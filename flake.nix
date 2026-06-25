@@ -25,6 +25,7 @@
         default = pkgs.mkShell {
           packages = with pkgs; [
             gcc
+            gcc-arm-embedded
             qt5.qtbase.dev
             qt5.qttools
             qt5.qtquickcontrols2
@@ -36,8 +37,6 @@
             (rust-bin.stable.latest.default.override {
               targets = [ "thumbv7em-none-eabihf" ];
             })
-          ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
-            gcc-arm-embedded
           ];
 
           shellHook = ''
