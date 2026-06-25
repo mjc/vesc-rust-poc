@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 pub fn roadmap_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../docs/rust-package-api-roadmap.md")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/rust-package-api-roadmap.md")
 }
 
 pub fn roadmap_text() -> String {

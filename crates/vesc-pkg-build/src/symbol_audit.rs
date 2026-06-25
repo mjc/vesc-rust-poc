@@ -29,11 +29,15 @@ pub fn is_allowed_runtime_symbol(symbol: &str) -> bool {
 
 pub fn rust_staticlib_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../target/thumbv7em-none-eabihf/release/libvesc_rust_poc.a")
+        .join("../../target/thumbv7em-none-eabihf/release/libvesc_rust_poc.a")
 }
 
 pub fn native_lib_elf_path() -> PathBuf {
     crate::native_lib_link::native_lib_elf_path()
+}
+
+pub fn native_lib_bin_path() -> PathBuf {
+    native_lib_elf_path().with_file_name("native_lib.bin")
 }
 
 pub fn package_lib_c_path() -> PathBuf {
@@ -126,6 +130,33 @@ pub fn build_final_native_lib_elf() {
     );
 }
 
+pub fn build_final_native_lib_binary(native_binary_path: &Path) {
+    build_final_native_lib_elf();
+
+    if let Some(parent) = native_binary_path.parent() {
+        fs::create_dir_all(parent).expect("create native_lib.bin parent directory");
+    }
+
+    let objcopy_status = Command::new("arm-none-eabi-objcopy")
+        .args([
+            "-O",
+            "binary",
+            native_lib_elf_path()
+                .to_str()
+                .expect("utf-8 native-lib ELF path"),
+            native_binary_path
+                .to_str()
+                .expect("utf-8 native-lib binary path"),
+        ])
+        .status()
+        .expect("arm-none-eabi-objcopy of the final native-lib ELF");
+
+    assert!(
+        objcopy_status.success(),
+        "failed to objcopy the final native-lib ELF into the native binary"
+    );
+}
+
 pub fn nm_output(path: &Path) -> String {
     let output = Command::new("arm-none-eabi-nm")
         .arg(path)
@@ -187,10 +218,11 @@ fn parse_defined_symbol(line: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        audit_final_native_lib_elf_symbols, audit_rust_staticlib_symbols, build_rust_staticlib,
-        defined_symbols, is_allowed_final_native_lib_symbol, is_allowed_runtime_symbol, nm_output,
-        rust_staticlib_path, undefined_symbols, unexpected_final_native_lib_undefined_symbols,
-        unexpected_undefined_symbols,
+        audit_final_native_lib_elf_symbols, audit_rust_staticlib_symbols,
+        build_final_native_lib_binary, build_rust_staticlib, defined_symbols,
+        is_allowed_final_native_lib_symbol, is_allowed_runtime_symbol, native_lib_bin_path,
+        nm_output, rust_staticlib_path, undefined_symbols,
+        unexpected_final_native_lib_undefined_symbols, unexpected_undefined_symbols,
     };
     use std::collections::BTreeSet;
 
@@ -256,6 +288,16 @@ mod tests {
         assert!(
             audit_final_native_lib_elf_symbols().is_empty(),
             "unexpected undefined symbols remain in the final native-lib ELF"
+        );
+    }
+
+    #[test]
+    fn build_final_native_lib_binary_materializes_the_packageable_payload() {
+        build_final_native_lib_binary(&native_lib_bin_path());
+
+        assert!(
+            native_lib_bin_path().exists(),
+            "expected the final native-lib binary to be materialized"
         );
     }
 

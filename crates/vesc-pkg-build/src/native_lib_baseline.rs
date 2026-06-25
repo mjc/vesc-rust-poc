@@ -6,7 +6,7 @@ pub const NATIVE_LIB_BASELINE_INPUTS: [&str; 8] = [
     "src/vesc_c_if.h",
     "src/rules.mk",
     "src/link.ld",
-    "src/conv.py",
+    "scripts/conv.py",
     "package/code.lisp",
     "package/pkgdesc.qml",
     "package/README.md",
@@ -54,7 +54,7 @@ impl NativeLibBaselinePath {
 
 pub fn native_lib_baseline_root() -> NativeLibBaselinePath {
     NativeLibBaselinePath::new(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures/native-lib-baseline"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/native-lib-baseline"),
     )
 }
 

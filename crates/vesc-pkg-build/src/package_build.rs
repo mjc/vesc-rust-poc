@@ -228,7 +228,7 @@ mod tests {
         assert_eq!(
             plan.conversion_plan().conversion_command_args(),
             vec![
-                "fixtures/native-lib-baseline/src/conv.py".to_owned(),
+                "fixtures/native-lib-baseline/scripts/conv.py".to_owned(),
                 "fixtures/native-lib-baseline/target/native-lib-baseline/native_lib.bin".to_owned(),
                 "fixtures/native-lib-baseline/target/native-lib-baseline/package_lib.bin"
                     .to_owned(),

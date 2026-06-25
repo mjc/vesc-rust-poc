@@ -1,15 +1,15 @@
 # Rust Package API Roadmap
 
 This is the short migration ladder for the Rust-backed VESC package experiment
-in `vesc-rust-poc`. It stays deliberately narrow so later API work keeps moving
+in `crates/vesc-rust-poc`. It stays deliberately narrow so later API work keeps moving
 in the right direction instead of growing a too-clever wrapper too early.
 
 ## Current workspace shape
 
-- `vesc-rust-poc`
-- `vesc-pkg-build`
-- `vesc-protocol`
-- `vesc-host-cli`
+- `crates/vesc-rust-poc`
+- `crates/vesc-pkg-build`
+- `crates/vesc-protocol`
+- `crates/vesc-host-cli`
 
 ## Validation
 

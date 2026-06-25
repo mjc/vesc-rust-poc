@@ -8,7 +8,7 @@ This fixture captures the smallest C package skeleton we want to keep around whi
 - `src/vesc_c_if.h`
 - `src/rules.mk`
 - `src/link.ld`
-- `src/conv.py`
+- `scripts/conv.py`
 - `package/code.lisp`
 - `package/pkgdesc.qml`
 - `package/README.md`
@@ -35,6 +35,6 @@ This fixture captures the smallest C package skeleton we want to keep around whi
   the Rust staticlib.
 - The fixture pins `src/vesc_c_if.h` with fingerprint `a8980de23614d274`; if
   that header changes, refresh the expected fingerprint in
-  `vesc-pkg-build/src/native_lib_baseline.rs` after reviewing the ABI diff.
+  `crates/vesc-pkg-build/src/native_lib_baseline.rs` after reviewing the ABI diff.
 - The package loader fixture loads `src/package_lib.bin` for the BLE loopback test package.
 - Build integration can land later without changing the fixture contract.

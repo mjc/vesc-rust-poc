@@ -11,7 +11,7 @@ pub const GENERATED_PACKAGE_PATHS: [&str; 4] = [
 ];
 
 pub fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
 pub fn git_check_ignore(path: &str) -> bool {

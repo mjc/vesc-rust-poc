@@ -5,14 +5,15 @@ This note characterizes the package path that the Rust VESC package experiment s
 ## Inputs
 
 - `pkgdesc.qml` defines the package name, description markdown, Lisp loader, QML file, fullscreen flag, and final package output name.
-- `lisp/package.lisp` loads `src/package_lib.bin` and registers Lisp-side behavior.
+- `fixtures/native-lib-baseline/package/code.lisp` loads `src/package_lib.bin` and registers Lisp-side behavior for the baseline package.
+- `fixtures/native-lib-baseline/src/package_lib.c` and `fixtures/native-lib-baseline/src/rules.mk` model the native-library build flow that produces the Rust-backed binary payload.
 - `lisp/bms.lisp` is imported by the package loader when BMS integration is enabled.
 - `package_README.md`, `ui.qml.in`, `package_name`, and `version` feed generated package assets.
 
 ## Native Payload Path
 
-- `src/Makefile` builds `src/package_lib.bin` from the VESC C package library rules.
-- `vesc_pkg_lib/rules.mk` compiles the C sources into an ELF, converts it to a raw binary, and turns that binary into a Lisp-loadable asset.
+- `crates/vesc-pkg-build` owns package staging, conversion, and inspection.
+- `fixtures/native-lib-baseline/src/rules.mk` compiles the C sources into an ELF, converts it to a raw binary, and turns that binary into a Lisp-loadable asset.
 - The native build stays in the VESC native-library flow; the package layer does not build the final payload directly.
 
 ## Package Assembly

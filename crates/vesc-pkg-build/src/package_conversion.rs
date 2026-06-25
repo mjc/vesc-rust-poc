@@ -4,7 +4,7 @@ use crate::PackageLayout;
 
 pub const NATIVE_LIB_BINARY_PATH: &str = "target/native-lib-baseline/native_lib.bin";
 pub const PACKAGE_LIB_BINARY_PATH: &str = "target/native-lib-baseline/package_lib.bin";
-pub const CONVERSION_SCRIPT_PATH: &str = "src/conv.py";
+pub const CONVERSION_SCRIPT_PATH: &str = "scripts/conv.py";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageBinaryConversionCommand {
@@ -184,7 +184,7 @@ mod tests {
         assert_eq!(
             plan.conversion_inputs().collect::<Vec<_>>(),
             vec![
-                std::path::PathBuf::from("fixtures/native-lib-baseline/src/conv.py"),
+                std::path::PathBuf::from("fixtures/native-lib-baseline/scripts/conv.py"),
                 std::path::PathBuf::from(
                     "fixtures/native-lib-baseline/target/native-lib-baseline/native_lib.bin"
                 ),
@@ -193,7 +193,7 @@ mod tests {
         assert_eq!(
             plan.conversion_command_args(),
             vec![
-                "fixtures/native-lib-baseline/src/conv.py".to_owned(),
+                "fixtures/native-lib-baseline/scripts/conv.py".to_owned(),
                 "fixtures/native-lib-baseline/target/native-lib-baseline/native_lib.bin".to_owned(),
                 "fixtures/native-lib-baseline/target/native-lib-baseline/package_lib.bin"
                     .to_owned(),
@@ -218,7 +218,7 @@ mod tests {
         assert_eq!(
             plan.command().arguments(),
             vec![
-                "fixtures/native-lib-baseline/src/conv.py".to_owned(),
+                "fixtures/native-lib-baseline/scripts/conv.py".to_owned(),
                 "fixtures/native-lib-baseline/target/native-lib-baseline/native_lib.bin".to_owned(),
                 "fixtures/native-lib-baseline/target/native-lib-baseline/package_lib.bin"
                     .to_owned(),

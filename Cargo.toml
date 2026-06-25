@@ -1,16 +1,11 @@
-[package]
-name = "vesc-rust-poc"
-version = "0.1.0"
-edition = "2021"
-
-[lib]
-crate-type = ["staticlib"]
-
-[dependencies]
-vesc-protocol = { path = "vesc-protocol" }
-
 [workspace]
-members = [".", "vesc-host-cli", "vesc-pkg-build", "vesc-protocol"]
+members = [
+    "crates/vesc-rust-poc",
+    "crates/vesc-host-cli",
+    "crates/vesc-pkg-build",
+    "crates/vesc-protocol",
+]
+default-members = ["crates/vesc-rust-poc"]
 resolver = "2"
 
 [profile.release]

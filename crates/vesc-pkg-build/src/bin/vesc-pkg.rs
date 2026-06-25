@@ -10,6 +10,10 @@ struct RealPackageRunner;
 
 impl PackageBinaryConversionRunner for RealPackageRunner {
     fn run(&self, command: &PackageBinaryConversionCommand) -> Result<(), String> {
+        vesc_pkg_build::symbol_audit::build_final_native_lib_binary(
+            command.native_binary_path().as_path(),
+        );
+
         let status = Command::new("python3")
             .arg(command.script_path())
             .arg(command.native_binary_path())

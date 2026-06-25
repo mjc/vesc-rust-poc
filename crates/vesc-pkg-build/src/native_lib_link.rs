@@ -32,7 +32,7 @@ impl NativeLibLinkPlan {
 }
 
 pub fn native_lib_link_plan() -> NativeLibLinkPlan {
-    NativeLibLinkPlan::new(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."))
+    NativeLibLinkPlan::new(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."))
 }
 
 pub fn native_lib_elf_path() -> PathBuf {
@@ -59,7 +59,7 @@ mod tests {
         assert_eq!(
             plan.elf_path(),
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("..")
+                .join("../..")
                 .join(NATIVE_LIB_ELF_PATH)
         );
     }
