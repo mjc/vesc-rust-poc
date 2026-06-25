@@ -86,6 +86,12 @@ impl PackageBuildPlan {
         self.inspection_plan().inspect()
     }
 
+    pub fn inspect_package_output(
+        &self,
+    ) -> Result<(), crate::package_artifacts::PackageArtifactInspectionError> {
+        self.inspection_plan().inspect_package_output()
+    }
+
     pub fn package_input_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
         [
             "package/code.lisp",

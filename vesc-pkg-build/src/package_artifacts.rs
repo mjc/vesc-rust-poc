@@ -115,6 +115,27 @@ impl PackageArtifactInspectionPlan {
         }
     }
 
+    pub fn inspect_package_output(&self) -> Result<(), PackageArtifactInspectionError> {
+        let path = self.package_output_path();
+        let Ok(bytes) = fs::read(&path) else {
+            return Err(PackageArtifactInspectionError::new(vec![
+                PackageArtifactProblem::MissingPath { path },
+            ]));
+        };
+
+        if bytes.is_empty() {
+            Err(PackageArtifactInspectionError::new(vec![
+                PackageArtifactProblem::ContentMismatch {
+                    path,
+                    expected: "non-empty package artifact".to_owned(),
+                    actual: "empty file".to_owned(),
+                },
+            ]))
+        } else {
+            Ok(())
+        }
+    }
+
     fn inspect_text_file(
         &self,
         path: PathBuf,
@@ -159,6 +180,7 @@ mod tests {
         NATIVE_PAYLOAD_PATH, STAGING_DESCRIPTOR_PATH, STAGING_LOADER_PATH, STAGING_README_PATH,
     };
     use crate::package_assets::PackageProvenance;
+    use crate::BLE_LOOPBACK_PACKAGE_NAME;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -185,11 +207,11 @@ mod tests {
     #[test]
     fn reports_missing_required_artifacts() {
         let root = unique_root();
-        fs::create_dir_all(root.join("target/vescpkg/Rust-VESC-package-0.1.0"))
+        fs::create_dir_all(root.join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0"))
             .expect("staging root");
         let plan = PackageArtifactInspectionPlan::new(
             &root,
-            "Rust VESC package",
+            BLE_LOOPBACK_PACKAGE_NAME,
             "0.1.0",
             PackageProvenance::empty(),
         );
@@ -199,17 +221,17 @@ mod tests {
             Err(PackageArtifactInspectionError::new(vec![
                 PackageArtifactProblem::MissingPath {
                     path: root
-                        .join("target/vescpkg/Rust-VESC-package-0.1.0")
+                        .join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0")
                         .join(STAGING_README_PATH)
                 },
                 PackageArtifactProblem::MissingPath {
                     path: root
-                        .join("target/vescpkg/Rust-VESC-package-0.1.0")
+                        .join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0")
                         .join(STAGING_DESCRIPTOR_PATH)
                 },
                 PackageArtifactProblem::MissingPath {
                     path: root
-                        .join("target/vescpkg/Rust-VESC-package-0.1.0")
+                        .join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0")
                         .join(STAGING_LOADER_PATH)
                 },
                 PackageArtifactProblem::MissingPath {
@@ -222,27 +244,27 @@ mod tests {
     #[test]
     fn reports_content_mismatches_with_exact_paths() {
         let root = unique_root();
-        let staging_root = root.join("target/vescpkg/Rust-VESC-package-0.1.0");
+        let staging_root = root.join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0");
         fs::create_dir_all(&staging_root).expect("staging root");
         write_artifact(&root, NATIVE_PAYLOAD_PATH, "payload");
         write_artifact(
             &root,
-            "target/vescpkg/Rust-VESC-package-0.1.0/README.md",
+            "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/README.md",
             "wrong readme",
         );
         write_artifact(
             &root,
-            "target/vescpkg/Rust-VESC-package-0.1.0/pkgdesc.qml",
+            "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/pkgdesc.qml",
             "wrong descriptor",
         );
         write_artifact(
             &root,
-            "target/vescpkg/Rust-VESC-package-0.1.0/code.lisp",
-            "; Auto-generated loader for Rust VESC package\n(load-native-lib \"src/package_lib.bin\")\n",
+            "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/code.lisp",
+            "; Auto-generated loader for Rust BLE loopback test package\n(load-native-lib \"src/package_lib.bin\")\n",
         );
         let plan = PackageArtifactInspectionPlan::new(
             &root,
-            "Rust VESC package",
+            BLE_LOOPBACK_PACKAGE_NAME,
             "0.1.0",
             PackageProvenance::empty(),
         );
@@ -267,14 +289,14 @@ mod tests {
     #[test]
     fn reports_empty_native_payloads() {
         let root = unique_root();
-        let staging_root = root.join("target/vescpkg/Rust-VESC-package-0.1.0");
+        let staging_root = root.join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0");
         fs::create_dir_all(&staging_root).expect("staging root");
         write_artifact(
             &root,
-            "target/vescpkg/Rust-VESC-package-0.1.0/README.md",
+            "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/README.md",
             &PackageArtifactInspectionPlan::new(
                 &root,
-                "Rust VESC package",
+                BLE_LOOPBACK_PACKAGE_NAME,
                 "0.1.0",
                 PackageProvenance::empty(),
             )
@@ -283,10 +305,10 @@ mod tests {
         );
         write_artifact(
             &root,
-            "target/vescpkg/Rust-VESC-package-0.1.0/pkgdesc.qml",
+            "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/pkgdesc.qml",
             &PackageArtifactInspectionPlan::new(
                 &root,
-                "Rust VESC package",
+                BLE_LOOPBACK_PACKAGE_NAME,
                 "0.1.0",
                 PackageProvenance::empty(),
             )
@@ -295,10 +317,10 @@ mod tests {
         );
         write_artifact(
             &root,
-            "target/vescpkg/Rust-VESC-package-0.1.0/code.lisp",
+            "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/code.lisp",
             &PackageArtifactInspectionPlan::new(
                 &root,
-                "Rust VESC package",
+                BLE_LOOPBACK_PACKAGE_NAME,
                 "0.1.0",
                 PackageProvenance::empty(),
             )
@@ -308,7 +330,7 @@ mod tests {
         write_artifact(&root, NATIVE_PAYLOAD_PATH, "");
         let plan = PackageArtifactInspectionPlan::new(
             &root,
-            "Rust VESC package",
+            BLE_LOOPBACK_PACKAGE_NAME,
             "0.1.0",
             PackageProvenance::empty(),
         );

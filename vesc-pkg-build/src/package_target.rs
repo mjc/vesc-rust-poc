@@ -103,6 +103,9 @@ impl PackageTargetPlan {
                     tool_path: self.vesc_tool_path.clone(),
                     reason,
                 })?;
+            self.build_plan
+                .inspect_package_output()
+                .map_err(PackageTargetError::Inspection)?;
         }
 
         Ok(self.package_output_path())
@@ -146,6 +149,7 @@ mod tests {
         available: RefCell<Result<(), String>>,
         availability_checks: RefCell<Vec<PathBuf>>,
         runs: RefCell<Vec<(PathBuf, Vec<String>)>>,
+        package_output_path: Option<PathBuf>,
     }
 
     impl FakeTargetRunner {
@@ -154,6 +158,14 @@ mod tests {
                 available: RefCell::new(Ok(())),
                 availability_checks: RefCell::new(Vec::new()),
                 runs: RefCell::new(Vec::new()),
+                package_output_path: None,
+            }
+        }
+
+        fn package_with_output(path: impl Into<PathBuf>) -> Self {
+            Self {
+                package_output_path: Some(path.into()),
+                ..Self::package()
             }
         }
 
@@ -162,6 +174,7 @@ mod tests {
                 available: RefCell::new(Err(reason.into())),
                 availability_checks: RefCell::new(Vec::new()),
                 runs: RefCell::new(Vec::new()),
+                package_output_path: None,
             }
         }
 
@@ -186,6 +199,12 @@ mod tests {
             self.runs
                 .borrow_mut()
                 .push((tool_path.to_path_buf(), args.to_vec()));
+            if let Some(path) = &self.package_output_path {
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+                }
+                fs::write(path, b"package").map_err(|error| error.to_string())?;
+            }
             Ok(())
         }
     }
@@ -245,7 +264,8 @@ mod tests {
             "/nix/store/fake-vesc-tool/bin/vesc_tool",
         );
         let conversion_runner = FakeConversionRunner::default();
-        let target_runner = FakeTargetRunner::package();
+        let target_runner =
+            FakeTargetRunner::package_with_output(root.join(target.package_output_path()));
 
         let output = target
             .execute_with(&conversion_runner, &target_runner)
@@ -265,6 +285,10 @@ mod tests {
                     "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/pkgdesc.qml".to_owned(),
                 ],
             )]
+        );
+        assert!(
+            root.join(target.package_output_path()).exists(),
+            "expected the package target to materialize the final .vescpkg"
         );
     }
 
