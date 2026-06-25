@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use crate::package_assets::{PackageAssets, PackageProvenance};
+use crate::package_conversion::PackageBinaryConversionPlan;
 use crate::PackageLayout;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,6 +28,14 @@ impl PackageBuildPlan {
 
     pub fn assets(&self) -> PackageAssets {
         PackageAssets::new(self.layout.clone(), PackageProvenance::empty())
+    }
+
+    pub fn conversion_plan(&self) -> PackageBinaryConversionPlan {
+        PackageBinaryConversionPlan::new(
+            self.source_root.clone(),
+            self.layout.package_name(),
+            self.layout.version(),
+        )
     }
 
     pub fn package_input_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
@@ -91,6 +100,15 @@ mod tests {
                 std::path::PathBuf::from("target/vescpkg/Rust-VESC-package-0.1.0/README.md"),
                 std::path::PathBuf::from("target/vescpkg/Rust-VESC-package-0.1.0/pkgdesc.qml"),
                 std::path::PathBuf::from("target/vescpkg/Rust-VESC-package-0.1.0/code.lisp"),
+            ]
+        );
+        assert_eq!(
+            plan.conversion_plan().conversion_command_args(),
+            vec![
+                "fixtures/native-lib-baseline/src/conv.py".to_owned(),
+                "fixtures/native-lib-baseline/target/native-lib-baseline/native_lib.bin".to_owned(),
+                "fixtures/native-lib-baseline/target/native-lib-baseline/package_lib.bin"
+                    .to_owned(),
             ]
         );
     }

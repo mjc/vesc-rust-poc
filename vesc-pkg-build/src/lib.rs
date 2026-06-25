@@ -4,6 +4,7 @@ pub mod native_lib_baseline;
 pub mod native_lib_link;
 pub mod package_assets;
 pub mod package_build;
+pub mod package_conversion;
 pub mod package_runtime;
 pub mod symbol_audit;
 
@@ -14,6 +15,10 @@ pub use native_lib_baseline::{
 pub use native_lib_link::{native_lib_link_plan, NativeLibLinkPlan};
 pub use package_assets::{PackageAssets, PackageProvenance};
 pub use package_build::PackageBuildPlan;
+pub use package_conversion::{
+    PackageBinaryConversionPlan, CONVERSION_SCRIPT_PATH, NATIVE_LIB_BINARY_PATH,
+    PACKAGE_LIB_BINARY_PATH,
+};
 pub use package_runtime::{
     FakeFirmwareServices, FirmwareServices, LoopbackPackageRuntime, LoopbackPackageState,
     LoopbackRuntimeError, LoopbackStartError, LoopbackTick,
