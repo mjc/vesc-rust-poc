@@ -32,8 +32,8 @@ This note characterizes the package path that the Rust VESC package experiment s
 
 1. Enter the Nix shell with `nix develop`.
 2. Run `make check` before packaging any change.
-3. Use `make package-only` to exercise staging, conversion, artifact inspection, and package path rendering without VESC Tool.
-4. Use `make package` when `VESC_TOOL` or `vesc_tool` is available and you want the final `.vescpkg` emitted.
+3. Use `make package-only` to exercise staging, conversion, package emission, and artifact inspection.
+4. Use `make package` for the checked path that still emits the final `.vescpkg` from the local Rust packer.
 5. Upload the emitted package in VESC Tool, then run the host `loopback` command against the device-side package.
 
 The current package name is `Rust BLE loopback test package`, and the predictable output path is
@@ -47,7 +47,6 @@ The current package name is `Rust BLE loopback test package`, and the predictabl
 
 ## Troubleshooting
 
-- If `make package` fails because `vesc_tool` is missing, install VESC Tool or set `VESC_TOOL` to its binary path.
 - If `make check` fails early, start with `make test` and `make symbol-check` to narrow the failure.
 - If generated files drift, run `make clean` before rebuilding.
 - If the host loopback fails with a scan timeout, the adapter or device was not discovered in time.
@@ -64,6 +63,6 @@ The current package name is `Rust BLE loopback test package`, and the predictabl
 ## What This Means For Rust
 
 - The Rust path should keep the same separation between package metadata and native payload generation.
-- The first Rust proof should still let the VESC native-library flow own the final ELF/bin/conversion steps.
-- Package staging, package asset rendering, artifact inspection, and VESC Tool invocation
+- The first Rust proof should keep the native-library flow for ELF/bin generation and let the Rust packer own the final `.vescpkg` emission.
+- Package staging, package asset rendering, artifact inspection, and final package emission
   belong in the dedicated `vesc-pkg-build` crate rather than ad hoc shell fragments.

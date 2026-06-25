@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::package_artifacts::PackageArtifactInspectionError;
 use crate::package_build::PackageBuildPlan;
@@ -16,20 +16,13 @@ pub enum PackageTargetError {
     Stage { path: PathBuf, reason: String },
     Conversion(PackageBinaryConversionError),
     Inspection(PackageArtifactInspectionError),
-    ToolUnavailable { tool_path: PathBuf, reason: String },
-    ToolFailed { tool_path: PathBuf, reason: String },
-}
-
-pub trait PackageTargetRunner {
-    fn ensure_vesc_tool_available(&self, tool_path: &Path) -> Result<(), String>;
-    fn run_vesc_tool(&self, tool_path: &Path, args: &[String]) -> Result<(), String>;
+    PackageOutput { path: PathBuf, reason: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageTargetPlan {
     build_plan: PackageBuildPlan,
     mode: PackageTargetMode,
-    vesc_tool_path: PathBuf,
 }
 
 impl PackageTargetPlan {
@@ -38,7 +31,6 @@ impl PackageTargetPlan {
         package_name: impl Into<String>,
         version: impl Into<String>,
         mode: PackageTargetMode,
-        vesc_tool_path: impl Into<PathBuf>,
     ) -> Self {
         Self::with_provenance(
             source_root,
@@ -46,7 +38,6 @@ impl PackageTargetPlan {
             version,
             PackageProvenance::empty(),
             mode,
-            vesc_tool_path,
         )
     }
 
@@ -56,7 +47,6 @@ impl PackageTargetPlan {
         version: impl Into<String>,
         provenance: PackageProvenance,
         mode: PackageTargetMode,
-        vesc_tool_path: impl Into<PathBuf>,
     ) -> Self {
         Self {
             build_plan: PackageBuildPlan::with_provenance(
@@ -66,7 +56,6 @@ impl PackageTargetPlan {
                 provenance,
             ),
             mode,
-            vesc_tool_path: vesc_tool_path.into(),
         }
     }
 
@@ -78,32 +67,14 @@ impl PackageTargetPlan {
         self.mode
     }
 
-    pub fn vesc_tool_path(&self) -> &Path {
-        &self.vesc_tool_path
-    }
-
     pub fn package_output_path(&self) -> PathBuf {
         self.build_plan.package_output_path()
     }
 
-    pub fn execute_with<C, R>(
-        &self,
-        conversion_runner: &C,
-        target_runner: &R,
-    ) -> Result<PathBuf, PackageTargetError>
+    pub fn execute_with<C>(&self, conversion_runner: &C) -> Result<PathBuf, PackageTargetError>
     where
         C: PackageBinaryConversionRunner,
-        R: PackageTargetRunner,
     {
-        if self.mode == PackageTargetMode::Package {
-            target_runner
-                .ensure_vesc_tool_available(self.vesc_tool_path.as_path())
-                .map_err(|reason| PackageTargetError::ToolUnavailable {
-                    tool_path: self.vesc_tool_path.clone(),
-                    reason,
-                })?;
-        }
-
         self.build_plan
             .stage_package_assets()
             .map_err(|error| PackageTargetError::Stage {
@@ -117,20 +88,15 @@ impl PackageTargetPlan {
             .inspect_package_artifacts()
             .map_err(PackageTargetError::Inspection)?;
 
-        if self.mode == PackageTargetMode::Package {
-            target_runner
-                .run_vesc_tool(
-                    self.vesc_tool_path.as_path(),
-                    &self.build_plan.vesc_tool_args(),
-                )
-                .map_err(|reason| PackageTargetError::ToolFailed {
-                    tool_path: self.vesc_tool_path.clone(),
-                    reason,
-                })?;
-            self.build_plan
-                .inspect_package_output()
-                .map_err(PackageTargetError::Inspection)?;
-        }
+        self.build_plan.write_package_output().map_err(|error| {
+            PackageTargetError::PackageOutput {
+                path: self.build_plan.package_output_path(),
+                reason: error.to_string(),
+            }
+        })?;
+        self.build_plan
+            .inspect_package_output()
+            .map_err(PackageTargetError::Inspection)?;
 
         Ok(self.package_output_path())
     }
@@ -138,14 +104,14 @@ impl PackageTargetPlan {
 
 #[cfg(test)]
 mod tests {
-    use super::{PackageTargetError, PackageTargetMode, PackageTargetPlan, PackageTargetRunner};
+    use super::{PackageTargetMode, PackageTargetPlan};
     use crate::package_conversion::{
         PackageBinaryConversionCommand, PackageBinaryConversionRunner,
     };
     use crate::BLE_LOOPBACK_PACKAGE_NAME;
     use std::cell::RefCell;
     use std::fs;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[derive(Default)]
@@ -169,70 +135,6 @@ mod tests {
         }
     }
 
-    struct FakeTargetRunner {
-        available: RefCell<Result<(), String>>,
-        availability_checks: RefCell<Vec<PathBuf>>,
-        runs: RefCell<Vec<(PathBuf, Vec<String>)>>,
-        package_output_path: Option<PathBuf>,
-    }
-
-    impl FakeTargetRunner {
-        fn package() -> Self {
-            Self {
-                available: RefCell::new(Ok(())),
-                availability_checks: RefCell::new(Vec::new()),
-                runs: RefCell::new(Vec::new()),
-                package_output_path: None,
-            }
-        }
-
-        fn package_with_output(path: impl Into<PathBuf>) -> Self {
-            Self {
-                package_output_path: Some(path.into()),
-                ..Self::package()
-            }
-        }
-
-        fn unavailable(reason: impl Into<String>) -> Self {
-            Self {
-                available: RefCell::new(Err(reason.into())),
-                availability_checks: RefCell::new(Vec::new()),
-                runs: RefCell::new(Vec::new()),
-                package_output_path: None,
-            }
-        }
-
-        fn availability_checks(&self) -> Vec<PathBuf> {
-            self.availability_checks.borrow().clone()
-        }
-
-        fn runs(&self) -> Vec<(PathBuf, Vec<String>)> {
-            self.runs.borrow().clone()
-        }
-    }
-
-    impl PackageTargetRunner for FakeTargetRunner {
-        fn ensure_vesc_tool_available(&self, tool_path: &Path) -> Result<(), String> {
-            self.availability_checks
-                .borrow_mut()
-                .push(tool_path.to_path_buf());
-            self.available.borrow().clone()
-        }
-
-        fn run_vesc_tool(&self, tool_path: &Path, args: &[String]) -> Result<(), String> {
-            self.runs
-                .borrow_mut()
-                .push((tool_path.to_path_buf(), args.to_vec()));
-            if let Some(path) = &self.package_output_path {
-                if let Some(parent) = path.parent() {
-                    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-                }
-                fs::write(path, b"package").map_err(|error| error.to_string())?;
-            }
-            Ok(())
-        }
-    }
-
     fn unique_root() -> PathBuf {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -245,20 +147,18 @@ mod tests {
     }
 
     #[test]
-    fn package_only_stages_inspects_and_skips_vesc_tool() {
+    fn package_only_stages_inspects_and_writes_the_output() {
         let root = unique_root();
         let target = PackageTargetPlan::new(
             &root,
             BLE_LOOPBACK_PACKAGE_NAME,
             "0.1.0",
             PackageTargetMode::PackageOnly,
-            "vesc_tool",
         );
         let conversion_runner = FakeConversionRunner::default();
-        let target_runner = FakeTargetRunner::package();
 
         let output = target
-            .execute_with(&conversion_runner, &target_runner)
+            .execute_with(&conversion_runner)
             .expect("package target");
 
         assert_eq!(output, target.package_output_path());
@@ -266,50 +166,35 @@ mod tests {
             conversion_runner.calls(),
             vec![target.build_plan().conversion_plan().command()]
         );
-        assert!(target_runner.availability_checks().is_empty());
-        assert!(target_runner.runs().is_empty());
         assert!(target.build_plan().inspect_package_artifacts().is_ok());
+        assert!(target.build_plan().inspect_package_output().is_ok());
         assert!(root
             .join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/README.md")
             .exists());
         assert!(root
             .join("target/native-lib-baseline/package_lib.bin")
             .exists());
+        assert!(root
+            .join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/Rust-BLE-loopback-test-package-0.1.0.vescpkg")
+            .exists());
     }
 
     #[test]
-    fn package_mode_checks_vesc_tool_and_runs_it() {
+    fn package_mode_still_writes_the_package_output() {
         let root = unique_root();
         let target = PackageTargetPlan::new(
             &root,
             BLE_LOOPBACK_PACKAGE_NAME,
             "0.1.0",
             PackageTargetMode::Package,
-            "/nix/store/fake-vesc-tool/bin/vesc_tool",
         );
         let conversion_runner = FakeConversionRunner::default();
-        let target_runner =
-            FakeTargetRunner::package_with_output(root.join(target.package_output_path()));
 
         let output = target
-            .execute_with(&conversion_runner, &target_runner)
+            .execute_with(&conversion_runner)
             .expect("package target");
 
         assert_eq!(output, target.package_output_path());
-        assert_eq!(
-            target_runner.availability_checks(),
-            vec![PathBuf::from("/nix/store/fake-vesc-tool/bin/vesc_tool")]
-        );
-        assert_eq!(
-            target_runner.runs(),
-            vec![(
-                PathBuf::from("/nix/store/fake-vesc-tool/bin/vesc_tool"),
-                vec![
-                    "--buildPkgFromDesc".to_owned(),
-                    "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/pkgdesc.qml".to_owned(),
-                ],
-            )]
-        );
         assert!(
             root.join(target.package_output_path()).exists(),
             "expected the package target to materialize the final .vescpkg"
@@ -317,29 +202,26 @@ mod tests {
     }
 
     #[test]
-    fn package_mode_reports_missing_vesc_tool() {
+    fn package_output_remains_small_enough_to_upload() {
         let root = unique_root();
         let target = PackageTargetPlan::new(
             &root,
-            "Rust VESC package",
+            BLE_LOOPBACK_PACKAGE_NAME,
             "0.1.0",
             PackageTargetMode::Package,
-            "vesc_tool",
         );
         let conversion_runner = FakeConversionRunner::default();
-        let target_runner = FakeTargetRunner::unavailable("vesc_tool not found");
 
         assert_eq!(
-            target.execute_with(&conversion_runner, &target_runner),
-            Err(PackageTargetError::ToolUnavailable {
-                tool_path: PathBuf::from("vesc_tool"),
-                reason: "vesc_tool not found".to_owned(),
-            })
+            target.execute_with(&conversion_runner),
+            Ok(target.package_output_path())
         );
-        assert_eq!(
-            target_runner.availability_checks(),
-            vec![PathBuf::from("vesc_tool")]
+        let size = fs::metadata(root.join(target.package_output_path()))
+            .expect("package metadata")
+            .len();
+        assert!(
+            size < 128 * 1024,
+            "expected the final package to stay below the VESC upload block limit, got {size} bytes"
         );
-        assert!(target_runner.runs().is_empty());
     }
 }

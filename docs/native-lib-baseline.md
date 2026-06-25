@@ -18,7 +18,7 @@ This fixture captures the smallest C package skeleton we want to keep around whi
 - `target/native-lib-baseline/native_lib.elf`
 - `target/native-lib-baseline/native_lib.bin`
 - `target/native-lib-baseline/package_lib.bin`
-- `target/vescpkg/native-lib-baseline/native-lib-baseline.vescpkg`
+- `target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/Rust-BLE-loopback-test-package-0.1.0.vescpkg`
 
 ## Notes
 

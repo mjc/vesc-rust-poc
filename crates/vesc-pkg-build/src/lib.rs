@@ -6,6 +6,7 @@ pub mod package_artifacts;
 pub mod package_assets;
 pub mod package_build;
 pub mod package_conversion;
+pub mod package_format;
 pub mod package_runtime;
 pub mod package_target;
 pub mod rust_package_api_roadmap;
@@ -33,9 +34,7 @@ pub use package_runtime::{
     FakeFirmwareServices, FirmwareServices, LoopbackPackageRuntime, LoopbackPackageState,
     LoopbackRuntimeError, LoopbackStartError, LoopbackTick,
 };
-pub use package_target::{
-    PackageTargetError, PackageTargetMode, PackageTargetPlan, PackageTargetRunner,
-};
+pub use package_target::{PackageTargetError, PackageTargetMode, PackageTargetPlan};
 pub use symbol_audit::{
     audit_rust_staticlib_symbols, defined_symbols, is_allowed_runtime_symbol, nm_output,
     undefined_symbols, unexpected_undefined_symbols,

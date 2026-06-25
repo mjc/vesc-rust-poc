@@ -6,6 +6,7 @@ use crate::package_assets::{PackageAssets, PackageProvenance};
 use crate::package_conversion::{
     PackageBinaryConversionError, PackageBinaryConversionPlan, PackageBinaryConversionRunner,
 };
+use crate::package_format::{write_vesc_package, VescPackageInput};
 use crate::PackageLayout;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,6 +109,29 @@ impl PackageBuildPlan {
         self.inspection_plan().inspect_package_output()
     }
 
+    pub fn write_package_output(&self) -> io::Result<PathBuf> {
+        let assets = self.assets();
+        let staging = self.inspection_plan();
+        let readme = fs::read_to_string(staging.readme_path())?;
+        let descriptor = fs::read_to_string(staging.descriptor_path())?;
+        let loader = fs::read_to_string(staging.loader_path())?;
+        let output_path = self.source_root.join(self.package_output_path());
+        let loader_path = self.source_root.join("package");
+
+        let input = VescPackageInput {
+            name: assets.package_name(),
+            description_md: &readme,
+            lisp_source: &loader,
+            lisp_editor_path: &loader_path,
+            qml_file: "",
+            pkg_desc_qml: &descriptor,
+            qml_is_fullscreen: false,
+        };
+        write_vesc_package(&output_path, &input)?;
+
+        Ok(output_path)
+    }
+
     pub fn package_input_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
         [
             "package/code.lisp",
@@ -124,13 +148,6 @@ impl PackageBuildPlan {
 
     pub fn package_output_path(&self) -> PathBuf {
         self.layout.staging_dir().join(self.layout.artifact_name())
-    }
-
-    pub fn vesc_tool_args(&self) -> Vec<String> {
-        vec![
-            "--buildPkgFromDesc".to_owned(),
-            self.descriptor_path().to_string_lossy().into_owned(),
-        ]
     }
 }
 
@@ -205,13 +222,6 @@ mod tests {
             )
         );
         assert_eq!(
-            plan.vesc_tool_args(),
-            vec![
-                "--buildPkgFromDesc".to_owned(),
-                "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/pkgdesc.qml".to_owned(),
-            ]
-        );
-        assert_eq!(
             plan.assets().asset_paths().collect::<Vec<_>>(),
             vec![
                 std::path::PathBuf::from(
@@ -276,6 +286,25 @@ mod tests {
             )
             .join("Rust-BLE-loopback-test-package-0.1.0.vescpkg")
         );
+    }
+
+    #[test]
+    fn writes_the_expected_package_output() {
+        let root = unique_root();
+        let plan = PackageBuildPlan::new(&root, BLE_LOOPBACK_PACKAGE_NAME, "0.1.0");
+        plan.stage_package_assets().expect("staged assets");
+        fs::create_dir_all(root.join("target/native-lib-baseline")).expect("native payload dir");
+        fs::write(
+            root.join("target/native-lib-baseline/package_lib.bin"),
+            b"payload",
+        )
+        .expect("native payload");
+
+        let output = plan.write_package_output().expect("package output");
+
+        assert_eq!(output, root.join(plan.package_output_path()));
+        assert!(output.exists(), "expected the final .vescpkg to exist");
+        assert!(fs::metadata(&output).expect("package metadata").len() > 0);
     }
 
     #[test]

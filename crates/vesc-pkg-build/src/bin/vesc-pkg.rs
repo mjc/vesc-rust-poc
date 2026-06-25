@@ -1,9 +1,9 @@
-use std::path::Path;
-use std::process::{Command, ExitCode};
+use std::fs;
+use std::process::ExitCode;
 
 use vesc_pkg_build::{
     PackageBinaryConversionCommand, PackageBinaryConversionRunner, PackageProvenance,
-    PackageTargetMode, PackageTargetPlan, PackageTargetRunner, BLE_LOOPBACK_PACKAGE_NAME,
+    PackageTargetMode, PackageTargetPlan, BLE_LOOPBACK_PACKAGE_NAME,
 };
 
 struct RealPackageRunner;
@@ -14,39 +14,13 @@ impl PackageBinaryConversionRunner for RealPackageRunner {
             command.native_binary_path().as_path(),
         );
 
-        let status = Command::new("python3")
-            .arg(command.script_path())
-            .arg(command.native_binary_path())
-            .arg(command.package_binary_path())
-            .status()
+        if let Some(parent) = command.package_binary_path().parent() {
+            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+
+        fs::copy(command.native_binary_path(), command.package_binary_path())
             .map_err(|error| error.to_string())?;
-
-        status
-            .success()
-            .then_some(())
-            .ok_or_else(|| format!("conversion helper exited with {status}"))
-    }
-}
-
-impl PackageTargetRunner for RealPackageRunner {
-    fn ensure_vesc_tool_available(&self, tool_path: &Path) -> Result<(), String> {
-        Command::new(tool_path)
-            .arg("--help")
-            .output()
-            .map(|_| ())
-            .map_err(|error| error.to_string())
-    }
-
-    fn run_vesc_tool(&self, tool_path: &Path, args: &[String]) -> Result<(), String> {
-        let status = Command::new(tool_path)
-            .args(args)
-            .status()
-            .map_err(|error| error.to_string())?;
-
-        status
-            .success()
-            .then_some(())
-            .ok_or_else(|| format!("VESC Tool exited with {status}"))
+        Ok(())
     }
 }
 
@@ -86,18 +60,16 @@ fn main() -> ExitCode {
         }
     };
 
-    let tool_path = std::env::var("VESC_TOOL").unwrap_or_else(|_| "vesc_tool".to_owned());
     let plan = PackageTargetPlan::with_provenance(
         root,
         BLE_LOOPBACK_PACKAGE_NAME,
         "0.1.0",
         package_provenance_from_env(),
         mode,
-        tool_path,
     );
     let runner = RealPackageRunner;
 
-    match plan.execute_with(&runner, &runner) {
+    match plan.execute_with(&runner) {
         Ok(path) => {
             println!("{}", path.display());
             ExitCode::SUCCESS
