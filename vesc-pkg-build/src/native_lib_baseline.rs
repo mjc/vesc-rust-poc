@@ -126,4 +126,43 @@ mod tests {
             "package payload is too large for the VESC flash block: {sizes:?}"
         );
     }
+
+    #[test]
+    fn package_lib_c_registers_the_rust_extension_shim() {
+        let root = native_lib_baseline_root();
+        let package_lib = root
+            .input_paths()
+            .find(|path| path.ends_with("src/package_lib.c"))
+            .expect("expected package_lib.c in the native-lib baseline fixture");
+        let source = fs::read_to_string(&package_lib).expect("package_lib.c contents");
+
+        assert!(
+            source.contains("INIT_FUN(package_lib_init)"),
+            "expected an init hook in the C shim: {package_lib:?}"
+        );
+        assert!(
+            source.contains("ext-rust-add"),
+            "expected the shim to register the Rust extension name: {package_lib:?}"
+        );
+        assert!(
+            source.contains("rust_add"),
+            "expected the shim to delegate to the Rust function: {package_lib:?}"
+        );
+        assert!(
+            source.contains("argn != 2"),
+            "expected the shim to guard against bad arity: {package_lib:?}"
+        );
+        assert!(
+            source.contains("ENC_SYM_EERROR"),
+            "expected the shim to return the LispBM arity error: {package_lib:?}"
+        );
+        assert!(
+            source.contains("lbm_dec_as_i32"),
+            "expected the shim to decode LispBM integers: {package_lib:?}"
+        );
+        assert!(
+            source.contains("lbm_enc_i"),
+            "expected the shim to encode the Rust result back to LispBM: {package_lib:?}"
+        );
+    }
 }
