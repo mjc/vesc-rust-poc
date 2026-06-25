@@ -18,8 +18,9 @@ This note characterizes the package path that the Rust VESC package experiment s
 ## Package Assembly
 
 - The root `Makefile` gates packaging behind tests.
-- `make check` runs the host C test suite and QML behavior checks before packaging.
-- `make` and `make package` both end in `vesc_tool --buildPkgFromDesc pkgdesc.qml` unless `OLDVT=1` is selected.
+- `make check` runs workspace tests, formatting, linting, and the package-size smoke test before packaging work moves forward.
+- `make test`, `make fmt`, `make clippy`, and `make package-smoke` stay available as smaller commands when a slice only needs one gate.
+- `make` currently defaults to `check`; the package-build command path will be tightened up in a later slice.
 - `package_README-gen.md` and `ui.qml` are generated artifacts, not hand-edited inputs.
 
 ## Build Metadata

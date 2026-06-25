@@ -1,4 +1,4 @@
-use core::ffi::c_char;
+use core::ffi::{c_char, CStr};
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,12 +16,15 @@ pub struct LibInfo {
 pub type ExtensionHandler = unsafe extern "C" fn(*mut LbmValue, LbmCount) -> LbmValue;
 
 pub trait LbmBindings {
-    /// Safety: `name` must be a valid NUL-terminated string for the duration of the call,
+    /// # Safety
+    /// `name` must be a valid NUL-terminated string for the duration of the call,
     /// and `handler` must obey the firmware's extension callback ABI.
     unsafe fn add_extension(&self, name: *const c_char, handler: ExtensionHandler) -> i32;
-    /// Safety: `value` must be a valid firmware-provided LispBM value.
+    /// # Safety
+    /// `value` must be a valid firmware-provided LispBM value.
     unsafe fn decode_i32(&self, value: LbmValue) -> i32;
-    /// Safety: the returned value is owned by the caller as an opaque LispBM value.
+    /// # Safety
+    /// The returned value is owned by the caller as an opaque LispBM value.
     unsafe fn encode_i32(&self, value: i32) -> LbmValue;
 }
 
@@ -50,12 +53,8 @@ impl<B: LbmBindings> LbmApi<B> {
         Self { bindings }
     }
 
-    pub fn register_extension(
-        &self,
-        name: *const c_char,
-        handler: ExtensionHandler,
-    ) -> i32 {
-        unsafe { self.bindings.add_extension(name, handler) }
+    pub fn register_extension(&self, name: &CStr, handler: ExtensionHandler) -> i32 {
+        unsafe { self.bindings.add_extension(name.as_ptr(), handler) }
     }
 
     pub fn decode_i32(&self, value: LbmValue) -> i32 {
@@ -80,10 +79,7 @@ pub(crate) mod raw {
         fn raw_lbm_enc_i(value: i32) -> LbmValue;
     }
 
-    pub(crate) unsafe fn lbm_add_extension(
-        name: *const c_char,
-        handler: ExtensionHandler,
-    ) -> i32 {
+    pub(crate) unsafe fn lbm_add_extension(name: *const c_char, handler: ExtensionHandler) -> i32 {
         // Safety: this simply forwards the raw pointer and callback to the firmware ABI.
         raw_lbm_add_extension(name, handler)
     }
@@ -122,16 +118,23 @@ mod tests {
     }
 
     impl LbmBindings for FakeBindings {
+        /// # Safety
+        /// The fake test binding ignores the pointer and callback, so it cannot violate
+        /// the firmware ABI invariants.
         unsafe fn add_extension(&self, _name: *const c_char, _handler: ExtensionHandler) -> i32 {
             self.add_calls.set(self.add_calls.get() + 1);
             17
         }
 
+        /// # Safety
+        /// The fake test binding only decodes the raw integer wrapper by value.
         unsafe fn decode_i32(&self, value: LbmValue) -> i32 {
             self.decode_calls.set(self.decode_calls.get() + 1);
             value.0 as i32
         }
 
+        /// # Safety
+        /// The fake test binding only rewraps the integer into the opaque type.
         unsafe fn encode_i32(&self, value: i32) -> LbmValue {
             self.encode_calls.set(self.encode_calls.get() + 1);
             LbmValue(value as usize)
@@ -146,7 +149,7 @@ mod tests {
     fn wrapper_delegates_through_the_binding_trait() {
         let bindings = FakeBindings::new();
         let api = LbmApi::new(bindings);
-        let name = b"ext-rust-add\0".as_ptr() as *const c_char;
+        let name = c"ext-rust-add";
 
         assert_eq!(api.register_extension(name, stub_handler), 17);
         assert_eq!(api.decode_i32(LbmValue(3)), 3);

@@ -33,18 +33,12 @@ mod tests {
 
     #[test]
     fn parses_layout_command() {
-        assert_eq!(
-            parse_args(["vesc-host-cli", "layout"]),
-            Ok(Command::Layout)
-        );
+        assert_eq!(parse_args(["vesc-host-cli", "layout"]), Ok(Command::Layout));
     }
 
     #[test]
     fn parses_status_command() {
-        assert_eq!(
-            parse_args(["vesc-host-cli", "status"]),
-            Ok(Command::Status)
-        );
+        assert_eq!(parse_args(["vesc-host-cli", "status"]), Ok(Command::Status));
     }
 
     #[test]

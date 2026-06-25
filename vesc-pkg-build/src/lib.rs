@@ -32,9 +32,11 @@ impl PackageLayout {
     }
 
     pub fn staging_dir(&self) -> PathBuf {
-        Path::new("target")
-            .join("vescpkg")
-            .join(format!("{}-{}", sanitize(&self.package_name), sanitize(&self.version)))
+        Path::new("target").join("vescpkg").join(format!(
+            "{}-{}",
+            sanitize(&self.package_name),
+            sanitize(&self.version)
+        ))
     }
 
     pub fn descriptor_path(&self) -> PathBuf {
