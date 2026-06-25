@@ -20,6 +20,7 @@ pub const NATIVE_LIB_BASELINE_OUTPUTS: [&str; 4] = [
 ];
 
 pub const VESC_PACKAGE_FLASH_BLOCK_LIMIT_BYTES: u64 = 128 * 1024;
+pub const VESC_PACKAGE_FLASH_BUDGET_BYTES: u64 = VESC_PACKAGE_FLASH_BLOCK_LIMIT_BYTES / 8;
 pub const EXPECTED_VESC_C_IF_HEADER_FINGERPRINT: &str = "a8980de23614d274";
 
 pub const NATIVE_LIB_BASELINE_PACKAGE_INPUTS: [&str; 3] = [
@@ -109,8 +110,7 @@ mod tests {
     use super::{
         baseline_input_paths, baseline_output_paths, native_lib_baseline_root,
         vesc_c_if_header_fingerprint, EXPECTED_VESC_C_IF_HEADER_FINGERPRINT,
-        NATIVE_LIB_BASELINE_INPUTS, NATIVE_LIB_BASELINE_OUTPUTS,
-        VESC_PACKAGE_FLASH_BLOCK_LIMIT_BYTES,
+        NATIVE_LIB_BASELINE_INPUTS, NATIVE_LIB_BASELINE_OUTPUTS, VESC_PACKAGE_FLASH_BUDGET_BYTES,
     };
     use std::fs;
 
@@ -160,12 +160,12 @@ mod tests {
         let biggest = sizes.iter().map(|(_, size)| *size).max().unwrap_or(0);
 
         assert!(
-            biggest < VESC_PACKAGE_FLASH_BLOCK_LIMIT_BYTES,
-            "largest package input reaches the VESC flash block limit: {sizes:?}"
+            biggest < VESC_PACKAGE_FLASH_BUDGET_BYTES,
+            "largest package input reaches the package budget: {sizes:?}"
         );
         assert!(
-            total_size < VESC_PACKAGE_FLASH_BLOCK_LIMIT_BYTES,
-            "package payload is too large for the VESC flash block: {sizes:?}"
+            total_size < VESC_PACKAGE_FLASH_BUDGET_BYTES,
+            "package payload is too large for the package budget: {sizes:?}"
         );
     }
 
