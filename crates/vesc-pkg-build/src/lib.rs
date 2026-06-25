@@ -1,4 +1,5 @@
 pub mod abi_inventory;
+pub mod cargo_vescpkg_command;
 pub mod hygiene;
 pub mod native_lib_baseline;
 pub mod native_lib_link;
