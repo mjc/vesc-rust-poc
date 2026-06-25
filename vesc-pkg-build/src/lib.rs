@@ -2,6 +2,7 @@ pub mod abi_inventory;
 pub mod hygiene;
 pub mod native_lib_baseline;
 pub mod native_lib_link;
+pub mod package_assets;
 pub mod package_build;
 pub mod symbol_audit;
 
@@ -10,6 +11,7 @@ pub use native_lib_baseline::{
     baseline_input_paths, baseline_output_paths, native_lib_baseline_root, NativeLibBaselinePath,
 };
 pub use native_lib_link::{native_lib_link_plan, NativeLibLinkPlan};
+pub use package_assets::{PackageAssets, PackageProvenance};
 pub use package_build::PackageBuildPlan;
 pub use symbol_audit::{
     audit_rust_staticlib_symbols, defined_symbols, is_allowed_runtime_symbol, nm_output,
@@ -38,6 +40,14 @@ impl PackageLayout {
             sanitize(&self.package_name),
             sanitize(&self.version)
         )
+    }
+
+    pub fn package_name(&self) -> &str {
+        &self.package_name
+    }
+
+    pub fn version(&self) -> &str {
+        &self.version
     }
 
     pub fn staging_dir(&self) -> PathBuf {

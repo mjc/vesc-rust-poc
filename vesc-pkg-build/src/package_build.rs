@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use crate::package_assets::{PackageAssets, PackageProvenance};
 use crate::PackageLayout;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +23,10 @@ impl PackageBuildPlan {
 
     pub fn layout(&self) -> &PackageLayout {
         &self.layout
+    }
+
+    pub fn assets(&self) -> PackageAssets {
+        PackageAssets::new(self.layout.clone(), PackageProvenance::empty())
     }
 
     pub fn package_input_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
@@ -78,6 +83,14 @@ mod tests {
             vec![
                 "--buildPkgFromDesc".to_owned(),
                 "target/vescpkg/Rust-VESC-package-0.1.0/pkgdesc.qml".to_owned(),
+            ]
+        );
+        assert_eq!(
+            plan.assets().asset_paths().collect::<Vec<_>>(),
+            vec![
+                std::path::PathBuf::from("target/vescpkg/Rust-VESC-package-0.1.0/README.md"),
+                std::path::PathBuf::from("target/vescpkg/Rust-VESC-package-0.1.0/pkgdesc.qml"),
+                std::path::PathBuf::from("target/vescpkg/Rust-VESC-package-0.1.0/code.lisp"),
             ]
         );
     }
