@@ -3,7 +3,7 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     match vesc_host_cli::parse_args(std::env::args()) {
         Ok(vesc_host_cli::Command::Help) => {
-            println!("vesc-host-cli: use `layout`, `status`, or `loopback`");
+            println!("vesc-host-cli: use `layout`, `status`, `loopback`, or `package-install`");
             ExitCode::SUCCESS
         }
         Ok(vesc_host_cli::Command::Layout) => {
@@ -46,7 +46,20 @@ fn main() -> ExitCode {
                 }
             };
 
-            let transport = vesc_host_cli::package_install::FakePackageInstallTransport::default();
+            let transport =
+                match vesc_host_cli::package_transport::BtlePackageInstallTransport::new() {
+                    Ok(transport) => transport,
+                    Err(error) => {
+                        eprintln!("failed to initialize package transport: {error}");
+                        return ExitCode::from(1);
+                    }
+                };
+
+            if let Err(error) = transport.open() {
+                eprintln!("failed to open package transport: {error}");
+                return ExitCode::from(1);
+            }
+
             match vesc_host_cli::package_install::install_package(&package, &transport) {
                 Ok(report) => {
                     println!(

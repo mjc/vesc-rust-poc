@@ -36,6 +36,8 @@ where
 pub mod btle;
 pub mod loopback;
 pub mod package_install;
+pub mod package_transport;
+pub mod vesc_uart;
 
 #[cfg(test)]
 mod tests {
