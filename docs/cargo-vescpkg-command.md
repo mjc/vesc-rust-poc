@@ -18,6 +18,8 @@ VESC package flow.
 - `cargo vescpkg build`
 - optional `cargo vescpkg build --package-only`
 - optional `cargo vescpkg build --target thumbv7em-none-eabihf`
+- the repo prototype lives in the `cargo-vescpkg` binary under
+  `crates/vesc-pkg-build`
 
 ## Responsibilities
 

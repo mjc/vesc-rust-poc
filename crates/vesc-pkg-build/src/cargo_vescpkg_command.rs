@@ -250,6 +250,7 @@ mod tests {
             "cargo vescpkg build",
             "cargo vescpkg build --package-only",
             "cargo vescpkg build --target thumbv7em-none-eabihf",
+            "cargo-vescpkg",
             "crates/vesc-pkg-build",
             "device-side BTLE loopback package",
             "VESC BTLE",

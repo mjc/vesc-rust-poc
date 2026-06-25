@@ -8,6 +8,7 @@ pub mod package_assets;
 pub mod package_build;
 pub mod package_conversion;
 pub mod package_format;
+pub mod package_runner;
 pub mod package_runtime;
 pub mod package_target;
 pub mod rust_package_api_roadmap;
@@ -31,6 +32,7 @@ pub use package_conversion::{
     PackageBinaryConversionRunner, CONVERSION_SCRIPT_PATH, NATIVE_LIB_BINARY_PATH,
     PACKAGE_LIB_BINARY_PATH,
 };
+pub use package_runner::{package_provenance_from_env, RealPackageRunner};
 pub use package_runtime::{
     FakeFirmwareServices, FirmwareServices, LoopbackPackageRuntime, LoopbackPackageState,
     LoopbackRuntimeError, LoopbackStartError, LoopbackTick,
