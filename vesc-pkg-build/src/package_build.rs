@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 
 use crate::package_assets::{PackageAssets, PackageProvenance};
-use crate::package_conversion::PackageBinaryConversionPlan;
+use crate::package_conversion::{
+    PackageBinaryConversionError, PackageBinaryConversionPlan, PackageBinaryConversionRunner,
+};
 use crate::PackageLayout;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,6 +40,13 @@ impl PackageBuildPlan {
         )
     }
 
+    pub fn convert_package_binary_with<R: PackageBinaryConversionRunner>(
+        &self,
+        runner: &R,
+    ) -> Result<(), PackageBinaryConversionError> {
+        self.conversion_plan().run_with(runner)
+    }
+
     pub fn package_input_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
         [
             "package/code.lisp",
@@ -67,6 +76,28 @@ impl PackageBuildPlan {
 #[cfg(test)]
 mod tests {
     use super::PackageBuildPlan;
+    use crate::package_conversion::{
+        PackageBinaryConversionCommand, PackageBinaryConversionRunner,
+    };
+    use std::cell::RefCell;
+
+    #[derive(Default)]
+    struct FakeRunner {
+        calls: RefCell<Vec<PackageBinaryConversionCommand>>,
+    }
+
+    impl FakeRunner {
+        fn calls(&self) -> Vec<PackageBinaryConversionCommand> {
+            self.calls.borrow().clone()
+        }
+    }
+
+    impl PackageBinaryConversionRunner for FakeRunner {
+        fn run(&self, command: &PackageBinaryConversionCommand) -> Result<(), String> {
+            self.calls.borrow_mut().push(command.clone());
+            Ok(())
+        }
+    }
 
     #[test]
     fn renders_the_expected_package_build_plan() {
@@ -111,5 +142,9 @@ mod tests {
                     .to_owned(),
             ]
         );
+
+        let runner = FakeRunner::default();
+        assert_eq!(plan.convert_package_binary_with(&runner), Ok(()));
+        assert_eq!(runner.calls(), vec![plan.conversion_plan().command()]);
     }
 }

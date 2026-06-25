@@ -7,6 +7,60 @@ pub const PACKAGE_LIB_BINARY_PATH: &str = "target/native-lib-baseline/package_li
 pub const CONVERSION_SCRIPT_PATH: &str = "src/conv.py";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageBinaryConversionCommand {
+    script_path: PathBuf,
+    native_binary_path: PathBuf,
+    package_binary_path: PathBuf,
+}
+
+impl PackageBinaryConversionCommand {
+    pub fn new(
+        script_path: impl Into<PathBuf>,
+        native_binary_path: impl Into<PathBuf>,
+        package_binary_path: impl Into<PathBuf>,
+    ) -> Self {
+        Self {
+            script_path: script_path.into(),
+            native_binary_path: native_binary_path.into(),
+            package_binary_path: package_binary_path.into(),
+        }
+    }
+
+    pub fn script_path(&self) -> &PathBuf {
+        &self.script_path
+    }
+
+    pub fn native_binary_path(&self) -> &PathBuf {
+        &self.native_binary_path
+    }
+
+    pub fn package_binary_path(&self) -> &PathBuf {
+        &self.package_binary_path
+    }
+
+    pub fn arguments(&self) -> Vec<String> {
+        vec![
+            self.script_path.to_string_lossy().into_owned(),
+            self.native_binary_path.to_string_lossy().into_owned(),
+            self.package_binary_path.to_string_lossy().into_owned(),
+        ]
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PackageBinaryConversionError {
+    Failed {
+        reason: String,
+        native_binary_path: PathBuf,
+        package_binary_path: PathBuf,
+    },
+}
+
+pub trait PackageBinaryConversionRunner {
+    fn run(&self, command: &PackageBinaryConversionCommand) -> Result<(), String>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageBinaryConversionPlan {
     source_root: PathBuf,
     layout: PackageLayout,
@@ -28,6 +82,14 @@ impl PackageBinaryConversionPlan {
         &self.layout
     }
 
+    pub fn command(&self) -> PackageBinaryConversionCommand {
+        PackageBinaryConversionCommand::new(
+            self.conversion_script_path(),
+            self.native_binary_path(),
+            self.package_binary_path(),
+        )
+    }
+
     pub fn conversion_script_path(&self) -> PathBuf {
         self.source_root.join(CONVERSION_SCRIPT_PATH)
     }
@@ -45,11 +107,20 @@ impl PackageBinaryConversionPlan {
     }
 
     pub fn conversion_command_args(&self) -> Vec<String> {
-        vec![
-            self.conversion_script_path().to_string_lossy().into_owned(),
-            self.native_binary_path().to_string_lossy().into_owned(),
-            self.package_binary_path().to_string_lossy().into_owned(),
-        ]
+        self.command().arguments()
+    }
+
+    pub fn run_with<R: PackageBinaryConversionRunner>(
+        &self,
+        runner: &R,
+    ) -> Result<(), PackageBinaryConversionError> {
+        runner
+            .run(&self.command())
+            .map_err(|reason| PackageBinaryConversionError::Failed {
+                reason,
+                native_binary_path: self.native_binary_path(),
+                package_binary_path: self.package_binary_path(),
+            })
     }
 
     pub fn failure_context(&self, reason: &str) -> String {
@@ -64,9 +135,43 @@ impl PackageBinaryConversionPlan {
 #[cfg(test)]
 mod tests {
     use super::{
-        PackageBinaryConversionPlan, CONVERSION_SCRIPT_PATH, NATIVE_LIB_BINARY_PATH,
+        PackageBinaryConversionCommand, PackageBinaryConversionError, PackageBinaryConversionPlan,
+        PackageBinaryConversionRunner, CONVERSION_SCRIPT_PATH, NATIVE_LIB_BINARY_PATH,
         PACKAGE_LIB_BINARY_PATH,
     };
+    use std::cell::RefCell;
+
+    struct FakeRunner {
+        calls: RefCell<Vec<PackageBinaryConversionCommand>>,
+        result: RefCell<Result<(), String>>,
+    }
+
+    impl FakeRunner {
+        fn success() -> Self {
+            Self {
+                calls: RefCell::new(Vec::new()),
+                result: RefCell::new(Ok(())),
+            }
+        }
+
+        fn failure(reason: impl Into<String>) -> Self {
+            Self {
+                calls: RefCell::new(Vec::new()),
+                result: RefCell::new(Err(reason.into())),
+            }
+        }
+
+        fn calls(&self) -> Vec<PackageBinaryConversionCommand> {
+            self.calls.borrow().clone()
+        }
+    }
+
+    impl PackageBinaryConversionRunner for FakeRunner {
+        fn run(&self, command: &PackageBinaryConversionCommand) -> Result<(), String> {
+            self.calls.borrow_mut().push(command.clone());
+            self.result.borrow().clone()
+        }
+    }
 
     #[test]
     fn renders_the_expected_conversion_plan() {
@@ -109,6 +214,51 @@ mod tests {
         assert_eq!(
             plan.package_binary_path(),
             std::path::PathBuf::from("fixtures/native-lib-baseline").join(PACKAGE_LIB_BINARY_PATH)
+        );
+        assert_eq!(
+            plan.command().arguments(),
+            vec![
+                "fixtures/native-lib-baseline/src/conv.py".to_owned(),
+                "fixtures/native-lib-baseline/target/native-lib-baseline/native_lib.bin".to_owned(),
+                "fixtures/native-lib-baseline/target/native-lib-baseline/package_lib.bin"
+                    .to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn run_with_invokes_the_fake_runner() {
+        let plan = PackageBinaryConversionPlan::new(
+            "fixtures/native-lib-baseline",
+            "Rust VESC package",
+            "0.1.0",
+        );
+        let runner = FakeRunner::success();
+
+        assert_eq!(plan.run_with(&runner), Ok(()));
+        assert_eq!(runner.calls(), vec![plan.command()]);
+    }
+
+    #[test]
+    fn run_with_wraps_runner_failures_with_path_context() {
+        let plan = PackageBinaryConversionPlan::new(
+            "fixtures/native-lib-baseline",
+            "Rust VESC package",
+            "0.1.0",
+        );
+        let runner = FakeRunner::failure("conv.py blew up");
+
+        assert_eq!(
+            plan.run_with(&runner),
+            Err(PackageBinaryConversionError::Failed {
+                reason: "conv.py blew up".to_owned(),
+                native_binary_path: std::path::PathBuf::from(
+                    "fixtures/native-lib-baseline/target/native-lib-baseline/native_lib.bin"
+                ),
+                package_binary_path: std::path::PathBuf::from(
+                    "fixtures/native-lib-baseline/target/native-lib-baseline/package_lib.bin"
+                ),
+            })
         );
     }
 }
