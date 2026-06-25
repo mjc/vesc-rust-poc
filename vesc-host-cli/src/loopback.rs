@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::fmt;
 
 use vesc_protocol::ble_loopback::{LoopbackError, LoopbackPacket};
 use vesc_protocol::WireCommand;
@@ -12,6 +13,20 @@ pub enum LoopbackTransportError {
     Protocol(LoopbackError),
     Device(&'static str),
 }
+
+impl fmt::Display for LoopbackTransportError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ScanTimeout => f.write_str("scan timed out while opening the BLE transport"),
+            Self::ConnectFailed => f.write_str("failed to connect to the BLE device"),
+            Self::MissingService => f.write_str("missing BLE loopback service"),
+            Self::Protocol(error) => write!(f, "protocol error: {error}"),
+            Self::Device(reason) => write!(f, "device error: {reason}"),
+        }
+    }
+}
+
+impl std::error::Error for LoopbackTransportError {}
 
 pub trait LoopbackTransport {
     fn open(&self) -> Result<(), LoopbackTransportError>;
@@ -159,6 +174,33 @@ mod tests {
             Err(LoopbackTransportError::Protocol(
                 vesc_protocol::ble_loopback::LoopbackError::InvalidCommand { code: 99 }
             ))
+        );
+    }
+
+    #[test]
+    fn formats_transport_errors_for_humans() {
+        assert_eq!(
+            LoopbackTransportError::ScanTimeout.to_string(),
+            "scan timed out while opening the BLE transport"
+        );
+        assert_eq!(
+            LoopbackTransportError::ConnectFailed.to_string(),
+            "failed to connect to the BLE device"
+        );
+        assert_eq!(
+            LoopbackTransportError::MissingService.to_string(),
+            "missing BLE loopback service"
+        );
+        assert_eq!(
+            LoopbackTransportError::Protocol(
+                vesc_protocol::ble_loopback::LoopbackError::InvalidCommand { code: 99 }
+            )
+            .to_string(),
+            "protocol error: invalid command code: 99"
+        );
+        assert_eq!(
+            LoopbackTransportError::Device("boom").to_string(),
+            "device error: boom"
         );
     }
 }

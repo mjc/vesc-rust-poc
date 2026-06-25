@@ -1,4 +1,5 @@
 use super::{Frame, WireCommand, WireVersion};
+use core::fmt;
 
 pub const BLE_LOOPBACK_PROTOCOL_VERSION: WireVersion = WireVersion::CURRENT;
 pub const MAX_LOOPBACK_PAYLOAD_BYTES: usize = 16;
@@ -18,6 +19,26 @@ pub enum LoopbackError {
         len: usize,
         max: usize,
     },
+}
+
+impl fmt::Display for LoopbackError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::FrameTooShort => f.write_str("frame too short"),
+            Self::InvalidVersion { expected, actual } => {
+                write!(
+                    f,
+                    "invalid protocol version: expected {}, got {}",
+                    expected.raw(),
+                    actual.raw()
+                )
+            }
+            Self::InvalidCommand { code } => write!(f, "invalid command code: {code}"),
+            Self::PayloadTooLong { len, max } => {
+                write!(f, "payload too long: {len} bytes (max {max})")
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,6 +122,7 @@ mod tests {
         MIN_WIRE_FRAME_BYTES,
     };
     use crate::{WireCommand, WireVersion};
+    use alloc::string::ToString;
 
     #[test]
     fn round_trips_ping_frames() {
@@ -156,6 +178,27 @@ mod tests {
                 len: MAX_LOOPBACK_PAYLOAD_BYTES + 1,
                 max: MAX_LOOPBACK_PAYLOAD_BYTES,
             })
+        );
+    }
+
+    #[test]
+    fn formats_loopback_errors_for_humans() {
+        assert_eq!(LoopbackError::FrameTooShort.to_string(), "frame too short");
+        assert_eq!(
+            LoopbackError::InvalidVersion {
+                expected: BLE_LOOPBACK_PROTOCOL_VERSION,
+                actual: WireVersion::new(2),
+            }
+            .to_string(),
+            "invalid protocol version: expected 1, got 2"
+        );
+        assert_eq!(
+            LoopbackError::InvalidCommand { code: 99 }.to_string(),
+            "invalid command code: 99"
+        );
+        assert_eq!(
+            LoopbackError::PayloadTooLong { len: 17, max: 16 }.to_string(),
+            "payload too long: 17 bytes (max 16)"
         );
     }
 }

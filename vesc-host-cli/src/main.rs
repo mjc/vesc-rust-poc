@@ -22,7 +22,7 @@ fn main() -> ExitCode {
                     ExitCode::SUCCESS
                 }
                 Err(error) => {
-                    eprintln!("loopback failed: {error:?}");
+                    eprintln!("loopback failed: {error}");
                     ExitCode::from(1)
                 }
             }

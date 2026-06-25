@@ -1,5 +1,8 @@
 #![no_std]
 
+#[cfg(test)]
+extern crate alloc;
+
 pub mod ble_loopback;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
