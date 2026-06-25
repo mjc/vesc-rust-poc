@@ -1,3 +1,3 @@
 # Rust VESC Package Proof
 
-This package loads the Rust-backed native library and calls `(ext-rust-add 1 2)`.
+This package loads the Rust-backed native library for the BLE loopback test package.

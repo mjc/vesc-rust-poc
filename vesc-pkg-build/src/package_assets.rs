@@ -105,7 +105,7 @@ impl PackageAssets {
 
     pub fn render_loader(&self) -> String {
         format!(
-            "; Auto-generated loader for {}\n(load-native-lib \"src/package_lib.bin\")\n(ext-rust-add 1 2)\n",
+            "; Auto-generated loader for {}\n(load-native-lib \"src/package_lib.bin\")\n",
             self.package_name()
         )
     }
@@ -146,6 +146,9 @@ mod tests {
         assert!(assets
             .render_loader()
             .contains("(load-native-lib \"src/package_lib.bin\")"));
-        assert!(assets.render_loader().contains("(ext-rust-add 1 2)"));
+        assert!(
+            !assets.render_loader().contains("ext-rust-add"),
+            "expected the BLE loopback package loader to only load the native library"
+        );
     }
 }

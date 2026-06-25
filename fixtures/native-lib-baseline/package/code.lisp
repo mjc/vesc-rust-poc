@@ -1,3 +1,2 @@
-; Auto-generated loader for the Rust VESC package proof.
+; Auto-generated loader for the Rust BLE loopback test package.
 (load-native-lib "src/package_lib.bin")
-(ext-rust-add 1 2)

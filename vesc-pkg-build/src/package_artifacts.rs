@@ -238,7 +238,7 @@ mod tests {
         write_artifact(
             &root,
             "target/vescpkg/Rust-VESC-package-0.1.0/code.lisp",
-            "; Auto-generated loader for Rust VESC package\n(load-native-lib \"src/package_lib.bin\")\n(ext-rust-add 1 2)\n",
+            "; Auto-generated loader for Rust VESC package\n(load-native-lib \"src/package_lib.bin\")\n",
         );
         let plan = PackageArtifactInspectionPlan::new(
             &root,

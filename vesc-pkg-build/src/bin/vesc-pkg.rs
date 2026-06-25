@@ -3,7 +3,7 @@ use std::process::{Command, ExitCode};
 
 use vesc_pkg_build::{
     PackageBinaryConversionCommand, PackageBinaryConversionRunner, PackageTargetMode,
-    PackageTargetPlan, PackageTargetRunner,
+    PackageTargetPlan, PackageTargetRunner, BLE_LOOPBACK_PACKAGE_NAME,
 };
 
 struct RealPackageRunner;
@@ -76,7 +76,7 @@ fn main() -> ExitCode {
     };
 
     let tool_path = std::env::var("VESC_TOOL").unwrap_or_else(|_| "vesc_tool".to_owned());
-    let plan = PackageTargetPlan::new(root, "Rust VESC package", "0.1.0", mode, tool_path);
+    let plan = PackageTargetPlan::new(root, BLE_LOOPBACK_PACKAGE_NAME, "0.1.0", mode, tool_path);
     let runner = RealPackageRunner;
 
     match plan.execute_with(&runner, &runner) {

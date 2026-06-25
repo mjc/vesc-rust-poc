@@ -218,7 +218,7 @@ mod tests {
     }
 
     #[test]
-    fn package_loader_calls_the_rust_extension() {
+    fn package_loader_only_loads_the_native_library_for_ble_loopback() {
         let root = native_lib_baseline_root();
         let loader = root
             .input_paths()
@@ -231,8 +231,32 @@ mod tests {
             "expected the loader to import the native library: {loader:?}"
         );
         assert!(
-            source.contains("(ext-rust-add 1 2)"),
-            "expected the loader to call the Rust-backed extension: {loader:?}"
+            !source.contains("ext-rust-add"),
+            "expected the BLE loopback loader to avoid the old proof extension: {loader:?}"
+        );
+    }
+
+    #[test]
+    fn fixture_package_identity_mentions_the_ble_loopback_test_package() {
+        let root = native_lib_baseline_root();
+        let readme = fs::read_to_string(root.root.join("package/README.md"))
+            .expect("package README contents");
+        let descriptor = fs::read_to_string(root.root.join("package/pkgdesc.qml"))
+            .expect("package descriptor contents");
+        let loader = fs::read_to_string(root.root.join("package/code.lisp"))
+            .expect("package loader contents");
+
+        assert!(
+            readme.contains("BLE loopback test package"),
+            "expected the package README to describe the BLE loopback test package"
+        );
+        assert!(
+            descriptor.contains("Rust BLE loopback test package"),
+            "expected the package descriptor to name the BLE loopback test package"
+        );
+        assert!(
+            loader.contains("BLE loopback test package"),
+            "expected the package loader comment to name the BLE loopback test package"
         );
     }
 }
