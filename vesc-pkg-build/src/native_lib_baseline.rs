@@ -18,6 +18,14 @@ pub const NATIVE_LIB_BASELINE_OUTPUTS: [&str; 4] = [
     "target/vescpkg/native-lib-baseline/native-lib-baseline.vescpkg",
 ];
 
+pub const VESC_PACKAGE_FLASH_BLOCK_LIMIT_BYTES: u64 = 128 * 1024;
+
+pub const NATIVE_LIB_BASELINE_PACKAGE_INPUTS: [&str; 3] = [
+    "package/code.lisp",
+    "package/pkgdesc.qml",
+    "package/README.md",
+];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NativeLibBaselinePath {
     root: PathBuf,
@@ -30,6 +38,12 @@ impl NativeLibBaselinePath {
 
     pub fn input_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
         NATIVE_LIB_BASELINE_INPUTS
+            .iter()
+            .map(move |relative| self.root.join(relative))
+    }
+
+    pub fn package_input_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
+        NATIVE_LIB_BASELINE_PACKAGE_INPUTS
             .iter()
             .map(move |relative| self.root.join(relative))
     }
@@ -54,7 +68,9 @@ mod tests {
     use super::{
         baseline_input_paths, baseline_output_paths, native_lib_baseline_root,
         NATIVE_LIB_BASELINE_INPUTS, NATIVE_LIB_BASELINE_OUTPUTS,
+        VESC_PACKAGE_FLASH_BLOCK_LIMIT_BYTES,
     };
+    use std::fs;
 
     #[test]
     fn lists_expected_baseline_inputs() {
@@ -84,6 +100,30 @@ mod tests {
         assert!(
             missing.is_empty(),
             "missing native-lib baseline files: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn package_payload_stays_well_below_the_vesc_tool_flash_block_limit() {
+        let root = native_lib_baseline_root();
+        let sizes = root
+            .package_input_paths()
+            .map(|path| {
+                let size = fs::metadata(&path).expect("package input metadata").len();
+                (path, size)
+            })
+            .collect::<Vec<_>>();
+
+        let total_size = sizes.iter().map(|(_, size)| *size).sum::<u64>();
+        let biggest = sizes.iter().map(|(_, size)| *size).max().unwrap_or(0);
+
+        assert!(
+            biggest < VESC_PACKAGE_FLASH_BLOCK_LIMIT_BYTES,
+            "largest package input reaches the VESC flash block limit: {sizes:?}"
+        );
+        assert!(
+            total_size < VESC_PACKAGE_FLASH_BLOCK_LIMIT_BYTES,
+            "package payload is too large for the VESC flash block: {sizes:?}"
         );
     }
 }

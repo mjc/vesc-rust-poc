@@ -24,4 +24,5 @@ This fixture captures the smallest C package skeleton we want to keep around whi
 
 - The fixture is intentionally small.
 - The baseline test checks that the package skeleton files stay present.
+- The package payload is also checked against the 128 KiB VESC Tool flash block budget.
 - Build integration can land later without changing the fixture contract.
