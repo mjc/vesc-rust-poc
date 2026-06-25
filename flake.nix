@@ -25,6 +25,14 @@
         default = pkgs.mkShell {
           packages = with pkgs; [
             gcc
+            qt5.qtbase.dev
+            qt5.qttools
+            qt5.qtquickcontrols2
+            qt5.qtserialport
+            qt5.qtconnectivity
+            qt5.qtpositioning
+            qt5.qtgamepad
+            qt5.qtserialbus
             (rust-bin.stable.latest.default.override {
               targets = [ "thumbv7em-none-eabihf" ];
             })
