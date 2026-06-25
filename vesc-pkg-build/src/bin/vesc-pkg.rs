@@ -2,8 +2,8 @@ use std::path::Path;
 use std::process::{Command, ExitCode};
 
 use vesc_pkg_build::{
-    PackageBinaryConversionCommand, PackageBinaryConversionRunner, PackageTargetMode,
-    PackageTargetPlan, PackageTargetRunner, BLE_LOOPBACK_PACKAGE_NAME,
+    PackageBinaryConversionCommand, PackageBinaryConversionRunner, PackageProvenance,
+    PackageTargetMode, PackageTargetPlan, PackageTargetRunner, BLE_LOOPBACK_PACKAGE_NAME,
 };
 
 struct RealPackageRunner;
@@ -46,6 +46,13 @@ impl PackageTargetRunner for RealPackageRunner {
     }
 }
 
+fn package_provenance_from_env() -> PackageProvenance {
+    PackageProvenance::new(
+        std::env::var("VESC_PKG_GIT_COMMIT").ok(),
+        std::env::var("VESC_PKG_BUILD_DATE").ok(),
+    )
+}
+
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     let Some(mode) = args.next() else {
@@ -76,7 +83,14 @@ fn main() -> ExitCode {
     };
 
     let tool_path = std::env::var("VESC_TOOL").unwrap_or_else(|_| "vesc_tool".to_owned());
-    let plan = PackageTargetPlan::new(root, BLE_LOOPBACK_PACKAGE_NAME, "0.1.0", mode, tool_path);
+    let plan = PackageTargetPlan::with_provenance(
+        root,
+        BLE_LOOPBACK_PACKAGE_NAME,
+        "0.1.0",
+        package_provenance_from_env(),
+        mode,
+        tool_path,
+    );
     let runner = RealPackageRunner;
 
     match plan.execute_with(&runner, &runner) {

@@ -27,9 +27,36 @@ This note characterizes the package path that the Rust VESC package experiment s
 - `make` currently defaults to `check`; the package-build command path lives in the repo now instead of an ad hoc shell fragment.
 - `package_README-gen.md` and `ui.qml` are generated artifacts, not hand-edited inputs.
 
+## Build And Upload Workflow
+
+1. Enter the Nix shell with `nix develop`.
+2. Run `make check` before packaging any change.
+3. Use `make package-only` to exercise staging, conversion, artifact inspection, and package path rendering without VESC Tool.
+4. Use `make package` when `VESC_TOOL` or `vesc_tool` is available and you want the final `.vescpkg` emitted.
+5. Upload the emitted package in VESC Tool, then run the host `loopback` command against the device-side package.
+
+The current package name is `Rust BLE loopback test package`, and the predictable output path is
+`target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/Rust-BLE-loopback-test-package-0.1.0.vescpkg`.
+
+## Device Assumptions
+
+- The target firmware must expose the BLE loopback package entrypoint.
+- The device must be able to stay connected long enough for the loopback exchange.
+- The host and device should agree on the `vesc_protocol` wire version before any real hardware smoke test.
+
+## Troubleshooting
+
+- If `make package` fails because `vesc_tool` is missing, install VESC Tool or set `VESC_TOOL` to its binary path.
+- If `make check` fails early, start with `make test` and `make symbol-check` to narrow the failure.
+- If generated files drift, run `make clean` before rebuilding.
+- If the host loopback fails with a scan timeout, the adapter or device was not discovered in time.
+- If the host loopback fails with connect failure, retry the connection path before blaming the package.
+- If the host loopback fails with a missing service error, the device-side package likely did not advertise the loopback service.
+
 ## Build Metadata
 
 - The generated README appends version, build date, and git commit details.
+- `VESC_PKG_GIT_COMMIT` and `VESC_PKG_BUILD_DATE` feed the package provenance fields when they are set.
 - `ui.qml` is templated from `ui.qml.in` with package name and version substitutions.
 - The package output name is the package name with a `.vescpkg` suffix.
 

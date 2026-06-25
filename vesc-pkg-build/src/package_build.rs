@@ -12,6 +12,7 @@ use crate::PackageLayout;
 pub struct PackageBuildPlan {
     source_root: PathBuf,
     layout: PackageLayout,
+    provenance: PackageProvenance,
 }
 
 impl PackageBuildPlan {
@@ -20,9 +21,24 @@ impl PackageBuildPlan {
         package_name: impl Into<String>,
         version: impl Into<String>,
     ) -> Self {
+        Self::with_provenance(
+            source_root,
+            package_name,
+            version,
+            PackageProvenance::empty(),
+        )
+    }
+
+    pub fn with_provenance(
+        source_root: impl Into<PathBuf>,
+        package_name: impl Into<String>,
+        version: impl Into<String>,
+        provenance: PackageProvenance,
+    ) -> Self {
         Self {
             source_root: source_root.into(),
             layout: PackageLayout::new(package_name, version),
+            provenance,
         }
     }
 
@@ -31,7 +47,7 @@ impl PackageBuildPlan {
     }
 
     pub fn assets(&self) -> PackageAssets {
-        PackageAssets::new(self.layout.clone(), PackageProvenance::empty())
+        PackageAssets::new(self.layout.clone(), self.provenance.clone())
     }
 
     pub fn stage_package_assets(&self) -> io::Result<PackageAssets> {
@@ -76,7 +92,7 @@ impl PackageBuildPlan {
             self.source_root.clone(),
             self.layout.package_name(),
             self.layout.version(),
-            PackageProvenance::empty(),
+            self.provenance.clone(),
         )
     }
 
@@ -124,7 +140,7 @@ mod tests {
     use crate::package_conversion::{
         PackageBinaryConversionCommand, PackageBinaryConversionRunner,
     };
-    use crate::BLE_LOOPBACK_PACKAGE_NAME;
+    use crate::{PackageProvenance, BLE_LOOPBACK_PACKAGE_NAME};
     use std::cell::RefCell;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -222,6 +238,26 @@ mod tests {
         let runner = FakeRunner::default();
         assert_eq!(plan.convert_package_binary_with(&runner), Ok(()));
         assert_eq!(runner.calls(), vec![plan.conversion_plan().command()]);
+    }
+
+    #[test]
+    fn renders_package_provenance_through_the_build_plan() {
+        let plan = PackageBuildPlan::with_provenance(
+            "fixtures/native-lib-baseline",
+            BLE_LOOPBACK_PACKAGE_NAME,
+            "0.1.0",
+            PackageProvenance::new(Some("abc123"), Some("2026-06-25")),
+        );
+
+        let readme = plan.assets().render_readme();
+        assert!(readme.contains("Version: 0.1.0"));
+        assert!(readme.contains("Git commit: abc123"));
+        assert!(readme.contains("Build date: 2026-06-25"));
+        assert!(plan
+            .inspection_plan()
+            .assets()
+            .render_readme()
+            .contains("abc123"));
     }
 
     #[test]

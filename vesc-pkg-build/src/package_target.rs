@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::package_artifacts::PackageArtifactInspectionError;
 use crate::package_build::PackageBuildPlan;
 use crate::package_conversion::{PackageBinaryConversionError, PackageBinaryConversionRunner};
+use crate::PackageProvenance;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PackageTargetMode {
@@ -39,8 +40,31 @@ impl PackageTargetPlan {
         mode: PackageTargetMode,
         vesc_tool_path: impl Into<PathBuf>,
     ) -> Self {
+        Self::with_provenance(
+            source_root,
+            package_name,
+            version,
+            PackageProvenance::empty(),
+            mode,
+            vesc_tool_path,
+        )
+    }
+
+    pub fn with_provenance(
+        source_root: impl Into<PathBuf>,
+        package_name: impl Into<String>,
+        version: impl Into<String>,
+        provenance: PackageProvenance,
+        mode: PackageTargetMode,
+        vesc_tool_path: impl Into<PathBuf>,
+    ) -> Self {
         Self {
-            build_plan: PackageBuildPlan::new(source_root, package_name, version),
+            build_plan: PackageBuildPlan::with_provenance(
+                source_root,
+                package_name,
+                version,
+                provenance,
+            ),
             mode,
             vesc_tool_path: vesc_tool_path.into(),
         }
