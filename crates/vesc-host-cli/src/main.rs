@@ -15,19 +15,24 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Ok(vesc_host_cli::Command::Loopback) => {
-            let transport = vesc_host_cli::loopback::FakeLoopbackTransport::scripted_success();
-            match vesc_host_cli::loopback::run_loopback(&transport) {
-                Ok(report) => {
-                    println!(
-                        "loopback ok on device={} service={}: {:?}",
-                        report.target().device_name_hint(),
-                        report.target().service_name_hint(),
-                        report.commands()
-                    );
-                    ExitCode::SUCCESS
-                }
+            match vesc_host_cli::btle::BtleLoopbackTransport::new() {
+                Ok(transport) => match vesc_host_cli::loopback::run_loopback(&transport) {
+                    Ok(report) => {
+                        println!(
+                            "loopback ok on device={} service={}: {:?}",
+                            report.target().device_name_hint(),
+                            report.target().service_name_hint(),
+                            report.commands()
+                        );
+                        ExitCode::SUCCESS
+                    }
+                    Err(error) => {
+                        eprintln!("loopback failed: {error}");
+                        ExitCode::from(1)
+                    }
+                },
                 Err(error) => {
-                    eprintln!("loopback failed: {error}");
+                    eprintln!("failed to initialize BLE transport: {error}");
                     ExitCode::from(1)
                 }
             }

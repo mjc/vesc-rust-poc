@@ -24,8 +24,10 @@
       devShells = forSystems (pkgs: {
         default = pkgs.mkShell {
           packages = with pkgs; [
+            dbus.dev
             gcc
             gcc-arm-embedded
+            pkg-config
             qt5.qtbase.dev
             qt5.qttools
             qt5.qtquickcontrols2

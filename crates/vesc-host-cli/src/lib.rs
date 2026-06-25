@@ -28,6 +28,7 @@ where
     }
 }
 
+pub mod btle;
 pub mod loopback;
 
 #[cfg(test)]
