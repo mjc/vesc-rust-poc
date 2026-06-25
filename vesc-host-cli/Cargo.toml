@@ -5,3 +5,6 @@ edition = "2021"
 
 [dependencies]
 vesc-protocol = { path = "../vesc-protocol" }
+
+[dev-dependencies]
+vesc-pkg-build = { path = "../vesc-pkg-build" }
