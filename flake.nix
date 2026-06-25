@@ -2,8 +2,9 @@
   description = "vesc-rust-poc";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs.rust-overlay.url = "github:oxalica/rust-overlay";
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, rust-overlay }:
     let
       systems = [
         "aarch64-darwin"
@@ -14,16 +15,19 @@
 
       forSystems = f:
         nixpkgs.lib.genAttrs systems (system:
-          f (import nixpkgs { inherit system; }));
+          f (import nixpkgs {
+            inherit system;
+            overlays = [ (import rust-overlay) ];
+          }));
     in
     {
       devShells = forSystems (pkgs: {
         default = pkgs.mkShell {
           packages = with pkgs; [
-            cargo
             gcc
-            rustc
-            rustfmt
+            (rust-bin.stable.latest.default.override {
+              targets = [ "thumbv7em-none-eabihf" ];
+            })
           ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
             gcc-arm-embedded
           ];

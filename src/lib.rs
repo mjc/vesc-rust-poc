@@ -4,6 +4,11 @@ pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
 
 pub mod ffi;
 
+#[no_mangle]
+pub extern "C" fn rust_add(a: i32, b: i32) -> i32 {
+    a + b
+}
+
 #[cfg(not(test))]
 use core::panic::PanicInfo;
 
@@ -17,7 +22,7 @@ fn panic(_: &PanicInfo) -> ! {
 
 #[cfg(test)]
 mod tests {
-    use super::{ProtocolFrame, WireCommand, WireVersion};
+    use super::{rust_add, ProtocolFrame, WireCommand, WireVersion};
 
     #[test]
     fn cargo_test_smoke() {
@@ -31,5 +36,11 @@ mod tests {
         assert_eq!(frame.version(), WireVersion::CURRENT);
         assert_eq!(frame.command(), WireCommand::Ping);
         assert_eq!(frame.payload(), &[7, 8]);
+    }
+
+    #[test]
+    fn rust_add_stays_a_plain_integer_function() {
+        assert_eq!(rust_add(1, 2), 3);
+        assert_eq!(rust_add(-8, 11), 3);
     }
 }
