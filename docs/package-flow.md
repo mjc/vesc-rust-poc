@@ -35,4 +35,5 @@ This note characterizes the package path that the Rust VESC package experiment s
 
 - The Rust path should keep the same separation between package metadata and native payload generation.
 - The first Rust proof should still let the VESC native-library flow own the final ELF/bin/conversion steps.
-- Package staging, artifact inspection, and VESC Tool invocation belong in a dedicated packaging support crate rather than ad hoc shell fragments.
+- Package staging, artifact inspection, and VESC Tool invocation belong in the dedicated
+  `vesc-pkg-build` crate rather than ad hoc shell fragments.

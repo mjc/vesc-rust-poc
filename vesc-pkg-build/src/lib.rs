@@ -2,6 +2,7 @@ pub mod abi_inventory;
 pub mod hygiene;
 pub mod native_lib_baseline;
 pub mod native_lib_link;
+pub mod package_build;
 pub mod symbol_audit;
 
 pub use abi_inventory::{minimal_test_package_abi, AbiRequirement, AbiRequirementKind};
@@ -9,6 +10,7 @@ pub use native_lib_baseline::{
     baseline_input_paths, baseline_output_paths, native_lib_baseline_root, NativeLibBaselinePath,
 };
 pub use native_lib_link::{native_lib_link_plan, NativeLibLinkPlan};
+pub use package_build::PackageBuildPlan;
 pub use symbol_audit::{
     audit_rust_staticlib_symbols, defined_symbols, is_allowed_runtime_symbol, nm_output,
     undefined_symbols, unexpected_undefined_symbols,
