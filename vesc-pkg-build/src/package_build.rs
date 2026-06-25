@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use crate::package_artifacts::PackageArtifactInspectionPlan;
 use crate::package_assets::{PackageAssets, PackageProvenance};
 use crate::package_conversion::{
     PackageBinaryConversionError, PackageBinaryConversionPlan, PackageBinaryConversionRunner,
@@ -47,6 +48,21 @@ impl PackageBuildPlan {
         self.conversion_plan().run_with(runner)
     }
 
+    pub fn inspection_plan(&self) -> PackageArtifactInspectionPlan {
+        PackageArtifactInspectionPlan::new(
+            self.source_root.clone(),
+            self.layout.package_name(),
+            self.layout.version(),
+            PackageProvenance::empty(),
+        )
+    }
+
+    pub fn inspect_package_artifacts(
+        &self,
+    ) -> Result<(), crate::package_artifacts::PackageArtifactInspectionError> {
+        self.inspection_plan().inspect()
+    }
+
     pub fn package_input_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
         [
             "package/code.lisp",
@@ -80,6 +96,8 @@ mod tests {
         PackageBinaryConversionCommand, PackageBinaryConversionRunner,
     };
     use std::cell::RefCell;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[derive(Default)]
     struct FakeRunner {
@@ -97,6 +115,25 @@ mod tests {
             self.calls.borrow_mut().push(command.clone());
             Ok(())
         }
+    }
+
+    fn unique_root() -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "vesc-rust-poc-build-{nanos}-{}",
+            std::process::id()
+        ))
+    }
+
+    fn write_artifact(root: &std::path::Path, relative: &str, contents: &str) {
+        let path = root.join(relative);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("artifact parent directory");
+        }
+        fs::write(path, contents).expect("artifact contents");
     }
 
     #[test]
@@ -146,5 +183,63 @@ mod tests {
         let runner = FakeRunner::default();
         assert_eq!(plan.convert_package_binary_with(&runner), Ok(()));
         assert_eq!(runner.calls(), vec![plan.conversion_plan().command()]);
+    }
+
+    #[test]
+    fn renders_the_expected_package_artifact_inspection_plan() {
+        let plan =
+            PackageBuildPlan::new("fixtures/native-lib-baseline", "Rust VESC package", "0.1.0");
+        let inspection_plan = plan.inspection_plan();
+
+        assert_eq!(
+            inspection_plan.package_output_path(),
+            std::path::PathBuf::from(
+                "fixtures/native-lib-baseline/target/vescpkg/Rust-VESC-package-0.1.0/"
+            )
+            .join("Rust-VESC-package-0.1.0.vescpkg")
+        );
+    }
+
+    #[test]
+    fn inspect_package_artifacts_reports_missing_staging_files() {
+        let root = unique_root();
+        let plan = PackageBuildPlan::new(&root, "Rust VESC package", "0.1.0");
+        fs::create_dir_all(plan.inspection_plan().staging_dir_path()).expect("staging root");
+
+        let error = plan
+            .inspect_package_artifacts()
+            .expect_err("missing artifacts");
+        assert_eq!(error.problems().len(), 4);
+    }
+
+    #[test]
+    fn inspect_package_artifacts_accepts_rendered_artifacts() {
+        let root = unique_root();
+        let plan = PackageBuildPlan::new(&root, "Rust VESC package", "0.1.0");
+        let inspection_plan = plan.inspection_plan();
+        let assets = inspection_plan.assets();
+
+        write_artifact(
+            &inspection_plan.staging_dir_path(),
+            "README.md",
+            &assets.render_readme(),
+        );
+        write_artifact(
+            &inspection_plan.staging_dir_path(),
+            "pkgdesc.qml",
+            &assets.render_descriptor(),
+        );
+        write_artifact(
+            &inspection_plan.staging_dir_path(),
+            "code.lisp",
+            &assets.render_loader(),
+        );
+        write_artifact(
+            &root,
+            "target/native-lib-baseline/package_lib.bin",
+            "payload",
+        );
+
+        assert_eq!(plan.inspect_package_artifacts(), Ok(()));
     }
 }

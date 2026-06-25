@@ -2,6 +2,7 @@ pub mod abi_inventory;
 pub mod hygiene;
 pub mod native_lib_baseline;
 pub mod native_lib_link;
+pub mod package_artifacts;
 pub mod package_assets;
 pub mod package_build;
 pub mod package_conversion;
@@ -13,6 +14,10 @@ pub use native_lib_baseline::{
     baseline_input_paths, baseline_output_paths, native_lib_baseline_root, NativeLibBaselinePath,
 };
 pub use native_lib_link::{native_lib_link_plan, NativeLibLinkPlan};
+pub use package_artifacts::{
+    PackageArtifactInspectionError, PackageArtifactInspectionPlan, PackageArtifactProblem,
+    NATIVE_PAYLOAD_PATH,
+};
 pub use package_assets::{PackageAssets, PackageProvenance};
 pub use package_build::PackageBuildPlan;
 pub use package_conversion::{
