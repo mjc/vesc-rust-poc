@@ -1,4 +1,5 @@
 pub mod abi_inventory;
+pub mod hygiene;
 pub mod native_lib_baseline;
 
 pub use abi_inventory::{minimal_test_package_abi, AbiRequirement, AbiRequirementKind};
