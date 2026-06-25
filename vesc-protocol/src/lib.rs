@@ -1,5 +1,7 @@
 #![no_std]
 
+pub mod ble_loopback;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WireVersion(u8);
 
