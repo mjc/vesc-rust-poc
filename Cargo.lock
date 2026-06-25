@@ -3,6 +3,10 @@
 version = 4
 
 [[package]]
+name = "vesc-host-cli"
+version = "0.1.0"
+
+[[package]]
 name = "vesc-pkg-build"
 version = "0.1.0"
 
