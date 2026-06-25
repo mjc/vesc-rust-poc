@@ -52,16 +52,16 @@ mod tests {
 
     #[test]
     fn renders_stable_artifact_paths() {
-        let layout = PackageLayout::new("Refloat POC", "0.1.0");
+        let layout = PackageLayout::new("Rust VESC package", "0.1.0");
 
-        assert_eq!(layout.artifact_name(), "Refloat-POC-0.1.0.vescpkg");
+        assert_eq!(layout.artifact_name(), "Rust-VESC-package-0.1.0.vescpkg");
         assert_eq!(
             layout.staging_dir(),
-            std::path::PathBuf::from("target/vescpkg/Refloat-POC-0.1.0")
+            std::path::PathBuf::from("target/vescpkg/Rust-VESC-package-0.1.0")
         );
         assert_eq!(
             layout.descriptor_path(),
-            std::path::PathBuf::from("target/vescpkg/Refloat-POC-0.1.0/pkgdesc.qml")
+            std::path::PathBuf::from("target/vescpkg/Rust-VESC-package-0.1.0/pkgdesc.qml")
         );
     }
 }

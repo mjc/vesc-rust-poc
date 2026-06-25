@@ -1,6 +1,6 @@
-# Refloat Package Flow
+# Rust VESC Package Flow
 
-This note characterizes the working Refloat VESC package path that the Rust POC should mirror.
+This note characterizes the package path that the Rust VESC package experiment should support.
 
 ## Inputs
 
@@ -26,7 +26,7 @@ This note characterizes the working Refloat VESC package path that the Rust POC 
 
 - The generated README appends version, build date, and git commit details.
 - `ui.qml` is templated from `ui.qml.in` with package name and version substitutions.
-- The package output name is `refloat.vescpkg`.
+- The package output name is the package name with a `.vescpkg` suffix.
 
 ## What This Means For Rust
 
