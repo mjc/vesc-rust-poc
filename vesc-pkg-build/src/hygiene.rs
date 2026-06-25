@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 pub const TRACKED_LOCKFILES: [&str; 2] = ["Cargo.lock", "flake.lock"];
+pub const ROOT_MAKEFILE_PATH: &str = "Makefile";
 pub const GENERATED_PACKAGE_PATHS: [&str; 4] = [
     "target/native-lib-baseline/native_lib.bin",
     "target/native-lib-baseline/native_lib.elf",
@@ -35,7 +36,10 @@ pub fn git_tracks(path: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{git_check_ignore, git_tracks, GENERATED_PACKAGE_PATHS, TRACKED_LOCKFILES};
+    use super::{
+        git_check_ignore, git_tracks, repo_root, GENERATED_PACKAGE_PATHS, TRACKED_LOCKFILES,
+    };
+    use std::fs;
 
     #[test]
     fn generated_package_paths_are_ignored() {
@@ -53,5 +57,15 @@ mod tests {
             TRACKED_LOCKFILES.iter().all(|path| git_tracks(path)),
             "expected lockfiles to stay tracked"
         );
+    }
+
+    #[test]
+    fn makefile_defines_the_package_targets() {
+        let source = fs::read_to_string(repo_root().join("Makefile")).expect("root Makefile");
+
+        assert!(source.contains("package: check"));
+        assert!(source.contains("package-only:"));
+        assert!(source.contains("run -p vesc-pkg-build --bin vesc-pkg -- package"));
+        assert!(source.contains("run -p vesc-pkg-build --bin vesc-pkg -- package-only"));
     }
 }

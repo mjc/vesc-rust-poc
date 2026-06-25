@@ -22,7 +22,9 @@ This note characterizes the package path that the Rust VESC package experiment s
   and the package-size smoke test before packaging work moves forward.
 - `make test`, `make fmt`, `make clippy`, `make symbol-check`, and `make package-smoke`
   stay available as smaller commands when a slice only needs one gate.
-- `make` currently defaults to `check`; the package-build command path will be tightened up in a later slice.
+- `make package` runs the checked package build wrapper and emits the final `.vescpkg` path.
+- `make package-only` skips the top-level `check` dependency for debugging the packaging wrapper itself.
+- `make` currently defaults to `check`; the package-build command path lives in the repo now instead of an ad hoc shell fragment.
 - `package_README-gen.md` and `ui.qml` are generated artifacts, not hand-edited inputs.
 
 ## Build Metadata

@@ -7,6 +7,7 @@ pub mod package_assets;
 pub mod package_build;
 pub mod package_conversion;
 pub mod package_runtime;
+pub mod package_target;
 pub mod symbol_audit;
 
 pub use abi_inventory::{minimal_test_package_abi, AbiRequirement, AbiRequirementKind};
@@ -21,12 +22,16 @@ pub use package_artifacts::{
 pub use package_assets::{PackageAssets, PackageProvenance};
 pub use package_build::PackageBuildPlan;
 pub use package_conversion::{
-    PackageBinaryConversionPlan, CONVERSION_SCRIPT_PATH, NATIVE_LIB_BINARY_PATH,
+    PackageBinaryConversionCommand, PackageBinaryConversionError, PackageBinaryConversionPlan,
+    PackageBinaryConversionRunner, CONVERSION_SCRIPT_PATH, NATIVE_LIB_BINARY_PATH,
     PACKAGE_LIB_BINARY_PATH,
 };
 pub use package_runtime::{
     FakeFirmwareServices, FirmwareServices, LoopbackPackageRuntime, LoopbackPackageState,
     LoopbackRuntimeError, LoopbackStartError, LoopbackTick,
+};
+pub use package_target::{
+    PackageTargetError, PackageTargetMode, PackageTargetPlan, PackageTargetRunner,
 };
 pub use symbol_audit::{
     audit_rust_staticlib_symbols, defined_symbols, is_allowed_runtime_symbol, nm_output,

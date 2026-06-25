@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::{fs, io};
 
 use crate::package_artifacts::PackageArtifactInspectionPlan;
 use crate::package_assets::{PackageAssets, PackageProvenance};
@@ -31,6 +32,28 @@ impl PackageBuildPlan {
 
     pub fn assets(&self) -> PackageAssets {
         PackageAssets::new(self.layout.clone(), PackageProvenance::empty())
+    }
+
+    pub fn stage_package_assets(&self) -> io::Result<PackageAssets> {
+        let assets = self.assets();
+        let staging_dir = self.source_root.join(assets.staging_dir());
+        let native_dir = self.source_root.join("target/native-lib-baseline");
+
+        fs::create_dir_all(&staging_dir)?;
+        fs::create_dir_all(&native_dir)?;
+        fs::write(
+            self.source_root.join(assets.readme_path()),
+            assets.render_readme(),
+        )?;
+        fs::write(
+            self.source_root.join(assets.descriptor_path()),
+            assets.render_descriptor(),
+        )?;
+        fs::write(
+            self.source_root.join(assets.loader_path()),
+            assets.render_loader(),
+        )?;
+        Ok(assets)
     }
 
     pub fn conversion_plan(&self) -> PackageBinaryConversionPlan {

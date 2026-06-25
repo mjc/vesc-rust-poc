@@ -2,7 +2,7 @@
 
 CARGO ?= cargo
 
-.PHONY: check test fmt clippy symbol-check package-smoke clean status
+.PHONY: check test fmt clippy symbol-check package-smoke package package-only clean status
 
 check: test fmt clippy symbol-check package-smoke
 
@@ -21,6 +21,12 @@ symbol-check:
 
 package-smoke:
 	$(CARGO) test -p vesc-pkg-build package_payload_stays_well_below_the_vesc_tool_flash_block_limit
+
+package: check
+	$(CARGO) run -p vesc-pkg-build --bin vesc-pkg -- package
+
+package-only:
+	$(CARGO) run -p vesc-pkg-build --bin vesc-pkg -- package-only
 
 clean:
 	$(CARGO) clean
