@@ -2,6 +2,7 @@
 
 pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
 
+pub mod ble_loopback_device;
 pub mod ffi;
 pub mod package_lifecycle;
 
@@ -15,6 +16,13 @@ pub extern "C" fn rust_add(a: i32, b: i32) -> i32 {
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) {
     let _ = info;
     package_lifecycle::init_package();
+    ble_loopback_device::init_package();
+}
+
+#[cfg(test)]
+pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) {
+    let _ = info;
+    ble_loopback_device::init_package_for_tests();
 }
 
 #[cfg(not(test))]
@@ -30,7 +38,7 @@ fn panic(_: &PanicInfo) -> ! {
 
 #[cfg(test)]
 mod tests {
-    use super::{rust_add, ProtocolFrame, WireCommand, WireVersion};
+    use super::{ble_loopback_device, rust_add, ProtocolFrame, WireCommand, WireVersion};
 
     #[test]
     fn cargo_test_smoke() {
@@ -50,5 +58,14 @@ mod tests {
     fn rust_add_stays_a_plain_integer_function() {
         assert_eq!(rust_add(1, 2), 3);
         assert_eq!(rust_add(-8, 11), 3);
+    }
+
+    #[test]
+    fn package_lib_init_runs_the_device_loopback_entrypoint_path() {
+        ble_loopback_device::reset_init_call_count_for_tests();
+
+        super::package_lib_init(core::ptr::null_mut());
+
+        assert_eq!(ble_loopback_device::init_call_count_for_tests(), 1);
     }
 }
