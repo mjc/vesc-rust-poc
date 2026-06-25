@@ -3,6 +3,7 @@ pub enum Command {
     Help,
     Layout,
     Status,
+    Loopback,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,9 +23,12 @@ where
         None | Some("-h") | Some("--help") => Ok(Command::Help),
         Some("layout") => Ok(Command::Layout),
         Some("status") => Ok(Command::Status),
+        Some("loopback") => Ok(Command::Loopback),
         Some(other) => Err(ParseError::UnknownCommand(other.to_owned())),
     }
 }
+
+pub mod loopback;
 
 #[cfg(test)]
 mod tests {
@@ -51,6 +55,14 @@ mod tests {
         assert_eq!(
             parse_args(["vesc-host-cli", "spoon"]),
             Err(ParseError::UnknownCommand("spoon".to_owned()))
+        );
+    }
+
+    #[test]
+    fn parses_loopback_command() {
+        assert_eq!(
+            parse_args(["vesc-host-cli", "loopback"]),
+            Ok(Command::Loopback)
         );
     }
 
