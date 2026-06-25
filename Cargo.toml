@@ -6,6 +6,10 @@ edition = "2021"
 [lib]
 crate-type = ["staticlib"]
 
+[workspace]
+members = [".", "vesc-pkg-build"]
+resolver = "2"
+
 [profile.release]
 panic = "abort"
 lto = true
