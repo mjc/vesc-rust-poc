@@ -2,9 +2,9 @@
 
 CARGO ?= cargo
 
-.PHONY: check test fmt clippy package-smoke clean status
+.PHONY: check test fmt clippy symbol-check package-smoke clean status
 
-check: test fmt clippy package-smoke
+check: test fmt clippy symbol-check package-smoke
 
 test:
 	$(CARGO) test --workspace
@@ -15,6 +15,9 @@ fmt:
 clippy:
 	$(CARGO) clippy --workspace --exclude vesc-rust-poc --all-targets --all-features -- -D warnings
 	$(CARGO) clippy -p vesc-rust-poc --lib --release --target thumbv7em-none-eabihf -- -D warnings
+
+symbol-check:
+	$(CARGO) test -p vesc-pkg-build rust_staticlib_has_no_unexpected_undefined_symbols
 
 package-smoke:
 	$(CARGO) test -p vesc-pkg-build package_payload_stays_well_below_the_vesc_tool_flash_block_limit

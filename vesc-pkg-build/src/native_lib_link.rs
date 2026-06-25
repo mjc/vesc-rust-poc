@@ -35,6 +35,10 @@ pub fn native_lib_link_plan() -> NativeLibLinkPlan {
     NativeLibLinkPlan::new(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."))
 }
 
+pub fn native_lib_elf_path() -> PathBuf {
+    native_lib_link_plan().elf_path()
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
