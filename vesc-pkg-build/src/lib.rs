@@ -1,3 +1,7 @@
+pub mod abi_inventory;
+
+pub use abi_inventory::{minimal_test_package_abi, AbiRequirement, AbiRequirementKind};
+
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
