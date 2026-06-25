@@ -1,7 +1,8 @@
 use super::{
-    AccelerationG, AmpHours, AngleRadians, AngularVelocity, Charge, Current, Distance,
-    DistancePerEnergy, Energy, EnergyPerDistance, Frequency, Latitude, Longitude, Percent, Power,
-    Ratio, Rpm, SampleRate, Speed, SystemTicks, Temperature, VescSeconds, Voltage, WattHours,
+    AccelerationG, AmpHours, AngleDegrees, AngleRadians, AngularVelocity, Charge, Current,
+    Distance, DistancePerEnergy, Energy, EnergyPerDistance, Frequency, Latitude, Longitude,
+    Percent, Power, Ratio, Rpm, SampleRate, Speed, SystemTicks, Temperature, VescSeconds, Voltage,
+    WattHours,
 };
 
 #[test]
@@ -61,6 +62,84 @@ fn local_unit_conversions_stay_in_the_embedded_units_layer() {
         10.0
     );
     assert_eq!(Speed::from_miles_per_hour(60.0).as_miles_per_hour(), 60.0);
+}
+
+#[test]
+fn angle_units_convert_between_degrees_and_radians_once_at_boundaries() {
+    let right_angle_degrees = AngleDegrees::from_radians(core::f32::consts::FRAC_PI_2);
+    let right_angle_radians = AngleRadians::from_degrees(90.0);
+
+    assert!((right_angle_degrees.as_degrees() - 90.0).abs() < f32::EPSILON);
+    assert!((right_angle_radians.as_radians() - core::f32::consts::FRAC_PI_2).abs() < f32::EPSILON);
+    assert_eq!(
+        AngleDegrees::from(right_angle_radians).as_degrees(),
+        right_angle_degrees.as_degrees()
+    );
+    assert_eq!(
+        AngleRadians::from(right_angle_degrees).as_radians(),
+        right_angle_radians.as_radians()
+    );
+}
+
+#[test]
+fn angular_velocity_units_convert_between_degrees_and_radians_once_at_boundaries() {
+    let right_angle_per_second =
+        AngularVelocity::from_radians_per_second(core::f32::consts::FRAC_PI_2);
+
+    assert!((right_angle_per_second.as_degrees_per_second() - 90.0).abs() < f32::EPSILON);
+    assert!(
+        (AngularVelocity::from_degrees_per_second(180.0).as_radians_per_second()
+            - core::f32::consts::PI)
+            .abs()
+            < f32::EPSILON
+    );
+}
+
+#[test]
+fn angular_velocity_over_time_is_an_angle_in_radians() {
+    let rate = AngularVelocity::from_radians_per_second(2.0);
+    let duration = VescSeconds::from_seconds(0.25);
+
+    assert!(((rate * duration).as_radians() - 0.5).abs() < f32::EPSILON);
+    assert!(((duration * rate).as_radians() - 0.5).abs() < f32::EPSILON);
+}
+
+#[test]
+fn sample_rate_reports_one_sample_period() {
+    assert_eq!(
+        SampleRate::from_hertz(200.0).sample_period().as_seconds(),
+        0.005
+    );
+    assert_eq!(
+        SampleRate::from_hertz(0.0).sample_period().as_seconds(),
+        1.0
+    );
+}
+
+#[test]
+fn scalar_units_support_same_unit_arithmetic_traits() {
+    let angle = AngleDegrees::from_degrees(8.0) - AngleDegrees::from_degrees(3.0);
+    let rate = -AngularVelocity::from_degrees_per_second(12.0);
+    let current = Current::from_amps(10.0) * 0.25 + Current::from_amps(1.0);
+
+    assert_eq!(angle.as_degrees(), 5.0);
+    assert_eq!(rate.as_degrees_per_second(), -12.0);
+    assert_eq!(current.as_amps(), 3.5);
+    assert_eq!((current / 2.0).as_amps(), 1.75);
+    assert_eq!((-angle).abs().as_degrees(), 5.0);
+    assert_eq!(rate.signum(), -1.0);
+    assert!(current.is_positive());
+    assert!(Current::ZERO.is_zero());
+    assert_eq!(
+        Current::from_amps(4.0)
+            .min(Current::from_amps(6.0))
+            .as_amps(),
+        4.0
+    );
+    assert_eq!(
+        AngleDegrees::from_degrees(6.0) / AngleDegrees::from_degrees(3.0),
+        2.0
+    );
 }
 
 #[test]

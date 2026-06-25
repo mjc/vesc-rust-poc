@@ -2,7 +2,7 @@
 
 use core::ops::{Div, Mul};
 
-use crate::time::{SystemTicks, system_ticks_as_secs_f32};
+use crate::time::{SystemTicks, VescSeconds, system_ticks_as_secs_f32};
 use crate::{scalar_int_unit, scalar_unit};
 
 scalar_unit!(
@@ -41,6 +41,81 @@ scalar_int_unit!(
     u64,
     "odometer meters"
 );
+
+const RADIANS_PER_DEGREE: f32 = core::f32::consts::PI / 180.0;
+const DEGREES_PER_RADIAN: f32 = 180.0 / core::f32::consts::PI;
+
+impl AngleDegrees {
+    /// Create an angle value from radians.
+    #[inline(always)]
+    pub fn from_radians(value: f32) -> Self {
+        Self::from_degrees(value * 180.0 / core::f32::consts::PI)
+    }
+
+    /// Return this angle value in radians.
+    #[inline(always)]
+    pub fn as_radians(self) -> f32 {
+        self.as_degrees() * RADIANS_PER_DEGREE
+    }
+}
+
+impl AngleRadians {
+    /// Create an angle value from degrees.
+    #[inline(always)]
+    pub fn from_degrees(value: f32) -> Self {
+        Self::from_radians(value * RADIANS_PER_DEGREE)
+    }
+
+    /// Return this angle value in degrees.
+    #[inline(always)]
+    pub fn as_degrees(self) -> f32 {
+        self.as_radians() * 180.0 / core::f32::consts::PI
+    }
+}
+
+impl AngularVelocity {
+    /// Create an angular velocity from radians per second.
+    #[inline(always)]
+    pub fn from_radians_per_second(value: f32) -> Self {
+        Self::from_degrees_per_second(value * DEGREES_PER_RADIAN)
+    }
+
+    /// Return this angular velocity in radians per second.
+    #[inline(always)]
+    pub fn as_radians_per_second(self) -> f32 {
+        self.as_degrees_per_second() * RADIANS_PER_DEGREE
+    }
+}
+
+impl Mul<VescSeconds> for AngularVelocity {
+    type Output = AngleRadians;
+
+    fn mul(self, rhs: VescSeconds) -> Self::Output {
+        AngleRadians::from_radians(self.as_radians_per_second() * rhs.as_seconds())
+    }
+}
+
+impl Mul<AngularVelocity> for VescSeconds {
+    type Output = AngleRadians;
+
+    fn mul(self, rhs: AngularVelocity) -> Self::Output {
+        rhs * self
+    }
+}
+
+impl From<AngleDegrees> for AngleRadians {
+    #[inline(always)]
+    fn from(angle: AngleDegrees) -> Self {
+        Self::from_degrees(angle.as_degrees())
+    }
+}
+
+impl From<AngleRadians> for AngleDegrees {
+    #[inline(always)]
+    fn from(angle: AngleRadians) -> Self {
+        Self::from_radians(angle.as_radians())
+    }
+}
 
 impl Speed {
     /// Create a speed value from kilometers per hour.

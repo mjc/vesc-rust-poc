@@ -14,6 +14,7 @@ fn main() {
     let header = workspace.join("third_party/vesc_pkg_lib/vesc_c_if.h");
     let out = PathBuf::from(env::var("OUT_DIR").expect("out dir")).join("c_vesc_if.rs");
 
+    println!("cargo::rustc-check-cfg=cfg(coverage)");
     println!("cargo:rerun-if-changed={}", header.display());
     println!(
         "cargo:rerun-if-changed={}",

@@ -7,11 +7,11 @@ use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescPin, Vesc
 
 use super::{
     CustomConfigGet, CustomConfigSet, CustomConfigXml, VescIf, conf_custom_add_config,
-    conf_custom_clear_configs, foc_get_id, io_read, io_set_mode, io_write, lbm_add_extension,
-    lbm_add_extension_with_table_base, lbm_dec_as_i32, lbm_enc_i, lbm_enc_sym_eerror,
-    lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number, mc_get_amp_hours, mc_get_amp_hours_charged,
-    mc_get_battery_level, mc_get_distance_abs, mc_get_duty_cycle_now, mc_get_fault,
-    mc_get_input_voltage_filtered, mc_get_odometer, mc_get_rpm, mc_get_speed,
+    conf_custom_clear_configs, foc_get_id, io_read, io_read_analog, io_set_mode, io_write,
+    lbm_add_extension, lbm_add_extension_with_table_base, lbm_dec_as_i32, lbm_enc_i,
+    lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number, mc_get_amp_hours,
+    mc_get_amp_hours_charged, mc_get_battery_level, mc_get_distance_abs, mc_get_duty_cycle_now,
+    mc_get_fault, mc_get_input_voltage_filtered, mc_get_odometer, mc_get_rpm, mc_get_speed,
     mc_get_tot_current_filtered, mc_get_tot_current_in_filtered, mc_get_watt_hours,
     mc_get_watt_hours_charged, mc_temp_fet_filtered, mc_temp_motor_filtered,
     vesc_clear_app_data_handler, vesc_send_app_data, vesc_set_app_data_handler, vesc_sleep_us,
@@ -126,10 +126,12 @@ static CUSTOM_CONFIG_SET: SyncCounter = SyncCounter::new();
 static CUSTOM_CONFIG_XML: SyncCounter = SyncCounter::new();
 static SLEEP_US: SyncCounter = SyncCounter::new();
 static THREAD_SET_PRIORITY: SyncCounter = SyncCounter::new();
+static SYSTEM_TIME: SyncCounter = SyncCounter::new();
 static SYSTEM_TIME_TICKS: SyncCounter = SyncCounter::new();
 static IO_SET_MODE: SyncCounter = SyncCounter::new();
 static IO_WRITE: SyncCounter = SyncCounter::new();
 static IO_READ: SyncCounter = SyncCounter::new();
+static IO_READ_ANALOG: SyncCounter = SyncCounter::new();
 static MC_GET_DISTANCE_ABS: SyncCounter = SyncCounter::new();
 static MC_GET_RPM: SyncCounter = SyncCounter::new();
 static MC_GET_SPEED: SyncCounter = SyncCounter::new();
@@ -172,10 +174,12 @@ fn reset_counters() {
         &CUSTOM_CONFIG_XML,
         &SLEEP_US,
         &THREAD_SET_PRIORITY,
+        &SYSTEM_TIME,
         &SYSTEM_TIME_TICKS,
         &IO_SET_MODE,
         &IO_WRITE,
         &IO_READ,
+        &IO_READ_ANALOG,
         &MC_GET_RPM,
         &MC_GET_SPEED,
         &MC_GET_TOT_CURRENT_FILTERED,
@@ -279,6 +283,11 @@ extern "C" fn stub_system_time_ticks() -> u32 {
     42
 }
 
+extern "C" fn stub_system_time() -> f32 {
+    SYSTEM_TIME.inc();
+    1.25
+}
+
 extern "C" fn stub_sleep_us(micros: u32) {
     SLEEP_US.inc();
     LAST_SLEEP_US.set(micros);
@@ -307,6 +316,12 @@ extern "C" fn stub_io_read(pin: c_int) -> bool {
     IO_READ.inc();
     LAST_PIN.set(pin);
     pin == 3
+}
+
+extern "C" fn stub_io_read_analog(pin: c_int) -> f32 {
+    IO_READ_ANALOG.inc();
+    LAST_PIN.set(pin);
+    0.25 * pin as f32
 }
 
 extern "C" fn stub_mc_get_distance_abs() -> f32 {
@@ -413,10 +428,12 @@ fn populated_table() -> VescIf {
     table.conf_custom_clear_configs = Some(stub_conf_custom_clear_configs);
     table.sleep_us = Some(stub_sleep_us);
     table.thread_set_priority = Some(stub_thread_set_priority);
+    table.system_time = Some(stub_system_time);
     table.system_time_ticks = Some(stub_system_time_ticks);
     table.io_set_mode = Some(stub_io_set_mode);
     table.io_write = Some(stub_io_write);
     table.io_read = Some(stub_io_read);
+    table.io_read_analog = Some(stub_io_read_analog);
     table.mc_get_rpm = Some(stub_mc_get_rpm);
     table.mc_get_speed = Some(stub_mc_get_speed);
     table.mc_get_tot_current_filtered = Some(stub_mc_get_tot_current_filtered);
@@ -528,6 +545,23 @@ fn custom_config_helpers_forward_through_mock_table() {
 fn system_time_ticks_forwards_through_mock_table() {
     with_populated_table(|| unsafe {
         assert_eq!(vesc_system_time_ticks(), 42);
+        assert_eq!(SYSTEM_TIME_TICKS.get(), 1);
+        assert_eq!(SYSTEM_TIME.get(), 0);
+    });
+}
+
+#[test]
+fn system_time_ticks_falls_back_to_seconds_when_tick_slot_is_absent_like_refloat() {
+    let mut table = populated_table();
+    table.system_time_ticks = None;
+
+    with_table(&table, || {
+        reset_counters();
+        let ticks = unsafe { vesc_system_time_ticks() };
+
+        assert_eq!(ticks, 12_500);
+        assert_eq!(SYSTEM_TIME_TICKS.get(), 0);
+        assert_eq!(SYSTEM_TIME.get(), 1);
     });
 }
 
@@ -580,6 +614,7 @@ fn gpio_helpers_forward_through_mock_table() {
         assert!(io_set_mode(pin, mode));
         assert!(io_write(pin, 1));
         assert!(io_read(pin));
+        assert_eq!(io_read_analog(pin), 0.75);
         assert_eq!(LAST_PIN.get(), 3);
         assert_eq!(LAST_MODE.get(), 2);
         assert_eq!(LAST_LEVEL.get(), 1);
@@ -673,6 +708,10 @@ fn vesc_if_abi_gpio_offsets_match_struct_layout() {
     assert_eq!(
         VescIfAbi::IO_READ.vesc32_byte_offset(),
         vesc32(core::mem::offset_of!(VescIf, io_read))
+    );
+    assert_eq!(
+        VescIfAbi::IO_READ_ANALOG.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, io_read_analog))
     );
 }
 

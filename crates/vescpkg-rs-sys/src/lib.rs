@@ -72,6 +72,7 @@ macro_rules! vesc_if_used_slots {
             IO_SET_MODE => io_set_mode,
             IO_WRITE => io_write,
             IO_READ => io_read,
+            IO_READ_ANALOG => io_read_analog,
         }
     };
 }

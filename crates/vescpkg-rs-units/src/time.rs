@@ -19,6 +19,13 @@ scalar_unit!(VescSeconds, from_seconds, as_seconds, "VESC float seconds");
 scalar_unit!(Frequency, from_hertz, as_hertz, "hertz");
 scalar_unit!(SampleRate, from_hertz, as_hertz, "hertz");
 
+impl SampleRate {
+    /// Return the duration of one sample at this rate.
+    pub fn sample_period(self) -> VescSeconds {
+        VescSeconds::from_seconds(1.0 / self.as_hertz().max(1.0))
+    }
+}
+
 #[allow(clippy::cast_precision_loss)]
 pub(crate) fn system_ticks_as_secs_f32(ticks: SystemTicks) -> f32 {
     ticks.as_ticks() as f32 / SYSTEM_TICK_RATE_HZ as f32

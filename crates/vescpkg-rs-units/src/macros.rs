@@ -6,6 +6,9 @@ macro_rules! scalar_unit {
         pub struct $name(f32);
 
         impl $name {
+            /// Zero value for this unit.
+            pub const ZERO: Self = Self(0.0);
+
             #[doc = concat!("Create a value from ", $unit, ".")]
             pub const fn $from(value: f32) -> Self {
                 Self(value)
@@ -14,6 +17,108 @@ macro_rules! scalar_unit {
             #[doc = concat!("Return this value in ", $unit, ".")]
             pub const fn $as(self) -> f32 {
                 self.0
+            }
+
+            /// Return the absolute magnitude in the same unit.
+            #[inline(always)]
+            pub const fn abs(self) -> Self {
+                if self.0 < 0.0 { Self(-self.0) } else { self }
+            }
+
+            /// Return -1.0, 0.0, or 1.0 according to this value's sign.
+            #[inline(always)]
+            pub const fn signum(self) -> f32 {
+                if self.0 > 0.0 {
+                    1.0
+                } else if self.0 < 0.0 {
+                    -1.0
+                } else {
+                    0.0
+                }
+            }
+
+            /// Return true when this value is greater than zero.
+            #[inline(always)]
+            pub const fn is_positive(self) -> bool {
+                self.0 > 0.0
+            }
+
+            /// Return true when this value is less than zero.
+            #[inline(always)]
+            pub const fn is_negative(self) -> bool {
+                self.0 < 0.0
+            }
+
+            /// Return true when this value is exactly zero.
+            #[inline(always)]
+            pub const fn is_zero(self) -> bool {
+                self.0 == 0.0
+            }
+
+            /// Return the smaller same-unit value.
+            #[inline(always)]
+            pub fn min(self, rhs: Self) -> Self {
+                if self.0 < rhs.0 { self } else { rhs }
+            }
+
+            /// Return the larger same-unit value.
+            #[inline(always)]
+            pub fn max(self, rhs: Self) -> Self {
+                if self.0 > rhs.0 { self } else { rhs }
+            }
+        }
+
+        impl core::ops::Add for $name {
+            type Output = Self;
+
+            #[inline(always)]
+            fn add(self, rhs: Self) -> Self::Output {
+                Self(self.0 + rhs.0)
+            }
+        }
+
+        impl core::ops::Sub for $name {
+            type Output = Self;
+
+            #[inline(always)]
+            fn sub(self, rhs: Self) -> Self::Output {
+                Self(self.0 - rhs.0)
+            }
+        }
+
+        impl core::ops::Mul<f32> for $name {
+            type Output = Self;
+
+            #[inline(always)]
+            fn mul(self, rhs: f32) -> Self::Output {
+                Self(self.0 * rhs)
+            }
+        }
+
+        impl core::ops::Div<f32> for $name {
+            type Output = Self;
+
+            #[inline(always)]
+            fn div(self, rhs: f32) -> Self::Output {
+                Self(self.0 / rhs)
+            }
+        }
+
+        impl core::ops::Div for $name {
+            type Output = f32;
+
+            #[inline(always)]
+            fn div(self, rhs: Self) -> Self::Output {
+                self.0 / rhs.0
+            }
+        }
+
+        impl core::ops::Neg for $name {
+            type Output = Self;
+
+            #[inline(always)]
+            fn neg(self) -> Self::Output {
+                Self(-self.0)
             }
         }
     };

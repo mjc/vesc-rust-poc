@@ -55,7 +55,12 @@ pub type CustomConfigSet = unsafe extern "C" fn(*mut u8) -> bool;
 /// `src/main.c:2456`; the callback is declared in
 /// `vesc_pkg_lib/vesc_c_if.h:552`.
 pub type CustomConfigXml = unsafe extern "C" fn(*mut *mut u8) -> c_int;
-type ImuReadCallback = unsafe extern "C" fn(*mut f32, *mut f32, *mut f32, f32);
+/// Refloat/VESC IMU read callback.
+///
+/// Refloat `v1.2.1` registers `imu_ref_callback` with this slot at
+/// `src/main.c:2455`; the callback itself updates the balance filter at
+/// `src/main.c:760-764`.
+pub type ImuReadCallback = unsafe extern "C" fn(*mut f32, *mut f32, *mut f32, f32);
 type EncoderReadCallback = unsafe extern "C" fn() -> f32;
 type EncoderFaultCallback = unsafe extern "C" fn() -> bool;
 type EncoderInfoCallback = unsafe extern "C" fn() -> *mut c_char;
@@ -441,7 +446,7 @@ macro_rules! vesc_slot_word_from {
 mod slots {
     use super::{
         AppDataHandler, CustomConfigGet, CustomConfigSet, CustomConfigXml, ExtensionHandler,
-        LibThread, VescIfAbi, c_char, c_int, c_uchar, c_void,
+        ImuReadCallback, LibThread, VescIfAbi, c_char, c_int, c_uchar, c_void,
     };
     #[cfg(not(all(target_arch = "arm", not(test))))]
     use super::{VescIf, vesc_if};
@@ -540,6 +545,7 @@ mod slots {
     fn_slot!(lbm_enc_i as unsafe extern "C" fn(i32) -> u32);
     fn_slot!(lbm_is_number as unsafe extern "C" fn(u32) -> bool);
     fn_slot!(set_app_data_handler as unsafe extern "C" fn(Option<AppDataHandler>) -> bool);
+    fn_slot!(imu_set_read_callback as unsafe extern "C" fn(Option<ImuReadCallback>));
 
     word_slot!(lbm_enc_sym_nil);
     word_slot!(lbm_enc_sym_true);
@@ -579,6 +585,12 @@ mod slots {
     fn_slot!(mc_get_battery_level as unsafe extern "C" fn(*mut f32) -> f32);
     fn_slot!(mc_get_distance_abs as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_odometer as unsafe extern "C" fn() -> u64);
+    fn_slot!(get_cfg_float as unsafe extern "C" fn(c_int) -> f32);
+    fn_slot!(mc_set_duty as unsafe extern "C" fn(f32));
+    fn_slot!(mc_set_current as unsafe extern "C" fn(f32));
+    fn_slot!(mc_set_current_off_delay as unsafe extern "C" fn(f32));
+    fn_slot!(mc_set_brake_current as unsafe extern "C" fn(f32));
+    fn_slot!(timeout_reset as unsafe extern "C" fn());
     optional_fn_slot!(foc_get_id as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_temp_fet_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_temp_motor_filtered as unsafe extern "C" fn() -> f32);
@@ -586,12 +598,16 @@ mod slots {
     fn_slot!(imu_get_roll as unsafe extern "C" fn() -> f32);
     fn_slot!(imu_get_pitch as unsafe extern "C" fn() -> f32);
     fn_slot!(imu_get_yaw as unsafe extern "C" fn() -> f32);
+    fn_slot!(imu_get_gyro as unsafe extern "C" fn(*mut f32));
+    fn_slot!(imu_get_quaternions as unsafe extern "C" fn(*mut f32));
     fn_slot!(send_app_data as unsafe extern "C" fn(*mut c_uchar, u32));
-    fn_slot!(system_time_ticks as unsafe extern "C" fn() -> u32);
+    fn_slot!(system_time as unsafe extern "C" fn() -> f32);
+    optional_fn_slot!(system_time_ticks as unsafe extern "C" fn() -> u32);
     optional_fn_slot!(thread_set_priority as unsafe extern "C" fn(c_int));
     fn_slot!(io_set_mode as unsafe extern "C" fn(c_int, c_int) -> bool);
     fn_slot!(io_write as unsafe extern "C" fn(c_int, c_int) -> bool);
     fn_slot!(io_read as unsafe extern "C" fn(c_int) -> bool);
+    fn_slot!(io_read_analog as unsafe extern "C" fn(c_int) -> f32);
 }
 
 /// # Safety
@@ -730,6 +746,49 @@ pub unsafe fn vesc_clear_app_data_handler() -> bool {
     unsafe { vesc_set_app_data_handler_slot(None) }
 }
 
+/// Register the firmware IMU read callback.
+///
+/// Refloat registers `imu_ref_callback` at `src/main.c:2455`; that callback
+/// updates the balance filter at `src/main.c:760-764`. The VESC slot is
+/// declared in `lispBM/c_libs/vesc_c_if.h:586`.
+///
+/// # Safety
+///
+/// `handler` must remain valid until replaced or cleared by a later firmware call.
+pub unsafe fn vesc_set_imu_read_callback(handler: ImuReadCallback) {
+    unsafe { vesc_set_imu_read_callback_slot(Some(handler)) }
+}
+
+unsafe fn vesc_set_imu_read_callback_slot(handler: Option<ImuReadCallback>) {
+    unsafe { slots::imu_set_read_callback()(handler) }
+}
+
+/// Clear the firmware IMU read callback.
+///
+/// Refloat clears package callbacks during stop at `src/main.c:2401-2403`;
+/// the VESC callback slot is declared in `lispBM/c_libs/vesc_c_if.h:586`.
+///
+/// # Safety
+///
+/// Must only be called when the firmware `VESC_IF` table is valid, same as
+/// [`vesc_set_imu_read_callback`].
+pub unsafe fn vesc_clear_imu_read_callback() {
+    unsafe { vesc_set_imu_read_callback_slot(None) }
+}
+
+/// Read firmware IMU quaternions.
+///
+/// Refloat initializes its balance filter from firmware quaternions at
+/// `src/balance_filter.c:53-61`; the VESC slot is declared in
+/// `lispBM/c_libs/vesc_c_if.h:521`.
+///
+/// # Safety
+///
+/// `quaternions` must point to four writable `f32` values.
+pub unsafe fn vesc_imu_get_quaternions(quaternions: *mut f32) {
+    unsafe { slots::imu_get_quaternions()(quaternions) }
+}
+
 /// Register firmware custom-config callbacks using the Refloat/VESC ABI.
 ///
 /// Refloat `v1.2.1` registers `get_cfg`, `set_cfg`, and `get_cfg_xml` through
@@ -801,11 +860,11 @@ pub unsafe fn vesc_free(ptr: *mut c_void) {
 /// point to state that lives until the spawned thread terminates.
 pub unsafe fn vesc_spawn(
     entry: unsafe extern "C" fn(*mut c_void),
-    stack_words: usize,
+    stack_bytes: usize,
     name: *const c_char,
     arg: *mut c_void,
 ) -> LibThread {
-    unsafe { slots::spawn()(entry, stack_words, name, arg) }
+    unsafe { slots::spawn()(entry, stack_bytes, name, arg) }
 }
 
 /// Sleep the current firmware package thread for a number of microseconds.
@@ -931,6 +990,85 @@ pub unsafe fn mc_get_tot_current_filtered() -> f32 {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_tot_current_in_filtered() -> f32 {
     unsafe { slots::mc_get_tot_current_in_filtered()() }
+}
+
+/// Read a firmware motor configuration float by `CFG_PARAM_*` id.
+///
+/// Refloat v1.2.1 reads `CFG_PARAM_l_current_max` and
+/// `CFG_PARAM_l_current_min` in `src/motor_data.c:90-91`; the VESC ABI slot is
+/// declared at `vesc_pkg_lib/vesc_c_if.h:588`.
+///
+/// # Safety
+///
+/// The firmware VESC function table must be valid and `param` must be a valid
+/// firmware configuration parameter id for a float-valued setting.
+pub unsafe fn get_cfg_float(param: c_int) -> f32 {
+    unsafe { slots::get_cfg_float()(param) }
+}
+
+/// Reset the firmware motor-command safety timeout.
+///
+/// Refloat v1.2.1 calls this before every motor-control apply branch in
+/// `third_party/refloat/src/motor_control.c:92-93`; the VESC ABI slot is declared at
+/// `third_party/vesc_pkg_lib/vesc_c_if.h:538`.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn timeout_reset() {
+    unsafe { slots::timeout_reset()() }
+}
+
+/// Keep current control enabled after a current command.
+///
+/// Refloat v1.2.1 calls this before `mc_set_current` in
+/// `third_party/refloat/src/motor_control.c:96-99`; the VESC ABI slot is declared at
+/// `third_party/vesc_pkg_lib/vesc_c_if.h:476`.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn mc_set_current_off_delay(seconds: f32) {
+    unsafe { slots::mc_set_current_off_delay()(seconds) }
+}
+
+/// Set the motor current command in amps.
+///
+/// Refloat v1.2.1 sends requested current in
+/// `third_party/refloat/src/motor_control.c:96-99`; the VESC ABI slot is
+/// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:440`.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn mc_set_current(amps: f32) {
+    unsafe { slots::mc_set_current()(amps) }
+}
+
+/// Set the motor duty-cycle command.
+///
+/// Refloat v1.2.1 applies parking brake duty zero in
+/// `third_party/refloat/src/motor_control.c:112-114`; the VESC ABI slot is
+/// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:436`.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn mc_set_duty(duty_cycle: f32) {
+    unsafe { slots::mc_set_duty()(duty_cycle) }
+}
+
+/// Set the motor brake current command in amps.
+///
+/// Refloat v1.2.1 applies idle brake current in
+/// `third_party/refloat/src/motor_control.c:115-117`; the VESC ABI slot is
+/// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:441`.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn mc_set_brake_current(amps: f32) {
+    unsafe { slots::mc_set_brake_current()(amps) }
 }
 
 /// Return the current duty cycle.
@@ -1098,6 +1236,19 @@ pub unsafe fn imu_get_yaw() -> f32 {
     unsafe { slots::imu_get_yaw()() }
 }
 
+/// Write firmware IMU gyro axes in degrees/sec into `xyz`.
+///
+/// Refloat v1.2.1 mirrors this VESC ABI slot from
+/// `vesc_pkg_lib/vesc_c_if.h:516` and reads it in `src/imu.c:45-53`.
+///
+/// # Safety
+///
+/// `xyz` must point to three writable `f32` values, and the VESC function
+/// table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn imu_get_gyro(xyz: *mut f32) {
+    unsafe { slots::imu_get_gyro()(xyz) }
+}
+
 /// # Safety
 ///
 /// `data` must point to at least `len` bytes that remain valid for the
@@ -1112,7 +1263,13 @@ pub unsafe fn vesc_send_app_data(data: *const u8, len: u32) {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn vesc_system_time_ticks() -> u32 {
-    unsafe { slots::system_time_ticks()() }
+    unsafe {
+        if let Some(system_time_ticks) = slots::system_time_ticks() {
+            system_time_ticks()
+        } else {
+            (slots::system_time()() * 10_000.0) as u32
+        }
+    }
 }
 
 /// # Safety
@@ -1134,6 +1291,25 @@ pub unsafe fn io_write(pin: crate::VescPin, level: i32) -> bool {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn io_read(pin: crate::VescPin) -> bool {
     unsafe { slots::io_read()(pin.0) }
+}
+
+/// # Safety
+///
+/// The VESC slot is declared in `lispBM/c_libs/vesc_c_if.h:396`.
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+#[inline(always)]
+pub unsafe fn io_read_analog(pin: crate::VescPin) -> f32 {
+    unsafe { slots::io_read_analog()(pin.0) }
+}
+
+/// # Safety
+///
+/// The VESC slot is declared in `lispBM/c_libs/vesc_c_if.h:396`.
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+#[inline(always)]
+pub unsafe fn io_read_analog_pair(first: crate::VescPin, second: crate::VescPin) -> (f32, f32) {
+    let read = unsafe { slots::io_read_analog() };
+    (unsafe { read(first.0) }, unsafe { read(second.0) })
 }
 
 /// Returns selected `VescIf` field offsets for ABI layout tests.
