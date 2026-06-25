@@ -5,6 +5,35 @@ use std::fmt;
 use vesc_protocol::ble_loopback::{LoopbackError, LoopbackPacket};
 use vesc_protocol::WireCommand;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LoopbackTarget {
+    device_name_hint: &'static str,
+    service_name_hint: &'static str,
+}
+
+impl LoopbackTarget {
+    pub const fn new(device_name_hint: &'static str, service_name_hint: &'static str) -> Self {
+        Self {
+            device_name_hint,
+            service_name_hint,
+        }
+    }
+
+    pub const fn device_name_hint(&self) -> &'static str {
+        self.device_name_hint
+    }
+
+    pub const fn service_name_hint(&self) -> &'static str {
+        self.service_name_hint
+    }
+}
+
+impl Default for LoopbackTarget {
+    fn default() -> Self {
+        Self::new("vesc-loopback-test", "vesc-loopback-service")
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoopbackTransportError {
     ScanTimeout,
@@ -29,16 +58,21 @@ impl fmt::Display for LoopbackTransportError {
 impl std::error::Error for LoopbackTransportError {}
 
 pub trait LoopbackTransport {
-    fn open(&self) -> Result<(), LoopbackTransportError>;
+    fn open(&self, target: LoopbackTarget) -> Result<(), LoopbackTransportError>;
     fn exchange(&self, request: &[u8]) -> Result<Vec<u8>, LoopbackTransportError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoopbackReport {
+    target: LoopbackTarget,
     commands: Vec<WireCommand>,
 }
 
 impl LoopbackReport {
+    pub fn target(&self) -> LoopbackTarget {
+        self.target
+    }
+
     pub fn commands(&self) -> &[WireCommand] {
         &self.commands
     }
@@ -47,6 +81,7 @@ impl LoopbackReport {
 #[derive(Debug, Default)]
 pub struct FakeLoopbackTransport {
     open_result: RefCell<Option<Result<(), LoopbackTransportError>>>,
+    open_target: RefCell<Option<LoopbackTarget>>,
     responses: RefCell<VecDeque<Result<Vec<u8>, LoopbackTransportError>>>,
     requests: RefCell<Vec<Vec<u8>>>,
 }
@@ -79,6 +114,10 @@ impl FakeLoopbackTransport {
         transport
     }
 
+    pub fn open_target(&self) -> Option<LoopbackTarget> {
+        *self.open_target.borrow()
+    }
+
     pub fn queue_response(&self, response: Result<Vec<u8>, LoopbackTransportError>) {
         self.responses.borrow_mut().push_back(response);
     }
@@ -89,7 +128,8 @@ impl FakeLoopbackTransport {
 }
 
 impl LoopbackTransport for FakeLoopbackTransport {
-    fn open(&self) -> Result<(), LoopbackTransportError> {
+    fn open(&self, target: LoopbackTarget) -> Result<(), LoopbackTransportError> {
+        *self.open_target.borrow_mut() = Some(target);
         self.open_result.borrow_mut().take().unwrap_or(Ok(()))
     }
 
@@ -107,7 +147,8 @@ impl LoopbackTransport for FakeLoopbackTransport {
 pub fn run_loopback<T: LoopbackTransport>(
     transport: &T,
 ) -> Result<LoopbackReport, LoopbackTransportError> {
-    transport.open()?;
+    let target = LoopbackTarget::default();
+    transport.open(target)?;
     let steps = [
         LoopbackPacket::new(WireCommand::Ping, &[]).expect("ping packet"),
         LoopbackPacket::new(WireCommand::Echo, &[9, 8]).expect("echo packet"),
@@ -126,12 +167,12 @@ pub fn run_loopback<T: LoopbackTransport>(
         })
         .collect::<Result<Vec<_>, LoopbackTransportError>>()?;
 
-    Ok(LoopbackReport { commands })
+    Ok(LoopbackReport { target, commands })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{run_loopback, FakeLoopbackTransport, LoopbackTransportError};
+    use super::{run_loopback, FakeLoopbackTransport, LoopbackTarget, LoopbackTransportError};
     use vesc_protocol::WireCommand;
 
     #[test]
@@ -202,5 +243,17 @@ mod tests {
             LoopbackTransportError::Device("boom").to_string(),
             "device error: boom"
         );
+    }
+
+    #[test]
+    fn loopback_uses_the_default_discovery_target() {
+        let transport = FakeLoopbackTransport::scripted_success();
+
+        let report = run_loopback(&transport).expect("loopback report");
+
+        assert_eq!(report.target(), LoopbackTarget::default());
+        assert_eq!(transport.open_target(), Some(LoopbackTarget::default()));
+        assert_eq!(report.target().device_name_hint(), "vesc-loopback-test");
+        assert_eq!(report.target().service_name_hint(), "vesc-loopback-service");
     }
 }

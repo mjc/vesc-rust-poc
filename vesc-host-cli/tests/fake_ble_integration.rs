@@ -1,6 +1,8 @@
 use std::cell::RefCell;
 
-use vesc_host_cli::loopback::{run_loopback, LoopbackTransport, LoopbackTransportError};
+use vesc_host_cli::loopback::{
+    run_loopback, LoopbackTarget, LoopbackTransport, LoopbackTransportError,
+};
 use vesc_pkg_build::{
     FakeFirmwareServices, LoopbackPackageRuntime, LoopbackPackageState, LoopbackRuntimeError,
     LoopbackStartError, LoopbackTick,
@@ -40,7 +42,8 @@ impl<'a> BridgeTransport<'a> {
 }
 
 impl<'a> LoopbackTransport for BridgeTransport<'a> {
-    fn open(&self) -> Result<(), LoopbackTransportError> {
+    fn open(&self, target: LoopbackTarget) -> Result<(), LoopbackTransportError> {
+        assert_eq!(target, LoopbackTarget::default());
         self.start_if_needed()
     }
 

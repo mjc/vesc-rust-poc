@@ -18,7 +18,12 @@ fn main() -> ExitCode {
             let transport = vesc_host_cli::loopback::FakeLoopbackTransport::scripted_success();
             match vesc_host_cli::loopback::run_loopback(&transport) {
                 Ok(report) => {
-                    println!("loopback ok: {:?}", report.commands());
+                    println!(
+                        "loopback ok on device={} service={}: {:?}",
+                        report.target().device_name_hint(),
+                        report.target().service_name_hint(),
+                        report.commands()
+                    );
                     ExitCode::SUCCESS
                 }
                 Err(error) => {
