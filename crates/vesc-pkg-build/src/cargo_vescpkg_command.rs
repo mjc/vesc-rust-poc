@@ -1,7 +1,10 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::{PackageTargetMode, PackageTargetPlan, BLE_LOOPBACK_PACKAGE_NAME};
+use crate::{
+    PackageBinaryConversionRunner, PackageTargetError, PackageTargetMode, PackageTargetPlan,
+    BLE_LOOPBACK_PACKAGE_NAME,
+};
 
 pub const DEFAULT_PACKAGE_VERSION: &str = "0.1.0";
 pub const DEFAULT_TARGET_TRIPLE: &str = "thumbv7em-none-eabihf";
@@ -28,6 +31,12 @@ pub enum CargoVescPkgParseError {
     UnexpectedArgument(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CargoVescPkgError {
+    Parse(CargoVescPkgParseError),
+    Package(PackageTargetError),
+}
+
 impl std::fmt::Display for CargoVescPkgParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -44,6 +53,17 @@ impl std::fmt::Display for CargoVescPkgParseError {
 }
 
 impl std::error::Error for CargoVescPkgParseError {}
+
+impl std::fmt::Display for CargoVescPkgError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Parse(error) => write!(f, "{error}"),
+            Self::Package(error) => write!(f, "{error:?}"),
+        }
+    }
+}
+
+impl std::error::Error for CargoVescPkgError {}
 
 impl CargoVescPkgInvocation {
     pub fn new(mode: CargoVescPkgMode) -> Self {
@@ -101,6 +121,19 @@ impl CargoVescPkgInvocation {
             self.package_target_mode(),
         )
     }
+
+    pub fn execute_with<C>(
+        &self,
+        repo_root: impl Into<PathBuf>,
+        conversion_runner: &C,
+    ) -> Result<PathBuf, CargoVescPkgError>
+    where
+        C: PackageBinaryConversionRunner,
+    {
+        self.package_target_plan(repo_root)
+            .execute_with(conversion_runner)
+            .map_err(CargoVescPkgError::Package)
+    }
 }
 
 pub fn parse_args<I, S>(args: I) -> Result<CargoVescPkgInvocation, CargoVescPkgParseError>
@@ -140,6 +173,20 @@ where
     Ok(CargoVescPkgInvocation::new(mode).with_target_triple(target_triple))
 }
 
+pub fn run_with<I, S, C>(
+    repo_root: impl Into<PathBuf>,
+    args: I,
+    conversion_runner: &C,
+) -> Result<PathBuf, CargoVescPkgError>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+    C: PackageBinaryConversionRunner,
+{
+    let invocation = parse_args(args).map_err(CargoVescPkgError::Parse)?;
+    invocation.execute_with(repo_root, conversion_runner)
+}
+
 pub fn command_design_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/cargo-vescpkg-command.md")
 }
@@ -151,11 +198,49 @@ pub fn command_design_text() -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        command_design_text, parse_args, CargoVescPkgInvocation, CargoVescPkgMode,
-        DEFAULT_PACKAGE_VERSION, DEFAULT_TARGET_TRIPLE,
+        command_design_text, parse_args, run_with, CargoVescPkgError, CargoVescPkgInvocation,
+        CargoVescPkgMode, DEFAULT_PACKAGE_VERSION, DEFAULT_TARGET_TRIPLE,
+    };
+    use crate::package_conversion::{
+        PackageBinaryConversionCommand, PackageBinaryConversionRunner,
     };
     use crate::PackageTargetMode;
+    use std::cell::RefCell;
+    use std::fs;
     use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[derive(Default)]
+    struct FakeRunner {
+        calls: RefCell<Vec<PackageBinaryConversionCommand>>,
+    }
+
+    impl FakeRunner {
+        fn calls(&self) -> Vec<PackageBinaryConversionCommand> {
+            self.calls.borrow().clone()
+        }
+    }
+
+    impl PackageBinaryConversionRunner for FakeRunner {
+        fn run(&self, command: &PackageBinaryConversionCommand) -> Result<(), String> {
+            self.calls.borrow_mut().push(command.clone());
+            if let Some(parent) = command.package_binary_path().parent() {
+                fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+            }
+            fs::write(command.package_binary_path(), b"payload").map_err(|error| error.to_string())
+        }
+    }
+
+    fn unique_root() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "vesc-rust-poc-cargo-vescpkg-{nanos}-{}",
+            std::process::id()
+        ))
+    }
 
     #[test]
     fn command_design_mentions_the_expected_contract() {
@@ -251,5 +336,43 @@ mod tests {
                 "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/Rust-BLE-loopback-test-package-0.1.0.vescpkg"
             )
         );
+    }
+
+    #[test]
+    fn run_with_executes_the_default_build_invocation() {
+        let root = unique_root();
+        let runner = FakeRunner::default();
+
+        let output = run_with(&root, ["build"], &runner).expect("run build invocation");
+
+        assert_eq!(
+            output,
+            PathBuf::from(
+                "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/Rust-BLE-loopback-test-package-0.1.0.vescpkg"
+            )
+        );
+        assert_eq!(
+            runner.calls(),
+            vec![PackageBinaryConversionCommand::new(
+                root.join("scripts/conv.py"),
+                root.join("target/native-lib-baseline/native_lib.bin"),
+                root.join("target/native-lib-baseline/package_lib.bin"),
+            )]
+        );
+        assert!(
+            root.join(&output).exists(),
+            "expected cargo vescpkg output to exist"
+        );
+    }
+
+    #[test]
+    fn run_with_rejects_unknown_subcommands() {
+        let error = run_with(unique_root(), ["spoon"], &FakeRunner::default())
+            .expect_err("unknown subcommand should fail");
+
+        assert!(matches!(
+            error,
+            CargoVescPkgError::Parse(super::CargoVescPkgParseError::UnexpectedSubcommand(_))
+        ));
     }
 }
