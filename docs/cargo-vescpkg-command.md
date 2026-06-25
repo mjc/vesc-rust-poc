@@ -9,6 +9,8 @@ VESC package flow.
 - The shared implementation should live in `crates/vesc-pkg-build`.
 - The command should build on the existing package plans rather than duplicating
   staging or artifact layout logic.
+- The package target is the device-side BTLE loopback package, not a generic
+  archive builder.
 - The current checked workflow remains `nix develop -c make check`.
 
 ## Intended Shape
@@ -22,6 +24,7 @@ VESC package flow.
 - run the Rust build for the device crate when needed
 - stage package assets
 - emit the final `.vescpkg`
+- keep the device package wired to VESC BTLE on the firmware side
 - preserve the Predictable artifact path under `target/vescpkg`
 - keep the package-size guard and symbol checks in the workspace gates
 
