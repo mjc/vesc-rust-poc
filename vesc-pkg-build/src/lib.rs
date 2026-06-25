@@ -4,6 +4,7 @@ pub mod native_lib_baseline;
 pub mod native_lib_link;
 pub mod package_assets;
 pub mod package_build;
+pub mod package_runtime;
 pub mod symbol_audit;
 
 pub use abi_inventory::{minimal_test_package_abi, AbiRequirement, AbiRequirementKind};
@@ -13,6 +14,7 @@ pub use native_lib_baseline::{
 pub use native_lib_link::{native_lib_link_plan, NativeLibLinkPlan};
 pub use package_assets::{PackageAssets, PackageProvenance};
 pub use package_build::PackageBuildPlan;
+pub use package_runtime::{FakeFirmwareServices, FirmwareServices, LoopbackPackageRuntime};
 pub use symbol_audit::{
     audit_rust_staticlib_symbols, defined_symbols, is_allowed_runtime_symbol, nm_output,
     undefined_symbols, unexpected_undefined_symbols,

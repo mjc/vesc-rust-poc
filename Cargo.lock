@@ -12,6 +12,9 @@ dependencies = [
 [[package]]
 name = "vesc-pkg-build"
 version = "0.1.0"
+dependencies = [
+ "vesc-protocol",
+]
 
 [[package]]
 name = "vesc-protocol"
