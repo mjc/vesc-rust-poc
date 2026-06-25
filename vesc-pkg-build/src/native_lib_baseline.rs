@@ -1,3 +1,4 @@
+use std::hash::Hasher;
 use std::path::PathBuf;
 
 pub const NATIVE_LIB_BASELINE_INPUTS: [&str; 8] = [
@@ -19,6 +20,7 @@ pub const NATIVE_LIB_BASELINE_OUTPUTS: [&str; 4] = [
 ];
 
 pub const VESC_PACKAGE_FLASH_BLOCK_LIMIT_BYTES: u64 = 128 * 1024;
+pub const EXPECTED_VESC_C_IF_HEADER_FINGERPRINT: &str = "a8980de23614d274";
 
 pub const NATIVE_LIB_BASELINE_PACKAGE_INPUTS: [&str; 3] = [
     "package/code.lisp",
@@ -55,6 +57,45 @@ pub fn native_lib_baseline_root() -> NativeLibBaselinePath {
     )
 }
 
+pub fn vesc_c_if_header_path() -> PathBuf {
+    native_lib_baseline_root().root.join("src/vesc_c_if.h")
+}
+
+pub fn vesc_c_if_header_fingerprint() -> String {
+    let header = std::fs::read(vesc_c_if_header_path()).expect("vesc_c_if.h contents");
+    fingerprint_bytes(&header)
+}
+
+fn fingerprint_bytes(bytes: &[u8]) -> String {
+    let mut hasher = Fnv1a64::default();
+    hasher.write(bytes);
+    format!("{:016x}", hasher.finish())
+}
+
+#[derive(Default)]
+struct Fnv1a64(u64);
+
+impl Hasher for Fnv1a64 {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        let mut hash = if self.0 == 0 {
+            0xcbf29ce484222325
+        } else {
+            self.0
+        };
+
+        for byte in bytes {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+
+        self.0 = hash;
+    }
+}
+
 pub fn baseline_input_paths() -> impl Iterator<Item = &'static str> {
     NATIVE_LIB_BASELINE_INPUTS.iter().copied()
 }
@@ -67,6 +108,7 @@ pub fn baseline_output_paths() -> impl Iterator<Item = &'static str> {
 mod tests {
     use super::{
         baseline_input_paths, baseline_output_paths, native_lib_baseline_root,
+        vesc_c_if_header_fingerprint, EXPECTED_VESC_C_IF_HEADER_FINGERPRINT,
         NATIVE_LIB_BASELINE_INPUTS, NATIVE_LIB_BASELINE_OUTPUTS,
         VESC_PACKAGE_FLASH_BLOCK_LIMIT_BYTES,
     };
@@ -124,6 +166,15 @@ mod tests {
         assert!(
             total_size < VESC_PACKAGE_FLASH_BLOCK_LIMIT_BYTES,
             "package payload is too large for the VESC flash block: {sizes:?}"
+        );
+    }
+
+    #[test]
+    fn vesc_c_if_header_fingerprint_is_pinned() {
+        assert_eq!(
+            vesc_c_if_header_fingerprint(),
+            EXPECTED_VESC_C_IF_HEADER_FINGERPRINT,
+            "refresh the pinned header fingerprint only after reviewing the ABI diff for fixtures/native-lib-baseline/src/vesc_c_if.h"
         );
     }
 

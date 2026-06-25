@@ -32,6 +32,9 @@ This fixture captures the smallest C package skeleton we want to keep around whi
   externals before the final native-library link step grows out.
 - The same audit also checks the relocatable final ELF built from the C shim plus
   the Rust staticlib.
+- The fixture pins `src/vesc_c_if.h` with fingerprint `a8980de23614d274`; if
+  that header changes, refresh the expected fingerprint in
+  `vesc-pkg-build/src/native_lib_baseline.rs` after reviewing the ABI diff.
 - The package loader fixture loads `src/package_lib.bin` and calls
   `(ext-rust-add 1 2)`.
 - Build integration can land later without changing the fixture contract.
