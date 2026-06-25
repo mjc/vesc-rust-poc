@@ -32,4 +32,6 @@ This fixture captures the smallest C package skeleton we want to keep around whi
   externals before the final native-library link step grows out.
 - The same audit also checks the relocatable final ELF built from the C shim plus
   the Rust staticlib.
+- The package loader fixture loads `src/package_lib.bin` and calls
+  `(ext-rust-add 1 2)`.
 - Build integration can land later without changing the fixture contract.

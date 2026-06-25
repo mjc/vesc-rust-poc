@@ -97,7 +97,7 @@ impl PackageAssets {
 
     pub fn render_descriptor(&self) -> String {
         format!(
-            "import QtQuick 2.15\n\nItem {{\n    property string packageName: \"{}\"\n    property string packageVersion: \"{}\"\n    property string nativeLibraryPath: \"src/package_lib.bin\"\n}}\n",
+            "import QtQuick 2.15\n\nItem {{\n    property string packageName: \"{}\"\n    property string packageVersion: \"{}\"\n    property string nativeLibraryPath: \"src/package_lib.bin\"\n    property string loaderScriptPath: \"code.lisp\"\n}}\n",
             self.package_name(),
             self.version()
         )
@@ -105,7 +105,7 @@ impl PackageAssets {
 
     pub fn render_loader(&self) -> String {
         format!(
-            "; Auto-generated loader for {}\n(load-native-lib \"src/package_lib.bin\")\n",
+            "; Auto-generated loader for {}\n(load-native-lib \"src/package_lib.bin\")\n(ext-rust-add 1 2)\n",
             self.package_name()
         )
     }
@@ -141,7 +141,11 @@ mod tests {
             .render_descriptor()
             .contains("nativeLibraryPath: \"src/package_lib.bin\""));
         assert!(assets
+            .render_descriptor()
+            .contains("loaderScriptPath: \"code.lisp\""));
+        assert!(assets
             .render_loader()
             .contains("(load-native-lib \"src/package_lib.bin\")"));
+        assert!(assets.render_loader().contains("(ext-rust-add 1 2)"));
     }
 }

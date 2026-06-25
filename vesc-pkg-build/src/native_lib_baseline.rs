@@ -165,4 +165,23 @@ mod tests {
             "expected the shim to encode the Rust result back to LispBM: {package_lib:?}"
         );
     }
+
+    #[test]
+    fn package_loader_calls_the_rust_extension() {
+        let root = native_lib_baseline_root();
+        let loader = root
+            .input_paths()
+            .find(|path| path.ends_with("package/code.lisp"))
+            .expect("expected code.lisp in the native-lib baseline fixture");
+        let source = fs::read_to_string(&loader).expect("code.lisp contents");
+
+        assert!(
+            source.contains("(load-native-lib \"src/package_lib.bin\")"),
+            "expected the loader to import the native library: {loader:?}"
+        );
+        assert!(
+            source.contains("(ext-rust-add 1 2)"),
+            "expected the loader to call the Rust-backed extension: {loader:?}"
+        );
+    }
 }

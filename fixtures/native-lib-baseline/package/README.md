@@ -1,3 +1,3 @@
-# Native Library Baseline
+# Rust VESC Package Proof
 
-Placeholder package README for the native-lib baseline fixture.
+This package loads the Rust-backed native library and calls `(ext-rust-add 1 2)`.
