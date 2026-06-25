@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -29,6 +30,21 @@ pub fn rust_staticlib_path() -> PathBuf {
         .join("../target/thumbv7em-none-eabihf/release/libvesc_rust_poc.a")
 }
 
+pub fn native_lib_elf_path() -> PathBuf {
+    crate::native_lib_link::native_lib_elf_path()
+}
+
+pub fn package_lib_c_path() -> PathBuf {
+    crate::native_lib_baseline_root()
+        .input_paths()
+        .find(|path| path.ends_with("src/package_lib.c"))
+        .expect("native-lib baseline package_lib.c")
+}
+
+pub fn package_lib_object_path() -> PathBuf {
+    crate::native_lib_link::native_lib_link_plan().shim_object_path()
+}
+
 pub fn build_rust_staticlib() {
     let status = Command::new("cargo")
         .args([
@@ -43,6 +59,69 @@ pub fn build_rust_staticlib() {
         .expect("cargo build for the Rust staticlib");
 
     assert!(status.success(), "cargo failed to build the Rust staticlib");
+}
+
+pub fn build_final_native_lib_elf() {
+    build_rust_staticlib();
+
+    let c_path = package_lib_c_path();
+    let object_path = package_lib_object_path();
+    let elf_path = native_lib_elf_path();
+    let include_dir = c_path
+        .parent()
+        .expect("package_lib.c parent directory")
+        .to_path_buf();
+
+    if let Some(parent) = object_path.parent() {
+        fs::create_dir_all(parent).expect("create package_lib.o parent directory");
+    }
+    if let Some(parent) = elf_path.parent() {
+        fs::create_dir_all(parent).expect("create native_lib.elf parent directory");
+    }
+
+    let compile_status = Command::new("arm-none-eabi-gcc")
+        .args([
+            "-c",
+            "-mcpu=cortex-m4",
+            "-mthumb",
+            "-mfloat-abi=hard",
+            "-mfpu=fpv4-sp-d16",
+            "-std=c11",
+            "-I",
+            include_dir.to_str().expect("utf-8 include directory"),
+            c_path.to_str().expect("utf-8 C source path"),
+            "-o",
+            object_path.to_str().expect("utf-8 object path"),
+        ])
+        .status()
+        .expect("arm-none-eabi-gcc compile of package_lib.c");
+
+    assert!(
+        compile_status.success(),
+        "failed to compile the C shim into package_lib.o"
+    );
+
+    let link_status = Command::new("arm-none-eabi-gcc")
+        .args([
+            "-r",
+            "-mcpu=cortex-m4",
+            "-mthumb",
+            "-mfloat-abi=hard",
+            "-mfpu=fpv4-sp-d16",
+            object_path.to_str().expect("utf-8 object path"),
+            rust_staticlib_path()
+                .to_str()
+                .expect("utf-8 staticlib path"),
+            "-o",
+            elf_path.to_str().expect("utf-8 ELF path"),
+        ])
+        .status()
+        .expect("arm-none-eabi-gcc link of the final native-lib ELF");
+
+    assert!(
+        link_status.success(),
+        "failed to link the final native-lib ELF"
+    );
 }
 
 pub fn nm_output(path: &Path) -> String {
@@ -67,6 +146,25 @@ pub fn audit_rust_staticlib_symbols() -> BTreeSet<String> {
     unexpected_undefined_symbols(&output)
 }
 
+pub fn audit_final_native_lib_elf_symbols() -> BTreeSet<String> {
+    build_final_native_lib_elf();
+    let output = nm_output(&native_lib_elf_path());
+
+    unexpected_final_native_lib_undefined_symbols(&output)
+}
+
+pub fn unexpected_final_native_lib_undefined_symbols(nm_output: &str) -> BTreeSet<String> {
+    undefined_symbols(nm_output)
+        .into_iter()
+        .filter(|symbol| !is_allowed_final_native_lib_symbol(symbol))
+        .collect()
+}
+
+pub fn is_allowed_final_native_lib_symbol(symbol: &str) -> bool {
+    matches!(symbol, "lbm_add_extension" | "lbm_dec_as_i32" | "lbm_enc_i")
+        || is_allowed_runtime_symbol(symbol)
+}
+
 fn parse_undefined_symbol(line: &str) -> Option<String> {
     let parts = line.split_whitespace().collect::<Vec<_>>();
     match parts.as_slice() {
@@ -87,8 +185,9 @@ fn parse_defined_symbol(line: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        audit_rust_staticlib_symbols, defined_symbols, is_allowed_runtime_symbol,
-        undefined_symbols, unexpected_undefined_symbols,
+        audit_final_native_lib_elf_symbols, audit_rust_staticlib_symbols, defined_symbols,
+        is_allowed_final_native_lib_symbol, is_allowed_runtime_symbol, undefined_symbols,
+        unexpected_final_native_lib_undefined_symbols, unexpected_undefined_symbols,
     };
     use std::collections::BTreeSet;
 
@@ -141,6 +240,34 @@ mod tests {
         assert!(
             audit_rust_staticlib_symbols().is_empty(),
             "unexpected undefined symbols remain in the Rust staticlib"
+        );
+    }
+
+    #[test]
+    fn final_native_lib_elf_has_no_unexpected_undefined_symbols() {
+        assert!(
+            audit_final_native_lib_elf_symbols().is_empty(),
+            "unexpected undefined symbols remain in the final native-lib ELF"
+        );
+    }
+
+    #[test]
+    fn final_native_lib_elf_allows_only_the_expected_firmware_calls() {
+        assert!(is_allowed_final_native_lib_symbol("lbm_add_extension"));
+        assert!(is_allowed_final_native_lib_symbol("lbm_dec_as_i32"));
+        assert!(is_allowed_final_native_lib_symbol("lbm_enc_i"));
+        assert!(!is_allowed_final_native_lib_symbol("rust_add"));
+
+        let sample = "\
+         U lbm_add_extension
+         U lbm_dec_as_i32
+         U lbm_enc_i
+         U rust_add
+";
+
+        assert_eq!(
+            unexpected_final_native_lib_undefined_symbols(sample),
+            BTreeSet::from(["rust_add".to_owned()])
         );
     }
 }

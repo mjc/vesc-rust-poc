@@ -30,4 +30,6 @@ This fixture captures the smallest C package skeleton we want to keep around whi
   `target/native-lib-baseline/native_lib.elf`.
 - A symbol audit now inspects the Rust archive and flags unexpected unresolved
   externals before the final native-library link step grows out.
+- The same audit also checks the relocatable final ELF built from the C shim plus
+  the Rust staticlib.
 - Build integration can land later without changing the fixture contract.

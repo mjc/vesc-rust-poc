@@ -17,7 +17,7 @@ clippy:
 	$(CARGO) clippy -p vesc-rust-poc --lib --release --target thumbv7em-none-eabihf -- -D warnings
 
 symbol-check:
-	$(CARGO) test -p vesc-pkg-build rust_staticlib_has_no_unexpected_undefined_symbols
+	$(CARGO) test -p vesc-pkg-build symbol_audit
 
 package-smoke:
 	$(CARGO) test -p vesc-pkg-build package_payload_stays_well_below_the_vesc_tool_flash_block_limit
