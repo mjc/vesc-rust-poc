@@ -1,6 +1,10 @@
 pub mod abi_inventory;
+pub mod native_lib_baseline;
 
 pub use abi_inventory::{minimal_test_package_abi, AbiRequirement, AbiRequirementKind};
+pub use native_lib_baseline::{
+    baseline_input_paths, baseline_output_paths, native_lib_baseline_root, NativeLibBaselinePath,
+};
 
 use std::path::{Path, PathBuf};
 
