@@ -1,11 +1,13 @@
 pub mod abi_inventory;
 pub mod hygiene;
 pub mod native_lib_baseline;
+pub mod native_lib_link;
 
 pub use abi_inventory::{minimal_test_package_abi, AbiRequirement, AbiRequirementKind};
 pub use native_lib_baseline::{
     baseline_input_paths, baseline_output_paths, native_lib_baseline_root, NativeLibBaselinePath,
 };
+pub use native_lib_link::{native_lib_link_plan, NativeLibLinkPlan};
 
 use std::path::{Path, PathBuf};
 
