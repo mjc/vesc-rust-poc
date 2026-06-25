@@ -1,9 +1,10 @@
 use std::fmt;
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::Path;
 
 use flate2::read::ZlibDecoder;
+use flate2::{write::ZlibEncoder, Compression};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VescPackage {
@@ -33,6 +34,7 @@ pub enum PackageInstallStep {
     UploadQml { bytes: usize, fullscreen: bool },
     EraseLisp { bytes: usize },
     UploadLisp { bytes: usize },
+    SetRunning { running: bool },
     ReloadFirmware,
 }
 
@@ -45,6 +47,7 @@ pub struct PackageInstallReport {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PackageInstallError {
     Io(String),
+    Device(String),
     InvalidPackage,
 }
 
@@ -52,6 +55,7 @@ impl fmt::Display for PackageInstallError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Io(reason) => write!(f, "io error: {reason}"),
+            Self::Device(reason) => write!(f, "device error: {reason}"),
             Self::InvalidPackage => f.write_str("invalid VESC package"),
         }
     }
@@ -64,6 +68,7 @@ pub trait PackageInstallTransport {
     fn upload_qml(&self, qml: &[u8], fullscreen: bool) -> Result<(), PackageInstallError>;
     fn erase_lisp(&self, bytes: usize) -> Result<(), PackageInstallError>;
     fn upload_lisp(&self, lisp: &[u8]) -> Result<(), PackageInstallError>;
+    fn set_running(&self, running: bool) -> Result<(), PackageInstallError>;
     fn reload_firmware(&self) -> Result<(), PackageInstallError>;
 }
 
@@ -99,6 +104,13 @@ impl PackageInstallTransport for FakePackageInstallTransport {
         self.steps
             .borrow_mut()
             .push(PackageInstallStep::UploadLisp { bytes: lisp.len() });
+        Ok(())
+    }
+
+    fn set_running(&self, running: bool) -> Result<(), PackageInstallError> {
+        self.steps
+            .borrow_mut()
+            .push(PackageInstallStep::SetRunning { running });
         Ok(())
     }
 
@@ -180,10 +192,11 @@ pub fn install_package<T: PackageInstallTransport>(
     let mut steps = Vec::new();
 
     if !package.qml_file.is_empty() {
-        let bytes = package.qml_file.len();
+        let qml = qml_compress(&package.qml_file)?;
+        let bytes = qml.len();
         transport.erase_qml(bytes + 100)?;
         steps.push(PackageInstallStep::EraseQml { bytes: bytes + 100 });
-        transport.upload_qml(package.qml_file.as_bytes(), package.qml_is_fullscreen)?;
+        transport.upload_qml(&qml, package.qml_is_fullscreen)?;
         steps.push(PackageInstallStep::UploadQml {
             bytes,
             fullscreen: package.qml_is_fullscreen,
@@ -199,6 +212,8 @@ pub fn install_package<T: PackageInstallTransport>(
         steps.push(PackageInstallStep::EraseLisp { bytes: bytes + 100 });
         transport.upload_lisp(&package.lisp_data)?;
         steps.push(PackageInstallStep::UploadLisp { bytes });
+        transport.set_running(true)?;
+        steps.push(PackageInstallStep::SetRunning { running: true });
     } else {
         transport.erase_lisp(16)?;
         steps.push(PackageInstallStep::EraseLisp { bytes: 16 });
@@ -237,9 +252,29 @@ fn invalid_utf8(_: std::string::FromUtf8Error) -> PackageInstallError {
     PackageInstallError::InvalidPackage
 }
 
+fn qml_compress(script: &str) -> Result<Vec<u8>, PackageInstallError> {
+    let raw = format!("import Vedder.vesc.vescinterface 1.0;import \"qrc:/mobile\";{script}")
+        .into_bytes();
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
+    encoder
+        .write_all(&raw)
+        .map_err(|error| PackageInstallError::Io(error.to_string()))?;
+    let compressed = encoder
+        .finish()
+        .map_err(|error| PackageInstallError::Io(error.to_string()))?;
+
+    let mut out = Vec::with_capacity(4 + compressed.len());
+    out.extend_from_slice(&(raw.len() as u32).to_be_bytes());
+    out.extend_from_slice(&compressed);
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{decode_package, install_package, FakePackageInstallTransport, PackageInstallStep};
+    use super::{
+        decode_package, install_package, qml_compress, FakePackageInstallTransport,
+        PackageInstallStep,
+    };
     use flate2::{write::ZlibEncoder, Compression};
     use std::io::Write;
 
@@ -283,21 +318,27 @@ mod tests {
     fn installs_package_in_vesc_tool_order() {
         let package = decode_package(&build_package_bytes()).expect("package");
         let transport = FakePackageInstallTransport::default();
+        let qml = qml_compress("import QtQuick 2.15\nItem {}\n").expect("qml");
 
         let report = install_package(&package, &transport).expect("report");
 
         assert_eq!(
             report.steps,
             vec![
-                PackageInstallStep::EraseQml { bytes: 128 },
+                PackageInstallStep::EraseQml {
+                    bytes: qml.len() + 100
+                },
                 PackageInstallStep::UploadQml {
-                    bytes: "import QtQuick 2.15\nItem {}\n".len(),
+                    bytes: qml.len(),
                     fullscreen: true
                 },
-                PackageInstallStep::EraseLisp { bytes: 140 },
-                PackageInstallStep::UploadLisp {
-                    bytes: "(load-native-lib \"src/package_lib.bin\")\n".len()
+                PackageInstallStep::EraseLisp {
+                    bytes: package.lisp_data.len() + 100
                 },
+                PackageInstallStep::UploadLisp {
+                    bytes: package.lisp_data.len()
+                },
+                PackageInstallStep::SetRunning { running: true },
                 PackageInstallStep::ReloadFirmware,
             ]
         );
