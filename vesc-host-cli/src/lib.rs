@@ -29,6 +29,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::{parse_args, Command, ParseError};
+    use vesc_protocol::{WireCommand, WireVersion};
 
     #[test]
     fn parses_layout_command() {
@@ -57,5 +58,11 @@ mod tests {
             parse_args(["vesc-host-cli", "spoon"]),
             Err(ParseError::UnknownCommand("spoon".to_owned()))
         );
+    }
+
+    #[test]
+    fn shares_the_protocol_crate_version_and_command_codes() {
+        assert_eq!(WireVersion::CURRENT.raw(), 1);
+        assert_eq!(WireCommand::Status.code(), 3);
     }
 }
