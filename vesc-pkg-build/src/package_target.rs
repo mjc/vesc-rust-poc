@@ -115,6 +115,7 @@ mod tests {
     use crate::package_conversion::{
         PackageBinaryConversionCommand, PackageBinaryConversionRunner,
     };
+    use crate::BLE_LOOPBACK_PACKAGE_NAME;
     use std::cell::RefCell;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -205,7 +206,7 @@ mod tests {
         let root = unique_root();
         let target = PackageTargetPlan::new(
             &root,
-            "Rust VESC package",
+            BLE_LOOPBACK_PACKAGE_NAME,
             "0.1.0",
             PackageTargetMode::PackageOnly,
             "vesc_tool",
@@ -226,7 +227,7 @@ mod tests {
         assert!(target_runner.runs().is_empty());
         assert!(target.build_plan().inspect_package_artifacts().is_ok());
         assert!(root
-            .join("target/vescpkg/Rust-VESC-package-0.1.0/README.md")
+            .join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/README.md")
             .exists());
         assert!(root
             .join("target/native-lib-baseline/package_lib.bin")
@@ -238,7 +239,7 @@ mod tests {
         let root = unique_root();
         let target = PackageTargetPlan::new(
             &root,
-            "Rust VESC package",
+            BLE_LOOPBACK_PACKAGE_NAME,
             "0.1.0",
             PackageTargetMode::Package,
             "/nix/store/fake-vesc-tool/bin/vesc_tool",
@@ -261,7 +262,7 @@ mod tests {
                 PathBuf::from("/nix/store/fake-vesc-tool/bin/vesc_tool"),
                 vec![
                     "--buildPkgFromDesc".to_owned(),
-                    "target/vescpkg/Rust-VESC-package-0.1.0/pkgdesc.qml".to_owned(),
+                    "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/pkgdesc.qml".to_owned(),
                 ],
             )]
         );

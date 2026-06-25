@@ -114,21 +114,27 @@ impl PackageAssets {
 #[cfg(test)]
 mod tests {
     use super::{PackageAssets, PackageProvenance};
-    use crate::PackageLayout;
+    use crate::{PackageLayout, BLE_LOOPBACK_PACKAGE_NAME};
 
     #[test]
     fn renders_the_expected_package_assets() {
         let assets = PackageAssets::new(
-            PackageLayout::new("Rust VESC package", "0.1.0"),
+            PackageLayout::new(BLE_LOOPBACK_PACKAGE_NAME, "0.1.0"),
             PackageProvenance::new(Some("abc123"), Some("2026-06-25")),
         );
 
         assert_eq!(
             assets.asset_paths().collect::<Vec<_>>(),
             vec![
-                std::path::PathBuf::from("target/vescpkg/Rust-VESC-package-0.1.0/README.md"),
-                std::path::PathBuf::from("target/vescpkg/Rust-VESC-package-0.1.0/pkgdesc.qml"),
-                std::path::PathBuf::from("target/vescpkg/Rust-VESC-package-0.1.0/code.lisp"),
+                std::path::PathBuf::from(
+                    "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/README.md"
+                ),
+                std::path::PathBuf::from(
+                    "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/pkgdesc.qml"
+                ),
+                std::path::PathBuf::from(
+                    "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/code.lisp"
+                ),
             ]
         );
         assert!(assets.render_readme().contains("Version: 0.1.0"));
@@ -136,7 +142,7 @@ mod tests {
         assert!(assets.render_readme().contains("Build date: 2026-06-25"));
         assert!(assets
             .render_descriptor()
-            .contains("packageName: \"Rust VESC package\""));
+            .contains("packageName: \"Rust BLE loopback test package\""));
         assert!(assets
             .render_descriptor()
             .contains("nativeLibraryPath: \"src/package_lib.bin\""));

@@ -118,6 +118,7 @@ mod tests {
     use crate::package_conversion::{
         PackageBinaryConversionCommand, PackageBinaryConversionRunner,
     };
+    use crate::BLE_LOOPBACK_PACKAGE_NAME;
     use std::cell::RefCell;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -161,8 +162,11 @@ mod tests {
 
     #[test]
     fn renders_the_expected_package_build_plan() {
-        let plan =
-            PackageBuildPlan::new("fixtures/native-lib-baseline", "Rust VESC package", "0.1.0");
+        let plan = PackageBuildPlan::new(
+            "fixtures/native-lib-baseline",
+            BLE_LOOPBACK_PACKAGE_NAME,
+            "0.1.0",
+        );
 
         assert_eq!(
             plan.package_input_paths().collect::<Vec<_>>(),
@@ -175,22 +179,28 @@ mod tests {
         assert_eq!(
             plan.package_output_path(),
             std::path::PathBuf::from(
-                "target/vescpkg/Rust-VESC-package-0.1.0/Rust-VESC-package-0.1.0.vescpkg"
+                "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/Rust-BLE-loopback-test-package-0.1.0.vescpkg"
             )
         );
         assert_eq!(
             plan.vesc_tool_args(),
             vec![
                 "--buildPkgFromDesc".to_owned(),
-                "target/vescpkg/Rust-VESC-package-0.1.0/pkgdesc.qml".to_owned(),
+                "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/pkgdesc.qml".to_owned(),
             ]
         );
         assert_eq!(
             plan.assets().asset_paths().collect::<Vec<_>>(),
             vec![
-                std::path::PathBuf::from("target/vescpkg/Rust-VESC-package-0.1.0/README.md"),
-                std::path::PathBuf::from("target/vescpkg/Rust-VESC-package-0.1.0/pkgdesc.qml"),
-                std::path::PathBuf::from("target/vescpkg/Rust-VESC-package-0.1.0/code.lisp"),
+                std::path::PathBuf::from(
+                    "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/README.md"
+                ),
+                std::path::PathBuf::from(
+                    "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/pkgdesc.qml"
+                ),
+                std::path::PathBuf::from(
+                    "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/code.lisp"
+                ),
             ]
         );
         assert_eq!(
@@ -210,23 +220,26 @@ mod tests {
 
     #[test]
     fn renders_the_expected_package_artifact_inspection_plan() {
-        let plan =
-            PackageBuildPlan::new("fixtures/native-lib-baseline", "Rust VESC package", "0.1.0");
+        let plan = PackageBuildPlan::new(
+            "fixtures/native-lib-baseline",
+            BLE_LOOPBACK_PACKAGE_NAME,
+            "0.1.0",
+        );
         let inspection_plan = plan.inspection_plan();
 
         assert_eq!(
             inspection_plan.package_output_path(),
             std::path::PathBuf::from(
-                "fixtures/native-lib-baseline/target/vescpkg/Rust-VESC-package-0.1.0/"
+                "fixtures/native-lib-baseline/target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/"
             )
-            .join("Rust-VESC-package-0.1.0.vescpkg")
+            .join("Rust-BLE-loopback-test-package-0.1.0.vescpkg")
         );
     }
 
     #[test]
     fn inspect_package_artifacts_reports_missing_staging_files() {
         let root = unique_root();
-        let plan = PackageBuildPlan::new(&root, "Rust VESC package", "0.1.0");
+        let plan = PackageBuildPlan::new(&root, BLE_LOOPBACK_PACKAGE_NAME, "0.1.0");
         fs::create_dir_all(plan.inspection_plan().staging_dir_path()).expect("staging root");
 
         let error = plan
@@ -238,7 +251,7 @@ mod tests {
     #[test]
     fn inspect_package_artifacts_accepts_rendered_artifacts() {
         let root = unique_root();
-        let plan = PackageBuildPlan::new(&root, "Rust VESC package", "0.1.0");
+        let plan = PackageBuildPlan::new(&root, BLE_LOOPBACK_PACKAGE_NAME, "0.1.0");
         let inspection_plan = plan.inspection_plan();
         let assets = inspection_plan.assets();
 
