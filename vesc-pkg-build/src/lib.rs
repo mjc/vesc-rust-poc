@@ -8,6 +8,7 @@ pub mod package_build;
 pub mod package_conversion;
 pub mod package_runtime;
 pub mod package_target;
+pub mod rust_package_api_roadmap;
 pub mod symbol_audit;
 
 pub use abi_inventory::{minimal_test_package_abi, AbiRequirement, AbiRequirementKind};
