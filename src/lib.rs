@@ -3,10 +3,18 @@
 pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
 
 pub mod ffi;
+pub mod package_lifecycle;
 
 #[no_mangle]
 pub extern "C" fn rust_add(a: i32, b: i32) -> i32 {
     a + b
+}
+
+#[cfg(not(test))]
+#[no_mangle]
+pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) {
+    let _ = info;
+    package_lifecycle::init_package();
 }
 
 #[cfg(not(test))]

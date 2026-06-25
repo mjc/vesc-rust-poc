@@ -15,7 +15,7 @@ static lbm_value ext_rust_add(lbm_value *args, lbm_uint argn) {
     return lbm_enc_i(rust_add(a, b));
 }
 
-INIT_FUN(package_lib_init) {
+__attribute__((weak)) INIT_FUN(package_lib_init) {
     INIT_START;
     lbm_add_extension("ext-rust-add", ext_rust_add);
     INIT_END;

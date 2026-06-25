@@ -22,7 +22,9 @@ pub fn unexpected_undefined_symbols(nm_output: &str) -> BTreeSet<String> {
 }
 
 pub fn is_allowed_runtime_symbol(symbol: &str) -> bool {
-    symbol.starts_with('_') || symbol == "fma"
+    symbol.starts_with('_')
+        || symbol == "fma"
+        || matches!(symbol, "lbm_add_extension" | "lbm_dec_as_i32" | "lbm_enc_i")
 }
 
 pub fn rust_staticlib_path() -> PathBuf {
@@ -185,9 +187,10 @@ fn parse_defined_symbol(line: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        audit_final_native_lib_elf_symbols, audit_rust_staticlib_symbols, defined_symbols,
-        is_allowed_final_native_lib_symbol, is_allowed_runtime_symbol, undefined_symbols,
-        unexpected_final_native_lib_undefined_symbols, unexpected_undefined_symbols,
+        audit_final_native_lib_elf_symbols, audit_rust_staticlib_symbols, build_rust_staticlib,
+        defined_symbols, is_allowed_final_native_lib_symbol, is_allowed_runtime_symbol, nm_output,
+        rust_staticlib_path, undefined_symbols, unexpected_final_native_lib_undefined_symbols,
+        unexpected_undefined_symbols,
     };
     use std::collections::BTreeSet;
 
@@ -221,17 +224,22 @@ mod tests {
             "_RNvNtNtCseGTyb2smT0B_17compiler_builtins3mem6memcpy"
         ));
         assert!(is_allowed_runtime_symbol("fma"));
-        assert!(!is_allowed_runtime_symbol("lbm_add_extension"));
+        assert!(is_allowed_runtime_symbol("lbm_add_extension"));
+        assert!(is_allowed_runtime_symbol("lbm_dec_as_i32"));
+        assert!(is_allowed_runtime_symbol("lbm_enc_i"));
 
         let sample = "\
          U __aeabi_dadd
          U fma
          U lbm_add_extension
+         U lbm_dec_as_i32
+         U lbm_enc_i
+         U plain_external
 ";
 
         assert_eq!(
             unexpected_undefined_symbols(sample),
-            BTreeSet::from(["lbm_add_extension".to_owned()])
+            BTreeSet::from(["plain_external".to_owned()])
         );
     }
 
@@ -268,6 +276,18 @@ mod tests {
         assert_eq!(
             unexpected_final_native_lib_undefined_symbols(sample),
             BTreeSet::from(["rust_add".to_owned()])
+        );
+    }
+
+    #[test]
+    fn rust_staticlib_exports_the_package_init_entrypoint() {
+        build_rust_staticlib();
+        let output = nm_output(&rust_staticlib_path());
+        let defined = defined_symbols(&output);
+
+        assert!(
+            defined.contains("package_lib_init"),
+            "expected the Rust staticlib to export package_lib_init"
         );
     }
 }
