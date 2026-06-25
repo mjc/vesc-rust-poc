@@ -4,6 +4,7 @@ pub enum Command {
     Layout,
     Status,
     Loopback,
+    PackageInstall(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,11 +25,16 @@ where
         Some("layout") => Ok(Command::Layout),
         Some("status") => Ok(Command::Status),
         Some("loopback") => Ok(Command::Loopback),
+        Some("package-install") => iter
+            .next()
+            .map(Command::PackageInstall)
+            .ok_or_else(|| ParseError::UnknownCommand("package-install".to_owned())),
         Some(other) => Err(ParseError::UnknownCommand(other.to_owned())),
     }
 }
 
 pub mod loopback;
+pub mod package_install;
 
 #[cfg(test)]
 mod tests {
@@ -63,6 +69,14 @@ mod tests {
         assert_eq!(
             parse_args(["vesc-host-cli", "loopback"]),
             Ok(Command::Loopback)
+        );
+    }
+
+    #[test]
+    fn parses_package_install_command() {
+        assert_eq!(
+            parse_args(["vesc-host-cli", "package-install", "foo.vescpkg"]),
+            Ok(Command::PackageInstall("foo.vescpkg".to_owned()))
         );
     }
 

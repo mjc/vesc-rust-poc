@@ -32,6 +32,30 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Ok(vesc_host_cli::Command::PackageInstall(path)) => {
+            let package = match vesc_host_cli::package_install::read_package_from_path(&path) {
+                Ok(package) => package,
+                Err(error) => {
+                    eprintln!("failed to read package {path}: {error}");
+                    return ExitCode::from(1);
+                }
+            };
+
+            let transport = vesc_host_cli::package_install::FakePackageInstallTransport::default();
+            match vesc_host_cli::package_install::install_package(&package, &transport) {
+                Ok(report) => {
+                    println!(
+                        "package install ok for {}: {:?}",
+                        report.package_name, report.steps
+                    );
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("package install failed: {error}");
+                    ExitCode::from(1)
+                }
+            }
+        }
         Err(vesc_host_cli::ParseError::UnknownCommand(command)) => {
             eprintln!("unknown command: {command}");
             ExitCode::from(2)
