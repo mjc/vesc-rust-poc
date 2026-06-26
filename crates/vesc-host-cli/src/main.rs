@@ -3,7 +3,9 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     match vesc_host_cli::parse_args(std::env::args()) {
         Ok(vesc_host_cli::Command::Help) => {
-            println!("vesc-host-cli: use `layout`, `status`, `loopback`, or `package-install`");
+            println!(
+                "vesc-host-cli: use `layout`, `status`, `scan`, `loopback`, or `package-install`"
+            );
             ExitCode::SUCCESS
         }
         Ok(vesc_host_cli::Command::Layout) => {
@@ -14,6 +16,21 @@ fn main() -> ExitCode {
             println!("status: placeholder host surface");
             ExitCode::SUCCESS
         }
+        Ok(vesc_host_cli::Command::Scan) => match vesc_host_cli::btle::scan_devices() {
+            Ok(devices) => {
+                devices.into_iter().for_each(|device| {
+                    println!(
+                        "{} {:?} {:?}",
+                        device.identifier, device.local_name, device.services
+                    );
+                });
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("scan failed: {error}");
+                ExitCode::from(1)
+            }
+        },
         Ok(vesc_host_cli::Command::Loopback) => {
             match vesc_host_cli::btle::BtleLoopbackTransport::new() {
                 Ok(transport) => match vesc_host_cli::loopback::run_loopback(&transport) {

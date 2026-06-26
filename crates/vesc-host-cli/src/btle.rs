@@ -1,9 +1,14 @@
-use crate::ble_scan::vesc_tool_scan_filter;
+use crate::ble_discovery::{
+    find_matching_peripheral, vesc_tool_scan_filter, DiscoveredPeripheral, DiscoveryError,
+};
 use crate::loopback::{LoopbackTarget, LoopbackTransport, LoopbackTransportError};
-use btleplug::api::{Central, Characteristic, Manager as _, Peripheral as _, WriteType};
-use btleplug::platform::{Adapter, Manager, Peripheral};
+use btleplug::api::{
+    Central, CentralEvent, Characteristic, Manager as _, Peripheral as _, WriteType,
+};
+use btleplug::platform::{Manager, Peripheral};
 use futures_util::StreamExt;
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::sync::mpsc::{self, Receiver};
 use std::time::Duration;
 use tokio::runtime::{Builder, Runtime};
@@ -113,9 +118,11 @@ async fn open_session(target: LoopbackTarget) -> Result<BtleSession, LoopbackTra
 
     let discovered = time::timeout(SCAN_TIMEOUT, find_matching_peripheral(&adapter, &target))
         .await
-        .map_err(|_| LoopbackTransportError::ScanTimeout)??;
+        .map_err(|_| LoopbackTransportError::ScanTimeout)?
+        .map_err(map_discovery_error)?;
 
     let peripheral = discovered;
+    let _ = adapter.stop_scan().await;
     time::timeout(CONNECT_TIMEOUT, peripheral.connect())
         .await
         .map_err(|_| LoopbackTransportError::ConnectFailed)?
@@ -167,57 +174,94 @@ async fn open_session(target: LoopbackTarget) -> Result<BtleSession, LoopbackTra
     })
 }
 
-async fn find_matching_peripheral(
-    adapter: &Adapter,
-    target: &LoopbackTarget,
-) -> Result<Peripheral, LoopbackTransportError> {
-    loop {
-        let peripherals = adapter
-            .peripherals()
-            .await
-            .map_err(|_| LoopbackTransportError::Device("failed to inspect BLE peripherals"))?;
+pub fn scan_devices() -> Result<Vec<DiscoveredPeripheral>, LoopbackTransportError> {
+    let runtime = Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(1)
+        .build()
+        .map_err(|_| LoopbackTransportError::Device("failed to start the BLE runtime"))?;
 
-        for peripheral in peripherals {
-            let properties = match peripheral.properties().await {
-                Ok(Some(properties)) => properties,
-                _ => continue,
+    runtime.block_on(async move {
+        let manager = Manager::new()
+            .await
+            .map_err(|_| LoopbackTransportError::Device("failed to initialize Bluetooth"))?;
+        let adapters = manager.adapters().await.map_err(|_| {
+            LoopbackTransportError::Device("failed to enumerate Bluetooth adapters")
+        })?;
+        let adapter = adapters
+            .into_iter()
+            .next()
+            .ok_or(LoopbackTransportError::ScanTimeout)?;
+
+        adapter
+            .start_scan(vesc_tool_scan_filter())
+            .await
+            .map_err(|_| LoopbackTransportError::Device("failed to start BLE scan"))?;
+
+        let mut events = adapter
+            .events()
+            .await
+            .map_err(|_| LoopbackTransportError::Device("failed to open BLE event stream"))?;
+        let deadline = tokio::time::Instant::now() + SCAN_TIMEOUT;
+        let mut devices = Vec::new();
+        let mut seen = HashSet::new();
+
+        while tokio::time::Instant::now() < deadline {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            let Some(event) = time::timeout(remaining, events.next())
+                .await
+                .map_err(|_| LoopbackTransportError::ScanTimeout)?
+            else {
+                continue;
             };
 
-            if target_matches_properties(
-                target,
-                Some(&properties.address.to_string()),
-                properties.local_name.as_deref(),
-                &properties.services,
-            ) {
-                return Ok(peripheral);
+            let peripheral_id = match event {
+                CentralEvent::DeviceDiscovered(id)
+                | CentralEvent::DeviceUpdated(id)
+                | CentralEvent::DeviceConnected(id)
+                | CentralEvent::DeviceDisconnected(id)
+                | CentralEvent::ServicesAdvertisement { id, .. }
+                | CentralEvent::ServiceDataAdvertisement { id, .. }
+                | CentralEvent::ManufacturerDataAdvertisement { id, .. } => id,
+                CentralEvent::StateUpdate(_) => continue,
+            };
+
+            let peripheral = adapter
+                .peripheral(&peripheral_id)
+                .await
+                .map_err(|_| LoopbackTransportError::Device("failed to inspect BLE peripherals"))?;
+            let Some(properties) = peripheral
+                .properties()
+                .await
+                .map_err(|_| LoopbackTransportError::Device("failed to inspect BLE peripherals"))?
+            else {
+                continue;
+            };
+
+            let identifier = properties.address.to_string();
+            if seen.insert(identifier.clone()) {
+                devices.push(DiscoveredPeripheral {
+                    identifier,
+                    local_name: properties.local_name,
+                    services: properties.services,
+                });
             }
         }
 
-        time::sleep(Duration::from_millis(250)).await;
-    }
+        let _ = adapter.stop_scan().await;
+        Ok(devices)
+    })
 }
 
-fn target_matches_properties(
-    target: &LoopbackTarget,
-    address: Option<&str>,
-    local_name: Option<&str>,
-    services: &[Uuid],
-) -> bool {
-    let address_matches = target
-        .address()
-        .zip(address)
-        .map(|(expected, actual)| expected.eq_ignore_ascii_case(actual))
-        .unwrap_or(false);
-    let name_matches = local_name
-        .map(|name| {
-            name.eq_ignore_ascii_case(target.device_name_hint())
-                || name.eq_ignore_ascii_case(target.service_name_hint())
-        })
-        .unwrap_or(false);
-    let service_matches =
-        !target.requires_explicit_match() && services.contains(&VESC_BLE_UART_SERVICE_UUID);
-
-    address_matches || name_matches || service_matches
+fn map_discovery_error(error: DiscoveryError) -> LoopbackTransportError {
+    match error {
+        DiscoveryError::InspectFailed => {
+            LoopbackTransportError::Device("failed to inspect BLE peripherals")
+        }
+        DiscoveryError::EventStreamFailed => {
+            LoopbackTransportError::Device("failed to open BLE event stream")
+        }
+    }
 }
 
 pub fn vesc_ble_uart_service_uuid() -> Uuid {
@@ -234,11 +278,7 @@ pub fn vesc_ble_uart_tx_uuid() -> Uuid {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        target_matches_properties, vesc_ble_uart_rx_uuid, vesc_ble_uart_service_uuid,
-        vesc_ble_uart_tx_uuid,
-    };
-    use crate::loopback::LoopbackTarget;
+    use super::{vesc_ble_uart_rx_uuid, vesc_ble_uart_service_uuid, vesc_ble_uart_tx_uuid};
 
     #[test]
     fn exports_the_vesc_ble_uart_profile_uuids() {
@@ -254,71 +294,5 @@ mod tests {
             vesc_ble_uart_tx_uuid().to_string(),
             "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
         );
-    }
-
-    #[test]
-    fn matches_a_known_vesc_service_uuid() {
-        assert!(target_matches_properties(
-            &LoopbackTarget::default(),
-            Some("AA:BB:CC:DD:EE:FF"),
-            Some("something-else"),
-            &[vesc_ble_uart_service_uuid()]
-        ));
-    }
-
-    #[test]
-    fn falls_back_to_the_target_name_hint() {
-        assert!(target_matches_properties(
-            &LoopbackTarget::default(),
-            Some("AA:BB:CC:DD:EE:FF"),
-            Some("vesc-loopback-test"),
-            &[]
-        ));
-    }
-
-    #[test]
-    fn rejects_unrelated_devices() {
-        assert!(!target_matches_properties(
-            &LoopbackTarget::default(),
-            Some("AA:BB:CC:DD:EE:FF"),
-            Some("other-device"),
-            &[]
-        ));
-    }
-
-    #[test]
-    fn explicit_name_target_does_not_fall_back_to_service_uuid() {
-        let target = LoopbackTarget::named("Floatwheel PintV");
-
-        assert!(target_matches_properties(
-            &target,
-            Some("AA:BB:CC:DD:EE:FF"),
-            Some("Floatwheel PintV"),
-            &[]
-        ));
-        assert!(!target_matches_properties(
-            &target,
-            Some("AA:BB:CC:DD:EE:FF"),
-            Some("something-else"),
-            &[vesc_ble_uart_service_uuid()]
-        ));
-    }
-
-    #[test]
-    fn explicit_address_target_matches_address() {
-        let target = LoopbackTarget::addressed("AA:BB:CC:DD:EE:FF");
-
-        assert!(target_matches_properties(
-            &target,
-            Some("aa:bb:cc:dd:ee:ff"),
-            Some("something-else"),
-            &[]
-        ));
-        assert!(!target_matches_properties(
-            &target,
-            Some("11:22:33:44:55:66"),
-            Some("something-else"),
-            &[vesc_ble_uart_service_uuid()]
-        ));
     }
 }

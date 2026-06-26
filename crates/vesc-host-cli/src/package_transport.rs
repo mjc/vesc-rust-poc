@@ -11,13 +11,11 @@ use futures_util::StreamExt;
 use tokio::runtime::{Builder, Runtime};
 use tokio::time;
 
-use crate::ble_scan::vesc_tool_scan_filter;
+use crate::ble_discovery::{find_matching_peripheral, vesc_tool_scan_filter, DiscoveryError};
 use crate::loopback::LoopbackTarget;
 use crate::package_install::{PackageInstallError, PackageInstallTransport};
 use crate::vesc_uart::{encode_packet, PacketDecoder};
 
-const VESC_BLE_UART_SERVICE_UUID: uuid::Uuid =
-    uuid::Uuid::from_u128(0x6e400001b5a3f393e0a9e50e24dcca9e);
 const VESC_BLE_UART_RX_UUID: uuid::Uuid = uuid::Uuid::from_u128(0x6e400002b5a3f393e0a9e50e24dcca9e);
 const VESC_BLE_UART_TX_UUID: uuid::Uuid = uuid::Uuid::from_u128(0x6e400003b5a3f393e0a9e50e24dcca9e);
 
@@ -361,7 +359,10 @@ async fn open_session(target: LoopbackTarget) -> Result<VescSession, PackageInst
         .await
         .map_err(|_| {
             PackageInstallError::Device("scan timed out while opening the BLE transport".to_owned())
-        })??;
+        })?
+        .map_err(map_discovery_error)?;
+
+    let _ = adapter.stop_scan().await;
 
     time::timeout(CONNECT_TIMEOUT, peripheral.connect())
         .await
@@ -422,42 +423,14 @@ async fn open_session(target: LoopbackTarget) -> Result<VescSession, PackageInst
     })
 }
 
-async fn find_matching_peripheral(
-    adapter: &btleplug::platform::Adapter,
-    target: &LoopbackTarget,
-) -> Result<Peripheral, PackageInstallError> {
-    loop {
-        let peripherals = adapter.peripherals().await.map_err(|_| {
+fn map_discovery_error(error: DiscoveryError) -> PackageInstallError {
+    match error {
+        DiscoveryError::InspectFailed => {
             PackageInstallError::Device("failed to inspect BLE peripherals".to_owned())
-        })?;
-
-        for peripheral in peripherals {
-            let properties = match peripheral.properties().await {
-                Ok(Some(properties)) => properties,
-                _ => continue,
-            };
-
-            let address_matches = target
-                .address()
-                .map(|address| properties.address.to_string().eq_ignore_ascii_case(address))
-                .unwrap_or(false);
-            let name_matches = properties
-                .local_name
-                .as_deref()
-                .map(|name| {
-                    name.eq_ignore_ascii_case(target.device_name_hint())
-                        || name.eq_ignore_ascii_case(target.service_name_hint())
-                })
-                .unwrap_or(false);
-            let service_matches = !target.requires_explicit_match()
-                && properties.services.contains(&VESC_BLE_UART_SERVICE_UUID);
-
-            if address_matches || name_matches || service_matches {
-                return Ok(peripheral);
-            }
         }
-
-        time::sleep(Duration::from_millis(250)).await;
+        DiscoveryError::EventStreamFailed => {
+            PackageInstallError::Device("failed to open the BLE event stream".to_owned())
+        }
     }
 }
 

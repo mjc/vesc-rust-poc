@@ -3,6 +3,7 @@ pub enum Command {
     Help,
     Layout,
     Status,
+    Scan,
     Loopback,
     PackageInstall(PackageInstallCommand),
 }
@@ -31,6 +32,7 @@ where
         None | Some("-h") | Some("--help") => Ok(Command::Help),
         Some("layout") => Ok(Command::Layout),
         Some("status") => Ok(Command::Status),
+        Some("scan") => Ok(Command::Scan),
         Some("loopback") => Ok(Command::Loopback),
         Some("package-install") => parse_package_install(iter).map(Command::PackageInstall),
         Some(other) => Err(ParseError::UnknownCommand(other.to_owned())),
@@ -72,7 +74,7 @@ fn parse_package_install(
         .ok_or_else(|| ParseError::UnknownCommand("package-install".to_owned()))
 }
 
-mod ble_scan;
+mod ble_discovery;
 pub mod btle;
 pub mod loopback;
 pub mod package_install;
@@ -92,6 +94,11 @@ mod tests {
     #[test]
     fn parses_status_command() {
         assert_eq!(parse_args(["vesc-host-cli", "status"]), Ok(Command::Status));
+    }
+
+    #[test]
+    fn parses_scan_command() {
+        assert_eq!(parse_args(["vesc-host-cli", "scan"]), Ok(Command::Scan));
     }
 
     #[test]
