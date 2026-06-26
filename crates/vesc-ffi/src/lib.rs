@@ -169,7 +169,7 @@ pub trait LbmBindings {
     /// # Safety
     /// `name` must be a valid NUL-terminated string for the duration of the call,
     /// and `handler` must obey the firmware's extension callback ABI.
-    unsafe fn add_extension(&self, name: *const c_char, handler: ExtensionHandler) -> i32;
+    unsafe fn add_extension(&self, name: *const c_char, handler: ExtensionHandler) -> bool;
     /// # Safety
     /// `value` must be a valid firmware-provided LispBM value.
     unsafe fn decode_i32(&self, value: LbmValue) -> i32;
@@ -199,7 +199,7 @@ pub enum ExtensionNameError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RegisterError {
     InvalidExtensionName,
-    FirmwareRejected(i32),
+    FirmwareRejected,
 }
 
 #[derive(Clone, Copy)]
@@ -233,7 +233,7 @@ impl ExtensionDescriptor {
 pub struct RealBindings;
 
 impl LbmBindings for RealBindings {
-    unsafe fn add_extension(&self, name: *const c_char, handler: ExtensionHandler) -> i32 {
+    unsafe fn add_extension(&self, name: *const c_char, handler: ExtensionHandler) -> bool {
         unsafe { raw::lbm_add_extension(name, handler) }
     }
 
@@ -273,7 +273,7 @@ impl<B: LbmBindings> LbmApi<B> {
         &self.bindings
     }
 
-    pub fn register_extension(&self, name: &CStr, handler: ExtensionHandler) -> i32 {
+    pub fn register_extension(&self, name: &CStr, handler: ExtensionHandler) -> bool {
         unsafe { self.bindings.add_extension(name.as_ptr(), handler) }
     }
 
@@ -287,7 +287,7 @@ impl<B: LbmBindings> LbmApi<B> {
         image: NativeImage,
         name: &CStr,
         handler: ExtensionHandler,
-    ) -> i32 {
+    ) -> bool {
         let name = image.rebase_ptr(name.as_ptr());
         let handler = unsafe { image.rebase_extension_handler(handler) };
         unsafe { self.bindings.add_extension(name, handler) }
@@ -321,21 +321,18 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         }
     }
 
-    pub fn register_extension(
-        &self,
-        descriptor: ExtensionDescriptor,
-    ) -> Result<i32, RegisterError> {
+    pub fn register_extension(&self, descriptor: ExtensionDescriptor) -> Result<(), RegisterError> {
         let descriptor = descriptor
             .validate()
             .map_err(|_| RegisterError::InvalidExtensionName)?;
 
-        let result = self
+        if self
             .api
-            .register_extension(descriptor.name(), descriptor.handler());
-        if result < 0 {
-            Err(RegisterError::FirmwareRejected(result))
+            .register_extension(descriptor.name(), descriptor.handler())
+        {
+            Ok(())
         } else {
-            Ok(result)
+            Err(RegisterError::FirmwareRejected)
         }
     }
 
@@ -347,18 +344,17 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         &self,
         image: NativeImage,
         descriptor: ExtensionDescriptor,
-    ) -> Result<i32, RegisterError> {
+    ) -> Result<(), RegisterError> {
         // Do not validate `descriptor.name()` here: when this runs inside the
         // loaded native image, the C string pointer is still an image offset
         // until `register_extension_from_image` applies `lib_info.base_addr`.
-        let result = unsafe {
+        if unsafe {
             self.api
                 .register_extension_from_image(image, descriptor.name(), descriptor.handler())
-        };
-        if result < 0 {
-            Err(RegisterError::FirmwareRejected(result))
+        } {
+            Ok(())
         } else {
-            Ok(result)
+            Err(RegisterError::FirmwareRejected)
         }
     }
 
@@ -457,8 +453,8 @@ pub mod raw {
     ///
     /// `name` must point to a valid, NUL-terminated extension name and
     /// `handler` must use the firmware LispBM extension ABI.
-    pub unsafe fn lbm_add_extension(name: *const c_char, handler: ExtensionHandler) -> i32 {
-        unsafe { ((*VESC_IF).lbm_add_extension)(name as *mut c_char, handler) as i32 }
+    pub unsafe fn lbm_add_extension(name: *const c_char, handler: ExtensionHandler) -> bool {
+        unsafe { ((*VESC_IF).lbm_add_extension)(name as *mut c_char, handler) }
     }
 
     /// # Safety
@@ -552,15 +548,15 @@ mod tests {
         encode_calls: Cell<usize>,
         last_name: Cell<usize>,
         last_handler: Cell<usize>,
-        add_results: Cell<[i32; 2]>,
+        add_results: Cell<[bool; 2]>,
     }
 
     impl FakeBindings {
         fn new() -> Self {
-            Self::with_add_results([17, 17])
+            Self::with_add_results([true, true])
         }
 
-        fn with_add_results(add_results: [i32; 2]) -> Self {
+        fn with_add_results(add_results: [bool; 2]) -> Self {
             Self {
                 add_calls: Cell::new(0),
                 decode_calls: Cell::new(0),
@@ -573,7 +569,7 @@ mod tests {
     }
 
     impl LbmBindings for FakeBindings {
-        unsafe fn add_extension(&self, name: *const c_char, handler: ExtensionHandler) -> i32 {
+        unsafe fn add_extension(&self, name: *const c_char, handler: ExtensionHandler) -> bool {
             self.add_calls.set(self.add_calls.get() + 1);
             self.last_name.set(name as usize);
             self.last_handler.set(handler as usize);
@@ -614,7 +610,7 @@ mod tests {
         let api = LbmApi::new(bindings);
         let name = c"ext-rust-add";
 
-        assert_eq!(api.register_extension(name, stub_handler), 17);
+        assert!(api.register_extension(name, stub_handler));
         assert_eq!(api.decode_i32(LbmValue(3)), 3);
         assert_eq!(api.encode_i32(9), LbmValue(9));
         assert!(api.is_number(LbmValue(9)));
@@ -628,10 +624,7 @@ mod tests {
         let image = NativeImage::new(0x2000);
         let name = c"ext-rust-probe-v5";
 
-        assert_eq!(
-            unsafe { api.register_extension_from_image(image, name, stub_handler) },
-            17
-        );
+        assert!(unsafe { api.register_extension_from_image(image, name, stub_handler) });
         assert_eq!(
             api.bindings.last_name.get(),
             name.as_ptr() as usize + 0x2000
@@ -665,7 +658,7 @@ mod tests {
 
     #[test]
     fn package_registration_reports_name_validation_and_firmware_rejection() {
-        let bindings = FakeBindings::with_add_results([-42, 17]);
+        let bindings = FakeBindings::with_add_results([false, true]);
         let lifecycle = PackageLifecycle::new(bindings);
 
         let invalid = ExtensionDescriptor::new(c"bad-name", stub_handler);
@@ -677,13 +670,13 @@ mod tests {
         let rejected = ExtensionDescriptor::new(c"ext-rust-reject", stub_handler);
         assert_eq!(
             lifecycle.register_extension(rejected),
-            Err(RegisterError::FirmwareRejected(-42))
+            Err(RegisterError::FirmwareRejected)
         );
     }
 
     #[test]
     fn package_batch_registration_stops_on_the_first_failure() {
-        let bindings = FakeBindings::with_add_results([-42, 17]);
+        let bindings = FakeBindings::with_add_results([false, true]);
         let lifecycle = PackageLifecycle::new(bindings);
 
         let first = ExtensionDescriptor::new(c"ext-rust-a", stub_handler);
@@ -692,7 +685,7 @@ mod tests {
             unsafe {
                 lifecycle.register_extensions_from_image(NativeImage::new(0x2000), &[first, second])
             },
-            Err(RegisterError::FirmwareRejected(-42))
+            Err(RegisterError::FirmwareRejected)
         );
         assert_eq!(lifecycle.api.bindings.add_calls.get(), 1);
     }

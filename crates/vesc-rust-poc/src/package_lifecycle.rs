@@ -24,17 +24,17 @@ impl<B: LbmBindings> PackageLifecycle<B> {
     pub fn register_extension(
         &self,
         descriptor: ExtensionDescriptor,
-    ) -> Result<i32, ffi::RegisterError> {
+    ) -> Result<(), ffi::RegisterError> {
         let descriptor = descriptor
             .validate()
             .map_err(|_| ffi::RegisterError::InvalidExtensionName)?;
-        let result = self
+        if self
             .api
-            .register_extension(descriptor.name(), descriptor.handler());
-        if result < 0 {
-            Err(ffi::RegisterError::FirmwareRejected(result))
+            .register_extension(descriptor.name(), descriptor.handler())
+        {
+            Ok(())
         } else {
-            Ok(result)
+            Err(ffi::RegisterError::FirmwareRejected)
         }
     }
 
@@ -42,18 +42,17 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         &self,
         image: NativeImage,
         descriptor: ExtensionDescriptor,
-    ) -> Result<i32, ffi::RegisterError> {
+    ) -> Result<(), ffi::RegisterError> {
         // Image-owned C strings are offsets until the VESC loader applies
         // `lib_info.base_addr`; validating here would dereference an invalid
         // pre-rebase address on device.
-        let result = unsafe {
+        if unsafe {
             self.api
                 .register_extension_from_image(image, descriptor.name(), descriptor.handler())
-        };
-        if result < 0 {
-            Err(ffi::RegisterError::FirmwareRejected(result))
+        } {
+            Ok(())
         } else {
-            Ok(result)
+            Err(ffi::RegisterError::FirmwareRejected)
         }
     }
 
@@ -116,6 +115,7 @@ mod tests {
         decode_calls: Cell<usize>,
         last_name: Cell<usize>,
         last_handler: Cell<usize>,
+        add_result: Cell<bool>,
     }
 
     impl FakeBindings {
@@ -125,16 +125,28 @@ mod tests {
                 decode_calls: Cell::new(0),
                 last_name: Cell::new(0),
                 last_handler: Cell::new(0),
+                add_result: Cell::new(true),
+            }
+        }
+
+        fn rejecting() -> Self {
+            Self {
+                add_result: Cell::new(false),
+                ..Self::new()
             }
         }
     }
 
     impl LbmBindings for FakeBindings {
-        unsafe fn add_extension(&self, name: *const c_char, handler: ffi::ExtensionHandler) -> i32 {
+        unsafe fn add_extension(
+            &self,
+            name: *const c_char,
+            handler: ffi::ExtensionHandler,
+        ) -> bool {
             self.add_calls.set(self.add_calls.get() + 1);
             self.last_name.set(name as usize);
             self.last_handler.set(handler as usize);
-            17
+            self.add_result.get()
         }
 
         unsafe fn decode_i32(&self, value: LbmValue) -> i32 {
@@ -165,7 +177,7 @@ mod tests {
         let lifecycle = PackageLifecycle::new(bindings);
         let descriptor = ExtensionDescriptor::new(EXT_RUST_PROBE_NAME, stub_handler);
 
-        assert_eq!(lifecycle.register_extension(descriptor), Ok(17));
+        assert_eq!(lifecycle.register_extension(descriptor), Ok(()));
         assert_eq!(lifecycle.api.bindings().add_calls.get(), 1);
         assert_eq!(
             EXT_RUST_PROBE_NAME.to_bytes_with_nul(),
@@ -196,6 +208,19 @@ mod tests {
             Err(ffi::RegisterError::InvalidExtensionName)
         );
         assert_eq!(lifecycle.api.bindings().add_calls.get(), 0);
+    }
+
+    #[test]
+    fn rejects_firmware_extension_registration_false() {
+        let bindings = FakeBindings::rejecting();
+        let lifecycle = PackageLifecycle::new(bindings);
+        let descriptor = ExtensionDescriptor::new(EXT_RUST_PROBE_NAME, stub_handler);
+
+        assert_eq!(
+            lifecycle.register_extension(descriptor),
+            Err(ffi::RegisterError::FirmwareRejected)
+        );
+        assert_eq!(lifecycle.api.bindings().add_calls.get(), 1);
     }
 
     #[test]
