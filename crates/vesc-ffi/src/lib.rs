@@ -454,34 +454,61 @@ pub mod raw {
 
     const VESC_IF: *const VescIf = VescIfAbi::BASE_ADDR.0 as *const VescIf;
 
+    /// # Safety
+    ///
+    /// `name` must point to a valid, NUL-terminated extension name and
+    /// `handler` must use the firmware LispBM extension ABI.
     pub unsafe fn lbm_add_extension(name: *const c_char, handler: ExtensionHandler) -> i32 {
         unsafe { ((*VESC_IF).lbm_add_extension)(name as *mut c_char, handler) as i32 }
     }
 
+    /// # Safety
+    ///
+    /// `value` must be a LispBM value supplied by the firmware.
     pub unsafe fn lbm_dec_as_i32(value: LbmValue) -> i32 {
         unsafe { ((*VESC_IF).lbm_dec_as_i32)(value) }
     }
 
+    /// # Safety
+    ///
+    /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
     pub unsafe fn lbm_enc_i(value: i32) -> LbmValue {
         unsafe { ((*VESC_IF).lbm_enc_i)(value) }
     }
 
+    /// # Safety
+    ///
+    /// `value` must be a LispBM value supplied by the firmware.
     pub unsafe fn lbm_is_number(value: LbmValue) -> bool {
         unsafe { ((*VESC_IF).lbm_is_number)(value) }
     }
 
+    /// # Safety
+    ///
+    /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
     pub unsafe fn lbm_enc_sym_eerror() -> LbmValue {
         unsafe { LbmValue((*VESC_IF).lbm_enc_sym_eerror) }
     }
 
+    /// # Safety
+    ///
+    /// `handler` must either be `None` or remain valid until replaced or
+    /// cleared by a later firmware call.
     pub unsafe fn vesc_set_app_data_handler(handler: Option<AppDataHandler>) -> bool {
         unsafe { ((*VESC_IF).set_app_data_handler)(handler) }
     }
 
+    /// # Safety
+    ///
+    /// `data` must point to at least `len` bytes that remain valid for the
+    /// duration of the firmware call.
     pub unsafe fn vesc_send_app_data(data: *const u8, len: u32) {
         unsafe { ((*VESC_IF).send_app_data)(data as *mut c_uchar, len) }
     }
 
+    /// # Safety
+    ///
+    /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
     pub unsafe fn vesc_system_time_ticks() -> u32 {
         unsafe { ((*VESC_IF).system_time_ticks)() }
     }
@@ -935,7 +962,7 @@ mod tests {
 
         assert_eq!(LbmInt(-7).0, -7);
         assert_eq!(LbmFloat(3.5).0, 3.5);
-        assert_eq!(HalfDuplex(true).0, true);
+        assert!(HalfDuplex(true).0);
         assert_eq!(ConfigXmlBytes(&raw).0, &raw);
         assert_eq!(ConfigPayload(&raw).0, &raw);
         assert_eq!(ThreadName(name).0, name);
