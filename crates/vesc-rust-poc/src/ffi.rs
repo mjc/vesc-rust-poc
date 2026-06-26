@@ -108,7 +108,7 @@ pub(crate) mod raw {
         lbm_is_number: unsafe extern "C" fn(LbmValue) -> bool,
         _reserved_before_lbm_enc_sym_eerror: [usize; 5],
         lbm_enc_sym_eerror: u32,
-        _reserved_after_lbm_enc_sym_eerror: [usize; 109],
+        _reserved_after_lbm_enc_sym_eerror: [usize; 110],
         send_app_data: unsafe extern "C" fn(*mut c_uchar, u32),
         set_app_data_handler: unsafe extern "C" fn(Option<AppDataHandler>) -> bool,
         _reserved_after_app_data: [usize; 88],
@@ -155,6 +155,20 @@ pub(crate) mod raw {
     pub(crate) unsafe fn vesc_system_time_ticks() -> u32 {
         // Safety: this forwards to the firmware's monotonic tick source.
         ((*VESC_IF).system_time_ticks)()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn vesc_if_offsets_for_tests() -> [usize; 8] {
+        [
+            core::mem::offset_of!(VescIf, lbm_add_extension),
+            core::mem::offset_of!(VescIf, lbm_enc_i),
+            core::mem::offset_of!(VescIf, lbm_dec_as_i32),
+            core::mem::offset_of!(VescIf, lbm_is_number),
+            core::mem::offset_of!(VescIf, lbm_enc_sym_eerror),
+            core::mem::offset_of!(VescIf, send_app_data),
+            core::mem::offset_of!(VescIf, set_app_data_handler),
+            core::mem::offset_of!(VescIf, system_time_ticks),
+        ]
     }
 }
 
@@ -227,5 +241,13 @@ mod tests {
         assert_eq!(api.encode_i32(9), LbmValue(9));
         assert!(api.is_number(LbmValue(9)));
         assert_eq!(api.encode_eval_error(), LbmValue(0xffff_ffff));
+    }
+
+    #[test]
+    fn raw_vesc_if_offsets_match_the_32_bit_package_header() {
+        let pointer_scale = core::mem::size_of::<usize>() / 4;
+        let expected = [0, 64, 100, 124, 148, 592, 596, 952].map(|offset| offset * pointer_scale);
+
+        assert_eq!(super::raw::vesc_if_offsets_for_tests(), expected);
     }
 }

@@ -471,10 +471,10 @@ mod tests {
         );
         for offset in [
             "1000f840",
-            "1000fa4c",
+            "1000fa50",
             "[r6, #360]",
             "[r6, #0]",
-            "[r5, #592]",
+            "[r5, #596]",
         ] {
             assert!(
                 disassembly.contains(offset),
