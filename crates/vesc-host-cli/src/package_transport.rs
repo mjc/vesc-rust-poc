@@ -25,6 +25,7 @@ const FW_VERSION_TIMEOUT: Duration = Duration::from_secs(8);
 const ERASE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(6);
 const WRITE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(1);
 const CHUNK_SIZE: usize = 384;
+const BLE_WRITE_CHUNK_SIZE: usize = 20;
 const WRITE_RETRIES: usize = 5;
 const QML_UPLOAD_LIMIT: usize = 1024 * 120;
 const LISP_UPLOAD_LIMIT_ESP32: usize = 1024 * 512 - 6;
@@ -79,14 +80,11 @@ struct VescSession {
 impl VescSession {
     fn query_fw_info(&mut self, runtime: &Runtime) -> Result<FwVersionInfo, PackageInstallError> {
         let request = encode_packet(&[COMM_FW_VERSION]);
-        runtime
-            .block_on(
-                self.peripheral
-                    .write(&self.rx_char, &request, WriteType::WithoutResponse),
-            )
-            .map_err(|_| {
-                PackageInstallError::Device("failed to query the firmware version".to_owned())
-            })?;
+        runtime.block_on(write_ble_uart_packet(
+            &self.peripheral,
+            &self.rx_char,
+            &request,
+        ))?;
 
         let response = self.recv_packet(COMM_FW_VERSION, FW_VERSION_TIMEOUT)?;
         parse_fw_version_info(&response)
@@ -202,10 +200,10 @@ impl BtlePackageInstallTransport {
 
         self.with_session(|session| {
             self.runtime
-                .block_on(session.peripheral.write(
+                .block_on(write_ble_uart_packet(
+                    &session.peripheral,
                     &session.rx_char,
                     &packet,
-                    WriteType::WithoutResponse,
                 ))
                 .map_err(|_| {
                     PackageInstallError::Device("failed to write a BLE command".to_owned())
@@ -387,20 +385,19 @@ async fn open_session(target: LoopbackTarget) -> Result<VescSession, PackageInst
         .cloned()
         .ok_or_else(|| PackageInstallError::Device("missing BLE TX characteristic".to_owned()))?;
 
+    let (responses_tx, responses_rx) = mpsc::channel();
+    let notification_uuid = tx_char.uuid;
+    let mut notifications = peripheral
+        .notifications()
+        .await
+        .map_err(|_| PackageInstallError::Device("missing BLE TX characteristic".to_owned()))?;
+
     peripheral
         .subscribe(&tx_char)
         .await
         .map_err(|_| PackageInstallError::Device("missing BLE TX characteristic".to_owned()))?;
 
-    let (responses_tx, responses_rx) = mpsc::channel();
-    let notification_peripheral = peripheral.clone();
-    let notification_uuid = tx_char.uuid;
-
     tokio::spawn(async move {
-        let Ok(mut notifications) = notification_peripheral.notifications().await else {
-            return;
-        };
-
         while let Some(notification) = notifications.next().await {
             if notification.uuid == notification_uuid
                 && responses_tx.send(notification.value).is_err()
@@ -421,6 +418,24 @@ async fn open_session(target: LoopbackTarget) -> Result<VescSession, PackageInst
             has_qml_app: false,
         },
     })
+}
+
+async fn write_ble_uart_packet(
+    peripheral: &Peripheral,
+    rx_char: &Characteristic,
+    packet: &[u8],
+) -> Result<(), PackageInstallError> {
+    for chunk in ble_write_chunks(packet) {
+        peripheral
+            .write(rx_char, chunk, WriteType::WithoutResponse)
+            .await
+            .map_err(|_| PackageInstallError::Device("failed to write a BLE command".to_owned()))?;
+    }
+    Ok(())
+}
+
+fn ble_write_chunks(packet: &[u8]) -> impl Iterator<Item = &[u8]> {
+    packet.chunks(BLE_WRITE_CHUNK_SIZE)
 }
 
 fn map_discovery_error(error: DiscoveryError) -> PackageInstallError {
@@ -562,9 +577,9 @@ fn malformed_reply(reason: &str) -> PackageInstallError {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_lisp_upload_payload, build_qml_upload_payload, parse_fw_version_info,
-        parse_simple_ack, parse_write_ack, FwVersionInfo, HwType, COMM_FW_VERSION,
-        COMM_LISP_WRITE_CODE, COMM_QMLUI_ERASE,
+        ble_write_chunks, build_lisp_upload_payload, build_qml_upload_payload,
+        parse_fw_version_info, parse_simple_ack, parse_write_ack, FwVersionInfo, HwType,
+        COMM_FW_VERSION, COMM_LISP_WRITE_CODE, COMM_QMLUI_ERASE,
     };
 
     #[test]
@@ -647,5 +662,15 @@ mod tests {
     fn allows_larger_lisp_uploads_for_non_vesc_hardware() {
         let lisp = vec![0_u8; 1024 * 128];
         assert!(build_lisp_upload_payload(&lisp, HwType::CustomModule).is_ok());
+    }
+
+    #[test]
+    fn ble_uart_writes_are_split_into_vesc_tool_sized_chunks() {
+        let packet = [0_u8; 41];
+        let chunks = ble_write_chunks(&packet)
+            .map(<[u8]>::len)
+            .collect::<Vec<_>>();
+
+        assert_eq!(chunks, vec![20, 20, 1]);
     }
 }

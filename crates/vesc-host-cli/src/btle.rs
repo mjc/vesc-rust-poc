@@ -20,6 +20,7 @@ const VESC_BLE_UART_TX_UUID: Uuid = Uuid::from_u128(0x6e400003b5a3f393e0a9e50e24
 const SCAN_TIMEOUT: Duration = Duration::from_secs(8);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
+const BLE_WRITE_CHUNK_SIZE: usize = 20;
 
 #[derive(Debug)]
 struct BtleSession {
@@ -78,10 +79,10 @@ impl LoopbackTransport for BtleLoopbackTransport {
         let session = self.session()?;
         let session = session.as_ref().expect("session checked above");
         self.runtime
-            .block_on(session.peripheral.write(
+            .block_on(write_ble_uart_packet(
+                &session.peripheral,
                 &session.rx_char,
                 request,
-                WriteType::WithoutResponse,
             ))
             .map_err(|_| LoopbackTransportError::Device("failed to write BLE request"))?;
         session.runtime_receive()
@@ -142,20 +143,19 @@ async fn open_session(target: LoopbackTarget) -> Result<BtleSession, LoopbackTra
         .cloned()
         .ok_or(LoopbackTransportError::MissingService)?;
 
+    let (responses_tx, responses_rx) = mpsc::channel();
+    let notification_uuid = tx_char.uuid;
+    let mut notifications = peripheral
+        .notifications()
+        .await
+        .map_err(|_| LoopbackTransportError::MissingService)?;
+
     peripheral
         .subscribe(&tx_char)
         .await
         .map_err(|_| LoopbackTransportError::MissingService)?;
 
-    let (responses_tx, responses_rx) = mpsc::channel();
-    let notification_peripheral = peripheral.clone();
-    let notification_uuid = tx_char.uuid;
-
     tokio::spawn(async move {
-        let Ok(mut notifications) = notification_peripheral.notifications().await else {
-            return;
-        };
-
         while let Some(notification) = notifications.next().await {
             if notification.uuid == notification_uuid
                 && responses_tx.send(notification.value).is_err()
@@ -170,6 +170,20 @@ async fn open_session(target: LoopbackTarget) -> Result<BtleSession, LoopbackTra
         rx_char,
         responses: responses_rx,
     })
+}
+
+async fn write_ble_uart_packet(
+    peripheral: &Peripheral,
+    rx_char: &Characteristic,
+    packet: &[u8],
+) -> Result<(), LoopbackTransportError> {
+    for chunk in packet.chunks(BLE_WRITE_CHUNK_SIZE) {
+        peripheral
+            .write(rx_char, chunk, WriteType::WithoutResponse)
+            .await
+            .map_err(|_| LoopbackTransportError::Device("failed to write BLE request"))?;
+    }
+    Ok(())
 }
 
 pub fn scan_devices() -> Result<Vec<DiscoveredPeripheral>, LoopbackTransportError> {
