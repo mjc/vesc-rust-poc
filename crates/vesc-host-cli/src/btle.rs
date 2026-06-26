@@ -309,16 +309,14 @@ pub fn run_lisp_probe() -> Result<LispProbeReport, LoopbackTransportError> {
         .map_err(|_| LoopbackTransportError::Device("failed to start the BLE runtime"))?;
 
     let mut session = runtime.block_on(open_session(LoopbackTarget::default()))?;
-    for command in [
-        r#"(print "vesc-rust-probe-v3")"#,
-        "(print (ext-rust-add 20 22))",
-    ] {
-        runtime.block_on(write_ble_uart_packet(
-            &session.peripheral,
-            &session.rx_char,
-            &build_lisp_repl_packet(command),
-        ))?;
-    }
+    let command = r#"(progn
+    (print "vesc-rust-probe-v4")
+    (print (ext-rust-add 20 22)))"#;
+    runtime.block_on(write_ble_uart_packet(
+        &session.peripheral,
+        &session.rx_char,
+        &build_lisp_repl_packet(command),
+    ))?;
     let prints = session.receive_lisp_prints()?;
 
     Ok(LispProbeReport { prints })
@@ -430,14 +428,21 @@ mod tests {
 
     #[test]
     fn wraps_lisp_probe_commands_in_repl_packets() {
-        let packet = build_lisp_repl_packet("(print 42)");
+        let command = r#"(progn
+    (print "vesc-rust-probe-v4")
+    (print (ext-rust-add 20 22)))"#;
+        let packet = build_lisp_repl_packet(command);
         let decoded = PacketDecoder::new()
             .push(&packet)
             .expect("valid packet")
             .pop()
             .expect("complete packet");
 
-        assert_eq!(decoded, b"\x8a(print 42)\0");
+        let mut expected = Vec::with_capacity(command.len() + 2);
+        expected.push(COMM_LISP_REPL_CMD);
+        expected.extend_from_slice(command.as_bytes());
+        expected.push(0);
+        assert_eq!(decoded, expected);
         assert_eq!(decoded[0], COMM_LISP_REPL_CMD);
     }
 
