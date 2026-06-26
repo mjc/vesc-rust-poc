@@ -156,11 +156,13 @@ mod tests {
             assets.render_loader(),
             "(import \"src/package_lib.bin\" 'package-lib)\n(print \"vesc-rust-load-v7\")\n(print (load-native-lib package-lib))\n(loopwhile t {\n    (sleep 1.0)\n})\n"
         );
-        assert!(assets.render_loader().contains("vesc-rust-load-v7"));
-        assert!(assets.render_loader().contains("(loopwhile t"));
-        assert!(assets.render_loader().contains("(sleep 1.0)"));
+        let loader = assets.render_loader();
+        assert_eq!(loader.matches("load-native-lib").count(), 1);
+        assert!(loader.contains("vesc-rust-load-v7"));
+        assert!(loader.contains("(loopwhile t"));
+        assert!(loader.contains("(sleep 1.0)"));
         assert!(
-            !assets.render_loader().contains("ext-rust-add"),
+            !loader.contains("ext-rust-add"),
             "expected the BLE loopback package loader to only load the native library"
         );
     }

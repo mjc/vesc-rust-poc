@@ -231,7 +231,7 @@ pub(crate) mod raw {
 mod tests {
     use super::{ExtensionHandler, LbmApi, LbmBindings, LbmCount, LbmValue, NativeImage};
     use core::cell::Cell;
-    use core::ffi::c_char;
+    use core::ffi::{c_char, c_void};
 
     struct FakeBindings {
         add_calls: Cell<usize>,
@@ -291,6 +291,10 @@ mod tests {
         LbmValue(0)
     }
 
+    unsafe extern "C" fn stub_app_data_handler(_data: *mut u8, _len: u32) {}
+
+    unsafe extern "C" fn stub_stop_handler(_arg: *mut c_void) {}
+
     #[test]
     fn wrapper_delegates_through_the_binding_trait() {
         let bindings = FakeBindings::new();
@@ -325,6 +329,20 @@ mod tests {
         );
         assert_eq!(image.rebase_addr(0x61), 0x2061);
         assert_eq!(image.rebase_ptr(0x1df as *const c_char) as usize, 0x21df);
+
+        let rebased_app_data =
+            unsafe { image.rebase_app_data_handler(stub_app_data_handler) } as *const () as usize;
+        assert_eq!(
+            rebased_app_data,
+            stub_app_data_handler as *const () as usize + 0x2000
+        );
+
+        let rebased_stop =
+            unsafe { image.rebase_stop_handler(stub_stop_handler) } as *const () as usize;
+        assert_eq!(
+            rebased_stop,
+            stub_stop_handler as *const () as usize + 0x2000
+        );
     }
 
     #[test]

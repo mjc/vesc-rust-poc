@@ -154,6 +154,28 @@ mod tests {
     }
 
     #[test]
+    fn round_trips_every_loopback_command() {
+        let payload = [0xaa, 0x55];
+
+        [
+            (WireCommand::Ping, &[][..]),
+            (WireCommand::Echo, &payload[..]),
+            (WireCommand::Status, &payload[..]),
+            (WireCommand::Teardown, &[][..]),
+        ]
+        .into_iter()
+        .for_each(|(command, payload)| {
+            let packet = LoopbackPacket::new(command, payload).expect("loopback packet");
+            let (bytes, len) = packet.encode();
+            let decoded = LoopbackPacket::decode(&bytes[..len]).expect("decoded packet");
+
+            assert_eq!(decoded.frame().version(), BLE_LOOPBACK_PROTOCOL_VERSION);
+            assert_eq!(decoded.frame().command(), command);
+            assert_eq!(decoded.frame().payload(), payload);
+        });
+    }
+
+    #[test]
     fn rejects_unknown_versions_and_commands() {
         assert_eq!(
             LoopbackPacket::decode(&[2, WireCommand::Ping.code(), 0]),
