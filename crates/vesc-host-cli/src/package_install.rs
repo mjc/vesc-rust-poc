@@ -141,11 +141,19 @@ pub fn read_package_from_path(path: impl AsRef<Path>) -> Result<VescPackage, Pac
 }
 
 pub fn decode_package(data: &[u8]) -> Result<VescPackage, PackageInstallError> {
-    let mut decoder = ZlibDecoder::new(data);
+    if data.len() < 4 {
+        return Err(PackageInstallError::InvalidPackage);
+    }
+
+    let expected_len = u32::from_be_bytes(data[..4].try_into().expect("slice length")) as usize;
+    let mut decoder = ZlibDecoder::new(&data[4..]);
     let mut bytes = Vec::new();
     decoder
         .read_to_end(&mut bytes)
         .map_err(|error| PackageInstallError::Io(error.to_string()))?;
+    if bytes.len() != expected_len {
+        return Err(PackageInstallError::InvalidPackage);
+    }
 
     let mut cursor = &bytes[..];
     if read_string(&mut cursor)? != "VESC Packet" {
@@ -164,7 +172,8 @@ pub fn decode_package(data: &[u8]) -> Result<VescPackage, PackageInstallError> {
 
     while !cursor.is_empty() {
         let field = read_string(&mut cursor)?;
-        let len = read_u32(&mut cursor)? as usize;
+        let len = read_i32_be(&mut cursor)?;
+        let len = usize::try_from(len).map_err(|_| PackageInstallError::InvalidPackage)?;
         let field_bytes = take(&mut cursor, len)?;
 
         match field.as_str() {
@@ -242,14 +251,17 @@ pub fn install_package<T: PackageInstallTransport>(
 }
 
 fn read_string(cursor: &mut &[u8]) -> Result<String, PackageInstallError> {
-    let len = read_u32(cursor)? as usize;
+    let Some(len) = cursor.iter().position(|byte| *byte == 0) else {
+        return Err(PackageInstallError::InvalidPackage);
+    };
     let bytes = take(cursor, len)?;
+    take(cursor, 1)?;
     String::from_utf8(bytes).map_err(invalid_utf8)
 }
 
-fn read_u32(cursor: &mut &[u8]) -> Result<u32, PackageInstallError> {
+fn read_i32_be(cursor: &mut &[u8]) -> Result<i32, PackageInstallError> {
     let bytes = take(cursor, 4)?;
-    Ok(u32::from_le_bytes(bytes.try_into().expect("slice length")))
+    Ok(i32::from_be_bytes(bytes.try_into().expect("slice length")))
 }
 
 fn take(cursor: &mut &[u8], len: usize) -> Result<Vec<u8>, PackageInstallError> {
@@ -266,7 +278,7 @@ fn invalid_utf8(_: std::string::FromUtf8Error) -> PackageInstallError {
 }
 
 fn qml_compress(script: &str) -> Result<Vec<u8>, PackageInstallError> {
-    let raw = format!("import Vedder.vesc.vescinterface 1.0;import \"qrc:/mobile\";{script}")
+    let raw = format!("import \"qrc:/mobile\";import Vedder.vesc.vescinterface 1.0;{script}")
         .into_bytes();
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
     encoder
@@ -285,11 +297,12 @@ fn qml_compress(script: &str) -> Result<Vec<u8>, PackageInstallError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_package, install_package, qml_compress, FakePackageInstallTransport,
-        PackageInstallStep,
+        decode_package, install_package, qml_compress, read_package_from_path,
+        FakePackageInstallTransport, PackageInstallStep,
     };
     use flate2::{write::ZlibEncoder, Compression};
     use std::io::Write;
+    use std::path::Path;
 
     fn build_package_bytes() -> Vec<u8> {
         let mut data = Vec::new();
@@ -303,9 +316,7 @@ mod tests {
         );
         write_field(&mut data, "qmlIsFullscreen", &[1]);
 
-        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
-        encoder.write_all(&data).unwrap();
-        encoder.finish().unwrap()
+        q_compress(&data)
     }
 
     fn build_lisp_only_package_bytes() -> Vec<u8> {
@@ -318,20 +329,29 @@ mod tests {
             b"(load-native-lib \"src/package_lib.bin\")\n",
         );
 
-        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
-        encoder.write_all(&data).unwrap();
-        encoder.finish().unwrap()
+        q_compress(&data)
     }
 
     fn write_string(buf: &mut Vec<u8>, value: &str) {
-        buf.extend_from_slice(&(value.len() as u32).to_le_bytes());
         buf.extend_from_slice(value.as_bytes());
+        buf.push(0);
     }
 
     fn write_field(buf: &mut Vec<u8>, name: &str, data: &[u8]) {
         write_string(buf, name);
-        buf.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        buf.extend_from_slice(&(data.len() as i32).to_be_bytes());
         buf.extend_from_slice(data);
+    }
+
+    fn q_compress(data: &[u8]) -> Vec<u8> {
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
+        encoder.write_all(data).unwrap();
+        let compressed = encoder.finish().unwrap();
+
+        let mut output = Vec::with_capacity(4 + compressed.len());
+        output.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        output.extend_from_slice(&compressed);
+        output
     }
 
     #[test]
@@ -340,6 +360,33 @@ mod tests {
         assert_eq!(package.name, "Rust BLE loopback test package");
         assert!(package.qml_is_fullscreen);
         assert!(package.load_ok());
+    }
+
+    #[test]
+    fn rejects_non_qcompress_packages() {
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
+        encoder.write_all(b"VESC Packet\0").unwrap();
+        let package = encoder.finish().unwrap();
+
+        assert!(decode_package(&package).is_err());
+    }
+
+    #[test]
+    fn decodes_refloat_vesc_tool_fixture_when_present() {
+        let path = Path::new("/home/mjc/projects/refloat/refloat.vescpkg");
+        if !path.exists() {
+            return;
+        }
+
+        let package = read_package_from_path(path).expect("refloat package");
+
+        assert_eq!(package.name, "Refloat");
+        assert!(!package.qml_file.is_empty());
+        assert!(!package.lisp_data.is_empty());
+        assert!(
+            package.lisp_data.len() < 128 * 1024,
+            "fixture should stay below the VESC Lisp data limit"
+        );
     }
 
     #[test]
