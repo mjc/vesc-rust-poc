@@ -353,6 +353,19 @@ mod tests {
     }
 
     #[test]
+    fn rust_only_native_blob_stays_under_compactness_guard() {
+        build_final_native_lib_binary(&native_lib_bin_path());
+
+        let native_bin_size = fs::metadata(native_lib_bin_path())
+            .expect("native-lib binary metadata")
+            .len();
+        assert!(
+            native_bin_size <= 512,
+            "expected the Rust-only native blob to stay compact, got {native_bin_size} bytes"
+        );
+    }
+
+    #[test]
     fn final_native_lib_elf_is_a_fully_linked_executable_image() {
         build_final_native_lib_elf();
 
@@ -480,6 +493,31 @@ mod tests {
     }
 
     #[test]
+    fn rust_only_native_artifact_has_no_package_c_shim_symbols() {
+        build_final_native_lib_elf();
+
+        let package_object = nm_output(&package_lib_object_path());
+        let package_defined = defined_symbols(&package_object);
+        let final_symbols = nm_output(&native_lib_elf_path());
+        let final_defined = defined_symbols(&final_symbols);
+
+        for forbidden in ["init", "package_lib_init", "ext_c_probe_v6"] {
+            assert!(
+                !package_defined.contains(forbidden),
+                "package-specific C object must not define `{forbidden}`:\n{package_object}"
+            );
+            assert!(
+                !final_defined.contains(forbidden) || matches!(forbidden, "init" | "package_lib_init"),
+                "final Rust-only image must not retain C shim symbol `{forbidden}`:\n{final_symbols}"
+            );
+        }
+        assert!(
+            final_defined.contains("init") && final_defined.contains("package_lib_init"),
+            "Rust-owned native image must keep loader and package entry symbols:\n{final_symbols}"
+        );
+    }
+
+    #[test]
     fn final_native_lib_retains_the_rust_owned_boundary_symbols() {
         build_final_native_lib_elf();
 
@@ -587,6 +625,33 @@ mod tests {
     }
 
     #[test]
+    fn rust_only_native_artifact_rebases_all_firmware_callbacks() {
+        build_final_native_lib_elf();
+
+        let disassembly = command_stdout(
+            "arm-none-eabi-objdump",
+            [PathBuf::from("-d"), native_lib_elf_path()],
+        );
+        let package_init_disassembly = disassembly
+            .split("<package_lib_init>:")
+            .nth(1)
+            .expect("expected package_lib_init in disassembly");
+
+        for expected in [
+            "[r0, #8]",
+            "add\tr1, r0",
+            "str\tr1, [r4, #0]",
+            "#596]",
+            "#0]",
+        ] {
+            assert!(
+                package_init_disassembly.contains(expected),
+                "missing Rust-only callback rebase/registration marker `{expected}`:\n{package_init_disassembly}"
+            );
+        }
+    }
+
+    #[test]
     fn final_native_lib_elf_allows_only_the_expected_firmware_calls() {
         assert!(is_allowed_final_native_lib_symbol("lbm_add_extension"));
         assert!(is_allowed_final_native_lib_symbol("lbm_dec_as_i32"));
@@ -620,6 +685,28 @@ mod tests {
             defined.contains("init"),
             "expected the Rust staticlib to export the loader init trampoline"
         );
+    }
+
+    #[test]
+    fn rust_only_native_artifact_exports_loader_entry_from_rust() {
+        build_rust_staticlib();
+        build_final_native_lib_elf();
+
+        let staticlib_symbols = nm_output(&rust_staticlib_path());
+        let staticlib_defined = defined_symbols(&staticlib_symbols);
+        let package_object_symbols = nm_output(&package_lib_object_path());
+        let package_object_defined = defined_symbols(&package_object_symbols);
+
+        for symbol in ["prog_ptr", "init", "package_lib_init"] {
+            assert!(
+                staticlib_defined.contains(symbol),
+                "Rust staticlib must own loader symbol `{symbol}`:\n{staticlib_symbols}"
+            );
+            assert!(
+                !package_object_defined.contains(symbol),
+                "package C object must not own Rust loader symbol `{symbol}`:\n{package_object_symbols}"
+            );
+        }
     }
 
     fn command_stdout(program: &str, args: impl IntoIterator<Item = impl AsRef<Path>>) -> String {
