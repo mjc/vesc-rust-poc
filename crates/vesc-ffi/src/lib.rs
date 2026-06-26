@@ -1192,6 +1192,17 @@ mod tests {
         let name = c"axis";
         let name_value: ThreadName<'_> = name.into();
         let axis_value: PlotAxisName<'_> = name.into();
+        let can_payload: CanPayload<'_> = (&payload[..]).into();
+        let config_payload: ConfigPayload<'_> = (&payload[..]).into();
+        let xml_bytes: ConfigXmlBytes<'_> = (&payload[..]).into();
+        let nvm_bytes: NvmBytes<'_> = (&payload[..]).into();
+        let angle = RollDeg::new(90.0);
+        let pitch = PitchDeg::new(45.0);
+        let yaw = YawDeg::new(15.0);
+        let half_duplex: HalfDuplex = true.into();
+        let accel: Accel3 = [1.0, 2.0, 3.0].into();
+        let quat: Quaternion = [1.0, 0.0, 0.0, 0.0].into();
+        let graph_name: PlotGraphName<'_> = name.into();
 
         assert_eq!(int_value.get(), -7);
         assert_eq!(float_value.get(), 3.5);
@@ -1200,5 +1211,17 @@ mod tests {
         assert_eq!(payload_value.as_bytes(), &payload);
         assert_eq!(name_value.get(), name);
         assert_eq!(axis_value.get(), name);
+        assert_eq!(can_payload.get(), &payload);
+        assert_eq!(config_payload.get(), &payload);
+        assert_eq!(xml_bytes.get(), &payload);
+        assert_eq!(nvm_bytes.get(), &payload);
+        assert_eq!(half_duplex.is_enabled(), true);
+        assert_eq!(accel.get(), [1.0, 2.0, 3.0]);
+        assert_eq!(quat.get(), [1.0, 0.0, 0.0, 0.0]);
+        assert_eq!(
+            EulerAngles::new(angle, pitch, yaw),
+            EulerAngles::new(angle, pitch, yaw)
+        );
+        assert_eq!(graph_name.get(), name);
     }
 }
