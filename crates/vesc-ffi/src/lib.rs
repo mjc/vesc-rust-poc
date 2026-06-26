@@ -317,6 +317,96 @@ transparent_value_type_generic!(pub struct NvmBytes<'a>(&'a [u8]););
 transparent_eq_value_type!(pub struct EepromAddress(i32););
 transparent_eq_value_type!(pub struct EepromVar(i32););
 
+pub type Value = LbmValue;
+pub type Count = LbmCount;
+pub type Int = LbmInt;
+pub type Uint = LbmUint;
+pub type TypeCode = LbmType;
+pub type ChannelId = LbmCid;
+pub type Float = LbmFloat;
+pub type Symbol = LbmSymbol;
+pub type ErrorSymbol = LbmErrorSymbol;
+pub type BoolSymbol = LbmBoolSymbol;
+pub type NilSymbol = LbmNilSymbol;
+pub type Address = ProgramAddress;
+pub type BaseAddress = LoaderBaseAddress;
+pub type MillisecondsU32 = Milliseconds;
+pub type MicrosecondsU32 = Microseconds;
+pub type Seconds = SecondsF32;
+pub type TimeTicks = SystemTicks;
+pub type TimeSeconds = SystemSeconds;
+pub type Angle = Degrees;
+pub type Radian = Radians;
+pub type Rpm = Erpm;
+pub type Duty = DutyCycle;
+pub type Amps = CurrentAmps;
+pub type BrakeAmps = BrakeCurrentAmps;
+pub type InputAmps = InputCurrentAmps;
+pub type Volts = Voltage;
+pub type Packet<'a> = AppDataPacket<'a>;
+pub type Command<'a> = CommandPacket<'a>;
+pub type Reply<'a> = ReplyPacket<'a>;
+pub type Half = HalfDuplex;
+pub type Temperature = TemperatureC;
+pub type Distance = DistanceMeters;
+pub type Speed = SpeedMetersPerSecond;
+pub type Charge = AmpHours;
+pub type Energy = WattHours;
+pub type Odometer = OdometerMeters;
+pub type Battery = BatteryLevel;
+pub type Channel = FocChannel;
+pub type Frequency = ToneFrequencyHz;
+pub type Tone = ToneVoltage;
+pub type Delay = OffDelaySeconds;
+pub type Latitude = LatitudeDeg;
+pub type Longitude = LongitudeDeg;
+pub type Altitude = AltitudeMeters;
+pub type GnssSpeedMs = GnssSpeed;
+pub type HdopValue = Hdop;
+pub type Vector3 = Accel3;
+pub type Gyroscope = Gyro3;
+pub type Magnetometer = Mag3;
+pub type Quaternion4 = Quaternion;
+pub type ImuCalibrationData = ImuCalibration;
+pub type SamplePeriod = ReadCallbackDtSeconds;
+pub type Parameter = CfgParam;
+pub type ConfigurationFloat = CfgFloat;
+pub type ConfigurationInt = CfgInt;
+pub type ConfigurationResult = ConfigSetResult;
+pub type XmlBytes<'a> = ConfigXmlBytes<'a>;
+pub type Payload<'a> = ConfigPayload<'a>;
+pub type ThreadLabel<'a> = ThreadName<'a>;
+pub type StackSize = StackSizeBytes;
+pub type Thread = ThreadHandle;
+pub type Mutex = MutexHandle;
+pub type Semaphore = SemaphoreHandle;
+pub type FirmwarePtrValue<T> = FirmwarePtr<T>;
+pub type FirmwareNonNullValue<T> = FirmwareNonNull<T>;
+pub type MallocSize = MallocLen;
+pub type OwnedFirmware<T> = OwnedFirmwareAllocation<T>;
+pub type CanBytes<'a> = CanPayload<'a>;
+pub type StatusIndex = CanStatusIndex;
+pub type HardwareKind = HardwareType;
+pub type Roll = RollDeg;
+pub type Pitch = PitchDeg;
+pub type Yaw = YawDeg;
+pub type AxisLabel<'a> = PlotAxisName<'a>;
+pub type GraphLabel<'a> = PlotGraphName<'a>;
+pub type GraphIndex = PlotGraphIndex;
+pub type Point = PlotPoint;
+pub type Pin = VescPin;
+pub type PinMode = VescPinMode;
+pub type Port = GpioPortPtr;
+pub type Gpio = GpioPin;
+pub type Analog = AnalogVoltage;
+pub type RawAnalog = AnalogRaw;
+pub type IoSymbol = LbmIoSymbol;
+pub type NvmAddr = NvmAddress;
+pub type NvmLength = NvmLen;
+pub type Bytes<'a> = NvmBytes<'a>;
+pub type EepromAddr = EepromAddress;
+pub type EepromValue = EepromVar;
+
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
@@ -838,7 +928,7 @@ mod tests {
         ProgramAddress, Quaternion, Radians, ReplyPacket, RollDeg, SemaphoreHandle, SecondsF32,
         SpeedMetersPerSecond, StackSizeBytes, SystemSeconds, SystemTicks, TemperatureC,
         ThreadHandle, ThreadName, ToneFrequencyHz, ToneVoltage, UartBaudRate, UartWriteLen,
-        VescIfAbi, VescPin, VescPinMode, Voltage, WattHours, YawDeg,
+        VescIfAbi, VescPin, VescPinMode, Voltage, WattHours, YawDeg, Bytes, Speed, Value,
     };
     use core::cell::Cell;
     use core::ffi::{c_char, c_void, CStr};
@@ -1223,5 +1313,16 @@ mod tests {
             EulerAngles::new(angle, pitch, yaw)
         );
         assert_eq!(graph_name.get(), name);
+    }
+
+    #[test]
+    fn rustic_aliases_point_at_the_public_wrapper_surface() {
+        let value: Value = 1_u32.into();
+        let speed: Speed = 2.5_f32.into();
+        let bytes: Bytes<'_> = (&[1_u8, 2, 3][..]).into();
+
+        assert_eq!(value.get(), 1);
+        assert_eq!(speed.get(), 2.5);
+        assert_eq!(bytes.get(), &[1, 2, 3]);
     }
 }
