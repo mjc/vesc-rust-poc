@@ -66,7 +66,9 @@ typedef struct {
     lbm_uint lbm_enc_sym_terror;
     lbm_uint lbm_enc_sym_eerror;
     lbm_uint lbm_enc_sym_merror;
-    uintptr_t _reserved_after_lbm[108];
+    bool (*lbm_is_symbol_nil)(lbm_uint);
+    bool (*lbm_is_symbol_true)(lbm_uint);
+    uintptr_t _reserved_after_lbm[107];
     void (*send_app_data)(unsigned char *data, unsigned int len);
     bool (*set_app_data_handler)(app_data_handler_fun handler);
     uintptr_t _reserved_after_app_data[88];

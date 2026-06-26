@@ -20,7 +20,7 @@ pub const NATIVE_LIB_BASELINE_OUTPUTS: [&str; 4] = [
 
 pub const VESC_PACKAGE_FLASH_BLOCK_LIMIT_BYTES: u64 = 128 * 1024;
 pub const VESC_PACKAGE_FLASH_BUDGET_BYTES: u64 = VESC_PACKAGE_FLASH_BLOCK_LIMIT_BYTES / 8;
-pub const EXPECTED_VESC_C_IF_HEADER_FINGERPRINT: &str = "6f9d6d4dc9dab059";
+pub const EXPECTED_VESC_C_IF_HEADER_FINGERPRINT: &str = "f0097b82dd4adc19";
 
 pub const NATIVE_LIB_BASELINE_PACKAGE_INPUTS: [&str; 3] = [
     "package/code.lisp",
@@ -178,6 +178,51 @@ mod tests {
     }
 
     #[test]
+    fn vesc_c_if_fixture_keeps_used_slots_aligned_with_vesc_pkg_lib() {
+        let header =
+            fs::read_to_string(super::vesc_c_if_header_path()).expect("vesc_c_if.h contents");
+        let slots = parse_vesc_c_if_slots(&header);
+
+        let expected = [
+            (
+                0,
+                "lbm_add_extension",
+                "load_extension_fptr lbm_add_extension;",
+            ),
+            (16, "lbm_enc_i", "lbm_value (*lbm_enc_i)(lbm_int x);"),
+            (
+                25,
+                "lbm_dec_as_i32",
+                "int32_t (*lbm_dec_as_i32)(lbm_value val);",
+            ),
+            (31, "lbm_is_number", "bool (*lbm_is_number)(lbm_value x);"),
+            (37, "lbm_enc_sym_eerror", "lbm_uint lbm_enc_sym_eerror;"),
+            (
+                148,
+                "send_app_data",
+                "void (*send_app_data)(unsigned char *data, unsigned int len);",
+            ),
+            (
+                149,
+                "set_app_data_handler",
+                "bool (*set_app_data_handler)(app_data_handler_fun handler);",
+            ),
+            (
+                238,
+                "system_time_ticks",
+                "systime_t (*system_time_ticks)(void);",
+            ),
+        ]
+        .map(|(slot, name, signature)| (slot, name, signature.to_owned()));
+
+        assert_eq!(
+            slots,
+            expected,
+            "fixture vesc_c_if.h must preserve the upstream vesc_pkg_lib slot order for every Rust-modeled VESC_IF entry"
+        );
+    }
+
+    #[test]
     fn native_baseline_has_no_package_specific_c_source() {
         let root = native_lib_baseline_root();
         let package_c_sources = root
@@ -205,6 +250,78 @@ mod tests {
                 .all(|path| !path.ends_with("src/package_lib.c")),
             "package-specific C shim source must not be a baseline input: {inputs:?}"
         );
+    }
+
+    fn parse_vesc_c_if_slots(header: &str) -> Vec<(usize, &'static str, String)> {
+        let struct_start = header
+            .find("typedef struct {\n    load_extension_fptr lbm_add_extension;")
+            .expect("vesc_c_if struct start");
+        let struct_end = header[struct_start..]
+            .find("} vesc_c_if;")
+            .map(|offset| struct_start + offset)
+            .expect("vesc_c_if struct end");
+        let body = &header[struct_start..struct_end];
+        let mut slot = 0usize;
+        let mut used = Vec::new();
+
+        for raw_line in body.lines().skip(1) {
+            let line = raw_line.split("//").next().unwrap_or("").trim();
+            if line.is_empty() {
+                continue;
+            }
+
+            let width = if let Some(reserved) = line.strip_prefix("uintptr_t _reserved_after_lbm[")
+            {
+                reserved
+                    .split(']')
+                    .next()
+                    .expect("reserved width")
+                    .parse::<usize>()
+                    .expect("reserved width integer")
+            } else if let Some(reserved) = line.strip_prefix("uintptr_t _reserved_after_app_data[")
+            {
+                reserved
+                    .split(']')
+                    .next()
+                    .expect("reserved width")
+                    .parse::<usize>()
+                    .expect("reserved width integer")
+            } else {
+                1
+            };
+
+            match line {
+                "load_extension_fptr lbm_add_extension;" => {
+                    used.push((slot, "lbm_add_extension", line.to_owned()));
+                }
+                "lbm_value (*lbm_enc_i)(lbm_int x);" => {
+                    used.push((slot, "lbm_enc_i", line.to_owned()));
+                }
+                "int32_t (*lbm_dec_as_i32)(lbm_value val);" => {
+                    used.push((slot, "lbm_dec_as_i32", line.to_owned()));
+                }
+                "bool (*lbm_is_number)(lbm_value x);" => {
+                    used.push((slot, "lbm_is_number", line.to_owned()));
+                }
+                "lbm_uint lbm_enc_sym_eerror;" => {
+                    used.push((slot, "lbm_enc_sym_eerror", line.to_owned()));
+                }
+                "void (*send_app_data)(unsigned char *data, unsigned int len);" => {
+                    used.push((slot, "send_app_data", line.to_owned()));
+                }
+                "bool (*set_app_data_handler)(app_data_handler_fun handler);" => {
+                    used.push((slot, "set_app_data_handler", line.to_owned()));
+                }
+                "systime_t (*system_time_ticks)(void);" => {
+                    used.push((slot, "system_time_ticks", line.to_owned()));
+                }
+                _ => {}
+            }
+
+            slot += width;
+        }
+
+        used
     }
 
     #[test]
