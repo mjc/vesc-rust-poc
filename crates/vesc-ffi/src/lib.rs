@@ -11,30 +11,12 @@ macro_rules! transparent_value_type {
     };
 }
 
-macro_rules! transparent_value_type_generic {
-    ($(#[$meta:meta])* $vis:vis struct $name:ident<$lt:lifetime>($inner:ty);) => {
-        $(#[$meta])*
-        #[repr(transparent)]
-        #[derive(Debug, Clone, Copy, PartialEq)]
-        $vis struct $name<$lt>(pub $inner);
-    };
-}
-
 macro_rules! transparent_eq_value_type {
     ($(#[$meta:meta])* $vis:vis struct $name:ident($inner:ty);) => {
         $(#[$meta])*
         #[repr(transparent)]
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         $vis struct $name(pub $inner);
-    };
-}
-
-macro_rules! transparent_eq_value_type_generic {
-    ($(#[$meta:meta])* $vis:vis struct $name:ident<$lt:lifetime>($inner:ty);) => {
-        $(#[$meta])*
-        #[repr(transparent)]
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-        $vis struct $name<$lt>(pub $inner);
     };
 }
 
