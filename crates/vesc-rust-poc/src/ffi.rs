@@ -19,22 +19,64 @@ pub struct LibInfo {
     pub base_addr: u32,
 }
 
+pub struct LibInfoAbi;
+
+impl LibInfoAbi {
+    pub const STOP_FUN_OFFSET: usize = 0;
+    pub const ARG_OFFSET: usize = 4;
+    pub const BASE_ADDR_OFFSET: usize = 8;
+    pub const SIZE: usize = 12;
+    pub const ALIGN: usize = 4;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImageOffset(usize);
+
+impl ImageOffset {
+    pub const fn new(offset: usize) -> Self {
+        Self(offset)
+    }
+
+    pub const fn get(self) -> usize {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeAddress(usize);
+
+impl NativeAddress {
+    pub const fn get(self) -> usize {
+        self.0
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeImage {
-    base_addr: u32,
+    base_addr: NativeAddress,
 }
 
 impl NativeImage {
     pub const fn new(base_addr: u32) -> Self {
-        Self { base_addr }
+        Self {
+            base_addr: NativeAddress(base_addr as usize),
+        }
     }
 
     pub fn from_info(info: &LibInfo) -> Self {
         Self::new(info.base_addr)
     }
 
+    pub const fn base_addr(self) -> NativeAddress {
+        self.base_addr
+    }
+
+    pub fn rebase_offset(self, offset: ImageOffset) -> NativeAddress {
+        NativeAddress(self.base_addr.get() + offset.get())
+    }
+
     pub fn rebase_addr(self, image_addr: usize) -> usize {
-        self.base_addr as usize + image_addr
+        self.rebase_offset(ImageOffset::new(image_addr)).get()
     }
 
     pub fn rebase_ptr<T>(self, ptr: *const T) -> *const T {
@@ -229,7 +271,10 @@ pub(crate) mod raw {
 
 #[cfg(test)]
 mod tests {
-    use super::{ExtensionHandler, LbmApi, LbmBindings, LbmCount, LbmValue, NativeImage};
+    use super::{
+        ExtensionHandler, ImageOffset, LbmApi, LbmBindings, LbmCount, LbmValue, LibInfo,
+        LibInfoAbi, NativeAddress, NativeImage,
+    };
     use core::cell::Cell;
     use core::ffi::{c_char, c_void};
 
@@ -328,6 +373,11 @@ mod tests {
             stub_handler as *const () as usize + 0x2000
         );
         assert_eq!(image.rebase_addr(0x61), 0x2061);
+        assert_eq!(image.base_addr(), NativeAddress(0x2000));
+        assert_eq!(
+            image.rebase_offset(ImageOffset::new(0x61)),
+            NativeAddress(0x2061)
+        );
         assert_eq!(image.rebase_ptr(0x1df as *const c_char) as usize, 0x21df);
 
         let rebased_app_data =
@@ -343,6 +393,26 @@ mod tests {
             rebased_stop,
             stub_stop_handler as *const () as usize + 0x2000
         );
+    }
+
+    #[test]
+    fn lib_info_abi_constants_match_the_vesc_native_loader_layout() {
+        assert_eq!(LibInfoAbi::STOP_FUN_OFFSET, 0);
+        assert_eq!(LibInfoAbi::ARG_OFFSET, 4);
+        assert_eq!(LibInfoAbi::BASE_ADDR_OFFSET, 8);
+        assert_eq!(LibInfoAbi::SIZE, 12);
+        assert_eq!(LibInfoAbi::ALIGN, 4);
+    }
+
+    #[test]
+    fn lib_info_repr_c_layout_scales_with_the_compilation_pointer_width() {
+        let pointer_size = core::mem::size_of::<usize>();
+
+        assert_eq!(core::mem::size_of::<LibInfo>(), pointer_size * 3);
+        assert_eq!(core::mem::align_of::<LibInfo>(), pointer_size);
+        assert_eq!(core::mem::offset_of!(LibInfo, stop_fun), 0);
+        assert_eq!(core::mem::offset_of!(LibInfo, arg), pointer_size);
+        assert_eq!(core::mem::offset_of!(LibInfo, base_addr), pointer_size * 2);
     }
 
     #[test]
