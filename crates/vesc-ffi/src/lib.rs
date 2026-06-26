@@ -27,6 +27,31 @@ macro_rules! transparent_value_type {
     };
 }
 
+macro_rules! transparent_value_type_generic {
+    ($(#[$meta:meta])* $vis:vis struct $name:ident<$lt:lifetime>($inner:ty);) => {
+        $(#[$meta])*
+        #[repr(transparent)]
+        #[derive(Debug, Clone, Copy, PartialEq)]
+        $vis struct $name<$lt>(pub $inner);
+
+        impl<$lt> $name<$lt> {
+            pub const fn new(value: $inner) -> Self {
+                Self(value)
+            }
+
+            pub const fn get(self) -> $inner {
+                self.0
+            }
+        }
+
+        impl<$lt> From<$inner> for $name<$lt> {
+            fn from(value: $inner) -> Self {
+                Self(value)
+            }
+        }
+    };
+}
+
 macro_rules! transparent_eq_value_type {
     ($(#[$meta:meta])* $vis:vis struct $name:ident($inner:ty);) => {
         $(#[$meta])*
@@ -45,6 +70,56 @@ macro_rules! transparent_eq_value_type {
         }
 
         impl From<$inner> for $name {
+            fn from(value: $inner) -> Self {
+                Self(value)
+            }
+        }
+    };
+}
+
+macro_rules! transparent_eq_value_type_generic {
+    ($(#[$meta:meta])* $vis:vis struct $name:ident<$lt:lifetime>($inner:ty);) => {
+        $(#[$meta])*
+        #[repr(transparent)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        $vis struct $name<$lt>(pub $inner);
+
+        impl<$lt> $name<$lt> {
+            pub const fn new(value: $inner) -> Self {
+                Self(value)
+            }
+
+            pub const fn get(self) -> $inner {
+                self.0
+            }
+        }
+
+        impl<$lt> From<$inner> for $name<$lt> {
+            fn from(value: $inner) -> Self {
+                Self(value)
+            }
+        }
+    };
+}
+
+macro_rules! transparent_eq_value_type_type {
+    ($(#[$meta:meta])* $vis:vis struct $name:ident<$ty:ident>($inner:ty);) => {
+        $(#[$meta])*
+        #[repr(transparent)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        $vis struct $name<$ty>(pub $inner);
+
+        impl<$ty> $name<$ty> {
+            pub const fn new(value: $inner) -> Self {
+                Self(value)
+            }
+
+            pub const fn get(self) -> $inner {
+                self.0
+            }
+        }
+
+        impl<$ty> From<$inner> for $name<$ty> {
             fn from(value: $inner) -> Self {
                 Self(value)
             }
@@ -237,113 +312,33 @@ pub struct GnssSpeed(pub f32);
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Hdop(pub f32);
 
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Accel3(pub [f32; 3]);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Gyro3(pub [f32; 3]);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Mag3(pub [f32; 3]);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Quaternion(pub [f32; 4]);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ImuCalibration(pub [f32; 3]);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ReadCallbackDtSeconds(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CfgParam(pub i32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct CfgFloat(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CfgInt(pub i32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ConfigSetResult(pub i32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ConfigXmlBytes<'a>(pub &'a [u8]);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ConfigPayload<'a>(pub &'a [u8]);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ThreadName<'a>(pub &'a CStr);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StackSizeBytes(pub usize);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ThreadHandle(pub core::ptr::NonNull<c_void>);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MutexHandle(pub core::ptr::NonNull<c_void>);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SemaphoreHandle(pub core::ptr::NonNull<c_void>);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FirmwarePtr<T>(pub core::ptr::NonNull<T>);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FirmwareNonNull<T>(pub core::ptr::NonNull<T>);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MallocLen(pub usize);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OwnedFirmwareAllocation<T>(pub core::ptr::NonNull<T>);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CanPayload<'a>(pub &'a [u8]);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CanStatusIndex(pub i32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HardwareType(pub i32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct RollDeg(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PitchDeg(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct YawDeg(pub f32);
+transparent_value_type!(pub struct Accel3([f32; 3]););
+transparent_value_type!(pub struct Gyro3([f32; 3]););
+transparent_value_type!(pub struct Mag3([f32; 3]););
+transparent_value_type!(pub struct Quaternion([f32; 4]););
+transparent_value_type!(pub struct ImuCalibration([f32; 3]););
+transparent_value_type!(pub struct ReadCallbackDtSeconds(f32););
+transparent_eq_value_type!(pub struct CfgParam(i32););
+transparent_value_type!(pub struct CfgFloat(f32););
+transparent_eq_value_type!(pub struct CfgInt(i32););
+transparent_eq_value_type!(pub struct ConfigSetResult(i32););
+transparent_value_type_generic!(pub struct ConfigXmlBytes<'a>(&'a [u8]););
+transparent_value_type_generic!(pub struct ConfigPayload<'a>(&'a [u8]););
+transparent_value_type_generic!(pub struct ThreadName<'a>(&'a CStr););
+transparent_eq_value_type!(pub struct StackSizeBytes(usize););
+transparent_eq_value_type!(pub struct ThreadHandle(core::ptr::NonNull<c_void>););
+transparent_eq_value_type!(pub struct MutexHandle(core::ptr::NonNull<c_void>););
+transparent_eq_value_type!(pub struct SemaphoreHandle(core::ptr::NonNull<c_void>););
+transparent_eq_value_type_type!(pub struct FirmwarePtr<T>(core::ptr::NonNull<T>););
+transparent_eq_value_type_type!(pub struct FirmwareNonNull<T>(core::ptr::NonNull<T>););
+transparent_eq_value_type!(pub struct MallocLen(usize););
+transparent_eq_value_type_type!(pub struct OwnedFirmwareAllocation<T>(core::ptr::NonNull<T>););
+transparent_eq_value_type_generic!(pub struct CanPayload<'a>(&'a [u8]););
+transparent_eq_value_type!(pub struct CanStatusIndex(i32););
+transparent_eq_value_type!(pub struct HardwareType(i32););
+transparent_value_type!(pub struct RollDeg(f32););
+transparent_value_type!(pub struct PitchDeg(f32););
+transparent_value_type!(pub struct YawDeg(f32););
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -357,19 +352,23 @@ impl EulerAngles {
     pub const fn new(roll: RollDeg, pitch: PitchDeg, yaw: YawDeg) -> Self {
         Self { roll, pitch, yaw }
     }
+
+    pub const fn roll(self) -> RollDeg {
+        self.roll
+    }
+
+    pub const fn pitch(self) -> PitchDeg {
+        self.pitch
+    }
+
+    pub const fn yaw(self) -> YawDeg {
+        self.yaw
+    }
 }
 
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PlotAxisName<'a>(pub &'a CStr);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PlotGraphName<'a>(pub &'a CStr);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PlotGraphIndex(pub i32);
+transparent_value_type_generic!(pub struct PlotAxisName<'a>(&'a CStr););
+transparent_value_type_generic!(pub struct PlotGraphName<'a>(&'a CStr););
+transparent_eq_value_type!(pub struct PlotGraphIndex(i32););
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -382,65 +381,29 @@ impl PlotPoint {
     pub const fn new(x: f32, y: f32) -> Self {
         Self { x, y }
     }
-}
 
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct VescPin(pub i32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct VescPinMode(pub i32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GpioPortPtr(pub core::ptr::NonNull<c_void>);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GpioPin(pub u32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct AnalogVoltage(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct AnalogRaw(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LbmIoSymbol(pub LbmSymbol);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct NvmAddress(pub u32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct NvmLen(pub u32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct NvmBytes<'a>(pub &'a [u8]);
-
-impl<'a> NvmBytes<'a> {
-    pub const fn new(bytes: &'a [u8]) -> Self {
-        Self(bytes)
+    pub const fn x(self) -> f32 {
+        self.x
     }
 
-    pub const fn as_bytes(self) -> &'a [u8] {
-        self.0
+    pub const fn y(self) -> f32 {
+        self.y
     }
 }
 
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EepromAddress(pub i32);
+transparent_eq_value_type!(pub struct VescPin(i32););
+transparent_eq_value_type!(pub struct VescPinMode(i32););
+transparent_eq_value_type!(pub struct GpioPortPtr(core::ptr::NonNull<c_void>););
+transparent_eq_value_type!(pub struct GpioPin(u32););
+transparent_value_type!(pub struct AnalogVoltage(f32););
+transparent_value_type!(pub struct AnalogRaw(f32););
+transparent_eq_value_type!(pub struct LbmIoSymbol(LbmSymbol););
+transparent_eq_value_type!(pub struct NvmAddress(u32););
+transparent_eq_value_type!(pub struct NvmLen(u32););
+transparent_value_type_generic!(pub struct NvmBytes<'a>(&'a [u8]););
 
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EepromVar(pub i32);
+transparent_eq_value_type!(pub struct EepromAddress(i32););
+transparent_eq_value_type!(pub struct EepromVar(i32););
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
