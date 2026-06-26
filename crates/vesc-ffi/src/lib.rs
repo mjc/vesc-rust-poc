@@ -332,8 +332,6 @@ pub type Address = ProgramAddress;
 pub type BaseAddress = LoaderBaseAddress;
 pub type MillisecondsU32 = Milliseconds;
 pub type MicrosecondsU32 = Microseconds;
-pub type Seconds = SecondsF32;
-pub type Radian = Radians;
 pub type Packet<'a> = AppDataPacket<'a>;
 pub type Command<'a> = CommandPacket<'a>;
 pub type Reply<'a> = ReplyPacket<'a>;
@@ -385,8 +383,6 @@ pub type GraphLabel<'a> = PlotGraphName<'a>;
 pub type GraphIndex = PlotGraphIndex;
 pub type Point = PlotPoint;
 pub type Bytes<'a> = NvmBytes<'a>;
-pub type Power = ElectricPotential;
-
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
