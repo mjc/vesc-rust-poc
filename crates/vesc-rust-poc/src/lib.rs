@@ -14,15 +14,13 @@ pub extern "C" fn rust_add(a: i32, b: i32) -> i32 {
 #[cfg(not(test))]
 #[no_mangle]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) {
-    let _ = info;
     package_lifecycle::init_package();
-    ble_loopback_device::init_package();
+    ble_loopback_device::init_package(info);
 }
 
 #[cfg(test)]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) {
-    let _ = info;
-    ble_loopback_device::init_package_for_tests();
+    ble_loopback_device::init_package_for_tests(info);
 }
 
 #[cfg(not(test))]
@@ -38,7 +36,7 @@ fn panic(_: &PanicInfo) -> ! {
 
 #[cfg(test)]
 mod tests {
-    use super::{ble_loopback_device, rust_add, ProtocolFrame, WireCommand, WireVersion};
+    use super::{ble_loopback_device, ffi, rust_add, ProtocolFrame, WireCommand, WireVersion};
 
     #[test]
     fn cargo_test_smoke() {
@@ -63,9 +61,15 @@ mod tests {
     #[test]
     fn package_lib_init_runs_the_device_loopback_entrypoint_path() {
         ble_loopback_device::reset_init_call_count_for_tests();
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0,
+        };
 
-        super::package_lib_init(core::ptr::null_mut());
+        super::package_lib_init(&mut info);
 
         assert_eq!(ble_loopback_device::init_call_count_for_tests(), 1);
+        assert!(info.stop_fun.is_some());
     }
 }

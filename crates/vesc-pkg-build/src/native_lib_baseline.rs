@@ -21,7 +21,7 @@ pub const NATIVE_LIB_BASELINE_OUTPUTS: [&str; 4] = [
 
 pub const VESC_PACKAGE_FLASH_BLOCK_LIMIT_BYTES: u64 = 128 * 1024;
 pub const VESC_PACKAGE_FLASH_BUDGET_BYTES: u64 = VESC_PACKAGE_FLASH_BLOCK_LIMIT_BYTES / 8;
-pub const EXPECTED_VESC_C_IF_HEADER_FINGERPRINT: &str = "e7917615273899a4";
+pub const EXPECTED_VESC_C_IF_HEADER_FINGERPRINT: &str = "73caefd0e737b1cf";
 
 pub const NATIVE_LIB_BASELINE_PACKAGE_INPUTS: [&str; 3] = [
     "package/code.lisp",
@@ -196,8 +196,9 @@ mod tests {
             "expected the VESC init hook in the C bridge: {package_lib:?}"
         );
         assert!(
-            source.contains("package_lib_init(0)"),
-            "expected the C bridge to call the Rust package entrypoint: {package_lib:?}"
+            source.contains("INIT_FUN(lib_info *info)")
+                && source.contains("package_lib_init(info)"),
+            "expected the C bridge to pass lib_info to the Rust package entrypoint: {package_lib:?}"
         );
         assert!(
             !source.contains("ext-rust-add"),

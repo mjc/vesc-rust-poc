@@ -18,8 +18,8 @@ lbm_value lbm_enc_i(int32_t value) {
     return VESC_IF->lbm_enc_i(value);
 }
 
-INIT_FUN {
+INIT_FUN(lib_info *info) {
     INIT_START;
-    package_lib_init(0);
+    package_lib_init(info);
     return true;
 }

@@ -1,4 +1,4 @@
-use core::ffi::{c_char, CStr};
+use core::ffi::{c_char, c_void, CStr};
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -8,13 +8,16 @@ pub struct LbmValue(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LbmCount(pub usize);
 
-#[repr(C)]
-pub struct LibInfo {
-    _private: [u8; 0],
-}
-
 pub type ExtensionHandler = unsafe extern "C" fn(*mut LbmValue, LbmCount) -> LbmValue;
 pub type AppDataHandler = unsafe extern "C" fn(*mut u8, u32);
+pub type StopHandler = unsafe extern "C" fn(*mut c_void);
+
+#[repr(C)]
+pub struct LibInfo {
+    pub stop_fun: Option<StopHandler>,
+    pub arg: *mut c_void,
+    pub base_addr: u32,
+}
 
 pub trait LbmBindings {
     /// # Safety

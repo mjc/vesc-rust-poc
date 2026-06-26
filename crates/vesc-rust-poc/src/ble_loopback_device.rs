@@ -419,32 +419,63 @@ impl DeviceServices for &FakeDeviceServices {
 }
 
 static INIT_CALLS: AtomicUsize = AtomicUsize::new(0);
+static STOP_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
+    #[cfg(not(test))]
+    {
+        // Safety: this clears the package-owned callback from the firmware ABI.
+        unsafe {
+            let _ = crate::ffi::raw::vesc_set_app_data_handler(None);
+        }
+    }
+
+    #[cfg(test)]
+    {
+        STOP_CALLS.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+fn install_stop_hook(info: *mut crate::ffi::LibInfo) {
+    if let Some(info) = unsafe { info.as_mut() } {
+        info.stop_fun = Some(stop_package);
+    }
+}
 
 #[cfg(not(test))]
-pub fn init_package() {
+pub fn init_package(info: *mut crate::ffi::LibInfo) {
+    install_stop_hook(info);
+
     // Safety: the bridge registers a static callback with the firmware ABI.
     unsafe {
         let _ = crate::ffi::raw::vesc_set_app_data_handler(Some(app_data_handler));
     }
 }
 
-pub fn init_package_for_tests() {
+pub fn init_package_for_tests(info: *mut crate::ffi::LibInfo) {
+    install_stop_hook(info);
     INIT_CALLS.fetch_add(1, Ordering::SeqCst);
 }
 
 pub fn reset_init_call_count_for_tests() {
     INIT_CALLS.store(0, Ordering::SeqCst);
+    STOP_CALLS.store(0, Ordering::SeqCst);
 }
 
 pub fn init_call_count_for_tests() -> usize {
     INIT_CALLS.load(Ordering::SeqCst)
 }
 
+pub fn stop_call_count_for_tests() -> usize {
+    STOP_CALLS.load(Ordering::SeqCst)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         handle_loopback_frame, init_call_count_for_tests, reset_init_call_count_for_tests,
-        BleFrame, FakeDeviceServices, LoopbackPackageRuntime, LoopbackPackageState, LoopbackTick,
+        stop_call_count_for_tests, BleFrame, FakeDeviceServices, LoopbackPackageRuntime,
+        LoopbackPackageState, LoopbackTick,
     };
     use vesc_protocol::ble_loopback::LoopbackPacket;
     use vesc_protocol::WireCommand;
@@ -540,9 +571,27 @@ mod tests {
     fn package_entrypoint_records_device_initialization() {
         reset_init_call_count_for_tests();
 
-        super::init_package_for_tests();
+        super::init_package_for_tests(core::ptr::null_mut());
 
         assert_eq!(init_call_count_for_tests(), 1);
+    }
+
+    #[test]
+    fn package_entrypoint_installs_a_stop_hook() {
+        reset_init_call_count_for_tests();
+        let mut info = crate::ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0,
+        };
+
+        super::init_package_for_tests(&mut info);
+
+        let stop_fun = info.stop_fun.expect("stop hook");
+        unsafe {
+            stop_fun(info.arg);
+        }
+        assert_eq!(stop_call_count_for_tests(), 1);
     }
 
     #[test]

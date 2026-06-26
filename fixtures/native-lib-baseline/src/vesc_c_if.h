@@ -54,7 +54,7 @@ typedef struct {
 
 #define VESC_IF ((vesc_c_if *)(0x1000F800))
 #define HEADER volatile int __attribute__((__section__(".program_ptr"))) prog_ptr;
-#define INIT_FUN bool __attribute__((__section__(".init_fun"))) init(void)
+#define INIT_FUN bool __attribute__((__section__(".init_fun"))) init
 #define INIT_START (void)prog_ptr
 #define INIT_END
 #define ENC_SYM_EERROR ((lbm_value)0)

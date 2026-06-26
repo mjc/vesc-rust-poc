@@ -422,7 +422,7 @@ mod tests {
             init_fun,
             SectionLayout {
                 name: ".init_fun".to_owned(),
-                size: 32,
+                size: 28,
                 vma: 4,
             }
         );
@@ -431,15 +431,15 @@ mod tests {
             SectionLayout {
                 name: ".got".to_owned(),
                 size: 16,
-                vma: 36,
+                vma: 32,
             }
         );
         assert_eq!(
             text,
             SectionLayout {
                 name: ".text".to_owned(),
-                size: 397,
-                vma: 64,
+                size: 445,
+                vma: 48,
             }
         );
         assert_eq!(init_fun.vma, program_ptr.vma + program_ptr.size);
