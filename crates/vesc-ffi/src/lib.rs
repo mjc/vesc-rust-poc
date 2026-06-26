@@ -336,30 +336,6 @@ pub type Packet<'a> = AppDataPacket<'a>;
 pub type Command<'a> = CommandPacket<'a>;
 pub type Reply<'a> = ReplyPacket<'a>;
 pub type Half = HalfDuplex;
-pub type ThermodynamicTemperature = TemperatureC;
-pub type Length = DistanceMeters;
-pub type Velocity = SpeedMetersPerSecond;
-pub type ElectricCurrent = CurrentAmps;
-pub type ElectricPotential = Voltage;
-pub type ElectricCharge = AmpHours;
-pub type Energy = WattHours;
-pub type Odometer = OdometerMeters;
-pub type Battery = BatteryLevel;
-pub type Channel = FocChannel;
-pub type Frequency = ToneFrequencyHz;
-pub type Time = OffDelaySeconds;
-pub type Tone = ToneVoltage;
-pub type Delay = Time;
-pub type Latitude = LatitudeDeg;
-pub type Longitude = LongitudeDeg;
-pub type Altitude = AltitudeMeters;
-pub type HdopValue = Hdop;
-pub type Vector3 = Accel3;
-pub type AngularVelocity = Gyro3;
-pub type MagneticFluxDensity = Mag3;
-pub type Quaternion4 = Quaternion;
-pub type Calibration = ImuCalibration;
-pub type SamplePeriod = ReadCallbackDtSeconds;
 pub type Parameter = CfgParam;
 pub type ConfigFloat = CfgFloat;
 pub type ConfigInt = CfgInt;
@@ -891,23 +867,22 @@ mod tests {
     #[allow(unused_imports)]
     use super::{
         Accel3, AltitudeMeters, AnalogRaw, AnalogVoltage, AmpHours, AppDataLen, AppDataPacket,
-        AngularVelocity, BatteryLevel, BrakeCurrentAmps, Bytes, Calibration, CanControllerId,
+        BatteryLevel, BrakeCurrentAmps, Bytes, CanControllerId,
         CanFrameLen, CanPayload, CanStatusIndex, CfgFloat, CfgInt, CfgParam, CommandPacket,
         ConfigPayload, ConfigResult, ConfigXmlBytes, CurrentAmps, Degrees, DistanceMeters,
-        DutyCycle, EepromAddress, EepromVar, Energy, Erpm, EulerAngles, ExtensionHandler,
-        ElectricCurrent, ElectricPotential, FocChannel, FirmwareNonNull, FirmwarePtr, GnssSpeed,
-        GpioPin, GpioPortPtr, HdopValue,
+        DutyCycle, EepromAddress, EepromVar, Erpm, EulerAngles, ExtensionHandler,
+        FocChannel, FirmwareNonNull, FirmwarePtr, GnssSpeed, GpioPin, GpioPortPtr, Hdop,
         HalfDuplex, HardwareType, ImageOffset, InputCurrentAmps, LatitudeDeg, LbmApi,
         LbmBindings, LbmBoolSymbol, LbmCid, LbmCount, LbmErrorSymbol, LbmFloat, LbmInt,
-        LbmIoSymbol, LbmNilSymbol, LbmSymbol, LbmType, LbmUint, LbmValue, Length, LibInfo,
-        LibInfoAbi, LoaderBaseAddress, LongitudeDeg, MallocLen, MagneticFluxDensity, MotorIndex,
+        LbmIoSymbol, LbmNilSymbol, LbmSymbol, LbmType, LbmUint, LbmValue, LibInfo,
+        LibInfoAbi, LoaderBaseAddress, LongitudeDeg, MallocLen, Mag3, MotorIndex,
         MutexHandle, MutablePacket, NativeAddress, NativeImage, NvmAddress, NvmBytes, NvmLen,
         OdometerMeters, OffDelaySeconds, OwnedFirmwareAllocation, PitchDeg, PlotAxisName,
         PlotGraphIndex, PlotGraphName, PlotPoint, ProgramAddress, Quaternion, Radians, ReplyPacket,
-        RollDeg, SamplePeriod, SemaphoreHandle, SecondsF32, SpeedMetersPerSecond, StackSizeBytes,
+        ReadCallbackDtSeconds, RollDeg, SemaphoreHandle, SecondsF32, SpeedMetersPerSecond, StackSizeBytes,
         SystemSeconds, SystemTicks, TemperatureC, ThreadHandle, ThreadName, ToneFrequencyHz,
         ToneVoltage, UartBaudRate, UartWriteLen, Value, VescIfAbi, VescPin, VescPinMode,
-        WattHours, YawDeg,
+        Voltage, WattHours, YawDeg,
     };
     use core::cell::Cell;
     use core::ffi::{c_char, c_void, CStr};
@@ -1141,7 +1116,7 @@ mod tests {
         assert_eq!(core::mem::size_of::<LongitudeDeg>(), core::mem::size_of::<f64>());
         assert_eq!(core::mem::size_of::<AltitudeMeters>(), core::mem::size_of::<f32>());
         assert_eq!(core::mem::size_of::<GnssSpeed>(), core::mem::size_of::<f32>());
-        assert_eq!(core::mem::size_of::<HdopValue>(), core::mem::size_of::<f32>());
+        assert_eq!(core::mem::size_of::<Hdop>(), core::mem::size_of::<f32>());
         assert_eq!(core::mem::size_of::<SystemTicks>(), core::mem::size_of::<u32>());
         assert_eq!(core::mem::size_of::<SystemSeconds>(), core::mem::size_of::<f32>());
         assert_eq!(core::mem::size_of::<Degrees>(), core::mem::size_of::<f32>());
@@ -1157,10 +1132,7 @@ mod tests {
             core::mem::size_of::<InputCurrentAmps>(),
             core::mem::size_of::<f32>()
         );
-        assert_eq!(
-            core::mem::size_of::<ElectricPotential>(),
-            core::mem::size_of::<f32>()
-        );
+        assert_eq!(core::mem::size_of::<Voltage>(), core::mem::size_of::<f32>());
         assert_eq!(core::mem::size_of::<CfgParam>(), core::mem::size_of::<i32>());
         assert_eq!(core::mem::size_of::<CfgFloat>(), core::mem::size_of::<f32>());
         assert_eq!(core::mem::size_of::<CfgInt>(), core::mem::size_of::<i32>());
@@ -1294,55 +1266,4 @@ mod tests {
         assert_eq!(graph_name.get(), name);
     }
 
-    #[test]
-    fn rustic_aliases_point_at_the_public_wrapper_surface() {
-        let value: crate::Value = 1_u32.into();
-        let speed: crate::Velocity = 2.5_f32.into();
-        let bytes: crate::Bytes<'_> = (&[1_u8, 2, 3][..]).into();
-
-        assert_eq!(value.get(), 1);
-        assert_eq!(speed.get(), 2.5);
-        assert_eq!(bytes.get(), &[1, 2, 3]);
-    }
-
-    #[test]
-    fn unit_style_metric_aliases_cover_the_public_quantity_surface() {
-        let temperature: crate::ThermodynamicTemperature = 21.5_f32.into();
-        let distance: crate::Length = 12.0_f32.into();
-        let speed: crate::Velocity = 3.25_f32.into();
-        let latitude: crate::Latitude = 45.0_f64.into();
-        let longitude: crate::Longitude = crate::Longitude::new(-110.0_f64);
-        let altitude: crate::Altitude = 1800.0_f32.into();
-        let voltage: crate::ElectricPotential = 50.5_f32.into();
-        let current: crate::ElectricCurrent = 7.25_f32.into();
-        let charge: crate::ElectricCharge = 1.5_f32.into();
-        let energy: crate::Energy = 10.0_f32.into();
-        let omega: crate::AngularVelocity = [0.1, 0.2, 0.3].into();
-        let magnetic: crate::MagneticFluxDensity = [4.0, 5.0, 6.0].into();
-        let calibration: crate::Calibration = [0.0, 1.0, 2.0].into();
-        let gnss_speed: crate::Velocity = 8.5_f32.into();
-        let frequency: crate::Frequency = 1.0_f32.into();
-        let tone_voltage: crate::Tone = 12.0_f32.into();
-        let delay: crate::Delay = 3.0_f32.into();
-        let sample_period: crate::SamplePeriod = 0.25_f32.into();
-
-        assert_eq!(temperature.get(), 21.5);
-        assert_eq!(distance.get(), 12.0);
-        assert_eq!(speed.get(), 3.25);
-        assert_eq!(latitude.get(), 45.0);
-        assert_eq!(longitude.get(), -110.0);
-        assert_eq!(altitude.get(), 1800.0);
-        assert_eq!(voltage.get(), 50.5);
-        assert_eq!(current.get(), 7.25);
-        assert_eq!(charge.get(), 1.5);
-        assert_eq!(energy.get(), 10.0);
-        assert_eq!(omega.get(), [0.1, 0.2, 0.3]);
-        assert_eq!(magnetic.get(), [4.0, 5.0, 6.0]);
-        assert_eq!(calibration.get(), [0.0, 1.0, 2.0]);
-        assert_eq!(gnss_speed.get(), 8.5);
-        assert_eq!(frequency.get(), 1.0);
-        assert_eq!(tone_voltage.get(), 12.0);
-        assert_eq!(delay.get(), 3.0);
-        assert_eq!(sample_period.get(), 0.25);
-    }
 }
