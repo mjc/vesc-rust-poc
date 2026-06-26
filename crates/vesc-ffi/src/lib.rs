@@ -154,29 +154,12 @@ transparent_value_type!(pub struct BrakeCurrentAmps(f32););
 transparent_value_type!(pub struct InputCurrentAmps(f32););
 transparent_value_type!(pub struct Voltage(f32););
 
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AppDataLen(pub u32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct UartBaudRate(pub u32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct UartWriteLen(pub u32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MotorIndex(pub i32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CanControllerId(pub u8);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CanFrameLen(pub u8);
+transparent_eq_value_type!(pub struct AppDataLen(u32););
+transparent_eq_value_type!(pub struct UartBaudRate(u32););
+transparent_eq_value_type!(pub struct UartWriteLen(u32););
+transparent_eq_value_type!(pub struct MotorIndex(i32););
+transparent_eq_value_type!(pub struct CanControllerId(u8););
+transparent_eq_value_type!(pub struct CanFrameLen(u8););
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -234,83 +217,30 @@ impl<'a> ReplyPacket<'a> {
     }
 }
 
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct HalfDuplex(pub bool);
+transparent_value_type!(pub struct HalfDuplex(bool););
 
 impl HalfDuplex {
-    pub const fn new(enabled: bool) -> Self {
-        Self(enabled)
-    }
-
     pub const fn is_enabled(self) -> bool {
         self.0
     }
 }
 
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TemperatureC(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DistanceMeters(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SpeedMetersPerSecond(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct AmpHours(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct WattHours(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct OdometerMeters(pub u64);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct BatteryLevel(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FocChannel(pub i32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ToneFrequencyHz(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ToneVoltage(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct OffDelaySeconds(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct LatitudeDeg(pub f64);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct LongitudeDeg(pub f64);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct AltitudeMeters(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct GnssSpeed(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Hdop(pub f32);
+transparent_value_type!(pub struct TemperatureC(f32););
+transparent_value_type!(pub struct DistanceMeters(f32););
+transparent_value_type!(pub struct SpeedMetersPerSecond(f32););
+transparent_value_type!(pub struct AmpHours(f32););
+transparent_value_type!(pub struct WattHours(f32););
+transparent_value_type!(pub struct OdometerMeters(u64););
+transparent_value_type!(pub struct BatteryLevel(f32););
+transparent_value_type!(pub struct FocChannel(i32););
+transparent_value_type!(pub struct ToneFrequencyHz(f32););
+transparent_value_type!(pub struct ToneVoltage(f32););
+transparent_value_type!(pub struct OffDelaySeconds(f32););
+transparent_value_type!(pub struct LatitudeDeg(f64););
+transparent_value_type!(pub struct LongitudeDeg(f64););
+transparent_value_type!(pub struct AltitudeMeters(f32););
+transparent_value_type!(pub struct GnssSpeed(f32););
+transparent_value_type!(pub struct Hdop(f32););
 
 transparent_value_type!(pub struct Accel3([f32; 3]););
 transparent_value_type!(pub struct Gyro3([f32; 3]););
