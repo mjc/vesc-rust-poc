@@ -25,7 +25,7 @@ const COMM_LISP_REPL_CMD: u8 = 138;
 const SCAN_TIMEOUT: Duration = Duration::from_secs(8);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
-const LISP_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
+const LISP_PROBE_TIMEOUT: Duration = Duration::from_secs(90);
 const LISP_PROBE_MAX_ATTEMPTS: usize = 10;
 const BLE_WRITE_CHUNK_SIZE: usize = 20;
 
