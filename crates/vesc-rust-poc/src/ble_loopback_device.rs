@@ -424,8 +424,8 @@ static STOP_CALLS: AtomicUsize = AtomicUsize::new(0);
 unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
     #[cfg(not(test))]
     {
-        let _ = crate::ffi::LoopbackLifecycle::new(crate::ffi::RealBindings)
-            .clear_app_data_handler();
+        let _ =
+            crate::ffi::LoopbackLifecycle::new(crate::ffi::RealBindings).clear_app_data_handler();
     }
 
     #[cfg(test)]
@@ -468,8 +468,8 @@ pub fn stop_call_count_for_tests() -> usize {
 mod tests {
     use super::{
         handle_loopback_frame, init_call_count_for_tests, reset_init_call_count_for_tests,
-        stop_call_count_for_tests, BleFrame, FakeDeviceServices,
-        LoopbackPackageRuntime, LoopbackPackageState, LoopbackTick,
+        stop_call_count_for_tests, BleFrame, FakeDeviceServices, LoopbackPackageRuntime,
+        LoopbackPackageState, LoopbackTick,
     };
     use crate::ffi;
     use core::cell::Cell;

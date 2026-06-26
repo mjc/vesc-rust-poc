@@ -47,11 +47,8 @@ impl<B: LbmBindings> PackageLifecycle<B> {
             .validate()
             .map_err(|_| ffi::RegisterError::InvalidExtensionName)?;
         let result = unsafe {
-            self.api.register_extension_from_image(
-                image,
-                descriptor.name(),
-                descriptor.handler(),
-            )
+            self.api
+                .register_extension_from_image(image, descriptor.name(), descriptor.handler())
         };
         if result < 0 {
             Err(ffi::RegisterError::FirmwareRejected(result))
@@ -105,8 +102,8 @@ fn rust_add_extension_value<B: LbmBindings>(
 #[cfg(test)]
 mod tests {
     use super::{
-        rust_add_extension_value, ExtensionDescriptor, LbmApi, LbmBindings,
-        LbmCount, LbmValue, PackageLifecycle, EXT_RUST_PROBE_NAME, PACKAGE_EXTENSION_NAMES,
+        rust_add_extension_value, ExtensionDescriptor, LbmApi, LbmBindings, LbmCount, LbmValue,
+        PackageLifecycle, EXT_RUST_PROBE_NAME, PACKAGE_EXTENSION_NAMES,
     };
     use crate::ffi;
     use core::cell::Cell;

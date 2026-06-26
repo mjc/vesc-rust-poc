@@ -514,9 +514,8 @@ mod tests {
         LoaderBaseAddress, MallocLen, MotorIndex, MutablePacket, MutexHandle, NativeAddress,
         NativeImage, NvmAddress, NvmBytes, NvmLen, OwnedFirmwareAllocation, PackageLifecycle,
         PlotAxisName, PlotGraphIndex, PlotGraphName, PlotPoint, ProgramAddress, RegisterError,
-        ReplyPacket,
-        SemaphoreHandle, StackSizeBytes, SystemTicks, ThreadHandle, ThreadName, UartBaudRate,
-        UartWriteLen, VescIfAbi, VescPin, VescPinMode,
+        ReplyPacket, SemaphoreHandle, StackSizeBytes, SystemTicks, ThreadHandle, ThreadName,
+        UartBaudRate, UartWriteLen, VescIfAbi, VescPin, VescPinMode,
     };
     use core::cell::Cell;
     use core::ffi::{CStr, c_char, c_void};
@@ -665,10 +664,7 @@ mod tests {
         let second = ExtensionDescriptor::new(c"ext-rust-ok", stub_handler);
         assert_eq!(
             unsafe {
-                lifecycle.register_extensions_from_image(
-                    NativeImage::new(0x2000),
-                    &[first, second],
-                )
+                lifecycle.register_extensions_from_image(NativeImage::new(0x2000), &[first, second])
             },
             Err(RegisterError::FirmwareRejected(-42))
         );
@@ -725,7 +721,10 @@ mod tests {
             slots.map(|slot| slot.vesc32_byte_offset()),
             [0, 64, 100, 124, 148, 592, 596, 952]
         );
-        assert_eq!(slots.map(|slot| slot.slot_index()), [0, 16, 25, 31, 37, 148, 149, 238]);
+        assert_eq!(
+            slots.map(|slot| slot.slot_index()),
+            [0, 16, 25, 31, 37, 148, 149, 238]
+        );
     }
 
     #[test]

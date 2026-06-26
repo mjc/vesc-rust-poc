@@ -205,4 +205,3 @@ pub(crate) struct TerminalArgNames<'a>(pub &'a [u8]);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
 pub(crate) struct TerminalCallback(pub core::ptr::NonNull<c_void>);
-

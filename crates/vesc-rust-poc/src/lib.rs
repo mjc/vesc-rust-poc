@@ -1,7 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 
-pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
 pub use vesc_ffi as ffi;
+pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
 
 pub mod ble_loopback_device;
 pub mod package_lifecycle;
