@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::fmt;
 use std::fs;
 use std::io::{Read, Write};
@@ -64,6 +65,7 @@ impl fmt::Display for PackageInstallError {
 impl std::error::Error for PackageInstallError {}
 
 pub trait PackageInstallTransport {
+    fn has_qml_app(&self) -> Result<bool, PackageInstallError>;
     fn erase_qml(&self, bytes: usize) -> Result<(), PackageInstallError>;
     fn upload_qml(&self, qml: &[u8], fullscreen: bool) -> Result<(), PackageInstallError>;
     fn erase_lisp(&self, bytes: usize) -> Result<(), PackageInstallError>;
@@ -74,10 +76,21 @@ pub trait PackageInstallTransport {
 
 #[derive(Debug, Default)]
 pub struct FakePackageInstallTransport {
+    has_qml_app: Cell<bool>,
     pub steps: std::cell::RefCell<Vec<PackageInstallStep>>,
 }
 
+impl FakePackageInstallTransport {
+    pub fn set_has_qml_app(&self, has_qml_app: bool) {
+        self.has_qml_app.set(has_qml_app);
+    }
+}
+
 impl PackageInstallTransport for FakePackageInstallTransport {
+    fn has_qml_app(&self) -> Result<bool, PackageInstallError> {
+        Ok(self.has_qml_app.get())
+    }
+
     fn erase_qml(&self, bytes: usize) -> Result<(), PackageInstallError> {
         self.steps
             .borrow_mut()
@@ -201,7 +214,7 @@ pub fn install_package<T: PackageInstallTransport>(
             bytes,
             fullscreen: package.qml_is_fullscreen,
         });
-    } else {
+    } else if transport.has_qml_app()? {
         transport.erase_qml(16)?;
         steps.push(PackageInstallStep::EraseQml { bytes: 16 });
     }
@@ -295,6 +308,21 @@ mod tests {
         encoder.finish().unwrap()
     }
 
+    fn build_lisp_only_package_bytes() -> Vec<u8> {
+        let mut data = Vec::new();
+        write_string(&mut data, "VESC Packet");
+        write_field(&mut data, "name", b"Rust BLE loopback test package");
+        write_field(
+            &mut data,
+            "lispData",
+            b"(load-native-lib \"src/package_lib.bin\")\n",
+        );
+
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
+        encoder.write_all(&data).unwrap();
+        encoder.finish().unwrap()
+    }
+
     fn write_string(buf: &mut Vec<u8>, value: &str) {
         buf.extend_from_slice(&(value.len() as u32).to_le_bytes());
         buf.extend_from_slice(value.as_bytes());
@@ -332,6 +360,29 @@ mod tests {
                     bytes: qml.len(),
                     fullscreen: true
                 },
+                PackageInstallStep::EraseLisp {
+                    bytes: package.lisp_data.len() + 100
+                },
+                PackageInstallStep::UploadLisp {
+                    bytes: package.lisp_data.len()
+                },
+                PackageInstallStep::SetRunning { running: true },
+                PackageInstallStep::ReloadFirmware,
+            ]
+        );
+    }
+
+    #[test]
+    fn skips_qml_erasure_when_the_device_has_no_qml_app() {
+        let package = decode_package(&build_lisp_only_package_bytes()).expect("package");
+        let transport = FakePackageInstallTransport::default();
+        transport.set_has_qml_app(false);
+
+        let report = install_package(&package, &transport).expect("report");
+
+        assert_eq!(
+            report.steps,
+            vec![
                 PackageInstallStep::EraseLisp {
                     bytes: package.lisp_data.len() + 100
                 },

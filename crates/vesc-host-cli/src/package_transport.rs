@@ -29,6 +29,7 @@ const COMM_QMLUI_WRITE: u8 = 121;
 const COMM_LISP_WRITE_CODE: u8 = 131;
 const COMM_LISP_ERASE_CODE: u8 = 132;
 const COMM_LISP_SET_RUNNING: u8 = 133;
+const COMM_FW_VERSION: u8 = 0;
 
 #[derive(Debug)]
 struct VescSession {
@@ -36,9 +37,25 @@ struct VescSession {
     rx_char: Characteristic,
     responses: Receiver<Vec<u8>>,
     decoder: PacketDecoder,
+    has_qml_app: bool,
 }
 
 impl VescSession {
+    fn query_has_qml_app(&mut self, runtime: &Runtime) -> Result<bool, PackageInstallError> {
+        let request = encode_packet(&[COMM_FW_VERSION]);
+        runtime
+            .block_on(
+                self.peripheral
+                    .write(&self.rx_char, &request, WriteType::WithoutResponse),
+            )
+            .map_err(|_| {
+                PackageInstallError::Device("failed to query the firmware version".to_owned())
+            })?;
+
+        let response = self.recv_packet()?;
+        Ok(parse_has_qml_app(&response))
+    }
+
     fn recv_packet(&mut self) -> Result<Vec<u8>, PackageInstallError> {
         loop {
             if let Some(packet) = self.decoder.pop_ready() {
@@ -86,9 +103,10 @@ impl BtlePackageInstallTransport {
     }
 
     fn open_session(&self, target: LoopbackTarget) -> Result<(), PackageInstallError> {
-        let session = self
+        let mut session = self
             .runtime
             .block_on(async move { open_session(target).await })?;
+        session.has_qml_app = session.query_has_qml_app(&self.runtime)?;
         *self.session.borrow_mut() = Some(session);
         Ok(())
     }
@@ -137,6 +155,10 @@ impl BtlePackageInstallTransport {
 }
 
 impl PackageInstallTransport for BtlePackageInstallTransport {
+    fn has_qml_app(&self) -> Result<bool, PackageInstallError> {
+        self.with_session(|session| Ok(session.has_qml_app))
+    }
+
     fn erase_qml(&self, bytes: usize) -> Result<(), PackageInstallError> {
         self.expect_ok(COMM_QMLUI_ERASE, &(bytes as i32).to_be_bytes())
     }
@@ -267,6 +289,7 @@ async fn open_session(target: LoopbackTarget) -> Result<VescSession, PackageInst
         rx_char,
         responses: responses_rx,
         decoder: PacketDecoder::new(),
+        has_qml_app: false,
     })
 }
 
@@ -300,5 +323,59 @@ async fn find_matching_peripheral(
         }
 
         time::sleep(Duration::from_millis(250)).await;
+    }
+}
+
+fn parse_has_qml_app(response: &[u8]) -> bool {
+    let mut cursor = response;
+    if cursor.first().copied() != Some(COMM_FW_VERSION) {
+        return false;
+    }
+    cursor = &cursor[1..];
+    if cursor.len() < 2 {
+        return false;
+    }
+    cursor = &cursor[2..];
+
+    let Some(nul) = cursor.iter().position(|byte| *byte == 0) else {
+        return false;
+    };
+    cursor = &cursor[nul + 1..];
+
+    if cursor.len() < 12 + 5 + 2 {
+        return false;
+    }
+    cursor = &cursor[12..];
+    cursor = &cursor[5..];
+
+    cursor.get(1).copied().unwrap_or(0) > 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_has_qml_app;
+
+    #[test]
+    fn parses_fw_version_replies_with_qml_app_support() {
+        let mut response = Vec::new();
+        response.push(0);
+        response.extend_from_slice(&[75, 15]);
+        response.extend_from_slice(b"VESC\0");
+        response.extend_from_slice(&[0_u8; 12]);
+        response.extend_from_slice(&[0, 0, 1, 0, 0, 0, 1]);
+
+        assert!(parse_has_qml_app(&response));
+    }
+
+    #[test]
+    fn parses_fw_version_replies_without_qml_app_support() {
+        let mut response = Vec::new();
+        response.push(0);
+        response.extend_from_slice(&[75, 15]);
+        response.extend_from_slice(b"VESC\0");
+        response.extend_from_slice(&[0_u8; 12]);
+        response.extend_from_slice(&[0, 0, 1, 0, 0, 0, 0]);
+
+        assert!(!parse_has_qml_app(&response));
     }
 }
