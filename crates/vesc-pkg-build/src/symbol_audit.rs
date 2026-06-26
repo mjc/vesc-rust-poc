@@ -423,7 +423,7 @@ mod tests {
             text,
             SectionLayout {
                 name: ".text".to_owned(),
-                size: 444,
+                size: 460,
                 vma: 16,
             }
         );
@@ -622,6 +622,32 @@ mod tests {
         assert!(
             !package_init_disassembly.contains("ldr\tr2, [r0, #0]"),
             "package init must not read an extension name through a raw image offset before adding lib_info.base_addr:\n{package_init_disassembly}"
+        );
+    }
+
+    #[test]
+    fn loader_init_propagates_package_init_failure() {
+        build_final_native_lib_elf();
+
+        let disassembly = command_stdout(
+            "arm-none-eabi-objdump",
+            [PathBuf::from("-d"), native_lib_elf_path()],
+        );
+        let init_disassembly = disassembly
+            .split("<init>:")
+            .nth(1)
+            .expect("expected init in disassembly")
+            .split("\n\n")
+            .next()
+            .expect("expected bounded init disassembly");
+
+        assert!(
+            init_disassembly.contains("<package_lib_init>"),
+            "expected VESC loader init to call package_lib_init:\n{init_disassembly}"
+        );
+        assert!(
+            !init_disassembly.contains("movs\tr0, #1"),
+            "loader init must return package_lib_init's bool instead of unconditionally reporting success:\n{init_disassembly}"
         );
     }
 

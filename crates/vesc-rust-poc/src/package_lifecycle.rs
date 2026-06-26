@@ -77,13 +77,15 @@ impl<B: LbmBindings> PackageLifecycle<B> {
 }
 
 #[cfg(not(test))]
-pub fn init_package(info: *const ffi::LibInfo) {
+pub fn init_package(info: *const ffi::LibInfo) -> bool {
     let Some(info) = (unsafe { info.as_ref() }) else {
-        return;
+        return false;
     };
 
     let lifecycle = PackageLifecycle::new(ffi::RealBindings);
-    let _ = lifecycle.register_extensions(NativeImage::from_info(info));
+    lifecycle
+        .register_extensions(NativeImage::from_info(info))
+        .is_ok()
 }
 
 #[cfg(not(test))]

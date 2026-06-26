@@ -435,20 +435,21 @@ unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
 }
 
 #[cfg(not(test))]
-pub fn init_package(info: *mut crate::ffi::LibInfo) {
+pub fn init_package(info: *mut crate::ffi::LibInfo) -> bool {
     let Some(info_ref) = (unsafe { info.as_ref() }) else {
-        return;
+        return false;
     };
     let image = crate::ffi::NativeImage::from_info(info_ref);
     let lifecycle = crate::ffi::LoopbackLifecycle::new(crate::ffi::RealBindings);
-    let _ = unsafe { lifecycle.install(info, image, stop_package, app_data_handler) };
+    unsafe { lifecycle.install(info, image, stop_package, app_data_handler) }
 }
 
-pub fn init_package_for_tests(info: *mut crate::ffi::LibInfo) {
+pub fn init_package_for_tests(info: *mut crate::ffi::LibInfo) -> bool {
     if let Some(info) = unsafe { info.as_mut() } {
         info.stop_fun = Some(stop_package);
     }
     INIT_CALLS.fetch_add(1, Ordering::SeqCst);
+    true
 }
 
 pub fn reset_init_call_count_for_tests() {
@@ -567,7 +568,7 @@ mod tests {
     fn package_entrypoint_records_device_initialization() {
         reset_init_call_count_for_tests();
 
-        super::init_package_for_tests(core::ptr::null_mut());
+        assert!(super::init_package_for_tests(core::ptr::null_mut()));
 
         assert_eq!(init_call_count_for_tests(), 1);
     }
@@ -581,7 +582,7 @@ mod tests {
             base_addr: 0,
         };
 
-        super::init_package_for_tests(&mut info);
+        assert!(super::init_package_for_tests(&mut info));
 
         let stop_fun = info.stop_fun.expect("stop hook");
         unsafe {

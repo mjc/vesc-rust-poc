@@ -20,20 +20,19 @@ pub static prog_ptr: i32 = 0;
 #[no_mangle]
 #[link_section = ".init_fun"]
 pub extern "C" fn init(info: *mut ffi::LibInfo) -> bool {
-    package_lib_init(info);
-    true
+    package_lib_init(info)
 }
 
 #[cfg(not(test))]
 #[no_mangle]
-pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) {
-    ble_loopback_device::init_package(info);
-    package_lifecycle::init_package(info);
+pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
+    ble_loopback_device::init_package(info) && package_lifecycle::init_package(info)
 }
 
 #[cfg(test)]
-pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) {
+pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
     ble_loopback_device::init_package_for_tests(info);
+    true
 }
 
 #[cfg(not(test))]
@@ -80,7 +79,7 @@ mod tests {
             base_addr: 0,
         };
 
-        super::package_lib_init(&mut info);
+        assert!(super::package_lib_init(&mut info));
 
         assert_eq!(ble_loopback_device::init_call_count_for_tests(), 1);
         assert!(info.stop_fun.is_some());
