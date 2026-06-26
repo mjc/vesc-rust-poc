@@ -268,31 +268,6 @@ pub(crate) struct TerminalCallback(pub core::ptr::NonNull<c_void>);
 #[allow(dead_code)]
 pub(crate) struct ThreadEntry(pub core::ptr::NonNull<c_void>);
 
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
-pub(crate) struct GnssData(pub core::ptr::NonNull<c_void>);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
-pub(crate) struct RemoteButton(pub u32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
-pub(crate) struct RemoteState(pub u32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
-pub(crate) struct JoystickAxis(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
-pub(crate) struct PpmValue(pub f32);
-
 pub type ExtensionHandler = unsafe extern "C" fn(*mut LbmValue, LbmCount) -> LbmValue;
 pub type AppDataHandler = unsafe extern "C" fn(*mut u8, u32);
 pub type StopHandler = unsafe extern "C" fn(*mut c_void);
