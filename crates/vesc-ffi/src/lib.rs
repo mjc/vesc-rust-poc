@@ -1,3 +1,9 @@
+//! Minimal VESC ABI crate.
+//!
+//! This crate mirrors the firmware C ABI and keeps semantic Rust domain types
+//! out of the raw boundary. It exposes raw scalar wrappers, view wrappers, and
+//! firmware-facing helper APIs, but it does not define the later ergonomic
+//! `vesc-types` / `vesc-units` surface.
 #![cfg_attr(not(test), no_std)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
