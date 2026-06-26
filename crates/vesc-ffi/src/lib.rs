@@ -1,6 +1,6 @@
 #![cfg_attr(not(test), no_std)]
 
-use core::ffi::{c_char, c_void, CStr};
+use core::ffi::{CStr, c_char, c_void};
 
 macro_rules! transparent_value_type {
     ($(#[$meta:meta])* $vis:vis struct $name:ident($inner:ty);) => {
@@ -8,22 +8,6 @@ macro_rules! transparent_value_type {
         #[repr(transparent)]
         #[derive(Debug, Clone, Copy, PartialEq)]
         $vis struct $name(pub $inner);
-
-        impl $name {
-            pub const fn new(value: $inner) -> Self {
-                Self(value)
-            }
-
-            pub const fn get(self) -> $inner {
-                self.0
-            }
-        }
-
-        impl From<$inner> for $name {
-            fn from(value: $inner) -> Self {
-                Self(value)
-            }
-        }
     };
 }
 
@@ -33,22 +17,6 @@ macro_rules! transparent_value_type_generic {
         #[repr(transparent)]
         #[derive(Debug, Clone, Copy, PartialEq)]
         $vis struct $name<$lt>(pub $inner);
-
-        impl<$lt> $name<$lt> {
-            pub const fn new(value: $inner) -> Self {
-                Self(value)
-            }
-
-            pub const fn get(self) -> $inner {
-                self.0
-            }
-        }
-
-        impl<$lt> From<$inner> for $name<$lt> {
-            fn from(value: $inner) -> Self {
-                Self(value)
-            }
-        }
     };
 }
 
@@ -58,22 +26,6 @@ macro_rules! transparent_eq_value_type {
         #[repr(transparent)]
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         $vis struct $name(pub $inner);
-
-        impl $name {
-            pub const fn new(value: $inner) -> Self {
-                Self(value)
-            }
-
-            pub const fn get(self) -> $inner {
-                self.0
-            }
-        }
-
-        impl From<$inner> for $name {
-            fn from(value: $inner) -> Self {
-                Self(value)
-            }
-        }
     };
 }
 
@@ -83,22 +35,6 @@ macro_rules! transparent_eq_value_type_generic {
         #[repr(transparent)]
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         $vis struct $name<$lt>(pub $inner);
-
-        impl<$lt> $name<$lt> {
-            pub const fn new(value: $inner) -> Self {
-                Self(value)
-            }
-
-            pub const fn get(self) -> $inner {
-                self.0
-            }
-        }
-
-        impl<$lt> From<$inner> for $name<$lt> {
-            fn from(value: $inner) -> Self {
-                Self(value)
-            }
-        }
     };
 }
 
@@ -108,119 +44,167 @@ macro_rules! transparent_eq_value_type_type {
         #[repr(transparent)]
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         $vis struct $name<$ty>(pub $inner);
-
-        impl<$ty> $name<$ty> {
-            pub const fn new(value: $inner) -> Self {
-                Self(value)
-            }
-
-            pub const fn get(self) -> $inner {
-                self.0
-            }
-        }
-
-        impl<$ty> From<$inner> for $name<$ty> {
-            fn from(value: $inner) -> Self {
-                Self(value)
-            }
-        }
     };
 }
 
-transparent_eq_value_type!(pub struct LbmValue(u32););
-transparent_eq_value_type!(pub struct LbmCount(u32););
-transparent_eq_value_type!(pub struct LbmInt(i32););
-transparent_eq_value_type!(pub struct LbmUint(u32););
-transparent_eq_value_type!(pub struct LbmType(u32););
-transparent_eq_value_type!(pub struct LbmCid(u32););
-transparent_value_type!(pub struct LbmFloat(f32););
-transparent_eq_value_type!(pub struct LbmSymbol(u32););
-transparent_eq_value_type!(pub struct LbmErrorSymbol(u32););
-transparent_eq_value_type!(pub struct LbmBoolSymbol(u32););
-transparent_eq_value_type!(pub struct LbmNilSymbol(u32););
-transparent_eq_value_type!(pub struct ProgramAddress(u32););
-transparent_eq_value_type!(pub struct LoaderBaseAddress(u32););
-transparent_eq_value_type!(pub struct Milliseconds(u32););
-transparent_eq_value_type!(pub struct Microseconds(u32););
-transparent_value_type!(pub struct SecondsF32(f32););
-transparent_eq_value_type!(pub struct SystemTicks(u32););
-transparent_value_type!(pub struct SystemSeconds(f32););
+transparent_eq_value_type!(
+    pub struct LbmValue(u32);
+);
+transparent_eq_value_type!(
+    pub struct LbmCount(u32);
+);
+transparent_eq_value_type!(
+    pub struct LbmInt(i32);
+);
+transparent_eq_value_type!(
+    pub struct LbmUint(u32);
+);
+transparent_eq_value_type!(
+    pub struct LbmType(u32);
+);
+transparent_eq_value_type!(
+    pub struct LbmCid(u32);
+);
+transparent_value_type!(
+    pub struct LbmFloat(f32);
+);
+transparent_eq_value_type!(
+    pub struct LbmSymbol(u32);
+);
+transparent_eq_value_type!(
+    pub struct LbmErrorSymbol(u32);
+);
+transparent_eq_value_type!(
+    pub struct LbmBoolSymbol(u32);
+);
+transparent_eq_value_type!(
+    pub struct LbmNilSymbol(u32);
+);
+transparent_eq_value_type!(
+    pub struct ProgramAddress(u32);
+);
+transparent_eq_value_type!(
+    pub struct LoaderBaseAddress(u32);
+);
+transparent_eq_value_type!(
+    pub struct Milliseconds(u32);
+);
+transparent_eq_value_type!(
+    pub struct Microseconds(u32);
+);
+transparent_value_type!(
+    pub struct SecondsF32(f32);
+);
+transparent_eq_value_type!(
+    pub struct SystemTicks(u32);
+);
+transparent_value_type!(
+    pub struct SystemSeconds(f32);
+);
 
-transparent_eq_value_type!(pub struct AppDataLen(u32););
-transparent_eq_value_type!(pub struct UartBaudRate(u32););
-transparent_eq_value_type!(pub struct UartWriteLen(u32););
-transparent_eq_value_type!(pub struct MotorIndex(i32););
-transparent_eq_value_type!(pub struct CanControllerId(u8););
-transparent_eq_value_type!(pub struct CanFrameLen(u8););
+transparent_eq_value_type!(
+    pub struct AppDataLen(u32);
+);
+transparent_eq_value_type!(
+    pub struct UartBaudRate(u32);
+);
+transparent_eq_value_type!(
+    pub struct UartWriteLen(u32);
+);
+transparent_eq_value_type!(
+    pub struct MotorIndex(i32);
+);
+transparent_eq_value_type!(
+    pub struct CanControllerId(u8);
+);
+transparent_eq_value_type!(
+    pub struct CanFrameLen(u8);
+);
 
-transparent_value_type_generic!(pub struct AppDataPacket<'a>(&'a [u8]););
-
-impl<'a> AppDataPacket<'a> {
-    pub const fn as_bytes(self) -> &'a [u8] {
-        self.get()
-    }
-}
+transparent_value_type_generic!(
+    pub struct AppDataPacket<'a>(&'a [u8]);
+);
 
 #[repr(transparent)]
 #[derive(Debug, PartialEq)]
 pub struct MutablePacket<'a>(pub &'a mut [u8]);
 
-impl<'a> MutablePacket<'a> {
-    pub const fn new(bytes: &'a mut [u8]) -> Self {
-        Self(bytes)
-    }
+transparent_value_type_generic!(
+    pub struct CommandPacket<'a>(&'a [u8]);
+);
 
-    pub fn as_mut_bytes(&mut self) -> &mut [u8] {
-        self.0
-    }
-}
+transparent_value_type_generic!(
+    pub struct ReplyPacket<'a>(&'a [u8]);
+);
 
-transparent_value_type_generic!(pub struct CommandPacket<'a>(&'a [u8]););
+transparent_value_type!(
+    pub struct HalfDuplex(bool);
+);
 
-impl<'a> CommandPacket<'a> {
-    pub const fn as_bytes(self) -> &'a [u8] {
-        self.get()
-    }
-}
+transparent_eq_value_type!(
+    pub struct CfgParam(i32);
+);
+transparent_value_type!(
+    pub struct CfgFloat(f32);
+);
+transparent_eq_value_type!(
+    pub struct CfgInt(i32);
+);
+transparent_eq_value_type!(
+    pub struct ConfigSetResult(i32);
+);
+transparent_value_type_generic!(
+    pub struct ConfigXmlBytes<'a>(&'a [u8]);
+);
+transparent_value_type_generic!(
+    pub struct ConfigPayload<'a>(&'a [u8]);
+);
+transparent_value_type_generic!(
+    pub struct ThreadName<'a>(&'a CStr);
+);
+transparent_eq_value_type!(
+    pub struct StackSizeBytes(usize);
+);
+transparent_eq_value_type!(
+    pub struct ThreadHandle(core::ptr::NonNull<c_void>);
+);
+transparent_eq_value_type!(
+    pub struct MutexHandle(core::ptr::NonNull<c_void>);
+);
+transparent_eq_value_type!(
+    pub struct SemaphoreHandle(core::ptr::NonNull<c_void>);
+);
+transparent_eq_value_type_type!(
+    pub struct FirmwarePtr<T>(core::ptr::NonNull<T>);
+);
+transparent_eq_value_type_type!(
+    pub struct FirmwareNonNull<T>(core::ptr::NonNull<T>);
+);
+transparent_eq_value_type!(
+    pub struct MallocLen(usize);
+);
+transparent_eq_value_type_type!(
+    pub struct OwnedFirmwareAllocation<T>(core::ptr::NonNull<T>);
+);
+transparent_eq_value_type_generic!(
+    pub struct CanPayload<'a>(&'a [u8]);
+);
+transparent_eq_value_type!(
+    pub struct CanStatusIndex(i32);
+);
+transparent_eq_value_type!(
+    pub struct HardwareType(i32);
+);
 
-transparent_value_type_generic!(pub struct ReplyPacket<'a>(&'a [u8]););
-
-impl<'a> ReplyPacket<'a> {
-    pub const fn as_bytes(self) -> &'a [u8] {
-        self.get()
-    }
-}
-
-transparent_value_type!(pub struct HalfDuplex(bool););
-
-impl HalfDuplex {
-    pub const fn is_enabled(self) -> bool {
-        self.0
-    }
-}
-
-transparent_eq_value_type!(pub struct CfgParam(i32););
-transparent_value_type!(pub struct CfgFloat(f32););
-transparent_eq_value_type!(pub struct CfgInt(i32););
-transparent_eq_value_type!(pub struct ConfigSetResult(i32););
-transparent_value_type_generic!(pub struct ConfigXmlBytes<'a>(&'a [u8]););
-transparent_value_type_generic!(pub struct ConfigPayload<'a>(&'a [u8]););
-transparent_value_type_generic!(pub struct ThreadName<'a>(&'a CStr););
-transparent_eq_value_type!(pub struct StackSizeBytes(usize););
-transparent_eq_value_type!(pub struct ThreadHandle(core::ptr::NonNull<c_void>););
-transparent_eq_value_type!(pub struct MutexHandle(core::ptr::NonNull<c_void>););
-transparent_eq_value_type!(pub struct SemaphoreHandle(core::ptr::NonNull<c_void>););
-transparent_eq_value_type_type!(pub struct FirmwarePtr<T>(core::ptr::NonNull<T>););
-transparent_eq_value_type_type!(pub struct FirmwareNonNull<T>(core::ptr::NonNull<T>););
-transparent_eq_value_type!(pub struct MallocLen(usize););
-transparent_eq_value_type_type!(pub struct OwnedFirmwareAllocation<T>(core::ptr::NonNull<T>););
-transparent_eq_value_type_generic!(pub struct CanPayload<'a>(&'a [u8]););
-transparent_eq_value_type!(pub struct CanStatusIndex(i32););
-transparent_eq_value_type!(pub struct HardwareType(i32););
-
-transparent_value_type_generic!(pub struct PlotAxisName<'a>(&'a CStr););
-transparent_value_type_generic!(pub struct PlotGraphName<'a>(&'a CStr););
-transparent_eq_value_type!(pub struct PlotGraphIndex(i32););
+transparent_value_type_generic!(
+    pub struct PlotAxisName<'a>(&'a CStr);
+);
+transparent_value_type_generic!(
+    pub struct PlotGraphName<'a>(&'a CStr);
+);
+transparent_eq_value_type!(
+    pub struct PlotGraphIndex(i32);
+);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -229,31 +213,37 @@ pub struct PlotPoint {
     pub y: f32,
 }
 
-impl PlotPoint {
-    pub const fn new(x: f32, y: f32) -> Self {
-        Self { x, y }
-    }
+transparent_eq_value_type!(
+    pub struct VescPin(i32);
+);
+transparent_eq_value_type!(
+    pub struct VescPinMode(i32);
+);
+transparent_eq_value_type!(
+    pub struct GpioPortPtr(core::ptr::NonNull<c_void>);
+);
+transparent_eq_value_type!(
+    pub struct GpioPin(u32);
+);
+transparent_eq_value_type!(
+    pub struct LbmIoSymbol(LbmSymbol);
+);
+transparent_eq_value_type!(
+    pub struct NvmAddress(u32);
+);
+transparent_eq_value_type!(
+    pub struct NvmLen(u32);
+);
+transparent_value_type_generic!(
+    pub struct NvmBytes<'a>(&'a [u8]);
+);
 
-    pub const fn x(self) -> f32 {
-        self.x
-    }
-
-    pub const fn y(self) -> f32 {
-        self.y
-    }
-}
-
-transparent_eq_value_type!(pub struct VescPin(i32););
-transparent_eq_value_type!(pub struct VescPinMode(i32););
-transparent_eq_value_type!(pub struct GpioPortPtr(core::ptr::NonNull<c_void>););
-transparent_eq_value_type!(pub struct GpioPin(u32););
-transparent_eq_value_type!(pub struct LbmIoSymbol(LbmSymbol););
-transparent_eq_value_type!(pub struct NvmAddress(u32););
-transparent_eq_value_type!(pub struct NvmLen(u32););
-transparent_value_type_generic!(pub struct NvmBytes<'a>(&'a [u8]););
-
-transparent_eq_value_type!(pub struct EepromAddress(i32););
-transparent_eq_value_type!(pub struct EepromVar(i32););
+transparent_eq_value_type!(
+    pub struct EepromAddress(i32);
+);
+transparent_eq_value_type!(
+    pub struct EepromVar(i32);
+);
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -402,20 +392,10 @@ impl ImageOffset {
     pub const fn new(offset: usize) -> Self {
         Self(offset)
     }
-
-    pub const fn get(self) -> usize {
-        self.0
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeAddress(usize);
-
-impl NativeAddress {
-    pub const fn get(self) -> usize {
-        self.0
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeImage {
@@ -438,11 +418,11 @@ impl NativeImage {
     }
 
     pub fn rebase_offset(self, offset: ImageOffset) -> NativeAddress {
-        NativeAddress(self.base_addr.get() + offset.get())
+        NativeAddress(self.base_addr.0 + offset.0)
     }
 
     pub fn rebase_addr(self, image_addr: usize) -> usize {
-        self.rebase_offset(ImageOffset::new(image_addr)).get()
+        self.rebase_offset(ImageOffset::new(image_addr)).0
     }
 
     pub fn rebase_ptr<T>(self, ptr: *const T) -> *const T {
@@ -709,7 +689,7 @@ pub mod raw {
         system_time_ticks: unsafe extern "C" fn() -> u32,
     }
 
-    const VESC_IF: *const VescIf = VescIfAbi::BASE_ADDR.get() as *const VescIf;
+    const VESC_IF: *const VescIf = VescIfAbi::BASE_ADDR.0 as *const VescIf;
 
     pub unsafe fn lbm_add_extension(name: *const c_char, handler: ExtensionHandler) -> i32 {
         unsafe { ((*VESC_IF).lbm_add_extension)(name as *mut c_char, handler) as i32 }
@@ -762,20 +742,20 @@ pub mod raw {
 mod tests {
     #[allow(unused_imports)]
     use super::{
-        AppDataLen, AppDataPacket, CanControllerId, CanFrameLen, CanPayload,
-        CanStatusIndex, CfgFloat, CfgInt, CfgParam, CommandPacket, ConfigPayload, ConfigSetResult,
-        ConfigXmlBytes, EepromAddress, EepromVar, ExtensionHandler, FirmwareNonNull, FirmwarePtr,
-        GpioPin, GpioPortPtr, HalfDuplex, HardwareType, ImageOffset, LbmApi,
-        LbmBindings, LbmBoolSymbol, LbmCid, LbmCount, LbmErrorSymbol, LbmFloat, LbmInt,
-        LbmIoSymbol, LbmNilSymbol, LbmSymbol, LbmType, LbmUint, LbmValue, LibInfo,
-        LibInfoAbi, LoaderBaseAddress, MallocLen, MotorIndex, MutexHandle, MutablePacket,
-        NativeAddress, NativeImage, NvmAddress, NvmBytes, NvmLen, OwnedFirmwareAllocation,
-        PlotAxisName, PlotGraphIndex, PlotGraphName, PlotPoint, ProgramAddress, ReplyPacket,
-        SemaphoreHandle, SecondsF32, StackSizeBytes, SystemSeconds, SystemTicks, ThreadHandle,
-        ThreadName, UartBaudRate, UartWriteLen, VescIfAbi, VescPin, VescPinMode,
+        AppDataLen, AppDataPacket, CanControllerId, CanFrameLen, CanPayload, CanStatusIndex,
+        CfgFloat, CfgInt, CfgParam, CommandPacket, ConfigPayload, ConfigSetResult, ConfigXmlBytes,
+        EepromAddress, EepromVar, ExtensionHandler, FirmwareNonNull, FirmwarePtr, GpioPin,
+        GpioPortPtr, HalfDuplex, HardwareType, ImageOffset, LbmApi, LbmBindings, LbmBoolSymbol,
+        LbmCid, LbmCount, LbmErrorSymbol, LbmFloat, LbmInt, LbmIoSymbol, LbmNilSymbol, LbmSymbol,
+        LbmType, LbmUint, LbmValue, LibInfo, LibInfoAbi, LoaderBaseAddress, MallocLen, MotorIndex,
+        MutablePacket, MutexHandle, NativeAddress, NativeImage, NvmAddress, NvmBytes, NvmLen,
+        OwnedFirmwareAllocation, PlotAxisName, PlotGraphIndex, PlotGraphName, PlotPoint,
+        ProgramAddress, ReplyPacket, SecondsF32, SemaphoreHandle, StackSizeBytes, SystemSeconds,
+        SystemTicks, ThreadHandle, ThreadName, UartBaudRate, UartWriteLen, VescIfAbi, VescPin,
+        VescPinMode,
     };
     use core::cell::Cell;
-    use core::ffi::{c_char, c_void, CStr};
+    use core::ffi::{CStr, c_char, c_void};
 
     struct FakeBindings {
         add_calls: Cell<usize>,
@@ -945,11 +925,26 @@ mod tests {
         assert_eq!(core::mem::size_of::<LbmUint>(), core::mem::size_of::<u32>());
         assert_eq!(core::mem::size_of::<LbmType>(), core::mem::size_of::<u32>());
         assert_eq!(core::mem::size_of::<LbmCid>(), core::mem::size_of::<u32>());
-        assert_eq!(core::mem::size_of::<LbmFloat>(), core::mem::size_of::<f32>());
-        assert_eq!(core::mem::size_of::<LbmSymbol>(), core::mem::size_of::<u32>());
-        assert_eq!(core::mem::size_of::<LbmErrorSymbol>(), core::mem::size_of::<u32>());
-        assert_eq!(core::mem::size_of::<LbmBoolSymbol>(), core::mem::size_of::<u32>());
-        assert_eq!(core::mem::size_of::<LbmNilSymbol>(), core::mem::size_of::<u32>());
+        assert_eq!(
+            core::mem::size_of::<LbmFloat>(),
+            core::mem::size_of::<f32>()
+        );
+        assert_eq!(
+            core::mem::size_of::<LbmSymbol>(),
+            core::mem::size_of::<u32>()
+        );
+        assert_eq!(
+            core::mem::size_of::<LbmErrorSymbol>(),
+            core::mem::size_of::<u32>()
+        );
+        assert_eq!(
+            core::mem::size_of::<LbmBoolSymbol>(),
+            core::mem::size_of::<u32>()
+        );
+        assert_eq!(
+            core::mem::size_of::<LbmNilSymbol>(),
+            core::mem::size_of::<u32>()
+        );
         assert_eq!(
             core::mem::size_of::<ProgramAddress>(),
             core::mem::size_of::<u32>()
@@ -958,13 +953,34 @@ mod tests {
             core::mem::size_of::<LoaderBaseAddress>(),
             core::mem::size_of::<u32>()
         );
-        assert_eq!(core::mem::size_of::<SecondsF32>(), core::mem::size_of::<f32>());
-        assert_eq!(core::mem::size_of::<AppDataLen>(), core::mem::size_of::<u32>());
-        assert_eq!(core::mem::size_of::<UartBaudRate>(), core::mem::size_of::<u32>());
-        assert_eq!(core::mem::size_of::<UartWriteLen>(), core::mem::size_of::<u32>());
-        assert_eq!(core::mem::size_of::<MotorIndex>(), core::mem::size_of::<i32>());
-        assert_eq!(core::mem::size_of::<CanControllerId>(), core::mem::size_of::<u8>());
-        assert_eq!(core::mem::size_of::<CanFrameLen>(), core::mem::size_of::<u8>());
+        assert_eq!(
+            core::mem::size_of::<SecondsF32>(),
+            core::mem::size_of::<f32>()
+        );
+        assert_eq!(
+            core::mem::size_of::<AppDataLen>(),
+            core::mem::size_of::<u32>()
+        );
+        assert_eq!(
+            core::mem::size_of::<UartBaudRate>(),
+            core::mem::size_of::<u32>()
+        );
+        assert_eq!(
+            core::mem::size_of::<UartWriteLen>(),
+            core::mem::size_of::<u32>()
+        );
+        assert_eq!(
+            core::mem::size_of::<MotorIndex>(),
+            core::mem::size_of::<i32>()
+        );
+        assert_eq!(
+            core::mem::size_of::<CanControllerId>(),
+            core::mem::size_of::<u8>()
+        );
+        assert_eq!(
+            core::mem::size_of::<CanFrameLen>(),
+            core::mem::size_of::<u8>()
+        );
         assert_eq!(
             core::mem::size_of::<AppDataPacket<'_>>(),
             core::mem::size_of::<&[u8]>()
@@ -981,13 +997,31 @@ mod tests {
             core::mem::size_of::<ReplyPacket<'_>>(),
             core::mem::size_of::<&[u8]>()
         );
-        assert_eq!(core::mem::size_of::<HalfDuplex>(), core::mem::size_of::<bool>());
-        assert_eq!(core::mem::size_of::<SystemTicks>(), core::mem::size_of::<u32>());
-        assert_eq!(core::mem::size_of::<SystemSeconds>(), core::mem::size_of::<f32>());
-        assert_eq!(core::mem::size_of::<CfgParam>(), core::mem::size_of::<i32>());
-        assert_eq!(core::mem::size_of::<CfgFloat>(), core::mem::size_of::<f32>());
+        assert_eq!(
+            core::mem::size_of::<HalfDuplex>(),
+            core::mem::size_of::<bool>()
+        );
+        assert_eq!(
+            core::mem::size_of::<SystemTicks>(),
+            core::mem::size_of::<u32>()
+        );
+        assert_eq!(
+            core::mem::size_of::<SystemSeconds>(),
+            core::mem::size_of::<f32>()
+        );
+        assert_eq!(
+            core::mem::size_of::<CfgParam>(),
+            core::mem::size_of::<i32>()
+        );
+        assert_eq!(
+            core::mem::size_of::<CfgFloat>(),
+            core::mem::size_of::<f32>()
+        );
         assert_eq!(core::mem::size_of::<CfgInt>(), core::mem::size_of::<i32>());
-        assert_eq!(core::mem::size_of::<ConfigSetResult>(), core::mem::size_of::<i32>());
+        assert_eq!(
+            core::mem::size_of::<ConfigSetResult>(),
+            core::mem::size_of::<i32>()
+        );
         assert_eq!(
             core::mem::size_of::<ConfigXmlBytes<'_>>(),
             core::mem::size_of::<&[u8]>()
@@ -996,24 +1030,54 @@ mod tests {
             core::mem::size_of::<ConfigPayload<'_>>(),
             core::mem::size_of::<&[u8]>()
         );
-        assert_eq!(core::mem::size_of::<ThreadName<'_>>(), core::mem::size_of::<&CStr>());
-        assert_eq!(core::mem::size_of::<StackSizeBytes>(), core::mem::size_of::<usize>());
-        assert_eq!(core::mem::size_of::<ThreadHandle>(), core::mem::size_of::<usize>());
-        assert_eq!(core::mem::size_of::<MutexHandle>(), core::mem::size_of::<usize>());
-        assert_eq!(core::mem::size_of::<SemaphoreHandle>(), core::mem::size_of::<usize>());
-        assert_eq!(core::mem::size_of::<FirmwarePtr::<u8>>(), core::mem::size_of::<usize>());
+        assert_eq!(
+            core::mem::size_of::<ThreadName<'_>>(),
+            core::mem::size_of::<&CStr>()
+        );
+        assert_eq!(
+            core::mem::size_of::<StackSizeBytes>(),
+            core::mem::size_of::<usize>()
+        );
+        assert_eq!(
+            core::mem::size_of::<ThreadHandle>(),
+            core::mem::size_of::<usize>()
+        );
+        assert_eq!(
+            core::mem::size_of::<MutexHandle>(),
+            core::mem::size_of::<usize>()
+        );
+        assert_eq!(
+            core::mem::size_of::<SemaphoreHandle>(),
+            core::mem::size_of::<usize>()
+        );
+        assert_eq!(
+            core::mem::size_of::<FirmwarePtr::<u8>>(),
+            core::mem::size_of::<usize>()
+        );
         assert_eq!(
             core::mem::size_of::<FirmwareNonNull::<u8>>(),
             core::mem::size_of::<usize>()
         );
-        assert_eq!(core::mem::size_of::<MallocLen>(), core::mem::size_of::<usize>());
+        assert_eq!(
+            core::mem::size_of::<MallocLen>(),
+            core::mem::size_of::<usize>()
+        );
         assert_eq!(
             core::mem::size_of::<OwnedFirmwareAllocation::<u8>>(),
             core::mem::size_of::<usize>()
         );
-        assert_eq!(core::mem::size_of::<CanPayload<'_>>(), core::mem::size_of::<&[u8]>());
-        assert_eq!(core::mem::size_of::<CanStatusIndex>(), core::mem::size_of::<i32>());
-        assert_eq!(core::mem::size_of::<HardwareType>(), core::mem::size_of::<i32>());
+        assert_eq!(
+            core::mem::size_of::<CanPayload<'_>>(),
+            core::mem::size_of::<&[u8]>()
+        );
+        assert_eq!(
+            core::mem::size_of::<CanStatusIndex>(),
+            core::mem::size_of::<i32>()
+        );
+        assert_eq!(
+            core::mem::size_of::<HardwareType>(),
+            core::mem::size_of::<i32>()
+        );
         assert_eq!(
             core::mem::size_of::<PlotAxisName<'_>>(),
             core::mem::size_of::<&CStr>()
@@ -1022,76 +1086,70 @@ mod tests {
             core::mem::size_of::<PlotGraphName<'_>>(),
             core::mem::size_of::<&CStr>()
         );
-        assert_eq!(core::mem::size_of::<PlotGraphIndex>(), core::mem::size_of::<i32>());
-        assert_eq!(core::mem::size_of::<PlotPoint>(), core::mem::size_of::<f32>() * 2);
+        assert_eq!(
+            core::mem::size_of::<PlotGraphIndex>(),
+            core::mem::size_of::<i32>()
+        );
+        assert_eq!(
+            core::mem::size_of::<PlotPoint>(),
+            core::mem::size_of::<f32>() * 2
+        );
         assert_eq!(core::mem::size_of::<VescPin>(), core::mem::size_of::<i32>());
-        assert_eq!(core::mem::size_of::<VescPinMode>(), core::mem::size_of::<i32>());
-        assert_eq!(core::mem::size_of::<GpioPortPtr>(), core::mem::size_of::<usize>());
+        assert_eq!(
+            core::mem::size_of::<VescPinMode>(),
+            core::mem::size_of::<i32>()
+        );
+        assert_eq!(
+            core::mem::size_of::<GpioPortPtr>(),
+            core::mem::size_of::<usize>()
+        );
         assert_eq!(core::mem::size_of::<GpioPin>(), core::mem::size_of::<u32>());
-        assert_eq!(core::mem::size_of::<LbmIoSymbol>(), core::mem::size_of::<LbmSymbol>());
-        assert_eq!(core::mem::size_of::<NvmAddress>(), core::mem::size_of::<u32>());
+        assert_eq!(
+            core::mem::size_of::<LbmIoSymbol>(),
+            core::mem::size_of::<LbmSymbol>()
+        );
+        assert_eq!(
+            core::mem::size_of::<NvmAddress>(),
+            core::mem::size_of::<u32>()
+        );
         assert_eq!(core::mem::size_of::<NvmLen>(), core::mem::size_of::<u32>());
-        assert_eq!(core::mem::size_of::<NvmBytes<'_>>(), core::mem::size_of::<&[u8]>());
-        assert_eq!(core::mem::size_of::<EepromAddress>(), core::mem::size_of::<i32>());
-        assert_eq!(core::mem::size_of::<EepromVar>(), core::mem::size_of::<i32>());
+        assert_eq!(
+            core::mem::size_of::<NvmBytes<'_>>(),
+            core::mem::size_of::<&[u8]>()
+        );
+        assert_eq!(
+            core::mem::size_of::<EepromAddress>(),
+            core::mem::size_of::<i32>()
+        );
+        assert_eq!(
+            core::mem::size_of::<EepromVar>(),
+            core::mem::size_of::<i32>()
+        );
     }
 
     #[test]
-    fn wrapper_helpers_round_trip_their_inner_values() {
+    fn transparent_wrappers_expose_raw_tuple_fields() {
         let raw = [1_u8, 2, 3];
         let mut mut_raw = [4_u8, 5, 6];
         let name = c"axis";
 
-        assert_eq!(LbmInt::new(-7).get(), -7);
-        assert_eq!(LbmFloat::new(3.5).get(), 3.5);
-        assert_eq!(HalfDuplex::new(true).is_enabled(), true);
-        assert_eq!(ConfigXmlBytes::new(&raw).get(), &raw);
-        assert_eq!(ConfigPayload::new(&raw).get(), &raw);
-        assert_eq!(ThreadName::new(name).get(), name);
-        assert_eq!(CanPayload::new(&raw).get(), &raw);
-        assert_eq!(PlotAxisName::new(name).get(), name);
-        assert_eq!(PlotGraphName::new(name).get(), name);
-        assert_eq!(NvmBytes::new(&raw).get(), &raw);
+        assert_eq!(LbmInt(-7).0, -7);
+        assert_eq!(LbmFloat(3.5).0, 3.5);
+        assert_eq!(HalfDuplex(true).0, true);
+        assert_eq!(ConfigXmlBytes(&raw).0, &raw);
+        assert_eq!(ConfigPayload(&raw).0, &raw);
+        assert_eq!(ThreadName(name).0, name);
+        assert_eq!(CanPayload(&raw).0, &raw);
+        assert_eq!(PlotAxisName(name).0, name);
+        assert_eq!(PlotGraphName(name).0, name);
+        assert_eq!(NvmBytes(&raw).0, &raw);
         {
-            let mut packet = MutablePacket::new(&mut mut_raw);
-            packet.as_mut_bytes()[0] = 9;
+            let packet = MutablePacket(&mut mut_raw);
+            packet.0[0] = 9;
         }
         assert_eq!(mut_raw[0], 9);
-        assert_eq!(PlotPoint::new(1.5, 2.5).x(), 1.5);
-        assert_eq!(PlotPoint::new(1.5, 2.5).y(), 2.5);
+        let point = PlotPoint { x: 1.5, y: 2.5 };
+        assert_eq!(point.x, 1.5);
+        assert_eq!(point.y, 2.5);
     }
-
-    #[test]
-    fn normalized_wrappers_support_into_and_from_conversions() {
-        let int_value: LbmInt = (-7_i32).into();
-        let float_value: LbmFloat = 3.5_f32.into();
-        let scalar_value: AppDataLen = 42_u32.into();
-        let size_value: StackSizeBytes = 128_usize.into();
-        let payload = [7_u8, 8, 9];
-        let payload_value: AppDataPacket<'_> = (&payload[..]).into();
-        let name = c"axis";
-        let name_value: ThreadName<'_> = name.into();
-        let axis_value: PlotAxisName<'_> = name.into();
-        let can_payload: CanPayload<'_> = (&payload[..]).into();
-        let config_payload: ConfigPayload<'_> = (&payload[..]).into();
-        let xml_bytes: ConfigXmlBytes<'_> = (&payload[..]).into();
-        let nvm_bytes: NvmBytes<'_> = (&payload[..]).into();
-        let half_duplex: HalfDuplex = true.into();
-        let graph_name: PlotGraphName<'_> = name.into();
-
-        assert_eq!(int_value.get(), -7);
-        assert_eq!(float_value.get(), 3.5);
-        assert_eq!(scalar_value.get(), 42);
-        assert_eq!(size_value.get(), 128);
-        assert_eq!(payload_value.as_bytes(), &payload);
-        assert_eq!(name_value.get(), name);
-        assert_eq!(axis_value.get(), name);
-        assert_eq!(can_payload.get(), &payload);
-        assert_eq!(config_payload.get(), &payload);
-        assert_eq!(xml_bytes.get(), &payload);
-        assert_eq!(nvm_bytes.get(), &payload);
-        assert_eq!(half_duplex.is_enabled(), true);
-        assert_eq!(graph_name.get(), name);
-    }
-
 }
