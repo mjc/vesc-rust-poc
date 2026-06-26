@@ -392,6 +392,12 @@ pub enum ExtensionNameError {
     MissingExtPrefix,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegisterError {
+    InvalidExtensionName,
+    FirmwareRejected(i32),
+}
+
 #[derive(Clone, Copy)]
 pub struct ExtensionDescriptor {
     name: &'static CStr,
@@ -511,14 +517,22 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         }
     }
 
-    pub fn register_extension(&self, descriptor: ExtensionDescriptor) -> i32 {
-        let descriptor = match descriptor.validate() {
-            Ok(descriptor) => descriptor,
-            Err(_) => return -1,
-        };
+    pub fn register_extension(
+        &self,
+        descriptor: ExtensionDescriptor,
+    ) -> Result<i32, RegisterError> {
+        let descriptor = descriptor
+            .validate()
+            .map_err(|_| RegisterError::InvalidExtensionName)?;
 
-        self.api
-            .register_extension(descriptor.name(), descriptor.handler())
+        let result = self
+            .api
+            .register_extension(descriptor.name(), descriptor.handler());
+        if result < 0 {
+            Err(RegisterError::FirmwareRejected(result))
+        } else {
+            Ok(result)
+        }
     }
 
     /// # Safety
@@ -529,15 +543,19 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         &self,
         image: NativeImage,
         descriptor: ExtensionDescriptor,
-    ) -> i32 {
-        let descriptor = match descriptor.validate() {
-            Ok(descriptor) => descriptor,
-            Err(_) => return -1,
-        };
+    ) -> Result<i32, RegisterError> {
+        let descriptor = descriptor
+            .validate()
+            .map_err(|_| RegisterError::InvalidExtensionName)?;
 
-        unsafe {
+        let result = unsafe {
             self.api
                 .register_extension_from_image(image, descriptor.name(), descriptor.handler())
+        };
+        if result < 0 {
+            Err(RegisterError::FirmwareRejected(result))
+        } else {
+            Ok(result)
         }
     }
 
@@ -549,10 +567,13 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         &self,
         image: NativeImage,
         descriptors: &[ExtensionDescriptor],
-    ) -> i32 {
-        descriptors.iter().fold(0, |_, descriptor| {
-            unsafe { self.register_extension_from_image(image, *descriptor) }
-        })
+    ) -> Result<(), RegisterError> {
+        for descriptor in descriptors {
+            unsafe {
+                self.register_extension_from_image(image, *descriptor)?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -674,14 +695,16 @@ mod tests {
     use super::{
         AppDataLen, AppDataPacket, CanControllerId, CanFrameLen, CanPayload, CanStatusIndex,
         CfgFloat, CfgInt, CfgParam, CommandPacket, ConfigPayload, ConfigSetResult, ConfigXmlBytes,
-        EepromAddress, EepromVar, ExtensionHandler, FirmwareNonNull, FirmwarePtr, GpioPin,
-        GpioPortPtr, HalfDuplex, HardwareType, ImageOffset, LbmApi, LbmBindings, LbmBoolSymbol,
-        LbmCid, LbmCount, LbmErrorSymbol, LbmFloat, LbmInt, LbmIoSymbol, LbmNilSymbol, LbmSymbol,
-        LbmType, LbmUint, LbmValue, LibInfo, LibInfoAbi, LoaderBaseAddress, MallocLen, MotorIndex,
-        MutablePacket, MutexHandle, NativeAddress, NativeImage, NvmAddress, NvmBytes, NvmLen,
-        OwnedFirmwareAllocation, PlotAxisName, PlotGraphIndex, PlotGraphName, PlotPoint,
-        ProgramAddress, ReplyPacket, SemaphoreHandle, StackSizeBytes, SystemTicks, ThreadHandle,
-        ThreadName, UartBaudRate, UartWriteLen, VescIfAbi, VescPin, VescPinMode,
+        EepromAddress, EepromVar, ExtensionDescriptor, ExtensionHandler, FirmwareNonNull,
+        FirmwarePtr, GpioPin, GpioPortPtr, HalfDuplex, HardwareType, ImageOffset, LbmApi,
+        LbmBindings, LbmBoolSymbol, LbmCid, LbmCount, LbmErrorSymbol, LbmFloat, LbmInt,
+        LbmIoSymbol, LbmNilSymbol, LbmSymbol, LbmType, LbmUint, LbmValue, LibInfo, LibInfoAbi,
+        LoaderBaseAddress, MallocLen, MotorIndex, MutablePacket, MutexHandle, NativeAddress,
+        NativeImage, NvmAddress, NvmBytes, NvmLen, OwnedFirmwareAllocation, PackageLifecycle,
+        PlotAxisName, PlotGraphIndex, PlotGraphName, PlotPoint, ProgramAddress, RegisterError,
+        ReplyPacket,
+        SemaphoreHandle, StackSizeBytes, SystemTicks, ThreadHandle, ThreadName, UartBaudRate,
+        UartWriteLen, VescIfAbi, VescPin, VescPinMode,
     };
     use core::cell::Cell;
     use core::ffi::{CStr, c_char, c_void};
@@ -692,16 +715,22 @@ mod tests {
         encode_calls: Cell<usize>,
         last_name: Cell<usize>,
         last_handler: Cell<usize>,
+        add_results: Cell<[i32; 2]>,
     }
 
     impl FakeBindings {
         fn new() -> Self {
+            Self::with_add_results([17, 17])
+        }
+
+        fn with_add_results(add_results: [i32; 2]) -> Self {
             Self {
                 add_calls: Cell::new(0),
                 decode_calls: Cell::new(0),
                 encode_calls: Cell::new(0),
                 last_name: Cell::new(0),
                 last_handler: Cell::new(0),
+                add_results: Cell::new(add_results),
             }
         }
     }
@@ -711,7 +740,8 @@ mod tests {
             self.add_calls.set(self.add_calls.get() + 1);
             self.last_name.set(name as usize);
             self.last_handler.set(handler as usize);
-            17
+            let index = self.add_calls.get().saturating_sub(1).min(1);
+            self.add_results.get()[index]
         }
 
         unsafe fn decode_i32(&self, value: LbmValue) -> i32 {
@@ -794,6 +824,43 @@ mod tests {
             rebased_stop,
             stub_stop_handler as *const () as usize + 0x2000
         );
+    }
+
+    #[test]
+    fn package_registration_reports_name_validation_and_firmware_rejection() {
+        let bindings = FakeBindings::with_add_results([-42, 17]);
+        let lifecycle = PackageLifecycle::new(bindings);
+
+        let invalid = ExtensionDescriptor::new(c"bad-name", stub_handler);
+        assert_eq!(
+            lifecycle.register_extension(invalid),
+            Err(RegisterError::InvalidExtensionName)
+        );
+
+        let rejected = ExtensionDescriptor::new(c"ext-rust-reject", stub_handler);
+        assert_eq!(
+            lifecycle.register_extension(rejected),
+            Err(RegisterError::FirmwareRejected(-42))
+        );
+    }
+
+    #[test]
+    fn package_batch_registration_stops_on_the_first_failure() {
+        let bindings = FakeBindings::with_add_results([-42, 17]);
+        let lifecycle = PackageLifecycle::new(bindings);
+
+        let first = ExtensionDescriptor::new(c"ext-rust-a", stub_handler);
+        let second = ExtensionDescriptor::new(c"ext-rust-ok", stub_handler);
+        assert_eq!(
+            unsafe {
+                lifecycle.register_extensions_from_image(
+                    NativeImage::new(0x2000),
+                    &[first, second],
+                )
+            },
+            Err(RegisterError::FirmwareRejected(-42))
+        );
+        assert_eq!(lifecycle.api.bindings.add_calls.get(), 1);
     }
 
     #[test]
