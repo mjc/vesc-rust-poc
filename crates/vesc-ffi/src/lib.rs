@@ -803,6 +803,9 @@ pub mod raw {
         // Firmware 6.06
         thread_set_priority: Option<unsafe extern "C" fn(c_int)>,
         shutdown_disable: Option<unsafe extern "C" fn(bool)>,
+
+        // Firmware 7.00
+        foc_set_fw_override: Option<unsafe extern "C" fn(f32)>,
     }
 
     const VESC_IF: *const VescIf = VescIfAbi::BASE_ADDR.0 as *const VescIf;
@@ -919,7 +922,7 @@ pub mod raw {
         (
             core::mem::size_of::<VescIf>(),
             core::mem::align_of::<VescIf>(),
-            core::mem::offset_of!(VescIf, shutdown_disable),
+            core::mem::offset_of!(VescIf, foc_set_fw_override),
         )
     }
 
@@ -1128,12 +1131,12 @@ mod tests {
     }
 
     #[test]
-    fn raw_vesc_if_table_covers_the_complete_vesc_pkg_lib_header() {
+    fn raw_vesc_if_table_covers_the_current_vesc_firmware_header() {
         let pointer_size = core::mem::size_of::<usize>();
 
         assert_eq!(
             super::raw::vesc_if_full_layout_for_tests(),
-            (253 * pointer_size, pointer_size, 252 * pointer_size)
+            (254 * pointer_size, pointer_size, 253 * pointer_size)
         );
     }
 
