@@ -6,8 +6,7 @@ pub mod ble_loopback_device;
 pub mod ffi;
 pub mod package_lifecycle;
 
-#[no_mangle]
-pub extern "C" fn rust_add(a: i32, b: i32) -> i32 {
+pub fn rust_add(a: i32, b: i32) -> i32 {
     a + b
 }
 

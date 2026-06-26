@@ -2,11 +2,11 @@ use core::ffi::{c_char, c_void, CStr};
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LbmValue(pub usize);
+pub struct LbmValue(pub u32);
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LbmCount(pub usize);
+pub struct LbmCount(pub u32);
 
 pub type ExtensionHandler = unsafe extern "C" fn(*mut LbmValue, LbmCount) -> LbmValue;
 pub type AppDataHandler = unsafe extern "C" fn(*mut u8, u32);
@@ -30,6 +30,12 @@ pub trait LbmBindings {
     /// # Safety
     /// The returned value is owned by the caller as an opaque LispBM value.
     unsafe fn encode_i32(&self, value: i32) -> LbmValue;
+    /// # Safety
+    /// `value` must be a valid firmware-provided LispBM value.
+    unsafe fn is_number(&self, value: LbmValue) -> bool;
+    /// # Safety
+    /// The returned value is the firmware's eval-error symbol.
+    unsafe fn encode_eval_error(&self) -> LbmValue;
 }
 
 pub struct RealBindings;
@@ -45,6 +51,14 @@ impl LbmBindings for RealBindings {
 
     unsafe fn encode_i32(&self, value: i32) -> LbmValue {
         raw::lbm_enc_i(value)
+    }
+
+    unsafe fn is_number(&self, value: LbmValue) -> bool {
+        raw::lbm_is_number(value)
+    }
+
+    unsafe fn encode_eval_error(&self) -> LbmValue {
+        raw::lbm_enc_sym_eerror()
     }
 }
 
@@ -68,56 +82,78 @@ impl<B: LbmBindings> LbmApi<B> {
     pub fn encode_i32(&self, value: i32) -> LbmValue {
         unsafe { self.bindings.encode_i32(value) }
     }
+
+    pub fn is_number(&self, value: LbmValue) -> bool {
+        unsafe { self.bindings.is_number(value) }
+    }
+
+    pub fn encode_eval_error(&self) -> LbmValue {
+        unsafe { self.bindings.encode_eval_error() }
+    }
 }
 
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) mod raw {
     use super::{AppDataHandler, ExtensionHandler, LbmValue};
-    use core::ffi::c_char;
+    use core::ffi::{c_char, c_uchar};
 
     #[repr(C)]
     pub(crate) struct VescIf {
-        _pad0: [u8; 592],
-        send_app_data: unsafe extern "C" fn(*mut u8, u32),
+        lbm_add_extension: unsafe extern "C" fn(*mut c_char, ExtensionHandler) -> bool,
+        _reserved_before_lbm_enc_i: [usize; 15],
+        lbm_enc_i: unsafe extern "C" fn(i32) -> LbmValue,
+        _reserved_before_lbm_dec_as_i32: [usize; 8],
+        lbm_dec_as_i32: unsafe extern "C" fn(LbmValue) -> i32,
+        _reserved_before_lbm_is_number: [usize; 5],
+        lbm_is_number: unsafe extern "C" fn(LbmValue) -> bool,
+        _reserved_before_lbm_enc_sym_eerror: [usize; 5],
+        lbm_enc_sym_eerror: u32,
+        _reserved_after_lbm_enc_sym_eerror: [usize; 109],
+        send_app_data: unsafe extern "C" fn(*mut c_uchar, u32),
         set_app_data_handler: unsafe extern "C" fn(Option<AppDataHandler>) -> bool,
-        _pad1: [u8; 352],
+        _reserved_after_app_data: [usize; 88],
         system_time_ticks: unsafe extern "C" fn() -> u32,
     }
 
     const VESC_IF: *const VescIf = 0x1000_f800 as *const VescIf;
 
-    extern "C" {
-        #[link_name = "lbm_add_extension"]
-        fn raw_lbm_add_extension(name: *const c_char, handler: ExtensionHandler) -> i32;
-        #[link_name = "lbm_dec_as_i32"]
-        fn raw_lbm_dec_as_i32(value: LbmValue) -> i32;
-        #[link_name = "lbm_enc_i"]
-        fn raw_lbm_enc_i(value: i32) -> LbmValue;
-    }
-
     pub(crate) unsafe fn lbm_add_extension(name: *const c_char, handler: ExtensionHandler) -> i32 {
-        // Safety: this simply forwards the raw pointer and callback to the firmware ABI.
-        raw_lbm_add_extension(name, handler)
+        // Safety: this forwards the raw pointer and callback to the firmware ABI.
+        ((*VESC_IF).lbm_add_extension)(name as *mut c_char, handler) as i32
     }
 
     pub(crate) unsafe fn lbm_dec_as_i32(value: LbmValue) -> i32 {
         // Safety: the value is forwarded by value to the firmware decoder.
-        raw_lbm_dec_as_i32(value)
+        ((*VESC_IF).lbm_dec_as_i32)(value)
     }
 
     pub(crate) unsafe fn lbm_enc_i(value: i32) -> LbmValue {
         // Safety: the firmware encodes the integer into an opaque LispBM value.
-        raw_lbm_enc_i(value)
+        ((*VESC_IF).lbm_enc_i)(value)
+    }
+
+    pub(crate) unsafe fn lbm_is_number(value: LbmValue) -> bool {
+        // Safety: the value is forwarded by value to the firmware type predicate.
+        ((*VESC_IF).lbm_is_number)(value)
+    }
+
+    pub(crate) unsafe fn lbm_enc_sym_eerror() -> LbmValue {
+        // Safety: the firmware returns its canonical eval-error symbol value.
+        LbmValue((*VESC_IF).lbm_enc_sym_eerror)
     }
 
     pub(crate) unsafe fn vesc_set_app_data_handler(handler: Option<AppDataHandler>) -> bool {
+        // Safety: the callback has the package app-data ABI and a static lifetime.
         ((*VESC_IF).set_app_data_handler)(handler)
     }
 
     pub(crate) unsafe fn vesc_send_app_data(data: *const u8, len: u32) {
-        ((*VESC_IF).send_app_data)(data as *mut u8, len)
+        // Safety: the firmware reads `len` bytes from the provided packet buffer.
+        ((*VESC_IF).send_app_data)(data as *mut c_uchar, len)
     }
 
     pub(crate) unsafe fn vesc_system_time_ticks() -> u32 {
+        // Safety: this forwards to the firmware's monotonic tick source.
         ((*VESC_IF).system_time_ticks)()
     }
 }
@@ -164,7 +200,15 @@ mod tests {
         /// The fake test binding only rewraps the integer into the opaque type.
         unsafe fn encode_i32(&self, value: i32) -> LbmValue {
             self.encode_calls.set(self.encode_calls.get() + 1);
-            LbmValue(value as usize)
+            LbmValue(value as u32)
+        }
+
+        unsafe fn is_number(&self, _value: LbmValue) -> bool {
+            true
+        }
+
+        unsafe fn encode_eval_error(&self) -> LbmValue {
+            LbmValue(0xffff_ffff)
         }
     }
 
@@ -181,5 +225,7 @@ mod tests {
         assert_eq!(api.register_extension(name, stub_handler), 17);
         assert_eq!(api.decode_i32(LbmValue(3)), 3);
         assert_eq!(api.encode_i32(9), LbmValue(9));
+        assert!(api.is_number(LbmValue(9)));
+        assert_eq!(api.encode_eval_error(), LbmValue(0xffff_ffff));
     }
 }

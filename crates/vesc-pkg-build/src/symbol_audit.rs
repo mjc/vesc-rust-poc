@@ -227,8 +227,7 @@ pub fn unexpected_final_native_lib_undefined_symbols(nm_output: &str) -> BTreeSe
 }
 
 pub fn is_allowed_final_native_lib_symbol(symbol: &str) -> bool {
-    matches!(symbol, "lbm_add_extension" | "lbm_dec_as_i32" | "lbm_enc_i")
-        || is_allowed_runtime_symbol(symbol)
+    is_allowed_runtime_symbol(symbol)
 }
 
 fn parse_undefined_symbol(line: &str) -> Option<String> {
@@ -438,7 +437,7 @@ mod tests {
             text,
             SectionLayout {
                 name: ".text".to_owned(),
-                size: 445,
+                size: 429,
                 vma: 48,
             }
         );
@@ -468,7 +467,26 @@ mod tests {
         );
         assert!(
             disassembly.contains("1000f800"),
-            "expected generated wrappers to call through VESC_IF at 0x1000f800:\n{disassembly}"
+            "expected generated package code to call through VESC_IF at 0x1000f800:\n{disassembly}"
+        );
+        for offset in [
+            "1000f840",
+            "[r6, #60]",
+            "[r6, #84]",
+            "1000fa4c",
+            "[r6, #360]",
+            "[r6, #0]",
+            "[r5, #592]",
+        ] {
+            assert!(
+                disassembly.contains(offset),
+                "expected VESC_IF slot access {offset} in generated code:\n{disassembly}"
+            );
+        }
+        assert!(
+            !disassembly.contains("<vesc_send_app_data>")
+                && !disassembly.contains("<vesc_set_app_data_handler>"),
+            "expected direct VESC_IF calls without C wrapper stubs:\n{disassembly}"
         );
         assert!(
             disassembly.contains("<init>"),

@@ -21,7 +21,7 @@ pub const NATIVE_LIB_BASELINE_OUTPUTS: [&str; 4] = [
 
 pub const VESC_PACKAGE_FLASH_BLOCK_LIMIT_BYTES: u64 = 128 * 1024;
 pub const VESC_PACKAGE_FLASH_BUDGET_BYTES: u64 = VESC_PACKAGE_FLASH_BLOCK_LIMIT_BYTES / 8;
-pub const EXPECTED_VESC_C_IF_HEADER_FINGERPRINT: &str = "73caefd0e737b1cf";
+pub const EXPECTED_VESC_C_IF_HEADER_FINGERPRINT: &str = "6f9d6d4dc9dab059";
 
 pub const NATIVE_LIB_BASELINE_PACKAGE_INPUTS: [&str; 3] = [
     "package/code.lisp",
@@ -205,16 +205,8 @@ mod tests {
             "expected Rust, not C, to own LispBM extension registration: {package_lib:?}"
         );
         assert!(
-            source.contains("VESC_IF->lbm_add_extension"),
-            "expected the C bridge to route extension registration through VESC_IF: {package_lib:?}"
-        );
-        assert!(
-            source.contains("VESC_IF->lbm_dec_as_i32"),
-            "expected the C bridge to route integer decoding through VESC_IF: {package_lib:?}"
-        );
-        assert!(
-            source.contains("VESC_IF->lbm_enc_i"),
-            "expected the C bridge to route integer encoding through VESC_IF: {package_lib:?}"
+            !source.contains("VESC_IF->"),
+            "expected Rust, not C wrapper stubs, to own VESC_IF calls: {package_lib:?}"
         );
     }
 

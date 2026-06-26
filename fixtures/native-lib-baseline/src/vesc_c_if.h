@@ -8,14 +8,17 @@ typedef uint32_t lbm_value;
 typedef uint32_t lbm_cid;
 typedef int32_t lbm_int;
 typedef unsigned int lbm_uint;
+typedef uint32_t systime_t;
 
 typedef struct lib_info {
-    const char *name;
-    const char *version;
+    void (*stop_fun)(void *arg);
+    void *arg;
+    uint32_t base_addr;
 } lib_info;
 
 typedef lbm_value (*lbm_extension_fun)(lbm_value *args, lbm_uint argn);
 typedef bool (*load_extension_fptr)(char *name, lbm_extension_fun fun);
+typedef void (*app_data_handler_fun)(unsigned char *data, unsigned int len);
 
 typedef struct {
     uint8_t *buf;
@@ -50,6 +53,24 @@ typedef struct {
     float (*lbm_dec_as_float)(lbm_value val);
     uint32_t (*lbm_dec_as_u32)(lbm_value val);
     int32_t (*lbm_dec_as_i32)(lbm_value val);
+    uint8_t (*lbm_dec_char)(lbm_value x);
+    char* (*lbm_dec_str)(lbm_value);
+    lbm_uint (*lbm_dec_sym)(lbm_value x);
+    bool (*lbm_is_byte_array)(lbm_value val);
+    bool (*lbm_is_cons)(lbm_value x);
+    bool (*lbm_is_number)(lbm_value x);
+    bool (*lbm_is_char)(lbm_value x);
+    bool (*lbm_is_symbol)(lbm_value x);
+    lbm_uint lbm_enc_sym_nil;
+    lbm_uint lbm_enc_sym_true;
+    lbm_uint lbm_enc_sym_terror;
+    lbm_uint lbm_enc_sym_eerror;
+    lbm_uint lbm_enc_sym_merror;
+    uintptr_t _reserved_after_lbm[108];
+    void (*send_app_data)(unsigned char *data, unsigned int len);
+    bool (*set_app_data_handler)(app_data_handler_fun handler);
+    uintptr_t _reserved_after_app_data[88];
+    systime_t (*system_time_ticks)(void);
 } vesc_c_if;
 
 #define VESC_IF ((vesc_c_if *)(0x1000F800))
@@ -58,10 +79,6 @@ typedef struct {
 #define INIT_START (void)prog_ptr
 #define INIT_END
 #define ENC_SYM_EERROR ((lbm_value)0)
-
-int lbm_add_extension(const char *name, lbm_extension_fun fun);
-int32_t lbm_dec_as_i32(lbm_value value);
-lbm_value lbm_enc_i(int32_t value);
 
 extern volatile int prog_ptr;
 

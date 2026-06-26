@@ -20,7 +20,7 @@ impl AbiRequirement {
     }
 }
 
-pub const MINIMAL_TEST_PACKAGE_ABI: [AbiRequirement; 10] = [
+pub const MINIMAL_TEST_PACKAGE_ABI: [AbiRequirement; 14] = [
     AbiRequirement::new(
         "INIT_FUN",
         AbiRequirementKind::EntryPoint,
@@ -67,9 +67,29 @@ pub const MINIMAL_TEST_PACKAGE_ABI: [AbiRequirement; 10] = [
         "C shim encodes the integer result",
     ),
     AbiRequirement::new(
-        "ENC_SYM_EERROR",
+        "VESC_IF.lbm_is_number",
+        AbiRequirementKind::Function,
+        "Rust package validates LispBM extension arguments before decoding",
+    ),
+    AbiRequirement::new(
+        "VESC_IF.lbm_enc_sym_eerror",
         AbiRequirementKind::ErrorSymbol,
-        "C shim returns a LispBM error on bad arity",
+        "Rust package returns the firmware eval-error symbol on bad arguments",
+    ),
+    AbiRequirement::new(
+        "VESC_IF.set_app_data_handler",
+        AbiRequirementKind::Function,
+        "Rust package registers the BLE loopback app-data callback",
+    ),
+    AbiRequirement::new(
+        "VESC_IF.send_app_data",
+        AbiRequirementKind::Function,
+        "Rust package sends BLE loopback replies through firmware app data",
+    ),
+    AbiRequirement::new(
+        "VESC_IF.system_time_ticks",
+        AbiRequirementKind::Function,
+        "Rust package reads firmware ticks for loopback status replies",
     ),
 ];
 
@@ -99,7 +119,11 @@ mod tests {
                 "lbm_uint",
                 "lbm_dec_as_i32",
                 "lbm_enc_i",
-                "ENC_SYM_EERROR",
+                "VESC_IF.lbm_is_number",
+                "VESC_IF.lbm_enc_sym_eerror",
+                "VESC_IF.set_app_data_handler",
+                "VESC_IF.send_app_data",
+                "VESC_IF.system_time_ticks",
             ]
         );
     }
