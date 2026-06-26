@@ -7,4 +7,5 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
+vesc-ffi = { path = "../vesc-ffi" }
 vesc-protocol = { path = "../vesc-protocol" }

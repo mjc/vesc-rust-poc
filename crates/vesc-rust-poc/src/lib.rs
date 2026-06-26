@@ -1,9 +1,9 @@
 #![cfg_attr(not(test), no_std)]
 
 pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
+pub use vesc_ffi as ffi;
 
 pub mod ble_loopback_device;
-pub mod ffi;
 pub mod package_lifecycle;
 
 pub fn rust_add(a: i32, b: i32) -> i32 {

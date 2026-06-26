@@ -742,6 +742,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "vesc-ffi"
+version = "0.1.0"
+
+[[package]]
 name = "vesc-host-cli"
 version = "0.1.0"
 dependencies = [
@@ -770,6 +774,7 @@ version = "0.1.0"
 name = "vesc-rust-poc"
 version = "0.1.0"
 dependencies = [
+ "vesc-ffi",
  "vesc-protocol",
 ]
 

@@ -424,43 +424,13 @@ static STOP_CALLS: AtomicUsize = AtomicUsize::new(0);
 unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
     #[cfg(not(test))]
     {
-        let _ = LoopbackLifecycle::new(crate::ffi::RealBindings).clear_app_data_handler();
+        let _ = crate::ffi::LoopbackLifecycle::new(crate::ffi::RealBindings)
+            .clear_app_data_handler();
     }
 
     #[cfg(test)]
     {
         STOP_CALLS.fetch_add(1, Ordering::SeqCst);
-    }
-}
-
-pub struct LoopbackLifecycle<B = crate::ffi::RealBindings> {
-    bindings: B,
-}
-
-impl<B: crate::ffi::AppDataBindings> LoopbackLifecycle<B> {
-    pub fn new(bindings: B) -> Self {
-        Self { bindings }
-    }
-
-    pub fn install(
-        &self,
-        info: *mut crate::ffi::LibInfo,
-        image: crate::ffi::NativeImage,
-        stop_handler: crate::ffi::StopHandler,
-        app_data_handler: crate::ffi::AppDataHandler,
-    ) -> bool {
-        let stop_handler = unsafe { image.rebase_stop_handler(stop_handler) };
-        let app_data_handler = unsafe { image.rebase_app_data_handler(app_data_handler) };
-
-        if let Some(info) = unsafe { info.as_mut() } {
-            info.stop_fun = Some(stop_handler);
-        }
-
-        unsafe { self.bindings.set_app_data_handler(Some(app_data_handler)) }
-    }
-
-    pub fn clear_app_data_handler(&self) -> bool {
-        unsafe { self.bindings.set_app_data_handler(None) }
     }
 }
 
@@ -470,7 +440,7 @@ pub fn init_package(info: *mut crate::ffi::LibInfo) {
         return;
     };
     let image = crate::ffi::NativeImage::from_info(info_ref);
-    let lifecycle = LoopbackLifecycle::new(crate::ffi::RealBindings);
+    let lifecycle = crate::ffi::LoopbackLifecycle::new(crate::ffi::RealBindings);
     let _ = lifecycle.install(info, image, stop_package, app_data_handler);
 }
 
@@ -498,7 +468,7 @@ pub fn stop_call_count_for_tests() -> usize {
 mod tests {
     use super::{
         handle_loopback_frame, init_call_count_for_tests, reset_init_call_count_for_tests,
-        stop_call_count_for_tests, BleFrame, FakeDeviceServices, LoopbackLifecycle,
+        stop_call_count_for_tests, BleFrame, FakeDeviceServices,
         LoopbackPackageRuntime, LoopbackPackageState, LoopbackTick,
     };
     use crate::ffi;
@@ -650,7 +620,7 @@ mod tests {
     #[test]
     fn lifecycle_descriptor_installs_rebased_stop_and_app_data_callbacks() {
         let bindings = FakeAppDataBindings::new();
-        let lifecycle = LoopbackLifecycle::new(bindings);
+        let lifecycle = crate::ffi::LoopbackLifecycle::new(bindings);
         let image = ffi::NativeImage::new(0x2000);
         let mut info = ffi::LibInfo {
             stop_fun: None,
@@ -664,9 +634,9 @@ mod tests {
             info.stop_fun.expect("stop hook") as *const () as usize,
             stub_stop_handler as *const () as usize + 0x2000
         );
-        assert_eq!(lifecycle.bindings.calls.get(), 1);
+        assert_eq!(lifecycle.bindings().calls.get(), 1);
         assert_eq!(
-            lifecycle.bindings.last_handler.get(),
+            lifecycle.bindings().last_handler.get(),
             stub_app_data_handler as *const () as usize + 0x2000
         );
     }
@@ -674,12 +644,12 @@ mod tests {
     #[test]
     fn lifecycle_cleanup_clears_the_package_app_data_handler() {
         let bindings = FakeAppDataBindings::new();
-        let lifecycle = LoopbackLifecycle::new(bindings);
+        let lifecycle = crate::ffi::LoopbackLifecycle::new(bindings);
 
         assert!(lifecycle.clear_app_data_handler());
 
-        assert_eq!(lifecycle.bindings.calls.get(), 1);
-        assert_eq!(lifecycle.bindings.last_handler.get(), 0);
+        assert_eq!(lifecycle.bindings().calls.get(), 1);
+        assert_eq!(lifecycle.bindings().last_handler.get(), 0);
     }
 
     #[test]

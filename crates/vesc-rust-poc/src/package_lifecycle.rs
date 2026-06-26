@@ -1,41 +1,8 @@
 use core::ffi::CStr;
 
-use crate::ffi::{self, LbmApi, LbmBindings, LbmCount, LbmValue, NativeImage};
+use crate::ffi::{self, ExtensionDescriptor, LbmApi, LbmBindings, LbmCount, LbmValue, NativeImage};
 
 const EXT_RUST_PROBE_NAME: &CStr = c"ext-rust-probe-v5";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExtensionNameError {
-    MissingExtPrefix,
-}
-
-#[derive(Clone, Copy)]
-pub struct ExtensionDescriptor {
-    name: &'static CStr,
-    handler: ffi::ExtensionHandler,
-}
-
-impl ExtensionDescriptor {
-    pub const fn new(name: &'static CStr, handler: ffi::ExtensionHandler) -> Self {
-        Self { name, handler }
-    }
-
-    pub const fn name(self) -> &'static CStr {
-        self.name
-    }
-
-    pub const fn handler(self) -> ffi::ExtensionHandler {
-        self.handler
-    }
-
-    pub fn validate(self) -> Result<Self, ExtensionNameError> {
-        if self.name.to_bytes().starts_with(b"ext-") {
-            Ok(self)
-        } else {
-            Err(ExtensionNameError::MissingExtPrefix)
-        }
-    }
-}
 
 #[cfg(not(test))]
 const PACKAGE_EXTENSIONS: [ExtensionDescriptor; 1] =
@@ -120,7 +87,7 @@ fn rust_add_extension_value<B: LbmBindings>(
 #[cfg(test)]
 mod tests {
     use super::{
-        rust_add_extension_value, ExtensionDescriptor, ExtensionNameError, LbmApi, LbmBindings,
+        rust_add_extension_value, ExtensionDescriptor, LbmApi, LbmBindings,
         LbmCount, LbmValue, PackageLifecycle, EXT_RUST_PROBE_NAME, PACKAGE_EXTENSION_NAMES,
     };
     use crate::ffi;
@@ -205,7 +172,7 @@ mod tests {
 
         assert!(matches!(
             descriptor.validate(),
-            Err(ExtensionNameError::MissingExtPrefix)
+            Err(crate::ffi::ExtensionNameError::MissingExtPrefix)
         ));
         assert_eq!(lifecycle.register_extension(descriptor), -1);
         assert_eq!(lifecycle.api.bindings().add_calls.get(), 0);
