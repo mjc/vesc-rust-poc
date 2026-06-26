@@ -628,7 +628,9 @@ mod tests {
             base_addr: 0x2000,
         };
 
-        assert!(lifecycle.install(&mut info, image, stub_stop_handler, stub_app_data_handler));
+        assert!(unsafe {
+            lifecycle.install(&mut info, image, stub_stop_handler, stub_app_data_handler)
+        });
 
         assert_eq!(
             info.stop_fun.expect("stop hook") as *const () as usize,

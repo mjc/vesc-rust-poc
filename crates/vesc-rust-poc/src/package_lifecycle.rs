@@ -21,43 +21,61 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         }
     }
 
-    pub fn register_extension(&self, descriptor: ExtensionDescriptor) -> i32 {
-        let descriptor = match descriptor.validate() {
-            Ok(descriptor) => descriptor,
-            Err(_) => return -1,
-        };
-
-        self.api
-            .register_extension(descriptor.name(), descriptor.handler())
+    pub fn register_extension(
+        &self,
+        descriptor: ExtensionDescriptor,
+    ) -> Result<i32, ffi::RegisterError> {
+        let descriptor = descriptor
+            .validate()
+            .map_err(|_| ffi::RegisterError::InvalidExtensionName)?;
+        let result = self
+            .api
+            .register_extension(descriptor.name(), descriptor.handler());
+        if result < 0 {
+            Err(ffi::RegisterError::FirmwareRejected(result))
+        } else {
+            Ok(result)
+        }
     }
 
-    pub fn register_extension_from_image(
+    pub unsafe fn register_extension_from_image(
         &self,
         image: NativeImage,
         descriptor: ExtensionDescriptor,
-    ) -> i32 {
-        let descriptor = match descriptor.validate() {
-            Ok(descriptor) => descriptor,
-            Err(_) => return -1,
+    ) -> Result<i32, ffi::RegisterError> {
+        let descriptor = descriptor
+            .validate()
+            .map_err(|_| ffi::RegisterError::InvalidExtensionName)?;
+        let result = unsafe {
+            self.api.register_extension_from_image(
+                image,
+                descriptor.name(),
+                descriptor.handler(),
+            )
         };
-
-        self.api
-            .register_extension_from_image(image, descriptor.name(), descriptor.handler())
+        if result < 0 {
+            Err(ffi::RegisterError::FirmwareRejected(result))
+        } else {
+            Ok(result)
+        }
     }
 
-    pub fn register_extensions_from_image(
+    pub unsafe fn register_extensions_from_image(
         &self,
         image: NativeImage,
         descriptors: &[ExtensionDescriptor],
-    ) -> i32 {
-        descriptors.iter().fold(0, |_, descriptor| {
-            self.register_extension_from_image(image, *descriptor)
-        })
+    ) -> Result<(), ffi::RegisterError> {
+        for descriptor in descriptors {
+            unsafe {
+                self.register_extension_from_image(image, *descriptor)?;
+            }
+        }
+        Ok(())
     }
 
     #[cfg(not(test))]
-    pub fn register_extensions(&self, image: NativeImage) -> i32 {
-        self.register_extensions_from_image(image, &PACKAGE_EXTENSIONS)
+    pub fn register_extensions(&self, image: NativeImage) -> Result<(), ffi::RegisterError> {
+        unsafe { self.register_extensions_from_image(image, &PACKAGE_EXTENSIONS) }
     }
 }
 
@@ -148,7 +166,7 @@ mod tests {
         let lifecycle = PackageLifecycle::new(bindings);
         let descriptor = ExtensionDescriptor::new(EXT_RUST_PROBE_NAME, stub_handler);
 
-        assert_eq!(lifecycle.register_extension(descriptor), 17);
+        assert_eq!(lifecycle.register_extension(descriptor), Ok(17));
         assert_eq!(lifecycle.api.bindings().add_calls.get(), 1);
         assert_eq!(
             EXT_RUST_PROBE_NAME.to_bytes_with_nul(),
@@ -174,7 +192,10 @@ mod tests {
             descriptor.validate(),
             Err(crate::ffi::ExtensionNameError::MissingExtPrefix)
         ));
-        assert_eq!(lifecycle.register_extension(descriptor), -1);
+        assert_eq!(
+            lifecycle.register_extension(descriptor),
+            Err(ffi::RegisterError::InvalidExtensionName)
+        );
         assert_eq!(lifecycle.api.bindings().add_calls.get(), 0);
     }
 
@@ -186,8 +207,8 @@ mod tests {
         let descriptor = ExtensionDescriptor::new(EXT_RUST_PROBE_NAME, stub_handler);
 
         assert_eq!(
-            lifecycle.register_extensions_from_image(image, &[descriptor]),
-            17
+            unsafe { lifecycle.register_extensions_from_image(image, &[descriptor]) },
+            Ok(())
         );
         assert_eq!(
             lifecycle.api.bindings().last_name.get(),
