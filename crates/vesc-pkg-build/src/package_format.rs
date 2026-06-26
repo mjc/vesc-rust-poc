@@ -221,6 +221,7 @@ fn parse_import_line(line: &str) -> Option<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::{build_vesc_package, VescPackageInput};
+    use crate::{PackageAssets, PackageLayout, PackageProvenance, BLE_LOOPBACK_PACKAGE_NAME};
     use flate2::read::ZlibDecoder;
     use std::fs;
     use std::io::Read;
@@ -340,6 +341,10 @@ mod tests {
         (code, imports)
     }
 
+    fn payload_matches_native_with_only_nul_tail(payload: &[u8], native: &[u8]) -> bool {
+        payload.starts_with(native) && payload[native.len()..].iter().all(|byte| *byte == 0)
+    }
+
     #[test]
     fn lisp_imports_embed_native_payload_bytes() {
         let root = unique_root();
@@ -375,6 +380,36 @@ mod tests {
             }]
         );
         assert_eq!(imports[0].offset % 4, 0);
+    }
+
+    #[test]
+    fn lisp_import_payload_preserves_native_bytes_with_only_nul_padding() {
+        let root = unique_root();
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("src dir");
+        let native_payload = [0, 1, 2, 3, 0];
+        fs::write(src_dir.join("package_lib.bin"), native_payload).expect("native payload");
+
+        let package = build_vesc_package(&VescPackageInput {
+            name: "test",
+            description_md: "",
+            lisp_source:
+                "(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n",
+            lisp_editor_path: &root,
+            qml_file: "",
+            pkg_desc_qml: "",
+            qml_is_fullscreen: false,
+        })
+        .expect("package");
+        let lisp_data = extract_field(&package, "lispData");
+        let (_, imports) = parse_lisp_imports(&lisp_data);
+
+        assert_eq!(imports.len(), 1);
+        assert_eq!(imports[0].tag, "package-lib");
+        assert!(payload_matches_native_with_only_nul_tail(
+            &imports[0].payload,
+            &native_payload
+        ));
     }
 
     #[test]
@@ -414,5 +449,60 @@ mod tests {
         assert_eq!(fields[3].value, b"qml");
         assert_eq!(fields[4].value, b"descriptor");
         assert_eq!(fields[5].value, [0]);
+    }
+
+    #[test]
+    fn generated_ble_package_pins_the_expected_field_sizes_and_native_import_layout() {
+        let root = unique_root();
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("src dir");
+        let mut native_payload = (0..205).map(|byte| byte as u8).collect::<Vec<_>>();
+        native_payload[204] = 0;
+        fs::write(src_dir.join("package_lib.bin"), &native_payload).expect("native payload");
+
+        let assets = PackageAssets::new(
+            PackageLayout::new(BLE_LOOPBACK_PACKAGE_NAME, "0.1.0"),
+            PackageProvenance::empty(),
+        );
+        let package = build_vesc_package(&VescPackageInput {
+            name: assets.package_name(),
+            description_md: &assets.render_readme(),
+            lisp_source: &assets.render_loader(),
+            lisp_editor_path: &root,
+            qml_file: "",
+            pkg_desc_qml: &assets.render_descriptor(),
+            qml_is_fullscreen: false,
+        })
+        .expect("package");
+        let fields = package_fields(&package);
+
+        assert_eq!(
+            fields
+                .iter()
+                .map(|field| (field.key.as_str(), field.value.len()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("name", 30),
+                ("description_md", 37),
+                ("lispData", 307),
+                ("pkgDescQml", 227),
+                ("qmlIsFullscreen", 1),
+            ]
+        );
+
+        let lisp_data = extract_field(&package, "lispData");
+        let (code, imports) = parse_lisp_imports(&lisp_data);
+        assert_eq!(
+            code,
+            "(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n"
+        );
+        assert_eq!(imports.len(), 1);
+        assert_eq!(imports[0].tag, "package-lib");
+        assert_eq!(imports[0].offset, 100);
+        assert_eq!(imports[0].size, 205);
+        assert!(payload_matches_native_with_only_nul_tail(
+            &imports[0].payload,
+            &native_payload
+        ));
     }
 }

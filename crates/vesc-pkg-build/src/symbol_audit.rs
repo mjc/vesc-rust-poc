@@ -381,7 +381,7 @@ mod tests {
         build_final_native_lib_binary(&native_lib_bin_path());
 
         let blob = fs::read(native_lib_bin_path()).expect("native-lib binary bytes");
-        for section_name in [".program_ptr", ".init_fun", ".text"] {
+        for section_name in [".program_ptr", ".init_fun", ".got", ".text"] {
             let section = section_layout(section_name);
             let section_bytes = section_binary(section_name);
             let end = section.vma + section.size;
@@ -407,6 +407,7 @@ mod tests {
 
         let program_ptr = section_layout(".program_ptr");
         let init_fun = section_layout(".init_fun");
+        let got = section_layout(".got");
         let text = section_layout(".text");
 
         assert_eq!(
@@ -417,11 +418,33 @@ mod tests {
                 vma: 0,
             }
         );
-        assert_eq!(init_fun.vma, program_ptr.vma + program_ptr.size);
-        assert!(
-            text.vma > init_fun.vma,
-            "expected .text to load after the VESC init section"
+        assert_eq!(
+            init_fun,
+            SectionLayout {
+                name: ".init_fun".to_owned(),
+                size: 32,
+                vma: 4,
+            }
         );
+        assert_eq!(
+            got,
+            SectionLayout {
+                name: ".got".to_owned(),
+                size: 16,
+                vma: 36,
+            }
+        );
+        assert_eq!(
+            text,
+            SectionLayout {
+                name: ".text".to_owned(),
+                size: 141,
+                vma: 64,
+            }
+        );
+        assert_eq!(init_fun.vma, program_ptr.vma + program_ptr.size);
+        assert_eq!(got.vma, init_fun.vma + init_fun.size);
+        assert!(text.vma > got.vma, "expected .text to load after .got");
         assert_eq!(
             text.vma % 16,
             0,
