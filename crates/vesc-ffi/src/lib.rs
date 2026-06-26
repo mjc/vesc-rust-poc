@@ -134,21 +134,71 @@ pub struct CanFrameLen(pub u8);
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AppDataPacket<'a>(pub &'a [u8]);
 
+impl<'a> AppDataPacket<'a> {
+    pub const fn new(bytes: &'a [u8]) -> Self {
+        Self(bytes)
+    }
+
+    pub const fn as_bytes(self) -> &'a [u8] {
+        self.0
+    }
+}
+
 #[repr(transparent)]
 #[derive(Debug, PartialEq)]
 pub struct MutablePacket<'a>(pub &'a mut [u8]);
+
+impl<'a> MutablePacket<'a> {
+    pub const fn new(bytes: &'a mut [u8]) -> Self {
+        Self(bytes)
+    }
+
+    pub fn as_mut_bytes(&mut self) -> &mut [u8] {
+        self.0
+    }
+}
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CommandPacket<'a>(pub &'a [u8]);
 
+impl<'a> CommandPacket<'a> {
+    pub const fn new(bytes: &'a [u8]) -> Self {
+        Self(bytes)
+    }
+
+    pub const fn as_bytes(self) -> &'a [u8] {
+        self.0
+    }
+}
+
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ReplyPacket<'a>(pub &'a [u8]);
 
+impl<'a> ReplyPacket<'a> {
+    pub const fn new(bytes: &'a [u8]) -> Self {
+        Self(bytes)
+    }
+
+    pub const fn as_bytes(self) -> &'a [u8] {
+        self.0
+    }
+}
+
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HalfDuplex(pub bool);
+
+impl HalfDuplex {
+    pub const fn new(enabled: bool) -> Self {
+        Self(enabled)
+    }
+
+    pub const fn is_enabled(self) -> bool {
+        self.0
+    }
+}
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -330,6 +380,12 @@ pub struct EulerAngles {
     pub yaw: YawDeg,
 }
 
+impl EulerAngles {
+    pub const fn new(roll: RollDeg, pitch: PitchDeg, yaw: YawDeg) -> Self {
+        Self { roll, pitch, yaw }
+    }
+}
+
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlotAxisName<'a>(pub &'a CStr);
@@ -347,6 +403,12 @@ pub struct PlotGraphIndex(pub i32);
 pub struct PlotPoint {
     pub x: f32,
     pub y: f32,
+}
+
+impl PlotPoint {
+    pub const fn new(x: f32, y: f32) -> Self {
+        Self { x, y }
+    }
 }
 
 #[repr(transparent)]
@@ -389,6 +451,16 @@ pub struct NvmLen(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NvmBytes<'a>(pub &'a [u8]);
 
+impl<'a> NvmBytes<'a> {
+    pub const fn new(bytes: &'a [u8]) -> Self {
+        Self(bytes)
+    }
+
+    pub const fn as_bytes(self) -> &'a [u8] {
+        self.0
+    }
+}
+
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EepromAddress(pub i32);
@@ -396,6 +468,76 @@ pub struct EepromAddress(pub i32);
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EepromVar(pub i32);
+
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(crate) struct FaultCode(pub i32);
+
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(crate) struct CustomConfigCallback(pub core::ptr::NonNull<c_void>);
+
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(crate) struct TerminalCommandName<'a>(pub &'a CStr);
+
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
+pub(crate) struct TerminalHelp<'a>(pub &'a CStr);
+
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
+pub(crate) struct TerminalArgNames<'a>(pub &'a [u8]);
+
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(crate) struct TerminalCallback(pub core::ptr::NonNull<c_void>);
+
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(crate) struct ThreadEntry(pub core::ptr::NonNull<c_void>);
+
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(crate) struct GnssData(pub core::ptr::NonNull<c_void>);
+
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
+pub(crate) struct RemoteButton(pub u32);
+
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
+pub(crate) struct RemoteAgeSeconds(pub f32);
+
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
+pub(crate) struct RemoteState(pub u32);
+
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
+pub(crate) struct JoystickAxis(pub f32);
+
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
+pub(crate) struct PpmValue(pub f32);
+
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
+pub(crate) struct PpmAgeSeconds(pub f32);
 
 pub type ExtensionHandler = unsafe extern "C" fn(*mut LbmValue, LbmCount) -> LbmValue;
 pub type AppDataHandler = unsafe extern "C" fn(*mut u8, u32);
@@ -833,22 +975,22 @@ pub mod raw {
 #[cfg(test)]
 mod tests {
     use super::{
-        Accel3, AltitudeMeters, AnalogRaw, AnalogVoltage, AmpHours, AppDataLen, AppDataPacket,
+        AltitudeMeters, AnalogRaw, AnalogVoltage, AmpHours, AppDataLen, AppDataPacket,
         BatteryLevel, BrakeCurrentAmps, CanControllerId, CanFrameLen, CanPayload, CanStatusIndex,
         CfgFloat, CfgInt, CfgParam, CommandPacket, ConfigPayload, ConfigSetResult, ConfigXmlBytes,
         CurrentAmps, Degrees, DistanceMeters, DutyCycle, EepromAddress, EepromVar, Erpm,
-        EulerAngles, ExtensionHandler, FocChannel, FirmwareNonNull, FirmwarePtr, GnssSpeed, Gyro3,
-        GpioPin, GpioPortPtr, Hdop, HardwareType, HalfDuplex, ImageOffset, ImuCalibration,
-        InputCurrentAmps, LatitudeDeg,
+        EulerAngles, ExtensionHandler, FocChannel, FirmwareNonNull, FirmwarePtr, GnssSpeed,
+        GpioPin, GpioPortPtr, Hdop, HardwareType, HalfDuplex, ImageOffset, InputCurrentAmps,
+        LatitudeDeg,
         LbmApi, LbmBindings, LbmBoolSymbol, LbmCid, LbmCount, LbmErrorSymbol, LbmFloat, LbmInt,
         LbmIoSymbol, LbmNilSymbol, LbmSymbol, LbmType, LbmUint, LbmValue, LibInfo, LibInfoAbi,
-        LoaderBaseAddress, LongitudeDeg, MallocLen, Mag3, MotorIndex, MutexHandle, MutablePacket,
+        LoaderBaseAddress, LongitudeDeg, MallocLen, MotorIndex, MutexHandle, MutablePacket,
         NativeAddress, NativeImage, NvmAddress, NvmBytes, NvmLen, OdometerMeters, OffDelaySeconds,
         OwnedFirmwareAllocation, PitchDeg, PlotAxisName, PlotGraphIndex, PlotGraphName, PlotPoint,
-        ProgramAddress, Quaternion, Radians, ReadCallbackDtSeconds, ReplyPacket, RollDeg,
-        SemaphoreHandle, SecondsF32, SpeedMetersPerSecond, StackSizeBytes, SystemSeconds,
-        SystemTicks, TemperatureC, ThreadHandle, ThreadName, ToneFrequencyHz, ToneVoltage,
-        UartBaudRate, UartWriteLen, VescIfAbi, VescPin, VescPinMode, Voltage, WattHours, YawDeg,
+        ProgramAddress, Radians, ReplyPacket, RollDeg, SemaphoreHandle, SecondsF32,
+        SpeedMetersPerSecond, StackSizeBytes, SystemSeconds, SystemTicks, TemperatureC,
+        ThreadHandle, ThreadName, ToneFrequencyHz, ToneVoltage, UartBaudRate, UartWriteLen,
+        VescIfAbi, VescPin, VescPinMode, Voltage, WattHours, YawDeg,
     };
     use core::cell::Cell;
     use core::ffi::{c_char, c_void, CStr};
