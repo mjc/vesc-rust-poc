@@ -304,12 +304,16 @@ impl VescIfSlot {
         self.name
     }
 
-    pub const fn offset(self) -> usize {
+    pub const fn vesc32_byte_offset(self) -> usize {
         self.offset
     }
 
-    pub const fn host_offset(self, pointer_size: usize) -> usize {
-        self.offset * (pointer_size / 4)
+    pub const fn slot_index(self) -> usize {
+        self.offset / 4
+    }
+
+    pub const fn host_byte_offset(self, pointer_size: usize) -> usize {
+        self.slot_index() * pointer_size
     }
 }
 
@@ -317,6 +321,7 @@ pub struct VescIfAbi;
 
 impl VescIfAbi {
     pub const BASE_ADDR: NativeAddress = NativeAddress(0x1000_f800);
+    // These offsets are pinned to the 32-bit VESC native header/table layout.
     pub const LBM_ADD_EXTENSION: VescIfSlot = VescIfSlot::new("lbm_add_extension", 0);
     pub const LBM_ENC_I: VescIfSlot = VescIfSlot::new("lbm_enc_i", 64);
     pub const LBM_DEC_AS_I32: VescIfSlot = VescIfSlot::new("lbm_dec_as_i32", 100);
@@ -842,7 +847,7 @@ mod tests {
     #[test]
     fn raw_vesc_if_offsets_match_the_32_bit_package_header() {
         let expected =
-            VescIfAbi::USED_SLOTS.map(|slot| slot.host_offset(core::mem::size_of::<usize>()));
+            VescIfAbi::USED_SLOTS.map(|slot| slot.host_byte_offset(core::mem::size_of::<usize>()));
 
         assert_eq!(super::raw::vesc_if_offsets_for_tests(), expected);
     }
@@ -866,9 +871,10 @@ mod tests {
             ]
         );
         assert_eq!(
-            slots.map(|slot| slot.offset()),
+            slots.map(|slot| slot.vesc32_byte_offset()),
             [0, 64, 100, 124, 148, 592, 596, 952]
         );
+        assert_eq!(slots.map(|slot| slot.slot_index()), [0, 16, 25, 31, 37, 148, 149, 238]);
     }
 
     #[test]
