@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Mutex, OnceLock};
 
 pub fn undefined_symbols(nm_output: &str) -> BTreeSet<String> {
     nm_output
@@ -52,6 +53,11 @@ pub fn package_lib_object_path() -> PathBuf {
 }
 
 pub fn build_rust_staticlib() {
+    let _guard = native_build_lock().lock().expect("native build lock");
+    build_rust_staticlib_unlocked();
+}
+
+fn build_rust_staticlib_unlocked() {
     let status = Command::new("cargo")
         .args([
             "build",
@@ -68,7 +74,12 @@ pub fn build_rust_staticlib() {
 }
 
 pub fn build_final_native_lib_elf() {
-    build_rust_staticlib();
+    let _guard = native_build_lock().lock().expect("native build lock");
+    build_final_native_lib_elf_unlocked();
+}
+
+fn build_final_native_lib_elf_unlocked() {
+    build_rust_staticlib_unlocked();
 
     let c_path = package_lib_c_path();
     let object_path = package_lib_object_path();
@@ -92,9 +103,13 @@ pub fn build_final_native_lib_elf() {
             "-mthumb",
             "-mfloat-abi=hard",
             "-mfpu=fpv4-sp-d16",
+            "-fpic",
             "-Os",
+            "-ffunction-sections",
+            "-fdata-sections",
             "-fomit-frame-pointer",
             "-std=c11",
+            "-DIS_VESC_LIB",
             "-I",
             include_dir.to_str().expect("utf-8 include directory"),
             c_path.to_str().expect("utf-8 C source path"),
@@ -111,7 +126,8 @@ pub fn build_final_native_lib_elf() {
 
     let link_status = Command::new("arm-none-eabi-gcc")
         .args([
-            "-r",
+            "-nostartfiles",
+            "-static",
             "-mcpu=cortex-m4",
             "-mthumb",
             "-mfloat-abi=hard",
@@ -120,6 +136,13 @@ pub fn build_final_native_lib_elf() {
             rust_staticlib_path()
                 .to_str()
                 .expect("utf-8 staticlib path"),
+            "-Wl,--gc-sections",
+            "-Wl,--undefined=init",
+            "-T",
+            crate::native_lib_link::native_lib_link_plan()
+                .linker_script_path()
+                .to_str()
+                .expect("utf-8 linker script path"),
             "-o",
             elf_path.to_str().expect("utf-8 ELF path"),
         ])
@@ -132,8 +155,14 @@ pub fn build_final_native_lib_elf() {
     );
 }
 
+fn native_build_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 pub fn build_final_native_lib_binary(native_binary_path: &Path) {
-    build_final_native_lib_elf();
+    let _guard = native_build_lock().lock().expect("native build lock");
+    build_final_native_lib_elf_unlocked();
 
     if let Some(parent) = native_binary_path.parent() {
         fs::create_dir_all(parent).expect("create native_lib.bin parent directory");
@@ -149,6 +178,8 @@ pub fn build_final_native_lib_binary(native_binary_path: &Path) {
             native_binary_path
                 .to_str()
                 .expect("utf-8 native-lib binary path"),
+            "--gap-fill",
+            "0x00",
         ])
         .status()
         .expect("arm-none-eabi-objcopy of the final native-lib ELF");
@@ -220,15 +251,25 @@ fn parse_defined_symbol(line: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
 
     use super::{
         audit_final_native_lib_elf_symbols, audit_rust_staticlib_symbols,
-        build_final_native_lib_binary, build_rust_staticlib, defined_symbols,
-        is_allowed_final_native_lib_symbol, is_allowed_runtime_symbol, native_lib_bin_path,
-        nm_output, rust_staticlib_path, undefined_symbols,
-        unexpected_final_native_lib_undefined_symbols, unexpected_undefined_symbols,
+        build_final_native_lib_binary, build_final_native_lib_elf, build_rust_staticlib,
+        defined_symbols, is_allowed_final_native_lib_symbol, is_allowed_runtime_symbol,
+        native_lib_bin_path, native_lib_elf_path, nm_output, rust_staticlib_path,
+        undefined_symbols, unexpected_final_native_lib_undefined_symbols,
+        unexpected_undefined_symbols,
     };
     use std::collections::BTreeSet;
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct SectionLayout {
+        name: String,
+        size: usize,
+        vma: usize,
+    }
 
     #[test]
     fn separates_defined_and_undefined_symbols() {
@@ -307,8 +348,112 @@ mod tests {
             .expect("native-lib binary metadata")
             .len();
         assert!(
-            native_bin_size <= 80,
+            native_bin_size <= 512,
             "expected the native blob to stay compact, got {native_bin_size} bytes"
+        );
+    }
+
+    #[test]
+    fn final_native_lib_elf_is_a_fully_linked_executable_image() {
+        build_final_native_lib_elf();
+
+        let header = command_stdout(
+            "arm-none-eabi-readelf",
+            [PathBuf::from("-h"), native_lib_elf_path()],
+        );
+        assert!(
+            header.contains("Type:                              EXEC"),
+            "expected a final executable ELF, got:\n{header}"
+        );
+
+        let relocations = command_stdout(
+            "arm-none-eabi-readelf",
+            [PathBuf::from("-r"), native_lib_elf_path()],
+        );
+        assert!(
+            relocations.contains("There are no relocations in this file."),
+            "expected no relocation records in the final native-lib ELF, got:\n{relocations}"
+        );
+    }
+
+    #[test]
+    fn native_blob_contains_linked_sections_at_their_load_offsets() {
+        build_final_native_lib_binary(&native_lib_bin_path());
+
+        let blob = fs::read(native_lib_bin_path()).expect("native-lib binary bytes");
+        for section_name in [".program_ptr", ".init_fun", ".text"] {
+            let section = section_layout(section_name);
+            let section_bytes = section_binary(section_name);
+            let end = section.vma + section.size;
+
+            assert!(
+                end <= blob.len(),
+                "section {section_name} at 0x{:x}..0x{:x} exceeds {}-byte blob",
+                section.vma,
+                end,
+                blob.len()
+            );
+            assert_eq!(
+                &blob[section.vma..end],
+                section_bytes.as_slice(),
+                "section {section_name} bytes must appear at the linked load offset"
+            );
+        }
+    }
+
+    #[test]
+    fn final_native_lib_uses_the_vesc_entry_section_order() {
+        build_final_native_lib_elf();
+
+        let program_ptr = section_layout(".program_ptr");
+        let init_fun = section_layout(".init_fun");
+        let text = section_layout(".text");
+
+        assert_eq!(
+            program_ptr,
+            SectionLayout {
+                name: ".program_ptr".to_owned(),
+                size: 4,
+                vma: 0,
+            }
+        );
+        assert_eq!(init_fun.vma, program_ptr.vma + program_ptr.size);
+        assert!(
+            text.vma > init_fun.vma,
+            "expected .text to load after the VESC init section"
+        );
+        assert_eq!(
+            text.vma % 16,
+            0,
+            "expected .text to keep VESC's 16-byte function alignment"
+        );
+    }
+
+    #[test]
+    fn final_native_lib_calls_lispbm_through_the_vesc_function_table() {
+        build_final_native_lib_elf();
+
+        let symbols = nm_output(&native_lib_elf_path());
+        assert!(
+            undefined_symbols(&symbols).is_empty(),
+            "expected no unresolved firmware calls in the final native-lib ELF:\n{symbols}"
+        );
+
+        let disassembly = command_stdout(
+            "arm-none-eabi-objdump",
+            [PathBuf::from("-d"), native_lib_elf_path()],
+        );
+        assert!(
+            disassembly.contains("1000f800"),
+            "expected generated wrappers to call through VESC_IF at 0x1000f800:\n{disassembly}"
+        );
+        assert!(
+            disassembly.contains("<init>"),
+            "expected a VESC init entrypoint in .init_fun:\n{disassembly}"
+        );
+        assert!(
+            disassembly.contains("<package_lib_init>"),
+            "expected init to retain the Rust package entrypoint:\n{disassembly}"
         );
     }
 
@@ -342,5 +487,75 @@ mod tests {
             defined.contains("package_lib_init"),
             "expected the Rust staticlib to export package_lib_init"
         );
+    }
+
+    fn command_stdout(program: &str, args: impl IntoIterator<Item = impl AsRef<Path>>) -> String {
+        let output = Command::new(program)
+            .args(args.into_iter().map(|arg| arg.as_ref().to_owned()))
+            .output()
+            .unwrap_or_else(|error| panic!("{program} execution failed: {error}"));
+
+        assert!(
+            output.status.success(),
+            "{program} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).expect("command stdout to be valid UTF-8")
+    }
+
+    fn section_layout(section_name: &str) -> SectionLayout {
+        let sections = command_stdout(
+            "arm-none-eabi-objdump",
+            [PathBuf::from("-h"), native_lib_elf_path()],
+        );
+        sections
+            .lines()
+            .filter_map(parse_section_layout)
+            .find(|section| section.name == section_name)
+            .unwrap_or_else(|| panic!("section {section_name} not found in:\n{sections}"))
+    }
+
+    fn parse_section_layout(line: &str) -> Option<SectionLayout> {
+        let parts = line.split_whitespace().collect::<Vec<_>>();
+        let [_, name, size, vma, ..] = parts.as_slice() else {
+            return None;
+        };
+        if !name.starts_with('.') {
+            return None;
+        }
+
+        Some(SectionLayout {
+            name: (*name).to_owned(),
+            size: usize::from_str_radix(size, 16).ok()?,
+            vma: usize::from_str_radix(vma, 16).ok()?,
+        })
+    }
+
+    fn section_binary(section_name: &str) -> Vec<u8> {
+        let output_path = section_binary_path(section_name);
+        let status = Command::new("arm-none-eabi-objcopy")
+            .args([
+                "-O",
+                "binary",
+                "--only-section",
+                section_name,
+                native_lib_elf_path().to_str().expect("utf-8 ELF path"),
+                output_path.to_str().expect("utf-8 section binary path"),
+            ])
+            .status()
+            .expect("arm-none-eabi-objcopy section extraction");
+        assert!(
+            status.success(),
+            "failed to extract section {section_name} from native-lib ELF"
+        );
+
+        fs::read(output_path).expect("section binary bytes")
+    }
+
+    fn section_binary_path(section_name: &str) -> PathBuf {
+        native_lib_bin_path().with_file_name(format!(
+            "native_lib_{}.bin",
+            section_name.trim_start_matches('.')
+        ))
     }
 }

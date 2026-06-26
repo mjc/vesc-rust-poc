@@ -3,6 +3,7 @@ use std::path::PathBuf;
 pub const NATIVE_LIB_SHIM_OBJECT: &str = "target/native-lib-baseline/package_lib.o";
 pub const RUST_STATICLIB_PATH: &str = "target/thumbv7em-none-eabihf/release/libvesc_rust_poc.a";
 pub const NATIVE_LIB_ELF_PATH: &str = "target/native-lib-baseline/native_lib.elf";
+pub const NATIVE_LIB_LINKER_SCRIPT: &str = "fixtures/native-lib-baseline/src/link.ld";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NativeLibLinkPlan {
@@ -26,8 +27,17 @@ impl NativeLibLinkPlan {
         self.root.join(NATIVE_LIB_ELF_PATH)
     }
 
+    pub fn linker_script_path(&self) -> PathBuf {
+        self.root.join(NATIVE_LIB_LINKER_SCRIPT)
+    }
+
     pub fn link_inputs(&self) -> impl Iterator<Item = PathBuf> + '_ {
-        [self.shim_object_path(), self.rust_staticlib_path()].into_iter()
+        [
+            self.shim_object_path(),
+            self.rust_staticlib_path(),
+            self.linker_script_path(),
+        ]
+        .into_iter()
     }
 }
 
@@ -44,8 +54,8 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{
-        native_lib_link_plan, NativeLibLinkPlan, NATIVE_LIB_ELF_PATH, NATIVE_LIB_SHIM_OBJECT,
-        RUST_STATICLIB_PATH,
+        native_lib_link_plan, NativeLibLinkPlan, NATIVE_LIB_ELF_PATH, NATIVE_LIB_LINKER_SCRIPT,
+        NATIVE_LIB_SHIM_OBJECT, RUST_STATICLIB_PATH,
     };
 
     #[test]
@@ -54,7 +64,11 @@ mod tests {
 
         assert_eq!(
             plan.link_inputs().collect::<Vec<_>>(),
-            vec![plan.shim_object_path(), plan.rust_staticlib_path(),]
+            vec![
+                plan.shim_object_path(),
+                plan.rust_staticlib_path(),
+                plan.linker_script_path(),
+            ]
         );
         assert_eq!(
             plan.elf_path(),
@@ -75,6 +89,10 @@ mod tests {
         assert_eq!(
             plan.rust_staticlib_path(),
             PathBuf::from("fixtures/native-lib-baseline").join(RUST_STATICLIB_PATH)
+        );
+        assert_eq!(
+            plan.linker_script_path(),
+            PathBuf::from("fixtures/native-lib-baseline").join(NATIVE_LIB_LINKER_SCRIPT)
         );
     }
 }

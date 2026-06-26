@@ -2,21 +2,24 @@
 
 #include "vesc_c_if.h"
 
-extern int32_t rust_add(int32_t a, int32_t b);
+extern void package_lib_init(lib_info *info);
 
-static lbm_value ext_rust_add(lbm_value *args, lbm_uint argn) {
-    if (argn != 2) {
-        return ENC_SYM_EERROR;
-    }
+HEADER
 
-    int32_t a = lbm_dec_as_i32(args[0]);
-    int32_t b = lbm_dec_as_i32(args[1]);
-
-    return lbm_enc_i(rust_add(a, b));
+int lbm_add_extension(const char *name, lbm_extension_fun fun) {
+    return VESC_IF->lbm_add_extension((char *)name, fun);
 }
 
-__attribute__((weak)) INIT_FUN(package_lib_init) {
+int32_t lbm_dec_as_i32(lbm_value value) {
+    return VESC_IF->lbm_dec_as_i32(value);
+}
+
+lbm_value lbm_enc_i(int32_t value) {
+    return VESC_IF->lbm_enc_i(value);
+}
+
+INIT_FUN {
     INIT_START;
-    lbm_add_extension("ext-rust-add", ext_rust_add);
-    INIT_END;
+    package_lib_init(0);
+    return true;
 }

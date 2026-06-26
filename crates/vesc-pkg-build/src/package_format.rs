@@ -237,6 +237,20 @@ mod tests {
         ))
     }
 
+    #[derive(Debug, PartialEq, Eq)]
+    struct PackageField {
+        key: String,
+        value: Vec<u8>,
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct LispImport {
+        tag: String,
+        offset: usize,
+        size: usize,
+        payload: Vec<u8>,
+    }
+
     fn read_string(cursor: &mut &[u8]) -> String {
         let end = cursor
             .iter()
@@ -255,7 +269,13 @@ mod tests {
         i32::from_be_bytes(bytes.try_into().expect("i32 bytes"))
     }
 
-    fn extract_field(package: &[u8], key: &str) -> Vec<u8> {
+    fn read_i16_be(cursor: &mut &[u8]) -> i16 {
+        let (bytes, rest) = cursor.split_at(2);
+        *cursor = rest;
+        i16::from_be_bytes(bytes.try_into().expect("i16 bytes"))
+    }
+
+    fn decompress_package(package: &[u8]) -> Vec<u8> {
         let declared_len =
             u32::from_be_bytes(package[..4].try_into().expect("qCompress length")) as usize;
         let mut decoder = ZlibDecoder::new(&package[4..]);
@@ -264,19 +284,60 @@ mod tests {
             .read_to_end(&mut raw)
             .expect("decompress package payload");
         assert_eq!(raw.len(), declared_len);
+        raw
+    }
 
+    fn package_fields(package: &[u8]) -> Vec<PackageField> {
+        let raw = decompress_package(package);
         let mut cursor = raw.as_slice();
         assert_eq!(read_string(&mut cursor), "VESC Packet");
+
+        let mut fields = Vec::new();
         while !cursor.is_empty() {
-            let field = read_string(&mut cursor);
+            let key = read_string(&mut cursor);
             let len = read_i32_be(&mut cursor) as usize;
             let (value, rest) = cursor.split_at(len);
             cursor = rest;
-            if field == key {
-                return value.to_vec();
-            }
+            fields.push(PackageField {
+                key,
+                value: value.to_vec(),
+            });
         }
-        panic!("missing field {key}");
+        fields
+    }
+
+    fn extract_field(package: &[u8], key: &str) -> Vec<u8> {
+        package_fields(package)
+            .into_iter()
+            .find(|field| field.key == key)
+            .unwrap_or_else(|| panic!("missing field {key}"))
+            .value
+    }
+
+    fn parse_lisp_imports(lisp_data: &[u8]) -> (String, Vec<LispImport>) {
+        let mut cursor = lisp_data;
+        assert_eq!(read_i16_be(&mut cursor), 0);
+        let code = read_string(&mut cursor);
+        let import_count = read_i16_be(&mut cursor);
+        assert!(import_count >= 0, "negative Lisp import count");
+
+        let imports = (0..import_count)
+            .map(|_| {
+                let tag = read_string(&mut cursor);
+                let offset = read_i32_be(&mut cursor) as usize;
+                let size = read_i32_be(&mut cursor) as usize;
+                let start = 2 + offset;
+                let end = start + size;
+                LispImport {
+                    tag,
+                    offset,
+                    size,
+                    payload: lisp_data[start..end].to_vec(),
+                }
+            })
+            .collect();
+
+        (code, imports)
     }
 
     #[test]
@@ -298,12 +359,60 @@ mod tests {
         })
         .expect("package");
         let lisp_data = extract_field(&package, "lispData");
+        let (code, imports) = parse_lisp_imports(&lisp_data);
 
-        assert!(lisp_data
-            .windows(b"package-lib\0".len())
-            .any(|window| window == b"package-lib\0"));
-        assert!(lisp_data
-            .windows([0, 1, 2, 3, 0xff, 0].len())
-            .any(|window| window == [0, 1, 2, 3, 0xff, 0]));
+        assert_eq!(
+            code,
+            "(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n"
+        );
+        assert_eq!(
+            imports,
+            vec![LispImport {
+                tag: "package-lib".to_owned(),
+                offset: 100,
+                size: 6,
+                payload: vec![0, 1, 2, 3, 0xff, 0],
+            }]
+        );
+        assert_eq!(imports[0].offset % 4, 0);
+    }
+
+    #[test]
+    fn package_uses_the_vesc_tool_field_spine() {
+        let root = unique_root();
+        fs::create_dir_all(root.join("src")).expect("src dir");
+        fs::write(root.join("src/package_lib.bin"), [0xaa]).expect("native payload");
+
+        let package = build_vesc_package(&VescPackageInput {
+            name: "test",
+            description_md: "markdown",
+            lisp_source: "(import \"src/package_lib.bin\" 'package-lib)\n",
+            lisp_editor_path: &root,
+            qml_file: "qml",
+            pkg_desc_qml: "descriptor",
+            qml_is_fullscreen: false,
+        })
+        .expect("package");
+        let fields = package_fields(&package);
+
+        assert_eq!(
+            fields
+                .iter()
+                .map(|field| field.key.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "name",
+                "description_md",
+                "lispData",
+                "qmlFile",
+                "pkgDescQml",
+                "qmlIsFullscreen",
+            ]
+        );
+        assert_eq!(fields[0].value, b"test");
+        assert_eq!(fields[1].value, b"markdown");
+        assert_eq!(fields[3].value, b"qml");
+        assert_eq!(fields[4].value, b"descriptor");
+        assert_eq!(fields[5].value, [0]);
     }
 }
