@@ -43,9 +43,9 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         image: NativeImage,
         descriptor: ExtensionDescriptor,
     ) -> Result<i32, ffi::RegisterError> {
-        let descriptor = descriptor
-            .validate()
-            .map_err(|_| ffi::RegisterError::InvalidExtensionName)?;
+        // Image-owned C strings are offsets until the VESC loader applies
+        // `lib_info.base_addr`; validating here would dereference an invalid
+        // pre-rebase address on device.
         let result = unsafe {
             self.api
                 .register_extension_from_image(image, descriptor.name(), descriptor.handler())

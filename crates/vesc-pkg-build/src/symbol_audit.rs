@@ -423,7 +423,7 @@ mod tests {
             text,
             SectionLayout {
                 name: ".text".to_owned(),
-                size: 476,
+                size: 444,
                 vma: 16,
             }
         );
@@ -537,7 +537,7 @@ mod tests {
             .find("#596]")
             .expect("expected app-data handler registration in package_lib_init");
         let rust_extension_register = package_init_disassembly[app_data_register..]
-            .find("#0]")
+            .find("[r8]")
             .map(|offset| app_data_register + offset)
             .expect("expected Rust extension registration through lbm_add_extension");
         assert!(
@@ -604,6 +604,25 @@ mod tests {
                 "missing Rust-only callback rebase/registration marker `{expected}`:\n{package_init_disassembly}"
             );
         }
+    }
+
+    #[test]
+    fn package_init_does_not_dereference_extension_names_before_rebase() {
+        build_final_native_lib_elf();
+
+        let disassembly = command_stdout(
+            "arm-none-eabi-objdump",
+            [PathBuf::from("-d"), native_lib_elf_path()],
+        );
+        let package_init_disassembly = disassembly
+            .split("<package_lib_init>:")
+            .nth(1)
+            .expect("expected package_lib_init in disassembly");
+
+        assert!(
+            !package_init_disassembly.contains("ldr\tr2, [r0, #0]"),
+            "package init must not read an extension name through a raw image offset before adding lib_info.base_addr:\n{package_init_disassembly}"
+        );
     }
 
     #[test]

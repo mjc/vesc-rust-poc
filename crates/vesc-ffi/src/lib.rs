@@ -348,10 +348,9 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         image: NativeImage,
         descriptor: ExtensionDescriptor,
     ) -> Result<i32, RegisterError> {
-        let descriptor = descriptor
-            .validate()
-            .map_err(|_| RegisterError::InvalidExtensionName)?;
-
+        // Do not validate `descriptor.name()` here: when this runs inside the
+        // loaded native image, the C string pointer is still an image offset
+        // until `register_extension_from_image` applies `lib_info.base_addr`.
         let result = unsafe {
             self.api
                 .register_extension_from_image(image, descriptor.name(), descriptor.handler())
