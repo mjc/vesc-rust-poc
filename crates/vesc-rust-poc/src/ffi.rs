@@ -30,6 +30,55 @@ impl LibInfoAbi {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VescIfSlot {
+    name: &'static str,
+    offset: usize,
+}
+
+impl VescIfSlot {
+    pub const fn new(name: &'static str, offset: usize) -> Self {
+        Self { name, offset }
+    }
+
+    pub const fn name(self) -> &'static str {
+        self.name
+    }
+
+    pub const fn offset(self) -> usize {
+        self.offset
+    }
+
+    pub const fn host_offset(self, pointer_size: usize) -> usize {
+        self.offset * (pointer_size / 4)
+    }
+}
+
+pub struct VescIfAbi;
+
+impl VescIfAbi {
+    pub const BASE_ADDR: NativeAddress = NativeAddress(0x1000_f800);
+    pub const LBM_ADD_EXTENSION: VescIfSlot = VescIfSlot::new("lbm_add_extension", 0);
+    pub const LBM_ENC_I: VescIfSlot = VescIfSlot::new("lbm_enc_i", 64);
+    pub const LBM_DEC_AS_I32: VescIfSlot = VescIfSlot::new("lbm_dec_as_i32", 100);
+    pub const LBM_IS_NUMBER: VescIfSlot = VescIfSlot::new("lbm_is_number", 124);
+    pub const LBM_ENC_SYM_EERROR: VescIfSlot = VescIfSlot::new("lbm_enc_sym_eerror", 148);
+    pub const SEND_APP_DATA: VescIfSlot = VescIfSlot::new("send_app_data", 592);
+    pub const SET_APP_DATA_HANDLER: VescIfSlot = VescIfSlot::new("set_app_data_handler", 596);
+    pub const SYSTEM_TIME_TICKS: VescIfSlot = VescIfSlot::new("system_time_ticks", 952);
+
+    pub const USED_SLOTS: [VescIfSlot; 8] = [
+        Self::LBM_ADD_EXTENSION,
+        Self::LBM_ENC_I,
+        Self::LBM_DEC_AS_I32,
+        Self::LBM_IS_NUMBER,
+        Self::LBM_ENC_SYM_EERROR,
+        Self::SEND_APP_DATA,
+        Self::SET_APP_DATA_HANDLER,
+        Self::SYSTEM_TIME_TICKS,
+    ];
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ImageOffset(usize);
 
 impl ImageOffset {
@@ -191,7 +240,7 @@ impl<B: LbmBindings> LbmApi<B> {
 
 #[cfg_attr(test, allow(dead_code))]
 pub(crate) mod raw {
-    use super::{AppDataHandler, ExtensionHandler, LbmValue};
+    use super::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi};
     use core::ffi::{c_char, c_uchar};
 
     #[repr(C)]
@@ -212,7 +261,7 @@ pub(crate) mod raw {
         system_time_ticks: unsafe extern "C" fn() -> u32,
     }
 
-    const VESC_IF: *const VescIf = 0x1000_f800 as *const VescIf;
+    const VESC_IF: *const VescIf = VescIfAbi::BASE_ADDR.get() as *const VescIf;
 
     pub(crate) unsafe fn lbm_add_extension(name: *const c_char, handler: ExtensionHandler) -> i32 {
         // Safety: this forwards the raw pointer and callback to the firmware ABI.
@@ -273,7 +322,7 @@ pub(crate) mod raw {
 mod tests {
     use super::{
         ExtensionHandler, ImageOffset, LbmApi, LbmBindings, LbmCount, LbmValue, LibInfo,
-        LibInfoAbi, NativeAddress, NativeImage,
+        LibInfoAbi, NativeAddress, NativeImage, VescIfAbi,
     };
     use core::cell::Cell;
     use core::ffi::{c_char, c_void};
@@ -417,9 +466,33 @@ mod tests {
 
     #[test]
     fn raw_vesc_if_offsets_match_the_32_bit_package_header() {
-        let pointer_scale = core::mem::size_of::<usize>() / 4;
-        let expected = [0, 64, 100, 124, 148, 592, 596, 952].map(|offset| offset * pointer_scale);
+        let expected =
+            VescIfAbi::USED_SLOTS.map(|slot| slot.host_offset(core::mem::size_of::<usize>()));
 
         assert_eq!(super::raw::vesc_if_offsets_for_tests(), expected);
+    }
+
+    #[test]
+    fn vesc_if_slot_constants_name_the_package_header_offsets() {
+        let slots = VescIfAbi::USED_SLOTS;
+
+        assert_eq!(VescIfAbi::BASE_ADDR, NativeAddress(0x1000_f800));
+        assert_eq!(
+            slots.map(|slot| slot.name()),
+            [
+                "lbm_add_extension",
+                "lbm_enc_i",
+                "lbm_dec_as_i32",
+                "lbm_is_number",
+                "lbm_enc_sym_eerror",
+                "send_app_data",
+                "set_app_data_handler",
+                "system_time_ticks",
+            ]
+        );
+        assert_eq!(
+            slots.map(|slot| slot.offset()),
+            [0, 64, 100, 124, 148, 592, 596, 952]
+        );
     }
 }
