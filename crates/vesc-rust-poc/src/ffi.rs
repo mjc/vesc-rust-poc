@@ -19,6 +19,50 @@ pub struct LibInfo {
     pub base_addr: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeImage {
+    base_addr: u32,
+}
+
+impl NativeImage {
+    pub const fn new(base_addr: u32) -> Self {
+        Self { base_addr }
+    }
+
+    pub fn from_info(info: &LibInfo) -> Self {
+        Self::new(info.base_addr)
+    }
+
+    pub fn rebase_addr(self, image_addr: usize) -> usize {
+        self.base_addr as usize + image_addr
+    }
+
+    pub fn rebase_ptr<T>(self, ptr: *const T) -> *const T {
+        self.rebase_addr(ptr as usize) as *const T
+    }
+
+    /// # Safety
+    ///
+    /// `handler` must be a function pointer emitted into the currently loaded native image.
+    pub unsafe fn rebase_extension_handler(self, handler: ExtensionHandler) -> ExtensionHandler {
+        unsafe { core::mem::transmute(self.rebase_addr(handler as usize)) }
+    }
+
+    /// # Safety
+    ///
+    /// `handler` must be a function pointer emitted into the currently loaded native image.
+    pub unsafe fn rebase_app_data_handler(self, handler: AppDataHandler) -> AppDataHandler {
+        unsafe { core::mem::transmute(self.rebase_addr(handler as usize)) }
+    }
+
+    /// # Safety
+    ///
+    /// `handler` must be a function pointer emitted into the currently loaded native image.
+    pub unsafe fn rebase_stop_handler(self, handler: StopHandler) -> StopHandler {
+        unsafe { core::mem::transmute(self.rebase_addr(handler as usize)) }
+    }
+}
+
 pub trait LbmBindings {
     /// # Safety
     /// `name` must be a valid NUL-terminated string for the duration of the call,
@@ -73,6 +117,17 @@ impl<B: LbmBindings> LbmApi<B> {
 
     pub fn register_extension(&self, name: &CStr, handler: ExtensionHandler) -> i32 {
         unsafe { self.bindings.add_extension(name.as_ptr(), handler) }
+    }
+
+    pub fn register_extension_from_image(
+        &self,
+        image: NativeImage,
+        name: &CStr,
+        handler: ExtensionHandler,
+    ) -> i32 {
+        let name = image.rebase_ptr(name.as_ptr());
+        let handler = unsafe { image.rebase_extension_handler(handler) };
+        unsafe { self.bindings.add_extension(name, handler) }
     }
 
     pub fn decode_i32(&self, value: LbmValue) -> i32 {
@@ -174,7 +229,7 @@ pub(crate) mod raw {
 
 #[cfg(test)]
 mod tests {
-    use super::{ExtensionHandler, LbmApi, LbmBindings, LbmCount, LbmValue};
+    use super::{ExtensionHandler, LbmApi, LbmBindings, LbmCount, LbmValue, NativeImage};
     use core::cell::Cell;
     use core::ffi::c_char;
 
@@ -182,6 +237,8 @@ mod tests {
         add_calls: Cell<usize>,
         decode_calls: Cell<usize>,
         encode_calls: Cell<usize>,
+        last_name: Cell<usize>,
+        last_handler: Cell<usize>,
     }
 
     impl FakeBindings {
@@ -190,6 +247,8 @@ mod tests {
                 add_calls: Cell::new(0),
                 decode_calls: Cell::new(0),
                 encode_calls: Cell::new(0),
+                last_name: Cell::new(0),
+                last_handler: Cell::new(0),
             }
         }
     }
@@ -198,8 +257,10 @@ mod tests {
         /// # Safety
         /// The fake test binding ignores the pointer and callback, so it cannot violate
         /// the firmware ABI invariants.
-        unsafe fn add_extension(&self, _name: *const c_char, _handler: ExtensionHandler) -> i32 {
+        unsafe fn add_extension(&self, name: *const c_char, handler: ExtensionHandler) -> i32 {
             self.add_calls.set(self.add_calls.get() + 1);
+            self.last_name.set(name as usize);
+            self.last_handler.set(handler as usize);
             17
         }
 
@@ -241,6 +302,29 @@ mod tests {
         assert_eq!(api.encode_i32(9), LbmValue(9));
         assert!(api.is_number(LbmValue(9)));
         assert_eq!(api.encode_eval_error(), LbmValue(0xffff_ffff));
+    }
+
+    #[test]
+    fn native_image_rebases_rust_owned_extension_pointers() {
+        let bindings = FakeBindings::new();
+        let api = LbmApi::new(bindings);
+        let image = NativeImage::new(0x2000);
+        let name = c"ext-rust-probe-v5";
+
+        assert_eq!(
+            api.register_extension_from_image(image, name, stub_handler),
+            17
+        );
+        assert_eq!(
+            api.bindings.last_name.get(),
+            name.as_ptr() as usize + 0x2000
+        );
+        assert_eq!(
+            api.bindings.last_handler.get(),
+            stub_handler as *const () as usize + 0x2000
+        );
+        assert_eq!(image.rebase_addr(0x61), 0x2061);
+        assert_eq!(image.rebase_ptr(0x1df as *const c_char) as usize, 0x21df);
     }
 
     #[test]

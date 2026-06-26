@@ -14,7 +14,7 @@ pub fn rust_add(a: i32, b: i32) -> i32 {
 #[no_mangle]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) {
     ble_loopback_device::init_package(info);
-    package_lifecycle::init_package();
+    package_lifecycle::init_package(info);
 }
 
 #[cfg(test)]

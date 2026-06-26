@@ -436,24 +436,30 @@ unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
     }
 }
 
-fn install_stop_hook(info: *mut crate::ffi::LibInfo) {
+fn install_stop_hook(info: *mut crate::ffi::LibInfo, stop_fun: crate::ffi::StopHandler) {
     if let Some(info) = unsafe { info.as_mut() } {
-        info.stop_fun = Some(stop_package);
+        info.stop_fun = Some(stop_fun);
     }
 }
 
 #[cfg(not(test))]
 pub fn init_package(info: *mut crate::ffi::LibInfo) {
-    install_stop_hook(info);
+    let Some(info_ref) = (unsafe { info.as_ref() }) else {
+        return;
+    };
+    let image = crate::ffi::NativeImage::from_info(info_ref);
+    let stop_fun = unsafe { image.rebase_stop_handler(stop_package) };
+    install_stop_hook(info, stop_fun);
 
     // Safety: the bridge registers a static callback with the firmware ABI.
     unsafe {
-        let _ = crate::ffi::raw::vesc_set_app_data_handler(Some(app_data_handler));
+        let handler = image.rebase_app_data_handler(app_data_handler);
+        let _ = crate::ffi::raw::vesc_set_app_data_handler(Some(handler));
     }
 }
 
 pub fn init_package_for_tests(info: *mut crate::ffi::LibInfo) {
-    install_stop_hook(info);
+    install_stop_hook(info, stop_package);
     INIT_CALLS.fetch_add(1, Ordering::SeqCst);
 }
 

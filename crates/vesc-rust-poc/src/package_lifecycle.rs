@@ -1,6 +1,6 @@
 use core::ffi::CStr;
 
-use crate::ffi::{self, LbmApi, LbmBindings, LbmCount, LbmValue};
+use crate::ffi::{self, LbmApi, LbmBindings, LbmCount, LbmValue, NativeImage};
 
 const EXT_RUST_PROBE_NAME: &CStr = c"ext-rust-probe-v5";
 
@@ -19,16 +19,29 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         self.api.register_extension(EXT_RUST_PROBE_NAME, handler)
     }
 
+    pub fn register_extensions_from_image(
+        &self,
+        image: NativeImage,
+        handler: ffi::ExtensionHandler,
+    ) -> i32 {
+        self.api
+            .register_extension_from_image(image, EXT_RUST_PROBE_NAME, handler)
+    }
+
     #[cfg(not(test))]
-    pub fn register_extensions(&self) -> i32 {
-        self.register_extensions_with(ext_rust_add)
+    pub fn register_extensions(&self, image: NativeImage) -> i32 {
+        self.register_extensions_from_image(image, ext_rust_add)
     }
 }
 
 #[cfg(not(test))]
-pub fn init_package() {
+pub fn init_package(info: *const ffi::LibInfo) {
+    let Some(info) = (unsafe { info.as_ref() }) else {
+        return;
+    };
+
     let lifecycle = PackageLifecycle::new(ffi::RealBindings);
-    let _ = lifecycle.register_extensions();
+    let _ = lifecycle.register_extensions(NativeImage::from_info(info));
 }
 
 #[cfg(not(test))]

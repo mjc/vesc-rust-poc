@@ -347,7 +347,7 @@ mod tests {
             .expect("native-lib binary metadata")
             .len();
         assert!(
-            native_bin_size <= 512,
+            native_bin_size <= 640,
             "expected the native blob to stay compact, got {native_bin_size} bytes"
         );
     }
@@ -437,7 +437,7 @@ mod tests {
             text,
             SectionLayout {
                 name: ".text".to_owned(),
-                size: 417,
+                size: 433,
                 vma: 80,
             }
         );
@@ -502,6 +502,35 @@ mod tests {
         assert!(
             app_data_register < rust_extension_register,
             "expected package_lib_init to mirror VESC packages by registering app-data before LispBM extensions:\n{package_init_disassembly}"
+        );
+    }
+
+    #[test]
+    fn final_native_lib_rebases_rust_callbacks_from_the_loaded_image_base() {
+        build_final_native_lib_elf();
+
+        let disassembly = command_stdout(
+            "arm-none-eabi-objdump",
+            [PathBuf::from("-d"), native_lib_elf_path()],
+        );
+        let package_init_disassembly = disassembly
+            .split("<package_lib_init>:")
+            .nth(1)
+            .expect("expected package_lib_init in disassembly");
+
+        assert!(
+            package_init_disassembly.contains("[r0, #8]"),
+            "expected Rust package init to load lib_info.base_addr before registering Rust-owned pointers:\n{package_init_disassembly}"
+        );
+        for rebase_step in ["add\tr1, r0", "add\tr0, r1", "add\tr1, r2"] {
+            assert!(
+                package_init_disassembly.contains(rebase_step),
+                "expected Rust-owned image pointer rebase step `{rebase_step}` before use:\n{package_init_disassembly}"
+            );
+        }
+        assert!(
+            package_init_disassembly.contains("str\tr1, [r4, #0]"),
+            "expected the stop hook to store a rebased function pointer:\n{package_init_disassembly}"
         );
     }
 
