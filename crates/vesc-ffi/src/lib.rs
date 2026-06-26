@@ -350,9 +350,6 @@ pub type Half = HalfDuplex;
 pub type Celsius = TemperatureC;
 pub type Meters = DistanceMeters;
 pub type MetersPerSecond = SpeedMetersPerSecond;
-pub type Temperature = Celsius;
-pub type Distance = Meters;
-pub type Speed = MetersPerSecond;
 pub type Charge = AmpHours;
 pub type Energy = WattHours;
 pub type Odometer = OdometerMeters;
@@ -361,73 +358,36 @@ pub type Channel = FocChannel;
 pub type Hertz = ToneFrequencyHz;
 pub type VoltsTone = ToneVoltage;
 pub type SecondsDelay = OffDelaySeconds;
-pub type Frequency = Hertz;
-pub type Tone = VoltsTone;
-pub type Delay = SecondsDelay;
 pub type DegreesLatitude = LatitudeDeg;
 pub type DegreesLongitude = LongitudeDeg;
 pub type MetersAltitude = AltitudeMeters;
 pub type GnssMetersPerSecond = GnssSpeed;
 pub type HdopUnit = Hdop;
-pub type Latitude = DegreesLatitude;
-pub type Longitude = DegreesLongitude;
-pub type Altitude = MetersAltitude;
-pub type GnssSpeedMs = GnssMetersPerSecond;
-pub type HdopValue = HdopUnit;
 pub type Vector3 = Accel3;
 pub type AngularVelocity = Gyro3;
 pub type MagneticField = Mag3;
-pub type Gyroscope = AngularVelocity;
-pub type Magnetometer = MagneticField;
 pub type Quaternion4 = Quaternion;
 pub type Calibration = ImuCalibration;
-pub type ImuCalibrationData = Calibration;
 pub type SecondsPerSample = ReadCallbackDtSeconds;
-pub type SamplePeriod = SecondsPerSample;
 pub type Parameter = CfgParam;
 pub type ConfigFloat = CfgFloat;
 pub type ConfigInt = CfgInt;
 pub type ConfigResult = ConfigSetResult;
-pub type ConfigurationFloat = ConfigFloat;
-pub type ConfigurationInt = ConfigInt;
-pub type ConfigurationResult = ConfigResult;
 pub type XmlBytes<'a> = ConfigXmlBytes<'a>;
 pub type Payload<'a> = ConfigPayload<'a>;
-pub type ThreadNameUtf8<'a> = ThreadName<'a>;
-pub type ThreadLabel<'a> = ThreadNameUtf8<'a>;
 pub type StackSize = StackSizeBytes;
 pub type ThreadHandleValue = ThreadHandle;
 pub type MutexHandleValue = MutexHandle;
 pub type SemaphoreHandleValue = SemaphoreHandle;
-pub type Thread = ThreadHandleValue;
-pub type Mutex = MutexHandleValue;
-pub type Semaphore = SemaphoreHandleValue;
 pub type FirmwarePtrValue<T> = FirmwarePtr<T>;
 pub type FirmwareNonNullValue<T> = FirmwareNonNull<T>;
 pub type MallocSize = MallocLen;
 pub type OwnedFirmware<T> = OwnedFirmwareAllocation<T>;
-pub type CanBytes<'a> = CanPayload<'a>;
-pub type StatusIndex = CanStatusIndex;
-pub type HardwareKind = HardwareType;
-pub type Roll = RollDeg;
-pub type Pitch = PitchDeg;
-pub type Yaw = YawDeg;
 pub type AxisLabel<'a> = PlotAxisName<'a>;
 pub type GraphLabel<'a> = PlotGraphName<'a>;
 pub type GraphIndex = PlotGraphIndex;
 pub type Point = PlotPoint;
-pub type Pin = VescPin;
-pub type PinMode = VescPinMode;
-pub type Port = GpioPortPtr;
-pub type Gpio = GpioPin;
-pub type Analog = AnalogVoltage;
-pub type RawAnalog = AnalogRaw;
-pub type IoSymbol = LbmIoSymbol;
-pub type NvmAddr = NvmAddress;
-pub type NvmLength = NvmLen;
 pub type Bytes<'a> = NvmBytes<'a>;
-pub type EepromAddr = EepromAddress;
-pub type EepromValue = EepromVar;
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -934,23 +894,26 @@ pub mod raw {
 
 #[cfg(test)]
 mod tests {
+    #[allow(unused_imports)]
     use super::{
         Accel3, AltitudeMeters, AnalogRaw, AnalogVoltage, AmpHours, AppDataLen, AppDataPacket,
-        BatteryLevel, BrakeCurrentAmps, CanControllerId, CanFrameLen, CanPayload, CanStatusIndex,
-        CfgFloat, CfgInt, CfgParam, CommandPacket, ConfigPayload, ConfigXmlBytes, ConfigSetResult,
-        CurrentAmps, Degrees, DistanceMeters, DutyCycle, EepromAddress, EepromVar, Erpm,
-        EulerAngles, ExtensionHandler, FocChannel,
-        FirmwareNonNull, FirmwarePtr, GnssSpeed, GpioPin, GpioPortPtr, Hdop, HardwareType,
-        HalfDuplex, ImageOffset, InputCurrentAmps, LatitudeDeg, LbmApi,
-        LbmBindings, LbmBoolSymbol, LbmCid, LbmCount, LbmErrorSymbol, LbmFloat, LbmInt,
-        LbmIoSymbol, LbmNilSymbol, LbmSymbol, LbmType, LbmUint, LbmValue, LibInfo, LibInfoAbi,
-        LoaderBaseAddress, LongitudeDeg, MallocLen, MotorIndex, MutexHandle, MutablePacket,
-        NativeAddress, NativeImage, NvmAddress, NvmBytes, NvmLen, OdometerMeters, OffDelaySeconds,
-        OwnedFirmwareAllocation, PitchDeg, PlotAxisName, PlotGraphIndex, PlotGraphName, PlotPoint,
-        ProgramAddress, Quaternion, Radians, ReplyPacket, RollDeg, SemaphoreHandle, SecondsF32,
-        SpeedMetersPerSecond, StackSizeBytes, SystemSeconds, SystemTicks, TemperatureC,
-        ThreadHandle, ThreadName, ToneFrequencyHz, ToneVoltage, UartBaudRate, UartWriteLen,
-        VescIfAbi, VescPin, VescPinMode, Voltage, WattHours, YawDeg,
+        Amps, AngularVelocity, BatteryLevel, BrakeCurrentAmps, Bytes, Calibration, CanControllerId,
+        CanFrameLen, CanPayload, CanStatusIndex, Celsius, Charge, CfgFloat, CfgInt, CfgParam,
+        CommandPacket, ConfigPayload, ConfigResult, ConfigXmlBytes, CurrentAmps, Degrees,
+        DegreesLatitude, DegreesLongitude, DistanceMeters, DutyCycle, EepromAddress, EepromVar,
+        Energy, Erpm, EulerAngles, ExtensionHandler, FocChannel, FirmwareNonNull, FirmwarePtr,
+        GnssMetersPerSecond, GnssSpeed, GpioPin, GpioPortPtr, Hdop, HalfDuplex, HardwareType,
+        ImageOffset, InputCurrentAmps, LatitudeDeg, LbmApi, LbmBindings, LbmBoolSymbol, LbmCid,
+        LbmCount, LbmErrorSymbol, LbmFloat, LbmInt, LbmIoSymbol, LbmNilSymbol, LbmSymbol, LbmType,
+        LbmUint, LbmValue, LibInfo, LibInfoAbi, LoaderBaseAddress, LongitudeDeg, MallocLen,
+        MagneticField, Meters, MetersAltitude, MetersPerSecond, MotorIndex, MutexHandle,
+        MutablePacket, NativeAddress, NativeImage, NvmAddress, NvmBytes, NvmLen, OdometerMeters,
+        OffDelaySeconds, OwnedFirmwareAllocation, PitchDeg, PlotAxisName, PlotGraphIndex,
+        PlotGraphName, PlotPoint, ProgramAddress, Quaternion, Radians, ReplyPacket, RollDeg,
+        SecondsDelay, SemaphoreHandle, SecondsPerSample, SecondsF32, SpeedMetersPerSecond,
+        StackSizeBytes, SystemSeconds, SystemTicks, TemperatureC, ThreadHandle, ThreadName,
+        ToneFrequencyHz, ToneVoltage, UartBaudRate, UartWriteLen, Value, Volts, VescIfAbi, VescPin,
+        VescPinMode, Voltage, WattHours, YawDeg,
     };
     use core::cell::Cell;
     use core::ffi::{c_char, c_void, CStr};
@@ -1204,10 +1167,7 @@ mod tests {
         assert_eq!(core::mem::size_of::<CfgParam>(), core::mem::size_of::<i32>());
         assert_eq!(core::mem::size_of::<CfgFloat>(), core::mem::size_of::<f32>());
         assert_eq!(core::mem::size_of::<CfgInt>(), core::mem::size_of::<i32>());
-        assert_eq!(
-            core::mem::size_of::<ConfigSetResult>(),
-            core::mem::size_of::<i32>()
-        );
+        assert_eq!(core::mem::size_of::<ConfigResult>(), core::mem::size_of::<i32>());
         assert_eq!(
             core::mem::size_of::<ConfigXmlBytes<'_>>(),
             core::mem::size_of::<&[u8]>()
@@ -1340,7 +1300,7 @@ mod tests {
     #[test]
     fn rustic_aliases_point_at_the_public_wrapper_surface() {
         let value: crate::Value = 1_u32.into();
-        let speed: crate::Speed = 2.5_f32.into();
+        let speed: crate::MetersPerSecond = 2.5_f32.into();
         let bytes: crate::Bytes<'_> = (&[1_u8, 2, 3][..]).into();
 
         assert_eq!(value.get(), 1);
@@ -1364,6 +1324,10 @@ mod tests {
         let magnetic: crate::MagneticField = [4.0, 5.0, 6.0].into();
         let calibration: crate::Calibration = [0.0, 1.0, 2.0].into();
         let gnss_speed: crate::GnssMetersPerSecond = 8.5_f32.into();
+        let frequency: crate::Hertz = 1.0_f32.into();
+        let tone_voltage: crate::VoltsTone = 12.0_f32.into();
+        let delay: crate::SecondsDelay = 3.0_f32.into();
+        let sample_period: crate::SecondsPerSample = 0.25_f32.into();
 
         assert_eq!(temperature.get(), 21.5);
         assert_eq!(distance.get(), 12.0);
@@ -1379,5 +1343,9 @@ mod tests {
         assert_eq!(magnetic.get(), [4.0, 5.0, 6.0]);
         assert_eq!(calibration.get(), [0.0, 1.0, 2.0]);
         assert_eq!(gnss_speed.get(), 8.5);
+        assert_eq!(frequency.get(), 1.0);
+        assert_eq!(tone_voltage.get(), 12.0);
+        assert_eq!(delay.get(), 3.0);
+        assert_eq!(sample_period.get(), 0.25);
     }
 }
