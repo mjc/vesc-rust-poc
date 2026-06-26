@@ -5,8 +5,14 @@ pub enum Command {
     Status,
     Scan,
     Loopback,
-    LispProbe,
+    LispProbe(LispProbeCommand),
     PackageInstall(PackageInstallCommand),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LispProbeCommand {
+    pub device_name: Option<String>,
+    pub address: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,10 +41,40 @@ where
         Some("status") => Ok(Command::Status),
         Some("scan") => Ok(Command::Scan),
         Some("loopback") => Ok(Command::Loopback),
-        Some("lisp-probe") => Ok(Command::LispProbe),
+        Some("lisp-probe") => parse_lisp_probe(iter).map(Command::LispProbe),
         Some("package-install") => parse_package_install(iter).map(Command::PackageInstall),
         Some(other) => Err(ParseError::UnknownCommand(other.to_owned())),
     }
+}
+
+fn parse_lisp_probe(
+    mut iter: impl Iterator<Item = String>,
+) -> Result<LispProbeCommand, ParseError> {
+    let mut device_name = None;
+    let mut address = None;
+
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--device" => {
+                device_name = Some(
+                    iter.next()
+                        .ok_or_else(|| ParseError::UnknownCommand("--device".to_owned()))?,
+                );
+            }
+            "--address" => {
+                address = Some(
+                    iter.next()
+                        .ok_or_else(|| ParseError::UnknownCommand("--address".to_owned()))?,
+                );
+            }
+            other => return Err(ParseError::UnknownCommand(other.to_owned())),
+        }
+    }
+
+    Ok(LispProbeCommand {
+        device_name,
+        address,
+    })
 }
 
 fn parse_package_install(
@@ -85,7 +121,7 @@ pub mod vesc_uart;
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_args, Command, PackageInstallCommand, ParseError};
+    use super::{parse_args, Command, LispProbeCommand, PackageInstallCommand, ParseError};
     use vesc_protocol::{WireCommand, WireVersion};
 
     #[test]
@@ -128,7 +164,37 @@ mod tests {
     fn parses_lisp_probe_command() {
         assert_eq!(
             parse_args(["vesc-host-cli", "lisp-probe"]),
-            Ok(Command::LispProbe)
+            Ok(Command::LispProbe(LispProbeCommand {
+                device_name: None,
+                address: None,
+            }))
+        );
+    }
+
+    #[test]
+    fn parses_lisp_probe_device_selector() {
+        assert_eq!(
+            parse_args(["vesc-host-cli", "lisp-probe", "--device", "VESC BLE UART"]),
+            Ok(Command::LispProbe(LispProbeCommand {
+                device_name: Some("VESC BLE UART".to_owned()),
+                address: None,
+            }))
+        );
+    }
+
+    #[test]
+    fn parses_lisp_probe_address_selector() {
+        assert_eq!(
+            parse_args([
+                "vesc-host-cli",
+                "lisp-probe",
+                "--address",
+                "AA:BB:CC:DD:EE:FF"
+            ]),
+            Ok(Command::LispProbe(LispProbeCommand {
+                device_name: None,
+                address: Some("AA:BB:CC:DD:EE:FF".to_owned()),
+            }))
         );
     }
 

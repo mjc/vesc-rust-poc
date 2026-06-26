@@ -322,14 +322,14 @@ fn should_retry_lisp_probe(prints: &[String], attempt: usize, max_attempts: usiz
     prints.is_empty() && attempt < max_attempts
 }
 
-pub fn run_lisp_probe() -> Result<LispProbeReport, LoopbackTransportError> {
+pub fn run_lisp_probe(target: LoopbackTarget) -> Result<LispProbeReport, LoopbackTransportError> {
     let runtime = Builder::new_multi_thread()
         .enable_all()
         .worker_threads(1)
         .build()
         .map_err(|_| LoopbackTransportError::Device("failed to start the BLE runtime"))?;
 
-    let mut session = runtime.block_on(open_session(LoopbackTarget::default()))?;
+    let mut session = runtime.block_on(open_session(target))?;
     let packet = build_lisp_repl_packet(lisp_probe_command());
 
     for attempt in 1..=LISP_PROBE_MAX_ATTEMPTS {

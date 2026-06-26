@@ -1,4 +1,6 @@
-use std::process::ExitCode;
+use std::{process::ExitCode, thread, time::Duration};
+
+const LISP_PROBE_RETRY_DELAY: Duration = Duration::from_secs(1);
 
 fn main() -> ExitCode {
     match vesc_host_cli::parse_args(std::env::args()) {
@@ -54,31 +56,43 @@ fn main() -> ExitCode {
                 }
             }
         }
-        Ok(vesc_host_cli::Command::LispProbe) => match vesc_host_cli::btle::run_lisp_probe() {
-            Ok(report) => {
-                report
-                    .prints()
-                    .iter()
-                    .for_each(|line| println!("lisp print: {line}"));
-                if report.attempts() > 1 {
-                    println!(
-                        "lisp probe received print replies after {} attempts",
-                        report.attempts()
-                    );
+        Ok(vesc_host_cli::Command::LispProbe(command)) => {
+            let target = match (command.address, command.device_name) {
+                (Some(address), _) => vesc_host_cli::loopback::LoopbackTarget::addressed(address),
+                (None, Some(device_name)) => {
+                    vesc_host_cli::loopback::LoopbackTarget::named(device_name)
                 }
-                if report.prints().is_empty() {
-                    println!(
-                        "lisp probe completed without print replies after {} attempts",
-                        report.attempts()
-                    );
+                (None, None) => vesc_host_cli::loopback::LoopbackTarget::default(),
+            };
+
+            loop {
+                match vesc_host_cli::btle::run_lisp_probe(target.clone()) {
+                    Ok(report) => {
+                        report
+                            .prints()
+                            .iter()
+                            .for_each(|line| println!("lisp print: {line}"));
+                        if report.attempts() > 1 {
+                            println!(
+                                "lisp probe received print replies after {} attempts",
+                                report.attempts()
+                            );
+                        }
+                        if report.prints().is_empty() {
+                            println!(
+                                "lisp probe completed without print replies after {} attempts; retrying",
+                                report.attempts()
+                            );
+                        }
+                    }
+                    Err(error) => {
+                        eprintln!("lisp probe failed: {error}; retrying");
+                    }
                 }
-                ExitCode::SUCCESS
+
+                thread::sleep(LISP_PROBE_RETRY_DELAY);
             }
-            Err(error) => {
-                eprintln!("lisp probe failed: {error}");
-                ExitCode::from(1)
-            }
-        },
+        }
         Ok(vesc_host_cli::Command::PackageInstall(command)) => {
             let package =
                 match vesc_host_cli::package_install::read_package_from_path(&command.package_path)
