@@ -173,6 +173,13 @@ pub trait LbmBindings {
     unsafe fn encode_eval_error(&self) -> LbmValue;
 }
 
+pub trait AppDataBindings {
+    /// # Safety
+    /// `handler` must be either `None` or a callback with the firmware app-data ABI
+    /// that remains valid until it is replaced or cleared.
+    unsafe fn set_app_data_handler(&self, handler: Option<AppDataHandler>) -> bool;
+}
+
 pub struct RealBindings;
 
 impl LbmBindings for RealBindings {
@@ -194,6 +201,12 @@ impl LbmBindings for RealBindings {
 
     unsafe fn encode_eval_error(&self) -> LbmValue {
         raw::lbm_enc_sym_eerror()
+    }
+}
+
+impl AppDataBindings for RealBindings {
+    unsafe fn set_app_data_handler(&self, handler: Option<AppDataHandler>) -> bool {
+        raw::vesc_set_app_data_handler(handler)
     }
 }
 

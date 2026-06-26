@@ -424,10 +424,7 @@ static STOP_CALLS: AtomicUsize = AtomicUsize::new(0);
 unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
     #[cfg(not(test))]
     {
-        // Safety: this clears the package-owned callback from the firmware ABI.
-        unsafe {
-            let _ = crate::ffi::raw::vesc_set_app_data_handler(None);
-        }
+        let _ = LoopbackLifecycle::new(crate::ffi::RealBindings).clear_app_data_handler();
     }
 
     #[cfg(test)]
@@ -436,9 +433,34 @@ unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
     }
 }
 
-fn install_stop_hook(info: *mut crate::ffi::LibInfo, stop_fun: crate::ffi::StopHandler) {
-    if let Some(info) = unsafe { info.as_mut() } {
-        info.stop_fun = Some(stop_fun);
+pub struct LoopbackLifecycle<B = crate::ffi::RealBindings> {
+    bindings: B,
+}
+
+impl<B: crate::ffi::AppDataBindings> LoopbackLifecycle<B> {
+    pub fn new(bindings: B) -> Self {
+        Self { bindings }
+    }
+
+    pub fn install(
+        &self,
+        info: *mut crate::ffi::LibInfo,
+        image: crate::ffi::NativeImage,
+        stop_handler: crate::ffi::StopHandler,
+        app_data_handler: crate::ffi::AppDataHandler,
+    ) -> bool {
+        let stop_handler = unsafe { image.rebase_stop_handler(stop_handler) };
+        let app_data_handler = unsafe { image.rebase_app_data_handler(app_data_handler) };
+
+        if let Some(info) = unsafe { info.as_mut() } {
+            info.stop_fun = Some(stop_handler);
+        }
+
+        unsafe { self.bindings.set_app_data_handler(Some(app_data_handler)) }
+    }
+
+    pub fn clear_app_data_handler(&self) -> bool {
+        unsafe { self.bindings.set_app_data_handler(None) }
     }
 }
 
@@ -448,18 +470,14 @@ pub fn init_package(info: *mut crate::ffi::LibInfo) {
         return;
     };
     let image = crate::ffi::NativeImage::from_info(info_ref);
-    let stop_fun = unsafe { image.rebase_stop_handler(stop_package) };
-    install_stop_hook(info, stop_fun);
-
-    // Safety: the bridge registers a static callback with the firmware ABI.
-    unsafe {
-        let handler = image.rebase_app_data_handler(app_data_handler);
-        let _ = crate::ffi::raw::vesc_set_app_data_handler(Some(handler));
-    }
+    let lifecycle = LoopbackLifecycle::new(crate::ffi::RealBindings);
+    let _ = lifecycle.install(info, image, stop_package, app_data_handler);
 }
 
 pub fn init_package_for_tests(info: *mut crate::ffi::LibInfo) {
-    install_stop_hook(info, stop_package);
+    if let Some(info) = unsafe { info.as_mut() } {
+        info.stop_fun = Some(stop_package);
+    }
     INIT_CALLS.fetch_add(1, Ordering::SeqCst);
 }
 
@@ -480,9 +498,11 @@ pub fn stop_call_count_for_tests() -> usize {
 mod tests {
     use super::{
         handle_loopback_frame, init_call_count_for_tests, reset_init_call_count_for_tests,
-        stop_call_count_for_tests, BleFrame, FakeDeviceServices, LoopbackPackageRuntime,
-        LoopbackPackageState, LoopbackTick,
+        stop_call_count_for_tests, BleFrame, FakeDeviceServices, LoopbackLifecycle,
+        LoopbackPackageRuntime, LoopbackPackageState, LoopbackTick,
     };
+    use crate::ffi;
+    use core::cell::Cell;
     use vesc_protocol::ble_loopback::LoopbackPacket;
     use vesc_protocol::WireCommand;
 
@@ -598,6 +618,68 @@ mod tests {
             stop_fun(info.arg);
         }
         assert_eq!(stop_call_count_for_tests(), 1);
+    }
+
+    struct FakeAppDataBindings {
+        calls: Cell<usize>,
+        last_handler: Cell<usize>,
+    }
+
+    impl FakeAppDataBindings {
+        fn new() -> Self {
+            Self {
+                calls: Cell::new(0),
+                last_handler: Cell::new(usize::MAX),
+            }
+        }
+    }
+
+    impl ffi::AppDataBindings for FakeAppDataBindings {
+        unsafe fn set_app_data_handler(&self, handler: Option<ffi::AppDataHandler>) -> bool {
+            self.calls.set(self.calls.get() + 1);
+            self.last_handler
+                .set(handler.map_or(0, |handler| handler as *const () as usize));
+            true
+        }
+    }
+
+    unsafe extern "C" fn stub_stop_handler(_arg: *mut core::ffi::c_void) {}
+
+    unsafe extern "C" fn stub_app_data_handler(_data: *mut u8, _len: u32) {}
+
+    #[test]
+    fn lifecycle_descriptor_installs_rebased_stop_and_app_data_callbacks() {
+        let bindings = FakeAppDataBindings::new();
+        let lifecycle = LoopbackLifecycle::new(bindings);
+        let image = ffi::NativeImage::new(0x2000);
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0x2000,
+        };
+
+        assert!(lifecycle.install(&mut info, image, stub_stop_handler, stub_app_data_handler));
+
+        assert_eq!(
+            info.stop_fun.expect("stop hook") as *const () as usize,
+            stub_stop_handler as *const () as usize + 0x2000
+        );
+        assert_eq!(lifecycle.bindings.calls.get(), 1);
+        assert_eq!(
+            lifecycle.bindings.last_handler.get(),
+            stub_app_data_handler as *const () as usize + 0x2000
+        );
+    }
+
+    #[test]
+    fn lifecycle_cleanup_clears_the_package_app_data_handler() {
+        let bindings = FakeAppDataBindings::new();
+        let lifecycle = LoopbackLifecycle::new(bindings);
+
+        assert!(lifecycle.clear_app_data_handler());
+
+        assert_eq!(lifecycle.bindings.calls.get(), 1);
+        assert_eq!(lifecycle.bindings.last_handler.get(), 0);
     }
 
     #[test]
