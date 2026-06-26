@@ -236,6 +236,10 @@ mod tests {
             "expected the loader to load the imported native library: {loader:?}"
         );
         assert!(
+            source.contains("(loopwhile t") && source.contains("(sleep 1.0)"),
+            "expected the loader to keep the package context visible and alive: {loader:?}"
+        );
+        assert!(
             !source.contains("ext-rust-add"),
             "expected the BLE loopback loader to avoid the old proof extension: {loader:?}"
         );

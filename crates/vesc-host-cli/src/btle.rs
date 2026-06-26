@@ -19,10 +19,13 @@ const VESC_BLE_UART_SERVICE_UUID: Uuid = Uuid::from_u128(0x6e400001b5a3f393e0a9e
 const VESC_BLE_UART_RX_UUID: Uuid = Uuid::from_u128(0x6e400002b5a3f393e0a9e50e24dcca9e);
 const VESC_BLE_UART_TX_UUID: Uuid = Uuid::from_u128(0x6e400003b5a3f393e0a9e50e24dcca9e);
 const COMM_CUSTOM_APP_DATA: u8 = 36;
+const COMM_LISP_PRINT: u8 = 135;
+const COMM_LISP_REPL_CMD: u8 = 138;
 
 const SCAN_TIMEOUT: Duration = Duration::from_secs(8);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
+const LISP_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
 const BLE_WRITE_CHUNK_SIZE: usize = 20;
 
 #[derive(Debug)]
@@ -38,6 +41,17 @@ struct BtleSession {
 pub struct BtleLoopbackTransport {
     runtime: Runtime,
     session: RefCell<Option<BtleSession>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LispProbeReport {
+    prints: Vec<String>,
+}
+
+impl LispProbeReport {
+    pub fn prints(&self) -> &[String] {
+        &self.prints
+    }
 }
 
 impl BtleLoopbackTransport {
@@ -141,6 +155,50 @@ impl BtleSession {
 
         Some(packet[1..].to_vec())
     }
+
+    fn receive_lisp_prints(&mut self) -> Result<Vec<String>, LoopbackTransportError> {
+        let mut prints = self.take_pending_lisp_prints();
+        let deadline = std::time::Instant::now() + LISP_PROBE_TIMEOUT;
+
+        while std::time::Instant::now() < deadline {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            match self.responses.recv_timeout(remaining) {
+                Ok(bytes) => {
+                    let packets = self.decoder.push(&bytes).map_err(|_| {
+                        LoopbackTransportError::Device("failed to decode a Lisp probe reply")
+                    })?;
+                    packets
+                        .into_iter()
+                        .for_each(|packet| self.pending.push_back(packet));
+                    prints.extend(self.take_pending_lisp_prints());
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => break,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(LoopbackTransportError::Device(
+                        "BLE notification stream disconnected",
+                    ));
+                }
+            }
+        }
+
+        Ok(prints)
+    }
+
+    fn take_pending_lisp_prints(&mut self) -> Vec<String> {
+        let mut prints = Vec::new();
+        let mut retained = VecDeque::new();
+
+        while let Some(packet) = self.pending.pop_front() {
+            if packet.first().copied() == Some(COMM_LISP_PRINT) {
+                prints.push(parse_lisp_print(&packet[1..]));
+            } else {
+                retained.push_back(packet);
+            }
+        }
+
+        self.pending = retained;
+        prints
+    }
 }
 
 async fn open_session(target: LoopbackTarget) -> Result<BtleSession, LoopbackTransportError> {
@@ -227,6 +285,40 @@ fn build_custom_app_data_packet(payload: &[u8]) -> Vec<u8> {
     encode_packet(&data)
 }
 
+fn build_lisp_repl_packet(command: &str) -> Vec<u8> {
+    let mut data = Vec::with_capacity(command.len() + 2);
+    data.push(COMM_LISP_REPL_CMD);
+    data.extend_from_slice(command.as_bytes());
+    data.push(0);
+    encode_packet(&data)
+}
+
+fn parse_lisp_print(payload: &[u8]) -> String {
+    let end = payload
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(payload.len());
+    String::from_utf8_lossy(&payload[..end]).into_owned()
+}
+
+pub fn run_lisp_probe() -> Result<LispProbeReport, LoopbackTransportError> {
+    let runtime = Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(1)
+        .build()
+        .map_err(|_| LoopbackTransportError::Device("failed to start the BLE runtime"))?;
+
+    let mut session = runtime.block_on(open_session(LoopbackTarget::default()))?;
+    runtime.block_on(write_ble_uart_packet(
+        &session.peripheral,
+        &session.rx_char,
+        &build_lisp_repl_packet("(print (ext-rust-add 20 22))"),
+    ))?;
+    let prints = session.receive_lisp_prints()?;
+
+    Ok(LispProbeReport { prints })
+}
+
 async fn write_ble_uart_packet(
     peripheral: &Peripheral,
     rx_char: &Characteristic,
@@ -297,8 +389,9 @@ pub fn vesc_ble_uart_tx_uuid() -> Uuid {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_custom_app_data_packet, vesc_ble_uart_rx_uuid, vesc_ble_uart_service_uuid,
-        vesc_ble_uart_tx_uuid, COMM_CUSTOM_APP_DATA,
+        build_custom_app_data_packet, build_lisp_repl_packet, parse_lisp_print,
+        vesc_ble_uart_rx_uuid, vesc_ble_uart_service_uuid, vesc_ble_uart_tx_uuid,
+        COMM_CUSTOM_APP_DATA, COMM_LISP_REPL_CMD,
     };
     use crate::vesc_uart::PacketDecoder;
 
@@ -328,5 +421,24 @@ mod tests {
             .expect("complete packet");
 
         assert_eq!(decoded, vec![COMM_CUSTOM_APP_DATA, 1, 2, 3]);
+    }
+
+    #[test]
+    fn wraps_lisp_probe_commands_in_repl_packets() {
+        let packet = build_lisp_repl_packet("(print 42)");
+        let decoded = PacketDecoder::new()
+            .push(&packet)
+            .expect("valid packet")
+            .pop()
+            .expect("complete packet");
+
+        assert_eq!(decoded, b"\x8a(print 42)\0");
+        assert_eq!(decoded[0], COMM_LISP_REPL_CMD);
+    }
+
+    #[test]
+    fn parses_lisp_print_packets_as_lossy_strings() {
+        assert_eq!(parse_lisp_print(b"42\0ignored"), "42");
+        assert_eq!(parse_lisp_print(&[0xff, b'a']), "\u{fffd}a");
     }
 }

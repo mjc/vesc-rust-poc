@@ -4,7 +4,7 @@ fn main() -> ExitCode {
     match vesc_host_cli::parse_args(std::env::args()) {
         Ok(vesc_host_cli::Command::Help) => {
             println!(
-                "vesc-host-cli: use `layout`, `status`, `scan`, `loopback`, or `package-install`"
+                "vesc-host-cli: use `layout`, `status`, `scan`, `loopback`, `lisp-probe`, or `package-install`"
             );
             ExitCode::SUCCESS
         }
@@ -54,6 +54,22 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Ok(vesc_host_cli::Command::LispProbe) => match vesc_host_cli::btle::run_lisp_probe() {
+            Ok(report) => {
+                report
+                    .prints()
+                    .iter()
+                    .for_each(|line| println!("lisp print: {line}"));
+                if report.prints().is_empty() {
+                    println!("lisp probe completed without print replies");
+                }
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("lisp probe failed: {error}");
+                ExitCode::from(1)
+            }
+        },
         Ok(vesc_host_cli::Command::PackageInstall(command)) => {
             let package =
                 match vesc_host_cli::package_install::read_package_from_path(&command.package_path)

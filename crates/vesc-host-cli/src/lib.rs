@@ -5,6 +5,7 @@ pub enum Command {
     Status,
     Scan,
     Loopback,
+    LispProbe,
     PackageInstall(PackageInstallCommand),
 }
 
@@ -34,6 +35,7 @@ where
         Some("status") => Ok(Command::Status),
         Some("scan") => Ok(Command::Scan),
         Some("loopback") => Ok(Command::Loopback),
+        Some("lisp-probe") => Ok(Command::LispProbe),
         Some("package-install") => parse_package_install(iter).map(Command::PackageInstall),
         Some(other) => Err(ParseError::UnknownCommand(other.to_owned())),
     }
@@ -119,6 +121,14 @@ mod tests {
         assert_eq!(
             parse_args(["vesc-host-cli", "loopback"]),
             Ok(Command::Loopback)
+        );
+    }
+
+    #[test]
+    fn parses_lisp_probe_command() {
+        assert_eq!(
+            parse_args(["vesc-host-cli", "lisp-probe"]),
+            Ok(Command::LispProbe)
         );
     }
 
