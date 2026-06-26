@@ -217,38 +217,66 @@ pub fn install_package<T: PackageInstallTransport>(
     if !package.qml_file.is_empty() {
         let qml = qml_compress(&package.qml_file)?;
         let bytes = qml.len();
-        transport.erase_qml(bytes + 100)?;
+        transport
+            .erase_qml(bytes + 100)
+            .map_err(|error| step_error(format!("erase QML {} bytes", bytes + 100), error))?;
         steps.push(PackageInstallStep::EraseQml { bytes: bytes + 100 });
-        transport.upload_qml(&qml, package.qml_is_fullscreen)?;
+        transport
+            .upload_qml(&qml, package.qml_is_fullscreen)
+            .map_err(|error| step_error(format!("upload QML {bytes} bytes"), error))?;
         steps.push(PackageInstallStep::UploadQml {
             bytes,
             fullscreen: package.qml_is_fullscreen,
         });
     } else if transport.has_qml_app()? {
-        transport.erase_qml(16)?;
+        transport
+            .erase_qml(16)
+            .map_err(|error| step_error("erase QML 16 bytes", error))?;
         steps.push(PackageInstallStep::EraseQml { bytes: 16 });
     }
 
     if !package.lisp_data.is_empty() {
         let bytes = package.lisp_data.len();
-        transport.erase_lisp(bytes + 100)?;
+        transport
+            .erase_lisp(bytes + 100)
+            .map_err(|error| step_error(format!("erase Lisp {} bytes", bytes + 100), error))?;
         steps.push(PackageInstallStep::EraseLisp { bytes: bytes + 100 });
-        transport.upload_lisp(&package.lisp_data)?;
+        transport
+            .upload_lisp(&package.lisp_data)
+            .map_err(|error| step_error(format!("upload Lisp {bytes} bytes"), error))?;
         steps.push(PackageInstallStep::UploadLisp { bytes });
-        transport.set_running(true)?;
+        transport
+            .set_running(true)
+            .map_err(|error| step_error("set Lisp running true", error))?;
         steps.push(PackageInstallStep::SetRunning { running: true });
     } else {
-        transport.erase_lisp(16)?;
+        transport
+            .erase_lisp(16)
+            .map_err(|error| step_error("erase Lisp 16 bytes", error))?;
         steps.push(PackageInstallStep::EraseLisp { bytes: 16 });
     }
 
-    transport.reload_firmware()?;
+    transport
+        .reload_firmware()
+        .map_err(|error| step_error("reload firmware", error))?;
     steps.push(PackageInstallStep::ReloadFirmware);
 
     Ok(PackageInstallReport {
         package_name: package.name.clone(),
         steps,
     })
+}
+
+fn step_error(step: impl AsRef<str>, error: PackageInstallError) -> PackageInstallError {
+    match error {
+        PackageInstallError::Device(reason) => {
+            PackageInstallError::Device(format!("{}: {reason}", step.as_ref()))
+        }
+        PackageInstallError::Io(reason) => {
+            PackageInstallError::Io(format!("{}: {reason}", step.as_ref()))
+        }
+        PackageInstallError::InvalidPackage => PackageInstallError::InvalidPackage,
+    }
 }
 
 fn read_string(cursor: &mut &[u8]) -> Result<String, PackageInstallError> {
@@ -313,8 +341,8 @@ fn qml_compress(script: &str) -> Result<Vec<u8>, PackageInstallError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_package, install_package, qml_compress, read_package_from_path,
-        FakePackageInstallTransport, PackageInstallStep,
+        decode_package, install_package, qml_compress, read_package_from_path, step_error,
+        FakePackageInstallTransport, PackageInstallError, PackageInstallStep,
     };
     use flate2::{write::ZlibEncoder, Compression};
     use std::io::Write;
@@ -466,6 +494,19 @@ mod tests {
                 PackageInstallStep::SetRunning { running: true },
                 PackageInstallStep::ReloadFirmware,
             ]
+        );
+    }
+
+    #[test]
+    fn install_step_errors_keep_the_failed_step_name() {
+        let error = step_error(
+            "erase Lisp 407 bytes",
+            PackageInstallError::Device("timed out waiting for a BLE reply".to_owned()),
+        );
+
+        assert_eq!(
+            error.to_string(),
+            "device error: erase Lisp 407 bytes: timed out waiting for a BLE reply"
         );
     }
 }
