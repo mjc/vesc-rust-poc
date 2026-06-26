@@ -1180,4 +1180,25 @@ mod tests {
             YawDeg::new(3.0)
         );
     }
+
+    #[test]
+    fn normalized_wrappers_support_into_and_from_conversions() {
+        let int_value: LbmInt = (-7_i32).into();
+        let float_value: LbmFloat = 3.5_f32.into();
+        let scalar_value: AppDataLen = 42_u32.into();
+        let size_value: StackSizeBytes = 128_usize.into();
+        let payload = [7_u8, 8, 9];
+        let payload_value: AppDataPacket<'_> = (&payload[..]).into();
+        let name = c"axis";
+        let name_value: ThreadName<'_> = name.into();
+        let axis_value: PlotAxisName<'_> = name.into();
+
+        assert_eq!(int_value.get(), -7);
+        assert_eq!(float_value.get(), 3.5);
+        assert_eq!(scalar_value.get(), 42);
+        assert_eq!(size_value.get(), 128);
+        assert_eq!(payload_value.as_bytes(), &payload);
+        assert_eq!(name_value.get(), name);
+        assert_eq!(axis_value.get(), name);
+    }
 }
