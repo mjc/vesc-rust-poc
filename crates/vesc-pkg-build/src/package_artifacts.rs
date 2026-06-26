@@ -282,6 +282,11 @@ mod tests {
                     expected: plan.assets().render_descriptor(),
                     actual: "wrong descriptor".to_owned(),
                 },
+                PackageArtifactProblem::ContentMismatch {
+                    path: staging_root.join(STAGING_LOADER_PATH),
+                    expected: plan.assets().render_loader(),
+                    actual: "; Auto-generated loader for Rust BLE loopback test package\n(load-native-lib \"src/package_lib.bin\")\n".to_owned(),
+                },
             ]))
         );
     }

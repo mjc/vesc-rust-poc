@@ -260,9 +260,10 @@ mod tests {
         );
 
         let readme = plan.assets().render_readme();
-        assert!(readme.contains("Version: 0.1.0"));
-        assert!(readme.contains("Git commit: abc123"));
-        assert!(readme.contains("Build date: 2026-06-25"));
+        assert_eq!(
+            readme,
+            "Rust BLE loopback test package 0.1.0\ngit abc123\ndate 2026-06-25\n"
+        );
         assert!(plan
             .inspection_plan()
             .assets()

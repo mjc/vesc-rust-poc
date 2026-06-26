@@ -80,34 +80,28 @@ impl PackageAssets {
     }
 
     pub fn render_readme(&self) -> String {
-        let mut output = format!("# {}\n\nVersion: {}\n", self.package_name(), self.version());
+        let mut output = format!("{} {}\n", self.package_name(), self.version());
 
         if let Some(commit) = self.provenance.git_commit() {
-            output.push_str(&format!("Git commit: {}\n", commit));
+            output.push_str(&format!("git {commit}\n"));
         }
         if let Some(build_date) = self.provenance.build_date() {
-            output.push_str(&format!("Build date: {}\n", build_date));
+            output.push_str(&format!("date {build_date}\n"));
         }
 
-        output.push_str(
-            "\nThis package contains the Rust-backed VESC native library proof and its loader assets.\n",
-        );
         output
     }
 
     pub fn render_descriptor(&self) -> String {
         format!(
-            "import QtQuick 2.15\n\nItem {{\n    property string packageName: \"{}\"\n    property string packageVersion: \"{}\"\n    property string nativeLibraryPath: \"src/package_lib.bin\"\n    property string loaderScriptPath: \"code.lisp\"\n}}\n",
+            "import QtQuick 2.15\nItem{{property string packageName:\"{}\";property string packageVersion:\"{}\";property string nativeLibraryPath:\"src/package_lib.bin\";property string loaderScriptPath:\"code.lisp\"}}\n",
             self.package_name(),
             self.version()
         )
     }
 
     pub fn render_loader(&self) -> String {
-        format!(
-            "; Auto-generated loader for {}\n(load-native-lib \"src/package_lib.bin\")\n",
-            self.package_name()
-        )
+        "(load-native-lib \"src/package_lib.bin\")\n".to_owned()
     }
 }
 
@@ -137,21 +131,23 @@ mod tests {
                 ),
             ]
         );
-        assert!(assets.render_readme().contains("Version: 0.1.0"));
-        assert!(assets.render_readme().contains("Git commit: abc123"));
-        assert!(assets.render_readme().contains("Build date: 2026-06-25"));
+        assert_eq!(
+            assets.render_readme(),
+            "Rust BLE loopback test package 0.1.0\ngit abc123\ndate 2026-06-25\n"
+        );
         assert!(assets
             .render_descriptor()
-            .contains("packageName: \"Rust BLE loopback test package\""));
+            .contains("packageName:\"Rust BLE loopback test package\""));
         assert!(assets
             .render_descriptor()
-            .contains("nativeLibraryPath: \"src/package_lib.bin\""));
+            .contains("nativeLibraryPath:\"src/package_lib.bin\""));
         assert!(assets
             .render_descriptor()
-            .contains("loaderScriptPath: \"code.lisp\""));
-        assert!(assets
-            .render_loader()
-            .contains("(load-native-lib \"src/package_lib.bin\")"));
+            .contains("loaderScriptPath:\"code.lisp\""));
+        assert_eq!(
+            assets.render_loader(),
+            "(load-native-lib \"src/package_lib.bin\")\n"
+        );
         assert!(
             !assets.render_loader().contains("ext-rust-add"),
             "expected the BLE loopback package loader to only load the native library"
