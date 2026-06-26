@@ -106,7 +106,7 @@ impl PackageAssets {
     }
 
     pub fn render_loader(&self) -> String {
-        "(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n(loopwhile t {\n    (sleep 1.0)\n})\n".to_owned()
+        "(import \"src/package_lib.bin\" 'package-lib)\n(print \"vesc-rust-load-v7\")\n(print (load-native-lib package-lib))\n(loopwhile t {\n    (sleep 1.0)\n})\n".to_owned()
     }
 }
 
@@ -154,8 +154,9 @@ mod tests {
             .contains("loaderScriptPath:\"code.lisp\""));
         assert_eq!(
             assets.render_loader(),
-            "(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n(loopwhile t {\n    (sleep 1.0)\n})\n"
+            "(import \"src/package_lib.bin\" 'package-lib)\n(print \"vesc-rust-load-v7\")\n(print (load-native-lib package-lib))\n(loopwhile t {\n    (sleep 1.0)\n})\n"
         );
+        assert!(assets.render_loader().contains("vesc-rust-load-v7"));
         assert!(assets.render_loader().contains("(loopwhile t"));
         assert!(assets.render_loader().contains("(sleep 1.0)"));
         assert!(
