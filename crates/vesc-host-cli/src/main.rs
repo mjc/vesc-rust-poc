@@ -60,8 +60,17 @@ fn main() -> ExitCode {
                     .prints()
                     .iter()
                     .for_each(|line| println!("lisp print: {line}"));
+                if report.attempts() > 1 {
+                    println!(
+                        "lisp probe received print replies after {} attempts",
+                        report.attempts()
+                    );
+                }
                 if report.prints().is_empty() {
-                    println!("lisp probe completed without print replies");
+                    println!(
+                        "lisp probe completed without print replies after {} attempts",
+                        report.attempts()
+                    );
                 }
                 ExitCode::SUCCESS
             }

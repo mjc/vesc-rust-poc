@@ -26,6 +26,7 @@ const SCAN_TIMEOUT: Duration = Duration::from_secs(8);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
 const LISP_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
+const LISP_PROBE_MAX_ATTEMPTS: usize = 10;
 const BLE_WRITE_CHUNK_SIZE: usize = 20;
 
 #[derive(Debug)]
@@ -46,11 +47,16 @@ pub struct BtleLoopbackTransport {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LispProbeReport {
     prints: Vec<String>,
+    attempts: usize,
 }
 
 impl LispProbeReport {
     pub fn prints(&self) -> &[String] {
         &self.prints
+    }
+
+    pub fn attempts(&self) -> usize {
+        self.attempts
     }
 }
 
@@ -308,6 +314,14 @@ fn lisp_probe_command() -> &'static str {
     (print (trap (ext-rust-probe-v5))))"#
 }
 
+fn lisp_probe_report(prints: Vec<String>, attempts: usize) -> LispProbeReport {
+    LispProbeReport { prints, attempts }
+}
+
+fn should_retry_lisp_probe(prints: &[String], attempt: usize, max_attempts: usize) -> bool {
+    prints.is_empty() && attempt < max_attempts
+}
+
 pub fn run_lisp_probe() -> Result<LispProbeReport, LoopbackTransportError> {
     let runtime = Builder::new_multi_thread()
         .enable_all()
@@ -316,14 +330,21 @@ pub fn run_lisp_probe() -> Result<LispProbeReport, LoopbackTransportError> {
         .map_err(|_| LoopbackTransportError::Device("failed to start the BLE runtime"))?;
 
     let mut session = runtime.block_on(open_session(LoopbackTarget::default()))?;
-    runtime.block_on(write_ble_uart_packet(
-        &session.peripheral,
-        &session.rx_char,
-        &build_lisp_repl_packet(lisp_probe_command()),
-    ))?;
-    let prints = session.receive_lisp_prints()?;
+    let packet = build_lisp_repl_packet(lisp_probe_command());
 
-    Ok(LispProbeReport { prints })
+    for attempt in 1..=LISP_PROBE_MAX_ATTEMPTS {
+        runtime.block_on(write_ble_uart_packet(
+            &session.peripheral,
+            &session.rx_char,
+            &packet,
+        ))?;
+        let prints = session.receive_lisp_prints()?;
+        if !should_retry_lisp_probe(&prints, attempt, LISP_PROBE_MAX_ATTEMPTS) {
+            return Ok(lisp_probe_report(prints, attempt));
+        }
+    }
+
+    Ok(lisp_probe_report(Vec::new(), LISP_PROBE_MAX_ATTEMPTS))
 }
 
 async fn write_ble_uart_packet(
@@ -396,9 +417,10 @@ pub fn vesc_ble_uart_tx_uuid() -> Uuid {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_custom_app_data_packet, build_lisp_repl_packet, lisp_probe_command, parse_lisp_print,
-        vesc_ble_uart_rx_uuid, vesc_ble_uart_service_uuid, vesc_ble_uart_tx_uuid,
-        COMM_CUSTOM_APP_DATA, COMM_LISP_REPL_CMD,
+        build_custom_app_data_packet, build_lisp_repl_packet, lisp_probe_command,
+        lisp_probe_report, parse_lisp_print, should_retry_lisp_probe, vesc_ble_uart_rx_uuid,
+        vesc_ble_uart_service_uuid, vesc_ble_uart_tx_uuid, COMM_CUSTOM_APP_DATA,
+        COMM_LISP_REPL_CMD,
     };
     use crate::vesc_uart::PacketDecoder;
 
@@ -454,6 +476,22 @@ mod tests {
         expected.push(0);
         assert_eq!(decoded, expected);
         assert_eq!(decoded[0], COMM_LISP_REPL_CMD);
+    }
+
+    #[test]
+    fn lisp_probe_retries_empty_print_attempts_until_the_limit() {
+        assert!(should_retry_lisp_probe(&[], 1, 10));
+        assert!(should_retry_lisp_probe(&[], 9, 10));
+        assert!(!should_retry_lisp_probe(&[], 10, 10));
+    }
+
+    #[test]
+    fn lisp_probe_stops_retrying_once_prints_arrive() {
+        let prints = vec!["(exit-ok 42)".to_owned()];
+
+        assert!(!should_retry_lisp_probe(&prints, 1, 10));
+        assert_eq!(lisp_probe_report(prints.clone(), 3).prints(), prints);
+        assert_eq!(lisp_probe_report(prints, 3).attempts(), 3);
     }
 
     #[test]
