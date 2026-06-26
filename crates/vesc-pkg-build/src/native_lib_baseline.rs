@@ -1,8 +1,7 @@
 use std::hash::Hasher;
 use std::path::PathBuf;
 
-pub const NATIVE_LIB_BASELINE_INPUTS: [&str; 8] = [
-    "src/package_lib.c",
+pub const NATIVE_LIB_BASELINE_INPUTS: [&str; 7] = [
     "src/vesc_c_if.h",
     "src/rules.mk",
     "src/link.ld",
@@ -179,64 +178,32 @@ mod tests {
     }
 
     #[test]
-    fn package_lib_c_no_longer_owns_package_extension_registration() {
+    fn native_baseline_has_no_package_specific_c_source() {
         let root = native_lib_baseline_root();
-        let package_lib = root
+        let package_c_sources = root
             .input_paths()
-            .find(|path| path.ends_with("src/package_lib.c"))
-            .expect("expected package_lib.c in the native-lib baseline fixture");
-        let source = fs::read_to_string(&package_lib).expect("package_lib.c contents");
+            .filter(|path| path.extension().is_some_and(|extension| extension == "c"))
+            .collect::<Vec<_>>();
 
         assert!(
-            !source.contains("HEADER"),
-            "Rust should own the VESC program pointer header equivalent: {package_lib:?}"
-        );
-        assert!(
-            !source.contains("INIT_FUN") && !source.contains("package_lib_init(info)"),
-            "Rust should own the loader init hook and package entry call: {package_lib:?}"
-        );
-        assert!(
-            !source.contains("ext-rust-add")
-                && !source.contains("ext_c_probe")
-                && !source.contains("lbm_add_extension"),
-            "expected Rust, not C, to own LispBM extension registration: {package_lib:?}"
+            package_c_sources.is_empty(),
+            "package-specific C sources must not be native-lib inputs: {package_c_sources:?}"
         );
     }
 
     #[test]
-    fn package_lib_c_responsibility_inventory_is_explicit() {
+    fn native_baseline_documents_only_generic_vesc_references() {
         let root = native_lib_baseline_root();
-        let package_lib = root
-            .input_paths()
-            .find(|path| path.ends_with("src/package_lib.c"))
-            .expect("expected package_lib.c in the native-lib baseline fixture");
-        let source = fs::read_to_string(&package_lib).expect("package_lib.c contents");
+        let inputs = root.input_paths().collect::<Vec<_>>();
 
-        let responsibilities: [(&str, &[&str]); 1] = [(
-            "package-specific native registration lives in Rust",
-            &["Package-specific native registration lives in Rust."],
-        )];
-
-        for (label, snippets) in responsibilities {
-            for snippet in snippets {
-                assert!(
-                    source.contains(snippet),
-                    "missing C shim responsibility `{label}` snippet `{snippet}` in {package_lib:?}"
-                );
-            }
-        }
-
+        assert!(inputs.iter().any(|path| path.ends_with("src/vesc_c_if.h")));
+        assert!(inputs.iter().any(|path| path.ends_with("src/link.ld")));
+        assert!(inputs.iter().any(|path| path.ends_with("scripts/conv.py")));
         assert!(
-            !source.contains("ext-rust-"),
-            "C shim must not own Rust extension registration: {package_lib:?}"
-        );
-        assert!(
-            !source.contains("ext_c_probe") && !source.contains("lbm_add_extension"),
-            "C shim must not keep temporary extension callbacks or registration calls: {package_lib:?}"
-        );
-        assert!(
-            !source.contains("INIT_FUN") && !source.contains("HEADER"),
-            "Rust-owned loader metadata must not regress back into package_lib.c"
+            inputs
+                .iter()
+                .all(|path| !path.ends_with("src/package_lib.c")),
+            "package-specific C shim source must not be a baseline input: {inputs:?}"
         );
     }
 

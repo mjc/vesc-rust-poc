@@ -14,22 +14,25 @@ mod tests {
     use super::roadmap_text;
 
     #[test]
-    fn roadmap_captures_the_staged_migration_ladder() {
+    fn roadmap_captures_the_current_rust_boundary_and_next_migration_ladder() {
         let text = roadmap_text();
 
         for needle in [
             "nix develop -c make check",
+            "nix develop -c make package",
             "vesc-rust-poc",
             "vesc-pkg-build",
             "vesc-protocol",
             "vesc-host-cli",
-            "Rust pure computation behind C shim",
-            "Rust handles primitive logic while C decodes LispBM values",
-            "Rust calls one VESC_IF function through the shim",
-            "Rust receives a VESC_IF pointer/raw binding",
+            "Rust exports `prog_ptr` and `init`",
+            "Rust owns LispBM extension table registration",
+            "Rust owns BLE app-data and stop-hook lifecycle setup",
+            "generic VESC linker and conversion references",
+            "Hardware-validate install, `lisp-probe`, and `loopback`",
             "safe wrapper crate",
-            "xtask",
             "cargo vescpkg build",
+            "no_std",
+            "no-alloc",
             "Do not dump all of `vesc_c_if.h` into an ergonomic-looking API prematurely",
         ] {
             assert!(

@@ -1,7 +1,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AbiRequirementKind {
     EntryPoint,
-    Macro,
+    LoaderHeader,
     Type,
     Function,
     ErrorSymbol,
@@ -20,21 +20,16 @@ impl AbiRequirement {
     }
 }
 
-pub const MINIMAL_TEST_PACKAGE_ABI: [AbiRequirement; 13] = [
+pub const MINIMAL_TEST_PACKAGE_ABI: [AbiRequirement; 12] = [
     AbiRequirement::new(
-        "INIT_FUN",
+        "prog_ptr",
+        AbiRequirementKind::LoaderHeader,
+        "Rust package exports the VESC program pointer header word",
+    ),
+    AbiRequirement::new(
+        "init",
         AbiRequirementKind::EntryPoint,
-        "package loader calls the C shim entry point",
-    ),
-    AbiRequirement::new(
-        "INIT_START",
-        AbiRequirementKind::Macro,
-        "C shim wraps registration setup",
-    ),
-    AbiRequirement::new(
-        "INIT_END",
-        AbiRequirementKind::Macro,
-        "C shim wraps registration teardown",
+        "package loader calls the Rust-owned native init trampoline",
     ),
     AbiRequirement::new(
         "lib_info",
@@ -44,7 +39,7 @@ pub const MINIMAL_TEST_PACKAGE_ABI: [AbiRequirement; 13] = [
     AbiRequirement::new(
         "lbm_add_extension",
         AbiRequirementKind::Function,
-        "C shim registers the LispBM extension",
+        "Rust package registers LispBM extensions through VESC_IF",
     ),
     AbiRequirement::new(
         "lbm_value",
@@ -59,12 +54,12 @@ pub const MINIMAL_TEST_PACKAGE_ABI: [AbiRequirement; 13] = [
     AbiRequirement::new(
         "lbm_dec_as_i32",
         AbiRequirementKind::Function,
-        "C shim decodes LispBM integer arguments",
+        "Rust package decodes LispBM integer arguments",
     ),
     AbiRequirement::new(
         "lbm_enc_i",
         AbiRequirementKind::Function,
-        "C shim encodes the integer result",
+        "Rust package encodes integer results",
     ),
     AbiRequirement::new(
         "VESC_IF.lbm_enc_sym_eerror",
@@ -97,7 +92,7 @@ mod tests {
     use super::{minimal_test_package_abi, AbiRequirementKind};
 
     #[test]
-    fn inventories_the_minimal_c_abi_for_the_test_package() {
+    fn inventories_the_minimal_rust_abi_for_the_test_package() {
         let abi = minimal_test_package_abi();
 
         let names = abi.iter().map(|item| item.name).collect::<Vec<_>>();
@@ -105,9 +100,8 @@ mod tests {
         assert_eq!(
             names,
             [
-                "INIT_FUN",
-                "INIT_START",
-                "INIT_END",
+                "prog_ptr",
+                "init",
                 "lib_info",
                 "lbm_add_extension",
                 "lbm_value",
@@ -131,7 +125,7 @@ mod tests {
             .any(|item| item.kind == AbiRequirementKind::EntryPoint));
         assert!(abi
             .iter()
-            .any(|item| item.kind == AbiRequirementKind::Macro));
+            .any(|item| item.kind == AbiRequirementKind::LoaderHeader));
         assert!(abi.iter().any(|item| item.kind == AbiRequirementKind::Type));
         assert!(abi
             .iter()

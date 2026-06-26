@@ -1,10 +1,9 @@
 # Native Library Baseline
 
-This fixture captures the smallest C package skeleton we want to keep around while the Rust path grows.
+This fixture captures the smallest Rust-backed VESC package skeleton we want to keep around while the Rust path grows.
 
 ## Input Layout
 
-- `src/package_lib.c`
 - `src/vesc_c_if.h`
 - `src/rules.mk`
 - `src/link.ld`
@@ -26,15 +25,17 @@ This fixture captures the smallest C package skeleton we want to keep around whi
 - The baseline test checks that the package skeleton files stay present.
 - The package payload smoke test keeps the fixture under a 16 KiB budget, leaving
   ample headroom below the 128 KiB VESC Tool flash block limit.
-- The next link step should combine `target/native-lib-baseline/package_lib.o` with
-  `target/thumbv7em-none-eabihf/release/libvesc_rust_poc.a` to produce
+- The native link step uses
+  `target/thumbv7em-none-eabihf/release/libvesc_rust_poc.a` plus the generic
+  linker script to produce
   `target/native-lib-baseline/native_lib.elf`.
 - A symbol audit now inspects the Rust archive and flags unexpected unresolved
   externals before the final native-library link step grows out.
-- The same audit also checks the relocatable final ELF built from the C shim plus
-  the Rust staticlib.
-- The fixture pins `src/vesc_c_if.h` with fingerprint `a8980de23614d274`; if
+- The same audit also checks the relocatable final ELF built from the Rust
+  staticlib and fails if package-specific C shim symbols or objects reappear.
+- The fixture pins `src/vesc_c_if.h` with fingerprint `6f9d6d4dc9dab059`; if
   that header changes, refresh the expected fingerprint in
   `crates/vesc-pkg-build/src/native_lib_baseline.rs` after reviewing the ABI diff.
 - The package loader fixture loads `src/package_lib.bin` for the BLE loopback test package.
-- Build integration can land later without changing the fixture contract.
+- `src/vesc_c_if.h`, `src/link.ld`, `src/rules.mk`, and `scripts/conv.py` are
+  generic VESC references, not package-specific C glue.

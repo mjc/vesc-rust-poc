@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-pub const NATIVE_LIB_SHIM_OBJECT: &str = "target/native-lib-baseline/package_lib.o";
 pub const RUST_STATICLIB_PATH: &str = "target/thumbv7em-none-eabihf/release/libvesc_rust_poc.a";
 pub const NATIVE_LIB_ELF_PATH: &str = "target/native-lib-baseline/native_lib.elf";
 pub const NATIVE_LIB_LINKER_SCRIPT: &str = "fixtures/native-lib-baseline/src/link.ld";
@@ -13,10 +12,6 @@ pub struct NativeLibLinkPlan {
 impl NativeLibLinkPlan {
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self { root: root.into() }
-    }
-
-    pub fn shim_object_path(&self) -> PathBuf {
-        self.root.join(NATIVE_LIB_SHIM_OBJECT)
     }
 
     pub fn rust_staticlib_path(&self) -> PathBuf {
@@ -32,12 +27,7 @@ impl NativeLibLinkPlan {
     }
 
     pub fn link_inputs(&self) -> impl Iterator<Item = PathBuf> + '_ {
-        [
-            self.shim_object_path(),
-            self.rust_staticlib_path(),
-            self.linker_script_path(),
-        ]
-        .into_iter()
+        [self.rust_staticlib_path(), self.linker_script_path()].into_iter()
     }
 }
 
@@ -55,7 +45,7 @@ mod tests {
 
     use super::{
         native_lib_link_plan, NativeLibLinkPlan, NATIVE_LIB_ELF_PATH, NATIVE_LIB_LINKER_SCRIPT,
-        NATIVE_LIB_SHIM_OBJECT, RUST_STATICLIB_PATH,
+        RUST_STATICLIB_PATH,
     };
 
     #[test]
@@ -64,11 +54,7 @@ mod tests {
 
         assert_eq!(
             plan.link_inputs().collect::<Vec<_>>(),
-            vec![
-                plan.shim_object_path(),
-                plan.rust_staticlib_path(),
-                plan.linker_script_path(),
-            ]
+            vec![plan.rust_staticlib_path(), plan.linker_script_path()]
         );
         assert_eq!(
             plan.elf_path(),
@@ -82,10 +68,6 @@ mod tests {
     fn uses_the_expected_baseline_paths() {
         let plan = NativeLibLinkPlan::new("fixtures/native-lib-baseline");
 
-        assert_eq!(
-            plan.shim_object_path(),
-            PathBuf::from("fixtures/native-lib-baseline").join(NATIVE_LIB_SHIM_OBJECT)
-        );
         assert_eq!(
             plan.rust_staticlib_path(),
             PathBuf::from("fixtures/native-lib-baseline").join(RUST_STATICLIB_PATH)

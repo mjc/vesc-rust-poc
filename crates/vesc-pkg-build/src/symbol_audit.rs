@@ -41,15 +41,8 @@ pub fn native_lib_bin_path() -> PathBuf {
     native_lib_elf_path().with_file_name("native_lib.bin")
 }
 
-pub fn package_lib_c_path() -> PathBuf {
-    crate::native_lib_baseline_root()
-        .input_paths()
-        .find(|path| path.ends_with("src/package_lib.c"))
-        .expect("native-lib baseline package_lib.c")
-}
-
 pub fn package_lib_object_path() -> PathBuf {
-    crate::native_lib_link::native_lib_link_plan().shim_object_path()
+    native_lib_elf_path().with_file_name("package_lib.o")
 }
 
 pub fn build_rust_staticlib() {
@@ -81,48 +74,15 @@ pub fn build_final_native_lib_elf() {
 fn build_final_native_lib_elf_unlocked() {
     build_rust_staticlib_unlocked();
 
-    let c_path = package_lib_c_path();
-    let object_path = package_lib_object_path();
     let elf_path = native_lib_elf_path();
-    let include_dir = c_path
-        .parent()
-        .expect("package_lib.c parent directory")
-        .to_path_buf();
 
-    if let Some(parent) = object_path.parent() {
-        fs::create_dir_all(parent).expect("create package_lib.o parent directory");
-    }
     if let Some(parent) = elf_path.parent() {
         fs::create_dir_all(parent).expect("create native_lib.elf parent directory");
     }
-
-    let compile_status = Command::new("arm-none-eabi-gcc")
-        .args([
-            "-c",
-            "-mcpu=cortex-m4",
-            "-mthumb",
-            "-mfloat-abi=hard",
-            "-mfpu=fpv4-sp-d16",
-            "-fpic",
-            "-Os",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-fomit-frame-pointer",
-            "-std=c11",
-            "-DIS_VESC_LIB",
-            "-I",
-            include_dir.to_str().expect("utf-8 include directory"),
-            c_path.to_str().expect("utf-8 C source path"),
-            "-o",
-            object_path.to_str().expect("utf-8 object path"),
-        ])
-        .status()
-        .expect("arm-none-eabi-gcc compile of package_lib.c");
-
-    assert!(
-        compile_status.success(),
-        "failed to compile the C shim into package_lib.o"
-    );
+    let stale_object_path = package_lib_object_path();
+    if stale_object_path.exists() {
+        fs::remove_file(&stale_object_path).expect("remove stale package_lib.o");
+    }
 
     let link_status = Command::new("arm-none-eabi-gcc")
         .args([
@@ -132,7 +92,6 @@ fn build_final_native_lib_elf_unlocked() {
             "-mthumb",
             "-mfloat-abi=hard",
             "-mfpu=fpv4-sp-d16",
-            object_path.to_str().expect("utf-8 object path"),
             rust_staticlib_path()
                 .to_str()
                 .expect("utf-8 staticlib path"),
@@ -366,6 +325,20 @@ mod tests {
     }
 
     #[test]
+    fn native_blob_embeds_rust_owned_package_identity() {
+        build_final_native_lib_binary(&native_lib_bin_path());
+
+        let blob = fs::read(native_lib_bin_path()).expect("native-lib binary bytes");
+        let rust_extension_name = b"ext-rust-probe-v5\0";
+
+        assert!(
+            blob.windows(rust_extension_name.len())
+                .any(|window| window == rust_extension_name),
+            "Rust-owned extension identity must be linked into the native blob so Rust source changes affect packaged bytes"
+        );
+    }
+
+    #[test]
     fn final_native_lib_elf_is_a_fully_linked_executable_image() {
         build_final_native_lib_elf();
 
@@ -468,27 +441,13 @@ mod tests {
     }
 
     #[test]
-    fn c_shim_object_no_longer_exposes_package_entry_or_extension_symbols() {
+    fn rust_only_build_does_not_materialize_a_package_c_object() {
         build_final_native_lib_elf();
 
-        let output = nm_output(&package_lib_object_path());
-        let defined = defined_symbols(&output);
-
         assert!(
-            !defined.contains("ext_c_probe_v6"),
-            "expected C shim object to drop the temporary C probe symbol:\n{output}"
-        );
-        assert!(
-            !defined.contains("init"),
-            "Rust, not the C shim object, should define the loader init symbol:\n{output}"
-        );
-        assert!(
-            !defined.contains("package_lib_init"),
-            "Rust, not the C shim object, should define package_lib_init:\n{output}"
-        );
-        assert!(
-            !defined.iter().any(|symbol| symbol.starts_with("ext_rust")),
-            "C shim object must not define Rust-owned extension symbols:\n{output}"
+            !package_lib_object_path().exists(),
+            "Rust-only native build must not materialize package_lib.o at {:?}",
+            package_lib_object_path()
         );
     }
 
@@ -496,21 +455,13 @@ mod tests {
     fn rust_only_native_artifact_has_no_package_c_shim_symbols() {
         build_final_native_lib_elf();
 
-        let package_object = nm_output(&package_lib_object_path());
-        let package_defined = defined_symbols(&package_object);
         let final_symbols = nm_output(&native_lib_elf_path());
         let final_defined = defined_symbols(&final_symbols);
 
-        for forbidden in ["init", "package_lib_init", "ext_c_probe_v6"] {
-            assert!(
-                !package_defined.contains(forbidden),
-                "package-specific C object must not define `{forbidden}`:\n{package_object}"
-            );
-            assert!(
-                !final_defined.contains(forbidden) || matches!(forbidden, "init" | "package_lib_init"),
-                "final Rust-only image must not retain C shim symbol `{forbidden}`:\n{final_symbols}"
-            );
-        }
+        assert!(
+            !final_defined.contains("ext_c_probe_v6"),
+            "final Rust-only image must not retain C shim symbol `ext_c_probe_v6`:\n{final_symbols}"
+        );
         assert!(
             final_defined.contains("init") && final_defined.contains("package_lib_init"),
             "Rust-owned native image must keep loader and package entry symbols:\n{final_symbols}"
@@ -694,19 +645,17 @@ mod tests {
 
         let staticlib_symbols = nm_output(&rust_staticlib_path());
         let staticlib_defined = defined_symbols(&staticlib_symbols);
-        let package_object_symbols = nm_output(&package_lib_object_path());
-        let package_object_defined = defined_symbols(&package_object_symbols);
 
         for symbol in ["prog_ptr", "init", "package_lib_init"] {
             assert!(
                 staticlib_defined.contains(symbol),
                 "Rust staticlib must own loader symbol `{symbol}`:\n{staticlib_symbols}"
             );
-            assert!(
-                !package_object_defined.contains(symbol),
-                "package C object must not own Rust loader symbol `{symbol}`:\n{package_object_symbols}"
-            );
         }
+        assert!(
+            !package_lib_object_path().exists(),
+            "package C object must not exist in the Rust-only native build"
+        );
     }
 
     fn command_stdout(program: &str, args: impl IntoIterator<Item = impl AsRef<Path>>) -> String {
