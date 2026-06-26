@@ -421,19 +421,27 @@ pub mod raw {
 
     #[repr(C)]
     pub struct VescIf {
+        // 32-bit package table slot 0.
         lbm_add_extension: unsafe extern "C" fn(*mut c_char, ExtensionHandler) -> bool,
         _reserved_before_lbm_enc_i: [usize; 15],
+        // 32-bit package table slot 16.
         lbm_enc_i: unsafe extern "C" fn(i32) -> LbmValue,
         _reserved_before_lbm_dec_as_i32: [usize; 8],
+        // 32-bit package table slot 25.
         lbm_dec_as_i32: unsafe extern "C" fn(LbmValue) -> i32,
         _reserved_before_lbm_is_number: [usize; 5],
+        // 32-bit package table slot 31.
         lbm_is_number: unsafe extern "C" fn(LbmValue) -> bool,
         _reserved_before_lbm_enc_sym_eerror: [usize; 5],
+        // 32-bit package table slot 37.
         lbm_enc_sym_eerror: u32,
         _reserved_after_lbm_enc_sym_eerror: [usize; 110],
+        // 32-bit package table slot 148.
         send_app_data: unsafe extern "C" fn(*mut c_uchar, u32),
+        // 32-bit package table slot 149.
         set_app_data_handler: unsafe extern "C" fn(Option<AppDataHandler>) -> bool,
         _reserved_after_app_data: [usize; 88],
+        // 32-bit package table slot 238.
         system_time_ticks: unsafe extern "C" fn() -> u32,
     }
 
@@ -681,7 +689,7 @@ mod tests {
     }
 
     #[test]
-    fn raw_vesc_if_offsets_match_the_32_bit_package_header() {
+    fn raw_vesc_if_offsets_match_the_documented_32_bit_package_header_slots() {
         let expected =
             VescIfAbi::USED_SLOTS.map(|slot| slot.host_byte_offset(core::mem::size_of::<usize>()));
 
