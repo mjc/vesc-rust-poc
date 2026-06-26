@@ -255,48 +255,6 @@ transparent_value_type_generic!(pub struct NvmBytes<'a>(&'a [u8]););
 transparent_eq_value_type!(pub struct EepromAddress(i32););
 transparent_eq_value_type!(pub struct EepromVar(i32););
 
-pub type Value = LbmValue;
-pub type Count = LbmCount;
-pub type Int = LbmInt;
-pub type Uint = LbmUint;
-pub type TypeCode = LbmType;
-pub type ChannelId = LbmCid;
-pub type Float = LbmFloat;
-pub type Symbol = LbmSymbol;
-pub type ErrorSymbol = LbmErrorSymbol;
-pub type BoolSymbol = LbmBoolSymbol;
-pub type NilSymbol = LbmNilSymbol;
-pub type Address = ProgramAddress;
-pub type BaseAddress = LoaderBaseAddress;
-pub type MillisecondsU32 = Milliseconds;
-pub type MicrosecondsU32 = Microseconds;
-pub type Packet<'a> = AppDataPacket<'a>;
-pub type Command<'a> = CommandPacket<'a>;
-pub type Reply<'a> = ReplyPacket<'a>;
-pub type Half = HalfDuplex;
-pub type Parameter = CfgParam;
-pub type ConfigFloat = CfgFloat;
-pub type ConfigInt = CfgInt;
-pub type ConfigResult = ConfigSetResult;
-pub type XmlBytes<'a> = ConfigXmlBytes<'a>;
-pub type Payload<'a> = ConfigPayload<'a>;
-pub type ThreadLabel<'a> = ThreadName<'a>;
-pub type StackSize = StackSizeBytes;
-pub type ThreadHandleValue = ThreadHandle;
-pub type MutexHandleValue = MutexHandle;
-pub type SemaphoreHandleValue = SemaphoreHandle;
-pub type Thread = ThreadHandleValue;
-pub type Mutex = MutexHandleValue;
-pub type Semaphore = SemaphoreHandleValue;
-pub type FirmwarePtrValue<T> = FirmwarePtr<T>;
-pub type FirmwareNonNullValue<T> = FirmwareNonNull<T>;
-pub type MallocSize = MallocLen;
-pub type OwnedFirmware<T> = OwnedFirmwareAllocation<T>;
-pub type AxisLabel<'a> = PlotAxisName<'a>;
-pub type GraphLabel<'a> = PlotGraphName<'a>;
-pub type GraphIndex = PlotGraphIndex;
-pub type Point = PlotPoint;
-pub type Bytes<'a> = NvmBytes<'a>;
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
@@ -804,8 +762,8 @@ pub mod raw {
 mod tests {
     #[allow(unused_imports)]
     use super::{
-        AppDataLen, AppDataPacket, Bytes, CanControllerId, CanFrameLen, CanPayload,
-        CanStatusIndex, CfgFloat, CfgInt, CfgParam, CommandPacket, ConfigPayload, ConfigResult,
+        AppDataLen, AppDataPacket, CanControllerId, CanFrameLen, CanPayload,
+        CanStatusIndex, CfgFloat, CfgInt, CfgParam, CommandPacket, ConfigPayload, ConfigSetResult,
         ConfigXmlBytes, EepromAddress, EepromVar, ExtensionHandler, FirmwareNonNull, FirmwarePtr,
         GpioPin, GpioPortPtr, HalfDuplex, HardwareType, ImageOffset, LbmApi,
         LbmBindings, LbmBoolSymbol, LbmCid, LbmCount, LbmErrorSymbol, LbmFloat, LbmInt,
@@ -814,7 +772,7 @@ mod tests {
         NativeAddress, NativeImage, NvmAddress, NvmBytes, NvmLen, OwnedFirmwareAllocation,
         PlotAxisName, PlotGraphIndex, PlotGraphName, PlotPoint, ProgramAddress, ReplyPacket,
         SemaphoreHandle, SecondsF32, StackSizeBytes, SystemSeconds, SystemTicks, ThreadHandle,
-        ThreadName, UartBaudRate, UartWriteLen, Value, VescIfAbi, VescPin, VescPinMode,
+        ThreadName, UartBaudRate, UartWriteLen, VescIfAbi, VescPin, VescPinMode,
     };
     use core::cell::Cell;
     use core::ffi::{c_char, c_void, CStr};
@@ -1029,7 +987,7 @@ mod tests {
         assert_eq!(core::mem::size_of::<CfgParam>(), core::mem::size_of::<i32>());
         assert_eq!(core::mem::size_of::<CfgFloat>(), core::mem::size_of::<f32>());
         assert_eq!(core::mem::size_of::<CfgInt>(), core::mem::size_of::<i32>());
-        assert_eq!(core::mem::size_of::<ConfigResult>(), core::mem::size_of::<i32>());
+        assert_eq!(core::mem::size_of::<ConfigSetResult>(), core::mem::size_of::<i32>());
         assert_eq!(
             core::mem::size_of::<ConfigXmlBytes<'_>>(),
             core::mem::size_of::<&[u8]>()
