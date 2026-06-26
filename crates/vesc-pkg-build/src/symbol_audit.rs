@@ -423,7 +423,7 @@ mod tests {
             text,
             SectionLayout {
                 name: ".text".to_owned(),
-                size: 460,
+                size: 476,
                 vma: 16,
             }
         );
@@ -563,7 +563,7 @@ mod tests {
             package_init_disassembly.contains("[r0, #8]"),
             "expected Rust package init to load lib_info.base_addr before registering Rust-owned pointers:\n{package_init_disassembly}"
         );
-        for rebase_step in ["add\tr1, r0", "add\tr0, r1"] {
+        for rebase_step in ["add\tr1, r0", "add\tr0, r2", "add\tr0, r4", "add\tr1, r4"] {
             assert!(
                 package_init_disassembly.contains(rebase_step),
                 "expected Rust-owned image pointer rebase step `{rebase_step}` before use:\n{package_init_disassembly}"

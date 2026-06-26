@@ -462,340 +462,347 @@ pub mod raw {
     #[repr(C)]
     pub struct VescIf {
         // LBM
-        lbm_add_extension: unsafe extern "C" fn(*mut c_char, ExtensionHandler) -> bool,
-        lbm_block_ctx_from_extension: unsafe extern "C" fn(),
-        lbm_unblock_ctx: unsafe extern "C" fn(u32, *mut LbmFlatValue) -> bool,
-        lbm_get_current_cid: unsafe extern "C" fn() -> u32,
-        lbm_set_error_reason: unsafe extern "C" fn(*mut c_char) -> c_int,
-        lbm_pause_eval_with_gc: unsafe extern "C" fn(u32),
-        lbm_continue_eval: unsafe extern "C" fn(),
-        lbm_send_message: unsafe extern "C" fn(u32, LbmValue) -> c_int,
-        lbm_eval_is_paused: unsafe extern "C" fn() -> bool,
-        lbm_cons: unsafe extern "C" fn(LbmValue, LbmValue) -> LbmValue,
-        lbm_car: unsafe extern "C" fn(LbmValue) -> LbmValue,
-        lbm_cdr: unsafe extern "C" fn(LbmValue) -> LbmValue,
-        lbm_list_destructive_reverse: unsafe extern "C" fn(LbmValue) -> LbmValue,
-        lbm_create_byte_array: unsafe extern "C" fn(*mut LbmValue, u32) -> bool,
-        lbm_add_symbol_const: unsafe extern "C" fn(*mut c_char, *mut u32) -> c_int,
-        lbm_get_symbol_by_name: unsafe extern "C" fn(*mut c_char, *mut u32) -> c_int,
-        lbm_enc_i: unsafe extern "C" fn(i32) -> LbmValue,
-        lbm_enc_u: unsafe extern "C" fn(u32) -> LbmValue,
-        lbm_enc_char: unsafe extern "C" fn(u8) -> LbmValue,
-        lbm_enc_float: unsafe extern "C" fn(f32) -> LbmValue,
-        lbm_enc_u32: unsafe extern "C" fn(u32) -> LbmValue,
-        lbm_enc_i32: unsafe extern "C" fn(i32) -> LbmValue,
-        lbm_enc_sym: unsafe extern "C" fn(u32) -> LbmValue,
-        lbm_dec_as_float: unsafe extern "C" fn(LbmValue) -> f32,
-        lbm_dec_as_u32: unsafe extern "C" fn(LbmValue) -> u32,
-        lbm_dec_as_i32: unsafe extern "C" fn(LbmValue) -> i32,
-        lbm_dec_char: unsafe extern "C" fn(LbmValue) -> u8,
-        lbm_dec_str: unsafe extern "C" fn(LbmValue) -> *mut c_char,
-        lbm_dec_sym: unsafe extern "C" fn(LbmValue) -> u32,
-        lbm_is_byte_array: unsafe extern "C" fn(LbmValue) -> bool,
-        lbm_is_cons: unsafe extern "C" fn(LbmValue) -> bool,
-        lbm_is_number: unsafe extern "C" fn(LbmValue) -> bool,
-        lbm_is_char: unsafe extern "C" fn(LbmValue) -> bool,
-        lbm_is_symbol: unsafe extern "C" fn(LbmValue) -> bool,
+        lbm_add_extension: Option<unsafe extern "C" fn(*mut c_char, ExtensionHandler) -> bool>,
+        lbm_block_ctx_from_extension: Option<unsafe extern "C" fn()>,
+        lbm_unblock_ctx: Option<unsafe extern "C" fn(u32, *mut LbmFlatValue) -> bool>,
+        lbm_get_current_cid: Option<unsafe extern "C" fn() -> u32>,
+        lbm_set_error_reason: Option<unsafe extern "C" fn(*mut c_char) -> c_int>,
+        lbm_pause_eval_with_gc: Option<unsafe extern "C" fn(u32)>,
+        lbm_continue_eval: Option<unsafe extern "C" fn()>,
+        lbm_send_message: Option<unsafe extern "C" fn(u32, LbmValue) -> c_int>,
+        lbm_eval_is_paused: Option<unsafe extern "C" fn() -> bool>,
+        lbm_cons: Option<unsafe extern "C" fn(LbmValue, LbmValue) -> LbmValue>,
+        lbm_car: Option<unsafe extern "C" fn(LbmValue) -> LbmValue>,
+        lbm_cdr: Option<unsafe extern "C" fn(LbmValue) -> LbmValue>,
+        lbm_list_destructive_reverse: Option<unsafe extern "C" fn(LbmValue) -> LbmValue>,
+        lbm_create_byte_array: Option<unsafe extern "C" fn(*mut LbmValue, u32) -> bool>,
+        lbm_add_symbol_const: Option<unsafe extern "C" fn(*mut c_char, *mut u32) -> c_int>,
+        lbm_get_symbol_by_name: Option<unsafe extern "C" fn(*mut c_char, *mut u32) -> c_int>,
+        lbm_enc_i: Option<unsafe extern "C" fn(i32) -> LbmValue>,
+        lbm_enc_u: Option<unsafe extern "C" fn(u32) -> LbmValue>,
+        lbm_enc_char: Option<unsafe extern "C" fn(u8) -> LbmValue>,
+        lbm_enc_float: Option<unsafe extern "C" fn(f32) -> LbmValue>,
+        lbm_enc_u32: Option<unsafe extern "C" fn(u32) -> LbmValue>,
+        lbm_enc_i32: Option<unsafe extern "C" fn(i32) -> LbmValue>,
+        lbm_enc_sym: Option<unsafe extern "C" fn(u32) -> LbmValue>,
+        lbm_dec_as_float: Option<unsafe extern "C" fn(LbmValue) -> f32>,
+        lbm_dec_as_u32: Option<unsafe extern "C" fn(LbmValue) -> u32>,
+        lbm_dec_as_i32: Option<unsafe extern "C" fn(LbmValue) -> i32>,
+        lbm_dec_char: Option<unsafe extern "C" fn(LbmValue) -> u8>,
+        lbm_dec_str: Option<unsafe extern "C" fn(LbmValue) -> *mut c_char>,
+        lbm_dec_sym: Option<unsafe extern "C" fn(LbmValue) -> u32>,
+        lbm_is_byte_array: Option<unsafe extern "C" fn(LbmValue) -> bool>,
+        lbm_is_cons: Option<unsafe extern "C" fn(LbmValue) -> bool>,
+        lbm_is_number: Option<unsafe extern "C" fn(LbmValue) -> bool>,
+        lbm_is_char: Option<unsafe extern "C" fn(LbmValue) -> bool>,
+        lbm_is_symbol: Option<unsafe extern "C" fn(LbmValue) -> bool>,
         lbm_enc_sym_nil: usize,
         lbm_enc_sym_true: usize,
         lbm_enc_sym_terror: usize,
         lbm_enc_sym_eerror: usize,
         lbm_enc_sym_merror: usize,
-        lbm_is_symbol_nil: unsafe extern "C" fn(u32) -> bool,
-        lbm_is_symbol_true: unsafe extern "C" fn(u32) -> bool,
+        lbm_is_symbol_nil: Option<unsafe extern "C" fn(u32) -> bool>,
+        lbm_is_symbol_true: Option<unsafe extern "C" fn(u32) -> bool>,
 
         // OS
-        sleep_ms: unsafe extern "C" fn(u32),
-        sleep_us: unsafe extern "C" fn(u32),
-        system_time: unsafe extern "C" fn() -> f32,
-        ts_to_age_s: unsafe extern "C" fn(u32) -> f32,
-        printf: unsafe extern "C" fn(*const c_char, ...) -> c_int,
-        malloc: unsafe extern "C" fn(usize) -> *mut c_void,
-        free: unsafe extern "C" fn(*mut c_void),
-        spawn: unsafe extern "C" fn(
-            unsafe extern "C" fn(*mut c_void),
-            usize,
-            *const c_char,
-            *mut c_void,
-        ) -> LibThread,
-        request_terminate: unsafe extern "C" fn(LibThread),
-        should_terminate: unsafe extern "C" fn() -> bool,
-        get_arg: unsafe extern "C" fn(u32) -> *mut *mut c_void,
+        sleep_ms: Option<unsafe extern "C" fn(u32)>,
+        sleep_us: Option<unsafe extern "C" fn(u32)>,
+        system_time: Option<unsafe extern "C" fn() -> f32>,
+        ts_to_age_s: Option<unsafe extern "C" fn(u32) -> f32>,
+        printf: Option<unsafe extern "C" fn(*const c_char, ...) -> c_int>,
+        malloc: Option<unsafe extern "C" fn(usize) -> *mut c_void>,
+        free: Option<unsafe extern "C" fn(*mut c_void)>,
+        spawn: Option<
+            unsafe extern "C" fn(
+                unsafe extern "C" fn(*mut c_void),
+                usize,
+                *const c_char,
+                *mut c_void,
+            ) -> LibThread,
+        >,
+        request_terminate: Option<unsafe extern "C" fn(LibThread)>,
+        should_terminate: Option<unsafe extern "C" fn() -> bool>,
+        get_arg: Option<unsafe extern "C" fn(u32) -> *mut *mut c_void>,
 
         // ST IO
-        set_pad_mode: unsafe extern "C" fn(*mut GpioPort, u32, u32),
-        set_pad: unsafe extern "C" fn(*mut GpioPort, u32),
-        clear_pad: unsafe extern "C" fn(*mut GpioPort, u32),
+        set_pad_mode: Option<unsafe extern "C" fn(*mut GpioPort, u32, u32)>,
+        set_pad: Option<unsafe extern "C" fn(*mut GpioPort, u32)>,
+        clear_pad: Option<unsafe extern "C" fn(*mut GpioPort, u32)>,
 
         // Abstract IO
-        io_set_mode: unsafe extern "C" fn(c_int, c_int) -> bool,
-        io_write: unsafe extern "C" fn(c_int, c_int) -> bool,
-        io_read: unsafe extern "C" fn(c_int) -> bool,
-        io_read_analog: unsafe extern "C" fn(c_int) -> f32,
-        io_get_st_pin: unsafe extern "C" fn(c_int, *mut *mut GpioPort, *mut u32) -> bool,
+        io_set_mode: Option<unsafe extern "C" fn(c_int, c_int) -> bool>,
+        io_write: Option<unsafe extern "C" fn(c_int, c_int) -> bool>,
+        io_read: Option<unsafe extern "C" fn(c_int) -> bool>,
+        io_read_analog: Option<unsafe extern "C" fn(c_int) -> f32>,
+        io_get_st_pin: Option<unsafe extern "C" fn(c_int, *mut *mut GpioPort, *mut u32) -> bool>,
 
         // CAN
-        can_set_sid_cb: unsafe extern "C" fn(Option<CanRxCallback>),
-        can_set_eid_cb: unsafe extern "C" fn(Option<CanRxCallback>),
-        can_transmit_sid: unsafe extern "C" fn(u32, *const u8, u8),
-        can_transmit_eid: unsafe extern "C" fn(u32, *const u8, u8),
-        can_send_buffer: unsafe extern "C" fn(u8, *mut u8, c_uint, u8),
-        can_set_duty: unsafe extern "C" fn(u8, f32),
-        can_set_current: unsafe extern "C" fn(u8, f32),
-        can_set_current_off_delay: unsafe extern "C" fn(u8, f32, f32),
-        can_set_current_brake: unsafe extern "C" fn(u8, f32),
-        can_set_rpm: unsafe extern "C" fn(u8, f32),
-        can_set_pos: unsafe extern "C" fn(u8, f32),
-        can_set_current_rel: unsafe extern "C" fn(u8, f32),
-        can_set_current_rel_off_delay: unsafe extern "C" fn(u8, f32, f32),
-        can_set_current_brake_rel: unsafe extern "C" fn(u8, f32),
-        can_ping: unsafe extern "C" fn(u8, *mut HwType) -> bool,
-        can_get_status_msg_index: unsafe extern "C" fn(c_int) -> *mut CanStatusMsg,
-        can_get_status_msg_id: unsafe extern "C" fn(c_int) -> *mut CanStatusMsg,
-        can_get_status_msg_2_index: unsafe extern "C" fn(c_int) -> *mut CanStatusMsg2,
-        can_get_status_msg_2_id: unsafe extern "C" fn(c_int) -> *mut CanStatusMsg2,
-        can_get_status_msg_3_index: unsafe extern "C" fn(c_int) -> *mut CanStatusMsg3,
-        can_get_status_msg_3_id: unsafe extern "C" fn(c_int) -> *mut CanStatusMsg3,
-        can_get_status_msg_4_index: unsafe extern "C" fn(c_int) -> *mut CanStatusMsg4,
-        can_get_status_msg_4_id: unsafe extern "C" fn(c_int) -> *mut CanStatusMsg4,
-        can_get_status_msg_5_index: unsafe extern "C" fn(c_int) -> *mut CanStatusMsg5,
-        can_get_status_msg_5_id: unsafe extern "C" fn(c_int) -> *mut CanStatusMsg5,
-        can_get_status_msg_6_index: unsafe extern "C" fn(c_int) -> *mut CanStatusMsg6,
-        can_get_status_msg_6_id: unsafe extern "C" fn(c_int) -> *mut CanStatusMsg6,
+        can_set_sid_cb: Option<unsafe extern "C" fn(Option<CanRxCallback>)>,
+        can_set_eid_cb: Option<unsafe extern "C" fn(Option<CanRxCallback>)>,
+        can_transmit_sid: Option<unsafe extern "C" fn(u32, *const u8, u8)>,
+        can_transmit_eid: Option<unsafe extern "C" fn(u32, *const u8, u8)>,
+        can_send_buffer: Option<unsafe extern "C" fn(u8, *mut u8, c_uint, u8)>,
+        can_set_duty: Option<unsafe extern "C" fn(u8, f32)>,
+        can_set_current: Option<unsafe extern "C" fn(u8, f32)>,
+        can_set_current_off_delay: Option<unsafe extern "C" fn(u8, f32, f32)>,
+        can_set_current_brake: Option<unsafe extern "C" fn(u8, f32)>,
+        can_set_rpm: Option<unsafe extern "C" fn(u8, f32)>,
+        can_set_pos: Option<unsafe extern "C" fn(u8, f32)>,
+        can_set_current_rel: Option<unsafe extern "C" fn(u8, f32)>,
+        can_set_current_rel_off_delay: Option<unsafe extern "C" fn(u8, f32, f32)>,
+        can_set_current_brake_rel: Option<unsafe extern "C" fn(u8, f32)>,
+        can_ping: Option<unsafe extern "C" fn(u8, *mut HwType) -> bool>,
+        can_get_status_msg_index: Option<unsafe extern "C" fn(c_int) -> *mut CanStatusMsg>,
+        can_get_status_msg_id: Option<unsafe extern "C" fn(c_int) -> *mut CanStatusMsg>,
+        can_get_status_msg_2_index: Option<unsafe extern "C" fn(c_int) -> *mut CanStatusMsg2>,
+        can_get_status_msg_2_id: Option<unsafe extern "C" fn(c_int) -> *mut CanStatusMsg2>,
+        can_get_status_msg_3_index: Option<unsafe extern "C" fn(c_int) -> *mut CanStatusMsg3>,
+        can_get_status_msg_3_id: Option<unsafe extern "C" fn(c_int) -> *mut CanStatusMsg3>,
+        can_get_status_msg_4_index: Option<unsafe extern "C" fn(c_int) -> *mut CanStatusMsg4>,
+        can_get_status_msg_4_id: Option<unsafe extern "C" fn(c_int) -> *mut CanStatusMsg4>,
+        can_get_status_msg_5_index: Option<unsafe extern "C" fn(c_int) -> *mut CanStatusMsg5>,
+        can_get_status_msg_5_id: Option<unsafe extern "C" fn(c_int) -> *mut CanStatusMsg5>,
+        can_get_status_msg_6_index: Option<unsafe extern "C" fn(c_int) -> *mut CanStatusMsg6>,
+        can_get_status_msg_6_id: Option<unsafe extern "C" fn(c_int) -> *mut CanStatusMsg6>,
 
         // Motor Control
-        mc_motor_now: unsafe extern "C" fn() -> c_int,
-        mc_select_motor_thread: unsafe extern "C" fn(c_int),
-        mc_get_motor_thread: unsafe extern "C" fn() -> c_int,
-        mc_dccal_done: unsafe extern "C" fn() -> bool,
-        mc_set_pwm_callback: unsafe extern "C" fn(Option<PwmCallback>),
-        mc_get_fault: unsafe extern "C" fn() -> c_int,
-        mc_fault_to_string: unsafe extern "C" fn(c_int) -> *const c_char,
-        mc_set_duty: unsafe extern "C" fn(f32),
-        mc_set_duty_noramp: unsafe extern "C" fn(f32),
-        mc_set_pid_speed: unsafe extern "C" fn(f32),
-        mc_set_pid_pos: unsafe extern "C" fn(f32),
-        mc_set_current: unsafe extern "C" fn(f32),
-        mc_set_brake_current: unsafe extern "C" fn(f32),
-        mc_set_current_rel: unsafe extern "C" fn(f32),
-        mc_set_brake_current_rel: unsafe extern "C" fn(f32),
-        mc_set_handbrake: unsafe extern "C" fn(f32),
-        mc_set_handbrake_rel: unsafe extern "C" fn(f32),
-        mc_set_tachometer_value: unsafe extern "C" fn(c_int) -> c_int,
-        mc_release_motor: unsafe extern "C" fn(),
-        mc_wait_for_motor_release: unsafe extern "C" fn(f32) -> bool,
-        mc_get_duty_cycle_now: unsafe extern "C" fn() -> f32,
-        mc_get_sampling_frequency_now: unsafe extern "C" fn() -> f32,
-        mc_get_rpm: unsafe extern "C" fn() -> f32,
-        mc_get_amp_hours: unsafe extern "C" fn(bool) -> f32,
-        mc_get_amp_hours_charged: unsafe extern "C" fn(bool) -> f32,
-        mc_get_watt_hours: unsafe extern "C" fn(bool) -> f32,
-        mc_get_watt_hours_charged: unsafe extern "C" fn(bool) -> f32,
-        mc_get_tot_current: unsafe extern "C" fn() -> f32,
-        mc_get_tot_current_filtered: unsafe extern "C" fn() -> f32,
-        mc_get_tot_current_directional: unsafe extern "C" fn() -> f32,
-        mc_get_tot_current_directional_filtered: unsafe extern "C" fn() -> f32,
-        mc_get_tot_current_in: unsafe extern "C" fn() -> f32,
-        mc_get_tot_current_in_filtered: unsafe extern "C" fn() -> f32,
-        mc_get_input_voltage_filtered: unsafe extern "C" fn() -> f32,
-        mc_get_tachometer_value: unsafe extern "C" fn(bool) -> c_int,
-        mc_get_tachometer_abs_value: unsafe extern "C" fn(bool) -> c_int,
-        mc_get_pid_pos_set: unsafe extern "C" fn() -> f32,
-        mc_get_pid_pos_now: unsafe extern "C" fn() -> f32,
-        mc_update_pid_pos_offset: unsafe extern "C" fn(f32, bool),
-        mc_temp_fet_filtered: unsafe extern "C" fn() -> f32,
-        mc_temp_motor_filtered: unsafe extern "C" fn() -> f32,
-        mc_get_battery_level: unsafe extern "C" fn(*mut f32) -> f32,
-        mc_get_speed: unsafe extern "C" fn() -> f32,
-        mc_get_distance: unsafe extern "C" fn() -> f32,
-        mc_get_distance_abs: unsafe extern "C" fn() -> f32,
-        mc_get_odometer: unsafe extern "C" fn() -> u64,
-        mc_set_odometer: unsafe extern "C" fn(u64),
-        mc_set_current_off_delay: unsafe extern "C" fn(f32),
-        mc_stat_speed_avg: unsafe extern "C" fn() -> f32,
-        mc_stat_speed_max: unsafe extern "C" fn() -> f32,
-        mc_stat_power_avg: unsafe extern "C" fn() -> f32,
-        mc_stat_power_max: unsafe extern "C" fn() -> f32,
-        mc_stat_current_avg: unsafe extern "C" fn() -> f32,
-        mc_stat_current_max: unsafe extern "C" fn() -> f32,
-        mc_stat_temp_mosfet_avg: unsafe extern "C" fn() -> f32,
-        mc_stat_temp_mosfet_max: unsafe extern "C" fn() -> f32,
-        mc_stat_temp_motor_avg: unsafe extern "C" fn() -> f32,
-        mc_stat_temp_motor_max: unsafe extern "C" fn() -> f32,
-        mc_stat_count_time: unsafe extern "C" fn() -> f32,
-        mc_stat_reset: unsafe extern "C" fn(),
+        mc_motor_now: Option<unsafe extern "C" fn() -> c_int>,
+        mc_select_motor_thread: Option<unsafe extern "C" fn(c_int)>,
+        mc_get_motor_thread: Option<unsafe extern "C" fn() -> c_int>,
+        mc_dccal_done: Option<unsafe extern "C" fn() -> bool>,
+        mc_set_pwm_callback: Option<unsafe extern "C" fn(Option<PwmCallback>)>,
+        mc_get_fault: Option<unsafe extern "C" fn() -> c_int>,
+        mc_fault_to_string: Option<unsafe extern "C" fn(c_int) -> *const c_char>,
+        mc_set_duty: Option<unsafe extern "C" fn(f32)>,
+        mc_set_duty_noramp: Option<unsafe extern "C" fn(f32)>,
+        mc_set_pid_speed: Option<unsafe extern "C" fn(f32)>,
+        mc_set_pid_pos: Option<unsafe extern "C" fn(f32)>,
+        mc_set_current: Option<unsafe extern "C" fn(f32)>,
+        mc_set_brake_current: Option<unsafe extern "C" fn(f32)>,
+        mc_set_current_rel: Option<unsafe extern "C" fn(f32)>,
+        mc_set_brake_current_rel: Option<unsafe extern "C" fn(f32)>,
+        mc_set_handbrake: Option<unsafe extern "C" fn(f32)>,
+        mc_set_handbrake_rel: Option<unsafe extern "C" fn(f32)>,
+        mc_set_tachometer_value: Option<unsafe extern "C" fn(c_int) -> c_int>,
+        mc_release_motor: Option<unsafe extern "C" fn()>,
+        mc_wait_for_motor_release: Option<unsafe extern "C" fn(f32) -> bool>,
+        mc_get_duty_cycle_now: Option<unsafe extern "C" fn() -> f32>,
+        mc_get_sampling_frequency_now: Option<unsafe extern "C" fn() -> f32>,
+        mc_get_rpm: Option<unsafe extern "C" fn() -> f32>,
+        mc_get_amp_hours: Option<unsafe extern "C" fn(bool) -> f32>,
+        mc_get_amp_hours_charged: Option<unsafe extern "C" fn(bool) -> f32>,
+        mc_get_watt_hours: Option<unsafe extern "C" fn(bool) -> f32>,
+        mc_get_watt_hours_charged: Option<unsafe extern "C" fn(bool) -> f32>,
+        mc_get_tot_current: Option<unsafe extern "C" fn() -> f32>,
+        mc_get_tot_current_filtered: Option<unsafe extern "C" fn() -> f32>,
+        mc_get_tot_current_directional: Option<unsafe extern "C" fn() -> f32>,
+        mc_get_tot_current_directional_filtered: Option<unsafe extern "C" fn() -> f32>,
+        mc_get_tot_current_in: Option<unsafe extern "C" fn() -> f32>,
+        mc_get_tot_current_in_filtered: Option<unsafe extern "C" fn() -> f32>,
+        mc_get_input_voltage_filtered: Option<unsafe extern "C" fn() -> f32>,
+        mc_get_tachometer_value: Option<unsafe extern "C" fn(bool) -> c_int>,
+        mc_get_tachometer_abs_value: Option<unsafe extern "C" fn(bool) -> c_int>,
+        mc_get_pid_pos_set: Option<unsafe extern "C" fn() -> f32>,
+        mc_get_pid_pos_now: Option<unsafe extern "C" fn() -> f32>,
+        mc_update_pid_pos_offset: Option<unsafe extern "C" fn(f32, bool)>,
+        mc_temp_fet_filtered: Option<unsafe extern "C" fn() -> f32>,
+        mc_temp_motor_filtered: Option<unsafe extern "C" fn() -> f32>,
+        mc_get_battery_level: Option<unsafe extern "C" fn(*mut f32) -> f32>,
+        mc_get_speed: Option<unsafe extern "C" fn() -> f32>,
+        mc_get_distance: Option<unsafe extern "C" fn() -> f32>,
+        mc_get_distance_abs: Option<unsafe extern "C" fn() -> f32>,
+        mc_get_odometer: Option<unsafe extern "C" fn() -> u64>,
+        mc_set_odometer: Option<unsafe extern "C" fn(u64)>,
+        mc_set_current_off_delay: Option<unsafe extern "C" fn(f32)>,
+        mc_stat_speed_avg: Option<unsafe extern "C" fn() -> f32>,
+        mc_stat_speed_max: Option<unsafe extern "C" fn() -> f32>,
+        mc_stat_power_avg: Option<unsafe extern "C" fn() -> f32>,
+        mc_stat_power_max: Option<unsafe extern "C" fn() -> f32>,
+        mc_stat_current_avg: Option<unsafe extern "C" fn() -> f32>,
+        mc_stat_current_max: Option<unsafe extern "C" fn() -> f32>,
+        mc_stat_temp_mosfet_avg: Option<unsafe extern "C" fn() -> f32>,
+        mc_stat_temp_mosfet_max: Option<unsafe extern "C" fn() -> f32>,
+        mc_stat_temp_motor_avg: Option<unsafe extern "C" fn() -> f32>,
+        mc_stat_temp_motor_max: Option<unsafe extern "C" fn() -> f32>,
+        mc_stat_count_time: Option<unsafe extern "C" fn() -> f32>,
+        mc_stat_reset: Option<unsafe extern "C" fn()>,
 
         // Comm
-        commands_process_packet: unsafe extern "C" fn(*mut c_uchar, c_uint, ReplyCallback),
-        send_app_data: unsafe extern "C" fn(*mut c_uchar, u32),
-        set_app_data_handler: unsafe extern "C" fn(Option<AppDataHandler>) -> bool,
+        commands_process_packet: Option<unsafe extern "C" fn(*mut c_uchar, c_uint, ReplyCallback)>,
+        send_app_data: Option<unsafe extern "C" fn(*mut c_uchar, u32)>,
+        set_app_data_handler: Option<unsafe extern "C" fn(Option<AppDataHandler>) -> bool>,
 
         // UART
-        uart_start: unsafe extern "C" fn(u32, bool) -> bool,
-        uart_write: unsafe extern "C" fn(*const u8, u32) -> bool,
-        uart_read: unsafe extern "C" fn() -> i32,
+        uart_start: Option<unsafe extern "C" fn(u32, bool) -> bool>,
+        uart_write: Option<unsafe extern "C" fn(*const u8, u32) -> bool>,
+        uart_read: Option<unsafe extern "C" fn() -> i32>,
 
         // Packets
-        packet_init:
+        packet_init: Option<
             unsafe extern "C" fn(PacketSendCallback, PacketProcessCallback, *mut PacketState),
-        packet_reset: unsafe extern "C" fn(*mut PacketState),
-        packet_process_byte: unsafe extern "C" fn(u8, *mut PacketState),
-        packet_send_packet: unsafe extern "C" fn(*mut c_uchar, c_uint, *mut PacketState),
+        >,
+        packet_reset: Option<unsafe extern "C" fn(*mut PacketState)>,
+        packet_process_byte: Option<unsafe extern "C" fn(u8, *mut PacketState)>,
+        packet_send_packet: Option<unsafe extern "C" fn(*mut c_uchar, c_uint, *mut PacketState)>,
 
         // IMU
-        imu_startup_done: unsafe extern "C" fn() -> bool,
-        imu_get_roll: unsafe extern "C" fn() -> f32,
-        imu_get_pitch: unsafe extern "C" fn() -> f32,
-        imu_get_yaw: unsafe extern "C" fn() -> f32,
-        imu_get_rpy: unsafe extern "C" fn(*mut f32),
-        imu_get_accel: unsafe extern "C" fn(*mut f32),
-        imu_get_gyro: unsafe extern "C" fn(*mut f32),
-        imu_get_mag: unsafe extern "C" fn(*mut f32),
-        imu_derotate: unsafe extern "C" fn(*const f32, *mut f32),
-        imu_get_accel_derotated: unsafe extern "C" fn(*mut f32),
-        imu_get_gyro_derotated: unsafe extern "C" fn(*mut f32),
-        imu_get_quaternions: unsafe extern "C" fn(*mut f32),
-        imu_get_calibration: unsafe extern "C" fn(f32, *mut f32),
-        imu_set_yaw: unsafe extern "C" fn(f32),
+        imu_startup_done: Option<unsafe extern "C" fn() -> bool>,
+        imu_get_roll: Option<unsafe extern "C" fn() -> f32>,
+        imu_get_pitch: Option<unsafe extern "C" fn() -> f32>,
+        imu_get_yaw: Option<unsafe extern "C" fn() -> f32>,
+        imu_get_rpy: Option<unsafe extern "C" fn(*mut f32)>,
+        imu_get_accel: Option<unsafe extern "C" fn(*mut f32)>,
+        imu_get_gyro: Option<unsafe extern "C" fn(*mut f32)>,
+        imu_get_mag: Option<unsafe extern "C" fn(*mut f32)>,
+        imu_derotate: Option<unsafe extern "C" fn(*const f32, *mut f32)>,
+        imu_get_accel_derotated: Option<unsafe extern "C" fn(*mut f32)>,
+        imu_get_gyro_derotated: Option<unsafe extern "C" fn(*mut f32)>,
+        imu_get_quaternions: Option<unsafe extern "C" fn(*mut f32)>,
+        imu_get_calibration: Option<unsafe extern "C" fn(f32, *mut f32)>,
+        imu_set_yaw: Option<unsafe extern "C" fn(f32)>,
 
         // Terminal
-        terminal_register_command_callback:
+        terminal_register_command_callback: Option<
             unsafe extern "C" fn(*const c_char, *const c_char, *const c_char, TerminalCallback),
-        terminal_unregister_callback: unsafe extern "C" fn(TerminalCallback),
+        >,
+        terminal_unregister_callback: Option<unsafe extern "C" fn(TerminalCallback)>,
 
         // EEPROM
-        read_eeprom_var: unsafe extern "C" fn(*mut EepromVar, c_int) -> bool,
-        store_eeprom_var: unsafe extern "C" fn(*mut EepromVar, c_int) -> bool,
+        read_eeprom_var: Option<unsafe extern "C" fn(*mut EepromVar, c_int) -> bool>,
+        store_eeprom_var: Option<unsafe extern "C" fn(*mut EepromVar, c_int) -> bool>,
 
         // Timeout
-        timeout_reset: unsafe extern "C" fn(),
-        timeout_has_timeout: unsafe extern "C" fn() -> bool,
-        timeout_secs_since_update: unsafe extern "C" fn() -> f32,
+        timeout_reset: Option<unsafe extern "C" fn()>,
+        timeout_has_timeout: Option<unsafe extern "C" fn() -> bool>,
+        timeout_secs_since_update: Option<unsafe extern "C" fn() -> f32>,
 
         // Plot
-        plot_init: unsafe extern "C" fn(*const c_char, *const c_char),
-        plot_add_graph: unsafe extern "C" fn(*const c_char),
-        plot_set_graph: unsafe extern "C" fn(c_int),
-        plot_send_points: unsafe extern "C" fn(f32, f32),
+        plot_init: Option<unsafe extern "C" fn(*const c_char, *const c_char)>,
+        plot_add_graph: Option<unsafe extern "C" fn(*const c_char)>,
+        plot_set_graph: Option<unsafe extern "C" fn(c_int)>,
+        plot_send_points: Option<unsafe extern "C" fn(f32, f32)>,
 
         // Custom config
-        conf_custom_add_config: unsafe extern "C" fn(
-            unsafe extern "C" fn(*mut u8, bool) -> c_int,
-            unsafe extern "C" fn(*mut u8) -> bool,
-            unsafe extern "C" fn(*mut *mut u8) -> c_int,
-        ),
-        conf_custom_clear_configs: unsafe extern "C" fn(),
+        conf_custom_add_config: Option<
+            unsafe extern "C" fn(
+                unsafe extern "C" fn(*mut u8, bool) -> c_int,
+                unsafe extern "C" fn(*mut u8) -> bool,
+                unsafe extern "C" fn(*mut *mut u8) -> c_int,
+            ),
+        >,
+        conf_custom_clear_configs: Option<unsafe extern "C" fn()>,
 
         // Settings
-        get_cfg_float: unsafe extern "C" fn(c_int) -> f32,
-        get_cfg_int: unsafe extern "C" fn(c_int) -> c_int,
-        set_cfg_float: unsafe extern "C" fn(c_int, f32) -> bool,
-        set_cfg_int: unsafe extern "C" fn(c_int, c_int) -> bool,
-        store_cfg: unsafe extern "C" fn() -> bool,
+        get_cfg_float: Option<unsafe extern "C" fn(c_int) -> f32>,
+        get_cfg_int: Option<unsafe extern "C" fn(c_int) -> c_int>,
+        set_cfg_float: Option<unsafe extern "C" fn(c_int, f32) -> bool>,
+        set_cfg_int: Option<unsafe extern "C" fn(c_int, c_int) -> bool>,
+        store_cfg: Option<unsafe extern "C" fn() -> bool>,
 
         // GNSS
-        mc_gnss: unsafe extern "C" fn() -> *mut GnssData,
+        mc_gnss: Option<unsafe extern "C" fn() -> *mut GnssData>,
 
         // Mutex
-        mutex_create: unsafe extern "C" fn() -> LibMutex,
-        mutex_lock: unsafe extern "C" fn(LibMutex),
-        mutex_unlock: unsafe extern "C" fn(LibMutex),
+        mutex_create: Option<unsafe extern "C" fn() -> LibMutex>,
+        mutex_lock: Option<unsafe extern "C" fn(LibMutex)>,
+        mutex_unlock: Option<unsafe extern "C" fn(LibMutex)>,
 
         // Get ST io-pin from lbm symbol
-        lbm_symbol_to_io: unsafe extern "C" fn(u32, *mut *mut GpioPort, *mut u32) -> bool,
+        lbm_symbol_to_io: Option<unsafe extern "C" fn(u32, *mut *mut GpioPort, *mut u32) -> bool>,
 
         // High resolution timer
-        timer_time_now: unsafe extern "C" fn() -> u32,
-        timer_seconds_elapsed_since: unsafe extern "C" fn(u32) -> f32,
-        timer_sleep: unsafe extern "C" fn(f32),
+        timer_time_now: Option<unsafe extern "C" fn() -> u32>,
+        timer_seconds_elapsed_since: Option<unsafe extern "C" fn(u32) -> f32>,
+        timer_sleep: Option<unsafe extern "C" fn(f32)>,
 
         // System lock
-        sys_lock: unsafe extern "C" fn(),
-        sys_unlock: unsafe extern "C" fn(),
+        sys_lock: Option<unsafe extern "C" fn()>,
+        sys_unlock: Option<unsafe extern "C" fn()>,
 
         // Comm reply cleanup
-        commands_unregister_reply_func: unsafe extern "C" fn(ReplyCallback),
+        commands_unregister_reply_func: Option<unsafe extern "C" fn(ReplyCallback)>,
 
         // IMU AHRS functions and read callback
-        imu_set_read_callback: unsafe extern "C" fn(Option<ImuReadCallback>),
-        ahrs_init_attitude_info: unsafe extern "C" fn(*mut AttitudeInfo),
+        imu_set_read_callback: Option<unsafe extern "C" fn(Option<ImuReadCallback>)>,
+        ahrs_init_attitude_info: Option<unsafe extern "C" fn(*mut AttitudeInfo)>,
         ahrs_update_initial_orientation:
-            unsafe extern "C" fn(*const f32, *const f32, *mut AttitudeInfo),
+            Option<unsafe extern "C" fn(*const f32, *const f32, *mut AttitudeInfo)>,
         ahrs_update_mahony_imu:
-            unsafe extern "C" fn(*const f32, *const f32, f32, *mut AttitudeInfo),
+            Option<unsafe extern "C" fn(*const f32, *const f32, f32, *mut AttitudeInfo)>,
         ahrs_update_madgwick_imu:
-            unsafe extern "C" fn(*const f32, *const f32, f32, *mut AttitudeInfo),
-        ahrs_get_roll: unsafe extern "C" fn(*const AttitudeInfo) -> f32,
-        ahrs_get_pitch: unsafe extern "C" fn(*const AttitudeInfo) -> f32,
-        ahrs_get_yaw: unsafe extern "C" fn(*const AttitudeInfo) -> f32,
+            Option<unsafe extern "C" fn(*const f32, *const f32, f32, *mut AttitudeInfo)>,
+        ahrs_get_roll: Option<unsafe extern "C" fn(*const AttitudeInfo) -> f32>,
+        ahrs_get_pitch: Option<unsafe extern "C" fn(*const AttitudeInfo) -> f32>,
+        ahrs_get_yaw: Option<unsafe extern "C" fn(*const AttitudeInfo) -> f32>,
 
         // Encoder callbacks
-        encoder_set_custom_callbacks:
+        encoder_set_custom_callbacks: Option<
             unsafe extern "C" fn(EncoderReadCallback, EncoderFaultCallback, EncoderInfoCallback),
+        >,
 
         // Store backup data
-        store_backup_data: unsafe extern "C" fn() -> bool,
+        store_backup_data: Option<unsafe extern "C" fn() -> bool>,
 
         // Input Devices
-        get_remote_state: unsafe extern "C" fn() -> RemoteState,
-        get_ppm: unsafe extern "C" fn() -> f32,
-        get_ppm_age: unsafe extern "C" fn() -> f32,
-        app_is_output_disabled: unsafe extern "C" fn() -> bool,
+        get_remote_state: Option<unsafe extern "C" fn() -> RemoteState>,
+        get_ppm: Option<unsafe extern "C" fn() -> f32>,
+        get_ppm_age: Option<unsafe extern "C" fn() -> f32>,
+        app_is_output_disabled: Option<unsafe extern "C" fn() -> bool>,
 
         // Firmware 6.2 NVM
-        read_nvm: unsafe extern "C" fn(*mut u8, c_uint, c_uint) -> bool,
-        write_nvm: unsafe extern "C" fn(*mut u8, c_uint, c_uint) -> bool,
-        wipe_nvm: unsafe extern "C" fn() -> bool,
+        read_nvm: Option<unsafe extern "C" fn(*mut u8, c_uint, c_uint) -> bool>,
+        write_nvm: Option<unsafe extern "C" fn(*mut u8, c_uint, c_uint) -> bool>,
+        wipe_nvm: Option<unsafe extern "C" fn() -> bool>,
 
         // Firmware 6.2 FOC
-        foc_get_id: unsafe extern "C" fn() -> f32,
-        foc_get_iq: unsafe extern "C" fn() -> f32,
-        foc_get_vd: unsafe extern "C" fn() -> f32,
-        foc_get_vq: unsafe extern "C" fn() -> f32,
-        foc_set_openloop_current: unsafe extern "C" fn(f32, f32),
-        foc_set_openloop_phase: unsafe extern "C" fn(f32, f32),
-        foc_set_openloop_duty: unsafe extern "C" fn(f32, f32),
-        foc_set_openloop_duty_phase: unsafe extern "C" fn(f32, f32),
+        foc_get_id: Option<unsafe extern "C" fn() -> f32>,
+        foc_get_iq: Option<unsafe extern "C" fn() -> f32>,
+        foc_get_vd: Option<unsafe extern "C" fn() -> f32>,
+        foc_get_vq: Option<unsafe extern "C" fn() -> f32>,
+        foc_set_openloop_current: Option<unsafe extern "C" fn(f32, f32)>,
+        foc_set_openloop_phase: Option<unsafe extern "C" fn(f32, f32)>,
+        foc_set_openloop_duty: Option<unsafe extern "C" fn(f32, f32)>,
+        foc_set_openloop_duty_phase: Option<unsafe extern "C" fn(f32, f32)>,
 
         // Firmware 6.05 flat values
-        lbm_start_flatten: unsafe extern "C" fn(*mut LbmFlatValue, usize) -> bool,
-        lbm_finish_flatten: unsafe extern "C" fn(*mut LbmFlatValue) -> bool,
-        f_cons: unsafe extern "C" fn(*mut LbmFlatValue) -> bool,
-        f_sym: unsafe extern "C" fn(*mut LbmFlatValue, u32) -> bool,
-        f_i: unsafe extern "C" fn(*mut LbmFlatValue, i32) -> bool,
-        f_b: unsafe extern "C" fn(*mut LbmFlatValue, u8) -> bool,
-        f_i32: unsafe extern "C" fn(*mut LbmFlatValue, i32) -> bool,
-        f_u32: unsafe extern "C" fn(*mut LbmFlatValue, u32) -> bool,
-        f_float: unsafe extern "C" fn(*mut LbmFlatValue, f32) -> bool,
-        f_i64: unsafe extern "C" fn(*mut LbmFlatValue, i64) -> bool,
-        f_u64: unsafe extern "C" fn(*mut LbmFlatValue, u64) -> bool,
-        f_lbm_array: unsafe extern "C" fn(*mut LbmFlatValue, u32, *mut u8) -> bool,
+        lbm_start_flatten: Option<unsafe extern "C" fn(*mut LbmFlatValue, usize) -> bool>,
+        lbm_finish_flatten: Option<unsafe extern "C" fn(*mut LbmFlatValue) -> bool>,
+        f_cons: Option<unsafe extern "C" fn(*mut LbmFlatValue) -> bool>,
+        f_sym: Option<unsafe extern "C" fn(*mut LbmFlatValue, u32) -> bool>,
+        f_i: Option<unsafe extern "C" fn(*mut LbmFlatValue, i32) -> bool>,
+        f_b: Option<unsafe extern "C" fn(*mut LbmFlatValue, u8) -> bool>,
+        f_i32: Option<unsafe extern "C" fn(*mut LbmFlatValue, i32) -> bool>,
+        f_u32: Option<unsafe extern "C" fn(*mut LbmFlatValue, u32) -> bool>,
+        f_float: Option<unsafe extern "C" fn(*mut LbmFlatValue, f32) -> bool>,
+        f_i64: Option<unsafe extern "C" fn(*mut LbmFlatValue, i64) -> bool>,
+        f_u64: Option<unsafe extern "C" fn(*mut LbmFlatValue, u64) -> bool>,
+        f_lbm_array: Option<unsafe extern "C" fn(*mut LbmFlatValue, u32, *mut u8) -> bool>,
 
         // Unblock unboxed
-        lbm_unblock_ctx_unboxed: unsafe extern "C" fn(u32, LbmValue) -> bool,
+        lbm_unblock_ctx_unboxed: Option<unsafe extern "C" fn(u32, LbmValue) -> bool>,
 
         // Time since boot in system ticks
-        system_time_ticks: unsafe extern "C" fn() -> u32,
-        sleep_ticks: unsafe extern "C" fn(u32),
+        system_time_ticks: Option<unsafe extern "C" fn() -> u32>,
+        sleep_ticks: Option<unsafe extern "C" fn(u32)>,
 
         // FOC Audio
-        foc_beep: unsafe extern "C" fn(f32, f32, f32) -> bool,
-        foc_play_tone: unsafe extern "C" fn(c_int, f32, f32) -> bool,
-        foc_stop_audio: unsafe extern "C" fn(bool),
-        foc_set_audio_sample_table: unsafe extern "C" fn(c_int, *const f32, c_int) -> bool,
-        foc_get_audio_sample_table: unsafe extern "C" fn(c_int) -> *const f32,
-        foc_play_audio_samples: unsafe extern "C" fn(*const i8, c_int, f32, f32) -> bool,
+        foc_beep: Option<unsafe extern "C" fn(f32, f32, f32) -> bool>,
+        foc_play_tone: Option<unsafe extern "C" fn(c_int, f32, f32) -> bool>,
+        foc_stop_audio: Option<unsafe extern "C" fn(bool)>,
+        foc_set_audio_sample_table: Option<unsafe extern "C" fn(c_int, *const f32, c_int) -> bool>,
+        foc_get_audio_sample_table: Option<unsafe extern "C" fn(c_int) -> *const f32>,
+        foc_play_audio_samples: Option<unsafe extern "C" fn(*const i8, c_int, f32, f32) -> bool>,
 
         // Semaphores
-        sem_create: unsafe extern "C" fn() -> LibSemaphore,
-        sem_wait: unsafe extern "C" fn(LibSemaphore),
-        sem_signal: unsafe extern "C" fn(LibSemaphore),
-        sem_wait_to: unsafe extern "C" fn(LibSemaphore, u32) -> bool,
-        sem_reset: unsafe extern "C" fn(LibSemaphore),
+        sem_create: Option<unsafe extern "C" fn() -> LibSemaphore>,
+        sem_wait: Option<unsafe extern "C" fn(LibSemaphore)>,
+        sem_signal: Option<unsafe extern "C" fn(LibSemaphore)>,
+        sem_wait_to: Option<unsafe extern "C" fn(LibSemaphore, u32) -> bool>,
+        sem_reset: Option<unsafe extern "C" fn(LibSemaphore)>,
 
         // Firmware 6.06
-        thread_set_priority: unsafe extern "C" fn(c_int),
-        shutdown_disable: unsafe extern "C" fn(bool),
+        thread_set_priority: Option<unsafe extern "C" fn(c_int)>,
+        shutdown_disable: Option<unsafe extern "C" fn(bool)>,
     }
 
     const VESC_IF: *const VescIf = VescIfAbi::BASE_ADDR.0 as *const VescIf;
@@ -805,28 +812,48 @@ pub mod raw {
     /// `name` must point to a valid, NUL-terminated extension name and
     /// `handler` must use the firmware LispBM extension ABI.
     pub unsafe fn lbm_add_extension(name: *const c_char, handler: ExtensionHandler) -> bool {
-        unsafe { ((*VESC_IF).lbm_add_extension)(name as *mut c_char, handler) }
+        unsafe {
+            match (*VESC_IF).lbm_add_extension {
+                Some(lbm_add_extension) => lbm_add_extension(name as *mut c_char, handler),
+                None => false,
+            }
+        }
     }
 
     /// # Safety
     ///
     /// `value` must be a LispBM value supplied by the firmware.
     pub unsafe fn lbm_dec_as_i32(value: LbmValue) -> i32 {
-        unsafe { ((*VESC_IF).lbm_dec_as_i32)(value) }
+        unsafe {
+            match (*VESC_IF).lbm_dec_as_i32 {
+                Some(lbm_dec_as_i32) => lbm_dec_as_i32(value),
+                None => 0,
+            }
+        }
     }
 
     /// # Safety
     ///
     /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
     pub unsafe fn lbm_enc_i(value: i32) -> LbmValue {
-        unsafe { ((*VESC_IF).lbm_enc_i)(value) }
+        unsafe {
+            match (*VESC_IF).lbm_enc_i {
+                Some(lbm_enc_i) => lbm_enc_i(value),
+                None => LbmValue(0),
+            }
+        }
     }
 
     /// # Safety
     ///
     /// `value` must be a LispBM value supplied by the firmware.
     pub unsafe fn lbm_is_number(value: LbmValue) -> bool {
-        unsafe { ((*VESC_IF).lbm_is_number)(value) }
+        unsafe {
+            match (*VESC_IF).lbm_is_number {
+                Some(lbm_is_number) => lbm_is_number(value),
+                None => false,
+            }
+        }
     }
 
     /// # Safety
@@ -841,7 +868,12 @@ pub mod raw {
     /// `handler` must either be `None` or remain valid until replaced or
     /// cleared by a later firmware call.
     pub unsafe fn vesc_set_app_data_handler(handler: Option<AppDataHandler>) -> bool {
-        unsafe { ((*VESC_IF).set_app_data_handler)(handler) }
+        unsafe {
+            match (*VESC_IF).set_app_data_handler {
+                Some(set_app_data_handler) => set_app_data_handler(handler),
+                None => false,
+            }
+        }
     }
 
     /// # Safety
@@ -849,14 +881,23 @@ pub mod raw {
     /// `data` must point to at least `len` bytes that remain valid for the
     /// duration of the firmware call.
     pub unsafe fn vesc_send_app_data(data: *const u8, len: u32) {
-        unsafe { ((*VESC_IF).send_app_data)(data as *mut c_uchar, len) }
+        unsafe {
+            if let Some(send_app_data) = (*VESC_IF).send_app_data {
+                send_app_data(data as *mut c_uchar, len);
+            }
+        }
     }
 
     /// # Safety
     ///
     /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
     pub unsafe fn vesc_system_time_ticks() -> u32 {
-        unsafe { ((*VESC_IF).system_time_ticks)() }
+        unsafe {
+            match (*VESC_IF).system_time_ticks {
+                Some(system_time_ticks) => system_time_ticks(),
+                None => 0,
+            }
+        }
     }
 
     #[cfg(test)]
@@ -879,6 +920,14 @@ pub mod raw {
             core::mem::size_of::<VescIf>(),
             core::mem::align_of::<VescIf>(),
             core::mem::offset_of!(VescIf, shutdown_disable),
+        )
+    }
+
+    #[cfg(test)]
+    pub fn nullable_slot_layout_for_tests() -> (usize, usize) {
+        (
+            core::mem::size_of::<Option<unsafe extern "C" fn()>>(),
+            core::mem::align_of::<Option<unsafe extern "C" fn()>>(),
         )
     }
 }
@@ -1085,6 +1134,16 @@ mod tests {
         assert_eq!(
             super::raw::vesc_if_full_layout_for_tests(),
             (253 * pointer_size, pointer_size, 252 * pointer_size)
+        );
+    }
+
+    #[test]
+    fn raw_vesc_if_callable_slots_are_nullable_c_function_pointers() {
+        let pointer_size = core::mem::size_of::<usize>();
+
+        assert_eq!(
+            super::raw::nullable_slot_layout_for_tests(),
+            (pointer_size, pointer_size)
         );
     }
 
