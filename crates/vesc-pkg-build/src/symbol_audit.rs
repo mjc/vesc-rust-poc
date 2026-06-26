@@ -559,24 +559,18 @@ mod tests {
             .nth(1)
             .expect("expected package_lib_init in disassembly");
 
-        assert!(
-            package_init_disassembly.contains("[r0, #8]"),
-            "expected Rust package init to load lib_info.base_addr before registering Rust-owned pointers:\n{package_init_disassembly}"
-        );
-        for rebase_step in ["add\tr1, r0", "add\tr0, r2", "add\tr0, r4", "add\tr1, r4"] {
+        for expected in [
+            "ldr\tr6, [r0, #8]",
+            "add\tr0, r6",
+            "str\tr0, [r4, #0]",
+            "add\tr1, r6",
+            "blx\tr2",
+        ] {
             assert!(
-                package_init_disassembly.contains(rebase_step),
-                "expected Rust-owned image pointer rebase step `{rebase_step}` before use:\n{package_init_disassembly}"
+                package_init_disassembly.contains(expected),
+                "missing Rust-owned image pointer rebase marker `{expected}` before use:\n{package_init_disassembly}"
             );
         }
-        assert!(
-            package_init_disassembly.contains("add\tr1, r4"),
-            "expected the stop hook rebasing path to use the loaded image base before storing the callback:\n{package_init_disassembly}"
-        );
-        assert!(
-            package_init_disassembly.contains("str\tr1, [r4, #0]"),
-            "expected the stop hook to store a rebased function pointer:\n{package_init_disassembly}"
-        );
     }
 
     #[test]
@@ -593,11 +587,12 @@ mod tests {
             .expect("expected package_lib_init in disassembly");
 
         for expected in [
-            "[r0, #8]",
-            "add\tr1, r0",
-            "str\tr1, [r4, #0]",
+            "ldr\tr6, [r0, #8]",
+            "str\tr0, [r4, #0]",
             "#596]",
             "#0]",
+            "blx\tr1",
+            "blx\tr2",
         ] {
             assert!(
                 package_init_disassembly.contains(expected),
@@ -626,7 +621,7 @@ mod tests {
     }
 
     #[test]
-    fn loader_init_propagates_package_init_failure() {
+    fn loader_init_reports_success_after_best_effort_package_init() {
         build_final_native_lib_elf();
 
         let disassembly = command_stdout(
@@ -646,8 +641,8 @@ mod tests {
             "expected VESC loader init to call package_lib_init:\n{init_disassembly}"
         );
         assert!(
-            !init_disassembly.contains("movs\tr0, #1"),
-            "loader init must return package_lib_init's bool instead of unconditionally reporting success:\n{init_disassembly}"
+            init_disassembly.contains("movs\tr0, #1"),
+            "VESC package examples return true after best-effort setup; loader init should not fail the native load because app-data or extension registration reported false:\n{init_disassembly}"
         );
     }
 

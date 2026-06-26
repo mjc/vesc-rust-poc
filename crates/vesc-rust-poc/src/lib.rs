@@ -20,13 +20,16 @@ pub static prog_ptr: i32 = 0;
 #[no_mangle]
 #[link_section = ".init_fun"]
 pub extern "C" fn init(info: *mut ffi::LibInfo) -> bool {
-    package_lib_init(info)
+    let _ = package_lib_init(info);
+    true
 }
 
 #[cfg(not(test))]
 #[no_mangle]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
-    ble_loopback_device::init_package(info) && package_lifecycle::init_package(info)
+    let _ = ble_loopback_device::init_package(info);
+    let _ = package_lifecycle::init_package(info);
+    true
 }
 
 #[cfg(test)]
