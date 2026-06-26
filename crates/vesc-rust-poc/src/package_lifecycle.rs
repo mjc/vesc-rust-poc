@@ -2,7 +2,7 @@ use core::ffi::CStr;
 
 use crate::ffi::{self, LbmApi, LbmBindings, LbmCount, LbmValue};
 
-const EXT_RUST_ADD_NAME: &CStr = c"ext-rust-add";
+const EXT_RUST_PROBE_NAME: &CStr = c"ext-rust-probe-v5";
 
 pub struct PackageLifecycle<B = ffi::RealBindings> {
     api: LbmApi<B>,
@@ -16,7 +16,7 @@ impl<B: LbmBindings> PackageLifecycle<B> {
     }
 
     pub fn register_extensions_with(&self, handler: ffi::ExtensionHandler) -> i32 {
-        self.api.register_extension(EXT_RUST_ADD_NAME, handler)
+        self.api.register_extension(EXT_RUST_PROBE_NAME, handler)
     }
 
     #[cfg(not(test))]
@@ -48,6 +48,7 @@ fn rust_add_extension_value<B: LbmBindings>(
 mod tests {
     use super::{
         rust_add_extension_value, LbmApi, LbmBindings, LbmCount, LbmValue, PackageLifecycle,
+        EXT_RUST_PROBE_NAME,
     };
     use crate::ffi;
     use core::cell::Cell;
@@ -105,6 +106,10 @@ mod tests {
         let lifecycle = PackageLifecycle::new(bindings);
 
         assert_eq!(lifecycle.register_extensions_with(stub_handler), 17);
+        assert_eq!(
+            EXT_RUST_PROBE_NAME.to_bytes_with_nul(),
+            b"ext-rust-probe-v5\0"
+        );
     }
 
     #[test]

@@ -437,7 +437,7 @@ mod tests {
             text,
             SectionLayout {
                 name: ".text".to_owned(),
-                size: 381,
+                size: 386,
                 vma: 48,
             }
         );

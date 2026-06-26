@@ -310,8 +310,8 @@ pub fn run_lisp_probe() -> Result<LispProbeReport, LoopbackTransportError> {
 
     let mut session = runtime.block_on(open_session(LoopbackTarget::default()))?;
     let command = r#"(progn
-    (print "vesc-rust-probe-v4")
-    (print (ext-rust-add 20 22)))"#;
+    (print "vesc-rust-probe-v5")
+    (print (ext-rust-probe-v5)))"#;
     runtime.block_on(write_ble_uart_packet(
         &session.peripheral,
         &session.rx_char,
@@ -429,8 +429,8 @@ mod tests {
     #[test]
     fn wraps_lisp_probe_commands_in_repl_packets() {
         let command = r#"(progn
-    (print "vesc-rust-probe-v4")
-    (print (ext-rust-add 20 22)))"#;
+    (print "vesc-rust-probe-v5")
+    (print (ext-rust-probe-v5)))"#;
         let packet = build_lisp_repl_packet(command);
         let decoded = PacketDecoder::new()
             .push(&packet)
