@@ -911,7 +911,7 @@ pub mod raw {
 #[cfg(test)]
 mod tests {
     use super::{
-        AltitudeMeters, AnalogRaw, AnalogVoltage, AmpHours, AppDataLen, AppDataPacket,
+        Accel3, AltitudeMeters, AnalogRaw, AnalogVoltage, AmpHours, AppDataLen, AppDataPacket,
         BatteryLevel, BrakeCurrentAmps, CanControllerId, CanFrameLen, CanPayload, CanStatusIndex,
         CfgFloat, CfgInt, CfgParam, CommandPacket, ConfigPayload, ConfigSetResult, ConfigXmlBytes,
         CurrentAmps, Degrees, DistanceMeters, DutyCycle, EepromAddress, EepromVar, Erpm,
@@ -923,7 +923,7 @@ mod tests {
         LoaderBaseAddress, LongitudeDeg, MallocLen, MotorIndex, MutexHandle, MutablePacket,
         NativeAddress, NativeImage, NvmAddress, NvmBytes, NvmLen, OdometerMeters, OffDelaySeconds,
         OwnedFirmwareAllocation, PitchDeg, PlotAxisName, PlotGraphIndex, PlotGraphName, PlotPoint,
-        ProgramAddress, Radians, ReplyPacket, RollDeg, SemaphoreHandle, SecondsF32,
+        ProgramAddress, Quaternion, Radians, ReplyPacket, RollDeg, SemaphoreHandle, SecondsF32,
         SpeedMetersPerSecond, StackSizeBytes, SystemSeconds, SystemTicks, TemperatureC,
         ThreadHandle, ThreadName, ToneFrequencyHz, ToneVoltage, UartBaudRate, UartWriteLen,
         VescIfAbi, VescPin, VescPinMode, Voltage, WattHours, YawDeg,
@@ -1236,5 +1236,36 @@ mod tests {
         assert_eq!(core::mem::size_of::<NvmBytes<'_>>(), core::mem::size_of::<&[u8]>());
         assert_eq!(core::mem::size_of::<EepromAddress>(), core::mem::size_of::<i32>());
         assert_eq!(core::mem::size_of::<EepromVar>(), core::mem::size_of::<i32>());
+    }
+
+    #[test]
+    fn wrapper_helpers_round_trip_their_inner_values() {
+        let raw = [1_u8, 2, 3];
+        let mut mut_raw = [4_u8, 5, 6];
+        let name = c"axis";
+
+        assert_eq!(LbmInt::new(-7).get(), -7);
+        assert_eq!(LbmFloat::new(3.5).get(), 3.5);
+        assert_eq!(HalfDuplex::new(true).is_enabled(), true);
+        assert_eq!(Accel3::new([0.1, 0.2, 0.3]).get(), [0.1, 0.2, 0.3]);
+        assert_eq!(Quaternion::new([1.0, 0.0, 0.0, 0.0]).get(), [1.0, 0.0, 0.0, 0.0]);
+        assert_eq!(ConfigXmlBytes::new(&raw).get(), &raw);
+        assert_eq!(ConfigPayload::new(&raw).get(), &raw);
+        assert_eq!(ThreadName::new(name).get(), name);
+        assert_eq!(CanPayload::new(&raw).get(), &raw);
+        assert_eq!(PlotAxisName::new(name).get(), name);
+        assert_eq!(PlotGraphName::new(name).get(), name);
+        assert_eq!(NvmBytes::new(&raw).get(), &raw);
+        {
+            let mut packet = MutablePacket::new(&mut mut_raw);
+            packet.as_mut_bytes()[0] = 9;
+        }
+        assert_eq!(mut_raw[0], 9);
+        assert_eq!(PlotPoint::new(1.5, 2.5).x(), 1.5);
+        assert_eq!(PlotPoint::new(1.5, 2.5).y(), 2.5);
+        assert_eq!(
+            EulerAngles::new(RollDeg::new(1.0), PitchDeg::new(2.0), YawDeg::new(3.0)).yaw(),
+            YawDeg::new(3.0)
+        );
     }
 }
