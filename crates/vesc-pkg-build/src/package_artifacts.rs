@@ -201,16 +201,20 @@ mod tests {
     use crate::BLE_LOOPBACK_PACKAGE_NAME;
     use std::fs;
     use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    static UNIQUE_ROOT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     fn unique_root() -> PathBuf {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system time")
             .as_nanos();
+        let unique = UNIQUE_ROOT_COUNTER.fetch_add(1, Ordering::Relaxed);
         std::env::temp_dir().join(format!(
-            "vesc-rust-poc-artifacts-{nanos}-{}",
-            std::process::id()
+            "vesc-rust-poc-artifacts-{nanos}-{}-{unique}",
+            std::process::id(),
         ))
     }
 
