@@ -199,12 +199,6 @@ impl HalfDuplex {
     }
 }
 
-transparent_value_type!(pub struct Accel3([f32; 3]););
-transparent_value_type!(pub struct Gyro3([f32; 3]););
-transparent_value_type!(pub struct Mag3([f32; 3]););
-transparent_value_type!(pub struct Quaternion([f32; 4]););
-transparent_value_type!(pub struct ImuCalibration([f32; 3]););
-transparent_value_type!(pub struct ReadCallbackDtSeconds(f32););
 transparent_eq_value_type!(pub struct CfgParam(i32););
 transparent_value_type!(pub struct CfgFloat(f32););
 transparent_eq_value_type!(pub struct CfgInt(i32););
@@ -223,35 +217,6 @@ transparent_eq_value_type_type!(pub struct OwnedFirmwareAllocation<T>(core::ptr:
 transparent_eq_value_type_generic!(pub struct CanPayload<'a>(&'a [u8]););
 transparent_eq_value_type!(pub struct CanStatusIndex(i32););
 transparent_eq_value_type!(pub struct HardwareType(i32););
-transparent_value_type!(pub struct RollDeg(f32););
-transparent_value_type!(pub struct PitchDeg(f32););
-transparent_value_type!(pub struct YawDeg(f32););
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct EulerAngles {
-    pub roll: RollDeg,
-    pub pitch: PitchDeg,
-    pub yaw: YawDeg,
-}
-
-impl EulerAngles {
-    pub const fn new(roll: RollDeg, pitch: PitchDeg, yaw: YawDeg) -> Self {
-        Self { roll, pitch, yaw }
-    }
-
-    pub const fn roll(self) -> RollDeg {
-        self.roll
-    }
-
-    pub const fn pitch(self) -> PitchDeg {
-        self.pitch
-    }
-
-    pub const fn yaw(self) -> YawDeg {
-        self.yaw
-    }
-}
 
 transparent_value_type_generic!(pub struct PlotAxisName<'a>(&'a CStr););
 transparent_value_type_generic!(pub struct PlotGraphName<'a>(&'a CStr););
@@ -282,8 +247,6 @@ transparent_eq_value_type!(pub struct VescPin(i32););
 transparent_eq_value_type!(pub struct VescPinMode(i32););
 transparent_eq_value_type!(pub struct GpioPortPtr(core::ptr::NonNull<c_void>););
 transparent_eq_value_type!(pub struct GpioPin(u32););
-transparent_value_type!(pub struct AnalogVoltage(f32););
-transparent_value_type!(pub struct AnalogRaw(f32););
 transparent_eq_value_type!(pub struct LbmIoSymbol(LbmSymbol););
 transparent_eq_value_type!(pub struct NvmAddress(u32););
 transparent_eq_value_type!(pub struct NvmLen(u32););
@@ -841,21 +804,17 @@ pub mod raw {
 mod tests {
     #[allow(unused_imports)]
     use super::{
-        Accel3, AnalogRaw, AnalogVoltage, AppDataLen, AppDataPacket,
-        Bytes, CanControllerId,
-        CanFrameLen, CanPayload, CanStatusIndex, CfgFloat, CfgInt, CfgParam, CommandPacket,
-        ConfigPayload, ConfigResult, ConfigXmlBytes, EepromAddress, EepromVar, EulerAngles,
-        ExtensionHandler, FirmwareNonNull, FirmwarePtr, GpioPin, GpioPortPtr,
-        HalfDuplex, HardwareType, ImageOffset, LbmApi,
+        AppDataLen, AppDataPacket, Bytes, CanControllerId, CanFrameLen, CanPayload,
+        CanStatusIndex, CfgFloat, CfgInt, CfgParam, CommandPacket, ConfigPayload, ConfigResult,
+        ConfigXmlBytes, EepromAddress, EepromVar, ExtensionHandler, FirmwareNonNull, FirmwarePtr,
+        GpioPin, GpioPortPtr, HalfDuplex, HardwareType, ImageOffset, LbmApi,
         LbmBindings, LbmBoolSymbol, LbmCid, LbmCount, LbmErrorSymbol, LbmFloat, LbmInt,
         LbmIoSymbol, LbmNilSymbol, LbmSymbol, LbmType, LbmUint, LbmValue, LibInfo,
-        LibInfoAbi, LoaderBaseAddress, MallocLen, Mag3, MotorIndex,
-        MutexHandle, MutablePacket, NativeAddress, NativeImage, NvmAddress, NvmBytes, NvmLen,
-        OwnedFirmwareAllocation, PitchDeg, PlotAxisName,
-        PlotGraphIndex, PlotGraphName, PlotPoint, ProgramAddress, Quaternion, ReplyPacket,
-        ReadCallbackDtSeconds, RollDeg, SemaphoreHandle, SecondsF32, StackSizeBytes,
-        SystemSeconds, SystemTicks, ThreadHandle, ThreadName, UartBaudRate, UartWriteLen, Value,
-        VescIfAbi, VescPin, VescPinMode, YawDeg,
+        LibInfoAbi, LoaderBaseAddress, MallocLen, MotorIndex, MutexHandle, MutablePacket,
+        NativeAddress, NativeImage, NvmAddress, NvmBytes, NvmLen, OwnedFirmwareAllocation,
+        PlotAxisName, PlotGraphIndex, PlotGraphName, PlotPoint, ProgramAddress, ReplyPacket,
+        SemaphoreHandle, SecondsF32, StackSizeBytes, SystemSeconds, SystemTicks, ThreadHandle,
+        ThreadName, UartBaudRate, UartWriteLen, Value, VescIfAbi, VescPin, VescPinMode,
     };
     use core::cell::Cell;
     use core::ffi::{c_char, c_void, CStr};
@@ -1097,10 +1056,6 @@ mod tests {
         assert_eq!(core::mem::size_of::<CanPayload<'_>>(), core::mem::size_of::<&[u8]>());
         assert_eq!(core::mem::size_of::<CanStatusIndex>(), core::mem::size_of::<i32>());
         assert_eq!(core::mem::size_of::<HardwareType>(), core::mem::size_of::<i32>());
-        assert_eq!(core::mem::size_of::<RollDeg>(), core::mem::size_of::<f32>());
-        assert_eq!(core::mem::size_of::<PitchDeg>(), core::mem::size_of::<f32>());
-        assert_eq!(core::mem::size_of::<YawDeg>(), core::mem::size_of::<f32>());
-        assert_eq!(core::mem::size_of::<EulerAngles>(), core::mem::size_of::<f32>() * 3);
         assert_eq!(
             core::mem::size_of::<PlotAxisName<'_>>(),
             core::mem::size_of::<&CStr>()
@@ -1115,8 +1070,6 @@ mod tests {
         assert_eq!(core::mem::size_of::<VescPinMode>(), core::mem::size_of::<i32>());
         assert_eq!(core::mem::size_of::<GpioPortPtr>(), core::mem::size_of::<usize>());
         assert_eq!(core::mem::size_of::<GpioPin>(), core::mem::size_of::<u32>());
-        assert_eq!(core::mem::size_of::<AnalogVoltage>(), core::mem::size_of::<f32>());
-        assert_eq!(core::mem::size_of::<AnalogRaw>(), core::mem::size_of::<f32>());
         assert_eq!(core::mem::size_of::<LbmIoSymbol>(), core::mem::size_of::<LbmSymbol>());
         assert_eq!(core::mem::size_of::<NvmAddress>(), core::mem::size_of::<u32>());
         assert_eq!(core::mem::size_of::<NvmLen>(), core::mem::size_of::<u32>());
@@ -1134,8 +1087,6 @@ mod tests {
         assert_eq!(LbmInt::new(-7).get(), -7);
         assert_eq!(LbmFloat::new(3.5).get(), 3.5);
         assert_eq!(HalfDuplex::new(true).is_enabled(), true);
-        assert_eq!(Accel3::new([0.1, 0.2, 0.3]).get(), [0.1, 0.2, 0.3]);
-        assert_eq!(Quaternion::new([1.0, 0.0, 0.0, 0.0]).get(), [1.0, 0.0, 0.0, 0.0]);
         assert_eq!(ConfigXmlBytes::new(&raw).get(), &raw);
         assert_eq!(ConfigPayload::new(&raw).get(), &raw);
         assert_eq!(ThreadName::new(name).get(), name);
@@ -1150,10 +1101,6 @@ mod tests {
         assert_eq!(mut_raw[0], 9);
         assert_eq!(PlotPoint::new(1.5, 2.5).x(), 1.5);
         assert_eq!(PlotPoint::new(1.5, 2.5).y(), 2.5);
-        assert_eq!(
-            EulerAngles::new(RollDeg::new(1.0), PitchDeg::new(2.0), YawDeg::new(3.0)).yaw(),
-            YawDeg::new(3.0)
-        );
     }
 
     #[test]
@@ -1171,12 +1118,7 @@ mod tests {
         let config_payload: ConfigPayload<'_> = (&payload[..]).into();
         let xml_bytes: ConfigXmlBytes<'_> = (&payload[..]).into();
         let nvm_bytes: NvmBytes<'_> = (&payload[..]).into();
-        let angle = RollDeg::new(90.0);
-        let pitch = PitchDeg::new(45.0);
-        let yaw = YawDeg::new(15.0);
         let half_duplex: HalfDuplex = true.into();
-        let accel: Accel3 = [1.0, 2.0, 3.0].into();
-        let quat: Quaternion = [1.0, 0.0, 0.0, 0.0].into();
         let graph_name: PlotGraphName<'_> = name.into();
 
         assert_eq!(int_value.get(), -7);
@@ -1191,12 +1133,6 @@ mod tests {
         assert_eq!(xml_bytes.get(), &payload);
         assert_eq!(nvm_bytes.get(), &payload);
         assert_eq!(half_duplex.is_enabled(), true);
-        assert_eq!(accel.get(), [1.0, 2.0, 3.0]);
-        assert_eq!(quat.get(), [1.0, 0.0, 0.0, 0.0]);
-        assert_eq!(
-            EulerAngles::new(angle, pitch, yaw),
-            EulerAngles::new(angle, pitch, yaw)
-        );
         assert_eq!(graph_name.get(), name);
     }
 
