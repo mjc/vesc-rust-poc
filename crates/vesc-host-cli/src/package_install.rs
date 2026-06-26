@@ -136,6 +136,7 @@ impl PackageInstallTransport for FakePackageInstallTransport {
 }
 
 pub fn read_package_from_path(path: impl AsRef<Path>) -> Result<VescPackage, PackageInstallError> {
+    let path = normalize_package_path(path.as_ref());
     let data = fs::read(path).map_err(|error| PackageInstallError::Io(error.to_string()))?;
     decode_package(&data)
 }
@@ -277,6 +278,21 @@ fn invalid_utf8(_: std::string::FromUtf8Error) -> PackageInstallError {
     PackageInstallError::InvalidPackage
 }
 
+fn normalize_package_path(path: &Path) -> std::path::PathBuf {
+    let path_str = path.to_string_lossy();
+    for prefix in ["file://", "file:/"] {
+        if let Some(rest) = path_str.strip_prefix(prefix) {
+            if rest.starts_with('/') {
+                return std::path::PathBuf::from(rest);
+            }
+
+            return std::path::PathBuf::from(format!("/{rest}"));
+        }
+    }
+
+    path.to_path_buf()
+}
+
 fn qml_compress(script: &str) -> Result<Vec<u8>, PackageInstallError> {
     let raw = format!("import \"qrc:/mobile\";import Vedder.vesc.vescinterface 1.0;{script}")
         .into_bytes();
@@ -387,6 +403,17 @@ mod tests {
             package.lisp_data.len() < 128 * 1024,
             "fixture should stay below the VESC Lisp data limit"
         );
+    }
+
+    #[test]
+    fn strips_file_uri_prefixes_from_package_paths() {
+        let path = Path::new("file:/home/mjc/projects/refloat/refloat.vescpkg");
+        if !Path::new("/home/mjc/projects/refloat/refloat.vescpkg").exists() {
+            return;
+        }
+
+        let package = read_package_from_path(path).expect("package");
+        assert_eq!(package.name, "Refloat");
     }
 
     #[test]
