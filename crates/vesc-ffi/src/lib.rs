@@ -2,109 +2,82 @@
 
 use core::ffi::{c_char, c_void, CStr};
 
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LbmValue(pub u32);
+macro_rules! transparent_value_type {
+    ($(#[$meta:meta])* $vis:vis struct $name:ident($inner:ty);) => {
+        $(#[$meta])*
+        #[repr(transparent)]
+        #[derive(Debug, Clone, Copy, PartialEq)]
+        $vis struct $name(pub $inner);
 
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LbmCount(pub u32);
+        impl $name {
+            pub const fn new(value: $inner) -> Self {
+                Self(value)
+            }
 
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LbmInt(pub i32);
+            pub const fn get(self) -> $inner {
+                self.0
+            }
+        }
 
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LbmUint(pub u32);
+        impl From<$inner> for $name {
+            fn from(value: $inner) -> Self {
+                Self(value)
+            }
+        }
+    };
+}
 
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LbmType(pub u32);
+macro_rules! transparent_eq_value_type {
+    ($(#[$meta:meta])* $vis:vis struct $name:ident($inner:ty);) => {
+        $(#[$meta])*
+        #[repr(transparent)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        $vis struct $name(pub $inner);
 
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LbmCid(pub u32);
+        impl $name {
+            pub const fn new(value: $inner) -> Self {
+                Self(value)
+            }
 
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct LbmFloat(pub f32);
+            pub const fn get(self) -> $inner {
+                self.0
+            }
+        }
 
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LbmSymbol(pub u32);
+        impl From<$inner> for $name {
+            fn from(value: $inner) -> Self {
+                Self(value)
+            }
+        }
+    };
+}
 
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LbmErrorSymbol(pub u32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LbmBoolSymbol(pub u32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LbmNilSymbol(pub u32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ProgramAddress(pub u32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LoaderBaseAddress(pub u32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Milliseconds(pub u32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Microseconds(pub u32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SecondsF32(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SystemTicks(pub u32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SystemSeconds(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Degrees(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Radians(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Erpm(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DutyCycle(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct CurrentAmps(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct BrakeCurrentAmps(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct InputCurrentAmps(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Voltage(pub f32);
+transparent_eq_value_type!(pub struct LbmValue(u32););
+transparent_eq_value_type!(pub struct LbmCount(u32););
+transparent_eq_value_type!(pub struct LbmInt(i32););
+transparent_eq_value_type!(pub struct LbmUint(u32););
+transparent_eq_value_type!(pub struct LbmType(u32););
+transparent_eq_value_type!(pub struct LbmCid(u32););
+transparent_value_type!(pub struct LbmFloat(f32););
+transparent_eq_value_type!(pub struct LbmSymbol(u32););
+transparent_eq_value_type!(pub struct LbmErrorSymbol(u32););
+transparent_eq_value_type!(pub struct LbmBoolSymbol(u32););
+transparent_eq_value_type!(pub struct LbmNilSymbol(u32););
+transparent_eq_value_type!(pub struct ProgramAddress(u32););
+transparent_eq_value_type!(pub struct LoaderBaseAddress(u32););
+transparent_eq_value_type!(pub struct Milliseconds(u32););
+transparent_eq_value_type!(pub struct Microseconds(u32););
+transparent_value_type!(pub struct SecondsF32(f32););
+transparent_eq_value_type!(pub struct SystemTicks(u32););
+transparent_value_type!(pub struct SystemSeconds(f32););
+transparent_value_type!(pub struct Degrees(f32););
+transparent_value_type!(pub struct Radians(f32););
+transparent_value_type!(pub struct Erpm(f32););
+transparent_value_type!(pub struct DutyCycle(f32););
+transparent_value_type!(pub struct CurrentAmps(f32););
+transparent_value_type!(pub struct BrakeCurrentAmps(f32););
+transparent_value_type!(pub struct InputCurrentAmps(f32););
+transparent_value_type!(pub struct Voltage(f32););
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
