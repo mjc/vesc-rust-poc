@@ -206,6 +206,11 @@ impl<B: LbmBindings> LbmApi<B> {
         Self { bindings }
     }
 
+    #[cfg(test)]
+    pub(crate) fn bindings(&self) -> &B {
+        &self.bindings
+    }
+
     pub fn register_extension(&self, name: &CStr, handler: ExtensionHandler) -> i32 {
         unsafe { self.bindings.add_extension(name.as_ptr(), handler) }
     }

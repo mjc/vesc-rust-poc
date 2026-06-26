@@ -25,7 +25,6 @@ pub fn unexpected_undefined_symbols(nm_output: &str) -> BTreeSet<String> {
 pub fn is_allowed_runtime_symbol(symbol: &str) -> bool {
     symbol.starts_with('_')
         || symbol == "fma"
-        || symbol == "ext_c_probe_v6"
         || matches!(symbol, "lbm_add_extension" | "lbm_dec_as_i32" | "lbm_enc_i")
 }
 
@@ -422,7 +421,7 @@ mod tests {
             init_fun,
             SectionLayout {
                 name: ".init_fun".to_owned(),
-                size: 44,
+                size: 12,
                 vma: 4,
             }
         );
@@ -431,15 +430,15 @@ mod tests {
             SectionLayout {
                 name: ".got".to_owned(),
                 size: 0,
-                vma: 48,
+                vma: 16,
             }
         );
         assert_eq!(
             text,
             SectionLayout {
                 name: ".text".to_owned(),
-                size: 433,
-                vma: 48,
+                size: 402,
+                vma: 16,
             }
         );
         assert_eq!(init_fun.vma, program_ptr.vma + program_ptr.size);
@@ -456,15 +455,15 @@ mod tests {
     }
 
     #[test]
-    fn c_shim_object_exposes_only_the_current_loader_and_probe_contract() {
+    fn c_shim_object_no_longer_exposes_package_entry_or_extension_symbols() {
         build_final_native_lib_elf();
 
         let output = nm_output(&package_lib_object_path());
         let defined = defined_symbols(&output);
 
         assert!(
-            defined.contains("ext_c_probe_v6"),
-            "expected C shim object to define the temporary C probe symbol:\n{output}"
+            !defined.contains("ext_c_probe_v6"),
+            "expected C shim object to drop the temporary C probe symbol:\n{output}"
         );
         assert!(
             !defined.contains("init"),
@@ -481,19 +480,23 @@ mod tests {
     }
 
     #[test]
-    fn final_native_lib_retains_the_current_c_shim_boundary_symbols() {
+    fn final_native_lib_retains_the_rust_owned_boundary_symbols() {
         build_final_native_lib_elf();
 
         let output = nm_output(&native_lib_elf_path());
         let defined = defined_symbols(&output);
         let undefined = undefined_symbols(&output);
 
-        for symbol in ["init", "ext_c_probe_v6", "package_lib_init"] {
+        for symbol in ["init", "package_lib_init"] {
             assert!(
                 defined.contains(symbol),
                 "expected final native image to retain current boundary symbol `{symbol}`:\n{output}"
             );
         }
+        assert!(
+            !defined.contains("ext_c_probe_v6"),
+            "expected final native image to drop the temporary C probe after Rust-owned registration:\n{output}"
+        );
         assert!(
             undefined.is_empty(),
             "expected final native image to resolve the C-to-Rust boundary completely:\n{output}"

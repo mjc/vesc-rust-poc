@@ -4,6 +4,45 @@ use crate::ffi::{self, LbmApi, LbmBindings, LbmCount, LbmValue, NativeImage};
 
 const EXT_RUST_PROBE_NAME: &CStr = c"ext-rust-probe-v5";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExtensionNameError {
+    MissingExtPrefix,
+}
+
+#[derive(Clone, Copy)]
+pub struct ExtensionDescriptor {
+    name: &'static CStr,
+    handler: ffi::ExtensionHandler,
+}
+
+impl ExtensionDescriptor {
+    pub const fn new(name: &'static CStr, handler: ffi::ExtensionHandler) -> Self {
+        Self { name, handler }
+    }
+
+    pub const fn name(self) -> &'static CStr {
+        self.name
+    }
+
+    pub const fn handler(self) -> ffi::ExtensionHandler {
+        self.handler
+    }
+
+    pub fn validate(self) -> Result<Self, ExtensionNameError> {
+        if self.name.to_bytes().starts_with(b"ext-") {
+            Ok(self)
+        } else {
+            Err(ExtensionNameError::MissingExtPrefix)
+        }
+    }
+}
+
+#[cfg(not(test))]
+const PACKAGE_EXTENSIONS: [ExtensionDescriptor; 1] =
+    [ExtensionDescriptor::new(EXT_RUST_PROBE_NAME, ext_rust_add)];
+
+pub const PACKAGE_EXTENSION_NAMES: [&CStr; 1] = [EXT_RUST_PROBE_NAME];
+
 pub struct PackageLifecycle<B = ffi::RealBindings> {
     api: LbmApi<B>,
 }
@@ -15,22 +54,43 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         }
     }
 
-    pub fn register_extensions_with(&self, handler: ffi::ExtensionHandler) -> i32 {
-        self.api.register_extension(EXT_RUST_PROBE_NAME, handler)
+    pub fn register_extension(&self, descriptor: ExtensionDescriptor) -> i32 {
+        let descriptor = match descriptor.validate() {
+            Ok(descriptor) => descriptor,
+            Err(_) => return -1,
+        };
+
+        self.api
+            .register_extension(descriptor.name(), descriptor.handler())
+    }
+
+    pub fn register_extension_from_image(
+        &self,
+        image: NativeImage,
+        descriptor: ExtensionDescriptor,
+    ) -> i32 {
+        let descriptor = match descriptor.validate() {
+            Ok(descriptor) => descriptor,
+            Err(_) => return -1,
+        };
+
+        self.api
+            .register_extension_from_image(image, descriptor.name(), descriptor.handler())
     }
 
     pub fn register_extensions_from_image(
         &self,
         image: NativeImage,
-        handler: ffi::ExtensionHandler,
+        descriptors: &[ExtensionDescriptor],
     ) -> i32 {
-        self.api
-            .register_extension_from_image(image, EXT_RUST_PROBE_NAME, handler)
+        descriptors.iter().fold(0, |_, descriptor| {
+            self.register_extension_from_image(image, *descriptor)
+        })
     }
 
     #[cfg(not(test))]
     pub fn register_extensions(&self, image: NativeImage) -> i32 {
-        self.register_extensions_from_image(image, ext_rust_add)
+        self.register_extensions_from_image(image, &PACKAGE_EXTENSIONS)
     }
 }
 
@@ -60,8 +120,8 @@ fn rust_add_extension_value<B: LbmBindings>(
 #[cfg(test)]
 mod tests {
     use super::{
-        rust_add_extension_value, LbmApi, LbmBindings, LbmCount, LbmValue, PackageLifecycle,
-        EXT_RUST_PROBE_NAME,
+        rust_add_extension_value, ExtensionDescriptor, ExtensionNameError, LbmApi, LbmBindings,
+        LbmCount, LbmValue, PackageLifecycle, EXT_RUST_PROBE_NAME, PACKAGE_EXTENSION_NAMES,
     };
     use crate::ffi;
     use core::cell::Cell;
@@ -70,6 +130,8 @@ mod tests {
     struct FakeBindings {
         add_calls: Cell<usize>,
         decode_calls: Cell<usize>,
+        last_name: Cell<usize>,
+        last_handler: Cell<usize>,
     }
 
     impl FakeBindings {
@@ -77,17 +139,17 @@ mod tests {
             Self {
                 add_calls: Cell::new(0),
                 decode_calls: Cell::new(0),
+                last_name: Cell::new(0),
+                last_handler: Cell::new(0),
             }
         }
     }
 
     impl LbmBindings for FakeBindings {
-        unsafe fn add_extension(
-            &self,
-            _name: *const c_char,
-            _handler: ffi::ExtensionHandler,
-        ) -> i32 {
+        unsafe fn add_extension(&self, name: *const c_char, handler: ffi::ExtensionHandler) -> i32 {
             self.add_calls.set(self.add_calls.get() + 1);
+            self.last_name.set(name as usize);
+            self.last_handler.set(handler as usize);
             17
         }
 
@@ -117,11 +179,56 @@ mod tests {
     fn registers_the_rust_extension_through_the_lifecycle_helper() {
         let bindings = FakeBindings::new();
         let lifecycle = PackageLifecycle::new(bindings);
+        let descriptor = ExtensionDescriptor::new(EXT_RUST_PROBE_NAME, stub_handler);
 
-        assert_eq!(lifecycle.register_extensions_with(stub_handler), 17);
+        assert_eq!(lifecycle.register_extension(descriptor), 17);
+        assert_eq!(lifecycle.api.bindings().add_calls.get(), 1);
         assert_eq!(
             EXT_RUST_PROBE_NAME.to_bytes_with_nul(),
             b"ext-rust-probe-v5\0"
+        );
+    }
+
+    #[test]
+    fn package_extension_table_lists_every_rust_owned_extension() {
+        assert_eq!(PACKAGE_EXTENSION_NAMES, [EXT_RUST_PROBE_NAME]);
+        assert!(PACKAGE_EXTENSION_NAMES
+            .iter()
+            .all(|name| name.to_bytes().starts_with(b"ext-")));
+    }
+
+    #[test]
+    fn rejects_non_extension_names_before_calling_firmware() {
+        let bindings = FakeBindings::new();
+        let lifecycle = PackageLifecycle::new(bindings);
+        let descriptor = ExtensionDescriptor::new(c"rust-probe-v5", stub_handler);
+
+        assert!(matches!(
+            descriptor.validate(),
+            Err(ExtensionNameError::MissingExtPrefix)
+        ));
+        assert_eq!(lifecycle.register_extension(descriptor), -1);
+        assert_eq!(lifecycle.api.bindings().add_calls.get(), 0);
+    }
+
+    #[test]
+    fn registration_table_rebases_names_and_callbacks_from_the_native_image() {
+        let bindings = FakeBindings::new();
+        let lifecycle = PackageLifecycle::new(bindings);
+        let image = ffi::NativeImage::new(0x2000);
+        let descriptor = ExtensionDescriptor::new(EXT_RUST_PROBE_NAME, stub_handler);
+
+        assert_eq!(
+            lifecycle.register_extensions_from_image(image, &[descriptor]),
+            17
+        );
+        assert_eq!(
+            lifecycle.api.bindings().last_name.get(),
+            EXT_RUST_PROBE_NAME.as_ptr() as usize + 0x2000
+        );
+        assert_eq!(
+            lifecycle.api.bindings().last_handler.get(),
+            stub_handler as *const () as usize + 0x2000
         );
     }
 
