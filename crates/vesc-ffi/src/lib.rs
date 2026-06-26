@@ -161,17 +161,11 @@ transparent_eq_value_type!(pub struct MotorIndex(i32););
 transparent_eq_value_type!(pub struct CanControllerId(u8););
 transparent_eq_value_type!(pub struct CanFrameLen(u8););
 
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct AppDataPacket<'a>(pub &'a [u8]);
+transparent_value_type_generic!(pub struct AppDataPacket<'a>(&'a [u8]););
 
 impl<'a> AppDataPacket<'a> {
-    pub const fn new(bytes: &'a [u8]) -> Self {
-        Self(bytes)
-    }
-
     pub const fn as_bytes(self) -> &'a [u8] {
-        self.0
+        self.get()
     }
 }
 
@@ -189,31 +183,19 @@ impl<'a> MutablePacket<'a> {
     }
 }
 
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct CommandPacket<'a>(pub &'a [u8]);
+transparent_value_type_generic!(pub struct CommandPacket<'a>(&'a [u8]););
 
 impl<'a> CommandPacket<'a> {
-    pub const fn new(bytes: &'a [u8]) -> Self {
-        Self(bytes)
-    }
-
     pub const fn as_bytes(self) -> &'a [u8] {
-        self.0
+        self.get()
     }
 }
 
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ReplyPacket<'a>(pub &'a [u8]);
+transparent_value_type_generic!(pub struct ReplyPacket<'a>(&'a [u8]););
 
 impl<'a> ReplyPacket<'a> {
-    pub const fn new(bytes: &'a [u8]) -> Self {
-        Self(bytes)
-    }
-
     pub const fn as_bytes(self) -> &'a [u8] {
-        self.0
+        self.get()
     }
 }
 
