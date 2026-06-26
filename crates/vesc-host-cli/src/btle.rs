@@ -3,10 +3,12 @@ use crate::ble_discovery::{
     DiscoveredPeripheral, DiscoveryError,
 };
 use crate::loopback::{LoopbackTarget, LoopbackTransport, LoopbackTransportError};
+use crate::vesc_uart::{encode_packet, PacketDecoder};
 use btleplug::api::{Central, Characteristic, Manager as _, Peripheral as _, WriteType};
 use btleplug::platform::{Manager, Peripheral};
 use futures_util::StreamExt;
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::sync::mpsc::{self, Receiver};
 use std::time::Duration;
 use tokio::runtime::{Builder, Runtime};
@@ -16,6 +18,7 @@ use uuid::Uuid;
 const VESC_BLE_UART_SERVICE_UUID: Uuid = Uuid::from_u128(0x6e400001b5a3f393e0a9e50e24dcca9e);
 const VESC_BLE_UART_RX_UUID: Uuid = Uuid::from_u128(0x6e400002b5a3f393e0a9e50e24dcca9e);
 const VESC_BLE_UART_TX_UUID: Uuid = Uuid::from_u128(0x6e400003b5a3f393e0a9e50e24dcca9e);
+const COMM_CUSTOM_APP_DATA: u8 = 36;
 
 const SCAN_TIMEOUT: Duration = Duration::from_secs(8);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
@@ -27,6 +30,8 @@ struct BtleSession {
     peripheral: Peripheral,
     rx_char: Characteristic,
     responses: Receiver<Vec<u8>>,
+    decoder: PacketDecoder,
+    pending: VecDeque<Vec<u8>>,
 }
 
 #[derive(Debug)]
@@ -76,13 +81,13 @@ impl LoopbackTransport for BtleLoopbackTransport {
     }
 
     fn exchange(&self, request: &[u8]) -> Result<Vec<u8>, LoopbackTransportError> {
-        let session = self.session()?;
-        let session = session.as_ref().expect("session checked above");
+        let mut session = self.session()?;
+        let session = session.as_mut().expect("session checked above");
         self.runtime
             .block_on(write_ble_uart_packet(
                 &session.peripheral,
                 &session.rx_char,
-                request,
+                &build_custom_app_data_packet(request),
             ))
             .map_err(|_| LoopbackTransportError::Device("failed to write BLE request"))?;
         session.runtime_receive()
@@ -90,10 +95,51 @@ impl LoopbackTransport for BtleLoopbackTransport {
 }
 
 impl BtleSession {
-    fn runtime_receive(&self) -> Result<Vec<u8>, LoopbackTransportError> {
-        self.responses
-            .recv_timeout(RESPONSE_TIMEOUT)
-            .map_err(|_| LoopbackTransportError::Device("timed out waiting for a BLE reply"))
+    fn runtime_receive(&mut self) -> Result<Vec<u8>, LoopbackTransportError> {
+        if let Some(packet) = self.take_pending_response() {
+            return Ok(packet);
+        }
+
+        loop {
+            if let Some(packet) = self.decoder.pop_ready() {
+                if packet.first().copied() == Some(COMM_CUSTOM_APP_DATA) {
+                    return Ok(packet[1..].to_vec());
+                }
+
+                self.pending.push_back(packet);
+                continue;
+            }
+
+            let bytes = self.responses.recv_timeout(RESPONSE_TIMEOUT).map_err(|_| {
+                LoopbackTransportError::Device("timed out waiting for a loopback reply")
+            })?;
+
+            let packets = self
+                .decoder
+                .push(&bytes)
+                .map_err(|_| LoopbackTransportError::Device("failed to decode a loopback reply"))?;
+            for packet in packets {
+                if packet.first().copied() == Some(COMM_CUSTOM_APP_DATA) {
+                    return Ok(packet[1..].to_vec());
+                }
+
+                self.pending.push_back(packet);
+            }
+
+            if let Some(packet) = self.take_pending_response() {
+                return Ok(packet);
+            }
+        }
+    }
+
+    fn take_pending_response(&mut self) -> Option<Vec<u8>> {
+        let response_index = self
+            .pending
+            .iter()
+            .position(|packet| packet.first().copied() == Some(COMM_CUSTOM_APP_DATA))?;
+        let packet = self.pending.remove(response_index)?;
+
+        Some(packet[1..].to_vec())
     }
 }
 
@@ -169,7 +215,16 @@ async fn open_session(target: LoopbackTarget) -> Result<BtleSession, LoopbackTra
         peripheral,
         rx_char,
         responses: responses_rx,
+        decoder: PacketDecoder::new(),
+        pending: VecDeque::new(),
     })
+}
+
+fn build_custom_app_data_packet(payload: &[u8]) -> Vec<u8> {
+    let mut data = Vec::with_capacity(payload.len() + 1);
+    data.push(COMM_CUSTOM_APP_DATA);
+    data.extend_from_slice(payload);
+    encode_packet(&data)
 }
 
 async fn write_ble_uart_packet(
@@ -241,7 +296,11 @@ pub fn vesc_ble_uart_tx_uuid() -> Uuid {
 
 #[cfg(test)]
 mod tests {
-    use super::{vesc_ble_uart_rx_uuid, vesc_ble_uart_service_uuid, vesc_ble_uart_tx_uuid};
+    use super::{
+        build_custom_app_data_packet, vesc_ble_uart_rx_uuid, vesc_ble_uart_service_uuid,
+        vesc_ble_uart_tx_uuid, COMM_CUSTOM_APP_DATA,
+    };
+    use crate::vesc_uart::PacketDecoder;
 
     #[test]
     fn exports_the_vesc_ble_uart_profile_uuids() {
@@ -257,5 +316,17 @@ mod tests {
             vesc_ble_uart_tx_uuid().to_string(),
             "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
         );
+    }
+
+    #[test]
+    fn wraps_loopback_requests_in_custom_app_data_packets() {
+        let packet = build_custom_app_data_packet(&[1, 2, 3]);
+        let decoded = PacketDecoder::new()
+            .push(&packet)
+            .expect("decoded packet")
+            .pop()
+            .expect("complete packet");
+
+        assert_eq!(decoded, vec![COMM_CUSTOM_APP_DATA, 1, 2, 3]);
     }
 }

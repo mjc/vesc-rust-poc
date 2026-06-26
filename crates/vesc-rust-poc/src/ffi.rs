@@ -14,6 +14,7 @@ pub struct LibInfo {
 }
 
 pub type ExtensionHandler = unsafe extern "C" fn(*mut LbmValue, LbmCount) -> LbmValue;
+pub type AppDataHandler = unsafe extern "C" fn(*mut u8, u32);
 
 pub trait LbmBindings {
     /// # Safety
@@ -67,8 +68,19 @@ impl<B: LbmBindings> LbmApi<B> {
 }
 
 pub(crate) mod raw {
-    use super::{ExtensionHandler, LbmValue};
+    use super::{AppDataHandler, ExtensionHandler, LbmValue};
     use core::ffi::c_char;
+
+    #[repr(C)]
+    pub(crate) struct VescIf {
+        _pad0: [u8; 592],
+        send_app_data: unsafe extern "C" fn(*mut u8, u32),
+        set_app_data_handler: unsafe extern "C" fn(Option<AppDataHandler>) -> bool,
+        _pad1: [u8; 352],
+        system_time_ticks: unsafe extern "C" fn() -> u32,
+    }
+
+    const VESC_IF: *const VescIf = 0x1000_f800 as *const VescIf;
 
     extern "C" {
         #[link_name = "lbm_add_extension"]
@@ -92,6 +104,18 @@ pub(crate) mod raw {
     pub(crate) unsafe fn lbm_enc_i(value: i32) -> LbmValue {
         // Safety: the firmware encodes the integer into an opaque LispBM value.
         raw_lbm_enc_i(value)
+    }
+
+    pub(crate) unsafe fn vesc_set_app_data_handler(handler: Option<AppDataHandler>) -> bool {
+        ((*VESC_IF).set_app_data_handler)(handler)
+    }
+
+    pub(crate) unsafe fn vesc_send_app_data(data: *const u8, len: u32) {
+        ((*VESC_IF).send_app_data)(data as *mut u8, len)
+    }
+
+    pub(crate) unsafe fn vesc_system_time_ticks() -> u32 {
+        ((*VESC_IF).system_time_ticks)()
     }
 }
 

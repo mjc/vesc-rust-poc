@@ -1,8 +1,11 @@
 use core::cell::{Cell, RefCell};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use vesc_protocol::ble_loopback::{LoopbackError, LoopbackPacket};
+use vesc_protocol::ble_loopback::{
+    LoopbackError, LoopbackPacket, BLE_LOOPBACK_PROTOCOL_VERSION, MAX_LOOPBACK_PAYLOAD_BYTES,
+};
 use vesc_protocol::WireCommand;
+use vesc_protocol::WireVersion;
 
 const MAX_FRAME_BYTES: usize = 19;
 const MAX_LOGS: usize = 8;
@@ -184,6 +187,73 @@ impl<S: DeviceServices> LoopbackPackageRuntime<S> {
     }
 }
 
+pub fn handle_loopback_frame(
+    bytes: &[u8],
+    now_ms: u64,
+) -> Result<([u8; 19], usize), LoopbackError> {
+    if bytes.len() < 3 {
+        return Err(LoopbackError::FrameTooShort);
+    }
+
+    let actual_version = WireVersion::new(bytes[0]);
+    if actual_version != BLE_LOOPBACK_PROTOCOL_VERSION {
+        return Err(LoopbackError::InvalidVersion {
+            expected: BLE_LOOPBACK_PROTOCOL_VERSION,
+            actual: actual_version,
+        });
+    }
+
+    let command =
+        WireCommand::from_code(bytes[1]).ok_or(LoopbackError::InvalidCommand { code: bytes[1] })?;
+    let payload_len = bytes[2] as usize;
+    if payload_len > MAX_LOOPBACK_PAYLOAD_BYTES {
+        return Err(LoopbackError::PayloadTooLong {
+            len: payload_len,
+            max: MAX_LOOPBACK_PAYLOAD_BYTES,
+        });
+    }
+
+    let required = 3 + payload_len;
+    if bytes.len() < required {
+        return Err(LoopbackError::FrameTooShort);
+    }
+
+    let status_bytes = now_ms.to_le_bytes();
+    let payload = match command {
+        WireCommand::Ping | WireCommand::Teardown => &[][..],
+        WireCommand::Echo => &bytes[3..required],
+        WireCommand::Status => &status_bytes,
+    };
+
+    let mut response = [0_u8; 19];
+    response[0] = BLE_LOOPBACK_PROTOCOL_VERSION.raw();
+    response[1] = command.code();
+    response[2] = payload.len() as u8;
+
+    let mut index = 0;
+    while index < payload.len() {
+        response[3 + index] = payload[index];
+        index += 1;
+    }
+
+    Ok((response, 3 + payload.len()))
+}
+
+#[cfg(not(test))]
+unsafe extern "C" fn app_data_handler(data: *mut u8, len: u32) {
+    if data.is_null() {
+        return;
+    }
+
+    let bytes = core::slice::from_raw_parts(data as *const u8, len as usize);
+    let now_ticks = crate::ffi::raw::vesc_system_time_ticks();
+    let now_ms = u64::from(now_ticks) / 10;
+
+    if let Ok((response, response_len)) = handle_loopback_frame(bytes, now_ms) {
+        crate::ffi::raw::vesc_send_app_data(response.as_ptr(), response_len as u32);
+    }
+}
+
 #[derive(Debug)]
 pub struct NullDeviceServices;
 
@@ -350,17 +420,16 @@ impl DeviceServices for &FakeDeviceServices {
 
 static INIT_CALLS: AtomicUsize = AtomicUsize::new(0);
 
+#[cfg(not(test))]
 pub fn init_package() {
-    let services = NullDeviceServices;
-    let mut runtime = LoopbackPackageRuntime::new(services);
-
-    let _ = runtime.start();
-    let _ = runtime.tick();
+    // Safety: the bridge registers a static callback with the firmware ABI.
+    unsafe {
+        let _ = crate::ffi::raw::vesc_set_app_data_handler(Some(app_data_handler));
+    }
 }
 
 pub fn init_package_for_tests() {
     INIT_CALLS.fetch_add(1, Ordering::SeqCst);
-    init_package();
 }
 
 pub fn reset_init_call_count_for_tests() {
@@ -374,8 +443,8 @@ pub fn init_call_count_for_tests() -> usize {
 #[cfg(test)]
 mod tests {
     use super::{
-        init_call_count_for_tests, reset_init_call_count_for_tests, BleFrame, FakeDeviceServices,
-        LoopbackPackageRuntime, LoopbackPackageState, LoopbackTick,
+        handle_loopback_frame, init_call_count_for_tests, reset_init_call_count_for_tests,
+        BleFrame, FakeDeviceServices, LoopbackPackageRuntime, LoopbackPackageState, LoopbackTick,
     };
     use vesc_protocol::ble_loopback::LoopbackPacket;
     use vesc_protocol::WireCommand;
@@ -474,5 +543,35 @@ mod tests {
         super::init_package_for_tests();
 
         assert_eq!(init_call_count_for_tests(), 1);
+    }
+
+    #[test]
+    fn app_data_ping_echoes_the_frame_back() {
+        let request = frame(WireCommand::Ping, &[]);
+        let (response, len) =
+            handle_loopback_frame(request.as_slice(), 1234).expect("loopback response");
+
+        assert_eq!(&response[..len], frame(WireCommand::Ping, &[]).as_slice());
+    }
+
+    #[test]
+    fn app_data_status_uses_device_time() {
+        let request = frame(WireCommand::Status, &[]);
+        let (response, len) =
+            handle_loopback_frame(request.as_slice(), 0x0102_0304_0506_0708).expect("status");
+
+        assert_eq!(
+            &response[..len],
+            frame(
+                WireCommand::Status,
+                &0x0102_0304_0506_0708_u64.to_le_bytes()
+            )
+            .as_slice()
+        );
+    }
+
+    #[test]
+    fn app_data_rejects_invalid_frames() {
+        assert!(handle_loopback_frame(&[9, 1, 0], 0).is_err());
     }
 }
