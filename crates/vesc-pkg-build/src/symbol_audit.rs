@@ -25,6 +25,7 @@ pub fn unexpected_undefined_symbols(nm_output: &str) -> BTreeSet<String> {
 pub fn is_allowed_runtime_symbol(symbol: &str) -> bool {
     symbol.starts_with('_')
         || symbol == "fma"
+        || symbol == "ext_c_probe_v6"
         || matches!(symbol, "lbm_add_extension" | "lbm_dec_as_i32" | "lbm_enc_i")
 }
 
@@ -421,7 +422,7 @@ mod tests {
             init_fun,
             SectionLayout {
                 name: ".init_fun".to_owned(),
-                size: 56,
+                size: 44,
                 vma: 4,
             }
         );
@@ -429,8 +430,8 @@ mod tests {
             got,
             SectionLayout {
                 name: ".got".to_owned(),
-                size: 16,
-                vma: 60,
+                size: 0,
+                vma: 48,
             }
         );
         assert_eq!(
@@ -438,12 +439,15 @@ mod tests {
             SectionLayout {
                 name: ".text".to_owned(),
                 size: 433,
-                vma: 80,
+                vma: 48,
             }
         );
         assert_eq!(init_fun.vma, program_ptr.vma + program_ptr.size);
         assert_eq!(got.vma, init_fun.vma + init_fun.size);
-        assert!(text.vma > got.vma, "expected .text to load after .got");
+        assert!(
+            text.vma >= got.vma + got.size,
+            "expected .text to load after .got"
+        );
         assert_eq!(
             text.vma % 16,
             0,
@@ -457,21 +461,18 @@ mod tests {
 
         let output = nm_output(&package_lib_object_path());
         let defined = defined_symbols(&output);
-        let undefined = undefined_symbols(&output);
 
-        for symbol in ["init", "ext_c_probe_v6"] {
-            assert!(
-                defined.contains(symbol),
-                "expected C shim object to define current shim symbol `{symbol}`:\n{output}"
-            );
-        }
+        assert!(
+            defined.contains("ext_c_probe_v6"),
+            "expected C shim object to define the temporary C probe symbol:\n{output}"
+        );
+        assert!(
+            !defined.contains("init"),
+            "Rust, not the C shim object, should define the loader init symbol:\n{output}"
+        );
         assert!(
             !defined.contains("package_lib_init"),
             "Rust, not the C shim object, should define package_lib_init:\n{output}"
-        );
-        assert!(
-            undefined.contains("package_lib_init"),
-            "C shim object should bridge to Rust package_lib_init through an undefined reference:\n{output}"
         );
         assert!(
             !defined.iter().any(|symbol| symbol.starts_with("ext_rust")),
@@ -611,6 +612,10 @@ mod tests {
         assert!(
             defined.contains("package_lib_init"),
             "expected the Rust staticlib to export package_lib_init"
+        );
+        assert!(
+            defined.contains("init"),
+            "expected the Rust staticlib to export the loader init trampoline"
         );
     }
 

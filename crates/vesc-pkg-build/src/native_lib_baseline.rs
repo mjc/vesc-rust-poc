@@ -179,7 +179,7 @@ mod tests {
     }
 
     #[test]
-    fn package_lib_c_bridges_the_vesc_init_abi_to_the_rust_package() {
+    fn package_lib_c_only_provides_the_temporary_probe_callback() {
         let root = native_lib_baseline_root();
         let package_lib = root
             .input_paths()
@@ -188,33 +188,21 @@ mod tests {
         let source = fs::read_to_string(&package_lib).expect("package_lib.c contents");
 
         assert!(
-            source.contains("HEADER"),
-            "expected the VESC program pointer header in the C bridge: {package_lib:?}"
+            !source.contains("HEADER"),
+            "Rust should own the VESC program pointer header equivalent: {package_lib:?}"
         );
         assert!(
-            source.contains("INIT_FUN"),
-            "expected the VESC init hook in the C bridge: {package_lib:?}"
-        );
-        assert!(
-            source.contains("INIT_FUN(lib_info *info)")
-                && source.contains("package_lib_init(info)"),
-            "expected the C bridge to pass lib_info to the Rust package entrypoint: {package_lib:?}"
+            !source.contains("INIT_FUN") && !source.contains("package_lib_init(info)"),
+            "Rust should own the loader init hook and package entry call: {package_lib:?}"
         );
         assert!(
             !source.contains("ext-rust-add"),
             "expected Rust, not C, to own LispBM extension registration: {package_lib:?}"
         );
         assert!(
-            source.contains("static lbm_value ext_c_probe_v6(lbm_value *args, lbm_uint argn)")
-                && source.contains("return VESC_IF->lbm_enc_i(42);")
-                && source
-                    .contains("VESC_IF->lbm_add_extension(\"ext-c-probe-v6\", ext_c_probe_v6);"),
-            "expected a minimal C-owned extension probe in the C bridge: {package_lib:?}"
-        );
-        assert!(
-            source.find("package_lib_init(info);")
-                < source.find("VESC_IF->lbm_add_extension(\"ext-c-probe-v6\""),
-            "expected the C probe to register after the Rust package init path: {package_lib:?}"
+            source.contains("lbm_value ext_c_probe_v6(lbm_value *args, lbm_uint argn)")
+                && source.contains("return VESC_IF->lbm_enc_i(42);"),
+            "expected only the minimal C-owned extension probe callback: {package_lib:?}"
         );
     }
 
@@ -227,28 +215,14 @@ mod tests {
             .expect("expected package_lib.c in the native-lib baseline fixture");
         let source = fs::read_to_string(&package_lib).expect("package_lib.c contents");
 
-        let responsibilities: [(&str, &[&str]); 4] = [
+        let responsibilities: [(&str, &[&str]); 2] = [
             (
-                "VESC program pointer header",
-                &["HEADER", "#include \"vesc_c_if.h\"", "VESC_IF"],
-            ),
-            (
-                "loader init receives lib_info",
-                &["INIT_FUN(lib_info *info)", "package_lib_init(info)"],
-            ),
-            (
-                "Rust init runs before C probe registration",
-                &[
-                    "package_lib_init(info);",
-                    "VESC_IF->lbm_add_extension(\"ext-c-probe-v6\"",
-                ],
+                "VESC C types and function table remain available to the temporary probe",
+                &["#include \"vesc_c_if.h\"", "VESC_IF"],
             ),
             (
                 "C-owned probe remains visibly temporary",
-                &[
-                    "static lbm_value ext_c_probe_v6",
-                    "return VESC_IF->lbm_enc_i(42);",
-                ],
+                &["lbm_value ext_c_probe_v6", "return VESC_IF->lbm_enc_i(42);"],
             ),
         ];
 
@@ -262,13 +236,12 @@ mod tests {
         }
 
         assert!(
-            source.find("package_lib_init(info);")
-                < source.find("VESC_IF->lbm_add_extension(\"ext-c-probe-v6\""),
-            "expected Rust package init to remain before the temporary C probe registration"
-        );
-        assert!(
             !source.contains("ext-rust-"),
             "C shim must not own Rust extension registration: {package_lib:?}"
+        );
+        assert!(
+            !source.contains("INIT_FUN") && !source.contains("HEADER"),
+            "Rust-owned loader metadata must not regress back into package_lib.c"
         );
     }
 

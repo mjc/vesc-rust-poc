@@ -11,6 +11,32 @@ pub fn rust_add(a: i32, b: i32) -> i32 {
 }
 
 #[cfg(not(test))]
+#[used]
+#[no_mangle]
+#[link_section = ".program_ptr"]
+pub static prog_ptr: i32 = 0;
+
+#[cfg(not(test))]
+unsafe extern "C" {
+    fn ext_c_probe_v6(args: *mut ffi::LbmValue, argn: ffi::LbmCount) -> ffi::LbmValue;
+}
+
+#[cfg(not(test))]
+#[no_mangle]
+#[link_section = ".init_fun"]
+pub extern "C" fn init(info: *mut ffi::LibInfo) -> bool {
+    package_lib_init(info);
+
+    if let Some(info) = unsafe { info.as_ref() } {
+        let image = ffi::NativeImage::from_info(info);
+        let api = ffi::LbmApi::new(ffi::RealBindings);
+        api.register_extension_from_image(image, c"ext-c-probe-v6", ext_c_probe_v6);
+    }
+
+    true
+}
+
+#[cfg(not(test))]
 #[no_mangle]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) {
     ble_loopback_device::init_package(info);
