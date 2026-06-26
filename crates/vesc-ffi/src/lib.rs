@@ -347,39 +347,61 @@ pub type Packet<'a> = AppDataPacket<'a>;
 pub type Command<'a> = CommandPacket<'a>;
 pub type Reply<'a> = ReplyPacket<'a>;
 pub type Half = HalfDuplex;
-pub type Temperature = TemperatureC;
-pub type Distance = DistanceMeters;
-pub type Speed = SpeedMetersPerSecond;
+pub type Celsius = TemperatureC;
+pub type Meters = DistanceMeters;
+pub type MetersPerSecond = SpeedMetersPerSecond;
+pub type Temperature = Celsius;
+pub type Distance = Meters;
+pub type Speed = MetersPerSecond;
 pub type Charge = AmpHours;
 pub type Energy = WattHours;
 pub type Odometer = OdometerMeters;
 pub type Battery = BatteryLevel;
 pub type Channel = FocChannel;
-pub type Frequency = ToneFrequencyHz;
-pub type Tone = ToneVoltage;
-pub type Delay = OffDelaySeconds;
-pub type Latitude = LatitudeDeg;
-pub type Longitude = LongitudeDeg;
-pub type Altitude = AltitudeMeters;
-pub type GnssSpeedMs = GnssSpeed;
-pub type HdopValue = Hdop;
+pub type Hertz = ToneFrequencyHz;
+pub type VoltsTone = ToneVoltage;
+pub type SecondsDelay = OffDelaySeconds;
+pub type Frequency = Hertz;
+pub type Tone = VoltsTone;
+pub type Delay = SecondsDelay;
+pub type DegreesLatitude = LatitudeDeg;
+pub type DegreesLongitude = LongitudeDeg;
+pub type MetersAltitude = AltitudeMeters;
+pub type GnssMetersPerSecond = GnssSpeed;
+pub type HdopUnit = Hdop;
+pub type Latitude = DegreesLatitude;
+pub type Longitude = DegreesLongitude;
+pub type Altitude = MetersAltitude;
+pub type GnssSpeedMs = GnssMetersPerSecond;
+pub type HdopValue = HdopUnit;
 pub type Vector3 = Accel3;
-pub type Gyroscope = Gyro3;
-pub type Magnetometer = Mag3;
+pub type AngularVelocity = Gyro3;
+pub type MagneticField = Mag3;
+pub type Gyroscope = AngularVelocity;
+pub type Magnetometer = MagneticField;
 pub type Quaternion4 = Quaternion;
-pub type ImuCalibrationData = ImuCalibration;
-pub type SamplePeriod = ReadCallbackDtSeconds;
+pub type Calibration = ImuCalibration;
+pub type ImuCalibrationData = Calibration;
+pub type SecondsPerSample = ReadCallbackDtSeconds;
+pub type SamplePeriod = SecondsPerSample;
 pub type Parameter = CfgParam;
-pub type ConfigurationFloat = CfgFloat;
-pub type ConfigurationInt = CfgInt;
-pub type ConfigurationResult = ConfigSetResult;
+pub type ConfigFloat = CfgFloat;
+pub type ConfigInt = CfgInt;
+pub type ConfigResult = ConfigSetResult;
+pub type ConfigurationFloat = ConfigFloat;
+pub type ConfigurationInt = ConfigInt;
+pub type ConfigurationResult = ConfigResult;
 pub type XmlBytes<'a> = ConfigXmlBytes<'a>;
 pub type Payload<'a> = ConfigPayload<'a>;
-pub type ThreadLabel<'a> = ThreadName<'a>;
+pub type ThreadNameUtf8<'a> = ThreadName<'a>;
+pub type ThreadLabel<'a> = ThreadNameUtf8<'a>;
 pub type StackSize = StackSizeBytes;
-pub type Thread = ThreadHandle;
-pub type Mutex = MutexHandle;
-pub type Semaphore = SemaphoreHandle;
+pub type ThreadHandleValue = ThreadHandle;
+pub type MutexHandleValue = MutexHandle;
+pub type SemaphoreHandleValue = SemaphoreHandle;
+pub type Thread = ThreadHandleValue;
+pub type Mutex = MutexHandleValue;
+pub type Semaphore = SemaphoreHandleValue;
 pub type FirmwarePtrValue<T> = FirmwarePtr<T>;
 pub type FirmwareNonNullValue<T> = FirmwareNonNull<T>;
 pub type MallocSize = MallocLen;
@@ -915,12 +937,12 @@ mod tests {
     use super::{
         Accel3, AltitudeMeters, AnalogRaw, AnalogVoltage, AmpHours, AppDataLen, AppDataPacket,
         BatteryLevel, BrakeCurrentAmps, CanControllerId, CanFrameLen, CanPayload, CanStatusIndex,
-        CfgFloat, CfgInt, CfgParam, CommandPacket, ConfigPayload, ConfigSetResult, ConfigXmlBytes,
+        CfgFloat, CfgInt, CfgParam, CommandPacket, ConfigPayload, ConfigXmlBytes, ConfigSetResult,
         CurrentAmps, Degrees, DistanceMeters, DutyCycle, EepromAddress, EepromVar, Erpm,
-        EulerAngles, ExtensionHandler, FocChannel, FirmwareNonNull, FirmwarePtr, GnssSpeed,
-        GpioPin, GpioPortPtr, Hdop, HardwareType, HalfDuplex, ImageOffset, InputCurrentAmps,
-        LatitudeDeg,
-        LbmApi, LbmBindings, LbmBoolSymbol, LbmCid, LbmCount, LbmErrorSymbol, LbmFloat, LbmInt,
+        EulerAngles, ExtensionHandler, FocChannel,
+        FirmwareNonNull, FirmwarePtr, GnssSpeed, GpioPin, GpioPortPtr, Hdop, HardwareType,
+        HalfDuplex, ImageOffset, InputCurrentAmps, LatitudeDeg, LbmApi,
+        LbmBindings, LbmBoolSymbol, LbmCid, LbmCount, LbmErrorSymbol, LbmFloat, LbmInt,
         LbmIoSymbol, LbmNilSymbol, LbmSymbol, LbmType, LbmUint, LbmValue, LibInfo, LibInfoAbi,
         LoaderBaseAddress, LongitudeDeg, MallocLen, MotorIndex, MutexHandle, MutablePacket,
         NativeAddress, NativeImage, NvmAddress, NvmBytes, NvmLen, OdometerMeters, OffDelaySeconds,
@@ -928,7 +950,7 @@ mod tests {
         ProgramAddress, Quaternion, Radians, ReplyPacket, RollDeg, SemaphoreHandle, SecondsF32,
         SpeedMetersPerSecond, StackSizeBytes, SystemSeconds, SystemTicks, TemperatureC,
         ThreadHandle, ThreadName, ToneFrequencyHz, ToneVoltage, UartBaudRate, UartWriteLen,
-        VescIfAbi, VescPin, VescPinMode, Voltage, WattHours, YawDeg, Bytes, Speed, Value,
+        VescIfAbi, VescPin, VescPinMode, Voltage, WattHours, YawDeg,
     };
     use core::cell::Cell;
     use core::ffi::{c_char, c_void, CStr};
@@ -1317,12 +1339,45 @@ mod tests {
 
     #[test]
     fn rustic_aliases_point_at_the_public_wrapper_surface() {
-        let value: Value = 1_u32.into();
-        let speed: Speed = 2.5_f32.into();
-        let bytes: Bytes<'_> = (&[1_u8, 2, 3][..]).into();
+        let value: crate::Value = 1_u32.into();
+        let speed: crate::Speed = 2.5_f32.into();
+        let bytes: crate::Bytes<'_> = (&[1_u8, 2, 3][..]).into();
 
         assert_eq!(value.get(), 1);
         assert_eq!(speed.get(), 2.5);
         assert_eq!(bytes.get(), &[1, 2, 3]);
+    }
+
+    #[test]
+    fn unit_style_metric_aliases_cover_the_public_quantity_surface() {
+        let temperature: crate::Celsius = 21.5_f32.into();
+        let distance: crate::Meters = 12.0_f32.into();
+        let speed: crate::MetersPerSecond = 3.25_f32.into();
+        let latitude: crate::DegreesLatitude = 45.0_f64.into();
+        let longitude: crate::DegreesLongitude = crate::DegreesLongitude::new(-110.0_f64);
+        let altitude: crate::MetersAltitude = 1800.0_f32.into();
+        let voltage: crate::Volts = 50.5_f32.into();
+        let current: crate::Amps = 7.25_f32.into();
+        let charge: crate::Charge = 1.5_f32.into();
+        let energy: crate::Energy = 10.0_f32.into();
+        let omega: crate::AngularVelocity = [0.1, 0.2, 0.3].into();
+        let magnetic: crate::MagneticField = [4.0, 5.0, 6.0].into();
+        let calibration: crate::Calibration = [0.0, 1.0, 2.0].into();
+        let gnss_speed: crate::GnssMetersPerSecond = 8.5_f32.into();
+
+        assert_eq!(temperature.get(), 21.5);
+        assert_eq!(distance.get(), 12.0);
+        assert_eq!(speed.get(), 3.25);
+        assert_eq!(latitude.get(), 45.0);
+        assert_eq!(longitude.get(), -110.0);
+        assert_eq!(altitude.get(), 1800.0);
+        assert_eq!(voltage.get(), 50.5);
+        assert_eq!(current.get(), 7.25);
+        assert_eq!(charge.get(), 1.5);
+        assert_eq!(energy.get(), 10.0);
+        assert_eq!(omega.get(), [0.1, 0.2, 0.3]);
+        assert_eq!(magnetic.get(), [4.0, 5.0, 6.0]);
+        assert_eq!(calibration.get(), [0.0, 1.0, 2.0]);
+        assert_eq!(gnss_speed.get(), 8.5);
     }
 }
