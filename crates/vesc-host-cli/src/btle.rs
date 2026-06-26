@@ -303,7 +303,8 @@ fn parse_lisp_print(payload: &[u8]) -> String {
 
 fn lisp_probe_command() -> &'static str {
     r#"(progn
-    (print "vesc-rust-probe-v6")
+    (print "vesc-rust-probe-v7")
+    (print (trap (load-native-lib package-lib)))
     (print (trap (ext-c-probe-v6)))
     (print (trap (ext-rust-probe-v5))))"#
 }
@@ -433,7 +434,8 @@ mod tests {
     #[test]
     fn wraps_lisp_probe_commands_in_repl_packets() {
         let command = lisp_probe_command();
-        assert!(command.contains("vesc-rust-probe-v6"));
+        assert!(command.contains("vesc-rust-probe-v7"));
+        assert!(command.contains("(trap (load-native-lib package-lib))"));
         assert!(command.contains("(trap (ext-c-probe-v6))"));
         assert!(command.contains("(trap (ext-rust-probe-v5))"));
 
