@@ -21,30 +21,35 @@
           }));
     in
     {
-      devShells = forSystems (pkgs: {
-        default = pkgs.mkShell {
-          packages = with pkgs; [
-            dbus.dev
-            gcc
-            gcc-arm-embedded
-            pkg-config
-            qt5.qtbase.dev
-            qt5.qttools
-            qt5.qtquickcontrols2
-            qt5.qtserialport
-            qt5.qtconnectivity
-            qt5.qtpositioning
-            qt5.qtgamepad
-            qt5.qtserialbus
-            (rust-bin.stable.latest.default.override {
-              targets = [ "thumbv7em-none-eabihf" ];
-            })
-          ];
+      devShells = forSystems (pkgs:
+        let
+          rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+            targets = [ "thumbv7em-none-eabihf" ];
+          };
+        in
+        {
+          default = pkgs.mkShell {
+            packages = with pkgs; [
+              dbus.dev
+              gcc
+              gcc-arm-embedded
+              pkg-config
+              qt5.qtbase.dev
+              qt5.qttools
+              qt5.qtquickcontrols2
+              qt5.qtserialport
+              qt5.qtconnectivity
+              qt5.qtpositioning
+              qt5.qtgamepad
+              qt5.qtserialbus
+              rustToolchain
+            ];
 
-          shellHook = ''
-            export CARGO_TARGET_DIR="$PWD/target"
-          '';
-        };
-      });
+            shellHook = ''
+              export PATH="${pkgs.lib.makeBinPath [ rustToolchain ]}:$PATH"
+              export CARGO_TARGET_DIR="$PWD/target"
+            '';
+          };
+        });
     };
 }
