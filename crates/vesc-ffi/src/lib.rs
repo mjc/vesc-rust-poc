@@ -339,10 +339,6 @@ pub type Angle = Degrees;
 pub type Radian = Radians;
 pub type Rpm = Erpm;
 pub type Duty = DutyCycle;
-pub type Amps = CurrentAmps;
-pub type BrakeAmps = BrakeCurrentAmps;
-pub type InputAmps = InputCurrentAmps;
-pub type Volts = Voltage;
 pub type Packet<'a> = AppDataPacket<'a>;
 pub type Command<'a> = CommandPacket<'a>;
 pub type Reply<'a> = ReplyPacket<'a>;
@@ -372,6 +368,7 @@ pub type MagneticFluxDensity = Mag3;
 pub type Quaternion4 = Quaternion;
 pub type Calibration = ImuCalibration;
 pub type SamplePeriod = ReadCallbackDtSeconds;
+pub type Current = ElectricCurrent;
 pub type Parameter = CfgParam;
 pub type ConfigFloat = CfgFloat;
 pub type ConfigInt = CfgInt;
@@ -909,7 +906,8 @@ mod tests {
         CanFrameLen, CanPayload, CanStatusIndex, CfgFloat, CfgInt, CfgParam, CommandPacket,
         ConfigPayload, ConfigResult, ConfigXmlBytes, CurrentAmps, Degrees, DistanceMeters,
         DutyCycle, EepromAddress, EepromVar, Energy, Erpm, EulerAngles, ExtensionHandler,
-        FocChannel, FirmwareNonNull, FirmwarePtr, GnssSpeed, GpioPin, GpioPortPtr, HdopValue,
+        ElectricCurrent, ElectricPotential, FocChannel, FirmwareNonNull, FirmwarePtr, GnssSpeed,
+        GpioPin, GpioPortPtr, HdopValue,
         HalfDuplex, HardwareType, ImageOffset, InputCurrentAmps, LatitudeDeg, LbmApi,
         LbmBindings, LbmBoolSymbol, LbmCid, LbmCount, LbmErrorSymbol, LbmFloat, LbmInt,
         LbmIoSymbol, LbmNilSymbol, LbmSymbol, LbmType, LbmUint, LbmValue, Length, LibInfo,
@@ -919,8 +917,8 @@ mod tests {
         PlotGraphIndex, PlotGraphName, PlotPoint, ProgramAddress, Quaternion, Radians, ReplyPacket,
         RollDeg, SamplePeriod, SemaphoreHandle, SecondsF32, SpeedMetersPerSecond, StackSizeBytes,
         SystemSeconds, SystemTicks, TemperatureC, ThreadHandle, ThreadName, ToneFrequencyHz,
-        ToneVoltage, UartBaudRate, UartWriteLen, Value, Volts, VescIfAbi, VescPin, VescPinMode,
-        Voltage, WattHours, YawDeg,
+        ToneVoltage, UartBaudRate, UartWriteLen, Value, VescIfAbi, VescPin, VescPinMode,
+        WattHours, YawDeg,
     };
     use core::cell::Cell;
     use core::ffi::{c_char, c_void, CStr};
@@ -1170,7 +1168,10 @@ mod tests {
             core::mem::size_of::<InputCurrentAmps>(),
             core::mem::size_of::<f32>()
         );
-        assert_eq!(core::mem::size_of::<Voltage>(), core::mem::size_of::<f32>());
+        assert_eq!(
+            core::mem::size_of::<ElectricPotential>(),
+            core::mem::size_of::<f32>()
+        );
         assert_eq!(core::mem::size_of::<CfgParam>(), core::mem::size_of::<i32>());
         assert_eq!(core::mem::size_of::<CfgFloat>(), core::mem::size_of::<f32>());
         assert_eq!(core::mem::size_of::<CfgInt>(), core::mem::size_of::<i32>());
