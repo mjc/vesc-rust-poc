@@ -467,7 +467,12 @@ impl<B: LbmBindings> LbmApi<B> {
         unsafe { self.bindings.add_extension(name.as_ptr(), handler) }
     }
 
-    pub fn register_extension_from_image(
+    /// # Safety
+    ///
+    /// `image` must describe the address space that produced `handler`.
+    /// `name` must also point at a string living in that same image if it was
+    /// compiled into native code rather than host memory.
+    pub unsafe fn register_extension_from_image(
         &self,
         image: NativeImage,
         name: &CStr,
@@ -516,7 +521,11 @@ impl<B: LbmBindings> PackageLifecycle<B> {
             .register_extension(descriptor.name(), descriptor.handler())
     }
 
-    pub fn register_extension_from_image(
+    /// # Safety
+    ///
+    /// `image` must describe the address space that produced every callback
+    /// inside `descriptor`.
+    pub unsafe fn register_extension_from_image(
         &self,
         image: NativeImage,
         descriptor: ExtensionDescriptor,
@@ -526,17 +535,23 @@ impl<B: LbmBindings> PackageLifecycle<B> {
             Err(_) => return -1,
         };
 
-        self.api
-            .register_extension_from_image(image, descriptor.name(), descriptor.handler())
+        unsafe {
+            self.api
+                .register_extension_from_image(image, descriptor.name(), descriptor.handler())
+        }
     }
 
-    pub fn register_extensions_from_image(
+    /// # Safety
+    ///
+    /// `image` must describe the address space that produced every callback
+    /// inside `descriptors`.
+    pub unsafe fn register_extensions_from_image(
         &self,
         image: NativeImage,
         descriptors: &[ExtensionDescriptor],
     ) -> i32 {
         descriptors.iter().fold(0, |_, descriptor| {
-            self.register_extension_from_image(image, *descriptor)
+            unsafe { self.register_extension_from_image(image, *descriptor) }
         })
     }
 }
@@ -554,7 +569,12 @@ impl<B: AppDataBindings> LoopbackLifecycle<B> {
         &self.bindings
     }
 
-    pub fn install(
+    /// # Safety
+    ///
+    /// `info` must either be null or point to a live `LibInfo` owned by the
+    /// native image described by `image`. `stop_handler` and
+    /// `app_data_handler` must also originate from that image.
+    pub unsafe fn install(
         &self,
         info: *mut LibInfo,
         image: NativeImage,
@@ -742,7 +762,7 @@ mod tests {
         let name = c"ext-rust-probe-v5";
 
         assert_eq!(
-            api.register_extension_from_image(image, name, stub_handler),
+            unsafe { api.register_extension_from_image(image, name, stub_handler) },
             17
         );
         assert_eq!(
