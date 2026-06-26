@@ -304,6 +304,7 @@ fn parse_lisp_print(payload: &[u8]) -> String {
 fn lisp_probe_command() -> &'static str {
     r#"(progn
     (print "vesc-rust-probe-v8")
+    (sleep 1.0)
     (print (trap (ext-rust-probe-v5))))"#
 }
 
@@ -437,6 +438,7 @@ mod tests {
             !command.contains("load-native-lib"),
             "lisp-probe should exercise the already-loaded package extensions, not retry native loading"
         );
+        assert!(command.contains("(sleep 1.0)"));
         assert!(command.contains("(trap (ext-rust-probe-v5))"));
 
         let packet = build_lisp_repl_packet(command);
