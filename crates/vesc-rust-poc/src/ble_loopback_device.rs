@@ -441,7 +441,7 @@ pub fn init_package(info: *mut crate::ffi::LibInfo) {
     };
     let image = crate::ffi::NativeImage::from_info(info_ref);
     let lifecycle = crate::ffi::LoopbackLifecycle::new(crate::ffi::RealBindings);
-    let _ = lifecycle.install(info, image, stop_package, app_data_handler);
+    let _ = unsafe { lifecycle.install(info, image, stop_package, app_data_handler) };
 }
 
 pub fn init_package_for_tests(info: *mut crate::ffi::LibInfo) {

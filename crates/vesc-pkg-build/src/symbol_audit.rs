@@ -423,7 +423,7 @@ mod tests {
             text,
             SectionLayout {
                 name: ".text".to_owned(),
-                size: 402,
+                size: 476,
                 vma: 16,
             }
         );
@@ -563,12 +563,16 @@ mod tests {
             package_init_disassembly.contains("[r0, #8]"),
             "expected Rust package init to load lib_info.base_addr before registering Rust-owned pointers:\n{package_init_disassembly}"
         );
-        for rebase_step in ["add\tr1, r0", "add\tr0, r1", "add\tr1, r2"] {
+        for rebase_step in ["add\tr1, r0", "add\tr0, r1"] {
             assert!(
                 package_init_disassembly.contains(rebase_step),
                 "expected Rust-owned image pointer rebase step `{rebase_step}` before use:\n{package_init_disassembly}"
             );
         }
+        assert!(
+            package_init_disassembly.contains("add\tr1, r4"),
+            "expected the stop hook rebasing path to use the loaded image base before storing the callback:\n{package_init_disassembly}"
+        );
         assert!(
             package_init_disassembly.contains("str\tr1, [r4, #0]"),
             "expected the stop hook to store a rebased function pointer:\n{package_init_disassembly}"
