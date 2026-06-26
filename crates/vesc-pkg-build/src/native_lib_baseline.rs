@@ -219,6 +219,60 @@ mod tests {
     }
 
     #[test]
+    fn package_lib_c_responsibility_inventory_is_explicit() {
+        let root = native_lib_baseline_root();
+        let package_lib = root
+            .input_paths()
+            .find(|path| path.ends_with("src/package_lib.c"))
+            .expect("expected package_lib.c in the native-lib baseline fixture");
+        let source = fs::read_to_string(&package_lib).expect("package_lib.c contents");
+
+        let responsibilities: [(&str, &[&str]); 4] = [
+            (
+                "VESC program pointer header",
+                &["HEADER", "#include \"vesc_c_if.h\"", "VESC_IF"],
+            ),
+            (
+                "loader init receives lib_info",
+                &["INIT_FUN(lib_info *info)", "package_lib_init(info)"],
+            ),
+            (
+                "Rust init runs before C probe registration",
+                &[
+                    "package_lib_init(info);",
+                    "VESC_IF->lbm_add_extension(\"ext-c-probe-v6\"",
+                ],
+            ),
+            (
+                "C-owned probe remains visibly temporary",
+                &[
+                    "static lbm_value ext_c_probe_v6",
+                    "return VESC_IF->lbm_enc_i(42);",
+                ],
+            ),
+        ];
+
+        for (label, snippets) in responsibilities {
+            for snippet in snippets {
+                assert!(
+                    source.contains(snippet),
+                    "missing C shim responsibility `{label}` snippet `{snippet}` in {package_lib:?}"
+                );
+            }
+        }
+
+        assert!(
+            source.find("package_lib_init(info);")
+                < source.find("VESC_IF->lbm_add_extension(\"ext-c-probe-v6\""),
+            "expected Rust package init to remain before the temporary C probe registration"
+        );
+        assert!(
+            !source.contains("ext-rust-"),
+            "C shim must not own Rust extension registration: {package_lib:?}"
+        );
+    }
+
+    #[test]
     fn package_loader_only_loads_the_native_library_for_ble_loopback() {
         let root = native_lib_baseline_root();
         let loader = root

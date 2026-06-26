@@ -257,8 +257,8 @@ mod tests {
         audit_final_native_lib_elf_symbols, audit_rust_staticlib_symbols,
         build_final_native_lib_binary, build_final_native_lib_elf, build_rust_staticlib,
         defined_symbols, is_allowed_final_native_lib_symbol, is_allowed_runtime_symbol,
-        native_lib_bin_path, native_lib_elf_path, nm_output, rust_staticlib_path,
-        undefined_symbols, unexpected_final_native_lib_undefined_symbols,
+        native_lib_bin_path, native_lib_elf_path, nm_output, package_lib_object_path,
+        rust_staticlib_path, undefined_symbols, unexpected_final_native_lib_undefined_symbols,
         unexpected_undefined_symbols,
     };
     use std::collections::BTreeSet;
@@ -448,6 +448,54 @@ mod tests {
             text.vma % 16,
             0,
             "expected .text to keep VESC's 16-byte function alignment"
+        );
+    }
+
+    #[test]
+    fn c_shim_object_exposes_only_the_current_loader_and_probe_contract() {
+        build_final_native_lib_elf();
+
+        let output = nm_output(&package_lib_object_path());
+        let defined = defined_symbols(&output);
+        let undefined = undefined_symbols(&output);
+
+        for symbol in ["init", "ext_c_probe_v6"] {
+            assert!(
+                defined.contains(symbol),
+                "expected C shim object to define current shim symbol `{symbol}`:\n{output}"
+            );
+        }
+        assert!(
+            !defined.contains("package_lib_init"),
+            "Rust, not the C shim object, should define package_lib_init:\n{output}"
+        );
+        assert!(
+            undefined.contains("package_lib_init"),
+            "C shim object should bridge to Rust package_lib_init through an undefined reference:\n{output}"
+        );
+        assert!(
+            !defined.iter().any(|symbol| symbol.starts_with("ext_rust")),
+            "C shim object must not define Rust-owned extension symbols:\n{output}"
+        );
+    }
+
+    #[test]
+    fn final_native_lib_retains_the_current_c_shim_boundary_symbols() {
+        build_final_native_lib_elf();
+
+        let output = nm_output(&native_lib_elf_path());
+        let defined = defined_symbols(&output);
+        let undefined = undefined_symbols(&output);
+
+        for symbol in ["init", "ext_c_probe_v6", "package_lib_init"] {
+            assert!(
+                defined.contains(symbol),
+                "expected final native image to retain current boundary symbol `{symbol}`:\n{output}"
+            );
+        }
+        assert!(
+            undefined.is_empty(),
+            "expected final native image to resolve the C-to-Rust boundary completely:\n{output}"
         );
     }
 
