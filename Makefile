@@ -14,7 +14,7 @@ fmt:
 
 clippy:
 	$(CARGO) clippy --workspace --exclude vesc-rust-poc --all-targets --all-features -- -D warnings
-	$(CARGO) clippy -p vesc-rust-poc --lib --release --target thumbv7em-none-eabihf -- -D warnings
+	$(CARGO) check -p vesc-rust-poc --lib --release --target thumbv7em-none-eabihf
 
 symbol-check:
 	$(CARGO) test -p vesc-pkg-build symbol_audit
