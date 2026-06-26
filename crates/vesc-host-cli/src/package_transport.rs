@@ -193,10 +193,7 @@ impl BtlePackageInstallTransport {
         payload: &[u8],
         timeout: Duration,
     ) -> Result<Vec<u8>, PackageInstallError> {
-        let mut data = Vec::with_capacity(payload.len() + 1);
-        data.push(command);
-        data.extend_from_slice(payload);
-        let packet = encode_packet(&data);
+        let packet = build_command_packet(command, payload);
 
         self.with_session(|session| {
             self.runtime
@@ -209,6 +206,22 @@ impl BtlePackageInstallTransport {
                     PackageInstallError::Device("failed to write a BLE command".to_owned())
                 })?;
             session.recv_packet(command, timeout)
+        })
+    }
+
+    fn send_command(&self, command: u8, payload: &[u8]) -> Result<(), PackageInstallError> {
+        let packet = build_command_packet(command, payload);
+
+        self.with_session(|session| {
+            self.runtime
+                .block_on(write_ble_uart_packet(
+                    &session.peripheral,
+                    &session.rx_char,
+                    &packet,
+                ))
+                .map_err(|_| {
+                    PackageInstallError::Device("failed to write a BLE command".to_owned())
+                })
         })
     }
 
@@ -323,11 +336,7 @@ impl PackageInstallTransport for BtlePackageInstallTransport {
     }
 
     fn set_running(&self, running: bool) -> Result<(), PackageInstallError> {
-        self.expect_ok(
-            COMM_LISP_SET_RUNNING,
-            &[u8::from(running)],
-            WRITE_RESPONSE_TIMEOUT,
-        )
+        self.send_command(COMM_LISP_SET_RUNNING, &[u8::from(running)])
     }
 
     fn reload_firmware(&self) -> Result<(), PackageInstallError> {
@@ -436,6 +445,13 @@ async fn write_ble_uart_packet(
 
 fn ble_write_chunks(packet: &[u8]) -> impl Iterator<Item = &[u8]> {
     packet.chunks(BLE_WRITE_CHUNK_SIZE)
+}
+
+fn build_command_packet(command: u8, payload: &[u8]) -> Vec<u8> {
+    let mut data = Vec::with_capacity(payload.len() + 1);
+    data.push(command);
+    data.extend_from_slice(payload);
+    encode_packet(&data)
 }
 
 fn map_discovery_error(error: DiscoveryError) -> PackageInstallError {
@@ -577,10 +593,12 @@ fn malformed_reply(reason: &str) -> PackageInstallError {
 #[cfg(test)]
 mod tests {
     use super::{
-        ble_write_chunks, build_lisp_upload_payload, build_qml_upload_payload,
-        parse_fw_version_info, parse_simple_ack, parse_write_ack, FwVersionInfo, HwType,
-        COMM_FW_VERSION, COMM_LISP_WRITE_CODE, COMM_QMLUI_ERASE,
+        ble_write_chunks, build_command_packet, build_lisp_upload_payload,
+        build_qml_upload_payload, parse_fw_version_info, parse_simple_ack, parse_write_ack,
+        FwVersionInfo, HwType, COMM_FW_VERSION, COMM_LISP_SET_RUNNING, COMM_LISP_WRITE_CODE,
+        COMM_QMLUI_ERASE,
     };
+    use crate::vesc_uart::PacketDecoder;
 
     #[test]
     fn parses_fw_version_replies_with_qml_app_support() {
@@ -672,5 +690,17 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(chunks, vec![20, 20, 1]);
+    }
+
+    #[test]
+    fn lisp_set_running_packet_matches_vesc_tool_fire_and_forget_command() {
+        let packet = build_command_packet(COMM_LISP_SET_RUNNING, &[1]);
+        let decoded = PacketDecoder::new()
+            .push(&packet)
+            .expect("valid packet")
+            .pop()
+            .expect("complete packet");
+
+        assert_eq!(decoded, vec![COMM_LISP_SET_RUNNING, 1]);
     }
 }
