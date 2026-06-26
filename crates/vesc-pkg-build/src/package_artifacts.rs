@@ -85,6 +85,10 @@ impl PackageArtifactInspectionPlan {
         self.root.join(NATIVE_PAYLOAD_PATH)
     }
 
+    pub fn staged_native_payload_path(&self) -> PathBuf {
+        self.staging_dir_path().join("src/package_lib.bin")
+    }
+
     pub fn package_output_path(&self) -> PathBuf {
         self.staging_dir_path().join(self.layout.artifact_name())
     }
@@ -107,6 +111,7 @@ impl PackageArtifactInspectionPlan {
             &mut problems,
         );
         self.inspect_native_payload(&mut problems);
+        self.inspect_staged_native_payload(&mut problems);
 
         if problems.is_empty() {
             Ok(())
@@ -158,18 +163,31 @@ impl PackageArtifactInspectionPlan {
 
     fn inspect_native_payload(&self, problems: &mut Vec<PackageArtifactProblem>) {
         let path = self.native_payload_path();
-        let Ok(bytes) = fs::read(&path) else {
-            problems.push(PackageArtifactProblem::MissingPath { path });
-            return;
-        };
+        inspect_non_empty_binary(path, "non-empty native payload", problems);
+    }
 
-        if bytes.is_empty() {
-            problems.push(PackageArtifactProblem::ContentMismatch {
-                path,
-                expected: "non-empty native payload".to_owned(),
-                actual: "empty file".to_owned(),
-            });
-        }
+    fn inspect_staged_native_payload(&self, problems: &mut Vec<PackageArtifactProblem>) {
+        let path = self.staged_native_payload_path();
+        inspect_non_empty_binary(path, "non-empty staged native payload", problems);
+    }
+}
+
+fn inspect_non_empty_binary(
+    path: PathBuf,
+    expected: &str,
+    problems: &mut Vec<PackageArtifactProblem>,
+) {
+    let Ok(bytes) = fs::read(&path) else {
+        problems.push(PackageArtifactProblem::MissingPath { path });
+        return;
+    };
+
+    if bytes.is_empty() {
+        problems.push(PackageArtifactProblem::ContentMismatch {
+            path,
+            expected: expected.to_owned(),
+            actual: "empty file".to_owned(),
+        });
     }
 }
 
@@ -237,6 +255,11 @@ mod tests {
                 PackageArtifactProblem::MissingPath {
                     path: root.join(NATIVE_PAYLOAD_PATH)
                 },
+                PackageArtifactProblem::MissingPath {
+                    path: root
+                        .join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0")
+                        .join("src/package_lib.bin")
+                },
             ]))
         );
     }
@@ -247,6 +270,7 @@ mod tests {
         let staging_root = root.join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0");
         fs::create_dir_all(&staging_root).expect("staging root");
         write_artifact(&root, NATIVE_PAYLOAD_PATH, "payload");
+        write_artifact(&staging_root, "src/package_lib.bin", "payload");
         write_artifact(
             &root,
             "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/README.md",
@@ -333,6 +357,7 @@ mod tests {
             .render_loader(),
         );
         write_artifact(&root, NATIVE_PAYLOAD_PATH, "");
+        write_artifact(&staging_root, "src/package_lib.bin", "payload");
         let plan = PackageArtifactInspectionPlan::new(
             &root,
             BLE_LOOPBACK_PACKAGE_NAME,

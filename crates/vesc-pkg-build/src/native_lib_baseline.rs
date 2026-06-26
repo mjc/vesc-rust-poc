@@ -227,8 +227,12 @@ mod tests {
         let source = fs::read_to_string(&loader).expect("code.lisp contents");
 
         assert!(
-            source.contains("(load-native-lib \"src/package_lib.bin\")"),
+            source.contains("(import \"src/package_lib.bin\" 'package-lib)"),
             "expected the loader to import the native library: {loader:?}"
+        );
+        assert!(
+            source.contains("(load-native-lib package-lib)"),
+            "expected the loader to load the imported native library: {loader:?}"
         );
         assert!(
             !source.contains("ext-rust-add"),

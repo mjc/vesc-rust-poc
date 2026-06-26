@@ -217,3 +217,93 @@ fn parse_import_line(line: &str) -> Option<(String, String)> {
 
     Some((path, tag))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{build_vesc_package, VescPackageInput};
+    use flate2::read::ZlibDecoder;
+    use std::fs;
+    use std::io::Read;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_root() -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "vesc-rust-poc-package-format-{nanos}-{}",
+            std::process::id()
+        ))
+    }
+
+    fn read_string(cursor: &mut &[u8]) -> String {
+        let end = cursor
+            .iter()
+            .position(|byte| *byte == 0)
+            .expect("nul-terminated string");
+        let value = std::str::from_utf8(&cursor[..end])
+            .expect("utf-8 string")
+            .to_owned();
+        *cursor = &cursor[end + 1..];
+        value
+    }
+
+    fn read_i32_be(cursor: &mut &[u8]) -> i32 {
+        let (bytes, rest) = cursor.split_at(4);
+        *cursor = rest;
+        i32::from_be_bytes(bytes.try_into().expect("i32 bytes"))
+    }
+
+    fn extract_field(package: &[u8], key: &str) -> Vec<u8> {
+        let declared_len =
+            u32::from_be_bytes(package[..4].try_into().expect("qCompress length")) as usize;
+        let mut decoder = ZlibDecoder::new(&package[4..]);
+        let mut raw = Vec::new();
+        decoder
+            .read_to_end(&mut raw)
+            .expect("decompress package payload");
+        assert_eq!(raw.len(), declared_len);
+
+        let mut cursor = raw.as_slice();
+        assert_eq!(read_string(&mut cursor), "VESC Packet");
+        while !cursor.is_empty() {
+            let field = read_string(&mut cursor);
+            let len = read_i32_be(&mut cursor) as usize;
+            let (value, rest) = cursor.split_at(len);
+            cursor = rest;
+            if field == key {
+                return value.to_vec();
+            }
+        }
+        panic!("missing field {key}");
+    }
+
+    #[test]
+    fn lisp_imports_embed_native_payload_bytes() {
+        let root = unique_root();
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("src dir");
+        fs::write(src_dir.join("package_lib.bin"), [0, 1, 2, 3, 0xff]).expect("native payload");
+
+        let package = build_vesc_package(&VescPackageInput {
+            name: "test",
+            description_md: "",
+            lisp_source:
+                "(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n",
+            lisp_editor_path: &root,
+            qml_file: "",
+            pkg_desc_qml: "",
+            qml_is_fullscreen: false,
+        })
+        .expect("package");
+        let lisp_data = extract_field(&package, "lispData");
+
+        assert!(lisp_data
+            .windows(b"package-lib\0".len())
+            .any(|window| window == b"package-lib\0"));
+        assert!(lisp_data
+            .windows([0, 1, 2, 3, 0xff, 0].len())
+            .any(|window| window == [0, 1, 2, 3, 0xff, 0]));
+    }
+}

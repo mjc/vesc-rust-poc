@@ -1,2 +1,3 @@
 ; Auto-generated loader for the Rust BLE loopback test package.
-(load-native-lib "src/package_lib.bin")
+(import "src/package_lib.bin" 'package-lib)
+(load-native-lib package-lib)

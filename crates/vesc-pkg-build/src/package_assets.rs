@@ -70,11 +70,16 @@ impl PackageAssets {
         self.staging_dir().join("code.lisp")
     }
 
+    pub fn native_payload_path(&self) -> PathBuf {
+        self.staging_dir().join("src/package_lib.bin")
+    }
+
     pub fn asset_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
         [
             self.readme_path(),
             self.descriptor_path(),
             self.loader_path(),
+            self.native_payload_path(),
         ]
         .into_iter()
     }
@@ -101,7 +106,7 @@ impl PackageAssets {
     }
 
     pub fn render_loader(&self) -> String {
-        "(load-native-lib \"src/package_lib.bin\")\n".to_owned()
+        "(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n".to_owned()
     }
 }
 
@@ -129,6 +134,9 @@ mod tests {
                 std::path::PathBuf::from(
                     "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/code.lisp"
                 ),
+                std::path::PathBuf::from(
+                    "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/src/package_lib.bin"
+                ),
             ]
         );
         assert_eq!(
@@ -146,7 +154,7 @@ mod tests {
             .contains("loaderScriptPath:\"code.lisp\""));
         assert_eq!(
             assets.render_loader(),
-            "(load-native-lib \"src/package_lib.bin\")\n"
+            "(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n"
         );
         assert!(
             !assets.render_loader().contains("ext-rust-add"),

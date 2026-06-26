@@ -76,14 +76,14 @@ impl PackageTargetPlan {
         C: PackageBinaryConversionRunner,
     {
         self.build_plan
+            .convert_package_binary_with(conversion_runner)
+            .map_err(PackageTargetError::Conversion)?;
+        self.build_plan
             .stage_package_assets()
             .map_err(|error| PackageTargetError::Stage {
                 path: self.build_plan.inspection_plan().staging_dir_path(),
                 reason: error.to_string(),
             })?;
-        self.build_plan
-            .convert_package_binary_with(conversion_runner)
-            .map_err(PackageTargetError::Conversion)?;
         self.build_plan
             .inspect_package_artifacts()
             .map_err(PackageTargetError::Inspection)?;

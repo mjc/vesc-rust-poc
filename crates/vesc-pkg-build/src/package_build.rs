@@ -70,6 +70,15 @@ impl PackageBuildPlan {
             self.source_root.join(assets.loader_path()),
             assets.render_loader(),
         )?;
+        let native_payload_path = self.source_root.join(assets.native_payload_path());
+        if let Some(parent) = native_payload_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::copy(
+            self.source_root
+                .join("target/native-lib-baseline/package_lib.bin"),
+            native_payload_path,
+        )?;
         Ok(assets)
     }
 
@@ -116,7 +125,7 @@ impl PackageBuildPlan {
         let descriptor = fs::read_to_string(staging.descriptor_path())?;
         let loader = fs::read_to_string(staging.loader_path())?;
         let output_path = self.source_root.join(self.package_output_path());
-        let loader_path = self.source_root.join("package");
+        let loader_path = staging.staging_dir_path();
 
         let input = VescPackageInput {
             name: assets.package_name(),
@@ -233,6 +242,9 @@ mod tests {
                 std::path::PathBuf::from(
                     "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/code.lisp"
                 ),
+                std::path::PathBuf::from(
+                    "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/src/package_lib.bin"
+                ),
             ]
         );
         assert_eq!(
@@ -293,13 +305,13 @@ mod tests {
     fn writes_the_expected_package_output() {
         let root = unique_root();
         let plan = PackageBuildPlan::new(&root, BLE_LOOPBACK_PACKAGE_NAME, "0.1.0");
-        plan.stage_package_assets().expect("staged assets");
         fs::create_dir_all(root.join("target/native-lib-baseline")).expect("native payload dir");
         fs::write(
             root.join("target/native-lib-baseline/package_lib.bin"),
             b"payload",
         )
         .expect("native payload");
+        plan.stage_package_assets().expect("staged assets");
 
         let output = plan.write_package_output().expect("package output");
 
@@ -317,7 +329,7 @@ mod tests {
         let error = plan
             .inspect_package_artifacts()
             .expect_err("missing artifacts");
-        assert_eq!(error.problems().len(), 4);
+        assert_eq!(error.problems().len(), 5);
     }
 
     #[test]
@@ -345,6 +357,11 @@ mod tests {
         write_artifact(
             &root,
             "target/native-lib-baseline/package_lib.bin",
+            "payload",
+        );
+        write_artifact(
+            &inspection_plan.staging_dir_path(),
+            "src/package_lib.bin",
             "payload",
         );
 
