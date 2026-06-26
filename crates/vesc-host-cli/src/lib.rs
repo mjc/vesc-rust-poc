@@ -33,6 +33,7 @@ where
     }
 }
 
+mod ble_scan;
 pub mod btle;
 pub mod loopback;
 pub mod package_install;

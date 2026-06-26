@@ -5,14 +5,13 @@ use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::Duration;
 
-use btleplug::api::{
-    Central, Characteristic, Manager as _, Peripheral as _, ScanFilter, WriteType,
-};
+use btleplug::api::{Central, Characteristic, Manager as _, Peripheral as _, WriteType};
 use btleplug::platform::{Manager, Peripheral};
 use futures_util::StreamExt;
 use tokio::runtime::{Builder, Runtime};
 use tokio::time;
 
+use crate::ble_scan::vesc_tool_scan_filter;
 use crate::loopback::LoopbackTarget;
 use crate::package_install::{PackageInstallError, PackageInstallTransport};
 use crate::vesc_uart::{encode_packet, PacketDecoder};
@@ -354,9 +353,7 @@ async fn open_session(target: LoopbackTarget) -> Result<VescSession, PackageInst
         .ok_or_else(|| PackageInstallError::Device("no Bluetooth adapter found".to_owned()))?;
 
     adapter
-        .start_scan(ScanFilter {
-            services: vec![VESC_BLE_UART_SERVICE_UUID],
-        })
+        .start_scan(vesc_tool_scan_filter())
         .await
         .map_err(|_| PackageInstallError::Device("failed to start BLE scan".to_owned()))?;
 

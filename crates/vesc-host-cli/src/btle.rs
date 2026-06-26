@@ -1,7 +1,6 @@
+use crate::ble_scan::vesc_tool_scan_filter;
 use crate::loopback::{LoopbackTarget, LoopbackTransport, LoopbackTransportError};
-use btleplug::api::{
-    Central, Characteristic, Manager as _, Peripheral as _, ScanFilter, WriteType,
-};
+use btleplug::api::{Central, Characteristic, Manager as _, Peripheral as _, WriteType};
 use btleplug::platform::{Adapter, Manager, Peripheral};
 use futures_util::StreamExt;
 use std::cell::RefCell;
@@ -108,9 +107,7 @@ async fn open_session(target: LoopbackTarget) -> Result<BtleSession, LoopbackTra
         .ok_or(LoopbackTransportError::ScanTimeout)?;
 
     adapter
-        .start_scan(ScanFilter {
-            services: vec![VESC_BLE_UART_SERVICE_UUID],
-        })
+        .start_scan(vesc_tool_scan_filter())
         .await
         .map_err(|_| LoopbackTransportError::Device("failed to start BLE scan"))?;
 
