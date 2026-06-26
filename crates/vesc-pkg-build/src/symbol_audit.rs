@@ -92,6 +92,8 @@ pub fn build_final_native_lib_elf() {
             "-mthumb",
             "-mfloat-abi=hard",
             "-mfpu=fpv4-sp-d16",
+            "-Os",
+            "-fomit-frame-pointer",
             "-std=c11",
             "-I",
             include_dir.to_str().expect("utf-8 include directory"),
@@ -217,6 +219,8 @@ fn parse_defined_symbol(line: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::{
         audit_final_native_lib_elf_symbols, audit_rust_staticlib_symbols,
         build_final_native_lib_binary, build_rust_staticlib, defined_symbols,
@@ -298,6 +302,13 @@ mod tests {
         assert!(
             native_lib_bin_path().exists(),
             "expected the final native-lib binary to be materialized"
+        );
+        let native_bin_size = fs::metadata(native_lib_bin_path())
+            .expect("native-lib binary metadata")
+            .len();
+        assert!(
+            native_bin_size <= 80,
+            "expected the native blob to stay compact, got {native_bin_size} bytes"
         );
     }
 
