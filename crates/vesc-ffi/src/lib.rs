@@ -145,14 +145,6 @@ transparent_eq_value_type!(pub struct Microseconds(u32););
 transparent_value_type!(pub struct SecondsF32(f32););
 transparent_eq_value_type!(pub struct SystemTicks(u32););
 transparent_value_type!(pub struct SystemSeconds(f32););
-transparent_value_type!(pub struct Degrees(f32););
-transparent_value_type!(pub struct Radians(f32););
-transparent_value_type!(pub struct Erpm(f32););
-transparent_value_type!(pub struct DutyCycle(f32););
-transparent_value_type!(pub struct CurrentAmps(f32););
-transparent_value_type!(pub struct BrakeCurrentAmps(f32););
-transparent_value_type!(pub struct InputCurrentAmps(f32););
-transparent_value_type!(pub struct Voltage(f32););
 
 transparent_eq_value_type!(pub struct AppDataLen(u32););
 transparent_eq_value_type!(pub struct UartBaudRate(u32););
@@ -206,23 +198,6 @@ impl HalfDuplex {
         self.0
     }
 }
-
-transparent_value_type!(pub struct TemperatureC(f32););
-transparent_value_type!(pub struct DistanceMeters(f32););
-transparent_value_type!(pub struct SpeedMetersPerSecond(f32););
-transparent_value_type!(pub struct AmpHours(f32););
-transparent_value_type!(pub struct WattHours(f32););
-transparent_value_type!(pub struct OdometerMeters(u64););
-transparent_value_type!(pub struct BatteryLevel(f32););
-transparent_value_type!(pub struct FocChannel(i32););
-transparent_value_type!(pub struct ToneFrequencyHz(f32););
-transparent_value_type!(pub struct ToneVoltage(f32););
-transparent_value_type!(pub struct OffDelaySeconds(f32););
-transparent_value_type!(pub struct LatitudeDeg(f64););
-transparent_value_type!(pub struct LongitudeDeg(f64););
-transparent_value_type!(pub struct AltitudeMeters(f32););
-transparent_value_type!(pub struct GnssSpeed(f32););
-transparent_value_type!(pub struct Hdop(f32););
 
 transparent_value_type!(pub struct Accel3([f32; 3]););
 transparent_value_type!(pub struct Gyro3([f32; 3]););
@@ -866,23 +841,21 @@ pub mod raw {
 mod tests {
     #[allow(unused_imports)]
     use super::{
-        Accel3, AltitudeMeters, AnalogRaw, AnalogVoltage, AmpHours, AppDataLen, AppDataPacket,
-        BatteryLevel, BrakeCurrentAmps, Bytes, CanControllerId,
+        Accel3, AnalogRaw, AnalogVoltage, AppDataLen, AppDataPacket,
+        Bytes, CanControllerId,
         CanFrameLen, CanPayload, CanStatusIndex, CfgFloat, CfgInt, CfgParam, CommandPacket,
-        ConfigPayload, ConfigResult, ConfigXmlBytes, CurrentAmps, Degrees, DistanceMeters,
-        DutyCycle, EepromAddress, EepromVar, Erpm, EulerAngles, ExtensionHandler,
-        FocChannel, FirmwareNonNull, FirmwarePtr, GnssSpeed, GpioPin, GpioPortPtr, Hdop,
-        HalfDuplex, HardwareType, ImageOffset, InputCurrentAmps, LatitudeDeg, LbmApi,
+        ConfigPayload, ConfigResult, ConfigXmlBytes, EepromAddress, EepromVar, EulerAngles,
+        ExtensionHandler, FirmwareNonNull, FirmwarePtr, GpioPin, GpioPortPtr,
+        HalfDuplex, HardwareType, ImageOffset, LbmApi,
         LbmBindings, LbmBoolSymbol, LbmCid, LbmCount, LbmErrorSymbol, LbmFloat, LbmInt,
         LbmIoSymbol, LbmNilSymbol, LbmSymbol, LbmType, LbmUint, LbmValue, LibInfo,
-        LibInfoAbi, LoaderBaseAddress, LongitudeDeg, MallocLen, Mag3, MotorIndex,
+        LibInfoAbi, LoaderBaseAddress, MallocLen, Mag3, MotorIndex,
         MutexHandle, MutablePacket, NativeAddress, NativeImage, NvmAddress, NvmBytes, NvmLen,
-        OdometerMeters, OffDelaySeconds, OwnedFirmwareAllocation, PitchDeg, PlotAxisName,
-        PlotGraphIndex, PlotGraphName, PlotPoint, ProgramAddress, Quaternion, Radians, ReplyPacket,
-        ReadCallbackDtSeconds, RollDeg, SemaphoreHandle, SecondsF32, SpeedMetersPerSecond, StackSizeBytes,
-        SystemSeconds, SystemTicks, TemperatureC, ThreadHandle, ThreadName, ToneFrequencyHz,
-        ToneVoltage, UartBaudRate, UartWriteLen, Value, VescIfAbi, VescPin, VescPinMode,
-        Voltage, WattHours, YawDeg,
+        OwnedFirmwareAllocation, PitchDeg, PlotAxisName,
+        PlotGraphIndex, PlotGraphName, PlotPoint, ProgramAddress, Quaternion, ReplyPacket,
+        ReadCallbackDtSeconds, RollDeg, SemaphoreHandle, SecondsF32, StackSizeBytes,
+        SystemSeconds, SystemTicks, ThreadHandle, ThreadName, UartBaudRate, UartWriteLen, Value,
+        VescIfAbi, VescPin, VescPinMode, YawDeg,
     };
     use core::cell::Cell;
     use core::ffi::{c_char, c_void, CStr};
@@ -1092,47 +1065,8 @@ mod tests {
             core::mem::size_of::<&[u8]>()
         );
         assert_eq!(core::mem::size_of::<HalfDuplex>(), core::mem::size_of::<bool>());
-        assert_eq!(core::mem::size_of::<TemperatureC>(), core::mem::size_of::<f32>());
-        assert_eq!(core::mem::size_of::<DistanceMeters>(), core::mem::size_of::<f32>());
-        assert_eq!(
-            core::mem::size_of::<SpeedMetersPerSecond>(),
-            core::mem::size_of::<f32>()
-        );
-        assert_eq!(core::mem::size_of::<AmpHours>(), core::mem::size_of::<f32>());
-        assert_eq!(core::mem::size_of::<WattHours>(), core::mem::size_of::<f32>());
-        assert_eq!(core::mem::size_of::<OdometerMeters>(), core::mem::size_of::<u64>());
-        assert_eq!(core::mem::size_of::<BatteryLevel>(), core::mem::size_of::<f32>());
-        assert_eq!(core::mem::size_of::<FocChannel>(), core::mem::size_of::<i32>());
-        assert_eq!(
-            core::mem::size_of::<ToneFrequencyHz>(),
-            core::mem::size_of::<f32>()
-        );
-        assert_eq!(core::mem::size_of::<ToneVoltage>(), core::mem::size_of::<f32>());
-        assert_eq!(
-            core::mem::size_of::<OffDelaySeconds>(),
-            core::mem::size_of::<f32>()
-        );
-        assert_eq!(core::mem::size_of::<LatitudeDeg>(), core::mem::size_of::<f64>());
-        assert_eq!(core::mem::size_of::<LongitudeDeg>(), core::mem::size_of::<f64>());
-        assert_eq!(core::mem::size_of::<AltitudeMeters>(), core::mem::size_of::<f32>());
-        assert_eq!(core::mem::size_of::<GnssSpeed>(), core::mem::size_of::<f32>());
-        assert_eq!(core::mem::size_of::<Hdop>(), core::mem::size_of::<f32>());
         assert_eq!(core::mem::size_of::<SystemTicks>(), core::mem::size_of::<u32>());
         assert_eq!(core::mem::size_of::<SystemSeconds>(), core::mem::size_of::<f32>());
-        assert_eq!(core::mem::size_of::<Degrees>(), core::mem::size_of::<f32>());
-        assert_eq!(core::mem::size_of::<Radians>(), core::mem::size_of::<f32>());
-        assert_eq!(core::mem::size_of::<Erpm>(), core::mem::size_of::<f32>());
-        assert_eq!(core::mem::size_of::<DutyCycle>(), core::mem::size_of::<f32>());
-        assert_eq!(core::mem::size_of::<CurrentAmps>(), core::mem::size_of::<f32>());
-        assert_eq!(
-            core::mem::size_of::<BrakeCurrentAmps>(),
-            core::mem::size_of::<f32>()
-        );
-        assert_eq!(
-            core::mem::size_of::<InputCurrentAmps>(),
-            core::mem::size_of::<f32>()
-        );
-        assert_eq!(core::mem::size_of::<Voltage>(), core::mem::size_of::<f32>());
         assert_eq!(core::mem::size_of::<CfgParam>(), core::mem::size_of::<i32>());
         assert_eq!(core::mem::size_of::<CfgFloat>(), core::mem::size_of::<f32>());
         assert_eq!(core::mem::size_of::<CfgInt>(), core::mem::size_of::<i32>());
