@@ -309,11 +309,16 @@ pub fn run_lisp_probe() -> Result<LispProbeReport, LoopbackTransportError> {
         .map_err(|_| LoopbackTransportError::Device("failed to start the BLE runtime"))?;
 
     let mut session = runtime.block_on(open_session(LoopbackTarget::default()))?;
-    runtime.block_on(write_ble_uart_packet(
-        &session.peripheral,
-        &session.rx_char,
-        &build_lisp_repl_packet("(print (ext-rust-add 20 22))"),
-    ))?;
+    for command in [
+        r#"(print "vesc-rust-probe-v3")"#,
+        "(print (ext-rust-add 20 22))",
+    ] {
+        runtime.block_on(write_ble_uart_packet(
+            &session.peripheral,
+            &session.rx_char,
+            &build_lisp_repl_packet(command),
+        ))?;
+    }
     let prints = session.receive_lisp_prints()?;
 
     Ok(LispProbeReport { prints })

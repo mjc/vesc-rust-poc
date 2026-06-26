@@ -437,7 +437,7 @@ mod tests {
             text,
             SectionLayout {
                 name: ".text".to_owned(),
-                size: 429,
+                size: 413,
                 vma: 48,
             }
         );
@@ -471,7 +471,6 @@ mod tests {
         );
         for offset in [
             "1000f840",
-            "[r6, #60]",
             "[r6, #84]",
             "1000fa4c",
             "[r6, #360]",

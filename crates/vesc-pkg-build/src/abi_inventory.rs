@@ -20,7 +20,7 @@ impl AbiRequirement {
     }
 }
 
-pub const MINIMAL_TEST_PACKAGE_ABI: [AbiRequirement; 14] = [
+pub const MINIMAL_TEST_PACKAGE_ABI: [AbiRequirement; 13] = [
     AbiRequirement::new(
         "INIT_FUN",
         AbiRequirementKind::EntryPoint,
@@ -65,11 +65,6 @@ pub const MINIMAL_TEST_PACKAGE_ABI: [AbiRequirement; 14] = [
         "lbm_enc_i",
         AbiRequirementKind::Function,
         "C shim encodes the integer result",
-    ),
-    AbiRequirement::new(
-        "VESC_IF.lbm_is_number",
-        AbiRequirementKind::Function,
-        "Rust package validates LispBM extension arguments before decoding",
     ),
     AbiRequirement::new(
         "VESC_IF.lbm_enc_sym_eerror",
@@ -119,7 +114,6 @@ mod tests {
                 "lbm_uint",
                 "lbm_dec_as_i32",
                 "lbm_enc_i",
-                "VESC_IF.lbm_is_number",
                 "VESC_IF.lbm_enc_sym_eerror",
                 "VESC_IF.set_app_data_handler",
                 "VESC_IF.send_app_data",

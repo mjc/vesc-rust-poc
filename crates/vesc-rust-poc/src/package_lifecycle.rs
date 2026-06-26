@@ -47,10 +47,6 @@ fn rust_add_extension_value<B: LbmBindings>(
 
     let first = unsafe { *args };
     let second = unsafe { *args.add(1) };
-    if !api.is_number(first) || !api.is_number(second) {
-        return api.encode_eval_error();
-    }
-
     let a = api.decode_i32(first);
     let b = api.decode_i32(second);
     api.encode_i32(crate::rust_add(a, b))
@@ -68,7 +64,6 @@ mod tests {
     struct FakeBindings {
         add_calls: Cell<usize>,
         decode_calls: Cell<usize>,
-        number_result: bool,
     }
 
     impl FakeBindings {
@@ -76,15 +71,6 @@ mod tests {
             Self {
                 add_calls: Cell::new(0),
                 decode_calls: Cell::new(0),
-                number_result: true,
-            }
-        }
-
-        fn with_number_result(number_result: bool) -> Self {
-            Self {
-                add_calls: Cell::new(0),
-                decode_calls: Cell::new(0),
-                number_result,
             }
         }
     }
@@ -109,7 +95,7 @@ mod tests {
         }
 
         unsafe fn is_number(&self, _value: LbmValue) -> bool {
-            self.number_result
+            true
         }
 
         unsafe fn encode_eval_error(&self) -> LbmValue {
@@ -141,7 +127,7 @@ mod tests {
     }
 
     #[test]
-    fn rust_add_extension_returns_eval_error_for_bad_arguments() {
+    fn rust_add_extension_returns_eval_error_for_bad_arity() {
         let api = LbmApi::new(FakeBindings::new());
         let mut args = [LbmValue(20)];
 
@@ -151,13 +137,6 @@ mod tests {
         );
         assert_eq!(
             rust_add_extension_value(&api, core::ptr::null_mut(), LbmCount(2)),
-            LbmValue(0xeeee_eeee)
-        );
-
-        let api = LbmApi::new(FakeBindings::with_number_result(false));
-        let mut args = [LbmValue(20), LbmValue(22)];
-        assert_eq!(
-            rust_add_extension_value(&api, args.as_mut_ptr(), LbmCount(2)),
             LbmValue(0xeeee_eeee)
         );
     }
