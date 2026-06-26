@@ -185,6 +185,7 @@ async fn find_matching_peripheral(
 
             if target_matches_properties(
                 target,
+                Some(&properties.address.to_string()),
                 properties.local_name.as_deref(),
                 &properties.services,
             ) {
@@ -198,16 +199,25 @@ async fn find_matching_peripheral(
 
 fn target_matches_properties(
     target: &LoopbackTarget,
+    address: Option<&str>,
     local_name: Option<&str>,
     services: &[Uuid],
 ) -> bool {
-    services.contains(&VESC_BLE_UART_SERVICE_UUID)
-        || local_name
-            .map(|name| {
-                name.eq_ignore_ascii_case(target.device_name_hint())
-                    || name.eq_ignore_ascii_case(target.service_name_hint())
-            })
-            .unwrap_or(false)
+    let address_matches = target
+        .address()
+        .zip(address)
+        .map(|(expected, actual)| expected.eq_ignore_ascii_case(actual))
+        .unwrap_or(false);
+    let name_matches = local_name
+        .map(|name| {
+            name.eq_ignore_ascii_case(target.device_name_hint())
+                || name.eq_ignore_ascii_case(target.service_name_hint())
+        })
+        .unwrap_or(false);
+    let service_matches =
+        !target.requires_explicit_match() && services.contains(&VESC_BLE_UART_SERVICE_UUID);
+
+    address_matches || name_matches || service_matches
 }
 
 pub fn vesc_ble_uart_service_uuid() -> Uuid {
@@ -250,6 +260,7 @@ mod tests {
     fn matches_a_known_vesc_service_uuid() {
         assert!(target_matches_properties(
             &LoopbackTarget::default(),
+            Some("AA:BB:CC:DD:EE:FF"),
             Some("something-else"),
             &[vesc_ble_uart_service_uuid()]
         ));
@@ -259,6 +270,7 @@ mod tests {
     fn falls_back_to_the_target_name_hint() {
         assert!(target_matches_properties(
             &LoopbackTarget::default(),
+            Some("AA:BB:CC:DD:EE:FF"),
             Some("vesc-loopback-test"),
             &[]
         ));
@@ -268,8 +280,45 @@ mod tests {
     fn rejects_unrelated_devices() {
         assert!(!target_matches_properties(
             &LoopbackTarget::default(),
+            Some("AA:BB:CC:DD:EE:FF"),
             Some("other-device"),
             &[]
+        ));
+    }
+
+    #[test]
+    fn explicit_name_target_does_not_fall_back_to_service_uuid() {
+        let target = LoopbackTarget::named("Floatwheel PintV");
+
+        assert!(target_matches_properties(
+            &target,
+            Some("AA:BB:CC:DD:EE:FF"),
+            Some("Floatwheel PintV"),
+            &[]
+        ));
+        assert!(!target_matches_properties(
+            &target,
+            Some("AA:BB:CC:DD:EE:FF"),
+            Some("something-else"),
+            &[vesc_ble_uart_service_uuid()]
+        ));
+    }
+
+    #[test]
+    fn explicit_address_target_matches_address() {
+        let target = LoopbackTarget::addressed("AA:BB:CC:DD:EE:FF");
+
+        assert!(target_matches_properties(
+            &target,
+            Some("aa:bb:cc:dd:ee:ff"),
+            Some("something-else"),
+            &[]
+        ));
+        assert!(!target_matches_properties(
+            &target,
+            Some("11:22:33:44:55:66"),
+            Some("something-else"),
+            &[vesc_ble_uart_service_uuid()]
         ));
     }
 }

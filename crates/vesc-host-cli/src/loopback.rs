@@ -5,26 +5,56 @@ use std::fmt;
 use vesc_protocol::ble_loopback::{LoopbackError, LoopbackPacket};
 use vesc_protocol::WireCommand;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoopbackTarget {
-    device_name_hint: &'static str,
-    service_name_hint: &'static str,
+    device_name_hint: String,
+    service_name_hint: String,
+    address: Option<String>,
+    require_explicit_match: bool,
 }
 
 impl LoopbackTarget {
-    pub const fn new(device_name_hint: &'static str, service_name_hint: &'static str) -> Self {
+    pub fn new(device_name_hint: impl Into<String>, service_name_hint: impl Into<String>) -> Self {
         Self {
-            device_name_hint,
-            service_name_hint,
+            device_name_hint: device_name_hint.into(),
+            service_name_hint: service_name_hint.into(),
+            address: None,
+            require_explicit_match: false,
         }
     }
 
-    pub const fn device_name_hint(&self) -> &'static str {
-        self.device_name_hint
+    pub fn named(device_name: impl Into<String>) -> Self {
+        Self {
+            device_name_hint: device_name.into(),
+            service_name_hint: "vesc-loopback-service".to_owned(),
+            address: None,
+            require_explicit_match: true,
+        }
     }
 
-    pub const fn service_name_hint(&self) -> &'static str {
-        self.service_name_hint
+    pub fn addressed(address: impl Into<String>) -> Self {
+        Self {
+            device_name_hint: "vesc-loopback-test".to_owned(),
+            service_name_hint: "vesc-loopback-service".to_owned(),
+            address: Some(address.into()),
+            require_explicit_match: true,
+        }
+    }
+
+    pub fn device_name_hint(&self) -> &str {
+        &self.device_name_hint
+    }
+
+    pub fn service_name_hint(&self) -> &str {
+        &self.service_name_hint
+    }
+
+    pub fn address(&self) -> Option<&str> {
+        self.address.as_deref()
+    }
+
+    pub fn requires_explicit_match(&self) -> bool {
+        self.require_explicit_match
     }
 }
 
@@ -69,8 +99,8 @@ pub struct LoopbackReport {
 }
 
 impl LoopbackReport {
-    pub fn target(&self) -> LoopbackTarget {
-        self.target
+    pub fn target(&self) -> &LoopbackTarget {
+        &self.target
     }
 
     pub fn commands(&self) -> &[WireCommand] {
@@ -115,7 +145,7 @@ impl FakeLoopbackTransport {
     }
 
     pub fn open_target(&self) -> Option<LoopbackTarget> {
-        *self.open_target.borrow()
+        self.open_target.borrow().clone()
     }
 
     pub fn queue_response(&self, response: Result<Vec<u8>, LoopbackTransportError>) {
@@ -148,7 +178,7 @@ pub fn run_loopback<T: LoopbackTransport>(
     transport: &T,
 ) -> Result<LoopbackReport, LoopbackTransportError> {
     let target = LoopbackTarget::default();
-    transport.open(target)?;
+    transport.open(target.clone())?;
     let steps = [
         LoopbackPacket::new(WireCommand::Ping, &[]).expect("ping packet"),
         LoopbackPacket::new(WireCommand::Echo, &[9, 8]).expect("echo packet"),
@@ -251,7 +281,7 @@ mod tests {
 
         let report = run_loopback(&transport).expect("loopback report");
 
-        assert_eq!(report.target(), LoopbackTarget::default());
+        assert_eq!(report.target(), &LoopbackTarget::default());
         assert_eq!(transport.open_target(), Some(LoopbackTarget::default()));
         assert_eq!(report.target().device_name_hint(), "vesc-loopback-test");
         assert_eq!(report.target().service_name_hint(), "vesc-loopback-service");

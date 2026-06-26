@@ -4,7 +4,14 @@ pub enum Command {
     Layout,
     Status,
     Loopback,
-    PackageInstall(String),
+    PackageInstall(PackageInstallCommand),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageInstallCommand {
+    pub package_path: String,
+    pub device_name: Option<String>,
+    pub address: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,12 +32,44 @@ where
         Some("layout") => Ok(Command::Layout),
         Some("status") => Ok(Command::Status),
         Some("loopback") => Ok(Command::Loopback),
-        Some("package-install") => iter
-            .next()
-            .map(Command::PackageInstall)
-            .ok_or_else(|| ParseError::UnknownCommand("package-install".to_owned())),
+        Some("package-install") => parse_package_install(iter).map(Command::PackageInstall),
         Some(other) => Err(ParseError::UnknownCommand(other.to_owned())),
     }
+}
+
+fn parse_package_install(
+    mut iter: impl Iterator<Item = String>,
+) -> Result<PackageInstallCommand, ParseError> {
+    let mut device_name = None;
+    let mut address = None;
+    let mut package_path = None;
+
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--device" => {
+                device_name = Some(
+                    iter.next()
+                        .ok_or_else(|| ParseError::UnknownCommand("--device".to_owned()))?,
+                );
+            }
+            "--address" => {
+                address = Some(
+                    iter.next()
+                        .ok_or_else(|| ParseError::UnknownCommand("--address".to_owned()))?,
+                );
+            }
+            _ if package_path.is_none() => package_path = Some(arg),
+            other => return Err(ParseError::UnknownCommand(other.to_owned())),
+        }
+    }
+
+    package_path
+        .map(|package_path| PackageInstallCommand {
+            package_path,
+            device_name,
+            address,
+        })
+        .ok_or_else(|| ParseError::UnknownCommand("package-install".to_owned()))
 }
 
 mod ble_scan;
@@ -42,7 +81,7 @@ pub mod vesc_uart;
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_args, Command, ParseError};
+    use super::{parse_args, Command, PackageInstallCommand, ParseError};
     use vesc_protocol::{WireCommand, WireVersion};
 
     #[test]
@@ -80,7 +119,47 @@ mod tests {
     fn parses_package_install_command() {
         assert_eq!(
             parse_args(["vesc-host-cli", "package-install", "foo.vescpkg"]),
-            Ok(Command::PackageInstall("foo.vescpkg".to_owned()))
+            Ok(Command::PackageInstall(PackageInstallCommand {
+                package_path: "foo.vescpkg".to_owned(),
+                device_name: None,
+                address: None,
+            }))
+        );
+    }
+
+    #[test]
+    fn parses_package_install_device_selector() {
+        assert_eq!(
+            parse_args([
+                "vesc-host-cli",
+                "package-install",
+                "--device",
+                "Floatwheel PintV",
+                "foo.vescpkg"
+            ]),
+            Ok(Command::PackageInstall(PackageInstallCommand {
+                package_path: "foo.vescpkg".to_owned(),
+                device_name: Some("Floatwheel PintV".to_owned()),
+                address: None,
+            }))
+        );
+    }
+
+    #[test]
+    fn parses_package_install_address_selector() {
+        assert_eq!(
+            parse_args([
+                "vesc-host-cli",
+                "package-install",
+                "--address",
+                "AA:BB:CC:DD:EE:FF",
+                "foo.vescpkg"
+            ]),
+            Ok(Command::PackageInstall(PackageInstallCommand {
+                package_path: "foo.vescpkg".to_owned(),
+                device_name: None,
+                address: Some("AA:BB:CC:DD:EE:FF".to_owned()),
+            }))
         );
     }
 

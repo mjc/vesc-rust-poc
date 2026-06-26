@@ -167,8 +167,8 @@ impl BtlePackageInstallTransport {
         })
     }
 
-    pub fn open(&self) -> Result<(), PackageInstallError> {
-        self.open_session(LoopbackTarget::default())
+    pub fn open(&self, target: LoopbackTarget) -> Result<(), PackageInstallError> {
+        self.open_session(target)
     }
 
     fn open_session(&self, target: LoopbackTarget) -> Result<(), PackageInstallError> {
@@ -437,16 +437,22 @@ async fn find_matching_peripheral(
                 _ => continue,
             };
 
-            if properties.services.contains(&VESC_BLE_UART_SERVICE_UUID)
-                || properties
-                    .local_name
-                    .as_deref()
-                    .map(|name| {
-                        name.eq_ignore_ascii_case(target.device_name_hint())
-                            || name.eq_ignore_ascii_case(target.service_name_hint())
-                    })
-                    .unwrap_or(false)
-            {
+            let address_matches = target
+                .address()
+                .map(|address| properties.address.to_string().eq_ignore_ascii_case(address))
+                .unwrap_or(false);
+            let name_matches = properties
+                .local_name
+                .as_deref()
+                .map(|name| {
+                    name.eq_ignore_ascii_case(target.device_name_hint())
+                        || name.eq_ignore_ascii_case(target.service_name_hint())
+                })
+                .unwrap_or(false);
+            let service_matches = !target.requires_explicit_match()
+                && properties.services.contains(&VESC_BLE_UART_SERVICE_UUID);
+
+            if address_matches || name_matches || service_matches {
                 return Ok(peripheral);
             }
         }

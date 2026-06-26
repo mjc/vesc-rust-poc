@@ -37,14 +37,16 @@ fn main() -> ExitCode {
                 }
             }
         }
-        Ok(vesc_host_cli::Command::PackageInstall(path)) => {
-            let package = match vesc_host_cli::package_install::read_package_from_path(&path) {
-                Ok(package) => package,
-                Err(error) => {
-                    eprintln!("failed to read package {path}: {error}");
-                    return ExitCode::from(1);
-                }
-            };
+        Ok(vesc_host_cli::Command::PackageInstall(command)) => {
+            let package =
+                match vesc_host_cli::package_install::read_package_from_path(&command.package_path)
+                {
+                    Ok(package) => package,
+                    Err(error) => {
+                        eprintln!("failed to read package {}: {error}", command.package_path);
+                        return ExitCode::from(1);
+                    }
+                };
 
             let transport =
                 match vesc_host_cli::package_transport::BtlePackageInstallTransport::new() {
@@ -55,7 +57,15 @@ fn main() -> ExitCode {
                     }
                 };
 
-            if let Err(error) = transport.open() {
+            let target = match (command.address, command.device_name) {
+                (Some(address), _) => vesc_host_cli::loopback::LoopbackTarget::addressed(address),
+                (None, Some(device_name)) => {
+                    vesc_host_cli::loopback::LoopbackTarget::named(device_name)
+                }
+                (None, None) => vesc_host_cli::loopback::LoopbackTarget::default(),
+            };
+
+            if let Err(error) = transport.open(target) {
                 eprintln!("failed to open package transport: {error}");
                 return ExitCode::from(1);
             }
