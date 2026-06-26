@@ -109,22 +109,6 @@ transparent_eq_value_type!(
     pub struct CanFrameLen(u8);
 );
 
-transparent_value_type_generic!(
-    pub struct AppDataPacket<'a>(&'a [u8]);
-);
-
-#[repr(transparent)]
-#[derive(Debug, PartialEq)]
-pub struct MutablePacket<'a>(pub &'a mut [u8]);
-
-transparent_value_type_generic!(
-    pub struct CommandPacket<'a>(&'a [u8]);
-);
-
-transparent_value_type_generic!(
-    pub struct ReplyPacket<'a>(&'a [u8]);
-);
-
 transparent_value_type!(
     pub struct HalfDuplex(bool);
 );
@@ -140,15 +124,6 @@ transparent_eq_value_type!(
 );
 transparent_eq_value_type!(
     pub struct ConfigSetResult(i32);
-);
-transparent_value_type_generic!(
-    pub struct ConfigXmlBytes<'a>(&'a [u8]);
-);
-transparent_value_type_generic!(
-    pub struct ConfigPayload<'a>(&'a [u8]);
-);
-transparent_value_type_generic!(
-    pub struct ThreadName<'a>(&'a CStr);
 );
 transparent_eq_value_type!(
     pub struct StackSizeBytes(usize);
@@ -174,9 +149,6 @@ transparent_eq_value_type!(
 transparent_eq_value_type_type!(
     pub struct OwnedFirmwareAllocation<T>(core::ptr::NonNull<T>);
 );
-transparent_eq_value_type_generic!(
-    pub struct CanPayload<'a>(&'a [u8]);
-);
 transparent_eq_value_type!(
     pub struct CanStatusIndex(i32);
 );
@@ -184,12 +156,13 @@ transparent_eq_value_type!(
     pub struct HardwareType(i32);
 );
 
-transparent_value_type_generic!(
-    pub struct PlotAxisName<'a>(&'a CStr);
-);
-transparent_value_type_generic!(
-    pub struct PlotGraphName<'a>(&'a CStr);
-);
+pub mod views;
+
+pub use views::{
+    AppDataPacket, CanPayload, CommandPacket, ConfigPayload, ConfigXmlBytes, MutablePacket,
+    NvmBytes, PlotAxisName, PlotGraphName, ReplyPacket, ThreadName,
+};
+
 transparent_eq_value_type!(
     pub struct PlotGraphIndex(i32);
 );
@@ -221,9 +194,6 @@ transparent_eq_value_type!(
 );
 transparent_eq_value_type!(
     pub struct NvmLen(u32);
-);
-transparent_value_type_generic!(
-    pub struct NvmBytes<'a>(&'a [u8]);
 );
 
 transparent_eq_value_type!(
