@@ -87,19 +87,7 @@ transparent_eq_value_type!(
     pub struct LoaderBaseAddress(u32);
 );
 transparent_eq_value_type!(
-    pub struct Milliseconds(u32);
-);
-transparent_eq_value_type!(
-    pub struct Microseconds(u32);
-);
-transparent_value_type!(
-    pub struct SecondsF32(f32);
-);
-transparent_eq_value_type!(
     pub struct SystemTicks(u32);
-);
-transparent_value_type!(
-    pub struct SystemSeconds(f32);
 );
 
 transparent_eq_value_type!(
@@ -293,11 +281,6 @@ pub(crate) struct RemoteButton(pub u32);
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(dead_code)]
-pub(crate) struct RemoteAgeSeconds(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
 pub(crate) struct RemoteState(pub u32);
 
 #[repr(transparent)]
@@ -309,11 +292,6 @@ pub(crate) struct JoystickAxis(pub f32);
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(dead_code)]
 pub(crate) struct PpmValue(pub f32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
-pub(crate) struct PpmAgeSeconds(pub f32);
 
 pub type ExtensionHandler = unsafe extern "C" fn(*mut LbmValue, LbmCount) -> LbmValue;
 pub type AppDataHandler = unsafe extern "C" fn(*mut u8, u32);
@@ -750,9 +728,8 @@ mod tests {
         LbmType, LbmUint, LbmValue, LibInfo, LibInfoAbi, LoaderBaseAddress, MallocLen, MotorIndex,
         MutablePacket, MutexHandle, NativeAddress, NativeImage, NvmAddress, NvmBytes, NvmLen,
         OwnedFirmwareAllocation, PlotAxisName, PlotGraphIndex, PlotGraphName, PlotPoint,
-        ProgramAddress, ReplyPacket, SecondsF32, SemaphoreHandle, StackSizeBytes, SystemSeconds,
-        SystemTicks, ThreadHandle, ThreadName, UartBaudRate, UartWriteLen, VescIfAbi, VescPin,
-        VescPinMode,
+        ProgramAddress, ReplyPacket, SemaphoreHandle, StackSizeBytes, SystemTicks, ThreadHandle,
+        ThreadName, UartBaudRate, UartWriteLen, VescIfAbi, VescPin, VescPinMode,
     };
     use core::cell::Cell;
     use core::ffi::{CStr, c_char, c_void};
@@ -954,10 +931,6 @@ mod tests {
             core::mem::size_of::<u32>()
         );
         assert_eq!(
-            core::mem::size_of::<SecondsF32>(),
-            core::mem::size_of::<f32>()
-        );
-        assert_eq!(
             core::mem::size_of::<AppDataLen>(),
             core::mem::size_of::<u32>()
         );
@@ -1004,10 +977,6 @@ mod tests {
         assert_eq!(
             core::mem::size_of::<SystemTicks>(),
             core::mem::size_of::<u32>()
-        );
-        assert_eq!(
-            core::mem::size_of::<SystemSeconds>(),
-            core::mem::size_of::<f32>()
         );
         assert_eq!(
             core::mem::size_of::<CfgParam>(),
