@@ -1,14 +1,12 @@
 use crate::ble_discovery::{
-    find_matching_peripheral, vesc_tool_scan_filter, DiscoveredPeripheral, DiscoveryError,
+    collect_discovered_peripherals, find_matching_peripheral, vesc_tool_scan_filter,
+    DiscoveredPeripheral, DiscoveryError,
 };
 use crate::loopback::{LoopbackTarget, LoopbackTransport, LoopbackTransportError};
-use btleplug::api::{
-    Central, CentralEvent, Characteristic, Manager as _, Peripheral as _, WriteType,
-};
+use btleplug::api::{Central, Characteristic, Manager as _, Peripheral as _, WriteType};
 use btleplug::platform::{Manager, Peripheral};
 use futures_util::StreamExt;
 use std::cell::RefCell;
-use std::collections::HashSet;
 use std::sync::mpsc::{self, Receiver};
 use std::time::Duration;
 use tokio::runtime::{Builder, Runtime};
@@ -198,56 +196,10 @@ pub fn scan_devices() -> Result<Vec<DiscoveredPeripheral>, LoopbackTransportErro
             .await
             .map_err(|_| LoopbackTransportError::Device("failed to start BLE scan"))?;
 
-        let mut events = adapter
-            .events()
+        time::sleep(SCAN_TIMEOUT).await;
+        let devices = collect_discovered_peripherals(&adapter)
             .await
-            .map_err(|_| LoopbackTransportError::Device("failed to open BLE event stream"))?;
-        let deadline = tokio::time::Instant::now() + SCAN_TIMEOUT;
-        let mut devices = Vec::new();
-        let mut seen = HashSet::new();
-
-        while tokio::time::Instant::now() < deadline {
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            let Some(event) = time::timeout(remaining, events.next())
-                .await
-                .map_err(|_| LoopbackTransportError::ScanTimeout)?
-            else {
-                continue;
-            };
-
-            let peripheral_id = match event {
-                CentralEvent::DeviceDiscovered(id)
-                | CentralEvent::DeviceUpdated(id)
-                | CentralEvent::DeviceConnected(id)
-                | CentralEvent::DeviceDisconnected(id)
-                | CentralEvent::ServicesAdvertisement { id, .. }
-                | CentralEvent::ServiceDataAdvertisement { id, .. }
-                | CentralEvent::ManufacturerDataAdvertisement { id, .. } => id,
-                CentralEvent::StateUpdate(_) => continue,
-            };
-
-            let peripheral = adapter
-                .peripheral(&peripheral_id)
-                .await
-                .map_err(|_| LoopbackTransportError::Device("failed to inspect BLE peripherals"))?;
-            let Some(properties) = peripheral
-                .properties()
-                .await
-                .map_err(|_| LoopbackTransportError::Device("failed to inspect BLE peripherals"))?
-            else {
-                continue;
-            };
-
-            let identifier = properties.address.to_string();
-            if seen.insert(identifier.clone()) {
-                devices.push(DiscoveredPeripheral {
-                    identifier,
-                    local_name: properties.local_name,
-                    services: properties.services,
-                });
-            }
-        }
-
+            .map_err(map_discovery_error)?;
         let _ = adapter.stop_scan().await;
         Ok(devices)
     })
@@ -257,9 +209,6 @@ fn map_discovery_error(error: DiscoveryError) -> LoopbackTransportError {
     match error {
         DiscoveryError::InspectFailed => {
             LoopbackTransportError::Device("failed to inspect BLE peripherals")
-        }
-        DiscoveryError::EventStreamFailed => {
-            LoopbackTransportError::Device("failed to open BLE event stream")
         }
     }
 }

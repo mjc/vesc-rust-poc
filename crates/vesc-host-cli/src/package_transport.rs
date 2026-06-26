@@ -428,9 +428,6 @@ fn map_discovery_error(error: DiscoveryError) -> PackageInstallError {
         DiscoveryError::InspectFailed => {
             PackageInstallError::Device("failed to inspect BLE peripherals".to_owned())
         }
-        DiscoveryError::EventStreamFailed => {
-            PackageInstallError::Device("failed to open the BLE event stream".to_owned())
-        }
     }
 }
 
