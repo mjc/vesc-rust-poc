@@ -421,7 +421,7 @@ mod tests {
             init_fun,
             SectionLayout {
                 name: ".init_fun".to_owned(),
-                size: 28,
+                size: 56,
                 vma: 4,
             }
         );
@@ -430,15 +430,15 @@ mod tests {
             SectionLayout {
                 name: ".got".to_owned(),
                 size: 16,
-                vma: 32,
+                vma: 60,
             }
         );
         assert_eq!(
             text,
             SectionLayout {
                 name: ".text".to_owned(),
-                size: 386,
-                vma: 48,
+                size: 417,
+                vma: 80,
             }
         );
         assert_eq!(init_fun.vma, program_ptr.vma + program_ptr.size);
@@ -469,13 +469,7 @@ mod tests {
             disassembly.contains("1000f800"),
             "expected generated package code to call through VESC_IF at 0x1000f800:\n{disassembly}"
         );
-        for offset in [
-            "1000f840",
-            "1000fa50",
-            "[r6, #360]",
-            "[r6, #0]",
-            "[r5, #596]",
-        ] {
+        for offset in ["1000f840", "1000fa50", "[r6, #360]", "[r6, #0]", "#596]"] {
             assert!(
                 disassembly.contains(offset),
                 "expected VESC_IF slot access {offset} in generated code:\n{disassembly}"
@@ -493,6 +487,21 @@ mod tests {
         assert!(
             disassembly.contains("<package_lib_init>"),
             "expected init to retain the Rust package entrypoint:\n{disassembly}"
+        );
+        let package_init_disassembly = disassembly
+            .split("<package_lib_init>:")
+            .nth(1)
+            .expect("expected package_lib_init in disassembly");
+        let app_data_register = package_init_disassembly
+            .find("#596]")
+            .expect("expected app-data handler registration in package_lib_init");
+        let rust_extension_register = package_init_disassembly[app_data_register..]
+            .find("#0]")
+            .map(|offset| app_data_register + offset)
+            .expect("expected Rust extension registration through lbm_add_extension");
+        assert!(
+            app_data_register < rust_extension_register,
+            "expected package_lib_init to mirror VESC packages by registering app-data before LispBM extensions:\n{package_init_disassembly}"
         );
     }
 

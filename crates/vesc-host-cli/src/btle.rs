@@ -301,6 +301,13 @@ fn parse_lisp_print(payload: &[u8]) -> String {
     String::from_utf8_lossy(&payload[..end]).into_owned()
 }
 
+fn lisp_probe_command() -> &'static str {
+    r#"(progn
+    (print "vesc-rust-probe-v6")
+    (print (trap (ext-c-probe-v6)))
+    (print (trap (ext-rust-probe-v5))))"#
+}
+
 pub fn run_lisp_probe() -> Result<LispProbeReport, LoopbackTransportError> {
     let runtime = Builder::new_multi_thread()
         .enable_all()
@@ -309,13 +316,10 @@ pub fn run_lisp_probe() -> Result<LispProbeReport, LoopbackTransportError> {
         .map_err(|_| LoopbackTransportError::Device("failed to start the BLE runtime"))?;
 
     let mut session = runtime.block_on(open_session(LoopbackTarget::default()))?;
-    let command = r#"(progn
-    (print "vesc-rust-probe-v5")
-    (print (ext-rust-probe-v5)))"#;
     runtime.block_on(write_ble_uart_packet(
         &session.peripheral,
         &session.rx_char,
-        &build_lisp_repl_packet(command),
+        &build_lisp_repl_packet(lisp_probe_command()),
     ))?;
     let prints = session.receive_lisp_prints()?;
 
@@ -392,7 +396,7 @@ pub fn vesc_ble_uart_tx_uuid() -> Uuid {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_custom_app_data_packet, build_lisp_repl_packet, parse_lisp_print,
+        build_custom_app_data_packet, build_lisp_repl_packet, lisp_probe_command, parse_lisp_print,
         vesc_ble_uart_rx_uuid, vesc_ble_uart_service_uuid, vesc_ble_uart_tx_uuid,
         COMM_CUSTOM_APP_DATA, COMM_LISP_REPL_CMD,
     };
@@ -428,9 +432,11 @@ mod tests {
 
     #[test]
     fn wraps_lisp_probe_commands_in_repl_packets() {
-        let command = r#"(progn
-    (print "vesc-rust-probe-v5")
-    (print (ext-rust-probe-v5)))"#;
+        let command = lisp_probe_command();
+        assert!(command.contains("vesc-rust-probe-v6"));
+        assert!(command.contains("(trap (ext-c-probe-v6))"));
+        assert!(command.contains("(trap (ext-rust-probe-v5))"));
+
         let packet = build_lisp_repl_packet(command);
         let decoded = PacketDecoder::new()
             .push(&packet)

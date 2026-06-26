@@ -205,8 +205,16 @@ mod tests {
             "expected Rust, not C, to own LispBM extension registration: {package_lib:?}"
         );
         assert!(
-            !source.contains("VESC_IF->"),
-            "expected Rust, not C wrapper stubs, to own VESC_IF calls: {package_lib:?}"
+            source.contains("static lbm_value ext_c_probe_v6(lbm_value *args, lbm_uint argn)")
+                && source.contains("return VESC_IF->lbm_enc_i(42);")
+                && source
+                    .contains("VESC_IF->lbm_add_extension(\"ext-c-probe-v6\", ext_c_probe_v6);"),
+            "expected a minimal C-owned extension probe in the C bridge: {package_lib:?}"
+        );
+        assert!(
+            source.find("package_lib_init(info);")
+                < source.find("VESC_IF->lbm_add_extension(\"ext-c-probe-v6\""),
+            "expected the C probe to register after the Rust package init path: {package_lib:?}"
         );
     }
 
