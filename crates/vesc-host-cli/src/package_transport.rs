@@ -267,10 +267,9 @@ impl BtlePackageInstallTransport {
         command: u8,
         payload: &[u8],
         timeout: Duration,
-        expected_offset: u32,
     ) -> Result<(), PackageInstallError> {
         self.send_with_retries(command, payload, timeout, |response| {
-            parse_write_ack(response, command, expected_offset)
+            parse_write_ack(response, command)
         })
     }
 }
@@ -296,12 +295,7 @@ impl PackageInstallTransport for BtlePackageInstallTransport {
             let offset = (offset * CHUNK_SIZE) as u32;
             command_payload.extend_from_slice(&offset.to_be_bytes());
             command_payload.extend_from_slice(chunk);
-            self.expect_write_ok(
-                COMM_QMLUI_WRITE,
-                &command_payload,
-                WRITE_RESPONSE_TIMEOUT,
-                offset,
-            )?;
+            self.expect_write_ok(COMM_QMLUI_WRITE, &command_payload, WRITE_RESPONSE_TIMEOUT)?;
         }
 
         Ok(())
@@ -328,7 +322,6 @@ impl PackageInstallTransport for BtlePackageInstallTransport {
                 COMM_LISP_WRITE_CODE,
                 &command_payload,
                 WRITE_RESPONSE_TIMEOUT,
-                offset,
             )?;
         }
 
@@ -535,21 +528,14 @@ fn parse_simple_ack(response: &[u8], expected_command: u8) -> Result<bool, Packa
     Ok(read_u8(&mut cursor)? > 0)
 }
 
-fn parse_write_ack(
-    response: &[u8],
-    expected_command: u8,
-    expected_offset: u32,
-) -> Result<bool, PackageInstallError> {
+fn parse_write_ack(response: &[u8], expected_command: u8) -> Result<bool, PackageInstallError> {
     let mut cursor = response;
     if read_u8(&mut cursor)? != expected_command {
         return Err(malformed_reply("unexpected BLE reply"));
     }
 
     let ok = read_u8(&mut cursor)? > 0;
-    let offset = read_u32_be(&mut cursor)?;
-    if offset != expected_offset {
-        return Err(malformed_reply("unexpected BLE write offset"));
-    }
+    let _offset = read_u32_be(&mut cursor)?;
 
     Ok(ok)
 }
@@ -645,23 +631,23 @@ mod tests {
     }
 
     #[test]
-    fn parses_write_ack_packets_and_validates_offsets() {
+    fn parses_write_ack_packets_and_ignores_reported_offsets_like_vesc_tool() {
         let mut response = Vec::new();
         response.push(COMM_LISP_WRITE_CODE);
         response.push(1);
         response.extend_from_slice(&384_u32.to_be_bytes());
 
-        assert!(parse_write_ack(&response, COMM_LISP_WRITE_CODE, 384).expect("ack"));
+        assert!(parse_write_ack(&response, COMM_LISP_WRITE_CODE).expect("ack"));
     }
 
     #[test]
-    fn rejects_wrong_write_offsets() {
+    fn rejects_write_acks_for_the_wrong_command() {
         let mut response = Vec::new();
         response.push(COMM_LISP_WRITE_CODE);
         response.push(1);
         response.extend_from_slice(&128_u32.to_be_bytes());
 
-        assert!(parse_write_ack(&response, COMM_LISP_WRITE_CODE, 384).is_err());
+        assert!(parse_write_ack(&response, COMM_QMLUI_ERASE).is_err());
     }
 
     #[test]
