@@ -322,7 +322,7 @@ pub struct PitchDeg(pub f32);
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct YawDeg(pub f32);
 
-#[repr(transparent)]
+#[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EulerAngles {
     pub roll: RollDeg,
@@ -342,7 +342,7 @@ pub struct PlotGraphName<'a>(pub &'a CStr);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PlotGraphIndex(pub i32);
 
-#[repr(transparent)]
+#[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlotPoint {
     pub x: f32,
@@ -833,18 +833,25 @@ pub mod raw {
 #[cfg(test)]
 mod tests {
     use super::{
-        AltitudeMeters, AmpHours, AppDataLen, AppDataPacket, BatteryLevel, BrakeCurrentAmps,
-        CanControllerId, CanFrameLen, CommandPacket, CurrentAmps, Degrees, DistanceMeters,
-        DutyCycle, Erpm, ExtensionHandler, FocChannel, GnssSpeed, Hdop, HalfDuplex, ImageOffset,
-        InputCurrentAmps, LatitudeDeg, LbmApi, LbmBindings, LbmBoolSymbol, LbmCid, LbmCount,
-        LbmErrorSymbol, LbmFloat, LbmInt, LbmNilSymbol, LbmSymbol, LbmType, LbmUint, LbmValue,
-        LibInfo, LibInfoAbi, LoaderBaseAddress, LongitudeDeg, MotorIndex, MutablePacket,
-        NativeAddress, NativeImage, OdometerMeters, OffDelaySeconds, ProgramAddress, Radians,
-        ReplyPacket, SecondsF32, SpeedMetersPerSecond, SystemSeconds, SystemTicks, TemperatureC,
-        ToneFrequencyHz, ToneVoltage, UartBaudRate, UartWriteLen, Voltage, VescIfAbi, WattHours,
+        Accel3, AltitudeMeters, AnalogRaw, AnalogVoltage, AmpHours, AppDataLen, AppDataPacket,
+        BatteryLevel, BrakeCurrentAmps, CanControllerId, CanFrameLen, CanPayload, CanStatusIndex,
+        CfgFloat, CfgInt, CfgParam, CommandPacket, ConfigPayload, ConfigSetResult, ConfigXmlBytes,
+        CurrentAmps, Degrees, DistanceMeters, DutyCycle, EepromAddress, EepromVar, Erpm,
+        EulerAngles, ExtensionHandler, FocChannel, FirmwareNonNull, FirmwarePtr, GnssSpeed, Gyro3,
+        GpioPin, GpioPortPtr, Hdop, HardwareType, HalfDuplex, ImageOffset, ImuCalibration,
+        InputCurrentAmps, LatitudeDeg,
+        LbmApi, LbmBindings, LbmBoolSymbol, LbmCid, LbmCount, LbmErrorSymbol, LbmFloat, LbmInt,
+        LbmIoSymbol, LbmNilSymbol, LbmSymbol, LbmType, LbmUint, LbmValue, LibInfo, LibInfoAbi,
+        LoaderBaseAddress, LongitudeDeg, MallocLen, Mag3, MotorIndex, MutexHandle, MutablePacket,
+        NativeAddress, NativeImage, NvmAddress, NvmBytes, NvmLen, OdometerMeters, OffDelaySeconds,
+        OwnedFirmwareAllocation, PitchDeg, PlotAxisName, PlotGraphIndex, PlotGraphName, PlotPoint,
+        ProgramAddress, Quaternion, Radians, ReadCallbackDtSeconds, ReplyPacket, RollDeg,
+        SemaphoreHandle, SecondsF32, SpeedMetersPerSecond, StackSizeBytes, SystemSeconds,
+        SystemTicks, TemperatureC, ThreadHandle, ThreadName, ToneFrequencyHz, ToneVoltage,
+        UartBaudRate, UartWriteLen, VescIfAbi, VescPin, VescPinMode, Voltage, WattHours, YawDeg,
     };
     use core::cell::Cell;
-    use core::ffi::{c_char, c_void};
+    use core::ffi::{c_char, c_void, CStr};
 
     struct FakeBindings {
         add_calls: Cell<usize>,
@@ -1092,5 +1099,64 @@ mod tests {
             core::mem::size_of::<f32>()
         );
         assert_eq!(core::mem::size_of::<Voltage>(), core::mem::size_of::<f32>());
+        assert_eq!(core::mem::size_of::<CfgParam>(), core::mem::size_of::<i32>());
+        assert_eq!(core::mem::size_of::<CfgFloat>(), core::mem::size_of::<f32>());
+        assert_eq!(core::mem::size_of::<CfgInt>(), core::mem::size_of::<i32>());
+        assert_eq!(
+            core::mem::size_of::<ConfigSetResult>(),
+            core::mem::size_of::<i32>()
+        );
+        assert_eq!(
+            core::mem::size_of::<ConfigXmlBytes<'_>>(),
+            core::mem::size_of::<&[u8]>()
+        );
+        assert_eq!(
+            core::mem::size_of::<ConfigPayload<'_>>(),
+            core::mem::size_of::<&[u8]>()
+        );
+        assert_eq!(core::mem::size_of::<ThreadName<'_>>(), core::mem::size_of::<&CStr>());
+        assert_eq!(core::mem::size_of::<StackSizeBytes>(), core::mem::size_of::<usize>());
+        assert_eq!(core::mem::size_of::<ThreadHandle>(), core::mem::size_of::<usize>());
+        assert_eq!(core::mem::size_of::<MutexHandle>(), core::mem::size_of::<usize>());
+        assert_eq!(core::mem::size_of::<SemaphoreHandle>(), core::mem::size_of::<usize>());
+        assert_eq!(core::mem::size_of::<FirmwarePtr::<u8>>(), core::mem::size_of::<usize>());
+        assert_eq!(
+            core::mem::size_of::<FirmwareNonNull::<u8>>(),
+            core::mem::size_of::<usize>()
+        );
+        assert_eq!(core::mem::size_of::<MallocLen>(), core::mem::size_of::<usize>());
+        assert_eq!(
+            core::mem::size_of::<OwnedFirmwareAllocation::<u8>>(),
+            core::mem::size_of::<usize>()
+        );
+        assert_eq!(core::mem::size_of::<CanPayload<'_>>(), core::mem::size_of::<&[u8]>());
+        assert_eq!(core::mem::size_of::<CanStatusIndex>(), core::mem::size_of::<i32>());
+        assert_eq!(core::mem::size_of::<HardwareType>(), core::mem::size_of::<i32>());
+        assert_eq!(core::mem::size_of::<RollDeg>(), core::mem::size_of::<f32>());
+        assert_eq!(core::mem::size_of::<PitchDeg>(), core::mem::size_of::<f32>());
+        assert_eq!(core::mem::size_of::<YawDeg>(), core::mem::size_of::<f32>());
+        assert_eq!(core::mem::size_of::<EulerAngles>(), core::mem::size_of::<f32>() * 3);
+        assert_eq!(
+            core::mem::size_of::<PlotAxisName<'_>>(),
+            core::mem::size_of::<&CStr>()
+        );
+        assert_eq!(
+            core::mem::size_of::<PlotGraphName<'_>>(),
+            core::mem::size_of::<&CStr>()
+        );
+        assert_eq!(core::mem::size_of::<PlotGraphIndex>(), core::mem::size_of::<i32>());
+        assert_eq!(core::mem::size_of::<PlotPoint>(), core::mem::size_of::<f32>() * 2);
+        assert_eq!(core::mem::size_of::<VescPin>(), core::mem::size_of::<i32>());
+        assert_eq!(core::mem::size_of::<VescPinMode>(), core::mem::size_of::<i32>());
+        assert_eq!(core::mem::size_of::<GpioPortPtr>(), core::mem::size_of::<usize>());
+        assert_eq!(core::mem::size_of::<GpioPin>(), core::mem::size_of::<u32>());
+        assert_eq!(core::mem::size_of::<AnalogVoltage>(), core::mem::size_of::<f32>());
+        assert_eq!(core::mem::size_of::<AnalogRaw>(), core::mem::size_of::<f32>());
+        assert_eq!(core::mem::size_of::<LbmIoSymbol>(), core::mem::size_of::<LbmSymbol>());
+        assert_eq!(core::mem::size_of::<NvmAddress>(), core::mem::size_of::<u32>());
+        assert_eq!(core::mem::size_of::<NvmLen>(), core::mem::size_of::<u32>());
+        assert_eq!(core::mem::size_of::<NvmBytes<'_>>(), core::mem::size_of::<&[u8]>());
+        assert_eq!(core::mem::size_of::<EepromAddress>(), core::mem::size_of::<i32>());
+        assert_eq!(core::mem::size_of::<EepromVar>(), core::mem::size_of::<i32>());
     }
 }
