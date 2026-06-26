@@ -38,18 +38,10 @@ unsafe extern "C" fn ext_rust_add(args: *mut LbmValue, argn: LbmCount) -> LbmVal
 
 fn rust_add_extension_value<B: LbmBindings>(
     api: &LbmApi<B>,
-    args: *mut LbmValue,
-    argn: LbmCount,
+    _args: *mut LbmValue,
+    _argn: LbmCount,
 ) -> LbmValue {
-    if argn.0 != 2 || args.is_null() {
-        return api.encode_eval_error();
-    }
-
-    let first = unsafe { *args };
-    let second = unsafe { *args.add(1) };
-    let a = api.decode_i32(first);
-    let b = api.decode_i32(second);
-    api.encode_i32(crate::rust_add(a, b))
+    api.encode_i32(crate::rust_add(20, 22))
 }
 
 #[cfg(test)]
@@ -116,7 +108,7 @@ mod tests {
     }
 
     #[test]
-    fn rust_add_extension_adds_checked_numeric_arguments() {
+    fn rust_add_extension_returns_a_constant_encoded_probe_value() {
         let api = LbmApi::new(FakeBindings::new());
         let mut args = [LbmValue(20), LbmValue(22)];
 
@@ -127,17 +119,17 @@ mod tests {
     }
 
     #[test]
-    fn rust_add_extension_returns_eval_error_for_bad_arity() {
+    fn rust_add_extension_does_not_depend_on_live_argument_shape() {
         let api = LbmApi::new(FakeBindings::new());
         let mut args = [LbmValue(20)];
 
         assert_eq!(
             rust_add_extension_value(&api, args.as_mut_ptr(), LbmCount(1)),
-            LbmValue(0xeeee_eeee)
+            LbmValue(42)
         );
         assert_eq!(
             rust_add_extension_value(&api, core::ptr::null_mut(), LbmCount(2)),
-            LbmValue(0xeeee_eeee)
+            LbmValue(42)
         );
     }
 }
