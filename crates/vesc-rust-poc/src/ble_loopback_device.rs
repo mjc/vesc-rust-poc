@@ -407,72 +407,12 @@ impl DeviceServices for &FakeDeviceServices {
 }
 
 #[cfg(test)]
-thread_local! {
-    static INIT_CALLS: Cell<usize> = Cell::new(0);
-    static STOP_CALLS: Cell<usize> = Cell::new(0);
-}
-
-unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
-    #[cfg(not(test))]
-    {
-        let _ = crate::ffi::LoopbackLifecycle::new(FIRMWARE_BINDINGS).clear_app_data_handler();
-    }
-
-    #[cfg(test)]
-    {
-        STOP_CALLS.with(|calls| calls.set(calls.get() + 1));
-    }
-}
-
-#[cfg(not(test))]
-pub fn init_package(info: *mut crate::ffi::LibInfo) -> bool {
-    if info.is_null() {
-        return false;
-    }
-    let lifecycle = crate::ffi::LoopbackLifecycle::new(FIRMWARE_BINDINGS);
-    if unsafe { lifecycle.install(info, stop_package, app_data_handler) } {
-        return true;
-    }
-
-    if let Some(info) = unsafe { info.as_mut() } {
-        info.stop_fun = Some(stop_package);
-    }
-    true
-}
-
-#[cfg(test)]
-pub fn init_package_for_tests(info: *mut crate::ffi::LibInfo) -> bool {
-    if let Some(info) = unsafe { info.as_mut() } {
-        info.stop_fun = Some(stop_package);
-    }
-    INIT_CALLS.with(|calls| calls.set(calls.get() + 1));
-    true
-}
-
-#[cfg(test)]
-pub fn reset_init_call_count_for_tests() {
-    INIT_CALLS.with(|calls| calls.set(0));
-    STOP_CALLS.with(|calls| calls.set(0));
-}
-
-#[cfg(test)]
-pub fn init_call_count_for_tests() -> usize {
-    INIT_CALLS.with(|calls| calls.get())
-}
-
-#[cfg(test)]
-pub fn stop_call_count_for_tests() -> usize {
-    STOP_CALLS.with(|calls| calls.get())
-}
-
-#[cfg(test)]
 mod tests {
     use super::{
-        handle_loopback_frame, init_call_count_for_tests, reset_init_call_count_for_tests,
-        stop_call_count_for_tests, BleFrame, FakeDeviceServices, LoopbackPackageRuntime,
+        handle_loopback_frame, BleFrame, FakeDeviceServices, LoopbackPackageRuntime,
         LoopbackPackageState, LoopbackTick,
     };
-    use crate::ffi;
+    use crate::{ffi, package_init};
     use core::cell::Cell;
     use vesc_protocol::ble_loopback::LoopbackPacket;
     use vesc_protocol::WireCommand;
@@ -566,29 +506,29 @@ mod tests {
 
     #[test]
     fn package_entrypoint_records_device_initialization() {
-        reset_init_call_count_for_tests();
+        package_init::reset_init_call_count_for_tests();
 
-        assert!(super::init_package_for_tests(core::ptr::null_mut()));
+        assert!(package_init::init_for_tests(core::ptr::null_mut()));
 
-        assert_eq!(init_call_count_for_tests(), 1);
+        assert_eq!(package_init::init_call_count_for_tests(), 1);
     }
 
     #[test]
     fn package_entrypoint_installs_a_stop_hook() {
-        reset_init_call_count_for_tests();
+        package_init::reset_init_call_count_for_tests();
         let mut info = crate::ffi::LibInfo {
             stop_fun: None,
             arg: core::ptr::null_mut(),
             base_addr: 0,
         };
 
-        assert!(super::init_package_for_tests(&mut info));
+        assert!(package_init::init_for_tests(&mut info));
 
         let stop_fun = info.stop_fun.expect("stop hook");
         unsafe {
             stop_fun(info.arg);
         }
-        assert_eq!(stop_call_count_for_tests(), 1);
+        assert_eq!(package_init::stop_call_count_for_tests(), 1);
     }
 
     struct FakeAppDataBindings {

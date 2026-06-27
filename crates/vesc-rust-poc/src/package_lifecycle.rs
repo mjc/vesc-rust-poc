@@ -88,15 +88,6 @@ pub fn register_loader_extensions<B: ffi::LbmBindings>(
     lifecycle.register_extensions_from_image(image, package_extension_descriptors())
 }
 
-#[cfg(all(not(test), target_arch = "arm"))]
-pub fn finish_loader_init(info: *mut ffi::LibInfo) -> bool {
-    if info.is_null() {
-        return false;
-    }
-    let lifecycle = ffi::PackageLifecycle::new(ffi::RealBindings);
-    register_loader_extensions(unsafe { &*info }, &lifecycle).is_ok()
-}
-
 #[cfg(test)]
 fn rust_add_extension_value<B: LbmBindings>(
     api: &LbmApi<B>,

@@ -9,8 +9,7 @@ pub use firmware as ffi;
 pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
 
 pub mod ble_loopback_device;
-#[cfg(all(not(test), target_arch = "arm"))]
-pub mod loader_init;
+pub mod package_init;
 pub mod package_lifecycle;
 
 #[no_mangle]
@@ -22,21 +21,12 @@ pub extern "C" fn rust_add(a: i32, b: i32) -> i32 {
 #[inline(never)]
 #[no_mangle]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
-    if info.is_null() {
-        return false;
-    }
-
-    if !ble_loopback_device::init_package(info) {
-        return false;
-    }
-
-    true
+    package_init::install_stop_hook(info)
 }
 
 #[cfg(test)]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
-    ble_loopback_device::init_package_for_tests(info);
-    true
+    package_init::init_for_tests(info)
 }
 
 #[cfg(not(test))]
@@ -52,7 +42,8 @@ fn panic(_: &PanicInfo) -> ! {
 
 #[cfg(test)]
 mod tests {
-    use super::{ble_loopback_device, ffi, rust_add, ProtocolFrame, WireCommand, WireVersion};
+    use super::{ffi, rust_add, ProtocolFrame, WireCommand, WireVersion};
+    use crate::package_init;
 
     #[test]
     fn device_side_can_use_the_shared_protocol_crate() {
@@ -71,7 +62,7 @@ mod tests {
 
     #[test]
     fn package_lib_init_runs_the_device_loopback_entrypoint_path() {
-        ble_loopback_device::reset_init_call_count_for_tests();
+        package_init::reset_init_call_count_for_tests();
         let mut info = ffi::LibInfo {
             stop_fun: None,
             arg: core::ptr::null_mut(),
@@ -80,7 +71,7 @@ mod tests {
 
         assert!(super::package_lib_init(&mut info));
 
-        assert_eq!(ble_loopback_device::init_call_count_for_tests(), 1);
+        assert_eq!(package_init::init_call_count_for_tests(), 1);
         assert!(info.stop_fun.is_some());
     }
 }
