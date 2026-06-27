@@ -19,6 +19,9 @@ pub use views::{
     NvmBytes, PlotAxisName, PlotGraphName, ReplyPacket, ThreadName,
 };
 
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
+
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
@@ -1056,102 +1059,12 @@ mod tests {
         RegisterError, ReplyPacket, SemaphoreHandle, StackSizeBytes, SystemTicks, ThreadHandle,
         ThreadName, UartBaudRate, UartWriteLen, VescIfAbi, VescPin, VescPinMode,
     };
-    use core::cell::Cell;
     use core::ffi::{CStr, c_char};
 
-    struct FakeBindings {
-        add_calls: Cell<usize>,
-        decode_calls: Cell<usize>,
-        encode_calls: Cell<usize>,
-        last_name: Cell<usize>,
-        last_handler: Cell<usize>,
-        add_results: Cell<[bool; 2]>,
-    }
-
-    impl FakeBindings {
-        fn new() -> Self {
-            Self::with_add_results([true, true])
-        }
-
-        fn with_add_results(add_results: [bool; 2]) -> Self {
-            Self {
-                add_calls: Cell::new(0),
-                decode_calls: Cell::new(0),
-                encode_calls: Cell::new(0),
-                last_name: Cell::new(0),
-                last_handler: Cell::new(0),
-                add_results: Cell::new(add_results),
-            }
-        }
-    }
-
-    impl LbmBindings for FakeBindings {
-        unsafe fn add_extension(&self, name: *const c_char, handler: ExtensionHandler) -> bool {
-            self.add_calls.set(self.add_calls.get() + 1);
-            self.last_name.set(name as usize);
-            self.last_handler.set(handler as usize);
-            let index = self.add_calls.get().saturating_sub(1).min(1);
-            self.add_results.get()[index]
-        }
-
-        unsafe fn decode_i32(&self, value: LbmValue) -> i32 {
-            self.decode_calls.set(self.decode_calls.get() + 1);
-            value.0 as i32
-        }
-
-        unsafe fn encode_i32(&self, value: i32) -> LbmValue {
-            self.encode_calls.set(self.encode_calls.get() + 1);
-            LbmValue(value as u32)
-        }
-
-        unsafe fn is_number(&self, _value: LbmValue) -> bool {
-            true
-        }
-
-        unsafe fn encode_eval_error(&self) -> LbmValue {
-            LbmValue(0xffff_ffff)
-        }
-    }
+    use crate::test_support::{FakeAppDataBindings, FakeBindings};
 
     unsafe extern "C" fn stub_handler(_args: *mut u32, _count: u32) -> u32 {
         0
-    }
-
-    struct FakeAppDataBindings {
-        handler_calls: Cell<usize>,
-        ticks: Cell<u32>,
-        send_calls: Cell<usize>,
-        last_data: Cell<usize>,
-        last_len: Cell<u32>,
-    }
-
-    impl FakeAppDataBindings {
-        fn with_ticks(ticks: u32) -> Self {
-            Self {
-                handler_calls: Cell::new(0),
-                ticks: Cell::new(ticks),
-                send_calls: Cell::new(0),
-                last_data: Cell::new(0),
-                last_len: Cell::new(0),
-            }
-        }
-    }
-
-    impl AppDataBindings for FakeAppDataBindings {
-        unsafe fn set_app_data_handler(&self, _handler: Option<super::AppDataHandler>) -> bool {
-            self.handler_calls.set(self.handler_calls.get() + 1);
-            true
-        }
-
-        fn system_time_ticks(&self) -> u32 {
-            self.ticks.get()
-        }
-
-        unsafe fn send_app_data(&self, data: *const u8, len: u32) {
-            self.send_calls.set(self.send_calls.get() + 1);
-            self.last_data.set(data as usize);
-            self.last_len.set(len);
-        }
     }
 
     #[test]
@@ -1243,9 +1156,9 @@ mod tests {
             lifecycle.register_extension(first),
             Err(RegisterError::FirmwareRejected)
         );
-        assert_eq!(lifecycle.api.bindings.add_calls.get(), 1);
+        assert_eq!(lifecycle.bindings().add_calls.get(), 1);
         assert_eq!(lifecycle.register_extension(second), Ok(()));
-        assert_eq!(lifecycle.api.bindings.add_calls.get(), 2);
+        assert_eq!(lifecycle.bindings().add_calls.get(), 2);
     }
 
     #[test]
