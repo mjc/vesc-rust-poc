@@ -1,7 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 
-use vesc_protocol::ble_loopback::{LoopbackError, LoopbackPacket};
+use vesc_protocol::ble_loopback::{handle_loopback_frame, LoopbackError, LoopbackPacket};
 use vesc_protocol::WireCommand;
 
 pub trait FirmwareServices {
@@ -243,26 +243,19 @@ impl<S: FirmwareServices> LoopbackPackageRuntime<S> {
         };
         let command = packet.frame().command();
 
-        match command {
-            WireCommand::Ping => self.reply(WireCommand::Ping, &[]),
-            WireCommand::Echo => self.reply(WireCommand::Echo, packet.frame().payload()),
-            WireCommand::Status => self.reply_status(),
-            WireCommand::Teardown => self.reply(WireCommand::Teardown, &[]),
+        match handle_loopback_frame(&bytes, self.services.now_ms()) {
+            Ok((response, len)) => {
+                self.services.send_ble_frame(&response[..len]);
+            }
+            Err(error) => {
+                self.state = LoopbackPackageState::Failed("malformed BLE frame");
+                self.services.log("malformed BLE frame");
+                return Err(LoopbackRuntimeError::from(error));
+            }
         }
 
         self.services.log("replied to BLE frame");
         Ok(LoopbackTick::Replied(command))
-    }
-
-    fn reply(&self, command: WireCommand, payload: &[u8]) {
-        let packet = LoopbackPacket::new(command, payload).expect("response payload fits");
-        let (bytes, len) = packet.encode();
-        self.services.send_ble_frame(&bytes[..len]);
-    }
-
-    fn reply_status(&self) {
-        let payload = self.services.now_ms().to_le_bytes();
-        self.reply(WireCommand::Status, &payload);
     }
 }
 
