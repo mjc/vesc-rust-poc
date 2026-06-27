@@ -1057,7 +1057,7 @@ mod tests {
         NativeAddress, NativeImage, NvmAddress, NvmBytes, NvmLen, OwnedFirmwareAllocation,
         PackageLifecycle, PlotAxisName, PlotGraphIndex, PlotGraphName, PlotPoint, ProgramAddress,
         RegisterError, ReplyPacket, SemaphoreHandle, StackSizeBytes, SystemTicks, ThreadHandle,
-        ThreadName, UartBaudRate, UartWriteLen, VescIfAbi, VescPin, VescPinMode,
+        ThreadName, UartBaudRate, UartWriteLen, VescIfAbi, VescIfSlot, VescPin, VescPinMode,
     };
     use core::ffi::{CStr, c_char};
 
@@ -1435,6 +1435,99 @@ mod tests {
             core::mem::size_of::<EepromVar>(),
             core::mem::size_of::<i32>()
         );
+    }
+
+    #[test]
+    fn native_image_from_info_uses_loader_base_addr() {
+        let info = LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0x3000,
+        };
+
+        assert_eq!(
+            NativeImage::from_info(&info).base_addr(),
+            NativeAddress(0x3000)
+        );
+    }
+
+    #[test]
+    fn extension_descriptor_validate_accepts_ext_prefix() {
+        let descriptor = ExtensionDescriptor::new(c"ext-rust-ok", stub_handler);
+
+        assert!(descriptor.validate().is_ok());
+    }
+
+    #[test]
+    fn register_extensions_from_image_registers_each_descriptor() {
+        let bindings = FakeBindings::new();
+        let lifecycle = PackageLifecycle::new(bindings);
+        let image = NativeImage::new(0x2000);
+        let first = ExtensionDescriptor::new(c"ext-rust-a", stub_handler);
+        let second = ExtensionDescriptor::new(c"ext-rust-b", stub_handler);
+
+        assert_eq!(
+            lifecycle.register_extensions_from_image(image, [first, second]),
+            Ok(())
+        );
+        assert_eq!(lifecycle.bindings().add_calls.get(), 2);
+    }
+
+    #[test]
+    fn register_extension_reports_success_when_firmware_accepts() {
+        let bindings = FakeBindings::new();
+        let lifecycle = PackageLifecycle::new(bindings);
+        let descriptor = ExtensionDescriptor::new(c"ext-rust-ok", stub_handler);
+
+        assert_eq!(lifecycle.register_extension(descriptor), Ok(()));
+        assert_eq!(lifecycle.bindings().add_calls.get(), 1);
+    }
+
+    #[test]
+    fn loopback_lifecycle_install_sets_stop_hook() {
+        let bindings = FakeAppDataBindings::new();
+        let lifecycle = LoopbackLifecycle::new(bindings);
+        let mut info = LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0x2000,
+        };
+
+        unsafe extern "C" fn stop(_arg: *mut core::ffi::c_void) {}
+        unsafe extern "C" fn app_data(_data: *mut u8, _len: u32) {}
+
+        assert!(unsafe { lifecycle.install(&mut info, stop, app_data) });
+        assert!(info.stop_fun.is_some());
+    }
+
+    #[test]
+    fn loopback_lifecycle_registers_and_clears_app_data_handler() {
+        let bindings = FakeAppDataBindings::new();
+        let lifecycle = LoopbackLifecycle::new(bindings);
+
+        unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
+
+        assert!(lifecycle.register_app_data_handler(handler));
+        assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
+        assert_eq!(
+            lifecycle.bindings().last_handler.get(),
+            handler as *const () as usize
+        );
+
+        assert!(lifecycle.clear_app_data_handler());
+        assert_eq!(lifecycle.bindings().handler_calls.get(), 2);
+        assert_eq!(lifecycle.bindings().last_handler.get(), 0);
+    }
+
+    #[test]
+    fn vesc_if_slot_host_byte_offset_scales_with_pointer_width() {
+        let pointer_size = core::mem::size_of::<usize>();
+        let slot = VescIfSlot::new("custom", 64);
+
+        assert_eq!(slot.name(), "custom");
+        assert_eq!(slot.vesc32_byte_offset(), 64);
+        assert_eq!(slot.slot_index(), 16);
+        assert_eq!(slot.host_byte_offset(pointer_size), 16 * pointer_size);
     }
 
     #[test]

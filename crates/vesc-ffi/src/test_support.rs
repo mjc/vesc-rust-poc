@@ -138,3 +138,62 @@ pub mod stubs {
     /// Test-only no-op; callers must satisfy the real app-data handler ABI.
     pub unsafe extern "C" fn app_data_handler(_data: *mut u8, _len: u32) {}
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{FakeAppDataBindings, FakeBindings, stubs};
+    use crate::{AppDataBindings, ExtensionHandler, LbmBindings, LbmValue};
+
+    #[test]
+    fn fake_bindings_default_and_rejecting_paths() {
+        let accepting = FakeBindings::default();
+        let rejecting = FakeBindings::rejecting();
+
+        unsafe {
+            assert!(accepting.add_extension(
+                c"ext-a".as_ptr(),
+                stubs::extension_handler as ExtensionHandler
+            ));
+            assert!(!rejecting.add_extension(
+                c"ext-b".as_ptr(),
+                stubs::extension_handler as ExtensionHandler
+            ));
+        }
+
+        assert_eq!(accepting.add_calls.get(), 1);
+        assert_eq!(rejecting.add_calls.get(), 1);
+        unsafe {
+            assert_eq!(accepting.decode_i32(LbmValue(7)), 7);
+            assert_eq!(accepting.encode_i32(9), LbmValue(9));
+            assert!(accepting.is_number(LbmValue(1)));
+            assert_eq!(accepting.encode_eval_error(), LbmValue(0xffff_ffff));
+        }
+    }
+
+    #[test]
+    fn fake_app_data_bindings_track_handler_send_and_ticks() {
+        let bindings = FakeAppDataBindings::with_ticks(999);
+        unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
+
+        assert_eq!(bindings.system_time_ticks(), 999);
+        unsafe {
+            assert!(bindings.set_app_data_handler(Some(handler)));
+            bindings.send_app_data([1_u8, 2].as_ptr(), 2);
+            assert!(bindings.set_app_data_handler(None));
+        }
+
+        assert_eq!(bindings.handler_calls.get(), 2);
+        assert_eq!(bindings.send_calls.get(), 1);
+        assert_eq!(bindings.last_len.get(), 2);
+        assert_eq!(bindings.last_handler.get(), 0);
+    }
+
+    #[test]
+    fn stub_handlers_are_callable() {
+        unsafe {
+            stubs::extension_handler(core::ptr::null_mut(), 0);
+            stubs::stop_handler(core::ptr::null_mut());
+            stubs::app_data_handler(core::ptr::null_mut(), 0);
+        }
+    }
+}
