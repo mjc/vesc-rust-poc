@@ -4,6 +4,8 @@ pub use vesc_ffi as ffi;
 pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
 
 pub mod ble_loopback_device;
+#[cfg(all(not(test), target_arch = "arm"))]
+pub mod loader_init;
 pub mod package_lifecycle;
 
 #[no_mangle]
@@ -12,6 +14,7 @@ pub extern "C" fn rust_add(a: i32, b: i32) -> i32 {
 }
 
 #[cfg(not(test))]
+#[inline(never)]
 #[no_mangle]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
     if info.is_null() {

@@ -2,12 +2,17 @@
 
 CARGO ?= cargo
 
-.PHONY: check test fmt clippy symbol-check package-smoke package package-only clean status
+.PHONY: check test test-all test-changed fmt clippy symbol-check package-smoke package package-only clean status
 
 check: fmt clippy test
 
-test:
+test: test-all
+
+test-all:
 	$(CARGO) nextest run --workspace --no-fail-fast
+
+test-changed:
+	$(CARGO) test-changed -r nextest
 
 fmt:
 	$(CARGO) fmt --all --check

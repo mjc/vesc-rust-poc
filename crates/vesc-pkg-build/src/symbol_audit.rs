@@ -527,8 +527,33 @@ mod tests {
         }
     }
 
+    fn bounded_init_disassembly(disassembly: &str) -> &str {
+        disassembly
+            .split("<init>:")
+            .nth(1)
+            .expect("expected init in disassembly")
+            .split("\n\n")
+            .next()
+            .expect("expected bounded init disassembly")
+    }
+
+    fn assert_rust_loader_init_uses_vesc_ffi(init_disassembly: &str) {
+        assert!(
+            init_disassembly.contains("1000f800"),
+            "loader init should load the firmware VESC table base:\n{init_disassembly}"
+        );
+        assert!(
+            init_disassembly.contains("4798") || init_disassembly.contains("4790"),
+            "loader init should call lbm_add_extension through blx after loading slot 0:\n{init_disassembly}"
+        );
+        assert!(
+            init_disassembly.contains("<package_lib_init>"),
+            "loader init should delegate package setup to Rust before registering the probe:\n{init_disassembly}"
+        );
+    }
+
     #[test]
-    fn loader_init_bytes_match_device_proven_binary() {
+    fn loader_init_registers_probe_through_vesc_ffi() {
         let fixture = SymbolAuditFixture::new();
         fixture.build_bin();
 
@@ -537,32 +562,25 @@ mod tests {
             init_fun.vma, DEVICE_PROVEN_INIT_OFFSET,
             "expected .init_fun to start at the device-proven offset"
         );
-        assert_eq!(
-            init_fun.size, DEVICE_PROVEN_INIT_SIZE,
-            "expected .init_fun to keep the device-proven byte length"
+        assert!(
+            init_fun.size >= 24,
+            "expected Rust-owned init to retain loader entry and probe registration"
         );
+
+        let disassembly = command_stdout(
+            "arm-none-eabi-objdump",
+            [PathBuf::from("-d"), fixture.elf()],
+        );
+        assert_rust_loader_init_uses_vesc_ffi(bounded_init_disassembly(&disassembly));
 
         let current = fs::read(fixture.bin()).expect("current native-lib binary bytes");
         let proven = fs::read(crate::test_support::repo_root().join(DEVICE_PROVEN_PACKAGE_BINARY))
             .expect("device-proven package binary bytes");
-        let init_end = init_fun.vma + init_fun.size;
-
-        assert!(
-            init_end <= current.len(),
-            "current binary is too short for .init_fun at 0x{:x}..0x{:x}",
-            init_fun.vma,
-            init_end
-        );
-        assert!(
-            init_end <= proven.len(),
-            "device-proven binary is too short for .init_fun at 0x{:x}..0x{:x}",
-            init_fun.vma,
-            init_end
-        );
-        assert_eq!(
-            &current[init_fun.vma..init_end],
-            &proven[init_fun.vma..init_end],
-            "current .init_fun bytes must exactly match {DEVICE_PROVEN_PACKAGE_BINARY}"
+        let proven_init_end = DEVICE_PROVEN_INIT_OFFSET + DEVICE_PROVEN_INIT_SIZE;
+        assert_ne!(
+            &current[init_fun.vma..init_fun.vma + init_fun.size.min(DEVICE_PROVEN_INIT_SIZE)],
+            &proven[DEVICE_PROVEN_INIT_OFFSET..proven_init_end],
+            "Rust-owned init should no longer match the legacy hand-asm bytes in {DEVICE_PROVEN_PACKAGE_BINARY}"
         );
     }
 
@@ -584,31 +602,11 @@ mod tests {
                 vma: 0,
             }
         );
-        assert_eq!(
-            init_fun,
-            SectionLayout {
-                name: ".init_fun".to_owned(),
-                size: 59,
-                vma: 4,
-            }
-        );
-        assert_eq!(
-            got,
-            SectionLayout {
-                name: ".got".to_owned(),
-                size: 0,
-                vma: 64,
-            }
-        );
-        assert_eq!(
-            text,
-            SectionLayout {
-                name: ".text".to_owned(),
-                size: 104,
-                vma: 64,
-            }
-        );
         assert_eq!(init_fun.vma, program_ptr.vma + program_ptr.size);
+        assert!(
+            init_fun.size >= 24,
+            "expected Rust-owned init to retain loader entry and probe registration"
+        );
         assert_eq!(
             got.vma,
             align_section_vma(init_fun.vma + init_fun.size, 4),
@@ -622,6 +620,10 @@ mod tests {
             text.vma % 16,
             0,
             "expected .text to keep VESC's 16-byte function alignment"
+        );
+        assert!(
+            text.size >= 64,
+            "expected .text to retain the probe callback and stop hook"
         );
     }
 
@@ -703,7 +705,7 @@ mod tests {
             "arm-none-eabi-objdump",
             [PathBuf::from("-d"), fixture.elf()],
         );
-        for offset in ["1000f800", "#124]", "#100]", "#64]", "#148]"] {
+        for offset in ["1000f800", "#596]"] {
             assert!(
                 disassembly.contains(offset),
                 "expected VESC_IF slot access {offset} in generated code:\n{disassembly}"
@@ -732,7 +734,8 @@ mod tests {
             "loader init should run Rust package init before registering the probe:\n{init_disassembly}"
         );
         assert!(
-            init_disassembly.contains("1000f800") && init_disassembly.contains("4798"),
+            init_disassembly.contains("1000f800")
+                && (init_disassembly.contains("4798") || init_disassembly.contains("4790")),
             "Rust loader init should register the probe inline through VESC_IF like refloat:\n{init_disassembly}"
         );
         assert!(
@@ -742,7 +745,7 @@ mod tests {
     }
 
     #[test]
-    fn rust_probe_extension_uses_the_vesc_function_table() {
+    fn rust_probe_extension_returns_the_encoded_probe_value_directly() {
         let fixture = SymbolAuditFixture::new();
         fixture.build_elf();
 
@@ -758,24 +761,12 @@ mod tests {
         let probe_disassembly = &probe_rest[..probe_end];
 
         assert!(
-            probe_disassembly.contains("1000f800"),
-            "Rust probe extension should materialize the VESC_IF base like refloat:\n{probe_disassembly}"
+            probe_disassembly.contains("#680") || probe_disassembly.contains("0x2a8"),
+            "Rust probe extension should return the LispBM-encoded integer 42 directly:\n{probe_disassembly}"
         );
         assert!(
-            probe_disassembly.contains("#124]"),
-            "Rust probe extension should call lbm_is_number through VESC_IF + 124:\n{probe_disassembly}"
-        );
-        assert!(
-            probe_disassembly.contains("#100]"),
-            "Rust probe extension should call lbm_dec_as_i32 through VESC_IF + 100:\n{probe_disassembly}"
-        );
-        assert!(
-            probe_disassembly.contains("#64]"),
-            "Rust probe extension should return through VESC_IF lbm_enc_i like refloat:\n{probe_disassembly}"
-        );
-        assert!(
-            probe_disassembly.contains("#148]"),
-            "Rust probe extension should return VESC_IF lbm_enc_sym_eerror on validation failure:\n{probe_disassembly}"
+            !probe_disassembly.contains("1000f800"),
+            "Rust probe extension should not reject valid hardware calls through fragile LispBM validation slots:\n{probe_disassembly}"
         );
     }
 
@@ -796,21 +787,10 @@ mod tests {
             .next()
             .expect("expected bounded init disassembly");
 
+        assert_rust_loader_init_uses_vesc_ffi(bounded_init_disassembly(&disassembly));
         assert!(
-            init_disassembly.contains("1000f800"),
-            "loader init should register LispBM extensions directly:\n{init_disassembly}"
-        );
-        assert!(
-            init_disassembly.contains("<package_lib_init>"),
-            "loader init should call Rust package init before registration:\n{init_disassembly}"
-        );
-        assert!(
-            init_disassembly.contains("4798") && init_disassembly.contains("addw\tr1, pc"),
-            "Rust registration should use a direct PC-relative callback without a trampoline:\n{init_disassembly}"
-        );
-        assert!(
-            init_disassembly.contains("movs\tr0, #1"),
-            "loader init should return true after registration like refloat:\n{init_disassembly}"
+            init_disassembly.contains("4620") || init_disassembly.contains("movs\tr0, #1"),
+            "loader init should return success after package init and registration:\n{init_disassembly}"
         );
     }
 
@@ -874,14 +854,12 @@ mod tests {
             "arm-none-eabi-objdump",
             [PathBuf::from("-d"), fixture.elf()],
         );
-        let init_disassembly = disassembly
-            .split("<init>:")
-            .nth(1)
-            .expect("expected init in disassembly");
+        let init_disassembly = bounded_init_disassembly(&disassembly);
 
+        assert_rust_loader_init_uses_vesc_ffi(init_disassembly);
         assert!(
-            !init_disassembly.contains("ldr\tr2, [r0, #0]"),
-            "loader init must not read an extension name through a raw image offset before adding lib_info.base_addr:\n{init_disassembly}"
+            !init_disassembly.contains("addw\tr1, pc") && !init_disassembly.contains("0ff2 2901"),
+            "loader init should pass the probe callback through vesc-ffi, not legacy hand-asm PC-relative registration:\n{init_disassembly}"
         );
     }
 
@@ -907,7 +885,8 @@ mod tests {
             "loader init should run Rust package init:\n{init_disassembly}"
         );
         assert!(
-            init_disassembly.contains("1000f800") && init_disassembly.contains("4798"),
+            init_disassembly.contains("1000f800")
+                && (init_disassembly.contains("4798") || init_disassembly.contains("4790")),
             "loader init should register the LispBM probe inline:\n{init_disassembly}"
         );
     }

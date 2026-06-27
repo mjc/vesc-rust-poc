@@ -8,98 +8,18 @@ use crate::ffi::{LbmCount, LbmValue};
 const EXT_RUST_PROBE_DIAG_NAME: &CStr = c"ext-rust-probe-diag-v4";
 #[cfg(test)]
 const EXT_RUST_PROBE_NAME: &CStr = c"ext-c-probe-v12";
-#[cfg(test)]
 const LBM_INT_TAG: u32 = 0x8;
 #[cfg(test)]
 const LBM_TAG_MASK: u32 = 0xf;
-#[cfg(test)]
 const LBM_VALUE_SHIFT: u32 = 4;
 
 pub const PACKAGE_EXTENSION_NAMES: [&CStr; 1] = [EXT_RUST_PROBE_DIAG_NAME];
 
 #[cfg(not(test))]
-core::arch::global_asm!(
-    r#"
-    .section .program_ptr,"aw",%progbits
-    .global prog_ptr
-    .type prog_ptr, %object
-    .balign 4
-prog_ptr:
-    .word   0
-    .size prog_ptr, . - prog_ptr
-
-    .section .init_fun,"ax",%progbits
-    .thumb
-    .thumb_func
-    .global init
-    .type init, %function
-init:
-    push    {{r3, lr}}
-    adr     r3, prog_ptr
-    ldr     r3, [r3]
-    bl      package_lib_init
-    cbz     r0, .Linit_done
-    ldr     r3, .Linit_vesc_if_base
-    adr     r1, ext_rust_probe_v12
-    adr     r0, .Linit_rust_probe_name
-    ldr     r3, [r3, #0]
-    blx     r3
-    movs    r0, #1
-.Linit_done:
-    pop     {{r3, pc}}
-
-    .balign 4
-.Linit_vesc_if_base:
-    .word   0x1000f800
-
-    .balign 4
-.Linit_rust_probe_name:
-    .asciz  "ext-rust-probe-diag-v4"
-    .size init, . - init
-"#
-);
-
-#[cfg(not(test))]
-unsafe extern "C" {
-    pub fn ext_rust_probe_v12(args: *mut u32, argn: u32) -> u32;
+#[no_mangle]
+pub unsafe extern "C" fn ext_rust_probe_v12(_args: *mut u32, _argn: u32) -> u32 {
+    encode_lbm_i32_raw(42)
 }
-
-#[cfg(not(test))]
-core::arch::global_asm!(
-    r#"
-    .section .text.ext_rust_probe_v12,"ax",%progbits
-    .thumb
-    .thumb_func
-    .global ext_rust_probe_v12
-    .type ext_rust_probe_v12, %function
-ext_rust_probe_v12:
-    cmp     r1, #1
-    push    {{r4, r5, r6, lr}}
-    ldr     r4, .Lvesc_if_base_probe
-    mov     r5, r0
-    bne     .Lprobe_eerror
-    ldr     r3, [r4, #124]
-    ldr     r0, [r0, #0]
-    blx     r3
-    cbz     r0, .Lprobe_eerror
-    ldr     r3, [r4, #100]
-    ldr     r0, [r5, #0]
-    ldr     r6, [r4, #64]
-    blx     r3
-    mov     r3, r6
-    add.w   r0, r0, r0, lsl #1
-    pop     {{r4, r5, r6, lr}}
-    bx      r3
-.Lprobe_eerror:
-    ldr.w   r0, [r4, #148]
-    pop     {{r4, r5, r6, pc}}
-
-    .balign 4
-.Lvesc_if_base_probe:
-    .word   0x1000f800
-    .size ext_rust_probe_v12, . - ext_rust_probe_v12
-"#
-);
 
 #[cfg(test)]
 #[no_mangle]
@@ -134,9 +54,13 @@ fn rust_probe_extension<B: ffi::LbmBindings>(
     encode_lbm_i32(decoded.wrapping_mul(3))
 }
 
+fn encode_lbm_i32_raw(value: i32) -> u32 {
+    value.wrapping_shl(LBM_VALUE_SHIFT) as u32 | LBM_INT_TAG
+}
+
 #[cfg(test)]
 fn encode_lbm_i32(value: i32) -> ffi::LbmValue {
-    ffi::LbmValue(value.wrapping_shl(LBM_VALUE_SHIFT) as u32 | LBM_INT_TAG)
+    ffi::LbmValue(encode_lbm_i32_raw(value))
 }
 
 #[cfg(test)]

@@ -740,11 +740,50 @@ pub mod raw {
     /// `name` must point to a valid, NUL-terminated extension name and
     /// `handler` must use the firmware LispBM extension ABI.
     pub unsafe fn lbm_add_extension(name: *const c_char, handler: ExtensionHandler) -> bool {
+        #[cfg(all(target_arch = "arm", not(test)))]
+        unsafe {
+            return lbm_add_extension_with_table_base(VescIfAbi::BASE_ADDR.0 as u32, name, handler);
+        }
+
+        #[cfg(not(all(target_arch = "arm", not(test))))]
         unsafe {
             match (*VESC_IF).lbm_add_extension {
                 Some(lbm_add_extension) => lbm_add_extension(name as *mut c_char, handler),
                 None => false,
             }
+        }
+    }
+
+    /// # Safety
+    ///
+    /// `vesc_if_base` must be the firmware VESC function table address and
+    /// `name`/`handler` must satisfy the same requirements as
+    /// [`lbm_add_extension`].
+    #[inline(always)]
+    pub unsafe fn lbm_add_extension_with_table_base(
+        vesc_if_base: u32,
+        name: *const c_char,
+        handler: ExtensionHandler,
+    ) -> bool {
+        #[cfg(all(target_arch = "arm", not(test)))]
+        unsafe {
+            let vesc_if = vesc_if_base as usize;
+            let lbm_add_extension: usize;
+            core::arch::asm!(
+                "ldr {lbm_add_extension}, [{vesc_if}, #0]",
+                vesc_if = in(reg) vesc_if,
+                lbm_add_extension = out(reg) lbm_add_extension,
+                options(nostack, preserves_flags),
+            );
+            let lbm_add_extension: unsafe extern "C" fn(*mut c_char, ExtensionHandler) -> bool =
+                core::mem::transmute(lbm_add_extension);
+            lbm_add_extension(name as *mut c_char, handler)
+        }
+
+        #[cfg(not(all(target_arch = "arm", not(test))))]
+        {
+            let _ = (vesc_if_base, name, handler);
+            false
         }
     }
 
@@ -762,9 +801,6 @@ pub mod raw {
                 lbm_dec_as_i32 = out(reg) lbm_dec_as_i32,
                 options(nostack, preserves_flags),
             );
-            if lbm_dec_as_i32 == 0 {
-                return 0;
-            }
             let lbm_dec_as_i32: unsafe extern "C" fn(u32) -> i32 =
                 core::mem::transmute(lbm_dec_as_i32);
             return lbm_dec_as_i32(value.0);
@@ -793,9 +829,6 @@ pub mod raw {
                 lbm_enc_i = out(reg) lbm_enc_i,
                 options(nostack, preserves_flags),
             );
-            if lbm_enc_i == 0 {
-                return LbmValue(0);
-            }
             let lbm_enc_i: unsafe extern "C" fn(i32) -> u32 = core::mem::transmute(lbm_enc_i);
             return LbmValue(lbm_enc_i(value));
         }
@@ -823,9 +856,6 @@ pub mod raw {
                 lbm_is_number = out(reg) lbm_is_number,
                 options(nostack, preserves_flags),
             );
-            if lbm_is_number == 0 {
-                return false;
-            }
             let lbm_is_number: unsafe extern "C" fn(u32) -> bool =
                 core::mem::transmute(lbm_is_number);
             return lbm_is_number(value.0);
@@ -844,7 +874,23 @@ pub mod raw {
     ///
     /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
     pub unsafe fn lbm_enc_sym_eerror() -> LbmValue {
-        unsafe { LbmValue((*VESC_IF).lbm_enc_sym_eerror as u32) }
+        #[cfg(all(target_arch = "arm", not(test)))]
+        unsafe {
+            let vesc_if = VescIfAbi::BASE_ADDR.0;
+            let lbm_enc_sym_eerror: usize;
+            core::arch::asm!(
+                "ldr {lbm_enc_sym_eerror}, [{vesc_if}, #148]",
+                vesc_if = in(reg) vesc_if,
+                lbm_enc_sym_eerror = out(reg) lbm_enc_sym_eerror,
+                options(nostack, preserves_flags),
+            );
+            return LbmValue(lbm_enc_sym_eerror as u32);
+        }
+
+        #[cfg(not(all(target_arch = "arm", not(test))))]
+        unsafe {
+            LbmValue((*VESC_IF).lbm_enc_sym_eerror as u32)
+        }
     }
 
     /// # Safety

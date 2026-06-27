@@ -26,6 +26,25 @@
           rustToolchain = pkgs.rust-bin.stable.latest.default.override {
             targets = [ "thumbv7em-none-eabihf" ];
           };
+
+          cargo-test-changed = pkgs.rustPlatform.buildRustPackage rec {
+            pname = "cargo-test-changed";
+            version = "0.1.1";
+
+            src = pkgs.fetchCrate {
+              inherit pname version;
+              hash = "sha256-G17zPi8UJTEffkEuZKKlwyiMnqxc9Ki9wfEMl+wr4i4=";
+            };
+
+            cargoHash = "sha256-vgP2c5fG0JCvSCMCVAr3bGhmG4JCcCG6lqlwCTy1k20=";
+            doCheck = false;
+
+            meta = with pkgs.lib; {
+              description = "Run tests only for changed workspace crates";
+              homepage = "https://github.com/felixpackard/cargo-test-changed";
+              license = licenses.mit;
+            };
+          };
         in
         {
           default = pkgs.mkShell {
@@ -44,6 +63,7 @@
               qt5.qtserialbus
               rustToolchain
               cargo-nextest
+              cargo-test-changed
             ];
 
             shellHook = ''
