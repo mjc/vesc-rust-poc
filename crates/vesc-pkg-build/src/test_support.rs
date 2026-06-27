@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
@@ -44,19 +45,38 @@ pub fn link_repo_fixtures(root: &Path) {
     panic!("TempWorkspace fixture layout requires Unix symlinks");
 }
 
+enum NativeBuildRoot {
+    Isolated(TempWorkspace),
+    Repo,
+}
+
 pub struct NativeBuildWorkspace {
-    _workspace: TempWorkspace,
+    root: NativeBuildRoot,
     plan: crate::native_lib_link::NativeLibLinkPlan,
 }
+
+static SHARED_REPO_WORKSPACE: LazyLock<NativeBuildWorkspace> =
+    LazyLock::new(NativeBuildWorkspace::from_repo_root);
 
 impl NativeBuildWorkspace {
     pub fn new() -> Self {
         let workspace = TempWorkspace::with_repo_fixture_layout();
         let plan = crate::native_lib_link::NativeLibLinkPlan::new(workspace.root.clone());
         Self {
-            _workspace: workspace,
+            root: NativeBuildRoot::Isolated(workspace),
             plan,
         }
+    }
+
+    pub fn from_repo_root() -> Self {
+        Self {
+            root: NativeBuildRoot::Repo,
+            plan: crate::native_lib_link::native_lib_link_plan(),
+        }
+    }
+
+    pub fn shared() -> &'static Self {
+        &SHARED_REPO_WORKSPACE
     }
 
     pub fn plan(&self) -> &crate::native_lib_link::NativeLibLinkPlan {

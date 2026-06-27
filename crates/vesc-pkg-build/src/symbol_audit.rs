@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{LazyLock, OnceLock};
 
 use crate::native_lib_link::{native_lib_link_plan, NativeLibLinkPlan};
 
@@ -49,8 +50,66 @@ pub fn build_rust_staticlib() {
     build_rust_staticlib_for(&native_lib_link_plan());
 }
 
+fn artifact_is_up_to_date(output: &Path, inputs: &[&Path]) -> bool {
+    let Ok(output_meta) = fs::metadata(output) else {
+        return false;
+    };
+    let Ok(output_modified) = output_meta.modified() else {
+        return false;
+    };
+
+    inputs.iter().all(|input| {
+        fs::metadata(input)
+            .and_then(|meta| meta.modified())
+            .is_ok_and(|modified| modified <= output_modified)
+    })
+}
+
+fn is_repo_native_build_plan(plan: &NativeLibLinkPlan) -> bool {
+    plan.root() == native_lib_link_plan().root()
+}
+
+struct RepoNativeBuildCache {
+    staticlib: OnceLock<()>,
+    elf: OnceLock<()>,
+    bin: OnceLock<()>,
+}
+
+impl RepoNativeBuildCache {
+    const fn new() -> Self {
+        Self {
+            staticlib: OnceLock::new(),
+            elf: OnceLock::new(),
+            bin: OnceLock::new(),
+        }
+    }
+
+    fn ensure_staticlib(&self, plan: &NativeLibLinkPlan) {
+        self.staticlib
+            .get_or_init(|| build_rust_staticlib_unlocked(plan));
+    }
+
+    fn ensure_elf(&self, plan: &NativeLibLinkPlan) {
+        self.elf
+            .get_or_init(|| build_final_native_lib_elf_unlocked(plan));
+    }
+
+    fn ensure_bin(&self, plan: &NativeLibLinkPlan, native_binary_path: &Path) {
+        self.bin.get_or_init(|| {
+            build_final_native_lib_binary_unlocked(plan, native_binary_path);
+        });
+    }
+}
+
+static REPO_NATIVE_BUILD: LazyLock<RepoNativeBuildCache> =
+    LazyLock::new(RepoNativeBuildCache::new);
+
 pub fn build_rust_staticlib_for(plan: &NativeLibLinkPlan) {
-    build_rust_staticlib_unlocked(plan);
+    if is_repo_native_build_plan(plan) {
+        REPO_NATIVE_BUILD.ensure_staticlib(plan);
+    } else {
+        build_rust_staticlib_unlocked(plan);
+    }
 }
 
 fn build_rust_staticlib_unlocked(plan: &NativeLibLinkPlan) {
@@ -83,7 +142,11 @@ pub fn build_final_native_lib_elf() {
 }
 
 pub fn build_final_native_lib_elf_for(plan: &NativeLibLinkPlan) {
-    build_final_native_lib_elf_unlocked(plan);
+    if is_repo_native_build_plan(plan) {
+        REPO_NATIVE_BUILD.ensure_elf(plan);
+    } else {
+        build_final_native_lib_elf_unlocked(plan);
+    }
 }
 
 fn native_lib_c_only_from_env() -> bool {
@@ -92,12 +155,25 @@ fn native_lib_c_only_from_env() -> bool {
 
 fn build_final_native_lib_elf_unlocked(plan: &NativeLibLinkPlan) {
     let c_only = native_lib_c_only_from_env();
-    if !c_only {
-        build_rust_staticlib_unlocked(plan);
-    }
-
     let link_plan = plan.clone();
     let elf_path = link_plan.elf_path();
+    let package_c_source_path = link_plan.package_c_source_path();
+    let linker_script_path = link_plan.linker_script_path();
+    let rust_staticlib_path = link_plan.rust_staticlib_path();
+    let mut elf_inputs = vec![
+        package_c_source_path.as_path(),
+        linker_script_path.as_path(),
+    ];
+    if !c_only {
+        elf_inputs.push(rust_staticlib_path.as_path());
+    }
+    if artifact_is_up_to_date(&elf_path, &elf_inputs) {
+        return;
+    }
+
+    if !c_only {
+        build_rust_staticlib_for(plan);
+    }
 
     if let Some(parent) = elf_path.parent() {
         fs::create_dir_all(parent).expect("create native_lib.elf parent directory");
@@ -201,7 +277,19 @@ pub fn build_final_native_lib_binary(native_binary_path: &Path) {
 }
 
 pub fn build_final_native_lib_binary_for(plan: &NativeLibLinkPlan, native_binary_path: &Path) {
-    build_final_native_lib_elf_unlocked(plan);
+    if is_repo_native_build_plan(plan) {
+        REPO_NATIVE_BUILD.ensure_bin(plan, native_binary_path);
+    } else {
+        build_final_native_lib_binary_unlocked(plan, native_binary_path);
+    }
+}
+
+fn build_final_native_lib_binary_unlocked(plan: &NativeLibLinkPlan, native_binary_path: &Path) {
+    build_final_native_lib_elf_for(plan);
+
+    if artifact_is_up_to_date(native_binary_path, &[plan.elf_path().as_path()]) {
+        return;
+    }
 
     if let Some(parent) = native_binary_path.parent() {
         fs::create_dir_all(parent).expect("create native_lib.bin parent directory");
@@ -301,13 +389,13 @@ mod tests {
     use std::collections::BTreeSet;
 
     struct SymbolAuditFixture {
-        workspace: NativeBuildWorkspace,
+        workspace: &'static NativeBuildWorkspace,
     }
 
     impl SymbolAuditFixture {
         fn new() -> Self {
             Self {
-                workspace: NativeBuildWorkspace::new(),
+                workspace: NativeBuildWorkspace::shared(),
             }
         }
 
