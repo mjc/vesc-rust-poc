@@ -70,7 +70,7 @@ fn build_rust_staticlib_unlocked(plan: &NativeLibLinkPlan) {
             "--target",
             "thumbv7em-none-eabihf",
             "-p",
-            "vesc-rust-poc",
+            "vesc-ble-loopback",
         ])
         .status()
         .expect("cargo build for the Rust staticlib");

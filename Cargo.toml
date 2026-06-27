@@ -2,12 +2,12 @@
 members = [
     "crates/vesc-ffi",
     "crates/vesc-package",
-    "crates/vesc-rust-poc",
+    "crates/vesc-ble-loopback",
     "crates/vesc-host-cli",
     "crates/vesc-pkg-build",
     "crates/vesc-protocol",
 ]
-default-members = ["crates/vesc-rust-poc"]
+default-members = ["crates/vesc-ble-loopback"]
 resolver = "2"
 
 [profile.release]

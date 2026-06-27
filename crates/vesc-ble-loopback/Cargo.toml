@@ -1,5 +1,5 @@
 [package]
-name = "vesc-rust-poc"
+name = "vesc-ble-loopback"
 version = "0.1.0"
 edition = "2021"
 

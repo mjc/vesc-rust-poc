@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-pub const RUST_STATICLIB_PATH: &str = "target/thumbv7em-none-eabihf/release/libvesc_rust_poc.a";
+pub const RUST_STATICLIB_PATH: &str = "target/thumbv7em-none-eabihf/release/libvesc_ble_loopback.a";
 pub const NATIVE_LIB_ELF_PATH: &str = "target/native-lib-baseline/native_lib.elf";
 pub const NATIVE_LIB_BIN_PATH: &str = "target/native-lib-baseline/native_lib.bin";
 pub const NATIVE_LIB_LINKER_SCRIPT: &str = "fixtures/native-lib-baseline/src/link.ld";

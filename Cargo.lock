@@ -807,6 +807,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "vesc-ble-loopback"
+version = "0.1.0"
+dependencies = [
+ "vesc-package",
+]
+
+[[package]]
 name = "vesc-ffi"
 version = "0.1.0"
 
@@ -843,13 +850,6 @@ dependencies = [
 [[package]]
 name = "vesc-protocol"
 version = "0.1.0"
-
-[[package]]
-name = "vesc-rust-poc"
-version = "0.1.0"
-dependencies = [
- "vesc-package",
-]
 
 [[package]]
 name = "walkdir"

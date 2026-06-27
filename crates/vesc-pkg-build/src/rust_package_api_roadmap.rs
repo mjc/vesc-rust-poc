@@ -20,7 +20,7 @@ mod tests {
         for needle in [
             "nix develop -c make check",
             "nix develop -c make package",
-            "vesc-rust-poc",
+            "vesc-ble-loopback",
             "vesc-pkg-build",
             "vesc-protocol",
             "vesc-host-cli",

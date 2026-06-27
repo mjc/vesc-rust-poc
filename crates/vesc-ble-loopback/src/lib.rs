@@ -1,6 +1,6 @@
-//! BLE loopback proof-of-concept package payload.
+//! BLE loopback VESC package payload.
 //!
-//! This crate is the linkable staticlib artifact (`libvesc_rust_poc.a`). Generic loader,
+//! This crate is the linkable staticlib artifact (`libvesc_ble_loopback.a`). Generic loader,
 //! lifecycle, and firmware wrapper code lives in `vesc-package`.
 
 #![cfg_attr(not(test), no_std)]
