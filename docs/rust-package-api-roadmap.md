@@ -1,12 +1,14 @@
 # Rust Package API Roadmap
 
 This is the short migration ladder for the Rust-backed VESC package experiment
-in `crates/vesc-rust-poc`. It stays deliberately narrow so later API work keeps
+in `crates/vesc-ble-loopback`. It stays deliberately narrow so later API work keeps
 moving in the right direction instead of growing a too-clever wrapper too early.
 
 ## Current workspace shape
 
-- `crates/vesc-rust-poc`
+- `crates/vesc-ffi` — raw firmware ABI (`no_std`, unsafe table calls)
+- `crates/vesc-package` — safe wrapper on top of `vesc-ffi`
+- `crates/vesc-ble-loopback` — BLE loopback package staticlib payload
 - `crates/vesc-pkg-build`
 - `crates/vesc-protocol`
 - `crates/vesc-host-cli`
@@ -28,7 +30,7 @@ moving in the right direction instead of growing a too-clever wrapper too early.
 
 1. Keep artifact, size, symbol, and ABI guards green under `nix develop -c make package`.
 2. Hardware-validate install, `lisp-probe`, and `loopback` after each native boundary change.
-3. Extract a safe wrapper crate around the small unsafe ABI surface.
+3. Grow the safe wrapper crate (`vesc-package`) only where tests prove the ABI boundary is stable.
 4. Grow `cargo vescpkg build` from the tested `vesc-pkg-build` boundary.
 5. Replace generic VESC references only after tests prove byte/layout equivalence.
 

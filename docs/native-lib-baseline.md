@@ -26,7 +26,7 @@ This fixture captures the smallest Rust-backed VESC package skeleton we want to 
 - The package payload smoke test keeps the fixture under a 16 KiB budget, leaving
   ample headroom below the 128 KiB VESC Tool flash block limit.
 - The native link step uses
-  `target/thumbv7em-none-eabihf/release/libvesc_rust_poc.a` plus the generic
+  `target/thumbv7em-none-eabihf/release/libvesc_ble_loopback.a` plus the generic
   linker script to produce
   `target/native-lib-baseline/native_lib.elf`.
 - A symbol audit now inspects the Rust archive and flags unexpected unresolved
