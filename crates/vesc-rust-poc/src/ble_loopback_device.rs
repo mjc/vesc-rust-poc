@@ -246,11 +246,11 @@ unsafe extern "C" fn app_data_handler(data: *mut u8, len: u32) {
     }
 
     let bytes = core::slice::from_raw_parts(data as *const u8, len as usize);
-    let now_ticks = crate::ffi::raw::vesc_system_time_ticks();
-    let now_ms = u64::from(now_ticks) / 10;
+    let lifecycle = crate::ffi::LoopbackLifecycle::new(crate::ffi::RealBindings);
+    let now_ms = u64::from(lifecycle.system_time_ticks()) / 10;
 
     if let Ok((response, response_len)) = handle_loopback_frame(bytes, now_ms) {
-        crate::ffi::raw::vesc_send_app_data(response.as_ptr(), response_len as u32);
+        unsafe { lifecycle.send_app_data(response.as_ptr(), response_len as u32) };
     }
 }
 
@@ -625,6 +625,12 @@ mod tests {
                 .set(handler.map_or(0, |handler| handler as *const () as usize));
             true
         }
+
+        fn system_time_ticks(&self) -> u32 {
+            0
+        }
+
+        unsafe fn send_app_data(&self, _data: *const u8, _len: u32) {}
     }
 
     unsafe extern "C" fn stub_stop_handler(_arg: *mut core::ffi::c_void) {}

@@ -103,6 +103,23 @@ impl<B: LbmBindings> PackageLifecycle<B> {
             Err(ffi::RegisterError::FirmwareRejected)
         }
     }
+
+    pub fn register_extension_from_image(
+        &self,
+        image: ffi::NativeImage,
+        descriptor: ExtensionDescriptor,
+    ) -> Result<(), ffi::RegisterError> {
+        let descriptor = descriptor
+            .validate()
+            .map_err(|_| ffi::RegisterError::InvalidExtensionName)?;
+        let handler_offset = descriptor.handler() as usize;
+        let handler = unsafe { core::mem::transmute(image.rebase_addr(handler_offset)) };
+        if self.api.register_extension(descriptor.name(), handler) {
+            Ok(())
+        } else {
+            Err(ffi::RegisterError::FirmwareRejected)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -183,6 +200,23 @@ mod tests {
 
     unsafe extern "C" fn stub_handler(_args: *mut u32, _count: u32) -> u32 {
         0
+    }
+
+    #[test]
+    fn register_extension_from_image_rebases_handler_before_firmware_call() {
+        let bindings = FakeBindings::new();
+        let lifecycle = PackageLifecycle::new(bindings);
+        let handler_offset = 0x31_usize;
+        let descriptor = ExtensionDescriptor::new(EXT_RUST_PROBE_NAME, unsafe {
+            core::mem::transmute(handler_offset)
+        });
+        let image = ffi::NativeImage::new(0x2000);
+
+        assert_eq!(
+            lifecycle.register_extension_from_image(image, descriptor),
+            Ok(())
+        );
+        assert_eq!(lifecycle.api.bindings().last_handler.get(), 0x2031);
     }
 
     #[test]

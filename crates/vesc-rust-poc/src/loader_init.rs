@@ -15,10 +15,9 @@ pub extern "C" fn init(info: *mut ffi::LibInfo) -> bool {
 
     unsafe {
         let image = ffi::NativeImage::from_info(&*info);
-        let descriptor = package_lifecycle::rust_probe_diag_descriptor();
-        let handler_addr = image.rebase_addr(descriptor.handler() as *const () as usize);
-        let handler = core::mem::transmute(handler_addr);
-        let _registered = ffi::raw::lbm_add_extension(descriptor.name().as_ptr(), handler);
+        let lifecycle = package_lifecycle::PackageLifecycle::new(ffi::RealBindings);
+        let _registered = lifecycle
+            .register_extension_from_image(image, package_lifecycle::rust_probe_diag_descriptor());
     }
 
     true

@@ -168,6 +168,14 @@ pub trait AppDataBindings {
     /// `handler` must be either `None` or a callback with the firmware app-data ABI
     /// that remains valid until it is replaced or cleared.
     unsafe fn set_app_data_handler(&self, handler: Option<AppDataHandler>) -> bool;
+
+    fn system_time_ticks(&self) -> u32;
+
+    /// # Safety
+    ///
+    /// `data` must point to at least `len` bytes that remain valid for the duration
+    /// of the firmware call.
+    unsafe fn send_app_data(&self, data: *const u8, len: u32);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -236,6 +244,14 @@ impl LbmBindings for RealBindings {
 impl AppDataBindings for RealBindings {
     unsafe fn set_app_data_handler(&self, handler: Option<AppDataHandler>) -> bool {
         unsafe { raw::vesc_set_app_data_handler(handler) }
+    }
+
+    fn system_time_ticks(&self) -> u32 {
+        unsafe { raw::vesc_system_time_ticks() }
+    }
+
+    unsafe fn send_app_data(&self, data: *const u8, len: u32) {
+        unsafe { raw::vesc_send_app_data(data, len) }
     }
 }
 
@@ -339,6 +355,18 @@ impl<B: AppDataBindings> LoopbackLifecycle<B> {
 
     pub fn register_app_data_handler(&self, handler: AppDataHandler) -> bool {
         unsafe { self.bindings.set_app_data_handler(Some(handler)) }
+    }
+
+    pub fn system_time_ticks(&self) -> u32 {
+        self.bindings.system_time_ticks()
+    }
+
+    /// # Safety
+    ///
+    /// `data` must point to at least `len` bytes that remain valid for the duration
+    /// of the firmware call.
+    pub unsafe fn send_app_data(&self, data: *const u8, len: u32) {
+        unsafe { self.bindings.send_app_data(data, len) }
     }
 }
 
@@ -983,17 +1011,17 @@ pub mod raw {
 mod tests {
     #[allow(unused_imports)]
     use super::{
-        AppDataLen, AppDataPacket, CanControllerId, CanFrameLen, CanPayload, CanStatusIndex,
-        CfgFloat, CfgInt, CfgParam, CommandPacket, ConfigPayload, ConfigSetResult, ConfigXmlBytes,
-        EepromAddress, EepromVar, ExtensionDescriptor, ExtensionHandler, FirmwareNonNull,
-        FirmwarePtr, GpioPin, GpioPortPtr, HalfDuplex, HardwareType, ImageOffset, LbmApi,
-        LbmBindings, LbmBoolSymbol, LbmCid, LbmCount, LbmErrorSymbol, LbmFloat, LbmInt,
+        AppDataBindings, AppDataLen, AppDataPacket, CanControllerId, CanFrameLen, CanPayload,
+        CanStatusIndex, CfgFloat, CfgInt, CfgParam, CommandPacket, ConfigPayload, ConfigSetResult,
+        ConfigXmlBytes, EepromAddress, EepromVar, ExtensionDescriptor, ExtensionHandler,
+        FirmwareNonNull, FirmwarePtr, GpioPin, GpioPortPtr, HalfDuplex, HardwareType, ImageOffset,
+        LbmApi, LbmBindings, LbmBoolSymbol, LbmCid, LbmCount, LbmErrorSymbol, LbmFloat, LbmInt,
         LbmIoSymbol, LbmNilSymbol, LbmSymbol, LbmType, LbmUint, LbmValue, LibInfo, LibInfoAbi,
-        LoaderBaseAddress, MallocLen, MotorIndex, MutablePacket, MutexHandle, NativeAddress,
-        NativeImage, NvmAddress, NvmBytes, NvmLen, OwnedFirmwareAllocation, PackageLifecycle,
-        PlotAxisName, PlotGraphIndex, PlotGraphName, PlotPoint, ProgramAddress, RegisterError,
-        ReplyPacket, SemaphoreHandle, StackSizeBytes, SystemTicks, ThreadHandle, ThreadName,
-        UartBaudRate, UartWriteLen, VescIfAbi, VescPin, VescPinMode,
+        LoaderBaseAddress, LoopbackLifecycle, MallocLen, MotorIndex, MutablePacket, MutexHandle,
+        NativeAddress, NativeImage, NvmAddress, NvmBytes, NvmLen, OwnedFirmwareAllocation,
+        PackageLifecycle, PlotAxisName, PlotGraphIndex, PlotGraphName, PlotPoint, ProgramAddress,
+        RegisterError, ReplyPacket, SemaphoreHandle, StackSizeBytes, SystemTicks, ThreadHandle,
+        ThreadName, UartBaudRate, UartWriteLen, VescIfAbi, VescPin, VescPinMode,
     };
     use core::cell::Cell;
     use core::ffi::{CStr, c_char};
@@ -1054,6 +1082,60 @@ mod tests {
 
     unsafe extern "C" fn stub_handler(_args: *mut u32, _count: u32) -> u32 {
         0
+    }
+
+    struct FakeAppDataBindings {
+        handler_calls: Cell<usize>,
+        ticks: Cell<u32>,
+        send_calls: Cell<usize>,
+        last_data: Cell<usize>,
+        last_len: Cell<u32>,
+    }
+
+    impl FakeAppDataBindings {
+        fn with_ticks(ticks: u32) -> Self {
+            Self {
+                handler_calls: Cell::new(0),
+                ticks: Cell::new(ticks),
+                send_calls: Cell::new(0),
+                last_data: Cell::new(0),
+                last_len: Cell::new(0),
+            }
+        }
+    }
+
+    impl AppDataBindings for FakeAppDataBindings {
+        unsafe fn set_app_data_handler(&self, _handler: Option<super::AppDataHandler>) -> bool {
+            self.handler_calls.set(self.handler_calls.get() + 1);
+            true
+        }
+
+        fn system_time_ticks(&self) -> u32 {
+            self.ticks.get()
+        }
+
+        unsafe fn send_app_data(&self, data: *const u8, len: u32) {
+            self.send_calls.set(self.send_calls.get() + 1);
+            self.last_data.set(data as usize);
+            self.last_len.set(len);
+        }
+    }
+
+    #[test]
+    fn loopback_lifecycle_forwards_firmware_app_data_calls_through_bindings() {
+        let bindings = FakeAppDataBindings::with_ticks(1234);
+        let lifecycle = LoopbackLifecycle::new(bindings);
+        let payload = [1_u8, 2, 3];
+
+        assert_eq!(lifecycle.system_time_ticks(), 1234);
+        unsafe { lifecycle.send_app_data(payload.as_ptr(), 3) };
+
+        assert_eq!(lifecycle.bindings().send_calls.get(), 1);
+        assert_eq!(lifecycle.bindings().last_len.get(), 3);
+        assert_eq!(
+            lifecycle.bindings().last_data.get(),
+            payload.as_ptr() as usize
+        );
     }
 
     #[test]
