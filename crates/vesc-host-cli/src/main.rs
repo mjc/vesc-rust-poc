@@ -66,35 +66,17 @@ fn main() -> ExitCode {
             };
 
             loop {
-                match vesc_host_cli::btle::run_lisp_probe_with_progress(target.clone(), |event| {
-                    if event.should_print_to_cli() {
-                        println!("lisp probe: {}", event.describe());
-                    }
-                }) {
-                    Ok(report) => {
-                        report
-                            .prints()
-                            .iter()
-                            .for_each(|line| println!("lisp print: {line}"));
-                        if report.attempts() > 1 {
-                            println!(
-                                "lisp probe received print replies after {} attempts",
-                                report.attempts()
-                            );
+                if let Err(error) = vesc_host_cli::btle::run_lisp_probe_continuously_with_progress(
+                    target.clone(),
+                    |event| {
+                        if event.should_print_to_cli() {
+                            println!("lisp probe: {}", event.describe());
                         }
-                        if report.prints().is_empty() {
-                            println!(
-                                "lisp probe completed without print replies after {} attempts; retrying",
-                                report.attempts()
-                            );
-                        }
-                    }
-                    Err(error) => {
-                        eprintln!("lisp probe failed: {error}; retrying");
-                    }
+                    },
+                ) {
+                    eprintln!("lisp probe failed: {error}; reconnecting");
+                    thread::sleep(LISP_PROBE_RETRY_DELAY);
                 }
-
-                thread::sleep(LISP_PROBE_RETRY_DELAY);
             }
         }
         Ok(vesc_host_cli::Command::PackageInstall(command)) => {

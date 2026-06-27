@@ -32,6 +32,43 @@ const LISP_PROBE_REPL_ATTEMPTS: usize = 5;
 const LISP_PROBE_REPL_RETRY_DELAY: Duration = Duration::from_secs(1);
 const BLE_WRITE_CHUNK_SIZE: usize = 20;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LispPrintReceiveConfig {
+    timeout: Duration,
+    quiet_after_print: Duration,
+    progress_interval: Duration,
+}
+
+impl Default for LispPrintReceiveConfig {
+    fn default() -> Self {
+        Self {
+            timeout: LISP_PROBE_TIMEOUT,
+            quiet_after_print: LISP_PROBE_QUIET_AFTER_PRINT,
+            progress_interval: LISP_PROBE_PROGRESS_INTERVAL,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ContinuousProbeStep {
+    ContinueImmediately { next_attempt: usize },
+    RetryAfterDelay { next_attempt: usize },
+}
+
+fn continuous_probe_step(attempt: usize, prints: &[String]) -> ContinuousProbeStep {
+    if lisp_probe_has_expected_result(prints) {
+        return ContinuousProbeStep::ContinueImmediately { next_attempt: 1 };
+    }
+
+    if attempt >= LISP_PROBE_REPL_ATTEMPTS {
+        ContinuousProbeStep::RetryAfterDelay { next_attempt: 1 }
+    } else {
+        ContinuousProbeStep::RetryAfterDelay {
+            next_attempt: attempt + 1,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct BtleSession {
     peripheral: Peripheral,
@@ -126,9 +163,7 @@ impl LispProbeProgress {
             Self::RetryingReplCommand {
                 next_attempt,
                 delay_secs,
-            } => format!(
-                "retrying Lisp REPL probe as attempt {next_attempt} after {delay_secs}s"
-            ),
+            } => format!("retrying Lisp REPL probe as attempt {next_attempt} after {delay_secs}s"),
             Self::FinishedWaiting { prints } => {
                 format!("finished waiting for Lisp print replies ({prints} print(s))")
             }
@@ -250,94 +285,15 @@ impl BtleSession {
 
     fn receive_lisp_prints_with_progress(
         &mut self,
-        mut progress: impl FnMut(LispProbeProgress),
+        progress: impl FnMut(LispProbeProgress),
     ) -> Result<Vec<String>, LoopbackTransportError> {
-        let mut prints = self.take_pending_lisp_prints();
-        progress(LispProbeProgress::WaitingForPrints);
-        let start = std::time::Instant::now();
-        let deadline = start + LISP_PROBE_TIMEOUT;
-        let mut next_progress = start + LISP_PROBE_PROGRESS_INTERVAL;
-        let mut quiet_deadline = (!prints.is_empty()).then(|| start + LISP_PROBE_QUIET_AFTER_PRINT);
-
-        while std::time::Instant::now() < deadline {
-            let now = std::time::Instant::now();
-            let mut wait_until = deadline.min(next_progress);
-            if let Some(quiet_deadline) = quiet_deadline {
-                wait_until = wait_until.min(quiet_deadline);
-            }
-            let remaining = wait_until.saturating_duration_since(now);
-            match self.responses.recv_timeout(remaining) {
-                Ok(bytes) => {
-                    quiet_deadline = None;
-                    progress(LispProbeProgress::ReceivedNotification { bytes: bytes.len() });
-                    let packets = self.decoder.push(&bytes).map_err(|_| {
-                        LoopbackTransportError::Device("failed to decode a Lisp probe reply")
-                    })?;
-                    progress(LispProbeProgress::DecodedPackets {
-                        count: packets.len(),
-                    });
-                    packets
-                        .into_iter()
-                        .for_each(|packet| self.pending.push_back(packet));
-                    let new_prints = self.take_pending_lisp_prints();
-                    for line in &new_prints {
-                        progress(LispProbeProgress::LispPrint { line: line.clone() });
-                    }
-                    prints.extend(new_prints);
-                    if prints.iter().any(|line| lisp_probe_line_is_success(line)) {
-                        progress(LispProbeProgress::ExpectedResultReceived);
-                        break;
-                    }
-                    if !prints.is_empty() {
-                        quiet_deadline =
-                            Some(std::time::Instant::now() + LISP_PROBE_QUIET_AFTER_PRINT);
-                    }
-                }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    let now = std::time::Instant::now();
-                    if quiet_deadline.is_some_and(|deadline| now >= deadline) {
-                        progress(LispProbeProgress::QuietAfterPrints {
-                            prints: prints.len(),
-                        });
-                        break;
-                    }
-                    if now >= deadline {
-                        break;
-                    }
-                    progress(LispProbeProgress::StillWaiting {
-                        elapsed_secs: start.elapsed().as_secs(),
-                        prints: prints.len(),
-                    });
-                    next_progress = std::time::Instant::now() + LISP_PROBE_PROGRESS_INTERVAL;
-                }
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                    return Err(LoopbackTransportError::Device(
-                        "BLE notification stream disconnected",
-                    ));
-                }
-            }
-        }
-
-        progress(LispProbeProgress::FinishedWaiting {
-            prints: prints.len(),
-        });
-        Ok(prints)
-    }
-
-    fn take_pending_lisp_prints(&mut self) -> Vec<String> {
-        let mut prints = Vec::new();
-        let mut retained = VecDeque::new();
-
-        while let Some(packet) = self.pending.pop_front() {
-            if packet.first().copied() == Some(COMM_LISP_PRINT) {
-                prints.push(parse_lisp_print(&packet[1..]));
-            } else {
-                retained.push_back(packet);
-            }
-        }
-
-        self.pending = retained;
-        prints
+        receive_lisp_prints_from_channel(
+            &self.responses,
+            &mut self.decoder,
+            &mut self.pending,
+            LispPrintReceiveConfig::default(),
+            progress,
+        )
     }
 }
 
@@ -506,6 +462,146 @@ pub fn run_lisp_probe_with_progress(
     Ok(lisp_probe_report(all_prints, attempts))
 }
 
+pub fn run_lisp_probe_continuously_with_progress(
+    target: LoopbackTarget,
+    mut progress: impl FnMut(LispProbeProgress),
+) -> Result<(), LoopbackTransportError> {
+    progress(LispProbeProgress::StartingRuntime);
+    let runtime = Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(1)
+        .build()
+        .map_err(|_| LoopbackTransportError::Device("failed to start the BLE runtime"))?;
+
+    progress(LispProbeProgress::OpeningSession);
+    let mut session = runtime.block_on(open_session(target))?;
+    progress(LispProbeProgress::SessionOpened);
+    let packet = build_lisp_repl_packet(lisp_probe_command());
+    let mut attempt = 1;
+
+    loop {
+        progress(LispProbeProgress::SendingReplCommand {
+            attempt,
+            bytes: packet.len(),
+        });
+        runtime.block_on(write_ble_uart_packet(
+            &session.peripheral,
+            &session.rx_char,
+            &packet,
+        ))?;
+        let prints = session.receive_lisp_prints_with_progress(&mut progress)?;
+
+        match continuous_probe_step(attempt, &prints) {
+            ContinuousProbeStep::ContinueImmediately { next_attempt } => {
+                attempt = next_attempt;
+                continue;
+            }
+            ContinuousProbeStep::RetryAfterDelay { next_attempt } => {
+                progress(LispProbeProgress::RetryingReplCommand {
+                    next_attempt,
+                    delay_secs: LISP_PROBE_REPL_RETRY_DELAY.as_secs(),
+                });
+                attempt = next_attempt;
+                std::thread::sleep(LISP_PROBE_REPL_RETRY_DELAY);
+            }
+        }
+    }
+}
+
+fn receive_lisp_prints_from_channel(
+    responses: &Receiver<Vec<u8>>,
+    decoder: &mut PacketDecoder,
+    pending: &mut VecDeque<Vec<u8>>,
+    config: LispPrintReceiveConfig,
+    mut progress: impl FnMut(LispProbeProgress),
+) -> Result<Vec<String>, LoopbackTransportError> {
+    let mut prints = take_pending_lisp_prints(pending);
+    progress(LispProbeProgress::WaitingForPrints);
+    let start = std::time::Instant::now();
+    let deadline = start + config.timeout;
+    let mut next_progress = start + config.progress_interval;
+    let mut quiet_deadline = (!prints.is_empty()).then(|| start + config.quiet_after_print);
+
+    while std::time::Instant::now() < deadline {
+        let now = std::time::Instant::now();
+        let mut wait_until = deadline.min(next_progress);
+        if let Some(quiet_deadline) = quiet_deadline {
+            wait_until = wait_until.min(quiet_deadline);
+        }
+        let remaining = wait_until.saturating_duration_since(now);
+        match responses.recv_timeout(remaining) {
+            Ok(bytes) => {
+                quiet_deadline = None;
+                progress(LispProbeProgress::ReceivedNotification { bytes: bytes.len() });
+                let packets = decoder.push(&bytes).map_err(|_| {
+                    LoopbackTransportError::Device("failed to decode a Lisp probe reply")
+                })?;
+                progress(LispProbeProgress::DecodedPackets {
+                    count: packets.len(),
+                });
+                packets
+                    .into_iter()
+                    .for_each(|packet| pending.push_back(packet));
+                let new_prints = take_pending_lisp_prints(pending);
+                for line in &new_prints {
+                    progress(LispProbeProgress::LispPrint { line: line.clone() });
+                }
+                prints.extend(new_prints);
+                if prints.iter().any(|line| lisp_probe_line_is_success(line)) {
+                    progress(LispProbeProgress::ExpectedResultReceived);
+                    break;
+                }
+                if !prints.is_empty() {
+                    quiet_deadline = Some(std::time::Instant::now() + config.quiet_after_print);
+                }
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                let now = std::time::Instant::now();
+                if quiet_deadline.is_some_and(|deadline| now >= deadline) {
+                    progress(LispProbeProgress::QuietAfterPrints {
+                        prints: prints.len(),
+                    });
+                    break;
+                }
+                if now >= deadline {
+                    break;
+                }
+                progress(LispProbeProgress::StillWaiting {
+                    elapsed_secs: start.elapsed().as_secs(),
+                    prints: prints.len(),
+                });
+                next_progress = std::time::Instant::now() + config.progress_interval;
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(LoopbackTransportError::Device(
+                    "BLE notification stream disconnected",
+                ));
+            }
+        }
+    }
+
+    progress(LispProbeProgress::FinishedWaiting {
+        prints: prints.len(),
+    });
+    Ok(prints)
+}
+
+fn take_pending_lisp_prints(pending: &mut VecDeque<Vec<u8>>) -> Vec<String> {
+    let mut prints = Vec::new();
+    let mut retained = VecDeque::new();
+
+    while let Some(packet) = pending.pop_front() {
+        if packet.first().copied() == Some(COMM_LISP_PRINT) {
+            prints.push(parse_lisp_print(&packet[1..]));
+        } else {
+            retained.push_back(packet);
+        }
+    }
+
+    *pending = retained;
+    prints
+}
+
 fn lisp_probe_has_expected_result(prints: &[String]) -> bool {
     prints.iter().any(|line| lisp_probe_line_is_success(line))
 }
@@ -584,11 +680,67 @@ pub fn vesc_ble_uart_tx_uuid() -> Uuid {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_custom_app_data_packet, build_lisp_repl_packet, lisp_probe_command,
-        lisp_probe_report, parse_lisp_print, vesc_ble_uart_rx_uuid, vesc_ble_uart_service_uuid,
-        vesc_ble_uart_tx_uuid, LispProbeProgress, COMM_CUSTOM_APP_DATA, COMM_LISP_REPL_CMD,
+        build_custom_app_data_packet, build_lisp_repl_packet, continuous_probe_step,
+        lisp_probe_command, lisp_probe_has_expected_result, lisp_probe_line_is_success,
+        lisp_probe_report, parse_lisp_print, receive_lisp_prints_from_channel,
+        take_pending_lisp_prints, vesc_ble_uart_rx_uuid, vesc_ble_uart_service_uuid,
+        vesc_ble_uart_tx_uuid, ContinuousProbeStep, LispPrintReceiveConfig, LispProbeProgress,
+        COMM_CUSTOM_APP_DATA, COMM_LISP_PRINT, COMM_LISP_REPL_CMD,
     };
-    use crate::vesc_uart::PacketDecoder;
+    use crate::loopback::LoopbackTransportError;
+    use crate::vesc_uart::{encode_packet, PacketDecoder};
+    use std::collections::VecDeque;
+    use std::sync::mpsc::{self, Receiver};
+    use std::thread;
+    use std::time::Duration;
+
+    fn fast_lisp_print_receive_config() -> LispPrintReceiveConfig {
+        LispPrintReceiveConfig {
+            timeout: Duration::from_secs(2),
+            quiet_after_print: Duration::from_millis(50),
+            progress_interval: Duration::from_secs(5),
+        }
+    }
+
+    fn build_lisp_print_notification(line: &str) -> Vec<u8> {
+        let mut payload = vec![COMM_LISP_PRINT];
+        payload.extend_from_slice(line.as_bytes());
+        payload.push(0);
+        encode_packet(&payload)
+    }
+
+    fn receive_with_tracked_progress(
+        responses: &Receiver<Vec<u8>>,
+        decoder: &mut PacketDecoder,
+        pending: &mut VecDeque<Vec<u8>>,
+    ) -> (
+        Result<Vec<String>, LoopbackTransportError>,
+        Vec<LispProbeProgress>,
+    ) {
+        let mut events = Vec::new();
+        let result = receive_lisp_prints_from_channel(
+            responses,
+            decoder,
+            pending,
+            fast_lisp_print_receive_config(),
+            |event| events.push(event),
+        );
+        (result, events)
+    }
+
+    fn simulate_lisp_probe_reconnects<F>(mut run: F, max: usize) -> usize
+    where
+        F: FnMut() -> Result<(), LoopbackTransportError>,
+    {
+        let mut reconnects = 0;
+        while reconnects < max {
+            if run().is_ok() {
+                break;
+            }
+            reconnects += 1;
+        }
+        reconnects
+    }
 
     #[test]
     fn exports_the_vesc_ble_uart_profile_uuids() {
@@ -708,5 +860,277 @@ mod tests {
     fn parses_lisp_print_packets_as_lossy_strings() {
         assert_eq!(parse_lisp_print(b"42\0ignored"), "42");
         assert_eq!(parse_lisp_print(&[0xff, b'a']), "\u{fffd}a");
+    }
+
+    #[test]
+    fn lisp_probe_success_detection_matches_probe_marker_substring() {
+        assert!(lisp_probe_line_is_success("vesc-rust-probe-ok-42"));
+        assert!(lisp_probe_line_is_success(
+            "prefix vesc-rust-probe-ok-42 suffix"
+        ));
+        assert!(!lisp_probe_line_is_success("vesc-rust-probe-rust-diag-v4"));
+        assert!(!lisp_probe_line_is_success("41"));
+        assert!(!lisp_probe_has_expected_result(&[]));
+        assert!(lisp_probe_has_expected_result(&[
+            "vesc-rust-probe-rust-diag-v4".to_owned(),
+            "vesc-rust-probe-ok-42".to_owned(),
+        ]));
+    }
+
+    #[test]
+    fn continuous_probe_success_resets_attempt_without_retry_step() {
+        assert_eq!(
+            continuous_probe_step(4, &["vesc-rust-probe-ok-42".to_owned()]),
+            ContinuousProbeStep::ContinueImmediately { next_attempt: 1 }
+        );
+    }
+
+    #[test]
+    fn continuous_probe_missing_success_advances_attempt_until_wrap() {
+        assert_eq!(
+            continuous_probe_step(1, &[]),
+            ContinuousProbeStep::RetryAfterDelay { next_attempt: 2 }
+        );
+        assert_eq!(
+            continuous_probe_step(4, &["unexpected".to_owned()]),
+            ContinuousProbeStep::RetryAfterDelay { next_attempt: 5 }
+        );
+        assert_eq!(
+            continuous_probe_step(5, &[]),
+            ContinuousProbeStep::RetryAfterDelay { next_attempt: 1 }
+        );
+    }
+
+    #[test]
+    fn continuous_probe_state_machine_keeps_session_on_success() {
+        let mut attempt = 3;
+        let mut retry_events = 0;
+
+        for round in 0..4 {
+            let prints = if round % 2 == 0 {
+                vec!["vesc-rust-probe-ok-42".to_owned()]
+            } else {
+                vec!["vesc-rust-probe-rust-diag-v4".to_owned()]
+            };
+
+            match continuous_probe_step(attempt, &prints) {
+                ContinuousProbeStep::ContinueImmediately { next_attempt } => {
+                    assert!(lisp_probe_has_expected_result(&prints));
+                    assert_eq!(next_attempt, 1);
+                    attempt = next_attempt;
+                }
+                ContinuousProbeStep::RetryAfterDelay { next_attempt } => {
+                    retry_events += 1;
+                    attempt = next_attempt;
+                }
+            }
+        }
+
+        assert_eq!(attempt, 2);
+        assert_eq!(retry_events, 2);
+    }
+
+    #[test]
+    fn receive_lisp_prints_stops_early_on_success_marker() {
+        let (responses_tx, responses_rx) = mpsc::channel();
+        let mut decoder = PacketDecoder::new();
+        let mut pending = VecDeque::new();
+
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(10));
+            responses_tx
+                .send(build_lisp_print_notification(
+                    "vesc-rust-probe-rust-diag-v4",
+                ))
+                .expect("diag print");
+            responses_tx
+                .send(build_lisp_print_notification("vesc-rust-probe-ok-42"))
+                .expect("success print");
+        });
+
+        let (prints, events) =
+            receive_with_tracked_progress(&responses_rx, &mut decoder, &mut pending);
+
+        assert_eq!(
+            prints.expect("prints"),
+            vec![
+                "vesc-rust-probe-rust-diag-v4".to_owned(),
+                "vesc-rust-probe-ok-42".to_owned(),
+            ]
+        );
+        assert!(events.contains(&LispProbeProgress::ExpectedResultReceived));
+        assert!(!events
+            .iter()
+            .any(|event| { matches!(event, LispProbeProgress::QuietAfterPrints { .. }) }));
+    }
+
+    #[test]
+    fn receive_lisp_prints_returns_disconnect_error_for_closed_channel() {
+        let (responses_tx, responses_rx) = mpsc::channel();
+        drop(responses_tx);
+
+        let mut decoder = PacketDecoder::new();
+        let mut pending = VecDeque::new();
+        let error = receive_lisp_prints_from_channel(
+            &responses_rx,
+            &mut decoder,
+            &mut pending,
+            fast_lisp_print_receive_config(),
+            |_| {},
+        )
+        .expect_err("disconnect");
+
+        assert_eq!(
+            error,
+            LoopbackTransportError::Device("BLE notification stream disconnected")
+        );
+    }
+
+    #[test]
+    fn receive_lisp_prints_stops_after_quiet_period_without_success() {
+        let (responses_tx, responses_rx) = mpsc::channel();
+        let mut decoder = PacketDecoder::new();
+        let mut pending = VecDeque::new();
+
+        responses_tx
+            .send(build_lisp_print_notification("only-diag"))
+            .expect("diag print");
+
+        let (prints, events) =
+            receive_with_tracked_progress(&responses_rx, &mut decoder, &mut pending);
+
+        assert_eq!(prints.expect("prints"), vec!["only-diag".to_owned()]);
+        assert!(events
+            .iter()
+            .any(|event| { matches!(event, LispProbeProgress::QuietAfterPrints { prints: 1 }) }));
+        assert!(!events.contains(&LispProbeProgress::ExpectedResultReceived));
+    }
+
+    #[test]
+    fn receive_lisp_prints_drains_pending_before_waiting_on_channel() {
+        let (_responses_tx, responses_rx) = mpsc::channel();
+        let mut decoder = PacketDecoder::new();
+        let mut pending = VecDeque::from([vec![
+            COMM_LISP_PRINT,
+            b'p',
+            b'r',
+            b'e',
+            b's',
+            b'e',
+            b'e',
+            b'd',
+            0,
+        ]]);
+
+        let (prints, events) =
+            receive_with_tracked_progress(&responses_rx, &mut decoder, &mut pending);
+
+        assert_eq!(prints.expect("prints"), vec!["preseed".to_owned()]);
+        assert!(events
+            .iter()
+            .any(|event| { matches!(event, LispProbeProgress::QuietAfterPrints { prints: 1 }) }));
+    }
+
+    #[test]
+    fn receive_lisp_prints_retains_non_lisp_packets_in_pending() {
+        let (responses_tx, responses_rx) = mpsc::channel();
+        let mut decoder = PacketDecoder::new();
+        let mut pending = VecDeque::new();
+
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(10));
+            responses_tx
+                .send(encode_packet(&[COMM_CUSTOM_APP_DATA, 9, 8, 7]))
+                .expect("custom app data");
+            responses_tx
+                .send(build_lisp_print_notification("vesc-rust-probe-ok-42"))
+                .expect("success print");
+        });
+
+        let prints = receive_lisp_prints_from_channel(
+            &responses_rx,
+            &mut decoder,
+            &mut pending,
+            fast_lisp_print_receive_config(),
+            |_| {},
+        )
+        .expect("prints");
+
+        assert_eq!(prints, vec!["vesc-rust-probe-ok-42".to_owned()]);
+        assert_eq!(
+            pending,
+            VecDeque::from([vec![COMM_CUSTOM_APP_DATA, 9, 8, 7]])
+        );
+    }
+
+    #[test]
+    fn take_pending_lisp_prints_leaves_other_packets_queued() {
+        let mut pending = VecDeque::from([
+            vec![COMM_LISP_PRINT, b'a', 0],
+            vec![COMM_CUSTOM_APP_DATA, 1],
+            vec![COMM_LISP_PRINT, b'b', 0],
+        ]);
+
+        assert_eq!(
+            take_pending_lisp_prints(&mut pending),
+            vec!["a".to_owned(), "b".to_owned()]
+        );
+        assert_eq!(pending, VecDeque::from([vec![COMM_CUSTOM_APP_DATA, 1]]));
+    }
+
+    #[test]
+    fn lisp_probe_progress_includes_expected_result_received_message() {
+        assert_eq!(
+            LispProbeProgress::ExpectedResultReceived.describe(),
+            "received expected Lisp probe result"
+        );
+    }
+
+    #[test]
+    fn one_shot_retry_progress_differs_from_continuous_success_path() {
+        assert_ne!(
+            continuous_probe_step(2, &["vesc-rust-probe-ok-42".to_owned()]),
+            ContinuousProbeStep::RetryAfterDelay { next_attempt: 3 }
+        );
+        assert_eq!(
+            LispProbeProgress::RetryingReplCommand {
+                next_attempt: 3,
+                delay_secs: 1,
+            }
+            .describe(),
+            "retrying Lisp REPL probe as attempt 3 after 1s"
+        );
+    }
+
+    #[test]
+    fn reconnect_loop_opens_a_fresh_session_after_ble_errors() {
+        let mut session_opens = 0;
+        let reconnects = simulate_lisp_probe_reconnects(
+            || {
+                session_opens += 1;
+                Err(LoopbackTransportError::Device(
+                    "BLE notification stream disconnected",
+                ))
+            },
+            3,
+        );
+
+        assert_eq!(session_opens, 3);
+        assert_eq!(reconnects, 3);
+    }
+
+    #[test]
+    fn reconnect_loop_does_not_run_when_continuous_probe_keeps_succeeding() {
+        let mut session_opens = 0;
+        let reconnects = simulate_lisp_probe_reconnects(
+            || {
+                session_opens += 1;
+                Ok(())
+            },
+            3,
+        );
+
+        assert_eq!(session_opens, 1);
+        assert_eq!(reconnects, 0);
     }
 }

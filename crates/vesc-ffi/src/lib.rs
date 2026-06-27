@@ -852,6 +852,22 @@ pub mod raw {
     /// `handler` must either be `None` or remain valid until replaced or
     /// cleared by a later firmware call.
     pub unsafe fn vesc_set_app_data_handler(handler: Option<AppDataHandler>) -> bool {
+        #[cfg(all(target_arch = "arm", not(test)))]
+        unsafe {
+            let vesc_if = VescIfAbi::BASE_ADDR.0;
+            let set_app_data_handler: usize;
+            core::arch::asm!(
+                "ldr {set_app_data_handler}, [{vesc_if}, #596]",
+                vesc_if = in(reg) vesc_if,
+                set_app_data_handler = out(reg) set_app_data_handler,
+                options(nostack, preserves_flags),
+            );
+            let set_app_data_handler: unsafe extern "C" fn(Option<AppDataHandler>) -> bool =
+                core::mem::transmute(set_app_data_handler);
+            return set_app_data_handler(handler);
+        }
+
+        #[cfg(not(all(target_arch = "arm", not(test))))]
         unsafe {
             let Some(set_app_data_handler) = (*VESC_IF).set_app_data_handler else {
                 return false;
