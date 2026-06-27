@@ -2,7 +2,7 @@
 
 CARGO ?= cargo
 
-.PHONY: check check-full check-ffi check-ffi-header test test-all test-embedded test-ffi test-package test-changed fmt clippy symbol-check package-smoke package package-only clean status coverage coverage-ffi coverage-sdk coverage-pkg coverage-cli hack-check
+.PHONY: check check-full check-ffi check-ffi-header test test-all test-embedded test-ffi test-package test-changed fmt clippy symbol-check golden-check package-smoke package package-only clean status coverage coverage-ffi coverage-sdk coverage-pkg coverage-cli hack-check
 
 check: fmt clippy test
 
@@ -44,6 +44,9 @@ clippy:
 	$(CARGO) clippy -p vesc-example-loopback --lib --release --target thumbv7em-none-eabihf -- -D warnings
 
 symbol-check: test-embedded
+
+golden-check:
+	$(CARGO) test -p vesc-pkg package_golden -- --test-threads=1
 
 COVERAGE_FAIL_UNDER ?= 80
 COVERAGE_PACKAGE_IGNORE := --ignore-filename-regex 'crates/vesc-(ffi|protocol)/'

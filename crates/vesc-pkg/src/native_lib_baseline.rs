@@ -66,7 +66,7 @@ pub fn vesc_c_if_header_fingerprint() -> String {
     fingerprint_bytes(&header)
 }
 
-fn fingerprint_bytes(bytes: &[u8]) -> String {
+pub fn fingerprint_bytes(bytes: &[u8]) -> String {
     let mut hasher = Fnv1a64::default();
     hasher.write(bytes);
     format!("{:016x}", hasher.finish())

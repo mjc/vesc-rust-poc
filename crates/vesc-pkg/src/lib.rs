@@ -25,6 +25,8 @@ pub mod package_assets;
 pub mod package_build;
 pub mod package_conversion;
 pub mod package_format;
+pub mod package_format_decode;
+pub mod package_golden;
 pub mod package_runner;
 pub mod package_runtime;
 pub mod package_target;

@@ -17,3 +17,7 @@ vesc-protocol = { path = "../vesc-protocol" }
 [dev-dependencies]
 insta = "1"
 tempfile = "3"
+
+[[bin]]
+name = "write-golden-fixtures"
+path = "src/bin/write-golden-fixtures.rs"

@@ -51,6 +51,10 @@ pub fn encode_vesc_package(wire: &VescPackageWire<'_>) -> io::Result<Vec<u8>> {
     q_compress(&data)
 }
 
+pub fn build_lisp_data(lisp_source: &str, lisp_editor_path: &Path) -> io::Result<Vec<u8>> {
+    pack_lisp_imports(lisp_source, lisp_editor_path)
+}
+
 pub fn build_vesc_package(input: &VescPackageInput<'_>) -> io::Result<Vec<u8>> {
     let lisp_data = pack_lisp_imports(input.lisp_source, input.lisp_editor_path)?;
 
