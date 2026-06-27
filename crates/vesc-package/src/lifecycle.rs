@@ -11,6 +11,7 @@ pub fn register_extension_from_image<B: LbmBindings>(
 }
 
 /// Register one extension through the live firmware binding set.
+#[cfg(not(test))]
 pub fn register_extension_from_image_real(
     info: &ffi::LibInfo,
     descriptor: ffi::ExtensionDescriptor,

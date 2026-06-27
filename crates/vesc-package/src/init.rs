@@ -2,9 +2,6 @@
 
 use crate::ffi;
 
-#[cfg(test)]
-use core::cell::Cell;
-
 unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
     #[cfg(not(test))]
     {
@@ -13,7 +10,7 @@ unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
 
     #[cfg(test)]
     {
-        STOP_CALLS.with(|calls| calls.set(calls.get() + 1));
+        record_stop_call_for_tests();
     }
 }
 
@@ -31,39 +28,63 @@ pub fn install_stop_hook(info: *mut ffi::LibInfo) -> bool {
     true
 }
 
-#[cfg(test)]
-#[no_mangle]
-pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
-    init_for_tests(info)
+#[cfg(any(test, feature = "test-support"))]
+mod test_state {
+    use core::sync::atomic::{AtomicUsize, Ordering};
+
+    static INIT_CALLS: AtomicUsize = AtomicUsize::new(0);
+    static STOP_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    pub fn record_init_call() {
+        INIT_CALLS.fetch_add(1, Ordering::SeqCst);
+    }
+
+    #[cfg(test)]
+    pub fn record_stop_call() {
+        STOP_CALLS.fetch_add(1, Ordering::SeqCst);
+    }
+
+    pub fn reset() {
+        INIT_CALLS.store(0, Ordering::SeqCst);
+        STOP_CALLS.store(0, Ordering::SeqCst);
+    }
+
+    pub fn init_calls() -> usize {
+        INIT_CALLS.load(Ordering::SeqCst)
+    }
+
+    #[cfg(test)]
+    pub fn stop_calls() -> usize {
+        STOP_CALLS.load(Ordering::SeqCst)
+    }
 }
 
 #[cfg(test)]
-thread_local! {
-    static INIT_CALLS: Cell<usize> = const { Cell::new(0) };
-    static STOP_CALLS: Cell<usize> = const { Cell::new(0) };
+fn record_stop_call_for_tests() {
+    test_state::record_stop_call();
 }
 
-#[cfg(test)]
+/// Test helper that mirrors the device `package_lib_init` stop-hook path.
+#[cfg(any(test, feature = "test-support"))]
 pub fn init_for_tests(info: *mut ffi::LibInfo) -> bool {
     let _ = install_stop_hook(info);
-    INIT_CALLS.with(|calls| calls.set(calls.get() + 1));
+    test_state::record_init_call();
     true
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn reset_init_call_count_for_tests() {
-    INIT_CALLS.with(|calls| calls.set(0));
-    STOP_CALLS.with(|calls| calls.set(0));
+    test_state::reset();
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn init_call_count_for_tests() -> usize {
-    INIT_CALLS.with(|calls| calls.get())
+    test_state::init_calls()
 }
 
 #[cfg(test)]
 pub fn stop_call_count_for_tests() -> usize {
-    STOP_CALLS.with(|calls| calls.get())
+    test_state::stop_calls()
 }
 
 #[cfg(test)]

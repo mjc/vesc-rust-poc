@@ -18,7 +18,7 @@ pub mod lifecycle;
 
 #[cfg(test)]
 mod tests {
-    use super::{ffi, init, ProtocolFrame, WireCommand, WireVersion};
+    use super::{ProtocolFrame, WireCommand, WireVersion};
 
     #[test]
     fn device_side_can_use_the_shared_protocol_crate() {
@@ -27,20 +27,5 @@ mod tests {
         assert_eq!(frame.version(), WireVersion::CURRENT);
         assert_eq!(frame.command(), WireCommand::Ping);
         assert_eq!(frame.payload(), &[7, 8]);
-    }
-
-    #[test]
-    fn package_lib_init_runs_the_device_loopback_entrypoint_path() {
-        init::reset_init_call_count_for_tests();
-        let mut info = ffi::LibInfo {
-            stop_fun: None,
-            arg: core::ptr::null_mut(),
-            base_addr: 0,
-        };
-
-        assert!(init::package_lib_init(&mut info));
-
-        assert_eq!(init::init_call_count_for_tests(), 1);
-        assert!(info.stop_fun.is_some());
     }
 }
