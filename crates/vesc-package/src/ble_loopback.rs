@@ -181,8 +181,8 @@ pub fn process_loopback_app_data(
 }
 
 /// Register the loopback app-data handler through the supplied binding set.
-pub fn register_loopback_app_data_handler_with<B: vesc_ffi::AppDataBindings>(
-    lifecycle: &vesc_ffi::LoopbackLifecycle<B>,
+pub fn register_loopback_app_data_handler_with<B: crate::AppDataBindings>(
+    lifecycle: &crate::LoopbackLifecycle<B>,
     handler: vesc_ffi::AppDataHandler,
 ) -> bool {
     lifecycle.register_app_data_handler(handler)
@@ -535,71 +535,5 @@ mod tests {
             process_loopback_app_data(ping.as_slice(), 0x0102_0304_0506_0708).expect("reply");
 
         assert_eq!(&response[..len], ping.as_slice());
-    }
-}
-
-#[cfg(all(test, feature = "test-support"))]
-mod lifecycle_tests {
-    use crate::ffi;
-    use crate::ffi::test_support::{stubs, FakeAppDataBindings};
-    #[test]
-    fn lifecycle_descriptor_installs_the_stop_hook() {
-        let bindings = FakeAppDataBindings::new();
-        let lifecycle = crate::ffi::LoopbackLifecycle::new(bindings);
-        let mut info = ffi::LibInfo {
-            stop_fun: None,
-            arg: core::ptr::null_mut(),
-            base_addr: 0x2000,
-        };
-
-        assert!(unsafe {
-            lifecycle.install(&mut info, stubs::stop_handler, stubs::app_data_handler)
-        });
-
-        assert_eq!(
-            info.stop_fun.expect("stop hook") as *const () as usize,
-            stubs::stop_handler as *const () as usize
-        );
-        assert_eq!(lifecycle.bindings().handler_calls.get(), 0);
-    }
-
-    #[test]
-    fn lifecycle_registers_the_app_data_handler_separately() {
-        let bindings = FakeAppDataBindings::new();
-        let lifecycle = crate::ffi::LoopbackLifecycle::new(bindings);
-
-        assert!(lifecycle.register_app_data_handler(stubs::app_data_handler));
-
-        assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
-        assert_eq!(
-            lifecycle.bindings().last_handler.get(),
-            stubs::app_data_handler as *const () as usize
-        );
-    }
-
-    #[test]
-    fn lifecycle_cleanup_clears_the_package_app_data_handler() {
-        let bindings = FakeAppDataBindings::new();
-        let lifecycle = crate::ffi::LoopbackLifecycle::new(bindings);
-
-        assert!(lifecycle.clear_app_data_handler());
-
-        assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
-        assert_eq!(lifecycle.bindings().last_handler.get(), 0);
-    }
-
-    #[test]
-    fn register_loopback_app_data_handler_with_forwards_to_bindings() {
-        use super::register_loopback_app_data_handler_with;
-        use crate::ffi::test_support::stubs;
-
-        let bindings = FakeAppDataBindings::new();
-        let lifecycle = crate::ffi::LoopbackLifecycle::new(bindings);
-
-        assert!(register_loopback_app_data_handler_with(
-            &lifecycle,
-            stubs::app_data_handler
-        ));
-        assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
     }
 }

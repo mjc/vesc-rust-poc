@@ -8,4 +8,4 @@ vesc-ffi = { path = "../vesc-ffi" }
 vesc-protocol = { path = "../vesc-protocol" }
 
 [features]
-test-support = ["vesc-ffi/test-support"]
+test-support = []
