@@ -396,7 +396,7 @@ const VESC_IF: *const VescIf = VescIfAbi::BASE_ADDR.0 as *const VescIf;
 pub unsafe fn lbm_add_extension(name: *const c_char, handler: ExtensionHandler) -> bool {
     #[cfg(all(target_arch = "arm", not(test)))]
     unsafe {
-        return lbm_add_extension_with_table_base(VescIfAbi::BASE_ADDR.0 as u32, name, handler);
+        lbm_add_extension_with_table_base(VescIfAbi::BASE_ADDR.0 as u32, name, handler)
     }
 
     #[cfg(not(all(target_arch = "arm", not(test))))]
@@ -456,7 +456,7 @@ pub unsafe fn lbm_dec_as_i32(value: LbmValue) -> i32 {
             options(nostack, preserves_flags),
         );
         let lbm_dec_as_i32: unsafe extern "C" fn(u32) -> i32 = core::mem::transmute(lbm_dec_as_i32);
-        return lbm_dec_as_i32(value.0);
+        lbm_dec_as_i32(value.0)
     }
 
     #[cfg(not(all(target_arch = "arm", not(test))))]
@@ -483,7 +483,7 @@ pub unsafe fn lbm_enc_i(value: i32) -> LbmValue {
             options(nostack, preserves_flags),
         );
         let lbm_enc_i: unsafe extern "C" fn(i32) -> u32 = core::mem::transmute(lbm_enc_i);
-        return LbmValue(lbm_enc_i(value));
+        LbmValue(lbm_enc_i(value))
     }
 
     #[cfg(not(all(target_arch = "arm", not(test))))]
@@ -510,7 +510,7 @@ pub unsafe fn lbm_is_number(value: LbmValue) -> bool {
             options(nostack, preserves_flags),
         );
         let lbm_is_number: unsafe extern "C" fn(u32) -> bool = core::mem::transmute(lbm_is_number);
-        return lbm_is_number(value.0);
+        lbm_is_number(value.0)
     }
 
     #[cfg(not(all(target_arch = "arm", not(test))))]
@@ -536,7 +536,7 @@ pub unsafe fn lbm_enc_sym_eerror() -> LbmValue {
             lbm_enc_sym_eerror = out(reg) lbm_enc_sym_eerror,
             options(nostack, preserves_flags),
         );
-        return LbmValue(lbm_enc_sym_eerror as u32);
+        LbmValue(lbm_enc_sym_eerror as u32)
     }
 
     #[cfg(not(all(target_arch = "arm", not(test))))]
@@ -562,7 +562,7 @@ pub unsafe fn vesc_set_app_data_handler(handler: Option<AppDataHandler>) -> bool
         );
         let set_app_data_handler: unsafe extern "C" fn(Option<AppDataHandler>) -> bool =
             core::mem::transmute(set_app_data_handler);
-        return set_app_data_handler(handler);
+        set_app_data_handler(handler)
     }
 
     #[cfg(not(all(target_arch = "arm", not(test))))]
