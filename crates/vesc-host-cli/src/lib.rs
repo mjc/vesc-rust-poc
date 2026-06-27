@@ -7,6 +7,7 @@ pub enum Command {
     Loopback,
     LispProbe(LispProbeCommand),
     PackageInstall(PackageInstallCommand),
+    ErasePackage(PackageEraseCommand),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,6 +19,12 @@ pub struct LispProbeCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageInstallCommand {
     pub package_path: String,
+    pub device_name: Option<String>,
+    pub address: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageEraseCommand {
     pub device_name: Option<String>,
     pub address: Option<String>,
 }
@@ -43,6 +50,7 @@ where
         Some("loopback") => Ok(Command::Loopback),
         Some("lisp-probe") => parse_lisp_probe(iter).map(Command::LispProbe),
         Some("package-install") => parse_package_install(iter).map(Command::PackageInstall),
+        Some("erase-package") => parse_erase_package(iter).map(Command::ErasePackage),
         Some(other) => Err(ParseError::UnknownCommand(other.to_owned())),
     }
 }
@@ -112,6 +120,36 @@ fn parse_package_install(
         .ok_or_else(|| ParseError::UnknownCommand("package-install".to_owned()))
 }
 
+fn parse_erase_package(
+    mut iter: impl Iterator<Item = String>,
+) -> Result<PackageEraseCommand, ParseError> {
+    let mut device_name = None;
+    let mut address = None;
+
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--device" => {
+                device_name = Some(
+                    iter.next()
+                        .ok_or_else(|| ParseError::UnknownCommand("--device".to_owned()))?,
+                );
+            }
+            "--address" => {
+                address = Some(
+                    iter.next()
+                        .ok_or_else(|| ParseError::UnknownCommand("--address".to_owned()))?,
+                );
+            }
+            other => return Err(ParseError::UnknownCommand(other.to_owned())),
+        }
+    }
+
+    Ok(PackageEraseCommand {
+        device_name,
+        address,
+    })
+}
+
 mod ble_discovery;
 pub mod btle;
 pub mod loopback;
@@ -121,7 +159,10 @@ pub mod vesc_uart;
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_args, Command, LispProbeCommand, PackageInstallCommand, ParseError};
+    use super::{
+        parse_args, Command, LispProbeCommand, PackageEraseCommand, PackageInstallCommand,
+        ParseError,
+    };
     use vesc_protocol::{WireCommand, WireVersion};
 
     #[test]
@@ -241,6 +282,107 @@ mod tests {
             Ok(Command::PackageInstall(PackageInstallCommand {
                 package_path: "foo.vescpkg".to_owned(),
                 device_name: None,
+                address: Some("AA:BB:CC:DD:EE:FF".to_owned()),
+            }))
+        );
+    }
+
+    #[test]
+    fn parses_erase_package_command() {
+        assert_eq!(
+            parse_args(["vesc-host-cli", "erase-package"]),
+            Ok(Command::ErasePackage(PackageEraseCommand {
+                device_name: None,
+                address: None,
+            }))
+        );
+    }
+
+    #[test]
+    fn parses_erase_package_device_selector() {
+        assert_eq!(
+            parse_args([
+                "vesc-host-cli",
+                "erase-package",
+                "--device",
+                "Floatwheel PintV"
+            ]),
+            Ok(Command::ErasePackage(PackageEraseCommand {
+                device_name: Some("Floatwheel PintV".to_owned()),
+                address: None,
+            }))
+        );
+    }
+
+    #[test]
+    fn parses_erase_package_address_selector() {
+        assert_eq!(
+            parse_args([
+                "vesc-host-cli",
+                "erase-package",
+                "--address",
+                "AA:BB:CC:DD:EE:FF"
+            ]),
+            Ok(Command::ErasePackage(PackageEraseCommand {
+                device_name: None,
+                address: Some("AA:BB:CC:DD:EE:FF".to_owned()),
+            }))
+        );
+    }
+
+    #[test]
+    fn rejects_bare_erase_command() {
+        assert_eq!(
+            parse_args(["vesc-host-cli", "erase"]),
+            Err(ParseError::UnknownCommand("erase".to_owned()))
+        );
+    }
+
+    #[test]
+    fn rejects_erase_package_unknown_flag() {
+        assert_eq!(
+            parse_args(["vesc-host-cli", "erase-package", "--force"]),
+            Err(ParseError::UnknownCommand("--force".to_owned()))
+        );
+    }
+
+    #[test]
+    fn rejects_erase_package_missing_device_value() {
+        assert_eq!(
+            parse_args(["vesc-host-cli", "erase-package", "--device"]),
+            Err(ParseError::UnknownCommand("--device".to_owned()))
+        );
+    }
+
+    #[test]
+    fn rejects_erase_package_missing_address_value() {
+        assert_eq!(
+            parse_args(["vesc-host-cli", "erase-package", "--address"]),
+            Err(ParseError::UnknownCommand("--address".to_owned()))
+        );
+    }
+
+    #[test]
+    fn rejects_erase_package_extra_argument() {
+        assert_eq!(
+            parse_args(["vesc-host-cli", "erase-package", "extra.vescpkg"]),
+            Err(ParseError::UnknownCommand("extra.vescpkg".to_owned()))
+        );
+    }
+
+    #[test]
+    fn parses_erase_package_with_both_selectors() {
+        assert_eq!(
+            parse_args([
+                "vesc-host-cli",
+                "erase-package",
+                "--device",
+                "Floatwheel PintV",
+                "--address",
+                "AA:BB:CC:DD:EE:FF"
+            ]),
+            Ok(Command::ErasePackage(PackageEraseCommand {
+                device_name: Some("Floatwheel PintV".to_owned()),
                 address: Some("AA:BB:CC:DD:EE:FF".to_owned()),
             }))
         );
