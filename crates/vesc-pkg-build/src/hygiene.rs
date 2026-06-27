@@ -63,6 +63,8 @@ mod tests {
     fn makefile_defines_the_package_targets() {
         let source = fs::read_to_string(repo_root().join("Makefile")).expect("root Makefile");
 
+        assert!(source.contains("check: fmt clippy test"));
+        assert!(source.contains("nextest run --workspace --no-fail-fast"));
         assert!(source.contains("package: check"));
         assert!(source.contains("package-only:"));
         assert!(source.contains("run -p vesc-pkg-build --bin vesc-pkg -- package"));

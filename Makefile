@@ -4,10 +4,10 @@ CARGO ?= cargo
 
 .PHONY: check test fmt clippy symbol-check package-smoke package package-only clean status
 
-check: test fmt clippy symbol-check package-smoke
+check: fmt clippy test
 
 test:
-	$(CARGO) test --workspace
+	$(CARGO) nextest run --workspace --no-fail-fast
 
 fmt:
 	$(CARGO) fmt --all --check
@@ -17,10 +17,10 @@ clippy:
 	$(CARGO) check -p vesc-rust-poc --lib --release --target thumbv7em-none-eabihf
 
 symbol-check:
-	$(CARGO) test -p vesc-pkg-build symbol_audit
+	$(CARGO) nextest run -p vesc-pkg-build -E 'test(symbol_audit)'
 
 package-smoke:
-	$(CARGO) test -p vesc-pkg-build package_payload_stays_well_below_the_vesc_tool_flash_block_limit
+	$(CARGO) nextest run -p vesc-pkg-build package_payload_stays_well_below_the_vesc_tool_flash_block_limit
 
 package: check
 	$(CARGO) run -p vesc-pkg-build --bin vesc-pkg -- package

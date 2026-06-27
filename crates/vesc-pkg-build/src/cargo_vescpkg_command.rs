@@ -330,7 +330,7 @@ mod tests {
 
     #[test]
     fn run_with_executes_the_default_build_invocation() {
-        let workspace = TempWorkspace::new();
+        let workspace = TempWorkspace::with_repo_fixture_layout();
         let root = workspace.root.clone();
         let _workspace = workspace;
         let runner = FakeRunner::default();

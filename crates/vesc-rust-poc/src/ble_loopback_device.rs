@@ -1,5 +1,4 @@
 use core::cell::{Cell, RefCell};
-use core::sync::atomic::{AtomicUsize, Ordering};
 
 use vesc_protocol::ble_loopback::{
     LoopbackError, LoopbackPacket, BLE_LOOPBACK_PROTOCOL_VERSION, MAX_LOOPBACK_PAYLOAD_BYTES,
@@ -419,8 +418,11 @@ impl DeviceServices for &FakeDeviceServices {
     }
 }
 
-static INIT_CALLS: AtomicUsize = AtomicUsize::new(0);
-static STOP_CALLS: AtomicUsize = AtomicUsize::new(0);
+#[cfg(test)]
+thread_local! {
+    static INIT_CALLS: Cell<usize> = Cell::new(0);
+    static STOP_CALLS: Cell<usize> = Cell::new(0);
+}
 
 unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
     #[cfg(not(test))]
@@ -431,7 +433,7 @@ unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
 
     #[cfg(test)]
     {
-        STOP_CALLS.fetch_add(1, Ordering::SeqCst);
+        STOP_CALLS.with(|calls| calls.set(calls.get() + 1));
     }
 }
 
@@ -451,25 +453,29 @@ pub fn init_package(info: *mut crate::ffi::LibInfo) -> bool {
     true
 }
 
+#[cfg(test)]
 pub fn init_package_for_tests(info: *mut crate::ffi::LibInfo) -> bool {
     if let Some(info) = unsafe { info.as_mut() } {
         info.stop_fun = Some(stop_package);
     }
-    INIT_CALLS.fetch_add(1, Ordering::SeqCst);
+    INIT_CALLS.with(|calls| calls.set(calls.get() + 1));
     true
 }
 
+#[cfg(test)]
 pub fn reset_init_call_count_for_tests() {
-    INIT_CALLS.store(0, Ordering::SeqCst);
-    STOP_CALLS.store(0, Ordering::SeqCst);
+    INIT_CALLS.with(|calls| calls.set(0));
+    STOP_CALLS.with(|calls| calls.set(0));
 }
 
+#[cfg(test)]
 pub fn init_call_count_for_tests() -> usize {
-    INIT_CALLS.load(Ordering::SeqCst)
+    INIT_CALLS.with(|calls| calls.get())
 }
 
+#[cfg(test)]
 pub fn stop_call_count_for_tests() -> usize {
-    STOP_CALLS.load(Ordering::SeqCst)
+    STOP_CALLS.with(|calls| calls.get())
 }
 
 #[cfg(test)]

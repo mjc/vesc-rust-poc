@@ -43,6 +43,7 @@
               qt5.qtgamepad
               qt5.qtserialbus
               rustToolchain
+              cargo-nextest
             ];
 
             shellHook = ''

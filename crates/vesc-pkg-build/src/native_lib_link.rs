@@ -1,7 +1,8 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub const RUST_STATICLIB_PATH: &str = "target/thumbv7em-none-eabihf/release/libvesc_rust_poc.a";
 pub const NATIVE_LIB_ELF_PATH: &str = "target/native-lib-baseline/native_lib.elf";
+pub const NATIVE_LIB_BIN_PATH: &str = "target/native-lib-baseline/native_lib.bin";
 pub const NATIVE_LIB_LINKER_SCRIPT: &str = "fixtures/native-lib-baseline/src/link.ld";
 pub const PACKAGE_C_SOURCE_PATH: &str = "fixtures/native-lib-baseline/src/package_lib.c";
 pub const PACKAGE_C_OBJECT_PATH: &str = "target/native-lib-baseline/package_lib.o";
@@ -16,12 +17,24 @@ impl NativeLibLinkPlan {
         Self { root: root.into() }
     }
 
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    pub fn cargo_target_dir(&self) -> PathBuf {
+        self.root.join("target")
+    }
+
     pub fn rust_staticlib_path(&self) -> PathBuf {
         self.root.join(RUST_STATICLIB_PATH)
     }
 
     pub fn elf_path(&self) -> PathBuf {
         self.root.join(NATIVE_LIB_ELF_PATH)
+    }
+
+    pub fn native_lib_bin_path(&self) -> PathBuf {
+        self.root.join(NATIVE_LIB_BIN_PATH)
     }
 
     pub fn linker_script_path(&self) -> PathBuf {
@@ -47,7 +60,22 @@ impl NativeLibLinkPlan {
 }
 
 pub fn native_lib_link_plan() -> NativeLibLinkPlan {
-    NativeLibLinkPlan::new(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."))
+    NativeLibLinkPlan::new(crate::hygiene::repo_root())
+}
+
+pub fn native_lib_link_plan_for_native_binary(native_binary_path: &Path) -> NativeLibLinkPlan {
+    NativeLibLinkPlan::new(artifact_root_from_native_binary(native_binary_path))
+}
+
+pub fn artifact_root_from_native_binary(native_binary_path: &Path) -> PathBuf {
+    native_binary_path
+        .parent()
+        .and_then(|path| path.parent())
+        .and_then(|path| path.parent())
+        .expect(
+            "native binary path must live under <root>/target/native-lib-baseline/native_lib.bin",
+        )
+        .to_path_buf()
 }
 
 pub fn native_lib_elf_path() -> PathBuf {

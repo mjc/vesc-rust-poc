@@ -2,7 +2,8 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Mutex, OnceLock};
+
+use crate::native_lib_link::{native_lib_link_plan, NativeLibLinkPlan};
 
 pub fn undefined_symbols(nm_output: &str) -> BTreeSet<String> {
     nm_output
@@ -29,28 +30,30 @@ pub fn is_allowed_runtime_symbol(symbol: &str) -> bool {
 }
 
 pub fn rust_staticlib_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/thumbv7em-none-eabihf/release/libvesc_rust_poc.a")
+    native_lib_link_plan().rust_staticlib_path()
 }
 
 pub fn native_lib_elf_path() -> PathBuf {
-    crate::native_lib_link::native_lib_elf_path()
+    native_lib_link_plan().elf_path()
 }
 
 pub fn native_lib_bin_path() -> PathBuf {
-    native_lib_elf_path().with_file_name("native_lib.bin")
+    native_lib_link_plan().native_lib_bin_path()
 }
 
 pub fn package_lib_object_path() -> PathBuf {
-    crate::native_lib_link::native_lib_link_plan().package_c_object_path()
+    native_lib_link_plan().package_c_object_path()
 }
 
 pub fn build_rust_staticlib() {
-    let _guard = native_build_lock().lock().expect("native build lock");
-    build_rust_staticlib_unlocked();
+    build_rust_staticlib_for(&native_lib_link_plan());
 }
 
-fn build_rust_staticlib_unlocked() {
+pub fn build_rust_staticlib_for(plan: &NativeLibLinkPlan) {
+    build_rust_staticlib_unlocked(plan);
+}
+
+fn build_rust_staticlib_unlocked(plan: &NativeLibLinkPlan) {
     let rustflags = match std::env::var("RUSTFLAGS") {
         Ok(existing) if !existing.trim().is_empty() => {
             format!("{existing} -C relocation-model=pic")
@@ -59,6 +62,7 @@ fn build_rust_staticlib_unlocked() {
     };
 
     let status = Command::new("cargo")
+        .env("CARGO_TARGET_DIR", plan.cargo_target_dir())
         .env("RUSTFLAGS", rustflags)
         .args([
             "build",
@@ -75,27 +79,30 @@ fn build_rust_staticlib_unlocked() {
 }
 
 pub fn build_final_native_lib_elf() {
-    let _guard = native_build_lock().lock().expect("native build lock");
-    build_final_native_lib_elf_unlocked();
+    build_final_native_lib_elf_for(&native_lib_link_plan());
+}
+
+pub fn build_final_native_lib_elf_for(plan: &NativeLibLinkPlan) {
+    build_final_native_lib_elf_unlocked(plan);
 }
 
 fn native_lib_c_only_from_env() -> bool {
     std::env::var("VESC_NATIVE_LIB_C_ONLY").ok().as_deref() == Some("1")
 }
 
-fn build_final_native_lib_elf_unlocked() {
+fn build_final_native_lib_elf_unlocked(plan: &NativeLibLinkPlan) {
     let c_only = native_lib_c_only_from_env();
     if !c_only {
-        build_rust_staticlib_unlocked();
+        build_rust_staticlib_unlocked(plan);
     }
 
-    let link_plan = crate::native_lib_link::native_lib_link_plan();
-    let elf_path = native_lib_elf_path();
+    let link_plan = plan.clone();
+    let elf_path = link_plan.elf_path();
 
     if let Some(parent) = elf_path.parent() {
         fs::create_dir_all(parent).expect("create native_lib.elf parent directory");
     }
-    let stale_object_path = package_lib_object_path();
+    let stale_object_path = link_plan.package_c_object_path();
     if stale_object_path.exists() {
         fs::remove_file(&stale_object_path).expect("remove stale package_lib.o");
     }
@@ -157,7 +164,8 @@ fn build_final_native_lib_elf_unlocked() {
     ];
     if !c_only {
         link_args.push(
-            rust_staticlib_path()
+            link_plan
+                .rust_staticlib_path()
                 .to_str()
                 .expect("utf-8 staticlib path")
                 .to_owned(),
@@ -167,7 +175,7 @@ fn build_final_native_lib_elf_unlocked() {
         "-Wl,--gc-sections".to_owned(),
         "-Wl,--undefined=init".to_owned(),
         "-T".to_owned(),
-        crate::native_lib_link::native_lib_link_plan()
+        link_plan
             .linker_script_path()
             .to_str()
             .expect("utf-8 linker script path")
@@ -187,14 +195,13 @@ fn build_final_native_lib_elf_unlocked() {
     );
 }
 
-fn native_build_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
+pub fn build_final_native_lib_binary(native_binary_path: &Path) {
+    let plan = crate::native_lib_link::native_lib_link_plan_for_native_binary(native_binary_path);
+    build_final_native_lib_binary_for(&plan, native_binary_path);
 }
 
-pub fn build_final_native_lib_binary(native_binary_path: &Path) {
-    let _guard = native_build_lock().lock().expect("native build lock");
-    build_final_native_lib_elf_unlocked();
+pub fn build_final_native_lib_binary_for(plan: &NativeLibLinkPlan, native_binary_path: &Path) {
+    build_final_native_lib_elf_unlocked(plan);
 
     if let Some(parent) = native_binary_path.parent() {
         fs::create_dir_all(parent).expect("create native_lib.bin parent directory");
@@ -204,9 +211,7 @@ pub fn build_final_native_lib_binary(native_binary_path: &Path) {
         .args([
             "-O",
             "binary",
-            native_lib_elf_path()
-                .to_str()
-                .expect("utf-8 native-lib ELF path"),
+            plan.elf_path().to_str().expect("utf-8 native-lib ELF path"),
             native_binary_path
                 .to_str()
                 .expect("utf-8 native-lib binary path"),
@@ -286,14 +291,58 @@ mod tests {
     use std::process::Command;
 
     use super::{
-        audit_final_native_lib_elf_symbols, audit_rust_staticlib_symbols,
-        build_final_native_lib_binary, build_final_native_lib_elf, build_rust_staticlib,
-        defined_symbols, is_allowed_final_native_lib_symbol, is_allowed_runtime_symbol,
-        native_lib_bin_path, native_lib_elf_path, nm_output, package_lib_object_path,
-        rust_staticlib_path, undefined_symbols, unexpected_final_native_lib_undefined_symbols,
-        unexpected_undefined_symbols,
+        build_final_native_lib_binary_for, build_final_native_lib_elf_for,
+        build_rust_staticlib_for, defined_symbols, is_allowed_final_native_lib_symbol,
+        is_allowed_runtime_symbol, nm_output, undefined_symbols,
+        unexpected_final_native_lib_undefined_symbols, unexpected_undefined_symbols,
     };
+    use crate::native_lib_link::NativeLibLinkPlan;
+    use crate::test_support::NativeBuildWorkspace;
     use std::collections::BTreeSet;
+
+    struct SymbolAuditFixture {
+        workspace: NativeBuildWorkspace,
+    }
+
+    impl SymbolAuditFixture {
+        fn new() -> Self {
+            Self {
+                workspace: NativeBuildWorkspace::new(),
+            }
+        }
+
+        fn plan(&self) -> &NativeLibLinkPlan {
+            self.workspace.plan()
+        }
+
+        fn elf(&self) -> PathBuf {
+            self.workspace.native_lib_elf_path()
+        }
+
+        fn bin(&self) -> PathBuf {
+            self.workspace.native_lib_bin_path()
+        }
+
+        fn staticlib(&self) -> PathBuf {
+            self.workspace.rust_staticlib_path()
+        }
+
+        fn package_object(&self) -> PathBuf {
+            self.workspace.package_lib_object_path()
+        }
+
+        fn build_elf(&self) {
+            build_final_native_lib_elf_for(self.plan());
+        }
+
+        fn build_bin(&self) {
+            build_final_native_lib_binary_for(self.plan(), &self.bin());
+        }
+
+        fn build_staticlib(&self) {
+            build_rust_staticlib_for(self.plan());
+        }
+    }
 
     #[derive(Debug, PartialEq, Eq)]
     struct SectionLayout {
@@ -301,6 +350,10 @@ mod tests {
         size: usize,
         vma: usize,
     }
+
+    const DEVICE_PROVEN_PACKAGE_BINARY: &str = "THIS_FUCKING_RAN_AT_LEAST.bin.good";
+    const DEVICE_PROVEN_INIT_OFFSET: usize = 4;
+    const DEVICE_PROVEN_INIT_SIZE: usize = 59;
 
     fn align_section_vma(vma: usize, alignment: usize) -> usize {
         (vma + alignment - 1) & !(alignment - 1)
@@ -357,29 +410,36 @@ mod tests {
 
     #[test]
     fn rust_staticlib_has_no_unexpected_undefined_symbols() {
+        let fixture = SymbolAuditFixture::new();
+        fixture.build_staticlib();
+        let output = nm_output(&fixture.staticlib());
         assert!(
-            audit_rust_staticlib_symbols().is_empty(),
+            unexpected_undefined_symbols(&output).is_empty(),
             "unexpected undefined symbols remain in the Rust staticlib"
         );
     }
 
     #[test]
     fn final_native_lib_elf_has_no_unexpected_undefined_symbols() {
+        let fixture = SymbolAuditFixture::new();
+        fixture.build_elf();
+        let output = nm_output(&fixture.elf());
         assert!(
-            audit_final_native_lib_elf_symbols().is_empty(),
+            unexpected_final_native_lib_undefined_symbols(&output).is_empty(),
             "unexpected undefined symbols remain in the final native-lib ELF"
         );
     }
 
     #[test]
     fn build_final_native_lib_binary_materializes_the_packageable_payload() {
-        build_final_native_lib_binary(&native_lib_bin_path());
+        let fixture = SymbolAuditFixture::new();
+        fixture.build_bin();
 
         assert!(
-            native_lib_bin_path().exists(),
+            fixture.bin().exists(),
             "expected the final native-lib binary to be materialized"
         );
-        let native_bin_size = fs::metadata(native_lib_bin_path())
+        let native_bin_size = fs::metadata(fixture.bin())
             .expect("native-lib binary metadata")
             .len();
         assert!(
@@ -390,9 +450,10 @@ mod tests {
 
     #[test]
     fn rust_only_native_blob_stays_under_compactness_guard() {
-        build_final_native_lib_binary(&native_lib_bin_path());
+        let fixture = SymbolAuditFixture::new();
+        fixture.build_bin();
 
-        let native_bin_size = fs::metadata(native_lib_bin_path())
+        let native_bin_size = fs::metadata(fixture.bin())
             .expect("native-lib binary metadata")
             .len();
         assert!(
@@ -403,9 +464,10 @@ mod tests {
 
     #[test]
     fn native_blob_embeds_rust_owned_package_identity() {
-        build_final_native_lib_binary(&native_lib_bin_path());
+        let fixture = SymbolAuditFixture::new();
+        fixture.build_bin();
 
-        let blob = fs::read(native_lib_bin_path()).expect("native-lib binary bytes");
+        let blob = fs::read(fixture.bin()).expect("native-lib binary bytes");
         let rust_extension_name = b"ext-rust-probe-diag-v4\0";
 
         assert!(
@@ -417,11 +479,12 @@ mod tests {
 
     #[test]
     fn final_native_lib_elf_is_a_fully_linked_executable_image() {
-        build_final_native_lib_elf();
+        let fixture = SymbolAuditFixture::new();
+        fixture.build_elf();
 
         let header = command_stdout(
             "arm-none-eabi-readelf",
-            [PathBuf::from("-h"), native_lib_elf_path()],
+            [PathBuf::from("-h"), fixture.elf()],
         );
         assert!(
             header.contains("Type:                              EXEC"),
@@ -430,7 +493,7 @@ mod tests {
 
         let relocations = command_stdout(
             "arm-none-eabi-readelf",
-            [PathBuf::from("-r"), native_lib_elf_path()],
+            [PathBuf::from("-r"), fixture.elf()],
         );
         assert!(
             relocations.contains("There are no relocations in this file."),
@@ -440,12 +503,13 @@ mod tests {
 
     #[test]
     fn native_blob_contains_linked_sections_at_their_load_offsets() {
-        build_final_native_lib_binary(&native_lib_bin_path());
+        let fixture = SymbolAuditFixture::new();
+        fixture.build_bin();
 
-        let blob = fs::read(native_lib_bin_path()).expect("native-lib binary bytes");
+        let blob = fs::read(fixture.bin()).expect("native-lib binary bytes");
         for section_name in [".program_ptr", ".init_fun", ".got", ".text"] {
-            let section = section_layout(section_name);
-            let section_bytes = section_binary(section_name);
+            let section = section_layout(&fixture, section_name);
+            let section_bytes = section_binary(&fixture, section_name);
             let end = section.vma + section.size;
 
             assert!(
@@ -464,13 +528,53 @@ mod tests {
     }
 
     #[test]
-    fn final_native_lib_uses_the_vesc_entry_section_order() {
-        build_final_native_lib_elf();
+    fn loader_init_bytes_match_device_proven_binary() {
+        let fixture = SymbolAuditFixture::new();
+        fixture.build_bin();
 
-        let program_ptr = section_layout(".program_ptr");
-        let init_fun = section_layout(".init_fun");
-        let got = section_layout(".got");
-        let text = section_layout(".text");
+        let init_fun = section_layout(&fixture, ".init_fun");
+        assert_eq!(
+            init_fun.vma, DEVICE_PROVEN_INIT_OFFSET,
+            "expected .init_fun to start at the device-proven offset"
+        );
+        assert_eq!(
+            init_fun.size, DEVICE_PROVEN_INIT_SIZE,
+            "expected .init_fun to keep the device-proven byte length"
+        );
+
+        let current = fs::read(fixture.bin()).expect("current native-lib binary bytes");
+        let proven = fs::read(crate::test_support::repo_root().join(DEVICE_PROVEN_PACKAGE_BINARY))
+            .expect("device-proven package binary bytes");
+        let init_end = init_fun.vma + init_fun.size;
+
+        assert!(
+            init_end <= current.len(),
+            "current binary is too short for .init_fun at 0x{:x}..0x{:x}",
+            init_fun.vma,
+            init_end
+        );
+        assert!(
+            init_end <= proven.len(),
+            "device-proven binary is too short for .init_fun at 0x{:x}..0x{:x}",
+            init_fun.vma,
+            init_end
+        );
+        assert_eq!(
+            &current[init_fun.vma..init_end],
+            &proven[init_fun.vma..init_end],
+            "current .init_fun bytes must exactly match {DEVICE_PROVEN_PACKAGE_BINARY}"
+        );
+    }
+
+    #[test]
+    fn final_native_lib_uses_the_vesc_entry_section_order() {
+        let fixture = SymbolAuditFixture::new();
+        fixture.build_elf();
+
+        let program_ptr = section_layout(&fixture, ".program_ptr");
+        let init_fun = section_layout(&fixture, ".init_fun");
+        let got = section_layout(&fixture, ".got");
+        let text = section_layout(&fixture, ".text");
 
         assert_eq!(
             program_ptr,
@@ -523,20 +627,22 @@ mod tests {
 
     #[test]
     fn native_build_materializes_the_package_loader_object() {
-        build_final_native_lib_elf();
+        let fixture = SymbolAuditFixture::new();
+        fixture.build_elf();
 
         assert!(
-            package_lib_object_path().exists(),
+            fixture.package_object().exists(),
             "native build must materialize the C loader shim at {:?}",
-            package_lib_object_path()
+            fixture.package_object()
         );
     }
 
     #[test]
     fn native_artifact_keeps_the_rust_owned_package_symbols() {
-        build_final_native_lib_elf();
+        let fixture = SymbolAuditFixture::new();
+        fixture.build_elf();
 
-        let final_symbols = nm_output(&native_lib_elf_path());
+        let final_symbols = nm_output(&fixture.elf());
         let final_defined = defined_symbols(&final_symbols);
 
         assert!(
@@ -553,9 +659,10 @@ mod tests {
 
     #[test]
     fn final_native_lib_retains_the_rust_owned_boundary_symbols() {
-        build_final_native_lib_elf();
+        let fixture = SymbolAuditFixture::new();
+        fixture.build_elf();
 
-        let output = nm_output(&native_lib_elf_path());
+        let output = nm_output(&fixture.elf());
         let defined = defined_symbols(&output);
         let undefined = undefined_symbols(&output);
 
@@ -583,9 +690,10 @@ mod tests {
 
     #[test]
     fn final_native_lib_calls_lispbm_through_the_vesc_function_table() {
-        build_final_native_lib_elf();
+        let fixture = SymbolAuditFixture::new();
+        fixture.build_elf();
 
-        let symbols = nm_output(&native_lib_elf_path());
+        let symbols = nm_output(&fixture.elf());
         assert!(
             undefined_symbols(&symbols).is_empty(),
             "expected no unresolved firmware calls in the final native-lib ELF:\n{symbols}"
@@ -593,7 +701,7 @@ mod tests {
 
         let disassembly = command_stdout(
             "arm-none-eabi-objdump",
-            [PathBuf::from("-d"), native_lib_elf_path()],
+            [PathBuf::from("-d"), fixture.elf()],
         );
         for offset in ["1000f800", "#124]", "#100]", "#64]", "#148]"] {
             assert!(
@@ -635,11 +743,12 @@ mod tests {
 
     #[test]
     fn rust_probe_extension_uses_the_vesc_function_table() {
-        build_final_native_lib_elf();
+        let fixture = SymbolAuditFixture::new();
+        fixture.build_elf();
 
         let disassembly = command_stdout(
             "arm-none-eabi-objdump",
-            [PathBuf::from("-d"), native_lib_elf_path()],
+            [PathBuf::from("-d"), fixture.elf()],
         );
         let probe_start = disassembly
             .find("<ext_rust_probe_v12>:")
@@ -672,11 +781,12 @@ mod tests {
 
     #[test]
     fn final_native_lib_registers_the_rust_probe_from_rust_loader_init() {
-        build_final_native_lib_elf();
+        let fixture = SymbolAuditFixture::new();
+        fixture.build_elf();
 
         let disassembly = command_stdout(
             "arm-none-eabi-objdump",
-            [PathBuf::from("-d"), native_lib_elf_path()],
+            [PathBuf::from("-d"), fixture.elf()],
         );
         let init_disassembly = disassembly
             .split("<init>:")
@@ -706,11 +816,12 @@ mod tests {
 
     #[test]
     fn native_artifact_uses_the_rust_probe_with_rust_package_init() {
-        build_final_native_lib_elf();
+        let fixture = SymbolAuditFixture::new();
+        fixture.build_elf();
 
         let disassembly = command_stdout(
             "arm-none-eabi-objdump",
-            [PathBuf::from("-d"), native_lib_elf_path()],
+            [PathBuf::from("-d"), fixture.elf()],
         );
 
         assert!(
@@ -728,12 +839,40 @@ mod tests {
     }
 
     #[test]
-    fn loader_init_does_not_dereference_extension_names_before_rebase() {
-        build_final_native_lib_elf();
+    fn stop_package_clears_app_data_handler_like_refloat() {
+        let fixture = SymbolAuditFixture::new();
+        fixture.build_elf();
 
         let disassembly = command_stdout(
             "arm-none-eabi-objdump",
-            [PathBuf::from("-d"), native_lib_elf_path()],
+            [PathBuf::from("-d"), fixture.elf()],
+        );
+        let stop_start = disassembly
+            .find("stop_package")
+            .expect("expected stop_package in final native image");
+        let stop_disassembly = disassembly[stop_start..]
+            .split("\n\n")
+            .next()
+            .expect("expected bounded stop_package disassembly");
+
+        assert!(
+            stop_disassembly.contains("1000f800") && stop_disassembly.contains("#596]"),
+            "stop_package should clear app-data through direct VESC_IF + 596 load like refloat:\n{stop_disassembly}"
+        );
+        assert!(
+            !stop_disassembly.contains("cbz"),
+            "stop_package should not guard the VESC_IF app-data slot; refloat calls it directly:\n{stop_disassembly}"
+        );
+    }
+
+    #[test]
+    fn loader_init_does_not_dereference_extension_names_before_rebase() {
+        let fixture = SymbolAuditFixture::new();
+        fixture.build_elf();
+
+        let disassembly = command_stdout(
+            "arm-none-eabi-objdump",
+            [PathBuf::from("-d"), fixture.elf()],
         );
         let init_disassembly = disassembly
             .split("<init>:")
@@ -748,11 +887,12 @@ mod tests {
 
     #[test]
     fn loader_init_reports_success_after_delegating_to_rust_package_init() {
-        build_final_native_lib_elf();
+        let fixture = SymbolAuditFixture::new();
+        fixture.build_elf();
 
         let disassembly = command_stdout(
             "arm-none-eabi-objdump",
-            [PathBuf::from("-d"), native_lib_elf_path()],
+            [PathBuf::from("-d"), fixture.elf()],
         );
         let init_disassembly = disassembly
             .split("<init>:")
@@ -793,8 +933,9 @@ mod tests {
 
     #[test]
     fn rust_staticlib_exports_the_package_init_entrypoint() {
-        build_rust_staticlib();
-        let output = nm_output(&rust_staticlib_path());
+        let fixture = SymbolAuditFixture::new();
+        fixture.build_staticlib();
+        let output = nm_output(&fixture.staticlib());
         let defined = defined_symbols(&output);
 
         assert!(
@@ -806,10 +947,11 @@ mod tests {
 
     #[test]
     fn rust_staticlib_exports_loader_entry_and_rust_probe_dependency() {
-        build_rust_staticlib();
-        build_final_native_lib_elf();
+        let fixture = SymbolAuditFixture::new();
+        fixture.build_staticlib();
+        fixture.build_elf();
 
-        let staticlib_symbols = nm_output(&rust_staticlib_path());
+        let staticlib_symbols = nm_output(&fixture.staticlib());
         let staticlib_defined = defined_symbols(&staticlib_symbols);
         let staticlib_undefined = undefined_symbols(&staticlib_symbols);
 
@@ -830,7 +972,7 @@ mod tests {
             "Rust package init should not depend on a separate C probe registrar:\n{staticlib_symbols}"
         );
         assert!(
-            package_lib_object_path().exists(),
+            fixture.package_object().exists(),
             "package C object must be linked into the final native build"
         );
     }
@@ -849,10 +991,10 @@ mod tests {
         String::from_utf8(output.stdout).expect("command stdout to be valid UTF-8")
     }
 
-    fn section_layout(section_name: &str) -> SectionLayout {
+    fn section_layout(fixture: &SymbolAuditFixture, section_name: &str) -> SectionLayout {
         let sections = command_stdout(
             "arm-none-eabi-objdump",
-            [PathBuf::from("-h"), native_lib_elf_path()],
+            [PathBuf::from("-h"), fixture.elf()],
         );
         sections
             .lines()
@@ -877,15 +1019,15 @@ mod tests {
         })
     }
 
-    fn section_binary(section_name: &str) -> Vec<u8> {
-        let output_path = section_binary_path(section_name);
+    fn section_binary(fixture: &SymbolAuditFixture, section_name: &str) -> Vec<u8> {
+        let output_path = section_binary_path(fixture, section_name);
         let status = Command::new("arm-none-eabi-objcopy")
             .args([
                 "-O",
                 "binary",
                 "--only-section",
                 section_name,
-                native_lib_elf_path().to_str().expect("utf-8 ELF path"),
+                fixture.elf().to_str().expect("utf-8 ELF path"),
                 output_path.to_str().expect("utf-8 section binary path"),
             ])
             .status()
@@ -898,8 +1040,8 @@ mod tests {
         fs::read(output_path).expect("section binary bytes")
     }
 
-    fn section_binary_path(section_name: &str) -> PathBuf {
-        native_lib_bin_path().with_file_name(format!(
+    fn section_binary_path(fixture: &SymbolAuditFixture, section_name: &str) -> PathBuf {
+        fixture.bin().with_file_name(format!(
             "native_lib_{}.bin",
             section_name.trim_start_matches('.')
         ))
