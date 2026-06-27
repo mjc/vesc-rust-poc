@@ -172,14 +172,32 @@ impl<S: DeviceServices> LoopbackPackageRuntime<S> {
     }
 }
 
+/// Process app-data bytes through the loopback frame handler.
+pub fn process_loopback_app_data(
+    bytes: &[u8],
+    now_ms: u64,
+) -> Option<([u8; MAX_FRAME_BYTES], usize)> {
+    handle_loopback_frame(bytes, now_ms).ok()
+}
+
+/// Register the loopback app-data handler through the supplied binding set.
+pub fn register_loopback_app_data_handler_with<B: vesc_ffi::AppDataBindings>(
+    lifecycle: &vesc_ffi::LoopbackLifecycle<B>,
+    handler: vesc_ffi::AppDataHandler,
+) -> bool {
+    lifecycle.register_app_data_handler(handler)
+}
+
 /// Opt-in BLE loopback app-data handler registration.
 ///
 /// Not called from package init so the native blob stays compact; call explicitly when
 /// loopback-over-app-data is needed.
 #[cfg(not(test))]
 pub fn register_loopback_app_data_handler() -> bool {
-    crate::ffi::LoopbackLifecycle::new(crate::ffi::RealBindings)
-        .register_app_data_handler(loopback_app_data_handler)
+    register_loopback_app_data_handler_with(
+        &crate::ffi::LoopbackLifecycle::new(crate::ffi::RealBindings),
+        loopback_app_data_handler,
+    )
 }
 
 #[cfg(not(test))]
@@ -192,7 +210,7 @@ unsafe extern "C" fn loopback_app_data_handler(data: *mut u8, len: u32) {
     let lifecycle = crate::ffi::LoopbackLifecycle::new(crate::ffi::RealBindings);
     let now_ms = u64::from(lifecycle.system_time_ticks()) / 10;
 
-    if let Ok((response, response_len)) = handle_loopback_frame(bytes, now_ms) {
+    if let Some((response, response_len)) = process_loopback_app_data(bytes, now_ms) {
         unsafe { lifecycle.send_app_data(response.as_ptr(), response_len as u32) };
     }
 }
@@ -364,7 +382,8 @@ impl DeviceServices for &FakeDeviceServices {
 #[cfg(test)]
 mod tests {
     use super::{
-        BleFrame, FakeDeviceServices, LoopbackPackageRuntime, LoopbackPackageState, LoopbackTick,
+        process_loopback_app_data, BleFrame, DeviceServices, FakeDeviceServices,
+        LoopbackPackageRuntime, LoopbackPackageState, LoopbackTick, NullDeviceServices,
     };
     use vesc_protocol::ble_loopback::LoopbackPacket;
     use vesc_protocol::WireCommand;
@@ -455,6 +474,68 @@ mod tests {
             .as_slice()
         );
     }
+
+    #[test]
+    fn runtime_auto_starts_from_booting_on_first_tick() {
+        let services = FakeDeviceServices::new();
+        services.set_ble_connected(true);
+
+        let mut runtime = LoopbackPackageRuntime::new(&services);
+
+        assert_eq!(runtime.state(), LoopbackPackageState::Booting);
+        assert_eq!(runtime.tick(), Ok(LoopbackTick::Idle));
+        assert_eq!(runtime.state(), LoopbackPackageState::Ready);
+    }
+
+    #[test]
+    fn runtime_failed_state_ticks_idle_without_consuming_frames() {
+        let services = FakeDeviceServices::new();
+        services.set_ble_init_error(Some("radio down"));
+        services.queue_ble_frame(frame(WireCommand::Ping, &[]));
+
+        let mut runtime = LoopbackPackageRuntime::new(&services);
+        assert!(runtime.start().is_err());
+        assert_eq!(runtime.state(), LoopbackPackageState::Failed("radio down"));
+
+        assert_eq!(runtime.tick(), Ok(LoopbackTick::Idle));
+        assert_eq!(services.transmitted_frame_count(), 0);
+    }
+
+    #[test]
+    fn runtime_marks_malformed_frames_as_failed() {
+        let services = FakeDeviceServices::new();
+        services.set_ble_connected(true);
+        services.queue_ble_frame(BleFrame::from_slice(&[0xde, 0xad]));
+
+        let mut runtime = LoopbackPackageRuntime::new(&services);
+        assert_eq!(runtime.start(), Ok(LoopbackPackageState::Ready));
+        assert!(runtime.tick().is_err());
+        assert_eq!(
+            runtime.state(),
+            LoopbackPackageState::Failed("malformed BLE frame")
+        );
+    }
+
+    #[test]
+    fn null_device_services_implement_the_trait() {
+        let services = NullDeviceServices;
+
+        assert_eq!(services.now_ms(), 0);
+        assert!(!services.ble_connected());
+        assert!(services.init_ble_loopback().is_ok());
+        assert!(services.receive_ble_frame().is_none());
+        services.send_ble_frame(frame(WireCommand::Ping, &[]));
+    }
+
+    #[test]
+    fn process_loopback_app_data_echoes_valid_frames() {
+        let ping = frame(WireCommand::Ping, &[]);
+
+        let (response, len) =
+            process_loopback_app_data(ping.as_slice(), 0x0102_0304_0506_0708).expect("reply");
+
+        assert_eq!(&response[..len], ping.as_slice());
+    }
 }
 
 #[cfg(all(test, feature = "test-support"))]
@@ -505,5 +586,20 @@ mod lifecycle_tests {
 
         assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
         assert_eq!(lifecycle.bindings().last_handler.get(), 0);
+    }
+
+    #[test]
+    fn register_loopback_app_data_handler_with_forwards_to_bindings() {
+        use super::register_loopback_app_data_handler_with;
+        use crate::ffi::test_support::stubs;
+
+        let bindings = FakeAppDataBindings::new();
+        let lifecycle = crate::ffi::LoopbackLifecycle::new(bindings);
+
+        assert!(register_loopback_app_data_handler_with(
+            &lifecycle,
+            stubs::app_data_handler
+        ));
+        assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
     }
 }

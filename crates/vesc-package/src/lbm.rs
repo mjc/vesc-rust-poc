@@ -15,10 +15,16 @@ pub fn decode_lbm_i32_raw(value: u32) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::encode_lbm_i32_raw;
+    use super::{decode_lbm_i32_raw, encode_lbm_i32_raw};
 
     #[test]
     fn encodes_lispbm_integers_with_the_device_tag() {
         assert_eq!(encode_lbm_i32_raw(42), 0x2a8);
+    }
+
+    #[test]
+    fn decode_lbm_i32_raw_reverses_encode() {
+        assert_eq!(decode_lbm_i32_raw(encode_lbm_i32_raw(-3)), -3);
+        assert_eq!(decode_lbm_i32_raw(encode_lbm_i32_raw(42)), 42);
     }
 }
