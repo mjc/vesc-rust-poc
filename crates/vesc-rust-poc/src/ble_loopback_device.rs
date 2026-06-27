@@ -1,10 +1,7 @@
 use core::cell::{Cell, RefCell};
 
-use vesc_protocol::ble_loopback::{
-    LoopbackError, LoopbackPacket, BLE_LOOPBACK_PROTOCOL_VERSION, MAX_LOOPBACK_PAYLOAD_BYTES,
-};
+use vesc_protocol::ble_loopback::{handle_loopback_frame, LoopbackError, LoopbackPacket};
 use vesc_protocol::WireCommand;
-use vesc_protocol::WireVersion;
 
 const MAX_FRAME_BYTES: usize = 19;
 const MAX_LOGS: usize = 8;
@@ -175,59 +172,18 @@ impl<S: DeviceServices> LoopbackPackageRuntime<S> {
     }
 }
 
-pub fn handle_loopback_frame(
-    bytes: &[u8],
-    now_ms: u64,
-) -> Result<([u8; 19], usize), LoopbackError> {
-    if bytes.len() < 3 {
-        return Err(LoopbackError::FrameTooShort);
-    }
-
-    let actual_version = WireVersion::new(bytes[0]);
-    if actual_version != BLE_LOOPBACK_PROTOCOL_VERSION {
-        return Err(LoopbackError::InvalidVersion {
-            expected: BLE_LOOPBACK_PROTOCOL_VERSION,
-            actual: actual_version,
-        });
-    }
-
-    let command =
-        WireCommand::from_code(bytes[1]).ok_or(LoopbackError::InvalidCommand { code: bytes[1] })?;
-    let payload_len = bytes[2] as usize;
-    if payload_len > MAX_LOOPBACK_PAYLOAD_BYTES {
-        return Err(LoopbackError::PayloadTooLong {
-            len: payload_len,
-            max: MAX_LOOPBACK_PAYLOAD_BYTES,
-        });
-    }
-
-    let required = 3 + payload_len;
-    if bytes.len() < required {
-        return Err(LoopbackError::FrameTooShort);
-    }
-
-    let status_bytes = now_ms.to_le_bytes();
-    let payload = match command {
-        WireCommand::Ping | WireCommand::Teardown => &[][..],
-        WireCommand::Echo => &bytes[3..required],
-        WireCommand::Status => &status_bytes,
-    };
-
-    let mut response = [0_u8; 19];
-    response[0] = BLE_LOOPBACK_PROTOCOL_VERSION.raw();
-    response[1] = command.code();
-    response[2] = payload.len() as u8;
-    response[3..3 + payload.len()].copy_from_slice(payload);
-
-    Ok((response, 3 + payload.len()))
+/// Opt-in BLE loopback app-data handler registration.
+///
+/// Not called from package init so the native blob stays compact; call explicitly when
+/// loopback-over-app-data is needed.
+#[cfg(not(test))]
+pub fn register_loopback_app_data_handler() -> bool {
+    crate::ffi::LoopbackLifecycle::new(crate::ffi::RealBindings)
+        .register_app_data_handler(loopback_app_data_handler)
 }
 
 #[cfg(not(test))]
-#[expect(
-    dead_code,
-    reason = "opt-in app-data registration; not wired at init to keep the native blob compact"
-)]
-unsafe extern "C" fn app_data_handler(data: *mut u8, len: u32) {
+unsafe extern "C" fn loopback_app_data_handler(data: *mut u8, len: u32) {
     if data.is_null() {
         return;
     }
@@ -408,11 +364,8 @@ impl DeviceServices for &FakeDeviceServices {
 #[cfg(test)]
 mod tests {
     use super::{
-        handle_loopback_frame, BleFrame, FakeDeviceServices, LoopbackPackageRuntime,
-        LoopbackPackageState, LoopbackTick,
+        BleFrame, FakeDeviceServices, LoopbackPackageRuntime, LoopbackPackageState, LoopbackTick,
     };
-    use crate::{ffi, package_init};
-    use core::cell::Cell;
     use vesc_protocol::ble_loopback::LoopbackPacket;
     use vesc_protocol::WireCommand;
 
@@ -502,67 +455,12 @@ mod tests {
             .as_slice()
         );
     }
+}
 
-    #[test]
-    fn package_entrypoint_records_device_initialization() {
-        package_init::reset_init_call_count_for_tests();
-
-        assert!(package_init::init_for_tests(core::ptr::null_mut()));
-
-        assert_eq!(package_init::init_call_count_for_tests(), 1);
-    }
-
-    #[test]
-    fn package_entrypoint_installs_a_stop_hook() {
-        package_init::reset_init_call_count_for_tests();
-        let mut info = crate::ffi::LibInfo {
-            stop_fun: None,
-            arg: core::ptr::null_mut(),
-            base_addr: 0,
-        };
-
-        assert!(package_init::init_for_tests(&mut info));
-
-        let stop_fun = info.stop_fun.expect("stop hook");
-        unsafe {
-            stop_fun(info.arg);
-        }
-        assert_eq!(package_init::stop_call_count_for_tests(), 1);
-    }
-
-    struct FakeAppDataBindings {
-        calls: Cell<usize>,
-        last_handler: Cell<usize>,
-    }
-
-    impl FakeAppDataBindings {
-        fn new() -> Self {
-            Self {
-                calls: Cell::new(0),
-                last_handler: Cell::new(usize::MAX),
-            }
-        }
-    }
-
-    impl ffi::AppDataBindings for FakeAppDataBindings {
-        unsafe fn set_app_data_handler(&self, handler: Option<ffi::AppDataHandler>) -> bool {
-            self.calls.set(self.calls.get() + 1);
-            self.last_handler
-                .set(handler.map_or(0, |handler| handler as *const () as usize));
-            true
-        }
-
-        fn system_time_ticks(&self) -> u32 {
-            0
-        }
-
-        unsafe fn send_app_data(&self, _data: *const u8, _len: u32) {}
-    }
-
-    unsafe extern "C" fn stub_stop_handler(_arg: *mut core::ffi::c_void) {}
-
-    unsafe extern "C" fn stub_app_data_handler(_data: *mut u8, _len: u32) {}
-
+#[cfg(all(test, feature = "test-support"))]
+mod lifecycle_tests {
+    use crate::ffi;
+    use crate::ffi::test_support::{stubs, FakeAppDataBindings};
     #[test]
     fn lifecycle_descriptor_installs_the_stop_hook() {
         let bindings = FakeAppDataBindings::new();
@@ -573,13 +471,15 @@ mod tests {
             base_addr: 0x2000,
         };
 
-        assert!(unsafe { lifecycle.install(&mut info, stub_stop_handler, stub_app_data_handler) });
+        assert!(unsafe {
+            lifecycle.install(&mut info, stubs::stop_handler, stubs::app_data_handler)
+        });
 
         assert_eq!(
             info.stop_fun.expect("stop hook") as *const () as usize,
-            stub_stop_handler as *const () as usize
+            stubs::stop_handler as *const () as usize
         );
-        assert_eq!(lifecycle.bindings().calls.get(), 0);
+        assert_eq!(lifecycle.bindings().handler_calls.get(), 0);
     }
 
     #[test]
@@ -587,12 +487,12 @@ mod tests {
         let bindings = FakeAppDataBindings::new();
         let lifecycle = crate::ffi::LoopbackLifecycle::new(bindings);
 
-        assert!(lifecycle.register_app_data_handler(stub_app_data_handler));
+        assert!(lifecycle.register_app_data_handler(stubs::app_data_handler));
 
-        assert_eq!(lifecycle.bindings().calls.get(), 1);
+        assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
         assert_eq!(
             lifecycle.bindings().last_handler.get(),
-            stub_app_data_handler as *const () as usize
+            stubs::app_data_handler as *const () as usize
         );
     }
 
@@ -603,37 +503,7 @@ mod tests {
 
         assert!(lifecycle.clear_app_data_handler());
 
-        assert_eq!(lifecycle.bindings().calls.get(), 1);
+        assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
         assert_eq!(lifecycle.bindings().last_handler.get(), 0);
-    }
-
-    #[test]
-    fn app_data_ping_echoes_the_frame_back() {
-        let request = frame(WireCommand::Ping, &[]);
-        let (response, len) =
-            handle_loopback_frame(request.as_slice(), 1234).expect("loopback response");
-
-        assert_eq!(&response[..len], frame(WireCommand::Ping, &[]).as_slice());
-    }
-
-    #[test]
-    fn app_data_status_uses_device_time() {
-        let request = frame(WireCommand::Status, &[]);
-        let (response, len) =
-            handle_loopback_frame(request.as_slice(), 0x0102_0304_0506_0708).expect("status");
-
-        assert_eq!(
-            &response[..len],
-            frame(
-                WireCommand::Status,
-                &0x0102_0304_0506_0708_u64.to_le_bytes()
-            )
-            .as_slice()
-        );
-    }
-
-    #[test]
-    fn app_data_rejects_invalid_frames() {
-        assert!(handle_loopback_frame(&[9, 1, 0], 0).is_err());
     }
 }
