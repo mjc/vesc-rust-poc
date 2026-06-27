@@ -4,9 +4,6 @@ use vesc_package::{ffi, init as pkg_init, lifecycle};
 
 use crate::extensions;
 
-#[cfg(test)]
-use core::cell::Cell;
-
 /// VESC loader anchor in `.program_ptr`; value is unused but the section must exist.
 #[cfg(all(not(test), target_arch = "arm"))]
 #[used]
@@ -24,7 +21,7 @@ pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
 #[cfg(test)]
 #[no_mangle]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
-    init_for_tests(info)
+    pkg_init::init_for_tests(info)
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
@@ -35,40 +32,20 @@ pub extern "C" fn init(info: *mut ffi::LibInfo) -> bool {
         return false;
     }
 
-    register_package_extensions(info)
+    register_package_extensions(info, &ffi::PackageLifecycle::new(ffi::RealBindings))
 }
 
-/// Register this package's extension table using the compact init path.
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn register_package_extensions(info: *mut ffi::LibInfo) -> bool {
+/// Register this package's extension table using the supplied binding set.
+pub fn register_package_extensions<B: ffi::LbmBindings>(
+    info: *mut ffi::LibInfo,
+    lifecycle: &ffi::PackageLifecycle<B>,
+) -> bool {
     if info.is_null() {
         return false;
     }
 
     let [descriptor] = extensions::package_extension_descriptors();
-    unsafe { lifecycle::register_extension_from_image_real(&*info, descriptor).is_ok() }
-}
-
-#[cfg(test)]
-thread_local! {
-    static INIT_CALLS: Cell<usize> = const { Cell::new(0) };
-}
-
-#[cfg(test)]
-pub fn init_for_tests(info: *mut ffi::LibInfo) -> bool {
-    let _ = pkg_init::install_stop_hook(info);
-    INIT_CALLS.with(|calls| calls.set(calls.get() + 1));
-    true
-}
-
-#[cfg(test)]
-pub fn reset_init_call_count_for_tests() {
-    INIT_CALLS.with(|calls| calls.set(0));
-}
-
-#[cfg(test)]
-pub fn init_call_count_for_tests() -> usize {
-    INIT_CALLS.with(|calls| calls.get())
+    unsafe { lifecycle::register_extension_from_image(&*info, lifecycle, descriptor).is_ok() }
 }
 
 #[cfg(all(test, feature = "test-support"))]
@@ -77,12 +54,20 @@ mod registration_tests {
     use crate::extensions::package_extension_descriptors;
     use vesc_package::ffi::test_support::FakeBindings;
     use vesc_package::ffi::{self, PackageLifecycle};
-    use vesc_package::lifecycle::register_extension_from_image;
+
+    #[test]
+    fn register_package_extensions_rejects_null_loader_metadata() {
+        let lifecycle = PackageLifecycle::new(FakeBindings::new());
+
+        assert!(!register_package_extensions(
+            core::ptr::null_mut(),
+            &lifecycle
+        ));
+    }
 
     #[test]
     fn register_package_extensions_propagates_firmware_rejection() {
-        let bindings = FakeBindings::rejecting();
-        let lifecycle = PackageLifecycle::new(bindings);
+        let lifecycle = PackageLifecycle::new(FakeBindings::rejecting());
         let mut info = ffi::LibInfo {
             stop_fun: None,
             arg: core::ptr::null_mut(),
@@ -90,38 +75,15 @@ mod registration_tests {
         };
         let [descriptor] = package_extension_descriptors();
 
-        assert!(!register_package_extensions(core::ptr::null_mut()));
-        assert!(
-            register_extension_from_image(&info, &lifecycle, descriptor).is_err(),
-            "registration failure should propagate to init callers"
-        );
-        let _ = &mut info;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{init_for_tests, reset_init_call_count_for_tests};
-    use vesc_package::ffi;
-
-    #[test]
-    fn package_init_records_device_initialization() {
-        reset_init_call_count_for_tests();
-
-        assert!(init_for_tests(core::ptr::null_mut()));
-        assert_eq!(super::init_call_count_for_tests(), 1);
-    }
-
-    #[test]
-    fn package_init_installs_a_stop_hook() {
-        reset_init_call_count_for_tests();
-        let mut info = ffi::LibInfo {
-            stop_fun: None,
-            arg: core::ptr::null_mut(),
-            base_addr: 0,
-        };
-
-        assert!(init_for_tests(&mut info));
-        assert!(info.stop_fun.is_some());
+        assert!(!register_package_extensions(
+            core::ptr::null_mut(),
+            &lifecycle
+        ));
+        assert!(!register_package_extensions(
+            core::ptr::from_mut(&mut info),
+            &lifecycle
+        ));
+        assert_eq!(lifecycle.bindings().add_calls.get(), 1);
+        assert_eq!(descriptor.name(), package_extension_descriptors()[0].name());
     }
 }

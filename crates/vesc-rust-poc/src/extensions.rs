@@ -10,13 +10,6 @@ use vesc_package::ffi::{LbmApi, LbmBindings, LbmCount, LbmValue};
 
 /// LispBM extension name registered on device (`ext-rust-probe-diag-v4`).
 const EXT_RUST_PROBE_DIAG_NAME: &CStr = c"ext-rust-probe-diag-v4";
-/// Host-only alias for tests that exercise argument validation through `LbmApi`.
-#[cfg(test)]
-const EXT_HOST_TEST_PROBE_NAME: &CStr = c"ext-c-probe-v12";
-#[cfg(test)]
-const LBM_INT_TAG: u32 = 0x8;
-#[cfg(test)]
-const LBM_TAG_MASK: u32 = 0xf;
 
 const PACKAGE_EXTENSION_COUNT: usize = 1;
 
@@ -24,45 +17,14 @@ pub const PACKAGE_EXTENSION_NAMES: [&CStr; PACKAGE_EXTENSION_COUNT] = [EXT_RUST_
 
 const _: () = assert!(PACKAGE_EXTENSION_COUNT == 1);
 
-#[cfg(not(test))]
 #[no_mangle]
 /// Device probe: returns encoded LispBM integer 42 without calling firmware `lbm_enc_i`.
 ///
 /// # Safety
 ///
-/// `args` is ignored on the device path; callers must satisfy the LispBM extension ABI.
+/// `args` is ignored; callers must satisfy the LispBM extension ABI.
 pub unsafe extern "C" fn ext_rust_probe_diag_v4(_args: *mut u32, _argn: u32) -> u32 {
     encode_lbm_i32_raw(42)
-}
-
-#[cfg(test)]
-#[no_mangle]
-/// # Safety
-///
-/// `args` must point to at least `argn` initialized LispBM values when `argn > 0`.
-pub unsafe extern "C" fn ext_rust_probe_diag_v4(args: *mut u32, argn: u32) -> u32 {
-    rust_probe_extension(&LbmApi::new(ffi::RealBindings), args.cast(), LbmCount(argn)).0
-}
-
-#[cfg(test)]
-fn rust_probe_extension<B: LbmBindings>(
-    api: &LbmApi<B>,
-    args: *mut LbmValue,
-    argn: LbmCount,
-) -> LbmValue {
-    const LBM_VALUE_SHIFT: u32 = 4;
-
-    if argn.0 != 1 {
-        return api.encode_eval_error();
-    }
-
-    let value = unsafe { *args };
-    if value.0 & LBM_TAG_MASK != LBM_INT_TAG {
-        return api.encode_eval_error();
-    }
-
-    let decoded = (value.0 as i32) >> LBM_VALUE_SHIFT;
-    LbmValue(encode_lbm_i32_raw(decoded.wrapping_mul(3)))
 }
 
 pub fn package_extension_descriptors() -> [ffi::ExtensionDescriptor; PACKAGE_EXTENSION_COUNT] {
@@ -93,12 +55,21 @@ fn rust_add_extension_value<B: LbmBindings>(
 #[cfg(all(test, feature = "test-support"))]
 mod tests {
     use super::{
-        package_extension_descriptors, rust_add_extension_value, LbmApi, LbmCount, LbmValue,
-        EXT_HOST_TEST_PROBE_NAME, EXT_RUST_PROBE_DIAG_NAME, PACKAGE_EXTENSION_NAMES,
+        ext_rust_probe_diag_v4, package_extension_descriptors, rust_add_extension_value, LbmApi,
+        LbmCount, LbmValue, EXT_RUST_PROBE_DIAG_NAME, PACKAGE_EXTENSION_NAMES,
     };
     use vesc_package::ffi::test_support::FakeBindings;
-    use vesc_package::ffi::{self, ExtensionDescriptor, PackageLifecycle};
+    use vesc_package::ffi::{self, PackageLifecycle};
+    use vesc_package::lbm::encode_lbm_i32_raw;
     use vesc_package::lifecycle::register_extension_from_image;
+
+    #[test]
+    fn probe_returns_the_device_encoded_value() {
+        assert_eq!(
+            unsafe { ext_rust_probe_diag_v4(core::ptr::null_mut(), 0) },
+            encode_lbm_i32_raw(42)
+        );
+    }
 
     #[test]
     fn package_extension_table_lists_the_device_probe_descriptor() {
@@ -158,14 +129,5 @@ mod tests {
             rust_add_extension_value(&api, core::ptr::null_mut(), LbmCount(2)),
             LbmValue(42)
         );
-    }
-
-    #[test]
-    fn host_test_probe_alias_stays_distinct_from_the_device_name() {
-        let [device] = package_extension_descriptors();
-        let host = ExtensionDescriptor::new(EXT_HOST_TEST_PROBE_NAME, device.handler());
-
-        assert_eq!(host.name(), EXT_HOST_TEST_PROBE_NAME);
-        assert_eq!(device.name(), EXT_RUST_PROBE_DIAG_NAME);
     }
 }
