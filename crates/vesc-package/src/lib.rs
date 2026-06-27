@@ -1,6 +1,6 @@
 //! Safe wrapper around `vesc-ffi` for VESC native package development.
 //!
-//! Owns loader init, extension registration, and device-side package runtime helpers.
+//! Owns loader helpers, generic extension registration, and device-side runtime code.
 
 #![cfg_attr(not(test), no_std)]
 
@@ -13,14 +13,8 @@ pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
 
 pub mod ble_loopback;
 pub mod init;
+pub mod lbm;
 pub mod lifecycle;
-
-pub use init::package_lib_init;
-
-#[cfg(test)]
-pub(crate) fn rust_add(a: i32, b: i32) -> i32 {
-    a + b
-}
 
 #[cfg(test)]
 mod tests {
@@ -36,12 +30,6 @@ mod tests {
     }
 
     #[test]
-    fn rust_add_stays_a_plain_integer_function() {
-        assert_eq!(super::rust_add(1, 2), 3);
-        assert_eq!(super::rust_add(-8, 11), 3);
-    }
-
-    #[test]
     fn package_lib_init_runs_the_device_loopback_entrypoint_path() {
         init::reset_init_call_count_for_tests();
         let mut info = ffi::LibInfo {
@@ -50,7 +38,7 @@ mod tests {
             base_addr: 0,
         };
 
-        assert!(super::package_lib_init(&mut info));
+        assert!(init::package_lib_init(&mut info));
 
         assert_eq!(init::init_call_count_for_tests(), 1);
         assert!(info.stop_fun.is_some());

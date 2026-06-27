@@ -1,41 +1,9 @@
-//! Native VESC package loader wiring: stop hook and LispBM extension registration.
+//! Native VESC package loader helpers shared across package payloads.
 
 use crate::ffi;
-use crate::lifecycle;
 
 #[cfg(test)]
 use core::cell::Cell;
-
-/// VESC loader anchor in `.program_ptr`; value is unused but the section must exist.
-#[cfg(all(not(test), target_arch = "arm"))]
-#[used]
-#[no_mangle]
-#[link_section = ".program_ptr"]
-static prog_ptr: u32 = 0;
-
-#[cfg(not(test))]
-#[inline(never)]
-#[no_mangle]
-pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
-    install_stop_hook(info)
-}
-
-#[cfg(test)]
-#[no_mangle]
-pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
-    init_for_tests(info)
-}
-
-#[cfg(all(not(test), target_arch = "arm"))]
-#[no_mangle]
-#[link_section = ".init_fun"]
-pub extern "C" fn init(info: *mut ffi::LibInfo) -> bool {
-    if !package_lib_init(info) {
-        return false;
-    }
-
-    register_package_extensions(info)
-}
 
 unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
     #[cfg(not(test))]
@@ -63,14 +31,10 @@ pub fn install_stop_hook(info: *mut ffi::LibInfo) -> bool {
     true
 }
 
-/// Register package extensions from the descriptor table using the compact init path.
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn register_package_extensions(info: *mut ffi::LibInfo) -> bool {
-    if info.is_null() {
-        return false;
-    }
-
-    unsafe { lifecycle::register_package_extension_from_image(&*info).is_ok() }
+#[cfg(test)]
+#[no_mangle]
+pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
+    init_for_tests(info)
 }
 
 #[cfg(test)]
@@ -100,32 +64,6 @@ pub fn init_call_count_for_tests() -> usize {
 #[cfg(test)]
 pub fn stop_call_count_for_tests() -> usize {
     STOP_CALLS.with(|calls| calls.get())
-}
-
-#[cfg(all(test, feature = "test-support"))]
-mod registration_tests {
-    use super::register_package_extensions;
-    use crate::ffi::test_support::FakeBindings;
-    use crate::ffi::{self, PackageLifecycle};
-    use crate::lifecycle::register_package_extension_from_image_with;
-
-    #[test]
-    fn register_package_extensions_propagates_firmware_rejection() {
-        let bindings = FakeBindings::rejecting();
-        let lifecycle = PackageLifecycle::new(bindings);
-        let mut info = ffi::LibInfo {
-            stop_fun: None,
-            arg: core::ptr::null_mut(),
-            base_addr: 0x2000,
-        };
-
-        assert!(!register_package_extensions(core::ptr::null_mut()));
-        assert!(
-            register_package_extension_from_image_with(&info, &lifecycle).is_err(),
-            "registration failure should propagate to init callers"
-        );
-        let _ = &mut info;
-    }
 }
 
 #[cfg(test)]
