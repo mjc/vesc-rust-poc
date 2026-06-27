@@ -108,11 +108,10 @@ mod tests {
     use crate::package_conversion::{
         PackageBinaryConversionCommand, PackageBinaryConversionRunner,
     };
+    use crate::test_support::TempWorkspace;
     use crate::BLE_LOOPBACK_PACKAGE_NAME;
     use std::cell::RefCell;
     use std::fs;
-    use std::path::PathBuf;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[derive(Default)]
     struct FakeConversionRunner {
@@ -135,20 +134,11 @@ mod tests {
         }
     }
 
-    fn unique_root() -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time")
-            .as_nanos();
-        std::env::temp_dir().join(format!(
-            "vesc-rust-poc-package-target-{nanos}-{}",
-            std::process::id()
-        ))
-    }
-
     #[test]
     fn package_only_stages_inspects_and_writes_the_output() {
-        let root = unique_root();
+        let workspace = TempWorkspace::new();
+        let root = workspace.root.clone();
+        let _workspace = workspace;
         let target = PackageTargetPlan::new(
             &root,
             BLE_LOOPBACK_PACKAGE_NAME,
@@ -181,7 +171,9 @@ mod tests {
 
     #[test]
     fn package_mode_still_writes_the_package_output() {
-        let root = unique_root();
+        let workspace = TempWorkspace::new();
+        let root = workspace.root.clone();
+        let _workspace = workspace;
         let target = PackageTargetPlan::new(
             &root,
             BLE_LOOPBACK_PACKAGE_NAME,
@@ -203,7 +195,9 @@ mod tests {
 
     #[test]
     fn package_output_remains_small_enough_to_upload() {
-        let root = unique_root();
+        let workspace = TempWorkspace::new();
+        let root = workspace.root.clone();
+        let _workspace = workspace;
         let target = PackageTargetPlan::new(
             &root,
             BLE_LOOPBACK_PACKAGE_NAME,

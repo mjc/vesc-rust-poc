@@ -204,11 +204,11 @@ mod tests {
     use crate::package_conversion::{
         PackageBinaryConversionCommand, PackageBinaryConversionRunner,
     };
+    use crate::test_support::TempWorkspace;
     use crate::PackageTargetMode;
     use std::cell::RefCell;
     use std::fs;
     use std::path::PathBuf;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[derive(Default)]
     struct FakeRunner {
@@ -229,17 +229,6 @@ mod tests {
             }
             fs::write(command.package_binary_path(), b"payload").map_err(|error| error.to_string())
         }
-    }
-
-    fn unique_root() -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time")
-            .as_nanos();
-        std::env::temp_dir().join(format!(
-            "vesc-rust-poc-cargo-vescpkg-{nanos}-{}",
-            std::process::id()
-        ))
     }
 
     #[test]
@@ -341,7 +330,9 @@ mod tests {
 
     #[test]
     fn run_with_executes_the_default_build_invocation() {
-        let root = unique_root();
+        let workspace = TempWorkspace::new();
+        let root = workspace.root.clone();
+        let _workspace = workspace;
         let runner = FakeRunner::default();
 
         let output = run_with(&root, ["build"], &runner).expect("run build invocation");
@@ -368,7 +359,8 @@ mod tests {
 
     #[test]
     fn run_with_rejects_unknown_subcommands() {
-        let error = run_with(unique_root(), ["spoon"], &FakeRunner::default())
+        let workspace = TempWorkspace::new();
+        let error = run_with(&workspace.root, ["spoon"], &FakeRunner::default())
             .expect_err("unknown subcommand should fail");
 
         assert!(matches!(

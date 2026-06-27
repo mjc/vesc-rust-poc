@@ -166,10 +166,10 @@ mod tests {
     use crate::package_conversion::{
         PackageBinaryConversionCommand, PackageBinaryConversionRunner,
     };
+    use crate::test_support::TempWorkspace;
     use crate::{PackageProvenance, BLE_LOOPBACK_PACKAGE_NAME};
     use std::cell::RefCell;
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[derive(Default)]
     struct FakeRunner {
@@ -187,17 +187,6 @@ mod tests {
             self.calls.borrow_mut().push(command.clone());
             Ok(())
         }
-    }
-
-    fn unique_root() -> std::path::PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time")
-            .as_nanos();
-        std::env::temp_dir().join(format!(
-            "vesc-rust-poc-build-{nanos}-{}",
-            std::process::id()
-        ))
     }
 
     fn write_artifact(root: &std::path::Path, relative: &str, contents: &str) {
@@ -303,7 +292,9 @@ mod tests {
 
     #[test]
     fn writes_the_expected_package_output() {
-        let root = unique_root();
+        let workspace = TempWorkspace::new();
+        let root = workspace.root.clone();
+        let _workspace = workspace;
         let plan = PackageBuildPlan::new(&root, BLE_LOOPBACK_PACKAGE_NAME, "0.1.0");
         fs::create_dir_all(root.join("target/native-lib-baseline")).expect("native payload dir");
         fs::write(
@@ -322,7 +313,9 @@ mod tests {
 
     #[test]
     fn inspect_package_artifacts_reports_missing_staging_files() {
-        let root = unique_root();
+        let workspace = TempWorkspace::new();
+        let root = workspace.root.clone();
+        let _workspace = workspace;
         let plan = PackageBuildPlan::new(&root, BLE_LOOPBACK_PACKAGE_NAME, "0.1.0");
         fs::create_dir_all(plan.inspection_plan().staging_dir_path()).expect("staging root");
 
@@ -334,7 +327,9 @@ mod tests {
 
     #[test]
     fn inspect_package_artifacts_accepts_rendered_artifacts() {
-        let root = unique_root();
+        let workspace = TempWorkspace::new();
+        let root = workspace.root.clone();
+        let _workspace = workspace;
         let plan = PackageBuildPlan::new(&root, BLE_LOOPBACK_PACKAGE_NAME, "0.1.0");
         let inspection_plan = plan.inspection_plan();
         let assets = inspection_plan.assets();

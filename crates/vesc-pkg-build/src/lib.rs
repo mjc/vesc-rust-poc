@@ -13,6 +13,8 @@ pub mod package_runtime;
 pub mod package_target;
 pub mod rust_package_api_roadmap;
 pub mod symbol_audit;
+#[cfg(test)]
+mod test_support;
 
 pub const BLE_LOOPBACK_PACKAGE_NAME: &str = "Rust BLE loopback test package";
 

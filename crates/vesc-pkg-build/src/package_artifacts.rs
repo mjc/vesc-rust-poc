@@ -198,25 +198,10 @@ mod tests {
         NATIVE_PAYLOAD_PATH, STAGING_DESCRIPTOR_PATH, STAGING_LOADER_PATH, STAGING_README_PATH,
     };
     use crate::package_assets::PackageProvenance;
+    use crate::test_support::TempWorkspace;
     use crate::BLE_LOOPBACK_PACKAGE_NAME;
     use std::fs;
-    use std::path::{Path, PathBuf};
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    static UNIQUE_ROOT_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-    fn unique_root() -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time")
-            .as_nanos();
-        let unique = UNIQUE_ROOT_COUNTER.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!(
-            "vesc-rust-poc-artifacts-{nanos}-{}-{unique}",
-            std::process::id(),
-        ))
-    }
+    use std::path::Path;
 
     fn write_artifact(root: &Path, relative: &str, contents: &str) {
         let path = root.join(relative);
@@ -228,7 +213,9 @@ mod tests {
 
     #[test]
     fn reports_missing_required_artifacts() {
-        let root = unique_root();
+        let workspace = TempWorkspace::new();
+        let root = workspace.root.clone();
+        let _workspace = workspace;
         fs::create_dir_all(root.join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0"))
             .expect("staging root");
         let plan = PackageArtifactInspectionPlan::new(
@@ -270,7 +257,9 @@ mod tests {
 
     #[test]
     fn reports_content_mismatches_with_exact_paths() {
-        let root = unique_root();
+        let workspace = TempWorkspace::new();
+        let root = workspace.root.clone();
+        let _workspace = workspace;
         let staging_root = root.join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0");
         fs::create_dir_all(&staging_root).expect("staging root");
         write_artifact(&root, NATIVE_PAYLOAD_PATH, "payload");
@@ -321,7 +310,9 @@ mod tests {
 
     #[test]
     fn reports_empty_native_payloads() {
-        let root = unique_root();
+        let workspace = TempWorkspace::new();
+        let root = workspace.root.clone();
+        let _workspace = workspace;
         let staging_root = root.join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0");
         fs::create_dir_all(&staging_root).expect("staging root");
         write_artifact(

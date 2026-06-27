@@ -221,22 +221,11 @@ fn parse_import_line(line: &str) -> Option<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::{build_vesc_package, VescPackageInput};
+    use crate::test_support::TempWorkspace;
     use crate::{PackageAssets, PackageLayout, PackageProvenance, BLE_LOOPBACK_PACKAGE_NAME};
     use flate2::read::ZlibDecoder;
     use std::fs;
     use std::io::Read;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn unique_root() -> std::path::PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time")
-            .as_nanos();
-        std::env::temp_dir().join(format!(
-            "vesc-rust-poc-package-format-{nanos}-{}",
-            std::process::id()
-        ))
-    }
 
     #[derive(Debug, PartialEq, Eq)]
     struct PackageField {
@@ -347,7 +336,9 @@ mod tests {
 
     #[test]
     fn lisp_imports_embed_native_payload_bytes() {
-        let root = unique_root();
+        let workspace = TempWorkspace::new();
+        let root = workspace.root.clone();
+        let _workspace = workspace;
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("src dir");
         fs::write(src_dir.join("package_lib.bin"), [0, 1, 2, 3, 0xff]).expect("native payload");
@@ -384,7 +375,9 @@ mod tests {
 
     #[test]
     fn lisp_import_payload_preserves_native_bytes_with_only_nul_padding() {
-        let root = unique_root();
+        let workspace = TempWorkspace::new();
+        let root = workspace.root.clone();
+        let _workspace = workspace;
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("src dir");
         let native_payload = [0, 1, 2, 3, 0];
@@ -414,7 +407,9 @@ mod tests {
 
     #[test]
     fn package_uses_the_vesc_tool_field_spine() {
-        let root = unique_root();
+        let workspace = TempWorkspace::new();
+        let root = workspace.root.clone();
+        let _workspace = workspace;
         fs::create_dir_all(root.join("src")).expect("src dir");
         fs::write(root.join("src/package_lib.bin"), [0xaa]).expect("native payload");
 
@@ -453,7 +448,9 @@ mod tests {
 
     #[test]
     fn generated_ble_package_pins_the_expected_field_sizes_and_native_import_layout() {
-        let root = unique_root();
+        let workspace = TempWorkspace::new();
+        let root = workspace.root.clone();
+        let _workspace = workspace;
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("src dir");
         let mut native_payload = (0..205).map(|byte| byte as u8).collect::<Vec<_>>();
@@ -508,7 +505,9 @@ mod tests {
 
     #[test]
     fn native_import_payload_preserves_the_loader_header_prefix() {
-        let root = unique_root();
+        let workspace = TempWorkspace::new();
+        let root = workspace.root.clone();
+        let _workspace = workspace;
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("src dir");
         let native_payload = [
