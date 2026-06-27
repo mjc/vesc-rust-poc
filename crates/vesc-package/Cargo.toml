@@ -1,0 +1,11 @@
+[package]
+name = "vesc-package"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+vesc-ffi = { path = "../vesc-ffi" }
+vesc-protocol = { path = "../vesc-protocol" }
+
+[features]
+test-support = ["vesc-ffi/test-support"]

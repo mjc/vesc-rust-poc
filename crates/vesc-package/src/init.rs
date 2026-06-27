@@ -1,7 +1,7 @@
 //! Native VESC package loader wiring: stop hook and LispBM extension registration.
 
 use crate::ffi;
-use crate::package_lifecycle;
+use crate::lifecycle;
 
 #[cfg(test)]
 use core::cell::Cell;
@@ -50,6 +50,7 @@ unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
 }
 
 /// Install the package stop hook into loader metadata.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub fn install_stop_hook(info: *mut ffi::LibInfo) -> bool {
     if info.is_null() {
         return false;
@@ -63,18 +64,19 @@ pub fn install_stop_hook(info: *mut ffi::LibInfo) -> bool {
 }
 
 /// Register package extensions from the descriptor table using the compact init path.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub fn register_package_extensions(info: *mut ffi::LibInfo) -> bool {
     if info.is_null() {
         return false;
     }
 
-    unsafe { package_lifecycle::register_package_extension_from_image(&*info).is_ok() }
+    unsafe { lifecycle::register_package_extension_from_image(&*info).is_ok() }
 }
 
 #[cfg(test)]
 thread_local! {
-    static INIT_CALLS: Cell<usize> = Cell::new(0);
-    static STOP_CALLS: Cell<usize> = Cell::new(0);
+    static INIT_CALLS: Cell<usize> = const { Cell::new(0) };
+    static STOP_CALLS: Cell<usize> = const { Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -105,7 +107,7 @@ mod registration_tests {
     use super::register_package_extensions;
     use crate::ffi::test_support::FakeBindings;
     use crate::ffi::{self, PackageLifecycle};
-    use crate::package_lifecycle::register_package_extension_from_image_with;
+    use crate::lifecycle::register_package_extension_from_image_with;
 
     #[test]
     fn register_package_extensions_propagates_firmware_rejection() {
@@ -119,7 +121,7 @@ mod registration_tests {
 
         assert!(!register_package_extensions(core::ptr::null_mut()));
         assert!(
-            !register_package_extension_from_image_with(&info, &lifecycle).is_ok(),
+            register_package_extension_from_image_with(&info, &lifecycle).is_err(),
             "registration failure should propagate to init callers"
         );
         let _ = &mut info;

@@ -25,8 +25,9 @@ const _: () = assert!(PACKAGE_EXTENSION_COUNT == 1);
 #[no_mangle]
 /// Device probe: returns encoded LispBM integer 42 without calling firmware `lbm_enc_i`.
 ///
-/// Host tests use the `#[cfg(test)]` build, which exercises argument validation through
-/// `LbmApi` instead. Keep the device path minimal so PIC/staticlib codegen stays stable.
+/// # Safety
+///
+/// `args` is ignored on the device path; callers must satisfy the LispBM extension ABI.
 pub unsafe extern "C" fn ext_rust_probe_diag_v4(_args: *mut u32, _argn: u32) -> u32 {
     encode_lbm_i32_raw(42)
 }
