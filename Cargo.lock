@@ -824,6 +824,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "vesc-package"
+version = "0.1.0"
+dependencies = [
+ "vesc-ffi",
+ "vesc-protocol",
+]
+
+[[package]]
 name = "vesc-pkg-build"
 version = "0.1.0"
 dependencies = [
@@ -840,8 +848,7 @@ version = "0.1.0"
 name = "vesc-rust-poc"
 version = "0.1.0"
 dependencies = [
- "vesc-ffi",
- "vesc-protocol",
+ "vesc-package",
 ]
 
 [[package]]
