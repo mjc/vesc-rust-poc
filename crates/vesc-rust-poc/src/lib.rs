@@ -1,6 +1,11 @@
 #![cfg_attr(not(test), no_std)]
 
-pub use vesc_ffi as ffi;
+pub mod firmware {
+    //! VESC firmware ABI (`vesc-ffi`): bindings, lifecycle helpers, and loader metadata.
+    pub use vesc_ffi::*;
+}
+
+pub use firmware as ffi;
 pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
 
 pub mod ble_loopback_device;
@@ -48,11 +53,6 @@ fn panic(_: &PanicInfo) -> ! {
 #[cfg(test)]
 mod tests {
     use super::{ble_loopback_device, ffi, rust_add, ProtocolFrame, WireCommand, WireVersion};
-
-    #[test]
-    fn cargo_test_smoke() {
-        assert_eq!(1 + 1, 2);
-    }
 
     #[test]
     fn device_side_can_use_the_shared_protocol_crate() {

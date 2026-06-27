@@ -21,11 +21,7 @@ impl BleFrame {
         assert!(bytes.len() <= MAX_FRAME_BYTES, "BLE frame exceeds budget");
 
         let mut frame = [0_u8; MAX_FRAME_BYTES];
-        let mut index = 0;
-        while index < bytes.len() {
-            frame[index] = bytes[index];
-            index += 1;
-        }
+        frame[..bytes.len()].copy_from_slice(bytes);
 
         Self {
             bytes: frame,
@@ -162,27 +158,20 @@ impl<S: DeviceServices> LoopbackPackageRuntime<S> {
         };
         let command = packet.frame().command();
 
-        match command {
-            WireCommand::Ping => self.reply(WireCommand::Ping, &[]),
-            WireCommand::Echo => self.reply(WireCommand::Echo, packet.frame().payload()),
-            WireCommand::Status => self.reply_status(),
-            WireCommand::Teardown => self.reply(WireCommand::Teardown, &[]),
+        match handle_loopback_frame(frame.as_slice(), self.services.now_ms()) {
+            Ok((response, len)) => {
+                self.services
+                    .send_ble_frame(BleFrame::from_slice(&response[..len]));
+            }
+            Err(error) => {
+                self.state = LoopbackPackageState::Failed("malformed BLE frame");
+                self.services.log("malformed BLE frame");
+                return Err(LoopbackRuntimeError::from(error));
+            }
         }
 
         self.services.log("replied to BLE frame");
         Ok(LoopbackTick::Replied(command))
-    }
-
-    fn reply(&self, command: WireCommand, payload: &[u8]) {
-        let packet = LoopbackPacket::new(command, payload).expect("response payload fits");
-        let (bytes, len) = packet.encode();
-        self.services
-            .send_ble_frame(BleFrame::from_slice(&bytes[..len]));
-    }
-
-    fn reply_status(&self) {
-        let payload = self.services.now_ms().to_le_bytes();
-        self.reply(WireCommand::Status, &payload);
     }
 }
 
@@ -228,31 +217,30 @@ pub fn handle_loopback_frame(
     response[0] = BLE_LOOPBACK_PROTOCOL_VERSION.raw();
     response[1] = command.code();
     response[2] = payload.len() as u8;
-
-    let mut index = 0;
-    while index < payload.len() {
-        response[3 + index] = payload[index];
-        index += 1;
-    }
+    response[3..3 + payload.len()].copy_from_slice(payload);
 
     Ok((response, 3 + payload.len()))
 }
 
+const FIRMWARE_BINDINGS: crate::ffi::RealBindings = crate::ffi::RealBindings;
+
 #[cfg(not(test))]
-#[allow(dead_code)]
 unsafe extern "C" fn app_data_handler(data: *mut u8, len: u32) {
     if data.is_null() {
         return;
     }
 
     let bytes = core::slice::from_raw_parts(data as *const u8, len as usize);
-    let lifecycle = crate::ffi::LoopbackLifecycle::new(crate::ffi::RealBindings);
+    let lifecycle = crate::ffi::LoopbackLifecycle::new(FIRMWARE_BINDINGS);
     let now_ms = u64::from(lifecycle.system_time_ticks()) / 10;
 
     if let Ok((response, response_len)) = handle_loopback_frame(bytes, now_ms) {
         unsafe { lifecycle.send_app_data(response.as_ptr(), response_len as u32) };
     }
 }
+
+#[cfg(test)]
+unsafe extern "C" fn app_data_handler(_data: *mut u8, _len: u32) {}
 
 #[derive(Debug)]
 pub struct NullDeviceServices;
@@ -427,8 +415,7 @@ thread_local! {
 unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
     #[cfg(not(test))]
     {
-        let _ =
-            crate::ffi::LoopbackLifecycle::new(crate::ffi::RealBindings).clear_app_data_handler();
+        let _ = crate::ffi::LoopbackLifecycle::new(FIRMWARE_BINDINGS).clear_app_data_handler();
     }
 
     #[cfg(test)]
@@ -442,7 +429,7 @@ pub fn init_package(info: *mut crate::ffi::LibInfo) -> bool {
     if info.is_null() {
         return false;
     }
-    let lifecycle = crate::ffi::LoopbackLifecycle::new(crate::ffi::RealBindings);
+    let lifecycle = crate::ffi::LoopbackLifecycle::new(FIRMWARE_BINDINGS);
     if unsafe { lifecycle.install(info, stop_package, app_data_handler) } {
         return true;
     }

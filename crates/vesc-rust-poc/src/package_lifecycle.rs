@@ -1,9 +1,9 @@
 use core::ffi::CStr;
 
-use crate::ffi::{self, ExtensionDescriptor, LbmApi, LbmBindings};
+use crate::ffi::{self};
 
 #[cfg(test)]
-use crate::ffi::{LbmCount, LbmValue};
+use crate::ffi::{LbmApi, LbmBindings, LbmCount, LbmValue};
 
 const EXT_RUST_PROBE_DIAG_NAME: &CStr = c"ext-rust-probe-diag-v4";
 #[cfg(test)]
@@ -17,6 +17,10 @@ pub const PACKAGE_EXTENSION_NAMES: [&CStr; 1] = [EXT_RUST_PROBE_DIAG_NAME];
 
 #[cfg(not(test))]
 #[no_mangle]
+/// Device probe: returns encoded LispBM integer 42 without calling firmware `lbm_enc_i`.
+///
+/// Host tests use the `#[cfg(test)]` build, which exercises argument validation through
+/// `LbmApi` instead. Keep the device path minimal so PIC/staticlib codegen stays stable.
 pub unsafe extern "C" fn ext_rust_probe_v12(_args: *mut u32, _argn: u32) -> u32 {
     encode_lbm_i32_raw(42)
 }
@@ -76,50 +80,21 @@ pub fn package_extension_descriptors() -> [ffi::ExtensionDescriptor; 1] {
     [rust_probe_diag_descriptor()]
 }
 
-pub struct PackageLifecycle<B = ffi::RealBindings> {
-    api: LbmApi<B>,
+pub fn register_loader_extensions<B: ffi::LbmBindings>(
+    info: &ffi::LibInfo,
+    lifecycle: &ffi::PackageLifecycle<B>,
+) -> Result<(), ffi::RegisterError> {
+    let image = ffi::NativeImage::from_info(info);
+    lifecycle.register_extensions_from_image(image, package_extension_descriptors())
 }
 
-impl<B: LbmBindings> PackageLifecycle<B> {
-    pub fn new(bindings: B) -> Self {
-        Self {
-            api: LbmApi::new(bindings),
-        }
+#[cfg(all(not(test), target_arch = "arm"))]
+pub fn finish_loader_init(info: *mut ffi::LibInfo) -> bool {
+    if info.is_null() {
+        return false;
     }
-
-    pub fn register_extension(
-        &self,
-        descriptor: ExtensionDescriptor,
-    ) -> Result<(), ffi::RegisterError> {
-        let descriptor = descriptor
-            .validate()
-            .map_err(|_| ffi::RegisterError::InvalidExtensionName)?;
-        if self
-            .api
-            .register_extension(descriptor.name(), descriptor.handler())
-        {
-            Ok(())
-        } else {
-            Err(ffi::RegisterError::FirmwareRejected)
-        }
-    }
-
-    pub fn register_extension_from_image(
-        &self,
-        image: ffi::NativeImage,
-        descriptor: ExtensionDescriptor,
-    ) -> Result<(), ffi::RegisterError> {
-        let descriptor = descriptor
-            .validate()
-            .map_err(|_| ffi::RegisterError::InvalidExtensionName)?;
-        let handler_offset = descriptor.handler() as usize;
-        let handler = unsafe { core::mem::transmute(image.rebase_addr(handler_offset)) };
-        if self.api.register_extension(descriptor.name(), handler) {
-            Ok(())
-        } else {
-            Err(ffi::RegisterError::FirmwareRejected)
-        }
-    }
+    let lifecycle = ffi::PackageLifecycle::new(ffi::RealBindings);
+    register_loader_extensions(unsafe { &*info }, &lifecycle).is_ok()
 }
 
 #[cfg(test)]
@@ -134,10 +109,10 @@ fn rust_add_extension_value<B: LbmBindings>(
 #[cfg(test)]
 mod tests {
     use super::{
-        rust_add_extension_value, ExtensionDescriptor, LbmApi, LbmBindings, LbmCount, LbmValue,
-        PackageLifecycle, EXT_RUST_PROBE_DIAG_NAME, EXT_RUST_PROBE_NAME, PACKAGE_EXTENSION_NAMES,
+        register_loader_extensions, rust_add_extension_value, LbmApi, LbmBindings, LbmCount,
+        LbmValue, EXT_RUST_PROBE_DIAG_NAME, EXT_RUST_PROBE_NAME, PACKAGE_EXTENSION_NAMES,
     };
-    use crate::ffi;
+    use crate::ffi::{self, ExtensionDescriptor, PackageLifecycle};
     use core::cell::Cell;
     use core::ffi::c_char;
 
@@ -203,12 +178,26 @@ mod tests {
     }
 
     #[test]
+    fn register_loader_extensions_registers_every_descriptor_from_image() {
+        let bindings = FakeBindings::new();
+        let lifecycle = PackageLifecycle::new(bindings);
+        let info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0x2000,
+        };
+
+        assert_eq!(register_loader_extensions(&info, &lifecycle), Ok(()));
+        assert_eq!(lifecycle.bindings().add_calls.get(), 1);
+    }
+
+    #[test]
     fn register_extension_from_image_rebases_handler_before_firmware_call() {
         let bindings = FakeBindings::new();
         let lifecycle = PackageLifecycle::new(bindings);
         let handler_offset = 0x31_usize;
         let descriptor = ExtensionDescriptor::new(EXT_RUST_PROBE_NAME, unsafe {
-            core::mem::transmute(handler_offset)
+            core::mem::transmute::<usize, ffi::ExtensionHandler>(handler_offset)
         });
         let image = ffi::NativeImage::new(0x2000);
 
@@ -216,7 +205,7 @@ mod tests {
             lifecycle.register_extension_from_image(image, descriptor),
             Ok(())
         );
-        assert_eq!(lifecycle.api.bindings().last_handler.get(), 0x2031);
+        assert_eq!(lifecycle.bindings().last_handler.get(), 0x2031);
     }
 
     #[test]
@@ -226,7 +215,7 @@ mod tests {
         let descriptor = ExtensionDescriptor::new(EXT_RUST_PROBE_NAME, stub_handler);
 
         assert_eq!(lifecycle.register_extension(descriptor), Ok(()));
-        assert_eq!(lifecycle.api.bindings().add_calls.get(), 1);
+        assert_eq!(lifecycle.bindings().add_calls.get(), 1);
         assert_eq!(
             EXT_RUST_PROBE_NAME.to_bytes_with_nul(),
             b"ext-c-probe-v12\0"
@@ -255,7 +244,7 @@ mod tests {
             lifecycle.register_extension(descriptor),
             Err(ffi::RegisterError::InvalidExtensionName)
         );
-        assert_eq!(lifecycle.api.bindings().add_calls.get(), 0);
+        assert_eq!(lifecycle.bindings().add_calls.get(), 0);
     }
 
     #[test]
@@ -268,7 +257,7 @@ mod tests {
             lifecycle.register_extension(descriptor),
             Err(ffi::RegisterError::FirmwareRejected)
         );
-        assert_eq!(lifecycle.api.bindings().add_calls.get(), 1);
+        assert_eq!(lifecycle.bindings().add_calls.get(), 1);
     }
 
     #[test]
@@ -279,11 +268,11 @@ mod tests {
 
         assert_eq!(lifecycle.register_extension(descriptor), Ok(()));
         assert_eq!(
-            lifecycle.api.bindings().last_name.get(),
+            lifecycle.bindings().last_name.get(),
             EXT_RUST_PROBE_NAME.as_ptr() as usize
         );
         assert_eq!(
-            lifecycle.api.bindings().last_handler.get(),
+            lifecycle.bindings().last_handler.get(),
             stub_handler as *const () as usize
         );
     }

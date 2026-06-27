@@ -300,6 +300,10 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         }
     }
 
+    pub fn bindings(&self) -> &B {
+        self.api.bindings()
+    }
+
     pub fn register_extension(&self, descriptor: ExtensionDescriptor) -> Result<(), RegisterError> {
         let descriptor = descriptor
             .validate()
@@ -313,6 +317,36 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         } else {
             Err(RegisterError::FirmwareRejected)
         }
+    }
+
+    pub fn register_extension_from_image(
+        &self,
+        image: NativeImage,
+        descriptor: ExtensionDescriptor,
+    ) -> Result<(), RegisterError> {
+        let descriptor = descriptor
+            .validate()
+            .map_err(|_| RegisterError::InvalidExtensionName)?;
+        let handler_offset = descriptor.handler() as usize;
+        let handler = unsafe {
+            core::mem::transmute::<usize, ExtensionHandler>(image.rebase_addr(handler_offset))
+        };
+        if self.api.register_extension(descriptor.name(), handler) {
+            Ok(())
+        } else {
+            Err(RegisterError::FirmwareRejected)
+        }
+    }
+
+    pub fn register_extensions_from_image(
+        &self,
+        image: NativeImage,
+        descriptors: impl IntoIterator<Item = ExtensionDescriptor>,
+    ) -> Result<(), RegisterError> {
+        for descriptor in descriptors {
+            self.register_extension_from_image(image, descriptor)?;
+        }
+        Ok(())
     }
 }
 
@@ -332,10 +366,9 @@ impl<B: AppDataBindings> LoopbackLifecycle<B> {
     /// # Safety
     ///
     /// `info` must either be null or point to live loader metadata.
-    /// `stop_handler` and `app_data_handler` must remain valid for as long as
-    /// the firmware may call them. The native image is built as PIC, matching
-    /// refloat's VESC package model, so these callback pointers are already
-    /// runtime addresses when this code executes.
+    /// `stop_handler` must remain valid for as long as the firmware may call it.
+    /// The native image is built as PIC, matching refloat's VESC package model,
+    /// so this callback pointer is already a runtime address when this code executes.
     pub unsafe fn install(
         &self,
         info: *mut LibInfo,
@@ -1119,6 +1152,23 @@ mod tests {
             self.last_data.set(data as usize);
             self.last_len.set(len);
         }
+    }
+
+    #[test]
+    fn register_extension_from_image_rebases_handler_before_firmware_call() {
+        let bindings = FakeBindings::new();
+        let lifecycle = PackageLifecycle::new(bindings);
+        let handler_offset = 0x31_usize;
+        let descriptor = ExtensionDescriptor::new(c"ext-test", unsafe {
+            core::mem::transmute::<usize, ExtensionHandler>(handler_offset)
+        });
+        let image = NativeImage::new(0x2000);
+
+        assert_eq!(
+            lifecycle.register_extension_from_image(image, descriptor),
+            Ok(())
+        );
+        assert_eq!(lifecycle.bindings().last_handler.get(), 0x2031);
     }
 
     #[test]
