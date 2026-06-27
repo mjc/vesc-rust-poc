@@ -302,6 +302,10 @@ mod tests {
         vma: usize,
     }
 
+    fn align_section_vma(vma: usize, alignment: usize) -> usize {
+        (vma + alignment - 1) & !(alignment - 1)
+    }
+
     #[test]
     fn separates_defined_and_undefined_symbols() {
         let sample = "\
@@ -402,12 +406,12 @@ mod tests {
         build_final_native_lib_binary(&native_lib_bin_path());
 
         let blob = fs::read(native_lib_bin_path()).expect("native-lib binary bytes");
-        let rust_extension_name = b"ext-c-probe-v12\0";
+        let rust_extension_name = b"ext-rust-probe-diag-v4\0";
 
         assert!(
             blob.windows(rust_extension_name.len())
                 .any(|window| window == rust_extension_name),
-            "C probe extension identity must be linked into the native blob:\n{rust_extension_name:?}"
+            "Rust probe extension identity must be linked into the native blob:\n{rust_extension_name:?}"
         );
     }
 
@@ -480,7 +484,7 @@ mod tests {
             init_fun,
             SectionLayout {
                 name: ".init_fun".to_owned(),
-                size: 56,
+                size: 59,
                 vma: 4,
             }
         );
@@ -488,20 +492,24 @@ mod tests {
             got,
             SectionLayout {
                 name: ".got".to_owned(),
-                size: 16,
-                vma: 60,
+                size: 0,
+                vma: 64,
             }
         );
         assert_eq!(
             text,
             SectionLayout {
                 name: ".text".to_owned(),
-                size: 112,
-                vma: 80,
+                size: 104,
+                vma: 64,
             }
         );
         assert_eq!(init_fun.vma, program_ptr.vma + program_ptr.size);
-        assert_eq!(got.vma, init_fun.vma + init_fun.size);
+        assert_eq!(
+            got.vma,
+            align_section_vma(init_fun.vma + init_fun.size, 4),
+            "expected .got to follow .init_fun with VESC's 4-byte section alignment"
+        );
         assert!(
             text.vma >= got.vma + got.size,
             "expected .text to load after .got"
@@ -532,8 +540,8 @@ mod tests {
         let final_defined = defined_symbols(&final_symbols);
 
         assert!(
-            final_defined.contains("ext_c_probe_v12"),
-            "final image must retain the C LispBM probe shim:\n{final_symbols}"
+            final_defined.contains("ext_rust_probe_v12"),
+            "final image must retain the Rust LispBM probe callback:\n{final_symbols}"
         );
         assert!(
             final_defined.contains("init")
@@ -556,12 +564,12 @@ mod tests {
             "expected final native image to retain loader and Rust package init:\n{output}"
         );
         assert!(
-            defined.contains("ext_c_probe_v12"),
-            "expected final native image to retain the C LispBM probe:\n{output}"
+            defined.contains("ext_rust_probe_v12"),
+            "expected final native image to retain the Rust LispBM probe:\n{output}"
         );
         assert!(
-            !defined.contains("ext_rust_probe_v12"),
-            "expected unused Rust probe entrypoints to be garbage-collected from the final image:\n{output}"
+            !defined.contains("ext_c_probe_v12"),
+            "expected final native image to drop the C LispBM probe body:\n{output}"
         );
         assert!(
             !defined.contains("ext_c_probe_v6"),
@@ -587,7 +595,7 @@ mod tests {
             "arm-none-eabi-objdump",
             [PathBuf::from("-d"), native_lib_elf_path()],
         );
-        for offset in ["1000f800", "#124]", "#100]", "#8"] {
+        for offset in ["1000f800", "#124]", "#100]", "#64]", "#148]"] {
             assert!(
                 disassembly.contains(offset),
                 "expected VESC_IF slot access {offset} in generated code:\n{disassembly}"
@@ -598,7 +606,7 @@ mod tests {
                 && !disassembly.contains("<vesc_set_app_data_handler>"),
             "expected direct VESC_IF calls without C wrapper stubs:\n{disassembly}"
         );
-        for symbol in ["<init>", "<package_lib_init>", "<ext_c_probe_v12>"] {
+        for symbol in ["<init>", "<package_lib_init>", "<ext_rust_probe_v12>"] {
             assert!(
                 disassembly.contains(symbol),
                 "expected native image to retain `{symbol}`:\n{disassembly}"
@@ -612,25 +620,21 @@ mod tests {
             .next()
             .expect("expected bounded init disassembly");
         assert!(
-            init_disassembly.contains("4798"),
-            "loader init should register the C probe via blx after Rust package init:\n{init_disassembly}"
-        );
-        assert!(
             init_disassembly.contains("<package_lib_init>"),
-            "loader init should call Rust package init before registering the probe:\n{init_disassembly}"
+            "loader init should run Rust package init before registering the probe:\n{init_disassembly}"
         );
-        let package_init_disassembly = disassembly
-            .split("<package_lib_init>:")
-            .nth(1)
-            .expect("expected package_lib_init in disassembly");
         assert!(
-            !package_init_disassembly.contains("4798"),
-            "Rust package init should not register the probe before the C shim owns it:\n{package_init_disassembly}"
+            init_disassembly.contains("1000f800") && init_disassembly.contains("4798"),
+            "Rust loader init should register the probe inline through VESC_IF like refloat:\n{init_disassembly}"
+        );
+        assert!(
+            !disassembly.contains("<register_package_extensions_asm>"),
+            "Rust init should register directly without a registration trampoline:\n{disassembly}"
         );
     }
 
     #[test]
-    fn c_probe_extension_uses_the_vesc_function_table() {
+    fn rust_probe_extension_uses_the_vesc_function_table() {
         build_final_native_lib_elf();
 
         let disassembly = command_stdout(
@@ -638,36 +642,36 @@ mod tests {
             [PathBuf::from("-d"), native_lib_elf_path()],
         );
         let probe_start = disassembly
-            .find("<ext_c_probe_v12>")
-            .expect("expected ext_c_probe_v12 in final native image");
+            .find("<ext_rust_probe_v12>:")
+            .expect("expected ext_rust_probe_v12 in final native image");
         let probe_rest = &disassembly[probe_start..];
         let probe_end = probe_rest.find("\n\n0000").unwrap_or(probe_rest.len());
         let probe_disassembly = &probe_rest[..probe_end];
 
         assert!(
             probe_disassembly.contains("1000f800"),
-            "C probe extension should materialize VESC_IF base:\n{probe_disassembly}"
+            "Rust probe extension should materialize the VESC_IF base like refloat:\n{probe_disassembly}"
         );
         assert!(
             probe_disassembly.contains("#124]"),
-            "C probe extension should call lbm_is_number through VESC_IF:\n{probe_disassembly}"
+            "Rust probe extension should call lbm_is_number through VESC_IF + 124:\n{probe_disassembly}"
         );
         assert!(
             probe_disassembly.contains("#100]"),
-            "C probe extension should call lbm_dec_as_i32 through VESC_IF:\n{probe_disassembly}"
+            "Rust probe extension should call lbm_dec_as_i32 through VESC_IF + 100:\n{probe_disassembly}"
         );
         assert!(
-            probe_disassembly.contains("#8"),
-            "C probe extension should manually encode the LispBM integer tag:\n{probe_disassembly}"
+            probe_disassembly.contains("#64]"),
+            "Rust probe extension should return through VESC_IF lbm_enc_i like refloat:\n{probe_disassembly}"
         );
         assert!(
-            !probe_disassembly.contains("#64]"),
-            "C probe extension should not tail-call lbm_enc_i:\n{probe_disassembly}"
+            probe_disassembly.contains("#148]"),
+            "Rust probe extension should return VESC_IF lbm_enc_sym_eerror on validation failure:\n{probe_disassembly}"
         );
     }
 
     #[test]
-    fn final_native_lib_registers_the_c_probe_from_loader_init() {
+    fn final_native_lib_registers_the_rust_probe_from_rust_loader_init() {
         build_final_native_lib_elf();
 
         let disassembly = command_stdout(
@@ -677,24 +681,31 @@ mod tests {
         let init_disassembly = disassembly
             .split("<init>:")
             .nth(1)
-            .expect("expected init in disassembly");
+            .expect("expected init in disassembly")
+            .split("\n\nDisassembly")
+            .next()
+            .expect("expected bounded init disassembly");
 
         assert!(
             init_disassembly.contains("1000f800"),
-            "loader init should register the C probe through VESC_IF:\n{init_disassembly}"
+            "loader init should register LispBM extensions directly:\n{init_disassembly}"
         );
         assert!(
             init_disassembly.contains("<package_lib_init>"),
-            "loader init should call Rust package init before registering the probe:\n{init_disassembly}"
+            "loader init should call Rust package init before registration:\n{init_disassembly}"
         );
         assert!(
-            !init_disassembly.contains("[r0, #8]"),
-            "PIC init should not manually add lib_info.base_addr to callbacks:\n{init_disassembly}"
+            init_disassembly.contains("4798") && init_disassembly.contains("addw\tr1, pc"),
+            "Rust registration should use a direct PC-relative callback without a trampoline:\n{init_disassembly}"
+        );
+        assert!(
+            init_disassembly.contains("movs\tr0, #1"),
+            "loader init should return true after registration like refloat:\n{init_disassembly}"
         );
     }
 
     #[test]
-    fn native_artifact_uses_the_c_probe_with_rust_package_init() {
+    fn native_artifact_uses_the_rust_probe_with_rust_package_init() {
         build_final_native_lib_elf();
 
         let disassembly = command_stdout(
@@ -703,14 +714,16 @@ mod tests {
         );
 
         assert!(
-            disassembly.contains("<ext_c_probe_v12>"),
-            "native artifact should include the C LispBM probe:\n{disassembly}"
+            disassembly.contains("<ext_rust_probe_v12>"),
+            "native artifact should include the Rust LispBM probe:\n{disassembly}"
         );
         assert!(
-            disassembly.split("<init>:").nth(1).is_some_and(
-                |init| init.contains("1000f800") && init.contains("<package_lib_init>")
-            ),
-            "loader init should call Rust package init and register the C probe:\n{disassembly}"
+            disassembly
+                .split("<init>:")
+                .nth(1)
+                .and_then(|init| init.split("\n\nDisassembly").next())
+                .is_some_and(|init| init.contains("1000f800") && init.contains("<package_lib_init>")),
+            "loader init should call Rust package init and register the probe inline:\n{disassembly}"
         );
     }
 
@@ -751,11 +764,11 @@ mod tests {
 
         assert!(
             init_disassembly.contains("<package_lib_init>"),
-            "loader init should call Rust package init before registering the probe:\n{init_disassembly}"
+            "loader init should run Rust package init:\n{init_disassembly}"
         );
         assert!(
-            init_disassembly.contains("4798"),
-            "loader init should register the C probe via blx after Rust package init:\n{init_disassembly}"
+            init_disassembly.contains("1000f800") && init_disassembly.contains("4798"),
+            "loader init should register the LispBM probe inline:\n{init_disassembly}"
         );
     }
 
@@ -788,14 +801,11 @@ mod tests {
             defined.contains("package_lib_init"),
             "expected the Rust staticlib to export package_lib_init"
         );
-        assert!(
-            !defined.contains("init"),
-            "loader init must come from the refloat-style C shim, not the Rust staticlib:\n{output}"
-        );
+        assert!(defined.contains("init") && defined.contains("prog_ptr"));
     }
 
     #[test]
-    fn rust_staticlib_exports_loader_entry_and_c_probe_dependency() {
+    fn rust_staticlib_exports_loader_entry_and_rust_probe_dependency() {
         build_rust_staticlib();
         build_final_native_lib_elf();
 
@@ -803,16 +813,18 @@ mod tests {
         let staticlib_defined = defined_symbols(&staticlib_symbols);
         let staticlib_undefined = undefined_symbols(&staticlib_symbols);
 
-        for symbol in ["package_lib_init", "rust_add", "ext_rust_probe_v12"] {
+        for symbol in [
+            "package_lib_init",
+            "rust_add",
+            "ext_rust_probe_v12",
+            "init",
+            "prog_ptr",
+        ] {
             assert!(
                 staticlib_defined.contains(symbol),
                 "Rust staticlib must own symbol `{symbol}`:\n{staticlib_symbols}"
             );
         }
-        assert!(
-            !staticlib_defined.contains("init") && !staticlib_defined.contains("prog_ptr"),
-            "Rust staticlib must not duplicate loader sections owned by the C shim:\n{staticlib_symbols}"
-        );
         assert!(
             !staticlib_undefined.contains("register_c_probe"),
             "Rust package init should not depend on a separate C probe registrar:\n{staticlib_symbols}"

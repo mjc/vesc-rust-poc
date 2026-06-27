@@ -14,7 +14,15 @@ pub extern "C" fn rust_add(a: i32, b: i32) -> i32 {
 #[cfg(not(test))]
 #[no_mangle]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
-    ble_loopback_device::init_package(info)
+    if info.is_null() {
+        return false;
+    }
+
+    if !ble_loopback_device::init_package(info) {
+        return false;
+    }
+
+    true
 }
 
 #[cfg(test)]

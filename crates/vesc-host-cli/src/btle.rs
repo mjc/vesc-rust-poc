@@ -443,8 +443,8 @@ fn parse_lisp_print(payload: &[u8]) -> String {
 
 fn lisp_probe_command() -> &'static str {
     r#"(progn
-    (print "vesc-rust-probe-v24")
-    (match (trap (ext-c-probe-v12 14))
+    (print "vesc-rust-probe-rust-diag-v4")
+    (match (trap (ext-rust-probe-diag-v4 14))
         ((exit-ok (? v)) (if (= v 42) (print "vesc-rust-probe-ok-42") (print v)))
         ((exit-error (? e)) (print e))))"#
 }
@@ -621,7 +621,7 @@ mod tests {
     #[test]
     fn wraps_lisp_probe_commands_in_repl_packets() {
         let command = lisp_probe_command();
-        assert!(command.contains("vesc-rust-probe-v24"));
+        assert!(command.contains("vesc-rust-probe-rust-diag-v4"));
         assert!(
             !command.contains("load-native-lib"),
             "lisp-probe should exercise the already-loaded package extensions, not retry native loading"
@@ -630,7 +630,7 @@ mod tests {
             !command.contains("(sleep"),
             "VESC Tool sends REPL expressions directly; host-side progress handles waiting"
         );
-        assert!(command.contains("(trap (ext-c-probe-v12 14))"));
+        assert!(command.contains("(trap (ext-rust-probe-diag-v4 14))"));
         assert!(command.contains("vesc-rust-probe-ok-42"));
 
         let packet = build_lisp_repl_packet(command);
@@ -689,10 +689,10 @@ mod tests {
         assert!(LispProbeProgress::WaitingForPrints.should_print_to_cli());
         assert_eq!(
             LispProbeProgress::LispPrint {
-                line: "vesc-rust-probe-v24".to_owned(),
+                line: "vesc-rust-probe-rust-diag-v4".to_owned(),
             }
             .describe(),
-            "lisp print: vesc-rust-probe-v24"
+            "lisp print: vesc-rust-probe-rust-diag-v4"
         );
     }
 

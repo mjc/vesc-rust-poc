@@ -437,12 +437,11 @@ unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
 
 #[cfg(not(test))]
 pub fn init_package(info: *mut crate::ffi::LibInfo) -> bool {
-    let Some(info_ref) = (unsafe { info.as_ref() }) else {
+    if info.is_null() {
         return false;
-    };
-    let image = crate::ffi::NativeImage::from_info(info_ref);
+    }
     let lifecycle = crate::ffi::LoopbackLifecycle::new(crate::ffi::RealBindings);
-    if unsafe { lifecycle.install(info, image, stop_package, app_data_handler) } {
+    if unsafe { lifecycle.install(info, stop_package, app_data_handler) } {
         return true;
     }
 
@@ -630,16 +629,13 @@ mod tests {
     fn lifecycle_descriptor_installs_the_stop_hook() {
         let bindings = FakeAppDataBindings::new();
         let lifecycle = crate::ffi::LoopbackLifecycle::new(bindings);
-        let image = ffi::NativeImage::new(0x2000);
         let mut info = ffi::LibInfo {
             stop_fun: None,
             arg: core::ptr::null_mut(),
             base_addr: 0x2000,
         };
 
-        assert!(unsafe {
-            lifecycle.install(&mut info, image, stub_stop_handler, stub_app_data_handler)
-        });
+        assert!(unsafe { lifecycle.install(&mut info, stub_stop_handler, stub_app_data_handler) });
 
         assert_eq!(
             info.stop_fun.expect("stop hook") as *const () as usize,

@@ -1,42 +1,118 @@
 use core::ffi::CStr;
 
-use crate::ffi::{self, ExtensionDescriptor, LbmApi, LbmBindings, NativeImage};
+use crate::ffi::{self, ExtensionDescriptor, LbmApi, LbmBindings};
 
 #[cfg(test)]
 use crate::ffi::{LbmCount, LbmValue};
 
+const EXT_RUST_PROBE_DIAG_NAME: &CStr = c"ext-rust-probe-diag-v4";
+#[cfg(test)]
 const EXT_RUST_PROBE_NAME: &CStr = c"ext-c-probe-v12";
+#[cfg(test)]
+const LBM_INT_TAG: u32 = 0x8;
+#[cfg(test)]
+const LBM_TAG_MASK: u32 = 0xf;
+#[cfg(test)]
+const LBM_VALUE_SHIFT: u32 = 4;
 
-pub const PACKAGE_EXTENSION_NAMES: [&CStr; 1] = [EXT_RUST_PROBE_NAME];
+pub const PACKAGE_EXTENSION_NAMES: [&CStr; 1] = [EXT_RUST_PROBE_DIAG_NAME];
 
+#[cfg(not(test))]
+core::arch::global_asm!(
+    r#"
+    .section .program_ptr,"aw",%progbits
+    .global prog_ptr
+    .type prog_ptr, %object
+    .balign 4
+prog_ptr:
+    .word   0
+    .size prog_ptr, . - prog_ptr
+
+    .section .init_fun,"ax",%progbits
+    .thumb
+    .thumb_func
+    .global init
+    .type init, %function
+init:
+    push    {{r3, lr}}
+    adr     r3, prog_ptr
+    ldr     r3, [r3]
+    bl      package_lib_init
+    cbz     r0, .Linit_done
+    ldr     r3, .Linit_vesc_if_base
+    adr     r1, ext_rust_probe_v12
+    adr     r0, .Linit_rust_probe_name
+    ldr     r3, [r3, #0]
+    blx     r3
+    movs    r0, #1
+.Linit_done:
+    pop     {{r3, pc}}
+
+    .balign 4
+.Linit_vesc_if_base:
+    .word   0x1000f800
+
+    .balign 4
+.Linit_rust_probe_name:
+    .asciz  "ext-rust-probe-diag-v4"
+    .size init, . - init
+"#
+);
+
+#[cfg(not(test))]
+unsafe extern "C" {
+    pub fn ext_rust_probe_v12(args: *mut u32, argn: u32) -> u32;
+}
+
+#[cfg(not(test))]
+core::arch::global_asm!(
+    r#"
+    .section .text.ext_rust_probe_v12,"ax",%progbits
+    .thumb
+    .thumb_func
+    .global ext_rust_probe_v12
+    .type ext_rust_probe_v12, %function
+ext_rust_probe_v12:
+    cmp     r1, #1
+    push    {{r4, r5, r6, lr}}
+    ldr     r4, .Lvesc_if_base_probe
+    mov     r5, r0
+    bne     .Lprobe_eerror
+    ldr     r3, [r4, #124]
+    ldr     r0, [r0, #0]
+    blx     r3
+    cbz     r0, .Lprobe_eerror
+    ldr     r3, [r4, #100]
+    ldr     r0, [r5, #0]
+    ldr     r6, [r4, #64]
+    blx     r3
+    mov     r3, r6
+    add.w   r0, r0, r0, lsl #1
+    pop     {{r4, r5, r6, lr}}
+    bx      r3
+.Lprobe_eerror:
+    ldr.w   r0, [r4, #148]
+    pop     {{r4, r5, r6, pc}}
+
+    .balign 4
+.Lvesc_if_base_probe:
+    .word   0x1000f800
+    .size ext_rust_probe_v12, . - ext_rust_probe_v12
+"#
+);
+
+#[cfg(test)]
 #[no_mangle]
 /// # Safety
 ///
 /// `args` must point to at least `argn` initialized LispBM values when `argn > 0`.
 pub unsafe extern "C" fn ext_rust_probe_v12(args: *mut u32, argn: u32) -> u32 {
-    #[cfg(not(test))]
-    {
-        if argn != 1 {
-            return ffi::raw::lbm_enc_sym_eerror().0;
-        }
-
-        let value = ffi::LbmValue(unsafe { *args });
-        if !ffi::raw::lbm_is_number(value) {
-            return ffi::raw::lbm_enc_sym_eerror().0;
-        }
-
-        ffi::raw::lbm_enc_i(ffi::raw::lbm_dec_as_i32(value) * 3).0
-    }
-
-    #[cfg(test)]
-    {
-        rust_probe_extension(
-            &ffi::LbmApi::new(ffi::RealBindings),
-            args.cast(),
-            ffi::LbmCount(argn),
-        )
-        .0
-    }
+    rust_probe_extension(
+        &ffi::LbmApi::new(ffi::RealBindings),
+        args.cast(),
+        ffi::LbmCount(argn),
+    )
+    .0
 }
 
 #[cfg(test)]
@@ -50,19 +126,30 @@ fn rust_probe_extension<B: ffi::LbmBindings>(
     }
 
     let value = unsafe { *args };
-    if !api.is_number(value) {
+    if value.0 & LBM_TAG_MASK != LBM_INT_TAG {
         return api.encode_eval_error();
     }
 
-    api.encode_i32(api.decode_i32(value) * 3)
+    let decoded = (value.0 as i32) >> LBM_VALUE_SHIFT;
+    encode_lbm_i32(decoded.wrapping_mul(3))
 }
 
+#[cfg(test)]
+fn encode_lbm_i32(value: i32) -> ffi::LbmValue {
+    ffi::LbmValue(value.wrapping_shl(LBM_VALUE_SHIFT) as u32 | LBM_INT_TAG)
+}
+
+#[cfg(test)]
 pub fn rust_probe_descriptor() -> ffi::ExtensionDescriptor {
     ffi::ExtensionDescriptor::new(EXT_RUST_PROBE_NAME, ext_rust_probe_v12)
 }
 
+pub fn rust_probe_diag_descriptor() -> ffi::ExtensionDescriptor {
+    ffi::ExtensionDescriptor::new(EXT_RUST_PROBE_DIAG_NAME, ext_rust_probe_v12)
+}
+
 pub fn package_extension_descriptors() -> [ffi::ExtensionDescriptor; 1] {
-    [rust_probe_descriptor()]
+    [rust_probe_diag_descriptor()]
 }
 
 pub struct PackageLifecycle<B = ffi::RealBindings> {
@@ -92,44 +179,6 @@ impl<B: LbmBindings> PackageLifecycle<B> {
             Err(ffi::RegisterError::FirmwareRejected)
         }
     }
-
-    /// # Safety
-    ///
-    /// `image` must describe the loaded native library address space that
-    /// produced `descriptor`.
-    pub unsafe fn register_extension_from_image(
-        &self,
-        image: NativeImage,
-        descriptor: ExtensionDescriptor,
-    ) -> Result<(), ffi::RegisterError> {
-        // Image-owned Rust pointers are offsets in the final non-PIC native
-        // image until `register_extension_from_image` applies `lib_info.base_addr`.
-        if unsafe {
-            self.api
-                .register_extension_from_image(image, descriptor.name(), descriptor.handler())
-        } {
-            Ok(())
-        } else {
-            Err(ffi::RegisterError::FirmwareRejected)
-        }
-    }
-
-    /// # Safety
-    ///
-    /// `image` must describe the loaded native library address space that
-    /// produced every callback inside `descriptors`.
-    pub unsafe fn register_extensions_from_image(
-        &self,
-        image: NativeImage,
-        descriptors: &[ExtensionDescriptor],
-    ) -> Result<(), ffi::RegisterError> {
-        for descriptor in descriptors {
-            unsafe {
-                self.register_extension_from_image(image, *descriptor)?;
-            }
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -145,7 +194,7 @@ fn rust_add_extension_value<B: LbmBindings>(
 mod tests {
     use super::{
         rust_add_extension_value, ExtensionDescriptor, LbmApi, LbmBindings, LbmCount, LbmValue,
-        PackageLifecycle, EXT_RUST_PROBE_NAME, PACKAGE_EXTENSION_NAMES,
+        PackageLifecycle, EXT_RUST_PROBE_DIAG_NAME, EXT_RUST_PROBE_NAME, PACKAGE_EXTENSION_NAMES,
     };
     use crate::ffi;
     use core::cell::Cell;
@@ -228,7 +277,7 @@ mod tests {
 
     #[test]
     fn package_extension_table_lists_every_rust_owned_extension() {
-        assert_eq!(PACKAGE_EXTENSION_NAMES, [EXT_RUST_PROBE_NAME]);
+        assert_eq!(PACKAGE_EXTENSION_NAMES, [EXT_RUST_PROBE_DIAG_NAME]);
         assert!(PACKAGE_EXTENSION_NAMES
             .iter()
             .all(|name| name.to_bytes().starts_with(b"ext-")));
@@ -265,23 +314,19 @@ mod tests {
     }
 
     #[test]
-    fn registration_table_rebases_names_and_callbacks_from_the_native_image() {
+    fn repeated_registration_reports_each_firmware_result() {
         let bindings = FakeBindings::new();
         let lifecycle = PackageLifecycle::new(bindings);
-        let image = ffi::NativeImage::new(0x2000);
         let descriptor = ExtensionDescriptor::new(EXT_RUST_PROBE_NAME, stub_handler);
 
-        assert_eq!(
-            unsafe { lifecycle.register_extensions_from_image(image, &[descriptor]) },
-            Ok(())
-        );
+        assert_eq!(lifecycle.register_extension(descriptor), Ok(()));
         assert_eq!(
             lifecycle.api.bindings().last_name.get(),
-            EXT_RUST_PROBE_NAME.as_ptr() as usize + 0x2000
+            EXT_RUST_PROBE_NAME.as_ptr() as usize
         );
         assert_eq!(
             lifecycle.api.bindings().last_handler.get(),
-            stub_handler as *const () as usize + 0x2000
+            stub_handler as *const () as usize
         );
     }
 

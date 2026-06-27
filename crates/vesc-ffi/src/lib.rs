@@ -142,27 +142,6 @@ impl NativeImage {
     pub fn rebase_ptr<T>(self, ptr: *const T) -> *const T {
         self.rebase_addr(ptr as usize) as *const T
     }
-
-    /// # Safety
-    ///
-    /// `handler` must be a function pointer emitted into the currently loaded native image.
-    pub unsafe fn rebase_extension_handler(self, handler: ExtensionHandler) -> ExtensionHandler {
-        unsafe { core::mem::transmute(self.rebase_addr(handler as usize)) }
-    }
-
-    /// # Safety
-    ///
-    /// `handler` must be a function pointer emitted into the currently loaded native image.
-    pub unsafe fn rebase_app_data_handler(self, handler: AppDataHandler) -> AppDataHandler {
-        unsafe { core::mem::transmute(self.rebase_addr(handler as usize)) }
-    }
-
-    /// # Safety
-    ///
-    /// `handler` must be a function pointer emitted into the currently loaded native image.
-    pub unsafe fn rebase_stop_handler(self, handler: StopHandler) -> StopHandler {
-        unsafe { core::mem::transmute(self.rebase_addr(handler as usize)) }
-    }
 }
 
 pub trait LbmBindings {
@@ -277,22 +256,6 @@ impl<B: LbmBindings> LbmApi<B> {
         unsafe { self.bindings.add_extension(name.as_ptr(), handler) }
     }
 
-    /// # Safety
-    ///
-    /// `image` must describe the address space that produced `handler`.
-    /// `name` must also point at a string living in that same image if it was
-    /// compiled into native code rather than host memory.
-    pub unsafe fn register_extension_from_image(
-        &self,
-        image: NativeImage,
-        name: &CStr,
-        handler: ExtensionHandler,
-    ) -> bool {
-        let name = image.rebase_ptr(name.as_ptr());
-        let handler = unsafe { image.rebase_extension_handler(handler) };
-        unsafe { self.bindings.add_extension(name, handler) }
-    }
-
     pub fn decode_i32(&self, value: LbmValue) -> i32 {
         unsafe { self.bindings.decode_i32(value) }
     }
@@ -335,46 +298,6 @@ impl<B: LbmBindings> PackageLifecycle<B> {
             Err(RegisterError::FirmwareRejected)
         }
     }
-
-    /// # Safety
-    ///
-    /// `image` must describe the address space that produced every callback
-    /// inside `descriptor`.
-    pub unsafe fn register_extension_from_image(
-        &self,
-        image: NativeImage,
-        descriptor: ExtensionDescriptor,
-    ) -> Result<(), RegisterError> {
-        // Rust does not currently emit this native library as PIC in the same
-        // way Refloat's C build does, so these local pointers are linked as
-        // image offsets and must be made absolute before the firmware stores
-        // them for later calls.
-        if unsafe {
-            self.api
-                .register_extension_from_image(image, descriptor.name(), descriptor.handler())
-        } {
-            Ok(())
-        } else {
-            Err(RegisterError::FirmwareRejected)
-        }
-    }
-
-    /// # Safety
-    ///
-    /// `image` must describe the address space that produced every callback
-    /// inside `descriptors`.
-    pub unsafe fn register_extensions_from_image(
-        &self,
-        image: NativeImage,
-        descriptors: &[ExtensionDescriptor],
-    ) -> Result<(), RegisterError> {
-        for descriptor in descriptors {
-            unsafe {
-                self.register_extension_from_image(image, *descriptor)?;
-            }
-        }
-        Ok(())
-    }
 }
 
 pub struct LoopbackLifecycle<B = RealBindings> {
@@ -400,7 +323,6 @@ impl<B: AppDataBindings> LoopbackLifecycle<B> {
     pub unsafe fn install(
         &self,
         info: *mut LibInfo,
-        _image: NativeImage,
         stop_handler: StopHandler,
         _app_data_handler: AppDataHandler,
     ) -> bool {
@@ -634,7 +556,7 @@ pub mod raw {
         // Comm
         commands_process_packet: Option<unsafe extern "C" fn(*mut c_uchar, c_uint, ReplyCallback)>,
         send_app_data: Option<unsafe extern "C" fn(*mut c_uchar, u32)>,
-        set_app_data_handler: Option<unsafe extern "C" fn(AppDataHandler) -> bool>,
+        set_app_data_handler: Option<unsafe extern "C" fn(Option<AppDataHandler>) -> bool>,
 
         // UART
         uart_start: Option<unsafe extern "C" fn(u32, bool) -> bool>,
@@ -935,15 +857,7 @@ pub mod raw {
                 return false;
             };
 
-            match handler {
-                Some(handler) => set_app_data_handler(handler),
-                None => {
-                    // Firmware expects a null function pointer to unregister the handler.
-                    #[allow(clippy::transmute_null_to_fn)]
-                    let cleared: AppDataHandler = core::mem::transmute(core::ptr::null::<()>());
-                    set_app_data_handler(cleared)
-                }
-            }
+            set_app_data_handler(handler)
         }
     }
 
@@ -1020,7 +934,7 @@ mod tests {
         UartBaudRate, UartWriteLen, VescIfAbi, VescPin, VescPinMode,
     };
     use core::cell::Cell;
-    use core::ffi::{CStr, c_char, c_void};
+    use core::ffi::{CStr, c_char};
 
     struct FakeBindings {
         add_calls: Cell<usize>,
@@ -1080,10 +994,6 @@ mod tests {
         0
     }
 
-    unsafe extern "C" fn stub_app_data_handler(_data: *mut u8, _len: u32) {}
-
-    unsafe extern "C" fn stub_stop_handler(_arg: *mut c_void) {}
-
     #[test]
     fn wrapper_delegates_through_the_binding_trait() {
         let bindings = FakeBindings::new();
@@ -1098,21 +1008,9 @@ mod tests {
     }
 
     #[test]
-    fn native_image_rebases_rust_owned_extension_pointers() {
-        let bindings = FakeBindings::new();
-        let api = LbmApi::new(bindings);
+    fn native_image_rebases_image_data_offsets() {
         let image = NativeImage::new(0x2000);
-        let name = c"ext-rust-probe-v5";
 
-        assert!(unsafe { api.register_extension_from_image(image, name, stub_handler) });
-        assert_eq!(
-            api.bindings.last_name.get(),
-            name.as_ptr() as usize + 0x2000
-        );
-        assert_eq!(
-            api.bindings.last_handler.get(),
-            stub_handler as *const () as usize + 0x2000
-        );
         assert_eq!(image.rebase_addr(0x61), 0x2061);
         assert_eq!(image.base_addr(), NativeAddress(0x2000));
         assert_eq!(
@@ -1120,20 +1018,6 @@ mod tests {
             NativeAddress(0x2061)
         );
         assert_eq!(image.rebase_ptr(0x1df as *const c_char) as usize, 0x21df);
-
-        let rebased_app_data =
-            unsafe { image.rebase_app_data_handler(stub_app_data_handler) } as *const () as usize;
-        assert_eq!(
-            rebased_app_data,
-            stub_app_data_handler as *const () as usize + 0x2000
-        );
-
-        let rebased_stop =
-            unsafe { image.rebase_stop_handler(stub_stop_handler) } as *const () as usize;
-        assert_eq!(
-            rebased_stop,
-            stub_stop_handler as *const () as usize + 0x2000
-        );
     }
 
     #[test]
@@ -1155,19 +1039,19 @@ mod tests {
     }
 
     #[test]
-    fn package_batch_registration_stops_on_the_first_failure() {
+    fn repeated_package_registration_reports_each_firmware_result() {
         let bindings = FakeBindings::with_add_results([false, true]);
         let lifecycle = PackageLifecycle::new(bindings);
 
         let first = ExtensionDescriptor::new(c"ext-rust-a", stub_handler);
         let second = ExtensionDescriptor::new(c"ext-rust-ok", stub_handler);
         assert_eq!(
-            unsafe {
-                lifecycle.register_extensions_from_image(NativeImage::new(0x2000), &[first, second])
-            },
+            lifecycle.register_extension(first),
             Err(RegisterError::FirmwareRejected)
         );
         assert_eq!(lifecycle.api.bindings.add_calls.get(), 1);
+        assert_eq!(lifecycle.register_extension(second), Ok(()));
+        assert_eq!(lifecycle.api.bindings.add_calls.get(), 2);
     }
 
     #[test]
