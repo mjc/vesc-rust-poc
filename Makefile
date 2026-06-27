@@ -9,7 +9,7 @@ check: fmt clippy test
 test: test-all
 
 test-all:
-	$(CARGO) nextest run --workspace --no-fail-fast
+	$(CARGO) nextest run --workspace --no-fail-fast --features test-support
 
 test-changed:
 	$(CARGO) test-changed -r nextest

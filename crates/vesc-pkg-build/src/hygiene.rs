@@ -66,7 +66,7 @@ mod tests {
         assert!(source.contains("check: fmt clippy test"));
         assert!(source.contains("test-changed -r nextest"));
         assert!(source.contains("test-all:"));
-        assert!(source.contains("nextest run --workspace --no-fail-fast"));
+        assert!(source.contains("nextest run --workspace --no-fail-fast --features test-support"));
         assert!(source.contains("package: check"));
         assert!(source.contains("package-only:"));
         assert!(source.contains("run -p vesc-pkg-build --bin vesc-pkg -- package"));
