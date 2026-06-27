@@ -24,6 +24,35 @@ pub fn git_check_ignore(path: &str) -> bool {
         .is_ok_and(|status| status.success())
 }
 
+pub fn git_check_ignore_all(paths: &[&str]) -> bool {
+    let output = Command::new("git")
+        .arg("check-ignore")
+        .args(paths)
+        .current_dir(repo_root())
+        .output()
+        .expect("git check-ignore");
+
+    if !output.status.success() {
+        return false;
+    }
+
+    let ignored = String::from_utf8_lossy(&output.stdout);
+    paths
+        .iter()
+        .all(|path| ignored.lines().any(|line| line == *path))
+}
+
+pub fn git_tracks_all(paths: &[&str]) -> bool {
+    Command::new("git")
+        .args(["ls-files", "--error-unmatch"])
+        .args(paths)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .current_dir(repo_root())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
 pub fn git_tracks(path: &str) -> bool {
     Command::new("git")
         .args(["ls-files", "--error-unmatch", path])
@@ -37,16 +66,14 @@ pub fn git_tracks(path: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        git_check_ignore, git_tracks, repo_root, GENERATED_PACKAGE_PATHS, TRACKED_LOCKFILES,
+        git_check_ignore_all, git_tracks_all, repo_root, GENERATED_PACKAGE_PATHS, TRACKED_LOCKFILES,
     };
     use std::fs;
 
     #[test]
     fn generated_package_paths_are_ignored() {
         assert!(
-            GENERATED_PACKAGE_PATHS
-                .iter()
-                .all(|path| git_check_ignore(path)),
+            git_check_ignore_all(&GENERATED_PACKAGE_PATHS),
             "expected generated package outputs to be ignored"
         );
     }
@@ -54,7 +81,7 @@ mod tests {
     #[test]
     fn lockfiles_remain_tracked() {
         assert!(
-            TRACKED_LOCKFILES.iter().all(|path| git_tracks(path)),
+            git_tracks_all(&TRACKED_LOCKFILES),
             "expected lockfiles to stay tracked"
         );
     }

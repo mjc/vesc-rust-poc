@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{LazyLock, OnceLock};
+use std::time::SystemTime;
 
 use crate::native_lib_link::{native_lib_link_plan, NativeLibLinkPlan};
 
@@ -65,6 +66,59 @@ fn artifact_is_up_to_date(output: &Path, inputs: &[&Path]) -> bool {
     })
 }
 
+fn newest_rs_tree_mtime(dir: &Path) -> Option<SystemTime> {
+    let mut stack = vec![dir.to_path_buf()];
+    let mut newest = None;
+
+    while let Some(path) = stack.pop() {
+        let Ok(read_dir) = fs::read_dir(path) else {
+            continue;
+        };
+        for entry in read_dir.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                if let Ok(modified) = entry.metadata().and_then(|meta| meta.modified()) {
+                    newest = Some(
+                        newest.map_or(modified, |current: SystemTime| current.max(modified)),
+                    );
+                }
+            }
+        }
+    }
+
+    newest
+}
+
+fn rust_staticlib_is_up_to_date(plan: &NativeLibLinkPlan) -> bool {
+    let staticlib = plan.rust_staticlib_path();
+    let Ok(output_modified) = fs::metadata(&staticlib).and_then(|meta| meta.modified()) else {
+        return false;
+    };
+
+    let root = plan.root();
+    for crate_dir in ["crates/vesc-ble-loopback", "crates/vesc-package"] {
+        if newest_rs_tree_mtime(&root.join(crate_dir).join("src"))
+            .is_some_and(|mtime| mtime > output_modified)
+        {
+            return false;
+        }
+    }
+
+    [
+        root.join("Cargo.lock"),
+        root.join("crates/vesc-ble-loopback/Cargo.toml"),
+        root.join("crates/vesc-package/Cargo.toml"),
+    ]
+    .iter()
+    .all(|input| {
+        fs::metadata(input)
+            .and_then(|meta| meta.modified())
+            .is_ok_and(|modified| modified <= output_modified)
+    })
+}
+
 fn is_repo_native_build_plan(plan: &NativeLibLinkPlan) -> bool {
     plan.root() == native_lib_link_plan().root()
 }
@@ -113,6 +167,10 @@ pub fn build_rust_staticlib_for(plan: &NativeLibLinkPlan) {
 }
 
 fn build_rust_staticlib_unlocked(plan: &NativeLibLinkPlan) {
+    if rust_staticlib_is_up_to_date(plan) {
+        return;
+    }
+
     let rustflags = match std::env::var("RUSTFLAGS") {
         Ok(existing) if !existing.trim().is_empty() => {
             format!("{existing} -C relocation-model=pic")

@@ -696,8 +696,8 @@ mod tests {
 
     fn fast_lisp_print_receive_config() -> LispPrintReceiveConfig {
         LispPrintReceiveConfig {
-            timeout: Duration::from_secs(2),
-            quiet_after_print: Duration::from_millis(50),
+            timeout: Duration::from_millis(200),
+            quiet_after_print: Duration::from_millis(10),
             progress_interval: Duration::from_secs(5),
         }
     }

@@ -57,9 +57,9 @@ fn cargo_vescpkg_requires_the_build_subcommand() {
 
 #[test]
 fn cargo_vescpkg_build_package_only_writes_the_package_path() {
-    let workspace = TempWorkspace::with_repo_fixture_layout();
+    let workspace_root = repo_root();
     let output = Command::new(cargo_vescpkg_bin())
-        .current_dir(&workspace.root)
+        .current_dir(&workspace_root)
         .args(["build", "--package-only"])
         .output()
         .expect("run cargo-vescpkg build");
@@ -76,7 +76,7 @@ fn cargo_vescpkg_build_package_only_writes_the_package_path() {
         "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/Rust-BLE-loopback-test-package-0.1.0.vescpkg"
     );
     assert!(
-        workspace.root.join(package_path).exists(),
+        workspace_root.join(package_path).exists(),
         "expected cargo-vescpkg to materialize the package file"
     );
 }
