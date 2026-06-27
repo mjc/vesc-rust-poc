@@ -18,8 +18,8 @@ fmt:
 	$(CARGO) fmt --all --check
 
 clippy:
-	$(CARGO) clippy --workspace --exclude vesc-rust-poc --all-targets --all-features -- -D warnings
-	$(CARGO) check -p vesc-rust-poc --lib --release --target thumbv7em-none-eabihf
+	$(CARGO) clippy --workspace --all-targets --all-features -- -D warnings
+	$(CARGO) clippy -p vesc-rust-poc --lib --release --target thumbv7em-none-eabihf -- -D warnings
 
 symbol-check:
 	$(CARGO) nextest run -p vesc-pkg-build -E 'test(symbol_audit)'

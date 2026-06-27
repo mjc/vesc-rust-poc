@@ -25,6 +25,7 @@ pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[no_mangle]
 #[link_section = ".init_fun"]
 pub extern "C" fn init(info: *mut ffi::LibInfo) -> bool {
@@ -32,20 +33,20 @@ pub extern "C" fn init(info: *mut ffi::LibInfo) -> bool {
         return false;
     }
 
+    let Some(info) = (unsafe { info.as_ref() }) else {
+        return false;
+    };
+
     register_package_extensions(info, &ffi::PackageLifecycle::new(ffi::RealBindings))
 }
 
 /// Register this package's extension table using the supplied binding set.
 pub fn register_package_extensions<B: ffi::LbmBindings>(
-    info: *mut ffi::LibInfo,
+    info: &ffi::LibInfo,
     lifecycle: &ffi::PackageLifecycle<B>,
 ) -> bool {
-    if info.is_null() {
-        return false;
-    }
-
     let [descriptor] = extensions::package_extension_descriptors();
-    unsafe { lifecycle::register_extension_from_image(&*info, lifecycle, descriptor).is_ok() }
+    lifecycle::register_extension_from_image(info, lifecycle, descriptor).is_ok()
 }
 
 #[cfg(all(test, feature = "test-support"))]
@@ -56,33 +57,16 @@ mod registration_tests {
     use vesc_package::ffi::{self, PackageLifecycle};
 
     #[test]
-    fn register_package_extensions_rejects_null_loader_metadata() {
-        let lifecycle = PackageLifecycle::new(FakeBindings::new());
-
-        assert!(!register_package_extensions(
-            core::ptr::null_mut(),
-            &lifecycle
-        ));
-    }
-
-    #[test]
     fn register_package_extensions_propagates_firmware_rejection() {
         let lifecycle = PackageLifecycle::new(FakeBindings::rejecting());
-        let mut info = ffi::LibInfo {
+        let info = ffi::LibInfo {
             stop_fun: None,
             arg: core::ptr::null_mut(),
             base_addr: 0x2000,
         };
         let [descriptor] = package_extension_descriptors();
 
-        assert!(!register_package_extensions(
-            core::ptr::null_mut(),
-            &lifecycle
-        ));
-        assert!(!register_package_extensions(
-            core::ptr::from_mut(&mut info),
-            &lifecycle
-        ));
+        assert!(!register_package_extensions(&info, &lifecycle));
         assert_eq!(lifecycle.bindings().add_calls.get(), 1);
         assert_eq!(descriptor.name(), package_extension_descriptors()[0].name());
     }
