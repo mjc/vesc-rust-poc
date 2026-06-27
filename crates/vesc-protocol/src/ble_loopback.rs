@@ -4,6 +4,7 @@ use core::fmt;
 pub const BLE_LOOPBACK_PROTOCOL_VERSION: WireVersion = WireVersion::CURRENT;
 pub const MAX_LOOPBACK_PAYLOAD_BYTES: usize = 16;
 pub const MIN_WIRE_FRAME_BYTES: usize = 3;
+pub const MAX_LOOPBACK_FRAME_BYTES: usize = MIN_WIRE_FRAME_BYTES + MAX_LOOPBACK_PAYLOAD_BYTES;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoopbackError {
@@ -115,6 +116,54 @@ impl<'a> LoopbackPacket<'a> {
     }
 }
 
+/// Build the wire response for an incoming loopback frame.
+pub fn handle_loopback_frame(
+    bytes: &[u8],
+    now_ms: u64,
+) -> Result<([u8; MAX_LOOPBACK_FRAME_BYTES], usize), LoopbackError> {
+    if bytes.len() < MIN_WIRE_FRAME_BYTES {
+        return Err(LoopbackError::FrameTooShort);
+    }
+
+    let actual_version = WireVersion::new(bytes[0]);
+    if actual_version != BLE_LOOPBACK_PROTOCOL_VERSION {
+        return Err(LoopbackError::InvalidVersion {
+            expected: BLE_LOOPBACK_PROTOCOL_VERSION,
+            actual: actual_version,
+        });
+    }
+
+    let command =
+        WireCommand::from_code(bytes[1]).ok_or(LoopbackError::InvalidCommand { code: bytes[1] })?;
+    let payload_len = bytes[2] as usize;
+    if payload_len > MAX_LOOPBACK_PAYLOAD_BYTES {
+        return Err(LoopbackError::PayloadTooLong {
+            len: payload_len,
+            max: MAX_LOOPBACK_PAYLOAD_BYTES,
+        });
+    }
+
+    let required = MIN_WIRE_FRAME_BYTES + payload_len;
+    if bytes.len() < required {
+        return Err(LoopbackError::FrameTooShort);
+    }
+
+    let status_bytes = now_ms.to_le_bytes();
+    let payload = match command {
+        WireCommand::Ping | WireCommand::Teardown => &[][..],
+        WireCommand::Echo => &bytes[MIN_WIRE_FRAME_BYTES..required],
+        WireCommand::Status => &status_bytes,
+    };
+
+    let mut response = [0_u8; MAX_LOOPBACK_FRAME_BYTES];
+    response[0] = BLE_LOOPBACK_PROTOCOL_VERSION.raw();
+    response[1] = command.code();
+    response[2] = payload.len() as u8;
+    response[MIN_WIRE_FRAME_BYTES..MIN_WIRE_FRAME_BYTES + payload.len()].copy_from_slice(payload);
+
+    Ok((response, MIN_WIRE_FRAME_BYTES + payload.len()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -222,5 +271,27 @@ mod tests {
             LoopbackError::PayloadTooLong { len: 17, max: 16 }.to_string(),
             "payload too long: 17 bytes (max 16)"
         );
+    }
+
+    #[test]
+    fn handle_loopback_frame_echoes_ping_status_and_rejects_invalid_frames() {
+        use super::handle_loopback_frame;
+
+        let ping = LoopbackPacket::new(WireCommand::Ping, &[]).expect("ping");
+        let (bytes, len) = ping.encode();
+        let (response, response_len) =
+            handle_loopback_frame(&bytes[..len], 1234).expect("ping response");
+        assert_eq!(&response[..response_len], &bytes[..len]);
+
+        let status = LoopbackPacket::new(WireCommand::Status, &[]).expect("status");
+        let (bytes, len) = status.encode();
+        let (response, response_len) =
+            handle_loopback_frame(&bytes[..len], 0x0102_0304_0506_0708).expect("status response");
+        assert_eq!(
+            response[..response_len],
+            [1, WireCommand::Status.code(), 8, 8, 7, 6, 5, 4, 3, 2, 1]
+        );
+
+        assert!(handle_loopback_frame(&[9, 1, 0], 0).is_err());
     }
 }
