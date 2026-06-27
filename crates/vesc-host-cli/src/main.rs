@@ -6,7 +6,7 @@ fn main() -> ExitCode {
     match vesc_host_cli::parse_args(std::env::args()) {
         Ok(vesc_host_cli::Command::Help) => {
             println!(
-                "vesc-host-cli: use `layout`, `status`, `scan`, `loopback`, `lisp-probe`, or `package-install`"
+                "vesc-host-cli: use `layout`, `status`, `scan`, `loopback`, `lisp-probe`, `package-install`, or `erase-package`"
             );
             ExitCode::SUCCESS
         }
@@ -140,6 +140,40 @@ fn main() -> ExitCode {
                 }
                 Err(error) => {
                     eprintln!("package install failed: {error}");
+                    ExitCode::from(1)
+                }
+            }
+        }
+        Ok(vesc_host_cli::Command::ErasePackage(command)) => {
+            let transport =
+                match vesc_host_cli::package_transport::BtlePackageInstallTransport::new() {
+                    Ok(transport) => transport,
+                    Err(error) => {
+                        eprintln!("failed to initialize package transport: {error}");
+                        return ExitCode::from(1);
+                    }
+                };
+
+            let target = match (command.address, command.device_name) {
+                (Some(address), _) => vesc_host_cli::loopback::LoopbackTarget::addressed(address),
+                (None, Some(device_name)) => {
+                    vesc_host_cli::loopback::LoopbackTarget::named(device_name)
+                }
+                (None, None) => vesc_host_cli::loopback::LoopbackTarget::default(),
+            };
+
+            if let Err(error) = transport.open(target) {
+                eprintln!("failed to open package transport: {error}");
+                return ExitCode::from(1);
+            }
+
+            match vesc_host_cli::package_install::erase_package(&transport) {
+                Ok(report) => {
+                    println!("package erase ok: {:?}", report.steps);
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("package erase failed: {error}");
                     ExitCode::from(1)
                 }
             }

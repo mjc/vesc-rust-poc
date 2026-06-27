@@ -7,6 +7,8 @@ use std::path::Path;
 use flate2::read::ZlibDecoder;
 use flate2::{write::ZlibEncoder, Compression};
 
+const PACKAGE_ERASE_BYTES: usize = 16;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VescPackage {
     pub name: String,
@@ -230,9 +232,11 @@ pub fn install_package<T: PackageInstallTransport>(
         });
     } else if transport.has_qml_app()? {
         transport
-            .erase_qml(16)
+            .erase_qml(PACKAGE_ERASE_BYTES)
             .map_err(|error| step_error("erase QML 16 bytes", error))?;
-        steps.push(PackageInstallStep::EraseQml { bytes: 16 });
+        steps.push(PackageInstallStep::EraseQml {
+            bytes: PACKAGE_ERASE_BYTES,
+        });
     }
 
     if !package.lisp_data.is_empty() {
@@ -251,9 +255,11 @@ pub fn install_package<T: PackageInstallTransport>(
         steps.push(PackageInstallStep::SetRunning { running: true });
     } else {
         transport
-            .erase_lisp(16)
+            .erase_lisp(PACKAGE_ERASE_BYTES)
             .map_err(|error| step_error("erase Lisp 16 bytes", error))?;
-        steps.push(PackageInstallStep::EraseLisp { bytes: 16 });
+        steps.push(PackageInstallStep::EraseLisp {
+            bytes: PACKAGE_ERASE_BYTES,
+        });
     }
 
     transport
@@ -263,6 +269,36 @@ pub fn install_package<T: PackageInstallTransport>(
 
     Ok(PackageInstallReport {
         package_name: package.name.clone(),
+        steps,
+    })
+}
+
+pub fn erase_package<T: PackageInstallTransport>(
+    transport: &T,
+) -> Result<PackageInstallReport, PackageInstallError> {
+    let mut steps = Vec::new();
+
+    transport
+        .erase_qml(PACKAGE_ERASE_BYTES)
+        .map_err(|error| step_error("erase QML 16 bytes", error))?;
+    steps.push(PackageInstallStep::EraseQml {
+        bytes: PACKAGE_ERASE_BYTES,
+    });
+
+    transport
+        .erase_lisp(PACKAGE_ERASE_BYTES)
+        .map_err(|error| step_error("erase Lisp 16 bytes", error))?;
+    steps.push(PackageInstallStep::EraseLisp {
+        bytes: PACKAGE_ERASE_BYTES,
+    });
+
+    transport
+        .reload_firmware()
+        .map_err(|error| step_error("reload firmware", error))?;
+    steps.push(PackageInstallStep::ReloadFirmware);
+
+    Ok(PackageInstallReport {
+        package_name: "installed package".to_owned(),
         steps,
     })
 }
@@ -341,10 +377,12 @@ fn qml_compress(script: &str) -> Result<Vec<u8>, PackageInstallError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_package, install_package, qml_compress, read_package_from_path, step_error,
-        FakePackageInstallTransport, PackageInstallError, PackageInstallStep,
+        decode_package, erase_package, install_package, qml_compress, read_package_from_path,
+        step_error, FakePackageInstallTransport, PackageInstallError, PackageInstallStep,
+        PackageInstallTransport,
     };
     use flate2::{write::ZlibEncoder, Compression};
+    use std::cell::Cell;
     use std::io::Write;
     use std::path::Path;
 
@@ -507,6 +545,189 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "device error: erase Lisp 407 bytes: timed out waiting for a BLE reply"
+        );
+    }
+
+    #[test]
+    fn erases_package_in_vesc_tool_order() {
+        let transport = FakePackageInstallTransport::default();
+
+        let report = erase_package(&transport).expect("report");
+
+        assert_eq!(report.package_name, "installed package");
+        assert_eq!(
+            report.steps,
+            vec![
+                PackageInstallStep::EraseQml { bytes: 16 },
+                PackageInstallStep::EraseLisp { bytes: 16 },
+                PackageInstallStep::ReloadFirmware,
+            ]
+        );
+        assert_eq!(transport.steps.borrow().len(), 3);
+    }
+
+    #[derive(Debug, Default)]
+    struct ScriptedPackageInstallTransport {
+        recorded: std::cell::RefCell<Vec<PackageInstallStep>>,
+        fail_on: std::cell::Cell<Option<TransportFailPoint>>,
+        queried_qml_app: Cell<bool>,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum TransportFailPoint {
+        EraseQml,
+        EraseLisp,
+        ReloadFirmware,
+    }
+
+    impl ScriptedPackageInstallTransport {
+        fn fail_on(point: TransportFailPoint) -> Self {
+            Self {
+                fail_on: std::cell::Cell::new(Some(point)),
+                ..Self::default()
+            }
+        }
+    }
+
+    impl PackageInstallTransport for ScriptedPackageInstallTransport {
+        fn has_qml_app(&self) -> Result<bool, PackageInstallError> {
+            self.queried_qml_app.set(true);
+            Ok(true)
+        }
+
+        fn erase_qml(&self, bytes: usize) -> Result<(), PackageInstallError> {
+            self.recorded
+                .borrow_mut()
+                .push(PackageInstallStep::EraseQml { bytes });
+            if self.fail_on.get() == Some(TransportFailPoint::EraseQml) {
+                return Err(PackageInstallError::Device("qml erase failed".to_owned()));
+            }
+            Ok(())
+        }
+
+        fn upload_qml(&self, qml: &[u8], fullscreen: bool) -> Result<(), PackageInstallError> {
+            self.recorded
+                .borrow_mut()
+                .push(PackageInstallStep::UploadQml {
+                    bytes: qml.len(),
+                    fullscreen,
+                });
+            Ok(())
+        }
+
+        fn erase_lisp(&self, bytes: usize) -> Result<(), PackageInstallError> {
+            self.recorded
+                .borrow_mut()
+                .push(PackageInstallStep::EraseLisp { bytes });
+            if self.fail_on.get() == Some(TransportFailPoint::EraseLisp) {
+                return Err(PackageInstallError::Device("lisp erase failed".to_owned()));
+            }
+            Ok(())
+        }
+
+        fn upload_lisp(&self, lisp: &[u8]) -> Result<(), PackageInstallError> {
+            self.recorded
+                .borrow_mut()
+                .push(PackageInstallStep::UploadLisp { bytes: lisp.len() });
+            Ok(())
+        }
+
+        fn set_running(&self, running: bool) -> Result<(), PackageInstallError> {
+            self.recorded
+                .borrow_mut()
+                .push(PackageInstallStep::SetRunning { running });
+            Ok(())
+        }
+
+        fn reload_firmware(&self) -> Result<(), PackageInstallError> {
+            self.recorded
+                .borrow_mut()
+                .push(PackageInstallStep::ReloadFirmware);
+            if self.fail_on.get() == Some(TransportFailPoint::ReloadFirmware) {
+                return Err(PackageInstallError::Device("reload failed".to_owned()));
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn erase_package_does_not_query_qml_presence() {
+        let transport = ScriptedPackageInstallTransport::default();
+
+        erase_package(&transport).expect("report");
+
+        assert!(!transport.queried_qml_app.get());
+    }
+
+    #[test]
+    fn erase_package_aborts_before_lisp_when_qml_erase_fails() {
+        let transport = ScriptedPackageInstallTransport::fail_on(TransportFailPoint::EraseQml);
+
+        let error = erase_package(&transport).expect_err("expected qml erase failure");
+
+        assert_eq!(
+            error.to_string(),
+            "device error: erase QML 16 bytes: qml erase failed"
+        );
+        assert_eq!(
+            transport.recorded.borrow().as_slice(),
+            &[PackageInstallStep::EraseQml { bytes: 16 }]
+        );
+    }
+
+    #[test]
+    fn erase_package_aborts_before_reload_when_lisp_erase_fails() {
+        let transport = ScriptedPackageInstallTransport::fail_on(TransportFailPoint::EraseLisp);
+
+        let error = erase_package(&transport).expect_err("expected lisp erase failure");
+
+        assert_eq!(
+            error.to_string(),
+            "device error: erase Lisp 16 bytes: lisp erase failed"
+        );
+        assert_eq!(
+            transport.recorded.borrow().as_slice(),
+            &[
+                PackageInstallStep::EraseQml { bytes: 16 },
+                PackageInstallStep::EraseLisp { bytes: 16 },
+            ]
+        );
+    }
+
+    #[test]
+    fn erase_package_reports_reload_failures() {
+        let transport =
+            ScriptedPackageInstallTransport::fail_on(TransportFailPoint::ReloadFirmware);
+
+        let error = erase_package(&transport).expect_err("expected reload failure");
+
+        assert_eq!(
+            error.to_string(),
+            "device error: reload firmware: reload failed"
+        );
+        assert_eq!(
+            transport.recorded.borrow().as_slice(),
+            &[
+                PackageInstallStep::EraseQml { bytes: 16 },
+                PackageInstallStep::EraseLisp { bytes: 16 },
+                PackageInstallStep::ReloadFirmware,
+            ]
+        );
+    }
+
+    #[test]
+    fn erase_package_uses_vesc_tool_fixed_erase_sizes() {
+        let transport = FakePackageInstallTransport::default();
+
+        erase_package(&transport).expect("report");
+
+        assert_eq!(
+            transport.steps.borrow().as_slice(),
+            &[
+                PackageInstallStep::EraseQml { bytes: 16 },
+                PackageInstallStep::EraseLisp { bytes: 16 },
+                PackageInstallStep::ReloadFirmware,
+            ]
         );
     }
 }
