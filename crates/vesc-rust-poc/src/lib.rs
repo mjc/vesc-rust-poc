@@ -12,21 +12,11 @@ pub mod ble_loopback_device;
 pub mod package_init;
 pub mod package_lifecycle;
 
-#[no_mangle]
-pub extern "C" fn rust_add(a: i32, b: i32) -> i32 {
-    a + b
-}
-
-#[cfg(not(test))]
-#[inline(never)]
-#[no_mangle]
-pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
-    package_init::install_stop_hook(info)
-}
+pub use package_init::package_lib_init;
 
 #[cfg(test)]
-pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
-    package_init::init_for_tests(info)
+pub(crate) fn rust_add(a: i32, b: i32) -> i32 {
+    a + b
 }
 
 #[cfg(not(test))]
@@ -42,8 +32,7 @@ fn panic(_: &PanicInfo) -> ! {
 
 #[cfg(test)]
 mod tests {
-    use super::{ffi, rust_add, ProtocolFrame, WireCommand, WireVersion};
-    use crate::package_init;
+    use super::{ffi, package_init, ProtocolFrame, WireCommand, WireVersion};
 
     #[test]
     fn device_side_can_use_the_shared_protocol_crate() {
@@ -56,8 +45,8 @@ mod tests {
 
     #[test]
     fn rust_add_stays_a_plain_integer_function() {
-        assert_eq!(rust_add(1, 2), 3);
-        assert_eq!(rust_add(-8, 11), 3);
+        assert_eq!(super::rust_add(1, 2), 3);
+        assert_eq!(super::rust_add(-8, 11), 3);
     }
 
     #[test]

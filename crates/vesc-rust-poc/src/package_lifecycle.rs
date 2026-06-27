@@ -5,9 +5,11 @@ use crate::ffi::{self};
 #[cfg(test)]
 use crate::ffi::{LbmApi, LbmBindings, LbmCount, LbmValue};
 
+/// LispBM extension name registered on device (`ext-rust-probe-diag-v4`).
 const EXT_RUST_PROBE_DIAG_NAME: &CStr = c"ext-rust-probe-diag-v4";
+/// Host-only alias for tests that exercise argument validation through `LbmApi`.
 #[cfg(test)]
-const EXT_RUST_PROBE_NAME: &CStr = c"ext-c-probe-v12";
+const EXT_HOST_TEST_PROBE_NAME: &CStr = c"ext-c-probe-v12";
 const LBM_INT_TAG: u32 = 0x8;
 #[cfg(test)]
 const LBM_TAG_MASK: u32 = 0xf;
@@ -25,7 +27,7 @@ const _: () = assert!(PACKAGE_EXTENSION_COUNT == 1);
 ///
 /// Host tests use the `#[cfg(test)]` build, which exercises argument validation through
 /// `LbmApi` instead. Keep the device path minimal so PIC/staticlib codegen stays stable.
-pub unsafe extern "C" fn ext_rust_probe_v12(_args: *mut u32, _argn: u32) -> u32 {
+pub unsafe extern "C" fn ext_rust_probe_diag_v4(_args: *mut u32, _argn: u32) -> u32 {
     encode_lbm_i32_raw(42)
 }
 
@@ -34,7 +36,7 @@ pub unsafe extern "C" fn ext_rust_probe_v12(_args: *mut u32, _argn: u32) -> u32 
 /// # Safety
 ///
 /// `args` must point to at least `argn` initialized LispBM values when `argn > 0`.
-pub unsafe extern "C" fn ext_rust_probe_v12(args: *mut u32, argn: u32) -> u32 {
+pub unsafe extern "C" fn ext_rust_probe_diag_v4(args: *mut u32, argn: u32) -> u32 {
     rust_probe_extension(
         &ffi::LbmApi::new(ffi::RealBindings),
         args.cast(),
@@ -73,13 +75,13 @@ fn encode_lbm_i32(value: i32) -> ffi::LbmValue {
 
 #[cfg(test)]
 pub fn rust_probe_descriptor() -> ffi::ExtensionDescriptor {
-    ffi::ExtensionDescriptor::new(EXT_RUST_PROBE_NAME, ext_rust_probe_v12)
+    ffi::ExtensionDescriptor::new(EXT_HOST_TEST_PROBE_NAME, ext_rust_probe_diag_v4)
 }
 
 pub fn package_extension_descriptors() -> [ffi::ExtensionDescriptor; PACKAGE_EXTENSION_COUNT] {
     [ffi::ExtensionDescriptor::new(
         EXT_RUST_PROBE_DIAG_NAME,
-        ext_rust_probe_v12,
+        ext_rust_probe_diag_v4,
     )]
 }
 
@@ -122,77 +124,16 @@ fn rust_add_extension_value<B: LbmBindings>(
     api.encode_i32(crate::rust_add(20, 22))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "test-support"))]
 mod tests {
     use super::{
         register_loader_extensions, register_package_extension_from_image_with,
-        rust_add_extension_value, LbmApi, LbmBindings, LbmCount, LbmValue,
-        EXT_RUST_PROBE_DIAG_NAME, EXT_RUST_PROBE_NAME, PACKAGE_EXTENSION_NAMES,
+        rust_add_extension_value, LbmApi, LbmCount, LbmValue, EXT_HOST_TEST_PROBE_NAME,
+        EXT_RUST_PROBE_DIAG_NAME, PACKAGE_EXTENSION_NAMES,
     };
+    use crate::ffi::test_support::stubs;
+    use crate::ffi::test_support::FakeBindings;
     use crate::ffi::{self, ExtensionDescriptor, PackageLifecycle};
-    use core::cell::Cell;
-    use core::ffi::c_char;
-
-    struct FakeBindings {
-        add_calls: Cell<usize>,
-        decode_calls: Cell<usize>,
-        last_name: Cell<usize>,
-        last_handler: Cell<usize>,
-        add_result: Cell<bool>,
-    }
-
-    impl FakeBindings {
-        fn new() -> Self {
-            Self {
-                add_calls: Cell::new(0),
-                decode_calls: Cell::new(0),
-                last_name: Cell::new(0),
-                last_handler: Cell::new(0),
-                add_result: Cell::new(true),
-            }
-        }
-
-        fn rejecting() -> Self {
-            Self {
-                add_result: Cell::new(false),
-                ..Self::new()
-            }
-        }
-    }
-
-    impl LbmBindings for FakeBindings {
-        unsafe fn add_extension(
-            &self,
-            name: *const c_char,
-            handler: ffi::ExtensionHandler,
-        ) -> bool {
-            self.add_calls.set(self.add_calls.get() + 1);
-            self.last_name.set(name as usize);
-            self.last_handler.set(handler as usize);
-            self.add_result.get()
-        }
-
-        unsafe fn decode_i32(&self, value: LbmValue) -> i32 {
-            self.decode_calls.set(self.decode_calls.get() + 1);
-            value.0 as i32
-        }
-
-        unsafe fn encode_i32(&self, value: i32) -> LbmValue {
-            LbmValue(value as u32)
-        }
-
-        unsafe fn is_number(&self, _value: LbmValue) -> bool {
-            true
-        }
-
-        unsafe fn encode_eval_error(&self) -> LbmValue {
-            LbmValue(0xeeee_eeee)
-        }
-    }
-
-    unsafe extern "C" fn stub_handler(_args: *mut u32, _count: u32) -> u32 {
-        0
-    }
 
     #[test]
     fn package_extension_table_lists_the_device_probe_descriptor() {
@@ -238,7 +179,7 @@ mod tests {
         let bindings = FakeBindings::new();
         let lifecycle = PackageLifecycle::new(bindings);
         let handler_offset = 0x31_usize;
-        let descriptor = ExtensionDescriptor::new(EXT_RUST_PROBE_NAME, unsafe {
+        let descriptor = ExtensionDescriptor::new(EXT_HOST_TEST_PROBE_NAME, unsafe {
             core::mem::transmute::<usize, ffi::ExtensionHandler>(handler_offset)
         });
         let image = ffi::NativeImage::new(0x2000);
@@ -254,12 +195,13 @@ mod tests {
     fn registers_the_rust_extension_through_the_lifecycle_helper() {
         let bindings = FakeBindings::new();
         let lifecycle = PackageLifecycle::new(bindings);
-        let descriptor = ExtensionDescriptor::new(EXT_RUST_PROBE_NAME, stub_handler);
+        let descriptor =
+            ExtensionDescriptor::new(EXT_HOST_TEST_PROBE_NAME, stubs::extension_handler);
 
         assert_eq!(lifecycle.register_extension(descriptor), Ok(()));
         assert_eq!(lifecycle.bindings().add_calls.get(), 1);
         assert_eq!(
-            EXT_RUST_PROBE_NAME.to_bytes_with_nul(),
+            EXT_HOST_TEST_PROBE_NAME.to_bytes_with_nul(),
             b"ext-c-probe-v12\0"
         );
     }
@@ -276,7 +218,7 @@ mod tests {
     fn rejects_non_extension_names_before_calling_firmware() {
         let bindings = FakeBindings::new();
         let lifecycle = PackageLifecycle::new(bindings);
-        let descriptor = ExtensionDescriptor::new(c"rust-probe-v5", stub_handler);
+        let descriptor = ExtensionDescriptor::new(c"rust-probe-v5", stubs::extension_handler);
 
         assert!(matches!(
             descriptor.validate(),
@@ -293,7 +235,8 @@ mod tests {
     fn rejects_firmware_extension_registration_false() {
         let bindings = FakeBindings::rejecting();
         let lifecycle = PackageLifecycle::new(bindings);
-        let descriptor = ExtensionDescriptor::new(EXT_RUST_PROBE_NAME, stub_handler);
+        let descriptor =
+            ExtensionDescriptor::new(EXT_HOST_TEST_PROBE_NAME, stubs::extension_handler);
 
         assert_eq!(
             lifecycle.register_extension(descriptor),
@@ -306,16 +249,17 @@ mod tests {
     fn repeated_registration_reports_each_firmware_result() {
         let bindings = FakeBindings::new();
         let lifecycle = PackageLifecycle::new(bindings);
-        let descriptor = ExtensionDescriptor::new(EXT_RUST_PROBE_NAME, stub_handler);
+        let descriptor =
+            ExtensionDescriptor::new(EXT_HOST_TEST_PROBE_NAME, stubs::extension_handler);
 
         assert_eq!(lifecycle.register_extension(descriptor), Ok(()));
         assert_eq!(
             lifecycle.bindings().last_name.get(),
-            EXT_RUST_PROBE_NAME.as_ptr() as usize
+            EXT_HOST_TEST_PROBE_NAME.as_ptr() as usize
         );
         assert_eq!(
             lifecycle.bindings().last_handler.get(),
-            stub_handler as *const () as usize
+            stubs::extension_handler as *const () as usize
         );
     }
 

@@ -543,8 +543,10 @@ mod tests {
             "loader init should load the firmware VESC table base:\n{init_disassembly}"
         );
         assert!(
-            init_disassembly.contains("4798") || init_disassembly.contains("4790"),
-            "loader init should call lbm_add_extension through blx after loading slot 0:\n{init_disassembly}"
+            init_disassembly.contains("4798")
+                || init_disassembly.contains("4790")
+                || init_disassembly.contains("4710"),
+            "loader init should call lbm_add_extension through an indirect branch after loading slot 0:\n{init_disassembly}"
         );
         assert!(
             init_disassembly.contains("<package_lib_init>"),
@@ -648,7 +650,7 @@ mod tests {
         let final_defined = defined_symbols(&final_symbols);
 
         assert!(
-            final_defined.contains("ext_rust_probe_v12"),
+            final_defined.contains("ext_rust_probe_diag_v4"),
             "final image must retain the Rust LispBM probe callback:\n{final_symbols}"
         );
         assert!(
@@ -673,7 +675,7 @@ mod tests {
             "expected final native image to retain loader and Rust package init:\n{output}"
         );
         assert!(
-            defined.contains("ext_rust_probe_v12"),
+            defined.contains("ext_rust_probe_diag_v4"),
             "expected final native image to retain the Rust LispBM probe:\n{output}"
         );
         assert!(
@@ -716,7 +718,7 @@ mod tests {
                 && !disassembly.contains("<vesc_set_app_data_handler>"),
             "expected direct VESC_IF calls without C wrapper stubs:\n{disassembly}"
         );
-        for symbol in ["<init>", "<package_lib_init>", "<ext_rust_probe_v12>"] {
+        for symbol in ["<init>", "<package_lib_init>", "<ext_rust_probe_diag_v4>"] {
             assert!(
                 disassembly.contains(symbol),
                 "expected native image to retain `{symbol}`:\n{disassembly}"
@@ -735,7 +737,9 @@ mod tests {
         );
         assert!(
             init_disassembly.contains("1000f800")
-                && (init_disassembly.contains("4798") || init_disassembly.contains("4790")),
+                && (init_disassembly.contains("4798")
+                    || init_disassembly.contains("4790")
+                    || init_disassembly.contains("4710")),
             "Rust loader init should register the probe inline through VESC_IF like refloat:\n{init_disassembly}"
         );
         assert!(
@@ -754,8 +758,8 @@ mod tests {
             [PathBuf::from("-d"), fixture.elf()],
         );
         let probe_start = disassembly
-            .find("<ext_rust_probe_v12>:")
-            .expect("expected ext_rust_probe_v12 in final native image");
+            .find("<ext_rust_probe_diag_v4>:")
+            .expect("expected ext_rust_probe_diag_v4 in final native image");
         let probe_rest = &disassembly[probe_start..];
         let probe_end = probe_rest.find("\n\n0000").unwrap_or(probe_rest.len());
         let probe_disassembly = &probe_rest[..probe_end];
@@ -789,8 +793,10 @@ mod tests {
 
         assert_rust_loader_init_uses_vesc_ffi(bounded_init_disassembly(&disassembly));
         assert!(
-            init_disassembly.contains("4620") || init_disassembly.contains("movs\tr0, #1"),
-            "loader init should return success after package init and registration:\n{init_disassembly}"
+            init_disassembly.contains("4620")
+                || init_disassembly.contains("movs\tr0, #1")
+                || init_disassembly.contains("4710"),
+            "loader init should return lbm_add_extension's result after package init and registration:\n{init_disassembly}"
         );
     }
 
@@ -805,7 +811,7 @@ mod tests {
         );
 
         assert!(
-            disassembly.contains("<ext_rust_probe_v12>"),
+            disassembly.contains("<ext_rust_probe_diag_v4>"),
             "native artifact should include the Rust LispBM probe:\n{disassembly}"
         );
         assert!(
@@ -886,7 +892,9 @@ mod tests {
         );
         assert!(
             init_disassembly.contains("1000f800")
-                && (init_disassembly.contains("4798") || init_disassembly.contains("4790")),
+                && (init_disassembly.contains("4798")
+                    || init_disassembly.contains("4790")
+                    || init_disassembly.contains("4710")),
             "loader init should register the LispBM probe inline:\n{init_disassembly}"
         );
     }
@@ -936,8 +944,7 @@ mod tests {
 
         for symbol in [
             "package_lib_init",
-            "rust_add",
-            "ext_rust_probe_v12",
+            "ext_rust_probe_diag_v4",
             "init",
             "prog_ptr",
         ] {
@@ -946,6 +953,10 @@ mod tests {
                 "Rust staticlib must own symbol `{symbol}`:\n{staticlib_symbols}"
             );
         }
+        assert!(
+            !staticlib_defined.contains("rust_add"),
+            "rust_add must stay test-only and out of the firmware staticlib:\n{staticlib_symbols}"
+        );
         assert!(
             !staticlib_undefined.contains("register_c_probe"),
             "Rust package init should not depend on a separate C probe registrar:\n{staticlib_symbols}"
