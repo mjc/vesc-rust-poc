@@ -99,9 +99,9 @@ impl PackageAssets {
 
     pub fn render_descriptor(&self) -> String {
         format!(
-            "import QtQuick 2.15\nItem{{property string packageName:\"{}\";property string packageVersion:\"{}\";property string nativeLibraryPath:\"src/package_lib.bin\";property string loaderScriptPath:\"code.lisp\"}}\n",
+            "import QtQuick 2.15\n\nItem {{\n    property string pkgName: \"{}\"\n    property string pkgDescriptionMd: \"README.md\"\n    property string pkgLisp: \"code.lisp\"\n    property string pkgQml: \"\"\n    property bool pkgQmlIsFullscreen: false\n    property string pkgOutput: \"{}\"\n}}\n",
             self.package_name(),
-            self.version()
+            self.layout.artifact_name()
         )
     }
 
@@ -143,15 +143,15 @@ mod tests {
             assets.render_readme(),
             "Rust BLE loopback test package 0.1.0\ngit abc123\ndate 2026-06-25\n"
         );
-        assert!(assets
-            .render_descriptor()
-            .contains("packageName:\"Rust BLE loopback test package\""));
-        assert!(assets
-            .render_descriptor()
-            .contains("nativeLibraryPath:\"src/package_lib.bin\""));
-        assert!(assets
-            .render_descriptor()
-            .contains("loaderScriptPath:\"code.lisp\""));
+        let descriptor = assets.render_descriptor();
+        assert!(descriptor.contains("pkgName: \"Rust BLE loopback test package\""));
+        assert!(descriptor.contains("pkgDescriptionMd: \"README.md\""));
+        assert!(descriptor.contains("pkgLisp: \"code.lisp\""));
+        assert!(descriptor.contains("pkgOutput: \"Rust-BLE-loopback-test-package-0.1.0.vescpkg\""));
+        assert!(
+            !descriptor.contains("packageName"),
+            "expected vesc_tool schema, not legacy POC dialect"
+        );
         assert_eq!(
             assets.render_loader(),
             "; Auto-generated loader for the Rust BLE loopback test package.\n(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n"

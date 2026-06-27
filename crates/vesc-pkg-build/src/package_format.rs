@@ -482,7 +482,7 @@ mod tests {
                 ("name", 30),
                 ("description_md", 37),
                 ("lispData", 371),
-                ("pkgDescQml", 227),
+                ("pkgDescQml", 336),
                 ("qmlIsFullscreen", 1),
             ]
         );

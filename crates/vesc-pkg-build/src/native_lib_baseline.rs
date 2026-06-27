@@ -366,8 +366,16 @@ mod tests {
             "expected the package README to describe the BLE loopback test package"
         );
         assert!(
-            descriptor.contains("Rust BLE loopback test package"),
-            "expected the package descriptor to name the BLE loopback test package"
+            descriptor.contains("pkgName: \"Rust BLE loopback test package\""),
+            "expected the package descriptor to use vesc_tool pkgName schema"
+        );
+        assert!(
+            descriptor.contains("pkgOutput: \"native-lib-baseline.vescpkg\""),
+            "expected the package descriptor to name the baseline artifact"
+        );
+        assert!(
+            !descriptor.contains("packageName"),
+            "legacy POC pkgdesc dialect must not remain in the baseline fixture"
         );
         assert!(
             loader.contains("BLE loopback test package"),
