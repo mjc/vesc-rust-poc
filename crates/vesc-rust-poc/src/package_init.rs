@@ -6,8 +6,6 @@ use crate::package_lifecycle;
 #[cfg(test)]
 use core::cell::Cell;
 
-const FIRMWARE_BINDINGS: ffi::RealBindings = ffi::RealBindings;
-
 /// VESC loader anchor in `.program_ptr`; value is unused but the section must exist.
 #[cfg(all(not(test), target_arch = "arm"))]
 #[used]
@@ -30,7 +28,7 @@ pub extern "C" fn init(info: *mut ffi::LibInfo) -> bool {
 unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
     #[cfg(not(test))]
     {
-        let _ = ffi::LoopbackLifecycle::new(FIRMWARE_BINDINGS).clear_app_data_handler();
+        let _ = ffi::LoopbackLifecycle::new(ffi::RealBindings).clear_app_data_handler();
     }
 
     #[cfg(test)]
@@ -52,22 +50,13 @@ pub fn install_stop_hook(info: *mut ffi::LibInfo) -> bool {
     true
 }
 
-/// Register the device probe extension using the compact single-descriptor path.
-///
-/// The loader keeps this as one `register_extension_from_image` call so `.init_fun`
-/// stays within the device-proven codegen budget.
+/// Register package extensions from the descriptor table using the compact init path.
 pub fn register_probe_extension(info: *mut ffi::LibInfo) -> bool {
     if info.is_null() {
         return false;
     }
 
-    unsafe {
-        let image = ffi::NativeImage::from_info(&*info);
-        let lifecycle = ffi::PackageLifecycle::new(ffi::RealBindings);
-        lifecycle
-            .register_extension_from_image(image, package_lifecycle::rust_probe_diag_descriptor())
-            .is_ok()
-    }
+    unsafe { package_lifecycle::register_package_extension_from_image(&*info).is_ok() }
 }
 
 #[cfg(test)]

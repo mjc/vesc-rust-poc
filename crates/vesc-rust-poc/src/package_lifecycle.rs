@@ -13,7 +13,11 @@ const LBM_INT_TAG: u32 = 0x8;
 const LBM_TAG_MASK: u32 = 0xf;
 const LBM_VALUE_SHIFT: u32 = 4;
 
-pub const PACKAGE_EXTENSION_NAMES: [&CStr; 1] = [EXT_RUST_PROBE_DIAG_NAME];
+const PACKAGE_EXTENSION_COUNT: usize = 1;
+
+pub const PACKAGE_EXTENSION_NAMES: [&CStr; PACKAGE_EXTENSION_COUNT] = [EXT_RUST_PROBE_DIAG_NAME];
+
+const _: () = assert!(PACKAGE_EXTENSION_COUNT == 1);
 
 #[cfg(not(test))]
 #[no_mangle]
@@ -72,20 +76,41 @@ pub fn rust_probe_descriptor() -> ffi::ExtensionDescriptor {
     ffi::ExtensionDescriptor::new(EXT_RUST_PROBE_NAME, ext_rust_probe_v12)
 }
 
-pub fn rust_probe_diag_descriptor() -> ffi::ExtensionDescriptor {
-    ffi::ExtensionDescriptor::new(EXT_RUST_PROBE_DIAG_NAME, ext_rust_probe_v12)
+pub fn package_extension_descriptors() -> [ffi::ExtensionDescriptor; PACKAGE_EXTENSION_COUNT] {
+    [ffi::ExtensionDescriptor::new(
+        EXT_RUST_PROBE_DIAG_NAME,
+        ext_rust_probe_v12,
+    )]
 }
 
-pub fn package_extension_descriptors() -> [ffi::ExtensionDescriptor; 1] {
-    [rust_probe_diag_descriptor()]
+pub fn rust_probe_diag_descriptor() -> ffi::ExtensionDescriptor {
+    package_extension_descriptors()[0]
+}
+
+/// Register the current package extension table with one firmware call.
+///
+/// Device `.init_fun` uses this path instead of `register_loader_extensions` so
+/// registration stays a single inlined `register_extension_from_image` call.
+pub fn register_package_extension_from_image(
+    info: &ffi::LibInfo,
+) -> Result<(), ffi::RegisterError> {
+    register_package_extension_from_image_with(info, &ffi::PackageLifecycle::new(ffi::RealBindings))
+}
+
+pub fn register_package_extension_from_image_with<B: ffi::LbmBindings>(
+    info: &ffi::LibInfo,
+    lifecycle: &ffi::PackageLifecycle<B>,
+) -> Result<(), ffi::RegisterError> {
+    let image = ffi::NativeImage::from_info(info);
+    let [descriptor] = package_extension_descriptors();
+    lifecycle.register_extension_from_image(image, descriptor)
 }
 
 pub fn register_loader_extensions<B: ffi::LbmBindings>(
     info: &ffi::LibInfo,
     lifecycle: &ffi::PackageLifecycle<B>,
 ) -> Result<(), ffi::RegisterError> {
-    let image = ffi::NativeImage::from_info(info);
-    lifecycle.register_extensions_from_image(image, package_extension_descriptors())
+    register_package_extension_from_image_with(info, lifecycle)
 }
 
 #[cfg(test)]
@@ -100,8 +125,9 @@ fn rust_add_extension_value<B: LbmBindings>(
 #[cfg(test)]
 mod tests {
     use super::{
-        register_loader_extensions, rust_add_extension_value, LbmApi, LbmBindings, LbmCount,
-        LbmValue, EXT_RUST_PROBE_DIAG_NAME, EXT_RUST_PROBE_NAME, PACKAGE_EXTENSION_NAMES,
+        register_loader_extensions, register_package_extension_from_image_with,
+        rust_add_extension_value, LbmApi, LbmBindings, LbmCount, LbmValue,
+        EXT_RUST_PROBE_DIAG_NAME, EXT_RUST_PROBE_NAME, PACKAGE_EXTENSION_NAMES,
     };
     use crate::ffi::{self, ExtensionDescriptor, PackageLifecycle};
     use core::cell::Cell;
@@ -169,6 +195,14 @@ mod tests {
     }
 
     #[test]
+    fn package_extension_table_lists_the_device_probe_descriptor() {
+        let [descriptor] = super::package_extension_descriptors();
+
+        assert_eq!(descriptor.name(), EXT_RUST_PROBE_DIAG_NAME);
+        assert_eq!(PACKAGE_EXTENSION_NAMES[0], EXT_RUST_PROBE_DIAG_NAME);
+    }
+
+    #[test]
     fn register_loader_extensions_registers_every_descriptor_from_image() {
         let bindings = FakeBindings::new();
         let lifecycle = PackageLifecycle::new(bindings);
@@ -179,6 +213,23 @@ mod tests {
         };
 
         assert_eq!(register_loader_extensions(&info, &lifecycle), Ok(()));
+        assert_eq!(lifecycle.bindings().add_calls.get(), 1);
+    }
+
+    #[test]
+    fn register_package_extension_from_image_uses_the_descriptor_table() {
+        let bindings = FakeBindings::new();
+        let lifecycle = PackageLifecycle::new(bindings);
+        let info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0x2000,
+        };
+
+        assert_eq!(
+            register_package_extension_from_image_with(&info, &lifecycle),
+            Ok(())
+        );
         assert_eq!(lifecycle.bindings().add_calls.get(), 1);
     }
 

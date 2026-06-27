@@ -222,25 +222,24 @@ pub fn handle_loopback_frame(
     Ok((response, 3 + payload.len()))
 }
 
-const FIRMWARE_BINDINGS: crate::ffi::RealBindings = crate::ffi::RealBindings;
-
 #[cfg(not(test))]
+#[expect(
+    dead_code,
+    reason = "opt-in app-data registration; not wired at init to keep the native blob compact"
+)]
 unsafe extern "C" fn app_data_handler(data: *mut u8, len: u32) {
     if data.is_null() {
         return;
     }
 
     let bytes = core::slice::from_raw_parts(data as *const u8, len as usize);
-    let lifecycle = crate::ffi::LoopbackLifecycle::new(FIRMWARE_BINDINGS);
+    let lifecycle = crate::ffi::LoopbackLifecycle::new(crate::ffi::RealBindings);
     let now_ms = u64::from(lifecycle.system_time_ticks()) / 10;
 
     if let Ok((response, response_len)) = handle_loopback_frame(bytes, now_ms) {
         unsafe { lifecycle.send_app_data(response.as_ptr(), response_len as u32) };
     }
 }
-
-#[cfg(test)]
-unsafe extern "C" fn app_data_handler(_data: *mut u8, _len: u32) {}
 
 #[derive(Debug)]
 pub struct NullDeviceServices;
