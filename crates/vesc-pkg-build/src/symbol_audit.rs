@@ -587,7 +587,7 @@ mod tests {
             "arm-none-eabi-objdump",
             [PathBuf::from("-d"), native_lib_elf_path()],
         );
-        for offset in ["1000f800", "#64]", "#124]", "#100]"] {
+        for offset in ["1000f800", "#124]", "#100]", "#8"] {
             assert!(
                 disassembly.contains(offset),
                 "expected VESC_IF slot access {offset} in generated code:\n{disassembly}"
@@ -649,16 +649,20 @@ mod tests {
             "C probe extension should materialize VESC_IF base:\n{probe_disassembly}"
         );
         assert!(
-            probe_disassembly.contains("#64]"),
-            "C probe extension should reach lbm_enc_i through VESC_IF:\n{probe_disassembly}"
-        );
-        assert!(
             probe_disassembly.contains("#124]"),
             "C probe extension should call lbm_is_number through VESC_IF:\n{probe_disassembly}"
         );
         assert!(
             probe_disassembly.contains("#100]"),
             "C probe extension should call lbm_dec_as_i32 through VESC_IF:\n{probe_disassembly}"
+        );
+        assert!(
+            probe_disassembly.contains("#8"),
+            "C probe extension should manually encode the LispBM integer tag:\n{probe_disassembly}"
+        );
+        assert!(
+            !probe_disassembly.contains("#64]"),
+            "C probe extension should not tail-call lbm_enc_i:\n{probe_disassembly}"
         );
     }
 

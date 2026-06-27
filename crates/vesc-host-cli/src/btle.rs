@@ -443,7 +443,7 @@ fn parse_lisp_print(payload: &[u8]) -> String {
 
 fn lisp_probe_command() -> &'static str {
     r#"(progn
-    (print "vesc-rust-probe-v17")
+    (print "vesc-rust-probe-v24")
     (match (trap (ext-c-probe-v12 14))
         ((exit-ok (? v)) (if (= v 42) (print "vesc-rust-probe-ok-42") (print v)))
         ((exit-error (? e)) (print e))))"#
@@ -621,7 +621,7 @@ mod tests {
     #[test]
     fn wraps_lisp_probe_commands_in_repl_packets() {
         let command = lisp_probe_command();
-        assert!(command.contains("vesc-rust-probe-v17"));
+        assert!(command.contains("vesc-rust-probe-v24"));
         assert!(
             !command.contains("load-native-lib"),
             "lisp-probe should exercise the already-loaded package extensions, not retry native loading"
@@ -689,10 +689,10 @@ mod tests {
         assert!(LispProbeProgress::WaitingForPrints.should_print_to_cli());
         assert_eq!(
             LispProbeProgress::LispPrint {
-                line: "vesc-rust-probe-v17".to_owned(),
+                line: "vesc-rust-probe-v24".to_owned(),
             }
             .describe(),
-            "lisp print: vesc-rust-probe-v17"
+            "lisp print: vesc-rust-probe-v24"
         );
     }
 

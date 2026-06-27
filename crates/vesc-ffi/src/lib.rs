@@ -830,6 +830,25 @@ pub mod raw {
     ///
     /// `value` must be a LispBM value supplied by the firmware.
     pub unsafe fn lbm_dec_as_i32(value: LbmValue) -> i32 {
+        #[cfg(all(target_arch = "arm", not(test)))]
+        unsafe {
+            let vesc_if = VescIfAbi::BASE_ADDR.0;
+            let lbm_dec_as_i32: usize;
+            core::arch::asm!(
+                "ldr {lbm_dec_as_i32}, [{vesc_if}, #100]",
+                vesc_if = in(reg) vesc_if,
+                lbm_dec_as_i32 = out(reg) lbm_dec_as_i32,
+                options(nostack, preserves_flags),
+            );
+            if lbm_dec_as_i32 == 0 {
+                return 0;
+            }
+            let lbm_dec_as_i32: unsafe extern "C" fn(u32) -> i32 =
+                core::mem::transmute(lbm_dec_as_i32);
+            return lbm_dec_as_i32(value.0);
+        }
+
+        #[cfg(not(all(target_arch = "arm", not(test))))]
         unsafe {
             match (*VESC_IF).lbm_dec_as_i32 {
                 Some(lbm_dec_as_i32) => lbm_dec_as_i32(value.0),
@@ -872,6 +891,25 @@ pub mod raw {
     ///
     /// `value` must be a LispBM value supplied by the firmware.
     pub unsafe fn lbm_is_number(value: LbmValue) -> bool {
+        #[cfg(all(target_arch = "arm", not(test)))]
+        unsafe {
+            let vesc_if = VescIfAbi::BASE_ADDR.0;
+            let lbm_is_number: usize;
+            core::arch::asm!(
+                "ldr {lbm_is_number}, [{vesc_if}, #124]",
+                vesc_if = in(reg) vesc_if,
+                lbm_is_number = out(reg) lbm_is_number,
+                options(nostack, preserves_flags),
+            );
+            if lbm_is_number == 0 {
+                return false;
+            }
+            let lbm_is_number: unsafe extern "C" fn(u32) -> bool =
+                core::mem::transmute(lbm_is_number);
+            return lbm_is_number(value.0);
+        }
+
+        #[cfg(not(all(target_arch = "arm", not(test))))]
         unsafe {
             match (*VESC_IF).lbm_is_number {
                 Some(lbm_is_number) => lbm_is_number(value.0),
@@ -899,7 +937,12 @@ pub mod raw {
 
             match handler {
                 Some(handler) => set_app_data_handler(handler),
-                None => true,
+                None => {
+                    // Firmware expects a null function pointer to unregister the handler.
+                    #[allow(clippy::transmute_null_to_fn)]
+                    let cleared: AppDataHandler = core::mem::transmute(core::ptr::null::<()>());
+                    set_app_data_handler(cleared)
+                }
             }
         }
     }

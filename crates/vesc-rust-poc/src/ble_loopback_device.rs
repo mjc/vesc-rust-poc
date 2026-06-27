@@ -240,6 +240,7 @@ pub fn handle_loopback_frame(
 }
 
 #[cfg(not(test))]
+#[allow(dead_code)]
 unsafe extern "C" fn app_data_handler(data: *mut u8, len: u32) {
     if data.is_null() {
         return;

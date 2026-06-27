@@ -10,15 +10,36 @@ const EXT_RUST_PROBE_NAME: &CStr = c"ext-c-probe-v12";
 pub const PACKAGE_EXTENSION_NAMES: [&CStr; 1] = [EXT_RUST_PROBE_NAME];
 
 #[no_mangle]
+/// # Safety
+///
+/// `args` must point to at least `argn` initialized LispBM values when `argn > 0`.
 pub unsafe extern "C" fn ext_rust_probe_v12(args: *mut u32, argn: u32) -> u32 {
-    rust_probe_extension(
-        &ffi::LbmApi::new(ffi::RealBindings),
-        args.cast(),
-        ffi::LbmCount(argn),
-    )
-    .0
+    #[cfg(not(test))]
+    {
+        if argn != 1 {
+            return ffi::raw::lbm_enc_sym_eerror().0;
+        }
+
+        let value = ffi::LbmValue(unsafe { *args });
+        if !ffi::raw::lbm_is_number(value) {
+            return ffi::raw::lbm_enc_sym_eerror().0;
+        }
+
+        ffi::raw::lbm_enc_i(ffi::raw::lbm_dec_as_i32(value) * 3).0
+    }
+
+    #[cfg(test)]
+    {
+        rust_probe_extension(
+            &ffi::LbmApi::new(ffi::RealBindings),
+            args.cast(),
+            ffi::LbmCount(argn),
+        )
+        .0
+    }
 }
 
+#[cfg(test)]
 fn rust_probe_extension<B: ffi::LbmBindings>(
     api: &ffi::LbmApi<B>,
     args: *mut ffi::LbmValue,
@@ -38,6 +59,10 @@ fn rust_probe_extension<B: ffi::LbmBindings>(
 
 pub fn rust_probe_descriptor() -> ffi::ExtensionDescriptor {
     ffi::ExtensionDescriptor::new(EXT_RUST_PROBE_NAME, ext_rust_probe_v12)
+}
+
+pub fn package_extension_descriptors() -> [ffi::ExtensionDescriptor; 1] {
+    [rust_probe_descriptor()]
 }
 
 pub struct PackageLifecycle<B = ffi::RealBindings> {
@@ -68,6 +93,10 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         }
     }
 
+    /// # Safety
+    ///
+    /// `image` must describe the loaded native library address space that
+    /// produced `descriptor`.
     pub unsafe fn register_extension_from_image(
         &self,
         image: NativeImage,
@@ -85,6 +114,10 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         }
     }
 
+    /// # Safety
+    ///
+    /// `image` must describe the loaded native library address space that
+    /// produced every callback inside `descriptors`.
     pub unsafe fn register_extensions_from_image(
         &self,
         image: NativeImage,

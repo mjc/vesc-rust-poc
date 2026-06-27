@@ -9,7 +9,8 @@ static lbm_value ext_c_probe_v12(lbm_value *args, lbm_uint argn) {
         return VESC_IF->lbm_enc_sym_eerror;
     }
 
-    return VESC_IF->lbm_enc_i(VESC_IF->lbm_dec_as_i32(args[0]) * 3);
+    int32_t v = VESC_IF->lbm_dec_as_i32(args[0]) * 3;
+    return ((lbm_value)v << 4) | 8u;
 }
 
 INIT_FUN(lib_info *info) {
