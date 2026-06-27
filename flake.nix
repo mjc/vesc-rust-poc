@@ -25,7 +25,10 @@
         let
           rustToolchain = pkgs.rust-bin.stable.latest.default.override {
             targets = [ "thumbv7em-none-eabihf" ];
+            extensions = [ "llvm-tools-preview" "rust-src" ];
           };
+
+          cargo-llvm-cov = pkgs.cargo-llvm-cov;
 
           cargo-test-changed = pkgs.rustPlatform.buildRustPackage rec {
             pname = "cargo-test-changed";
@@ -64,11 +67,16 @@
               rustToolchain
               cargo-nextest
               cargo-test-changed
+              cargo-llvm-cov
             ];
 
             shellHook = ''
-              export PATH="${pkgs.lib.makeBinPath [ rustToolchain ]}:$PATH"
+              export PATH="${pkgs.lib.makeBinPath [ rustToolchain cargo-llvm-cov ]}:$PATH"
               export CARGO_TARGET_DIR="$PWD/target"
+              host_target="$(rustc -vV | sed -n 's/^host: //p')"
+              rust_sysroot="$(rustc --print sysroot)"
+              export LLVM_COV="$rust_sysroot/lib/rustlib/$host_target/bin/llvm-cov"
+              export LLVM_PROFDATA="$rust_sysroot/lib/rustlib/$host_target/bin/llvm-profdata"
             '';
           };
         });
