@@ -1,14 +1,44 @@
 use core::ffi::CStr;
 
-use crate::ffi::{self, ExtensionDescriptor, LbmApi, LbmBindings, LbmCount, LbmValue, NativeImage};
+use crate::ffi::{self, ExtensionDescriptor, LbmApi, LbmBindings, NativeImage};
 
-const EXT_RUST_PROBE_NAME: &CStr = c"ext-rust-probe-v5";
+#[cfg(test)]
+use crate::ffi::{LbmCount, LbmValue};
 
-#[cfg(not(test))]
-const PACKAGE_EXTENSIONS: [ExtensionDescriptor; 1] =
-    [ExtensionDescriptor::new(EXT_RUST_PROBE_NAME, ext_rust_add)];
+const EXT_RUST_PROBE_NAME: &CStr = c"ext-c-probe-v12";
 
 pub const PACKAGE_EXTENSION_NAMES: [&CStr; 1] = [EXT_RUST_PROBE_NAME];
+
+#[no_mangle]
+pub unsafe extern "C" fn ext_rust_probe_v12(args: *mut u32, argn: u32) -> u32 {
+    rust_probe_extension(
+        &ffi::LbmApi::new(ffi::RealBindings),
+        args.cast(),
+        ffi::LbmCount(argn),
+    )
+    .0
+}
+
+fn rust_probe_extension<B: ffi::LbmBindings>(
+    api: &ffi::LbmApi<B>,
+    args: *mut ffi::LbmValue,
+    argn: ffi::LbmCount,
+) -> ffi::LbmValue {
+    if argn.0 != 1 {
+        return api.encode_eval_error();
+    }
+
+    let value = unsafe { *args };
+    if !api.is_number(value) {
+        return api.encode_eval_error();
+    }
+
+    api.encode_i32(api.decode_i32(value) * 3)
+}
+
+pub fn rust_probe_descriptor() -> ffi::ExtensionDescriptor {
+    ffi::ExtensionDescriptor::new(EXT_RUST_PROBE_NAME, ext_rust_probe_v12)
+}
 
 pub struct PackageLifecycle<B = ffi::RealBindings> {
     api: LbmApi<B>,
@@ -43,9 +73,8 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         image: NativeImage,
         descriptor: ExtensionDescriptor,
     ) -> Result<(), ffi::RegisterError> {
-        // Image-owned C strings are offsets until the VESC loader applies
-        // `lib_info.base_addr`; validating here would dereference an invalid
-        // pre-rebase address on device.
+        // Image-owned Rust pointers are offsets in the final non-PIC native
+        // image until `register_extension_from_image` applies `lib_info.base_addr`.
         if unsafe {
             self.api
                 .register_extension_from_image(image, descriptor.name(), descriptor.handler())
@@ -68,30 +97,9 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         }
         Ok(())
     }
-
-    #[cfg(not(test))]
-    pub fn register_extensions(&self, image: NativeImage) -> Result<(), ffi::RegisterError> {
-        unsafe { self.register_extensions_from_image(image, &PACKAGE_EXTENSIONS) }
-    }
 }
 
-#[cfg(not(test))]
-pub fn init_package(info: *const ffi::LibInfo) -> bool {
-    let Some(info) = (unsafe { info.as_ref() }) else {
-        return false;
-    };
-
-    let lifecycle = PackageLifecycle::new(ffi::RealBindings);
-    lifecycle
-        .register_extensions(NativeImage::from_info(info))
-        .is_ok()
-}
-
-#[cfg(not(test))]
-unsafe extern "C" fn ext_rust_add(args: *mut LbmValue, argn: LbmCount) -> LbmValue {
-    rust_add_extension_value(&LbmApi::new(ffi::RealBindings), args, argn)
-}
-
+#[cfg(test)]
 fn rust_add_extension_value<B: LbmBindings>(
     api: &LbmApi<B>,
     _args: *mut LbmValue,
@@ -167,8 +175,8 @@ mod tests {
         }
     }
 
-    unsafe extern "C" fn stub_handler(_args: *mut LbmValue, _count: super::LbmCount) -> LbmValue {
-        LbmValue(0)
+    unsafe extern "C" fn stub_handler(_args: *mut u32, _count: u32) -> u32 {
+        0
     }
 
     #[test]
@@ -181,7 +189,7 @@ mod tests {
         assert_eq!(lifecycle.api.bindings().add_calls.get(), 1);
         assert_eq!(
             EXT_RUST_PROBE_NAME.to_bytes_with_nul(),
-            b"ext-rust-probe-v5\0"
+            b"ext-c-probe-v12\0"
         );
     }
 

@@ -6,30 +6,15 @@ pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
 pub mod ble_loopback_device;
 pub mod package_lifecycle;
 
-pub fn rust_add(a: i32, b: i32) -> i32 {
+#[no_mangle]
+pub extern "C" fn rust_add(a: i32, b: i32) -> i32 {
     a + b
-}
-
-#[cfg(not(test))]
-#[used]
-#[no_mangle]
-#[link_section = ".program_ptr"]
-pub static prog_ptr: i32 = 0;
-
-#[cfg(not(test))]
-#[no_mangle]
-#[link_section = ".init_fun"]
-pub extern "C" fn init(info: *mut ffi::LibInfo) -> bool {
-    let _ = package_lib_init(info);
-    true
 }
 
 #[cfg(not(test))]
 #[no_mangle]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
-    let _ = ble_loopback_device::init_package(info);
-    let _ = package_lifecycle::init_package(info);
-    true
+    ble_loopback_device::init_package(info)
 }
 
 #[cfg(test)]

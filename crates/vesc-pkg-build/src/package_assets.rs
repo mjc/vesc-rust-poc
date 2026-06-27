@@ -106,7 +106,7 @@ impl PackageAssets {
     }
 
     pub fn render_loader(&self) -> String {
-        "(import \"src/package_lib.bin\" 'package-lib)\n(print \"vesc-rust-load-v7\")\n(print (load-native-lib package-lib))\n(loopwhile t {\n    (sleep 1.0)\n})\n".to_owned()
+        "; Auto-generated loader for the Rust BLE loopback test package.\n(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n".to_owned()
     }
 }
 
@@ -154,13 +154,13 @@ mod tests {
             .contains("loaderScriptPath:\"code.lisp\""));
         assert_eq!(
             assets.render_loader(),
-            "(import \"src/package_lib.bin\" 'package-lib)\n(print \"vesc-rust-load-v7\")\n(print (load-native-lib package-lib))\n(loopwhile t {\n    (sleep 1.0)\n})\n"
+            "; Auto-generated loader for the Rust BLE loopback test package.\n(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n"
         );
         let loader = assets.render_loader();
         assert_eq!(loader.matches("load-native-lib").count(), 1);
-        assert!(loader.contains("vesc-rust-load-v7"));
-        assert!(loader.contains("(loopwhile t"));
-        assert!(loader.contains("(sleep 1.0)"));
+        assert!(!loader.contains("vesc-rust-load-v7"));
+        assert!(!loader.contains("(loopwhile t"));
+        assert!(!loader.contains("(sleep 1.0)"));
         assert!(
             !loader.contains("ext-rust-add"),
             "expected the BLE loopback package loader to only load the native library"

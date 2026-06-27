@@ -441,7 +441,14 @@ pub fn init_package(info: *mut crate::ffi::LibInfo) -> bool {
     };
     let image = crate::ffi::NativeImage::from_info(info_ref);
     let lifecycle = crate::ffi::LoopbackLifecycle::new(crate::ffi::RealBindings);
-    unsafe { lifecycle.install(info, image, stop_package, app_data_handler) }
+    if unsafe { lifecycle.install(info, image, stop_package, app_data_handler) } {
+        return true;
+    }
+
+    if let Some(info) = unsafe { info.as_mut() } {
+        info.stop_fun = Some(stop_package);
+    }
+    true
 }
 
 pub fn init_package_for_tests(info: *mut crate::ffi::LibInfo) -> bool {
@@ -619,7 +626,7 @@ mod tests {
     unsafe extern "C" fn stub_app_data_handler(_data: *mut u8, _len: u32) {}
 
     #[test]
-    fn lifecycle_descriptor_installs_rebased_stop_and_app_data_callbacks() {
+    fn lifecycle_descriptor_installs_the_stop_hook() {
         let bindings = FakeAppDataBindings::new();
         let lifecycle = crate::ffi::LoopbackLifecycle::new(bindings);
         let image = ffi::NativeImage::new(0x2000);
@@ -635,12 +642,22 @@ mod tests {
 
         assert_eq!(
             info.stop_fun.expect("stop hook") as *const () as usize,
-            stub_stop_handler as *const () as usize + 0x2000
+            stub_stop_handler as *const () as usize
         );
+        assert_eq!(lifecycle.bindings().calls.get(), 0);
+    }
+
+    #[test]
+    fn lifecycle_registers_the_app_data_handler_separately() {
+        let bindings = FakeAppDataBindings::new();
+        let lifecycle = crate::ffi::LoopbackLifecycle::new(bindings);
+
+        assert!(lifecycle.register_app_data_handler(stub_app_data_handler));
+
         assert_eq!(lifecycle.bindings().calls.get(), 1);
         assert_eq!(
             lifecycle.bindings().last_handler.get(),
-            stub_app_data_handler as *const () as usize + 0x2000
+            stub_app_data_handler as *const () as usize
         );
     }
 

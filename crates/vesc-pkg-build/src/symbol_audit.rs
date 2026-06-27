@@ -42,7 +42,7 @@ pub fn native_lib_bin_path() -> PathBuf {
 }
 
 pub fn package_lib_object_path() -> PathBuf {
-    native_lib_elf_path().with_file_name("package_lib.o")
+    crate::native_lib_link::native_lib_link_plan().package_c_object_path()
 }
 
 pub fn build_rust_staticlib() {
@@ -51,7 +51,15 @@ pub fn build_rust_staticlib() {
 }
 
 fn build_rust_staticlib_unlocked() {
+    let rustflags = match std::env::var("RUSTFLAGS") {
+        Ok(existing) if !existing.trim().is_empty() => {
+            format!("{existing} -C relocation-model=pic")
+        }
+        _ => "-C relocation-model=pic".to_owned(),
+    };
+
     let status = Command::new("cargo")
+        .env("RUSTFLAGS", rustflags)
         .args([
             "build",
             "--release",
@@ -71,9 +79,17 @@ pub fn build_final_native_lib_elf() {
     build_final_native_lib_elf_unlocked();
 }
 
-fn build_final_native_lib_elf_unlocked() {
-    build_rust_staticlib_unlocked();
+fn native_lib_c_only_from_env() -> bool {
+    std::env::var("VESC_NATIVE_LIB_C_ONLY").ok().as_deref() == Some("1")
+}
 
+fn build_final_native_lib_elf_unlocked() {
+    let c_only = native_lib_c_only_from_env();
+    if !c_only {
+        build_rust_staticlib_unlocked();
+    }
+
+    let link_plan = crate::native_lib_link::native_lib_link_plan();
     let elf_path = native_lib_elf_path();
 
     if let Some(parent) = elf_path.parent() {
@@ -84,27 +100,84 @@ fn build_final_native_lib_elf_unlocked() {
         fs::remove_file(&stale_object_path).expect("remove stale package_lib.o");
     }
 
-    let link_status = Command::new("arm-none-eabi-gcc")
+    let compile_status = Command::new("arm-none-eabi-gcc")
         .args([
-            "-nostartfiles",
-            "-static",
-            "-mcpu=cortex-m4",
+            "-fpic",
+            "-Os",
+            "-Wall",
+            "-Wextra",
+            "-Wundef",
+            "-std=gnu99",
+            "-I",
+            link_plan
+                .package_c_source_path()
+                .parent()
+                .expect("package C source parent")
+                .to_str()
+                .expect("utf-8 package C source parent"),
+            "-fomit-frame-pointer",
+            "-falign-functions=16",
             "-mthumb",
+            "-fsingle-precision-constant",
+            "-Wdouble-promotion",
             "-mfloat-abi=hard",
             "-mfpu=fpv4-sp-d16",
+            "-mcpu=cortex-m4",
+            "-fdata-sections",
+            "-ffunction-sections",
+            "-DIS_VESC_LIB",
+            "-c",
+            link_plan
+                .package_c_source_path()
+                .to_str()
+                .expect("utf-8 package C source path"),
+            "-o",
+            link_plan
+                .package_c_object_path()
+                .to_str()
+                .expect("utf-8 package C object path"),
+        ])
+        .status()
+        .expect("arm-none-eabi-gcc compile of package C shim");
+
+    assert!(compile_status.success(), "failed to compile package C shim");
+
+    let mut link_args = vec![
+        "-nostartfiles".to_owned(),
+        "-static".to_owned(),
+        "-mcpu=cortex-m4".to_owned(),
+        "-mthumb".to_owned(),
+        "-mfloat-abi=hard".to_owned(),
+        "-mfpu=fpv4-sp-d16".to_owned(),
+        link_plan
+            .package_c_object_path()
+            .to_str()
+            .expect("utf-8 package C object path")
+            .to_owned(),
+    ];
+    if !c_only {
+        link_args.push(
             rust_staticlib_path()
                 .to_str()
-                .expect("utf-8 staticlib path"),
-            "-Wl,--gc-sections",
-            "-Wl,--undefined=init",
-            "-T",
-            crate::native_lib_link::native_lib_link_plan()
-                .linker_script_path()
-                .to_str()
-                .expect("utf-8 linker script path"),
-            "-o",
-            elf_path.to_str().expect("utf-8 ELF path"),
-        ])
+                .expect("utf-8 staticlib path")
+                .to_owned(),
+        );
+    }
+    link_args.extend([
+        "-Wl,--gc-sections".to_owned(),
+        "-Wl,--undefined=init".to_owned(),
+        "-T".to_owned(),
+        crate::native_lib_link::native_lib_link_plan()
+            .linker_script_path()
+            .to_str()
+            .expect("utf-8 linker script path")
+            .to_owned(),
+        "-o".to_owned(),
+        elf_path.to_str().expect("utf-8 ELF path").to_owned(),
+    ]);
+
+    let link_status = Command::new("arm-none-eabi-gcc")
+        .args(link_args)
         .status()
         .expect("arm-none-eabi-gcc link of the final native-lib ELF");
 
@@ -329,12 +402,12 @@ mod tests {
         build_final_native_lib_binary(&native_lib_bin_path());
 
         let blob = fs::read(native_lib_bin_path()).expect("native-lib binary bytes");
-        let rust_extension_name = b"ext-rust-probe-v5\0";
+        let rust_extension_name = b"ext-c-probe-v12\0";
 
         assert!(
             blob.windows(rust_extension_name.len())
                 .any(|window| window == rust_extension_name),
-            "Rust-owned extension identity must be linked into the native blob so Rust source changes affect packaged bytes"
+            "C probe extension identity must be linked into the native blob:\n{rust_extension_name:?}"
         );
     }
 
@@ -407,7 +480,7 @@ mod tests {
             init_fun,
             SectionLayout {
                 name: ".init_fun".to_owned(),
-                size: 12,
+                size: 56,
                 vma: 4,
             }
         );
@@ -415,16 +488,16 @@ mod tests {
             got,
             SectionLayout {
                 name: ".got".to_owned(),
-                size: 0,
-                vma: 16,
+                size: 16,
+                vma: 60,
             }
         );
         assert_eq!(
             text,
             SectionLayout {
                 name: ".text".to_owned(),
-                size: 476,
-                vma: 16,
+                size: 112,
+                vma: 80,
             }
         );
         assert_eq!(init_fun.vma, program_ptr.vma + program_ptr.size);
@@ -441,30 +514,32 @@ mod tests {
     }
 
     #[test]
-    fn rust_only_build_does_not_materialize_a_package_c_object() {
+    fn native_build_materializes_the_package_loader_object() {
         build_final_native_lib_elf();
 
         assert!(
-            !package_lib_object_path().exists(),
-            "Rust-only native build must not materialize package_lib.o at {:?}",
+            package_lib_object_path().exists(),
+            "native build must materialize the C loader shim at {:?}",
             package_lib_object_path()
         );
     }
 
     #[test]
-    fn rust_only_native_artifact_has_no_package_c_shim_symbols() {
+    fn native_artifact_keeps_the_rust_owned_package_symbols() {
         build_final_native_lib_elf();
 
         let final_symbols = nm_output(&native_lib_elf_path());
         let final_defined = defined_symbols(&final_symbols);
 
         assert!(
-            !final_defined.contains("ext_c_probe_v6"),
-            "final Rust-only image must not retain C shim symbol `ext_c_probe_v6`:\n{final_symbols}"
+            final_defined.contains("ext_c_probe_v12"),
+            "final image must retain the C LispBM probe shim:\n{final_symbols}"
         );
         assert!(
-            final_defined.contains("init") && final_defined.contains("package_lib_init"),
-            "Rust-owned native image must keep loader and package entry symbols:\n{final_symbols}"
+            final_defined.contains("init")
+                && final_defined.contains("prog_ptr")
+                && final_defined.contains("package_lib_init"),
+            "native image must keep loader entry and Rust package init:\n{final_symbols}"
         );
     }
 
@@ -476,12 +551,18 @@ mod tests {
         let defined = defined_symbols(&output);
         let undefined = undefined_symbols(&output);
 
-        for symbol in ["init", "package_lib_init"] {
-            assert!(
-                defined.contains(symbol),
-                "expected final native image to retain current boundary symbol `{symbol}`:\n{output}"
-            );
-        }
+        assert!(
+            defined.contains("init") && defined.contains("package_lib_init"),
+            "expected final native image to retain loader and Rust package init:\n{output}"
+        );
+        assert!(
+            defined.contains("ext_c_probe_v12"),
+            "expected final native image to retain the C LispBM probe:\n{output}"
+        );
+        assert!(
+            !defined.contains("ext_rust_probe_v12"),
+            "expected unused Rust probe entrypoints to be garbage-collected from the final image:\n{output}"
+        );
         assert!(
             !defined.contains("ext_c_probe_v6"),
             "expected final native image to drop the temporary C probe after Rust-owned registration:\n{output}"
@@ -506,11 +587,7 @@ mod tests {
             "arm-none-eabi-objdump",
             [PathBuf::from("-d"), native_lib_elf_path()],
         );
-        assert!(
-            disassembly.contains("1000f800"),
-            "expected generated package code to call through VESC_IF at 0x1000f800:\n{disassembly}"
-        );
-        for offset in ["1000f840", "1000fa50", "[r6, #360]", "[r6, #0]", "#596]"] {
+        for offset in ["1000f800", "#64]", "#124]", "#100]"] {
             assert!(
                 disassembly.contains(offset),
                 "expected VESC_IF slot access {offset} in generated code:\n{disassembly}"
@@ -521,107 +598,139 @@ mod tests {
                 && !disassembly.contains("<vesc_set_app_data_handler>"),
             "expected direct VESC_IF calls without C wrapper stubs:\n{disassembly}"
         );
-        assert!(
-            disassembly.contains("<init>"),
-            "expected a VESC init entrypoint in .init_fun:\n{disassembly}"
-        );
-        assert!(
-            disassembly.contains("<package_lib_init>"),
-            "expected init to retain the Rust package entrypoint:\n{disassembly}"
-        );
-        let package_init_disassembly = disassembly
-            .split("<package_lib_init>:")
-            .nth(1)
-            .expect("expected package_lib_init in disassembly");
-        let app_data_register = package_init_disassembly
-            .find("#596]")
-            .expect("expected app-data handler registration in package_lib_init");
-        let rust_extension_register = package_init_disassembly[app_data_register..]
-            .find("[r8]")
-            .map(|offset| app_data_register + offset)
-            .expect("expected Rust extension registration through lbm_add_extension");
-        assert!(
-            app_data_register < rust_extension_register,
-            "expected package_lib_init to mirror VESC packages by registering app-data before LispBM extensions:\n{package_init_disassembly}"
-        );
-    }
-
-    #[test]
-    fn final_native_lib_rebases_rust_callbacks_from_the_loaded_image_base() {
-        build_final_native_lib_elf();
-
-        let disassembly = command_stdout(
-            "arm-none-eabi-objdump",
-            [PathBuf::from("-d"), native_lib_elf_path()],
-        );
-        let package_init_disassembly = disassembly
-            .split("<package_lib_init>:")
-            .nth(1)
-            .expect("expected package_lib_init in disassembly");
-
-        for expected in [
-            "ldr\tr6, [r0, #8]",
-            "add\tr0, r6",
-            "str\tr0, [r4, #0]",
-            "add\tr1, r6",
-            "blx\tr2",
-        ] {
+        for symbol in ["<init>", "<package_lib_init>", "<ext_c_probe_v12>"] {
             assert!(
-                package_init_disassembly.contains(expected),
-                "missing Rust-owned image pointer rebase marker `{expected}` before use:\n{package_init_disassembly}"
+                disassembly.contains(symbol),
+                "expected native image to retain `{symbol}`:\n{disassembly}"
             );
         }
+        let init_disassembly = disassembly
+            .split("<init>:")
+            .nth(1)
+            .expect("expected init in disassembly")
+            .split("\n\nDisassembly")
+            .next()
+            .expect("expected bounded init disassembly");
+        assert!(
+            init_disassembly.contains("4798"),
+            "loader init should register the C probe via blx after Rust package init:\n{init_disassembly}"
+        );
+        assert!(
+            init_disassembly.contains("<package_lib_init>"),
+            "loader init should call Rust package init before registering the probe:\n{init_disassembly}"
+        );
+        let package_init_disassembly = disassembly
+            .split("<package_lib_init>:")
+            .nth(1)
+            .expect("expected package_lib_init in disassembly");
+        assert!(
+            !package_init_disassembly.contains("4798"),
+            "Rust package init should not register the probe before the C shim owns it:\n{package_init_disassembly}"
+        );
     }
 
     #[test]
-    fn rust_only_native_artifact_rebases_all_firmware_callbacks() {
+    fn c_probe_extension_uses_the_vesc_function_table() {
         build_final_native_lib_elf();
 
         let disassembly = command_stdout(
             "arm-none-eabi-objdump",
             [PathBuf::from("-d"), native_lib_elf_path()],
         );
-        let package_init_disassembly = disassembly
-            .split("<package_lib_init>:")
-            .nth(1)
-            .expect("expected package_lib_init in disassembly");
-
-        for expected in [
-            "ldr\tr6, [r0, #8]",
-            "str\tr0, [r4, #0]",
-            "#596]",
-            "#0]",
-            "blx\tr1",
-            "blx\tr2",
-        ] {
-            assert!(
-                package_init_disassembly.contains(expected),
-                "missing Rust-only callback rebase/registration marker `{expected}`:\n{package_init_disassembly}"
-            );
-        }
-    }
-
-    #[test]
-    fn package_init_does_not_dereference_extension_names_before_rebase() {
-        build_final_native_lib_elf();
-
-        let disassembly = command_stdout(
-            "arm-none-eabi-objdump",
-            [PathBuf::from("-d"), native_lib_elf_path()],
-        );
-        let package_init_disassembly = disassembly
-            .split("<package_lib_init>:")
-            .nth(1)
-            .expect("expected package_lib_init in disassembly");
+        let probe_start = disassembly
+            .find("<ext_c_probe_v12>")
+            .expect("expected ext_c_probe_v12 in final native image");
+        let probe_rest = &disassembly[probe_start..];
+        let probe_end = probe_rest.find("\n\n0000").unwrap_or(probe_rest.len());
+        let probe_disassembly = &probe_rest[..probe_end];
 
         assert!(
-            !package_init_disassembly.contains("ldr\tr2, [r0, #0]"),
-            "package init must not read an extension name through a raw image offset before adding lib_info.base_addr:\n{package_init_disassembly}"
+            probe_disassembly.contains("1000f800"),
+            "C probe extension should materialize VESC_IF base:\n{probe_disassembly}"
+        );
+        assert!(
+            probe_disassembly.contains("#64]"),
+            "C probe extension should reach lbm_enc_i through VESC_IF:\n{probe_disassembly}"
+        );
+        assert!(
+            probe_disassembly.contains("#124]"),
+            "C probe extension should call lbm_is_number through VESC_IF:\n{probe_disassembly}"
+        );
+        assert!(
+            probe_disassembly.contains("#100]"),
+            "C probe extension should call lbm_dec_as_i32 through VESC_IF:\n{probe_disassembly}"
         );
     }
 
     #[test]
-    fn loader_init_reports_success_after_best_effort_package_init() {
+    fn final_native_lib_registers_the_c_probe_from_loader_init() {
+        build_final_native_lib_elf();
+
+        let disassembly = command_stdout(
+            "arm-none-eabi-objdump",
+            [PathBuf::from("-d"), native_lib_elf_path()],
+        );
+        let init_disassembly = disassembly
+            .split("<init>:")
+            .nth(1)
+            .expect("expected init in disassembly");
+
+        assert!(
+            init_disassembly.contains("1000f800"),
+            "loader init should register the C probe through VESC_IF:\n{init_disassembly}"
+        );
+        assert!(
+            init_disassembly.contains("<package_lib_init>"),
+            "loader init should call Rust package init before registering the probe:\n{init_disassembly}"
+        );
+        assert!(
+            !init_disassembly.contains("[r0, #8]"),
+            "PIC init should not manually add lib_info.base_addr to callbacks:\n{init_disassembly}"
+        );
+    }
+
+    #[test]
+    fn native_artifact_uses_the_c_probe_with_rust_package_init() {
+        build_final_native_lib_elf();
+
+        let disassembly = command_stdout(
+            "arm-none-eabi-objdump",
+            [PathBuf::from("-d"), native_lib_elf_path()],
+        );
+
+        assert!(
+            disassembly.contains("<ext_c_probe_v12>"),
+            "native artifact should include the C LispBM probe:\n{disassembly}"
+        );
+        assert!(
+            disassembly.split("<init>:").nth(1).is_some_and(
+                |init| init.contains("1000f800") && init.contains("<package_lib_init>")
+            ),
+            "loader init should call Rust package init and register the C probe:\n{disassembly}"
+        );
+    }
+
+    #[test]
+    fn loader_init_does_not_dereference_extension_names_before_rebase() {
+        build_final_native_lib_elf();
+
+        let disassembly = command_stdout(
+            "arm-none-eabi-objdump",
+            [PathBuf::from("-d"), native_lib_elf_path()],
+        );
+        let init_disassembly = disassembly
+            .split("<init>:")
+            .nth(1)
+            .expect("expected init in disassembly");
+
+        assert!(
+            !init_disassembly.contains("ldr\tr2, [r0, #0]"),
+            "loader init must not read an extension name through a raw image offset before adding lib_info.base_addr:\n{init_disassembly}"
+        );
+    }
+
+    #[test]
+    fn loader_init_reports_success_after_delegating_to_rust_package_init() {
         build_final_native_lib_elf();
 
         let disassembly = command_stdout(
@@ -638,11 +747,11 @@ mod tests {
 
         assert!(
             init_disassembly.contains("<package_lib_init>"),
-            "expected VESC loader init to call package_lib_init:\n{init_disassembly}"
+            "loader init should call Rust package init before registering the probe:\n{init_disassembly}"
         );
         assert!(
-            init_disassembly.contains("movs\tr0, #1"),
-            "VESC package examples return true after best-effort setup; loader init should not fail the native load because app-data or extension registration reported false:\n{init_disassembly}"
+            init_disassembly.contains("4798"),
+            "loader init should register the C probe via blx after Rust package init:\n{init_disassembly}"
         );
     }
 
@@ -657,12 +766,11 @@ mod tests {
          U lbm_add_extension
          U lbm_dec_as_i32
          U lbm_enc_i
-         U rust_add
 ";
 
         assert_eq!(
             unexpected_final_native_lib_undefined_symbols(sample),
-            BTreeSet::from(["rust_add".to_owned()])
+            BTreeSet::new()
         );
     }
 
@@ -677,28 +785,37 @@ mod tests {
             "expected the Rust staticlib to export package_lib_init"
         );
         assert!(
-            defined.contains("init"),
-            "expected the Rust staticlib to export the loader init trampoline"
+            !defined.contains("init"),
+            "loader init must come from the refloat-style C shim, not the Rust staticlib:\n{output}"
         );
     }
 
     #[test]
-    fn rust_only_native_artifact_exports_loader_entry_from_rust() {
+    fn rust_staticlib_exports_loader_entry_and_c_probe_dependency() {
         build_rust_staticlib();
         build_final_native_lib_elf();
 
         let staticlib_symbols = nm_output(&rust_staticlib_path());
         let staticlib_defined = defined_symbols(&staticlib_symbols);
+        let staticlib_undefined = undefined_symbols(&staticlib_symbols);
 
-        for symbol in ["prog_ptr", "init", "package_lib_init"] {
+        for symbol in ["package_lib_init", "rust_add", "ext_rust_probe_v12"] {
             assert!(
                 staticlib_defined.contains(symbol),
-                "Rust staticlib must own loader symbol `{symbol}`:\n{staticlib_symbols}"
+                "Rust staticlib must own symbol `{symbol}`:\n{staticlib_symbols}"
             );
         }
         assert!(
-            !package_lib_object_path().exists(),
-            "package C object must not exist in the Rust-only native build"
+            !staticlib_defined.contains("init") && !staticlib_defined.contains("prog_ptr"),
+            "Rust staticlib must not duplicate loader sections owned by the C shim:\n{staticlib_symbols}"
+        );
+        assert!(
+            !staticlib_undefined.contains("register_c_probe"),
+            "Rust package init should not depend on a separate C probe registrar:\n{staticlib_symbols}"
+        );
+        assert!(
+            package_lib_object_path().exists(),
+            "package C object must be linked into the final native build"
         );
     }
 

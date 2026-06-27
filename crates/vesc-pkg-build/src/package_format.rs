@@ -481,7 +481,7 @@ mod tests {
             vec![
                 ("name", 30),
                 ("description_md", 37),
-                ("lispData", 375),
+                ("lispData", 371),
                 ("pkgDescQml", 227),
                 ("qmlIsFullscreen", 1),
             ]
@@ -491,11 +491,11 @@ mod tests {
         let (code, imports) = parse_lisp_imports(&lisp_data);
         assert_eq!(
             code,
-            "(import \"src/package_lib.bin\" 'package-lib)\n(print \"vesc-rust-load-v7\")\n(print (load-native-lib package-lib))\n(loopwhile t {\n    (sleep 1.0)\n})\n"
+            "; Auto-generated loader for the Rust BLE loopback test package.\n(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n"
         );
         assert_eq!(imports.len(), 1);
         assert_eq!(imports[0].tag, "package-lib");
-        assert_eq!(imports[0].offset, 168);
+        assert_eq!(imports[0].offset, 164);
         assert_eq!(imports[0].size, 205);
         assert!(payload_matches_native_with_only_nul_tail(
             &imports[0].payload,

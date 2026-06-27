@@ -342,8 +342,8 @@ mod tests {
             "expected the loader to load the imported native library: {loader:?}"
         );
         assert!(
-            source.contains("(loopwhile t") && source.contains("(sleep 1.0)"),
-            "expected the loader to keep the package context visible and alive: {loader:?}"
+            !source.contains("(loopwhile t") && !source.contains("(sleep 1.0)"),
+            "expected the loader to return after native registration so REPL probes can run: {loader:?}"
         );
         assert!(
             !source.contains("ext-rust-add"),

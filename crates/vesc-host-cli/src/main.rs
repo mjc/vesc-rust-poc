@@ -66,7 +66,11 @@ fn main() -> ExitCode {
             };
 
             loop {
-                match vesc_host_cli::btle::run_lisp_probe(target.clone()) {
+                match vesc_host_cli::btle::run_lisp_probe_with_progress(target.clone(), |event| {
+                    if event.should_print_to_cli() {
+                        println!("lisp probe: {}", event.describe());
+                    }
+                }) {
                     Ok(report) => {
                         report
                             .prints()

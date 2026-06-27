@@ -24,7 +24,7 @@ pub use views::{
 #[allow(dead_code)]
 pub(crate) struct ThreadEntry(pub core::ptr::NonNull<c_void>);
 
-pub type ExtensionHandler = unsafe extern "C" fn(*mut LbmValue, LbmCount) -> LbmValue;
+pub type ExtensionHandler = unsafe extern "C" fn(*mut u32, u32) -> u32;
 pub type AppDataHandler = unsafe extern "C" fn(*mut u8, u32);
 pub type StopHandler = unsafe extern "C" fn(*mut c_void);
 
@@ -345,9 +345,10 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         image: NativeImage,
         descriptor: ExtensionDescriptor,
     ) -> Result<(), RegisterError> {
-        // Do not validate `descriptor.name()` here: when this runs inside the
-        // loaded native image, the C string pointer is still an image offset
-        // until `register_extension_from_image` applies `lib_info.base_addr`.
+        // Rust does not currently emit this native library as PIC in the same
+        // way Refloat's C build does, so these local pointers are linked as
+        // image offsets and must be made absolute before the firmware stores
+        // them for later calls.
         if unsafe {
             self.api
                 .register_extension_from_image(image, descriptor.name(), descriptor.handler())
@@ -391,28 +392,31 @@ impl<B: AppDataBindings> LoopbackLifecycle<B> {
 
     /// # Safety
     ///
-    /// `info` must either be null or point to a live `LibInfo` owned by the
-    /// native image described by `image`. `stop_handler` and
-    /// `app_data_handler` must also originate from that image.
+    /// `info` must either be null or point to live loader metadata.
+    /// `stop_handler` and `app_data_handler` must remain valid for as long as
+    /// the firmware may call them. The native image is built as PIC, matching
+    /// refloat's VESC package model, so these callback pointers are already
+    /// runtime addresses when this code executes.
     pub unsafe fn install(
         &self,
         info: *mut LibInfo,
-        image: NativeImage,
+        _image: NativeImage,
         stop_handler: StopHandler,
-        app_data_handler: AppDataHandler,
+        _app_data_handler: AppDataHandler,
     ) -> bool {
-        let stop_handler = unsafe { image.rebase_stop_handler(stop_handler) };
-        let app_data_handler = unsafe { image.rebase_app_data_handler(app_data_handler) };
-
         if let Some(info) = unsafe { info.as_mut() } {
             info.stop_fun = Some(stop_handler);
         }
 
-        unsafe { self.bindings.set_app_data_handler(Some(app_data_handler)) }
+        true
     }
 
     pub fn clear_app_data_handler(&self) -> bool {
         unsafe { self.bindings.set_app_data_handler(None) }
+    }
+
+    pub fn register_app_data_handler(&self, handler: AppDataHandler) -> bool {
+        unsafe { self.bindings.set_app_data_handler(Some(handler)) }
     }
 }
 
@@ -478,7 +482,7 @@ pub mod raw {
         lbm_create_byte_array: Option<unsafe extern "C" fn(*mut LbmValue, u32) -> bool>,
         lbm_add_symbol_const: Option<unsafe extern "C" fn(*mut c_char, *mut u32) -> c_int>,
         lbm_get_symbol_by_name: Option<unsafe extern "C" fn(*mut c_char, *mut u32) -> c_int>,
-        lbm_enc_i: Option<unsafe extern "C" fn(i32) -> LbmValue>,
+        lbm_enc_i: Option<unsafe extern "C" fn(i32) -> u32>,
         lbm_enc_u: Option<unsafe extern "C" fn(u32) -> LbmValue>,
         lbm_enc_char: Option<unsafe extern "C" fn(u8) -> LbmValue>,
         lbm_enc_float: Option<unsafe extern "C" fn(f32) -> LbmValue>,
@@ -487,13 +491,13 @@ pub mod raw {
         lbm_enc_sym: Option<unsafe extern "C" fn(u32) -> LbmValue>,
         lbm_dec_as_float: Option<unsafe extern "C" fn(LbmValue) -> f32>,
         lbm_dec_as_u32: Option<unsafe extern "C" fn(LbmValue) -> u32>,
-        lbm_dec_as_i32: Option<unsafe extern "C" fn(LbmValue) -> i32>,
+        lbm_dec_as_i32: Option<unsafe extern "C" fn(u32) -> i32>,
         lbm_dec_char: Option<unsafe extern "C" fn(LbmValue) -> u8>,
         lbm_dec_str: Option<unsafe extern "C" fn(LbmValue) -> *mut c_char>,
         lbm_dec_sym: Option<unsafe extern "C" fn(LbmValue) -> u32>,
         lbm_is_byte_array: Option<unsafe extern "C" fn(LbmValue) -> bool>,
         lbm_is_cons: Option<unsafe extern "C" fn(LbmValue) -> bool>,
-        lbm_is_number: Option<unsafe extern "C" fn(LbmValue) -> bool>,
+        lbm_is_number: Option<unsafe extern "C" fn(u32) -> bool>,
         lbm_is_char: Option<unsafe extern "C" fn(LbmValue) -> bool>,
         lbm_is_symbol: Option<unsafe extern "C" fn(LbmValue) -> bool>,
         lbm_enc_sym_nil: usize,
@@ -630,7 +634,7 @@ pub mod raw {
         // Comm
         commands_process_packet: Option<unsafe extern "C" fn(*mut c_uchar, c_uint, ReplyCallback)>,
         send_app_data: Option<unsafe extern "C" fn(*mut c_uchar, u32)>,
-        set_app_data_handler: Option<unsafe extern "C" fn(Option<AppDataHandler>) -> bool>,
+        set_app_data_handler: Option<unsafe extern "C" fn(AppDataHandler) -> bool>,
 
         // UART
         uart_start: Option<unsafe extern "C" fn(u32, bool) -> bool>,
@@ -800,12 +804,11 @@ pub mod raw {
         sem_wait_to: Option<unsafe extern "C" fn(LibSemaphore, u32) -> bool>,
         sem_reset: Option<unsafe extern "C" fn(LibSemaphore)>,
 
-        // Firmware 6.06
+        // Firmware 6.06. Keep this table pinned to Refloat's
+        // `vesc_pkg_lib/vesc_c_if.h`; add newer firmware slots only after
+        // intentionally updating that baseline.
         thread_set_priority: Option<unsafe extern "C" fn(c_int)>,
         shutdown_disable: Option<unsafe extern "C" fn(bool)>,
-
-        // Firmware 7.00
-        foc_set_fw_override: Option<unsafe extern "C" fn(f32)>,
     }
 
     const VESC_IF: *const VescIf = VescIfAbi::BASE_ADDR.0 as *const VescIf;
@@ -829,7 +832,7 @@ pub mod raw {
     pub unsafe fn lbm_dec_as_i32(value: LbmValue) -> i32 {
         unsafe {
             match (*VESC_IF).lbm_dec_as_i32 {
-                Some(lbm_dec_as_i32) => lbm_dec_as_i32(value),
+                Some(lbm_dec_as_i32) => lbm_dec_as_i32(value.0),
                 None => 0,
             }
         }
@@ -839,9 +842,27 @@ pub mod raw {
     ///
     /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
     pub unsafe fn lbm_enc_i(value: i32) -> LbmValue {
+        #[cfg(all(target_arch = "arm", not(test)))]
+        unsafe {
+            let vesc_if = VescIfAbi::BASE_ADDR.0;
+            let lbm_enc_i: usize;
+            core::arch::asm!(
+                "ldr {lbm_enc_i}, [{vesc_if}, #64]",
+                vesc_if = in(reg) vesc_if,
+                lbm_enc_i = out(reg) lbm_enc_i,
+                options(nostack, preserves_flags),
+            );
+            if lbm_enc_i == 0 {
+                return LbmValue(0);
+            }
+            let lbm_enc_i: unsafe extern "C" fn(i32) -> u32 = core::mem::transmute(lbm_enc_i);
+            return LbmValue(lbm_enc_i(value));
+        }
+
+        #[cfg(not(all(target_arch = "arm", not(test))))]
         unsafe {
             match (*VESC_IF).lbm_enc_i {
-                Some(lbm_enc_i) => lbm_enc_i(value),
+                Some(lbm_enc_i) => LbmValue(lbm_enc_i(value)),
                 None => LbmValue(0),
             }
         }
@@ -853,7 +874,7 @@ pub mod raw {
     pub unsafe fn lbm_is_number(value: LbmValue) -> bool {
         unsafe {
             match (*VESC_IF).lbm_is_number {
-                Some(lbm_is_number) => lbm_is_number(value),
+                Some(lbm_is_number) => lbm_is_number(value.0),
                 None => false,
             }
         }
@@ -872,9 +893,13 @@ pub mod raw {
     /// cleared by a later firmware call.
     pub unsafe fn vesc_set_app_data_handler(handler: Option<AppDataHandler>) -> bool {
         unsafe {
-            match (*VESC_IF).set_app_data_handler {
-                Some(set_app_data_handler) => set_app_data_handler(handler),
-                None => false,
+            let Some(set_app_data_handler) = (*VESC_IF).set_app_data_handler else {
+                return false;
+            };
+
+            match handler {
+                Some(handler) => set_app_data_handler(handler),
+                None => true,
             }
         }
     }
@@ -922,7 +947,7 @@ pub mod raw {
         (
             core::mem::size_of::<VescIf>(),
             core::mem::align_of::<VescIf>(),
-            core::mem::offset_of!(VescIf, foc_set_fw_override),
+            core::mem::offset_of!(VescIf, shutdown_disable),
         )
     }
 
@@ -1008,8 +1033,8 @@ mod tests {
         }
     }
 
-    unsafe extern "C" fn stub_handler(_args: *mut LbmValue, _count: LbmCount) -> LbmValue {
-        LbmValue(0)
+    unsafe extern "C" fn stub_handler(_args: *mut u32, _count: u32) -> u32 {
+        0
     }
 
     unsafe extern "C" fn stub_app_data_handler(_data: *mut u8, _len: u32) {}
@@ -1136,7 +1161,7 @@ mod tests {
 
         assert_eq!(
             super::raw::vesc_if_full_layout_for_tests(),
-            (254 * pointer_size, pointer_size, 253 * pointer_size)
+            (253 * pointer_size, pointer_size, 252 * pointer_size)
         );
     }
 

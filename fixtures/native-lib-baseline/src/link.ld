@@ -47,7 +47,7 @@ SECTIONS
         *(.text)
         *(.text*)
         *(.rodata)
-        *(.rodata*)
+        *(.rodata.*)
     } > MEM
 
     /DISCARD/ :
