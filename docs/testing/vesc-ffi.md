@@ -6,7 +6,7 @@ Strategy for the `vesc-ffi` crate: a hand-maintained, `no_std` firmware ABI mirr
 
 | Tier | What | Where |
 |------|------|--------|
-| Compile-fail | `unsafe` required, no `std` leak | `tests/ui/`, trybuild |
+| Compile-fail | `unsafe` required, no `std` leak, gated `test-support` | `tests/ui/`, trybuild |
 | Layout / ABI pins | `LibInfo`, `VescIf` size/offsets, newtypes | `src/tests.rs` |
 | Raw dispatch | mock `VescIf` + stub call recording | `src/raw/dispatch_tests.rs` |
 | Header parity | `ffi-compare` vs `vesc_c_if.h` | `vesc-pkg` bin (Phase 4, br-uc4.5) |
@@ -48,7 +48,7 @@ with_table(&table, || unsafe {
 });
 ```
 
-Implementation: `crates/vesc-ffi/src/test_support.rs`, enabled with `cfg(any(test, feature = "test-support"))`.
+Implementation: `crates/vesc-ffi/src/test_support.rs`, enabled with the `test-support` feature.
 
 Production ARM builds keep inline `asm!` dispatch; host/test builds use `Option<fn>` slots on the mock table.
 
@@ -66,9 +66,10 @@ Production ARM builds keep inline `asm!` dispatch; host/test builds use `Option<
 | Command | Scope |
 |---------|--------|
 | `nix develop -c make check` | fmt, clippy, default nextest (includes vesc-ffi unit + dispatch) |
+| `nix develop -c make check-ffi-header` | `ffi_compare` library tests (fixture + optional refloat parity) |
+| `nix develop -c make check-ffi` | ffi nextest profile, coverage gate, header parity |
 | `nix develop -c make coverage-ffi` | line coverage with `--features test-support` |
-| `nix develop -c make check-full` | check + symbol-check + package tier |
-| `check-ffi-header` (planned, br-uc4.5) | `ffi-compare` header parity |
+| `nix develop -c make check-full` | check + header parity + symbol-check + package tier |
 
 ## Adding a new `raw::*` wrapper
 
@@ -77,5 +78,15 @@ Production ARM builds keep inline `asm!` dispatch; host/test builds use `Option<
 3. Extend `vesc_if_offsets_for_tests()` and layout tests.
 4. Add dispatch tests (Some + None paths) using `test_support`.
 5. Update this inventory table.
+
+## Miri (optional)
+
+Host dispatch tests can be run under Miri to exercise the mock-table harness:
+
+```bash
+nix develop -c cargo +nightly miri test -p vesc-ffi --features test-support
+```
+
+Miri does not cover the ARM `asm!` dispatch path (`cfg(all(target_arch = "arm", not(test)))`). Treat Miri as a harness sanity check, not firmware validation.
 
 Epic tracking: **br-uc4**.

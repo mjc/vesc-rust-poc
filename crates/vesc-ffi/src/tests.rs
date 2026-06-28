@@ -220,3 +220,39 @@ fn transparent_wrappers_expose_raw_tuple_fields() {
     assert_eq!(point.x, 1.5);
     assert_eq!(point.y, 2.5);
 }
+
+#[test]
+fn arm_asm_immediates_match_vesc_if_abi() {
+    let raw = include_str!("raw.rs");
+    let expected = [
+        (
+            "lbm_add_extension",
+            VescIfAbi::LBM_ADD_EXTENSION.vesc32_byte_offset(),
+        ),
+        ("lbm_enc_i", VescIfAbi::LBM_ENC_I.vesc32_byte_offset()),
+        (
+            "lbm_dec_as_i32",
+            VescIfAbi::LBM_DEC_AS_I32.vesc32_byte_offset(),
+        ),
+        (
+            "lbm_is_number",
+            VescIfAbi::LBM_IS_NUMBER.vesc32_byte_offset(),
+        ),
+        (
+            "lbm_enc_sym_eerror",
+            VescIfAbi::LBM_ENC_SYM_EERROR.vesc32_byte_offset(),
+        ),
+        (
+            "set_app_data_handler",
+            VescIfAbi::SET_APP_DATA_HANDLER.vesc32_byte_offset(),
+        ),
+    ];
+
+    for (slot, offset) in expected {
+        let insn = std::format!("ldr {{{slot}}}, [{{vesc_if}}, #{offset}]");
+        assert!(
+            raw.contains(&insn),
+            "missing ARM asm dispatch for {slot} at byte offset {offset}"
+        );
+    }
+}
