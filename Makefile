@@ -2,7 +2,7 @@
 
 CARGO ?= cargo
 
-.PHONY: check check-full test test-all test-embedded test-changed fmt clippy symbol-check package-smoke package package-only clean status coverage coverage-ffi coverage-package
+.PHONY: check check-full test test-all test-embedded test-package test-changed fmt clippy symbol-check package-smoke package package-only clean status coverage coverage-ffi coverage-package
 
 check: fmt clippy test
 
@@ -15,6 +15,9 @@ test-all:
 
 test-embedded:
 	$(CARGO) nextest run -p vesc-pkg-build --no-fail-fast --profile embedded
+
+test-package:
+	$(CARGO) nextest run -p vesc-pkg-build --no-fail-fast --features test-support --profile package
 
 test-changed:
 	$(CARGO) test-changed -r nextest

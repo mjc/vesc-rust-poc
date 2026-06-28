@@ -12,6 +12,12 @@ pub struct TempWorkspace {
     pub root: PathBuf,
 }
 
+impl Default for TempWorkspace {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TempWorkspace {
     pub fn new() -> Self {
         let temp = tempfile::tempdir().expect("temp dir");
@@ -22,6 +28,12 @@ impl TempWorkspace {
 
 pub struct PackageTestHarness {
     workspace: TempWorkspace,
+}
+
+impl Default for PackageTestHarness {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PackageTestHarness {

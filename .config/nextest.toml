@@ -2,7 +2,10 @@
 dir = "target/nextest"
 
 [profile.default]
-default-filter = 'not test(native_lib_artifacts)'
+default-filter = 'not test(native_lib_artifacts) and not test(package_pipeline)'
 
 [profile.embedded]
 default-filter = 'test(native_lib_artifacts)'
+
+[profile.package]
+default-filter = 'test(package_pipeline)'

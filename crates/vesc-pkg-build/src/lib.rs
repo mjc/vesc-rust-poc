@@ -22,8 +22,8 @@ pub mod package_target;
 pub mod package_wire;
 pub mod rust_package_api_roadmap;
 pub mod symbol_audit;
-#[cfg(test)]
-mod test_support;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 
 pub const BLE_LOOPBACK_PACKAGE_NAME: &str = "Rust BLE loopback test package";
 
