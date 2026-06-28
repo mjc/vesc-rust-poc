@@ -2,7 +2,7 @@
 
 This repo is organized around layered responsibilities:
 
-- `crates/vesc-ffi/` — raw firmware ABI (`no_std`, unsafe table calls).
+- `crates/vesc-ffi/` — raw firmware ABI (`no_std`, unsafe table calls). See [vesc-ffi testing](testing/vesc-ffi.md).
 - `crates/vesc-sdk/` — target-side SDK linked into native VESC packages.
 - `crates/vesc-protocol/` — shared wire types for host and target.
 - `crates/vesc-pkg/` — host-side `.vescpkg` format, build, and install.

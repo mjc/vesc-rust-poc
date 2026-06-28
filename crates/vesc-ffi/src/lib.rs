@@ -4,6 +4,8 @@
 //! high-level vehicle semantics, package building, or host transport code.
 //!
 //! Device builds must stay `no_std` and must not link `alloc` or `std`.
+//!
+//! Testing strategy: see `docs/testing/vesc-ffi.md`.
 
 #![no_std]
 #![forbid(unused_extern_crates)]
@@ -16,6 +18,9 @@ mod image;
 mod loader;
 mod types;
 mod vesc_if;
+
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 
 pub mod raw;
 pub mod views;
