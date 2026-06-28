@@ -5,6 +5,7 @@
 
 pub mod abi_inventory;
 pub mod cargo_vescpkg_command;
+pub mod ffi_compare;
 pub mod hygiene;
 pub mod install;
 pub mod manifest;

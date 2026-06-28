@@ -12,3 +12,6 @@ default-filter = 'test(package_pipeline) or test(fixtures)'
 
 [profile.hil]
 default-filter = 'test(hil_loopback_sketch)'
+
+[profile.ffi]
+default-filter = 'package(vesc-ffi) or test(ffi_compare)'
