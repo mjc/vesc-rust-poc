@@ -5,7 +5,7 @@ use core::ffi::CStr;
 use vesc_package::ffi;
 use vesc_package::lbm::encode_lbm_i32_raw;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "test-support"))]
 use vesc_package::ffi::{LbmApi, LbmBindings, LbmCount, LbmValue};
 
 /// LispBM extension name registered on device (`ext-rust-probe-diag-v4`).
@@ -43,7 +43,7 @@ pub(crate) fn rust_add(a: i32, b: i32) -> i32 {
     a + b
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "test-support"))]
 fn rust_add_extension_value<B: LbmBindings>(
     api: &LbmApi<B>,
     _args: *mut LbmValue,
