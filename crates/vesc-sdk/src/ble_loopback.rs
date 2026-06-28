@@ -1,5 +1,7 @@
 use core::cell::{Cell, RefCell};
 
+#[cfg(not(test))]
+use crate::AppDataBindings;
 use vesc_protocol::WireCommand;
 use vesc_protocol::ble_loopback::{LoopbackError, LoopbackPacket, handle_loopback_frame};
 
@@ -188,14 +190,11 @@ pub fn register_loopback_app_data_handler_with<B: crate::AppDataBindings>(
     lifecycle.register_app_data_handler(handler)
 }
 
-/// Opt-in BLE loopback app-data handler registration.
-///
-/// Not called from package init so the native blob stays compact; call explicitly when
-/// loopback-over-app-data is needed.
+/// Register the production loopback app-data handler on device firmware.
 #[cfg(not(test))]
 pub fn register_loopback_app_data_handler() -> bool {
     register_loopback_app_data_handler_with(
-        &crate::ffi::LoopbackLifecycle::new(crate::ffi::RealBindings),
+        &crate::LoopbackLifecycle::new(crate::RealBindings),
         loopback_app_data_handler,
     )
 }
@@ -207,11 +206,11 @@ unsafe extern "C" fn loopback_app_data_handler(data: *mut u8, len: u32) {
     }
 
     let bytes = unsafe { core::slice::from_raw_parts(data as *const u8, len as usize) };
-    let lifecycle = crate::ffi::LoopbackLifecycle::new(crate::ffi::RealBindings);
-    let now_ms = u64::from(lifecycle.system_time_ticks()) / 10;
+    let bindings = crate::RealBindings;
+    let now_ms = u64::from(bindings.system_time_ticks()) / 10;
 
     if let Some((response, response_len)) = process_loopback_app_data(bytes, now_ms) {
-        unsafe { lifecycle.send_app_data(response.as_ptr(), response_len as u32) };
+        unsafe { bindings.send_app_data(response.as_ptr(), response_len as u32) };
     }
 }
 

@@ -37,7 +37,8 @@ pub extern "C" fn init(info: *mut ffi::LibInfo) -> bool {
         return false;
     };
 
-    register_package_extensions(info, &ffi::PackageLifecycle::new(ffi::RealBindings))
+    let lifecycle = ffi::PackageLifecycle::new(ffi::RealBindings);
+    register_package_extensions(info, &lifecycle)
 }
 
 /// Register this package's extension table using the supplied binding set.
