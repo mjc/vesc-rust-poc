@@ -3,10 +3,7 @@ fn native_lib_disassembly_matches_firmware_patterns() {
     let fixture = SymbolAuditFixture::new();
     fixture.build_bin();
 
-    let disassembly = command_stdout(
-        "arm-none-eabi-objdump",
-        [PathBuf::from("-d"), fixture.elf()],
-    );
+    let disassembly = crate::native_disasm::elf_disassembly(&fixture.elf());
 
     for offset in ["1000f800", "#596]"] {
         assert!(

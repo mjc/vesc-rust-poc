@@ -3,26 +3,26 @@ source: crates/vesc-pkg-build/src/native_lib_audit_disassembly.rs
 expression: redact_disassembly_for_snapshot(bounded_init)
 ---
 
-   [ADDR]:	b5d0      	push	{r4, r6, r7, lr}
-   [ADDR]:	af02      	add	r7, sp, #8
-   [ADDR]:	4604      	mov	r4, r0
-   [ADDR]:	f000 f829 	bl	60 <package_lib_init>
-   [ADDR]:	b160      	cbz	r0, 2a <init+0x26>
-  [ADDR]:	b15c      	cbz	r4, 2a <init+0x26>
-  [ADDR]:	4808      	ldr	r0, [pc, #32]	@ (34 <init+0x30>)
-  [ADDR]:	68a1      	ldr	r1, [r4, #8]
-  [ADDR]:	4478      	add	r0, pc
-  [ADDR]:	6800      	ldr	r0, [r0, #0]
-  [ADDR]:	4401      	add	r1, r0
-  [ADDR]:	4804      	ldr	r0, [pc, #16]	@ (30 <init+0x2c>)
-  [ADDR]:	6802      	ldr	r2, [r0, #0]
-  [ADDR]:	4805      	ldr	r0, [pc, #20]	@ (38 <init+0x34>)
-  [ADDR]:	4478      	add	r0, pc
-  [ADDR]:	e8bd 40d0 	ldmia.w	sp!, {r4, r6, r7, lr}
-  [ADDR]:	4710      	bx	r2
-  [ADDR]:	2000      	movs	r0, #0
-  [ADDR]:	bdd0      	pop	{r4, r6, r7, pc}
-  [ADDR]:	bf00      	nop
-  [ADDR]:	1000f800 	.word	0x1000f800
-  [ADDR]:	00000022 	.word	0x00000022
-  [ADDR]:	0000007a 	.word	0x0000007a
+   [ADDR]:	b5d0	push	{r4, r6, r7, lr}
+   [ADDR]:	af02	add	r7, sp, #8
+   [ADDR]:	4604	mov	r4, r0
+   [ADDR]:	f000 f829	bl	#0x60 <package_lib_init>
+   [ADDR]:	b160	cbz	r0, #0x2a
+  [ADDR]:	b15c	cbz	r4, #0x2a
+  [ADDR]:	4808	ldr	r0, [pc, #0x20]
+  [ADDR]:	68a1	ldr	r1, [r4, #8]
+  [ADDR]:	4478	add	r0, pc
+  [ADDR]:	6800	ldr	r0, [r0]
+  [ADDR]:	4401	add	r1, r0
+  [ADDR]:	4804	ldr	r0, [pc, #0x10]
+  [ADDR]:	6802	ldr	r2, [r0]
+  [ADDR]:	4805	ldr	r0, [pc, #0x14]
+  [ADDR]:	4478	add	r0, pc
+  [ADDR]:	e8bd 40d0	pop.w	{r4, r6, r7, lr}
+  [ADDR]:	4710	bx	r2
+  [ADDR]:	2000	movs	r0, #0
+  [ADDR]:	bdd0	pop	{r4, r6, r7, pc}
+  [ADDR]:	bf00	nop	
+  [ADDR]:	1000f800	.word	0x1000f800
+  [ADDR]:	00000022	.word	0x00000022
+  [ADDR]:	0000007a	.word	0x0000007a

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+capstone = "0.12"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 object = { version = "0.36", default-features = false, features = ["read", "elf"] }
 vesc-protocol = { path = "../vesc-protocol" }
