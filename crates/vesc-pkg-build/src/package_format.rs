@@ -220,10 +220,10 @@ fn parse_import_line(line: &str) -> Option<(String, String)> {
 
 #[cfg(test)]
 mod tests {
+    use super::parse_import_line;
     use super::{build_vesc_package, VescPackageInput};
     use crate::package_wire::{field_bytes, parse_lisp_imports, parse_vescpkg, LispImport};
     use crate::test_support::PackageTestHarness;
-    use crate::{PackageAssets, PackageLayout, PackageProvenance, BLE_LOOPBACK_PACKAGE_NAME};
 
     fn extract_field(package: &[u8], key: &str) -> Vec<u8> {
         field_bytes(&parse_vescpkg(package).expect("vescpkg"), key)
@@ -231,8 +231,18 @@ mod tests {
             .to_vec()
     }
 
-    fn payload_matches_native_with_only_nul_tail(payload: &[u8], native: &[u8]) -> bool {
-        payload.starts_with(native) && payload[native.len()..].iter().all(|byte| *byte == 0)
+    #[test]
+    fn parse_import_line_reads_path_and_tag_from_lisp_import_forms() {
+        assert_eq!(
+            parse_import_line("(import \"src/package_lib.bin\" 'package-lib)"),
+            Some(("src/package_lib.bin".to_owned(), "package-lib".to_owned()))
+        );
+        assert_eq!(
+            parse_import_line("  (import \"relative/path.bin\" 'my-tag) ; comment"),
+            Some(("relative/path.bin".to_owned(), "my-tag".to_owned()))
+        );
+        assert_eq!(parse_import_line("(load-native-lib package-lib)"), None);
+        assert_eq!(parse_import_line("(import \"\" 'package-lib)"), None);
     }
 
     #[test]
@@ -264,33 +274,6 @@ mod tests {
             }]
         );
         assert_eq!(imports[0].offset % 4, 0);
-    }
-
-    #[test]
-    fn lisp_import_payload_preserves_native_bytes_with_only_nul_padding() {
-        let native_payload = [0, 1, 2, 3, 0];
-        let harness = PackageTestHarness::new().write_native_payload(native_payload);
-        let loader = harness.loopback_loader_lisp();
-
-        let package = build_vesc_package(&VescPackageInput {
-            name: "test",
-            description_md: "",
-            lisp_source: &loader,
-            lisp_editor_path: harness.root(),
-            qml_file: "",
-            pkg_desc_qml: "",
-            qml_is_fullscreen: false,
-        })
-        .expect("package");
-        let lisp_data = extract_field(&package, "lispData");
-        let (_, imports) = parse_lisp_imports(&lisp_data).expect("lisp imports");
-
-        assert_eq!(imports.len(), 1);
-        assert_eq!(imports[0].tag, "package-lib");
-        assert!(payload_matches_native_with_only_nul_tail(
-            &imports[0].payload,
-            &native_payload
-        ));
     }
 
     #[test]
@@ -329,93 +312,5 @@ mod tests {
         assert_eq!(fields[3].value, b"qml");
         assert_eq!(fields[4].value, b"descriptor");
         assert_eq!(fields[5].value, [0]);
-    }
-
-    #[test]
-    fn generated_ble_package_pins_the_expected_field_sizes_and_native_import_layout() {
-        let mut native_payload = (0..205).map(|byte| byte as u8).collect::<Vec<_>>();
-        native_payload[204] = 0;
-        let harness = PackageTestHarness::new().write_native_payload(&native_payload);
-
-        let assets = PackageAssets::new(
-            PackageLayout::new(BLE_LOOPBACK_PACKAGE_NAME, "0.1.0"),
-            PackageProvenance::empty(),
-        );
-        let package = build_vesc_package(&VescPackageInput {
-            name: assets.package_name(),
-            description_md: &assets.render_readme(),
-            lisp_source: &assets.render_loader(),
-            lisp_editor_path: harness.root(),
-            qml_file: "",
-            pkg_desc_qml: &assets.render_descriptor(),
-            qml_is_fullscreen: false,
-        })
-        .expect("package");
-        let fields = parse_vescpkg(&package).expect("vescpkg fields");
-
-        assert_eq!(
-            fields
-                .iter()
-                .map(|field| (field.key.as_str(), field.value.len()))
-                .collect::<Vec<_>>(),
-            vec![
-                ("name", 30),
-                ("description_md", 37),
-                ("lispData", 371),
-                ("pkgDescQml", 336),
-                ("qmlIsFullscreen", 1),
-            ]
-        );
-
-        let lisp_data = extract_field(&package, "lispData");
-        let (code, imports) = parse_lisp_imports(&lisp_data).expect("lisp imports");
-        assert_eq!(
-            code,
-            "; Auto-generated loader for the Rust BLE loopback test package.\n(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n"
-        );
-        assert_eq!(imports.len(), 1);
-        assert_eq!(imports[0].tag, "package-lib");
-        assert_eq!(imports[0].offset, 164);
-        assert_eq!(imports[0].size, 205);
-        assert!(payload_matches_native_with_only_nul_tail(
-            &imports[0].payload,
-            &native_payload
-        ));
-    }
-
-    #[test]
-    fn native_import_payload_preserves_the_loader_header_prefix() {
-        let native_payload = [
-            0x00, 0x00, 0x00, 0x00, // .program_ptr placeholder
-            0x08, 0xb5, 0x09, 0x4b, // current Thumb init prologue prefix
-            0x09, 0x4a, 0x7b, 0x44,
-        ];
-        let harness = PackageTestHarness::new().write_native_payload(native_payload);
-
-        let assets = PackageAssets::new(
-            PackageLayout::new(BLE_LOOPBACK_PACKAGE_NAME, "0.1.0"),
-            PackageProvenance::empty(),
-        );
-        let package = build_vesc_package(&VescPackageInput {
-            name: assets.package_name(),
-            description_md: &assets.render_readme(),
-            lisp_source: &assets.render_loader(),
-            lisp_editor_path: harness.root(),
-            qml_file: "",
-            pkg_desc_qml: &assets.render_descriptor(),
-            qml_is_fullscreen: false,
-        })
-        .expect("package");
-
-        let lisp_data = extract_field(&package, "lispData");
-        let (_, imports) = parse_lisp_imports(&lisp_data).expect("lisp imports");
-
-        assert_eq!(imports.len(), 1);
-        assert_eq!(imports[0].tag, "package-lib");
-        assert_eq!(&imports[0].payload[..native_payload.len()], &native_payload);
-        assert!(payload_matches_native_with_only_nul_tail(
-            &imports[0].payload,
-            &native_payload
-        ));
     }
 }

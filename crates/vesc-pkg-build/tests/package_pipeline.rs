@@ -24,6 +24,11 @@ fn package_pipeline() {
 
     let package_bytes = std::fs::read(harness.root().join(&output)).expect("read emitted .vescpkg");
     assert!(!package_bytes.is_empty());
+    assert!(
+        package_bytes.len() < 128 * 1024,
+        "expected the final package to stay below the VESC upload block limit, got {} bytes",
+        package_bytes.len()
+    );
 
     let report = wire_snapshot_report(&package_bytes).expect("wire snapshot report");
     insta::assert_snapshot!("package_pipeline_wire", report);

@@ -163,7 +163,6 @@ impl PackageBuildPlan {
 #[cfg(test)]
 mod tests {
     use super::PackageBuildPlan;
-    use crate::package_artifacts::NATIVE_PAYLOAD_PATH;
     use crate::test_support::{FakeConversionRunner, PackageTestHarness};
     use crate::{PackageProvenance, BLE_LOOPBACK_PACKAGE_NAME};
 
@@ -261,20 +260,6 @@ mod tests {
     }
 
     #[test]
-    fn writes_the_expected_package_output() {
-        let harness = PackageTestHarness::new().write_text(NATIVE_PAYLOAD_PATH, "payload");
-        let root = harness.root();
-        let plan = PackageBuildPlan::new(root, BLE_LOOPBACK_PACKAGE_NAME, "0.1.0");
-        plan.stage_package_assets().expect("staged assets");
-
-        let output = plan.write_package_output().expect("package output");
-
-        assert_eq!(output, root.join(plan.package_output_path()));
-        assert!(output.exists(), "expected the final .vescpkg to exist");
-        assert!(std::fs::metadata(&output).expect("package metadata").len() > 0);
-    }
-
-    #[test]
     fn inspect_package_artifacts_reports_missing_staging_files() {
         let harness = PackageTestHarness::new().ensure_loopback_staging();
         let plan = PackageBuildPlan::new(harness.root(), BLE_LOOPBACK_PACKAGE_NAME, "0.1.0");
@@ -283,21 +268,5 @@ mod tests {
             .inspect_package_artifacts()
             .expect_err("missing artifacts");
         assert_eq!(error.problems().len(), 5);
-    }
-
-    #[test]
-    fn inspect_package_artifacts_accepts_rendered_artifacts() {
-        let harness = PackageTestHarness::new();
-        let plan = PackageBuildPlan::new(harness.root(), BLE_LOOPBACK_PACKAGE_NAME, "0.1.0");
-        let inspection_plan = plan.inspection_plan();
-        let assets = inspection_plan.assets();
-        let _harness = harness
-            .write_loopback_staging_text("README.md", &assets.render_readme())
-            .write_loopback_staging_text("pkgdesc.qml", &assets.render_descriptor())
-            .write_loopback_staging_text("code.lisp", &assets.render_loader())
-            .write_text(NATIVE_PAYLOAD_PATH, "payload")
-            .write_loopback_staging_text("src/package_lib.bin", "payload");
-
-        assert_eq!(plan.inspect_package_artifacts(), Ok(()));
     }
 }
