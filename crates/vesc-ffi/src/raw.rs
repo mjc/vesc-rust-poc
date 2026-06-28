@@ -389,7 +389,7 @@ pub struct VescIf {
 
 #[inline(always)]
 unsafe fn vesc_if() -> *const VescIf {
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(feature = "test-support")]
     if let Some(table) = crate::test_support::current_table() {
         return table;
     }
@@ -666,7 +666,7 @@ pub fn vesc_if_offsets_for_tests() -> [usize; 11] {
     ]
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "test-support"))]
 mod dispatch_tests;
 
 #[cfg(test)]

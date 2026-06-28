@@ -2,7 +2,7 @@
 
 CARGO ?= cargo
 
-.PHONY: check check-full check-ffi-header test test-all test-embedded test-ffi test-package test-changed fmt clippy symbol-check package-smoke package package-only clean status coverage coverage-ffi coverage-sdk coverage-pkg coverage-cli hack-check
+.PHONY: check check-full check-ffi check-ffi-header test test-all test-embedded test-ffi test-package test-changed fmt clippy symbol-check package-smoke package package-only clean status coverage coverage-ffi coverage-sdk coverage-pkg coverage-cli hack-check
 
 check: fmt clippy test
 
@@ -17,12 +17,15 @@ test: test-all
 
 test-all:
 	$(CARGO) nextest run --workspace --no-fail-fast --features test-support --profile default
+	$(CARGO) test -p vesc-ffi compile_fail_ui --no-default-features
 
 test-ffi:
 	$(CARGO) nextest run -p vesc-ffi -p vesc-pkg --lib --features test-support --profile ffi
 
 check-ffi-header:
 	$(CARGO) test -p vesc-pkg --lib ffi_compare
+
+check-ffi: test-ffi coverage-ffi check-ffi-header
 
 test-embedded:
 	$(CARGO) nextest run -p vesc-pkg --no-fail-fast --profile embedded
