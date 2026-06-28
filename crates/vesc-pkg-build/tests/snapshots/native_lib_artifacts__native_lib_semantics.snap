@@ -1,8 +1,8 @@
 ---
-source: crates/vesc-pkg-build/src/native_lib_audit_disassembly.rs
-expression: "crate::native_elf_semantics::semantic_report(&semantics)"
+source: crates/vesc-pkg-build/tests/native_lib_artifacts.rs
+expression: report
 ---
-symbols: vesc_ble_loopback.b47f8d8d7235399f-cgu.0, init, _GLOBAL_OFFSET_TABLE_, ext_rust_probe_diag_v4, package_lib_init, _ZN12vesc_package4init12stop_package17h6fc92ae67d0dd1b4E
+symbols: init, ext_rust_probe_diag_v4, package_lib_init, _ZN12vesc_package4init12stop_package17h6fc92ae67d0dd1b4E
 literal_pools: 0x30=0x1000f800, 0x34=0x00000022, 0x38=0x0000007a, 0x74=0x00000015, 0x94=0x1000f800
 init: push {r4, r6, r7, lr}; add r7, sp, #8; mov r4, r0; bl #0x60; cbz r0, #0x2a; cbz r4, #0x2a; ldr r0, [pc, #0x20]; ldr r1, [r4, #8]; add r0, pc; ldr r0, [r0]; add r1, r0; ldr r0, [pc, #0x10]; ldr r2, [r0]; ldr r0, [pc, #0x14]; add r0, pc; pop.w {r4, r6, r7, lr}; bx r2; movs r0, #0; pop {r4, r6, r7, pc}; nop ; strb.w r1, [r0, r0]; movs r2, r4; movs r0, r0; lsls r2, r7, #1; movs r0, r0
 probe: push {r7, lr}; mov r7, sp; mov.w r0, #0x2a8; pop {r7, pc}; movs r0, r0; movs r0, r0; movs r0, r0

@@ -331,22 +331,3 @@ fn stop_insns_clear_app_data_slot(insns: &[DecodedInsn], literals: &BTreeMap<u64
                 && (insn.operands.contains("#596") || insn.operands.contains("#0x254"))
         })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::analyze_native_lib_elf;
-    use crate::native_lib_link::native_lib_link_plan;
-    use crate::package_runner::ensure_repo_native_lib_artifacts;
-    use crate::test_support::repo_root;
-
-    #[test]
-    fn native_lib_semantics_finds_loader_symbols() {
-        ensure_repo_native_lib_artifacts(&repo_root());
-        let semantics = analyze_native_lib_elf(&native_lib_link_plan().elf_path());
-        assert!(semantics.symbols.values().any(|name| name == "init"));
-        assert!(semantics
-            .symbols
-            .values()
-            .any(|name| name == "package_lib_init"));
-    }
-}

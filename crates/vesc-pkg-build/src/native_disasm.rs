@@ -220,20 +220,3 @@ pub fn elf_disassembly(elf: &Path) -> String {
 
     output
 }
-
-#[cfg(test)]
-mod tests {
-    use super::elf_disassembly;
-    use crate::native_lib_link::native_lib_link_plan;
-    use crate::package_runner::ensure_repo_native_lib_artifacts;
-    use crate::test_support::repo_root;
-
-    #[test]
-    fn elf_disassembly_finds_loader_symbols() {
-        ensure_repo_native_lib_artifacts(&repo_root());
-        let elf = native_lib_link_plan().elf_path();
-        let disassembly = elf_disassembly(&elf);
-        assert!(disassembly.contains("<init>:"));
-        assert!(disassembly.contains("<package_lib_init>"));
-    }
-}

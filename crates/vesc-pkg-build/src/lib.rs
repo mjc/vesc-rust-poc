@@ -6,6 +6,7 @@ pub mod native_build;
 pub mod native_disasm;
 pub mod native_elf_semantics;
 pub mod native_inspect;
+pub mod native_lib_audit;
 pub mod native_lib_baseline;
 pub mod native_lib_link;
 pub mod native_lib_materialize;
@@ -26,6 +27,10 @@ mod test_support;
 pub const BLE_LOOPBACK_PACKAGE_NAME: &str = "Rust BLE loopback test package";
 
 pub use abi_inventory::{minimal_test_package_abi, AbiRequirement, AbiRequirementKind};
+pub use native_lib_audit::{
+    audit_native_lib_artifacts, audit_native_lib_flat_binary, audit_native_lib_layout,
+    audit_native_lib_symbols, semantic_snapshot_report, NativeLibArtifactPaths,
+};
 pub use native_lib_baseline::{
     baseline_input_paths, baseline_output_paths, native_lib_baseline_root, NativeLibBaselinePath,
 };

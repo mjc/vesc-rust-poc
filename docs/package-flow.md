@@ -21,7 +21,7 @@ This note characterizes the package path that the Rust VESC package experiment s
 - The root `Makefile` gates packaging behind tests.
 - `make check` runs formatting, linting, and the fast host test tier (`nextest` default profile).
 - `make check-full` adds the embedded native-lib audit tier (`make symbol-check`) on top of `check`.
-- `make symbol-check` runs the slow cross-compiled native-lib symbol, layout, and disassembly audits.
+- `make symbol-check` runs the embedded native-lib integration audit (`tests/native_lib_artifacts.rs`).
 - `make test`, `make fmt`, `make clippy`, `make test-embedded`, and `make package-smoke`
   stay available as smaller commands when a slice only needs one gate.
 - `make package` runs the checked package build wrapper and emits the final `.vescpkg` path.

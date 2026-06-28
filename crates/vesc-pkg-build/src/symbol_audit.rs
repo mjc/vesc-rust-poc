@@ -10,6 +10,10 @@ pub use crate::native_build::{
     native_lib_bin_path, native_lib_elf_path, package_lib_object_path, rust_staticlib_path,
 };
 pub use crate::native_inspect::nm_output;
+pub use crate::native_lib_audit::{
+    audit_native_lib_artifacts, audit_native_lib_flat_binary, audit_native_lib_layout,
+    audit_native_lib_symbols, semantic_snapshot_report, NativeLibArtifactPaths,
+};
 
 pub fn audit_rust_staticlib_symbols() -> std::collections::BTreeSet<String> {
     build_rust_staticlib();
@@ -25,56 +29,13 @@ pub fn audit_final_native_lib_elf_symbols() -> std::collections::BTreeSet<String
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::path::PathBuf;
+    use std::collections::BTreeSet;
 
     use super::{
         defined_symbols, is_allowed_final_native_lib_symbol, is_allowed_runtime_symbol,
         undefined_symbols, unexpected_final_native_lib_undefined_symbols,
         unexpected_undefined_symbols,
     };
-    use crate::native_inspect::{all_section_layouts, nm_output, section_from, SectionLayout};
-    use crate::native_lib_link::NativeLibLinkPlan;
-    use crate::test_support::NativeBuildWorkspace;
-    use std::collections::BTreeSet;
-
-    struct SymbolAuditFixture {
-        workspace: &'static NativeBuildWorkspace,
-    }
-
-    impl SymbolAuditFixture {
-        fn new() -> Self {
-            Self {
-                workspace: NativeBuildWorkspace::shared(),
-            }
-        }
-
-        fn plan(&self) -> &NativeLibLinkPlan {
-            self.workspace.plan()
-        }
-
-        fn elf(&self) -> PathBuf {
-            self.workspace.native_lib_elf_path()
-        }
-
-        fn bin(&self) -> PathBuf {
-            self.workspace.native_lib_bin_path()
-        }
-
-        fn staticlib(&self) -> PathBuf {
-            self.workspace.rust_staticlib_path()
-        }
-
-        fn package_object(&self) -> PathBuf {
-            self.workspace.package_lib_object_path()
-        }
-
-        fn build_bin(&self) {
-            crate::package_runner::ensure_repo_native_lib_artifacts(self.plan().root());
-        }
-    }
-
-    use super::{align_section_vma, DEVICE_PROVEN_INIT_OFFSET, DEVICE_PROVEN_INIT_SIZE};
 
     #[test]
     fn symbol_audit_helpers_classify_nm_output() {
@@ -137,8 +98,4 @@ mod tests {
             BTreeSet::new()
         );
     }
-
-    include!("native_lib_audit_symbols.rs");
-    include!("native_lib_audit_layout.rs");
-    include!("native_lib_audit_disassembly.rs");
 }

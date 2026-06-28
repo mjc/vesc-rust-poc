@@ -178,12 +178,7 @@ pub fn section_from<'a>(
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-
-    use super::{elf_to_flat_binary, SectionLayout};
-    use crate::native_lib_link::native_lib_link_plan;
-    use crate::package_runner::ensure_repo_native_lib_artifacts;
-    use crate::test_support::repo_root;
+    use super::SectionLayout;
 
     fn parse_section_layout(line: &str) -> Option<SectionLayout> {
         let parts = line.split_whitespace().collect::<Vec<_>>();
@@ -199,15 +194,6 @@ mod tests {
             size: usize::from_str_radix(size, 16).ok()?,
             vma: usize::from_str_radix(vma, 16).ok()?,
         })
-    }
-
-    #[test]
-    fn native_lib_flat_binary_matches_materialized_bin() {
-        ensure_repo_native_lib_artifacts(&repo_root());
-        let plan = native_lib_link_plan();
-        let flat = elf_to_flat_binary(&plan.elf_path());
-        let materialized = fs::read(plan.native_lib_bin_path()).expect("materialized native bin");
-        assert_eq!(flat, materialized);
     }
 
     #[test]
