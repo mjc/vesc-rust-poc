@@ -33,7 +33,8 @@ pub use native_lib_audit::{
     audit_native_lib_symbols, semantic_snapshot_report, NativeLibArtifactPaths,
 };
 pub use native_lib_baseline::{
-    baseline_input_paths, baseline_output_paths, native_lib_baseline_root, NativeLibBaselinePath,
+    audit_baseline_fixture_layout, audit_vesc_c_if_abi_pins, baseline_input_paths,
+    baseline_output_paths, native_lib_baseline_root, NativeLibBaselinePath,
 };
 pub use native_lib_link::{native_lib_link_plan, NativeLibLinkPlan};
 pub use package_artifacts::{

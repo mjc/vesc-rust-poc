@@ -127,14 +127,11 @@ fn parse_defined_symbol(line: &str) -> Option<String> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::device_proven_package_binary;
-
-    #[test]
-    fn device_proven_fixture_decodes_from_hex() {
-        let bytes = device_proven_package_binary();
-        assert_eq!(bytes.len(), 183);
-        assert_ne!(bytes[4..4 + 59], [0u8; 59]);
-    }
+pub fn audit_device_proven_fixture() {
+    let bytes = device_proven_package_binary();
+    assert_eq!(bytes.len(), 183);
+    assert_ne!(
+        bytes[DEVICE_PROVEN_INIT_OFFSET..DEVICE_PROVEN_INIT_OFFSET + DEVICE_PROVEN_INIT_SIZE],
+        [0u8; DEVICE_PROVEN_INIT_SIZE]
+    );
 }
