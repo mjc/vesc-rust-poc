@@ -20,9 +20,10 @@ This note characterizes the package path that the Rust VESC package experiment s
 
 | Tier | Command | Scope |
 |------|---------|-------|
-| Fast (default) | `make check` | ~138 host tests in ~2s; no gcc, no thumb target races |
+| Fast (default) | `make check` | ~139 host tests in ~2s; no gcc, no thumb target races |
 | Package | `make test-package` / `make package-smoke` | `fixtures` + `package_pipeline` integration tests |
 | Embedded | `make symbol-check` | `native_lib_artifacts` semantic ELF audit (~1s) |
+| Feature matrix | `make hack-check` | `cargo-hack --each-feature` for host crates; thumb release lib for payload |
 | Full gate | `make check-full` | fast + embedded + package tiers |
 | HIL (manual) | `cargo nextest run -p vesc-host-cli --profile hil -- --ignored` | ignored hardware sketch; needs `VESC_DEVICE` + `VESC_BLE_ADDR` |
 
@@ -30,7 +31,7 @@ This note characterizes the package path that the Rust VESC package experiment s
 - `make check` runs formatting, linting, and the fast host test tier (`nextest` default profile).
 - `make check-full` adds the embedded native-lib audit tier and the package integration tier on top of `check`.
 - `make symbol-check` runs the embedded native-lib integration audit (`tests/native_lib_artifacts.rs`).
-- `make test`, `make fmt`, `make clippy`, `make test-embedded`, `make test-package`, and `make package-smoke`
+- `make test`, `make fmt`, `make clippy`, `make test-embedded`, `make test-package`, `make hack-check`, and `make package-smoke`
   stay available as smaller commands when a slice only needs one gate.
 - `make test-package` runs the package tier integration tests (`tests/fixtures.rs` and `tests/package_pipeline.rs`) via the nextest `package` profile.
 - `make package-smoke` is an alias for `make test-package`.

@@ -108,5 +108,9 @@ mod tests {
             make_dry_run_succeeds("test-package"),
             "make -n test-package should succeed from repo root"
         );
+        assert!(
+            make_dry_run_succeeds("hack-check"),
+            "make -n hack-check should succeed from repo root"
+        );
     }
 }
