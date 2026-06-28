@@ -42,8 +42,7 @@ coverage-package:
 
 coverage: coverage-ffi coverage-package
 
-package-smoke:
-	$(CARGO) nextest run -p vesc-pkg-build baseline_fixture_layout
+package-smoke: test-package
 
 package: check
 	$(CARGO) run -p vesc-pkg-build --bin vesc-pkg -- package
