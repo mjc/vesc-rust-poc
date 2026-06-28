@@ -1,8 +1,8 @@
 use std::process::ExitCode;
 
 use vesc_pkg_build::{
-    package_provenance_from_env, package_runner::RealPackageRunner, PackageTargetMode,
-    PackageTargetPlan, BLE_LOOPBACK_PACKAGE_NAME,
+    BLE_LOOPBACK_PACKAGE_NAME, PackageTargetMode, PackageTargetPlan, package_provenance_from_env,
+    package_runner::RealPackageRunner,
 };
 
 fn main() -> ExitCode {

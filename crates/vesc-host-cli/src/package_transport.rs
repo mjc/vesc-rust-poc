@@ -11,10 +11,10 @@ use futures_util::StreamExt;
 use tokio::runtime::{Builder, Runtime};
 use tokio::time;
 
-use crate::ble_discovery::{find_matching_peripheral, vesc_tool_scan_filter, DiscoveryError};
+use crate::ble_discovery::{DiscoveryError, find_matching_peripheral, vesc_tool_scan_filter};
 use crate::loopback::LoopbackTarget;
 use crate::package_install::{PackageInstallError, PackageInstallTransport};
-use crate::vesc_uart::{encode_packet, PacketDecoder};
+use crate::vesc_uart::{PacketDecoder, encode_packet};
 
 const VESC_BLE_UART_RX_UUID: uuid::Uuid = uuid::Uuid::from_u128(0x6e400002b5a3f393e0a9e50e24dcca9e);
 const VESC_BLE_UART_TX_UUID: uuid::Uuid = uuid::Uuid::from_u128(0x6e400003b5a3f393e0a9e50e24dcca9e);
@@ -579,10 +579,10 @@ fn malformed_reply(reason: &str) -> PackageInstallError {
 #[cfg(test)]
 mod tests {
     use super::{
-        ble_write_chunks, build_command_packet, build_lisp_upload_payload,
-        build_qml_upload_payload, parse_fw_version_info, parse_simple_ack, parse_write_ack,
-        FwVersionInfo, HwType, COMM_FW_VERSION, COMM_LISP_ERASE_CODE, COMM_LISP_SET_RUNNING,
-        COMM_LISP_WRITE_CODE, COMM_QMLUI_ERASE,
+        COMM_FW_VERSION, COMM_LISP_ERASE_CODE, COMM_LISP_SET_RUNNING, COMM_LISP_WRITE_CODE,
+        COMM_QMLUI_ERASE, FwVersionInfo, HwType, ble_write_chunks, build_command_packet,
+        build_lisp_upload_payload, build_qml_upload_payload, parse_fw_version_info,
+        parse_simple_ack, parse_write_ack,
     };
     use crate::vesc_uart::PacketDecoder;
 

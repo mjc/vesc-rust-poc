@@ -34,11 +34,10 @@ fn newest_rs_tree_mtime(dir: &Path) -> Option<SystemTime> {
             let path = entry.path();
             if path.is_dir() {
                 stack.push(path);
-            } else if path.extension().is_some_and(|ext| ext == "rs") {
-                if let Ok(modified) = entry.metadata().and_then(|meta| meta.modified()) {
-                    newest =
-                        Some(newest.map_or(modified, |current: SystemTime| current.max(modified)));
-                }
+            } else if path.extension().is_some_and(|ext| ext == "rs")
+                && let Ok(modified) = entry.metadata().and_then(|meta| meta.modified())
+            {
+                newest = Some(newest.map_or(modified, |current: SystemTime| current.max(modified)));
             }
         }
     }

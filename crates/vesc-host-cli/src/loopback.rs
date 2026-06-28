@@ -2,8 +2,8 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::fmt;
 
-use vesc_protocol::ble_loopback::{LoopbackError, LoopbackPacket};
 use vesc_protocol::WireCommand;
+use vesc_protocol::ble_loopback::{LoopbackError, LoopbackPacket};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoopbackTarget {
@@ -202,7 +202,7 @@ pub fn run_loopback<T: LoopbackTransport>(
 
 #[cfg(test)]
 mod tests {
-    use super::{run_loopback, FakeLoopbackTransport, LoopbackTarget, LoopbackTransportError};
+    use super::{FakeLoopbackTransport, LoopbackTarget, LoopbackTransportError, run_loopback};
     use vesc_protocol::WireCommand;
 
     #[test]

@@ -36,12 +36,11 @@ fn branch_target_address(op_str: &str) -> Option<u64> {
 
 fn format_operands(op_str: &str, mnemonic: &str, symbols: &BTreeMap<u64, String>) -> String {
     let mut op = op_str.replace("#0x254", "#596").replace("#0x2a8", "#680");
-    if matches!(mnemonic, "bl" | "b" | "bx" | "b.w") {
-        if let Some(target) = branch_target_address(&op) {
-            if let Some(name) = symbols.get(&target) {
-                op.push_str(&format!(" <{name}>"));
-            }
-        }
+    if matches!(mnemonic, "bl" | "b" | "bx" | "b.w")
+        && let Some(target) = branch_target_address(&op)
+        && let Some(name) = symbols.get(&target)
+    {
+        op.push_str(&format!(" <{name}>"));
     }
     op
 }
@@ -87,11 +86,11 @@ fn literal_pool_ranges(insns: &capstone::Instructions) -> Vec<(u64, u64)> {
 
     let mut merged = Vec::new();
     for (start, end) in ranges {
-        if let Some((_, last_end)) = merged.last_mut() {
-            if start <= *last_end {
-                *last_end = (*last_end).max(end);
-                continue;
-            }
+        if let Some((_, last_end)) = merged.last_mut()
+            && start <= *last_end
+        {
+            *last_end = (*last_end).max(end);
+            continue;
         }
         merged.push((start, end));
     }

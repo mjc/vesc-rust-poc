@@ -113,7 +113,7 @@ impl PackageAssets {
 #[cfg(test)]
 mod tests {
     use super::{PackageAssets, PackageProvenance};
-    use crate::{PackageLayout, BLE_LOOPBACK_PACKAGE_NAME};
+    use crate::{BLE_LOOPBACK_PACKAGE_NAME, PackageLayout};
 
     #[test]
     fn renders_the_expected_package_assets() {

@@ -1,6 +1,6 @@
+use object::read::File as ObjectFile;
 use object::read::archive::ArchiveFile;
 use object::read::elf::FileHeader;
-use object::read::File as ObjectFile;
 use object::{Object, ObjectSection, ObjectSymbol, SectionFlags, SymbolKind};
 use std::collections::BTreeMap;
 use std::fs;

@@ -89,7 +89,7 @@ pub fn minimal_test_package_abi() -> &'static [AbiRequirement] {
 
 #[cfg(test)]
 mod tests {
-    use super::{minimal_test_package_abi, AbiRequirementKind};
+    use super::{AbiRequirementKind, minimal_test_package_abi};
 
     #[test]
     fn inventories_the_minimal_rust_abi_for_the_test_package() {
@@ -120,18 +120,22 @@ mod tests {
     fn groups_requirements_by_abi_role() {
         let abi = minimal_test_package_abi();
 
-        assert!(abi
-            .iter()
-            .any(|item| item.kind == AbiRequirementKind::EntryPoint));
-        assert!(abi
-            .iter()
-            .any(|item| item.kind == AbiRequirementKind::LoaderHeader));
+        assert!(
+            abi.iter()
+                .any(|item| item.kind == AbiRequirementKind::EntryPoint)
+        );
+        assert!(
+            abi.iter()
+                .any(|item| item.kind == AbiRequirementKind::LoaderHeader)
+        );
         assert!(abi.iter().any(|item| item.kind == AbiRequirementKind::Type));
-        assert!(abi
-            .iter()
-            .any(|item| item.kind == AbiRequirementKind::Function));
-        assert!(abi
-            .iter()
-            .any(|item| item.kind == AbiRequirementKind::ErrorSymbol));
+        assert!(
+            abi.iter()
+                .any(|item| item.kind == AbiRequirementKind::Function)
+        );
+        assert!(
+            abi.iter()
+                .any(|item| item.kind == AbiRequirementKind::ErrorSymbol)
+        );
     }
 }

@@ -160,8 +160,8 @@ pub mod vesc_uart;
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_args, Command, LispProbeCommand, PackageEraseCommand, PackageInstallCommand,
-        ParseError,
+        Command, LispProbeCommand, PackageEraseCommand, PackageInstallCommand, ParseError,
+        parse_args,
     };
     use vesc_protocol::{WireCommand, WireVersion};
 

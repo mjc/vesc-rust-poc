@@ -3,7 +3,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
 
-use flate2::{write::ZlibEncoder, Compression};
+use flate2::{Compression, write::ZlibEncoder};
 
 const PACKAGE_MAGIC: &str = "VESC Packet";
 
@@ -221,8 +221,8 @@ fn parse_import_line(line: &str) -> Option<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::parse_import_line;
-    use super::{build_vesc_package, VescPackageInput};
-    use crate::package_wire::{field_bytes, parse_lisp_imports, parse_vescpkg, LispImport};
+    use super::{VescPackageInput, build_vesc_package};
+    use crate::package_wire::{LispImport, field_bytes, parse_lisp_imports, parse_vescpkg};
     use crate::test_support::PackageTestHarness;
 
     fn extract_field(package: &[u8], key: &str) -> Vec<u8> {

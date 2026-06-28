@@ -228,8 +228,7 @@ pub fn audit_vesc_c_if_abi_pins() {
     ]
     .map(|(slot, name, signature)| (slot, name, signature.to_owned()));
     assert_eq!(
-        slots,
-        expected,
+        slots, expected,
         "fixture vesc_c_if.h must preserve the upstream vesc_pkg_lib slot order for every Rust-modeled VESC_IF entry"
     );
 }

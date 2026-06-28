@@ -239,15 +239,15 @@ fn read_u32_le(_bytes: &[u8], address: u64, object: &ObjectFile<'_>) -> u32 {
         let end = start + section.size();
         if (start..end).contains(&address) && address + 4 <= end {
             let offset = (address - start) as usize;
-            if let Ok(data) = section.data() {
-                if offset + 4 <= data.len() {
-                    return u32::from_le_bytes([
-                        data[offset],
-                        data[offset + 1],
-                        data[offset + 2],
-                        data[offset + 3],
-                    ]);
-                }
+            if let Ok(data) = section.data()
+                && offset + 4 <= data.len()
+            {
+                return u32::from_le_bytes([
+                    data[offset],
+                    data[offset + 1],
+                    data[offset + 2],
+                    data[offset + 3],
+                ]);
             }
         }
     }

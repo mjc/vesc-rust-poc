@@ -17,7 +17,7 @@ pub const PACKAGE_EXTENSION_NAMES: [&CStr; PACKAGE_EXTENSION_COUNT] = [EXT_RUST_
 
 const _: () = assert!(PACKAGE_EXTENSION_COUNT == 1);
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// Device probe: returns encoded LispBM integer 42 without calling firmware `lbm_enc_i`.
 ///
 /// # Safety
@@ -55,8 +55,8 @@ fn rust_add_extension_value<B: LbmBindings>(
 #[cfg(all(test, feature = "test-support"))]
 mod tests {
     use super::{
-        ext_rust_probe_diag_v4, package_extension_descriptors, rust_add_extension_value, LbmApi,
-        LbmCount, LbmValue, EXT_RUST_PROBE_DIAG_NAME, PACKAGE_EXTENSION_NAMES,
+        EXT_RUST_PROBE_DIAG_NAME, LbmApi, LbmCount, LbmValue, PACKAGE_EXTENSION_NAMES,
+        ext_rust_probe_diag_v4, package_extension_descriptors, rust_add_extension_value,
     };
     use vesc_package::ffi::test_support::FakeBindings;
     use vesc_package::ffi::{self, PackageLifecycle};
@@ -100,9 +100,11 @@ mod tests {
     #[test]
     fn package_extension_table_lists_every_rust_owned_extension() {
         assert_eq!(PACKAGE_EXTENSION_NAMES, [EXT_RUST_PROBE_DIAG_NAME]);
-        assert!(PACKAGE_EXTENSION_NAMES
-            .iter()
-            .all(|name| name.to_bytes().starts_with(b"ext-")));
+        assert!(
+            PACKAGE_EXTENSION_NAMES
+                .iter()
+                .all(|name| name.to_bytes().starts_with(b"ext-"))
+        );
     }
 
     #[test]

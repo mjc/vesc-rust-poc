@@ -1,8 +1,7 @@
 pub use crate::native_audit::{
-    align_section_vma, defined_symbols, device_proven_package_binary,
-    is_allowed_final_native_lib_symbol, is_allowed_runtime_symbol, undefined_symbols,
-    unexpected_final_native_lib_undefined_symbols, unexpected_undefined_symbols,
-    DEVICE_PROVEN_INIT_OFFSET, DEVICE_PROVEN_INIT_SIZE,
+    DEVICE_PROVEN_INIT_OFFSET, DEVICE_PROVEN_INIT_SIZE, align_section_vma, defined_symbols,
+    device_proven_package_binary, is_allowed_final_native_lib_symbol, is_allowed_runtime_symbol,
+    undefined_symbols, unexpected_final_native_lib_undefined_symbols, unexpected_undefined_symbols,
 };
 pub use crate::native_build::{
     build_final_native_lib_binary, build_final_native_lib_binary_for, build_final_native_lib_elf,
@@ -11,8 +10,8 @@ pub use crate::native_build::{
 };
 pub use crate::native_inspect::nm_output;
 pub use crate::native_lib_audit::{
-    audit_native_lib_artifacts, audit_native_lib_flat_binary, audit_native_lib_layout,
-    audit_native_lib_symbols, semantic_snapshot_report, NativeLibArtifactPaths,
+    NativeLibArtifactPaths, audit_native_lib_artifacts, audit_native_lib_flat_binary,
+    audit_native_lib_layout, audit_native_lib_symbols, semantic_snapshot_report,
 };
 
 pub fn audit_rust_staticlib_symbols() -> std::collections::BTreeSet<String> {

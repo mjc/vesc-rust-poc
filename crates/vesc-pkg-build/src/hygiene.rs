@@ -66,7 +66,7 @@ pub fn git_tracks(path: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        git_check_ignore_all, git_tracks_all, repo_root, GENERATED_PACKAGE_PATHS, TRACKED_LOCKFILES,
+        GENERATED_PACKAGE_PATHS, TRACKED_LOCKFILES, git_check_ignore_all, git_tracks_all, repo_root,
     };
     use std::fs;
 

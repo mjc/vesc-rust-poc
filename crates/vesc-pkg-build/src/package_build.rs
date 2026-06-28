@@ -1,13 +1,13 @@
 use std::path::PathBuf;
 use std::{fs, io};
 
+use crate::PackageLayout;
 use crate::package_artifacts::PackageArtifactInspectionPlan;
 use crate::package_assets::{PackageAssets, PackageProvenance};
 use crate::package_conversion::{
     PackageBinaryConversionError, PackageBinaryConversionPlan, PackageBinaryConversionRunner,
 };
-use crate::package_format::{write_vesc_package, VescPackageInput};
-use crate::PackageLayout;
+use crate::package_format::{VescPackageInput, write_vesc_package};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageBuildPlan {
@@ -164,7 +164,7 @@ impl PackageBuildPlan {
 mod tests {
     use super::PackageBuildPlan;
     use crate::test_support::{FakeConversionRunner, PackageTestHarness};
-    use crate::{PackageProvenance, BLE_LOOPBACK_PACKAGE_NAME};
+    use crate::{BLE_LOOPBACK_PACKAGE_NAME, PackageProvenance};
 
     #[test]
     fn renders_the_expected_package_build_plan() {
@@ -234,11 +234,12 @@ mod tests {
             readme,
             "Rust BLE loopback test package 0.1.0\ngit abc123\ndate 2026-06-25\n"
         );
-        assert!(plan
-            .inspection_plan()
-            .assets()
-            .render_readme()
-            .contains("abc123"));
+        assert!(
+            plan.inspection_plan()
+                .assets()
+                .render_readme()
+                .contains("abc123")
+        );
     }
 
     #[test]

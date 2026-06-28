@@ -7,27 +7,27 @@ use crate::extensions;
 /// VESC loader anchor in `.program_ptr`; value is unused but the section must exist.
 #[cfg(all(not(test), target_arch = "arm"))]
 #[used]
-#[no_mangle]
-#[link_section = ".program_ptr"]
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".program_ptr")]
 static prog_ptr: u32 = 0;
 
 #[cfg(not(test))]
 #[inline(never)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
     pkg_init::install_stop_hook(info)
 }
 
 #[cfg(test)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
     pkg_init::install_stop_hook(info)
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-#[no_mangle]
-#[link_section = ".init_fun"]
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".init_fun")]
 pub extern "C" fn init(info: *mut ffi::LibInfo) -> bool {
     if !package_lib_init(info) {
         return false;

@@ -2,8 +2,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::{
-    PackageBinaryConversionRunner, PackageTargetError, PackageTargetMode, PackageTargetPlan,
-    BLE_LOOPBACK_PACKAGE_NAME,
+    BLE_LOOPBACK_PACKAGE_NAME, PackageBinaryConversionRunner, PackageTargetError,
+    PackageTargetMode, PackageTargetPlan,
 };
 
 pub const DEFAULT_PACKAGE_VERSION: &str = "0.1.0";
@@ -198,13 +198,13 @@ pub fn command_design_text() -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        command_design_text, parse_args, run_with, CargoVescPkgError, CargoVescPkgInvocation,
-        CargoVescPkgMode, DEFAULT_PACKAGE_VERSION, DEFAULT_TARGET_TRIPLE,
+        CargoVescPkgError, CargoVescPkgInvocation, CargoVescPkgMode, DEFAULT_PACKAGE_VERSION,
+        DEFAULT_TARGET_TRIPLE, command_design_text, parse_args, run_with,
     };
+    use crate::PackageTargetMode;
     use crate::hygiene::repo_root;
     use crate::package_conversion::PackageBinaryConversionCommand;
     use crate::test_support::{FakeConversionRunner, PackageTestHarness};
-    use crate::PackageTargetMode;
     use std::path::PathBuf;
 
     #[test]
@@ -272,12 +272,22 @@ mod tests {
             ]
         );
         assert_eq!(
-            PathBuf::from("/tmp/repo").join(invocation.package_target_plan("/tmp/repo").package_output_path()),
-            PathBuf::from("/tmp/repo/target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/Rust-BLE-loopback-test-package-0.1.0.vescpkg")
+            PathBuf::from("/tmp/repo").join(
+                invocation
+                    .package_target_plan("/tmp/repo")
+                    .package_output_path()
+            ),
+            PathBuf::from(
+                "/tmp/repo/target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/Rust-BLE-loopback-test-package-0.1.0.vescpkg"
+            )
         );
         assert_eq!(
-            invocation.package_target_plan("/tmp/repo").package_output_path(),
-            PathBuf::from("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/Rust-BLE-loopback-test-package-0.1.0.vescpkg")
+            invocation
+                .package_target_plan("/tmp/repo")
+                .package_output_path(),
+            PathBuf::from(
+                "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/Rust-BLE-loopback-test-package-0.1.0.vescpkg"
+            )
         );
     }
 

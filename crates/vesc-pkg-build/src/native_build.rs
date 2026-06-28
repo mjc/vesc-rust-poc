@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 
+use crate::BLE_LOOPBACK_PACKAGE_NAME;
 use crate::cargo_vescpkg_command::DEFAULT_PACKAGE_VERSION;
-use crate::native_lib_link::{native_lib_link_plan, NativeLibLinkPlan};
+use crate::native_lib_link::{NativeLibLinkPlan, native_lib_link_plan};
 use crate::package_conversion::PackageBinaryConversionPlan;
 use crate::package_runner::ensure_native_lib_artifacts;
-use crate::BLE_LOOPBACK_PACKAGE_NAME;
 
 pub fn rust_staticlib_path() -> PathBuf {
     native_lib_link_plan().rust_staticlib_path()

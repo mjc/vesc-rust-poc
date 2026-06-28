@@ -177,7 +177,7 @@ fn try_decode_packet(buffer: &[u8]) -> Result<DecodeOutcome, PacketDecodeError> 
 
 #[cfg(test)]
 mod tests {
-    use super::{crc16, encode_packet, PacketDecoder};
+    use super::{PacketDecoder, crc16, encode_packet};
 
     #[test]
     fn encodes_and_decodes_short_packets() {

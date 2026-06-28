@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use vesc_pkg_build::package_conversion::PackageBinaryConversionPlan;
 use vesc_pkg_build::{
-    audit_native_lib_artifacts, ensure_native_lib_artifacts, native_lib_link_plan,
-    NativeLibArtifactPaths, BLE_LOOPBACK_PACKAGE_NAME,
+    BLE_LOOPBACK_PACKAGE_NAME, NativeLibArtifactPaths, audit_native_lib_artifacts,
+    ensure_native_lib_artifacts, native_lib_link_plan,
 };
 
 fn repo_root() -> PathBuf {

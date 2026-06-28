@@ -8,7 +8,7 @@ use crate::native_lib_toolchain::RealNativeLibToolchain;
 use crate::package_conversion::{
     PackageBinaryConversionCommand, PackageBinaryConversionPlan, PackageBinaryConversionRunner,
 };
-use crate::{PackageProvenance, BLE_LOOPBACK_PACKAGE_NAME};
+use crate::{BLE_LOOPBACK_PACKAGE_NAME, PackageProvenance};
 
 pub struct RealPackageRunner;
 

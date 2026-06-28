@@ -212,8 +212,8 @@ fn take(cursor: &mut &[u8], len: usize) -> Result<Vec<u8>, WireError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_decompressed_vescpkg, parse_lisp_imports, wire_snapshot_report, PackageField,
-        VESC_PACKET_HEADER,
+        PackageField, VESC_PACKET_HEADER, parse_decompressed_vescpkg, parse_lisp_imports,
+        wire_snapshot_report,
     };
 
     fn field_spine() -> Vec<u8> {

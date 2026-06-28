@@ -2,14 +2,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::native_audit::{
-    align_section_vma, defined_symbols, device_proven_package_binary, undefined_symbols,
-    unexpected_final_native_lib_undefined_symbols, unexpected_undefined_symbols,
-    DEVICE_PROVEN_INIT_OFFSET, DEVICE_PROVEN_INIT_SIZE,
+    DEVICE_PROVEN_INIT_OFFSET, DEVICE_PROVEN_INIT_SIZE, align_section_vma, defined_symbols,
+    device_proven_package_binary, undefined_symbols, unexpected_final_native_lib_undefined_symbols,
+    unexpected_undefined_symbols,
 };
 use crate::native_elf_semantics::{analyze_native_lib_elf, assert_native_lib_semantics};
 use crate::native_inspect::{
-    all_section_layouts, elf_has_no_relocations, elf_is_executable, elf_to_flat_binary, nm_output,
-    section_from, SectionLayout,
+    SectionLayout, all_section_layouts, elf_has_no_relocations, elf_is_executable,
+    elf_to_flat_binary, nm_output, section_from,
 };
 use crate::native_lib_link::NativeLibLinkPlan;
 

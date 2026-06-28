@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::package_assets::{PackageAssets, PackageProvenance};
 use crate::PackageLayout;
+use crate::package_assets::{PackageAssets, PackageProvenance};
 
 pub const STAGING_README_PATH: &str = "README.md";
 pub const STAGING_DESCRIPTOR_PATH: &str = "pkgdesc.qml";
@@ -194,12 +194,12 @@ fn inspect_non_empty_binary(
 #[cfg(test)]
 mod tests {
     use super::{
-        PackageArtifactInspectionError, PackageArtifactInspectionPlan, PackageArtifactProblem,
-        NATIVE_PAYLOAD_PATH, STAGING_DESCRIPTOR_PATH, STAGING_LOADER_PATH, STAGING_README_PATH,
+        NATIVE_PAYLOAD_PATH, PackageArtifactInspectionError, PackageArtifactInspectionPlan,
+        PackageArtifactProblem, STAGING_DESCRIPTOR_PATH, STAGING_LOADER_PATH, STAGING_README_PATH,
     };
+    use crate::BLE_LOOPBACK_PACKAGE_NAME;
     use crate::package_assets::PackageProvenance;
     use crate::test_support::PackageTestHarness;
-    use crate::BLE_LOOPBACK_PACKAGE_NAME;
 
     #[test]
     fn reports_missing_required_artifacts() {

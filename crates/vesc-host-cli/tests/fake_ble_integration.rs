@@ -1,14 +1,14 @@
 use std::cell::RefCell;
 
 use vesc_host_cli::loopback::{
-    run_loopback, LoopbackTarget, LoopbackTransport, LoopbackTransportError,
+    LoopbackTarget, LoopbackTransport, LoopbackTransportError, run_loopback,
 };
 use vesc_pkg_build::{
     FakeFirmwareServices, LoopbackPackageRuntime, LoopbackPackageState, LoopbackRuntimeError,
     LoopbackStartError, LoopbackTick,
 };
-use vesc_protocol::ble_loopback::LoopbackPacket;
 use vesc_protocol::WireCommand;
+use vesc_protocol::ble_loopback::LoopbackPacket;
 
 struct BridgeTransport<'a> {
     services: &'a FakeFirmwareServices,
@@ -139,18 +139,24 @@ fn fake_ble_loopback_bridge_behavior() {
         assert_eq!(teardown.frame().command(), WireCommand::Teardown);
         assert!(teardown.frame().payload().is_empty());
 
-        assert!(services
-            .logs()
-            .iter()
-            .any(|line| line == "BLE loopback ready"));
-        assert!(services
-            .logs()
-            .iter()
-            .any(|line| line == "received BLE frame"));
-        assert!(services
-            .logs()
-            .iter()
-            .any(|line| line == "replied to BLE frame"));
+        assert!(
+            services
+                .logs()
+                .iter()
+                .any(|line| line == "BLE loopback ready")
+        );
+        assert!(
+            services
+                .logs()
+                .iter()
+                .any(|line| line == "received BLE frame")
+        );
+        assert!(
+            services
+                .logs()
+                .iter()
+                .any(|line| line == "replied to BLE frame")
+        );
     }
 
     {

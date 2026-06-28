@@ -87,8 +87,8 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{
-        native_lib_link_plan, NativeLibLinkPlan, NATIVE_LIB_ELF_PATH, NATIVE_LIB_LINKER_SCRIPT,
-        PACKAGE_C_OBJECT_PATH, PACKAGE_C_SOURCE_PATH, RUST_STATICLIB_PATH,
+        NATIVE_LIB_ELF_PATH, NATIVE_LIB_LINKER_SCRIPT, NativeLibLinkPlan, PACKAGE_C_OBJECT_PATH,
+        PACKAGE_C_SOURCE_PATH, RUST_STATICLIB_PATH, native_lib_link_plan,
     };
 
     #[test]

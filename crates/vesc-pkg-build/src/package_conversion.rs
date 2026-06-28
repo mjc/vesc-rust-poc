@@ -135,8 +135,8 @@ impl PackageBinaryConversionPlan {
 #[cfg(test)]
 mod tests {
     use super::{
-        PackageBinaryConversionError, PackageBinaryConversionPlan, CONVERSION_SCRIPT_PATH,
-        NATIVE_LIB_BINARY_PATH, PACKAGE_LIB_BINARY_PATH,
+        CONVERSION_SCRIPT_PATH, NATIVE_LIB_BINARY_PATH, PACKAGE_LIB_BINARY_PATH,
+        PackageBinaryConversionError, PackageBinaryConversionPlan,
     };
     use crate::test_support::FakeConversionRunner;
     #[test]

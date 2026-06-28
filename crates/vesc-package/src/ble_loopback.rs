@@ -1,7 +1,7 @@
 use core::cell::{Cell, RefCell};
 
-use vesc_protocol::ble_loopback::{handle_loopback_frame, LoopbackError, LoopbackPacket};
 use vesc_protocol::WireCommand;
+use vesc_protocol::ble_loopback::{LoopbackError, LoopbackPacket, handle_loopback_frame};
 
 const MAX_FRAME_BYTES: usize = 19;
 const MAX_LOGS: usize = 8;
@@ -206,7 +206,7 @@ unsafe extern "C" fn loopback_app_data_handler(data: *mut u8, len: u32) {
         return;
     }
 
-    let bytes = core::slice::from_raw_parts(data as *const u8, len as usize);
+    let bytes = unsafe { core::slice::from_raw_parts(data as *const u8, len as usize) };
     let lifecycle = crate::ffi::LoopbackLifecycle::new(crate::ffi::RealBindings);
     let now_ms = u64::from(lifecycle.system_time_ticks()) / 10;
 
@@ -382,11 +382,11 @@ impl DeviceServices for &FakeDeviceServices {
 #[cfg(test)]
 mod tests {
     use super::{
-        process_loopback_app_data, BleFrame, DeviceServices, FakeDeviceServices,
-        LoopbackPackageRuntime, LoopbackPackageState, LoopbackTick, NullDeviceServices,
+        BleFrame, DeviceServices, FakeDeviceServices, LoopbackPackageRuntime, LoopbackPackageState,
+        LoopbackTick, NullDeviceServices, process_loopback_app_data,
     };
-    use vesc_protocol::ble_loopback::LoopbackPacket;
     use vesc_protocol::WireCommand;
+    use vesc_protocol::ble_loopback::LoopbackPacket;
 
     fn frame(command: WireCommand, payload: &[u8]) -> BleFrame {
         let packet = LoopbackPacket::new(command, payload).expect("frame");

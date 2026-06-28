@@ -27,30 +27,30 @@ pub mod test_support;
 
 pub const BLE_LOOPBACK_PACKAGE_NAME: &str = "Rust BLE loopback test package";
 
-pub use abi_inventory::{minimal_test_package_abi, AbiRequirement, AbiRequirementKind};
+pub use abi_inventory::{AbiRequirement, AbiRequirementKind, minimal_test_package_abi};
 pub use native_lib_audit::{
-    audit_native_lib_artifacts, audit_native_lib_flat_binary, audit_native_lib_layout,
-    audit_native_lib_symbols, semantic_snapshot_report, NativeLibArtifactPaths,
+    NativeLibArtifactPaths, audit_native_lib_artifacts, audit_native_lib_flat_binary,
+    audit_native_lib_layout, audit_native_lib_symbols, semantic_snapshot_report,
 };
 pub use native_lib_baseline::{
-    audit_baseline_fixture_layout, audit_vesc_c_if_abi_pins, baseline_input_paths,
-    baseline_output_paths, native_lib_baseline_root, NativeLibBaselinePath,
+    NativeLibBaselinePath, audit_baseline_fixture_layout, audit_vesc_c_if_abi_pins,
+    baseline_input_paths, baseline_output_paths, native_lib_baseline_root,
 };
-pub use native_lib_link::{native_lib_link_plan, NativeLibLinkPlan};
+pub use native_lib_link::{NativeLibLinkPlan, native_lib_link_plan};
 pub use package_artifacts::{
-    PackageArtifactInspectionError, PackageArtifactInspectionPlan, PackageArtifactProblem,
-    NATIVE_PAYLOAD_PATH,
+    NATIVE_PAYLOAD_PATH, PackageArtifactInspectionError, PackageArtifactInspectionPlan,
+    PackageArtifactProblem,
 };
 pub use package_assets::{PackageAssets, PackageProvenance};
 pub use package_build::PackageBuildPlan;
 pub use package_conversion::{
+    CONVERSION_SCRIPT_PATH, NATIVE_LIB_BINARY_PATH, PACKAGE_LIB_BINARY_PATH,
     PackageBinaryConversionCommand, PackageBinaryConversionError, PackageBinaryConversionPlan,
-    PackageBinaryConversionRunner, CONVERSION_SCRIPT_PATH, NATIVE_LIB_BINARY_PATH,
-    PACKAGE_LIB_BINARY_PATH,
+    PackageBinaryConversionRunner,
 };
 pub use package_runner::{
-    ensure_native_lib_artifacts, ensure_repo_native_lib_artifacts, package_provenance_from_env,
-    RealPackageRunner,
+    RealPackageRunner, ensure_native_lib_artifacts, ensure_repo_native_lib_artifacts,
+    package_provenance_from_env,
 };
 pub use package_runtime::{
     FakeFirmwareServices, FirmwareServices, LoopbackPackageRuntime, LoopbackPackageState,
@@ -58,8 +58,8 @@ pub use package_runtime::{
 };
 pub use package_target::{PackageTargetError, PackageTargetMode, PackageTargetPlan};
 pub use package_wire::{
-    decompress_vescpkg, field_bytes, parse_decompressed_vescpkg, parse_lisp_imports, parse_vescpkg,
-    wire_snapshot_report, LispImport, PackageField, WireError, VESC_PACKET_HEADER,
+    LispImport, PackageField, VESC_PACKET_HEADER, WireError, decompress_vescpkg, field_bytes,
+    parse_decompressed_vescpkg, parse_lisp_imports, parse_vescpkg, wire_snapshot_report,
 };
 pub use symbol_audit::{
     audit_rust_staticlib_symbols, defined_symbols, is_allowed_runtime_symbol, nm_output,
@@ -126,7 +126,7 @@ fn sanitize(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{PackageLayout, BLE_LOOPBACK_PACKAGE_NAME};
+    use super::{BLE_LOOPBACK_PACKAGE_NAME, PackageLayout};
 
     #[test]
     fn renders_stable_artifact_paths() {

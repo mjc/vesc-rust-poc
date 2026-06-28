@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::package_conversion::{PackageBinaryConversionCommand, PackageBinaryConversionRunner};
-use crate::{PackageLayout, BLE_LOOPBACK_PACKAGE_NAME};
+use crate::{BLE_LOOPBACK_PACKAGE_NAME, PackageLayout};
 
 const LOOPBACK_PACKAGE_VERSION: &str = "0.1.0";
 

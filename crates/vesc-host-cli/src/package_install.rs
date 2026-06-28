@@ -4,7 +4,7 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 
-use flate2::{write::ZlibEncoder, Compression};
+use flate2::{Compression, write::ZlibEncoder};
 
 const PACKAGE_ERASE_BYTES: usize = 16;
 
@@ -338,11 +338,11 @@ fn qml_compress(script: &str) -> Result<Vec<u8>, PackageInstallError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_package, erase_package, install_package, qml_compress, read_package_from_path,
-        step_error, FakePackageInstallTransport, PackageInstallError, PackageInstallStep,
-        PackageInstallTransport,
+        FakePackageInstallTransport, PackageInstallError, PackageInstallStep,
+        PackageInstallTransport, decode_package, erase_package, install_package, qml_compress,
+        read_package_from_path, step_error,
     };
-    use flate2::{write::ZlibEncoder, Compression};
+    use flate2::{Compression, write::ZlibEncoder};
     use std::cell::Cell;
     use std::io::Write;
     use std::path::Path;

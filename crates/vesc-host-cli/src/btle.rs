@@ -1,9 +1,9 @@
 use crate::ble_discovery::{
-    collect_discovered_peripherals, find_matching_peripheral, vesc_tool_scan_filter,
-    DiscoveredPeripheral, DiscoveryError,
+    DiscoveredPeripheral, DiscoveryError, collect_discovered_peripherals, find_matching_peripheral,
+    vesc_tool_scan_filter,
 };
 use crate::loopback::{LoopbackTarget, LoopbackTransport, LoopbackTransportError};
-use crate::vesc_uart::{encode_packet, PacketDecoder};
+use crate::vesc_uart::{PacketDecoder, encode_packet};
 use btleplug::api::{Central, Characteristic, Manager as _, Peripheral as _, WriteType};
 use btleplug::platform::{Manager, Peripheral};
 use futures_util::StreamExt;
@@ -680,15 +680,15 @@ pub fn vesc_ble_uart_tx_uuid() -> Uuid {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_custom_app_data_packet, build_lisp_repl_packet, continuous_probe_step,
-        lisp_probe_command, lisp_probe_has_expected_result, lisp_probe_line_is_success,
-        lisp_probe_report, parse_lisp_print, receive_lisp_prints_from_channel,
-        take_pending_lisp_prints, vesc_ble_uart_rx_uuid, vesc_ble_uart_service_uuid,
-        vesc_ble_uart_tx_uuid, ContinuousProbeStep, LispPrintReceiveConfig, LispProbeProgress,
-        COMM_CUSTOM_APP_DATA, COMM_LISP_PRINT, COMM_LISP_REPL_CMD,
+        COMM_CUSTOM_APP_DATA, COMM_LISP_PRINT, COMM_LISP_REPL_CMD, ContinuousProbeStep,
+        LispPrintReceiveConfig, LispProbeProgress, build_custom_app_data_packet,
+        build_lisp_repl_packet, continuous_probe_step, lisp_probe_command,
+        lisp_probe_has_expected_result, lisp_probe_line_is_success, lisp_probe_report,
+        parse_lisp_print, receive_lisp_prints_from_channel, take_pending_lisp_prints,
+        vesc_ble_uart_rx_uuid, vesc_ble_uart_service_uuid, vesc_ble_uart_tx_uuid,
     };
     use crate::loopback::LoopbackTransportError;
-    use crate::vesc_uart::{encode_packet, PacketDecoder};
+    use crate::vesc_uart::{PacketDecoder, encode_packet};
     use std::collections::VecDeque;
     use std::sync::mpsc::{self, Receiver};
     use std::thread;
@@ -942,9 +942,11 @@ mod tests {
                 ]
             );
             assert!(events.contains(&LispProbeProgress::ExpectedResultReceived));
-            assert!(!events
-                .iter()
-                .any(|event| { matches!(event, LispProbeProgress::QuietAfterPrints { .. }) }));
+            assert!(
+                !events
+                    .iter()
+                    .any(|event| { matches!(event, LispProbeProgress::QuietAfterPrints { .. }) })
+            );
         }
 
         {

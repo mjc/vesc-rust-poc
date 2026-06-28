@@ -167,11 +167,11 @@ pub fn handle_loopback_frame(
 #[cfg(test)]
 mod tests {
     use super::{
-        LoopbackError, LoopbackPacket, BLE_LOOPBACK_PROTOCOL_VERSION, MAX_LOOPBACK_PAYLOAD_BYTES,
+        BLE_LOOPBACK_PROTOCOL_VERSION, LoopbackError, LoopbackPacket, MAX_LOOPBACK_PAYLOAD_BYTES,
         MIN_WIRE_FRAME_BYTES,
     };
     use crate::{WireCommand, WireVersion};
-    use alloc::string::ToString;
+    use std::format;
 
     #[test]
     fn round_trips_ping_frames() {
@@ -254,21 +254,26 @@ mod tests {
 
     #[test]
     fn formats_loopback_errors_for_humans() {
-        assert_eq!(LoopbackError::FrameTooShort.to_string(), "frame too short");
         assert_eq!(
-            LoopbackError::InvalidVersion {
-                expected: BLE_LOOPBACK_PROTOCOL_VERSION,
-                actual: WireVersion::new(2),
-            }
-            .to_string(),
+            format!("{}", LoopbackError::FrameTooShort),
+            "frame too short"
+        );
+        assert_eq!(
+            format!(
+                "{}",
+                LoopbackError::InvalidVersion {
+                    expected: BLE_LOOPBACK_PROTOCOL_VERSION,
+                    actual: WireVersion::new(2),
+                }
+            ),
             "invalid protocol version: expected 1, got 2"
         );
         assert_eq!(
-            LoopbackError::InvalidCommand { code: 99 }.to_string(),
+            format!("{}", LoopbackError::InvalidCommand { code: 99 }),
             "invalid command code: 99"
         );
         assert_eq!(
-            LoopbackError::PayloadTooLong { len: 17, max: 16 }.to_string(),
+            format!("{}", LoopbackError::PayloadTooLong { len: 17, max: 16 }),
             "payload too long: 17 bytes (max 16)"
         );
     }

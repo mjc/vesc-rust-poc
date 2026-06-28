@@ -1,8 +1,8 @@
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 
-use vesc_protocol::ble_loopback::{handle_loopback_frame, LoopbackError, LoopbackPacket};
 use vesc_protocol::WireCommand;
+use vesc_protocol::ble_loopback::{LoopbackError, LoopbackPacket, handle_loopback_frame};
 
 pub trait FirmwareServices {
     fn now_ms(&self) -> u64;
@@ -265,8 +265,8 @@ mod tests {
         FakeFirmwareServices, LoopbackPackageRuntime, LoopbackPackageState, LoopbackRuntimeError,
         LoopbackTick,
     };
-    use vesc_protocol::ble_loopback::LoopbackPacket;
     use vesc_protocol::WireCommand;
+    use vesc_protocol::ble_loopback::LoopbackPacket;
 
     #[test]
     fn fake_services_record_time_logs_connectivity_and_transmissions() {
@@ -298,10 +298,12 @@ mod tests {
             runtime.state(),
             LoopbackPackageState::Failed("BLE init failed")
         );
-        assert!(services
-            .logs()
-            .iter()
-            .any(|line| line == "BLE init failed: BLE init failed"));
+        assert!(
+            services
+                .logs()
+                .iter()
+                .any(|line| line == "BLE init failed: BLE init failed")
+        );
     }
 
     #[test]
@@ -318,10 +320,12 @@ mod tests {
         );
         assert_eq!(runtime.tick(), Ok(LoopbackTick::WaitingForConnection));
         assert_eq!(services.transmitted_frames(), Vec::<Vec<u8>>::new());
-        assert!(services
-            .logs()
-            .iter()
-            .any(|line| line == "waiting for BLE connection"));
+        assert!(
+            services
+                .logs()
+                .iter()
+                .any(|line| line == "waiting for BLE connection")
+        );
     }
 
     #[test]
@@ -372,14 +376,18 @@ mod tests {
             &0x0102_0304_0506_0708_u64.to_le_bytes()
         );
 
-        assert!(services
-            .logs()
-            .iter()
-            .any(|line| line == "received BLE frame"));
-        assert!(services
-            .logs()
-            .iter()
-            .any(|line| line == "replied to BLE frame"));
+        assert!(
+            services
+                .logs()
+                .iter()
+                .any(|line| line == "received BLE frame")
+        );
+        assert!(
+            services
+                .logs()
+                .iter()
+                .any(|line| line == "replied to BLE frame")
+        );
     }
 
     #[test]
@@ -401,9 +409,11 @@ mod tests {
             runtime.state(),
             LoopbackPackageState::Failed("malformed BLE frame")
         );
-        assert!(services
-            .logs()
-            .iter()
-            .any(|line| line == "malformed BLE frame"));
+        assert!(
+            services
+                .logs()
+                .iter()
+                .any(|line| line == "malformed BLE frame")
+        );
     }
 }

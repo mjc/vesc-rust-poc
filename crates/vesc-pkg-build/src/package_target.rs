@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
+use crate::PackageProvenance;
 use crate::package_artifacts::PackageArtifactInspectionError;
 use crate::package_build::PackageBuildPlan;
 use crate::package_conversion::{PackageBinaryConversionError, PackageBinaryConversionRunner};
-use crate::PackageProvenance;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PackageTargetMode {

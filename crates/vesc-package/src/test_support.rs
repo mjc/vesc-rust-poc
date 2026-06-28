@@ -142,7 +142,7 @@ pub mod stubs {
 
 #[cfg(test)]
 mod tests {
-    use super::{stubs, FakeAppDataBindings, FakeBindings};
+    use super::{FakeAppDataBindings, FakeBindings, stubs};
     use crate::{AppDataBindings, LbmBindings};
     use vesc_ffi::{ExtensionHandler, LbmValue};
 
