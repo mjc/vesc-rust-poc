@@ -332,6 +332,23 @@ mod tests {
     }
 
     #[test]
+    fn refloat_header_full_table_matches_when_available() {
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let refloat = PathBuf::from("/Users/mjc/projects/refloat/vesc_pkg_lib/vesc_c_if.h");
+        if !refloat.is_file() {
+            return;
+        }
+        let c_source = std::fs::read_to_string(&refloat).expect("refloat header");
+        let rust_source =
+            std::fs::read_to_string(default_rust_table_path(&manifest)).expect("raw.rs");
+        let mismatches = super::compare_full_table(&c_source, &rust_source);
+        assert!(
+            mismatches.is_empty(),
+            "full-table mismatches: {mismatches:?}"
+        );
+    }
+
+    #[test]
     fn fixture_header_cannot_match_full_rust_order() {
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let result = compare_used_slots_from_paths(
