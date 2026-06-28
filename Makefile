@@ -46,7 +46,7 @@ clippy:
 symbol-check: test-embedded
 
 golden-check:
-	$(CARGO) nextest run -p vesc-pkg package_golden
+	$(CARGO) nextest run -p vesc-pkg --test golden_packaging --test native_lib_artifacts
 
 COVERAGE_FAIL_UNDER ?= 80
 COVERAGE_PACKAGE_IGNORE := --ignore-filename-regex 'crates/vesc-(ffi|protocol)/'

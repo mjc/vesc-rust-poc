@@ -67,35 +67,3 @@ pub fn package_provenance_from_env() -> PackageProvenance {
         std::env::var("VESC_PKG_BUILD_DATE").ok(),
     )
 }
-
-#[cfg(test)]
-mod tests {
-    use super::ensure_native_lib_artifacts;
-    use crate::BLE_LOOPBACK_PACKAGE_NAME;
-    use crate::hygiene::repo_root;
-    use crate::package_conversion::PackageBinaryConversionPlan;
-    use std::fs;
-
-    #[test]
-    fn native_lib_materialization_is_idempotent() {
-        let root = repo_root();
-        let plan = PackageBinaryConversionPlan::new(&root, BLE_LOOPBACK_PACKAGE_NAME, "0.1.0");
-
-        ensure_native_lib_artifacts(&plan);
-        let expected_native = fs::read(plan.native_binary_path()).expect("baseline native bin");
-        let expected_package = fs::read(plan.package_binary_path()).expect("baseline package bin");
-
-        ensure_native_lib_artifacts(&plan);
-
-        assert_eq!(
-            fs::read(plan.native_binary_path()).expect("second native bin"),
-            expected_native,
-            "conversion plan should keep native payload bytes stable"
-        );
-        assert_eq!(
-            fs::read(plan.package_binary_path()).expect("second package bin"),
-            expected_package,
-            "conversion plan should keep package payload bytes stable"
-        );
-    }
-}

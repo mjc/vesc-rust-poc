@@ -1,0 +1,7 @@
+---
+source: crates/vesc-pkg/tests/golden_packaging.rs
+expression: "format!(\"len={}\\nfingerprint={}\\nprobe_extension={}\", PACKAGE_LIB.len(),\nfingerprint_bytes(PACKAGE_LIB), payload_contains_probe_extension(PACKAGE_LIB))"
+---
+len=183
+fingerprint=3ecbdd83d489576f
+probe_extension=true

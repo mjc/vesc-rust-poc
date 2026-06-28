@@ -1,3 +1,7 @@
+---
+source: crates/vesc-pkg/tests/golden_packaging.rs
+expression: FINGERPRINTS_TOML
+---
 package_lib.bin = "3ecbdd83d489576f"
 native_lib.bin = "3ecbdd83d489576f"
 native_lib.elf = "67d09827a897dbd8"

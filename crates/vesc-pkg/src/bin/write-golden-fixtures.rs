@@ -15,8 +15,15 @@ fn main() {
 
     let package_lib = build_and_copy_package_lib_bin(&root);
     let package_lib_path = package_lib_output_path(&root);
+    let native_bin_path = root.join("target/native-lib-baseline/native_lib.bin");
+    let native_elf_path = root.join("target/native-lib-baseline/native_lib.elf");
+
     fs::copy(&package_lib_path, fixture_root.join(GOLDEN_PACKAGE_LIB_BIN))
         .expect("copy package_lib.bin into golden fixtures");
+    fs::copy(&native_bin_path, fixture_root.join("native_lib.bin"))
+        .expect("copy native_lib.bin into golden fixtures");
+    fs::copy(&native_elf_path, fixture_root.join("native_lib.elf"))
+        .expect("copy native_lib.elf into golden fixtures");
 
     let assets = PackageAssets::new(
         PackageLayout::new(BLE_LOOPBACK_PACKAGE_NAME, "0.1.0"),
@@ -31,12 +38,17 @@ fn main() {
         build_lisp_data(&assets.render_loader(), &staging_dir).expect("build lispData bytes");
     fs::write(fixture_root.join(GOLDEN_LISP_DATA_BIN), &lisp_data).expect("write lisp_data.bin");
 
+    let native_lib = fs::read(&native_bin_path).expect("native_lib.bin bytes");
     let fingerprints = format!(
         "package_lib.bin = \"{}\"\n\
          native_lib.bin = \"{}\"\n\
+         native_lib.elf = \"{}\"\n\
          lisp_data.bin = \"{}\"\n",
         fingerprint_bytes(&package_lib),
-        fingerprint_bytes(&package_lib),
+        fingerprint_bytes(&native_lib),
+        fingerprint_bytes(
+            &fs::read(&native_elf_path).expect("native_lib.elf bytes for fingerprint")
+        ),
         fingerprint_bytes(&lisp_data),
     );
     fs::write(fixture_root.join(GOLDEN_FINGERPRINTS_TOML), fingerprints)
@@ -44,6 +56,13 @@ fn main() {
 
     eprintln!("updated golden fixtures in {}", fixture_root.display());
     eprintln!("  {} ({} bytes)", GOLDEN_PACKAGE_LIB_BIN, package_lib.len());
+    eprintln!("  native_lib.bin ({} bytes)", native_lib.len());
+    eprintln!(
+        "  native_lib.elf ({} bytes)",
+        fs::metadata(&native_elf_path)
+            .expect("native_lib.elf metadata")
+            .len()
+    );
     eprintln!("  {} ({} bytes)", GOLDEN_LISP_DATA_BIN, lisp_data.len());
     eprintln!("  {}", GOLDEN_FINGERPRINTS_TOML);
 }

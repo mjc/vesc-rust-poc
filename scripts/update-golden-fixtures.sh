@@ -17,6 +17,6 @@ echo "==> writing golden fixtures"
 "${RUNNER[@]}" cargo run -p vesc-pkg --bin write-golden-fixtures
 
 echo "==> verifying golden tests"
-"${RUNNER[@]}" cargo test -p vesc-pkg package_golden -- --quiet --test-threads=1
+"${RUNNER[@]}" cargo nextest run -p vesc-pkg --test golden_packaging --test native_lib_artifacts
 
 echo "golden fixtures updated under fixtures/golden/ble-loopback-0.1.0/"

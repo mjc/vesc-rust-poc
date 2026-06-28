@@ -1,0 +1,6 @@
+---
+source: crates/vesc-pkg/tests/golden_packaging.rs
+expression: "format!(\"len={}\\nfingerprint={}\", LISP_DATA.len(),\nfingerprint_bytes(LISP_DATA))"
+---
+len=349
+fingerprint=9422e625a6e207bc

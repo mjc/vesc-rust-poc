@@ -1,0 +1,7 @@
+---
+source: crates/vesc-pkg/tests/golden_packaging.rs
+expression: lisp_import_summary(&lisp_data)
+---
+code_len=138
+imports=1
+import[0]: tag=package-lib offset=164 size=183 payload_fp=3ecbdd83d489576f
