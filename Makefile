@@ -6,7 +6,7 @@ CARGO ?= cargo
 
 check: fmt clippy test
 
-check-full: check symbol-check
+check-full: check symbol-check test-package
 
 test: test-all
 
