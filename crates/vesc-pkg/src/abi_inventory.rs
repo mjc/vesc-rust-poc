@@ -117,6 +117,26 @@ mod tests {
     }
 
     #[test]
+    fn minimal_package_function_requirements_are_pinned_for_ffi_compare() {
+        use crate::ffi_compare::LOOPBACK_USED_SLOTS;
+
+        for requirement in minimal_test_package_abi() {
+            let slot = match requirement.kind {
+                AbiRequirementKind::Function | AbiRequirementKind::ErrorSymbol => requirement
+                    .name
+                    .strip_prefix("VESC_IF.")
+                    .unwrap_or(requirement.name),
+                _ => continue,
+            };
+            assert!(
+                LOOPBACK_USED_SLOTS.contains(&slot),
+                "missing pinned slot for {}",
+                requirement.name
+            );
+        }
+    }
+
+    #[test]
     fn groups_requirements_by_abi_role() {
         let abi = minimal_test_package_abi();
 
