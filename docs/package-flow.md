@@ -39,6 +39,7 @@ This note characterizes the package path that the Rust VESC package experiment s
 - `make` currently defaults to `check`; the package-build command path lives in the repo now instead of an ad hoc shell fragment.
 - Set `INSTA_UPDATE=always` when intentionally refreshing package or native-lib snapshots.
 - Set `VESC_PKG_DISASM=1` to print optional native-lib disassembly during the embedded audit.
+- `crates/vesc-host-cli/tests/fake_ble_integration.rs` is the canonical host↔in-process firmware bridge: it wires `FakeFirmwareServices` from `vesc-pkg-build` to the host `LoopbackTransport` and exercises ping/echo without hardware.
 - `package_README-gen.md` and `ui.qml` are generated artifacts, not hand-edited inputs.
 
 ## Build And Upload Workflow
