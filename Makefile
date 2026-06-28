@@ -2,11 +2,16 @@
 
 CARGO ?= cargo
 
-.PHONY: check check-full test test-all test-embedded test-package test-changed fmt clippy symbol-check package-smoke package package-only clean status coverage coverage-ffi coverage-package coverage-pkg-build coverage-host-cli
+.PHONY: check check-full test test-all test-embedded test-package test-changed fmt clippy symbol-check package-smoke package package-only clean status coverage coverage-ffi coverage-package coverage-pkg-build coverage-host-cli hack-check
 
 check: fmt clippy test
 
 check-full: check symbol-check test-package
+
+hack-check:
+	$(CARGO) hack check --each-feature -p vesc-package
+	$(CARGO) hack check --each-feature -p vesc-pkg-build
+	$(CARGO) hack check --each-feature -p vesc-ble-loopback --lib --release --target thumbv7em-none-eabihf
 
 test: test-all
 

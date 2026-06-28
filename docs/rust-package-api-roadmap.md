@@ -17,6 +17,7 @@ moving in the right direction instead of growing a too-clever wrapper too early.
 
 - `nix develop -c make check` — fast host tier (`nextest` default profile)
 - `nix develop -c make check-full` — host tier plus embedded native-lib audits and package integration tests
+- `nix develop -c make hack-check` — `cargo-hack --each-feature` matrix for host crates plus thumb release lib build for `vesc-ble-loopback`
 - `nix develop -c make symbol-check` — embedded native-lib audit tier only
 - `nix develop -c make test-package` — fixtures + package pipeline integration tier
 - `nix develop -c make package`

@@ -66,6 +66,7 @@
             cargo-nextest
             cargo-test-changed
             cargo-llvm-cov
+            cargo-hack
           ];
 
           shellHook = ''
