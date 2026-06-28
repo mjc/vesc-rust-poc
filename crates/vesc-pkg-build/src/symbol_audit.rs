@@ -1,9 +1,8 @@
 pub use crate::native_audit::{
-    align_section_vma, assert_rust_loader_init_uses_vesc_ffi, bounded_init_disassembly,
-    defined_symbols, is_allowed_final_native_lib_symbol, is_allowed_runtime_symbol,
-    redact_disassembly_for_snapshot, undefined_symbols,
+    align_section_vma, defined_symbols, device_proven_package_binary,
+    is_allowed_final_native_lib_symbol, is_allowed_runtime_symbol, undefined_symbols,
     unexpected_final_native_lib_undefined_symbols, unexpected_undefined_symbols,
-    DEVICE_PROVEN_INIT_OFFSET, DEVICE_PROVEN_INIT_SIZE, DEVICE_PROVEN_PACKAGE_BINARY,
+    DEVICE_PROVEN_INIT_OFFSET, DEVICE_PROVEN_INIT_SIZE,
 };
 pub use crate::native_build::{
     build_final_native_lib_binary, build_final_native_lib_binary_for, build_final_native_lib_elf,
@@ -75,11 +74,7 @@ mod tests {
         }
     }
 
-    use super::{
-        align_section_vma, assert_rust_loader_init_uses_vesc_ffi, bounded_init_disassembly,
-        redact_disassembly_for_snapshot, DEVICE_PROVEN_INIT_OFFSET, DEVICE_PROVEN_INIT_SIZE,
-        DEVICE_PROVEN_PACKAGE_BINARY,
-    };
+    use super::{align_section_vma, DEVICE_PROVEN_INIT_OFFSET, DEVICE_PROVEN_INIT_SIZE};
 
     #[test]
     fn symbol_audit_helpers_classify_nm_output() {

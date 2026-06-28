@@ -24,12 +24,19 @@ moving in the right direction instead of growing a too-clever wrapper too early.
 
 On-target validation (QEMU system emulation or a physical VESC on the bench) is intentionally
 out of scope for the current test pyramid. Host-side checks cover artifact bytes, ELF layout,
-symbol resolution, and disassembly patterns against device-proven fixtures; `vesc-host-cli`
+symbol resolution, and semantic instruction audits against device-proven fixtures; `vesc-host-cli`
 covers install/loopback against real or fake BLE transports.
 
 When a HIL lane is added later, it should run only the smoke probes that require firmware
 (`lisp-probe`, loopback echo) and leave the heavy native-lib audits in the embedded CI tier.
 No QEMU runner is wired in this repo yet.
+
+## Deferred: CI matrix and generic VESC reference replacement
+
+- Add a fast Nix `checks.check` job (`make check`) alongside `checks.check-full`.
+- Mirror those tiers in GitHub Actions when CI moves off local Nix-only verification.
+- Replace generic VESC references (`vesc_c_if.h`, `link.ld`, archived `rules.mk`, archived `conv.py`)
+  only after semantic audits and package parity tests prove byte/layout equivalence.
 
 ## Current Rust-Owned Boundary
 

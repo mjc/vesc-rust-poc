@@ -23,6 +23,7 @@ mod tests {
             "nix develop -c make check-full",
             "fast host tier",
             "embedded native-lib audit tier",
+            "semantic instruction audits",
             "nix develop -c make package",
             "vesc-ble-loopback",
             "vesc-pkg-build",
