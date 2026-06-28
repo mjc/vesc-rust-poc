@@ -1,7 +1,7 @@
-//! Raw VESC firmware ABI surface.
+//! Raw/minimal VESC firmware ABI bindings.
 //!
-//! Mirrors the firmware C ABI: loader metadata, function-table slots, native
-//! image rebasing, scalar/view wrappers, and direct firmware table calls.
+//! This crate mirrors the VESC native package ABI. It does not provide
+//! high-level vehicle semantics, package building, or host transport code.
 //!
 //! Device builds must stay `no_std` and must not link `alloc` or `std`.
 

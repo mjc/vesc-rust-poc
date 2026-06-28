@@ -1,7 +1,7 @@
-//! Safe wrapper around `vesc-ffi` for VESC native package development.
+//! Target-side SDK for Rust VESC packages.
 //!
-//! Owns binding traits, lifecycle helpers, loader init, and device-side runtime code.
-//! Raw firmware ABI types live in `vesc-ffi`; this crate builds the safe layer on top.
+//! Link this crate into native VESC package code. It wraps `vesc-ffi` with
+//! lifecycle, LispBM extension, app-data, and protocol helpers.
 //!
 //! Device builds must stay `no_std` and must not link `alloc` or `std`.
 
