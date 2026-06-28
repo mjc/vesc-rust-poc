@@ -358,6 +358,44 @@ mod tests {
     }
 
     #[test]
+    fn parse_args_requires_the_build_subcommand() {
+        assert!(matches!(
+            parse_args(std::iter::empty::<&str>()),
+            Err(super::CargoVescPkgParseError::MissingSubcommand)
+        ));
+    }
+
+    #[test]
+    fn run_with_executes_package_only_build_invocation() {
+        let workspace = TempWorkspace::with_repo_fixture_layout();
+        let root = workspace.root.clone();
+        let _workspace = workspace;
+        let runner = FakeRunner::default();
+
+        let output = run_with(&root, ["build", "--package-only"], &runner)
+            .expect("run package-only invocation");
+
+        assert_eq!(
+            output,
+            PathBuf::from(
+                "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/Rust-BLE-loopback-test-package-0.1.0.vescpkg"
+            )
+        );
+        assert_eq!(
+            runner.calls(),
+            vec![PackageBinaryConversionCommand::new(
+                root.join("scripts/conv.py"),
+                root.join("target/native-lib-baseline/native_lib.bin"),
+                root.join("target/native-lib-baseline/package_lib.bin"),
+            )]
+        );
+        assert!(
+            root.join(&output).exists(),
+            "expected cargo vescpkg output to exist"
+        );
+    }
+
+    #[test]
     fn run_with_rejects_unknown_subcommands() {
         let workspace = TempWorkspace::new();
         let error = run_with(&workspace.root, ["spoon"], &FakeRunner::default())

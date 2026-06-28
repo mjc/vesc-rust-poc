@@ -80,9 +80,8 @@ fn newest_rs_tree_mtime(dir: &Path) -> Option<SystemTime> {
                 stack.push(path);
             } else if path.extension().is_some_and(|ext| ext == "rs") {
                 if let Ok(modified) = entry.metadata().and_then(|meta| meta.modified()) {
-                    newest = Some(
-                        newest.map_or(modified, |current: SystemTime| current.max(modified)),
-                    );
+                    newest =
+                        Some(newest.map_or(modified, |current: SystemTime| current.max(modified)));
                 }
             }
         }
@@ -155,8 +154,7 @@ impl RepoNativeBuildCache {
     }
 }
 
-static REPO_NATIVE_BUILD: LazyLock<RepoNativeBuildCache> =
-    LazyLock::new(RepoNativeBuildCache::new);
+static REPO_NATIVE_BUILD: LazyLock<RepoNativeBuildCache> = LazyLock::new(RepoNativeBuildCache::new);
 
 pub fn build_rust_staticlib_for(plan: &NativeLibLinkPlan) {
     if is_repo_native_build_plan(plan) {
