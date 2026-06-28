@@ -1,4 +1,2 @@
-# Minimal native-lib fixture.
-#
-# This file exists so the baseline tree carries the same top-level inputs a real
-# VESC native-library package expects.
+# Archived placeholder: the Rust build path in `vesc-pkg-build` materializes
+# `native_lib.elf` / `native_lib.bin` directly and does not invoke this file.

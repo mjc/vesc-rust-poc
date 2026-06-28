@@ -4,10 +4,12 @@ pub mod hygiene;
 pub mod native_audit;
 pub mod native_build;
 pub mod native_disasm;
+pub mod native_elf_semantics;
 pub mod native_inspect;
 pub mod native_lib_baseline;
 pub mod native_lib_link;
 pub mod native_lib_materialize;
+pub mod native_lib_toolchain;
 pub mod package_artifacts;
 pub mod package_assets;
 pub mod package_build;
@@ -39,7 +41,10 @@ pub use package_conversion::{
     PackageBinaryConversionRunner, CONVERSION_SCRIPT_PATH, NATIVE_LIB_BINARY_PATH,
     PACKAGE_LIB_BINARY_PATH,
 };
-pub use package_runner::{package_provenance_from_env, RealPackageRunner};
+pub use package_runner::{
+    ensure_native_lib_artifacts, ensure_repo_native_lib_artifacts, package_provenance_from_env,
+    RealPackageRunner,
+};
 pub use package_runtime::{
     FakeFirmwareServices, FirmwareServices, LoopbackPackageRuntime, LoopbackPackageState,
     LoopbackRuntimeError, LoopbackStartError, LoopbackTick,

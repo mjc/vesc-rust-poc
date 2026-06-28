@@ -1,11 +1,10 @@
 use std::path::{Path, PathBuf};
 
+use crate::cargo_vescpkg_command::DEFAULT_PACKAGE_VERSION;
 use crate::native_lib_link::{native_lib_link_plan, NativeLibLinkPlan};
-use crate::native_lib_materialize::{
-    build_final_native_lib_elf_unlocked, build_rust_staticlib_unlocked,
-    materialize_native_lib_binary_unlocked,
-};
-use crate::package_runner::ensure_repo_native_lib_artifacts;
+use crate::package_conversion::PackageBinaryConversionPlan;
+use crate::package_runner::ensure_native_lib_artifacts;
+use crate::BLE_LOOPBACK_PACKAGE_NAME;
 
 pub fn rust_staticlib_path() -> PathBuf {
     native_lib_link_plan().rust_staticlib_path()
@@ -23,8 +22,20 @@ pub fn package_lib_object_path() -> PathBuf {
     native_lib_link_plan().package_c_object_path()
 }
 
+fn repo_conversion_plan(plan: &NativeLibLinkPlan) -> PackageBinaryConversionPlan {
+    PackageBinaryConversionPlan::new(
+        plan.root(),
+        BLE_LOOPBACK_PACKAGE_NAME,
+        DEFAULT_PACKAGE_VERSION,
+    )
+}
+
 fn is_repo_native_build_plan(plan: &NativeLibLinkPlan) -> bool {
     plan.root() == native_lib_link_plan().root()
+}
+
+fn ensure_repo_plan_artifacts(plan: &NativeLibLinkPlan) {
+    ensure_native_lib_artifacts(&repo_conversion_plan(plan));
 }
 
 pub fn build_rust_staticlib() {
@@ -33,9 +44,9 @@ pub fn build_rust_staticlib() {
 
 pub fn build_rust_staticlib_for(plan: &NativeLibLinkPlan) {
     if is_repo_native_build_plan(plan) {
-        ensure_repo_native_lib_artifacts(plan.root());
+        ensure_repo_plan_artifacts(plan);
     } else {
-        build_rust_staticlib_unlocked(plan);
+        crate::native_lib_materialize::build_rust_staticlib(plan);
     }
 }
 
@@ -45,9 +56,9 @@ pub fn build_final_native_lib_elf() {
 
 pub fn build_final_native_lib_elf_for(plan: &NativeLibLinkPlan) {
     if is_repo_native_build_plan(plan) {
-        ensure_repo_native_lib_artifacts(plan.root());
+        ensure_repo_plan_artifacts(plan);
     } else {
-        build_final_native_lib_elf_unlocked(plan);
+        crate::native_lib_materialize::build_final_native_lib_elf(plan);
     }
 }
 
@@ -58,8 +69,8 @@ pub fn build_final_native_lib_binary(native_binary_path: &Path) {
 
 pub fn build_final_native_lib_binary_for(plan: &NativeLibLinkPlan, native_binary_path: &Path) {
     if is_repo_native_build_plan(plan) {
-        ensure_repo_native_lib_artifacts(plan.root());
+        ensure_repo_plan_artifacts(plan);
     } else {
-        materialize_native_lib_binary_unlocked(plan, native_binary_path);
+        crate::native_lib_materialize::materialize_native_lib_binary(plan, native_binary_path);
     }
 }

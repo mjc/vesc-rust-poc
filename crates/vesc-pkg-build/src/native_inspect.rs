@@ -1,12 +1,10 @@
-use std::collections::BTreeMap;
-use std::fs;
-use std::path::Path;
-use std::process::Command;
-
 use object::read::archive::ArchiveFile;
 use object::read::elf::FileHeader;
 use object::read::File as ObjectFile;
-use object::{Object, ObjectSection, ObjectSymbol, SymbolKind};
+use object::{Object, ObjectSection, ObjectSymbol, SectionFlags, SymbolKind};
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SectionLayout {
@@ -109,26 +107,64 @@ pub fn elf_is_executable(elf: &Path) -> bool {
     }
 }
 
+pub fn elf_to_flat_binary(elf: &Path) -> Vec<u8> {
+    let bytes = read_bytes(elf);
+    let object = parse_elf_bytes(&bytes, elf);
+    let mut max_end = 0usize;
+
+    for section in object.sections() {
+        let Ok(name) = section.name() else {
+            continue;
+        };
+        if !name.starts_with('.') {
+            continue;
+        }
+        if !section_is_loadable(section.flags()) {
+            continue;
+        }
+        let start = section.address() as usize;
+        let end = start.saturating_add(section.size() as usize);
+        max_end = max_end.max(end);
+    }
+
+    let mut blob = vec![0u8; max_end];
+    for section in object.sections() {
+        let Ok(name) = section.name() else {
+            continue;
+        };
+        if !name.starts_with('.') {
+            continue;
+        }
+        if !section_is_loadable(section.flags()) {
+            continue;
+        }
+        let Ok(data) = section.data() else {
+            continue;
+        };
+        let start = section.address() as usize;
+        let end = start.saturating_add(data.len());
+        if end > blob.len() {
+            continue;
+        }
+        blob[start..end].copy_from_slice(data);
+    }
+
+    blob
+}
+
+fn section_is_loadable(flags: SectionFlags) -> bool {
+    match flags {
+        SectionFlags::Elf { sh_flags } => sh_flags & object::elf::SHF_ALLOC as u64 != 0,
+        _ => false,
+    }
+}
+
 pub fn elf_has_no_relocations(elf: &Path) -> bool {
     let bytes = read_bytes(elf);
     let object = parse_elf_bytes(&bytes, elf);
     !object
         .sections()
         .any(|section| section.relocations().next().is_some())
-}
-
-pub fn command_stdout(program: &str, args: impl IntoIterator<Item = impl AsRef<Path>>) -> String {
-    let output = Command::new(program)
-        .args(args.into_iter().map(|arg| arg.as_ref().to_owned()))
-        .output()
-        .unwrap_or_else(|error| panic!("{program} execution failed: {error}"));
-
-    assert!(
-        output.status.success(),
-        "{program} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout).expect("command stdout to be valid UTF-8")
 }
 
 pub fn section_from<'a>(
@@ -142,7 +178,12 @@ pub fn section_from<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::SectionLayout;
+    use std::fs;
+
+    use super::{elf_to_flat_binary, SectionLayout};
+    use crate::native_lib_link::native_lib_link_plan;
+    use crate::package_runner::ensure_repo_native_lib_artifacts;
+    use crate::test_support::repo_root;
 
     fn parse_section_layout(line: &str) -> Option<SectionLayout> {
         let parts = line.split_whitespace().collect::<Vec<_>>();
@@ -158,6 +199,15 @@ mod tests {
             size: usize::from_str_radix(size, 16).ok()?,
             vma: usize::from_str_radix(vma, 16).ok()?,
         })
+    }
+
+    #[test]
+    fn native_lib_flat_binary_matches_materialized_bin() {
+        ensure_repo_native_lib_artifacts(&repo_root());
+        let plan = native_lib_link_plan();
+        let flat = elf_to_flat_binary(&plan.elf_path());
+        let materialized = fs::read(plan.native_lib_bin_path()).expect("materialized native bin");
+        assert_eq!(flat, materialized);
     }
 
     #[test]
