@@ -587,36 +587,31 @@ mod tests {
     use crate::vesc_uart::PacketDecoder;
 
     #[test]
-    fn parses_fw_version_replies_with_qml_app_support() {
-        let mut response = Vec::new();
-        response.push(COMM_FW_VERSION);
-        response.extend_from_slice(&[75, 15]);
-        response.extend_from_slice(b"VESC\0");
-        response.extend_from_slice(&[0_u8; 12]);
-        response.extend_from_slice(&[0, 0, 1, 0, 0, 0, 1]);
+    fn parses_fw_version_replies() {
+        let mut with_qml = Vec::new();
+        with_qml.push(COMM_FW_VERSION);
+        with_qml.extend_from_slice(&[75, 15]);
+        with_qml.extend_from_slice(b"VESC\0");
+        with_qml.extend_from_slice(&[0_u8; 12]);
+        with_qml.extend_from_slice(&[0, 0, 1, 0, 0, 0, 1]);
 
-        let info = parse_fw_version_info(&response).expect("info");
         assert_eq!(
-            info,
+            parse_fw_version_info(&with_qml).expect("info with qml"),
             FwVersionInfo {
                 hw_type: HwType::VescBms,
                 has_qml_app: true,
             }
         );
-    }
 
-    #[test]
-    fn parses_fw_version_replies_without_qml_app_support() {
-        let mut response = Vec::new();
-        response.push(COMM_FW_VERSION);
-        response.extend_from_slice(&[75, 15]);
-        response.extend_from_slice(b"VESC\0");
-        response.extend_from_slice(&[0_u8; 12]);
-        response.extend_from_slice(&[0, 0, 1, 0, 0, 0, 0]);
+        let mut without_qml = Vec::new();
+        without_qml.push(COMM_FW_VERSION);
+        without_qml.extend_from_slice(&[75, 15]);
+        without_qml.extend_from_slice(b"VESC\0");
+        without_qml.extend_from_slice(&[0_u8; 12]);
+        without_qml.extend_from_slice(&[0, 0, 1, 0, 0, 0, 0]);
 
-        let info = parse_fw_version_info(&response).expect("info");
         assert_eq!(
-            info,
+            parse_fw_version_info(&without_qml).expect("info without qml"),
             FwVersionInfo {
                 hw_type: HwType::VescBms,
                 has_qml_app: false,
@@ -625,29 +620,28 @@ mod tests {
     }
 
     #[test]
-    fn parses_simple_ack_packets() {
-        let response = [COMM_QMLUI_ERASE, 1];
-        assert!(parse_simple_ack(&response, COMM_QMLUI_ERASE).expect("ack"));
-    }
+    fn parse_ack_packets_covers_write_and_erase_replies() {
+        assert!(parse_simple_ack(&[COMM_QMLUI_ERASE, 1], COMM_QMLUI_ERASE).expect("qml ack"));
+        assert!(
+            parse_simple_ack(&[COMM_LISP_ERASE_CODE, 1], COMM_LISP_ERASE_CODE).expect("lisp ack")
+        );
+        assert!(!parse_simple_ack(&[COMM_QMLUI_ERASE, 0], COMM_QMLUI_ERASE).expect("failed qml"));
+        assert!(
+            !parse_simple_ack(&[COMM_LISP_ERASE_CODE, 0], COMM_LISP_ERASE_CODE)
+                .expect("failed lisp")
+        );
 
-    #[test]
-    fn parses_write_ack_packets_and_ignores_reported_offsets_like_vesc_tool() {
-        let mut response = Vec::new();
-        response.push(COMM_LISP_WRITE_CODE);
-        response.push(1);
-        response.extend_from_slice(&384_u32.to_be_bytes());
+        let mut write_ack = Vec::new();
+        write_ack.push(COMM_LISP_WRITE_CODE);
+        write_ack.push(1);
+        write_ack.extend_from_slice(&384_u32.to_be_bytes());
+        assert!(parse_write_ack(&write_ack, COMM_LISP_WRITE_CODE).expect("write ack"));
+        assert!(parse_write_ack(&write_ack, COMM_QMLUI_ERASE).is_err());
 
-        assert!(parse_write_ack(&response, COMM_LISP_WRITE_CODE).expect("ack"));
-    }
-
-    #[test]
-    fn rejects_write_acks_for_the_wrong_command() {
-        let mut response = Vec::new();
-        response.push(COMM_LISP_WRITE_CODE);
-        response.push(1);
-        response.extend_from_slice(&128_u32.to_be_bytes());
-
-        assert!(parse_write_ack(&response, COMM_QMLUI_ERASE).is_err());
+        let wrong_command = [COMM_LISP_WRITE_CODE, 1];
+        assert!(parse_simple_ack(&wrong_command, COMM_QMLUI_ERASE).is_err());
+        assert!(parse_simple_ack(&wrong_command, COMM_LISP_ERASE_CODE).is_err());
+        assert!(parse_simple_ack(&[COMM_QMLUI_ERASE], COMM_QMLUI_ERASE).is_err());
     }
 
     #[test]
@@ -657,15 +651,36 @@ mod tests {
     }
 
     #[test]
-    fn uses_the_vesc_lisp_limit_for_vesc_hardware() {
-        let lisp = vec![0_u8; 1024 * 128];
-        assert!(build_lisp_upload_payload(&lisp, HwType::Vesc).is_err());
+    fn lisp_upload_limits_depend_on_hardware_type() {
+        let vesc_lisp = vec![0_u8; 1024 * 128];
+        assert!(build_lisp_upload_payload(&vesc_lisp, HwType::Vesc).is_err());
+
+        let custom_lisp = vec![0_u8; 1024 * 128];
+        assert!(build_lisp_upload_payload(&custom_lisp, HwType::CustomModule).is_ok());
     }
 
     #[test]
-    fn allows_larger_lisp_uploads_for_non_vesc_hardware() {
-        let lisp = vec![0_u8; 1024 * 128];
-        assert!(build_lisp_upload_payload(&lisp, HwType::CustomModule).is_ok());
+    fn erase_command_packets_match_vesc_tool() {
+        for bytes in [16_i32, 4096_i32] {
+            let payload = bytes.to_be_bytes();
+            let expected_tail = payload.to_vec();
+            for command in [COMM_QMLUI_ERASE, COMM_LISP_ERASE_CODE] {
+                let packet = build_command_packet(command, &payload);
+                assert!(
+                    !packet.is_empty(),
+                    "command {command} should produce a framed packet"
+                );
+
+                let decoded = PacketDecoder::new()
+                    .push(&packet)
+                    .expect("valid packet")
+                    .pop()
+                    .expect("complete packet");
+                assert_eq!(decoded.len(), 5);
+                assert_eq!(decoded[0], command);
+                assert_eq!(decoded[1..], expected_tail);
+            }
+        }
     }
 
     #[test]
@@ -688,97 +703,5 @@ mod tests {
             .expect("complete packet");
 
         assert_eq!(decoded, vec![COMM_LISP_SET_RUNNING, 1]);
-    }
-
-    #[test]
-    fn erase_packets_match_vesc_tool_package_uninstall_commands() {
-        let qml_packet = build_command_packet(COMM_QMLUI_ERASE, &16_i32.to_be_bytes());
-        let qml_decoded = PacketDecoder::new()
-            .push(&qml_packet)
-            .expect("valid packet")
-            .pop()
-            .expect("complete packet");
-        assert_eq!(qml_decoded, vec![COMM_QMLUI_ERASE, 0, 0, 0, 16]);
-
-        let lisp_packet = build_command_packet(COMM_LISP_ERASE_CODE, &16_i32.to_be_bytes());
-        let lisp_decoded = PacketDecoder::new()
-            .push(&lisp_packet)
-            .expect("valid packet")
-            .pop()
-            .expect("complete packet");
-        assert_eq!(lisp_decoded, vec![COMM_LISP_ERASE_CODE, 0, 0, 0, 16]);
-    }
-
-    #[test]
-    fn parses_lisp_erase_ack_packets() {
-        let response = [COMM_LISP_ERASE_CODE, 1];
-        assert!(parse_simple_ack(&response, COMM_LISP_ERASE_CODE).expect("ack"));
-    }
-
-    #[test]
-    fn rejects_failed_qml_erase_ack() {
-        let response = [COMM_QMLUI_ERASE, 0];
-        assert!(!parse_simple_ack(&response, COMM_QMLUI_ERASE).expect("ack"));
-    }
-
-    #[test]
-    fn rejects_failed_lisp_erase_ack() {
-        let response = [COMM_LISP_ERASE_CODE, 0];
-        assert!(!parse_simple_ack(&response, COMM_LISP_ERASE_CODE).expect("ack"));
-    }
-
-    #[test]
-    fn rejects_erase_ack_for_wrong_command() {
-        let response = [COMM_LISP_WRITE_CODE, 1];
-        assert!(parse_simple_ack(&response, COMM_QMLUI_ERASE).is_err());
-        assert!(parse_simple_ack(&response, COMM_LISP_ERASE_CODE).is_err());
-    }
-
-    #[test]
-    fn rejects_truncated_erase_ack() {
-        let response = [COMM_QMLUI_ERASE];
-        assert!(parse_simple_ack(&response, COMM_QMLUI_ERASE).is_err());
-    }
-
-    #[test]
-    fn erase_command_packets_survive_uart_framing() {
-        for command in [COMM_QMLUI_ERASE, COMM_LISP_ERASE_CODE] {
-            let packet = build_command_packet(command, &16_i32.to_be_bytes());
-            assert!(
-                !packet.is_empty(),
-                "command {command} should produce a framed packet"
-            );
-
-            let decoded = PacketDecoder::new()
-                .push(&packet)
-                .expect("valid packet")
-                .pop()
-                .expect("complete packet");
-            assert_eq!(decoded.len(), 5);
-            assert_eq!(decoded[0], command);
-            assert_eq!(decoded[1..], [0, 0, 0, 16]);
-        }
-    }
-
-    #[test]
-    fn erase_packets_use_big_endian_byte_counts_like_vesc_tool() {
-        let bytes = 4096_i32;
-        let payload = bytes.to_be_bytes();
-
-        let qml_packet = build_command_packet(COMM_QMLUI_ERASE, &payload);
-        let qml_decoded = PacketDecoder::new()
-            .push(&qml_packet)
-            .expect("valid packet")
-            .pop()
-            .expect("complete packet");
-        assert_eq!(qml_decoded, vec![COMM_QMLUI_ERASE, 0, 0, 16, 0]);
-
-        let lisp_packet = build_command_packet(COMM_LISP_ERASE_CODE, &payload);
-        let lisp_decoded = PacketDecoder::new()
-            .push(&lisp_packet)
-            .expect("valid packet")
-            .pop()
-            .expect("complete packet");
-        assert_eq!(lisp_decoded, vec![COMM_LISP_ERASE_CODE, 0, 0, 16, 0]);
     }
 }

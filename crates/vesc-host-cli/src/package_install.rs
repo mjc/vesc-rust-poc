@@ -437,20 +437,16 @@ mod tests {
     }
 
     #[test]
-    fn decodes_a_compressed_vesc_package() {
+    fn decodes_vesc_packages() {
         let package = decode_package(&build_package_bytes()).expect("package");
         assert_eq!(package.name, "Rust BLE loopback test package");
         assert!(package.qml_is_fullscreen);
         assert!(package.load_ok());
-    }
 
-    #[test]
-    fn rejects_non_qcompress_packages() {
         let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
         encoder.write_all(b"VESC Packet\0").unwrap();
-        let package = encoder.finish().unwrap();
-
-        assert!(decode_package(&package).is_err());
+        let invalid = encoder.finish().unwrap();
+        assert!(decode_package(&invalid).is_err());
     }
 
     #[test]

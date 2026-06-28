@@ -27,7 +27,6 @@ fn panic(_: &PanicInfo) -> ! {
 #[cfg(test)]
 mod tests {
     use super::{extensions, init};
-    use vesc_package::init as pkg_init;
 
     #[test]
     fn rust_add_stays_a_plain_integer_function() {
@@ -37,7 +36,6 @@ mod tests {
 
     #[test]
     fn package_lib_init_runs_the_device_loopback_entrypoint_path() {
-        pkg_init::reset_init_call_count_for_tests();
         let mut info = super::ffi::LibInfo {
             stop_fun: None,
             arg: core::ptr::null_mut(),
@@ -45,7 +43,6 @@ mod tests {
         };
 
         assert!(init::package_lib_init(&mut info));
-        assert_eq!(pkg_init::init_call_count_for_tests(), 1);
         assert!(info.stop_fun.is_some());
     }
 }

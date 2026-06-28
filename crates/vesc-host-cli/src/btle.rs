@@ -743,7 +743,7 @@ mod tests {
     }
 
     #[test]
-    fn exports_the_vesc_ble_uart_profile_uuids() {
+    fn lisp_probe_unit_behavior() {
         assert_eq!(
             vesc_ble_uart_service_uuid().to_string(),
             "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
@@ -756,22 +756,15 @@ mod tests {
             vesc_ble_uart_tx_uuid().to_string(),
             "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
         );
-    }
 
-    #[test]
-    fn wraps_loopback_requests_in_custom_app_data_packets() {
         let packet = build_custom_app_data_packet(&[1, 2, 3]);
         let decoded = PacketDecoder::new()
             .push(&packet)
             .expect("decoded packet")
             .pop()
             .expect("complete packet");
-
         assert_eq!(decoded, vec![COMM_CUSTOM_APP_DATA, 1, 2, 3]);
-    }
 
-    #[test]
-    fn wraps_lisp_probe_commands_in_repl_packets() {
         let command = lisp_probe_command();
         assert!(command.contains("vesc-rust-probe-rust-diag-v4"));
         assert!(
@@ -785,29 +778,22 @@ mod tests {
         assert!(command.contains("(trap (ext-rust-probe-diag-v4 14))"));
         assert!(command.contains("vesc-rust-probe-ok-42"));
 
-        let packet = build_lisp_repl_packet(command);
-        let decoded = PacketDecoder::new()
-            .push(&packet)
+        let repl_packet = build_lisp_repl_packet(command);
+        let repl_decoded = PacketDecoder::new()
+            .push(&repl_packet)
             .expect("valid packet")
             .pop()
             .expect("complete packet");
-
         let mut expected = Vec::with_capacity(command.len() + 2);
         expected.push(COMM_LISP_REPL_CMD);
         expected.extend_from_slice(command.as_bytes());
         expected.push(0);
-        assert_eq!(decoded, expected);
-        assert_eq!(decoded[0], COMM_LISP_REPL_CMD);
-    }
+        assert_eq!(repl_decoded, expected);
+        assert_eq!(repl_decoded[0], COMM_LISP_REPL_CMD);
 
-    #[test]
-    fn lisp_probe_reports_empty_print_attempts_to_the_outer_loop() {
         assert!(lisp_probe_report(Vec::new(), 1).prints().is_empty());
         assert_eq!(lisp_probe_report(Vec::new(), 1).attempts(), 1);
-    }
 
-    #[test]
-    fn lisp_probe_progress_messages_explain_wait_state() {
         assert_eq!(
             LispProbeProgress::StillWaiting {
                 elapsed_secs: 15,
@@ -846,24 +832,18 @@ mod tests {
             .describe(),
             "lisp print: vesc-rust-probe-rust-diag-v4"
         );
-    }
+        assert_eq!(
+            LispProbeProgress::ExpectedResultReceived.describe(),
+            "received expected Lisp probe result"
+        );
 
-    #[test]
-    fn lisp_probe_stops_retrying_once_prints_arrive() {
         let prints = vec!["vesc-rust-probe-ok-42".to_owned()];
-
         assert_eq!(lisp_probe_report(prints.clone(), 1).prints(), prints);
         assert_eq!(lisp_probe_report(prints, 1).attempts(), 1);
-    }
 
-    #[test]
-    fn parses_lisp_print_packets_as_lossy_strings() {
         assert_eq!(parse_lisp_print(b"42\0ignored"), "42");
         assert_eq!(parse_lisp_print(&[0xff, b'a']), "\u{fffd}a");
-    }
 
-    #[test]
-    fn lisp_probe_success_detection_matches_probe_marker_substring() {
         assert!(lisp_probe_line_is_success("vesc-rust-probe-ok-42"));
         assert!(lisp_probe_line_is_success(
             "prefix vesc-rust-probe-ok-42 suffix"
@@ -875,18 +855,11 @@ mod tests {
             "vesc-rust-probe-rust-diag-v4".to_owned(),
             "vesc-rust-probe-ok-42".to_owned(),
         ]));
-    }
 
-    #[test]
-    fn continuous_probe_success_resets_attempt_without_retry_step() {
         assert_eq!(
             continuous_probe_step(4, &["vesc-rust-probe-ok-42".to_owned()]),
             ContinuousProbeStep::ContinueImmediately { next_attempt: 1 }
         );
-    }
-
-    #[test]
-    fn continuous_probe_missing_success_advances_attempt_until_wrap() {
         assert_eq!(
             continuous_probe_step(1, &[]),
             ContinuousProbeStep::RetryAfterDelay { next_attempt: 2 }
@@ -899,23 +872,22 @@ mod tests {
             continuous_probe_step(5, &[]),
             ContinuousProbeStep::RetryAfterDelay { next_attempt: 1 }
         );
-    }
+        assert_ne!(
+            continuous_probe_step(2, &["vesc-rust-probe-ok-42".to_owned()]),
+            ContinuousProbeStep::RetryAfterDelay { next_attempt: 3 }
+        );
 
-    #[test]
-    fn continuous_probe_state_machine_keeps_session_on_success() {
         let mut attempt = 3;
         let mut retry_events = 0;
-
         for round in 0..4 {
-            let prints = if round % 2 == 0 {
+            let round_prints = if round % 2 == 0 {
                 vec!["vesc-rust-probe-ok-42".to_owned()]
             } else {
                 vec!["vesc-rust-probe-rust-diag-v4".to_owned()]
             };
-
-            match continuous_probe_step(attempt, &prints) {
+            match continuous_probe_step(attempt, &round_prints) {
                 ContinuousProbeStep::ContinueImmediately { next_attempt } => {
-                    assert!(lisp_probe_has_expected_result(&prints));
+                    assert!(lisp_probe_has_expected_result(&round_prints));
                     assert_eq!(next_attempt, 1);
                     attempt = next_attempt;
                 }
@@ -925,152 +897,14 @@ mod tests {
                 }
             }
         }
-
         assert_eq!(attempt, 2);
         assert_eq!(retry_events, 2);
-    }
 
-    #[test]
-    fn receive_lisp_prints_stops_early_on_success_marker() {
-        let (responses_tx, responses_rx) = mpsc::channel();
-        let mut decoder = PacketDecoder::new();
-        let mut pending = VecDeque::new();
-
-        thread::spawn(move || {
-            thread::sleep(Duration::from_millis(10));
-            responses_tx
-                .send(build_lisp_print_notification(
-                    "vesc-rust-probe-rust-diag-v4",
-                ))
-                .expect("diag print");
-            responses_tx
-                .send(build_lisp_print_notification("vesc-rust-probe-ok-42"))
-                .expect("success print");
-        });
-
-        let (prints, events) =
-            receive_with_tracked_progress(&responses_rx, &mut decoder, &mut pending);
-
-        assert_eq!(
-            prints.expect("prints"),
-            vec![
-                "vesc-rust-probe-rust-diag-v4".to_owned(),
-                "vesc-rust-probe-ok-42".to_owned(),
-            ]
-        );
-        assert!(events.contains(&LispProbeProgress::ExpectedResultReceived));
-        assert!(!events
-            .iter()
-            .any(|event| { matches!(event, LispProbeProgress::QuietAfterPrints { .. }) }));
-    }
-
-    #[test]
-    fn receive_lisp_prints_returns_disconnect_error_for_closed_channel() {
-        let (responses_tx, responses_rx) = mpsc::channel();
-        drop(responses_tx);
-
-        let mut decoder = PacketDecoder::new();
-        let mut pending = VecDeque::new();
-        let error = receive_lisp_prints_from_channel(
-            &responses_rx,
-            &mut decoder,
-            &mut pending,
-            fast_lisp_print_receive_config(),
-            |_| {},
-        )
-        .expect_err("disconnect");
-
-        assert_eq!(
-            error,
-            LoopbackTransportError::Device("BLE notification stream disconnected")
-        );
-    }
-
-    #[test]
-    fn receive_lisp_prints_stops_after_quiet_period_without_success() {
-        let (responses_tx, responses_rx) = mpsc::channel();
-        let mut decoder = PacketDecoder::new();
-        let mut pending = VecDeque::new();
-
-        responses_tx
-            .send(build_lisp_print_notification("only-diag"))
-            .expect("diag print");
-
-        let (prints, events) =
-            receive_with_tracked_progress(&responses_rx, &mut decoder, &mut pending);
-
-        assert_eq!(prints.expect("prints"), vec!["only-diag".to_owned()]);
-        assert!(events
-            .iter()
-            .any(|event| { matches!(event, LispProbeProgress::QuietAfterPrints { prints: 1 }) }));
-        assert!(!events.contains(&LispProbeProgress::ExpectedResultReceived));
-    }
-
-    #[test]
-    fn receive_lisp_prints_drains_pending_before_waiting_on_channel() {
-        let (_responses_tx, responses_rx) = mpsc::channel();
-        let mut decoder = PacketDecoder::new();
-        let mut pending = VecDeque::from([vec![
-            COMM_LISP_PRINT,
-            b'p',
-            b'r',
-            b'e',
-            b's',
-            b'e',
-            b'e',
-            b'd',
-            0,
-        ]]);
-
-        let (prints, events) =
-            receive_with_tracked_progress(&responses_rx, &mut decoder, &mut pending);
-
-        assert_eq!(prints.expect("prints"), vec!["preseed".to_owned()]);
-        assert!(events
-            .iter()
-            .any(|event| { matches!(event, LispProbeProgress::QuietAfterPrints { prints: 1 }) }));
-    }
-
-    #[test]
-    fn receive_lisp_prints_retains_non_lisp_packets_in_pending() {
-        let (responses_tx, responses_rx) = mpsc::channel();
-        let mut decoder = PacketDecoder::new();
-        let mut pending = VecDeque::new();
-
-        thread::spawn(move || {
-            thread::sleep(Duration::from_millis(10));
-            responses_tx
-                .send(encode_packet(&[COMM_CUSTOM_APP_DATA, 9, 8, 7]))
-                .expect("custom app data");
-            responses_tx
-                .send(build_lisp_print_notification("vesc-rust-probe-ok-42"))
-                .expect("success print");
-        });
-
-        let prints = receive_lisp_prints_from_channel(
-            &responses_rx,
-            &mut decoder,
-            &mut pending,
-            fast_lisp_print_receive_config(),
-            |_| {},
-        )
-        .expect("prints");
-
-        assert_eq!(prints, vec!["vesc-rust-probe-ok-42".to_owned()]);
-        assert_eq!(
-            pending,
-            VecDeque::from([vec![COMM_CUSTOM_APP_DATA, 9, 8, 7]])
-        );
-    }
-
-    #[test]
-    fn take_pending_lisp_prints_leaves_other_packets_queued() {
         let mut pending = VecDeque::from([
             vec![COMM_LISP_PRINT, b'a', 0],
             vec![COMM_CUSTOM_APP_DATA, 1],
             vec![COMM_LISP_PRINT, b'b', 0],
         ]);
-
         assert_eq!(
             take_pending_lisp_prints(&mut pending),
             vec!["a".to_owned(), "b".to_owned()]
@@ -1079,31 +913,138 @@ mod tests {
     }
 
     #[test]
-    fn lisp_probe_progress_includes_expected_result_received_message() {
-        assert_eq!(
-            LispProbeProgress::ExpectedResultReceived.describe(),
-            "received expected Lisp probe result"
-        );
+    fn receive_lisp_prints_covers_channel_and_pending_behavior() {
+        {
+            let (responses_tx, responses_rx) = mpsc::channel();
+            let mut decoder = PacketDecoder::new();
+            let mut pending = VecDeque::new();
+
+            thread::spawn(move || {
+                thread::sleep(Duration::from_millis(10));
+                responses_tx
+                    .send(build_lisp_print_notification(
+                        "vesc-rust-probe-rust-diag-v4",
+                    ))
+                    .expect("diag print");
+                responses_tx
+                    .send(build_lisp_print_notification("vesc-rust-probe-ok-42"))
+                    .expect("success print");
+            });
+
+            let (prints, events) =
+                receive_with_tracked_progress(&responses_rx, &mut decoder, &mut pending);
+
+            assert_eq!(
+                prints.expect("prints"),
+                vec![
+                    "vesc-rust-probe-rust-diag-v4".to_owned(),
+                    "vesc-rust-probe-ok-42".to_owned(),
+                ]
+            );
+            assert!(events.contains(&LispProbeProgress::ExpectedResultReceived));
+            assert!(!events
+                .iter()
+                .any(|event| { matches!(event, LispProbeProgress::QuietAfterPrints { .. }) }));
+        }
+
+        {
+            let (responses_tx, responses_rx) = mpsc::channel();
+            drop(responses_tx);
+
+            let mut decoder = PacketDecoder::new();
+            let mut pending = VecDeque::new();
+            let error = receive_lisp_prints_from_channel(
+                &responses_rx,
+                &mut decoder,
+                &mut pending,
+                fast_lisp_print_receive_config(),
+                |_| {},
+            )
+            .expect_err("disconnect");
+
+            assert_eq!(
+                error,
+                LoopbackTransportError::Device("BLE notification stream disconnected")
+            );
+        }
+
+        {
+            let (responses_tx, responses_rx) = mpsc::channel();
+            let mut decoder = PacketDecoder::new();
+            let mut pending = VecDeque::new();
+
+            responses_tx
+                .send(build_lisp_print_notification("only-diag"))
+                .expect("diag print");
+
+            let (prints, events) =
+                receive_with_tracked_progress(&responses_rx, &mut decoder, &mut pending);
+
+            assert_eq!(prints.expect("prints"), vec!["only-diag".to_owned()]);
+            assert!(events.iter().any(|event| {
+                matches!(event, LispProbeProgress::QuietAfterPrints { prints: 1 })
+            }));
+            assert!(!events.contains(&LispProbeProgress::ExpectedResultReceived));
+        }
+
+        {
+            let (_responses_tx, responses_rx) = mpsc::channel();
+            let mut decoder = PacketDecoder::new();
+            let mut pending = VecDeque::from([vec![
+                COMM_LISP_PRINT,
+                b'p',
+                b'r',
+                b'e',
+                b's',
+                b'e',
+                b'e',
+                b'd',
+                0,
+            ]]);
+
+            let (prints, events) =
+                receive_with_tracked_progress(&responses_rx, &mut decoder, &mut pending);
+
+            assert_eq!(prints.expect("prints"), vec!["preseed".to_owned()]);
+            assert!(events.iter().any(|event| {
+                matches!(event, LispProbeProgress::QuietAfterPrints { prints: 1 })
+            }));
+        }
+
+        {
+            let (responses_tx, responses_rx) = mpsc::channel();
+            let mut decoder = PacketDecoder::new();
+            let mut pending = VecDeque::new();
+
+            thread::spawn(move || {
+                thread::sleep(Duration::from_millis(10));
+                responses_tx
+                    .send(encode_packet(&[COMM_CUSTOM_APP_DATA, 9, 8, 7]))
+                    .expect("custom app data");
+                responses_tx
+                    .send(build_lisp_print_notification("vesc-rust-probe-ok-42"))
+                    .expect("success print");
+            });
+
+            let prints = receive_lisp_prints_from_channel(
+                &responses_rx,
+                &mut decoder,
+                &mut pending,
+                fast_lisp_print_receive_config(),
+                |_| {},
+            )
+            .expect("prints");
+
+            assert_eq!(prints, vec!["vesc-rust-probe-ok-42".to_owned()]);
+            assert_eq!(
+                pending,
+                VecDeque::from([vec![COMM_CUSTOM_APP_DATA, 9, 8, 7]])
+            );
+        }
     }
 
     #[test]
-    fn one_shot_retry_progress_differs_from_continuous_success_path() {
-        assert_ne!(
-            continuous_probe_step(2, &["vesc-rust-probe-ok-42".to_owned()]),
-            ContinuousProbeStep::RetryAfterDelay { next_attempt: 3 }
-        );
-        assert_eq!(
-            LispProbeProgress::RetryingReplCommand {
-                next_attempt: 3,
-                delay_secs: 1,
-            }
-            .describe(),
-            "retrying Lisp REPL probe as attempt 3 after 1s"
-        );
-    }
-
-    #[test]
-    fn reconnect_loop_opens_a_fresh_session_after_ble_errors() {
+    fn reconnect_loop_behavior() {
         let mut session_opens = 0;
         let reconnects = simulate_lisp_probe_reconnects(
             || {
@@ -1114,14 +1055,10 @@ mod tests {
             },
             3,
         );
-
         assert_eq!(session_opens, 3);
         assert_eq!(reconnects, 3);
-    }
 
-    #[test]
-    fn reconnect_loop_does_not_run_when_continuous_probe_keeps_succeeding() {
-        let mut session_opens = 0;
+        session_opens = 0;
         let reconnects = simulate_lisp_probe_reconnects(
             || {
                 session_opens += 1;
@@ -1129,7 +1066,6 @@ mod tests {
             },
             3,
         );
-
         assert_eq!(session_opens, 1);
         assert_eq!(reconnects, 0);
     }

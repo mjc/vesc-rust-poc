@@ -166,43 +166,19 @@ mod tests {
     use vesc_protocol::{WireCommand, WireVersion};
 
     #[test]
-    fn parses_layout_command() {
+    fn parse_args_covers_cli_commands() {
         assert_eq!(parse_args(["vesc-host-cli", "layout"]), Ok(Command::Layout));
-    }
-
-    #[test]
-    fn parses_status_command() {
         assert_eq!(parse_args(["vesc-host-cli", "status"]), Ok(Command::Status));
-    }
-
-    #[test]
-    fn parses_scan_command() {
         assert_eq!(parse_args(["vesc-host-cli", "scan"]), Ok(Command::Scan));
-    }
-
-    #[test]
-    fn defaults_to_help() {
         assert_eq!(parse_args(["vesc-host-cli"]), Ok(Command::Help));
-    }
-
-    #[test]
-    fn rejects_unknown_command() {
         assert_eq!(
             parse_args(["vesc-host-cli", "spoon"]),
             Err(ParseError::UnknownCommand("spoon".to_owned()))
         );
-    }
-
-    #[test]
-    fn parses_loopback_command() {
         assert_eq!(
             parse_args(["vesc-host-cli", "loopback"]),
             Ok(Command::Loopback)
         );
-    }
-
-    #[test]
-    fn parses_lisp_probe_command() {
         assert_eq!(
             parse_args(["vesc-host-cli", "lisp-probe"]),
             Ok(Command::LispProbe(LispProbeCommand {
@@ -210,10 +186,6 @@ mod tests {
                 address: None,
             }))
         );
-    }
-
-    #[test]
-    fn parses_lisp_probe_device_selector() {
         assert_eq!(
             parse_args(["vesc-host-cli", "lisp-probe", "--device", "VESC BLE UART"]),
             Ok(Command::LispProbe(LispProbeCommand {
@@ -221,10 +193,6 @@ mod tests {
                 address: None,
             }))
         );
-    }
-
-    #[test]
-    fn parses_lisp_probe_address_selector() {
         assert_eq!(
             parse_args([
                 "vesc-host-cli",
@@ -237,10 +205,6 @@ mod tests {
                 address: Some("AA:BB:CC:DD:EE:FF".to_owned()),
             }))
         );
-    }
-
-    #[test]
-    fn parses_package_install_command() {
         assert_eq!(
             parse_args(["vesc-host-cli", "package-install", "foo.vescpkg"]),
             Ok(Command::PackageInstall(PackageInstallCommand {
@@ -249,10 +213,6 @@ mod tests {
                 address: None,
             }))
         );
-    }
-
-    #[test]
-    fn parses_package_install_device_selector() {
         assert_eq!(
             parse_args([
                 "vesc-host-cli",
@@ -267,10 +227,6 @@ mod tests {
                 address: None,
             }))
         );
-    }
-
-    #[test]
-    fn parses_package_install_address_selector() {
         assert_eq!(
             parse_args([
                 "vesc-host-cli",
@@ -285,10 +241,6 @@ mod tests {
                 address: Some("AA:BB:CC:DD:EE:FF".to_owned()),
             }))
         );
-    }
-
-    #[test]
-    fn parses_erase_package_command() {
         assert_eq!(
             parse_args(["vesc-host-cli", "erase-package"]),
             Ok(Command::ErasePackage(PackageEraseCommand {
@@ -296,10 +248,6 @@ mod tests {
                 address: None,
             }))
         );
-    }
-
-    #[test]
-    fn parses_erase_package_device_selector() {
         assert_eq!(
             parse_args([
                 "vesc-host-cli",
@@ -312,10 +260,6 @@ mod tests {
                 address: None,
             }))
         );
-    }
-
-    #[test]
-    fn parses_erase_package_address_selector() {
         assert_eq!(
             parse_args([
                 "vesc-host-cli",
@@ -328,50 +272,26 @@ mod tests {
                 address: Some("AA:BB:CC:DD:EE:FF".to_owned()),
             }))
         );
-    }
-
-    #[test]
-    fn rejects_bare_erase_command() {
         assert_eq!(
             parse_args(["vesc-host-cli", "erase"]),
             Err(ParseError::UnknownCommand("erase".to_owned()))
         );
-    }
-
-    #[test]
-    fn rejects_erase_package_unknown_flag() {
         assert_eq!(
             parse_args(["vesc-host-cli", "erase-package", "--force"]),
             Err(ParseError::UnknownCommand("--force".to_owned()))
         );
-    }
-
-    #[test]
-    fn rejects_erase_package_missing_device_value() {
         assert_eq!(
             parse_args(["vesc-host-cli", "erase-package", "--device"]),
             Err(ParseError::UnknownCommand("--device".to_owned()))
         );
-    }
-
-    #[test]
-    fn rejects_erase_package_missing_address_value() {
         assert_eq!(
             parse_args(["vesc-host-cli", "erase-package", "--address"]),
             Err(ParseError::UnknownCommand("--address".to_owned()))
         );
-    }
-
-    #[test]
-    fn rejects_erase_package_extra_argument() {
         assert_eq!(
             parse_args(["vesc-host-cli", "erase-package", "extra.vescpkg"]),
             Err(ParseError::UnknownCommand("extra.vescpkg".to_owned()))
         );
-    }
-
-    #[test]
-    fn parses_erase_package_with_both_selectors() {
         assert_eq!(
             parse_args([
                 "vesc-host-cli",
@@ -386,10 +306,7 @@ mod tests {
                 address: Some("AA:BB:CC:DD:EE:FF".to_owned()),
             }))
         );
-    }
 
-    #[test]
-    fn shares_the_protocol_crate_version_and_command_codes() {
         assert_eq!(WireVersion::CURRENT.raw(), 1);
         assert_eq!(WireCommand::Status.code(), 3);
     }

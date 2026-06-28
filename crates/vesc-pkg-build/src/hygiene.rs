@@ -71,25 +71,17 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn generated_package_paths_are_ignored() {
+    fn repo_workspace_hygiene() {
         assert!(
             git_check_ignore_all(&GENERATED_PACKAGE_PATHS),
             "expected generated package outputs to be ignored"
         );
-    }
-
-    #[test]
-    fn lockfiles_remain_tracked() {
         assert!(
             git_tracks_all(&TRACKED_LOCKFILES),
             "expected lockfiles to stay tracked"
         );
-    }
 
-    #[test]
-    fn makefile_defines_the_package_targets() {
         let source = fs::read_to_string(repo_root().join("Makefile")).expect("root Makefile");
-
         assert!(source.contains("check: fmt clippy test"));
         assert!(source.contains("test-changed -r nextest"));
         assert!(source.contains("test-all:"));

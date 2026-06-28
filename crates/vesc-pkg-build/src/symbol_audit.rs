@@ -435,14 +435,13 @@ mod tests {
     use std::process::Command;
 
     use super::{
-        build_final_native_lib_binary_for, build_final_native_lib_elf_for,
-        build_rust_staticlib_for, defined_symbols, is_allowed_final_native_lib_symbol,
+        build_final_native_lib_binary_for, defined_symbols, is_allowed_final_native_lib_symbol,
         is_allowed_runtime_symbol, nm_output, undefined_symbols,
         unexpected_final_native_lib_undefined_symbols, unexpected_undefined_symbols,
     };
     use crate::native_lib_link::NativeLibLinkPlan;
     use crate::test_support::NativeBuildWorkspace;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     struct SymbolAuditFixture {
         workspace: &'static NativeBuildWorkspace,
@@ -475,16 +474,8 @@ mod tests {
             self.workspace.package_lib_object_path()
         }
 
-        fn build_elf(&self) {
-            build_final_native_lib_elf_for(self.plan());
-        }
-
         fn build_bin(&self) {
             build_final_native_lib_binary_for(self.plan(), &self.bin());
-        }
-
-        fn build_staticlib(&self) {
-            build_rust_staticlib_for(self.plan());
         }
     }
 
@@ -504,7 +495,7 @@ mod tests {
     }
 
     #[test]
-    fn separates_defined_and_undefined_symbols() {
+    fn symbol_audit_helpers_classify_nm_output() {
         let sample = "\
 00000000 T rust_add
          U __aeabi_dadd
@@ -524,10 +515,7 @@ mod tests {
                 "lbm_add_extension".to_owned(),
             ])
         );
-    }
 
-    #[test]
-    fn allows_runtime_underscore_symbols_but_flags_plain_external_names() {
         assert!(is_allowed_runtime_symbol("__aeabi_dadd"));
         assert!(is_allowed_runtime_symbol(
             "_RNvNtNtCseGTyb2smT0B_17compiler_builtins3mem6memcpy"
@@ -537,7 +525,7 @@ mod tests {
         assert!(is_allowed_runtime_symbol("lbm_dec_as_i32"));
         assert!(is_allowed_runtime_symbol("lbm_enc_i"));
 
-        let sample = "\
+        let unexpected_sample = "\
          U __aeabi_dadd
          U fma
          U lbm_add_extension
@@ -547,26 +535,23 @@ mod tests {
 ";
 
         assert_eq!(
-            unexpected_undefined_symbols(sample),
+            unexpected_undefined_symbols(unexpected_sample),
             BTreeSet::from(["plain_external".to_owned()])
         );
-    }
 
-    #[test]
-    fn final_native_lib_elf_allows_only_the_expected_firmware_calls() {
         assert!(is_allowed_final_native_lib_symbol("lbm_add_extension"));
         assert!(is_allowed_final_native_lib_symbol("lbm_dec_as_i32"));
         assert!(is_allowed_final_native_lib_symbol("lbm_enc_i"));
         assert!(!is_allowed_final_native_lib_symbol("rust_add"));
 
-        let sample = "\
+        let final_sample = "\
          U lbm_add_extension
          U lbm_dec_as_i32
          U lbm_enc_i
 ";
 
         assert_eq!(
-            unexpected_final_native_lib_undefined_symbols(sample),
+            unexpected_final_native_lib_undefined_symbols(final_sample),
             BTreeSet::new()
         );
     }
@@ -612,7 +597,7 @@ mod tests {
         String::from_utf8(output.stdout).expect("command stdout to be valid UTF-8")
     }
 
-    fn section_layout(fixture: &SymbolAuditFixture, section_name: &str) -> SectionLayout {
+    fn all_section_layouts(fixture: &SymbolAuditFixture) -> BTreeMap<String, SectionLayout> {
         let sections = command_stdout(
             "arm-none-eabi-objdump",
             [PathBuf::from("-h"), fixture.elf()],
@@ -620,8 +605,17 @@ mod tests {
         sections
             .lines()
             .filter_map(parse_section_layout)
-            .find(|section| section.name == section_name)
-            .unwrap_or_else(|| panic!("section {section_name} not found in:\n{sections}"))
+            .map(|section| (section.name.clone(), section))
+            .collect()
+    }
+
+    fn section_from<'a>(
+        sections: &'a BTreeMap<String, SectionLayout>,
+        section_name: &str,
+    ) -> &'a SectionLayout {
+        sections
+            .get(section_name)
+            .unwrap_or_else(|| panic!("section {section_name} not found in native-lib ELF headers"))
     }
 
     fn parse_section_layout(line: &str) -> Option<SectionLayout> {
@@ -638,34 +632,6 @@ mod tests {
             size: usize::from_str_radix(size, 16).ok()?,
             vma: usize::from_str_radix(vma, 16).ok()?,
         })
-    }
-
-    fn section_binary(fixture: &SymbolAuditFixture, section_name: &str) -> Vec<u8> {
-        let output_path = section_binary_path(fixture, section_name);
-        let status = Command::new("arm-none-eabi-objcopy")
-            .args([
-                "-O",
-                "binary",
-                "--only-section",
-                section_name,
-                fixture.elf().to_str().expect("utf-8 ELF path"),
-                output_path.to_str().expect("utf-8 section binary path"),
-            ])
-            .status()
-            .expect("arm-none-eabi-objcopy section extraction");
-        assert!(
-            status.success(),
-            "failed to extract section {section_name} from native-lib ELF"
-        );
-
-        fs::read(output_path).expect("section binary bytes")
-    }
-
-    fn section_binary_path(fixture: &SymbolAuditFixture, section_name: &str) -> PathBuf {
-        fixture.bin().with_file_name(format!(
-            "native_lib_{}.bin",
-            section_name.trim_start_matches('.')
-        ))
     }
 
     include!("native_lib_audit.rs");

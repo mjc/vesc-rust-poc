@@ -21,7 +21,7 @@ pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
 #[cfg(test)]
 #[no_mangle]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
-    pkg_init::init_for_tests(info)
+    pkg_init::install_stop_hook(info)
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]

@@ -206,50 +206,46 @@ mod tests {
     use vesc_protocol::WireCommand;
 
     #[test]
-    fn loopback_runs_a_deterministic_protocol_exchange() {
-        let transport = FakeLoopbackTransport::scripted_success();
+    fn loopback_transport_behavior() {
+        {
+            let transport = FakeLoopbackTransport::scripted_success();
+            let report = run_loopback(&transport).expect("loopback report");
+            assert_eq!(
+                report.commands(),
+                &[
+                    WireCommand::Ping,
+                    WireCommand::Echo,
+                    WireCommand::Status,
+                    WireCommand::Teardown
+                ]
+            );
+            assert_eq!(transport.requests().len(), 4);
+            assert_eq!(report.target(), &LoopbackTarget::default());
+            assert_eq!(transport.open_target(), Some(LoopbackTarget::default()));
+            assert_eq!(report.target().device_name_hint(), "vesc-loopback-test");
+            assert_eq!(report.target().service_name_hint(), "vesc-loopback-service");
+        }
 
-        let report = run_loopback(&transport).expect("loopback report");
+        {
+            let transport =
+                FakeLoopbackTransport::with_open_result(Err(LoopbackTransportError::ScanTimeout));
+            assert_eq!(
+                run_loopback(&transport),
+                Err(LoopbackTransportError::ScanTimeout)
+            );
+        }
 
-        assert_eq!(
-            report.commands(),
-            &[
-                WireCommand::Ping,
-                WireCommand::Echo,
-                WireCommand::Status,
-                WireCommand::Teardown
-            ]
-        );
-        assert_eq!(transport.requests().len(), 4);
-    }
+        {
+            let transport = FakeLoopbackTransport::new();
+            transport.queue_response(Ok(vec![1, 99, 0]));
+            assert_eq!(
+                run_loopback(&transport),
+                Err(LoopbackTransportError::Protocol(
+                    vesc_protocol::ble_loopback::LoopbackError::InvalidCommand { code: 99 }
+                ))
+            );
+        }
 
-    #[test]
-    fn loopback_propagates_open_failures() {
-        let transport =
-            FakeLoopbackTransport::with_open_result(Err(LoopbackTransportError::ScanTimeout));
-
-        assert_eq!(
-            run_loopback(&transport),
-            Err(LoopbackTransportError::ScanTimeout)
-        );
-    }
-
-    #[test]
-    fn loopback_reports_invalid_device_responses() {
-        let transport = FakeLoopbackTransport::new();
-        let bad_response = vec![1, 99, 0];
-        transport.queue_response(Ok(bad_response));
-
-        assert_eq!(
-            run_loopback(&transport),
-            Err(LoopbackTransportError::Protocol(
-                vesc_protocol::ble_loopback::LoopbackError::InvalidCommand { code: 99 }
-            ))
-        );
-    }
-
-    #[test]
-    fn formats_transport_errors_for_humans() {
         assert_eq!(
             LoopbackTransportError::ScanTimeout.to_string(),
             "scan timed out while opening the BLE transport"
@@ -273,17 +269,5 @@ mod tests {
             LoopbackTransportError::Device("boom").to_string(),
             "device error: boom"
         );
-    }
-
-    #[test]
-    fn loopback_uses_the_default_discovery_target() {
-        let transport = FakeLoopbackTransport::scripted_success();
-
-        let report = run_loopback(&transport).expect("loopback report");
-
-        assert_eq!(report.target(), &LoopbackTarget::default());
-        assert_eq!(transport.open_target(), Some(LoopbackTarget::default()));
-        assert_eq!(report.target().device_name_hint(), "vesc-loopback-test");
-        assert_eq!(report.target().service_name_hint(), "vesc-loopback-service");
     }
 }

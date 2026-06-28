@@ -201,6 +201,7 @@ mod tests {
         command_design_text, parse_args, run_with, CargoVescPkgError, CargoVescPkgInvocation,
         CargoVescPkgMode, DEFAULT_PACKAGE_VERSION, DEFAULT_TARGET_TRIPLE,
     };
+    use crate::hygiene::repo_root;
     use crate::package_conversion::{
         PackageBinaryConversionCommand, PackageBinaryConversionRunner,
     };
@@ -329,35 +330,6 @@ mod tests {
     }
 
     #[test]
-    fn run_with_executes_the_default_build_invocation() {
-        let workspace = TempWorkspace::with_repo_fixture_layout();
-        let root = workspace.root.clone();
-        let _workspace = workspace;
-        let runner = FakeRunner::default();
-
-        let output = run_with(&root, ["build"], &runner).expect("run build invocation");
-
-        assert_eq!(
-            output,
-            PathBuf::from(
-                "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/Rust-BLE-loopback-test-package-0.1.0.vescpkg"
-            )
-        );
-        assert_eq!(
-            runner.calls(),
-            vec![PackageBinaryConversionCommand::new(
-                root.join("scripts/conv.py"),
-                root.join("target/native-lib-baseline/native_lib.bin"),
-                root.join("target/native-lib-baseline/package_lib.bin"),
-            )]
-        );
-        assert!(
-            root.join(&output).exists(),
-            "expected cargo vescpkg output to exist"
-        );
-    }
-
-    #[test]
     fn parse_args_requires_the_build_subcommand() {
         assert!(matches!(
             parse_args(std::iter::empty::<&str>()),
@@ -366,15 +338,11 @@ mod tests {
     }
 
     #[test]
-    fn run_with_executes_package_only_build_invocation() {
-        let workspace = TempWorkspace::with_repo_fixture_layout();
-        let root = workspace.root.clone();
-        let _workspace = workspace;
+    fn run_with_executes_build_invocations() {
+        let root = repo_root();
         let runner = FakeRunner::default();
 
-        let output = run_with(&root, ["build", "--package-only"], &runner)
-            .expect("run package-only invocation");
-
+        let output = run_with(&root, ["build"], &runner).expect("run build invocation");
         assert_eq!(
             output,
             PathBuf::from(
@@ -393,6 +361,12 @@ mod tests {
             root.join(&output).exists(),
             "expected cargo vescpkg output to exist"
         );
+
+        let package_only = run_with(&root, ["build", "--package-only"], &runner)
+            .expect("run package-only invocation");
+        assert_eq!(output, package_only);
+        assert_eq!(runner.calls().len(), 2);
+        assert!(root.join(&package_only).exists());
     }
 
     #[test]

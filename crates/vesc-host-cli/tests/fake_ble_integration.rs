@@ -94,72 +94,73 @@ fn decode_commands(frames: &[Vec<u8>]) -> Vec<WireCommand> {
 }
 
 #[test]
-fn host_and_device_round_trip_the_same_loopback_exchange() {
-    let services = FakeFirmwareServices::new();
-    services.set_now_ms(0x0102_0304_0506_0708);
-    let bridge = BridgeTransport::new(&services);
+fn fake_ble_loopback_bridge_behavior() {
+    {
+        let services = FakeFirmwareServices::new();
+        services.set_now_ms(0x0102_0304_0506_0708);
+        let bridge = BridgeTransport::new(&services);
 
-    let report = run_loopback(&bridge).expect("loopback report");
+        let report = run_loopback(&bridge).expect("loopback report");
 
-    assert_eq!(
-        report.commands(),
-        &[
-            WireCommand::Ping,
-            WireCommand::Echo,
-            WireCommand::Status,
-            WireCommand::Teardown,
-        ]
-    );
+        assert_eq!(
+            report.commands(),
+            &[
+                WireCommand::Ping,
+                WireCommand::Echo,
+                WireCommand::Status,
+                WireCommand::Teardown,
+            ]
+        );
 
-    let requests = bridge.requests();
-    assert_eq!(
-        decode_commands(&requests),
-        [
-            WireCommand::Ping,
-            WireCommand::Echo,
-            WireCommand::Status,
-            WireCommand::Teardown,
-        ]
-    );
-    assert_eq!(
-        decode_commands(&services.transmitted_frames()),
-        report.commands()
-    );
+        let requests = bridge.requests();
+        assert_eq!(
+            decode_commands(&requests),
+            [
+                WireCommand::Ping,
+                WireCommand::Echo,
+                WireCommand::Status,
+                WireCommand::Teardown,
+            ]
+        );
+        assert_eq!(
+            decode_commands(&services.transmitted_frames()),
+            report.commands()
+        );
 
-    let transmitted = services.transmitted_frames();
-    let status = LoopbackPacket::decode(&transmitted[2]).expect("decoded status reply");
-    assert_eq!(status.frame().command(), WireCommand::Status);
-    assert_eq!(
-        status.frame().payload(),
-        &0x0102_0304_0506_0708_u64.to_le_bytes()
-    );
+        let transmitted = services.transmitted_frames();
+        let status = LoopbackPacket::decode(&transmitted[2]).expect("decoded status reply");
+        assert_eq!(status.frame().command(), WireCommand::Status);
+        assert_eq!(
+            status.frame().payload(),
+            &0x0102_0304_0506_0708_u64.to_le_bytes()
+        );
 
-    let teardown = LoopbackPacket::decode(&transmitted[3]).expect("decoded teardown reply");
-    assert_eq!(teardown.frame().command(), WireCommand::Teardown);
-    assert!(teardown.frame().payload().is_empty());
+        let teardown = LoopbackPacket::decode(&transmitted[3]).expect("decoded teardown reply");
+        assert_eq!(teardown.frame().command(), WireCommand::Teardown);
+        assert!(teardown.frame().payload().is_empty());
 
-    assert!(services
-        .logs()
-        .iter()
-        .any(|line| line == "BLE loopback ready"));
-    assert!(services
-        .logs()
-        .iter()
-        .any(|line| line == "received BLE frame"));
-    assert!(services
-        .logs()
-        .iter()
-        .any(|line| line == "replied to BLE frame"));
-}
+        assert!(services
+            .logs()
+            .iter()
+            .any(|line| line == "BLE loopback ready"));
+        assert!(services
+            .logs()
+            .iter()
+            .any(|line| line == "received BLE frame"));
+        assert!(services
+            .logs()
+            .iter()
+            .any(|line| line == "replied to BLE frame"));
+    }
 
-#[test]
-fn host_reports_device_init_failures_through_the_bridge() {
-    let services = FakeFirmwareServices::new();
-    services.set_ble_init_error(Some("BLE init failed"));
-    let bridge = BridgeTransport::new(&services);
+    {
+        let services = FakeFirmwareServices::new();
+        services.set_ble_init_error(Some("BLE init failed"));
+        let bridge = BridgeTransport::new(&services);
 
-    assert_eq!(
-        run_loopback(&bridge),
-        Err(LoopbackTransportError::Device("BLE init failed"))
-    );
+        assert_eq!(
+            run_loopback(&bridge),
+            Err(LoopbackTransportError::Device("BLE init failed"))
+        );
+    }
 }

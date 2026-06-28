@@ -133,48 +133,35 @@ mod tests {
     use uuid::Uuid;
 
     #[test]
-    fn does_not_filter_by_service_uuid() {
+    fn target_matching_covers_scan_filter_and_selectors() {
         assert!(vesc_tool_scan_filter().services.is_empty());
-    }
 
-    #[test]
-    fn explicit_name_target_does_not_fall_back_to_service_uuid() {
-        let target = LoopbackTarget::named("Floatwheel PintV");
         let service_uuid = Uuid::from_u128(0x6e400001b5a3f393e0a9e50e24dcca9e);
-
+        let named = LoopbackTarget::named("Floatwheel PintV");
         assert!(target_matches_properties(
-            &target,
+            &named,
             Some("AA:BB:CC:DD:EE:FF"),
             Some("Floatwheel PintV"),
             &[]
         ));
         assert!(!target_matches_properties(
-            &target,
+            &named,
             Some("AA:BB:CC:DD:EE:FF"),
             Some("something-else"),
             &[service_uuid]
         ));
-    }
 
-    #[test]
-    fn explicit_address_target_matches_address_case_insensitively() {
-        let target = LoopbackTarget::addressed("AA:BB:CC:DD:EE:FF");
-
+        let addressed = LoopbackTarget::addressed("AA:BB:CC:DD:EE:FF");
         assert!(target_matches_properties(
-            &target,
+            &addressed,
             Some("aa:bb:cc:dd:ee:ff"),
             Some("something-else"),
             &[]
         ));
-    }
 
-    #[test]
-    fn default_target_allows_service_uuid_fallback() {
-        let target = LoopbackTarget::default();
-        let service_uuid = Uuid::from_u128(0x6e400001b5a3f393e0a9e50e24dcca9e);
-
+        let default_target = LoopbackTarget::default();
         assert!(target_matches_properties(
-            &target,
+            &default_target,
             Some("AA:BB:CC:DD:EE:FF"),
             Some("something-else"),
             &[service_uuid]
