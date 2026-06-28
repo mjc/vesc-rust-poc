@@ -85,8 +85,16 @@ mod tests {
         assert!(source.contains("check: fmt clippy test"));
         assert!(source.contains("test-changed -r nextest"));
         assert!(source.contains("test-all:"));
-        assert!(source.contains("nextest run --workspace --no-fail-fast --features test-support"));
+        assert!(source.contains(
+            "nextest run --workspace --no-fail-fast --features test-support --profile default"
+        ));
+        assert!(source.contains("test-embedded:"));
+        assert!(source.contains("symbol-check: test-embedded"));
         assert!(source.contains("package: check"));
+        assert!(
+            fs::metadata(repo_root().join(".config/nextest.toml")).is_ok(),
+            "expected embedded nextest profiles at .config/nextest.toml"
+        );
         assert!(source.contains("package-only:"));
         assert!(source.contains("run -p vesc-pkg-build --bin vesc-pkg -- package"));
         assert!(source.contains("run -p vesc-pkg-build --bin vesc-pkg -- package-only"));

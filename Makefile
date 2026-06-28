@@ -2,14 +2,17 @@
 
 CARGO ?= cargo
 
-.PHONY: check test test-all test-changed fmt clippy symbol-check package-smoke package package-only clean status coverage coverage-ffi coverage-package
+.PHONY: check test test-all test-embedded test-changed fmt clippy symbol-check package-smoke package package-only clean status coverage coverage-ffi coverage-package
 
 check: fmt clippy test
 
 test: test-all
 
 test-all:
-	$(CARGO) nextest run --workspace --no-fail-fast --features test-support
+	$(CARGO) nextest run --workspace --no-fail-fast --features test-support --profile default
+
+test-embedded:
+	$(CARGO) nextest run -p vesc-pkg-build --no-fail-fast --profile embedded
 
 test-changed:
 	$(CARGO) test-changed -r nextest
@@ -21,8 +24,7 @@ clippy:
 	$(CARGO) clippy --workspace --all-targets --all-features -- -D warnings
 	$(CARGO) clippy -p vesc-ble-loopback --lib --release --target thumbv7em-none-eabihf -- -D warnings
 
-symbol-check:
-	$(CARGO) nextest run -p vesc-pkg-build -E 'test(symbol_audit)'
+symbol-check: test-embedded
 
 COVERAGE_FAIL_UNDER ?= 80
 COVERAGE_PACKAGE_IGNORE := --ignore-filename-regex 'crates/vesc-(ffi|protocol)/'
@@ -36,7 +38,7 @@ coverage-package:
 coverage: coverage-ffi coverage-package
 
 package-smoke:
-	$(CARGO) nextest run -p vesc-pkg-build package_payload_stays_well_below_the_vesc_tool_flash_block_limit
+	$(CARGO) nextest run -p vesc-pkg-build baseline_fixture_layout
 
 package: check
 	$(CARGO) run -p vesc-pkg-build --bin vesc-pkg -- package

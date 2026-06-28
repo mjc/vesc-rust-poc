@@ -93,4 +93,8 @@ fn native_lib_disassembly_matches_firmware_patterns() {
         !stop_disassembly.contains("cbz"),
         "stop_package should not guard the VESC_IF app-data slot; refloat calls it directly:\n{stop_disassembly}"
     );
+
+    insta::assert_snapshot!("init_disassembly", bounded_init);
+    insta::assert_snapshot!("probe_disassembly", probe_disassembly);
+    insta::assert_snapshot!("stop_disassembly", stop_disassembly);
 }

@@ -29,9 +29,9 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{
-        build_final_native_lib_binary_for, defined_symbols, is_allowed_final_native_lib_symbol,
-        is_allowed_runtime_symbol, undefined_symbols,
-        unexpected_final_native_lib_undefined_symbols, unexpected_undefined_symbols,
+        defined_symbols, is_allowed_final_native_lib_symbol, is_allowed_runtime_symbol,
+        undefined_symbols, unexpected_final_native_lib_undefined_symbols,
+        unexpected_undefined_symbols,
     };
     use crate::native_inspect::{
         all_section_layouts, command_stdout, nm_output, section_from, SectionLayout,
@@ -72,7 +72,21 @@ mod tests {
         }
 
         fn build_bin(&self) {
-            build_final_native_lib_binary_for(self.plan(), &self.bin());
+            use crate::cargo_vescpkg_command::DEFAULT_PACKAGE_VERSION;
+            use crate::package_conversion::{
+                PackageBinaryConversionPlan, PackageBinaryConversionRunner,
+            };
+            use crate::package_runner::RealPackageRunner;
+            use crate::BLE_LOOPBACK_PACKAGE_NAME;
+
+            let conversion_plan = PackageBinaryConversionPlan::new(
+                self.plan().root(),
+                BLE_LOOPBACK_PACKAGE_NAME,
+                DEFAULT_PACKAGE_VERSION,
+            );
+            RealPackageRunner
+                .run(&conversion_plan.command())
+                .expect("native-lib package conversion");
         }
     }
 

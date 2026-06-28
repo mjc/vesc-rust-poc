@@ -5,10 +5,6 @@ fn native_lib_layout_matches_linker_script() {
 
     let blob = fs::read(fixture.bin()).expect("native-lib binary bytes");
     let sections = all_section_layouts(&fixture.elf());
-    let readelf = command_stdout(
-        "arm-none-eabi-readelf",
-        [PathBuf::from("-h"), PathBuf::from("-r"), fixture.elf()],
-    );
 
     assert!(
         fixture.bin().exists(),
@@ -35,12 +31,14 @@ fn native_lib_layout_matches_linker_script() {
     );
 
     assert!(
-        readelf.contains("Type:                              EXEC"),
-        "expected a final executable ELF, got:\n{readelf}"
+        crate::native_inspect::elf_is_executable(&fixture.elf()),
+        "expected a final executable ELF at {:?}",
+        fixture.elf()
     );
     assert!(
-        readelf.contains("There are no relocations in this file."),
-        "expected no relocation records in the final native-lib ELF, got:\n{readelf}"
+        crate::native_inspect::elf_has_no_relocations(&fixture.elf()),
+        "expected no relocation records in the final native-lib ELF at {:?}",
+        fixture.elf()
     );
 
     for section_name in [".program_ptr", ".init_fun", ".got", ".text"] {

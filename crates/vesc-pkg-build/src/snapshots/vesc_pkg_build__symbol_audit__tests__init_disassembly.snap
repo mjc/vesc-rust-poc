@@ -1,0 +1,28 @@
+---
+source: crates/vesc-pkg-build/src/native_lib_audit_disassembly.rs
+expression: bounded_init
+---
+
+   4:	b5d0      	push	{r4, r6, r7, lr}
+   6:	af02      	add	r7, sp, #8
+   8:	4604      	mov	r4, r0
+   a:	f000 f829 	bl	60 <package_lib_init>
+   e:	b160      	cbz	r0, 2a <init+0x26>
+  10:	b15c      	cbz	r4, 2a <init+0x26>
+  12:	4808      	ldr	r0, [pc, #32]	@ (34 <init+0x30>)
+  14:	68a1      	ldr	r1, [r4, #8]
+  16:	4478      	add	r0, pc
+  18:	6800      	ldr	r0, [r0, #0]
+  1a:	4401      	add	r1, r0
+  1c:	4804      	ldr	r0, [pc, #16]	@ (30 <init+0x2c>)
+  1e:	6802      	ldr	r2, [r0, #0]
+  20:	4805      	ldr	r0, [pc, #20]	@ (38 <init+0x34>)
+  22:	4478      	add	r0, pc
+  24:	e8bd 40d0 	ldmia.w	sp!, {r4, r6, r7, lr}
+  28:	4710      	bx	r2
+  2a:	2000      	movs	r0, #0
+  2c:	bdd0      	pop	{r4, r6, r7, pc}
+  2e:	bf00      	nop
+  30:	1000f800 	.word	0x1000f800
+  34:	00000022 	.word	0x00000022
+  38:	0000007a 	.word	0x0000007a

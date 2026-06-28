@@ -1,0 +1,8 @@
+[store]
+dir = "target/nextest"
+
+[profile.default]
+default-filter = 'not test(/native_lib_(symbols|layout|disassembly)|links_the_rust_staticlib/)'
+
+[profile.embedded]
+default-filter = 'test(/native_lib_(symbols|layout|disassembly)|links_the_rust_staticlib/)'
