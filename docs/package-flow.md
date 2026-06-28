@@ -18,9 +18,17 @@ This note characterizes the package path that the Rust VESC package experiment s
 
 ## Package Assembly
 
+| Tier | Command | Scope |
+|------|---------|-------|
+| Fast (default) | `make check` | ~138 host tests in ~2s; no gcc, no thumb target races |
+| Package | `make test-package` / `make package-smoke` | `fixtures` + `package_pipeline` integration tests |
+| Embedded | `make symbol-check` | `native_lib_artifacts` semantic ELF audit (~1s) |
+| Full gate | `make check-full` | fast + embedded + package tiers |
+| HIL (manual) | `cargo nextest run -p vesc-host-cli --profile hil -- --ignored` | ignored hardware sketch; needs `VESC_DEVICE` + `VESC_BLE_ADDR` |
+
 - The root `Makefile` gates packaging behind tests.
 - `make check` runs formatting, linting, and the fast host test tier (`nextest` default profile).
-- `make check-full` adds the embedded native-lib audit tier (`make symbol-check`) on top of `check`.
+- `make check-full` adds the embedded native-lib audit tier and the package integration tier on top of `check`.
 - `make symbol-check` runs the embedded native-lib integration audit (`tests/native_lib_artifacts.rs`).
 - `make test`, `make fmt`, `make clippy`, `make test-embedded`, `make test-package`, and `make package-smoke`
   stay available as smaller commands when a slice only needs one gate.
@@ -29,6 +37,8 @@ This note characterizes the package path that the Rust VESC package experiment s
 - `make package` runs the checked package build wrapper and emits the final `.vescpkg` path.
 - `make package-only` skips the top-level `check` dependency for debugging the packaging wrapper itself.
 - `make` currently defaults to `check`; the package-build command path lives in the repo now instead of an ad hoc shell fragment.
+- Set `INSTA_UPDATE=always` when intentionally refreshing package or native-lib snapshots.
+- Set `VESC_PKG_DISASM=1` to print optional native-lib disassembly during the embedded audit.
 - `package_README-gen.md` and `ui.qml` are generated artifacts, not hand-edited inputs.
 
 ## Build And Upload Workflow

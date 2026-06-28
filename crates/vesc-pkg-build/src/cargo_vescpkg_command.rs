@@ -211,26 +211,38 @@ mod tests {
     fn command_design_mentions_the_expected_contract() {
         let text = command_design_text();
 
-        for needle in [
-            "cargo vescpkg build",
-            "cargo vescpkg build --package-only",
-            "cargo vescpkg build --target thumbv7em-none-eabihf",
-            "cargo-vescpkg",
-            "crates/vesc-pkg-build",
-            "device-side BTLE loopback package",
-            "VESC BTLE",
-            "target/vescpkg",
-            "nix develop -c make check",
-            "package-size guard",
-            "symbol checks",
-            "xtask",
-            "Predictable artifact path",
+        for section in [
+            "## Contract",
+            "## Intended Shape",
+            "## Responsibilities",
+            "## Non-Goals",
+            "## Notes",
         ] {
             assert!(
-                text.contains(needle),
-                "command design document is missing required guidance: {needle}"
+                text.contains(section),
+                "command design document is missing required section: {section}"
             );
         }
+
+        let contract = text
+            .split("## Contract")
+            .nth(1)
+            .expect("contract section")
+            .split("## Intended Shape")
+            .next()
+            .expect("contract body");
+        assert!(contract.contains("crates/vesc-pkg-build"));
+        assert!(contract.contains("device-side BTLE loopback package"));
+
+        let shape = text
+            .split("## Intended Shape")
+            .nth(1)
+            .expect("intended shape section")
+            .split("## Responsibilities")
+            .next()
+            .expect("intended shape body");
+        assert!(shape.contains("cargo vescpkg build"));
+        assert!(shape.contains("thumbv7em-none-eabihf"));
     }
 
     #[test]

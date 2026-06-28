@@ -2,7 +2,7 @@
 
 CARGO ?= cargo
 
-.PHONY: check check-full test test-all test-embedded test-package test-changed fmt clippy symbol-check package-smoke package package-only clean status coverage coverage-ffi coverage-package
+.PHONY: check check-full test test-all test-embedded test-package test-changed fmt clippy symbol-check package-smoke package package-only clean status coverage coverage-ffi coverage-package coverage-pkg-build coverage-host-cli
 
 check: fmt clippy test
 
@@ -33,6 +33,8 @@ symbol-check: test-embedded
 
 COVERAGE_FAIL_UNDER ?= 80
 COVERAGE_PACKAGE_IGNORE := --ignore-filename-regex 'crates/vesc-(ffi|protocol)/'
+COVERAGE_PKG_BUILD_IGNORE := --ignore-filename-regex 'crates/vesc-pkg-build/tests/|test_support'
+COVERAGE_HOST_CLI_IGNORE := --ignore-filename-regex 'tests/fake_ble_integration'
 
 coverage-ffi:
 	$(CARGO) llvm-cov -p vesc-ffi --features test-support --summary-only --fail-under-lines $(COVERAGE_FAIL_UNDER)
@@ -40,7 +42,13 @@ coverage-ffi:
 coverage-package:
 	$(CARGO) llvm-cov -p vesc-package --features test-support $(COVERAGE_PACKAGE_IGNORE) --summary-only --fail-under-lines $(COVERAGE_FAIL_UNDER)
 
-coverage: coverage-ffi coverage-package
+coverage-pkg-build:
+	$(CARGO) llvm-cov -p vesc-pkg-build --features test-support $(COVERAGE_PKG_BUILD_IGNORE) --summary-only --fail-under-lines $(COVERAGE_FAIL_UNDER)
+
+coverage-host-cli:
+	$(CARGO) llvm-cov -p vesc-host-cli $(COVERAGE_HOST_CLI_IGNORE) --summary-only --fail-under-lines $(COVERAGE_FAIL_UNDER)
+
+coverage: coverage-ffi coverage-package coverage-pkg-build coverage-host-cli
 
 package-smoke: test-package
 

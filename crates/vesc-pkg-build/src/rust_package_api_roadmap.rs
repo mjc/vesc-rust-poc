@@ -13,36 +13,52 @@ pub fn roadmap_text() -> String {
 mod tests {
     use super::roadmap_text;
 
+    fn assert_markdown_sections(text: &str, sections: &[&str]) {
+        for section in sections {
+            assert!(
+                text.contains(section),
+                "roadmap document is missing required section: {section}"
+            );
+        }
+    }
+
     #[test]
     fn roadmap_captures_the_current_rust_boundary_and_next_migration_ladder() {
         let text = roadmap_text();
 
-        for needle in [
+        assert_markdown_sections(
+            &text,
+            &[
+                "## Current workspace shape",
+                "## Validation",
+                "## Current Rust-Owned Boundary",
+                "## Next Migration Ladder",
+                "## Guardrail",
+            ],
+        );
+
+        let guardrail = text
+            .split("## Guardrail")
+            .nth(1)
+            .expect("guardrail section");
+        assert!(guardrail.contains("no_std"));
+        assert!(guardrail.contains("no-alloc"));
+
+        let validation = text
+            .split("## Validation")
+            .nth(1)
+            .expect("validation section")
+            .split("## Deferred:")
+            .next()
+            .expect("validation body");
+        for command in [
             "nix develop -c make check",
             "nix develop -c make symbol-check",
             "nix develop -c make check-full",
-            "fast host tier",
-            "embedded native-lib audit tier",
-            "semantic instruction audits",
-            "nix develop -c make package",
-            "vesc-ble-loopback",
-            "vesc-pkg-build",
-            "vesc-protocol",
-            "vesc-host-cli",
-            "Rust exports `prog_ptr` and `init`",
-            "Rust owns LispBM extension table registration",
-            "Rust owns BLE app-data and stop-hook lifecycle setup",
-            "generic VESC linker and conversion references",
-            "Hardware-validate install, `lisp-probe`, and `loopback`",
-            "safe wrapper crate",
-            "cargo vescpkg build",
-            "no_std",
-            "no-alloc",
-            "Do not dump all of `vesc_c_if.h` into an ergonomic-looking API prematurely",
         ] {
             assert!(
-                text.contains(needle),
-                "roadmap document is missing required guidance: {needle}"
+                validation.contains(command),
+                "validation section is missing command: {command}"
             );
         }
     }

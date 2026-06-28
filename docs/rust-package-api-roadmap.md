@@ -16,8 +16,9 @@ moving in the right direction instead of growing a too-clever wrapper too early.
 ## Validation
 
 - `nix develop -c make check` — fast host tier (`nextest` default profile)
-- `nix develop -c make check-full` — host tier plus embedded native-lib audits
+- `nix develop -c make check-full` — host tier plus embedded native-lib audits and package integration tests
 - `nix develop -c make symbol-check` — embedded native-lib audit tier only
+- `nix develop -c make test-package` — fixtures + package pipeline integration tier
 - `nix develop -c make package`
 
 ## Deferred: QEMU / hardware-in-the-loop
@@ -29,7 +30,8 @@ covers install/loopback against real or fake BLE transports.
 
 When a HIL lane is added later, it should run only the smoke probes that require firmware
 (`lisp-probe`, loopback echo) and leave the heavy native-lib audits in the embedded CI tier.
-No QEMU runner is wired in this repo yet.
+The ignored sketch lives in `crates/vesc-host-cli/tests/hil_loopback.rs` and is filtered by the
+nextest `hil` profile (`VESC_DEVICE`, `VESC_BLE_ADDR` required at runtime).
 
 ## Deferred: CI matrix and generic VESC reference replacement
 
