@@ -71,8 +71,8 @@ pub fn build_and_copy_package_lib_bin(root: &Path) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_and_copy_package_lib_bin, golden_fixture_root, read_golden_lisp_data,
-        read_golden_package_lib, repo_root, staged_package_lib_path, GOLDEN_FIXTURE_VERSION,
+        GOLDEN_FIXTURE_VERSION, build_and_copy_package_lib_bin, golden_fixture_root,
+        read_golden_lisp_data, read_golden_package_lib, repo_root, staged_package_lib_path,
     };
     use crate::package_format::build_lisp_data;
     use crate::package_format_decode::{
@@ -81,7 +81,7 @@ mod tests {
     };
     use crate::package_runner::RealPackageRunner;
     use crate::package_target::{PackageTargetMode, PackageTargetPlan};
-    use crate::{PackageAssets, PackageLayout, PackageProvenance, BLE_LOOPBACK_PACKAGE_NAME};
+    use crate::{BLE_LOOPBACK_PACKAGE_NAME, PackageAssets, PackageLayout, PackageProvenance};
     use std::fs;
 
     fn ble_loopback_assets() -> PackageAssets {

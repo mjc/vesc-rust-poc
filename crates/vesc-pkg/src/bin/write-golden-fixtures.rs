@@ -3,10 +3,10 @@ use std::fs;
 use vesc_pkg::native_lib_baseline::fingerprint_bytes;
 use vesc_pkg::package_format::build_lisp_data;
 use vesc_pkg::package_golden::{
-    build_and_copy_package_lib_bin, golden_fixture_root, package_lib_output_path, repo_root,
     GOLDEN_FINGERPRINTS_TOML, GOLDEN_LISP_DATA_BIN, GOLDEN_PACKAGE_LIB_BIN,
+    build_and_copy_package_lib_bin, golden_fixture_root, package_lib_output_path, repo_root,
 };
-use vesc_pkg::{PackageAssets, PackageLayout, PackageProvenance, BLE_LOOPBACK_PACKAGE_NAME};
+use vesc_pkg::{BLE_LOOPBACK_PACKAGE_NAME, PackageAssets, PackageLayout, PackageProvenance};
 
 fn main() {
     let root = repo_root();
