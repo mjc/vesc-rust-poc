@@ -43,8 +43,11 @@ impl VescIfAbi {
     pub const SEND_APP_DATA: VescIfSlot = VescIfSlot::new("send_app_data", 592);
     pub const SET_APP_DATA_HANDLER: VescIfSlot = VescIfSlot::new("set_app_data_handler", 596);
     pub const SYSTEM_TIME_TICKS: VescIfSlot = VescIfSlot::new("system_time_ticks", 952);
+    pub const IO_SET_MODE: VescIfSlot = VescIfSlot::new("io_set_mode", 220);
+    pub const IO_WRITE: VescIfSlot = VescIfSlot::new("io_write", 224);
+    pub const IO_READ: VescIfSlot = VescIfSlot::new("io_read", 228);
 
-    pub const USED_SLOTS: [VescIfSlot; 8] = [
+    pub const USED_SLOTS: [VescIfSlot; 11] = [
         Self::LBM_ADD_EXTENSION,
         Self::LBM_ENC_I,
         Self::LBM_DEC_AS_I32,
@@ -53,5 +56,8 @@ impl VescIfAbi {
         Self::SEND_APP_DATA,
         Self::SET_APP_DATA_HANDLER,
         Self::SYSTEM_TIME_TICKS,
+        Self::IO_SET_MODE,
+        Self::IO_WRITE,
+        Self::IO_READ,
     ];
 }

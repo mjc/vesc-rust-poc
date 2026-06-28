@@ -104,15 +104,18 @@ fn vesc_if_slot_constants_name_the_package_header_offsets() {
             "send_app_data",
             "set_app_data_handler",
             "system_time_ticks",
+            "io_set_mode",
+            "io_write",
+            "io_read",
         ]
     );
     assert_eq!(
         slots.map(|slot| slot.vesc32_byte_offset()),
-        [0, 64, 100, 124, 148, 592, 596, 952]
+        [0, 64, 100, 124, 148, 592, 596, 952, 220, 224, 228]
     );
     assert_eq!(
         slots.map(|slot| slot.slot_index()),
-        [0, 16, 25, 31, 37, 148, 149, 238]
+        [0, 16, 25, 31, 37, 148, 149, 238, 55, 56, 57]
     );
 }
 
