@@ -221,113 +221,15 @@ fn parse_import_line(line: &str) -> Option<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::{build_vesc_package, VescPackageInput};
+    use crate::package_wire::{field_bytes, parse_lisp_imports, parse_vescpkg, LispImport};
     use crate::test_support::TempWorkspace;
     use crate::{PackageAssets, PackageLayout, PackageProvenance, BLE_LOOPBACK_PACKAGE_NAME};
-    use flate2::read::ZlibDecoder;
     use std::fs;
-    use std::io::Read;
-
-    #[derive(Debug, PartialEq, Eq)]
-    struct PackageField {
-        key: String,
-        value: Vec<u8>,
-    }
-
-    #[derive(Debug, PartialEq, Eq)]
-    struct LispImport {
-        tag: String,
-        offset: usize,
-        size: usize,
-        payload: Vec<u8>,
-    }
-
-    fn read_string(cursor: &mut &[u8]) -> String {
-        let end = cursor
-            .iter()
-            .position(|byte| *byte == 0)
-            .expect("nul-terminated string");
-        let value = std::str::from_utf8(&cursor[..end])
-            .expect("utf-8 string")
-            .to_owned();
-        *cursor = &cursor[end + 1..];
-        value
-    }
-
-    fn read_i32_be(cursor: &mut &[u8]) -> i32 {
-        let (bytes, rest) = cursor.split_at(4);
-        *cursor = rest;
-        i32::from_be_bytes(bytes.try_into().expect("i32 bytes"))
-    }
-
-    fn read_i16_be(cursor: &mut &[u8]) -> i16 {
-        let (bytes, rest) = cursor.split_at(2);
-        *cursor = rest;
-        i16::from_be_bytes(bytes.try_into().expect("i16 bytes"))
-    }
-
-    fn decompress_package(package: &[u8]) -> Vec<u8> {
-        let declared_len =
-            u32::from_be_bytes(package[..4].try_into().expect("qCompress length")) as usize;
-        let mut decoder = ZlibDecoder::new(&package[4..]);
-        let mut raw = Vec::new();
-        decoder
-            .read_to_end(&mut raw)
-            .expect("decompress package payload");
-        assert_eq!(raw.len(), declared_len);
-        raw
-    }
-
-    fn package_fields(package: &[u8]) -> Vec<PackageField> {
-        let raw = decompress_package(package);
-        let mut cursor = raw.as_slice();
-        assert_eq!(read_string(&mut cursor), "VESC Packet");
-
-        let mut fields = Vec::new();
-        while !cursor.is_empty() {
-            let key = read_string(&mut cursor);
-            let len = read_i32_be(&mut cursor) as usize;
-            let (value, rest) = cursor.split_at(len);
-            cursor = rest;
-            fields.push(PackageField {
-                key,
-                value: value.to_vec(),
-            });
-        }
-        fields
-    }
 
     fn extract_field(package: &[u8], key: &str) -> Vec<u8> {
-        package_fields(package)
-            .into_iter()
-            .find(|field| field.key == key)
-            .unwrap_or_else(|| panic!("missing field {key}"))
-            .value
-    }
-
-    fn parse_lisp_imports(lisp_data: &[u8]) -> (String, Vec<LispImport>) {
-        let mut cursor = lisp_data;
-        assert_eq!(read_i16_be(&mut cursor), 0);
-        let code = read_string(&mut cursor);
-        let import_count = read_i16_be(&mut cursor);
-        assert!(import_count >= 0, "negative Lisp import count");
-
-        let imports = (0..import_count)
-            .map(|_| {
-                let tag = read_string(&mut cursor);
-                let offset = read_i32_be(&mut cursor) as usize;
-                let size = read_i32_be(&mut cursor) as usize;
-                let start = 2 + offset;
-                let end = start + size;
-                LispImport {
-                    tag,
-                    offset,
-                    size,
-                    payload: lisp_data[start..end].to_vec(),
-                }
-            })
-            .collect();
-
-        (code, imports)
+        field_bytes(&parse_vescpkg(package).expect("vescpkg"), key)
+            .expect("missing field")
+            .to_vec()
     }
 
     fn payload_matches_native_with_only_nul_tail(payload: &[u8], native: &[u8]) -> bool {
@@ -355,7 +257,7 @@ mod tests {
         })
         .expect("package");
         let lisp_data = extract_field(&package, "lispData");
-        let (code, imports) = parse_lisp_imports(&lisp_data);
+        let (code, imports) = parse_lisp_imports(&lisp_data).expect("lisp imports");
 
         assert_eq!(
             code,
@@ -395,7 +297,7 @@ mod tests {
         })
         .expect("package");
         let lisp_data = extract_field(&package, "lispData");
-        let (_, imports) = parse_lisp_imports(&lisp_data);
+        let (_, imports) = parse_lisp_imports(&lisp_data).expect("lisp imports");
 
         assert_eq!(imports.len(), 1);
         assert_eq!(imports[0].tag, "package-lib");
@@ -423,7 +325,7 @@ mod tests {
             qml_is_fullscreen: false,
         })
         .expect("package");
-        let fields = package_fields(&package);
+        let fields = parse_vescpkg(&package).expect("vescpkg fields");
 
         assert_eq!(
             fields
@@ -471,7 +373,7 @@ mod tests {
             qml_is_fullscreen: false,
         })
         .expect("package");
-        let fields = package_fields(&package);
+        let fields = parse_vescpkg(&package).expect("vescpkg fields");
 
         assert_eq!(
             fields
@@ -488,7 +390,7 @@ mod tests {
         );
 
         let lisp_data = extract_field(&package, "lispData");
-        let (code, imports) = parse_lisp_imports(&lisp_data);
+        let (code, imports) = parse_lisp_imports(&lisp_data).expect("lisp imports");
         assert_eq!(
             code,
             "; Auto-generated loader for the Rust BLE loopback test package.\n(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n"
@@ -533,7 +435,7 @@ mod tests {
         .expect("package");
 
         let lisp_data = extract_field(&package, "lispData");
-        let (_, imports) = parse_lisp_imports(&lisp_data);
+        let (_, imports) = parse_lisp_imports(&lisp_data).expect("lisp imports");
 
         assert_eq!(imports.len(), 1);
         assert_eq!(imports[0].tag, "package-lib");

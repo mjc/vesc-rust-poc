@@ -19,6 +19,7 @@ pub mod package_format;
 pub mod package_runner;
 pub mod package_runtime;
 pub mod package_target;
+pub mod package_wire;
 pub mod rust_package_api_roadmap;
 pub mod symbol_audit;
 #[cfg(test)]
@@ -55,6 +56,10 @@ pub use package_runtime::{
     LoopbackRuntimeError, LoopbackStartError, LoopbackTick,
 };
 pub use package_target::{PackageTargetError, PackageTargetMode, PackageTargetPlan};
+pub use package_wire::{
+    decompress_vescpkg, field_bytes, parse_decompressed_vescpkg, parse_lisp_imports, parse_vescpkg,
+    LispImport, PackageField, WireError, VESC_PACKET_HEADER,
+};
 pub use symbol_audit::{
     audit_rust_staticlib_symbols, defined_symbols, is_allowed_runtime_symbol, nm_output,
     undefined_symbols, unexpected_undefined_symbols,

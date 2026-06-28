@@ -1,10 +1,9 @@
 use std::cell::Cell;
 use std::fmt;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::Path;
 
-use flate2::read::ZlibDecoder;
 use flate2::{write::ZlibEncoder, Compression};
 
 const PACKAGE_ERASE_BYTES: usize = 16;
@@ -144,24 +143,7 @@ pub fn read_package_from_path(path: impl AsRef<Path>) -> Result<VescPackage, Pac
 }
 
 pub fn decode_package(data: &[u8]) -> Result<VescPackage, PackageInstallError> {
-    if data.len() < 4 {
-        return Err(PackageInstallError::InvalidPackage);
-    }
-
-    let expected_len = u32::from_be_bytes(data[..4].try_into().expect("slice length")) as usize;
-    let mut decoder = ZlibDecoder::new(&data[4..]);
-    let mut bytes = Vec::new();
-    decoder
-        .read_to_end(&mut bytes)
-        .map_err(|error| PackageInstallError::Io(error.to_string()))?;
-    if bytes.len() != expected_len {
-        return Err(PackageInstallError::InvalidPackage);
-    }
-
-    let mut cursor = &bytes[..];
-    if read_string(&mut cursor)? != "VESC Packet" {
-        return Err(PackageInstallError::InvalidPackage);
-    }
+    let fields = vesc_pkg_build::parse_vescpkg(data).map_err(map_wire_error)?;
 
     let mut package = VescPackage {
         name: String::new(),
@@ -173,27 +155,22 @@ pub fn decode_package(data: &[u8]) -> Result<VescPackage, PackageInstallError> {
         qml_is_fullscreen: false,
     };
 
-    while !cursor.is_empty() {
-        let field = read_string(&mut cursor)?;
-        let len = read_i32_be(&mut cursor)?;
-        let len = usize::try_from(len).map_err(|_| PackageInstallError::InvalidPackage)?;
-        let field_bytes = take(&mut cursor, len)?;
-
-        match field.as_str() {
-            "name" => package.name = String::from_utf8(field_bytes).map_err(invalid_utf8)?,
+    for field in fields {
+        match field.key.as_str() {
+            "name" => package.name = String::from_utf8(field.value).map_err(invalid_utf8)?,
             "description" => {
-                package.description = String::from_utf8(field_bytes).map_err(invalid_utf8)?
+                package.description = String::from_utf8(field.value).map_err(invalid_utf8)?
             }
             "description_md" => {
-                package.description_md = String::from_utf8(field_bytes).map_err(invalid_utf8)?
+                package.description_md = String::from_utf8(field.value).map_err(invalid_utf8)?
             }
-            "lispData" => package.lisp_data = field_bytes,
-            "qmlFile" => package.qml_file = String::from_utf8(field_bytes).map_err(invalid_utf8)?,
+            "lispData" => package.lisp_data = field.value,
+            "qmlFile" => package.qml_file = String::from_utf8(field.value).map_err(invalid_utf8)?,
             "pkgDescQml" => {
-                package.pkg_desc_qml = String::from_utf8(field_bytes).map_err(invalid_utf8)?
+                package.pkg_desc_qml = String::from_utf8(field.value).map_err(invalid_utf8)?
             }
             "qmlIsFullscreen" => {
-                package.qml_is_fullscreen = field_bytes.first().copied().unwrap_or(0) != 0;
+                package.qml_is_fullscreen = field.value.first().copied().unwrap_or(0) != 0;
             }
             _ => {}
         }
@@ -203,6 +180,13 @@ pub fn decode_package(data: &[u8]) -> Result<VescPackage, PackageInstallError> {
         Ok(package)
     } else {
         Err(PackageInstallError::InvalidPackage)
+    }
+}
+
+fn map_wire_error(error: vesc_pkg_build::WireError) -> PackageInstallError {
+    match error {
+        vesc_pkg_build::WireError::DecompressionFailed(reason) => PackageInstallError::Io(reason),
+        _ => PackageInstallError::InvalidPackage,
     }
 }
 
@@ -313,29 +297,6 @@ fn step_error(step: impl AsRef<str>, error: PackageInstallError) -> PackageInsta
         }
         PackageInstallError::InvalidPackage => PackageInstallError::InvalidPackage,
     }
-}
-
-fn read_string(cursor: &mut &[u8]) -> Result<String, PackageInstallError> {
-    let Some(len) = cursor.iter().position(|byte| *byte == 0) else {
-        return Err(PackageInstallError::InvalidPackage);
-    };
-    let bytes = take(cursor, len)?;
-    take(cursor, 1)?;
-    String::from_utf8(bytes).map_err(invalid_utf8)
-}
-
-fn read_i32_be(cursor: &mut &[u8]) -> Result<i32, PackageInstallError> {
-    let bytes = take(cursor, 4)?;
-    Ok(i32::from_be_bytes(bytes.try_into().expect("slice length")))
-}
-
-fn take(cursor: &mut &[u8], len: usize) -> Result<Vec<u8>, PackageInstallError> {
-    if cursor.len() < len {
-        return Err(PackageInstallError::InvalidPackage);
-    }
-    let (head, tail) = cursor.split_at(len);
-    *cursor = tail;
-    Ok(head.to_vec())
 }
 
 fn invalid_utf8(_: std::string::FromUtf8Error) -> PackageInstallError {
