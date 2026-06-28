@@ -112,7 +112,42 @@
             };
           };
         in
+        let checkEnv = ''
+          cd $src
+          export PATH="${pkgs.lib.makeBinPath [ rustToolchain cargo-llvm-cov ]}:$PATH"
+          export CARGO_TARGET_DIR="$TMPDIR/cargo-target"
+          host_target="$(rustc -vV | sed -n 's/^host: //p')"
+          rust_sysroot="$(rustc --print sysroot)"
+          export LLVM_COV="$rust_sysroot/lib/rustlib/$host_target/bin/llvm-cov"
+          export LLVM_PROFDATA="$rust_sysroot/lib/rustlib/$host_target/bin/llvm-profdata"
+        '';
+        in
         {
+          check = pkgs.runCommand "vesc-rust-poc-check" {
+            src = ./.;
+            nativeBuildInputs = with pkgs; [
+              dbus.dev
+              gcc
+              pkg-config
+              qt5.qtbase.dev
+              qt5.qttools
+              qt5.qtquickcontrols2
+              qt5.qtserialport
+              qt5.qtconnectivity
+              qt5.qtpositioning
+              qt5.qtgamepad
+              qt5.qtserialbus
+              rustToolchain
+              cargo-nextest
+              cargo-test-changed
+              cargo-llvm-cov
+            ];
+          } ''
+            ${checkEnv}
+            make check
+            touch $out
+          '';
+
           check-full = pkgs.runCommand "vesc-rust-poc-check-full" {
             src = ./.;
             nativeBuildInputs = with pkgs; [
@@ -134,13 +169,7 @@
               cargo-llvm-cov
             ];
           } ''
-            cd $src
-            export PATH="${pkgs.lib.makeBinPath [ rustToolchain cargo-llvm-cov ]}:$PATH"
-            export CARGO_TARGET_DIR="$TMPDIR/cargo-target"
-            host_target="$(rustc -vV | sed -n 's/^host: //p')"
-            rust_sysroot="$(rustc --print sysroot)"
-            export LLVM_COV="$rust_sysroot/lib/rustlib/$host_target/bin/llvm-cov"
-            export LLVM_PROFDATA="$rust_sysroot/lib/rustlib/$host_target/bin/llvm-profdata"
+            ${checkEnv}
             make check-full
             touch $out
           '';

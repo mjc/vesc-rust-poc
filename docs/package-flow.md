@@ -13,7 +13,7 @@ This note characterizes the package path that the Rust VESC package experiment s
 ## Native Payload Path
 
 - `crates/vesc-pkg-build` owns package staging, conversion, and inspection.
-- `fixtures/native-lib-baseline/src/rules.mk` compiles the C sources into an ELF, converts it to a raw binary, and turns that binary into a Lisp-loadable asset.
+- `fixtures/native-lib-baseline/src/rules.mk` and `scripts/conv.py` are placeholder references retained for VESC layout parity; the Rust build path compiles via `native_lib_materialize` and copies `native_lib.bin` to `package_lib.bin` without invoking them.
 - The native build stays in the VESC native-library flow; the package layer does not build the final payload directly.
 
 ## Package Assembly

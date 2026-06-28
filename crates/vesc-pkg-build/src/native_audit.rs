@@ -1,6 +1,24 @@
 use std::collections::BTreeSet;
 
-pub const DEVICE_PROVEN_PACKAGE_BINARY: &str = "fixtures/device-proven/legacy-init.bin";
+pub const DEVICE_PROVEN_PACKAGE_HEX: &str =
+    include_str!("../../../fixtures/device-proven/legacy-init.hex");
+
+pub fn device_proven_package_binary() -> Vec<u8> {
+    let hex = DEVICE_PROVEN_PACKAGE_HEX
+        .chars()
+        .filter(|ch| ch.is_ascii_hexdigit())
+        .collect::<String>();
+    assert_eq!(
+        hex.len() % 2,
+        0,
+        "device-proven legacy-init.hex must contain whole bytes"
+    );
+    (0..hex.len())
+        .step_by(2)
+        .map(|idx| u8::from_str_radix(&hex[idx..idx + 2], 16))
+        .collect::<Result<Vec<_>, _>>()
+        .expect("device-proven legacy-init.hex bytes")
+}
 pub const DEVICE_PROVEN_INIT_OFFSET: usize = 4;
 pub const DEVICE_PROVEN_INIT_SIZE: usize = 59;
 
@@ -106,5 +124,17 @@ fn parse_defined_symbol(line: &str) -> Option<String> {
     match parts.as_slice() {
         [_, kind, symbol] if *kind != "U" => Some((*symbol).to_owned()),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::device_proven_package_binary;
+
+    #[test]
+    fn device_proven_fixture_decodes_from_hex() {
+        let bytes = device_proven_package_binary();
+        assert_eq!(bytes.len(), 183);
+        assert_ne!(bytes[4..4 + 59], [0u8; 59]);
     }
 }

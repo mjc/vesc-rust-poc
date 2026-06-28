@@ -2,7 +2,7 @@
 dir = "target/nextest"
 
 [profile.default]
-default-filter = 'not test(/native_lib_(symbols|layout|disassembly)|links_the_rust_staticlib/)'
+default-filter = 'not test(/native_lib_(symbols|layout|disassembly|materialization|semantics|flat_binary)|links_the_rust_staticlib|elf_disassembly_finds_loader_symbols/)'
 
 [profile.embedded]
-default-filter = 'test(/native_lib_(symbols|layout|disassembly)|links_the_rust_staticlib/)'
+default-filter = 'test(/native_lib_(symbols|layout|disassembly|materialization|semantics|flat_binary)|links_the_rust_staticlib|elf_disassembly_finds_loader_symbols/)'

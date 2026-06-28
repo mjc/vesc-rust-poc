@@ -62,13 +62,12 @@ fn native_lib_layout_matches_linker_script() {
         init_fun.size >= 24,
         "expected Rust-owned init to retain loader entry and probe registration"
     );
-    let proven = fs::read(crate::test_support::repo_root().join(DEVICE_PROVEN_PACKAGE_BINARY))
-        .expect("device-proven package binary bytes");
+    let proven = crate::native_audit::device_proven_package_binary();
     let proven_init_end = DEVICE_PROVEN_INIT_OFFSET + DEVICE_PROVEN_INIT_SIZE;
     assert_ne!(
         &blob[init_fun.vma..init_fun.vma + init_fun.size.min(DEVICE_PROVEN_INIT_SIZE)],
         &proven[DEVICE_PROVEN_INIT_OFFSET..proven_init_end],
-        "Rust-owned init should no longer match the legacy hand-asm bytes in {DEVICE_PROVEN_PACKAGE_BINARY}"
+        "Rust-owned init should no longer match the legacy hand-asm bytes in fixtures/device-proven/legacy-init.hex"
     );
 
     let program_ptr = section_from(&sections, ".program_ptr");

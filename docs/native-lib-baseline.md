@@ -33,7 +33,7 @@ This fixture captures the smallest Rust-backed VESC package skeleton we want to 
   externals before the final native-library link step grows out.
 - The same audit also checks the relocatable final ELF built from the Rust
   staticlib and fails if package-specific C shim symbols or objects reappear.
-- The fixture pins `src/vesc_c_if.h` with fingerprint `6f9d6d4dc9dab059`; if
+- The fixture pins `src/vesc_c_if.h` with fingerprint `f0097b82dd4adc19`; if
   that header changes, refresh the expected fingerprint in
   `crates/vesc-pkg-build/src/native_lib_baseline.rs` after reviewing the ABI diff.
 - The package loader fixture loads `src/package_lib.bin` for the BLE loopback test package.
