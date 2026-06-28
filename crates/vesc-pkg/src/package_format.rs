@@ -18,6 +18,39 @@ pub struct VescPackageInput<'a> {
     pub qml_is_fullscreen: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct VescPackageWire<'a> {
+    pub name: &'a str,
+    pub description: &'a str,
+    pub description_md: &'a str,
+    pub lisp_data: &'a [u8],
+    pub qml_file: &'a str,
+    pub pkg_desc_qml: &'a str,
+    pub qml_is_fullscreen: bool,
+}
+
+/// Encode a decoded package back to `.vescpkg` bytes without repacking Lisp imports.
+pub fn encode_vesc_package(wire: &VescPackageWire<'_>) -> io::Result<Vec<u8>> {
+    let mut data = Vec::new();
+    append_string(&mut data, PACKAGE_MAGIC);
+
+    append_text_field(&mut data, "name", wire.name)?;
+    if !wire.description_md.is_empty() {
+        append_text_field(&mut data, "description_md", wire.description_md)?;
+    } else {
+        append_text_field(&mut data, "description", wire.description)?;
+    }
+    append_bytes_field(&mut data, "lispData", wire.lisp_data)?;
+    append_text_field(&mut data, "qmlFile", wire.qml_file)?;
+    append_text_field(&mut data, "pkgDescQml", wire.pkg_desc_qml)?;
+
+    append_string(&mut data, "qmlIsFullscreen");
+    append_i32_be(&mut data, 1);
+    data.push(u8::from(wire.qml_is_fullscreen));
+
+    q_compress(&data)
+}
+
 pub fn build_vesc_package(input: &VescPackageInput<'_>) -> io::Result<Vec<u8>> {
     let lisp_data = pack_lisp_imports(input.lisp_source, input.lisp_editor_path)?;
 

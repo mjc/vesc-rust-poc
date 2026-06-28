@@ -6,6 +6,8 @@
 pub mod abi_inventory;
 pub mod cargo_vescpkg_command;
 pub mod hygiene;
+pub mod install;
+pub mod manifest;
 pub mod native_audit;
 pub mod native_build;
 pub mod native_disasm;
@@ -16,6 +18,7 @@ pub mod native_lib_baseline;
 pub mod native_lib_link;
 pub mod native_lib_materialize;
 pub mod native_lib_toolchain;
+pub mod package;
 pub mod package_artifacts;
 pub mod package_assets;
 pub mod package_build;
@@ -33,6 +36,11 @@ pub mod test_support;
 pub const BLE_LOOPBACK_PACKAGE_NAME: &str = "Rust BLE loopback test package";
 
 pub use abi_inventory::{AbiRequirement, AbiRequirementKind, minimal_test_package_abi};
+pub use install::{
+    FakeInstallTransport, InstallError, InstallReport, InstallStep, InstallTransport, Installer,
+    erase_package, install_package,
+};
+pub use manifest::{manifest_path, parse_pkgdesc, staging_dir_from_manifest};
 pub use native_lib_audit::{
     NativeLibArtifactPaths, audit_native_lib_artifacts, audit_native_lib_flat_binary,
     audit_native_lib_layout, audit_native_lib_symbols, semantic_snapshot_report,
@@ -42,6 +50,7 @@ pub use native_lib_baseline::{
     baseline_input_paths, baseline_output_paths, native_lib_baseline_root,
 };
 pub use native_lib_link::{NativeLibLinkPlan, native_lib_link_plan};
+pub use package::{Builder, Package, PackageError};
 pub use package_artifacts::{
     NATIVE_PAYLOAD_PATH, PackageArtifactInspectionError, PackageArtifactInspectionPlan,
     PackageArtifactProblem,
