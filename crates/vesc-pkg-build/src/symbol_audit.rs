@@ -143,5 +143,7 @@ mod tests {
         );
     }
 
-    include!("native_lib_audit.rs");
+    include!("native_lib_audit_symbols.rs");
+    include!("native_lib_audit_layout.rs");
+    include!("native_lib_audit_disassembly.rs");
 }
