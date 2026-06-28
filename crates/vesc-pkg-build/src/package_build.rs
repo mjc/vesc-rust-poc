@@ -163,31 +163,9 @@ impl PackageBuildPlan {
 #[cfg(test)]
 mod tests {
     use super::PackageBuildPlan;
-    use crate::package_conversion::{
-        PackageBinaryConversionCommand, PackageBinaryConversionRunner,
-    };
-    use crate::test_support::TempWorkspace;
+    use crate::test_support::{FakeConversionRunner, TempWorkspace};
     use crate::{PackageProvenance, BLE_LOOPBACK_PACKAGE_NAME};
-    use std::cell::RefCell;
     use std::fs;
-
-    #[derive(Default)]
-    struct FakeRunner {
-        calls: RefCell<Vec<PackageBinaryConversionCommand>>,
-    }
-
-    impl FakeRunner {
-        fn calls(&self) -> Vec<PackageBinaryConversionCommand> {
-            self.calls.borrow().clone()
-        }
-    }
-
-    impl PackageBinaryConversionRunner for FakeRunner {
-        fn run(&self, command: &PackageBinaryConversionCommand) -> Result<(), String> {
-            self.calls.borrow_mut().push(command.clone());
-            Ok(())
-        }
-    }
 
     fn write_artifact(root: &std::path::Path, relative: &str, contents: &str) {
         let path = root.join(relative);
@@ -246,7 +224,7 @@ mod tests {
             ]
         );
 
-        let runner = FakeRunner::default();
+        let runner = FakeConversionRunner::recording();
         assert_eq!(plan.convert_package_binary_with(&runner), Ok(()));
         assert_eq!(runner.calls(), vec![plan.conversion_plan().command()]);
     }

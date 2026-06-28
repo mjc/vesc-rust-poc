@@ -202,35 +202,10 @@ mod tests {
         CargoVescPkgMode, DEFAULT_PACKAGE_VERSION, DEFAULT_TARGET_TRIPLE,
     };
     use crate::hygiene::repo_root;
-    use crate::package_conversion::{
-        PackageBinaryConversionCommand, PackageBinaryConversionRunner,
-    };
-    use crate::test_support::TempWorkspace;
+    use crate::package_conversion::PackageBinaryConversionCommand;
+    use crate::test_support::{FakeConversionRunner, TempWorkspace};
     use crate::PackageTargetMode;
-    use std::cell::RefCell;
-    use std::fs;
     use std::path::PathBuf;
-
-    #[derive(Default)]
-    struct FakeRunner {
-        calls: RefCell<Vec<PackageBinaryConversionCommand>>,
-    }
-
-    impl FakeRunner {
-        fn calls(&self) -> Vec<PackageBinaryConversionCommand> {
-            self.calls.borrow().clone()
-        }
-    }
-
-    impl PackageBinaryConversionRunner for FakeRunner {
-        fn run(&self, command: &PackageBinaryConversionCommand) -> Result<(), String> {
-            self.calls.borrow_mut().push(command.clone());
-            if let Some(parent) = command.package_binary_path().parent() {
-                fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-            }
-            fs::write(command.package_binary_path(), b"payload").map_err(|error| error.to_string())
-        }
-    }
 
     #[test]
     fn command_design_mentions_the_expected_contract() {
@@ -340,7 +315,7 @@ mod tests {
     #[test]
     fn run_with_executes_build_invocations() {
         let root = repo_root();
-        let runner = FakeRunner::default();
+        let runner = FakeConversionRunner::materializing();
 
         let output = run_with(&root, ["build"], &runner).expect("run build invocation");
         assert_eq!(
@@ -372,8 +347,12 @@ mod tests {
     #[test]
     fn run_with_rejects_unknown_subcommands() {
         let workspace = TempWorkspace::new();
-        let error = run_with(&workspace.root, ["spoon"], &FakeRunner::default())
-            .expect_err("unknown subcommand should fail");
+        let error = run_with(
+            &workspace.root,
+            ["spoon"],
+            &FakeConversionRunner::recording(),
+        )
+        .expect_err("unknown subcommand should fail");
 
         assert!(matches!(
             error,

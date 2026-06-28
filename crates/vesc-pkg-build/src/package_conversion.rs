@@ -135,44 +135,10 @@ impl PackageBinaryConversionPlan {
 #[cfg(test)]
 mod tests {
     use super::{
-        PackageBinaryConversionCommand, PackageBinaryConversionError, PackageBinaryConversionPlan,
-        PackageBinaryConversionRunner, CONVERSION_SCRIPT_PATH, NATIVE_LIB_BINARY_PATH,
-        PACKAGE_LIB_BINARY_PATH,
+        PackageBinaryConversionError, PackageBinaryConversionPlan, CONVERSION_SCRIPT_PATH,
+        NATIVE_LIB_BINARY_PATH, PACKAGE_LIB_BINARY_PATH,
     };
-    use std::cell::RefCell;
-
-    struct FakeRunner {
-        calls: RefCell<Vec<PackageBinaryConversionCommand>>,
-        result: RefCell<Result<(), String>>,
-    }
-
-    impl FakeRunner {
-        fn success() -> Self {
-            Self {
-                calls: RefCell::new(Vec::new()),
-                result: RefCell::new(Ok(())),
-            }
-        }
-
-        fn failure(reason: impl Into<String>) -> Self {
-            Self {
-                calls: RefCell::new(Vec::new()),
-                result: RefCell::new(Err(reason.into())),
-            }
-        }
-
-        fn calls(&self) -> Vec<PackageBinaryConversionCommand> {
-            self.calls.borrow().clone()
-        }
-    }
-
-    impl PackageBinaryConversionRunner for FakeRunner {
-        fn run(&self, command: &PackageBinaryConversionCommand) -> Result<(), String> {
-            self.calls.borrow_mut().push(command.clone());
-            self.result.borrow().clone()
-        }
-    }
-
+    use crate::test_support::FakeConversionRunner;
     #[test]
     fn renders_the_expected_conversion_plan() {
         let plan = PackageBinaryConversionPlan::new(
@@ -233,7 +199,7 @@ mod tests {
             "Rust VESC package",
             "0.1.0",
         );
-        let runner = FakeRunner::success();
+        let runner = FakeConversionRunner::recording();
 
         assert_eq!(plan.run_with(&runner), Ok(()));
         assert_eq!(runner.calls(), vec![plan.command()]);
@@ -246,7 +212,7 @@ mod tests {
             "Rust VESC package",
             "0.1.0",
         );
-        let runner = FakeRunner::failure("conv.py blew up");
+        let runner = FakeConversionRunner::failing("conv.py blew up");
 
         assert_eq!(
             plan.run_with(&runner),
