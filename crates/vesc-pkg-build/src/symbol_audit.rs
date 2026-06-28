@@ -34,9 +34,7 @@ mod tests {
         undefined_symbols, unexpected_final_native_lib_undefined_symbols,
         unexpected_undefined_symbols,
     };
-    use crate::native_inspect::{
-        all_section_layouts, command_stdout, nm_output, section_from, SectionLayout,
-    };
+    use crate::native_inspect::{all_section_layouts, nm_output, section_from, SectionLayout};
     use crate::native_lib_link::NativeLibLinkPlan;
     use crate::test_support::NativeBuildWorkspace;
     use std::collections::BTreeSet;
@@ -73,21 +71,7 @@ mod tests {
         }
 
         fn build_bin(&self) {
-            use crate::cargo_vescpkg_command::DEFAULT_PACKAGE_VERSION;
-            use crate::package_conversion::{
-                PackageBinaryConversionPlan, PackageBinaryConversionRunner,
-            };
-            use crate::package_runner::RealPackageRunner;
-            use crate::BLE_LOOPBACK_PACKAGE_NAME;
-
-            let conversion_plan = PackageBinaryConversionPlan::new(
-                self.plan().root(),
-                BLE_LOOPBACK_PACKAGE_NAME,
-                DEFAULT_PACKAGE_VERSION,
-            );
-            RealPackageRunner
-                .run(&conversion_plan.command())
-                .expect("native-lib package conversion");
+            crate::package_runner::ensure_repo_native_lib_artifacts(self.plan().root());
         }
     }
 
