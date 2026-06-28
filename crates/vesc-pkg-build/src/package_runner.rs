@@ -6,7 +6,7 @@ pub struct RealPackageRunner;
 
 impl PackageBinaryConversionRunner for RealPackageRunner {
     fn run(&self, command: &PackageBinaryConversionCommand) -> Result<(), String> {
-        crate::symbol_audit::build_final_native_lib_binary(command.native_binary_path().as_path());
+        crate::native_build::build_final_native_lib_binary(command.native_binary_path().as_path());
 
         if let Some(parent) = command.package_binary_path().parent() {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;

@@ -10,7 +10,7 @@ fn native_lib_artifacts_match_firmware_expectations() {
     let staticlib_undefined = undefined_symbols(&staticlib_symbols);
     let elf_defined = defined_symbols(&elf_symbols);
     let elf_undefined = undefined_symbols(&elf_symbols);
-    let sections = all_section_layouts(&fixture);
+    let sections = all_section_layouts(&fixture.elf());
     let disassembly = command_stdout(
         "arm-none-eabi-objdump",
         [PathBuf::from("-d"), fixture.elf()],
