@@ -1,7 +1,12 @@
+//! Shared wire types for device-side VESC packages.
+//!
+//! Device builds must stay `no_std` and must not link `alloc` or `std`.
+
 #![no_std]
+#![forbid(unused_extern_crates)]
 
 #[cfg(test)]
-extern crate alloc;
+extern crate std;
 
 pub mod ble_loopback;
 

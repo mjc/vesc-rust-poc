@@ -2,15 +2,21 @@
 //!
 //! This crate is the linkable staticlib artifact (`libvesc_ble_loopback.a`). Generic loader,
 //! lifecycle, and firmware wrapper code lives in `vesc-package`.
+//!
+//! Device builds must stay `no_std` and must not link `alloc` or `std`.
 
-#![cfg_attr(not(test), no_std)]
+#![no_std]
+#![forbid(unused_extern_crates)]
+
+#[cfg(test)]
+extern crate std;
 
 pub mod extensions;
 pub mod init;
 
 pub use init::package_lib_init;
 pub use vesc_package::{
-    ble_loopback, ffi, lbm, lifecycle, ProtocolFrame, WireCommand, WireVersion,
+    ProtocolFrame, WireCommand, WireVersion, ble_loopback, ffi, lbm, lifecycle,
 };
 
 #[cfg(not(test))]

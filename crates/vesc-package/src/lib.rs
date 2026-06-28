@@ -2,8 +2,14 @@
 //!
 //! Owns binding traits, lifecycle helpers, loader init, and device-side runtime code.
 //! Raw firmware ABI types live in `vesc-ffi`; this crate builds the safe layer on top.
+//!
+//! Device builds must stay `no_std` and must not link `alloc` or `std`.
 
-#![cfg_attr(not(test), no_std)]
+#![no_std]
+#![forbid(unused_extern_crates)]
+
+#[cfg(test)]
+extern crate std;
 
 mod bindings;
 mod extension;
