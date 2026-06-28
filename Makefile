@@ -2,7 +2,7 @@
 
 CARGO ?= cargo
 
-.PHONY: check check-full check-ffi check-ffi-header test test-all test-embedded test-ffi test-package test-changed fmt clippy symbol-check golden-check package-smoke package package-only clean status coverage coverage-ffi coverage-sdk coverage-pkg coverage-cli hack-check
+.PHONY: check check-full check-ffi check-ffi-header test test-all test-embedded test-ffi test-package test-changed fmt clippy symbol-check golden-check package-smoke package package-only deploy deploy-install clean status coverage coverage-ffi coverage-sdk coverage-pkg coverage-cli hack-check
 
 check: fmt clippy test
 
@@ -74,6 +74,22 @@ package: check
 
 package-only:
 	$(CARGO) run -p vesc-pkg --bin vesc-pkg -- package-only
+
+PACKAGE_ARTIFACT := target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/Rust-BLE-loopback-test-package-0.1.0.vescpkg
+DEVICE_FLAGS ?=
+ifdef DEVICE_NAME
+DEVICE_FLAGS += --device $(DEVICE_NAME)
+endif
+ifdef DEVICE_ADDRESS
+DEVICE_FLAGS += --address $(DEVICE_ADDRESS)
+endif
+
+deploy: package
+	$(CARGO) run -p vesc-cli -- package-install $(PACKAGE_ARTIFACT) $(DEVICE_FLAGS)
+	$(CARGO) run -p vesc-cli -- loopback $(DEVICE_FLAGS)
+
+deploy-install: package
+	$(CARGO) run -p vesc-cli -- package-install $(PACKAGE_ARTIFACT) $(DEVICE_FLAGS)
 
 clean:
 	$(CARGO) clean
