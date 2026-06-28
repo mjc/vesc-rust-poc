@@ -1,6 +1,7 @@
 pub mod abi_inventory;
 pub mod cargo_vescpkg_command;
 pub mod hygiene;
+pub mod native_audit;
 pub mod native_build;
 pub mod native_inspect;
 pub mod native_lib_baseline;
