@@ -162,6 +162,11 @@ pub(crate) fn build_final_native_lib_elf_unlocked(
     let package_c_source_path = link_plan.package_c_source_path();
     let linker_script_path = link_plan.linker_script_path();
     let rust_staticlib_path = link_plan.rust_staticlib_path();
+
+    if !c_only {
+        build_rust_staticlib_unlocked(plan)?;
+    }
+
     let mut elf_inputs = vec![
         package_c_source_path.as_path(),
         linker_script_path.as_path(),
@@ -171,10 +176,6 @@ pub(crate) fn build_final_native_lib_elf_unlocked(
     }
     if artifact_is_up_to_date(&elf_path, &elf_inputs) {
         return Ok(());
-    }
-
-    if !c_only {
-        build_rust_staticlib_unlocked(plan)?;
     }
 
     if let Some(parent) = elf_path.parent() {
