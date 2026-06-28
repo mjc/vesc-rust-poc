@@ -38,7 +38,12 @@ pub use lifecycle_core::{LbmApi, LoopbackLifecycle, PackageLifecycle};
 pub use bindings::RealBindings;
 
 pub mod ble_loopback;
+pub mod gpio;
 pub mod init;
+
+#[cfg(not(test))]
+pub use gpio::RealGpioBindings;
+pub use gpio::{GpioApi, GpioBindings};
 pub mod lbm;
 pub mod lifecycle;
 

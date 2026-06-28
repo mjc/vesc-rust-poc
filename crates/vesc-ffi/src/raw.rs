@@ -599,6 +599,42 @@ pub unsafe fn vesc_system_time_ticks() -> u32 {
     }
 }
 
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn io_set_mode(pin: crate::VescPin, mode: crate::VescPinMode) -> bool {
+    unsafe {
+        match (*VESC_IF).io_set_mode {
+            Some(io_set_mode) => io_set_mode(pin.0, mode.0),
+            None => false,
+        }
+    }
+}
+
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn io_write(pin: crate::VescPin, level: i32) -> bool {
+    unsafe {
+        match (*VESC_IF).io_write {
+            Some(io_write) => io_write(pin.0, level),
+            None => false,
+        }
+    }
+}
+
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn io_read(pin: crate::VescPin) -> bool {
+    unsafe {
+        match (*VESC_IF).io_read {
+            Some(io_read) => io_read(pin.0),
+            None => false,
+        }
+    }
+}
+
 #[cfg(test)]
 pub fn vesc_if_offsets_for_tests() -> [usize; 8] {
     [
