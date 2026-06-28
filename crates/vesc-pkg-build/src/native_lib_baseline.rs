@@ -108,45 +108,51 @@ pub fn baseline_output_paths() -> impl Iterator<Item = &'static str> {
 mod tests {
     use super::{
         baseline_input_paths, baseline_output_paths, native_lib_baseline_root,
-        vesc_c_if_header_fingerprint, EXPECTED_VESC_C_IF_HEADER_FINGERPRINT,
+        vesc_c_if_header_fingerprint, vesc_c_if_header_path, EXPECTED_VESC_C_IF_HEADER_FINGERPRINT,
         NATIVE_LIB_BASELINE_INPUTS, NATIVE_LIB_BASELINE_OUTPUTS, VESC_PACKAGE_FLASH_BUDGET_BYTES,
     };
     use std::fs;
 
     #[test]
-    fn lists_expected_baseline_inputs() {
+    fn baseline_fixture_layout() {
         assert_eq!(
             baseline_input_paths().collect::<Vec<_>>(),
             NATIVE_LIB_BASELINE_INPUTS
         );
-    }
-
-    #[test]
-    fn lists_expected_baseline_outputs() {
         assert_eq!(
             baseline_output_paths().collect::<Vec<_>>(),
             NATIVE_LIB_BASELINE_OUTPUTS
         );
-    }
 
-    #[test]
-    fn fixture_contains_the_expected_input_layout() {
         let root = native_lib_baseline_root();
-
         let missing = root
             .input_paths()
             .filter(|path| !path.exists())
             .collect::<Vec<_>>();
-
         assert!(
             missing.is_empty(),
             "missing native-lib baseline files: {missing:?}"
         );
-    }
 
-    #[test]
-    fn package_payload_stays_well_below_the_vesc_tool_flash_block_limit() {
-        let root = native_lib_baseline_root();
+        let inputs = root.input_paths().collect::<Vec<_>>();
+        assert!(inputs.iter().any(|path| path.ends_with("src/vesc_c_if.h")));
+        assert!(inputs.iter().any(|path| path.ends_with("src/link.ld")));
+        assert!(inputs.iter().any(|path| path.ends_with("scripts/conv.py")));
+        assert!(
+            inputs
+                .iter()
+                .all(|path| !path.ends_with("src/package_lib.c")),
+            "package-specific C shim source must not be a baseline input: {inputs:?}"
+        );
+        assert!(
+            inputs
+                .iter()
+                .filter(|path| path.extension().is_some_and(|extension| extension == "c"))
+                .collect::<Vec<_>>()
+                .is_empty(),
+            "package-specific C sources must not be native-lib inputs"
+        );
+
         let sizes = root
             .package_input_paths()
             .map(|path| {
@@ -154,10 +160,8 @@ mod tests {
                 (path, size)
             })
             .collect::<Vec<_>>();
-
         let total_size = sizes.iter().map(|(_, size)| *size).sum::<u64>();
         let biggest = sizes.iter().map(|(_, size)| *size).max().unwrap_or(0);
-
         assert!(
             biggest < VESC_PACKAGE_FLASH_BUDGET_BYTES,
             "largest package input reaches the package budget: {sizes:?}"
@@ -166,23 +170,39 @@ mod tests {
             total_size < VESC_PACKAGE_FLASH_BUDGET_BYTES,
             "package payload is too large for the package budget: {sizes:?}"
         );
+
+        let loader = root
+            .input_paths()
+            .find(|path| path.ends_with("package/code.lisp"))
+            .expect("expected code.lisp in the native-lib baseline fixture");
+        let source = fs::read_to_string(&loader).expect("code.lisp contents");
+        assert!(source.contains("(import \"src/package_lib.bin\" 'package-lib)"));
+        assert!(source.contains("(load-native-lib package-lib)"));
+        assert!(!source.contains("(loopwhile t") && !source.contains("(sleep 1.0)"));
+        assert!(!source.contains("ext-rust-add"));
+
+        let readme = root.root.join("package/README.md");
+        let readme_source = fs::read_to_string(&readme).expect("package README");
+        assert!(readme_source.contains("BLE loopback test package"));
+
+        let descriptor = fs::read_to_string(root.root.join("package/pkgdesc.qml"))
+            .expect("package descriptor contents");
+        assert!(descriptor.contains("pkgName: \"Rust BLE loopback test package\""));
+        assert!(descriptor.contains("pkgOutput: \"native-lib-baseline.vescpkg\""));
+        assert!(!descriptor.contains("packageName"));
+        assert!(source.contains("BLE loopback test package"));
     }
 
     #[test]
-    fn vesc_c_if_header_fingerprint_is_pinned() {
+    fn vesc_c_if_abi_pins() {
         assert_eq!(
             vesc_c_if_header_fingerprint(),
             EXPECTED_VESC_C_IF_HEADER_FINGERPRINT,
             "refresh the pinned header fingerprint only after reviewing the ABI diff for fixtures/native-lib-baseline/src/vesc_c_if.h"
         );
-    }
 
-    #[test]
-    fn vesc_c_if_fixture_keeps_used_slots_aligned_with_vesc_pkg_lib() {
-        let header =
-            fs::read_to_string(super::vesc_c_if_header_path()).expect("vesc_c_if.h contents");
+        let header = fs::read_to_string(vesc_c_if_header_path()).expect("vesc_c_if.h contents");
         let slots = parse_vesc_c_if_slots(&header);
-
         let expected = [
             (
                 0,
@@ -214,41 +234,10 @@ mod tests {
             ),
         ]
         .map(|(slot, name, signature)| (slot, name, signature.to_owned()));
-
         assert_eq!(
             slots,
             expected,
             "fixture vesc_c_if.h must preserve the upstream vesc_pkg_lib slot order for every Rust-modeled VESC_IF entry"
-        );
-    }
-
-    #[test]
-    fn native_baseline_has_no_package_specific_c_source() {
-        let root = native_lib_baseline_root();
-        let package_c_sources = root
-            .input_paths()
-            .filter(|path| path.extension().is_some_and(|extension| extension == "c"))
-            .collect::<Vec<_>>();
-
-        assert!(
-            package_c_sources.is_empty(),
-            "package-specific C sources must not be native-lib inputs: {package_c_sources:?}"
-        );
-    }
-
-    #[test]
-    fn native_baseline_documents_only_generic_vesc_references() {
-        let root = native_lib_baseline_root();
-        let inputs = root.input_paths().collect::<Vec<_>>();
-
-        assert!(inputs.iter().any(|path| path.ends_with("src/vesc_c_if.h")));
-        assert!(inputs.iter().any(|path| path.ends_with("src/link.ld")));
-        assert!(inputs.iter().any(|path| path.ends_with("scripts/conv.py")));
-        assert!(
-            inputs
-                .iter()
-                .all(|path| !path.ends_with("src/package_lib.c")),
-            "package-specific C shim source must not be a baseline input: {inputs:?}"
         );
     }
 
@@ -322,64 +311,5 @@ mod tests {
         }
 
         used
-    }
-
-    #[test]
-    fn package_loader_only_loads_the_native_library_for_ble_loopback() {
-        let root = native_lib_baseline_root();
-        let loader = root
-            .input_paths()
-            .find(|path| path.ends_with("package/code.lisp"))
-            .expect("expected code.lisp in the native-lib baseline fixture");
-        let source = fs::read_to_string(&loader).expect("code.lisp contents");
-
-        assert!(
-            source.contains("(import \"src/package_lib.bin\" 'package-lib)"),
-            "expected the loader to import the native library: {loader:?}"
-        );
-        assert!(
-            source.contains("(load-native-lib package-lib)"),
-            "expected the loader to load the imported native library: {loader:?}"
-        );
-        assert!(
-            !source.contains("(loopwhile t") && !source.contains("(sleep 1.0)"),
-            "expected the loader to return after native registration so REPL probes can run: {loader:?}"
-        );
-        assert!(
-            !source.contains("ext-rust-add"),
-            "expected the BLE loopback loader to avoid the old proof extension: {loader:?}"
-        );
-    }
-
-    #[test]
-    fn fixture_package_identity_mentions_the_ble_loopback_test_package() {
-        let root = native_lib_baseline_root();
-        let readme = fs::read_to_string(root.root.join("package/README.md"))
-            .expect("package README contents");
-        let descriptor = fs::read_to_string(root.root.join("package/pkgdesc.qml"))
-            .expect("package descriptor contents");
-        let loader = fs::read_to_string(root.root.join("package/code.lisp"))
-            .expect("package loader contents");
-
-        assert!(
-            readme.contains("BLE loopback test package"),
-            "expected the package README to describe the BLE loopback test package"
-        );
-        assert!(
-            descriptor.contains("pkgName: \"Rust BLE loopback test package\""),
-            "expected the package descriptor to use vesc_tool pkgName schema"
-        );
-        assert!(
-            descriptor.contains("pkgOutput: \"native-lib-baseline.vescpkg\""),
-            "expected the package descriptor to name the baseline artifact"
-        );
-        assert!(
-            !descriptor.contains("packageName"),
-            "legacy POC pkgdesc dialect must not remain in the baseline fixture"
-        );
-        assert!(
-            loader.contains("BLE loopback test package"),
-            "expected the package loader comment to name the BLE loopback test package"
-        );
     }
 }
