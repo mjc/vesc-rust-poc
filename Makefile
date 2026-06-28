@@ -2,11 +2,11 @@
 
 CARGO ?= cargo
 
-.PHONY: check check-full check-ffi check-ffi-header test test-all test-embedded test-ffi test-package test-changed fmt clippy symbol-check golden-check package-smoke package package-only deploy deploy-install clean status coverage coverage-ffi coverage-sdk coverage-pkg coverage-cli hack-check
+.PHONY: check check-full check-ffi check-ffi-header test test-all test-embedded test-ffi test-package test-changed fmt clippy symbol-check golden-check package-smoke package package-only deploy deploy-install lisp-probe clean status coverage coverage-ffi coverage-sdk coverage-pkg coverage-cli hack-check
 
 check: fmt clippy test
 
-check-full: check check-ffi-header symbol-check test-package
+check-full: check check-ffi-header symbol-check test-package golden-check
 
 hack-check:
 	$(CARGO) hack check --each-feature -p vesc-sdk
@@ -46,7 +46,7 @@ clippy:
 symbol-check: test-embedded
 
 golden-check:
-	$(CARGO) test -p vesc-pkg package_golden -- --test-threads=1
+	$(CARGO) nextest run -p vesc-pkg package_golden
 
 COVERAGE_FAIL_UNDER ?= 80
 COVERAGE_PACKAGE_IGNORE := --ignore-filename-regex 'crates/vesc-(ffi|protocol)/'
@@ -84,12 +84,15 @@ ifdef DEVICE_ADDRESS
 DEVICE_FLAGS += --address $(DEVICE_ADDRESS)
 endif
 
-deploy: package
+deploy: check package
 	$(CARGO) run -p vesc-cli -- package-install $(PACKAGE_ARTIFACT) $(DEVICE_FLAGS)
 	$(CARGO) run -p vesc-cli -- loopback $(DEVICE_FLAGS)
 
 deploy-install: package
 	$(CARGO) run -p vesc-cli -- package-install $(PACKAGE_ARTIFACT) $(DEVICE_FLAGS)
+
+lisp-probe:
+	$(CARGO) run -p vesc-cli -- lisp-probe $(DEVICE_FLAGS)
 
 clean:
 	$(CARGO) clean
