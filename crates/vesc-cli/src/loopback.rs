@@ -174,10 +174,10 @@ impl LoopbackTransport for FakeLoopbackTransport {
     }
 }
 
-pub fn run_loopback<T: LoopbackTransport>(
+pub fn run_loopback_with_target<T: LoopbackTransport>(
     transport: &T,
+    target: LoopbackTarget,
 ) -> Result<LoopbackReport, LoopbackTransportError> {
-    let target = LoopbackTarget::default();
     transport.open(target.clone())?;
     let steps = [
         LoopbackPacket::new(WireCommand::Ping, &[]).expect("ping packet"),
@@ -198,6 +198,12 @@ pub fn run_loopback<T: LoopbackTransport>(
         .collect::<Result<Vec<_>, LoopbackTransportError>>()?;
 
     Ok(LoopbackReport { target, commands })
+}
+
+pub fn run_loopback<T: LoopbackTransport>(
+    transport: &T,
+) -> Result<LoopbackReport, LoopbackTransportError> {
+    run_loopback_with_target(transport, LoopbackTarget::default())
 }
 
 #[cfg(test)]

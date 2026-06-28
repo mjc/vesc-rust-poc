@@ -1,6 +1,4 @@
-use std::{process::ExitCode, thread, time::Duration};
-
-const LISP_PROBE_RETRY_DELAY: Duration = Duration::from_secs(1);
+use std::process::ExitCode;
 
 fn main() -> ExitCode {
     match vesc_cli::parse_args(std::env::args()) {
@@ -33,27 +31,37 @@ fn main() -> ExitCode {
                 ExitCode::from(1)
             }
         },
-        Ok(vesc_cli::Command::Loopback) => match vesc_cli::btle::BtleLoopbackTransport::new() {
-            Ok(transport) => match vesc_cli::loopback::run_loopback(&transport) {
-                Ok(report) => {
-                    println!(
-                        "loopback ok on device={} service={}: {:?}",
-                        report.target().device_name_hint(),
-                        report.target().service_name_hint(),
-                        report.commands()
-                    );
-                    ExitCode::SUCCESS
+        Ok(vesc_cli::Command::Loopback(command)) => {
+            let target = match (command.address, command.device_name) {
+                (Some(address), _) => vesc_cli::loopback::LoopbackTarget::addressed(address),
+                (None, Some(device_name)) => vesc_cli::loopback::LoopbackTarget::named(device_name),
+                (None, None) => vesc_cli::loopback::LoopbackTarget::default(),
+            };
+
+            match vesc_cli::btle::BtleLoopbackTransport::new() {
+                Ok(transport) => {
+                    match vesc_cli::loopback::run_loopback_with_target(&transport, target) {
+                        Ok(report) => {
+                            println!(
+                                "loopback ok on device={} service={}: {:?}",
+                                report.target().device_name_hint(),
+                                report.target().service_name_hint(),
+                                report.commands()
+                            );
+                            ExitCode::SUCCESS
+                        }
+                        Err(error) => {
+                            eprintln!("loopback failed: {error}");
+                            ExitCode::from(1)
+                        }
+                    }
                 }
                 Err(error) => {
-                    eprintln!("loopback failed: {error}");
+                    eprintln!("failed to initialize BLE transport: {error}");
                     ExitCode::from(1)
                 }
-            },
-            Err(error) => {
-                eprintln!("failed to initialize BLE transport: {error}");
-                ExitCode::from(1)
             }
-        },
+        }
         Ok(vesc_cli::Command::LispProbe(command)) => {
             let target = match (command.address, command.device_name) {
                 (Some(address), _) => vesc_cli::loopback::LoopbackTarget::addressed(address),
@@ -61,17 +69,26 @@ fn main() -> ExitCode {
                 (None, None) => vesc_cli::loopback::LoopbackTarget::default(),
             };
 
-            loop {
-                if let Err(error) = vesc_cli::btle::run_lisp_probe_continuously_with_progress(
-                    target.clone(),
-                    |event| {
-                        if event.should_print_to_cli() {
-                            println!("lisp probe: {}", event.describe());
-                        }
-                    },
-                ) {
-                    eprintln!("lisp probe failed: {error}; reconnecting");
-                    thread::sleep(LISP_PROBE_RETRY_DELAY);
+            match vesc_cli::btle::run_lisp_probe_with_progress(target, |event| {
+                if event.should_print_to_cli() {
+                    println!("lisp probe: {}", event.describe());
+                }
+            }) {
+                Ok(report) => {
+                    let ok = report
+                        .prints()
+                        .iter()
+                        .any(|line| line.contains("vesc-rust-probe-ok-42"));
+                    if ok {
+                        ExitCode::SUCCESS
+                    } else {
+                        eprintln!("lisp probe: missing expected vesc-rust-probe-ok-42 print");
+                        ExitCode::from(1)
+                    }
+                }
+                Err(error) => {
+                    eprintln!("lisp probe failed: {error}");
+                    ExitCode::from(1)
                 }
             }
         }

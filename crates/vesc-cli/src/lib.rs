@@ -6,10 +6,16 @@ pub enum Command {
     Layout,
     Status,
     Scan,
-    Loopback,
+    Loopback(LoopbackCommand),
     LispProbe(LispProbeCommand),
     PackageInstall(PackageInstallCommand),
     ErasePackage(PackageEraseCommand),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoopbackCommand {
+    pub device_name: Option<String>,
+    pub address: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,7 +55,7 @@ where
         Some("layout") => Ok(Command::Layout),
         Some("status") => Ok(Command::Status),
         Some("scan") => Ok(Command::Scan),
-        Some("loopback") => Ok(Command::Loopback),
+        Some("loopback") => parse_loopback(iter).map(Command::Loopback),
         Some("lisp-probe") => parse_lisp_probe(iter).map(Command::LispProbe),
         Some("package-install") => parse_package_install(iter).map(Command::PackageInstall),
         Some("erase-package") => parse_erase_package(iter).map(Command::ErasePackage),
@@ -57,9 +63,9 @@ where
     }
 }
 
-fn parse_lisp_probe(
+fn parse_device_flags(
     mut iter: impl Iterator<Item = String>,
-) -> Result<LispProbeCommand, ParseError> {
+) -> Result<(Option<String>, Option<String>), ParseError> {
     let mut device_name = None;
     let mut address = None;
 
@@ -80,6 +86,21 @@ fn parse_lisp_probe(
             other => return Err(ParseError::UnknownCommand(other.to_owned())),
         }
     }
+
+    Ok((device_name, address))
+}
+
+fn parse_loopback(iter: impl Iterator<Item = String>) -> Result<LoopbackCommand, ParseError> {
+    let (device_name, address) = parse_device_flags(iter)?;
+
+    Ok(LoopbackCommand {
+        device_name,
+        address,
+    })
+}
+
+fn parse_lisp_probe(iter: impl Iterator<Item = String>) -> Result<LispProbeCommand, ParseError> {
+    let (device_name, address) = parse_device_flags(iter)?;
 
     Ok(LispProbeCommand {
         device_name,
@@ -163,8 +184,8 @@ pub mod vesc_uart;
 #[cfg(test)]
 mod tests {
     use super::{
-        Command, LispProbeCommand, PackageEraseCommand, PackageInstallCommand, ParseError,
-        parse_args,
+        Command, LispProbeCommand, LoopbackCommand, PackageEraseCommand, PackageInstallCommand,
+        ParseError, parse_args,
     };
     use vesc_protocol::{WireCommand, WireVersion};
 
@@ -178,7 +199,20 @@ mod tests {
             parse_args(["vesc-cli", "spoon"]),
             Err(ParseError::UnknownCommand("spoon".to_owned()))
         );
-        assert_eq!(parse_args(["vesc-cli", "loopback"]), Ok(Command::Loopback));
+        assert_eq!(
+            parse_args(["vesc-cli", "loopback"]),
+            Ok(Command::Loopback(LoopbackCommand {
+                device_name: None,
+                address: None,
+            }))
+        );
+        assert_eq!(
+            parse_args(["vesc-cli", "loopback", "--device", "Floatwheel PintV"]),
+            Ok(Command::Loopback(LoopbackCommand {
+                device_name: Some("Floatwheel PintV".to_owned()),
+                address: None,
+            }))
+        );
         assert_eq!(
             parse_args(["vesc-cli", "lisp-probe"]),
             Ok(Command::LispProbe(LispProbeCommand {
