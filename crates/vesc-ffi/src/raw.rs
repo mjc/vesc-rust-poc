@@ -387,7 +387,14 @@ pub struct VescIf {
     shutdown_disable: Option<unsafe extern "C" fn(bool)>,
 }
 
-const VESC_IF: *const VescIf = VescIfAbi::BASE_ADDR.0 as *const VescIf;
+#[inline(always)]
+unsafe fn vesc_if() -> *const VescIf {
+    #[cfg(any(test, feature = "test-support"))]
+    if let Some(table) = crate::test_support::current_table() {
+        return table;
+    }
+    VescIfAbi::BASE_ADDR.0 as *const VescIf
+}
 
 /// # Safety
 ///
@@ -401,7 +408,7 @@ pub unsafe fn lbm_add_extension(name: *const c_char, handler: ExtensionHandler) 
 
     #[cfg(not(all(target_arch = "arm", not(test))))]
     unsafe {
-        match (*VESC_IF).lbm_add_extension {
+        match (*vesc_if()).lbm_add_extension {
             Some(lbm_add_extension) => lbm_add_extension(name as *mut c_char, handler),
             None => false,
         }
@@ -435,9 +442,16 @@ pub unsafe fn lbm_add_extension_with_table_base(
     }
 
     #[cfg(not(all(target_arch = "arm", not(test))))]
-    {
-        let _ = (vesc_if_base, name, handler);
-        false
+    unsafe {
+        let table = if vesc_if_base == VescIfAbi::BASE_ADDR.0 as u32 {
+            vesc_if()
+        } else {
+            vesc_if_base as *const VescIf
+        };
+        match (*table).lbm_add_extension {
+            Some(lbm_add_extension) => lbm_add_extension(name as *mut c_char, handler),
+            None => false,
+        }
     }
 }
 
@@ -461,7 +475,7 @@ pub unsafe fn lbm_dec_as_i32(value: LbmValue) -> i32 {
 
     #[cfg(not(all(target_arch = "arm", not(test))))]
     unsafe {
-        match (*VESC_IF).lbm_dec_as_i32 {
+        match (*vesc_if()).lbm_dec_as_i32 {
             Some(lbm_dec_as_i32) => lbm_dec_as_i32(value.0),
             None => 0,
         }
@@ -488,7 +502,7 @@ pub unsafe fn lbm_enc_i(value: i32) -> LbmValue {
 
     #[cfg(not(all(target_arch = "arm", not(test))))]
     unsafe {
-        match (*VESC_IF).lbm_enc_i {
+        match (*vesc_if()).lbm_enc_i {
             Some(lbm_enc_i) => LbmValue(lbm_enc_i(value)),
             None => LbmValue(0),
         }
@@ -515,7 +529,7 @@ pub unsafe fn lbm_is_number(value: LbmValue) -> bool {
 
     #[cfg(not(all(target_arch = "arm", not(test))))]
     unsafe {
-        match (*VESC_IF).lbm_is_number {
+        match (*vesc_if()).lbm_is_number {
             Some(lbm_is_number) => lbm_is_number(value.0),
             None => false,
         }
@@ -541,7 +555,7 @@ pub unsafe fn lbm_enc_sym_eerror() -> LbmValue {
 
     #[cfg(not(all(target_arch = "arm", not(test))))]
     unsafe {
-        LbmValue((*VESC_IF).lbm_enc_sym_eerror as u32)
+        LbmValue((*vesc_if()).lbm_enc_sym_eerror as u32)
     }
 }
 
@@ -567,7 +581,7 @@ pub unsafe fn vesc_set_app_data_handler(handler: Option<AppDataHandler>) -> bool
 
     #[cfg(not(all(target_arch = "arm", not(test))))]
     unsafe {
-        let Some(set_app_data_handler) = (*VESC_IF).set_app_data_handler else {
+        let Some(set_app_data_handler) = (*vesc_if()).set_app_data_handler else {
             return false;
         };
 
@@ -581,7 +595,7 @@ pub unsafe fn vesc_set_app_data_handler(handler: Option<AppDataHandler>) -> bool
 /// duration of the firmware call.
 pub unsafe fn vesc_send_app_data(data: *const u8, len: u32) {
     unsafe {
-        if let Some(send_app_data) = (*VESC_IF).send_app_data {
+        if let Some(send_app_data) = (*vesc_if()).send_app_data {
             send_app_data(data as *mut c_uchar, len);
         }
     }
@@ -592,7 +606,7 @@ pub unsafe fn vesc_send_app_data(data: *const u8, len: u32) {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn vesc_system_time_ticks() -> u32 {
     unsafe {
-        match (*VESC_IF).system_time_ticks {
+        match (*vesc_if()).system_time_ticks {
             Some(system_time_ticks) => system_time_ticks(),
             None => 0,
         }
@@ -604,7 +618,7 @@ pub unsafe fn vesc_system_time_ticks() -> u32 {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn io_set_mode(pin: crate::VescPin, mode: crate::VescPinMode) -> bool {
     unsafe {
-        match (*VESC_IF).io_set_mode {
+        match (*vesc_if()).io_set_mode {
             Some(io_set_mode) => io_set_mode(pin.0, mode.0),
             None => false,
         }
@@ -616,7 +630,7 @@ pub unsafe fn io_set_mode(pin: crate::VescPin, mode: crate::VescPinMode) -> bool
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn io_write(pin: crate::VescPin, level: i32) -> bool {
     unsafe {
-        match (*VESC_IF).io_write {
+        match (*vesc_if()).io_write {
             Some(io_write) => io_write(pin.0, level),
             None => false,
         }
@@ -628,7 +642,7 @@ pub unsafe fn io_write(pin: crate::VescPin, level: i32) -> bool {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn io_read(pin: crate::VescPin) -> bool {
     unsafe {
-        match (*VESC_IF).io_read {
+        match (*vesc_if()).io_read {
             Some(io_read) => io_read(pin.0),
             None => false,
         }
@@ -636,7 +650,7 @@ pub unsafe fn io_read(pin: crate::VescPin) -> bool {
 }
 
 #[cfg(test)]
-pub fn vesc_if_offsets_for_tests() -> [usize; 8] {
+pub fn vesc_if_offsets_for_tests() -> [usize; 11] {
     [
         core::mem::offset_of!(VescIf, lbm_add_extension),
         core::mem::offset_of!(VescIf, lbm_enc_i),
@@ -646,8 +660,14 @@ pub fn vesc_if_offsets_for_tests() -> [usize; 8] {
         core::mem::offset_of!(VescIf, send_app_data),
         core::mem::offset_of!(VescIf, set_app_data_handler),
         core::mem::offset_of!(VescIf, system_time_ticks),
+        core::mem::offset_of!(VescIf, io_set_mode),
+        core::mem::offset_of!(VescIf, io_write),
+        core::mem::offset_of!(VescIf, io_read),
     ]
 }
+
+#[cfg(test)]
+mod dispatch_tests;
 
 #[cfg(test)]
 pub fn vesc_if_full_layout_for_tests() -> (usize, usize, usize) {
