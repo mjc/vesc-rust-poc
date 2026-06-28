@@ -1,3 +1,5 @@
+//! Command-line tool for building, installing, and debugging Rust VESC packages.
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Help,
@@ -151,6 +153,7 @@ fn parse_erase_package(
 }
 
 mod ble_discovery;
+
 pub mod btle;
 pub mod loopback;
 pub mod package_install;
@@ -167,46 +170,38 @@ mod tests {
 
     #[test]
     fn parse_args_covers_cli_commands() {
-        assert_eq!(parse_args(["vesc-host-cli", "layout"]), Ok(Command::Layout));
-        assert_eq!(parse_args(["vesc-host-cli", "status"]), Ok(Command::Status));
-        assert_eq!(parse_args(["vesc-host-cli", "scan"]), Ok(Command::Scan));
-        assert_eq!(parse_args(["vesc-host-cli"]), Ok(Command::Help));
+        assert_eq!(parse_args(["vesc-cli", "layout"]), Ok(Command::Layout));
+        assert_eq!(parse_args(["vesc-cli", "status"]), Ok(Command::Status));
+        assert_eq!(parse_args(["vesc-cli", "scan"]), Ok(Command::Scan));
+        assert_eq!(parse_args(["vesc-cli"]), Ok(Command::Help));
         assert_eq!(
-            parse_args(["vesc-host-cli", "spoon"]),
+            parse_args(["vesc-cli", "spoon"]),
             Err(ParseError::UnknownCommand("spoon".to_owned()))
         );
+        assert_eq!(parse_args(["vesc-cli", "loopback"]), Ok(Command::Loopback));
         assert_eq!(
-            parse_args(["vesc-host-cli", "loopback"]),
-            Ok(Command::Loopback)
-        );
-        assert_eq!(
-            parse_args(["vesc-host-cli", "lisp-probe"]),
+            parse_args(["vesc-cli", "lisp-probe"]),
             Ok(Command::LispProbe(LispProbeCommand {
                 device_name: None,
                 address: None,
             }))
         );
         assert_eq!(
-            parse_args(["vesc-host-cli", "lisp-probe", "--device", "VESC BLE UART"]),
+            parse_args(["vesc-cli", "lisp-probe", "--device", "VESC BLE UART"]),
             Ok(Command::LispProbe(LispProbeCommand {
                 device_name: Some("VESC BLE UART".to_owned()),
                 address: None,
             }))
         );
         assert_eq!(
-            parse_args([
-                "vesc-host-cli",
-                "lisp-probe",
-                "--address",
-                "AA:BB:CC:DD:EE:FF"
-            ]),
+            parse_args(["vesc-cli", "lisp-probe", "--address", "AA:BB:CC:DD:EE:FF"]),
             Ok(Command::LispProbe(LispProbeCommand {
                 device_name: None,
                 address: Some("AA:BB:CC:DD:EE:FF".to_owned()),
             }))
         );
         assert_eq!(
-            parse_args(["vesc-host-cli", "package-install", "foo.vescpkg"]),
+            parse_args(["vesc-cli", "package-install", "foo.vescpkg"]),
             Ok(Command::PackageInstall(PackageInstallCommand {
                 package_path: "foo.vescpkg".to_owned(),
                 device_name: None,
@@ -215,7 +210,7 @@ mod tests {
         );
         assert_eq!(
             parse_args([
-                "vesc-host-cli",
+                "vesc-cli",
                 "package-install",
                 "--device",
                 "Floatwheel PintV",
@@ -229,7 +224,7 @@ mod tests {
         );
         assert_eq!(
             parse_args([
-                "vesc-host-cli",
+                "vesc-cli",
                 "package-install",
                 "--address",
                 "AA:BB:CC:DD:EE:FF",
@@ -242,19 +237,14 @@ mod tests {
             }))
         );
         assert_eq!(
-            parse_args(["vesc-host-cli", "erase-package"]),
+            parse_args(["vesc-cli", "erase-package"]),
             Ok(Command::ErasePackage(PackageEraseCommand {
                 device_name: None,
                 address: None,
             }))
         );
         assert_eq!(
-            parse_args([
-                "vesc-host-cli",
-                "erase-package",
-                "--device",
-                "Floatwheel PintV"
-            ]),
+            parse_args(["vesc-cli", "erase-package", "--device", "Floatwheel PintV"]),
             Ok(Command::ErasePackage(PackageEraseCommand {
                 device_name: Some("Floatwheel PintV".to_owned()),
                 address: None,
@@ -262,7 +252,7 @@ mod tests {
         );
         assert_eq!(
             parse_args([
-                "vesc-host-cli",
+                "vesc-cli",
                 "erase-package",
                 "--address",
                 "AA:BB:CC:DD:EE:FF"
@@ -273,28 +263,28 @@ mod tests {
             }))
         );
         assert_eq!(
-            parse_args(["vesc-host-cli", "erase"]),
+            parse_args(["vesc-cli", "erase"]),
             Err(ParseError::UnknownCommand("erase".to_owned()))
         );
         assert_eq!(
-            parse_args(["vesc-host-cli", "erase-package", "--force"]),
+            parse_args(["vesc-cli", "erase-package", "--force"]),
             Err(ParseError::UnknownCommand("--force".to_owned()))
         );
         assert_eq!(
-            parse_args(["vesc-host-cli", "erase-package", "--device"]),
+            parse_args(["vesc-cli", "erase-package", "--device"]),
             Err(ParseError::UnknownCommand("--device".to_owned()))
         );
         assert_eq!(
-            parse_args(["vesc-host-cli", "erase-package", "--address"]),
+            parse_args(["vesc-cli", "erase-package", "--address"]),
             Err(ParseError::UnknownCommand("--address".to_owned()))
         );
         assert_eq!(
-            parse_args(["vesc-host-cli", "erase-package", "extra.vescpkg"]),
+            parse_args(["vesc-cli", "erase-package", "extra.vescpkg"]),
             Err(ParseError::UnknownCommand("extra.vescpkg".to_owned()))
         );
         assert_eq!(
             parse_args([
-                "vesc-host-cli",
+                "vesc-cli",
                 "erase-package",
                 "--device",
                 "Floatwheel PintV",

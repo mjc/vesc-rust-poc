@@ -1,8 +1,8 @@
 #![cfg(feature = "test-support")]
 
-use vesc_pkg_build::package_wire::wire_snapshot_report;
-use vesc_pkg_build::test_support::{FakeConversionRunner, PackageTestHarness};
-use vesc_pkg_build::{BLE_LOOPBACK_PACKAGE_NAME, PackageTargetMode, PackageTargetPlan};
+use vesc_pkg::package_wire::wire_snapshot_report;
+use vesc_pkg::test_support::{FakeConversionRunner, PackageTestHarness};
+use vesc_pkg::{BLE_LOOPBACK_PACKAGE_NAME, PackageTargetMode, PackageTargetPlan};
 
 #[test]
 fn package_pipeline() {

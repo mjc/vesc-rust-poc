@@ -52,7 +52,7 @@ fn rust_staticlib_is_up_to_date(plan: &NativeLibLinkPlan) -> bool {
     };
 
     let root = plan.root();
-    for crate_dir in ["crates/vesc-ble-loopback", "crates/vesc-package"] {
+    for crate_dir in ["examples/loopback", "crates/vesc-sdk"] {
         if newest_rs_tree_mtime(&root.join(crate_dir).join("src"))
             .is_some_and(|mtime| mtime > output_modified)
         {
@@ -62,8 +62,8 @@ fn rust_staticlib_is_up_to_date(plan: &NativeLibLinkPlan) -> bool {
 
     [
         root.join("Cargo.lock"),
-        root.join("crates/vesc-ble-loopback/Cargo.toml"),
-        root.join("crates/vesc-package/Cargo.toml"),
+        root.join("examples/loopback/Cargo.toml"),
+        root.join("crates/vesc-sdk/Cargo.toml"),
     ]
     .iter()
     .all(|input| {
@@ -94,7 +94,7 @@ pub(crate) fn build_rust_staticlib_unlocked(plan: &NativeLibLinkPlan) -> Result<
             "--target",
             "thumbv7em-none-eabihf",
             "-p",
-            "vesc-ble-loopback",
+            "vesc-example-loopback",
         ])
         .status()
         .map_err(|error| format!("cargo build for the Rust staticlib: {error}"))?;

@@ -1,5 +1,5 @@
 [package]
-name = "vesc-host-cli"
+name = "vesc-cli"
 version = "0.1.0"
 edition = "2024"
 
@@ -9,8 +9,8 @@ flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 futures-util = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "time"] }
 vesc-protocol = { path = "../vesc-protocol" }
-vesc-pkg-build = { path = "../vesc-pkg-build" }
+vesc-pkg = { path = "../vesc-pkg" }
 uuid = "1"
 
 [dev-dependencies]
-vesc-pkg-build = { path = "../vesc-pkg-build" }
+vesc-pkg = { path = "../vesc-pkg" }

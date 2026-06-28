@@ -1,13 +1,15 @@
 [package]
-name = "vesc-ble-loopback"
+name = "vesc-example-loopback"
 version = "0.1.0"
 edition = "2024"
+
+publish = false
 
 [lib]
 crate-type = ["staticlib"]
 
 [dependencies]
-vesc-package = { path = "../vesc-package" }
+vesc-sdk = { path = "../../crates/vesc-sdk" }
 
 [features]
-test-support = ["vesc-package/test-support"]
+test-support = ["vesc-sdk/test-support"]

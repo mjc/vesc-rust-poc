@@ -1,3 +1,8 @@
+//! Host-side VESC package format, build, and install support.
+//!
+//! This crate reads/writes `.vescpkg` files and provides package build/install
+//! primitives for tools and CLIs. It does not run inside the VESC firmware.
+
 pub mod abi_inventory;
 pub mod cargo_vescpkg_command;
 pub mod hygiene;

@@ -143,7 +143,7 @@ pub fn read_package_from_path(path: impl AsRef<Path>) -> Result<VescPackage, Pac
 }
 
 pub fn decode_package(data: &[u8]) -> Result<VescPackage, PackageInstallError> {
-    let fields = vesc_pkg_build::parse_vescpkg(data).map_err(map_wire_error)?;
+    let fields = vesc_pkg::parse_vescpkg(data).map_err(map_wire_error)?;
 
     let mut package = VescPackage {
         name: String::new(),
@@ -183,9 +183,9 @@ pub fn decode_package(data: &[u8]) -> Result<VescPackage, PackageInstallError> {
     }
 }
 
-fn map_wire_error(error: vesc_pkg_build::WireError) -> PackageInstallError {
+fn map_wire_error(error: vesc_pkg::WireError) -> PackageInstallError {
     match error {
-        vesc_pkg_build::WireError::DecompressionFailed(reason) => PackageInstallError::Io(reason),
+        vesc_pkg::WireError::DecompressionFailed(reason) => PackageInstallError::Io(reason),
         _ => PackageInstallError::InvalidPackage,
     }
 }
@@ -398,7 +398,7 @@ mod tests {
     }
 
     #[test]
-    fn decodes_vesc_packages() {
+    fn decodes_a_compressed_vesc_package() {
         let package = decode_package(&build_package_bytes()).expect("package");
         assert_eq!(package.name, "Rust BLE loopback test package");
         assert!(package.qml_is_fullscreen);

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use vesc_pkg_build::package_conversion::PackageBinaryConversionPlan;
-use vesc_pkg_build::{
+use vesc_pkg::package_conversion::PackageBinaryConversionPlan;
+use vesc_pkg::{
     BLE_LOOPBACK_PACKAGE_NAME, NativeLibArtifactPaths, audit_native_lib_artifacts,
     ensure_native_lib_artifacts, native_lib_link_plan,
 };
@@ -22,10 +22,7 @@ fn native_lib_artifacts() {
     insta::assert_snapshot!("native_lib_semantics", report);
 
     if std::env::var("VESC_PKG_DISASM").ok().as_deref() == Some("1") {
-        eprintln!(
-            "{}",
-            vesc_pkg_build::native_disasm::elf_disassembly(&paths.elf)
-        );
+        eprintln!("{}", vesc_pkg::native_disasm::elf_disassembly(&paths.elf));
     }
 
     let expected_native = std::fs::read(&paths.bin).expect("native bin");

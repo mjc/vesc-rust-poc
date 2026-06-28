@@ -1,5 +1,5 @@
 [package]
-name = "vesc-pkg-build"
+name = "vesc-pkg"
 version = "0.1.0"
 edition = "2024"
 

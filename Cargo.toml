@@ -1,13 +1,16 @@
 [workspace]
 members = [
     "crates/vesc-ffi",
-    "crates/vesc-package",
-    "crates/vesc-ble-loopback",
-    "crates/vesc-host-cli",
-    "crates/vesc-pkg-build",
+    "crates/vesc-sdk",
     "crates/vesc-protocol",
+    "crates/vesc-pkg",
+    "crates/vesc-cli",
+    "examples/loopback",
 ]
-default-members = ["crates/vesc-ble-loopback"]
+default-members = [
+    "crates/vesc-cli",
+    "examples/loopback",
+]
 resolver = "2"
 
 [profile.release]

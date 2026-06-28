@@ -1,9 +1,7 @@
 use std::cell::RefCell;
 
-use vesc_host_cli::loopback::{
-    LoopbackTarget, LoopbackTransport, LoopbackTransportError, run_loopback,
-};
-use vesc_pkg_build::{
+use vesc_cli::loopback::{LoopbackTarget, LoopbackTransport, LoopbackTransportError, run_loopback};
+use vesc_pkg::{
     FakeFirmwareServices, LoopbackPackageRuntime, LoopbackPackageState, LoopbackRuntimeError,
     LoopbackStartError, LoopbackTick,
 };

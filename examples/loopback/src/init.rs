@@ -1,6 +1,6 @@
 //! Native loader entrypoints for the BLE loopback proof-of-concept package.
 
-use vesc_package::{ffi, init as pkg_init, lifecycle};
+use vesc_sdk::{ffi, init as pkg_init, lifecycle};
 
 use crate::extensions;
 
@@ -53,8 +53,8 @@ pub fn register_package_extensions<B: ffi::LbmBindings>(
 mod registration_tests {
     use super::register_package_extensions;
     use crate::extensions::package_extension_descriptors;
-    use vesc_package::ffi::test_support::FakeBindings;
-    use vesc_package::ffi::{self, PackageLifecycle};
+    use vesc_sdk::ffi::test_support::FakeBindings;
+    use vesc_sdk::ffi::{self, PackageLifecycle};
 
     #[test]
     fn register_package_extensions_propagates_firmware_rejection() {

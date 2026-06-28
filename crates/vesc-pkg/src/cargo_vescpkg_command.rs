@@ -231,7 +231,7 @@ mod tests {
             .split("## Intended Shape")
             .next()
             .expect("contract body");
-        assert!(contract.contains("crates/vesc-pkg-build"));
+        assert!(contract.contains("crates/vesc-pkg"));
         assert!(contract.contains("device-side BTLE loopback package"));
 
         let shape = text
