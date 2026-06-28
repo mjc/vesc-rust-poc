@@ -2,12 +2,14 @@
 
 This repo is organized around layered responsibilities:
 
-- `crates/vesc-ffi/` contains the raw firmware ABI surface (`no_std`, unsafe table calls).
-- `crates/vesc-package/` contains the safe wrapper (bindings, lifecycle, init, loopback runtime).
-- `crates/vesc-ble-loopback/` contains the `no_std` BLE loopback package staticlib payload.
-- `crates/vesc-protocol/` contains the shared wire types used by both host and device code.
-- `crates/vesc-pkg-build/` owns package layout, staging, and build orchestration.
-- `crates/vesc-host-cli/` owns the host-side command surface for discovery, control, and transport testing.
-- `scripts/` holds small workspace-level helpers that are not part of a Rust crate.
+- `crates/vesc-ffi/` — raw firmware ABI (`no_std`, unsafe table calls).
+- `crates/vesc-sdk/` — target-side SDK linked into native VESC packages.
+- `crates/vesc-protocol/` — shared wire types for host and target.
+- `crates/vesc-pkg/` — host-side `.vescpkg` format, build, and install.
+- `crates/vesc-cli/` — host command-line tool (BLE, install, loopback).
+- `examples/loopback/` — reference BLE loopback package staticlib.
+- `scripts/` — small workspace helpers outside Rust crates.
 
-Host-only dependencies stay inside `vesc-host-cli`, packaging dependencies stay inside `vesc-pkg-build`, and the device payload crates stay free of both.
+Host-only dependencies stay in `vesc-cli` and `vesc-pkg`. Target code stays in
+`vesc-sdk`, `vesc-ffi`, and examples. Host tools must not depend on `vesc-sdk`
+except when building examples.

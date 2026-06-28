@@ -6,4 +6,4 @@
 - Nix is the supported development environment; `nix develop` is the preferred entrypoint.
 - `make` drives the checked workflow and package targets.
 - `arm-none-eabi-*` tooling is used for the native-lib/package conversion path.
-- Keep packaging logic in `crates/vesc-pkg-build`; `cargo` subcommand plumbing is a later convenience layer.
+- Keep packaging logic in `crates/vesc-pkg`; `cargo` subcommand plumbing is a later convenience layer.

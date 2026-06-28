@@ -6,13 +6,13 @@ This note characterizes the package path that the Rust VESC package experiment s
 
 - `pkgdesc.qml` defines the package name, description markdown, Lisp loader, QML file, fullscreen flag, and final package output name.
 - `fixtures/native-lib-baseline/package/code.lisp` loads `src/package_lib.bin` and registers Lisp-side behavior for the baseline package.
-- `target/thumbv7em-none-eabihf/release/libvesc_ble_loopback.a` and the generic VESC references in `fixtures/native-lib-baseline/src/` model the native-library build flow that produces the Rust-backed binary payload.
+- `target/thumbv7em-none-eabihf/release/libvesc_example_loopback.a` and the generic VESC references in `fixtures/native-lib-baseline/src/` model the native-library build flow that produces the Rust-backed binary payload.
 - `lisp/bms.lisp` is imported by the package loader when BMS integration is enabled.
 - `package_README.md`, `ui.qml.in`, `package_name`, and `version` feed generated package assets.
 
 ## Native Payload Path
 
-- `crates/vesc-pkg-build` owns package staging, conversion, and inspection.
+- `crates/vesc-pkg` owns package staging, conversion, and inspection.
 - `fixtures/native-lib-baseline/src/rules.mk` and `scripts/conv.py` are placeholder references retained for VESC layout parity; the Rust build path compiles via `native_lib_materialize` and copies `native_lib.bin` to `package_lib.bin` without invoking them.
 - The native build stays in the VESC native-library flow; the package layer does not build the final payload directly.
 
@@ -25,7 +25,7 @@ This note characterizes the package path that the Rust VESC package experiment s
 | Embedded | `make symbol-check` | `native_lib_artifacts` semantic ELF audit (~1s) |
 | Feature matrix | `make hack-check` | `cargo-hack --each-feature` for host crates; thumb release lib for payload |
 | Full gate | `make check-full` | fast + embedded + package tiers |
-| HIL (manual) | `cargo nextest run -p vesc-host-cli --profile hil -- --ignored` | ignored hardware sketch; needs `VESC_DEVICE` + `VESC_BLE_ADDR` |
+| HIL (manual) | `cargo nextest run -p vesc-cli --profile hil -- --ignored` | ignored hardware sketch; needs `VESC_DEVICE` + `VESC_BLE_ADDR` |
 
 - The root `Makefile` gates packaging behind tests.
 - `make check` runs formatting, linting, and the fast host test tier (`nextest` default profile).
@@ -40,7 +40,7 @@ This note characterizes the package path that the Rust VESC package experiment s
 - `make` currently defaults to `check`; the package-build command path lives in the repo now instead of an ad hoc shell fragment.
 - Set `INSTA_UPDATE=always` when intentionally refreshing package or native-lib snapshots.
 - Set `VESC_PKG_DISASM=1` to print optional native-lib disassembly during the embedded audit.
-- `crates/vesc-host-cli/tests/fake_ble_integration.rs` is the canonical host↔in-process firmware bridge: it wires `FakeFirmwareServices` from `vesc-pkg-build` to the host `LoopbackTransport` and exercises ping/echo without hardware.
+- `crates/vesc-cli/tests/fake_ble_integration.rs` is the canonical host↔in-process firmware bridge: it wires `FakeFirmwareServices` from `vesc-pkg` to the host `LoopbackTransport` and exercises ping/echo without hardware.
 - `package_README-gen.md` and `ui.qml` are generated artifacts, not hand-edited inputs.
 
 ## Build And Upload Workflow
@@ -80,4 +80,4 @@ The current package name is `Rust BLE loopback test package`, and the predictabl
 - The Rust path should keep the same separation between package metadata and native payload generation.
 - The first Rust proof should keep the native-library flow for ELF/bin generation and let the Rust packer own the final `.vescpkg` emission.
 - Package staging, package asset rendering, artifact inspection, and final package emission
-  belong in the dedicated `vesc-pkg-build` crate rather than ad hoc shell fragments.
+  belong in the dedicated `vesc-pkg` crate rather than ad hoc shell fragments.

@@ -1,60 +1,48 @@
 # Rust Package API Roadmap
 
 This is the short migration ladder for the Rust-backed VESC package experiment
-in `crates/vesc-ble-loopback`. It stays deliberately narrow so later API work keeps
+in `examples/loopback`. It stays deliberately narrow so later API work keeps
 moving in the right direction instead of growing a too-clever wrapper too early.
 
 ## Current workspace shape
 
 - `crates/vesc-ffi` — raw firmware ABI (`no_std`, unsafe table calls)
-- `crates/vesc-package` — safe wrapper on top of `vesc-ffi`
-- `crates/vesc-ble-loopback` — BLE loopback package staticlib payload
-- `crates/vesc-pkg-build`
-- `crates/vesc-protocol`
-- `crates/vesc-host-cli`
+- `crates/vesc-sdk` — target-side SDK linked into native packages
+- `examples/loopback` — BLE loopback reference package staticlib
+- `crates/vesc-pkg` — host-side `.vescpkg` format/build/install
+- `crates/vesc-protocol` — shared wire protocol types
+- `crates/vesc-cli` — host CLI binary
 
 ## Validation
 
-- `nix develop -c make check` — fast host tier (`nextest` default profile)
-- `nix develop -c make check-full` — host tier plus embedded native-lib audits and package integration tests
-- `nix develop -c make hack-check` — `cargo-hack --each-feature` matrix for host crates plus thumb release lib build for `vesc-ble-loopback`
-- `nix develop -c make symbol-check` — embedded native-lib audit tier only
-- `nix develop -c make test-package` — fixtures + package pipeline integration tier
-- `nix develop -c make package`
+- `nix develop -c make check`
+- `nix develop -c make symbol-check`
+- `nix develop -c make check-full`
+- `nix develop -c make hack-check` — `cargo-hack --each-feature` matrix for host crates plus thumb release lib build for `vesc-example-loopback`
 
-## Deferred: QEMU / hardware-in-the-loop
+## Deferred:
 
-On-target validation (QEMU system emulation or a physical VESC on the bench) is intentionally
-out of scope for the current test pyramid. Host-side checks cover artifact bytes, ELF layout,
-symbol resolution, and semantic instruction audits against device-proven fixtures; `vesc-host-cli`
-covers install/loopback against real or fake BLE transports.
+Hardware-in-the-loop validation is intentionally out of the default CI path.
+Symbol resolution, and semantic instruction audits against device-proven fixtures; `vesc-cli`
+exercises install/loopback against real hardware manually.
 
-When a HIL lane is added later, it should run only the smoke probes that require firmware
-(`lisp-probe`, loopback echo) and leave the heavy native-lib audits in the embedded CI tier.
-The ignored sketch lives in `crates/vesc-host-cli/tests/hil_loopback.rs` and is filtered by the
-nextest `hil` profile (`VESC_DEVICE`, `VESC_BLE_ADDR` required at runtime).
-
-## Deferred: CI matrix and generic VESC reference replacement
-
-- Add a fast Nix `checks.check` job (`make check`) alongside `checks.check-full`.
-- Mirror those tiers in GitHub Actions when CI moves off local Nix-only verification.
-- Replace generic VESC references (`vesc_c_if.h`, `link.ld`, archived `rules.mk`, archived `conv.py`)
-  only after semantic audits and package parity tests prove byte/layout equivalence.
+The ignored sketch lives in `crates/vesc-cli/tests/hil_loopback.rs` and is filtered by the
+`hil` nextest profile.
 
 ## Current Rust-Owned Boundary
 
 - Rust exports `prog_ptr` and `init` for the native loader.
 - Rust owns LispBM extension table registration.
 - Rust owns BLE app-data and stop-hook lifecycle setup.
-- `vesc-pkg-build` still uses the generic VESC linker and conversion references:
+- `vesc-pkg` still uses the generic VESC linker and conversion references:
   `src/vesc_c_if.h`, `src/link.ld`, `src/rules.mk`, and `scripts/conv.py`.
 
 ## Next Migration Ladder
 
 1. Keep artifact, size, symbol, and ABI guards green under `nix develop -c make package`.
 2. Hardware-validate install, `lisp-probe`, and `loopback` after each native boundary change.
-3. Grow the safe wrapper crate (`vesc-package`) only where tests prove the ABI boundary is stable.
-4. Grow `cargo vescpkg build` from the tested `vesc-pkg-build` boundary.
+3. Grow `vesc-sdk` only where tests prove the ABI boundary is stable.
+4. Grow `cargo vescpkg build` from the tested `vesc-pkg` boundary.
 5. Replace generic VESC references only after tests prove byte/layout equivalence.
 
 ## Guardrail
