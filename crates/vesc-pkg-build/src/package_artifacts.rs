@@ -198,28 +198,16 @@ mod tests {
         NATIVE_PAYLOAD_PATH, STAGING_DESCRIPTOR_PATH, STAGING_LOADER_PATH, STAGING_README_PATH,
     };
     use crate::package_assets::PackageProvenance;
-    use crate::test_support::TempWorkspace;
+    use crate::test_support::PackageTestHarness;
     use crate::BLE_LOOPBACK_PACKAGE_NAME;
-    use std::fs;
-    use std::path::Path;
-
-    fn write_artifact(root: &Path, relative: &str, contents: &str) {
-        let path = root.join(relative);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).expect("artifact parent directory");
-        }
-        fs::write(path, contents).expect("artifact contents");
-    }
 
     #[test]
     fn reports_missing_required_artifacts() {
-        let workspace = TempWorkspace::new();
-        let root = workspace.root.clone();
-        let _workspace = workspace;
-        fs::create_dir_all(root.join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0"))
-            .expect("staging root");
+        let harness = PackageTestHarness::new().ensure_loopback_staging();
+        let root = harness.root();
+        let staging_root = harness.loopback_staging_dir();
         let plan = PackageArtifactInspectionPlan::new(
-            &root,
+            root,
             BLE_LOOPBACK_PACKAGE_NAME,
             "0.1.0",
             PackageProvenance::empty(),
@@ -229,27 +217,19 @@ mod tests {
             plan.inspect(),
             Err(PackageArtifactInspectionError::new(vec![
                 PackageArtifactProblem::MissingPath {
-                    path: root
-                        .join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0")
-                        .join(STAGING_README_PATH)
+                    path: staging_root.join(STAGING_README_PATH)
                 },
                 PackageArtifactProblem::MissingPath {
-                    path: root
-                        .join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0")
-                        .join(STAGING_DESCRIPTOR_PATH)
+                    path: staging_root.join(STAGING_DESCRIPTOR_PATH)
                 },
                 PackageArtifactProblem::MissingPath {
-                    path: root
-                        .join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0")
-                        .join(STAGING_LOADER_PATH)
+                    path: staging_root.join(STAGING_LOADER_PATH)
                 },
                 PackageArtifactProblem::MissingPath {
                     path: root.join(NATIVE_PAYLOAD_PATH)
                 },
                 PackageArtifactProblem::MissingPath {
-                    path: root
-                        .join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0")
-                        .join("src/package_lib.bin")
+                    path: staging_root.join("src/package_lib.bin")
                 },
             ]))
         );
@@ -257,30 +237,19 @@ mod tests {
 
     #[test]
     fn reports_content_mismatches_with_exact_paths() {
-        let workspace = TempWorkspace::new();
-        let root = workspace.root.clone();
-        let _workspace = workspace;
-        let staging_root = root.join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0");
-        fs::create_dir_all(&staging_root).expect("staging root");
-        write_artifact(&root, NATIVE_PAYLOAD_PATH, "payload");
-        write_artifact(&staging_root, "src/package_lib.bin", "payload");
-        write_artifact(
-            &root,
-            "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/README.md",
-            "wrong readme",
-        );
-        write_artifact(
-            &root,
-            "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/pkgdesc.qml",
-            "wrong descriptor",
-        );
-        write_artifact(
-            &root,
-            "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/code.lisp",
-            "; Auto-generated loader for Rust BLE loopback test package\n(load-native-lib \"src/package_lib.bin\")\n",
-        );
+        let harness = PackageTestHarness::new()
+            .ensure_loopback_staging()
+            .write_text(NATIVE_PAYLOAD_PATH, "payload")
+            .write_loopback_staging_text("src/package_lib.bin", "payload")
+            .write_loopback_staging_text(STAGING_README_PATH, "wrong readme")
+            .write_loopback_staging_text(STAGING_DESCRIPTOR_PATH, "wrong descriptor")
+            .write_loopback_staging_text(
+                STAGING_LOADER_PATH,
+                "; Auto-generated loader for Rust BLE loopback test package\n(load-native-lib \"src/package_lib.bin\")\n",
+            );
+        let staging_root = harness.loopback_staging_dir();
         let plan = PackageArtifactInspectionPlan::new(
-            &root,
+            harness.root(),
             BLE_LOOPBACK_PACKAGE_NAME,
             "0.1.0",
             PackageProvenance::empty(),
@@ -310,61 +279,29 @@ mod tests {
 
     #[test]
     fn reports_empty_native_payloads() {
-        let workspace = TempWorkspace::new();
-        let root = workspace.root.clone();
-        let _workspace = workspace;
-        let staging_root = root.join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0");
-        fs::create_dir_all(&staging_root).expect("staging root");
-        write_artifact(
-            &root,
-            "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/README.md",
-            &PackageArtifactInspectionPlan::new(
-                &root,
-                BLE_LOOPBACK_PACKAGE_NAME,
-                "0.1.0",
-                PackageProvenance::empty(),
-            )
-            .assets()
-            .render_readme(),
-        );
-        write_artifact(
-            &root,
-            "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/pkgdesc.qml",
-            &PackageArtifactInspectionPlan::new(
-                &root,
-                BLE_LOOPBACK_PACKAGE_NAME,
-                "0.1.0",
-                PackageProvenance::empty(),
-            )
-            .assets()
-            .render_descriptor(),
-        );
-        write_artifact(
-            &root,
-            "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/code.lisp",
-            &PackageArtifactInspectionPlan::new(
-                &root,
-                BLE_LOOPBACK_PACKAGE_NAME,
-                "0.1.0",
-                PackageProvenance::empty(),
-            )
-            .assets()
-            .render_loader(),
-        );
-        write_artifact(&root, NATIVE_PAYLOAD_PATH, "");
-        write_artifact(&staging_root, "src/package_lib.bin", "payload");
+        let harness = PackageTestHarness::new().ensure_loopback_staging();
         let plan = PackageArtifactInspectionPlan::new(
-            &root,
+            harness.root(),
             BLE_LOOPBACK_PACKAGE_NAME,
             "0.1.0",
             PackageProvenance::empty(),
         );
+        let native_payload_path = harness.root().join(NATIVE_PAYLOAD_PATH);
+        let _harness = harness
+            .write_loopback_staging_text(STAGING_README_PATH, &plan.assets().render_readme())
+            .write_loopback_staging_text(
+                STAGING_DESCRIPTOR_PATH,
+                &plan.assets().render_descriptor(),
+            )
+            .write_loopback_staging_text(STAGING_LOADER_PATH, &plan.assets().render_loader())
+            .write_text(NATIVE_PAYLOAD_PATH, "")
+            .write_loopback_staging_text("src/package_lib.bin", "payload");
 
         assert_eq!(
             plan.inspect(),
             Err(PackageArtifactInspectionError::new(vec![
                 PackageArtifactProblem::ContentMismatch {
-                    path: root.join(NATIVE_PAYLOAD_PATH),
+                    path: native_payload_path,
                     expected: "non-empty native payload".to_owned(),
                     actual: "empty file".to_owned(),
                 },

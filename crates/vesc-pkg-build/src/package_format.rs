@@ -222,9 +222,8 @@ fn parse_import_line(line: &str) -> Option<(String, String)> {
 mod tests {
     use super::{build_vesc_package, VescPackageInput};
     use crate::package_wire::{field_bytes, parse_lisp_imports, parse_vescpkg, LispImport};
-    use crate::test_support::TempWorkspace;
+    use crate::test_support::PackageTestHarness;
     use crate::{PackageAssets, PackageLayout, PackageProvenance, BLE_LOOPBACK_PACKAGE_NAME};
-    use std::fs;
 
     fn extract_field(package: &[u8], key: &str) -> Vec<u8> {
         field_bytes(&parse_vescpkg(package).expect("vescpkg"), key)
@@ -238,19 +237,14 @@ mod tests {
 
     #[test]
     fn lisp_imports_embed_native_payload_bytes() {
-        let workspace = TempWorkspace::new();
-        let root = workspace.root.clone();
-        let _workspace = workspace;
-        let src_dir = root.join("src");
-        fs::create_dir_all(&src_dir).expect("src dir");
-        fs::write(src_dir.join("package_lib.bin"), [0, 1, 2, 3, 0xff]).expect("native payload");
+        let harness = PackageTestHarness::new().write_native_payload([0, 1, 2, 3, 0xff]);
+        let loader = harness.loopback_loader_lisp();
 
         let package = build_vesc_package(&VescPackageInput {
             name: "test",
             description_md: "",
-            lisp_source:
-                "(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n",
-            lisp_editor_path: &root,
+            lisp_source: &loader,
+            lisp_editor_path: harness.root(),
             qml_file: "",
             pkg_desc_qml: "",
             qml_is_fullscreen: false,
@@ -259,10 +253,7 @@ mod tests {
         let lisp_data = extract_field(&package, "lispData");
         let (code, imports) = parse_lisp_imports(&lisp_data).expect("lisp imports");
 
-        assert_eq!(
-            code,
-            "(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n"
-        );
+        assert_eq!(code, loader);
         assert_eq!(
             imports,
             vec![LispImport {
@@ -277,20 +268,15 @@ mod tests {
 
     #[test]
     fn lisp_import_payload_preserves_native_bytes_with_only_nul_padding() {
-        let workspace = TempWorkspace::new();
-        let root = workspace.root.clone();
-        let _workspace = workspace;
-        let src_dir = root.join("src");
-        fs::create_dir_all(&src_dir).expect("src dir");
         let native_payload = [0, 1, 2, 3, 0];
-        fs::write(src_dir.join("package_lib.bin"), native_payload).expect("native payload");
+        let harness = PackageTestHarness::new().write_native_payload(native_payload);
+        let loader = harness.loopback_loader_lisp();
 
         let package = build_vesc_package(&VescPackageInput {
             name: "test",
             description_md: "",
-            lisp_source:
-                "(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n",
-            lisp_editor_path: &root,
+            lisp_source: &loader,
+            lisp_editor_path: harness.root(),
             qml_file: "",
             pkg_desc_qml: "",
             qml_is_fullscreen: false,
@@ -309,17 +295,14 @@ mod tests {
 
     #[test]
     fn package_uses_the_vesc_tool_field_spine() {
-        let workspace = TempWorkspace::new();
-        let root = workspace.root.clone();
-        let _workspace = workspace;
-        fs::create_dir_all(root.join("src")).expect("src dir");
-        fs::write(root.join("src/package_lib.bin"), [0xaa]).expect("native payload");
+        let harness = PackageTestHarness::new().write_native_payload([0xaa]);
+        let loader = harness.loopback_loader_lisp_import_only();
 
         let package = build_vesc_package(&VescPackageInput {
             name: "test",
             description_md: "markdown",
-            lisp_source: "(import \"src/package_lib.bin\" 'package-lib)\n",
-            lisp_editor_path: &root,
+            lisp_source: &loader,
+            lisp_editor_path: harness.root(),
             qml_file: "qml",
             pkg_desc_qml: "descriptor",
             qml_is_fullscreen: false,
@@ -350,14 +333,9 @@ mod tests {
 
     #[test]
     fn generated_ble_package_pins_the_expected_field_sizes_and_native_import_layout() {
-        let workspace = TempWorkspace::new();
-        let root = workspace.root.clone();
-        let _workspace = workspace;
-        let src_dir = root.join("src");
-        fs::create_dir_all(&src_dir).expect("src dir");
         let mut native_payload = (0..205).map(|byte| byte as u8).collect::<Vec<_>>();
         native_payload[204] = 0;
-        fs::write(src_dir.join("package_lib.bin"), &native_payload).expect("native payload");
+        let harness = PackageTestHarness::new().write_native_payload(&native_payload);
 
         let assets = PackageAssets::new(
             PackageLayout::new(BLE_LOOPBACK_PACKAGE_NAME, "0.1.0"),
@@ -367,7 +345,7 @@ mod tests {
             name: assets.package_name(),
             description_md: &assets.render_readme(),
             lisp_source: &assets.render_loader(),
-            lisp_editor_path: &root,
+            lisp_editor_path: harness.root(),
             qml_file: "",
             pkg_desc_qml: &assets.render_descriptor(),
             qml_is_fullscreen: false,
@@ -407,17 +385,12 @@ mod tests {
 
     #[test]
     fn native_import_payload_preserves_the_loader_header_prefix() {
-        let workspace = TempWorkspace::new();
-        let root = workspace.root.clone();
-        let _workspace = workspace;
-        let src_dir = root.join("src");
-        fs::create_dir_all(&src_dir).expect("src dir");
         let native_payload = [
             0x00, 0x00, 0x00, 0x00, // .program_ptr placeholder
             0x08, 0xb5, 0x09, 0x4b, // current Thumb init prologue prefix
             0x09, 0x4a, 0x7b, 0x44,
         ];
-        fs::write(src_dir.join("package_lib.bin"), native_payload).expect("native payload");
+        let harness = PackageTestHarness::new().write_native_payload(native_payload);
 
         let assets = PackageAssets::new(
             PackageLayout::new(BLE_LOOPBACK_PACKAGE_NAME, "0.1.0"),
@@ -427,7 +400,7 @@ mod tests {
             name: assets.package_name(),
             description_md: &assets.render_readme(),
             lisp_source: &assets.render_loader(),
-            lisp_editor_path: &root,
+            lisp_editor_path: harness.root(),
             qml_file: "",
             pkg_desc_qml: &assets.render_descriptor(),
             qml_is_fullscreen: false,

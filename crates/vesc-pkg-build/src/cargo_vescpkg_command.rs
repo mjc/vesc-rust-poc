@@ -203,7 +203,7 @@ mod tests {
     };
     use crate::hygiene::repo_root;
     use crate::package_conversion::PackageBinaryConversionCommand;
-    use crate::test_support::{FakeConversionRunner, TempWorkspace};
+    use crate::test_support::{FakeConversionRunner, PackageTestHarness};
     use crate::PackageTargetMode;
     use std::path::PathBuf;
 
@@ -346,9 +346,9 @@ mod tests {
 
     #[test]
     fn run_with_rejects_unknown_subcommands() {
-        let workspace = TempWorkspace::new();
+        let harness = PackageTestHarness::new();
         let error = run_with(
-            &workspace.root,
+            harness.root(),
             ["spoon"],
             &FakeConversionRunner::recording(),
         )

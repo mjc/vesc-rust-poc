@@ -108,7 +108,7 @@ mod tests {
     use crate::package_conversion::{
         PackageBinaryConversionCommand, PackageBinaryConversionRunner,
     };
-    use crate::test_support::TempWorkspace;
+    use crate::test_support::PackageTestHarness;
     use crate::BLE_LOOPBACK_PACKAGE_NAME;
     use std::cell::RefCell;
     use std::fs;
@@ -136,11 +136,10 @@ mod tests {
 
     #[test]
     fn package_only_stages_inspects_and_writes_the_output() {
-        let workspace = TempWorkspace::new();
-        let root = workspace.root.clone();
-        let _workspace = workspace;
+        let harness = PackageTestHarness::new();
+        let root = harness.root();
         let target = PackageTargetPlan::new(
-            &root,
+            root,
             BLE_LOOPBACK_PACKAGE_NAME,
             "0.1.0",
             PackageTargetMode::PackageOnly,
@@ -167,15 +166,15 @@ mod tests {
         assert!(root
             .join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/Rust-BLE-loopback-test-package-0.1.0.vescpkg")
             .exists());
+        let _harness = harness;
     }
 
     #[test]
     fn package_mode_still_writes_the_package_output() {
-        let workspace = TempWorkspace::new();
-        let root = workspace.root.clone();
-        let _workspace = workspace;
+        let harness = PackageTestHarness::new();
+        let root = harness.root();
         let target = PackageTargetPlan::new(
-            &root,
+            root,
             BLE_LOOPBACK_PACKAGE_NAME,
             "0.1.0",
             PackageTargetMode::Package,
@@ -195,11 +194,10 @@ mod tests {
 
     #[test]
     fn package_output_remains_small_enough_to_upload() {
-        let workspace = TempWorkspace::new();
-        let root = workspace.root.clone();
-        let _workspace = workspace;
+        let harness = PackageTestHarness::new();
+        let root = harness.root();
         let target = PackageTargetPlan::new(
-            &root,
+            root,
             BLE_LOOPBACK_PACKAGE_NAME,
             "0.1.0",
             PackageTargetMode::Package,

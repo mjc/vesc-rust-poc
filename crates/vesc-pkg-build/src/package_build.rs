@@ -163,17 +163,9 @@ impl PackageBuildPlan {
 #[cfg(test)]
 mod tests {
     use super::PackageBuildPlan;
-    use crate::test_support::{FakeConversionRunner, TempWorkspace};
+    use crate::package_artifacts::NATIVE_PAYLOAD_PATH;
+    use crate::test_support::{FakeConversionRunner, PackageTestHarness};
     use crate::{PackageProvenance, BLE_LOOPBACK_PACKAGE_NAME};
-    use std::fs;
-
-    fn write_artifact(root: &std::path::Path, relative: &str, contents: &str) {
-        let path = root.join(relative);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).expect("artifact parent directory");
-        }
-        fs::write(path, contents).expect("artifact contents");
-    }
 
     #[test]
     fn renders_the_expected_package_build_plan() {
@@ -270,32 +262,22 @@ mod tests {
 
     #[test]
     fn writes_the_expected_package_output() {
-        let workspace = TempWorkspace::new();
-        let root = workspace.root.clone();
-        let _workspace = workspace;
-        let plan = PackageBuildPlan::new(&root, BLE_LOOPBACK_PACKAGE_NAME, "0.1.0");
-        fs::create_dir_all(root.join("target/native-lib-baseline")).expect("native payload dir");
-        fs::write(
-            root.join("target/native-lib-baseline/package_lib.bin"),
-            b"payload",
-        )
-        .expect("native payload");
+        let harness = PackageTestHarness::new().write_text(NATIVE_PAYLOAD_PATH, "payload");
+        let root = harness.root();
+        let plan = PackageBuildPlan::new(root, BLE_LOOPBACK_PACKAGE_NAME, "0.1.0");
         plan.stage_package_assets().expect("staged assets");
 
         let output = plan.write_package_output().expect("package output");
 
         assert_eq!(output, root.join(plan.package_output_path()));
         assert!(output.exists(), "expected the final .vescpkg to exist");
-        assert!(fs::metadata(&output).expect("package metadata").len() > 0);
+        assert!(std::fs::metadata(&output).expect("package metadata").len() > 0);
     }
 
     #[test]
     fn inspect_package_artifacts_reports_missing_staging_files() {
-        let workspace = TempWorkspace::new();
-        let root = workspace.root.clone();
-        let _workspace = workspace;
-        let plan = PackageBuildPlan::new(&root, BLE_LOOPBACK_PACKAGE_NAME, "0.1.0");
-        fs::create_dir_all(plan.inspection_plan().staging_dir_path()).expect("staging root");
+        let harness = PackageTestHarness::new().ensure_loopback_staging();
+        let plan = PackageBuildPlan::new(harness.root(), BLE_LOOPBACK_PACKAGE_NAME, "0.1.0");
 
         let error = plan
             .inspect_package_artifacts()
@@ -305,38 +287,16 @@ mod tests {
 
     #[test]
     fn inspect_package_artifacts_accepts_rendered_artifacts() {
-        let workspace = TempWorkspace::new();
-        let root = workspace.root.clone();
-        let _workspace = workspace;
-        let plan = PackageBuildPlan::new(&root, BLE_LOOPBACK_PACKAGE_NAME, "0.1.0");
+        let harness = PackageTestHarness::new();
+        let plan = PackageBuildPlan::new(harness.root(), BLE_LOOPBACK_PACKAGE_NAME, "0.1.0");
         let inspection_plan = plan.inspection_plan();
         let assets = inspection_plan.assets();
-
-        write_artifact(
-            &inspection_plan.staging_dir_path(),
-            "README.md",
-            &assets.render_readme(),
-        );
-        write_artifact(
-            &inspection_plan.staging_dir_path(),
-            "pkgdesc.qml",
-            &assets.render_descriptor(),
-        );
-        write_artifact(
-            &inspection_plan.staging_dir_path(),
-            "code.lisp",
-            &assets.render_loader(),
-        );
-        write_artifact(
-            &root,
-            "target/native-lib-baseline/package_lib.bin",
-            "payload",
-        );
-        write_artifact(
-            &inspection_plan.staging_dir_path(),
-            "src/package_lib.bin",
-            "payload",
-        );
+        let _harness = harness
+            .write_loopback_staging_text("README.md", &assets.render_readme())
+            .write_loopback_staging_text("pkgdesc.qml", &assets.render_descriptor())
+            .write_loopback_staging_text("code.lisp", &assets.render_loader())
+            .write_text(NATIVE_PAYLOAD_PATH, "payload")
+            .write_loopback_staging_text("src/package_lib.bin", "payload");
 
         assert_eq!(plan.inspect_package_artifacts(), Ok(()));
     }
