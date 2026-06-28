@@ -9,8 +9,8 @@ Strategy for the `vesc-ffi` crate: a hand-maintained, `no_std` firmware ABI mirr
 | Compile-fail | `unsafe` required, no `std` leak, gated `test-support` | `tests/ui/`, trybuild |
 | Layout / ABI pins | `LibInfo`, `VescIf` size/offsets, newtypes | `src/tests.rs` |
 | Raw dispatch | mock `VescIf` + stub call recording | `src/raw/dispatch_tests.rs` |
-| Header parity | `ffi-compare` vs `vesc_c_if.h` | `vesc-pkg` bin (Phase 4, br-uc4.5) |
-| Thumb/asm smoke | `ldr` immediates vs `VescIfAbi` | Phase 7, br-uc4.8 |
+| Header parity | `ffi-compare` vs `vesc_c_if.h` | `vesc-pkg` bin + `check-ffi-header` |
+| Thumb/asm smoke | `ldr` immediates vs `VescIfAbi` | `src/tests.rs` |
 
 ## Public export inventory
 

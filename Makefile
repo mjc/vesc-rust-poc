@@ -51,7 +51,7 @@ COVERAGE_PKG_IGNORE := --ignore-filename-regex 'crates/vesc-pkg/tests/|test_supp
 COVERAGE_CLI_IGNORE := --ignore-filename-regex 'tests/fake_ble_integration'
 
 coverage-ffi:
-	$(CARGO) llvm-cov -p vesc-ffi --features test-support --summary-only --fail-under-lines $(COVERAGE_FAIL_UNDER)
+	$(CARGO) llvm-cov -p vesc-ffi --lib --features test-support --summary-only --fail-under-lines $(COVERAGE_FAIL_UNDER)
 
 coverage-sdk:
 	$(CARGO) llvm-cov -p vesc-sdk --features test-support $(COVERAGE_PACKAGE_IGNORE) --summary-only --fail-under-lines $(COVERAGE_FAIL_UNDER)
