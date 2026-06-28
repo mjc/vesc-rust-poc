@@ -19,9 +19,10 @@ This note characterizes the package path that the Rust VESC package experiment s
 ## Package Assembly
 
 - The root `Makefile` gates packaging behind tests.
-- `make check` runs workspace tests, formatting, linting, the Rust archive symbol audit,
-  and the package-size smoke test before packaging work moves forward.
-- `make test`, `make fmt`, `make clippy`, `make symbol-check`, and `make package-smoke`
+- `make check` runs formatting, linting, and the fast host test tier (`nextest` default profile).
+- `make check-full` adds the embedded native-lib audit tier (`make symbol-check`) on top of `check`.
+- `make symbol-check` runs the slow cross-compiled native-lib symbol, layout, and disassembly audits.
+- `make test`, `make fmt`, `make clippy`, `make test-embedded`, and `make package-smoke`
   stay available as smaller commands when a slice only needs one gate.
 - `make package` runs the checked package build wrapper and emits the final `.vescpkg` path.
 - `make package-only` skips the top-level `check` dependency for debugging the packaging wrapper itself.
@@ -31,7 +32,7 @@ This note characterizes the package path that the Rust VESC package experiment s
 ## Build And Upload Workflow
 
 1. Enter the Nix shell with `nix develop`.
-2. Run `make check` before packaging any change.
+2. Run `make check-full` before packaging native-boundary changes; `make check` is enough for host-only edits.
 3. Use `make package-only` to exercise staging, conversion, package emission, and artifact inspection.
 4. Use `make package` for the checked path that still emits the final `.vescpkg` from the local Rust packer.
 5. Upload the emitted package in VESC Tool, then run the host `loopback` command against the device-side package.

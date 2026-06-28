@@ -19,6 +19,10 @@ mod tests {
 
         for needle in [
             "nix develop -c make check",
+            "nix develop -c make symbol-check",
+            "nix develop -c make check-full",
+            "fast host tier",
+            "embedded native-lib audit tier",
             "nix develop -c make package",
             "vesc-ble-loopback",
             "vesc-pkg-build",

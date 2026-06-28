@@ -16,7 +16,8 @@ moving in the right direction instead of growing a too-clever wrapper too early.
 ## Validation
 
 - `nix develop -c make check` — fast host tier (`nextest` default profile)
-- `nix develop -c make symbol-check` — embedded native-lib audit tier
+- `nix develop -c make check-full` — host tier plus embedded native-lib audits
+- `nix develop -c make symbol-check` — embedded native-lib audit tier only
 - `nix develop -c make package`
 
 ## Deferred: QEMU / hardware-in-the-loop

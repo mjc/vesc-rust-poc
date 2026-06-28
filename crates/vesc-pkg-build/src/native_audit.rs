@@ -53,6 +53,28 @@ pub fn bounded_init_disassembly(disassembly: &str) -> &str {
         .expect("expected bounded init disassembly")
 }
 
+pub fn redact_disassembly_for_snapshot(text: &str) -> String {
+    text.lines()
+        .map(|line| {
+            let Some(colon) = line.find(':') else {
+                return line.to_owned();
+            };
+            let prefix = &line[..colon];
+            if prefix
+                .trim()
+                .chars()
+                .all(|character| character.is_ascii_hexdigit())
+                && !prefix.trim().is_empty()
+            {
+                let indent = line.len() - line.trim_start().len();
+                return format!("{}[ADDR]:{}", " ".repeat(indent), &line[colon + 1..]);
+            }
+            line.to_owned()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 pub fn assert_rust_loader_init_uses_vesc_ffi(init_disassembly: &str) {
     assert!(
         init_disassembly.contains("1000f800"),

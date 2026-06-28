@@ -1,7 +1,8 @@
 pub use crate::native_audit::{
     align_section_vma, assert_rust_loader_init_uses_vesc_ffi, bounded_init_disassembly,
     defined_symbols, is_allowed_final_native_lib_symbol, is_allowed_runtime_symbol,
-    undefined_symbols, unexpected_final_native_lib_undefined_symbols, unexpected_undefined_symbols,
+    redact_disassembly_for_snapshot, undefined_symbols,
+    unexpected_final_native_lib_undefined_symbols, unexpected_undefined_symbols,
     DEVICE_PROVEN_INIT_OFFSET, DEVICE_PROVEN_INIT_SIZE, DEVICE_PROVEN_PACKAGE_BINARY,
 };
 pub use crate::native_build::{
@@ -92,7 +93,8 @@ mod tests {
 
     use super::{
         align_section_vma, assert_rust_loader_init_uses_vesc_ffi, bounded_init_disassembly,
-        DEVICE_PROVEN_INIT_OFFSET, DEVICE_PROVEN_INIT_SIZE, DEVICE_PROVEN_PACKAGE_BINARY,
+        redact_disassembly_for_snapshot, DEVICE_PROVEN_INIT_OFFSET, DEVICE_PROVEN_INIT_SIZE,
+        DEVICE_PROVEN_PACKAGE_BINARY,
     };
 
     #[test]

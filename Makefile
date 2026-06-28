@@ -2,9 +2,11 @@
 
 CARGO ?= cargo
 
-.PHONY: check test test-all test-embedded test-changed fmt clippy symbol-check package-smoke package package-only clean status coverage coverage-ffi coverage-package
+.PHONY: check check-full test test-all test-embedded test-changed fmt clippy symbol-check package-smoke package package-only clean status coverage coverage-ffi coverage-package
 
 check: fmt clippy test
+
+check-full: check symbol-check
 
 test: test-all
 
