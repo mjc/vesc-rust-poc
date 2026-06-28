@@ -1,0 +1,14 @@
+---
+source: crates/vesc-pkg-build/tests/package_pipeline.rs
+expression: report
+---
+compressed_len: 337
+decompressed_len: 666
+fields:
+  name: len=30 sha256=ad4e7ee31395d0c2c9ec2a0c0d2b3c99cb8e1967597997f82400d8b7acce8f4c
+  description_md: len=37 sha256=8167ebd797bdcd850014badd59f319cac4f18b691568141ae22255da461b869d
+  lispData: len=174 sha256=938e21bce0b51ff45325cfb1cf8fa8b5765c30f7e4946aacc542c02230a8768e
+    imports:
+      package-lib: offset=164 size=8 payload_sha256=58ba30a17dab8570f92204c6d7ffbe4e4de303792e85d277c0545d54d024f85a
+  pkgDescQml: len=336 sha256=4e4b6cdf7c022aa4d1d4a38ad90ba30bbbdf04659de382e69d994e6e29a52800
+  qmlIsFullscreen: len=1 sha256=6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d

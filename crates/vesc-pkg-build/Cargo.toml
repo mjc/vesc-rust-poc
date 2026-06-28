@@ -10,6 +10,7 @@ test-support = ["dep:tempfile"]
 capstone = "0.12"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 object = { version = "0.36", default-features = false, features = ["read", "elf"] }
+sha2 = "0.10"
 tempfile = { version = "3", optional = true }
 vesc-protocol = { path = "../vesc-protocol" }
 

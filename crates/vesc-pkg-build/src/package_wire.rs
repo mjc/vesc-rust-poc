@@ -2,6 +2,7 @@ use std::fmt;
 use std::io::Read;
 
 use flate2::read::ZlibDecoder;
+use sha2::{Digest, Sha256};
 
 pub const VESC_PACKET_HEADER: &str = "VESC Packet";
 
@@ -139,6 +140,47 @@ pub fn parse_lisp_imports(lisp_data: &[u8]) -> Result<(String, Vec<LispImport>),
     Ok((code, imports))
 }
 
+pub fn wire_snapshot_report(data: &[u8]) -> Result<String, WireError> {
+    let decompressed = decompress_vescpkg(data)?;
+    let fields = parse_decompressed_vescpkg(&decompressed)?;
+    let mut lines = vec![
+        format!("compressed_len: {}", data.len()),
+        format!("decompressed_len: {}", decompressed.len()),
+        "fields:".to_owned(),
+    ];
+
+    for field in &fields {
+        lines.push(format!(
+            "  {}: len={} sha256={}",
+            field.key,
+            field.value.len(),
+            sha256_hex(&field.value)
+        ));
+        if field.key == "lispData" {
+            let (_, imports) = parse_lisp_imports(&field.value)?;
+            lines.push("    imports:".to_owned());
+            for import in imports {
+                lines.push(format!(
+                    "      {}: offset={} size={} payload_sha256={}",
+                    import.tag,
+                    import.offset,
+                    import.size,
+                    sha256_hex(&import.payload)
+                ));
+            }
+        }
+    }
+
+    Ok(lines.join("\n"))
+}
+
+fn sha256_hex(data: &[u8]) -> String {
+    Sha256::digest(data)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
 fn read_string(cursor: &mut &[u8]) -> Result<String, WireError> {
     let Some(end) = cursor.iter().position(|byte| *byte == 0) else {
         return Err(WireError::UnexpectedEof);
@@ -169,7 +211,10 @@ fn take(cursor: &mut &[u8], len: usize) -> Result<Vec<u8>, WireError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_decompressed_vescpkg, parse_lisp_imports, PackageField, VESC_PACKET_HEADER};
+    use super::{
+        parse_decompressed_vescpkg, parse_lisp_imports, wire_snapshot_report, PackageField,
+        VESC_PACKET_HEADER,
+    };
 
     fn field_spine() -> Vec<u8> {
         let mut raw = Vec::new();
@@ -212,5 +257,41 @@ mod tests {
         assert_eq!(imports.len(), 1);
         assert_eq!(imports[0].tag, "package-lib");
         assert_eq!(imports[0].payload, payload.to_vec());
+    }
+
+    #[test]
+    fn wire_snapshot_report_redacts_payloads_to_lengths_and_hashes() {
+        let payload = [0xAA, 0xBB, 0xCC, 0xDD];
+        let code = b"(import \"src/package_lib.bin\" 'package-lib)\0";
+
+        let mut lisp = Vec::new();
+        lisp.extend_from_slice(&0i16.to_be_bytes());
+        lisp.extend_from_slice(code);
+        lisp.extend_from_slice(&1i16.to_be_bytes());
+        lisp.extend_from_slice(b"package-lib\0");
+        let offset = i32::try_from(lisp.len() + 8 - 2).expect("offset fits in i32");
+        lisp.extend_from_slice(&offset.to_be_bytes());
+        lisp.extend_from_slice(&(payload.len() as i32).to_be_bytes());
+        lisp.extend_from_slice(&payload);
+
+        let mut raw = field_spine();
+        raw.extend_from_slice(b"lispData\0");
+        raw.extend_from_slice(&(lisp.len() as i32).to_be_bytes());
+        raw.extend_from_slice(&lisp);
+
+        let mut encoder =
+            flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        std::io::Write::write_all(&mut encoder, &raw).expect("zlib payload");
+        let compressed_body = encoder.finish().expect("zlib finish");
+        let mut package = (raw.len() as u32).to_be_bytes().to_vec();
+        package.extend_from_slice(&compressed_body);
+
+        let report = wire_snapshot_report(&package).expect("wire snapshot");
+        assert!(report.contains("fields:"));
+        assert!(report.contains("name: len=4 sha256="));
+        assert!(report.contains("lispData:"));
+        assert!(report.contains("imports:"));
+        assert!(report.contains("package-lib: offset="));
+        assert!(!report.contains("0xaa"));
     }
 }

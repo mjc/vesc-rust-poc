@@ -58,7 +58,7 @@ pub use package_runtime::{
 pub use package_target::{PackageTargetError, PackageTargetMode, PackageTargetPlan};
 pub use package_wire::{
     decompress_vescpkg, field_bytes, parse_decompressed_vescpkg, parse_lisp_imports, parse_vescpkg,
-    LispImport, PackageField, WireError, VESC_PACKET_HEADER,
+    wire_snapshot_report, LispImport, PackageField, WireError, VESC_PACKET_HEADER,
 };
 pub use symbol_audit::{
     audit_rust_staticlib_symbols, defined_symbols, is_allowed_runtime_symbol, nm_output,
