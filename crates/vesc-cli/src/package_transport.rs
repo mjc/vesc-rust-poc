@@ -13,6 +13,7 @@ use tokio::time;
 
 use crate::ble_discovery::{DiscoveryError, find_matching_peripheral, vesc_tool_scan_filter};
 use crate::loopback::LoopbackTarget;
+use crate::loopback::LoopbackTransportError;
 use crate::package_install::{PackageInstallError, PackageInstallTransport};
 use crate::vesc_uart::{PacketDecoder, encode_packet};
 
@@ -22,6 +23,9 @@ const VESC_BLE_UART_TX_UUID: uuid::Uuid = uuid::Uuid::from_u128(0x6e400003b5a3f3
 const SCAN_TIMEOUT: Duration = Duration::from_secs(8);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 const FW_VERSION_TIMEOUT: Duration = Duration::from_secs(8);
+const POST_LISP_RESTART_QUERY_TIMEOUT: Duration = Duration::from_secs(2);
+const LISP_SET_RUNNING_TIMEOUT: Duration = Duration::from_secs(60);
+const POST_LISP_LOADER_SETTLE: Duration = Duration::from_secs(3);
 const ERASE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(6);
 const WRITE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(1);
 const CHUNK_SIZE: usize = 384;
@@ -37,6 +41,7 @@ const COMM_LISP_WRITE_CODE: u8 = 131;
 const COMM_LISP_ERASE_CODE: u8 = 132;
 const COMM_LISP_SET_RUNNING: u8 = 133;
 const COMM_FW_VERSION: u8 = 0;
+const COMM_CUSTOM_APP_DATA: u8 = 36;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HwType {
@@ -68,9 +73,9 @@ struct FwVersionInfo {
 }
 
 #[derive(Debug)]
-struct VescSession {
-    peripheral: Peripheral,
-    rx_char: Characteristic,
+pub(crate) struct VescSession {
+    pub(crate) peripheral: Peripheral,
+    pub(crate) rx_char: Characteristic,
     responses: Receiver<Vec<u8>>,
     decoder: PacketDecoder,
     pending: VecDeque<Vec<u8>>,
@@ -78,7 +83,35 @@ struct VescSession {
 }
 
 impl VescSession {
+    pub(crate) fn confirm_fw_version(
+        &mut self,
+        runtime: &Runtime,
+    ) -> Result<(), PackageInstallError> {
+        self.query_fw_info(runtime).map(|_| ())
+    }
+
     fn query_fw_info(&mut self, runtime: &Runtime) -> Result<FwVersionInfo, PackageInstallError> {
+        self.query_fw_info_with_timeout(runtime, FW_VERSION_TIMEOUT)
+    }
+
+    pub(crate) fn clear_packet_state(&mut self) {
+        self.pending.clear();
+        while self.decoder.pop_ready().is_some() {}
+    }
+
+    pub(crate) fn receive_custom_app_data(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<Vec<u8>, PackageInstallError> {
+        let packet = self.recv_packet(COMM_CUSTOM_APP_DATA, timeout)?;
+        Ok(packet[1..].to_vec())
+    }
+
+    fn query_fw_info_with_timeout(
+        &mut self,
+        runtime: &Runtime,
+        timeout: Duration,
+    ) -> Result<FwVersionInfo, PackageInstallError> {
         let request = encode_packet(&[COMM_FW_VERSION]);
         runtime.block_on(write_ble_uart_packet(
             &self.peripheral,
@@ -86,7 +119,7 @@ impl VescSession {
             &request,
         ))?;
 
-        let response = self.recv_packet(COMM_FW_VERSION, FW_VERSION_TIMEOUT)?;
+        let response = self.recv_packet(COMM_FW_VERSION, timeout)?;
         parse_fw_version_info(&response)
     }
 
@@ -167,6 +200,27 @@ impl BtlePackageInstallTransport {
         self.open_session(target)
     }
 
+    pub fn close(&self) {
+        let mut session = self.session.borrow_mut();
+        if let Some(session) = session.take() {
+            let peripheral = session.peripheral;
+            self.runtime.block_on(async move {
+                let _ = peripheral.disconnect().await;
+            });
+        }
+    }
+
+    pub(crate) fn with_loopback_session<R>(
+        &self,
+        f: impl FnOnce(&Runtime, &mut VescSession) -> Result<R, LoopbackTransportError>,
+    ) -> Result<R, LoopbackTransportError> {
+        let mut session = self.session.borrow_mut();
+        let session = session.as_mut().ok_or_else(|| {
+            LoopbackTransportError::Device("BLE transport has not been opened".to_owned())
+        })?;
+        f(&self.runtime, session)
+    }
+
     fn open_session(&self, target: LoopbackTarget) -> Result<(), PackageInstallError> {
         let mut session = self
             .runtime
@@ -206,22 +260,6 @@ impl BtlePackageInstallTransport {
                     PackageInstallError::Device("failed to write a BLE command".to_owned())
                 })?;
             session.recv_packet(command, timeout)
-        })
-    }
-
-    fn send_command(&self, command: u8, payload: &[u8]) -> Result<(), PackageInstallError> {
-        let packet = build_command_packet(command, payload);
-
-        self.with_session(|session| {
-            self.runtime
-                .block_on(write_ble_uart_packet(
-                    &session.peripheral,
-                    &session.rx_char,
-                    &packet,
-                ))
-                .map_err(|_| {
-                    PackageInstallError::Device("failed to write a BLE command".to_owned())
-                })
         })
     }
 
@@ -329,12 +367,23 @@ impl PackageInstallTransport for BtlePackageInstallTransport {
     }
 
     fn set_running(&self, running: bool) -> Result<(), PackageInstallError> {
-        self.send_command(COMM_LISP_SET_RUNNING, &[u8::from(running)])
+        self.expect_ok(
+            COMM_LISP_SET_RUNNING,
+            &[u8::from(running)],
+            LISP_SET_RUNNING_TIMEOUT,
+        )
     }
 
     fn reload_firmware(&self) -> Result<(), PackageInstallError> {
-        thread::sleep(Duration::from_millis(500));
-        Ok(())
+        // `set_running(true)` waits for the restart ack, but the loader still runs
+        // incrementally on the eval thread (`load-native-lib`, event handler, etc.).
+        thread::sleep(POST_LISP_LOADER_SETTLE);
+        self.with_session(|session| {
+            session.query_fw_info_with_timeout(&self.runtime, POST_LISP_RESTART_QUERY_TIMEOUT)?;
+            thread::sleep(Duration::from_secs(1));
+            session.query_fw_info_with_timeout(&self.runtime, POST_LISP_RESTART_QUERY_TIMEOUT)?;
+            Ok(())
+        })
     }
 }
 
@@ -422,7 +471,7 @@ async fn open_session(target: LoopbackTarget) -> Result<VescSession, PackageInst
     })
 }
 
-async fn write_ble_uart_packet(
+pub(crate) async fn write_ble_uart_packet(
     peripheral: &Peripheral,
     rx_char: &Characteristic,
     packet: &[u8],
@@ -694,7 +743,7 @@ mod tests {
     }
 
     #[test]
-    fn lisp_set_running_packet_matches_vesc_tool_fire_and_forget_command() {
+    fn lisp_set_running_waits_for_device_ack() {
         let packet = build_command_packet(COMM_LISP_SET_RUNNING, &[1]);
         let decoded = PacketDecoder::new()
             .push(&packet)
