@@ -60,7 +60,7 @@ pub fn analyze_native_lib_elf(elf: &Path) -> NativeLibSemantics {
         let Ok(name) = section.name() else {
             continue;
         };
-        if !matches!(name, ".text" | ".init_fun") {
+        if name != ".init_fun" && !name.starts_with(".text") {
             continue;
         }
         let address = section.address();
@@ -84,11 +84,12 @@ pub fn analyze_native_lib_elf(elf: &Path) -> NativeLibSemantics {
         if name == ".init_fun" {
             init_insns = decoded;
         } else {
-            text_insns = decoded;
+            text_insns.extend(decoded);
         }
     }
 
-    let text_end = text_insns.last().map(|insn| insn.address + 2).unwrap_or(0);
+    text_insns.sort_by_key(|insn| insn.address);
+
     let probe_start = symbol_address(&symbols, "ext_rust_probe_diag_v4");
     let package_init_start = symbol_address(&symbols, "package_lib_init");
     let stop_start = symbols
@@ -96,11 +97,13 @@ pub fn analyze_native_lib_elf(elf: &Path) -> NativeLibSemantics {
         .find_map(|(addr, name)| name.contains("stop_package").then_some(*addr));
 
     if let Some(start) = probe_start {
-        let end = package_init_start.or(stop_start).unwrap_or(text_end);
-        probe_insns = insns_in_range(&text_insns, start, Some(end));
+        let end = package_init_start
+            .or(stop_start)
+            .or_else(|| next_symbol_address(&symbols, start));
+        probe_insns = decode_symbol_insns(&object, &cs, start, end);
     }
     if let Some(start) = stop_start {
-        stop_insns = insns_in_range(&text_insns, start, None);
+        stop_insns = decode_symbol_insns(&object, &cs, start, next_symbol_address(&symbols, start));
     }
 
     NativeLibSemantics {
@@ -176,8 +179,13 @@ pub fn assert_native_lib_semantics(elf: &Path) {
         semantic_report(&semantics)
     );
     assert!(
-        init_insns_return_extension_result(&semantics.init_insns),
-        "loader init should return lbm_add_extension's result after package init and registration: {}",
+        init_insns_report_success(&semantics.init_insns),
+        "loader init should report success after best-effort package setup: {}",
+        semantic_report(&semantics)
+    );
+    assert!(
+        !init_insns_have_failure_return(&semantics.init_insns),
+        "loader init should not fail load-native-lib when optional setup reports false: {}",
         semantic_report(&semantics)
     );
     assert!(
@@ -201,8 +209,12 @@ pub fn assert_native_lib_semantics(elf: &Path) {
     );
 
     assert!(
-        stop_insns_clear_app_data_slot(&semantics.stop_insns, &semantics.literal_pools),
-        "stop_package should clear app-data through direct VESC_IF slot load: {}",
+        stop_insns_clear_app_data_slot(&semantics.stop_insns, &semantics.literal_pools)
+            || stop_insns_branch_to_clear_app_data_helper(
+                &semantics.stop_insns,
+                &semantics.symbols
+            ),
+        "stop_package should clear app-data directly or tail-call the clear helper: {}",
         semantic_report(&semantics)
     );
     assert!(
@@ -225,12 +237,40 @@ fn symbol_address(symbols: &BTreeMap<u64, String>, name: &str) -> Option<u64> {
         .find_map(|(addr, symbol)| (symbol == name).then_some(*addr))
 }
 
-fn insns_in_range(insns: &[DecodedInsn], start: u64, end: Option<u64>) -> Vec<DecodedInsn> {
-    insns
-        .iter()
-        .filter(|insn| insn.address >= start && end.is_none_or(|end| insn.address < end))
-        .cloned()
-        .collect()
+fn next_symbol_address(symbols: &BTreeMap<u64, String>, start: u64) -> Option<u64> {
+    symbols.keys().copied().filter(|addr| *addr > start).min()
+}
+
+fn decode_symbol_insns(
+    object: &ObjectFile<'_>,
+    cs: &Capstone,
+    start: u64,
+    end: Option<u64>,
+) -> Vec<DecodedInsn> {
+    for section in object.sections() {
+        let section_start = section.address();
+        let section_end = section_start + section.size();
+        if !(section_start..section_end).contains(&start) {
+            continue;
+        }
+
+        let Ok(data) = section.data() else {
+            return Vec::new();
+        };
+        let offset = (start - section_start) as usize;
+        let end = end.unwrap_or(section_end).min(section_end);
+        let end_offset = (end - section_start) as usize;
+        if offset >= data.len() || end_offset > data.len() || offset >= end_offset {
+            return Vec::new();
+        }
+
+        return cs
+            .disasm_all(&data[offset..end_offset], start)
+            .map(|insns| decode_insns(&insns))
+            .unwrap_or_default();
+    }
+
+    Vec::new()
 }
 
 fn read_u32_le(_bytes: &[u8], address: u64, object: &ObjectFile<'_>) -> u32 {
@@ -299,11 +339,17 @@ fn init_insns_touch_vesc_if(_insns: &[DecodedInsn], literals: &BTreeMap<u64, u32
     literals.values().any(|word| *word == VESC_IF_TABLE_BASE)
 }
 
-fn init_insns_return_extension_result(insns: &[DecodedInsn]) -> bool {
+fn init_insns_report_success(insns: &[DecodedInsn]) -> bool {
     insns.iter().any(|insn| {
         (insn.mnemonic == "movs" && insn.operands.contains("#1"))
-            || (insn.mnemonic == "bx" && insn.operands.contains("r2"))
             || (insn.mnemonic == "mov" && insn.operands.contains("#1"))
+    })
+}
+
+fn init_insns_have_failure_return(insns: &[DecodedInsn]) -> bool {
+    insns.iter().any(|insn| {
+        (insn.mnemonic == "movs" && insn.operands.contains("r0, #0"))
+            || (insn.mnemonic == "mov" && insn.operands.contains("r0, #0"))
     })
 }
 
@@ -330,4 +376,19 @@ fn stop_insns_clear_app_data_slot(insns: &[DecodedInsn], literals: &BTreeMap<u64
             insn.mnemonic.starts_with("ldr")
                 && (insn.operands.contains("#596") || insn.operands.contains("#0x254"))
         })
+}
+
+fn stop_insns_branch_to_clear_app_data_helper(
+    insns: &[DecodedInsn],
+    symbols: &BTreeMap<u64, String>,
+) -> bool {
+    let Some(target) = symbol_address(symbols, "vesc_clear_loopback_app_data_handler") else {
+        return false;
+    };
+    let hex_target = format!("#0x{target:x}");
+    let decimal_target = format!("#{target}");
+    insns.iter().any(|insn| {
+        insn.mnemonic.starts_with('b')
+            && (insn.operands.contains(&hex_target) || insn.operands.contains(&decimal_target))
+    })
 }

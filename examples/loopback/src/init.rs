@@ -15,13 +15,15 @@ static prog_ptr: u32 = 0;
 #[inline(never)]
 #[unsafe(no_mangle)]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
-    pkg_init::install_stop_hook(info)
+    let _ = pkg_init::install_stop_hook(info);
+    true
 }
 
 #[cfg(test)]
 #[unsafe(no_mangle)]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
-    pkg_init::install_stop_hook(info)
+    let _ = pkg_init::install_stop_hook(info);
+    true
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
@@ -29,26 +31,22 @@ pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".init_fun")]
 pub extern "C" fn init(info: *mut ffi::LibInfo) -> bool {
-    if !package_lib_init(info) {
-        return false;
-    }
+    let _ = package_lib_init(info);
 
     let Some(info) = (unsafe { info.as_ref() }) else {
-        return false;
+        return true;
     };
 
-    if !vesc_sdk::ble_loopback::register_loopback_app_data_handler() {
-        return false;
-    }
+    let _ = vesc_sdk::ble_loopback::register_loopback_app_data_handler();
 
     let lifecycle = ffi::PackageLifecycle::new(ffi::RealBindings);
-    if !register_package_extensions(info, &lifecycle) {
-        return false;
-    }
+    let _ = register_package_extensions(info, &lifecycle);
 
     // Extension registration can run other firmware setup; register again so the
     // loopback handler remains the active app-data callback (refloat pattern).
-    vesc_sdk::ble_loopback::register_loopback_app_data_handler()
+    let _ = vesc_sdk::ble_loopback::register_loopback_app_data_handler();
+
+    true
 }
 
 /// Register this package's extension table using the supplied binding set.
