@@ -105,22 +105,20 @@ mod tests {
             "make -n check-full should succeed from repo root"
         );
         assert!(
-            make_dry_run_succeeds("test-package"),
-            "make -n test-package should succeed from repo root"
-        );
-        assert!(
-            make_dry_run_succeeds("check-ffi"),
-            "make -n check-ffi should succeed from repo root"
-        );
-        assert!(
-            make_dry_run_succeeds("check-ffi-header"),
-            "make -n check-ffi-header should succeed from repo root"
+            make_dry_run_succeeds("test"),
+            "make -n test should succeed from repo root"
         );
         let vesc_ffi_manifest = repo_root().join("crates/vesc-ffi/Cargo.toml");
         let manifest = fs::read_to_string(&vesc_ffi_manifest).expect("vesc-ffi manifest");
         assert!(
-            manifest.contains("test-support"),
-            "expected vesc-ffi Cargo.toml to declare test-support feature"
+            !manifest.contains("test-support"),
+            "vesc-ffi must not declare test-support; mock table is cfg(test) only"
+        );
+        let vesc_ffi_lib = fs::read_to_string(repo_root().join("crates/vesc-ffi/src/lib.rs"))
+            .expect("vesc-ffi lib.rs");
+        assert!(
+            vesc_ffi_lib.contains("#[cfg(test)]\npub mod test_support"),
+            "expected test_support to be cfg(test) gated"
         );
     }
 }

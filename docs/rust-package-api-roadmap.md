@@ -16,7 +16,6 @@ moving in the right direction instead of growing a too-clever wrapper too early.
 ## Validation
 
 - `nix develop -c make check`
-- `nix develop -c make symbol-check`
 - `nix develop -c make check-full`
 - `nix develop -c make hack-check` — `cargo-hack --each-feature` matrix for host crates plus thumb release lib build for `vesc-example-loopback`
 

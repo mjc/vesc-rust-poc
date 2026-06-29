@@ -53,7 +53,6 @@ mod tests {
             .expect("validation body");
         for command in [
             "nix develop -c make check",
-            "nix develop -c make symbol-check",
             "nix develop -c make check-full",
         ] {
             assert!(
