@@ -1,17 +1,6 @@
 [store]
 dir = "target/nextest"
 
-[profile.default]
-default-filter = 'not test(native_lib_artifacts) and not test(package_pipeline) and not test(fixtures) and not test(hil_loopback_sketch) and not test(compile_fail_ui)'
-
-[profile.embedded]
-default-filter = 'test(native_lib_semantics)'
-
-[profile.package]
-default-filter = 'test(package_pipeline) or test(fixtures)'
-
+# Hardware-in-the-loop only (`#[ignore]` by default; run with `--profile hil -- --run-ignored`).
 [profile.hil]
 default-filter = 'test(hil_loopback_sketch)'
-
-[profile.ffi]
-default-filter = 'package(vesc-ffi) or test(ffi_compare)'
