@@ -106,17 +106,15 @@ impl PackageAssets {
     }
 
     pub fn render_loader(&self) -> String {
-        "; Auto-generated loader for the Rust BLE loopback test package.\n\
-         (import \"src/package_lib.bin\" 'package-lib)\n\
-         (load-native-lib package-lib)\n\
-         (defun loopback-event-handler ()\n\
-           (loopwhile t\n\
-             (recv\n\
-               ((event-data-rx . (? data)) (send-data data))\n\
-               (_ nil))))\n\
-         (event-register-handler (spawn loopback-event-handler))\n\
-         (event-enable 'event-data-rx)\n"
-            .to_owned()
+        concat!(
+            "(import \"src/package_lib.bin\" 'package-lib)\n",
+            "(print \"vesc-rust-load-v7\")\n",
+            "(print (load-native-lib package-lib))\n",
+            "(loopwhile t {\n",
+            "    (sleep 1.0)\n",
+            "})\n",
+        )
+        .to_owned()
     }
 }
 
@@ -162,18 +160,17 @@ mod tests {
             !descriptor.contains("packageName"),
             "expected vesc_tool schema, not legacy POC dialect"
         );
-        let loader = assets.render_loader();
-        assert!(loader.starts_with(
-            "; Auto-generated loader for the Rust BLE loopback test package.\n(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n"
-        ));
-        assert_eq!(loader.matches("load-native-lib").count(), 1);
-        assert!(loader.contains("event-data-rx"));
-        assert!(loader.contains("send-data"));
-        assert!(loader.contains("loopback-event-handler"));
-        assert!(!loader.contains("vesc-rust-load-v7"));
-        assert!(!loader.contains("(sleep 1.0)"));
+        assert_eq!(
+            assets.render_loader(),
+            "(import \"src/package_lib.bin\" 'package-lib)\n(print \"vesc-rust-load-v7\")\n(print (load-native-lib package-lib))\n(loopwhile t {\n    (sleep 1.0)\n})\n"
+        );
+        assert_eq!(assets.render_loader().matches("load-native-lib").count(), 1);
+        assert!(assets.render_loader().contains("vesc-rust-load-v7"));
+        assert!(assets.render_loader().contains("(sleep 1.0)"));
+        assert!(!assets.render_loader().contains("event-data-rx"));
+        assert!(!assets.render_loader().contains("send-data"));
         assert!(
-            !loader.contains("ext-rust-add"),
+            !assets.render_loader().contains("ext-rust-add"),
             "expected the BLE loopback package loader to only load the native library"
         );
     }

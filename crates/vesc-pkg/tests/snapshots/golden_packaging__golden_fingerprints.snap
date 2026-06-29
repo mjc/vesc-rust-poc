@@ -5,4 +5,4 @@ expression: FINGERPRINTS_TOML
 package_lib.bin = "14809a831d69cf88"
 native_lib.bin = "14809a831d69cf88"
 native_lib.elf = "63832c39366ebd93"
-lisp_data.bin = "bcbe11a828e238c4"
+lisp_data.bin = "d427fdfbd7d1f7d4"
