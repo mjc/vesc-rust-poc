@@ -70,7 +70,7 @@ pub enum LoopbackTransportError {
     ConnectFailed,
     MissingService,
     Protocol(LoopbackError),
-    Device(&'static str),
+    Device(String),
 }
 
 impl fmt::Display for LoopbackTransportError {
@@ -99,6 +99,10 @@ pub struct LoopbackReport {
 }
 
 impl LoopbackReport {
+    pub fn new(target: LoopbackTarget, commands: Vec<WireCommand>) -> Self {
+        Self { target, commands }
+    }
+
     pub fn target(&self) -> &LoopbackTarget {
         &self.target
     }
@@ -169,7 +173,7 @@ impl LoopbackTransport for FakeLoopbackTransport {
             .borrow_mut()
             .pop_front()
             .unwrap_or(Err(LoopbackTransportError::Device(
-                "missing scripted response",
+                "missing scripted response".to_owned(),
             )))
     }
 }
@@ -272,7 +276,7 @@ mod tests {
             "protocol error: invalid command code: 99"
         );
         assert_eq!(
-            LoopbackTransportError::Device("boom").to_string(),
+            LoopbackTransportError::Device("boom".to_owned()).to_string(),
             "device error: boom"
         );
     }

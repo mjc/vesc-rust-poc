@@ -56,11 +56,13 @@ impl<'a> LoopbackTransport for BridgeTransport<'a> {
                 transmitted
                     .last()
                     .cloned()
-                    .ok_or(LoopbackTransportError::Device("device produced no reply"))
+                    .ok_or(LoopbackTransportError::Device(
+                        "device produced no reply".to_owned(),
+                    ))
             }
-            Ok(LoopbackTick::Idle) | Ok(LoopbackTick::WaitingForConnection) => {
-                Err(LoopbackTransportError::Device("device produced no reply"))
-            }
+            Ok(LoopbackTick::Idle) | Ok(LoopbackTick::WaitingForConnection) => Err(
+                LoopbackTransportError::Device("device produced no reply".to_owned()),
+            ),
             Err(error) => Err(map_runtime_error(error)),
         }
     }
@@ -68,7 +70,7 @@ impl<'a> LoopbackTransport for BridgeTransport<'a> {
 
 fn map_start_error(error: LoopbackStartError) -> LoopbackTransportError {
     match error {
-        LoopbackStartError::InitFailed(reason) => LoopbackTransportError::Device(reason),
+        LoopbackStartError::InitFailed(reason) => LoopbackTransportError::Device(reason.to_owned()),
     }
 }
 
@@ -164,7 +166,7 @@ fn fake_ble_loopback_bridge_behavior() {
 
         assert_eq!(
             run_loopback(&bridge),
-            Err(LoopbackTransportError::Device("BLE init failed"))
+            Err(LoopbackTransportError::Device("BLE init failed".to_owned()))
         );
     }
 }
