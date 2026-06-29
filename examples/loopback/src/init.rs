@@ -37,8 +37,18 @@ pub extern "C" fn init(info: *mut ffi::LibInfo) -> bool {
         return false;
     };
 
+    if !vesc_sdk::ble_loopback::register_loopback_app_data_handler() {
+        return false;
+    }
+
     let lifecycle = ffi::PackageLifecycle::new(ffi::RealBindings);
-    register_package_extensions(info, &lifecycle)
+    if !register_package_extensions(info, &lifecycle) {
+        return false;
+    }
+
+    // Extension registration can run other firmware setup; register again so the
+    // loopback handler remains the active app-data callback (refloat pattern).
+    vesc_sdk::ble_loopback::register_loopback_app_data_handler()
 }
 
 /// Register this package's extension table using the supplied binding set.
