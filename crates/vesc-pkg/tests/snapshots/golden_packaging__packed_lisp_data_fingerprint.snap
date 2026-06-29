@@ -2,4 +2,4 @@
 source: crates/vesc-pkg/tests/golden_packaging.rs
 expression: fingerprint_bytes(&packed)
 ---
-80a29eaddc483fbf
+bcbe11a828e238c4

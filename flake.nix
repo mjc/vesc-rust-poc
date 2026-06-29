@@ -64,6 +64,7 @@
             qt5.qtserialbus
             rustToolchain
             cargo-nextest
+            cargo-insta
             cargo-test-changed
             cargo-llvm-cov
             cargo-hack
@@ -140,6 +141,7 @@
               qt5.qtserialbus
               rustToolchain
               cargo-nextest
+              cargo-insta
               cargo-test-changed
               cargo-llvm-cov
             ];
@@ -166,6 +168,7 @@
               qt5.qtserialbus
               rustToolchain
               cargo-nextest
+              cargo-insta
               cargo-test-changed
               cargo-llvm-cov
             ];
