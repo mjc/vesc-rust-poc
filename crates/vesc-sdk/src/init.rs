@@ -3,9 +3,9 @@
 use crate::ffi;
 
 unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
-    #[cfg(not(test))]
+    #[cfg(all(not(test), target_arch = "arm"))]
     {
-        let _ = ffi::LoopbackLifecycle::new(ffi::RealBindings).clear_app_data_handler();
+        crate::ble_loopback::clear_loopback_app_data_handler();
     }
 
     #[cfg(test)]

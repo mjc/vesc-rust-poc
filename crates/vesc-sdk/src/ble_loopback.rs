@@ -1,7 +1,5 @@
 use core::cell::{Cell, RefCell};
 
-#[cfg(not(test))]
-use crate::AppDataBindings;
 use vesc_protocol::WireCommand;
 use vesc_protocol::ble_loopback::{LoopbackError, LoopbackPacket, handle_loopback_frame};
 
@@ -190,28 +188,45 @@ pub fn register_loopback_app_data_handler_with<B: crate::AppDataBindings>(
     lifecycle.register_app_data_handler(handler)
 }
 
-/// Register the production loopback app-data handler on device firmware.
-#[cfg(not(test))]
+/// Register the loopback app-data handler through the static C shim.
+#[cfg(all(not(test), target_arch = "arm"))]
 pub fn register_loopback_app_data_handler() -> bool {
-    register_loopback_app_data_handler_with(
-        &crate::LoopbackLifecycle::new(crate::RealBindings),
-        loopback_app_data_handler,
-    )
+    unsafe { vesc_register_loopback_app_data_handler() }
 }
 
-#[cfg(not(test))]
-unsafe extern "C" fn loopback_app_data_handler(data: *mut u8, len: u32) {
-    if data.is_null() {
+/// Clear the loopback app-data handler through the static C shim.
+#[cfg(all(not(test), target_arch = "arm"))]
+pub fn clear_loopback_app_data_handler() {
+    unsafe { vesc_clear_loopback_app_data_handler() };
+}
+
+/// Device entrypoint invoked from the static C app-data shim (`package_lib.c`).
+///
+/// # Safety
+///
+/// `data` must point to at least `len` bytes that remain valid for the duration
+/// of the call. This is invoked from firmware app-data delivery; it must not
+/// retain `data` beyond the callback.
+#[cfg(all(not(test), target_arch = "arm"))]
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub unsafe extern "C" fn loopback_handle_app_data(data: *mut u8, len: u32) {
+    if data.is_null() || len == 0 {
         return;
     }
 
     let bytes = unsafe { core::slice::from_raw_parts(data as *const u8, len as usize) };
-    let bindings = crate::RealBindings;
-    let now_ms = u64::from(bindings.system_time_ticks()) / 10;
+    let now_ms = u64::from(unsafe { vesc_ffi::raw::vesc_system_time_ticks() }) / 10;
 
     if let Some((response, response_len)) = process_loopback_app_data(bytes, now_ms) {
-        unsafe { bindings.send_app_data(response.as_ptr(), response_len as u32) };
+        unsafe { vesc_ffi::raw::vesc_send_app_data(response.as_ptr(), response_len as u32) };
     }
+}
+
+#[cfg(all(not(test), target_arch = "arm"))]
+unsafe extern "C" {
+    fn vesc_register_loopback_app_data_handler() -> bool;
+    fn vesc_clear_loopback_app_data_handler();
 }
 
 #[derive(Debug)]
