@@ -3,7 +3,7 @@ source: crates/vesc-pkg/tests/native_lib_artifacts.rs
 expression: report
 ---
 symbols: init, ext_rust_probe_diag_v4, package_lib_init, _ZN8vesc_sdk4init12stop_package17h638fb03beee28c0eE
-literal_pools: 0x30=0x1000f800, 0x34=0x00000022, 0x38=0x0000007a, 0x74=0x00000015, 0x94=0x1000f800
-init: push {r4, r6, r7, lr}; add r7, sp, #8; mov r4, r0; bl #0x60; cbz r0, #0x2a; cbz r4, #0x2a; ldr r0, [pc, #0x20]; ldr r1, [r4, #8]; add r0, pc; ldr r0, [r0]; add r1, r0; ldr r0, [pc, #0x10]; ldr r2, [r0]; ldr r0, [pc, #0x14]; add r0, pc; pop.w {r4, r6, r7, lr}; bx r2; movs r0, #0; pop {r4, r6, r7, pc}; nop ; strb.w r1, [r0, r0]; movs r2, r4; movs r0, r0; lsls r2, r7, #1; movs r0, r0
-probe: push {r7, lr}; mov r7, sp; mov.w r0, #0x2a8; pop {r7, pc}; movs r0, r0; movs r0, r0; movs r0, r0
-stop: push {r7, lr}; mov r7, sp; ldr r0, [pc, #0xc]; ldr.w r1, [r0, #0x254]; movs r0, #0; pop.w {r7, lr}; bx r1; nop ; strb.w r1, [r0, r0]; movs r0, r0; movs r0, r0; movs r0, r0; movs r0, r0; ldrb r5, [r4, #1]; cmp r5, #0x74; strb r2, [r6, #0x15]; strb r3, [r6, #0x11]; strb r5, [r5]; ldr r2, [r6, #0x74]; str r2, [r4, #0x54]; str r5, [r5, #0x40]; str r1, [r5, #0x14]; cmp r5, #0x67; adds r4, #0x76
+literal_pools: 0x3c=0x1000f800, 0x40=0x00000028, 0x44=0x00000484, 0x7c=0x1000f800, 0x80=0xffffffe5
+init: push {r4, r6, r7, lr}; add r7, sp, #8; mov r4, r0; bl #0xb0; cbz r0, #0x36; cbz r4, #0x36; bl #0x70; cbz r0, #0x36; ldr r0, [pc, #0x24]; ldr r1, [r4, #8]; add r0, pc; ldr r0, [r0]; add r1, r0; ldr r0, [pc, #0x18]; ldr r2, [r0]; ldr r0, [pc, #0x1c]; add r0, pc; blx r2; cbz r0, #0x36; pop.w {r4, r6, r7, lr}; b.w #0x70; movs r0, #0; pop {r4, r6, r7, pc}; nop ; strb.w r1, [r0, r0]; movs r0, r5; movs r0, r0; lsls r4, r0, #0x12; movs r0, r0
+probe: 
+stop:

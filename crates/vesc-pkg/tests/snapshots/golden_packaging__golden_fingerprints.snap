@@ -2,7 +2,7 @@
 source: crates/vesc-pkg/tests/golden_packaging.rs
 expression: FINGERPRINTS_TOML
 ---
-package_lib.bin = "3ecbdd83d489576f"
-native_lib.bin = "3ecbdd83d489576f"
-native_lib.elf = "67d09827a897dbd8"
-lisp_data.bin = "9422e625a6e207bc"
+package_lib.bin = "5a1d24a42af2363f"
+native_lib.bin = "5a1d24a42af2363f"
+native_lib.elf = "6256d30b22d0e46b"
+lisp_data.bin = "80a29eaddc483fbf"
