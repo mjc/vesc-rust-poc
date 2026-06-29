@@ -88,10 +88,20 @@ pub fn audit_native_lib_symbols(paths: &NativeLibArtifactPaths) {
         "ext_rust_probe_diag_v4",
         "init",
         "prog_ptr",
+        "loopback_handle_app_data",
     ] {
         assert!(
             staticlib_defined.contains(symbol),
             "Rust staticlib must own symbol `{symbol}`:\n{staticlib_symbols}"
+        );
+    }
+    for symbol in [
+        "vesc_register_loopback_app_data_handler",
+        "vesc_clear_loopback_app_data_handler",
+    ] {
+        assert!(
+            elf_defined.contains(symbol),
+            "final native image must export `{symbol}` from the C shim:\n{elf_symbols}"
         );
     }
     assert!(
