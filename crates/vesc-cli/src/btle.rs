@@ -187,7 +187,9 @@ impl BtleLoopbackTransport {
             .enable_all()
             .worker_threads(1)
             .build()
-            .map_err(|_| LoopbackTransportError::Device("failed to start the BLE runtime"))?;
+            .map_err(|_| {
+                LoopbackTransportError::Device("failed to start the BLE runtime".to_owned())
+            })?;
 
         Ok(Self {
             runtime,
@@ -208,7 +210,7 @@ impl BtleLoopbackTransport {
     ) -> Result<std::cell::RefMut<'_, Option<BtleSession>>, LoopbackTransportError> {
         if self.session.borrow().is_none() {
             return Err(LoopbackTransportError::Device(
-                "BLE transport has not been opened",
+                "BLE transport has not been opened".to_owned(),
             ));
         }
 
@@ -230,7 +232,9 @@ impl LoopbackTransport for BtleLoopbackTransport {
                 &session.rx_char,
                 &build_custom_app_data_packet(request),
             ))
-            .map_err(|_| LoopbackTransportError::Device("failed to write BLE request"))?;
+            .map_err(|_| {
+                LoopbackTransportError::Device("failed to write BLE request".to_owned())
+            })?;
         session.runtime_receive()
     }
 }
@@ -252,13 +256,12 @@ impl BtleSession {
             }
 
             let bytes = self.responses.recv_timeout(RESPONSE_TIMEOUT).map_err(|_| {
-                LoopbackTransportError::Device("timed out waiting for a loopback reply")
+                LoopbackTransportError::Device("timed out waiting for a loopback reply".to_owned())
             })?;
 
-            let packets = self
-                .decoder
-                .push(&bytes)
-                .map_err(|_| LoopbackTransportError::Device("failed to decode a loopback reply"))?;
+            let packets = self.decoder.push(&bytes).map_err(|_| {
+                LoopbackTransportError::Device("failed to decode a loopback reply".to_owned())
+            })?;
             for packet in packets {
                 if packet.first().copied() == Some(COMM_CUSTOM_APP_DATA) {
                     return Ok(packet[1..].to_vec());
@@ -300,11 +303,10 @@ impl BtleSession {
 async fn open_session(target: LoopbackTarget) -> Result<BtleSession, LoopbackTransportError> {
     let manager = Manager::new()
         .await
-        .map_err(|_| LoopbackTransportError::Device("failed to initialize Bluetooth"))?;
-    let adapters = manager
-        .adapters()
-        .await
-        .map_err(|_| LoopbackTransportError::Device("failed to enumerate Bluetooth adapters"))?;
+        .map_err(|_| LoopbackTransportError::Device("failed to initialize Bluetooth".to_owned()))?;
+    let adapters = manager.adapters().await.map_err(|_| {
+        LoopbackTransportError::Device("failed to enumerate Bluetooth adapters".to_owned())
+    })?;
     let adapter = adapters
         .into_iter()
         .next()
@@ -313,7 +315,7 @@ async fn open_session(target: LoopbackTarget) -> Result<BtleSession, LoopbackTra
     adapter
         .start_scan(vesc_tool_scan_filter())
         .await
-        .map_err(|_| LoopbackTransportError::Device("failed to start BLE scan"))?;
+        .map_err(|_| LoopbackTransportError::Device("failed to start BLE scan".to_owned()))?;
 
     let discovered = time::timeout(SCAN_TIMEOUT, find_matching_peripheral(&adapter, &target))
         .await
@@ -422,7 +424,9 @@ pub fn run_lisp_probe_with_progress(
         .enable_all()
         .worker_threads(1)
         .build()
-        .map_err(|_| LoopbackTransportError::Device("failed to start the BLE runtime"))?;
+        .map_err(|_| {
+            LoopbackTransportError::Device("failed to start the BLE runtime".to_owned())
+        })?;
 
     progress(LispProbeProgress::OpeningSession);
     let mut session = runtime.block_on(open_session(target))?;
@@ -471,7 +475,9 @@ pub fn run_lisp_probe_continuously_with_progress(
         .enable_all()
         .worker_threads(1)
         .build()
-        .map_err(|_| LoopbackTransportError::Device("failed to start the BLE runtime"))?;
+        .map_err(|_| {
+            LoopbackTransportError::Device("failed to start the BLE runtime".to_owned())
+        })?;
 
     progress(LispProbeProgress::OpeningSession);
     let mut session = runtime.block_on(open_session(target))?;
@@ -534,7 +540,7 @@ fn receive_lisp_prints_from_channel(
                 quiet_deadline = None;
                 progress(LispProbeProgress::ReceivedNotification { bytes: bytes.len() });
                 let packets = decoder.push(&bytes).map_err(|_| {
-                    LoopbackTransportError::Device("failed to decode a Lisp probe reply")
+                    LoopbackTransportError::Device("failed to decode a Lisp probe reply".to_owned())
                 })?;
                 progress(LispProbeProgress::DecodedPackets {
                     count: packets.len(),
@@ -574,7 +580,7 @@ fn receive_lisp_prints_from_channel(
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                 return Err(LoopbackTransportError::Device(
-                    "BLE notification stream disconnected",
+                    "BLE notification stream disconnected".to_owned(),
                 ));
             }
         }
@@ -619,7 +625,9 @@ async fn write_ble_uart_packet(
         peripheral
             .write(rx_char, chunk, WriteType::WithoutResponse)
             .await
-            .map_err(|_| LoopbackTransportError::Device("failed to write BLE request"))?;
+            .map_err(|_| {
+                LoopbackTransportError::Device("failed to write BLE request".to_owned())
+            })?;
     }
     Ok(())
 }
@@ -629,14 +637,16 @@ pub fn scan_devices() -> Result<Vec<DiscoveredPeripheral>, LoopbackTransportErro
         .enable_all()
         .worker_threads(1)
         .build()
-        .map_err(|_| LoopbackTransportError::Device("failed to start the BLE runtime"))?;
+        .map_err(|_| {
+            LoopbackTransportError::Device("failed to start the BLE runtime".to_owned())
+        })?;
 
     runtime.block_on(async move {
-        let manager = Manager::new()
-            .await
-            .map_err(|_| LoopbackTransportError::Device("failed to initialize Bluetooth"))?;
+        let manager = Manager::new().await.map_err(|_| {
+            LoopbackTransportError::Device("failed to initialize Bluetooth".to_owned())
+        })?;
         let adapters = manager.adapters().await.map_err(|_| {
-            LoopbackTransportError::Device("failed to enumerate Bluetooth adapters")
+            LoopbackTransportError::Device("failed to enumerate Bluetooth adapters".to_owned())
         })?;
         let adapter = adapters
             .into_iter()
@@ -646,7 +656,7 @@ pub fn scan_devices() -> Result<Vec<DiscoveredPeripheral>, LoopbackTransportErro
         adapter
             .start_scan(vesc_tool_scan_filter())
             .await
-            .map_err(|_| LoopbackTransportError::Device("failed to start BLE scan"))?;
+            .map_err(|_| LoopbackTransportError::Device("failed to start BLE scan".to_owned()))?;
 
         time::sleep(SCAN_TIMEOUT).await;
         let devices = collect_discovered_peripherals(&adapter)
@@ -660,7 +670,7 @@ pub fn scan_devices() -> Result<Vec<DiscoveredPeripheral>, LoopbackTransportErro
 fn map_discovery_error(error: DiscoveryError) -> LoopbackTransportError {
     match error {
         DiscoveryError::InspectFailed => {
-            LoopbackTransportError::Device("failed to inspect BLE peripherals")
+            LoopbackTransportError::Device("failed to inspect BLE peripherals".to_owned())
         }
     }
 }
@@ -966,7 +976,7 @@ mod tests {
 
             assert_eq!(
                 error,
-                LoopbackTransportError::Device("BLE notification stream disconnected")
+                LoopbackTransportError::Device("BLE notification stream disconnected".to_owned())
             );
         }
 
@@ -1052,7 +1062,7 @@ mod tests {
             || {
                 session_opens += 1;
                 Err(LoopbackTransportError::Device(
-                    "BLE notification stream disconnected",
+                    "BLE notification stream disconnected".to_owned(),
                 ))
             },
             3,
