@@ -25,9 +25,8 @@ pub trait LbmBindings {
 
 pub trait AppDataBindings {
     /// # Safety
-    /// `handler` must be either `None` or a callback with the firmware app-data ABI
-    /// that remains valid until it is replaced or cleared.
-    unsafe fn set_app_data_handler(&self, handler: Option<AppDataHandler>) -> bool;
+    /// `handler` must remain valid until it is replaced or cleared. Pass null to clear.
+    unsafe fn set_app_data_handler(&self, handler: AppDataHandler) -> bool;
 
     fn system_time_ticks(&self) -> u32;
 
@@ -66,7 +65,7 @@ impl LbmBindings for RealBindings {
 
 #[cfg(not(test))]
 impl AppDataBindings for RealBindings {
-    unsafe fn set_app_data_handler(&self, handler: Option<AppDataHandler>) -> bool {
+    unsafe fn set_app_data_handler(&self, handler: AppDataHandler) -> bool {
         unsafe { vesc_ffi::raw::vesc_set_app_data_handler(handler) }
     }
 

@@ -134,11 +134,15 @@ impl<B: AppDataBindings> LoopbackLifecycle<B> {
     }
 
     pub fn clear_app_data_handler(&self) -> bool {
-        unsafe { self.bindings.set_app_data_handler(None) }
+        unsafe {
+            let cleared: AppDataHandler =
+                core::mem::transmute::<*mut u8, AppDataHandler>(core::ptr::null_mut());
+            self.bindings.set_app_data_handler(cleared)
+        }
     }
 
     pub fn register_app_data_handler(&self, handler: AppDataHandler) -> bool {
-        unsafe { self.bindings.set_app_data_handler(Some(handler)) }
+        unsafe { self.bindings.set_app_data_handler(handler) }
     }
 
     pub fn system_time_ticks(&self) -> u32 {

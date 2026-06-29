@@ -103,10 +103,9 @@ impl FakeAppDataBindings {
 }
 
 impl AppDataBindings for FakeAppDataBindings {
-    unsafe fn set_app_data_handler(&self, handler: Option<AppDataHandler>) -> bool {
+    unsafe fn set_app_data_handler(&self, handler: AppDataHandler) -> bool {
         self.handler_calls.set(self.handler_calls.get() + 1);
-        self.last_handler
-            .set(handler.map_or(0, |handler| handler as *const () as usize));
+        self.last_handler.set(handler as *const () as usize);
         true
     }
 
@@ -144,7 +143,7 @@ pub mod stubs {
 mod tests {
     use super::{FakeAppDataBindings, FakeBindings, stubs};
     use crate::{AppDataBindings, LbmBindings};
-    use vesc_ffi::{ExtensionHandler, LbmValue};
+    use vesc_ffi::{AppDataHandler, ExtensionHandler, LbmValue};
 
     #[test]
     fn fake_bindings_default_and_rejecting_paths() {
@@ -179,9 +178,11 @@ mod tests {
 
         assert_eq!(bindings.system_time_ticks(), 999);
         unsafe {
-            assert!(bindings.set_app_data_handler(Some(handler)));
+            assert!(bindings.set_app_data_handler(handler));
             bindings.send_app_data([1_u8, 2].as_ptr(), 2);
-            assert!(bindings.set_app_data_handler(None));
+            let cleared: AppDataHandler =
+                core::mem::transmute::<*mut u8, AppDataHandler>(core::ptr::null_mut());
+            assert!(bindings.set_app_data_handler(cleared));
         }
 
         assert_eq!(bindings.handler_calls.get(), 2);
