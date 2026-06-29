@@ -19,7 +19,7 @@ mod loader;
 mod types;
 mod vesc_if;
 
-#[cfg(feature = "test-support")]
+#[cfg(test)]
 pub mod test_support;
 
 pub mod raw;

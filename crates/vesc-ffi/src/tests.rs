@@ -246,6 +246,14 @@ fn arm_asm_immediates_match_vesc_if_abi() {
             "set_app_data_handler",
             VescIfAbi::SET_APP_DATA_HANDLER.vesc32_byte_offset(),
         ),
+        (
+            "send_app_data",
+            VescIfAbi::SEND_APP_DATA.vesc32_byte_offset(),
+        ),
+        (
+            "system_time_ticks",
+            VescIfAbi::SYSTEM_TIME_TICKS.vesc32_byte_offset(),
+        ),
     ];
 
     for (slot, offset) in expected {

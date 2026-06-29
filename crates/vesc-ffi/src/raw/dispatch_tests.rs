@@ -6,8 +6,8 @@ use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescPin, Vesc
 
 use super::{
     VescIf, io_read, io_set_mode, io_write, lbm_add_extension, lbm_add_extension_with_table_base,
-    lbm_dec_as_i32, lbm_enc_i, lbm_enc_sym_eerror, lbm_is_number, vesc_send_app_data,
-    vesc_set_app_data_handler, vesc_system_time_ticks,
+    lbm_dec_as_i32, lbm_enc_i, lbm_enc_sym_eerror, lbm_is_number, vesc_clear_app_data_handler,
+    vesc_send_app_data, vesc_set_app_data_handler, vesc_system_time_ticks,
 };
 
 struct SyncCounter(Cell<usize>);
@@ -148,9 +148,13 @@ extern "C" fn stub_lbm_is_number(value: u32) -> bool {
     value == 7
 }
 
-extern "C" fn stub_set_app_data_handler(handler: Option<AppDataHandler>) -> bool {
+extern "C" fn stub_set_app_data_handler(handler: AppDataHandler) -> bool {
     SET_APP_DATA_HANDLER.inc();
-    LAST_HANDLER_INSTALLED.set(handler.is_some());
+    let is_installed = {
+        let ptr: *const () = handler as *const ();
+        !ptr.is_null()
+    };
+    LAST_HANDLER_INSTALLED.set(is_installed);
     true
 }
 
@@ -259,9 +263,9 @@ fn app_data_helpers_forward_and_handle_missing_slots() {
     with_populated_table(|| unsafe {
         extern "C" fn handler(_: *mut u8, _: u32) {}
 
-        assert!(vesc_set_app_data_handler(Some(handler)));
+        assert!(vesc_set_app_data_handler(handler));
         assert!(LAST_HANDLER_INSTALLED.get());
-        assert!(vesc_set_app_data_handler(None));
+        assert!(vesc_clear_app_data_handler());
         assert!(!LAST_HANDLER_INSTALLED.get());
 
         let payload = [1_u8, 2, 3];
@@ -274,7 +278,7 @@ fn app_data_helpers_forward_and_handle_missing_slots() {
     reset_counters();
     let table = empty_table();
     with_table(&table, || unsafe {
-        assert!(!vesc_set_app_data_handler(None));
+        assert!(!vesc_clear_app_data_handler());
         vesc_send_app_data(core::ptr::null(), 0);
         assert_eq!(SEND_APP_DATA.get(), 0);
     });

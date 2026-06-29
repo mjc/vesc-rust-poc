@@ -212,7 +212,7 @@ pub struct VescIf {
     // Comm
     commands_process_packet: Option<unsafe extern "C" fn(*mut c_uchar, c_uint, ReplyCallback)>,
     send_app_data: Option<unsafe extern "C" fn(*mut c_uchar, u32)>,
-    set_app_data_handler: Option<unsafe extern "C" fn(Option<AppDataHandler>) -> bool>,
+    set_app_data_handler: Option<unsafe extern "C" fn(AppDataHandler) -> bool>,
 
     // UART
     uart_start: Option<unsafe extern "C" fn(u32, bool) -> bool>,
@@ -389,7 +389,7 @@ pub struct VescIf {
 
 #[inline(always)]
 unsafe fn vesc_if() -> *const VescIf {
-    #[cfg(feature = "test-support")]
+    #[cfg(test)]
     if let Some(table) = crate::test_support::current_table() {
         return table;
     }
@@ -559,11 +559,14 @@ pub unsafe fn lbm_enc_sym_eerror() -> LbmValue {
     }
 }
 
+/// Register or clear the firmware app-data callback using the refloat/C ABI.
+///
+/// Pass a null function pointer to clear the handler.
+///
 /// # Safety
 ///
-/// `handler` must either be `None` or remain valid until replaced or
-/// cleared by a later firmware call.
-pub unsafe fn vesc_set_app_data_handler(handler: Option<AppDataHandler>) -> bool {
+/// `handler` must remain valid until replaced or cleared by a later firmware call.
+pub unsafe fn vesc_set_app_data_handler(handler: AppDataHandler) -> bool {
     #[cfg(all(target_arch = "arm", not(test)))]
     unsafe {
         let vesc_if = VescIfAbi::BASE_ADDR.0;
@@ -574,7 +577,7 @@ pub unsafe fn vesc_set_app_data_handler(handler: Option<AppDataHandler>) -> bool
             set_app_data_handler = out(reg) set_app_data_handler,
             options(nostack, preserves_flags),
         );
-        let set_app_data_handler: unsafe extern "C" fn(Option<AppDataHandler>) -> bool =
+        let set_app_data_handler: unsafe extern "C" fn(AppDataHandler) -> bool =
             core::mem::transmute(set_app_data_handler);
         set_app_data_handler(handler)
     }
@@ -589,11 +592,43 @@ pub unsafe fn vesc_set_app_data_handler(handler: Option<AppDataHandler>) -> bool
     }
 }
 
+/// Clear the firmware app-data callback.
+///
+/// # Safety
+///
+/// Must only be called when the firmware `VESC_IF` table is valid, same as
+/// [`vesc_set_app_data_handler`].
+pub unsafe fn vesc_clear_app_data_handler() -> bool {
+    unsafe {
+        let handler: AppDataHandler =
+            core::mem::transmute::<*mut u8, AppDataHandler>(core::ptr::null_mut());
+        vesc_set_app_data_handler(handler)
+    }
+}
+
 /// # Safety
 ///
 /// `data` must point to at least `len` bytes that remain valid for the
 /// duration of the firmware call.
 pub unsafe fn vesc_send_app_data(data: *const u8, len: u32) {
+    #[cfg(all(target_arch = "arm", not(test)))]
+    unsafe {
+        let vesc_if = VescIfAbi::BASE_ADDR.0;
+        let send_app_data: usize;
+        core::arch::asm!(
+            "ldr {send_app_data}, [{vesc_if}, #592]",
+            vesc_if = in(reg) vesc_if,
+            send_app_data = out(reg) send_app_data,
+            options(nostack, preserves_flags),
+        );
+        if send_app_data != 0 {
+            let send_app_data: unsafe extern "C" fn(*mut c_uchar, u32) =
+                core::mem::transmute(send_app_data);
+            send_app_data(data as *mut c_uchar, len);
+        }
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
     unsafe {
         if let Some(send_app_data) = (*vesc_if()).send_app_data {
             send_app_data(data as *mut c_uchar, len);
@@ -605,6 +640,25 @@ pub unsafe fn vesc_send_app_data(data: *const u8, len: u32) {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn vesc_system_time_ticks() -> u32 {
+    #[cfg(all(target_arch = "arm", not(test)))]
+    unsafe {
+        let vesc_if = VescIfAbi::BASE_ADDR.0;
+        let system_time_ticks: usize;
+        core::arch::asm!(
+            "ldr {system_time_ticks}, [{vesc_if}, #952]",
+            vesc_if = in(reg) vesc_if,
+            system_time_ticks = out(reg) system_time_ticks,
+            options(nostack, preserves_flags),
+        );
+        if system_time_ticks == 0 {
+            return 0;
+        }
+        let system_time_ticks: unsafe extern "C" fn() -> u32 =
+            core::mem::transmute(system_time_ticks);
+        system_time_ticks()
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
     unsafe {
         match (*vesc_if()).system_time_ticks {
             Some(system_time_ticks) => system_time_ticks(),
@@ -666,7 +720,7 @@ pub fn vesc_if_offsets_for_tests() -> [usize; 11] {
     ]
 }
 
-#[cfg(all(test, feature = "test-support"))]
+#[cfg(test)]
 mod dispatch_tests;
 
 #[cfg(test)]

@@ -5,8 +5,5 @@ edition = "2024"
 
 [dependencies]
 
-[features]
-test-support = []
-
 [dev-dependencies]
 trybuild = "1"
