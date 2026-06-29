@@ -106,7 +106,17 @@ impl PackageAssets {
     }
 
     pub fn render_loader(&self) -> String {
-        "; Auto-generated loader for the Rust BLE loopback test package.\n(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n".to_owned()
+        "; Auto-generated loader for the Rust BLE loopback test package.\n\
+         (import \"src/package_lib.bin\" 'package-lib)\n\
+         (load-native-lib package-lib)\n\
+         (defun loopback-event-handler ()\n\
+           (loopwhile t\n\
+             (recv\n\
+               ((event-data-rx . (? data)) (send-data data))\n\
+               (_ nil))))\n\
+         (event-register-handler (spawn loopback-event-handler))\n\
+         (event-enable 'event-data-rx)\n"
+            .to_owned()
     }
 }
 
@@ -152,14 +162,15 @@ mod tests {
             !descriptor.contains("packageName"),
             "expected vesc_tool schema, not legacy POC dialect"
         );
-        assert_eq!(
-            assets.render_loader(),
-            "; Auto-generated loader for the Rust BLE loopback test package.\n(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n"
-        );
         let loader = assets.render_loader();
+        assert!(loader.starts_with(
+            "; Auto-generated loader for the Rust BLE loopback test package.\n(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n"
+        ));
         assert_eq!(loader.matches("load-native-lib").count(), 1);
+        assert!(loader.contains("event-data-rx"));
+        assert!(loader.contains("send-data"));
+        assert!(loader.contains("loopback-event-handler"));
         assert!(!loader.contains("vesc-rust-load-v7"));
-        assert!(!loader.contains("(loopwhile t"));
         assert!(!loader.contains("(sleep 1.0)"));
         assert!(
             !loader.contains("ext-rust-add"),
