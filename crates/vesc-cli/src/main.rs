@@ -4,7 +4,7 @@ fn main() -> ExitCode {
     match vesc_cli::parse_args(std::env::args()) {
         Ok(vesc_cli::Command::Help) => {
             println!(
-                "vesc-cli: use `layout`, `status`, `scan`, `loopback`, `lisp-probe`, `package-install`, or `erase-package`"
+                "vesc-cli: use `layout`, `status`, `scan`, `loopback`, `lisp-probe`, `deploy`, `package-install`, or `erase-package`"
             );
             ExitCode::SUCCESS
         }
@@ -38,26 +38,22 @@ fn main() -> ExitCode {
                 (None, None) => vesc_cli::loopback::LoopbackTarget::default(),
             };
 
-            match vesc_cli::btle::BtleLoopbackTransport::new() {
-                Ok(transport) => {
-                    match vesc_cli::loopback::run_loopback_with_target(&transport, target) {
-                        Ok(report) => {
-                            println!(
-                                "loopback ok on device={} service={}: {:?}",
-                                report.target().device_name_hint(),
-                                report.target().service_name_hint(),
-                                report.commands()
-                            );
-                            ExitCode::SUCCESS
-                        }
-                        Err(error) => {
-                            eprintln!("loopback failed: {error}");
-                            ExitCode::from(1)
-                        }
-                    }
+            match vesc_cli::loopback_debug::run_loopback_with_diagnostics(target, |event| {
+                if event.should_print_to_cli() {
+                    println!("loopback: {}", event.describe());
+                }
+            }) {
+                Ok(report) => {
+                    println!(
+                        "loopback ok on device={} service={}: {:?}",
+                        report.target().device_name_hint(),
+                        report.target().service_name_hint(),
+                        report.commands()
+                    );
+                    ExitCode::SUCCESS
                 }
                 Err(error) => {
-                    eprintln!("failed to initialize BLE transport: {error}");
+                    eprintln!("loopback failed: {error}");
                     ExitCode::from(1)
                 }
             }
@@ -88,6 +84,38 @@ fn main() -> ExitCode {
                 }
                 Err(error) => {
                     eprintln!("lisp probe failed: {error}");
+                    ExitCode::from(1)
+                }
+            }
+        }
+        Ok(vesc_cli::Command::Deploy(command)) => {
+            let package_path = command.package_path;
+            let target = match (command.address, command.device_name) {
+                (Some(address), _) => vesc_cli::loopback::LoopbackTarget::addressed(address),
+                (None, Some(device_name)) => vesc_cli::loopback::LoopbackTarget::named(device_name),
+                (None, None) => vesc_cli::loopback::LoopbackTarget::default(),
+            };
+
+            match vesc_cli::deploy::run_deploy(&package_path, target, |event| {
+                if event.should_print_to_cli() {
+                    println!("loopback: {}", event.describe());
+                }
+            }) {
+                Ok((install, report)) => {
+                    println!(
+                        "package install ok for {}: {:?}",
+                        install.package_name, install.steps
+                    );
+                    println!(
+                        "loopback ok on device={} service={}: {:?}",
+                        report.target().device_name_hint(),
+                        report.target().service_name_hint(),
+                        report.commands()
+                    );
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("deploy failed: {error}");
                     ExitCode::from(1)
                 }
             }
@@ -123,6 +151,7 @@ fn main() -> ExitCode {
 
             match vesc_cli::package_install::install_package(&package, &transport) {
                 Ok(report) => {
+                    transport.close();
                     println!(
                         "package install ok for {}: {:?}",
                         report.package_name, report.steps
@@ -157,6 +186,7 @@ fn main() -> ExitCode {
 
             match vesc_cli::package_install::erase_package(&transport) {
                 Ok(report) => {
+                    transport.close();
                     println!("package erase ok: {:?}", report.steps);
                     ExitCode::SUCCESS
                 }

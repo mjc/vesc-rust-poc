@@ -10,6 +10,7 @@ pub enum Command {
     LispProbe(LispProbeCommand),
     PackageInstall(PackageInstallCommand),
     ErasePackage(PackageEraseCommand),
+    Deploy(PackageInstallCommand),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,6 +59,7 @@ where
         Some("loopback") => parse_loopback(iter).map(Command::Loopback),
         Some("lisp-probe") => parse_lisp_probe(iter).map(Command::LispProbe),
         Some("package-install") => parse_package_install(iter).map(Command::PackageInstall),
+        Some("deploy") => parse_package_install(iter).map(Command::Deploy),
         Some("erase-package") => parse_erase_package(iter).map(Command::ErasePackage),
         Some(other) => Err(ParseError::UnknownCommand(other.to_owned())),
     }
@@ -176,7 +178,9 @@ fn parse_erase_package(
 mod ble_discovery;
 
 pub mod btle;
+pub mod deploy;
 pub mod loopback;
+pub mod loopback_debug;
 pub mod package_install;
 pub mod package_transport;
 pub mod vesc_uart;
