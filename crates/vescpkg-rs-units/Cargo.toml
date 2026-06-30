@@ -1,0 +1,15 @@
+[package]
+name = "vescpkg-rs-units"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[features]
+default = []
+std = []
+uom = ["dep:uom"]
+
+[dependencies]
+uom = { version = "0.38", default-features = false, features = ["f32", "si"], optional = true }

@@ -1,10 +1,10 @@
 [workspace]
 members = [
-    "crates/vescpkg-sys",
-    "crates/vescpkg-units",
-    "crates/vescpkg",
+    "crates/vescpkg-rs-sys",
+    "crates/vescpkg-rs-units",
+    "crates/vescpkg-rs",
     "crates/vesc-protocol",
-    "crates/vescpkg-build",
+    "crates/vescpkg-rs-build",
     "crates/cargo-vescpkg",
     "crates/vesc-cli",
     "examples/loopback",

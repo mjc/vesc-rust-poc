@@ -1,9 +1,0 @@
----
-source: crates/vescpkg-build/tests/native_lib_artifacts.rs
-expression: report
----
-symbols: init, ext_rust_probe_diag_v4, package_lib_init, _ZN8vesc_sdk4init12stop_package17h32fc10a222cd9e24E
-literal_pools: 0x30=0x1000f800, 0x34=0x00000020, 0x38=0x000001a8, 0x6c=0x1000f800, 0x70=0xffffffe5
-init: push {r4, r6, r7, lr}; add r7, sp, #8; mov r4, r0; bl #0xa0; cbz r4, #0x2c; bl #0x60; ldr r0, [pc, #0x1c]; ldr r1, [r4, #8]; add r0, pc; ldr r0, [r0]; add r1, r0; ldr r0, [pc, #0x10]; ldr r2, [r0]; ldr r0, [pc, #0x14]; add r0, pc; blx r2; bl #0x60; movs r0, #1; pop {r4, r6, r7, pc}; strb.w r1, [r0, r0]; movs r0, r4; movs r0, r0; lsls r0, r5, #6; movs r0, r0
-probe: push {r7, lr}; mov r7, sp; mov.w r0, #0x2a8; pop {r7, pc}; movs r0, r0; movs r0, r0; movs r0, r0
-stop: push {r7, lr}; mov r7, sp; pop.w {r7, lr}; b.w #0x80; movs r0, r0; movs r0, r0

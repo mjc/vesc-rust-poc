@@ -1,0 +1,26 @@
+[package]
+name = "vescpkg-rs-build"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[features]
+test-support = ["dep:tempfile"]
+
+[dependencies]
+capstone = "0.12"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+object = { version = "0.36", default-features = false, features = ["read", "elf"] }
+sha2 = "0.10"
+tempfile = { version = "3", optional = true }
+vesc-protocol = { path = "../vesc-protocol" }
+
+[dev-dependencies]
+insta = "1"
+tempfile = "3"
+
+[[bin]]
+name = "write-golden-fixtures"
+path = "src/bin/write-golden-fixtures.rs"

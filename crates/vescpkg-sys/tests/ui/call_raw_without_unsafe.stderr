@@ -1,7 +1,0 @@
-error[E0133]: call to unsafe function `lbm_add_extension` is unsafe and requires unsafe block
- --> tests/ui/call_raw_without_unsafe.rs:6:13
-  |
-6 |     let _ = vescpkg_sys::raw::lbm_add_extension(core::ptr::null(), handler);
-  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
-  |
-  = note: consult the function's documentation for information on how to avoid undefined behavior

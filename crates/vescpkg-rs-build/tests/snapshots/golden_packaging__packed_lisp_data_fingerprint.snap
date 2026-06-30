@@ -1,0 +1,5 @@
+---
+source: crates/vescpkg-rs-build/tests/golden_packaging.rs
+expression: fingerprint_bytes(&packed)
+---
+98c1e6cc743bc88c

@@ -1,0 +1,17 @@
+[package]
+name = "vescpkg-rs"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+vescpkg-rs-sys = { path = "../vescpkg-rs-sys" }
+vesc-protocol = { path = "../vesc-protocol" }
+
+[features]
+test-support = []
+
+[dev-dependencies]
+rstest = "0.26"

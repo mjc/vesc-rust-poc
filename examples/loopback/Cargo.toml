@@ -12,7 +12,7 @@ workspace = true
 crate-type = ["staticlib"]
 
 [dependencies]
-vescpkg = { path = "../../crates/vescpkg" }
+vescpkg-rs = { path = "../../crates/vescpkg-rs" }
 
 [features]
-test-support = ["vescpkg/test-support"]
+test-support = ["vescpkg-rs/test-support"]

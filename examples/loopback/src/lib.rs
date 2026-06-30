@@ -1,7 +1,7 @@
 //! BLE loopback VESC package payload.
 //!
 //! This crate is the linkable staticlib artifact (`libvesc_example_loopback.a`). Generic loader,
-//! lifecycle, and firmware wrapper code lives in `vescpkg`.
+//! lifecycle, and firmware wrapper code lives in `vescpkg-rs`.
 //!
 //! Device builds must stay `no_std` and must not link `alloc` or `std`.
 
@@ -15,7 +15,7 @@ pub mod extensions;
 pub mod init;
 
 pub use init::package_lib_init;
-pub use vescpkg::{ProtocolFrame, WireCommand, WireVersion, ble_loopback, ffi, lbm, lifecycle};
+pub use vescpkg_rs::{ProtocolFrame, WireCommand, WireVersion, ble_loopback, ffi, lbm, lifecycle};
 
 #[cfg(not(test))]
 use core::panic::PanicInfo;

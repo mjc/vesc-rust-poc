@@ -6,10 +6,10 @@ moving in the right direction instead of growing a too-clever wrapper too early.
 
 ## Current workspace shape
 
-- `crates/vescpkg-sys` — raw firmware ABI (`no_std`, unsafe table calls)
-- `crates/vescpkg` — target-side SDK linked into native packages
+- `crates/vescpkg-rs-sys` — raw firmware ABI (`no_std`, unsafe table calls)
+- `crates/vescpkg-rs` — target-side SDK linked into native packages
 - `examples/loopback` — BLE loopback reference package staticlib
-- `crates/vescpkg-build` — host-side `.vescpkg` format/build/install
+- `crates/vescpkg-rs-build` — host-side `.vescpkg` format/build/install
 - `crates/vesc-protocol` — shared wire protocol types
 - `crates/vesc-cli` — host CLI binary
 
@@ -33,15 +33,15 @@ The ignored sketch lives in `crates/vesc-cli/tests/hil_loopback.rs` and is filte
 - Rust exports `prog_ptr` and `init` for the native loader.
 - Rust owns LispBM extension table registration.
 - Rust owns BLE app-data and stop-hook lifecycle setup.
-- `vescpkg-build` still uses the generic VESC linker and conversion references:
+- `vescpkg-rs-build` still uses the generic VESC linker and conversion references:
   `src/vesc_c_if.h`, `src/link.ld`, `src/rules.mk`, and `scripts/conv.py`.
 
 ## Next Migration Ladder
 
 1. Keep artifact, size, symbol, and ABI guards green under `nix develop -c make package`.
 2. Hardware-validate install, `lisp-probe`, and `loopback` after each native boundary change.
-3. Grow `vescpkg` only where tests prove the ABI boundary is stable.
-4. Grow `cargo vescpkg build` from the tested `vescpkg-build` boundary.
+3. Grow `vescpkg-rs` only where tests prove the ABI boundary is stable.
+4. Grow `cargo vescpkg build` from the tested `vescpkg-rs-build` boundary.
 5. Replace generic VESC references only after tests prove byte/layout equivalence.
 
 ## Guardrail

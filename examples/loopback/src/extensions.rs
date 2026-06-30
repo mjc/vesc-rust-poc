@@ -2,11 +2,11 @@
 
 use core::ffi::CStr;
 
-use vescpkg::ffi;
-use vescpkg::lbm::encode_lbm_i32_raw;
+use vescpkg_rs::ffi;
+use vescpkg_rs::lbm::encode_lbm_i32_raw;
 
 #[cfg(all(test, feature = "test-support"))]
-use vescpkg::ffi::{LbmApi, LbmBindings, LbmCount, LbmValue};
+use vescpkg_rs::ffi::{LbmApi, LbmBindings, LbmCount, LbmValue};
 
 /// LispBM extension name registered on device (`ext-rust-probe-diag-v4`).
 const EXT_RUST_PROBE_DIAG_NAME: &CStr = c"ext-rust-probe-diag-v4";
@@ -61,10 +61,10 @@ mod tests {
         EXT_RUST_PROBE_DIAG_NAME, LbmApi, LbmCount, LbmValue, PACKAGE_EXTENSION_NAMES,
         ext_rust_probe_diag_v4, package_extension_descriptors, rust_add_extension_value,
     };
-    use vescpkg::ffi::test_support::FakeBindings;
-    use vescpkg::ffi::{self, PackageLifecycle};
-    use vescpkg::lbm::encode_lbm_i32_raw;
-    use vescpkg::lifecycle::register_extension_from_image;
+    use vescpkg_rs::ffi::test_support::FakeBindings;
+    use vescpkg_rs::ffi::{self, PackageLifecycle};
+    use vescpkg_rs::lbm::encode_lbm_i32_raw;
+    use vescpkg_rs::lifecycle::register_extension_from_image;
 
     #[test]
     fn probe_returns_the_device_encoded_value() {

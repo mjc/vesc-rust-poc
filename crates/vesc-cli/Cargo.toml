@@ -12,8 +12,8 @@ flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 futures-util = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "time"] }
 vesc-protocol = { path = "../vesc-protocol" }
-vescpkg-build = { path = "../vescpkg-build" }
+vescpkg-rs-build = { path = "../vescpkg-rs-build" }
 uuid = "1"
 
 [dev-dependencies]
-vescpkg-build = { path = "../vescpkg-build", features = ["test-support"] }
+vescpkg-rs-build = { path = "../vescpkg-rs-build", features = ["test-support"] }

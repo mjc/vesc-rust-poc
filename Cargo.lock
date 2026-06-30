@@ -151,7 +151,7 @@ dependencies = [
 name = "cargo-vescpkg"
 version = "0.1.0"
 dependencies = [
- "vescpkg-build",
+ "vescpkg-rs-build",
 ]
 
 [[package]]
@@ -1256,14 +1256,14 @@ dependencies = [
  "tokio",
  "uuid",
  "vesc-protocol",
- "vescpkg-build",
+ "vescpkg-rs-build",
 ]
 
 [[package]]
 name = "vesc-example-loopback"
 version = "0.1.0"
 dependencies = [
- "vescpkg",
+ "vescpkg-rs",
 ]
 
 [[package]]
@@ -1274,16 +1274,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "vescpkg"
+name = "vescpkg-rs"
 version = "0.1.0"
 dependencies = [
  "rstest",
  "vesc-protocol",
- "vescpkg-sys",
+ "vescpkg-rs-sys",
 ]
 
 [[package]]
-name = "vescpkg-build"
+name = "vescpkg-rs-build"
 version = "0.1.0"
 dependencies = [
  "capstone",
@@ -1296,14 +1296,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "vescpkg-sys"
+name = "vescpkg-rs-sys"
 version = "0.1.0"
 dependencies = [
  "trybuild",
 ]
 
 [[package]]
-name = "vescpkg-units"
+name = "vescpkg-rs-units"
 version = "0.1.0"
 dependencies = [
  "uom",

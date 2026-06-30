@@ -1,0 +1,7 @@
+error[E0133]: call to unsafe function `io_set_mode` is unsafe and requires unsafe block
+ --> tests/ui/call_io_set_mode_without_unsafe.rs:2:13
+  |
+2 |     let _ = vescpkg_rs_sys::raw::io_set_mode(vescpkg_rs_sys::VescPin(0), vescpkg_rs_sys::VescPinMode(0));
+  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+  |
+  = note: consult the function's documentation for information on how to avoid undefined behavior

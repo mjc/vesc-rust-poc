@@ -6,7 +6,7 @@ VESC package flow.
 ## Contract
 
 - The command surface should stay thin.
-- The shared implementation should live in `crates/vescpkg-build`.
+- The shared implementation should live in `crates/vescpkg-rs-build`.
 - The command should build on the existing package plans rather than duplicating
   staging or artifact layout logic.
 - The package target is the device-side BTLE loopback package, not a generic

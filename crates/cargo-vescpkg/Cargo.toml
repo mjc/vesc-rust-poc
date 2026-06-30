@@ -7,4 +7,4 @@ edition = "2024"
 workspace = true
 
 [dependencies]
-vescpkg-build = { path = "../vescpkg-build" }
+vescpkg-rs-build = { path = "../vescpkg-rs-build" }
