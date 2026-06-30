@@ -194,11 +194,11 @@ pub fn audit_baseline_fixture_layout() {
     assert!(!source.contains("(loopwhile t") && !source.contains("(sleep 1.0)"));
     assert!(!source.contains("ext-rust-add"));
 
-    let readme = root.root.join("package/README.md");
+    let readme = root.root().join("package/README.md");
     let readme_source = fs::read_to_string(&readme).expect("package README");
     assert!(readme_source.contains("BLE loopback test package"));
 
-    let descriptor = fs::read_to_string(root.root.join("package/pkgdesc.qml"))
+    let descriptor = fs::read_to_string(root.root().join("package/pkgdesc.qml"))
         .expect("package descriptor contents");
     assert!(descriptor.contains("pkgName: \"Rust BLE loopback test package\""));
     assert!(descriptor.contains("pkgOutput: \"native-lib-baseline.vescpkg\""));

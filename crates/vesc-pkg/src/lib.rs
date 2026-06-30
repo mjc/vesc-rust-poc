@@ -10,51 +10,68 @@ pub mod cargo_vescpkg_command;
 /// Helpers for comparing the Rust ABI surface against the C header.
 pub mod ffi_compare;
 /// Golden fixture data for the loopback package and native-lib checks.
-pub mod golden;
+#[allow(dead_code, unused_imports)]
+pub(crate) mod golden;
 /// Repository hygiene helpers and generated-path checks.
-pub mod hygiene;
+#[allow(dead_code, unused_imports)]
+pub(crate) mod hygiene;
 /// Host-side package install and erase helpers.
 pub mod install;
 /// Package manifest discovery and parsing helpers.
 pub mod manifest;
 /// Native artifact audit helpers.
-pub mod native_audit;
+#[allow(dead_code, unused_imports)]
+pub(crate) mod native_audit;
 /// Native build orchestration helpers.
-pub mod native_build;
+#[allow(dead_code, unused_imports)]
+pub(crate) mod native_build;
 /// Native ELF disassembly helpers.
-pub mod native_disasm;
+#[allow(dead_code, unused_imports)]
+pub(crate) mod native_disasm;
 /// Native ELF semantic analysis helpers.
-pub mod native_elf_semantics;
+#[allow(dead_code, unused_imports)]
+pub(crate) mod native_elf_semantics;
 /// Native artifact inspection helpers.
-pub mod native_inspect;
+#[allow(dead_code, unused_imports)]
+pub(crate) mod native_inspect;
 /// Native-library audit helpers.
-pub mod native_lib_audit;
+#[allow(dead_code, unused_imports)]
+pub(crate) mod native_lib_audit;
 /// Native-library baseline fixture helpers.
-pub mod native_lib_baseline;
+#[allow(dead_code, unused_imports)]
+pub(crate) mod native_lib_baseline;
 /// Native-library link-plan helpers.
-pub mod native_lib_link;
+#[allow(dead_code, unused_imports)]
+pub(crate) mod native_lib_link;
 /// Native-library materialization helpers.
-pub mod native_lib_materialize;
+#[allow(dead_code, unused_imports)]
+pub(crate) mod native_lib_materialize;
 /// Native-library toolchain helpers.
-pub mod native_lib_toolchain;
+#[allow(dead_code, unused_imports)]
+pub(crate) mod native_lib_toolchain;
 /// Package model and builder types.
 pub mod package;
 /// Package artifact inspection helpers.
-pub mod package_artifacts;
+#[allow(dead_code, unused_imports)]
+pub(crate) mod package_artifacts;
 /// Package provenance and asset metadata.
 pub mod package_assets;
 /// Package build-plan orchestration.
-pub mod package_build;
+#[allow(dead_code, unused_imports)]
+pub(crate) mod package_build;
 /// Package binary conversion helpers.
-pub mod package_conversion;
+#[allow(dead_code, unused_imports)]
+pub(crate) mod package_conversion;
 /// Package encoding and decoding helpers.
 pub mod package_format;
 /// Package wire-format decoding helpers.
 pub mod package_format_decode;
 /// Golden package generation and comparison helpers.
-pub mod package_golden;
+#[allow(dead_code, unused_imports)]
+pub(crate) mod package_golden;
 /// Native package runner helpers.
-pub mod package_runner;
+#[allow(dead_code, unused_imports)]
+pub(crate) mod package_runner;
 /// Loopback package runtime helpers.
 pub mod package_runtime;
 /// Package target and staging helpers.
@@ -62,9 +79,11 @@ pub mod package_target;
 /// Host-side package wire format helpers.
 pub mod package_wire;
 /// Roadmap notes for the Rust package API.
-pub mod rust_package_api_roadmap;
+#[allow(dead_code, unused_imports)]
+pub(crate) mod rust_package_api_roadmap;
 /// Symbol audit helpers.
-pub mod symbol_audit;
+#[allow(dead_code, unused_imports)]
+pub(crate) mod symbol_audit;
 /// Test-support harnesses and fake runners for package tooling tests.
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
@@ -73,18 +92,24 @@ pub mod test_support;
 pub const BLE_LOOPBACK_PACKAGE_NAME: &str = "Rust BLE loopback test package";
 
 pub use abi_inventory::{AbiRequirement, AbiRequirementKind, minimal_test_package_abi};
+pub use golden::{
+    FINGERPRINTS_TOML, LISP_DATA, NATIVE_LIB_BIN, NATIVE_LIB_ELF, PACKAGE_LIB, VERSION,
+    fixture_dir, pack_lisp_data, payload_contains_probe_extension, probe_extension_name,
+};
 pub use install::{
     FakeInstallTransport, InstallError, InstallReport, InstallStep, InstallTransport, Installer,
     erase_package, install_package,
 };
 pub use manifest::{manifest_path, parse_pkgdesc, staging_dir_from_manifest};
+pub use native_audit::audit_device_proven_fixture;
+pub use native_elf_semantics::assert_native_lib_semantics;
 pub use native_lib_audit::{
     NativeLibArtifactPaths, audit_native_lib_artifacts, audit_native_lib_flat_binary,
     audit_native_lib_layout, audit_native_lib_symbols, semantic_snapshot_report,
 };
 pub use native_lib_baseline::{
     NativeLibBaselinePath, audit_baseline_fixture_layout, audit_vesc_c_if_abi_pins,
-    baseline_input_paths, baseline_output_paths, native_lib_baseline_root,
+    baseline_input_paths, baseline_output_paths, fingerprint_bytes, native_lib_baseline_root,
 };
 pub use native_lib_link::{NativeLibLinkPlan, native_lib_link_plan};
 pub use package::{Builder, Package, PackageError};
@@ -98,6 +123,11 @@ pub use package_conversion::{
     CONVERSION_SCRIPT_PATH, NATIVE_LIB_BINARY_PATH, PACKAGE_LIB_BINARY_PATH,
     PackageBinaryConversionCommand, PackageBinaryConversionError, PackageBinaryConversionPlan,
     PackageBinaryConversionRunner,
+};
+pub use package_golden::{
+    GOLDEN_FINGERPRINTS_TOML, GOLDEN_FIXTURE_DIR, GOLDEN_FIXTURE_VERSION, GOLDEN_LISP_DATA_BIN,
+    GOLDEN_PACKAGE_LIB_BIN, build_and_copy_package_lib_bin, golden_fixture_root,
+    package_lib_output_path, repo_root,
 };
 pub use package_runner::{
     RealPackageRunner, ensure_native_lib_artifacts, ensure_repo_native_lib_artifacts,

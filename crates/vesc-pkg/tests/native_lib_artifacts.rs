@@ -3,10 +3,10 @@
 use std::path::PathBuf;
 
 use tempfile::TempDir;
-use vesc_pkg::golden::{NATIVE_LIB_BIN, NATIVE_LIB_ELF};
-use vesc_pkg::native_elf_semantics::assert_native_lib_semantics;
-use vesc_pkg::native_lib_audit::semantic_snapshot_report;
-use vesc_pkg::{ensure_repo_native_lib_artifacts, native_lib_link_plan};
+use vesc_pkg::{
+    NATIVE_LIB_BIN, NATIVE_LIB_ELF, assert_native_lib_semantics, ensure_repo_native_lib_artifacts,
+    native_lib_link_plan, semantic_snapshot_report,
+};
 
 fn write_fixture_artifacts(dir: &std::path::Path) -> PathBuf {
     let elf = dir.join("native_lib.elf");
