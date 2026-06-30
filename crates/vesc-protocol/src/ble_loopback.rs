@@ -1,23 +1,37 @@
 use super::{Frame, WireCommand, WireVersion};
 use core::fmt;
 
+/// Wire protocol version used by loopback frames.
 pub const BLE_LOOPBACK_PROTOCOL_VERSION: WireVersion = WireVersion::CURRENT;
+/// Maximum payload size accepted by the loopback frame encoder.
 pub const MAX_LOOPBACK_PAYLOAD_BYTES: usize = 16;
+/// Size of the fixed frame header in bytes.
 pub const MIN_WIRE_FRAME_BYTES: usize = 3;
+/// Maximum encoded loopback frame size in bytes.
 pub const MAX_LOOPBACK_FRAME_BYTES: usize = MIN_WIRE_FRAME_BYTES + MAX_LOOPBACK_PAYLOAD_BYTES;
 
+/// Errors returned when loopback frame decoding or handling fails.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoopbackError {
+    /// The frame was shorter than the fixed header.
     FrameTooShort,
+    /// The encoded version byte did not match the loopback protocol version.
     InvalidVersion {
+        /// Expected wire version.
         expected: WireVersion,
+        /// Actual wire version found in the frame.
         actual: WireVersion,
     },
+    /// The encoded command byte was not recognized.
     InvalidCommand {
+        /// Unknown command code.
         code: u8,
     },
+    /// The payload length exceeded the maximum supported frame payload.
     PayloadTooLong {
+        /// Payload length from the wire frame.
         len: usize,
+        /// Maximum supported payload length.
         max: usize,
     },
 }
@@ -42,12 +56,14 @@ impl fmt::Display for LoopbackError {
     }
 }
 
+/// Borrowed loopback packet wrapper used by the shared wire protocol.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoopbackPacket<'a> {
     frame: Frame<'a>,
 }
 
 impl<'a> LoopbackPacket<'a> {
+    /// Construct a validated loopback packet.
     pub const fn new(command: WireCommand, payload: &'a [u8]) -> Result<Self, LoopbackError> {
         if payload.len() > MAX_LOOPBACK_PAYLOAD_BYTES {
             return Err(LoopbackError::PayloadTooLong {
@@ -61,10 +77,12 @@ impl<'a> LoopbackPacket<'a> {
         })
     }
 
+    /// Return the underlying frame by value.
     pub fn frame(&self) -> Frame<'a> {
         self.frame.clone()
     }
 
+    /// Encode the packet into a fixed-size byte buffer and its used length.
     pub fn encode(
         &self,
     ) -> (
@@ -81,6 +99,7 @@ impl<'a> LoopbackPacket<'a> {
         (bytes, MIN_WIRE_FRAME_BYTES + self.frame.payload().len())
     }
 
+    /// Decode a packet from raw bytes.
     pub fn decode(bytes: &'a [u8]) -> Result<Self, LoopbackError> {
         if bytes.len() < MIN_WIRE_FRAME_BYTES {
             return Err(LoopbackError::FrameTooShort);
