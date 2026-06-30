@@ -1263,7 +1263,7 @@ dependencies = [
 name = "vesc-example-loopback"
 version = "0.1.0"
 dependencies = [
- "vesc-sdk",
+ "vescpkg",
 ]
 
 [[package]]
@@ -1274,19 +1274,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "vesc-sdk"
+name = "vesc-units"
+version = "0.1.0"
+dependencies = [
+ "uom",
+]
+
+[[package]]
+name = "vescpkg"
 version = "0.1.0"
 dependencies = [
  "rstest",
  "vesc-protocol",
  "vescpkg-sys",
-]
-
-[[package]]
-name = "vesc-units"
-version = "0.1.0"
-dependencies = [
- "uom",
 ]
 
 [[package]]

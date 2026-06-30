@@ -2,7 +2,7 @@
 
 Reference VESC native package built as a `thumbv7em-none-eabihf` staticlib.
 
-This example links [`vesc-sdk`](../../crates/vesc-sdk) and produces
+This example links [`vescpkg`](../../crates/vescpkg) and produces
 `libvesc_example_loopback.a`, which `vesc-pkg` embeds into the BLE loopback
 `.vescpkg` artifact.
 

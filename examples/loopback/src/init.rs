@@ -1,6 +1,6 @@
 //! Native loader entrypoints for the BLE loopback proof-of-concept package.
 
-use vesc_sdk::{ffi, init as pkg_init, lifecycle};
+use vescpkg::{ffi, init as pkg_init, lifecycle};
 
 use crate::extensions;
 
@@ -40,14 +40,14 @@ pub extern "C" fn init(info: *mut ffi::LibInfo) -> bool {
         return true;
     };
 
-    let _ = vesc_sdk::ble_loopback::register_loopback_app_data_handler();
+    let _ = vescpkg::ble_loopback::register_loopback_app_data_handler();
 
     let lifecycle = ffi::PackageLifecycle::new(ffi::RealBindings);
     let _ = register_package_extensions(info, &lifecycle);
 
     // Extension registration can run other firmware setup; register again so the
     // loopback handler remains the active app-data callback (refloat pattern).
-    let _ = vesc_sdk::ble_loopback::register_loopback_app_data_handler();
+    let _ = vescpkg::ble_loopback::register_loopback_app_data_handler();
 
     true
 }
@@ -66,8 +66,8 @@ pub fn register_package_extensions<B: ffi::LbmBindings>(
 mod registration_tests {
     use super::register_package_extensions;
     use crate::extensions::package_extension_descriptors;
-    use vesc_sdk::ffi::test_support::FakeBindings;
-    use vesc_sdk::ffi::{self, PackageLifecycle};
+    use vescpkg::ffi::test_support::FakeBindings;
+    use vescpkg::ffi::{self, PackageLifecycle};
 
     #[test]
     fn register_package_extensions_propagates_firmware_rejection() {

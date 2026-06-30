@@ -20,7 +20,7 @@ vehicle semantics stabilize.
 - `no_std`, no `alloc` unless proven necessary
 - No dependency on `vescpkg-build` or `vesc-cli`
 - May depend on `vesc-protocol` only if wire encodings need typed units
-- Keep out of `vesc-sdk` prelude until at least one real package consumes typed units
+- Keep out of `vescpkg` prelude until at least one real package consumes typed units
 
 ## Status
 

@@ -7,7 +7,7 @@ moving in the right direction instead of growing a too-clever wrapper too early.
 ## Current workspace shape
 
 - `crates/vescpkg-sys` — raw firmware ABI (`no_std`, unsafe table calls)
-- `crates/vesc-sdk` — target-side SDK linked into native packages
+- `crates/vescpkg` — target-side SDK linked into native packages
 - `examples/loopback` — BLE loopback reference package staticlib
 - `crates/vescpkg-build` — host-side `.vescpkg` format/build/install
 - `crates/vesc-protocol` — shared wire protocol types
@@ -40,7 +40,7 @@ The ignored sketch lives in `crates/vesc-cli/tests/hil_loopback.rs` and is filte
 
 1. Keep artifact, size, symbol, and ABI guards green under `nix develop -c make package`.
 2. Hardware-validate install, `lisp-probe`, and `loopback` after each native boundary change.
-3. Grow `vesc-sdk` only where tests prove the ABI boundary is stable.
+3. Grow `vescpkg` only where tests prove the ABI boundary is stable.
 4. Grow `cargo vescpkg build` from the tested `vescpkg-build` boundary.
 5. Replace generic VESC references only after tests prove byte/layout equivalence.
 

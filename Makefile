@@ -55,7 +55,7 @@ clippy: clippy-pedantic vescpkg-sys-target-check arm-clippy
 	$(CARGO) clippy --workspace --all-targets --all-features -- $(CLIPPY_FLAGS)
 
 clippy-pedantic:
-	$(CARGO) clippy -p vesc-protocol -p vesc-sdk -p vesc-example-loopback --all-targets --all-features -- $(CLIPPY_PEDANTIC_FLAGS)
+	$(CARGO) clippy -p vesc-protocol -p vescpkg -p vesc-example-loopback --all-targets --all-features -- $(CLIPPY_PEDANTIC_FLAGS)
 
 vescpkg-sys-target-check:
 	test "$$($(CARGO) tree -p vescpkg-sys --edges normal --no-default-features --prefix none | wc -l | tr -d ' ')" = 1

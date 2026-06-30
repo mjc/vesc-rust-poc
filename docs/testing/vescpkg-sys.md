@@ -58,7 +58,7 @@ Production ARM builds keep inline `asm!` dispatch; host/test builds use `Option<
 | Layer | Role |
 |-------|------|
 | `vescpkg-sys` | Layout + raw dispatch |
-| `vesc-sdk` | Safe bindings, lifecycle, extension semantics |
+| `vescpkg` | Safe bindings, lifecycle, extension semantics |
 | `vescpkg-build` | Symbol audit, elf semantics, package pipeline |
 | HIL / real VESC | Manual `vesc-cli` profiles |
 

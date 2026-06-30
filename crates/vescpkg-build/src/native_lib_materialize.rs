@@ -52,7 +52,7 @@ fn rust_staticlib_is_up_to_date(plan: &NativeLibLinkPlan) -> bool {
     };
 
     let root = plan.root();
-    for crate_dir in ["examples/loopback", "crates/vesc-sdk"] {
+    for crate_dir in ["examples/loopback", "crates/vescpkg"] {
         if newest_rs_tree_mtime(&root.join(crate_dir).join("src"))
             .is_some_and(|mtime| mtime > output_modified)
         {
@@ -63,7 +63,7 @@ fn rust_staticlib_is_up_to_date(plan: &NativeLibLinkPlan) -> bool {
     [
         root.join("Cargo.lock"),
         root.join("examples/loopback/Cargo.toml"),
-        root.join("crates/vesc-sdk/Cargo.toml"),
+        root.join("crates/vescpkg/Cargo.toml"),
     ]
     .iter()
     .all(|input| {
