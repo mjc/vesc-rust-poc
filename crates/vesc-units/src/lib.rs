@@ -8,6 +8,62 @@
 //! The default build has no `std`, no `alloc`, and no `uom` dependency. Enable
 //! the `uom` feature only when boundary conversion to third-party quantities is
 //! useful.
+//!
+//! # Unit Boundary
+//!
+//! Use these local newtypes as the normal public API for physical measurements:
+//!
+//! ```
+//! use vesc_units::{DutyCycle, Energy, Speed, Voltage};
+//!
+//! let pack_voltage = Voltage::from_volts(50.4);
+//! let speed = Speed::from_kilometers_per_hour(36.0);
+//! let stored = Energy::from_watt_hours(2.0);
+//! let duty = DutyCycle::from_ratio(0.25).expect("in range");
+//!
+//! assert_eq!(pack_voltage.as_volts(), 50.4);
+//! assert_eq!(speed.as_meters_per_second(), 10.0);
+//! assert_eq!(stored.as_joules(), 7200.0);
+//! assert_eq!(duty.as_ratio(), 0.25);
+//! ```
+//!
+//! Raw primitive values are explicit boundary conversions, not the default way
+//! to pass measurements around:
+//!
+//! ```
+//! use vesc_units::Voltage;
+//!
+//! let voltage = Voltage::from_volts(57.0);
+//! let abi_value: f32 = voltage.into();
+//!
+//! assert_eq!(abi_value, 57.0);
+//! ```
+//!
+//! VESC-specific meanings belong in a separate domain layer. For example,
+//! motor current and battery current should be distinct domain types even though
+//! both can contain [`Current`]. [`Efficiency`] is only a generic
+//! watt-hours-per-mile measurement here; controller-specific efficiency semantics
+//! should live in `vesc-types`.
+//!
+//! # Optional `uom` Compatibility
+//!
+//! The `uom` feature adds conversion at interoperability boundaries while the
+//! local newtypes remain the public representation in this core crate. A higher
+//! level package facade may choose `uom` return types when that ergonomic layer
+//! is ready; that policy does not change the embedded units boundary here.
+//!
+//! ```
+//! #[cfg(feature = "uom")]
+//! {
+//!     use uom::si::electric_potential::volt;
+//!     use uom::si::f32::ElectricPotential;
+//!     use vesc_units::Voltage;
+//!
+//!     let quantity = ElectricPotential::from(Voltage::from_volts(12.0));
+//!     assert_eq!(quantity.get::<volt>(), 12.0);
+//!     assert_eq!(Voltage::from(quantity).as_volts(), 12.0);
+//! }
+//! ```
 
 #![no_std]
 #![forbid(unused_extern_crates)]
