@@ -27,6 +27,8 @@ current_type!(MotorCurrent, "Motor phase/current-control current.");
 current_type!(BrakeCurrent, "Motor braking current.");
 current_type!(HandbrakeCurrent, "Handbrake current command.");
 current_type!(PhaseCurrent, "Measured motor phase current.");
+current_type!(TotalMotorCurrent, "Total motor current.");
+current_type!(DirectionalMotorCurrent, "Signed/directional motor current.");
 current_type!(DCurrent, "FOC d-axis current.");
 current_type!(QCurrent, "FOC q-axis current.");
 current_type!(OpenLoopCurrent, "Open-loop motor current command.");

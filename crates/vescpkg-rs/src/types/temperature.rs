@@ -25,3 +25,6 @@ macro_rules! temperature_type {
 
 temperature_type!(FetTemperature, "FET temperature.");
 temperature_type!(MotorTemperature, "Motor temperature.");
+temperature_type!(MosfetTemperature, "MOSFET temperature.");
+temperature_type!(TemperatureLimitStart, "Temperature limit start threshold.");
+temperature_type!(TemperatureLimitEnd, "Temperature limit end threshold.");

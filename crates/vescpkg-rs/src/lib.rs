@@ -60,8 +60,11 @@ pub mod types;
 #[cfg(test)]
 mod tests {
     use super::{ProtocolFrame, WireCommand, WireVersion};
-    use crate::types::{BatteryCurrent, MotorCurrent};
-    use vescpkg_rs_units::Current;
+    use crate::types::{
+        BatteryCurrent, BatteryVoltage, DirectionalMotorCurrent, MotorCurrent, TotalMotorCurrent,
+        WattHoursDischarged,
+    };
+    use vescpkg_rs_units::{Current, Energy, Voltage};
 
     #[test]
     fn device_side_can_use_the_shared_protocol_crate() {
@@ -79,6 +82,19 @@ mod tests {
 
         assert_eq!(motor.current().as_amps(), 10.0);
         assert_eq!(battery.current().as_amps(), 6.0);
+    }
+
+    #[test]
+    fn semantic_voltage_energy_and_aggregate_current_types_wrap_units() {
+        let total = TotalMotorCurrent::new(Current::from_amps(18.0));
+        let directional = DirectionalMotorCurrent::new(Current::from_amps(-2.0));
+        let battery_voltage = BatteryVoltage::new(Voltage::from_volts(50.4));
+        let discharged = WattHoursDischarged::new(Energy::from_watt_hours(42.0));
+
+        assert_eq!(total.current().as_amps(), 18.0);
+        assert_eq!(directional.current().as_amps(), -2.0);
+        assert_eq!(battery_voltage.voltage().as_volts(), 50.4);
+        assert_eq!(discharged.energy().as_watt_hours(), 42.0);
     }
 }
 

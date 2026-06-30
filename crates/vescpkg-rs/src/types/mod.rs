@@ -19,9 +19,18 @@ pub mod motor;
 pub mod ratio;
 pub mod temperature;
 
-pub use battery::{AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, InputVoltage};
-pub use motor::{
-    BrakeCurrent, DCurrent, HandbrakeCurrent, MotorCurrent, OpenLoopCurrent, PhaseCurrent, QCurrent,
+pub use battery::{
+    AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, BatteryVoltage, CellVoltage,
+    InputCurrent, InputVoltage, WattHoursCharged, WattHoursDischarged, WattHoursRemaining,
 };
-pub use ratio::{BrakeCurrentRelative, CurrentRelative, DutyCycle};
-pub use temperature::{FetTemperature, MotorTemperature};
+pub use motor::{
+    BrakeCurrent, DCurrent, DirectionalMotorCurrent, HandbrakeCurrent, MotorCurrent,
+    OpenLoopCurrent, PhaseCurrent, QCurrent, TotalMotorCurrent,
+};
+pub use ratio::{
+    BrakeCurrentRelative, CurrentRelative, DutyCycle, HandbrakeRelative, JoystickX, JoystickY,
+    PpmInput,
+};
+pub use temperature::{
+    FetTemperature, MosfetTemperature, MotorTemperature, TemperatureLimitEnd, TemperatureLimitStart,
+};

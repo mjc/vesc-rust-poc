@@ -75,7 +75,7 @@ pub mod ratio;
 pub mod temperature;
 pub mod time;
 
-pub use battery::{AmpHours, Charge, Energy, WattHours};
+pub use battery::{AmpHours, Charge, DistancePerEnergy, Energy, EnergyPerDistance, WattHours};
 pub use electrical::{Current, FluxLinkage, Inductance, Power, Resistance, Voltage};
 pub use gnss::{GnssAccuracy, Hdop, Height, Latitude, Longitude};
 pub use motion::{
@@ -83,7 +83,9 @@ pub use motion::{
 };
 pub use ratio::{DutyCycle, Percent, Pwm, Ratio, SignedRatio};
 pub use temperature::Temperature;
-pub use time::{SYSTEM_TICK_RATE_HZ, SystemInstant, SystemTicks, TimestampTicks};
+pub use time::{
+    Frequency, SYSTEM_TICK_RATE_HZ, SampleRate, SystemInstant, SystemTicks, TimestampTicks,
+};
 
 /// Error returned when a bounded unit rejects an out-of-range value.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -130,6 +132,27 @@ macro_rules! scalar_unit {
 
             #[doc = concat!("Return this value in ", $unit, ".")]
             pub const fn $as(self) -> f32 {
+                self.0
+            }
+        }
+    };
+}
+
+macro_rules! scalar_unit_f64 {
+    ($name:ident, $from:ident, $as:ident, $unit:literal) => {
+        #[doc = concat!("Generic measurement value stored in ", $unit, ".")]
+        #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
+        #[repr(transparent)]
+        pub struct $name(f64);
+
+        impl $name {
+            #[doc = concat!("Create a value from ", $unit, ".")]
+            pub const fn $from(value: f64) -> Self {
+                Self(value)
+            }
+
+            #[doc = concat!("Return this value in ", $unit, ".")]
+            pub const fn $as(self) -> f64 {
                 self.0
             }
         }
@@ -202,12 +225,14 @@ macro_rules! bounded_unit {
 pub(crate) use bounded_unit;
 pub(crate) use scalar_int_unit;
 pub(crate) use scalar_unit;
+pub(crate) use scalar_unit_f64;
 
 #[cfg(test)]
 mod tests {
     use super::{
-        AmpHours, Current, DutyCycle, ElectricalRpm, Energy, Percent, Power, Ratio, Speed,
-        SystemTicks, Temperature, Voltage, WattHours,
+        AmpHours, Current, Distance, DistancePerEnergy, DutyCycle, ElectricalRpm, Energy,
+        EnergyPerDistance, Frequency, Latitude, Longitude, Percent, Power, Ratio, SampleRate,
+        Speed, SystemTicks, Temperature, Voltage, WattHours,
     };
 
     #[test]
@@ -230,6 +255,12 @@ mod tests {
             Temperature::from_degrees_celsius(23.0).as_degrees_celsius(),
             23.0
         );
+        let latitude_degrees: f64 = Latitude::from_degrees(40.015).as_degrees();
+        let longitude_degrees: f64 = Longitude::from_degrees(-105.2705).as_degrees();
+        assert_eq!(latitude_degrees, 40.015);
+        assert_eq!(longitude_degrees, -105.2705);
+        assert_eq!(Frequency::from_hertz(1000.0).as_hertz(), 1000.0);
+        assert_eq!(SampleRate::from_hertz(200.0).as_hertz(), 200.0);
     }
 
     #[test]
@@ -242,6 +273,23 @@ mod tests {
             10.0
         );
         assert_eq!(Speed::from_miles_per_hour(60.0).as_miles_per_hour(), 60.0);
+    }
+
+    #[test]
+    fn efficiency_units_remain_generic_ratios_between_energy_and_distance() {
+        let energy_per_distance = EnergyPerDistance::from_watt_hours_per_meter(12.5);
+        let distance_per_energy = DistancePerEnergy::from_meters_per_watt_hour(0.08);
+
+        assert_eq!(energy_per_distance.as_watt_hours_per_meter(), 12.5);
+        assert_eq!(distance_per_energy.as_meters_per_watt_hour(), 0.08);
+        assert_eq!(
+            (Energy::from_watt_hours(25.0) / Distance::from_meters(2.0)).as_watt_hours_per_meter(),
+            12.5
+        );
+        assert_eq!(
+            (Distance::from_meters(2.0) / Energy::from_watt_hours(25.0)).as_meters_per_watt_hour(),
+            0.08
+        );
     }
 
     #[test]

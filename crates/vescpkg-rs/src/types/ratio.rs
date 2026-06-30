@@ -29,3 +29,7 @@ ratio_type!(
     BrakeCurrentRelative,
     "Relative brake-current command ratio."
 );
+ratio_type!(HandbrakeRelative, "Relative handbrake command ratio.");
+ratio_type!(PpmInput, "Decoded PPM input ratio.");
+ratio_type!(JoystickX, "Joystick X input ratio.");
+ratio_type!(JoystickY, "Joystick Y input ratio.");
