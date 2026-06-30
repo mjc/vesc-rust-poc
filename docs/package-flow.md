@@ -1,6 +1,7 @@
 # Rust VESC Package Flow
 
 This note characterizes the package path that the Rust VESC package experiment should support.
+This is an unofficial Rust package flow and is not an official VESC project or endorsed toolchain.
 
 ## Inputs
 
@@ -20,23 +21,17 @@ This note characterizes the package path that the Rust VESC package experiment s
 
 | Tier | Command | Scope |
 |------|---------|-------|
-| Fast (default) | `make check` | ~139 host tests in ~2s; no gcc, no thumb target races |
-| Package | `make test-package` / `make package-smoke` | `fixtures` + `package_pipeline` integration tests |
-| Embedded | `make symbol-check` | `native_lib_artifacts` semantic ELF audit (~1s) |
-| Feature matrix | `make hack-check` | `cargo-hack --each-feature` for host crates; thumb release lib for payload |
-| Full gate | `make check-full` | fast + embedded + package tiers |
+| Fast (default) | `make check` | fmt, clippy, thumb sys check, ARM loopback clippy, and workspace nextest |
+| Package build | `make package-only` | package staging, conversion, and `.vescpkg` emission through `cargo-vescpkg` |
+| Embedded audit | `make native-audit` | package build plus native-lib semantic audit |
+| Full gate | `make check-full` | default checks plus ARM/package audit gates |
 | HIL (manual) | `cargo nextest run -p vesc-cli --profile hil -- --ignored` | ignored hardware sketch; needs `VESC_DEVICE` + `VESC_BLE_ADDR` |
 
 - The root `Makefile` gates packaging behind tests.
-- `make check` runs formatting, linting, and the fast host test tier (`nextest` default profile).
-- `make check-full` adds the embedded native-lib audit tier and the package integration tier on top of `check`.
-- `make symbol-check` runs the embedded native-lib integration audit (`tests/native_lib_artifacts.rs`).
-- `make test`, `make fmt`, `make clippy`, `make test-embedded`, `make test-package`, `make hack-check`, and `make package-smoke`
-  stay available as smaller commands when a slice only needs one gate.
-- `make test-package` runs the package tier integration tests (`tests/fixtures.rs` and `tests/package_pipeline.rs`) via the nextest `package` profile.
-- `make package-smoke` is an alias for `make test-package`.
+- `make check` runs formatting, linting, target checks, and the workspace `nextest` default profile.
+- `make check-full` adds the embedded native-lib audit tier on top of `check`.
 - `make package` runs the checked package build wrapper and emits the final `.vescpkg` path.
-- `make package-only` skips the top-level `check` dependency for debugging the packaging wrapper itself.
+- `make package-only` skips the top-level `check` dependency for debugging the `cargo-vescpkg` wrapper itself.
 - `make` currently defaults to `check`; the package-build command path lives in the repo now instead of an ad hoc shell fragment.
 - Set `INSTA_UPDATE=always` when intentionally refreshing package or native-lib snapshots.
 - Set `VESC_PKG_DISASM=1` to print optional native-lib disassembly during the embedded audit.
@@ -47,7 +42,7 @@ This note characterizes the package path that the Rust VESC package experiment s
 
 1. Enter the Nix shell with `nix develop`.
 2. Run `make check-full` before packaging native-boundary changes; `make check` is enough for host-only edits.
-3. Use `make package-only` to exercise staging, conversion, package emission, and artifact inspection.
+3. Use `make package-only` to exercise staging, conversion, package emission, and artifact inspection through `cargo-vescpkg`.
 4. Use `make package` for the checked path that still emits the final `.vescpkg` from the local Rust packer.
 5. Upload the emitted package in VESC Tool, then run the host `loopback` command against the device-side package.
 

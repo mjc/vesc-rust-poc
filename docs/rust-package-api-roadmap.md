@@ -3,6 +3,8 @@
 This is the short migration ladder for the Rust-backed VESC package experiment
 in `examples/loopback`. It stays deliberately narrow so later API work keeps
 moving in the right direction instead of growing a too-clever wrapper too early.
+This workspace is unofficial and is not an official VESC project or endorsed
+Rust package API.
 
 ## Current workspace shape
 

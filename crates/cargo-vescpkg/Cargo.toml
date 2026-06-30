@@ -2,6 +2,7 @@
 name = "cargo-vescpkg"
 version = "0.1.0"
 edition = "2024"
+description = "Unofficial Cargo subcommand for building Rust VESC package artifacts."
 
 [lints]
 workspace = true

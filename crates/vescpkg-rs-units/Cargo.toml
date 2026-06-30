@@ -2,6 +2,7 @@
 name = "vescpkg-rs-units"
 version = "0.1.0"
 edition = "2024"
+description = "Unofficial embedded unit newtypes for Rust VESC package experiments."
 
 [lints]
 workspace = true

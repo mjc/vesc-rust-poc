@@ -3,6 +3,9 @@
 This note captures the intended long-term Cargo entrypoint for the Rust-backed
 VESC package flow.
 
+This is an unofficial Cargo subcommand for Rust VESC package experiments; it is
+not an official VESC project or endorsed command.
+
 ## Contract
 
 - The command surface should stay thin.

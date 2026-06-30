@@ -2,6 +2,8 @@
 
 This repo is organized around layered responsibilities:
 
+- This is an unofficial Rust workspace for VESC package experiments; it is not
+  an official VESC project or endorsed package stack.
 - `vescpkg-rs-*` crates are for code that runs inside a VESC package or builds
   `.vescpkg` artifacts. `vesc-*` names are reserved here for host/protocol
   communication surfaces, matching the broader Rust ecosystem naming split.

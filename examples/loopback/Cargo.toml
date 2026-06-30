@@ -2,6 +2,7 @@
 name = "vesc-example-loopback"
 version = "0.1.0"
 edition = "2024"
+description = "Unofficial BLE loopback example package for Rust VESC package experiments."
 
 publish = false
 

@@ -2,6 +2,7 @@
 name = "vescpkg-rs-build"
 version = "0.1.0"
 edition = "2024"
+description = "Unofficial host-side library for building and inspecting Rust VESC package artifacts."
 
 [lints]
 workspace = true
