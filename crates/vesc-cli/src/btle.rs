@@ -444,13 +444,11 @@ fn lisp_probe_report(prints: Vec<String>, attempts: usize) -> LispProbeReport {
 }
 
 /// Runs the Lisp probe diagnostic and returns collected print output.
-
 pub fn run_lisp_probe(target: LoopbackTarget) -> Result<LispProbeReport, LoopbackTransportError> {
     run_lisp_probe_with_progress(target, |_| {})
 }
 
 /// Runs the Lisp probe diagnostic while reporting progress events.
-
 pub fn run_lisp_probe_with_progress(
     target: LoopbackTarget,
     mut progress: impl FnMut(LispProbeProgress),
@@ -503,7 +501,6 @@ pub fn run_lisp_probe_with_progress(
 }
 
 /// Repeatedly runs the Lisp probe diagnostic until the expected result or retry limit is reached.
-
 pub fn run_lisp_probe_continuously_with_progress(
     target: LoopbackTarget,
     mut progress: impl FnMut(LispProbeProgress),
@@ -671,7 +668,6 @@ async fn write_ble_uart_packet(
 }
 
 /// Scans for BLE peripherals that expose VESC BLE UART characteristics.
-
 pub fn scan_devices() -> Result<Vec<DiscoveredPeripheral>, LoopbackTransportError> {
     let runtime = Builder::new_multi_thread()
         .enable_all()
@@ -716,19 +712,16 @@ fn map_discovery_error(error: DiscoveryError) -> LoopbackTransportError {
 }
 
 /// Returns the VESC BLE UART service UUID.
-
 pub fn vesc_ble_uart_service_uuid() -> Uuid {
     VESC_BLE_UART_SERVICE_UUID
 }
 
 /// Returns the VESC BLE UART RX characteristic UUID.
-
 pub fn vesc_ble_uart_rx_uuid() -> Uuid {
     VESC_BLE_UART_RX_UUID
 }
 
 /// Returns the VESC BLE UART TX characteristic UUID.
-
 pub fn vesc_ble_uart_tx_uuid() -> Uuid {
     VESC_BLE_UART_TX_UUID
 }

@@ -17,7 +17,6 @@ const POST_INSTALL_SETTLE: Duration = Duration::from_millis(1500);
 const LOOPBACK_RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
 
 /// Builds or reads a package, installs it over BLE, and runs a loopback smoke test.
-
 pub fn run_deploy(
     package_path: &str,
     target: LoopbackTarget,

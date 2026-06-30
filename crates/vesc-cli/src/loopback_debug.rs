@@ -239,7 +239,6 @@ struct DiagnosticSession {
 }
 
 /// Runs the loopback protocol over BLE while reporting detailed diagnostic progress.
-
 pub fn run_loopback_with_diagnostics(
     target: LoopbackTarget,
     mut progress: impl FnMut(LoopbackProgress),
@@ -782,7 +781,6 @@ fn decode_loopback_command(payload: &[u8]) -> Result<WireCommand, LoopbackTransp
 }
 
 /// Returns a concise human-readable summary of a decoded VESC UART packet payload.
-
 pub fn describe_vesc_packet(packet: &[u8]) -> String {
     let command = packet.first().copied().unwrap_or(0xff);
     let payload = &packet[1..];
@@ -806,7 +804,6 @@ pub fn describe_vesc_packet(packet: &[u8]) -> String {
 }
 
 /// Formats at most `max_bytes` bytes as a compact hexadecimal preview.
-
 pub fn hex_snippet(bytes: &[u8], max_bytes: usize) -> String {
     let shown = bytes.len().min(max_bytes);
     let mut hex = bytes[..shown]

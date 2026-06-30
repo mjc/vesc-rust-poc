@@ -207,7 +207,6 @@ impl LoopbackTransport for FakeLoopbackTransport {
 }
 
 /// Runs the standard ping, echo, status, and teardown loopback sequence against `target`.
-
 pub fn run_loopback_with_target<T: LoopbackTransport>(
     transport: &T,
     target: LoopbackTarget,
@@ -235,7 +234,6 @@ pub fn run_loopback_with_target<T: LoopbackTransport>(
 }
 
 /// Runs the standard loopback sequence against the default target.
-
 pub fn run_loopback<T: LoopbackTransport>(
     transport: &T,
 ) -> Result<LoopbackReport, LoopbackTransportError> {

@@ -81,7 +81,6 @@ pub enum PacketDecodeError {
 }
 
 /// Encodes a payload into a VESC UART packet with length, CRC, and terminator bytes.
-
 pub fn encode_packet(payload: &[u8]) -> Vec<u8> {
     let mut packet = Vec::with_capacity(payload.len() + 8);
     let len = payload.len();
@@ -109,7 +108,6 @@ pub fn encode_packet(payload: &[u8]) -> Vec<u8> {
 }
 
 /// Computes the VESC UART CRC16 checksum for `buf`.
-
 pub fn crc16(buf: &[u8]) -> u16 {
     let mut cksum = 0u16;
     for byte in buf {

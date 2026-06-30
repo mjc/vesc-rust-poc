@@ -69,7 +69,6 @@ pub enum ParseError {
 }
 
 /// Parses command-line arguments into a top-level CLI command.
-
 pub fn parse_args<I, S>(args: I) -> Result<Command, ParseError>
 where
     I: IntoIterator<Item = S>,
