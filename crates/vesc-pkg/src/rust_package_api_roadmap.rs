@@ -10,12 +10,23 @@ pub fn roadmap_text() -> String {
 }
 
 pub fn markdown_section_body<'a>(text: &'a str, heading: &str) -> Option<&'a str> {
-    let marker = format!("## {heading}");
-    let after_heading = text.split_once(&marker)?.1;
-    let body = after_heading
-        .split_once("\n## ")
-        .map_or(after_heading, |(body, _)| body);
-    Some(body.trim())
+    let target = format!("## {heading}");
+    let mut body_start = None;
+    let mut line_start = 0;
+
+    for line in text.split_inclusive('\n') {
+        let heading_line = line.trim_end_matches(['\r', '\n']).trim_end();
+        if let Some(start) = body_start {
+            if heading_line.starts_with("## ") {
+                return Some(text[start..line_start].trim());
+            }
+        } else if heading_line == target {
+            body_start = Some(line_start + line.len());
+        }
+        line_start += line.len();
+    }
+
+    body_start.map(|start| text[start..].trim())
 }
 
 #[cfg(test)]
@@ -60,5 +71,13 @@ mod tests {
                 "validation section is missing command: {command}"
             );
         }
+    }
+
+    #[test]
+    fn markdown_section_body_matches_exact_second_level_headings() {
+        let text = "# Doc\n\n## Contractual\nwrong\n\n## Contract\nright\n\n## Next\ndone\n";
+
+        assert_eq!(markdown_section_body(text, "Contract"), Some("right"));
+        assert_eq!(markdown_section_body(text, "Missing"), None);
     }
 }
