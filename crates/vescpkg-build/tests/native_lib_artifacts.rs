@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use tempfile::TempDir;
-use vesc_pkg::{
+use vescpkg_build::{
     NATIVE_LIB_BIN, NATIVE_LIB_ELF, assert_native_lib_semantics, ensure_repo_native_lib_artifacts,
     native_lib_link_plan, semantic_snapshot_report,
 };

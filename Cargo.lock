@@ -1248,8 +1248,8 @@ dependencies = [
  "futures-util",
  "tokio",
  "uuid",
- "vesc-pkg",
  "vesc-protocol",
+ "vescpkg-build",
 ]
 
 [[package]]
@@ -1264,19 +1264,6 @@ name = "vesc-ffi"
 version = "0.1.0"
 dependencies = [
  "trybuild",
-]
-
-[[package]]
-name = "vesc-pkg"
-version = "0.1.0"
-dependencies = [
- "capstone",
- "flate2",
- "insta",
- "object",
- "sha2",
- "tempfile",
- "vesc-protocol",
 ]
 
 [[package]]
@@ -1300,6 +1287,19 @@ name = "vesc-units"
 version = "0.1.0"
 dependencies = [
  "uom",
+]
+
+[[package]]
+name = "vescpkg-build"
+version = "0.1.0"
+dependencies = [
+ "capstone",
+ "flate2",
+ "insta",
+ "object",
+ "sha2",
+ "tempfile",
+ "vesc-protocol",
 ]
 
 [[package]]

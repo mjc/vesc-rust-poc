@@ -2,8 +2,8 @@
 
 use std::process::ExitCode;
 
-use vesc_pkg::RealPackageRunner;
-use vesc_pkg::cargo_vescpkg_command::{CargoVescPkgError, run_with};
+use vescpkg_build::RealPackageRunner;
+use vescpkg_build::cargo_vescpkg_command::{CargoVescPkgError, run_with};
 
 fn print_error(error: CargoVescPkgError) -> ExitCode {
     match error {

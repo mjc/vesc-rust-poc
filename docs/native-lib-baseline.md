@@ -35,7 +35,7 @@ This fixture captures the smallest Rust-backed VESC package skeleton we want to 
   staticlib and fails if package-specific C shim symbols or objects reappear.
 - The fixture pins `src/vesc_c_if.h` with fingerprint `f0097b82dd4adc19`; if
   that header changes, refresh the expected fingerprint in
-  `crates/vesc-pkg/src/native_lib_baseline.rs` after reviewing the ABI diff.
+  `crates/vescpkg-build/src/native_lib_baseline.rs` after reviewing the ABI diff.
 - The package loader fixture loads `src/package_lib.bin` for the BLE loopback test package.
 - `src/vesc_c_if.h`, `src/link.ld`, `src/rules.mk`, and `scripts/conv.py` are
   generic VESC references, not package-specific C glue.

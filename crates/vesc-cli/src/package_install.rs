@@ -1,9 +1,9 @@
 //! Host-side VESC package install protocol.
 //!
-//! Thin re-exports of the library API in [`vesc_pkg`].
+//! Thin re-exports of the library API in [`vescpkg_build`].
 
-pub use vesc_pkg::Package as VescPackage;
-pub use vesc_pkg::install::{
+pub use vescpkg_build::Package as VescPackage;
+pub use vescpkg_build::install::{
     FakeInstallTransport as FakePackageInstallTransport, InstallError as PackageInstallError,
     InstallReport as PackageInstallReport, InstallStep as PackageInstallStep,
     InstallTransport as PackageInstallTransport, Installer, erase_package, install_package,
@@ -27,7 +27,7 @@ mod tests {
     use flate2::{Compression, write::ZlibEncoder};
     use std::io::Write;
     use std::path::Path;
-    use vesc_pkg::FakeInstallTransport;
+    use vescpkg_build::FakeInstallTransport;
 
     fn build_package_bytes() -> Vec<u8> {
         let mut data = Vec::new();

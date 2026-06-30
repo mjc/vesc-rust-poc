@@ -2,10 +2,10 @@
 
 use tempfile::TempDir;
 
-use vesc_pkg::package_format_decode::{
+use vescpkg_build::package_format_decode::{
     parse_lisp_imports, payload_matches_native_with_only_nul_tail,
 };
-use vesc_pkg::{
+use vescpkg_build::{
     FINGERPRINTS_TOML, LISP_DATA, PACKAGE_LIB, fingerprint_bytes, pack_lisp_data,
     payload_contains_probe_extension,
 };

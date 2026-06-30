@@ -2,7 +2,7 @@
 
 use std::process::ExitCode;
 
-use vesc_pkg::{
+use vescpkg_build::{
     BLE_LOOPBACK_PACKAGE_NAME, PackageTargetMode, PackageTargetPlan, RealPackageRunner,
     package_provenance_from_env,
 };
@@ -10,12 +10,12 @@ use vesc_pkg::{
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     let Some(mode) = args.next() else {
-        eprintln!("usage: vesc-pkg package|package-only");
+        eprintln!("usage: vescpkg-build package|package-only");
         return ExitCode::from(2);
     };
 
     if args.next().is_some() {
-        eprintln!("usage: vesc-pkg package|package-only");
+        eprintln!("usage: vescpkg-build package|package-only");
         return ExitCode::from(2);
     }
 

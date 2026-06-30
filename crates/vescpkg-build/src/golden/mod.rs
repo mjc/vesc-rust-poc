@@ -1,7 +1,7 @@
 //! Golden fixture helpers for host-side packaging tests.
 //!
 //! Tests embed fixture bytes with `include_bytes!` and never rebuild native code.
-//! Refresh fixtures with `cargo run -p vesc-pkg --bin write-golden-fixtures`.
+//! Refresh fixtures with `cargo run -p vescpkg-build --bin write-golden-fixtures`.
 
 /// Embedded fixture bytes and helper lookups.
 pub mod fixtures;

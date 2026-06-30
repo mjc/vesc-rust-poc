@@ -18,7 +18,7 @@ vehicle semantics stabilize.
 ## Constraints for a future crate
 
 - `no_std`, no `alloc` unless proven necessary
-- No dependency on `vesc-pkg` or `vesc-cli`
+- No dependency on `vescpkg-build` or `vesc-cli`
 - May depend on `vesc-protocol` only if wire encodings need typed units
 - Keep out of `vesc-sdk` prelude until at least one real package consumes typed units
 

@@ -2,9 +2,9 @@
 
 use std::fs;
 
-use vesc_pkg::fingerprint_bytes;
-use vesc_pkg::package_format::build_lisp_data;
-use vesc_pkg::{
+use vescpkg_build::fingerprint_bytes;
+use vescpkg_build::package_format::build_lisp_data;
+use vescpkg_build::{
     BLE_LOOPBACK_PACKAGE_NAME, GOLDEN_FINGERPRINTS_TOML, GOLDEN_LISP_DATA_BIN,
     GOLDEN_PACKAGE_LIB_BIN, PackageAssets, PackageLayout, PackageProvenance,
     build_and_copy_package_lib_bin, golden_fixture_root, package_lib_output_path, repo_root,

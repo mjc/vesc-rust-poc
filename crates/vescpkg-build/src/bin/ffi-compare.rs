@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::process::ExitCode;
 
-use vesc_pkg::ffi_compare::{
+use vescpkg_build::ffi_compare::{
     ALL_PINNED_USED_SLOTS, LOOPBACK_USED_SLOTS, compare_full_table, compare_used_slots_from_paths,
     default_header_path, default_rust_table_path,
 };
@@ -47,7 +47,7 @@ fn main() -> ExitCode {
         };
     }
 
-    match vesc_pkg::ffi_compare::compare_used_slots_from_paths(
+    match vescpkg_build::ffi_compare::compare_used_slots_from_paths(
         &c_header,
         &rust_source,
         LOOPBACK_USED_SLOTS,
@@ -56,8 +56,8 @@ fn main() -> ExitCode {
             println!("loopback used-slot order matches");
             ExitCode::SUCCESS
         }
-        Err(vesc_pkg::ffi_compare::CompareError::SlotOrderMismatch { .. }) => {
-            match vesc_pkg::ffi_compare::slots_present(
+        Err(vescpkg_build::ffi_compare::CompareError::SlotOrderMismatch { .. }) => {
+            match vescpkg_build::ffi_compare::slots_present(
                 &std::fs::read_to_string(&c_header).expect("header"),
                 LOOPBACK_USED_SLOTS,
             ) {

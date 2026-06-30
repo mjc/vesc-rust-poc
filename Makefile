@@ -67,7 +67,7 @@ arm-clippy:
 arm-gates: vesc-ffi-target-check arm-clippy native-audit
 
 native-audit: package-only
-	$(CARGO) test -p vesc-pkg native_lib -- --nocapture
+	$(CARGO) test -p vescpkg-build native_lib -- --nocapture
 
 test:
 	$(CARGO) nextest run --workspace --features test-support
@@ -75,10 +75,10 @@ test:
 # --- packaging & device -----------------------------------------------------
 
 package: check
-	$(CARGO) run -p vesc-pkg --bin vesc-pkg -- package
+	$(CARGO) run -p vescpkg-build --bin vescpkg-build -- package
 
 package-only:
-	$(CARGO) run -p vesc-pkg --bin vesc-pkg -- package-only
+	$(CARGO) run -p vescpkg-build --bin vescpkg-build -- package-only
 
 deploy: package-only
 	$(CARGO) run -p vesc-cli -- deploy $(PACKAGE) $(DEVICE_FLAGS)
