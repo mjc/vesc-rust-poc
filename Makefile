@@ -58,6 +58,7 @@ clippy-pedantic:
 	$(CARGO) clippy -p vesc-protocol -p vesc-sdk -p vesc-example-loopback --all-targets --all-features -- $(CLIPPY_PEDANTIC_FLAGS)
 
 vesc-ffi-target-check:
+	test "$$($(CARGO) tree -p vesc-ffi --edges normal --no-default-features --prefix none | wc -l | tr -d ' ')" = 1
 	$(CARGO) check -p vesc-ffi --target $(ARM_TARGET) --no-default-features
 
 arm-clippy:
