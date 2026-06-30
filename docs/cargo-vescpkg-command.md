@@ -6,7 +6,7 @@ VESC package flow.
 ## Contract
 
 - The command surface should stay thin.
-- The shared implementation should live in `crates/vesc-pkg`.
+- The shared implementation should live in `crates/vescpkg-build`.
 - The command should build on the existing package plans rather than duplicating
   staging or artifact layout logic.
 - The package target is the device-side BTLE loopback package, not a generic
@@ -18,8 +18,7 @@ VESC package flow.
 - `cargo vescpkg build`
 - optional `cargo vescpkg build --package-only`
 - optional `cargo vescpkg build --target thumbv7em-none-eabihf`
-- the repo prototype lives in the `cargo-vescpkg` binary under
-  `crates/vesc-pkg`
+- the repo prototype lives in the thin `crates/cargo-vescpkg` subcommand crate
 
 ## Responsibilities
 

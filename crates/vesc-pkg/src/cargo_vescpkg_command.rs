@@ -255,7 +255,7 @@ mod tests {
         }
 
         let contract = markdown_section_body(&text, "Contract").expect("contract section");
-        assert!(contract.contains("crates/vesc-pkg"));
+        assert!(contract.contains("crates/vescpkg-build"));
         assert!(contract.contains("device-side BTLE loopback package"));
 
         let shape = markdown_section_body(&text, "Intended Shape").expect("intended shape section");
