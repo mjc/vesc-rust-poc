@@ -34,7 +34,7 @@ ifdef DEVICE_ADDRESS
 DEVICE_FLAGS += --address $(DEVICE_ADDRESS)
 endif
 
-.PHONY: check check-full pre-commit fmt clippy clippy-pedantic arm-clippy arm-gates native-audit test package package-only deploy deploy-install lisp-probe clean status
+.PHONY: check check-full pre-commit fmt clippy clippy-pedantic vesc-ffi-target-check arm-clippy arm-gates native-audit test package package-only deploy deploy-install lisp-probe clean status
 
 # --- verification -----------------------------------------------------------
 #
@@ -51,16 +51,19 @@ pre-commit: check-full
 fmt:
 	$(CARGO) fmt --all --check
 
-clippy: clippy-pedantic arm-clippy
+clippy: clippy-pedantic vesc-ffi-target-check arm-clippy
 	$(CARGO) clippy --workspace --all-targets --all-features -- $(CLIPPY_FLAGS)
 
 clippy-pedantic:
 	$(CARGO) clippy -p vesc-protocol -p vesc-sdk -p vesc-example-loopback --all-targets --all-features -- $(CLIPPY_PEDANTIC_FLAGS)
 
+vesc-ffi-target-check:
+	$(CARGO) check -p vesc-ffi --target $(ARM_TARGET) --no-default-features
+
 arm-clippy:
 	$(CARGO) clippy -p vesc-example-loopback --lib --release --target $(ARM_TARGET) -- $(CLIPPY_PEDANTIC_FLAGS)
 
-arm-gates: arm-clippy native-audit
+arm-gates: vesc-ffi-target-check arm-clippy native-audit
 
 native-audit: package-only
 	$(CARGO) test -p vesc-pkg native_lib -- --nocapture

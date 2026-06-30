@@ -50,6 +50,12 @@ fn lib_info_abi_constants_match_the_vesc_native_loader_layout() {
 }
 
 #[test]
+fn lib_info_abi_exposes_a_target_layout_assertion() {
+    assert_eq!(LibInfoAbi::SIZE, 12);
+    assert_eq!(LibInfoAbi::ALIGN, 4);
+}
+
+#[test]
 fn lib_info_repr_c_layout_scales_with_the_compilation_pointer_width() {
     let pointer_size = core::mem::size_of::<usize>();
 
