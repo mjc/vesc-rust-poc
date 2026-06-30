@@ -281,7 +281,9 @@ mod tests {
             assert_eq!(
                 run_loopback(&transport),
                 Err(LoopbackTransportError::Protocol(
-                    vesc_protocol::ble_loopback::LoopbackError::InvalidCommand { code: 99 }
+                    vesc_protocol::ble_loopback::LoopbackError::InvalidCommand {
+                        code: vesc_protocol::InvalidWireCommand::new(99),
+                    }
                 ))
             );
         }
@@ -300,7 +302,9 @@ mod tests {
         );
         assert_eq!(
             LoopbackTransportError::Protocol(
-                vesc_protocol::ble_loopback::LoopbackError::InvalidCommand { code: 99 }
+                vesc_protocol::ble_loopback::LoopbackError::InvalidCommand {
+                    code: vesc_protocol::InvalidWireCommand::new(99),
+                }
             )
             .to_string(),
             "protocol error: invalid command code: 99"

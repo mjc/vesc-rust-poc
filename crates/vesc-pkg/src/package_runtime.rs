@@ -448,7 +448,9 @@ mod tests {
         assert_eq!(
             runtime.tick(),
             Err(LoopbackRuntimeError::Frame(
-                vesc_protocol::ble_loopback::LoopbackError::InvalidCommand { code: 99 }
+                vesc_protocol::ble_loopback::LoopbackError::InvalidCommand {
+                    code: vesc_protocol::InvalidWireCommand::new(99),
+                }
             ))
         );
         assert_eq!(

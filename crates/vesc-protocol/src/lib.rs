@@ -1,6 +1,16 @@
-//! Shared no_std wire types for host tools and device-side VESC packages.
+//! Typed `no_std` protocol values for host tools and device-side VESC packages.
 //!
 //! Device builds must stay `no_std` and must not link `alloc` or `std`.
+//!
+//! The normal API uses project-owned Rust types such as [`WireVersion`],
+//! [`WireCommand`], and [`Frame`]. Primitive wire bytes are only exposed at
+//! explicit encode/decode boundaries through standard conversions such as
+//! [`TryFrom`] and [`From`].
+//!
+//! This crate owns the protocol/wire contract. Reusable physical units belong
+//! in the future `vesc-units` crate, VESC-domain semantic values belong in the
+//! future `vesc-types` crate, and third-party `uom` compatibility should remain
+//! opt-in interop outside the default protocol path.
 
 #![no_std]
 #![forbid(unused_extern_crates)]
@@ -21,14 +31,42 @@ impl WireVersion {
     /// Current loopback wire protocol version.
     pub const CURRENT: Self = Self(1);
 
-    /// Create a version tag from its raw wire value.
-    pub const fn new(raw: u8) -> Self {
-        Self(raw)
+    /// Create a version tag from its wire value.
+    pub const fn new(value: u8) -> Self {
+        Self(value)
     }
 
-    /// Return the raw version byte as it appears on the wire.
-    pub const fn raw(self) -> u8 {
+    /// Explicitly extract the primitive wire value.
+    pub const fn get(self) -> u8 {
         self.0
+    }
+}
+
+impl From<WireVersion> for u8 {
+    fn from(version: WireVersion) -> Self {
+        version.get()
+    }
+}
+
+/// Error returned when a primitive command code is not recognized.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidWireCommand(u8);
+
+impl InvalidWireCommand {
+    /// Create an invalid command marker from the rejected wire value.
+    pub const fn new(code: u8) -> Self {
+        Self(code)
+    }
+
+    /// Explicitly extract the rejected primitive command code.
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
+impl From<InvalidWireCommand> for u8 {
+    fn from(command: InvalidWireCommand) -> Self {
+        command.get()
     }
 }
 
@@ -46,8 +84,7 @@ pub enum WireCommand {
 }
 
 impl WireCommand {
-    /// Map the command to its wire code.
-    pub const fn code(self) -> u8 {
+    const fn wire_value(self) -> u8 {
         match self {
             Self::Ping => 1,
             Self::Echo => 2,
@@ -55,18 +92,25 @@ impl WireCommand {
             Self::Teardown => 4,
         }
     }
+}
 
-    /// Decode a wire command code.
-    ///
-    /// Unknown codes return `None` so callers can reject frames explicitly.
-    pub const fn from_code(code: u8) -> Option<Self> {
+impl TryFrom<u8> for WireCommand {
+    type Error = InvalidWireCommand;
+
+    fn try_from(code: u8) -> Result<Self, Self::Error> {
         match code {
-            1 => Some(Self::Ping),
-            2 => Some(Self::Echo),
-            3 => Some(Self::Status),
-            4 => Some(Self::Teardown),
-            _ => None,
+            1 => Ok(Self::Ping),
+            2 => Ok(Self::Echo),
+            3 => Ok(Self::Status),
+            4 => Ok(Self::Teardown),
+            _ => Err(InvalidWireCommand::new(code)),
         }
+    }
+}
+
+impl From<WireCommand> for u8 {
+    fn from(command: WireCommand) -> Self {
+        command.wire_value()
     }
 }
 
@@ -113,14 +157,18 @@ mod tests {
 
     #[test]
     fn exposes_a_stable_current_version() {
-        assert_eq!(WireVersion::CURRENT.raw(), 1);
+        assert_eq!(WireVersion::CURRENT.get(), 1);
+        assert_eq!(u8::from(WireVersion::CURRENT), 1);
     }
 
     #[test]
     fn maps_command_codes_round_trip() {
-        assert_eq!(WireCommand::Ping.code(), 1);
-        assert_eq!(WireCommand::from_code(4), Some(WireCommand::Teardown));
-        assert_eq!(WireCommand::from_code(99), None);
+        assert_eq!(u8::from(WireCommand::Ping), 1);
+        assert_eq!(WireCommand::try_from(4), Ok(WireCommand::Teardown));
+        assert_eq!(
+            WireCommand::try_from(99).map_err(|code| code.get()),
+            Err(99)
+        );
     }
 
     #[test]

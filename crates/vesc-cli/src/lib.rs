@@ -365,7 +365,7 @@ mod tests {
             }))
         );
 
-        assert_eq!(WireVersion::CURRENT.raw(), 1);
-        assert_eq!(WireCommand::Status.code(), 3);
+        assert_eq!(WireVersion::CURRENT.get(), 1);
+        assert_eq!(u8::from(WireCommand::Status), 3);
     }
 }

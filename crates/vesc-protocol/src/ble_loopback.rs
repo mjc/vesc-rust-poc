@@ -1,4 +1,4 @@
-use super::{Frame, WireCommand, WireVersion};
+use super::{Frame, InvalidWireCommand, WireCommand, WireVersion};
 use core::fmt;
 
 /// Wire protocol version used by loopback frames.
@@ -25,7 +25,14 @@ pub enum LoopbackError {
     /// The encoded command byte was not recognized.
     InvalidCommand {
         /// Unknown command code.
-        code: u8,
+        code: InvalidWireCommand,
+    },
+    /// The output buffer cannot hold the encoded frame.
+    BufferTooShort {
+        /// Provided output buffer length.
+        len: usize,
+        /// Required encoded frame length.
+        required: usize,
     },
     /// The payload length exceeded the maximum supported frame payload.
     PayloadTooLong {
@@ -44,11 +51,16 @@ impl fmt::Display for LoopbackError {
                 write!(
                     f,
                     "invalid protocol version: expected {}, got {}",
-                    expected.raw(),
-                    actual.raw()
+                    expected.get(),
+                    actual.get()
                 )
             }
-            Self::InvalidCommand { code } => write!(f, "invalid command code: {code}"),
+            Self::InvalidCommand { code } => {
+                write!(f, "invalid command code: {}", code.get())
+            }
+            Self::BufferTooShort { len, required } => {
+                write!(f, "buffer too short: {len} bytes (need {required})")
+            }
             Self::PayloadTooLong { len, max } => {
                 write!(f, "payload too long: {len} bytes (max {max})")
             }
@@ -77,26 +89,44 @@ impl<'a> LoopbackPacket<'a> {
         })
     }
 
-    /// Return the underlying frame by value.
+    /// Return the underlying typed frame by value.
     pub fn frame(&self) -> Frame<'a> {
         self.frame.clone()
     }
 
-    /// Encode the packet into a fixed-size byte buffer and its used length.
-    pub fn encode(
-        &self,
-    ) -> (
-        [u8; MIN_WIRE_FRAME_BYTES + MAX_LOOPBACK_PAYLOAD_BYTES],
-        usize,
-    ) {
-        let mut bytes = [0_u8; MIN_WIRE_FRAME_BYTES + MAX_LOOPBACK_PAYLOAD_BYTES];
-        bytes[0] = self.frame.version().raw();
-        bytes[1] = self.frame.command().code();
-        bytes[2] = self.frame.payload().len() as u8;
-        bytes[MIN_WIRE_FRAME_BYTES..MIN_WIRE_FRAME_BYTES + self.frame.payload().len()]
-            .copy_from_slice(self.frame.payload());
+    /// Encode the packet into the provided output buffer.
+    pub fn encode_into(&self, out: &mut [u8]) -> Result<usize, LoopbackError> {
+        let required = MIN_WIRE_FRAME_BYTES + self.frame.payload().len();
+        if out.len() < required {
+            return Err(LoopbackError::BufferTooShort {
+                len: out.len(),
+                required,
+            });
+        }
 
-        (bytes, MIN_WIRE_FRAME_BYTES + self.frame.payload().len())
+        out[0] = self.frame.version().get();
+        out[1] = u8::from(self.frame.command());
+        out[2] = self.frame.payload().len() as u8;
+
+        let mut index = 0;
+        while index < self.frame.payload().len() {
+            out[MIN_WIRE_FRAME_BYTES + index] = self.frame.payload()[index];
+            index += 1;
+        }
+
+        Ok(required)
+    }
+
+    /// Encode the packet into a fixed-size byte buffer and its used length.
+    pub fn encode(&self) -> ([u8; MAX_LOOPBACK_FRAME_BYTES], usize) {
+        let mut bytes = [0_u8; MAX_LOOPBACK_FRAME_BYTES];
+        let payload = self.frame.payload();
+        bytes[0] = self.frame.version().get();
+        bytes[1] = u8::from(self.frame.command());
+        bytes[2] = payload.len() as u8;
+        copy_payload_no_runtime(&mut bytes, payload);
+
+        (bytes, MIN_WIRE_FRAME_BYTES + payload.len())
     }
 
     /// Decode a packet from raw bytes.
@@ -113,8 +143,8 @@ impl<'a> LoopbackPacket<'a> {
             });
         }
 
-        let command = WireCommand::from_code(bytes[1])
-            .ok_or(LoopbackError::InvalidCommand { code: bytes[1] })?;
+        let command = WireCommand::try_from(bytes[1])
+            .map_err(|code| LoopbackError::InvalidCommand { code })?;
         let payload_len = bytes[2] as usize;
         let required = MIN_WIRE_FRAME_BYTES + payload_len;
 
@@ -132,6 +162,21 @@ impl<'a> LoopbackPacket<'a> {
         Ok(Self {
             frame: Frame::new(actual, command, &bytes[MIN_WIRE_FRAME_BYTES..required]),
         })
+    }
+}
+
+#[cfg_attr(all(not(test), target_arch = "arm"), no_panic::no_panic)]
+fn copy_payload_no_runtime(response: &mut [u8; MAX_LOOPBACK_FRAME_BYTES], payload: &[u8]) {
+    let mut index = 0;
+    while index < payload.len() {
+        // SAFETY: callers only pass payload slices that are already capped to
+        // MAX_LOOPBACK_PAYLOAD_BYTES, and response has exactly enough trailing
+        // capacity after the fixed header. Pointer copy avoids target codegen
+        // pulling in memcpy/compiler-builtins in the final native package.
+        unsafe {
+            *response.as_mut_ptr().add(MIN_WIRE_FRAME_BYTES + index) = *payload.as_ptr().add(index);
+        }
+        index += 1;
     }
 }
 
@@ -154,7 +199,7 @@ pub fn handle_loopback_frame(
     }
 
     let command =
-        WireCommand::from_code(bytes[1]).ok_or(LoopbackError::InvalidCommand { code: bytes[1] })?;
+        WireCommand::try_from(bytes[1]).map_err(|code| LoopbackError::InvalidCommand { code })?;
     let payload_len = bytes[2] as usize;
     if payload_len > MAX_LOOPBACK_PAYLOAD_BYTES {
         return Err(LoopbackError::PayloadTooLong {
@@ -176,19 +221,10 @@ pub fn handle_loopback_frame(
     };
 
     let mut response = [0_u8; MAX_LOOPBACK_FRAME_BYTES];
-    response[0] = BLE_LOOPBACK_PROTOCOL_VERSION.raw();
-    response[1] = command.code();
+    response[0] = BLE_LOOPBACK_PROTOCOL_VERSION.get();
+    response[1] = u8::from(command);
     response[2] = payload.len() as u8;
-
-    let mut index = 0;
-    while index < payload.len() {
-        // `payload` is already capped to MAX_LOOPBACK_PAYLOAD_BYTES, so this
-        // cannot write past the fixed response frame.
-        unsafe {
-            *response.as_mut_ptr().add(MIN_WIRE_FRAME_BYTES + index) = *payload.as_ptr().add(index);
-        }
-        index += 1;
-    }
+    copy_payload_no_runtime(&mut response, payload);
 
     Ok((response, MIN_WIRE_FRAME_BYTES + payload.len()))
 }
@@ -196,8 +232,8 @@ pub fn handle_loopback_frame(
 #[cfg(test)]
 mod tests {
     use super::{
-        BLE_LOOPBACK_PROTOCOL_VERSION, LoopbackError, LoopbackPacket, MAX_LOOPBACK_PAYLOAD_BYTES,
-        MIN_WIRE_FRAME_BYTES,
+        BLE_LOOPBACK_PROTOCOL_VERSION, LoopbackError, LoopbackPacket, MAX_LOOPBACK_FRAME_BYTES,
+        MAX_LOOPBACK_PAYLOAD_BYTES, MIN_WIRE_FRAME_BYTES,
     };
     use crate::{WireCommand, WireVersion};
     use std::format;
@@ -208,7 +244,7 @@ mod tests {
         let (bytes, len) = packet.encode();
 
         assert_eq!(len, MIN_WIRE_FRAME_BYTES);
-        assert_eq!(bytes[..len], [1, WireCommand::Ping.code(), 0]);
+        assert_eq!(bytes[..len], [1, u8::from(WireCommand::Ping), 0]);
 
         let decoded = LoopbackPacket::decode(&bytes[..len]).expect("decoded packet");
 
@@ -229,6 +265,33 @@ mod tests {
         assert_eq!(decoded.frame().version(), BLE_LOOPBACK_PROTOCOL_VERSION);
         assert_eq!(decoded.frame().command(), WireCommand::Echo);
         assert_eq!(decoded.frame().payload(), &payload);
+    }
+
+    #[test]
+    fn encode_into_reports_short_output_buffers() {
+        let payload = [4_u8, 5, 6, 7];
+        let packet = LoopbackPacket::new(WireCommand::Echo, &payload).expect("echo packet");
+        let mut bytes = [0_u8; MIN_WIRE_FRAME_BYTES + 1];
+
+        assert_eq!(
+            packet.encode_into(&mut bytes),
+            Err(LoopbackError::BufferTooShort {
+                len: MIN_WIRE_FRAME_BYTES + 1,
+                required: MIN_WIRE_FRAME_BYTES + payload.len(),
+            })
+        );
+    }
+
+    #[test]
+    fn encode_into_writes_typed_protocol_frame() {
+        let payload = [9_u8, 8];
+        let packet = LoopbackPacket::new(WireCommand::Echo, &payload).expect("echo packet");
+        let mut bytes = [0_u8; MAX_LOOPBACK_FRAME_BYTES];
+
+        let len = packet.encode_into(&mut bytes).expect("encoded frame");
+
+        assert_eq!(len, MIN_WIRE_FRAME_BYTES + payload.len());
+        assert_eq!(&bytes[..len], &[1, u8::from(WireCommand::Echo), 2, 9, 8]);
     }
 
     #[test]
@@ -256,7 +319,7 @@ mod tests {
     #[test]
     fn rejects_unknown_versions_and_commands() {
         assert_eq!(
-            LoopbackPacket::decode(&[2, WireCommand::Ping.code(), 0]),
+            LoopbackPacket::decode(&[2, u8::from(WireCommand::Ping), 0]),
             Err(LoopbackError::InvalidVersion {
                 expected: BLE_LOOPBACK_PROTOCOL_VERSION,
                 actual: WireVersion::new(2),
@@ -264,7 +327,9 @@ mod tests {
         );
         assert_eq!(
             LoopbackPacket::decode(&[1, 99, 0]),
-            Err(LoopbackError::InvalidCommand { code: 99 })
+            Err(LoopbackError::InvalidCommand {
+                code: crate::InvalidWireCommand::new(99),
+            })
         );
     }
 
@@ -298,12 +363,27 @@ mod tests {
             "invalid protocol version: expected 1, got 2"
         );
         assert_eq!(
-            format!("{}", LoopbackError::InvalidCommand { code: 99 }),
+            format!(
+                "{}",
+                LoopbackError::InvalidCommand {
+                    code: crate::InvalidWireCommand::new(99),
+                }
+            ),
             "invalid command code: 99"
         );
         assert_eq!(
             format!("{}", LoopbackError::PayloadTooLong { len: 17, max: 16 }),
             "payload too long: 17 bytes (max 16)"
+        );
+        assert_eq!(
+            format!(
+                "{}",
+                LoopbackError::BufferTooShort {
+                    len: 4,
+                    required: 7,
+                }
+            ),
+            "buffer too short: 4 bytes (need 7)"
         );
     }
 
@@ -323,7 +403,7 @@ mod tests {
             handle_loopback_frame(&bytes[..len], 0x0102_0304_0506_0708).expect("status response");
         assert_eq!(
             response[..response_len],
-            [1, WireCommand::Status.code(), 8, 8, 7, 6, 5, 4, 3, 2, 1]
+            [1, u8::from(WireCommand::Status), 8, 8, 7, 6, 5, 4, 3, 2, 1]
         );
 
         assert!(handle_loopback_frame(&[9, 1, 0], 0).is_err());
