@@ -1,15 +1,21 @@
 //! Explicit firmware allocation handles for VESC native packages.
 //!
 //! VESC native packages can allocate from firmware-provided allocator slots.
-//! This module wraps those slots with explicit RAII handles; it is not Rust's
-//! default allocator, and it does not make `alloc` collections available.
+//! By default this module only wraps those slots with explicit RAII handles.
 //!
 //! Memory returned by firmware `malloc` is uninitialized. The handle frees via
 //! firmware `free` on [`Drop`], and callers should use raw pointers until they
 //! have explicitly initialized the allocation.
 //!
-//! The optional `alloc` feature exposes [`VescAllocator`] for package crates
-//! that deliberately opt into Rust's `alloc` collections.
+//! With the `alloc` feature enabled, package crates may install
+//! [`VescAllocator`] as their package-local `#[global_allocator]` and then use
+//! Rust `alloc` collections such as `Vec`, `Box`, and `String`. The adapter
+//! over-allocates and stores the original firmware pointer before the aligned
+//! user pointer so Rust allocation layouts can request alignments larger than
+//! the firmware `malloc` API exposes directly. Out-of-memory is reported by
+//! returning null from `GlobalAlloc::alloc`; `alloc` collection methods that
+//! panic or abort on allocation failure keep their normal behavior, while
+//! `try_reserve` reports the failure to the package.
 
 #[cfg(feature = "alloc")]
 use core::alloc::{GlobalAlloc, Layout};
@@ -20,89 +26,9 @@ use core::ptr;
 use core::ptr::NonNull;
 
 #[cfg(feature = "alloc")]
-const ALLOC_HEADER_BYTES: usize = size_of::<*mut c_void>();
-
-/// Firmware-backed global allocator for package-local `alloc` collections.
+const HEADER_BYTES: usize = size_of::<*mut c_void>();
 #[cfg(feature = "alloc")]
-#[derive(Debug, Clone, Copy, Default)]
-pub struct VescAllocator;
-
-#[cfg(feature = "alloc")]
-unsafe impl GlobalAlloc for VescAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if layout.size() == 0 {
-            return NonNull::<u8>::dangling().as_ptr();
-        }
-
-        let Some(bytes) = layout
-            .size()
-            .checked_add(ALLOC_HEADER_BYTES)
-            .and_then(|bytes| bytes.checked_add(layout.align().saturating_sub(1)))
-        else {
-            return ptr::null_mut();
-        };
-        let raw = unsafe { vescpkg_rs_sys::raw::vesc_malloc(bytes) }.cast::<u8>();
-        let Some(raw) = NonNull::new(raw) else {
-            return ptr::null_mut();
-        };
-        let start = raw.as_ptr().wrapping_add(ALLOC_HEADER_BYTES);
-        let offset = start.align_offset(layout.align());
-        if offset == usize::MAX {
-            unsafe { vescpkg_rs_sys::raw::vesc_free(raw.as_ptr().cast()) };
-            return ptr::null_mut();
-        }
-        let user = start.wrapping_add(offset);
-        unsafe {
-            ptr::copy_nonoverlapping(
-                (&raw.as_ptr().cast::<c_void>() as *const *mut c_void).cast::<u8>(),
-                user.sub(ALLOC_HEADER_BYTES),
-                ALLOC_HEADER_BYTES,
-            );
-        }
-        user
-    }
-
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        if ptr.is_null() || layout.size() == 0 {
-            return;
-        }
-        let mut raw = ptr::null_mut::<c_void>();
-        unsafe {
-            ptr::copy_nonoverlapping(
-                ptr.sub(ALLOC_HEADER_BYTES),
-                (&mut raw as *mut *mut c_void).cast::<u8>(),
-                ALLOC_HEADER_BYTES,
-            );
-            vescpkg_rs_sys::raw::vesc_free(raw);
-        }
-    }
-
-    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        let ptr = unsafe { self.alloc(layout) };
-        if !ptr.is_null() {
-            unsafe { ptr::write_bytes(ptr, 0, layout.size()) };
-        }
-        ptr
-    }
-
-    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        if ptr.is_null() {
-            let Ok(layout) = Layout::from_size_align(new_size, layout.align()) else {
-                return ptr::null_mut();
-            };
-            return unsafe { self.alloc(layout) };
-        }
-        let Ok(new_layout) = Layout::from_size_align(new_size, layout.align()) else {
-            return ptr::null_mut();
-        };
-        let replacement = unsafe { self.alloc(new_layout) };
-        if !replacement.is_null() {
-            unsafe { ptr::copy_nonoverlapping(ptr, replacement, layout.size().min(new_size)) };
-            unsafe { self.dealloc(ptr, layout) };
-        }
-        replacement
-    }
-}
+const HEADER_ALIGN: usize = core::mem::align_of::<*mut c_void>();
 
 /// Firmware allocation failures reported by [`FirmwareAllocator`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,6 +44,158 @@ pub enum AllocError {
         /// Requested byte count.
         bytes: usize,
     },
+}
+
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, Copy)]
+struct AllocationHeader;
+
+#[cfg(feature = "alloc")]
+impl AllocationHeader {
+    fn request_bytes(layout: Layout) -> Result<usize, AllocationSizeOverflow> {
+        let align = effective_align(layout.align());
+        layout
+            .size()
+            .checked_add(HEADER_BYTES)
+            .and_then(|bytes| bytes.checked_add(align - 1))
+            .ok_or(AllocationSizeOverflow)
+    }
+
+    unsafe fn write_before(user: NonNull<u8>, original: NonNull<u8>) {
+        let original = original.as_ptr().cast::<c_void>();
+        let header = user.as_ptr().wrapping_sub(HEADER_BYTES);
+        unsafe {
+            ptr::copy_nonoverlapping((&raw const original).cast::<u8>(), header, HEADER_BYTES)
+        };
+    }
+
+    unsafe fn read_before(user: NonNull<u8>) -> *mut c_void {
+        let mut original = ptr::null_mut::<c_void>();
+        let header = user.as_ptr().wrapping_sub(HEADER_BYTES);
+        unsafe { ptr::copy_nonoverlapping(header, (&raw mut original).cast::<u8>(), HEADER_BYTES) };
+        original
+    }
+}
+
+/// VESC firmware allocator adapter for package-local Rust `alloc` use.
+///
+/// Install this type with `#[global_allocator]` in a package crate that
+/// intentionally enables `vescpkg-rs/alloc` and wants `alloc` collections to
+/// consume firmware heap.
+///
+/// ```ignore
+/// use vescpkg_rs::VescAllocator;
+///
+/// #[global_allocator]
+/// static ALLOCATOR: VescAllocator = VescAllocator;
+/// ```
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct VescAllocator;
+
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AllocationSizeOverflow;
+
+#[cfg(feature = "alloc")]
+unsafe impl GlobalAlloc for VescAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        if layout.size() == 0 {
+            return NonNull::<u8>::dangling().as_ptr().with_addr(layout.align());
+        }
+
+        match AllocationHeader::request_bytes(layout) {
+            Ok(request) => {
+                let raw = unsafe { crate::ffi::vesc_malloc(request) }.cast::<u8>();
+                let Some(user) = aligned_user_ptr(raw, layout.align()) else {
+                    if !raw.is_null() {
+                        unsafe { crate::ffi::vesc_free(raw.cast()) };
+                    }
+                    return ptr::null_mut();
+                };
+                user.as_ptr()
+            }
+            Err(AllocationSizeOverflow) => ptr::null_mut(),
+        }
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        if ptr.is_null() || layout.size() == 0 {
+            return;
+        }
+
+        let user = unsafe { NonNull::new_unchecked(ptr) };
+        let original = unsafe { AllocationHeader::read_before(user) };
+        unsafe { crate::ffi::vesc_free(original) };
+    }
+
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        let ptr = unsafe { self.alloc(layout) };
+        if !ptr.is_null() {
+            unsafe { zero_allocation_bytes(ptr, layout.size()) };
+        }
+        ptr
+    }
+
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        if new_size == 0 {
+            unsafe { self.dealloc(ptr, layout) };
+            return ptr::null_mut();
+        }
+
+        let Ok(new_layout) = Layout::from_size_align(new_size, layout.align()) else {
+            return ptr::null_mut();
+        };
+        let new_ptr = unsafe { self.alloc(new_layout) };
+        if !new_ptr.is_null() {
+            let bytes_to_copy = layout.size().min(new_size);
+            unsafe { copy_allocation_bytes(ptr, new_ptr, bytes_to_copy) };
+            unsafe { self.dealloc(ptr, layout) };
+        }
+        new_ptr
+    }
+}
+
+#[cfg(feature = "alloc")]
+unsafe fn zero_allocation_bytes(dst: *mut u8, len: usize) {
+    unsafe { ptr::write_bytes(dst, 0, len) };
+}
+
+#[cfg(feature = "alloc")]
+unsafe fn copy_allocation_bytes(src: *const u8, dst: *mut u8, len: usize) {
+    unsafe { ptr::copy_nonoverlapping(src, dst, len) };
+}
+
+#[cfg(feature = "alloc")]
+fn aligned_user_ptr(raw: *mut u8, align: usize) -> Option<NonNull<u8>> {
+    let raw = NonNull::new(raw)?;
+    let align = effective_align(align);
+    let start = raw.as_ptr().wrapping_add(HEADER_BYTES);
+    let offset = start.align_offset(align);
+    if offset == usize::MAX {
+        return None;
+    }
+    let user = NonNull::new(start.wrapping_add(offset))?;
+
+    unsafe {
+        AllocationHeader::write_before(user, raw);
+    }
+
+    Some(user)
+}
+
+#[cfg(feature = "alloc")]
+const fn effective_align(requested: usize) -> usize {
+    if requested > HEADER_ALIGN {
+        requested
+    } else {
+        HEADER_ALIGN
+    }
+}
+
+#[cfg(all(test, feature = "alloc"))]
+unsafe fn stored_original_ptr(user: NonNull<u8>) -> *mut c_void {
+    unsafe { AllocationHeader::read_before(user) }
 }
 
 /// Firmware allocation and free calls used by the SDK allocator wrapper.
@@ -136,13 +214,13 @@ pub trait AllocBindings {
 }
 
 #[cfg(not(test))]
-impl AllocBindings for crate::RealBindings {
+impl AllocBindings for crate::bindings::RealBindings {
     unsafe fn malloc(&self, bytes: usize) -> *mut c_void {
-        unsafe { vescpkg_rs_sys::raw::vesc_malloc(bytes) }
+        unsafe { crate::ffi::vesc_malloc(bytes) }
     }
 
     unsafe fn free(&self, ptr: *mut c_void) {
-        unsafe { vescpkg_rs_sys::raw::vesc_free(ptr) }
+        unsafe { crate::ffi::vesc_free(ptr) }
     }
 }
 
@@ -158,13 +236,11 @@ impl<'a, B: AllocBindings> FirmwareAllocator<'a, B> {
         Self { bindings }
     }
 
-    /// Allocate `len` uninitialized bytes from the firmware allocator.
-    pub fn allocate_bytes(&self, len: usize) -> Result<FirmwareAllocation<'a, u8, B>, AllocError> {
-        self.allocate_for::<u8>(len)
-    }
-
     /// Allocate space for `count` uninitialized values of `T`.
-    pub fn allocate_for<T>(&self, count: usize) -> Result<FirmwareAllocation<'a, T, B>, AllocError>
+    pub(crate) fn allocate_for<T>(
+        &self,
+        count: usize,
+    ) -> Result<FirmwareAllocation<'a, T, B>, AllocError>
     where
         T: Sized,
     {
@@ -184,66 +260,76 @@ impl<'a, B: AllocBindings> FirmwareAllocator<'a, B> {
 
         Ok(FirmwareAllocation {
             ptr,
-            len: count,
             bindings: self.bindings,
         })
+    }
+}
+
+#[cfg(not(test))]
+static LIVE_BINDINGS: crate::bindings::RealBindings = crate::bindings::RealBindings;
+
+#[cfg(not(test))]
+impl FirmwareAllocator<'static, crate::bindings::RealBindings> {
+    /// Construct an allocator backed by the live package ABI without exposing its binding type.
+    #[inline(always)]
+    pub fn live() -> Self {
+        Self::new(&LIVE_BINDINGS)
     }
 }
 
 /// Owned firmware allocation pointer freed on drop.
 
 #[derive(Debug)]
-pub struct FirmwareAllocation<'a, T, B: AllocBindings> {
+pub(crate) struct FirmwareAllocation<'a, T, B: AllocBindings> {
     ptr: NonNull<T>,
-    len: usize,
     bindings: &'a B,
 }
 
 impl<T, B: AllocBindings> FirmwareAllocation<'_, T, B> {
-    /// Return the allocation pointer as const.
-    pub const fn as_ptr(&self) -> *const T {
-        self.ptr.as_ptr()
-    }
-
     /// Return the allocation pointer as mutable.
-    pub const fn as_mut_ptr(&mut self) -> *mut T {
+    pub(crate) const fn as_mut_ptr(&mut self) -> *mut T {
         self.ptr.as_ptr()
     }
 
-    /// Number of `T` elements requested for this allocation.
-    pub const fn len(&self) -> usize {
-        self.len
-    }
-
-    /// Return whether this allocation has zero elements.
-    pub const fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
-    /// Return the owned non-null firmware pointer.
-    pub const fn as_non_null(&self) -> NonNull<T> {
-        self.ptr
+    /// Initialize the first element and return it as a mutable reference.
+    pub(crate) fn write_first(&mut self, value: T) -> &mut T {
+        unsafe {
+            self.ptr.as_ptr().write(value);
+            self.ptr.as_mut()
+        }
     }
 
     /// Transfer ownership of the firmware pointer out of this RAII handle.
     ///
     /// The caller becomes responsible for freeing the pointer exactly once with
     /// the same firmware allocator.
-    pub fn into_raw(self) -> NonNull<T> {
+    pub(crate) fn into_raw(self) -> NonNull<T> {
         let allocation = ManuallyDrop::new(self);
         allocation.ptr
     }
 }
 
+/// Reclaim a firmware allocation pointer so dropping it frees through `bindings`.
+#[cfg(all(not(test), target_arch = "arm"))]
+pub fn reclaim_firmware_allocation<T, B: AllocBindings>(
+    ptr: *mut T,
+    bindings: &B,
+) -> Option<FirmwareAllocation<'_, T, B>> {
+    let ptr = NonNull::new(ptr)?;
+    Some(unsafe { FirmwareAllocation::from_raw_parts(ptr, bindings) })
+}
+
+#[cfg(any(test, all(not(test), target_arch = "arm")))]
+#[allow(clippy::elidable_lifetime_names)]
 impl<'a, T, B: AllocBindings> FirmwareAllocation<'a, T, B> {
     /// Build an owned firmware allocation handle from raw parts.
     ///
     /// # Safety
     ///
-    /// `ptr` must have been returned by `bindings.malloc`, represent at least
-    /// `len * size_of::<T>()` bytes, and be uniquely owned by this handle.
-    pub unsafe fn from_raw_parts(ptr: NonNull<T>, len: usize, bindings: &'a B) -> Self {
-        Self { ptr, len, bindings }
+    /// `ptr` must have been returned by `bindings.malloc` and be uniquely owned
+    /// by this handle.
+    pub(crate) unsafe fn from_raw_parts(ptr: NonNull<T>, bindings: &'a B) -> Self {
+        Self { ptr, bindings }
     }
 }
 
@@ -256,6 +342,13 @@ impl<T, B: AllocBindings> Drop for FirmwareAllocation<'_, T, B> {
 #[cfg(test)]
 mod tests {
     use super::{AllocBindings, AllocError, FirmwareAllocation, FirmwareAllocator};
+    #[cfg(feature = "alloc")]
+    use super::{
+        AllocationHeader, HEADER_ALIGN, HEADER_BYTES, VescAllocator, aligned_user_ptr,
+        copy_allocation_bytes, stored_original_ptr, zero_allocation_bytes,
+    };
+    #[cfg(feature = "alloc")]
+    use core::alloc::{GlobalAlloc, Layout};
     use core::cell::Cell;
     use core::ffi::c_void;
     use core::ptr::NonNull;
@@ -300,22 +393,6 @@ mod tests {
     }
 
     #[test]
-    fn allocate_bytes_calls_firmware_malloc_with_requested_len() {
-        let mut backing = vec![0_u8; 8];
-        let bindings = FakeAllocBindings::new(backing.as_mut_ptr().cast());
-        let allocator = FirmwareAllocator::new(&bindings);
-
-        let allocation = allocator.allocate_bytes(8).expect("allocation");
-
-        assert_eq!(bindings.malloc_calls.get(), 1);
-        assert_eq!(bindings.last_requested_len.get(), 8);
-        assert_eq!(allocation.len(), 8);
-        assert!(!allocation.is_empty());
-        assert_eq!(allocation.as_ptr(), backing.as_ptr());
-        assert_eq!(allocation.as_non_null().as_ptr(), backing.as_mut_ptr());
-    }
-
-    #[test]
     fn allocation_drop_calls_firmware_free_once() {
         let mut backing = vec![0_u8; 4];
         let ptr = backing.as_mut_ptr();
@@ -323,7 +400,7 @@ mod tests {
         let allocator = FirmwareAllocator::new(&bindings);
 
         {
-            let mut allocation = allocator.allocate_bytes(4).expect("allocation");
+            let mut allocation = allocator.allocate_for::<u8>(4).expect("allocation");
             assert_eq!(allocation.as_mut_ptr(), ptr);
         }
 
@@ -332,12 +409,11 @@ mod tests {
     }
 
     #[test]
-
     fn malloc_null_maps_to_out_of_memory() {
         let bindings = FakeAllocBindings::failing();
         let allocator = FirmwareAllocator::new(&bindings);
 
-        let error = allocator.allocate_bytes(7).unwrap_err();
+        let error = allocator.allocate_for::<u8>(7).unwrap_err();
 
         assert_eq!(error, AllocError::OutOfMemory { bytes: 7 });
     }
@@ -348,14 +424,13 @@ mod tests {
         let bindings = FakeAllocBindings::new(backing.as_mut_ptr().cast());
         let allocator = FirmwareAllocator::new(&bindings);
 
-        let allocation = allocator.allocate_for::<u32>(3).expect("allocation");
+        let mut allocation = allocator.allocate_for::<u32>(3).expect("allocation");
 
         assert_eq!(bindings.last_requested_len.get(), 12);
-        assert_eq!(allocation.len(), 3);
+        assert_eq!(allocation.as_mut_ptr(), backing.as_mut_ptr());
     }
 
     #[test]
-
     fn allocate_for_rejects_size_overflow() {
         let mut backing = vec![0_u8; 1];
         let bindings = FakeAllocBindings::new(backing.as_mut_ptr().cast());
@@ -368,7 +443,6 @@ mod tests {
     }
 
     #[test]
-
     fn allocate_for_rejects_zero_sized_types() {
         let mut backing = vec![0_u8; 1];
         let bindings = FakeAllocBindings::new(backing.as_mut_ptr().cast());
@@ -377,10 +451,6 @@ mod tests {
         assert_eq!(
             allocator.allocate_for::<()>(1).unwrap_err(),
             AllocError::ZeroSizedType
-        );
-        assert_eq!(
-            allocator.allocate_bytes(0).unwrap_err(),
-            AllocError::ZeroLength
         );
         assert_eq!(
             allocator.allocate_for::<u8>(0).unwrap_err(),
@@ -396,7 +466,7 @@ mod tests {
         let bindings = FakeAllocBindings::new(ptr.cast());
         let allocator = FirmwareAllocator::new(&bindings);
 
-        let allocation = allocator.allocate_bytes(4).expect("allocation");
+        let allocation = allocator.allocate_for::<u8>(4).expect("allocation");
         let raw = allocation.into_raw();
 
         assert_eq!(raw.as_ptr(), ptr);
@@ -404,18 +474,118 @@ mod tests {
     }
 
     #[test]
-
     fn from_raw_parts_frees_on_drop() {
         let mut backing = vec![0_u16; 2];
         let ptr = NonNull::new(backing.as_mut_ptr()).expect("nonnull");
         let bindings = FakeAllocBindings::new(ptr.as_ptr().cast());
 
         {
-            let allocation = unsafe { FirmwareAllocation::from_raw_parts(ptr, 2, &bindings) };
-            assert_eq!(allocation.len(), 2);
+            let _allocation = unsafe { FirmwareAllocation::from_raw_parts(ptr, &bindings) };
         }
 
         assert_eq!(bindings.free_calls.get(), 1);
         assert_eq!(bindings.last_freed.get(), ptr.as_ptr() as usize);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn allocation_request_includes_alignment_and_header_space() {
+        let layout = Layout::from_size_align(7, 32).expect("valid layout");
+
+        assert_eq!(
+            AllocationHeader::request_bytes(layout),
+            Ok(7 + HEADER_BYTES + 31)
+        );
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn allocation_request_keeps_pointer_alignment_for_low_alignment_layouts() {
+        let layout = Layout::from_size_align(1, 1).expect("valid layout");
+
+        assert_eq!(
+            AllocationHeader::request_bytes(layout),
+            Ok(1 + HEADER_BYTES + HEADER_ALIGN - 1)
+        );
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn global_allocator_returns_aligned_dangling_pointer_for_zero_sized_layouts() {
+        let layout = Layout::from_size_align(0, 32).expect("valid layout");
+
+        let ptr = unsafe { VescAllocator.alloc(layout) };
+
+        assert!(!ptr.is_null());
+        assert_eq!(ptr.addr() % layout.align(), 0);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn global_allocator_dealloc_ignores_zero_sized_layouts() {
+        let layout = Layout::from_size_align(0, 32).expect("valid layout");
+        let ptr = NonNull::<u8>::dangling().as_ptr().with_addr(layout.align());
+
+        unsafe { VescAllocator.dealloc(ptr, layout) };
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn aligned_user_ptr_returns_requested_alignment_and_preserves_original_pointer() {
+        let mut backing = [0_u8; 128];
+        let raw = backing.as_mut_ptr();
+        let user = aligned_user_ptr(raw, 64).expect("aligned pointer");
+
+        assert_eq!(user.as_ptr().addr() % 64, 0);
+        assert_eq!(unsafe { stored_original_ptr(user) }, raw.cast());
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn aligned_user_ptr_aligns_unaligned_firmware_pointer_without_losing_original() {
+        let mut backing = [0_u8; 128];
+        let raw = backing.as_mut_ptr().wrapping_add(1);
+        let user = aligned_user_ptr(raw, 16).expect("aligned pointer");
+
+        assert_eq!(user.as_ptr().addr() % 16, 0);
+        assert_eq!(unsafe { stored_original_ptr(user) }, raw.cast());
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn aligned_user_ptr_preserves_original_pointer_for_low_alignment_layouts() {
+        let mut backing = [0_u8; 128];
+        let raw = backing.as_mut_ptr();
+        let user = aligned_user_ptr(raw, 1).expect("aligned pointer");
+
+        assert_eq!(unsafe { stored_original_ptr(user) }, raw.cast());
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn aligned_user_ptr_maps_null_firmware_allocation_to_none() {
+        assert_eq!(aligned_user_ptr(core::ptr::null_mut(), 4), None);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn allocation_byte_copy_preserves_dynamic_realloc_contents() {
+        let src = [1_u8, 2, 3, 4, 5];
+        let mut dst = [0_u8; 8];
+
+        unsafe { copy_allocation_bytes(src.as_ptr(), dst.as_mut_ptr(), src.len()) };
+
+        assert_eq!(&dst[..src.len()], src);
+        assert_eq!(&dst[src.len()..], &[0, 0, 0]);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn allocation_zeroing_clears_dynamic_alloc_zeroed_contents() {
+        let mut dst = [1_u8; 8];
+
+        unsafe { zero_allocation_bytes(dst.as_mut_ptr(), dst.len()) };
+
+        assert_eq!(dst, [0; 8]);
     }
 }
