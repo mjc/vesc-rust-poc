@@ -9,9 +9,18 @@ pub fn roadmap_text() -> String {
     fs::read_to_string(roadmap_path()).expect("roadmap document contents")
 }
 
+pub fn markdown_section_body<'a>(text: &'a str, heading: &str) -> Option<&'a str> {
+    let marker = format!("## {heading}");
+    let after_heading = text.split_once(&marker)?.1;
+    let body = after_heading
+        .split_once("\n## ")
+        .map_or(after_heading, |(body, _)| body);
+    Some(body.trim())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::roadmap_text;
+    use super::{markdown_section_body, roadmap_text};
 
     fn assert_markdown_sections(text: &str, sections: &[&str]) {
         for section in sections {
@@ -37,20 +46,11 @@ mod tests {
             ],
         );
 
-        let guardrail = text
-            .split("## Guardrail")
-            .nth(1)
-            .expect("guardrail section");
+        let guardrail = markdown_section_body(&text, "Guardrail").expect("guardrail section");
         assert!(guardrail.contains("no_std"));
         assert!(guardrail.contains("no-alloc"));
 
-        let validation = text
-            .split("## Validation")
-            .nth(1)
-            .expect("validation section")
-            .split("## Deferred:")
-            .next()
-            .expect("validation body");
+        let validation = markdown_section_body(&text, "Validation").expect("validation section");
         for command in [
             "nix develop -c make check",
             "nix develop -c make check-full",

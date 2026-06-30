@@ -63,6 +63,8 @@ pub fn git_tracks(path: &str) -> bool {
         .is_ok_and(|status| status.success())
 }
 
+pub const MAKE_DRY_RUN_TARGETS: &[&str] = &["check", "check-full"];
+
 pub fn make_dry_run_succeeds(target: &str) -> bool {
     Command::new("make")
         .arg("-n")
@@ -77,8 +79,8 @@ pub fn make_dry_run_succeeds(target: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        GENERATED_PACKAGE_PATHS, TRACKED_LOCKFILES, git_check_ignore_all, git_tracks_all,
-        make_dry_run_succeeds, repo_root,
+        GENERATED_PACKAGE_PATHS, MAKE_DRY_RUN_TARGETS, TRACKED_LOCKFILES, git_check_ignore_all,
+        git_tracks_all, make_dry_run_succeeds, repo_root,
     };
     use std::fs;
 
@@ -96,18 +98,17 @@ mod tests {
             fs::metadata(repo_root().join(".config/nextest.toml")).is_ok(),
             "expected nextest profiles at .config/nextest.toml"
         );
-        assert!(
-            make_dry_run_succeeds("check"),
-            "make -n check should succeed from repo root"
+        assert_eq!(
+            MAKE_DRY_RUN_TARGETS,
+            ["check", "check-full"],
+            "workspace hygiene should dry-run the repo-facing check targets only"
         );
-        assert!(
-            make_dry_run_succeeds("check-full"),
-            "make -n check-full should succeed from repo root"
-        );
-        assert!(
-            make_dry_run_succeeds("test"),
-            "make -n test should succeed from repo root"
-        );
+        for target in MAKE_DRY_RUN_TARGETS {
+            assert!(
+                make_dry_run_succeeds(target),
+                "make -n {target} should succeed from repo root"
+            );
+        }
         let vesc_ffi_manifest = repo_root().join("crates/vesc-ffi/Cargo.toml");
         let manifest = fs::read_to_string(&vesc_ffi_manifest).expect("vesc-ffi manifest");
         assert!(

@@ -197,6 +197,8 @@ pub fn command_design_text() -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::rust_package_api_roadmap::markdown_section_body;
+
     use super::{
         CargoVescPkgError, CargoVescPkgInvocation, CargoVescPkgMode, DEFAULT_PACKAGE_VERSION,
         DEFAULT_TARGET_TRIPLE, command_design_text, parse_args, run_with,
@@ -223,23 +225,11 @@ mod tests {
             );
         }
 
-        let contract = text
-            .split("## Contract")
-            .nth(1)
-            .expect("contract section")
-            .split("## Intended Shape")
-            .next()
-            .expect("contract body");
+        let contract = markdown_section_body(&text, "Contract").expect("contract section");
         assert!(contract.contains("crates/vesc-pkg"));
         assert!(contract.contains("device-side BTLE loopback package"));
 
-        let shape = text
-            .split("## Intended Shape")
-            .nth(1)
-            .expect("intended shape section")
-            .split("## Responsibilities")
-            .next()
-            .expect("intended shape body");
+        let shape = markdown_section_body(&text, "Intended Shape").expect("intended shape section");
         assert!(shape.contains("cargo vescpkg build"));
         assert!(shape.contains("thumbv7em-none-eabihf"));
     }
