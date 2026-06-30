@@ -25,7 +25,9 @@
 
 pub mod battery;
 pub mod can;
+pub mod gnss;
 pub mod io;
+pub mod motion;
 pub mod motor;
 pub mod ratio;
 pub mod temperature;
@@ -35,7 +37,12 @@ pub use battery::{
     InputCurrent, InputVoltage, WattHoursCharged, WattHoursDischarged, WattHoursRemaining,
 };
 pub use can::{CanControllerId, CanExtendedId, CanStandardId};
+pub use gnss::{GnssAltitude, GnssLatitude, GnssLongitude, GnssSpeed};
 pub use io::{ThreadPriority, ThreadPriorityError};
+pub use motion::{
+    AbsoluteTachometerSteps, ElectricalSpeed, MechanicalSpeed, TachometerSteps, TripDistance,
+    VehicleSpeed,
+};
 pub use motor::{
     BrakeCurrent, DCurrent, DirectionalMotorCurrent, HandbrakeCurrent, MotorCurrent,
     OpenLoopCurrent, PhaseCurrent, QCurrent, TotalMotorCurrent,

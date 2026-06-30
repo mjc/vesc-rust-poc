@@ -61,10 +61,13 @@ pub mod types;
 mod tests {
     use super::{ProtocolFrame, WireCommand, WireVersion};
     use crate::types::{
-        BatteryCurrent, BatteryVoltage, CanControllerId, DirectionalMotorCurrent, MotorCurrent,
-        ThreadPriority, TotalMotorCurrent, WattHoursDischarged,
+        BatteryCurrent, BatteryVoltage, CanControllerId, DirectionalMotorCurrent, GnssLatitude,
+        GnssLongitude, GnssSpeed, MechanicalSpeed, MotorCurrent, ThreadPriority, TotalMotorCurrent,
+        TripDistance, VehicleSpeed, WattHoursDischarged,
     };
-    use vescpkg_rs_units::{Current, Energy, Voltage};
+    use vescpkg_rs_units::{
+        Current, Distance, Energy, Latitude, Longitude, MechanicalRpm, Speed, Voltage,
+    };
 
     #[test]
     fn device_side_can_use_the_shared_protocol_crate() {
@@ -95,6 +98,23 @@ mod tests {
         assert_eq!(directional.current().as_amps(), -2.0);
         assert_eq!(battery_voltage.voltage().as_volts(), 50.4);
         assert_eq!(discharged.energy().as_watt_hours(), 42.0);
+    }
+
+    #[test]
+    fn semantic_motion_and_gnss_types_wrap_units() {
+        let speed = VehicleSpeed::new(Speed::from_meters_per_second(4.0));
+        let trip = TripDistance::new(Distance::from_meters(123.0));
+        let mechanical = MechanicalSpeed::new(MechanicalRpm::from_revolutions_per_minute(3000.0));
+        let latitude = GnssLatitude::new(Latitude::from_degrees(40.015));
+        let longitude = GnssLongitude::new(Longitude::from_degrees(-105.2705));
+        let gnss_speed = GnssSpeed::new(Speed::from_meters_per_second(3.5));
+
+        assert_eq!(speed.speed().as_meters_per_second(), 4.0);
+        assert_eq!(trip.distance().as_meters(), 123.0);
+        assert_eq!(mechanical.rpm().as_revolutions_per_minute(), 3000.0);
+        assert_eq!(latitude.latitude().as_degrees(), 40.015);
+        assert_eq!(longitude.longitude().as_degrees(), -105.2705);
+        assert_eq!(gnss_speed.speed().as_meters_per_second(), 3.5);
     }
 
     #[test]
