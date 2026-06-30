@@ -55,7 +55,8 @@ pub fn register_package_extensions<B: ffi::LbmBindings>(
     lifecycle: &ffi::PackageLifecycle<B>,
 ) -> bool {
     let [descriptor] = extensions::package_extension_descriptors();
-    lifecycle::register_extension_from_image(info, lifecycle, descriptor).is_ok()
+    // VESC passes loader metadata for this native package before registration.
+    unsafe { lifecycle::register_extension_from_image(info, lifecycle, descriptor) }.is_ok()
 }
 
 #[cfg(all(test, feature = "test-support"))]

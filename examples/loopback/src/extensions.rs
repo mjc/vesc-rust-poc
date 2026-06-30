@@ -91,7 +91,7 @@ mod tests {
         let [descriptor] = package_extension_descriptors();
 
         assert_eq!(
-            register_extension_from_image(&info, &lifecycle, descriptor),
+            unsafe { register_extension_from_image(&info, &lifecycle, descriptor) },
             Ok(())
         );
         assert_eq!(lifecycle.bindings().add_calls.get(), 1);

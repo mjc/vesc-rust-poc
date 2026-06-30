@@ -70,7 +70,14 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         }
     }
 
-    pub fn register_extension_from_image(
+    /// Register an extension whose handler address is relative to a loaded native image.
+    ///
+    /// # Safety
+    ///
+    /// `image` must describe the native package image that owns `descriptor.handler()`.
+    /// The rebased handler address must use the firmware LispBM extension ABI and remain
+    /// valid for as long as firmware may call the registered extension.
+    pub unsafe fn register_extension_from_image(
         &self,
         image: NativeImage,
         descriptor: ExtensionDescriptor,
@@ -89,13 +96,19 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         }
     }
 
-    pub fn register_extensions_from_image(
+    /// Register multiple extensions whose handlers are relative to one loaded native image.
+    ///
+    /// # Safety
+    ///
+    /// The safety requirements of [`Self::register_extension_from_image`] apply to every
+    /// descriptor in `descriptors`.
+    pub unsafe fn register_extensions_from_image(
         &self,
         image: NativeImage,
         descriptors: impl IntoIterator<Item = ExtensionDescriptor>,
     ) -> Result<(), RegisterError> {
         for descriptor in descriptors {
-            self.register_extension_from_image(image, descriptor)?;
+            unsafe { self.register_extension_from_image(image, descriptor)? };
         }
         Ok(())
     }

@@ -75,7 +75,8 @@ fn register_extension_from_image_reports_outcome(
         base_addr,
     };
 
-    let result = register_extension_from_image(&info, &lifecycle, descriptor);
+    // Test metadata models a loaded image whose handler offsets are intentionally rebased.
+    let result = unsafe { register_extension_from_image(&info, &lifecycle, descriptor) };
 
     match mode {
         "accept" => assert_eq!(result, Ok(())),
@@ -216,7 +217,7 @@ fn register_extensions_from_image_registers_each_descriptor() {
     let second = ExtensionDescriptor::new(c"ext-rust-b", stub_handler);
 
     assert_eq!(
-        lifecycle.register_extensions_from_image(image, [first, second]),
+        unsafe { lifecycle.register_extensions_from_image(image, [first, second]) },
         Ok(())
     );
     assert_eq!(lifecycle.bindings().add_calls.get(), 2);
@@ -251,7 +252,7 @@ fn registers_an_extension_through_the_lifecycle_helper() {
     };
 
     assert_eq!(
-        register_extension_from_image(&info, &lifecycle, descriptor),
+        unsafe { register_extension_from_image(&info, &lifecycle, descriptor) },
         Ok(())
     );
     assert_eq!(lifecycle.bindings().add_calls.get(), 1);
