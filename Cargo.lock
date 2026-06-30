@@ -1274,13 +1274,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "vesc-units"
-version = "0.1.0"
-dependencies = [
- "uom",
-]
-
-[[package]]
 name = "vescpkg"
 version = "0.1.0"
 dependencies = [
@@ -1307,6 +1300,13 @@ name = "vescpkg-sys"
 version = "0.1.0"
 dependencies = [
  "trybuild",
+]
+
+[[package]]
+name = "vescpkg-units"
+version = "0.1.0"
+dependencies = [
+ "uom",
 ]
 
 [[package]]

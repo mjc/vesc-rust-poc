@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "crates/vescpkg-sys",
-    "crates/vesc-units",
+    "crates/vescpkg-units",
     "crates/vescpkg",
     "crates/vesc-protocol",
     "crates/vescpkg-build",

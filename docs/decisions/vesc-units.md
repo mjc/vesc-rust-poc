@@ -1,8 +1,8 @@
-# vesc-units evaluation (deferred)
+# vescpkg-units evaluation (deferred)
 
 ## Decision
 
-Do **not** add a `vesc-units` crate in the current epic scope.
+Do **not** add a `vescpkg-units` crate in the current epic scope.
 
 Physical units (speed, torque, temperature, battery state) belong outside the target SDK
 and outside raw `vescpkg-sys`. They should live in a separate optional crate once real
@@ -12,7 +12,7 @@ vehicle semantics stabilize.
 
 | Option | When |
 |--------|------|
-| `vesc-units` | Generic reusable SI/newtype helpers shared by multiple VESC packages |
+| `vescpkg-units` | Generic reusable SI/newtype helpers shared by multiple VESC packages |
 | Project-specific crate (e.g. `cutout-units`) | Product semantics tied to one firmware/product line |
 
 ## Constraints for a future crate

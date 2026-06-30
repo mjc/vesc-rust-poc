@@ -14,7 +14,7 @@
 //! Use these local newtypes as the normal public API for physical measurements:
 //!
 //! ```
-//! use vesc_units::{DutyCycle, Energy, Speed, Voltage};
+//! use vescpkg_units::{DutyCycle, Energy, Speed, Voltage};
 //!
 //! let pack_voltage = Voltage::from_volts(50.4);
 //! let speed = Speed::from_kilometers_per_hour(36.0);
@@ -31,7 +31,7 @@
 //! to pass measurements around:
 //!
 //! ```
-//! use vesc_units::Voltage;
+//! use vescpkg_units::Voltage;
 //!
 //! let voltage = Voltage::from_volts(57.0);
 //! let abi_value: f32 = voltage.into();
@@ -57,7 +57,7 @@
 //! {
 //!     use uom::si::electric_potential::volt;
 //!     use uom::si::f32::ElectricPotential;
-//!     use vesc_units::Voltage;
+//!     use vescpkg_units::Voltage;
 //!
 //!     let quantity = ElectricPotential::from(Voltage::from_volts(12.0));
 //!     assert_eq!(quantity.get::<volt>(), 12.0);
