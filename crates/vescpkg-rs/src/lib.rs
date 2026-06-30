@@ -31,6 +31,7 @@ pub mod ffi {
 }
 
 pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
+pub use vescpkg_rs_units as units;
 
 pub use bindings::{AppDataBindings, LbmBindings};
 pub use extension::{ExtensionDescriptor, ExtensionNameError, RegisterError};
@@ -53,10 +54,14 @@ pub use gpio::{GpioApi, GpioBindings};
 pub mod lbm;
 /// Higher-level lifecycle helpers for package startup and runtime behavior.
 pub mod lifecycle;
+/// VESC-domain semantic wrappers over generic embedded units.
+pub mod types;
 
 #[cfg(test)]
 mod tests {
     use super::{ProtocolFrame, WireCommand, WireVersion};
+    use crate::types::{BatteryCurrent, MotorCurrent};
+    use vescpkg_rs_units::Current;
 
     #[test]
     fn device_side_can_use_the_shared_protocol_crate() {
@@ -65,6 +70,15 @@ mod tests {
         assert_eq!(frame.version(), WireVersion::CURRENT);
         assert_eq!(frame.command(), WireCommand::Ping);
         assert_eq!(frame.payload(), &[7, 8]);
+    }
+
+    #[test]
+    fn semantic_current_types_are_not_interchangeable() {
+        let motor = MotorCurrent::new(Current::from_amps(10.0));
+        let battery = BatteryCurrent::new(Current::from_amps(6.0));
+
+        assert_eq!(motor.current().as_amps(), 10.0);
+        assert_eq!(battery.current().as_amps(), 6.0);
     }
 }
 

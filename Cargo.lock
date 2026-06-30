@@ -1270,6 +1270,7 @@ dependencies = [
  "rstest",
  "vesc-protocol",
  "vescpkg-rs-sys",
+ "vescpkg-rs-units",
 ]
 
 [[package]]
