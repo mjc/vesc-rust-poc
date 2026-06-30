@@ -3,12 +3,12 @@
 use std::cell::RefCell;
 
 use vesc_cli::loopback::{LoopbackTarget, LoopbackTransport, LoopbackTransportError, run_loopback};
+use vesc_protocol::WireCommand;
+use vesc_protocol::ble_loopback::LoopbackPacket;
 use vescpkg_build::{
     FakeFirmwareServices, LoopbackPackageRuntime, LoopbackPackageState, LoopbackRuntimeError,
     LoopbackStartError, LoopbackTick,
 };
-use vesc_protocol::WireCommand;
-use vesc_protocol::ble_loopback::LoopbackPacket;
 
 struct BridgeTransport<'a> {
     services: &'a FakeFirmwareServices,
