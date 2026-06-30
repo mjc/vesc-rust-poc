@@ -1,12 +1,16 @@
+#[cfg(any(test, feature = "test-support"))]
 use core::cell::{Cell, RefCell};
 
 use vesc_protocol::WireCommand;
 use vesc_protocol::ble_loopback::{LoopbackError, LoopbackPacket, handle_loopback_frame};
 
 const MAX_FRAME_BYTES: usize = 19;
+#[cfg(any(test, feature = "test-support"))]
 const MAX_LOGS: usize = 8;
+#[cfg(any(test, feature = "test-support"))]
 const MAX_FRAMES: usize = 4;
 
+/// Fixed-size BLE frame buffer used by the loopback runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BleFrame {
     bytes: [u8; MAX_FRAME_BYTES],
@@ -14,6 +18,7 @@ pub struct BleFrame {
 }
 
 impl BleFrame {
+    /// Construct a frame from a raw byte slice.
     pub fn from_slice(bytes: &[u8]) -> Self {
         assert!(bytes.len() <= MAX_FRAME_BYTES, "BLE frame exceeds budget");
 
@@ -26,43 +31,65 @@ impl BleFrame {
         }
     }
 
+    /// Return the live prefix of the stored frame bytes.
     pub fn as_slice(&self) -> &[u8] {
         &self.bytes[..self.len]
     }
 }
 
+/// Services required by the loopback runtime to talk to firmware.
 pub trait DeviceServices {
+    /// Return the current time in milliseconds.
     fn now_ms(&self) -> u64;
+    /// Record a runtime log message.
     fn log(&self, message: &'static str);
+    /// Initialize the BLE loopback transport.
     fn init_ble_loopback(&self) -> Result<(), &'static str>;
+    /// Report whether BLE is currently connected.
     fn ble_connected(&self) -> bool;
+    /// Pull the next inbound BLE frame, if any.
     fn receive_ble_frame(&self) -> Option<BleFrame>;
+    /// Send one outbound BLE frame.
     fn send_ble_frame(&self, frame: BleFrame);
 }
 
+/// Runtime state for the loopback package.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoopbackPackageState {
+    /// Startup has begun but BLE is not ready yet.
     Booting,
+    /// BLE initialized but no connection is present yet.
     WaitingForConnection,
+    /// BLE is connected and frames may be processed.
     Ready,
+    /// The runtime hit an unrecoverable error.
     Failed(&'static str),
 }
 
+/// Tick outcomes produced by the loopback runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoopbackTick {
+    /// Nothing happened on this tick.
     Idle,
+    /// The runtime is still waiting for a BLE connection.
     WaitingForConnection,
+    /// A frame was handled and replied to.
     Replied(WireCommand),
 }
 
+/// Errors that can occur while starting the loopback runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoopbackStartError {
+    /// BLE initialization failed.
     InitFailed(&'static str),
 }
 
+/// Errors that can occur while ticking the loopback runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoopbackRuntimeError {
+    /// Startup failed before the runtime could process frames.
     Start(LoopbackStartError),
+    /// A loopback frame was malformed.
     Frame(LoopbackError),
 }
 
@@ -78,6 +105,7 @@ impl From<LoopbackError> for LoopbackRuntimeError {
     }
 }
 
+/// Stateful loopback package runtime.
 #[derive(Debug)]
 pub struct LoopbackPackageRuntime<S> {
     services: S,
@@ -85,6 +113,7 @@ pub struct LoopbackPackageRuntime<S> {
 }
 
 impl<S: DeviceServices> LoopbackPackageRuntime<S> {
+    /// Construct a runtime around the provided services.
     pub fn new(services: S) -> Self {
         Self {
             services,
@@ -92,10 +121,12 @@ impl<S: DeviceServices> LoopbackPackageRuntime<S> {
         }
     }
 
+    /// Return the current runtime state.
     pub fn state(&self) -> LoopbackPackageState {
         self.state
     }
 
+    /// Start the runtime and transition it to the appropriate steady state.
     pub fn start(&mut self) -> Result<LoopbackPackageState, LoopbackStartError> {
         self.services.log("booting BLE loopback package");
 
@@ -118,6 +149,7 @@ impl<S: DeviceServices> LoopbackPackageRuntime<S> {
         Ok(self.state)
     }
 
+    /// Advance the runtime once and process at most one frame.
     pub fn tick(&mut self) -> Result<LoopbackTick, LoopbackRuntimeError> {
         match self.state {
             LoopbackPackageState::Booting => {
@@ -229,9 +261,12 @@ unsafe extern "C" {
     fn vesc_clear_loopback_app_data_handler();
 }
 
+/// No-op services implementation used in tests and host-side checks.
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug)]
 pub struct NullDeviceServices;
 
+#[cfg(any(test, feature = "test-support"))]
 impl DeviceServices for NullDeviceServices {
     fn now_ms(&self) -> u64 {
         0
@@ -254,6 +289,8 @@ impl DeviceServices for NullDeviceServices {
     fn send_ble_frame(&self, _frame: BleFrame) {}
 }
 
+/// Test-only fake services implementation used by the runtime tests.
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug)]
 pub struct FakeDeviceServices {
     now_ms: Cell<u64>,
@@ -268,6 +305,7 @@ pub struct FakeDeviceServices {
     outbox_count: Cell<usize>,
 }
 
+#[cfg(any(test, feature = "test-support"))]
 impl Default for FakeDeviceServices {
     fn default() -> Self {
         Self {
@@ -285,23 +323,29 @@ impl Default for FakeDeviceServices {
     }
 }
 
+#[cfg(any(test, feature = "test-support"))]
 impl FakeDeviceServices {
+    /// Construct a new fake service set.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Set the current time returned by the fake services.
     pub fn set_now_ms(&self, now_ms: u64) {
         self.now_ms.set(now_ms);
     }
 
+    /// Set whether the fake services report a BLE connection.
     pub fn set_ble_connected(&self, connected: bool) {
         self.ble_connected.set(connected);
     }
 
+    /// Configure the fake BLE initializer to fail with a reason.
     pub fn set_ble_init_error(&self, error: Option<&'static str>) {
         self.ble_init_error.set(error);
     }
 
+    /// Queue one inbound BLE frame for the runtime to consume.
     pub fn queue_ble_frame(&self, frame: BleFrame) {
         let index = self.inbox_count.get();
         assert!(index < MAX_FRAMES, "too many queued BLE frames");
@@ -310,23 +354,28 @@ impl FakeDeviceServices {
         self.inbox_count.set(index + 1);
     }
 
+    /// Return the number of recorded log messages.
     pub fn log_count(&self) -> usize {
         self.log_count.get()
     }
 
+    /// Return the log message at the given index, if present.
     pub fn log_at(&self, index: usize) -> Option<&'static str> {
         self.logs.borrow().get(index).copied().flatten()
     }
 
+    /// Return the number of transmitted frames recorded by the fake.
     pub fn transmitted_frame_count(&self) -> usize {
         self.outbox_count.get()
     }
 
+    /// Return the transmitted frame at the given index, if present.
     pub fn transmitted_frame_at(&self, index: usize) -> Option<BleFrame> {
         self.outbox.borrow().get(index).copied().flatten()
     }
 }
 
+#[cfg(any(test, feature = "test-support"))]
 impl DeviceServices for FakeDeviceServices {
     fn now_ms(&self) -> u64 {
         self.now_ms.get()
@@ -367,6 +416,7 @@ impl DeviceServices for FakeDeviceServices {
     }
 }
 
+#[cfg(any(test, feature = "test-support"))]
 impl DeviceServices for &FakeDeviceServices {
     fn now_ms(&self) -> u64 {
         FakeDeviceServices::now_ms(self)

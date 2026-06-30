@@ -2,13 +2,18 @@
 
 use vesc_ffi::{VescPin, VescPinMode};
 
+/// Abstract GPIO operations backed by firmware slots.
 pub trait GpioBindings {
+    /// Configure the pin mode.
     fn set_mode(&self, pin: VescPin, mode: VescPinMode) -> bool;
+    /// Drive the pin high or low.
     fn write(&self, pin: VescPin, level: bool) -> bool;
+    /// Read the current pin state.
     fn read(&self, pin: VescPin) -> bool;
 }
 
 #[cfg(not(test))]
+/// GPIO binding implementation that forwards to the live firmware ABI.
 pub struct RealGpioBindings;
 
 #[cfg(not(test))]
@@ -26,23 +31,28 @@ impl GpioBindings for RealGpioBindings {
     }
 }
 
+/// High-level GPIO convenience API built on a binding implementation.
 pub struct GpioApi<B> {
     bindings: B,
 }
 
 impl<B: GpioBindings> GpioApi<B> {
+    /// Construct a new GPIO API wrapper.
     pub fn new(bindings: B) -> Self {
         Self { bindings }
     }
 
+    /// Configure the pin mode.
     pub fn set_mode(&self, pin: VescPin, mode: VescPinMode) -> bool {
         self.bindings.set_mode(pin, mode)
     }
 
+    /// Drive the pin high or low.
     pub fn write(&self, pin: VescPin, level: bool) -> bool {
         self.bindings.write(pin, level)
     }
 
+    /// Read the current pin state.
     pub fn read(&self, pin: VescPin) -> bool {
         self.bindings.read(pin)
     }
