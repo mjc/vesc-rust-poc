@@ -61,12 +61,13 @@ pub mod types;
 mod tests {
     use super::{ProtocolFrame, WireCommand, WireVersion};
     use crate::types::{
-        BatteryCurrent, BatteryVoltage, CanControllerId, DirectionalMotorCurrent, GnssLatitude,
-        GnssLongitude, GnssSpeed, MechanicalSpeed, MotorCurrent, ThreadPriority, TotalMotorCurrent,
-        TripDistance, VehicleSpeed, WattHoursDischarged,
+        AudioVoltage, AveragePower, BatteryCurrent, BatteryVoltage, CanControllerId, DVoltage,
+        DirectionalMotorCurrent, GnssLatitude, GnssLongitude, GnssSpeed, MechanicalSpeed,
+        MotorCurrent, PeakPower, QVoltage, ThreadPriority, TotalMotorCurrent, TripDistance,
+        VehicleSpeed, WattHoursDischarged,
     };
     use vescpkg_rs_units::{
-        Current, Distance, Energy, Latitude, Longitude, MechanicalRpm, Speed, Voltage,
+        Current, Distance, Energy, Latitude, Longitude, MechanicalRpm, Power, Speed, Voltage,
     };
 
     #[test]
@@ -93,11 +94,21 @@ mod tests {
         let directional = DirectionalMotorCurrent::new(Current::from_amps(-2.0));
         let battery_voltage = BatteryVoltage::new(Voltage::from_volts(50.4));
         let discharged = WattHoursDischarged::new(Energy::from_watt_hours(42.0));
+        let d_voltage = DVoltage::new(Voltage::from_volts(1.25));
+        let q_voltage = QVoltage::new(Voltage::from_volts(2.5));
+        let audio_voltage = AudioVoltage::new(Voltage::from_volts(0.75));
+        let average_power = AveragePower::new(Power::from_watts(420.0));
+        let peak_power = PeakPower::new(Power::from_watts(900.0));
 
         assert_eq!(total.current().as_amps(), 18.0);
         assert_eq!(directional.current().as_amps(), -2.0);
         assert_eq!(battery_voltage.voltage().as_volts(), 50.4);
         assert_eq!(discharged.energy().as_watt_hours(), 42.0);
+        assert_eq!(d_voltage.voltage().as_volts(), 1.25);
+        assert_eq!(q_voltage.voltage().as_volts(), 2.5);
+        assert_eq!(audio_voltage.voltage().as_volts(), 0.75);
+        assert_eq!(average_power.power().as_watts(), 420.0);
+        assert_eq!(peak_power.power().as_watts(), 900.0);
     }
 
     #[test]

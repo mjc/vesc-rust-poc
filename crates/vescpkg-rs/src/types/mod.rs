@@ -29,6 +29,7 @@ pub mod gnss;
 pub mod io;
 pub mod motion;
 pub mod motor;
+pub mod power;
 pub mod ratio;
 pub mod temperature;
 
@@ -44,9 +45,10 @@ pub use motion::{
     VehicleSpeed,
 };
 pub use motor::{
-    BrakeCurrent, DCurrent, DirectionalMotorCurrent, HandbrakeCurrent, MotorCurrent,
-    OpenLoopCurrent, PhaseCurrent, QCurrent, TotalMotorCurrent,
+    AudioVoltage, BrakeCurrent, DCurrent, DVoltage, DirectionalMotorCurrent, HandbrakeCurrent,
+    MotorCurrent, OpenLoopCurrent, PhaseCurrent, QCurrent, QVoltage, TotalMotorCurrent,
 };
+pub use power::{AveragePower, PeakPower};
 pub use ratio::{
     BrakeCurrentRelative, CurrentRelative, DutyCycle, HandbrakeRelative, JoystickX, JoystickY,
     PpmInput,
