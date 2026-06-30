@@ -8,9 +8,8 @@
 //! [`TryFrom`] and [`From`].
 //!
 //! This crate owns the protocol/wire contract. Reusable physical units belong
-//! in the current `vescpkg-rs-units` crate, VESC-domain semantic values belong in the
-//! future `vescpkg-rs-types` crate, and third-party `uom` compatibility should remain
-//! opt-in interop outside the default protocol path.
+//! in the current `vescpkg-rs-units` crate, and VESC-domain semantic values belong in
+//! the future `vescpkg-rs-types` crate.
 
 #![no_std]
 #![forbid(unused_extern_crates)]

@@ -10,7 +10,6 @@ workspace = true
 [features]
 default = []
 std = []
-uom = ["dep:uom"]
 
 [dependencies]
-uom = { version = "0.38", default-features = false, features = ["f32", "si"], optional = true }
+fugit = { version = "0.4", default-features = false }
