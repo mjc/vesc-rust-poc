@@ -36,68 +36,113 @@ const FW_VERSION_PREFLIGHT_ATTEMPTS: usize = 5;
 const FW_VERSION_PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(2);
 const FW_VERSION_PREFLIGHT_RETRY_DELAY: Duration = Duration::from_millis(500);
 
+/// Progress event emitted by the diagnostic loopback runner.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoopbackProgress {
+    /// The diagnostic runner is starting its BLE runtime.
     StartingRuntime,
+    /// Device discovery and connection are starting for a target.
     OpeningSession {
+        /// Human-readable target description.
         target: String,
     },
+    /// BLE scanning started.
     ScanStarted {
+        /// Scan timeout in seconds.
         timeout_secs: u64,
     },
+    /// A BLE device was seen during scanning.
     ScanSeen {
+        /// Human-readable device description.
         device: String,
+        /// Whether this device matched the target selector.
         matched: bool,
     },
+    /// A BLE device connection was established.
     Connected {
+        /// Human-readable device description.
         device: String,
     },
+    /// Services and characteristics were discovered from GATT.
     DiscoveredGatt {
+        /// Discovered service UUIDs or names.
         services: Vec<String>,
+        /// Discovered characteristic UUIDs or names.
         characteristics: Vec<String>,
     },
+    /// BLE UART notifications are subscribed and the session is ready.
     SessionOpened,
+    /// A named loopback step is starting.
     StepStarted {
+        /// Step name, such as `ping` or `status`.
         step: &'static str,
     },
+    /// A loopback request is being sent.
     Sending {
+        /// Step name associated with the request.
         step: &'static str,
+        /// Hex preview of the encoded wire packet.
         wire_hex: String,
+        /// Encoded packet size in bytes.
         bytes: usize,
     },
+    /// The runner is waiting for a reply for a step.
     WaitingForReply {
+        /// Step name awaiting a reply.
         step: &'static str,
+        /// Reply timeout in seconds.
         timeout_secs: u64,
     },
+    /// A BLE notification arrived while waiting for a reply.
     ReceivedNotification {
+        /// Step name active when the notification arrived.
         step: &'static str,
+        /// Notification size in bytes.
         bytes: usize,
     },
+    /// One or more VESC packets were decoded from notifications.
     DecodedPackets {
+        /// Step name active when packets were decoded.
         step: &'static str,
+        /// Number of decoded packets.
         count: usize,
     },
+    /// A decoded packet was unrelated to loopback app data.
     NonAppDataPacket {
+        /// Step name active when the unrelated packet arrived.
         step: &'static str,
+        /// Human-readable packet summary.
         summary: String,
     },
+    /// A loopback reply packet was decoded.
     ReplyReceived {
+        /// Step name associated with the reply.
         step: &'static str,
+        /// Hex preview of the reply payload.
         wire_hex: String,
+        /// Decoded loopback command.
         command: WireCommand,
     },
+    /// A loopback step completed successfully.
     StepSucceeded {
+        /// Step name that completed.
         step: &'static str,
+        /// Decoded response command for the step.
         command: WireCommand,
     },
+    /// Reply waiting timed out.
     TimeoutWaiting {
+        /// Step name that timed out.
         step: &'static str,
+        /// Seconds elapsed before timeout.
         elapsed_secs: u64,
+        /// Summaries of packets that were decoded but did not satisfy the step.
         pending: Vec<String>,
     },
 }
 
 impl LoopbackProgress {
+    /// Returns whether this event should be printed in normal CLI output.
     pub fn should_print_to_cli(&self) -> bool {
         !matches!(
             self,
@@ -105,6 +150,7 @@ impl LoopbackProgress {
         )
     }
 
+    /// Returns a human-readable description of this progress event.
     pub fn describe(&self) -> String {
         match self {
             Self::StartingRuntime => "starting BLE runtime".to_owned(),
@@ -191,6 +237,8 @@ struct DiagnosticSession {
     decoder: PacketDecoder,
     pending: VecDeque<Vec<u8>>,
 }
+
+/// Runs the loopback protocol over BLE while reporting detailed diagnostic progress.
 
 pub fn run_loopback_with_diagnostics(
     target: LoopbackTarget,
@@ -733,6 +781,8 @@ fn decode_loopback_command(payload: &[u8]) -> Result<WireCommand, LoopbackTransp
         .map_err(LoopbackTransportError::Protocol)
 }
 
+/// Returns a concise human-readable summary of a decoded VESC UART packet payload.
+
 pub fn describe_vesc_packet(packet: &[u8]) -> String {
     let command = packet.first().copied().unwrap_or(0xff);
     let payload = &packet[1..];
@@ -754,6 +804,8 @@ pub fn describe_vesc_packet(packet: &[u8]) -> String {
         _ => format!("COMM_{command} payload={}", hex_snippet(payload, 16)),
     }
 }
+
+/// Formats at most `max_bytes` bytes as a compact hexadecimal preview.
 
 pub fn hex_snippet(bytes: &[u8], max_bytes: usize) -> String {
     let shown = bytes.len().min(max_bytes);

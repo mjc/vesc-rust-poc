@@ -13,4 +13,4 @@ vesc-pkg = { path = "../vesc-pkg" }
 uuid = "1"
 
 [dev-dependencies]
-vesc-pkg = { path = "../vesc-pkg" }
+vesc-pkg = { path = "../vesc-pkg", features = ["test-support"] }

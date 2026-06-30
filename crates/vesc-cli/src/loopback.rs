@@ -5,6 +5,7 @@ use std::fmt;
 use vesc_protocol::WireCommand;
 use vesc_protocol::ble_loopback::{LoopbackError, LoopbackPacket};
 
+/// Target selection for BLE loopback and related diagnostics.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoopbackTarget {
     device_name_hint: String,
@@ -14,6 +15,7 @@ pub struct LoopbackTarget {
 }
 
 impl LoopbackTarget {
+    /// Creates a target from broad device and service name hints.
     pub fn new(device_name_hint: impl Into<String>, service_name_hint: impl Into<String>) -> Self {
         Self {
             device_name_hint: device_name_hint.into(),
@@ -23,6 +25,7 @@ impl LoopbackTarget {
         }
     }
 
+    /// Creates a target that must match the given BLE device name.
     pub fn named(device_name: impl Into<String>) -> Self {
         Self {
             device_name_hint: device_name.into(),
@@ -32,6 +35,7 @@ impl LoopbackTarget {
         }
     }
 
+    /// Creates a target that must match the given BLE address.
     pub fn addressed(address: impl Into<String>) -> Self {
         Self {
             device_name_hint: "vesc-loopback-test".to_owned(),
@@ -41,18 +45,22 @@ impl LoopbackTarget {
         }
     }
 
+    /// Returns the preferred BLE device-name match hint.
     pub fn device_name_hint(&self) -> &str {
         &self.device_name_hint
     }
 
+    /// Returns the preferred BLE service-name match hint.
     pub fn service_name_hint(&self) -> &str {
         &self.service_name_hint
     }
 
+    /// Returns the explicit BLE address filter, if one was provided.
     pub fn address(&self) -> Option<&str> {
         self.address.as_deref()
     }
 
+    /// Returns whether discovery must match the provided name or address exactly.
     pub fn requires_explicit_match(&self) -> bool {
         self.require_explicit_match
     }
@@ -64,12 +72,18 @@ impl Default for LoopbackTarget {
     }
 }
 
+/// Errors returned by loopback transports.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoopbackTransportError {
+    /// No matching device was found before the scan timed out.
     ScanTimeout,
+    /// Connecting to the selected device failed.
     ConnectFailed,
+    /// The connected device did not expose the expected BLE UART service.
     MissingService,
+    /// A loopback protocol frame was invalid or unexpected.
     Protocol(LoopbackError),
+    /// The device or transport reported a human-readable failure.
     Device(String),
 }
 
@@ -87,11 +101,15 @@ impl fmt::Display for LoopbackTransportError {
 
 impl std::error::Error for LoopbackTransportError {}
 
+/// Transport abstraction used by loopback command runners.
 pub trait LoopbackTransport {
+    /// Opens a session to `target`.
     fn open(&self, target: LoopbackTarget) -> Result<(), LoopbackTransportError>;
+    /// Exchanges one encoded protocol request for a response payload.
     fn exchange(&self, request: &[u8]) -> Result<Vec<u8>, LoopbackTransportError>;
 }
 
+/// Successful loopback run summary.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoopbackReport {
     target: LoopbackTarget,
@@ -99,19 +117,23 @@ pub struct LoopbackReport {
 }
 
 impl LoopbackReport {
+    /// Creates a loopback report from the selected target and observed commands.
     pub fn new(target: LoopbackTarget, commands: Vec<WireCommand>) -> Self {
         Self { target, commands }
     }
 
+    /// Returns the target used by the loopback run.
     pub fn target(&self) -> &LoopbackTarget {
         &self.target
     }
 
+    /// Returns the response commands decoded during the loopback run.
     pub fn commands(&self) -> &[WireCommand] {
         &self.commands
     }
 }
 
+/// In-memory loopback transport used by tests.
 #[derive(Debug, Default)]
 pub struct FakeLoopbackTransport {
     open_result: RefCell<Option<Result<(), LoopbackTransportError>>>,
@@ -121,10 +143,12 @@ pub struct FakeLoopbackTransport {
 }
 
 impl FakeLoopbackTransport {
+    /// Creates an empty fake transport.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Creates a fake transport preloaded with the standard successful loopback responses.
     pub fn scripted_success() -> Self {
         let transport = Self::new();
         [
@@ -142,20 +166,24 @@ impl FakeLoopbackTransport {
         transport
     }
 
+    /// Creates a fake transport with a predetermined open result.
     pub fn with_open_result(result: Result<(), LoopbackTransportError>) -> Self {
         let transport = Self::new();
         *transport.open_result.borrow_mut() = Some(result);
         transport
     }
 
+    /// Returns the target passed to `open`, if any.
     pub fn open_target(&self) -> Option<LoopbackTarget> {
         self.open_target.borrow().clone()
     }
 
+    /// Queues one response for the next `exchange` call.
     pub fn queue_response(&self, response: Result<Vec<u8>, LoopbackTransportError>) {
         self.responses.borrow_mut().push_back(response);
     }
 
+    /// Returns every request payload observed by the fake transport.
     pub fn requests(&self) -> Vec<Vec<u8>> {
         self.requests.borrow().clone()
     }
@@ -177,6 +205,8 @@ impl LoopbackTransport for FakeLoopbackTransport {
             )))
     }
 }
+
+/// Runs the standard ping, echo, status, and teardown loopback sequence against `target`.
 
 pub fn run_loopback_with_target<T: LoopbackTransport>(
     transport: &T,
@@ -203,6 +233,8 @@ pub fn run_loopback_with_target<T: LoopbackTransport>(
 
     Ok(LoopbackReport { target, commands })
 }
+
+/// Runs the standard loopback sequence against the default target.
 
 pub fn run_loopback<T: LoopbackTransport>(
     transport: &T,

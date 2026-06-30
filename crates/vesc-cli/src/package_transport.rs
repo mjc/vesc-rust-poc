@@ -174,6 +174,7 @@ impl VescSession {
     }
 }
 
+/// BLE UART transport used by package install and erase flows.
 #[derive(Debug)]
 pub struct BtlePackageInstallTransport {
     runtime: Runtime,
@@ -181,6 +182,7 @@ pub struct BtlePackageInstallTransport {
 }
 
 impl BtlePackageInstallTransport {
+    /// Creates a BLE package install transport with its own single-worker runtime.
     pub fn new() -> Result<Self, PackageInstallError> {
         let runtime = Builder::new_multi_thread()
             .enable_all()
@@ -196,10 +198,12 @@ impl BtlePackageInstallTransport {
         })
     }
 
+    /// Opens a package install session to `target`.
     pub fn open(&self, target: LoopbackTarget) -> Result<(), PackageInstallError> {
         self.open_session(target)
     }
 
+    /// Disconnects the active BLE session, if one is open.
     pub fn close(&self) {
         let mut session = self.session.borrow_mut();
         if let Some(session) = session.take() {

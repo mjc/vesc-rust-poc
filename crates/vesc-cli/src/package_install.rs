@@ -9,11 +9,15 @@ pub use vesc_pkg::install::{
     InstallTransport as PackageInstallTransport, Installer, erase_package, install_package,
 };
 
+/// Reads and decodes a package from a filesystem path.
+
 pub fn read_package_from_path(
     path: impl AsRef<std::path::Path>,
 ) -> Result<VescPackage, PackageInstallError> {
     VescPackage::read(path).map_err(Into::into)
 }
+
+/// Decodes raw package bytes into an installable VESC package model.
 
 pub fn decode_package(data: &[u8]) -> Result<VescPackage, PackageInstallError> {
     VescPackage::from_bytes(data).map_err(Into::into)

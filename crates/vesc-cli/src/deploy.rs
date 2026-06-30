@@ -16,6 +16,8 @@ const COMM_CUSTOM_APP_DATA: u8 = 36;
 const POST_INSTALL_SETTLE: Duration = Duration::from_millis(1500);
 const LOOPBACK_RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
 
+/// Builds or reads a package, installs it over BLE, and runs a loopback smoke test.
+
 pub fn run_deploy(
     package_path: &str,
     target: LoopbackTarget,
@@ -137,10 +139,14 @@ fn map_package_device_error(error: PackageInstallError) -> LoopbackTransportErro
     }
 }
 
+/// Errors returned by the build, install, and loopback deploy flow.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeployError {
+    /// Reading or decoding the package failed.
     Package(PackageInstallError),
+    /// Installing or erasing the package over the transport failed.
     Transport(PackageInstallError),
+    /// The post-deploy loopback smoke test failed.
     Loopback(LoopbackTransportError),
 }
 

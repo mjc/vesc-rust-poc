@@ -78,55 +78,83 @@ struct BtleSession {
     pending: VecDeque<Vec<u8>>,
 }
 
+/// BLE UART-backed transport for loopback protocol exchanges.
 #[derive(Debug)]
 pub struct BtleLoopbackTransport {
     runtime: Runtime,
     session: RefCell<Option<BtleSession>>,
 }
 
+/// Summary returned by a Lisp probe diagnostic run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LispProbeReport {
     prints: Vec<String>,
     attempts: usize,
 }
 
+/// Progress event emitted while running the Lisp probe diagnostic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LispProbeProgress {
+    /// The Tokio runtime is being started.
     StartingRuntime,
+    /// Device discovery and BLE connection are starting.
     OpeningSession,
+    /// BLE notifications are subscribed and the session is ready.
     SessionOpened,
+    /// A Lisp REPL command packet is being sent.
     SendingReplCommand {
+        /// One-based send attempt number.
         attempt: usize,
+        /// Encoded packet size in bytes.
         bytes: usize,
     },
+    /// The probe is waiting for Lisp print replies.
     WaitingForPrints,
+    /// A BLE notification was received.
     ReceivedNotification {
+        /// Notification size in bytes.
         bytes: usize,
     },
+    /// One or more VESC UART packets were decoded.
     DecodedPackets {
+        /// Number of decoded packets.
         count: usize,
     },
+    /// A Lisp print line was decoded.
     LispPrint {
+        /// Printed Lisp line.
         line: String,
     },
+    /// The probe is still waiting for more print replies.
     StillWaiting {
+        /// Seconds elapsed while waiting.
         elapsed_secs: u64,
+        /// Number of print lines observed so far.
         prints: usize,
     },
+    /// The probe saw print output and then a quiet period.
     QuietAfterPrints {
+        /// Number of print lines observed.
         prints: usize,
     },
+    /// The expected Lisp probe result was observed.
     ExpectedResultReceived,
+    /// The probe will retry the REPL command after a delay.
     RetryingReplCommand {
+        /// One-based attempt number that will be sent next.
         next_attempt: usize,
+        /// Delay before the next attempt in seconds.
         delay_secs: u64,
     },
+    /// The wait loop finished with the collected print count.
     FinishedWaiting {
+        /// Number of print lines observed.
         prints: usize,
     },
 }
 
 impl LispProbeProgress {
+    /// Returns whether this event should be printed in normal CLI output.
     pub fn should_print_to_cli(&self) -> bool {
         !matches!(
             self,
@@ -134,6 +162,7 @@ impl LispProbeProgress {
         )
     }
 
+    /// Returns a human-readable description of this progress event.
     pub fn describe(&self) -> String {
         match self {
             Self::StartingRuntime => "starting BLE runtime".to_owned(),
@@ -172,16 +201,19 @@ impl LispProbeProgress {
 }
 
 impl LispProbeReport {
+    /// Returns Lisp print lines collected during the probe.
     pub fn prints(&self) -> &[String] {
         &self.prints
     }
 
+    /// Returns how many REPL send attempts were needed.
     pub fn attempts(&self) -> usize {
         self.attempts
     }
 }
 
 impl BtleLoopbackTransport {
+    /// Creates a BLE loopback transport with its own single-worker runtime.
     pub fn new() -> Result<Self, LoopbackTransportError> {
         let runtime = Builder::new_multi_thread()
             .enable_all()
@@ -411,9 +443,13 @@ fn lisp_probe_report(prints: Vec<String>, attempts: usize) -> LispProbeReport {
     LispProbeReport { prints, attempts }
 }
 
+/// Runs the Lisp probe diagnostic and returns collected print output.
+
 pub fn run_lisp_probe(target: LoopbackTarget) -> Result<LispProbeReport, LoopbackTransportError> {
     run_lisp_probe_with_progress(target, |_| {})
 }
+
+/// Runs the Lisp probe diagnostic while reporting progress events.
 
 pub fn run_lisp_probe_with_progress(
     target: LoopbackTarget,
@@ -465,6 +501,8 @@ pub fn run_lisp_probe_with_progress(
 
     Ok(lisp_probe_report(all_prints, attempts))
 }
+
+/// Repeatedly runs the Lisp probe diagnostic until the expected result or retry limit is reached.
 
 pub fn run_lisp_probe_continuously_with_progress(
     target: LoopbackTarget,
@@ -632,6 +670,8 @@ async fn write_ble_uart_packet(
     Ok(())
 }
 
+/// Scans for BLE peripherals that expose VESC BLE UART characteristics.
+
 pub fn scan_devices() -> Result<Vec<DiscoveredPeripheral>, LoopbackTransportError> {
     let runtime = Builder::new_multi_thread()
         .enable_all()
@@ -675,13 +715,19 @@ fn map_discovery_error(error: DiscoveryError) -> LoopbackTransportError {
     }
 }
 
+/// Returns the VESC BLE UART service UUID.
+
 pub fn vesc_ble_uart_service_uuid() -> Uuid {
     VESC_BLE_UART_SERVICE_UUID
 }
 
+/// Returns the VESC BLE UART RX characteristic UUID.
+
 pub fn vesc_ble_uart_rx_uuid() -> Uuid {
     VESC_BLE_UART_RX_UUID
 }
+
+/// Returns the VESC BLE UART TX characteristic UUID.
 
 pub fn vesc_ble_uart_tx_uuid() -> Uuid {
     VESC_BLE_UART_TX_UUID
