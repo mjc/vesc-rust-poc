@@ -3,40 +3,72 @@
 //! This crate reads/writes `.vescpkg` files and provides package build/install
 //! primitives for tools and CLIs. It does not run inside the VESC firmware.
 
+/// ABI inventory used by package layout and audit checks.
 pub mod abi_inventory;
+/// Cargo subcommand parsing and command-file helpers.
 pub mod cargo_vescpkg_command;
+/// Helpers for comparing the Rust ABI surface against the C header.
 pub mod ffi_compare;
+/// Golden fixture data for the loopback package and native-lib checks.
 pub mod golden;
+/// Repository hygiene helpers and generated-path checks.
 pub mod hygiene;
+/// Host-side package install and erase helpers.
 pub mod install;
+/// Package manifest discovery and parsing helpers.
 pub mod manifest;
+/// Native artifact audit helpers.
 pub mod native_audit;
+/// Native build orchestration helpers.
 pub mod native_build;
+/// Native ELF disassembly helpers.
 pub mod native_disasm;
+/// Native ELF semantic analysis helpers.
 pub mod native_elf_semantics;
+/// Native artifact inspection helpers.
 pub mod native_inspect;
+/// Native-library audit helpers.
 pub mod native_lib_audit;
+/// Native-library baseline fixture helpers.
 pub mod native_lib_baseline;
+/// Native-library link-plan helpers.
 pub mod native_lib_link;
+/// Native-library materialization helpers.
 pub mod native_lib_materialize;
+/// Native-library toolchain helpers.
 pub mod native_lib_toolchain;
+/// Package model and builder types.
 pub mod package;
+/// Package artifact inspection helpers.
 pub mod package_artifacts;
+/// Package provenance and asset metadata.
 pub mod package_assets;
+/// Package build-plan orchestration.
 pub mod package_build;
+/// Package binary conversion helpers.
 pub mod package_conversion;
+/// Package encoding and decoding helpers.
 pub mod package_format;
+/// Package wire-format decoding helpers.
 pub mod package_format_decode;
+/// Golden package generation and comparison helpers.
 pub mod package_golden;
+/// Native package runner helpers.
 pub mod package_runner;
+/// Loopback package runtime helpers.
 pub mod package_runtime;
+/// Package target and staging helpers.
 pub mod package_target;
+/// Host-side package wire format helpers.
 pub mod package_wire;
+/// Roadmap notes for the Rust package API.
 pub mod rust_package_api_roadmap;
+/// Symbol audit helpers.
 pub mod symbol_audit;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 
+/// Canonical name used by the loopback package fixtures.
 pub const BLE_LOOPBACK_PACKAGE_NAME: &str = "Rust BLE loopback test package";
 
 pub use abi_inventory::{AbiRequirement, AbiRequirementKind, minimal_test_package_abi};
@@ -70,9 +102,11 @@ pub use package_runner::{
     RealPackageRunner, ensure_native_lib_artifacts, ensure_repo_native_lib_artifacts,
     package_provenance_from_env,
 };
+#[cfg(any(test, feature = "test-support"))]
+pub use package_runtime::FakeFirmwareServices;
 pub use package_runtime::{
-    FakeFirmwareServices, FirmwareServices, LoopbackPackageRuntime, LoopbackPackageState,
-    LoopbackRuntimeError, LoopbackStartError, LoopbackTick,
+    FirmwareServices, LoopbackPackageRuntime, LoopbackPackageState, LoopbackRuntimeError,
+    LoopbackStartError, LoopbackTick,
 };
 pub use package_target::{PackageTargetError, PackageTargetMode, PackageTargetPlan};
 pub use package_wire::{
@@ -86,6 +120,7 @@ pub use symbol_audit::{
 
 use std::path::{Path, PathBuf};
 
+/// Filesystem layout for a single package version and name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageLayout {
     package_name: String,
@@ -93,6 +128,7 @@ pub struct PackageLayout {
 }
 
 impl PackageLayout {
+    /// Create a layout from a package name and version.
     pub fn new(package_name: impl Into<String>, version: impl Into<String>) -> Self {
         Self {
             package_name: package_name.into(),
@@ -100,6 +136,7 @@ impl PackageLayout {
         }
     }
 
+    /// Return the `.vescpkg` artifact filename.
     pub fn artifact_name(&self) -> String {
         format!(
             "{}-{}.vescpkg",
@@ -108,14 +145,17 @@ impl PackageLayout {
         )
     }
 
+    /// Return the package name used by the layout.
     pub fn package_name(&self) -> &str {
         &self.package_name
     }
 
+    /// Return the package version used by the layout.
     pub fn version(&self) -> &str {
         &self.version
     }
 
+    /// Return the staging directory for the package.
     pub fn staging_dir(&self) -> PathBuf {
         Path::new("target").join("vescpkg").join(format!(
             "{}-{}",
@@ -124,6 +164,7 @@ impl PackageLayout {
         ))
     }
 
+    /// Return the staged `pkgdesc.qml` path.
     pub fn descriptor_path(&self) -> PathBuf {
         self.staging_dir().join("pkgdesc.qml")
     }

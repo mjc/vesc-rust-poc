@@ -10,11 +10,16 @@ use crate::package_runner::{RealPackageRunner, package_provenance_from_env};
 use crate::package_target::{PackageTargetMode, PackageTargetPlan};
 use crate::package_wire::{WireError, parse_vescpkg};
 
+/// Errors returned when reading, decoding, or building a package.
 #[derive(Debug)]
 pub enum PackageError {
+    /// Reading package bytes from disk failed.
     Io(io::Error),
+    /// Decoding package wire data failed.
     Wire(WireError),
+    /// The decoded package failed structural validation.
     InvalidPackage,
+    /// Building package assets from source inputs failed.
     Build(String),
 }
 
@@ -49,23 +54,33 @@ impl From<crate::package_target::PackageTargetError> for PackageError {
     }
 }
 
+/// Parsed VESC package metadata and payload data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Package {
+    /// Package name shown to the user.
     pub name: String,
+    /// Human-readable description.
     pub description: String,
+    /// Markdown description used by newer tools.
     pub description_md: String,
+    /// Embedded Lisp payload bytes.
     pub lisp_data: Vec<u8>,
+    /// QML entrypoint filename.
     pub qml_file: String,
+    /// Raw `pkgDescQml` metadata from the package.
     pub pkg_desc_qml: String,
+    /// Whether the package should launch fullscreen.
     pub qml_is_fullscreen: bool,
 }
 
 impl Package {
+    /// Read and decode a package from disk.
     pub fn read(path: impl AsRef<Path>) -> Result<Self, PackageError> {
         let bytes = fs::read(normalize_package_path(path.as_ref()))?;
         Self::from_bytes(&bytes)
     }
 
+    /// Encode the package and write it to disk.
     pub fn write(&self, path: impl AsRef<Path>) -> Result<Vec<u8>, PackageError> {
         let bytes = self.to_bytes()?;
         let path = path.as_ref();
@@ -76,6 +91,7 @@ impl Package {
         Ok(bytes)
     }
 
+    /// Decode a package from raw wire bytes.
     pub fn from_bytes(data: &[u8]) -> Result<Self, PackageError> {
         let fields = parse_vescpkg(data)?;
         let mut package = Self {
@@ -110,6 +126,7 @@ impl Package {
         }
     }
 
+    /// Encode the package into raw wire bytes.
     pub fn to_bytes(&self) -> Result<Vec<u8>, PackageError> {
         if !self.is_valid() {
             return Err(PackageError::InvalidPackage);
@@ -127,6 +144,7 @@ impl Package {
         .map_err(PackageError::from)
     }
 
+    /// Return whether the package has at least one populated field.
     pub fn is_valid(&self) -> bool {
         !self.name.is_empty()
             || !self.description.is_empty()
@@ -137,6 +155,7 @@ impl Package {
     }
 }
 
+/// Host-side builder that locates a package manifest and produces output paths.
 pub struct Builder {
     source_root: PathBuf,
     plan: PackageBuildPlan,
@@ -144,6 +163,7 @@ pub struct Builder {
 }
 
 impl Builder {
+    /// Construct a builder from a package manifest path.
     pub fn from_manifest(manifest: impl AsRef<Path>) -> Result<Self, PackageError> {
         let manifest = manifest_path(manifest.as_ref());
         let staging_dir = staging_dir_from_manifest(&manifest)?;
@@ -162,19 +182,23 @@ impl Builder {
         })
     }
 
+    /// Select the package build mode.
     pub fn with_mode(mut self, mode: PackageTargetMode) -> Self {
         self.mode = mode;
         self
     }
 
+    /// Return the underlying build plan.
     pub fn build_plan(&self) -> &PackageBuildPlan {
         &self.plan
     }
 
+    /// Build the package using the default conversion runner.
     pub fn build(&self) -> Result<PathBuf, PackageError> {
         self.build_with(&RealPackageRunner)
     }
 
+    /// Build the package using the supplied conversion runner.
     pub fn build_with<R: crate::package_conversion::PackageBinaryConversionRunner>(
         &self,
         runner: &R,

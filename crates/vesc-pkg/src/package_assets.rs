@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use crate::PackageLayout;
 
+/// Provenance metadata embedded in generated package assets.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageProvenance {
     git_commit: Option<String>,
@@ -9,6 +10,7 @@ pub struct PackageProvenance {
 }
 
 impl PackageProvenance {
+    /// Return empty provenance metadata.
     pub fn empty() -> Self {
         Self {
             git_commit: None,
@@ -16,6 +18,7 @@ impl PackageProvenance {
         }
     }
 
+    /// Build provenance metadata from optional git commit and build date.
     pub fn new(
         git_commit: Option<impl Into<String>>,
         build_date: Option<impl Into<String>>,
@@ -26,15 +29,18 @@ impl PackageProvenance {
         }
     }
 
+    /// Return the recorded git commit, if any.
     pub fn git_commit(&self) -> Option<&str> {
         self.git_commit.as_deref()
     }
 
+    /// Return the recorded build date, if any.
     pub fn build_date(&self) -> Option<&str> {
         self.build_date.as_deref()
     }
 }
 
+/// Rendered package asset paths and file contents.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageAssets {
     layout: PackageLayout,
@@ -42,38 +48,47 @@ pub struct PackageAssets {
 }
 
 impl PackageAssets {
+    /// Construct the asset set for one package layout and provenance.
     pub fn new(layout: PackageLayout, provenance: PackageProvenance) -> Self {
         Self { layout, provenance }
     }
 
+    /// Return the package name used by the assets.
     pub fn package_name(&self) -> &str {
         self.layout.package_name()
     }
 
+    /// Return the package version used by the assets.
     pub fn version(&self) -> &str {
         self.layout.version()
     }
 
+    /// Return the package staging directory.
     pub fn staging_dir(&self) -> PathBuf {
         self.layout.staging_dir()
     }
 
+    /// Return the generated README path.
     pub fn readme_path(&self) -> PathBuf {
         self.staging_dir().join("README.md")
     }
 
+    /// Return the generated descriptor path.
     pub fn descriptor_path(&self) -> PathBuf {
         self.staging_dir().join("pkgdesc.qml")
     }
 
+    /// Return the generated loader path.
     pub fn loader_path(&self) -> PathBuf {
         self.staging_dir().join("code.lisp")
     }
 
+    /// Return the generated native payload path.
     pub fn native_payload_path(&self) -> PathBuf {
         self.staging_dir().join("src/package_lib.bin")
     }
 
+    /// Return all generated asset paths.
     pub fn asset_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
         [
             self.readme_path(),
@@ -84,6 +99,7 @@ impl PackageAssets {
         .into_iter()
     }
 
+    /// Render the package README contents.
     pub fn render_readme(&self) -> String {
         let mut output = format!("{} {}\n", self.package_name(), self.version());
 
@@ -97,6 +113,7 @@ impl PackageAssets {
         output
     }
 
+    /// Render the package descriptor QML.
     pub fn render_descriptor(&self) -> String {
         format!(
             "import QtQuick 2.15\n\nItem {{\n    property string pkgName: \"{}\"\n    property string pkgDescriptionMd: \"README.md\"\n    property string pkgLisp: \"code.lisp\"\n    property string pkgQml: \"\"\n    property bool pkgQmlIsFullscreen: false\n    property string pkgOutput: \"{}\"\n}}\n",
@@ -105,6 +122,7 @@ impl PackageAssets {
         )
     }
 
+    /// Render the loader script that boots the package.
     pub fn render_loader(&self) -> String {
         concat!(
             "(import \"src/package_lib.bin\" 'package-lib)\n",

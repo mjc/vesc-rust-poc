@@ -1,8 +1,11 @@
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
+/// Lockfiles that should stay checked into the repository root.
 pub const TRACKED_LOCKFILES: [&str; 2] = ["Cargo.lock", "flake.lock"];
+/// Repository-root Makefile path used by hygiene checks.
 pub const ROOT_MAKEFILE_PATH: &str = "Makefile";
+/// Generated package artifacts that must remain ignored by git.
 pub const GENERATED_PACKAGE_PATHS: [&str; 4] = [
     "target/native-lib-baseline/native_lib.bin",
     "target/native-lib-baseline/native_lib.elf",
@@ -10,9 +13,13 @@ pub const GENERATED_PACKAGE_PATHS: [&str; 4] = [
     "target/vescpkg/native-lib-baseline/native-lib-baseline.vescpkg",
 ];
 
+/// Returns the workspace root that owns the package fixtures and Make targets.
+
 pub fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
+
+/// Returns whether `git check-ignore` reports `path` as ignored.
 
 pub fn git_check_ignore(path: &str) -> bool {
     Command::new("git")
@@ -23,6 +30,8 @@ pub fn git_check_ignore(path: &str) -> bool {
         .status()
         .is_ok_and(|status| status.success())
 }
+
+/// Returns whether every path is reported as ignored by `git check-ignore`.
 
 pub fn git_check_ignore_all(paths: &[&str]) -> bool {
     let output = Command::new("git")
@@ -42,6 +51,8 @@ pub fn git_check_ignore_all(paths: &[&str]) -> bool {
         .all(|path| ignored.lines().any(|line| line == *path))
 }
 
+/// Returns whether every path is tracked by git.
+
 pub fn git_tracks_all(paths: &[&str]) -> bool {
     Command::new("git")
         .args(["ls-files", "--error-unmatch"])
@@ -53,6 +64,8 @@ pub fn git_tracks_all(paths: &[&str]) -> bool {
         .is_ok_and(|status| status.success())
 }
 
+/// Returns whether git tracks `path`.
+
 pub fn git_tracks(path: &str) -> bool {
     Command::new("git")
         .args(["ls-files", "--error-unmatch", path])
@@ -63,7 +76,10 @@ pub fn git_tracks(path: &str) -> bool {
         .is_ok_and(|status| status.success())
 }
 
+/// Make targets that should resolve successfully in dry-run mode.
 pub const MAKE_DRY_RUN_TARGETS: &[&str] = &["check", "check-full"];
+
+/// Returns whether `make -n <target>` succeeds from the repository root.
 
 pub fn make_dry_run_succeeds(target: &str) -> bool {
     Command::new("make")

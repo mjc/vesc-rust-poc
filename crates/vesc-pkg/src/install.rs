@@ -8,26 +8,58 @@ use crate::package::Package;
 
 const PACKAGE_ERASE_BYTES: usize = 16;
 
+/// Steps emitted while installing or erasing a package over the firmware transport.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InstallStep {
-    EraseQml { bytes: usize },
-    UploadQml { bytes: usize, fullscreen: bool },
-    EraseLisp { bytes: usize },
-    UploadLisp { bytes: usize },
-    SetRunning { running: bool },
+    /// Reserve flash space for the package's QML payload.
+    EraseQml {
+        /// Total QML erase size in bytes.
+        bytes: usize,
+    },
+    /// Write the compressed QML payload and fullscreen flag.
+    UploadQml {
+        /// Compressed QML payload size in bytes.
+        bytes: usize,
+        /// Whether the uploaded QML app should run fullscreen.
+        fullscreen: bool,
+    },
+    /// Reserve flash space for the package's Lisp payload.
+    EraseLisp {
+        /// Total Lisp erase size in bytes.
+        bytes: usize,
+    },
+    /// Write the package's Lisp payload.
+    UploadLisp {
+        /// Lisp payload size in bytes.
+        bytes: usize,
+    },
+    /// Toggle the installed Lisp package's running state.
+    SetRunning {
+        /// Desired running state after install.
+        running: bool,
+    },
+    /// Ask the firmware to reload package state after the transfer completes.
     ReloadFirmware,
 }
 
+/// Summary of the package operations issued to the target.
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstallReport {
+    /// Package name reported by the install or erase flow.
     pub package_name: String,
+    /// Ordered transport operations that were performed.
     pub steps: Vec<InstallStep>,
 }
 
+/// Errors produced while translating a package into firmware install steps.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InstallError {
+    /// Host-side I/O failed while preparing package payloads.
     Io(String),
+    /// The device rejected or failed a transport operation.
     Device(String),
+    /// The package bytes failed structural validation before install.
     InvalidPackage,
 }
 
@@ -53,41 +85,63 @@ impl From<crate::package::PackageError> for InstallError {
     }
 }
 
+/// Firmware-side transport operations needed to install or erase a package.
+
 pub trait InstallTransport {
+    /// Returns whether a QML app is already present on the target.
     fn has_qml_app(&self) -> Result<bool, InstallError>;
+    /// Erases enough space for a QML payload of `bytes` bytes.
     fn erase_qml(&self, bytes: usize) -> Result<(), InstallError>;
+    /// Uploads a compressed QML payload and its fullscreen setting.
     fn upload_qml(&self, qml: &[u8], fullscreen: bool) -> Result<(), InstallError>;
+    /// Erases enough space for a Lisp payload of `bytes` bytes.
     fn erase_lisp(&self, bytes: usize) -> Result<(), InstallError>;
+    /// Uploads the Lisp payload bytes.
     fn upload_lisp(&self, lisp: &[u8]) -> Result<(), InstallError>;
+    /// Enables or disables the installed Lisp package.
     fn set_running(&self, running: bool) -> Result<(), InstallError>;
+    /// Requests a firmware reload after package changes complete.
     fn reload_firmware(&self) -> Result<(), InstallError>;
 }
+
+/// Small helper that drives package install and erase flows through an `InstallTransport`.
 
 pub struct Installer<'a, T: InstallTransport> {
     transport: &'a T,
 }
 
 impl<'a, T: InstallTransport> Installer<'a, T> {
+    /// Binds an installer to a transport implementation.
+
     pub fn new(transport: &'a T) -> Self {
         Self { transport }
     }
 
+    /// Installs `package` through the configured transport.
+
     pub fn install(&self, package: &Package) -> Result<InstallReport, InstallError> {
         install_package(package, self.transport)
     }
+
+    /// Erases the currently installed package through the configured transport.
 
     pub fn erase(&self) -> Result<InstallReport, InstallError> {
         erase_package(self.transport)
     }
 }
 
+/// In-memory transport used by tests to capture install sequencing.
+
 #[derive(Debug, Default)]
 pub struct FakeInstallTransport {
     has_qml_app: Cell<bool>,
+    /// Recorded transport steps for assertions in tests and golden checks.
     pub steps: std::cell::RefCell<Vec<InstallStep>>,
 }
 
 impl FakeInstallTransport {
+    /// Controls whether the fake transport reports an existing QML app.
+
     pub fn set_has_qml_app(&self, has_qml_app: bool) {
         self.has_qml_app.set(has_qml_app);
     }
@@ -139,6 +193,8 @@ impl InstallTransport for FakeInstallTransport {
         Ok(())
     }
 }
+
+/// Installs a validated package using the same operation order as VESC Tool.
 
 pub fn install_package<T: InstallTransport>(
     package: &Package,
@@ -206,6 +262,8 @@ pub fn install_package<T: InstallTransport>(
         steps,
     })
 }
+
+/// Erases any installed package payloads from the target and reloads firmware state.
 
 pub fn erase_package<T: InstallTransport>(transport: &T) -> Result<InstallReport, InstallError> {
     let mut steps = Vec::new();

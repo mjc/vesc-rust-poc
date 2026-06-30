@@ -5,20 +5,39 @@ use crate::package_artifacts::PackageArtifactInspectionError;
 use crate::package_build::PackageBuildPlan;
 use crate::package_conversion::{PackageBinaryConversionError, PackageBinaryConversionRunner};
 
+/// The two supported package target modes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PackageTargetMode {
+    /// Build a package and keep the package-only artifacts.
     Package,
+    /// Build a package without any extra target-specific packaging.
     PackageOnly,
 }
 
+/// Errors returned while staging or materializing a package target.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PackageTargetError {
-    Stage { path: PathBuf, reason: String },
+    /// Preparing the staging directory failed.
+    Stage {
+        /// Path that could not be staged.
+        path: PathBuf,
+        /// Human-readable staging failure reason.
+        reason: String,
+    },
+    /// Converting the native binary into a package payload failed.
     Conversion(PackageBinaryConversionError),
+    /// Inspecting staged artifacts or package output failed.
     Inspection(PackageArtifactInspectionError),
-    PackageOutput { path: PathBuf, reason: String },
+    /// Writing or validating the final package output failed.
+    PackageOutput {
+        /// Output path that failed.
+        path: PathBuf,
+        /// Human-readable package-output failure reason.
+        reason: String,
+    },
 }
 
+/// End-to-end package build plan with target mode and provenance.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageTargetPlan {
     build_plan: PackageBuildPlan,
@@ -26,6 +45,7 @@ pub struct PackageTargetPlan {
 }
 
 impl PackageTargetPlan {
+    /// Build a target plan without provenance metadata.
     pub fn new(
         source_root: impl Into<PathBuf>,
         package_name: impl Into<String>,
@@ -41,6 +61,7 @@ impl PackageTargetPlan {
         )
     }
 
+    /// Build a target plan with explicit provenance metadata.
     pub fn with_provenance(
         source_root: impl Into<PathBuf>,
         package_name: impl Into<String>,
@@ -59,18 +80,22 @@ impl PackageTargetPlan {
         }
     }
 
+    /// Return the underlying package build plan.
     pub fn build_plan(&self) -> &PackageBuildPlan {
         &self.build_plan
     }
 
+    /// Return the selected target mode.
     pub fn mode(&self) -> PackageTargetMode {
         self.mode
     }
 
+    /// Return the final package output path.
     pub fn package_output_path(&self) -> PathBuf {
         self.build_plan.package_output_path()
     }
 
+    /// Execute the target plan using the supplied conversion runner.
     pub fn execute_with<C>(&self, conversion_runner: &C) -> Result<PathBuf, PackageTargetError>
     where
         C: PackageBinaryConversionRunner,

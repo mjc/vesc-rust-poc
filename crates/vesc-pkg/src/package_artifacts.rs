@@ -4,38 +4,53 @@ use std::path::PathBuf;
 use crate::PackageLayout;
 use crate::package_assets::{PackageAssets, PackageProvenance};
 
+/// Staged README file name written into package source trees.
 pub const STAGING_README_PATH: &str = "README.md";
+/// Staged package descriptor file name written into package source trees.
 pub const STAGING_DESCRIPTOR_PATH: &str = "pkgdesc.qml";
+/// Staged Lisp loader file name written into package source trees.
 pub const STAGING_LOADER_PATH: &str = "code.lisp";
+/// Repository-relative native payload path copied into package source trees.
 pub const NATIVE_PAYLOAD_PATH: &str = "target/native-lib-baseline/package_lib.bin";
 
+/// A problem found while inspecting staged package artifacts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PackageArtifactProblem {
+    /// A required artifact path was missing.
     MissingPath {
+        /// Missing path on disk.
         path: PathBuf,
     },
+    /// An artifact's contents differed from the expected bytes or text.
     ContentMismatch {
+        /// Path whose contents mismatched.
         path: PathBuf,
+        /// Expected content summary.
         expected: String,
+        /// Actual content summary.
         actual: String,
     },
 }
 
+/// Error containing every package artifact inspection problem found in one pass.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageArtifactInspectionError {
     problems: Vec<PackageArtifactProblem>,
 }
 
 impl PackageArtifactInspectionError {
+    /// Creates an inspection error from the collected problems.
     pub fn new(problems: Vec<PackageArtifactProblem>) -> Self {
         Self { problems }
     }
 
+    /// Returns the problems found during inspection.
     pub fn problems(&self) -> &[PackageArtifactProblem] {
         &self.problems
     }
 }
 
+/// Inspection plan for the generated package staging tree and package output.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageArtifactInspectionPlan {
     root: PathBuf,
@@ -44,6 +59,7 @@ pub struct PackageArtifactInspectionPlan {
 }
 
 impl PackageArtifactInspectionPlan {
+    /// Creates an inspection plan for one package layout under `root`.
     pub fn new(
         root: impl Into<PathBuf>,
         package_name: impl Into<String>,
@@ -57,42 +73,52 @@ impl PackageArtifactInspectionPlan {
         }
     }
 
+    /// Returns the package layout inspected by this plan.
     pub fn layout(&self) -> &PackageLayout {
         &self.layout
     }
 
+    /// Builds the expected package assets for this inspection plan.
     pub fn assets(&self) -> PackageAssets {
         PackageAssets::new(self.layout.clone(), self.provenance.clone())
     }
 
+    /// Returns the package staging directory path.
     pub fn staging_dir_path(&self) -> PathBuf {
         self.root.join(self.layout.staging_dir())
     }
 
+    /// Returns the expected staged README path.
     pub fn readme_path(&self) -> PathBuf {
         self.staging_dir_path().join(STAGING_README_PATH)
     }
 
+    /// Returns the expected staged package descriptor path.
     pub fn descriptor_path(&self) -> PathBuf {
         self.staging_dir_path().join(STAGING_DESCRIPTOR_PATH)
     }
 
+    /// Returns the expected staged Lisp loader path.
     pub fn loader_path(&self) -> PathBuf {
         self.staging_dir_path().join(STAGING_LOADER_PATH)
     }
 
+    /// Returns the generated native payload path.
     pub fn native_payload_path(&self) -> PathBuf {
         self.root.join(NATIVE_PAYLOAD_PATH)
     }
 
+    /// Returns the staged copy of the generated native payload path.
     pub fn staged_native_payload_path(&self) -> PathBuf {
         self.staging_dir_path().join("src/package_lib.bin")
     }
 
+    /// Returns the final package artifact path.
     pub fn package_output_path(&self) -> PathBuf {
         self.staging_dir_path().join(self.layout.artifact_name())
     }
 
+    /// Inspects all staged package source artifacts and native payloads.
     pub fn inspect(&self) -> Result<(), PackageArtifactInspectionError> {
         let mut problems = Vec::new();
         self.inspect_text_file(
@@ -120,6 +146,7 @@ impl PackageArtifactInspectionPlan {
         }
     }
 
+    /// Inspects the final package output file.
     pub fn inspect_package_output(&self) -> Result<(), PackageArtifactInspectionError> {
         let path = self.package_output_path();
         let Ok(bytes) = fs::read(&path) else {

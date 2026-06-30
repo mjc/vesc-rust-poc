@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::package::PackageError;
 
+/// Read the package name and version from a `pkgdesc.qml` file.
 pub fn parse_pkgdesc(path: &Path) -> Result<(String, String), PackageError> {
     let text = std::fs::read_to_string(path).map_err(PackageError::Io)?;
     let name = extract_qml_string_property(&text, "pkgName")?;
@@ -10,6 +11,7 @@ pub fn parse_pkgdesc(path: &Path) -> Result<(String, String), PackageError> {
     Ok((name, version))
 }
 
+/// Return the canonical `pkgdesc.qml` path for a manifest or directory.
 pub fn manifest_path(path: &Path) -> PathBuf {
     if path.file_name().is_some_and(|name| name == "pkgdesc.qml") {
         path.to_path_buf()
@@ -18,6 +20,7 @@ pub fn manifest_path(path: &Path) -> PathBuf {
     }
 }
 
+/// Return the staging directory that contains the manifest.
 pub fn staging_dir_from_manifest(path: &Path) -> Result<PathBuf, PackageError> {
     let manifest = manifest_path(path);
     manifest

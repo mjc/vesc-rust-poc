@@ -7,25 +7,41 @@ use flate2::{Compression, write::ZlibEncoder};
 
 const PACKAGE_MAGIC: &str = "VESC Packet";
 
+/// Source inputs used to build a VESC package archive.
 #[derive(Debug, Clone)]
 pub struct VescPackageInput<'a> {
+    /// Package name embedded in the archive.
     pub name: &'a str,
+    /// Markdown description used for the generated README.
     pub description_md: &'a str,
+    /// Lisp loader source before native-payload packing.
     pub lisp_source: &'a str,
+    /// Workspace path used to resolve Lisp imports.
     pub lisp_editor_path: &'a Path,
+    /// QML source embedded in the package.
     pub qml_file: &'a str,
+    /// `pkgdesc.qml` descriptor contents.
     pub pkg_desc_qml: &'a str,
+    /// Whether the package's QML app should run fullscreen.
     pub qml_is_fullscreen: bool,
 }
 
+/// Fully materialized package fields written to the VESC package wire format.
 #[derive(Debug, Clone)]
 pub struct VescPackageWire<'a> {
+    /// Package name field.
     pub name: &'a str,
+    /// Plain-text description derived from the markdown source.
     pub description: &'a str,
+    /// Markdown description field.
     pub description_md: &'a str,
+    /// Packed Lisp payload bytes.
     pub lisp_data: &'a [u8],
+    /// QML source field.
     pub qml_file: &'a str,
+    /// `pkgdesc.qml` descriptor field.
     pub pkg_desc_qml: &'a str,
+    /// Whether the package's QML app should run fullscreen.
     pub qml_is_fullscreen: bool,
 }
 
@@ -51,9 +67,13 @@ pub fn encode_vesc_package(wire: &VescPackageWire<'_>) -> io::Result<Vec<u8>> {
     q_compress(&data)
 }
 
+/// Packs Lisp source and its native imports into the package Lisp payload format.
+
 pub fn build_lisp_data(lisp_source: &str, lisp_editor_path: &Path) -> io::Result<Vec<u8>> {
     pack_lisp_imports(lisp_source, lisp_editor_path)
 }
+
+/// Builds compressed VESC package bytes from source package inputs.
 
 pub fn build_vesc_package(input: &VescPackageInput<'_>) -> io::Result<Vec<u8>> {
     let lisp_data = pack_lisp_imports(input.lisp_source, input.lisp_editor_path)?;
@@ -73,6 +93,8 @@ pub fn build_vesc_package(input: &VescPackageInput<'_>) -> io::Result<Vec<u8>> {
 
     q_compress(&data)
 }
+
+/// Builds a VESC package and writes the resulting bytes to `output_path`.
 
 pub fn write_vesc_package(
     output_path: impl AsRef<Path>,

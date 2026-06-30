@@ -6,16 +6,23 @@ use crate::{
     PackageTargetMode, PackageTargetPlan,
 };
 
+/// Default package version used by the cargo subcommand wrapper.
 pub const DEFAULT_PACKAGE_VERSION: &str = "0.1.0";
+/// Default embedded target triple used by the cargo subcommand wrapper.
 pub const DEFAULT_TARGET_TRIPLE: &str = "thumbv7em-none-eabihf";
+/// Cargo subcommand name accepted by this parser.
 pub const BUILD_SUBCOMMAND: &str = "build";
 
+/// Supported `cargo vescpkg` modes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CargoVescPkgMode {
+    /// Build the full package target.
     Build,
+    /// Only build the package payload and staging output.
     BuildPackageOnly,
 }
 
+/// Parsed `cargo vescpkg` invocation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CargoVescPkgInvocation {
     mode: CargoVescPkgMode,
@@ -23,17 +30,25 @@ pub struct CargoVescPkgInvocation {
     target_triple: String,
 }
 
+/// Errors produced while parsing `cargo vescpkg` arguments.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CargoVescPkgParseError {
+    /// No subcommand was provided.
     MissingSubcommand,
+    /// The first positional argument was not a supported subcommand.
     UnexpectedSubcommand(String),
+    /// `--target` was provided without a value.
     MissingTargetValue,
+    /// An unsupported flag or positional argument was provided.
     UnexpectedArgument(String),
 }
 
+/// Top-level errors returned by the `cargo vescpkg` runner.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CargoVescPkgError {
+    /// Argument parsing failed.
     Parse(CargoVescPkgParseError),
+    /// Package execution failed after parsing.
     Package(PackageTargetError),
 }
 
@@ -66,6 +81,7 @@ impl std::fmt::Display for CargoVescPkgError {
 impl std::error::Error for CargoVescPkgError {}
 
 impl CargoVescPkgInvocation {
+    /// Construct a new invocation with default version and target values.
     pub fn new(mode: CargoVescPkgMode) -> Self {
         Self {
             mode,
@@ -74,28 +90,34 @@ impl CargoVescPkgInvocation {
         }
     }
 
+    /// Override the package version used by the invocation.
     pub fn with_package_version(mut self, package_version: impl Into<String>) -> Self {
         self.package_version = package_version.into();
         self
     }
 
+    /// Override the target triple used by the invocation.
     pub fn with_target_triple(mut self, target_triple: impl Into<String>) -> Self {
         self.target_triple = target_triple.into();
         self
     }
 
+    /// Return the requested invocation mode.
     pub fn mode(&self) -> CargoVescPkgMode {
         self.mode
     }
 
+    /// Return the package version.
     pub fn package_version(&self) -> &str {
         &self.package_version
     }
 
+    /// Return the target triple.
     pub fn target_triple(&self) -> &str {
         &self.target_triple
     }
 
+    /// Render the cargo subcommand arguments implied by this invocation.
     pub fn subcommand_args(&self) -> Vec<String> {
         let mut args = vec![BUILD_SUBCOMMAND.to_owned()];
         if matches!(self.mode, CargoVescPkgMode::BuildPackageOnly) {
@@ -106,6 +128,7 @@ impl CargoVescPkgInvocation {
         args
     }
 
+    /// Translate the invocation mode into a package target mode.
     pub fn package_target_mode(&self) -> PackageTargetMode {
         match self.mode {
             CargoVescPkgMode::Build => PackageTargetMode::Package,
@@ -113,6 +136,7 @@ impl CargoVescPkgInvocation {
         }
     }
 
+    /// Build the package target plan for this invocation.
     pub fn package_target_plan(&self, repo_root: impl Into<PathBuf>) -> PackageTargetPlan {
         PackageTargetPlan::new(
             repo_root,
@@ -122,6 +146,7 @@ impl CargoVescPkgInvocation {
         )
     }
 
+    /// Execute the invocation with a custom conversion runner.
     pub fn execute_with<C>(
         &self,
         repo_root: impl Into<PathBuf>,
@@ -136,6 +161,7 @@ impl CargoVescPkgInvocation {
     }
 }
 
+/// Parse the argument tail passed to `cargo vescpkg`.
 pub fn parse_args<I, S>(args: I) -> Result<CargoVescPkgInvocation, CargoVescPkgParseError>
 where
     I: IntoIterator<Item = S>,
@@ -173,6 +199,7 @@ where
     Ok(CargoVescPkgInvocation::new(mode).with_target_triple(target_triple))
 }
 
+/// Parse and execute a `cargo vescpkg` invocation with a custom runner.
 pub fn run_with<I, S, C>(
     repo_root: impl Into<PathBuf>,
     args: I,
@@ -187,10 +214,12 @@ where
     invocation.execute_with(repo_root, conversion_runner)
 }
 
+/// Return the design-note path for the cargo subcommand contract.
 pub fn command_design_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/cargo-vescpkg-command.md")
 }
 
+/// Read the cargo subcommand design note text.
 pub fn command_design_text() -> String {
     fs::read_to_string(command_design_path()).expect("cargo vescpkg command design")
 }

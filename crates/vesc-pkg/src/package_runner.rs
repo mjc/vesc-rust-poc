@@ -11,11 +11,13 @@ use crate::package_conversion::{
 };
 use crate::{BLE_LOOPBACK_PACKAGE_NAME, PackageProvenance};
 
+/// Runner that materializes the native package binary using the real toolchain.
 pub struct RealPackageRunner;
 
 static NATIVE_LIB_BUILD: Mutex<()> = Mutex::new(());
 static REPO_NATIVE_LIB: OnceLock<()> = OnceLock::new();
 
+/// Ensure that the native library artifacts exist for one package plan.
 pub fn ensure_native_lib_artifacts(plan: &PackageBinaryConversionPlan) {
     let _guard = NATIVE_LIB_BUILD
         .lock()
@@ -31,6 +33,7 @@ pub fn ensure_native_lib_artifacts(plan: &PackageBinaryConversionPlan) {
         });
 }
 
+/// Ensure the repository's loopback native artifacts exist.
 pub fn ensure_repo_native_lib_artifacts(root: &Path) {
     REPO_NATIVE_LIB.get_or_init(|| {
         let plan = PackageBinaryConversionPlan::new(
@@ -43,6 +46,7 @@ pub fn ensure_repo_native_lib_artifacts(root: &Path) {
 }
 
 impl PackageBinaryConversionRunner for RealPackageRunner {
+    /// Run the native build and copy the resulting package binary into place.
     fn run(&self, command: &PackageBinaryConversionCommand) -> Result<(), String> {
         let plan = native_lib_link_plan_for_native_binary(command.native_binary_path());
         materialize_native_lib_binary_unlocked(
@@ -61,6 +65,7 @@ impl PackageBinaryConversionRunner for RealPackageRunner {
     }
 }
 
+/// Read package provenance metadata from the process environment.
 pub fn package_provenance_from_env() -> PackageProvenance {
     PackageProvenance::new(
         std::env::var("VESC_PKG_GIT_COMMIT").ok(),

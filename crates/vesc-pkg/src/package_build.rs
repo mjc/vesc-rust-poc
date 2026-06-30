@@ -9,6 +9,7 @@ use crate::package_conversion::{
 };
 use crate::package_format::{VescPackageInput, write_vesc_package};
 
+/// End-to-end package build plan from source tree to `.vescpkg` output.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageBuildPlan {
     source_root: PathBuf,
@@ -17,6 +18,7 @@ pub struct PackageBuildPlan {
 }
 
 impl PackageBuildPlan {
+    /// Build a plan without provenance metadata.
     pub fn new(
         source_root: impl Into<PathBuf>,
         package_name: impl Into<String>,
@@ -30,6 +32,7 @@ impl PackageBuildPlan {
         )
     }
 
+    /// Build a plan with explicit provenance metadata.
     pub fn with_provenance(
         source_root: impl Into<PathBuf>,
         package_name: impl Into<String>,
@@ -43,14 +46,17 @@ impl PackageBuildPlan {
         }
     }
 
+    /// Return the package layout used by this plan.
     pub fn layout(&self) -> &PackageLayout {
         &self.layout
     }
 
+    /// Return the rendered package assets for this plan.
     pub fn assets(&self) -> PackageAssets {
         PackageAssets::new(self.layout.clone(), self.provenance.clone())
     }
 
+    /// Render the package assets into the source tree.
     pub fn stage_package_assets(&self) -> io::Result<PackageAssets> {
         let assets = self.assets();
         let staging_dir = self.source_root.join(assets.staging_dir());
@@ -82,6 +88,7 @@ impl PackageBuildPlan {
         Ok(assets)
     }
 
+    /// Return the native-binary conversion plan.
     pub fn conversion_plan(&self) -> PackageBinaryConversionPlan {
         PackageBinaryConversionPlan::new(
             self.source_root.clone(),
@@ -90,6 +97,7 @@ impl PackageBuildPlan {
         )
     }
 
+    /// Run the native-binary conversion step with a custom runner.
     pub fn convert_package_binary_with<R: PackageBinaryConversionRunner>(
         &self,
         runner: &R,
@@ -97,6 +105,7 @@ impl PackageBuildPlan {
         self.conversion_plan().run_with(runner)
     }
 
+    /// Return the package-artifact inspection plan.
     pub fn inspection_plan(&self) -> PackageArtifactInspectionPlan {
         PackageArtifactInspectionPlan::new(
             self.source_root.clone(),
@@ -106,18 +115,21 @@ impl PackageBuildPlan {
         )
     }
 
+    /// Inspect the staged package artifacts.
     pub fn inspect_package_artifacts(
         &self,
     ) -> Result<(), crate::package_artifacts::PackageArtifactInspectionError> {
         self.inspection_plan().inspect()
     }
 
+    /// Inspect the final package output.
     pub fn inspect_package_output(
         &self,
     ) -> Result<(), crate::package_artifacts::PackageArtifactInspectionError> {
         self.inspection_plan().inspect_package_output()
     }
 
+    /// Write the final `.vescpkg` output file.
     pub fn write_package_output(&self) -> io::Result<PathBuf> {
         let assets = self.assets();
         let staging = self.inspection_plan();
@@ -141,6 +153,7 @@ impl PackageBuildPlan {
         Ok(output_path)
     }
 
+    /// Return the source files that feed the package output.
     pub fn package_input_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
         [
             "package/code.lisp",
@@ -151,10 +164,12 @@ impl PackageBuildPlan {
         .map(move |relative| self.source_root.join(relative))
     }
 
+    /// Return the staged descriptor path.
     pub fn descriptor_path(&self) -> PathBuf {
         self.layout.descriptor_path()
     }
 
+    /// Return the final `.vescpkg` output path.
     pub fn package_output_path(&self) -> PathBuf {
         self.layout.staging_dir().join(self.layout.artifact_name())
     }

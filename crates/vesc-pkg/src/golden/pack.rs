@@ -7,6 +7,8 @@ use crate::{BLE_LOOPBACK_PACKAGE_NAME, PackageAssets, PackageLayout, PackageProv
 
 use super::fixtures;
 
+/// Builds Lisp package data for the loopback golden fixture in `workspace`.
+
 pub fn pack_lisp_data(package_lib: &[u8], workspace: &Path) -> io::Result<Vec<u8>> {
     let assets = PackageAssets::new(
         PackageLayout::new(BLE_LOOPBACK_PACKAGE_NAME, fixtures::VERSION),

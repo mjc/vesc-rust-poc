@@ -1,7 +1,10 @@
 use std::collections::BTreeSet;
 
+/// Hex-encoded package bytes captured from a device-proven fixture.
 pub const DEVICE_PROVEN_PACKAGE_HEX: &str =
     include_str!("../../../fixtures/device-proven/legacy-init.hex");
+
+/// Decodes the device-proven package fixture into raw package bytes.
 
 pub fn device_proven_package_binary() -> Vec<u8> {
     let hex = DEVICE_PROVEN_PACKAGE_HEX
@@ -19,12 +22,18 @@ pub fn device_proven_package_binary() -> Vec<u8> {
         .collect::<Result<Vec<_>, _>>()
         .expect("device-proven legacy-init.hex bytes")
 }
+/// Start offset of the audited init routine inside the flattened fixture.
 pub const DEVICE_PROVEN_INIT_OFFSET: usize = 4;
+/// Size in bytes of the audited init routine inside the flattened fixture.
 pub const DEVICE_PROVEN_INIT_SIZE: usize = 59;
+
+/// Aligns a section virtual address up to `alignment` bytes.
 
 pub fn align_section_vma(vma: usize, alignment: usize) -> usize {
     (vma + alignment - 1) & !(alignment - 1)
 }
+
+/// Collects undefined symbols from `nm` output.
 
 pub fn undefined_symbols(nm_output: &str) -> BTreeSet<String> {
     nm_output
@@ -33,9 +42,13 @@ pub fn undefined_symbols(nm_output: &str) -> BTreeSet<String> {
         .collect()
 }
 
+/// Collects defined symbols from `nm` output.
+
 pub fn defined_symbols(nm_output: &str) -> BTreeSet<String> {
     nm_output.lines().filter_map(parse_defined_symbol).collect()
 }
+
+/// Filters undefined symbols down to entries the runtime should not require.
 
 pub fn unexpected_undefined_symbols(nm_output: &str) -> BTreeSet<String> {
     undefined_symbols(nm_output)
@@ -44,11 +57,15 @@ pub fn unexpected_undefined_symbols(nm_output: &str) -> BTreeSet<String> {
         .collect()
 }
 
+/// Returns whether a runtime symbol is expected to stay unresolved in package artifacts.
+
 pub fn is_allowed_runtime_symbol(symbol: &str) -> bool {
     symbol.starts_with('_')
         || symbol == "fma"
         || matches!(symbol, "lbm_add_extension" | "lbm_dec_as_i32" | "lbm_enc_i")
 }
+
+/// Filters final native-lib undefined symbols down to unexpected entries.
 
 pub fn unexpected_final_native_lib_undefined_symbols(nm_output: &str) -> BTreeSet<String> {
     undefined_symbols(nm_output)
@@ -57,9 +74,13 @@ pub fn unexpected_final_native_lib_undefined_symbols(nm_output: &str) -> BTreeSe
         .collect()
 }
 
+/// Returns whether a final native-lib symbol is intentionally supplied by firmware.
+
 pub fn is_allowed_final_native_lib_symbol(symbol: &str) -> bool {
     is_allowed_runtime_symbol(symbol)
 }
+
+/// Returns the disassembly slice that covers the audited init routine.
 
 pub fn bounded_init_disassembly(disassembly: &str) -> &str {
     disassembly
@@ -70,6 +91,8 @@ pub fn bounded_init_disassembly(disassembly: &str) -> &str {
         .next()
         .expect("expected bounded init disassembly")
 }
+
+/// Redacts unstable addresses from disassembly snapshots.
 
 pub fn redact_disassembly_for_snapshot(text: &str) -> String {
     text.lines()
@@ -92,6 +115,8 @@ pub fn redact_disassembly_for_snapshot(text: &str) -> String {
         .collect::<Vec<_>>()
         .join("\n")
 }
+
+/// Asserts that loader init code talks to firmware only through the `vesc-ffi` surface.
 
 pub fn assert_rust_loader_init_uses_vesc_ffi(init_disassembly: &str) {
     assert!(
@@ -126,6 +151,8 @@ fn parse_defined_symbol(line: &str) -> Option<String> {
         _ => None,
     }
 }
+
+/// Runs the full audit suite against the checked-in device-proven fixture.
 
 pub fn audit_device_proven_fixture() {
     let bytes = device_proven_package_binary();

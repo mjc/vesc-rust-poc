@@ -1,6 +1,7 @@
 use std::hash::Hasher;
 use std::path::PathBuf;
 
+/// Repository-relative files that feed the native-lib baseline audit.
 pub const NATIVE_LIB_BASELINE_INPUTS: [&str; 7] = [
     "src/vesc_c_if.h",
     "src/rules.mk",
@@ -11,6 +12,7 @@ pub const NATIVE_LIB_BASELINE_INPUTS: [&str; 7] = [
     "package/README.md",
 ];
 
+/// Repository-relative native-lib baseline outputs that should be generated.
 pub const NATIVE_LIB_BASELINE_OUTPUTS: [&str; 4] = [
     "target/native-lib-baseline/native_lib.elf",
     "target/native-lib-baseline/native_lib.bin",
@@ -18,38 +20,47 @@ pub const NATIVE_LIB_BASELINE_OUTPUTS: [&str; 4] = [
     "target/vescpkg/native-lib-baseline/native-lib-baseline.vescpkg",
 ];
 
+/// Flash block size budget used by VESC package native payload checks.
 pub const VESC_PACKAGE_FLASH_BLOCK_LIMIT_BYTES: u64 = 128 * 1024;
+/// Conservative native payload budget reserved within the package flash block.
 pub const VESC_PACKAGE_FLASH_BUDGET_BYTES: u64 = VESC_PACKAGE_FLASH_BLOCK_LIMIT_BYTES / 8;
+/// Expected fingerprint for the vendored VESC C interface header.
 pub const EXPECTED_VESC_C_IF_HEADER_FINGERPRINT: &str = "f0097b82dd4adc19";
 
+/// Package-specific inputs included in native-lib baseline fixture checks.
 pub const NATIVE_LIB_BASELINE_PACKAGE_INPUTS: [&str; 3] = [
     "package/code.lisp",
     "package/pkgdesc.qml",
     "package/README.md",
 ];
 
+/// Baseline fixture root used to resolve native-lib audit inputs and outputs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NativeLibBaselinePath {
-    root: PathBuf,
+    /// Root directory that contains the baseline fixture tree.
+    pub root: PathBuf,
 }
 
 impl NativeLibBaselinePath {
+    /// Creates a baseline path helper rooted at `root`.
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self { root: root.into() }
     }
 
+    /// Iterates over required baseline input paths.
     pub fn input_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
-        NATIVE_LIB_BASELINE_INPUTS
-            .iter()
-            .map(move |relative| self.root.join(relative))
+        baseline_input_paths().map(|path| self.root.join(path))
     }
 
+    /// Iterates over required package baseline input paths.
     pub fn package_input_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
         NATIVE_LIB_BASELINE_PACKAGE_INPUTS
             .iter()
-            .map(move |relative| self.root.join(relative))
+            .map(|path| self.root.join(path))
     }
 }
+
+/// Returns the default baseline fixture path helper.
 
 pub fn native_lib_baseline_root() -> NativeLibBaselinePath {
     NativeLibBaselinePath::new(
@@ -57,14 +68,20 @@ pub fn native_lib_baseline_root() -> NativeLibBaselinePath {
     )
 }
 
+/// Returns the path to the vendored VESC C interface header.
+
 pub fn vesc_c_if_header_path() -> PathBuf {
     native_lib_baseline_root().root.join("src/vesc_c_if.h")
 }
+
+/// Computes the fingerprint of the vendored VESC C interface header.
 
 pub fn vesc_c_if_header_fingerprint() -> String {
     let header = std::fs::read(vesc_c_if_header_path()).expect("vesc_c_if.h contents");
     fingerprint_bytes(&header)
 }
+
+/// Computes the stable FNV-1a fingerprint used by fixture pinning checks.
 
 pub fn fingerprint_bytes(bytes: &[u8]) -> String {
     let mut hasher = Fnv1a64::default();
@@ -96,13 +113,19 @@ impl Hasher for Fnv1a64 {
     }
 }
 
+/// Iterates repository-relative baseline input paths.
+
 pub fn baseline_input_paths() -> impl Iterator<Item = &'static str> {
     NATIVE_LIB_BASELINE_INPUTS.iter().copied()
 }
 
+/// Iterates repository-relative baseline output paths.
+
 pub fn baseline_output_paths() -> impl Iterator<Item = &'static str> {
     NATIVE_LIB_BASELINE_OUTPUTS.iter().copied()
 }
+
+/// Asserts that required native-lib baseline fixture inputs and outputs are present.
 
 pub fn audit_baseline_fixture_layout() {
     use std::fs;
@@ -184,6 +207,8 @@ pub fn audit_baseline_fixture_layout() {
     assert!(!descriptor.contains("packageName"));
     assert!(source.contains("BLE loopback test package"));
 }
+
+/// Asserts that the vendored C interface header still matches pinned ABI expectations.
 
 pub fn audit_vesc_c_if_abi_pins() {
     use std::fs;

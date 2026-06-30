@@ -1,24 +1,38 @@
 use std::path::{Path, PathBuf};
 
+/// One field parsed from the C or Rust VESC interface table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Field {
+    /// Field name.
     pub name: String,
+    /// 1-based source line where the field was found.
     pub line: usize,
 }
 
+/// Errors returned while comparing the C and Rust VESC interface tables.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompareError {
+    /// Reading one of the source files failed.
     ReadFailed {
+        /// Path that failed to read.
         path: PathBuf,
+        /// Read failure reason.
         reason: String,
     },
+    /// One side was missing a required slot.
     SlotMissing {
+        /// Missing slot name.
         slot: String,
+        /// Side that was missing the slot.
         side: &'static str,
     },
+    /// A shared slot appeared at a different index on the two sides.
     SlotOrderMismatch {
+        /// Mismatched slot name.
         slot: String,
+        /// Slot index in the C table.
         c_index: usize,
+        /// Slot index in the Rust table.
         rust_index: usize,
     },
 }
@@ -42,6 +56,7 @@ impl std::fmt::Display for CompareError {
     }
 }
 
+/// Slots used by the loopback package path.
 pub const LOOPBACK_USED_SLOTS: &[&str] = &[
     "lbm_add_extension",
     "lbm_enc_i",
@@ -53,8 +68,10 @@ pub const LOOPBACK_USED_SLOTS: &[&str] = &[
     "system_time_ticks",
 ];
 
+/// Slots used by the GPIO path.
 pub const GPIO_USED_SLOTS: &[&str] = &["io_set_mode", "io_write", "io_read"];
 
+/// All pinned VESC interface slots currently depended on by this workspace.
 pub const ALL_PINNED_USED_SLOTS: &[&str] = &[
     "lbm_add_extension",
     "lbm_enc_i",
@@ -69,10 +86,12 @@ pub const ALL_PINNED_USED_SLOTS: &[&str] = &[
     "io_read",
 ];
 
+/// Return the workspace root from a crate manifest directory.
 pub fn workspace_root_from_manifest(manifest_dir: &Path) -> PathBuf {
     manifest_dir.join("../..")
 }
 
+/// Return the default C header path, honoring `VESC_C_IF_HEADER` when set.
 pub fn default_header_path(manifest_dir: &Path) -> PathBuf {
     if let Ok(path) = std::env::var("VESC_C_IF_HEADER") {
         return PathBuf::from(path);
@@ -80,10 +99,12 @@ pub fn default_header_path(manifest_dir: &Path) -> PathBuf {
     workspace_root_from_manifest(manifest_dir).join("fixtures/native-lib-baseline/src/vesc_c_if.h")
 }
 
+/// Return the default Rust VESC interface table path.
 pub fn default_rust_table_path(manifest_dir: &Path) -> PathBuf {
     workspace_root_from_manifest(manifest_dir).join("crates/vesc-ffi/src/raw.rs")
 }
 
+/// Compare the used slots from the C header and Rust source files.
 pub fn compare_used_slots_from_paths(
     c_header: &Path,
     rust_source: &Path,
@@ -101,6 +122,7 @@ pub fn compare_used_slots_from_paths(
     compare_used_slots(&c_source, &rust_source, slots)
 }
 
+/// Compare the used slot ordering between the C and Rust tables.
 pub fn compare_used_slots(
     c_source: &str,
     rust_source: &str,
@@ -136,6 +158,7 @@ pub fn compare_used_slots(
     Ok(())
 }
 
+/// Assert that the given slot names are present in the C table source.
 pub fn slots_present(c_source: &str, slots: &[&str]) -> Result<(), CompareError> {
     let c_fields = parse_c_vesc_if_fields(c_source);
     for slot in slots {
@@ -149,6 +172,7 @@ pub fn slots_present(c_source: &str, slots: &[&str]) -> Result<(), CompareError>
     Ok(())
 }
 
+/// Return full-table mismatches between the C and Rust interface tables.
 pub fn compare_full_table(c_source: &str, rust_source: &str) -> Vec<(usize, Field, Option<Field>)> {
     let c_fields = parse_c_vesc_if_fields(c_source);
     let rust_fields = parse_rust_vesc_if_fields(rust_source);
@@ -165,6 +189,7 @@ pub fn compare_full_table(c_source: &str, rust_source: &str) -> Vec<(usize, Fiel
         .collect()
 }
 
+/// Parse field names from the C `vesc_if` struct source.
 pub fn parse_c_vesc_if_fields(source: &str) -> Vec<Field> {
     let lines: Vec<&str> = source.lines().collect();
     let end_line = lines.iter().position(|line| {
@@ -239,6 +264,7 @@ fn parse_c_field_name(line: &str) -> Option<String> {
     (!name.is_empty()).then(|| name.to_owned())
 }
 
+/// Parse field names from the Rust `VescIf` struct source.
 pub fn parse_rust_vesc_if_fields(source: &str) -> Vec<Field> {
     let mut fields = Vec::new();
     let mut in_table = false;
