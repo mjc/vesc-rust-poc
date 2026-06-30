@@ -1,0 +1,10 @@
+[package]
+name = "cargo-vescpkg"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+vescpkg-build = { path = "../vescpkg-build" }

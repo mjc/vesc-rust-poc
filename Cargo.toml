@@ -5,6 +5,7 @@ members = [
     "crates/vesc-sdk",
     "crates/vesc-protocol",
     "crates/vescpkg-build",
+    "crates/cargo-vescpkg",
     "crates/vesc-cli",
     "examples/loopback",
 ]
