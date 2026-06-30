@@ -13,8 +13,19 @@
 //! let battery = BatteryCurrent::new(Current::from_amps(10.0));
 //! set_motor_current(battery);
 //! ```
+//!
+//! Raw token wrappers also require explicit extraction:
+//!
+//! ```compile_fail
+//! use vescpkg_rs::types::CanControllerId;
+//!
+//! let id = CanControllerId::new(42);
+//! let _: u8 = id.into();
+//! ```
 
 pub mod battery;
+pub mod can;
+pub mod io;
 pub mod motor;
 pub mod ratio;
 pub mod temperature;
@@ -23,6 +34,8 @@ pub use battery::{
     AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, BatteryVoltage, CellVoltage,
     InputCurrent, InputVoltage, WattHoursCharged, WattHoursDischarged, WattHoursRemaining,
 };
+pub use can::{CanControllerId, CanExtendedId, CanStandardId};
+pub use io::{ThreadPriority, ThreadPriorityError};
 pub use motor::{
     BrakeCurrent, DCurrent, DirectionalMotorCurrent, HandbrakeCurrent, MotorCurrent,
     OpenLoopCurrent, PhaseCurrent, QCurrent, TotalMotorCurrent,

@@ -61,8 +61,8 @@ pub mod types;
 mod tests {
     use super::{ProtocolFrame, WireCommand, WireVersion};
     use crate::types::{
-        BatteryCurrent, BatteryVoltage, DirectionalMotorCurrent, MotorCurrent, TotalMotorCurrent,
-        WattHoursDischarged,
+        BatteryCurrent, BatteryVoltage, CanControllerId, DirectionalMotorCurrent, MotorCurrent,
+        ThreadPriority, TotalMotorCurrent, WattHoursDischarged,
     };
     use vescpkg_rs_units::{Current, Energy, Voltage};
 
@@ -95,6 +95,17 @@ mod tests {
         assert_eq!(directional.current().as_amps(), -2.0);
         assert_eq!(battery_voltage.voltage().as_volts(), 50.4);
         assert_eq!(discharged.energy().as_watt_hours(), 42.0);
+    }
+
+    #[test]
+    fn semantic_raw_tokens_require_explicit_checked_construction() {
+        let controller = CanControllerId::new(42);
+        let priority = ThreadPriority::try_new(5).expect("valid priority");
+
+        assert_eq!(controller.get(), 42);
+        assert_eq!(priority.get(), 5);
+        assert!(ThreadPriority::try_new(6).is_err());
+        assert!(ThreadPriority::try_new(-6).is_err());
     }
 }
 
