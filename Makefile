@@ -75,10 +75,10 @@ test:
 # --- packaging & device -----------------------------------------------------
 
 package: check
-	$(CARGO) run -p vescpkg-rs-build --bin vescpkg-rs-build -- package
+	$(CARGO) run -p cargo-vescpkg -- build
 
 package-only:
-	$(CARGO) run -p vescpkg-rs-build --bin vescpkg-rs-build -- package-only
+	$(CARGO) run -p cargo-vescpkg -- build --package-only
 
 deploy: package-only
 	$(CARGO) run -p vesc-cli -- deploy $(PACKAGE) $(DEVICE_FLAGS)
