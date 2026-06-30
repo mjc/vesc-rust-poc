@@ -2,6 +2,29 @@
 
 CARGO   ?= cargo
 PACKAGE := target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/Rust-BLE-loopback-test-package-0.1.0.vescpkg
+ARM_TARGET := thumbv7em-none-eabihf
+
+CLIPPY_FLAGS := -D warnings
+CLIPPY_PEDANTIC_FLAGS := \
+	$(CLIPPY_FLAGS) \
+	-W clippy::pedantic \
+	-A clippy::missing_errors_doc \
+	-A clippy::missing_panics_doc \
+	-A clippy::must_use_candidate \
+	-A clippy::return_self_not_must_use \
+	-A clippy::cast_possible_truncation \
+	-A clippy::cast_possible_wrap \
+	-A clippy::cast_sign_loss \
+	-A clippy::doc_markdown \
+	-A clippy::inline_always \
+	-A clippy::ptr_cast_constness \
+	-A clippy::needless_for_each \
+	-A clippy::borrow_as_ptr \
+	-A clippy::ref_as_ptr \
+	-A clippy::redundant_closure_for_method_calls \
+	-A clippy::float_cmp \
+	-A clippy::semicolon_if_nothing_returned \
+	-A clippy::items_after_statements
 
 DEVICE_FLAGS :=
 ifdef DEVICE_NAME
@@ -11,25 +34,36 @@ ifdef DEVICE_ADDRESS
 DEVICE_FLAGS += --address $(DEVICE_ADDRESS)
 endif
 
-.PHONY: check check-full fmt clippy test package package-only deploy deploy-install lisp-probe clean status
+.PHONY: check check-full pre-commit fmt clippy clippy-pedantic arm-clippy arm-gates native-audit test package package-only deploy deploy-install lisp-probe clean status
 
 # --- verification -----------------------------------------------------------
 #
-# Policy: local `check` runs exactly one workspace nextest invocation.
-# Do NOT add extra test targets (per-crate nextest, compile-fail cargo test,
-# tiered test-*, golden-check, symbol-check, etc.). Feature-matrix runs
-# (cargo hack, coverage, HIL, extra feature combos) belong in CI — not here.
+# Policy: local `check` keeps exactly one workspace nextest invocation.
+# ARM/package gates live in `pre-commit`/`check-full` so the native loopback
+# binary is audited without multiplying the default test matrix.
 
 check: fmt clippy test
 
-check-full: check
+check-full: check arm-gates
+
+pre-commit: check-full
 
 fmt:
 	$(CARGO) fmt --all --check
 
-clippy:
-	$(CARGO) clippy --workspace --all-targets --all-features -- -D warnings
-	$(CARGO) clippy -p vesc-example-loopback --lib --release --target thumbv7em-none-eabihf -- -D warnings
+clippy: clippy-pedantic arm-clippy
+	$(CARGO) clippy --workspace --all-targets --all-features -- $(CLIPPY_FLAGS)
+
+clippy-pedantic:
+	$(CARGO) clippy -p vesc-protocol -p vesc-sdk -p vesc-example-loopback --all-targets --all-features -- $(CLIPPY_PEDANTIC_FLAGS)
+
+arm-clippy:
+	$(CARGO) clippy -p vesc-example-loopback --lib --release --target $(ARM_TARGET) -- $(CLIPPY_PEDANTIC_FLAGS)
+
+arm-gates: arm-clippy native-audit
+
+native-audit: package-only
+	$(CARGO) test -p vesc-pkg native_lib -- --nocapture
 
 test:
 	$(CARGO) nextest run --workspace --features test-support

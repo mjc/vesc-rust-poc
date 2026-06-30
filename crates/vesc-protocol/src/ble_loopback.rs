@@ -166,8 +166,7 @@ pub fn handle_loopback_frame(
         // `payload` is already capped to MAX_LOOPBACK_PAYLOAD_BYTES, so this
         // cannot write past the fixed response frame.
         unsafe {
-            *response.as_mut_ptr().add(MIN_WIRE_FRAME_BYTES + index) =
-                *payload.as_ptr().add(index);
+            *response.as_mut_ptr().add(MIN_WIRE_FRAME_BYTES + index) = *payload.as_ptr().add(index);
         }
         index += 1;
     }
