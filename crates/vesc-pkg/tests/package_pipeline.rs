@@ -1,3 +1,5 @@
+//! End-to-end package pipeline fixture tests.
+
 #![cfg(feature = "test-support")]
 
 use vesc_pkg::package_wire::wire_snapshot_report;

@@ -6,10 +6,10 @@ Strategy for the `vesc-ffi` crate: a hand-maintained, `no_std` firmware ABI mirr
 
 | Tier | What | Where |
 |------|------|--------|
-| Compile-fail | `unsafe` required, no `std` leak, gated `test-support` | `tests/ui/`, trybuild |
+| Compile-fail | `unsafe` required, no `std` leak, crate-internal test harness | `tests/ui/`, trybuild |
 | Layout / ABI pins | `LibInfo`, `VescIf` size/offsets, newtypes | `src/tests.rs` |
 | Raw dispatch | mock `VescIf` + stub call recording | `src/raw/dispatch_tests.rs` |
-| Header parity | `ffi-compare` vs `vesc_c_if.h` | `vesc-pkg` bin + `check-ffi-header` |
+| Header parity | `ffi-compare` vs `vesc_c_if.h` | `vesc-pkg` tests + optional local header fixtures |
 | Thumb/asm smoke | `ldr` immediates vs `VescIfAbi` | `src/tests.rs` |
 
 ## Public export inventory
@@ -34,7 +34,7 @@ Strategy for the `vesc-ffi` crate: a hand-maintained, `no_std` firmware ABI mirr
 | `views::*` | newtypes | — | size tests |
 | `types::*` | newtypes | — | size tests |
 
-## Mock-table harness (`test-support` feature)
+## Mock-table harness
 
 Host tests must not dereference `VescIfAbi::BASE_ADDR`. The harness installs a stack/static mock table:
 
@@ -48,7 +48,8 @@ with_table(&table, || unsafe {
 });
 ```
 
-Implementation: `crates/vesc-ffi/src/test_support.rs`, enabled with the `test-support` feature.
+Implementation: `crates/vesc-ffi/src/test_support.rs`, compiled only for `vesc-ffi`'s own tests with `#[cfg(test)]`.
+It is not a downstream feature surface; the compile-fail tests intentionally prove external crates cannot import it.
 
 Production ARM builds keep inline `asm!` dispatch; host/test builds use `Option<fn>` slots on the mock table.
 
@@ -66,10 +67,9 @@ Production ARM builds keep inline `asm!` dispatch; host/test builds use `Option<
 | Command | Scope |
 |---------|--------|
 | `nix develop -c make check` | fmt, clippy, default nextest (includes vesc-ffi unit + dispatch) |
-| `nix develop -c make check-ffi-header` | `ffi_compare` library tests (fixture + optional refloat parity) |
-| `nix develop -c make check-ffi` | ffi nextest profile, coverage gate, header parity |
-| `nix develop -c make coverage-ffi` | line coverage with `--features test-support` |
-| `nix develop -c make check-full` | check + header parity + symbol-check + package tier |
+| `nix develop -c make vesc-ffi-target-check` | no normal deps + `thumbv7em-none-eabihf` check |
+| `nix develop -c make native-audit` | package-only + native-lib tests |
+| `nix develop -c make check-full` | check + ARM gates + native audit |
 
 ## Adding a new `raw::*` wrapper
 
@@ -81,10 +81,10 @@ Production ARM builds keep inline `asm!` dispatch; host/test builds use `Option<
 
 ## Miri (optional)
 
-Host dispatch tests can be run under Miri to exercise the mock-table harness:
+Host dispatch tests can be run under Miri to exercise the crate-internal mock-table harness:
 
 ```bash
-nix develop -c cargo +nightly miri test -p vesc-ffi --features test-support
+nix develop -c cargo +nightly miri test -p vesc-ffi
 ```
 
 Miri does not cover the ARM `asm!` dispatch path (`cfg(all(target_arch = "arm", not(test)))`). Treat Miri as a harness sanity check, not firmware validation.

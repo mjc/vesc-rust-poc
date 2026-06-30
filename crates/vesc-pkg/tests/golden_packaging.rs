@@ -1,11 +1,13 @@
+//! Golden package packing and fingerprint integration tests.
+
 use tempfile::TempDir;
 
-use vesc_pkg::golden::{
-    FINGERPRINTS_TOML, LISP_DATA, PACKAGE_LIB, pack_lisp_data, payload_contains_probe_extension,
-};
-use vesc_pkg::native_lib_baseline::fingerprint_bytes;
 use vesc_pkg::package_format_decode::{
     parse_lisp_imports, payload_matches_native_with_only_nul_tail,
+};
+use vesc_pkg::{
+    FINGERPRINTS_TOML, LISP_DATA, PACKAGE_LIB, fingerprint_bytes, pack_lisp_data,
+    payload_contains_probe_extension,
 };
 
 fn lisp_import_summary(lisp_data: &[u8]) -> String {

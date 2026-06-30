@@ -4,31 +4,54 @@ use std::io::Read;
 use flate2::read::ZlibDecoder;
 use sha2::{Digest, Sha256};
 
+/// Wire-format header prefix used by VESC package archives.
 pub const VESC_PACKET_HEADER: &str = "VESC Packet";
 
+/// One decoded key/value field from a `.vescpkg` payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageField {
+    /// Field name from the package payload.
     pub key: String,
+    /// Raw field bytes from the package payload.
     pub value: Vec<u8>,
 }
 
+/// One Lisp import entry decoded from the package payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LispImport {
+    /// Import tag string.
     pub tag: String,
+    /// Offset of the import within the Lisp payload.
     pub offset: usize,
+    /// Size of the import payload.
     pub size: usize,
+    /// Imported payload bytes.
     pub payload: Vec<u8>,
 }
 
+/// Errors encountered while parsing or validating package wire data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WireError {
+    /// The compressed payload was too short to contain a length prefix.
     TooShort,
+    /// Zlib decompression failed.
     DecompressionFailed(String),
-    LengthMismatch { expected: usize, actual: usize },
+    /// The decompressed byte count did not match the encoded length.
+    LengthMismatch {
+        /// Declared decompressed byte count.
+        expected: usize,
+        /// Actual decompressed byte count.
+        actual: usize,
+    },
+    /// The decompressed payload did not start with the expected header.
     InvalidHeader,
+    /// A decoded string was not valid UTF-8.
     InvalidUtf8,
+    /// The input ended before the requested bytes were available.
     UnexpectedEof,
+    /// The Lisp import count was negative.
     NegativeImportCount,
+    /// An import range extended past the available data.
     ImportOutOfBounds,
 }
 
@@ -54,6 +77,7 @@ impl fmt::Display for WireError {
 
 impl std::error::Error for WireError {}
 
+/// Decompress a `.vescpkg` blob into its raw package payload.
 pub fn decompress_vescpkg(data: &[u8]) -> Result<Vec<u8>, WireError> {
     if data.len() < 4 {
         return Err(WireError::TooShort);
@@ -75,6 +99,7 @@ pub fn decompress_vescpkg(data: &[u8]) -> Result<Vec<u8>, WireError> {
     Ok(bytes)
 }
 
+/// Parse a decompressed package payload into its key/value fields.
 pub fn parse_decompressed_vescpkg(raw: &[u8]) -> Result<Vec<PackageField>, WireError> {
     let mut cursor = raw;
     if read_string(&mut cursor)? != VESC_PACKET_HEADER {
@@ -93,10 +118,12 @@ pub fn parse_decompressed_vescpkg(raw: &[u8]) -> Result<Vec<PackageField>, WireE
     Ok(fields)
 }
 
+/// Decompress and parse a `.vescpkg` blob.
 pub fn parse_vescpkg(data: &[u8]) -> Result<Vec<PackageField>, WireError> {
     parse_decompressed_vescpkg(&decompress_vescpkg(data)?)
 }
 
+/// Return the raw bytes for a named package field.
 pub fn field_bytes<'a>(fields: &'a [PackageField], key: &str) -> Option<&'a [u8]> {
     fields
         .iter()
@@ -104,6 +131,7 @@ pub fn field_bytes<'a>(fields: &'a [PackageField], key: &str) -> Option<&'a [u8]
         .map(|field| field.value.as_slice())
 }
 
+/// Parse the Lisp import table from a package's `lispData` payload.
 pub fn parse_lisp_imports(lisp_data: &[u8]) -> Result<(String, Vec<LispImport>), WireError> {
     let mut cursor = lisp_data;
     if read_i16_be(&mut cursor)? != 0 {
@@ -140,6 +168,7 @@ pub fn parse_lisp_imports(lisp_data: &[u8]) -> Result<(String, Vec<LispImport>),
     Ok((code, imports))
 }
 
+/// Produce a human-readable snapshot report for a package blob.
 pub fn wire_snapshot_report(data: &[u8]) -> Result<String, WireError> {
     let decompressed = decompress_vescpkg(data)?;
     let fields = parse_decompressed_vescpkg(&decompressed)?;

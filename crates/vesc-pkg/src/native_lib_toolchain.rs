@@ -1,9 +1,12 @@
 use std::process::Command;
 
+/// Toolchain abstraction used by native-lib build orchestration.
 pub trait NativeLibToolchain {
+    /// Runs `program` with `args`, returning a human-readable failure string on error.
     fn run(&self, program: &str, args: &[&str]) -> Result<(), String>;
 }
 
+/// Host toolchain implementation that invokes real subprocesses.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RealNativeLibToolchain;
 
@@ -38,8 +41,10 @@ mod tests {
 }
 
 #[cfg(test)]
+/// Test toolchain that records native-lib subprocess invocations.
 #[derive(Default)]
 pub struct RecordingNativeLibToolchain {
+    /// Recorded program names and argument lists.
     pub calls: std::cell::RefCell<Vec<(String, Vec<String>)>>,
 }
 

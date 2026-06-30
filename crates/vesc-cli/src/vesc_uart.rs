@@ -30,6 +30,7 @@ const CRC16_TABLE: [u16; 256] = [
     0x2e93, 0x3eb2, 0x0ed1, 0x1ef0,
 ];
 
+/// Incremental decoder for VESC UART packet frames.
 #[derive(Debug, Default)]
 pub struct PacketDecoder {
     buffer: Vec<u8>,
@@ -37,10 +38,12 @@ pub struct PacketDecoder {
 }
 
 impl PacketDecoder {
+    /// Creates an empty incremental packet decoder.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Pops the oldest fully decoded payload buffered by the decoder.
     pub fn pop_ready(&mut self) -> Option<Vec<u8>> {
         if self.ready.is_empty() {
             None
@@ -49,6 +52,7 @@ impl PacketDecoder {
         }
     }
 
+    /// Pushes bytes into the decoder and returns any newly decoded payloads.
     pub fn push(&mut self, bytes: &[u8]) -> Result<Vec<Vec<u8>>, PacketDecodeError> {
         self.buffer.extend_from_slice(bytes);
         let mut packets = Vec::new();
@@ -69,11 +73,14 @@ impl PacketDecoder {
     }
 }
 
+/// Errors returned while decoding VESC UART packet frames.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PacketDecodeError {
+    /// The buffered packet header, length, CRC, or terminator was malformed.
     Malformed,
 }
 
+/// Encodes a payload into a VESC UART packet with length, CRC, and terminator bytes.
 pub fn encode_packet(payload: &[u8]) -> Vec<u8> {
     let mut packet = Vec::with_capacity(payload.len() + 8);
     let len = payload.len();
@@ -100,6 +107,7 @@ pub fn encode_packet(payload: &[u8]) -> Vec<u8> {
     packet
 }
 
+/// Computes the VESC UART CRC16 checksum for `buf`.
 pub fn crc16(buf: &[u8]) -> u16 {
     let mut cksum = 0u16;
     for byte in buf {

@@ -1,3 +1,5 @@
+//! Integration tests for the fake BLE loopback bridge.
+
 use std::cell::RefCell;
 
 use vesc_cli::loopback::{LoopbackTarget, LoopbackTransport, LoopbackTransportError, run_loopback};

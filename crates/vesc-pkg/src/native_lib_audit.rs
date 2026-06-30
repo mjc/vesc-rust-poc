@@ -13,15 +13,20 @@ use crate::native_inspect::{
 };
 use crate::native_lib_link::NativeLibLinkPlan;
 
-#[derive(Debug, Clone)]
+/// Concrete artifact paths consumed by the native-lib audit helpers.
 pub struct NativeLibArtifactPaths {
+    /// Linked native ELF path.
     pub elf: PathBuf,
+    /// Flattened native binary path.
     pub bin: PathBuf,
+    /// Rust static library input path.
     pub staticlib: PathBuf,
+    /// C shim object path linked into the final ELF.
     pub package_object: PathBuf,
 }
 
 impl NativeLibArtifactPaths {
+    /// Builds artifact paths from a link plan.
     pub fn from_link_plan(plan: &NativeLibLinkPlan) -> Self {
         Self {
             elf: plan.elf_path(),
@@ -32,6 +37,7 @@ impl NativeLibArtifactPaths {
     }
 }
 
+/// Audits symbol-level constraints for the native-lib build outputs.
 pub fn audit_native_lib_symbols(paths: &NativeLibArtifactPaths) {
     let elf_symbols = nm_output(&paths.elf);
     let staticlib_symbols = nm_output(&paths.staticlib);
@@ -141,6 +147,7 @@ pub fn audit_native_lib_symbols(paths: &NativeLibArtifactPaths) {
     );
 }
 
+/// Audits section layout and flash-budget constraints for the native-lib outputs.
 pub fn audit_native_lib_layout(paths: &NativeLibArtifactPaths) {
     let blob = fs::read(&paths.bin).expect("native-lib binary bytes");
     let sections = all_section_layouts(&paths.elf);
@@ -241,6 +248,7 @@ pub fn audit_native_lib_layout(paths: &NativeLibArtifactPaths) {
     );
 }
 
+/// Audits that the flattened binary matches the linked ELF layout.
 pub fn audit_native_lib_flat_binary(elf: &Path, bin: &Path) {
     let flat = elf_to_flat_binary(elf);
     let materialized = fs::read(bin).expect("materialized native bin");
@@ -250,6 +258,7 @@ pub fn audit_native_lib_flat_binary(elf: &Path, bin: &Path) {
     );
 }
 
+/// Builds a redacted semantic snapshot report for `elf`.
 pub fn semantic_snapshot_report(elf: &Path) -> String {
     let semantics = analyze_native_lib_elf(elf);
     let stable_symbols = semantics
@@ -293,6 +302,7 @@ pub fn semantic_snapshot_report(elf: &Path) -> String {
     )
 }
 
+/// Runs the full native-lib audit suite and returns the semantic snapshot text.
 pub fn audit_native_lib_artifacts(paths: &NativeLibArtifactPaths) -> String {
     audit_native_lib_symbols(paths);
     audit_native_lib_layout(paths);

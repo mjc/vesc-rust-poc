@@ -1,5 +1,8 @@
-use vesc_pkg::native_audit::audit_device_proven_fixture;
-use vesc_pkg::native_lib_baseline::{audit_baseline_fixture_layout, audit_vesc_c_if_abi_pins};
+//! Golden fixture smoke tests for package payload metadata.
+
+use vesc_pkg::{
+    audit_baseline_fixture_layout, audit_device_proven_fixture, audit_vesc_c_if_abi_pins,
+};
 
 #[test]
 fn fixtures() {

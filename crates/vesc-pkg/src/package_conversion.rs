@@ -2,10 +2,14 @@ use std::path::PathBuf;
 
 use crate::PackageLayout;
 
+/// Relative path to the built native binary used by the conversion script.
 pub const NATIVE_LIB_BINARY_PATH: &str = "target/native-lib-baseline/native_lib.bin";
+/// Relative path to the package-library binary written by the conversion script.
 pub const PACKAGE_LIB_BINARY_PATH: &str = "target/native-lib-baseline/package_lib.bin";
+/// Relative path to the package conversion script.
 pub const CONVERSION_SCRIPT_PATH: &str = "scripts/conv.py";
 
+/// Command line used to convert the native binary into a package binary.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageBinaryConversionCommand {
     script_path: PathBuf,
@@ -14,6 +18,7 @@ pub struct PackageBinaryConversionCommand {
 }
 
 impl PackageBinaryConversionCommand {
+    /// Construct a conversion command from its paths.
     pub fn new(
         script_path: impl Into<PathBuf>,
         native_binary_path: impl Into<PathBuf>,
@@ -26,18 +31,22 @@ impl PackageBinaryConversionCommand {
         }
     }
 
+    /// Return the conversion script path.
     pub fn script_path(&self) -> &PathBuf {
         &self.script_path
     }
 
+    /// Return the native binary path.
     pub fn native_binary_path(&self) -> &PathBuf {
         &self.native_binary_path
     }
 
+    /// Return the package binary output path.
     pub fn package_binary_path(&self) -> &PathBuf {
         &self.package_binary_path
     }
 
+    /// Return the command-line arguments for the conversion runner.
     pub fn arguments(&self) -> Vec<String> {
         vec![
             self.script_path.to_string_lossy().into_owned(),
@@ -47,19 +56,27 @@ impl PackageBinaryConversionCommand {
     }
 }
 
+/// Errors returned when the package conversion runner fails.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PackageBinaryConversionError {
+    /// The conversion command failed before producing the package payload.
     Failed {
+        /// Human-readable command failure reason.
         reason: String,
+        /// Native binary input path.
         native_binary_path: PathBuf,
+        /// Package binary output path.
         package_binary_path: PathBuf,
     },
 }
 
+/// Runner abstraction used to execute the package conversion script.
 pub trait PackageBinaryConversionRunner {
+    /// Run the supplied conversion command.
     fn run(&self, command: &PackageBinaryConversionCommand) -> Result<(), String>;
 }
 
+/// Conversion plan for a package's native and package-library binaries.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageBinaryConversionPlan {
     source_root: PathBuf,
@@ -67,6 +84,7 @@ pub struct PackageBinaryConversionPlan {
 }
 
 impl PackageBinaryConversionPlan {
+    /// Construct a conversion plan for one package.
     pub fn new(
         source_root: impl Into<PathBuf>,
         package_name: impl Into<String>,
@@ -78,10 +96,12 @@ impl PackageBinaryConversionPlan {
         }
     }
 
+    /// Return the package layout for this plan.
     pub fn layout(&self) -> &PackageLayout {
         &self.layout
     }
 
+    /// Return the command used to perform the conversion.
     pub fn command(&self) -> PackageBinaryConversionCommand {
         PackageBinaryConversionCommand::new(
             self.conversion_script_path(),
@@ -90,26 +110,32 @@ impl PackageBinaryConversionPlan {
         )
     }
 
+    /// Return the conversion script path.
     pub fn conversion_script_path(&self) -> PathBuf {
         self.source_root.join(CONVERSION_SCRIPT_PATH)
     }
 
+    /// Return the native binary path.
     pub fn native_binary_path(&self) -> PathBuf {
         self.source_root.join(NATIVE_LIB_BINARY_PATH)
     }
 
+    /// Return the package binary path.
     pub fn package_binary_path(&self) -> PathBuf {
         self.source_root.join(PACKAGE_LIB_BINARY_PATH)
     }
 
+    /// Return the files that feed the conversion step.
     pub fn conversion_inputs(&self) -> impl Iterator<Item = PathBuf> + '_ {
         [self.conversion_script_path(), self.native_binary_path()].into_iter()
     }
 
+    /// Return the conversion runner arguments.
     pub fn conversion_command_args(&self) -> Vec<String> {
         self.command().arguments()
     }
 
+    /// Run the conversion step with a custom runner.
     pub fn run_with<R: PackageBinaryConversionRunner>(
         &self,
         runner: &R,
@@ -123,6 +149,7 @@ impl PackageBinaryConversionPlan {
             })
     }
 
+    /// Render a short failure message with the input and output paths.
     pub fn failure_context(&self, reason: &str) -> String {
         format!(
             "{reason}: {} -> {}",

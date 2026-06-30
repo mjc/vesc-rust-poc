@@ -6,10 +6,14 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+/// Simplified section metadata extracted from an ELF file.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SectionLayout {
+    /// Section name as reported by the ELF inspector.
     pub name: String,
+    /// Section size in bytes.
     pub size: usize,
+    /// Section virtual memory address.
     pub vma: usize,
 }
 
@@ -44,6 +48,7 @@ fn push_nm_lines<'data>(lines: &mut Vec<String>, object: ObjectFile<'data>) {
     }
 }
 
+/// Runs `nm` for `path` and returns its stdout.
 pub fn nm_output(path: &Path) -> String {
     let bytes = read_bytes(path);
     let mut lines = Vec::new();
@@ -69,6 +74,7 @@ pub fn nm_output(path: &Path) -> String {
     lines.join("\n")
 }
 
+/// Returns all loadable section layouts keyed by section name.
 pub fn all_section_layouts(elf: &Path) -> BTreeMap<String, SectionLayout> {
     let bytes = read_bytes(elf);
     let object = parse_elf_bytes(&bytes, elf);
@@ -91,6 +97,7 @@ pub fn all_section_layouts(elf: &Path) -> BTreeMap<String, SectionLayout> {
         .collect()
 }
 
+/// Returns whether the ELF header marks `elf` executable.
 pub fn elf_is_executable(elf: &Path) -> bool {
     let bytes = read_bytes(elf);
     let object = parse_elf_bytes(&bytes, elf);
@@ -107,6 +114,7 @@ pub fn elf_is_executable(elf: &Path) -> bool {
     }
 }
 
+/// Flattens loadable ELF sections into the package binary image.
 pub fn elf_to_flat_binary(elf: &Path) -> Vec<u8> {
     let bytes = read_bytes(elf);
     let object = parse_elf_bytes(&bytes, elf);
@@ -159,6 +167,7 @@ fn section_is_loadable(flags: SectionFlags) -> bool {
     }
 }
 
+/// Returns whether the ELF has no relocation sections.
 pub fn elf_has_no_relocations(elf: &Path) -> bool {
     let bytes = read_bytes(elf);
     let object = parse_elf_bytes(&bytes, elf);
@@ -167,6 +176,7 @@ pub fn elf_has_no_relocations(elf: &Path) -> bool {
         .any(|section| section.relocations().next().is_some())
 }
 
+/// Returns the named section layout or panics with context if it is missing.
 pub fn section_from<'a>(
     sections: &'a BTreeMap<String, SectionLayout>,
     section_name: &str,

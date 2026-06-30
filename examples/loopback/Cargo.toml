@@ -5,6 +5,9 @@ edition = "2024"
 
 publish = false
 
+[lints]
+workspace = true
+
 [lib]
 crate-type = ["staticlib"]
 

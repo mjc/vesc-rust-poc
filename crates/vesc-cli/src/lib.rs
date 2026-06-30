@@ -1,48 +1,74 @@
 //! Command-line tool for building, installing, and debugging Rust VESC packages.
 
+/// Parsed top-level command requested by the operator-facing CLI.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
+    /// Print CLI usage information.
     Help,
+    /// Print package layout information.
     Layout,
+    /// Print host and build status information.
     Status,
+    /// Scan for nearby VESC BLE UART devices.
     Scan,
+    /// Run the BLE loopback protocol against a target device.
     Loopback(LoopbackCommand),
+    /// Run the Lisp probe diagnostic against a target device.
     LispProbe(LispProbeCommand),
+    /// Install a package on a target device.
     PackageInstall(PackageInstallCommand),
+    /// Erase an installed package from a target device.
     ErasePackage(PackageEraseCommand),
+    /// Build, install, and smoke-test a package on a target device.
     Deploy(PackageInstallCommand),
 }
 
+/// Arguments for the `loopback` command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoopbackCommand {
+    /// Optional BLE device-name filter.
     pub device_name: Option<String>,
+    /// Optional BLE address filter.
     pub address: Option<String>,
 }
 
+/// Arguments for the `lisp-probe` command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LispProbeCommand {
+    /// Optional BLE device-name filter.
     pub device_name: Option<String>,
+    /// Optional BLE address filter.
     pub address: Option<String>,
 }
 
+/// Arguments for package install and deploy commands.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageInstallCommand {
+    /// Path to the `.vescpkg` file to install.
     pub package_path: String,
+    /// Optional BLE device-name filter.
     pub device_name: Option<String>,
+    /// Optional BLE address filter.
     pub address: Option<String>,
 }
 
+/// Arguments for the `erase-package` command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageEraseCommand {
+    /// Optional BLE device-name filter.
     pub device_name: Option<String>,
+    /// Optional BLE address filter.
     pub address: Option<String>,
 }
 
+/// Errors returned while parsing CLI arguments.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
+    /// The first non-program argument did not match a supported command.
     UnknownCommand(String),
 }
 
+/// Parses command-line arguments into a top-level CLI command.
 pub fn parse_args<I, S>(args: I) -> Result<Command, ParseError>
 where
     I: IntoIterator<Item = S>,
@@ -177,12 +203,16 @@ fn parse_erase_package(
 
 mod ble_discovery;
 
+/// BLE UART transport, discovery, and Lisp probe helpers.
 pub mod btle;
 pub mod deploy;
+/// Loopback protocol runner and transport abstractions.
 pub mod loopback;
 pub mod loopback_debug;
 pub mod package_install;
+/// Package install transport implementations and BLE command helpers.
 pub mod package_transport;
+/// VESC UART packet encoding, decoding, and checksum helpers.
 pub mod vesc_uart;
 
 #[cfg(test)]

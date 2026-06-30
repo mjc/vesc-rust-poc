@@ -3,6 +3,9 @@ name = "vesc-cli"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [dependencies]
 btleplug = "0.11.8"
 flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
@@ -13,4 +16,4 @@ vesc-pkg = { path = "../vesc-pkg" }
 uuid = "1"
 
 [dev-dependencies]
-vesc-pkg = { path = "../vesc-pkg" }
+vesc-pkg = { path = "../vesc-pkg", features = ["test-support"] }

@@ -6,55 +6,67 @@ use crate::bindings::{AppDataBindings, LbmBindings};
 use crate::extension::{ExtensionDescriptor, RegisterError};
 use vesc_ffi::{AppDataHandler, ExtensionHandler, LbmValue, LibInfo, NativeImage, StopHandler};
 
+/// Thin wrapper around the LispBM binding set used by package code.
 pub struct LbmApi<B> {
     bindings: B,
 }
 
 impl<B: LbmBindings> LbmApi<B> {
+    /// Construct a new LispBM API wrapper.
     pub fn new(bindings: B) -> Self {
         Self { bindings }
     }
 
+    /// Return the underlying bindings implementation.
     pub fn bindings(&self) -> &B {
         &self.bindings
     }
 
+    /// Register one LispBM extension name and handler.
     pub fn register_extension(&self, name: &CStr, handler: ExtensionHandler) -> bool {
         unsafe { self.bindings.add_extension(name.as_ptr(), handler) }
     }
 
+    /// Decode a LispBM integer value into an `i32`.
     pub fn decode_i32(&self, value: LbmValue) -> i32 {
         unsafe { self.bindings.decode_i32(value) }
     }
 
+    /// Encode an `i32` as a LispBM value.
     pub fn encode_i32(&self, value: i32) -> LbmValue {
         unsafe { self.bindings.encode_i32(value) }
     }
 
+    /// Check whether a LispBM value is numeric.
     pub fn is_number(&self, value: LbmValue) -> bool {
         unsafe { self.bindings.is_number(value) }
     }
 
+    /// Return the LispBM eval-error value.
     pub fn encode_eval_error(&self) -> LbmValue {
         unsafe { self.bindings.encode_eval_error() }
     }
 }
 
+/// Package lifecycle controller that owns the shared LispBM API wrapper.
 pub struct PackageLifecycle<B> {
     api: LbmApi<B>,
 }
 
 impl<B: LbmBindings> PackageLifecycle<B> {
+    /// Construct a package lifecycle controller.
     pub fn new(bindings: B) -> Self {
         Self {
             api: LbmApi::new(bindings),
         }
     }
 
+    /// Return the wrapped LispBM API helper.
     pub fn bindings(&self) -> &B {
         self.api.bindings()
     }
 
+    /// Register a validated extension descriptor with firmware.
     pub fn register_extension(&self, descriptor: ExtensionDescriptor) -> Result<(), RegisterError> {
         let descriptor = descriptor
             .validate()
@@ -114,19 +126,24 @@ impl<B: LbmBindings> PackageLifecycle<B> {
     }
 }
 
+/// Package lifecycle controller for loopback and app-data flows.
 pub struct LoopbackLifecycle<B> {
     bindings: B,
 }
 
 impl<B: AppDataBindings> LoopbackLifecycle<B> {
+    /// Construct a loopback lifecycle controller.
     pub fn new(bindings: B) -> Self {
         Self { bindings }
     }
 
+    /// Return the wrapped app-data bindings.
     pub fn bindings(&self) -> &B {
         &self.bindings
     }
 
+    /// Install the package stop hook into loader metadata.
+    ///
     /// # Safety
     ///
     /// `info` must either be null or point to live loader metadata.
@@ -146,6 +163,7 @@ impl<B: AppDataBindings> LoopbackLifecycle<B> {
         true
     }
 
+    /// Clear the app-data callback through the binding set.
     pub fn clear_app_data_handler(&self) -> bool {
         unsafe {
             let cleared: AppDataHandler =
@@ -154,14 +172,18 @@ impl<B: AppDataBindings> LoopbackLifecycle<B> {
         }
     }
 
+    /// Register the app-data callback through the binding set.
     pub fn register_app_data_handler(&self, handler: AppDataHandler) -> bool {
         unsafe { self.bindings.set_app_data_handler(handler) }
     }
 
+    /// Return the current firmware time tick counter.
     pub fn system_time_ticks(&self) -> u32 {
         self.bindings.system_time_ticks()
     }
 
+    /// Send app-data bytes through the firmware callback.
+    ///
     /// # Safety
     ///
     /// `data` must point to at least `len` bytes that remain valid for the duration

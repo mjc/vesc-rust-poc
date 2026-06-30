@@ -1,14 +1,17 @@
 use std::fs;
 use std::path::PathBuf;
 
+/// Returns the checked-in roadmap document path for the Rust package API.
 pub fn roadmap_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/rust-package-api-roadmap.md")
 }
 
+/// Reads the checked-in roadmap document.
 pub fn roadmap_text() -> String {
     fs::read_to_string(roadmap_path()).expect("roadmap document contents")
 }
 
+/// Returns the body of a second-level markdown section named `heading`.
 pub fn markdown_section_body<'a>(text: &'a str, heading: &str) -> Option<&'a str> {
     let target = format!("## {heading}");
     let mut body_start = None;

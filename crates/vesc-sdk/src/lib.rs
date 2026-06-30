@@ -1,7 +1,7 @@
 //! Target-side SDK for Rust VESC packages.
 //!
 //! Link this crate into native VESC package code. It wraps `vesc-ffi` with
-//! lifecycle, LispBM extension, app-data, and protocol helpers.
+//! lifecycle, LispBM extension, app-data, GPIO, and protocol helpers.
 //!
 //! Device builds must stay `no_std` and must not link `alloc` or `std`.
 
@@ -20,8 +20,8 @@ mod lifecycle_core;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 
+/// Safe and unsafe raw ABI re-exports for SDK consumers that need them.
 pub mod ffi {
-    //! Raw ABI plus the safe package runtime surface re-exported for callers.
     pub use crate::bindings::*;
     pub use crate::extension::*;
     pub use crate::lifecycle_core::*;
@@ -39,14 +39,19 @@ pub use lifecycle_core::{LbmApi, LoopbackLifecycle, PackageLifecycle};
 #[cfg(not(test))]
 pub use bindings::RealBindings;
 
+/// BLE loopback helpers and package-side packet handlers.
 pub mod ble_loopback;
+/// GPIO bindings and convenience wrappers for package code.
 pub mod gpio;
+/// Device package entrypoint and loader-hook helpers.
 pub mod init;
 
 #[cfg(not(test))]
 pub use gpio::RealGpioBindings;
 pub use gpio::{GpioApi, GpioBindings};
+/// LispBM value encoding helpers and raw device-side integer packing.
 pub mod lbm;
+/// Higher-level lifecycle helpers for package startup and runtime behavior.
 pub mod lifecycle;
 
 #[cfg(test)]

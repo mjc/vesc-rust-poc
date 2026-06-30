@@ -1,8 +1,10 @@
+//! Standalone package builder for the loopback VESC package fixture.
+
 use std::process::ExitCode;
 
 use vesc_pkg::{
-    BLE_LOOPBACK_PACKAGE_NAME, PackageTargetMode, PackageTargetPlan, package_provenance_from_env,
-    package_runner::RealPackageRunner,
+    BLE_LOOPBACK_PACKAGE_NAME, PackageTargetMode, PackageTargetPlan, RealPackageRunner,
+    package_provenance_from_env,
 };
 
 fn main() -> ExitCode {

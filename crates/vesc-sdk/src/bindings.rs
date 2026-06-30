@@ -4,6 +4,7 @@ use core::ffi::c_char;
 
 use vesc_ffi::{AppDataHandler, ExtensionHandler, LbmValue};
 
+/// LispBM-related firmware calls required by the SDK lifecycle layer.
 pub trait LbmBindings {
     /// # Safety
     /// `name` must be a valid NUL-terminated string for the duration of the call,
@@ -23,11 +24,13 @@ pub trait LbmBindings {
     unsafe fn encode_eval_error(&self) -> LbmValue;
 }
 
+/// Firmware calls used by the app-data and system-time helpers.
 pub trait AppDataBindings {
     /// # Safety
     /// `handler` must remain valid until it is replaced or cleared. Pass null to clear.
     unsafe fn set_app_data_handler(&self, handler: AppDataHandler) -> bool;
 
+    /// Return the current firmware tick counter.
     fn system_time_ticks(&self) -> u32;
 
     /// # Safety
@@ -38,6 +41,7 @@ pub trait AppDataBindings {
 }
 
 #[cfg(not(test))]
+/// Concrete bindings that forward calls into the live `vesc-ffi` ABI.
 pub struct RealBindings;
 
 #[cfg(not(test))]

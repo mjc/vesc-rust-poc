@@ -1,25 +1,37 @@
+/// Classifies the role of an ABI requirement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AbiRequirementKind {
+    /// Native entrypoint symbol.
     EntryPoint,
+    /// Loader-provided header data.
     LoaderHeader,
+    /// ABI type name that must be present.
     Type,
+    /// Callable function symbol.
     Function,
+    /// Special error symbol exported by the firmware.
     ErrorSymbol,
 }
 
+/// One required ABI symbol or type in the minimal package surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AbiRequirement {
+    /// Symbol or type name to check.
     pub name: &'static str,
+    /// Kind of ABI requirement.
     pub kind: AbiRequirementKind,
+    /// Human-readable explanation of why the symbol matters.
     pub caller: &'static str,
 }
 
 impl AbiRequirement {
+    /// Construct one ABI requirement entry.
     pub const fn new(name: &'static str, kind: AbiRequirementKind, caller: &'static str) -> Self {
         Self { name, kind, caller }
     }
 }
 
+/// ABI requirements that define the minimal loopback test package surface.
 pub const MINIMAL_TEST_PACKAGE_ABI: [AbiRequirement; 12] = [
     AbiRequirement::new(
         "prog_ptr",
@@ -83,6 +95,7 @@ pub const MINIMAL_TEST_PACKAGE_ABI: [AbiRequirement; 12] = [
     ),
 ];
 
+/// Return the pinned ABI requirements for the loopback test package.
 pub fn minimal_test_package_abi() -> &'static [AbiRequirement] {
     &MINIMAL_TEST_PACKAGE_ABI
 }

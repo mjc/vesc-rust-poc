@@ -20,6 +20,7 @@ type EepromVar = c_void;
 type GnssData = c_void;
 type AttitudeInfo = c_void;
 
+/// Raw remote-control state mirrored from the firmware ABI.
 #[repr(C)]
 pub struct RemoteState {
     js_x: f32,
@@ -41,6 +42,7 @@ type EncoderReadCallback = unsafe extern "C" fn() -> f32;
 type EncoderFaultCallback = unsafe extern "C" fn() -> bool;
 type EncoderInfoCallback = unsafe extern "C" fn() -> *mut c_char;
 
+/// Raw firmware function table mirrored from the VESC native ABI.
 #[repr(C)]
 pub struct VescIf {
     // LBM
@@ -703,6 +705,7 @@ pub unsafe fn io_read(pin: crate::VescPin) -> bool {
     }
 }
 
+/// Returns selected `VescIf` field offsets for ABI layout tests.
 #[cfg(test)]
 pub fn vesc_if_offsets_for_tests() -> [usize; 11] {
     [
@@ -723,6 +726,7 @@ pub fn vesc_if_offsets_for_tests() -> [usize; 11] {
 #[cfg(test)]
 mod dispatch_tests;
 
+/// Returns `VescIf` size, alignment, and final-slot offset for ABI layout tests.
 #[cfg(test)]
 pub fn vesc_if_full_layout_for_tests() -> (usize, usize, usize) {
     (
@@ -732,6 +736,7 @@ pub fn vesc_if_full_layout_for_tests() -> (usize, usize, usize) {
     )
 }
 
+/// Returns nullable function-pointer slot size and alignment for ABI layout tests.
 #[cfg(test)]
 pub fn nullable_slot_layout_for_tests() -> (usize, usize) {
     (
