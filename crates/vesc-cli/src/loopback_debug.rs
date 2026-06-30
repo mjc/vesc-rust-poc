@@ -244,8 +244,9 @@ pub fn run_loopback_with_diagnostics(
     mut progress: impl FnMut(LoopbackProgress),
 ) -> Result<LoopbackReport, LoopbackTransportError> {
     progress(LoopbackProgress::StartingRuntime);
-    let runtime = Builder::new_current_thread()
+    let runtime = Builder::new_multi_thread()
         .enable_all()
+        .worker_threads(1)
         .build()
         .map_err(|_| device_error("failed to start the BLE runtime"))?;
 

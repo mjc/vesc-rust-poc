@@ -23,6 +23,7 @@ pub struct NativeLibSemantics {
 }
 
 /// Single decoded instruction from a native-lib routine.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodedInsn {
     /// Virtual address of the instruction.
     pub address: u64,

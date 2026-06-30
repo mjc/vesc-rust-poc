@@ -18,7 +18,7 @@ pub const PACKAGE_C_OBJECT_PATH: &str = "target/native-lib-baseline/package_lib.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NativeLibLinkPlan {
     /// Artifact root that owns all linked native-lib outputs.
-    pub root: PathBuf,
+    root: PathBuf,
 }
 
 impl NativeLibLinkPlan {

@@ -1,5 +1,5 @@
 use std::hash::Hasher;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Repository-relative files that feed the native-lib baseline audit.
 pub const NATIVE_LIB_BASELINE_INPUTS: [&str; 7] = [
@@ -38,13 +38,18 @@ pub const NATIVE_LIB_BASELINE_PACKAGE_INPUTS: [&str; 3] = [
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NativeLibBaselinePath {
     /// Root directory that contains the baseline fixture tree.
-    pub root: PathBuf,
+    root: PathBuf,
 }
 
 impl NativeLibBaselinePath {
     /// Creates a baseline path helper rooted at `root`.
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self { root: root.into() }
+    }
+
+    /// Returns the baseline fixture root directory.
+    pub fn root(&self) -> &Path {
+        &self.root
     }
 
     /// Iterates over required baseline input paths.
@@ -69,7 +74,7 @@ pub fn native_lib_baseline_root() -> NativeLibBaselinePath {
 
 /// Returns the path to the vendored VESC C interface header.
 pub fn vesc_c_if_header_path() -> PathBuf {
-    native_lib_baseline_root().root.join("src/vesc_c_if.h")
+    native_lib_baseline_root().root().join("src/vesc_c_if.h")
 }
 
 /// Computes the fingerprint of the vendored VESC C interface header.
