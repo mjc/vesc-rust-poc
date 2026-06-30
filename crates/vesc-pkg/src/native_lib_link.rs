@@ -79,19 +79,16 @@ impl NativeLibLinkPlan {
 }
 
 /// Returns the repository-default native-lib link plan.
-
 pub fn native_lib_link_plan() -> NativeLibLinkPlan {
     NativeLibLinkPlan::new(crate::hygiene::repo_root())
 }
 
 /// Returns a link plan rooted from a requested native binary output path.
-
 pub fn native_lib_link_plan_for_native_binary(native_binary_path: &Path) -> NativeLibLinkPlan {
     NativeLibLinkPlan::new(artifact_root_from_native_binary(native_binary_path))
 }
 
 /// Derives an artifact root from a native binary output path.
-
 pub fn artifact_root_from_native_binary(native_binary_path: &Path) -> PathBuf {
     native_binary_path
         .parent()
@@ -104,7 +101,6 @@ pub fn artifact_root_from_native_binary(native_binary_path: &Path) -> PathBuf {
 }
 
 /// Returns the repository-default native ELF output path.
-
 pub fn native_lib_elf_path() -> PathBuf {
     native_lib_link_plan().elf_path()
 }

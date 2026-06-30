@@ -14,13 +14,11 @@ pub const GENERATED_PACKAGE_PATHS: [&str; 4] = [
 ];
 
 /// Returns the workspace root that owns the package fixtures and Make targets.
-
 pub fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
 /// Returns whether `git check-ignore` reports `path` as ignored.
-
 pub fn git_check_ignore(path: &str) -> bool {
     Command::new("git")
         .arg("check-ignore")
@@ -32,7 +30,6 @@ pub fn git_check_ignore(path: &str) -> bool {
 }
 
 /// Returns whether every path is reported as ignored by `git check-ignore`.
-
 pub fn git_check_ignore_all(paths: &[&str]) -> bool {
     let output = Command::new("git")
         .arg("check-ignore")
@@ -52,7 +49,6 @@ pub fn git_check_ignore_all(paths: &[&str]) -> bool {
 }
 
 /// Returns whether every path is tracked by git.
-
 pub fn git_tracks_all(paths: &[&str]) -> bool {
     Command::new("git")
         .args(["ls-files", "--error-unmatch"])
@@ -65,7 +61,6 @@ pub fn git_tracks_all(paths: &[&str]) -> bool {
 }
 
 /// Returns whether git tracks `path`.
-
 pub fn git_tracks(path: &str) -> bool {
     Command::new("git")
         .args(["ls-files", "--error-unmatch", path])
@@ -80,7 +75,6 @@ pub fn git_tracks(path: &str) -> bool {
 pub const MAKE_DRY_RUN_TARGETS: &[&str] = &["check", "check-full"];
 
 /// Returns whether `make -n <target>` succeeds from the repository root.
-
 pub fn make_dry_run_succeeds(target: &str) -> bool {
     Command::new("make")
         .arg("-n")

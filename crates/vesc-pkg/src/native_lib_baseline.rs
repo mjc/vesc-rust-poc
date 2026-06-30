@@ -61,7 +61,6 @@ impl NativeLibBaselinePath {
 }
 
 /// Returns the default baseline fixture path helper.
-
 pub fn native_lib_baseline_root() -> NativeLibBaselinePath {
     NativeLibBaselinePath::new(
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/native-lib-baseline"),
@@ -69,20 +68,17 @@ pub fn native_lib_baseline_root() -> NativeLibBaselinePath {
 }
 
 /// Returns the path to the vendored VESC C interface header.
-
 pub fn vesc_c_if_header_path() -> PathBuf {
     native_lib_baseline_root().root.join("src/vesc_c_if.h")
 }
 
 /// Computes the fingerprint of the vendored VESC C interface header.
-
 pub fn vesc_c_if_header_fingerprint() -> String {
     let header = std::fs::read(vesc_c_if_header_path()).expect("vesc_c_if.h contents");
     fingerprint_bytes(&header)
 }
 
 /// Computes the stable FNV-1a fingerprint used by fixture pinning checks.
-
 pub fn fingerprint_bytes(bytes: &[u8]) -> String {
     let mut hasher = Fnv1a64::default();
     hasher.write(bytes);
@@ -114,19 +110,16 @@ impl Hasher for Fnv1a64 {
 }
 
 /// Iterates repository-relative baseline input paths.
-
 pub fn baseline_input_paths() -> impl Iterator<Item = &'static str> {
     NATIVE_LIB_BASELINE_INPUTS.iter().copied()
 }
 
 /// Iterates repository-relative baseline output paths.
-
 pub fn baseline_output_paths() -> impl Iterator<Item = &'static str> {
     NATIVE_LIB_BASELINE_OUTPUTS.iter().copied()
 }
 
 /// Asserts that required native-lib baseline fixture inputs and outputs are present.
-
 pub fn audit_baseline_fixture_layout() {
     use std::fs;
 
@@ -209,7 +202,6 @@ pub fn audit_baseline_fixture_layout() {
 }
 
 /// Asserts that the vendored C interface header still matches pinned ABI expectations.
-
 pub fn audit_vesc_c_if_abi_pins() {
     use std::fs;
 

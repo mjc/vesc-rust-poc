@@ -1,3 +1,5 @@
+//! Native library artifact audit integration tests.
+
 use std::path::PathBuf;
 
 use tempfile::TempDir;

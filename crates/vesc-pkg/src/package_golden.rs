@@ -13,7 +13,6 @@ pub const GOLDEN_LISP_DATA_BIN: &str = "lisp_data.bin";
 pub const GOLDEN_FINGERPRINTS_TOML: &str = "fingerprints.toml";
 
 /// Returns the absolute path to the checked-in golden fixture directory.
-
 pub fn golden_fixture_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../")
@@ -21,19 +20,16 @@ pub fn golden_fixture_root() -> PathBuf {
 }
 
 /// Returns the golden native package payload path.
-
 pub fn golden_package_lib_path() -> PathBuf {
     golden_fixture_root().join(GOLDEN_PACKAGE_LIB_BIN)
 }
 
 /// Returns the golden packed Lisp payload path.
-
 pub fn golden_lisp_data_path() -> PathBuf {
     golden_fixture_root().join(GOLDEN_LISP_DATA_BIN)
 }
 
 /// Reads the checked-in golden native package payload.
-
 pub fn read_golden_package_lib() -> Vec<u8> {
     fs::read(golden_package_lib_path()).unwrap_or_else(|error| {
         panic!(
@@ -44,7 +40,6 @@ pub fn read_golden_package_lib() -> Vec<u8> {
 }
 
 /// Reads the checked-in golden packed Lisp payload.
-
 pub fn read_golden_lisp_data() -> Vec<u8> {
     fs::read(golden_lisp_data_path()).unwrap_or_else(|error| {
         panic!(
@@ -55,31 +50,26 @@ pub fn read_golden_lisp_data() -> Vec<u8> {
 }
 
 /// Returns the repository root used to locate generated package artifacts.
-
 pub fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
 /// Returns the generated package payload path under `root`.
-
 pub fn package_lib_output_path(root: &Path) -> PathBuf {
     root.join("target/native-lib-baseline/package_lib.bin")
 }
 
 /// Returns the generated native-lib payload path under `root`.
-
 pub fn native_lib_output_path(root: &Path) -> PathBuf {
     root.join("target/native-lib-baseline/native_lib.bin")
 }
 
 /// Returns the staged package payload path under `root`.
-
 pub fn staged_package_lib_path(root: &Path) -> PathBuf {
     root.join("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/src/package_lib.bin")
 }
 
 /// Builds the package payload and copies it into the golden-output location under `root`.
-
 pub fn build_and_copy_package_lib_bin(root: &Path) -> Vec<u8> {
     let native_bin = native_lib_output_path(root);
     crate::symbol_audit::build_final_native_lib_binary(&native_bin);

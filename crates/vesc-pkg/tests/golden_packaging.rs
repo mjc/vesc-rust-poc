@@ -1,3 +1,5 @@
+//! Golden package packing and fingerprint integration tests.
+
 use tempfile::TempDir;
 
 use vesc_pkg::golden::{

@@ -15,7 +15,6 @@ pub use crate::native_lib_audit::{
 };
 
 /// Returns the symbol set exported by the built Rust static library.
-
 pub fn audit_rust_staticlib_symbols() -> std::collections::BTreeSet<String> {
     build_rust_staticlib();
     let output = nm_output(&rust_staticlib_path());
@@ -23,7 +22,6 @@ pub fn audit_rust_staticlib_symbols() -> std::collections::BTreeSet<String> {
 }
 
 /// Returns the symbol set exported by the final linked native ELF.
-
 pub fn audit_final_native_lib_elf_symbols() -> std::collections::BTreeSet<String> {
     build_final_native_lib_elf();
     let output = nm_output(&native_lib_elf_path());

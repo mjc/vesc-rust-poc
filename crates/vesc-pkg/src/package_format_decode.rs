@@ -24,7 +24,6 @@ pub struct LispImport {
 }
 
 /// Reads a length-prefixed UTF-8 string from `cursor`.
-
 pub fn read_string(cursor: &mut &[u8]) -> String {
     let end = cursor
         .iter()
@@ -38,7 +37,6 @@ pub fn read_string(cursor: &mut &[u8]) -> String {
 }
 
 /// Reads a big-endian signed 32-bit integer from `cursor`.
-
 pub fn read_i32_be(cursor: &mut &[u8]) -> i32 {
     let (bytes, rest) = cursor.split_at(4);
     *cursor = rest;
@@ -46,7 +44,6 @@ pub fn read_i32_be(cursor: &mut &[u8]) -> i32 {
 }
 
 /// Reads a big-endian signed 16-bit integer from `cursor`.
-
 pub fn read_i16_be(cursor: &mut &[u8]) -> i16 {
     let (bytes, rest) = cursor.split_at(2);
     *cursor = rest;
@@ -54,7 +51,6 @@ pub fn read_i16_be(cursor: &mut &[u8]) -> i16 {
 }
 
 /// Decompresses a VESC package payload into its raw field stream.
-
 pub fn decompress_vescpkg(package: &[u8]) -> Vec<u8> {
     let declared_len =
         u32::from_be_bytes(package[..4].try_into().expect("qCompress length")) as usize;
@@ -68,7 +64,6 @@ pub fn decompress_vescpkg(package: &[u8]) -> Vec<u8> {
 }
 
 /// Decodes all top-level fields from a VESC package archive.
-
 pub fn package_fields(package: &[u8]) -> Vec<PackageField> {
     let raw = decompress_vescpkg(package);
     let mut cursor = raw.as_slice();
@@ -89,7 +84,6 @@ pub fn package_fields(package: &[u8]) -> Vec<PackageField> {
 }
 
 /// Extracts one decoded package field by key.
-
 pub fn extract_field(package: &[u8], key: &str) -> Vec<u8> {
     package_fields(package)
         .into_iter()
@@ -99,7 +93,6 @@ pub fn extract_field(package: &[u8], key: &str) -> Vec<u8> {
 }
 
 /// Parses packed Lisp data into source text and native import records.
-
 pub fn parse_lisp_imports(lisp_data: &[u8]) -> (String, Vec<LispImport>) {
     let mut cursor = lisp_data;
     assert_eq!(read_i16_be(&mut cursor), 0);
@@ -127,11 +120,11 @@ pub fn parse_lisp_imports(lisp_data: &[u8]) -> (String, Vec<LispImport>) {
 }
 
 /// Returns whether a payload matches native bytes apart from trailing NUL padding.
-
 pub fn payload_matches_native_with_only_nul_tail(payload: &[u8], native: &[u8]) -> bool {
     payload.starts_with(native) && payload[native.len()..].iter().all(|byte| *byte == 0)
 }
 
+/// Asserts byte equality with a focused hex diff for package-format tests.
 #[cfg(test)]
 pub fn assert_bytes_eq(actual: &[u8], expected: &[u8], label: &str) {
     if actual == expected {

@@ -37,19 +37,16 @@ pub const FINGERPRINTS_TOML: &str = include_str!(concat!(
 ));
 
 /// Returns the root directory that holds checked-in golden package fixtures.
-
 pub fn fixture_dir() -> PathBuf {
     PathBuf::from(FIXTURE_ROOT)
 }
 
 /// Returns the null-terminated extension name embedded in the probe fixture.
-
 pub fn probe_extension_name() -> &'static [u8] {
     b"ext-rust-probe-diag-v4\0"
 }
 
 /// Returns whether a payload contains the probe extension marker.
-
 pub fn payload_contains_probe_extension(payload: &[u8]) -> bool {
     payload
         .windows(probe_extension_name().len())

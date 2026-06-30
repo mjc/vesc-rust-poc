@@ -43,7 +43,6 @@ pub enum InstallStep {
 }
 
 /// Summary of the package operations issued to the target.
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstallReport {
     /// Package name reported by the install or erase flow.
@@ -86,7 +85,6 @@ impl From<crate::package::PackageError> for InstallError {
 }
 
 /// Firmware-side transport operations needed to install or erase a package.
-
 pub trait InstallTransport {
     /// Returns whether a QML app is already present on the target.
     fn has_qml_app(&self) -> Result<bool, InstallError>;
@@ -105,33 +103,28 @@ pub trait InstallTransport {
 }
 
 /// Small helper that drives package install and erase flows through an `InstallTransport`.
-
 pub struct Installer<'a, T: InstallTransport> {
     transport: &'a T,
 }
 
 impl<'a, T: InstallTransport> Installer<'a, T> {
     /// Binds an installer to a transport implementation.
-
     pub fn new(transport: &'a T) -> Self {
         Self { transport }
     }
 
     /// Installs `package` through the configured transport.
-
     pub fn install(&self, package: &Package) -> Result<InstallReport, InstallError> {
         install_package(package, self.transport)
     }
 
     /// Erases the currently installed package through the configured transport.
-
     pub fn erase(&self) -> Result<InstallReport, InstallError> {
         erase_package(self.transport)
     }
 }
 
 /// In-memory transport used by tests to capture install sequencing.
-
 #[derive(Debug, Default)]
 pub struct FakeInstallTransport {
     has_qml_app: Cell<bool>,
@@ -141,7 +134,6 @@ pub struct FakeInstallTransport {
 
 impl FakeInstallTransport {
     /// Controls whether the fake transport reports an existing QML app.
-
     pub fn set_has_qml_app(&self, has_qml_app: bool) {
         self.has_qml_app.set(has_qml_app);
     }
@@ -195,7 +187,6 @@ impl InstallTransport for FakeInstallTransport {
 }
 
 /// Installs a validated package using the same operation order as VESC Tool.
-
 pub fn install_package<T: InstallTransport>(
     package: &Package,
     transport: &T,
@@ -264,7 +255,6 @@ pub fn install_package<T: InstallTransport>(
 }
 
 /// Erases any installed package payloads from the target and reloads firmware state.
-
 pub fn erase_package<T: InstallTransport>(transport: &T) -> Result<InstallReport, InstallError> {
     let mut steps = Vec::new();
 

@@ -9,7 +9,6 @@ const VESC_IF_TABLE_BASE: u32 = 0x1000_f800;
 const PROBE_LISBM_ENCODED_42: u32 = 680;
 
 /// Semantic view of the linked native library used by audit assertions.
-
 pub struct NativeLibSemantics {
     /// Symbol table keyed by resolved virtual address.
     pub symbols: BTreeMap<u64, String>,
@@ -24,7 +23,6 @@ pub struct NativeLibSemantics {
 }
 
 /// Single decoded instruction from a native-lib routine.
-
 pub struct DecodedInsn {
     /// Virtual address of the instruction.
     pub address: u64,
@@ -35,7 +33,6 @@ pub struct DecodedInsn {
 }
 
 /// Decodes the linked native ELF into a semantic report structure.
-
 pub fn analyze_native_lib_elf(elf: &Path) -> NativeLibSemantics {
     let bytes = std::fs::read(elf).unwrap_or_else(|error| panic!("read ELF {elf:?}: {error}"));
     let object =
@@ -129,7 +126,6 @@ pub fn analyze_native_lib_elf(elf: &Path) -> NativeLibSemantics {
 }
 
 /// Renders a stable human-readable summary of native-lib semantics.
-
 pub fn semantic_report(semantics: &NativeLibSemantics) -> String {
     let mut lines = Vec::new();
     lines.push(format!(
@@ -157,7 +153,6 @@ pub fn semantic_report(semantics: &NativeLibSemantics) -> String {
 }
 
 /// Asserts the linked native ELF preserves the expected semantic behavior.
-
 pub fn assert_native_lib_semantics(elf: &Path) {
     let semantics = analyze_native_lib_elf(elf);
 

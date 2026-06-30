@@ -68,13 +68,11 @@ pub fn encode_vesc_package(wire: &VescPackageWire<'_>) -> io::Result<Vec<u8>> {
 }
 
 /// Packs Lisp source and its native imports into the package Lisp payload format.
-
 pub fn build_lisp_data(lisp_source: &str, lisp_editor_path: &Path) -> io::Result<Vec<u8>> {
     pack_lisp_imports(lisp_source, lisp_editor_path)
 }
 
 /// Builds compressed VESC package bytes from source package inputs.
-
 pub fn build_vesc_package(input: &VescPackageInput<'_>) -> io::Result<Vec<u8>> {
     let lisp_data = pack_lisp_imports(input.lisp_source, input.lisp_editor_path)?;
 
@@ -95,7 +93,6 @@ pub fn build_vesc_package(input: &VescPackageInput<'_>) -> io::Result<Vec<u8>> {
 }
 
 /// Builds a VESC package and writes the resulting bytes to `output_path`.
-
 pub fn write_vesc_package(
     output_path: impl AsRef<Path>,
     input: &VescPackageInput<'_>,

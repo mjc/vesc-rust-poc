@@ -41,8 +41,10 @@ mod tests {
 }
 
 #[cfg(test)]
+/// Test toolchain that records native-lib subprocess invocations.
 #[derive(Default)]
 pub struct RecordingNativeLibToolchain {
+    /// Recorded program names and argument lists.
     pub calls: std::cell::RefCell<Vec<(String, Vec<String>)>>,
 }
 

@@ -104,7 +104,6 @@ fn in_literal_pool(addr: u64, ranges: &[(u64, u64)]) -> bool {
 }
 
 /// Produces a normalized objdump disassembly for `elf`.
-
 pub fn elf_disassembly(elf: &Path) -> String {
     let bytes =
         fs::read(elf).unwrap_or_else(|error| panic!("read ELF {elf:?} for disassembly: {error}"));

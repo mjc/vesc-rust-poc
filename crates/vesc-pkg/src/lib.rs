@@ -65,6 +65,7 @@ pub mod package_wire;
 pub mod rust_package_api_roadmap;
 /// Symbol audit helpers.
 pub mod symbol_audit;
+/// Test-support harnesses and fake runners for package tooling tests.
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 

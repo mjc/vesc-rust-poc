@@ -7,7 +7,6 @@ use vesc_protocol::WireCommand;
 use vesc_protocol::ble_loopback::{LoopbackError, LoopbackPacket, handle_loopback_frame};
 
 /// Firmware-facing services required by the loopback package runtime.
-
 pub trait FirmwareServices {
     /// Return the current firmware time in milliseconds.
     fn now_ms(&self) -> u64;
