@@ -1,5 +1,5 @@
 ---
-source: crates/vesc-pkg/tests/package_pipeline.rs
+source: crates/vescpkg-build/tests/package_pipeline.rs
 expression: report
 ---
 compressed_len: 351

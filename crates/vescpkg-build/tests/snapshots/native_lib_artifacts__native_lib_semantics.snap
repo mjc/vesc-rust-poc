@@ -1,5 +1,5 @@
 ---
-source: crates/vesc-pkg/tests/native_lib_artifacts.rs
+source: crates/vescpkg-build/tests/native_lib_artifacts.rs
 expression: report
 ---
 symbols: init, ext_rust_probe_diag_v4, package_lib_init, _ZN8vesc_sdk4init12stop_package17h32fc10a222cd9e24E

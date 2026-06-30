@@ -3,7 +3,7 @@
 Reference VESC native package built as a `thumbv7em-none-eabihf` staticlib.
 
 This example links [`vescpkg`](../../crates/vescpkg) and produces
-`libvesc_example_loopback.a`, which `vesc-pkg` embeds into the BLE loopback
+`libvesc_example_loopback.a`, which `vescpkg-build` embeds into the BLE loopback
 `.vescpkg` artifact.
 
 Build the staticlib:

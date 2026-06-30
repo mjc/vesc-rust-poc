@@ -1,7 +1,7 @@
 //! Reusable `no_std` measurement newtypes for VESC-related Rust code.
 //!
 //! This crate owns physical units only. VESC-specific meanings such as motor
-//! current versus battery current belong in `vesc-types`; raw firmware ABI
+//! current versus battery current belong in `vescpkg-types`; raw firmware ABI
 //! values belong in `vescpkg-sys`; raw protocol byte conversion belongs in
 //! `vesc-protocol`.
 //!
@@ -43,7 +43,7 @@
 //! motor current and battery current should be distinct domain types even though
 //! both can contain [`Current`]. [`Efficiency`] is only a generic
 //! watt-hours-per-mile measurement here; controller-specific efficiency semantics
-//! should live in `vesc-types`.
+//! should live in `vescpkg-types`.
 //!
 //! # Optional `uom` Compatibility
 //!

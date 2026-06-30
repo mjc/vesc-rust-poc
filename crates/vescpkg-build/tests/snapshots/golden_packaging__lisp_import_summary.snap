@@ -1,5 +1,5 @@
 ---
-source: crates/vesc-pkg/tests/golden_packaging.rs
+source: crates/vescpkg-build/tests/golden_packaging.rs
 expression: lisp_import_summary(&lisp_data)
 ---
 code_len=144
