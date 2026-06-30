@@ -163,6 +163,52 @@ scalar_unit!(
     "watt-hours per mile"
 );
 
+impl Energy {
+    /// Create an energy value from watt-hours.
+    pub const fn from_watt_hours(value: f32) -> Self {
+        Self::from_joules(value * 3600.0)
+    }
+
+    /// Return this energy value in watt-hours.
+    pub const fn as_watt_hours(self) -> f32 {
+        self.as_joules() / 3600.0
+    }
+}
+
+impl WattHours {
+    /// Create a watt-hour value from joules.
+    pub const fn from_joules(value: f32) -> Self {
+        Self::from_watt_hours(value / 3600.0)
+    }
+
+    /// Return this watt-hour value in joules.
+    pub const fn as_joules(self) -> f32 {
+        self.as_watt_hours() * 3600.0
+    }
+}
+
+impl Speed {
+    /// Create a speed value from kilometers per hour.
+    pub const fn from_kilometers_per_hour(value: f32) -> Self {
+        Self::from_meters_per_second(value / 3.6)
+    }
+
+    /// Return this speed value in kilometers per hour.
+    pub const fn as_kilometers_per_hour(self) -> f32 {
+        self.as_meters_per_second() * 3.6
+    }
+
+    /// Create a speed value from miles per hour.
+    pub const fn from_miles_per_hour(value: f32) -> Self {
+        Self::from_meters_per_second(value * 0.447_04)
+    }
+
+    /// Return this speed value in miles per hour.
+    pub const fn as_miles_per_hour(self) -> f32 {
+        self.as_meters_per_second() / 0.447_04
+    }
+}
+
 bounded_unit!(DutyCycle, from_ratio, as_ratio, 0.0, 1.0, "normalized duty");
 bounded_unit!(Ratio, from_ratio, as_ratio, 0.0, 1.0, "normalized ratio");
 bounded_unit!(Percent, from_percent, as_percent, 0.0, 100.0, "percent");
@@ -170,13 +216,17 @@ bounded_unit!(Pwm, from_ratio, as_ratio, 0.0, 1.0, "normalized PWM");
 
 #[cfg(feature = "uom")]
 mod uom_compat {
-    use super::{Current, Distance, Energy, Power, Speed, TemperatureC, Voltage, WattHours};
+    use super::{
+        Current, Distance, ElectricalRpm, Energy, MechanicalRpm, Power, Speed, TemperatureC,
+        Voltage, WattHours,
+    };
+    use uom::si::angular_velocity::revolution_per_minute;
     use uom::si::electric_current::ampere;
     use uom::si::electric_potential::volt;
     use uom::si::energy::{joule, watt_hour};
     use uom::si::f32::{
-        ElectricCurrent, ElectricPotential, Energy as UomEnergy, Length, Power as UomPower,
-        ThermodynamicTemperature, Velocity,
+        AngularVelocity, ElectricCurrent, ElectricPotential, Energy as UomEnergy, Length,
+        Power as UomPower, ThermodynamicTemperature, Velocity,
     };
     use uom::si::length::meter;
     use uom::si::power::watt;
@@ -278,6 +328,30 @@ mod uom_compat {
             Self::from_degrees_celsius(value.get::<degree_celsius>())
         }
     }
+
+    impl From<MechanicalRpm> for AngularVelocity {
+        fn from(value: MechanicalRpm) -> Self {
+            Self::new::<revolution_per_minute>(value.as_revolutions_per_minute())
+        }
+    }
+
+    impl From<AngularVelocity> for MechanicalRpm {
+        fn from(value: AngularVelocity) -> Self {
+            Self::from_revolutions_per_minute(value.get::<revolution_per_minute>())
+        }
+    }
+
+    impl From<ElectricalRpm> for AngularVelocity {
+        fn from(value: ElectricalRpm) -> Self {
+            Self::new::<revolution_per_minute>(value.as_revolutions_per_minute())
+        }
+    }
+
+    impl From<AngularVelocity> for ElectricalRpm {
+        fn from(value: AngularVelocity) -> Self {
+            Self::from_revolutions_per_minute(value.get::<revolution_per_minute>())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -307,6 +381,17 @@ mod tests {
             TemperatureC::from_degrees_celsius(23.0).as_degrees_celsius(),
             23.0
         );
+    }
+
+    #[test]
+    fn local_unit_conversions_do_not_need_uom() {
+        assert_eq!(Energy::from_watt_hours(2.0).as_joules(), 7200.0);
+        assert_eq!(WattHours::from_joules(7200.0).as_watt_hours(), 2.0);
+        assert_eq!(
+            Speed::from_kilometers_per_hour(36.0).as_meters_per_second(),
+            10.0
+        );
+        assert_eq!(Speed::from_miles_per_hour(60.0).as_miles_per_hour(), 60.0);
     }
 
     #[test]
@@ -344,13 +429,17 @@ mod tests {
 
 #[cfg(all(test, feature = "uom"))]
 mod uom_tests {
-    use super::{Current, Distance, Energy, Power, Speed, TemperatureC, Voltage, WattHours};
+    use super::{
+        Current, Distance, ElectricalRpm, Energy, MechanicalRpm, Power, Speed, TemperatureC,
+        Voltage, WattHours,
+    };
+    use uom::si::angular_velocity::revolution_per_minute;
     use uom::si::electric_current::ampere;
     use uom::si::electric_potential::volt;
     use uom::si::energy::{joule, watt_hour};
     use uom::si::f32::{
-        ElectricCurrent, ElectricPotential, Energy as UomEnergy, Length, Power as UomPower,
-        ThermodynamicTemperature, Velocity,
+        AngularVelocity, ElectricCurrent, ElectricPotential, Energy as UomEnergy, Length,
+        Power as UomPower, ThermodynamicTemperature, Velocity,
     };
     use uom::si::length::meter;
     use uom::si::power::watt;
@@ -390,5 +479,23 @@ mod uom_tests {
         let temperature = ThermodynamicTemperature::from(TemperatureC::from_degrees_celsius(32.0));
         assert_eq!(TemperatureC::from(temperature).as_degrees_celsius(), 32.0);
         assert_eq!(temperature.get::<degree_celsius>(), 32.0);
+    }
+
+    #[test]
+    fn uom_conversions_cover_rpm_like_units() {
+        let mechanical = AngularVelocity::from(MechanicalRpm::from_revolutions_per_minute(3_000.0));
+        let electrical =
+            AngularVelocity::from(ElectricalRpm::from_revolutions_per_minute(12_000.0));
+
+        assert_eq!(mechanical.get::<revolution_per_minute>(), 3_000.0);
+        assert_eq!(electrical.get::<revolution_per_minute>(), 12_000.0);
+        assert_eq!(
+            MechanicalRpm::from(mechanical).as_revolutions_per_minute(),
+            3_000.0
+        );
+        assert_eq!(
+            ElectricalRpm::from(electrical).as_revolutions_per_minute(),
+            12_000.0
+        );
     }
 }
