@@ -632,6 +632,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "no-panic"
+version = "0.1.36"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f967505aabc8af5752d098c34146544a43684817cdba8f9725b292530cabbf53"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "objc-sys"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1246,6 +1257,9 @@ dependencies = [
 [[package]]
 name = "vesc-protocol"
 version = "0.1.0"
+dependencies = [
+ "no-panic",
+]
 
 [[package]]
 name = "vesc-sdk"

@@ -117,6 +117,7 @@ impl<'a> LoopbackPacket<'a> {
 }
 
 /// Build the wire response for an incoming loopback frame.
+#[cfg_attr(all(not(test), target_arch = "arm"), no_panic::no_panic)]
 pub fn handle_loopback_frame(
     bytes: &[u8],
     now_ms: u64,
@@ -159,7 +160,17 @@ pub fn handle_loopback_frame(
     response[0] = BLE_LOOPBACK_PROTOCOL_VERSION.raw();
     response[1] = command.code();
     response[2] = payload.len() as u8;
-    response[MIN_WIRE_FRAME_BYTES..MIN_WIRE_FRAME_BYTES + payload.len()].copy_from_slice(payload);
+
+    let mut index = 0;
+    while index < payload.len() {
+        // `payload` is already capped to MAX_LOOPBACK_PAYLOAD_BYTES, so this
+        // cannot write past the fixed response frame.
+        unsafe {
+            *response.as_mut_ptr().add(MIN_WIRE_FRAME_BYTES + index) =
+                *payload.as_ptr().add(index);
+        }
+        index += 1;
+    }
 
     Ok((response, MIN_WIRE_FRAME_BYTES + payload.len()))
 }

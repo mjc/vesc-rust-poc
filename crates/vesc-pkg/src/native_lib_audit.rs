@@ -48,6 +48,33 @@ pub fn audit_native_lib_symbols(paths: &NativeLibArtifactPaths) {
         unexpected_final_native_lib_undefined_symbols(&elf_symbols).is_empty(),
         "unexpected undefined symbols remain in the final native-lib ELF"
     );
+    let forbidden_runtime_fragments = [
+        "__rust_alloc",
+        "__rg_alloc",
+        "malloc",
+        "free",
+        "alloc::",
+        "std::",
+        "std_",
+        "panic",
+        "eh_personality",
+        "unwind",
+        "__aeabi_memcpy",
+        "memcpy",
+    ];
+    let forbidden_hits: Vec<&str> = elf_symbols
+        .lines()
+        .filter(|line| {
+            forbidden_runtime_fragments
+                .iter()
+                .any(|fragment| line.contains(fragment))
+        })
+        .collect();
+    assert!(
+        forbidden_hits.is_empty(),
+        "final native-lib ELF must not contain allocator/std/panic/memcpy runtime symbols:\n{}\n\nfull symbols:\n{elf_symbols}",
+        forbidden_hits.join("\n")
+    );
     assert!(
         paths.package_object.exists(),
         "native build must materialize the C loader shim at {:?}",
