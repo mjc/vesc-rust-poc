@@ -10,7 +10,7 @@ workspace = true
 btleplug = "0.11.8"
 flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 futures-util = "0.3"
-tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+tokio = { version = "1", features = ["rt", "time"] }
 vesc-protocol = { path = "../vesc-protocol" }
 vesc-pkg = { path = "../vesc-pkg" }
 uuid = "1"

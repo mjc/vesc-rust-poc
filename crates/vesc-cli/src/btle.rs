@@ -213,11 +213,10 @@ impl LispProbeReport {
 }
 
 impl BtleLoopbackTransport {
-    /// Creates a BLE loopback transport with its own single-worker runtime.
+    /// Creates a BLE loopback transport with its own current-thread Tokio runtime.
     pub fn new() -> Result<Self, LoopbackTransportError> {
-        let runtime = Builder::new_multi_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
-            .worker_threads(1)
             .build()
             .map_err(|_| {
                 LoopbackTransportError::Device("failed to start the BLE runtime".to_owned())
@@ -454,9 +453,8 @@ pub fn run_lisp_probe_with_progress(
     mut progress: impl FnMut(LispProbeProgress),
 ) -> Result<LispProbeReport, LoopbackTransportError> {
     progress(LispProbeProgress::StartingRuntime);
-    let runtime = Builder::new_multi_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
-        .worker_threads(1)
         .build()
         .map_err(|_| {
             LoopbackTransportError::Device("failed to start the BLE runtime".to_owned())
@@ -506,9 +504,8 @@ pub fn run_lisp_probe_continuously_with_progress(
     mut progress: impl FnMut(LispProbeProgress),
 ) -> Result<(), LoopbackTransportError> {
     progress(LispProbeProgress::StartingRuntime);
-    let runtime = Builder::new_multi_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
-        .worker_threads(1)
         .build()
         .map_err(|_| {
             LoopbackTransportError::Device("failed to start the BLE runtime".to_owned())
@@ -669,9 +666,8 @@ async fn write_ble_uart_packet(
 
 /// Scans for BLE peripherals that expose VESC BLE UART characteristics.
 pub fn scan_devices() -> Result<Vec<DiscoveredPeripheral>, LoopbackTransportError> {
-    let runtime = Builder::new_multi_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
-        .worker_threads(1)
         .build()
         .map_err(|_| {
             LoopbackTransportError::Device("failed to start the BLE runtime".to_owned())

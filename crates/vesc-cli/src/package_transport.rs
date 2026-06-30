@@ -182,11 +182,10 @@ pub struct BtlePackageInstallTransport {
 }
 
 impl BtlePackageInstallTransport {
-    /// Creates a BLE package install transport with its own single-worker runtime.
+    /// Creates a BLE package install transport with its own current-thread Tokio runtime.
     pub fn new() -> Result<Self, PackageInstallError> {
-        let runtime = Builder::new_multi_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
-            .worker_threads(1)
             .build()
             .map_err(|_| {
                 PackageInstallError::Device("failed to start the BLE runtime".to_owned())

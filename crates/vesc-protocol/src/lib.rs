@@ -1,4 +1,4 @@
-//! Shared wire types for device-side VESC packages.
+//! Shared no_std wire types for host tools and device-side VESC packages.
 //!
 //! Device builds must stay `no_std` and must not link `alloc` or `std`.
 

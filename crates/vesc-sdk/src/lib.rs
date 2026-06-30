@@ -1,7 +1,7 @@
 //! Target-side SDK for Rust VESC packages.
 //!
 //! Link this crate into native VESC package code. It wraps `vesc-ffi` with
-//! lifecycle, LispBM extension, app-data, and protocol helpers.
+//! lifecycle, LispBM extension, app-data, GPIO, and protocol helpers.
 //!
 //! Device builds must stay `no_std` and must not link `alloc` or `std`.
 
