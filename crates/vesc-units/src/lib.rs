@@ -2,7 +2,7 @@
 //!
 //! This crate owns physical units only. VESC-specific meanings such as motor
 //! current versus battery current belong in `vesc-types`; raw firmware ABI
-//! values belong in `vesc-ffi`; raw protocol byte conversion belongs in
+//! values belong in `vescpkg-sys`; raw protocol byte conversion belongs in
 //! `vesc-protocol`.
 //!
 //! The default build has no `std`, no `alloc`, and no `uom` dependency. Enable

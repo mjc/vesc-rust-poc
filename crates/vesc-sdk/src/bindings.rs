@@ -2,7 +2,7 @@
 
 use core::ffi::c_char;
 
-use vesc_ffi::{AppDataHandler, ExtensionHandler, LbmValue};
+use vescpkg_sys::{AppDataHandler, ExtensionHandler, LbmValue};
 
 /// LispBM-related firmware calls required by the SDK lifecycle layer.
 pub trait LbmBindings {
@@ -41,43 +41,43 @@ pub trait AppDataBindings {
 }
 
 #[cfg(not(test))]
-/// Concrete bindings that forward calls into the live `vesc-ffi` ABI.
+/// Concrete bindings that forward calls into the live `vescpkg-sys` ABI.
 pub struct RealBindings;
 
 #[cfg(not(test))]
 impl LbmBindings for RealBindings {
     unsafe fn add_extension(&self, name: *const c_char, handler: ExtensionHandler) -> bool {
-        unsafe { vesc_ffi::raw::lbm_add_extension(name, handler) }
+        unsafe { vescpkg_sys::raw::lbm_add_extension(name, handler) }
     }
 
     unsafe fn decode_i32(&self, value: LbmValue) -> i32 {
-        unsafe { vesc_ffi::raw::lbm_dec_as_i32(value) }
+        unsafe { vescpkg_sys::raw::lbm_dec_as_i32(value) }
     }
 
     unsafe fn encode_i32(&self, value: i32) -> LbmValue {
-        unsafe { vesc_ffi::raw::lbm_enc_i(value) }
+        unsafe { vescpkg_sys::raw::lbm_enc_i(value) }
     }
 
     unsafe fn is_number(&self, value: LbmValue) -> bool {
-        unsafe { vesc_ffi::raw::lbm_is_number(value) }
+        unsafe { vescpkg_sys::raw::lbm_is_number(value) }
     }
 
     unsafe fn encode_eval_error(&self) -> LbmValue {
-        unsafe { vesc_ffi::raw::lbm_enc_sym_eerror() }
+        unsafe { vescpkg_sys::raw::lbm_enc_sym_eerror() }
     }
 }
 
 #[cfg(not(test))]
 impl AppDataBindings for RealBindings {
     unsafe fn set_app_data_handler(&self, handler: AppDataHandler) -> bool {
-        unsafe { vesc_ffi::raw::vesc_set_app_data_handler(handler) }
+        unsafe { vescpkg_sys::raw::vesc_set_app_data_handler(handler) }
     }
 
     fn system_time_ticks(&self) -> u32 {
-        unsafe { vesc_ffi::raw::vesc_system_time_ticks() }
+        unsafe { vescpkg_sys::raw::vesc_system_time_ticks() }
     }
 
     unsafe fn send_app_data(&self, data: *const u8, len: u32) {
-        unsafe { vesc_ffi::raw::vesc_send_app_data(data, len) }
+        unsafe { vescpkg_sys::raw::vesc_send_app_data(data, len) }
     }
 }

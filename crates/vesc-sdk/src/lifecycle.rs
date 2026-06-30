@@ -1,7 +1,7 @@
 use crate::bindings::LbmBindings;
 use crate::extension::ExtensionDescriptor;
 use crate::lifecycle_core::PackageLifecycle;
-use vesc_ffi::LibInfo;
+use vescpkg_sys::LibInfo;
 
 /// Register one extension descriptor against loader metadata.
 ///
@@ -15,7 +15,7 @@ pub unsafe fn register_extension_from_image<B: LbmBindings>(
     lifecycle: &PackageLifecycle<B>,
     descriptor: ExtensionDescriptor,
 ) -> Result<(), crate::RegisterError> {
-    let image = vesc_ffi::NativeImage::from_info(info);
+    let image = vescpkg_sys::NativeImage::from_info(info);
     unsafe { lifecycle.register_extension_from_image(image, descriptor) }
 }
 

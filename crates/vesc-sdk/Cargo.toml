@@ -7,7 +7,7 @@ edition = "2024"
 workspace = true
 
 [dependencies]
-vesc-ffi = { path = "../vesc-ffi" }
+vescpkg-sys = { path = "../vescpkg-sys" }
 vesc-protocol = { path = "../vesc-protocol" }
 
 [features]

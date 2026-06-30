@@ -4,7 +4,7 @@ use core::ffi::CStr;
 
 use crate::bindings::{AppDataBindings, LbmBindings};
 use crate::extension::{ExtensionDescriptor, RegisterError};
-use vesc_ffi::{AppDataHandler, ExtensionHandler, LbmValue, LibInfo, NativeImage, StopHandler};
+use vescpkg_sys::{AppDataHandler, ExtensionHandler, LbmValue, LibInfo, NativeImage, StopHandler};
 
 /// Thin wrapper around the LispBM binding set used by package code.
 pub struct LbmApi<B> {

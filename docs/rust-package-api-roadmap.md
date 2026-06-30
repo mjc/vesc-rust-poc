@@ -6,7 +6,7 @@ moving in the right direction instead of growing a too-clever wrapper too early.
 
 ## Current workspace shape
 
-- `crates/vesc-ffi` — raw firmware ABI (`no_std`, unsafe table calls)
+- `crates/vescpkg-sys` — raw firmware ABI (`no_std`, unsafe table calls)
 - `crates/vesc-sdk` — target-side SDK linked into native packages
 - `examples/loopback` — BLE loopback reference package staticlib
 - `crates/vescpkg-build` — host-side `.vescpkg` format/build/install

@@ -5,7 +5,7 @@
 //!
 //! Device builds must stay `no_std` and must not link `alloc` or `std`.
 //!
-//! Testing strategy: see `docs/testing/vesc-ffi.md`.
+//! Testing strategy: see `docs/testing/vescpkg-sys.md`.
 
 #![no_std]
 #![forbid(unused_extern_crates)]

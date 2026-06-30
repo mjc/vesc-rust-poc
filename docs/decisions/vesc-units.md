@@ -5,7 +5,7 @@
 Do **not** add a `vesc-units` crate in the current epic scope.
 
 Physical units (speed, torque, temperature, battery state) belong outside the target SDK
-and outside raw `vesc-ffi`. They should live in a separate optional crate once real
+and outside raw `vescpkg-sys`. They should live in a separate optional crate once real
 vehicle semantics stabilize.
 
 ## Recommended direction

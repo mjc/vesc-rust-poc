@@ -215,7 +215,7 @@ pub fn process_loopback_app_data(
 /// Register the loopback app-data handler through the supplied binding set.
 pub fn register_loopback_app_data_handler_with<B: crate::AppDataBindings>(
     lifecycle: &crate::LoopbackLifecycle<B>,
-    handler: vesc_ffi::AppDataHandler,
+    handler: vescpkg_sys::AppDataHandler,
 ) -> bool {
     lifecycle.register_app_data_handler(handler)
 }
@@ -248,10 +248,10 @@ pub unsafe extern "C" fn loopback_handle_app_data(data: *mut u8, len: u32) {
     }
 
     let bytes = unsafe { core::slice::from_raw_parts(data as *const u8, len as usize) };
-    let now_ms = u64::from(unsafe { vesc_ffi::raw::vesc_system_time_ticks() }) / 10;
+    let now_ms = u64::from(unsafe { vescpkg_sys::raw::vesc_system_time_ticks() }) / 10;
 
     if let Some((response, response_len)) = process_loopback_app_data(bytes, now_ms) {
-        unsafe { vesc_ffi::raw::vesc_send_app_data(response.as_ptr(), response_len as u32) };
+        unsafe { vescpkg_sys::raw::vesc_send_app_data(response.as_ptr(), response_len as u32) };
     }
 }
 

@@ -1267,13 +1267,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "vesc-ffi"
-version = "0.1.0"
-dependencies = [
- "trybuild",
-]
-
-[[package]]
 name = "vesc-protocol"
 version = "0.1.0"
 dependencies = [
@@ -1285,8 +1278,8 @@ name = "vesc-sdk"
 version = "0.1.0"
 dependencies = [
  "rstest",
- "vesc-ffi",
  "vesc-protocol",
+ "vescpkg-sys",
 ]
 
 [[package]]
@@ -1307,6 +1300,13 @@ dependencies = [
  "sha2",
  "tempfile",
  "vesc-protocol",
+]
+
+[[package]]
+name = "vescpkg-sys"
+version = "0.1.0"
+dependencies = [
+ "trybuild",
 ]
 
 [[package]]

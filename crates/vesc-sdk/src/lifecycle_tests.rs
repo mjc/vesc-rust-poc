@@ -5,7 +5,7 @@ use crate::lifecycle_core::{LbmApi, LoopbackLifecycle, PackageLifecycle};
 use crate::test_support::{FakeAppDataBindings, FakeBindings, stubs};
 use crate::{RegisterError, ffi};
 use rstest::rstest;
-use vesc_ffi::{ExtensionHandler, LbmValue, LibInfo, NativeImage};
+use vescpkg_sys::{ExtensionHandler, LbmValue, LibInfo, NativeImage};
 
 unsafe extern "C" fn stub_handler(_args: *mut u32, _count: u32) -> u32 {
     0

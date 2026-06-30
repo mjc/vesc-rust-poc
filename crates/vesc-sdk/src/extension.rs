@@ -2,7 +2,7 @@
 
 use core::ffi::CStr;
 
-use vesc_ffi::ExtensionHandler;
+use vescpkg_sys::ExtensionHandler;
 
 /// Extension-name validation failures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

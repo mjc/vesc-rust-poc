@@ -101,7 +101,7 @@ pub fn default_header_path(manifest_dir: &Path) -> PathBuf {
 
 /// Return the default Rust VESC interface table path.
 pub fn default_rust_table_path(manifest_dir: &Path) -> PathBuf {
-    workspace_root_from_manifest(manifest_dir).join("crates/vesc-ffi/src/raw.rs")
+    workspace_root_from_manifest(manifest_dir).join("crates/vescpkg-sys/src/raw.rs")
 }
 
 /// Compare the used slots from the C header and Rust source files.

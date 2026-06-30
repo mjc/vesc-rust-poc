@@ -1,6 +1,6 @@
-# vesc-ffi testing
+# vescpkg-sys testing
 
-Strategy for the `vesc-ffi` crate: a hand-maintained, `no_std` firmware ABI mirror. Tests focus on **layout contracts**, **dispatch behavior** through injectable mock tables, and **guardrails** — not firmware HIL.
+Strategy for the `vescpkg-sys` crate: a hand-maintained, `no_std` firmware ABI mirror. Tests focus on **layout contracts**, **dispatch behavior** through injectable mock tables, and **guardrails** — not firmware HIL.
 
 ## Test pyramid
 
@@ -39,7 +39,7 @@ Strategy for the `vesc-ffi` crate: a hand-maintained, `no_std` firmware ABI mirr
 Host tests must not dereference `VescIfAbi::BASE_ADDR`. The harness installs a stack/static mock table:
 
 ```rust
-use vesc_ffi::test_support::{empty_table, with_table};
+use vescpkg_sys::test_support::{empty_table, with_table};
 
 let mut table = empty_table();
 table.lbm_enc_i = Some(my_stub);
@@ -48,7 +48,7 @@ with_table(&table, || unsafe {
 });
 ```
 
-Implementation: `crates/vesc-ffi/src/test_support.rs`, compiled only for `vesc-ffi`'s own tests with `#[cfg(test)]`.
+Implementation: `crates/vescpkg-sys/src/test_support.rs`, compiled only for `vescpkg-sys`'s own tests with `#[cfg(test)]`.
 It is not a downstream feature surface; the compile-fail tests intentionally prove external crates cannot import it.
 
 Production ARM builds keep inline `asm!` dispatch; host/test builds use `Option<fn>` slots on the mock table.
@@ -57,7 +57,7 @@ Production ARM builds keep inline `asm!` dispatch; host/test builds use `Option<
 
 | Layer | Role |
 |-------|------|
-| `vesc-ffi` | Layout + raw dispatch |
+| `vescpkg-sys` | Layout + raw dispatch |
 | `vesc-sdk` | Safe bindings, lifecycle, extension semantics |
 | `vescpkg-build` | Symbol audit, elf semantics, package pipeline |
 | HIL / real VESC | Manual `vesc-cli` profiles |
@@ -66,8 +66,8 @@ Production ARM builds keep inline `asm!` dispatch; host/test builds use `Option<
 
 | Command | Scope |
 |---------|--------|
-| `nix develop -c make check` | fmt, clippy, default nextest (includes vesc-ffi unit + dispatch) |
-| `nix develop -c make vesc-ffi-target-check` | no normal deps + `thumbv7em-none-eabihf` check |
+| `nix develop -c make check` | fmt, clippy, default nextest (includes vescpkg-sys unit + dispatch) |
+| `nix develop -c make vescpkg-sys-target-check` | no normal deps + `thumbv7em-none-eabihf` check |
 | `nix develop -c make native-audit` | package-only + native-lib tests |
 | `nix develop -c make check-full` | check + ARM gates + native audit |
 
@@ -84,7 +84,7 @@ Production ARM builds keep inline `asm!` dispatch; host/test builds use `Option<
 Host dispatch tests can be run under Miri to exercise the crate-internal mock-table harness:
 
 ```bash
-nix develop -c cargo +nightly miri test -p vesc-ffi
+nix develop -c cargo +nightly miri test -p vescpkg-sys
 ```
 
 Miri does not cover the ARM `asm!` dispatch path (`cfg(all(target_arch = "arm", not(test)))`). Treat Miri as a harness sanity check, not firmware validation.

@@ -4,7 +4,7 @@ use core::cell::Cell;
 use core::ffi::c_char;
 
 use crate::bindings::{AppDataBindings, LbmBindings};
-use vesc_ffi::{AppDataHandler, ExtensionHandler, LbmValue};
+use vescpkg_sys::{AppDataHandler, ExtensionHandler, LbmValue};
 
 /// Fake extension registration bindings used by SDK tests.
 pub struct FakeBindings {
@@ -162,7 +162,7 @@ pub mod stubs {
 mod tests {
     use super::{FakeAppDataBindings, FakeBindings, stubs};
     use crate::{AppDataBindings, LbmBindings};
-    use vesc_ffi::{AppDataHandler, ExtensionHandler, LbmValue};
+    use vescpkg_sys::{AppDataHandler, ExtensionHandler, LbmValue};
 
     #[test]
     fn fake_bindings_default_and_rejecting_paths() {

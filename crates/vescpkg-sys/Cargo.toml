@@ -1,5 +1,5 @@
 [package]
-name = "vesc-ffi"
+name = "vescpkg-sys"
 version = "0.1.0"
 edition = "2024"
 

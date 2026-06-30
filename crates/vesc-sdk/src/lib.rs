@@ -1,6 +1,6 @@
 //! Target-side SDK for Rust VESC packages.
 //!
-//! Link this crate into native VESC package code. It wraps `vesc-ffi` with
+//! Link this crate into native VESC package code. It wraps `vescpkg-sys` with
 //! lifecycle, LispBM extension, app-data, GPIO, and protocol helpers.
 //!
 //! Device builds must stay `no_std` and must not link `alloc` or `std`.
@@ -27,7 +27,7 @@ pub mod ffi {
     pub use crate::lifecycle_core::*;
     #[cfg(any(test, feature = "test-support"))]
     pub use crate::test_support;
-    pub use vesc_ffi::*;
+    pub use vescpkg_sys::*;
 }
 
 pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};

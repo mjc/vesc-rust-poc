@@ -1,6 +1,6 @@
 //! GPIO helpers built on the firmware abstract IO table slots.
 
-use vesc_ffi::{VescPin, VescPinMode};
+use vescpkg_sys::{VescPin, VescPinMode};
 
 /// Abstract GPIO operations backed by firmware slots.
 pub trait GpioBindings {
@@ -19,15 +19,15 @@ pub struct RealGpioBindings;
 #[cfg(not(test))]
 impl GpioBindings for RealGpioBindings {
     fn set_mode(&self, pin: VescPin, mode: VescPinMode) -> bool {
-        unsafe { vesc_ffi::raw::io_set_mode(pin, mode) }
+        unsafe { vescpkg_sys::raw::io_set_mode(pin, mode) }
     }
 
     fn write(&self, pin: VescPin, level: bool) -> bool {
-        unsafe { vesc_ffi::raw::io_write(pin, i32::from(level)) }
+        unsafe { vescpkg_sys::raw::io_write(pin, i32::from(level)) }
     }
 
     fn read(&self, pin: VescPin) -> bool {
-        unsafe { vesc_ffi::raw::io_read(pin) }
+        unsafe { vescpkg_sys::raw::io_read(pin) }
     }
 }
 
@@ -63,7 +63,7 @@ impl<B: GpioBindings> GpioApi<B> {
 pub mod test_support {
     use super::GpioBindings;
     use core::cell::Cell;
-    use vesc_ffi::{VescPin, VescPinMode};
+    use vescpkg_sys::{VescPin, VescPinMode};
 
     /// Fake GPIO binding implementation used by GPIO unit tests.
     pub struct FakeGpioBindings {
@@ -127,7 +127,7 @@ pub mod test_support {
     mod tests {
         use super::FakeGpioBindings;
         use crate::GpioApi;
-        use vesc_ffi::{VescPin, VescPinMode};
+        use vescpkg_sys::{VescPin, VescPinMode};
 
         #[test]
         fn gpio_api_forwards_through_bindings() {

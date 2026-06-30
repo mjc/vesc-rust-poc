@@ -119,14 +119,14 @@ mod tests {
                 "make -n {target} should succeed from repo root"
             );
         }
-        let vesc_ffi_manifest = repo_root().join("crates/vesc-ffi/Cargo.toml");
-        let manifest = fs::read_to_string(&vesc_ffi_manifest).expect("vesc-ffi manifest");
+        let vesc_ffi_manifest = repo_root().join("crates/vescpkg-sys/Cargo.toml");
+        let manifest = fs::read_to_string(&vesc_ffi_manifest).expect("vescpkg-sys manifest");
         assert!(
             !manifest.contains("test-support"),
-            "vesc-ffi must not declare test-support; mock table is cfg(test) only"
+            "vescpkg-sys must not declare test-support; mock table is cfg(test) only"
         );
-        let vesc_ffi_lib = fs::read_to_string(repo_root().join("crates/vesc-ffi/src/lib.rs"))
-            .expect("vesc-ffi lib.rs");
+        let vesc_ffi_lib = fs::read_to_string(repo_root().join("crates/vescpkg-sys/src/lib.rs"))
+            .expect("vescpkg-sys lib.rs");
         assert!(
             vesc_ffi_lib.contains("#[cfg(test)]\npub mod test_support"),
             "expected test_support to be cfg(test) gated"

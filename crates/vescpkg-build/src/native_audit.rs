@@ -106,7 +106,7 @@ pub fn redact_disassembly_for_snapshot(text: &str) -> String {
         .join("\n")
 }
 
-/// Asserts that loader init code talks to firmware only through the `vesc-ffi` surface.
+/// Asserts that loader init code talks to firmware only through the `vescpkg-sys` surface.
 pub fn assert_rust_loader_init_uses_vesc_ffi(init_disassembly: &str) {
     assert!(
         init_disassembly.contains("1000f800"),
