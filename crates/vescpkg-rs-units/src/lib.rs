@@ -335,4 +335,22 @@ mod tests {
         assert_eq!(ticks.as_ticks(), 10_000);
         assert_eq!(ticks.as_millis(), 1_000);
     }
+
+    #[test]
+    fn system_tick_duration_arithmetic_stays_typed() {
+        let two_seconds = SystemTicks::from_ticks(20_000);
+
+        assert_eq!(
+            (Speed::from_meters_per_second(2.0) * two_seconds).as_meters(),
+            4.0
+        );
+        assert_eq!(
+            (Distance::from_meters(4.0) / two_seconds).as_meters_per_second(),
+            2.0
+        );
+        assert_eq!(
+            (Power::from_watts(100.0) * two_seconds).as_watt_hours(),
+            200.0 / 3600.0
+        );
+    }
 }

@@ -14,3 +14,8 @@ pub type SystemInstant = fugit::TimerInstantU32<SYSTEM_TICK_RATE_HZ>;
 scalar_int_unit!(TimestampTicks, from_ticks, as_ticks, u32, "system ticks");
 scalar_unit!(Frequency, from_hertz, as_hertz, "hertz");
 scalar_unit!(SampleRate, from_hertz, as_hertz, "hertz");
+
+#[allow(clippy::cast_precision_loss)]
+pub(crate) fn system_ticks_as_secs_f32(ticks: SystemTicks) -> f32 {
+    ticks.as_ticks() as f32 / SYSTEM_TICK_RATE_HZ as f32
+}

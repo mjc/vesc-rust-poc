@@ -2,7 +2,9 @@
 
 use core::ops::{Div, Mul};
 
+use crate::battery::Energy;
 use crate::scalar_unit;
+use crate::time::{SystemTicks, system_ticks_as_secs_f32};
 
 scalar_unit!(Voltage, from_volts, as_volts, "volts");
 scalar_unit!(Current, from_amps, as_amps, "amps");
@@ -64,5 +66,13 @@ impl Mul<Current> for Resistance {
 
     fn mul(self, rhs: Current) -> Self::Output {
         rhs * self
+    }
+}
+
+impl Mul<SystemTicks> for Power {
+    type Output = Energy;
+
+    fn mul(self, rhs: SystemTicks) -> Self::Output {
+        Energy::from_joules(self.as_watts() * system_ticks_as_secs_f32(rhs))
     }
 }

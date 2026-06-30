@@ -1,5 +1,8 @@
 //! Motion, distance, angle, and count unit newtypes.
 
+use core::ops::{Div, Mul};
+
+use crate::time::{SystemTicks, system_ticks_as_secs_f32};
 use crate::{scalar_int_unit, scalar_unit};
 
 scalar_unit!(
@@ -56,5 +59,21 @@ impl Speed {
     /// Return this speed value in miles per hour.
     pub const fn as_miles_per_hour(self) -> f32 {
         self.as_meters_per_second() / 0.447_04
+    }
+}
+
+impl Mul<SystemTicks> for Speed {
+    type Output = Distance;
+
+    fn mul(self, rhs: SystemTicks) -> Self::Output {
+        Distance::from_meters(self.as_meters_per_second() * system_ticks_as_secs_f32(rhs))
+    }
+}
+
+impl Div<SystemTicks> for Distance {
+    type Output = Speed;
+
+    fn div(self, rhs: SystemTicks) -> Self::Output {
+        Speed::from_meters_per_second(self.as_meters() / system_ticks_as_secs_f32(rhs))
     }
 }
