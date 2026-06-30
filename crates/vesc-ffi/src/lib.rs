@@ -23,7 +23,9 @@ mod vesc_if;
 #[cfg(test)]
 pub mod test_support;
 
+/// Raw firmware layout mirrors used when host code needs to inspect payloads directly.
 pub mod raw;
+/// Typed borrowed views over raw firmware packet bytes.
 pub mod views;
 
 pub use image::{ImageOffset, NativeAddress, NativeImage};

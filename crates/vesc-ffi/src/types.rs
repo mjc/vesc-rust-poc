@@ -2,6 +2,7 @@ use core::ffi::c_void;
 
 macro_rules! transparent_value_type {
     ($(#[$meta:meta])* $vis:vis struct $name:ident($inner:ty);) => {
+        #[doc = "Transparent firmware value wrapper."]
         $(#[$meta])*
         #[repr(transparent)]
         #[derive(Debug, Clone, Copy, PartialEq)]
@@ -11,6 +12,7 @@ macro_rules! transparent_value_type {
 
 macro_rules! transparent_eq_value_type {
     ($(#[$meta:meta])* $vis:vis struct $name:ident($inner:ty);) => {
+        #[doc = "Transparent firmware value wrapper."]
         $(#[$meta])*
         #[repr(transparent)]
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,6 +22,7 @@ macro_rules! transparent_eq_value_type {
 
 macro_rules! transparent_eq_value_type_type {
     ($(#[$meta:meta])* $vis:vis struct $name:ident<$ty:ident>($inner:ty);) => {
+        #[doc = "Transparent firmware value wrapper."]
         $(#[$meta])*
         #[repr(transparent)]
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -142,8 +145,11 @@ transparent_eq_value_type!(
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// 2D point passed through the firmware plotting APIs.
 pub struct PlotPoint {
+    /// X coordinate.
     pub x: f32,
+    /// Y coordinate.
     pub y: f32,
 }
 

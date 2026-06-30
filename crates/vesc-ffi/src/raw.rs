@@ -20,6 +20,7 @@ type EepromVar = c_void;
 type GnssData = c_void;
 type AttitudeInfo = c_void;
 
+/// Raw remote-control state mirrored from the firmware ABI.
 #[repr(C)]
 pub struct RemoteState {
     js_x: f32,
@@ -41,6 +42,7 @@ type EncoderReadCallback = unsafe extern "C" fn() -> f32;
 type EncoderFaultCallback = unsafe extern "C" fn() -> bool;
 type EncoderInfoCallback = unsafe extern "C" fn() -> *mut c_char;
 
+/// Raw firmware function table mirrored from the VESC native ABI.
 #[repr(C)]
 pub struct VescIf {
     // LBM
