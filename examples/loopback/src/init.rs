@@ -11,6 +11,8 @@ use crate::extensions;
 #[unsafe(link_section = ".program_ptr")]
 static prog_ptr: u32 = 0;
 
+/// Package loader entrypoint that installs the example stop hook and reports success.
+
 #[cfg(not(test))]
 #[inline(never)]
 #[unsafe(no_mangle)]
@@ -18,6 +20,8 @@ pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
     let _ = pkg_init::install_stop_hook(info);
     true
 }
+
+/// Test-build package loader entrypoint that mirrors the target init behavior.
 
 #[cfg(test)]
 #[unsafe(no_mangle)]
