@@ -1,3 +1,5 @@
+//! Regenerates checked-in golden package fixture payloads and fingerprints.
+
 use std::fs;
 
 use vesc_pkg::native_lib_baseline::fingerprint_bytes;

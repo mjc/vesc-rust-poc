@@ -1,3 +1,5 @@
+//! Cargo subcommand entrypoint for building VESC package artifacts.
+
 use std::process::ExitCode;
 
 use vesc_pkg::cargo_vescpkg_command::{CargoVescPkgError, run_with};

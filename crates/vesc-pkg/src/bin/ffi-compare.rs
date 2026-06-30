@@ -1,3 +1,5 @@
+//! Command-line ABI comparison helper for Rust and VESC C interface surfaces.
+
 use std::path::Path;
 use std::process::ExitCode;
 

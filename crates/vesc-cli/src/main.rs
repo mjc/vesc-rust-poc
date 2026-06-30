@@ -1,3 +1,5 @@
+//! Operator-facing command-line entrypoint for VESC package and loopback workflows.
+
 use std::process::ExitCode;
 
 fn main() -> ExitCode {

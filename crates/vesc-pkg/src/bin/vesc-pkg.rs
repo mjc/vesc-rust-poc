@@ -1,3 +1,5 @@
+//! Standalone package builder for the loopback VESC package fixture.
+
 use std::process::ExitCode;
 
 use vesc_pkg::{
