@@ -4,4 +4,4 @@ expression: lisp_import_summary(&lisp_data)
 ---
 code_len=144
 imports=1
-import[0]: tag=package-lib offset=168 size=513 payload_fp=14809a831d69cf88
+import[0]: tag=package-lib offset=168 size=487 payload_fp=57ade221fa31f6ad

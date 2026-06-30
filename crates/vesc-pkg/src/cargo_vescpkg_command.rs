@@ -202,7 +202,6 @@ mod tests {
         DEFAULT_TARGET_TRIPLE, command_design_text, parse_args, run_with,
     };
     use crate::PackageTargetMode;
-    use crate::hygiene::repo_root;
     use crate::package_conversion::PackageBinaryConversionCommand;
     use crate::test_support::{FakeConversionRunner, PackageTestHarness};
     use std::path::PathBuf;
@@ -336,7 +335,8 @@ mod tests {
 
     #[test]
     fn run_with_executes_build_invocations() {
-        let root = repo_root();
+        let harness = PackageTestHarness::new();
+        let root = harness.root().to_path_buf();
         let runner = FakeConversionRunner::materializing();
 
         let output = run_with(&root, ["build"], &runner).expect("run build invocation");

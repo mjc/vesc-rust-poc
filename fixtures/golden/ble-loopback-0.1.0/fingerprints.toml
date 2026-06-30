@@ -1,4 +1,4 @@
-package_lib.bin = "14809a831d69cf88"
-native_lib.bin = "14809a831d69cf88"
-native_lib.elf = "63832c39366ebd93"
-lisp_data.bin = "d427fdfbd7d1f7d4"
+package_lib.bin = "57ade221fa31f6ad"
+native_lib.bin = "57ade221fa31f6ad"
+native_lib.elf = "5621860a972e5cd3"
+lisp_data.bin = "98c1e6cc743bc88c"
