@@ -1,3 +1,5 @@
+//! Compile-fail tests for unsafe and no-std ABI boundaries.
+
 #[test]
 fn compile_fail_ui() {
     let tests = trybuild::TestCases::new();

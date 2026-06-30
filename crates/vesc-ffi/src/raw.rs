@@ -705,6 +705,7 @@ pub unsafe fn io_read(pin: crate::VescPin) -> bool {
     }
 }
 
+/// Returns selected `VescIf` field offsets for ABI layout tests.
 #[cfg(test)]
 pub fn vesc_if_offsets_for_tests() -> [usize; 11] {
     [
@@ -725,6 +726,7 @@ pub fn vesc_if_offsets_for_tests() -> [usize; 11] {
 #[cfg(test)]
 mod dispatch_tests;
 
+/// Returns `VescIf` size, alignment, and final-slot offset for ABI layout tests.
 #[cfg(test)]
 pub fn vesc_if_full_layout_for_tests() -> (usize, usize, usize) {
     (
@@ -734,6 +736,7 @@ pub fn vesc_if_full_layout_for_tests() -> (usize, usize, usize) {
     )
 }
 
+/// Returns nullable function-pointer slot size and alignment for ABI layout tests.
 #[cfg(test)]
 pub fn nullable_slot_layout_for_tests() -> (usize, usize) {
     (
