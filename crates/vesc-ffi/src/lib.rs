@@ -10,6 +10,7 @@
 #![no_std]
 #![forbid(unused_extern_crates)]
 #![deny(unsafe_op_in_unsafe_fn)]
+#![deny(clippy::missing_safety_doc)]
 
 #[cfg(test)]
 extern crate std;
