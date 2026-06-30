@@ -22,7 +22,6 @@ pub mod test_support;
 
 /// Safe and unsafe raw ABI re-exports for SDK consumers that need them.
 pub mod ffi {
-    //! Raw ABI plus the safe package runtime surface re-exported for callers.
     pub use crate::bindings::*;
     pub use crate::extension::*;
     pub use crate::lifecycle_core::*;

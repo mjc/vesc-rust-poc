@@ -72,16 +72,19 @@ pub fn init_for_tests(info: *mut ffi::LibInfo) -> bool {
     true
 }
 
+/// Resets the package init call counter used by tests.
 #[cfg(any(test, feature = "test-support"))]
 pub fn reset_init_call_count_for_tests() {
     test_state::reset();
 }
 
+/// Returns how many times the package init entrypoint has been called in tests.
 #[cfg(any(test, feature = "test-support"))]
 pub fn init_call_count_for_tests() -> usize {
     test_state::init_calls()
 }
 
+/// Returns how many times the package stop hook has been called in tests.
 #[cfg(test)]
 pub fn stop_call_count_for_tests() -> usize {
     test_state::stop_calls()

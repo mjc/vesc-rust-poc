@@ -6,11 +6,17 @@ use core::ffi::c_char;
 use crate::bindings::{AppDataBindings, LbmBindings};
 use vesc_ffi::{AppDataHandler, ExtensionHandler, LbmValue};
 
+/// Fake extension registration bindings used by SDK tests.
 pub struct FakeBindings {
+    /// Number of extension add calls observed.
     pub add_calls: Cell<usize>,
+    /// Number of decode callback calls observed.
     pub decode_calls: Cell<usize>,
+    /// Number of encode callback calls observed.
     pub encode_calls: Cell<usize>,
+    /// Last extension name pointer passed to registration.
     pub last_name: Cell<usize>,
+    /// Last handler pointer passed to registration.
     pub last_handler: Cell<usize>,
     add_results: Cell<[bool; 2]>,
 }
@@ -22,14 +28,17 @@ impl Default for FakeBindings {
 }
 
 impl FakeBindings {
+    /// Creates fake bindings that accept both extension registrations.
     pub fn new() -> Self {
         Self::with_add_results([true, true])
     }
 
+    /// Creates fake bindings that reject extension registrations.
     pub fn rejecting() -> Self {
         Self::with_add_results([false, false])
     }
 
+    /// Creates fake bindings with explicit add results for two registrations.
     pub fn with_add_results(add_results: [bool; 2]) -> Self {
         Self {
             add_calls: Cell::new(0),
@@ -70,12 +79,19 @@ impl LbmBindings for FakeBindings {
     }
 }
 
+/// Fake app-data bindings used by lifecycle and loopback runtime tests.
 pub struct FakeAppDataBindings {
+    /// Number of app-data handler invocations observed.
     pub handler_calls: Cell<usize>,
+    /// Tick count returned by the fake timer binding.
     pub ticks: Cell<u32>,
+    /// Number of app-data send calls observed.
     pub send_calls: Cell<usize>,
+    /// Last app-data handler pointer passed to registration.
     pub last_handler: Cell<usize>,
+    /// Last outbound data pointer passed to send.
     pub last_data: Cell<usize>,
+    /// Last outbound data length passed to send.
     pub last_len: Cell<u32>,
 }
 
@@ -86,10 +102,12 @@ impl Default for FakeAppDataBindings {
 }
 
 impl FakeAppDataBindings {
+    /// Creates fake app-data bindings with zero timer ticks.
     pub fn new() -> Self {
         Self::with_ticks(0)
     }
 
+    /// Creates fake app-data bindings returning `ticks` from the timer.
     pub fn with_ticks(ticks: u32) -> Self {
         Self {
             handler_calls: Cell::new(0),
@@ -120,6 +138,7 @@ impl AppDataBindings for FakeAppDataBindings {
     }
 }
 
+/// C ABI stubs linked by host-side tests.
 pub mod stubs {
     /// # Safety
     ///

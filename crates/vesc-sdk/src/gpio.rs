@@ -59,17 +59,25 @@ impl<B: GpioBindings> GpioApi<B> {
 }
 
 #[cfg(any(test, feature = "test-support"))]
+/// GPIO fake binding helpers exported for tests.
 pub mod test_support {
     use super::GpioBindings;
     use core::cell::Cell;
     use vesc_ffi::{VescPin, VescPinMode};
 
+    /// Fake GPIO binding implementation used by GPIO unit tests.
     pub struct FakeGpioBindings {
+        /// Number of mode calls observed.
         pub mode_calls: Cell<usize>,
+        /// Number of write calls observed.
         pub write_calls: Cell<usize>,
+        /// Number of read calls observed.
         pub read_calls: Cell<usize>,
+        /// Last pin passed to any GPIO call.
         pub last_pin: Cell<i32>,
+        /// Last mode value passed to mode configuration.
         pub last_mode: Cell<i32>,
+        /// Last output level passed to write.
         pub last_level: Cell<i32>,
     }
 
@@ -80,6 +88,7 @@ pub mod test_support {
     }
 
     impl FakeGpioBindings {
+        /// Creates a fake GPIO binding recorder with zeroed counters.
         pub fn new() -> Self {
             Self {
                 mode_calls: Cell::new(0),

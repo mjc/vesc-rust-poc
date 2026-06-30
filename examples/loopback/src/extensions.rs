@@ -29,7 +29,6 @@ pub unsafe extern "C" fn ext_rust_probe_diag_v4(_args: *mut u32, _argn: u32) -> 
 }
 
 /// Returns extension descriptors registered by the loopback example package.
-
 pub fn package_extension_descriptors() -> [ffi::ExtensionDescriptor; PACKAGE_EXTENSION_COUNT] {
     [ffi::ExtensionDescriptor::new(
         EXT_RUST_PROBE_DIAG_NAME,
@@ -38,7 +37,6 @@ pub fn package_extension_descriptors() -> [ffi::ExtensionDescriptor; PACKAGE_EXT
 }
 
 /// Returns the diagnostic probe extension descriptor used by tests and fixtures.
-
 pub fn rust_probe_diag_descriptor() -> ffi::ExtensionDescriptor {
     package_extension_descriptors()[0]
 }

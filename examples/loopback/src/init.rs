@@ -12,7 +12,6 @@ use crate::extensions;
 static prog_ptr: u32 = 0;
 
 /// Package loader entrypoint that installs the example stop hook and reports success.
-
 #[cfg(not(test))]
 #[inline(never)]
 #[unsafe(no_mangle)]
@@ -22,7 +21,6 @@ pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
 }
 
 /// Test-build package loader entrypoint that mirrors the target init behavior.
-
 #[cfg(test)]
 #[unsafe(no_mangle)]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
@@ -30,6 +28,7 @@ pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
     true
 }
 
+/// ARM package loader entrypoint placed in `.init_fun` for VESC firmware loading.
 #[cfg(all(not(test), target_arch = "arm"))]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]

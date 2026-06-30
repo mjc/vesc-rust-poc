@@ -8,6 +8,7 @@ pub fn encode_lbm_i32_raw(value: i32) -> u32 {
     value.wrapping_shl(LBM_VALUE_SHIFT) as u32 | LBM_INT_TAG
 }
 
+/// Decodes a raw LispBM integer value for unit tests.
 #[cfg(test)]
 pub fn decode_lbm_i32_raw(value: u32) -> i32 {
     (value as i32) >> LBM_VALUE_SHIFT
