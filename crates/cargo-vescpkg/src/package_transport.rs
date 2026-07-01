@@ -97,6 +97,7 @@ impl VescSession {
     pub(crate) fn clear_packet_state(&mut self) {
         self.pending.clear();
         while self.decoder.pop_ready().is_some() {}
+        drain_response_channel(&self.responses);
     }
 
     pub(crate) fn receive_custom_app_data(
@@ -172,6 +173,10 @@ impl VescSession {
 
         None
     }
+}
+
+fn drain_response_channel(responses: &Receiver<Vec<u8>>) {
+    while responses.try_recv().is_ok() {}
 }
 
 /// BLE UART transport used by package install and erase flows.
@@ -645,10 +650,11 @@ mod tests {
     use super::{
         COMM_FW_VERSION, COMM_LISP_ERASE_CODE, COMM_LISP_SET_RUNNING, COMM_LISP_WRITE_CODE,
         COMM_QMLUI_ERASE, FwVersionInfo, HwType, ble_write_chunks, build_command_packet,
-        build_lisp_upload_payload, build_qml_upload_payload, parse_fw_version_info,
-        parse_simple_ack, parse_write_ack,
+        build_lisp_upload_payload, build_qml_upload_payload, drain_response_channel,
+        parse_fw_version_info, parse_simple_ack, parse_write_ack,
     };
     use crate::vesc_uart::PacketDecoder;
+    use std::sync::mpsc;
 
     #[test]
     fn parses_fw_version_replies() {
@@ -755,6 +761,20 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(chunks, vec![20, 20, 1]);
+    }
+
+    #[test]
+    fn clear_packet_state_drains_stale_notification_bytes() {
+        let (tx, rx) = mpsc::channel();
+        tx.send(vec![COMM_FW_VERSION, 1])
+            .expect("first stale reply");
+        tx.send(vec![COMM_FW_VERSION, 2])
+            .expect("second stale reply");
+        drop(tx);
+
+        drain_response_channel(&rx);
+
+        assert!(rx.try_recv().is_err());
     }
 
     #[test]
