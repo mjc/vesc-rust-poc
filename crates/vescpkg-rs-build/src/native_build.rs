@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 
-use crate::BLE_LOOPBACK_PACKAGE_NAME;
 use crate::cargo_vescpkg_command::DEFAULT_PACKAGE_VERSION;
 use crate::native_lib_link::{NativeLibLinkPlan, native_lib_link_plan};
 use crate::package_conversion::PackageBinaryConversionPlan;
 use crate::package_runner::ensure_native_lib_artifacts;
+use crate::{BLE_LOOPBACK_PACKAGE_NAME, PackageExample};
 
 /// Returns the repository-default Rust static library output path.
 pub fn rust_staticlib_path() -> PathBuf {
@@ -72,7 +72,10 @@ pub fn build_final_native_lib_elf_for(plan: &NativeLibLinkPlan) {
 
 /// Flattens the repository-default native ELF into a package binary at `native_binary_path`.
 pub fn build_final_native_lib_binary(native_binary_path: &Path) {
-    let plan = crate::native_lib_link::native_lib_link_plan_for_native_binary(native_binary_path);
+    let plan = crate::native_lib_link::native_lib_link_plan_for_native_binary(
+        native_binary_path,
+        PackageExample::Loopback,
+    );
     build_final_native_lib_binary_for(&plan, native_binary_path);
 }
 

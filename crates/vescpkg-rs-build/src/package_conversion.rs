@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::PackageLayout;
+use crate::{PackageExample, PackageLayout};
 
 /// Relative path to the built native binary used by the conversion script.
 pub const NATIVE_LIB_BINARY_PATH: &str = "target/native-lib-baseline/native_lib.bin";
@@ -15,6 +15,7 @@ pub struct PackageBinaryConversionCommand {
     script_path: PathBuf,
     native_binary_path: PathBuf,
     package_binary_path: PathBuf,
+    example: PackageExample,
 }
 
 impl PackageBinaryConversionCommand {
@@ -24,10 +25,26 @@ impl PackageBinaryConversionCommand {
         native_binary_path: impl Into<PathBuf>,
         package_binary_path: impl Into<PathBuf>,
     ) -> Self {
+        Self::for_example(
+            script_path,
+            native_binary_path,
+            package_binary_path,
+            PackageExample::Loopback,
+        )
+    }
+
+    /// Construct a conversion command from its paths and selected package example.
+    pub fn for_example(
+        script_path: impl Into<PathBuf>,
+        native_binary_path: impl Into<PathBuf>,
+        package_binary_path: impl Into<PathBuf>,
+        example: PackageExample,
+    ) -> Self {
         Self {
             script_path: script_path.into(),
             native_binary_path: native_binary_path.into(),
             package_binary_path: package_binary_path.into(),
+            example,
         }
     }
 
@@ -44,6 +61,11 @@ impl PackageBinaryConversionCommand {
     /// Return the package binary output path.
     pub fn package_binary_path(&self) -> &PathBuf {
         &self.package_binary_path
+    }
+
+    /// Return the selected package example.
+    pub fn example(&self) -> PackageExample {
+        self.example
     }
 
     /// Return the command-line arguments for the conversion runner.
@@ -81,6 +103,7 @@ pub trait PackageBinaryConversionRunner {
 pub struct PackageBinaryConversionPlan {
     source_root: PathBuf,
     layout: PackageLayout,
+    example: PackageExample,
 }
 
 impl PackageBinaryConversionPlan {
@@ -90,9 +113,20 @@ impl PackageBinaryConversionPlan {
         package_name: impl Into<String>,
         version: impl Into<String>,
     ) -> Self {
+        Self::for_example(source_root, package_name, version, PackageExample::Loopback)
+    }
+
+    /// Construct a conversion plan for one selected package example.
+    pub fn for_example(
+        source_root: impl Into<PathBuf>,
+        package_name: impl Into<String>,
+        version: impl Into<String>,
+        example: PackageExample,
+    ) -> Self {
         Self {
             source_root: source_root.into(),
             layout: PackageLayout::new(package_name, version),
+            example,
         }
     }
 
@@ -101,12 +135,18 @@ impl PackageBinaryConversionPlan {
         &self.layout
     }
 
+    /// Return the selected package example.
+    pub fn example(&self) -> PackageExample {
+        self.example
+    }
+
     /// Return the command used to perform the conversion.
     pub fn command(&self) -> PackageBinaryConversionCommand {
-        PackageBinaryConversionCommand::new(
+        PackageBinaryConversionCommand::for_example(
             self.conversion_script_path(),
             self.native_binary_path(),
             self.package_binary_path(),
+            self.example,
         )
     }
 
@@ -117,12 +157,16 @@ impl PackageBinaryConversionPlan {
 
     /// Return the native binary path.
     pub fn native_binary_path(&self) -> PathBuf {
-        self.source_root.join(NATIVE_LIB_BINARY_PATH)
+        self.source_root
+            .join(self.example.native_build_dir())
+            .join("native_lib.bin")
     }
 
     /// Return the package binary path.
     pub fn package_binary_path(&self) -> PathBuf {
-        self.source_root.join(PACKAGE_LIB_BINARY_PATH)
+        self.source_root
+            .join(self.example.native_build_dir())
+            .join("package_lib.bin")
     }
 
     /// Return the files that feed the conversion step.

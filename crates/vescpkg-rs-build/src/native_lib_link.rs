@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use crate::PackageExample;
+
 /// Repository-relative Rust static library path used by the native-lib link.
 pub const RUST_STATICLIB_PATH: &str =
     "target/thumbv7em-none-eabihf/release/libvesc_example_loopback.a";
@@ -19,12 +21,25 @@ pub const PACKAGE_C_OBJECT_PATH: &str = "target/native-lib-baseline/package_lib.
 pub struct NativeLibLinkPlan {
     /// Artifact root that owns all linked native-lib outputs.
     root: PathBuf,
+    rust_staticlib_path: PathBuf,
+    rust_package_name: String,
+    native_build_dir: PathBuf,
 }
 
 impl NativeLibLinkPlan {
     /// Creates a link plan rooted at `root`.
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        Self::for_example(root, PackageExample::Loopback)
+    }
+
+    /// Creates a link plan rooted at `root` for a selected package example.
+    pub fn for_example(root: impl Into<PathBuf>, example: PackageExample) -> Self {
+        Self {
+            root: root.into(),
+            rust_staticlib_path: example.native_artifact_input_path(),
+            rust_package_name: example.cargo_package_name().to_owned(),
+            native_build_dir: example.native_build_dir(),
+        }
     }
 
     /// Returns the artifact root for this plan.
@@ -39,17 +54,33 @@ impl NativeLibLinkPlan {
 
     /// Returns the Rust static library input path.
     pub fn rust_staticlib_path(&self) -> PathBuf {
-        self.root.join(RUST_STATICLIB_PATH)
+        self.root.join(&self.rust_staticlib_path)
+    }
+
+    /// Returns the Cargo package that builds the Rust static library.
+    pub fn rust_package_name(&self) -> &str {
+        &self.rust_package_name
+    }
+
+    /// Returns the example crate directory that owns the Rust static library sources.
+    pub fn rust_package_source_path(&self) -> PathBuf {
+        self.root
+            .join("examples")
+            .join(self.rust_package_name.trim_start_matches("vesc-example-"))
     }
 
     /// Returns the linked native ELF output path.
     pub fn elf_path(&self) -> PathBuf {
-        self.root.join(NATIVE_LIB_ELF_PATH)
+        self.root
+            .join(&self.native_build_dir)
+            .join("native_lib.elf")
     }
 
     /// Returns the flattened native binary output path.
     pub fn native_lib_bin_path(&self) -> PathBuf {
-        self.root.join(NATIVE_LIB_BIN_PATH)
+        self.root
+            .join(&self.native_build_dir)
+            .join("native_lib.bin")
     }
 
     /// Returns the linker script path used for the native-lib link.
@@ -64,7 +95,7 @@ impl NativeLibLinkPlan {
 
     /// Returns the C package shim object path.
     pub fn package_c_object_path(&self) -> PathBuf {
-        self.root.join(PACKAGE_C_OBJECT_PATH)
+        self.root.join(&self.native_build_dir).join("package_lib.o")
     }
 
     /// Iterates over files that must exist before the final native link.
@@ -84,8 +115,14 @@ pub fn native_lib_link_plan() -> NativeLibLinkPlan {
 }
 
 /// Returns a link plan rooted from a requested native binary output path.
-pub fn native_lib_link_plan_for_native_binary(native_binary_path: &Path) -> NativeLibLinkPlan {
-    NativeLibLinkPlan::new(artifact_root_from_native_binary(native_binary_path))
+pub fn native_lib_link_plan_for_native_binary(
+    native_binary_path: &Path,
+    example: PackageExample,
+) -> NativeLibLinkPlan {
+    NativeLibLinkPlan::for_example(
+        artifact_root_from_native_binary(native_binary_path),
+        example,
+    )
 }
 
 /// Derives an artifact root from a native binary output path.
@@ -108,6 +145,8 @@ pub fn native_lib_elf_path() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+
+    use crate::PackageExample;
 
     use super::{
         NATIVE_LIB_ELF_PATH, NATIVE_LIB_LINKER_SCRIPT, NativeLibLinkPlan, PACKAGE_C_OBJECT_PATH,
@@ -142,6 +181,7 @@ mod tests {
             plan.rust_staticlib_path(),
             PathBuf::from("fixtures/native-lib-baseline").join(RUST_STATICLIB_PATH)
         );
+        assert_eq!(plan.rust_package_name(), "vesc-example-loopback");
         assert_eq!(
             plan.linker_script_path(),
             PathBuf::from("fixtures/native-lib-baseline").join(NATIVE_LIB_LINKER_SCRIPT)
@@ -153,6 +193,23 @@ mod tests {
         assert_eq!(
             plan.package_c_object_path(),
             PathBuf::from("fixtures/native-lib-baseline").join(PACKAGE_C_OBJECT_PATH)
+        );
+    }
+
+    #[test]
+    fn selected_example_drives_staticlib_package_and_source_paths() {
+        let plan =
+            NativeLibLinkPlan::for_example("fixtures/native-lib-baseline", PackageExample::Snake);
+
+        assert_eq!(
+            plan.rust_staticlib_path(),
+            PathBuf::from("fixtures/native-lib-baseline")
+                .join("target/thumbv7em-none-eabihf/release/libvesc_example_snake.a")
+        );
+        assert_eq!(plan.rust_package_name(), "vesc-example-snake");
+        assert_eq!(
+            plan.rust_package_source_path(),
+            PathBuf::from("fixtures/native-lib-baseline").join("examples/snake")
         );
     }
 }

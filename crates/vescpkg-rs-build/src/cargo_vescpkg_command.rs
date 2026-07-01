@@ -426,6 +426,10 @@ mod tests {
             plan.build_plan().example_source_path(),
             PathBuf::from("examples/snake")
         );
+        assert_eq!(
+            plan.build_plan().conversion_plan().command().example(),
+            crate::PackageExample::Snake
+        );
     }
 
     #[test]

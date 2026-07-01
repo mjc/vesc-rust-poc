@@ -38,6 +38,22 @@ impl PackageExample {
             }
         }
     }
+
+    /// Return the Cargo package that builds this example staticlib.
+    pub fn cargo_package_name(self) -> &'static str {
+        match self {
+            Self::Loopback => "vesc-example-loopback",
+            Self::Snake => "vesc-example-snake",
+        }
+    }
+
+    /// Return the native build artifact directory for this example.
+    pub fn native_build_dir(self) -> PathBuf {
+        match self {
+            Self::Loopback => PathBuf::from("target/native-lib-baseline"),
+            Self::Snake => PathBuf::from("target/native-lib-snake"),
+        }
+    }
 }
 
 /// End-to-end package build plan from source tree to `.vescpkg` output.
@@ -157,8 +173,7 @@ impl PackageBuildPlan {
             fs::create_dir_all(parent)?;
         }
         fs::copy(
-            self.source_root
-                .join("target/native-lib-baseline/package_lib.bin"),
+            self.conversion_plan().package_binary_path(),
             native_payload_path,
         )?;
         Ok(assets)
@@ -166,10 +181,11 @@ impl PackageBuildPlan {
 
     /// Return the native-binary conversion plan.
     pub fn conversion_plan(&self) -> PackageBinaryConversionPlan {
-        PackageBinaryConversionPlan::new(
+        PackageBinaryConversionPlan::for_example(
             self.source_root.clone(),
             self.layout.package_name(),
             self.layout.version(),
+            self.example,
         )
     }
 
@@ -183,11 +199,12 @@ impl PackageBuildPlan {
 
     /// Return the package-artifact inspection plan.
     pub fn inspection_plan(&self) -> PackageArtifactInspectionPlan {
-        PackageArtifactInspectionPlan::new(
+        PackageArtifactInspectionPlan::for_example(
             self.source_root.clone(),
             self.layout.package_name(),
             self.layout.version(),
             self.provenance.clone(),
+            self.example,
         )
     }
 

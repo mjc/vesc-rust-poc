@@ -48,7 +48,8 @@ pub fn ensure_repo_native_lib_artifacts(root: &Path) {
 impl PackageBinaryConversionRunner for RealPackageRunner {
     /// Run the native build and copy the resulting package binary into place.
     fn run(&self, command: &PackageBinaryConversionCommand) -> Result<(), String> {
-        let plan = native_lib_link_plan_for_native_binary(command.native_binary_path());
+        let plan =
+            native_lib_link_plan_for_native_binary(command.native_binary_path(), command.example());
         materialize_native_lib_binary_unlocked(
             &plan,
             command.native_binary_path(),

@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::PackageLayout;
 use crate::package_assets::{PackageAssets, PackageProvenance};
+use crate::{PackageExample, PackageLayout};
 
 /// Staged README file name written into package source trees.
 pub const STAGING_README_PATH: &str = "README.md";
@@ -56,6 +56,7 @@ pub struct PackageArtifactInspectionPlan {
     root: PathBuf,
     layout: PackageLayout,
     provenance: PackageProvenance,
+    example: PackageExample,
 }
 
 impl PackageArtifactInspectionPlan {
@@ -66,10 +67,28 @@ impl PackageArtifactInspectionPlan {
         version: impl Into<String>,
         provenance: PackageProvenance,
     ) -> Self {
+        Self::for_example(
+            root,
+            package_name,
+            version,
+            provenance,
+            PackageExample::Loopback,
+        )
+    }
+
+    /// Creates an inspection plan for one selected package example.
+    pub fn for_example(
+        root: impl Into<PathBuf>,
+        package_name: impl Into<String>,
+        version: impl Into<String>,
+        provenance: PackageProvenance,
+        example: PackageExample,
+    ) -> Self {
         Self {
             root: root.into(),
             layout: PackageLayout::new(package_name, version),
             provenance,
+            example,
         }
     }
 
@@ -105,7 +124,9 @@ impl PackageArtifactInspectionPlan {
 
     /// Returns the generated native payload path.
     pub fn native_payload_path(&self) -> PathBuf {
-        self.root.join(NATIVE_PAYLOAD_PATH)
+        self.root
+            .join(self.example.native_build_dir())
+            .join("package_lib.bin")
     }
 
     /// Returns the staged copy of the generated native payload path.
