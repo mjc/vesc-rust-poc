@@ -488,8 +488,13 @@ impl BtlePackageInstallTransport {
         payload: &[u8],
         timeout: Duration,
     ) -> Result<(), PackageInstallError> {
+        let expected_offset = payload
+            .get(..4)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_be_bytes)
+            .ok_or_else(|| malformed_reply("write payload missing offset"))?;
         self.send_with_retries(command, payload, timeout, |response| {
-            parse_write_ack(response, command)
+            parse_write_ack(response, command, expected_offset)
         })
     }
 }
@@ -767,14 +772,21 @@ fn parse_simple_ack(response: &[u8], expected_command: u8) -> Result<bool, Packa
     Ok(read_u8(&mut cursor)? > 0)
 }
 
-fn parse_write_ack(response: &[u8], expected_command: u8) -> Result<bool, PackageInstallError> {
+fn parse_write_ack(
+    response: &[u8],
+    expected_command: u8,
+    expected_offset: u32,
+) -> Result<bool, PackageInstallError> {
     let mut cursor = response;
     if read_u8(&mut cursor)? != expected_command {
         return Err(malformed_reply("unexpected BLE reply"));
     }
 
     let ok = read_u8(&mut cursor)? > 0;
-    let _offset = read_u32_be(&mut cursor)?;
+    let offset = read_u32_be(&mut cursor)?;
+    if offset != expected_offset {
+        return Err(malformed_reply("stale write acknowledgement offset"));
+    }
 
     Ok(ok)
 }
@@ -900,8 +912,11 @@ mod tests {
         write_ack.push(COMM_LISP_WRITE_CODE);
         write_ack.push(1);
         write_ack.extend_from_slice(&384_u32.to_be_bytes());
-        assert!(parse_write_ack(&write_ack, COMM_LISP_WRITE_CODE).expect("write ack"));
-        assert!(parse_write_ack(&write_ack, COMM_QMLUI_ERASE).is_err());
+        assert!(
+            parse_write_ack(&write_ack, COMM_LISP_WRITE_CODE, 384).expect("matching write ack")
+        );
+        assert!(parse_write_ack(&write_ack, COMM_LISP_WRITE_CODE, 0).is_err());
+        assert!(parse_write_ack(&write_ack, COMM_QMLUI_ERASE, 384).is_err());
 
         let wrong_command = [COMM_LISP_WRITE_CODE, 1];
         assert!(parse_simple_ack(&wrong_command, COMM_QMLUI_ERASE).is_err());
