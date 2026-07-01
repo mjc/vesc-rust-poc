@@ -325,17 +325,15 @@ where
 
     let mut ticks = snake::SnakeTick::new(0);
     while ticks.get() < u32::from(tick_limit.get()) {
-        if event::poll(Duration::from_millis(120))
+        if event::poll(Duration::from_millis(220))
             .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?
-        {
-            if let Event::Key(key) =
+            && let Event::Key(key) =
                 event::read().map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?
-            {
-                match snake_action_from_key(key) {
-                    Some(snake::SnakeLocalAction::Quit) => return Ok(()),
-                    Some(action) => apply_snake_action(model, action, &mut ticks)?,
-                    None => {}
-                }
+        {
+            match snake_action_from_key(key) {
+                Some(snake::SnakeLocalAction::Quit) => return Ok(()),
+                Some(action) => apply_snake_action(model, action, &mut ticks)?,
+                None => {}
             }
         }
 
@@ -357,23 +355,50 @@ fn render_snake_terminal_frame<W>(
 where
     W: Write,
 {
+    let snapshot = model
+        .snapshot()
+        .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
+    let board = snapshot.board().board();
+
     queue!(output, MoveTo(0, 0), Clear(ClearType::All))
         .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
-    writeln!(
+    write!(
         output,
-        "controls: wasd/arrows steer | space pause/resume | r reset | q quit"
+        "Snake | score={} tick={} state={:?} direction={:?}\r\n",
+        snapshot.score().get(),
+        snapshot.tick().get(),
+        snapshot.state(),
+        snapshot.direction()
     )
     .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
     write!(
         output,
-        "{}",
-        snake::render_terminal_snapshot(
-            &model
-                .snapshot()
-                .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?
-        )
+        "wasd/arrows steer | space pause/resume | r reset | q quit\r\n"
     )
     .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
+    write!(output, "+{}+\r\n", "-".repeat(usize::from(board.width())))
+        .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
+
+    for y in 0..board.height() {
+        write!(output, "|").map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
+        for x in 0..board.width() {
+            let cell = snake::SnakeCell::new(x, y);
+            let ch = if cell == snapshot.board().head() {
+                '█'
+            } else if cell == snapshot.board().food() {
+                '*'
+            } else if snapshot.board().body().contains(&cell) {
+                '█'
+            } else {
+                ' '
+            };
+            write!(output, "{ch}").map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
+        }
+        write!(output, "|\r\n").map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
+    }
+
+    write!(output, "+{}+\r\n", "-".repeat(usize::from(board.width())))
+        .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
     output
         .flush()
         .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)
@@ -396,10 +421,10 @@ fn apply_snake_action(
             }
         }
         snake::SnakeLocalAction::Turn(direction) => {
-            if let Err(error) = model.set_direction(direction) {
-                if !matches!(error, snake::SnakeTransitionError::ReverseTurn { .. }) {
-                    return Err(error);
-                }
+            if let Err(error) = model.set_direction(direction)
+                && !matches!(error, snake::SnakeTransitionError::ReverseTurn { .. })
+            {
+                return Err(error);
             }
         }
         snake::SnakeLocalAction::Pause => {
@@ -658,8 +683,8 @@ fn parse_erase_package(
 fn parse_snake(mut iter: impl Iterator<Item = String>) -> Result<SnakeCommand, ParseError> {
     let mut device_name = None;
     let mut address = None;
-    let mut board_width = snake::SnakeBoardWidth::new(16).expect("default width");
-    let mut board_height = snake::SnakeBoardHeight::new(12).expect("default height");
+    let mut board_width = snake::SnakeBoardWidth::new(32).expect("default width");
+    let mut board_height = snake::SnakeBoardHeight::new(18).expect("default height");
     let mut seed = snake::SnakeSeed::new(1);
     let mut moves = Vec::new();
     let mut actions = Vec::new();
@@ -969,8 +994,8 @@ mod tests {
             Ok(Command::Snake(SnakeCommand {
                 device_name: None,
                 address: None,
-                board_width: SnakeBoardWidth::new(16).expect("width"),
-                board_height: SnakeBoardHeight::new(12).expect("height"),
+                board_width: SnakeBoardWidth::new(32).expect("width"),
+                board_height: SnakeBoardHeight::new(18).expect("height"),
                 seed: SnakeSeed::new(1),
                 moves: Vec::new(),
                 actions: Vec::new(),
@@ -1102,6 +1127,21 @@ mod tests {
             model.head(),
             crate::snake::SnakeCell::new(start.x() + 1, start.y())
         );
+    }
+
+    #[test]
+    fn snake_terminal_frame_uses_raw_mode_safe_lines_without_prompt() {
+        let board = crate::snake::SnakeBoardSize::new(7, 5).expect("board");
+        let model = crate::snake::SnakeModel::new(board, 123);
+        let mut output = Vec::new();
+
+        super::render_snake_terminal_frame(&model, &mut output).expect("render");
+
+        let output = String::from_utf8(output).expect("utf8");
+        assert!(output.contains("\r\n"));
+        assert!(output.contains("wasd/arrows steer"));
+        assert!(output.contains("+-------+\r\n"));
+        assert!(!output.contains("snake>"));
     }
 
     #[test]
