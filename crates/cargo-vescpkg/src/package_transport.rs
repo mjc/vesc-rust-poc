@@ -235,6 +235,18 @@ impl BtlePackageInstallTransport {
         self.open_session(target)
     }
 
+    /// Opens a BLE UART session without querying firmware metadata.
+    pub fn open_without_preflight(
+        &self,
+        target: LoopbackTarget,
+    ) -> Result<(), PackageInstallError> {
+        let session = self
+            .runtime
+            .block_on(async move { open_session(target).await })?;
+        *self.session.borrow_mut() = Some(session);
+        Ok(())
+    }
+
     /// Disconnects the active BLE session, if one is open.
     pub fn close(&self) {
         let mut session = self.session.borrow_mut();

@@ -76,6 +76,8 @@ pub struct PackageEraseCommand {
     pub device_name: Option<String>,
     /// Optional BLE address filter.
     pub address: Option<String>,
+    /// Skip firmware-version preflight before erasing.
+    pub no_preflight: bool,
 }
 
 /// Arguments for the `snake` example command.
@@ -710,7 +712,13 @@ fn run_package_erase(command: PackageEraseCommand) -> ExitCode {
         }
     };
 
-    if let Err(error) = transport.open(loopback_target(command.address, command.device_name)) {
+    let target = loopback_target(command.address, command.device_name);
+    let open_result = if command.no_preflight {
+        transport.open_without_preflight(target)
+    } else {
+        transport.open(target)
+    };
+    if let Err(error) = open_result {
         eprintln!("failed to open package transport: {error}");
         return ExitCode::from(1);
     }
@@ -843,9 +851,11 @@ fn parse_erase_package(
 ) -> Result<PackageEraseCommand, ParseError> {
     let mut device_name = None;
     let mut address = None;
+    let mut no_preflight = false;
 
     while let Some(arg) = iter.next() {
         match arg.as_str() {
+            "--no-preflight" => no_preflight = true,
             "--device" => {
                 device_name = Some(
                     iter.next()
@@ -865,6 +875,7 @@ fn parse_erase_package(
     Ok(PackageEraseCommand {
         device_name,
         address,
+        no_preflight,
     })
 }
 
@@ -1174,6 +1185,7 @@ mod tests {
             Ok(Command::ErasePackage(PackageEraseCommand {
                 device_name: None,
                 address: None,
+                no_preflight: false,
             }))
         );
         assert_eq!(
@@ -1186,6 +1198,7 @@ mod tests {
             Ok(Command::ErasePackage(PackageEraseCommand {
                 device_name: Some("Floatwheel PintV".to_owned()),
                 address: None,
+                no_preflight: false,
             }))
         );
         assert_eq!(
@@ -1198,6 +1211,21 @@ mod tests {
             Ok(Command::ErasePackage(PackageEraseCommand {
                 device_name: None,
                 address: Some("AA:BB:CC:DD:EE:FF".to_owned()),
+                no_preflight: false,
+            }))
+        );
+        assert_eq!(
+            parse_args([
+                "cargo-vescpkg",
+                "erase-package",
+                "--device",
+                "VESC BLE UART",
+                "--no-preflight"
+            ]),
+            Ok(Command::ErasePackage(PackageEraseCommand {
+                device_name: Some("VESC BLE UART".to_owned()),
+                address: None,
+                no_preflight: true,
             }))
         );
         assert_eq!(
@@ -1309,6 +1337,7 @@ mod tests {
             Ok(Command::ErasePackage(PackageEraseCommand {
                 device_name: Some("Floatwheel PintV".to_owned()),
                 address: Some("AA:BB:CC:DD:EE:FF".to_owned()),
+                no_preflight: false,
             }))
         );
 
