@@ -220,14 +220,7 @@ fn run_snake(command: SnakeCommand) -> ExitCode {
     let model = snake::SnakeModel::new(board, command.seed.get());
     match model.snapshot() {
         Ok(snapshot) => {
-            println!(
-                "snake ready: {}x{} score={} tick={} direction={:?}",
-                snapshot.board().board().width(),
-                snapshot.board().board().height(),
-                snapshot.score().get(),
-                snapshot.tick().get(),
-                snapshot.direction()
-            );
+            print!("{}", snake::render_terminal_snapshot(&snapshot));
             ExitCode::SUCCESS
         }
         Err(error) => {

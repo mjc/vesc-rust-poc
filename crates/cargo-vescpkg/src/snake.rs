@@ -567,6 +567,42 @@ impl SnakeModel {
     }
 }
 
+/// Render a snapshot as a stable terminal board.
+pub fn render_terminal_snapshot(snapshot: &SnakeSnapshot) -> String {
+    let board = snapshot.board().board();
+    let mut output = format!(
+        "score={} tick={} state={:?} direction={:?}\n+{}+\n",
+        snapshot.score().get(),
+        snapshot.tick().get(),
+        snapshot.state(),
+        snapshot.direction(),
+        "-".repeat(usize::from(board.width()))
+    );
+
+    for y in 0..board.height() {
+        output.push('|');
+        for x in 0..board.width() {
+            let cell = SnakeCell::new(x, y);
+            let ch = if cell == snapshot.board().head() {
+                'S'
+            } else if cell == snapshot.board().food() {
+                '*'
+            } else if snapshot.board().body().contains(&cell) {
+                'o'
+            } else {
+                '.'
+            };
+            output.push(ch);
+        }
+        output.push_str("|\n");
+    }
+
+    output.push('+');
+    output.push_str(&"-".repeat(usize::from(board.width())));
+    output.push_str("+\n");
+    output
+}
+
 fn is_reverse(current: SnakeDirection, requested: SnakeDirection) -> bool {
     matches!(
         (current, requested),
@@ -685,5 +721,28 @@ mod tests {
         assert_eq!(snapshot.direction(), SnakeDirection::Right);
         assert_eq!(snapshot.tick(), model.tick());
         assert_eq!(snapshot.score(), model.score());
+    }
+
+    #[test]
+    fn renders_snapshot_as_terminal_board() {
+        let board = SnakeBoardSize::new(5, 4).expect("board");
+        let body = SnakeBody::new(&[
+            SnakeCell::new(2, 1),
+            SnakeCell::new(1, 1),
+            SnakeCell::new(1, 2),
+        ])
+        .expect("body");
+        let snapshot = SnakeSnapshot::new(
+            SnakeBoardSnapshot::new(board, SnakeCell::new(2, 1), SnakeCell::new(4, 3), body),
+            SnakeSessionState::Running,
+            SnakeTick::new(7),
+            SnakeScore::new(3),
+            SnakeDirection::Right,
+        );
+
+        assert_eq!(
+            render_terminal_snapshot(&snapshot),
+            "score=3 tick=7 state=Running direction=Right\n+-----+\n|.....|\n|.oS..|\n|.o...|\n|....*|\n+-----+\n"
+        );
     }
 }
