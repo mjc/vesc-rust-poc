@@ -15,6 +15,7 @@ static prog_ptr: u32 = 0;
 #[unsafe(no_mangle)]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
     let _ = pkg_init::install_stop_hook(info);
+    let _ = crate::app_data::register_snake_app_data_handler();
     true
 }
 

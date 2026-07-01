@@ -12,6 +12,8 @@
 #[cfg(test)]
 extern crate std;
 
+/// App-data command handler that lets VESC firmware run the package-side Snake logic.
+pub mod app_data;
 pub mod game;
 pub mod init;
 
