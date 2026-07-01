@@ -225,6 +225,17 @@ impl BtlePackageInstallTransport {
         f(&self.runtime, session)
     }
 
+    pub(crate) fn with_app_data_session<R>(
+        &self,
+        f: impl FnOnce(&Runtime, &mut VescSession) -> Result<R, PackageInstallError>,
+    ) -> Result<R, PackageInstallError> {
+        let mut session = self.session.borrow_mut();
+        let session = session.as_mut().ok_or_else(|| {
+            PackageInstallError::Device("BLE transport has not been opened".to_owned())
+        })?;
+        f(&self.runtime, session)
+    }
+
     fn open_session(&self, target: LoopbackTarget) -> Result<(), PackageInstallError> {
         let mut session = self
             .runtime
@@ -493,7 +504,7 @@ fn ble_write_chunks(packet: &[u8]) -> impl Iterator<Item = &[u8]> {
     packet.chunks(BLE_WRITE_CHUNK_SIZE)
 }
 
-fn build_command_packet(command: u8, payload: &[u8]) -> Vec<u8> {
+pub(crate) fn build_command_packet(command: u8, payload: &[u8]) -> Vec<u8> {
     let mut data = Vec::with_capacity(payload.len() + 1);
     data.push(command);
     data.extend_from_slice(payload);

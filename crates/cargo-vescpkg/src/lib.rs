@@ -34,6 +34,8 @@ pub enum Command {
     ErasePackage(PackageEraseCommand),
     /// Build, install, and smoke-test a package on a target device.
     Deploy(PackageInstallCommand),
+    /// Install Snake and smoke-test its app-data handler on a target device.
+    SnakeDeploy(PackageInstallCommand),
     /// Run the terminal Snake example surface.
     Snake(SnakeCommand),
 }
@@ -128,7 +130,7 @@ where
     match parse_args(args) {
         Ok(Command::Help) => {
             println!(
-                "cargo vescpkg: use `build`, `layout`, `status`, `scan`, `loopback`, `lisp-probe`, `deploy`, `package-install`, `erase-package`, or `snake`"
+                "cargo vescpkg: use `build`, `layout`, `status`, `scan`, `loopback`, `lisp-probe`, `deploy`, `snake-deploy`, `package-install`, `erase-package`, or `snake`"
             );
             ExitCode::SUCCESS
         }
@@ -234,6 +236,7 @@ where
         }
         Ok(Command::PackageInstall(command)) => run_package_install(command),
         Ok(Command::ErasePackage(command)) => run_package_erase(command),
+        Ok(Command::SnakeDeploy(command)) => run_snake_deploy(command),
         Ok(Command::Snake(command)) => run_snake(command),
         Err(ParseError::UnknownCommand(command)) => {
             eprintln!("unknown command: {command}");
@@ -298,6 +301,33 @@ fn run_snake(command: SnakeCommand) -> ExitCode {
                     ExitCode::from(1)
                 }
             }
+        }
+    }
+}
+
+fn run_snake_deploy(command: PackageInstallCommand) -> ExitCode {
+    let package_path = command.package_path;
+    let target = loopback_target(command.address, command.device_name);
+
+    match snake_deploy::run_snake_deploy(&package_path, target) {
+        Ok((install, report)) => {
+            println!(
+                "package install ok for {}: {:?}",
+                install.package_name, install.steps
+            );
+            println!(
+                "snake app-data ok on device={} service={}: reset={:?} tick={:?} state={:?}",
+                report.target.device_name_hint(),
+                report.target.service_name_hint(),
+                report.reset,
+                report.tick,
+                report.state
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("snake deploy failed: {error}");
+            ExitCode::from(1)
         }
     }
 }
@@ -714,8 +744,13 @@ where
         Some("scan") => Ok(Command::Scan),
         Some("loopback") => parse_loopback(iter).map(Command::Loopback),
         Some("lisp-probe") => parse_lisp_probe(iter).map(Command::LispProbe),
-        Some("package-install") => parse_package_install(iter).map(Command::PackageInstall),
-        Some("deploy") => parse_package_install(iter).map(Command::Deploy),
+        Some("package-install") => {
+            parse_package_install(iter, "package-install").map(Command::PackageInstall)
+        }
+        Some("deploy") => parse_package_install(iter, "deploy").map(Command::Deploy),
+        Some("snake-deploy") => {
+            parse_package_install(iter, "snake-deploy").map(Command::SnakeDeploy)
+        }
         Some("erase-package") => parse_erase_package(iter).map(Command::ErasePackage),
         Some("snake") => parse_snake(iter).map(Command::Snake),
         Some(other) => Err(ParseError::UnknownCommand(other.to_owned())),
@@ -769,6 +804,7 @@ fn parse_lisp_probe(iter: impl Iterator<Item = String>) -> Result<LispProbeComma
 
 fn parse_package_install(
     mut iter: impl Iterator<Item = String>,
+    command_name: &'static str,
 ) -> Result<PackageInstallCommand, ParseError> {
     let mut device_name = None;
     let mut address = None;
@@ -799,7 +835,7 @@ fn parse_package_install(
             device_name,
             address,
         })
-        .ok_or_else(|| ParseError::UnknownCommand("package-install".to_owned()))
+        .ok_or_else(|| ParseError::UnknownCommand(command_name.to_owned()))
 }
 
 fn parse_erase_package(
@@ -1003,6 +1039,8 @@ pub mod package_install;
 pub mod package_transport;
 /// Deterministic snake game model for host-side tests and future UI wiring.
 pub mod snake;
+/// Snake package deploy and app-data smoke-test helper.
+pub mod snake_deploy;
 /// VESC UART packet encoding, decoding, and checksum helpers.
 pub mod vesc_uart;
 
@@ -1104,6 +1142,32 @@ mod tests {
                 device_name: None,
                 address: Some("AA:BB:CC:DD:EE:FF".to_owned()),
             }))
+        );
+        assert_eq!(
+            parse_args(["cargo-vescpkg", "snake-deploy", "snake.vescpkg"]),
+            Ok(Command::SnakeDeploy(PackageInstallCommand {
+                package_path: "snake.vescpkg".to_owned(),
+                device_name: None,
+                address: None,
+            }))
+        );
+        assert_eq!(
+            parse_args([
+                "cargo-vescpkg",
+                "snake-deploy",
+                "--device",
+                "VESC BLE UART",
+                "snake.vescpkg"
+            ]),
+            Ok(Command::SnakeDeploy(PackageInstallCommand {
+                package_path: "snake.vescpkg".to_owned(),
+                device_name: Some("VESC BLE UART".to_owned()),
+                address: None,
+            }))
+        );
+        assert_eq!(
+            parse_args(["cargo-vescpkg", "snake-deploy"]),
+            Err(ParseError::UnknownCommand("snake-deploy".to_owned()))
         );
         assert_eq!(
             parse_args(["cargo-vescpkg", "erase-package"]),
