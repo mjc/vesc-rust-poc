@@ -9,7 +9,7 @@
 //!
 //! This crate owns the protocol/wire contract. Reusable physical units belong
 //! in the current `vescpkg-rs-units` crate, and VESC-domain semantic values belong in
-//! the future `vescpkg-rs-types` crate.
+//! the `vescpkg-rs` package layer.
 
 #![no_std]
 #![forbid(unused_extern_crates)]
@@ -19,6 +19,8 @@ extern crate std;
 
 /// BLE loopback wire-format helpers and response handling.
 pub mod ble_loopback;
+/// Snake protocol types and wire helpers.
+pub mod snake;
 
 /// Version tag carried by the shared loopback wire frame.
 ///
