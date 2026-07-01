@@ -410,8 +410,8 @@ impl BtlePackageInstallTransport {
                 timeout
             );
             match self.write_command(command, payload, timeout) {
-                Ok(response) => match response_is_ok(&response)? {
-                    true => {
+                Ok(response) => match response_is_ok(&response) {
+                    Ok(true) => {
                         eprintln!(
                             "package-transport: ack {} ({}) attempt {}/{} response={}",
                             command_name(command),
@@ -422,7 +422,7 @@ impl BtlePackageInstallTransport {
                         );
                         return Ok(());
                     }
-                    false if attempt + 1 < attempts => {
+                    Ok(false) if attempt + 1 < attempts => {
                         eprintln!(
                             "package-transport: rejected {} ({}) attempt {}/{}; retrying",
                             command_name(command),
@@ -432,7 +432,7 @@ impl BtlePackageInstallTransport {
                         );
                         continue;
                     }
-                    false => {
+                    Ok(false) => {
                         eprintln!(
                             "package-transport: rejected {} ({}) attempt {}/{}",
                             command_name(command),
@@ -443,6 +443,26 @@ impl BtlePackageInstallTransport {
                         return Err(PackageInstallError::Device(
                             "device rejected the package write".to_owned(),
                         ));
+                    }
+                    Err(error) if attempt + 1 < attempts => {
+                        eprintln!(
+                            "package-transport: invalid {} ({}) response attempt {}/{}: {error}; retrying",
+                            command_name(command),
+                            command,
+                            attempt + 1,
+                            attempts
+                        );
+                        continue;
+                    }
+                    Err(error) => {
+                        eprintln!(
+                            "package-transport: invalid {} ({}) response attempt {}/{}: {error}",
+                            command_name(command),
+                            command,
+                            attempt + 1,
+                            attempts
+                        );
+                        return Err(error);
                     }
                 },
                 Err(error) if attempt + 1 < attempts => {
