@@ -718,7 +718,10 @@ where
                     break;
                 }
                 let outcome = model.advance();
-                if matches!(outcome, SnakeStepOutcome::Advanced | SnakeStepOutcome::AteFood) {
+                if matches!(
+                    outcome,
+                    SnakeStepOutcome::Advanced | SnakeStepOutcome::AteFood
+                ) {
                     ticks_advanced = SnakeTick::new(ticks_advanced.get().wrapping_add(1));
                 }
             }

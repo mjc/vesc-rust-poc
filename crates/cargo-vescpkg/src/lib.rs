@@ -1,5 +1,6 @@
 //! Command-line tool for building, installing, and debugging Rust VESC packages.
 
+use std::io::{self, BufRead, Write};
 use std::process::ExitCode;
 
 /// Parsed top-level command requested by the operator-facing CLI.
@@ -82,8 +83,21 @@ pub struct SnakeCommand {
     pub moves: Vec<snake::SnakeDirection>,
     /// Scripted local-play input actions for CLI-only sessions.
     pub actions: Vec<snake::SnakeLocalAction>,
+    /// How the local Snake command should consume input.
+    pub run_mode: SnakeRunMode,
     /// Number of ticks to render after the initial frame.
     pub tick_limit: snake::SnakeTickLimit,
+}
+
+/// Input mode for the local Snake command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SnakeRunMode {
+    /// Read commands from stdin until the user quits.
+    Interactive,
+    /// Consume `--moves` as one direction per tick.
+    ScriptedMoves,
+    /// Consume `--actions` as explicit local session actions.
+    ScriptedActions,
 }
 
 /// Errors returned while parsing CLI arguments.
@@ -225,23 +239,133 @@ fn run_snake(command: SnakeCommand) -> ExitCode {
     };
     let model = snake::SnakeModel::new(board, command.seed.get());
     let mut model = model;
-    let rendered = if command.actions.is_empty() {
-        snake::render_scripted_terminal_session(&mut model, command.moves, command.tick_limit)
-    } else {
-        snake::render_local_terminal_session(&mut model, command.actions, command.tick_limit)
-            .map(|report| report.output().to_owned())
-    };
-
-    match rendered {
-        Ok(output) => {
-            print!("{output}");
-            ExitCode::SUCCESS
+    match command.run_mode {
+        SnakeRunMode::Interactive => {
+            let stdin = io::stdin();
+            let stdout = io::stdout();
+            match run_snake_interactive(&mut model, stdin.lock(), stdout.lock(), command.tick_limit)
+            {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(error) => {
+                    eprintln!("snake failed: {error:?}");
+                    ExitCode::from(1)
+                }
+            }
         }
-        Err(error) => {
-            eprintln!("snake failed: {error:?}");
-            ExitCode::from(1)
+        SnakeRunMode::ScriptedMoves => {
+            match snake::render_scripted_terminal_session(
+                &mut model,
+                command.moves,
+                command.tick_limit,
+            ) {
+                Ok(output) => {
+                    print!("{output}");
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("snake failed: {error:?}");
+                    ExitCode::from(1)
+                }
+            }
+        }
+        SnakeRunMode::ScriptedActions => {
+            match snake::render_local_terminal_session(
+                &mut model,
+                command.actions,
+                command.tick_limit,
+            ) {
+                Ok(report) => {
+                    print!("{}", report.output());
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("snake failed: {error:?}");
+                    ExitCode::from(1)
+                }
+            }
         }
     }
+}
+
+fn run_snake_interactive<R, W>(
+    model: &mut snake::SnakeModel,
+    mut input: R,
+    mut output: W,
+    tick_limit: snake::SnakeTickLimit,
+) -> Result<(), snake::SnakeTransitionError>
+where
+    R: BufRead,
+    W: Write,
+{
+    writeln!(
+        output,
+        "controls: w/a/s/d then enter to steer, enter to tick, p pause, u resume, r reset, q quit"
+    )
+    .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
+    write!(
+        output,
+        "{}",
+        snake::render_terminal_snapshot(
+            &model
+                .snapshot()
+                .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?
+        )
+    )
+    .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
+
+    let mut ticks = snake::SnakeTick::new(0);
+    let mut line = String::new();
+    while ticks.get() < u32::from(tick_limit.get()) {
+        line.clear();
+        write!(output, "snake> ").map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
+        output
+            .flush()
+            .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
+        let bytes = input
+            .read_line(&mut line)
+            .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
+        if bytes == 0 {
+            break;
+        }
+
+        let mut actions = parse_snake_line_actions(&line)
+            .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
+        if actions.is_empty() {
+            actions.push(snake::SnakeLocalAction::Tick);
+        }
+
+        for action in actions {
+            match action {
+                snake::SnakeLocalAction::Quit => return Ok(()),
+                snake::SnakeLocalAction::Tick => {
+                    let outcome = model.advance();
+                    if matches!(
+                        outcome,
+                        snake::SnakeStepOutcome::Advanced | snake::SnakeStepOutcome::AteFood
+                    ) {
+                        ticks = snake::SnakeTick::new(ticks.get().wrapping_add(1));
+                    }
+                }
+                snake::SnakeLocalAction::Turn(direction) => model.set_direction(direction)?,
+                snake::SnakeLocalAction::Pause => model.pause()?,
+                snake::SnakeLocalAction::Resume => model.resume()?,
+                snake::SnakeLocalAction::Reset => model.reset(),
+            }
+        }
+
+        write!(
+            output,
+            "{}",
+            snake::render_terminal_snapshot(
+                &model
+                    .snapshot()
+                    .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?
+            )
+        )
+        .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
+    }
+
+    Ok(())
 }
 
 fn loopback_target(
@@ -462,7 +586,8 @@ fn parse_snake(mut iter: impl Iterator<Item = String>) -> Result<SnakeCommand, P
     let mut seed = snake::SnakeSeed::new(1);
     let mut moves = Vec::new();
     let mut actions = Vec::new();
-    let mut tick_limit = snake::SnakeTickLimit::new(1).expect("default tick limit");
+    let mut run_mode = SnakeRunMode::Interactive;
+    let mut tick_limit = snake::SnakeTickLimit::new(1000).expect("default tick limit");
 
     while let Some(arg) = iter.next() {
         match arg.as_str() {
@@ -497,12 +622,14 @@ fn parse_snake(mut iter: impl Iterator<Item = String>) -> Result<SnakeCommand, P
                     .next()
                     .ok_or_else(|| ParseError::UnknownCommand("--moves".to_owned()))?;
                 moves = parse_snake_moves(&value)?;
+                run_mode = SnakeRunMode::ScriptedMoves;
             }
             "--actions" => {
                 let value = iter
                     .next()
                     .ok_or_else(|| ParseError::UnknownCommand("--actions".to_owned()))?;
                 actions = parse_snake_actions(&value)?;
+                run_mode = SnakeRunMode::ScriptedActions;
             }
             "--ticks" => {
                 let value = iter
@@ -522,6 +649,7 @@ fn parse_snake(mut iter: impl Iterator<Item = String>) -> Result<SnakeCommand, P
         seed,
         moves,
         actions,
+        run_mode,
         tick_limit,
     })
 }
@@ -584,6 +712,31 @@ fn parse_snake_actions(value: &str) -> Result<Vec<snake::SnakeLocalAction>, Pars
         .collect()
 }
 
+fn parse_snake_line_actions(value: &str) -> Result<Vec<snake::SnakeLocalAction>, ParseError> {
+    value
+        .trim()
+        .chars()
+        .map(|ch| {
+            parse_snake_action_char(ch).ok_or_else(|| ParseError::UnknownCommand(value.to_owned()))
+        })
+        .collect()
+}
+
+fn parse_snake_action_char(ch: char) -> Option<snake::SnakeLocalAction> {
+    match ch {
+        'w' | 'W' => Some(snake::SnakeLocalAction::Turn(snake::SnakeDirection::Up)),
+        'a' | 'A' => Some(snake::SnakeLocalAction::Turn(snake::SnakeDirection::Left)),
+        's' | 'S' => Some(snake::SnakeLocalAction::Turn(snake::SnakeDirection::Down)),
+        'd' | 'D' => Some(snake::SnakeLocalAction::Turn(snake::SnakeDirection::Right)),
+        '.' => Some(snake::SnakeLocalAction::Tick),
+        'p' | 'P' => Some(snake::SnakeLocalAction::Pause),
+        'u' | 'U' => Some(snake::SnakeLocalAction::Resume),
+        'r' | 'R' => Some(snake::SnakeLocalAction::Reset),
+        'q' | 'Q' => Some(snake::SnakeLocalAction::Quit),
+        _ => None,
+    }
+}
+
 fn parse_snake_tick_limit(value: &str) -> Result<snake::SnakeTickLimit, ParseError> {
     value
         .parse::<u16>()
@@ -612,7 +765,7 @@ pub mod vesc_uart;
 mod tests {
     use super::{
         Command, LispProbeCommand, LoopbackCommand, PackageEraseCommand, PackageInstallCommand,
-        ParseError, SnakeCommand, parse_args,
+        ParseError, SnakeCommand, SnakeRunMode, parse_args, run_snake_interactive,
     };
     use crate::snake::{
         SnakeBoardHeight, SnakeBoardWidth, SnakeDirection, SnakeLocalAction, SnakeSeed,
@@ -758,6 +911,20 @@ mod tests {
             Err(ParseError::UnknownCommand("extra.vescpkg".to_owned()))
         );
         assert_eq!(
+            parse_args(["cargo-vescpkg", "snake"]),
+            Ok(Command::Snake(SnakeCommand {
+                device_name: None,
+                address: None,
+                board_width: SnakeBoardWidth::new(16).expect("width"),
+                board_height: SnakeBoardHeight::new(12).expect("height"),
+                seed: SnakeSeed::new(1),
+                moves: Vec::new(),
+                actions: Vec::new(),
+                run_mode: SnakeRunMode::Interactive,
+                tick_limit: SnakeTickLimit::new(1000).expect("tick limit"),
+            }))
+        );
+        assert_eq!(
             parse_args([
                 "cargo-vescpkg",
                 "snake",
@@ -780,6 +947,7 @@ mod tests {
                 seed: SnakeSeed::new(99),
                 moves: vec![SnakeDirection::Down, SnakeDirection::Left],
                 actions: Vec::new(),
+                run_mode: SnakeRunMode::ScriptedMoves,
                 tick_limit: SnakeTickLimit::new(2).expect("tick limit"),
             }))
         );
@@ -810,6 +978,7 @@ mod tests {
                     SnakeLocalAction::Reset,
                     SnakeLocalAction::Quit,
                 ],
+                run_mode: SnakeRunMode::ScriptedActions,
                 tick_limit: SnakeTickLimit::new(12).expect("tick limit"),
             }))
         );
@@ -830,5 +999,28 @@ mod tests {
 
         assert_eq!(WireVersion::CURRENT.get(), 1);
         assert_eq!(u8::from(WireCommand::Status), 3);
+    }
+
+    #[test]
+    fn interactive_snake_loop_reads_lines_until_quit() {
+        let board = crate::snake::SnakeBoardSize::new(7, 5).expect("board");
+        let mut model = crate::snake::SnakeModel::new(board, 123);
+        let input = b"s\n\np\nu\nr\nq\n";
+        let mut output = Vec::new();
+
+        run_snake_interactive(
+            &mut model,
+            &input[..],
+            &mut output,
+            SnakeTickLimit::new(20).expect("tick limit"),
+        )
+        .expect("interactive session");
+
+        let output = String::from_utf8(output).expect("utf8");
+        assert!(output.contains("controls:"));
+        assert!(output.contains("snake> "));
+        assert!(output.contains("state=Paused"));
+        assert_eq!(model.tick(), crate::snake::SnakeTick::new(0));
+        assert_eq!(model.state(), crate::snake::SnakeSessionState::Running);
     }
 }
