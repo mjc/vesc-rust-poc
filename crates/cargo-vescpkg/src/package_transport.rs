@@ -26,8 +26,8 @@ const FW_VERSION_TIMEOUT: Duration = Duration::from_secs(8);
 const FW_VERSION_OPEN_ATTEMPTS: usize = 3;
 const FW_VERSION_OPEN_RETRY_DELAY: Duration = Duration::from_millis(750);
 const POST_LISP_RESTART_QUERY_TIMEOUT: Duration = Duration::from_secs(2);
-const LISP_SET_RUNNING_TIMEOUT: Duration = Duration::from_secs(60);
-const RECOVERY_SET_RUNNING_TIMEOUT: Duration = Duration::from_secs(3);
+const LISP_SET_RUNNING_TIMEOUT: Duration = Duration::from_secs(180);
+const RECOVERY_SET_RUNNING_TIMEOUT: Duration = Duration::from_secs(15);
 const POST_LISP_LOADER_SETTLE: Duration = Duration::from_secs(3);
 const ERASE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(6);
 const WRITE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(1);
@@ -263,7 +263,13 @@ impl BtlePackageInstallTransport {
 
     /// Best-effort short-timeout stop used when normal preflight is unavailable.
     pub fn stop_running_recovery(&self) -> Result<(), PackageInstallError> {
-        self.expect_ok(COMM_LISP_SET_RUNNING, &[0], RECOVERY_SET_RUNNING_TIMEOUT)
+        self.send_with_attempts(
+            COMM_LISP_SET_RUNNING,
+            &[0],
+            RECOVERY_SET_RUNNING_TIMEOUT,
+            1,
+            |response| parse_simple_ack(response, COMM_LISP_SET_RUNNING),
+        )
     }
 
     /// Disconnects the active BLE session, if one is open.
@@ -352,13 +358,28 @@ impl BtlePackageInstallTransport {
         timeout: Duration,
         mut response_is_ok: impl FnMut(&[u8]) -> Result<bool, PackageInstallError>,
     ) -> Result<(), PackageInstallError> {
-        for attempt in 0..WRITE_RETRIES {
+        self.send_with_attempts(command, payload, timeout, WRITE_RETRIES, |response| {
+            response_is_ok(response)
+        })
+    }
+
+    fn send_with_attempts(
+        &self,
+        command: u8,
+        payload: &[u8],
+        timeout: Duration,
+        attempts: usize,
+        mut response_is_ok: impl FnMut(&[u8]) -> Result<bool, PackageInstallError>,
+    ) -> Result<(), PackageInstallError> {
+        debug_assert!(attempts > 0);
+
+        for attempt in 0..attempts {
             eprintln!(
                 "package-transport: send {} ({}) attempt {}/{} payload={} timeout={:?}",
                 command_name(command),
                 command,
                 attempt + 1,
-                WRITE_RETRIES,
+                attempts,
                 payload.len(),
                 timeout
             );
@@ -370,18 +391,18 @@ impl BtlePackageInstallTransport {
                             command_name(command),
                             command,
                             attempt + 1,
-                            WRITE_RETRIES,
+                            attempts,
                             response.len()
                         );
                         return Ok(());
                     }
-                    false if attempt + 1 < WRITE_RETRIES => {
+                    false if attempt + 1 < attempts => {
                         eprintln!(
                             "package-transport: rejected {} ({}) attempt {}/{}; retrying",
                             command_name(command),
                             command,
                             attempt + 1,
-                            WRITE_RETRIES
+                            attempts
                         );
                         continue;
                     }
@@ -391,20 +412,20 @@ impl BtlePackageInstallTransport {
                             command_name(command),
                             command,
                             attempt + 1,
-                            WRITE_RETRIES
+                            attempts
                         );
                         return Err(PackageInstallError::Device(
                             "device rejected the package write".to_owned(),
                         ));
                     }
                 },
-                Err(error) if attempt + 1 < WRITE_RETRIES => {
+                Err(error) if attempt + 1 < attempts => {
                     eprintln!(
                         "package-transport: error {} ({}) attempt {}/{}: {error}; retrying",
                         command_name(command),
                         command,
                         attempt + 1,
-                        WRITE_RETRIES
+                        attempts
                     );
                     continue;
                 }
@@ -414,7 +435,7 @@ impl BtlePackageInstallTransport {
                         command_name(command),
                         command,
                         attempt + 1,
-                        WRITE_RETRIES
+                        attempts
                     );
                     return Err(error);
                 }
@@ -502,10 +523,12 @@ impl PackageInstallTransport for BtlePackageInstallTransport {
     }
 
     fn set_running(&self, running: bool) -> Result<(), PackageInstallError> {
-        self.expect_ok(
+        self.send_with_attempts(
             COMM_LISP_SET_RUNNING,
             &[u8::from(running)],
             LISP_SET_RUNNING_TIMEOUT,
+            1,
+            |response| parse_simple_ack(response, COMM_LISP_SET_RUNNING),
         )
     }
 
