@@ -62,18 +62,19 @@ mod tests {
     use super::{ProtocolFrame, WireCommand, WireVersion};
     use crate::types::{
         AdcDecodedLevel, AdcVoltage, AudioVoltage, AveragePower, BatteryCurrent, BatteryVoltage,
-        BaudRate, CanControllerId, CanPayloadLen, DVoltage, DirectionalMotorCurrent,
-        FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance, GearRatio, GnssLatitude,
-        GnssLongitude, GnssSpeed, ImuAcceleration, ImuAngularRate, ImuPitch, ImuQuaternion,
-        ImuRoll, ImuYaw, MechanicalSpeed, MotorCurrent, MotorPoleCount, PacketLength, PeakPower,
-        PpmAge, QVoltage, RemoteAge, SystemDuration, SystemTimestamp, ThreadPriority,
+        BaudRate, BrakeCurrentRelative, CanControllerId, CanPayloadLen, CurrentRelative, DVoltage,
+        DirectionalMotorCurrent, DutyCycle, FocMotorFluxLinkage, FocMotorInductance,
+        FocMotorResistance, GearRatio, GnssLatitude, GnssLongitude, GnssSpeed, HandbrakeRelative,
+        ImuAcceleration, ImuAngularRate, ImuPitch, ImuQuaternion, ImuRoll, ImuYaw, JoystickX,
+        JoystickY, MechanicalSpeed, MotorCurrent, MotorPoleCount, PacketLength, PeakPower, PpmAge,
+        PpmInput, QVoltage, RemoteAge, SystemDuration, SystemTimestamp, ThreadPriority,
         TimeoutDuration, TotalMotorCurrent, TripDistance, VehicleSpeed, WattHoursDischarged,
         WheelDiameter,
     };
     use vescpkg_rs_units::{
         AccelerationG, AngleRadians, AngularVelocity, Current, Distance, Energy, FluxLinkage,
         Inductance, Latitude, Longitude, MechanicalRpm, Power, Quaternion, Ratio, Resistance,
-        Speed, SystemTicks, TimestampTicks, Voltage,
+        SignedRatio, Speed, SystemTicks, TimestampTicks, Voltage,
     };
 
     #[test]
@@ -190,6 +191,27 @@ mod tests {
         assert!(BaudRate::try_new(0).is_err());
         assert!(PacketLength::try_new(0).is_err());
         assert!(CanPayloadLen::try_new(9).is_err());
+    }
+
+    #[test]
+    fn semantic_package_inputs_follow_vesc_c_if_signed_ratio_ranges() {
+        let duty = DutyCycle::new(SignedRatio::from_ratio(-0.25).expect("signed duty"));
+        let current_rel =
+            CurrentRelative::new(SignedRatio::from_ratio(-0.5).expect("signed current command"));
+        let brake_rel = BrakeCurrentRelative::new(Ratio::from_ratio(0.75).expect("brake ratio"));
+        let handbrake_rel =
+            HandbrakeRelative::new(Ratio::from_ratio(0.5).expect("handbrake ratio"));
+        let ppm = PpmInput::new(SignedRatio::from_ratio(-1.0).expect("decoded PPM"));
+        let joystick_x = JoystickX::new(SignedRatio::from_ratio(-0.2).expect("joystick X"));
+        let joystick_y = JoystickY::new(SignedRatio::from_ratio(0.8).expect("joystick Y"));
+
+        assert_eq!(duty.ratio().as_ratio(), -0.25);
+        assert_eq!(current_rel.ratio().as_ratio(), -0.5);
+        assert_eq!(brake_rel.ratio().as_ratio(), 0.75);
+        assert_eq!(handbrake_rel.ratio().as_ratio(), 0.5);
+        assert_eq!(ppm.ratio().as_ratio(), -1.0);
+        assert_eq!(joystick_x.ratio().as_ratio(), -0.2);
+        assert_eq!(joystick_y.ratio().as_ratio(), 0.8);
     }
 
     #[test]
