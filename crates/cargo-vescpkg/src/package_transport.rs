@@ -46,6 +46,19 @@ const COMM_LISP_SET_RUNNING: u8 = 133;
 const COMM_FW_VERSION: u8 = 0;
 const COMM_CUSTOM_APP_DATA: u8 = 36;
 
+fn command_name(command: u8) -> &'static str {
+    match command {
+        COMM_FW_VERSION => "COMM_FW_VERSION",
+        COMM_CUSTOM_APP_DATA => "COMM_CUSTOM_APP_DATA",
+        COMM_QMLUI_ERASE => "COMM_QMLUI_ERASE",
+        COMM_QMLUI_WRITE => "COMM_QMLUI_WRITE",
+        COMM_LISP_WRITE_CODE => "COMM_LISP_WRITE_CODE",
+        COMM_LISP_ERASE_CODE => "COMM_LISP_ERASE_CODE",
+        COMM_LISP_SET_RUNNING => "COMM_LISP_SET_RUNNING",
+        _ => "UNKNOWN",
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HwType {
     Vesc,
@@ -340,18 +353,71 @@ impl BtlePackageInstallTransport {
         mut response_is_ok: impl FnMut(&[u8]) -> Result<bool, PackageInstallError>,
     ) -> Result<(), PackageInstallError> {
         for attempt in 0..WRITE_RETRIES {
+            eprintln!(
+                "package-transport: send {} ({}) attempt {}/{} payload={} timeout={:?}",
+                command_name(command),
+                command,
+                attempt + 1,
+                WRITE_RETRIES,
+                payload.len(),
+                timeout
+            );
             match self.write_command(command, payload, timeout) {
                 Ok(response) => match response_is_ok(&response)? {
-                    true => return Ok(()),
-                    false if attempt + 1 < WRITE_RETRIES => continue,
+                    true => {
+                        eprintln!(
+                            "package-transport: ack {} ({}) attempt {}/{} response={}",
+                            command_name(command),
+                            command,
+                            attempt + 1,
+                            WRITE_RETRIES,
+                            response.len()
+                        );
+                        return Ok(());
+                    }
+                    false if attempt + 1 < WRITE_RETRIES => {
+                        eprintln!(
+                            "package-transport: rejected {} ({}) attempt {}/{}; retrying",
+                            command_name(command),
+                            command,
+                            attempt + 1,
+                            WRITE_RETRIES
+                        );
+                        continue;
+                    }
                     false => {
+                        eprintln!(
+                            "package-transport: rejected {} ({}) attempt {}/{}",
+                            command_name(command),
+                            command,
+                            attempt + 1,
+                            WRITE_RETRIES
+                        );
                         return Err(PackageInstallError::Device(
                             "device rejected the package write".to_owned(),
                         ));
                     }
                 },
-                Err(_) if attempt + 1 < WRITE_RETRIES => continue,
-                Err(error) => return Err(error),
+                Err(error) if attempt + 1 < WRITE_RETRIES => {
+                    eprintln!(
+                        "package-transport: error {} ({}) attempt {}/{}: {error}; retrying",
+                        command_name(command),
+                        command,
+                        attempt + 1,
+                        WRITE_RETRIES
+                    );
+                    continue;
+                }
+                Err(error) => {
+                    eprintln!(
+                        "package-transport: error {} ({}) attempt {}/{}: {error}",
+                        command_name(command),
+                        command,
+                        attempt + 1,
+                        WRITE_RETRIES
+                    );
+                    return Err(error);
+                }
             }
         }
 
