@@ -1,27 +1,38 @@
-# vescpkg-rs-units evaluation (deferred)
+# vescpkg-rs-units decision
 
 ## Decision
 
-Do **not** add a `vescpkg-rs-units` crate in the current epic scope.
+Keep `vescpkg-rs-units` as the generic embedded units layer for the current
+package-author API work.
 
-Physical units (speed, torque, temperature, battery state) belong outside the target SDK
-and outside raw `vescpkg-rs-sys`. They should live in a separate optional crate once real
-vehicle semantics stabilize.
+The crate owns reusable physical-ish quantities such as voltage, current,
+power, temperature, speed, distance, GNSS coordinates, and VESC system ticks.
+It does not own VESC-domain meaning. Domain-specific names such as motor
+current, battery current, FOC motor resistance, and GNSS speed belong in
+`vescpkg-rs::types`.
+
+Raw ABI values still belong in `vescpkg-rs-sys`, and raw protocol byte
+conversion belongs in `vesc-protocol`.
 
 ## Recommended direction
 
 | Option | When |
 |--------|------|
-| `vescpkg-rs-units` | Generic reusable SI/newtype helpers shared by multiple VESC packages |
+| `vescpkg-rs-units` | Generic reusable no_std unit newtypes and obvious dimensional arithmetic |
+| `vescpkg-rs::types` | VESC-specific semantic wrappers over units and raw typed tokens |
 | Project-specific crate (e.g. `cutout-units`) | Product semantics tied to one firmware/product line |
 
-## Constraints for a future crate
+## Constraints
 
 - `no_std`, no `alloc` unless proven necessary
+- Default features do not enable `std`, `alloc`, or `uom`
+- Use `fugit` for VESC system tick duration/instant modeling
+- Use explicit named accessors; do not add `From<Unit> for f32`
 - No dependency on `vescpkg-rs-build` or `vesc-cli`
-- May depend on `vesc-protocol` only if wire encodings need typed units
-- Keep out of `vescpkg-rs` prelude until at least one real package consumes typed units
+- Keep VESC-specific meaning out of the units crate
+- Keep higher-level `uom` compatibility deferred until after snake game completion
 
 ## Status
 
-Spike complete. Revisit after GPIO helpers and install API are exercised on hardware.
+Implemented for VESCR-46/VESCR-47. The current crate is intentionally small,
+`no_std`, `fugit`-backed for system time, and consumed by `vescpkg-rs::types`.
