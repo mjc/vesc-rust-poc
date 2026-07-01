@@ -2,7 +2,7 @@
 
 use std::io::{self, Write};
 use std::process::ExitCode;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::cursor::{Hide, MoveTo, Show};
 use crossterm::event::{self, Event, KeyCode, KeyEvent};
@@ -95,6 +95,8 @@ pub struct SnakeCommand {
     pub run_mode: SnakeRunMode,
     /// Number of ticks to render after the initial frame.
     pub tick_limit: snake::SnakeTickLimit,
+    /// Milliseconds between automatic Snake ticks in interactive mode.
+    pub tick_interval: snake::SnakeTickInterval,
 }
 
 /// Input mode for the local Snake command.
@@ -250,7 +252,12 @@ fn run_snake(command: SnakeCommand) -> ExitCode {
     match command.run_mode {
         SnakeRunMode::Interactive => {
             let stdout = io::stdout();
-            match run_snake_terminal(&mut model, stdout.lock(), command.tick_limit) {
+            match run_snake_terminal(
+                &mut model,
+                stdout.lock(),
+                command.tick_limit,
+                command.tick_interval,
+            ) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(error) => {
                     eprintln!("snake failed: {error:?}");
@@ -297,6 +304,7 @@ fn run_snake_terminal<W>(
     model: &mut snake::SnakeModel,
     mut output: W,
     tick_limit: snake::SnakeTickLimit,
+    tick_interval: snake::SnakeTickInterval,
 ) -> Result<(), snake::SnakeTransitionError>
 where
     W: Write,
@@ -305,7 +313,7 @@ where
     execute!(output, EnterAlternateScreen, Hide)
         .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
 
-    let result = run_snake_terminal_loop(model, &mut output, tick_limit);
+    let result = run_snake_terminal_loop(model, &mut output, tick_limit, tick_interval);
 
     let _ = execute!(output, Show, LeaveAlternateScreen);
     let _ = disable_raw_mode();
@@ -317,16 +325,25 @@ fn run_snake_terminal_loop<W>(
     model: &mut snake::SnakeModel,
     output: &mut W,
     tick_limit: snake::SnakeTickLimit,
+    tick_interval: snake::SnakeTickInterval,
 ) -> Result<(), snake::SnakeTransitionError>
 where
     W: Write,
 {
+    queue!(output, Clear(ClearType::All))
+        .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
     render_snake_terminal_frame(model, output)?;
 
+    let interval = Duration::from_millis(u64::from(tick_interval.as_millis()));
+    let mut next_tick = Instant::now() + interval;
     let mut ticks = snake::SnakeTick::new(0);
+
     while ticks.get() < u32::from(tick_limit.get()) {
-        if event::poll(Duration::from_millis(220))
-            .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?
+        let now = Instant::now();
+        let wait = next_tick.saturating_duration_since(now);
+
+        if !wait.is_zero()
+            && event::poll(wait).map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?
             && let Event::Key(key) =
                 event::read().map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?
         {
@@ -337,8 +354,11 @@ where
             }
         }
 
-        apply_snake_action(model, snake::SnakeLocalAction::Tick, &mut ticks)?;
-        render_snake_terminal_frame(model, output)?;
+        if Instant::now() >= next_tick {
+            apply_snake_action(model, snake::SnakeLocalAction::Tick, &mut ticks)?;
+            render_snake_terminal_frame(model, output)?;
+            next_tick += interval;
+        }
 
         if model.state() == snake::SnakeSessionState::GameOver {
             break;
@@ -359,21 +379,25 @@ where
         .snapshot()
         .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
     let board = snapshot.board().board();
+    let clear_width = usize::from(board.width()) + 2;
 
-    queue!(output, MoveTo(0, 0), Clear(ClearType::All))
-        .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
+    queue!(output, MoveTo(0, 0)).map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
     write!(
         output,
-        "Snake | score={} tick={} state={:?} direction={:?}\r\n",
+        "Snake | score={} tick={} state={:?} direction={:?}{:width$}\r\n",
         snapshot.score().get(),
         snapshot.tick().get(),
         snapshot.state(),
-        snapshot.direction()
+        snapshot.direction(),
+        "",
+        width = clear_width
     )
     .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
     write!(
         output,
-        "wasd/arrows steer | space pause/resume | r reset | q quit\r\n"
+        "wasd/arrows steer | space pause/resume | r reset | q quit{:width$}\r\n",
+        "",
+        width = clear_width
     )
     .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
     write!(output, "+{}+\r\n", "-".repeat(usize::from(board.width())))
@@ -690,6 +714,7 @@ fn parse_snake(mut iter: impl Iterator<Item = String>) -> Result<SnakeCommand, P
     let mut actions = Vec::new();
     let mut run_mode = SnakeRunMode::Interactive;
     let mut tick_limit = snake::SnakeTickLimit::new(1000).expect("default tick limit");
+    let mut tick_interval = snake::SnakeTickInterval::new_millis(320).expect("default interval");
 
     while let Some(arg) = iter.next() {
         match arg.as_str() {
@@ -739,6 +764,12 @@ fn parse_snake(mut iter: impl Iterator<Item = String>) -> Result<SnakeCommand, P
                     .ok_or_else(|| ParseError::UnknownCommand("--ticks".to_owned()))?;
                 tick_limit = parse_snake_tick_limit(&value)?;
             }
+            "--tick-ms" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| ParseError::UnknownCommand("--tick-ms".to_owned()))?;
+                tick_interval = parse_snake_tick_interval(&value)?;
+            }
             other => return Err(ParseError::UnknownCommand(other.to_owned())),
         }
     }
@@ -753,6 +784,7 @@ fn parse_snake(mut iter: impl Iterator<Item = String>) -> Result<SnakeCommand, P
         actions,
         run_mode,
         tick_limit,
+        tick_interval,
     })
 }
 
@@ -822,6 +854,14 @@ fn parse_snake_tick_limit(value: &str) -> Result<snake::SnakeTickLimit, ParseErr
         .ok_or_else(|| ParseError::UnknownCommand(value.to_owned()))
 }
 
+fn parse_snake_tick_interval(value: &str) -> Result<snake::SnakeTickInterval, ParseError> {
+    value
+        .parse::<u16>()
+        .ok()
+        .and_then(snake::SnakeTickInterval::new_millis)
+        .ok_or_else(|| ParseError::UnknownCommand(value.to_owned()))
+}
+
 mod ble_discovery;
 
 /// BLE UART transport, discovery, and Lisp probe helpers.
@@ -847,7 +887,7 @@ mod tests {
     };
     use crate::snake::{
         SnakeBoardHeight, SnakeBoardWidth, SnakeDirection, SnakeLocalAction, SnakeSeed,
-        SnakeTickLimit,
+        SnakeTickInterval, SnakeTickLimit,
     };
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use vesc_protocol::{WireCommand, WireVersion};
@@ -1001,6 +1041,7 @@ mod tests {
                 actions: Vec::new(),
                 run_mode: SnakeRunMode::Interactive,
                 tick_limit: SnakeTickLimit::new(1000).expect("tick limit"),
+                tick_interval: SnakeTickInterval::new_millis(320).expect("tick interval"),
             }))
         );
         assert_eq!(
@@ -1016,7 +1057,9 @@ mod tests {
                 "--moves",
                 "sa",
                 "--ticks",
-                "2"
+                "2",
+                "--tick-ms",
+                "150"
             ]),
             Ok(Command::Snake(SnakeCommand {
                 device_name: Some("VESC BLE UART".to_owned()),
@@ -1028,6 +1071,7 @@ mod tests {
                 actions: Vec::new(),
                 run_mode: SnakeRunMode::ScriptedMoves,
                 tick_limit: SnakeTickLimit::new(2).expect("tick limit"),
+                tick_interval: SnakeTickInterval::new_millis(150).expect("tick interval"),
             }))
         );
         assert_eq!(
@@ -1059,6 +1103,7 @@ mod tests {
                 ],
                 run_mode: SnakeRunMode::ScriptedActions,
                 tick_limit: SnakeTickLimit::new(12).expect("tick limit"),
+                tick_interval: SnakeTickInterval::new_millis(320).expect("tick interval"),
             }))
         );
         assert_eq!(

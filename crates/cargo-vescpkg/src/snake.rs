@@ -67,6 +67,22 @@ impl SnakeTickLimit {
     }
 }
 
+/// Milliseconds between automatic Snake ticks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SnakeTickInterval(u16);
+
+impl SnakeTickInterval {
+    /// Create a non-zero tick interval.
+    pub const fn new_millis(value: u16) -> Option<Self> {
+        if value == 0 { None } else { Some(Self(value)) }
+    }
+
+    /// Extract the interval in milliseconds.
+    pub const fn as_millis(self) -> u16 {
+        self.0
+    }
+}
+
 /// Board dimensions for the example snake.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SnakeBoardSize {
