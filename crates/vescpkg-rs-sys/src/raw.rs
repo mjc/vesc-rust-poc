@@ -608,6 +608,49 @@ pub unsafe fn vesc_clear_app_data_handler() -> bool {
     }
 }
 
+/// Allocate memory from the firmware LispBM reserve heap.
+///
+/// # Safety
+///
+/// The returned pointer must be freed with [`vesc_free`] when no longer used.
+pub unsafe fn vesc_malloc(bytes: usize) -> *mut c_void {
+    unsafe {
+        let Some(malloc) = (*vesc_if()).malloc else {
+            return core::ptr::null_mut();
+        };
+
+        malloc(bytes)
+    }
+}
+
+/// Free memory previously allocated by [`vesc_malloc`].
+///
+/// # Safety
+///
+/// `ptr` must be null or a pointer returned by the firmware allocator.
+pub unsafe fn vesc_free(ptr: *mut c_void) {
+    unsafe {
+        if let Some(free) = (*vesc_if()).free {
+            free(ptr);
+        }
+    }
+}
+
+/// Return the firmware-owned mutable `lib_info.arg` slot for a loaded native library.
+///
+/// # Safety
+///
+/// `prog_addr` must be the native library base address passed by the VESC loader.
+pub unsafe fn vesc_get_arg(prog_addr: u32) -> *mut *mut c_void {
+    unsafe {
+        let Some(get_arg) = (*vesc_if()).get_arg else {
+            return core::ptr::null_mut();
+        };
+
+        get_arg(prog_addr)
+    }
+}
+
 /// # Safety
 ///
 /// `data` must point to at least `len` bytes that remain valid for the

@@ -1,6 +1,6 @@
 //! Native loader entrypoints for the Snake example package.
 
-use vescpkg_rs::{ffi, init as pkg_init};
+use vescpkg_rs::ffi;
 
 /// VESC loader anchor in `.program_ptr`; value is unused but the section must exist.
 #[cfg(all(not(test), target_arch = "arm"))]
@@ -10,23 +10,28 @@ use vescpkg_rs::{ffi, init as pkg_init};
 static prog_ptr: u32 = 0;
 
 /// Package loader entrypoint that installs the example stop hook and reports success.
-#[cfg(not(test))]
+#[cfg(all(not(test), target_arch = "arm"))]
 #[inline(never)]
 #[unsafe(no_mangle)]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
-    let _ = pkg_init::install_stop_hook(info);
-    let Some(info) = (unsafe { info.as_ref() }) else {
-        return false;
-    };
-    crate::app_data::register_snake_app_data_handler(info)
+    crate::app_data::install_snake_app_data(info)
+}
+
+/// Host non-test builds cannot install a firmware callback.
+#[cfg(all(not(test), not(target_arch = "arm")))]
+#[inline(never)]
+#[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn package_lib_init(_info: *mut ffi::LibInfo) -> bool {
+    false
 }
 
 /// Test-build package loader entrypoint that mirrors the target init behavior.
 #[cfg(test)]
 #[unsafe(no_mangle)]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
-    let _ = pkg_init::install_stop_hook(info);
+    let _ = vescpkg_rs::init::install_stop_hook(info);
     true
 }
 

@@ -131,11 +131,6 @@ fn snake_state_byte(state: SnakeState) -> u8 {
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
-static mut SNAKE_GAME: SnakeGame = new_package_game();
-#[cfg(all(not(test), target_arch = "arm"))]
-static mut SNAKE_HANDLER_COUNT: u8 = 0;
-
-#[cfg(all(not(test), target_arch = "arm"))]
 fn loaded_image_base() -> usize {
     let loaded_handler: usize;
     unsafe {
@@ -152,8 +147,68 @@ fn loaded_image_base() -> usize {
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
-unsafe fn rebased_mut<T>(base_addr: usize, ptr: *mut T) -> *mut T {
-    (base_addr + ptr as usize) as *mut T
+struct SnakeDeviceState {
+    game: SnakeGame,
+    handler_count: u8,
+}
+
+#[cfg(all(not(test), target_arch = "arm"))]
+impl SnakeDeviceState {
+    fn new() -> Self {
+        Self {
+            game: new_package_game(),
+            handler_count: 0,
+        }
+    }
+
+    fn process(&mut self, bytes: &[u8]) -> Option<SnakeAppResponse> {
+        self.handler_count = self.handler_count.wrapping_add(1);
+        process_snake_app_data_with_count(&mut self.game, bytes, self.handler_count)
+    }
+}
+
+#[cfg(all(not(test), target_arch = "arm"))]
+unsafe fn snake_state_from_arg() -> Option<&'static mut SnakeDeviceState> {
+    let arg_slot = unsafe { vescpkg_rs::ffi::raw::vesc_get_arg(loaded_image_base() as u32) };
+    let arg_slot = unsafe { arg_slot.as_mut()? };
+    let state = (*arg_slot).cast::<SnakeDeviceState>();
+    unsafe { state.as_mut() }
+}
+
+#[cfg(all(not(test), target_arch = "arm"))]
+unsafe extern "C" fn stop_snake_package(arg: *mut core::ffi::c_void) {
+    let _ = unsafe { vescpkg_rs::ffi::raw::vesc_clear_app_data_handler() };
+    if !arg.is_null() {
+        unsafe { vescpkg_rs::ffi::raw::vesc_free(arg) };
+    }
+}
+
+/// Allocate and install the Snake package app-data state using the VESC native-library pattern.
+#[cfg(all(not(test), target_arch = "arm"))]
+pub fn install_snake_app_data(info: *mut vescpkg_rs::ffi::LibInfo) -> bool {
+    let Some(info) = (unsafe { info.as_mut() }) else {
+        return false;
+    };
+
+    let state =
+        unsafe { vescpkg_rs::ffi::raw::vesc_malloc(core::mem::size_of::<SnakeDeviceState>()) }
+            .cast::<SnakeDeviceState>();
+    if state.is_null() {
+        return false;
+    }
+
+    unsafe { state.write(SnakeDeviceState::new()) };
+    info.arg = state.cast();
+    info.stop_fun = Some(stop_snake_package);
+
+    if register_snake_app_data_handler(info) {
+        true
+    } else {
+        unsafe { vescpkg_rs::ffi::raw::vesc_free(info.arg) };
+        info.arg = core::ptr::null_mut();
+        info.stop_fun = None;
+        false
+    }
 }
 
 /// Rebase an image-relative handler address into firmware-loaded memory.
@@ -196,13 +251,10 @@ pub unsafe extern "C" fn snake_handle_app_data(data: *mut u8, len: u32) {
         return;
     }
 
-    let game = unsafe { &mut *core::ptr::addr_of_mut!(SNAKE_GAME) };
-    let handler_count_ptr = core::ptr::addr_of_mut!(SNAKE_HANDLER_COUNT);
-    let handler_count = unsafe {
-        *handler_count_ptr = (*handler_count_ptr).wrapping_add(1);
-        *handler_count_ptr
+    let Some(state) = (unsafe { snake_state_from_arg() }) else {
+        return;
     };
-    if let Some(response) = process_snake_app_data_with_count(game, bytes, handler_count) {
+    if let Some(response) = state.process(bytes) {
         let bytes = response.as_bytes();
         unsafe { vescpkg_rs::ffi::raw::vesc_send_app_data(bytes.as_ptr(), bytes.len() as u32) };
     }
