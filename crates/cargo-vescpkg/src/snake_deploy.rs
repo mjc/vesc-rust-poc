@@ -11,6 +11,8 @@ use crate::package_transport::{BtlePackageInstallTransport, VescSession};
 const COMM_CUSTOM_APP_DATA: u8 = 36;
 const POST_INSTALL_SETTLE: Duration = Duration::from_millis(1500);
 const SNAKE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
+const SNAKE_STARTUP_ATTEMPTS: usize = 8;
+const SNAKE_STARTUP_RETRY_DELAY: Duration = Duration::from_secs(2);
 
 const SNAKE_RESET: u8 = b'X';
 const SNAKE_TICK: u8 = b'T';
@@ -61,12 +63,16 @@ fn run_snake_smoke(
     session: &mut VescSession,
     target: LoopbackTarget,
 ) -> Result<SnakeDeployReport, PackageInstallError> {
-    session.confirm_fw_version(runtime)?;
+    session
+        .confirm_fw_version(runtime)
+        .map_err(|error| stage_error("post-install firmware preflight", error))?;
     session.clear_packet_state();
 
-    let reset = send_snake_command(runtime, session, SNAKE_RESET)?;
-    let tick = send_snake_command(runtime, session, SNAKE_TICK)?;
-    let state = send_snake_command(runtime, session, SNAKE_STATE)?;
+    let reset = wait_for_snake_handler(runtime, session)?;
+    let tick = send_snake_command(runtime, session, SNAKE_TICK)
+        .map_err(|error| stage_error("send Snake tick command", error))?;
+    let state = send_snake_command(runtime, session, SNAKE_STATE)
+        .map_err(|error| stage_error("send Snake state command", error))?;
 
     if tick.tick <= reset.tick {
         return Err(PackageInstallError::Device(format!(
@@ -87,6 +93,32 @@ fn run_snake_smoke(
         tick,
         state,
     })
+}
+
+fn wait_for_snake_handler(
+    runtime: &Runtime,
+    session: &mut VescSession,
+) -> Result<SnakeAppResponse, PackageInstallError> {
+    let mut last_error = None;
+    for attempt in 1..=SNAKE_STARTUP_ATTEMPTS {
+        session.clear_packet_state();
+        match send_snake_command(runtime, session, SNAKE_RESET) {
+            Ok(response) => return Ok(response),
+            Err(error) => {
+                last_error = Some(error);
+                if attempt != SNAKE_STARTUP_ATTEMPTS {
+                    std::thread::sleep(SNAKE_STARTUP_RETRY_DELAY);
+                }
+            }
+        }
+    }
+
+    Err(stage_error(
+        format!("wait for Snake app-data handler after {SNAKE_STARTUP_ATTEMPTS} attempts"),
+        last_error.unwrap_or_else(|| {
+            PackageInstallError::Device("Snake app-data handler did not reply".to_owned())
+        }),
+    ))
 }
 
 fn send_snake_command(
