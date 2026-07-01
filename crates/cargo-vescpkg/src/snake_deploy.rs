@@ -26,19 +26,34 @@ pub fn run_snake_deploy(
     let transport = BtlePackageInstallTransport::new().map_err(SnakeDeployError::Transport)?;
     transport
         .open(target.clone())
+        .map_err(|error| stage_error("open BLE package transport", error))
         .map_err(SnakeDeployError::Transport)?;
 
     let install = crate::package_install::install_package(&package, &transport)
+        .map_err(|error| stage_error("install Snake package", error))
         .map_err(SnakeDeployError::Transport)?;
 
     std::thread::sleep(POST_INSTALL_SETTLE);
 
     let report = transport
         .with_app_data_session(|runtime, session| run_snake_smoke(runtime, session, target))
+        .map_err(|error| stage_error("run Snake app-data smoke", error))
         .map_err(SnakeDeployError::Smoke)?;
 
     transport.close();
     Ok((install, report))
+}
+
+fn stage_error(stage: impl AsRef<str>, error: PackageInstallError) -> PackageInstallError {
+    match error {
+        PackageInstallError::Device(reason) => {
+            PackageInstallError::Device(format!("{}: {reason}", stage.as_ref()))
+        }
+        PackageInstallError::Io(reason) => {
+            PackageInstallError::Io(format!("{}: {reason}", stage.as_ref()))
+        }
+        PackageInstallError::InvalidPackage => PackageInstallError::InvalidPackage,
+    }
 }
 
 fn run_snake_smoke(
@@ -177,7 +192,8 @@ impl std::error::Error for SnakeDeployError {}
 
 #[cfg(test)]
 mod tests {
-    use super::{SNAKE_RESPONSE, SnakeAppResponse};
+    use super::{SNAKE_RESPONSE, SnakeAppResponse, stage_error};
+    use crate::package_install::PackageInstallError;
 
     #[test]
     fn decodes_snake_app_data_response() {
@@ -195,5 +211,19 @@ mod tests {
     fn rejects_non_snake_app_data_response() {
         assert!(SnakeAppResponse::decode(&[b'?', 1, 2, 0, 3, 0, 12, 14]).is_err());
         assert!(SnakeAppResponse::decode(&[SNAKE_RESPONSE, 1, 2]).is_err());
+    }
+
+    #[test]
+    fn stage_errors_keep_deploy_phase() {
+        let error = stage_error(
+            "open BLE package transport",
+            PackageInstallError::Device("timed out waiting for a BLE reply".to_owned()),
+        );
+
+        assert!(
+            error
+                .to_string()
+                .contains("open BLE package transport: timed out")
+        );
     }
 }
