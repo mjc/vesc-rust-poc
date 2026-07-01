@@ -14,6 +14,7 @@ use tokio::time;
 use crate::ble_discovery::{DiscoveryError, find_matching_peripheral, vesc_tool_scan_filter};
 use crate::loopback::LoopbackTarget;
 use crate::loopback::LoopbackTransportError;
+use crate::loopback_debug::describe_vesc_packet;
 use crate::package_install::{PackageInstallError, PackageInstallTransport};
 use crate::vesc_uart::{PacketDecoder, encode_packet};
 
@@ -179,7 +180,7 @@ impl VescSession {
                 if packet.first().copied() == Some(expected_command) {
                     return Ok(packet);
                 }
-                self.pending.push_back(packet);
+                self.push_pending_packet(packet, expected_command);
                 continue;
             }
 
@@ -194,12 +195,22 @@ impl VescSession {
                 if packet.first().copied() == Some(expected_command) {
                     return Ok(packet);
                 }
-                self.pending.push_back(packet);
+                self.push_pending_packet(packet, expected_command);
             }
             if let Some(packet) = self.take_pending(expected_command) {
                 return Ok(packet);
             }
         }
+    }
+
+    fn push_pending_packet(&mut self, packet: Vec<u8>, expected_command: u8) {
+        eprintln!(
+            "package-transport: pending while waiting for {} ({}): {}",
+            command_name(expected_command),
+            expected_command,
+            describe_vesc_packet(&packet)
+        );
+        self.pending.push_back(packet);
     }
 
     fn take_pending(&mut self, expected_command: u8) -> Option<Vec<u8>> {
