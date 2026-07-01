@@ -320,6 +320,49 @@ pub enum SnakeStepOutcome {
     Paused,
 }
 
+/// Input action consumed by the local CLI Snake session loop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SnakeLocalAction {
+    Turn(SnakeDirection),
+    Tick,
+    Pause,
+    Resume,
+    Reset,
+    Quit,
+}
+
+/// Whether a local CLI session ended because the user asked to quit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SnakeQuitStatus {
+    Requested,
+    NotRequested,
+}
+
+/// Summary of a deterministic local CLI Snake session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SnakeLocalSessionReport {
+    output: String,
+    ticks_advanced: SnakeTick,
+    quit_status: SnakeQuitStatus,
+}
+
+impl SnakeLocalSessionReport {
+    /// Rendered terminal frames captured during the session.
+    pub fn output(&self) -> &str {
+        &self.output
+    }
+
+    /// Number of tick actions that advanced the running model.
+    pub const fn ticks_advanced(&self) -> SnakeTick {
+        self.ticks_advanced
+    }
+
+    /// Whether the session stopped because quit was requested.
+    pub const fn quit_status(&self) -> SnakeQuitStatus {
+        self.quit_status
+    }
+}
+
 /// Error returned when constructing or snapshotting the example model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SnakeModelError {
@@ -650,6 +693,58 @@ where
     Ok(output)
 }
 
+/// Render a deterministic local session from typed input actions.
+pub fn render_local_terminal_session<I>(
+    model: &mut SnakeModel,
+    actions: I,
+    tick_limit: SnakeTickLimit,
+) -> Result<SnakeLocalSessionReport, SnakeTransitionError>
+where
+    I: IntoIterator<Item = SnakeLocalAction>,
+{
+    let mut output = render_terminal_snapshot(
+        &model
+            .snapshot()
+            .map_err(|_| SnakeTransitionError::AlreadyRunning)?,
+    );
+    let mut ticks_advanced = SnakeTick::new(0);
+    let mut quit_status = SnakeQuitStatus::NotRequested;
+
+    for action in actions {
+        match action {
+            SnakeLocalAction::Turn(direction) => model.set_direction(direction)?,
+            SnakeLocalAction::Tick => {
+                if ticks_advanced.get() >= u32::from(tick_limit.get()) {
+                    break;
+                }
+                let outcome = model.advance();
+                if matches!(outcome, SnakeStepOutcome::Advanced | SnakeStepOutcome::AteFood) {
+                    ticks_advanced = SnakeTick::new(ticks_advanced.get().wrapping_add(1));
+                }
+            }
+            SnakeLocalAction::Pause => model.pause()?,
+            SnakeLocalAction::Resume => model.resume()?,
+            SnakeLocalAction::Reset => model.reset(),
+            SnakeLocalAction::Quit => {
+                quit_status = SnakeQuitStatus::Requested;
+                break;
+            }
+        }
+
+        output.push_str(&render_terminal_snapshot(
+            &model
+                .snapshot()
+                .map_err(|_| SnakeTransitionError::AlreadyRunning)?,
+        ));
+    }
+
+    Ok(SnakeLocalSessionReport {
+        output,
+        ticks_advanced,
+        quit_status,
+    })
+}
+
 fn is_reverse(current: SnakeDirection, requested: SnakeDirection) -> bool {
     matches!(
         (current, requested),
@@ -810,5 +905,38 @@ mod tests {
         assert!(output.contains("tick=1"));
         assert!(output.contains("tick=2"));
         assert_eq!(model.direction(), SnakeDirection::Left);
+    }
+
+    #[test]
+    fn local_session_consumes_play_actions_until_quit() {
+        let board = SnakeBoardSize::new(7, 5).expect("board");
+        let mut model = SnakeModel::new(board, 123);
+
+        let report = render_local_terminal_session(
+            &mut model,
+            [
+                SnakeLocalAction::Turn(SnakeDirection::Down),
+                SnakeLocalAction::Tick,
+                SnakeLocalAction::Pause,
+                SnakeLocalAction::Tick,
+                SnakeLocalAction::Resume,
+                SnakeLocalAction::Tick,
+                SnakeLocalAction::Reset,
+                SnakeLocalAction::Tick,
+                SnakeLocalAction::Quit,
+                SnakeLocalAction::Tick,
+            ],
+            SnakeTickLimit::new(20).expect("tick limit"),
+        )
+        .expect("local session");
+
+        assert_eq!(report.ticks_advanced(), SnakeTick::new(3));
+        assert_eq!(model.tick(), SnakeTick::new(1));
+        assert_eq!(model.state(), SnakeSessionState::Running);
+        assert_eq!(report.quit_status(), SnakeQuitStatus::Requested);
+        assert!(report.output().contains("state=Paused"));
+        assert!(report.output().contains("tick=0"));
+        assert!(report.output().contains("tick=1"));
+        assert!(!report.output().contains("tick=4"));
     }
 }
