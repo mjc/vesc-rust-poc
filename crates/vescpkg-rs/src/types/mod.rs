@@ -23,10 +23,12 @@
 //! let _: u8 = id.into();
 //! ```
 
+pub mod adc;
 pub mod battery;
 pub mod can;
 pub mod config;
 pub mod gnss;
+pub mod imu;
 pub mod io;
 pub mod motion;
 pub mod motor;
@@ -35,6 +37,7 @@ pub mod ratio;
 pub mod temperature;
 pub mod time;
 
+pub use adc::{AdcDecodedLevel, AdcVoltage};
 pub use battery::{
     AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, BatteryVoltage, CellVoltage,
     InputCurrent, InputVoltage, WattHoursCharged, WattHoursDischarged, WattHoursRemaining,
@@ -46,6 +49,7 @@ pub use config::{
     WheelDiameter,
 };
 pub use gnss::{GnssAltitude, GnssLatitude, GnssLongitude, GnssSpeed};
+pub use imu::{ImuAcceleration, ImuAngularRate, ImuPitch, ImuQuaternion, ImuRoll, ImuYaw};
 pub use io::{
     BaudRate, BaudRateError, PacketLength, PacketLengthError, ThreadPriority, ThreadPriorityError,
 };

@@ -25,6 +25,14 @@ scalar_unit!(
     "meters per second"
 );
 scalar_unit!(AngleDegrees, from_degrees, as_degrees, "degrees");
+scalar_unit!(AngleRadians, from_radians, as_radians, "radians");
+scalar_unit!(AccelerationG, from_g, as_g, "g");
+scalar_unit!(
+    AngularVelocity,
+    from_degrees_per_second,
+    as_degrees_per_second,
+    "degrees per second"
+);
 scalar_int_unit!(
     TachometerSteps,
     from_steps,

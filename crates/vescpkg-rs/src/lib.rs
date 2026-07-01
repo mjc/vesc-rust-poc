@@ -61,16 +61,19 @@ pub mod types;
 mod tests {
     use super::{ProtocolFrame, WireCommand, WireVersion};
     use crate::types::{
-        AudioVoltage, AveragePower, BatteryCurrent, BatteryVoltage, BaudRate, CanControllerId,
-        CanPayloadLen, DVoltage, DirectionalMotorCurrent, FocMotorFluxLinkage, FocMotorInductance,
-        FocMotorResistance, GearRatio, GnssLatitude, GnssLongitude, GnssSpeed, MechanicalSpeed,
-        MotorCurrent, MotorPoleCount, PacketLength, PeakPower, PpmAge, QVoltage, RemoteAge,
-        SystemDuration, SystemTimestamp, ThreadPriority, TimeoutDuration, TotalMotorCurrent,
-        TripDistance, VehicleSpeed, WattHoursDischarged, WheelDiameter,
+        AdcDecodedLevel, AdcVoltage, AudioVoltage, AveragePower, BatteryCurrent, BatteryVoltage,
+        BaudRate, CanControllerId, CanPayloadLen, DVoltage, DirectionalMotorCurrent,
+        FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance, GearRatio, GnssLatitude,
+        GnssLongitude, GnssSpeed, ImuAcceleration, ImuAngularRate, ImuPitch, ImuQuaternion,
+        ImuRoll, ImuYaw, MechanicalSpeed, MotorCurrent, MotorPoleCount, PacketLength, PeakPower,
+        PpmAge, QVoltage, RemoteAge, SystemDuration, SystemTimestamp, ThreadPriority,
+        TimeoutDuration, TotalMotorCurrent, TripDistance, VehicleSpeed, WattHoursDischarged,
+        WheelDiameter,
     };
     use vescpkg_rs_units::{
-        Current, Distance, Energy, FluxLinkage, Inductance, Latitude, Longitude, MechanicalRpm,
-        Power, Resistance, Speed, SystemTicks, TimestampTicks, Voltage,
+        AccelerationG, AngleRadians, AngularVelocity, Current, Distance, Energy, FluxLinkage,
+        Inductance, Latitude, Longitude, MechanicalRpm, Power, Ratio, Resistance, Speed,
+        SystemTicks, TimestampTicks, Voltage,
     };
 
     #[test]
@@ -187,6 +190,36 @@ mod tests {
         assert!(BaudRate::try_new(0).is_err());
         assert!(PacketLength::try_new(0).is_err());
         assert!(CanPayloadLen::try_new(9).is_err());
+    }
+
+    #[test]
+    fn semantic_adc_and_proven_imu_types_wrap_firmware_units() {
+        let adc_voltage = AdcVoltage::new(Voltage::from_volts(1.65));
+        let adc_level = AdcDecodedLevel::try_new(Ratio::from_ratio(0.5).expect("normalized level"))
+            .expect("firmware decoded ADC level");
+        let roll = ImuRoll::new(AngleRadians::from_radians(0.25));
+        let pitch = ImuPitch::new(AngleRadians::from_radians(-0.125));
+        let yaw = ImuYaw::new(AngleRadians::from_radians(1.0));
+        let accel = ImuAcceleration::new([
+            AccelerationG::from_g(0.0),
+            AccelerationG::from_g(0.0),
+            AccelerationG::from_g(1.0),
+        ]);
+        let gyro = ImuAngularRate::new([
+            AngularVelocity::from_degrees_per_second(1.0),
+            AngularVelocity::from_degrees_per_second(2.0),
+            AngularVelocity::from_degrees_per_second(3.0),
+        ]);
+        let quat = ImuQuaternion::new([1.0, 0.0, 0.0, 0.0]);
+
+        assert_eq!(adc_voltage.voltage().as_volts(), 1.65);
+        assert_eq!(adc_level.ratio().as_ratio(), 0.5);
+        assert_eq!(roll.angle().as_radians(), 0.25);
+        assert_eq!(pitch.angle().as_radians(), -0.125);
+        assert_eq!(yaw.angle().as_radians(), 1.0);
+        assert_eq!(accel.xyz()[2].as_g(), 1.0);
+        assert_eq!(gyro.xyz()[1].as_degrees_per_second(), 2.0);
+        assert_eq!(quat.components(), [1.0, 0.0, 0.0, 0.0]);
     }
 }
 

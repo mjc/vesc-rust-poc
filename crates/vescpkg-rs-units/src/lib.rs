@@ -79,7 +79,8 @@ pub use battery::{AmpHours, Charge, DistancePerEnergy, Energy, EnergyPerDistance
 pub use electrical::{Current, FluxLinkage, Inductance, Power, Resistance, Voltage};
 pub use gnss::{GnssAccuracy, Hdop, Height, Latitude, Longitude};
 pub use motion::{
-    AngleDegrees, Distance, ElectricalRpm, MechanicalRpm, OdometerMeters, Speed, TachometerSteps,
+    AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Distance, ElectricalRpm,
+    MechanicalRpm, OdometerMeters, Speed, TachometerSteps,
 };
 pub use ratio::{DutyCycle, Percent, Pwm, Ratio, SignedRatio};
 pub use temperature::Temperature;
@@ -230,9 +231,10 @@ pub(crate) use scalar_unit_f64;
 #[cfg(test)]
 mod tests {
     use super::{
-        AmpHours, Current, Distance, DistancePerEnergy, DutyCycle, ElectricalRpm, Energy,
-        EnergyPerDistance, Frequency, Latitude, Longitude, Percent, Power, Ratio, SampleRate,
-        Speed, SystemTicks, Temperature, Voltage, WattHours,
+        AccelerationG, AmpHours, AngleRadians, AngularVelocity, Current, Distance,
+        DistancePerEnergy, DutyCycle, ElectricalRpm, Energy, EnergyPerDistance, Frequency,
+        Latitude, Longitude, Percent, Power, Ratio, SampleRate, Speed, SystemTicks, Temperature,
+        Voltage, WattHours,
     };
 
     #[test]
@@ -261,6 +263,12 @@ mod tests {
         assert_eq!(longitude_degrees, -105.2705);
         assert_eq!(Frequency::from_hertz(1000.0).as_hertz(), 1000.0);
         assert_eq!(SampleRate::from_hertz(200.0).as_hertz(), 200.0);
+        assert_eq!(AngleRadians::from_radians(1.5).as_radians(), 1.5);
+        assert_eq!(AccelerationG::from_g(1.0).as_g(), 1.0);
+        assert_eq!(
+            AngularVelocity::from_degrees_per_second(90.0).as_degrees_per_second(),
+            90.0
+        );
     }
 
     #[test]

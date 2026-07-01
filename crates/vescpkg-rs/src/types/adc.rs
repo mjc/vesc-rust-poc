@@ -1,0 +1,42 @@
+//! ADC semantic wrappers.
+
+use crate::units::{Ratio, Voltage};
+
+/// Firmware ADC pin voltage.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct AdcVoltage(Voltage);
+
+impl AdcVoltage {
+    /// Wrap a generic voltage as a firmware ADC pin voltage.
+    pub const fn new(voltage: Voltage) -> Self {
+        Self(voltage)
+    }
+
+    /// Return the typed voltage without erasing it to a primitive.
+    pub const fn voltage(self) -> Voltage {
+        self.0
+    }
+}
+
+/// Firmware decoded ADC level normalized to 0.0..=1.0.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct AdcDecodedLevel(Ratio);
+
+impl AdcDecodedLevel {
+    /// Wrap a checked normalized ratio as a decoded ADC level.
+    pub const fn new(level: Ratio) -> Self {
+        Self(level)
+    }
+
+    /// Compatibility constructor matching checked semantic-token style.
+    pub const fn try_new(level: Ratio) -> Result<Self, core::convert::Infallible> {
+        Ok(Self(level))
+    }
+
+    /// Return the typed ratio without erasing it to a primitive.
+    pub const fn ratio(self) -> Ratio {
+        self.0
+    }
+}
