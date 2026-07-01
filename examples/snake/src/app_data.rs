@@ -119,15 +119,22 @@ fn snake_state_byte(state: SnakeState) -> u8 {
 #[cfg(all(not(test), target_arch = "arm"))]
 static mut SNAKE_GAME: SnakeGame = new_package_game();
 
+/// Rebase an image-relative handler address into firmware-loaded memory.
+pub fn rebase_handler_addr(info: &vescpkg_rs::ffi::LibInfo, handler_addr: usize) -> usize {
+    vescpkg_rs::ffi::NativeImage::from_info(info).rebase_addr(handler_addr)
+}
+
 /// Register the Snake app-data handler with firmware.
 #[cfg(all(not(test), target_arch = "arm"))]
-pub fn register_snake_app_data_handler() -> bool {
-    unsafe { vescpkg_rs::ffi::raw::vesc_set_app_data_handler(snake_handle_app_data) }
+pub fn register_snake_app_data_handler(info: &vescpkg_rs::ffi::LibInfo) -> bool {
+    let handler_addr = rebase_handler_addr(info, snake_handle_app_data as *const () as usize);
+    let handler: vescpkg_rs::ffi::AppDataHandler = unsafe { core::mem::transmute(handler_addr) };
+    unsafe { vescpkg_rs::ffi::raw::vesc_set_app_data_handler(handler) }
 }
 
 /// Host non-test builds cannot install a firmware callback.
 #[cfg(all(not(test), not(target_arch = "arm")))]
-pub fn register_snake_app_data_handler() -> bool {
+pub fn register_snake_app_data_handler(_info: &vescpkg_rs::ffi::LibInfo) -> bool {
     false
 }
 
@@ -150,8 +157,9 @@ pub unsafe extern "C" fn snake_handle_app_data(data: *mut u8, len: u32) {
 
 #[cfg(test)]
 mod tests {
-    use super::{SnakeAppCommand, new_package_game, process_snake_app_data};
+    use super::{SnakeAppCommand, new_package_game, process_snake_app_data, rebase_handler_addr};
     use crate::game::{SnakeCell, SnakeDirection, SnakeState, SnakeTick};
+    use vescpkg_rs::ffi::LibInfo;
 
     #[test]
     fn app_data_tick_advances_and_reports_state() {
@@ -188,5 +196,16 @@ mod tests {
         assert!(process_snake_app_data(&mut game, &[SnakeAppCommand::RESET.0]).is_some());
         assert_eq!(game.tick(), SnakeTick::new(0));
         assert_eq!(game.state(), SnakeState::Running);
+    }
+
+    #[test]
+    fn app_data_handler_address_is_rebased_from_loader_metadata() {
+        let info = LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0x2000,
+        };
+
+        assert_eq!(rebase_handler_addr(&info, 0xb1), 0x20b1);
     }
 }

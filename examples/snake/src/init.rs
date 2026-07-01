@@ -13,9 +13,12 @@ static prog_ptr: u32 = 0;
 #[cfg(not(test))]
 #[inline(never)]
 #[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
     let _ = pkg_init::install_stop_hook(info);
-    let _ = crate::app_data::register_snake_app_data_handler();
+    if let Some(info) = unsafe { info.as_ref() } {
+        let _ = crate::app_data::register_snake_app_data_handler(info);
+    }
     true
 }
 
