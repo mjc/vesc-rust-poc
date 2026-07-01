@@ -23,6 +23,8 @@ const VESC_BLE_UART_TX_UUID: uuid::Uuid = uuid::Uuid::from_u128(0x6e400003b5a3f3
 const SCAN_TIMEOUT: Duration = Duration::from_secs(8);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 const FW_VERSION_TIMEOUT: Duration = Duration::from_secs(8);
+const FW_VERSION_OPEN_ATTEMPTS: usize = 3;
+const FW_VERSION_OPEN_RETRY_DELAY: Duration = Duration::from_millis(750);
 const POST_LISP_RESTART_QUERY_TIMEOUT: Duration = Duration::from_secs(2);
 const LISP_SET_RUNNING_TIMEOUT: Duration = Duration::from_secs(60);
 const POST_LISP_LOADER_SETTLE: Duration = Duration::from_secs(3);
@@ -92,6 +94,31 @@ impl VescSession {
 
     fn query_fw_info(&mut self, runtime: &Runtime) -> Result<FwVersionInfo, PackageInstallError> {
         self.query_fw_info_with_timeout(runtime, FW_VERSION_TIMEOUT)
+    }
+
+    fn query_fw_info_with_retries(
+        &mut self,
+        runtime: &Runtime,
+        attempts: usize,
+        retry_delay: Duration,
+    ) -> Result<FwVersionInfo, PackageInstallError> {
+        let mut last_error = None;
+        for attempt in 1..=attempts {
+            self.clear_packet_state();
+            match self.query_fw_info(runtime) {
+                Ok(info) => return Ok(info),
+                Err(error) => {
+                    last_error = Some(error);
+                    if attempt != attempts {
+                        thread::sleep(retry_delay);
+                    }
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| {
+            PackageInstallError::Device("timed out waiting for firmware preflight".to_owned())
+        }))
     }
 
     pub(crate) fn clear_packet_state(&mut self) {
@@ -245,7 +272,11 @@ impl BtlePackageInstallTransport {
         let mut session = self
             .runtime
             .block_on(async move { open_session(target).await })?;
-        session.fw_info = session.query_fw_info(&self.runtime)?;
+        session.fw_info = session.query_fw_info_with_retries(
+            &self.runtime,
+            FW_VERSION_OPEN_ATTEMPTS,
+            FW_VERSION_OPEN_RETRY_DELAY,
+        )?;
         *self.session.borrow_mut() = Some(session);
         Ok(())
     }
