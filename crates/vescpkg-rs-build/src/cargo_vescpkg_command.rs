@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use crate::{
     BLE_LOOPBACK_PACKAGE_NAME, PackageBinaryConversionRunner, PackageTargetError,
-    PackageTargetMode, PackageTargetPlan,
+    PackageTargetMode, PackageTargetPlan, SNAKE_PACKAGE_NAME,
 };
 
 /// Default package version used by the cargo subcommand wrapper.
@@ -22,10 +22,20 @@ pub enum CargoVescPkgMode {
     BuildPackageOnly,
 }
 
+/// Example package selected by `cargo vescpkg build`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CargoVescPkgExample {
+    /// Existing BLE loopback package example.
+    Loopback,
+    /// Snake package example.
+    Snake,
+}
+
 /// Parsed `cargo vescpkg` invocation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CargoVescPkgInvocation {
     mode: CargoVescPkgMode,
+    example: CargoVescPkgExample,
     package_version: String,
     target_triple: String,
 }
@@ -39,6 +49,10 @@ pub enum CargoVescPkgParseError {
     UnexpectedSubcommand(String),
     /// `--target` was provided without a value.
     MissingTargetValue,
+    /// `--example` was provided without a value.
+    MissingExampleValue,
+    /// `--example` selected an unsupported package example.
+    UnsupportedExample(String),
     /// An unsupported flag or positional argument was provided.
     UnexpectedArgument(String),
 }
@@ -60,6 +74,10 @@ impl std::fmt::Display for CargoVescPkgParseError {
                 write!(f, "unexpected cargo vescpkg subcommand: {subcommand}")
             }
             Self::MissingTargetValue => f.write_str("missing value for --target"),
+            Self::MissingExampleValue => f.write_str("missing value for --example"),
+            Self::UnsupportedExample(example) => {
+                write!(f, "unsupported cargo vescpkg example: {example}")
+            }
             Self::UnexpectedArgument(argument) => {
                 write!(f, "unexpected cargo vescpkg argument: {argument}")
             }
@@ -85,9 +103,16 @@ impl CargoVescPkgInvocation {
     pub fn new(mode: CargoVescPkgMode) -> Self {
         Self {
             mode,
+            example: CargoVescPkgExample::Loopback,
             package_version: DEFAULT_PACKAGE_VERSION.to_owned(),
             target_triple: DEFAULT_TARGET_TRIPLE.to_owned(),
         }
+    }
+
+    /// Override the selected package example.
+    pub fn with_example(mut self, example: CargoVescPkgExample) -> Self {
+        self.example = example;
+        self
     }
 
     /// Override the package version used by the invocation.
@@ -107,6 +132,11 @@ impl CargoVescPkgInvocation {
         self.mode
     }
 
+    /// Return the selected package example.
+    pub fn example(&self) -> CargoVescPkgExample {
+        self.example
+    }
+
     /// Return the package version.
     pub fn package_version(&self) -> &str {
         &self.package_version
@@ -117,11 +147,27 @@ impl CargoVescPkgInvocation {
         &self.target_triple
     }
 
+    /// Return the package name associated with the selected example.
+    pub fn package_name(&self) -> &'static str {
+        match self.example {
+            CargoVescPkgExample::Loopback => BLE_LOOPBACK_PACKAGE_NAME,
+            CargoVescPkgExample::Snake => SNAKE_PACKAGE_NAME,
+        }
+    }
+
     /// Render the cargo subcommand arguments implied by this invocation.
     pub fn subcommand_args(&self) -> Vec<String> {
         let mut args = vec![BUILD_SUBCOMMAND.to_owned()];
         if matches!(self.mode, CargoVescPkgMode::BuildPackageOnly) {
             args.push("--package-only".to_owned());
+        }
+        if !matches!(self.example, CargoVescPkgExample::Loopback) {
+            args.push("--example".to_owned());
+            args.push(match self.example {
+                CargoVescPkgExample::Loopback => "loopback",
+                CargoVescPkgExample::Snake => "snake",
+            }
+            .to_owned());
         }
         args.push("--target".to_owned());
         args.push(self.target_triple.clone());
@@ -140,7 +186,7 @@ impl CargoVescPkgInvocation {
     pub fn package_target_plan(&self, repo_root: impl Into<PathBuf>) -> PackageTargetPlan {
         PackageTargetPlan::new(
             repo_root,
-            BLE_LOOPBACK_PACKAGE_NAME,
+            self.package_name(),
             self.package_version.clone(),
             self.package_target_mode(),
         )
@@ -179,10 +225,17 @@ where
     }
 
     let mut mode = CargoVescPkgMode::Build;
+    let mut example = CargoVescPkgExample::Loopback;
     let mut target_triple = DEFAULT_TARGET_TRIPLE.to_owned();
     while let Some(argument) = args.next() {
         match argument.as_ref() {
             "--package-only" => mode = CargoVescPkgMode::BuildPackageOnly,
+            "--example" => {
+                let Some(value) = args.next() else {
+                    return Err(CargoVescPkgParseError::MissingExampleValue);
+                };
+                example = parse_example(value.as_ref())?;
+            }
             "--target" => {
                 let Some(value) = args.next() else {
                     return Err(CargoVescPkgParseError::MissingTargetValue);
@@ -196,7 +249,19 @@ where
         }
     }
 
-    Ok(CargoVescPkgInvocation::new(mode).with_target_triple(target_triple))
+    Ok(CargoVescPkgInvocation::new(mode)
+        .with_example(example)
+        .with_target_triple(target_triple))
+}
+
+fn parse_example(value: &str) -> Result<CargoVescPkgExample, CargoVescPkgParseError> {
+    match value {
+        "loopback" => Ok(CargoVescPkgExample::Loopback),
+        "snake" => Ok(CargoVescPkgExample::Snake),
+        other => Err(CargoVescPkgParseError::UnsupportedExample(
+            other.to_owned(),
+        )),
+    }
 }
 
 /// Parse and execute a `cargo vescpkg` invocation with a custom runner.
@@ -322,6 +387,32 @@ mod tests {
     }
 
     #[test]
+    fn parses_the_snake_example_invocation() {
+        let invocation = parse_args(["build", "--example", "snake"])
+            .expect("parse snake example invocation");
+
+        assert_eq!(invocation.mode(), CargoVescPkgMode::Build);
+        assert_eq!(
+            invocation.subcommand_args(),
+            vec![
+                "build".to_owned(),
+                "--example".to_owned(),
+                "snake".to_owned(),
+                "--target".to_owned(),
+                DEFAULT_TARGET_TRIPLE.to_owned(),
+            ]
+        );
+        assert_eq!(
+            invocation
+                .package_target_plan("/tmp/repo")
+                .package_output_path(),
+            PathBuf::from(
+                "target/vescpkg/Rust-Snake-example-package-0.1.0/Rust-Snake-example-package-0.1.0.vescpkg"
+            )
+        );
+    }
+
+    #[test]
     fn package_target_plan_tracks_the_package_version_and_mode() {
         let invocation = CargoVescPkgInvocation::new(CargoVescPkgMode::Build)
             .with_package_version("0.1.0")
@@ -399,5 +490,19 @@ mod tests {
             error,
             CargoVescPkgError::Parse(super::CargoVescPkgParseError::UnexpectedSubcommand(_))
         ));
+    }
+
+    #[test]
+    fn parse_args_rejects_unknown_examples() {
+        assert_eq!(
+            parse_args(["build", "--example"]),
+            Err(super::CargoVescPkgParseError::MissingExampleValue)
+        );
+        assert_eq!(
+            parse_args(["build", "--example", "pong"]),
+            Err(super::CargoVescPkgParseError::UnsupportedExample(
+                "pong".to_owned()
+            ))
+        );
     }
 }
