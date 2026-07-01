@@ -29,6 +29,7 @@ const FW_VERSION_OPEN_RETRY_DELAY: Duration = Duration::from_millis(750);
 const POST_LISP_RESTART_QUERY_TIMEOUT: Duration = Duration::from_secs(2);
 const LISP_SET_RUNNING_TIMEOUT: Duration = Duration::from_secs(180);
 const RECOVERY_SET_RUNNING_TIMEOUT: Duration = Duration::from_secs(15);
+const POST_LISP_UPLOAD_SETTLE: Duration = Duration::from_millis(750);
 const POST_LISP_LOADER_SETTLE: Duration = Duration::from_secs(3);
 const ERASE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(6);
 const WRITE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(1);
@@ -530,6 +531,12 @@ impl PackageInstallTransport for BtlePackageInstallTransport {
             )?;
         }
 
+        thread::sleep(POST_LISP_UPLOAD_SETTLE);
+        self.with_session(|session| {
+            session.clear_packet_state();
+            Ok(())
+        })?;
+
         Ok(())
     }
 
@@ -876,6 +883,27 @@ mod tests {
 
         let custom_lisp = vec![0_u8; 1024 * 128];
         assert!(build_lisp_upload_payload(&custom_lisp, HwType::CustomModule).is_ok());
+    }
+
+    #[test]
+    fn lisp_upload_payload_matches_flash_helper_header_contract() {
+        let mut lisp_data = Vec::new();
+        lisp_data.extend_from_slice(&0_u16.to_be_bytes());
+        lisp_data.extend_from_slice(b"(print \"hello\")\0");
+        lisp_data.extend_from_slice(&0_i16.to_be_bytes());
+
+        let payload = build_lisp_upload_payload(&lisp_data, HwType::Vesc).expect("lisp payload");
+
+        assert_eq!(
+            u32::from_be_bytes(payload[0..4].try_into().expect("length header")),
+            (lisp_data.len() - 2) as u32
+        );
+        assert_eq!(
+            u16::from_be_bytes(payload[4..6].try_into().expect("crc header")),
+            crate::vesc_uart::crc16(&lisp_data)
+        );
+        assert_eq!(&payload[6..8], &0_u16.to_be_bytes());
+        assert_eq!(&payload[8..], &lisp_data[2..]);
     }
 
     #[test]
