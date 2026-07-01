@@ -23,6 +23,8 @@ pub enum Command {
     ErasePackage(PackageEraseCommand),
     /// Build, install, and smoke-test a package on a target device.
     Deploy(PackageInstallCommand),
+    /// Run the terminal Snake example surface.
+    Snake(SnakeCommand),
 }
 
 /// Arguments for the `loopback` command.
@@ -61,6 +63,21 @@ pub struct PackageEraseCommand {
     pub device_name: Option<String>,
     /// Optional BLE address filter.
     pub address: Option<String>,
+}
+
+/// Arguments for the `snake` example command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SnakeCommand {
+    /// Optional BLE device-name filter.
+    pub device_name: Option<String>,
+    /// Optional BLE address filter.
+    pub address: Option<String>,
+    /// Board width in cells.
+    pub board_width: snake::SnakeBoardWidth,
+    /// Board height in cells.
+    pub board_height: snake::SnakeBoardHeight,
+    /// Deterministic seed used by scripted and fake sessions.
+    pub seed: snake::SnakeSeed,
 }
 
 /// Errors returned while parsing CLI arguments.
@@ -185,9 +202,37 @@ where
         }
         Ok(Command::PackageInstall(command)) => run_package_install(command),
         Ok(Command::ErasePackage(command)) => run_package_erase(command),
+        Ok(Command::Snake(command)) => run_snake(command),
         Err(ParseError::UnknownCommand(command)) => {
             eprintln!("unknown command: {command}");
             ExitCode::from(2)
+        }
+    }
+}
+
+fn run_snake(command: SnakeCommand) -> ExitCode {
+    let Some(board) =
+        snake::SnakeBoardSize::new(command.board_width.get(), command.board_height.get())
+    else {
+        eprintln!("snake failed: invalid board size");
+        return ExitCode::from(2);
+    };
+    let model = snake::SnakeModel::new(board, command.seed.get());
+    match model.snapshot() {
+        Ok(snapshot) => {
+            println!(
+                "snake ready: {}x{} score={} tick={} direction={:?}",
+                snapshot.board().board().width(),
+                snapshot.board().board().height(),
+                snapshot.score().get(),
+                snapshot.tick().get(),
+                snapshot.direction()
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("snake failed: {error:?}");
+            ExitCode::from(1)
         }
     }
 }
@@ -287,6 +332,7 @@ where
         Some("package-install") => parse_package_install(iter).map(Command::PackageInstall),
         Some("deploy") => parse_package_install(iter).map(Command::Deploy),
         Some("erase-package") => parse_erase_package(iter).map(Command::ErasePackage),
+        Some("snake") => parse_snake(iter).map(Command::Snake),
         Some(other) => Err(ParseError::UnknownCommand(other.to_owned())),
     }
 }
@@ -401,6 +447,81 @@ fn parse_erase_package(
     })
 }
 
+fn parse_snake(mut iter: impl Iterator<Item = String>) -> Result<SnakeCommand, ParseError> {
+    let mut device_name = None;
+    let mut address = None;
+    let mut board_width = snake::SnakeBoardWidth::new(16).expect("default width");
+    let mut board_height = snake::SnakeBoardHeight::new(12).expect("default height");
+    let mut seed = snake::SnakeSeed::new(1);
+
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--device" => {
+                device_name = Some(
+                    iter.next()
+                        .ok_or_else(|| ParseError::UnknownCommand("--device".to_owned()))?,
+                );
+            }
+            "--address" => {
+                address = Some(
+                    iter.next()
+                        .ok_or_else(|| ParseError::UnknownCommand("--address".to_owned()))?,
+                );
+            }
+            "--board" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| ParseError::UnknownCommand("--board".to_owned()))?;
+                let (width, height) = parse_snake_board(&value)?;
+                board_width = width;
+                board_height = height;
+            }
+            "--seed" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| ParseError::UnknownCommand("--seed".to_owned()))?;
+                seed = parse_snake_seed(&value)?;
+            }
+            other => return Err(ParseError::UnknownCommand(other.to_owned())),
+        }
+    }
+
+    Ok(SnakeCommand {
+        device_name,
+        address,
+        board_width,
+        board_height,
+        seed,
+    })
+}
+
+fn parse_snake_board(
+    value: &str,
+) -> Result<(snake::SnakeBoardWidth, snake::SnakeBoardHeight), ParseError> {
+    let Some((width, height)) = value.split_once('x') else {
+        return Err(ParseError::UnknownCommand(value.to_owned()));
+    };
+    let width = width
+        .parse::<u8>()
+        .ok()
+        .and_then(snake::SnakeBoardWidth::new)
+        .ok_or_else(|| ParseError::UnknownCommand(value.to_owned()))?;
+    let height = height
+        .parse::<u8>()
+        .ok()
+        .and_then(snake::SnakeBoardHeight::new)
+        .ok_or_else(|| ParseError::UnknownCommand(value.to_owned()))?;
+
+    Ok((width, height))
+}
+
+fn parse_snake_seed(value: &str) -> Result<snake::SnakeSeed, ParseError> {
+    value
+        .parse::<u32>()
+        .map(snake::SnakeSeed::new)
+        .map_err(|_| ParseError::UnknownCommand(value.to_owned()))
+}
+
 mod ble_discovery;
 
 /// BLE UART transport, discovery, and Lisp probe helpers.
@@ -421,8 +542,9 @@ pub mod vesc_uart;
 mod tests {
     use super::{
         Command, LispProbeCommand, LoopbackCommand, PackageEraseCommand, PackageInstallCommand,
-        ParseError, parse_args,
+        ParseError, SnakeCommand, parse_args,
     };
+    use crate::snake::{SnakeBoardHeight, SnakeBoardWidth, SnakeSeed};
     use vesc_protocol::{WireCommand, WireVersion};
 
     #[test]
@@ -561,6 +683,25 @@ mod tests {
         assert_eq!(
             parse_args(["cargo-vescpkg", "erase-package", "extra.vescpkg"]),
             Err(ParseError::UnknownCommand("extra.vescpkg".to_owned()))
+        );
+        assert_eq!(
+            parse_args([
+                "cargo-vescpkg",
+                "snake",
+                "--device",
+                "VESC BLE UART",
+                "--board",
+                "12x8",
+                "--seed",
+                "99"
+            ]),
+            Ok(Command::Snake(SnakeCommand {
+                device_name: Some("VESC BLE UART".to_owned()),
+                address: None,
+                board_width: SnakeBoardWidth::new(12).expect("width"),
+                board_height: SnakeBoardHeight::new(8).expect("height"),
+                seed: SnakeSeed::new(99),
+            }))
         );
         assert_eq!(
             parse_args([

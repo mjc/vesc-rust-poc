@@ -3,6 +3,54 @@
 /// Maximum number of cells the example snake can occupy.
 pub const MAX_SNAKE_BODY_CELLS: usize = 256;
 
+/// Board width in cells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SnakeBoardWidth(u8);
+
+impl SnakeBoardWidth {
+    /// Create a non-zero board width.
+    pub const fn new(value: u8) -> Option<Self> {
+        if value == 0 { None } else { Some(Self(value)) }
+    }
+
+    /// Extract the width in cells.
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
+/// Board height in cells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SnakeBoardHeight(u8);
+
+impl SnakeBoardHeight {
+    /// Create a non-zero board height.
+    pub const fn new(value: u8) -> Option<Self> {
+        if value == 0 { None } else { Some(Self(value)) }
+    }
+
+    /// Extract the height in cells.
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
+/// Deterministic seed for scripted Snake sessions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SnakeSeed(u32);
+
+impl SnakeSeed {
+    /// Create a seed value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Extract the primitive seed.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Board dimensions for the example snake.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SnakeBoardSize {
