@@ -132,6 +132,25 @@ static mut SNAKE_GAME: SnakeGame = new_package_game();
 #[cfg(all(not(test), target_arch = "arm"))]
 static mut SNAKE_HANDLER_COUNT: u8 = 0;
 
+#[cfg(all(not(test), target_arch = "arm"))]
+fn loaded_image_base() -> usize {
+    let loaded_handler: usize;
+    unsafe {
+        core::arch::asm!(
+            "adr {loaded_handler}, {handler}",
+            loaded_handler = out(reg) loaded_handler,
+            handler = sym snake_handle_app_data,
+            options(nomem, nostack, preserves_flags),
+        );
+    }
+    loaded_handler - snake_handle_app_data as *const () as usize
+}
+
+#[cfg(all(not(test), target_arch = "arm"))]
+unsafe fn rebased_mut<T>(base_addr: usize, ptr: *mut T) -> *mut T {
+    (base_addr + ptr as usize) as *mut T
+}
+
 /// Rebase an image-relative handler address into firmware-loaded memory.
 pub fn rebase_handler_addr(info: &vescpkg_rs::ffi::LibInfo, handler_addr: usize) -> usize {
     vescpkg_rs::ffi::NativeImage::from_info(info).rebase_addr(handler_addr)
@@ -161,10 +180,13 @@ pub unsafe extern "C" fn snake_handle_app_data(data: *mut u8, len: u32) {
     }
 
     let bytes = unsafe { core::slice::from_raw_parts(data as *const u8, len as usize) };
-    let game = unsafe { &mut *core::ptr::addr_of_mut!(SNAKE_GAME) };
+    let base_addr = loaded_image_base();
+    let game = unsafe { &mut *rebased_mut(base_addr, core::ptr::addr_of_mut!(SNAKE_GAME)) };
+    let handler_count_ptr =
+        unsafe { rebased_mut(base_addr, core::ptr::addr_of_mut!(SNAKE_HANDLER_COUNT)) };
     let handler_count = unsafe {
-        SNAKE_HANDLER_COUNT = SNAKE_HANDLER_COUNT.wrapping_add(1);
-        SNAKE_HANDLER_COUNT
+        *handler_count_ptr = (*handler_count_ptr).wrapping_add(1);
+        *handler_count_ptr
     };
     if let Some(response) = process_snake_app_data_with_count(game, bytes, handler_count) {
         let bytes = response.as_bytes();
