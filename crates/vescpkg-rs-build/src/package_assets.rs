@@ -128,9 +128,6 @@ impl PackageAssets {
             "(import \"src/package_lib.bin\" 'package-lib)\n",
             "(print \"vesc-rust-load-v7\")\n",
             "(print (load-native-lib package-lib))\n",
-            "(loopwhile t {\n",
-            "    (sleep 1.0)\n",
-            "})\n",
         )
         .to_owned()
     }
@@ -180,11 +177,12 @@ mod tests {
         );
         assert_eq!(
             assets.render_loader(),
-            "(import \"src/package_lib.bin\" 'package-lib)\n(print \"vesc-rust-load-v7\")\n(print (load-native-lib package-lib))\n(loopwhile t {\n    (sleep 1.0)\n})\n"
+            "(import \"src/package_lib.bin\" 'package-lib)\n(print \"vesc-rust-load-v7\")\n(print (load-native-lib package-lib))\n"
         );
         assert_eq!(assets.render_loader().matches("load-native-lib").count(), 1);
         assert!(assets.render_loader().contains("vesc-rust-load-v7"));
-        assert!(assets.render_loader().contains("(sleep 1.0)"));
+        assert!(!assets.render_loader().contains("(loopwhile t"));
+        assert!(!assets.render_loader().contains("(sleep 1.0)"));
         assert!(!assets.render_loader().contains("event-data-rx"));
         assert!(!assets.render_loader().contains("send-data"));
         assert!(
