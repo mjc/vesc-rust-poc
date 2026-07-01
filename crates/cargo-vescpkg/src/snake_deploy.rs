@@ -76,8 +76,7 @@ fn run_snake_smoke(
 
     if tick.tick <= reset.tick {
         return Err(PackageInstallError::Device(format!(
-            "snake tick did not advance on device: reset={} tick={}",
-            reset.tick, tick.tick
+            "snake tick did not advance on device: reset={reset:?} tick={tick:?}"
         )));
     }
     if state.tick != tick.tick {
@@ -126,6 +125,7 @@ fn send_snake_command(
     session: &mut VescSession,
     command: u8,
 ) -> Result<SnakeAppResponse, PackageInstallError> {
+    session.clear_packet_state();
     let packet = crate::package_transport::build_command_packet(COMM_CUSTOM_APP_DATA, &[command]);
     runtime.block_on(crate::package_transport::write_ble_uart_packet(
         &session.peripheral,
