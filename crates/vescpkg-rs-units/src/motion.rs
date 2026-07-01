@@ -48,6 +48,23 @@ scalar_int_unit!(
     "odometer meters"
 );
 
+/// Unitless attitude quaternion components.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+pub struct Quaternion([f32; 4]);
+
+impl Quaternion {
+    /// Create a quaternion from components in firmware order `[q0, q1, q2, q3]`.
+    pub const fn from_components(components: [f32; 4]) -> Self {
+        Self(components)
+    }
+
+    /// Return quaternion components in firmware order.
+    pub const fn components(self) -> [f32; 4] {
+        self.0
+    }
+}
+
 impl Speed {
     /// Create a speed value from kilometers per hour.
     pub const fn from_kilometers_per_hour(value: f32) -> Self {

@@ -80,7 +80,7 @@ pub use electrical::{Current, FluxLinkage, Inductance, Power, Resistance, Voltag
 pub use gnss::{GnssAccuracy, Hdop, Height, Latitude, Longitude};
 pub use motion::{
     AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Distance, ElectricalRpm,
-    MechanicalRpm, OdometerMeters, Speed, TachometerSteps,
+    MechanicalRpm, OdometerMeters, Quaternion, Speed, TachometerSteps,
 };
 pub use ratio::{DutyCycle, Percent, Pwm, Ratio, SignedRatio};
 pub use temperature::Temperature;
@@ -233,8 +233,8 @@ mod tests {
     use super::{
         AccelerationG, AmpHours, AngleRadians, AngularVelocity, Current, Distance,
         DistancePerEnergy, DutyCycle, ElectricalRpm, Energy, EnergyPerDistance, Frequency,
-        Latitude, Longitude, Percent, Power, Ratio, SampleRate, Speed, SystemTicks, Temperature,
-        Voltage, WattHours,
+        Latitude, Longitude, Percent, Power, Quaternion, Ratio, SampleRate, Speed, SystemTicks,
+        Temperature, Voltage, WattHours,
     };
 
     #[test]
@@ -268,6 +268,10 @@ mod tests {
         assert_eq!(
             AngularVelocity::from_degrees_per_second(90.0).as_degrees_per_second(),
             90.0
+        );
+        assert_eq!(
+            Quaternion::from_components([1.0, 0.0, 0.0, 0.0]).components(),
+            [1.0, 0.0, 0.0, 0.0]
         );
     }
 

@@ -72,8 +72,8 @@ mod tests {
     };
     use vescpkg_rs_units::{
         AccelerationG, AngleRadians, AngularVelocity, Current, Distance, Energy, FluxLinkage,
-        Inductance, Latitude, Longitude, MechanicalRpm, Power, Ratio, Resistance, Speed,
-        SystemTicks, TimestampTicks, Voltage,
+        Inductance, Latitude, Longitude, MechanicalRpm, Power, Quaternion, Ratio, Resistance,
+        Speed, SystemTicks, TimestampTicks, Voltage,
     };
 
     #[test]
@@ -210,7 +210,7 @@ mod tests {
             AngularVelocity::from_degrees_per_second(2.0),
             AngularVelocity::from_degrees_per_second(3.0),
         ]);
-        let quat = ImuQuaternion::new([1.0, 0.0, 0.0, 0.0]);
+        let quat = ImuQuaternion::new(Quaternion::from_components([1.0, 0.0, 0.0, 0.0]));
 
         assert_eq!(adc_voltage.voltage().as_volts(), 1.65);
         assert_eq!(adc_level.ratio().as_ratio(), 0.5);
