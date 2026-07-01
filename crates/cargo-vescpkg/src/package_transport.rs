@@ -42,6 +42,7 @@ const LISP_UPLOAD_LIMIT_VESC: usize = 1024 * 128 - 6;
 
 const COMM_QMLUI_ERASE: u8 = 120;
 const COMM_QMLUI_WRITE: u8 = 121;
+const COMM_LISP_READ_CODE: u8 = 130;
 const COMM_LISP_WRITE_CODE: u8 = 131;
 const COMM_LISP_ERASE_CODE: u8 = 132;
 const COMM_LISP_SET_RUNNING: u8 = 133;
@@ -54,6 +55,7 @@ fn command_name(command: u8) -> &'static str {
         COMM_CUSTOM_APP_DATA => "COMM_CUSTOM_APP_DATA",
         COMM_QMLUI_ERASE => "COMM_QMLUI_ERASE",
         COMM_QMLUI_WRITE => "COMM_QMLUI_WRITE",
+        COMM_LISP_READ_CODE => "COMM_LISP_READ_CODE",
         COMM_LISP_WRITE_CODE => "COMM_LISP_WRITE_CODE",
         COMM_LISP_ERASE_CODE => "COMM_LISP_ERASE_CODE",
         COMM_LISP_SET_RUNNING => "COMM_LISP_SET_RUNNING",
@@ -315,6 +317,18 @@ impl BtlePackageInstallTransport {
             PackageInstallError::Device("BLE transport has not been opened".to_owned())
         })?;
         f(&self.runtime, session)
+    }
+
+    pub(crate) fn read_lisp_code(
+        &self,
+        offset: u32,
+        len: u32,
+    ) -> Result<LispCodeRead, PackageInstallError> {
+        let mut payload = Vec::with_capacity(8);
+        payload.extend_from_slice(&len.to_be_bytes());
+        payload.extend_from_slice(&offset.to_be_bytes());
+        let response = self.write_command(COMM_LISP_READ_CODE, &payload, FW_VERSION_TIMEOUT)?;
+        parse_lisp_code_read(&response)
     }
 
     fn open_session(&self, target: LoopbackTarget) -> Result<(), PackageInstallError> {
@@ -765,6 +779,30 @@ fn parse_write_ack(response: &[u8], expected_command: u8) -> Result<bool, Packag
     Ok(ok)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LispCodeRead {
+    pub(crate) total_len: u32,
+    pub(crate) offset: u32,
+    pub(crate) data: Vec<u8>,
+}
+
+fn parse_lisp_code_read(response: &[u8]) -> Result<LispCodeRead, PackageInstallError> {
+    let mut cursor = response;
+    if read_u8(&mut cursor)? != COMM_LISP_READ_CODE {
+        return Err(malformed_reply(
+            "unexpected BLE reply while reading Lisp code",
+        ));
+    }
+
+    let total_len = read_u32_be(&mut cursor)?;
+    let offset = read_u32_be(&mut cursor)?;
+    Ok(LispCodeRead {
+        total_len,
+        offset,
+        data: cursor.to_vec(),
+    })
+}
+
 fn read_string(cursor: &mut &[u8]) -> Result<String, PackageInstallError> {
     let Some(len) = cursor.iter().position(|byte| *byte == 0) else {
         return Err(malformed_reply("missing NUL terminator"));
@@ -804,10 +842,11 @@ fn malformed_reply(reason: &str) -> PackageInstallError {
 #[cfg(test)]
 mod tests {
     use super::{
-        COMM_FW_VERSION, COMM_LISP_ERASE_CODE, COMM_LISP_SET_RUNNING, COMM_LISP_WRITE_CODE,
-        COMM_QMLUI_ERASE, FwVersionInfo, HwType, ble_write_chunks, build_command_packet,
-        build_lisp_upload_payload, build_qml_upload_payload, drain_response_channel,
-        parse_fw_version_info, parse_simple_ack, parse_write_ack,
+        COMM_FW_VERSION, COMM_LISP_ERASE_CODE, COMM_LISP_READ_CODE, COMM_LISP_SET_RUNNING,
+        COMM_LISP_WRITE_CODE, COMM_QMLUI_ERASE, FwVersionInfo, HwType, ble_write_chunks,
+        build_command_packet, build_lisp_upload_payload, build_qml_upload_payload,
+        drain_response_channel, parse_fw_version_info, parse_lisp_code_read, parse_simple_ack,
+        parse_write_ack,
     };
     use crate::vesc_uart::PacketDecoder;
     use std::sync::mpsc;
@@ -868,6 +907,22 @@ mod tests {
         assert!(parse_simple_ack(&wrong_command, COMM_QMLUI_ERASE).is_err());
         assert!(parse_simple_ack(&wrong_command, COMM_LISP_ERASE_CODE).is_err());
         assert!(parse_simple_ack(&[COMM_QMLUI_ERASE], COMM_QMLUI_ERASE).is_err());
+    }
+
+    #[test]
+    fn parses_lisp_code_read_replies() {
+        let mut response = Vec::new();
+        response.push(COMM_LISP_READ_CODE);
+        response.extend_from_slice(&1024_u32.to_be_bytes());
+        response.extend_from_slice(&384_u32.to_be_bytes());
+        response.extend_from_slice(b"(print \"hello\")");
+
+        let read = parse_lisp_code_read(&response).expect("readback reply");
+
+        assert_eq!(read.total_len, 1024);
+        assert_eq!(read.offset, 384);
+        assert_eq!(read.data, b"(print \"hello\")");
+        assert!(parse_lisp_code_read(&[COMM_LISP_READ_CODE, 0]).is_err());
     }
 
     #[test]

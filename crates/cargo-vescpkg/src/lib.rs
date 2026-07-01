@@ -30,6 +30,8 @@ pub enum Command {
     LispProbe(LispProbeCommand),
     /// Run one Lisp REPL form against a target device.
     LispEval(LispEvalCommand),
+    /// Read back the installed Lisp/code payload from a target device.
+    LispReadCode(LispReadCodeCommand),
     /// Install a package on a target device.
     PackageInstall(PackageInstallCommand),
     /// Erase an installed package from a target device.
@@ -65,6 +67,15 @@ pub struct LispProbeCommand {
 pub struct LispEvalCommand {
     /// Lisp REPL form to evaluate.
     pub expression: String,
+    /// Optional BLE device-name filter.
+    pub device_name: Option<String>,
+    /// Optional BLE address filter.
+    pub address: Option<String>,
+}
+
+/// Arguments for the `lisp-read-code` command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LispReadCodeCommand {
     /// Optional BLE device-name filter.
     pub device_name: Option<String>,
     /// Optional BLE address filter.
@@ -145,7 +156,7 @@ where
     match parse_args(args) {
         Ok(Command::Help) => {
             println!(
-                "cargo vescpkg: use `build`, `layout`, `status`, `scan`, `loopback`, `lisp-probe`, `lisp-eval`, `deploy`, `snake-deploy`, `package-install`, `erase-package`, or `snake`"
+                "cargo vescpkg: use `build`, `layout`, `status`, `scan`, `loopback`, `lisp-probe`, `lisp-eval`, `lisp-read-code`, `deploy`, `snake-deploy`, `package-install`, `erase-package`, or `snake`"
             );
             ExitCode::SUCCESS
         }
@@ -235,6 +246,25 @@ where
                 }
                 Err(error) => {
                     eprintln!("lisp eval failed: {error}");
+                    ExitCode::from(1)
+                }
+            }
+        }
+        Ok(Command::LispReadCode(command)) => {
+            let target = loopback_target(command.address, command.device_name);
+            match read_lisp_code(target) {
+                Ok(read) => {
+                    println!(
+                        "lisp code: total={} offset={} bytes={} preview={}",
+                        read.total_len,
+                        read.offset,
+                        read.data.len(),
+                        loopback_debug::hex_snippet(&read.data, 64)
+                    );
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("lisp read-code failed: {error}");
                     ExitCode::from(1)
                 }
             }
@@ -696,6 +726,18 @@ fn loopback_target(
     }
 }
 
+fn read_lisp_code(
+    target: loopback::LoopbackTarget,
+) -> Result<package_transport::LispCodeRead, package_install::PackageInstallError> {
+    const READBACK_LEN: u32 = 384;
+
+    let transport = package_transport::BtlePackageInstallTransport::new()?;
+    transport.open(target)?;
+    let read = transport.read_lisp_code(0, READBACK_LEN);
+    transport.close();
+    read
+}
+
 fn run_package_install(command: PackageInstallCommand) -> ExitCode {
     let package = match package_install::read_package_from_path(&command.package_path) {
         Ok(package) => package,
@@ -791,6 +833,7 @@ where
         Some("loopback") => parse_loopback(iter).map(Command::Loopback),
         Some("lisp-probe") => parse_lisp_probe(iter).map(Command::LispProbe),
         Some("lisp-eval") => parse_lisp_eval(iter).map(Command::LispEval),
+        Some("lisp-read-code") => parse_lisp_read_code(iter).map(Command::LispReadCode),
         Some("package-install") => {
             parse_package_install(iter, "package-install").map(Command::PackageInstall)
         }
@@ -875,6 +918,17 @@ fn parse_lisp_eval(mut iter: impl Iterator<Item = String>) -> Result<LispEvalCom
 
     Ok(LispEvalCommand {
         expression: expression.ok_or_else(|| ParseError::UnknownCommand("lisp-eval".to_owned()))?,
+        device_name,
+        address,
+    })
+}
+
+fn parse_lisp_read_code(
+    iter: impl Iterator<Item = String>,
+) -> Result<LispReadCodeCommand, ParseError> {
+    let (device_name, address) = parse_device_flags(iter)?;
+
+    Ok(LispReadCodeCommand {
         device_name,
         address,
     })
@@ -1128,9 +1182,9 @@ pub mod vesc_uart;
 #[cfg(test)]
 mod tests {
     use super::{
-        Command, LispEvalCommand, LispProbeCommand, LoopbackCommand, PackageEraseCommand,
-        PackageInstallCommand, ParseError, SnakeCommand, SnakeRunMode, parse_args,
-        snake_action_from_key,
+        Command, LispEvalCommand, LispProbeCommand, LispReadCodeCommand, LoopbackCommand,
+        PackageEraseCommand, PackageInstallCommand, ParseError, SnakeCommand, SnakeRunMode,
+        parse_args, snake_action_from_key,
     };
     use crate::snake::{
         SnakeBoardHeight, SnakeBoardWidth, SnakeDirection, SnakeLocalAction, SnakeSeed,
@@ -1206,6 +1260,18 @@ mod tests {
         assert_eq!(
             parse_args(["cargo-vescpkg", "lisp-eval"]),
             Err(ParseError::UnknownCommand("lisp-eval".to_owned()))
+        );
+        assert_eq!(
+            parse_args([
+                "cargo-vescpkg",
+                "lisp-read-code",
+                "--device",
+                "VESC BLE UART"
+            ]),
+            Ok(Command::LispReadCode(LispReadCodeCommand {
+                device_name: Some("VESC BLE UART".to_owned()),
+                address: None,
+            }))
         );
         assert_eq!(
             parse_args(["cargo-vescpkg", "package-install", "foo.vescpkg"]),
