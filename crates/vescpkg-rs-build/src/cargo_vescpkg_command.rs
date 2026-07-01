@@ -163,11 +163,13 @@ impl CargoVescPkgInvocation {
         }
         if !matches!(self.example, CargoVescPkgExample::Loopback) {
             args.push("--example".to_owned());
-            args.push(match self.example {
-                CargoVescPkgExample::Loopback => "loopback",
-                CargoVescPkgExample::Snake => "snake",
-            }
-            .to_owned());
+            args.push(
+                match self.example {
+                    CargoVescPkgExample::Loopback => "loopback",
+                    CargoVescPkgExample::Snake => "snake",
+                }
+                .to_owned(),
+            );
         }
         args.push("--target".to_owned());
         args.push(self.target_triple.clone());
@@ -258,9 +260,7 @@ fn parse_example(value: &str) -> Result<CargoVescPkgExample, CargoVescPkgParseEr
     match value {
         "loopback" => Ok(CargoVescPkgExample::Loopback),
         "snake" => Ok(CargoVescPkgExample::Snake),
-        other => Err(CargoVescPkgParseError::UnsupportedExample(
-            other.to_owned(),
-        )),
+        other => Err(CargoVescPkgParseError::UnsupportedExample(other.to_owned())),
     }
 }
 
@@ -388,8 +388,8 @@ mod tests {
 
     #[test]
     fn parses_the_snake_example_invocation() {
-        let invocation = parse_args(["build", "--example", "snake"])
-            .expect("parse snake example invocation");
+        let invocation =
+            parse_args(["build", "--example", "snake"]).expect("parse snake example invocation");
 
         assert_eq!(invocation.mode(), CargoVescPkgMode::Build);
         assert_eq!(
