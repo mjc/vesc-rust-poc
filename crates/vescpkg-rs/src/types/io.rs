@@ -39,3 +39,54 @@ impl ThreadPriorityError {
         self.value
     }
 }
+
+macro_rules! nonzero_u32_token {
+    ($name:ident, $error:ident, $doc:literal, $error_doc:literal) => {
+        #[doc = $doc]
+        #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        #[repr(transparent)]
+        pub struct $name(u32);
+
+        impl $name {
+            /// Create a checked non-zero token.
+            pub const fn try_new(value: u32) -> Result<Self, $error> {
+                if value == 0 {
+                    Err($error { value })
+                } else {
+                    Ok(Self(value))
+                }
+            }
+
+            /// Explicitly extract the raw token.
+            pub const fn get(self) -> u32 {
+                self.0
+            }
+        }
+
+        #[doc = $error_doc]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub struct $error {
+            value: u32,
+        }
+
+        impl $error {
+            /// Return the rejected value.
+            pub const fn value(self) -> u32 {
+                self.value
+            }
+        }
+    };
+}
+
+nonzero_u32_token!(
+    BaudRate,
+    BaudRateError,
+    "Serial baud rate.",
+    "Error returned when a baud rate is zero."
+);
+nonzero_u32_token!(
+    PacketLength,
+    PacketLengthError,
+    "Packet length.",
+    "Error returned when a packet length is zero."
+);

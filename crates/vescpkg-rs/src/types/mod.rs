@@ -23,6 +23,8 @@
 //! let _: u8 = id.into();
 //! ```
 
+pub use can::{CanPayloadLen, CanPayloadLenError};
+pub use io::{BaudRate, BaudRateError, PacketLength, PacketLengthError};
 pub mod battery;
 pub mod can;
 pub mod config;

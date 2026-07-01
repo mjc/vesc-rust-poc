@@ -61,12 +61,12 @@ pub mod types;
 mod tests {
     use super::{ProtocolFrame, WireCommand, WireVersion};
     use crate::types::{
-        AudioVoltage, AveragePower, BatteryCurrent, BatteryVoltage, CanControllerId, DVoltage,
-        DirectionalMotorCurrent, FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance,
-        GearRatio, GnssLatitude, GnssLongitude, GnssSpeed, MechanicalSpeed, MotorCurrent,
-        MotorPoleCount, PeakPower, PpmAge, QVoltage, RemoteAge, SystemDuration, SystemTimestamp,
-        ThreadPriority, TimeoutDuration, TotalMotorCurrent, TripDistance, VehicleSpeed,
-        WattHoursDischarged, WheelDiameter,
+        AudioVoltage, AveragePower, BatteryCurrent, BatteryVoltage, BaudRate, CanControllerId,
+        CanPayloadLen, DVoltage, DirectionalMotorCurrent, FocMotorFluxLinkage, FocMotorInductance,
+        FocMotorResistance, GearRatio, GnssLatitude, GnssLongitude, GnssSpeed, MechanicalSpeed,
+        MotorCurrent, MotorPoleCount, PacketLength, PeakPower, PpmAge, QVoltage, RemoteAge,
+        SystemDuration, SystemTimestamp, ThreadPriority, TimeoutDuration, TotalMotorCurrent,
+        TripDistance, VehicleSpeed, WattHoursDischarged, WheelDiameter,
     };
     use vescpkg_rs_units::{
         Current, Distance, Energy, FluxLinkage, Inductance, Latitude, Longitude, MechanicalRpm,
@@ -173,11 +173,20 @@ mod tests {
     fn semantic_raw_tokens_require_explicit_checked_construction() {
         let controller = CanControllerId::new(42);
         let priority = ThreadPriority::try_new(5).expect("valid priority");
+        let baud = BaudRate::try_new(115_200).expect("valid baud rate");
+        let packet_len = PacketLength::try_new(512).expect("valid packet length");
+        let payload_len = CanPayloadLen::try_new(8).expect("valid CAN payload length");
 
         assert_eq!(controller.get(), 42);
         assert_eq!(priority.get(), 5);
+        assert_eq!(baud.get(), 115_200);
+        assert_eq!(packet_len.get(), 512);
+        assert_eq!(payload_len.get(), 8);
         assert!(ThreadPriority::try_new(6).is_err());
         assert!(ThreadPriority::try_new(-6).is_err());
+        assert!(BaudRate::try_new(0).is_err());
+        assert!(PacketLength::try_new(0).is_err());
+        assert!(CanPayloadLen::try_new(9).is_err());
     }
 }
 

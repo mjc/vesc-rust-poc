@@ -84,6 +84,43 @@ pub struct CanExtendedIdError {
     value: u32,
 }
 
+/// Classic CAN payload length in bytes.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct CanPayloadLen(u8);
+
+impl CanPayloadLen {
+    /// Highest classic CAN payload length.
+    pub const MAX: u8 = 8;
+
+    /// Create a checked CAN payload length.
+    pub const fn try_new(len: u8) -> Result<Self, CanPayloadLenError> {
+        if len <= Self::MAX {
+            Ok(Self(len))
+        } else {
+            Err(CanPayloadLenError { value: len })
+        }
+    }
+
+    /// Explicitly extract the raw payload length.
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
+/// Error returned when a CAN payload length is out of range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CanPayloadLenError {
+    value: u8,
+}
+
+impl CanPayloadLenError {
+    /// Return the rejected length.
+    pub const fn value(self) -> u8 {
+        self.value
+    }
+}
+
 impl CanExtendedIdError {
     /// Return the rejected ID.
     pub const fn value(self) -> u32 {
