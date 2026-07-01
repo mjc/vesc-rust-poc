@@ -327,6 +327,7 @@ pub enum SnakeLocalAction {
     Tick,
     Pause,
     Resume,
+    TogglePause,
     Reset,
     Quit,
 }
@@ -727,6 +728,11 @@ where
             }
             SnakeLocalAction::Pause => model.pause()?,
             SnakeLocalAction::Resume => model.resume()?,
+            SnakeLocalAction::TogglePause => match model.state() {
+                SnakeSessionState::Running => model.pause()?,
+                SnakeSessionState::Paused => model.resume()?,
+                SnakeSessionState::Idle | SnakeSessionState::GameOver => {}
+            },
             SnakeLocalAction::Reset => model.reset(),
             SnakeLocalAction::Quit => {
                 quit_status = SnakeQuitStatus::Requested;

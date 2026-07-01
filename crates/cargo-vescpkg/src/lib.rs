@@ -1,7 +1,15 @@
 //! Command-line tool for building, installing, and debugging Rust VESC packages.
 
-use std::io::{self, BufRead, Write};
+use std::io::{self, Write};
 use std::process::ExitCode;
+use std::time::Duration;
+
+use crossterm::cursor::{Hide, MoveTo, Show};
+use crossterm::event::{self, Event, KeyCode, KeyEvent};
+use crossterm::terminal::{
+    Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
+use crossterm::{execute, queue};
 
 /// Parsed top-level command requested by the operator-facing CLI.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,7 +100,7 @@ pub struct SnakeCommand {
 /// Input mode for the local Snake command.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SnakeRunMode {
-    /// Read commands from stdin until the user quits.
+    /// Run a timer-driven terminal game loop.
     Interactive,
     /// Consume `--moves` as one direction per tick.
     ScriptedMoves,
@@ -241,10 +249,8 @@ fn run_snake(command: SnakeCommand) -> ExitCode {
     let mut model = model;
     match command.run_mode {
         SnakeRunMode::Interactive => {
-            let stdin = io::stdin();
             let stdout = io::stdout();
-            match run_snake_interactive(&mut model, stdin.lock(), stdout.lock(), command.tick_limit)
-            {
+            match run_snake_terminal(&mut model, stdout.lock(), command.tick_limit) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(error) => {
                     eprintln!("snake failed: {error:?}");
@@ -287,19 +293,75 @@ fn run_snake(command: SnakeCommand) -> ExitCode {
     }
 }
 
-fn run_snake_interactive<R, W>(
+fn run_snake_terminal<W>(
     model: &mut snake::SnakeModel,
-    mut input: R,
     mut output: W,
     tick_limit: snake::SnakeTickLimit,
 ) -> Result<(), snake::SnakeTransitionError>
 where
-    R: BufRead,
     W: Write,
 {
+    enable_raw_mode().map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
+    execute!(output, EnterAlternateScreen, Hide)
+        .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
+
+    let result = run_snake_terminal_loop(model, &mut output, tick_limit);
+
+    let _ = execute!(output, Show, LeaveAlternateScreen);
+    let _ = disable_raw_mode();
+
+    result
+}
+
+fn run_snake_terminal_loop<W>(
+    model: &mut snake::SnakeModel,
+    output: &mut W,
+    tick_limit: snake::SnakeTickLimit,
+) -> Result<(), snake::SnakeTransitionError>
+where
+    W: Write,
+{
+    render_snake_terminal_frame(model, output)?;
+
+    let mut ticks = snake::SnakeTick::new(0);
+    while ticks.get() < u32::from(tick_limit.get()) {
+        if event::poll(Duration::from_millis(120))
+            .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?
+        {
+            if let Event::Key(key) =
+                event::read().map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?
+            {
+                match snake_action_from_key(key) {
+                    Some(snake::SnakeLocalAction::Quit) => return Ok(()),
+                    Some(action) => apply_snake_action(model, action, &mut ticks)?,
+                    None => {}
+                }
+            }
+        }
+
+        apply_snake_action(model, snake::SnakeLocalAction::Tick, &mut ticks)?;
+        render_snake_terminal_frame(model, output)?;
+
+        if model.state() == snake::SnakeSessionState::GameOver {
+            break;
+        }
+    }
+
+    Ok(())
+}
+
+fn render_snake_terminal_frame<W>(
+    model: &snake::SnakeModel,
+    output: &mut W,
+) -> Result<(), snake::SnakeTransitionError>
+where
+    W: Write,
+{
+    queue!(output, MoveTo(0, 0), Clear(ClearType::All))
+        .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
     writeln!(
         output,
-        "controls: w/a/s/d then enter to steer, enter to tick, p pause, u resume, r reset, q quit"
+        "controls: wasd/arrows steer | space pause/resume | r reset | q quit"
     )
     .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
     write!(
@@ -312,60 +374,75 @@ where
         )
     )
     .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
+    output
+        .flush()
+        .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)
+}
 
-    let mut ticks = snake::SnakeTick::new(0);
-    let mut line = String::new();
-    while ticks.get() < u32::from(tick_limit.get()) {
-        line.clear();
-        write!(output, "snake> ").map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
-        output
-            .flush()
-            .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
-        let bytes = input
-            .read_line(&mut line)
-            .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
-        if bytes == 0 {
-            break;
-        }
-
-        let mut actions = parse_snake_line_actions(&line)
-            .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
-        if actions.is_empty() {
-            actions.push(snake::SnakeLocalAction::Tick);
-        }
-
-        for action in actions {
-            match action {
-                snake::SnakeLocalAction::Quit => return Ok(()),
-                snake::SnakeLocalAction::Tick => {
-                    let outcome = model.advance();
-                    if matches!(
-                        outcome,
-                        snake::SnakeStepOutcome::Advanced | snake::SnakeStepOutcome::AteFood
-                    ) {
-                        ticks = snake::SnakeTick::new(ticks.get().wrapping_add(1));
-                    }
-                }
-                snake::SnakeLocalAction::Turn(direction) => model.set_direction(direction)?,
-                snake::SnakeLocalAction::Pause => model.pause()?,
-                snake::SnakeLocalAction::Resume => model.resume()?,
-                snake::SnakeLocalAction::Reset => model.reset(),
+fn apply_snake_action(
+    model: &mut snake::SnakeModel,
+    action: snake::SnakeLocalAction,
+    ticks: &mut snake::SnakeTick,
+) -> Result<(), snake::SnakeTransitionError> {
+    match action {
+        snake::SnakeLocalAction::Quit => {}
+        snake::SnakeLocalAction::Tick => {
+            let outcome = model.advance();
+            if matches!(
+                outcome,
+                snake::SnakeStepOutcome::Advanced | snake::SnakeStepOutcome::AteFood
+            ) {
+                *ticks = snake::SnakeTick::new(ticks.get().wrapping_add(1));
             }
         }
-
-        write!(
-            output,
-            "{}",
-            snake::render_terminal_snapshot(
-                &model
-                    .snapshot()
-                    .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?
-            )
-        )
-        .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
+        snake::SnakeLocalAction::Turn(direction) => {
+            if let Err(error) = model.set_direction(direction) {
+                if !matches!(error, snake::SnakeTransitionError::ReverseTurn { .. }) {
+                    return Err(error);
+                }
+            }
+        }
+        snake::SnakeLocalAction::Pause => {
+            if model.state() == snake::SnakeSessionState::Running {
+                model.pause()?;
+            }
+        }
+        snake::SnakeLocalAction::Resume => {
+            if model.state() == snake::SnakeSessionState::Paused {
+                model.resume()?;
+            }
+        }
+        snake::SnakeLocalAction::TogglePause => match model.state() {
+            snake::SnakeSessionState::Running => model.pause()?,
+            snake::SnakeSessionState::Paused => model.resume()?,
+            snake::SnakeSessionState::Idle | snake::SnakeSessionState::GameOver => {}
+        },
+        snake::SnakeLocalAction::Reset => model.reset(),
     }
-
     Ok(())
+}
+
+fn snake_action_from_key(key: KeyEvent) -> Option<snake::SnakeLocalAction> {
+    match key.code {
+        KeyCode::Char('q' | 'Q') | KeyCode::Esc => Some(snake::SnakeLocalAction::Quit),
+        KeyCode::Char('r' | 'R') => Some(snake::SnakeLocalAction::Reset),
+        KeyCode::Char(' ') => Some(snake::SnakeLocalAction::TogglePause),
+        KeyCode::Char('p' | 'P') => Some(snake::SnakeLocalAction::Pause),
+        KeyCode::Char('u' | 'U') => Some(snake::SnakeLocalAction::Resume),
+        KeyCode::Char('w' | 'W') | KeyCode::Up => {
+            Some(snake::SnakeLocalAction::Turn(snake::SnakeDirection::Up))
+        }
+        KeyCode::Char('s' | 'S') | KeyCode::Down => {
+            Some(snake::SnakeLocalAction::Turn(snake::SnakeDirection::Down))
+        }
+        KeyCode::Char('a' | 'A') | KeyCode::Left => {
+            Some(snake::SnakeLocalAction::Turn(snake::SnakeDirection::Left))
+        }
+        KeyCode::Char('d' | 'D') | KeyCode::Right => {
+            Some(snake::SnakeLocalAction::Turn(snake::SnakeDirection::Right))
+        }
+        _ => None,
+    }
 }
 
 fn loopback_target(
@@ -712,31 +789,6 @@ fn parse_snake_actions(value: &str) -> Result<Vec<snake::SnakeLocalAction>, Pars
         .collect()
 }
 
-fn parse_snake_line_actions(value: &str) -> Result<Vec<snake::SnakeLocalAction>, ParseError> {
-    value
-        .trim()
-        .chars()
-        .map(|ch| {
-            parse_snake_action_char(ch).ok_or_else(|| ParseError::UnknownCommand(value.to_owned()))
-        })
-        .collect()
-}
-
-fn parse_snake_action_char(ch: char) -> Option<snake::SnakeLocalAction> {
-    match ch {
-        'w' | 'W' => Some(snake::SnakeLocalAction::Turn(snake::SnakeDirection::Up)),
-        'a' | 'A' => Some(snake::SnakeLocalAction::Turn(snake::SnakeDirection::Left)),
-        's' | 'S' => Some(snake::SnakeLocalAction::Turn(snake::SnakeDirection::Down)),
-        'd' | 'D' => Some(snake::SnakeLocalAction::Turn(snake::SnakeDirection::Right)),
-        '.' => Some(snake::SnakeLocalAction::Tick),
-        'p' | 'P' => Some(snake::SnakeLocalAction::Pause),
-        'u' | 'U' => Some(snake::SnakeLocalAction::Resume),
-        'r' | 'R' => Some(snake::SnakeLocalAction::Reset),
-        'q' | 'Q' => Some(snake::SnakeLocalAction::Quit),
-        _ => None,
-    }
-}
-
 fn parse_snake_tick_limit(value: &str) -> Result<snake::SnakeTickLimit, ParseError> {
     value
         .parse::<u16>()
@@ -765,12 +817,14 @@ pub mod vesc_uart;
 mod tests {
     use super::{
         Command, LispProbeCommand, LoopbackCommand, PackageEraseCommand, PackageInstallCommand,
-        ParseError, SnakeCommand, SnakeRunMode, parse_args, run_snake_interactive,
+        ParseError, SnakeCommand, SnakeRunMode, apply_snake_action, parse_args,
+        snake_action_from_key,
     };
     use crate::snake::{
         SnakeBoardHeight, SnakeBoardWidth, SnakeDirection, SnakeLocalAction, SnakeSeed,
         SnakeTickLimit,
     };
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use vesc_protocol::{WireCommand, WireVersion};
 
     #[test]
@@ -1002,25 +1056,70 @@ mod tests {
     }
 
     #[test]
-    fn interactive_snake_loop_reads_lines_until_quit() {
+    fn snake_terminal_key_mapping_matches_real_game_controls() {
+        assert_eq!(
+            snake_action_from_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE)),
+            Some(SnakeLocalAction::Turn(SnakeDirection::Up))
+        );
+        assert_eq!(
+            snake_action_from_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)),
+            Some(SnakeLocalAction::Turn(SnakeDirection::Left))
+        );
+        assert_eq!(
+            snake_action_from_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE)),
+            Some(SnakeLocalAction::TogglePause)
+        );
+        assert_eq!(
+            snake_action_from_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+            Some(SnakeLocalAction::Quit)
+        );
+        assert_eq!(
+            snake_action_from_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)),
+            None
+        );
+    }
+
+    #[test]
+    fn snake_live_actions_auto_advance_and_ignore_reverse_turns() {
         let board = crate::snake::SnakeBoardSize::new(7, 5).expect("board");
         let mut model = crate::snake::SnakeModel::new(board, 123);
-        let input = b"s\n\np\nu\nr\nq\n";
-        let mut output = Vec::new();
+        let mut ticks = crate::snake::SnakeTick::new(0);
+        let start = model.head();
 
-        run_snake_interactive(
+        apply_snake_action(
             &mut model,
-            &input[..],
-            &mut output,
-            SnakeTickLimit::new(20).expect("tick limit"),
+            SnakeLocalAction::Turn(SnakeDirection::Left),
+            &mut ticks,
         )
-        .expect("interactive session");
+        .expect("reverse turn is ignored");
+        assert_eq!(model.direction(), SnakeDirection::Right);
+        assert_eq!(ticks, crate::snake::SnakeTick::new(0));
 
-        let output = String::from_utf8(output).expect("utf8");
-        assert!(output.contains("controls:"));
-        assert!(output.contains("snake> "));
-        assert!(output.contains("state=Paused"));
-        assert_eq!(model.tick(), crate::snake::SnakeTick::new(0));
+        apply_snake_action(&mut model, SnakeLocalAction::Tick, &mut ticks).expect("tick");
+        assert_eq!(ticks, crate::snake::SnakeTick::new(1));
+        assert_eq!(model.tick(), crate::snake::SnakeTick::new(1));
+        assert_eq!(
+            model.head(),
+            crate::snake::SnakeCell::new(start.x() + 1, start.y())
+        );
+    }
+
+    #[test]
+    fn snake_live_actions_toggle_pause_without_advancing() {
+        let board = crate::snake::SnakeBoardSize::new(7, 5).expect("board");
+        let mut model = crate::snake::SnakeModel::new(board, 123);
+        let mut ticks = crate::snake::SnakeTick::new(0);
+        let start = model.head();
+
+        apply_snake_action(&mut model, SnakeLocalAction::TogglePause, &mut ticks).expect("pause");
+        apply_snake_action(&mut model, SnakeLocalAction::Tick, &mut ticks).expect("paused tick");
+        assert_eq!(model.state(), crate::snake::SnakeSessionState::Paused);
+        assert_eq!(ticks, crate::snake::SnakeTick::new(0));
+        assert_eq!(model.head(), start);
+
+        apply_snake_action(&mut model, SnakeLocalAction::TogglePause, &mut ticks).expect("resume");
+        apply_snake_action(&mut model, SnakeLocalAction::Tick, &mut ticks).expect("tick");
         assert_eq!(model.state(), crate::snake::SnakeSessionState::Running);
+        assert_eq!(ticks, crate::snake::SnakeTick::new(1));
     }
 }
