@@ -27,6 +27,7 @@ const FW_VERSION_OPEN_ATTEMPTS: usize = 3;
 const FW_VERSION_OPEN_RETRY_DELAY: Duration = Duration::from_millis(750);
 const POST_LISP_RESTART_QUERY_TIMEOUT: Duration = Duration::from_secs(2);
 const LISP_SET_RUNNING_TIMEOUT: Duration = Duration::from_secs(60);
+const RECOVERY_SET_RUNNING_TIMEOUT: Duration = Duration::from_secs(3);
 const POST_LISP_LOADER_SETTLE: Duration = Duration::from_secs(3);
 const ERASE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(6);
 const WRITE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(1);
@@ -245,6 +246,11 @@ impl BtlePackageInstallTransport {
             .block_on(async move { open_session(target).await })?;
         *self.session.borrow_mut() = Some(session);
         Ok(())
+    }
+
+    /// Best-effort short-timeout stop used when normal preflight is unavailable.
+    pub fn stop_running_recovery(&self) -> Result<(), PackageInstallError> {
+        self.expect_ok(COMM_LISP_SET_RUNNING, &[0], RECOVERY_SET_RUNNING_TIMEOUT)
     }
 
     /// Disconnects the active BLE session, if one is open.

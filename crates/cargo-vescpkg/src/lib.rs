@@ -725,8 +725,7 @@ fn run_package_erase(command: PackageEraseCommand) -> ExitCode {
 
     if command.no_preflight {
         eprintln!("package erase recovery: best-effort stop before erase");
-        if let Err(error) = package_install::PackageInstallTransport::set_running(&transport, false)
-        {
+        if let Err(error) = transport.stop_running_recovery() {
             eprintln!("package erase recovery: stop did not ack: {error}");
         }
     }
