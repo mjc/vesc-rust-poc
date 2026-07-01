@@ -196,10 +196,8 @@ pub unsafe extern "C" fn snake_handle_app_data(data: *mut u8, len: u32) {
         return;
     }
 
-    let base_addr = loaded_image_base();
-    let game = unsafe { &mut *rebased_mut(base_addr, core::ptr::addr_of_mut!(SNAKE_GAME)) };
-    let handler_count_ptr =
-        unsafe { rebased_mut(base_addr, core::ptr::addr_of_mut!(SNAKE_HANDLER_COUNT)) };
+    let game = unsafe { &mut *core::ptr::addr_of_mut!(SNAKE_GAME) };
+    let handler_count_ptr = core::ptr::addr_of_mut!(SNAKE_HANDLER_COUNT);
     let handler_count = unsafe {
         *handler_count_ptr = (*handler_count_ptr).wrapping_add(1);
         *handler_count_ptr
