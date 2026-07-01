@@ -62,12 +62,14 @@ mod tests {
     use super::{ProtocolFrame, WireCommand, WireVersion};
     use crate::types::{
         AudioVoltage, AveragePower, BatteryCurrent, BatteryVoltage, CanControllerId, DVoltage,
-        DirectionalMotorCurrent, GnssLatitude, GnssLongitude, GnssSpeed, MechanicalSpeed,
-        MotorCurrent, PeakPower, QVoltage, ThreadPriority, TotalMotorCurrent, TripDistance,
-        VehicleSpeed, WattHoursDischarged,
+        DirectionalMotorCurrent, FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance,
+        GearRatio, GnssLatitude, GnssLongitude, GnssSpeed, MechanicalSpeed, MotorCurrent,
+        MotorPoleCount, PeakPower, QVoltage, ThreadPriority, TotalMotorCurrent, TripDistance,
+        VehicleSpeed, WattHoursDischarged, WheelDiameter,
     };
     use vescpkg_rs_units::{
-        Current, Distance, Energy, Latitude, Longitude, MechanicalRpm, Power, Speed, Voltage,
+        Current, Distance, Energy, FluxLinkage, Inductance, Latitude, Longitude, MechanicalRpm,
+        Power, Resistance, Speed, Voltage,
     };
 
     #[test]
@@ -126,6 +128,28 @@ mod tests {
         assert_eq!(latitude.latitude().as_degrees(), 40.015);
         assert_eq!(longitude.longitude().as_degrees(), -105.2705);
         assert_eq!(gnss_speed.speed().as_meters_per_second(), 3.5);
+    }
+
+    #[test]
+    fn semantic_config_types_wrap_units_and_checked_scalars() {
+        let poles = MotorPoleCount::try_new(14).expect("valid pole count");
+        let cells = crate::types::BatteryCellCount::try_new(12).expect("valid cell count");
+        let gear_ratio = GearRatio::try_new(2.6).expect("valid gear ratio");
+        let wheel = WheelDiameter::new(Distance::from_meters(0.165));
+        let motor_r = FocMotorResistance::new(Resistance::from_ohms(0.03));
+        let motor_l = FocMotorInductance::new(Inductance::from_henries(0.000_012));
+        let flux = FocMotorFluxLinkage::new(FluxLinkage::from_webers(0.004));
+
+        assert_eq!(poles.get(), 14);
+        assert_eq!(cells.get(), 12);
+        assert_eq!(gear_ratio.get(), 2.6);
+        assert_eq!(wheel.distance().as_meters(), 0.165);
+        assert_eq!(motor_r.resistance().as_ohms(), 0.03);
+        assert_eq!(motor_l.inductance().as_henries(), 0.000_012);
+        assert_eq!(flux.flux_linkage().as_webers(), 0.004);
+        assert!(MotorPoleCount::try_new(0).is_err());
+        assert!(crate::types::BatteryCellCount::try_new(0).is_err());
+        assert!(GearRatio::try_new(0.0).is_err());
     }
 
     #[test]

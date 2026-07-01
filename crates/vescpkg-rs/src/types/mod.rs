@@ -25,6 +25,7 @@
 
 pub mod battery;
 pub mod can;
+pub mod config;
 pub mod gnss;
 pub mod io;
 pub mod motion;
@@ -38,6 +39,11 @@ pub use battery::{
     InputCurrent, InputVoltage, WattHoursCharged, WattHoursDischarged, WattHoursRemaining,
 };
 pub use can::{CanControllerId, CanExtendedId, CanStandardId};
+pub use config::{
+    BatteryCellCount, BatteryCellCountError, FocMotorFluxLinkage, FocMotorInductance,
+    FocMotorResistance, GearRatio, GearRatioError, MotorPoleCount, MotorPoleCountError,
+    WheelDiameter,
+};
 pub use gnss::{GnssAltitude, GnssLatitude, GnssLongitude, GnssSpeed};
 pub use io::{ThreadPriority, ThreadPriorityError};
 pub use motion::{
