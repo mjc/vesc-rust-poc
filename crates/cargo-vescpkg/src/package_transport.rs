@@ -27,7 +27,7 @@ const FW_VERSION_TIMEOUT: Duration = Duration::from_secs(8);
 const FW_VERSION_OPEN_ATTEMPTS: usize = 3;
 const FW_VERSION_OPEN_RETRY_DELAY: Duration = Duration::from_millis(750);
 const POST_LISP_RESTART_QUERY_TIMEOUT: Duration = Duration::from_secs(2);
-const LISP_SET_RUNNING_TIMEOUT: Duration = Duration::from_secs(180);
+const LISP_SET_RUNNING_TIMEOUT: Duration = Duration::from_secs(10);
 const RECOVERY_SET_RUNNING_TIMEOUT: Duration = Duration::from_secs(15);
 const POST_LISP_UPLOAD_SETTLE: Duration = Duration::from_secs(2);
 const POST_LISP_LOADER_SETTLE: Duration = Duration::from_secs(3);
@@ -1045,7 +1045,13 @@ mod tests {
     }
 
     #[test]
+
     fn lisp_set_running_waits_for_device_ack() {
+        assert_eq!(
+            super::LISP_SET_RUNNING_TIMEOUT,
+            std::time::Duration::from_secs(10)
+        );
+
         let packet = build_command_packet(COMM_LISP_SET_RUNNING, &[1]);
         let decoded = PacketDecoder::new()
             .push(&packet)
