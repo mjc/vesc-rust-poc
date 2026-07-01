@@ -24,19 +24,28 @@ pub fn run_snake_deploy(
     package_path: &str,
     target: LoopbackTarget,
 ) -> Result<(PackageInstallReport, SnakeDeployReport), SnakeDeployError> {
+    eprintln!("snake-deploy: reading package {package_path}");
     let package = read_package_from_path(package_path).map_err(SnakeDeployError::Package)?;
     let transport = BtlePackageInstallTransport::new().map_err(SnakeDeployError::Transport)?;
+    eprintln!(
+        "snake-deploy: opening BLE transport device={} service={}",
+        target.device_name_hint(),
+        target.service_name_hint()
+    );
     transport
         .open(target.clone())
         .map_err(|error| stage_error("open BLE package transport", error))
         .map_err(SnakeDeployError::Transport)?;
 
+    eprintln!("snake-deploy: installing package {}", package.name);
     let install = crate::package_install::install_package(&package, &transport)
         .map_err(|error| stage_error("install Snake package", error))
         .map_err(SnakeDeployError::Transport)?;
 
+    eprintln!("snake-deploy: waiting for package loader settle");
     std::thread::sleep(POST_INSTALL_SETTLE);
 
+    eprintln!("snake-deploy: running app-data smoke");
     let report = transport
         .with_app_data_session(|runtime, session| run_snake_smoke(runtime, session, target))
         .map_err(|error| stage_error("run Snake app-data smoke", error))
@@ -63,16 +72,23 @@ fn run_snake_smoke(
     session: &mut VescSession,
     target: LoopbackTarget,
 ) -> Result<SnakeDeployReport, PackageInstallError> {
+    eprintln!("snake-deploy: confirming firmware after install");
     session
         .confirm_fw_version(runtime)
         .map_err(|error| stage_error("post-install firmware preflight", error))?;
     session.clear_packet_state();
 
+    eprintln!("snake-deploy: sending reset");
     let reset = wait_for_snake_handler(runtime, session)?;
+    eprintln!("snake-deploy: reset response {reset:?}");
+    eprintln!("snake-deploy: sending tick");
     let tick = send_snake_command(runtime, session, SNAKE_TICK)
         .map_err(|error| stage_error("send Snake tick command", error))?;
+    eprintln!("snake-deploy: tick response {tick:?}");
+    eprintln!("snake-deploy: sending state query");
     let state = send_snake_command(runtime, session, SNAKE_STATE)
         .map_err(|error| stage_error("send Snake state command", error))?;
+    eprintln!("snake-deploy: state response {state:?}");
 
     if reset.command != SNAKE_RESET || tick.command != SNAKE_TICK || state.command != SNAKE_STATE {
         return Err(PackageInstallError::Device(format!(
