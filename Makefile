@@ -81,13 +81,13 @@ package-only:
 	$(CARGO) run -p cargo-vescpkg -- build --package-only
 
 deploy: package-only
-	$(CARGO) run -p vesc-cli -- deploy $(PACKAGE) $(DEVICE_FLAGS)
+	$(CARGO) run -p cargo-vescpkg -- deploy $(PACKAGE) $(DEVICE_FLAGS)
 
 deploy-install: package-only
-	$(CARGO) run -p vesc-cli -- package-install $(PACKAGE) $(DEVICE_FLAGS)
+	$(CARGO) run -p cargo-vescpkg -- package-install $(PACKAGE) $(DEVICE_FLAGS)
 
 lisp-probe:
-	$(CARGO) run -p vesc-cli -- lisp-probe $(DEVICE_FLAGS)
+	$(CARGO) run -p cargo-vescpkg -- lisp-probe $(DEVICE_FLAGS)
 
 clean:
 	$(CARGO) clean

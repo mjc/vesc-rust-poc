@@ -8,4 +8,5 @@ description = "Unofficial Cargo subcommand for building Rust VESC package artifa
 workspace = true
 
 [dependencies]
+vesc-cli = { path = "../vesc-cli" }
 vescpkg-rs-build = { path = "../vescpkg-rs-build" }

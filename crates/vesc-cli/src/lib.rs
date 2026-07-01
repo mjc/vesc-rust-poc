@@ -1,5 +1,7 @@
 //! Command-line tool for building, installing, and debugging Rust VESC packages.
 
+use std::process::ExitCode;
+
 /// Parsed top-level command requested by the operator-facing CLI.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -66,6 +68,204 @@ pub struct PackageEraseCommand {
 pub enum ParseError {
     /// The first non-program argument did not match a supported command.
     UnknownCommand(String),
+}
+
+/// Run a parsed CLI invocation and return the process exit code.
+pub fn run_args<I, S>(args: I) -> ExitCode
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    match parse_args(args) {
+        Ok(Command::Help) => {
+            println!(
+                "cargo vescpkg: use `build`, `layout`, `status`, `scan`, `loopback`, `lisp-probe`, `deploy`, `package-install`, or `erase-package`"
+            );
+            ExitCode::SUCCESS
+        }
+        Ok(Command::Layout) => {
+            println!("workspace layout is documented in docs/workspace-layout.md");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::Status) => {
+            println!("status: placeholder host surface");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::Scan) => match btle::scan_devices() {
+            Ok(devices) => {
+                devices.into_iter().for_each(|device| {
+                    println!(
+                        "{} {:?} {:?}",
+                        device.identifier, device.local_name, device.services
+                    );
+                });
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("scan failed: {error}");
+                ExitCode::from(1)
+            }
+        },
+        Ok(Command::Loopback(command)) => {
+            let target = loopback_target(command.address, command.device_name);
+
+            match loopback_debug::run_loopback_with_diagnostics(target, |event| {
+                if event.should_print_to_cli() {
+                    println!("loopback: {}", event.describe());
+                }
+            }) {
+                Ok(report) => {
+                    println!(
+                        "loopback ok on device={} service={}: {:?}",
+                        report.target().device_name_hint(),
+                        report.target().service_name_hint(),
+                        report.commands()
+                    );
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("loopback failed: {error}");
+                    ExitCode::from(1)
+                }
+            }
+        }
+        Ok(Command::LispProbe(command)) => {
+            let target = loopback_target(command.address, command.device_name);
+
+            match btle::run_lisp_probe_with_progress(target, |event| {
+                if event.should_print_to_cli() {
+                    println!("lisp probe: {}", event.describe());
+                }
+            }) {
+                Ok(report) => {
+                    let ok = report
+                        .prints()
+                        .iter()
+                        .any(|line| line.contains("vesc-rust-probe-ok-42"));
+                    if ok {
+                        ExitCode::SUCCESS
+                    } else {
+                        eprintln!("lisp probe: missing expected vesc-rust-probe-ok-42 print");
+                        ExitCode::from(1)
+                    }
+                }
+                Err(error) => {
+                    eprintln!("lisp probe failed: {error}");
+                    ExitCode::from(1)
+                }
+            }
+        }
+        Ok(Command::Deploy(command)) => {
+            let package_path = command.package_path;
+            let target = loopback_target(command.address, command.device_name);
+
+            match deploy::run_deploy(&package_path, target, |event| {
+                if event.should_print_to_cli() {
+                    println!("loopback: {}", event.describe());
+                }
+            }) {
+                Ok((install, report)) => {
+                    println!(
+                        "package install ok for {}: {:?}",
+                        install.package_name, install.steps
+                    );
+                    println!(
+                        "loopback ok on device={} service={}: {:?}",
+                        report.target().device_name_hint(),
+                        report.target().service_name_hint(),
+                        report.commands()
+                    );
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("deploy failed: {error}");
+                    ExitCode::from(1)
+                }
+            }
+        }
+        Ok(Command::PackageInstall(command)) => run_package_install(command),
+        Ok(Command::ErasePackage(command)) => run_package_erase(command),
+        Err(ParseError::UnknownCommand(command)) => {
+            eprintln!("unknown command: {command}");
+            ExitCode::from(2)
+        }
+    }
+}
+
+fn loopback_target(
+    address: Option<String>,
+    device_name: Option<String>,
+) -> loopback::LoopbackTarget {
+    match (address, device_name) {
+        (Some(address), _) => loopback::LoopbackTarget::addressed(address),
+        (None, Some(device_name)) => loopback::LoopbackTarget::named(device_name),
+        (None, None) => loopback::LoopbackTarget::default(),
+    }
+}
+
+fn run_package_install(command: PackageInstallCommand) -> ExitCode {
+    let package = match package_install::read_package_from_path(&command.package_path) {
+        Ok(package) => package,
+        Err(error) => {
+            eprintln!("failed to read package {}: {error}", command.package_path);
+            return ExitCode::from(1);
+        }
+    };
+
+    let transport = match package_transport::BtlePackageInstallTransport::new() {
+        Ok(transport) => transport,
+        Err(error) => {
+            eprintln!("failed to initialize package transport: {error}");
+            return ExitCode::from(1);
+        }
+    };
+
+    if let Err(error) = transport.open(loopback_target(command.address, command.device_name)) {
+        eprintln!("failed to open package transport: {error}");
+        return ExitCode::from(1);
+    }
+
+    match package_install::install_package(&package, &transport) {
+        Ok(report) => {
+            transport.close();
+            println!(
+                "package install ok for {}: {:?}",
+                report.package_name, report.steps
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("package install failed: {error}");
+            ExitCode::from(1)
+        }
+    }
+}
+
+fn run_package_erase(command: PackageEraseCommand) -> ExitCode {
+    let transport = match package_transport::BtlePackageInstallTransport::new() {
+        Ok(transport) => transport,
+        Err(error) => {
+            eprintln!("failed to initialize package transport: {error}");
+            return ExitCode::from(1);
+        }
+    };
+
+    if let Err(error) = transport.open(loopback_target(command.address, command.device_name)) {
+        eprintln!("failed to open package transport: {error}");
+        return ExitCode::from(1);
+    }
+
+    match package_install::erase_package(&transport) {
+        Ok(report) => {
+            transport.close();
+            println!("package erase ok: {:?}", report.steps);
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("package erase failed: {error}");
+            ExitCode::from(1)
+        }
+    }
 }
 
 /// Parses command-line arguments into a top-level CLI command.

@@ -145,6 +145,7 @@ dependencies = [
 name = "cargo-vescpkg"
 version = "0.1.0"
 dependencies = [
+ "vesc-cli",
  "vescpkg-rs-build",
 ]
 

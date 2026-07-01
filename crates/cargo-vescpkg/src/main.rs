@@ -1,4 +1,4 @@
-//! Cargo subcommand entrypoint for building VESC package artifacts.
+//! Cargo subcommand entrypoint for VESC package workflows.
 
 use std::process::ExitCode;
 
@@ -20,6 +20,11 @@ fn print_error(error: CargoVescPkgError) -> ExitCode {
 }
 
 fn main() -> ExitCode {
+    let args = std::env::args().skip(1).collect::<Vec<_>>();
+    if !matches!(args.first().map(String::as_str), Some("build")) {
+        return vesc_cli::run_args(std::iter::once("cargo vescpkg".to_owned()).chain(args));
+    }
+
     let root = match std::env::current_dir() {
         Ok(root) => root,
         Err(error) => {
@@ -29,7 +34,7 @@ fn main() -> ExitCode {
     };
     let runner = RealPackageRunner;
 
-    match run_with(root, std::env::args().skip(1), &runner) {
+    match run_with(root, args, &runner) {
         Ok(path) => {
             println!("{}", path.display());
             ExitCode::SUCCESS

@@ -1,7 +1,7 @@
 # Cargo VescPkg Command
 
-This note captures the intended long-term Cargo entrypoint for the Rust-backed
-VESC package flow.
+This note captures the intended Cargo entrypoint for the Rust-backed VESC
+package flow.
 
 This is an unofficial Cargo subcommand for Rust VESC package experiments; it is
 not an official VESC project or endorsed command.
@@ -12,6 +12,8 @@ not an official VESC project or endorsed command.
 - The shared implementation should live in `crates/vescpkg-rs-build`.
 - The command should build on the existing package plans rather than duplicating
   staging or artifact layout logic.
+- Operator workflows may delegate to `vesc-cli` internals while the repo is
+  greenfield, but package users should invoke them through `cargo vescpkg`.
 - The package target is the device-side BTLE loopback package, not a generic
   archive builder.
 - The current checked workflow remains `nix develop -c make check`.
@@ -21,6 +23,11 @@ not an official VESC project or endorsed command.
 - `cargo vescpkg build`
 - optional `cargo vescpkg build --package-only`
 - optional `cargo vescpkg build --target thumbv7em-none-eabihf`
+- `cargo vescpkg deploy <package.vescpkg>`
+- `cargo vescpkg package-install <package.vescpkg>`
+- `cargo vescpkg erase-package`
+- `cargo vescpkg loopback`
+- `cargo vescpkg lisp-probe`
 - the repo prototype lives in the thin `crates/cargo-vescpkg` subcommand crate
 
 ## Responsibilities
@@ -31,6 +38,8 @@ not an official VESC project or endorsed command.
 - keep the device package wired to VESC BTLE on the firmware side
 - preserve the Predictable artifact path under `target/vescpkg`
 - keep the package-size guard and symbol checks in the workspace gates
+- keep `vesc-cli` available as an implementation/compatibility binary until the
+  command surface no longer needs it
 
 ## Non-Goals
 
