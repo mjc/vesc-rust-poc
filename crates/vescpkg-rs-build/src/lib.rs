@@ -120,7 +120,7 @@ pub use package_artifacts::{
     PackageArtifactProblem,
 };
 pub use package_assets::{PackageAssets, PackageProvenance};
-pub use package_build::PackageBuildPlan;
+pub use package_build::{PackageBuildPlan, PackageExample};
 pub use package_conversion::{
     CONVERSION_SCRIPT_PATH, NATIVE_LIB_BINARY_PATH, PACKAGE_LIB_BINARY_PATH,
     PackageBinaryConversionCommand, PackageBinaryConversionError, PackageBinaryConversionPlan,

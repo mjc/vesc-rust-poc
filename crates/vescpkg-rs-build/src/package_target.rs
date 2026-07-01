@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::PackageProvenance;
 use crate::package_artifacts::PackageArtifactInspectionError;
-use crate::package_build::PackageBuildPlan;
+use crate::package_build::{PackageBuildPlan, PackageExample};
 use crate::package_conversion::{PackageBinaryConversionError, PackageBinaryConversionRunner};
 
 /// The two supported package target modes.
@@ -52,11 +52,29 @@ impl PackageTargetPlan {
         version: impl Into<String>,
         mode: PackageTargetMode,
     ) -> Self {
-        Self::with_provenance(
+        Self::for_example(
+            source_root,
+            package_name,
+            version,
+            PackageExample::Loopback,
+            mode,
+        )
+    }
+
+    /// Build a target plan for a selected package example without provenance metadata.
+    pub fn for_example(
+        source_root: impl Into<PathBuf>,
+        package_name: impl Into<String>,
+        version: impl Into<String>,
+        example: PackageExample,
+        mode: PackageTargetMode,
+    ) -> Self {
+        Self::with_provenance_for_example(
             source_root,
             package_name,
             version,
             PackageProvenance::empty(),
+            example,
             mode,
         )
     }
@@ -69,12 +87,32 @@ impl PackageTargetPlan {
         provenance: PackageProvenance,
         mode: PackageTargetMode,
     ) -> Self {
+        Self::with_provenance_for_example(
+            source_root,
+            package_name,
+            version,
+            provenance,
+            PackageExample::Loopback,
+            mode,
+        )
+    }
+
+    /// Build a target plan with explicit provenance metadata for a selected package example.
+    pub fn with_provenance_for_example(
+        source_root: impl Into<PathBuf>,
+        package_name: impl Into<String>,
+        version: impl Into<String>,
+        provenance: PackageProvenance,
+        example: PackageExample,
+        mode: PackageTargetMode,
+    ) -> Self {
         Self {
-            build_plan: PackageBuildPlan::with_provenance(
+            build_plan: PackageBuildPlan::with_provenance_for_example(
                 source_root,
                 package_name,
                 version,
                 provenance,
+                example,
             ),
             mode,
         }

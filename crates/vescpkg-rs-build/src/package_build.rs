@@ -9,12 +9,44 @@ use crate::package_conversion::{
 };
 use crate::package_format::{VescPackageInput, write_vesc_package};
 
+/// Package example artifact profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PackageExample {
+    /// BLE loopback package example.
+    Loopback,
+    /// Snake package example.
+    Snake,
+}
+
+impl PackageExample {
+    /// Return the example source directory.
+    pub fn source_path(self) -> PathBuf {
+        match self {
+            Self::Loopback => PathBuf::from("examples/loopback"),
+            Self::Snake => PathBuf::from("examples/snake"),
+        }
+    }
+
+    /// Return the built staticlib input path for this example.
+    pub fn native_artifact_input_path(self) -> PathBuf {
+        match self {
+            Self::Loopback => {
+                PathBuf::from("target/thumbv7em-none-eabihf/release/libvesc_example_loopback.a")
+            }
+            Self::Snake => {
+                PathBuf::from("target/thumbv7em-none-eabihf/release/libvesc_example_snake.a")
+            }
+        }
+    }
+}
+
 /// End-to-end package build plan from source tree to `.vescpkg` output.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageBuildPlan {
     source_root: PathBuf,
     layout: PackageLayout,
     provenance: PackageProvenance,
+    example: PackageExample,
 }
 
 impl PackageBuildPlan {
@@ -24,11 +56,22 @@ impl PackageBuildPlan {
         package_name: impl Into<String>,
         version: impl Into<String>,
     ) -> Self {
-        Self::with_provenance(
+        Self::for_example(source_root, package_name, version, PackageExample::Loopback)
+    }
+
+    /// Build a plan for a selected package example without provenance metadata.
+    pub fn for_example(
+        source_root: impl Into<PathBuf>,
+        package_name: impl Into<String>,
+        version: impl Into<String>,
+        example: PackageExample,
+    ) -> Self {
+        Self::with_provenance_for_example(
             source_root,
             package_name,
             version,
             PackageProvenance::empty(),
+            example,
         )
     }
 
@@ -39,16 +82,49 @@ impl PackageBuildPlan {
         version: impl Into<String>,
         provenance: PackageProvenance,
     ) -> Self {
+        Self::with_provenance_for_example(
+            source_root,
+            package_name,
+            version,
+            provenance,
+            PackageExample::Loopback,
+        )
+    }
+
+    /// Build a plan with explicit provenance metadata for a selected package example.
+    pub fn with_provenance_for_example(
+        source_root: impl Into<PathBuf>,
+        package_name: impl Into<String>,
+        version: impl Into<String>,
+        provenance: PackageProvenance,
+        example: PackageExample,
+    ) -> Self {
         Self {
             source_root: source_root.into(),
             layout: PackageLayout::new(package_name, version),
             provenance,
+            example,
         }
     }
 
     /// Return the package layout used by this plan.
     pub fn layout(&self) -> &PackageLayout {
         &self.layout
+    }
+
+    /// Return the selected package example profile.
+    pub fn example(&self) -> PackageExample {
+        self.example
+    }
+
+    /// Return the example source path.
+    pub fn example_source_path(&self) -> PathBuf {
+        self.example.source_path()
+    }
+
+    /// Return the native staticlib artifact input path.
+    pub fn native_artifact_input_path(&self) -> PathBuf {
+        self.example.native_artifact_input_path()
     }
 
     /// Return the rendered package assets for this plan.

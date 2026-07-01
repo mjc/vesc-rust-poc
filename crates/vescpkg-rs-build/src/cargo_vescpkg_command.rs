@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::{
-    BLE_LOOPBACK_PACKAGE_NAME, PackageBinaryConversionRunner, PackageTargetError,
+    BLE_LOOPBACK_PACKAGE_NAME, PackageBinaryConversionRunner, PackageExample, PackageTargetError,
     PackageTargetMode, PackageTargetPlan, SNAKE_PACKAGE_NAME,
 };
 
@@ -155,6 +155,14 @@ impl CargoVescPkgInvocation {
         }
     }
 
+    /// Return the build-layer package example associated with this invocation.
+    pub fn package_example(&self) -> PackageExample {
+        match self.example {
+            CargoVescPkgExample::Loopback => PackageExample::Loopback,
+            CargoVescPkgExample::Snake => PackageExample::Snake,
+        }
+    }
+
     /// Render the cargo subcommand arguments implied by this invocation.
     pub fn subcommand_args(&self) -> Vec<String> {
         let mut args = vec![BUILD_SUBCOMMAND.to_owned()];
@@ -186,10 +194,11 @@ impl CargoVescPkgInvocation {
 
     /// Build the package target plan for this invocation.
     pub fn package_target_plan(&self, repo_root: impl Into<PathBuf>) -> PackageTargetPlan {
-        PackageTargetPlan::new(
+        PackageTargetPlan::for_example(
             repo_root,
             self.package_name(),
             self.package_version.clone(),
+            self.package_example(),
             self.package_target_mode(),
         )
     }
@@ -402,13 +411,20 @@ mod tests {
                 DEFAULT_TARGET_TRIPLE.to_owned(),
             ]
         );
+        let plan = invocation.package_target_plan("/tmp/repo");
         assert_eq!(
-            invocation
-                .package_target_plan("/tmp/repo")
-                .package_output_path(),
+            plan.package_output_path(),
             PathBuf::from(
                 "target/vescpkg/Rust-Snake-example-package-0.1.0/Rust-Snake-example-package-0.1.0.vescpkg"
             )
+        );
+        assert_eq!(
+            plan.build_plan().native_artifact_input_path(),
+            PathBuf::from("target/thumbv7em-none-eabihf/release/libvesc_example_snake.a")
+        );
+        assert_eq!(
+            plan.build_plan().example_source_path(),
+            PathBuf::from("examples/snake")
         );
     }
 

@@ -1,11 +1,13 @@
 //! Command-line tool for building, installing, and debugging Rust VESC packages.
 
+use std::collections::VecDeque;
 use std::io::{self, Write};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use crossterm::cursor::{Hide, MoveTo, Show};
-use crossterm::event::{self, Event, KeyCode, KeyEvent};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::style::{Color, Print, ResetColor, SetForegroundColor};
 use crossterm::terminal::{
     Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
@@ -321,6 +323,209 @@ where
     result
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TerminalSnakePoint {
+    x: u16,
+    y: u16,
+}
+
+#[derive(Debug)]
+struct TerminalSnakeGame {
+    width: u16,
+    height: u16,
+    snake: VecDeque<TerminalSnakePoint>,
+    direction: snake::SnakeDirection,
+    pending_direction: Option<snake::SnakeDirection>,
+    food: TerminalSnakePoint,
+    score: u32,
+    rng: u32,
+    game_over: bool,
+}
+
+impl TerminalSnakeGame {
+    fn new(board: snake::SnakeBoardSize, seed: u32) -> Self {
+        let width = u16::from(board.width()).max(12);
+        let height = u16::from(board.height()).max(12);
+        let head = TerminalSnakePoint {
+            x: width / 2,
+            y: height / 2,
+        };
+        let mut snake = VecDeque::new();
+        snake.push_front(head);
+        snake.push_back(TerminalSnakePoint {
+            x: head.x.saturating_sub(1),
+            y: head.y,
+        });
+        snake.push_back(TerminalSnakePoint {
+            x: head.x.saturating_sub(2),
+            y: head.y,
+        });
+
+        let mut game = Self {
+            width,
+            height,
+            snake,
+            direction: snake::SnakeDirection::Right,
+            pending_direction: None,
+            food: TerminalSnakePoint { x: 1, y: 1 },
+            score: 0,
+            rng: seed.max(1),
+            game_over: false,
+        };
+        game.spawn_food();
+        game
+    }
+
+    fn queue_direction(&mut self, direction: snake::SnakeDirection) {
+        if self.pending_direction.is_some()
+            || self.direction == direction
+            || is_terminal_reverse(self.direction, direction)
+        {
+            return;
+        }
+        self.pending_direction = Some(direction);
+    }
+
+    fn step(&mut self) {
+        if self.game_over {
+            return;
+        }
+
+        if let Some(direction) = self.pending_direction.take() {
+            self.direction = direction;
+        }
+
+        let Some(head) = self.snake.front().copied() else {
+            self.game_over = true;
+            return;
+        };
+
+        let next = match self.direction {
+            snake::SnakeDirection::Up => TerminalSnakePoint {
+                x: head.x,
+                y: head.y.saturating_sub(1),
+            },
+            snake::SnakeDirection::Down => TerminalSnakePoint {
+                x: head.x,
+                y: head.y.saturating_add(1),
+            },
+            snake::SnakeDirection::Left => TerminalSnakePoint {
+                x: head.x.saturating_sub(1),
+                y: head.y,
+            },
+            snake::SnakeDirection::Right => TerminalSnakePoint {
+                x: head.x.saturating_add(1),
+                y: head.y,
+            },
+        };
+
+        let ate_food = next == self.food;
+        if !ate_food {
+            self.snake.pop_back();
+        }
+
+        if next.x == 0
+            || next.y == 0
+            || next.x >= self.width - 1
+            || next.y >= self.height - 1
+            || self.snake.iter().any(|point| *point == next)
+        {
+            self.game_over = true;
+            return;
+        }
+
+        self.snake.push_front(next);
+        if ate_food {
+            self.score = self.score.saturating_add(10);
+            self.spawn_food();
+        }
+    }
+
+    fn spawn_food(&mut self) {
+        let inner_width = self.width.saturating_sub(2).max(1);
+        let inner_height = self.height.saturating_sub(2).max(1);
+        for _ in 0..512 {
+            self.rng = self.rng.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let x = 1 + (self.rng % u32::from(inner_width)) as u16;
+            self.rng = self.rng.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let y = 1 + (self.rng % u32::from(inner_height)) as u16;
+            let candidate = TerminalSnakePoint { x, y };
+            if !self.snake.iter().any(|point| *point == candidate) {
+                self.food = candidate;
+                return;
+            }
+        }
+    }
+
+    fn draw<W: Write>(&self, output: &mut W) -> io::Result<()> {
+        queue!(output, MoveTo(0, 0))?;
+
+        let head = self.snake.front().copied();
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let point = TerminalSnakePoint { x, y };
+                if x == 0 || y == 0 || x == self.width - 1 || y == self.height - 1 {
+                    queue!(
+                        output,
+                        SetForegroundColor(Color::White),
+                        Print("#"),
+                        ResetColor
+                    )?;
+                } else if Some(point) == head {
+                    queue!(
+                        output,
+                        SetForegroundColor(Color::Green),
+                        Print("O"),
+                        ResetColor
+                    )?;
+                } else if self.snake.iter().skip(1).any(|body| *body == point) {
+                    queue!(
+                        output,
+                        SetForegroundColor(Color::Green),
+                        Print("o"),
+                        ResetColor
+                    )?;
+                } else if point == self.food {
+                    queue!(
+                        output,
+                        SetForegroundColor(Color::Red),
+                        Print("*"),
+                        ResetColor
+                    )?;
+                } else {
+                    queue!(output, Print(" "))?;
+                }
+            }
+            queue!(output, Print("\r\n"))?;
+        }
+
+        queue!(
+            output,
+            ResetColor,
+            Print(format!(
+                "Score: {}  WASD/arrows move, q quits{}",
+                self.score,
+                if self.game_over {
+                    "  GAME OVER"
+                } else {
+                    "           "
+                }
+            ))
+        )?;
+        output.flush()
+    }
+}
+
+fn is_terminal_reverse(current: snake::SnakeDirection, requested: snake::SnakeDirection) -> bool {
+    matches!(
+        (current, requested),
+        (snake::SnakeDirection::Up, snake::SnakeDirection::Down)
+            | (snake::SnakeDirection::Down, snake::SnakeDirection::Up)
+            | (snake::SnakeDirection::Left, snake::SnakeDirection::Right)
+            | (snake::SnakeDirection::Right, snake::SnakeDirection::Left)
+    )
+}
+
 fn run_snake_terminal_loop<W>(
     model: &mut snake::SnakeModel,
     output: &mut W,
@@ -332,146 +537,71 @@ where
 {
     queue!(output, Clear(ClearType::All))
         .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
-    render_snake_terminal_frame(model, output)?;
 
     let interval = Duration::from_millis(u64::from(tick_interval.as_millis()));
-    let mut next_tick = Instant::now() + interval;
+    let mut last_tick = Instant::now();
     let mut ticks = snake::SnakeTick::new(0);
+    let mut game = TerminalSnakeGame::new(model.board(), 1);
+    game.draw(output)
+        .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
 
     while ticks.get() < u32::from(tick_limit.get()) {
-        let now = Instant::now();
-        let wait = next_tick.saturating_duration_since(now);
+        let timeout = interval
+            .checked_sub(last_tick.elapsed())
+            .unwrap_or(Duration::ZERO);
 
-        if !wait.is_zero()
-            && event::poll(wait).map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?
-            && let Event::Key(key) =
+        if event::poll(timeout).map_err(|_| snake::SnakeTransitionError::AlreadyRunning)? {
+            if let Event::Key(key) =
                 event::read().map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?
-        {
-            match snake_action_from_key(key) {
-                Some(snake::SnakeLocalAction::Quit) => return Ok(()),
-                Some(action) => apply_snake_action(model, action, &mut ticks)?,
-                None => {}
-            }
-        }
-
-        if Instant::now() >= next_tick {
-            apply_snake_action(model, snake::SnakeLocalAction::Tick, &mut ticks)?;
-            render_snake_terminal_frame(model, output)?;
-            next_tick += interval;
-        }
-
-        if model.state() == snake::SnakeSessionState::GameOver {
-            break;
-        }
-    }
-
-    Ok(())
-}
-
-fn render_snake_terminal_frame<W>(
-    model: &snake::SnakeModel,
-    output: &mut W,
-) -> Result<(), snake::SnakeTransitionError>
-where
-    W: Write,
-{
-    let snapshot = model
-        .snapshot()
-        .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
-    let board = snapshot.board().board();
-    let clear_width = usize::from(board.width()) + 2;
-
-    queue!(output, MoveTo(0, 0)).map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
-    write!(
-        output,
-        "Snake | score={} tick={} state={:?} direction={:?}{:width$}\r\n",
-        snapshot.score().get(),
-        snapshot.tick().get(),
-        snapshot.state(),
-        snapshot.direction(),
-        "",
-        width = clear_width
-    )
-    .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
-    write!(
-        output,
-        "wasd/arrows steer | space pause/resume | r reset | q quit{:width$}\r\n",
-        "",
-        width = clear_width
-    )
-    .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
-    write!(output, "+{}+\r\n", "-".repeat(usize::from(board.width())))
-        .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
-
-    for y in 0..board.height() {
-        write!(output, "|").map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
-        for x in 0..board.width() {
-            let cell = snake::SnakeCell::new(x, y);
-            let ch = if cell == snapshot.board().head() {
-                '█'
-            } else if cell == snapshot.board().food() {
-                '*'
-            } else if snapshot.board().body().contains(&cell) {
-                '█'
-            } else {
-                ' '
-            };
-            write!(output, "{ch}").map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
-        }
-        write!(output, "|\r\n").map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
-    }
-
-    write!(output, "+{}+\r\n", "-".repeat(usize::from(board.width())))
-        .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
-    output
-        .flush()
-        .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)
-}
-
-fn apply_snake_action(
-    model: &mut snake::SnakeModel,
-    action: snake::SnakeLocalAction,
-    ticks: &mut snake::SnakeTick,
-) -> Result<(), snake::SnakeTransitionError> {
-    match action {
-        snake::SnakeLocalAction::Quit => {}
-        snake::SnakeLocalAction::Tick => {
-            let outcome = model.advance();
-            if matches!(
-                outcome,
-                snake::SnakeStepOutcome::Advanced | snake::SnakeStepOutcome::AteFood
-            ) {
-                *ticks = snake::SnakeTick::new(ticks.get().wrapping_add(1));
-            }
-        }
-        snake::SnakeLocalAction::Turn(direction) => {
-            if let Err(error) = model.set_direction(direction)
-                && !matches!(error, snake::SnakeTransitionError::ReverseTurn { .. })
             {
-                return Err(error);
+                if let Some(action) = snake_action_from_key(key) {
+                    match action {
+                        snake::SnakeLocalAction::Quit => return Ok(()),
+                        snake::SnakeLocalAction::Turn(direction) => game.queue_direction(direction),
+                        snake::SnakeLocalAction::Reset => {
+                            game = TerminalSnakeGame::new(model.board(), 1);
+                            ticks = snake::SnakeTick::new(0);
+                            last_tick = Instant::now();
+                        }
+                        snake::SnakeLocalAction::Pause
+                        | snake::SnakeLocalAction::Resume
+                        | snake::SnakeLocalAction::TogglePause
+                        | snake::SnakeLocalAction::Tick => {}
+                    }
+                }
             }
         }
-        snake::SnakeLocalAction::Pause => {
-            if model.state() == snake::SnakeSessionState::Running {
-                model.pause()?;
+
+        if last_tick.elapsed() >= interval {
+            game.step();
+            ticks = snake::SnakeTick::new(ticks.get().wrapping_add(1));
+            game.draw(output)
+                .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?;
+            last_tick = Instant::now();
+        }
+
+        if game.game_over {
+            loop {
+                if event::poll(Duration::from_millis(50))
+                    .map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?
+                    && let Event::Key(key) =
+                        event::read().map_err(|_| snake::SnakeTransitionError::AlreadyRunning)?
+                    && matches!(key.code, KeyCode::Char('q' | 'Q') | KeyCode::Esc)
+                {
+                    return Ok(());
+                }
             }
         }
-        snake::SnakeLocalAction::Resume => {
-            if model.state() == snake::SnakeSessionState::Paused {
-                model.resume()?;
-            }
-        }
-        snake::SnakeLocalAction::TogglePause => match model.state() {
-            snake::SnakeSessionState::Running => model.pause()?,
-            snake::SnakeSessionState::Paused => model.resume()?,
-            snake::SnakeSessionState::Idle | snake::SnakeSessionState::GameOver => {}
-        },
-        snake::SnakeLocalAction::Reset => model.reset(),
     }
+
     Ok(())
 }
 
 fn snake_action_from_key(key: KeyEvent) -> Option<snake::SnakeLocalAction> {
+    if key.kind != KeyEventKind::Press {
+        return None;
+    }
+
     match key.code {
         KeyCode::Char('q' | 'Q') | KeyCode::Esc => Some(snake::SnakeLocalAction::Quit),
         KeyCode::Char('r' | 'R') => Some(snake::SnakeLocalAction::Reset),
@@ -707,14 +837,14 @@ fn parse_erase_package(
 fn parse_snake(mut iter: impl Iterator<Item = String>) -> Result<SnakeCommand, ParseError> {
     let mut device_name = None;
     let mut address = None;
-    let mut board_width = snake::SnakeBoardWidth::new(32).expect("default width");
-    let mut board_height = snake::SnakeBoardHeight::new(18).expect("default height");
+    let mut board_width = snake::SnakeBoardWidth::new(24).expect("default width");
+    let mut board_height = snake::SnakeBoardHeight::new(24).expect("default height");
     let mut seed = snake::SnakeSeed::new(1);
     let mut moves = Vec::new();
     let mut actions = Vec::new();
     let mut run_mode = SnakeRunMode::Interactive;
     let mut tick_limit = snake::SnakeTickLimit::new(1000).expect("default tick limit");
-    let mut tick_interval = snake::SnakeTickInterval::new_millis(320).expect("default interval");
+    let mut tick_interval = snake::SnakeTickInterval::new_millis(170).expect("default interval");
 
     while let Some(arg) = iter.next() {
         match arg.as_str() {
@@ -889,7 +1019,7 @@ mod tests {
         SnakeBoardHeight, SnakeBoardWidth, SnakeDirection, SnakeLocalAction, SnakeSeed,
         SnakeTickInterval, SnakeTickLimit,
     };
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
     use vesc_protocol::{WireCommand, WireVersion};
 
     #[test]
@@ -1145,6 +1275,15 @@ mod tests {
         );
         assert_eq!(
             snake_action_from_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)),
+            None
+        );
+        assert_eq!(
+            snake_action_from_key(KeyEvent {
+                code: KeyCode::Up,
+                modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Repeat,
+                state: KeyEventState::NONE,
+            }),
             None
         );
     }

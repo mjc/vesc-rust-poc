@@ -508,6 +508,14 @@ impl SnakeModel {
             ));
         }
 
+        if self.direction == direction {
+            return Ok(());
+        }
+
+        if self.pending_direction.is_some() {
+            return Ok(());
+        }
+
         if is_reverse(self.direction, direction) {
             return Err(SnakeTransitionError::ReverseTurn {
                 current: self.direction,
@@ -842,6 +850,28 @@ mod tests {
         assert_eq!(model.advance(), SnakeStepOutcome::Paused);
         model.resume().expect("resume");
         assert_eq!(model.state(), SnakeSessionState::Running);
+    }
+
+    #[test]
+    fn queues_at_most_one_turn_per_tick() {
+        let board = SnakeBoardSize::new(8, 6).expect("board");
+        let mut model = SnakeModel::new(board, 12);
+        let start = model.head();
+
+        model
+            .set_direction(SnakeDirection::Up)
+            .expect("first queued turn");
+        model
+            .set_direction(SnakeDirection::Up)
+            .expect("same direction repeat is ignored");
+        model
+            .set_direction(SnakeDirection::Left)
+            .expect("second pre-tick turn is ignored");
+
+        assert_eq!(model.direction(), SnakeDirection::Right);
+        assert_eq!(model.advance(), SnakeStepOutcome::Advanced);
+        assert_eq!(model.direction(), SnakeDirection::Up);
+        assert_eq!(model.head(), SnakeCell::new(start.x(), start.y() - 1));
     }
 
     #[test]
