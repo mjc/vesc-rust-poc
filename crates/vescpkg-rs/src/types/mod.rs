@@ -37,7 +37,7 @@ pub mod ratio;
 pub mod temperature;
 pub mod time;
 
-pub use adc::{AdcDecodedLevel, AdcVoltage};
+pub use adc::{AdcDecodedLevel, AdcVoltage, BrakeLeverLevel, BrakeSwitch};
 pub use battery::{
     AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, BatteryVoltage, CellVoltage,
     InputCurrent, InputVoltage, WattHoursCharged, WattHoursDischarged, WattHoursRemaining,

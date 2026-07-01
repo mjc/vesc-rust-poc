@@ -63,14 +63,14 @@ mod tests {
     use crate::types::{
         AdcDecodedLevel, AdcVoltage, AudioDuration, AudioFrequency, AudioSampleRate, AudioVoltage,
         AveragePower, BatteryCurrent, BatteryVoltage, BaudRate, BrakeCurrentRelative,
-        CanControllerId, CanPayloadLen, CurrentRelative, DVoltage, DirectionalMotorCurrent,
-        DutyCycle, FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance, GearRatio,
-        GnssLatitude, GnssLongitude, GnssSpeed, HandbrakeRelative, ImuAcceleration, ImuAngularRate,
-        ImuPitch, ImuQuaternion, ImuRoll, ImuYaw, JoystickX, JoystickY, MechanicalSpeed,
-        MotorCurrent, MotorPoleCount, OpenLoopPhase, PacketLength, PeakPower, PidPosition, PpmAge,
-        PpmInput, QVoltage, RemoteAge, SystemDuration, SystemTimestamp, ThreadPriority,
-        TimeoutDuration, TotalMotorCurrent, TripDistance, VehicleSpeed, WattHoursDischarged,
-        WheelDiameter,
+        BrakeLeverLevel, BrakeSwitch, CanControllerId, CanPayloadLen, CurrentRelative, DVoltage,
+        DirectionalMotorCurrent, DutyCycle, FocMotorFluxLinkage, FocMotorInductance,
+        FocMotorResistance, GearRatio, GnssLatitude, GnssLongitude, GnssSpeed, HandbrakeRelative,
+        ImuAcceleration, ImuAngularRate, ImuPitch, ImuQuaternion, ImuRoll, ImuYaw, JoystickX,
+        JoystickY, MechanicalSpeed, MotorCurrent, MotorPoleCount, OpenLoopPhase, PacketLength,
+        PeakPower, PidPosition, PpmAge, PpmInput, QVoltage, RemoteAge, SystemDuration,
+        SystemTimestamp, ThreadPriority, TimeoutDuration, TotalMotorCurrent, TripDistance,
+        VehicleSpeed, WattHoursDischarged, WheelDiameter,
     };
     use vescpkg_rs_units::{
         AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Current, Distance, Energy,
@@ -237,6 +237,8 @@ mod tests {
         let adc_voltage = AdcVoltage::new(Voltage::from_volts(1.65));
         let adc_level = AdcDecodedLevel::try_new(Ratio::from_ratio(0.5).expect("normalized level"))
             .expect("firmware decoded ADC level");
+        let brake_lever = BrakeLeverLevel::new(Ratio::from_ratio(0.35).expect("brake lever level"));
+        let brake_switch = BrakeSwitch::Pressed;
         let roll = ImuRoll::new(AngleRadians::from_radians(0.25));
         let pitch = ImuPitch::new(AngleRadians::from_radians(-0.125));
         let yaw = ImuYaw::new(AngleRadians::from_radians(1.0));
@@ -254,6 +256,8 @@ mod tests {
 
         assert_eq!(adc_voltage.voltage().as_volts(), 1.65);
         assert_eq!(adc_level.ratio().as_ratio(), 0.5);
+        assert_eq!(brake_lever.ratio().as_ratio(), 0.35);
+        assert_eq!(brake_switch, BrakeSwitch::Pressed);
         assert_eq!(roll.angle().as_radians(), 0.25);
         assert_eq!(pitch.angle().as_radians(), -0.125);
         assert_eq!(yaw.angle().as_radians(), 1.0);

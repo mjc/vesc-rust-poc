@@ -40,3 +40,29 @@ impl AdcDecodedLevel {
         self.0
     }
 }
+
+/// Brake lever/input level decoded from ADC or app input.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct BrakeLeverLevel(Ratio);
+
+impl BrakeLeverLevel {
+    /// Wrap a checked normalized ratio as a brake lever/input level.
+    pub const fn new(level: Ratio) -> Self {
+        Self(level)
+    }
+
+    /// Return the typed input level without erasing it to a primitive.
+    pub const fn ratio(self) -> Ratio {
+        self.0
+    }
+}
+
+/// Brake switch/button input state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum BrakeSwitch {
+    /// Brake switch/button is inactive.
+    Released,
+    /// Brake switch/button is active.
+    Pressed,
+}
