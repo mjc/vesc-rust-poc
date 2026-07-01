@@ -78,6 +78,10 @@ pub struct SnakeCommand {
     pub board_height: snake::SnakeBoardHeight,
     /// Deterministic seed used by scripted and fake sessions.
     pub seed: snake::SnakeSeed,
+    /// Scripted WASD-style direction input for CLI-only sessions.
+    pub moves: Vec<snake::SnakeDirection>,
+    /// Number of ticks to render after the initial frame.
+    pub tick_limit: snake::SnakeTickLimit,
 }
 
 /// Errors returned while parsing CLI arguments.
@@ -218,9 +222,10 @@ fn run_snake(command: SnakeCommand) -> ExitCode {
         return ExitCode::from(2);
     };
     let model = snake::SnakeModel::new(board, command.seed.get());
-    match model.snapshot() {
-        Ok(snapshot) => {
-            print!("{}", snake::render_terminal_snapshot(&snapshot));
+    let mut model = model;
+    match snake::render_scripted_terminal_session(&mut model, command.moves, command.tick_limit) {
+        Ok(output) => {
+            print!("{output}");
             ExitCode::SUCCESS
         }
         Err(error) => {
@@ -446,6 +451,8 @@ fn parse_snake(mut iter: impl Iterator<Item = String>) -> Result<SnakeCommand, P
     let mut board_width = snake::SnakeBoardWidth::new(16).expect("default width");
     let mut board_height = snake::SnakeBoardHeight::new(12).expect("default height");
     let mut seed = snake::SnakeSeed::new(1);
+    let mut moves = Vec::new();
+    let mut tick_limit = snake::SnakeTickLimit::new(1).expect("default tick limit");
 
     while let Some(arg) = iter.next() {
         match arg.as_str() {
@@ -475,6 +482,18 @@ fn parse_snake(mut iter: impl Iterator<Item = String>) -> Result<SnakeCommand, P
                     .ok_or_else(|| ParseError::UnknownCommand("--seed".to_owned()))?;
                 seed = parse_snake_seed(&value)?;
             }
+            "--moves" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| ParseError::UnknownCommand("--moves".to_owned()))?;
+                moves = parse_snake_moves(&value)?;
+            }
+            "--ticks" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| ParseError::UnknownCommand("--ticks".to_owned()))?;
+                tick_limit = parse_snake_tick_limit(&value)?;
+            }
             other => return Err(ParseError::UnknownCommand(other.to_owned())),
         }
     }
@@ -485,6 +504,8 @@ fn parse_snake(mut iter: impl Iterator<Item = String>) -> Result<SnakeCommand, P
         board_width,
         board_height,
         seed,
+        moves,
+        tick_limit,
     })
 }
 
@@ -515,6 +536,27 @@ fn parse_snake_seed(value: &str) -> Result<snake::SnakeSeed, ParseError> {
         .map_err(|_| ParseError::UnknownCommand(value.to_owned()))
 }
 
+fn parse_snake_moves(value: &str) -> Result<Vec<snake::SnakeDirection>, ParseError> {
+    value
+        .chars()
+        .map(|ch| match ch {
+            'w' | 'W' => Ok(snake::SnakeDirection::Up),
+            'a' | 'A' => Ok(snake::SnakeDirection::Left),
+            's' | 'S' => Ok(snake::SnakeDirection::Down),
+            'd' | 'D' => Ok(snake::SnakeDirection::Right),
+            _ => Err(ParseError::UnknownCommand(value.to_owned())),
+        })
+        .collect()
+}
+
+fn parse_snake_tick_limit(value: &str) -> Result<snake::SnakeTickLimit, ParseError> {
+    value
+        .parse::<u16>()
+        .ok()
+        .and_then(snake::SnakeTickLimit::new)
+        .ok_or_else(|| ParseError::UnknownCommand(value.to_owned()))
+}
+
 mod ble_discovery;
 
 /// BLE UART transport, discovery, and Lisp probe helpers.
@@ -537,7 +579,9 @@ mod tests {
         Command, LispProbeCommand, LoopbackCommand, PackageEraseCommand, PackageInstallCommand,
         ParseError, SnakeCommand, parse_args,
     };
-    use crate::snake::{SnakeBoardHeight, SnakeBoardWidth, SnakeSeed};
+    use crate::snake::{
+        SnakeBoardHeight, SnakeBoardWidth, SnakeDirection, SnakeSeed, SnakeTickLimit,
+    };
     use vesc_protocol::{WireCommand, WireVersion};
 
     #[test]
@@ -686,7 +730,11 @@ mod tests {
                 "--board",
                 "12x8",
                 "--seed",
-                "99"
+                "99",
+                "--moves",
+                "sa",
+                "--ticks",
+                "2"
             ]),
             Ok(Command::Snake(SnakeCommand {
                 device_name: Some("VESC BLE UART".to_owned()),
@@ -694,6 +742,8 @@ mod tests {
                 board_width: SnakeBoardWidth::new(12).expect("width"),
                 board_height: SnakeBoardHeight::new(8).expect("height"),
                 seed: SnakeSeed::new(99),
+                moves: vec![SnakeDirection::Down, SnakeDirection::Left],
+                tick_limit: SnakeTickLimit::new(2).expect("tick limit"),
             }))
         );
         assert_eq!(

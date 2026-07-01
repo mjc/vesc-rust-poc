@@ -51,6 +51,22 @@ impl SnakeSeed {
     }
 }
 
+/// Maximum number of ticks to advance in a scripted CLI session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SnakeTickLimit(u16);
+
+impl SnakeTickLimit {
+    /// Create a bounded tick limit.
+    pub const fn new(value: u16) -> Option<Self> {
+        if value == 0 { None } else { Some(Self(value)) }
+    }
+
+    /// Extract the primitive tick count.
+    pub const fn get(self) -> u16 {
+        self.0
+    }
+}
+
 /// Board dimensions for the example snake.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SnakeBoardSize {
@@ -584,13 +600,13 @@ pub fn render_terminal_snapshot(snapshot: &SnakeSnapshot) -> String {
         for x in 0..board.width() {
             let cell = SnakeCell::new(x, y);
             let ch = if cell == snapshot.board().head() {
-                'S'
+                '█'
             } else if cell == snapshot.board().food() {
                 '*'
             } else if snapshot.board().body().contains(&cell) {
-                'o'
+                '█'
             } else {
-                '.'
+                ' '
             };
             output.push(ch);
         }
@@ -601,6 +617,37 @@ pub fn render_terminal_snapshot(snapshot: &SnakeSnapshot) -> String {
     output.push_str(&"-".repeat(usize::from(board.width())));
     output.push_str("+\n");
     output
+}
+
+/// Render an initial snapshot, then advance the model for a scripted number of ticks.
+pub fn render_scripted_terminal_session<I>(
+    model: &mut SnakeModel,
+    directions: I,
+    tick_limit: SnakeTickLimit,
+) -> Result<String, SnakeTransitionError>
+where
+    I: IntoIterator<Item = SnakeDirection>,
+{
+    let mut output = render_terminal_snapshot(
+        &model
+            .snapshot()
+            .map_err(|_| SnakeTransitionError::AlreadyRunning)?,
+    );
+    let mut directions = directions.into_iter();
+
+    for _ in 0..tick_limit.get() {
+        if let Some(direction) = directions.next() {
+            model.set_direction(direction)?;
+        }
+        model.advance();
+        output.push_str(&render_terminal_snapshot(
+            &model
+                .snapshot()
+                .map_err(|_| SnakeTransitionError::AlreadyRunning)?,
+        ));
+    }
+
+    Ok(output)
 }
 
 fn is_reverse(current: SnakeDirection, requested: SnakeDirection) -> bool {
@@ -742,7 +789,26 @@ mod tests {
 
         assert_eq!(
             render_terminal_snapshot(&snapshot),
-            "score=3 tick=7 state=Running direction=Right\n+-----+\n|.....|\n|.oS..|\n|.o...|\n|....*|\n+-----+\n"
+            "score=3 tick=7 state=Running direction=Right\n+-----+\n|     |\n| ██  |\n| █   |\n|    *|\n+-----+\n"
         );
+    }
+
+    #[test]
+    fn scripted_session_loops_and_applies_input() {
+        let board = SnakeBoardSize::new(5, 4).expect("board");
+        let mut model = SnakeModel::new(board, 99);
+
+        let output = render_scripted_terminal_session(
+            &mut model,
+            [SnakeDirection::Down, SnakeDirection::Left],
+            SnakeTickLimit::new(2).expect("tick limit"),
+        )
+        .expect("scripted session");
+
+        assert_eq!(model.tick(), SnakeTick::new(2));
+        assert!(output.contains("tick=0"));
+        assert!(output.contains("tick=1"));
+        assert!(output.contains("tick=2"));
+        assert_eq!(model.direction(), SnakeDirection::Left);
     }
 }
