@@ -448,6 +448,39 @@ pub fn run_lisp_probe(target: LoopbackTarget) -> Result<LispProbeReport, Loopbac
     run_lisp_probe_with_progress(target, |_| {})
 }
 
+/// Runs one Lisp REPL form and returns collected print output.
+pub fn run_lisp_eval_with_progress(
+    target: LoopbackTarget,
+    command: &str,
+    mut progress: impl FnMut(LispProbeProgress),
+) -> Result<LispProbeReport, LoopbackTransportError> {
+    progress(LispProbeProgress::StartingRuntime);
+    let runtime = Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(1)
+        .build()
+        .map_err(|_| {
+            LoopbackTransportError::Device("failed to start the BLE runtime".to_owned())
+        })?;
+
+    progress(LispProbeProgress::OpeningSession);
+    let mut session = runtime.block_on(open_session(target))?;
+    progress(LispProbeProgress::SessionOpened);
+    let packet = build_lisp_repl_packet(command);
+    progress(LispProbeProgress::SendingReplCommand {
+        attempt: 1,
+        bytes: packet.len(),
+    });
+    runtime.block_on(write_ble_uart_packet(
+        &session.peripheral,
+        &session.rx_char,
+        &packet,
+    ))?;
+    let prints = session.receive_lisp_prints_with_progress(progress)?;
+
+    Ok(lisp_probe_report(prints, 1))
+}
+
 /// Runs the Lisp probe diagnostic while reporting progress events.
 pub fn run_lisp_probe_with_progress(
     target: LoopbackTarget,

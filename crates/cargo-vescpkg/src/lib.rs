@@ -28,6 +28,8 @@ pub enum Command {
     Loopback(LoopbackCommand),
     /// Run the Lisp probe diagnostic against a target device.
     LispProbe(LispProbeCommand),
+    /// Run one Lisp REPL form against a target device.
+    LispEval(LispEvalCommand),
     /// Install a package on a target device.
     PackageInstall(PackageInstallCommand),
     /// Erase an installed package from a target device.
@@ -52,6 +54,17 @@ pub struct LoopbackCommand {
 /// Arguments for the `lisp-probe` command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LispProbeCommand {
+    /// Optional BLE device-name filter.
+    pub device_name: Option<String>,
+    /// Optional BLE address filter.
+    pub address: Option<String>,
+}
+
+/// Arguments for the `lisp-eval` command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LispEvalCommand {
+    /// Lisp REPL form to evaluate.
+    pub expression: String,
     /// Optional BLE device-name filter.
     pub device_name: Option<String>,
     /// Optional BLE address filter.
@@ -132,7 +145,7 @@ where
     match parse_args(args) {
         Ok(Command::Help) => {
             println!(
-                "cargo vescpkg: use `build`, `layout`, `status`, `scan`, `loopback`, `lisp-probe`, `deploy`, `snake-deploy`, `package-install`, `erase-package`, or `snake`"
+                "cargo vescpkg: use `build`, `layout`, `status`, `scan`, `loopback`, `lisp-probe`, `lisp-eval`, `deploy`, `snake-deploy`, `package-install`, `erase-package`, or `snake`"
             );
             ExitCode::SUCCESS
         }
@@ -204,6 +217,24 @@ where
                 }
                 Err(error) => {
                     eprintln!("lisp probe failed: {error}");
+                    ExitCode::from(1)
+                }
+            }
+        }
+        Ok(Command::LispEval(command)) => {
+            let target = loopback_target(command.address, command.device_name);
+
+            match btle::run_lisp_eval_with_progress(target, &command.expression, |event| {
+                if event.should_print_to_cli() {
+                    println!("lisp eval: {}", event.describe());
+                }
+            }) {
+                Ok(report) => {
+                    report.prints().iter().for_each(|line| println!("{line}"));
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("lisp eval failed: {error}");
                     ExitCode::from(1)
                 }
             }
@@ -759,6 +790,7 @@ where
         Some("scan") => Ok(Command::Scan),
         Some("loopback") => parse_loopback(iter).map(Command::Loopback),
         Some("lisp-probe") => parse_lisp_probe(iter).map(Command::LispProbe),
+        Some("lisp-eval") => parse_lisp_eval(iter).map(Command::LispEval),
         Some("package-install") => {
             parse_package_install(iter, "package-install").map(Command::PackageInstall)
         }
@@ -812,6 +844,37 @@ fn parse_lisp_probe(iter: impl Iterator<Item = String>) -> Result<LispProbeComma
     let (device_name, address) = parse_device_flags(iter)?;
 
     Ok(LispProbeCommand {
+        device_name,
+        address,
+    })
+}
+
+fn parse_lisp_eval(mut iter: impl Iterator<Item = String>) -> Result<LispEvalCommand, ParseError> {
+    let mut device_name = None;
+    let mut address = None;
+    let mut expression = None;
+
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--device" => {
+                device_name = Some(
+                    iter.next()
+                        .ok_or_else(|| ParseError::UnknownCommand("--device".to_owned()))?,
+                );
+            }
+            "--address" => {
+                address = Some(
+                    iter.next()
+                        .ok_or_else(|| ParseError::UnknownCommand("--address".to_owned()))?,
+                );
+            }
+            value if expression.is_none() => expression = Some(value.to_owned()),
+            other => return Err(ParseError::UnknownCommand(other.to_owned())),
+        }
+    }
+
+    Ok(LispEvalCommand {
+        expression: expression.ok_or_else(|| ParseError::UnknownCommand("lisp-eval".to_owned()))?,
         device_name,
         address,
     })
@@ -1065,8 +1128,9 @@ pub mod vesc_uart;
 #[cfg(test)]
 mod tests {
     use super::{
-        Command, LispProbeCommand, LoopbackCommand, PackageEraseCommand, PackageInstallCommand,
-        ParseError, SnakeCommand, SnakeRunMode, parse_args, snake_action_from_key,
+        Command, LispEvalCommand, LispProbeCommand, LoopbackCommand, PackageEraseCommand,
+        PackageInstallCommand, ParseError, SnakeCommand, SnakeRunMode, parse_args,
+        snake_action_from_key,
     };
     use crate::snake::{
         SnakeBoardHeight, SnakeBoardWidth, SnakeDirection, SnakeLocalAction, SnakeSeed,
@@ -1124,6 +1188,24 @@ mod tests {
                 device_name: None,
                 address: Some("AA:BB:CC:DD:EE:FF".to_owned()),
             }))
+        );
+        assert_eq!(
+            parse_args([
+                "cargo-vescpkg",
+                "lisp-eval",
+                "--device",
+                "VESC BLE UART",
+                "(print 42)"
+            ]),
+            Ok(Command::LispEval(LispEvalCommand {
+                expression: "(print 42)".to_owned(),
+                device_name: Some("VESC BLE UART".to_owned()),
+                address: None,
+            }))
+        );
+        assert_eq!(
+            parse_args(["cargo-vescpkg", "lisp-eval"]),
+            Err(ParseError::UnknownCommand("lisp-eval".to_owned()))
         );
         assert_eq!(
             parse_args(["cargo-vescpkg", "package-install", "foo.vescpkg"]),
