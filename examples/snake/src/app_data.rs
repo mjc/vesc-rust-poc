@@ -143,7 +143,9 @@ fn loaded_image_base() -> usize {
             options(nomem, nostack, preserves_flags),
         );
     }
-    loaded_handler - snake_handle_app_data as *const () as usize
+    let loaded_handler = loaded_handler & !1;
+    let image_handler = snake_handle_app_data as *const () as usize & !1;
+    loaded_handler - image_handler
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
