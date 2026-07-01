@@ -15,6 +15,7 @@ const SNAKE_STARTUP_ATTEMPTS: usize = 8;
 const SNAKE_STARTUP_RETRY_DELAY: Duration = Duration::from_secs(2);
 
 const SNAKE_RESET: u8 = b'X';
+const SNAKE_PROBE: u8 = b'P';
 const SNAKE_TICK: u8 = b'T';
 const SNAKE_STATE: u8 = b'S';
 const SNAKE_RESPONSE: u8 = b'S';
@@ -78,6 +79,10 @@ fn run_snake_smoke(
         .map_err(|error| stage_error("post-install firmware preflight", error))?;
     session.clear_packet_state();
 
+    eprintln!("snake-deploy: sending handler probe");
+    let probe = send_snake_command(runtime, session, SNAKE_PROBE)
+        .map_err(|error| stage_error("send Snake handler probe command", error))?;
+    eprintln!("snake-deploy: handler probe response {probe:?}");
     eprintln!("snake-deploy: sending reset");
     let reset = wait_for_snake_handler(runtime, session)?;
     eprintln!("snake-deploy: reset response {reset:?}");
@@ -90,9 +95,13 @@ fn run_snake_smoke(
         .map_err(|error| stage_error("send Snake state command", error))?;
     eprintln!("snake-deploy: state response {state:?}");
 
-    if reset.command != SNAKE_RESET || tick.command != SNAKE_TICK || state.command != SNAKE_STATE {
+    if probe.command != SNAKE_PROBE
+        || reset.command != SNAKE_RESET
+        || tick.command != SNAKE_TICK
+        || state.command != SNAKE_STATE
+    {
         return Err(PackageInstallError::Device(format!(
-            "snake command echo mismatch: reset={reset:?} tick={tick:?} state={state:?}"
+            "snake command echo mismatch: probe={probe:?} reset={reset:?} tick={tick:?} state={state:?}"
         )));
     }
     if tick.handler_count <= reset.handler_count {
