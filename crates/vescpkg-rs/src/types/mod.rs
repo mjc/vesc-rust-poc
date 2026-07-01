@@ -58,9 +58,9 @@ pub use motion::{
     TachometerSteps, TripDistance, VehicleSpeed,
 };
 pub use motor::{
-    AudioDuration, AudioFrequency, AudioSampleRate, AudioVoltage, BrakeCurrent, DCurrent, DVoltage,
-    DirectionalMotorCurrent, HandbrakeCurrent, MotorCurrent, OpenLoopCurrent, PhaseCurrent,
-    QCurrent, QVoltage, TotalMotorCurrent,
+    AudioChannel, AudioChannelError, AudioDuration, AudioFrequency, AudioSampleRate, AudioVoltage,
+    BrakeCurrent, DCurrent, DVoltage, DirectionalMotorCurrent, HandbrakeCurrent, MotorCurrent,
+    OpenLoopCurrent, PhaseCurrent, QCurrent, QVoltage, TotalMotorCurrent,
 };
 pub use power::{AveragePower, PeakPower};
 pub use ratio::{

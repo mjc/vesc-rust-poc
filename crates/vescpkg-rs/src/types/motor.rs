@@ -107,6 +107,49 @@ macro_rules! seconds_type {
     };
 }
 
+/// Number of FOC audio channels exposed by BLDC firmware.
+pub const AUDIO_CHANNEL_COUNT: u8 = 4;
+
+/// FOC audio channel token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct AudioChannel(u8);
+
+impl AudioChannel {
+    /// Lowest accepted FOC audio channel.
+    pub const MIN: u8 = 0;
+
+    /// Highest accepted FOC audio channel.
+    pub const MAX: u8 = AUDIO_CHANNEL_COUNT - 1;
+
+    /// Create a checked FOC audio channel.
+    pub const fn try_new(channel: u8) -> Result<Self, AudioChannelError> {
+        if channel <= Self::MAX {
+            Ok(Self(channel))
+        } else {
+            Err(AudioChannelError { value: channel })
+        }
+    }
+
+    /// Explicitly extract the raw channel index.
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
+/// Error returned when an audio channel is outside the firmware range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AudioChannelError {
+    value: u8,
+}
+
+impl AudioChannelError {
+    /// Return the rejected channel.
+    pub const fn value(self) -> u8 {
+        self.value
+    }
+}
+
 current_type!(MotorCurrent, "Motor phase/current-control current.");
 current_type!(BrakeCurrent, "Motor braking current.");
 current_type!(HandbrakeCurrent, "Handbrake current command.");

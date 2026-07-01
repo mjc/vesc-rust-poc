@@ -61,8 +61,8 @@ pub mod types;
 mod tests {
     use super::{ProtocolFrame, WireCommand, WireVersion};
     use crate::types::{
-        AdcDecodedLevel, AdcVoltage, AudioDuration, AudioFrequency, AudioSampleRate, AudioVoltage,
-        AveragePower, BatteryCurrent, BatteryVoltage, BaudRate, BrakeCurrentRelative,
+        AdcDecodedLevel, AdcVoltage, AudioChannel, AudioDuration, AudioFrequency, AudioSampleRate,
+        AudioVoltage, AveragePower, BatteryCurrent, BatteryVoltage, BaudRate, BrakeCurrentRelative,
         BrakeLeverLevel, BrakeSwitch, CanControllerId, CanPayloadLen, CurrentRelative, DVoltage,
         DirectionalMotorCurrent, DutyCycle, FocMotorFluxLinkage, FocMotorInductance,
         FocMotorResistance, GearRatio, GnssLatitude, GnssLongitude, GnssSpeed, HandbrakeRelative,
@@ -139,12 +139,16 @@ mod tests {
 
     #[test]
     fn semantic_package_inputs_follow_vesc_c_if_angle_and_audio_units() {
+        let channel = AudioChannel::try_new(3).expect("last valid audio channel");
         let position = PidPosition::new(AngleDegrees::from_degrees(90.0));
         let phase = OpenLoopPhase::new(AngleDegrees::from_degrees(180.0));
         let audio_frequency = AudioFrequency::new(Frequency::from_hertz(440.0));
         let audio_sample_rate = AudioSampleRate::new(SampleRate::from_hertz(22_050.0));
         let audio_duration = AudioDuration::new(Seconds::from_seconds(0.25));
 
+        assert_eq!(channel.get(), 3);
+        assert_eq!(AudioChannel::try_new(0).expect("first channel").get(), 0);
+        assert_eq!(AudioChannel::try_new(4).expect_err("too high").value(), 4);
         assert_eq!(position.angle().as_degrees(), 90.0);
         assert_eq!(phase.angle().as_degrees(), 180.0);
         assert_eq!(audio_frequency.frequency().as_hertz(), 440.0);
