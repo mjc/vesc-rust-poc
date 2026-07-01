@@ -25,7 +25,7 @@ This is an unofficial Rust package flow and is not an official VESC project or e
 | Package build | `make package-only` | package staging, conversion, and `.vescpkg` emission through `cargo-vescpkg` |
 | Embedded audit | `make native-audit` | package build plus native-lib semantic audit |
 | Full gate | `make check-full` | default checks plus ARM/package audit gates |
-| HIL (manual) | `cargo nextest run -p vesc-cli --profile hil -- --ignored` | ignored hardware sketch; needs `VESC_DEVICE` + `VESC_BLE_ADDR` |
+| HIL (manual) | `cargo nextest run -p cargo-vescpkg --profile hil -- --ignored` | ignored hardware sketch; needs `VESC_DEVICE` + `VESC_BLE_ADDR` |
 
 - The root `Makefile` gates packaging behind tests.
 - `make check` runs formatting, linting, target checks, and the workspace `nextest` default profile.
@@ -35,7 +35,7 @@ This is an unofficial Rust package flow and is not an official VESC project or e
 - `make` currently defaults to `check`; the package-build command path lives in the repo now instead of an ad hoc shell fragment.
 - Set `INSTA_UPDATE=always` when intentionally refreshing package or native-lib snapshots.
 - Set `VESC_PKG_DISASM=1` to print optional native-lib disassembly during the embedded audit.
-- `crates/vesc-cli/tests/fake_ble_integration.rs` is the canonical host↔in-process firmware bridge: it wires `FakeFirmwareServices` from `vescpkg-rs-build` to the host `LoopbackTransport` and exercises ping/echo without hardware.
+- `crates/cargo-vescpkg/tests/fake_ble_integration.rs` is the canonical host↔in-process firmware bridge: it wires `FakeFirmwareServices` from `vescpkg-rs-build` to the host `LoopbackTransport` and exercises ping/echo without hardware.
 - `package_README-gen.md` and `ui.qml` are generated artifacts, not hand-edited inputs.
 
 ## Build And Upload Workflow

@@ -12,8 +12,8 @@ not an official VESC project or endorsed command.
 - The shared implementation should live in `crates/vescpkg-rs-build`.
 - The command should build on the existing package plans rather than duplicating
   staging or artifact layout logic.
-- Operator workflows may delegate to `vesc-cli` internals while the repo is
-  greenfield, but package users should invoke them through `cargo vescpkg`.
+- Operator workflows live in `cargo-vescpkg`; package users invoke them through
+  `cargo vescpkg`.
 - The package target is the device-side BTLE loopback package, not a generic
   archive builder.
 - The current checked workflow remains `nix develop -c make check`.
@@ -38,8 +38,8 @@ not an official VESC project or endorsed command.
 - keep the device package wired to VESC BTLE on the firmware side
 - preserve the Predictable artifact path under `target/vescpkg`
 - keep the package-size guard and symbol checks in the workspace gates
-- keep `vesc-cli` available as an implementation/compatibility binary until the
-  command surface no longer needs it
+- own the host/operator command implementation directly, without a separate
+  legacy CLI crate
 
 ## Non-Goals
 

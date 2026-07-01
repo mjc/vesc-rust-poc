@@ -2,11 +2,19 @@
 name = "cargo-vescpkg"
 version = "0.1.0"
 edition = "2024"
-description = "Unofficial Cargo subcommand for building Rust VESC package artifacts."
+description = "Unofficial Cargo subcommand for building, installing, and debugging Rust VESC package artifacts."
 
 [lints]
 workspace = true
 
 [dependencies]
-vesc-cli = { path = "../vesc-cli" }
+btleplug = "0.11.8"
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+futures-util = "0.3"
+tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+vesc-protocol = { path = "../vesc-protocol" }
 vescpkg-rs-build = { path = "../vescpkg-rs-build" }
+uuid = "1"
+
+[dev-dependencies]
+vescpkg-rs-build = { path = "../vescpkg-rs-build", features = ["test-support"] }

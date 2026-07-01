@@ -11,10 +11,10 @@ This repo is organized around layered responsibilities:
 - `crates/vescpkg-rs/` — target-side SDK linked into native VESC packages.
 - `crates/vesc-protocol/` — shared wire types for host and target.
 - `crates/vescpkg-rs-build/` — host-side `.vescpkg` format, build, and install.
-- `crates/vesc-cli/` — host command-line tool (BLE, install, loopback).
+- `crates/cargo-vescpkg/` — `cargo vescpkg` command surface (build, BLE install, loopback).
 - `examples/loopback/` — reference BLE loopback package staticlib.
 - `scripts/` — small workspace helpers outside Rust crates.
 
-Host-only dependencies stay in `vesc-cli` and `vescpkg-rs-build`. Target code stays in
-`vescpkg-rs`, `vescpkg-rs-sys`, and examples. Host tools must not depend on `vescpkg-rs`
-except when building examples.
+Host-only dependencies stay in `cargo-vescpkg` and `vescpkg-rs-build`. Target code
+stays in `vescpkg-rs`, `vescpkg-rs-sys`, and examples. Host tools must not depend
+on `vescpkg-rs` except when building examples.

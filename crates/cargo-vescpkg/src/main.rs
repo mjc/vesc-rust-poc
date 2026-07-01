@@ -22,7 +22,7 @@ fn print_error(error: CargoVescPkgError) -> ExitCode {
 fn main() -> ExitCode {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     if !matches!(args.first().map(String::as_str), Some("build")) {
-        return vesc_cli::run_args(std::iter::once("cargo vescpkg".to_owned()).chain(args));
+        return cargo_vescpkg::run_args(std::iter::once("cargo vescpkg".to_owned()).chain(args));
     }
 
     let root = match std::env::current_dir() {

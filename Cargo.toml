@@ -6,11 +6,10 @@ members = [
     "crates/vesc-protocol",
     "crates/vescpkg-rs-build",
     "crates/cargo-vescpkg",
-    "crates/vesc-cli",
     "examples/loopback",
 ]
 default-members = [
-    "crates/vesc-cli",
+    "crates/cargo-vescpkg",
     "examples/loopback",
 ]
 resolver = "2"

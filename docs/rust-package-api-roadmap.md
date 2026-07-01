@@ -13,7 +13,7 @@ Rust package API.
 - `examples/loopback` — BLE loopback reference package staticlib
 - `crates/vescpkg-rs-build` — host-side `.vescpkg` format/build/install
 - `crates/vesc-protocol` — shared wire protocol types
-- `crates/vesc-cli` — host CLI binary
+- `crates/cargo-vescpkg` — `cargo vescpkg` host command surface
 
 ## Validation
 
@@ -24,11 +24,11 @@ Rust package API.
 ## Deferred:
 
 Hardware-in-the-loop validation is intentionally out of the default CI path.
-Symbol resolution, and semantic instruction audits against device-proven fixtures; `vesc-cli`
-exercises install/loopback against real hardware manually.
+Symbol resolution, and semantic instruction audits against device-proven fixtures;
+`cargo vescpkg` exercises install/loopback against real hardware manually.
 
-The ignored sketch lives in `crates/vesc-cli/tests/hil_loopback.rs` and is filtered by the
-`hil` nextest profile.
+The ignored sketch lives in `crates/cargo-vescpkg/tests/hil_loopback.rs` and is
+filtered by the `hil` nextest profile.
 
 ## Current Rust-Owned Boundary
 

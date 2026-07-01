@@ -60,7 +60,7 @@ Production ARM builds keep inline `asm!` dispatch; host/test builds use `Option<
 | `vescpkg-rs-sys` | Layout + raw dispatch |
 | `vescpkg-rs` | Safe bindings, lifecycle, extension semantics |
 | `vescpkg-rs-build` | Symbol audit, elf semantics, package pipeline |
-| HIL / real VESC | Manual `vesc-cli` profiles |
+| HIL / real VESC | Manual `cargo-vescpkg` profiles |
 
 ## CI commands
 

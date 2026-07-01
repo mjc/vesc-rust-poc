@@ -2,7 +2,9 @@
 
 use std::cell::RefCell;
 
-use vesc_cli::loopback::{LoopbackTarget, LoopbackTransport, LoopbackTransportError, run_loopback};
+use cargo_vescpkg::loopback::{
+    LoopbackTarget, LoopbackTransport, LoopbackTransportError, run_loopback,
+};
 use vesc_protocol::WireCommand;
 use vesc_protocol::ble_loopback::LoopbackPacket;
 use vescpkg_rs_build::{
