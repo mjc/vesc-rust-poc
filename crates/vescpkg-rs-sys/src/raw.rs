@@ -612,7 +612,9 @@ pub unsafe fn vesc_clear_app_data_handler() -> bool {
 ///
 /// # Safety
 ///
-/// The returned pointer must be freed with [`vesc_free`] when no longer used.
+/// The caller must check for null. A non-null returned pointer belongs to the
+/// firmware/LispBM reserve heap and must be freed with [`vesc_free`] when no
+/// longer used.
 pub unsafe fn vesc_malloc(bytes: usize) -> *mut c_void {
     #[cfg(all(target_arch = "arm", not(test)))]
     unsafe {
@@ -645,7 +647,8 @@ pub unsafe fn vesc_malloc(bytes: usize) -> *mut c_void {
 ///
 /// # Safety
 ///
-/// `ptr` must be null or a pointer returned by the firmware allocator.
+/// `ptr` must be null or a pointer returned by the firmware allocator, and it
+/// must not already have been freed.
 pub unsafe fn vesc_free(ptr: *mut c_void) {
     #[cfg(all(target_arch = "arm", not(test)))]
     unsafe {

@@ -178,8 +178,10 @@ unsafe fn snake_state_from_arg() -> Option<&'static mut SnakeDeviceState> {
 #[cfg(all(not(test), target_arch = "arm"))]
 unsafe extern "C" fn stop_snake_package(arg: *mut core::ffi::c_void) {
     let _ = unsafe { vescpkg_rs::ffi::raw::vesc_clear_app_data_handler() };
-    if !arg.is_null() {
-        unsafe { vescpkg_rs::ffi::raw::vesc_free(arg) };
+    if let Some(ptr) = core::ptr::NonNull::new(arg.cast::<SnakeDeviceState>()) {
+        let bindings = vescpkg_rs::RealBindings;
+        let _allocation =
+            unsafe { vescpkg_rs::FirmwareAllocation::from_raw_parts(ptr, 1, &bindings) };
     }
 }
 
@@ -190,21 +192,20 @@ pub fn install_snake_app_data(info: *mut vescpkg_rs::ffi::LibInfo) -> bool {
         return false;
     };
 
-    let state =
-        unsafe { vescpkg_rs::ffi::raw::vesc_malloc(core::mem::size_of::<SnakeDeviceState>()) }
-            .cast::<SnakeDeviceState>();
-    if state.is_null() {
+    let bindings = vescpkg_rs::RealBindings;
+    let allocator = vescpkg_rs::FirmwareAllocator::new(&bindings);
+    let Ok(mut state) = allocator.allocate_for::<SnakeDeviceState>(1) else {
         return false;
-    }
+    };
 
-    unsafe { state.write(SnakeDeviceState::new()) };
-    info.arg = state.cast();
+    unsafe { state.as_mut_ptr().write(SnakeDeviceState::new()) };
+    info.arg = state.as_mut_ptr().cast();
     info.stop_fun = Some(stop_snake_package);
 
     if register_snake_app_data_handler(info) {
+        let _ = state.into_raw();
         true
     } else {
-        unsafe { vescpkg_rs::ffi::raw::vesc_free(info.arg) };
         info.arg = core::ptr::null_mut();
         info.stop_fun = None;
         false

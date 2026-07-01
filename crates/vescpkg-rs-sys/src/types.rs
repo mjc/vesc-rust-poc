@@ -127,9 +127,11 @@ transparent_eq_value_type_type!(
     pub struct FirmwareNonNull<T>(core::ptr::NonNull<T>);
 );
 transparent_eq_value_type!(
+    /// Byte length requested from the firmware allocator.
     pub struct MallocLen(usize);
 );
 transparent_eq_value_type_type!(
+    /// Non-null firmware allocation pointer owned by Rust-side package code.
     pub struct OwnedFirmwareAllocation<T>(core::ptr::NonNull<T>);
 );
 transparent_eq_value_type!(

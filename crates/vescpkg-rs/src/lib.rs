@@ -13,6 +13,9 @@
 #[cfg(test)]
 extern crate std;
 
+/// Firmware allocation helpers backed by the VESC native package allocator.
+pub mod alloc;
+
 mod bindings;
 mod extension;
 mod lifecycle_core;
@@ -33,6 +36,7 @@ pub mod ffi {
 pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
 pub use vescpkg_rs_units as units;
 
+pub use alloc::{AllocBindings, AllocError, FirmwareAllocation, FirmwareAllocator};
 pub use bindings::{AppDataBindings, LbmBindings};
 pub use extension::{ExtensionDescriptor, ExtensionNameError, RegisterError};
 pub use lifecycle_core::{LbmApi, LoopbackLifecycle, PackageLifecycle};
