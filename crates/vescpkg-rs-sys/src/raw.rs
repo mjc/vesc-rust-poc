@@ -614,6 +614,24 @@ pub unsafe fn vesc_clear_app_data_handler() -> bool {
 ///
 /// The returned pointer must be freed with [`vesc_free`] when no longer used.
 pub unsafe fn vesc_malloc(bytes: usize) -> *mut c_void {
+    #[cfg(all(target_arch = "arm", not(test)))]
+    unsafe {
+        let vesc_if = VescIfAbi::BASE_ADDR.0;
+        let malloc: usize;
+        core::arch::asm!(
+            "ldr {malloc}, [{vesc_if}, #184]",
+            vesc_if = in(reg) vesc_if,
+            malloc = out(reg) malloc,
+            options(nostack, preserves_flags),
+        );
+        if malloc == 0 {
+            return core::ptr::null_mut();
+        }
+        let malloc: unsafe extern "C" fn(usize) -> *mut c_void = core::mem::transmute(malloc);
+        malloc(bytes)
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
     unsafe {
         let Some(malloc) = (*vesc_if()).malloc else {
             return core::ptr::null_mut();
@@ -629,6 +647,23 @@ pub unsafe fn vesc_malloc(bytes: usize) -> *mut c_void {
 ///
 /// `ptr` must be null or a pointer returned by the firmware allocator.
 pub unsafe fn vesc_free(ptr: *mut c_void) {
+    #[cfg(all(target_arch = "arm", not(test)))]
+    unsafe {
+        let vesc_if = VescIfAbi::BASE_ADDR.0;
+        let free: usize;
+        core::arch::asm!(
+            "ldr {free}, [{vesc_if}, #188]",
+            vesc_if = in(reg) vesc_if,
+            free = out(reg) free,
+            options(nostack, preserves_flags),
+        );
+        if free != 0 {
+            let free: unsafe extern "C" fn(*mut c_void) = core::mem::transmute(free);
+            free(ptr);
+        }
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
     unsafe {
         if let Some(free) = (*vesc_if()).free {
             free(ptr);
@@ -642,6 +677,24 @@ pub unsafe fn vesc_free(ptr: *mut c_void) {
 ///
 /// `prog_addr` must be the native library base address passed by the VESC loader.
 pub unsafe fn vesc_get_arg(prog_addr: u32) -> *mut *mut c_void {
+    #[cfg(all(target_arch = "arm", not(test)))]
+    unsafe {
+        let vesc_if = VescIfAbi::BASE_ADDR.0;
+        let get_arg: usize;
+        core::arch::asm!(
+            "ldr {get_arg}, [{vesc_if}, #204]",
+            vesc_if = in(reg) vesc_if,
+            get_arg = out(reg) get_arg,
+            options(nostack, preserves_flags),
+        );
+        if get_arg == 0 {
+            return core::ptr::null_mut();
+        }
+        let get_arg: unsafe extern "C" fn(u32) -> *mut *mut c_void = core::mem::transmute(get_arg);
+        get_arg(prog_addr)
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
     unsafe {
         let Some(get_arg) = (*vesc_if()).get_arg else {
             return core::ptr::null_mut();
@@ -750,13 +803,16 @@ pub unsafe fn io_read(pin: crate::VescPin) -> bool {
 
 /// Returns selected `VescIf` field offsets for ABI layout tests.
 #[cfg(test)]
-pub fn vesc_if_offsets_for_tests() -> [usize; 11] {
+pub fn vesc_if_offsets_for_tests() -> [usize; 14] {
     [
         core::mem::offset_of!(VescIf, lbm_add_extension),
         core::mem::offset_of!(VescIf, lbm_enc_i),
         core::mem::offset_of!(VescIf, lbm_dec_as_i32),
         core::mem::offset_of!(VescIf, lbm_is_number),
         core::mem::offset_of!(VescIf, lbm_enc_sym_eerror),
+        core::mem::offset_of!(VescIf, malloc),
+        core::mem::offset_of!(VescIf, free),
+        core::mem::offset_of!(VescIf, get_arg),
         core::mem::offset_of!(VescIf, send_app_data),
         core::mem::offset_of!(VescIf, set_app_data_handler),
         core::mem::offset_of!(VescIf, system_time_ticks),

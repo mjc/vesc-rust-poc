@@ -107,6 +107,9 @@ fn vesc_if_slot_constants_name_the_package_header_offsets() {
             "lbm_dec_as_i32",
             "lbm_is_number",
             "lbm_enc_sym_eerror",
+            "malloc",
+            "free",
+            "get_arg",
             "send_app_data",
             "set_app_data_handler",
             "system_time_ticks",
@@ -117,11 +120,13 @@ fn vesc_if_slot_constants_name_the_package_header_offsets() {
     );
     assert_eq!(
         slots.map(|slot| slot.vesc32_byte_offset()),
-        [0, 64, 100, 124, 148, 592, 596, 952, 220, 224, 228]
+        [
+            0, 64, 100, 124, 148, 184, 188, 204, 592, 596, 952, 220, 224, 228
+        ]
     );
     assert_eq!(
         slots.map(|slot| slot.slot_index()),
-        [0, 16, 25, 31, 37, 148, 149, 238, 55, 56, 57]
+        [0, 16, 25, 31, 37, 46, 47, 51, 148, 149, 238, 55, 56, 57]
     );
 }
 

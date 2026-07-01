@@ -52,6 +52,12 @@ impl VescIfAbi {
     pub const LBM_IS_NUMBER: VescIfSlot = VescIfSlot::new("lbm_is_number", 124);
     /// Slot for `lbm_enc_sym_eerror`.
     pub const LBM_ENC_SYM_EERROR: VescIfSlot = VescIfSlot::new("lbm_enc_sym_eerror", 148);
+    /// Slot for `malloc`.
+    pub const MALLOC: VescIfSlot = VescIfSlot::new("malloc", 184);
+    /// Slot for `free`.
+    pub const FREE: VescIfSlot = VescIfSlot::new("free", 188);
+    /// Slot for `get_arg`.
+    pub const GET_ARG: VescIfSlot = VescIfSlot::new("get_arg", 204);
     /// Slot for `send_app_data`.
     pub const SEND_APP_DATA: VescIfSlot = VescIfSlot::new("send_app_data", 592);
     /// Slot for `set_app_data_handler`.
@@ -66,12 +72,15 @@ impl VescIfAbi {
     pub const IO_READ: VescIfSlot = VescIfSlot::new("io_read", 228);
 
     /// The set of slots that this crate currently relies on.
-    pub const USED_SLOTS: [VescIfSlot; 11] = [
+    pub const USED_SLOTS: [VescIfSlot; 14] = [
         Self::LBM_ADD_EXTENSION,
         Self::LBM_ENC_I,
         Self::LBM_DEC_AS_I32,
         Self::LBM_IS_NUMBER,
         Self::LBM_ENC_SYM_EERROR,
+        Self::MALLOC,
+        Self::FREE,
+        Self::GET_ARG,
         Self::SEND_APP_DATA,
         Self::SET_APP_DATA_HANDLER,
         Self::SYSTEM_TIME_TICKS,
