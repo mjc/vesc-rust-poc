@@ -212,6 +212,8 @@ pub mod loopback_debug;
 pub mod package_install;
 /// Package install transport implementations and BLE command helpers.
 pub mod package_transport;
+/// Deterministic snake game model for host-side tests and future UI wiring.
+pub mod snake;
 /// VESC UART packet encoding, decoding, and checksum helpers.
 pub mod vesc_uart;
 

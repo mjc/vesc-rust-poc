@@ -19,8 +19,6 @@ extern crate std;
 
 /// BLE loopback wire-format helpers and response handling.
 pub mod ble_loopback;
-/// Snake protocol types and wire helpers.
-pub mod snake;
 
 /// Version tag carried by the shared loopback wire frame.
 ///
