@@ -1250,6 +1250,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "vesc-example-snake"
+version = "0.1.0"
+dependencies = [
+ "vescpkg-rs",
+]
+
+[[package]]
 name = "vesc-protocol"
 version = "0.1.0"
 dependencies = [

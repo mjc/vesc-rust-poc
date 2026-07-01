@@ -7,10 +7,12 @@ members = [
     "crates/vescpkg-rs-build",
     "crates/cargo-vescpkg",
     "examples/loopback",
+    "examples/snake",
 ]
 default-members = [
     "crates/cargo-vescpkg",
     "examples/loopback",
+    "examples/snake",
 ]
 resolver = "2"
 
