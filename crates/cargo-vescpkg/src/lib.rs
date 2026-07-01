@@ -80,6 +80,8 @@ pub struct SnakeCommand {
     pub seed: snake::SnakeSeed,
     /// Scripted WASD-style direction input for CLI-only sessions.
     pub moves: Vec<snake::SnakeDirection>,
+    /// Scripted local-play input actions for CLI-only sessions.
+    pub actions: Vec<snake::SnakeLocalAction>,
     /// Number of ticks to render after the initial frame.
     pub tick_limit: snake::SnakeTickLimit,
 }
@@ -223,7 +225,14 @@ fn run_snake(command: SnakeCommand) -> ExitCode {
     };
     let model = snake::SnakeModel::new(board, command.seed.get());
     let mut model = model;
-    match snake::render_scripted_terminal_session(&mut model, command.moves, command.tick_limit) {
+    let rendered = if command.actions.is_empty() {
+        snake::render_scripted_terminal_session(&mut model, command.moves, command.tick_limit)
+    } else {
+        snake::render_local_terminal_session(&mut model, command.actions, command.tick_limit)
+            .map(|report| report.output().to_owned())
+    };
+
+    match rendered {
         Ok(output) => {
             print!("{output}");
             ExitCode::SUCCESS
@@ -452,6 +461,7 @@ fn parse_snake(mut iter: impl Iterator<Item = String>) -> Result<SnakeCommand, P
     let mut board_height = snake::SnakeBoardHeight::new(12).expect("default height");
     let mut seed = snake::SnakeSeed::new(1);
     let mut moves = Vec::new();
+    let mut actions = Vec::new();
     let mut tick_limit = snake::SnakeTickLimit::new(1).expect("default tick limit");
 
     while let Some(arg) = iter.next() {
@@ -488,6 +498,12 @@ fn parse_snake(mut iter: impl Iterator<Item = String>) -> Result<SnakeCommand, P
                     .ok_or_else(|| ParseError::UnknownCommand("--moves".to_owned()))?;
                 moves = parse_snake_moves(&value)?;
             }
+            "--actions" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| ParseError::UnknownCommand("--actions".to_owned()))?;
+                actions = parse_snake_actions(&value)?;
+            }
             "--ticks" => {
                 let value = iter
                     .next()
@@ -505,6 +521,7 @@ fn parse_snake(mut iter: impl Iterator<Item = String>) -> Result<SnakeCommand, P
         board_height,
         seed,
         moves,
+        actions,
         tick_limit,
     })
 }
@@ -549,6 +566,24 @@ fn parse_snake_moves(value: &str) -> Result<Vec<snake::SnakeDirection>, ParseErr
         .collect()
 }
 
+fn parse_snake_actions(value: &str) -> Result<Vec<snake::SnakeLocalAction>, ParseError> {
+    value
+        .chars()
+        .map(|ch| match ch {
+            'w' | 'W' => Ok(snake::SnakeLocalAction::Turn(snake::SnakeDirection::Up)),
+            'a' | 'A' => Ok(snake::SnakeLocalAction::Turn(snake::SnakeDirection::Left)),
+            's' | 'S' => Ok(snake::SnakeLocalAction::Turn(snake::SnakeDirection::Down)),
+            'd' | 'D' => Ok(snake::SnakeLocalAction::Turn(snake::SnakeDirection::Right)),
+            '.' => Ok(snake::SnakeLocalAction::Tick),
+            'p' | 'P' => Ok(snake::SnakeLocalAction::Pause),
+            'u' | 'U' => Ok(snake::SnakeLocalAction::Resume),
+            'r' | 'R' => Ok(snake::SnakeLocalAction::Reset),
+            'q' | 'Q' => Ok(snake::SnakeLocalAction::Quit),
+            _ => Err(ParseError::UnknownCommand(value.to_owned())),
+        })
+        .collect()
+}
+
 fn parse_snake_tick_limit(value: &str) -> Result<snake::SnakeTickLimit, ParseError> {
     value
         .parse::<u16>()
@@ -580,7 +615,8 @@ mod tests {
         ParseError, SnakeCommand, parse_args,
     };
     use crate::snake::{
-        SnakeBoardHeight, SnakeBoardWidth, SnakeDirection, SnakeSeed, SnakeTickLimit,
+        SnakeBoardHeight, SnakeBoardWidth, SnakeDirection, SnakeLocalAction, SnakeSeed,
+        SnakeTickLimit,
     };
     use vesc_protocol::{WireCommand, WireVersion};
 
@@ -743,7 +779,38 @@ mod tests {
                 board_height: SnakeBoardHeight::new(8).expect("height"),
                 seed: SnakeSeed::new(99),
                 moves: vec![SnakeDirection::Down, SnakeDirection::Left],
+                actions: Vec::new(),
                 tick_limit: SnakeTickLimit::new(2).expect("tick limit"),
+            }))
+        );
+        assert_eq!(
+            parse_args([
+                "cargo-vescpkg",
+                "snake",
+                "--board",
+                "12x8",
+                "--actions",
+                "s.pu.rq",
+                "--ticks",
+                "12"
+            ]),
+            Ok(Command::Snake(SnakeCommand {
+                device_name: None,
+                address: None,
+                board_width: SnakeBoardWidth::new(12).expect("width"),
+                board_height: SnakeBoardHeight::new(8).expect("height"),
+                seed: SnakeSeed::new(1),
+                moves: Vec::new(),
+                actions: vec![
+                    SnakeLocalAction::Turn(SnakeDirection::Down),
+                    SnakeLocalAction::Tick,
+                    SnakeLocalAction::Pause,
+                    SnakeLocalAction::Resume,
+                    SnakeLocalAction::Tick,
+                    SnakeLocalAction::Reset,
+                    SnakeLocalAction::Quit,
+                ],
+                tick_limit: SnakeTickLimit::new(12).expect("tick limit"),
             }))
         );
         assert_eq!(
