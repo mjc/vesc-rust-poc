@@ -16,10 +16,10 @@ static prog_ptr: u32 = 0;
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
     let _ = pkg_init::install_stop_hook(info);
-    if let Some(info) = unsafe { info.as_ref() } {
-        let _ = crate::app_data::register_snake_app_data_handler(info);
-    }
-    true
+    let Some(info) = (unsafe { info.as_ref() }) else {
+        return false;
+    };
+    crate::app_data::register_snake_app_data_handler(info)
 }
 
 /// Test-build package loader entrypoint that mirrors the target init behavior.
@@ -36,6 +36,5 @@ pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".init_fun")]
 pub extern "C" fn init(info: *mut ffi::LibInfo) -> bool {
-    let _ = package_lib_init(info);
-    true
+    package_lib_init(info)
 }
