@@ -23,8 +23,6 @@
 //! let _: u8 = id.into();
 //! ```
 
-pub use can::{CanPayloadLen, CanPayloadLenError};
-pub use io::{BaudRate, BaudRateError, PacketLength, PacketLengthError};
 pub mod battery;
 pub mod can;
 pub mod config;
@@ -41,14 +39,16 @@ pub use battery::{
     AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, BatteryVoltage, CellVoltage,
     InputCurrent, InputVoltage, WattHoursCharged, WattHoursDischarged, WattHoursRemaining,
 };
-pub use can::{CanControllerId, CanExtendedId, CanStandardId};
+pub use can::{CanControllerId, CanExtendedId, CanPayloadLen, CanPayloadLenError, CanStandardId};
 pub use config::{
     BatteryCellCount, BatteryCellCountError, FocMotorFluxLinkage, FocMotorInductance,
     FocMotorResistance, GearRatio, GearRatioError, MotorPoleCount, MotorPoleCountError,
     WheelDiameter,
 };
 pub use gnss::{GnssAltitude, GnssLatitude, GnssLongitude, GnssSpeed};
-pub use io::{ThreadPriority, ThreadPriorityError};
+pub use io::{
+    BaudRate, BaudRateError, PacketLength, PacketLengthError, ThreadPriority, ThreadPriorityError,
+};
 pub use motion::{
     AbsoluteTachometerSteps, ElectricalSpeed, MechanicalSpeed, TachometerSteps, TripDistance,
     VehicleSpeed,
