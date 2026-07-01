@@ -61,20 +61,22 @@ pub mod types;
 mod tests {
     use super::{ProtocolFrame, WireCommand, WireVersion};
     use crate::types::{
-        AdcDecodedLevel, AdcVoltage, AudioVoltage, AveragePower, BatteryCurrent, BatteryVoltage,
-        BaudRate, BrakeCurrentRelative, CanControllerId, CanPayloadLen, CurrentRelative, DVoltage,
-        DirectionalMotorCurrent, DutyCycle, FocMotorFluxLinkage, FocMotorInductance,
-        FocMotorResistance, GearRatio, GnssLatitude, GnssLongitude, GnssSpeed, HandbrakeRelative,
-        ImuAcceleration, ImuAngularRate, ImuPitch, ImuQuaternion, ImuRoll, ImuYaw, JoystickX,
-        JoystickY, MechanicalSpeed, MotorCurrent, MotorPoleCount, PacketLength, PeakPower, PpmAge,
+        AdcDecodedLevel, AdcVoltage, AudioDuration, AudioFrequency, AudioSampleRate, AudioVoltage,
+        AveragePower, BatteryCurrent, BatteryVoltage, BaudRate, BrakeCurrentRelative,
+        CanControllerId, CanPayloadLen, CurrentRelative, DVoltage, DirectionalMotorCurrent,
+        DutyCycle, FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance, GearRatio,
+        GnssLatitude, GnssLongitude, GnssSpeed, HandbrakeRelative, ImuAcceleration, ImuAngularRate,
+        ImuPitch, ImuQuaternion, ImuRoll, ImuYaw, JoystickX, JoystickY, MechanicalSpeed,
+        MotorCurrent, MotorPoleCount, OpenLoopPhase, PacketLength, PeakPower, PidPosition, PpmAge,
         PpmInput, QVoltage, RemoteAge, SystemDuration, SystemTimestamp, ThreadPriority,
         TimeoutDuration, TotalMotorCurrent, TripDistance, VehicleSpeed, WattHoursDischarged,
         WheelDiameter,
     };
     use vescpkg_rs_units::{
-        AccelerationG, AngleRadians, AngularVelocity, Current, Distance, Energy, FluxLinkage,
-        Inductance, Latitude, Longitude, MechanicalRpm, Power, Quaternion, Ratio, Resistance,
-        SignedRatio, Speed, SystemTicks, TimestampTicks, Voltage,
+        AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Current, Distance, Energy,
+        FluxLinkage, Frequency, Inductance, Latitude, Longitude, MechanicalRpm, Power, Quaternion,
+        Ratio, Resistance, SampleRate, Seconds, SignedRatio, Speed, SystemTicks, TimestampTicks,
+        Voltage,
     };
 
     #[test]
@@ -136,6 +138,21 @@ mod tests {
     }
 
     #[test]
+    fn semantic_package_inputs_follow_vesc_c_if_angle_and_audio_units() {
+        let position = PidPosition::new(AngleDegrees::from_degrees(90.0));
+        let phase = OpenLoopPhase::new(AngleDegrees::from_degrees(180.0));
+        let audio_frequency = AudioFrequency::new(Frequency::from_hertz(440.0));
+        let audio_sample_rate = AudioSampleRate::new(SampleRate::from_hertz(22_050.0));
+        let audio_duration = AudioDuration::new(Seconds::from_seconds(0.25));
+
+        assert_eq!(position.angle().as_degrees(), 90.0);
+        assert_eq!(phase.angle().as_degrees(), 180.0);
+        assert_eq!(audio_frequency.frequency().as_hertz(), 440.0);
+        assert_eq!(audio_sample_rate.sample_rate().as_hertz(), 22_050.0);
+        assert_eq!(audio_duration.duration().as_seconds(), 0.25);
+    }
+
+    #[test]
     fn semantic_config_types_wrap_units_and_checked_scalars() {
         let poles = MotorPoleCount::try_new(14).expect("valid pole count");
         let cells = crate::types::BatteryCellCount::try_new(12).expect("valid cell count");
@@ -160,17 +177,18 @@ mod tests {
     #[test]
     fn semantic_time_types_wrap_fugit_and_tick_units() {
         let ticks = SystemTicks::from_ticks(25_000);
+        let seconds = Seconds::from_seconds(2.5);
         let timestamp = SystemTimestamp::new(TimestampTicks::from_ticks(123_456));
         let duration = SystemDuration::new(ticks);
-        let timeout = TimeoutDuration::new(ticks);
-        let remote_age = RemoteAge::new(ticks);
-        let ppm_age = PpmAge::new(ticks);
+        let timeout = TimeoutDuration::new(seconds);
+        let remote_age = RemoteAge::new(seconds);
+        let ppm_age = PpmAge::new(seconds);
 
         assert_eq!(timestamp.ticks().as_ticks(), 123_456);
         assert_eq!(duration.duration().as_ticks(), 25_000);
-        assert_eq!(timeout.duration().as_ticks(), 25_000);
-        assert_eq!(remote_age.duration().as_ticks(), 25_000);
-        assert_eq!(ppm_age.duration().as_ticks(), 25_000);
+        assert_eq!(timeout.duration().as_seconds(), 2.5);
+        assert_eq!(remote_age.duration().as_seconds(), 2.5);
+        assert_eq!(ppm_age.duration().as_seconds(), 2.5);
     }
 
     #[test]

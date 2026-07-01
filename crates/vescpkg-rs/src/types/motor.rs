@@ -1,6 +1,6 @@
 //! Motor-domain semantic wrappers.
 
-use crate::units::{Current, Voltage};
+use crate::units::{Current, Frequency, SampleRate, Seconds, Voltage};
 
 macro_rules! current_type {
     ($name:ident, $doc:literal) => {
@@ -44,6 +44,69 @@ macro_rules! voltage_type {
     };
 }
 
+macro_rules! frequency_type {
+    ($name:ident, $doc:literal) => {
+        #[doc = $doc]
+        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+        #[repr(transparent)]
+        pub struct $name(Frequency);
+
+        impl $name {
+            /// Wrap a generic frequency with VESC-domain meaning.
+            pub const fn new(frequency: Frequency) -> Self {
+                Self(frequency)
+            }
+
+            /// Return the typed frequency without erasing it to a primitive.
+            pub const fn frequency(self) -> Frequency {
+                self.0
+            }
+        }
+    };
+}
+
+macro_rules! sample_rate_type {
+    ($name:ident, $doc:literal) => {
+        #[doc = $doc]
+        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+        #[repr(transparent)]
+        pub struct $name(SampleRate);
+
+        impl $name {
+            /// Wrap a generic sample rate with VESC-domain meaning.
+            pub const fn new(sample_rate: SampleRate) -> Self {
+                Self(sample_rate)
+            }
+
+            /// Return the typed sample rate without erasing it to a primitive.
+            pub const fn sample_rate(self) -> SampleRate {
+                self.0
+            }
+        }
+    };
+}
+
+macro_rules! seconds_type {
+    ($name:ident, $doc:literal) => {
+        #[doc = $doc]
+        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+        #[repr(transparent)]
+        pub struct $name(Seconds);
+
+        impl $name {
+            /// Wrap package ABI seconds with VESC-domain meaning.
+            pub const fn new(duration: Seconds) -> Self {
+                Self(duration)
+            }
+
+            /// Return the typed duration without erasing it to a primitive.
+            pub const fn duration(self) -> Seconds {
+                self.0
+            }
+        }
+    };
+}
+
 current_type!(MotorCurrent, "Motor phase/current-control current.");
 current_type!(BrakeCurrent, "Motor braking current.");
 current_type!(HandbrakeCurrent, "Handbrake current command.");
@@ -56,3 +119,6 @@ current_type!(OpenLoopCurrent, "Open-loop motor current command.");
 voltage_type!(DVoltage, "FOC d-axis voltage.");
 voltage_type!(QVoltage, "FOC q-axis voltage.");
 voltage_type!(AudioVoltage, "Audio/haptic voltage command.");
+frequency_type!(AudioFrequency, "Audio/haptic frequency command.");
+sample_rate_type!(AudioSampleRate, "Sample rate for audio sample playback.");
+seconds_type!(AudioDuration, "Audio/haptic playback duration.");

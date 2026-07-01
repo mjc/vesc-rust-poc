@@ -88,7 +88,7 @@ pub use motion::{
 pub use ratio::{DutyCycle, Percent, Pwm, Ratio, SignedRatio};
 pub use temperature::Temperature;
 pub use time::{
-    Frequency, SYSTEM_TICK_RATE_HZ, SampleRate, SystemInstant, SystemTicks, TimestampTicks,
+    Frequency, SYSTEM_TICK_RATE_HZ, SampleRate, Seconds, SystemInstant, SystemTicks, TimestampTicks,
 };
 
 #[cfg(test)]

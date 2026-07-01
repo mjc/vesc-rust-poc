@@ -54,12 +54,13 @@ pub use io::{
     BaudRate, BaudRateError, PacketLength, PacketLengthError, ThreadPriority, ThreadPriorityError,
 };
 pub use motion::{
-    AbsoluteTachometerSteps, ElectricalSpeed, MechanicalSpeed, TachometerSteps, TripDistance,
-    VehicleSpeed,
+    AbsoluteTachometerSteps, ElectricalSpeed, MechanicalSpeed, OpenLoopPhase, PidPosition,
+    TachometerSteps, TripDistance, VehicleSpeed,
 };
 pub use motor::{
-    AudioVoltage, BrakeCurrent, DCurrent, DVoltage, DirectionalMotorCurrent, HandbrakeCurrent,
-    MotorCurrent, OpenLoopCurrent, PhaseCurrent, QCurrent, QVoltage, TotalMotorCurrent,
+    AudioDuration, AudioFrequency, AudioSampleRate, AudioVoltage, BrakeCurrent, DCurrent, DVoltage,
+    DirectionalMotorCurrent, HandbrakeCurrent, MotorCurrent, OpenLoopCurrent, PhaseCurrent,
+    QCurrent, QVoltage, TotalMotorCurrent,
 };
 pub use power::{AveragePower, PeakPower};
 pub use ratio::{

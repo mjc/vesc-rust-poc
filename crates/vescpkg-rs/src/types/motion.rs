@@ -1,7 +1,8 @@
 //! Motion-domain semantic wrappers.
 
 use crate::units::{
-    Distance, ElectricalRpm, MechanicalRpm, Speed, TachometerSteps as UnitTachometerSteps,
+    AngleDegrees, Distance, ElectricalRpm, MechanicalRpm, Speed,
+    TachometerSteps as UnitTachometerSteps,
 };
 
 macro_rules! speed_type {
@@ -109,9 +110,32 @@ macro_rules! tachometer_type {
     };
 }
 
+macro_rules! angle_degrees_type {
+    ($name:ident, $doc:literal) => {
+        #[doc = $doc]
+        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+        #[repr(transparent)]
+        pub struct $name(AngleDegrees);
+
+        impl $name {
+            /// Wrap generic degrees with VESC-domain meaning.
+            pub const fn new(angle: AngleDegrees) -> Self {
+                Self(angle)
+            }
+
+            /// Return the typed angle without erasing it to a primitive.
+            pub const fn angle(self) -> AngleDegrees {
+                self.0
+            }
+        }
+    };
+}
+
 speed_type!(VehicleSpeed, "Estimated vehicle speed.");
 distance_type!(TripDistance, "Trip distance travelled by the vehicle.");
 mechanical_rpm_type!(MechanicalSpeed, "Mechanical motor speed.");
 electrical_rpm_type!(ElectricalSpeed, "Electrical motor speed.");
 tachometer_type!(TachometerSteps, "Relative tachometer position.");
 tachometer_type!(AbsoluteTachometerSteps, "Absolute tachometer position.");
+angle_degrees_type!(PidPosition, "PID motor position command in degrees.");
+angle_degrees_type!(OpenLoopPhase, "FOC open-loop phase command in degrees.");
