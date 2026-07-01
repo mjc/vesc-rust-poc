@@ -51,10 +51,10 @@ pub struct SnakeAppResponse {
 
 impl SnakeAppResponse {
     /// Response byte length.
-    pub const LEN: usize = 8;
+    pub const LEN: usize = 10;
 
     /// Build a response snapshot from the current game state.
-    pub fn from_game(game: SnakeGame) -> Self {
+    pub fn from_game(game: SnakeGame, command: SnakeAppCommand, handler_count: u8) -> Self {
         let tick = game.tick().get();
         let score = game.score().get();
         Self {
@@ -67,6 +67,8 @@ impl SnakeAppResponse {
                 (score >> 8) as u8,
                 game.head().x(),
                 game.head().y(),
+                command.0,
+                handler_count,
             ],
         }
     }
@@ -84,6 +86,15 @@ pub const fn new_package_game() -> SnakeGame {
 
 /// Apply one app-data packet to a game and return a response when accepted.
 pub fn process_snake_app_data(game: &mut SnakeGame, bytes: &[u8]) -> Option<SnakeAppResponse> {
+    process_snake_app_data_with_count(game, bytes, 0)
+}
+
+/// Apply one app-data packet and include a target-side handler counter in the response.
+pub fn process_snake_app_data_with_count(
+    game: &mut SnakeGame,
+    bytes: &[u8],
+    handler_count: u8,
+) -> Option<SnakeAppResponse> {
     let command = SnakeAppCommand::from_byte(*bytes.first()?)?;
     match command {
         SnakeAppCommand::TICK => {
@@ -105,7 +116,7 @@ pub fn process_snake_app_data(game: &mut SnakeGame, bytes: &[u8]) -> Option<Snak
         SnakeAppCommand::STATE => {}
         _ => return None,
     }
-    Some(SnakeAppResponse::from_game(*game))
+    Some(SnakeAppResponse::from_game(*game, command, handler_count))
 }
 
 fn snake_state_byte(state: SnakeState) -> u8 {
@@ -118,6 +129,8 @@ fn snake_state_byte(state: SnakeState) -> u8 {
 
 #[cfg(all(not(test), target_arch = "arm"))]
 static mut SNAKE_GAME: SnakeGame = new_package_game();
+#[cfg(all(not(test), target_arch = "arm"))]
+static mut SNAKE_HANDLER_COUNT: u8 = 0;
 
 /// Rebase an image-relative handler address into firmware-loaded memory.
 pub fn rebase_handler_addr(info: &vescpkg_rs::ffi::LibInfo, handler_addr: usize) -> usize {
@@ -149,7 +162,11 @@ pub unsafe extern "C" fn snake_handle_app_data(data: *mut u8, len: u32) {
 
     let bytes = unsafe { core::slice::from_raw_parts(data as *const u8, len as usize) };
     let game = unsafe { &mut *core::ptr::addr_of_mut!(SNAKE_GAME) };
-    if let Some(response) = process_snake_app_data(game, bytes) {
+    let handler_count = unsafe {
+        SNAKE_HANDLER_COUNT = SNAKE_HANDLER_COUNT.wrapping_add(1);
+        SNAKE_HANDLER_COUNT
+    };
+    if let Some(response) = process_snake_app_data_with_count(game, bytes, handler_count) {
         let bytes = response.as_bytes();
         unsafe { vescpkg_rs::ffi::raw::vesc_send_app_data(bytes.as_ptr(), bytes.len() as u32) };
     }
@@ -172,7 +189,18 @@ mod tests {
         assert_eq!(game.head(), SnakeCell::new(13, 12));
         assert_eq!(
             response.as_bytes(),
-            &[b'S', 1, 1, 0, 0, 0, game.head().x(), game.head().y()]
+            &[
+                b'S',
+                1,
+                1,
+                0,
+                0,
+                0,
+                game.head().x(),
+                game.head().y(),
+                SnakeAppCommand::TICK.0,
+                0
+            ]
         );
     }
 

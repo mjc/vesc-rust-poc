@@ -74,6 +74,16 @@ fn run_snake_smoke(
     let state = send_snake_command(runtime, session, SNAKE_STATE)
         .map_err(|error| stage_error("send Snake state command", error))?;
 
+    if reset.command != SNAKE_RESET || tick.command != SNAKE_TICK || state.command != SNAKE_STATE {
+        return Err(PackageInstallError::Device(format!(
+            "snake command echo mismatch: reset={reset:?} tick={tick:?} state={state:?}"
+        )));
+    }
+    if tick.handler_count <= reset.handler_count {
+        return Err(PackageInstallError::Device(format!(
+            "snake handler counter did not advance: reset={reset:?} tick={tick:?}"
+        )));
+    }
     if tick.tick <= reset.tick {
         return Err(PackageInstallError::Device(format!(
             "snake tick did not advance on device: reset={reset:?} tick={tick:?}"
@@ -150,6 +160,10 @@ pub struct SnakeAppResponse {
     pub head_x: u8,
     /// Snake head y coordinate.
     pub head_y: u8,
+    /// Command byte observed by the package-side handler.
+    pub command: u8,
+    /// Wrapping package-side handler invocation counter.
+    pub handler_count: u8,
 }
 
 impl SnakeAppResponse {
@@ -163,6 +177,8 @@ impl SnakeAppResponse {
             score_hi,
             head_x,
             head_y,
+            command,
+            handler_count,
         ] = bytes
         else {
             return Err(PackageInstallError::Device(format!(
@@ -182,6 +198,8 @@ impl SnakeAppResponse {
             score: u16::from_le_bytes([*score_lo, *score_hi]),
             head_x: *head_x,
             head_y: *head_y,
+            command: *command,
+            handler_count: *handler_count,
         })
     }
 }
@@ -229,19 +247,21 @@ mod tests {
 
     #[test]
     fn decodes_snake_app_data_response() {
-        let response =
-            SnakeAppResponse::decode(&[SNAKE_RESPONSE, 1, 2, 0, 3, 0, 12, 14]).expect("response");
+        let response = SnakeAppResponse::decode(&[SNAKE_RESPONSE, 1, 2, 0, 3, 0, 12, 14, b'T', 9])
+            .expect("response");
 
         assert_eq!(response.state, 1);
         assert_eq!(response.tick, 2);
         assert_eq!(response.score, 3);
         assert_eq!(response.head_x, 12);
         assert_eq!(response.head_y, 14);
+        assert_eq!(response.command, b'T');
+        assert_eq!(response.handler_count, 9);
     }
 
     #[test]
     fn rejects_non_snake_app_data_response() {
-        assert!(SnakeAppResponse::decode(&[b'?', 1, 2, 0, 3, 0, 12, 14]).is_err());
+        assert!(SnakeAppResponse::decode(&[b'?', 1, 2, 0, 3, 0, 12, 14, b'T', 9]).is_err());
         assert!(SnakeAppResponse::decode(&[SNAKE_RESPONSE, 1, 2]).is_err());
     }
 
