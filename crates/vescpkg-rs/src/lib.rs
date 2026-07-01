@@ -64,12 +64,13 @@ mod tests {
         AudioVoltage, AveragePower, BatteryCurrent, BatteryVoltage, CanControllerId, DVoltage,
         DirectionalMotorCurrent, FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance,
         GearRatio, GnssLatitude, GnssLongitude, GnssSpeed, MechanicalSpeed, MotorCurrent,
-        MotorPoleCount, PeakPower, QVoltage, ThreadPriority, TotalMotorCurrent, TripDistance,
-        VehicleSpeed, WattHoursDischarged, WheelDiameter,
+        MotorPoleCount, PeakPower, PpmAge, QVoltage, RemoteAge, SystemDuration, SystemTimestamp,
+        ThreadPriority, TimeoutDuration, TotalMotorCurrent, TripDistance, VehicleSpeed,
+        WattHoursDischarged, WheelDiameter,
     };
     use vescpkg_rs_units::{
         Current, Distance, Energy, FluxLinkage, Inductance, Latitude, Longitude, MechanicalRpm,
-        Power, Resistance, Speed, Voltage,
+        Power, Resistance, Speed, SystemTicks, TimestampTicks, Voltage,
     };
 
     #[test]
@@ -150,6 +151,22 @@ mod tests {
         assert!(MotorPoleCount::try_new(0).is_err());
         assert!(crate::types::BatteryCellCount::try_new(0).is_err());
         assert!(GearRatio::try_new(0.0).is_err());
+    }
+
+    #[test]
+    fn semantic_time_types_wrap_fugit_and_tick_units() {
+        let ticks = SystemTicks::from_ticks(25_000);
+        let timestamp = SystemTimestamp::new(TimestampTicks::from_ticks(123_456));
+        let duration = SystemDuration::new(ticks);
+        let timeout = TimeoutDuration::new(ticks);
+        let remote_age = RemoteAge::new(ticks);
+        let ppm_age = PpmAge::new(ticks);
+
+        assert_eq!(timestamp.ticks().as_ticks(), 123_456);
+        assert_eq!(duration.duration().as_ticks(), 25_000);
+        assert_eq!(timeout.duration().as_ticks(), 25_000);
+        assert_eq!(remote_age.duration().as_ticks(), 25_000);
+        assert_eq!(ppm_age.duration().as_ticks(), 25_000);
     }
 
     #[test]

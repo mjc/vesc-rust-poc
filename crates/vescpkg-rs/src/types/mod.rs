@@ -33,6 +33,7 @@ pub mod motor;
 pub mod power;
 pub mod ratio;
 pub mod temperature;
+pub mod time;
 
 pub use battery::{
     AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, BatteryVoltage, CellVoltage,
@@ -62,3 +63,4 @@ pub use ratio::{
 pub use temperature::{
     FetTemperature, MosfetTemperature, MotorTemperature, TemperatureLimitEnd, TemperatureLimitStart,
 };
+pub use time::{PpmAge, RemoteAge, SystemDuration, SystemTimestamp, TimeoutDuration};

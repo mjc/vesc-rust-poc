@@ -1,0 +1,46 @@
+//! Time semantic wrappers.
+
+use crate::units::{SystemTicks, TimestampTicks};
+
+/// System timestamp captured in VESC 100 us ticks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(transparent)]
+pub struct SystemTimestamp(TimestampTicks);
+
+impl SystemTimestamp {
+    /// Wrap timestamp ticks with system timestamp meaning.
+    pub const fn new(ticks: TimestampTicks) -> Self {
+        Self(ticks)
+    }
+
+    /// Return the typed timestamp ticks without erasing them to a primitive.
+    pub const fn ticks(self) -> TimestampTicks {
+        self.0
+    }
+}
+
+macro_rules! duration_type {
+    ($name:ident, $doc:literal) => {
+        #[doc = $doc]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+        #[repr(transparent)]
+        pub struct $name(SystemTicks);
+
+        impl $name {
+            /// Wrap system ticks with semantic duration meaning.
+            pub const fn new(duration: SystemTicks) -> Self {
+                Self(duration)
+            }
+
+            /// Return the typed duration without erasing it to a primitive.
+            pub const fn duration(self) -> SystemTicks {
+                self.0
+            }
+        }
+    };
+}
+
+duration_type!(SystemDuration, "Elapsed system duration.");
+duration_type!(TimeoutDuration, "Timeout duration.");
+duration_type!(RemoteAge, "Age of the latest remote input sample.");
+duration_type!(PpmAge, "Age of the latest PPM input sample.");
