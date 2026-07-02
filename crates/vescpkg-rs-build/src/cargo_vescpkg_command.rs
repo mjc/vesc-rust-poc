@@ -333,8 +333,9 @@ impl CargoVescPkgInvocation {
         if let Some(refloat_source_path) = &self.refloat_source_path {
             let repo_root = repo_root.into();
             let refloat_source_root = clean_path(repo_root.join(refloat_source_path));
+            let vesc_tool = resolve_refloat_vesc_tool(&repo_root, self.refloat_vesc_tool());
             RefloatNativeBuildPlan::new(&refloat_source_root)
-                .with_vesc_tool(self.refloat_vesc_tool())
+                .with_vesc_tool(vesc_tool)
                 .with_git_hash(self.refloat_git_commit())
                 .build_with(native_toolchain)
                 .map_err(|error| {
@@ -487,6 +488,26 @@ fn parse_example(value: &str) -> Result<CargoVescPkgExample, CargoVescPkgParseEr
 
 fn clean_path(path: impl AsRef<Path>) -> PathBuf {
     path.as_ref().components().collect()
+}
+
+fn resolve_refloat_vesc_tool(repo_root: &Path, vesc_tool: &str) -> String {
+    let path = Path::new(vesc_tool);
+    if path.is_absolute() {
+        return clean_path(path).display().to_string();
+    }
+    if is_path_like(path) {
+        return clean_path(repo_root.join(path)).display().to_string();
+    }
+    vesc_tool.to_owned()
+}
+
+fn is_path_like(path: &Path) -> bool {
+    let mut components = path.components();
+    match components.next() {
+        Some(std::path::Component::CurDir | std::path::Component::ParentDir) => true,
+        Some(_) => components.next().is_some(),
+        None => false,
+    }
 }
 
 /// Parse and execute a `cargo vescpkg` invocation with a custom runner.
@@ -915,6 +936,43 @@ mod tests {
         let package = crate::Package::read(root.join(output)).expect("written package");
         let (_code, imports) = parse_lisp_imports(&package.lisp_data).expect("lisp imports");
         assert_eq!(imports[0].payload, b"refloat-native-built\0");
+    }
+
+    #[test]
+    fn run_with_refloat_source_resolves_relative_vesc_tool_paths_before_make() {
+        let harness = write_refloat_source(PackageTestHarness::new());
+        let root = harness.root().to_path_buf();
+        let conversion_runner = FakeConversionRunner::recording();
+        let native_toolchain = RefloatWritingNativeToolchain::new(&root);
+
+        run_with_toolchains(
+            &root,
+            [
+                "build",
+                "--refloat-source",
+                ".",
+                "--vesc-tool",
+                "target/refloat-tools/vesc_tool",
+            ],
+            &conversion_runner,
+            &native_toolchain,
+        )
+        .expect("run refloat source invocation");
+
+        assert_eq!(
+            native_toolchain.calls.borrow().as_slice(),
+            &[(
+                "make".to_owned(),
+                vec![
+                    "-C".to_owned(),
+                    root.join("src").display().to_string(),
+                    format!(
+                        "VESC_TOOL={}",
+                        root.join("target/refloat-tools/vesc_tool").display()
+                    )
+                ]
+            )]
+        );
     }
 
     #[test]
