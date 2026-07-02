@@ -58,31 +58,8 @@ impl VescIfAbi {
     pub const FREE: VescIfSlot = VescIfSlot::new("free", 188);
     /// Slot for `get_arg`.
     pub const GET_ARG: VescIfSlot = VescIfSlot::new("get_arg", 204);
-    /// Slot for `mc_get_fault`.
-    pub const MC_GET_FAULT: VescIfSlot = VescIfSlot::new("mc_get_fault", 368);
-    /// Slot for `mc_get_amp_hours`.
-    pub const MC_GET_AMP_HOURS: VescIfSlot = VescIfSlot::new("mc_get_amp_hours", 440);
-    /// Slot for `mc_get_amp_hours_charged`.
-    pub const MC_GET_AMP_HOURS_CHARGED: VescIfSlot =
-        VescIfSlot::new("mc_get_amp_hours_charged", 444);
-    /// Slot for `mc_get_watt_hours`.
-    pub const MC_GET_WATT_HOURS: VescIfSlot = VescIfSlot::new("mc_get_watt_hours", 448);
-    /// Slot for `mc_get_watt_hours_charged`.
-    pub const MC_GET_WATT_HOURS_CHARGED: VescIfSlot =
-        VescIfSlot::new("mc_get_watt_hours_charged", 452);
-    /// Slot for `mc_get_input_voltage_filtered`.
-    pub const MC_GET_INPUT_VOLTAGE_FILTERED: VescIfSlot =
-        VescIfSlot::new("mc_get_input_voltage_filtered", 480);
-    /// Slot for `mc_temp_fet_filtered`.
-    pub const MC_TEMP_FET_FILTERED: VescIfSlot = VescIfSlot::new("mc_temp_fet_filtered", 504);
-    /// Slot for `mc_temp_motor_filtered`.
-    pub const MC_TEMP_MOTOR_FILTERED: VescIfSlot = VescIfSlot::new("mc_temp_motor_filtered", 508);
-    /// Slot for `mc_get_battery_level`.
-    pub const MC_GET_BATTERY_LEVEL: VescIfSlot = VescIfSlot::new("mc_get_battery_level", 512);
     /// Slot for `mc_get_distance_abs`.
     pub const MC_GET_DISTANCE_ABS: VescIfSlot = VescIfSlot::new("mc_get_distance_abs", 524);
-    /// Slot for `mc_get_odometer`.
-    pub const MC_GET_ODOMETER: VescIfSlot = VescIfSlot::new("mc_get_odometer", 528);
     /// Slot for `send_app_data`.
     pub const SEND_APP_DATA: VescIfSlot = VescIfSlot::new("send_app_data", 592);
     /// Slot for `set_app_data_handler`.
@@ -97,7 +74,7 @@ impl VescIfAbi {
     pub const IO_READ: VescIfSlot = VescIfSlot::new("io_read", 228);
 
     /// The set of slots that this crate currently relies on.
-    pub const USED_SLOTS: [VescIfSlot; 25] = [
+    pub const USED_SLOTS: [VescIfSlot; 15] = [
         Self::LBM_ADD_EXTENSION,
         Self::LBM_ENC_I,
         Self::LBM_DEC_AS_I32,
@@ -106,17 +83,7 @@ impl VescIfAbi {
         Self::MALLOC,
         Self::FREE,
         Self::GET_ARG,
-        Self::MC_GET_FAULT,
-        Self::MC_GET_AMP_HOURS,
-        Self::MC_GET_AMP_HOURS_CHARGED,
-        Self::MC_GET_WATT_HOURS,
-        Self::MC_GET_WATT_HOURS_CHARGED,
-        Self::MC_GET_INPUT_VOLTAGE_FILTERED,
-        Self::MC_TEMP_FET_FILTERED,
-        Self::MC_TEMP_MOTOR_FILTERED,
-        Self::MC_GET_BATTERY_LEVEL,
         Self::MC_GET_DISTANCE_ABS,
-        Self::MC_GET_ODOMETER,
         Self::SEND_APP_DATA,
         Self::SET_APP_DATA_HANDLER,
         Self::SYSTEM_TIME_TICKS,

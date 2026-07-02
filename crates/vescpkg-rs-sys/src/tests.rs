@@ -110,17 +110,7 @@ fn vesc_if_slot_constants_name_the_package_header_offsets() {
             "malloc",
             "free",
             "get_arg",
-            "mc_get_fault",
-            "mc_get_amp_hours",
-            "mc_get_amp_hours_charged",
-            "mc_get_watt_hours",
-            "mc_get_watt_hours_charged",
-            "mc_get_input_voltage_filtered",
-            "mc_temp_fet_filtered",
-            "mc_temp_motor_filtered",
-            "mc_get_battery_level",
             "mc_get_distance_abs",
-            "mc_get_odometer",
             "send_app_data",
             "set_app_data_handler",
             "system_time_ticks",
@@ -132,15 +122,13 @@ fn vesc_if_slot_constants_name_the_package_header_offsets() {
     assert_eq!(
         slots.map(|slot| slot.vesc32_byte_offset()),
         [
-            0, 64, 100, 124, 148, 184, 188, 204, 368, 440, 444, 448, 452, 480, 504, 508, 512, 524,
-            528, 592, 596, 952, 220, 224, 228
+            0, 64, 100, 124, 148, 184, 188, 204, 524, 592, 596, 952, 220, 224, 228
         ]
     );
     assert_eq!(
         slots.map(|slot| slot.slot_index()),
         [
-            0, 16, 25, 31, 37, 46, 47, 51, 92, 110, 111, 112, 113, 120, 126, 127, 128, 131, 132,
-            148, 149, 238, 55, 56, 57
+            0, 16, 25, 31, 37, 46, 47, 51, 131, 148, 149, 238, 55, 56, 57
         ]
     );
 }
