@@ -3,9 +3,13 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::manifest::{manifest_path, parse_pkgdesc, staging_dir_from_manifest};
+use crate::manifest::{
+    manifest_path, parse_package_manifest, parse_pkgdesc, staging_dir_from_manifest,
+};
 use crate::package_build::PackageBuildPlan;
-use crate::package_format::{VescPackageWire, encode_vesc_package};
+use crate::package_format::{
+    VescPackageInput, VescPackageWire, build_vesc_package, encode_vesc_package,
+};
 use crate::package_runner::{RealPackageRunner, package_provenance_from_env};
 use crate::package_target::{PackageTargetMode, PackageTargetPlan};
 use crate::package_wire::{WireError, parse_vescpkg};
@@ -77,6 +81,31 @@ impl Package {
     /// Read and decode a package from disk.
     pub fn read(path: impl AsRef<Path>) -> Result<Self, PackageError> {
         let bytes = fs::read(normalize_package_path(path.as_ref()))?;
+        Self::from_bytes(&bytes)
+    }
+
+    /// Build an in-memory package from a `pkgdesc.qml` and its referenced files.
+    pub fn from_manifest(manifest: impl AsRef<Path>) -> Result<Self, PackageError> {
+        let manifest = manifest_path(manifest.as_ref());
+        let staging_dir = staging_dir_from_manifest(&manifest)?;
+        let descriptor = parse_package_manifest(&manifest)?;
+        let description_md = fs::read_to_string(staging_dir.join(descriptor.description_md()))?;
+        let lisp_source = fs::read_to_string(staging_dir.join(descriptor.lisp()))?;
+        let qml_file = if descriptor.qml().is_empty() {
+            String::new()
+        } else {
+            fs::read_to_string(staging_dir.join(descriptor.qml()))?
+        };
+        let pkg_desc_qml = fs::read_to_string(&manifest)?;
+        let bytes = build_vesc_package(&VescPackageInput {
+            name: descriptor.name(),
+            description_md: &description_md,
+            lisp_source: &lisp_source,
+            lisp_editor_path: &staging_dir,
+            qml_file: &qml_file,
+            pkg_desc_qml: &pkg_desc_qml,
+            qml_is_fullscreen: descriptor.qml_is_fullscreen(),
+        })?;
         Self::from_bytes(&bytes)
     }
 
@@ -311,5 +340,49 @@ mod tests {
             "Rust BLE loopback test package"
         );
         assert_eq!(builder.build_plan().layout().version(), "0.1.0");
+    }
+
+    #[test]
+    fn package_from_manifest_uses_descriptor_referenced_assets() {
+        let harness = PackageTestHarness::new().ensure_loopback_staging();
+        let staging = harness.loopback_staging_dir();
+        std::fs::create_dir_all(staging.join("lisp")).unwrap();
+        std::fs::create_dir_all(staging.join("src")).unwrap();
+        std::fs::write(staging.join("package_README-gen.md"), "Refloat readme").unwrap();
+        std::fs::write(
+            staging.join("ui.qml"),
+            "Item { property string marker: \"refloat\" }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            staging.join("lisp/package.lisp"),
+            "(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n",
+        )
+        .unwrap();
+        std::fs::write(staging.join("src/package_lib.bin"), b"refloat-native").unwrap();
+        std::fs::write(
+            staging.join("pkgdesc.qml"),
+            "import QtQuick 2.15\n\nItem {\n    property string pkgName: \"Refloat\"\n    property string pkgDescriptionMd: \"package_README-gen.md\"\n    property string pkgLisp: \"lisp/package.lisp\"\n    property string pkgQml: \"ui.qml\"\n    property bool pkgQmlIsFullscreen: true\n    property string pkgOutput: \"refloat.vescpkg\"\n}\n",
+        )
+        .unwrap();
+
+        let package = Package::from_manifest(staging.join("pkgdesc.qml")).expect("package");
+        assert_eq!(package.name, "Refloat");
+        assert_eq!(package.description_md, "Refloat readme");
+        assert_eq!(
+            package.qml_file,
+            "Item { property string marker: \"refloat\" }\n"
+        );
+        assert_eq!(
+            package.pkg_desc_qml,
+            std::fs::read_to_string(staging.join("pkgdesc.qml")).unwrap()
+        );
+        assert!(package.qml_is_fullscreen);
+        let (_, imports) =
+            crate::package_wire::parse_lisp_imports(&package.lisp_data).expect("lisp imports");
+        let [import] = imports.as_slice() else {
+            panic!("expected one Lisp import, got {imports:?}");
+        };
+        assert_eq!(import.payload, b"refloat-native\0");
     }
 }
