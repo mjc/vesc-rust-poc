@@ -1,6 +1,6 @@
-//! Host-side VESC package format, build, and install support.
+//! Host-side VESC package format and build support.
 //!
-//! This crate reads/writes `.vescpkg` files and provides package build/install
+//! This crate reads/writes `.vescpkg` files and provides package build
 //! primitives for tools and CLIs. It does not run inside the VESC firmware.
 
 /// ABI inventory used by package layout and audit checks.
@@ -15,8 +15,6 @@ pub(crate) mod golden;
 /// Repository hygiene helpers and generated-path checks.
 #[allow(dead_code, unused_imports)]
 pub(crate) mod hygiene;
-/// Host-side package install and erase helpers.
-pub mod install;
 /// Package manifest discovery and parsing helpers.
 pub mod manifest;
 /// Native artifact audit helpers.
@@ -97,10 +95,6 @@ pub use abi_inventory::{AbiRequirement, AbiRequirementKind, minimal_test_package
 pub use golden::{
     FINGERPRINTS_TOML, LISP_DATA, NATIVE_LIB_BIN, NATIVE_LIB_ELF, PACKAGE_LIB, VERSION,
     fixture_dir, pack_lisp_data, payload_contains_probe_extension, probe_extension_name,
-};
-pub use install::{
-    FakeInstallTransport, InstallError, InstallReport, InstallStep, InstallTransport, Installer,
-    erase_package, install_package,
 };
 pub use manifest::{manifest_path, parse_pkgdesc, staging_dir_from_manifest};
 pub use native_audit::audit_device_proven_fixture;

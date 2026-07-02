@@ -739,30 +739,9 @@ fn read_lisp_code(
 }
 
 fn run_package_install(command: PackageInstallCommand) -> ExitCode {
-    let package = match package_install::read_package_from_path(&command.package_path) {
-        Ok(package) => package,
-        Err(error) => {
-            eprintln!("failed to read package {}: {error}", command.package_path);
-            return ExitCode::from(1);
-        }
-    };
-
-    let transport = match package_transport::BtlePackageInstallTransport::new() {
-        Ok(transport) => transport,
-        Err(error) => {
-            eprintln!("failed to initialize package transport: {error}");
-            return ExitCode::from(1);
-        }
-    };
-
-    if let Err(error) = transport.open(loopback_target(command.address, command.device_name)) {
-        eprintln!("failed to open package transport: {error}");
-        return ExitCode::from(1);
-    }
-
-    match package_install::install_package(&package, &transport) {
+    let target = loopback_target(command.address, command.device_name);
+    match package_install::install_over_ble(command.package_path, target) {
         Ok(report) => {
-            transport.close();
             println!(
                 "package install ok for {}: {:?}",
                 report.package_name, report.steps
@@ -777,35 +756,9 @@ fn run_package_install(command: PackageInstallCommand) -> ExitCode {
 }
 
 fn run_package_erase(command: PackageEraseCommand) -> ExitCode {
-    let transport = match package_transport::BtlePackageInstallTransport::new() {
-        Ok(transport) => transport,
-        Err(error) => {
-            eprintln!("failed to initialize package transport: {error}");
-            return ExitCode::from(1);
-        }
-    };
-
     let target = loopback_target(command.address, command.device_name);
-    let open_result = if command.no_preflight {
-        transport.open_without_preflight(target)
-    } else {
-        transport.open(target)
-    };
-    if let Err(error) = open_result {
-        eprintln!("failed to open package transport: {error}");
-        return ExitCode::from(1);
-    }
-
-    if command.no_preflight {
-        eprintln!("package erase recovery: best-effort stop before erase");
-        if let Err(error) = transport.stop_running_recovery() {
-            eprintln!("package erase recovery: stop did not ack: {error}");
-        }
-    }
-
-    match package_install::erase_package(&transport) {
+    match package_install::erase_over_ble(target, command.no_preflight) {
         Ok(report) => {
-            transport.close();
             println!("package erase ok: {:?}", report.steps);
             ExitCode::SUCCESS
         }
