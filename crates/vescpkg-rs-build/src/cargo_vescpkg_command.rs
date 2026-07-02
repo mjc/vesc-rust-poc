@@ -17,6 +17,8 @@ pub const DEFAULT_TARGET_TRIPLE: &str = "thumbv7em-none-eabihf";
 pub const DEFAULT_REFLOAT_BUILD_DATE: &str = "unknown";
 /// Default Refloat git commit used when no deterministic value is supplied.
 pub const DEFAULT_REFLOAT_GIT_COMMIT: &str = "unknown";
+/// Default VESC Tool executable used for Refloat native config generation.
+pub const DEFAULT_REFLOAT_VESC_TOOL: &str = "vesc_tool";
 /// Cargo subcommand name accepted by this parser.
 pub const BUILD_SUBCOMMAND: &str = "build";
 
@@ -49,6 +51,7 @@ pub struct CargoVescPkgInvocation {
     refloat_source_path: Option<PathBuf>,
     refloat_build_date: String,
     refloat_git_commit: String,
+    refloat_vesc_tool: String,
 }
 
 /// Errors produced while parsing `cargo vescpkg` arguments.
@@ -70,6 +73,8 @@ pub enum CargoVescPkgParseError {
     MissingBuildDateValue,
     /// `--git-commit` was provided without a value.
     MissingGitCommitValue,
+    /// `--vesc-tool` was provided without a value.
+    MissingVescToolValue,
     /// `--example` selected an unsupported package example.
     UnsupportedExample(String),
     /// An unsupported flag or positional argument was provided.
@@ -98,6 +103,7 @@ impl std::fmt::Display for CargoVescPkgParseError {
             Self::MissingRefloatSourceValue => f.write_str("missing value for --refloat-source"),
             Self::MissingBuildDateValue => f.write_str("missing value for --build-date"),
             Self::MissingGitCommitValue => f.write_str("missing value for --git-commit"),
+            Self::MissingVescToolValue => f.write_str("missing value for --vesc-tool"),
             Self::UnsupportedExample(example) => {
                 write!(f, "unsupported cargo vescpkg example: {example}")
             }
@@ -133,6 +139,7 @@ impl CargoVescPkgInvocation {
             refloat_source_path: None,
             refloat_build_date: DEFAULT_REFLOAT_BUILD_DATE.to_owned(),
             refloat_git_commit: DEFAULT_REFLOAT_GIT_COMMIT.to_owned(),
+            refloat_vesc_tool: DEFAULT_REFLOAT_VESC_TOOL.to_owned(),
         }
     }
 
@@ -179,6 +186,12 @@ impl CargoVescPkgInvocation {
         self
     }
 
+    /// Set the VESC Tool executable used by Refloat's native Makefile.
+    pub fn with_refloat_vesc_tool(mut self, vesc_tool: impl Into<String>) -> Self {
+        self.refloat_vesc_tool = vesc_tool.into();
+        self
+    }
+
     /// Return the requested invocation mode.
     pub fn mode(&self) -> CargoVescPkgMode {
         self.mode
@@ -217,6 +230,11 @@ impl CargoVescPkgInvocation {
     /// Return the deterministic Refloat git commit string.
     pub fn refloat_git_commit(&self) -> &str {
         &self.refloat_git_commit
+    }
+
+    /// Return the VESC Tool executable used by Refloat's native Makefile.
+    pub fn refloat_vesc_tool(&self) -> &str {
+        &self.refloat_vesc_tool
     }
 
     /// Return the package name associated with the selected example.
@@ -262,6 +280,8 @@ impl CargoVescPkgInvocation {
             args.push(self.refloat_build_date.clone());
             args.push("--git-commit".to_owned());
             args.push(self.refloat_git_commit.clone());
+            args.push("--vesc-tool".to_owned());
+            args.push(self.refloat_vesc_tool.clone());
         }
         args.push("--target".to_owned());
         args.push(self.target_triple.clone());
@@ -314,6 +334,7 @@ impl CargoVescPkgInvocation {
             let repo_root = repo_root.into();
             let refloat_source_root = clean_path(repo_root.join(refloat_source_path));
             RefloatNativeBuildPlan::new(&refloat_source_root)
+                .with_vesc_tool(self.refloat_vesc_tool())
                 .with_git_hash(self.refloat_git_commit())
                 .build_with(native_toolchain)
                 .map_err(|error| {
@@ -384,6 +405,7 @@ where
     let mut refloat_source_path = None;
     let mut refloat_build_date = DEFAULT_REFLOAT_BUILD_DATE.to_owned();
     let mut refloat_git_commit = DEFAULT_REFLOAT_GIT_COMMIT.to_owned();
+    let mut refloat_vesc_tool = DEFAULT_REFLOAT_VESC_TOOL.to_owned();
     while let Some(argument) = args.next() {
         match argument.as_ref() {
             "--package-only" => mode = CargoVescPkgMode::BuildPackageOnly,
@@ -425,6 +447,12 @@ where
                 };
                 refloat_git_commit = value.as_ref().to_owned();
             }
+            "--vesc-tool" => {
+                let Some(value) = args.next() else {
+                    return Err(CargoVescPkgParseError::MissingVescToolValue);
+                };
+                refloat_vesc_tool = value.as_ref().to_owned();
+            }
             other if other.starts_with('-') => {
                 return Err(CargoVescPkgParseError::UnexpectedArgument(other.to_owned()));
             }
@@ -435,7 +463,8 @@ where
     let invocation = CargoVescPkgInvocation::new(mode)
         .with_example(example)
         .with_target_triple(target_triple)
-        .with_refloat_build_info(refloat_build_date, refloat_git_commit);
+        .with_refloat_build_info(refloat_build_date, refloat_git_commit)
+        .with_refloat_vesc_tool(refloat_vesc_tool);
 
     let invocation = match manifest_path {
         Some(path) => invocation.with_manifest_path(path),
@@ -633,6 +662,8 @@ mod tests {
             "2026-07-02 06:00:00-06:00",
             "--git-commit",
             "0ef6e99",
+            "--vesc-tool",
+            "/opt/vesc_tool",
         ])
         .expect("parse refloat source invocation");
 
@@ -643,6 +674,7 @@ mod tests {
         );
         assert_eq!(invocation.refloat_build_date(), "2026-07-02 06:00:00-06:00");
         assert_eq!(invocation.refloat_git_commit(), "0ef6e99");
+        assert_eq!(invocation.refloat_vesc_tool(), "/opt/vesc_tool");
         assert_eq!(
             invocation.subcommand_args(),
             vec![
@@ -654,6 +686,8 @@ mod tests {
                 "2026-07-02 06:00:00-06:00".to_owned(),
                 "--git-commit".to_owned(),
                 "0ef6e99".to_owned(),
+                "--vesc-tool".to_owned(),
+                "/opt/vesc_tool".to_owned(),
                 "--target".to_owned(),
                 DEFAULT_TARGET_TRIPLE.to_owned(),
             ]
@@ -851,6 +885,8 @@ mod tests {
                 "2026-07-02 06:00:00-06:00",
                 "--git-commit",
                 "0ef6e99",
+                "--vesc-tool",
+                "custom-vesc-tool",
             ],
             &conversion_runner,
             &native_toolchain,
@@ -870,7 +906,7 @@ mod tests {
                 vec![
                     "-C".to_owned(),
                     root.join("src").display().to_string(),
-                    "VESC_TOOL=vesc_tool".to_owned()
+                    "VESC_TOOL=custom-vesc-tool".to_owned()
                 ]
             )]
         );
@@ -918,6 +954,10 @@ mod tests {
         assert_eq!(
             parse_args(["build", "--git-commit"]),
             Err(super::CargoVescPkgParseError::MissingGitCommitValue)
+        );
+        assert_eq!(
+            parse_args(["build", "--vesc-tool"]),
+            Err(super::CargoVescPkgParseError::MissingVescToolValue)
         );
         assert_eq!(
             parse_args(["build", "--example", "pong"]),
