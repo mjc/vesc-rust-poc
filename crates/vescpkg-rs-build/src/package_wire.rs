@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fmt;
 use std::io::Read;
 
@@ -203,6 +204,130 @@ pub fn wire_snapshot_report(data: &[u8]) -> Result<String, WireError> {
     Ok(lines.join("\n"))
 }
 
+/// Compare two `.vescpkg` blobs by package fields and Lisp native imports.
+pub fn wire_comparison_report(left: &[u8], right: &[u8]) -> Result<String, WireError> {
+    let left_decompressed = decompress_vescpkg(left)?;
+    let right_decompressed = decompress_vescpkg(right)?;
+    let left_fields = parse_decompressed_vescpkg(&left_decompressed)?;
+    let right_fields = parse_decompressed_vescpkg(&right_decompressed)?;
+
+    let mut lines = vec![
+        format!("compressed_len: left={} right={}", left.len(), right.len()),
+        format!(
+            "decompressed_len: left={} right={}",
+            left_decompressed.len(),
+            right_decompressed.len()
+        ),
+        "fields:".to_owned(),
+    ];
+
+    let keys = left_fields
+        .iter()
+        .chain(right_fields.iter())
+        .map(|field| field.key.as_str())
+        .collect::<BTreeSet<_>>();
+    for key in keys {
+        match (
+            field_bytes(&left_fields, key),
+            field_bytes(&right_fields, key),
+        ) {
+            (Some(left_value), Some(right_value)) => {
+                lines.push(format_byte_comparison(key, left_value, right_value));
+            }
+            (Some(left_value), None) => lines.push(format!(
+                "  {key}: left_only len={} sha256={}",
+                left_value.len(),
+                sha256_hex(left_value)
+            )),
+            (None, Some(right_value)) => lines.push(format!(
+                "  {key}: right_only len={} sha256={}",
+                right_value.len(),
+                sha256_hex(right_value)
+            )),
+            (None, None) => {}
+        }
+    }
+
+    if let (Some(left_lisp), Some(right_lisp)) = (
+        field_bytes(&left_fields, "lispData"),
+        field_bytes(&right_fields, "lispData"),
+    ) {
+        append_import_comparison(&mut lines, left_lisp, right_lisp)?;
+    }
+
+    Ok(lines.join("\n"))
+}
+
+fn append_import_comparison(
+    lines: &mut Vec<String>,
+    left_lisp: &[u8],
+    right_lisp: &[u8],
+) -> Result<(), WireError> {
+    let (_, left_imports) = parse_lisp_imports(left_lisp)?;
+    let (_, right_imports) = parse_lisp_imports(right_lisp)?;
+    let tags = left_imports
+        .iter()
+        .chain(right_imports.iter())
+        .map(|import| import.tag.as_str())
+        .collect::<BTreeSet<_>>();
+    if tags.is_empty() {
+        return Ok(());
+    }
+
+    lines.push("  imports:".to_owned());
+    for tag in tags {
+        let left_import = left_imports.iter().find(|import| import.tag == tag);
+        let right_import = right_imports.iter().find(|import| import.tag == tag);
+        match (left_import, right_import) {
+            (Some(left_import), Some(right_import)) => {
+                let status = if left_import.payload == right_import.payload {
+                    "match"
+                } else {
+                    "differs"
+                };
+                lines.push(format!(
+                    "    {tag}: {status} left_offset={} right_offset={} left_size={} right_size={} left_payload_sha256={} right_payload_sha256={}",
+                    left_import.offset,
+                    right_import.offset,
+                    left_import.size,
+                    right_import.size,
+                    sha256_hex(&left_import.payload),
+                    sha256_hex(&right_import.payload)
+                ));
+            }
+            (Some(left_import), None) => lines.push(format!(
+                "    {tag}: left_only offset={} size={} payload_sha256={}",
+                left_import.offset,
+                left_import.size,
+                sha256_hex(&left_import.payload)
+            )),
+            (None, Some(right_import)) => lines.push(format!(
+                "    {tag}: right_only offset={} size={} payload_sha256={}",
+                right_import.offset,
+                right_import.size,
+                sha256_hex(&right_import.payload)
+            )),
+            (None, None) => {}
+        }
+    }
+
+    Ok(())
+}
+
+fn format_byte_comparison(key: &str, left: &[u8], right: &[u8]) -> String {
+    let left_sha = sha256_hex(left);
+    let right_sha = sha256_hex(right);
+    if left == right {
+        format!("  {key}: match len={} sha256={left_sha}", left.len())
+    } else {
+        format!(
+            "  {key}: differs left_len={} right_len={} left_sha256={left_sha} right_sha256={right_sha}",
+            left.len(),
+            right.len()
+        )
+    }
+}
+
 fn sha256_hex(data: &[u8]) -> String {
     Sha256::digest(data)
         .iter()
@@ -242,8 +367,41 @@ fn take(cursor: &mut &[u8], len: usize) -> Result<Vec<u8>, WireError> {
 mod tests {
     use super::{
         PackageField, VESC_PACKET_HEADER, parse_decompressed_vescpkg, parse_lisp_imports,
-        wire_snapshot_report,
+        wire_comparison_report, wire_snapshot_report,
     };
+
+    fn lisp_data(payload: &[u8]) -> Vec<u8> {
+        let code = b"(import \"src/package_lib.bin\" 'package-lib)\0";
+        let mut lisp = Vec::new();
+        lisp.extend_from_slice(&0i16.to_be_bytes());
+        lisp.extend_from_slice(code);
+        lisp.extend_from_slice(&1i16.to_be_bytes());
+        lisp.extend_from_slice(b"package-lib\0");
+        let offset = i32::try_from(lisp.len() + 8 - 2).expect("offset fits in i32");
+        lisp.extend_from_slice(&offset.to_be_bytes());
+        lisp.extend_from_slice(&(payload.len() as i32).to_be_bytes());
+        lisp.extend_from_slice(payload);
+        lisp
+    }
+
+    fn compressed_package(raw: &[u8]) -> Vec<u8> {
+        let mut encoder =
+            flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        std::io::Write::write_all(&mut encoder, raw).expect("zlib payload");
+        let compressed_body = encoder.finish().expect("zlib finish");
+        let mut package = (raw.len() as u32).to_be_bytes().to_vec();
+        package.extend_from_slice(&compressed_body);
+        package
+    }
+
+    fn package_with_lisp_payload(payload: &[u8]) -> Vec<u8> {
+        let lisp = lisp_data(payload);
+        let mut raw = field_spine();
+        raw.extend_from_slice(b"lispData\0");
+        raw.extend_from_slice(&(lisp.len() as i32).to_be_bytes());
+        raw.extend_from_slice(&lisp);
+        compressed_package(&raw)
+    }
 
     fn field_spine() -> Vec<u8> {
         let mut raw = Vec::new();
@@ -269,17 +427,7 @@ mod tests {
     #[test]
     fn parse_lisp_imports_reads_native_import_table() {
         let payload = [0xAA, 0xBB, 0xCC, 0xDD];
-        let code = b"(import \"src/package_lib.bin\" 'package-lib)\0";
-
-        let mut lisp = Vec::new();
-        lisp.extend_from_slice(&0i16.to_be_bytes());
-        lisp.extend_from_slice(code);
-        lisp.extend_from_slice(&1i16.to_be_bytes());
-        lisp.extend_from_slice(b"package-lib\0");
-        let offset = i32::try_from(lisp.len() + 8 - 2).expect("offset fits in i32");
-        lisp.extend_from_slice(&offset.to_be_bytes());
-        lisp.extend_from_slice(&(payload.len() as i32).to_be_bytes());
-        lisp.extend_from_slice(&payload);
+        let lisp = lisp_data(&payload);
 
         let (parsed_code, imports) = parse_lisp_imports(&lisp).expect("lisp imports");
         assert!(parsed_code.contains("package-lib"));
@@ -291,29 +439,7 @@ mod tests {
     #[test]
     fn wire_snapshot_report_redacts_payloads_to_lengths_and_hashes() {
         let payload = [0xAA, 0xBB, 0xCC, 0xDD];
-        let code = b"(import \"src/package_lib.bin\" 'package-lib)\0";
-
-        let mut lisp = Vec::new();
-        lisp.extend_from_slice(&0i16.to_be_bytes());
-        lisp.extend_from_slice(code);
-        lisp.extend_from_slice(&1i16.to_be_bytes());
-        lisp.extend_from_slice(b"package-lib\0");
-        let offset = i32::try_from(lisp.len() + 8 - 2).expect("offset fits in i32");
-        lisp.extend_from_slice(&offset.to_be_bytes());
-        lisp.extend_from_slice(&(payload.len() as i32).to_be_bytes());
-        lisp.extend_from_slice(&payload);
-
-        let mut raw = field_spine();
-        raw.extend_from_slice(b"lispData\0");
-        raw.extend_from_slice(&(lisp.len() as i32).to_be_bytes());
-        raw.extend_from_slice(&lisp);
-
-        let mut encoder =
-            flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
-        std::io::Write::write_all(&mut encoder, &raw).expect("zlib payload");
-        let compressed_body = encoder.finish().expect("zlib finish");
-        let mut package = (raw.len() as u32).to_be_bytes().to_vec();
-        package.extend_from_slice(&compressed_body);
+        let package = package_with_lisp_payload(&payload);
 
         let report = wire_snapshot_report(&package).expect("wire snapshot");
         assert!(report.contains("fields:"));
@@ -321,6 +447,17 @@ mod tests {
         assert!(report.contains("lispData:"));
         assert!(report.contains("imports:"));
         assert!(report.contains("package-lib: offset="));
+        assert!(!report.contains("0xaa"));
+    }
+
+    #[test]
+    fn wire_comparison_report_highlights_field_and_import_differences() {
+        let baseline = package_with_lisp_payload(&[0xAA, 0xBB, 0xCC, 0xDD]);
+        let rust_native = package_with_lisp_payload(&[0xAA, 0xBB, 0xCC]);
+
+        let report = wire_comparison_report(&baseline, &rust_native).expect("wire comparison");
+
+        insta::assert_snapshot!("wire_comparison_report", report);
         assert!(!report.contains("0xaa"));
     }
 }
