@@ -69,6 +69,36 @@ impl EnergyPerDistance {
     }
 }
 
+impl EnergyPerDistance {
+    /// Create an efficiency value from watt-hours per kilometer.
+    ///
+    /// Uses the canonical conversion of 1 kilometer = 1000 meters.
+    pub const fn from_watt_hours_per_kilometer(value: f32) -> Self {
+        Self::from_watt_hours_per_meter(value / METERS_PER_KILOMETER)
+    }
+
+    /// Return this efficiency value in watt-hours per kilometer.
+    ///
+    /// Uses the canonical conversion of 1 kilometer = 1000 meters.
+    pub const fn as_watt_hours_per_kilometer(self) -> f32 {
+        self.as_watt_hours_per_meter() * METERS_PER_KILOMETER
+    }
+
+    /// Create an efficiency value from watt-hours per mile.
+    ///
+    /// Uses the international mile conversion of 1 mile = 1609.344 meters.
+    pub const fn from_watt_hours_per_mile(value: f32) -> Self {
+        Self::from_watt_hours_per_meter(value / METERS_PER_MILE)
+    }
+
+    /// Return this efficiency value in watt-hours per mile.
+    ///
+    /// Uses the international mile conversion of 1 mile = 1609.344 meters.
+    pub const fn as_watt_hours_per_mile(self) -> f32 {
+        self.as_watt_hours_per_meter() * METERS_PER_MILE
+    }
+}
+
 impl Div<Distance> for Energy {
     type Output = EnergyPerDistance;
 
