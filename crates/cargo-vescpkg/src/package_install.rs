@@ -225,6 +225,88 @@ impl InstallOperation<'_> {
     }
 }
 
+enum PackageQml<'a> {
+    Upload { script: &'a str, fullscreen: bool },
+    EraseExisting,
+    LeaveEmpty,
+}
+
+impl<'a> PackageQml<'a> {
+    fn from_package<T: PackageInstallTransport>(
+        package: &'a VescPackage,
+        transport: &T,
+    ) -> Result<Self, PackageInstallError> {
+        match package.qml_file.as_str() {
+            "" if transport.has_qml_app()? => Ok(Self::EraseExisting),
+            "" => Ok(Self::LeaveEmpty),
+            script => Ok(Self::Upload {
+                script,
+                fullscreen: package.qml_is_fullscreen,
+            }),
+        }
+    }
+
+    fn into_operations(
+        self,
+    ) -> Result<impl Iterator<Item = InstallOperation<'a>>, PackageInstallError> {
+        let operations = match self {
+            Self::Upload { script, fullscreen } => {
+                let qml = qml_compress(script)?;
+                [
+                    Some(InstallOperation::EraseQml {
+                        bytes: qml.len() + 100,
+                    }),
+                    Some(InstallOperation::UploadQml { qml, fullscreen }),
+                ]
+            }
+            Self::EraseExisting => [
+                Some(InstallOperation::EraseQml {
+                    bytes: PACKAGE_ERASE_BYTES,
+                }),
+                None,
+            ],
+            Self::LeaveEmpty => [None, None],
+        };
+
+        Ok(operations.into_iter().flatten())
+    }
+}
+
+enum PackageLisp<'a> {
+    Upload(&'a [u8]),
+    EraseEmpty,
+}
+
+impl<'a> PackageLisp<'a> {
+    fn from_package(package: &'a VescPackage) -> Self {
+        match package.lisp_data.as_slice() {
+            [] => Self::EraseEmpty,
+            lisp => Self::Upload(lisp),
+        }
+    }
+
+    fn into_operations(self) -> impl Iterator<Item = InstallOperation<'a>> {
+        let operations = match self {
+            Self::Upload(lisp) => [
+                Some(InstallOperation::EraseLisp {
+                    bytes: lisp.len() + 100,
+                }),
+                Some(InstallOperation::UploadLisp { lisp }),
+                Some(InstallOperation::SetRunning { running: true }),
+            ],
+            Self::EraseEmpty => [
+                Some(InstallOperation::EraseLisp {
+                    bytes: PACKAGE_ERASE_BYTES,
+                }),
+                None,
+                None,
+            ],
+        };
+
+        operations.into_iter().flatten()
+    }
+}
+
 /// Reads and decodes a package from a filesystem path.
 pub fn read_package_from_path(path: impl AsRef<Path>) -> Result<VescPackage, PackageInstallError> {
     VescPackage::read(path).map_err(Into::into)
@@ -273,21 +355,13 @@ pub fn install_package<T: PackageInstallTransport>(
     package: &VescPackage,
     transport: &T,
 ) -> Result<PackageInstallReport, PackageInstallError> {
-    if !package.is_valid() {
-        return Err(PackageInstallError::InvalidPackage);
-    }
+    let package = checked_package(package)?;
 
-    let has_qml_app = package
-        .qml_file
-        .is_empty()
-        .then(|| transport.has_qml_app())
-        .transpose()?
-        .unwrap_or(false);
-    let steps = execute_plan(transport, install_plan(package, has_qml_app)?)?;
-
-    Ok(PackageInstallReport {
-        package_name: package.name.clone(),
-        steps,
+    execute_plan(transport, install_operations(package, transport)?).map(|steps| {
+        PackageInstallReport {
+            package_name: package.name.clone(),
+            steps,
+        }
     })
 }
 
@@ -295,7 +369,7 @@ pub fn install_package<T: PackageInstallTransport>(
 pub fn erase_package<T: PackageInstallTransport>(
     transport: &T,
 ) -> Result<PackageInstallReport, PackageInstallError> {
-    let steps = execute_plan(
+    execute_plan(
         transport,
         [
             InstallOperation::EraseQml {
@@ -306,55 +380,28 @@ pub fn erase_package<T: PackageInstallTransport>(
             },
             InstallOperation::ReloadFirmware,
         ],
-    )?;
-
-    Ok(PackageInstallReport {
+    )
+    .map(|steps| PackageInstallReport {
         package_name: "installed package".to_owned(),
         steps,
     })
 }
 
-fn install_plan<'a>(
+fn checked_package(package: &VescPackage) -> Result<&VescPackage, PackageInstallError> {
+    package
+        .is_valid()
+        .then_some(package)
+        .ok_or(PackageInstallError::InvalidPackage)
+}
+
+fn install_operations<'a, T: PackageInstallTransport>(
     package: &'a VescPackage,
-    has_qml_app: bool,
-) -> Result<Vec<InstallOperation<'a>>, PackageInstallError> {
-    let qml_steps = match (package.qml_file.is_empty(), has_qml_app) {
-        (false, _) => {
-            let qml = qml_compress(&package.qml_file)?;
-            vec![
-                InstallOperation::EraseQml {
-                    bytes: qml.len() + 100,
-                },
-                InstallOperation::UploadQml {
-                    qml,
-                    fullscreen: package.qml_is_fullscreen,
-                },
-            ]
-        }
-        (true, true) => vec![InstallOperation::EraseQml {
-            bytes: PACKAGE_ERASE_BYTES,
-        }],
-        (true, false) => Vec::new(),
-    };
-
-    let lisp_steps = match package.lisp_data.as_slice() {
-        [] => vec![InstallOperation::EraseLisp {
-            bytes: PACKAGE_ERASE_BYTES,
-        }],
-        lisp => vec![
-            InstallOperation::EraseLisp {
-                bytes: lisp.len() + 100,
-            },
-            InstallOperation::UploadLisp { lisp },
-            InstallOperation::SetRunning { running: true },
-        ],
-    };
-
-    Ok(qml_steps
-        .into_iter()
-        .chain(lisp_steps)
-        .chain([InstallOperation::ReloadFirmware])
-        .collect())
+    transport: &T,
+) -> Result<impl Iterator<Item = InstallOperation<'a>>, PackageInstallError> {
+    Ok(PackageQml::from_package(package, transport)?
+        .into_operations()?
+        .chain(PackageLisp::from_package(package).into_operations())
+        .chain([InstallOperation::ReloadFirmware]))
 }
 
 fn execute_plan<'a, T, I>(
@@ -367,11 +414,8 @@ where
 {
     operations
         .into_iter()
-        .try_fold(Vec::new(), |mut steps, op| {
-            op.run(transport)?;
-            steps.push(op.step());
-            Ok(steps)
-        })
+        .map(|op| op.run(transport).map(|()| op.step()))
+        .collect()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
