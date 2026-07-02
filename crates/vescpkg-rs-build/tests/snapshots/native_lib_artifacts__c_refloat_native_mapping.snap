@@ -1,0 +1,22 @@
+---
+source: crates/vescpkg-rs-build/tests/native_lib_artifacts.rs
+expression: report
+---
+c_refloat_native_mapping:
+entrypoints:
+  package_init: present addr=0x4 symbol=init source=src/main.c:2415
+  main_thread: present addr=0xb588 symbol=refloat_thd source=src/main.c:767
+  aux_thread: present addr=0x9878 symbol=aux_thd source=src/main.c:1130
+  stop_hook: present addr=0x7b54 symbol=stop source=src/main.c:2399
+runtime_paths:
+  configure: present addr=0xa348 symbol=configure source=src/main.c:185
+  config_get: present addr=0x8882 symbol=get_cfg source=src/main.c:2335
+  config_set: present addr=0xb4bc symbol=set_cfg source=src/main.c:2360
+  config_xml: present addr=0x7b30 symbol=get_cfg_xml source=src/main.c:2389
+  imu_callback: present addr=0xa4b0 symbol=imu_ref_callback source=src/main.c:760
+  state_compat: present addr=0x7d80 symbol=state_compat source=src/state.c:50
+config_payload:
+  serialized_defaults: present addr=0xabc symbol=data_refloatconfig_ source=src/conf/confxml.c:5
+  defaults: present addr=0x7e5e symbol=confparser_set_defaults_refloatconfig source=src/conf/confparser.c:363
+  serialize: present addr=0x8226 symbol=confparser_serialize_refloatconfig source=src/conf/confparser.c:8
+  deserialize: present addr=0xa860 symbol=confparser_deserialize_refloatconfig source=src/conf/confparser.c:184

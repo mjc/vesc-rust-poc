@@ -1,0 +1,34 @@
+---
+source: crates/vescpkg-rs-build/tests/native_lib_artifacts.rs
+expression: report
+---
+refloat_c_rust_mapping:
+lifecycle:
+  package_init: c=[present addr=0x4 symbol=init source=src/main.c:2415] rust=[present addr=0x1830 symbol=package_lib_init]
+  main_thread: c=[present addr=0xb588 symbol=refloat_thd source=src/main.c:767] rust=[present addr=0x9b0 symbol=_ZN20vesc_example_refloat7runtime19refloat_main_thread17hf4b8792fbe283886E]
+  aux_thread: c=[present addr=0x9878 symbol=aux_thd source=src/main.c:1130] rust=[present addr=0x980 symbol=_ZN20vesc_example_refloat7runtime18refloat_aux_thread17hc2f51d7df6be2fc3E]
+  stop_hook: c=[present addr=0x7b54 symbol=stop source=src/main.c:2399] rust=[present addr=0xf90 symbol=_ZN20vesc_example_refloat8app_data21stop_refloat_app_data17h396be9e266c760abE]
+app_communication:
+  app_data_handler: c=[present addr=0xdd58 symbol=on_command_received source=src/main.c:2143] rust=[present addr=0x1a80 symbol=refloat_handle_app_data]
+  app_data_registration: c=[registered source=src/main.c:2457] rust=[slot=596 set during package_lib_init]
+runtime:
+  configure: c=[present addr=0xa348 symbol=configure source=src/main.c:185] rust=[present addr=0xbd0 symbol=_ZN20vesc_example_refloat8app_data19RefloatAppDataState26refresh_boot_runtime_state17hf9b923b0c6c44b60E]
+  imu_refresh: c=[present addr=0xa4b0 symbol=imu_ref_callback source=src/main.c:760] rust=[present addr=0xbd0 symbol=_ZN20vesc_example_refloat8app_data19RefloatAppDataState26refresh_boot_runtime_state17hf9b923b0c6c44b60E]
+  state_recovery: c=[present addr=0x7d80 symbol=state_compat source=src/state.c:50] rust=[present addr=0xfe0 symbol=_ZN20vesc_example_refloat8app_data22refloat_state_from_arg17h1430520902cd9b3fE]
+config:
+  config_get: c=[present addr=0x8882 symbol=get_cfg source=src/main.c:2335] rust=[present addr=0xac0 symbol=_ZN20vesc_example_refloat8app_data15refloat_get_cfg17hd2311ee92c73b21eE]
+  config_set: c=[present addr=0xb4bc symbol=set_cfg source=src/main.c:2360] rust=[present addr=0xb00 symbol=_ZN20vesc_example_refloat8app_data15refloat_set_cfg17haa20e0cbfbf8af04E]
+  config_xml: c=[present addr=0x7b30 symbol=get_cfg_xml source=src/main.c:2389] rust=[present addr=0xf60 symbol=_ZN20vesc_example_refloat8app_data19refloat_get_cfg_xml17h5e247df83f17f907E]
+  c_defaults_blob: c=[present addr=0xabc symbol=data_refloatconfig_ source=src/conf/confxml.c:5] rust=[generated config payload source=examples/refloat/src/conf/refloatconfig.dat:1 include=examples/refloat/src/app_data.rs:45]
+  c_defaults: c=[present addr=0x7e5e symbol=confparser_set_defaults_refloatconfig source=src/conf/confparser.c:363] rust=[generated defaults source=examples/refloat/src/conf/default_config.dat:1 include=examples/refloat/src/app_data.rs:60]
+  c_serialize: c=[present addr=0x8226 symbol=confparser_serialize_refloatconfig source=src/conf/confparser.c:8] rust=[generated defaults copy source=examples/refloat/src/app_data.rs:910]
+  c_deserialize: c=[present addr=0xa860 symbol=confparser_deserialize_refloatconfig source=src/conf/confparser.c:184] rust=[serialized config store source=examples/refloat/src/app_data.rs:957]
+helper_classification:
+  implemented_rust_peer: on_command_received->refloat_handle_app_data; ext_set_fw_version->ext_set_fw_version; get_cfg/set_cfg/get_cfg_xml callbacks
+  folded_into_existing_path: configure/reconfigure/reset_runtime_vars/state_compat fold into refresh_boot_runtime_state, typed ride-state payloads, and runtime state refresh
+  intentionally_omitted: none declared permanent in VESCR-214; remaining helpers need porting or explicit omission evidence
+  new_follow_up_ticket: VESCR-215 covers config EEPROM/startup helpers, ride/control helpers, app-data command handlers, ext_bms/fatal_error_terminate, and subsystem helpers
+rust_firmware_slots:
+  malloc: present slot=184
+  set_app_data_handler: present slot=596
+  clear_app_data_handler: present slot=596
