@@ -58,6 +58,8 @@ impl VescIfAbi {
     pub const FREE: VescIfSlot = VescIfSlot::new("free", 188);
     /// Slot for `get_arg`.
     pub const GET_ARG: VescIfSlot = VescIfSlot::new("get_arg", 204);
+    /// Slot for `mc_get_fault`.
+    pub const MC_GET_FAULT: VescIfSlot = VescIfSlot::new("mc_get_fault", 368);
     /// Slot for `mc_get_amp_hours`.
     pub const MC_GET_AMP_HOURS: VescIfSlot = VescIfSlot::new("mc_get_amp_hours", 440);
     /// Slot for `mc_get_amp_hours_charged`.
@@ -92,7 +94,7 @@ impl VescIfAbi {
     pub const IO_READ: VescIfSlot = VescIfSlot::new("io_read", 228);
 
     /// The set of slots that this crate currently relies on.
-    pub const USED_SLOTS: [VescIfSlot; 23] = [
+    pub const USED_SLOTS: [VescIfSlot; 24] = [
         Self::LBM_ADD_EXTENSION,
         Self::LBM_ENC_I,
         Self::LBM_DEC_AS_I32,
@@ -101,6 +103,7 @@ impl VescIfAbi {
         Self::MALLOC,
         Self::FREE,
         Self::GET_ARG,
+        Self::MC_GET_FAULT,
         Self::MC_GET_AMP_HOURS,
         Self::MC_GET_AMP_HOURS_CHARGED,
         Self::MC_GET_WATT_HOURS,

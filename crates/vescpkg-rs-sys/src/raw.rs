@@ -705,6 +705,39 @@ pub unsafe fn vesc_get_arg(prog_addr: u32) -> *mut *mut c_void {
     }
 }
 
+/// Return the active motor fault code, or zero for no fault.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn mc_get_fault() -> c_int {
+    #[cfg(all(target_arch = "arm", not(test)))]
+    unsafe {
+        let vesc_if = VescIfAbi::BASE_ADDR.0;
+        let mc_get_fault: usize;
+        core::arch::asm!(
+            "ldr {mc_get_fault}, [{vesc_if}, #{slot}]",
+            vesc_if = in(reg) vesc_if,
+            mc_get_fault = out(reg) mc_get_fault,
+            slot = const VescIfAbi::MC_GET_FAULT.vesc32_byte_offset(),
+            options(nostack, preserves_flags),
+        );
+        if mc_get_fault == 0 {
+            return 0;
+        }
+        let mc_get_fault: unsafe extern "C" fn() -> c_int = core::mem::transmute(mc_get_fault);
+        mc_get_fault()
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
+    unsafe {
+        match (*vesc_if()).mc_get_fault {
+            Some(mc_get_fault) => mc_get_fault(),
+            None => 0,
+        }
+    }
+}
+
 /// Return the discharged amp-hours counter.
 ///
 /// # Safety
@@ -1110,7 +1143,7 @@ pub unsafe fn io_read(pin: crate::VescPin) -> bool {
 
 /// Returns selected `VescIf` field offsets for ABI layout tests.
 #[cfg(test)]
-pub fn vesc_if_offsets_for_tests() -> [usize; 23] {
+pub fn vesc_if_offsets_for_tests() -> [usize; 24] {
     [
         core::mem::offset_of!(VescIf, lbm_add_extension),
         core::mem::offset_of!(VescIf, lbm_enc_i),
@@ -1120,6 +1153,7 @@ pub fn vesc_if_offsets_for_tests() -> [usize; 23] {
         core::mem::offset_of!(VescIf, malloc),
         core::mem::offset_of!(VescIf, free),
         core::mem::offset_of!(VescIf, get_arg),
+        core::mem::offset_of!(VescIf, mc_get_fault),
         core::mem::offset_of!(VescIf, mc_get_amp_hours),
         core::mem::offset_of!(VescIf, mc_get_amp_hours_charged),
         core::mem::offset_of!(VescIf, mc_get_watt_hours),
