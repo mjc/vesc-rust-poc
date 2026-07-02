@@ -1,6 +1,6 @@
 //! Motor-domain semantic wrappers.
 
-use crate::units::{Current, Frequency, SampleRate, Seconds, Voltage};
+use crate::units::{AbiSeconds, Current, Frequency, SampleRate, Voltage};
 
 macro_rules! current_type {
     ($name:ident, $doc:literal) => {
@@ -91,16 +91,16 @@ macro_rules! seconds_type {
         #[doc = $doc]
         #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
         #[repr(transparent)]
-        pub struct $name(Seconds);
+        pub struct $name(AbiSeconds);
 
         impl $name {
             /// Wrap package ABI seconds with VESC-domain meaning.
-            pub const fn new(duration: Seconds) -> Self {
+            pub const fn new(duration: AbiSeconds) -> Self {
                 Self(duration)
             }
 
             /// Return the typed duration without erasing it to a primitive.
-            pub const fn duration(self) -> Seconds {
+            pub const fn duration(self) -> AbiSeconds {
                 self.0
             }
         }

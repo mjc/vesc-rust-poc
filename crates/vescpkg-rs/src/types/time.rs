@@ -1,6 +1,6 @@
 //! Time semantic wrappers.
 
-use crate::units::{Seconds, SystemTicks, TimestampTicks};
+use crate::units::{AbiSeconds, SystemTicks, TimestampTicks};
 
 /// System timestamp captured in VESC 100 us ticks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -47,16 +47,16 @@ macro_rules! seconds_type {
         #[doc = $doc]
         #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
         #[repr(transparent)]
-        pub struct $name(Seconds);
+        pub struct $name(AbiSeconds);
 
         impl $name {
             /// Wrap package ABI seconds with semantic duration meaning.
-            pub const fn new(seconds: Seconds) -> Self {
+            pub const fn new(seconds: AbiSeconds) -> Self {
                 Self(seconds)
             }
 
             /// Return the typed seconds without erasing them to a primitive.
-            pub const fn duration(self) -> Seconds {
+            pub const fn duration(self) -> AbiSeconds {
                 self.0
             }
         }

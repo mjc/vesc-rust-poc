@@ -62,7 +62,7 @@ macro_rules! scalar_int_unit {
 }
 
 macro_rules! bounded_unit {
-    ($name:ident, $from:ident, $as:ident, $min:expr, $max:expr, $unit:literal) => {
+    ($name:ident, $from:ident, $from_const:ident, $as:ident, $min:expr, $max:expr, $unit:literal) => {
         #[doc = concat!("Bounded generic measurement value stored in ", $unit, ".")]
         #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
         #[repr(transparent)]
@@ -81,6 +81,17 @@ macro_rules! bounded_unit {
                     Ok(Self(value))
                 } else {
                     Err(crate::BoundedUnitError::new(value, Self::MIN, Self::MAX))
+                }
+            }
+
+            #[doc = concat!("Create a known-good package constant from ", $unit, ".")]
+            ///
+            /// This is for embedded configuration constants that should fail at compile time
+            /// if the value is invalid. Use the checked constructor for runtime input.
+            pub const fn $from_const(value: f32) -> Self {
+                match Self::$from(value) {
+                    Ok(value) => value,
+                    Err(_) => panic!(concat!("invalid ", $unit, " constant")),
                 }
             }
 

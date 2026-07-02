@@ -16,7 +16,7 @@
 //! Use these local newtypes as the normal public API for physical measurements:
 //!
 //! ```
-//! use vescpkg_rs_units::{Energy, Ratio, Speed, Voltage};
+//! use vescpkg_rs_units::prelude::*;
 //!
 //! let pack_voltage = Voltage::from_volts(50.4);
 //! let speed = Speed::from_kilometers_per_hour(36.0);
@@ -88,8 +88,21 @@ pub use motion::{
 pub use ratio::{Percent, Ratio, SignedRatio};
 pub use temperature::Temperature;
 pub use time::{
-    Frequency, SYSTEM_TICK_RATE_HZ, SampleRate, Seconds, SystemInstant, SystemTicks, TimestampTicks,
+    AbiSeconds, Frequency, SYSTEM_TICK_RATE_HZ, SampleRate, SystemInstant, SystemTicks,
+    TimestampTicks,
 };
+
+/// Common package-author imports for typed unit calculations.
+pub mod prelude {
+    pub use crate::{
+        AbiSeconds, AccelerationG, AmpHours, AngleDegrees, AngleRadians, AngularVelocity,
+        BoundedUnitError, Charge, Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance,
+        FluxLinkage, Frequency, Height, Inductance, Latitude, Longitude, OdometerMeters, Percent,
+        Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed,
+        SystemInstant, SystemTicks, TachometerSteps, Temperature, TimestampTicks, Voltage,
+        WattHours,
+    };
+}
 
 #[cfg(test)]
 mod tests;
