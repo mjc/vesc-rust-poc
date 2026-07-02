@@ -6,8 +6,11 @@ use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescPin, Vesc
 
 use super::{
     VescIf, io_read, io_set_mode, io_write, lbm_add_extension, lbm_add_extension_with_table_base,
-    lbm_dec_as_i32, lbm_enc_i, lbm_enc_sym_eerror, lbm_is_number, vesc_clear_app_data_handler,
-    vesc_send_app_data, vesc_set_app_data_handler, vesc_system_time_ticks,
+    lbm_dec_as_i32, lbm_enc_i, lbm_enc_sym_eerror, lbm_is_number, mc_get_amp_hours,
+    mc_get_amp_hours_charged, mc_get_battery_level, mc_get_distance_abs, mc_get_fault,
+    mc_get_input_voltage_filtered, mc_get_odometer, mc_get_watt_hours, mc_get_watt_hours_charged,
+    mc_temp_fet_filtered, mc_temp_motor_filtered, vesc_clear_app_data_handler, vesc_send_app_data,
+    vesc_set_app_data_handler, vesc_system_time_ticks,
 };
 
 struct SyncCounter(Cell<usize>);
@@ -97,6 +100,17 @@ static SYSTEM_TIME_TICKS: SyncCounter = SyncCounter::new();
 static IO_SET_MODE: SyncCounter = SyncCounter::new();
 static IO_WRITE: SyncCounter = SyncCounter::new();
 static IO_READ: SyncCounter = SyncCounter::new();
+static MC_GET_DISTANCE_ABS: SyncCounter = SyncCounter::new();
+static MC_TEMP_FET_FILTERED: SyncCounter = SyncCounter::new();
+static MC_TEMP_MOTOR_FILTERED: SyncCounter = SyncCounter::new();
+static MC_GET_AMP_HOURS: SyncCounter = SyncCounter::new();
+static MC_GET_AMP_HOURS_CHARGED: SyncCounter = SyncCounter::new();
+static MC_GET_WATT_HOURS: SyncCounter = SyncCounter::new();
+static MC_GET_WATT_HOURS_CHARGED: SyncCounter = SyncCounter::new();
+static MC_GET_BATTERY_LEVEL: SyncCounter = SyncCounter::new();
+static MC_GET_ODOMETER: SyncCounter = SyncCounter::new();
+static MC_GET_FAULT: SyncCounter = SyncCounter::new();
+static MC_GET_INPUT_VOLTAGE_FILTERED: SyncCounter = SyncCounter::new();
 static LAST_PIN: SyncI32 = SyncI32::new();
 static LAST_MODE: SyncI32 = SyncI32::new();
 static LAST_LEVEL: SyncI32 = SyncI32::new();
@@ -115,6 +129,17 @@ fn reset_counters() {
         &IO_SET_MODE,
         &IO_WRITE,
         &IO_READ,
+        &MC_GET_DISTANCE_ABS,
+        &MC_TEMP_FET_FILTERED,
+        &MC_TEMP_MOTOR_FILTERED,
+        &MC_GET_AMP_HOURS,
+        &MC_GET_AMP_HOURS_CHARGED,
+        &MC_GET_WATT_HOURS,
+        &MC_GET_WATT_HOURS_CHARGED,
+        &MC_GET_BATTERY_LEVEL,
+        &MC_GET_ODOMETER,
+        &MC_GET_FAULT,
+        &MC_GET_INPUT_VOLTAGE_FILTERED,
     ] {
         counter.set(0);
     }
@@ -188,6 +213,64 @@ extern "C" fn stub_io_read(pin: c_int) -> bool {
     pin == 3
 }
 
+extern "C" fn stub_mc_get_distance_abs() -> f32 {
+    MC_GET_DISTANCE_ABS.inc();
+    12.5
+}
+
+extern "C" fn stub_mc_temp_fet_filtered() -> f32 {
+    MC_TEMP_FET_FILTERED.inc();
+    44.0
+}
+
+extern "C" fn stub_mc_temp_motor_filtered() -> f32 {
+    MC_TEMP_MOTOR_FILTERED.inc();
+    51.5
+}
+
+extern "C" fn stub_mc_get_amp_hours(reset: bool) -> f32 {
+    MC_GET_AMP_HOURS.inc();
+    if reset { -1.0 } else { 3.2 }
+}
+
+extern "C" fn stub_mc_get_amp_hours_charged(reset: bool) -> f32 {
+    MC_GET_AMP_HOURS_CHARGED.inc();
+    if reset { -1.0 } else { 0.8 }
+}
+
+extern "C" fn stub_mc_get_watt_hours(reset: bool) -> f32 {
+    MC_GET_WATT_HOURS.inc();
+    if reset { -1.0 } else { 170.0 }
+}
+
+extern "C" fn stub_mc_get_watt_hours_charged(reset: bool) -> f32 {
+    MC_GET_WATT_HOURS_CHARGED.inc();
+    if reset { -1.0 } else { 18.5 }
+}
+
+extern "C" fn stub_mc_get_battery_level(wh_left: *mut f32) -> f32 {
+    MC_GET_BATTERY_LEVEL.inc();
+    if let Some(wh_left) = unsafe { wh_left.as_mut() } {
+        *wh_left = 42.0;
+    }
+    0.72
+}
+
+extern "C" fn stub_mc_get_odometer() -> u64 {
+    MC_GET_ODOMETER.inc();
+    123_456
+}
+
+extern "C" fn stub_mc_get_fault() -> c_int {
+    MC_GET_FAULT.inc();
+    5
+}
+
+extern "C" fn stub_mc_get_input_voltage_filtered() -> f32 {
+    MC_GET_INPUT_VOLTAGE_FILTERED.inc();
+    84.2
+}
+
 fn populated_table() -> VescIf {
     let mut table = empty_table();
     table.lbm_add_extension = Some(stub_lbm_add_extension);
@@ -201,13 +284,34 @@ fn populated_table() -> VescIf {
     table.io_set_mode = Some(stub_io_set_mode);
     table.io_write = Some(stub_io_write);
     table.io_read = Some(stub_io_read);
+    table.mc_get_distance_abs = Some(stub_mc_get_distance_abs);
+    table.mc_temp_fet_filtered = Some(stub_mc_temp_fet_filtered);
+    table.mc_temp_motor_filtered = Some(stub_mc_temp_motor_filtered);
+    table.mc_get_amp_hours = Some(stub_mc_get_amp_hours);
+    table.mc_get_amp_hours_charged = Some(stub_mc_get_amp_hours_charged);
+    table.mc_get_watt_hours = Some(stub_mc_get_watt_hours);
+    table.mc_get_watt_hours_charged = Some(stub_mc_get_watt_hours_charged);
+    table.mc_get_battery_level = Some(stub_mc_get_battery_level);
+    table.mc_get_odometer = Some(stub_mc_get_odometer);
+    table.mc_get_fault = Some(stub_mc_get_fault);
+    table.mc_get_input_voltage_filtered = Some(stub_mc_get_input_voltage_filtered);
     table
 }
 
 fn with_populated_table<R>(body: impl FnOnce() -> R) -> R {
-    reset_counters();
     let table = populated_table();
-    with_table(&table, body)
+    with_table(&table, || {
+        reset_counters();
+        body()
+    })
+}
+
+fn with_empty_table<R>(body: impl FnOnce() -> R) -> R {
+    let table = empty_table();
+    with_table(&table, || {
+        reset_counters();
+        body()
+    })
 }
 
 #[test]
@@ -248,9 +352,7 @@ fn lbm_value_helpers_forward_and_handle_missing_slots() {
         assert_eq!(lbm_enc_sym_eerror(), LbmValue(0xAABB_CC00));
     });
 
-    reset_counters();
-    let table = empty_table();
-    with_table(&table, || unsafe {
+    with_empty_table(|| unsafe {
         assert_eq!(lbm_dec_as_i32(LbmValue(1)), 0);
         assert_eq!(lbm_enc_i(1), LbmValue(0));
         assert!(!lbm_is_number(LbmValue(1)));
@@ -274,10 +376,7 @@ fn app_data_helpers_forward_and_handle_missing_slots() {
         assert_eq!(SEND_APP_DATA_LEN.get(), 3);
     });
 
-    reset_counters();
-    reset_counters();
-    let table = empty_table();
-    with_table(&table, || unsafe {
+    with_empty_table(|| unsafe {
         assert!(!vesc_clear_app_data_handler());
         vesc_send_app_data(core::ptr::null(), 0);
         assert_eq!(SEND_APP_DATA.get(), 0);
@@ -290,9 +389,7 @@ fn system_time_ticks_forwards_and_defaults_to_zero() {
         assert_eq!(vesc_system_time_ticks(), 42);
     });
 
-    reset_counters();
-    let table = empty_table();
-    with_table(&table, || unsafe {
+    with_empty_table(|| unsafe {
         assert_eq!(vesc_system_time_ticks(), 0);
     });
 }
@@ -311,13 +408,64 @@ fn gpio_helpers_forward_and_handle_missing_slots() {
         assert_eq!(LAST_LEVEL.get(), 1);
     });
 
-    reset_counters();
-    let table = empty_table();
-    with_table(&table, || unsafe {
+    with_empty_table(|| unsafe {
         let pin = VescPin(1);
         assert!(!io_set_mode(pin, VescPinMode(0)));
         assert!(!io_write(pin, 0));
         assert!(!io_read(pin));
+    });
+}
+
+#[test]
+fn motor_data_helpers_forward_and_handle_missing_slots() {
+    with_populated_table(|| unsafe {
+        assert_eq!(mc_get_distance_abs(), 12.5);
+        assert_eq!(mc_temp_fet_filtered(), 44.0);
+        assert_eq!(mc_temp_motor_filtered(), 51.5);
+        assert_eq!(mc_get_amp_hours(false), 3.2);
+        assert_eq!(mc_get_amp_hours_charged(false), 0.8);
+        assert_eq!(mc_get_watt_hours(false), 170.0);
+        assert_eq!(mc_get_watt_hours_charged(false), 18.5);
+        assert_eq!(mc_get_battery_level(core::ptr::null_mut()), 0.72);
+        assert_eq!(mc_get_odometer(), 123_456);
+        assert_eq!(mc_get_fault(), 5);
+        assert_eq!(mc_get_input_voltage_filtered(), 84.2);
+        assert_eq!(MC_GET_DISTANCE_ABS.get(), 1);
+        assert_eq!(MC_TEMP_FET_FILTERED.get(), 1);
+        assert_eq!(MC_TEMP_MOTOR_FILTERED.get(), 1);
+        assert_eq!(MC_GET_AMP_HOURS.get(), 1);
+        assert_eq!(MC_GET_AMP_HOURS_CHARGED.get(), 1);
+        assert_eq!(MC_GET_WATT_HOURS.get(), 1);
+        assert_eq!(MC_GET_WATT_HOURS_CHARGED.get(), 1);
+        assert_eq!(MC_GET_BATTERY_LEVEL.get(), 1);
+        assert_eq!(MC_GET_ODOMETER.get(), 1);
+        assert_eq!(MC_GET_FAULT.get(), 1);
+        assert_eq!(MC_GET_INPUT_VOLTAGE_FILTERED.get(), 1);
+    });
+
+    with_empty_table(|| unsafe {
+        assert_eq!(mc_get_distance_abs(), 0.0);
+        assert_eq!(mc_temp_fet_filtered(), 0.0);
+        assert_eq!(mc_temp_motor_filtered(), 0.0);
+        assert_eq!(mc_get_amp_hours(false), 0.0);
+        assert_eq!(mc_get_amp_hours_charged(false), 0.0);
+        assert_eq!(mc_get_watt_hours(false), 0.0);
+        assert_eq!(mc_get_watt_hours_charged(false), 0.0);
+        assert_eq!(mc_get_battery_level(core::ptr::null_mut()), 0.0);
+        assert_eq!(mc_get_odometer(), 0);
+        assert_eq!(mc_get_fault(), 0);
+        assert_eq!(mc_get_input_voltage_filtered(), 0.0);
+        assert_eq!(MC_GET_DISTANCE_ABS.get(), 0);
+        assert_eq!(MC_TEMP_FET_FILTERED.get(), 0);
+        assert_eq!(MC_TEMP_MOTOR_FILTERED.get(), 0);
+        assert_eq!(MC_GET_AMP_HOURS.get(), 0);
+        assert_eq!(MC_GET_AMP_HOURS_CHARGED.get(), 0);
+        assert_eq!(MC_GET_WATT_HOURS.get(), 0);
+        assert_eq!(MC_GET_WATT_HOURS_CHARGED.get(), 0);
+        assert_eq!(MC_GET_BATTERY_LEVEL.get(), 0);
+        assert_eq!(MC_GET_ODOMETER.get(), 0);
+        assert_eq!(MC_GET_FAULT.get(), 0);
+        assert_eq!(MC_GET_INPUT_VOLTAGE_FILTERED.get(), 0);
     });
 }
 
@@ -337,5 +485,56 @@ fn vesc_if_abi_gpio_offsets_match_struct_layout() {
     assert_eq!(
         VescIfAbi::IO_READ.vesc32_byte_offset(),
         vesc32(core::mem::offset_of!(VescIf, io_read))
+    );
+}
+
+#[test]
+fn vesc_if_abi_motor_data_offsets_match_struct_layout() {
+    let pointer_size = core::mem::size_of::<usize>();
+    let vesc32 = |field_offset: usize| (field_offset / pointer_size) * 4;
+
+    assert_eq!(
+        VescIfAbi::MC_GET_AMP_HOURS.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_get_amp_hours))
+    );
+    assert_eq!(
+        VescIfAbi::MC_GET_AMP_HOURS_CHARGED.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_get_amp_hours_charged))
+    );
+    assert_eq!(
+        VescIfAbi::MC_GET_WATT_HOURS.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_get_watt_hours))
+    );
+    assert_eq!(
+        VescIfAbi::MC_GET_WATT_HOURS_CHARGED.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_get_watt_hours_charged))
+    );
+    assert_eq!(
+        VescIfAbi::MC_GET_DISTANCE_ABS.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_get_distance_abs))
+    );
+    assert_eq!(
+        VescIfAbi::MC_TEMP_FET_FILTERED.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_temp_fet_filtered))
+    );
+    assert_eq!(
+        VescIfAbi::MC_TEMP_MOTOR_FILTERED.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_temp_motor_filtered))
+    );
+    assert_eq!(
+        VescIfAbi::MC_GET_BATTERY_LEVEL.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_get_battery_level))
+    );
+    assert_eq!(
+        VescIfAbi::MC_GET_ODOMETER.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_get_odometer))
+    );
+    assert_eq!(
+        VescIfAbi::MC_GET_FAULT.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_get_fault))
+    );
+    assert_eq!(
+        VescIfAbi::MC_GET_INPUT_VOLTAGE_FILTERED.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_get_input_voltage_filtered))
     );
 }
