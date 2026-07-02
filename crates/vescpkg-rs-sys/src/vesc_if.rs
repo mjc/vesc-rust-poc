@@ -58,6 +58,10 @@ impl VescIfAbi {
     pub const FREE: VescIfSlot = VescIfSlot::new("free", 188);
     /// Slot for `get_arg`.
     pub const GET_ARG: VescIfSlot = VescIfSlot::new("get_arg", 204);
+    /// Slot for `mc_temp_fet_filtered`.
+    pub const MC_TEMP_FET_FILTERED: VescIfSlot = VescIfSlot::new("mc_temp_fet_filtered", 504);
+    /// Slot for `mc_temp_motor_filtered`.
+    pub const MC_TEMP_MOTOR_FILTERED: VescIfSlot = VescIfSlot::new("mc_temp_motor_filtered", 508);
     /// Slot for `mc_get_distance_abs`.
     pub const MC_GET_DISTANCE_ABS: VescIfSlot = VescIfSlot::new("mc_get_distance_abs", 524);
     /// Slot for `send_app_data`.
@@ -74,7 +78,7 @@ impl VescIfAbi {
     pub const IO_READ: VescIfSlot = VescIfSlot::new("io_read", 228);
 
     /// The set of slots that this crate currently relies on.
-    pub const USED_SLOTS: [VescIfSlot; 15] = [
+    pub const USED_SLOTS: [VescIfSlot; 17] = [
         Self::LBM_ADD_EXTENSION,
         Self::LBM_ENC_I,
         Self::LBM_DEC_AS_I32,
@@ -83,6 +87,8 @@ impl VescIfAbi {
         Self::MALLOC,
         Self::FREE,
         Self::GET_ARG,
+        Self::MC_TEMP_FET_FILTERED,
+        Self::MC_TEMP_MOTOR_FILTERED,
         Self::MC_GET_DISTANCE_ABS,
         Self::SEND_APP_DATA,
         Self::SET_APP_DATA_HANDLER,

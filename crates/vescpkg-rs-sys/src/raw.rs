@@ -739,6 +739,74 @@ pub unsafe fn mc_get_distance_abs() -> f32 {
     }
 }
 
+/// Return the filtered MOSFET/FET temperature in degrees Celsius.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn mc_temp_fet_filtered() -> f32 {
+    #[cfg(all(target_arch = "arm", not(test)))]
+    unsafe {
+        let vesc_if = VescIfAbi::BASE_ADDR.0;
+        let mc_temp_fet_filtered: usize;
+        core::arch::asm!(
+            "ldr {mc_temp_fet_filtered}, [{vesc_if}, #{slot}]",
+            vesc_if = in(reg) vesc_if,
+            mc_temp_fet_filtered = out(reg) mc_temp_fet_filtered,
+            slot = const VescIfAbi::MC_TEMP_FET_FILTERED.vesc32_byte_offset(),
+            options(nostack, preserves_flags),
+        );
+        if mc_temp_fet_filtered == 0 {
+            return 0.0;
+        }
+        let mc_temp_fet_filtered: unsafe extern "C" fn() -> f32 =
+            core::mem::transmute(mc_temp_fet_filtered);
+        mc_temp_fet_filtered()
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
+    unsafe {
+        match (*vesc_if()).mc_temp_fet_filtered {
+            Some(mc_temp_fet_filtered) => mc_temp_fet_filtered(),
+            None => 0.0,
+        }
+    }
+}
+
+/// Return the filtered motor temperature in degrees Celsius.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn mc_temp_motor_filtered() -> f32 {
+    #[cfg(all(target_arch = "arm", not(test)))]
+    unsafe {
+        let vesc_if = VescIfAbi::BASE_ADDR.0;
+        let mc_temp_motor_filtered: usize;
+        core::arch::asm!(
+            "ldr {mc_temp_motor_filtered}, [{vesc_if}, #{slot}]",
+            vesc_if = in(reg) vesc_if,
+            mc_temp_motor_filtered = out(reg) mc_temp_motor_filtered,
+            slot = const VescIfAbi::MC_TEMP_MOTOR_FILTERED.vesc32_byte_offset(),
+            options(nostack, preserves_flags),
+        );
+        if mc_temp_motor_filtered == 0 {
+            return 0.0;
+        }
+        let mc_temp_motor_filtered: unsafe extern "C" fn() -> f32 =
+            core::mem::transmute(mc_temp_motor_filtered);
+        mc_temp_motor_filtered()
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
+    unsafe {
+        match (*vesc_if()).mc_temp_motor_filtered {
+            Some(mc_temp_motor_filtered) => mc_temp_motor_filtered(),
+            None => 0.0,
+        }
+    }
+}
+
 /// # Safety
 ///
 /// `data` must point to at least `len` bytes that remain valid for the
@@ -838,7 +906,7 @@ pub unsafe fn io_read(pin: crate::VescPin) -> bool {
 
 /// Returns selected `VescIf` field offsets for ABI layout tests.
 #[cfg(test)]
-pub fn vesc_if_offsets_for_tests() -> [usize; 15] {
+pub fn vesc_if_offsets_for_tests() -> [usize; 17] {
     [
         core::mem::offset_of!(VescIf, lbm_add_extension),
         core::mem::offset_of!(VescIf, lbm_enc_i),
@@ -848,6 +916,8 @@ pub fn vesc_if_offsets_for_tests() -> [usize; 15] {
         core::mem::offset_of!(VescIf, malloc),
         core::mem::offset_of!(VescIf, free),
         core::mem::offset_of!(VescIf, get_arg),
+        core::mem::offset_of!(VescIf, mc_temp_fet_filtered),
+        core::mem::offset_of!(VescIf, mc_temp_motor_filtered),
         core::mem::offset_of!(VescIf, mc_get_distance_abs),
         core::mem::offset_of!(VescIf, send_app_data),
         core::mem::offset_of!(VescIf, set_app_data_handler),
