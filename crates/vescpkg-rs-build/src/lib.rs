@@ -76,6 +76,9 @@ pub mod package_runtime;
 pub mod package_target;
 /// Host-side package wire format helpers.
 pub mod package_wire;
+/// Refloat source-tree package asset generation helpers.
+#[allow(dead_code, unused_imports)]
+pub(crate) mod refloat_package_assets;
 /// Roadmap notes for the Rust package API.
 #[allow(dead_code, unused_imports)]
 pub(crate) mod rust_package_api_roadmap;
