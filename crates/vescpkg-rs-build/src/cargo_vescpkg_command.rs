@@ -779,10 +779,7 @@ mod tests {
         let package = crate::Package::read(root.join(output)).expect("written package");
         assert_eq!(package.name, "Refloat");
         assert!(package.description_md.contains("- Git Commit: #0ef6e99"));
-        assert_eq!(
-            package.qml_file,
-            "Item { property string title: \"Refloat\" }\n"
-        );
+        assert_eq!(package.qml_file, "Item{property string title:\"Refloat\"}");
         assert!(runner.calls().is_empty());
     }
 

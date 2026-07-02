@@ -65,9 +65,10 @@ impl RefloatSourceAssets {
         let package_name = truncate_chars(&self.read_trimmed("package_name")?, 20);
         let version = self.read_trimmed("version")?;
 
-        Ok(template
+        let rendered = template
             .replace("{{PACKAGE_NAME}}", &package_name)
-            .replace("{{VERSION}}", &version))
+            .replace("{{VERSION}}", &version);
+        Ok(minify_qml(&rendered))
     }
 
     fn read_text(&self, relative_path: &str) -> Result<String, PackageError> {
@@ -107,6 +108,151 @@ fn truncate_chars(input: &str, max_chars: usize) -> String {
     input.chars().take(max_chars).collect()
 }
 
+fn minify_qml(input: &str) -> String {
+    let lines: Vec<_> = input.lines().filter_map(minify_qml_line).collect();
+
+    lines
+        .iter()
+        .enumerate()
+        .fold(String::new(), |mut output, (index, line)| {
+            output.push_str(line);
+            if should_keep_linebreak(line, lines.get(index + 1).map(String::as_str)) {
+                output.push('\n');
+            }
+            output
+        })
+}
+
+fn minify_qml_line(line: &str) -> Option<String> {
+    let line = strip_line_comment(line).trim().to_owned();
+    (!line.is_empty()).then(|| compact_qml_spaces(&line))
+}
+
+fn strip_line_comment(line: &str) -> String {
+    let mut output = String::new();
+    let mut chars = line.chars().peekable();
+    let mut string_delimiter = None;
+    let mut escaped = false;
+
+    while let Some(ch) = chars.next() {
+        match (string_delimiter, escaped, ch, chars.peek().copied()) {
+            (None, _, '/', Some('/')) => break,
+            (None, _, '"' | '\'', _) => {
+                string_delimiter = Some(ch);
+                output.push(ch);
+            }
+            (Some(delimiter), false, current, _) if current == delimiter => {
+                string_delimiter = None;
+                output.push(ch);
+            }
+            (Some(_), false, '\\', _) => {
+                escaped = true;
+                output.push(ch);
+            }
+            (Some(_), true, _, _) => {
+                escaped = false;
+                output.push(ch);
+            }
+            _ => output.push(ch),
+        }
+    }
+
+    output
+}
+
+fn compact_qml_spaces(line: &str) -> String {
+    line.chars()
+        .fold(
+            (String::new(), false, None, false),
+            |(mut output, pending_space, string_delimiter, escaped), ch| {
+                let punctuation = is_qml_punctuation(ch);
+                match (string_delimiter, escaped, ch) {
+                    (Some(delimiter), false, current) if current == delimiter => {
+                        output.push(ch);
+                        (output, false, None, false)
+                    }
+                    (Some(delimiter), false, '\\') => {
+                        output.push(ch);
+                        (output, false, Some(delimiter), true)
+                    }
+                    (Some(delimiter), _, _) => {
+                        output.push(ch);
+                        (output, false, Some(delimiter), false)
+                    }
+                    (None, _, '"' | '\'') => {
+                        if pending_space
+                            && !output.ends_with("return")
+                            && output
+                                .chars()
+                                .last()
+                                .is_some_and(|previous| !is_qml_punctuation(previous))
+                        {
+                            output.push(' ');
+                        }
+                        output.push(ch);
+                        (output, false, Some(ch), false)
+                    }
+                    (None, _, current) if current.is_whitespace() => (output, true, None, false),
+                    (None, _, current) if punctuation => {
+                        if output.ends_with(' ') {
+                            output.pop();
+                        }
+                        output.push(current);
+                        (output, false, None, false)
+                    }
+                    (None, _, current) => {
+                        if pending_space
+                            && output
+                                .chars()
+                                .last()
+                                .is_some_and(|previous| !is_qml_punctuation(previous))
+                        {
+                            output.push(' ');
+                        }
+                        output.push(current);
+                        (output, false, None, false)
+                    }
+                }
+            },
+        )
+        .0
+}
+
+fn is_qml_punctuation(ch: char) -> bool {
+    matches!(
+        ch,
+        '{' | '}'
+            | '('
+            | ')'
+            | '['
+            | ']'
+            | ':'
+            | ';'
+            | ','
+            | '='
+            | '!'
+            | '<'
+            | '>'
+            | '+'
+            | '-'
+            | '*'
+            | '/'
+            | '?'
+    )
+}
+
+fn should_keep_linebreak(current: &str, next: Option<&str>) -> bool {
+    current.starts_with("import ")
+        || current.starts_with("id:")
+        || current.starts_with("property ") && !matches!(next, Some("}"))
+        || current == "}"
+            && next.is_some_and(|next| {
+                next.starts_with("return ")
+                    || next.starts_with("property ")
+                    || next.starts_with("function ")
+            })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{RefloatBuildInfo, RefloatSourceAssets};
@@ -144,7 +290,32 @@ mod tests {
         );
         assert_eq!(
             std::fs::read_to_string(generated.ui_path()).expect("generated ui"),
-            "Item {\n    property string title: \"Refloat Long Package\"\n    property string version: \"1.2.1\"\n}\n"
+            "Item{property string title:\"Refloat Long Package\"\nproperty string version:\"1.2.1\"}"
+        );
+    }
+
+    #[test]
+    fn materializes_refloat_qml_with_makefile_default_minification() {
+        let harness = PackageTestHarness::new()
+            .write_text("package_README.md", "# Refloat\n")
+            .write_text("package_name", "Refloat\n")
+            .write_text("version", "1.2.1\n")
+            .write_text(
+                "ui.qml.in",
+                "import QtQuick 2.15\n\nItem {\n    id: mainItem\n    // generated title\n    property string title: \"{{PACKAGE_NAME}} {{VERSION}}\"\n    function round(num) {\n        if (num != num) {\n            return \"--\";\n        }\n        return Math.round(num);\n    }\n}\n",
+            );
+        let root = harness.root();
+
+        let generated = RefloatSourceAssets::new(root)
+            .materialize_generated_inputs(&RefloatBuildInfo::new(
+                "2026-07-02 06:00:00-06:00",
+                "0ef6e99",
+            ))
+            .expect("generated inputs");
+
+        assert_eq!(
+            std::fs::read_to_string(generated.ui_path()).expect("generated ui"),
+            "import QtQuick 2.15\nItem{id:mainItem\nproperty string title:\"Refloat 1.2.1\"\nfunction round(num){if(num!=num){return\"--\";}\nreturn Math.round(num);}}"
         );
     }
 
@@ -182,7 +353,7 @@ mod tests {
         assert!(package.description_md.contains("- Version: 1.2.1"));
         assert_eq!(
             package.qml_file,
-            "Item { property string title: \"Refloat 1.2.1\" }\n"
+            "Item{property string title:\"Refloat 1.2.1\"}"
         );
         let (_code, imports) = parse_lisp_imports(&package.lisp_data).expect("lisp imports");
         assert_eq!(imports[0].payload, b"refloat-native\0");
