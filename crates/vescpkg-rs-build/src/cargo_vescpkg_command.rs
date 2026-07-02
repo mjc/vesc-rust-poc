@@ -1,9 +1,9 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::{
-    BLE_LOOPBACK_PACKAGE_NAME, PackageBinaryConversionRunner, PackageExample, PackageTargetError,
-    PackageTargetMode, PackageTargetPlan, SNAKE_PACKAGE_NAME,
+    BLE_LOOPBACK_PACKAGE_NAME, Package, PackageBinaryConversionRunner, PackageExample,
+    PackageTargetError, PackageTargetMode, PackageTargetPlan, SNAKE_PACKAGE_NAME,
 };
 
 /// Default package version used by the cargo subcommand wrapper.
@@ -38,6 +38,7 @@ pub struct CargoVescPkgInvocation {
     example: CargoVescPkgExample,
     package_version: String,
     target_triple: String,
+    manifest_path: Option<PathBuf>,
 }
 
 /// Errors produced while parsing `cargo vescpkg` arguments.
@@ -51,6 +52,8 @@ pub enum CargoVescPkgParseError {
     MissingTargetValue,
     /// `--example` was provided without a value.
     MissingExampleValue,
+    /// `--manifest` was provided without a value.
+    MissingManifestValue,
     /// `--example` selected an unsupported package example.
     UnsupportedExample(String),
     /// An unsupported flag or positional argument was provided.
@@ -75,6 +78,7 @@ impl std::fmt::Display for CargoVescPkgParseError {
             }
             Self::MissingTargetValue => f.write_str("missing value for --target"),
             Self::MissingExampleValue => f.write_str("missing value for --example"),
+            Self::MissingManifestValue => f.write_str("missing value for --manifest"),
             Self::UnsupportedExample(example) => {
                 write!(f, "unsupported cargo vescpkg example: {example}")
             }
@@ -106,6 +110,7 @@ impl CargoVescPkgInvocation {
             example: CargoVescPkgExample::Loopback,
             package_version: DEFAULT_PACKAGE_VERSION.to_owned(),
             target_triple: DEFAULT_TARGET_TRIPLE.to_owned(),
+            manifest_path: None,
         }
     }
 
@@ -127,6 +132,13 @@ impl CargoVescPkgInvocation {
         self
     }
 
+    /// Use an existing package descriptor instead of rendering example staging assets.
+    pub fn with_manifest_path(mut self, manifest_path: impl Into<PathBuf>) -> Self {
+        self.mode = CargoVescPkgMode::BuildPackageOnly;
+        self.manifest_path = Some(manifest_path.into());
+        self
+    }
+
     /// Return the requested invocation mode.
     pub fn mode(&self) -> CargoVescPkgMode {
         self.mode
@@ -145,6 +157,11 @@ impl CargoVescPkgInvocation {
     /// Return the target triple.
     pub fn target_triple(&self) -> &str {
         &self.target_triple
+    }
+
+    /// Return the package descriptor path when this invocation builds from one.
+    pub fn manifest_path(&self) -> Option<&Path> {
+        self.manifest_path.as_deref()
     }
 
     /// Return the package name associated with the selected example.
@@ -179,6 +196,10 @@ impl CargoVescPkgInvocation {
                 .to_owned(),
             );
         }
+        if let Some(manifest_path) = &self.manifest_path {
+            args.push("--manifest".to_owned());
+            args.push(manifest_path.display().to_string());
+        }
         args.push("--target".to_owned());
         args.push(self.target_triple.clone());
         args
@@ -212,6 +233,21 @@ impl CargoVescPkgInvocation {
     where
         C: PackageBinaryConversionRunner,
     {
+        if let Some(manifest_path) = &self.manifest_path {
+            let repo_root = repo_root.into();
+            let output =
+                Package::write_from_manifest(repo_root.join(manifest_path)).map_err(|error| {
+                    CargoVescPkgError::Package(PackageTargetError::PackageOutput {
+                        path: manifest_path.clone(),
+                        reason: error.to_string(),
+                    })
+                })?;
+            return Ok(output
+                .strip_prefix(&repo_root)
+                .unwrap_or(&output)
+                .to_path_buf());
+        }
+
         self.package_target_plan(repo_root)
             .execute_with(conversion_runner)
             .map_err(CargoVescPkgError::Package)
@@ -238,6 +274,7 @@ where
     let mut mode = CargoVescPkgMode::Build;
     let mut example = CargoVescPkgExample::Loopback;
     let mut target_triple = DEFAULT_TARGET_TRIPLE.to_owned();
+    let mut manifest_path = None;
     while let Some(argument) = args.next() {
         match argument.as_ref() {
             "--package-only" => mode = CargoVescPkgMode::BuildPackageOnly,
@@ -253,6 +290,13 @@ where
                 };
                 target_triple = value.as_ref().to_owned();
             }
+            "--manifest" => {
+                let Some(value) = args.next() else {
+                    return Err(CargoVescPkgParseError::MissingManifestValue);
+                };
+                mode = CargoVescPkgMode::BuildPackageOnly;
+                manifest_path = Some(PathBuf::from(value.as_ref()));
+            }
             other if other.starts_with('-') => {
                 return Err(CargoVescPkgParseError::UnexpectedArgument(other.to_owned()));
             }
@@ -260,9 +304,14 @@ where
         }
     }
 
-    Ok(CargoVescPkgInvocation::new(mode)
+    let invocation = CargoVescPkgInvocation::new(mode)
         .with_example(example)
-        .with_target_triple(target_triple))
+        .with_target_triple(target_triple);
+
+    Ok(match manifest_path {
+        Some(path) => invocation.with_manifest_path(path),
+        None => invocation,
+    })
 }
 
 fn parse_example(value: &str) -> Result<CargoVescPkgExample, CargoVescPkgParseError> {
@@ -396,6 +445,29 @@ mod tests {
     }
 
     #[test]
+    fn parses_the_manifest_build_invocation() {
+        let invocation =
+            parse_args(["build", "--manifest", "refloat/pkgdesc.qml"]).expect("parse manifest");
+
+        assert_eq!(invocation.mode(), CargoVescPkgMode::BuildPackageOnly);
+        assert_eq!(
+            invocation.manifest_path(),
+            Some(PathBuf::from("refloat/pkgdesc.qml").as_path())
+        );
+        assert_eq!(
+            invocation.subcommand_args(),
+            vec![
+                "build".to_owned(),
+                "--package-only".to_owned(),
+                "--manifest".to_owned(),
+                "refloat/pkgdesc.qml".to_owned(),
+                "--target".to_owned(),
+                DEFAULT_TARGET_TRIPLE.to_owned(),
+            ]
+        );
+    }
+
+    #[test]
     fn parses_the_snake_example_invocation() {
         let invocation =
             parse_args(["build", "--example", "snake"]).expect("parse snake example invocation");
@@ -497,6 +569,47 @@ mod tests {
     }
 
     #[test]
+    fn run_with_writes_manifest_package_without_conversion_runner() {
+        let harness = PackageTestHarness::new().ensure_loopback_staging();
+        let root = harness.root().to_path_buf();
+        let staging = harness.loopback_staging_dir();
+        std::fs::create_dir_all(staging.join("lisp")).unwrap();
+        std::fs::create_dir_all(staging.join("src")).unwrap();
+        std::fs::write(staging.join("package_README-gen.md"), "Refloat readme").unwrap();
+        std::fs::write(
+            staging.join("lisp/package.lisp"),
+            "(import \"src/package_lib.bin\" 'refloat-native)\n",
+        )
+        .unwrap();
+        std::fs::write(staging.join("src/package_lib.bin"), b"refloat-native\0").unwrap();
+        std::fs::write(staging.join("ui.qml"), "import QtQuick 2.15\nItem {}\n").unwrap();
+        std::fs::write(
+            staging.join("pkgdesc.qml"),
+            "import QtQuick 2.15\n\nItem {\n    property string pkgName: \"Refloat\"\n    property string pkgDescriptionMd: \"package_README-gen.md\"\n    property string pkgLisp: \"lisp/package.lisp\"\n    property string pkgQml: \"ui.qml\"\n    property bool pkgQmlIsFullscreen: true\n    property string pkgOutput: \"refloat.vescpkg\"\n}\n",
+        )
+        .unwrap();
+
+        let runner = FakeConversionRunner::recording();
+        let output = run_with(
+            &root,
+            [
+                "build",
+                "--manifest",
+                "target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/pkgdesc.qml",
+            ],
+            &runner,
+        )
+        .expect("run manifest package invocation");
+
+        assert_eq!(
+            output,
+            PathBuf::from("target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/refloat.vescpkg")
+        );
+        assert!(root.join(output).exists());
+        assert!(runner.calls().is_empty());
+    }
+
+    #[test]
     fn run_with_rejects_unknown_subcommands() {
         let harness = PackageTestHarness::new();
         let error = run_with(
@@ -517,6 +630,10 @@ mod tests {
         assert_eq!(
             parse_args(["build", "--example"]),
             Err(super::CargoVescPkgParseError::MissingExampleValue)
+        );
+        assert_eq!(
+            parse_args(["build", "--manifest"]),
+            Err(super::CargoVescPkgParseError::MissingManifestValue)
         );
         assert_eq!(
             parse_args(["build", "--example", "pong"]),
