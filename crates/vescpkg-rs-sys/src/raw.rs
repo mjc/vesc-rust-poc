@@ -214,7 +214,7 @@ pub struct VescIf {
     // Comm
     commands_process_packet: Option<unsafe extern "C" fn(*mut c_uchar, c_uint, ReplyCallback)>,
     send_app_data: Option<unsafe extern "C" fn(*mut c_uchar, u32)>,
-    set_app_data_handler: Option<unsafe extern "C" fn(AppDataHandler) -> bool>,
+    set_app_data_handler: Option<unsafe extern "C" fn(Option<AppDataHandler>) -> bool>,
 
     // UART
     uart_start: Option<unsafe extern "C" fn(u32, bool) -> bool>,
@@ -561,14 +561,16 @@ pub unsafe fn lbm_enc_sym_eerror() -> LbmValue {
     }
 }
 
-/// Register or clear the firmware app-data callback using the refloat/C ABI.
-///
-/// Pass a null function pointer to clear the handler.
+/// Register the firmware app-data callback using the refloat/C ABI.
 ///
 /// # Safety
 ///
 /// `handler` must remain valid until replaced or cleared by a later firmware call.
 pub unsafe fn vesc_set_app_data_handler(handler: AppDataHandler) -> bool {
+    unsafe { vesc_set_app_data_handler_slot(Some(handler)) }
+}
+
+unsafe fn vesc_set_app_data_handler_slot(handler: Option<AppDataHandler>) -> bool {
     #[cfg(all(target_arch = "arm", not(test)))]
     unsafe {
         let vesc_if = VescIfAbi::BASE_ADDR.0;
@@ -579,7 +581,7 @@ pub unsafe fn vesc_set_app_data_handler(handler: AppDataHandler) -> bool {
             set_app_data_handler = out(reg) set_app_data_handler,
             options(nostack, preserves_flags),
         );
-        let set_app_data_handler: unsafe extern "C" fn(AppDataHandler) -> bool =
+        let set_app_data_handler: unsafe extern "C" fn(Option<AppDataHandler>) -> bool =
             core::mem::transmute(set_app_data_handler);
         set_app_data_handler(handler)
     }
@@ -601,11 +603,7 @@ pub unsafe fn vesc_set_app_data_handler(handler: AppDataHandler) -> bool {
 /// Must only be called when the firmware `VESC_IF` table is valid, same as
 /// [`vesc_set_app_data_handler`].
 pub unsafe fn vesc_clear_app_data_handler() -> bool {
-    unsafe {
-        let handler: AppDataHandler =
-            core::mem::transmute::<*mut u8, AppDataHandler>(core::ptr::null_mut());
-        vesc_set_app_data_handler(handler)
-    }
+    unsafe { vesc_set_app_data_handler_slot(None) }
 }
 
 /// Allocate memory from the firmware LispBM reserve heap.

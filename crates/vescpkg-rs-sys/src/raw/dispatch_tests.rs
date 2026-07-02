@@ -173,13 +173,9 @@ extern "C" fn stub_lbm_is_number(value: u32) -> bool {
     value == 7
 }
 
-extern "C" fn stub_set_app_data_handler(handler: AppDataHandler) -> bool {
+extern "C" fn stub_set_app_data_handler(handler: Option<AppDataHandler>) -> bool {
     SET_APP_DATA_HANDLER.inc();
-    let is_installed = {
-        let ptr: *const () = handler as *const ();
-        !ptr.is_null()
-    };
-    LAST_HANDLER_INSTALLED.set(is_installed);
+    LAST_HANDLER_INSTALLED.set(handler.is_some());
     true
 }
 

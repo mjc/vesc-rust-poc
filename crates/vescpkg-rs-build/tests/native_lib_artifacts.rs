@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use tempfile::TempDir;
 use vescpkg_rs_build::{
-    NATIVE_LIB_BIN, NATIVE_LIB_ELF, assert_native_lib_semantics, ensure_repo_native_lib_artifacts,
-    native_lib_link_plan, semantic_snapshot_report,
+    NATIVE_LIB_BIN, NATIVE_LIB_ELF, NativeLibArtifactPaths, audit_native_lib_artifacts,
+    ensure_repo_native_lib_artifacts, native_lib_link_plan, semantic_snapshot_report,
 };
 
 fn write_fixture_artifacts(dir: &std::path::Path) -> PathBuf {
@@ -27,5 +27,5 @@ fn native_lib_semantics() {
 fn current_native_lib_preserves_known_good_loader_contract() {
     let plan = native_lib_link_plan();
     ensure_repo_native_lib_artifacts(plan.root());
-    assert_native_lib_semantics(&plan.elf_path());
+    audit_native_lib_artifacts(&NativeLibArtifactPaths::from_link_plan(&plan));
 }
