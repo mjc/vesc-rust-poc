@@ -133,6 +133,21 @@ pub struct LoopbackLifecycle<B> {
     bindings: B,
 }
 
+/// Error returned when app-data handler registration fails.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppDataHandlerRegistrationError {
+    /// Firmware rejected the handler update.
+    FirmwareRejected,
+}
+
+impl core::fmt::Display for AppDataHandlerRegistrationError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::FirmwareRejected => f.write_str("firmware rejected app-data handler update"),
+        }
+    }
+}
+
 impl<B: AppDataBindings> LoopbackLifecycle<B> {
     /// Construct a loopback lifecycle controller.
     pub fn new(bindings: B) -> Self {
@@ -166,17 +181,20 @@ impl<B: AppDataBindings> LoopbackLifecycle<B> {
     }
 
     /// Clear the app-data callback through the binding set.
-    pub fn clear_app_data_handler(&self) -> bool {
+    pub fn clear_app_data_handler(&self) -> Result<(), AppDataHandlerRegistrationError> {
         unsafe {
             let cleared: AppDataHandler =
                 core::mem::transmute::<*mut u8, AppDataHandler>(core::ptr::null_mut());
-            self.bindings.set_app_data_handler(cleared)
+            app_data_handler_result(self.bindings.set_app_data_handler(cleared))
         }
     }
 
     /// Register the app-data callback through the binding set.
-    pub fn register_app_data_handler(&self, handler: AppDataHandler) -> bool {
-        unsafe { self.bindings.set_app_data_handler(handler) }
+    pub fn register_app_data_handler(
+        &self,
+        handler: AppDataHandler,
+    ) -> Result<(), AppDataHandlerRegistrationError> {
+        unsafe { app_data_handler_result(self.bindings.set_app_data_handler(handler)) }
     }
 
     /// Return the current firmware time tick counter.
@@ -193,4 +211,10 @@ impl<B: AppDataBindings> LoopbackLifecycle<B> {
     pub unsafe fn send_app_data(&self, data: *const u8, len: u32) {
         unsafe { self.bindings.send_app_data(data, len) }
     }
+}
+
+fn app_data_handler_result(accepted: bool) -> Result<(), AppDataHandlerRegistrationError> {
+    accepted
+        .then_some(())
+        .ok_or(AppDataHandlerRegistrationError::FirmwareRejected)
 }

@@ -216,7 +216,7 @@ pub fn process_loopback_app_data(
 pub fn register_loopback_app_data_handler_with<B: crate::AppDataBindings>(
     lifecycle: &crate::LoopbackLifecycle<B>,
     handler: vescpkg_rs_sys::AppDataHandler,
-) -> bool {
+) -> Result<(), crate::AppDataHandlerRegistrationError> {
     lifecycle.register_app_data_handler(handler)
 }
 

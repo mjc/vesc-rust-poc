@@ -95,6 +95,7 @@ pub struct FakeAppDataBindings {
     pub last_data: Cell<usize>,
     /// Last outbound data length passed to send.
     pub last_len: Cell<u32>,
+    handler_results: Cell<[bool; 2]>,
 }
 
 impl Default for FakeAppDataBindings {
@@ -111,6 +112,16 @@ impl FakeAppDataBindings {
 
     /// Creates fake app-data bindings returning `ticks` from the timer.
     pub fn with_ticks(ticks: u32) -> Self {
+        Self::with_ticks_and_handler_results(ticks, [true, true])
+    }
+
+    /// Creates fake app-data bindings with explicit handler registration results.
+    pub fn with_handler_results(handler_results: [bool; 2]) -> Self {
+        Self::with_ticks_and_handler_results(0, handler_results)
+    }
+
+    /// Creates fake app-data bindings with explicit timer ticks and handler registration results.
+    pub fn with_ticks_and_handler_results(ticks: u32, handler_results: [bool; 2]) -> Self {
         Self {
             handler_calls: Cell::new(0),
             ticks: Cell::new(ticks),
@@ -118,6 +129,7 @@ impl FakeAppDataBindings {
             last_handler: Cell::new(0),
             last_data: Cell::new(0),
             last_len: Cell::new(0),
+            handler_results: Cell::new(handler_results),
         }
     }
 }
@@ -126,7 +138,8 @@ impl AppDataBindings for FakeAppDataBindings {
     unsafe fn set_app_data_handler(&self, handler: AppDataHandler) -> bool {
         self.handler_calls.set(self.handler_calls.get() + 1);
         self.last_handler.set(handler as *const () as usize);
-        true
+        let index = self.handler_calls.get().saturating_sub(1).min(1);
+        self.handler_results.get()[index]
     }
 
     fn system_time_ticks(&self) -> u32 {

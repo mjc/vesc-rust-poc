@@ -39,7 +39,9 @@ pub use vescpkg_rs_units as units;
 pub use alloc::{AllocBindings, AllocError, FirmwareAllocation, FirmwareAllocator};
 pub use bindings::{AppDataBindings, LbmBindings};
 pub use extension::{ExtensionDescriptor, ExtensionNameError, RegisterError};
-pub use lifecycle_core::{LbmApi, LoopbackLifecycle, PackageLifecycle};
+pub use lifecycle_core::{
+    AppDataHandlerRegistrationError, LbmApi, LoopbackLifecycle, PackageLifecycle,
+};
 pub use motor::{MotorTelemetryApi, MotorTelemetryBindings};
 
 #[cfg(not(test))]
@@ -74,10 +76,11 @@ pub mod prelude {
         SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage, WattHours,
     };
     pub use crate::{
-        AllocBindings, AllocError, AppDataBindings, ExtensionDescriptor, ExtensionNameError,
-        FirmwareAllocation, FirmwareAllocator, GpioApi, GpioBindings, LbmApi, LbmBindings,
-        LoopbackLifecycle, MotorTelemetryApi, MotorTelemetryBindings, PackageLifecycle,
-        ProtocolFrame, RegisterError, WireCommand, WireVersion,
+        AllocBindings, AllocError, AppDataBindings, AppDataHandlerRegistrationError,
+        ExtensionDescriptor, ExtensionNameError, FirmwareAllocation, FirmwareAllocator, GpioApi,
+        GpioBindings, LbmApi, LbmBindings, LoopbackLifecycle, MotorTelemetryApi,
+        MotorTelemetryBindings, PackageLifecycle, ProtocolFrame, RegisterError, WireCommand,
+        WireVersion,
     };
 
     #[cfg(not(test))]
