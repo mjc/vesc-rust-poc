@@ -20,6 +20,46 @@ macro_rules! current_type {
                 self.0
             }
         }
+
+        impl core::ops::Add for $name {
+            type Output = Self;
+
+            fn add(self, rhs: Self) -> Self::Output {
+                Self(self.0 + rhs.0)
+            }
+        }
+
+        impl core::ops::Sub for $name {
+            type Output = Self;
+
+            fn sub(self, rhs: Self) -> Self::Output {
+                Self(self.0 - rhs.0)
+            }
+        }
+
+        impl core::ops::Mul<f32> for $name {
+            type Output = Self;
+
+            fn mul(self, rhs: f32) -> Self::Output {
+                Self(self.0 * rhs)
+            }
+        }
+
+        impl core::ops::Div<f32> for $name {
+            type Output = Self;
+
+            fn div(self, rhs: f32) -> Self::Output {
+                Self(self.0 / rhs)
+            }
+        }
+
+        impl core::ops::Neg for $name {
+            type Output = Self;
+
+            fn neg(self) -> Self::Output {
+                Self(-self.0)
+            }
+        }
     };
 }
 
@@ -131,8 +171,8 @@ impl AudioChannel {
         }
     }
 
-    /// Explicitly extract the raw channel index.
-    pub const fn get(self) -> u8 {
+    /// Encode the channel index for the audio boundary.
+    pub const fn as_u8(self) -> u8 {
         self.0
     }
 }
@@ -156,19 +196,15 @@ impl AudioChannelError {
 pub struct FirmwareFaultCode(i32);
 
 impl FirmwareFaultCode {
-    /// Build a firmware fault-code token from the raw firmware enum value.
-    pub const fn from_raw_code(code: i32) -> Self {
+    /// Build an internal fault-code token from the firmware enum value.
+    #[cfg(any(not(test), feature = "test-support"))]
+    pub(crate) const fn from_raw_code(code: i32) -> Self {
         Self(code)
     }
 
     /// Build a firmware fault-code token from the app-data compatible byte.
     pub const fn from_compat_code(code: u8) -> Self {
         Self(code as i32)
-    }
-
-    /// Return the raw firmware enum value.
-    pub const fn raw_code(self) -> i32 {
-        self.0
     }
 
     /// Return the app-data compatible fault code byte, if the raw code fits.

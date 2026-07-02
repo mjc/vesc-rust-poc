@@ -5,8 +5,7 @@
 //! voltage, and duty cycle is a controller command ratio.
 //!
 //! ```compile_fail
-//! use vescpkg_rs::types::{BatteryCurrent, MotorCurrent};
-//! use vescpkg_rs::units::Current;
+//! use vescpkg_rs::{BatteryCurrent, Current, MotorCurrent};
 //!
 //! fn set_motor_current(_: MotorCurrent) {}
 //!
@@ -17,25 +16,27 @@
 //! Raw token wrappers also require explicit extraction:
 //!
 //! ```compile_fail
-//! use vescpkg_rs::types::CanControllerId;
+//! use vescpkg_rs::CanControllerId;
 //!
 //! let id = CanControllerId::new(42);
 //! let _: u8 = id.into();
 //! ```
 
-pub mod adc;
-pub mod battery;
-pub mod can;
-pub mod config;
-pub mod gnss;
-pub mod imu;
-pub mod io;
-pub mod motion;
-pub mod motor;
-pub mod power;
-pub mod ratio;
-pub mod temperature;
-pub mod time;
+mod adc;
+mod battery;
+mod can;
+mod config;
+mod control;
+mod gnss;
+mod imu;
+mod io;
+mod loader;
+mod motion;
+mod motor;
+mod power;
+mod ratio;
+mod temperature;
+mod time;
 
 pub use adc::{AdcDecodedLevel, AdcVoltage, BrakeLeverLevel, BrakeSwitch};
 pub use battery::{
@@ -44,15 +45,35 @@ pub use battery::{
 };
 pub use can::{CanControllerId, CanExtendedId, CanPayloadLen, CanPayloadLenError, CanStandardId};
 pub use config::{
-    BatteryCellCount, BatteryCellCountError, FocMotorFluxLinkage, FocMotorInductance,
-    FocMotorResistance, GearRatio, GearRatioError, MotorPoleCount, MotorPoleCountError,
-    WheelDiameter,
+    BatteryCellCount, BatteryCellCountError, CustomConfigAngleCurrentGainField,
+    CustomConfigAngleField, CustomConfigAngularVelocityField, CustomConfigDurationField,
+    CustomConfigEditor, CustomConfigElectricalSpeedField, CustomConfigEnumField,
+    CustomConfigFlagField, CustomConfigImage, CustomConfigIntegralCurrentGainField,
+    CustomConfigMahonyPitchGainField, CustomConfigMahonyRollGainField,
+    CustomConfigMotorCurrentField, CustomConfigPidScaleField, CustomConfigRateCurrentGainField,
+    CustomConfigResetField, CustomConfigSampleRateField, CustomConfigSecondsField,
+    CustomConfigVoltageField, FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance,
+    GearRatio, GearRatioError, MotorPoleCount, MotorPoleCountError, WheelDiameter,
+};
+pub use control::{
+    AngleCurrentGain, IntegralCurrentGain, MahonyPitchGain, MahonyRollGain, PidScale,
+    RateCurrentGain,
 };
 pub use gnss::{GnssAccuracy, GnssAltitude, GnssHdop, GnssLatitude, GnssLongitude, GnssSpeed};
-pub use imu::{ImuAcceleration, ImuAngularRate, ImuPitch, ImuQuaternion, ImuRoll, ImuYaw};
+pub use imu::{
+    ImuAcceleration, ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ, ImuAngularRate,
+    ImuAngularRatePitch, ImuAngularRateRoll, ImuAngularRateYaw, ImuAttitude, ImuOrientation,
+    ImuPitch, ImuQuaternion, ImuQuaternionW, ImuQuaternionX, ImuQuaternionY, ImuQuaternionZ,
+    ImuReadSample, ImuRoll, ImuSamplePeriod, ImuYaw,
+};
 pub use io::{
     BaudRate, BaudRateError, PacketLength, PacketLengthError, ThreadPriority, ThreadPriorityError,
 };
+#[cfg(any(test, feature = "test-support"))]
+pub use loader::PackageArgument;
+#[cfg(not(any(test, feature = "test-support")))]
+pub(crate) use loader::PackageArgument;
+pub use loader::{LoaderInfo, PackageProgram, PackageProgramAddress};
 pub use motion::{
     AbsoluteTachometerSteps, ElectricalSpeed, MechanicalSpeed, OpenLoopPhase, PidPosition,
     TachometerSteps, TripDistance, VehicleSpeed,
@@ -70,4 +91,6 @@ pub use ratio::{
 pub use temperature::{
     FetTemperature, MosfetTemperature, MotorTemperature, TemperatureLimitEnd, TemperatureLimitStart,
 };
-pub use time::{PpmAge, RemoteAge, SystemDuration, SystemTimestamp, TimeoutDuration};
+pub use time::{
+    CurrentOffDelay, PpmAge, RemoteAge, SystemDuration, SystemTimestamp, TimeoutDuration,
+};

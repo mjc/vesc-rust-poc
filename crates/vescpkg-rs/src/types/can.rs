@@ -11,8 +11,8 @@ impl CanControllerId {
         Self(id)
     }
 
-    /// Explicitly extract the raw controller ID.
-    pub const fn get(self) -> u8 {
+    /// Encode the controller ID for the CAN boundary.
+    pub const fn as_u8(self) -> u8 {
         self.0
     }
 }
@@ -35,8 +35,8 @@ impl CanStandardId {
         }
     }
 
-    /// Explicitly extract the raw standard CAN identifier.
-    pub const fn get(self) -> u16 {
+    /// Encode the standard CAN identifier for the protocol boundary.
+    pub const fn as_u16(self) -> u16 {
         self.0
     }
 }
@@ -72,8 +72,8 @@ impl CanExtendedId {
         }
     }
 
-    /// Explicitly extract the raw extended CAN identifier.
-    pub const fn get(self) -> u32 {
+    /// Encode the extended CAN identifier for the protocol boundary.
+    pub const fn as_u32(self) -> u32 {
         self.0
     }
 }
@@ -102,8 +102,8 @@ impl CanPayloadLen {
         }
     }
 
-    /// Explicitly extract the raw payload length.
-    pub const fn get(self) -> u8 {
+    /// Encode the payload length for the protocol boundary.
+    pub const fn as_u8(self) -> u8 {
         self.0
     }
 }

@@ -1,144 +1,87 @@
-//! GPIO helpers built on the firmware abstract IO table slots.
+//! Typed GPIO access for package code.
 
-use vescpkg_rs_sys::{VescPin, VescPinMode};
+use vescpkg_rs_sys::VescPin;
 
-/// Abstract GPIO operations backed by firmware slots.
-pub trait GpioBindings {
-    /// Configure the pin mode.
-    fn set_mode(&self, pin: VescPin, mode: VescPinMode) -> bool;
-    /// Drive the pin high or low.
-    fn write(&self, pin: VescPin, level: bool) -> bool;
-    /// Read the current pin state.
-    fn read(&self, pin: VescPin) -> bool;
-}
+use crate::units::Voltage;
 
-#[cfg(not(test))]
-/// GPIO binding implementation that forwards to the live firmware ABI.
-pub struct RealGpioBindings;
+/// A firmware analog-input pin.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct AnalogPin(u8);
 
-#[cfg(not(test))]
-impl GpioBindings for RealGpioBindings {
-    fn set_mode(&self, pin: VescPin, mode: VescPinMode) -> bool {
-        unsafe { vescpkg_rs_sys::raw::io_set_mode(pin, mode) }
+impl AnalogPin {
+    /// Name an analog pin by its VESC firmware pin number.
+    pub const fn new(number: u8) -> Self {
+        Self(number)
     }
 
-    fn write(&self, pin: VescPin, level: bool) -> bool {
-        unsafe { vescpkg_rs_sys::raw::io_write(pin, i32::from(level)) }
-    }
-
-    fn read(&self, pin: VescPin) -> bool {
-        unsafe { vescpkg_rs_sys::raw::io_read(pin) }
+    const fn firmware_pin(self) -> VescPin {
+        VescPin(self.0 as i32)
     }
 }
 
-/// High-level GPIO convenience API built on a binding implementation.
-pub struct GpioApi<B> {
-    bindings: B,
+/// Firmware GPIO capability.
+pub struct Gpio {
+    #[cfg(test)]
+    test: TestGpio,
 }
 
-impl<B: GpioBindings> GpioApi<B> {
-    /// Construct a new GPIO API wrapper.
-    pub fn new(bindings: B) -> Self {
-        Self { bindings }
-    }
-
-    /// Configure the pin mode.
-    pub fn set_mode(&self, pin: VescPin, mode: VescPinMode) -> bool {
-        self.bindings.set_mode(pin, mode)
-    }
-
-    /// Drive the pin high or low.
-    pub fn write(&self, pin: VescPin, level: bool) -> bool {
-        self.bindings.write(pin, level)
-    }
-
-    /// Read the current pin state.
-    pub fn read(&self, pin: VescPin) -> bool {
-        self.bindings.read(pin)
-    }
-}
-
-#[cfg(any(test, feature = "test-support"))]
-/// GPIO fake binding helpers exported for tests.
-pub mod test_support {
-    use super::GpioBindings;
-    use core::cell::Cell;
-    use vescpkg_rs_sys::{VescPin, VescPinMode};
-
-    /// Fake GPIO binding implementation used by GPIO unit tests.
-    pub struct FakeGpioBindings {
-        /// Number of mode calls observed.
-        pub mode_calls: Cell<usize>,
-        /// Number of write calls observed.
-        pub write_calls: Cell<usize>,
-        /// Number of read calls observed.
-        pub read_calls: Cell<usize>,
-        /// Last pin passed to any GPIO call.
-        pub last_pin: Cell<i32>,
-        /// Last mode value passed to mode configuration.
-        pub last_mode: Cell<i32>,
-        /// Last output level passed to write.
-        pub last_level: Cell<i32>,
-    }
-
-    impl Default for FakeGpioBindings {
-        fn default() -> Self {
-            Self::new()
-        }
-    }
-
-    impl FakeGpioBindings {
-        /// Creates a fake GPIO binding recorder with zeroed counters.
-        pub fn new() -> Self {
-            Self {
-                mode_calls: Cell::new(0),
-                write_calls: Cell::new(0),
-                read_calls: Cell::new(0),
-                last_pin: Cell::new(0),
-                last_mode: Cell::new(0),
-                last_level: Cell::new(0),
-            }
-        }
-    }
-
-    impl GpioBindings for FakeGpioBindings {
-        fn set_mode(&self, pin: VescPin, mode: VescPinMode) -> bool {
-            self.mode_calls.set(self.mode_calls.get() + 1);
-            self.last_pin.set(pin.0);
-            self.last_mode.set(mode.0);
-            true
-        }
-
-        fn write(&self, pin: VescPin, level: bool) -> bool {
-            self.write_calls.set(self.write_calls.get() + 1);
-            self.last_pin.set(pin.0);
-            self.last_level.set(i32::from(level));
-            true
-        }
-
-        fn read(&self, pin: VescPin) -> bool {
-            self.read_calls.set(self.read_calls.get() + 1);
-            self.last_pin.set(pin.0);
-            false
-        }
+impl Gpio {
+    #[cfg(not(test))]
+    pub(crate) const fn new() -> Self {
+        Self {}
     }
 
     #[cfg(test)]
-    mod tests {
-        use super::FakeGpioBindings;
-        use crate::GpioApi;
-        use vescpkg_rs_sys::{VescPin, VescPinMode};
-
-        #[test]
-        fn gpio_api_forwards_through_bindings() {
-            let bindings = FakeGpioBindings::new();
-            let api = GpioApi::new(bindings);
-            let pin = VescPin(42);
-            let mode = VescPinMode(1);
-
-            assert!(api.set_mode(pin, mode));
-            assert!(api.write(pin, true));
-            assert!(!api.read(pin));
+    fn test(analog_pair: (f32, f32)) -> Self {
+        Self {
+            test: TestGpio {
+                analog_pair: core::cell::Cell::new(analog_pair),
+                ..TestGpio::default()
+            },
         }
+    }
+
+    /// Read two analog pins as typed firmware-scaled voltages.
+    pub fn read_analog_pair(&self, first: AnalogPin, second: AnalogPin) -> (Voltage, Voltage) {
+        let first = first.firmware_pin();
+        let second = second.firmware_pin();
+        #[cfg(test)]
+        {
+            self.test
+                .analog_pair_calls
+                .set(self.test.analog_pair_calls.get() + 1);
+            self.test.last_pin.set(first.0);
+            self.test.last_second_pin.set(second.0);
+            let (first, second) = self.test.analog_pair.get();
+            (Voltage::from_volts(first), Voltage::from_volts(second))
+        }
+        #[cfg(not(test))]
+        {
+            let (first, second) = unsafe { crate::ffi::io_read_analog_pair(first, second) };
+            (Voltage::from_volts(first), Voltage::from_volts(second))
+        }
+    }
+}
+
+#[cfg(test)]
+#[derive(Default)]
+struct TestGpio {
+    analog_pair_calls: core::cell::Cell<usize>,
+    last_pin: core::cell::Cell<i32>,
+    last_second_pin: core::cell::Cell<i32>,
+    analog_pair: core::cell::Cell<(f32, f32)>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AnalogPin, Gpio};
+
+    #[test]
+    fn gpio_uses_one_semantic_capability() {
+        let gpio = Gpio::test((1.2, 3.4));
+        let (first, second) = gpio.read_analog_pair(AnalogPin::new(42), AnalogPin::new(43));
+        assert_eq!(first.as_volts(), 1.2);
+        assert_eq!(second.as_volts(), 3.4);
     }
 }

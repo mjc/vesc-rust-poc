@@ -1,0 +1,1143 @@
+//! Safe adapters for firmware callback pointers.
+
+use core::ffi::{c_int, c_void};
+use core::ptr::{self, NonNull};
+
+use vescpkg_rs_sys::{LbmValue, LibInfo, MutablePacket, NativeImage, StopHandler};
+
+/// Borrowed application-data bytes delivered by firmware.
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AppDataPacket<'a>(&'a [u8]);
+
+impl<'a> AppDataPacket<'a> {
+    /// Wrap packet bytes for host-side callback tests.
+    #[must_use]
+    pub const fn from_bytes(bytes: &'a [u8]) -> Self {
+        Self(bytes)
+    }
+
+    /// Borrow the packet payload.
+    #[must_use]
+    pub const fn as_bytes(self) -> &'a [u8] {
+        self.0
+    }
+}
+
+impl AsRef<[u8]> for AppDataPacket<'_> {
+    fn as_ref(&self) -> &[u8] {
+        self.0
+    }
+}
+
+/// Borrow nullable loader metadata from a firmware entrypoint.
+pub fn loader_info_mut(info: *mut LibInfo) -> Option<&'static mut LibInfo> {
+    NonNull::new(info).map(|mut info| unsafe { info.as_mut() })
+}
+
+/// Clear package state and stop metadata when startup fails.
+pub fn clear_loader_info(info: *mut LibInfo) {
+    if let Some(info) = loader_info_mut(info) {
+        info.arg = ptr::null_mut();
+        info.stop_fun = None;
+    }
+}
+
+/// Rebase an image-relative address through loader metadata.
+#[cfg(any(test, all(not(test), target_arch = "arm")))]
+pub(crate) fn rebase_native_handler_addr(info: &LibInfo, handler_addr: usize) -> usize {
+    vescpkg_rs_sys::NativeImage::from_info(info).rebase_addr(handler_addr)
+}
+
+pub(crate) fn stop_handler_for_loader(info: &LibInfo, stop_handler: StopHandler) -> StopHandler {
+    #[cfg(all(not(test), target_arch = "arm"))]
+    {
+        let handler_addr = rebase_native_handler_addr(info, stop_handler as *const () as usize);
+        unsafe { core::mem::transmute::<usize, StopHandler>(handler_addr) }
+    }
+
+    #[cfg(not(all(not(test), target_arch = "arm")))]
+    {
+        let _ = info;
+        stop_handler
+    }
+}
+
+/// Store package state and a stop hook in loader metadata.
+pub fn install_loader_state<T>(
+    info: *mut LibInfo,
+    stop_handler: StopHandler,
+    state: &mut T,
+) -> bool {
+    let Some(info) = loader_info_mut(info) else {
+        return false;
+    };
+    info.arg = ptr::from_mut(state).cast();
+    info.stop_fun = Some(stop_handler_for_loader(info, stop_handler));
+    true
+}
+
+/// Recover typed package state from loader metadata.
+pub fn loader_state_mut<T: 'static>(info: &mut LibInfo) -> Option<&mut T> {
+    arg_mut(info.arg)
+}
+
+/// Recover typed package state from a firmware ARG pointer.
+pub fn arg_mut<T: 'static>(arg: *mut c_void) -> Option<&'static mut T> {
+    NonNull::new(arg.cast::<T>()).map(|mut arg| unsafe { arg.as_mut() })
+}
+
+/// Borrow typed package state from a firmware ARG pointer.
+pub fn arg_ref<T: 'static>(arg: *mut c_void) -> Option<&'static T> {
+    NonNull::new(arg.cast::<T>()).map(|arg| unsafe { arg.as_ref() })
+}
+
+/// Typed context passed to package stop callbacks.
+pub struct StopContext<T: 'static> {
+    state: Option<&'static T>,
+}
+
+impl<T: 'static> StopContext<T> {
+    /// Borrow the package state, when firmware provided one.
+    pub const fn state(&self) -> Option<&T> {
+        self.state
+    }
+}
+
+/// Rust implementation for a package stop callback.
+pub trait StopCallback {
+    /// Package state stored in loader metadata.
+    type State: 'static;
+
+    /// Stop package-owned runtime resources.
+    fn stop(context: StopContext<Self::State>);
+}
+
+/// Firmware ABI trampoline for a typed package stop callback.
+///
+/// # Safety
+///
+/// `arg` must be null or point to a valid `T::State` value for the duration of this call.
+pub unsafe extern "C" fn stop_callback<T: StopCallback>(arg: *mut c_void) {
+    T::stop(StopContext {
+        state: arg_ref::<T::State>(arg),
+    });
+}
+
+/// Stop callback for state whose allocation ownership belongs to the SDK.
+///
+/// C map: VESC invokes `stop_fun(arg)` during unload at
+/// `third_party/vesc/lispBM/lispif_c_lib.c:1131-1150`; Refloat performs its
+/// cleanup and frees `Data` at `third_party/refloat/src/main.c:2399-2412`.
+pub(crate) unsafe extern "C" fn owned_stop_callback<T: StopCallback>(arg: *mut c_void) {
+    unsafe { stop_callback::<T>(arg) };
+    #[cfg(all(not(test), target_arch = "arm"))]
+    {
+        let bindings = crate::bindings::RealBindings;
+        let _ = crate::alloc::reclaim_firmware_allocation(arg.cast::<T::State>(), &bindings);
+    }
+}
+
+/// Convert firmware app-data callback arguments into a packet view.
+#[cfg(any(test, not(feature = "test-support")))]
+pub(crate) fn app_data_packet(data: *mut u8, len: u32) -> Option<AppDataPacket<'static>> {
+    let len = usize::try_from(len).ok()?;
+    borrowed_bytes(data.cast_const(), len).map(AppDataPacket)
+}
+
+/// Rust implementation for an app-data callback.
+pub trait AppDataCallback {
+    /// Handle one firmware app-data packet.
+    fn handle(packet: AppDataPacket<'static>);
+}
+
+/// App-data behavior backed by package state recovered from firmware.
+pub trait StatefulAppDataCallback {
+    /// Package state installed by startup.
+    type State: 'static;
+
+    /// Runtime state shared with package callbacks.
+    fn runtime_state() -> &'static crate::PackageStateStore<Self::State>;
+
+    /// Handle one firmware app-data packet with package state.
+    fn handle(state: &mut Self::State, packet: AppDataPacket<'static>);
+}
+
+/// Package-local app-data callback generated by the firmware callback macros.
+///
+/// The callback's image-relative address is consumed by [`crate::PackageStart`]
+/// during registration. Package code implements this trait through a callback
+/// macro rather than naming the firmware ABI entry directly.
+///
+/// C map: Refloat passes `on_command_received` directly to
+/// `VESC_IF->set_app_data_handler` at `third_party/refloat/src/main.c:2456`;
+/// VESC stores and invokes that exact function pointer at
+/// `third_party/vesc/comm/commands.c:1820-1828` and `:770-776`.
+#[doc(hidden)]
+pub trait PackageAppDataCallback {
+    /// Return the callback's image-relative function address.
+    #[doc(hidden)]
+    fn image_address() -> usize;
+}
+
+/// Firmware ABI trampoline for a typed app-data callback.
+///
+/// # Safety
+///
+/// `data` must be null with `len == 0` or point to `len` readable bytes that stay valid for this
+/// call.
+#[cfg(any(test, not(feature = "test-support")))]
+pub unsafe extern "C" fn app_data_callback<T: AppDataCallback>(data: *mut u8, len: u32) {
+    if let Some(packet) = app_data_packet(data, len) {
+        T::handle(packet);
+    }
+}
+
+/// Define a package-local app-data callback symbol backed by a typed Rust handler.
+#[macro_export]
+macro_rules! firmware_app_data_callback {
+    ($name:ident, $callback:ty) => {
+        #[doc = "Package-local firmware app-data callback generated by `firmware_app_data_callback!`."]
+        #[cfg(all(not(test), target_arch = "arm"))]
+        #[unsafe(no_mangle)]
+        #[inline(never)]
+        pub unsafe extern "C" fn $name(data: *mut u8, len: u32) {
+            unsafe { $crate::__macro_support::app_data_callback::<$callback>(data, len) };
+        }
+
+        #[cfg(all(not(test), target_arch = "arm"))]
+        impl $crate::PackageAppDataCallback for $callback {
+            #[inline(always)]
+            fn image_address() -> usize {
+                $name as *const () as usize
+            }
+        }
+    };
+}
+
+/// Define a package-local app-data callback symbol backed by package state.
+///
+/// C map: generated callbacks recover package state through `ARG(PROG_ADDR)`
+/// from `third_party/vesc_pkg_lib/vesc_c_if.h:697-700` before dispatching.
+#[macro_export]
+macro_rules! firmware_stateful_app_data_callback {
+    ($name:ident, $callback:ty) => {
+        $crate::firmware_stateful_app_data_callback!($name, $callback, package_state_source);
+    };
+    ($name:ident, $callback:ty, $state_source_name:ident) => {
+        #[cfg(all(not(test), target_arch = "arm"))]
+        #[inline(never)]
+        fn package_state_mut()
+        -> Option<&'static mut <$callback as $crate::StatefulAppDataCallback>::State> {
+            $crate::__macro_support::__firmware_package_state_mut::<
+                <$callback as $crate::StatefulAppDataCallback>::State,
+            >($crate::firmware_package_program_address!($name))
+        }
+
+        #[cfg(all(not(test), target_arch = "arm"))]
+        #[inline(always)]
+        pub(crate) fn $state_source_name(
+            runtime: &'static $crate::PackageStateStore<
+                <$callback as $crate::StatefulAppDataCallback>::State,
+            >,
+        ) -> $crate::PackageStateAccess<
+            'static,
+            <$callback as $crate::StatefulAppDataCallback>::State,
+        > {
+            $crate::PackageStateAccess::with_firmware_fallback(runtime, package_state_mut)
+        }
+
+        #[cfg(all(not(test), target_arch = "arm"))]
+        impl $crate::AppDataCallback for $callback {
+            fn handle(packet: $crate::AppDataPacket<'static>) {
+                let Some(state) = package_state_mut() else {
+                    return;
+                };
+                <$callback as $crate::StatefulAppDataCallback>::handle(state, packet);
+            }
+        }
+
+        $crate::firmware_app_data_callback!($name, $callback);
+    };
+}
+
+/// Convert LispBM extension callback arguments into typed values.
+///
+/// # Safety
+///
+/// `args` must be null with `arg_count == 0` or point to `arg_count` LispBM
+/// values that stay valid for the returned borrow.
+pub(crate) unsafe fn lbm_args<'a>(args: *mut u32, arg_count: u32) -> Option<&'a [LbmValue]> {
+    let len = usize::try_from(arg_count).ok()?;
+    if len == 0 {
+        return Some(&[]);
+    }
+    let args = NonNull::new(args.cast::<LbmValue>())?;
+    Some(unsafe { core::slice::from_raw_parts(args.as_ptr().cast_const(), len) })
+}
+
+/// Borrowed serialized custom-config bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConfigBytes<'a>(&'a [u8]);
+
+impl<'a> ConfigBytes<'a> {
+    /// Wrap serialized configuration bytes.
+    #[must_use]
+    pub const fn new(bytes: &'a [u8]) -> Self {
+        Self(bytes)
+    }
+
+    /// Return the serialized configuration bytes.
+    #[must_use]
+    pub const fn as_bytes(self) -> &'a [u8] {
+        self.0
+    }
+}
+
+/// Borrowed custom-config XML bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConfigXml<'a>(&'a [u8]);
+
+impl<'a> ConfigXml<'a> {
+    /// Wrap custom-config XML bytes.
+    #[must_use]
+    pub const fn new(bytes: &'a [u8]) -> Self {
+        Self(bytes)
+    }
+
+    /// Return the XML bytes.
+    #[must_use]
+    pub const fn as_bytes(self) -> &'a [u8] {
+        self.0
+    }
+}
+
+/// Mutable custom-config output buffer for `get_cfg` callbacks.
+struct CustomConfigGetBuffer(MutablePacket<'static>);
+
+impl CustomConfigGetBuffer {
+    /// Borrow the firmware-provided output buffer.
+    pub fn new(buffer: *mut u8, len: usize) -> Option<Self> {
+        mutable_bytes(buffer, len).map(Self)
+    }
+
+    /// Write serialized config bytes into the firmware-provided output buffer.
+    fn write(&mut self, payload: ConfigBytes<'_>) -> c_int {
+        if payload.as_bytes().len() > self.0.0.len() {
+            return 0;
+        }
+        self.0.0[..payload.as_bytes().len()].copy_from_slice(payload.as_bytes());
+        payload.as_bytes().len() as c_int
+    }
+}
+
+/// Borrowed custom-config input for `set_cfg` callbacks.
+fn custom_config_payload(buffer: *mut u8, len: usize) -> Option<ConfigBytes<'static>> {
+    borrowed_bytes(buffer.cast_const(), len).map(ConfigBytes::new)
+}
+
+/// Custom-config behavior backed by a reusable package state source.
+pub trait SourceCustomConfigCallback<const LEN: usize> {
+    /// Package state installed by startup.
+    type State: 'static;
+
+    /// Return the state source used by this callback family.
+    fn state_source() -> crate::PackageStateAccess<'static, Self::State>;
+
+    /// Return the static serialized default config.
+    fn default_config() -> ConfigBytes<'static>;
+
+    /// Return the current config borrowed from package state.
+    fn current_config(state: &Self::State) -> Option<ConfigBytes<'_>>;
+
+    /// Store config bytes borrowed for the duration of this callback.
+    fn set_config(state: &mut Self::State, config: ConfigBytes<'_>) -> bool;
+
+    /// Return the config XML bytes.
+    fn config_xml() -> ConfigXml<'static>;
+}
+
+/// Concrete package-local custom-config symbols generated for a callback type.
+///
+/// Package authors get this implementation from
+/// [`crate::firmware_stateful_custom_config_callbacks`].
+#[doc(hidden)]
+pub trait PackageCustomConfigCallback<const LEN: usize>:
+    SourceCustomConfigCallback<LEN> + Sized
+{
+    /// Return image-relative get, set, and XML callback addresses.
+    #[doc(hidden)]
+    fn image_addresses() -> (usize, usize, usize);
+
+    #[doc(hidden)]
+    unsafe fn get(buffer: *mut u8, is_default: bool) -> core::ffi::c_int {
+        unsafe { stateful_custom_config_get::<Self, LEN>(buffer, is_default) }
+    }
+
+    #[doc(hidden)]
+    unsafe fn set(buffer: *mut u8) -> bool {
+        unsafe { stateful_custom_config_set::<Self, LEN>(buffer) }
+    }
+
+    #[doc(hidden)]
+    unsafe fn xml(buffer: *mut *mut u8) -> core::ffi::c_int {
+        unsafe { stateful_custom_config_xml::<Self, LEN>(buffer) }
+    }
+}
+
+/// Firmware ABI trampoline for state-backed custom-config get callbacks.
+///
+/// # Safety
+///
+/// `buffer` must point to `LEN` writable bytes when the firmware expects a config copy.
+pub unsafe extern "C" fn stateful_custom_config_get<T, const LEN: usize>(
+    buffer: *mut u8,
+    is_default: bool,
+) -> c_int
+where
+    T: SourceCustomConfigCallback<LEN>,
+{
+    let Some(mut buffer) = CustomConfigGetBuffer::new(buffer, LEN) else {
+        return 0;
+    };
+    if is_default {
+        return buffer.write(T::default_config());
+    }
+    T::state_source()
+        .with(|state| T::current_config(state).map(|config| buffer.write(config)))
+        .flatten()
+        .unwrap_or(0)
+}
+
+/// Firmware ABI trampoline for state-backed custom-config set callbacks.
+///
+/// # Safety
+///
+/// `buffer` must point to `LEN` readable bytes for the duration of this call.
+pub unsafe extern "C" fn stateful_custom_config_set<T, const LEN: usize>(buffer: *mut u8) -> bool
+where
+    T: SourceCustomConfigCallback<LEN>,
+{
+    let Some(payload) = custom_config_payload(buffer, LEN) else {
+        return false;
+    };
+    T::state_source()
+        .with_mut(|state| T::set_config(state, payload))
+        .unwrap_or(false)
+}
+
+/// Firmware XML pointer output for `get_cfg_xml` callbacks.
+struct CustomConfigXmlOut(NonNull<*mut u8>);
+
+impl CustomConfigXmlOut {
+    /// Borrow the firmware-provided XML output pointer slot.
+    pub fn new(buffer: *mut *mut u8) -> Option<Self> {
+        NonNull::new(buffer).map(Self)
+    }
+
+    /// Return XML bytes to firmware by pointer and byte count.
+    fn return_xml(self, xml: ConfigXml<'static>) -> c_int {
+        unsafe { *self.0.as_ptr() = xml.as_bytes().as_ptr().cast_mut() };
+        xml.as_bytes().len() as c_int
+    }
+}
+
+/// Firmware ABI trampoline for state-backed custom-config XML callbacks.
+///
+/// # Safety
+///
+/// `buffer` must be a valid writable pointer to the firmware's output pointer slot.
+pub unsafe extern "C" fn stateful_custom_config_xml<T, const LEN: usize>(
+    buffer: *mut *mut u8,
+) -> c_int
+where
+    T: SourceCustomConfigCallback<LEN>,
+{
+    let Some(buffer) = CustomConfigXmlOut::new(buffer) else {
+        return 0;
+    };
+    buffer.return_xml(T::config_xml())
+}
+
+fn rebase_custom_config_get_callback(
+    image: NativeImage,
+    callback: crate::ffi::CustomConfigGet,
+) -> crate::ffi::CustomConfigGet {
+    let address = image.rebase_addr(callback as *const () as usize);
+    unsafe { core::mem::transmute::<usize, crate::ffi::CustomConfigGet>(address) }
+}
+
+fn rebase_custom_config_set_callback(
+    image: NativeImage,
+    callback: crate::ffi::CustomConfigSet,
+) -> crate::ffi::CustomConfigSet {
+    let address = image.rebase_addr(callback as *const () as usize);
+    unsafe { core::mem::transmute::<usize, crate::ffi::CustomConfigSet>(address) }
+}
+
+fn rebase_custom_config_xml_callback(
+    image: NativeImage,
+    callback: crate::ffi::CustomConfigXml,
+) -> crate::ffi::CustomConfigXml {
+    let address = image.rebase_addr(callback as *const () as usize);
+    unsafe { core::mem::transmute::<usize, crate::ffi::CustomConfigXml>(address) }
+}
+
+/// Register custom-config callbacks rebased into a loaded native image.
+///
+/// VESC records the loaded native image base at `third_party/vesc/lispBM/lispif_c_lib.c:1095-1098`,
+/// and custom-config registration checks loaded function pointers in
+/// `third_party/vesc/conf_custom.c:34-42`.
+pub fn register_custom_config_callbacks_from_image<B>(
+    bindings: &B,
+    image: NativeImage,
+    get_cfg: crate::ffi::CustomConfigGet,
+    set_cfg: crate::ffi::CustomConfigSet,
+    get_cfg_xml: crate::ffi::CustomConfigXml,
+) -> bool
+where
+    B: crate::bindings::CustomConfigBindings,
+{
+    bindings.register_custom_config_callbacks(
+        rebase_custom_config_get_callback(image, get_cfg),
+        rebase_custom_config_set_callback(image, set_cfg),
+        rebase_custom_config_xml_callback(image, get_cfg_xml),
+    )
+}
+
+/// Define package-local custom-config callback symbols backed by package state.
+#[macro_export]
+macro_rules! firmware_stateful_custom_config_callbacks {
+    ($get_name:ident, $set_name:ident, $xml_name:ident, $callback:ty, $len:expr) => {
+        #[doc = "Package-local firmware custom-config get callback generated by `firmware_stateful_custom_config_callbacks!`."]
+        #[cfg_attr(target_arch = "arm", unsafe(no_mangle))]
+        #[inline(never)]
+        pub unsafe extern "C" fn $get_name(
+            buffer: *mut u8,
+            is_default: bool,
+        ) -> core::ffi::c_int {
+            unsafe {
+                <$callback as $crate::PackageCustomConfigCallback<$len>>::get(buffer, is_default)
+            }
+        }
+
+        #[doc = "Package-local firmware custom-config set callback generated by `firmware_stateful_custom_config_callbacks!`."]
+        #[cfg_attr(target_arch = "arm", unsafe(no_mangle))]
+        #[inline(never)]
+        pub unsafe extern "C" fn $set_name(buffer: *mut u8) -> bool {
+            unsafe { <$callback as $crate::PackageCustomConfigCallback<$len>>::set(buffer) }
+        }
+
+        #[doc = "Package-local firmware custom-config XML callback generated by `firmware_stateful_custom_config_callbacks!`."]
+        #[cfg_attr(target_arch = "arm", unsafe(no_mangle))]
+        #[inline(never)]
+        pub unsafe extern "C" fn $xml_name(buffer: *mut *mut u8) -> core::ffi::c_int {
+            unsafe { <$callback as $crate::PackageCustomConfigCallback<$len>>::xml(buffer) }
+        }
+
+        impl $crate::PackageCustomConfigCallback<$len> for $callback {
+            #[inline(always)]
+            fn image_addresses() -> (usize, usize, usize) {
+                (
+                    $get_name as *const () as usize,
+                    $set_name as *const () as usize,
+                    $xml_name as *const () as usize,
+                )
+            }
+        }
+    };
+}
+
+/// Compute the firmware `PROG_ADDR` for the package image that owns a symbol.
+///
+/// Package authors should pass a package-local callback symbol and receive a
+/// typed `PackageProgramAddress`; the raw VESC name stays here because this is
+/// the SDK boundary that mirrors `vesc_pkg_lib`.
+///
+/// VESC's loader treats native package callbacks as loaded addresses, while Rust
+/// function pointers in the native ELF are image-relative offsets. The inline
+/// `adr` materializes the symbol's current PC-relative address, then subtracts
+/// the image-relative symbol offset to recover `PROG_ADDR`.
+///
+/// C map: `PROG_ADDR` is defined as `((uint32_t)&prog_ptr)` in
+/// `third_party/vesc_pkg_lib/vesc_c_if.h:697`; VESC stores and calls that
+/// native image base at `third_party/vesc/lispBM/lispif_c_lib.c:1087-1100`, and
+/// `lib_get_arg` later matches it at `third_party/vesc/lispBM/lispif_c_lib.c:152-156`.
+#[macro_export]
+macro_rules! firmware_package_program_address {
+    ($symbol:path) => {{
+        let loaded_symbol: usize;
+        // SAFETY: This reads the PC-relative address of a package-local symbol.
+        // It does not access memory, touch the stack, or mutate flags.
+        unsafe {
+            core::arch::asm!(
+                "adr {loaded_symbol}, {symbol}",
+                loaded_symbol = out(reg) loaded_symbol,
+                symbol = sym $symbol,
+                options(nomem, nostack, preserves_flags),
+            );
+        }
+        let loaded_symbol = loaded_symbol & !1;
+        let image_symbol = $symbol as *const () as usize & !1;
+        $crate::PackageProgramAddress::new(loaded_symbol.wrapping_sub(image_symbol) as u32)
+    }};
+}
+
+/// Compute the loaded package program identity for the image that owns a symbol.
+#[macro_export]
+macro_rules! firmware_package_program {
+    ($symbol:path) => {{ $crate::PackageProgram::new($crate::firmware_package_program_address!($symbol)) }};
+}
+
+/// Borrow typed package state for the package image that owns a callback symbol.
+///
+/// This is the Rust package-author API for VESC's `ARG(PROG_ADDR)` state lookup:
+/// the caller names a package-local symbol and receives typed package state.
+///
+/// C map: VESC package callbacks commonly recover state through `ARG`, defined
+/// as `*VESC_IF->get_arg(PROG_ADDR)` in
+/// `third_party/vesc_pkg_lib/vesc_c_if.h:697-700`. Firmware stores the same
+/// `PROG_ADDR` before calling native init at
+/// `third_party/vesc/lispBM/lispif_c_lib.c:1087-1100`, then matches it in
+/// `lib_get_arg` at `third_party/vesc/lispBM/lispif_c_lib.c:151-156`.
+#[macro_export]
+macro_rules! firmware_package_state_mut {
+    ($state:ty, $symbol:path) => {{
+        $crate::__macro_support::__firmware_package_state_mut::<$state>(
+            $crate::firmware_package_program_address!($symbol),
+        )
+    }};
+}
+
+/// Macro implementation hook for the firmware ARG-backed package state path.
+#[doc(hidden)]
+#[cfg(not(test))]
+pub fn __firmware_package_state_mut<T: 'static>(
+    program: crate::PackageProgramAddress,
+) -> Option<&'static mut T> {
+    let bindings = crate::bindings::RealBindings;
+    crate::bindings::AppDataBindings::arg_state_ptr::<T>(&bindings, program)
+}
+
+/// Copy a fixed-size firmware array into Rust-owned storage.
+pub fn firmware_array<T: Copy, const N: usize>(values: *const T) -> Option<[T; N]> {
+    let values = NonNull::new(values.cast_mut())?;
+    let values = unsafe { core::slice::from_raw_parts(values.as_ptr().cast_const(), N) };
+    values.try_into().ok()
+}
+
+fn borrowed_bytes(data: *const u8, len: usize) -> Option<&'static [u8]> {
+    if len == 0 {
+        return Some(&[]);
+    }
+
+    let data = NonNull::new(data.cast_mut())?;
+    Some(unsafe { core::slice::from_raw_parts(data.as_ptr().cast_const(), len) })
+}
+
+fn mutable_bytes(data: *mut u8, len: usize) -> Option<MutablePacket<'static>> {
+    let data = NonNull::new(data)?;
+    Some(MutablePacket(unsafe {
+        core::slice::from_raw_parts_mut(data.as_ptr(), len)
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::PackageStateAccess;
+    use std::boxed::Box;
+
+    unsafe extern "C" fn stop(_arg: *mut c_void) {}
+
+    #[test]
+    fn loader_state_round_trips_through_loader_info() {
+        let mut state = 42_u32;
+        let mut info = LibInfo {
+            stop_fun: None,
+            arg: ptr::null_mut(),
+            base_addr: 0,
+        };
+
+        assert!(install_loader_state(&mut info, stop, &mut state));
+        *loader_state_mut::<u32>(&mut info).expect("state") = 7;
+
+        assert_eq!(state, 7);
+        assert!(info.stop_fun.is_some());
+
+        clear_loader_info(&mut info);
+        assert!(info.arg.is_null());
+        assert!(info.stop_fun.is_none());
+    }
+
+    #[test]
+    fn native_handler_rebase_uses_loader_base_addr() {
+        let info = LibInfo {
+            stop_fun: None,
+            arg: ptr::null_mut(),
+            base_addr: 0x2000,
+        };
+
+        assert_eq!(rebase_native_handler_addr(&info, 0xb1), 0x20b1);
+    }
+
+    #[test]
+    fn package_state_returns_none_without_firmware_arg() {
+        struct State;
+
+        let bindings = crate::test_support::FakeAppDataBindings::new();
+        let prog_addr = crate::PackageProgramAddress::new(0x2000);
+
+        assert!(
+            crate::bindings::AppDataBindings::arg_state_ptr::<State>(&bindings, prog_addr)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn package_state_mutates_firmware_arg_state() {
+        #[derive(Debug, PartialEq, Eq)]
+        struct State {
+            value: u32,
+        }
+
+        let bindings = crate::test_support::FakeAppDataBindings::new();
+        let prog_addr = crate::PackageProgramAddress::new(0x2000);
+        let mut state = State { value: 7 };
+        bindings
+            .app_data_arg
+            .set(ptr::from_mut(&mut state).cast::<c_void>() as usize);
+
+        let state_ptr =
+            crate::bindings::AppDataBindings::arg_state_ptr::<State>(&bindings, prog_addr)
+                .expect("state");
+        state_ptr.value = 9;
+
+        assert_eq!(state, State { value: 9 });
+    }
+
+    #[test]
+    fn package_arg_contract_matches_vesc_prog_addr_lookup() {
+        #[derive(Debug, PartialEq, Eq)]
+        struct State {
+            value: u32,
+        }
+
+        struct FirmwareArgLookup {
+            loaded_prog_addr: crate::PackageProgramAddress,
+            arg: core::cell::Cell<usize>,
+        }
+
+        impl crate::bindings::AppDataBindings for FirmwareArgLookup {
+            unsafe fn set_app_data_handler(
+                &self,
+                _handler: vescpkg_rs_sys::AppDataHandler,
+            ) -> bool {
+                true
+            }
+
+            unsafe fn clear_app_data_handler(&self) -> bool {
+                true
+            }
+
+            fn system_time_ticks(&self) -> u32 {
+                0
+            }
+
+            fn arg(
+                &self,
+                prog_addr: crate::PackageProgramAddress,
+            ) -> Option<crate::PackageArgument> {
+                // C map: firmware's `lib_get_arg` searches loaded libraries by
+                // `base_addr == prog_addr` and returns the matching `arg` slot at
+                // `third_party/vesc/lispBM/lispif_c_lib.c:152-158`.
+                (prog_addr == self.loaded_prog_addr)
+                    .then_some(self.arg.get() as *mut c_void)
+                    .and_then(core::ptr::NonNull::new)
+                    .map(crate::PackageArgument::new)
+            }
+
+            unsafe fn send_app_data(&self, _data: *const u8, _len: u32) {}
+        }
+
+        // C map: native package startup is called with `loaded_libs[i]`, whose
+        // `base_addr` was set from the package image address at
+        // `third_party/vesc/lispBM/lispif_c_lib.c:1093-1100`.
+        let program = crate::PackageProgram::new(crate::PackageProgramAddress::new(0x2000));
+        let mut info = LibInfo {
+            stop_fun: None,
+            arg: ptr::null_mut(),
+            base_addr: program.address().get(),
+        };
+        let mut state = State { value: 7 };
+
+        assert!(install_loader_state(&mut info, stop, &mut state));
+
+        let bindings = FirmwareArgLookup {
+            loaded_prog_addr: crate::PackageProgramAddress::new(info.base_addr),
+            arg: core::cell::Cell::new(info.arg as usize),
+        };
+
+        // C map: `PROG_ADDR` is `((uint32_t)&prog_ptr)` and `ARG` is
+        // `*VESC_IF->get_arg(PROG_ADDR)` at
+        // `third_party/vesc_pkg_lib/vesc_c_if.h:697-700`. The Rust SDK keeps
+        // that address/pointer plumbing typed as `PackageProgramAddress`,
+        // `PackageArgument`, and finally package-owned `State`.
+        assert!(
+            crate::bindings::AppDataBindings::arg_state_ptr::<State>(
+                &bindings,
+                crate::PackageProgramAddress::new(0x2004),
+            )
+            .is_none()
+        );
+        let state_ptr =
+            crate::bindings::AppDataBindings::arg_state_ptr::<State>(&bindings, program.address())
+                .expect("package ARG state");
+        state_ptr.value = 9;
+
+        assert_eq!(state, State { value: 9 });
+    }
+
+    #[test]
+    fn custom_config_get_buffer_writes_payload_bytes() {
+        let mut buffer = [0_u8; 3];
+        let mut output =
+            CustomConfigGetBuffer::new(buffer.as_mut_ptr(), buffer.len()).expect("config output");
+
+        assert_eq!(output.write(ConfigBytes::new(b"abc")), 3);
+        assert_eq!(&buffer, b"abc");
+        assert!(CustomConfigGetBuffer::new(ptr::null_mut(), 3).is_none());
+    }
+
+    #[test]
+    fn firmware_packet_and_array_helpers_reject_null() {
+        assert_eq!(unsafe { lbm_args(ptr::null_mut(), 0) }, Some(&[][..]));
+        assert!(unsafe { lbm_args(ptr::null_mut(), 1) }.is_none());
+        assert!(firmware_array::<f32, 3>(ptr::null()).is_none());
+
+        let values = [1.0_f32, 2.0, 3.0];
+        assert_eq!(firmware_array::<f32, 3>(values.as_ptr()), Some(values));
+    }
+
+    #[test]
+    fn app_data_packet_accepts_empty_packet() {
+        let packet = app_data_packet(ptr::null_mut(), 0).expect("empty packet is valid");
+
+        assert!(packet.as_bytes().is_empty());
+    }
+
+    #[test]
+    fn app_data_packet_accepts_nonempty_packet() {
+        let mut bytes = [3_u8, 1, 4];
+        let packet = app_data_packet(bytes.as_mut_ptr(), bytes.len() as u32).expect("valid packet");
+
+        assert_eq!(packet.as_bytes(), &[3, 1, 4]);
+    }
+
+    #[test]
+    fn app_data_packet_rejects_null_nonempty_packet() {
+        assert!(app_data_packet(ptr::null_mut(), 3).is_none());
+    }
+
+    #[test]
+    fn app_data_callback_ignores_invalid_packet_pointer() {
+        use core::sync::atomic::{AtomicUsize, Ordering};
+
+        struct RecordingAppData;
+
+        static CALLS: AtomicUsize = AtomicUsize::new(0);
+
+        impl AppDataCallback for RecordingAppData {
+            fn handle(_packet: AppDataPacket<'static>) {
+                CALLS.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        CALLS.store(0, Ordering::SeqCst);
+
+        unsafe { app_data_callback::<RecordingAppData>(ptr::null_mut(), 1) };
+
+        assert_eq!(CALLS.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn app_data_callback_dispatches_empty_packet() {
+        use core::sync::atomic::{AtomicUsize, Ordering};
+
+        struct RecordingAppData;
+
+        static CALLS: AtomicUsize = AtomicUsize::new(0);
+        static LAST_LEN: AtomicUsize = AtomicUsize::new(usize::MAX);
+
+        impl AppDataCallback for RecordingAppData {
+            fn handle(packet: AppDataPacket<'static>) {
+                CALLS.fetch_add(1, Ordering::SeqCst);
+                LAST_LEN.store(packet.0.len(), Ordering::SeqCst);
+            }
+        }
+
+        CALLS.store(0, Ordering::SeqCst);
+        LAST_LEN.store(usize::MAX, Ordering::SeqCst);
+
+        unsafe { app_data_callback::<RecordingAppData>(ptr::null_mut(), 0) };
+
+        assert_eq!(CALLS.load(Ordering::SeqCst), 1);
+        assert_eq!(LAST_LEN.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn custom_config_xml_out_writes_pointer_and_len() {
+        let xml = b"<xml/>";
+        let mut out = ptr::null_mut();
+        let output = CustomConfigXmlOut::new(&mut out).expect("xml output");
+
+        assert_eq!(output.return_xml(ConfigXml::new(xml)), 6);
+        assert_eq!(out, xml.as_ptr().cast_mut());
+        assert!(CustomConfigXmlOut::new(ptr::null_mut()).is_none());
+    }
+
+    #[test]
+    fn register_custom_config_callbacks_from_image_rebases_explicit_symbols() {
+        use crate::PackageStateStore;
+        use crate::test_support::FakeAppDataBindings;
+
+        struct State;
+        struct TestCustomConfig;
+
+        static RUNTIME: PackageStateStore<State> = PackageStateStore::new();
+
+        fn no_state() -> Option<&'static mut State> {
+            None
+        }
+
+        impl SourceCustomConfigCallback<3> for TestCustomConfig {
+            type State = State;
+
+            fn state_source() -> PackageStateAccess<'static, Self::State> {
+                PackageStateAccess::with_firmware_fallback(&RUNTIME, no_state)
+            }
+
+            fn default_config() -> ConfigBytes<'static> {
+                ConfigBytes::new(b"abc")
+            }
+
+            fn current_config(_state: &Self::State) -> Option<ConfigBytes<'_>> {
+                Some(ConfigBytes::new(b"abc"))
+            }
+
+            fn set_config(_state: &mut Self::State, _config: ConfigBytes<'_>) -> bool {
+                true
+            }
+
+            fn config_xml() -> ConfigXml<'static> {
+                ConfigXml::new(b"<x/>")
+            }
+        }
+
+        let bindings = FakeAppDataBindings::new();
+        let image = NativeImage::new(0x2000);
+        let get_cfg = stateful_custom_config_get::<TestCustomConfig, 3>;
+        let set_cfg = stateful_custom_config_set::<TestCustomConfig, 3>;
+        let get_cfg_xml = stateful_custom_config_xml::<TestCustomConfig, 3>;
+
+        assert!(register_custom_config_callbacks_from_image(
+            &bindings,
+            image,
+            get_cfg,
+            set_cfg,
+            get_cfg_xml,
+        ));
+        assert_eq!(bindings.custom_config_register_calls.get(), 1);
+        assert_eq!(
+            bindings.last_custom_config_get.get(),
+            image.rebase_addr(get_cfg as *const () as usize)
+        );
+        assert_eq!(
+            bindings.last_custom_config_set.get(),
+            image.rebase_addr(set_cfg as *const () as usize)
+        );
+        assert_eq!(
+            bindings.last_custom_config_xml.get(),
+            image.rebase_addr(get_cfg_xml as *const () as usize)
+        );
+    }
+
+    #[test]
+    fn stateful_custom_config_trampolines_validate_and_update_state() {
+        use crate::PackageStateStore;
+        use crate::types::CustomConfigImage;
+
+        #[derive(Debug, PartialEq, Eq)]
+        struct State {
+            config: CustomConfigImage<5>,
+        }
+
+        struct TestCustomConfig;
+
+        static SLOT: PackageStateStore<State> = PackageStateStore::new();
+
+        fn no_state() -> Option<&'static mut State> {
+            None
+        }
+
+        impl SourceCustomConfigCallback<5> for TestCustomConfig {
+            type State = State;
+
+            fn state_source() -> PackageStateAccess<'static, Self::State> {
+                PackageStateAccess::with_firmware_fallback(&SLOT, no_state)
+            }
+
+            fn default_config() -> ConfigBytes<'static> {
+                ConfigBytes::new(&[1, 2, 3, 4, 0])
+            }
+
+            fn current_config(state: &Self::State) -> Option<ConfigBytes<'_>> {
+                Some(ConfigBytes::new(state.config.as_bytes()))
+            }
+
+            fn set_config(state: &mut Self::State, config: ConfigBytes<'_>) -> bool {
+                let Some(config) =
+                    CustomConfigImage::from_serialized(config.as_bytes(), [1, 2, 3, 4])
+                else {
+                    return false;
+                };
+                state.config = config;
+                true
+            }
+
+            fn config_xml() -> ConfigXml<'static> {
+                ConfigXml::new(b"<typed/>")
+            }
+        }
+
+        let state = Box::leak(Box::new(State {
+            config: CustomConfigImage::new([1, 2, 3, 4, 9]),
+        }));
+        unsafe { SLOT.install(state) };
+
+        let mut out = [0_u8; 5];
+        assert_eq!(
+            unsafe { stateful_custom_config_get::<TestCustomConfig, 5>(out.as_mut_ptr(), true) },
+            5
+        );
+        assert_eq!(out, [1, 2, 3, 4, 0]);
+
+        assert_eq!(
+            unsafe { stateful_custom_config_get::<TestCustomConfig, 5>(out.as_mut_ptr(), false) },
+            5
+        );
+        assert_eq!(out, [1, 2, 3, 4, 9]);
+        assert_eq!(
+            unsafe { stateful_custom_config_get::<TestCustomConfig, 5>(ptr::null_mut(), false) },
+            0
+        );
+
+        let mut incoming = [1_u8, 2, 3, 4, 7];
+        assert!(unsafe {
+            stateful_custom_config_set::<TestCustomConfig, 5>(incoming.as_mut_ptr())
+        });
+        assert_eq!(state.config.as_bytes(), &[1, 2, 3, 4, 7]);
+        assert!(!unsafe { stateful_custom_config_set::<TestCustomConfig, 5>(ptr::null_mut()) });
+        assert_eq!(state.config.as_bytes(), &[1, 2, 3, 4, 7]);
+
+        incoming[0] = 9;
+        assert!(!unsafe {
+            stateful_custom_config_set::<TestCustomConfig, 5>(incoming.as_mut_ptr())
+        });
+        assert_eq!(state.config.as_bytes(), &[1, 2, 3, 4, 7]);
+
+        SLOT.clear();
+    }
+
+    #[test]
+    fn source_custom_config_callback_prefers_runtime_and_falls_back_to_loader_state() {
+        use crate::types::CustomConfigImage;
+        use crate::{PackageStateAccess, PackageStateStore};
+        use core::ptr::NonNull;
+        use core::sync::atomic::{AtomicPtr, Ordering};
+
+        #[derive(Debug, PartialEq, Eq)]
+        struct State {
+            config: CustomConfigImage<5>,
+        }
+
+        struct TestCustomConfig;
+
+        static RUNTIME: PackageStateStore<State> = PackageStateStore::new();
+        static FALLBACK: AtomicPtr<State> = AtomicPtr::new(ptr::null_mut());
+
+        fn fallback_state() -> Option<&'static mut State> {
+            NonNull::new(FALLBACK.load(Ordering::Acquire))
+                .map(|mut state| unsafe { state.as_mut() })
+        }
+
+        impl SourceCustomConfigCallback<5> for TestCustomConfig {
+            type State = State;
+
+            fn state_source() -> PackageStateAccess<'static, Self::State> {
+                PackageStateAccess::with_firmware_fallback(&RUNTIME, fallback_state)
+            }
+
+            fn default_config() -> ConfigBytes<'static> {
+                ConfigBytes::new(&[1, 2, 3, 4, 0])
+            }
+
+            fn current_config(state: &Self::State) -> Option<ConfigBytes<'_>> {
+                Some(ConfigBytes::new(state.config.as_bytes()))
+            }
+
+            fn set_config(state: &mut Self::State, config: ConfigBytes<'_>) -> bool {
+                let Some(config) =
+                    CustomConfigImage::from_serialized(config.as_bytes(), [1, 2, 3, 4])
+                else {
+                    return false;
+                };
+                state.config = config;
+                true
+            }
+
+            fn config_xml() -> ConfigXml<'static> {
+                ConfigXml::new(b"<source/>")
+            }
+        }
+
+        // C map: package callbacks recover loader-owned state through
+        // `ARG(PROG_ADDR)` at `third_party/vesc_pkg_lib/vesc_c_if.h:697-700`;
+        // VESC resolves that package argument at
+        // `third_party/vesc/lispBM/lispif_c_lib.c:151-158`. The Rust runtime
+        // slot is preferred while installed, then the callback falls back to
+        // that firmware-owned state.
+        let runtime_state = Box::leak(Box::new(State {
+            config: CustomConfigImage::new([1, 2, 3, 4, 9]),
+        }));
+        let fallback_state_value = Box::leak(Box::new(State {
+            config: CustomConfigImage::new([1, 2, 3, 4, 8]),
+        }));
+        unsafe { RUNTIME.install(runtime_state) };
+        FALLBACK.store(core::ptr::from_mut(fallback_state_value), Ordering::Release);
+
+        let mut out = [0_u8; 5];
+        assert_eq!(
+            unsafe { stateful_custom_config_get::<TestCustomConfig, 5>(out.as_mut_ptr(), false) },
+            5
+        );
+        assert_eq!(out, [1, 2, 3, 4, 9]);
+
+        let mut incoming = [1_u8, 2, 3, 4, 7];
+        assert!(unsafe {
+            stateful_custom_config_set::<TestCustomConfig, 5>(incoming.as_mut_ptr())
+        });
+        assert_eq!(runtime_state.config.as_bytes(), &[1, 2, 3, 4, 7]);
+        assert_eq!(fallback_state_value.config.as_bytes(), &[1, 2, 3, 4, 8]);
+
+        RUNTIME.clear();
+        assert_eq!(
+            unsafe { stateful_custom_config_get::<TestCustomConfig, 5>(out.as_mut_ptr(), false) },
+            5
+        );
+        assert_eq!(out, [1, 2, 3, 4, 8]);
+        assert!(!unsafe { stateful_custom_config_set::<TestCustomConfig, 5>(ptr::null_mut()) });
+
+        FALLBACK.store(ptr::null_mut(), Ordering::Release);
+    }
+}

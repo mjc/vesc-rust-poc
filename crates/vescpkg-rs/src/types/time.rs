@@ -65,6 +65,10 @@ macro_rules! seconds_type {
 
 seconds_type!(TimeoutDuration, "Timeout duration in VESC seconds.");
 seconds_type!(
+    CurrentOffDelay,
+    "Motor current off-delay duration in VESC seconds."
+);
+seconds_type!(
     RemoteAge,
     "Age of the latest remote input sample in VESC seconds."
 );

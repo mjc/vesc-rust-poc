@@ -1,5 +1,7 @@
 //! Configuration semantic wrappers.
 
+use core::marker::PhantomData;
+
 use crate::units::{Distance, FluxLinkage, Inductance, Resistance};
 
 macro_rules! positive_count_type {
@@ -19,8 +21,8 @@ macro_rules! positive_count_type {
                 }
             }
 
-            /// Explicitly extract the raw count.
-            pub const fn get(self) -> u16 {
+            /// Encode the count for the firmware boundary.
+            pub const fn as_u16(self) -> u16 {
                 self.0
             }
         }
@@ -61,6 +63,411 @@ macro_rules! unit_type {
     };
 }
 
+/// Fixed-size serialized VESC custom-config bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct CustomConfigImage<const LEN: usize>([u8; LEN]);
+
+impl<const LEN: usize> CustomConfigImage<LEN> {
+    /// Wrap already validated custom-config bytes.
+    pub const fn new(bytes: [u8; LEN]) -> Self {
+        Self(bytes)
+    }
+
+    /// Parse bytes with the generated 32-bit config signature.
+    pub fn from_serialized(bytes: &[u8], signature: [u8; 4]) -> Option<Self> {
+        let bytes = <&[u8; LEN]>::try_from(bytes).ok()?;
+        bytes.starts_with(&signature).then_some(Self(*bytes))
+    }
+
+    /// Return the serialized config bytes.
+    pub const fn as_bytes(&self) -> &[u8; LEN] {
+        &self.0
+    }
+
+    /// Read one byte, returning zero for out-of-range generated offsets.
+    pub(crate) fn byte_at(&self, offset: usize) -> u8 {
+        self.0.get(offset).copied().unwrap_or(0)
+    }
+
+    /// Read one big-endian `u16`, returning zero for out-of-range generated offsets.
+    pub(crate) fn be_u16_at(&self, offset: usize) -> u16 {
+        u16::from_be_bytes([self.byte_at(offset), self.byte_at(offset + 1)])
+    }
+
+    /// Read a generated boolean flag.
+    fn flag_at(&self, offset: usize) -> Option<bool> {
+        self.0.get(offset).map(|value| *value != 0)
+    }
+
+    /// Edit this config image in place.
+    pub fn editor(&mut self) -> CustomConfigEditor<'_, LEN> {
+        CustomConfigEditor(&mut self.0)
+    }
+}
+
+/// In-place editor for fixed-size serialized VESC custom-config bytes.
+pub struct CustomConfigEditor<'a, const LEN: usize>(&'a mut [u8; LEN]);
+
+impl<const LEN: usize> CustomConfigEditor<'_, LEN> {
+    /// Write one byte for crate-internal field descriptors.
+    pub(crate) fn set_byte_at(&mut self, offset: usize, value: u8) -> Option<()> {
+        let byte = self.0.get_mut(offset)?;
+        *byte = value;
+        Some(())
+    }
+
+    /// Write one big-endian `u16`, returning `None` when the field is out of range.
+    pub(crate) fn set_be_u16_at(&mut self, offset: usize, value: u16) -> Option<()> {
+        let bytes = offset
+            .checked_add(2)
+            .and_then(|end| self.0.get_mut(offset..end))
+            .and_then(|bytes| <&mut [u8; 2]>::try_from(bytes).ok())?;
+        *bytes = value.to_be_bytes();
+        Some(())
+    }
+}
+
+/// Byte offset into generated custom-config bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+struct CustomConfigOffset(usize);
+
+impl CustomConfigOffset {
+    /// Create a generated config offset.
+    const fn new(offset: usize) -> Self {
+        Self(offset)
+    }
+
+    /// Explicitly extract the raw byte offset.
+    const fn get(self) -> usize {
+        self.0
+    }
+}
+
+/// Generated custom-config millisecond-duration field descriptor.
+///
+/// C map: Refloat decodes generated unsigned 16-bit values in big-endian
+/// order at `third_party/refloat/src/conf/buffer.c:188-191`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct CustomConfigDurationField(CustomConfigOffset);
+
+impl CustomConfigDurationField {
+    /// Name a generated millisecond field by its serialized byte offset.
+    pub const fn new(offset: usize) -> Self {
+        Self(CustomConfigOffset::new(offset))
+    }
+
+    /// Decode the field directly into a duration.
+    #[inline(always)]
+    pub fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> crate::VescSeconds {
+        crate::VescSeconds::from_seconds(f32::from(image.be_u16_at(self.0.get())) / 1000.0)
+    }
+
+    /// Encode a semantic duration into its generated millisecond field.
+    pub fn write<const LEN: usize>(
+        self,
+        editor: &mut CustomConfigEditor<'_, LEN>,
+        duration: crate::VescSeconds,
+    ) -> Option<()> {
+        editor.set_be_u16_at(self.0.get(), (duration.as_seconds() * 1000.0) as u16)
+    }
+}
+
+/// Generated custom-config voltage field descriptor.
+///
+/// C map: Refloat decodes generated unsigned 16-bit values in big-endian
+/// order at `third_party/refloat/src/conf/buffer.c:188-191`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct CustomConfigVoltageField(CustomConfigOffset);
+
+impl CustomConfigVoltageField {
+    /// Name a generated millivolt field by its serialized byte offset.
+    pub const fn new(offset: usize) -> Self {
+        Self(CustomConfigOffset::new(offset))
+    }
+
+    /// Decode the field directly into voltage.
+    #[inline(always)]
+    pub fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> crate::units::Voltage {
+        crate::units::Voltage::from_volts(f32::from(image.be_u16_at(self.0.get())) / 1000.0)
+    }
+
+    /// Encode semantic voltage into its generated millivolt field.
+    pub fn write<const LEN: usize>(
+        self,
+        editor: &mut CustomConfigEditor<'_, LEN>,
+        voltage: crate::units::Voltage,
+    ) -> Option<()> {
+        editor.set_be_u16_at(self.0.get(), (voltage.as_volts() * 1000.0) as u16)
+    }
+}
+
+/// Generated custom-config electrical-speed field descriptor.
+///
+/// C map: Refloat decodes generated unsigned 16-bit values in big-endian
+/// order at `third_party/refloat/src/conf/buffer.c:188-191`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct CustomConfigElectricalSpeedField(CustomConfigOffset);
+
+impl CustomConfigElectricalSpeedField {
+    /// Name a generated electrical-speed field by its serialized byte offset.
+    pub const fn new(offset: usize) -> Self {
+        Self(CustomConfigOffset::new(offset))
+    }
+
+    /// Decode the field directly into electrical RPM.
+    #[inline(always)]
+    pub fn read<const LEN: usize>(
+        self,
+        image: &CustomConfigImage<LEN>,
+    ) -> super::motion::ElectricalSpeed {
+        super::motion::ElectricalSpeed::new(crate::units::Rpm::from_revolutions_per_minute(
+            f32::from(image.be_u16_at(self.0.get())),
+        ))
+    }
+
+    /// Encode semantic electrical speed into its generated ERPM field.
+    pub fn write<const LEN: usize>(
+        self,
+        editor: &mut CustomConfigEditor<'_, LEN>,
+        speed: super::motion::ElectricalSpeed,
+    ) -> Option<()> {
+        editor.set_be_u16_at(self.0.get(), speed.rpm().as_revolutions_per_minute() as u16)
+    }
+}
+
+/// Generated custom-config sample-rate field descriptor.
+///
+/// C map: Refloat decodes generated unsigned 16-bit values in big-endian
+/// order at `third_party/refloat/src/conf/buffer.c:188-191`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct CustomConfigSampleRateField(CustomConfigOffset);
+
+impl CustomConfigSampleRateField {
+    /// Name a generated sample-rate field by its serialized byte offset.
+    pub const fn new(offset: usize) -> Self {
+        Self(CustomConfigOffset::new(offset))
+    }
+
+    /// Decode the field directly into its semantic sample-rate value.
+    #[inline(always)]
+    pub fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> crate::SampleRate {
+        crate::SampleRate::from_hertz(f32::from(image.be_u16_at(self.0.get())))
+    }
+
+    /// Encode a semantic sample rate into its generated unsigned field.
+    pub fn write<const LEN: usize>(
+        self,
+        editor: &mut CustomConfigEditor<'_, LEN>,
+        sample_rate: crate::SampleRate,
+    ) -> Option<()> {
+        editor.set_be_u16_at(self.0.get(), sample_rate.as_hertz() as u16)
+    }
+}
+
+/// Generated boolean custom-config field descriptor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct CustomConfigFlagField(CustomConfigOffset);
+
+impl CustomConfigFlagField {
+    /// Name a generated boolean field by its serialized byte offset.
+    pub const fn new(offset: usize) -> Self {
+        Self(CustomConfigOffset::new(offset))
+    }
+
+    /// Read the field, returning `None` when its generated offset is invalid.
+    #[inline(always)]
+    pub fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> Option<bool> {
+        image.flag_at(self.0.get())
+    }
+
+    /// Write the field, returning `None` when its generated offset is invalid.
+    #[inline(always)]
+    pub fn write<const LEN: usize>(
+        self,
+        editor: &mut CustomConfigEditor<'_, LEN>,
+        value: bool,
+    ) -> Option<()> {
+        editor.set_byte_at(self.0.get(), u8::from(value))
+    }
+}
+
+/// Generated enum custom-config field descriptor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct CustomConfigEnumField<T>(CustomConfigOffset, PhantomData<fn() -> T>);
+
+impl<T> CustomConfigEnumField<T> {
+    /// Name a generated enum field by its serialized byte offset.
+    pub const fn new(offset: usize) -> Self {
+        Self(CustomConfigOffset::new(offset), PhantomData)
+    }
+
+    /// Decode the field into its Rust enum.
+    #[inline(always)]
+    pub fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> Option<T>
+    where
+        T: From<u8>,
+    {
+        image.0.get(self.0.get()).copied().map(T::from)
+    }
+}
+
+/// Generated two-byte field that a safety policy resets to zero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct CustomConfigResetField(CustomConfigOffset);
+
+impl CustomConfigResetField {
+    /// Name a generated two-byte field by its serialized byte offset.
+    pub const fn new(offset: usize) -> Self {
+        Self(CustomConfigOffset::new(offset))
+    }
+
+    /// Reset the generated field without exposing its storage representation.
+    pub fn clear<const LEN: usize>(self, editor: &mut CustomConfigEditor<'_, LEN>) -> Option<()> {
+        editor.set_be_u16_at(self.0.get(), 0)
+    }
+}
+
+// Refloat's generated float16 fields store a signed big-endian integer and a
+// generated scale. C map: `third_party/refloat/src/conf/buffer.c:182-210`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CustomConfigScaledField {
+    offset: CustomConfigOffset,
+    scale: f32,
+}
+
+impl CustomConfigScaledField {
+    const fn new(offset: usize, scale: f32) -> Self {
+        Self {
+            offset: CustomConfigOffset::new(offset),
+            scale,
+        }
+    }
+
+    #[inline(always)]
+    fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> f32 {
+        f32::from(image.be_u16_at(self.offset.get()) as i16) / self.scale
+    }
+
+    fn write<const LEN: usize>(
+        self,
+        editor: &mut CustomConfigEditor<'_, LEN>,
+        value: f32,
+    ) -> Option<()> {
+        editor.set_be_u16_at(self.offset.get(), (value * self.scale) as i16 as u16)
+    }
+}
+
+macro_rules! semantic_scaled_config_field {
+    ($name:ident, $value:ty, $decode:expr, $encode:expr, $docs:literal) => {
+        #[doc = $docs]
+        #[derive(Debug, Clone, Copy, PartialEq)]
+        #[repr(transparent)]
+        pub struct $name(CustomConfigScaledField);
+
+        impl $name {
+            /// Name a generated scaled field by its serialized offset and scale.
+            pub const fn new(offset: usize, scale: f32) -> Self {
+                Self(CustomConfigScaledField::new(offset, scale))
+            }
+
+            /// Decode the field directly into its semantic value.
+            #[inline(always)]
+            pub fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> $value {
+                ($decode)(self.0.read(image))
+            }
+
+            /// Encode a semantic value into its generated scaled field.
+            pub fn write<const LEN: usize>(
+                self,
+                editor: &mut CustomConfigEditor<'_, LEN>,
+                value: $value,
+            ) -> Option<()> {
+                self.0.write(editor, ($encode)(value))
+            }
+        }
+    };
+}
+
+semantic_scaled_config_field!(
+    CustomConfigMotorCurrentField,
+    crate::MotorCurrent,
+    |value| crate::MotorCurrent::new(crate::Current::from_amps(value)),
+    |value: crate::MotorCurrent| value.current().as_amps(),
+    "Generated scaled motor-current field descriptor."
+);
+semantic_scaled_config_field!(
+    CustomConfigAngleField,
+    crate::AngleDegrees,
+    crate::AngleDegrees::from_degrees,
+    crate::AngleDegrees::as_degrees,
+    "Generated scaled angle field descriptor."
+);
+semantic_scaled_config_field!(
+    CustomConfigAngularVelocityField,
+    crate::AngularVelocity,
+    crate::AngularVelocity::from_degrees_per_second,
+    crate::AngularVelocity::as_degrees_per_second,
+    "Generated scaled angular-velocity field descriptor."
+);
+semantic_scaled_config_field!(
+    CustomConfigSecondsField,
+    crate::VescSeconds,
+    crate::VescSeconds::from_seconds,
+    crate::VescSeconds::as_seconds,
+    "Generated scaled-seconds field descriptor."
+);
+semantic_scaled_config_field!(
+    CustomConfigMahonyPitchGainField,
+    crate::MahonyPitchGain,
+    crate::MahonyPitchGain::new,
+    crate::MahonyPitchGain::value,
+    "Generated Mahony pitch-gain field descriptor."
+);
+semantic_scaled_config_field!(
+    CustomConfigMahonyRollGainField,
+    crate::MahonyRollGain,
+    crate::MahonyRollGain::new,
+    crate::MahonyRollGain::value,
+    "Generated Mahony roll-gain field descriptor."
+);
+semantic_scaled_config_field!(
+    CustomConfigAngleCurrentGainField,
+    crate::AngleCurrentGain,
+    crate::AngleCurrentGain::new,
+    crate::AngleCurrentGain::as_amps_per_degree,
+    "Generated angle-current-gain field descriptor."
+);
+semantic_scaled_config_field!(
+    CustomConfigRateCurrentGainField,
+    crate::RateCurrentGain,
+    crate::RateCurrentGain::new,
+    crate::RateCurrentGain::as_amps_per_degree_per_second,
+    "Generated rate-current-gain field descriptor."
+);
+semantic_scaled_config_field!(
+    CustomConfigIntegralCurrentGainField,
+    crate::IntegralCurrentGain,
+    crate::IntegralCurrentGain::new,
+    crate::IntegralCurrentGain::as_amps_per_degree_per_tick,
+    "Generated integral-current-gain field descriptor."
+);
+semantic_scaled_config_field!(
+    CustomConfigPidScaleField,
+    crate::PidScale,
+    crate::PidScale::new,
+    crate::PidScale::value,
+    "Generated PID-scale field descriptor."
+);
+
 /// Gear reduction ratio configured for speed/distance calculations.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 #[repr(transparent)]
@@ -76,8 +483,8 @@ impl GearRatio {
         }
     }
 
-    /// Explicitly extract the raw gear ratio.
-    pub const fn get(self) -> f32 {
+    /// Return the configured ratio for typed calculations.
+    pub const fn as_f32(self) -> f32 {
         self.0
     }
 }
@@ -140,3 +547,182 @@ unit_type!(
     "Configured FOC motor flux linkage.",
     "Return the typed motor flux linkage without erasing it to a primitive."
 );
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        CustomConfigAngleCurrentGainField, CustomConfigAngleField,
+        CustomConfigAngularVelocityField, CustomConfigDurationField,
+        CustomConfigElectricalSpeedField, CustomConfigEnumField, CustomConfigFlagField,
+        CustomConfigImage, CustomConfigIntegralCurrentGainField, CustomConfigMahonyPitchGainField,
+        CustomConfigMahonyRollGainField, CustomConfigMotorCurrentField, CustomConfigPidScaleField,
+        CustomConfigRateCurrentGainField, CustomConfigResetField, CustomConfigSampleRateField,
+        CustomConfigSecondsField, CustomConfigVoltageField,
+    };
+    use crate::{ElectricalSpeed, Rpm, SampleRate, VescSeconds, Voltage};
+
+    const SIGNATURE: [u8; 4] = [0x90, 0xb7, 0xa9, 0xba];
+
+    #[test]
+    fn custom_config_image_rejects_wrong_length_or_signature() {
+        assert!(CustomConfigImage::<6>::from_serialized(&SIGNATURE, SIGNATURE).is_none());
+
+        let mut bytes = [0x90, 0xb7, 0xa9, 0xba, 0x00, 0x01];
+        assert!(CustomConfigImage::<6>::from_serialized(&bytes, SIGNATURE).is_some());
+
+        bytes[0] = 0;
+        assert!(CustomConfigImage::<6>::from_serialized(&bytes, SIGNATURE).is_none());
+    }
+
+    #[test]
+    fn sample_rate_field_decodes_big_endian_hertz() {
+        let field = CustomConfigSampleRateField::new(0);
+        let mut image = CustomConfigImage::new([0x00, 0xc8]);
+
+        assert_eq!(field.read(&image), SampleRate::from_hertz(200.0));
+        assert_eq!(
+            CustomConfigSampleRateField::new(99).read(&image),
+            SampleRate::from_hertz(0.0),
+        );
+        assert_eq!(
+            field.write(&mut image.editor(), SampleRate::from_hertz(500.0)),
+            Some(()),
+        );
+        assert_eq!(image.as_bytes(), &[0x01, 0xf4]);
+    }
+
+    #[test]
+    fn electrical_speed_field_decodes_big_endian_erpm() {
+        let field = CustomConfigElectricalSpeedField::new(0);
+        let mut image = CustomConfigImage::new([0x30, 0x39]);
+
+        assert_eq!(
+            field.read(&image),
+            ElectricalSpeed::new(Rpm::from_revolutions_per_minute(12_345.0)),
+        );
+        let speed = ElectricalSpeed::new(Rpm::from_revolutions_per_minute(5432.0));
+        assert_eq!(field.write(&mut image.editor(), speed), Some(()));
+        assert_eq!(field.read(&image), speed);
+    }
+
+    #[test]
+    fn voltage_field_decodes_big_endian_millivolts() {
+        let field = CustomConfigVoltageField::new(0);
+        let mut image = CustomConfigImage::new([0x0c, 0xe4]);
+
+        assert_eq!(field.read(&image), Voltage::from_volts(3.3));
+        assert_eq!(
+            field.write(&mut image.editor(), Voltage::from_volts(4.2)),
+            Some(()),
+        );
+        assert_eq!(field.read(&image), Voltage::from_volts(4.2));
+    }
+
+    #[test]
+    fn duration_field_decodes_big_endian_milliseconds() {
+        let field = CustomConfigDurationField::new(0);
+        let mut image = CustomConfigImage::new([0x04, 0xe2]);
+
+        assert_eq!(field.read(&image), VescSeconds::from_seconds(1.25));
+        assert_eq!(
+            field.write(&mut image.editor(), VescSeconds::from_seconds(2.5)),
+            Some(()),
+        );
+        assert_eq!(field.read(&image), VescSeconds::from_seconds(2.5));
+    }
+
+    #[test]
+    fn flag_field_reads_and_writes_boolean_values() {
+        let mut image = CustomConfigImage::new([0, 1]);
+        let flag = CustomConfigFlagField::new(1);
+        let missing_flag = CustomConfigFlagField::new(99);
+
+        assert_eq!(flag.read(&image), Some(true));
+        assert_eq!(missing_flag.read(&image), None);
+        assert_eq!(flag.write(&mut image.editor(), false), Some(()));
+        assert_eq!(flag.read(&image), Some(false));
+        assert_eq!(missing_flag.write(&mut image.editor(), true), None);
+    }
+
+    #[test]
+    fn scaled_fields_decode_and_encode_semantic_values() {
+        let mut image = CustomConfigImage::new([0x00, 0x7b]);
+
+        assert_eq!(
+            CustomConfigMotorCurrentField::new(0, 10.0).read(&image),
+            crate::MotorCurrent::new(crate::Current::from_amps(12.3))
+        );
+        assert_eq!(
+            CustomConfigAngleField::new(0, 10.0).read(&image),
+            crate::AngleDegrees::from_degrees(12.3)
+        );
+        assert_eq!(
+            CustomConfigAngularVelocityField::new(0, 10.0).read(&image),
+            crate::AngularVelocity::from_degrees_per_second(12.3)
+        );
+        assert_eq!(
+            CustomConfigSecondsField::new(0, 10.0).read(&image),
+            crate::VescSeconds::from_seconds(12.3)
+        );
+        assert_eq!(
+            CustomConfigMahonyPitchGainField::new(0, 10.0).read(&image),
+            crate::MahonyPitchGain::new(12.3)
+        );
+        assert_eq!(
+            CustomConfigMahonyRollGainField::new(0, 10.0).read(&image),
+            crate::MahonyRollGain::new(12.3)
+        );
+        assert_eq!(
+            CustomConfigAngleCurrentGainField::new(0, 10.0).read(&image),
+            crate::AngleCurrentGain::new(12.3)
+        );
+        assert_eq!(
+            CustomConfigRateCurrentGainField::new(0, 10.0).read(&image),
+            crate::RateCurrentGain::new(12.3)
+        );
+        assert_eq!(
+            CustomConfigIntegralCurrentGainField::new(0, 10.0).read(&image),
+            crate::IntegralCurrentGain::new(12.3)
+        );
+        assert_eq!(
+            CustomConfigPidScaleField::new(0, 10.0).read(&image),
+            crate::PidScale::new(12.3)
+        );
+
+        CustomConfigAngleField::new(0, 10.0)
+            .write(&mut image.editor(), crate::AngleDegrees::from_degrees(-4.2))
+            .expect("valid generated field");
+        assert_eq!(image.as_bytes(), &[0xff, 0xd6]);
+    }
+
+    #[test]
+    fn enum_and_reset_fields_hide_generated_storage() {
+        #[derive(Debug, PartialEq, Eq)]
+        enum Mode {
+            Known,
+            Unknown(u8),
+        }
+
+        impl From<u8> for Mode {
+            fn from(value: u8) -> Self {
+                if value == 1 {
+                    Self::Known
+                } else {
+                    Self::Unknown(value)
+                }
+            }
+        }
+
+        let mut image = CustomConfigImage::new([7, 0x12, 0x34]);
+        assert_eq!(
+            CustomConfigEnumField::<Mode>::new(0).read(&image),
+            Some(Mode::Unknown(7))
+        );
+        assert_eq!(CustomConfigEnumField::<Mode>::new(3).read(&image), None);
+
+        CustomConfigResetField::new(1)
+            .clear(&mut image.editor())
+            .expect("valid generated field");
+        assert_eq!(image.as_bytes(), &[7, 0, 0]);
+    }
+}

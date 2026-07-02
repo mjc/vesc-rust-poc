@@ -21,8 +21,8 @@ impl ThreadPriority {
         }
     }
 
-    /// Explicitly extract the raw priority.
-    pub const fn get(self) -> i8 {
+    /// Encode the priority for the firmware boundary.
+    pub const fn as_i8(self) -> i8 {
         self.0
     }
 }
@@ -57,8 +57,8 @@ macro_rules! nonzero_u32_token {
                 }
             }
 
-            /// Explicitly extract the raw token.
-            pub const fn get(self) -> u32 {
+            /// Encode the token for the firmware boundary.
+            pub const fn as_u32(self) -> u32 {
                 self.0
             }
         }
