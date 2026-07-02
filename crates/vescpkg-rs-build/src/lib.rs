@@ -76,6 +76,9 @@ pub mod package_runtime;
 pub mod package_target;
 /// Host-side package wire format helpers.
 pub mod package_wire;
+/// Refloat source-tree native payload build helpers.
+#[allow(dead_code, unused_imports)]
+pub(crate) mod refloat_native_build;
 /// Refloat source-tree package asset generation helpers.
 #[allow(dead_code, unused_imports)]
 pub(crate) mod refloat_package_assets;
