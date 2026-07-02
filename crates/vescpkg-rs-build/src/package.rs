@@ -109,6 +109,16 @@ impl Package {
         Self::from_bytes(&bytes)
     }
 
+    /// Build and write a package from a `pkgdesc.qml` and its referenced files.
+    pub fn write_from_manifest(manifest: impl AsRef<Path>) -> Result<PathBuf, PackageError> {
+        let manifest = manifest_path(manifest.as_ref());
+        let staging_dir = staging_dir_from_manifest(&manifest)?;
+        let descriptor = parse_package_manifest(&manifest)?;
+        let output = staging_dir.join(descriptor.output());
+        Self::from_manifest(&manifest)?.write(&output)?;
+        Ok(output)
+    }
+
     /// Encode the package and write it to disk.
     pub fn write(&self, path: impl AsRef<Path>) -> Result<Vec<u8>, PackageError> {
         let bytes = self.to_bytes()?;
@@ -342,9 +352,7 @@ mod tests {
         assert_eq!(builder.build_plan().layout().version(), "0.1.0");
     }
 
-    #[test]
-    fn package_from_manifest_uses_descriptor_referenced_assets() {
-        let harness = PackageTestHarness::new().ensure_loopback_staging();
+    fn write_refloat_style_staging(harness: &PackageTestHarness) {
         let staging = harness.loopback_staging_dir();
         std::fs::create_dir_all(staging.join("lisp")).unwrap();
         std::fs::create_dir_all(staging.join("src")).unwrap();
@@ -365,6 +373,13 @@ mod tests {
             "import QtQuick 2.15\n\nItem {\n    property string pkgName: \"Refloat\"\n    property string pkgDescriptionMd: \"package_README-gen.md\"\n    property string pkgLisp: \"lisp/package.lisp\"\n    property string pkgQml: \"ui.qml\"\n    property bool pkgQmlIsFullscreen: true\n    property string pkgOutput: \"refloat.vescpkg\"\n}\n",
         )
         .unwrap();
+    }
+
+    #[test]
+    fn package_from_manifest_uses_descriptor_referenced_assets() {
+        let harness = PackageTestHarness::new().ensure_loopback_staging();
+        write_refloat_style_staging(&harness);
+        let staging = harness.loopback_staging_dir();
 
         let package = Package::from_manifest(staging.join("pkgdesc.qml")).expect("package");
         assert_eq!(package.name, "Refloat");
@@ -384,5 +399,18 @@ mod tests {
             panic!("expected one Lisp import, got {imports:?}");
         };
         assert_eq!(import.payload, b"refloat-native\0");
+    }
+
+    #[test]
+    fn write_from_manifest_uses_descriptor_output_path() {
+        let harness = PackageTestHarness::new().ensure_loopback_staging();
+        write_refloat_style_staging(&harness);
+        let staging = harness.loopback_staging_dir();
+
+        let output = Package::write_from_manifest(staging.join("pkgdesc.qml")).expect("package");
+        assert_eq!(output, staging.join("refloat.vescpkg"));
+        let package = Package::read(&output).expect("written package");
+        assert_eq!(package.name, "Refloat");
+        assert_eq!(package.description_md, "Refloat readme");
     }
 }
