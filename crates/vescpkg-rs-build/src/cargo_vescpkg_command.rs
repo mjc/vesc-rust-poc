@@ -4,12 +4,17 @@ use std::path::{Path, PathBuf};
 use crate::{
     BLE_LOOPBACK_PACKAGE_NAME, Package, PackageBinaryConversionRunner, PackageExample,
     PackageTargetError, PackageTargetMode, PackageTargetPlan, SNAKE_PACKAGE_NAME,
+    refloat_package_assets::{RefloatBuildInfo, RefloatSourceAssets},
 };
 
 /// Default package version used by the cargo subcommand wrapper.
 pub const DEFAULT_PACKAGE_VERSION: &str = "0.1.0";
 /// Default embedded target triple used by the cargo subcommand wrapper.
 pub const DEFAULT_TARGET_TRIPLE: &str = "thumbv7em-none-eabihf";
+/// Default Refloat build date used when no deterministic value is supplied.
+pub const DEFAULT_REFLOAT_BUILD_DATE: &str = "unknown";
+/// Default Refloat git commit used when no deterministic value is supplied.
+pub const DEFAULT_REFLOAT_GIT_COMMIT: &str = "unknown";
 /// Cargo subcommand name accepted by this parser.
 pub const BUILD_SUBCOMMAND: &str = "build";
 
@@ -39,6 +44,9 @@ pub struct CargoVescPkgInvocation {
     package_version: String,
     target_triple: String,
     manifest_path: Option<PathBuf>,
+    refloat_source_path: Option<PathBuf>,
+    refloat_build_date: String,
+    refloat_git_commit: String,
 }
 
 /// Errors produced while parsing `cargo vescpkg` arguments.
@@ -54,6 +62,12 @@ pub enum CargoVescPkgParseError {
     MissingExampleValue,
     /// `--manifest` was provided without a value.
     MissingManifestValue,
+    /// `--refloat-source` was provided without a value.
+    MissingRefloatSourceValue,
+    /// `--build-date` was provided without a value.
+    MissingBuildDateValue,
+    /// `--git-commit` was provided without a value.
+    MissingGitCommitValue,
     /// `--example` selected an unsupported package example.
     UnsupportedExample(String),
     /// An unsupported flag or positional argument was provided.
@@ -79,6 +93,9 @@ impl std::fmt::Display for CargoVescPkgParseError {
             Self::MissingTargetValue => f.write_str("missing value for --target"),
             Self::MissingExampleValue => f.write_str("missing value for --example"),
             Self::MissingManifestValue => f.write_str("missing value for --manifest"),
+            Self::MissingRefloatSourceValue => f.write_str("missing value for --refloat-source"),
+            Self::MissingBuildDateValue => f.write_str("missing value for --build-date"),
+            Self::MissingGitCommitValue => f.write_str("missing value for --git-commit"),
             Self::UnsupportedExample(example) => {
                 write!(f, "unsupported cargo vescpkg example: {example}")
             }
@@ -111,6 +128,9 @@ impl CargoVescPkgInvocation {
             package_version: DEFAULT_PACKAGE_VERSION.to_owned(),
             target_triple: DEFAULT_TARGET_TRIPLE.to_owned(),
             manifest_path: None,
+            refloat_source_path: None,
+            refloat_build_date: DEFAULT_REFLOAT_BUILD_DATE.to_owned(),
+            refloat_git_commit: DEFAULT_REFLOAT_GIT_COMMIT.to_owned(),
         }
     }
 
@@ -139,6 +159,24 @@ impl CargoVescPkgInvocation {
         self
     }
 
+    /// Use a Refloat source tree instead of the built-in examples.
+    pub fn with_refloat_source_path(mut self, refloat_source_path: impl Into<PathBuf>) -> Self {
+        self.mode = CargoVescPkgMode::BuildPackageOnly;
+        self.refloat_source_path = Some(refloat_source_path.into());
+        self
+    }
+
+    /// Use deterministic metadata for Refloat generated package assets.
+    pub fn with_refloat_build_info(
+        mut self,
+        build_date: impl Into<String>,
+        git_commit: impl Into<String>,
+    ) -> Self {
+        self.refloat_build_date = build_date.into();
+        self.refloat_git_commit = git_commit.into();
+        self
+    }
+
     /// Return the requested invocation mode.
     pub fn mode(&self) -> CargoVescPkgMode {
         self.mode
@@ -162,6 +200,21 @@ impl CargoVescPkgInvocation {
     /// Return the package descriptor path when this invocation builds from one.
     pub fn manifest_path(&self) -> Option<&Path> {
         self.manifest_path.as_deref()
+    }
+
+    /// Return the Refloat source path when this invocation builds from one.
+    pub fn refloat_source_path(&self) -> Option<&Path> {
+        self.refloat_source_path.as_deref()
+    }
+
+    /// Return the deterministic Refloat build date string.
+    pub fn refloat_build_date(&self) -> &str {
+        &self.refloat_build_date
+    }
+
+    /// Return the deterministic Refloat git commit string.
+    pub fn refloat_git_commit(&self) -> &str {
+        &self.refloat_git_commit
     }
 
     /// Return the package name associated with the selected example.
@@ -200,6 +253,14 @@ impl CargoVescPkgInvocation {
             args.push("--manifest".to_owned());
             args.push(manifest_path.display().to_string());
         }
+        if let Some(refloat_source_path) = &self.refloat_source_path {
+            args.push("--refloat-source".to_owned());
+            args.push(refloat_source_path.display().to_string());
+            args.push("--build-date".to_owned());
+            args.push(self.refloat_build_date.clone());
+            args.push("--git-commit".to_owned());
+            args.push(self.refloat_git_commit.clone());
+        }
         args.push("--target".to_owned());
         args.push(self.target_triple.clone());
         args
@@ -233,6 +294,25 @@ impl CargoVescPkgInvocation {
     where
         C: PackageBinaryConversionRunner,
     {
+        if let Some(refloat_source_path) = &self.refloat_source_path {
+            let repo_root = repo_root.into();
+            let output = RefloatSourceAssets::new(repo_root.join(refloat_source_path))
+                .write_package(&RefloatBuildInfo::new(
+                    self.refloat_build_date(),
+                    self.refloat_git_commit(),
+                ))
+                .map_err(|error| {
+                    CargoVescPkgError::Package(PackageTargetError::PackageOutput {
+                        path: refloat_source_path.clone(),
+                        reason: error.to_string(),
+                    })
+                })?;
+            return Ok(output
+                .strip_prefix(&repo_root)
+                .unwrap_or(&output)
+                .to_path_buf());
+        }
+
         if let Some(manifest_path) = &self.manifest_path {
             let repo_root = repo_root.into();
             let output =
@@ -275,6 +355,9 @@ where
     let mut example = CargoVescPkgExample::Loopback;
     let mut target_triple = DEFAULT_TARGET_TRIPLE.to_owned();
     let mut manifest_path = None;
+    let mut refloat_source_path = None;
+    let mut refloat_build_date = DEFAULT_REFLOAT_BUILD_DATE.to_owned();
+    let mut refloat_git_commit = DEFAULT_REFLOAT_GIT_COMMIT.to_owned();
     while let Some(argument) = args.next() {
         match argument.as_ref() {
             "--package-only" => mode = CargoVescPkgMode::BuildPackageOnly,
@@ -297,6 +380,25 @@ where
                 mode = CargoVescPkgMode::BuildPackageOnly;
                 manifest_path = Some(PathBuf::from(value.as_ref()));
             }
+            "--refloat-source" => {
+                let Some(value) = args.next() else {
+                    return Err(CargoVescPkgParseError::MissingRefloatSourceValue);
+                };
+                mode = CargoVescPkgMode::BuildPackageOnly;
+                refloat_source_path = Some(PathBuf::from(value.as_ref()));
+            }
+            "--build-date" => {
+                let Some(value) = args.next() else {
+                    return Err(CargoVescPkgParseError::MissingBuildDateValue);
+                };
+                refloat_build_date = value.as_ref().to_owned();
+            }
+            "--git-commit" => {
+                let Some(value) = args.next() else {
+                    return Err(CargoVescPkgParseError::MissingGitCommitValue);
+                };
+                refloat_git_commit = value.as_ref().to_owned();
+            }
             other if other.starts_with('-') => {
                 return Err(CargoVescPkgParseError::UnexpectedArgument(other.to_owned()));
             }
@@ -306,10 +408,16 @@ where
 
     let invocation = CargoVescPkgInvocation::new(mode)
         .with_example(example)
-        .with_target_triple(target_triple);
+        .with_target_triple(target_triple)
+        .with_refloat_build_info(refloat_build_date, refloat_git_commit);
 
-    Ok(match manifest_path {
+    let invocation = match manifest_path {
         Some(path) => invocation.with_manifest_path(path),
+        None => invocation,
+    };
+
+    Ok(match refloat_source_path {
+        Some(path) => invocation.with_refloat_source_path(path),
         None => invocation,
     })
 }
@@ -468,6 +576,43 @@ mod tests {
     }
 
     #[test]
+    fn parses_the_refloat_source_invocation() {
+        let invocation = parse_args([
+            "build",
+            "--refloat-source",
+            "refloat",
+            "--build-date",
+            "2026-07-02 06:00:00-06:00",
+            "--git-commit",
+            "0ef6e99",
+        ])
+        .expect("parse refloat source invocation");
+
+        assert_eq!(invocation.mode(), CargoVescPkgMode::BuildPackageOnly);
+        assert_eq!(
+            invocation.refloat_source_path(),
+            Some(PathBuf::from("refloat").as_path())
+        );
+        assert_eq!(invocation.refloat_build_date(), "2026-07-02 06:00:00-06:00");
+        assert_eq!(invocation.refloat_git_commit(), "0ef6e99");
+        assert_eq!(
+            invocation.subcommand_args(),
+            vec![
+                "build".to_owned(),
+                "--package-only".to_owned(),
+                "--refloat-source".to_owned(),
+                "refloat".to_owned(),
+                "--build-date".to_owned(),
+                "2026-07-02 06:00:00-06:00".to_owned(),
+                "--git-commit".to_owned(),
+                "0ef6e99".to_owned(),
+                "--target".to_owned(),
+                DEFAULT_TARGET_TRIPLE.to_owned(),
+            ]
+        );
+    }
+
+    #[test]
     fn parses_the_snake_example_invocation() {
         let invocation =
             parse_args(["build", "--example", "snake"]).expect("parse snake example invocation");
@@ -610,6 +755,38 @@ mod tests {
     }
 
     #[test]
+    fn run_with_writes_refloat_source_package_without_conversion_runner() {
+        let harness = write_refloat_source(PackageTestHarness::new());
+        let root = harness.root().to_path_buf();
+
+        let runner = FakeConversionRunner::recording();
+        let output = run_with(
+            &root,
+            [
+                "build",
+                "--refloat-source",
+                ".",
+                "--build-date",
+                "2026-07-02 06:00:00-06:00",
+                "--git-commit",
+                "0ef6e99",
+            ],
+            &runner,
+        )
+        .expect("run refloat source invocation");
+
+        assert_eq!(output, PathBuf::from("refloat.vescpkg"));
+        let package = crate::Package::read(root.join(output)).expect("written package");
+        assert_eq!(package.name, "Refloat");
+        assert!(package.description_md.contains("- Git Commit: #0ef6e99"));
+        assert_eq!(
+            package.qml_file,
+            "Item { property string title: \"Refloat\" }\n"
+        );
+        assert!(runner.calls().is_empty());
+    }
+
+    #[test]
     fn run_with_rejects_unknown_subcommands() {
         let harness = PackageTestHarness::new();
         let error = run_with(
@@ -636,10 +813,42 @@ mod tests {
             Err(super::CargoVescPkgParseError::MissingManifestValue)
         );
         assert_eq!(
+            parse_args(["build", "--refloat-source"]),
+            Err(super::CargoVescPkgParseError::MissingRefloatSourceValue)
+        );
+        assert_eq!(
+            parse_args(["build", "--build-date"]),
+            Err(super::CargoVescPkgParseError::MissingBuildDateValue)
+        );
+        assert_eq!(
+            parse_args(["build", "--git-commit"]),
+            Err(super::CargoVescPkgParseError::MissingGitCommitValue)
+        );
+        assert_eq!(
             parse_args(["build", "--example", "pong"]),
             Err(super::CargoVescPkgParseError::UnsupportedExample(
                 "pong".to_owned()
             ))
         );
+    }
+
+    fn write_refloat_source(harness: PackageTestHarness) -> PackageTestHarness {
+        harness
+            .write_text("package_README.md", "# Refloat\n")
+            .write_text("package_name", "Refloat\n")
+            .write_text("version", "1.2.1\n")
+            .write_text(
+                "ui.qml.in",
+                "Item { property string title: \"{{PACKAGE_NAME}}\" }\n",
+            )
+            .write_text(
+                "pkgdesc.qml",
+                "import QtQuick 2.15\n\nItem {\n    property string pkgName: \"Refloat\"\n    property string pkgDescriptionMd: \"package_README-gen.md\"\n    property string pkgLisp: \"lisp/package.lisp\"\n    property string pkgQml: \"ui.qml\"\n    property bool pkgQmlIsFullscreen: false\n    property string pkgOutput: \"refloat.vescpkg\"\n}\n",
+            )
+            .write_text(
+                "lisp/package.lisp",
+                "(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n",
+            )
+            .write_bytes("src/package_lib.bin", b"refloat-native\0")
     }
 }
