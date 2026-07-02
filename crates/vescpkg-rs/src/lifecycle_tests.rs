@@ -1,8 +1,14 @@
+use crate::MotorTelemetryApi;
 use crate::ble_loopback::register_loopback_app_data_handler_with;
 use crate::extension::ExtensionDescriptor;
 use crate::lifecycle::register_extension_from_image;
 use crate::lifecycle_core::{LbmApi, LoopbackLifecycle, PackageLifecycle};
-use crate::test_support::{FakeAppDataBindings, FakeBindings, stubs};
+use crate::test_support::{FakeAppDataBindings, FakeBindings, FakeMotorTelemetryBindings, stubs};
+use crate::types::{
+    AmpHoursCharged, AmpHoursDischarged, BatteryLevel, FirmwareFaultCode, InputVoltage,
+    MosfetTemperature, MotorTemperature, TripDistance, WattHoursCharged, WattHoursDischarged,
+};
+use crate::units::{Charge, Distance, Energy, OdometerMeters, Ratio, Temperature, Voltage};
 use crate::{RegisterError, ffi};
 use rstest::rstest;
 use vescpkg_rs_sys::{ExtensionHandler, LbmValue, LibInfo, NativeImage};
@@ -136,6 +142,79 @@ fn loopback_lifecycle_forwards_system_time_ticks(
 ) {
     let lifecycle = LoopbackLifecycle::new(FakeAppDataBindings::with_ticks(configured_ticks));
     assert_eq!(lifecycle.system_time_ticks(), expected_ticks);
+}
+
+#[test]
+fn motor_telemetry_api_forwards_absolute_distance_as_trip_distance() {
+    let distance = TripDistance::new(Distance::from_meters(12.5));
+    let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::with_distance_abs(distance));
+
+    assert_eq!(telemetry.distance_abs(), distance);
+    assert_eq!(telemetry.bindings().distance_abs_calls.get(), 1);
+}
+
+#[test]
+fn motor_telemetry_api_forwards_filtered_motor_temperatures() {
+    let mosfet = MosfetTemperature::new(Temperature::from_degrees_celsius(44.0));
+    let motor = MotorTemperature::new(Temperature::from_degrees_celsius(51.5));
+    let telemetry =
+        MotorTelemetryApi::new(FakeMotorTelemetryBindings::with_temperatures(mosfet, motor));
+
+    assert_eq!(telemetry.mosfet_temperature(), mosfet);
+    assert_eq!(telemetry.motor_temperature(), motor);
+    assert_eq!(telemetry.bindings().mosfet_temperature_calls.get(), 1);
+    assert_eq!(telemetry.bindings().motor_temperature_calls.get(), 1);
+}
+
+#[test]
+fn motor_telemetry_api_forwards_accumulated_ride_totals() {
+    let odometer = OdometerMeters::from_meters(123_456);
+    let discharged_charge = AmpHoursDischarged::new(Charge::from_amp_hours(3.2));
+    let charged_charge = AmpHoursCharged::new(Charge::from_amp_hours(0.8));
+    let discharged_energy = WattHoursDischarged::new(Energy::from_watt_hours(170.0));
+    let charged_energy = WattHoursCharged::new(Energy::from_watt_hours(18.5));
+    let battery_level = BatteryLevel::new(Ratio::from_ratio_const(0.72));
+    let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::with_ride_totals(
+        odometer,
+        discharged_charge,
+        charged_charge,
+        discharged_energy,
+        charged_energy,
+        battery_level,
+    ));
+
+    assert_eq!(telemetry.odometer(), odometer);
+    assert_eq!(telemetry.amp_hours_discharged(), discharged_charge);
+    assert_eq!(telemetry.amp_hours_charged(), charged_charge);
+    assert_eq!(telemetry.watt_hours_discharged(), discharged_energy);
+    assert_eq!(telemetry.watt_hours_charged(), charged_energy);
+    assert_eq!(telemetry.battery_level(), battery_level);
+    assert_eq!(telemetry.bindings().odometer_calls.get(), 1);
+    assert_eq!(telemetry.bindings().amp_hours_discharged_calls.get(), 1);
+    assert_eq!(telemetry.bindings().amp_hours_charged_calls.get(), 1);
+    assert_eq!(telemetry.bindings().watt_hours_discharged_calls.get(), 1);
+    assert_eq!(telemetry.bindings().watt_hours_charged_calls.get(), 1);
+    assert_eq!(telemetry.bindings().battery_level_calls.get(), 1);
+}
+
+#[test]
+fn motor_telemetry_api_forwards_firmware_fault_code() {
+    let fault = FirmwareFaultCode::from_compat_code(5);
+    let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::with_firmware_fault(fault));
+
+    assert_eq!(telemetry.firmware_fault(), fault);
+    assert_eq!(telemetry.bindings().firmware_fault_calls.get(), 1);
+}
+
+#[test]
+fn motor_telemetry_api_forwards_filtered_input_voltage() {
+    let voltage = InputVoltage::new(Voltage::from_volts(84.2));
+    let telemetry = MotorTelemetryApi::new(
+        FakeMotorTelemetryBindings::with_input_voltage_filtered(voltage),
+    );
+
+    assert_eq!(telemetry.input_voltage_filtered(), voltage);
+    assert_eq!(telemetry.bindings().input_voltage_filtered_calls.get(), 1);
 }
 
 #[rstest]

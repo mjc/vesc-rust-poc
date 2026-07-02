@@ -40,9 +40,12 @@ pub use alloc::{AllocBindings, AllocError, FirmwareAllocation, FirmwareAllocator
 pub use bindings::{AppDataBindings, LbmBindings};
 pub use extension::{ExtensionDescriptor, ExtensionNameError, RegisterError};
 pub use lifecycle_core::{LbmApi, LoopbackLifecycle, PackageLifecycle};
+pub use motor::{MotorTelemetryApi, MotorTelemetryBindings};
 
 #[cfg(not(test))]
 pub use bindings::RealBindings;
+#[cfg(not(test))]
+pub use motor::RealMotorTelemetryBindings;
 
 /// BLE loopback helpers and package-side packet handlers.
 pub mod ble_loopback;
@@ -50,6 +53,8 @@ pub mod ble_loopback;
 pub mod gpio;
 /// Device package entrypoint and loader-hook helpers.
 pub mod init;
+/// Motor telemetry bindings and convenience wrappers for package code.
+pub mod motor;
 
 #[cfg(not(test))]
 pub use gpio::RealGpioBindings;
@@ -71,12 +76,12 @@ pub mod prelude {
     pub use crate::{
         AllocBindings, AllocError, AppDataBindings, ExtensionDescriptor, ExtensionNameError,
         FirmwareAllocation, FirmwareAllocator, GpioApi, GpioBindings, LbmApi, LbmBindings,
-        LoopbackLifecycle, PackageLifecycle, ProtocolFrame, RegisterError, WireCommand,
-        WireVersion,
+        LoopbackLifecycle, MotorTelemetryApi, MotorTelemetryBindings, PackageLifecycle,
+        ProtocolFrame, RegisterError, WireCommand, WireVersion,
     };
 
     #[cfg(not(test))]
-    pub use crate::{RealBindings, RealGpioBindings};
+    pub use crate::{RealBindings, RealGpioBindings, RealMotorTelemetryBindings};
 }
 /// VESC-domain semantic wrappers over generic embedded units.
 pub mod types;
@@ -109,6 +114,29 @@ mod tests {
         assert_eq!(frame.version(), WireVersion::CURRENT);
         assert_eq!(frame.command(), WireCommand::Ping);
         assert_eq!(frame.payload(), &[7, 8]);
+    }
+
+    #[test]
+    fn package_author_prelude_exports_runtime_surface() {
+        use crate::prelude::*;
+
+        let _package = PackageLifecycle::new(crate::test_support::FakeBindings::new());
+        let _loopback = LoopbackLifecycle::new(crate::test_support::FakeAppDataBindings::new());
+        let telemetry = MotorTelemetryApi::new(
+            crate::test_support::FakeMotorTelemetryBindings::with_distance_abs(TripDistance::new(
+                Distance::from_meters(1.25),
+            )),
+        );
+        let _descriptor = ExtensionDescriptor::new(
+            c"ext-rust-prelude",
+            crate::test_support::stubs::extension_handler,
+        );
+        let command = WireCommand::Ping;
+        let switch = BrakeSwitch::Released;
+
+        assert_eq!(command, WireCommand::Ping);
+        assert_eq!(switch, BrakeSwitch::Released);
+        assert_eq!(telemetry.distance_abs().distance().as_meters(), 1.25);
     }
 
     #[test]

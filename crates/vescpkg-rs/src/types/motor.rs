@@ -150,6 +150,28 @@ impl AudioChannelError {
     }
 }
 
+/// Firmware motor fault code token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct FirmwareFaultCode(u8);
+
+impl FirmwareFaultCode {
+    /// Build a firmware fault-code token from the app-data compatible byte.
+    pub const fn from_compat_code(code: u8) -> Self {
+        Self(code)
+    }
+
+    /// Return the app-data compatible fault code byte.
+    pub const fn compat_code(self) -> u8 {
+        self.0
+    }
+
+    /// Return true when the firmware reports no active fault.
+    pub const fn is_none(self) -> bool {
+        self.0 == 0
+    }
+}
+
 current_type!(MotorCurrent, "Motor phase/current-control current.");
 current_type!(BrakeCurrent, "Motor braking current.");
 current_type!(HandbrakeCurrent, "Handbrake current command.");

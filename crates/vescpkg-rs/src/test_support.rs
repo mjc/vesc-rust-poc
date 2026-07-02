@@ -6,6 +6,8 @@ use core::ffi::c_char;
 use crate::bindings::{AppDataBindings, LbmBindings};
 use vescpkg_rs_sys::{AppDataHandler, ExtensionHandler, LbmValue};
 
+pub use crate::motor::test_support::FakeMotorTelemetryBindings;
+
 /// Fake extension registration bindings used by SDK tests.
 pub struct FakeBindings {
     /// Number of extension add calls observed.
