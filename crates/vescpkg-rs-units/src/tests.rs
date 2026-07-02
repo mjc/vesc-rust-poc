@@ -74,6 +74,30 @@ fn efficiency_units_remain_generic_ratios_between_energy_and_distance() {
 }
 
 #[test]
+fn energy_per_distance_uses_human_scale_ride_efficiency_units() {
+    let city_efficiency = EnergyPerDistance::from_watt_hours_per_kilometer(18.0);
+    let highway_efficiency = EnergyPerDistance::from_watt_hours_per_mile(32.0);
+
+    assert_eq!(city_efficiency.as_watt_hours_per_kilometer(), 18.0);
+    assert_eq!(city_efficiency.as_watt_hours_per_meter(), 0.018);
+    assert_eq!(highway_efficiency.as_watt_hours_per_mile(), 32.0);
+    assert_eq!(
+        highway_efficiency.as_watt_hours_per_meter(),
+        32.0 / 1609.344
+    );
+}
+
+#[test]
+fn energy_divided_by_distance_reports_ride_efficiency_without_manual_conversion() {
+    let commute_energy = Energy::from_watt_hours(540.0);
+    let commute_distance = Distance::from_meters(30_000.0);
+    let efficiency = commute_energy / commute_distance;
+
+    assert_eq!(efficiency.as_watt_hours_per_kilometer(), 18.0);
+    assert!((efficiency.as_watt_hours_per_mile() - 28.968_191).abs() < 0.000_01);
+}
+
+#[test]
 fn electrical_units_support_obvious_no_panic_arithmetic() {
     let voltage = Voltage::from_volts(50.4);
     let current = Current::from_amps(10.0);
