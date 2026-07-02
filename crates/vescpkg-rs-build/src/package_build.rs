@@ -237,6 +237,7 @@ impl PackageBuildPlan {
             description_md: &readme,
             lisp_source: &loader,
             lisp_editor_path: &loader_path,
+            lisp_import_path: None,
             qml_file: "",
             pkg_desc_qml: &descriptor,
             qml_is_fullscreen: false,

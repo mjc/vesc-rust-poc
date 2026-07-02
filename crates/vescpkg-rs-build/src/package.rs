@@ -90,7 +90,8 @@ impl Package {
         let staging_dir = staging_dir_from_manifest(&manifest)?;
         let descriptor = parse_package_manifest(&manifest)?;
         let description_md = fs::read_to_string(staging_dir.join(descriptor.description_md()))?;
-        let lisp_source = fs::read_to_string(staging_dir.join(descriptor.lisp()))?;
+        let lisp_path = staging_dir.join(descriptor.lisp());
+        let lisp_source = fs::read_to_string(&lisp_path)?;
         let qml_file = if descriptor.qml().is_empty() {
             String::new()
         } else {
@@ -102,6 +103,7 @@ impl Package {
             description_md: &description_md,
             lisp_source: &lisp_source,
             lisp_editor_path: &staging_dir,
+            lisp_import_path: lisp_path.parent(),
             qml_file: &qml_file,
             pkg_desc_qml: &pkg_desc_qml,
             qml_is_fullscreen: descriptor.qml_is_fullscreen(),
@@ -412,5 +414,34 @@ mod tests {
         let package = Package::read(&output).expect("written package");
         assert_eq!(package.name, "Refloat");
         assert_eq!(package.description_md, "Refloat readme");
+    }
+
+    #[test]
+    fn package_from_manifest_resolves_lisp_sibling_imports() {
+        let harness = PackageTestHarness::new().ensure_loopback_staging();
+        write_refloat_style_staging(&harness);
+        let staging = harness.loopback_staging_dir();
+        std::fs::write(
+            staging.join("lisp/package.lisp"),
+            "(import \"src/package_lib.bin\" 'package-lib)\n(import \"bms.lisp\" 'bms)\n",
+        )
+        .unwrap();
+        std::fs::write(staging.join("lisp/bms.lisp"), "(define bms-enabled true)\n").unwrap();
+
+        let package = Package::from_manifest(staging.join("pkgdesc.qml")).expect("package");
+
+        let (_, imports) =
+            crate::package_wire::parse_lisp_imports(&package.lisp_data).expect("lisp imports");
+        let payloads = imports
+            .iter()
+            .map(|import| import.payload.as_slice())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            payloads,
+            vec![
+                b"refloat-native\0".as_slice(),
+                b"(define bms-enabled true)\n\0".as_slice()
+            ]
+        );
     }
 }

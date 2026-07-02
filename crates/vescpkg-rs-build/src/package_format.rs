@@ -18,6 +18,8 @@ pub struct VescPackageInput<'a> {
     pub lisp_source: &'a str,
     /// Workspace path used to resolve Lisp imports.
     pub lisp_editor_path: &'a Path,
+    /// Optional path used to resolve imports beside the main Lisp file.
+    pub lisp_import_path: Option<&'a Path>,
     /// QML source embedded in the package.
     pub qml_file: &'a str,
     /// `pkgdesc.qml` descriptor contents.
@@ -69,12 +71,16 @@ pub fn encode_vesc_package(wire: &VescPackageWire<'_>) -> io::Result<Vec<u8>> {
 
 /// Packs Lisp source and its native imports into the package Lisp payload format.
 pub fn build_lisp_data(lisp_source: &str, lisp_editor_path: &Path) -> io::Result<Vec<u8>> {
-    pack_lisp_imports(lisp_source, lisp_editor_path)
+    pack_lisp_imports(lisp_source, lisp_editor_path, None)
 }
 
 /// Builds compressed VESC package bytes from source package inputs.
 pub fn build_vesc_package(input: &VescPackageInput<'_>) -> io::Result<Vec<u8>> {
-    let lisp_data = pack_lisp_imports(input.lisp_source, input.lisp_editor_path)?;
+    let lisp_data = pack_lisp_imports(
+        input.lisp_source,
+        input.lisp_editor_path,
+        input.lisp_import_path,
+    )?;
 
     let mut data = Vec::new();
     append_string(&mut data, PACKAGE_MAGIC);
@@ -165,7 +171,11 @@ fn q_compress(data: &[u8]) -> io::Result<Vec<u8>> {
     Ok(output)
 }
 
-fn pack_lisp_imports(code_str: &str, editor_path: &Path) -> io::Result<Vec<u8>> {
+fn pack_lisp_imports(
+    code_str: &str,
+    editor_path: &Path,
+    import_path: Option<&Path>,
+) -> io::Result<Vec<u8>> {
     let mut packed = Vec::new();
     packed.extend_from_slice(&0u16.to_be_bytes());
     packed.extend_from_slice(code_str.as_bytes());
@@ -179,7 +189,7 @@ fn pack_lisp_imports(code_str: &str, editor_path: &Path) -> io::Result<Vec<u8>> 
             continue;
         };
 
-        let source_path = resolve_import_path(editor_path, &path);
+        let source_path = resolve_import_path(editor_path, import_path, &path);
         let mut file_data = fs::read(&source_path)?;
         if file_data.last().copied() != Some(0) {
             file_data.push(0);
@@ -236,10 +246,21 @@ fn pack_lisp_imports(code_str: &str, editor_path: &Path) -> io::Result<Vec<u8>> 
     Ok(packed)
 }
 
-fn resolve_import_path(editor_path: &Path, import_path: &str) -> std::path::PathBuf {
+fn resolve_import_path(
+    editor_path: &Path,
+    lisp_import_path: Option<&Path>,
+    import_path: &str,
+) -> std::path::PathBuf {
     let relative_candidate = editor_path.join(import_path);
     if relative_candidate.exists() {
         return relative_candidate;
+    }
+
+    if let Some(lisp_import_path) = lisp_import_path {
+        let lisp_relative_candidate = lisp_import_path.join(import_path);
+        if lisp_relative_candidate.exists() {
+            return lisp_relative_candidate;
+        }
     }
 
     std::path::PathBuf::from(import_path)
@@ -311,6 +332,7 @@ mod tests {
             description_md: "",
             lisp_source: &loader,
             lisp_editor_path: harness.root(),
+            lisp_import_path: None,
             qml_file: "",
             pkg_desc_qml: "",
             qml_is_fullscreen: false,
@@ -342,6 +364,7 @@ mod tests {
             description_md: "markdown",
             lisp_source: &loader,
             lisp_editor_path: harness.root(),
+            lisp_import_path: None,
             qml_file: "qml",
             pkg_desc_qml: "descriptor",
             qml_is_fullscreen: false,
