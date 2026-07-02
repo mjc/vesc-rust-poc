@@ -6,16 +6,10 @@ use crate::time::{SystemTicks, system_ticks_as_secs_f32};
 use crate::{scalar_int_unit, scalar_unit};
 
 scalar_unit!(
-    MechanicalRpm,
+    Rpm,
     from_revolutions_per_minute,
     as_revolutions_per_minute,
-    "mechanical revolutions per minute"
-);
-scalar_unit!(
-    ElectricalRpm,
-    from_revolutions_per_minute,
-    as_revolutions_per_minute,
-    "electrical revolutions per minute"
+    "revolutions per minute"
 );
 scalar_unit!(Distance, from_meters, as_meters, "meters");
 scalar_unit!(
@@ -47,23 +41,6 @@ scalar_int_unit!(
     u64,
     "odometer meters"
 );
-
-/// Unitless attitude quaternion components.
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[repr(transparent)]
-pub struct Quaternion([f32; 4]);
-
-impl Quaternion {
-    /// Create a quaternion from components in firmware order `[q0, q1, q2, q3]`.
-    pub const fn from_components(components: [f32; 4]) -> Self {
-        Self(components)
-    }
-
-    /// Return quaternion components in firmware order.
-    pub const fn components(self) -> [f32; 4] {
-        self.0
-    }
-}
 
 impl Speed {
     /// Create a speed value from kilometers per hour.

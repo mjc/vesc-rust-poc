@@ -1,4 +1,4 @@
-//! Energy, charge, and efficiency unit newtypes.
+//! Energy, charge, efficiency units, and compatibility names.
 
 use core::ops::Div;
 
@@ -10,8 +10,10 @@ const METERS_PER_MILE: f32 = 1609.344;
 
 scalar_unit!(Energy, from_watt_hours, as_watt_hours, "watt-hours");
 scalar_unit!(Charge, from_amp_hours, as_amp_hours, "amp-hours");
-scalar_unit!(WattHours, from_watt_hours, as_watt_hours, "watt-hours");
-scalar_unit!(AmpHours, from_amp_hours, as_amp_hours, "amp-hours");
+/// Compatibility alias for older package code; prefer [`Energy`] in new APIs.
+pub type WattHours = Energy;
+/// Compatibility alias for older package code; prefer [`Charge`] in new APIs.
+pub type AmpHours = Charge;
 scalar_unit!(
     EnergyPerDistance,
     from_watt_hours_per_meter,
@@ -32,18 +34,6 @@ impl Energy {
     }
 
     /// Return this energy value in joules.
-    pub const fn as_joules(self) -> f32 {
-        self.as_watt_hours() * 3600.0
-    }
-}
-
-impl WattHours {
-    /// Create a watt-hour value from joules.
-    pub const fn from_joules(value: f32) -> Self {
-        Self::from_watt_hours(value / 3600.0)
-    }
-
-    /// Return this watt-hour value in joules.
     pub const fn as_joules(self) -> f32 {
         self.as_watt_hours() * 3600.0
     }

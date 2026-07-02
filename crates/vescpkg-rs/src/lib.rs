@@ -58,6 +58,27 @@ pub use gpio::{GpioApi, GpioBindings};
 pub mod lbm;
 /// Higher-level lifecycle helpers for package startup and runtime behavior.
 pub mod lifecycle;
+/// Common package-author imports for code running inside the controller.
+pub mod prelude {
+    pub use crate::types::*;
+    pub use crate::units::{
+        AccelerationG, AmpHours, AngleDegrees, AngleRadians, AngularVelocity, BoundedUnitError,
+        Charge, Current, Distance, DistancePerEnergy, ElectricalRpm, Energy, EnergyPerDistance,
+        FluxLinkage, Frequency, Height, Inductance, Latitude, Longitude,
+        MechanicalRpm, OdometerMeters, Percent, Power, Ratio, Resistance,
+        SYSTEM_TICK_RATE_HZ, SampleRate, Seconds, SignedRatio, Speed, SystemInstant, SystemTicks,
+        Temperature, TimestampTicks, Voltage, WattHours,
+    };
+    pub use crate::{
+        AllocBindings, AllocError, AppDataBindings, AppDataHandlerRegistrationError,
+        ExtensionDescriptor, ExtensionNameError, FirmwareAllocation, FirmwareAllocator, GpioApi,
+        GpioBindings, LbmApi, LbmBindings, LoopbackLifecycle, PackageLifecycle, ProtocolFrame,
+        RegisterError, WireCommand, WireVersion,
+    };
+
+    #[cfg(not(test))]
+    pub use crate::{RealBindings, RealGpioBindings};
+}
 /// VESC-domain semantic wrappers over generic embedded units.
 pub mod types;
 
@@ -68,19 +89,18 @@ mod tests {
         AdcDecodedLevel, AdcVoltage, AudioChannel, AudioDuration, AudioFrequency, AudioSampleRate,
         AudioVoltage, AveragePower, BatteryCurrent, BatteryVoltage, BaudRate, BrakeCurrentRelative,
         BrakeLeverLevel, BrakeSwitch, CanControllerId, CanPayloadLen, CurrentRelative, DVoltage,
-        DirectionalMotorCurrent, DutyCycle, FocMotorFluxLinkage, FocMotorInductance,
-        FocMotorResistance, GearRatio, GnssLatitude, GnssLongitude, GnssSpeed, HandbrakeRelative,
-        ImuAcceleration, ImuAngularRate, ImuPitch, ImuQuaternion, ImuRoll, ImuYaw, JoystickX,
-        JoystickY, MechanicalSpeed, MotorCurrent, MotorPoleCount, OpenLoopPhase, PacketLength,
-        PeakPower, PidPosition, PpmAge, PpmInput, QVoltage, RemoteAge, SystemDuration,
-        SystemTimestamp, ThreadPriority, TimeoutDuration, TotalMotorCurrent, TripDistance,
-        VehicleSpeed, WattHoursDischarged, WheelDiameter,
+        DirectionalMotorCurrent, DutyCycle, ElectricalSpeed, FocMotorFluxLinkage,
+        FocMotorInductance, FocMotorResistance, GearRatio, GnssAccuracy, GnssHdop, GnssLatitude,
+        GnssLongitude, GnssSpeed, HandbrakeRelative, ImuAcceleration, ImuAngularRate, ImuPitch,
+        ImuQuaternion, ImuRoll, ImuYaw, JoystickX, JoystickY, MechanicalSpeed, MotorCurrent,
+        MotorPoleCount, OpenLoopPhase, PacketLength, PeakPower, PidPosition, PpmAge, PpmInput, Pwm,
+        QVoltage, RemoteAge, SystemDuration, SystemTimestamp, ThreadPriority, TimeoutDuration,
+        TotalMotorCurrent, TripDistance, VehicleSpeed, WattHoursDischarged, WheelDiameter,
     };
     use vescpkg_rs_units::{
         AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Current, Distance, Energy,
-        FluxLinkage, Frequency, Inductance, Latitude, Longitude, MechanicalRpm, Power, Quaternion,
-        Ratio, Resistance, SampleRate, Seconds, SignedRatio, Speed, SystemTicks, TimestampTicks,
-        Voltage,
+        FluxLinkage, Frequency, Inductance, Latitude, Longitude, Power, Ratio, Resistance, Rpm,
+        SampleRate, Seconds, SignedRatio, Speed, SystemTicks, TimestampTicks, Voltage,
     };
 
     #[test]
@@ -128,10 +148,12 @@ mod tests {
     fn semantic_motion_and_gnss_types_wrap_units() {
         let speed = VehicleSpeed::new(Speed::from_meters_per_second(4.0));
         let trip = TripDistance::new(Distance::from_meters(123.0));
-        let mechanical = MechanicalSpeed::new(MechanicalRpm::from_revolutions_per_minute(3000.0));
+        let mechanical = MechanicalSpeed::new(Rpm::from_revolutions_per_minute(3000.0));
         let latitude = GnssLatitude::new(Latitude::from_degrees(40.015));
         let longitude = GnssLongitude::new(Longitude::from_degrees(-105.2705));
         let gnss_speed = GnssSpeed::new(Speed::from_meters_per_second(3.5));
+        let hdop = GnssHdop::from_unitless(0.9);
+        let accuracy = GnssAccuracy::new(Distance::from_meters(1.8));
 
         assert_eq!(speed.speed().as_meters_per_second(), 4.0);
         assert_eq!(trip.distance().as_meters(), 123.0);
@@ -139,6 +161,31 @@ mod tests {
         assert_eq!(latitude.latitude().as_degrees(), 40.015);
         assert_eq!(longitude.longitude().as_degrees(), -105.2705);
         assert_eq!(gnss_speed.speed().as_meters_per_second(), 3.5);
+        assert_eq!(hdop.as_unitless(), 0.9);
+        assert_eq!(accuracy.distance().as_meters(), 1.8);
+    }
+
+    #[test]
+    fn semantic_rpm_types_wrap_generic_rpm_without_interchangeability() {
+        fn mechanical_command(speed: MechanicalSpeed) -> Rpm {
+            speed.rpm()
+        }
+
+        fn electrical_command(speed: ElectricalSpeed) -> Rpm {
+            speed.rpm()
+        }
+
+        let mechanical = MechanicalSpeed::new(Rpm::from_revolutions_per_minute(3000.0));
+        let electrical = ElectricalSpeed::new(Rpm::from_revolutions_per_minute(21_000.0));
+
+        assert_eq!(
+            mechanical_command(mechanical).as_revolutions_per_minute(),
+            3000.0
+        );
+        assert_eq!(
+            electrical_command(electrical).as_revolutions_per_minute(),
+            21_000.0
+        );
     }
 
     #[test]
@@ -222,6 +269,7 @@ mod tests {
     #[test]
     fn semantic_package_inputs_follow_vesc_c_if_signed_ratio_ranges() {
         let duty = DutyCycle::new(SignedRatio::from_ratio(-0.25).expect("signed duty"));
+        let pwm = Pwm::new(Ratio::from_ratio(0.75).expect("normalized PWM"));
         let current_rel =
             CurrentRelative::new(SignedRatio::from_ratio(-0.5).expect("signed current command"));
         let brake_rel = BrakeCurrentRelative::new(Ratio::from_ratio(0.75).expect("brake ratio"));
@@ -232,6 +280,7 @@ mod tests {
         let joystick_y = JoystickY::new(SignedRatio::from_ratio(0.8).expect("joystick Y"));
 
         assert_eq!(duty.ratio().as_ratio(), -0.25);
+        assert_eq!(pwm.ratio().as_ratio(), 0.75);
         assert_eq!(current_rel.ratio().as_ratio(), -0.5);
         assert_eq!(brake_rel.ratio().as_ratio(), 0.75);
         assert_eq!(handbrake_rel.ratio().as_ratio(), 0.5);
@@ -260,7 +309,7 @@ mod tests {
             AngularVelocity::from_degrees_per_second(2.0),
             AngularVelocity::from_degrees_per_second(3.0),
         ]);
-        let quat = ImuQuaternion::new(Quaternion::from_components([1.0, 0.0, 0.0, 0.0]));
+        let quat = ImuQuaternion::from_components([1.0, 0.0, 0.0, 0.0]);
 
         assert_eq!(adc_voltage.voltage().as_volts(), 1.65);
         assert_eq!(adc_level.ratio().as_ratio(), 0.5);

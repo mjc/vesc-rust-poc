@@ -1,6 +1,6 @@
 //! IMU semantic wrappers over firmware-proven units.
 
-use crate::units::{AccelerationG, AngleRadians, AngularVelocity, Quaternion};
+use crate::units::{AccelerationG, AngleRadians, AngularVelocity};
 
 macro_rules! attitude_type {
     ($name:ident, $doc:literal) => {
@@ -62,21 +62,21 @@ impl ImuAngularRate {
 /// Firmware IMU attitude quaternion components.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(transparent)]
-pub struct ImuQuaternion(Quaternion);
+pub struct ImuQuaternion([f32; 4]);
 
 impl ImuQuaternion {
-    /// Wrap a generic quaternion with VESC IMU meaning.
-    pub const fn new(quaternion: Quaternion) -> Self {
-        Self(quaternion)
+    /// Create an IMU attitude quaternion from firmware-order `[q0, q1, q2, q3]` components.
+    pub const fn from_components(components: [f32; 4]) -> Self {
+        Self(components)
     }
 
-    /// Return the typed quaternion without erasing it to primitives.
-    pub const fn quaternion(self) -> Quaternion {
-        self.0
+    /// Compatibility constructor for call sites that already hold firmware-order components.
+    pub const fn new(components: [f32; 4]) -> Self {
+        Self::from_components(components)
     }
 
     /// Return quaternion components in firmware order.
     pub const fn components(self) -> [f32; 4] {
-        self.0.components()
+        self.0
     }
 }

@@ -1,8 +1,7 @@
 use super::{
-    AccelerationG, AmpHours, AngleRadians, AngularVelocity, Current, Distance, DistancePerEnergy,
-    DutyCycle, ElectricalRpm, Energy, EnergyPerDistance, Frequency, Latitude, Longitude, Percent,
-    Power, Quaternion, Ratio, SampleRate, Seconds, Speed, SystemTicks, Temperature, Voltage,
-    WattHours,
+    AccelerationG, AmpHours, AngleRadians, AngularVelocity, Charge, Current, Distance,
+    DistancePerEnergy, Energy, EnergyPerDistance, Frequency, Latitude, Longitude, Percent, Power,
+    Ratio, Rpm, SampleRate, Seconds, Speed, SystemTicks, Temperature, Voltage, WattHours,
 };
 
 #[test]
@@ -11,10 +10,9 @@ fn scalar_units_round_trip_through_named_accessors() {
     assert_eq!(Current::from_amps(12.25).as_amps(), 12.25);
     assert_eq!(Power::from_watts(600.0).as_watts(), 600.0);
     assert_eq!(Energy::from_watt_hours(42.0).as_watt_hours(), 42.0);
-    assert_eq!(AmpHours::from_amp_hours(3.2).as_amp_hours(), 3.2);
-    assert_eq!(WattHours::from_watt_hours(70.0).as_watt_hours(), 70.0);
+    assert_eq!(Charge::from_amp_hours(3.2).as_amp_hours(), 3.2);
     assert_eq!(
-        ElectricalRpm::from_revolutions_per_minute(12_000.0).as_revolutions_per_minute(),
+        Rpm::from_revolutions_per_minute(12_000.0).as_revolutions_per_minute(),
         12_000.0
     );
     assert_eq!(
@@ -38,17 +36,26 @@ fn scalar_units_round_trip_through_named_accessors() {
         AngularVelocity::from_degrees_per_second(90.0).as_degrees_per_second(),
         90.0
     );
-    assert_eq!(
-        Quaternion::from_components([1.0, 0.0, 0.0, 0.0]).components(),
-        [1.0, 0.0, 0.0, 0.0]
-    );
+}
+
+#[test]
+fn unit_name_energy_and_charge_aliases_are_compatibility_names() {
+    let stored_energy: Energy = WattHours::from_watt_hours(70.0);
+    let legacy_energy_name: WattHours = Energy::from_joules(7200.0);
+    let stored_charge: Charge = AmpHours::from_amp_hours(3.2);
+    let legacy_charge_name: AmpHours = Charge::from_amp_hours(1.25);
+
+    assert_eq!(stored_energy.as_watt_hours(), 70.0);
+    assert_eq!(legacy_energy_name.as_watt_hours(), 2.0);
+    assert_eq!(stored_charge.as_amp_hours(), 3.2);
+    assert_eq!(legacy_charge_name.as_amp_hours(), 1.25);
 }
 
 #[test]
 fn local_unit_conversions_stay_in_the_embedded_units_layer() {
     assert_eq!(Energy::from_watt_hours(2.0).as_joules(), 7200.0);
     assert_eq!(Energy::from_joules(7200.0).as_watt_hours(), 2.0);
-    assert_eq!(WattHours::from_joules(7200.0).as_watt_hours(), 2.0);
+    assert_eq!(Charge::from_amp_hours(3.2).as_amp_hours(), 3.2);
     assert_eq!(
         Speed::from_kilometers_per_hour(36.0).as_meters_per_second(),
         10.0
@@ -112,9 +119,9 @@ fn electrical_units_support_obvious_no_panic_arithmetic() {
 
 #[test]
 fn bounded_units_reject_out_of_range_values() {
-    assert_eq!(DutyCycle::from_ratio(0.5).expect("valid").as_ratio(), 0.5);
+    assert_eq!(Ratio::from_ratio(0.5).expect("valid").as_ratio(), 0.5);
 
-    let low = DutyCycle::from_ratio(-0.1).expect_err("too low");
+    let low = Ratio::from_ratio(-0.1).expect_err("too low");
     assert_eq!(low.value(), -0.1);
     assert_eq!(low.min(), 0.0);
     assert_eq!(low.max(), 1.0);

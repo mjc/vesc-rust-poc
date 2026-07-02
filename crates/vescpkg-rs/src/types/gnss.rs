@@ -1,6 +1,6 @@
 //! GNSS-domain semantic wrappers.
 
-use crate::units::{Height, Latitude, Longitude, Speed};
+use crate::units::{Distance, Height, Latitude, Longitude, Speed};
 
 macro_rules! latitude_type {
     ($name:ident, $doc:literal) => {
@@ -90,3 +90,37 @@ latitude_type!(GnssLatitude, "Latitude reported by GNSS.");
 longitude_type!(GnssLongitude, "Longitude reported by GNSS.");
 altitude_type!(GnssAltitude, "Altitude reported by GNSS.");
 speed_type!(GnssSpeed, "Ground speed reported by GNSS.");
+
+/// Horizontal dilution of precision reported by GNSS.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct GnssHdop(f32);
+
+impl GnssHdop {
+    /// Wrap the unitless HDOP value reported by firmware.
+    pub const fn from_unitless(value: f32) -> Self {
+        Self(value)
+    }
+
+    /// Return the unitless HDOP value for explicit firmware/API boundaries.
+    pub const fn as_unitless(self) -> f32 {
+        self.0
+    }
+}
+
+/// Position accuracy reported by GNSS.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct GnssAccuracy(Distance);
+
+impl GnssAccuracy {
+    /// Wrap generic distance with GNSS accuracy meaning.
+    pub const fn new(distance: Distance) -> Self {
+        Self(distance)
+    }
+
+    /// Return the accuracy distance without erasing it to a primitive.
+    pub const fn distance(self) -> Distance {
+        self.0
+    }
+}

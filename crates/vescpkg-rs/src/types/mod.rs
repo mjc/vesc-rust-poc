@@ -48,7 +48,7 @@ pub use config::{
     FocMotorResistance, GearRatio, GearRatioError, MotorPoleCount, MotorPoleCountError,
     WheelDiameter,
 };
-pub use gnss::{GnssAltitude, GnssLatitude, GnssLongitude, GnssSpeed};
+pub use gnss::{GnssAccuracy, GnssAltitude, GnssHdop, GnssLatitude, GnssLongitude, GnssSpeed};
 pub use imu::{ImuAcceleration, ImuAngularRate, ImuPitch, ImuQuaternion, ImuRoll, ImuYaw};
 pub use io::{
     BaudRate, BaudRateError, PacketLength, PacketLengthError, ThreadPriority, ThreadPriorityError,
@@ -65,7 +65,7 @@ pub use motor::{
 pub use power::{AveragePower, PeakPower};
 pub use ratio::{
     BrakeCurrentRelative, CurrentRelative, DutyCycle, HandbrakeRelative, JoystickX, JoystickY,
-    PpmInput,
+    PpmInput, Pwm,
 };
 pub use temperature::{
     FetTemperature, MosfetTemperature, MotorTemperature, TemperatureLimitEnd, TemperatureLimitStart,

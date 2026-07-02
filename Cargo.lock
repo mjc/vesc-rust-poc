@@ -1347,6 +1347,7 @@ name = "vescpkg-rs"
 version = "0.1.0"
 dependencies = [
  "rstest",
+ "trybuild",
  "vesc-protocol",
  "vescpkg-rs-sys",
  "vescpkg-rs-units",
