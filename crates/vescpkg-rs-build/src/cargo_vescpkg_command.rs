@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use crate::{
     BLE_LOOPBACK_PACKAGE_NAME, Package, PackageBinaryConversionRunner, PackageExample,
     PackageTargetError, PackageTargetMode, PackageTargetPlan, SNAKE_PACKAGE_NAME,
+    native_lib_toolchain::{NativeLibToolchain, RealNativeLibToolchain},
+    refloat_native_build::RefloatNativeBuildPlan,
     refloat_package_assets::{RefloatBuildInfo, RefloatSourceAssets},
 };
 
@@ -294,9 +296,33 @@ impl CargoVescPkgInvocation {
     where
         C: PackageBinaryConversionRunner,
     {
+        self.execute_with_toolchains(repo_root, conversion_runner, &RealNativeLibToolchain)
+    }
+
+    /// Execute the invocation with custom conversion and native toolchains.
+    pub fn execute_with_toolchains<C, N>(
+        &self,
+        repo_root: impl Into<PathBuf>,
+        conversion_runner: &C,
+        native_toolchain: &N,
+    ) -> Result<PathBuf, CargoVescPkgError>
+    where
+        C: PackageBinaryConversionRunner,
+        N: NativeLibToolchain,
+    {
         if let Some(refloat_source_path) = &self.refloat_source_path {
             let repo_root = repo_root.into();
-            let output = RefloatSourceAssets::new(repo_root.join(refloat_source_path))
+            let refloat_source_root = clean_path(repo_root.join(refloat_source_path));
+            RefloatNativeBuildPlan::new(&refloat_source_root)
+                .with_git_hash(self.refloat_git_commit())
+                .build_with(native_toolchain)
+                .map_err(|error| {
+                    CargoVescPkgError::Package(PackageTargetError::PackageOutput {
+                        path: refloat_source_path.clone(),
+                        reason: error.to_string(),
+                    })
+                })?;
+            let output = RefloatSourceAssets::new(refloat_source_root)
                 .write_package(&RefloatBuildInfo::new(
                     self.refloat_build_date(),
                     self.refloat_git_commit(),
@@ -430,6 +456,10 @@ fn parse_example(value: &str) -> Result<CargoVescPkgExample, CargoVescPkgParseEr
     }
 }
 
+fn clean_path(path: impl AsRef<Path>) -> PathBuf {
+    path.as_ref().components().collect()
+}
+
 /// Parse and execute a `cargo vescpkg` invocation with a custom runner.
 pub fn run_with<I, S, C>(
     repo_root: impl Into<PathBuf>,
@@ -443,6 +473,23 @@ where
 {
     let invocation = parse_args(args).map_err(CargoVescPkgError::Parse)?;
     invocation.execute_with(repo_root, conversion_runner)
+}
+
+/// Parse and execute a `cargo vescpkg` invocation with custom toolchains.
+pub fn run_with_toolchains<I, S, C, N>(
+    repo_root: impl Into<PathBuf>,
+    args: I,
+    conversion_runner: &C,
+    native_toolchain: &N,
+) -> Result<PathBuf, CargoVescPkgError>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+    C: PackageBinaryConversionRunner,
+    N: NativeLibToolchain,
+{
+    let invocation = parse_args(args).map_err(CargoVescPkgError::Parse)?;
+    invocation.execute_with_toolchains(repo_root, conversion_runner, native_toolchain)
 }
 
 /// Return the design-note path for the cargo subcommand contract.
@@ -461,11 +508,12 @@ mod tests {
 
     use super::{
         CargoVescPkgError, CargoVescPkgInvocation, CargoVescPkgMode, DEFAULT_PACKAGE_VERSION,
-        DEFAULT_TARGET_TRIPLE, command_design_text, parse_args, run_with,
+        DEFAULT_TARGET_TRIPLE, command_design_text, parse_args, run_with, run_with_toolchains,
     };
-    use crate::PackageTargetMode;
     use crate::package_conversion::PackageBinaryConversionCommand;
     use crate::test_support::{FakeConversionRunner, PackageTestHarness};
+    use crate::{PackageTargetMode, native_lib_toolchain::NativeLibToolchain, parse_lisp_imports};
+    use std::cell::RefCell;
     use std::path::PathBuf;
 
     #[test]
@@ -760,7 +808,8 @@ mod tests {
         let root = harness.root().to_path_buf();
 
         let runner = FakeConversionRunner::recording();
-        let output = run_with(
+        let native_toolchain = RefloatWritingNativeToolchain::new(&root);
+        let output = run_with_toolchains(
             &root,
             [
                 "build",
@@ -772,6 +821,7 @@ mod tests {
                 "0ef6e99",
             ],
             &runner,
+            &native_toolchain,
         )
         .expect("run refloat source invocation");
 
@@ -781,6 +831,54 @@ mod tests {
         assert!(package.description_md.contains("- Git Commit: #0ef6e99"));
         assert_eq!(package.qml_file, "Item{property string title:\"Refloat\"}");
         assert!(runner.calls().is_empty());
+    }
+
+    #[test]
+    fn run_with_refloat_source_builds_native_payload_before_packaging() {
+        let harness = write_refloat_source(PackageTestHarness::new());
+        let root = harness.root().to_path_buf();
+        std::fs::remove_file(root.join("src/package_lib.bin")).unwrap();
+
+        let conversion_runner = FakeConversionRunner::recording();
+        let native_toolchain = RefloatWritingNativeToolchain::new(&root);
+        let output = run_with_toolchains(
+            &root,
+            [
+                "build",
+                "--refloat-source",
+                ".",
+                "--build-date",
+                "2026-07-02 06:00:00-06:00",
+                "--git-commit",
+                "0ef6e99",
+            ],
+            &conversion_runner,
+            &native_toolchain,
+        )
+        .expect("run refloat source invocation");
+
+        assert_eq!(output, PathBuf::from("refloat.vescpkg"));
+        assert_eq!(
+            std::fs::read_to_string(root.join("src/conf/conf_general.h"))
+                .expect("generated conf_general.h"),
+            "#define PACKAGE_NAME \"Refloat\"\n#define VERSION \"1.2.1\"\n#define GIT_HASH 0x0ef6e99\n"
+        );
+        assert_eq!(
+            native_toolchain.calls.borrow().as_slice(),
+            &[(
+                "make".to_owned(),
+                vec![
+                    "-C".to_owned(),
+                    root.join("src").display().to_string(),
+                    "VESC_TOOL=vesc_tool".to_owned()
+                ]
+            )]
+        );
+        assert!(conversion_runner.calls().is_empty());
+
+        let package = crate::Package::read(root.join(output)).expect("written package");
+        let (_code, imports) = parse_lisp_imports(&package.lisp_data).expect("lisp imports");
+        assert_eq!(imports[0].payload, b"refloat-native-built\0");
     }
 
     #[test]
@@ -846,6 +944,42 @@ mod tests {
                 "lisp/package.lisp",
                 "(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n",
             )
+            .write_text(
+                "src/conf/conf_general.h.in",
+                "#define PACKAGE_NAME \"{{PACKAGE_NAME}}\"\n#define VERSION \"{{VERSION}}\"\n#define GIT_HASH 0x{{GIT_HASH}}\n",
+            )
+            .write_text("src/conf/settings.xml", "<config />\n")
             .write_bytes("src/package_lib.bin", b"refloat-native\0")
+    }
+
+    struct RefloatWritingNativeToolchain {
+        source_root: PathBuf,
+        calls: RefCell<Vec<(String, Vec<String>)>>,
+    }
+
+    impl RefloatWritingNativeToolchain {
+        fn new(source_root: impl Into<PathBuf>) -> Self {
+            Self {
+                source_root: source_root.into(),
+                calls: RefCell::new(Vec::new()),
+            }
+        }
+    }
+
+    impl NativeLibToolchain for RefloatWritingNativeToolchain {
+        fn run(&self, program: &str, args: &[&str]) -> Result<(), String> {
+            self.calls.borrow_mut().push((
+                program.to_owned(),
+                args.iter().copied().map(str::to_owned).collect(),
+            ));
+            if program == "make" {
+                std::fs::write(
+                    self.source_root.join("src/package_lib.bin"),
+                    b"refloat-native-built\0",
+                )
+                .map_err(|error| error.to_string())?;
+            }
+            Ok(())
+        }
     }
 }
