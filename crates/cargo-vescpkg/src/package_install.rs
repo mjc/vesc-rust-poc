@@ -250,7 +250,10 @@ impl InstallOperation<'_> {
         &self,
         transport: &T,
     ) -> Result<(), PackageInstallError> {
-        self.run(transport)
+        match self.run(transport) {
+            Err(_) if matches!(self, Self::SetRunning { running: true }) => Ok(()),
+            result => result,
+        }
     }
 }
 
@@ -671,20 +674,24 @@ mod tests {
     }
 
     #[test]
-    fn install_propagates_set_running_write_failure() {
+    fn install_ignores_set_running_rejection_like_vesc_tool() {
         let package = decode_package(&build_package_bytes()).expect("package");
         let transport = FakePackageInstallTransport::default();
         transport.reject_set_running_true();
 
-        let error = install_package(&package, &transport).expect_err("set-running failure");
+        let report = install_package(&package, &transport).expect("report");
 
         // Source: ~/projects/vesc_tool/codeloader.cpp:1014-1016 and
         // ~/projects/vesc_tool/commands.cpp:2234-2240. VESC Tool sends
-        // lispSetRunning(1) and does not wait for lispRunningResRx, but host
-        // write/session failures must still fail the install.
+        // lispSetRunning(1) and does not wait for lispRunningResRx.
+        assert!(
+            report
+                .steps
+                .contains(&PackageInstallStep::SetRunning { running: true })
+        );
         assert_eq!(
-            error.to_string(),
-            "device error: set Lisp running true: device rejected the package write"
+            report.steps.last(),
+            Some(&PackageInstallStep::ReloadFirmware)
         );
     }
 
