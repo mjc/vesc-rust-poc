@@ -738,6 +738,40 @@ pub unsafe fn mc_get_fault() -> c_int {
     }
 }
 
+/// Return the filtered input/battery voltage, or zero when unavailable.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn mc_get_input_voltage_filtered() -> f32 {
+    #[cfg(all(target_arch = "arm", not(test)))]
+    unsafe {
+        let vesc_if = VescIfAbi::BASE_ADDR.0;
+        let mc_get_input_voltage_filtered: usize;
+        core::arch::asm!(
+            "ldr {mc_get_input_voltage_filtered}, [{vesc_if}, #{slot}]",
+            vesc_if = in(reg) vesc_if,
+            mc_get_input_voltage_filtered = out(reg) mc_get_input_voltage_filtered,
+            slot = const VescIfAbi::MC_GET_INPUT_VOLTAGE_FILTERED.vesc32_byte_offset(),
+            options(nostack, preserves_flags),
+        );
+        if mc_get_input_voltage_filtered == 0 {
+            return 0.0;
+        }
+        let mc_get_input_voltage_filtered: unsafe extern "C" fn() -> f32 =
+            core::mem::transmute(mc_get_input_voltage_filtered);
+        mc_get_input_voltage_filtered()
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
+    unsafe {
+        match (*vesc_if()).mc_get_input_voltage_filtered {
+            Some(mc_get_input_voltage_filtered) => mc_get_input_voltage_filtered(),
+            None => 0.0,
+        }
+    }
+}
+
 /// Return the discharged amp-hours counter.
 ///
 /// # Safety
@@ -1143,7 +1177,7 @@ pub unsafe fn io_read(pin: crate::VescPin) -> bool {
 
 /// Returns selected `VescIf` field offsets for ABI layout tests.
 #[cfg(test)]
-pub fn vesc_if_offsets_for_tests() -> [usize; 24] {
+pub fn vesc_if_offsets_for_tests() -> [usize; 25] {
     [
         core::mem::offset_of!(VescIf, lbm_add_extension),
         core::mem::offset_of!(VescIf, lbm_enc_i),
@@ -1158,6 +1192,7 @@ pub fn vesc_if_offsets_for_tests() -> [usize; 24] {
         core::mem::offset_of!(VescIf, mc_get_amp_hours_charged),
         core::mem::offset_of!(VescIf, mc_get_watt_hours),
         core::mem::offset_of!(VescIf, mc_get_watt_hours_charged),
+        core::mem::offset_of!(VescIf, mc_get_input_voltage_filtered),
         core::mem::offset_of!(VescIf, mc_temp_fet_filtered),
         core::mem::offset_of!(VescIf, mc_temp_motor_filtered),
         core::mem::offset_of!(VescIf, mc_get_battery_level),

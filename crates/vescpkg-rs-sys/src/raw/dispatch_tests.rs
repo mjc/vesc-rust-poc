@@ -8,8 +8,8 @@ use super::{
     VescIf, io_read, io_set_mode, io_write, lbm_add_extension, lbm_add_extension_with_table_base,
     lbm_dec_as_i32, lbm_enc_i, lbm_enc_sym_eerror, lbm_is_number, mc_get_amp_hours,
     mc_get_amp_hours_charged, mc_get_battery_level, mc_get_distance_abs, mc_get_fault,
-    mc_get_odometer, mc_get_watt_hours, mc_get_watt_hours_charged, mc_temp_fet_filtered,
-    mc_temp_motor_filtered, vesc_clear_app_data_handler, vesc_send_app_data,
+    mc_get_input_voltage_filtered, mc_get_odometer, mc_get_watt_hours, mc_get_watt_hours_charged,
+    mc_temp_fet_filtered, mc_temp_motor_filtered, vesc_clear_app_data_handler, vesc_send_app_data,
     vesc_set_app_data_handler, vesc_system_time_ticks,
 };
 
@@ -110,6 +110,7 @@ static MC_GET_WATT_HOURS_CHARGED: SyncCounter = SyncCounter::new();
 static MC_GET_BATTERY_LEVEL: SyncCounter = SyncCounter::new();
 static MC_GET_ODOMETER: SyncCounter = SyncCounter::new();
 static MC_GET_FAULT: SyncCounter = SyncCounter::new();
+static MC_GET_INPUT_VOLTAGE_FILTERED: SyncCounter = SyncCounter::new();
 static LAST_PIN: SyncI32 = SyncI32::new();
 static LAST_MODE: SyncI32 = SyncI32::new();
 static LAST_LEVEL: SyncI32 = SyncI32::new();
@@ -138,6 +139,7 @@ fn reset_counters() {
         &MC_GET_BATTERY_LEVEL,
         &MC_GET_ODOMETER,
         &MC_GET_FAULT,
+        &MC_GET_INPUT_VOLTAGE_FILTERED,
     ] {
         counter.set(0);
     }
@@ -260,6 +262,11 @@ extern "C" fn stub_mc_get_fault() -> c_int {
     5
 }
 
+extern "C" fn stub_mc_get_input_voltage_filtered() -> f32 {
+    MC_GET_INPUT_VOLTAGE_FILTERED.inc();
+    84.2
+}
+
 fn populated_table() -> VescIf {
     let mut table = empty_table();
     table.lbm_add_extension = Some(stub_lbm_add_extension);
@@ -283,6 +290,7 @@ fn populated_table() -> VescIf {
     table.mc_get_battery_level = Some(stub_mc_get_battery_level);
     table.mc_get_odometer = Some(stub_mc_get_odometer);
     table.mc_get_fault = Some(stub_mc_get_fault);
+    table.mc_get_input_voltage_filtered = Some(stub_mc_get_input_voltage_filtered);
     table
 }
 
@@ -417,6 +425,7 @@ fn motor_data_helpers_forward_and_handle_missing_slots() {
         assert_eq!(mc_get_battery_level(core::ptr::null_mut()), 0.72);
         assert_eq!(mc_get_odometer(), 123_456);
         assert_eq!(mc_get_fault(), 5);
+        assert_eq!(mc_get_input_voltage_filtered(), 84.2);
         assert_eq!(MC_GET_DISTANCE_ABS.get(), 1);
         assert_eq!(MC_TEMP_FET_FILTERED.get(), 1);
         assert_eq!(MC_TEMP_MOTOR_FILTERED.get(), 1);
@@ -427,6 +436,7 @@ fn motor_data_helpers_forward_and_handle_missing_slots() {
         assert_eq!(MC_GET_BATTERY_LEVEL.get(), 1);
         assert_eq!(MC_GET_ODOMETER.get(), 1);
         assert_eq!(MC_GET_FAULT.get(), 1);
+        assert_eq!(MC_GET_INPUT_VOLTAGE_FILTERED.get(), 1);
     });
 
     with_empty_table(|| unsafe {
@@ -440,6 +450,7 @@ fn motor_data_helpers_forward_and_handle_missing_slots() {
         assert_eq!(mc_get_battery_level(core::ptr::null_mut()), 0.0);
         assert_eq!(mc_get_odometer(), 0);
         assert_eq!(mc_get_fault(), 0);
+        assert_eq!(mc_get_input_voltage_filtered(), 0.0);
         assert_eq!(MC_GET_DISTANCE_ABS.get(), 0);
         assert_eq!(MC_TEMP_FET_FILTERED.get(), 0);
         assert_eq!(MC_TEMP_MOTOR_FILTERED.get(), 0);
@@ -450,6 +461,7 @@ fn motor_data_helpers_forward_and_handle_missing_slots() {
         assert_eq!(MC_GET_BATTERY_LEVEL.get(), 0);
         assert_eq!(MC_GET_ODOMETER.get(), 0);
         assert_eq!(MC_GET_FAULT.get(), 0);
+        assert_eq!(MC_GET_INPUT_VOLTAGE_FILTERED.get(), 0);
     });
 }
 
@@ -516,5 +528,9 @@ fn vesc_if_abi_motor_data_offsets_match_struct_layout() {
     assert_eq!(
         VescIfAbi::MC_GET_FAULT.vesc32_byte_offset(),
         vesc32(core::mem::offset_of!(VescIf, mc_get_fault))
+    );
+    assert_eq!(
+        VescIfAbi::MC_GET_INPUT_VOLTAGE_FILTERED.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_get_input_voltage_filtered))
     );
 }

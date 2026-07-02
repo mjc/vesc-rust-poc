@@ -70,6 +70,9 @@ impl VescIfAbi {
     /// Slot for `mc_get_watt_hours_charged`.
     pub const MC_GET_WATT_HOURS_CHARGED: VescIfSlot =
         VescIfSlot::new("mc_get_watt_hours_charged", 452);
+    /// Slot for `mc_get_input_voltage_filtered`.
+    pub const MC_GET_INPUT_VOLTAGE_FILTERED: VescIfSlot =
+        VescIfSlot::new("mc_get_input_voltage_filtered", 480);
     /// Slot for `mc_temp_fet_filtered`.
     pub const MC_TEMP_FET_FILTERED: VescIfSlot = VescIfSlot::new("mc_temp_fet_filtered", 504);
     /// Slot for `mc_temp_motor_filtered`.
@@ -94,7 +97,7 @@ impl VescIfAbi {
     pub const IO_READ: VescIfSlot = VescIfSlot::new("io_read", 228);
 
     /// The set of slots that this crate currently relies on.
-    pub const USED_SLOTS: [VescIfSlot; 24] = [
+    pub const USED_SLOTS: [VescIfSlot; 25] = [
         Self::LBM_ADD_EXTENSION,
         Self::LBM_ENC_I,
         Self::LBM_DEC_AS_I32,
@@ -108,6 +111,7 @@ impl VescIfAbi {
         Self::MC_GET_AMP_HOURS_CHARGED,
         Self::MC_GET_WATT_HOURS,
         Self::MC_GET_WATT_HOURS_CHARGED,
+        Self::MC_GET_INPUT_VOLTAGE_FILTERED,
         Self::MC_TEMP_FET_FILTERED,
         Self::MC_TEMP_MOTOR_FILTERED,
         Self::MC_GET_BATTERY_LEVEL,
