@@ -935,7 +935,7 @@ mod tests {
 
         let package = crate::Package::read(root.join(output)).expect("written package");
         let (_code, imports) = parse_lisp_imports(&package.lisp_data).expect("lisp imports");
-        assert_eq!(imports[0].payload, b"refloat-native-built\0");
+        assert_eq!(imports[0].payload, b"refloat-native-built\0\0");
     }
 
     #[test]
