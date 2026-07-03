@@ -77,6 +77,8 @@ pub enum CargoVescPkgParseError {
     MissingVescToolValue,
     /// `--example` selected an unsupported package example.
     UnsupportedExample(String),
+    /// More than one package source selector was provided.
+    ConflictingPackageSources,
     /// An unsupported flag or positional argument was provided.
     UnexpectedArgument(String),
 }
@@ -106,6 +108,9 @@ impl std::fmt::Display for CargoVescPkgParseError {
             Self::MissingVescToolValue => f.write_str("missing value for --vesc-tool"),
             Self::UnsupportedExample(example) => {
                 write!(f, "unsupported cargo vescpkg example: {example}")
+            }
+            Self::ConflictingPackageSources => {
+                f.write_str("choose only one of --example, --manifest, or --refloat-source")
             }
             Self::UnexpectedArgument(argument) => {
                 write!(f, "unexpected cargo vescpkg argument: {argument}")
@@ -401,6 +406,7 @@ where
 
     let mut mode = CargoVescPkgMode::Build;
     let mut example = CargoVescPkgExample::Loopback;
+    let mut explicit_example = false;
     let mut target_triple = DEFAULT_TARGET_TRIPLE.to_owned();
     let mut manifest_path = None;
     let mut refloat_source_path = None;
@@ -415,6 +421,7 @@ where
                     return Err(CargoVescPkgParseError::MissingExampleValue);
                 };
                 example = parse_example(value.as_ref())?;
+                explicit_example = true;
             }
             "--target" => {
                 let Some(value) = args.next() else {
@@ -459,6 +466,13 @@ where
             }
             other => return Err(CargoVescPkgParseError::UnexpectedArgument(other.to_owned())),
         }
+    }
+
+    let package_source_count = usize::from(explicit_example)
+        + usize::from(manifest_path.is_some())
+        + usize::from(refloat_source_path.is_some());
+    if package_source_count > 1 {
+        return Err(CargoVescPkgParseError::ConflictingPackageSources);
     }
 
     let invocation = CargoVescPkgInvocation::new(mode)
@@ -762,6 +776,32 @@ mod tests {
             plan.build_plan().conversion_plan().command().example(),
             crate::PackageExample::Snake
         );
+    }
+
+    #[test]
+    fn parse_args_rejects_conflicting_package_sources() {
+        for args in [
+            [
+                "build",
+                "--manifest",
+                "refloat/pkgdesc.qml",
+                "--refloat-source",
+                "refloat",
+            ],
+            [
+                "build",
+                "--example",
+                "snake",
+                "--manifest",
+                "refloat/pkgdesc.qml",
+            ],
+            ["build", "--example", "snake", "--refloat-source", "refloat"],
+        ] {
+            assert_eq!(
+                parse_args(args),
+                Err(super::CargoVescPkgParseError::ConflictingPackageSources)
+            );
+        }
     }
 
     #[test]
