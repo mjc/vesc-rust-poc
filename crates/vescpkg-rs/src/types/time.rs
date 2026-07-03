@@ -1,6 +1,6 @@
 //! Time semantic wrappers.
 
-use crate::units::{Seconds, SystemTicks, TimestampTicks};
+use crate::units::{SystemTicks, TimestampTicks, VescSeconds};
 
 /// System timestamp captured in VESC 100 us ticks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -47,28 +47,28 @@ macro_rules! seconds_type {
         #[doc = $doc]
         #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
         #[repr(transparent)]
-        pub struct $name(Seconds);
+        pub struct $name(VescSeconds);
 
         impl $name {
-            /// Wrap package ABI seconds with semantic duration meaning.
-            pub const fn new(seconds: Seconds) -> Self {
+            /// Wrap VESC float seconds with semantic duration meaning.
+            pub const fn new(seconds: VescSeconds) -> Self {
                 Self(seconds)
             }
 
             /// Return the typed seconds without erasing them to a primitive.
-            pub const fn duration(self) -> Seconds {
+            pub const fn duration(self) -> VescSeconds {
                 self.0
             }
         }
     };
 }
 
-seconds_type!(TimeoutDuration, "Timeout duration in package ABI seconds.");
+seconds_type!(TimeoutDuration, "Timeout duration in VESC seconds.");
 seconds_type!(
     RemoteAge,
-    "Age of the latest remote input sample in package ABI seconds."
+    "Age of the latest remote input sample in VESC seconds."
 );
 seconds_type!(
     PpmAge,
-    "Age of the latest PPM input sample in package ABI seconds."
+    "Age of the latest PPM input sample in VESC seconds."
 );

@@ -1,14 +1,19 @@
-//! Energy, charge, and efficiency unit newtypes.
+//! Energy, charge, efficiency units, and compatibility names.
 
 use core::ops::Div;
 
 use crate::motion::Distance;
 use crate::scalar_unit;
 
+const METERS_PER_KILOMETER: f32 = 1000.0;
+const METERS_PER_MILE: f32 = 1609.344;
+
 scalar_unit!(Energy, from_watt_hours, as_watt_hours, "watt-hours");
 scalar_unit!(Charge, from_amp_hours, as_amp_hours, "amp-hours");
-scalar_unit!(WattHours, from_watt_hours, as_watt_hours, "watt-hours");
-scalar_unit!(AmpHours, from_amp_hours, as_amp_hours, "amp-hours");
+/// Compatibility alias for older package code; prefer [`Energy`] in new APIs.
+pub type WattHours = Energy;
+/// Compatibility alias for older package code; prefer [`Charge`] in new APIs.
+pub type AmpHours = Charge;
 scalar_unit!(
     EnergyPerDistance,
     from_watt_hours_per_meter,
@@ -34,15 +39,33 @@ impl Energy {
     }
 }
 
-impl WattHours {
-    /// Create a watt-hour value from joules.
-    pub const fn from_joules(value: f32) -> Self {
-        Self::from_watt_hours(value / 3600.0)
+impl EnergyPerDistance {
+    /// Create an efficiency value from watt-hours per kilometer.
+    ///
+    /// Uses the canonical conversion of 1 kilometer = 1000 meters.
+    pub const fn from_watt_hours_per_kilometer(value: f32) -> Self {
+        Self::from_watt_hours_per_meter(value / METERS_PER_KILOMETER)
     }
 
-    /// Return this watt-hour value in joules.
-    pub const fn as_joules(self) -> f32 {
-        self.as_watt_hours() * 3600.0
+    /// Return this efficiency value in watt-hours per kilometer.
+    ///
+    /// Uses the canonical conversion of 1 kilometer = 1000 meters.
+    pub const fn as_watt_hours_per_kilometer(self) -> f32 {
+        self.as_watt_hours_per_meter() * METERS_PER_KILOMETER
+    }
+
+    /// Create an efficiency value from watt-hours per mile.
+    ///
+    /// Uses the international mile conversion of 1 mile = 1609.344 meters.
+    pub const fn from_watt_hours_per_mile(value: f32) -> Self {
+        Self::from_watt_hours_per_meter(value / METERS_PER_MILE)
+    }
+
+    /// Return this efficiency value in watt-hours per mile.
+    ///
+    /// Uses the international mile conversion of 1 mile = 1609.344 meters.
+    pub const fn as_watt_hours_per_mile(self) -> f32 {
+        self.as_watt_hours_per_meter() * METERS_PER_MILE
     }
 }
 

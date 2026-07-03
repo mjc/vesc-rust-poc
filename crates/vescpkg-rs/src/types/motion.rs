@@ -1,9 +1,6 @@
 //! Motion-domain semantic wrappers.
 
-use crate::units::{
-    AngleDegrees, Distance, ElectricalRpm, MechanicalRpm, Speed,
-    TachometerSteps as UnitTachometerSteps,
-};
+use crate::units::{AngleDegrees, Distance, Rpm, Speed, TachometerSteps as UnitTachometerSteps};
 
 macro_rules! speed_type {
     ($name:ident, $doc:literal) => {
@@ -52,16 +49,16 @@ macro_rules! mechanical_rpm_type {
         #[doc = $doc]
         #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
         #[repr(transparent)]
-        pub struct $name(MechanicalRpm);
+        pub struct $name(Rpm);
 
         impl $name {
-            /// Wrap generic mechanical RPM with VESC-domain meaning.
-            pub const fn new(rpm: MechanicalRpm) -> Self {
+            /// Wrap generic RPM with VESC-domain mechanical-speed meaning.
+            pub const fn new(rpm: Rpm) -> Self {
                 Self(rpm)
             }
 
-            /// Return the typed mechanical RPM without erasing it to a primitive.
-            pub const fn rpm(self) -> MechanicalRpm {
+            /// Return the generic RPM without erasing it to a primitive.
+            pub const fn rpm(self) -> Rpm {
                 self.0
             }
         }
@@ -73,16 +70,16 @@ macro_rules! electrical_rpm_type {
         #[doc = $doc]
         #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
         #[repr(transparent)]
-        pub struct $name(ElectricalRpm);
+        pub struct $name(Rpm);
 
         impl $name {
-            /// Wrap generic electrical RPM with VESC-domain meaning.
-            pub const fn new(rpm: ElectricalRpm) -> Self {
+            /// Wrap generic RPM with VESC-domain electrical-speed meaning.
+            pub const fn new(rpm: Rpm) -> Self {
                 Self(rpm)
             }
 
-            /// Return the typed electrical RPM without erasing it to a primitive.
-            pub const fn rpm(self) -> ElectricalRpm {
+            /// Return the generic RPM without erasing it to a primitive.
+            pub const fn rpm(self) -> Rpm {
                 self.0
             }
         }

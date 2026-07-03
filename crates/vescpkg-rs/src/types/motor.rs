@@ -1,6 +1,6 @@
 //! Motor-domain semantic wrappers.
 
-use crate::units::{Current, Frequency, SampleRate, Seconds, Voltage};
+use crate::units::{Current, Frequency, SampleRate, VescSeconds, Voltage};
 
 macro_rules! current_type {
     ($name:ident, $doc:literal) => {
@@ -91,16 +91,16 @@ macro_rules! seconds_type {
         #[doc = $doc]
         #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
         #[repr(transparent)]
-        pub struct $name(Seconds);
+        pub struct $name(VescSeconds);
 
         impl $name {
-            /// Wrap package ABI seconds with VESC-domain meaning.
-            pub const fn new(duration: Seconds) -> Self {
+            /// Wrap VESC float seconds with motor-domain meaning.
+            pub const fn new(duration: VescSeconds) -> Self {
                 Self(duration)
             }
 
             /// Return the typed duration without erasing it to a primitive.
-            pub const fn duration(self) -> Seconds {
+            pub const fn duration(self) -> VescSeconds {
                 self.0
             }
         }
@@ -147,6 +147,42 @@ impl AudioChannelError {
     /// Return the rejected channel.
     pub const fn value(self) -> u8 {
         self.value
+    }
+}
+
+/// Firmware motor fault code token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct FirmwareFaultCode(i32);
+
+impl FirmwareFaultCode {
+    /// Build a firmware fault-code token from the raw firmware enum value.
+    pub const fn from_raw_code(code: i32) -> Self {
+        Self(code)
+    }
+
+    /// Build a firmware fault-code token from the app-data compatible byte.
+    pub const fn from_compat_code(code: u8) -> Self {
+        Self(code as i32)
+    }
+
+    /// Return the raw firmware enum value.
+    pub const fn raw_code(self) -> i32 {
+        self.0
+    }
+
+    /// Return the app-data compatible fault code byte, if the raw code fits.
+    pub const fn compat_code(self) -> Option<u8> {
+        if self.0 >= 0 && self.0 <= u8::MAX as i32 {
+            Some(self.0 as u8)
+        } else {
+            None
+        }
+    }
+
+    /// Return true when the firmware reports no active fault.
+    pub const fn is_none(self) -> bool {
+        self.0 == 0
     }
 }
 

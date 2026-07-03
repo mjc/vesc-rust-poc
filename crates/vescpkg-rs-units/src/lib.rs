@@ -16,17 +16,17 @@
 //! Use these local newtypes as the normal public API for physical measurements:
 //!
 //! ```
-//! use vescpkg_rs_units::{DutyCycle, Energy, Speed, Voltage};
+//! use vescpkg_rs_units::prelude::*;
 //!
 //! let pack_voltage = Voltage::from_volts(50.4);
 //! let speed = Speed::from_kilometers_per_hour(36.0);
 //! let stored = Energy::from_watt_hours(2.0);
-//! let duty = DutyCycle::from_ratio(0.25).expect("in range");
+//! let ratio = Ratio::from_ratio(0.25).expect("in range");
 //!
 //! assert_eq!(pack_voltage.as_volts(), 50.4);
 //! assert_eq!(speed.as_meters_per_second(), 10.0);
 //! assert_eq!(stored.as_watt_hours(), 2.0);
-//! assert_eq!(duty.as_ratio(), 0.25);
+//! assert_eq!(ratio.as_ratio(), 0.25);
 //! ```
 //!
 //! Raw primitive values are explicit boundary conversions, not the default way
@@ -50,10 +50,10 @@
 //! ```
 //!
 //! ```compile_fail
-//! use vescpkg_rs_units::DutyCycle;
+//! use vescpkg_rs_units::Ratio;
 //!
-//! let duty = DutyCycle::from_ratio(0.75).expect("valid");
-//! let _: f32 = duty.into();
+//! let ratio = Ratio::from_ratio(0.75).expect("valid");
+//! let _: f32 = ratio.into();
 //! ```
 //!
 //! VESC-specific meanings belong in a separate domain layer. For example,
@@ -80,16 +80,28 @@ pub mod time;
 
 pub use battery::{AmpHours, Charge, DistancePerEnergy, Energy, EnergyPerDistance, WattHours};
 pub use electrical::{Current, FluxLinkage, Inductance, Power, Resistance, Voltage};
-pub use gnss::{GnssAccuracy, Hdop, Height, Latitude, Longitude};
+pub use gnss::{Height, Latitude, Longitude};
 pub use motion::{
-    AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Distance, ElectricalRpm,
-    MechanicalRpm, OdometerMeters, Quaternion, Speed, TachometerSteps,
+    AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Distance, OdometerMeters, Rpm,
+    Speed, TachometerSteps,
 };
-pub use ratio::{DutyCycle, Percent, Pwm, Ratio, SignedRatio};
+pub use ratio::{Percent, Ratio, SignedRatio};
 pub use temperature::Temperature;
 pub use time::{
-    Frequency, SYSTEM_TICK_RATE_HZ, SampleRate, Seconds, SystemInstant, SystemTicks, TimestampTicks,
+    Frequency, SYSTEM_TICK_RATE_HZ, SampleRate, SystemInstant, SystemTicks, TimestampTicks,
+    VescSeconds,
 };
+
+/// Common package-author imports for typed unit calculations.
+pub mod prelude {
+    pub use crate::{
+        AccelerationG, AmpHours, AngleDegrees, AngleRadians, AngularVelocity, BoundedUnitError,
+        Charge, Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage,
+        Frequency, Height, Inductance, Latitude, Longitude, OdometerMeters, Percent, Power, Ratio,
+        Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed, SystemInstant,
+        SystemTicks, TachometerSteps, Temperature, TimestampTicks, VescSeconds, Voltage, WattHours,
+    };
+}
 
 #[cfg(test)]
 mod tests;

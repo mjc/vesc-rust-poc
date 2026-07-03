@@ -1,8 +1,7 @@
 use super::{
-    AccelerationG, AmpHours, AngleRadians, AngularVelocity, Current, Distance, DistancePerEnergy,
-    DutyCycle, ElectricalRpm, Energy, EnergyPerDistance, Frequency, Latitude, Longitude, Percent,
-    Power, Quaternion, Ratio, SampleRate, Seconds, Speed, SystemTicks, Temperature, Voltage,
-    WattHours,
+    AccelerationG, AmpHours, AngleRadians, AngularVelocity, Charge, Current, Distance,
+    DistancePerEnergy, Energy, EnergyPerDistance, Frequency, Latitude, Longitude, Percent, Power,
+    Ratio, Rpm, SampleRate, Speed, SystemTicks, Temperature, VescSeconds, Voltage, WattHours,
 };
 
 #[test]
@@ -11,10 +10,9 @@ fn scalar_units_round_trip_through_named_accessors() {
     assert_eq!(Current::from_amps(12.25).as_amps(), 12.25);
     assert_eq!(Power::from_watts(600.0).as_watts(), 600.0);
     assert_eq!(Energy::from_watt_hours(42.0).as_watt_hours(), 42.0);
-    assert_eq!(AmpHours::from_amp_hours(3.2).as_amp_hours(), 3.2);
-    assert_eq!(WattHours::from_watt_hours(70.0).as_watt_hours(), 70.0);
+    assert_eq!(Charge::from_amp_hours(3.2).as_amp_hours(), 3.2);
     assert_eq!(
-        ElectricalRpm::from_revolutions_per_minute(12_000.0).as_revolutions_per_minute(),
+        Rpm::from_revolutions_per_minute(12_000.0).as_revolutions_per_minute(),
         12_000.0
     );
     assert_eq!(
@@ -31,24 +29,33 @@ fn scalar_units_round_trip_through_named_accessors() {
     assert_eq!(longitude_degrees, -105.2705);
     assert_eq!(Frequency::from_hertz(1000.0).as_hertz(), 1000.0);
     assert_eq!(SampleRate::from_hertz(200.0).as_hertz(), 200.0);
-    assert_eq!(Seconds::from_seconds(2.5).as_seconds(), 2.5);
+    assert_eq!(VescSeconds::from_seconds(2.5).as_seconds(), 2.5);
     assert_eq!(AngleRadians::from_radians(1.5).as_radians(), 1.5);
     assert_eq!(AccelerationG::from_g(1.0).as_g(), 1.0);
     assert_eq!(
         AngularVelocity::from_degrees_per_second(90.0).as_degrees_per_second(),
         90.0
     );
-    assert_eq!(
-        Quaternion::from_components([1.0, 0.0, 0.0, 0.0]).components(),
-        [1.0, 0.0, 0.0, 0.0]
-    );
+}
+
+#[test]
+fn unit_name_energy_and_charge_aliases_are_compatibility_names() {
+    let stored_energy: Energy = WattHours::from_watt_hours(70.0);
+    let legacy_energy_name: WattHours = Energy::from_joules(7200.0);
+    let stored_charge: Charge = AmpHours::from_amp_hours(3.2);
+    let legacy_charge_name: AmpHours = Charge::from_amp_hours(1.25);
+
+    assert_eq!(stored_energy.as_watt_hours(), 70.0);
+    assert_eq!(legacy_energy_name.as_watt_hours(), 2.0);
+    assert_eq!(stored_charge.as_amp_hours(), 3.2);
+    assert_eq!(legacy_charge_name.as_amp_hours(), 1.25);
 }
 
 #[test]
 fn local_unit_conversions_stay_in_the_embedded_units_layer() {
     assert_eq!(Energy::from_watt_hours(2.0).as_joules(), 7200.0);
     assert_eq!(Energy::from_joules(7200.0).as_watt_hours(), 2.0);
-    assert_eq!(WattHours::from_joules(7200.0).as_watt_hours(), 2.0);
+    assert_eq!(Charge::from_amp_hours(3.2).as_amp_hours(), 3.2);
     assert_eq!(
         Speed::from_kilometers_per_hour(36.0).as_meters_per_second(),
         10.0
@@ -74,6 +81,30 @@ fn efficiency_units_remain_generic_ratios_between_energy_and_distance() {
 }
 
 #[test]
+fn energy_per_distance_uses_human_scale_ride_efficiency_units() {
+    let city_efficiency = EnergyPerDistance::from_watt_hours_per_kilometer(18.0);
+    let highway_efficiency = EnergyPerDistance::from_watt_hours_per_mile(32.0);
+
+    assert_eq!(city_efficiency.as_watt_hours_per_kilometer(), 18.0);
+    assert_eq!(city_efficiency.as_watt_hours_per_meter(), 0.018);
+    assert_eq!(highway_efficiency.as_watt_hours_per_mile(), 32.0);
+    assert_eq!(
+        highway_efficiency.as_watt_hours_per_meter(),
+        32.0 / 1609.344
+    );
+}
+
+#[test]
+fn energy_divided_by_distance_reports_ride_efficiency_without_manual_conversion() {
+    let commute_energy = Energy::from_watt_hours(540.0);
+    let commute_distance = Distance::from_meters(30_000.0);
+    let efficiency = commute_energy / commute_distance;
+
+    assert_eq!(efficiency.as_watt_hours_per_kilometer(), 18.0);
+    assert!((efficiency.as_watt_hours_per_mile() - 28.968_191).abs() < 0.000_01);
+}
+
+#[test]
 fn electrical_units_support_obvious_no_panic_arithmetic() {
     let voltage = Voltage::from_volts(50.4);
     let current = Current::from_amps(10.0);
@@ -87,10 +118,73 @@ fn electrical_units_support_obvious_no_panic_arithmetic() {
 }
 
 #[test]
-fn bounded_units_reject_out_of_range_values() {
-    assert_eq!(DutyCycle::from_ratio(0.5).expect("valid").as_ratio(), 0.5);
+fn package_author_estimates_energy_from_pack_power_over_tick_window() {
+    use super::prelude::*;
 
-    let low = DutyCycle::from_ratio(-0.1).expect_err("too low");
+    let pack_voltage = Voltage::from_volts(50.4);
+    let pack_current = Current::from_amps(10.0);
+    let sample_window = SystemTicks::from_ticks(20_000);
+    let energy = (pack_voltage * pack_current) * sample_window;
+
+    assert!((energy.as_watt_hours() - (1008.0 / 3600.0)).abs() < 0.000_01);
+}
+
+#[test]
+fn package_author_derives_speed_from_distance_and_tick_window() {
+    use super::prelude::*;
+
+    let distance = Distance::from_meters(42.0);
+    let sample_window = SystemTicks::from_ticks(30_000);
+    let speed = distance / sample_window;
+
+    assert_eq!(speed.as_meters_per_second(), 14.0);
+    assert_eq!((speed * sample_window).as_meters(), 42.0);
+}
+
+#[test]
+fn package_author_reports_ride_efficiency_without_float_handoff() {
+    use super::prelude::*;
+
+    let energy = Energy::from_watt_hours(540.0);
+    let distance = Distance::from_meters(30_000.0);
+    let efficiency = energy / distance;
+
+    assert_eq!(efficiency.as_watt_hours_per_kilometer(), 18.0);
+}
+
+#[test]
+fn package_author_uses_known_good_bounded_constants_for_commands() {
+    use super::prelude::*;
+
+    const DUTY_LIMIT: Ratio = Ratio::from_ratio_const(0.85);
+    const REGEN_LIMIT: SignedRatio = SignedRatio::from_ratio_const(-0.25);
+    const BATTERY_WARNING: Percent = Percent::from_percent_const(20.0);
+
+    assert_eq!(DUTY_LIMIT.as_ratio(), 0.85);
+    assert_eq!(REGEN_LIMIT.as_ratio(), -0.25);
+    assert_eq!(BATTERY_WARNING.as_percent(), 20.0);
+}
+
+#[test]
+fn package_author_keeps_trip_math_typed_until_display() {
+    use super::prelude::*;
+
+    let cruise_speed = Speed::from_kilometers_per_hour(36.0);
+    let elapsed = SystemTicks::from_ticks(60_000);
+    let distance = cruise_speed * elapsed;
+    let energy = Power::from_watts(180.0) * elapsed;
+    let efficiency = energy / distance;
+
+    assert!((distance.as_meters() - 60.0).abs() < 0.000_01);
+    assert!((energy.as_watt_hours() - (3.0 / 10.0)).abs() < 0.000_01);
+    assert!((efficiency.as_watt_hours_per_kilometer() - 5.0).abs() < 0.000_01);
+}
+
+#[test]
+fn bounded_units_reject_out_of_range_values() {
+    assert_eq!(Ratio::from_ratio(0.5).expect("valid").as_ratio(), 0.5);
+
+    let low = Ratio::from_ratio(-0.1).expect_err("too low");
     assert_eq!(low.value(), -0.1);
     assert_eq!(low.min(), 0.0);
     assert_eq!(low.max(), 1.0);
@@ -99,6 +193,21 @@ fn bounded_units_reject_out_of_range_values() {
     assert_eq!(high.value(), 101.0);
     assert_eq!(high.min(), 0.0);
     assert_eq!(high.max(), 100.0);
+}
+
+#[test]
+fn bounded_units_support_known_good_package_constants() {
+    const CENTER_DUTY: Ratio = Ratio::from_ratio_const(0.5);
+    const FULL_SCALE: Percent = Percent::from_percent_const(100.0);
+
+    assert_eq!(CENTER_DUTY.as_ratio(), 0.5);
+    assert_eq!(FULL_SCALE.as_percent(), 100.0);
+}
+
+#[test]
+#[should_panic(expected = "invalid normalized ratio constant")]
+fn bounded_unit_constant_constructor_rejects_runtime_misuse() {
+    let _ = Ratio::from_ratio_const(2.0);
 }
 
 #[test]

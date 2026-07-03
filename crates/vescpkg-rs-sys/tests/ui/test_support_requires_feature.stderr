@@ -5,9 +5,6 @@ error[E0433]: cannot find `test_support` in `vescpkg_rs_sys`
   |                                  ^^^^^^^^^^^^ could not find `test_support` in `vescpkg_rs_sys`
   |
 note: found an item that was configured out
- --> src/lib.rs
+ --> <WORKSPACE>/src/lib.rs:23:6
   |
-  | #[cfg(test)]
-  |       ---- the item is gated here
-  | pub mod test_support;
-  |         ^^^^^^^^^^^^
+  = note: the item is gated here

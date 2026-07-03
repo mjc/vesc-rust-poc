@@ -44,7 +44,11 @@ macro_rules! signed_ratio_type {
     };
 }
 
-signed_ratio_type!(DutyCycle, "Signed controller duty-cycle command ratio.");
+signed_ratio_type!(
+    DutyCycle,
+    "Signed controller duty-cycle command ratio in `-1.0..=1.0`."
+);
+ratio_type!(Pwm, "Normalized PWM output command ratio in `0.0..=1.0`.");
 signed_ratio_type!(
     CurrentRelative,
     "Signed relative motor-current command ratio."
