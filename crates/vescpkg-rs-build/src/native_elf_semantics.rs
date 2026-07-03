@@ -182,7 +182,11 @@ pub fn assert_native_lib_semantics(elf: &Path) {
     }
 
     assert!(
-        init_insns_call(&semantics.init_insns, "package_lib_init"),
+        init_insns_call(
+            &semantics.init_insns,
+            &semantics.symbols,
+            "package_lib_init"
+        ),
         "loader init should run Rust package init before registering the probe: {}",
         semantic_report(&semantics)
     );
@@ -342,10 +346,24 @@ fn insn_summary(insns: &[DecodedInsn]) -> String {
         .join("; ")
 }
 
-fn init_insns_call(insns: &[DecodedInsn], target: &str) -> bool {
-    insns.iter().any(|insn| {
-        insn.mnemonic == "bl" && (insn.operands.contains(target) || insn.operands.contains("0x60"))
-    })
+fn init_insns_call(insns: &[DecodedInsn], symbols: &BTreeMap<u64, String>, target: &str) -> bool {
+    insns
+        .iter()
+        .any(|insn| insn.mnemonic == "bl" && insn_targets_symbol(insn, symbols, target))
+}
+
+fn insn_targets_symbol(insn: &DecodedInsn, symbols: &BTreeMap<u64, String>, target: &str) -> bool {
+    insn.operands.contains(target)
+        || symbol_address(symbols, target)
+            .is_some_and(|addr| branch_target(&insn.operands) == Some(addr))
+}
+
+fn branch_target(operands: &str) -> Option<u64> {
+    let target = operands.split(',').next()?.trim().trim_start_matches('#');
+    target.strip_prefix("0x").map_or_else(
+        || target.parse().ok(),
+        |hex| u64::from_str_radix(hex, 16).ok(),
+    )
 }
 
 fn init_insns_touch_vesc_if(_insns: &[DecodedInsn], literals: &BTreeMap<u64, u32>) -> bool {
