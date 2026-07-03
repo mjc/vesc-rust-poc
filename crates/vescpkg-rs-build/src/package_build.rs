@@ -8,9 +8,6 @@ use crate::package_conversion::{
     PackageBinaryConversionError, PackageBinaryConversionPlan, PackageBinaryConversionRunner,
 };
 use crate::package_format::{VescPackageInput, write_vesc_package};
-use crate::refloat_package_assets::{RefloatBuildInfo, RefloatSourceAssets};
-
-const REFLOAT_SOURCE_ROOT_ENV: &str = "REFLOAT_SOURCE_ROOT";
 
 /// Package example artifact profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,8 +16,6 @@ pub enum PackageExample {
     Loopback,
     /// Snake package example.
     Snake,
-    /// Refloat package example.
-    Refloat,
 }
 
 impl PackageExample {
@@ -29,7 +24,6 @@ impl PackageExample {
         match self {
             Self::Loopback => PathBuf::from("examples/loopback"),
             Self::Snake => PathBuf::from("examples/snake"),
-            Self::Refloat => PathBuf::from("examples/refloat"),
         }
     }
 
@@ -42,9 +36,6 @@ impl PackageExample {
             Self::Snake => {
                 PathBuf::from("target/thumbv7em-none-eabihf/release/libvesc_example_snake.a")
             }
-            Self::Refloat => {
-                PathBuf::from("target/thumbv7em-none-eabihf/release/libvesc_example_refloat.a")
-            }
         }
     }
 
@@ -53,7 +44,6 @@ impl PackageExample {
         match self {
             Self::Loopback => "vesc-example-loopback",
             Self::Snake => "vesc-example-snake",
-            Self::Refloat => "vesc-example-refloat",
         }
     }
 
@@ -62,7 +52,6 @@ impl PackageExample {
         match self {
             Self::Loopback => PathBuf::from("target/native-lib-baseline"),
             Self::Snake => PathBuf::from("target/native-lib-snake"),
-            Self::Refloat => PathBuf::from("target/native-lib-refloat"),
         }
     }
 }
@@ -156,14 +145,7 @@ impl PackageBuildPlan {
 
     /// Return the rendered package assets for this plan.
     pub fn assets(&self) -> PackageAssets {
-        match self.example {
-            PackageExample::Loopback | PackageExample::Snake => {
-                PackageAssets::new(self.layout.clone(), self.provenance.clone())
-            }
-            PackageExample::Refloat => {
-                PackageAssets::refloat(self.layout.clone(), self.provenance.clone())
-            }
-        }
+        PackageAssets::new(self.layout.clone(), self.provenance.clone())
     }
 
     /// Render the package assets into the source tree.
@@ -182,23 +164,10 @@ impl PackageBuildPlan {
             self.source_root.join(assets.descriptor_path()),
             assets.render_descriptor(),
         )?;
-        let refloat_source_root = self.refloat_source_root();
-        let loader = match self.example {
-            PackageExample::Loopback | PackageExample::Snake => assets.render_loader(),
-            PackageExample::Refloat => {
-                // Refloat v1.2.1 (0ef6e99d8701) `lisp/package.lisp:1-17`.
-                fs::read_to_string(refloat_source_root.join("lisp/package.lisp"))?
-            }
-        };
-        fs::write(self.source_root.join(assets.loader_path()), loader)?;
-        if self.example == PackageExample::Refloat {
-            // Imported by upstream `lisp/package.lisp:11-13` when `ext-bms`
-            // reports BMS integration enabled.
-            fs::copy(
-                refloat_source_root.join("lisp/bms.lisp"),
-                staging_dir.join("bms.lisp"),
-            )?;
-        }
+        fs::write(
+            self.source_root.join(assets.loader_path()),
+            assets.render_loader(),
+        )?;
         let native_payload_path = self.source_root.join(assets.native_payload_path());
         if let Some(parent) = native_payload_path.parent() {
             fs::create_dir_all(parent)?;
@@ -253,37 +222,6 @@ impl PackageBuildPlan {
         self.inspection_plan().inspect_package_output()
     }
 
-    fn refloat_source_root(&self) -> PathBuf {
-        if let Some(path) = std::env::var_os(REFLOAT_SOURCE_ROOT_ENV) {
-            return PathBuf::from(path);
-        }
-
-        if let Some(sibling) = self
-            .source_root
-            .parent()
-            .map(|parent| parent.join("refloat"))
-            && sibling.join("lisp/package.lisp").is_file()
-        {
-            return sibling;
-        }
-
-        self.source_root.join("target/refloat-v1.2.1-src")
-    }
-
-    fn package_qml_file(&self) -> io::Result<Option<String>> {
-        match self.example {
-            PackageExample::Loopback | PackageExample::Snake => Ok(None),
-            PackageExample::Refloat => {
-                // Refloat v1.2.1 generates `ui.qml` from `ui.qml.in` in
-                // `Makefile:37-39`.
-                let qml = RefloatSourceAssets::new(self.refloat_source_root())
-                    .render_ui()
-                    .map_err(|error| io::Error::other(format!("{error}")))?;
-                Ok(Some(qml))
-            }
-        }
-    }
-
     /// Write the final `.vescpkg` output file.
     pub fn write_package_output(&self) -> io::Result<PathBuf> {
         let assets = self.assets();
@@ -291,7 +229,6 @@ impl PackageBuildPlan {
         let readme = fs::read_to_string(staging.readme_path())?;
         let descriptor = fs::read_to_string(staging.descriptor_path())?;
         let loader = fs::read_to_string(staging.loader_path())?;
-        let qml_file = self.package_qml_file()?;
         let output_path = self.source_root.join(self.package_output_path());
         let loader_path = staging.staging_dir_path();
 
@@ -300,8 +237,7 @@ impl PackageBuildPlan {
             description_md: &readme,
             lisp_source: &loader,
             lisp_editor_path: &loader_path,
-            lisp_import_path: None,
-            qml_file: qml_file.as_deref().unwrap_or(""),
+            qml_file: "",
             pkg_desc_qml: &descriptor,
             qml_is_fullscreen: false,
         };
@@ -334,14 +270,9 @@ impl PackageBuildPlan {
 
 #[cfg(test)]
 mod tests {
-    use super::{PackageBuildPlan, PackageExample};
+    use super::PackageBuildPlan;
     use crate::test_support::{FakeConversionRunner, PackageTestHarness};
-    use crate::{
-        BLE_LOOPBACK_PACKAGE_NAME, Package, PackageProvenance, REFLOAT_PACKAGE_NAME,
-        parse_lisp_imports,
-    };
-    #[cfg(unix)]
-    use std::os::unix::fs::PermissionsExt;
+    use crate::{BLE_LOOPBACK_PACKAGE_NAME, PackageProvenance};
 
     #[test]
     fn renders_the_expected_package_build_plan() {
@@ -416,100 +347,6 @@ mod tests {
                 .assets()
                 .render_readme()
                 .contains("abc123")
-        );
-    }
-
-    #[test]
-    fn renders_refloat_descriptor_with_source_package_shape() {
-        let plan = PackageBuildPlan::for_example(
-            "fixtures/native-lib-baseline",
-            REFLOAT_PACKAGE_NAME,
-            "1.2.1",
-            PackageExample::Refloat,
-        );
-
-        assert_eq!(
-            plan.assets().render_descriptor(),
-            "import QtQuick 2.15\n\nItem {\n    property string pkgName: \"Refloat\"\n    property string pkgDescriptionMd: \"package_README-gen.md\"\n    property string pkgLisp: \"lisp/package.lisp\"\n    property string pkgQml: \"ui.qml\"\n    property bool pkgQmlIsFullscreen: false\n    property string pkgOutput: \"refloat.vescpkg\"\n\n    function isCompatible (fwRxParams) {\n        if (fwRxParams.hwTypeStr().toLowerCase() != \"vesc\") {\n            return false;\n        }\n\n        return true;\n    }\n}\n"
-        );
-    }
-
-    #[test]
-    fn write_refloat_package_output_embeds_generated_qml() {
-        let harness = PackageTestHarness::new()
-            .write_bytes(
-                "target/native-lib-refloat/package_lib.bin",
-                b"refloat-native\0",
-            )
-            .write_text("target/refloat-v1.2.1-src/package_README.md", "# Refloat\n")
-            .write_text("target/refloat-v1.2.1-src/package_name", "Rust Refloat\n")
-            .write_text("target/refloat-v1.2.1-src/version", "1.2.1\n")
-            .write_text(
-                "target/refloat-v1.2.1-src/lisp/package.lisp",
-                concat!(
-                    "(import \"src/package_lib.bin\" 'package-lib)\n",
-                    "(load-native-lib package-lib)\n\n",
-                    "(define fw-ver (sysinfo 'fw-ver))\n",
-                    "(apply ext-set-fw-version fw-ver)\n\n",
-                    "(if (ext-bms)\n",
-                    "    (progn\n",
-                    "        (import \"bms.lisp\" 'bms)\n",
-                    "        (read-eval-program bms)\n",
-                    "        (spawn \"Refloat BMS\" 50 bms-loop)\n",
-                    "    )\n",
-                    ")\n",
-                ),
-            )
-            .write_text(
-                "target/refloat-v1.2.1-src/lisp/bms.lisp",
-                "(define bms-enabled true)\n",
-            )
-            .write_text(
-                "target/refloat-v1.2.1-src/ui.qml.in",
-                "Item { property string title: \"{{PACKAGE_NAME}} {{VERSION}}\" }\n",
-            )
-            .write_text(
-                "target/refloat-v1.2.1-src/rjsmin.py",
-                "#!/usr/bin/env python3\nimport sys\nsys.stdout.write('rjsmin:' + sys.stdin.read())\n",
-            );
-        #[cfg(unix)]
-        {
-            let path = harness.root().join("target/refloat-v1.2.1-src/rjsmin.py");
-            let mut permissions = std::fs::metadata(&path)
-                .expect("fake rjsmin metadata")
-                .permissions();
-            permissions.set_mode(0o755);
-            std::fs::set_permissions(path, permissions).expect("fake rjsmin permissions");
-        }
-        let plan = PackageBuildPlan::for_example(
-            harness.root(),
-            REFLOAT_PACKAGE_NAME,
-            "1.2.1",
-            PackageExample::Refloat,
-        );
-        plan.stage_package_assets().expect("stage assets");
-
-        let output = plan.write_package_output().expect("package output");
-
-        let package = Package::read(output).expect("written package");
-        assert_eq!(
-            package.qml_file,
-            "rjsmin:Item { property string title: \"Rust Refloat 1.2.1\" }\n"
-        );
-        assert!(!package.qml_is_fullscreen);
-        let (loader, imports) = parse_lisp_imports(&package.lisp_data).expect("lisp imports");
-        assert!(loader.contains("(apply ext-set-fw-version fw-ver)"));
-        assert!(loader.contains("(read-eval-program bms)"));
-        assert_eq!(
-            imports
-                .iter()
-                .map(|import| import.tag.as_str())
-                .collect::<Vec<_>>(),
-            ["package-lib", "bms"]
-        );
-        assert_eq!(
-            imports[1].payload,
-            b"(define bms-enabled true)\n\0".as_slice()
         );
     }
 

@@ -3,5 +3,5 @@ source: crates/vescpkg-rs-build/tests/golden_packaging.rs
 assertion_line: 51
 expression: "format!(\"len={}\\nfingerprint={}\", LISP_DATA.len(),\nfingerprint_bytes(LISP_DATA))"
 ---
-len=626
-fingerprint=b5b28690a8037c4b
+len=625
+fingerprint=4119e7bdbee0afe4

@@ -99,8 +99,6 @@ fn vesc_if_slot_constants_name_the_package_header_offsets() {
     let slots = VescIfAbi::USED_SLOTS;
 
     assert_eq!(VescIfAbi::BASE_ADDR, NativeAddress(0x1000_f800));
-    // Custom-config slots are used by Refloat v1.2.1 at `src/main.c:2456`
-    // and `src/main.c:2403`; the ABI entries are `vesc_pkg_lib/vesc_c_if.h:549-553`.
     assert_eq!(
         slots.map(|slot| slot.name()),
         [
@@ -108,8 +106,6 @@ fn vesc_if_slot_constants_name_the_package_header_offsets() {
             "lbm_enc_i",
             "lbm_dec_as_i32",
             "lbm_is_number",
-            "lbm_enc_sym_nil",
-            "lbm_enc_sym_true",
             "lbm_enc_sym_eerror",
             "malloc",
             "free",
@@ -127,8 +123,6 @@ fn vesc_if_slot_constants_name_the_package_header_offsets() {
             "mc_get_odometer",
             "send_app_data",
             "set_app_data_handler",
-            "conf_custom_add_config",
-            "conf_custom_clear_configs",
             "system_time_ticks",
             "io_set_mode",
             "io_write",
@@ -138,15 +132,15 @@ fn vesc_if_slot_constants_name_the_package_header_offsets() {
     assert_eq!(
         slots.map(|slot| slot.vesc32_byte_offset()),
         [
-            0, 64, 100, 124, 136, 140, 148, 184, 188, 204, 368, 440, 444, 448, 452, 480, 504, 508,
-            512, 524, 528, 592, 596, 728, 732, 952, 220, 224, 228
+            0, 64, 100, 124, 148, 184, 188, 204, 368, 440, 444, 448, 452, 480, 504, 508, 512, 524,
+            528, 592, 596, 952, 220, 224, 228
         ]
     );
     assert_eq!(
         slots.map(|slot| slot.slot_index()),
         [
-            0, 16, 25, 31, 34, 35, 37, 46, 47, 51, 92, 110, 111, 112, 113, 120, 126, 127, 128, 131,
-            132, 148, 149, 182, 183, 238, 55, 56, 57
+            0, 16, 25, 31, 37, 46, 47, 51, 92, 110, 111, 112, 113, 120, 126, 127, 128, 131, 132,
+            148, 149, 238, 55, 56, 57
         ]
     );
 }

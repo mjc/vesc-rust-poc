@@ -36,8 +36,6 @@ pub enum Command {
     LispReadCode(LispReadCodeCommand),
     /// Read back the installed QML app payload from a target device.
     QmlAppRead(QmlAppReadCommand),
-    /// Send a Refloat app-data handshake probe to a target device.
-    RefloatProbe(RefloatProbeCommand),
     /// Install a package on a target device.
     PackageInstall(PackageInstallCommand),
     /// Erase an installed package from a target device.
@@ -100,15 +98,6 @@ pub struct LispReadCodeCommand {
 /// Arguments for the `qml-app-read` command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QmlAppReadCommand {
-    /// Optional BLE device-name filter.
-    pub device_name: Option<String>,
-    /// Optional BLE address filter.
-    pub address: Option<String>,
-}
-
-/// Arguments for the `refloat-probe` command.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RefloatProbeCommand {
     /// Optional BLE device-name filter.
     pub device_name: Option<String>,
     /// Optional BLE address filter.
@@ -189,7 +178,7 @@ where
     match parse_args(args) {
         Ok(Command::Help) => {
             println!(
-                "cargo vescpkg: use `build`, `layout`, `status`, `scan`, `loopback`, `lisp-probe`, `lisp-eval`, `lisp-stop`, `lisp-read-code`, `qml-app-read`, `refloat-probe`, `deploy`, `snake-deploy`, `package-install`, `erase-package`, or `snake`"
+                "cargo vescpkg: use `build`, `layout`, `status`, `scan`, `loopback`, `lisp-probe`, `lisp-eval`, `lisp-stop`, `lisp-read-code`, `qml-app-read`, `deploy`, `snake-deploy`, `package-install`, `erase-package`, or `snake`"
             );
             ExitCode::SUCCESS
         }
@@ -320,28 +309,6 @@ where
                 }
                 Err(error) => {
                     eprintln!("qml app read failed: {error}");
-                    ExitCode::from(1)
-                }
-            }
-        }
-        Ok(Command::RefloatProbe(command)) => {
-            let target = loopback_target(command.address, command.device_name);
-
-            match loopback_debug::run_refloat_probe_with_diagnostics(target, |event| {
-                if event.should_print_to_cli() {
-                    println!("refloat probe: {}", event.describe());
-                }
-            }) {
-                Ok(report) => {
-                    println!(
-                        "refloat probe ok: response_len={} response={}",
-                        report.response().len(),
-                        loopback_debug::hex_snippet(report.response(), 96)
-                    );
-                    ExitCode::SUCCESS
-                }
-                Err(error) => {
-                    eprintln!("refloat probe failed: {error}");
                     ExitCode::from(1)
                 }
             }
@@ -906,7 +873,6 @@ where
         Some("lisp-stop") => parse_lisp_stop(iter).map(Command::LispStop),
         Some("lisp-read-code") => parse_lisp_read_code(iter).map(Command::LispReadCode),
         Some("qml-app-read") => parse_qml_app_read(iter).map(Command::QmlAppRead),
-        Some("refloat-probe") => parse_refloat_probe(iter).map(Command::RefloatProbe),
         Some("package-install") => {
             parse_package_install(iter, "package-install").map(Command::PackageInstall)
         }
@@ -1020,17 +986,6 @@ fn parse_qml_app_read(iter: impl Iterator<Item = String>) -> Result<QmlAppReadCo
     let (device_name, address) = parse_device_flags(iter)?;
 
     Ok(QmlAppReadCommand {
-        device_name,
-        address,
-    })
-}
-
-fn parse_refloat_probe(
-    iter: impl Iterator<Item = String>,
-) -> Result<RefloatProbeCommand, ParseError> {
-    let (device_name, address) = parse_device_flags(iter)?;
-
-    Ok(RefloatProbeCommand {
         device_name,
         address,
     })
@@ -1286,7 +1241,7 @@ mod tests {
     use super::{
         Command, LispEvalCommand, LispProbeCommand, LispReadCodeCommand, LispStopCommand,
         LoopbackCommand, PackageEraseCommand, PackageInstallCommand, ParseError, QmlAppReadCommand,
-        RefloatProbeCommand, SnakeCommand, SnakeRunMode, parse_args, snake_action_from_key,
+        SnakeCommand, SnakeRunMode, parse_args, snake_action_from_key,
     };
     use crate::snake::{
         SnakeBoardHeight, SnakeBoardWidth, SnakeDirection, SnakeLocalAction, SnakeSeed,
@@ -1385,18 +1340,6 @@ mod tests {
         assert_eq!(
             parse_args(["cargo-vescpkg", "qml-app-read", "--device", "VESC BLE UART"]),
             Ok(Command::QmlAppRead(QmlAppReadCommand {
-                device_name: Some("VESC BLE UART".to_owned()),
-                address: None,
-            }))
-        );
-        assert_eq!(
-            parse_args([
-                "cargo-vescpkg",
-                "refloat-probe",
-                "--device",
-                "VESC BLE UART"
-            ]),
-            Ok(Command::RefloatProbe(RefloatProbeCommand {
                 device_name: Some("VESC BLE UART".to_owned()),
                 address: None,
             }))

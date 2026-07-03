@@ -108,18 +108,74 @@ pub(crate) fn build_rust_staticlib_unlocked(plan: &NativeLibLinkPlan) -> Result<
     }
 }
 
+fn native_lib_c_only_from_env() -> bool {
+    std::env::var("VESC_NATIVE_LIB_C_ONLY").ok().as_deref() == Some("1")
+}
+
+fn compile_package_c_shim(
+    plan: &NativeLibLinkPlan,
+    toolchain: &impl NativeLibToolchain,
+) -> Result<(), String> {
+    let source = plan.package_c_source_path();
+    let object = plan.package_c_object_path();
+    let include = source
+        .parent()
+        .expect("package C source parent")
+        .to_str()
+        .expect("utf-8 package C source parent");
+
+    toolchain.run(
+        "arm-none-eabi-gcc",
+        &[
+            "-c",
+            source.to_str().expect("utf-8 package C source path"),
+            "-o",
+            object.to_str().expect("utf-8 package C object path"),
+            "-fpic",
+            "-Os",
+            "-Wall",
+            "-Wextra",
+            "-Wundef",
+            "-std=gnu99",
+            "-I",
+            include,
+            "-fomit-frame-pointer",
+            "-falign-functions=16",
+            "-mthumb",
+            "-fsingle-precision-constant",
+            "-Wdouble-promotion",
+            "-mfloat-abi=hard",
+            "-mfpu=fpv4-sp-d16",
+            "-mcpu=cortex-m4",
+            "-fdata-sections",
+            "-ffunction-sections",
+            "-DIS_VESC_LIB",
+        ],
+    )
+}
+
 pub(crate) fn build_final_native_lib_elf_unlocked(
     plan: &NativeLibLinkPlan,
     toolchain: &impl NativeLibToolchain,
 ) -> Result<(), String> {
+    let c_only = native_lib_c_only_from_env();
     let link_plan = plan.clone();
     let elf_path = link_plan.elf_path();
+    let package_c_source_path = link_plan.package_c_source_path();
     let linker_script_path = link_plan.linker_script_path();
     let rust_staticlib_path = link_plan.rust_staticlib_path();
 
-    build_rust_staticlib_unlocked(plan)?;
+    if !c_only {
+        build_rust_staticlib_unlocked(plan)?;
+    }
 
-    let elf_inputs = [linker_script_path.as_path(), rust_staticlib_path.as_path()];
+    let mut elf_inputs = vec![
+        package_c_source_path.as_path(),
+        linker_script_path.as_path(),
+    ];
+    if !c_only {
+        elf_inputs.push(rust_staticlib_path.as_path());
+    }
     if artifact_is_up_to_date(&elf_path, &elf_inputs) {
         return Ok(());
     }
@@ -132,6 +188,9 @@ pub(crate) fn build_final_native_lib_elf_unlocked(
         fs::remove_file(&stale_object_path).expect("remove stale package_lib.o");
     }
 
+    compile_package_c_shim(plan, toolchain)?;
+
+    let object_path = link_plan.package_c_object_path();
     let staticlib_path = link_plan.rust_staticlib_path();
     let linker_script = link_plan.linker_script_path();
     let elf_path_str = elf_path.to_str().expect("utf-8 ELF path");
@@ -143,8 +202,11 @@ pub(crate) fn build_final_native_lib_elf_unlocked(
         "-mthumb",
         "-mfloat-abi=hard",
         "-mfpu=fpv4-sp-d16",
-        staticlib_path.to_str().expect("utf-8 staticlib path"),
+        object_path.to_str().expect("utf-8 package C object path"),
     ];
+    if !c_only {
+        link_args.push(staticlib_path.to_str().expect("utf-8 staticlib path"));
+    }
     link_args.extend([
         "-Wl,--gc-sections",
         "-Wl,--undefined=init",

@@ -47,7 +47,7 @@ pub fn with_table<R>(table: &VescIf, body: impl FnOnce() -> R) -> R {
 
 #[cfg(test)]
 mod tests {
-    use super::{TABLE_LOCK, clear_table, current_table, empty_table, set_table};
+    use super::{TABLE_LOCK, current_table, empty_table, set_table};
     use crate::raw::VescIf;
 
     #[test]
@@ -57,9 +57,10 @@ mod tests {
         assert!(current_table().is_none());
 
         set_table(&table);
+        let guard = super::MockGuard;
         assert_eq!(current_table(), Some(&table as *const VescIf));
 
-        clear_table();
+        drop(guard);
         assert!(current_table().is_none());
     }
 }

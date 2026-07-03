@@ -45,51 +45,12 @@ impl PackageProvenance {
 pub struct PackageAssets {
     layout: PackageLayout,
     provenance: PackageProvenance,
-    profile: PackageAssetProfile,
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PackageAssetProfile {
-    Generic,
-    Refloat,
-}
-
-const REFLOAT_LOADER: &str = concat!(
-    // Refloat v1.2.1 (0ef6e99d8701) `lisp/package.lisp:1-17`.
-    "(import \"src/package_lib.bin\" 'package-lib)\n",
-    "(load-native-lib package-lib)\n\n",
-    "(define fw-ver (sysinfo 'fw-ver))\n",
-    "(apply ext-set-fw-version fw-ver)\n\n",
-    "; Start the BMS polling loop in a thread if enabled\n",
-    "(if (ext-bms)\n",
-    "    (if (or (>= (first fw-ver) 7) (and (= (first fw-ver) 6) (>= (second fw-ver) 5)))\n",
-    "        (progn\n",
-    "            (import \"bms.lisp\" 'bms)\n",
-    "            (read-eval-program bms)\n",
-    "            (spawn \"Refloat BMS\" 50 bms-loop)\n",
-    "        )\n",
-    "        (print \"[refloat] BMS Integration: Unsupported firmware version, 6.05+ required.\")\n",
-    "    )\n",
-    ")\n",
-);
 
 impl PackageAssets {
     /// Construct the asset set for one package layout and provenance.
     pub fn new(layout: PackageLayout, provenance: PackageProvenance) -> Self {
-        Self {
-            layout,
-            provenance,
-            profile: PackageAssetProfile::Generic,
-        }
-    }
-
-    /// Construct the Refloat asset set for one package layout and provenance.
-    pub fn refloat(layout: PackageLayout, provenance: PackageProvenance) -> Self {
-        Self {
-            layout,
-            provenance,
-            profile: PackageAssetProfile::Refloat,
-        }
+        Self { layout, provenance }
     }
 
     /// Return the package name used by the assets.
@@ -154,44 +115,20 @@ impl PackageAssets {
 
     /// Render the package descriptor QML.
     pub fn render_descriptor(&self) -> String {
-        match self.profile {
-            PackageAssetProfile::Generic => format!(
-                "import QtQuick 2.15\n\nItem {{\n    property string pkgName: \"{}\"\n    property string pkgDescriptionMd: \"README.md\"\n    property string pkgLisp: \"code.lisp\"\n    property string pkgQml: \"\"\n    property bool pkgQmlIsFullscreen: false\n    property string pkgOutput: \"{}\"\n}}\n",
-                self.package_name(),
-                self.layout.artifact_name()
-            ),
-            PackageAssetProfile::Refloat => concat!(
-                // Refloat v1.2.1 (0ef6e99d8701) `pkgdesc.qml:1-18`.
-                "import QtQuick 2.15\n\n",
-                "Item {\n",
-                "    property string pkgName: \"Refloat\"\n",
-                "    property string pkgDescriptionMd: \"package_README-gen.md\"\n",
-                "    property string pkgLisp: \"lisp/package.lisp\"\n",
-                "    property string pkgQml: \"ui.qml\"\n",
-                "    property bool pkgQmlIsFullscreen: false\n",
-                "    property string pkgOutput: \"refloat.vescpkg\"\n\n",
-                "    function isCompatible (fwRxParams) {\n",
-                "        if (fwRxParams.hwTypeStr().toLowerCase() != \"vesc\") {\n",
-                "            return false;\n",
-                "        }\n\n",
-                "        return true;\n",
-                "    }\n",
-                "}\n",
-            )
-            .to_owned(),
-        }
+        format!(
+            "import QtQuick 2.15\n\nItem {{\n    property string pkgName: \"{}\"\n    property string pkgDescriptionMd: \"README.md\"\n    property string pkgLisp: \"code.lisp\"\n    property string pkgQml: \"\"\n    property bool pkgQmlIsFullscreen: false\n    property string pkgOutput: \"{}\"\n}}\n",
+            self.package_name(),
+            self.layout.artifact_name()
+        )
     }
 
     /// Render the loader script that boots the package.
     pub fn render_loader(&self) -> String {
-        match self.profile {
-            PackageAssetProfile::Generic => concat!(
-                "(import \"src/package_lib.bin\" 'package-lib)\n",
-                "(print \"vesc-rust-load-v7\")\n",
-                "(print (load-native-lib package-lib))\n",
-            ),
-            PackageAssetProfile::Refloat => REFLOAT_LOADER,
-        }
+        concat!(
+            "(import \"src/package_lib.bin\" 'package-lib)\n",
+            "(print \"vesc-rust-load-v7\")\n",
+            "(print (load-native-lib package-lib))\n",
+        )
         .to_owned()
     }
 }
@@ -199,9 +136,7 @@ impl PackageAssets {
 #[cfg(test)]
 mod tests {
     use super::{PackageAssets, PackageProvenance};
-    use crate::{
-        BLE_LOOPBACK_PACKAGE_NAME, PackageLayout, REFLOAT_PACKAGE_NAME, REFLOAT_PACKAGE_VERSION,
-    };
+    use crate::{BLE_LOOPBACK_PACKAGE_NAME, PackageLayout};
 
     #[test]
     fn renders_the_expected_package_assets() {
@@ -254,31 +189,5 @@ mod tests {
             !assets.render_loader().contains("ext-rust-add"),
             "expected the BLE loopback package loader to only load the native library"
         );
-
-        let refloat_assets = PackageAssets::refloat(
-            PackageLayout::new(REFLOAT_PACKAGE_NAME, REFLOAT_PACKAGE_VERSION),
-            PackageProvenance::empty(),
-        );
-        assert!(
-            refloat_assets
-                .render_loader()
-                .contains("(load-native-lib package-lib)")
-        );
-        assert!(
-            refloat_assets
-                .render_loader()
-                .contains("(apply ext-set-fw-version fw-ver)")
-        );
-        assert!(
-            refloat_assets
-                .render_loader()
-                .contains("(import \"bms.lisp\" 'bms)")
-        );
-        assert!(
-            refloat_assets
-                .render_loader()
-                .contains("(read-eval-program bms)")
-        );
-        assert!(!refloat_assets.render_loader().contains("vesc-rust-load-v7"));
     }
 }

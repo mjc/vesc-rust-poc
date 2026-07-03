@@ -3,8 +3,7 @@
 use core::cell::Cell;
 use core::ffi::c_char;
 
-use crate::bindings::{AppDataBindings, CustomConfigBindings, LbmBindings};
-use vescpkg_rs_sys::raw::{CustomConfigGet, CustomConfigSet, CustomConfigXml};
+use crate::bindings::{AppDataBindings, LbmBindings};
 use vescpkg_rs_sys::{AppDataHandler, ExtensionHandler, LbmValue};
 
 pub use crate::motor::test_support::FakeMotorTelemetryBindings;
@@ -96,11 +95,6 @@ pub struct FakeAppDataBindings {
     pub last_data: Cell<usize>,
     /// Last outbound data length passed to send.
     pub last_len: Cell<u32>,
-    /// Number of custom-config registration calls observed.
-    pub custom_config_register_calls: Cell<usize>,
-    /// Number of custom-config clear calls observed.
-    pub custom_config_clear_calls: Cell<usize>,
-    handler_results: Cell<[bool; 2]>,
 }
 
 impl Default for FakeAppDataBindings {
@@ -117,16 +111,6 @@ impl FakeAppDataBindings {
 
     /// Creates fake app-data bindings returning `ticks` from the timer.
     pub fn with_ticks(ticks: u32) -> Self {
-        Self::with_ticks_and_handler_results(ticks, [true, true])
-    }
-
-    /// Creates fake app-data bindings with explicit handler registration results.
-    pub fn with_handler_results(handler_results: [bool; 2]) -> Self {
-        Self::with_ticks_and_handler_results(0, handler_results)
-    }
-
-    /// Creates fake app-data bindings with explicit timer ticks and handler registration results.
-    pub fn with_ticks_and_handler_results(ticks: u32, handler_results: [bool; 2]) -> Self {
         Self {
             handler_calls: Cell::new(0),
             ticks: Cell::new(ticks),
@@ -134,9 +118,6 @@ impl FakeAppDataBindings {
             last_handler: Cell::new(0),
             last_data: Cell::new(0),
             last_len: Cell::new(0),
-            custom_config_register_calls: Cell::new(0),
-            custom_config_clear_calls: Cell::new(0),
-            handler_results: Cell::new(handler_results),
         }
     }
 }
@@ -145,15 +126,7 @@ impl AppDataBindings for FakeAppDataBindings {
     unsafe fn set_app_data_handler(&self, handler: AppDataHandler) -> bool {
         self.handler_calls.set(self.handler_calls.get() + 1);
         self.last_handler.set(handler as *const () as usize);
-        let index = self.handler_calls.get().saturating_sub(1).min(1);
-        self.handler_results.get()[index]
-    }
-
-    unsafe fn clear_app_data_handler(&self) -> bool {
-        self.handler_calls.set(self.handler_calls.get() + 1);
-        self.last_handler.set(0);
-        let index = self.handler_calls.get().saturating_sub(1).min(1);
-        self.handler_results.get()[index]
+        true
     }
 
     fn system_time_ticks(&self) -> u32 {
@@ -164,25 +137,6 @@ impl AppDataBindings for FakeAppDataBindings {
         self.send_calls.set(self.send_calls.get() + 1);
         self.last_data.set(data as usize);
         self.last_len.set(len);
-    }
-}
-
-impl CustomConfigBindings for FakeAppDataBindings {
-    unsafe fn register_custom_config(
-        &self,
-        _get_cfg: CustomConfigGet,
-        _set_cfg: CustomConfigSet,
-        _get_cfg_xml: CustomConfigXml,
-    ) -> bool {
-        self.custom_config_register_calls
-            .set(self.custom_config_register_calls.get() + 1);
-        true
-    }
-
-    unsafe fn clear_custom_configs(&self) -> bool {
-        self.custom_config_clear_calls
-            .set(self.custom_config_clear_calls.get() + 1);
-        true
     }
 }
 
@@ -209,8 +163,8 @@ pub mod stubs {
 #[cfg(test)]
 mod tests {
     use super::{FakeAppDataBindings, FakeBindings, stubs};
-    use crate::{AppDataBindings, CustomConfigBindings, LbmBindings};
-    use vescpkg_rs_sys::{ExtensionHandler, LbmValue};
+    use crate::{AppDataBindings, LbmBindings};
+    use vescpkg_rs_sys::{AppDataHandler, ExtensionHandler, LbmValue};
 
     #[test]
     fn fake_bindings_default_and_rejecting_paths() {
@@ -247,41 +201,15 @@ mod tests {
         unsafe {
             assert!(bindings.set_app_data_handler(handler));
             bindings.send_app_data([1_u8, 2].as_ptr(), 2);
-            assert!(bindings.clear_app_data_handler());
+            let cleared: AppDataHandler =
+                core::mem::transmute::<*mut u8, AppDataHandler>(core::ptr::null_mut());
+            assert!(bindings.set_app_data_handler(cleared));
         }
 
         assert_eq!(bindings.handler_calls.get(), 2);
         assert_eq!(bindings.send_calls.get(), 1);
         assert_eq!(bindings.last_len.get(), 2);
         assert_eq!(bindings.last_handler.get(), 0);
-    }
-
-    #[test]
-    fn fake_app_data_bindings_track_custom_config_registration() {
-        let bindings = FakeAppDataBindings::new();
-
-        unsafe extern "C" fn get_cfg(_data: *mut u8, _is_default: bool) -> core::ffi::c_int {
-            0
-        }
-
-        unsafe extern "C" fn set_cfg(_data: *mut u8) -> bool {
-            true
-        }
-
-        unsafe extern "C" fn get_cfg_xml(_data: *mut *mut u8) -> core::ffi::c_int {
-            0
-        }
-
-        unsafe {
-            // Refloat v1.2.1 registers these three callbacks at `src/main.c:2456`;
-            // the VESC function-table slots are declared in
-            // `vesc_pkg_lib/vesc_c_if.h:549-553`.
-            assert!(bindings.register_custom_config(get_cfg, set_cfg, get_cfg_xml));
-            assert!(bindings.clear_custom_configs());
-        }
-
-        assert_eq!(bindings.custom_config_register_calls.get(), 1);
-        assert_eq!(bindings.custom_config_clear_calls.get(), 1);
     }
 
     #[test]

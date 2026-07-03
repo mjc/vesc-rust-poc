@@ -562,11 +562,10 @@ fn qml_compress(script: &str) -> Result<Vec<u8>, PackageInstallError> {
 mod tests {
     use super::{
         FakePackageInstallTransport, PackageInstallError, PackageInstallStep, decode_package,
-        erase_package, install_package, read_package_from_path,
+        erase_package, install_package,
     };
     use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
     use std::io::{Read, Write};
-    use std::path::Path;
 
     fn build_package_bytes() -> Vec<u8> {
         let mut data = Vec::new();
@@ -611,20 +610,6 @@ mod tests {
         assert_eq!(package.name, "Rust BLE loopback test package");
         assert!(package.qml_is_fullscreen);
         assert!(package.is_valid());
-    }
-
-    #[test]
-    fn decodes_refloat_vesc_tool_fixture_when_present() {
-        let path = Path::new("target/refloat-1.2.1-upstream.vescpkg");
-        if !path.exists() {
-            return;
-        }
-
-        let package = read_package_from_path(path).expect("refloat package");
-        assert_eq!(package.name, "Refloat");
-        assert!(!package.qml_is_fullscreen);
-        assert!(!package.qml_file.is_empty());
-        assert!(!package.lisp_data.is_empty());
     }
 
     #[test]

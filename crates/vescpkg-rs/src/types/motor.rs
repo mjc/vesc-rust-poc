@@ -94,7 +94,7 @@ macro_rules! seconds_type {
         pub struct $name(VescSeconds);
 
         impl $name {
-            /// Wrap VESC seconds with motor-domain meaning.
+            /// Wrap VESC float seconds with motor-domain meaning.
             pub const fn new(duration: VescSeconds) -> Self {
                 Self(duration)
             }
@@ -153,17 +153,31 @@ impl AudioChannelError {
 /// Firmware motor fault code token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
-pub struct FirmwareFaultCode(u8);
+pub struct FirmwareFaultCode(i32);
 
 impl FirmwareFaultCode {
-    /// Build a firmware fault-code token from the app-data compatible byte.
-    pub const fn from_compat_code(code: u8) -> Self {
+    /// Build a firmware fault-code token from the raw firmware enum value.
+    pub const fn from_raw_code(code: i32) -> Self {
         Self(code)
     }
 
-    /// Return the app-data compatible fault code byte.
-    pub const fn compat_code(self) -> u8 {
+    /// Build a firmware fault-code token from the app-data compatible byte.
+    pub const fn from_compat_code(code: u8) -> Self {
+        Self(code as i32)
+    }
+
+    /// Return the raw firmware enum value.
+    pub const fn raw_code(self) -> i32 {
         self.0
+    }
+
+    /// Return the app-data compatible fault code byte, if the raw code fits.
+    pub const fn compat_code(self) -> Option<u8> {
+        if self.0 >= 0 && self.0 <= u8::MAX as i32 {
+            Some(self.0 as u8)
+        } else {
+            None
+        }
     }
 
     /// Return true when the firmware reports no active fault.

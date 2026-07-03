@@ -38,19 +38,6 @@ filtered by the `hil` nextest profile.
 - `vescpkg-rs-build` still uses the generic VESC linker and conversion references:
   `src/vesc_c_if.h`, `src/link.ld`, `src/rules.mk`, and `scripts/conv.py`.
 
-## Package-Author API Surface
-
-Package code running inside the controller should import the common surface with
-`use vescpkg_rs::prelude::*;`. That prelude exposes lifecycle controllers,
-binding traits, extension descriptors, protocol names, domain-specific
-`vescpkg-rs::types`, and non-conflicting physical units. It does not re-export
-the raw `ffi` module.
-
-Raw ABI bools can remain in `vescpkg-rs-sys` and low-level binding traits.
-Package-author APIs should translate firmware success/failure into named
-results such as `AppDataHandlerRegistrationError` so call sites do not have to
-remember firmware polarity.
-
 ## Next Migration Ladder
 
 1. Keep artifact, size, symbol, and ABI guards green under `nix develop -c make package`.
@@ -62,8 +49,6 @@ remember firmware polarity.
 ## Guardrail
 
 Do not dump all of `vesc_c_if.h` into an ergonomic-looking API prematurely.
-Do not publish the package-author crate as `vesc`, `vesc-api`, or `vesc-comm`;
-those names are host/controller communication territory in the Rust ecosystem.
 
 Keep the package code `no_std` and no-alloc, keep the unsafe surface small, and
 move one capability at a time with tests first.

@@ -99,14 +99,7 @@ impl PackageArtifactInspectionPlan {
 
     /// Builds the expected package assets for this inspection plan.
     pub fn assets(&self) -> PackageAssets {
-        match self.example {
-            PackageExample::Loopback | PackageExample::Snake => {
-                PackageAssets::new(self.layout.clone(), self.provenance.clone())
-            }
-            PackageExample::Refloat => {
-                PackageAssets::refloat(self.layout.clone(), self.provenance.clone())
-            }
-        }
+        PackageAssets::new(self.layout.clone(), self.provenance.clone())
     }
 
     /// Returns the package staging directory path.
@@ -252,28 +245,9 @@ mod tests {
         NATIVE_PAYLOAD_PATH, PackageArtifactInspectionError, PackageArtifactInspectionPlan,
         PackageArtifactProblem, STAGING_DESCRIPTOR_PATH, STAGING_LOADER_PATH, STAGING_README_PATH,
     };
+    use crate::BLE_LOOPBACK_PACKAGE_NAME;
     use crate::package_assets::PackageProvenance;
     use crate::test_support::PackageTestHarness;
-    use crate::{
-        BLE_LOOPBACK_PACKAGE_NAME, PackageExample, REFLOAT_PACKAGE_NAME, REFLOAT_PACKAGE_VERSION,
-    };
-
-    #[test]
-    fn refloat_inspection_uses_refloat_asset_profile() {
-        let plan = PackageArtifactInspectionPlan::for_example(
-            std::env::temp_dir(),
-            REFLOAT_PACKAGE_NAME,
-            REFLOAT_PACKAGE_VERSION,
-            PackageProvenance::empty(),
-            PackageExample::Refloat,
-        );
-        let descriptor = plan.assets().render_descriptor();
-
-        assert!(descriptor.contains("package_README-gen.md"));
-        assert!(descriptor.contains("lisp/package.lisp"));
-        assert!(descriptor.contains("ui.qml"));
-        assert!(descriptor.contains("refloat.vescpkg"));
-    }
 
     #[test]
     fn reports_missing_required_artifacts() {

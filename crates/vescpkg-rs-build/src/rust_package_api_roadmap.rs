@@ -63,12 +63,6 @@ mod tests {
         let guardrail = markdown_section_body(&text, "Guardrail").expect("guardrail section");
         assert!(guardrail.contains("no_std"));
         assert!(guardrail.contains("no-alloc"));
-        assert!(guardrail.contains("`vesc`, `vesc-api`, or `vesc-comm`"));
-
-        let api_surface =
-            markdown_section_body(&text, "Package-Author API Surface").expect("api surface");
-        assert!(api_surface.contains("vescpkg_rs::prelude::*"));
-        assert!(api_surface.contains("AppDataHandlerRegistrationError"));
 
         let validation = markdown_section_body(&text, "Validation").expect("validation section");
         for command in [

@@ -16,8 +16,6 @@ pub struct NativeLibSemantics {
     pub literal_pools: BTreeMap<u64, u32>,
     /// Decoded instructions from the loader init routine.
     pub init_insns: Vec<DecodedInsn>,
-    /// Decoded instructions from the package init routine.
-    pub package_init_insns: Vec<DecodedInsn>,
     /// Decoded instructions from the loader stop routine.
     pub stop_insns: Vec<DecodedInsn>,
     /// Decoded instructions from the probe routine.
@@ -65,7 +63,6 @@ pub fn analyze_native_lib_elf(elf: &Path) -> NativeLibSemantics {
 
     let mut literal_pools = BTreeMap::new();
     let mut init_insns = Vec::new();
-    let mut package_init_insns = Vec::new();
     let mut stop_insns = Vec::new();
     let mut probe_insns = Vec::new();
     let mut text_insns = Vec::new();
@@ -106,9 +103,9 @@ pub fn analyze_native_lib_elf(elf: &Path) -> NativeLibSemantics {
 
     let probe_start = symbol_address(&symbols, "ext_rust_probe_diag_v4");
     let package_init_start = symbol_address(&symbols, "package_lib_init");
-    let stop_start = symbols.iter().find_map(|(addr, name)| {
-        (name.contains("stop_package") || name.contains("stop_refloat_app_data")).then_some(*addr)
-    });
+    let stop_start = symbols
+        .iter()
+        .find_map(|(addr, name)| name.contains("stop_package").then_some(*addr));
 
     if let Some(start) = probe_start {
         let end = package_init_start
@@ -119,16 +116,11 @@ pub fn analyze_native_lib_elf(elf: &Path) -> NativeLibSemantics {
     if let Some(start) = stop_start {
         stop_insns = decode_symbol_insns(&object, &cs, start, next_symbol_address(&symbols, start));
     }
-    if let Some(start) = package_init_start {
-        package_init_insns =
-            decode_symbol_insns(&object, &cs, start, next_symbol_address(&symbols, start));
-    }
 
     NativeLibSemantics {
         symbols,
         literal_pools,
         init_insns,
-        package_init_insns,
         stop_insns,
         probe_insns,
     }
@@ -156,10 +148,6 @@ pub fn semantic_report(semantics: &NativeLibSemantics) -> String {
             .join(", ")
     ));
     lines.push(format!("init: {}", insn_summary(&semantics.init_insns)));
-    lines.push(format!(
-        "package_init: {}",
-        insn_summary(&semantics.package_init_insns)
-    ));
     lines.push(format!("probe: {}", insn_summary(&semantics.probe_insns)));
     lines.push(format!("stop: {}", insn_summary(&semantics.stop_insns)));
     lines.join("\n")
@@ -233,53 +221,21 @@ pub fn assert_native_lib_semantics(elf: &Path) {
         semantic_report(&semantics)
     );
 
-    assert_stop_clears_app_data_handler(&semantics, "stop_package");
-}
-
-/// Asserts the loader-facing `.init_fun` attempts setup but reports success to LispBM.
-pub fn assert_loader_init_best_effort(elf: &Path) {
-    let semantics = analyze_native_lib_elf(elf);
-
     assert!(
-        init_insns_call(&semantics.init_insns, "package_lib_init"),
-        "loader init should attempt package setup before reporting success: {}",
+        stop_insns_clear_app_data_slot(&semantics.stop_insns, &semantics.literal_pools)
+            || stop_insns_branch_to_clear_app_data_helper(
+                &semantics.stop_insns,
+                &semantics.symbols
+            ),
+        "stop_package should clear app-data directly or tail-call the clear helper: {}",
         semantic_report(&semantics)
     );
     assert!(
-        init_insns_report_success(&semantics.init_insns),
-        "loader init should report success after best-effort package setup: {}",
-        semantic_report(&semantics)
-    );
-    assert!(
-        !init_insns_have_failure_return(&semantics.init_insns),
-        "loader init should not fail load-native-lib when package setup reports false: {}",
-        semantic_report(&semantics)
-    );
-}
-
-/// Asserts the native package stop hook clears the firmware app-data callback.
-pub fn assert_native_stop_clears_app_data_handler(elf: &Path, name: &str) {
-    let semantics = analyze_native_lib_elf(elf);
-    assert_stop_clears_app_data_handler(&semantics, name);
-}
-
-/// Asserts the Refloat native image preserves the upstream registration tail.
-pub fn assert_refloat_registration_tail(elf: &Path) {
-    let semantics = analyze_native_lib_elf(elf);
-
-    assert!(
-        !semantics.package_init_insns.is_empty(),
-        "Refloat package init should be decoded before registration-tail assertions: {}",
-        semantic_report(&semantics)
-    );
-    assert!(
-        package_init_touches_slot(&semantics.package_init_insns, 596),
-        "Refloat package init must call set_app_data_handler; upstream v1.2.1 (0ef6e99d8701) does at src/main.c:2457: {}",
-        semantic_report(&semantics)
-    );
-    assert!(
-        package_init_touches_slot(&semantics.package_init_insns, 184),
-        "Refloat package init must allocate firmware-owned app-data state; upstream v1.2.1 (0ef6e99d8701) mallocs Data at src/main.c:2419: {}",
+        !semantics
+            .stop_insns
+            .iter()
+            .any(|insn| insn.mnemonic.starts_with("cbz") || insn.mnemonic.starts_with("cbnz")),
+        "stop_package should not guard the VESC_IF app-data slot; refloat calls it directly: {}",
         semantic_report(&semantics)
     );
 }
@@ -388,10 +344,7 @@ fn insn_summary(insns: &[DecodedInsn]) -> String {
 
 fn init_insns_call(insns: &[DecodedInsn], target: &str) -> bool {
     insns.iter().any(|insn| {
-        insn.mnemonic == "bl"
-            && (insn.operands.contains(target)
-                || insn.operands.contains("0x60")
-                || insn.operands.starts_with('#'))
+        insn.mnemonic == "bl" && (insn.operands.contains(target) || insn.operands.contains("0x60"))
     })
 }
 
@@ -430,21 +383,12 @@ fn probe_insns_touch_vesc_if(insns: &[DecodedInsn], literals: &BTreeMap<u64, u32
         .any(|(addr, word)| probe_addrs.contains(addr) && *word == VESC_IF_TABLE_BASE)
 }
 
-fn package_init_touches_slot(insns: &[DecodedInsn], slot: u32) -> bool {
-    let decimal = format!("#{slot}");
-    let hex = format!("#0x{slot:x}");
-    insns.iter().any(|insn| {
-        insn.mnemonic.starts_with("ldr")
-            && (insn.operands.contains(&decimal) || insn.operands.contains(&hex))
-    })
-}
-
 fn stop_insns_clear_app_data_slot(insns: &[DecodedInsn], literals: &BTreeMap<u64, u32>) -> bool {
-    let _ = literals;
-    insns.iter().any(|insn| {
-        insn.mnemonic.starts_with("ldr")
-            && (insn.operands.contains("#596") || insn.operands.contains("#0x254"))
-    })
+    literals.values().any(|word| *word == VESC_IF_TABLE_BASE)
+        && insns.iter().any(|insn| {
+            insn.mnemonic.starts_with("ldr")
+                && (insn.operands.contains("#596") || insn.operands.contains("#0x254"))
+        })
 }
 
 fn stop_insns_branch_to_clear_app_data_helper(
@@ -460,24 +404,4 @@ fn stop_insns_branch_to_clear_app_data_helper(
         insn.mnemonic.starts_with('b')
             && (insn.operands.contains(&hex_target) || insn.operands.contains(&decimal_target))
     })
-}
-
-fn assert_stop_clears_app_data_handler(semantics: &NativeLibSemantics, name: &str) {
-    assert!(
-        !semantics
-            .stop_insns
-            .iter()
-            .any(|insn| insn.mnemonic == "udf"),
-        "{name} should not trap when firmware stops the package: {}",
-        semantic_report(semantics)
-    );
-    assert!(
-        stop_insns_clear_app_data_slot(&semantics.stop_insns, &semantics.literal_pools)
-            || stop_insns_branch_to_clear_app_data_helper(
-                &semantics.stop_insns,
-                &semantics.symbols
-            ),
-        "{name} should clear app-data directly or tail-call the clear helper: {}",
-        semantic_report(semantics)
-    );
 }

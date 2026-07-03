@@ -11,7 +11,9 @@ pub const NATIVE_LIB_ELF_PATH: &str = "target/native-lib-baseline/native_lib.elf
 pub const NATIVE_LIB_BIN_PATH: &str = "target/native-lib-baseline/native_lib.bin";
 /// Repository-relative linker script used for native-lib packaging.
 pub const NATIVE_LIB_LINKER_SCRIPT: &str = "fixtures/native-lib-baseline/src/link.ld";
-/// Repository-relative legacy C shim object path removed before final native-lib linking.
+/// Repository-relative C shim source path linked with the Rust static library.
+pub const PACKAGE_C_SOURCE_PATH: &str = "fixtures/native-lib-baseline/src/package_lib.c";
+/// Repository-relative C shim object path used by the final native-lib link.
 pub const PACKAGE_C_OBJECT_PATH: &str = "target/native-lib-baseline/package_lib.o";
 
 /// Native-library link plan rooted at a concrete artifact directory.
@@ -86,14 +88,24 @@ impl NativeLibLinkPlan {
         self.root.join(NATIVE_LIB_LINKER_SCRIPT)
     }
 
-    /// Returns the legacy C package shim object path.
+    /// Returns the C package shim source path.
+    pub fn package_c_source_path(&self) -> PathBuf {
+        self.root.join(PACKAGE_C_SOURCE_PATH)
+    }
+
+    /// Returns the C package shim object path.
     pub fn package_c_object_path(&self) -> PathBuf {
         self.root.join(&self.native_build_dir).join("package_lib.o")
     }
 
     /// Iterates over files that must exist before the final native link.
     pub fn link_inputs(&self) -> impl Iterator<Item = PathBuf> + '_ {
-        [self.rust_staticlib_path(), self.linker_script_path()].into_iter()
+        [
+            self.rust_staticlib_path(),
+            self.package_c_source_path(),
+            self.linker_script_path(),
+        ]
+        .into_iter()
     }
 }
 
@@ -138,7 +150,7 @@ mod tests {
 
     use super::{
         NATIVE_LIB_ELF_PATH, NATIVE_LIB_LINKER_SCRIPT, NativeLibLinkPlan, PACKAGE_C_OBJECT_PATH,
-        RUST_STATICLIB_PATH, native_lib_link_plan,
+        PACKAGE_C_SOURCE_PATH, RUST_STATICLIB_PATH, native_lib_link_plan,
     };
 
     #[test]
@@ -147,7 +159,11 @@ mod tests {
 
         assert_eq!(
             plan.link_inputs().collect::<Vec<_>>(),
-            vec![plan.rust_staticlib_path(), plan.linker_script_path()]
+            vec![
+                plan.rust_staticlib_path(),
+                plan.package_c_source_path(),
+                plan.linker_script_path()
+            ]
         );
         assert_eq!(
             plan.elf_path(),
@@ -171,13 +187,17 @@ mod tests {
             PathBuf::from("fixtures/native-lib-baseline").join(NATIVE_LIB_LINKER_SCRIPT)
         );
         assert_eq!(
+            plan.package_c_source_path(),
+            PathBuf::from("fixtures/native-lib-baseline").join(PACKAGE_C_SOURCE_PATH)
+        );
+        assert_eq!(
             plan.package_c_object_path(),
             PathBuf::from("fixtures/native-lib-baseline").join(PACKAGE_C_OBJECT_PATH)
         );
     }
 
     #[test]
-    fn selected_example_drives_staticlib_package_and_object_paths() {
+    fn selected_example_drives_staticlib_package_and_source_paths() {
         let plan =
             NativeLibLinkPlan::for_example("fixtures/native-lib-baseline", PackageExample::Snake);
 

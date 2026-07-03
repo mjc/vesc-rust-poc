@@ -3,4 +3,4 @@ source: crates/vescpkg-rs-build/tests/golden_packaging.rs
 assertion_line: 65
 expression: fingerprint_bytes(&packed)
 ---
-b5b28690a8037c4b
+4119e7bdbee0afe4

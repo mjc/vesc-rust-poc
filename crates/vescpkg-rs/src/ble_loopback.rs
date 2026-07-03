@@ -216,23 +216,23 @@ pub fn process_loopback_app_data(
 pub fn register_loopback_app_data_handler_with<B: crate::AppDataBindings>(
     lifecycle: &crate::LoopbackLifecycle<B>,
     handler: vescpkg_rs_sys::AppDataHandler,
-) -> Result<(), crate::AppDataHandlerRegistrationError> {
+) -> bool {
     lifecycle.register_app_data_handler(handler)
 }
 
-/// Register the loopback app-data handler through the Rust-owned package export.
+/// Register the loopback app-data handler through the static C shim.
 #[cfg(all(not(test), target_arch = "arm"))]
 pub fn register_loopback_app_data_handler() -> bool {
-    vesc_register_loopback_app_data_handler()
+    unsafe { vesc_register_loopback_app_data_handler() }
 }
 
-/// Clear the loopback app-data handler through the Rust-owned package export.
+/// Clear the loopback app-data handler through the static C shim.
 #[cfg(all(not(test), target_arch = "arm"))]
 pub fn clear_loopback_app_data_handler() {
-    vesc_clear_loopback_app_data_handler();
+    unsafe { vesc_clear_loopback_app_data_handler() };
 }
 
-/// Device entrypoint invoked by firmware app-data delivery.
+/// Device entrypoint invoked from the static C app-data shim (`package_lib.c`).
 ///
 /// # Safety
 ///
@@ -256,21 +256,9 @@ pub unsafe extern "C" fn loopback_handle_app_data(data: *mut u8, len: u32) {
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
-/// Register the loopback app-data callback from the native package image.
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn vesc_register_loopback_app_data_handler() -> bool {
-    unsafe { vescpkg_rs_sys::raw::vesc_set_app_data_handler(loopback_handle_app_data) }
-}
-
-#[cfg(all(not(test), target_arch = "arm"))]
-/// Clear the loopback app-data callback from the native package image.
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn vesc_clear_loopback_app_data_handler() {
-    unsafe {
-        vescpkg_rs_sys::raw::vesc_clear_app_data_handler();
-    }
+unsafe extern "C" {
+    fn vesc_register_loopback_app_data_handler() -> bool;
+    fn vesc_clear_loopback_app_data_handler();
 }
 
 /// No-op services implementation used in tests and host-side checks.
