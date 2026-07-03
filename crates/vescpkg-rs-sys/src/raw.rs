@@ -403,6 +403,7 @@ pub struct VescIf {
     shutdown_disable: Option<unsafe extern "C" fn(bool)>,
 }
 
+#[cfg(not(all(target_arch = "arm", not(test))))]
 #[inline(always)]
 unsafe fn vesc_if() -> *const VescIf {
     #[cfg(test)]
@@ -410,6 +411,157 @@ unsafe fn vesc_if() -> *const VescIf {
         return table;
     }
     VescIfAbi::BASE_ADDR.0 as *const VescIf
+}
+
+#[cfg(all(target_arch = "arm", not(test)))]
+#[inline(always)]
+unsafe fn load_vesc_if_word_from<const OFFSET: usize>(vesc_if: usize) -> usize {
+    let word: usize;
+    unsafe {
+        core::arch::asm!(
+            "ldr {word}, [{vesc_if}, #{offset}]",
+            vesc_if = in(reg) vesc_if,
+            word = out(reg) word,
+            offset = const OFFSET,
+            options(nostack, preserves_flags),
+        );
+    }
+    word
+}
+
+#[cfg(all(target_arch = "arm", not(test)))]
+macro_rules! vesc_slot_word_from {
+    ($vesc_if:expr, $name:ident) => {
+        crate::raw::load_vesc_if_word_from::<{ crate::c_vesc_if::$name::VESC32_BYTE_OFFSET }>(
+            $vesc_if as usize,
+        )
+    };
+}
+
+mod slots {
+    use super::{
+        AppDataHandler, CustomConfigGet, CustomConfigSet, CustomConfigXml, ExtensionHandler,
+        LibThread, VescIfAbi, c_char, c_int, c_uchar, c_void,
+    };
+    #[cfg(not(all(target_arch = "arm", not(test))))]
+    use super::{VescIf, vesc_if};
+
+    macro_rules! word_slot {
+        ($name:ident) => {
+            #[inline(always)]
+            pub(super) unsafe fn $name() -> usize {
+                #[cfg(all(target_arch = "arm", not(test)))]
+                unsafe {
+                    vesc_slot_word_from!(VescIfAbi::BASE_ADDR.0, $name)
+                }
+
+                #[cfg(not(all(target_arch = "arm", not(test))))]
+                unsafe {
+                    (*vesc_if()).$name
+                }
+            }
+        };
+    }
+
+    macro_rules! fn_slot {
+        ($name:ident as $fn_ty:ty) => {
+            #[inline(always)]
+            pub(super) unsafe fn $name() -> $fn_ty {
+                #[cfg(all(target_arch = "arm", not(test)))]
+                unsafe {
+                    core::mem::transmute::<usize, $fn_ty>(vesc_slot_word_from!(
+                        VescIfAbi::BASE_ADDR.0,
+                        $name
+                    ))
+                }
+
+                #[cfg(not(all(target_arch = "arm", not(test))))]
+                unsafe {
+                    (*vesc_if())
+                        .$name
+                        .expect("mock VESC_IF table must populate required slot")
+                }
+            }
+        };
+    }
+
+    #[cfg(all(target_arch = "arm", not(test)))]
+    #[inline(always)]
+    pub(super) unsafe fn lbm_add_extension_from(
+        vesc_if_base: usize,
+    ) -> unsafe extern "C" fn(*mut c_char, ExtensionHandler) -> bool {
+        unsafe {
+            core::mem::transmute::<usize, unsafe extern "C" fn(*mut c_char, ExtensionHandler) -> bool>(
+                vesc_slot_word_from!(vesc_if_base, lbm_add_extension),
+            )
+        }
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
+    #[inline(always)]
+    pub(super) unsafe fn lbm_add_extension_from(
+        vesc_if_base: usize,
+    ) -> unsafe extern "C" fn(*mut c_char, ExtensionHandler) -> bool {
+        let table = if vesc_if_base == VescIfAbi::BASE_ADDR.0 {
+            unsafe { vesc_if() }
+        } else {
+            vesc_if_base as *const VescIf
+        };
+        unsafe {
+            (*table)
+                .lbm_add_extension
+                .expect("mock VESC_IF table must populate lbm_add_extension")
+        }
+    }
+
+    fn_slot!(lbm_dec_as_i32 as unsafe extern "C" fn(u32) -> i32);
+    fn_slot!(lbm_enc_i as unsafe extern "C" fn(i32) -> u32);
+    fn_slot!(lbm_is_number as unsafe extern "C" fn(u32) -> bool);
+    fn_slot!(set_app_data_handler as unsafe extern "C" fn(Option<AppDataHandler>) -> bool);
+
+    word_slot!(lbm_enc_sym_nil);
+    word_slot!(lbm_enc_sym_true);
+    word_slot!(lbm_enc_sym_eerror);
+
+    fn_slot!(
+        conf_custom_add_config
+            as unsafe extern "C" fn(CustomConfigGet, CustomConfigSet, CustomConfigXml)
+    );
+    fn_slot!(conf_custom_clear_configs as unsafe extern "C" fn());
+    fn_slot!(malloc as unsafe extern "C" fn(usize) -> *mut c_void);
+    fn_slot!(free as unsafe extern "C" fn(*mut c_void));
+    fn_slot!(
+        spawn
+            as unsafe extern "C" fn(
+                unsafe extern "C" fn(*mut c_void),
+                usize,
+                *const c_char,
+                *mut c_void,
+            ) -> LibThread
+    );
+    fn_slot!(request_terminate as unsafe extern "C" fn(LibThread));
+    fn_slot!(should_terminate as unsafe extern "C" fn() -> bool);
+    fn_slot!(get_arg as unsafe extern "C" fn(u32) -> *mut *mut c_void);
+    fn_slot!(mc_get_fault as unsafe extern "C" fn() -> c_int);
+    fn_slot!(mc_get_input_voltage_filtered as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_get_amp_hours as unsafe extern "C" fn(bool) -> f32);
+    fn_slot!(mc_get_amp_hours_charged as unsafe extern "C" fn(bool) -> f32);
+    fn_slot!(mc_get_watt_hours as unsafe extern "C" fn(bool) -> f32);
+    fn_slot!(mc_get_watt_hours_charged as unsafe extern "C" fn(bool) -> f32);
+    fn_slot!(mc_get_battery_level as unsafe extern "C" fn(*mut f32) -> f32);
+    fn_slot!(mc_get_distance_abs as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_get_odometer as unsafe extern "C" fn() -> u64);
+    fn_slot!(mc_temp_fet_filtered as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_temp_motor_filtered as unsafe extern "C" fn() -> f32);
+    fn_slot!(imu_startup_done as unsafe extern "C" fn() -> bool);
+    fn_slot!(imu_get_roll as unsafe extern "C" fn() -> f32);
+    fn_slot!(imu_get_pitch as unsafe extern "C" fn() -> f32);
+    fn_slot!(imu_get_yaw as unsafe extern "C" fn() -> f32);
+    fn_slot!(send_app_data as unsafe extern "C" fn(*mut c_uchar, u32));
+    fn_slot!(system_time_ticks as unsafe extern "C" fn() -> u32);
+    fn_slot!(io_set_mode as unsafe extern "C" fn(c_int, c_int) -> bool);
+    fn_slot!(io_write as unsafe extern "C" fn(c_int, c_int) -> bool);
+    fn_slot!(io_read as unsafe extern "C" fn(c_int) -> bool);
 }
 
 /// # Safety
@@ -424,10 +576,7 @@ pub unsafe fn lbm_add_extension(name: *const c_char, handler: ExtensionHandler) 
 
     #[cfg(not(all(target_arch = "arm", not(test))))]
     unsafe {
-        match (*vesc_if()).lbm_add_extension {
-            Some(lbm_add_extension) => lbm_add_extension(name as *mut c_char, handler),
-            None => false,
-        }
+        slots::lbm_add_extension_from(VescIfAbi::BASE_ADDR.0)(name as *mut c_char, handler)
     }
 }
 
@@ -444,30 +593,13 @@ pub unsafe fn lbm_add_extension_with_table_base(
 ) -> bool {
     #[cfg(all(target_arch = "arm", not(test)))]
     unsafe {
-        let vesc_if = vesc_if_base as usize;
-        let lbm_add_extension: usize;
-        core::arch::asm!(
-            "ldr {lbm_add_extension}, [{vesc_if}, #0]",
-            vesc_if = in(reg) vesc_if,
-            lbm_add_extension = out(reg) lbm_add_extension,
-            options(nostack, preserves_flags),
-        );
-        let lbm_add_extension: unsafe extern "C" fn(*mut c_char, ExtensionHandler) -> bool =
-            core::mem::transmute(lbm_add_extension);
+        let lbm_add_extension = slots::lbm_add_extension_from(vesc_if_base as usize);
         lbm_add_extension(name as *mut c_char, handler)
     }
 
     #[cfg(not(all(target_arch = "arm", not(test))))]
     unsafe {
-        let table = if vesc_if_base == VescIfAbi::BASE_ADDR.0 as u32 {
-            vesc_if()
-        } else {
-            vesc_if_base as *const VescIf
-        };
-        match (*table).lbm_add_extension {
-            Some(lbm_add_extension) => lbm_add_extension(name as *mut c_char, handler),
-            None => false,
-        }
+        slots::lbm_add_extension_from(vesc_if_base as usize)(name as *mut c_char, handler)
     }
 }
 
@@ -477,24 +609,12 @@ pub unsafe fn lbm_add_extension_with_table_base(
 pub unsafe fn lbm_dec_as_i32(value: LbmValue) -> i32 {
     #[cfg(all(target_arch = "arm", not(test)))]
     unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let lbm_dec_as_i32: usize;
-        core::arch::asm!(
-            "ldr {lbm_dec_as_i32}, [{vesc_if}, #100]",
-            vesc_if = in(reg) vesc_if,
-            lbm_dec_as_i32 = out(reg) lbm_dec_as_i32,
-            options(nostack, preserves_flags),
-        );
-        let lbm_dec_as_i32: unsafe extern "C" fn(u32) -> i32 = core::mem::transmute(lbm_dec_as_i32);
-        lbm_dec_as_i32(value.0)
+        slots::lbm_dec_as_i32()(value.0)
     }
 
     #[cfg(not(all(target_arch = "arm", not(test))))]
     unsafe {
-        match (*vesc_if()).lbm_dec_as_i32 {
-            Some(lbm_dec_as_i32) => lbm_dec_as_i32(value.0),
-            None => 0,
-        }
+        slots::lbm_dec_as_i32()(value.0)
     }
 }
 
@@ -504,24 +624,12 @@ pub unsafe fn lbm_dec_as_i32(value: LbmValue) -> i32 {
 pub unsafe fn lbm_enc_i(value: i32) -> LbmValue {
     #[cfg(all(target_arch = "arm", not(test)))]
     unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let lbm_enc_i: usize;
-        core::arch::asm!(
-            "ldr {lbm_enc_i}, [{vesc_if}, #64]",
-            vesc_if = in(reg) vesc_if,
-            lbm_enc_i = out(reg) lbm_enc_i,
-            options(nostack, preserves_flags),
-        );
-        let lbm_enc_i: unsafe extern "C" fn(i32) -> u32 = core::mem::transmute(lbm_enc_i);
-        LbmValue(lbm_enc_i(value))
+        LbmValue(slots::lbm_enc_i()(value))
     }
 
     #[cfg(not(all(target_arch = "arm", not(test))))]
     unsafe {
-        match (*vesc_if()).lbm_enc_i {
-            Some(lbm_enc_i) => LbmValue(lbm_enc_i(value)),
-            None => LbmValue(0),
-        }
+        LbmValue(slots::lbm_enc_i()(value))
     }
 }
 
@@ -531,24 +639,12 @@ pub unsafe fn lbm_enc_i(value: i32) -> LbmValue {
 pub unsafe fn lbm_is_number(value: LbmValue) -> bool {
     #[cfg(all(target_arch = "arm", not(test)))]
     unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let lbm_is_number: usize;
-        core::arch::asm!(
-            "ldr {lbm_is_number}, [{vesc_if}, #124]",
-            vesc_if = in(reg) vesc_if,
-            lbm_is_number = out(reg) lbm_is_number,
-            options(nostack, preserves_flags),
-        );
-        let lbm_is_number: unsafe extern "C" fn(u32) -> bool = core::mem::transmute(lbm_is_number);
-        lbm_is_number(value.0)
+        slots::lbm_is_number()(value.0)
     }
 
     #[cfg(not(all(target_arch = "arm", not(test))))]
     unsafe {
-        match (*vesc_if()).lbm_is_number {
-            Some(lbm_is_number) => lbm_is_number(value.0),
-            None => false,
-        }
+        slots::lbm_is_number()(value.0)
     }
 }
 
@@ -556,69 +652,21 @@ pub unsafe fn lbm_is_number(value: LbmValue) -> bool {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn lbm_enc_sym_nil() -> LbmValue {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let lbm_enc_sym_nil: usize;
-        core::arch::asm!(
-            "ldr {lbm_enc_sym_nil}, [{vesc_if}, #136]",
-            vesc_if = in(reg) vesc_if,
-            lbm_enc_sym_nil = out(reg) lbm_enc_sym_nil,
-            options(nostack, preserves_flags),
-        );
-        LbmValue(lbm_enc_sym_nil as u32)
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        LbmValue((*vesc_if()).lbm_enc_sym_nil as u32)
-    }
+    unsafe { LbmValue(slots::lbm_enc_sym_nil() as u32) }
 }
 
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn lbm_enc_sym_true() -> LbmValue {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let lbm_enc_sym_true: usize;
-        core::arch::asm!(
-            "ldr {lbm_enc_sym_true}, [{vesc_if}, #140]",
-            vesc_if = in(reg) vesc_if,
-            lbm_enc_sym_true = out(reg) lbm_enc_sym_true,
-            options(nostack, preserves_flags),
-        );
-        LbmValue(lbm_enc_sym_true as u32)
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        LbmValue((*vesc_if()).lbm_enc_sym_true as u32)
-    }
+    unsafe { LbmValue(slots::lbm_enc_sym_true() as u32) }
 }
 
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn lbm_enc_sym_eerror() -> LbmValue {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let lbm_enc_sym_eerror: usize;
-        core::arch::asm!(
-            "ldr {lbm_enc_sym_eerror}, [{vesc_if}, #148]",
-            vesc_if = in(reg) vesc_if,
-            lbm_enc_sym_eerror = out(reg) lbm_enc_sym_eerror,
-            options(nostack, preserves_flags),
-        );
-        LbmValue(lbm_enc_sym_eerror as u32)
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        LbmValue((*vesc_if()).lbm_enc_sym_eerror as u32)
-    }
+    unsafe { LbmValue(slots::lbm_enc_sym_eerror() as u32) }
 }
 
 /// Register the firmware app-data callback using the refloat/C ABI.
@@ -633,26 +681,12 @@ pub unsafe fn vesc_set_app_data_handler(handler: AppDataHandler) -> bool {
 unsafe fn vesc_set_app_data_handler_slot(handler: Option<AppDataHandler>) -> bool {
     #[cfg(all(target_arch = "arm", not(test)))]
     unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let set_app_data_handler: usize;
-        core::arch::asm!(
-            "ldr {set_app_data_handler}, [{vesc_if}, #596]",
-            vesc_if = in(reg) vesc_if,
-            set_app_data_handler = out(reg) set_app_data_handler,
-            options(nostack, preserves_flags),
-        );
-        let set_app_data_handler: unsafe extern "C" fn(Option<AppDataHandler>) -> bool =
-            core::mem::transmute(set_app_data_handler);
-        set_app_data_handler(handler)
+        slots::set_app_data_handler()(handler)
     }
 
     #[cfg(not(all(target_arch = "arm", not(test))))]
     unsafe {
-        let Some(set_app_data_handler) = (*vesc_if()).set_app_data_handler else {
-            return false;
-        };
-
-        set_app_data_handler(handler)
+        slots::set_app_data_handler()(handler)
     }
 }
 
@@ -681,35 +715,8 @@ pub unsafe fn conf_custom_add_config(
     set_cfg: CustomConfigSet,
     get_cfg_xml: CustomConfigXml,
 ) -> bool {
-    #[cfg(all(target_arch = "arm", not(test)))]
     unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let conf_custom_add_config: usize;
-        core::arch::asm!(
-            "ldr {conf_custom_add_config}, [{vesc_if}, #728]",
-            vesc_if = in(reg) vesc_if,
-            conf_custom_add_config = out(reg) conf_custom_add_config,
-            options(nostack, preserves_flags),
-        );
-        if conf_custom_add_config == 0 {
-            return false;
-        }
-        let conf_custom_add_config: unsafe extern "C" fn(
-            CustomConfigGet,
-            CustomConfigSet,
-            CustomConfigXml,
-        ) = core::mem::transmute(conf_custom_add_config);
-        conf_custom_add_config(get_cfg, set_cfg, get_cfg_xml);
-        true
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        let Some(conf_custom_add_config) = (*vesc_if()).conf_custom_add_config else {
-            return false;
-        };
-
-        conf_custom_add_config(get_cfg, set_cfg, get_cfg_xml);
+        slots::conf_custom_add_config()(get_cfg, set_cfg, get_cfg_xml);
         true
     }
 }
@@ -723,32 +730,8 @@ pub unsafe fn conf_custom_add_config(
 ///
 /// Must only be called while the firmware `VESC_IF` table is valid.
 pub unsafe fn conf_custom_clear_configs() -> bool {
-    #[cfg(all(target_arch = "arm", not(test)))]
     unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let conf_custom_clear_configs: usize;
-        core::arch::asm!(
-            "ldr {conf_custom_clear_configs}, [{vesc_if}, #732]",
-            vesc_if = in(reg) vesc_if,
-            conf_custom_clear_configs = out(reg) conf_custom_clear_configs,
-            options(nostack, preserves_flags),
-        );
-        if conf_custom_clear_configs == 0 {
-            return false;
-        }
-        let conf_custom_clear_configs: unsafe extern "C" fn() =
-            core::mem::transmute(conf_custom_clear_configs);
-        conf_custom_clear_configs();
-        true
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        let Some(conf_custom_clear_configs) = (*vesc_if()).conf_custom_clear_configs else {
-            return false;
-        };
-
-        conf_custom_clear_configs();
+        slots::conf_custom_clear_configs()();
         true
     }
 }
@@ -761,31 +744,7 @@ pub unsafe fn conf_custom_clear_configs() -> bool {
 /// firmware/LispBM reserve heap and must be freed with [`vesc_free`] when no
 /// longer used.
 pub unsafe fn vesc_malloc(bytes: usize) -> *mut c_void {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let malloc: usize;
-        core::arch::asm!(
-            "ldr {malloc}, [{vesc_if}, #184]",
-            vesc_if = in(reg) vesc_if,
-            malloc = out(reg) malloc,
-            options(nostack, preserves_flags),
-        );
-        if malloc == 0 {
-            return core::ptr::null_mut();
-        }
-        let malloc: unsafe extern "C" fn(usize) -> *mut c_void = core::mem::transmute(malloc);
-        malloc(bytes)
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        let Some(malloc) = (*vesc_if()).malloc else {
-            return core::ptr::null_mut();
-        };
-
-        malloc(bytes)
-    }
+    unsafe { slots::malloc()(bytes) }
 }
 
 /// Free memory previously allocated by [`vesc_malloc`].
@@ -795,27 +754,8 @@ pub unsafe fn vesc_malloc(bytes: usize) -> *mut c_void {
 /// `ptr` must be null or a pointer returned by the firmware allocator, and it
 /// must not already have been freed.
 pub unsafe fn vesc_free(ptr: *mut c_void) {
-    #[cfg(all(target_arch = "arm", not(test)))]
     unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let free: usize;
-        core::arch::asm!(
-            "ldr {free}, [{vesc_if}, #188]",
-            vesc_if = in(reg) vesc_if,
-            free = out(reg) free,
-            options(nostack, preserves_flags),
-        );
-        if free != 0 {
-            let free: unsafe extern "C" fn(*mut c_void) = core::mem::transmute(free);
-            free(ptr);
-        }
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        if let Some(free) = (*vesc_if()).free {
-            free(ptr);
-        }
+        slots::free()(ptr);
     }
 }
 
@@ -835,36 +775,7 @@ pub unsafe fn vesc_spawn(
     name: *const c_char,
     arg: *mut c_void,
 ) -> LibThread {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let spawn: usize;
-        core::arch::asm!(
-            "ldr {spawn}, [{vesc_if}, #{slot}]",
-            vesc_if = in(reg) vesc_if,
-            spawn = out(reg) spawn,
-            slot = const VescIfAbi::SPAWN.vesc32_byte_offset(),
-            options(nostack, preserves_flags),
-        );
-        if spawn == 0 {
-            return core::ptr::null_mut();
-        }
-        let spawn: unsafe extern "C" fn(
-            unsafe extern "C" fn(*mut c_void),
-            usize,
-            *const c_char,
-            *mut c_void,
-        ) -> LibThread = core::mem::transmute(spawn);
-        spawn(entry, stack_words, name, arg)
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        match (*vesc_if()).spawn {
-            Some(spawn) => spawn(entry, stack_words, name, arg),
-            None => core::ptr::null_mut(),
-        }
-    }
+    unsafe { slots::spawn()(entry, stack_words, name, arg) }
 }
 
 /// Ask a firmware package thread to terminate.
@@ -877,29 +788,8 @@ pub unsafe fn vesc_spawn(
 ///
 /// `thread` must be null or a thread handle returned by [`vesc_spawn`].
 pub unsafe fn vesc_request_terminate(thread: LibThread) {
-    #[cfg(all(target_arch = "arm", not(test)))]
     unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let request_terminate: usize;
-        core::arch::asm!(
-            "ldr {request_terminate}, [{vesc_if}, #{slot}]",
-            vesc_if = in(reg) vesc_if,
-            request_terminate = out(reg) request_terminate,
-            slot = const VescIfAbi::REQUEST_TERMINATE.vesc32_byte_offset(),
-            options(nostack, preserves_flags),
-        );
-        if request_terminate != 0 {
-            let request_terminate: unsafe extern "C" fn(LibThread) =
-                core::mem::transmute(request_terminate);
-            request_terminate(thread);
-        }
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        if let Some(request_terminate) = (*vesc_if()).request_terminate {
-            request_terminate(thread);
-        }
+        slots::request_terminate()(thread);
     }
 }
 
@@ -913,32 +803,7 @@ pub unsafe fn vesc_request_terminate(thread: LibThread) {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn vesc_should_terminate() -> bool {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let should_terminate: usize;
-        core::arch::asm!(
-            "ldr {should_terminate}, [{vesc_if}, #{slot}]",
-            vesc_if = in(reg) vesc_if,
-            should_terminate = out(reg) should_terminate,
-            slot = const VescIfAbi::SHOULD_TERMINATE.vesc32_byte_offset(),
-            options(nostack, preserves_flags),
-        );
-        if should_terminate == 0 {
-            return true;
-        }
-        let should_terminate: unsafe extern "C" fn() -> bool =
-            core::mem::transmute(should_terminate);
-        should_terminate()
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        match (*vesc_if()).should_terminate {
-            Some(should_terminate) => should_terminate(),
-            None => true,
-        }
-    }
+    unsafe { slots::should_terminate()() }
 }
 
 /// Return the firmware-owned mutable `lib_info.arg` slot for a loaded native library.
@@ -947,31 +812,7 @@ pub unsafe fn vesc_should_terminate() -> bool {
 ///
 /// `prog_addr` must be the native library base address passed by the VESC loader.
 pub unsafe fn vesc_get_arg(prog_addr: u32) -> *mut *mut c_void {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let get_arg: usize;
-        core::arch::asm!(
-            "ldr {get_arg}, [{vesc_if}, #204]",
-            vesc_if = in(reg) vesc_if,
-            get_arg = out(reg) get_arg,
-            options(nostack, preserves_flags),
-        );
-        if get_arg == 0 {
-            return core::ptr::null_mut();
-        }
-        let get_arg: unsafe extern "C" fn(u32) -> *mut *mut c_void = core::mem::transmute(get_arg);
-        get_arg(prog_addr)
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        let Some(get_arg) = (*vesc_if()).get_arg else {
-            return core::ptr::null_mut();
-        };
-
-        get_arg(prog_addr)
-    }
+    unsafe { slots::get_arg()(prog_addr) }
 }
 
 /// Return the active motor fault code, or zero for no fault.
@@ -980,65 +821,16 @@ pub unsafe fn vesc_get_arg(prog_addr: u32) -> *mut *mut c_void {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_fault() -> c_int {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let mc_get_fault: usize;
-        core::arch::asm!(
-            "ldr {mc_get_fault}, [{vesc_if}, #{slot}]",
-            vesc_if = in(reg) vesc_if,
-            mc_get_fault = out(reg) mc_get_fault,
-            slot = const VescIfAbi::MC_GET_FAULT.vesc32_byte_offset(),
-            options(nostack, preserves_flags),
-        );
-        if mc_get_fault == 0 {
-            return 0;
-        }
-        let mc_get_fault: unsafe extern "C" fn() -> c_int = core::mem::transmute(mc_get_fault);
-        mc_get_fault()
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        match (*vesc_if()).mc_get_fault {
-            Some(mc_get_fault) => mc_get_fault(),
-            None => 0,
-        }
-    }
+    unsafe { slots::mc_get_fault()() }
 }
 
-/// Return the filtered input/battery voltage, or zero when unavailable.
+/// Return the filtered input/battery voltage.
 ///
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_input_voltage_filtered() -> f32 {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let mc_get_input_voltage_filtered: usize;
-        core::arch::asm!(
-            "ldr {mc_get_input_voltage_filtered}, [{vesc_if}, #{slot}]",
-            vesc_if = in(reg) vesc_if,
-            mc_get_input_voltage_filtered = out(reg) mc_get_input_voltage_filtered,
-            slot = const VescIfAbi::MC_GET_INPUT_VOLTAGE_FILTERED.vesc32_byte_offset(),
-            options(nostack, preserves_flags),
-        );
-        if mc_get_input_voltage_filtered == 0 {
-            return 0.0;
-        }
-        let mc_get_input_voltage_filtered: unsafe extern "C" fn() -> f32 =
-            core::mem::transmute(mc_get_input_voltage_filtered);
-        mc_get_input_voltage_filtered()
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        match (*vesc_if()).mc_get_input_voltage_filtered {
-            Some(mc_get_input_voltage_filtered) => mc_get_input_voltage_filtered(),
-            None => 0.0,
-        }
-    }
+    unsafe { slots::mc_get_input_voltage_filtered()() }
 }
 
 /// Return the discharged amp-hours counter.
@@ -1047,32 +839,7 @@ pub unsafe fn mc_get_input_voltage_filtered() -> f32 {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_amp_hours(reset: bool) -> f32 {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let mc_get_amp_hours: usize;
-        core::arch::asm!(
-            "ldr {mc_get_amp_hours}, [{vesc_if}, #{slot}]",
-            vesc_if = in(reg) vesc_if,
-            mc_get_amp_hours = out(reg) mc_get_amp_hours,
-            slot = const VescIfAbi::MC_GET_AMP_HOURS.vesc32_byte_offset(),
-            options(nostack, preserves_flags),
-        );
-        if mc_get_amp_hours == 0 {
-            return 0.0;
-        }
-        let mc_get_amp_hours: unsafe extern "C" fn(bool) -> f32 =
-            core::mem::transmute(mc_get_amp_hours);
-        mc_get_amp_hours(reset)
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        match (*vesc_if()).mc_get_amp_hours {
-            Some(mc_get_amp_hours) => mc_get_amp_hours(reset),
-            None => 0.0,
-        }
-    }
+    unsafe { slots::mc_get_amp_hours()(reset) }
 }
 
 /// Return the charged amp-hours counter.
@@ -1081,32 +848,7 @@ pub unsafe fn mc_get_amp_hours(reset: bool) -> f32 {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_amp_hours_charged(reset: bool) -> f32 {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let mc_get_amp_hours_charged: usize;
-        core::arch::asm!(
-            "ldr {mc_get_amp_hours_charged}, [{vesc_if}, #{slot}]",
-            vesc_if = in(reg) vesc_if,
-            mc_get_amp_hours_charged = out(reg) mc_get_amp_hours_charged,
-            slot = const VescIfAbi::MC_GET_AMP_HOURS_CHARGED.vesc32_byte_offset(),
-            options(nostack, preserves_flags),
-        );
-        if mc_get_amp_hours_charged == 0 {
-            return 0.0;
-        }
-        let mc_get_amp_hours_charged: unsafe extern "C" fn(bool) -> f32 =
-            core::mem::transmute(mc_get_amp_hours_charged);
-        mc_get_amp_hours_charged(reset)
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        match (*vesc_if()).mc_get_amp_hours_charged {
-            Some(mc_get_amp_hours_charged) => mc_get_amp_hours_charged(reset),
-            None => 0.0,
-        }
-    }
+    unsafe { slots::mc_get_amp_hours_charged()(reset) }
 }
 
 /// Return the discharged watt-hours counter.
@@ -1115,32 +857,7 @@ pub unsafe fn mc_get_amp_hours_charged(reset: bool) -> f32 {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_watt_hours(reset: bool) -> f32 {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let mc_get_watt_hours: usize;
-        core::arch::asm!(
-            "ldr {mc_get_watt_hours}, [{vesc_if}, #{slot}]",
-            vesc_if = in(reg) vesc_if,
-            mc_get_watt_hours = out(reg) mc_get_watt_hours,
-            slot = const VescIfAbi::MC_GET_WATT_HOURS.vesc32_byte_offset(),
-            options(nostack, preserves_flags),
-        );
-        if mc_get_watt_hours == 0 {
-            return 0.0;
-        }
-        let mc_get_watt_hours: unsafe extern "C" fn(bool) -> f32 =
-            core::mem::transmute(mc_get_watt_hours);
-        mc_get_watt_hours(reset)
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        match (*vesc_if()).mc_get_watt_hours {
-            Some(mc_get_watt_hours) => mc_get_watt_hours(reset),
-            None => 0.0,
-        }
-    }
+    unsafe { slots::mc_get_watt_hours()(reset) }
 }
 
 /// Return the charged watt-hours counter.
@@ -1149,32 +866,7 @@ pub unsafe fn mc_get_watt_hours(reset: bool) -> f32 {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_watt_hours_charged(reset: bool) -> f32 {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let mc_get_watt_hours_charged: usize;
-        core::arch::asm!(
-            "ldr {mc_get_watt_hours_charged}, [{vesc_if}, #{slot}]",
-            vesc_if = in(reg) vesc_if,
-            mc_get_watt_hours_charged = out(reg) mc_get_watt_hours_charged,
-            slot = const VescIfAbi::MC_GET_WATT_HOURS_CHARGED.vesc32_byte_offset(),
-            options(nostack, preserves_flags),
-        );
-        if mc_get_watt_hours_charged == 0 {
-            return 0.0;
-        }
-        let mc_get_watt_hours_charged: unsafe extern "C" fn(bool) -> f32 =
-            core::mem::transmute(mc_get_watt_hours_charged);
-        mc_get_watt_hours_charged(reset)
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        match (*vesc_if()).mc_get_watt_hours_charged {
-            Some(mc_get_watt_hours_charged) => mc_get_watt_hours_charged(reset),
-            None => 0.0,
-        }
-    }
+    unsafe { slots::mc_get_watt_hours_charged()(reset) }
 }
 
 /// Return the estimated battery level as a ratio.
@@ -1184,32 +876,7 @@ pub unsafe fn mc_get_watt_hours_charged(reset: bool) -> f32 {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid. If
 /// `wh_left` is not null, it must be valid for firmware to write one `f32`.
 pub unsafe fn mc_get_battery_level(wh_left: *mut f32) -> f32 {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let mc_get_battery_level: usize;
-        core::arch::asm!(
-            "ldr {mc_get_battery_level}, [{vesc_if}, #{slot}]",
-            vesc_if = in(reg) vesc_if,
-            mc_get_battery_level = out(reg) mc_get_battery_level,
-            slot = const VescIfAbi::MC_GET_BATTERY_LEVEL.vesc32_byte_offset(),
-            options(nostack, preserves_flags),
-        );
-        if mc_get_battery_level == 0 {
-            return 0.0;
-        }
-        let mc_get_battery_level: unsafe extern "C" fn(*mut f32) -> f32 =
-            core::mem::transmute(mc_get_battery_level);
-        mc_get_battery_level(wh_left)
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        match (*vesc_if()).mc_get_battery_level {
-            Some(mc_get_battery_level) => mc_get_battery_level(wh_left),
-            None => 0.0,
-        }
-    }
+    unsafe { slots::mc_get_battery_level()(wh_left) }
 }
 
 /// Return the absolute motor distance in meters.
@@ -1218,32 +885,7 @@ pub unsafe fn mc_get_battery_level(wh_left: *mut f32) -> f32 {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_distance_abs() -> f32 {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let mc_get_distance_abs: usize;
-        core::arch::asm!(
-            "ldr {mc_get_distance_abs}, [{vesc_if}, #{slot}]",
-            vesc_if = in(reg) vesc_if,
-            mc_get_distance_abs = out(reg) mc_get_distance_abs,
-            slot = const VescIfAbi::MC_GET_DISTANCE_ABS.vesc32_byte_offset(),
-            options(nostack, preserves_flags),
-        );
-        if mc_get_distance_abs == 0 {
-            return 0.0;
-        }
-        let mc_get_distance_abs: unsafe extern "C" fn() -> f32 =
-            core::mem::transmute(mc_get_distance_abs);
-        mc_get_distance_abs()
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        match (*vesc_if()).mc_get_distance_abs {
-            Some(mc_get_distance_abs) => mc_get_distance_abs(),
-            None => 0.0,
-        }
-    }
+    unsafe { slots::mc_get_distance_abs()() }
 }
 
 /// Return the odometer distance in meters.
@@ -1252,31 +894,7 @@ pub unsafe fn mc_get_distance_abs() -> f32 {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_odometer() -> u64 {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let mc_get_odometer: usize;
-        core::arch::asm!(
-            "ldr {mc_get_odometer}, [{vesc_if}, #{slot}]",
-            vesc_if = in(reg) vesc_if,
-            mc_get_odometer = out(reg) mc_get_odometer,
-            slot = const VescIfAbi::MC_GET_ODOMETER.vesc32_byte_offset(),
-            options(nostack, preserves_flags),
-        );
-        if mc_get_odometer == 0 {
-            return 0;
-        }
-        let mc_get_odometer: unsafe extern "C" fn() -> u64 = core::mem::transmute(mc_get_odometer);
-        mc_get_odometer()
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        match (*vesc_if()).mc_get_odometer {
-            Some(mc_get_odometer) => mc_get_odometer(),
-            None => 0,
-        }
-    }
+    unsafe { slots::mc_get_odometer()() }
 }
 
 /// Return the filtered MOSFET/FET temperature in degrees Celsius.
@@ -1285,32 +903,7 @@ pub unsafe fn mc_get_odometer() -> u64 {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_temp_fet_filtered() -> f32 {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let mc_temp_fet_filtered: usize;
-        core::arch::asm!(
-            "ldr {mc_temp_fet_filtered}, [{vesc_if}, #{slot}]",
-            vesc_if = in(reg) vesc_if,
-            mc_temp_fet_filtered = out(reg) mc_temp_fet_filtered,
-            slot = const VescIfAbi::MC_TEMP_FET_FILTERED.vesc32_byte_offset(),
-            options(nostack, preserves_flags),
-        );
-        if mc_temp_fet_filtered == 0 {
-            return 0.0;
-        }
-        let mc_temp_fet_filtered: unsafe extern "C" fn() -> f32 =
-            core::mem::transmute(mc_temp_fet_filtered);
-        mc_temp_fet_filtered()
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        match (*vesc_if()).mc_temp_fet_filtered {
-            Some(mc_temp_fet_filtered) => mc_temp_fet_filtered(),
-            None => 0.0,
-        }
-    }
+    unsafe { slots::mc_temp_fet_filtered()() }
 }
 
 /// Return the filtered motor temperature in degrees Celsius.
@@ -1319,32 +912,7 @@ pub unsafe fn mc_temp_fet_filtered() -> f32 {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_temp_motor_filtered() -> f32 {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let mc_temp_motor_filtered: usize;
-        core::arch::asm!(
-            "ldr {mc_temp_motor_filtered}, [{vesc_if}, #{slot}]",
-            vesc_if = in(reg) vesc_if,
-            mc_temp_motor_filtered = out(reg) mc_temp_motor_filtered,
-            slot = const VescIfAbi::MC_TEMP_MOTOR_FILTERED.vesc32_byte_offset(),
-            options(nostack, preserves_flags),
-        );
-        if mc_temp_motor_filtered == 0 {
-            return 0.0;
-        }
-        let mc_temp_motor_filtered: unsafe extern "C" fn() -> f32 =
-            core::mem::transmute(mc_temp_motor_filtered);
-        mc_temp_motor_filtered()
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        match (*vesc_if()).mc_temp_motor_filtered {
-            Some(mc_temp_motor_filtered) => mc_temp_motor_filtered(),
-            None => 0.0,
-        }
-    }
+    unsafe { slots::mc_temp_motor_filtered()() }
 }
 
 /// Return whether firmware IMU startup has completed.
@@ -1357,32 +925,7 @@ pub unsafe fn mc_temp_motor_filtered() -> f32 {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn imu_startup_done() -> bool {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let imu_startup_done: usize;
-        core::arch::asm!(
-            "ldr {imu_startup_done}, [{vesc_if}, #{slot}]",
-            vesc_if = in(reg) vesc_if,
-            imu_startup_done = out(reg) imu_startup_done,
-            slot = const VescIfAbi::IMU_STARTUP_DONE.vesc32_byte_offset(),
-            options(nostack, preserves_flags),
-        );
-        if imu_startup_done == 0 {
-            return false;
-        }
-        let imu_startup_done: unsafe extern "C" fn() -> bool =
-            core::mem::transmute(imu_startup_done);
-        imu_startup_done()
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        match (*vesc_if()).imu_startup_done {
-            Some(imu_startup_done) => imu_startup_done(),
-            None => false,
-        }
-    }
+    unsafe { slots::imu_startup_done()() }
 }
 
 /// Return firmware IMU roll in radians.
@@ -1394,31 +937,7 @@ pub unsafe fn imu_startup_done() -> bool {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn imu_get_roll() -> f32 {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let imu_get_roll: usize;
-        core::arch::asm!(
-            "ldr {imu_get_roll}, [{vesc_if}, #{slot}]",
-            vesc_if = in(reg) vesc_if,
-            imu_get_roll = out(reg) imu_get_roll,
-            slot = const VescIfAbi::IMU_GET_ROLL.vesc32_byte_offset(),
-            options(nostack, preserves_flags),
-        );
-        if imu_get_roll == 0 {
-            return 0.0;
-        }
-        let imu_get_roll: unsafe extern "C" fn() -> f32 = core::mem::transmute(imu_get_roll);
-        imu_get_roll()
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        match (*vesc_if()).imu_get_roll {
-            Some(imu_get_roll) => imu_get_roll(),
-            None => 0.0,
-        }
-    }
+    unsafe { slots::imu_get_roll()() }
 }
 
 /// Return firmware IMU pitch in radians.
@@ -1430,31 +949,7 @@ pub unsafe fn imu_get_roll() -> f32 {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn imu_get_pitch() -> f32 {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let imu_get_pitch: usize;
-        core::arch::asm!(
-            "ldr {imu_get_pitch}, [{vesc_if}, #{slot}]",
-            vesc_if = in(reg) vesc_if,
-            imu_get_pitch = out(reg) imu_get_pitch,
-            slot = const VescIfAbi::IMU_GET_PITCH.vesc32_byte_offset(),
-            options(nostack, preserves_flags),
-        );
-        if imu_get_pitch == 0 {
-            return 0.0;
-        }
-        let imu_get_pitch: unsafe extern "C" fn() -> f32 = core::mem::transmute(imu_get_pitch);
-        imu_get_pitch()
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        match (*vesc_if()).imu_get_pitch {
-            Some(imu_get_pitch) => imu_get_pitch(),
-            None => 0.0,
-        }
-    }
+    unsafe { slots::imu_get_pitch()() }
 }
 
 /// Return firmware IMU yaw in radians.
@@ -1466,31 +961,7 @@ pub unsafe fn imu_get_pitch() -> f32 {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn imu_get_yaw() -> f32 {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let imu_get_yaw: usize;
-        core::arch::asm!(
-            "ldr {imu_get_yaw}, [{vesc_if}, #{slot}]",
-            vesc_if = in(reg) vesc_if,
-            imu_get_yaw = out(reg) imu_get_yaw,
-            slot = const VescIfAbi::IMU_GET_YAW.vesc32_byte_offset(),
-            options(nostack, preserves_flags),
-        );
-        if imu_get_yaw == 0 {
-            return 0.0;
-        }
-        let imu_get_yaw: unsafe extern "C" fn() -> f32 = core::mem::transmute(imu_get_yaw);
-        imu_get_yaw()
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        match (*vesc_if()).imu_get_yaw {
-            Some(imu_get_yaw) => imu_get_yaw(),
-            None => 0.0,
-        }
-    }
+    unsafe { slots::imu_get_yaw()() }
 }
 
 /// # Safety
@@ -1498,28 +969,8 @@ pub unsafe fn imu_get_yaw() -> f32 {
 /// `data` must point to at least `len` bytes that remain valid for the
 /// duration of the firmware call.
 pub unsafe fn vesc_send_app_data(data: *const u8, len: u32) {
-    #[cfg(all(target_arch = "arm", not(test)))]
     unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let send_app_data: usize;
-        core::arch::asm!(
-            "ldr {send_app_data}, [{vesc_if}, #592]",
-            vesc_if = in(reg) vesc_if,
-            send_app_data = out(reg) send_app_data,
-            options(nostack, preserves_flags),
-        );
-        if send_app_data != 0 {
-            let send_app_data: unsafe extern "C" fn(*mut c_uchar, u32) =
-                core::mem::transmute(send_app_data);
-            send_app_data(data as *mut c_uchar, len);
-        }
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        if let Some(send_app_data) = (*vesc_if()).send_app_data {
-            send_app_data(data as *mut c_uchar, len);
-        }
+        slots::send_app_data()(data as *mut c_uchar, len);
     }
 }
 
@@ -1527,67 +978,28 @@ pub unsafe fn vesc_send_app_data(data: *const u8, len: u32) {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn vesc_system_time_ticks() -> u32 {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    unsafe {
-        let vesc_if = VescIfAbi::BASE_ADDR.0;
-        let system_time_ticks: usize;
-        core::arch::asm!(
-            "ldr {system_time_ticks}, [{vesc_if}, #952]",
-            vesc_if = in(reg) vesc_if,
-            system_time_ticks = out(reg) system_time_ticks,
-            options(nostack, preserves_flags),
-        );
-        if system_time_ticks == 0 {
-            return 0;
-        }
-        let system_time_ticks: unsafe extern "C" fn() -> u32 =
-            core::mem::transmute(system_time_ticks);
-        system_time_ticks()
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        match (*vesc_if()).system_time_ticks {
-            Some(system_time_ticks) => system_time_ticks(),
-            None => 0,
-        }
-    }
+    unsafe { slots::system_time_ticks()() }
 }
 
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn io_set_mode(pin: crate::VescPin, mode: crate::VescPinMode) -> bool {
-    unsafe {
-        match (*vesc_if()).io_set_mode {
-            Some(io_set_mode) => io_set_mode(pin.0, mode.0),
-            None => false,
-        }
-    }
+    unsafe { slots::io_set_mode()(pin.0, mode.0) }
 }
 
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn io_write(pin: crate::VescPin, level: i32) -> bool {
-    unsafe {
-        match (*vesc_if()).io_write {
-            Some(io_write) => io_write(pin.0, level),
-            None => false,
-        }
-    }
+    unsafe { slots::io_write()(pin.0, level) }
 }
 
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn io_read(pin: crate::VescPin) -> bool {
-    unsafe {
-        match (*vesc_if()).io_read {
-            Some(io_read) => io_read(pin.0),
-            None => false,
-        }
-    }
+    unsafe { slots::io_read()(pin.0) }
 }
 
 /// Returns selected `VescIf` field offsets for ABI layout tests.
@@ -1648,9 +1060,9 @@ pub fn vesc_if_full_layout_for_tests() -> (usize, usize, usize) {
     )
 }
 
-/// Returns nullable function-pointer slot size and alignment for ABI layout tests.
+/// Returns host mock function-pointer slot size and alignment for ABI layout tests.
 #[cfg(test)]
-pub fn nullable_slot_layout_for_tests() -> (usize, usize) {
+pub fn mock_fn_slot_layout_for_tests() -> (usize, usize) {
     (
         core::mem::size_of::<Option<unsafe extern "C" fn()>>(),
         core::mem::align_of::<Option<unsafe extern "C" fn()>>(),

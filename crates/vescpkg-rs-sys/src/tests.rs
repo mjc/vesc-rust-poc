@@ -77,19 +77,24 @@ fn raw_vesc_if_offsets_match_the_documented_32_bit_package_header_slots() {
 #[test]
 fn raw_vesc_if_table_covers_the_current_vesc_firmware_header() {
     let pointer_size = core::mem::size_of::<usize>();
+    let expected_fields = VescIfAbi::FIELD_COUNT;
 
     assert_eq!(
         crate::raw::vesc_if_full_layout_for_tests(),
-        (253 * pointer_size, pointer_size, 252 * pointer_size)
+        (
+            expected_fields * pointer_size,
+            pointer_size,
+            (expected_fields - 1) * pointer_size
+        )
     );
 }
 
 #[test]
-fn raw_vesc_if_callable_slots_are_nullable_c_function_pointers() {
+fn raw_vesc_if_mock_function_slots_have_pointer_layout() {
     let pointer_size = core::mem::size_of::<usize>();
 
     assert_eq!(
-        crate::raw::nullable_slot_layout_for_tests(),
+        crate::raw::mock_fn_slot_layout_for_tests(),
         (pointer_size, pointer_size)
     );
 }
@@ -262,45 +267,20 @@ fn transparent_wrappers_expose_raw_tuple_fields() {
 }
 
 #[test]
-fn arm_asm_immediates_match_vesc_if_abi() {
-    let raw = include_str!("raw.rs");
-    let expected = [
-        (
-            "lbm_add_extension",
-            VescIfAbi::LBM_ADD_EXTENSION.vesc32_byte_offset(),
-        ),
-        ("lbm_enc_i", VescIfAbi::LBM_ENC_I.vesc32_byte_offset()),
-        (
-            "lbm_dec_as_i32",
-            VescIfAbi::LBM_DEC_AS_I32.vesc32_byte_offset(),
-        ),
-        (
-            "lbm_is_number",
-            VescIfAbi::LBM_IS_NUMBER.vesc32_byte_offset(),
-        ),
-        (
-            "lbm_enc_sym_eerror",
-            VescIfAbi::LBM_ENC_SYM_EERROR.vesc32_byte_offset(),
-        ),
-        (
-            "set_app_data_handler",
-            VescIfAbi::SET_APP_DATA_HANDLER.vesc32_byte_offset(),
-        ),
-        (
-            "send_app_data",
-            VescIfAbi::SEND_APP_DATA.vesc32_byte_offset(),
-        ),
-        (
-            "system_time_ticks",
-            VescIfAbi::SYSTEM_TIME_TICKS.vesc32_byte_offset(),
-        ),
-    ];
+fn vesc_if_used_slots_match_generated_header_descriptors() {
+    assert_eq!(crate::c_vesc_if::FIELD_COUNT, VescIfAbi::FIELD_COUNT);
+    assert_eq!(crate::c_vesc_if::SLOTS[0].name, "lbm_add_extension");
+    assert_eq!(
+        crate::c_vesc_if::SLOTS[crate::c_vesc_if::FIELD_COUNT - 1].name,
+        "shutdown_disable"
+    );
 
-    for (slot, offset) in expected {
-        let insn = std::format!("ldr {{{slot}}}, [{{vesc_if}}, #{offset}]");
-        assert!(
-            raw.contains(&insn),
-            "missing ARM asm dispatch for {slot} at byte offset {offset}"
-        );
+    for slot in VescIfAbi::USED_SLOTS {
+        let generated = crate::c_vesc_if::SLOTS
+            .iter()
+            .find(|generated| generated.name == slot.name())
+            .expect("used VESC_IF slot must exist in generated header inventory");
+
+        assert_eq!(generated.vesc32_byte_offset, slot.vesc32_byte_offset());
     }
 }

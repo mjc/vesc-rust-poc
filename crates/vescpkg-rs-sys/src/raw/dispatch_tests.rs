@@ -1,6 +1,7 @@
 use core::cell::Cell;
 use core::ffi::{c_char, c_int, c_uchar};
 
+use crate::c_vesc_if;
 use crate::test_support::{empty_table, with_table};
 use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescPin, VescPinMode};
 
@@ -353,14 +354,6 @@ fn with_populated_table<R>(body: impl FnOnce() -> R) -> R {
     })
 }
 
-fn with_empty_table<R>(body: impl FnOnce() -> R) -> R {
-    let table = empty_table();
-    with_table(&table, || {
-        reset_counters();
-        body()
-    })
-}
-
 #[test]
 fn lbm_add_extension_forwards_through_mock_table() {
     with_populated_table(|| unsafe {
@@ -390,7 +383,7 @@ fn lbm_add_extension_with_table_base_uses_mock_when_base_matches_firmware_addr()
 }
 
 #[test]
-fn lbm_value_helpers_forward_and_handle_missing_slots() {
+fn lbm_value_helpers_forward_through_mock_table() {
     with_populated_table(|| unsafe {
         assert_eq!(lbm_dec_as_i32(LbmValue(9)), 9);
         assert_eq!(lbm_enc_i(4), LbmValue(5));
@@ -400,19 +393,10 @@ fn lbm_value_helpers_forward_and_handle_missing_slots() {
         assert_eq!(lbm_enc_sym_true(), LbmValue(0xAABB_1100));
         assert_eq!(lbm_enc_sym_eerror(), LbmValue(0xAABB_CC00));
     });
-
-    with_empty_table(|| unsafe {
-        assert_eq!(lbm_dec_as_i32(LbmValue(1)), 0);
-        assert_eq!(lbm_enc_i(1), LbmValue(0));
-        assert!(!lbm_is_number(LbmValue(1)));
-        assert_eq!(lbm_enc_sym_nil(), LbmValue(0));
-        assert_eq!(lbm_enc_sym_true(), LbmValue(0));
-        assert_eq!(lbm_enc_sym_eerror(), LbmValue(0));
-    });
 }
 
 #[test]
-fn app_data_helpers_forward_and_handle_missing_slots() {
+fn app_data_helpers_forward_through_mock_table() {
     with_populated_table(|| unsafe {
         extern "C" fn handler(_: *mut u8, _: u32) {}
 
@@ -426,16 +410,10 @@ fn app_data_helpers_forward_and_handle_missing_slots() {
         assert_eq!(SEND_APP_DATA.get(), 1);
         assert_eq!(SEND_APP_DATA_LEN.get(), 3);
     });
-
-    with_empty_table(|| unsafe {
-        assert!(!vesc_clear_app_data_handler());
-        vesc_send_app_data(core::ptr::null(), 0);
-        assert_eq!(SEND_APP_DATA.get(), 0);
-    });
 }
 
 #[test]
-fn custom_config_helpers_forward_and_handle_missing_slots() {
+fn custom_config_helpers_forward_through_mock_table() {
     // Refloat v1.2.1 registers these callbacks in `src/main.c:2456`, clears them
     // in `src/main.c:2403`, and gets the ABI slots from `vesc_pkg_lib/vesc_c_if.h:549-553`.
     with_populated_table(|| unsafe {
@@ -453,36 +431,17 @@ fn custom_config_helpers_forward_and_handle_missing_slots() {
         assert!(conf_custom_clear_configs());
         assert_eq!(CONF_CUSTOM_CLEAR_CONFIGS.get(), 1);
     });
-
-    with_empty_table(|| unsafe {
-        assert!(!conf_custom_add_config(
-            custom_config_get,
-            custom_config_set,
-            custom_config_xml,
-        ));
-        assert_eq!(CONF_CUSTOM_ADD_CONFIG.get(), 0);
-        assert_eq!(CUSTOM_CONFIG_GET.get(), 0);
-        assert_eq!(CUSTOM_CONFIG_SET.get(), 0);
-        assert_eq!(CUSTOM_CONFIG_XML.get(), 0);
-
-        assert!(!conf_custom_clear_configs());
-        assert_eq!(CONF_CUSTOM_CLEAR_CONFIGS.get(), 0);
-    });
 }
 
 #[test]
-fn system_time_ticks_forwards_and_defaults_to_zero() {
+fn system_time_ticks_forwards_through_mock_table() {
     with_populated_table(|| unsafe {
         assert_eq!(vesc_system_time_ticks(), 42);
     });
-
-    with_empty_table(|| unsafe {
-        assert_eq!(vesc_system_time_ticks(), 0);
-    });
 }
 
 #[test]
-fn gpio_helpers_forward_and_handle_missing_slots() {
+fn gpio_helpers_forward_through_mock_table() {
     with_populated_table(|| unsafe {
         let pin = VescPin(3);
         let mode = VescPinMode(2);
@@ -494,17 +453,10 @@ fn gpio_helpers_forward_and_handle_missing_slots() {
         assert_eq!(LAST_MODE.get(), 2);
         assert_eq!(LAST_LEVEL.get(), 1);
     });
-
-    with_empty_table(|| unsafe {
-        let pin = VescPin(1);
-        assert!(!io_set_mode(pin, VescPinMode(0)));
-        assert!(!io_write(pin, 0));
-        assert!(!io_read(pin));
-    });
 }
 
 #[test]
-fn motor_data_helpers_forward_and_handle_missing_slots() {
+fn motor_data_helpers_forward_through_mock_table() {
     with_populated_table(|| unsafe {
         assert_eq!(mc_get_distance_abs(), 12.5);
         assert_eq!(mc_temp_fet_filtered(), 44.0);
@@ -529,31 +481,49 @@ fn motor_data_helpers_forward_and_handle_missing_slots() {
         assert_eq!(MC_GET_FAULT.get(), 1);
         assert_eq!(MC_GET_INPUT_VOLTAGE_FILTERED.get(), 1);
     });
+}
 
-    with_empty_table(|| unsafe {
-        assert_eq!(mc_get_distance_abs(), 0.0);
-        assert_eq!(mc_temp_fet_filtered(), 0.0);
-        assert_eq!(mc_temp_motor_filtered(), 0.0);
-        assert_eq!(mc_get_amp_hours(false), 0.0);
-        assert_eq!(mc_get_amp_hours_charged(false), 0.0);
-        assert_eq!(mc_get_watt_hours(false), 0.0);
-        assert_eq!(mc_get_watt_hours_charged(false), 0.0);
-        assert_eq!(mc_get_battery_level(core::ptr::null_mut()), 0.0);
-        assert_eq!(mc_get_odometer(), 0);
-        assert_eq!(mc_get_fault(), 0);
-        assert_eq!(mc_get_input_voltage_filtered(), 0.0);
-        assert_eq!(MC_GET_DISTANCE_ABS.get(), 0);
-        assert_eq!(MC_TEMP_FET_FILTERED.get(), 0);
-        assert_eq!(MC_TEMP_MOTOR_FILTERED.get(), 0);
-        assert_eq!(MC_GET_AMP_HOURS.get(), 0);
-        assert_eq!(MC_GET_AMP_HOURS_CHARGED.get(), 0);
-        assert_eq!(MC_GET_WATT_HOURS.get(), 0);
-        assert_eq!(MC_GET_WATT_HOURS_CHARGED.get(), 0);
-        assert_eq!(MC_GET_BATTERY_LEVEL.get(), 0);
-        assert_eq!(MC_GET_ODOMETER.get(), 0);
-        assert_eq!(MC_GET_FAULT.get(), 0);
-        assert_eq!(MC_GET_INPUT_VOLTAGE_FILTERED.get(), 0);
-    });
+#[test]
+fn generated_vesc_if_inventory_matches_pinned_upstream_header() {
+    assert_eq!(
+        c_vesc_if::HEADER_REPO,
+        "https://github.com/lukash/vesc_pkg_lib"
+    );
+    assert_eq!(c_vesc_if::FIELD_COUNT, 253);
+    assert_eq!(VescIfAbi::FIELD_COUNT, c_vesc_if::FIELD_COUNT);
+
+    assert_eq!(c_vesc_if::lbm_add_extension::INDEX, 0);
+    assert_eq!(c_vesc_if::lbm_add_extension::VESC32_BYTE_OFFSET, 0);
+    assert_eq!(c_vesc_if::lbm_add_extension::HEADER_LINE, 325);
+    assert_eq!(c_vesc_if::send_app_data::INDEX, 148);
+    assert_eq!(c_vesc_if::set_app_data_handler::INDEX, 149);
+    assert_eq!(c_vesc_if::mc_get_fault::INDEX, 92);
+    assert_eq!(c_vesc_if::system_time_ticks::INDEX, 238);
+    assert_eq!(c_vesc_if::shutdown_disable::INDEX, 252);
+    assert_eq!(c_vesc_if::shutdown_disable::HEADER_LINE, 672);
+
+    assert_eq!(c_vesc_if::SLOTS[0].name, c_vesc_if::lbm_add_extension::NAME);
+    assert_eq!(
+        c_vesc_if::SLOTS[c_vesc_if::FIELD_COUNT - 1].name,
+        c_vesc_if::shutdown_disable::NAME
+    );
+    assert_eq!(
+        c_vesc_if::SLOTS[c_vesc_if::FIELD_COUNT - 1].vesc32_byte_offset,
+        c_vesc_if::shutdown_disable::VESC32_BYTE_OFFSET
+    );
+}
+
+#[test]
+fn public_vesc_if_slots_are_projected_from_generated_inventory() {
+    for slot in VescIfAbi::USED_SLOTS {
+        let generated = c_vesc_if::SLOTS
+            .iter()
+            .find(|generated| generated.name == slot.name())
+            .expect("used slot must exist in generated upstream inventory");
+
+        assert_eq!(generated.index, slot.slot_index());
+        assert_eq!(generated.vesc32_byte_offset, slot.vesc32_byte_offset());
+    }
 }
 
 #[test]
