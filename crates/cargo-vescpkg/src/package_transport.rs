@@ -600,7 +600,7 @@ impl BtlePackageInstallTransport {
         match parse_simple_ack(&response, command)? {
             true => Ok(()),
             false => Err(PackageInstallError::Device(
-                "device rejected the package write".to_owned(),
+                "device rejected the package erase".to_owned(),
             )),
         }
     }
