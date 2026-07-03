@@ -4,7 +4,7 @@ use std::path::Path;
 use crate::native_audit::defined_symbols;
 use crate::native_inspect::{SectionLayout, all_section_layouts, nm_output};
 
-const LOAD_SECTIONS: [&str; 4] = [".program_ptr", ".init_fun", ".got", ".text"];
+const LOAD_SECTIONS: [&str; 5] = [".program_ptr", ".init_fun", ".data", ".got", ".text"];
 const CONTRACT_SYMBOLS: [&str; 8] = [
     "init",
     "prog_ptr",

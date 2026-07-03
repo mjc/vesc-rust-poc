@@ -458,7 +458,7 @@ fn package_init_touches_slot(insns: &[DecodedInsn], slot: u32) -> bool {
     })
 }
 
-fn stop_insns_clear_app_data_slot(insns: &[DecodedInsn], _literals: &BTreeMap<u64, u32>) -> bool {
+fn stop_insns_clear_app_data_slot(insns: &[DecodedInsn]) -> bool {
     insns.iter().any(|insn| {
         insn.mnemonic.starts_with("ldr")
             && (insn.operands.contains("#596") || insn.operands.contains("#0x254"))
@@ -490,7 +490,7 @@ fn assert_stop_clears_app_data_handler(semantics: &NativeLibSemantics, name: &st
         semantic_report(semantics)
     );
     assert!(
-        stop_insns_clear_app_data_slot(&semantics.stop_insns, &semantics.literal_pools)
+        stop_insns_clear_app_data_slot(&semantics.stop_insns)
             || stop_insns_branch_to_clear_app_data_helper(
                 &semantics.stop_insns,
                 &semantics.symbols

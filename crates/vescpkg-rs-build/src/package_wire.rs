@@ -252,26 +252,34 @@ pub fn wire_comparison_report(left: &[u8], right: &[u8]) -> Result<String, WireE
         field_bytes(&left_fields, "lispData"),
         field_bytes(&right_fields, "lispData"),
     ) {
-        append_import_comparison(&mut lines, left_lisp, right_lisp)?;
+        append_import_comparison(&mut lines, left_lisp, right_lisp);
     }
 
     Ok(lines.join("\n"))
 }
 
-fn append_import_comparison(
-    lines: &mut Vec<String>,
-    left_lisp: &[u8],
-    right_lisp: &[u8],
-) -> Result<(), WireError> {
-    let (_, left_imports) = parse_lisp_imports(left_lisp)?;
-    let (_, right_imports) = parse_lisp_imports(right_lisp)?;
+fn append_import_comparison(lines: &mut Vec<String>, left_lisp: &[u8], right_lisp: &[u8]) {
+    let left_imports = match parse_lisp_imports(left_lisp) {
+        Ok((_, imports)) => imports,
+        Err(error) => {
+            lines.push(format!("  imports: left_parse_error {error}"));
+            return;
+        }
+    };
+    let right_imports = match parse_lisp_imports(right_lisp) {
+        Ok((_, imports)) => imports,
+        Err(error) => {
+            lines.push(format!("  imports: right_parse_error {error}"));
+            return;
+        }
+    };
     let tags = left_imports
         .iter()
         .chain(right_imports.iter())
         .map(|import| import.tag.as_str())
         .collect::<BTreeSet<_>>();
     if tags.is_empty() {
-        return Ok(());
+        return;
     }
 
     lines.push("  imports:".to_owned());
@@ -310,8 +318,6 @@ fn append_import_comparison(
             (None, None) => {}
         }
     }
-
-    Ok(())
 }
 
 fn format_byte_comparison(key: &str, left: &[u8], right: &[u8]) -> String {
@@ -396,10 +402,14 @@ mod tests {
 
     fn package_with_lisp_payload(payload: &[u8]) -> Vec<u8> {
         let lisp = lisp_data(payload);
+        package_with_lisp_data(&lisp)
+    }
+
+    fn package_with_lisp_data(lisp: &[u8]) -> Vec<u8> {
         let mut raw = field_spine();
         raw.extend_from_slice(b"lispData\0");
         raw.extend_from_slice(&(lisp.len() as i32).to_be_bytes());
-        raw.extend_from_slice(&lisp);
+        raw.extend_from_slice(lisp);
         compressed_package(&raw)
     }
 
@@ -459,5 +469,16 @@ mod tests {
 
         insta::assert_snapshot!("wire_comparison_report", report);
         assert!(!report.contains("0xaa"));
+    }
+
+    #[test]
+    fn wire_comparison_report_keeps_field_diff_when_import_parse_fails() {
+        let baseline = package_with_lisp_payload(&[0xAA, 0xBB]);
+        let rust_native = package_with_lisp_data(&[]);
+
+        let report = wire_comparison_report(&baseline, &rust_native).expect("wire comparison");
+
+        assert!(report.contains("lispData: differs"));
+        assert!(report.contains("imports: right_parse_error"));
     }
 }
