@@ -101,12 +101,6 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
             vescpkg_rs_sys::raw::mc_get_input_voltage_filtered()
         }))
     }
-
-    fn input_voltage_filtered(&self) -> InputVoltage {
-        InputVoltage::new(Voltage::from_volts(unsafe {
-            vescpkg_rs_sys::raw::mc_get_input_voltage_filtered()
-        }))
-    }
 }
 
 /// High-level motor telemetry API built on a binding implementation.
@@ -318,13 +312,6 @@ pub mod test_support {
         pub fn with_input_voltage_filtered(self, input_voltage_filtered: InputVoltage) -> Self {
             self.input_voltage_filtered.set(input_voltage_filtered);
             self
-        }
-
-        /// Creates fake motor telemetry bindings returning `input_voltage_filtered`.
-        pub fn with_input_voltage_filtered(input_voltage_filtered: InputVoltage) -> Self {
-            let bindings = Self::new();
-            bindings.input_voltage_filtered.set(input_voltage_filtered);
-            bindings
         }
     }
 
