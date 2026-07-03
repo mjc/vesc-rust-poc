@@ -5,11 +5,9 @@ use crate::types::{
     FirmwareFaultCode, InputVoltage, MosfetTemperature, MotorCurrent, MotorTemperature,
     TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
-use crate::units::OdometerMeters;
 #[cfg(not(test))]
-use crate::units::{
-    Charge, Current, Distance, Energy, Ratio, Rpm, SignedRatio, Speed, Temperature, Voltage,
-};
+use crate::units::{Charge, Current, Distance, Energy, Ratio, Rpm, Speed, Temperature, Voltage};
+use crate::units::{OdometerMeters, SignedRatio};
 
 /// Motor telemetry operations backed by firmware slots.
 pub trait MotorTelemetryBindings {
@@ -105,9 +103,7 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
     }
 
     fn duty_cycle_now(&self) -> DutyCycle {
-        DutyCycle::new(SignedRatio::clamped(unsafe {
-            vescpkg_rs_sys::raw::mc_get_duty_cycle_now().abs()
-        }))
+        duty_cycle_magnitude(unsafe { vescpkg_rs_sys::raw::mc_get_duty_cycle_now() })
     }
 
     fn foc_id_current(&self) -> Option<MotorCurrent> {
@@ -178,9 +174,30 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
     }
 }
 
+fn duty_cycle_magnitude(raw_duty: f32) -> DutyCycle {
+    let magnitude = if raw_duty.is_nan() {
+        0.0
+    } else {
+        raw_duty.abs()
+    };
+    DutyCycle::new(SignedRatio::clamped(magnitude))
+}
+
 /// High-level motor telemetry API built on a binding implementation.
 pub struct MotorTelemetryApi<B> {
     bindings: B,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::duty_cycle_magnitude;
+
+    #[test]
+    fn duty_cycle_magnitude_never_reports_negative_nan() {
+        assert_eq!(duty_cycle_magnitude(f32::NAN).ratio().as_ratio(), 0.0);
+        assert_eq!(duty_cycle_magnitude(-0.42).ratio().as_ratio(), 0.42);
+        assert_eq!(duty_cycle_magnitude(2.0).ratio().as_ratio(), 1.0);
+    }
 }
 
 impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {

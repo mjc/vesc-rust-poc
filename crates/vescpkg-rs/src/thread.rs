@@ -146,8 +146,10 @@ impl<B: ThreadBindings> ThreadApi<B> {
     ///
     /// # Safety
     ///
-    /// `entry` must be a valid package-thread entrypoint. `arg` must point to
-    /// state that lives until the spawned thread exits or is terminated.
+    /// `entry` must be a valid package-thread entrypoint. `name` must be a
+    /// valid NUL-terminated C string that remains valid for the firmware
+    /// `spawn` call. `arg` must point to state that lives until the spawned
+    /// thread exits or is terminated.
     pub unsafe fn spawn(
         &self,
         entry: ThreadEntry,
