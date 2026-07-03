@@ -30,8 +30,12 @@ pub enum Command {
     LispProbe(LispProbeCommand),
     /// Run one Lisp REPL form against a target device.
     LispEval(LispEvalCommand),
+    /// Stop the running Lisp/native package on a target device.
+    LispStop(LispStopCommand),
     /// Read back the installed Lisp/code payload from a target device.
     LispReadCode(LispReadCodeCommand),
+    /// Read back the installed QML app payload from a target device.
+    QmlAppRead(QmlAppReadCommand),
     /// Install a package on a target device.
     PackageInstall(PackageInstallCommand),
     /// Erase an installed package from a target device.
@@ -73,9 +77,27 @@ pub struct LispEvalCommand {
     pub address: Option<String>,
 }
 
+/// Arguments for the `lisp-stop` command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LispStopCommand {
+    /// Optional BLE device-name filter.
+    pub device_name: Option<String>,
+    /// Optional BLE address filter.
+    pub address: Option<String>,
+}
+
 /// Arguments for the `lisp-read-code` command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LispReadCodeCommand {
+    /// Optional BLE device-name filter.
+    pub device_name: Option<String>,
+    /// Optional BLE address filter.
+    pub address: Option<String>,
+}
+
+/// Arguments for the `qml-app-read` command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QmlAppReadCommand {
     /// Optional BLE device-name filter.
     pub device_name: Option<String>,
     /// Optional BLE address filter.
@@ -156,7 +178,7 @@ where
     match parse_args(args) {
         Ok(Command::Help) => {
             println!(
-                "cargo vescpkg: use `build`, `layout`, `status`, `scan`, `loopback`, `lisp-probe`, `lisp-eval`, `lisp-read-code`, `deploy`, `snake-deploy`, `package-install`, `erase-package`, or `snake`"
+                "cargo vescpkg: use `build`, `layout`, `status`, `scan`, `loopback`, `lisp-probe`, `lisp-eval`, `lisp-stop`, `lisp-read-code`, `qml-app-read`, `deploy`, `snake-deploy`, `package-install`, `erase-package`, or `snake`"
             );
             ExitCode::SUCCESS
         }
@@ -250,6 +272,7 @@ where
                 }
             }
         }
+        Ok(Command::LispStop(command)) => run_lisp_stop(command),
         Ok(Command::LispReadCode(command)) => {
             let target = loopback_target(command.address, command.device_name);
             match read_lisp_code(target) {
@@ -265,6 +288,27 @@ where
                 }
                 Err(error) => {
                     eprintln!("lisp read-code failed: {error}");
+                    ExitCode::from(1)
+                }
+            }
+        }
+        Ok(Command::QmlAppRead(command)) => {
+            let target = loopback_target(command.address, command.device_name);
+            match read_qml_app(target) {
+                Ok(read) => {
+                    println!(
+                        "qml app: has_qml_app={} compressed={} decompressed={} preview={}",
+                        read.has_qml_app,
+                        read.compressed.len(),
+                        read.decompressed.as_ref().map_or(0, String::len),
+                        read.decompressed
+                            .as_deref()
+                            .map_or_else(|| "<none>".to_owned(), qml_preview)
+                    );
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("qml app read failed: {error}");
                     ExitCode::from(1)
                 }
             }
@@ -738,6 +782,46 @@ fn read_lisp_code(
     read
 }
 
+fn run_lisp_stop(command: LispStopCommand) -> ExitCode {
+    let target = loopback_target(command.address, command.device_name);
+    match stop_lisp_running(target) {
+        Ok(()) => {
+            println!("lisp stop ok");
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("lisp stop failed: {error}");
+            ExitCode::from(1)
+        }
+    }
+}
+
+fn stop_lisp_running(
+    target: loopback::LoopbackTarget,
+) -> Result<(), package_install::PackageInstallError> {
+    let transport = package_transport::BtlePackageInstallTransport::new()?;
+    transport.open_without_preflight(target)?;
+    let stopped = transport.stop_running_recovery();
+    transport.close();
+    stopped
+}
+
+fn read_qml_app(
+    target: loopback::LoopbackTarget,
+) -> Result<package_transport::QmlAppRead, package_install::PackageInstallError> {
+    let transport = package_transport::BtlePackageInstallTransport::new()?;
+    transport.open(target)?;
+    let read = transport.read_qml_app();
+    transport.close();
+    read
+}
+
+fn qml_preview(script: &str) -> String {
+    const PREVIEW_CHARS: usize = 80;
+
+    script.chars().take(PREVIEW_CHARS).collect()
+}
+
 fn run_package_install(command: PackageInstallCommand) -> ExitCode {
     let target = loopback_target(command.address, command.device_name);
     match package_install::install_over_ble(command.package_path, target) {
@@ -786,7 +870,9 @@ where
         Some("loopback") => parse_loopback(iter).map(Command::Loopback),
         Some("lisp-probe") => parse_lisp_probe(iter).map(Command::LispProbe),
         Some("lisp-eval") => parse_lisp_eval(iter).map(Command::LispEval),
+        Some("lisp-stop") => parse_lisp_stop(iter).map(Command::LispStop),
         Some("lisp-read-code") => parse_lisp_read_code(iter).map(Command::LispReadCode),
+        Some("qml-app-read") => parse_qml_app_read(iter).map(Command::QmlAppRead),
         Some("package-install") => {
             parse_package_install(iter, "package-install").map(Command::PackageInstall)
         }
@@ -876,12 +962,30 @@ fn parse_lisp_eval(mut iter: impl Iterator<Item = String>) -> Result<LispEvalCom
     })
 }
 
+fn parse_lisp_stop(iter: impl Iterator<Item = String>) -> Result<LispStopCommand, ParseError> {
+    let (device_name, address) = parse_device_flags(iter)?;
+
+    Ok(LispStopCommand {
+        device_name,
+        address,
+    })
+}
+
 fn parse_lisp_read_code(
     iter: impl Iterator<Item = String>,
 ) -> Result<LispReadCodeCommand, ParseError> {
     let (device_name, address) = parse_device_flags(iter)?;
 
     Ok(LispReadCodeCommand {
+        device_name,
+        address,
+    })
+}
+
+fn parse_qml_app_read(iter: impl Iterator<Item = String>) -> Result<QmlAppReadCommand, ParseError> {
+    let (device_name, address) = parse_device_flags(iter)?;
+
+    Ok(QmlAppReadCommand {
         device_name,
         address,
     })
@@ -1135,9 +1239,9 @@ pub mod vesc_uart;
 #[cfg(test)]
 mod tests {
     use super::{
-        Command, LispEvalCommand, LispProbeCommand, LispReadCodeCommand, LoopbackCommand,
-        PackageEraseCommand, PackageInstallCommand, ParseError, SnakeCommand, SnakeRunMode,
-        parse_args, snake_action_from_key,
+        Command, LispEvalCommand, LispProbeCommand, LispReadCodeCommand, LispStopCommand,
+        LoopbackCommand, PackageEraseCommand, PackageInstallCommand, ParseError, QmlAppReadCommand,
+        SnakeCommand, SnakeRunMode, parse_args, snake_action_from_key,
     };
     use crate::snake::{
         SnakeBoardHeight, SnakeBoardWidth, SnakeDirection, SnakeLocalAction, SnakeSeed,
@@ -1215,6 +1319,13 @@ mod tests {
             Err(ParseError::UnknownCommand("lisp-eval".to_owned()))
         );
         assert_eq!(
+            parse_args(["cargo-vescpkg", "lisp-stop", "--device", "VESC BLE UART"]),
+            Ok(Command::LispStop(LispStopCommand {
+                device_name: Some("VESC BLE UART".to_owned()),
+                address: None,
+            }))
+        );
+        assert_eq!(
             parse_args([
                 "cargo-vescpkg",
                 "lisp-read-code",
@@ -1222,6 +1333,13 @@ mod tests {
                 "VESC BLE UART"
             ]),
             Ok(Command::LispReadCode(LispReadCodeCommand {
+                device_name: Some("VESC BLE UART".to_owned()),
+                address: None,
+            }))
+        );
+        assert_eq!(
+            parse_args(["cargo-vescpkg", "qml-app-read", "--device", "VESC BLE UART"]),
+            Ok(Command::QmlAppRead(QmlAppReadCommand {
                 device_name: Some("VESC BLE UART".to_owned()),
                 address: None,
             }))

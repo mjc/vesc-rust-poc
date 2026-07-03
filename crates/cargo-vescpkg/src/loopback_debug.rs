@@ -123,6 +123,15 @@ pub enum LoopbackProgress {
         /// Decoded loopback command.
         command: WireCommand,
     },
+    /// A raw custom app-data reply packet was decoded.
+    RawAppDataReplyReceived {
+        /// Step name associated with the reply.
+        step: &'static str,
+        /// Hex preview of the app-data reply payload.
+        wire_hex: String,
+        /// App-data reply payload size in bytes.
+        bytes: usize,
+    },
     /// A loopback step completed successfully.
     StepSucceeded {
         /// Step name that completed.
@@ -206,6 +215,11 @@ impl LoopbackProgress {
                 wire_hex,
                 command,
             } => format!("step {step}: reply command={command:?} wire={wire_hex}"),
+            Self::RawAppDataReplyReceived {
+                step,
+                wire_hex,
+                bytes,
+            } => format!("step {step}: app-data reply {bytes} byte(s) wire={wire_hex}"),
             Self::StepSucceeded { step, command } => {
                 format!("step {step}: ok command={command:?}")
             }
@@ -440,7 +454,7 @@ async fn open_session_with_progress(
 impl DiagnosticSession {
     fn clear_pending(&mut self) {
         self.pending.clear();
-        while self.decoder.pop_ready().is_some() {}
+        self.decoder.clear();
     }
 
     fn receive_vesc_packet_with_progress(
@@ -844,6 +858,15 @@ mod tests {
                 bytes: 20
             }
             .should_print_to_cli()
+        );
+        assert_eq!(
+            LoopbackProgress::RawAppDataReplyReceived {
+                step: "all-data",
+                wire_hex: "650a04".to_owned(),
+                bytes: 3,
+            }
+            .describe(),
+            "step all-data: app-data reply 3 byte(s) wire=650a04"
         );
     }
 

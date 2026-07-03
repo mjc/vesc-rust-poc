@@ -12,7 +12,7 @@ test-support = ["dep:tempfile"]
 
 [dependencies]
 capstone = "0.12"
-flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 object = { version = "0.36", default-features = false, features = ["read", "elf"] }
 sha2 = "0.10"
 tempfile = { version = "3", optional = true }
