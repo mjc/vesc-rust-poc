@@ -336,7 +336,7 @@ impl CargoVescPkgInvocation {
             let vesc_tool = resolve_refloat_vesc_tool(&repo_root, self.refloat_vesc_tool());
             RefloatNativeBuildPlan::new(&refloat_source_root)
                 .with_vesc_tool(vesc_tool)
-                .with_git_hash(self.refloat_git_commit())
+                .with_git_hash(refloat_native_git_hash(self.refloat_git_commit()))
                 .build_with(native_toolchain)
                 .map_err(|error| {
                     CargoVescPkgError::Package(PackageTargetError::PackageOutput {
@@ -499,6 +499,13 @@ fn resolve_refloat_vesc_tool(repo_root: &Path, vesc_tool: &str) -> String {
         return clean_path(repo_root.join(path)).display().to_string();
     }
     vesc_tool.to_owned()
+}
+
+fn refloat_native_git_hash(git_commit: &str) -> &str {
+    match git_commit {
+        DEFAULT_REFLOAT_GIT_COMMIT => "0",
+        value => value,
+    }
 }
 
 fn is_path_like(path: &Path) -> bool {
@@ -973,6 +980,14 @@ mod tests {
                 ]
             )]
         );
+        assert_eq!(
+            std::fs::read_to_string(root.join("src/conf/conf_general.h"))
+                .expect("generated conf_general.h"),
+            "#define PACKAGE_NAME \"Refloat\"\n#define VERSION \"1.2.1\"\n#define GIT_HASH 0x0\n"
+        );
+
+        let package = crate::Package::read(root.join("refloat.vescpkg")).expect("package");
+        assert!(package.description_md.contains("- Git Commit: #unknown"));
     }
 
     #[test]

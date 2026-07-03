@@ -95,6 +95,9 @@ pub fn build_lisp_data(lisp_source: &str, lisp_editor_path: &Path) -> io::Result
 }
 
 /// Builds compressed VESC package bytes from source package inputs.
+///
+/// The VESC wire `description` field is rendered HTML derived from
+/// `description_md`; the original markdown is also emitted as `description_md`.
 pub fn build_vesc_package(input: &VescPackageInput<'_>) -> io::Result<Vec<u8>> {
     let lisp_data = pack_lisp_imports(
         input.lisp_source,

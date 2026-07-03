@@ -1,7 +1,7 @@
 use std::fmt;
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::manifest::{
     manifest_path, parse_package_manifest, parse_pkgdesc, staging_dir_from_manifest,
@@ -116,7 +116,7 @@ impl Package {
         let manifest = manifest_path(manifest.as_ref());
         let staging_dir = staging_dir_from_manifest(&manifest)?;
         let descriptor = parse_package_manifest(&manifest)?;
-        let output = staging_dir.join(descriptor.output());
+        let output = manifest_output_path(&staging_dir, descriptor.output())?;
         Self::from_manifest(&manifest)?.write(&output)?;
         Ok(output)
     }
@@ -193,6 +193,22 @@ impl Package {
             || !self.lisp_data.is_empty()
             || !self.qml_file.is_empty()
             || !self.pkg_desc_qml.is_empty()
+    }
+}
+
+fn manifest_output_path(staging_dir: &Path, output: &str) -> Result<PathBuf, PackageError> {
+    let output = Path::new(output);
+    let stays_inside_staging = output
+        .components()
+        .all(|component| matches!(component, Component::Normal(_) | Component::CurDir));
+
+    if stays_inside_staging {
+        Ok(staging_dir.join(output))
+    } else {
+        Err(PackageError::Build(format!(
+            "pkgOutput must be relative to the staging directory: {}",
+            output.display()
+        )))
     }
 }
 
@@ -414,6 +430,24 @@ mod tests {
         let package = Package::read(&output).expect("written package");
         assert_eq!(package.name, "Refloat");
         assert_eq!(package.description_md, "Refloat readme");
+    }
+
+    #[test]
+    fn write_from_manifest_rejects_output_paths_outside_staging() {
+        let harness = PackageTestHarness::new().ensure_loopback_staging();
+        write_refloat_style_staging(&harness);
+        let staging = harness.loopback_staging_dir();
+        std::fs::write(
+            staging.join("pkgdesc.qml"),
+            "import QtQuick 2.15\n\nItem {\n    property string pkgName: \"Refloat\"\n    property string pkgDescriptionMd: \"package_README-gen.md\"\n    property string pkgLisp: \"lisp/package.lisp\"\n    property string pkgQml: \"ui.qml\"\n    property bool pkgQmlIsFullscreen: true\n    property string pkgOutput: \"../escaped.vescpkg\"\n}\n",
+        )
+        .unwrap();
+
+        let error =
+            Package::write_from_manifest(staging.join("pkgdesc.qml")).expect_err("bad output");
+
+        assert!(error.to_string().contains("pkgOutput must be relative"));
+        assert!(!staging.join("../escaped.vescpkg").exists());
     }
 
     #[test]

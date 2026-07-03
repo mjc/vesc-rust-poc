@@ -119,6 +119,7 @@ pub struct FakePackageInstallTransport {
     has_qml_app: Cell<bool>,
     reject_erase_lisp: Cell<bool>,
     reject_set_running_true: Cell<bool>,
+    fail_set_running_true_io: Cell<bool>,
     /// Recorded transport steps for assertions in tests and golden checks.
     pub steps: RefCell<Vec<PackageInstallStep>>,
 }
@@ -137,6 +138,11 @@ impl FakePackageInstallTransport {
     /// Controls whether starting Lisp reports device rejection.
     pub fn reject_set_running_true(&self) {
         self.reject_set_running_true.set(true);
+    }
+
+    /// Controls whether starting Lisp reports a host transport failure.
+    pub fn fail_set_running_true_io(&self) {
+        self.fail_set_running_true_io.set(true);
     }
 }
 
@@ -186,6 +192,11 @@ impl PackageInstallTransport for FakePackageInstallTransport {
         if running && self.reject_set_running_true.get() {
             return Err(PackageInstallError::Device(
                 "device rejected the package write".to_owned(),
+            ));
+        }
+        if running && self.fail_set_running_true_io.get() {
+            return Err(PackageInstallError::Io(
+                "failed to write set-running command".to_owned(),
             ));
         }
         Ok(())
@@ -251,7 +262,11 @@ impl InstallOperation<'_> {
         transport: &T,
     ) -> Result<(), PackageInstallError> {
         match self.run(transport) {
-            Err(_) if matches!(self, Self::SetRunning { running: true }) => Ok(()),
+            Err(PackageInstallError::Device(_))
+                if matches!(self, Self::SetRunning { running: true }) =>
+            {
+                Ok(())
+            }
             result => result,
         }
     }
@@ -693,6 +708,19 @@ mod tests {
             report.steps.last(),
             Some(&PackageInstallStep::ReloadFirmware)
         );
+    }
+
+    #[test]
+    fn install_reports_set_running_host_io_failures() {
+        let package = decode_package(&build_package_bytes()).expect("package");
+        let transport = FakePackageInstallTransport::default();
+        transport.fail_set_running_true_io();
+
+        let error = install_package(&package, &transport).expect_err("install should fail");
+
+        assert!(matches!(error, PackageInstallError::Io(_)));
+        assert!(error.to_string().contains("set Lisp running true"));
+        assert!(error.to_string().contains("failed to write set-running"));
     }
 
     #[test]
