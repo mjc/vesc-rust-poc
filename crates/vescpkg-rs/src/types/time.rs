@@ -50,7 +50,7 @@ macro_rules! seconds_type {
         pub struct $name(VescSeconds);
 
         impl $name {
-            /// Wrap VESC float seconds with semantic duration meaning.
+            /// Wrap VESC seconds with semantic duration meaning.
             pub const fn new(seconds: VescSeconds) -> Self {
                 Self(seconds)
             }

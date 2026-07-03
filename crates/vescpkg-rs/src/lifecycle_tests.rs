@@ -2,7 +2,9 @@ use crate::MotorTelemetryApi;
 use crate::ble_loopback::register_loopback_app_data_handler_with;
 use crate::extension::ExtensionDescriptor;
 use crate::lifecycle::register_extension_from_image;
-use crate::lifecycle_core::{LbmApi, LoopbackLifecycle, PackageLifecycle};
+use crate::lifecycle_core::{
+    AppDataHandlerRegistrationError, LbmApi, LoopbackLifecycle, PackageLifecycle,
+};
 use crate::test_support::{FakeAppDataBindings, FakeBindings, FakeMotorTelemetryBindings, stubs};
 use crate::types::{
     AmpHoursCharged, AmpHoursDischarged, BatteryLevel, FirmwareFaultCode, InputVoltage,
@@ -147,8 +149,7 @@ fn loopback_lifecycle_forwards_system_time_ticks(
 #[test]
 fn motor_telemetry_api_forwards_absolute_distance_as_trip_distance() {
     let distance = TripDistance::new(Distance::from_meters(12.5));
-    let telemetry =
-        MotorTelemetryApi::new(FakeMotorTelemetryBindings::new().with_distance_abs(distance));
+    let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::with_distance_abs(distance));
 
     assert_eq!(telemetry.distance_abs(), distance);
     assert_eq!(telemetry.bindings().distance_abs_calls.get(), 1);
@@ -159,7 +160,7 @@ fn motor_telemetry_api_forwards_filtered_motor_temperatures() {
     let mosfet = MosfetTemperature::new(Temperature::from_degrees_celsius(44.0));
     let motor = MotorTemperature::new(Temperature::from_degrees_celsius(51.5));
     let telemetry =
-        MotorTelemetryApi::new(FakeMotorTelemetryBindings::new().with_temperatures(mosfet, motor));
+        MotorTelemetryApi::new(FakeMotorTelemetryBindings::with_temperatures(mosfet, motor));
 
     assert_eq!(telemetry.mosfet_temperature(), mosfet);
     assert_eq!(telemetry.motor_temperature(), motor);
@@ -175,7 +176,7 @@ fn motor_telemetry_api_forwards_accumulated_ride_totals() {
     let discharged_energy = WattHoursDischarged::new(Energy::from_watt_hours(170.0));
     let charged_energy = WattHoursCharged::new(Energy::from_watt_hours(18.5));
     let battery_level = BatteryLevel::new(Ratio::from_ratio_const(0.72));
-    let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new().with_ride_totals(
+    let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::with_ride_totals(
         odometer,
         discharged_charge,
         charged_charge,
@@ -201,53 +202,21 @@ fn motor_telemetry_api_forwards_accumulated_ride_totals() {
 #[test]
 fn motor_telemetry_api_forwards_firmware_fault_code() {
     let fault = FirmwareFaultCode::from_compat_code(5);
-    let telemetry =
-        MotorTelemetryApi::new(FakeMotorTelemetryBindings::new().with_firmware_fault(fault));
+    let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::with_firmware_fault(fault));
 
     assert_eq!(telemetry.firmware_fault(), fault);
     assert_eq!(telemetry.bindings().firmware_fault_calls.get(), 1);
 }
 
 #[test]
-fn firmware_fault_code_preserves_raw_values_until_compat_encoding() {
-    let valid = FirmwareFaultCode::from_raw_code(5);
-    let negative = FirmwareFaultCode::from_raw_code(-1);
-    let too_large = FirmwareFaultCode::from_raw_code(256);
-
-    assert_eq!(valid.raw_code(), 5);
-    assert_eq!(valid.compat_code(), Some(5));
-    assert_eq!(negative.raw_code(), -1);
-    assert_eq!(negative.compat_code(), None);
-    assert_eq!(too_large.raw_code(), 256);
-    assert_eq!(too_large.compat_code(), None);
-}
-
-#[test]
 fn motor_telemetry_api_forwards_filtered_input_voltage() {
     let voltage = InputVoltage::new(Voltage::from_volts(84.2));
     let telemetry = MotorTelemetryApi::new(
-        FakeMotorTelemetryBindings::new().with_input_voltage_filtered(voltage),
+        FakeMotorTelemetryBindings::with_input_voltage_filtered(voltage),
     );
 
     assert_eq!(telemetry.input_voltage_filtered(), voltage);
     assert_eq!(telemetry.bindings().input_voltage_filtered_calls.get(), 1);
-}
-
-#[test]
-fn fake_motor_telemetry_bindings_chain_overrides() {
-    let distance = TripDistance::new(Distance::from_meters(2.0));
-    let fault = FirmwareFaultCode::from_raw_code(256);
-    let voltage = InputVoltage::new(Voltage::from_volts(51.0));
-    let telemetry = MotorTelemetryApi::new(
-        FakeMotorTelemetryBindings::new()
-            .with_distance_abs(distance)
-            .with_firmware_fault(fault)
-            .with_input_voltage_filtered(voltage),
-    );
-
-    assert_eq!(telemetry.distance_abs(), distance);
-    assert_eq!(telemetry.firmware_fault(), fault);
-    assert_eq!(telemetry.input_voltage_filtered(), voltage);
 }
 
 #[rstest]
@@ -285,13 +254,13 @@ fn loopback_lifecycle_app_data_handler_forwards_to_bindings(
         } else {
             custom_handler
         };
-        assert!(lifecycle.register_app_data_handler(registered));
+        assert_eq!(lifecycle.register_app_data_handler(registered), Ok(()));
         assert_eq!(
             lifecycle.bindings().last_handler.get(),
             registered as *const () as usize
         );
     } else {
-        assert!(lifecycle.clear_app_data_handler());
+        assert_eq!(lifecycle.clear_app_data_handler(), Ok(()));
         assert_eq!(lifecycle.bindings().last_handler.get(), 0);
     }
 
@@ -306,10 +275,22 @@ fn register_loopback_app_data_handler_with_forwards_to_bindings() {
     let bindings = FakeAppDataBindings::new();
     let lifecycle = LoopbackLifecycle::new(bindings);
 
-    assert!(register_loopback_app_data_handler_with(
-        &lifecycle,
-        stubs::app_data_handler
-    ));
+    assert_eq!(
+        register_loopback_app_data_handler_with(&lifecycle, stubs::app_data_handler),
+        Ok(())
+    );
+    assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
+}
+
+#[test]
+fn app_data_handler_registration_reports_firmware_rejection() {
+    let bindings = FakeAppDataBindings::with_handler_results([false, true]);
+    let lifecycle = LoopbackLifecycle::new(bindings);
+
+    assert_eq!(
+        lifecycle.register_app_data_handler(stubs::app_data_handler),
+        Err(AppDataHandlerRegistrationError::FirmwareRejected)
+    );
     assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
 }
 

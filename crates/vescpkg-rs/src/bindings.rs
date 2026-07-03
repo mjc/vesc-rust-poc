@@ -2,6 +2,7 @@
 
 use core::ffi::c_char;
 
+use vescpkg_rs_sys::raw::{CustomConfigGet, CustomConfigSet, CustomConfigXml};
 use vescpkg_rs_sys::{AppDataHandler, ExtensionHandler, LbmValue};
 
 /// LispBM-related firmware calls required by the SDK lifecycle layer.
@@ -27,8 +28,15 @@ pub trait LbmBindings {
 /// Firmware calls used by the app-data and system-time helpers.
 pub trait AppDataBindings {
     /// # Safety
-    /// `handler` must remain valid until it is replaced or cleared. Pass null to clear.
+    /// `handler` must remain valid until it is replaced or cleared.
     unsafe fn set_app_data_handler(&self, handler: AppDataHandler) -> bool;
+
+    /// Clear the current app-data handler.
+    ///
+    /// # Safety
+    ///
+    /// Must only be called while the firmware `VESC_IF` table is valid.
+    unsafe fn clear_app_data_handler(&self) -> bool;
 
     /// Return the current firmware tick counter.
     fn system_time_ticks(&self) -> u32;
@@ -38,6 +46,37 @@ pub trait AppDataBindings {
     /// `data` must point to at least `len` bytes that remain valid for the duration
     /// of the firmware call.
     unsafe fn send_app_data(&self, data: *const u8, len: u32);
+}
+
+/// Firmware calls used by VESC Tool custom-config callback registration.
+pub trait CustomConfigBindings {
+    /// Register package-owned custom-config callbacks.
+    ///
+    /// Refloat `v1.2.1` registers `get_cfg`, `set_cfg`, and `get_cfg_xml` at
+    /// `src/main.c:2456`; the VESC function-table slot is declared in
+    /// `vesc_pkg_lib/vesc_c_if.h:549-552`.
+    ///
+    /// # Safety
+    ///
+    /// Must only be called while the firmware `VESC_IF` table is valid. The
+    /// callbacks must remain valid until package stop clears them or firmware
+    /// replaces them.
+    unsafe fn register_custom_config(
+        &self,
+        get_cfg: CustomConfigGet,
+        set_cfg: CustomConfigSet,
+        get_cfg_xml: CustomConfigXml,
+    ) -> bool;
+
+    /// Clear package-owned custom-config callbacks.
+    ///
+    /// Refloat `v1.2.1` calls this during stop at `src/main.c:2403`; the VESC
+    /// function-table slot is declared in `vesc_pkg_lib/vesc_c_if.h:553`.
+    ///
+    /// # Safety
+    ///
+    /// Must only be called while the firmware `VESC_IF` table is valid.
+    unsafe fn clear_custom_configs(&self) -> bool;
 }
 
 #[cfg(not(test))]
@@ -68,9 +107,29 @@ impl LbmBindings for RealBindings {
 }
 
 #[cfg(not(test))]
+impl CustomConfigBindings for RealBindings {
+    unsafe fn register_custom_config(
+        &self,
+        get_cfg: CustomConfigGet,
+        set_cfg: CustomConfigSet,
+        get_cfg_xml: CustomConfigXml,
+    ) -> bool {
+        unsafe { vescpkg_rs_sys::raw::conf_custom_add_config(get_cfg, set_cfg, get_cfg_xml) }
+    }
+
+    unsafe fn clear_custom_configs(&self) -> bool {
+        unsafe { vescpkg_rs_sys::raw::conf_custom_clear_configs() }
+    }
+}
+
+#[cfg(not(test))]
 impl AppDataBindings for RealBindings {
     unsafe fn set_app_data_handler(&self, handler: AppDataHandler) -> bool {
         unsafe { vescpkg_rs_sys::raw::vesc_set_app_data_handler(handler) }
+    }
+
+    unsafe fn clear_app_data_handler(&self) -> bool {
+        unsafe { vescpkg_rs_sys::raw::vesc_clear_app_data_handler() }
     }
 
     fn system_time_ticks(&self) -> u32 {
