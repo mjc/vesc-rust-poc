@@ -597,6 +597,11 @@ mod tests {
         let shape = markdown_section_body(&text, "Intended Shape").expect("intended shape section");
         assert!(shape.contains("cargo vescpkg build"));
         assert!(shape.contains("thumbv7em-none-eabihf"));
+        assert!(shape.contains("--manifest"));
+        assert!(shape.contains("--refloat-source"));
+        assert!(shape.contains("--build-date"));
+        assert!(shape.contains("--git-commit"));
+        assert!(shape.contains("--vesc-tool"));
     }
 
     #[test]

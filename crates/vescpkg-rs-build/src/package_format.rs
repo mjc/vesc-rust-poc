@@ -4,7 +4,7 @@ use std::io::{self, Write};
 use std::path::Path;
 
 use flate2::{Compression, write::ZlibEncoder};
-use pulldown_cmark::{Options, Parser, html};
+use pulldown_cmark::{Event, Options, Parser, html};
 
 const PACKAGE_MAGIC: &str = "VESC Packet";
 
@@ -388,7 +388,12 @@ fn markdown_description_html(markdown: &str) -> String {
     let mut rendered = String::from(
         "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" \"http://www.w3.org/TR/REC-html40/strict.dtd\">\n",
     );
-    html::push_html(&mut rendered, Parser::new_ext(markdown, Options::empty()));
+    let events = Parser::new_ext(markdown, Options::empty()).map(|event| match event {
+        Event::Html(html) => Event::Text(html),
+        Event::InlineHtml(html) => Event::Text(html),
+        event => event,
+    });
+    html::push_html(&mut rendered, events);
     rendered
 }
 
@@ -436,6 +441,8 @@ fn parse_import_line(line: &str) -> Option<(String, String)> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::{VescPackageInput, build_vesc_package};
     use super::{lisp_code_prefix, parse_import_line, q_compress, resolve_import_path};
     use crate::package_wire::{LispImport, field_bytes, parse_lisp_imports, parse_vescpkg};
@@ -621,5 +628,28 @@ mod tests {
         assert_eq!(fields[4].value, b"qml");
         assert_eq!(fields[5].value, b"descriptor");
         assert_eq!(fields[6].value, [0]);
+    }
+
+    #[test]
+    fn markdown_description_escapes_raw_html() {
+        let package = build_vesc_package(&VescPackageInput {
+            name: "test",
+            description_md: "**safe** <script>alert(1)</script>\n\n<div>raw</div>",
+            lisp_source: "",
+            lisp_editor_path: Path::new("."),
+            lisp_import_path: None,
+            qml_file: "",
+            pkg_desc_qml: "",
+            qml_is_fullscreen: false,
+        })
+        .expect("package");
+        let description = extract_field(&package, "description");
+        let html = String::from_utf8(description).expect("html");
+
+        assert!(html.contains("<strong>safe</strong>"));
+        assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
+        assert!(html.contains("&lt;div&gt;raw&lt;/div&gt;"));
+        assert!(!html.contains("<script>"));
+        assert!(!html.contains("<div>raw</div>"));
     }
 }

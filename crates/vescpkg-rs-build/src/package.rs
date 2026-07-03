@@ -202,7 +202,15 @@ fn manifest_output_path(staging_dir: &Path, output: &str) -> Result<PathBuf, Pac
         .components()
         .all(|component| matches!(component, Component::Normal(_) | Component::CurDir));
 
-    if stays_inside_staging {
+    if output.as_os_str().is_empty()
+        || output
+            .components()
+            .all(|component| component == Component::CurDir)
+    {
+        Err(PackageError::Build(
+            "pkgOutput must name a package file inside the staging directory".to_owned(),
+        ))
+    } else if stays_inside_staging {
         Ok(staging_dir.join(output))
     } else {
         Err(PackageError::Build(format!(
@@ -448,6 +456,31 @@ mod tests {
 
         assert!(error.to_string().contains("pkgOutput must be relative"));
         assert!(!staging.join("../escaped.vescpkg").exists());
+    }
+
+    #[test]
+    fn write_from_manifest_rejects_empty_output_file_names() {
+        for output in ["", ".", "./"] {
+            let harness = PackageTestHarness::new().ensure_loopback_staging();
+            write_refloat_style_staging(&harness);
+            let staging = harness.loopback_staging_dir();
+            std::fs::write(
+                staging.join("pkgdesc.qml"),
+                format!(
+                    "import QtQuick 2.15\n\nItem {{\n    property string pkgName: \"Refloat\"\n    property string pkgDescriptionMd: \"package_README-gen.md\"\n    property string pkgLisp: \"lisp/package.lisp\"\n    property string pkgQml: \"ui.qml\"\n    property bool pkgQmlIsFullscreen: true\n    property string pkgOutput: \"{output}\"\n}}\n"
+                ),
+            )
+            .unwrap();
+
+            let error =
+                Package::write_from_manifest(staging.join("pkgdesc.qml")).expect_err("bad output");
+
+            assert!(
+                error
+                    .to_string()
+                    .contains("pkgOutput must name a package file")
+            );
+        }
     }
 
     #[test]
