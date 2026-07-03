@@ -7,7 +7,7 @@ use crate::package_assets::{PackageAssets, PackageProvenance};
 use crate::package_conversion::{
     PackageBinaryConversionError, PackageBinaryConversionPlan, PackageBinaryConversionRunner,
 };
-use crate::package_format::{VescPackageInput, write_vesc_package};
+use crate::package_format::{LispImportPolicy, VescPackageInput, write_vesc_package};
 
 /// Package example artifact profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -237,6 +237,8 @@ impl PackageBuildPlan {
             description_md: &readme,
             lisp_source: &loader,
             lisp_editor_path: &loader_path,
+            lisp_import_path: None,
+            lisp_import_policy: LispImportPolicy::HostPaths,
             qml_file: "",
             pkg_desc_qml: &descriptor,
             qml_is_fullscreen: false,

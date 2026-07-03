@@ -3,10 +3,11 @@ source: crates/vescpkg-rs-build/tests/package_pipeline.rs
 assertion_line: 36
 expression: report
 ---
-compressed_len: 330
-decompressed_len: 638
+compressed_len: 428
+decompressed_len: 793
 fields:
   name: len=30 sha256=ad4e7ee31395d0c2c9ec2a0c0d2b3c99cb8e1967597997f82400d8b7acce8f4c
+  description: len=139 sha256=73d8c5c8d6c8381a184243dec9337accb9c4d96659eabb9ef060dd3a7de32596
   description_md: len=37 sha256=8167ebd797bdcd850014badd59f319cac4f18b691568141ae22255da461b869d
   lispData: len=146 sha256=4d503a9f8dac89aa7906a49642ea0a32d789f8be258b36d5c4b07c1984713c47
     imports:

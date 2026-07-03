@@ -1,11 +1,15 @@
 use std::fmt;
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
-use crate::manifest::{manifest_path, parse_pkgdesc, staging_dir_from_manifest};
+use crate::manifest::{
+    manifest_path, parse_package_manifest, parse_pkgdesc, staging_dir_from_manifest,
+};
 use crate::package_build::PackageBuildPlan;
-use crate::package_format::{VescPackageWire, encode_vesc_package};
+use crate::package_format::{
+    LispImportPolicy, VescPackageInput, VescPackageWire, build_vesc_package, encode_vesc_package,
+};
 use crate::package_runner::{RealPackageRunner, package_provenance_from_env};
 use crate::package_target::{PackageTargetMode, PackageTargetPlan};
 use crate::package_wire::{WireError, parse_vescpkg};
@@ -80,6 +84,53 @@ impl Package {
         Self::from_bytes(&bytes)
     }
 
+    /// Build an in-memory package from a `pkgdesc.qml` and its referenced files.
+    pub fn from_manifest(manifest: impl AsRef<Path>) -> Result<Self, PackageError> {
+        let manifest = manifest_path(manifest.as_ref());
+        let staging_dir = staging_dir_from_manifest(&manifest)?;
+        let staging_root = StagingRoot::new(&staging_dir)?;
+        let descriptor = parse_package_manifest(&manifest)?;
+        let description_md_path = staging_root
+            .asset_file("pkgDescriptionMd", descriptor.description_md())?
+            .ok_or_else(|| {
+                PackageError::Build("pkgDescriptionMd must name a staging file".to_owned())
+            })?;
+        let lisp_path = staging_root
+            .asset_file("pkgLisp", descriptor.lisp())?
+            .ok_or_else(|| PackageError::Build("pkgLisp must name a staging file".to_owned()))?;
+        let qml_path = staging_root.asset_file("pkgQml", descriptor.qml())?;
+        let description_md = fs::read_to_string(description_md_path)?;
+        let lisp_source = fs::read_to_string(&lisp_path)?;
+        let qml_file = qml_path
+            .map(fs::read_to_string)
+            .transpose()?
+            .unwrap_or_default();
+        let pkg_desc_qml = fs::read_to_string(&manifest)?;
+        let bytes = build_vesc_package(&VescPackageInput {
+            name: descriptor.name(),
+            description_md: &description_md,
+            lisp_source: &lisp_source,
+            lisp_editor_path: &staging_dir,
+            lisp_import_path: lisp_path.parent(),
+            lisp_import_policy: LispImportPolicy::StagingOnly,
+            qml_file: &qml_file,
+            pkg_desc_qml: &pkg_desc_qml,
+            qml_is_fullscreen: descriptor.qml_is_fullscreen(),
+        })?;
+        Self::from_bytes(&bytes)
+    }
+
+    /// Build and write a package from a `pkgdesc.qml` and its referenced files.
+    pub fn write_from_manifest(manifest: impl AsRef<Path>) -> Result<PathBuf, PackageError> {
+        let manifest = manifest_path(manifest.as_ref());
+        let staging_dir = staging_dir_from_manifest(&manifest)?;
+        let staging_root = StagingRoot::new(&staging_dir)?;
+        let descriptor = parse_package_manifest(&manifest)?;
+        let output = staging_root.output_file(descriptor.output())?;
+        Self::from_manifest(&manifest)?.write(&output)?;
+        Ok(output)
+    }
+
     /// Encode the package and write it to disk.
     pub fn write(&self, path: impl AsRef<Path>) -> Result<Vec<u8>, PackageError> {
         let bytes = self.to_bytes()?;
@@ -152,6 +203,125 @@ impl Package {
             || !self.lisp_data.is_empty()
             || !self.qml_file.is_empty()
             || !self.pkg_desc_qml.is_empty()
+    }
+}
+
+struct StagingRoot {
+    path: PathBuf,
+    canonical_path: PathBuf,
+}
+
+impl StagingRoot {
+    fn new(path: &Path) -> Result<Self, PackageError> {
+        Ok(Self {
+            path: path.to_path_buf(),
+            canonical_path: path.canonicalize()?,
+        })
+    }
+
+    fn output_file(&self, output: &str) -> Result<PathBuf, PackageError> {
+        let relative = staging_relative_path("pkgOutput", output, RequiredPath::Required)?;
+        let Some(relative) = relative else {
+            return Err(PackageError::Build(
+                "pkgOutput must name a package file inside the staging directory".to_owned(),
+            ));
+        };
+        let output = self.path.join(relative);
+        self.reject_symlink_path(&output)?;
+        Ok(output)
+    }
+
+    fn asset_file(&self, field: &str, asset_path: &str) -> Result<Option<PathBuf>, PackageError> {
+        let Some(relative) = staging_relative_path(field, asset_path, RequiredPath::Optional)?
+        else {
+            return Ok(None);
+        };
+        let asset = self.path.join(relative);
+        self.reject_symlink_path(&asset)?;
+        let canonical_asset = asset.canonicalize()?;
+        if canonical_asset.starts_with(&self.canonical_path) {
+            Ok(Some(asset))
+        } else {
+            Err(PackageError::Build(format!(
+                "{field} must stay inside the staging directory: {}",
+                asset.display()
+            )))
+        }
+    }
+
+    fn reject_symlink_path(&self, path: &Path) -> Result<(), PackageError> {
+        let relative = path.strip_prefix(&self.path).map_err(|_| {
+            PackageError::Build(format!(
+                "path must stay inside the staging directory: {}",
+                path.display()
+            ))
+        })?;
+        let mut current = self.path.clone();
+        for component in relative.components() {
+            let Component::Normal(name) = component else {
+                continue;
+            };
+            current.push(name);
+            match fs::symlink_metadata(&current) {
+                Ok(metadata) if metadata.file_type().is_symlink() => {
+                    return Err(PackageError::Build(format!(
+                        "staging paths must not traverse symlinks: {}",
+                        current.display()
+                    )));
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+                Err(error) => return Err(PackageError::Io(error)),
+            }
+        }
+        Ok(())
+    }
+}
+
+enum RequiredPath {
+    Required,
+    Optional,
+}
+
+fn staging_relative_path(
+    field: &str,
+    path: &str,
+    required: RequiredPath,
+) -> Result<Option<PathBuf>, PackageError> {
+    let path = Path::new(path);
+    if path.as_os_str().is_empty() {
+        return match required {
+            RequiredPath::Required => Err(PackageError::Build(format!(
+                "{field} must name a package file inside the staging directory"
+            ))),
+            RequiredPath::Optional => Ok(None),
+        };
+    }
+
+    if path
+        .components()
+        .all(|component| component == Component::CurDir)
+    {
+        return match required {
+            RequiredPath::Required => Err(PackageError::Build(format!(
+                "{field} must name a package file inside the staging directory"
+            ))),
+            RequiredPath::Optional => Err(PackageError::Build(format!(
+                "{field} must name a staging file"
+            ))),
+        };
+    }
+
+    if path
+        .components()
+        .all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
+    {
+        Ok(Some(path.to_path_buf()))
+    } else {
+        Err(PackageError::Build(format!(
+            "{field} must be relative to the staging directory: {}",
+            path.display()
+        )))
     }
 }
 
@@ -251,6 +421,8 @@ mod tests {
     use crate::test_support::PackageTestHarness;
     use flate2::{Compression, write::ZlibEncoder};
     use std::io::Write;
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
 
     fn sample_bytes() -> Vec<u8> {
         let mut data = Vec::new();
@@ -311,5 +483,248 @@ mod tests {
             "Rust BLE loopback test package"
         );
         assert_eq!(builder.build_plan().layout().version(), "0.1.0");
+    }
+
+    fn write_refloat_style_staging(harness: &PackageTestHarness) {
+        let staging = harness.loopback_staging_dir();
+        std::fs::create_dir_all(staging.join("lisp")).unwrap();
+        std::fs::create_dir_all(staging.join("src")).unwrap();
+        std::fs::write(staging.join("package_README-gen.md"), "Refloat readme").unwrap();
+        std::fs::write(
+            staging.join("ui.qml"),
+            "Item { property string marker: \"refloat\" }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            staging.join("lisp/package.lisp"),
+            "(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n",
+        )
+        .unwrap();
+        std::fs::write(staging.join("src/package_lib.bin"), b"refloat-native").unwrap();
+        std::fs::write(
+            staging.join("pkgdesc.qml"),
+            "import QtQuick 2.15\n\nItem {\n    property string pkgName: \"Refloat\"\n    property string pkgDescriptionMd: \"package_README-gen.md\"\n    property string pkgLisp: \"lisp/package.lisp\"\n    property string pkgQml: \"ui.qml\"\n    property bool pkgQmlIsFullscreen: true\n    property string pkgOutput: \"refloat.vescpkg\"\n}\n",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn package_from_manifest_uses_descriptor_referenced_assets() {
+        let harness = PackageTestHarness::new().ensure_loopback_staging();
+        write_refloat_style_staging(&harness);
+        let staging = harness.loopback_staging_dir();
+
+        let package = Package::from_manifest(staging.join("pkgdesc.qml")).expect("package");
+        assert_eq!(package.name, "Refloat");
+        assert_eq!(package.description_md, "Refloat readme");
+        assert_eq!(
+            package.qml_file,
+            "Item { property string marker: \"refloat\" }\n"
+        );
+        assert_eq!(
+            package.pkg_desc_qml,
+            std::fs::read_to_string(staging.join("pkgdesc.qml")).unwrap()
+        );
+        assert!(package.qml_is_fullscreen);
+        let (_, imports) =
+            crate::package_wire::parse_lisp_imports(&package.lisp_data).expect("lisp imports");
+        let [import] = imports.as_slice() else {
+            panic!("expected one Lisp import, got {imports:?}");
+        };
+        assert_eq!(import.payload, b"refloat-native\0");
+    }
+
+    #[test]
+    fn write_from_manifest_uses_descriptor_output_path() {
+        let harness = PackageTestHarness::new().ensure_loopback_staging();
+        write_refloat_style_staging(&harness);
+        let staging = harness.loopback_staging_dir();
+
+        let output = Package::write_from_manifest(staging.join("pkgdesc.qml")).expect("package");
+        assert_eq!(output, staging.join("refloat.vescpkg"));
+        let package = Package::read(&output).expect("written package");
+        assert_eq!(package.name, "Refloat");
+        assert_eq!(package.description_md, "Refloat readme");
+    }
+
+    #[test]
+    fn write_from_manifest_rejects_output_paths_outside_staging() {
+        let harness = PackageTestHarness::new().ensure_loopback_staging();
+        write_refloat_style_staging(&harness);
+        let staging = harness.loopback_staging_dir();
+        std::fs::write(
+            staging.join("pkgdesc.qml"),
+            "import QtQuick 2.15\n\nItem {\n    property string pkgName: \"Refloat\"\n    property string pkgDescriptionMd: \"package_README-gen.md\"\n    property string pkgLisp: \"lisp/package.lisp\"\n    property string pkgQml: \"ui.qml\"\n    property bool pkgQmlIsFullscreen: true\n    property string pkgOutput: \"../escaped.vescpkg\"\n}\n",
+        )
+        .unwrap();
+
+        let error =
+            Package::write_from_manifest(staging.join("pkgdesc.qml")).expect_err("bad output");
+
+        assert!(error.to_string().contains("pkgOutput must be relative"));
+        assert!(!staging.join("../escaped.vescpkg").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_from_manifest_rejects_symlink_output_paths() {
+        let harness = PackageTestHarness::new().ensure_loopback_staging();
+        write_refloat_style_staging(&harness);
+        let staging = harness.loopback_staging_dir();
+        let outside_output = harness.root().join("escaped.vescpkg");
+        symlink(&outside_output, staging.join("refloat.vescpkg")).unwrap();
+
+        let error =
+            Package::write_from_manifest(staging.join("pkgdesc.qml")).expect_err("bad output");
+
+        assert!(
+            error.to_string().contains("must not traverse symlinks"),
+            "expected symlink error, got {error}"
+        );
+        assert!(!outside_output.exists());
+    }
+
+    #[test]
+    fn from_manifest_rejects_asset_paths_outside_staging() {
+        for (field, value) in [
+            ("pkgDescriptionMd", "../README.md"),
+            ("pkgLisp", "/tmp/package.lisp"),
+            ("pkgQml", "../ui.qml"),
+        ] {
+            let harness = PackageTestHarness::new().ensure_loopback_staging();
+            write_refloat_style_staging(&harness);
+            let staging = harness.loopback_staging_dir();
+            std::fs::write(
+                staging.join("pkgdesc.qml"),
+                format!(
+                    "import QtQuick 2.15\n\nItem {{\n    property string pkgName: \"Refloat\"\n    property string pkgDescriptionMd: \"{}\"\n    property string pkgLisp: \"{}\"\n    property string pkgQml: \"{}\"\n    property bool pkgQmlIsFullscreen: true\n    property string pkgOutput: \"refloat.vescpkg\"\n}}\n",
+                    if field == "pkgDescriptionMd" { value } else { "package_README-gen.md" },
+                    if field == "pkgLisp" { value } else { "lisp/package.lisp" },
+                    if field == "pkgQml" { value } else { "ui.qml" },
+                ),
+            )
+            .unwrap();
+
+            let error = Package::from_manifest(staging.join("pkgdesc.qml")).expect_err("bad path");
+
+            assert!(
+                error.to_string().contains(field),
+                "expected {field} error, got {error}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn from_manifest_rejects_symlink_asset_paths() {
+        let harness = PackageTestHarness::new().ensure_loopback_staging();
+        write_refloat_style_staging(&harness);
+        let staging = harness.loopback_staging_dir();
+        let outside_readme = harness.root().join("outside.md");
+        std::fs::write(&outside_readme, "escaped readme").unwrap();
+        std::fs::remove_file(staging.join("package_README-gen.md")).unwrap();
+        symlink(&outside_readme, staging.join("package_README-gen.md")).unwrap();
+
+        let error = Package::from_manifest(staging.join("pkgdesc.qml")).expect_err("bad asset");
+
+        assert!(
+            error.to_string().contains("must not traverse symlinks"),
+            "expected symlink error, got {error}"
+        );
+    }
+
+    #[test]
+    fn from_manifest_rejects_lisp_import_paths_outside_staging() {
+        let harness = PackageTestHarness::new().ensure_loopback_staging();
+        write_refloat_style_staging(&harness);
+        let staging = harness.loopback_staging_dir();
+        std::fs::write(harness.root().join("outside.bin"), b"escaped").unwrap();
+        std::fs::write(
+            staging.join("lisp/package.lisp"),
+            "(import \"../../outside.bin\" 'package-lib)\n",
+        )
+        .unwrap();
+
+        let error = Package::from_manifest(staging.join("pkgdesc.qml")).expect_err("bad import");
+
+        assert!(
+            error
+                .to_string()
+                .contains("Lisp import must be relative to the staging directory"),
+            "expected staged import error, got {error}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn from_manifest_rejects_symlink_lisp_import_paths() {
+        let harness = PackageTestHarness::new().ensure_loopback_staging();
+        write_refloat_style_staging(&harness);
+        let staging = harness.loopback_staging_dir();
+        let outside_payload = harness.root().join("outside.bin");
+        std::fs::write(&outside_payload, b"escaped").unwrap();
+        std::fs::remove_file(staging.join("src/package_lib.bin")).unwrap();
+        symlink(&outside_payload, staging.join("src/package_lib.bin")).unwrap();
+
+        let error = Package::from_manifest(staging.join("pkgdesc.qml")).expect_err("bad import");
+
+        assert!(
+            error.to_string().contains("must not traverse symlinks"),
+            "expected symlink import error, got {error}"
+        );
+    }
+
+    #[test]
+    fn write_from_manifest_rejects_empty_output_file_names() {
+        for output in ["", ".", "./"] {
+            let harness = PackageTestHarness::new().ensure_loopback_staging();
+            write_refloat_style_staging(&harness);
+            let staging = harness.loopback_staging_dir();
+            std::fs::write(
+                staging.join("pkgdesc.qml"),
+                format!(
+                    "import QtQuick 2.15\n\nItem {{\n    property string pkgName: \"Refloat\"\n    property string pkgDescriptionMd: \"package_README-gen.md\"\n    property string pkgLisp: \"lisp/package.lisp\"\n    property string pkgQml: \"ui.qml\"\n    property bool pkgQmlIsFullscreen: true\n    property string pkgOutput: \"{output}\"\n}}\n"
+                ),
+            )
+            .unwrap();
+
+            let error =
+                Package::write_from_manifest(staging.join("pkgdesc.qml")).expect_err("bad output");
+
+            assert!(
+                error
+                    .to_string()
+                    .contains("pkgOutput must name a package file")
+            );
+        }
+    }
+
+    #[test]
+    fn package_from_manifest_resolves_lisp_sibling_imports() {
+        let harness = PackageTestHarness::new().ensure_loopback_staging();
+        write_refloat_style_staging(&harness);
+        let staging = harness.loopback_staging_dir();
+        std::fs::write(
+            staging.join("lisp/package.lisp"),
+            "(import \"src/package_lib.bin\" 'package-lib)\n(import \"bms.lisp\" 'bms)\n",
+        )
+        .unwrap();
+        std::fs::write(staging.join("lisp/bms.lisp"), "(define bms-enabled true)\n").unwrap();
+
+        let package = Package::from_manifest(staging.join("pkgdesc.qml")).expect("package");
+
+        let (_, imports) =
+            crate::package_wire::parse_lisp_imports(&package.lisp_data).expect("lisp imports");
+        let payloads = imports
+            .iter()
+            .map(|import| import.payload.as_slice())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            payloads,
+            vec![
+                b"refloat-native\0".as_slice(),
+                b"(define bms-enabled true)\n\0".as_slice()
+            ]
+        );
     }
 }
