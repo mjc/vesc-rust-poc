@@ -39,24 +39,34 @@ pub use vescpkg_rs_units as units;
 pub use alloc::{AllocBindings, AllocError, FirmwareAllocation, FirmwareAllocator};
 pub use bindings::{AppDataBindings, CustomConfigBindings, LbmBindings};
 pub use extension::{ExtensionDescriptor, ExtensionNameError, RegisterError};
+pub use imu::{ImuApi, ImuBindings};
 pub use lifecycle_core::{
     AppDataHandlerRegistrationError, LbmApi, LoopbackLifecycle, PackageLifecycle,
 };
 pub use motor::{MotorTelemetryApi, MotorTelemetryBindings};
+pub use thread::{FirmwareThreadHandle, ThreadApi, ThreadBindings};
 
 #[cfg(not(test))]
 pub use bindings::RealBindings;
 #[cfg(not(test))]
+pub use imu::RealImuBindings;
+#[cfg(not(test))]
 pub use motor::RealMotorTelemetryBindings;
+#[cfg(not(test))]
+pub use thread::RealThreadBindings;
 
 /// BLE loopback helpers and package-side packet handlers.
 pub mod ble_loopback;
 /// GPIO bindings and convenience wrappers for package code.
 pub mod gpio;
+/// IMU bindings and convenience wrappers for package code.
+pub mod imu;
 /// Device package entrypoint and loader-hook helpers.
 pub mod init;
 /// Motor telemetry bindings and convenience wrappers for package code.
 pub mod motor;
+/// Firmware thread bindings and convenience wrappers for package code.
+pub mod thread;
 
 #[cfg(not(test))]
 pub use gpio::RealGpioBindings;
@@ -78,13 +88,17 @@ pub mod prelude {
     pub use crate::{
         AllocBindings, AllocError, AppDataBindings, AppDataHandlerRegistrationError,
         CustomConfigBindings, ExtensionDescriptor, ExtensionNameError, FirmwareAllocation,
-        FirmwareAllocator, GpioApi, GpioBindings, LbmApi, LbmBindings, LoopbackLifecycle,
-        MotorTelemetryApi, MotorTelemetryBindings, PackageLifecycle, ProtocolFrame, RegisterError,
-        WireCommand, WireVersion,
+        FirmwareAllocator, FirmwareThreadHandle, GpioApi, GpioBindings, ImuApi, ImuBindings,
+        LbmApi, LbmBindings, LoopbackLifecycle, MotorTelemetryApi, MotorTelemetryBindings,
+        PackageLifecycle, ProtocolFrame, RegisterError, ThreadApi, ThreadBindings, WireCommand,
+        WireVersion,
     };
 
     #[cfg(not(test))]
-    pub use crate::{RealBindings, RealGpioBindings, RealMotorTelemetryBindings};
+    pub use crate::{
+        RealBindings, RealGpioBindings, RealImuBindings, RealMotorTelemetryBindings,
+        RealThreadBindings,
+    };
 }
 /// VESC-domain semantic wrappers over generic embedded units.
 pub mod types;
@@ -129,6 +143,7 @@ mod tests {
             crate::test_support::FakeMotorTelemetryBindings::new()
                 .with_distance_abs(TripDistance::new(Distance::from_meters(1.25))),
         );
+        let imu = ImuApi::new(crate::test_support::FakeImuBindings::new());
         let _descriptor = ExtensionDescriptor::new(
             c"ext-rust-prelude",
             crate::test_support::stubs::extension_handler,
@@ -139,6 +154,7 @@ mod tests {
         assert_eq!(command, WireCommand::Ping);
         assert_eq!(switch, BrakeSwitch::Released);
         assert_eq!(telemetry.distance_abs().distance().as_meters(), 1.25);
+        assert!(!imu.startup_done());
     }
 
     #[test]

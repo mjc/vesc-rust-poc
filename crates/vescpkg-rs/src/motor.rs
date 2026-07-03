@@ -1,15 +1,52 @@
 //! Motor telemetry helpers built on firmware motor-control table slots.
 
 use crate::types::{
-    AmpHoursCharged, AmpHoursDischarged, BatteryLevel, FirmwareFaultCode, InputVoltage,
-    MosfetTemperature, MotorTemperature, TripDistance, WattHoursCharged, WattHoursDischarged,
+    AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, DutyCycle, ElectricalSpeed,
+    FirmwareFaultCode, InputVoltage, MosfetTemperature, MotorCurrent, MotorTemperature,
+    TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 use crate::units::OdometerMeters;
 #[cfg(not(test))]
-use crate::units::{Charge, Distance, Energy, Ratio, Temperature, Voltage};
+use crate::units::{
+    Charge, Current, Distance, Energy, Ratio, Rpm, SignedRatio, Speed, Temperature, Voltage,
+};
 
 /// Motor telemetry operations backed by firmware slots.
 pub trait MotorTelemetryBindings {
+    /// Return the current motor electrical RPM.
+    ///
+    /// Refloat v1.2.1 reads `mc_get_rpm()` in `src/motor_data.c:108`; the VESC
+    /// ABI slot is declared at `vesc_pkg_lib/vesc_c_if.h:450`.
+    fn electrical_speed(&self) -> ElectricalSpeed;
+    /// Return firmware-calculated vehicle speed.
+    ///
+    /// Refloat v1.2.1 reads `mc_get_speed()` in `src/motor_data.c:118`; the
+    /// VESC ABI slot is declared at `vesc_pkg_lib/vesc_c_if.h:470`.
+    fn vehicle_speed(&self) -> VehicleSpeed;
+    /// Return filtered total motor current.
+    ///
+    /// Refloat v1.2.1 reads `mc_get_tot_current_filtered()` in
+    /// `src/motor_data.c:120`; the VESC ABI slot is declared at
+    /// `vesc_pkg_lib/vesc_c_if.h:456`.
+    fn motor_current(&self) -> MotorCurrent;
+    /// Return filtered input/battery current.
+    ///
+    /// Refloat v1.2.1 reads `mc_get_tot_current_in_filtered()` in
+    /// `src/motor_data.c:140`; the VESC ABI slot is declared at
+    /// `vesc_pkg_lib/vesc_c_if.h:460`.
+    fn battery_current(&self) -> BatteryCurrent;
+    /// Return the current absolute duty cycle.
+    ///
+    /// Refloat v1.2.1 stores `fabsf(mc_get_duty_cycle_now())` as
+    /// `duty_raw` in `src/motor_data.c:124`; the VESC ABI slot is declared at
+    /// `vesc_pkg_lib/vesc_c_if.h:448`.
+    fn duty_cycle_now(&self) -> DutyCycle;
+    /// Return optional FOC d-axis Id current.
+    ///
+    /// Refloat v1.2.1 reads optional `foc_get_id` while encoding compact
+    /// all-data at `src/main.c:1364-1368`; the VESC ABI slot is declared at
+    /// `vesc_pkg_lib/vesc_c_if.h:616`.
+    fn foc_id_current(&self) -> Option<MotorCurrent>;
     /// Return the absolute distance travelled by the motor/vehicle.
     fn distance_abs(&self) -> TripDistance;
     /// Return the filtered MOSFET/FET temperature.
@@ -40,6 +77,41 @@ pub struct RealMotorTelemetryBindings;
 
 #[cfg(not(test))]
 impl MotorTelemetryBindings for RealMotorTelemetryBindings {
+    fn electrical_speed(&self) -> ElectricalSpeed {
+        ElectricalSpeed::new(Rpm::from_revolutions_per_minute(unsafe {
+            vescpkg_rs_sys::raw::mc_get_rpm()
+        }))
+    }
+
+    fn vehicle_speed(&self) -> VehicleSpeed {
+        VehicleSpeed::new(Speed::from_meters_per_second(unsafe {
+            vescpkg_rs_sys::raw::mc_get_speed()
+        }))
+    }
+
+    fn motor_current(&self) -> MotorCurrent {
+        MotorCurrent::new(Current::from_amps(unsafe {
+            vescpkg_rs_sys::raw::mc_get_tot_current_filtered()
+        }))
+    }
+
+    fn battery_current(&self) -> BatteryCurrent {
+        BatteryCurrent::new(Current::from_amps(unsafe {
+            vescpkg_rs_sys::raw::mc_get_tot_current_in_filtered()
+        }))
+    }
+
+    fn duty_cycle_now(&self) -> DutyCycle {
+        DutyCycle::new(SignedRatio::clamped(unsafe {
+            vescpkg_rs_sys::raw::mc_get_duty_cycle_now().abs()
+        }))
+    }
+
+    fn foc_id_current(&self) -> Option<MotorCurrent> {
+        unsafe { vescpkg_rs_sys::raw::foc_get_id() }
+            .map(|amps| MotorCurrent::new(Current::from_amps(amps)))
+    }
+
     fn distance_abs(&self) -> TripDistance {
         TripDistance::new(Distance::from_meters(unsafe {
             vescpkg_rs_sys::raw::mc_get_distance_abs()
@@ -119,6 +191,36 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         &self.bindings
     }
 
+    /// Return the current motor electrical RPM.
+    pub fn electrical_speed(&self) -> ElectricalSpeed {
+        self.bindings.electrical_speed()
+    }
+
+    /// Return firmware-calculated vehicle speed.
+    pub fn vehicle_speed(&self) -> VehicleSpeed {
+        self.bindings.vehicle_speed()
+    }
+
+    /// Return filtered total motor current.
+    pub fn motor_current(&self) -> MotorCurrent {
+        self.bindings.motor_current()
+    }
+
+    /// Return filtered input/battery current.
+    pub fn battery_current(&self) -> BatteryCurrent {
+        self.bindings.battery_current()
+    }
+
+    /// Return the current absolute duty cycle.
+    pub fn duty_cycle_now(&self) -> DutyCycle {
+        self.bindings.duty_cycle_now()
+    }
+
+    /// Return optional FOC d-axis Id current.
+    pub fn foc_id_current(&self) -> Option<MotorCurrent> {
+        self.bindings.foc_id_current()
+    }
+
     /// Return the absolute distance travelled by the motor/vehicle.
     pub fn distance_abs(&self) -> TripDistance {
         self.bindings.distance_abs()
@@ -180,14 +282,30 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
 pub mod test_support {
     use super::MotorTelemetryBindings;
     use crate::types::{
-        AmpHoursCharged, AmpHoursDischarged, BatteryLevel, FirmwareFaultCode, InputVoltage,
-        MosfetTemperature, MotorTemperature, TripDistance, WattHoursCharged, WattHoursDischarged,
+        AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, DutyCycle,
+        ElectricalSpeed, FirmwareFaultCode, InputVoltage, MosfetTemperature, MotorCurrent,
+        MotorTemperature, TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
     };
-    use crate::units::{Charge, Distance, Energy, OdometerMeters, Ratio, Temperature, Voltage};
+    use crate::units::{
+        Charge, Current, Distance, Energy, OdometerMeters, Ratio, Rpm, SignedRatio, Speed,
+        Temperature, Voltage,
+    };
     use core::cell::Cell;
 
     /// Fake motor telemetry binding implementation used by package tests.
     pub struct FakeMotorTelemetryBindings {
+        /// Number of electrical-speed calls observed.
+        pub electrical_speed_calls: Cell<usize>,
+        /// Number of vehicle-speed calls observed.
+        pub vehicle_speed_calls: Cell<usize>,
+        /// Number of motor-current calls observed.
+        pub motor_current_calls: Cell<usize>,
+        /// Number of battery-current calls observed.
+        pub battery_current_calls: Cell<usize>,
+        /// Number of duty-cycle calls observed.
+        pub duty_cycle_now_calls: Cell<usize>,
+        /// Number of optional FOC Id current calls observed.
+        pub foc_id_current_calls: Cell<usize>,
         /// Number of absolute-distance calls observed.
         pub distance_abs_calls: Cell<usize>,
         /// Number of MOSFET temperature calls observed.
@@ -210,6 +328,12 @@ pub mod test_support {
         pub firmware_fault_calls: Cell<usize>,
         /// Number of filtered input-voltage calls observed.
         pub input_voltage_filtered_calls: Cell<usize>,
+        electrical_speed: Cell<ElectricalSpeed>,
+        vehicle_speed: Cell<VehicleSpeed>,
+        motor_current: Cell<MotorCurrent>,
+        battery_current: Cell<BatteryCurrent>,
+        duty_cycle_now: Cell<DutyCycle>,
+        foc_id_current: Cell<Option<MotorCurrent>>,
         distance_abs: Cell<TripDistance>,
         mosfet_temperature: Cell<MosfetTemperature>,
         motor_temperature: Cell<MotorTemperature>,
@@ -233,6 +357,12 @@ pub mod test_support {
         /// Creates fake motor telemetry bindings with zero distance.
         pub fn new() -> Self {
             Self {
+                electrical_speed_calls: Cell::new(0),
+                vehicle_speed_calls: Cell::new(0),
+                motor_current_calls: Cell::new(0),
+                battery_current_calls: Cell::new(0),
+                duty_cycle_now_calls: Cell::new(0),
+                foc_id_current_calls: Cell::new(0),
                 distance_abs_calls: Cell::new(0),
                 mosfet_temperature_calls: Cell::new(0),
                 motor_temperature_calls: Cell::new(0),
@@ -244,6 +374,14 @@ pub mod test_support {
                 battery_level_calls: Cell::new(0),
                 firmware_fault_calls: Cell::new(0),
                 input_voltage_filtered_calls: Cell::new(0),
+                electrical_speed: Cell::new(ElectricalSpeed::new(
+                    Rpm::from_revolutions_per_minute(0.0),
+                )),
+                vehicle_speed: Cell::new(VehicleSpeed::new(Speed::from_meters_per_second(0.0))),
+                motor_current: Cell::new(MotorCurrent::new(Current::from_amps(0.0))),
+                battery_current: Cell::new(BatteryCurrent::new(Current::from_amps(0.0))),
+                duty_cycle_now: Cell::new(DutyCycle::new(SignedRatio::from_ratio_const(0.0))),
+                foc_id_current: Cell::new(None),
                 distance_abs: Cell::new(TripDistance::new(Distance::from_meters(0.0))),
                 mosfet_temperature: Cell::new(MosfetTemperature::new(
                     Temperature::from_degrees_celsius(0.0),
@@ -264,6 +402,23 @@ pub mod test_support {
                 firmware_fault: Cell::new(FirmwareFaultCode::from_compat_code(0)),
                 input_voltage_filtered: Cell::new(InputVoltage::new(Voltage::from_volts(0.0))),
             }
+        }
+
+        /// Return fake motor telemetry bindings returning source-backed runtime motor fields.
+        pub fn with_runtime_motor(
+            self,
+            electrical_speed: ElectricalSpeed,
+            vehicle_speed: VehicleSpeed,
+            motor_current: MotorCurrent,
+            battery_current: BatteryCurrent,
+            duty_cycle_now: DutyCycle,
+        ) -> Self {
+            self.electrical_speed.set(electrical_speed);
+            self.vehicle_speed.set(vehicle_speed);
+            self.motor_current.set(motor_current);
+            self.battery_current.set(battery_current);
+            self.duty_cycle_now.set(duty_cycle_now);
+            self
         }
 
         /// Return fake motor telemetry bindings returning `distance_abs`.
@@ -313,9 +468,62 @@ pub mod test_support {
             self.input_voltage_filtered.set(input_voltage_filtered);
             self
         }
+
+        /// Return fake motor telemetry bindings returning optional FOC Id current.
+        pub fn with_foc_id_current(self, foc_id_current: Option<MotorCurrent>) -> Self {
+            self.foc_id_current.set(foc_id_current);
+            self
+        }
+
+        /// Creates fake motor telemetry bindings returning voltage and temperatures.
+        pub fn with_input_voltage_and_temperatures(
+            input_voltage_filtered: InputVoltage,
+            mosfet_temperature: MosfetTemperature,
+            motor_temperature: MotorTemperature,
+        ) -> Self {
+            let bindings = Self::new().with_temperatures(mosfet_temperature, motor_temperature);
+            bindings.input_voltage_filtered.set(input_voltage_filtered);
+            bindings
+        }
     }
 
     impl MotorTelemetryBindings for FakeMotorTelemetryBindings {
+        fn electrical_speed(&self) -> ElectricalSpeed {
+            self.electrical_speed_calls
+                .set(self.electrical_speed_calls.get() + 1);
+            self.electrical_speed.get()
+        }
+
+        fn vehicle_speed(&self) -> VehicleSpeed {
+            self.vehicle_speed_calls
+                .set(self.vehicle_speed_calls.get() + 1);
+            self.vehicle_speed.get()
+        }
+
+        fn motor_current(&self) -> MotorCurrent {
+            self.motor_current_calls
+                .set(self.motor_current_calls.get() + 1);
+            self.motor_current.get()
+        }
+
+        fn battery_current(&self) -> BatteryCurrent {
+            self.battery_current_calls
+                .set(self.battery_current_calls.get() + 1);
+            self.battery_current.get()
+        }
+
+        fn duty_cycle_now(&self) -> DutyCycle {
+            self.duty_cycle_now_calls
+                .set(self.duty_cycle_now_calls.get() + 1);
+            self.duty_cycle_now.get()
+        }
+
+        fn foc_id_current(&self) -> Option<MotorCurrent> {
+            self.foc_id_current_calls
+                .set(self.foc_id_current_calls.get() + 1);
+            self.foc_id_current.get()
+        }
+
         fn distance_abs(&self) -> TripDistance {
             self.distance_abs_calls
                 .set(self.distance_abs_calls.get() + 1);

@@ -13,7 +13,7 @@ use super::{
     mc_get_battery_level, mc_get_distance_abs, mc_get_fault, mc_get_input_voltage_filtered,
     mc_get_odometer, mc_get_watt_hours, mc_get_watt_hours_charged, mc_temp_fet_filtered,
     mc_temp_motor_filtered, vesc_clear_app_data_handler, vesc_send_app_data,
-    vesc_set_app_data_handler, vesc_system_time_ticks,
+    vesc_set_app_data_handler, vesc_sleep_us, vesc_system_time_ticks, vesc_thread_set_priority,
 };
 
 struct SyncCounter(Cell<usize>);
@@ -104,6 +104,8 @@ static CONF_CUSTOM_CLEAR_CONFIGS: SyncCounter = SyncCounter::new();
 static CUSTOM_CONFIG_GET: SyncCounter = SyncCounter::new();
 static CUSTOM_CONFIG_SET: SyncCounter = SyncCounter::new();
 static CUSTOM_CONFIG_XML: SyncCounter = SyncCounter::new();
+static SLEEP_US: SyncCounter = SyncCounter::new();
+static THREAD_SET_PRIORITY: SyncCounter = SyncCounter::new();
 static SYSTEM_TIME_TICKS: SyncCounter = SyncCounter::new();
 static IO_SET_MODE: SyncCounter = SyncCounter::new();
 static IO_WRITE: SyncCounter = SyncCounter::new();
@@ -123,6 +125,8 @@ static LAST_PIN: SyncI32 = SyncI32::new();
 static LAST_MODE: SyncI32 = SyncI32::new();
 static LAST_LEVEL: SyncI32 = SyncI32::new();
 static LAST_LBM_VALUE: SyncU32 = SyncU32::new();
+static LAST_SLEEP_US: SyncU32 = SyncU32::new();
+static LAST_THREAD_PRIORITY: SyncI32 = SyncI32::new();
 static LAST_HANDLER_INSTALLED: SyncBool = SyncBool::new();
 static LAST_CUSTOM_CONFIG_DEFAULT: SyncBool = SyncBool::new();
 
@@ -139,6 +143,8 @@ fn reset_counters() {
         &CUSTOM_CONFIG_GET,
         &CUSTOM_CONFIG_SET,
         &CUSTOM_CONFIG_XML,
+        &SLEEP_US,
+        &THREAD_SET_PRIORITY,
         &SYSTEM_TIME_TICKS,
         &IO_SET_MODE,
         &IO_WRITE,
@@ -162,6 +168,8 @@ fn reset_counters() {
     LAST_MODE.set(0);
     LAST_LEVEL.set(0);
     LAST_LBM_VALUE.set(0);
+    LAST_SLEEP_US.set(0);
+    LAST_THREAD_PRIORITY.set(0);
     LAST_HANDLER_INSTALLED.set(false);
     LAST_CUSTOM_CONFIG_DEFAULT.set(false);
 }
@@ -235,6 +243,16 @@ unsafe extern "C" fn custom_config_xml(_buffer: *mut *mut u8) -> c_int {
 extern "C" fn stub_system_time_ticks() -> u32 {
     SYSTEM_TIME_TICKS.inc();
     42
+}
+
+extern "C" fn stub_sleep_us(micros: u32) {
+    SLEEP_US.inc();
+    LAST_SLEEP_US.set(micros);
+}
+
+extern "C" fn stub_thread_set_priority(priority: c_int) {
+    THREAD_SET_PRIORITY.inc();
+    LAST_THREAD_PRIORITY.set(priority);
 }
 
 extern "C" fn stub_io_set_mode(pin: c_int, mode: c_int) -> bool {
@@ -328,6 +346,8 @@ fn populated_table() -> VescIf {
     table.send_app_data = Some(stub_send_app_data);
     table.conf_custom_add_config = Some(stub_conf_custom_add_config);
     table.conf_custom_clear_configs = Some(stub_conf_custom_clear_configs);
+    table.sleep_us = Some(stub_sleep_us);
+    table.thread_set_priority = Some(stub_thread_set_priority);
     table.system_time_ticks = Some(stub_system_time_ticks);
     table.io_set_mode = Some(stub_io_set_mode);
     table.io_write = Some(stub_io_write);
@@ -437,6 +457,26 @@ fn custom_config_helpers_forward_through_mock_table() {
 fn system_time_ticks_forwards_through_mock_table() {
     with_populated_table(|| unsafe {
         assert_eq!(vesc_system_time_ticks(), 42);
+    });
+}
+
+#[test]
+fn sleep_us_forwards_through_mock_table() {
+    with_populated_table(|| unsafe {
+        vesc_sleep_us(1201);
+
+        assert_eq!(SLEEP_US.get(), 1);
+        assert_eq!(LAST_SLEEP_US.get(), 1201);
+    });
+}
+
+#[test]
+fn thread_set_priority_forwards_through_mock_table() {
+    with_populated_table(|| unsafe {
+        assert!(vesc_thread_set_priority(-1));
+
+        assert_eq!(THREAD_SET_PRIORITY.get(), 1);
+        assert_eq!(LAST_THREAD_PRIORITY.get(), -1);
     });
 }
 

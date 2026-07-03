@@ -7,7 +7,9 @@ use crate::bindings::{AppDataBindings, CustomConfigBindings, LbmBindings};
 use vescpkg_rs_sys::raw::{CustomConfigGet, CustomConfigSet, CustomConfigXml};
 use vescpkg_rs_sys::{AppDataHandler, ExtensionHandler, LbmValue};
 
+pub use crate::imu::test_support::FakeImuBindings;
 pub use crate::motor::test_support::FakeMotorTelemetryBindings;
+pub use crate::thread::test_support::FakeThreadBindings;
 
 /// Fake extension registration bindings used by SDK tests.
 pub struct FakeBindings {

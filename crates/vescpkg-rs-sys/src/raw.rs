@@ -530,6 +530,7 @@ mod slots {
     fn_slot!(conf_custom_clear_configs as unsafe extern "C" fn());
     fn_slot!(malloc as unsafe extern "C" fn(usize) -> *mut c_void);
     fn_slot!(free as unsafe extern "C" fn(*mut c_void));
+    fn_slot!(sleep_us as unsafe extern "C" fn(u32));
     fn_slot!(
         spawn
             as unsafe extern "C" fn(
@@ -543,6 +544,11 @@ mod slots {
     fn_slot!(should_terminate as unsafe extern "C" fn() -> bool);
     fn_slot!(get_arg as unsafe extern "C" fn(u32) -> *mut *mut c_void);
     fn_slot!(mc_get_fault as unsafe extern "C" fn() -> c_int);
+    fn_slot!(mc_get_rpm as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_get_speed as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_get_tot_current_filtered as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_get_tot_current_in_filtered as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_get_duty_cycle_now as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_input_voltage_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_amp_hours as unsafe extern "C" fn(bool) -> f32);
     fn_slot!(mc_get_amp_hours_charged as unsafe extern "C" fn(bool) -> f32);
@@ -778,6 +784,51 @@ pub unsafe fn vesc_spawn(
     unsafe { slots::spawn()(entry, stack_words, name, arg) }
 }
 
+/// Sleep the current firmware package thread for a number of microseconds.
+///
+/// Refloat v1.2.1 mirrors this VESC ABI slot from
+/// `vesc_pkg_lib/vesc_c_if.h:376` and sleeps the main loop at
+/// `src/main.c:1080`.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn vesc_sleep_us(micros: u32) {
+    unsafe { slots::sleep_us()(micros) };
+}
+
+/// Set the current firmware package thread priority when the slot is present.
+///
+/// Refloat v1.2.1 checks optional `thread_set_priority` before lowering
+/// `aux_thd` priority at `src/main.c:1133-1135`; the VESC ABI slot is declared
+/// at `vesc_pkg_lib/vesc_c_if.h:670`.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn vesc_thread_set_priority(priority: c_int) -> bool {
+    #[cfg(all(target_arch = "arm", not(test)))]
+    {
+        let address = unsafe { vesc_slot_word_from!(VescIfAbi::BASE_ADDR.0, thread_set_priority) };
+        if address == 0 {
+            false
+        } else {
+            let func =
+                unsafe { core::mem::transmute::<usize, unsafe extern "C" fn(c_int)>(address) };
+            unsafe { func(priority) };
+            true
+        }
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
+    unsafe {
+        (*vesc_if())
+            .thread_set_priority
+            .map(|func| func(priority))
+            .is_some()
+    }
+}
+
 /// Ask a firmware package thread to terminate.
 ///
 /// Refloat v1.2.1 mirrors this VESC ABI slot from
@@ -822,6 +873,99 @@ pub unsafe fn vesc_get_arg(prog_addr: u32) -> *mut *mut c_void {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_fault() -> c_int {
     unsafe { slots::mc_get_fault()() }
+}
+
+/// Return the current motor electrical RPM.
+///
+/// Refloat v1.2.1 reads this in `motor_data_update` at
+/// `src/motor_data.c:108`; the VESC ABI slot is declared at
+/// `vesc_pkg_lib/vesc_c_if.h:450`.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn mc_get_rpm() -> f32 {
+    unsafe { slots::mc_get_rpm()() }
+}
+
+/// Return firmware-calculated vehicle speed in meters per second.
+///
+/// Refloat v1.2.1 reads this in `motor_data_update` at
+/// `src/motor_data.c:118`; the VESC ABI slot is declared at
+/// `vesc_pkg_lib/vesc_c_if.h:470`.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn mc_get_speed() -> f32 {
+    unsafe { slots::mc_get_speed()() }
+}
+
+/// Return filtered total motor current.
+///
+/// Refloat v1.2.1 reads this in `motor_data_update` at
+/// `src/motor_data.c:120`; the VESC ABI slot is declared at
+/// `vesc_pkg_lib/vesc_c_if.h:456`.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn mc_get_tot_current_filtered() -> f32 {
+    unsafe { slots::mc_get_tot_current_filtered()() }
+}
+
+/// Return filtered input/battery current.
+///
+/// Refloat v1.2.1 reads this in `motor_data_update` at
+/// `src/motor_data.c:140`; the VESC ABI slot is declared at
+/// `vesc_pkg_lib/vesc_c_if.h:460`.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn mc_get_tot_current_in_filtered() -> f32 {
+    unsafe { slots::mc_get_tot_current_in_filtered()() }
+}
+
+/// Return the current duty cycle.
+///
+/// Refloat v1.2.1 reads this in `motor_data_update` at
+/// `src/motor_data.c:124`; the VESC ABI slot is declared at
+/// `vesc_pkg_lib/vesc_c_if.h:448`.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn mc_get_duty_cycle_now() -> f32 {
+    unsafe { slots::mc_get_duty_cycle_now()() }
+}
+
+/// Return FOC d-axis Id current when the firmware slot is present.
+///
+/// Refloat v1.2.1 reads optional `foc_get_id` while encoding compact all-data
+/// at `src/main.c:1364-1368`; the VESC ABI slot is declared at
+/// `vesc_pkg_lib/vesc_c_if.h:616`.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn foc_get_id() -> Option<f32> {
+    #[cfg(all(target_arch = "arm", not(test)))]
+    {
+        let address = unsafe { vesc_slot_word_from!(VescIfAbi::BASE_ADDR.0, foc_get_id) };
+        if address == 0 {
+            None
+        } else {
+            let func =
+                unsafe { core::mem::transmute::<usize, unsafe extern "C" fn() -> f32>(address) };
+            Some(unsafe { func() })
+        }
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
+    unsafe {
+        (*vesc_if()).foc_get_id.map(|func| func())
+    }
 }
 
 /// Return the filtered input/battery voltage.
