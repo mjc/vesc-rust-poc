@@ -119,6 +119,11 @@ pub(crate) fn build_final_native_lib_elf_unlocked(
 
     build_rust_staticlib_unlocked(plan)?;
 
+    let stale_object_path = link_plan.package_c_object_path();
+    if stale_object_path.exists() {
+        fs::remove_file(&stale_object_path).expect("remove stale package_lib.o");
+    }
+
     let elf_inputs = [linker_script_path.as_path(), rust_staticlib_path.as_path()];
     if artifact_is_up_to_date(&elf_path, &elf_inputs) {
         return Ok(());
@@ -126,10 +131,6 @@ pub(crate) fn build_final_native_lib_elf_unlocked(
 
     if let Some(parent) = elf_path.parent() {
         fs::create_dir_all(parent).expect("create native_lib.elf parent directory");
-    }
-    let stale_object_path = link_plan.package_c_object_path();
-    if stale_object_path.exists() {
-        fs::remove_file(&stale_object_path).expect("remove stale package_lib.o");
     }
 
     let staticlib_path = link_plan.rust_staticlib_path();
@@ -188,4 +189,50 @@ pub(crate) fn build_final_native_lib_elf(plan: &NativeLibLinkPlan) {
 
 pub(crate) fn build_rust_staticlib(plan: &NativeLibLinkPlan) {
     build_rust_staticlib_unlocked(plan).expect("build rust staticlib");
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::Path;
+    use std::time::Duration;
+
+    use tempfile::TempDir;
+
+    use crate::native_lib_link::NativeLibLinkPlan;
+    use crate::native_lib_toolchain::RecordingNativeLibToolchain;
+
+    use super::build_final_native_lib_elf_unlocked;
+
+    #[test]
+    fn up_to_date_final_elf_still_removes_stale_package_object() {
+        let workspace = TempDir::new().expect("temp workspace");
+        let plan = NativeLibLinkPlan::new(workspace.path());
+
+        write_file(&workspace.path().join("Cargo.lock"));
+        write_file(&workspace.path().join("examples/loopback/Cargo.toml"));
+        write_file(&workspace.path().join("crates/vescpkg-rs/Cargo.toml"));
+        write_file(&plan.linker_script_path());
+
+        std::thread::sleep(Duration::from_millis(20));
+        write_file(&plan.rust_staticlib_path());
+
+        std::thread::sleep(Duration::from_millis(20));
+        write_file(&plan.elf_path());
+
+        let stale_object = plan.package_c_object_path();
+        write_file(&stale_object);
+
+        let toolchain = RecordingNativeLibToolchain::default();
+        build_final_native_lib_elf_unlocked(&plan, &toolchain).expect("up-to-date native ELF");
+
+        assert!(!stale_object.exists());
+        assert!(toolchain.calls.borrow().is_empty());
+    }
+
+    fn write_file(path: &Path) {
+        fs::create_dir_all(path.parent().expect("test fixture parent"))
+            .expect("create test fixture parent");
+        fs::write(path, b"fixture").expect("write test fixture");
+    }
 }

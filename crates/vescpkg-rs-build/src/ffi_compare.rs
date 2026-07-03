@@ -192,95 +192,155 @@ pub fn compare_full_table(c_source: &str, rust_source: &str) -> Vec<(usize, Fiel
 /// Parse field names from the C `vesc_if` struct source.
 pub fn parse_c_vesc_if_fields(source: &str) -> Vec<Field> {
     let lines: Vec<&str> = source.lines().collect();
-    let end_line = lines.iter().position(|line| {
+    c_vesc_if_body_lines(&lines)
+        .into_iter()
+        .filter_map(|(line, source)| {
+            c_declaration_fragment(source).map(|fragment| (line, fragment))
+        })
+        .scan(
+            PendingCDeclaration::default(),
+            |pending, (line, fragment)| Some(pending.push(line, fragment)),
+        )
+        .flatten()
+        .flat_map(|declaration| {
+            parse_c_field(&declaration.source)
+                .into_iter()
+                .flat_map(|field| field.names())
+                .map(move |name| Field {
+                    name,
+                    line: declaration.line,
+                })
+        })
+        .collect()
+}
+
+#[derive(Default)]
+struct PendingCDeclaration {
+    line: Option<usize>,
+    source: String,
+}
+
+impl PendingCDeclaration {
+    fn push(&mut self, line: usize, fragment: &str) -> Option<CDeclaration> {
+        self.line.get_or_insert(line);
+        self.source.push(' ');
+        self.source.push_str(fragment);
+
+        fragment.contains(';').then(|| {
+            let declaration = CDeclaration {
+                line: self.line.take().expect("pending declaration line"),
+                source: std::mem::take(&mut self.source),
+            };
+            self.source.clear();
+            declaration
+        })
+    }
+}
+
+struct CDeclaration {
+    line: usize,
+    source: String,
+}
+
+struct ParsedCField {
+    name: String,
+    array_len: Option<usize>,
+}
+
+impl ParsedCField {
+    fn names(self) -> impl Iterator<Item = String> {
+        let name = self.name;
+        let array_len = self.array_len;
+        (0..array_len.unwrap_or(1)).map(move |index| match array_len {
+            Some(_) => format!("{name}[{index}]"),
+            None => name.clone(),
+        })
+    }
+}
+
+fn c_vesc_if_body_lines<'a>(lines: &'a [&'a str]) -> Vec<(usize, &'a str)> {
+    c_vesc_if_bounds(lines)
+        .map(|(start, end)| {
+            lines[start + 1..end]
+                .iter()
+                .enumerate()
+                .map(move |(offset, line)| (start + offset + 2, *line))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn c_vesc_if_bounds(lines: &[&str]) -> Option<(usize, usize)> {
+    let end = lines.iter().position(|line| {
         let trimmed = line.trim();
         trimmed.starts_with("} vesc_c_if") || trimmed.starts_with("} vesc_if")
-    });
-    let Some(end_line) = end_line else {
-        return Vec::new();
-    };
-    let Some(start_line) = lines[..end_line]
+    })?;
+    let start = lines[..end]
         .iter()
-        .rposition(|line| line.trim() == "typedef struct {")
-    else {
-        return Vec::new();
-    };
+        .rposition(|line| line.trim() == "typedef struct {")?;
+    Some((start, end))
+}
 
-    let mut fields = Vec::new();
-    let mut pending_decl = String::new();
-    let mut pending_line = 0;
+fn c_declaration_fragment(line: &str) -> Option<&str> {
+    line.split("//")
+        .next()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .filter(|line| !line.starts_with("/*"))
+        .filter(|line| !line.starts_with('*'))
+}
 
-    for (offset, line) in lines[start_line + 1..end_line].iter().enumerate() {
-        let line_index = start_line + 1 + offset;
-        let line = line.split("//").next().unwrap_or("").trim();
-        if line.is_empty() || line.starts_with("/*") || line.starts_with('*') {
-            continue;
-        }
-        if pending_decl.is_empty() {
-            pending_line = line_index + 1;
-        }
-        pending_decl.push(' ');
-        pending_decl.push_str(line);
+fn parse_c_field(declaration: &str) -> Option<ParsedCField> {
+    c_function_pointer_field(declaration)
+        .or_else(|| c_array_field(declaration))
+        .or_else(|| c_scalar_field(declaration))
+}
 
-        if !line.contains(';') {
-            continue;
-        }
-
-        for name in parse_c_field_names(&pending_decl) {
-            fields.push(Field {
+fn c_function_pointer_field(declaration: &str) -> Option<ParsedCField> {
+    declaration.find("(*").and_then(|start| {
+        let rest = &declaration[start + 2..];
+        rest.find(')').and_then(|end| {
+            non_empty_name(rest[..end].trim()).map(|name| ParsedCField {
                 name,
-                line: pending_line,
-            });
-        }
-        pending_decl.clear();
-    }
-
-    fields
+                array_len: None,
+            })
+        })
+    })
 }
 
-fn parse_c_field_names(line: &str) -> Vec<String> {
-    let line = line.trim();
-    if line.is_empty() {
-        return Vec::new();
-    }
-
-    if let Some(start) = line.find("(*") {
-        let rest = &line[start + 2..];
-        let Some(end) = rest.find(')') else {
-            return Vec::new();
-        };
-        let name = rest[..end].trim();
-        return if name.is_empty() {
-            Vec::new()
-        } else {
-            vec![name.to_owned()]
-        };
-    }
-
-    if !line.ends_with(';') {
-        return Vec::new();
-    }
-
-    let without_semicolon = line.trim_end_matches(';').trim();
-    let Some(token) = without_semicolon.split_whitespace().last() else {
-        return Vec::new();
-    };
-    if let Some((name, len)) = parse_c_array_field(token) {
-        return (0..len).map(|index| format!("{name}[{index}]")).collect();
-    }
-
-    let name = token.trim_matches('*').trim();
-    if name.is_empty() {
-        Vec::new()
-    } else {
-        vec![name.to_owned()]
-    }
+fn c_array_field(declaration: &str) -> Option<ParsedCField> {
+    c_decl_token(declaration).and_then(|token| {
+        let (name, len) = token.trim_matches('*').split_once('[')?;
+        let len = len.strip_suffix(']')?.parse().ok()?;
+        non_empty_name(name).map(|name| ParsedCField {
+            name,
+            array_len: Some(len),
+        })
+    })
 }
 
-fn parse_c_array_field(token: &str) -> Option<(&str, usize)> {
-    let (name, len) = token.trim_matches('*').split_once('[')?;
-    let len = len.strip_suffix(']')?.parse().ok()?;
-    (!name.is_empty()).then_some((name, len))
+fn c_scalar_field(declaration: &str) -> Option<ParsedCField> {
+    c_decl_token(declaration).and_then(|token| {
+        let name = token.trim_matches('*').trim();
+        (!name.contains('[')).then_some(name).and_then(|name| {
+            non_empty_name(name).map(|name| ParsedCField {
+                name,
+                array_len: None,
+            })
+        })
+    })
+}
+
+fn c_decl_token(declaration: &str) -> Option<&str> {
+    declaration
+        .trim()
+        .strip_suffix(';')
+        .map(str::trim)
+        .and_then(|declaration| declaration.split_whitespace().last())
+}
+
+fn non_empty_name(name: &str) -> Option<String> {
+    (!name.is_empty()).then(|| name.to_owned())
 }
 
 /// Parse field names from the Rust `VescIf` struct source.
