@@ -485,6 +485,28 @@ mod slots {
         };
     }
 
+    macro_rules! optional_fn_slot {
+        ($name:ident as $fn_ty:ty) => {
+            #[inline(always)]
+            pub(super) unsafe fn $name() -> Option<$fn_ty> {
+                #[cfg(all(target_arch = "arm", not(test)))]
+                unsafe {
+                    let address = vesc_slot_word_from!(VescIfAbi::BASE_ADDR.0, $name);
+                    if address == 0 {
+                        None
+                    } else {
+                        Some(core::mem::transmute::<usize, $fn_ty>(address))
+                    }
+                }
+
+                #[cfg(not(all(target_arch = "arm", not(test))))]
+                unsafe {
+                    (*vesc_if()).$name
+                }
+            }
+        };
+    }
+
     #[cfg(all(target_arch = "arm", not(test)))]
     #[inline(always)]
     pub(super) unsafe fn lbm_add_extension_from(
@@ -557,6 +579,7 @@ mod slots {
     fn_slot!(mc_get_battery_level as unsafe extern "C" fn(*mut f32) -> f32);
     fn_slot!(mc_get_distance_abs as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_odometer as unsafe extern "C" fn() -> u64);
+    optional_fn_slot!(foc_get_id as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_temp_fet_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_temp_motor_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(imu_startup_done as unsafe extern "C" fn() -> bool);
@@ -565,6 +588,7 @@ mod slots {
     fn_slot!(imu_get_yaw as unsafe extern "C" fn() -> f32);
     fn_slot!(send_app_data as unsafe extern "C" fn(*mut c_uchar, u32));
     fn_slot!(system_time_ticks as unsafe extern "C" fn() -> u32);
+    optional_fn_slot!(thread_set_priority as unsafe extern "C" fn(c_int));
     fn_slot!(io_set_mode as unsafe extern "C" fn(c_int, c_int) -> bool);
     fn_slot!(io_write as unsafe extern "C" fn(c_int, c_int) -> bool);
     fn_slot!(io_read as unsafe extern "C" fn(c_int) -> bool);
@@ -807,28 +831,10 @@ pub unsafe fn vesc_sleep_us(micros: u32) {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn vesc_thread_set_priority(priority: c_int) -> bool {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    {
-        let address = unsafe { vesc_slot_word_from!(VescIfAbi::BASE_ADDR.0, thread_set_priority) };
-        if address == 0 {
-            false
-        } else {
-            let func =
-                unsafe { core::mem::transmute::<usize, unsafe extern "C" fn(c_int)>(address) };
-            unsafe { func(priority) };
-            true
-        }
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        (*vesc_if())
-            .thread_set_priority
-            .map(|func| func(priority))
-            .is_some()
-    }
+    unsafe { slots::thread_set_priority() }
+        .map(|func| unsafe { func(priority) })
+        .is_some()
 }
-
 /// Ask a firmware package thread to terminate.
 ///
 /// Refloat v1.2.1 mirrors this VESC ABI slot from
@@ -950,24 +956,8 @@ pub unsafe fn mc_get_duty_cycle_now() -> f32 {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn foc_get_id() -> Option<f32> {
-    #[cfg(all(target_arch = "arm", not(test)))]
-    {
-        let address = unsafe { vesc_slot_word_from!(VescIfAbi::BASE_ADDR.0, foc_get_id) };
-        if address == 0 {
-            None
-        } else {
-            let func =
-                unsafe { core::mem::transmute::<usize, unsafe extern "C" fn() -> f32>(address) };
-            Some(unsafe { func() })
-        }
-    }
-
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    unsafe {
-        (*vesc_if()).foc_get_id.map(|func| func())
-    }
+    unsafe { slots::foc_get_id() }.map(|func| unsafe { func() })
 }
-
 /// Return the filtered input/battery voltage.
 ///
 /// # Safety
@@ -1148,57 +1138,15 @@ pub unsafe fn io_read(pin: crate::VescPin) -> bool {
 
 /// Returns selected `VescIf` field offsets for ABI layout tests.
 #[cfg(test)]
-pub fn vesc_if_offsets_for_tests() -> [usize; 44] {
-    [
-        core::mem::offset_of!(VescIf, lbm_add_extension),
-        core::mem::offset_of!(VescIf, lbm_enc_i),
-        core::mem::offset_of!(VescIf, lbm_dec_as_i32),
-        core::mem::offset_of!(VescIf, lbm_is_number),
-        core::mem::offset_of!(VescIf, lbm_enc_sym_nil),
-        core::mem::offset_of!(VescIf, lbm_enc_sym_true),
-        core::mem::offset_of!(VescIf, lbm_enc_sym_eerror),
-        core::mem::offset_of!(VescIf, malloc),
-        core::mem::offset_of!(VescIf, free),
-        core::mem::offset_of!(VescIf, spawn),
-        core::mem::offset_of!(VescIf, request_terminate),
-        core::mem::offset_of!(VescIf, should_terminate),
-        core::mem::offset_of!(VescIf, get_arg),
-        core::mem::offset_of!(VescIf, mc_get_fault),
-        core::mem::offset_of!(VescIf, mc_get_duty_cycle_now),
-        core::mem::offset_of!(VescIf, mc_get_rpm),
-        core::mem::offset_of!(VescIf, mc_get_speed),
-        core::mem::offset_of!(VescIf, mc_get_tot_current_filtered),
-        core::mem::offset_of!(VescIf, mc_get_tot_current_in_filtered),
-        core::mem::offset_of!(VescIf, mc_get_amp_hours),
-        core::mem::offset_of!(VescIf, mc_get_amp_hours_charged),
-        core::mem::offset_of!(VescIf, mc_get_watt_hours),
-        core::mem::offset_of!(VescIf, mc_get_watt_hours_charged),
-        core::mem::offset_of!(VescIf, mc_get_input_voltage_filtered),
-        core::mem::offset_of!(VescIf, mc_temp_fet_filtered),
-        core::mem::offset_of!(VescIf, mc_temp_motor_filtered),
-        core::mem::offset_of!(VescIf, mc_get_battery_level),
-        core::mem::offset_of!(VescIf, mc_get_distance_abs),
-        core::mem::offset_of!(VescIf, mc_get_odometer),
-        core::mem::offset_of!(VescIf, send_app_data),
-        core::mem::offset_of!(VescIf, set_app_data_handler),
-        core::mem::offset_of!(VescIf, imu_startup_done),
-        core::mem::offset_of!(VescIf, imu_get_roll),
-        core::mem::offset_of!(VescIf, imu_get_pitch),
-        core::mem::offset_of!(VescIf, imu_get_yaw),
-        // Refloat v1.2.1 registers/clears custom config at `src/main.c:2456`
-        // and `src/main.c:2403`; slots are `vesc_pkg_lib/vesc_c_if.h:549-553`.
-        core::mem::offset_of!(VescIf, conf_custom_add_config),
-        core::mem::offset_of!(VescIf, conf_custom_clear_configs),
-        core::mem::offset_of!(VescIf, system_time_ticks),
-        core::mem::offset_of!(VescIf, sleep_us),
-        core::mem::offset_of!(VescIf, foc_get_id),
-        core::mem::offset_of!(VescIf, thread_set_priority),
-        core::mem::offset_of!(VescIf, io_set_mode),
-        core::mem::offset_of!(VescIf, io_write),
-        core::mem::offset_of!(VescIf, io_read),
-    ]
-}
+pub fn vesc_if_offsets_for_tests() -> [usize; VescIfAbi::USED_SLOT_COUNT] {
+    macro_rules! offsets {
+        ($($const_name:ident => $slot_name:ident),+ $(,)?) => {
+            [$(core::mem::offset_of!(VescIf, $slot_name)),+]
+        };
+    }
 
+    vesc_if_used_slots!(offsets)
+}
 #[cfg(test)]
 mod dispatch_tests;
 

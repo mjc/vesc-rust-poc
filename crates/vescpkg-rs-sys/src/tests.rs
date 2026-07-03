@@ -101,78 +101,23 @@ fn raw_vesc_if_mock_function_slots_have_pointer_layout() {
 
 #[test]
 fn vesc_if_slot_constants_name_the_package_header_offsets() {
-    let slots = VescIfAbi::USED_SLOTS;
-
     assert_eq!(VescIfAbi::BASE_ADDR, NativeAddress(0x1000_f800));
-    // Custom-config slots are used by Refloat v1.2.1 at `src/main.c:2456`
-    // and `src/main.c:2403`; the ABI entries are `vesc_pkg_lib/vesc_c_if.h:549-553`.
-    assert_eq!(
-        slots.map(|slot| slot.name()),
-        [
-            "lbm_add_extension",
-            "lbm_enc_i",
-            "lbm_dec_as_i32",
-            "lbm_is_number",
-            "lbm_enc_sym_nil",
-            "lbm_enc_sym_true",
-            "lbm_enc_sym_eerror",
-            "malloc",
-            "free",
-            "spawn",
-            "request_terminate",
-            "should_terminate",
-            "get_arg",
-            "mc_get_fault",
-            "mc_get_duty_cycle_now",
-            "mc_get_rpm",
-            "mc_get_speed",
-            "mc_get_tot_current_filtered",
-            "mc_get_tot_current_in_filtered",
-            "mc_get_amp_hours",
-            "mc_get_amp_hours_charged",
-            "mc_get_watt_hours",
-            "mc_get_watt_hours_charged",
-            "mc_get_input_voltage_filtered",
-            "mc_temp_fet_filtered",
-            "mc_temp_motor_filtered",
-            "mc_get_battery_level",
-            "mc_get_distance_abs",
-            "mc_get_odometer",
-            "send_app_data",
-            "set_app_data_handler",
-            "imu_startup_done",
-            "imu_get_roll",
-            "imu_get_pitch",
-            "imu_get_yaw",
-            "conf_custom_add_config",
-            "conf_custom_clear_configs",
-            "system_time_ticks",
-            "sleep_us",
-            "foc_get_id",
-            "thread_set_priority",
-            "io_set_mode",
-            "io_write",
-            "io_read",
-        ]
-    );
-    assert_eq!(
-        slots.map(|slot| slot.vesc32_byte_offset()),
-        [
-            0, 64, 100, 124, 136, 140, 148, 184, 188, 192, 196, 200, 204, 368, 428, 436, 516, 460,
-            476, 440, 444, 448, 452, 480, 504, 508, 512, 524, 528, 592, 596, 628, 632, 636, 640,
-            728, 732, 952, 168, 868, 1004, 220, 224, 228,
-        ]
-    );
-    assert_eq!(
-        slots.map(|slot| slot.slot_index()),
-        [
-            0, 16, 25, 31, 34, 35, 37, 46, 47, 48, 49, 50, 51, 92, 107, 109, 129, 115, 119, 110,
-            111, 112, 113, 120, 126, 127, 128, 131, 132, 148, 149, 157, 158, 159, 160, 182, 183,
-            238, 42, 217, 251, 55, 56, 57,
-        ]
-    );
-}
+    assert_eq!(VescIfAbi::USED_SLOT_COUNT, VescIfAbi::USED_SLOTS.len());
 
+    for slot in VescIfAbi::USED_SLOTS {
+        let generated = crate::c_vesc_if::SLOTS
+            .iter()
+            .find(|generated| generated.name == slot.name())
+            .expect("used VESC_IF slot must exist in generated header inventory");
+
+        assert_eq!(generated.index, slot.slot_index());
+        assert_eq!(generated.vesc32_byte_offset, slot.vesc32_byte_offset());
+    }
+
+    assert!(VescIfAbi::USED_SLOTS.contains(&VescIfAbi::SLEEP_US));
+    assert!(VescIfAbi::USED_SLOTS.contains(&VescIfAbi::FOC_GET_ID));
+    assert!(VescIfAbi::USED_SLOTS.contains(&VescIfAbi::THREAD_SET_PRIORITY));
+}
 #[test]
 fn vesc_if_slot_host_byte_offset_scales_with_pointer_width() {
     let pointer_size = core::mem::size_of::<usize>();
