@@ -1,3 +1,4 @@
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -5,7 +6,7 @@ use crate::{
     BLE_LOOPBACK_PACKAGE_NAME, Package, PackageBinaryConversionRunner, PackageExample,
     PackageTargetError, PackageTargetMode, PackageTargetPlan, SNAKE_PACKAGE_NAME,
     native_lib_toolchain::{NativeLibToolchain, RealNativeLibToolchain},
-    refloat_native_build::RefloatNativeBuildPlan,
+    refloat_native_build::{RefloatGitHash, RefloatNativeBuildPlan},
     refloat_package_assets::{RefloatBuildInfo, RefloatSourceAssets},
 };
 
@@ -40,15 +41,24 @@ pub enum CargoVescPkgExample {
     Snake,
 }
 
+/// Mutually exclusive source selected by `cargo vescpkg build`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CargoVescPkgSource {
+    /// Render one of the built-in examples.
+    Example(CargoVescPkgExample),
+    /// Build from an existing package descriptor.
+    Manifest(PathBuf),
+    /// Build from a Refloat source checkout.
+    RefloatSource(PathBuf),
+}
+
 /// Parsed `cargo vescpkg` invocation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CargoVescPkgInvocation {
     mode: CargoVescPkgMode,
-    example: CargoVescPkgExample,
+    source: CargoVescPkgSource,
     package_version: String,
     target_triple: String,
-    manifest_path: Option<PathBuf>,
-    refloat_source_path: Option<PathBuf>,
     refloat_build_date: String,
     refloat_git_commit: String,
     refloat_vesc_tool: String,
@@ -77,6 +87,8 @@ pub enum CargoVescPkgParseError {
     MissingVescToolValue,
     /// `--example` selected an unsupported package example.
     UnsupportedExample(String),
+    /// `--git-commit` was not a bare hexadecimal commit prefix.
+    InvalidRefloatGitCommit(String),
     /// More than one package source selector was provided.
     ConflictingPackageSources,
     /// An unsupported flag or positional argument was provided.
@@ -109,6 +121,12 @@ impl std::fmt::Display for CargoVescPkgParseError {
             Self::UnsupportedExample(example) => {
                 write!(f, "unsupported cargo vescpkg example: {example}")
             }
+            Self::InvalidRefloatGitCommit(value) => {
+                write!(
+                    f,
+                    "--git-commit must be hexadecimal digits without a 0x prefix: {value}"
+                )
+            }
             Self::ConflictingPackageSources => {
                 f.write_str("choose only one of --example, --manifest, or --refloat-source")
             }
@@ -137,11 +155,9 @@ impl CargoVescPkgInvocation {
     pub fn new(mode: CargoVescPkgMode) -> Self {
         Self {
             mode,
-            example: CargoVescPkgExample::Loopback,
+            source: CargoVescPkgSource::Example(CargoVescPkgExample::Loopback),
             package_version: DEFAULT_PACKAGE_VERSION.to_owned(),
             target_triple: DEFAULT_TARGET_TRIPLE.to_owned(),
-            manifest_path: None,
-            refloat_source_path: None,
             refloat_build_date: DEFAULT_REFLOAT_BUILD_DATE.to_owned(),
             refloat_git_commit: DEFAULT_REFLOAT_GIT_COMMIT.to_owned(),
             refloat_vesc_tool: DEFAULT_REFLOAT_VESC_TOOL.to_owned(),
@@ -150,7 +166,7 @@ impl CargoVescPkgInvocation {
 
     /// Override the selected package example.
     pub fn with_example(mut self, example: CargoVescPkgExample) -> Self {
-        self.example = example;
+        self.source = CargoVescPkgSource::Example(example);
         self
     }
 
@@ -169,14 +185,14 @@ impl CargoVescPkgInvocation {
     /// Use an existing package descriptor instead of rendering example staging assets.
     pub fn with_manifest_path(mut self, manifest_path: impl Into<PathBuf>) -> Self {
         self.mode = CargoVescPkgMode::BuildPackageOnly;
-        self.manifest_path = Some(manifest_path.into());
+        self.source = CargoVescPkgSource::Manifest(manifest_path.into());
         self
     }
 
     /// Use a Refloat source tree instead of the built-in examples.
     pub fn with_refloat_source_path(mut self, refloat_source_path: impl Into<PathBuf>) -> Self {
         self.mode = CargoVescPkgMode::BuildPackageOnly;
-        self.refloat_source_path = Some(refloat_source_path.into());
+        self.source = CargoVescPkgSource::RefloatSource(refloat_source_path.into());
         self
     }
 
@@ -204,7 +220,17 @@ impl CargoVescPkgInvocation {
 
     /// Return the selected package example.
     pub fn example(&self) -> CargoVescPkgExample {
-        self.example
+        match &self.source {
+            CargoVescPkgSource::Example(example) => *example,
+            CargoVescPkgSource::Manifest(_) | CargoVescPkgSource::RefloatSource(_) => {
+                CargoVescPkgExample::Loopback
+            }
+        }
+    }
+
+    /// Return the selected package source.
+    pub fn source(&self) -> &CargoVescPkgSource {
+        &self.source
     }
 
     /// Return the package version.
@@ -219,12 +245,18 @@ impl CargoVescPkgInvocation {
 
     /// Return the package descriptor path when this invocation builds from one.
     pub fn manifest_path(&self) -> Option<&Path> {
-        self.manifest_path.as_deref()
+        match &self.source {
+            CargoVescPkgSource::Manifest(path) => Some(path),
+            CargoVescPkgSource::Example(_) | CargoVescPkgSource::RefloatSource(_) => None,
+        }
     }
 
     /// Return the Refloat source path when this invocation builds from one.
     pub fn refloat_source_path(&self) -> Option<&Path> {
-        self.refloat_source_path.as_deref()
+        match &self.source {
+            CargoVescPkgSource::RefloatSource(path) => Some(path),
+            CargoVescPkgSource::Example(_) | CargoVescPkgSource::Manifest(_) => None,
+        }
     }
 
     /// Return the deterministic Refloat build date string.
@@ -244,7 +276,7 @@ impl CargoVescPkgInvocation {
 
     /// Return the package name associated with the selected example.
     pub fn package_name(&self) -> &'static str {
-        match self.example {
+        match self.example() {
             CargoVescPkgExample::Loopback => BLE_LOOPBACK_PACKAGE_NAME,
             CargoVescPkgExample::Snake => SNAKE_PACKAGE_NAME,
         }
@@ -252,7 +284,7 @@ impl CargoVescPkgInvocation {
 
     /// Return the build-layer package example associated with this invocation.
     pub fn package_example(&self) -> PackageExample {
-        match self.example {
+        match self.example() {
             CargoVescPkgExample::Loopback => PackageExample::Loopback,
             CargoVescPkgExample::Snake => PackageExample::Snake,
         }
@@ -264,29 +296,32 @@ impl CargoVescPkgInvocation {
         if matches!(self.mode, CargoVescPkgMode::BuildPackageOnly) {
             args.push("--package-only".to_owned());
         }
-        if !matches!(self.example, CargoVescPkgExample::Loopback) {
-            args.push("--example".to_owned());
-            args.push(
-                match self.example {
-                    CargoVescPkgExample::Loopback => "loopback",
-                    CargoVescPkgExample::Snake => "snake",
-                }
-                .to_owned(),
-            );
-        }
-        if let Some(manifest_path) = &self.manifest_path {
-            args.push("--manifest".to_owned());
-            args.push(manifest_path.display().to_string());
-        }
-        if let Some(refloat_source_path) = &self.refloat_source_path {
-            args.push("--refloat-source".to_owned());
-            args.push(refloat_source_path.display().to_string());
-            args.push("--build-date".to_owned());
-            args.push(self.refloat_build_date.clone());
-            args.push("--git-commit".to_owned());
-            args.push(self.refloat_git_commit.clone());
-            args.push("--vesc-tool".to_owned());
-            args.push(self.refloat_vesc_tool.clone());
+        match &self.source {
+            CargoVescPkgSource::Example(example) if *example != CargoVescPkgExample::Loopback => {
+                args.push("--example".to_owned());
+                args.push(
+                    match example {
+                        CargoVescPkgExample::Loopback => "loopback",
+                        CargoVescPkgExample::Snake => "snake",
+                    }
+                    .to_owned(),
+                );
+            }
+            CargoVescPkgSource::Example(_) => {}
+            CargoVescPkgSource::Manifest(manifest_path) => {
+                args.push("--manifest".to_owned());
+                args.push(manifest_path.display().to_string());
+            }
+            CargoVescPkgSource::RefloatSource(refloat_source_path) => {
+                args.push("--refloat-source".to_owned());
+                args.push(refloat_source_path.display().to_string());
+                args.push("--build-date".to_owned());
+                args.push(self.refloat_build_date.clone());
+                args.push("--git-commit".to_owned());
+                args.push(self.refloat_git_commit.clone());
+                args.push("--vesc-tool".to_owned());
+                args.push(self.refloat_vesc_tool.clone());
+            }
         }
         args.push("--target".to_owned());
         args.push(self.target_triple.clone());
@@ -335,46 +370,32 @@ impl CargoVescPkgInvocation {
         C: PackageBinaryConversionRunner,
         N: NativeLibToolchain,
     {
-        if let Some(refloat_source_path) = &self.refloat_source_path {
+        if let CargoVescPkgSource::RefloatSource(refloat_source_path) = &self.source {
             let repo_root = repo_root.into();
             let refloat_source_root = clean_path(repo_root.join(refloat_source_path));
             let vesc_tool = resolve_refloat_vesc_tool(&repo_root, self.refloat_vesc_tool());
             RefloatNativeBuildPlan::new(&refloat_source_root)
                 .with_vesc_tool(vesc_tool)
                 .with_git_hash(refloat_native_git_hash(self.refloat_git_commit()))
+                .map_err(|error| package_output_error(refloat_source_path, error))?
                 .build_with(native_toolchain)
-                .map_err(|error| {
-                    CargoVescPkgError::Package(PackageTargetError::PackageOutput {
-                        path: refloat_source_path.clone(),
-                        reason: error.to_string(),
-                    })
-                })?;
+                .map_err(|error| package_output_error(refloat_source_path, error))?;
             let output = RefloatSourceAssets::new(refloat_source_root)
                 .write_package(&RefloatBuildInfo::new(
                     self.refloat_build_date(),
                     self.refloat_git_commit(),
                 ))
-                .map_err(|error| {
-                    CargoVescPkgError::Package(PackageTargetError::PackageOutput {
-                        path: refloat_source_path.clone(),
-                        reason: error.to_string(),
-                    })
-                })?;
+                .map_err(|error| package_output_error(refloat_source_path, error))?;
             return Ok(output
                 .strip_prefix(&repo_root)
                 .unwrap_or(&output)
                 .to_path_buf());
         }
 
-        if let Some(manifest_path) = &self.manifest_path {
+        if let CargoVescPkgSource::Manifest(manifest_path) = &self.source {
             let repo_root = repo_root.into();
-            let output =
-                Package::write_from_manifest(repo_root.join(manifest_path)).map_err(|error| {
-                    CargoVescPkgError::Package(PackageTargetError::PackageOutput {
-                        path: manifest_path.clone(),
-                        reason: error.to_string(),
-                    })
-                })?;
+            let output = Package::write_from_manifest(repo_root.join(manifest_path))
+                .map_err(|error| package_output_error(manifest_path, error))?;
             return Ok(output
                 .strip_prefix(&repo_root)
                 .unwrap_or(&output)
@@ -385,6 +406,13 @@ impl CargoVescPkgInvocation {
             .execute_with(conversion_runner)
             .map_err(CargoVescPkgError::Package)
     }
+}
+
+fn package_output_error(path: &Path, error: impl fmt::Display) -> CargoVescPkgError {
+    CargoVescPkgError::Package(PackageTargetError::PackageOutput {
+        path: path.to_path_buf(),
+        reason: error.to_string(),
+    })
 }
 
 /// Parse the argument tail passed to `cargo vescpkg`.
@@ -453,7 +481,7 @@ where
                 let Some(value) = args.next() else {
                     return Err(CargoVescPkgParseError::MissingGitCommitValue);
                 };
-                refloat_git_commit = value.as_ref().to_owned();
+                refloat_git_commit = parse_refloat_git_commit(value.as_ref())?.to_owned();
             }
             "--vesc-tool" => {
                 let Some(value) = args.next() else {
@@ -522,6 +550,16 @@ fn refloat_native_git_hash(git_commit: &str) -> &str {
     }
 }
 
+fn parse_refloat_git_commit(value: &str) -> Result<&str, CargoVescPkgParseError> {
+    if RefloatGitHash::is_valid(value) {
+        Ok(value)
+    } else {
+        Err(CargoVescPkgParseError::InvalidRefloatGitCommit(
+            value.to_owned(),
+        ))
+    }
+}
+
 fn is_path_like(path: &Path) -> bool {
     let mut components = path.components();
     match components.next() {
@@ -578,8 +616,10 @@ mod tests {
     use crate::rust_package_api_roadmap::markdown_section_body;
 
     use super::{
-        CargoVescPkgError, CargoVescPkgInvocation, CargoVescPkgMode, DEFAULT_PACKAGE_VERSION,
-        DEFAULT_TARGET_TRIPLE, command_design_text, parse_args, run_with, run_with_toolchains,
+        CargoVescPkgError, CargoVescPkgInvocation, CargoVescPkgMode, CargoVescPkgSource,
+        DEFAULT_PACKAGE_VERSION, DEFAULT_REFLOAT_BUILD_DATE, DEFAULT_REFLOAT_GIT_COMMIT,
+        DEFAULT_REFLOAT_VESC_TOOL, DEFAULT_TARGET_TRIPLE, command_design_text, parse_args,
+        run_with, run_with_toolchains,
     };
     use crate::package_conversion::PackageBinaryConversionCommand;
     use crate::test_support::{FakeConversionRunner, PackageTestHarness};
@@ -742,6 +782,24 @@ mod tests {
     }
 
     #[test]
+    fn parse_args_rejects_refloat_git_commits_that_are_not_hex_digits() {
+        for git_commit in ["feature/refloat", "0x0ef6e99", "0ef6e99-dirty", ""] {
+            assert_eq!(
+                parse_args([
+                    "build",
+                    "--refloat-source",
+                    "refloat",
+                    "--git-commit",
+                    git_commit,
+                ]),
+                Err(super::CargoVescPkgParseError::InvalidRefloatGitCommit(
+                    git_commit.to_owned()
+                ))
+            );
+        }
+    }
+
+    #[test]
     fn parses_the_snake_example_invocation() {
         let invocation =
             parse_args(["build", "--example", "snake"]).expect("parse snake example invocation");
@@ -802,6 +860,36 @@ mod tests {
                 Err(super::CargoVescPkgParseError::ConflictingPackageSources)
             );
         }
+    }
+
+    #[test]
+    fn builder_package_source_is_mutually_exclusive() {
+        let invocation = CargoVescPkgInvocation::new(CargoVescPkgMode::Build)
+            .with_manifest_path("refloat/pkgdesc.qml")
+            .with_refloat_source_path("refloat");
+
+        assert_eq!(
+            invocation.source(),
+            &CargoVescPkgSource::RefloatSource(PathBuf::from("refloat"))
+        );
+        assert_eq!(invocation.manifest_path(), None);
+        assert_eq!(
+            invocation.subcommand_args(),
+            vec![
+                "build".to_owned(),
+                "--package-only".to_owned(),
+                "--refloat-source".to_owned(),
+                "refloat".to_owned(),
+                "--build-date".to_owned(),
+                DEFAULT_REFLOAT_BUILD_DATE.to_owned(),
+                "--git-commit".to_owned(),
+                DEFAULT_REFLOAT_GIT_COMMIT.to_owned(),
+                "--vesc-tool".to_owned(),
+                DEFAULT_REFLOAT_VESC_TOOL.to_owned(),
+                "--target".to_owned(),
+                DEFAULT_TARGET_TRIPLE.to_owned(),
+            ]
+        );
     }
 
     #[test]

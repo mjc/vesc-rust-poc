@@ -88,18 +88,17 @@ impl Package {
     pub fn from_manifest(manifest: impl AsRef<Path>) -> Result<Self, PackageError> {
         let manifest = manifest_path(manifest.as_ref());
         let staging_dir = staging_dir_from_manifest(&manifest)?;
+        let staging_root = StagingRoot::new(&staging_dir)?;
         let descriptor = parse_package_manifest(&manifest)?;
-        let description_md_path = manifest_asset_path(
-            &staging_dir,
-            "pkgDescriptionMd",
-            descriptor.description_md(),
-        )?
-        .ok_or_else(|| {
-            PackageError::Build("pkgDescriptionMd must name a staging file".to_owned())
-        })?;
-        let lisp_path = manifest_asset_path(&staging_dir, "pkgLisp", descriptor.lisp())?
+        let description_md_path = staging_root
+            .asset_file("pkgDescriptionMd", descriptor.description_md())?
+            .ok_or_else(|| {
+                PackageError::Build("pkgDescriptionMd must name a staging file".to_owned())
+            })?;
+        let lisp_path = staging_root
+            .asset_file("pkgLisp", descriptor.lisp())?
             .ok_or_else(|| PackageError::Build("pkgLisp must name a staging file".to_owned()))?;
-        let qml_path = manifest_asset_path(&staging_dir, "pkgQml", descriptor.qml())?;
+        let qml_path = staging_root.asset_file("pkgQml", descriptor.qml())?;
         let description_md = fs::read_to_string(description_md_path)?;
         let lisp_source = fs::read_to_string(&lisp_path)?;
         let qml_file = qml_path
@@ -124,8 +123,9 @@ impl Package {
     pub fn write_from_manifest(manifest: impl AsRef<Path>) -> Result<PathBuf, PackageError> {
         let manifest = manifest_path(manifest.as_ref());
         let staging_dir = staging_dir_from_manifest(&manifest)?;
+        let staging_root = StagingRoot::new(&staging_dir)?;
         let descriptor = parse_package_manifest(&manifest)?;
-        let output = manifest_output_path(&staging_dir, descriptor.output())?;
+        let output = staging_root.output_file(descriptor.output())?;
         Self::from_manifest(&manifest)?.write(&output)?;
         Ok(output)
     }
@@ -205,57 +205,121 @@ impl Package {
     }
 }
 
-fn manifest_output_path(staging_dir: &Path, output: &str) -> Result<PathBuf, PackageError> {
-    let output = Path::new(output);
-    let stays_inside_staging = output
-        .components()
-        .all(|component| matches!(component, Component::Normal(_) | Component::CurDir));
+struct StagingRoot {
+    path: PathBuf,
+    canonical_path: PathBuf,
+}
 
-    if output.as_os_str().is_empty()
-        || output
-            .components()
-            .all(|component| component == Component::CurDir)
-    {
-        Err(PackageError::Build(
-            "pkgOutput must name a package file inside the staging directory".to_owned(),
-        ))
-    } else if stays_inside_staging {
-        Ok(staging_dir.join(output))
-    } else {
-        Err(PackageError::Build(format!(
-            "pkgOutput must be relative to the staging directory: {}",
-            output.display()
-        )))
+impl StagingRoot {
+    fn new(path: &Path) -> Result<Self, PackageError> {
+        Ok(Self {
+            path: path.to_path_buf(),
+            canonical_path: path.canonicalize()?,
+        })
+    }
+
+    fn output_file(&self, output: &str) -> Result<PathBuf, PackageError> {
+        let relative = staging_relative_path("pkgOutput", output, RequiredPath::Required)?;
+        let Some(relative) = relative else {
+            return Err(PackageError::Build(
+                "pkgOutput must name a package file inside the staging directory".to_owned(),
+            ));
+        };
+        let output = self.path.join(relative);
+        self.reject_symlink_path(&output)?;
+        Ok(output)
+    }
+
+    fn asset_file(&self, field: &str, asset_path: &str) -> Result<Option<PathBuf>, PackageError> {
+        let Some(relative) = staging_relative_path(field, asset_path, RequiredPath::Optional)?
+        else {
+            return Ok(None);
+        };
+        let asset = self.path.join(relative);
+        self.reject_symlink_path(&asset)?;
+        let canonical_asset = asset.canonicalize()?;
+        if canonical_asset.starts_with(&self.canonical_path) {
+            Ok(Some(asset))
+        } else {
+            Err(PackageError::Build(format!(
+                "{field} must stay inside the staging directory: {}",
+                asset.display()
+            )))
+        }
+    }
+
+    fn reject_symlink_path(&self, path: &Path) -> Result<(), PackageError> {
+        let relative = path.strip_prefix(&self.path).map_err(|_| {
+            PackageError::Build(format!(
+                "path must stay inside the staging directory: {}",
+                path.display()
+            ))
+        })?;
+        let mut current = self.path.clone();
+        for component in relative.components() {
+            let Component::Normal(name) = component else {
+                continue;
+            };
+            current.push(name);
+            match fs::symlink_metadata(&current) {
+                Ok(metadata) if metadata.file_type().is_symlink() => {
+                    return Err(PackageError::Build(format!(
+                        "staging paths must not traverse symlinks: {}",
+                        current.display()
+                    )));
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+                Err(error) => return Err(PackageError::Io(error)),
+            }
+        }
+        Ok(())
     }
 }
 
-fn manifest_asset_path(
-    staging_dir: &Path,
+enum RequiredPath {
+    Required,
+    Optional,
+}
+
+fn staging_relative_path(
     field: &str,
-    asset_path: &str,
+    path: &str,
+    required: RequiredPath,
 ) -> Result<Option<PathBuf>, PackageError> {
-    if asset_path.is_empty() {
-        return Ok(None);
+    let path = Path::new(path);
+    if path.as_os_str().is_empty() {
+        return match required {
+            RequiredPath::Required => Err(PackageError::Build(format!(
+                "{field} must name a package file inside the staging directory"
+            ))),
+            RequiredPath::Optional => Ok(None),
+        };
     }
 
-    let asset_path = Path::new(asset_path);
-    let stays_inside_staging = asset_path
-        .components()
-        .all(|component| matches!(component, Component::Normal(_) | Component::CurDir));
-
-    if asset_path
+    if path
         .components()
         .all(|component| component == Component::CurDir)
     {
-        Err(PackageError::Build(format!(
-            "{field} must name a staging file"
-        )))
-    } else if stays_inside_staging {
-        Ok(Some(staging_dir.join(asset_path)))
+        return match required {
+            RequiredPath::Required => Err(PackageError::Build(format!(
+                "{field} must name a package file inside the staging directory"
+            ))),
+            RequiredPath::Optional => Err(PackageError::Build(format!(
+                "{field} must name a staging file"
+            ))),
+        };
+    }
+
+    if path
+        .components()
+        .all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
+    {
+        Ok(Some(path.to_path_buf()))
     } else {
         Err(PackageError::Build(format!(
             "{field} must be relative to the staging directory: {}",
-            asset_path.display()
+            path.display()
         )))
     }
 }
@@ -356,6 +420,8 @@ mod tests {
     use crate::test_support::PackageTestHarness;
     use flate2::{Compression, write::ZlibEncoder};
     use std::io::Write;
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
 
     fn sample_bytes() -> Vec<u8> {
         let mut data = Vec::new();
@@ -498,6 +564,25 @@ mod tests {
         assert!(!staging.join("../escaped.vescpkg").exists());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn write_from_manifest_rejects_symlink_output_paths() {
+        let harness = PackageTestHarness::new().ensure_loopback_staging();
+        write_refloat_style_staging(&harness);
+        let staging = harness.loopback_staging_dir();
+        let outside_output = harness.root().join("escaped.vescpkg");
+        symlink(&outside_output, staging.join("refloat.vescpkg")).unwrap();
+
+        let error =
+            Package::write_from_manifest(staging.join("pkgdesc.qml")).expect_err("bad output");
+
+        assert!(
+            error.to_string().contains("must not traverse symlinks"),
+            "expected symlink error, got {error}"
+        );
+        assert!(!outside_output.exists());
+    }
+
     #[test]
     fn from_manifest_rejects_asset_paths_outside_staging() {
         for (field, value) in [
@@ -526,6 +611,25 @@ mod tests {
                 "expected {field} error, got {error}"
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn from_manifest_rejects_symlink_asset_paths() {
+        let harness = PackageTestHarness::new().ensure_loopback_staging();
+        write_refloat_style_staging(&harness);
+        let staging = harness.loopback_staging_dir();
+        let outside_readme = harness.root().join("outside.md");
+        std::fs::write(&outside_readme, "escaped readme").unwrap();
+        std::fs::remove_file(staging.join("package_README-gen.md")).unwrap();
+        symlink(&outside_readme, staging.join("package_README-gen.md")).unwrap();
+
+        let error = Package::from_manifest(staging.join("pkgdesc.qml")).expect_err("bad asset");
+
+        assert!(
+            error.to_string().contains("must not traverse symlinks"),
+            "expected symlink error, got {error}"
+        );
     }
 
     #[test]

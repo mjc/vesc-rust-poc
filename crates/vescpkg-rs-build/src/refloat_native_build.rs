@@ -8,7 +8,39 @@ use crate::native_lib_toolchain::NativeLibToolchain;
 pub struct RefloatNativeBuildPlan {
     source_root: PathBuf,
     vesc_tool: String,
-    git_hash: String,
+    git_hash: RefloatGitHash,
+}
+
+/// Hex commit prefix rendered into Refloat's generated config header.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RefloatGitHash(String);
+
+impl RefloatGitHash {
+    /// Parse a bare hexadecimal git commit prefix.
+    pub fn parse(value: &str) -> Result<Self, PackageError> {
+        if Self::is_valid(value) {
+            Ok(Self(value.to_owned()))
+        } else {
+            Err(PackageError::Build(format!(
+                "Refloat git hash must be hexadecimal digits without a 0x prefix: {value}"
+            )))
+        }
+    }
+
+    /// Return whether `value` can be used inside `0x{{GIT_HASH}}`.
+    pub fn is_valid(value: &str) -> bool {
+        !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+    }
+
+    fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Default for RefloatGitHash {
+    fn default() -> Self {
+        Self("0".to_owned())
+    }
 }
 
 impl RefloatNativeBuildPlan {
@@ -17,7 +49,7 @@ impl RefloatNativeBuildPlan {
         Self {
             source_root: source_root.into(),
             vesc_tool: "vesc_tool".to_owned(),
-            git_hash: "0".to_owned(),
+            git_hash: RefloatGitHash::default(),
         }
     }
 
@@ -28,9 +60,9 @@ impl RefloatNativeBuildPlan {
     }
 
     /// Set the git hash embedded into generated Refloat config headers.
-    pub fn with_git_hash(mut self, git_hash: impl Into<String>) -> Self {
-        self.git_hash = git_hash.into();
-        self
+    pub fn with_git_hash(mut self, git_hash: impl AsRef<str>) -> Result<Self, PackageError> {
+        self.git_hash = RefloatGitHash::parse(git_hash.as_ref())?;
+        Ok(self)
     }
 
     /// Generate Refloat native inputs and run the native payload build.
@@ -62,7 +94,7 @@ impl RefloatNativeBuildPlan {
             .replace("{{MINOR_VERSION}}", parts.minor)
             .replace("{{PATCH_VERSION}}", parts.patch)
             .replace("{{VERSION_SUFFIX}}", parts.suffix)
-            .replace("{{GIT_HASH}}", &self.git_hash);
+            .replace("{{GIT_HASH}}", self.git_hash.as_str());
         std::fs::write(self.source_root.join("src/conf/conf_general.h"), rendered)?;
         Ok(())
     }
@@ -143,6 +175,7 @@ mod tests {
         let output = RefloatNativeBuildPlan::new(root)
             .with_vesc_tool("vesc_tool")
             .with_git_hash("0ef6e99d")
+            .expect("valid git hash")
             .build_with(&toolchain)
             .expect("native build plan");
 

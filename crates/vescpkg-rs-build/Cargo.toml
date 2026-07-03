@@ -17,6 +17,8 @@ object = { version = "0.36", default-features = false, features = ["read", "elf"
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 sha2 = "0.10"
 tempfile = { version = "3", optional = true }
+tree-sitter = "0.24.6"
+tree-sitter-qmljs = "0.3.0"
 vesc-protocol = { path = "../vesc-protocol" }
 
 [dev-dependencies]
