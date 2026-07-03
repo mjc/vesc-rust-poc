@@ -100,7 +100,43 @@ pub struct FakeAppDataBindings {
     pub custom_config_register_calls: Cell<usize>,
     /// Number of custom-config clear calls observed.
     pub custom_config_clear_calls: Cell<usize>,
-    handler_results: Cell<[bool; 2]>,
+    set_handler_result: Cell<bool>,
+    clear_handler_result: Cell<bool>,
+    register_custom_config_result: Cell<bool>,
+    clear_custom_configs_result: Cell<bool>,
+}
+
+#[derive(Clone, Copy)]
+enum FirmwareCallResult {
+    Accept,
+    Reject,
+}
+
+impl FirmwareCallResult {
+    const fn from_bool(value: bool) -> Self {
+        if value { Self::Accept } else { Self::Reject }
+    }
+
+    const fn accepted(self) -> bool {
+        matches!(self, Self::Accept)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct FakeAppDataResults {
+    set_handler: FirmwareCallResult,
+    clear_handler: FirmwareCallResult,
+    register_custom_config: FirmwareCallResult,
+    clear_custom_configs: FirmwareCallResult,
+}
+
+impl FakeAppDataResults {
+    const ACCEPT_ALL: Self = Self {
+        set_handler: FirmwareCallResult::Accept,
+        clear_handler: FirmwareCallResult::Accept,
+        register_custom_config: FirmwareCallResult::Accept,
+        clear_custom_configs: FirmwareCallResult::Accept,
+    };
 }
 
 impl Default for FakeAppDataBindings {
@@ -117,16 +153,56 @@ impl FakeAppDataBindings {
 
     /// Creates fake app-data bindings returning `ticks` from the timer.
     pub fn with_ticks(ticks: u32) -> Self {
-        Self::with_ticks_and_handler_results(ticks, [true, true])
+        Self::with_ticks_and_results(ticks, FakeAppDataResults::ACCEPT_ALL)
     }
 
-    /// Creates fake app-data bindings with explicit handler registration results.
-    pub fn with_handler_results(handler_results: [bool; 2]) -> Self {
-        Self::with_ticks_and_handler_results(0, handler_results)
+    /// Creates fake app-data bindings with an explicit handler registration result.
+    pub fn with_set_handler_result(set_handler_result: bool) -> Self {
+        Self::with_ticks_and_results(
+            0,
+            FakeAppDataResults {
+                set_handler: FirmwareCallResult::from_bool(set_handler_result),
+                ..FakeAppDataResults::ACCEPT_ALL
+            },
+        )
     }
 
-    /// Creates fake app-data bindings with explicit timer ticks and handler registration results.
-    pub fn with_ticks_and_handler_results(ticks: u32, handler_results: [bool; 2]) -> Self {
+    /// Creates fake app-data bindings with an explicit handler clear result.
+    pub fn with_clear_handler_result(clear_handler_result: bool) -> Self {
+        Self::with_ticks_and_results(
+            0,
+            FakeAppDataResults {
+                clear_handler: FirmwareCallResult::from_bool(clear_handler_result),
+                ..FakeAppDataResults::ACCEPT_ALL
+            },
+        )
+    }
+
+    /// Creates fake app-data bindings with an explicit custom-config registration result.
+    pub fn with_register_custom_config_result(register_custom_config_result: bool) -> Self {
+        Self::with_ticks_and_results(
+            0,
+            FakeAppDataResults {
+                register_custom_config: FirmwareCallResult::from_bool(
+                    register_custom_config_result,
+                ),
+                ..FakeAppDataResults::ACCEPT_ALL
+            },
+        )
+    }
+
+    /// Creates fake app-data bindings with an explicit custom-config clear result.
+    pub fn with_clear_custom_configs_result(clear_custom_configs_result: bool) -> Self {
+        Self::with_ticks_and_results(
+            0,
+            FakeAppDataResults {
+                clear_custom_configs: FirmwareCallResult::from_bool(clear_custom_configs_result),
+                ..FakeAppDataResults::ACCEPT_ALL
+            },
+        )
+    }
+
+    fn with_ticks_and_results(ticks: u32, results: FakeAppDataResults) -> Self {
         Self {
             handler_calls: Cell::new(0),
             ticks: Cell::new(ticks),
@@ -136,7 +212,10 @@ impl FakeAppDataBindings {
             last_len: Cell::new(0),
             custom_config_register_calls: Cell::new(0),
             custom_config_clear_calls: Cell::new(0),
-            handler_results: Cell::new(handler_results),
+            set_handler_result: Cell::new(results.set_handler.accepted()),
+            clear_handler_result: Cell::new(results.clear_handler.accepted()),
+            register_custom_config_result: Cell::new(results.register_custom_config.accepted()),
+            clear_custom_configs_result: Cell::new(results.clear_custom_configs.accepted()),
         }
     }
 }
@@ -145,15 +224,13 @@ impl AppDataBindings for FakeAppDataBindings {
     unsafe fn set_app_data_handler(&self, handler: AppDataHandler) -> bool {
         self.handler_calls.set(self.handler_calls.get() + 1);
         self.last_handler.set(handler as *const () as usize);
-        let index = self.handler_calls.get().saturating_sub(1).min(1);
-        self.handler_results.get()[index]
+        self.set_handler_result.get()
     }
 
     unsafe fn clear_app_data_handler(&self) -> bool {
         self.handler_calls.set(self.handler_calls.get() + 1);
         self.last_handler.set(0);
-        let index = self.handler_calls.get().saturating_sub(1).min(1);
-        self.handler_results.get()[index]
+        self.clear_handler_result.get()
     }
 
     fn system_time_ticks(&self) -> u32 {
@@ -176,13 +253,13 @@ impl CustomConfigBindings for FakeAppDataBindings {
     ) -> bool {
         self.custom_config_register_calls
             .set(self.custom_config_register_calls.get() + 1);
-        true
+        self.register_custom_config_result.get()
     }
 
     unsafe fn clear_custom_configs(&self) -> bool {
         self.custom_config_clear_calls
             .set(self.custom_config_clear_calls.get() + 1);
-        true
+        self.clear_custom_configs_result.get()
     }
 }
 
@@ -281,6 +358,40 @@ mod tests {
         }
 
         assert_eq!(bindings.custom_config_register_calls.get(), 1);
+        assert_eq!(bindings.custom_config_clear_calls.get(), 1);
+    }
+
+    #[test]
+    fn fake_app_data_bindings_can_reject_custom_config_registration() {
+        let bindings = FakeAppDataBindings::with_register_custom_config_result(false);
+
+        unsafe extern "C" fn get_cfg(_data: *mut u8, _is_default: bool) -> core::ffi::c_int {
+            0
+        }
+
+        unsafe extern "C" fn set_cfg(_data: *mut u8) -> bool {
+            true
+        }
+
+        unsafe extern "C" fn get_cfg_xml(_data: *mut *mut u8) -> core::ffi::c_int {
+            0
+        }
+
+        unsafe {
+            assert!(!bindings.register_custom_config(get_cfg, set_cfg, get_cfg_xml));
+        }
+
+        assert_eq!(bindings.custom_config_register_calls.get(), 1);
+    }
+
+    #[test]
+    fn fake_app_data_bindings_can_reject_custom_config_clear() {
+        let bindings = FakeAppDataBindings::with_clear_custom_configs_result(false);
+
+        unsafe {
+            assert!(!bindings.clear_custom_configs());
+        }
+
         assert_eq!(bindings.custom_config_clear_calls.get(), 1);
     }
 

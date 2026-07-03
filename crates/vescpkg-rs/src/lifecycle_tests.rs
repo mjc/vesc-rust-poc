@@ -317,7 +317,7 @@ fn register_loopback_app_data_handler_with_forwards_to_bindings() {
 
 #[test]
 fn app_data_handler_registration_reports_firmware_rejection() {
-    let bindings = FakeAppDataBindings::with_handler_results([false, true]);
+    let bindings = FakeAppDataBindings::with_set_handler_result(false);
     let lifecycle = LoopbackLifecycle::new(bindings);
 
     assert_eq!(
@@ -325,6 +325,19 @@ fn app_data_handler_registration_reports_firmware_rejection() {
         Err(AppDataHandlerRegistrationError::FirmwareRejected)
     );
     assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
+}
+
+#[test]
+fn app_data_handler_clear_reports_firmware_rejection() {
+    let bindings = FakeAppDataBindings::with_clear_handler_result(false);
+    let lifecycle = LoopbackLifecycle::new(bindings);
+
+    assert_eq!(
+        lifecycle.clear_app_data_handler(),
+        Err(AppDataHandlerRegistrationError::FirmwareRejected)
+    );
+    assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
+    assert_eq!(lifecycle.bindings().last_handler.get(), 0);
 }
 
 #[test]

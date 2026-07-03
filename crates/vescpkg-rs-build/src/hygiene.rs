@@ -86,11 +86,61 @@ pub fn make_dry_run_succeeds(target: &str) -> bool {
         .is_ok_and(|status| status.success())
 }
 
+/// Returns the normal direct reverse dependency tree for `vescpkg-rs-sys`.
+pub fn vescpkg_sys_direct_normal_dependents() -> Vec<String> {
+    cargo_tree_package_names([
+        "tree",
+        "--workspace",
+        "--invert",
+        "vescpkg-rs-sys",
+        "--edges",
+        "normal",
+        "--prefix",
+        "none",
+        "--depth",
+        "1",
+    ])
+}
+
+/// Returns the normal no-default-features dependency tree for `vescpkg-rs-sys`.
+pub fn vescpkg_sys_no_default_normal_dependencies() -> Vec<String> {
+    cargo_tree_package_names([
+        "tree",
+        "-p",
+        "vescpkg-rs-sys",
+        "--edges",
+        "normal",
+        "--no-default-features",
+        "--prefix",
+        "none",
+    ])
+}
+
+fn cargo_tree_package_names<const N: usize>(args: [&str; N]) -> Vec<String> {
+    let output = Command::new("cargo")
+        .args(args)
+        .current_dir(repo_root())
+        .output()
+        .expect("cargo tree");
+
+    assert!(
+        output.status.success(),
+        "cargo tree failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.split_once(' ').map(|(package, _)| package.to_owned()))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         GENERATED_PACKAGE_PATHS, MAKE_DRY_RUN_TARGETS, TRACKED_LOCKFILES, git_check_ignore_all,
-        git_tracks_all, make_dry_run_succeeds, repo_root,
+        git_tracks_all, make_dry_run_succeeds, repo_root, vescpkg_sys_direct_normal_dependents,
+        vescpkg_sys_no_default_normal_dependencies,
     };
     use std::fs;
 
@@ -119,18 +169,15 @@ mod tests {
                 "make -n {target} should succeed from repo root"
             );
         }
-        let vescpkg_sys_manifest = repo_root().join("crates/vescpkg-rs-sys/Cargo.toml");
-        let manifest = fs::read_to_string(&vescpkg_sys_manifest).expect("vescpkg-rs-sys manifest");
-        assert!(
-            !manifest.contains("test-support"),
-            "vescpkg-rs-sys must not declare test-support; mock table is cfg(test) only"
+        assert_eq!(
+            vescpkg_sys_no_default_normal_dependencies(),
+            ["vescpkg-rs-sys"],
+            "vescpkg-rs-sys should stay dependency-free without default features"
         );
-        let vescpkg_sys_lib =
-            fs::read_to_string(repo_root().join("crates/vescpkg-rs-sys/src/lib.rs"))
-                .expect("vescpkg-rs-sys lib.rs");
-        assert!(
-            vescpkg_sys_lib.contains("#[cfg(test)]\npub mod test_support"),
-            "expected test_support to be cfg(test) gated"
+        assert_eq!(
+            vescpkg_sys_direct_normal_dependents(),
+            ["vescpkg-rs-sys", "vescpkg-rs"],
+            "only vescpkg-rs should depend directly on the raw sys crate"
         );
     }
 }
