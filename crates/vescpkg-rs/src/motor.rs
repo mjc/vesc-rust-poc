@@ -266,26 +266,26 @@ pub mod test_support {
             }
         }
 
-        /// Creates fake motor telemetry bindings returning `distance_abs`.
-        pub fn with_distance_abs(distance_abs: TripDistance) -> Self {
-            let bindings = Self::new();
-            bindings.distance_abs.set(distance_abs);
-            bindings
+        /// Return fake motor telemetry bindings returning `distance_abs`.
+        pub fn with_distance_abs(self, distance_abs: TripDistance) -> Self {
+            self.distance_abs.set(distance_abs);
+            self
         }
 
-        /// Creates fake motor telemetry bindings returning the supplied temperatures.
+        /// Return fake motor telemetry bindings returning the supplied temperatures.
         pub fn with_temperatures(
+            self,
             mosfet_temperature: MosfetTemperature,
             motor_temperature: MotorTemperature,
         ) -> Self {
-            let bindings = Self::new();
-            bindings.mosfet_temperature.set(mosfet_temperature);
-            bindings.motor_temperature.set(motor_temperature);
-            bindings
+            self.mosfet_temperature.set(mosfet_temperature);
+            self.motor_temperature.set(motor_temperature);
+            self
         }
 
-        /// Creates fake motor telemetry bindings returning accumulated ride totals.
+        /// Return fake motor telemetry bindings returning accumulated ride totals.
         pub fn with_ride_totals(
+            self,
             odometer: OdometerMeters,
             amp_hours_discharged: AmpHoursDischarged,
             amp_hours_charged: AmpHoursCharged,
@@ -293,28 +293,25 @@ pub mod test_support {
             watt_hours_charged: WattHoursCharged,
             battery_level: BatteryLevel,
         ) -> Self {
-            let bindings = Self::new();
-            bindings.odometer.set(odometer);
-            bindings.amp_hours_discharged.set(amp_hours_discharged);
-            bindings.amp_hours_charged.set(amp_hours_charged);
-            bindings.watt_hours_discharged.set(watt_hours_discharged);
-            bindings.watt_hours_charged.set(watt_hours_charged);
-            bindings.battery_level.set(battery_level);
-            bindings
+            self.odometer.set(odometer);
+            self.amp_hours_discharged.set(amp_hours_discharged);
+            self.amp_hours_charged.set(amp_hours_charged);
+            self.watt_hours_discharged.set(watt_hours_discharged);
+            self.watt_hours_charged.set(watt_hours_charged);
+            self.battery_level.set(battery_level);
+            self
         }
 
-        /// Creates fake motor telemetry bindings returning `firmware_fault`.
-        pub fn with_firmware_fault(firmware_fault: FirmwareFaultCode) -> Self {
-            let bindings = Self::new();
-            bindings.firmware_fault.set(firmware_fault);
-            bindings
+        /// Return fake motor telemetry bindings returning `firmware_fault`.
+        pub fn with_firmware_fault(self, firmware_fault: FirmwareFaultCode) -> Self {
+            self.firmware_fault.set(firmware_fault);
+            self
         }
 
-        /// Creates fake motor telemetry bindings returning `input_voltage_filtered`.
-        pub fn with_input_voltage_filtered(input_voltage_filtered: InputVoltage) -> Self {
-            let bindings = Self::new();
-            bindings.input_voltage_filtered.set(input_voltage_filtered);
-            bindings
+        /// Return fake motor telemetry bindings returning `input_voltage_filtered`.
+        pub fn with_input_voltage_filtered(self, input_voltage_filtered: InputVoltage) -> Self {
+            self.input_voltage_filtered.set(input_voltage_filtered);
+            self
         }
     }
 

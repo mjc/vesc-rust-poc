@@ -123,9 +123,8 @@ mod tests {
         let _package = PackageLifecycle::new(crate::test_support::FakeBindings::new());
         let _loopback = LoopbackLifecycle::new(crate::test_support::FakeAppDataBindings::new());
         let telemetry = MotorTelemetryApi::new(
-            crate::test_support::FakeMotorTelemetryBindings::with_distance_abs(TripDistance::new(
-                Distance::from_meters(1.25),
-            )),
+            crate::test_support::FakeMotorTelemetryBindings::new()
+                .with_distance_abs(TripDistance::new(Distance::from_meters(1.25))),
         );
         let _descriptor = ExtensionDescriptor::new(
             c"ext-rust-prelude",

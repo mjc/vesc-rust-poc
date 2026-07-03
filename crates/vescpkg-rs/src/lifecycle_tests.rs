@@ -147,7 +147,8 @@ fn loopback_lifecycle_forwards_system_time_ticks(
 #[test]
 fn motor_telemetry_api_forwards_absolute_distance_as_trip_distance() {
     let distance = TripDistance::new(Distance::from_meters(12.5));
-    let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::with_distance_abs(distance));
+    let telemetry =
+        MotorTelemetryApi::new(FakeMotorTelemetryBindings::new().with_distance_abs(distance));
 
     assert_eq!(telemetry.distance_abs(), distance);
     assert_eq!(telemetry.bindings().distance_abs_calls.get(), 1);
@@ -158,7 +159,7 @@ fn motor_telemetry_api_forwards_filtered_motor_temperatures() {
     let mosfet = MosfetTemperature::new(Temperature::from_degrees_celsius(44.0));
     let motor = MotorTemperature::new(Temperature::from_degrees_celsius(51.5));
     let telemetry =
-        MotorTelemetryApi::new(FakeMotorTelemetryBindings::with_temperatures(mosfet, motor));
+        MotorTelemetryApi::new(FakeMotorTelemetryBindings::new().with_temperatures(mosfet, motor));
 
     assert_eq!(telemetry.mosfet_temperature(), mosfet);
     assert_eq!(telemetry.motor_temperature(), motor);
@@ -174,7 +175,7 @@ fn motor_telemetry_api_forwards_accumulated_ride_totals() {
     let discharged_energy = WattHoursDischarged::new(Energy::from_watt_hours(170.0));
     let charged_energy = WattHoursCharged::new(Energy::from_watt_hours(18.5));
     let battery_level = BatteryLevel::new(Ratio::from_ratio_const(0.72));
-    let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::with_ride_totals(
+    let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new().with_ride_totals(
         odometer,
         discharged_charge,
         charged_charge,
@@ -200,7 +201,8 @@ fn motor_telemetry_api_forwards_accumulated_ride_totals() {
 #[test]
 fn motor_telemetry_api_forwards_firmware_fault_code() {
     let fault = FirmwareFaultCode::from_compat_code(5);
-    let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::with_firmware_fault(fault));
+    let telemetry =
+        MotorTelemetryApi::new(FakeMotorTelemetryBindings::new().with_firmware_fault(fault));
 
     assert_eq!(telemetry.firmware_fault(), fault);
     assert_eq!(telemetry.bindings().firmware_fault_calls.get(), 1);
@@ -224,11 +226,28 @@ fn firmware_fault_code_preserves_raw_values_until_compat_encoding() {
 fn motor_telemetry_api_forwards_filtered_input_voltage() {
     let voltage = InputVoltage::new(Voltage::from_volts(84.2));
     let telemetry = MotorTelemetryApi::new(
-        FakeMotorTelemetryBindings::with_input_voltage_filtered(voltage),
+        FakeMotorTelemetryBindings::new().with_input_voltage_filtered(voltage),
     );
 
     assert_eq!(telemetry.input_voltage_filtered(), voltage);
     assert_eq!(telemetry.bindings().input_voltage_filtered_calls.get(), 1);
+}
+
+#[test]
+fn fake_motor_telemetry_bindings_chain_overrides() {
+    let distance = TripDistance::new(Distance::from_meters(2.0));
+    let fault = FirmwareFaultCode::from_raw_code(256);
+    let voltage = InputVoltage::new(Voltage::from_volts(51.0));
+    let telemetry = MotorTelemetryApi::new(
+        FakeMotorTelemetryBindings::new()
+            .with_distance_abs(distance)
+            .with_firmware_fault(fault)
+            .with_input_voltage_filtered(voltage),
+    );
+
+    assert_eq!(telemetry.distance_abs(), distance);
+    assert_eq!(telemetry.firmware_fault(), fault);
+    assert_eq!(telemetry.input_voltage_filtered(), voltage);
 }
 
 #[rstest]
