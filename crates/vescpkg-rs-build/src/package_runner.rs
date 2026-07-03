@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
 use crate::cargo_vescpkg_command::DEFAULT_PACKAGE_VERSION;
-use crate::native_lib_link::native_lib_link_plan_for_native_binary;
+use crate::native_lib_link::NativeLibLinkPlan;
 use crate::native_lib_materialize::materialize_native_lib_binary_unlocked;
 use crate::native_lib_toolchain::RealNativeLibToolchain;
 use crate::package_conversion::{
@@ -48,8 +48,18 @@ pub fn ensure_repo_native_lib_artifacts(root: &Path) {
 impl PackageBinaryConversionRunner for RealPackageRunner {
     /// Run the native build and copy the resulting package binary into place.
     fn run(&self, command: &PackageBinaryConversionCommand) -> Result<(), String> {
-        let plan =
-            native_lib_link_plan_for_native_binary(command.native_binary_path(), command.example());
+        let source_root = source_root_from_conversion_script(command.script_path())?;
+        let native_build_dir = command.native_binary_path().parent().ok_or_else(|| {
+            format!(
+                "native binary path must have a parent directory: {}",
+                command.native_binary_path().display()
+            )
+        })?;
+        let plan = NativeLibLinkPlan::for_example_with_native_build_dir(
+            source_root,
+            command.example(),
+            native_build_dir,
+        );
         materialize_native_lib_binary_unlocked(
             &plan,
             command.native_binary_path(),
@@ -66,10 +76,49 @@ impl PackageBinaryConversionRunner for RealPackageRunner {
     }
 }
 
+fn source_root_from_conversion_script(script_path: &Path) -> Result<&Path, String> {
+    let scripts_dir = script_path.parent().ok_or_else(|| {
+        format!(
+            "conversion script path must live under <source-root>/scripts: {}",
+            script_path.display()
+        )
+    })?;
+    if scripts_dir.file_name().and_then(|name| name.to_str()) != Some("scripts") {
+        return Err(format!(
+            "conversion script path must live under <source-root>/scripts: {}",
+            script_path.display()
+        ));
+    }
+    scripts_dir.parent().ok_or_else(|| {
+        format!(
+            "conversion script path must live under <source-root>/scripts: {}",
+            script_path.display()
+        )
+    })
+}
+
 /// Read package provenance metadata from the process environment.
 pub fn package_provenance_from_env() -> PackageProvenance {
     PackageProvenance::new(
         std::env::var("VESC_PKG_GIT_COMMIT").ok(),
         std::env::var("VESC_PKG_BUILD_DATE").ok(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::source_root_from_conversion_script;
+
+    #[test]
+    fn conversion_script_source_root_requires_scripts_directory() {
+        let root = source_root_from_conversion_script(Path::new("/repo/scripts/conv.py"))
+            .expect("source root");
+        assert_eq!(root, Path::new("/repo"));
+
+        let error = source_root_from_conversion_script(Path::new("/repo/foo/conv.py"))
+            .expect_err("bad script directory");
+        assert!(error.contains("<source-root>/scripts"));
+    }
 }
