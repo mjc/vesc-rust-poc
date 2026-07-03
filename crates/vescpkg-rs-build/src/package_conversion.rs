@@ -104,6 +104,7 @@ pub struct PackageBinaryConversionPlan {
     source_root: PathBuf,
     layout: PackageLayout,
     example: PackageExample,
+    native_build_dir: PathBuf,
 }
 
 impl PackageBinaryConversionPlan {
@@ -127,7 +128,14 @@ impl PackageBinaryConversionPlan {
             source_root: source_root.into(),
             layout: PackageLayout::new(package_name, version),
             example,
+            native_build_dir: example.native_build_dir(),
         }
+    }
+
+    /// Return this plan with an explicit native build artifact directory.
+    pub fn with_native_build_dir(mut self, native_build_dir: impl Into<PathBuf>) -> Self {
+        self.native_build_dir = native_build_dir.into();
+        self
     }
 
     /// Return the package layout for this plan.
@@ -158,14 +166,14 @@ impl PackageBinaryConversionPlan {
     /// Return the native binary path.
     pub fn native_binary_path(&self) -> PathBuf {
         self.source_root
-            .join(self.example.native_build_dir())
+            .join(&self.native_build_dir)
             .join("native_lib.bin")
     }
 
     /// Return the package binary path.
     pub fn package_binary_path(&self) -> PathBuf {
         self.source_root
-            .join(self.example.native_build_dir())
+            .join(&self.native_build_dir)
             .join("package_lib.bin")
     }
 

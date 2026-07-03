@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
 use crate::cargo_vescpkg_command::DEFAULT_PACKAGE_VERSION;
-use crate::native_lib_link::native_lib_link_plan_for_native_binary;
+use crate::native_lib_link::NativeLibLinkPlan;
 use crate::native_lib_materialize::materialize_native_lib_binary_unlocked;
 use crate::native_lib_toolchain::RealNativeLibToolchain;
 use crate::package_conversion::{
@@ -48,8 +48,27 @@ pub fn ensure_repo_native_lib_artifacts(root: &Path) {
 impl PackageBinaryConversionRunner for RealPackageRunner {
     /// Run the native build and copy the resulting package binary into place.
     fn run(&self, command: &PackageBinaryConversionCommand) -> Result<(), String> {
-        let plan =
-            native_lib_link_plan_for_native_binary(command.native_binary_path(), command.example());
+        let source_root = command
+            .script_path()
+            .parent()
+            .and_then(Path::parent)
+            .ok_or_else(|| {
+                format!(
+                    "conversion script path must live under <source-root>/scripts: {}",
+                    command.script_path().display()
+                )
+            })?;
+        let native_build_dir = command.native_binary_path().parent().ok_or_else(|| {
+            format!(
+                "native binary path must have a parent directory: {}",
+                command.native_binary_path().display()
+            )
+        })?;
+        let plan = NativeLibLinkPlan::for_example_with_native_build_dir(
+            source_root,
+            command.example(),
+            native_build_dir,
+        );
         materialize_native_lib_binary_unlocked(
             &plan,
             command.native_binary_path(),

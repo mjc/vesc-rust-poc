@@ -32,11 +32,20 @@ impl NativeLibLinkPlan {
 
     /// Creates a link plan rooted at `root` for a selected package example.
     pub fn for_example(root: impl Into<PathBuf>, example: PackageExample) -> Self {
+        Self::for_example_with_native_build_dir(root, example, example.native_build_dir())
+    }
+
+    /// Creates a link plan with an explicit native build artifact directory.
+    pub fn for_example_with_native_build_dir(
+        root: impl Into<PathBuf>,
+        example: PackageExample,
+        native_build_dir: impl Into<PathBuf>,
+    ) -> Self {
         Self {
             root: root.into(),
             rust_staticlib_path: example.native_artifact_input_path(),
             rust_package_name: example.cargo_package_name().to_owned(),
-            native_build_dir: example.native_build_dir(),
+            native_build_dir: native_build_dir.into(),
         }
     }
 
