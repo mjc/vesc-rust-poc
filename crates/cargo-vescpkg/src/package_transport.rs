@@ -263,7 +263,7 @@ fn clear_response_state(
     responses: &Receiver<Vec<u8>>,
 ) {
     pending.clear();
-    while decoder.pop_ready().is_some() {}
+    decoder.clear();
     drain_response_channel(responses);
 }
 
@@ -958,6 +958,9 @@ fn append_qml_chunk(data: &mut Vec<u8>, read: &QmlUiRead) -> Result<(), PackageI
     if read.offset as usize != data.len() {
         return Err(malformed_reply("unexpected QML readback offset"));
     }
+    if data.len() + read.data.len() > read.total_len as usize {
+        return Err(malformed_reply("QML readback chunk exceeds total length"));
+    }
     if read.data.is_empty() && data.len() < read.total_len as usize {
         return Err(malformed_reply("empty QML readback chunk"));
     }
@@ -968,6 +971,11 @@ fn append_qml_chunk(data: &mut Vec<u8>, read: &QmlUiRead) -> Result<(), PackageI
 fn decompress_qml_readback(compressed: &[u8]) -> Result<String, PackageInstallError> {
     let mut cursor = compressed;
     let expected_len = read_u32_be(&mut cursor)? as usize;
+    if expected_len > QML_UPLOAD_LIMIT {
+        return Err(PackageInstallError::Device(
+            "QML readback decompressed length is too large".to_owned(),
+        ));
+    }
     let mut decoder = ZlibDecoder::new(cursor);
     let mut raw = Vec::with_capacity(expected_len);
     decoder
@@ -1037,8 +1045,9 @@ mod tests {
     use super::{
         COMM_FW_VERSION, COMM_GET_QML_UI_APP, COMM_LISP_ERASE_CODE, COMM_LISP_READ_CODE,
         COMM_LISP_SET_RUNNING, COMM_LISP_WRITE_CODE, COMM_QMLUI_ERASE, COMM_QMLUI_WRITE,
-        FwVersionInfo, HwType, ble_write_chunks, build_command_packet, build_lisp_upload_payload,
-        build_qml_upload_payload, clear_response_state, drain_response_channel,
+        FwVersionInfo, HwType, QML_UPLOAD_LIMIT, QmlUiRead, append_qml_chunk, ble_write_chunks,
+        build_command_packet, build_lisp_upload_payload, build_qml_upload_payload,
+        clear_response_state, decompress_qml_readback, drain_response_channel,
         parse_fw_version_info, parse_lisp_code_read, parse_qml_ui_read, parse_simple_ack,
         parse_write_ack,
     };
@@ -1156,6 +1165,32 @@ mod tests {
         assert_eq!(read.offset, 384);
         assert_eq!(read.data, b"qml");
         assert!(parse_qml_ui_read(&[COMM_GET_QML_UI_APP, 0], COMM_GET_QML_UI_APP).is_err());
+    }
+
+    #[test]
+    fn append_qml_chunk_rejects_data_past_reported_total() {
+        let mut data = vec![1, 2];
+        let read = QmlUiRead {
+            total_len: 3,
+            offset: 2,
+            data: vec![3, 4],
+        };
+
+        assert!(append_qml_chunk(&mut data, &read).is_err());
+        assert_eq!(data, vec![1, 2]);
+    }
+
+    #[test]
+    fn decompress_qml_readback_rejects_oversized_lengths_before_allocating() {
+        let mut compressed = ((QML_UPLOAD_LIMIT + 1) as u32).to_be_bytes().to_vec();
+        compressed.extend_from_slice(b"not zlib");
+
+        let error = decompress_qml_readback(&compressed).expect_err("oversized readback");
+
+        assert_eq!(
+            error.to_string(),
+            "device error: QML readback decompressed length is too large"
+        );
     }
 
     #[test]
@@ -1277,14 +1312,24 @@ mod tests {
         let mut decoder = PacketDecoder::new();
         let stale_packet = build_command_packet(COMM_QMLUI_WRITE, &[1, 0, 0, 1, 128]);
         decoder.push(&stale_packet).expect("valid stale packet");
+        decoder
+            .push(&stale_packet[..3])
+            .expect("partial stale packet");
         let (tx, rx) = mpsc::channel();
-        tx.send(stale_packet).expect("queued stale notification");
+        tx.send(stale_packet.clone())
+            .expect("queued stale notification");
         drop(tx);
 
         clear_response_state(&mut pending, &mut decoder, &rx);
 
         assert!(pending.is_empty());
         assert!(decoder.pop_ready().is_none());
+        assert!(
+            decoder
+                .push(&stale_packet[3..])
+                .expect("old tail")
+                .is_empty()
+        );
         assert!(rx.try_recv().is_err());
     }
 

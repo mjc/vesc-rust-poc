@@ -454,7 +454,7 @@ async fn open_session_with_progress(
 impl DiagnosticSession {
     fn clear_pending(&mut self) {
         self.pending.clear();
-        while self.decoder.pop_ready().is_some() {}
+        self.decoder.clear();
     }
 
     fn receive_vesc_packet_with_progress(

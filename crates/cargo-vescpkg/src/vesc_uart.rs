@@ -52,6 +52,12 @@ impl PacketDecoder {
         }
     }
 
+    /// Drops any buffered partial bytes and decoded packets.
+    pub fn clear(&mut self) {
+        self.buffer.clear();
+        self.ready.clear();
+    }
+
     /// Pushes bytes into the decoder and returns any newly decoded payloads.
     pub fn push(&mut self, bytes: &[u8]) -> Result<Vec<Vec<u8>>, PacketDecodeError> {
         self.buffer.extend_from_slice(bytes);
@@ -212,5 +218,22 @@ mod tests {
         assert!(decoder.push(&packet[..3]).expect("part 1").is_empty());
         let packets = decoder.push(&packet[3..]).expect("part 2");
         assert_eq!(packets, vec![payload.to_vec()]);
+    }
+
+    #[test]
+    fn clear_drops_partial_and_ready_packets() {
+        let payload = [120_u8, 0, 0, 0, 8];
+        let packet = encode_packet(&payload);
+        let mut decoder = PacketDecoder::new();
+
+        assert!(decoder.push(&packet[..3]).expect("part 1").is_empty());
+        decoder
+            .push(&encode_packet(&[131_u8, 1]))
+            .expect("ready packet");
+
+        decoder.clear();
+
+        assert!(decoder.pop_ready().is_none());
+        assert!(decoder.push(&packet[3..]).expect("old tail").is_empty());
     }
 }

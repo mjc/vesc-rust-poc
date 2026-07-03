@@ -800,7 +800,7 @@ fn stop_lisp_running(
     target: loopback::LoopbackTarget,
 ) -> Result<(), package_install::PackageInstallError> {
     let transport = package_transport::BtlePackageInstallTransport::new()?;
-    transport.open(target)?;
+    transport.open_without_preflight(target)?;
     let stopped = transport.stop_running_recovery();
     transport.close();
     stopped
