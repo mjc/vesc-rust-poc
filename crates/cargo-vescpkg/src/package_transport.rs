@@ -976,9 +976,10 @@ fn decompress_qml_readback(compressed: &[u8]) -> Result<String, PackageInstallEr
             "QML readback decompressed length is too large".to_owned(),
         ));
     }
-    let mut decoder = ZlibDecoder::new(cursor);
+    let decoder = ZlibDecoder::new(cursor);
     let mut raw = Vec::with_capacity(expected_len);
     decoder
+        .take(expected_len as u64 + 1)
         .read_to_end(&mut raw)
         .map_err(|error| PackageInstallError::Io(error.to_string()))?;
     if raw.len() != expected_len {
@@ -1052,7 +1053,9 @@ mod tests {
         parse_write_ack,
     };
     use crate::vesc_uart::PacketDecoder;
+    use flate2::{Compression, write::ZlibEncoder};
     use std::collections::VecDeque;
+    use std::io::Write;
     use std::sync::mpsc;
 
     #[test]
@@ -1190,6 +1193,24 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "device error: QML readback decompressed length is too large"
+        );
+    }
+
+    #[test]
+    fn decompress_qml_readback_rejects_output_past_expected_length() {
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
+        encoder
+            .write_all(b"too long")
+            .expect("write compressed qml");
+        let zlib = encoder.finish().expect("finish compressed qml");
+        let mut compressed = 1_u32.to_be_bytes().to_vec();
+        compressed.extend_from_slice(&zlib);
+
+        let error = decompress_qml_readback(&compressed).expect_err("oversized output");
+
+        assert_eq!(
+            error.to_string(),
+            "device error: QML readback decompressed length mismatch"
         );
     }
 
