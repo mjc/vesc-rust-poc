@@ -4,6 +4,7 @@ use std::io::{self, Write};
 use std::path::Path;
 
 use flate2::{Compression, write::ZlibEncoder};
+use pulldown_cmark::{Options, Parser, html};
 
 const PACKAGE_MAGIC: &str = "VESC Packet";
 
@@ -381,168 +382,11 @@ fn markdown_description_html(markdown: &str) -> String {
         return String::new();
     }
 
-    let mut html = String::from(
+    let mut rendered = String::from(
         "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" \"http://www.w3.org/TR/REC-html40/strict.dtd\">\n",
     );
-    let lines = markdown.lines().collect::<Vec<_>>();
-    let mut index = 0;
-
-    while index < lines.len() {
-        let line = lines[index].trim();
-        if line.is_empty() {
-            index += 1;
-            continue;
-        }
-
-        if let Some((level, text)) = markdown_heading(line) {
-            html.push_str(&format!(
-                "<h{level}>{}</h{level}>",
-                render_markdown_inline(text)
-            ));
-            index += 1;
-            continue;
-        }
-
-        if let Some(item) = markdown_list_item(line) {
-            html.push_str("<ul>");
-            html.push_str(&format!("<li>{}</li>", render_markdown_inline(item)));
-            index += 1;
-            while index < lines.len() {
-                let Some(item) = markdown_list_item(lines[index].trim()) else {
-                    break;
-                };
-                html.push_str(&format!("<li>{}</li>", render_markdown_inline(item)));
-                index += 1;
-            }
-            html.push_str("</ul>");
-            continue;
-        }
-
-        let mut paragraph = vec![line];
-        index += 1;
-        while index < lines.len() {
-            let next = lines[index].trim();
-            if next.is_empty()
-                || markdown_heading(next).is_some()
-                || markdown_list_item(next).is_some()
-            {
-                break;
-            }
-            paragraph.push(next);
-            index += 1;
-        }
-        html.push_str("<p>");
-        html.push_str(
-            &paragraph
-                .iter()
-                .map(|line| render_markdown_inline(line))
-                .collect::<Vec<_>>()
-                .join(" "),
-        );
-        html.push_str(" </p>");
-    }
-
-    html
-}
-
-fn markdown_heading(line: &str) -> Option<(usize, &str)> {
-    let level = line.chars().take_while(|ch| *ch == '#').count();
-    if (1..=6).contains(&level) && line.as_bytes().get(level) == Some(&b' ') {
-        Some((level, line[level + 1..].trim()))
-    } else {
-        None
-    }
-}
-
-fn markdown_list_item(line: &str) -> Option<&str> {
-    line.strip_prefix("- ").map(str::trim)
-}
-
-fn render_markdown_inline(input: &str) -> String {
-    let mut output = String::new();
-    let mut cursor = input;
-
-    while let Some(start) = cursor.find('[') {
-        let (before, rest) = cursor.split_at(start);
-        output.push_str(&render_markdown_emphasis(before));
-
-        let Some(close_text) = rest.find("](") else {
-            output.push_str(&render_markdown_emphasis(rest));
-            return output;
-        };
-        let url_start = close_text + 2;
-        let Some(close_url) = rest[url_start..].find(')') else {
-            output.push_str(&render_markdown_emphasis(rest));
-            return output;
-        };
-
-        let text = &rest[1..close_text];
-        let url = &rest[url_start..url_start + close_url];
-        output.push_str("<a href=\"");
-        output.push_str(&escape_html(url));
-        output.push_str("\">");
-        output.push_str(&render_markdown_emphasis(text));
-        output.push_str("</a>");
-        cursor = &rest[url_start + close_url + 1..];
-    }
-
-    output.push_str(&render_markdown_emphasis(cursor));
-    output
-}
-
-fn render_markdown_emphasis(input: &str) -> String {
-    let mut output = String::new();
-    let mut cursor = input;
-
-    while let Some(start) = cursor.find("**") {
-        output.push_str(&render_markdown_italic(&cursor[..start]));
-        let rest = &cursor[start + 2..];
-        let Some(end) = rest.find("**") else {
-            output.push_str(&escape_html(&cursor[start..]));
-            return output;
-        };
-        output.push_str("<strong>");
-        output.push_str(&render_markdown_italic(&rest[..end]));
-        output.push_str("</strong>");
-        cursor = &rest[end + 2..];
-    }
-
-    output.push_str(&render_markdown_italic(cursor));
-    output
-}
-
-fn render_markdown_italic(input: &str) -> String {
-    let mut output = String::new();
-    let mut cursor = input;
-
-    while let Some(start) = cursor.find('_') {
-        output.push_str(&escape_html(&cursor[..start]));
-        let rest = &cursor[start + 1..];
-        let Some(end) = rest.find('_') else {
-            output.push_str(&escape_html(&cursor[start..]));
-            return output;
-        };
-        output.push_str("<em>");
-        output.push_str(&escape_html(&rest[..end]));
-        output.push_str("</em>");
-        cursor = &rest[end + 1..];
-    }
-
-    output.push_str(&escape_html(cursor));
-    output
-}
-
-fn escape_html(input: &str) -> String {
-    input
-        .chars()
-        .flat_map(|ch| match ch {
-            '&' => "&amp;".chars().collect::<Vec<_>>(),
-            '<' => "&lt;".chars().collect(),
-            '>' => "&gt;".chars().collect(),
-            '"' => "&quot;".chars().collect(),
-            _ => vec![ch],
-        })
-        .collect()
+    html::push_html(&mut rendered, Parser::new_ext(markdown, Options::empty()));
+    rendered
 }
 
 fn resolve_import_path(
@@ -767,7 +611,8 @@ mod tests {
         assert_eq!(
             fields[1].value,
             br#"<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0//EN" "http://www.w3.org/TR/REC-html40/strict.dtd">
-<p>markdown </p>"#
+<p>markdown</p>
+"#
         );
         assert_eq!(fields[2].value, b"markdown");
         assert_eq!(fields[4].value, b"qml");
