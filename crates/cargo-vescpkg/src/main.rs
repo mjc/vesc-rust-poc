@@ -9,7 +9,9 @@ fn print_error(error: CargoVescPkgError) -> ExitCode {
     match error {
         CargoVescPkgError::Parse(parse_error) => {
             eprintln!("cargo vescpkg error: {parse_error}");
-            eprintln!("usage: cargo vescpkg build [--package-only] [--target <triple>]");
+            eprintln!(
+                "usage: cargo vescpkg build [--package-only] [--example loopback|snake|refloat] [--target <triple>]"
+            );
             ExitCode::from(2)
         }
         CargoVescPkgError::Package(package_error) => {
