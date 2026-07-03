@@ -35,7 +35,10 @@ pub trait MotorTelemetryBindings {
     /// `src/motor_data.c:140`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:460`.
     fn battery_current(&self) -> BatteryCurrent;
-    /// Return the current absolute duty cycle.
+    /// Return the current duty-cycle magnitude.
+    ///
+    /// The value is the absolute value of firmware `mc_get_duty_cycle_now()`,
+    /// clamped to the signed ratio range and therefore always non-negative.
     ///
     /// Refloat v1.2.1 stores `fabsf(mc_get_duty_cycle_now())` as
     /// `duty_raw` in `src/motor_data.c:124`; the VESC ABI slot is declared at
@@ -211,7 +214,7 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.battery_current()
     }
 
-    /// Return the current absolute duty cycle.
+    /// Return the current duty-cycle magnitude.
     pub fn duty_cycle_now(&self) -> DutyCycle {
         self.bindings.duty_cycle_now()
     }

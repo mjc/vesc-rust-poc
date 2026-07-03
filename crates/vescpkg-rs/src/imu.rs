@@ -153,10 +153,11 @@ pub mod test_support {
             self
         }
 
-        /// Return fake IMU bindings with the supplied roll/pitch.
-        pub fn with_attitude(self, roll: ImuRoll, pitch: ImuPitch) -> Self {
+        /// Return fake IMU bindings with the supplied roll/pitch/yaw.
+        pub fn with_attitude(self, roll: ImuRoll, pitch: ImuPitch, yaw: ImuYaw) -> Self {
             self.roll.set(roll);
             self.pitch.set(pitch);
+            self.yaw.set(yaw);
             self
         }
     }

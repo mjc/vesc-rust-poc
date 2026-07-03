@@ -113,6 +113,31 @@ impl VescIfAbi {
         c_vesc_if::mc_get_fault::NAME,
         c_vesc_if::mc_get_fault::VESC32_BYTE_OFFSET,
     );
+    /// Slot for `mc_get_duty_cycle_now`.
+    pub const MC_GET_DUTY_CYCLE_NOW: VescIfSlot = VescIfSlot::new(
+        c_vesc_if::mc_get_duty_cycle_now::NAME,
+        c_vesc_if::mc_get_duty_cycle_now::VESC32_BYTE_OFFSET,
+    );
+    /// Slot for `mc_get_rpm`.
+    pub const MC_GET_RPM: VescIfSlot = VescIfSlot::new(
+        c_vesc_if::mc_get_rpm::NAME,
+        c_vesc_if::mc_get_rpm::VESC32_BYTE_OFFSET,
+    );
+    /// Slot for `mc_get_speed`.
+    pub const MC_GET_SPEED: VescIfSlot = VescIfSlot::new(
+        c_vesc_if::mc_get_speed::NAME,
+        c_vesc_if::mc_get_speed::VESC32_BYTE_OFFSET,
+    );
+    /// Slot for `mc_get_tot_current_filtered`.
+    pub const MC_GET_TOT_CURRENT_FILTERED: VescIfSlot = VescIfSlot::new(
+        c_vesc_if::mc_get_tot_current_filtered::NAME,
+        c_vesc_if::mc_get_tot_current_filtered::VESC32_BYTE_OFFSET,
+    );
+    /// Slot for `mc_get_tot_current_in_filtered`.
+    pub const MC_GET_TOT_CURRENT_IN_FILTERED: VescIfSlot = VescIfSlot::new(
+        c_vesc_if::mc_get_tot_current_in_filtered::NAME,
+        c_vesc_if::mc_get_tot_current_in_filtered::VESC32_BYTE_OFFSET,
+    );
     /// Slot for `mc_get_amp_hours`.
     pub const MC_GET_AMP_HOURS: VescIfSlot = VescIfSlot::new(
         c_vesc_if::mc_get_amp_hours::NAME,
@@ -219,6 +244,21 @@ impl VescIfAbi {
         c_vesc_if::system_time_ticks::NAME,
         c_vesc_if::system_time_ticks::VESC32_BYTE_OFFSET,
     );
+    /// Slot for `sleep_us`.
+    pub const SLEEP_US: VescIfSlot = VescIfSlot::new(
+        c_vesc_if::sleep_us::NAME,
+        c_vesc_if::sleep_us::VESC32_BYTE_OFFSET,
+    );
+    /// Slot for optional `foc_get_id`.
+    pub const FOC_GET_ID: VescIfSlot = VescIfSlot::new(
+        c_vesc_if::foc_get_id::NAME,
+        c_vesc_if::foc_get_id::VESC32_BYTE_OFFSET,
+    );
+    /// Slot for optional `thread_set_priority`.
+    pub const THREAD_SET_PRIORITY: VescIfSlot = VescIfSlot::new(
+        c_vesc_if::thread_set_priority::NAME,
+        c_vesc_if::thread_set_priority::VESC32_BYTE_OFFSET,
+    );
     /// Slot for `io_set_mode`.
     pub const IO_SET_MODE: VescIfSlot = VescIfSlot::new(
         c_vesc_if::io_set_mode::NAME,
@@ -236,7 +276,7 @@ impl VescIfAbi {
     );
 
     /// The set of slots that this crate currently relies on.
-    pub const USED_SLOTS: [VescIfSlot; 36] = [
+    pub const USED_SLOTS: [VescIfSlot; 44] = [
         Self::LBM_ADD_EXTENSION,
         Self::LBM_ENC_I,
         Self::LBM_DEC_AS_I32,
@@ -251,6 +291,11 @@ impl VescIfAbi {
         Self::SHOULD_TERMINATE,
         Self::GET_ARG,
         Self::MC_GET_FAULT,
+        Self::MC_GET_DUTY_CYCLE_NOW,
+        Self::MC_GET_RPM,
+        Self::MC_GET_SPEED,
+        Self::MC_GET_TOT_CURRENT_FILTERED,
+        Self::MC_GET_TOT_CURRENT_IN_FILTERED,
         Self::MC_GET_AMP_HOURS,
         Self::MC_GET_AMP_HOURS_CHARGED,
         Self::MC_GET_WATT_HOURS,
@@ -270,6 +315,9 @@ impl VescIfAbi {
         Self::CONF_CUSTOM_ADD_CONFIG,
         Self::CONF_CUSTOM_CLEAR_CONFIGS,
         Self::SYSTEM_TIME_TICKS,
+        Self::SLEEP_US,
+        Self::FOC_GET_ID,
+        Self::THREAD_SET_PRIORITY,
         Self::IO_SET_MODE,
         Self::IO_WRITE,
         Self::IO_READ,

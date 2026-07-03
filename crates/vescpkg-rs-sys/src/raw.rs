@@ -1148,7 +1148,7 @@ pub unsafe fn io_read(pin: crate::VescPin) -> bool {
 
 /// Returns selected `VescIf` field offsets for ABI layout tests.
 #[cfg(test)]
-pub fn vesc_if_offsets_for_tests() -> [usize; 36] {
+pub fn vesc_if_offsets_for_tests() -> [usize; 44] {
     [
         core::mem::offset_of!(VescIf, lbm_add_extension),
         core::mem::offset_of!(VescIf, lbm_enc_i),
@@ -1164,6 +1164,11 @@ pub fn vesc_if_offsets_for_tests() -> [usize; 36] {
         core::mem::offset_of!(VescIf, should_terminate),
         core::mem::offset_of!(VescIf, get_arg),
         core::mem::offset_of!(VescIf, mc_get_fault),
+        core::mem::offset_of!(VescIf, mc_get_duty_cycle_now),
+        core::mem::offset_of!(VescIf, mc_get_rpm),
+        core::mem::offset_of!(VescIf, mc_get_speed),
+        core::mem::offset_of!(VescIf, mc_get_tot_current_filtered),
+        core::mem::offset_of!(VescIf, mc_get_tot_current_in_filtered),
         core::mem::offset_of!(VescIf, mc_get_amp_hours),
         core::mem::offset_of!(VescIf, mc_get_amp_hours_charged),
         core::mem::offset_of!(VescIf, mc_get_watt_hours),
@@ -1185,6 +1190,9 @@ pub fn vesc_if_offsets_for_tests() -> [usize; 36] {
         core::mem::offset_of!(VescIf, conf_custom_add_config),
         core::mem::offset_of!(VescIf, conf_custom_clear_configs),
         core::mem::offset_of!(VescIf, system_time_ticks),
+        core::mem::offset_of!(VescIf, sleep_us),
+        core::mem::offset_of!(VescIf, foc_get_id),
+        core::mem::offset_of!(VescIf, thread_set_priority),
         core::mem::offset_of!(VescIf, io_set_mode),
         core::mem::offset_of!(VescIf, io_write),
         core::mem::offset_of!(VescIf, io_read),

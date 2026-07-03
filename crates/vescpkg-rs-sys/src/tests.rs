@@ -123,6 +123,11 @@ fn vesc_if_slot_constants_name_the_package_header_offsets() {
             "should_terminate",
             "get_arg",
             "mc_get_fault",
+            "mc_get_duty_cycle_now",
+            "mc_get_rpm",
+            "mc_get_speed",
+            "mc_get_tot_current_filtered",
+            "mc_get_tot_current_in_filtered",
             "mc_get_amp_hours",
             "mc_get_amp_hours_charged",
             "mc_get_watt_hours",
@@ -142,6 +147,9 @@ fn vesc_if_slot_constants_name_the_package_header_offsets() {
             "conf_custom_add_config",
             "conf_custom_clear_configs",
             "system_time_ticks",
+            "sleep_us",
+            "foc_get_id",
+            "thread_set_priority",
             "io_set_mode",
             "io_write",
             "io_read",
@@ -150,16 +158,17 @@ fn vesc_if_slot_constants_name_the_package_header_offsets() {
     assert_eq!(
         slots.map(|slot| slot.vesc32_byte_offset()),
         [
-            0, 64, 100, 124, 136, 140, 148, 184, 188, 192, 196, 200, 204, 368, 440, 444, 448, 452,
-            480, 504, 508, 512, 524, 528, 592, 596, 628, 632, 636, 640, 728, 732, 952, 220, 224,
-            228,
+            0, 64, 100, 124, 136, 140, 148, 184, 188, 192, 196, 200, 204, 368, 428, 436, 516, 460,
+            476, 440, 444, 448, 452, 480, 504, 508, 512, 524, 528, 592, 596, 628, 632, 636, 640,
+            728, 732, 952, 168, 868, 1004, 220, 224, 228,
         ]
     );
     assert_eq!(
         slots.map(|slot| slot.slot_index()),
         [
-            0, 16, 25, 31, 34, 35, 37, 46, 47, 48, 49, 50, 51, 92, 110, 111, 112, 113, 120, 126,
-            127, 128, 131, 132, 148, 149, 157, 158, 159, 160, 182, 183, 238, 55, 56, 57,
+            0, 16, 25, 31, 34, 35, 37, 46, 47, 48, 49, 50, 51, 92, 107, 109, 129, 115, 119, 110,
+            111, 112, 113, 120, 126, 127, 128, 131, 132, 148, 149, 157, 158, 159, 160, 182, 183,
+            238, 42, 217, 251, 55, 56, 57,
         ]
     );
 }
