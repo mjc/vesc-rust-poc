@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 use std::fs;
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 use flate2::{Compression, write::ZlibEncoder};
 use pulldown_cmark::{Event, Options, Parser, html};
@@ -21,12 +21,23 @@ pub struct VescPackageInput<'a> {
     pub lisp_editor_path: &'a Path,
     /// Optional path used to resolve imports beside the main Lisp file.
     pub lisp_import_path: Option<&'a Path>,
+    /// Policy used when resolving Lisp imports from loader source.
+    pub lisp_import_policy: LispImportPolicy,
     /// QML source embedded in the package.
     pub qml_file: &'a str,
     /// `pkgdesc.qml` descriptor contents.
     pub pkg_desc_qml: &'a str,
     /// Whether the package's QML app should run fullscreen.
     pub qml_is_fullscreen: bool,
+}
+
+/// Path policy for Lisp `(import "...")` payload references.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LispImportPolicy {
+    /// Preserve the legacy host-path fallback used by built-in example builds.
+    HostPaths,
+    /// Resolve only staging-relative paths and reject escapes or symlink traversal.
+    StagingOnly,
 }
 
 /// Fully materialized package fields written to the VESC package wire format.
@@ -91,7 +102,12 @@ pub fn encode_vesc_package(wire: &VescPackageWire<'_>) -> io::Result<Vec<u8>> {
 
 /// Packs Lisp source and its native imports into the package Lisp payload format.
 pub fn build_lisp_data(lisp_source: &str, lisp_editor_path: &Path) -> io::Result<Vec<u8>> {
-    pack_lisp_imports(lisp_source, lisp_editor_path, None)
+    pack_lisp_imports(
+        lisp_source,
+        lisp_editor_path,
+        None,
+        LispImportPolicy::HostPaths,
+    )
 }
 
 /// Builds compressed VESC package bytes from source package inputs.
@@ -103,6 +119,7 @@ pub fn build_vesc_package(input: &VescPackageInput<'_>) -> io::Result<Vec<u8>> {
         input.lisp_source,
         input.lisp_editor_path,
         input.lisp_import_path,
+        input.lisp_import_policy,
     )?;
 
     let description_html = markdown_description_html(input.description_md);
@@ -243,10 +260,11 @@ fn pack_lisp_imports(
     code_str: &str,
     editor_path: &Path,
     import_path: Option<&Path>,
+    policy: LispImportPolicy,
 ) -> io::Result<Vec<u8>> {
     let imports = code_str
         .lines()
-        .map(|line| read_lisp_import(line, editor_path, import_path))
+        .map(|line| read_lisp_import(line, editor_path, import_path, policy))
         .collect::<io::Result<Vec<_>>>()?
         .into_iter()
         .flatten()
@@ -297,10 +315,17 @@ fn read_lisp_import(
     line: &str,
     editor_path: &Path,
     import_path: Option<&Path>,
+    policy: LispImportPolicy,
 ) -> io::Result<Option<LispImportPayload>> {
     parse_import_line(line)
         .map(|(path, tag)| {
-            fs::read(resolve_import_path(editor_path, import_path, &path)).map(|mut data| {
+            fs::read(resolve_import_path(
+                editor_path,
+                import_path,
+                &path,
+                policy,
+            )?)
+            .map(|mut data| {
                 data.push(0);
                 LispImportPayload { tag, data }
             })
@@ -401,13 +426,97 @@ fn resolve_import_path(
     editor_path: &Path,
     lisp_import_path: Option<&Path>,
     import_path: &str,
-) -> std::path::PathBuf {
-    [Some(editor_path), lisp_import_path]
-        .into_iter()
-        .flatten()
-        .map(|base_path| base_path.join(import_path))
-        .find(|candidate| candidate.exists())
-        .unwrap_or_else(|| std::path::PathBuf::from(import_path))
+    policy: LispImportPolicy,
+) -> io::Result<PathBuf> {
+    match policy {
+        LispImportPolicy::HostPaths => Ok([Some(editor_path), lisp_import_path]
+            .into_iter()
+            .flatten()
+            .map(|base_path| base_path.join(import_path))
+            .find(|candidate| candidate.exists())
+            .unwrap_or_else(|| PathBuf::from(import_path))),
+        LispImportPolicy::StagingOnly => {
+            resolve_staged_import_path(editor_path, lisp_import_path, import_path)
+        }
+    }
+}
+
+fn resolve_staged_import_path(
+    staging_dir: &Path,
+    lisp_import_path: Option<&Path>,
+    import_path: &str,
+) -> io::Result<PathBuf> {
+    let relative = staging_relative_import_path(import_path)?;
+    let mut missing_candidate = None;
+    for base_path in [Some(staging_dir), lisp_import_path].into_iter().flatten() {
+        let candidate = base_path.join(&relative);
+        reject_symlink_path(base_path, &candidate)?;
+        if candidate.exists() {
+            let canonical_base = base_path.canonicalize()?;
+            let canonical_candidate = candidate.canonicalize()?;
+            if canonical_candidate.starts_with(canonical_base) {
+                return Ok(candidate);
+            }
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "Lisp import must stay inside the staging directory: {}",
+                    candidate.display()
+                ),
+            ));
+        }
+        missing_candidate.get_or_insert(candidate);
+    }
+    Ok(missing_candidate.unwrap_or_else(|| staging_dir.join(relative)))
+}
+
+fn staging_relative_import_path(import_path: &str) -> io::Result<PathBuf> {
+    let path = Path::new(import_path);
+    if path.as_os_str().is_empty()
+        || !path
+            .components()
+            .all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("Lisp import must be relative to the staging directory: {import_path}"),
+        ));
+    }
+    Ok(path.to_path_buf())
+}
+
+fn reject_symlink_path(base_path: &Path, path: &Path) -> io::Result<()> {
+    let relative = path.strip_prefix(base_path).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "Lisp import must stay inside the staging directory: {}",
+                path.display()
+            ),
+        )
+    })?;
+    let mut current = base_path.to_path_buf();
+    for component in relative.components() {
+        let Component::Normal(name) = component else {
+            continue;
+        };
+        current.push(name);
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!(
+                        "Lisp imports must not traverse symlinks: {}",
+                        current.display()
+                    ),
+                ));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
 }
 
 fn parse_import_line(line: &str) -> Option<(String, String)> {
@@ -443,7 +552,7 @@ fn parse_import_line(line: &str) -> Option<(String, String)> {
 mod tests {
     use std::path::Path;
 
-    use super::{VescPackageInput, build_vesc_package};
+    use super::{LispImportPolicy, VescPackageInput, build_vesc_package};
     use super::{lisp_code_prefix, parse_import_line, q_compress, resolve_import_path};
     use crate::package_wire::{LispImport, field_bytes, parse_lisp_imports, parse_vescpkg};
     use crate::test_support::PackageTestHarness;
@@ -511,15 +620,33 @@ mod tests {
         let import_root = harness.root().join("imports");
 
         assert_eq!(
-            resolve_import_path(harness.root(), Some(&import_root), "editor.bin"),
+            resolve_import_path(
+                harness.root(),
+                Some(&import_root),
+                "editor.bin",
+                LispImportPolicy::HostPaths
+            )
+            .expect("editor import path"),
             harness.root().join("editor.bin")
         );
         assert_eq!(
-            resolve_import_path(harness.root(), Some(&import_root), "native.bin"),
+            resolve_import_path(
+                harness.root(),
+                Some(&import_root),
+                "native.bin",
+                LispImportPolicy::HostPaths
+            )
+            .expect("native import path"),
             import_root.join("native.bin")
         );
         assert_eq!(
-            resolve_import_path(harness.root(), Some(&import_root), "missing.bin"),
+            resolve_import_path(
+                harness.root(),
+                Some(&import_root),
+                "missing.bin",
+                LispImportPolicy::HostPaths
+            )
+            .expect("missing import path"),
             std::path::PathBuf::from("missing.bin")
         );
     }
@@ -535,6 +662,7 @@ mod tests {
             lisp_source: &loader,
             lisp_editor_path: harness.root(),
             lisp_import_path: None,
+            lisp_import_policy: LispImportPolicy::HostPaths,
             qml_file: "",
             pkg_desc_qml: "",
             qml_is_fullscreen: false,
@@ -569,6 +697,7 @@ mod tests {
             lisp_source: loader,
             lisp_editor_path: harness.root(),
             lisp_import_path: None,
+            lisp_import_policy: LispImportPolicy::HostPaths,
             qml_file: "",
             pkg_desc_qml: "",
             qml_is_fullscreen: false,
@@ -595,6 +724,7 @@ mod tests {
             lisp_source: &loader,
             lisp_editor_path: harness.root(),
             lisp_import_path: None,
+            lisp_import_policy: LispImportPolicy::HostPaths,
             qml_file: "qml",
             pkg_desc_qml: "descriptor",
             qml_is_fullscreen: false,
@@ -638,6 +768,7 @@ mod tests {
             lisp_source: "",
             lisp_editor_path: Path::new("."),
             lisp_import_path: None,
+            lisp_import_policy: LispImportPolicy::HostPaths,
             qml_file: "",
             pkg_desc_qml: "",
             qml_is_fullscreen: false,

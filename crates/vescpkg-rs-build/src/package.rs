@@ -8,7 +8,7 @@ use crate::manifest::{
 };
 use crate::package_build::PackageBuildPlan;
 use crate::package_format::{
-    VescPackageInput, VescPackageWire, build_vesc_package, encode_vesc_package,
+    LispImportPolicy, VescPackageInput, VescPackageWire, build_vesc_package, encode_vesc_package,
 };
 use crate::package_runner::{RealPackageRunner, package_provenance_from_env};
 use crate::package_target::{PackageTargetMode, PackageTargetPlan};
@@ -112,6 +112,7 @@ impl Package {
             lisp_source: &lisp_source,
             lisp_editor_path: &staging_dir,
             lisp_import_path: lisp_path.parent(),
+            lisp_import_policy: LispImportPolicy::StagingOnly,
             qml_file: &qml_file,
             pkg_desc_qml: &pkg_desc_qml,
             qml_is_fullscreen: descriptor.qml_is_fullscreen(),
@@ -629,6 +630,47 @@ mod tests {
         assert!(
             error.to_string().contains("must not traverse symlinks"),
             "expected symlink error, got {error}"
+        );
+    }
+
+    #[test]
+    fn from_manifest_rejects_lisp_import_paths_outside_staging() {
+        let harness = PackageTestHarness::new().ensure_loopback_staging();
+        write_refloat_style_staging(&harness);
+        let staging = harness.loopback_staging_dir();
+        std::fs::write(harness.root().join("outside.bin"), b"escaped").unwrap();
+        std::fs::write(
+            staging.join("lisp/package.lisp"),
+            "(import \"../../outside.bin\" 'package-lib)\n",
+        )
+        .unwrap();
+
+        let error = Package::from_manifest(staging.join("pkgdesc.qml")).expect_err("bad import");
+
+        assert!(
+            error
+                .to_string()
+                .contains("Lisp import must be relative to the staging directory"),
+            "expected staged import error, got {error}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn from_manifest_rejects_symlink_lisp_import_paths() {
+        let harness = PackageTestHarness::new().ensure_loopback_staging();
+        write_refloat_style_staging(&harness);
+        let staging = harness.loopback_staging_dir();
+        let outside_payload = harness.root().join("outside.bin");
+        std::fs::write(&outside_payload, b"escaped").unwrap();
+        std::fs::remove_file(staging.join("src/package_lib.bin")).unwrap();
+        symlink(&outside_payload, staging.join("src/package_lib.bin")).unwrap();
+
+        let error = Package::from_manifest(staging.join("pkgdesc.qml")).expect_err("bad import");
+
+        assert!(
+            error.to_string().contains("must not traverse symlinks"),
+            "expected symlink import error, got {error}"
         );
     }
 
