@@ -1,7 +1,7 @@
 use super::{
-    AbiSeconds, AccelerationG, AmpHours, AngleRadians, AngularVelocity, Charge, Current, Distance,
+    AccelerationG, AmpHours, AngleRadians, AngularVelocity, Charge, Current, Distance,
     DistancePerEnergy, Energy, EnergyPerDistance, Frequency, Latitude, Longitude, Percent, Power,
-    Ratio, Rpm, SampleRate, Speed, SystemTicks, Temperature, Voltage, WattHours,
+    Ratio, Rpm, SampleRate, Speed, SystemTicks, Temperature, VescSeconds, Voltage, WattHours,
 };
 
 #[test]
@@ -29,7 +29,7 @@ fn scalar_units_round_trip_through_named_accessors() {
     assert_eq!(longitude_degrees, -105.2705);
     assert_eq!(Frequency::from_hertz(1000.0).as_hertz(), 1000.0);
     assert_eq!(SampleRate::from_hertz(200.0).as_hertz(), 200.0);
-    assert_eq!(AbiSeconds::from_seconds(2.5).as_seconds(), 2.5);
+    assert_eq!(VescSeconds::from_seconds(2.5).as_seconds(), 2.5);
     assert_eq!(AngleRadians::from_radians(1.5).as_radians(), 1.5);
     assert_eq!(AccelerationG::from_g(1.0).as_g(), 1.0);
     assert_eq!(

@@ -93,7 +93,7 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
     }
 
     fn firmware_fault(&self) -> FirmwareFaultCode {
-        FirmwareFaultCode::from_compat_code(unsafe { vescpkg_rs_sys::raw::mc_get_fault() as u8 })
+        FirmwareFaultCode::from_raw_code(unsafe { vescpkg_rs_sys::raw::mc_get_fault() })
     }
 
     fn input_voltage_filtered(&self) -> InputVoltage {

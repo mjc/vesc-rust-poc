@@ -207,6 +207,20 @@ fn motor_telemetry_api_forwards_firmware_fault_code() {
 }
 
 #[test]
+fn firmware_fault_code_preserves_raw_values_until_compat_encoding() {
+    let valid = FirmwareFaultCode::from_raw_code(5);
+    let negative = FirmwareFaultCode::from_raw_code(-1);
+    let too_large = FirmwareFaultCode::from_raw_code(256);
+
+    assert_eq!(valid.raw_code(), 5);
+    assert_eq!(valid.compat_code(), Some(5));
+    assert_eq!(negative.raw_code(), -1);
+    assert_eq!(negative.compat_code(), None);
+    assert_eq!(too_large.raw_code(), 256);
+    assert_eq!(too_large.compat_code(), None);
+}
+
+#[test]
 fn motor_telemetry_api_forwards_filtered_input_voltage() {
     let voltage = InputVoltage::new(Voltage::from_volts(84.2));
     let telemetry = MotorTelemetryApi::new(

@@ -1,7 +1,7 @@
-//! Time aliases for VESC's 10 kHz system tick clock and ABI float seconds.
+//! Time aliases for VESC's 10 kHz system tick clock and VESC float seconds.
 //!
 //! Prefer [`SystemTicks`] and [`SystemInstant`] for normal package time arithmetic.
-//! [`AbiSeconds`] models firmware APIs that expose durations as `f32` seconds.
+//! [`VescSeconds`] models firmware APIs that expose durations as `f32` seconds.
 
 use crate::{scalar_int_unit, scalar_unit};
 
@@ -15,7 +15,7 @@ pub type SystemTicks = fugit::TimerDurationU32<SYSTEM_TICK_RATE_HZ>;
 pub type SystemInstant = fugit::TimerInstantU32<SYSTEM_TICK_RATE_HZ>;
 
 scalar_int_unit!(TimestampTicks, from_ticks, as_ticks, u32, "system ticks");
-scalar_unit!(AbiSeconds, from_seconds, as_seconds, "ABI float seconds");
+scalar_unit!(VescSeconds, from_seconds, as_seconds, "VESC float seconds");
 scalar_unit!(Frequency, from_hertz, as_hertz, "hertz");
 scalar_unit!(SampleRate, from_hertz, as_hertz, "hertz");
 

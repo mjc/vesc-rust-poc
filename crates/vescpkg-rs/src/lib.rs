@@ -67,11 +67,11 @@ pub mod lifecycle;
 pub mod prelude {
     pub use crate::types::*;
     pub use crate::units::{
-        AbiSeconds, AccelerationG, AmpHours, AngleDegrees, AngleRadians, AngularVelocity,
-        BoundedUnitError, Charge, Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance,
-        FluxLinkage, Frequency, Height, Inductance, Latitude, Longitude, OdometerMeters, Percent,
-        Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed,
-        SystemInstant, SystemTicks, Temperature, TimestampTicks, Voltage, WattHours,
+        AccelerationG, AmpHours, AngleDegrees, AngleRadians, AngularVelocity, BoundedUnitError,
+        Charge, Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage,
+        Frequency, Height, Inductance, Latitude, Longitude, OdometerMeters, Percent, Power, Ratio,
+        Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed, SystemInstant,
+        SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage, WattHours,
     };
     pub use crate::{
         AllocBindings, AllocError, AppDataBindings, ExtensionDescriptor, ExtensionNameError,
@@ -102,9 +102,9 @@ mod tests {
         TotalMotorCurrent, TripDistance, VehicleSpeed, WattHoursDischarged, WheelDiameter,
     };
     use vescpkg_rs_units::{
-        AbiSeconds, AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Current, Distance,
-        Energy, FluxLinkage, Frequency, Inductance, Latitude, Longitude, Power, Ratio, Resistance,
-        Rpm, SampleRate, SignedRatio, Speed, SystemTicks, TimestampTicks, Voltage,
+        AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Current, Distance, Energy,
+        FluxLinkage, Frequency, Inductance, Latitude, Longitude, Power, Ratio, Resistance, Rpm,
+        SampleRate, SignedRatio, Speed, SystemTicks, TimestampTicks, VescSeconds, Voltage,
     };
 
     #[test]
@@ -222,7 +222,7 @@ mod tests {
         let phase = OpenLoopPhase::new(AngleDegrees::from_degrees(180.0));
         let audio_frequency = AudioFrequency::new(Frequency::from_hertz(440.0));
         let audio_sample_rate = AudioSampleRate::new(SampleRate::from_hertz(22_050.0));
-        let audio_duration = AudioDuration::new(AbiSeconds::from_seconds(0.25));
+        let audio_duration = AudioDuration::new(VescSeconds::from_seconds(0.25));
 
         assert_eq!(channel.get(), 3);
         assert_eq!(AudioChannel::try_new(0).expect("first channel").get(), 0);
@@ -259,7 +259,7 @@ mod tests {
     #[test]
     fn semantic_time_types_wrap_fugit_and_tick_units() {
         let ticks = SystemTicks::from_ticks(25_000);
-        let seconds = AbiSeconds::from_seconds(2.5);
+        let seconds = VescSeconds::from_seconds(2.5);
         let timestamp = SystemTimestamp::new(TimestampTicks::from_ticks(123_456));
         let duration = SystemDuration::new(ticks);
         let timeout = TimeoutDuration::new(seconds);

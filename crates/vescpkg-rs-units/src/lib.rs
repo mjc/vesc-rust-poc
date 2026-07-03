@@ -88,19 +88,18 @@ pub use motion::{
 pub use ratio::{Percent, Ratio, SignedRatio};
 pub use temperature::Temperature;
 pub use time::{
-    AbiSeconds, Frequency, SYSTEM_TICK_RATE_HZ, SampleRate, SystemInstant, SystemTicks,
-    TimestampTicks,
+    Frequency, SYSTEM_TICK_RATE_HZ, SampleRate, SystemInstant, SystemTicks, TimestampTicks,
+    VescSeconds,
 };
 
 /// Common package-author imports for typed unit calculations.
 pub mod prelude {
     pub use crate::{
-        AbiSeconds, AccelerationG, AmpHours, AngleDegrees, AngleRadians, AngularVelocity,
-        BoundedUnitError, Charge, Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance,
-        FluxLinkage, Frequency, Height, Inductance, Latitude, Longitude, OdometerMeters, Percent,
-        Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed,
-        SystemInstant, SystemTicks, TachometerSteps, Temperature, TimestampTicks, Voltage,
-        WattHours,
+        AccelerationG, AmpHours, AngleDegrees, AngleRadians, AngularVelocity, BoundedUnitError,
+        Charge, Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage,
+        Frequency, Height, Inductance, Latitude, Longitude, OdometerMeters, Percent, Power, Ratio,
+        Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed, SystemInstant,
+        SystemTicks, TachometerSteps, Temperature, TimestampTicks, VescSeconds, Voltage, WattHours,
     };
 }
 
