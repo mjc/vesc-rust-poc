@@ -458,8 +458,7 @@ fn package_init_touches_slot(insns: &[DecodedInsn], slot: u32) -> bool {
     })
 }
 
-fn stop_insns_clear_app_data_slot(insns: &[DecodedInsn], literals: &BTreeMap<u64, u32>) -> bool {
-    let _ = literals;
+fn stop_insns_clear_app_data_slot(insns: &[DecodedInsn], _literals: &BTreeMap<u64, u32>) -> bool {
     insns.iter().any(|insn| {
         insn.mnemonic.starts_with("ldr")
             && (insn.operands.contains("#596") || insn.operands.contains("#0x254"))

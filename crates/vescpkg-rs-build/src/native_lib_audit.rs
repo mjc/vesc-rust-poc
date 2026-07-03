@@ -395,7 +395,7 @@ fn audit_refloat_native_lib_layout(paths: &NativeLibArtifactPaths) {
         paths.elf
     );
 
-    for section_name in [".program_ptr", ".init_fun", ".got", ".text"] {
+    for section_name in [".program_ptr", ".init_fun", ".data", ".got", ".text"] {
         let section = section_from(&sections, section_name);
         let end = section.vma + section.size;
         assert!(
