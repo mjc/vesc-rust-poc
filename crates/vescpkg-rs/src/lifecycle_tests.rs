@@ -1,16 +1,24 @@
-use crate::MotorTelemetryApi;
 use crate::ble_loopback::register_loopback_app_data_handler_with;
 use crate::extension::ExtensionDescriptor;
 use crate::lifecycle::register_extension_from_image;
 use crate::lifecycle_core::{
     AppDataHandlerRegistrationError, LbmApi, LoopbackLifecycle, PackageLifecycle,
 };
-use crate::test_support::{FakeAppDataBindings, FakeBindings, FakeMotorTelemetryBindings, stubs};
-use crate::types::{
-    AmpHoursCharged, AmpHoursDischarged, BatteryLevel, FirmwareFaultCode, InputVoltage,
-    MosfetTemperature, MotorTemperature, TripDistance, WattHoursCharged, WattHoursDischarged,
+use crate::test_support::{
+    FakeAppDataBindings, FakeBindings, FakeImuBindings, FakeMotorTelemetryBindings,
+    FakeThreadBindings, stubs,
 };
-use crate::units::{Charge, Distance, Energy, OdometerMeters, Ratio, Temperature, Voltage};
+use crate::types::{
+    AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, DutyCycle, ElectricalSpeed,
+    FirmwareFaultCode, ImuPitch, ImuRoll, ImuYaw, InputVoltage, MosfetTemperature, MotorCurrent,
+    MotorTemperature, ThreadPriority, TripDistance, VehicleSpeed, WattHoursCharged,
+    WattHoursDischarged,
+};
+use crate::units::{
+    AngleRadians, Charge, Current, Distance, Energy, OdometerMeters, Ratio, Rpm, SignedRatio,
+    Speed, Temperature, Voltage,
+};
+use crate::{ImuApi, MotorTelemetryApi, ThreadApi};
 use crate::{RegisterError, ffi};
 use rstest::rstest;
 use vescpkg_rs_sys::{ExtensionHandler, LbmValue, LibInfo, NativeImage};
@@ -18,6 +26,8 @@ use vescpkg_rs_sys::{ExtensionHandler, LbmValue, LibInfo, NativeImage};
 unsafe extern "C" fn stub_handler(_args: *mut u32, _count: u32) -> u32 {
     0
 }
+
+unsafe extern "C" fn stub_thread_entry(_arg: *mut core::ffi::c_void) {}
 
 const EXT_HOST_TEST_PROBE_NAME: &core::ffi::CStr = c"ext-c-probe-v12";
 
@@ -157,6 +167,40 @@ fn motor_telemetry_api_forwards_absolute_distance_as_trip_distance() {
 }
 
 #[test]
+fn motor_telemetry_api_forwards_runtime_motor_fields() {
+    let electrical_speed = ElectricalSpeed::new(Rpm::from_revolutions_per_minute(3210.0));
+    let vehicle_speed = VehicleSpeed::new(Speed::from_meters_per_second(12.25));
+    let motor_current = MotorCurrent::new(Current::from_amps(33.5));
+    let battery_current = BatteryCurrent::new(Current::from_amps(-8.25));
+    let duty_cycle = DutyCycle::new(SignedRatio::from_ratio_const(0.42));
+    let foc_id = MotorCurrent::new(Current::from_amps(1.5));
+    let telemetry = MotorTelemetryApi::new(
+        FakeMotorTelemetryBindings::new()
+            .with_runtime_motor(
+                electrical_speed,
+                vehicle_speed,
+                motor_current,
+                battery_current,
+                duty_cycle,
+            )
+            .with_foc_id_current(Some(foc_id)),
+    );
+
+    assert_eq!(telemetry.electrical_speed(), electrical_speed);
+    assert_eq!(telemetry.vehicle_speed(), vehicle_speed);
+    assert_eq!(telemetry.motor_current(), motor_current);
+    assert_eq!(telemetry.battery_current(), battery_current);
+    assert_eq!(telemetry.duty_cycle_now(), duty_cycle);
+    assert_eq!(telemetry.foc_id_current(), Some(foc_id));
+    assert_eq!(telemetry.bindings().electrical_speed_calls.get(), 1);
+    assert_eq!(telemetry.bindings().vehicle_speed_calls.get(), 1);
+    assert_eq!(telemetry.bindings().motor_current_calls.get(), 1);
+    assert_eq!(telemetry.bindings().battery_current_calls.get(), 1);
+    assert_eq!(telemetry.bindings().duty_cycle_now_calls.get(), 1);
+    assert_eq!(telemetry.bindings().foc_id_current_calls.get(), 1);
+}
+
+#[test]
 fn motor_telemetry_api_forwards_filtered_motor_temperatures() {
     let mosfet = MosfetTemperature::new(Temperature::from_degrees_celsius(44.0));
     let motor = MotorTemperature::new(Temperature::from_degrees_celsius(51.5));
@@ -250,6 +294,66 @@ fn fake_motor_telemetry_bindings_chain_overrides() {
     assert_eq!(telemetry.distance_abs(), distance);
     assert_eq!(telemetry.firmware_fault(), fault);
     assert_eq!(telemetry.input_voltage_filtered(), voltage);
+}
+
+#[test]
+fn thread_api_forwards_and_maps_null_spawn_handles() {
+    let bindings = FakeThreadBindings::with_spawn_results([0x10, 0]);
+    let api = ThreadApi::new(bindings);
+    let mut arg = 7_u32;
+    let arg_ptr = (&mut arg as *mut u32).cast();
+
+    let handle = unsafe { api.spawn(stub_thread_entry, 256, c"refloat-main", arg_ptr) }
+        .expect("non-null thread handle");
+    assert_eq!(handle.as_ptr() as usize, 0x10);
+    assert!(
+        unsafe {
+            api.spawn(
+                stub_thread_entry,
+                128,
+                c"refloat-aux",
+                core::ptr::null_mut(),
+            )
+        }
+        .is_none()
+    );
+
+    api.request_terminate(handle);
+    assert!(!api.should_terminate());
+    api.sleep_us(1201);
+    assert!(api.set_priority(ThreadPriority::try_new(-1).expect("priority")));
+
+    let bindings = api.bindings();
+    assert_eq!(bindings.spawn_calls.get(), 2);
+    assert_eq!(bindings.spawn_stacks.get(), [256, 128]);
+    assert_eq!(bindings.spawn_names.get()[0], c"refloat-main".as_ptr());
+    assert_eq!(bindings.spawn_args.get()[0], arg_ptr as usize);
+    assert_eq!(
+        bindings.spawn_entries.get()[0],
+        stub_thread_entry as *const () as usize
+    );
+    assert_eq!(bindings.terminate_calls.get(), 1);
+    assert_eq!(bindings.terminated_threads.get()[0], 0x10);
+    assert_eq!(bindings.should_terminate_calls.get(), 1);
+    assert_eq!(bindings.sleep_calls.get(), 1);
+    assert_eq!(bindings.sleep_micros.get()[0], 1201);
+    assert_eq!(bindings.priority_calls.get(), 1);
+    assert_eq!(bindings.priorities.get()[0], -1);
+}
+
+#[test]
+fn imu_api_forwards_attitude_getters() {
+    let roll = ImuRoll::new(AngleRadians::from_radians(0.1));
+    let pitch = ImuPitch::new(AngleRadians::from_radians(-0.2));
+    let yaw = ImuYaw::new(AngleRadians::from_radians(3.0));
+    let imu = ImuApi::new(FakeImuBindings::new().with_attitude(roll, pitch, yaw));
+
+    assert_eq!(imu.roll(), roll);
+    assert_eq!(imu.pitch(), pitch);
+    assert_eq!(imu.yaw(), yaw);
+    assert_eq!(imu.bindings().roll_calls.get(), 1);
+    assert_eq!(imu.bindings().pitch_calls.get(), 1);
+    assert_eq!(imu.bindings().yaw_calls.get(), 1);
 }
 
 #[rstest]

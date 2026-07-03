@@ -7,13 +7,15 @@ use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescPin, Vesc
 
 use super::{
     CustomConfigGet, CustomConfigSet, CustomConfigXml, VescIf, conf_custom_add_config,
-    conf_custom_clear_configs, io_read, io_set_mode, io_write, lbm_add_extension,
+    conf_custom_clear_configs, foc_get_id, io_read, io_set_mode, io_write, lbm_add_extension,
     lbm_add_extension_with_table_base, lbm_dec_as_i32, lbm_enc_i, lbm_enc_sym_eerror,
     lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number, mc_get_amp_hours, mc_get_amp_hours_charged,
-    mc_get_battery_level, mc_get_distance_abs, mc_get_fault, mc_get_input_voltage_filtered,
-    mc_get_odometer, mc_get_watt_hours, mc_get_watt_hours_charged, mc_temp_fet_filtered,
-    mc_temp_motor_filtered, vesc_clear_app_data_handler, vesc_send_app_data,
-    vesc_set_app_data_handler, vesc_system_time_ticks,
+    mc_get_battery_level, mc_get_distance_abs, mc_get_duty_cycle_now, mc_get_fault,
+    mc_get_input_voltage_filtered, mc_get_odometer, mc_get_rpm, mc_get_speed,
+    mc_get_tot_current_filtered, mc_get_tot_current_in_filtered, mc_get_watt_hours,
+    mc_get_watt_hours_charged, mc_temp_fet_filtered, mc_temp_motor_filtered,
+    vesc_clear_app_data_handler, vesc_send_app_data, vesc_set_app_data_handler, vesc_sleep_us,
+    vesc_system_time_ticks, vesc_thread_set_priority,
 };
 
 struct SyncCounter(Cell<usize>);
@@ -74,6 +76,24 @@ impl SyncU32 {
     }
 }
 
+struct SyncF32(Cell<f32>);
+
+unsafe impl Sync for SyncF32 {}
+
+impl SyncF32 {
+    const fn new() -> Self {
+        Self(Cell::new(0.0))
+    }
+
+    fn get(&self) -> f32 {
+        self.0.get()
+    }
+
+    fn set(&self, value: f32) {
+        self.0.set(value);
+    }
+}
+
 struct SyncBool(Cell<bool>);
 
 unsafe impl Sync for SyncBool {}
@@ -104,11 +124,19 @@ static CONF_CUSTOM_CLEAR_CONFIGS: SyncCounter = SyncCounter::new();
 static CUSTOM_CONFIG_GET: SyncCounter = SyncCounter::new();
 static CUSTOM_CONFIG_SET: SyncCounter = SyncCounter::new();
 static CUSTOM_CONFIG_XML: SyncCounter = SyncCounter::new();
+static SLEEP_US: SyncCounter = SyncCounter::new();
+static THREAD_SET_PRIORITY: SyncCounter = SyncCounter::new();
 static SYSTEM_TIME_TICKS: SyncCounter = SyncCounter::new();
 static IO_SET_MODE: SyncCounter = SyncCounter::new();
 static IO_WRITE: SyncCounter = SyncCounter::new();
 static IO_READ: SyncCounter = SyncCounter::new();
 static MC_GET_DISTANCE_ABS: SyncCounter = SyncCounter::new();
+static MC_GET_RPM: SyncCounter = SyncCounter::new();
+static MC_GET_SPEED: SyncCounter = SyncCounter::new();
+static MC_GET_TOT_CURRENT_FILTERED: SyncCounter = SyncCounter::new();
+static MC_GET_TOT_CURRENT_IN_FILTERED: SyncCounter = SyncCounter::new();
+static MC_GET_DUTY_CYCLE_NOW: SyncCounter = SyncCounter::new();
+static FOC_GET_ID: SyncCounter = SyncCounter::new();
 static MC_TEMP_FET_FILTERED: SyncCounter = SyncCounter::new();
 static MC_TEMP_MOTOR_FILTERED: SyncCounter = SyncCounter::new();
 static MC_GET_AMP_HOURS: SyncCounter = SyncCounter::new();
@@ -123,6 +151,9 @@ static LAST_PIN: SyncI32 = SyncI32::new();
 static LAST_MODE: SyncI32 = SyncI32::new();
 static LAST_LEVEL: SyncI32 = SyncI32::new();
 static LAST_LBM_VALUE: SyncU32 = SyncU32::new();
+static LAST_SLEEP_US: SyncU32 = SyncU32::new();
+static LAST_THREAD_PRIORITY: SyncI32 = SyncI32::new();
+static LAST_FOC_ID: SyncF32 = SyncF32::new();
 static LAST_HANDLER_INSTALLED: SyncBool = SyncBool::new();
 static LAST_CUSTOM_CONFIG_DEFAULT: SyncBool = SyncBool::new();
 
@@ -139,10 +170,18 @@ fn reset_counters() {
         &CUSTOM_CONFIG_GET,
         &CUSTOM_CONFIG_SET,
         &CUSTOM_CONFIG_XML,
+        &SLEEP_US,
+        &THREAD_SET_PRIORITY,
         &SYSTEM_TIME_TICKS,
         &IO_SET_MODE,
         &IO_WRITE,
         &IO_READ,
+        &MC_GET_RPM,
+        &MC_GET_SPEED,
+        &MC_GET_TOT_CURRENT_FILTERED,
+        &MC_GET_TOT_CURRENT_IN_FILTERED,
+        &MC_GET_DUTY_CYCLE_NOW,
+        &FOC_GET_ID,
         &MC_GET_DISTANCE_ABS,
         &MC_TEMP_FET_FILTERED,
         &MC_TEMP_MOTOR_FILTERED,
@@ -162,6 +201,9 @@ fn reset_counters() {
     LAST_MODE.set(0);
     LAST_LEVEL.set(0);
     LAST_LBM_VALUE.set(0);
+    LAST_SLEEP_US.set(0);
+    LAST_THREAD_PRIORITY.set(0);
+    LAST_FOC_ID.set(0.0);
     LAST_HANDLER_INSTALLED.set(false);
     LAST_CUSTOM_CONFIG_DEFAULT.set(false);
 }
@@ -237,6 +279,16 @@ extern "C" fn stub_system_time_ticks() -> u32 {
     42
 }
 
+extern "C" fn stub_sleep_us(micros: u32) {
+    SLEEP_US.inc();
+    LAST_SLEEP_US.set(micros);
+}
+
+extern "C" fn stub_thread_set_priority(priority: c_int) {
+    THREAD_SET_PRIORITY.inc();
+    LAST_THREAD_PRIORITY.set(priority);
+}
+
 extern "C" fn stub_io_set_mode(pin: c_int, mode: c_int) -> bool {
     IO_SET_MODE.inc();
     LAST_PIN.set(pin);
@@ -260,6 +312,37 @@ extern "C" fn stub_io_read(pin: c_int) -> bool {
 extern "C" fn stub_mc_get_distance_abs() -> f32 {
     MC_GET_DISTANCE_ABS.inc();
     12.5
+}
+
+extern "C" fn stub_mc_get_rpm() -> f32 {
+    MC_GET_RPM.inc();
+    3210.0
+}
+
+extern "C" fn stub_mc_get_speed() -> f32 {
+    MC_GET_SPEED.inc();
+    12.25
+}
+
+extern "C" fn stub_mc_get_tot_current_filtered() -> f32 {
+    MC_GET_TOT_CURRENT_FILTERED.inc();
+    33.5
+}
+
+extern "C" fn stub_mc_get_tot_current_in_filtered() -> f32 {
+    MC_GET_TOT_CURRENT_IN_FILTERED.inc();
+    -8.25
+}
+
+extern "C" fn stub_mc_get_duty_cycle_now() -> f32 {
+    MC_GET_DUTY_CYCLE_NOW.inc();
+    -0.42
+}
+
+extern "C" fn stub_foc_get_id() -> f32 {
+    FOC_GET_ID.inc();
+    LAST_FOC_ID.set(1.5);
+    1.5
 }
 
 extern "C" fn stub_mc_temp_fet_filtered() -> f32 {
@@ -328,10 +411,18 @@ fn populated_table() -> VescIf {
     table.send_app_data = Some(stub_send_app_data);
     table.conf_custom_add_config = Some(stub_conf_custom_add_config);
     table.conf_custom_clear_configs = Some(stub_conf_custom_clear_configs);
+    table.sleep_us = Some(stub_sleep_us);
+    table.thread_set_priority = Some(stub_thread_set_priority);
     table.system_time_ticks = Some(stub_system_time_ticks);
     table.io_set_mode = Some(stub_io_set_mode);
     table.io_write = Some(stub_io_write);
     table.io_read = Some(stub_io_read);
+    table.mc_get_rpm = Some(stub_mc_get_rpm);
+    table.mc_get_speed = Some(stub_mc_get_speed);
+    table.mc_get_tot_current_filtered = Some(stub_mc_get_tot_current_filtered);
+    table.mc_get_tot_current_in_filtered = Some(stub_mc_get_tot_current_in_filtered);
+    table.mc_get_duty_cycle_now = Some(stub_mc_get_duty_cycle_now);
+    table.foc_get_id = Some(stub_foc_get_id);
     table.mc_get_distance_abs = Some(stub_mc_get_distance_abs);
     table.mc_temp_fet_filtered = Some(stub_mc_temp_fet_filtered);
     table.mc_temp_motor_filtered = Some(stub_mc_temp_motor_filtered);
@@ -437,6 +528,46 @@ fn custom_config_helpers_forward_through_mock_table() {
 fn system_time_ticks_forwards_through_mock_table() {
     with_populated_table(|| unsafe {
         assert_eq!(vesc_system_time_ticks(), 42);
+    });
+}
+
+#[test]
+fn sleep_us_forwards_through_mock_table() {
+    with_populated_table(|| unsafe {
+        vesc_sleep_us(1201);
+
+        assert_eq!(SLEEP_US.get(), 1);
+        assert_eq!(LAST_SLEEP_US.get(), 1201);
+    });
+}
+
+#[test]
+fn thread_set_priority_forwards_through_mock_table() {
+    with_populated_table(|| unsafe {
+        assert!(vesc_thread_set_priority(-1));
+
+        assert_eq!(THREAD_SET_PRIORITY.get(), 1);
+        assert_eq!(LAST_THREAD_PRIORITY.get(), -1);
+    });
+}
+
+#[test]
+fn runtime_motor_helpers_forward_through_mock_table() {
+    with_populated_table(|| unsafe {
+        assert_eq!(mc_get_rpm(), 3210.0);
+        assert_eq!(mc_get_speed(), 12.25);
+        assert_eq!(mc_get_tot_current_filtered(), 33.5);
+        assert_eq!(mc_get_tot_current_in_filtered(), -8.25);
+        assert_eq!(mc_get_duty_cycle_now(), -0.42);
+        assert_eq!(foc_get_id(), Some(1.5));
+
+        assert_eq!(MC_GET_RPM.get(), 1);
+        assert_eq!(MC_GET_SPEED.get(), 1);
+        assert_eq!(MC_GET_TOT_CURRENT_FILTERED.get(), 1);
+        assert_eq!(MC_GET_TOT_CURRENT_IN_FILTERED.get(), 1);
+        assert_eq!(MC_GET_DUTY_CYCLE_NOW.get(), 1);
+        assert_eq!(FOC_GET_ID.get(), 1);
+        assert_eq!(LAST_FOC_ID.get(), 1.5);
     });
 }
 
