@@ -7,7 +7,7 @@ use std::time::Duration;
 use btleplug::api::{Central, Characteristic, Manager as _, Peripheral as _, WriteType};
 use btleplug::platform::{Manager, Peripheral};
 use futures_util::StreamExt;
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 use tokio::time;
 use uuid::Uuid;
 use vesc_protocol::WireCommand;
@@ -35,6 +35,11 @@ const POST_INSTALL_SETTLE: Duration = Duration::from_millis(1500);
 const FW_VERSION_PREFLIGHT_ATTEMPTS: usize = 5;
 const FW_VERSION_PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(2);
 const FW_VERSION_PREFLIGHT_RETRY_DELAY: Duration = Duration::from_millis(500);
+static REFLOAT_ALL_DATA_MODE4_PAYLOAD: [u8; 3] = [101, 10, 4];
+const REFLOAT_ALL_DATA_MODE4_REQUEST: CustomAppDataRequest = CustomAppDataRequest {
+    step: "all-data",
+    payload: &REFLOAT_ALL_DATA_MODE4_PAYLOAD,
+};
 
 /// Progress event emitted by the diagnostic loopback runner.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -123,15 +128,6 @@ pub enum LoopbackProgress {
         /// Decoded loopback command.
         command: WireCommand,
     },
-    /// A raw custom app-data reply packet was decoded.
-    RawAppDataReplyReceived {
-        /// Step name associated with the reply.
-        step: &'static str,
-        /// Hex preview of the app-data reply payload.
-        wire_hex: String,
-        /// App-data reply payload size in bytes.
-        bytes: usize,
-    },
     /// A loopback step completed successfully.
     StepSucceeded {
         /// Step name that completed.
@@ -167,13 +163,7 @@ impl LoopbackProgress {
             Self::ScanStarted { timeout_secs } => {
                 format!("scanning for BLE devices (timeout {timeout_secs}s)")
             }
-            Self::ScanSeen { device, matched } => {
-                if *matched {
-                    format!("scan match: {device}")
-                } else {
-                    format!("scan seen: {device}")
-                }
-            }
+            Self::ScanSeen { device, matched } => describe_scan_seen(device, *matched),
             Self::Connected { device } => format!("connected to {device}"),
             Self::DiscoveredGatt {
                 services,
@@ -193,13 +183,7 @@ impl LoopbackProgress {
                 bytes,
             } => format!("step {step}: sending {bytes} byte(s) wire={wire_hex}"),
             Self::WaitingForReply { step, timeout_secs } => {
-                if *step == "fw-version-preflight" {
-                    format!("step {step}: waiting up to {timeout_secs}s for COMM_FW_VERSION reply")
-                } else {
-                    format!(
-                        "step {step}: waiting up to {timeout_secs}s for COMM_CUSTOM_APP_DATA reply"
-                    )
-                }
+                describe_waiting_for_reply(step, *timeout_secs)
             }
             Self::ReceivedNotification { step, bytes } => {
                 format!("step {step}: received BLE notification ({bytes} bytes)")
@@ -215,11 +199,6 @@ impl LoopbackProgress {
                 wire_hex,
                 command,
             } => format!("step {step}: reply command={command:?} wire={wire_hex}"),
-            Self::RawAppDataReplyReceived {
-                step,
-                wire_hex,
-                bytes,
-            } => format!("step {step}: app-data reply {bytes} byte(s) wire={wire_hex}"),
             Self::StepSucceeded { step, command } => {
                 format!("step {step}: ok command={command:?}")
             }
@@ -227,19 +206,34 @@ impl LoopbackProgress {
                 step,
                 elapsed_secs,
                 pending,
-            } => {
-                if pending.is_empty() {
-                    format!(
-                        "step {step}: timed out after {elapsed_secs}s with no VESC packets received"
-                    )
-                } else {
-                    format!(
-                        "step {step}: timed out after {elapsed_secs}s; pending packets: {}",
-                        pending.join("; ")
-                    )
-                }
-            }
+            } => describe_timeout_waiting(step, *elapsed_secs, pending),
         }
+    }
+}
+
+fn describe_scan_seen(device: &str, matched: bool) -> String {
+    match matched {
+        true => format!("scan match: {device}"),
+        false => format!("scan seen: {device}"),
+    }
+}
+
+fn describe_waiting_for_reply(step: &str, timeout_secs: u64) -> String {
+    match step {
+        "fw-version-preflight" => {
+            format!("step {step}: waiting up to {timeout_secs}s for COMM_FW_VERSION reply")
+        }
+        _ => format!("step {step}: waiting up to {timeout_secs}s for COMM_CUSTOM_APP_DATA reply"),
+    }
+}
+
+fn describe_timeout_waiting(step: &str, elapsed_secs: u64, pending: &[String]) -> String {
+    match pending {
+        [] => format!("step {step}: timed out after {elapsed_secs}s with no VESC packets received"),
+        packets => format!(
+            "step {step}: timed out after {elapsed_secs}s; pending packets: {}",
+            packets.join("; ")
+        ),
     }
 }
 
@@ -250,6 +244,36 @@ struct DiagnosticSession {
     responses: Receiver<Vec<u8>>,
     decoder: PacketDecoder,
     pending: VecDeque<Vec<u8>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CustomAppDataRequest {
+    step: &'static str,
+    payload: &'static [u8],
+}
+
+impl CustomAppDataRequest {
+    fn send(
+        self,
+        runtime: &Runtime,
+        session: &mut DiagnosticSession,
+        progress: &mut impl FnMut(LoopbackProgress),
+    ) -> Result<Vec<u8>, LoopbackTransportError> {
+        let wire = build_custom_app_data_packet(self.payload);
+        progress(LoopbackProgress::StepStarted { step: self.step });
+        progress(LoopbackProgress::Sending {
+            step: self.step,
+            wire_hex: hex_snippet(&wire, 48),
+            bytes: wire.len(),
+        });
+        runtime.block_on(write_ble_uart_packet(
+            &session.peripheral,
+            &session.rx_char,
+            &wire,
+        ))?;
+
+        session.receive_custom_app_data_payload_with_progress(self.step, progress)
+    }
 }
 
 /// Runs the loopback protocol over BLE while reporting detailed diagnostic progress.
@@ -322,6 +346,43 @@ pub fn run_loopback_with_diagnostics(
     }
 
     Ok(LoopbackReport::new(target, commands))
+}
+
+/// Sends one Refloat all-data app-data request and waits for a raw response.
+pub fn run_refloat_probe_with_diagnostics(
+    target: LoopbackTarget,
+    mut progress: impl FnMut(LoopbackProgress),
+) -> Result<Vec<u8>, LoopbackTransportError> {
+    with_diagnostic_session(target, &mut progress, |runtime, session, progress| {
+        REFLOAT_ALL_DATA_MODE4_REQUEST.send(runtime, session, progress)
+    })
+}
+
+fn with_diagnostic_session<P, R>(
+    target: LoopbackTarget,
+    progress: &mut P,
+    run: impl FnOnce(&Runtime, &mut DiagnosticSession, &mut P) -> Result<R, LoopbackTransportError>,
+) -> Result<R, LoopbackTransportError>
+where
+    P: FnMut(LoopbackProgress),
+{
+    progress(LoopbackProgress::StartingRuntime);
+    let runtime = Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(1)
+        .build()
+        .map_err(|_| device_error("failed to start the BLE runtime"))?;
+
+    progress(LoopbackProgress::OpeningSession {
+        target: describe_loopback_target(&target),
+    });
+    let mut session = runtime.block_on(open_session_with_progress(target, progress))?;
+    progress(LoopbackProgress::SessionOpened);
+    std::thread::sleep(POST_INSTALL_SETTLE);
+
+    runtime.block_on(run_fw_version_preflight(&mut session, progress))?;
+    session.clear_pending();
+    run(&runtime, &mut session, progress)
 }
 
 async fn open_session_with_progress(
@@ -567,117 +628,156 @@ impl DiagnosticSession {
         step: &'static str,
         progress: &mut impl FnMut(LoopbackProgress),
     ) -> Result<Vec<u8>, LoopbackTransportError> {
-        if let Some(packet) = self.take_pending_response() {
-            let wire_hex = hex_snippet(&packet, 32);
-            let command = decode_loopback_command(&packet)?;
-            progress(LoopbackProgress::ReplyReceived {
-                step,
-                wire_hex,
-                command,
-            });
-            return Ok(packet);
-        }
+        let payload = self.receive_custom_app_data_payload_with_progress(step, progress)?;
+        let wire_hex = hex_snippet(&payload, 32);
+        let command = decode_loopback_command(&payload)?;
+        progress(LoopbackProgress::ReplyReceived {
+            step,
+            wire_hex,
+            command,
+        });
+        Ok(payload)
+    }
 
+    fn take_pending_response(&mut self) -> Option<Vec<u8>> {
+        self.pending
+            .iter()
+            .position(|packet| matches!(packet.as_slice(), [COMM_CUSTOM_APP_DATA, ..]))
+            .and_then(|index| self.pending.remove(index))
+            .and_then(|packet| custom_app_data_payload(&packet))
+    }
+
+    fn receive_custom_app_data_payload_with_progress(
+        &mut self,
+        step: &'static str,
+        progress: &mut impl FnMut(LoopbackProgress),
+    ) -> Result<Vec<u8>, LoopbackTransportError> {
+        self.take_pending_response()
+            .map(Ok)
+            .unwrap_or_else(|| self.receive_custom_app_data_from_notifications(step, progress))
+    }
+
+    fn receive_custom_app_data_from_notifications(
+        &mut self,
+        step: &'static str,
+        progress: &mut impl FnMut(LoopbackProgress),
+    ) -> Result<Vec<u8>, LoopbackTransportError> {
         progress(LoopbackProgress::WaitingForReply {
             step,
             timeout_secs: RESPONSE_TIMEOUT.as_secs(),
         });
 
-        let start = std::time::Instant::now();
-        loop {
-            if let Some(packet) = self.decoder.pop_ready() {
-                if packet.first().copied() == Some(COMM_CUSTOM_APP_DATA) {
-                    let payload = packet[1..].to_vec();
-                    let wire_hex = hex_snippet(&payload, 32);
-                    let command = decode_loopback_command(&payload)?;
-                    progress(LoopbackProgress::ReplyReceived {
-                        step,
-                        wire_hex,
-                        command,
-                    });
-                    return Ok(payload);
-                }
+        let started = std::time::Instant::now();
+        std::iter::repeat_with(|| self.next_custom_app_data_payload(step, started, progress))
+            .find_map(Result::transpose)
+            .expect("repeat_with produces an infinite iterator")
+    }
 
+    fn next_custom_app_data_payload(
+        &mut self,
+        step: &'static str,
+        started: std::time::Instant,
+        progress: &mut impl FnMut(LoopbackProgress),
+    ) -> Result<Option<Vec<u8>>, LoopbackTransportError> {
+        self.take_decoded_custom_app_data(step, progress)
+            .map(Some)
+            .map(Ok)
+            .unwrap_or_else(|| self.receive_custom_app_data_notification(step, started, progress))
+    }
+
+    fn receive_custom_app_data_notification(
+        &mut self,
+        step: &'static str,
+        started: std::time::Instant,
+        progress: &mut impl FnMut(LoopbackProgress),
+    ) -> Result<Option<Vec<u8>>, LoopbackTransportError> {
+        match self.responses.recv_timeout(RESPONSE_TIMEOUT) {
+            Ok(bytes) => self.decode_notification(step, bytes, progress),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                let pending: Vec<String> = self
+                    .pending
+                    .iter()
+                    .map(|packet| describe_vesc_packet(packet))
+                    .collect();
+                progress(LoopbackProgress::TimeoutWaiting {
+                    step,
+                    elapsed_secs: started.elapsed().as_secs(),
+                    pending: pending.clone(),
+                });
+                Err(timeout_error(step, started.elapsed(), &pending))
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                Err(device_error("BLE notification stream disconnected"))
+            }
+        }
+    }
+
+    fn decode_notification(
+        &mut self,
+        step: &'static str,
+        bytes: Vec<u8>,
+        progress: &mut impl FnMut(LoopbackProgress),
+    ) -> Result<Option<Vec<u8>>, LoopbackTransportError> {
+        progress(LoopbackProgress::ReceivedNotification {
+            step,
+            bytes: bytes.len(),
+        });
+        let packets = self
+            .decoder
+            .push(&bytes)
+            .map_err(|_| device_error("failed to decode a VESC packet"))?;
+        progress(LoopbackProgress::DecodedPackets {
+            step,
+            count: packets.len(),
+        });
+        Ok(self.take_custom_app_data_from_packets(step, progress, packets))
+    }
+
+    fn take_decoded_custom_app_data(
+        &mut self,
+        step: &'static str,
+        progress: &mut impl FnMut(LoopbackProgress),
+    ) -> Option<Vec<u8>> {
+        self.decoder
+            .pop_ready()
+            .and_then(|packet| self.store_or_take_custom_app_data(step, progress, packet))
+    }
+
+    fn take_custom_app_data_from_packets(
+        &mut self,
+        step: &'static str,
+        progress: &mut impl FnMut(LoopbackProgress),
+        packets: Vec<Vec<u8>>,
+    ) -> Option<Vec<u8>> {
+        packets
+            .into_iter()
+            .find_map(|packet| self.store_or_take_custom_app_data(step, progress, packet))
+    }
+
+    fn store_or_take_custom_app_data(
+        &mut self,
+        step: &'static str,
+        progress: &mut impl FnMut(LoopbackProgress),
+        packet: Vec<u8>,
+    ) -> Option<Vec<u8>> {
+        match custom_app_data_payload(&packet) {
+            Some(payload) => Some(payload),
+            None => {
                 progress(LoopbackProgress::NonAppDataPacket {
                     step,
                     summary: describe_vesc_packet(&packet),
                 });
                 self.pending.push_back(packet);
-                continue;
-            }
-
-            match self.responses.recv_timeout(RESPONSE_TIMEOUT) {
-                Ok(bytes) => {
-                    progress(LoopbackProgress::ReceivedNotification {
-                        step,
-                        bytes: bytes.len(),
-                    });
-                    let packets = self
-                        .decoder
-                        .push(&bytes)
-                        .map_err(|_| device_error("failed to decode a loopback reply"))?;
-                    progress(LoopbackProgress::DecodedPackets {
-                        step,
-                        count: packets.len(),
-                    });
-                    for packet in packets {
-                        if packet.first().copied() == Some(COMM_CUSTOM_APP_DATA) {
-                            let payload = packet[1..].to_vec();
-                            let wire_hex = hex_snippet(&payload, 32);
-                            let command = decode_loopback_command(&payload)?;
-                            progress(LoopbackProgress::ReplyReceived {
-                                step,
-                                wire_hex,
-                                command,
-                            });
-                            return Ok(payload);
-                        }
-
-                        progress(LoopbackProgress::NonAppDataPacket {
-                            step,
-                            summary: describe_vesc_packet(&packet),
-                        });
-                        self.pending.push_back(packet);
-                    }
-
-                    if let Some(packet) = self.take_pending_response() {
-                        let wire_hex = hex_snippet(&packet, 32);
-                        let command = decode_loopback_command(&packet)?;
-                        progress(LoopbackProgress::ReplyReceived {
-                            step,
-                            wire_hex,
-                            command,
-                        });
-                        return Ok(packet);
-                    }
-                }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    let pending: Vec<String> = self
-                        .pending
-                        .iter()
-                        .map(|packet| describe_vesc_packet(packet))
-                        .collect();
-                    progress(LoopbackProgress::TimeoutWaiting {
-                        step,
-                        elapsed_secs: start.elapsed().as_secs(),
-                        pending: pending.clone(),
-                    });
-                    return Err(timeout_error(step, start.elapsed(), &pending));
-                }
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                    return Err(device_error("BLE notification stream disconnected"));
-                }
+                None
             }
         }
     }
+}
 
-    fn take_pending_response(&mut self) -> Option<Vec<u8>> {
-        let response_index = self
-            .pending
-            .iter()
-            .position(|packet| packet.first().copied() == Some(COMM_CUSTOM_APP_DATA))?;
-        let packet = self.pending.remove(response_index)?;
-        Some(packet[1..].to_vec())
+fn custom_app_data_payload(packet: &[u8]) -> Option<Vec<u8>> {
+    match packet {
+        [COMM_CUSTOM_APP_DATA, payload @ ..] => Some(payload.to_vec()),
+        _ => None,
     }
 }
 
@@ -833,7 +933,10 @@ pub fn hex_snippet(bytes: &[u8], max_bytes: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{LoopbackProgress, describe_vesc_packet, hex_snippet, timeout_error};
+    use super::{
+        COMM_CUSTOM_APP_DATA, LoopbackProgress, REFLOAT_ALL_DATA_MODE4_REQUEST,
+        build_custom_app_data_packet, describe_vesc_packet, hex_snippet, timeout_error,
+    };
     use crate::loopback::LoopbackTransportError;
     use crate::vesc_uart::encode_packet;
     use std::time::Duration;
@@ -859,15 +962,18 @@ mod tests {
             }
             .should_print_to_cli()
         );
-        assert_eq!(
-            LoopbackProgress::RawAppDataReplyReceived {
-                step: "all-data",
-                wire_hex: "650a04".to_owned(),
-                bytes: 3,
-            }
-            .describe(),
-            "step all-data: app-data reply 3 byte(s) wire=650a04"
-        );
+    }
+
+    #[test]
+    fn refloat_probe_uses_all_data_mode4_request() {
+        let wire = build_custom_app_data_packet(REFLOAT_ALL_DATA_MODE4_REQUEST.payload);
+        let decoded = crate::vesc_uart::PacketDecoder::new()
+            .push(&wire)
+            .expect("packet")
+            .pop()
+            .expect("ready");
+
+        assert_eq!(decoded, [COMM_CUSTOM_APP_DATA, 101, 10, 4]);
     }
 
     #[test]
