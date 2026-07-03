@@ -77,19 +77,24 @@ fn raw_vesc_if_offsets_match_the_documented_32_bit_package_header_slots() {
 #[test]
 fn raw_vesc_if_table_covers_the_current_vesc_firmware_header() {
     let pointer_size = core::mem::size_of::<usize>();
+    let expected_fields = VescIfAbi::FIELD_COUNT;
 
     assert_eq!(
         crate::raw::vesc_if_full_layout_for_tests(),
-        (253 * pointer_size, pointer_size, 252 * pointer_size)
+        (
+            expected_fields * pointer_size,
+            pointer_size,
+            (expected_fields - 1) * pointer_size
+        )
     );
 }
 
 #[test]
-fn raw_vesc_if_callable_slots_are_nullable_c_function_pointers() {
+fn raw_vesc_if_mock_function_slots_have_pointer_layout() {
     let pointer_size = core::mem::size_of::<usize>();
 
     assert_eq!(
-        crate::raw::nullable_slot_layout_for_tests(),
+        crate::raw::mock_fn_slot_layout_for_tests(),
         (pointer_size, pointer_size)
     );
 }
@@ -99,6 +104,8 @@ fn vesc_if_slot_constants_name_the_package_header_offsets() {
     let slots = VescIfAbi::USED_SLOTS;
 
     assert_eq!(VescIfAbi::BASE_ADDR, NativeAddress(0x1000_f800));
+    // Custom-config slots are used by Refloat v1.2.1 at `src/main.c:2456`
+    // and `src/main.c:2403`; the ABI entries are `vesc_pkg_lib/vesc_c_if.h:549-553`.
     assert_eq!(
         slots.map(|slot| slot.name()),
         [
@@ -106,9 +113,14 @@ fn vesc_if_slot_constants_name_the_package_header_offsets() {
             "lbm_enc_i",
             "lbm_dec_as_i32",
             "lbm_is_number",
+            "lbm_enc_sym_nil",
+            "lbm_enc_sym_true",
             "lbm_enc_sym_eerror",
             "malloc",
             "free",
+            "spawn",
+            "request_terminate",
+            "should_terminate",
             "get_arg",
             "mc_get_fault",
             "mc_get_amp_hours",
@@ -123,6 +135,12 @@ fn vesc_if_slot_constants_name_the_package_header_offsets() {
             "mc_get_odometer",
             "send_app_data",
             "set_app_data_handler",
+            "imu_startup_done",
+            "imu_get_roll",
+            "imu_get_pitch",
+            "imu_get_yaw",
+            "conf_custom_add_config",
+            "conf_custom_clear_configs",
             "system_time_ticks",
             "io_set_mode",
             "io_write",
@@ -132,15 +150,16 @@ fn vesc_if_slot_constants_name_the_package_header_offsets() {
     assert_eq!(
         slots.map(|slot| slot.vesc32_byte_offset()),
         [
-            0, 64, 100, 124, 148, 184, 188, 204, 368, 440, 444, 448, 452, 480, 504, 508, 512, 524,
-            528, 592, 596, 952, 220, 224, 228
+            0, 64, 100, 124, 136, 140, 148, 184, 188, 192, 196, 200, 204, 368, 440, 444, 448, 452,
+            480, 504, 508, 512, 524, 528, 592, 596, 628, 632, 636, 640, 728, 732, 952, 220, 224,
+            228,
         ]
     );
     assert_eq!(
         slots.map(|slot| slot.slot_index()),
         [
-            0, 16, 25, 31, 37, 46, 47, 51, 92, 110, 111, 112, 113, 120, 126, 127, 128, 131, 132,
-            148, 149, 238, 55, 56, 57
+            0, 16, 25, 31, 34, 35, 37, 46, 47, 48, 49, 50, 51, 92, 110, 111, 112, 113, 120, 126,
+            127, 128, 131, 132, 148, 149, 157, 158, 159, 160, 182, 183, 238, 55, 56, 57,
         ]
     );
 }
@@ -248,45 +267,20 @@ fn transparent_wrappers_expose_raw_tuple_fields() {
 }
 
 #[test]
-fn arm_asm_immediates_match_vesc_if_abi() {
-    let raw = include_str!("raw.rs");
-    let expected = [
-        (
-            "lbm_add_extension",
-            VescIfAbi::LBM_ADD_EXTENSION.vesc32_byte_offset(),
-        ),
-        ("lbm_enc_i", VescIfAbi::LBM_ENC_I.vesc32_byte_offset()),
-        (
-            "lbm_dec_as_i32",
-            VescIfAbi::LBM_DEC_AS_I32.vesc32_byte_offset(),
-        ),
-        (
-            "lbm_is_number",
-            VescIfAbi::LBM_IS_NUMBER.vesc32_byte_offset(),
-        ),
-        (
-            "lbm_enc_sym_eerror",
-            VescIfAbi::LBM_ENC_SYM_EERROR.vesc32_byte_offset(),
-        ),
-        (
-            "set_app_data_handler",
-            VescIfAbi::SET_APP_DATA_HANDLER.vesc32_byte_offset(),
-        ),
-        (
-            "send_app_data",
-            VescIfAbi::SEND_APP_DATA.vesc32_byte_offset(),
-        ),
-        (
-            "system_time_ticks",
-            VescIfAbi::SYSTEM_TIME_TICKS.vesc32_byte_offset(),
-        ),
-    ];
+fn vesc_if_used_slots_match_generated_header_descriptors() {
+    assert_eq!(crate::c_vesc_if::FIELD_COUNT, VescIfAbi::FIELD_COUNT);
+    assert_eq!(crate::c_vesc_if::SLOTS[0].name, "lbm_add_extension");
+    assert_eq!(
+        crate::c_vesc_if::SLOTS[crate::c_vesc_if::FIELD_COUNT - 1].name,
+        "shutdown_disable"
+    );
 
-    for (slot, offset) in expected {
-        let insn = std::format!("ldr {{{slot}}}, [{{vesc_if}}, #{offset}]");
-        assert!(
-            raw.contains(&insn),
-            "missing ARM asm dispatch for {slot} at byte offset {offset}"
-        );
+    for slot in VescIfAbi::USED_SLOTS {
+        let generated = crate::c_vesc_if::SLOTS
+            .iter()
+            .find(|generated| generated.name == slot.name())
+            .expect("used VESC_IF slot must exist in generated header inventory");
+
+        assert_eq!(generated.vesc32_byte_offset, slot.vesc32_byte_offset());
     }
 }

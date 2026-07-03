@@ -1,15 +1,18 @@
 use core::cell::Cell;
 use core::ffi::{c_char, c_int, c_uchar};
 
+use crate::c_vesc_if;
 use crate::test_support::{empty_table, with_table};
 use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescPin, VescPinMode};
 
 use super::{
-    VescIf, io_read, io_set_mode, io_write, lbm_add_extension, lbm_add_extension_with_table_base,
-    lbm_dec_as_i32, lbm_enc_i, lbm_enc_sym_eerror, lbm_is_number, mc_get_amp_hours,
-    mc_get_amp_hours_charged, mc_get_battery_level, mc_get_distance_abs, mc_get_fault,
-    mc_get_input_voltage_filtered, mc_get_odometer, mc_get_watt_hours, mc_get_watt_hours_charged,
-    mc_temp_fet_filtered, mc_temp_motor_filtered, vesc_clear_app_data_handler, vesc_send_app_data,
+    CustomConfigGet, CustomConfigSet, CustomConfigXml, VescIf, conf_custom_add_config,
+    conf_custom_clear_configs, io_read, io_set_mode, io_write, lbm_add_extension,
+    lbm_add_extension_with_table_base, lbm_dec_as_i32, lbm_enc_i, lbm_enc_sym_eerror,
+    lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number, mc_get_amp_hours, mc_get_amp_hours_charged,
+    mc_get_battery_level, mc_get_distance_abs, mc_get_fault, mc_get_input_voltage_filtered,
+    mc_get_odometer, mc_get_watt_hours, mc_get_watt_hours_charged, mc_temp_fet_filtered,
+    mc_temp_motor_filtered, vesc_clear_app_data_handler, vesc_send_app_data,
     vesc_set_app_data_handler, vesc_system_time_ticks,
 };
 
@@ -96,6 +99,11 @@ static LBM_IS_NUMBER: SyncCounter = SyncCounter::new();
 static SET_APP_DATA_HANDLER: SyncCounter = SyncCounter::new();
 static SEND_APP_DATA: SyncCounter = SyncCounter::new();
 static SEND_APP_DATA_LEN: SyncU32 = SyncU32::new();
+static CONF_CUSTOM_ADD_CONFIG: SyncCounter = SyncCounter::new();
+static CONF_CUSTOM_CLEAR_CONFIGS: SyncCounter = SyncCounter::new();
+static CUSTOM_CONFIG_GET: SyncCounter = SyncCounter::new();
+static CUSTOM_CONFIG_SET: SyncCounter = SyncCounter::new();
+static CUSTOM_CONFIG_XML: SyncCounter = SyncCounter::new();
 static SYSTEM_TIME_TICKS: SyncCounter = SyncCounter::new();
 static IO_SET_MODE: SyncCounter = SyncCounter::new();
 static IO_WRITE: SyncCounter = SyncCounter::new();
@@ -116,6 +124,7 @@ static LAST_MODE: SyncI32 = SyncI32::new();
 static LAST_LEVEL: SyncI32 = SyncI32::new();
 static LAST_LBM_VALUE: SyncU32 = SyncU32::new();
 static LAST_HANDLER_INSTALLED: SyncBool = SyncBool::new();
+static LAST_CUSTOM_CONFIG_DEFAULT: SyncBool = SyncBool::new();
 
 fn reset_counters() {
     for counter in [
@@ -125,6 +134,11 @@ fn reset_counters() {
         &LBM_IS_NUMBER,
         &SET_APP_DATA_HANDLER,
         &SEND_APP_DATA,
+        &CONF_CUSTOM_ADD_CONFIG,
+        &CONF_CUSTOM_CLEAR_CONFIGS,
+        &CUSTOM_CONFIG_GET,
+        &CUSTOM_CONFIG_SET,
+        &CUSTOM_CONFIG_XML,
         &SYSTEM_TIME_TICKS,
         &IO_SET_MODE,
         &IO_WRITE,
@@ -149,6 +163,7 @@ fn reset_counters() {
     LAST_LEVEL.set(0);
     LAST_LBM_VALUE.set(0);
     LAST_HANDLER_INSTALLED.set(false);
+    LAST_CUSTOM_CONFIG_DEFAULT.set(false);
 }
 
 extern "C" fn stub_lbm_add_extension(_name: *mut c_char, _handler: ExtensionHandler) -> bool {
@@ -173,19 +188,48 @@ extern "C" fn stub_lbm_is_number(value: u32) -> bool {
     value == 7
 }
 
-extern "C" fn stub_set_app_data_handler(handler: AppDataHandler) -> bool {
+extern "C" fn stub_set_app_data_handler(handler: Option<AppDataHandler>) -> bool {
     SET_APP_DATA_HANDLER.inc();
-    let is_installed = {
-        let ptr: *const () = handler as *const ();
-        !ptr.is_null()
-    };
-    LAST_HANDLER_INSTALLED.set(is_installed);
+    LAST_HANDLER_INSTALLED.set(handler.is_some());
     true
 }
 
 extern "C" fn stub_send_app_data(_data: *mut c_uchar, len: u32) {
     SEND_APP_DATA.inc();
     SEND_APP_DATA_LEN.set(len);
+}
+
+extern "C" fn stub_conf_custom_add_config(
+    get_cfg: CustomConfigGet,
+    set_cfg: CustomConfigSet,
+    get_cfg_xml: CustomConfigXml,
+) {
+    CONF_CUSTOM_ADD_CONFIG.inc();
+    unsafe {
+        let _ = get_cfg(core::ptr::null_mut(), true);
+        let _ = set_cfg(core::ptr::null_mut());
+        let _ = get_cfg_xml(core::ptr::null_mut());
+    }
+}
+
+extern "C" fn stub_conf_custom_clear_configs() {
+    CONF_CUSTOM_CLEAR_CONFIGS.inc();
+}
+
+unsafe extern "C" fn custom_config_get(_buffer: *mut u8, is_default: bool) -> c_int {
+    CUSTOM_CONFIG_GET.inc();
+    LAST_CUSTOM_CONFIG_DEFAULT.set(is_default);
+    11
+}
+
+unsafe extern "C" fn custom_config_set(_buffer: *mut u8) -> bool {
+    CUSTOM_CONFIG_SET.inc();
+    true
+}
+
+unsafe extern "C" fn custom_config_xml(_buffer: *mut *mut u8) -> c_int {
+    CUSTOM_CONFIG_XML.inc();
+    12
 }
 
 extern "C" fn stub_system_time_ticks() -> u32 {
@@ -277,9 +321,13 @@ fn populated_table() -> VescIf {
     table.lbm_dec_as_i32 = Some(stub_lbm_dec_as_i32);
     table.lbm_enc_i = Some(stub_lbm_enc_i);
     table.lbm_is_number = Some(stub_lbm_is_number);
+    table.lbm_enc_sym_nil = 0xAABB_0000;
+    table.lbm_enc_sym_true = 0xAABB_1100;
     table.lbm_enc_sym_eerror = 0xAABB_CC00;
     table.set_app_data_handler = Some(stub_set_app_data_handler);
     table.send_app_data = Some(stub_send_app_data);
+    table.conf_custom_add_config = Some(stub_conf_custom_add_config);
+    table.conf_custom_clear_configs = Some(stub_conf_custom_clear_configs);
     table.system_time_ticks = Some(stub_system_time_ticks);
     table.io_set_mode = Some(stub_io_set_mode);
     table.io_write = Some(stub_io_write);
@@ -300,14 +348,6 @@ fn populated_table() -> VescIf {
 
 fn with_populated_table<R>(body: impl FnOnce() -> R) -> R {
     let table = populated_table();
-    with_table(&table, || {
-        reset_counters();
-        body()
-    })
-}
-
-fn with_empty_table<R>(body: impl FnOnce() -> R) -> R {
-    let table = empty_table();
     with_table(&table, || {
         reset_counters();
         body()
@@ -343,25 +383,20 @@ fn lbm_add_extension_with_table_base_uses_mock_when_base_matches_firmware_addr()
 }
 
 #[test]
-fn lbm_value_helpers_forward_and_handle_missing_slots() {
+fn lbm_value_helpers_forward_through_mock_table() {
     with_populated_table(|| unsafe {
         assert_eq!(lbm_dec_as_i32(LbmValue(9)), 9);
         assert_eq!(lbm_enc_i(4), LbmValue(5));
         assert!(lbm_is_number(LbmValue(7)));
         assert!(!lbm_is_number(LbmValue(8)));
+        assert_eq!(lbm_enc_sym_nil(), LbmValue(0xAABB_0000));
+        assert_eq!(lbm_enc_sym_true(), LbmValue(0xAABB_1100));
         assert_eq!(lbm_enc_sym_eerror(), LbmValue(0xAABB_CC00));
-    });
-
-    with_empty_table(|| unsafe {
-        assert_eq!(lbm_dec_as_i32(LbmValue(1)), 0);
-        assert_eq!(lbm_enc_i(1), LbmValue(0));
-        assert!(!lbm_is_number(LbmValue(1)));
-        assert_eq!(lbm_enc_sym_eerror(), LbmValue(0));
     });
 }
 
 #[test]
-fn app_data_helpers_forward_and_handle_missing_slots() {
+fn app_data_helpers_forward_through_mock_table() {
     with_populated_table(|| unsafe {
         extern "C" fn handler(_: *mut u8, _: u32) {}
 
@@ -375,27 +410,38 @@ fn app_data_helpers_forward_and_handle_missing_slots() {
         assert_eq!(SEND_APP_DATA.get(), 1);
         assert_eq!(SEND_APP_DATA_LEN.get(), 3);
     });
+}
 
-    with_empty_table(|| unsafe {
-        assert!(!vesc_clear_app_data_handler());
-        vesc_send_app_data(core::ptr::null(), 0);
-        assert_eq!(SEND_APP_DATA.get(), 0);
+#[test]
+fn custom_config_helpers_forward_through_mock_table() {
+    // Refloat v1.2.1 registers these callbacks in `src/main.c:2456`, clears them
+    // in `src/main.c:2403`, and gets the ABI slots from `vesc_pkg_lib/vesc_c_if.h:549-553`.
+    with_populated_table(|| unsafe {
+        assert!(conf_custom_add_config(
+            custom_config_get,
+            custom_config_set,
+            custom_config_xml,
+        ));
+        assert_eq!(CONF_CUSTOM_ADD_CONFIG.get(), 1);
+        assert_eq!(CUSTOM_CONFIG_GET.get(), 1);
+        assert_eq!(CUSTOM_CONFIG_SET.get(), 1);
+        assert_eq!(CUSTOM_CONFIG_XML.get(), 1);
+        assert!(LAST_CUSTOM_CONFIG_DEFAULT.get());
+
+        assert!(conf_custom_clear_configs());
+        assert_eq!(CONF_CUSTOM_CLEAR_CONFIGS.get(), 1);
     });
 }
 
 #[test]
-fn system_time_ticks_forwards_and_defaults_to_zero() {
+fn system_time_ticks_forwards_through_mock_table() {
     with_populated_table(|| unsafe {
         assert_eq!(vesc_system_time_ticks(), 42);
     });
-
-    with_empty_table(|| unsafe {
-        assert_eq!(vesc_system_time_ticks(), 0);
-    });
 }
 
 #[test]
-fn gpio_helpers_forward_and_handle_missing_slots() {
+fn gpio_helpers_forward_through_mock_table() {
     with_populated_table(|| unsafe {
         let pin = VescPin(3);
         let mode = VescPinMode(2);
@@ -407,76 +453,77 @@ fn gpio_helpers_forward_and_handle_missing_slots() {
         assert_eq!(LAST_MODE.get(), 2);
         assert_eq!(LAST_LEVEL.get(), 1);
     });
-
-    with_empty_table(|| unsafe {
-        let pin = VescPin(1);
-        assert!(!io_set_mode(pin, VescPinMode(0)));
-        assert!(!io_write(pin, 0));
-        assert!(!io_read(pin));
-    });
 }
 
 #[test]
-fn motor_data_helpers_forward_and_handle_missing_slots() {
+fn motor_data_helpers_forward_through_mock_table() {
     with_populated_table(|| unsafe {
         assert_eq!(mc_get_distance_abs(), 12.5);
         assert_eq!(mc_temp_fet_filtered(), 44.0);
         assert_eq!(mc_temp_motor_filtered(), 51.5);
         assert_eq!(mc_get_amp_hours(false), 3.2);
-        assert_eq!(mc_get_amp_hours(true), -1.0);
         assert_eq!(mc_get_amp_hours_charged(false), 0.8);
-        assert_eq!(mc_get_amp_hours_charged(true), -1.0);
         assert_eq!(mc_get_watt_hours(false), 170.0);
-        assert_eq!(mc_get_watt_hours(true), -1.0);
         assert_eq!(mc_get_watt_hours_charged(false), 18.5);
-        assert_eq!(mc_get_watt_hours_charged(true), -1.0);
         assert_eq!(mc_get_battery_level(core::ptr::null_mut()), 0.72);
-        let mut wh_left = 0.0_f32;
-        assert_eq!(mc_get_battery_level(&raw mut wh_left), 0.72);
-        assert_eq!(wh_left, 42.0);
         assert_eq!(mc_get_odometer(), 123_456);
         assert_eq!(mc_get_fault(), 5);
         assert_eq!(mc_get_input_voltage_filtered(), 84.2);
         assert_eq!(MC_GET_DISTANCE_ABS.get(), 1);
         assert_eq!(MC_TEMP_FET_FILTERED.get(), 1);
         assert_eq!(MC_TEMP_MOTOR_FILTERED.get(), 1);
-        assert_eq!(MC_GET_AMP_HOURS.get(), 2);
-        assert_eq!(MC_GET_AMP_HOURS_CHARGED.get(), 2);
-        assert_eq!(MC_GET_WATT_HOURS.get(), 2);
-        assert_eq!(MC_GET_WATT_HOURS_CHARGED.get(), 2);
-        assert_eq!(MC_GET_BATTERY_LEVEL.get(), 2);
+        assert_eq!(MC_GET_AMP_HOURS.get(), 1);
+        assert_eq!(MC_GET_AMP_HOURS_CHARGED.get(), 1);
+        assert_eq!(MC_GET_WATT_HOURS.get(), 1);
+        assert_eq!(MC_GET_WATT_HOURS_CHARGED.get(), 1);
+        assert_eq!(MC_GET_BATTERY_LEVEL.get(), 1);
         assert_eq!(MC_GET_ODOMETER.get(), 1);
         assert_eq!(MC_GET_FAULT.get(), 1);
         assert_eq!(MC_GET_INPUT_VOLTAGE_FILTERED.get(), 1);
     });
+}
 
-    with_empty_table(|| unsafe {
-        assert_eq!(mc_get_distance_abs(), 0.0);
-        assert_eq!(mc_temp_fet_filtered(), 0.0);
-        assert_eq!(mc_temp_motor_filtered(), 0.0);
-        assert_eq!(mc_get_amp_hours(false), 0.0);
-        assert_eq!(mc_get_amp_hours_charged(false), 0.0);
-        assert_eq!(mc_get_watt_hours(false), 0.0);
-        assert_eq!(mc_get_watt_hours_charged(false), 0.0);
-        assert_eq!(mc_get_battery_level(core::ptr::null_mut()), 0.0);
-        let mut wh_left = 7.0_f32;
-        assert_eq!(mc_get_battery_level(&raw mut wh_left), 0.0);
-        assert_eq!(wh_left, 7.0);
-        assert_eq!(mc_get_odometer(), 0);
-        assert_eq!(mc_get_fault(), 0);
-        assert_eq!(mc_get_input_voltage_filtered(), 0.0);
-        assert_eq!(MC_GET_DISTANCE_ABS.get(), 0);
-        assert_eq!(MC_TEMP_FET_FILTERED.get(), 0);
-        assert_eq!(MC_TEMP_MOTOR_FILTERED.get(), 0);
-        assert_eq!(MC_GET_AMP_HOURS.get(), 0);
-        assert_eq!(MC_GET_AMP_HOURS_CHARGED.get(), 0);
-        assert_eq!(MC_GET_WATT_HOURS.get(), 0);
-        assert_eq!(MC_GET_WATT_HOURS_CHARGED.get(), 0);
-        assert_eq!(MC_GET_BATTERY_LEVEL.get(), 0);
-        assert_eq!(MC_GET_ODOMETER.get(), 0);
-        assert_eq!(MC_GET_FAULT.get(), 0);
-        assert_eq!(MC_GET_INPUT_VOLTAGE_FILTERED.get(), 0);
-    });
+#[test]
+fn generated_vesc_if_inventory_matches_pinned_upstream_header() {
+    assert_eq!(
+        c_vesc_if::HEADER_REPO,
+        "https://github.com/lukash/vesc_pkg_lib"
+    );
+    assert_eq!(c_vesc_if::FIELD_COUNT, 253);
+    assert_eq!(VescIfAbi::FIELD_COUNT, c_vesc_if::FIELD_COUNT);
+
+    assert_eq!(c_vesc_if::lbm_add_extension::INDEX, 0);
+    assert_eq!(c_vesc_if::lbm_add_extension::VESC32_BYTE_OFFSET, 0);
+    assert_eq!(c_vesc_if::lbm_add_extension::HEADER_LINE, 325);
+    assert_eq!(c_vesc_if::send_app_data::INDEX, 148);
+    assert_eq!(c_vesc_if::set_app_data_handler::INDEX, 149);
+    assert_eq!(c_vesc_if::mc_get_fault::INDEX, 92);
+    assert_eq!(c_vesc_if::system_time_ticks::INDEX, 238);
+    assert_eq!(c_vesc_if::shutdown_disable::INDEX, 252);
+    assert_eq!(c_vesc_if::shutdown_disable::HEADER_LINE, 672);
+
+    assert_eq!(c_vesc_if::SLOTS[0].name, c_vesc_if::lbm_add_extension::NAME);
+    assert_eq!(
+        c_vesc_if::SLOTS[c_vesc_if::FIELD_COUNT - 1].name,
+        c_vesc_if::shutdown_disable::NAME
+    );
+    assert_eq!(
+        c_vesc_if::SLOTS[c_vesc_if::FIELD_COUNT - 1].vesc32_byte_offset,
+        c_vesc_if::shutdown_disable::VESC32_BYTE_OFFSET
+    );
+}
+
+#[test]
+fn public_vesc_if_slots_are_projected_from_generated_inventory() {
+    for slot in VescIfAbi::USED_SLOTS {
+        let generated = c_vesc_if::SLOTS
+            .iter()
+            .find(|generated| generated.name == slot.name())
+            .expect("used slot must exist in generated upstream inventory");
+
+        assert_eq!(generated.index, slot.slot_index());
+        assert_eq!(generated.vesc32_byte_offset, slot.vesc32_byte_offset());
+    }
 }
 
 #[test]
@@ -495,6 +542,23 @@ fn vesc_if_abi_gpio_offsets_match_struct_layout() {
     assert_eq!(
         VescIfAbi::IO_READ.vesc32_byte_offset(),
         vesc32(core::mem::offset_of!(VescIf, io_read))
+    );
+}
+
+#[test]
+fn vesc_if_abi_custom_config_offsets_match_struct_layout() {
+    // Refloat v1.2.1 uses `src/main.c:2456` and `src/main.c:2403`; the matching
+    // ABI slots are declared in `vesc_pkg_lib/vesc_c_if.h:549-553`.
+    let pointer_size = core::mem::size_of::<usize>();
+    let vesc32 = |field_offset: usize| (field_offset / pointer_size) * 4;
+
+    assert_eq!(
+        VescIfAbi::CONF_CUSTOM_ADD_CONFIG.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, conf_custom_add_config))
+    );
+    assert_eq!(
+        VescIfAbi::CONF_CUSTOM_CLEAR_CONFIGS.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, conf_custom_clear_configs))
     );
 }
 

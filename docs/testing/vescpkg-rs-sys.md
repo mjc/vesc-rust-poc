@@ -9,7 +9,7 @@ Strategy for the `vescpkg-rs-sys` crate: a hand-maintained, `no_std` firmware AB
 | Compile-fail | `unsafe` required, no `std` leak, crate-internal test harness | `tests/ui/`, trybuild |
 | Layout / ABI pins | `LibInfo`, `VescIf` size/offsets, newtypes | `src/tests.rs` |
 | Raw dispatch | mock `VescIf` + stub call recording | `src/raw/dispatch_tests.rs` |
-| Header parity | `ffi-compare` vs `vesc_c_if.h` | `vescpkg-rs-build` tests + optional local header fixtures |
+| Header parity | `ffi-compare` vs `vesc_c_if.h` | `make check-ffi-header` + optional full Refloat header checks |
 | Thumb/asm smoke | `ldr` immediates vs `VescIfAbi` | `src/tests.rs` |
 
 ## Public export inventory
@@ -68,8 +68,25 @@ Production ARM builds keep inline `asm!` dispatch; host/test builds use `Option<
 |---------|--------|
 | `nix develop -c make check` | fmt, clippy, default nextest (includes vescpkg-rs-sys unit + dispatch) |
 | `nix develop -c make vescpkg-rs-sys-target-check` | no normal deps + `thumbv7em-none-eabihf` check |
+| `nix develop -c make check-ffi-header` | bundled fixture `vesc_c_if.h` loopback slot-order parity |
 | `nix develop -c make native-audit` | package-only + native-lib tests |
-| `nix develop -c make check-full` | check + ARM gates + native audit |
+| `nix develop -c make check-full` | check + header parity + ARM gates + native audit |
+
+`check-ffi-header` runs `ffi-compare` against the bundled
+`fixtures/native-lib-baseline/src/vesc_c_if.h` header. Set `VESC_C_IF_HEADER`
+to compare another header with the same default loopback slot set:
+
+```bash
+nix develop -c env VESC_C_IF_HEADER=target/refloat-v1.2.1-src/vesc_pkg_lib/vesc_c_if.h make check-ffi-header
+```
+
+For the complete pinned Rust surface, run the helper directly against a full
+Refloat or VESC header:
+
+```bash
+nix develop -c cargo run -p vescpkg-rs-build --bin ffi-compare -- --used-slots target/refloat-v1.2.1-src/vesc_pkg_lib/vesc_c_if.h crates/vescpkg-rs-sys/src/raw.rs
+nix develop -c cargo run -p vescpkg-rs-build --bin ffi-compare -- --full target/refloat-v1.2.1-src/vesc_pkg_lib/vesc_c_if.h crates/vescpkg-rs-sys/src/raw.rs
+```
 
 ## Adding a new `raw::*` wrapper
 

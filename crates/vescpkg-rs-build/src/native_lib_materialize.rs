@@ -108,74 +108,23 @@ pub(crate) fn build_rust_staticlib_unlocked(plan: &NativeLibLinkPlan) -> Result<
     }
 }
 
-fn native_lib_c_only_from_env() -> bool {
-    std::env::var("VESC_NATIVE_LIB_C_ONLY").ok().as_deref() == Some("1")
-}
-
-fn compile_package_c_shim(
-    plan: &NativeLibLinkPlan,
-    toolchain: &impl NativeLibToolchain,
-) -> Result<(), String> {
-    let source = plan.package_c_source_path();
-    let object = plan.package_c_object_path();
-    let include = source
-        .parent()
-        .expect("package C source parent")
-        .to_str()
-        .expect("utf-8 package C source parent");
-
-    toolchain.run(
-        "arm-none-eabi-gcc",
-        &[
-            "-c",
-            source.to_str().expect("utf-8 package C source path"),
-            "-o",
-            object.to_str().expect("utf-8 package C object path"),
-            "-fpic",
-            "-Os",
-            "-Wall",
-            "-Wextra",
-            "-Wundef",
-            "-std=gnu99",
-            "-I",
-            include,
-            "-fomit-frame-pointer",
-            "-falign-functions=16",
-            "-mthumb",
-            "-fsingle-precision-constant",
-            "-Wdouble-promotion",
-            "-mfloat-abi=hard",
-            "-mfpu=fpv4-sp-d16",
-            "-mcpu=cortex-m4",
-            "-fdata-sections",
-            "-ffunction-sections",
-            "-DIS_VESC_LIB",
-        ],
-    )
-}
-
 pub(crate) fn build_final_native_lib_elf_unlocked(
     plan: &NativeLibLinkPlan,
     toolchain: &impl NativeLibToolchain,
 ) -> Result<(), String> {
-    let c_only = native_lib_c_only_from_env();
     let link_plan = plan.clone();
     let elf_path = link_plan.elf_path();
-    let package_c_source_path = link_plan.package_c_source_path();
     let linker_script_path = link_plan.linker_script_path();
     let rust_staticlib_path = link_plan.rust_staticlib_path();
 
-    if !c_only {
-        build_rust_staticlib_unlocked(plan)?;
+    build_rust_staticlib_unlocked(plan)?;
+
+    let stale_object_path = link_plan.package_c_object_path();
+    if stale_object_path.exists() {
+        fs::remove_file(&stale_object_path).expect("remove stale package_lib.o");
     }
 
-    let mut elf_inputs = vec![
-        package_c_source_path.as_path(),
-        linker_script_path.as_path(),
-    ];
-    if !c_only {
-        elf_inputs.push(rust_staticlib_path.as_path());
-    }
+    let elf_inputs = [linker_script_path.as_path(), rust_staticlib_path.as_path()];
     if artifact_is_up_to_date(&elf_path, &elf_inputs) {
         return Ok(());
     }
@@ -183,14 +132,7 @@ pub(crate) fn build_final_native_lib_elf_unlocked(
     if let Some(parent) = elf_path.parent() {
         fs::create_dir_all(parent).expect("create native_lib.elf parent directory");
     }
-    let stale_object_path = link_plan.package_c_object_path();
-    if stale_object_path.exists() {
-        fs::remove_file(&stale_object_path).expect("remove stale package_lib.o");
-    }
 
-    compile_package_c_shim(plan, toolchain)?;
-
-    let object_path = link_plan.package_c_object_path();
     let staticlib_path = link_plan.rust_staticlib_path();
     let linker_script = link_plan.linker_script_path();
     let elf_path_str = elf_path.to_str().expect("utf-8 ELF path");
@@ -202,11 +144,8 @@ pub(crate) fn build_final_native_lib_elf_unlocked(
         "-mthumb",
         "-mfloat-abi=hard",
         "-mfpu=fpv4-sp-d16",
-        object_path.to_str().expect("utf-8 package C object path"),
+        staticlib_path.to_str().expect("utf-8 staticlib path"),
     ];
-    if !c_only {
-        link_args.push(staticlib_path.to_str().expect("utf-8 staticlib path"));
-    }
     link_args.extend([
         "-Wl,--gc-sections",
         "-Wl,--undefined=init",
@@ -250,4 +189,50 @@ pub(crate) fn build_final_native_lib_elf(plan: &NativeLibLinkPlan) {
 
 pub(crate) fn build_rust_staticlib(plan: &NativeLibLinkPlan) {
     build_rust_staticlib_unlocked(plan).expect("build rust staticlib");
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::Path;
+    use std::time::Duration;
+
+    use tempfile::TempDir;
+
+    use crate::native_lib_link::NativeLibLinkPlan;
+    use crate::native_lib_toolchain::RecordingNativeLibToolchain;
+
+    use super::build_final_native_lib_elf_unlocked;
+
+    #[test]
+    fn up_to_date_final_elf_still_removes_stale_package_object() {
+        let workspace = TempDir::new().expect("temp workspace");
+        let plan = NativeLibLinkPlan::new(workspace.path());
+
+        write_file(&workspace.path().join("Cargo.lock"));
+        write_file(&workspace.path().join("examples/loopback/Cargo.toml"));
+        write_file(&workspace.path().join("crates/vescpkg-rs/Cargo.toml"));
+        write_file(&plan.linker_script_path());
+
+        std::thread::sleep(Duration::from_millis(20));
+        write_file(&plan.rust_staticlib_path());
+
+        std::thread::sleep(Duration::from_millis(20));
+        write_file(&plan.elf_path());
+
+        let stale_object = plan.package_c_object_path();
+        write_file(&stale_object);
+
+        let toolchain = RecordingNativeLibToolchain::default();
+        build_final_native_lib_elf_unlocked(&plan, &toolchain).expect("up-to-date native ELF");
+
+        assert!(!stale_object.exists());
+        assert!(toolchain.calls.borrow().is_empty());
+    }
+
+    fn write_file(path: &Path) {
+        fs::create_dir_all(path.parent().expect("test fixture parent"))
+            .expect("create test fixture parent");
+        fs::write(path, b"fixture").expect("write test fixture");
+    }
 }

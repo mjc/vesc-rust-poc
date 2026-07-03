@@ -21,7 +21,7 @@ pub struct NativeLibArtifactPaths {
     pub bin: PathBuf,
     /// Rust static library input path.
     pub staticlib: PathBuf,
-    /// C shim object path linked into the final ELF.
+    /// Legacy package C shim object path that must not be linked into the final ELF.
     pub package_object: PathBuf,
 }
 
@@ -82,8 +82,8 @@ pub fn audit_native_lib_symbols(paths: &NativeLibArtifactPaths) {
         forbidden_hits.join("\n")
     );
     assert!(
-        paths.package_object.exists(),
-        "native build must materialize the C loader shim at {:?}",
+        !paths.package_object.exists(),
+        "native build must not materialize package-specific C shim object {:?}",
         paths.package_object
     );
     assert!(
@@ -122,19 +122,12 @@ pub fn audit_native_lib_symbols(paths: &NativeLibArtifactPaths) {
         "init",
         "prog_ptr",
         "loopback_handle_app_data",
-    ] {
-        assert!(
-            staticlib_defined.contains(symbol),
-            "Rust staticlib must own symbol `{symbol}`:\n{staticlib_symbols}"
-        );
-    }
-    for symbol in [
         "vesc_register_loopback_app_data_handler",
         "vesc_clear_loopback_app_data_handler",
     ] {
         assert!(
-            elf_defined.contains(symbol),
-            "final native image must export `{symbol}` from the C shim:\n{elf_symbols}"
+            staticlib_defined.contains(symbol),
+            "Rust staticlib must own symbol `{symbol}`:\n{staticlib_symbols}"
         );
     }
     assert!(

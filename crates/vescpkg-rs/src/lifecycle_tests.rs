@@ -2,7 +2,9 @@ use crate::MotorTelemetryApi;
 use crate::ble_loopback::register_loopback_app_data_handler_with;
 use crate::extension::ExtensionDescriptor;
 use crate::lifecycle::register_extension_from_image;
-use crate::lifecycle_core::{LbmApi, LoopbackLifecycle, PackageLifecycle};
+use crate::lifecycle_core::{
+    AppDataHandlerRegistrationError, LbmApi, LoopbackLifecycle, PackageLifecycle,
+};
 use crate::test_support::{FakeAppDataBindings, FakeBindings, FakeMotorTelemetryBindings, stubs};
 use crate::types::{
     AmpHoursCharged, AmpHoursDischarged, BatteryLevel, FirmwareFaultCode, InputVoltage,
@@ -285,13 +287,13 @@ fn loopback_lifecycle_app_data_handler_forwards_to_bindings(
         } else {
             custom_handler
         };
-        assert!(lifecycle.register_app_data_handler(registered));
+        assert_eq!(lifecycle.register_app_data_handler(registered), Ok(()));
         assert_eq!(
             lifecycle.bindings().last_handler.get(),
             registered as *const () as usize
         );
     } else {
-        assert!(lifecycle.clear_app_data_handler());
+        assert_eq!(lifecycle.clear_app_data_handler(), Ok(()));
         assert_eq!(lifecycle.bindings().last_handler.get(), 0);
     }
 
@@ -306,11 +308,36 @@ fn register_loopback_app_data_handler_with_forwards_to_bindings() {
     let bindings = FakeAppDataBindings::new();
     let lifecycle = LoopbackLifecycle::new(bindings);
 
-    assert!(register_loopback_app_data_handler_with(
-        &lifecycle,
-        stubs::app_data_handler
-    ));
+    assert_eq!(
+        register_loopback_app_data_handler_with(&lifecycle, stubs::app_data_handler),
+        Ok(())
+    );
     assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
+}
+
+#[test]
+fn app_data_handler_registration_reports_firmware_rejection() {
+    let bindings = FakeAppDataBindings::with_set_handler_result(false);
+    let lifecycle = LoopbackLifecycle::new(bindings);
+
+    assert_eq!(
+        lifecycle.register_app_data_handler(stubs::app_data_handler),
+        Err(AppDataHandlerRegistrationError::FirmwareRejected)
+    );
+    assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
+}
+
+#[test]
+fn app_data_handler_clear_reports_firmware_rejection() {
+    let bindings = FakeAppDataBindings::with_clear_handler_result(false);
+    let lifecycle = LoopbackLifecycle::new(bindings);
+
+    assert_eq!(
+        lifecycle.clear_app_data_handler(),
+        Err(AppDataHandlerRegistrationError::FirmwareRejected)
+    );
+    assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
+    assert_eq!(lifecycle.bindings().last_handler.get(), 0);
 }
 
 #[test]
