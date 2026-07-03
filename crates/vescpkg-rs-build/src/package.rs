@@ -89,14 +89,23 @@ impl Package {
         let manifest = manifest_path(manifest.as_ref());
         let staging_dir = staging_dir_from_manifest(&manifest)?;
         let descriptor = parse_package_manifest(&manifest)?;
-        let description_md = fs::read_to_string(staging_dir.join(descriptor.description_md()))?;
-        let lisp_path = staging_dir.join(descriptor.lisp());
+        let description_md_path = manifest_asset_path(
+            &staging_dir,
+            "pkgDescriptionMd",
+            descriptor.description_md(),
+        )?
+        .ok_or_else(|| {
+            PackageError::Build("pkgDescriptionMd must name a staging file".to_owned())
+        })?;
+        let lisp_path = manifest_asset_path(&staging_dir, "pkgLisp", descriptor.lisp())?
+            .ok_or_else(|| PackageError::Build("pkgLisp must name a staging file".to_owned()))?;
+        let qml_path = manifest_asset_path(&staging_dir, "pkgQml", descriptor.qml())?;
+        let description_md = fs::read_to_string(description_md_path)?;
         let lisp_source = fs::read_to_string(&lisp_path)?;
-        let qml_file = if descriptor.qml().is_empty() {
-            String::new()
-        } else {
-            fs::read_to_string(staging_dir.join(descriptor.qml()))?
-        };
+        let qml_file = qml_path
+            .map(fs::read_to_string)
+            .transpose()?
+            .unwrap_or_default();
         let pkg_desc_qml = fs::read_to_string(&manifest)?;
         let bytes = build_vesc_package(&VescPackageInput {
             name: descriptor.name(),
@@ -216,6 +225,37 @@ fn manifest_output_path(staging_dir: &Path, output: &str) -> Result<PathBuf, Pac
         Err(PackageError::Build(format!(
             "pkgOutput must be relative to the staging directory: {}",
             output.display()
+        )))
+    }
+}
+
+fn manifest_asset_path(
+    staging_dir: &Path,
+    field: &str,
+    asset_path: &str,
+) -> Result<Option<PathBuf>, PackageError> {
+    if asset_path.is_empty() {
+        return Ok(None);
+    }
+
+    let asset_path = Path::new(asset_path);
+    let stays_inside_staging = asset_path
+        .components()
+        .all(|component| matches!(component, Component::Normal(_) | Component::CurDir));
+
+    if asset_path
+        .components()
+        .all(|component| component == Component::CurDir)
+    {
+        Err(PackageError::Build(format!(
+            "{field} must name a staging file"
+        )))
+    } else if stays_inside_staging {
+        Ok(Some(staging_dir.join(asset_path)))
+    } else {
+        Err(PackageError::Build(format!(
+            "{field} must be relative to the staging directory: {}",
+            asset_path.display()
         )))
     }
 }
@@ -456,6 +496,36 @@ mod tests {
 
         assert!(error.to_string().contains("pkgOutput must be relative"));
         assert!(!staging.join("../escaped.vescpkg").exists());
+    }
+
+    #[test]
+    fn from_manifest_rejects_asset_paths_outside_staging() {
+        for (field, value) in [
+            ("pkgDescriptionMd", "../README.md"),
+            ("pkgLisp", "/tmp/package.lisp"),
+            ("pkgQml", "../ui.qml"),
+        ] {
+            let harness = PackageTestHarness::new().ensure_loopback_staging();
+            write_refloat_style_staging(&harness);
+            let staging = harness.loopback_staging_dir();
+            std::fs::write(
+                staging.join("pkgdesc.qml"),
+                format!(
+                    "import QtQuick 2.15\n\nItem {{\n    property string pkgName: \"Refloat\"\n    property string pkgDescriptionMd: \"{}\"\n    property string pkgLisp: \"{}\"\n    property string pkgQml: \"{}\"\n    property bool pkgQmlIsFullscreen: true\n    property string pkgOutput: \"refloat.vescpkg\"\n}}\n",
+                    if field == "pkgDescriptionMd" { value } else { "package_README-gen.md" },
+                    if field == "pkgLisp" { value } else { "lisp/package.lisp" },
+                    if field == "pkgQml" { value } else { "ui.qml" },
+                ),
+            )
+            .unwrap();
+
+            let error = Package::from_manifest(staging.join("pkgdesc.qml")).expect_err("bad path");
+
+            assert!(
+                error.to_string().contains(field),
+                "expected {field} error, got {error}"
+            );
+        }
     }
 
     #[test]

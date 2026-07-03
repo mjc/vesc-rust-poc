@@ -17,7 +17,7 @@ impl RefloatNativeBuildPlan {
         Self {
             source_root: source_root.into(),
             vesc_tool: "vesc_tool".to_owned(),
-            git_hash: String::new(),
+            git_hash: "0".to_owned(),
         }
     }
 
@@ -162,6 +162,27 @@ mod tests {
                     "VESC_TOOL=vesc_tool".to_owned()
                 ]
             )]
+        );
+    }
+
+    #[test]
+    fn native_build_defaults_git_hash_to_valid_hex_zero() {
+        let harness = PackageTestHarness::new()
+            .write_text("package_name", "Refloat\n")
+            .write_text("version", "1.2.1\n")
+            .write_text("src/conf/conf_general.h.in", "#define GIT 0x{{GIT_HASH}}\n")
+            .write_text("src/conf/settings.xml", "<config />\n");
+        let root = harness.root();
+        let toolchain = RecordingNativeLibToolchain::default();
+
+        RefloatNativeBuildPlan::new(root)
+            .build_with(&toolchain)
+            .expect("native build plan");
+
+        assert_eq!(
+            std::fs::read_to_string(root.join("src/conf/conf_general.h"))
+                .expect("generated conf_general.h"),
+            "#define GIT 0x0\n"
         );
     }
 
