@@ -182,11 +182,7 @@ impl<B: AppDataBindings> LoopbackLifecycle<B> {
 
     /// Clear the app-data callback through the binding set.
     pub fn clear_app_data_handler(&self) -> Result<(), AppDataHandlerRegistrationError> {
-        unsafe {
-            let cleared: AppDataHandler =
-                core::mem::transmute::<*mut u8, AppDataHandler>(core::ptr::null_mut());
-            app_data_handler_result(self.bindings.set_app_data_handler(cleared))
-        }
+        unsafe { app_data_handler_result(self.bindings.clear_app_data_handler()) }
     }
 
     /// Register the app-data callback through the binding set.

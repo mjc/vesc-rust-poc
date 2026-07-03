@@ -37,7 +37,7 @@ pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
 pub use vescpkg_rs_units as units;
 
 pub use alloc::{AllocBindings, AllocError, FirmwareAllocation, FirmwareAllocator};
-pub use bindings::{AppDataBindings, LbmBindings};
+pub use bindings::{AppDataBindings, CustomConfigBindings, LbmBindings};
 pub use extension::{ExtensionDescriptor, ExtensionNameError, RegisterError};
 pub use lifecycle_core::{
     AppDataHandlerRegistrationError, LbmApi, LoopbackLifecycle, PackageLifecycle,
@@ -77,10 +77,10 @@ pub mod prelude {
     };
     pub use crate::{
         AllocBindings, AllocError, AppDataBindings, AppDataHandlerRegistrationError,
-        ExtensionDescriptor, ExtensionNameError, FirmwareAllocation, FirmwareAllocator, GpioApi,
-        GpioBindings, LbmApi, LbmBindings, LoopbackLifecycle, MotorTelemetryApi,
-        MotorTelemetryBindings, PackageLifecycle, ProtocolFrame, RegisterError, WireCommand,
-        WireVersion,
+        CustomConfigBindings, ExtensionDescriptor, ExtensionNameError, FirmwareAllocation,
+        FirmwareAllocator, GpioApi, GpioBindings, LbmApi, LbmBindings, LoopbackLifecycle,
+        MotorTelemetryApi, MotorTelemetryBindings, PackageLifecycle, ProtocolFrame, RegisterError,
+        WireCommand, WireVersion,
     };
 
     #[cfg(not(test))]

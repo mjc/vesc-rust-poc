@@ -37,6 +37,24 @@ type PwmCallback = unsafe extern "C" fn();
 type PacketSendCallback = unsafe extern "C" fn(*mut c_uchar, c_uint);
 type PacketProcessCallback = unsafe extern "C" fn(*mut c_uchar, c_uint);
 type TerminalCallback = unsafe extern "C" fn(c_int, *const *const c_char);
+/// Refloat/VESC Tool custom-config serializer callback.
+///
+/// Refloat `v1.2.1` passes `get_cfg` to `conf_custom_add_config` in
+/// `src/main.c:2456`; the callback is declared in
+/// `vesc_pkg_lib/vesc_c_if.h:549-550`.
+pub type CustomConfigGet = unsafe extern "C" fn(*mut u8, bool) -> c_int;
+/// Refloat/VESC Tool custom-config deserializer callback.
+///
+/// Refloat `v1.2.1` passes `set_cfg` to `conf_custom_add_config` in
+/// `src/main.c:2456`; the callback is declared in
+/// `vesc_pkg_lib/vesc_c_if.h:551`.
+pub type CustomConfigSet = unsafe extern "C" fn(*mut u8) -> bool;
+/// Refloat/VESC Tool custom-config XML callback.
+///
+/// Refloat `v1.2.1` passes `get_cfg_xml` to `conf_custom_add_config` in
+/// `src/main.c:2456`; the callback is declared in
+/// `vesc_pkg_lib/vesc_c_if.h:552`.
+pub type CustomConfigXml = unsafe extern "C" fn(*mut *mut u8) -> c_int;
 type ImuReadCallback = unsafe extern "C" fn(*mut f32, *mut f32, *mut f32, f32);
 type EncoderReadCallback = unsafe extern "C" fn() -> f32;
 type EncoderFaultCallback = unsafe extern "C" fn() -> bool;
@@ -264,14 +282,10 @@ pub struct VescIf {
     plot_set_graph: Option<unsafe extern "C" fn(c_int)>,
     plot_send_points: Option<unsafe extern "C" fn(f32, f32)>,
 
-    // Custom config
-    conf_custom_add_config: Option<
-        unsafe extern "C" fn(
-            unsafe extern "C" fn(*mut u8, bool) -> c_int,
-            unsafe extern "C" fn(*mut u8) -> bool,
-            unsafe extern "C" fn(*mut *mut u8) -> c_int,
-        ),
-    >,
+    // Custom config. Refloat v1.2.1 (0ef6e99d8701) registers these callbacks in
+    // `src/main.c:2456` and clears them in `src/main.c:2403`.
+    conf_custom_add_config:
+        Option<unsafe extern "C" fn(CustomConfigGet, CustomConfigSet, CustomConfigXml)>,
     conf_custom_clear_configs: Option<unsafe extern "C" fn()>,
 
     // Settings
@@ -541,6 +555,52 @@ pub unsafe fn lbm_is_number(value: LbmValue) -> bool {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn lbm_enc_sym_nil() -> LbmValue {
+    #[cfg(all(target_arch = "arm", not(test)))]
+    unsafe {
+        let vesc_if = VescIfAbi::BASE_ADDR.0;
+        let lbm_enc_sym_nil: usize;
+        core::arch::asm!(
+            "ldr {lbm_enc_sym_nil}, [{vesc_if}, #136]",
+            vesc_if = in(reg) vesc_if,
+            lbm_enc_sym_nil = out(reg) lbm_enc_sym_nil,
+            options(nostack, preserves_flags),
+        );
+        LbmValue(lbm_enc_sym_nil as u32)
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
+    unsafe {
+        LbmValue((*vesc_if()).lbm_enc_sym_nil as u32)
+    }
+}
+
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn lbm_enc_sym_true() -> LbmValue {
+    #[cfg(all(target_arch = "arm", not(test)))]
+    unsafe {
+        let vesc_if = VescIfAbi::BASE_ADDR.0;
+        let lbm_enc_sym_true: usize;
+        core::arch::asm!(
+            "ldr {lbm_enc_sym_true}, [{vesc_if}, #140]",
+            vesc_if = in(reg) vesc_if,
+            lbm_enc_sym_true = out(reg) lbm_enc_sym_true,
+            options(nostack, preserves_flags),
+        );
+        LbmValue(lbm_enc_sym_true as u32)
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
+    unsafe {
+        LbmValue((*vesc_if()).lbm_enc_sym_true as u32)
+    }
+}
+
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn lbm_enc_sym_eerror() -> LbmValue {
     #[cfg(all(target_arch = "arm", not(test)))]
     unsafe {
@@ -606,6 +666,93 @@ pub unsafe fn vesc_clear_app_data_handler() -> bool {
     unsafe { vesc_set_app_data_handler_slot(None) }
 }
 
+/// Register firmware custom-config callbacks using the Refloat/VESC ABI.
+///
+/// Refloat `v1.2.1` registers `get_cfg`, `set_cfg`, and `get_cfg_xml` through
+/// this slot in `src/main.c:2456`. The VESC function-table slot is declared in
+/// `vesc_pkg_lib/vesc_c_if.h:549-552`.
+///
+/// # Safety
+///
+/// The callbacks must remain valid until package stop clears them or the
+/// firmware replaces them.
+pub unsafe fn conf_custom_add_config(
+    get_cfg: CustomConfigGet,
+    set_cfg: CustomConfigSet,
+    get_cfg_xml: CustomConfigXml,
+) -> bool {
+    #[cfg(all(target_arch = "arm", not(test)))]
+    unsafe {
+        let vesc_if = VescIfAbi::BASE_ADDR.0;
+        let conf_custom_add_config: usize;
+        core::arch::asm!(
+            "ldr {conf_custom_add_config}, [{vesc_if}, #728]",
+            vesc_if = in(reg) vesc_if,
+            conf_custom_add_config = out(reg) conf_custom_add_config,
+            options(nostack, preserves_flags),
+        );
+        if conf_custom_add_config == 0 {
+            return false;
+        }
+        let conf_custom_add_config: unsafe extern "C" fn(
+            CustomConfigGet,
+            CustomConfigSet,
+            CustomConfigXml,
+        ) = core::mem::transmute(conf_custom_add_config);
+        conf_custom_add_config(get_cfg, set_cfg, get_cfg_xml);
+        true
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
+    unsafe {
+        let Some(conf_custom_add_config) = (*vesc_if()).conf_custom_add_config else {
+            return false;
+        };
+
+        conf_custom_add_config(get_cfg, set_cfg, get_cfg_xml);
+        true
+    }
+}
+
+/// Clear firmware custom-config callbacks.
+///
+/// Refloat `v1.2.1` calls this during stop in `src/main.c:2403`. The VESC
+/// function-table slot is declared in `vesc_pkg_lib/vesc_c_if.h:553`.
+///
+/// # Safety
+///
+/// Must only be called while the firmware `VESC_IF` table is valid.
+pub unsafe fn conf_custom_clear_configs() -> bool {
+    #[cfg(all(target_arch = "arm", not(test)))]
+    unsafe {
+        let vesc_if = VescIfAbi::BASE_ADDR.0;
+        let conf_custom_clear_configs: usize;
+        core::arch::asm!(
+            "ldr {conf_custom_clear_configs}, [{vesc_if}, #732]",
+            vesc_if = in(reg) vesc_if,
+            conf_custom_clear_configs = out(reg) conf_custom_clear_configs,
+            options(nostack, preserves_flags),
+        );
+        if conf_custom_clear_configs == 0 {
+            return false;
+        }
+        let conf_custom_clear_configs: unsafe extern "C" fn() =
+            core::mem::transmute(conf_custom_clear_configs);
+        conf_custom_clear_configs();
+        true
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
+    unsafe {
+        let Some(conf_custom_clear_configs) = (*vesc_if()).conf_custom_clear_configs else {
+            return false;
+        };
+
+        conf_custom_clear_configs();
+        true
+    }
+}
+
 /// Allocate memory from the firmware LispBM reserve heap.
 ///
 /// # Safety
@@ -668,6 +815,128 @@ pub unsafe fn vesc_free(ptr: *mut c_void) {
     unsafe {
         if let Some(free) = (*vesc_if()).free {
             free(ptr);
+        }
+    }
+}
+
+/// Spawn a firmware package thread.
+///
+/// Refloat v1.2.1 mirrors this VESC ABI slot from
+/// `vesc_pkg_lib/vesc_c_if.h:382` and starts its main/auxiliary threads at
+/// `src/main.c:2438-2448`.
+///
+/// # Safety
+///
+/// `entry` and `name` must remain valid for the firmware call, and `arg` must
+/// point to state that lives until the spawned thread terminates.
+pub unsafe fn vesc_spawn(
+    entry: unsafe extern "C" fn(*mut c_void),
+    stack_words: usize,
+    name: *const c_char,
+    arg: *mut c_void,
+) -> LibThread {
+    #[cfg(all(target_arch = "arm", not(test)))]
+    unsafe {
+        let vesc_if = VescIfAbi::BASE_ADDR.0;
+        let spawn: usize;
+        core::arch::asm!(
+            "ldr {spawn}, [{vesc_if}, #{slot}]",
+            vesc_if = in(reg) vesc_if,
+            spawn = out(reg) spawn,
+            slot = const VescIfAbi::SPAWN.vesc32_byte_offset(),
+            options(nostack, preserves_flags),
+        );
+        if spawn == 0 {
+            return core::ptr::null_mut();
+        }
+        let spawn: unsafe extern "C" fn(
+            unsafe extern "C" fn(*mut c_void),
+            usize,
+            *const c_char,
+            *mut c_void,
+        ) -> LibThread = core::mem::transmute(spawn);
+        spawn(entry, stack_words, name, arg)
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
+    unsafe {
+        match (*vesc_if()).spawn {
+            Some(spawn) => spawn(entry, stack_words, name, arg),
+            None => core::ptr::null_mut(),
+        }
+    }
+}
+
+/// Ask a firmware package thread to terminate.
+///
+/// Refloat v1.2.1 mirrors this VESC ABI slot from
+/// `vesc_pkg_lib/vesc_c_if.h:383` and requests thread termination during stop
+/// at `src/main.c:2404-2408`.
+///
+/// # Safety
+///
+/// `thread` must be null or a thread handle returned by [`vesc_spawn`].
+pub unsafe fn vesc_request_terminate(thread: LibThread) {
+    #[cfg(all(target_arch = "arm", not(test)))]
+    unsafe {
+        let vesc_if = VescIfAbi::BASE_ADDR.0;
+        let request_terminate: usize;
+        core::arch::asm!(
+            "ldr {request_terminate}, [{vesc_if}, #{slot}]",
+            vesc_if = in(reg) vesc_if,
+            request_terminate = out(reg) request_terminate,
+            slot = const VescIfAbi::REQUEST_TERMINATE.vesc32_byte_offset(),
+            options(nostack, preserves_flags),
+        );
+        if request_terminate != 0 {
+            let request_terminate: unsafe extern "C" fn(LibThread) =
+                core::mem::transmute(request_terminate);
+            request_terminate(thread);
+        }
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
+    unsafe {
+        if let Some(request_terminate) = (*vesc_if()).request_terminate {
+            request_terminate(thread);
+        }
+    }
+}
+
+/// Return whether the current firmware package thread should terminate.
+///
+/// Refloat v1.2.1 mirrors this VESC ABI slot from
+/// `vesc_pkg_lib/vesc_c_if.h:384` and loops on it in `refloat_thd` and
+/// `aux_thd` at `src/main.c:771` and `src/main.c:1138`.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn vesc_should_terminate() -> bool {
+    #[cfg(all(target_arch = "arm", not(test)))]
+    unsafe {
+        let vesc_if = VescIfAbi::BASE_ADDR.0;
+        let should_terminate: usize;
+        core::arch::asm!(
+            "ldr {should_terminate}, [{vesc_if}, #{slot}]",
+            vesc_if = in(reg) vesc_if,
+            should_terminate = out(reg) should_terminate,
+            slot = const VescIfAbi::SHOULD_TERMINATE.vesc32_byte_offset(),
+            options(nostack, preserves_flags),
+        );
+        if should_terminate == 0 {
+            return true;
+        }
+        let should_terminate: unsafe extern "C" fn() -> bool =
+            core::mem::transmute(should_terminate);
+        should_terminate()
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
+    unsafe {
+        match (*vesc_if()).should_terminate {
+            Some(should_terminate) => should_terminate(),
+            None => true,
         }
     }
 }
@@ -1078,6 +1347,152 @@ pub unsafe fn mc_temp_motor_filtered() -> f32 {
     }
 }
 
+/// Return whether firmware IMU startup has completed.
+///
+/// Refloat v1.2.1 mirrors this VESC ABI slot from
+/// `vesc_pkg_lib/vesc_c_if.h:510` and gates startup readiness at
+/// `src/main.c:834-838`.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn imu_startup_done() -> bool {
+    #[cfg(all(target_arch = "arm", not(test)))]
+    unsafe {
+        let vesc_if = VescIfAbi::BASE_ADDR.0;
+        let imu_startup_done: usize;
+        core::arch::asm!(
+            "ldr {imu_startup_done}, [{vesc_if}, #{slot}]",
+            vesc_if = in(reg) vesc_if,
+            imu_startup_done = out(reg) imu_startup_done,
+            slot = const VescIfAbi::IMU_STARTUP_DONE.vesc32_byte_offset(),
+            options(nostack, preserves_flags),
+        );
+        if imu_startup_done == 0 {
+            return false;
+        }
+        let imu_startup_done: unsafe extern "C" fn() -> bool =
+            core::mem::transmute(imu_startup_done);
+        imu_startup_done()
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
+    unsafe {
+        match (*vesc_if()).imu_startup_done {
+            Some(imu_startup_done) => imu_startup_done(),
+            None => false,
+        }
+    }
+}
+
+/// Return firmware IMU roll in radians.
+///
+/// Refloat v1.2.1 mirrors this VESC ABI slot from
+/// `vesc_pkg_lib/vesc_c_if.h:511` and reads it in `src/imu.c:35-40`.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn imu_get_roll() -> f32 {
+    #[cfg(all(target_arch = "arm", not(test)))]
+    unsafe {
+        let vesc_if = VescIfAbi::BASE_ADDR.0;
+        let imu_get_roll: usize;
+        core::arch::asm!(
+            "ldr {imu_get_roll}, [{vesc_if}, #{slot}]",
+            vesc_if = in(reg) vesc_if,
+            imu_get_roll = out(reg) imu_get_roll,
+            slot = const VescIfAbi::IMU_GET_ROLL.vesc32_byte_offset(),
+            options(nostack, preserves_flags),
+        );
+        if imu_get_roll == 0 {
+            return 0.0;
+        }
+        let imu_get_roll: unsafe extern "C" fn() -> f32 = core::mem::transmute(imu_get_roll);
+        imu_get_roll()
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
+    unsafe {
+        match (*vesc_if()).imu_get_roll {
+            Some(imu_get_roll) => imu_get_roll(),
+            None => 0.0,
+        }
+    }
+}
+
+/// Return firmware IMU pitch in radians.
+///
+/// Refloat v1.2.1 mirrors this VESC ABI slot from
+/// `vesc_pkg_lib/vesc_c_if.h:512` and reads it in `src/imu.c:37-38`.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn imu_get_pitch() -> f32 {
+    #[cfg(all(target_arch = "arm", not(test)))]
+    unsafe {
+        let vesc_if = VescIfAbi::BASE_ADDR.0;
+        let imu_get_pitch: usize;
+        core::arch::asm!(
+            "ldr {imu_get_pitch}, [{vesc_if}, #{slot}]",
+            vesc_if = in(reg) vesc_if,
+            imu_get_pitch = out(reg) imu_get_pitch,
+            slot = const VescIfAbi::IMU_GET_PITCH.vesc32_byte_offset(),
+            options(nostack, preserves_flags),
+        );
+        if imu_get_pitch == 0 {
+            return 0.0;
+        }
+        let imu_get_pitch: unsafe extern "C" fn() -> f32 = core::mem::transmute(imu_get_pitch);
+        imu_get_pitch()
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
+    unsafe {
+        match (*vesc_if()).imu_get_pitch {
+            Some(imu_get_pitch) => imu_get_pitch(),
+            None => 0.0,
+        }
+    }
+}
+
+/// Return firmware IMU yaw in radians.
+///
+/// Refloat v1.2.1 mirrors this VESC ABI slot from
+/// `vesc_pkg_lib/vesc_c_if.h:513` and reads it in `src/imu.c:39-40`.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn imu_get_yaw() -> f32 {
+    #[cfg(all(target_arch = "arm", not(test)))]
+    unsafe {
+        let vesc_if = VescIfAbi::BASE_ADDR.0;
+        let imu_get_yaw: usize;
+        core::arch::asm!(
+            "ldr {imu_get_yaw}, [{vesc_if}, #{slot}]",
+            vesc_if = in(reg) vesc_if,
+            imu_get_yaw = out(reg) imu_get_yaw,
+            slot = const VescIfAbi::IMU_GET_YAW.vesc32_byte_offset(),
+            options(nostack, preserves_flags),
+        );
+        if imu_get_yaw == 0 {
+            return 0.0;
+        }
+        let imu_get_yaw: unsafe extern "C" fn() -> f32 = core::mem::transmute(imu_get_yaw);
+        imu_get_yaw()
+    }
+
+    #[cfg(not(all(target_arch = "arm", not(test))))]
+    unsafe {
+        match (*vesc_if()).imu_get_yaw {
+            Some(imu_get_yaw) => imu_get_yaw(),
+            None => 0.0,
+        }
+    }
+}
+
 /// # Safety
 ///
 /// `data` must point to at least `len` bytes that remain valid for the
@@ -1177,15 +1592,20 @@ pub unsafe fn io_read(pin: crate::VescPin) -> bool {
 
 /// Returns selected `VescIf` field offsets for ABI layout tests.
 #[cfg(test)]
-pub fn vesc_if_offsets_for_tests() -> [usize; 25] {
+pub fn vesc_if_offsets_for_tests() -> [usize; 36] {
     [
         core::mem::offset_of!(VescIf, lbm_add_extension),
         core::mem::offset_of!(VescIf, lbm_enc_i),
         core::mem::offset_of!(VescIf, lbm_dec_as_i32),
         core::mem::offset_of!(VescIf, lbm_is_number),
+        core::mem::offset_of!(VescIf, lbm_enc_sym_nil),
+        core::mem::offset_of!(VescIf, lbm_enc_sym_true),
         core::mem::offset_of!(VescIf, lbm_enc_sym_eerror),
         core::mem::offset_of!(VescIf, malloc),
         core::mem::offset_of!(VescIf, free),
+        core::mem::offset_of!(VescIf, spawn),
+        core::mem::offset_of!(VescIf, request_terminate),
+        core::mem::offset_of!(VescIf, should_terminate),
         core::mem::offset_of!(VescIf, get_arg),
         core::mem::offset_of!(VescIf, mc_get_fault),
         core::mem::offset_of!(VescIf, mc_get_amp_hours),
@@ -1200,6 +1620,14 @@ pub fn vesc_if_offsets_for_tests() -> [usize; 25] {
         core::mem::offset_of!(VescIf, mc_get_odometer),
         core::mem::offset_of!(VescIf, send_app_data),
         core::mem::offset_of!(VescIf, set_app_data_handler),
+        core::mem::offset_of!(VescIf, imu_startup_done),
+        core::mem::offset_of!(VescIf, imu_get_roll),
+        core::mem::offset_of!(VescIf, imu_get_pitch),
+        core::mem::offset_of!(VescIf, imu_get_yaw),
+        // Refloat v1.2.1 registers/clears custom config at `src/main.c:2456`
+        // and `src/main.c:2403`; slots are `vesc_pkg_lib/vesc_c_if.h:549-553`.
+        core::mem::offset_of!(VescIf, conf_custom_add_config),
+        core::mem::offset_of!(VescIf, conf_custom_clear_configs),
         core::mem::offset_of!(VescIf, system_time_ticks),
         core::mem::offset_of!(VescIf, io_set_mode),
         core::mem::offset_of!(VescIf, io_write),
