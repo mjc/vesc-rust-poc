@@ -226,7 +226,7 @@ pub fn parse_c_vesc_if_fields(source: &str) -> Vec<Field> {
             continue;
         }
 
-        if let Some(name) = parse_c_field_name(&pending_decl) {
+        for name in parse_c_field_names(&pending_decl) {
             fields.push(Field {
                 name,
                 line: pending_line,
@@ -238,30 +238,49 @@ pub fn parse_c_vesc_if_fields(source: &str) -> Vec<Field> {
     fields
 }
 
-fn parse_c_field_name(line: &str) -> Option<String> {
+fn parse_c_field_names(line: &str) -> Vec<String> {
     let line = line.trim();
     if line.is_empty() {
-        return None;
+        return Vec::new();
     }
 
     if let Some(start) = line.find("(*") {
         let rest = &line[start + 2..];
-        let end = rest.find(')')?;
+        let Some(end) = rest.find(')') else {
+            return Vec::new();
+        };
         let name = rest[..end].trim();
-        return (!name.is_empty()).then(|| name.to_owned());
+        return if name.is_empty() {
+            Vec::new()
+        } else {
+            vec![name.to_owned()]
+        };
     }
 
     if !line.ends_with(';') {
-        return None;
+        return Vec::new();
     }
 
     let without_semicolon = line.trim_end_matches(';').trim();
-    let token = without_semicolon.split_whitespace().last()?;
-    if token.contains('[') {
-        return None;
+    let Some(token) = without_semicolon.split_whitespace().last() else {
+        return Vec::new();
+    };
+    if let Some((name, len)) = parse_c_array_field(token) {
+        return (0..len).map(|index| format!("{name}[{index}]")).collect();
     }
+
     let name = token.trim_matches('*').trim();
-    (!name.is_empty()).then(|| name.to_owned())
+    if name.is_empty() {
+        Vec::new()
+    } else {
+        vec![name.to_owned()]
+    }
+}
+
+fn parse_c_array_field(token: &str) -> Option<(&str, usize)> {
+    let (name, len) = token.trim_matches('*').split_once('[')?;
+    let len = len.strip_suffix(']')?.parse().ok()?;
+    (!name.is_empty()).then_some((name, len))
 }
 
 /// Parse field names from the Rust `VescIf` struct source.
@@ -303,8 +322,8 @@ pub fn parse_rust_vesc_if_fields(source: &str) -> Vec<Field> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CompareError, GPIO_USED_SLOTS, LOOPBACK_USED_SLOTS, compare_used_slots_from_paths,
-        default_header_path, default_rust_table_path, parse_rust_vesc_if_fields, slots_present,
+        GPIO_USED_SLOTS, LOOPBACK_USED_SLOTS, compare_used_slots_from_paths, default_header_path,
+        default_rust_table_path, parse_rust_vesc_if_fields, slots_present,
     };
     use std::path::PathBuf;
 
@@ -375,16 +394,13 @@ mod tests {
     }
 
     #[test]
-    fn fixture_header_cannot_match_full_rust_order() {
+    fn fixture_header_matches_loopback_used_slot_order() {
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let result = compare_used_slots_from_paths(
+        compare_used_slots_from_paths(
             &default_header_path(&manifest),
             &default_rust_table_path(&manifest),
             LOOPBACK_USED_SLOTS,
-        );
-        assert!(matches!(
-            result,
-            Err(CompareError::SlotOrderMismatch { .. })
-        ));
+        )
+        .expect("fixture used-slot order");
     }
 }

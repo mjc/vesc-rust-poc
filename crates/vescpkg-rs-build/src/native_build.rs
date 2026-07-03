@@ -21,7 +21,7 @@ pub fn native_lib_bin_path() -> PathBuf {
     native_lib_link_plan().native_lib_bin_path()
 }
 
-/// Returns the repository-default C shim object path used during final linking.
+/// Returns the legacy C shim object path removed before final linking.
 pub fn package_lib_object_path() -> PathBuf {
     native_lib_link_plan().package_c_object_path()
 }

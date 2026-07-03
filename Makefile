@@ -34,7 +34,7 @@ ifdef DEVICE_ADDRESS
 DEVICE_FLAGS += --address $(DEVICE_ADDRESS)
 endif
 
-.PHONY: check check-full pre-commit fmt clippy clippy-pedantic vescpkg-rs-sys-target-check arm-clippy arm-gates native-audit test package package-only deploy deploy-install lisp-probe clean status
+.PHONY: check check-full pre-commit fmt clippy clippy-pedantic vescpkg-rs-sys-target-check check-ffi-header arm-clippy arm-gates native-audit test package package-only deploy deploy-install lisp-probe clean status
 
 # --- verification -----------------------------------------------------------
 #
@@ -44,7 +44,7 @@ endif
 
 check: fmt clippy test
 
-check-full: check arm-gates
+check-full: check check-ffi-header arm-gates
 
 pre-commit: check-full
 
@@ -60,6 +60,9 @@ clippy-pedantic:
 vescpkg-rs-sys-target-check:
 	test "$$($(CARGO) tree -p vescpkg-rs-sys --edges normal --no-default-features --prefix none | wc -l | tr -d ' ')" = 1
 	$(CARGO) check -p vescpkg-rs-sys --target $(ARM_TARGET) --no-default-features
+
+check-ffi-header:
+	$(CARGO) run -p vescpkg-rs-build --bin ffi-compare
 
 arm-clippy:
 	$(CARGO) clippy -p vesc-example-loopback --lib --release --target $(ARM_TARGET) -- $(CLIPPY_PEDANTIC_FLAGS)

@@ -6,7 +6,10 @@ use crate::native_audit::{
     device_proven_package_binary, undefined_symbols, unexpected_final_native_lib_undefined_symbols,
     unexpected_undefined_symbols,
 };
-use crate::native_elf_semantics::{analyze_native_lib_elf, assert_native_lib_semantics};
+use crate::native_elf_semantics::{
+    analyze_native_lib_elf, assert_loader_init_best_effort, assert_native_lib_semantics,
+    assert_refloat_registration_tail,
+};
 use crate::native_inspect::{
     SectionLayout, all_section_layouts, elf_has_no_relocations, elf_is_executable,
     elf_to_flat_binary, nm_output, section_from,
@@ -21,7 +24,7 @@ pub struct NativeLibArtifactPaths {
     pub bin: PathBuf,
     /// Rust static library input path.
     pub staticlib: PathBuf,
-    /// C shim object path linked into the final ELF.
+    /// Legacy package C shim object path that must not be linked into the final ELF.
     pub package_object: PathBuf,
 }
 
@@ -82,8 +85,8 @@ pub fn audit_native_lib_symbols(paths: &NativeLibArtifactPaths) {
         forbidden_hits.join("\n")
     );
     assert!(
-        paths.package_object.exists(),
-        "native build must materialize the C loader shim at {:?}",
+        !paths.package_object.exists(),
+        "native build must not materialize package-specific C shim object {:?}",
         paths.package_object
     );
     assert!(
@@ -122,19 +125,12 @@ pub fn audit_native_lib_symbols(paths: &NativeLibArtifactPaths) {
         "init",
         "prog_ptr",
         "loopback_handle_app_data",
-    ] {
-        assert!(
-            staticlib_defined.contains(symbol),
-            "Rust staticlib must own symbol `{symbol}`:\n{staticlib_symbols}"
-        );
-    }
-    for symbol in [
         "vesc_register_loopback_app_data_handler",
         "vesc_clear_loopback_app_data_handler",
     ] {
         assert!(
-            elf_defined.contains(symbol),
-            "final native image must export `{symbol}` from the C shim:\n{elf_symbols}"
+            staticlib_defined.contains(symbol),
+            "Rust staticlib must own symbol `{symbol}`:\n{staticlib_symbols}"
         );
     }
     assert!(
@@ -187,7 +183,7 @@ pub fn audit_native_lib_layout(paths: &NativeLibArtifactPaths) {
         paths.elf
     );
 
-    for section_name in [".program_ptr", ".init_fun", ".got", ".text"] {
+    for section_name in [".program_ptr", ".init_fun", ".data", ".got", ".text"] {
         let section = section_from(&sections, section_name);
         let end = section.vma + section.size;
         assert!(
@@ -269,6 +265,7 @@ pub fn semantic_snapshot_report(elf: &Path) -> String {
                 name.as_str(),
                 "init" | "prog_ptr" | "package_lib_init" | "ext_rust_probe_diag_v4"
             ) || name.contains("stop_package")
+                || name.contains("stop_refloat_app_data")
         })
         .cloned()
         .collect::<Vec<_>>()
@@ -309,4 +306,141 @@ pub fn audit_native_lib_artifacts(paths: &NativeLibArtifactPaths) -> String {
     audit_native_lib_flat_binary(&paths.elf, &paths.bin);
     assert_native_lib_semantics(&paths.elf);
     semantic_snapshot_report(&paths.elf)
+}
+
+/// Runs the Refloat native-lib audit suite and returns the semantic snapshot text.
+pub fn audit_refloat_native_lib_artifacts(paths: &NativeLibArtifactPaths) -> String {
+    audit_refloat_native_lib_symbols(paths);
+    audit_refloat_native_lib_layout(paths);
+    audit_native_lib_flat_binary(&paths.elf, &paths.bin);
+    assert_loader_init_best_effort(&paths.elf);
+    assert_refloat_registration_tail(&paths.elf);
+    semantic_snapshot_report(&paths.elf)
+}
+
+fn audit_refloat_native_lib_symbols(paths: &NativeLibArtifactPaths) {
+    let elf_symbols = nm_output(&paths.elf);
+    let staticlib_symbols = nm_output(&paths.staticlib);
+    let staticlib_defined = defined_symbols(&staticlib_symbols);
+    let elf_defined = defined_symbols(&elf_symbols);
+    let elf_undefined = undefined_symbols(&elf_symbols);
+
+    assert!(
+        unexpected_undefined_symbols(&staticlib_symbols).is_empty(),
+        "unexpected undefined symbols remain in the Refloat Rust staticlib"
+    );
+    assert!(
+        unexpected_final_native_lib_undefined_symbols(&elf_symbols).is_empty(),
+        "unexpected undefined symbols remain in the Refloat native-lib ELF"
+    );
+    assert!(
+        !paths.package_object.exists(),
+        "Refloat native build must not materialize package-specific C shim object {:?}",
+        paths.package_object
+    );
+
+    for symbol in ["init", "prog_ptr", "package_lib_init"] {
+        assert!(
+            elf_defined.contains(symbol),
+            "Refloat native image must keep loader symbol `{symbol}`:\n{elf_symbols}"
+        );
+        assert!(
+            staticlib_defined.contains(symbol),
+            "Refloat Rust staticlib must own symbol `{symbol}`:\n{staticlib_symbols}"
+        );
+    }
+
+    assert!(
+        elf_defined.contains("refloat_handle_app_data")
+            && elf_defined
+                .iter()
+                .any(|name| name.contains("stop_refloat_app_data")),
+        "Refloat native image must retain app-data and stop entrypoints; upstream v1.2.1 (0ef6e99d8701) wires app-data at src/main.c:2143 and 2457 and stop cleanup at src/main.c:2398-2412:\n{elf_symbols}"
+    );
+    assert!(
+        !elf_defined.contains("ext_rust_probe_diag_v4"),
+        "Refloat native image should not carry loopback probe extension symbols:\n{elf_symbols}"
+    );
+    assert!(
+        elf_undefined.is_empty(),
+        "expected Refloat native image to resolve the Rust package boundary completely:\n{elf_symbols}"
+    );
+}
+
+fn audit_refloat_native_lib_layout(paths: &NativeLibArtifactPaths) {
+    let blob = fs::read(&paths.bin).expect("Refloat native-lib binary bytes");
+    let sections = all_section_layouts(&paths.elf);
+
+    assert!(
+        paths.bin.exists(),
+        "expected the Refloat native-lib binary to be materialized"
+    );
+
+    let native_bin_size = fs::metadata(&paths.bin)
+        .expect("Refloat native-lib binary metadata")
+        .len();
+    assert!(
+        native_bin_size <= 32 * 1024,
+        "expected the Refloat native blob with generated config XML to stay below 32 KiB, got {native_bin_size} bytes"
+    );
+
+    assert!(
+        elf_is_executable(&paths.elf),
+        "expected a final executable Refloat ELF at {:?}",
+        paths.elf
+    );
+    assert!(
+        elf_has_no_relocations(&paths.elf),
+        "expected no relocation records in the final Refloat native-lib ELF at {:?}",
+        paths.elf
+    );
+
+    for section_name in [".program_ptr", ".init_fun", ".got", ".text"] {
+        let section = section_from(&sections, section_name);
+        let end = section.vma + section.size;
+        assert!(
+            end <= blob.len(),
+            "Refloat section {section_name} at 0x{:x}..0x{:x} exceeds {}-byte blob",
+            section.vma,
+            end,
+            blob.len()
+        );
+    }
+
+    let program_ptr = section_from(&sections, ".program_ptr");
+    let init_fun = section_from(&sections, ".init_fun");
+    let data = section_from(&sections, ".data");
+    let got = section_from(&sections, ".got");
+    let text = section_from(&sections, ".text");
+
+    assert_eq!(
+        *program_ptr,
+        SectionLayout {
+            name: ".program_ptr".to_owned(),
+            size: 4,
+            vma: 0,
+        }
+    );
+    assert_eq!(init_fun.vma, program_ptr.vma + program_ptr.size);
+    assert!(
+        init_fun.size >= 4,
+        "expected Refloat .init_fun to retain the loader entry"
+    );
+    assert!(
+        data.vma >= init_fun.vma + init_fun.size,
+        "expected Refloat .data to load after .init_fun"
+    );
+    assert!(
+        got.vma >= data.vma + data.size,
+        "expected Refloat .got to load after package-owned .data"
+    );
+    assert!(
+        text.vma >= got.vma + got.size,
+        "expected Refloat .text to load after .got"
+    );
+    assert_eq!(
+        text.vma % 16,
+        0,
+        "expected Refloat .text to keep VESC's 16-byte function alignment"
+    );
 }

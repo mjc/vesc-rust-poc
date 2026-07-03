@@ -23,6 +23,9 @@ pub(crate) mod native_audit;
 /// Native build orchestration helpers.
 #[allow(dead_code, unused_imports)]
 pub(crate) mod native_build;
+/// Native binary comparison helpers.
+#[allow(dead_code, unused_imports)]
+pub(crate) mod native_compare;
 /// Native ELF disassembly helpers.
 #[allow(dead_code, unused_imports)]
 pub(crate) mod native_disasm;
@@ -76,6 +79,12 @@ pub mod package_runtime;
 pub mod package_target;
 /// Host-side package wire format helpers.
 pub mod package_wire;
+/// Refloat source-tree native payload build helpers.
+#[allow(dead_code, unused_imports)]
+pub(crate) mod refloat_native_build;
+/// Refloat source-tree package asset generation helpers.
+#[allow(dead_code, unused_imports)]
+pub(crate) mod refloat_package_assets;
 /// Roadmap notes for the Rust package API.
 #[allow(dead_code, unused_imports)]
 pub(crate) mod rust_package_api_roadmap;
@@ -90,6 +99,10 @@ pub mod test_support;
 pub const BLE_LOOPBACK_PACKAGE_NAME: &str = "Rust BLE loopback test package";
 /// Canonical name used by the Snake example package.
 pub const SNAKE_PACKAGE_NAME: &str = "Rust Snake example package";
+/// Canonical name used by the Refloat package.
+pub const REFLOAT_PACKAGE_NAME: &str = "Refloat";
+/// Canonical Refloat package version used for the v1.2.1 parity target.
+pub const REFLOAT_PACKAGE_VERSION: &str = "1.2.1";
 
 pub use abi_inventory::{AbiRequirement, AbiRequirementKind, minimal_test_package_abi};
 pub use golden::{
@@ -98,10 +111,12 @@ pub use golden::{
 };
 pub use manifest::{manifest_path, parse_pkgdesc, staging_dir_from_manifest};
 pub use native_audit::audit_device_proven_fixture;
+pub use native_compare::native_binary_comparison_report;
 pub use native_elf_semantics::assert_native_lib_semantics;
 pub use native_lib_audit::{
     NativeLibArtifactPaths, audit_native_lib_artifacts, audit_native_lib_flat_binary,
-    audit_native_lib_layout, audit_native_lib_symbols, semantic_snapshot_report,
+    audit_native_lib_layout, audit_native_lib_symbols, audit_refloat_native_lib_artifacts,
+    semantic_snapshot_report,
 };
 pub use native_lib_baseline::{
     NativeLibBaselinePath, audit_baseline_fixture_layout, audit_vesc_c_if_abi_pins,
@@ -138,7 +153,8 @@ pub use package_runtime::{
 pub use package_target::{PackageTargetError, PackageTargetMode, PackageTargetPlan};
 pub use package_wire::{
     LispImport, PackageField, VESC_PACKET_HEADER, WireError, decompress_vescpkg, field_bytes,
-    parse_decompressed_vescpkg, parse_lisp_imports, parse_vescpkg, wire_snapshot_report,
+    parse_decompressed_vescpkg, parse_lisp_imports, parse_vescpkg, wire_comparison_report,
+    wire_snapshot_report,
 };
 pub use symbol_audit::{
     audit_rust_staticlib_symbols, defined_symbols, is_allowed_runtime_symbol, nm_output,

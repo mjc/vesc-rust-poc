@@ -18,6 +18,8 @@ pub struct VescPackageInput<'a> {
     pub lisp_source: &'a str,
     /// Workspace path used to resolve Lisp imports.
     pub lisp_editor_path: &'a Path,
+    /// Optional path used to resolve imports beside the main Lisp file.
+    pub lisp_import_path: Option<&'a Path>,
     /// QML source embedded in the package.
     pub qml_file: &'a str,
     /// `pkgdesc.qml` descriptor contents.
@@ -51,10 +53,11 @@ pub fn encode_vesc_package(wire: &VescPackageWire<'_>) -> io::Result<Vec<u8>> {
     append_string(&mut data, PACKAGE_MAGIC);
 
     append_text_field(&mut data, "name", wire.name)?;
+    if !wire.description.is_empty() {
+        append_text_field(&mut data, "description", wire.description)?;
+    }
     if !wire.description_md.is_empty() {
         append_text_field(&mut data, "description_md", wire.description_md)?;
-    } else {
-        append_text_field(&mut data, "description", wire.description)?;
     }
     append_bytes_field(&mut data, "lispData", wire.lisp_data)?;
     append_text_field(&mut data, "qmlFile", wire.qml_file)?;
@@ -69,17 +72,26 @@ pub fn encode_vesc_package(wire: &VescPackageWire<'_>) -> io::Result<Vec<u8>> {
 
 /// Packs Lisp source and its native imports into the package Lisp payload format.
 pub fn build_lisp_data(lisp_source: &str, lisp_editor_path: &Path) -> io::Result<Vec<u8>> {
-    pack_lisp_imports(lisp_source, lisp_editor_path)
+    pack_lisp_imports(lisp_source, lisp_editor_path, None)
 }
 
 /// Builds compressed VESC package bytes from source package inputs.
 pub fn build_vesc_package(input: &VescPackageInput<'_>) -> io::Result<Vec<u8>> {
-    let lisp_data = pack_lisp_imports(input.lisp_source, input.lisp_editor_path)?;
+    let lisp_data = pack_lisp_imports(
+        input.lisp_source,
+        input.lisp_editor_path,
+        input.lisp_import_path,
+    )?;
 
     let mut data = Vec::new();
     append_string(&mut data, PACKAGE_MAGIC);
 
     append_text_field(&mut data, "name", input.name)?;
+    append_text_field(
+        &mut data,
+        "description",
+        &markdown_description_html(input.description_md),
+    )?;
     append_text_field(&mut data, "description_md", input.description_md)?;
     append_bytes_field(&mut data, "lispData", &lisp_data)?;
     append_text_field(&mut data, "qmlFile", input.qml_file)?;
@@ -165,7 +177,11 @@ fn q_compress(data: &[u8]) -> io::Result<Vec<u8>> {
     Ok(output)
 }
 
-fn pack_lisp_imports(code_str: &str, editor_path: &Path) -> io::Result<Vec<u8>> {
+fn pack_lisp_imports(
+    code_str: &str,
+    editor_path: &Path,
+    import_path: Option<&Path>,
+) -> io::Result<Vec<u8>> {
     let mut packed = Vec::new();
     packed.extend_from_slice(&0u16.to_be_bytes());
     packed.extend_from_slice(code_str.as_bytes());
@@ -179,11 +195,9 @@ fn pack_lisp_imports(code_str: &str, editor_path: &Path) -> io::Result<Vec<u8>> 
             continue;
         };
 
-        let source_path = resolve_import_path(editor_path, &path);
+        let source_path = resolve_import_path(editor_path, import_path, &path);
         let mut file_data = fs::read(&source_path)?;
-        if file_data.last().copied() != Some(0) {
-            file_data.push(0);
-        }
+        file_data.push(0);
         imports.push((tag, file_data));
     }
 
@@ -236,10 +250,190 @@ fn pack_lisp_imports(code_str: &str, editor_path: &Path) -> io::Result<Vec<u8>> 
     Ok(packed)
 }
 
-fn resolve_import_path(editor_path: &Path, import_path: &str) -> std::path::PathBuf {
+fn markdown_description_html(markdown: &str) -> String {
+    if markdown.is_empty() {
+        return String::new();
+    }
+
+    let mut html = String::from(
+        "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" \"http://www.w3.org/TR/REC-html40/strict.dtd\">\n",
+    );
+    let lines = markdown.lines().collect::<Vec<_>>();
+    let mut index = 0;
+
+    while index < lines.len() {
+        let line = lines[index].trim();
+        if line.is_empty() {
+            index += 1;
+            continue;
+        }
+
+        if let Some((level, text)) = markdown_heading(line) {
+            html.push_str(&format!(
+                "<h{level}>{}</h{level}>",
+                render_markdown_inline(text)
+            ));
+            index += 1;
+            continue;
+        }
+
+        if let Some(item) = markdown_list_item(line) {
+            html.push_str("<ul>");
+            html.push_str(&format!("<li>{}</li>", render_markdown_inline(item)));
+            index += 1;
+            while index < lines.len() {
+                let Some(item) = markdown_list_item(lines[index].trim()) else {
+                    break;
+                };
+                html.push_str(&format!("<li>{}</li>", render_markdown_inline(item)));
+                index += 1;
+            }
+            html.push_str("</ul>");
+            continue;
+        }
+
+        let mut paragraph = vec![line];
+        index += 1;
+        while index < lines.len() {
+            let next = lines[index].trim();
+            if next.is_empty()
+                || markdown_heading(next).is_some()
+                || markdown_list_item(next).is_some()
+            {
+                break;
+            }
+            paragraph.push(next);
+            index += 1;
+        }
+        html.push_str("<p>");
+        html.push_str(
+            &paragraph
+                .iter()
+                .map(|line| render_markdown_inline(line))
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
+        html.push_str(" </p>");
+    }
+
+    html
+}
+
+fn markdown_heading(line: &str) -> Option<(usize, &str)> {
+    let level = line.chars().take_while(|ch| *ch == '#').count();
+    if (1..=6).contains(&level) && line.as_bytes().get(level) == Some(&b' ') {
+        Some((level, line[level + 1..].trim()))
+    } else {
+        None
+    }
+}
+
+fn markdown_list_item(line: &str) -> Option<&str> {
+    line.strip_prefix("- ").map(str::trim)
+}
+
+fn render_markdown_inline(input: &str) -> String {
+    let mut output = String::new();
+    let mut cursor = input;
+
+    while let Some(start) = cursor.find('[') {
+        let (before, rest) = cursor.split_at(start);
+        output.push_str(&render_markdown_emphasis(before));
+
+        let Some(close_text) = rest.find("](") else {
+            output.push_str(&render_markdown_emphasis(rest));
+            return output;
+        };
+        let url_start = close_text + 2;
+        let Some(close_url) = rest[url_start..].find(')') else {
+            output.push_str(&render_markdown_emphasis(rest));
+            return output;
+        };
+
+        let text = &rest[1..close_text];
+        let url = &rest[url_start..url_start + close_url];
+        output.push_str("<a href=\"");
+        output.push_str(&escape_html(url));
+        output.push_str("\">");
+        output.push_str(&render_markdown_emphasis(text));
+        output.push_str("</a>");
+        cursor = &rest[url_start + close_url + 1..];
+    }
+
+    output.push_str(&render_markdown_emphasis(cursor));
+    output
+}
+
+fn render_markdown_emphasis(input: &str) -> String {
+    let mut output = String::new();
+    let mut cursor = input;
+
+    while let Some(start) = cursor.find("**") {
+        output.push_str(&render_markdown_italic(&cursor[..start]));
+        let rest = &cursor[start + 2..];
+        let Some(end) = rest.find("**") else {
+            output.push_str(&escape_html(&cursor[start..]));
+            return output;
+        };
+        output.push_str("<strong>");
+        output.push_str(&render_markdown_italic(&rest[..end]));
+        output.push_str("</strong>");
+        cursor = &rest[end + 2..];
+    }
+
+    output.push_str(&render_markdown_italic(cursor));
+    output
+}
+
+fn render_markdown_italic(input: &str) -> String {
+    let mut output = String::new();
+    let mut cursor = input;
+
+    while let Some(start) = cursor.find('_') {
+        output.push_str(&escape_html(&cursor[..start]));
+        let rest = &cursor[start + 1..];
+        let Some(end) = rest.find('_') else {
+            output.push_str(&escape_html(&cursor[start..]));
+            return output;
+        };
+        output.push_str("<em>");
+        output.push_str(&escape_html(&rest[..end]));
+        output.push_str("</em>");
+        cursor = &rest[end + 1..];
+    }
+
+    output.push_str(&escape_html(cursor));
+    output
+}
+
+fn escape_html(input: &str) -> String {
+    input
+        .chars()
+        .flat_map(|ch| match ch {
+            '&' => "&amp;".chars().collect::<Vec<_>>(),
+            '<' => "&lt;".chars().collect(),
+            '>' => "&gt;".chars().collect(),
+            '"' => "&quot;".chars().collect(),
+            _ => vec![ch],
+        })
+        .collect()
+}
+
+fn resolve_import_path(
+    editor_path: &Path,
+    lisp_import_path: Option<&Path>,
+    import_path: &str,
+) -> std::path::PathBuf {
     let relative_candidate = editor_path.join(import_path);
     if relative_candidate.exists() {
         return relative_candidate;
+    }
+
+    if let Some(lisp_import_path) = lisp_import_path {
+        let lisp_relative_candidate = lisp_import_path.join(import_path);
+        if lisp_relative_candidate.exists() {
+            return lisp_relative_candidate;
+        }
     }
 
     std::path::PathBuf::from(import_path)
@@ -276,8 +470,8 @@ fn parse_import_line(line: &str) -> Option<(String, String)> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_import_line;
     use super::{VescPackageInput, build_vesc_package};
+    use super::{parse_import_line, q_compress};
     use crate::package_wire::{LispImport, field_bytes, parse_lisp_imports, parse_vescpkg};
     use crate::test_support::PackageTestHarness;
 
@@ -285,6 +479,29 @@ mod tests {
         field_bytes(&parse_vescpkg(package).expect("vescpkg-rs"), key)
             .expect("missing field")
             .to_vec()
+    }
+
+    #[test]
+    fn q_compress_matches_qt_zlib_level_9() {
+        let raw = [
+            b"VeSC Packet\0name\0".as_slice(),
+            &(0u8..64).cycle().take(512).collect::<Vec<_>>(),
+            b"qmlFile\0".as_slice(),
+            &[b'A'; 200],
+        ]
+        .concat();
+
+        assert_eq!(
+            q_compress(&raw).expect("compressed"),
+            [
+                0, 0, 2, 225, 120, 218, 11, 75, 13, 118, 86, 8, 72, 76, 206, 78, 45, 97, 200, 75,
+                204, 77, 101, 96, 96, 100, 98, 102, 97, 101, 99, 231, 224, 228, 226, 230, 225, 229,
+                227, 23, 16, 20, 18, 22, 17, 21, 19, 151, 144, 148, 146, 150, 145, 149, 147, 87,
+                80, 84, 82, 86, 81, 85, 83, 215, 208, 212, 210, 214, 209, 213, 211, 55, 48, 52, 50,
+                54, 49, 53, 51, 183, 176, 180, 178, 182, 177, 181, 179, 31, 213, 63, 180, 245, 23,
+                230, 230, 184, 101, 230, 164, 50, 56, 14, 19, 0, 0, 71, 243, 121, 253,
+            ]
+        );
     }
 
     #[test]
@@ -311,6 +528,7 @@ mod tests {
             description_md: "",
             lisp_source: &loader,
             lisp_editor_path: harness.root(),
+            lisp_import_path: None,
             qml_file: "",
             pkg_desc_qml: "",
             qml_is_fullscreen: false,
@@ -333,6 +551,34 @@ mod tests {
     }
 
     #[test]
+    fn lisp_imports_append_terminators_and_align_payloads() {
+        let harness = PackageTestHarness::new()
+            .write_bytes("first.bin", [1, 2, 0])
+            .write_bytes("second.bin", [3]);
+        let loader = "(import \"first.bin\" 'first)\n(import \"second.bin\" 'second)\n";
+
+        let package = build_vesc_package(&VescPackageInput {
+            name: "test",
+            description_md: "",
+            lisp_source: loader,
+            lisp_editor_path: harness.root(),
+            lisp_import_path: None,
+            qml_file: "",
+            pkg_desc_qml: "",
+            qml_is_fullscreen: false,
+        })
+        .expect("package");
+        let lisp_data = extract_field(&package, "lispData");
+        let (_, imports) = parse_lisp_imports(&lisp_data).expect("lisp imports");
+
+        assert_eq!(imports[0].payload, [1, 2, 0, 0]);
+        assert_eq!(imports[1].payload, [3, 0]);
+        assert_eq!(imports[0].offset % 4, 0);
+        assert_eq!(imports[1].offset % 4, 0);
+        assert_eq!(imports[1].offset, imports[0].offset + imports[0].size);
+    }
+
+    #[test]
     fn package_uses_the_vesc_tool_field_spine() {
         let harness = PackageTestHarness::new().write_native_payload([0xaa]);
         let loader = harness.loopback_loader_lisp_import_only();
@@ -342,6 +588,7 @@ mod tests {
             description_md: "markdown",
             lisp_source: &loader,
             lisp_editor_path: harness.root(),
+            lisp_import_path: None,
             qml_file: "qml",
             pkg_desc_qml: "descriptor",
             qml_is_fullscreen: false,
@@ -356,6 +603,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![
                 "name",
+                "description",
                 "description_md",
                 "lispData",
                 "qmlFile",
@@ -364,9 +612,14 @@ mod tests {
             ]
         );
         assert_eq!(fields[0].value, b"test");
-        assert_eq!(fields[1].value, b"markdown");
-        assert_eq!(fields[3].value, b"qml");
-        assert_eq!(fields[4].value, b"descriptor");
-        assert_eq!(fields[5].value, [0]);
+        assert_eq!(
+            fields[1].value,
+            br#"<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0//EN" "http://www.w3.org/TR/REC-html40/strict.dtd">
+<p>markdown </p>"#
+        );
+        assert_eq!(fields[2].value, b"markdown");
+        assert_eq!(fields[4].value, b"qml");
+        assert_eq!(fields[5].value, b"descriptor");
+        assert_eq!(fields[6].value, [0]);
     }
 }
