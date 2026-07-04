@@ -1,28 +1,420 @@
 //! Host-side fake firmware bindings for unit tests in dependent crates.
 
 use core::cell::Cell;
-use core::ffi::c_char;
+use core::ffi::{CStr, c_char};
 
-use crate::bindings::{AppDataBindings, CustomConfigBindings, LbmBindings};
-use vescpkg_rs_sys::raw::{CustomConfigGet, CustomConfigSet, CustomConfigXml};
-use vescpkg_rs_sys::{AppDataHandler, ExtensionHandler, LbmValue};
+use crate::bindings::LbmBindings;
+#[cfg(test)]
+use crate::bindings::{AppDataBindings, CustomConfigBindings, ImuReadCallbackBindings};
+#[cfg(test)]
+use crate::ffi::{CustomConfigGet, CustomConfigSet, CustomConfigXml, ImuReadCallback};
+use crate::lifecycle_core::PackageLifecycle;
+#[cfg(any(test, feature = "test-support"))]
+#[cfg(test)]
+use crate::types::{PackageArgument, PackageProgramAddress};
+#[cfg(test)]
+use vescpkg_rs_sys::AppDataHandler;
 
-pub use crate::imu::test_support::FakeImuBindings;
-pub use crate::motor::test_support::FakeMotorTelemetryBindings;
-pub use crate::thread::test_support::FakeThreadBindings;
+/// Host fixture that observes ordinary `Firmware` calls through the test FFI.
+#[cfg(all(feature = "test-support", not(test)))]
+pub struct FirmwareTest {
+    firmware: crate::Firmware,
+}
 
-/// Fake extension registration bindings used by SDK tests.
-pub struct FakeBindings {
+#[cfg(all(feature = "test-support", not(test)))]
+impl FirmwareTest {
+    /// Reset this thread's fake firmware state and construct normal capabilities.
+    #[must_use]
+    pub fn new() -> Self {
+        crate::test_ffi::lock_firmware();
+        Self {
+            firmware: crate::Firmware::new(),
+        }
+    }
+
+    /// Borrow the same typed motor capability package code uses on hardware.
+    #[must_use]
+    pub fn motor(&self) -> &impl crate::MotorOutput {
+        self.firmware.motor()
+    }
+
+    /// Borrow the same typed motor telemetry package code uses on hardware.
+    #[must_use]
+    pub fn telemetry(&self) -> &impl crate::MotorTelemetry {
+        self.firmware.telemetry()
+    }
+
+    /// Borrow the same typed IMU capability package code uses on hardware.
+    #[must_use]
+    pub fn imu(&self) -> &impl crate::Imu {
+        self.firmware.imu()
+    }
+
+    /// Configure whether firmware IMU startup has completed.
+    pub fn set_imu_startup_done(&self, done: bool) {
+        crate::test_ffi::set_imu_startup_done(done);
+    }
+
+    /// Configure the typed firmware IMU attitude.
+    pub fn set_imu_attitude(
+        &self,
+        roll: crate::ImuRoll,
+        pitch: crate::ImuPitch,
+        yaw: crate::ImuYaw,
+    ) {
+        crate::test_ffi::set_imu_attitude(roll, pitch, yaw);
+    }
+
+    /// Configure the typed firmware IMU angular rate.
+    pub fn set_imu_angular_rate(&self, rate: crate::ImuAngularRate) {
+        crate::test_ffi::set_imu_angular_rate(rate);
+    }
+
+    /// Configure the typed firmware IMU orientation.
+    pub fn set_imu_orientation(&self, orientation: crate::ImuOrientation) {
+        crate::test_ffi::set_imu_orientation(orientation);
+    }
+
+    /// Borrow the same typed thread capability package code uses on hardware.
+    #[must_use]
+    pub fn threads(&self) -> &impl crate::FirmwareThreads {
+        self.firmware.threads()
+    }
+
+    /// Make the second firmware thread spawn fail.
+    pub fn fail_second_thread_spawn(&self) {
+        crate::test_ffi::fail_second_thread_spawn();
+    }
+
+    /// Request loop termination on the given poll.
+    pub fn terminate_threads_after_checks(&self, checks: usize) {
+        crate::test_ffi::terminate_threads_after_checks(checks);
+    }
+
+    #[must_use]
+    /// Return the number of attempted firmware thread spawns.
+    pub fn thread_spawn_count(&self) -> usize {
+        crate::test_ffi::thread_spawn_count()
+    }
+
+    #[must_use]
+    /// Return stack sizes from the first two firmware thread spawns.
+    pub fn spawned_thread_stack_sizes(&self) -> [crate::ThreadStackSize; 2] {
+        crate::test_ffi::thread_spawn_stacks().map(crate::ThreadStackSize::from_bytes)
+    }
+
+    #[must_use]
+    /// Return the number of requested thread terminations.
+    pub fn thread_termination_count(&self) -> usize {
+        crate::test_ffi::thread_termination_count()
+    }
+
+    #[must_use]
+    /// Return handles from the first two termination requests.
+    pub fn terminated_threads(&self) -> [Option<crate::ThreadHandle>; 2] {
+        crate::test_ffi::thread_terminated().map(|address| {
+            // SAFETY: these addresses were returned by the private fake firmware.
+            unsafe { crate::ThreadHandle::from_firmware(address as *mut core::ffi::c_void) }
+        })
+    }
+
+    #[must_use]
+    /// Return the number of termination-condition polls.
+    pub fn thread_termination_check_count(&self) -> usize {
+        crate::test_ffi::thread_termination_check_count()
+    }
+
+    #[must_use]
+    /// Return the number of firmware sleep requests.
+    pub fn thread_sleep_count(&self) -> usize {
+        crate::test_ffi::thread_sleep_count()
+    }
+
+    #[must_use]
+    /// Return durations from the first two firmware sleep requests.
+    pub fn thread_sleep_durations(&self) -> [core::time::Duration; 2] {
+        crate::test_ffi::thread_sleep_micros()
+            .map(|micros| core::time::Duration::from_micros(u64::from(micros)))
+    }
+
+    #[must_use]
+    /// Return the number of firmware priority changes.
+    pub fn thread_priority_change_count(&self) -> usize {
+        crate::test_ffi::thread_priority_count()
+    }
+
+    #[must_use]
+    /// Return priorities from the first two firmware priority changes.
+    pub fn thread_priorities(&self) -> [Option<crate::ThreadPriority>; 2] {
+        crate::test_ffi::thread_priorities().map(|priority| {
+            i8::try_from(priority)
+                .ok()
+                .and_then(|priority| crate::ThreadPriority::try_new(priority).ok())
+        })
+    }
+
+    #[must_use]
+    /// Configure the typed runtime motor values returned by firmware telemetry.
+    pub fn with_runtime_motor(
+        self,
+        electrical_speed: crate::ElectricalSpeed,
+        vehicle_speed: crate::VehicleSpeed,
+        motor_current: crate::MotorCurrent,
+        battery_current: crate::BatteryCurrent,
+        duty_cycle: crate::DutyCycle,
+    ) -> Self {
+        crate::test_ffi::set_runtime_motor(
+            electrical_speed,
+            vehicle_speed,
+            motor_current,
+            battery_current,
+            duty_cycle,
+        );
+        self
+    }
+
+    #[must_use]
+    /// Configure the typed positive and braking motor-current limits.
+    pub fn with_motor_current_limits(
+        self,
+        max: crate::MotorCurrent,
+        min: crate::MotorCurrent,
+    ) -> Self {
+        crate::test_ffi::set_motor_current_limits(max, min);
+        self
+    }
+
+    #[must_use]
+    /// Configure the typed absolute trip distance.
+    pub fn with_distance_abs(self, distance: crate::TripDistance) -> Self {
+        crate::test_ffi::set_distance_abs(distance);
+        self
+    }
+
+    #[must_use]
+    /// Configure the typed MOSFET and motor temperatures.
+    pub fn with_temperatures(
+        self,
+        mosfet: crate::MosfetTemperature,
+        motor: crate::MotorTemperature,
+    ) -> Self {
+        crate::test_ffi::set_temperatures(mosfet, motor);
+        self
+    }
+
+    #[must_use]
+    /// Configure the typed accumulated ride totals.
+    pub fn with_ride_totals(
+        self,
+        odometer: crate::OdometerMeters,
+        amp_hours_discharged: crate::AmpHoursDischarged,
+        amp_hours_charged: crate::AmpHoursCharged,
+        watt_hours_discharged: crate::WattHoursDischarged,
+        watt_hours_charged: crate::WattHoursCharged,
+        battery_level: crate::BatteryLevel,
+    ) -> Self {
+        crate::test_ffi::set_ride_totals(
+            odometer,
+            amp_hours_discharged,
+            amp_hours_charged,
+            watt_hours_discharged,
+            watt_hours_charged,
+            battery_level,
+        );
+        self
+    }
+
+    #[must_use]
+    /// Configure the typed firmware fault code.
+    pub fn with_firmware_fault(self, fault: crate::FirmwareFaultCode) -> Self {
+        crate::test_ffi::set_firmware_fault(fault);
+        self
+    }
+
+    #[must_use]
+    /// Configure the typed filtered input voltage.
+    pub fn with_input_voltage_filtered(self, voltage: crate::InputVoltage) -> Self {
+        crate::test_ffi::set_input_voltage(voltage);
+        self
+    }
+
+    #[must_use]
+    /// Configure filtered input voltage and motor temperatures together.
+    pub fn with_input_voltage_and_temperatures(
+        self,
+        voltage: crate::InputVoltage,
+        mosfet: crate::MosfetTemperature,
+        motor: crate::MotorTemperature,
+    ) -> Self {
+        crate::test_ffi::set_input_voltage(voltage);
+        crate::test_ffi::set_temperatures(mosfet, motor);
+        self
+    }
+
+    #[must_use]
+    /// Configure the optional typed FOC d-axis current.
+    pub fn with_foc_id_current(self, current: Option<crate::MotorCurrent>) -> Self {
+        crate::test_ffi::set_foc_id_current(current);
+        self
+    }
+
+    #[must_use]
+    /// Return the number of motor-watchdog resets.
+    pub fn keep_alive_count(&self) -> usize {
+        crate::test_ffi::motor_output().keep_alive_count
+    }
+
+    #[must_use]
+    /// Return the number of current-off-delay writes.
+    pub fn current_off_delay_count(&self) -> usize {
+        crate::test_ffi::motor_output().current_off_delay_count
+    }
+
+    #[must_use]
+    /// Return the number of motor-current writes.
+    pub fn current_command_count(&self) -> usize {
+        crate::test_ffi::motor_output().current_count
+    }
+
+    #[must_use]
+    /// Return the number of duty-cycle writes.
+    pub fn duty_command_count(&self) -> usize {
+        crate::test_ffi::motor_output().duty_count
+    }
+
+    #[must_use]
+    /// Return the number of brake-current writes.
+    pub fn brake_current_command_count(&self) -> usize {
+        crate::test_ffi::motor_output().brake_current_count
+    }
+
+    #[must_use]
+    /// Return the latest current-off-delay write as the SDK domain type.
+    pub fn commanded_current_off_delay(&self) -> crate::CurrentOffDelay {
+        crate::CurrentOffDelay::new(crate::VescSeconds::from_seconds(
+            crate::test_ffi::motor_output().current_off_delay,
+        ))
+    }
+
+    #[must_use]
+    /// Return the latest motor-current write as the SDK domain type.
+    pub fn commanded_current(&self) -> crate::MotorCurrent {
+        crate::MotorCurrent::new(crate::Current::from_amps(
+            crate::test_ffi::motor_output().current,
+        ))
+    }
+
+    #[must_use]
+    /// Return the latest duty-cycle write as the SDK domain type.
+    pub fn commanded_duty(&self) -> crate::SignedRatio {
+        crate::SignedRatio::clamped(crate::test_ffi::motor_output().duty)
+    }
+
+    #[must_use]
+    /// Return the latest brake-current write as the SDK domain type.
+    pub fn commanded_brake_current(&self) -> crate::MotorCurrent {
+        crate::MotorCurrent::new(crate::Current::from_amps(
+            crate::test_ffi::motor_output().brake_current,
+        ))
+    }
+}
+
+#[cfg(all(feature = "test-support", not(test)))]
+impl Default for FirmwareTest {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(all(feature = "test-support", not(test)))]
+impl Drop for FirmwareTest {
+    fn drop(&mut self) {
+        crate::test_ffi::unlock_firmware();
+    }
+}
+use vescpkg_rs_sys::ExtensionHandler;
+#[cfg(not(test))]
+use vescpkg_rs_sys::LbmValue;
+
+/// Install test state and clear it when the returned guard is dropped.
+pub fn install_state<'a, T: 'static>(
+    store: &'a crate::PackageStateStore<T>,
+    state: &'a mut T,
+) -> impl Drop + 'a {
+    // The shared lifetime keeps the borrowed state alive for the guard.
+    unsafe { store.install_guard(state) }
+}
+
+/// Build a startup context for a typed loader fixture.
+pub fn package_start(info: &mut crate::LoaderInfo) -> crate::PackageStart {
+    crate::PackageStart::from_raw(info)
+}
+
+/// Build a startup context with no loader metadata for rejection-path tests.
+pub fn package_start_without_loader() -> crate::PackageStart {
+    crate::PackageStart::from_raw(core::ptr::null_mut())
+}
+
+/// Semantic extension registry for downstream package tests.
+pub struct TestExtensionRegistry {
+    bindings: FakeBindings,
+}
+
+impl TestExtensionRegistry {
+    /// Create a registry that accepts extension registration.
+    #[must_use]
+    pub fn accepting() -> Self {
+        Self {
+            bindings: FakeBindings::new(),
+        }
+    }
+
+    /// Create a registry that rejects extension registration.
+    #[must_use]
+    pub fn rejecting() -> Self {
+        Self {
+            bindings: FakeBindings::rejecting(),
+        }
+    }
+
+    /// Register extension descriptors through the package loader test seam.
+    pub fn register(
+        &self,
+        start: &mut crate::PackageStart,
+        descriptors: impl IntoIterator<Item = crate::ExtensionDescriptor>,
+    ) -> Result<(), crate::RegisterError> {
+        let lifecycle = PackageLifecycle::new(&self.bindings);
+        start.register_extensions_with(&lifecycle, descriptors)
+    }
+
+    /// Number of registration calls observed.
+    #[must_use]
+    pub fn registration_count(&self) -> usize {
+        self.bindings.add_calls.get()
+    }
+
+    /// Most recently registered extension name.
+    #[must_use]
+    pub fn last_registered_name(&self) -> Option<&'static str> {
+        let pointer = self.bindings.last_name.get();
+        if pointer == 0 {
+            return None;
+        }
+
+        unsafe { CStr::from_ptr(pointer as *const c_char) }
+            .to_str()
+            .ok()
+    }
+}
+
+/// Private extension registration bindings used by `TestExtensionRegistry`.
+pub(crate) struct FakeBindings {
     /// Number of extension add calls observed.
-    pub add_calls: Cell<usize>,
-    /// Number of decode callback calls observed.
-    pub decode_calls: Cell<usize>,
-    /// Number of encode callback calls observed.
-    pub encode_calls: Cell<usize>,
+    pub(crate) add_calls: Cell<usize>,
     /// Last extension name pointer passed to registration.
-    pub last_name: Cell<usize>,
+    pub(crate) last_name: Cell<usize>,
     /// Last handler pointer passed to registration.
-    pub last_handler: Cell<usize>,
+    pub(crate) last_handler: Cell<usize>,
     add_results: Cell<[bool; 2]>,
 }
 
@@ -47,8 +439,6 @@ impl FakeBindings {
     pub fn with_add_results(add_results: [bool; 2]) -> Self {
         Self {
             add_calls: Cell::new(0),
-            decode_calls: Cell::new(0),
-            encode_calls: Cell::new(0),
             last_name: Cell::new(0),
             last_handler: Cell::new(0),
             add_results: Cell::new(add_results),
@@ -57,6 +447,7 @@ impl FakeBindings {
 }
 
 impl LbmBindings for FakeBindings {
+    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     unsafe fn add_extension(&self, name: *const c_char, handler: ExtensionHandler) -> bool {
         self.add_calls.set(self.add_calls.get() + 1);
         self.last_name.set(name as usize);
@@ -65,27 +456,25 @@ impl LbmBindings for FakeBindings {
         self.add_results.get()[index]
     }
 
+    #[cfg(not(test))]
     unsafe fn decode_i32(&self, value: LbmValue) -> i32 {
-        self.decode_calls.set(self.decode_calls.get() + 1);
         value.0 as i32
     }
 
-    unsafe fn encode_i32(&self, value: i32) -> LbmValue {
-        self.encode_calls.set(self.encode_calls.get() + 1);
-        LbmValue(value as u32)
+    #[cfg(not(test))]
+    fn encode_true(&self) -> LbmValue {
+        LbmValue(1)
     }
 
-    unsafe fn is_number(&self, _value: LbmValue) -> bool {
-        true
-    }
-
-    unsafe fn encode_eval_error(&self) -> LbmValue {
-        LbmValue(0xffff_ffff)
+    #[cfg(not(test))]
+    fn encode_nil(&self) -> LbmValue {
+        LbmValue(0)
     }
 }
 
 /// Fake app-data bindings used by lifecycle and loopback runtime tests.
-pub struct FakeAppDataBindings {
+#[cfg(test)]
+pub(crate) struct FakeAppDataBindings {
     /// Number of app-data handler invocations observed.
     pub handler_calls: Cell<usize>,
     /// Tick count returned by the fake timer binding.
@@ -100,8 +489,20 @@ pub struct FakeAppDataBindings {
     pub last_len: Cell<u32>,
     /// Number of custom-config registration calls observed.
     pub custom_config_register_calls: Cell<usize>,
+    /// Last custom-config get callback pointer passed to registration.
+    pub last_custom_config_get: Cell<usize>,
+    /// Last custom-config set callback pointer passed to registration.
+    pub last_custom_config_set: Cell<usize>,
+    /// Last custom-config XML callback pointer passed to registration.
+    pub last_custom_config_xml: Cell<usize>,
     /// Number of custom-config clear calls observed.
     pub custom_config_clear_calls: Cell<usize>,
+    /// Number of IMU read callback registration calls observed.
+    pub imu_read_callback_calls: Cell<usize>,
+    /// Last IMU read callback pointer passed to registration.
+    pub last_imu_read_callback: Cell<usize>,
+    /// Fake package ARG pointer returned by the app-data binding.
+    pub app_data_arg: Cell<usize>,
     set_handler_result: Cell<bool>,
     clear_handler_result: Cell<bool>,
     register_custom_config_result: Cell<bool>,
@@ -109,11 +510,15 @@ pub struct FakeAppDataBindings {
 }
 
 #[derive(Clone, Copy)]
+#[cfg(any(test, feature = "test-support"))]
+#[cfg(test)]
 enum FirmwareCallResult {
     Accept,
     Reject,
 }
 
+#[cfg(any(test, feature = "test-support"))]
+#[cfg(test)]
 impl FirmwareCallResult {
     const fn from_bool(value: bool) -> Self {
         if value { Self::Accept } else { Self::Reject }
@@ -125,6 +530,8 @@ impl FirmwareCallResult {
 }
 
 #[derive(Clone, Copy)]
+#[cfg(any(test, feature = "test-support"))]
+#[cfg(test)]
 struct FakeAppDataResults {
     set_handler: FirmwareCallResult,
     clear_handler: FirmwareCallResult,
@@ -132,6 +539,8 @@ struct FakeAppDataResults {
     clear_custom_configs: FirmwareCallResult,
 }
 
+#[cfg(any(test, feature = "test-support"))]
+#[cfg(test)]
 impl FakeAppDataResults {
     const ACCEPT_ALL: Self = Self {
         set_handler: FirmwareCallResult::Accept,
@@ -141,12 +550,14 @@ impl FakeAppDataResults {
     };
 }
 
+#[cfg(test)]
 impl Default for FakeAppDataBindings {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(test)]
 impl FakeAppDataBindings {
     /// Creates fake app-data bindings with zero timer ticks.
     pub fn new() -> Self {
@@ -159,6 +570,7 @@ impl FakeAppDataBindings {
     }
 
     /// Creates fake app-data bindings with an explicit handler registration result.
+    #[cfg(test)]
     pub fn with_set_handler_result(set_handler_result: bool) -> Self {
         Self::with_ticks_and_results(
             0,
@@ -170,6 +582,7 @@ impl FakeAppDataBindings {
     }
 
     /// Creates fake app-data bindings with an explicit handler clear result.
+    #[cfg(test)]
     pub fn with_clear_handler_result(clear_handler_result: bool) -> Self {
         Self::with_ticks_and_results(
             0,
@@ -194,6 +607,7 @@ impl FakeAppDataBindings {
     }
 
     /// Creates fake app-data bindings with an explicit custom-config clear result.
+    #[cfg(test)]
     pub fn with_clear_custom_configs_result(clear_custom_configs_result: bool) -> Self {
         Self::with_ticks_and_results(
             0,
@@ -213,7 +627,13 @@ impl FakeAppDataBindings {
             last_data: Cell::new(0),
             last_len: Cell::new(0),
             custom_config_register_calls: Cell::new(0),
+            last_custom_config_get: Cell::new(0),
+            last_custom_config_set: Cell::new(0),
+            last_custom_config_xml: Cell::new(0),
             custom_config_clear_calls: Cell::new(0),
+            imu_read_callback_calls: Cell::new(0),
+            last_imu_read_callback: Cell::new(0),
+            app_data_arg: Cell::new(0),
             set_handler_result: Cell::new(results.set_handler.accepted()),
             clear_handler_result: Cell::new(results.clear_handler.accepted()),
             register_custom_config_result: Cell::new(results.register_custom_config.accepted()),
@@ -222,6 +642,7 @@ impl FakeAppDataBindings {
     }
 }
 
+#[cfg(test)]
 impl AppDataBindings for FakeAppDataBindings {
     unsafe fn set_app_data_handler(&self, handler: AppDataHandler) -> bool {
         self.handler_calls.set(self.handler_calls.get() + 1);
@@ -239,6 +660,11 @@ impl AppDataBindings for FakeAppDataBindings {
         self.ticks.get()
     }
 
+    fn arg(&self, _prog_addr: PackageProgramAddress) -> Option<PackageArgument> {
+        core::ptr::NonNull::new(self.app_data_arg.get() as *mut core::ffi::c_void)
+            .map(PackageArgument::new)
+    }
+
     unsafe fn send_app_data(&self, data: *const u8, len: u32) {
         self.send_calls.set(self.send_calls.get() + 1);
         self.last_data.set(data as usize);
@@ -246,15 +672,22 @@ impl AppDataBindings for FakeAppDataBindings {
     }
 }
 
+#[cfg(test)]
 impl CustomConfigBindings for FakeAppDataBindings {
     unsafe fn register_custom_config(
         &self,
-        _get_cfg: CustomConfigGet,
-        _set_cfg: CustomConfigSet,
-        _get_cfg_xml: CustomConfigXml,
+        get_cfg: CustomConfigGet,
+        set_cfg: CustomConfigSet,
+        get_cfg_xml: CustomConfigXml,
     ) -> bool {
         self.custom_config_register_calls
             .set(self.custom_config_register_calls.get() + 1);
+        self.last_custom_config_get
+            .set(get_cfg as *const () as usize);
+        self.last_custom_config_set
+            .set(set_cfg as *const () as usize);
+        self.last_custom_config_xml
+            .set(get_cfg_xml as *const () as usize);
         self.register_custom_config_result.get()
     }
 
@@ -265,11 +698,29 @@ impl CustomConfigBindings for FakeAppDataBindings {
     }
 }
 
+#[cfg(test)]
+impl ImuReadCallbackBindings for FakeAppDataBindings {
+    unsafe fn set_imu_read_callback(&self, callback: ImuReadCallback) {
+        self.imu_read_callback_calls
+            .set(self.imu_read_callback_calls.get() + 1);
+        self.last_imu_read_callback
+            .set(callback as *const () as usize);
+    }
+
+    unsafe fn clear_imu_read_callback(&self) {
+        self.imu_read_callback_calls
+            .set(self.imu_read_callback_calls.get() + 1);
+        self.last_imu_read_callback.set(0);
+    }
+}
+
 /// C ABI stubs linked by host-side tests.
-pub mod stubs {
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) mod stubs {
     /// # Safety
     ///
     /// Test-only no-op; callers must satisfy the real extension handler ABI.
+    #[cfg(test)]
     pub unsafe extern "C" fn extension_handler(_args: *mut u32, _count: u32) -> u32 {
         0
     }
@@ -277,19 +728,36 @@ pub mod stubs {
     /// # Safety
     ///
     /// Test-only no-op; callers must satisfy the real stop handler ABI.
+    #[cfg(test)]
     pub unsafe extern "C" fn stop_handler(_arg: *mut core::ffi::c_void) {}
 
     /// # Safety
     ///
     /// Test-only no-op; callers must satisfy the real app-data handler ABI.
+    #[cfg(test)]
     pub unsafe extern "C" fn app_data_handler(_data: *mut u8, _len: u32) {}
+
+    /// # Safety
+    ///
+    /// Test-only no-op; callers must satisfy the real IMU callback ABI.
+    #[cfg(test)]
+    pub unsafe extern "C" fn imu_read_callback(
+        _acc: *mut f32,
+        _gyro: *mut f32,
+        _mag: *mut f32,
+        _dt: f32,
+    ) {
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{FakeAppDataBindings, FakeBindings, stubs};
-    use crate::{AppDataBindings, CustomConfigBindings, LbmBindings};
-    use vescpkg_rs_sys::{ExtensionHandler, LbmValue};
+    use crate::bindings::{
+        AppDataBindings, CustomConfigBindings, ImuReadCallbackBindings, LbmBindings,
+    };
+    use crate::ffi::ImuReadCallback;
+    use vescpkg_rs_sys::ExtensionHandler;
 
     #[test]
     fn fake_bindings_default_and_rejecting_paths() {
@@ -309,12 +777,6 @@ mod tests {
 
         assert_eq!(accepting.add_calls.get(), 1);
         assert_eq!(rejecting.add_calls.get(), 1);
-        unsafe {
-            assert_eq!(accepting.decode_i32(LbmValue(7)), 7);
-            assert_eq!(accepting.encode_i32(9), LbmValue(9));
-            assert!(accepting.is_number(LbmValue(1)));
-            assert_eq!(accepting.encode_eval_error(), LbmValue(0xffff_ffff));
-        }
     }
 
     #[test]
@@ -361,6 +823,21 @@ mod tests {
 
         assert_eq!(bindings.custom_config_register_calls.get(), 1);
         assert_eq!(bindings.custom_config_clear_calls.get(), 1);
+    }
+
+    #[test]
+    fn fake_app_data_bindings_track_imu_read_callback_registration() {
+        let bindings = FakeAppDataBindings::new();
+
+        unsafe {
+            // Refloat v1.2.1 registers `imu_ref_callback` at `src/main.c:2455`
+            // and clears it during stop at `src/main.c:2401`.
+            bindings.set_imu_read_callback(stubs::imu_read_callback as ImuReadCallback);
+            bindings.clear_imu_read_callback();
+        }
+
+        assert_eq!(bindings.imu_read_callback_calls.get(), 2);
+        assert_eq!(bindings.last_imu_read_callback.get(), 0);
     }
 
     #[test]

@@ -1,5 +1,4 @@
-use vescpkg_rs::types::{ElectricalSpeed, MechanicalSpeed};
-use vescpkg_rs::units::Rpm;
+use vescpkg_rs::{ElectricalSpeed, MechanicalSpeed, Rpm};
 
 fn set_electrical_speed(_: ElectricalSpeed) {}
 

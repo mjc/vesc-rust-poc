@@ -1,5 +1,4 @@
-use vescpkg_rs::types::{DutyCycle, Pwm};
-use vescpkg_rs::units::SignedRatio;
+use vescpkg_rs::{DutyCycle, Pwm, SignedRatio};
 
 fn set_pwm(_: Pwm) {}
 

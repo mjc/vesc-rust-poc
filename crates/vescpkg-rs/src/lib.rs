@@ -1,9 +1,10 @@
 //! Target-side SDK for Rust VESC packages.
 //!
 //! Link this crate into native VESC package code. It wraps `vescpkg-rs-sys` with
-//! lifecycle, LispBM extension, app-data, GPIO, and protocol helpers.
+//! lifecycle, LispBM extension, app-data, GPIO, and typed firmware helpers.
 //!
-//! Device builds must stay `no_std` and must not link `alloc` or `std`.
+//! Device builds stay `no_std`; package crates must opt into the `alloc`
+//! feature before installing the VESC-backed global allocator.
 
 #![no_std]
 #![forbid(unused_extern_crates)]
@@ -14,69 +15,126 @@
 extern crate std;
 
 /// Firmware allocation helpers backed by the VESC native package allocator.
-pub mod alloc;
+mod alloc;
 
 mod bindings;
 mod extension;
+mod firmware;
 mod lifecycle_core;
+/// Float math entrypoints backed by the VESC C math library on package builds.
+#[cfg(feature = "math")]
+mod math;
+#[cfg(feature = "math")]
+pub use math::{asin, cos, sin, sqrt};
+mod runtime;
+#[cfg(all(feature = "test-support", not(test)))]
+mod test_ffi;
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 
-/// Safe and unsafe raw ABI re-exports for SDK consumers that need them.
-pub mod ffi {
-    pub use crate::bindings::*;
-    pub use crate::extension::*;
-    pub use crate::lifecycle_core::*;
-    #[cfg(any(test, feature = "test-support"))]
-    pub use crate::test_support;
-    pub use vescpkg_rs_sys::*;
+/// Internal ABI seam. `vescpkg-rs-sys` selects the real or test implementation.
+pub(crate) mod ffi {
+    #[allow(unused_imports)]
+    pub use vescpkg_rs_sys::raw::{
+        CustomConfigGet, CustomConfigSet, CustomConfigXml, ImuReadCallback,
+    };
+    #[allow(unused_imports)]
+    pub use vescpkg_rs_sys::raw::{
+        conf_custom_add_config, conf_custom_clear_configs, io_read, io_read_analog_pair,
+        io_set_mode, io_write, lbm_add_extension, lbm_dec_as_i32, lbm_enc_i, lbm_enc_sym_eerror,
+        lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number, vesc_clear_app_data_handler,
+        vesc_clear_imu_read_callback, vesc_free, vesc_get_arg, vesc_malloc, vesc_send_app_data,
+        vesc_set_app_data_handler, vesc_set_imu_read_callback, vesc_system_time_ticks,
+    };
+    pub use vescpkg_rs_sys::{AppDataHandler, LibInfo, NativeImage, StopHandler};
+
+    #[cfg(all(feature = "test-support", not(test)))]
+    use crate::test_ffi as selected_ffi;
+    #[allow(unused_imports)]
+    pub use selected_ffi::{
+        foc_get_id, get_cfg_float, imu_get_gyro, imu_get_pitch, imu_get_roll, imu_get_yaw,
+        imu_startup_done, mc_get_amp_hours, mc_get_amp_hours_charged, mc_get_battery_level,
+        mc_get_distance_abs, mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered,
+        mc_get_odometer, mc_get_rpm, mc_get_speed, mc_get_tot_current_filtered,
+        mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
+        mc_set_brake_current, mc_set_current, mc_set_current_off_delay, mc_set_duty,
+        mc_temp_fet_filtered, mc_temp_motor_filtered, timeout_reset, vesc_imu_get_quaternions,
+        vesc_request_terminate, vesc_should_terminate, vesc_sleep_us, vesc_spawn,
+        vesc_thread_set_priority,
+    };
+    #[cfg(any(test, not(feature = "test-support")))]
+    use vescpkg_rs_sys::raw as selected_ffi;
 }
 
-pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
-pub use vescpkg_rs_units as units;
+use vescpkg_rs_units as units;
+pub use vescpkg_rs_units::{
+    AccelerationG, AmpHours, AngleDegrees, AngleRadians, AngularVelocity, Charge, Current,
+    Distance, DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage, Frequency, Height,
+    Inductance, Latitude, Longitude, OdometerMeters, Percent, Power, Ratio, Resistance, Rpm,
+    SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed, SystemInstant, SystemTicks, Temperature,
+    TimestampTicks, VescSeconds, Voltage, WattHours,
+};
 
 #[cfg(feature = "alloc")]
 pub use alloc::VescAllocator;
-pub use alloc::{AllocBindings, AllocError, FirmwareAllocation, FirmwareAllocator};
-pub use bindings::{AppDataBindings, CustomConfigBindings, LbmBindings};
-pub use extension::{ExtensionDescriptor, ExtensionNameError, RegisterError};
-pub use imu::{ImuApi, ImuBindings};
-pub use lifecycle_core::{
-    AppDataHandlerRegistrationError, LbmApi, LoopbackLifecycle, PackageLifecycle,
+pub use extension::{ExtensionDescriptor, ExtensionName, ExtensionNameError, RegisterError};
+pub use extension::{LbmExtension, LispArgs, LispValue, StatefulLbmExtension};
+
+// Exported macros need public implementation hooks after downstream expansion.
+// Keep those hooks in one hidden namespace instead of the package-author root.
+// The functions retain their existing definitions and generated symbols.
+// Only macro expansion should name this module.
+#[doc(hidden)]
+pub mod __macro_support;
+
+pub use firmware::{
+    AppDataCallback, AppDataPacket, ConfigBytes, ConfigXml, PackageAppDataCallback,
+    PackageCustomConfigCallback, SourceCustomConfigCallback, StatefulAppDataCallback, StopCallback,
+    StopContext,
 };
-pub use motor::{MotorTelemetryApi, MotorTelemetryBindings};
-pub use thread::{FirmwareThreadHandle, ThreadApi, ThreadBindings};
+#[cfg(test)]
+pub(crate) use firmware::{
+    arg_mut, clear_loader_info, firmware_array, install_loader_state, loader_info_mut,
+    loader_state_mut, register_custom_config_callbacks_from_image, stop_callback,
+};
+#[cfg(all(feature = "test-support", not(test)))]
+pub(crate) use firmware::{
+    arg_mut, clear_loader_info, firmware_array, install_loader_state, loader_info_mut,
+    loader_state_mut, register_custom_config_callbacks_from_image, stop_callback,
+};
+#[cfg(not(any(test, feature = "test-support")))]
+pub(crate) use firmware::{
+    arg_mut, clear_loader_info, firmware_array, install_loader_state, loader_info_mut,
+    loader_state_mut, register_custom_config_callbacks_from_image, stop_callback,
+};
+pub use imu::{Imu, ImuReadHandler, PackageImuReadCallback};
+pub use init::{PackageStart, PackageStartError, PackageThreadState};
+pub use lifecycle_core::{AppDataHandlerRegistrationError, AppDataSendError};
+pub use motor::{MotorOutput, MotorTelemetry};
+pub(crate) use runtime::PackageStateGuard;
+pub use runtime::{PackageStateAccess, PackageStateStore};
+pub use thread::{
+    Firmware, FirmwareAppData, FirmwareLisp, FirmwareThread, FirmwareThreads,
+    StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadHandle,
+    ThreadName, ThreadPair, ThreadPairSpec, ThreadSpec, ThreadStackSize,
+};
 
-#[cfg(not(test))]
-pub use bindings::RealBindings;
-#[cfg(not(test))]
-pub use imu::RealImuBindings;
-#[cfg(not(test))]
-pub use motor::RealMotorTelemetryBindings;
-#[cfg(not(test))]
-pub use thread::RealThreadBindings;
-
-/// BLE loopback helpers and package-side packet handlers.
-pub mod ble_loopback;
 /// GPIO bindings and convenience wrappers for package code.
-pub mod gpio;
+mod gpio;
 /// IMU bindings and convenience wrappers for package code.
-pub mod imu;
+mod imu;
 /// Device package entrypoint and loader-hook helpers.
-pub mod init;
+mod init;
 /// Motor telemetry bindings and convenience wrappers for package code.
-pub mod motor;
+mod motor;
 /// Firmware thread bindings and convenience wrappers for package code.
-pub mod thread;
+mod thread;
 
-#[cfg(not(test))]
-pub use gpio::RealGpioBindings;
-pub use gpio::{GpioApi, GpioBindings};
-/// LispBM value encoding helpers and raw device-side integer packing.
-pub mod lbm;
+pub use gpio::{AnalogPin, Gpio};
 /// Higher-level lifecycle helpers for package startup and runtime behavior.
-pub mod lifecycle;
+pub use types::*;
+
 /// Common package-author imports for code running inside the controller.
 pub mod prelude {
     pub use crate::types::*;
@@ -88,42 +146,45 @@ pub mod prelude {
         SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage, WattHours,
     };
     pub use crate::{
-        AllocBindings, AllocError, AppDataBindings, AppDataHandlerRegistrationError,
-        CustomConfigBindings, ExtensionDescriptor, ExtensionNameError, FirmwareAllocation,
-        FirmwareAllocator, FirmwareThreadHandle, GpioApi, GpioBindings, ImuApi, ImuBindings,
-        LbmApi, LbmBindings, LoopbackLifecycle, MotorTelemetryApi, MotorTelemetryBindings,
-        PackageLifecycle, ProtocolFrame, RegisterError, ThreadApi, ThreadBindings, WireCommand,
-        WireVersion,
-    };
-
-    #[cfg(not(test))]
-    pub use crate::{
-        RealBindings, RealGpioBindings, RealImuBindings, RealMotorTelemetryBindings,
-        RealThreadBindings,
+        AnalogPin, AppDataCallback, AppDataHandlerRegistrationError, AppDataSendError, ConfigBytes,
+        ConfigXml, ExtensionDescriptor, ExtensionName, ExtensionNameError, Firmware,
+        FirmwareAppData, FirmwareLisp, FirmwareThread, FirmwareThreads, Gpio, Imu, ImuReadHandler,
+        LbmExtension, LispArgs, LispValue, MotorOutput, MotorTelemetry, PackageStart,
+        PackageStartError, PackageStateStore, RegisterError, SourceCustomConfigCallback,
+        StatefulAppDataCallback, StatefulLbmExtension, StatelessFirmwareThread,
+        StatelessThreadContext, StopCallback, StopContext, ThreadContext, ThreadError,
+        ThreadHandle, ThreadName, ThreadPair, ThreadPairSpec, ThreadSpec, ThreadStackSize,
     };
 }
+
 /// VESC-domain semantic wrappers over generic embedded units.
-pub mod types;
+mod types;
 
 #[cfg(test)]
 mod tests {
-    use super::{ProtocolFrame, WireCommand, WireVersion};
     use crate::types::{
         AdcDecodedLevel, AdcVoltage, AudioChannel, AudioDuration, AudioFrequency, AudioSampleRate,
         AudioVoltage, AveragePower, BatteryCurrent, BatteryVoltage, BaudRate, BrakeCurrentRelative,
         BrakeLeverLevel, BrakeSwitch, CanControllerId, CanPayloadLen, CurrentRelative, DVoltage,
         DirectionalMotorCurrent, DutyCycle, ElectricalSpeed, FocMotorFluxLinkage,
         FocMotorInductance, FocMotorResistance, GearRatio, GnssAccuracy, GnssHdop, GnssLatitude,
-        GnssLongitude, GnssSpeed, HandbrakeRelative, ImuAcceleration, ImuAngularRate, ImuPitch,
-        ImuQuaternion, ImuRoll, ImuYaw, JoystickX, JoystickY, MechanicalSpeed, MotorCurrent,
+        GnssLongitude, GnssSpeed, HandbrakeRelative, ImuAcceleration, ImuAngularRate, ImuAttitude,
+        ImuOrientation, ImuPitch, ImuQuaternion, ImuQuaternionW, ImuQuaternionX, ImuQuaternionY,
+        ImuQuaternionZ, ImuRoll, ImuYaw, JoystickX, JoystickY, MechanicalSpeed, MotorCurrent,
         MotorPoleCount, OpenLoopPhase, PacketLength, PeakPower, PidPosition, PpmAge, PpmInput, Pwm,
         QVoltage, RemoteAge, SystemDuration, SystemTimestamp, ThreadPriority, TimeoutDuration,
         TotalMotorCurrent, TripDistance, VehicleSpeed, WattHoursDischarged, WheelDiameter,
     };
+    use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
     use vescpkg_rs_units::{
         AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Current, Distance, Energy,
         FluxLinkage, Frequency, Inductance, Latitude, Longitude, Power, Ratio, Resistance, Rpm,
         SampleRate, SignedRatio, Speed, SystemTicks, TimestampTicks, VescSeconds, Voltage,
+    };
+
+    use crate::types::{
+        ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ, ImuAngularRatePitch,
+        ImuAngularRateRoll, ImuAngularRateYaw,
     };
 
     #[test]
@@ -139,24 +200,20 @@ mod tests {
     fn package_author_prelude_exports_runtime_surface() {
         use crate::prelude::*;
 
-        let _package = PackageLifecycle::new(crate::test_support::FakeBindings::new());
-        let _loopback = LoopbackLifecycle::new(crate::test_support::FakeAppDataBindings::new());
-        let telemetry = MotorTelemetryApi::new(
-            crate::test_support::FakeMotorTelemetryBindings::new()
-                .with_distance_abs(TripDistance::new(Distance::from_meters(1.25))),
-        );
-        let imu = ImuApi::new(crate::test_support::FakeImuBindings::new());
-        let _descriptor = ExtensionDescriptor::new(
-            c"ext-rust-prelude",
-            crate::test_support::stubs::extension_handler,
-        );
-        let command = WireCommand::Ping;
         let switch = BrakeSwitch::Released;
 
-        assert_eq!(command, WireCommand::Ping);
         assert_eq!(switch, BrakeSwitch::Released);
-        assert_eq!(telemetry.distance_abs().distance().as_meters(), 1.25);
-        assert!(!imu.startup_done());
+    }
+
+    #[test]
+    fn config_bytes_are_a_regular_borrowed_value() {
+        use crate::prelude::*;
+
+        let config = ConfigBytes::new(b"config");
+        let xml = ConfigXml::new(b"<config/>");
+
+        assert_eq!(config.as_bytes(), b"config");
+        assert_eq!(xml.as_bytes(), b"<config/>");
     }
 
     #[test]
@@ -166,6 +223,17 @@ mod tests {
 
         assert_eq!(motor.current().as_amps(), 10.0);
         assert_eq!(battery.current().as_amps(), 6.0);
+    }
+
+    #[test]
+    fn semantic_current_types_support_same_domain_arithmetic() {
+        let command = MotorCurrent::new(Current::from_amps(10.0))
+            + MotorCurrent::new(Current::from_amps(2.0));
+        let filtered = command * 0.25 - MotorCurrent::new(Current::from_amps(1.0));
+
+        assert_eq!(command.current().as_amps(), 12.0);
+        assert_eq!(filtered.current().as_amps(), 2.0);
+        assert_eq!((-filtered).current().as_amps(), -2.0);
     }
 
     #[test]
@@ -244,8 +312,8 @@ mod tests {
         let audio_sample_rate = AudioSampleRate::new(SampleRate::from_hertz(22_050.0));
         let audio_duration = AudioDuration::new(VescSeconds::from_seconds(0.25));
 
-        assert_eq!(channel.get(), 3);
-        assert_eq!(AudioChannel::try_new(0).expect("first channel").get(), 0);
+        assert_eq!(channel.as_u8(), 3);
+        assert_eq!(AudioChannel::try_new(0).expect("first channel").as_u8(), 0);
         assert_eq!(AudioChannel::try_new(4).expect_err("too high").value(), 4);
         assert_eq!(position.angle().as_degrees(), 90.0);
         assert_eq!(phase.angle().as_degrees(), 180.0);
@@ -264,9 +332,9 @@ mod tests {
         let motor_l = FocMotorInductance::new(Inductance::from_henries(0.000_012));
         let flux = FocMotorFluxLinkage::new(FluxLinkage::from_webers(0.004));
 
-        assert_eq!(poles.get(), 14);
-        assert_eq!(cells.get(), 12);
-        assert_eq!(gear_ratio.get(), 2.6);
+        assert_eq!(poles.as_u16(), 14);
+        assert_eq!(cells.as_u16(), 12);
+        assert_eq!(gear_ratio.as_f32(), 2.6);
         assert_eq!(wheel.distance().as_meters(), 0.165);
         assert_eq!(motor_r.resistance().as_ohms(), 0.03);
         assert_eq!(motor_l.inductance().as_henries(), 0.000_012);
@@ -301,11 +369,11 @@ mod tests {
         let packet_len = PacketLength::try_new(512).expect("valid packet length");
         let payload_len = CanPayloadLen::try_new(8).expect("valid CAN payload length");
 
-        assert_eq!(controller.get(), 42);
-        assert_eq!(priority.get(), 5);
-        assert_eq!(baud.get(), 115_200);
-        assert_eq!(packet_len.get(), 512);
-        assert_eq!(payload_len.get(), 8);
+        assert_eq!(controller.as_u8(), 42);
+        assert_eq!(priority.as_i8(), 5);
+        assert_eq!(baud.as_u32(), 115_200);
+        assert_eq!(packet_len.as_u32(), 512);
+        assert_eq!(payload_len.as_u8(), 8);
         assert!(ThreadPriority::try_new(6).is_err());
         assert!(ThreadPriority::try_new(-6).is_err());
         assert!(BaudRate::try_new(0).is_err());
@@ -346,17 +414,23 @@ mod tests {
         let roll = ImuRoll::new(AngleRadians::from_radians(0.25));
         let pitch = ImuPitch::new(AngleRadians::from_radians(-0.125));
         let yaw = ImuYaw::new(AngleRadians::from_radians(1.0));
-        let accel = ImuAcceleration::new([
-            AccelerationG::from_g(0.0),
-            AccelerationG::from_g(0.0),
-            AccelerationG::from_g(1.0),
-        ]);
-        let gyro = ImuAngularRate::new([
-            AngularVelocity::from_degrees_per_second(1.0),
-            AngularVelocity::from_degrees_per_second(2.0),
-            AngularVelocity::from_degrees_per_second(3.0),
-        ]);
-        let quat = ImuQuaternion::from_components([1.0, 0.0, 0.0, 0.0]);
+        let accel = ImuAcceleration::from_axes(
+            ImuAccelerationX::new(AccelerationG::from_g(0.0)),
+            ImuAccelerationY::new(AccelerationG::from_g(0.0)),
+            ImuAccelerationZ::new(AccelerationG::from_g(1.0)),
+        );
+        let gyro = ImuAngularRate::from_axes(
+            ImuAngularRateRoll::new(AngularVelocity::from_degrees_per_second(1.0)),
+            ImuAngularRatePitch::new(AngularVelocity::from_degrees_per_second(2.0)),
+            ImuAngularRateYaw::new(AngularVelocity::from_degrees_per_second(3.0)),
+        );
+        let attitude = ImuAttitude::new(roll, pitch, yaw);
+        let orientation = ImuOrientation::from_quaternion(ImuQuaternion::from_components(
+            ImuQuaternionW::new(1.0),
+            ImuQuaternionX::new(0.0),
+            ImuQuaternionY::new(0.0),
+            ImuQuaternionZ::new(0.0),
+        ));
 
         assert_eq!(adc_voltage.voltage().as_volts(), 1.65);
         assert_eq!(adc_level.ratio().as_ratio(), 0.5);
@@ -365,9 +439,21 @@ mod tests {
         assert_eq!(roll.angle().as_radians(), 0.25);
         assert_eq!(pitch.angle().as_radians(), -0.125);
         assert_eq!(yaw.angle().as_radians(), 1.0);
-        assert_eq!(accel.xyz()[2].as_g(), 1.0);
-        assert_eq!(gyro.xyz()[1].as_degrees_per_second(), 2.0);
-        assert_eq!(quat.components(), [1.0, 0.0, 0.0, 0.0]);
+        accel.map_axes(|_, _, z| assert_eq!(z.acceleration().as_g(), 1.0));
+        gyro.map_axes(|_, pitch, yaw| {
+            assert_eq!(pitch.angular_velocity().as_degrees_per_second(), 2.0);
+            assert_eq!(yaw.angular_velocity().as_degrees_per_second(), 3.0);
+        });
+        assert_eq!(gyro.pitch().as_degrees_per_second(), 2.0);
+        assert_eq!(gyro.yaw().as_degrees_per_second(), 3.0);
+        assert_eq!(attitude.roll(), roll);
+        assert_eq!(attitude.pitch(), pitch);
+        assert_eq!(attitude.yaw(), yaw);
+        let quaternion = orientation.quaternion();
+        assert_eq!(quaternion.w(), ImuQuaternionW::new(1.0));
+        assert_eq!(quaternion.x(), ImuQuaternionX::new(0.0));
+        assert_eq!(quaternion.y(), ImuQuaternionY::new(0.0));
+        assert_eq!(quaternion.z(), ImuQuaternionZ::new(0.0));
     }
 }
 

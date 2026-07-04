@@ -1,0 +1,83 @@
+error[E0432]: unresolved imports `vescpkg_rs::app_data_packet`, `vescpkg_rs::encode_integer`, `vescpkg_rs::ProtocolFrame`, `vescpkg_rs::FirmwareThreadHandle`, `vescpkg_rs::FirmwareThreadPair`, `vescpkg_rs::FirmwareThreadPairSpec`, `vescpkg_rs::FirmwareThreadSpec`, `vescpkg_rs::WireCommand`, `vescpkg_rs::WireVersion`
+ --> tests/ui/legacy_surface_is_not_public.rs:2:5
+  |
+2 |     app_data_packet, bindings, encode_integer, ffi, PackageProgramAddress, ProtocolFrame,
+  |     ^^^^^^^^^^^^^^^            ^^^^^^^^^^^^^^                              ^^^^^^^^^^^^^ no `ProtocolFrame` in the root
+  |     |                          |
+  |     |                          no `encode_integer` in the root
+  |     no `app_data_packet` in the root
+3 |     FirmwareThreadHandle, FirmwareThreadPair, FirmwareThreadPairSpec, FirmwareThreadSpec,
+  |     ^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^ no `FirmwareThreadSpec` in the root
+  |     |                     |                   |
+  |     |                     |                   no `FirmwareThreadPairSpec` in the root
+  |     |                     no `FirmwareThreadPair` in the root
+  |     no `FirmwareThreadHandle` in the root
+4 |     WireCommand, WireVersion, PackageStart,
+  |     ^^^^^^^^^^^  ^^^^^^^^^^^ no `WireVersion` in the root
+  |     |
+  |     no `WireCommand` in the root
+  |
+help: a similar name exists in the module
+  |
+2 -     app_data_packet, bindings, encode_integer, ffi, PackageProgramAddress, ProtocolFrame,
+2 +     AppDataPacket, bindings, encode_integer, ffi, PackageProgramAddress, ProtocolFrame,
+  |
+help: a similar name exists in the module
+  |
+3 -     FirmwareThreadHandle, FirmwareThreadPair, FirmwareThreadPairSpec, FirmwareThreadSpec,
+3 +     FirmwareThread, FirmwareThreadPair, FirmwareThreadPairSpec, FirmwareThreadSpec,
+  |
+help: a similar name exists in the module
+  |
+3 -     FirmwareThreadHandle, FirmwareThreadPair, FirmwareThreadPairSpec, FirmwareThreadSpec,
+3 +     FirmwareThreadHandle, FirmwareThread, FirmwareThreadPairSpec, FirmwareThreadSpec,
+  |
+help: a similar name exists in the module
+  |
+3 -     FirmwareThreadHandle, FirmwareThreadPair, FirmwareThreadPairSpec, FirmwareThreadSpec,
+3 +     FirmwareThreadHandle, FirmwareThreadPair, FirmwareThreadPairSpec, FirmwareThread,
+  |
+
+error[E0603]: module `bindings` is private
+ --> tests/ui/legacy_surface_is_not_public.rs:2:22
+  |
+2 |     app_data_packet, bindings, encode_integer, ffi, PackageProgramAddress, ProtocolFrame,
+  |                      ^^^^^^^^ private module
+  |
+note: the module `bindings` is defined here
+ --> <BASE_DIR>/crates/vescpkg-rs/src/lib.rs:20:0
+
+error[E0603]: module `ffi` is private
+ --> tests/ui/legacy_surface_is_not_public.rs:2:48
+  |
+2 |     app_data_packet, bindings, encode_integer, ffi, PackageProgramAddress, ProtocolFrame,
+  |                                                ^^^ private module
+  |
+note: the module `ffi` is defined here
+ --> <BASE_DIR>/crates/vescpkg-rs/src/lib.rs:37:0
+
+error[E0624]: method `get` is private
+  --> tests/ui/legacy_surface_is_not_public.rs:11:43
+   |
+11 |     let _ = PackageProgramAddress::new(0).get();
+   |                                           ^^^ private method
+   |
+  --> <BASE_DIR>/crates/vescpkg-rs/src/types/loader.rs:93:4
+   |
+   = note: private method defined here
+
+error[E0599]: no associated function or constant named `as_mut_ptr` found for struct `LoaderInfo` in the current scope
+  --> tests/ui/legacy_surface_is_not_public.rs:12:37
+   |
+12 |     let _ = vescpkg_rs::LoaderInfo::as_mut_ptr;
+   |                                     ^^^^^^^^^^ associated function or constant not found in `LoaderInfo`
+
+error[E0624]: associated function `from_raw` is private
+  --> tests/ui/legacy_surface_is_not_public.rs:13:27
+   |
+13 |     let _ = PackageStart::from_raw::<&mut vescpkg_rs::LoaderInfo>;
+   |                           ^^^^^^^^ private associated function
+   |
+  --> <BASE_DIR>/crates/vescpkg-rs/src/init.rs:231:4
+   |
+   = note: private associated function defined here
