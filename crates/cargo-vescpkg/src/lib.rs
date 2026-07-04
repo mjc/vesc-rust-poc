@@ -36,6 +36,8 @@ pub enum Command {
     LispReadCode(LispReadCodeCommand),
     /// Read back the installed QML app payload from a target device.
     QmlAppRead(QmlAppReadCommand),
+    /// Send a Refloat app-data handshake probe to a target device.
+    RefloatProbe(LoopbackCommand),
     /// Install a package on a target device.
     PackageInstall(PackageInstallCommand),
     /// Erase an installed package from a target device.
@@ -169,6 +171,8 @@ pub enum ParseError {
     UnknownCommand(String),
 }
 
+const HELP_TEXT: &str = "cargo vescpkg: use `build`, `layout`, `status`, `scan`, `loopback`, `lisp-probe`, `lisp-eval`, `lisp-stop`, `lisp-read-code`, `qml-app-read`, `refloat-probe`, `deploy`, `snake-deploy`, `package-install`, `erase-package`, or `snake`";
+
 /// Run a parsed CLI invocation and return the process exit code.
 pub fn run_args<I, S>(args: I) -> ExitCode
 where
@@ -177,9 +181,7 @@ where
 {
     match parse_args(args) {
         Ok(Command::Help) => {
-            println!(
-                "cargo vescpkg: use `build`, `layout`, `status`, `scan`, `loopback`, `lisp-probe`, `lisp-eval`, `lisp-stop`, `lisp-read-code`, `qml-app-read`, `deploy`, `snake-deploy`, `package-install`, `erase-package`, or `snake`"
-            );
+            println!("{HELP_TEXT}");
             ExitCode::SUCCESS
         }
         Ok(Command::Layout) => {
@@ -313,6 +315,7 @@ where
                 }
             }
         }
+        Ok(Command::RefloatProbe(command)) => run_refloat_probe(command),
         Ok(Command::Deploy(command)) => {
             let package_path = command.package_path;
             let target = loopback_target(command.address, command.device_name);
@@ -770,6 +773,30 @@ fn loopback_target(
     }
 }
 
+fn run_refloat_probe(command: LoopbackCommand) -> ExitCode {
+    let target = loopback_target(command.address, command.device_name);
+
+    loopback_debug::run_refloat_probe_with_diagnostics(target, |event| {
+        std::iter::once(event)
+            .filter(loopback_debug::LoopbackProgress::should_print_to_cli)
+            .for_each(|event| println!("refloat probe: {}", event.describe()));
+    })
+    .map_or_else(
+        |error| {
+            eprintln!("refloat probe failed: {error}");
+            ExitCode::from(1)
+        },
+        |response| {
+            println!(
+                "refloat probe ok: response_len={} response={}",
+                response.len(),
+                loopback_debug::hex_snippet(&response, 96)
+            );
+            ExitCode::SUCCESS
+        },
+    )
+}
+
 fn read_lisp_code(
     target: loopback::LoopbackTarget,
 ) -> Result<package_transport::LispCodeRead, package_install::PackageInstallError> {
@@ -873,6 +900,7 @@ where
         Some("lisp-stop") => parse_lisp_stop(iter).map(Command::LispStop),
         Some("lisp-read-code") => parse_lisp_read_code(iter).map(Command::LispReadCode),
         Some("qml-app-read") => parse_qml_app_read(iter).map(Command::QmlAppRead),
+        Some("refloat-probe") => parse_loopback(iter).map(Command::RefloatProbe),
         Some("package-install") => {
             parse_package_install(iter, "package-install").map(Command::PackageInstall)
         }
@@ -1340,6 +1368,18 @@ mod tests {
         assert_eq!(
             parse_args(["cargo-vescpkg", "qml-app-read", "--device", "VESC BLE UART"]),
             Ok(Command::QmlAppRead(QmlAppReadCommand {
+                device_name: Some("VESC BLE UART".to_owned()),
+                address: None,
+            }))
+        );
+        assert_eq!(
+            parse_args([
+                "cargo-vescpkg",
+                "refloat-probe",
+                "--device",
+                "VESC BLE UART"
+            ]),
+            Ok(Command::RefloatProbe(LoopbackCommand {
                 device_name: Some("VESC BLE UART".to_owned()),
                 address: None,
             }))
