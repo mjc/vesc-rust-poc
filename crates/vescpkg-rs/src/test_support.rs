@@ -84,6 +84,14 @@ impl LbmBindings for FakeBindings {
     unsafe fn encode_eval_error(&self) -> LbmValue {
         LbmValue(0xffff_ffff)
     }
+
+    fn encode_true(&self) -> LbmValue {
+        LbmValue(1)
+    }
+
+    fn encode_nil(&self) -> LbmValue {
+        LbmValue(0)
+    }
 }
 
 /// Fake app-data bindings used by lifecycle and loopback runtime tests.
@@ -108,6 +116,8 @@ pub struct FakeAppDataBindings {
     pub imu_read_callback_calls: Cell<usize>,
     /// Last IMU read callback pointer passed to registration.
     pub last_imu_read_callback: Cell<usize>,
+    /// Fake package ARG pointer returned by the app-data binding.
+    pub app_data_arg: Cell<usize>,
     set_handler_result: Cell<bool>,
     clear_handler_result: Cell<bool>,
     register_custom_config_result: Cell<bool>,
@@ -222,6 +232,7 @@ impl FakeAppDataBindings {
             custom_config_clear_calls: Cell::new(0),
             imu_read_callback_calls: Cell::new(0),
             last_imu_read_callback: Cell::new(0),
+            app_data_arg: Cell::new(0),
             set_handler_result: Cell::new(results.set_handler.accepted()),
             clear_handler_result: Cell::new(results.clear_handler.accepted()),
             register_custom_config_result: Cell::new(results.register_custom_config.accepted()),
@@ -245,6 +256,10 @@ impl AppDataBindings for FakeAppDataBindings {
 
     fn system_time_ticks(&self) -> u32 {
         self.ticks.get()
+    }
+
+    fn app_data_arg(&self, _prog_addr: u32) -> Option<core::ptr::NonNull<core::ffi::c_void>> {
+        core::ptr::NonNull::new(self.app_data_arg.get() as *mut core::ffi::c_void)
     }
 
     unsafe fn send_app_data(&self, data: *const u8, len: u32) {

@@ -6,8 +6,6 @@
 #[cfg(any(test, target_arch = "arm"))]
 use crate::app_data::RefloatAppDataState;
 use vescpkg_rs::FirmwareThreadHandle;
-#[cfg(all(not(test), target_arch = "arm"))]
-use vescpkg_rs::ffi;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::ThreadPriority;
 #[cfg(any(test, target_arch = "arm"))]
@@ -240,14 +238,16 @@ unsafe extern "C" fn refloat_main_thread(arg: *mut c_void) {
         let telemetry = MotorTelemetryApi::new(vescpkg_rs::RealMotorTelemetryBindings);
         let imu = ImuApi::new(vescpkg_rs::RealImuBindings);
         let motor = MotorControlApi::new(vescpkg_rs::RealMotorControlBindings);
+        let app_data = vescpkg_rs::RealBindings;
+        let gpio = vescpkg_rs::GpioApi::new(vescpkg_rs::RealGpioBindings);
         run_refloat_main_thread_with(&threads, || {
             let state = unsafe { &mut *arg.cast::<RefloatAppDataState>() };
-            let system_time_ticks = unsafe { ffi::raw::vesc_system_time_ticks() };
+            let system_time_ticks = vescpkg_rs::AppDataBindings::system_time_ticks(&app_data);
             // C map: Refloat `footpad_sensor_update` reads ADC1/ADC2 at
             // `/Users/mjc/projects/refloat/src/footpad_sensor.c:28-31`; BLDC
             // defines those enum slots at `/Users/mjc/projects/bldc/lispBM/c_libs/vesc_c_if.h:219-220`.
             let (footpad_adc1, footpad_adc2) =
-                unsafe { ffi::raw::io_read_analog_pair(ffi::VescPin(7), ffi::VescPin(8)) };
+                gpio.read_analog_pair(vescpkg_rs::ffi::VescPin(7), vescpkg_rs::ffi::VescPin(8));
             tick_refloat_main_thread_with(
                 state,
                 &telemetry,

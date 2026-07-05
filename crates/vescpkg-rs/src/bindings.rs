@@ -23,6 +23,10 @@ pub trait LbmBindings {
     /// # Safety
     /// The returned value is the firmware's eval-error symbol.
     unsafe fn encode_eval_error(&self) -> LbmValue;
+    /// Return the firmware's true symbol.
+    fn encode_true(&self) -> LbmValue;
+    /// Return the firmware's nil symbol.
+    fn encode_nil(&self) -> LbmValue;
 }
 
 /// Firmware calls used by the app-data and system-time helpers.
@@ -40,6 +44,9 @@ pub trait AppDataBindings {
 
     /// Return the current firmware tick counter.
     fn system_time_ticks(&self) -> u32;
+
+    /// Return the package ARG pointer stored by the firmware loader.
+    fn app_data_arg(&self, prog_addr: u32) -> Option<core::ptr::NonNull<core::ffi::c_void>>;
 
     /// # Safety
     ///
@@ -129,6 +136,14 @@ impl LbmBindings for RealBindings {
     unsafe fn encode_eval_error(&self) -> LbmValue {
         unsafe { vescpkg_rs_sys::raw::lbm_enc_sym_eerror() }
     }
+
+    fn encode_true(&self) -> LbmValue {
+        unsafe { vescpkg_rs_sys::raw::lbm_enc_sym_true() }
+    }
+
+    fn encode_nil(&self) -> LbmValue {
+        unsafe { vescpkg_rs_sys::raw::lbm_enc_sym_nil() }
+    }
 }
 
 #[cfg(not(test))]
@@ -159,6 +174,11 @@ impl AppDataBindings for RealBindings {
 
     fn system_time_ticks(&self) -> u32 {
         unsafe { vescpkg_rs_sys::raw::vesc_system_time_ticks() }
+    }
+
+    fn app_data_arg(&self, prog_addr: u32) -> Option<core::ptr::NonNull<core::ffi::c_void>> {
+        let slot = unsafe { vescpkg_rs_sys::raw::vesc_get_arg(prog_addr).as_mut()? };
+        core::ptr::NonNull::new(*slot)
     }
 
     unsafe fn send_app_data(&self, data: *const u8, len: u32) {

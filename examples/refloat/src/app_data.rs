@@ -119,16 +119,10 @@ unsafe fn refloat_state_from_arg() -> Option<&'static mut RefloatAppDataState> {
     // C map: closest visible state compatibility edge is `state_compat` at
     // Refloat v1.2.1 `third_party/refloat/src/state.c:50`; loader ARG storage happens at
     // `third_party/refloat/src/main.c:2432`.
-    let arg_slot = unsafe { ffi::raw::vesc_get_arg(loaded_image_base()) };
-    if arg_slot.is_null() {
-        return None;
-    }
-    let arg_slot = unsafe { arg_slot.as_mut()? };
-    let state = (*arg_slot).cast::<RefloatAppDataState>();
-    if state.is_null() {
-        return None;
-    }
-    unsafe { state.as_mut() }
+    let state = vescpkg_rs::RealBindings
+        .app_data_arg(loaded_image_base())?
+        .cast::<RefloatAppDataState>();
+    unsafe { state.as_ptr().as_mut() }
 }
 
 /// Device entrypoint invoked by firmware app-data delivery.
@@ -539,10 +533,8 @@ impl RefloatBalanceFilter {
     }
 
     #[cfg(all(not(test), target_arch = "arm"))]
-    unsafe fn from_firmware_quaternions() -> Self {
-        let mut quaternions = [0.0; 4];
-        unsafe { ffi::raw::vesc_imu_get_quaternions(quaternions.as_mut_ptr()) };
-        Self::from_quaternions(quaternions)
+    fn from_firmware_quaternions() -> Self {
+        Self::from_quaternions(vescpkg_rs::RealImuBindings.quaternions())
     }
 
     fn configure(&mut self, mahony_kp: f32, mahony_kp_roll: f32) {

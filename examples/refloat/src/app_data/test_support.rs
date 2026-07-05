@@ -114,6 +114,10 @@ impl AppDataBindings for RecordingAppDataBindings {
         self.system_time_ticks.get()
     }
 
+    fn app_data_arg(&self, _prog_addr: u32) -> Option<core::ptr::NonNull<core::ffi::c_void>> {
+        None
+    }
+
     unsafe fn send_app_data(&self, data: *const u8, len: u32) {
         self.send_calls.set(self.send_calls.get() + 1);
         self.last_sent_len.set(len);

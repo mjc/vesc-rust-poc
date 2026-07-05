@@ -10,6 +10,8 @@ pub trait GpioBindings {
     fn write(&self, pin: VescPin, level: bool) -> bool;
     /// Read the current pin state.
     fn read(&self, pin: VescPin) -> bool;
+    /// Read two analog pins as firmware-scaled voltages.
+    fn read_analog_pair(&self, first: VescPin, second: VescPin) -> (f32, f32);
 }
 
 #[cfg(not(test))]
@@ -28,6 +30,10 @@ impl GpioBindings for RealGpioBindings {
 
     fn read(&self, pin: VescPin) -> bool {
         unsafe { vescpkg_rs_sys::raw::io_read(pin) }
+    }
+
+    fn read_analog_pair(&self, first: VescPin, second: VescPin) -> (f32, f32) {
+        unsafe { vescpkg_rs_sys::raw::io_read_analog_pair(first, second) }
     }
 }
 
@@ -56,6 +62,11 @@ impl<B: GpioBindings> GpioApi<B> {
     pub fn read(&self, pin: VescPin) -> bool {
         self.bindings.read(pin)
     }
+
+    /// Read two analog pins as firmware-scaled voltages.
+    pub fn read_analog_pair(&self, first: VescPin, second: VescPin) -> (f32, f32) {
+        self.bindings.read_analog_pair(first, second)
+    }
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -73,12 +84,17 @@ pub mod test_support {
         pub write_calls: Cell<usize>,
         /// Number of read calls observed.
         pub read_calls: Cell<usize>,
+        /// Number of analog-pair reads observed.
+        pub analog_pair_calls: Cell<usize>,
         /// Last pin passed to any GPIO call.
         pub last_pin: Cell<i32>,
+        /// Last second analog pin passed to pair reads.
+        pub last_second_pin: Cell<i32>,
         /// Last mode value passed to mode configuration.
         pub last_mode: Cell<i32>,
         /// Last output level passed to write.
         pub last_level: Cell<i32>,
+        analog_pair: Cell<(f32, f32)>,
     }
 
     impl Default for FakeGpioBindings {
@@ -94,10 +110,19 @@ pub mod test_support {
                 mode_calls: Cell::new(0),
                 write_calls: Cell::new(0),
                 read_calls: Cell::new(0),
+                analog_pair_calls: Cell::new(0),
                 last_pin: Cell::new(0),
+                last_second_pin: Cell::new(0),
                 last_mode: Cell::new(0),
                 last_level: Cell::new(0),
+                analog_pair: Cell::new((0.0, 0.0)),
             }
+        }
+
+        /// Return fake GPIO bindings with the supplied analog-pair result.
+        pub fn with_analog_pair(self, analog_pair: (f32, f32)) -> Self {
+            self.analog_pair.set(analog_pair);
+            self
         }
     }
 
@@ -121,6 +146,13 @@ pub mod test_support {
             self.last_pin.set(pin.0);
             false
         }
+
+        fn read_analog_pair(&self, first: VescPin, second: VescPin) -> (f32, f32) {
+            self.analog_pair_calls.set(self.analog_pair_calls.get() + 1);
+            self.last_pin.set(first.0);
+            self.last_second_pin.set(second.0);
+            self.analog_pair.get()
+        }
     }
 
     #[cfg(test)]
@@ -131,7 +163,7 @@ pub mod test_support {
 
         #[test]
         fn gpio_api_forwards_through_bindings() {
-            let bindings = FakeGpioBindings::new();
+            let bindings = FakeGpioBindings::new().with_analog_pair((1.2, 3.4));
             let api = GpioApi::new(bindings);
             let pin = VescPin(42);
             let mode = VescPinMode(1);
@@ -139,6 +171,7 @@ pub mod test_support {
             assert!(api.set_mode(pin, mode));
             assert!(api.write(pin, true));
             assert!(!api.read(pin));
+            assert_eq!(api.read_analog_pair(pin, VescPin(43)), (1.2, 3.4));
         }
     }
 }

@@ -43,9 +43,25 @@ pub unsafe extern "C" fn ext_set_fw_version(args: *mut u32, argn: u32) -> u32 {
     if argn > 2 && !args.is_null() {
         let args =
             unsafe { core::slice::from_raw_parts(args.cast::<ffi::LbmValue>(), argn as usize) };
-        record_refloat_firmware_version(args, |value| unsafe { ffi::raw::lbm_dec_as_i32(value) });
+        #[cfg(all(not(test), target_arch = "arm"))]
+        {
+            let lbm = vescpkg_rs::LbmApi::new(vescpkg_rs::RealBindings);
+            record_refloat_firmware_version(args, |value| lbm.decode_i32(value));
+        }
+        #[cfg(any(test, not(target_arch = "arm")))]
+        record_refloat_firmware_version(args, |value| value.0 as i32);
     }
-    unsafe { ffi::raw::lbm_enc_sym_true().0 }
+
+    #[cfg(all(not(test), target_arch = "arm"))]
+    {
+        vescpkg_rs::LbmApi::new(vescpkg_rs::RealBindings)
+            .encode_true()
+            .0
+    }
+    #[cfg(any(test, not(target_arch = "arm")))]
+    {
+        1
+    }
 }
 
 /// Firmware version captured from Refloat's loader extension call.
@@ -112,7 +128,16 @@ fn reset_refloat_firmware_version() {
 /// extension ABI.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ext_bms(_args: *mut u32, _argn: u32) -> u32 {
-    unsafe { ffi::raw::lbm_enc_sym_nil().0 }
+    #[cfg(all(not(test), target_arch = "arm"))]
+    {
+        vescpkg_rs::LbmApi::new(vescpkg_rs::RealBindings)
+            .encode_nil()
+            .0
+    }
+    #[cfg(any(test, not(target_arch = "arm")))]
+    {
+        0
+    }
 }
 
 /// Return the native extension descriptors required by upstream `package.lisp`.
@@ -157,12 +182,19 @@ pub fn register_refloat_loader_extensions_with<B: vescpkg_rs::LbmBindings>(
 /// remain valid while firmware may call the LispBM extensions.
 #[cfg(all(not(test), target_arch = "arm"))]
 pub unsafe fn register_refloat_loader_extensions(_info: *mut ffi::LibInfo) -> bool {
-    unsafe {
-        ffi::raw::lbm_add_extension(
+    let lifecycle = vescpkg_rs::PackageLifecycle::new(vescpkg_rs::RealBindings);
+    lifecycle
+        .register_extension(vescpkg_rs::ExtensionDescriptor::new(
             runtime_ext_set_fw_version_name(),
             runtime_ext_set_fw_version_handler(),
-        ) && ffi::raw::lbm_add_extension(runtime_ext_bms_name(), runtime_ext_bms_handler())
-    }
+        ))
+        .is_ok()
+        && lifecycle
+            .register_extension(vescpkg_rs::ExtensionDescriptor::new(
+                runtime_ext_bms_name(),
+                runtime_ext_bms_handler(),
+            ))
+            .is_ok()
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
@@ -377,6 +409,14 @@ mod tests {
         }
 
         unsafe fn encode_eval_error(&self) -> LbmValue {
+            LbmValue(0)
+        }
+
+        fn encode_true(&self) -> LbmValue {
+            LbmValue(1)
+        }
+
+        fn encode_nil(&self) -> LbmValue {
             LbmValue(0)
         }
     }

@@ -40,6 +40,9 @@ pub trait ImuBindings {
     /// `src/imu.c:45-53`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:516`.
     fn angular_rate(&self) -> ImuAngularRate;
+
+    /// Return firmware IMU quaternions.
+    fn quaternions(&self) -> [f32; 4];
 }
 
 #[cfg(not(test))]
@@ -78,6 +81,12 @@ impl ImuBindings for RealImuBindings {
             AngularVelocity::from_degrees_per_second(gyro[1]),
             AngularVelocity::from_degrees_per_second(gyro[2]),
         ])
+    }
+
+    fn quaternions(&self) -> [f32; 4] {
+        let mut quaternions = [0.0; 4];
+        unsafe { vescpkg_rs_sys::raw::vesc_imu_get_quaternions(quaternions.as_mut_ptr()) };
+        quaternions
     }
 }
 
@@ -121,6 +130,11 @@ impl<B: ImuBindings> ImuApi<B> {
     pub fn angular_rate(&self) -> ImuAngularRate {
         self.bindings.angular_rate()
     }
+
+    /// Return firmware IMU quaternions.
+    pub fn quaternions(&self) -> [f32; 4] {
+        self.bindings.quaternions()
+    }
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -143,11 +157,14 @@ pub mod test_support {
         pub yaw_calls: Cell<usize>,
         /// Number of angular-rate reads observed.
         pub angular_rate_calls: Cell<usize>,
+        /// Number of quaternion reads observed.
+        pub quaternion_calls: Cell<usize>,
         startup_done: Cell<bool>,
         roll: Cell<ImuRoll>,
         pitch: Cell<ImuPitch>,
         yaw: Cell<ImuYaw>,
         angular_rate: Cell<ImuAngularRate>,
+        quaternions: Cell<[f32; 4]>,
     }
 
     impl Default for FakeImuBindings {
@@ -166,6 +183,7 @@ pub mod test_support {
                 pitch_calls: Cell::new(0),
                 yaw_calls: Cell::new(0),
                 angular_rate_calls: Cell::new(0),
+                quaternion_calls: Cell::new(0),
                 startup_done: Cell::new(false),
                 roll: Cell::new(ImuRoll::new(zero)),
                 pitch: Cell::new(ImuPitch::new(zero)),
@@ -175,6 +193,7 @@ pub mod test_support {
                     AngularVelocity::from_degrees_per_second(0.0),
                     AngularVelocity::from_degrees_per_second(0.0),
                 ])),
+                quaternions: Cell::new([1.0, 0.0, 0.0, 0.0]),
             }
         }
 
@@ -195,6 +214,12 @@ pub mod test_support {
         /// Return fake IMU bindings with the supplied angular-rate axes.
         pub fn with_angular_rate(self, angular_rate: ImuAngularRate) -> Self {
             self.angular_rate.set(angular_rate);
+            self
+        }
+
+        /// Return fake IMU bindings with the supplied quaternion state.
+        pub fn with_quaternions(self, quaternions: [f32; 4]) -> Self {
+            self.quaternions.set(quaternions);
             self
         }
     }
@@ -225,6 +250,11 @@ pub mod test_support {
             self.angular_rate_calls
                 .set(self.angular_rate_calls.get() + 1);
             self.angular_rate.get()
+        }
+
+        fn quaternions(&self) -> [f32; 4] {
+            self.quaternion_calls.set(self.quaternion_calls.get() + 1);
+            self.quaternions.get()
         }
     }
 }

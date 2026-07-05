@@ -48,6 +48,16 @@ impl<B: LbmBindings> LbmApi<B> {
     pub fn encode_eval_error(&self) -> LbmValue {
         unsafe { self.bindings.encode_eval_error() }
     }
+
+    /// Return the LispBM true value.
+    pub fn encode_true(&self) -> LbmValue {
+        self.bindings.encode_true()
+    }
+
+    /// Return the LispBM nil value.
+    pub fn encode_nil(&self) -> LbmValue {
+        self.bindings.encode_nil()
+    }
 }
 
 /// Package lifecycle controller that owns the shared LispBM API wrapper.
