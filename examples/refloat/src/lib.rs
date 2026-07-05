@@ -14,6 +14,7 @@ extern crate std;
 
 pub mod app_data;
 mod balance_loop;
+mod config;
 pub mod domain;
 pub mod extensions;
 pub mod init;
