@@ -28,6 +28,20 @@ pub fn install_stop_hook(info: *mut ffi::LibInfo) -> bool {
     true
 }
 
+/// One startup phase for a firmware package.
+pub type PackageStartStep = fn(*mut ffi::LibInfo) -> bool;
+
+/// Run package startup phases in order, stopping at the first failure.
+pub fn start_package(info: *mut ffi::LibInfo, steps: &[PackageStartStep]) -> bool {
+    for step in steps {
+        if !step(info) {
+            return false;
+        }
+    }
+
+    true
+}
+
 #[cfg(any(test, feature = "test-support"))]
 mod test_state {
     use core::sync::atomic::{AtomicUsize, Ordering};
@@ -124,5 +138,33 @@ mod tests {
     #[test]
     fn install_stop_hook_rejects_null_loader_metadata() {
         assert!(!install_stop_hook(core::ptr::null_mut()));
+    }
+
+    #[test]
+    fn start_package_runs_steps_until_failure() {
+        use core::sync::atomic::{AtomicUsize, Ordering};
+
+        static CALLS: AtomicUsize = AtomicUsize::new(0);
+
+        fn first(_info: *mut ffi::LibInfo) -> bool {
+            CALLS.fetch_add(1, Ordering::SeqCst);
+            true
+        }
+
+        fn second(_info: *mut ffi::LibInfo) -> bool {
+            CALLS.fetch_add(10, Ordering::SeqCst);
+            false
+        }
+
+        fn skipped(_info: *mut ffi::LibInfo) -> bool {
+            CALLS.fetch_add(100, Ordering::SeqCst);
+            true
+        }
+
+        CALLS.store(0, Ordering::SeqCst);
+        let steps: [super::PackageStartStep; 3] = [first, second, skipped];
+
+        assert!(!super::start_package(core::ptr::null_mut(), &steps));
+        assert_eq!(CALLS.load(Ordering::SeqCst), 11);
     }
 }

@@ -1,7 +1,7 @@
+#[cfg(all(not(test), target_arch = "arm"))]
+use super::runtime_refloat_app_data_handler;
 #[cfg(any(test, target_arch = "arm"))]
 use super::{RefloatPackageLifecycle, RefloatPackageState};
-#[cfg(all(not(test), target_arch = "arm"))]
-use super::{register_refloat_imu_callback, runtime_refloat_app_data_handler};
 #[cfg(any(test, target_arch = "arm"))]
 use crate::domain::RefloatAllDataPayloads;
 #[cfg(test)]
@@ -128,17 +128,6 @@ pub fn register_refloat_app_data_callbacks(info: *mut ffi::LibInfo) -> bool {
     let lifecycle = RefloatPackageLifecycle::new(vescpkg_rs::RealBindings);
     let handler = runtime_refloat_app_data_handler();
     lifecycle.install_refloat_callbacks(info, handler).is_ok()
-}
-
-/// Allocate startup state and register Refloat app-data callbacks.
-///
-/// Kept as the old combined entrypoint for callers that do not need the
-/// upstream split between `third_party/refloat/src/main.c:2431-2432` and `third_party/refloat/src/main.c:2455-2459`.
-#[cfg(all(not(test), target_arch = "arm"))]
-pub fn install_refloat_app_data(info: *mut ffi::LibInfo) -> bool {
-    install_refloat_package_state(info)
-        && register_refloat_imu_callback(info)
-        && register_refloat_app_data_callbacks(info)
 }
 
 #[cfg(test)]

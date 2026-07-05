@@ -26,11 +26,11 @@ mod state;
 
 pub use self::custom_config::register_refloat_custom_config;
 #[cfg(all(not(test), target_arch = "arm"))]
-pub use self::imu_callback::register_refloat_imu_callback;
+pub(crate) use self::imu_callback::register_refloat_imu_callback;
 pub use self::lifecycle::RefloatPackageLifecycle;
 #[cfg(all(not(test), target_arch = "arm"))]
-pub use self::startup::{
-    install_refloat_app_data, install_refloat_package_state, register_refloat_app_data_callbacks,
+pub(crate) use self::startup::{
+    install_refloat_package_state, register_refloat_app_data_callbacks,
 };
 pub use self::state::RefloatPackageState;
 
