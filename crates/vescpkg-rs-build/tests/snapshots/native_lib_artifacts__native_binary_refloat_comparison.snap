@@ -8,17 +8,17 @@ load_sections:
   .init_fun: left size=56 vma=0x4 right size=12 vma=0x4
   .data: left size=0 vma=0x3c right size=104 vma=0x10
   .got: left size=20 vma=0x3c right size=0 vma=0x78
-  .text: left size=391 vma=0x50 right size=35241 vma=0x80
+  .text: left size=391 vma=0x50 right size=35641 vma=0x80
 debug_sections:
   .debug_abbrev: right_only size=1395 vma=0x0
   .debug_aranges: right_only size=304 vma=0x0
-  .debug_frame: left size=228 vma=0x0 right size=2016 vma=0x0
+  .debug_frame: left size=228 vma=0x0 right size=2036 vma=0x0
   .debug_info: right_only size=5726 vma=0x0
   .debug_line: right_only size=6990 vma=0x0
   .debug_ranges: right_only size=1576 vma=0x0
   .debug_str: right_only size=5593 vma=0x0
   .strtab: left size=286 vma=0x0 right size=3665 vma=0x0
-  .symtab: left size=592 vma=0x0 right size=3264 vma=0x0
+  .symtab: left size=592 vma=0x0 right size=3296 vma=0x0
 contract_symbols:
   ext_rust_probe_diag_v4: left_only
   init: both

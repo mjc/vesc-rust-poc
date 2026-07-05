@@ -10,10 +10,11 @@ use vescpkg_rs::FirmwareThreadHandle;
 use vescpkg_rs::ffi;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::ThreadPriority;
-#[cfg(all(not(test), target_arch = "arm"))]
-use vescpkg_rs::{ImuApi, MotorTelemetryApi};
 #[cfg(any(test, target_arch = "arm"))]
-use vescpkg_rs::{ThreadApi, ThreadBindings};
+use vescpkg_rs::{
+    ImuApi, ImuBindings, MotorControlApi, MotorControlBindings, MotorTelemetryApi,
+    MotorTelemetryBindings, ThreadApi, ThreadBindings,
+};
 
 #[cfg(any(test, target_arch = "arm"))]
 use core::ffi::{CStr, c_void};
@@ -151,6 +152,28 @@ pub(crate) fn run_refloat_main_thread_with<B: ThreadBindings, F: FnMut() -> u32>
     }
 }
 
+#[cfg(any(test, target_arch = "arm"))]
+pub(crate) fn tick_refloat_main_thread_with<
+    M: MotorTelemetryBindings,
+    I: ImuBindings,
+    C: MotorControlBindings,
+>(
+    state: &mut RefloatAppDataState,
+    telemetry: &MotorTelemetryApi<M>,
+    imu: &ImuApi<I>,
+    motor: &MotorControlApi<C>,
+) -> u32 {
+    state.refresh_runtime_state(telemetry, imu);
+    let run_state = state
+        .all_data_payloads()
+        .base()
+        .status()
+        .ride_state()
+        .run_state();
+    state.apply_motor_control(motor, run_state);
+    state.configured_loop_time_us()
+}
+
 /// Run Refloat's source-backed auxiliary thread scheduler shell.
 ///
 /// Upstream `aux_thd` optionally lowers its current thread priority at
@@ -201,10 +224,10 @@ unsafe extern "C" fn refloat_main_thread(arg: *mut c_void) {
         let threads = ThreadApi::new(vescpkg_rs::RealThreadBindings);
         let telemetry = MotorTelemetryApi::new(vescpkg_rs::RealMotorTelemetryBindings);
         let imu = ImuApi::new(vescpkg_rs::RealImuBindings);
+        let motor = MotorControlApi::new(vescpkg_rs::RealMotorControlBindings);
         run_refloat_main_thread_with(&threads, || {
             let state = unsafe { &mut *arg.cast::<RefloatAppDataState>() };
-            state.refresh_runtime_state(&telemetry, &imu);
-            state.configured_loop_time_us()
+            tick_refloat_main_thread_with(state, &telemetry, &imu, &motor)
         });
     }
 
@@ -235,7 +258,7 @@ mod tests {
     use core::ffi::CStr;
     use vescpkg_rs::prelude::*;
     use vescpkg_rs::test_support::{
-        FakeImuBindings, FakeMotorTelemetryBindings, FakeThreadBindings,
+        FakeImuBindings, FakeMotorControlBindings, FakeMotorTelemetryBindings, FakeThreadBindings,
     };
 
     #[test]
@@ -355,6 +378,26 @@ mod tests {
         assert_eq!(bindings.should_terminate_calls.get(), 2);
         assert_eq!(bindings.sleep_calls.get(), 1);
         assert_eq!(bindings.sleep_micros.get(), [1201, 0]);
+    }
+
+    #[test]
+    fn refloat_main_thread_tick_applies_motor_control_like_refloat_loop() {
+        let bindings = FakeThreadBindings::with_should_terminate_after_calls(2);
+        let threads = ThreadApi::new(&bindings);
+        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+        let imu = ImuApi::new(FakeImuBindings::new().with_startup_done(true));
+        let motor = MotorControlApi::new(FakeMotorControlBindings::new());
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
+        state.request_motor_current(MotorCurrent::new(Current::from_amps(3.5)));
+
+        super::run_refloat_main_thread_with(&threads, || {
+            super::tick_refloat_main_thread_with(&mut state, &telemetry, &imu, &motor)
+        });
+
+        // Upstream `refloat_thd` applies motor control after the state switch at
+        // `src/main.c:1075`, before sleeping at `src/main.c:1080`.
+        assert_eq!(motor.bindings().set_current_calls.get(), 1);
+        assert_eq!(motor.bindings().current().current().as_amps(), 3.5);
     }
 
     #[test]
