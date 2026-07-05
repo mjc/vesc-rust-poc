@@ -12,6 +12,7 @@
 #[cfg(test)]
 extern crate std;
 
+pub mod app_data;
 pub mod domain;
 
 #[cfg(not(test))]
@@ -31,16 +32,17 @@ mod tests {
         FootpadSensorSample, FootpadSensorState, REFLOAT_APP_DATA_PACKAGE_ID,
         REFLOAT_REALTIME_DATA_ITEMS, REFLOAT_REALTIME_RECORDED_ITEMS,
         REFLOAT_REALTIME_RUNTIME_ITEMS, RefloatAlertId, RefloatAllDataAttitude,
-        RefloatAllDataBasePayload, RefloatAllDataBatteryTemperature, RefloatAllDataMode2Payload,
-        RefloatAllDataMode3Payload, RefloatAllDataMode4Payload, RefloatAllDataMotorPayload,
-        RefloatAllDataStatus, RefloatAppDataCommand, RefloatBeepReason, RefloatChargingState,
-        RefloatDarkRideState, RefloatDataRecorderFlags, RefloatFatalErrorState,
-        RefloatFirmwareFaultCode, RefloatFocIdCurrent, RefloatHardwareConfig,
-        RefloatHardwareLedsConfig, RefloatImuSample, RefloatLedAnimationMode,
-        RefloatLedAnimationSpeed, RefloatLedBarConfig, RefloatLedColor, RefloatLedColorOrder,
-        RefloatLedMode, RefloatLedPin, RefloatLedPinConfig, RefloatLedStripConfig,
-        RefloatLedStripOrder, RefloatLedTransition, RefloatLedsConfig, RefloatMode,
-        RefloatMotorCommand, RefloatMotorTelemetry, RefloatRealtimeAlertMask,
+        RefloatAllDataBasePayload, RefloatAllDataBatteryTemperature, RefloatAllDataMode,
+        RefloatAllDataMode2Payload, RefloatAllDataMode3Payload, RefloatAllDataMode4Payload,
+        RefloatAllDataMotorPayload, RefloatAllDataPayloads, RefloatAllDataRequest,
+        RefloatAllDataRequestError, RefloatAllDataStatus, RefloatAppDataCommand, RefloatBeepReason,
+        RefloatChargingState, RefloatDarkRideState, RefloatDataRecorderFlags,
+        RefloatFatalErrorState, RefloatFirmwareFaultCode, RefloatFocIdCurrent,
+        RefloatHardwareConfig, RefloatHardwareLedsConfig, RefloatImuSample,
+        RefloatLedAnimationMode, RefloatLedAnimationSpeed, RefloatLedBarConfig, RefloatLedColor,
+        RefloatLedColorOrder, RefloatLedMode, RefloatLedPin, RefloatLedPinConfig,
+        RefloatLedStripConfig, RefloatLedStripOrder, RefloatLedTransition, RefloatLedsConfig,
+        RefloatMode, RefloatMotorCommand, RefloatMotorTelemetry, RefloatRealtimeAlertMask,
         RefloatRealtimeAlwaysPayload, RefloatRealtimeAtrAccelerationDiff,
         RefloatRealtimeAtrSpeedBoost, RefloatRealtimeBalanceCurrent, RefloatRealtimeBalancePitch,
         RefloatRealtimeBoosterCurrent, RefloatRealtimeChargingCurrent,
@@ -183,6 +185,55 @@ mod tests {
                 .expect_err("unstable command should stay explicit")
                 .value(),
             200
+        );
+    }
+
+    #[test]
+    fn package_author_parses_all_data_requests_without_raw_packet_checks() {
+        let request = RefloatAllDataRequest::parse(&[
+            REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            RefloatAppDataCommand::GetAllData.id(),
+            4,
+        ])
+        .expect("all-data mode 4 request should parse");
+
+        assert_eq!(request.mode(), RefloatAllDataMode::with_mode4());
+        assert_eq!(request.mode().source_id(), 4);
+        assert!(request.mode().includes_mode2());
+        assert!(request.mode().includes_mode3());
+        assert!(request.mode().includes_mode4());
+        assert_eq!(
+            RefloatAllDataRequest::parse(&[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::GetAllData.id()
+            ])
+            .expect_err("truncated request should be rejected"),
+            RefloatAllDataRequestError::Length { actual: 2 }
+        );
+        assert_eq!(
+            RefloatAllDataRequest::parse(&[102, RefloatAppDataCommand::GetAllData.id(), 4])
+                .expect_err("wrong package ID should be rejected"),
+            RefloatAllDataRequestError::PackageId { value: 102 }
+        );
+        assert_eq!(
+            RefloatAllDataRequest::parse(&[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::PrintInfo.id(),
+                4
+            ])
+            .expect_err("wrong command should be rejected"),
+            RefloatAllDataRequestError::Command { value: 9 }
+        );
+        assert_eq!(
+            RefloatAllDataRequest::parse(&[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::GetAllData.id(),
+                9
+            ])
+            .expect("Refloat source accepts high all-data modes")
+            .mode()
+            .source_id(),
+            9
         );
     }
 
@@ -536,6 +587,239 @@ mod tests {
         assert_eq!(mode3.battery_level().ratio().as_ratio(), 0.72);
         assert_eq!(mode4.current().current().current().as_amps(), 1.2);
         assert_eq!(mode4.voltage().voltage().voltage().as_volts(), 82.4);
+    }
+
+    #[test]
+    fn package_author_encodes_all_data_base_response_like_refloat_v1_2_1() {
+        let ride_state = RefloatRideState::new(
+            RefloatRunState::Running,
+            RefloatMode::Normal,
+            RefloatSetpointAdjustment::None,
+            RefloatStopCondition::None,
+        );
+        let footpad = FootpadSensorSample::new(
+            AdcDecodedLevel::new(Ratio::from_ratio_const(0.60)),
+            AdcDecodedLevel::new(Ratio::from_ratio_const(0.40)),
+            FootpadSensorState::Both,
+        );
+        let setpoints = RefloatRealtimeRuntimeSetpoints::new(
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(1.0)),
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(0.0)),
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(-1.0)),
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(2.0)),
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(-2.0)),
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(3.0)),
+        );
+        let payload = RefloatAllDataBasePayload::new(
+            RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(9.0))),
+            RefloatAllDataAttitude::new(
+                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(1.2)),
+                ImuRoll::new(AngleRadians::from_radians(-0.5)),
+                ImuPitch::new(AngleRadians::from_radians(2.3)),
+            ),
+            RefloatAllDataStatus::new(ride_state, RefloatBeepReason::LowVoltage),
+            footpad,
+            setpoints,
+            RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(4.0))),
+            RefloatAllDataMotorPayload::new(
+                BatteryVoltage::new(Voltage::from_volts(72.0)),
+                ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1200.0)),
+                VehicleSpeed::new(Speed::from_meters_per_second(3.0)),
+                MotorCurrent::new(Current::from_amps(5.0)),
+                BatteryCurrent::new(Current::from_amps(-2.0)),
+                DutyCycle::new(SignedRatio::from_ratio_const(-0.25)),
+                RefloatFocIdCurrent::measured(MotorCurrent::new(Current::from_amps(2.0))),
+            ),
+        );
+
+        assert_eq!(
+            payload.encode_base_response(1),
+            [
+                101, 10, 1, 0, 90, 0, 12, 255, 251, 33, 18, 30, 20, 133, 128, 123, 138, 118, 143,
+                0, 23, 132, 2, 208, 4, 176, 0, 30, 0, 50, 255, 236, 103, 6,
+            ]
+        );
+    }
+
+    #[test]
+    fn package_author_encodes_all_data_mode4_response_like_refloat_v1_2_1() {
+        let ride_state = RefloatRideState::new(
+            RefloatRunState::Running,
+            RefloatMode::Normal,
+            RefloatSetpointAdjustment::None,
+            RefloatStopCondition::None,
+        );
+        let footpad = FootpadSensorSample::new(
+            AdcDecodedLevel::new(Ratio::from_ratio_const(0.60)),
+            AdcDecodedLevel::new(Ratio::from_ratio_const(0.40)),
+            FootpadSensorState::Both,
+        );
+        let setpoints = RefloatRealtimeRuntimeSetpoints::new(
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(1.0)),
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(0.0)),
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(-1.0)),
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(2.0)),
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(-2.0)),
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(3.0)),
+        );
+        let payload = RefloatAllDataBasePayload::new(
+            RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(9.0))),
+            RefloatAllDataAttitude::new(
+                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(1.2)),
+                ImuRoll::new(AngleRadians::from_radians(-0.5)),
+                ImuPitch::new(AngleRadians::from_radians(2.3)),
+            ),
+            RefloatAllDataStatus::new(ride_state, RefloatBeepReason::LowVoltage),
+            footpad,
+            setpoints,
+            RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(4.0))),
+            RefloatAllDataMotorPayload::new(
+                BatteryVoltage::new(Voltage::from_volts(72.0)),
+                ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1200.0)),
+                VehicleSpeed::new(Speed::from_meters_per_second(3.0)),
+                MotorCurrent::new(Current::from_amps(5.0)),
+                BatteryCurrent::new(Current::from_amps(-2.0)),
+                DutyCycle::new(SignedRatio::from_ratio_const(-0.25)),
+                RefloatFocIdCurrent::measured(MotorCurrent::new(Current::from_amps(2.0))),
+            ),
+        );
+        let mode2 = RefloatAllDataMode2Payload::new(
+            TripDistance::new(Distance::from_meters(64.0)),
+            RefloatRealtimeMotorTemperatures::new(
+                MosfetTemperature::new(Temperature::from_degrees_celsius(44.0)),
+                MotorTemperature::new(Temperature::from_degrees_celsius(51.5)),
+            ),
+            RefloatAllDataBatteryTemperature::unavailable(),
+        );
+        let mode3 = RefloatAllDataMode3Payload::new(
+            OdometerMeters::from_meters(123_456),
+            AmpHoursDischarged::new(Charge::from_amp_hours(3.2)),
+            AmpHoursCharged::new(Charge::from_amp_hours(0.8)),
+            WattHoursDischarged::new(Energy::from_watt_hours(170.0)),
+            WattHoursCharged::new(Energy::from_watt_hours(18.5)),
+            BatteryLevel::new(Ratio::from_ratio_const(0.72)),
+        );
+        let mode4 = RefloatAllDataMode4Payload::new(
+            RefloatRealtimeChargingCurrent::new(BatteryCurrent::new(Current::from_amps(1.2))),
+            RefloatRealtimeChargingVoltage::new(BatteryVoltage::new(Voltage::from_volts(82.4))),
+        );
+
+        assert_eq!(
+            payload.encode_mode4_response(mode2, mode3, mode4),
+            [
+                101, 10, 4, 0, 90, 0, 12, 255, 251, 33, 18, 30, 20, 133, 128, 123, 138, 118, 143,
+                0, 23, 132, 2, 208, 4, 176, 0, 30, 0, 50, 255, 236, 103, 6, 66, 128, 0, 0, 88, 103,
+                0, 0, 1, 226, 64, 0, 32, 0, 8, 0, 170, 0, 18, 144, 0, 12, 3, 56,
+            ]
+        );
+    }
+
+    #[test]
+    fn package_author_dispatches_all_data_responses_from_typed_request_mode() {
+        let ride_state = RefloatRideState::new(
+            RefloatRunState::Running,
+            RefloatMode::Normal,
+            RefloatSetpointAdjustment::None,
+            RefloatStopCondition::None,
+        );
+        let footpad = FootpadSensorSample::new(
+            AdcDecodedLevel::new(Ratio::from_ratio_const(0.60)),
+            AdcDecodedLevel::new(Ratio::from_ratio_const(0.40)),
+            FootpadSensorState::Both,
+        );
+        let setpoints = RefloatRealtimeRuntimeSetpoints::new(
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(1.0)),
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(0.0)),
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(-1.0)),
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(2.0)),
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(-2.0)),
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(3.0)),
+        );
+        let payloads = RefloatAllDataPayloads::new(
+            RefloatAllDataBasePayload::new(
+                RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(9.0))),
+                RefloatAllDataAttitude::new(
+                    RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(1.2)),
+                    ImuRoll::new(AngleRadians::from_radians(-0.5)),
+                    ImuPitch::new(AngleRadians::from_radians(2.3)),
+                ),
+                RefloatAllDataStatus::new(ride_state, RefloatBeepReason::LowVoltage),
+                footpad,
+                setpoints,
+                RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(4.0))),
+                RefloatAllDataMotorPayload::new(
+                    BatteryVoltage::new(Voltage::from_volts(72.0)),
+                    ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1200.0)),
+                    VehicleSpeed::new(Speed::from_meters_per_second(3.0)),
+                    MotorCurrent::new(Current::from_amps(5.0)),
+                    BatteryCurrent::new(Current::from_amps(-2.0)),
+                    DutyCycle::new(SignedRatio::from_ratio_const(-0.25)),
+                    RefloatFocIdCurrent::measured(MotorCurrent::new(Current::from_amps(2.0))),
+                ),
+            ),
+            RefloatAllDataMode2Payload::new(
+                TripDistance::new(Distance::from_meters(64.0)),
+                RefloatRealtimeMotorTemperatures::new(
+                    MosfetTemperature::new(Temperature::from_degrees_celsius(44.0)),
+                    MotorTemperature::new(Temperature::from_degrees_celsius(51.5)),
+                ),
+                RefloatAllDataBatteryTemperature::unavailable(),
+            ),
+            RefloatAllDataMode3Payload::new(
+                OdometerMeters::from_meters(123_456),
+                AmpHoursDischarged::new(Charge::from_amp_hours(3.2)),
+                AmpHoursCharged::new(Charge::from_amp_hours(0.8)),
+                WattHoursDischarged::new(Energy::from_watt_hours(170.0)),
+                WattHoursCharged::new(Energy::from_watt_hours(18.5)),
+                BatteryLevel::new(Ratio::from_ratio_const(0.72)),
+            ),
+            RefloatAllDataMode4Payload::new(
+                RefloatRealtimeChargingCurrent::new(BatteryCurrent::new(Current::from_amps(1.2))),
+                RefloatRealtimeChargingVoltage::new(BatteryVoltage::new(Voltage::from_volts(82.4))),
+            ),
+        );
+
+        assert_eq!(
+            payloads
+                .encode_response(RefloatAllDataRequest::new(RefloatAllDataMode::base()))
+                .as_bytes(),
+            &[
+                101, 10, 1, 0, 90, 0, 12, 255, 251, 33, 18, 30, 20, 133, 128, 123, 138, 118, 143,
+                0, 23, 132, 2, 208, 4, 176, 0, 30, 0, 50, 255, 236, 103, 6,
+            ]
+        );
+        assert_eq!(
+            payloads
+                .encode_response(RefloatAllDataRequest::new(RefloatAllDataMode::with_mode2()))
+                .as_bytes(),
+            &[
+                101, 10, 2, 0, 90, 0, 12, 255, 251, 33, 18, 30, 20, 133, 128, 123, 138, 118, 143,
+                0, 23, 132, 2, 208, 4, 176, 0, 30, 0, 50, 255, 236, 103, 6, 66, 128, 0, 0, 88, 103,
+                0,
+            ]
+        );
+        assert_eq!(
+            payloads
+                .encode_response(RefloatAllDataRequest::new(RefloatAllDataMode::with_mode3()))
+                .as_bytes(),
+            &[
+                101, 10, 3, 0, 90, 0, 12, 255, 251, 33, 18, 30, 20, 133, 128, 123, 138, 118, 143,
+                0, 23, 132, 2, 208, 4, 176, 0, 30, 0, 50, 255, 236, 103, 6, 66, 128, 0, 0, 88, 103,
+                0, 0, 1, 226, 64, 0, 32, 0, 8, 0, 170, 0, 18, 144,
+            ]
+        );
+        assert_eq!(
+            payloads
+                .encode_response(RefloatAllDataRequest::new(
+                    RefloatAllDataMode::from_source_id(9)
+                ))
+                .as_bytes(),
+            &[
+                101, 10, 9, 0, 90, 0, 12, 255, 251, 33, 18, 30, 20, 133, 128, 123, 138, 118, 143,
+                0, 23, 132, 2, 208, 4, 176, 0, 30, 0, 50, 255, 236, 103, 6, 66, 128, 0, 0, 88, 103,
+                0, 0, 1, 226, 64, 0, 32, 0, 8, 0, 170, 0, 18, 144, 0, 12, 3, 56,
+            ]
+        );
     }
 
     #[test]

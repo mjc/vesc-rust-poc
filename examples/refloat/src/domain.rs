@@ -181,6 +181,116 @@ impl RefloatAppDataCommandError {
     }
 }
 
+/// Refloat all-data request mode byte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RefloatAllDataMode {
+    source_id: u8,
+}
+
+impl RefloatAllDataMode {
+    /// Build a mode token from the upstream Refloat request byte.
+    pub const fn from_source_id(source_id: u8) -> Self {
+        Self { source_id }
+    }
+
+    /// Build a base all-data request mode.
+    pub const fn base() -> Self {
+        Self::from_source_id(1)
+    }
+
+    /// Build a request mode that includes mode 2 fields.
+    pub const fn with_mode2() -> Self {
+        Self::from_source_id(2)
+    }
+
+    /// Build a request mode that includes mode 2 and 3 fields.
+    pub const fn with_mode3() -> Self {
+        Self::from_source_id(3)
+    }
+
+    /// Build a request mode that includes mode 2, 3, and 4 fields.
+    pub const fn with_mode4() -> Self {
+        Self::from_source_id(4)
+    }
+
+    /// Return the source request byte.
+    pub const fn source_id(self) -> u8 {
+        self.source_id
+    }
+
+    /// Return whether the mode includes mode 2 extension fields.
+    pub const fn includes_mode2(self) -> bool {
+        self.source_id >= 2
+    }
+
+    /// Return whether the mode includes mode 3 extension fields.
+    pub const fn includes_mode3(self) -> bool {
+        self.source_id >= 3
+    }
+
+    /// Return whether the mode includes mode 4 extension fields.
+    pub const fn includes_mode4(self) -> bool {
+        self.source_id >= 4
+    }
+}
+
+/// Refloat all-data request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RefloatAllDataRequest {
+    mode: RefloatAllDataMode,
+}
+
+impl RefloatAllDataRequest {
+    /// Build an all-data request.
+    pub const fn new(mode: RefloatAllDataMode) -> Self {
+        Self { mode }
+    }
+
+    /// Parse a Refloat `COMMAND_GET_ALLDATA` app-data packet.
+    pub fn parse(bytes: &[u8]) -> Result<Self, RefloatAllDataRequestError> {
+        let [package_id, command_id, mode] = bytes else {
+            return Err(RefloatAllDataRequestError::Length {
+                actual: bytes.len(),
+            });
+        };
+
+        if *package_id != REFLOAT_APP_DATA_PACKAGE_ID.get() {
+            return Err(RefloatAllDataRequestError::PackageId { value: *package_id });
+        }
+
+        if *command_id != RefloatAppDataCommand::GetAllData.id() {
+            return Err(RefloatAllDataRequestError::Command { value: *command_id });
+        }
+
+        Ok(Self::new(RefloatAllDataMode::from_source_id(*mode)))
+    }
+
+    /// Return the requested all-data mode.
+    pub const fn mode(self) -> RefloatAllDataMode {
+        self.mode
+    }
+}
+
+/// Error returned when a Refloat all-data request cannot be parsed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefloatAllDataRequestError {
+    /// The request length is not the Refloat `v1.2.1` three-byte shape.
+    Length {
+        /// Actual request byte length.
+        actual: usize,
+    },
+    /// The package ID does not match Refloat.
+    PackageId {
+        /// Rejected package ID.
+        value: u8,
+    },
+    /// The command ID is not `COMMAND_GET_ALLDATA`.
+    Command {
+        /// Rejected command ID.
+        value: u8,
+    },
+}
+
 /// Refloat footpad sensor state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FootpadSensorState {
@@ -2410,6 +2520,200 @@ impl RefloatAllDataBasePayload {
         RefloatAppDataCommand::GetAllData
     }
 
+    /// Encode the compact all-data base response bytes.
+    pub fn encode_base_response(self, mode: u8) -> [u8; 34] {
+        let mut buffer = [0; 34];
+        let mut ind = 0;
+
+        refloat_push_u8(&mut buffer, &mut ind, REFLOAT_APP_DATA_PACKAGE_ID.get());
+        refloat_push_u8(&mut buffer, &mut ind, self.command().id());
+        refloat_push_u8(&mut buffer, &mut ind, mode);
+        refloat_push_scaled_i16(
+            &mut buffer,
+            &mut ind,
+            self.balance_current.current().current().as_amps(),
+            10.0,
+        );
+        refloat_push_scaled_i16(
+            &mut buffer,
+            &mut ind,
+            self.attitude.balance_pitch().angle().as_radians(),
+            10.0,
+        );
+        refloat_push_scaled_i16(
+            &mut buffer,
+            &mut ind,
+            self.attitude.roll().angle().as_radians(),
+            10.0,
+        );
+
+        let ride_state = self.status.ride_state;
+        refloat_push_u8(
+            &mut buffer,
+            &mut ind,
+            (ride_state.float_state_compat() & 0x0f)
+                + (ride_state.setpoint_adjustment_compat() << 4),
+        );
+
+        let handtest = matches!(ride_state.mode, RefloatMode::HandTest);
+        let switch_state = self.footpad.state().switch_compat() | u8::from(handtest) << 3;
+        refloat_push_u8(
+            &mut buffer,
+            &mut ind,
+            (switch_state & 0x0f) + (self.status.beep_reason.id() << 4),
+        );
+        refloat_push_u8(
+            &mut buffer,
+            &mut ind,
+            refloat_scaled_u8(self.footpad.adc1().ratio().as_ratio(), 50.0),
+        );
+        refloat_push_u8(
+            &mut buffer,
+            &mut ind,
+            refloat_scaled_u8(self.footpad.adc2().ratio().as_ratio(), 50.0),
+        );
+
+        [
+            self.setpoints.board(),
+            self.setpoints.atr(),
+            self.setpoints.brake_tilt(),
+            self.setpoints.torque_tilt(),
+            self.setpoints.turn_tilt(),
+            self.setpoints.remote(),
+        ]
+        .into_iter()
+        .map(|setpoint| refloat_offset_scaled_u8(setpoint.angle().as_degrees(), 5.0, 128.0))
+        .for_each(|value| refloat_push_u8(&mut buffer, &mut ind, value));
+
+        refloat_push_scaled_i16(
+            &mut buffer,
+            &mut ind,
+            self.attitude.pitch().angle().as_radians(),
+            10.0,
+        );
+        refloat_push_u8(
+            &mut buffer,
+            &mut ind,
+            refloat_offset_scaled_u8(
+                self.booster_current.current().current().as_amps(),
+                1.0,
+                128.0,
+            ),
+        );
+        refloat_push_scaled_i16(
+            &mut buffer,
+            &mut ind,
+            self.motor.battery_voltage().voltage().as_volts(),
+            10.0,
+        );
+        refloat_push_i16(
+            &mut buffer,
+            &mut ind,
+            self.motor
+                .electrical_speed()
+                .rpm()
+                .as_revolutions_per_minute() as i16,
+        );
+        refloat_push_scaled_i16(
+            &mut buffer,
+            &mut ind,
+            self.motor.vehicle_speed().speed().as_meters_per_second(),
+            10.0,
+        );
+        refloat_push_scaled_i16(
+            &mut buffer,
+            &mut ind,
+            self.motor.motor_current().current().as_amps(),
+            10.0,
+        );
+        refloat_push_scaled_i16(
+            &mut buffer,
+            &mut ind,
+            self.motor.battery_current().current().as_amps(),
+            10.0,
+        );
+        refloat_push_u8(
+            &mut buffer,
+            &mut ind,
+            refloat_offset_scaled_u8(self.motor.duty_cycle().ratio().as_ratio(), 100.0, 128.0),
+        );
+        refloat_push_u8(
+            &mut buffer,
+            &mut ind,
+            self.motor
+                .foc_id_current()
+                .as_measured()
+                .map_or(222, |current| {
+                    refloat_scaled_u8(current.current().as_amps().abs(), 3.0)
+                }),
+        );
+
+        buffer
+    }
+
+    /// Encode the compact all-data mode 4 response bytes.
+    pub fn encode_mode4_response(
+        self,
+        mode2: RefloatAllDataMode2Payload,
+        mode3: RefloatAllDataMode3Payload,
+        mode4: RefloatAllDataMode4Payload,
+    ) -> [u8; 58] {
+        self.encode_mode4_response_for_mode(4, mode2, mode3, mode4)
+    }
+
+    /// Encode the compact all-data mode 2 response bytes.
+    pub fn encode_mode2_response(
+        self,
+        mode: RefloatAllDataMode,
+        mode2: RefloatAllDataMode2Payload,
+    ) -> [u8; 41] {
+        let mut buffer = [0; 41];
+        let base = self.encode_base_response(mode.source_id());
+        buffer[..base.len()].copy_from_slice(&base);
+        let mut ind = base.len();
+
+        refloat_append_all_data_mode2(&mut buffer, &mut ind, mode2);
+
+        buffer
+    }
+
+    /// Encode the compact all-data mode 3 response bytes.
+    pub fn encode_mode3_response(
+        self,
+        mode: RefloatAllDataMode,
+        mode2: RefloatAllDataMode2Payload,
+        mode3: RefloatAllDataMode3Payload,
+    ) -> [u8; 54] {
+        let mut buffer = [0; 54];
+        let base = self.encode_base_response(mode.source_id());
+        buffer[..base.len()].copy_from_slice(&base);
+        let mut ind = base.len();
+
+        refloat_append_all_data_mode2(&mut buffer, &mut ind, mode2);
+        refloat_append_all_data_mode3(&mut buffer, &mut ind, mode3);
+
+        buffer
+    }
+
+    fn encode_mode4_response_for_mode(
+        self,
+        mode: u8,
+        mode2: RefloatAllDataMode2Payload,
+        mode3: RefloatAllDataMode3Payload,
+        mode4: RefloatAllDataMode4Payload,
+    ) -> [u8; 58] {
+        let mut buffer = [0; 58];
+        let base = self.encode_base_response(mode);
+        buffer[..base.len()].copy_from_slice(&base);
+        let mut ind = base.len();
+
+        refloat_append_all_data_mode2(&mut buffer, &mut ind, mode2);
+        refloat_append_all_data_mode3(&mut buffer, &mut ind, mode3);
+        refloat_append_all_data_mode4(&mut buffer, &mut ind, mode4);
+
+        buffer
+    }
+
     /// Return balance current.
     pub const fn balance_current(self) -> RefloatRealtimeBalanceCurrent {
         self.balance_current
@@ -2444,6 +2748,214 @@ impl RefloatAllDataBasePayload {
     pub const fn motor(self) -> RefloatAllDataMotorPayload {
         self.motor
     }
+}
+
+/// Refloat all-data payload snapshot used to answer compact all-data requests.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RefloatAllDataPayloads {
+    base: RefloatAllDataBasePayload,
+    mode2: RefloatAllDataMode2Payload,
+    mode3: RefloatAllDataMode3Payload,
+    mode4: RefloatAllDataMode4Payload,
+}
+
+impl RefloatAllDataPayloads {
+    /// Build a complete all-data payload snapshot.
+    pub const fn new(
+        base: RefloatAllDataBasePayload,
+        mode2: RefloatAllDataMode2Payload,
+        mode3: RefloatAllDataMode3Payload,
+        mode4: RefloatAllDataMode4Payload,
+    ) -> Self {
+        Self {
+            base,
+            mode2,
+            mode3,
+            mode4,
+        }
+    }
+
+    /// Encode the source-compatible response for a parsed all-data request.
+    pub fn encode_response(self, request: RefloatAllDataRequest) -> RefloatAllDataResponse {
+        let mode = request.mode();
+        if mode.includes_mode4() {
+            RefloatAllDataResponse::Mode4(self.base.encode_mode4_response_for_mode(
+                mode.source_id(),
+                self.mode2,
+                self.mode3,
+                self.mode4,
+            ))
+        } else if mode.includes_mode3() {
+            RefloatAllDataResponse::Mode3(
+                self.base
+                    .encode_mode3_response(mode, self.mode2, self.mode3),
+            )
+        } else if mode.includes_mode2() {
+            RefloatAllDataResponse::Mode2(self.base.encode_mode2_response(mode, self.mode2))
+        } else {
+            RefloatAllDataResponse::Base(self.base.encode_base_response(mode.source_id()))
+        }
+    }
+}
+
+/// Fixed-size Refloat all-data response bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefloatAllDataResponse {
+    /// Base response bytes.
+    Base([u8; 34]),
+    /// Mode 2 response bytes.
+    Mode2([u8; 41]),
+    /// Mode 3 response bytes.
+    Mode3([u8; 54]),
+    /// Mode 4 response bytes.
+    Mode4([u8; 58]),
+}
+
+impl RefloatAllDataResponse {
+    /// Return the encoded response bytes.
+    pub const fn as_bytes(&self) -> &[u8] {
+        match self {
+            Self::Base(bytes) => bytes,
+            Self::Mode2(bytes) => bytes,
+            Self::Mode3(bytes) => bytes,
+            Self::Mode4(bytes) => bytes,
+        }
+    }
+}
+
+fn refloat_append_all_data_mode2(
+    buffer: &mut [u8],
+    ind: &mut usize,
+    mode2: RefloatAllDataMode2Payload,
+) {
+    refloat_push_float32_auto(buffer, ind, mode2.distance_abs().distance().as_meters());
+    refloat_push_u8(
+        buffer,
+        ind,
+        refloat_nonnegative_scaled_u8(
+            mode2
+                .temperatures()
+                .mosfet()
+                .temperature()
+                .as_degrees_celsius(),
+            2.0,
+        ),
+    );
+    refloat_push_u8(
+        buffer,
+        ind,
+        refloat_nonnegative_scaled_u8(
+            mode2
+                .temperatures()
+                .motor()
+                .temperature()
+                .as_degrees_celsius(),
+            2.0,
+        ),
+    );
+    refloat_push_u8(
+        buffer,
+        ind,
+        mode2.battery_temperature().as_measured().map_or(0, |temp| {
+            refloat_nonnegative_scaled_u8(temp.as_degrees_celsius(), 2.0)
+        }),
+    );
+}
+
+fn refloat_append_all_data_mode3(
+    buffer: &mut [u8],
+    ind: &mut usize,
+    mode3: RefloatAllDataMode3Payload,
+) {
+    refloat_push_u32(buffer, ind, mode3.odometer().as_meters() as u32);
+    refloat_push_scaled_i16(
+        buffer,
+        ind,
+        mode3.discharged_charge().charge().as_amp_hours(),
+        10.0,
+    );
+    refloat_push_scaled_i16(
+        buffer,
+        ind,
+        mode3.charged_charge().charge().as_amp_hours(),
+        10.0,
+    );
+    refloat_push_scaled_i16(
+        buffer,
+        ind,
+        mode3.discharged_energy().energy().as_watt_hours(),
+        1.0,
+    );
+    refloat_push_scaled_i16(
+        buffer,
+        ind,
+        mode3.charged_energy().energy().as_watt_hours(),
+        1.0,
+    );
+    refloat_push_u8(
+        buffer,
+        ind,
+        refloat_scaled_u8(mode3.battery_level().ratio().as_ratio().min(1.25), 200.0),
+    );
+}
+
+fn refloat_append_all_data_mode4(
+    buffer: &mut [u8],
+    ind: &mut usize,
+    mode4: RefloatAllDataMode4Payload,
+) {
+    refloat_push_scaled_i16(
+        buffer,
+        ind,
+        mode4.current().current().current().as_amps(),
+        10.0,
+    );
+    refloat_push_scaled_i16(
+        buffer,
+        ind,
+        mode4.voltage().voltage().voltage().as_volts(),
+        10.0,
+    );
+}
+
+fn refloat_push_u8(buffer: &mut [u8], ind: &mut usize, value: u8) {
+    buffer[*ind] = value;
+    *ind += 1;
+}
+
+fn refloat_push_i16(buffer: &mut [u8], ind: &mut usize, value: i16) {
+    value
+        .to_be_bytes()
+        .into_iter()
+        .for_each(|byte| refloat_push_u8(buffer, ind, byte));
+}
+
+fn refloat_push_u32(buffer: &mut [u8], ind: &mut usize, value: u32) {
+    value
+        .to_be_bytes()
+        .into_iter()
+        .for_each(|byte| refloat_push_u8(buffer, ind, byte));
+}
+
+fn refloat_push_float32_auto(buffer: &mut [u8], ind: &mut usize, value: f32) {
+    let value = if value.abs() < 1.5e-38 { 0.0 } else { value };
+    refloat_push_u32(buffer, ind, value.to_bits());
+}
+
+fn refloat_push_scaled_i16(buffer: &mut [u8], ind: &mut usize, value: f32, scale: f32) {
+    refloat_push_i16(buffer, ind, (value * scale) as i16);
+}
+
+fn refloat_scaled_u8(value: f32, scale: f32) -> u8 {
+    (value * scale) as u8
+}
+
+fn refloat_nonnegative_scaled_u8(value: f32, scale: f32) -> u8 {
+    refloat_scaled_u8(value.max(0.0), scale)
+}
+
+fn refloat_offset_scaled_u8(value: f32, scale: f32, offset: f32) -> u8 {
+    (value * scale + offset) as u8
 }
 
 /// Refloat all-data battery-temperature state.
