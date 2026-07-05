@@ -99,6 +99,8 @@ pub mod test_support;
 pub const BLE_LOOPBACK_PACKAGE_NAME: &str = "Rust BLE loopback test package";
 /// Canonical name used by the Snake example package.
 pub const SNAKE_PACKAGE_NAME: &str = "Rust Snake example package";
+/// Canonical name used by the alloc smoke example package.
+pub const ALLOC_SMOKE_PACKAGE_NAME: &str = "Rust alloc smoke package";
 /// Canonical name used by the Refloat package.
 pub const REFLOAT_PACKAGE_NAME: &str = "Refloat";
 /// Canonical Refloat package version used for the v1.2.1 parity target.

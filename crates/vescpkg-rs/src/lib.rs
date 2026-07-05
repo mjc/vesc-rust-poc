@@ -3,7 +3,8 @@
 //! Link this crate into native VESC package code. It wraps `vescpkg-rs-sys` with
 //! lifecycle, LispBM extension, app-data, GPIO, and protocol helpers.
 //!
-//! Device builds must stay `no_std` and must not link `alloc` or `std`.
+//! Device builds stay `no_std`; package crates must opt into the `alloc`
+//! feature before installing the VESC-backed global allocator.
 
 #![no_std]
 #![forbid(unused_extern_crates)]
@@ -37,6 +38,8 @@ pub mod ffi {
 pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
 pub use vescpkg_rs_units as units;
 
+#[cfg(feature = "alloc")]
+pub use alloc::VescAllocator;
 pub use alloc::{
     AllocBindings, AllocError, FirmwareAllocation, FirmwareAllocator, reclaim_firmware_allocation,
 };

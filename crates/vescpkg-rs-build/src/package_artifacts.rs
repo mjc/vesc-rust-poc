@@ -100,7 +100,7 @@ impl PackageArtifactInspectionPlan {
     /// Builds the expected package assets for this inspection plan.
     pub fn assets(&self) -> PackageAssets {
         match self.example {
-            PackageExample::Loopback | PackageExample::Snake => {
+            PackageExample::Loopback | PackageExample::Snake | PackageExample::AllocSmoke => {
                 PackageAssets::new(self.layout.clone(), self.provenance.clone())
             }
             PackageExample::Refloat => {

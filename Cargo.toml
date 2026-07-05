@@ -8,6 +8,7 @@ members = [
     "crates/cargo-vescpkg",
     "examples/loopback",
     "examples/snake",
+    "examples/alloc-smoke",
     "examples/refloat",
 ]
 default-members = [

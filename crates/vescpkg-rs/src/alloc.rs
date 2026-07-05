@@ -1,21 +1,34 @@
 //! Explicit firmware allocation handles for VESC native packages.
 //!
 //! VESC native packages can allocate from firmware-provided allocator slots.
-//! This module wraps those slots with explicit RAII handles; it is not Rust's
-//! default allocator, and it does not make `alloc` collections available.
+//! By default this module only wraps those slots with explicit RAII handles.
 //!
 //! Memory returned by firmware `malloc` is uninitialized. The handle frees via
 //! firmware `free` on [`Drop`], and callers should use raw pointers until they
 //! have explicitly initialized the allocation.
 //!
-//! A future optional feature may expose a `#[global_allocator]` type for package
-//! crates that deliberately opt into `alloc`. That feature must live in
-//! `vescpkg-rs`, stay off by default, and document alignment limitations and
-//! out-of-memory behavior.
+//! With the `alloc` feature enabled, package crates may install
+//! [`VescAllocator`] as their package-local `#[global_allocator]` and then use
+//! Rust `alloc` collections such as `Vec`, `Box`, and `String`. The adapter
+//! over-allocates and stores the original firmware pointer before the aligned
+//! user pointer so Rust allocation layouts can request alignments larger than
+//! the firmware `malloc` API exposes directly. Out-of-memory is reported by
+//! returning null from `GlobalAlloc::alloc`; `alloc` collection methods that
+//! panic or abort on allocation failure keep their normal behavior, while
+//! `try_reserve` reports the failure to the package.
 
+#[cfg(feature = "alloc")]
+use core::alloc::{GlobalAlloc, Layout};
 use core::ffi::c_void;
 use core::mem::{ManuallyDrop, size_of};
+#[cfg(feature = "alloc")]
+use core::ptr;
 use core::ptr::NonNull;
+
+#[cfg(feature = "alloc")]
+const HEADER_BYTES: usize = size_of::<*mut c_void>();
+#[cfg(feature = "alloc")]
+const HEADER_ALIGN: usize = core::mem::align_of::<*mut c_void>();
 
 /// Firmware allocation failures reported by [`FirmwareAllocator`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,6 +44,115 @@ pub enum AllocError {
         /// Requested byte count.
         bytes: usize,
     },
+}
+
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, Copy)]
+struct AllocationHeader;
+
+#[cfg(feature = "alloc")]
+impl AllocationHeader {
+    fn request_bytes(layout: Layout) -> Result<usize, AllocationSizeOverflow> {
+        let align = effective_align(layout.align());
+        layout
+            .size()
+            .checked_add(HEADER_BYTES)
+            .and_then(|bytes| bytes.checked_add(align - 1))
+            .ok_or(AllocationSizeOverflow)
+    }
+
+    unsafe fn write_before(user: NonNull<u8>, original: NonNull<u8>) {
+        let original = original.as_ptr().cast::<c_void>();
+        let header = user.as_ptr().wrapping_sub(HEADER_BYTES);
+        unsafe {
+            ptr::copy_nonoverlapping((&raw const original).cast::<u8>(), header, HEADER_BYTES)
+        };
+    }
+
+    unsafe fn read_before(user: NonNull<u8>) -> *mut c_void {
+        let mut original = ptr::null_mut::<c_void>();
+        let header = user.as_ptr().wrapping_sub(HEADER_BYTES);
+        unsafe { ptr::copy_nonoverlapping(header, (&raw mut original).cast::<u8>(), HEADER_BYTES) };
+        original
+    }
+}
+
+/// VESC firmware allocator adapter for package-local Rust `alloc` use.
+///
+/// Install this type with `#[global_allocator]` in a package crate that
+/// intentionally enables `vescpkg-rs/alloc` and wants `alloc` collections to
+/// consume firmware heap.
+///
+/// ```ignore
+/// use vescpkg_rs::VescAllocator;
+///
+/// #[global_allocator]
+/// static ALLOCATOR: VescAllocator = VescAllocator;
+/// ```
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct VescAllocator;
+
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AllocationSizeOverflow;
+
+#[cfg(feature = "alloc")]
+unsafe impl GlobalAlloc for VescAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        match AllocationHeader::request_bytes(layout) {
+            Ok(request) => {
+                let raw = unsafe { vescpkg_rs_sys::raw::vesc_malloc(request) }.cast::<u8>();
+                let Some(user) = aligned_user_ptr(raw, layout.align()) else {
+                    if !raw.is_null() {
+                        unsafe { vescpkg_rs_sys::raw::vesc_free(raw.cast()) };
+                    }
+                    return ptr::null_mut();
+                };
+                user.as_ptr()
+            }
+            Err(AllocationSizeOverflow) => ptr::null_mut(),
+        }
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
+        if ptr.is_null() {
+            return;
+        }
+
+        let user = unsafe { NonNull::new_unchecked(ptr) };
+        let original = unsafe { AllocationHeader::read_before(user) };
+        unsafe { vescpkg_rs_sys::raw::vesc_free(original) };
+    }
+}
+
+#[cfg(feature = "alloc")]
+fn aligned_user_ptr(raw: *mut u8, align: usize) -> Option<NonNull<u8>> {
+    let raw = NonNull::new(raw)?;
+    let align = effective_align(align);
+    let start = raw.as_ptr().wrapping_add(HEADER_BYTES) as usize;
+    let aligned = start.checked_next_multiple_of(align)?;
+    let user = NonNull::new(aligned as *mut u8)?;
+
+    unsafe {
+        AllocationHeader::write_before(user, raw);
+    }
+
+    Some(user)
+}
+
+#[cfg(feature = "alloc")]
+const fn effective_align(requested: usize) -> usize {
+    if requested > HEADER_ALIGN {
+        requested
+    } else {
+        HEADER_ALIGN
+    }
+}
+
+#[cfg(all(test, feature = "alloc"))]
+unsafe fn stored_original_ptr(user: NonNull<u8>) -> *mut c_void {
+    unsafe { AllocationHeader::read_before(user) }
 }
 
 /// Firmware allocation and free calls used by the SDK allocator wrapper.
@@ -187,6 +309,12 @@ impl<T, B: AllocBindings> Drop for FirmwareAllocation<'_, T, B> {
 #[cfg(test)]
 mod tests {
     use super::{AllocBindings, AllocError, FirmwareAllocation, FirmwareAllocator};
+    #[cfg(feature = "alloc")]
+    use super::{
+        AllocationHeader, HEADER_ALIGN, HEADER_BYTES, aligned_user_ptr, stored_original_ptr,
+    };
+    #[cfg(feature = "alloc")]
+    use core::alloc::Layout;
     use core::cell::Cell;
     use core::ffi::c_void;
     use core::ptr::NonNull;
@@ -263,7 +391,6 @@ mod tests {
     }
 
     #[test]
-
     fn malloc_null_maps_to_out_of_memory() {
         let bindings = FakeAllocBindings::failing();
         let allocator = FirmwareAllocator::new(&bindings);
@@ -286,7 +413,6 @@ mod tests {
     }
 
     #[test]
-
     fn allocate_for_rejects_size_overflow() {
         let mut backing = vec![0_u8; 1];
         let bindings = FakeAllocBindings::new(backing.as_mut_ptr().cast());
@@ -299,7 +425,6 @@ mod tests {
     }
 
     #[test]
-
     fn allocate_for_rejects_zero_sized_types() {
         let mut backing = vec![0_u8; 1];
         let bindings = FakeAllocBindings::new(backing.as_mut_ptr().cast());
@@ -335,7 +460,6 @@ mod tests {
     }
 
     #[test]
-
     fn from_raw_parts_frees_on_drop() {
         let mut backing = vec![0_u16; 2];
         let ptr = NonNull::new(backing.as_mut_ptr()).expect("nonnull");
@@ -348,5 +472,54 @@ mod tests {
 
         assert_eq!(bindings.free_calls.get(), 1);
         assert_eq!(bindings.last_freed.get(), ptr.as_ptr() as usize);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn allocation_request_includes_alignment_and_header_space() {
+        let layout = Layout::from_size_align(7, 32).expect("valid layout");
+
+        assert_eq!(
+            AllocationHeader::request_bytes(layout),
+            Ok(7 + HEADER_BYTES + 31)
+        );
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn allocation_request_keeps_pointer_alignment_for_low_alignment_layouts() {
+        let layout = Layout::from_size_align(1, 1).expect("valid layout");
+
+        assert_eq!(
+            AllocationHeader::request_bytes(layout),
+            Ok(1 + HEADER_BYTES + HEADER_ALIGN - 1)
+        );
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn aligned_user_ptr_returns_requested_alignment_and_preserves_original_pointer() {
+        let mut backing = [0_u8; 128];
+        let raw = backing.as_mut_ptr();
+        let user = aligned_user_ptr(raw, 64).expect("aligned pointer");
+
+        assert_eq!(user.as_ptr() as usize % 64, 0);
+        assert_eq!(unsafe { stored_original_ptr(user) }, raw.cast());
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn aligned_user_ptr_preserves_original_pointer_for_low_alignment_layouts() {
+        let mut backing = [0_u8; 128];
+        let raw = backing.as_mut_ptr();
+        let user = aligned_user_ptr(raw, 1).expect("aligned pointer");
+
+        assert_eq!(unsafe { stored_original_ptr(user) }, raw.cast());
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn aligned_user_ptr_maps_null_firmware_allocation_to_none() {
+        assert_eq!(aligned_user_ptr(core::ptr::null_mut(), 4), None);
     }
 }

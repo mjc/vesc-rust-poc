@@ -19,6 +19,8 @@ pub enum PackageExample {
     Loopback,
     /// Snake package example.
     Snake,
+    /// Alloc smoke package example.
+    AllocSmoke,
     /// Refloat package example.
     Refloat,
 }
@@ -29,6 +31,7 @@ impl PackageExample {
         match self {
             Self::Loopback => PathBuf::from("examples/loopback"),
             Self::Snake => PathBuf::from("examples/snake"),
+            Self::AllocSmoke => PathBuf::from("examples/alloc-smoke"),
             Self::Refloat => PathBuf::from("examples/refloat"),
         }
     }
@@ -42,6 +45,9 @@ impl PackageExample {
             Self::Snake => {
                 PathBuf::from("target/thumbv7em-none-eabihf/release/libvesc_example_snake.a")
             }
+            Self::AllocSmoke => {
+                PathBuf::from("target/thumbv7em-none-eabihf/release/libvesc_example_alloc_smoke.a")
+            }
             Self::Refloat => {
                 PathBuf::from("target/thumbv7em-none-eabihf/release/libvesc_example_refloat.a")
             }
@@ -53,6 +59,7 @@ impl PackageExample {
         match self {
             Self::Loopback => "vesc-example-loopback",
             Self::Snake => "vesc-example-snake",
+            Self::AllocSmoke => "vesc-example-alloc-smoke",
             Self::Refloat => "vesc-example-refloat",
         }
     }
@@ -62,6 +69,7 @@ impl PackageExample {
         match self {
             Self::Loopback => PathBuf::from("target/native-lib-baseline"),
             Self::Snake => PathBuf::from("target/native-lib-snake"),
+            Self::AllocSmoke => PathBuf::from("target/native-lib-alloc-smoke"),
             Self::Refloat => PathBuf::from("target/native-lib-refloat"),
         }
     }
@@ -157,7 +165,7 @@ impl PackageBuildPlan {
     /// Return the rendered package assets for this plan.
     pub fn assets(&self) -> PackageAssets {
         match self.example {
-            PackageExample::Loopback | PackageExample::Snake => {
+            PackageExample::Loopback | PackageExample::Snake | PackageExample::AllocSmoke => {
                 PackageAssets::new(self.layout.clone(), self.provenance.clone())
             }
             PackageExample::Refloat => {
@@ -184,7 +192,9 @@ impl PackageBuildPlan {
         )?;
         let refloat_source_root = self.refloat_source_root();
         let loader = match self.example {
-            PackageExample::Loopback | PackageExample::Snake => assets.render_loader(),
+            PackageExample::Loopback | PackageExample::Snake | PackageExample::AllocSmoke => {
+                assets.render_loader()
+            }
             PackageExample::Refloat => {
                 // Refloat v1.2.1 (0ef6e99d8701) `lisp/package.lisp:1-17`.
                 fs::read_to_string(refloat_source_root.join("lisp/package.lisp"))?
@@ -272,7 +282,9 @@ impl PackageBuildPlan {
 
     fn package_qml_file(&self) -> io::Result<Option<String>> {
         match self.example {
-            PackageExample::Loopback | PackageExample::Snake => Ok(None),
+            PackageExample::Loopback | PackageExample::Snake | PackageExample::AllocSmoke => {
+                Ok(None)
+            }
             PackageExample::Refloat => {
                 // Refloat v1.2.1 generates `ui.qml` from `ui.qml.in` in
                 // `Makefile:37-39`.

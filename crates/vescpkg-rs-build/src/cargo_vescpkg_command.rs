@@ -3,8 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::{
-    BLE_LOOPBACK_PACKAGE_NAME, Package, PackageBinaryConversionRunner, PackageExample,
-    PackageTargetError, PackageTargetMode, PackageTargetPlan, REFLOAT_PACKAGE_NAME,
+    ALLOC_SMOKE_PACKAGE_NAME, BLE_LOOPBACK_PACKAGE_NAME, Package, PackageBinaryConversionRunner,
+    PackageExample, PackageTargetError, PackageTargetMode, PackageTargetPlan, REFLOAT_PACKAGE_NAME,
     REFLOAT_PACKAGE_VERSION, SNAKE_PACKAGE_NAME,
     native_lib_toolchain::{NativeLibToolchain, RealNativeLibToolchain},
     refloat_native_build::{RefloatGitHash, RefloatNativeBuildPlan},
@@ -40,6 +40,8 @@ pub enum CargoVescPkgExample {
     Loopback,
     /// Snake package example.
     Snake,
+    /// Alloc smoke package example.
+    AllocSmoke,
     /// Refloat package example.
     Refloat,
 }
@@ -282,6 +284,7 @@ impl CargoVescPkgInvocation {
         match self.example() {
             CargoVescPkgExample::Loopback => BLE_LOOPBACK_PACKAGE_NAME,
             CargoVescPkgExample::Snake => SNAKE_PACKAGE_NAME,
+            CargoVescPkgExample::AllocSmoke => ALLOC_SMOKE_PACKAGE_NAME,
             CargoVescPkgExample::Refloat => REFLOAT_PACKAGE_NAME,
         }
     }
@@ -291,6 +294,7 @@ impl CargoVescPkgInvocation {
         match self.example() {
             CargoVescPkgExample::Loopback => PackageExample::Loopback,
             CargoVescPkgExample::Snake => PackageExample::Snake,
+            CargoVescPkgExample::AllocSmoke => PackageExample::AllocSmoke,
             CargoVescPkgExample::Refloat => PackageExample::Refloat,
         }
     }
@@ -308,6 +312,7 @@ impl CargoVescPkgInvocation {
                     match example {
                         CargoVescPkgExample::Loopback => "loopback",
                         CargoVescPkgExample::Snake => "snake",
+                        CargoVescPkgExample::AllocSmoke => "alloc-smoke",
                         CargoVescPkgExample::Refloat => "refloat",
                     }
                     .to_owned(),
@@ -531,6 +536,7 @@ fn parse_example(value: &str) -> Result<CargoVescPkgExample, CargoVescPkgParseEr
     match value {
         "loopback" => Ok(CargoVescPkgExample::Loopback),
         "snake" => Ok(CargoVescPkgExample::Snake),
+        "alloc-smoke" => Ok(CargoVescPkgExample::AllocSmoke),
         "refloat" => Ok(CargoVescPkgExample::Refloat),
         other => Err(CargoVescPkgParseError::UnsupportedExample(other.to_owned())),
     }
@@ -538,7 +544,9 @@ fn parse_example(value: &str) -> Result<CargoVescPkgExample, CargoVescPkgParseEr
 
 fn default_package_version(example: CargoVescPkgExample) -> &'static str {
     match example {
-        CargoVescPkgExample::Loopback | CargoVescPkgExample::Snake => DEFAULT_PACKAGE_VERSION,
+        CargoVescPkgExample::Loopback
+        | CargoVescPkgExample::Snake
+        | CargoVescPkgExample::AllocSmoke => DEFAULT_PACKAGE_VERSION,
         CargoVescPkgExample::Refloat => REFLOAT_PACKAGE_VERSION,
     }
 }
@@ -850,6 +858,43 @@ mod tests {
         assert_eq!(
             plan.build_plan().conversion_plan().command().example(),
             crate::PackageExample::Snake
+        );
+    }
+
+    #[test]
+    fn parses_the_alloc_smoke_example_invocation() {
+        let invocation = parse_args(["build", "--example", "alloc-smoke"])
+            .expect("parse alloc-smoke example invocation");
+
+        assert_eq!(invocation.mode(), CargoVescPkgMode::Build);
+        assert_eq!(
+            invocation.subcommand_args(),
+            vec![
+                "build".to_owned(),
+                "--example".to_owned(),
+                "alloc-smoke".to_owned(),
+                "--target".to_owned(),
+                DEFAULT_TARGET_TRIPLE.to_owned(),
+            ]
+        );
+        let plan = invocation.package_target_plan("/tmp/repo");
+        assert_eq!(
+            plan.package_output_path(),
+            PathBuf::from(
+                "target/vescpkg/Rust-alloc-smoke-package-0.1.0/Rust-alloc-smoke-package-0.1.0.vescpkg"
+            )
+        );
+        assert_eq!(
+            plan.build_plan().native_artifact_input_path(),
+            PathBuf::from("target/thumbv7em-none-eabihf/release/libvesc_example_alloc_smoke.a")
+        );
+        assert_eq!(
+            plan.build_plan().example_source_path(),
+            PathBuf::from("examples/alloc-smoke")
+        );
+        assert_eq!(
+            plan.build_plan().conversion_plan().command().example(),
+            crate::PackageExample::AllocSmoke
         );
     }
 

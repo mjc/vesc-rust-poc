@@ -1377,6 +1377,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
+name = "vesc-example-alloc-smoke"
+version = "0.1.0"
+dependencies = [
+ "vescpkg-rs",
+]
+
+[[package]]
 name = "vesc-example-loopback"
 version = "0.1.0"
 dependencies = [
