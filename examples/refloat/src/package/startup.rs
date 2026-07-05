@@ -18,14 +18,12 @@ use vescpkg_rs::{AllocBindings, AppDataBindings, FirmwareAllocator, ffi};
 /// follows at `third_party/refloat/src/main.c:2455-2459`.
 ///
 #[cfg(test)]
-fn install_refloat_startup_state_with<B: AppDataBindings>(
+fn install_refloat_startup_state_with(
     start: &mut PackageStart,
     state: &mut RefloatPackageState,
-    lifecycle: &RefloatPackageLifecycle<B>,
-    handler: ffi::AppDataHandler,
 ) -> bool {
     *state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
-    lifecycle.install_refloat_state(start, state, handler)
+    start.install_loader_state(super::refloat_stop_handler(), state)
 }
 
 /// Install source-startup Refloat state and callback registrations.
@@ -40,7 +38,7 @@ fn install_refloat_startup_app_data_with<B: AppDataBindings + CustomConfigBindin
     lifecycle: &RefloatPackageLifecycle<B>,
     handler: ffi::AppDataHandler,
 ) -> bool {
-    if !install_refloat_startup_state_with(start, state, lifecycle, handler) {
+    if !install_refloat_startup_state_with(start, state) {
         return false;
     }
     lifecycle.install_refloat_callbacks(handler).is_ok()
@@ -55,27 +53,15 @@ fn install_refloat_startup_app_data_with<B: AppDataBindings + CustomConfigBindin
 /// registration tail at `third_party/refloat/src/main.c:2455-2459`.
 ///
 #[cfg(any(test, target_arch = "arm"))]
-fn allocate_refloat_startup_state_with<A: AllocBindings, B: AppDataBindings>(
+fn allocate_refloat_startup_state_with<A: AllocBindings>(
     start: &mut PackageStart,
     allocator: &FirmwareAllocator<'_, A>,
-    lifecycle: &RefloatPackageLifecycle<B>,
-    handler: ffi::AppDataHandler,
 ) -> bool {
-    let Ok(mut allocation) = allocator.allocate_for::<RefloatPackageState>(1) else {
-        start.clear_loader_info();
-        return false;
-    };
-    let state = allocation.write_first(RefloatPackageState::new(
-        RefloatAllDataPayloads::source_startup(),
-    ));
-
-    if !lifecycle.install_refloat_state(start, state, handler) {
-        start.clear_loader_info();
-        return false;
-    }
-
-    let _ = allocation.into_raw();
-    true
+    start.allocate_loader_state(
+        allocator,
+        super::refloat_stop_handler(),
+        RefloatPackageState::new(RefloatAllDataPayloads::source_startup()),
+    )
 }
 
 /// Allocate source-startup Refloat state and register app-data callbacks.
@@ -95,7 +81,7 @@ fn allocate_refloat_startup_app_data_with<
     lifecycle: &RefloatPackageLifecycle<B>,
     handler: ffi::AppDataHandler,
 ) -> bool {
-    if !allocate_refloat_startup_state_with(start, allocator, lifecycle, handler) {
+    if !allocate_refloat_startup_state_with(start, allocator) {
         return false;
     }
 
@@ -115,9 +101,7 @@ fn allocate_refloat_startup_app_data_with<
 pub fn install_refloat_package_state(start: &mut PackageStart) -> bool {
     let alloc_bindings = vescpkg_rs::RealBindings;
     let allocator = vescpkg_rs::FirmwareAllocator::new(&alloc_bindings);
-    let lifecycle = RefloatPackageLifecycle::new(vescpkg_rs::RealBindings);
-    let handler = refloat_app_data_handler();
-    allocate_refloat_startup_state_with(start, &allocator, &lifecycle, handler)
+    allocate_refloat_startup_state_with(start, &allocator)
 }
 
 /// Register Refloat custom config and app-data callbacks.

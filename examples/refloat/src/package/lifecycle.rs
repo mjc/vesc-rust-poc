@@ -1,5 +1,5 @@
 use super::protocol::process_refloat_app_data;
-use super::{RefloatPackageState, refloat_stop_handler, register_refloat_custom_config};
+use super::{refloat_stop_handler, register_refloat_custom_config};
 use crate::domain::{RefloatAllDataPayloads, RefloatAllDataRequest};
 use vescpkg_rs::{
     AppDataBindings, AppDataHandlerRegistrationError, CustomConfigBindings,
@@ -37,38 +37,6 @@ impl<B: AppDataBindings> RefloatPackageLifecycle<B> {
         self.lifecycle.register_app_data_handler(handler)
     }
 
-    /// Install Refloat stop cleanup and package-owned state without callbacks.
-    ///
-    /// Upstream stores `stop` and `Data *` in loader metadata at
-    /// `third_party/refloat/src/main.c:2431-2432`, before registering custom config/app-data/LispBM
-    /// callbacks at `third_party/refloat/src/main.c:2455-2459`.
-    ///
-    pub fn install_refloat_state(
-        &self,
-        start: &mut PackageStart,
-        state: &mut RefloatPackageState,
-        handler: ffi::AppDataHandler,
-    ) -> bool {
-        let _ = handler;
-        start.install_loader_state(refloat_stop_handler(), state)
-    }
-
-    /// Install Refloat state, stop cleanup, and app-data handler.
-    ///
-    /// Upstream stores `Data *`/`stop` in loader metadata at
-    /// `third_party/refloat/src/main.c:2431-2432`; app-data registration follows later at
-    /// `third_party/refloat/src/main.c:2456`.
-    ///
-    pub fn install_with_state(
-        &self,
-        start: &mut PackageStart,
-        state: &mut RefloatPackageState,
-        handler: ffi::AppDataHandler,
-    ) -> Result<(), AppDataHandlerRegistrationError> {
-        let _ = self.install_refloat_state(start, state, handler);
-        self.lifecycle.register_app_data_handler(handler)
-    }
-
     /// Clear Refloat callbacks during package stop.
     ///
     /// Refloat `v1.2.1` clears IMU/app-data/custom config callbacks at
@@ -77,10 +45,7 @@ impl<B: AppDataBindings> RefloatPackageLifecycle<B> {
     where
         B: CustomConfigBindings + ImuReadCallbackBindings,
     {
-        self.lifecycle.bindings().clear_imu_read_callback_handler();
-        let app_data_result = self.lifecycle.clear_app_data_handler();
-        let _ = self.lifecycle.bindings().clear_custom_config_callbacks();
-        app_data_result
+        self.lifecycle.clear_package_callbacks()
     }
 
     /// Process one Refloat app-data packet and send a response when accepted.
@@ -120,20 +85,5 @@ impl<B: AppDataBindings + CustomConfigBindings> RefloatPackageLifecycle<B> {
     ) -> Result<(), AppDataHandlerRegistrationError> {
         let _ = register_refloat_custom_config(self.bindings());
         self.lifecycle.register_app_data_handler(handler)
-    }
-
-    /// Install Refloat state plus custom config and app-data callbacks.
-    ///
-    /// Upstream stores `Data *` in `info->arg` at `third_party/refloat/src/main.c:2432` before
-    /// registering custom config and app-data at `third_party/refloat/src/main.c:2456-2457`.
-    ///
-    pub fn install_refloat_callbacks_with_state(
-        &self,
-        start: &mut PackageStart,
-        state: &mut RefloatPackageState,
-        handler: ffi::AppDataHandler,
-    ) -> Result<(), AppDataHandlerRegistrationError> {
-        let _ = self.install_refloat_state(start, state, handler);
-        self.install_refloat_callbacks(handler)
     }
 }

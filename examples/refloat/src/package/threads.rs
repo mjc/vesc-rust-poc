@@ -5,9 +5,9 @@
 
 #[cfg(any(test, target_arch = "arm"))]
 use super::state::RefloatPackageState;
-use vescpkg_rs::FirmwareThreadHandle;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::ThreadPriority;
+use vescpkg_rs::{FirmwareThreadHandle, FirmwareThreadPair};
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::{
     ImuApi, ImuBindings, MotorControlApi, MotorControlBindings, MotorTelemetryApi,
@@ -36,36 +36,38 @@ const REFLOAT_AUX_LOOP_TIME_US: u32 = 1_000_000 / REFLOAT_LEDS_REFRESH_RATE_HZ;
 /// spawning at `src/main.c:2439-2445`, then requests termination at
 /// `src/main.c:2404-2408`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RefloatRuntimeThreads {
-    main_thread: Option<FirmwareThreadHandle>,
-    aux_thread: Option<FirmwareThreadHandle>,
-}
+pub struct RefloatRuntimeThreads(FirmwareThreadPair);
 
 impl RefloatRuntimeThreads {
     /// Return an empty thread-handle set.
     pub const fn empty() -> Self {
-        Self {
-            main_thread: None,
-            aux_thread: None,
-        }
+        Self(FirmwareThreadPair::empty())
     }
 
     /// Build a thread-handle set after both source runtime threads spawned.
     pub const fn new(main_thread: FirmwareThreadHandle, aux_thread: FirmwareThreadHandle) -> Self {
-        Self {
-            main_thread: Some(main_thread),
-            aux_thread: Some(aux_thread),
-        }
+        Self(FirmwareThreadPair::new(main_thread, aux_thread))
+    }
+
+    /// Build a Refloat thread-handle set from a generic SDK pair.
+    pub const fn from_pair(pair: FirmwareThreadPair) -> Self {
+        Self(pair)
     }
 
     /// Return the main runtime thread handle.
     pub const fn main_thread(self) -> Option<FirmwareThreadHandle> {
-        self.main_thread
+        self.0.first()
     }
 
     /// Return the auxiliary runtime thread handle.
     pub const fn aux_thread(self) -> Option<FirmwareThreadHandle> {
-        self.aux_thread
+        self.0.second()
+    }
+
+    /// Request thread termination in Refloat stop order.
+    #[cfg(any(test, target_arch = "arm"))]
+    pub fn terminate_in_refloat_order<B: ThreadBindings>(self, threads: &ThreadApi<B>) {
+        self.0.terminate_reverse(threads);
     }
 }
 
@@ -88,25 +90,21 @@ pub(crate) fn start_refloat_runtime_threads_with<B: ThreadBindings>(
     threads: &ThreadApi<B>,
     state: &mut RefloatPackageState,
 ) -> bool {
-    let Some(main_thread) = threads.spawn_with_state(
-        vescpkg_rs::firmware_thread_entry::<RefloatMainThread>,
-        REFLOAT_MAIN_THREAD_STACK_BYTES,
-        REFLOAT_MAIN_THREAD_NAME,
+    let Some(runtime_threads) = threads.spawn_pair_with_state(
+        vescpkg_rs::FirmwareThreadSpec::<RefloatPackageState>::new::<RefloatMainThread>(
+            REFLOAT_MAIN_THREAD_STACK_BYTES,
+            REFLOAT_MAIN_THREAD_NAME,
+        ),
+        vescpkg_rs::FirmwareThreadSpec::<RefloatPackageState>::new::<RefloatAuxThread>(
+            REFLOAT_AUX_THREAD_STACK_BYTES,
+            REFLOAT_AUX_THREAD_NAME,
+        ),
         state,
     ) else {
-        return false;
-    };
-    let Some(aux_thread) = threads.spawn_with_state(
-        vescpkg_rs::firmware_thread_entry::<RefloatAuxThread>,
-        REFLOAT_AUX_THREAD_STACK_BYTES,
-        REFLOAT_AUX_THREAD_NAME,
-        state,
-    ) else {
-        threads.request_terminate(main_thread);
         return false;
     };
 
-    state.set_runtime_threads(RefloatRuntimeThreads::new(main_thread, aux_thread));
+    state.set_runtime_threads(RefloatRuntimeThreads::from_pair(runtime_threads));
     true
 }
 
@@ -119,13 +117,7 @@ pub(crate) fn request_refloat_runtime_thread_termination_with<B: ThreadBindings>
     threads: &ThreadApi<B>,
     state: &RefloatPackageState,
 ) {
-    let runtime_threads = state.runtime_threads();
-    if let Some(aux_thread) = runtime_threads.aux_thread() {
-        threads.request_terminate(aux_thread);
-    }
-    if let Some(main_thread) = runtime_threads.main_thread() {
-        threads.request_terminate(main_thread);
-    }
+    state.runtime_threads().terminate_in_refloat_order(threads);
 }
 
 /// Run Refloat's source-backed main thread tick loop.

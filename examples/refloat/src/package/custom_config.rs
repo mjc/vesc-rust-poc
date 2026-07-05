@@ -6,32 +6,7 @@ use crate::config::{REFLOAT_CONFIG_XML, REFLOAT_DEFAULT_CONFIG};
 use core::ffi::c_int;
 #[cfg(test)]
 use vescpkg_rs::CustomConfigGetBuffer;
-use vescpkg_rs::{CustomConfigBindings, ffi};
-
-/// Register Refloat custom-config callbacks with VESC Tool.
-///
-/// Upstream registers `get_cfg`, `set_cfg`, and `get_cfg_xml` at
-/// `third_party/refloat/src/main.c:2456`; those callbacks are implemented at `third_party/refloat/src/main.c:2334-2396`.
-/// The Rust port keeps the generated serialized config image here until the
-/// full typed `RefloatConfig` parser/deserializer exists.
-pub fn register_refloat_custom_config<B: CustomConfigBindings>(bindings: &B) -> bool {
-    #[cfg(all(not(test), target_arch = "arm"))]
-    {
-        bindings.register_custom_config_callbacks(
-            refloat_get_cfg,
-            refloat_set_cfg,
-            refloat_get_cfg_xml,
-        )
-    }
-    #[cfg(any(test, not(target_arch = "arm")))]
-    {
-        bindings.register_custom_config_callbacks(
-            vescpkg_rs::custom_config_get::<RefloatCustomConfig>,
-            vescpkg_rs::custom_config_set::<RefloatCustomConfig>,
-            vescpkg_rs::custom_config_xml::<RefloatCustomConfig>,
-        )
-    }
-}
+use vescpkg_rs::ffi;
 
 struct RefloatCustomConfig;
 
@@ -55,7 +30,12 @@ impl vescpkg_rs::CustomConfigCallback for RefloatCustomConfig {
     }
 }
 
-vescpkg_rs::firmware_custom_config_callbacks!(
+// Upstream registers `get_cfg`, `set_cfg`, and `get_cfg_xml` at
+// `third_party/refloat/src/main.c:2456`; those callbacks are implemented at
+// `third_party/refloat/src/main.c:2334-2396`. The Rust port keeps the generated serialized
+// config image here until the full typed `RefloatConfig` parser/deserializer exists.
+vescpkg_rs::firmware_custom_config_registration!(
+    register_refloat_custom_config,
     refloat_get_cfg,
     refloat_set_cfg,
     refloat_get_cfg_xml,

@@ -4127,7 +4127,7 @@ fn app_data_runtime_refreshes_foc_id_current_like_refloat_all_data() {
 }
 
 #[test]
-fn lifecycle_installs_typed_refloat_state_for_handler_retrieval() {
+fn package_start_installs_typed_refloat_state_for_handler_retrieval() {
     let lifecycle = RefloatPackageLifecycle::new(RecordingAppDataBindings::accepting());
     let mut info = ffi::LibInfo {
         stop_fun: None,
@@ -4139,10 +4139,8 @@ fn lifecycle_installs_typed_refloat_state_for_handler_retrieval() {
 
     let handler = noop_app_data_handler();
 
-    assert_eq!(
-        lifecycle.install_with_state(&mut start, &mut state, handler),
-        Ok(())
-    );
+    assert!(start.install_loader_state(crate::package::refloat_stop_handler(), &mut state));
+    assert_eq!(lifecycle.install(&mut start, handler), Ok(()));
     assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
     assert_eq!(
         RefloatPackageState::from_info_arg(&mut info)
@@ -4159,7 +4157,7 @@ fn lifecycle_installs_typed_refloat_state_for_handler_retrieval() {
 }
 
 #[test]
-fn lifecycle_installs_refloat_state_before_callbacks_like_refloat_startup() {
+fn package_start_installs_refloat_state_before_callbacks_like_refloat_startup() {
     let lifecycle = RefloatPackageLifecycle::new(RecordingAppDataBindings::accepting());
     let mut info = ffi::LibInfo {
         stop_fun: None,
@@ -4169,9 +4167,7 @@ fn lifecycle_installs_refloat_state_before_callbacks_like_refloat_startup() {
     let mut start = vescpkg_rs::PackageStart::from_raw(&mut info);
     let mut state = RefloatPackageState::new(sample_all_data_payloads());
 
-    let handler = noop_app_data_handler();
-
-    assert!(lifecycle.install_refloat_state(&mut start, &mut state, handler));
+    assert!(start.install_loader_state(crate::package::refloat_stop_handler(), &mut state));
     // Upstream sets `info->stop_fun` and `info->arg` at `third_party/refloat/src/main.c:2431-2432`,
     // before registering custom config/app-data/extensions at `third_party/refloat/src/main.c:2455-2459`.
     assert_eq!(lifecycle.bindings().handler_calls.get(), 0);
