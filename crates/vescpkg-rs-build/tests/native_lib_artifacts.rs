@@ -19,6 +19,25 @@ fn write_fixture_artifacts(dir: &std::path::Path) -> PathBuf {
     elf
 }
 
+fn isolated_refloat_plans(workspace: &TempDir) -> (NativeLibLinkPlan, PackageBinaryConversionPlan) {
+    let root = repo_root();
+    let native_build_dir = workspace.path().join("native-lib-refloat");
+    (
+        NativeLibLinkPlan::for_example_with_native_build_dir(
+            &root,
+            PackageExample::Refloat,
+            &native_build_dir,
+        ),
+        PackageBinaryConversionPlan::for_example(
+            &root,
+            REFLOAT_PACKAGE_NAME,
+            REFLOAT_PACKAGE_VERSION,
+            PackageExample::Refloat,
+        )
+        .with_native_build_dir(native_build_dir),
+    )
+}
+
 #[test]
 fn native_lib_semantics() {
     let workspace = TempDir::new().expect("temp workspace");
@@ -36,28 +55,19 @@ fn current_native_lib_preserves_known_good_loader_contract() {
 
 #[test]
 fn current_refloat_native_lib_preserves_registration_tail_contract() {
-    let plan = NativeLibLinkPlan::for_example(repo_root(), PackageExample::Refloat);
-    ensure_native_lib_artifacts(&PackageBinaryConversionPlan::for_example(
-        plan.root(),
-        REFLOAT_PACKAGE_NAME,
-        REFLOAT_PACKAGE_VERSION,
-        PackageExample::Refloat,
-    ));
+    let workspace = TempDir::new().expect("temp workspace");
+    let (plan, conversion) = isolated_refloat_plans(&workspace);
+    ensure_native_lib_artifacts(&conversion);
     audit_refloat_native_lib_artifacts(&NativeLibArtifactPaths::from_link_plan(&plan));
 }
 
 #[test]
 fn native_binary_comparison_report_highlights_refloat_registration_delta() {
-    let root = repo_root();
+    let workspace = TempDir::new().expect("temp workspace");
     let loopback = native_lib_link_plan();
-    let refloat = NativeLibLinkPlan::for_example(root, PackageExample::Refloat);
+    let (refloat, conversion) = isolated_refloat_plans(&workspace);
     ensure_repo_native_lib_artifacts(loopback.root());
-    ensure_native_lib_artifacts(&PackageBinaryConversionPlan::for_example(
-        refloat.root(),
-        REFLOAT_PACKAGE_NAME,
-        REFLOAT_PACKAGE_VERSION,
-        PackageExample::Refloat,
-    ));
+    ensure_native_lib_artifacts(&conversion);
 
     let report = native_binary_comparison_report(
         "loopback",

@@ -3485,6 +3485,31 @@ impl RefloatRideState {
         self.mode
     }
 
+    /// Return the setpoint adjustment/pushback state.
+    pub const fn setpoint_adjustment(self) -> RefloatSetpointAdjustment {
+        self.setpoint_adjustment
+    }
+
+    /// Return the stop condition.
+    pub const fn stop_condition(self) -> RefloatStopCondition {
+        self.stop_condition
+    }
+
+    /// Return the charging state.
+    pub const fn charging(self) -> RefloatChargingState {
+        self.charging
+    }
+
+    /// Return the wheel-slip state.
+    pub const fn wheelslip(self) -> RefloatWheelSlipState {
+        self.wheelslip
+    }
+
+    /// Return the darkride/upside-down state.
+    pub const fn darkride(self) -> RefloatDarkRideState {
+        self.darkride
+    }
+
     /// Return the Refloat app-data Float State compatibility value.
     pub const fn float_state_compat(self) -> u8 {
         if matches!(self.charging, RefloatChargingState::Charging) {
