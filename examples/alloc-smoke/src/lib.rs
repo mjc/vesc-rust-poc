@@ -15,7 +15,6 @@ use core::panic::PanicInfo;
 use core::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(not(test))]
 use vescpkg_rs::VescAllocator;
-use vescpkg_rs::{ffi::LibInfo, init as pkg_init};
 
 #[cfg(not(test))]
 #[global_allocator]
@@ -23,19 +22,11 @@ static ALLOCATOR: VescAllocator = VescAllocator;
 
 static ALLOC_SMOKE_LEN: AtomicUsize = AtomicUsize::new(0);
 
-/// VESC loader anchor in `.program_ptr`; value is unused but the section must exist.
-#[cfg(all(not(test), target_arch = "arm"))]
-#[used]
-#[unsafe(no_mangle)]
-#[unsafe(link_section = ".program_ptr")]
-static prog_ptr: u32 = 0;
+vescpkg_rs::package_start!(crate::start);
 
 /// Initialize the alloc smoke package.
-///
-/// `info` must be the VESC-provided package loader information pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn package_lib_init(info: *mut LibInfo) -> bool {
-    let _ = pkg_init::install_stop_hook(info);
+pub fn start(start: &mut vescpkg_rs::PackageStart) -> bool {
+    let _ = start.install_stop_hook();
     let mut bytes = Vec::new();
     if bytes.try_reserve_exact(1).is_ok() {
         bytes.push(42);
@@ -43,16 +34,6 @@ pub extern "C" fn package_lib_init(info: *mut LibInfo) -> bool {
     ALLOC_SMOKE_LEN.store(bytes.len(), Ordering::Relaxed);
     core::mem::drop(bytes);
     true
-}
-
-/// ARM package loader entrypoint placed in `.init_fun` for VESC firmware loading.
-///
-/// `info` must be the VESC-provided package loader information pointer.
-#[cfg(all(not(test), target_arch = "arm"))]
-#[unsafe(no_mangle)]
-#[unsafe(link_section = ".init_fun")]
-pub extern "C" fn init(info: *mut LibInfo) -> bool {
-    package_lib_init(info)
 }
 
 #[cfg(not(test))]
@@ -67,11 +48,10 @@ fn panic(_: &PanicInfo) -> ! {
 mod tests {
     use super::{ALLOC_SMOKE_LEN, package_lib_init};
     use core::sync::atomic::Ordering;
-    use vescpkg_rs::ffi::LibInfo;
 
     #[test]
     fn package_lib_init_uses_alloc_and_installs_stop_hook() {
-        let mut info = LibInfo {
+        let mut info = vescpkg_rs::ffi::LibInfo {
             stop_fun: None,
             arg: core::ptr::null_mut(),
             base_addr: 0,
