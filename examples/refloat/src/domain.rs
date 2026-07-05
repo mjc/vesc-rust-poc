@@ -6,10 +6,11 @@
 
 use vescpkg_rs::prelude::{
     AdcDecodedLevel, AmpHoursCharged, AmpHoursDischarged, AngleDegrees, AngleRadians,
-    BatteryCurrent, BatteryLevel, BatteryVoltage, DirectionalMotorCurrent, DutyCycle,
-    ElectricalSpeed, ImuAngularRate, ImuPitch, ImuRoll, ImuYaw, MosfetTemperature, MotorCurrent,
-    MotorTemperature, OdometerMeters, Ratio, SignedRatio, SystemTimestamp, Temperature,
-    TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
+    BatteryCurrent, BatteryLevel, BatteryVoltage, Charge, Current, DirectionalMotorCurrent,
+    Distance, DutyCycle, ElectricalSpeed, Energy, ImuAngularRate, ImuPitch, ImuRoll, ImuYaw,
+    MosfetTemperature, MotorCurrent, MotorTemperature, OdometerMeters, Ratio, Rpm, SignedRatio,
+    Speed, SystemTimestamp, Temperature, TripDistance, VehicleSpeed, Voltage, WattHoursCharged,
+    WattHoursDischarged,
 };
 
 /// Refloat app-data package ID.
@@ -2450,6 +2451,19 @@ impl RefloatAllDataMotorPayload {
         self.battery_voltage
     }
 
+    /// Return motor fields with refreshed battery voltage.
+    pub const fn with_battery_voltage(self, battery_voltage: BatteryVoltage) -> Self {
+        Self {
+            battery_voltage,
+            electrical_speed: self.electrical_speed,
+            vehicle_speed: self.vehicle_speed,
+            motor_current: self.motor_current,
+            battery_current: self.battery_current,
+            duty_cycle: self.duty_cycle,
+            foc_id_current: self.foc_id_current,
+        }
+    }
+
     /// Return electrical speed.
     pub const fn electrical_speed(self) -> ElectricalSpeed {
         self.electrical_speed
@@ -2748,6 +2762,19 @@ impl RefloatAllDataBasePayload {
     pub const fn motor(self) -> RefloatAllDataMotorPayload {
         self.motor
     }
+
+    /// Return base all-data fields with refreshed motor battery voltage.
+    pub const fn with_motor_battery_voltage(self, battery_voltage: BatteryVoltage) -> Self {
+        Self {
+            balance_current: self.balance_current,
+            attitude: self.attitude,
+            status: self.status,
+            footpad: self.footpad,
+            setpoints: self.setpoints,
+            booster_current: self.booster_current,
+            motor: self.motor.with_battery_voltage(battery_voltage),
+        }
+    }
 }
 
 /// Refloat all-data payload snapshot used to answer compact all-data requests.
@@ -2775,6 +2802,71 @@ impl RefloatAllDataPayloads {
         }
     }
 
+    /// Build the Refloat `v1.2.1` startup all-data snapshot after `data_init`.
+    pub const fn source_startup() -> Self {
+        let zero_current = Current::from_amps(0.0);
+        let zero_angle = AngleRadians::from_radians(0.0);
+        let zero_motor_current = MotorCurrent::new(zero_current);
+        let zero_battery_current = BatteryCurrent::new(zero_current);
+        let zero_voltage = BatteryVoltage::new(Voltage::from_volts(0.0));
+        let ride_state = RefloatRideState::new(
+            RefloatRunState::Startup,
+            RefloatMode::Normal,
+            RefloatSetpointAdjustment::None,
+            RefloatStopCondition::None,
+        );
+        let setpoint = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(0.0));
+        Self::new(
+            RefloatAllDataBasePayload::new(
+                RefloatRealtimeBalanceCurrent::new(zero_motor_current),
+                RefloatAllDataAttitude::new(
+                    RefloatRealtimeBalancePitch::new(zero_angle),
+                    ImuRoll::new(zero_angle),
+                    ImuPitch::new(zero_angle),
+                ),
+                RefloatAllDataStatus::new(ride_state, RefloatBeepReason::None),
+                FootpadSensorSample::new(
+                    AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
+                    AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
+                    FootpadSensorState::None,
+                ),
+                RefloatRealtimeRuntimeSetpoints::new(
+                    setpoint, setpoint, setpoint, setpoint, setpoint, setpoint,
+                ),
+                RefloatRealtimeBoosterCurrent::new(zero_motor_current),
+                RefloatAllDataMotorPayload::new(
+                    zero_voltage,
+                    ElectricalSpeed::new(Rpm::from_revolutions_per_minute(0.0)),
+                    VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
+                    zero_motor_current,
+                    zero_battery_current,
+                    DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+                    RefloatFocIdCurrent::unavailable(),
+                ),
+            ),
+            RefloatAllDataMode2Payload::new(
+                TripDistance::new(Distance::from_meters(0.0)),
+                RefloatRealtimeMotorTemperatures::new(
+                    MosfetTemperature::new(Temperature::from_degrees_celsius(0.0)),
+                    MotorTemperature::new(Temperature::from_degrees_celsius(0.0)),
+                ),
+                RefloatAllDataBatteryTemperature::unavailable(),
+            ),
+            RefloatAllDataMode3Payload::new(
+                OdometerMeters::from_meters(0),
+                AmpHoursDischarged::new(Charge::from_amp_hours(0.0)),
+                AmpHoursCharged::new(Charge::from_amp_hours(0.0)),
+                WattHoursDischarged::new(Energy::from_watt_hours(0.0)),
+                WattHoursCharged::new(Energy::from_watt_hours(0.0)),
+                BatteryLevel::new(Ratio::from_ratio_const(0.0)),
+            ),
+            RefloatAllDataMode4Payload::new(
+                RefloatRealtimeChargingCurrent::new(zero_battery_current),
+                RefloatRealtimeChargingVoltage::new(zero_voltage),
+            ),
+        )
+    }
+
     /// Encode the source-compatible response for a parsed all-data request.
     pub fn encode_response(self, request: RefloatAllDataRequest) -> RefloatAllDataResponse {
         let mode = request.mode();
@@ -2796,11 +2888,76 @@ impl RefloatAllDataPayloads {
             RefloatAllDataResponse::Base(self.base.encode_base_response(mode.source_id()))
         }
     }
+
+    /// Return base all-data payload fields.
+    pub const fn base(self) -> RefloatAllDataBasePayload {
+        self.base
+    }
+
+    /// Return mode 2 all-data extension fields.
+    pub const fn mode2(self) -> RefloatAllDataMode2Payload {
+        self.mode2
+    }
+
+    /// Return a payload snapshot with refreshed base battery voltage.
+    pub const fn with_base_battery_voltage(self, battery_voltage: BatteryVoltage) -> Self {
+        Self::new(
+            self.base.with_motor_battery_voltage(battery_voltage),
+            self.mode2,
+            self.mode3,
+            self.mode4,
+        )
+    }
+
+    /// Return a payload snapshot with refreshed absolute-distance mode 2 data.
+    pub const fn with_mode2_distance_abs(self, distance_abs: TripDistance) -> Self {
+        Self::new(
+            self.base,
+            self.mode2.with_distance_abs(distance_abs),
+            self.mode3,
+            self.mode4,
+        )
+    }
+
+    /// Return a payload snapshot with refreshed mode 2 motor temperatures.
+    pub const fn with_mode2_temperatures(
+        self,
+        temperatures: RefloatRealtimeMotorTemperatures,
+    ) -> Self {
+        Self::new(
+            self.base,
+            self.mode2.with_temperatures(temperatures),
+            self.mode3,
+            self.mode4,
+        )
+    }
+
+    /// Return a payload snapshot with refreshed mode 3 ride totals.
+    pub const fn with_mode3_ride_totals(self, mode3: RefloatAllDataMode3Payload) -> Self {
+        Self::new(self.base, self.mode2, mode3, self.mode4)
+    }
+
+    /// Return mode 3 all-data extension fields.
+    pub const fn mode3(self) -> RefloatAllDataMode3Payload {
+        self.mode3
+    }
+
+    /// Return a payload snapshot with refreshed mode 4 charging data.
+    pub const fn with_mode4_charging(self, mode4: RefloatAllDataMode4Payload) -> Self {
+        Self::new(self.base, self.mode2, self.mode3, mode4)
+    }
+
+    /// Return mode 4 all-data extension fields.
+    pub const fn mode4(self) -> RefloatAllDataMode4Payload {
+        self.mode4
+    }
 }
 
 /// Fixed-size Refloat all-data response bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefloatAllDataResponse {
+    /// Fault response bytes.
+    Fault([u8; 4]),
     /// Base response bytes.
     Base([u8; 34]),
     /// Mode 2 response bytes.
@@ -2812,9 +2969,20 @@ pub enum RefloatAllDataResponse {
 }
 
 impl RefloatAllDataResponse {
+    /// Encode a Refloat all-data fault response.
+    pub const fn fault(fault: RefloatFirmwareFaultCode) -> Self {
+        Self::Fault([
+            REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            RefloatAppDataCommand::GetAllData.id(),
+            69,
+            fault.compat_code(),
+        ])
+    }
+
     /// Return the encoded response bytes.
     pub const fn as_bytes(&self) -> &[u8] {
         match self {
+            Self::Fault(bytes) => bytes,
             Self::Base(bytes) => bytes,
             Self::Mode2(bytes) => bytes,
             Self::Mode3(bytes) => bytes,
@@ -3012,6 +3180,16 @@ impl RefloatAllDataMode2Payload {
     /// Return absolute distance.
     pub const fn distance_abs(self) -> TripDistance {
         self.distance_abs
+    }
+
+    /// Return mode 2 fields with refreshed absolute distance.
+    pub const fn with_distance_abs(self, distance_abs: TripDistance) -> Self {
+        Self::new(distance_abs, self.temperatures, self.battery_temperature)
+    }
+
+    /// Return mode 2 fields with refreshed motor temperatures.
+    pub const fn with_temperatures(self, temperatures: RefloatRealtimeMotorTemperatures) -> Self {
+        Self::new(self.distance_abs, temperatures, self.battery_temperature)
     }
 
     /// Return motor temperatures.

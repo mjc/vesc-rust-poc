@@ -14,6 +14,9 @@ extern crate std;
 
 pub mod app_data;
 pub mod domain;
+pub mod init;
+
+pub use init::package_lib_init;
 
 #[cfg(not(test))]
 use core::panic::PanicInfo;
@@ -35,10 +38,10 @@ mod tests {
         RefloatAllDataBasePayload, RefloatAllDataBatteryTemperature, RefloatAllDataMode,
         RefloatAllDataMode2Payload, RefloatAllDataMode3Payload, RefloatAllDataMode4Payload,
         RefloatAllDataMotorPayload, RefloatAllDataPayloads, RefloatAllDataRequest,
-        RefloatAllDataRequestError, RefloatAllDataStatus, RefloatAppDataCommand, RefloatBeepReason,
-        RefloatChargingState, RefloatDarkRideState, RefloatDataRecorderFlags,
-        RefloatFatalErrorState, RefloatFirmwareFaultCode, RefloatFocIdCurrent,
-        RefloatHardwareConfig, RefloatHardwareLedsConfig, RefloatImuSample,
+        RefloatAllDataRequestError, RefloatAllDataResponse, RefloatAllDataStatus,
+        RefloatAppDataCommand, RefloatBeepReason, RefloatChargingState, RefloatDarkRideState,
+        RefloatDataRecorderFlags, RefloatFatalErrorState, RefloatFirmwareFaultCode,
+        RefloatFocIdCurrent, RefloatHardwareConfig, RefloatHardwareLedsConfig, RefloatImuSample,
         RefloatLedAnimationMode, RefloatLedAnimationSpeed, RefloatLedBarConfig, RefloatLedColor,
         RefloatLedColorOrder, RefloatLedMode, RefloatLedPin, RefloatLedPinConfig,
         RefloatLedStripConfig, RefloatLedStripOrder, RefloatLedTransition, RefloatLedsConfig,
@@ -57,6 +60,47 @@ mod tests {
         RefloatStatusBarIdleTimeout, RefloatStopCondition, RefloatWheelSlipState,
     };
     use vescpkg_rs::prelude::*;
+
+    #[test]
+    fn package_lib_init_installs_refloat_stop_hook() {
+        let mut info = vescpkg_rs::ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0,
+        };
+
+        assert!(super::init::package_lib_init(&mut info));
+        assert!(info.stop_fun.is_some());
+    }
+
+    #[test]
+    fn package_author_builds_source_startup_all_data_payload() {
+        let payloads = RefloatAllDataPayloads::source_startup();
+        let response =
+            payloads.encode_response(RefloatAllDataRequest::new(RefloatAllDataMode::with_mode4()));
+
+        assert_eq!(
+            payloads.base().status(),
+            RefloatAllDataStatus::new(
+                RefloatRideState::new(
+                    RefloatRunState::Startup,
+                    RefloatMode::Normal,
+                    RefloatSetpointAdjustment::None,
+                    RefloatStopCondition::None,
+                ),
+                RefloatBeepReason::None,
+            )
+        );
+        assert_eq!(payloads.base().footpad().state(), FootpadSensorState::None);
+        assert_eq!(
+            response.as_bytes(),
+            &[
+                101, 10, 4, 0, 0, 0, 0, 0, 0, 32, 0, 0, 0, 128, 128, 128, 128, 128, 128, 0, 0, 128,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 222, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            ],
+        );
+    }
 
     #[test]
     fn package_author_models_refloat_ride_inputs_without_raw_float_handoff() {
@@ -638,6 +682,14 @@ mod tests {
                 101, 10, 1, 0, 90, 0, 12, 255, 251, 33, 18, 30, 20, 133, 128, 123, 138, 118, 143,
                 0, 23, 132, 2, 208, 4, 176, 0, 30, 0, 50, 255, 236, 103, 6,
             ]
+        );
+    }
+
+    #[test]
+    fn package_author_encodes_all_data_fault_response_like_refloat_v1_2_1() {
+        assert_eq!(
+            RefloatAllDataResponse::fault(RefloatFirmwareFaultCode::from_compat_code(5)).as_bytes(),
+            &[101, 10, 69, 5]
         );
     }
 
