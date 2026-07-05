@@ -1,0 +1,17 @@
+---
+source: crates/vescpkg-rs-build/tests/native_lib_artifacts.rs
+expression: report
+---
+compressed_len: left=97151 right=3938
+decompressed_len: left=216086 right=5451
+fields:
+  description: differs left_len=2796 right_len=116 left_sha256=e6834af6fd592545d2682bf1fb82b4d22d16eaf3aa821f13fa18694032107519 right_sha256=d023e07c686d72131285fed979627c1386260624c55662f9a7138a4dd9dacaac
+  description_md: differs left_len=2359 right_len=14 left_sha256=4e68ac48523a42d4c1112f0b574a0fda5527f72fe4bba6306100e07d8d60ac0b right_sha256=ec2f1af9af7e71fab9b01b3e9ea6e1b9ec58b40117550b9e95f1951487742ee4
+  lispData: differs left_len=78941 right_len=4731 left_sha256=e556297f7a78b3a94801a366048d71a50465591c4542c6bfe11dd1483d929e72 right_sha256=3b734fb01dc6f1093e518c00f25122bd0589260989032fb1c0dbae128845f3ca
+  name: match len=7 sha256=c2e06ee09397b2b034a6fd37001018bebbccb6b91a0e4a02aefe371f284bd886
+  pkgDescQml: match len=478 sha256=4d3c7e940d0b255631318991b3edf18b209f17b08b18c9db45d26d7546b672a4
+  qmlFile: left_only len=131388 sha256=f7ac80af2c1ce3e4800dab57593fc9c8e0941e00a33656e50d73f2be57e1db10
+  qmlIsFullscreen: match len=1 sha256=6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d
+  imports:
+    bms: left_only offset=77508 size=1431 payload_sha256=e8157ed96be407aea1418655dd8e661c3972ca06275278b819dcdf46119233ca
+    package-lib: differs left_offset=576 right_offset=100 left_size=76929 right_size=4629 left_payload_sha256=c307d369b7b1e1ea741f8b26cb3251bab5c4fdfd6315455975568ded1accb17c right_payload_sha256=c627bad340ad6e73a1c9445742e12aded30dca429b3461f799e5d077de086903

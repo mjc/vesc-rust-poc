@@ -640,6 +640,8 @@ mod tests {
     use crate::test_support::{FakeConversionRunner, PackageTestHarness};
     use crate::{PackageTargetMode, native_lib_toolchain::NativeLibToolchain, parse_lisp_imports};
     use std::cell::RefCell;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
 
     #[test]
@@ -1073,7 +1075,10 @@ mod tests {
         let package = crate::Package::read(root.join(output)).expect("written package");
         assert_eq!(package.name, "Refloat");
         assert!(package.description_md.contains("- Git Commit: #0ef6e99"));
-        assert_eq!(package.qml_file, "Item{property string title:\"Refloat\"}");
+        assert_eq!(
+            package.qml_file,
+            "rjsmin:Item { property string title: \"Refloat\" }\n"
+        );
         assert!(runner.calls().is_empty());
     }
 
@@ -1223,10 +1228,14 @@ mod tests {
     }
 
     fn write_refloat_source(harness: PackageTestHarness) -> PackageTestHarness {
-        harness
+        let harness = harness
             .write_text("package_README.md", "# Refloat\n")
             .write_text("package_name", "Refloat\n")
             .write_text("version", "1.2.1\n")
+            .write_text(
+                "rjsmin.py",
+                "#!/usr/bin/env python3\nimport sys\nsys.stdout.write('rjsmin:' + sys.stdin.read())\n",
+            )
             .write_text(
                 "ui.qml.in",
                 "Item { property string title: \"{{PACKAGE_NAME}}\" }\n",
@@ -1244,7 +1253,17 @@ mod tests {
                 "#define PACKAGE_NAME \"{{PACKAGE_NAME}}\"\n#define VERSION \"{{VERSION}}\"\n#define GIT_HASH 0x{{GIT_HASH}}\n",
             )
             .write_text("src/conf/settings.xml", "<config />\n")
-            .write_bytes("src/package_lib.bin", b"refloat-native\0")
+            .write_bytes("src/package_lib.bin", b"refloat-native\0");
+        #[cfg(unix)]
+        {
+            let path = harness.root().join("rjsmin.py");
+            let mut permissions = std::fs::metadata(&path)
+                .expect("fake rjsmin metadata")
+                .permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(path, permissions).expect("fake rjsmin permissions");
+        }
+        harness
     }
 
     struct RefloatWritingNativeToolchain {

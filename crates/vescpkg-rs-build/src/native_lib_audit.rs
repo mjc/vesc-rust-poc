@@ -416,6 +416,21 @@ fn audit_refloat_native_lib_layout(paths: &NativeLibArtifactPaths) {
     let data = section_from(&sections, ".data");
     let got = section_from(&sections, ".got");
     let text = section_from(&sections, ".text");
+    let semantics = analyze_native_lib_elf(&paths.elf);
+    let handler_thumb_addr = semantics
+        .symbols
+        .iter()
+        .find_map(|(address, name)| {
+            (name == "refloat_handle_app_data").then_some(*address as u32 | 1)
+        })
+        .expect("Refloat handler symbol must be present");
+    let got_words = blob[got.vma..got.vma + got.size]
+        .chunks_exact(4)
+        .map(|word| u32::from_le_bytes(word.try_into().expect("4-byte GOT word")));
+    assert!(
+        !got_words.into_iter().any(|word| word == handler_thumb_addr),
+        "Refloat app-data handler must be registered with a runtime PC-relative address, not stale GOT word 0x{handler_thumb_addr:08x}"
+    );
 
     assert_eq!(
         *program_ptr,

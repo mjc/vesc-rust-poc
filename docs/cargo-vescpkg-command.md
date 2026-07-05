@@ -37,6 +37,7 @@ not an official VESC project or endorsed command.
 - `cargo vescpkg lisp-probe`
 - `cargo vescpkg refloat-probe --vesc-tool <path>` to run the Refloat package
   probe through an explicit VESC Tool CLI
+- `cargo vescpkg qml-app-read`
 - the repo prototype lives in the thin `crates/cargo-vescpkg` subcommand crate
 
 ## Responsibilities

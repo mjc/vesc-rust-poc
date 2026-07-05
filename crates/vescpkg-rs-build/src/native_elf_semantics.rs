@@ -292,6 +292,31 @@ pub fn assert_refloat_registration_tail(elf: &Path) {
     );
 }
 
+/// Asserts the loader-facing `.init_fun` attempts setup but reports success to LispBM.
+pub fn assert_loader_init_best_effort(elf: &Path) {
+    let semantics = analyze_native_lib_elf(elf);
+
+    assert!(
+        init_insns_call(
+            &semantics.init_insns,
+            &semantics.symbols,
+            "package_lib_init"
+        ),
+        "loader init should attempt package setup before reporting success: {}",
+        semantic_report(&semantics)
+    );
+    assert!(
+        init_insns_report_success(&semantics.init_insns),
+        "loader init should report success after best-effort package setup: {}",
+        semantic_report(&semantics)
+    );
+    assert!(
+        !init_insns_have_failure_return(&semantics.init_insns),
+        "loader init should not fail load-native-lib when package setup reports false: {}",
+        semantic_report(&semantics)
+    );
+}
+
 fn symbol_vma(address: u64) -> u64 {
     address & !1
 }

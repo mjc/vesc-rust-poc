@@ -8,6 +8,7 @@ use crate::package_conversion::{
     PackageBinaryConversionError, PackageBinaryConversionPlan, PackageBinaryConversionRunner,
 };
 use crate::package_format::{LispImportPolicy, VescPackageInput, write_vesc_package};
+use crate::refloat_package_assets::{RefloatBuildInfo, RefloatSourceAssets};
 
 /// Package example artifact profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -237,6 +238,19 @@ impl PackageBuildPlan {
         self.inspection_plan().inspect_package_output()
     }
 
+    fn package_qml_file(&self) -> io::Result<Option<String>> {
+        match self.example {
+            PackageExample::Loopback | PackageExample::Snake => Ok(None),
+            PackageExample::Refloat => {
+                let source_root = self.source_root.join("target/refloat-v1.2.1-src");
+                let generated = RefloatSourceAssets::new(&source_root)
+                    .materialize_generated_inputs(&RefloatBuildInfo::new("", ""))
+                    .map_err(|error| io::Error::other(format!("{error}")))?;
+                fs::read_to_string(generated.ui_path()).map(Some)
+            }
+        }
+    }
+
     /// Write the final `.vescpkg` output file.
     pub fn write_package_output(&self) -> io::Result<PathBuf> {
         let assets = self.assets();
@@ -244,6 +258,7 @@ impl PackageBuildPlan {
         let readme = fs::read_to_string(staging.readme_path())?;
         let descriptor = fs::read_to_string(staging.descriptor_path())?;
         let loader = fs::read_to_string(staging.loader_path())?;
+        let qml_file = self.package_qml_file()?;
         let output_path = self.source_root.join(self.package_output_path());
         let loader_path = staging.staging_dir_path();
 
@@ -254,7 +269,7 @@ impl PackageBuildPlan {
             lisp_editor_path: &loader_path,
             lisp_import_path: None,
             lisp_import_policy: LispImportPolicy::HostPaths,
-            qml_file: "",
+            qml_file: qml_file.as_deref().unwrap_or(""),
             pkg_desc_qml: &descriptor,
             qml_is_fullscreen: false,
         };
@@ -289,7 +304,9 @@ impl PackageBuildPlan {
 mod tests {
     use super::{PackageBuildPlan, PackageExample};
     use crate::test_support::{FakeConversionRunner, PackageTestHarness};
-    use crate::{BLE_LOOPBACK_PACKAGE_NAME, PackageProvenance, REFLOAT_PACKAGE_NAME};
+    use crate::{BLE_LOOPBACK_PACKAGE_NAME, Package, PackageProvenance, REFLOAT_PACKAGE_NAME};
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn renders_the_expected_package_build_plan() {
@@ -380,6 +397,51 @@ mod tests {
             plan.assets().render_descriptor(),
             "import QtQuick 2.15\n\nItem {\n    property string pkgName: \"Refloat\"\n    property string pkgDescriptionMd: \"package_README-gen.md\"\n    property string pkgLisp: \"lisp/package.lisp\"\n    property string pkgQml: \"ui.qml\"\n    property bool pkgQmlIsFullscreen: false\n    property string pkgOutput: \"refloat.vescpkg\"\n\n    function isCompatible (fwRxParams) {\n        if (fwRxParams.hwTypeStr().toLowerCase() != \"vesc\") {\n            return false;\n        }\n\n        return true;\n    }\n}\n"
         );
+    }
+
+    #[test]
+    fn write_refloat_package_output_embeds_generated_qml() {
+        let harness = PackageTestHarness::new()
+            .write_bytes(
+                "target/native-lib-refloat/package_lib.bin",
+                b"refloat-native\0",
+            )
+            .write_text("target/refloat-v1.2.1-src/package_README.md", "# Refloat\n")
+            .write_text("target/refloat-v1.2.1-src/package_name", "Rust Refloat\n")
+            .write_text("target/refloat-v1.2.1-src/version", "1.2.1\n")
+            .write_text(
+                "target/refloat-v1.2.1-src/ui.qml.in",
+                "Item { property string title: \"{{PACKAGE_NAME}} {{VERSION}}\" }\n",
+            )
+            .write_text(
+                "target/refloat-v1.2.1-src/rjsmin.py",
+                "#!/usr/bin/env python3\nimport sys\nsys.stdout.write('rjsmin:' + sys.stdin.read())\n",
+            );
+        #[cfg(unix)]
+        {
+            let path = harness.root().join("target/refloat-v1.2.1-src/rjsmin.py");
+            let mut permissions = std::fs::metadata(&path)
+                .expect("fake rjsmin metadata")
+                .permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(path, permissions).expect("fake rjsmin permissions");
+        }
+        let plan = PackageBuildPlan::for_example(
+            harness.root(),
+            REFLOAT_PACKAGE_NAME,
+            "1.2.1",
+            PackageExample::Refloat,
+        );
+        plan.stage_package_assets().expect("stage assets");
+
+        let output = plan.write_package_output().expect("package output");
+
+        let package = Package::read(output).expect("written package");
+        assert_eq!(
+            package.qml_file,
+            "rjsmin:Item { property string title: \"Rust Refloat 1.2.1\" }\n"
+        );
+        assert!(!package.qml_is_fullscreen);
     }
 
     #[test]

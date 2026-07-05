@@ -164,11 +164,16 @@ impl PackageAssets {
 
     /// Render the loader script that boots the package.
     pub fn render_loader(&self) -> String {
-        concat!(
-            "(import \"src/package_lib.bin\" 'package-lib)\n",
-            "(print \"vesc-rust-load-v7\")\n",
-            "(print (load-native-lib package-lib))\n",
-        )
+        match self.profile {
+            PackageAssetProfile::Generic => concat!(
+                "(import \"src/package_lib.bin\" 'package-lib)\n",
+                "(print \"vesc-rust-load-v7\")\n",
+                "(print (load-native-lib package-lib))\n",
+            ),
+            PackageAssetProfile::Refloat => {
+                "(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n"
+            }
+        }
         .to_owned()
     }
 }
@@ -176,7 +181,9 @@ impl PackageAssets {
 #[cfg(test)]
 mod tests {
     use super::{PackageAssets, PackageProvenance};
-    use crate::{BLE_LOOPBACK_PACKAGE_NAME, PackageLayout};
+    use crate::{
+        BLE_LOOPBACK_PACKAGE_NAME, PackageLayout, REFLOAT_PACKAGE_NAME, REFLOAT_PACKAGE_VERSION,
+    };
 
     #[test]
     fn renders_the_expected_package_assets() {
@@ -229,5 +236,16 @@ mod tests {
             !assets.render_loader().contains("ext-rust-add"),
             "expected the BLE loopback package loader to only load the native library"
         );
+
+        let refloat_assets = PackageAssets::refloat(
+            PackageLayout::new(REFLOAT_PACKAGE_NAME, REFLOAT_PACKAGE_VERSION),
+            PackageProvenance::empty(),
+        );
+        assert_eq!(
+            refloat_assets.render_loader(),
+            "(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n"
+        );
+        assert!(!refloat_assets.render_loader().contains("vesc-rust-load-v7"));
+        assert!(!refloat_assets.render_loader().contains("(print"));
     }
 }

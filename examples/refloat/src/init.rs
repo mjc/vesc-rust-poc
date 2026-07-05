@@ -7,7 +7,7 @@ use vescpkg_rs::ffi;
 #[used]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".program_ptr")]
-static prog_ptr: u32 = 0;
+pub(crate) static prog_ptr: u32 = 0;
 
 /// ARM package loader entrypoint that installs Refloat app-data state and handler.
 #[cfg(all(not(test), target_arch = "arm"))]
@@ -39,5 +39,6 @@ pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".init_fun")]
 pub extern "C" fn init(info: *mut ffi::LibInfo) -> bool {
-    package_lib_init(info)
+    let _ = package_lib_init(info);
+    true
 }

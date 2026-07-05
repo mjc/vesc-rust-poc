@@ -40,26 +40,44 @@ unsafe fn handle_refloat_app_data_packet<B: AppDataBindings, M: MotorTelemetryBi
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
-fn loaded_image_base() -> usize {
-    let loaded_handler: usize;
+fn prog_addr() -> u32 {
+    let address: u32;
     unsafe {
         core::arch::asm!(
-            "adr {loaded_handler}, {handler}",
-            loaded_handler = out(reg) loaded_handler,
-            handler = sym refloat_handle_app_data,
+            "adr.w {address}, {prog_ptr}",
+            address = out(reg) address,
+            prog_ptr = sym crate::init::prog_ptr,
             options(nomem, nostack, preserves_flags),
         );
     }
-    let loaded_handler = loaded_handler & !1;
-    let image_handler = refloat_handle_app_data as *const () as usize & !1;
-    loaded_handler - image_handler
+    address
+}
+
+#[cfg(all(not(test), target_arch = "arm"))]
+fn runtime_refloat_app_data_handler() -> ffi::AppDataHandler {
+    let address: usize;
+    unsafe {
+        core::arch::asm!(
+            "adr.w {address}, {handler}",
+            address = out(reg) address,
+            handler = sym refloat_handle_app_data,
+            options(nomem, nostack, preserves_flags),
+        );
+        core::mem::transmute::<usize, ffi::AppDataHandler>(address | 1)
+    }
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
 unsafe fn refloat_state_from_arg() -> Option<&'static mut RefloatAppDataState> {
-    let arg_slot = unsafe { ffi::raw::vesc_get_arg(loaded_image_base() as u32) };
+    let arg_slot = unsafe { ffi::raw::vesc_get_arg(prog_addr()) };
+    if arg_slot.is_null() {
+        return None;
+    }
     let arg_slot = unsafe { arg_slot.as_mut()? };
     let state = (*arg_slot).cast::<RefloatAppDataState>();
+    if state.is_null() {
+        return None;
+    }
     unsafe { state.as_mut() }
 }
 
@@ -97,28 +115,21 @@ pub(crate) unsafe fn install_refloat_startup_app_data_with<B: AppDataBindings>(
 /// Allocate and install Refloat startup app-data state using firmware memory.
 #[cfg(all(not(test), target_arch = "arm"))]
 pub fn install_refloat_app_data(info: *mut ffi::LibInfo) -> bool {
-    let alloc_bindings = vescpkg_rs::RealBindings;
-    let allocator = vescpkg_rs::FirmwareAllocator::new(&alloc_bindings);
-    let Ok(mut state) = allocator.allocate_for::<RefloatAppDataState>(1) else {
-        return false;
-    };
-    let Some(state_ref) = (unsafe { state.as_mut_ptr().as_mut() }) else {
-        return false;
-    };
+    static mut REFLOAT_APP_DATA_STATE: RefloatAppDataState =
+        RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
+    let state_ref = unsafe { &mut *core::ptr::addr_of_mut!(REFLOAT_APP_DATA_STATE) };
 
     let lifecycle = RefloatAppDataLifecycle::new(vescpkg_rs::RealBindings);
-    if unsafe {
-        install_refloat_startup_app_data_with(info, state_ref, &lifecycle, refloat_handle_app_data)
-    } {
-        let _ = state.into_raw();
-        true
-    } else {
+    let handler = runtime_refloat_app_data_handler();
+    let installed =
+        unsafe { install_refloat_startup_app_data_with(info, state_ref, &lifecycle, handler) };
+    if !installed {
         if let Some(info) = unsafe { info.as_mut() } {
             info.arg = core::ptr::null_mut();
             info.stop_fun = None;
         }
-        false
     }
+    installed
 }
 
 /// Refloat package app-data state.

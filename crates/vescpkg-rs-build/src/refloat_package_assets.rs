@@ -1,4 +1,6 @@
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use crate::{Package, PackageError};
 
@@ -68,7 +70,7 @@ impl RefloatSourceAssets {
         let rendered = template
             .replace("{{PACKAGE_NAME}}", &package_name)
             .replace("{{VERSION}}", &version);
-        Ok(minify_qml(&rendered))
+        self.minify_qml(&rendered)
     }
 
     fn read_text(&self, relative_path: &str) -> Result<String, PackageError> {
@@ -77,6 +79,36 @@ impl RefloatSourceAssets {
 
     fn read_trimmed(&self, relative_path: &str) -> Result<String, PackageError> {
         Ok(self.read_text(relative_path)?.trim().to_owned())
+    }
+
+    fn minify_qml(&self, input: &str) -> Result<String, PackageError> {
+        let mut child = Command::new(self.source_root.join("rjsmin.py"))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| PackageError::Build(format!("failed to start rjsmin.py: {error}")))?;
+
+        let stdin = child
+            .stdin
+            .as_mut()
+            .ok_or_else(|| PackageError::Build("failed to open rjsmin.py stdin".to_owned()))?;
+        stdin.write_all(input.as_bytes()).map_err(|error| {
+            PackageError::Build(format!("failed to write rjsmin.py stdin: {error}"))
+        })?;
+
+        let output = child.wait_with_output().map_err(|error| {
+            PackageError::Build(format!("failed to wait for rjsmin.py: {error}"))
+        })?;
+        if !output.status.success() {
+            return Err(PackageError::Build(format!(
+                "rjsmin.py failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
+        }
+
+        String::from_utf8(output.stdout)
+            .map_err(|_| PackageError::Build("rjsmin.py produced invalid UTF-8".to_owned()))
     }
 }
 
@@ -108,161 +140,36 @@ fn truncate_chars(input: &str, max_chars: usize) -> String {
     input.chars().take(max_chars).collect()
 }
 
-fn minify_qml(input: &str) -> String {
-    let lines: Vec<_> = input.lines().filter_map(minify_qml_line).collect();
-
-    lines
-        .iter()
-        .enumerate()
-        .fold(String::new(), |mut output, (index, line)| {
-            output.push_str(line);
-            if should_keep_linebreak(line, lines.get(index + 1).map(String::as_str)) {
-                output.push('\n');
-            }
-            output
-        })
-}
-
-fn minify_qml_line(line: &str) -> Option<String> {
-    let line = strip_line_comment(line).trim().to_owned();
-    (!line.is_empty()).then(|| compact_qml_spaces(&line))
-}
-
-fn strip_line_comment(line: &str) -> String {
-    let mut output = String::new();
-    let mut chars = line.chars().peekable();
-    let mut string_delimiter = None;
-    let mut escaped = false;
-
-    while let Some(ch) = chars.next() {
-        match (string_delimiter, escaped, ch, chars.peek().copied()) {
-            (None, _, '/', Some('/')) => break,
-            (None, _, '"' | '\'', _) => {
-                string_delimiter = Some(ch);
-                output.push(ch);
-            }
-            (Some(delimiter), false, current, _) if current == delimiter => {
-                string_delimiter = None;
-                output.push(ch);
-            }
-            (Some(_), false, '\\', _) => {
-                escaped = true;
-                output.push(ch);
-            }
-            (Some(_), true, _, _) => {
-                escaped = false;
-                output.push(ch);
-            }
-            _ => output.push(ch),
-        }
-    }
-
-    output
-}
-
-fn compact_qml_spaces(line: &str) -> String {
-    line.chars()
-        .fold(
-            (String::new(), false, None, false),
-            |(mut output, pending_space, string_delimiter, escaped), ch| {
-                let punctuation = is_qml_punctuation(ch);
-                match (string_delimiter, escaped, ch) {
-                    (Some(delimiter), false, current) if current == delimiter => {
-                        output.push(ch);
-                        (output, false, None, false)
-                    }
-                    (Some(delimiter), false, '\\') => {
-                        output.push(ch);
-                        (output, false, Some(delimiter), true)
-                    }
-                    (Some(delimiter), _, _) => {
-                        output.push(ch);
-                        (output, false, Some(delimiter), false)
-                    }
-                    (None, _, '"' | '\'') => {
-                        if pending_space
-                            && !output.ends_with("return")
-                            && output
-                                .chars()
-                                .last()
-                                .is_some_and(|previous| !is_qml_punctuation(previous))
-                        {
-                            output.push(' ');
-                        }
-                        output.push(ch);
-                        (output, false, Some(ch), false)
-                    }
-                    (None, _, current) if current.is_whitespace() => (output, true, None, false),
-                    (None, _, current) if punctuation => {
-                        if output.ends_with(' ') {
-                            output.pop();
-                        }
-                        output.push(current);
-                        (output, false, None, false)
-                    }
-                    (None, _, current) => {
-                        if pending_space
-                            && output
-                                .chars()
-                                .last()
-                                .is_some_and(|previous| !is_qml_punctuation(previous))
-                        {
-                            output.push(' ');
-                        }
-                        output.push(current);
-                        (output, false, None, false)
-                    }
-                }
-            },
-        )
-        .0
-}
-
-fn is_qml_punctuation(ch: char) -> bool {
-    matches!(
-        ch,
-        '{' | '}'
-            | '('
-            | ')'
-            | '['
-            | ']'
-            | ':'
-            | ';'
-            | ','
-            | '='
-            | '!'
-            | '<'
-            | '>'
-            | '+'
-            | '-'
-            | '*'
-            | '/'
-            | '?'
-    )
-}
-
-fn should_keep_linebreak(current: &str, next: Option<&str>) -> bool {
-    current.starts_with("import ")
-        || current.starts_with("id:")
-        || current.starts_with("property ") && !matches!(next, Some("}"))
-        || current == "}"
-            && next.is_some_and(|next| {
-                next.starts_with("return ")
-                    || next.starts_with("property ")
-                    || next.starts_with("function ")
-            })
-}
-
 #[cfg(test)]
 mod tests {
     use super::{RefloatBuildInfo, RefloatSourceAssets};
     use crate::Package;
     use crate::package_wire::parse_lisp_imports;
     use crate::test_support::PackageTestHarness;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
+    fn with_fake_rjsmin(harness: PackageTestHarness) -> PackageTestHarness {
+        let harness = harness.write_text(
+            "rjsmin.py",
+            "#!/usr/bin/env python3\nimport sys\nsys.stdout.write('rjsmin:' + sys.stdin.read())\n",
+        );
+        #[cfg(unix)]
+        {
+            let path = harness.root().join("rjsmin.py");
+            let mut permissions = std::fs::metadata(&path)
+                .expect("fake rjsmin metadata")
+                .permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(path, permissions).expect("fake rjsmin permissions");
+        }
+        harness
+    }
 
     #[test]
     fn materializes_refloat_makefile_generated_readme_and_ui() {
-        let harness = PackageTestHarness::new()
+        let harness = with_fake_rjsmin(
+            PackageTestHarness::new()
             .write_text(
                 "package_README.md",
                 "# Refloat\n\nGenerated package documentation.\n",
@@ -272,7 +179,8 @@ mod tests {
             .write_text(
                 "ui.qml.in",
                 "Item {\n    property string title: \"{{PACKAGE_NAME}}\"\n    property string version: \"{{VERSION}}\"\n}\n",
-            );
+            ),
+        );
         let root = harness.root();
 
         let generated = RefloatSourceAssets::new(root)
@@ -290,20 +198,22 @@ mod tests {
         );
         assert_eq!(
             std::fs::read_to_string(generated.ui_path()).expect("generated ui"),
-            "Item{property string title:\"Refloat Long Package\"\nproperty string version:\"1.2.1\"}"
+            "rjsmin:Item {\n    property string title: \"Refloat Long Package\"\n    property string version: \"1.2.1\"\n}\n"
         );
     }
 
     #[test]
     fn materializes_refloat_qml_with_makefile_default_minification() {
-        let harness = PackageTestHarness::new()
+        let harness = with_fake_rjsmin(
+            PackageTestHarness::new()
             .write_text("package_README.md", "# Refloat\n")
             .write_text("package_name", "Refloat\n")
             .write_text("version", "1.2.1\n")
             .write_text(
                 "ui.qml.in",
                 "import QtQuick 2.15\n\nItem {\n    id: mainItem\n    // generated title\n    property string title: \"{{PACKAGE_NAME}} {{VERSION}}\"\n    function round(num) {\n        if (num != num) {\n            return \"--\";\n        }\n        return Math.round(num);\n    }\n}\n",
-            );
+            ),
+        );
         let root = harness.root();
 
         let generated = RefloatSourceAssets::new(root)
@@ -315,13 +225,14 @@ mod tests {
 
         assert_eq!(
             std::fs::read_to_string(generated.ui_path()).expect("generated ui"),
-            "import QtQuick 2.15\nItem{id:mainItem\nproperty string title:\"Refloat 1.2.1\"\nfunction round(num){if(num!=num){return\"--\";}\nreturn Math.round(num);}}"
+            "rjsmin:import QtQuick 2.15\n\nItem {\n    id: mainItem\n    // generated title\n    property string title: \"Refloat 1.2.1\"\n    function round(num) {\n        if (num != num) {\n            return \"--\";\n        }\n        return Math.round(num);\n    }\n}\n"
         );
     }
 
     #[test]
     fn writes_refloat_package_from_generated_assets_and_existing_native_payload() {
-        let harness = PackageTestHarness::new()
+        let harness = with_fake_rjsmin(
+            PackageTestHarness::new()
             .write_text("package_README.md", "# Refloat\n")
             .write_text("package_name", "Refloat\n")
             .write_text("version", "1.2.1\n")
@@ -337,7 +248,8 @@ mod tests {
                 "lisp/package.lisp",
                 "(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n",
             )
-            .write_bytes("src/package_lib.bin", b"refloat-native\0");
+            .write_bytes("src/package_lib.bin", b"refloat-native\0"),
+        );
         let root = harness.root();
 
         let output = RefloatSourceAssets::new(root)
@@ -353,7 +265,7 @@ mod tests {
         assert!(package.description_md.contains("- Version: 1.2.1"));
         assert_eq!(
             package.qml_file,
-            "Item{property string title:\"Refloat 1.2.1\"}"
+            "rjsmin:Item { property string title: \"Refloat 1.2.1\" }\n"
         );
         let (_code, imports) = parse_lisp_imports(&package.lisp_data).expect("lisp imports");
         assert_eq!(imports[0].payload, b"refloat-native\0\0");
