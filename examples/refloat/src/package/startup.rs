@@ -1,5 +1,5 @@
 #[cfg(all(not(test), target_arch = "arm"))]
-use super::runtime_refloat_app_data_handler;
+use super::refloat_app_data_handler;
 #[cfg(any(test, target_arch = "arm"))]
 use super::{RefloatPackageLifecycle, RefloatPackageState};
 #[cfg(any(test, target_arch = "arm"))]
@@ -116,7 +116,7 @@ pub fn install_refloat_package_state(start: &mut PackageStart) -> bool {
     let alloc_bindings = vescpkg_rs::RealBindings;
     let allocator = vescpkg_rs::FirmwareAllocator::new(&alloc_bindings);
     let lifecycle = RefloatPackageLifecycle::new(vescpkg_rs::RealBindings);
-    let handler = runtime_refloat_app_data_handler();
+    let handler = refloat_app_data_handler();
     allocate_refloat_startup_state_with(start, &allocator, &lifecycle, handler)
 }
 
@@ -128,7 +128,7 @@ pub fn install_refloat_package_state(start: &mut PackageStart) -> bool {
 #[cfg(all(not(test), target_arch = "arm"))]
 pub fn register_refloat_app_data_callbacks(_start: &mut PackageStart) -> bool {
     let lifecycle = RefloatPackageLifecycle::new(vescpkg_rs::RealBindings);
-    let handler = runtime_refloat_app_data_handler();
+    let handler = refloat_app_data_handler();
     lifecycle.install_refloat_callbacks(handler).is_ok()
 }
 

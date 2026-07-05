@@ -37,7 +37,7 @@ pub(crate) fn start(start: &mut vescpkg_rs::PackageStart) -> bool {
         start,
         &[
             startup::install_refloat_package_state,
-            crate::runtime::start_refloat_runtime_threads,
+            crate::threads::start_refloat_runtime_threads,
             imu_callback::register_refloat_imu_callback,
             startup::register_refloat_app_data_callbacks,
             crate::extensions::register_refloat_loader_extensions,
@@ -78,8 +78,11 @@ fn loaded_image_base() -> u32 {
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
-fn runtime_refloat_app_data_handler() -> ffi::AppDataHandler {
-    vescpkg_rs::firmware_rebased_thumb_handler!(refloat_handle_app_data, ffi::AppDataHandler)
+fn refloat_app_data_handler() -> vescpkg_rs::ffi::AppDataHandler {
+    vescpkg_rs::firmware_rebased_thumb_handler!(
+        refloat_handle_app_data,
+        vescpkg_rs::ffi::AppDataHandler
+    )
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
@@ -120,7 +123,7 @@ extern "C" fn stop_refloat_app_data(_arg: *mut core::ffi::c_void) {
     #[cfg(all(not(test), target_arch = "arm"))]
     if let Some(state) = vescpkg_rs::arg_ref::<RefloatPackageState>(_arg) {
         let bindings = vescpkg_rs::RealBindings;
-        crate::runtime::request_refloat_runtime_thread_termination(state);
+        crate::threads::request_refloat_runtime_thread_termination(state);
         let _allocation = vescpkg_rs::reclaim_firmware_allocation(
             _arg.cast::<RefloatPackageState>(),
             1,
