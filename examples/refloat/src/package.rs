@@ -29,12 +29,12 @@ pub use self::lifecycle::RefloatPackageLifecycle;
 pub use self::state::RefloatPackageState;
 
 #[cfg(test)]
-pub(crate) fn main(info: *mut ffi::LibInfo) -> bool {
+pub(crate) fn start(info: *mut ffi::LibInfo) -> bool {
     vescpkg_rs::start_package(info, &[])
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
-pub(crate) fn main(info: *mut ffi::LibInfo) -> bool {
+pub(crate) fn start(info: *mut ffi::LibInfo) -> bool {
     vescpkg_rs::start_package(
         info,
         &[

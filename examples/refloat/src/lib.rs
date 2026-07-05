@@ -16,13 +16,24 @@ mod balance_loop;
 mod config;
 pub mod domain;
 pub mod extensions;
-pub mod init;
 mod motor_control;
 pub mod package;
 pub mod runtime;
 mod state_transition;
 
-pub use init::package_lib_init;
+vescpkg_rs::package_main!(crate::package::start);
+
+#[cfg(test)]
+mod tests {
+    use vescpkg_rs::ffi;
+
+    #[test]
+    fn package_lib_init_runs_refloat_start() {
+        assert!(super::package_lib_init(
+            core::ptr::null_mut::<ffi::LibInfo>()
+        ));
+    }
+}
 
 #[cfg(not(test))]
 use core::panic::PanicInfo;

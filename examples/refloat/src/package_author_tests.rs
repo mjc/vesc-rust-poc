@@ -34,7 +34,7 @@ fn test_package_lib_init_uses_side_effect_free_registration_tail() {
         base_addr: 0,
     };
 
-    assert!(crate::init::package_lib_init(&mut info));
+    assert!(crate::package_lib_init(&mut info));
     // Upstream Refloat v1.2.1 installs `stop`/`Data *` at
     // `src/main.c:2431-2432` before the registration tail at
     // `src/main.c:2456-2459`; the test build keeps that tail side-effect free.
