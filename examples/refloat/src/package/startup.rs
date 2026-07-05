@@ -1,14 +1,13 @@
 #[cfg(any(test, target_arch = "arm"))]
 use super::{RefloatPackageLifecycle, RefloatPackageState};
 #[cfg(all(not(test), target_arch = "arm"))]
-use super::{
-    RefloatPackageLifecycle, register_refloat_app_data_callbacks, register_refloat_imu_callback,
-    runtime_refloat_app_data_handler,
-};
+use super::{register_refloat_imu_callback, runtime_refloat_app_data_handler};
 #[cfg(any(test, target_arch = "arm"))]
 use crate::domain::RefloatAllDataPayloads;
+#[cfg(test)]
+use vescpkg_rs::CustomConfigBindings;
 #[cfg(any(test, target_arch = "arm"))]
-use vescpkg_rs::{AllocBindings, AppDataBindings, CustomConfigBindings, FirmwareAllocator, ffi};
+use vescpkg_rs::{AllocBindings, AppDataBindings, FirmwareAllocator, ffi};
 
 /// Install source-startup Refloat state without registering callbacks.
 ///

@@ -63,32 +63,12 @@ fn handle_refloat_app_data_packet<B: AppDataBindings, M: MotorTelemetryBindings,
 
 #[cfg(all(not(test), target_arch = "arm"))]
 fn loaded_image_base() -> u32 {
-    let loaded_handler: usize;
-    unsafe {
-        core::arch::asm!(
-            "adr {loaded_handler}, {handler}",
-            loaded_handler = out(reg) loaded_handler,
-            handler = sym refloat_handle_app_data,
-            options(nomem, nostack, preserves_flags),
-        );
-    }
-    let loaded_handler = loaded_handler & !1;
-    let image_handler = refloat_handle_app_data as *const () as usize & !1;
-    (loaded_handler - image_handler) as u32
+    vescpkg_rs::firmware_loaded_function_offset!(refloat_handle_app_data)
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
 fn runtime_refloat_app_data_handler() -> ffi::AppDataHandler {
-    let address: usize;
-    unsafe {
-        core::arch::asm!(
-            "adr.w {address}, {handler}",
-            address = out(reg) address,
-            handler = sym refloat_handle_app_data,
-            options(nomem, nostack, preserves_flags),
-        );
-        core::mem::transmute::<usize, ffi::AppDataHandler>(address | 1)
-    }
+    vescpkg_rs::firmware_rebased_thumb_handler!(refloat_handle_app_data, ffi::AppDataHandler)
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]

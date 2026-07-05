@@ -113,6 +113,42 @@ pub fn firmware_array<T: Copy, const N: usize>(values: *const T) -> Option<[T; N
     values.try_into().ok()
 }
 
+/// Compute the loaded-image offset for a function symbol in a relocated firmware package.
+#[macro_export]
+macro_rules! firmware_loaded_function_offset {
+    ($symbol:path) => {{
+        let loaded_symbol: usize;
+        unsafe {
+            core::arch::asm!(
+                "adr {loaded_symbol}, {symbol}",
+                loaded_symbol = out(reg) loaded_symbol,
+                symbol = sym $symbol,
+                options(nomem, nostack, preserves_flags),
+            );
+        }
+        let loaded_symbol = loaded_symbol & !1;
+        let image_symbol = $symbol as *const () as usize & !1;
+        (loaded_symbol - image_symbol) as u32
+    }};
+}
+
+/// Return a Thumb handler pointer for a function symbol in a relocated firmware package.
+#[macro_export]
+macro_rules! firmware_rebased_thumb_handler {
+    ($handler:path, $handler_ty:ty) => {{
+        let address: usize;
+        unsafe {
+            core::arch::asm!(
+                "adr.w {address}, {handler}",
+                address = out(reg) address,
+                handler = sym $handler,
+                options(nomem, nostack, preserves_flags),
+            );
+            core::mem::transmute::<usize, $handler_ty>(address | 1)
+        }
+    }};
+}
+
 fn borrowed_bytes(data: *const u8, len: usize) -> Option<&'static [u8]> {
     let data = NonNull::new(data.cast_mut())?;
     Some(unsafe { core::slice::from_raw_parts(data.as_ptr().cast_const(), len) })

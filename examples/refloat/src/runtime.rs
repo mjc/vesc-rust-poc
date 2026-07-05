@@ -6,6 +6,8 @@
 #[cfg(any(test, target_arch = "arm"))]
 use crate::package::RefloatPackageState;
 use vescpkg_rs::FirmwareThreadHandle;
+#[cfg(all(not(test), target_arch = "arm"))]
+use vescpkg_rs::ffi;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::ThreadPriority;
 #[cfg(any(test, target_arch = "arm"))]
@@ -234,7 +236,7 @@ extern "C" fn refloat_main_thread(arg: *mut c_void) {
         let gpio = vescpkg_rs::GpioApi::new(vescpkg_rs::RealGpioBindings);
         run_refloat_main_thread_with(&threads, || {
             let Some(state) = vescpkg_rs::arg_mut::<RefloatPackageState>(arg) else {
-                return false;
+                return REFLOAT_AUX_LOOP_TIME_US;
             };
             let system_time_ticks = vescpkg_rs::AppDataBindings::system_time_ticks(&app_data);
             // C map: Refloat `footpad_sensor_update` reads ADC1/ADC2 at
