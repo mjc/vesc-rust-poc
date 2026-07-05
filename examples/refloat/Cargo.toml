@@ -16,4 +16,5 @@ crate-type = ["staticlib"]
 test-support = ["vescpkg-rs/test-support"]
 
 [dependencies]
+libm = "0.2"
 vescpkg-rs = { path = "../../crates/vescpkg-rs" }

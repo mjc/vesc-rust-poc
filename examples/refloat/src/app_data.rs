@@ -16,8 +16,8 @@ use crate::domain::{
     RefloatAllDataPayloads, RefloatAllDataRequest, RefloatAllDataResponse, RefloatAllDataStatus,
     RefloatAppDataCommand, RefloatChargingState, RefloatDarkRideState, RefloatFirmwareFaultCode,
     RefloatFocIdCurrent, RefloatMode, RefloatMotorCommand, RefloatRealtimeBalanceCurrent,
-    RefloatRealtimeChargingCurrent, RefloatRealtimeChargingVoltage, RefloatRealtimeDataItem,
-    RefloatRealtimeMotorTemperatures, RefloatRealtimeRuntimeSetpoint,
+    RefloatRealtimeBoosterCurrent, RefloatRealtimeChargingCurrent, RefloatRealtimeChargingVoltage,
+    RefloatRealtimeDataItem, RefloatRealtimeMotorTemperatures, RefloatRealtimeRuntimeSetpoint,
     RefloatRealtimeRuntimeSetpoints, RefloatRideState, RefloatRunState, RefloatSetpointAdjustment,
     RefloatStopCondition, RefloatWheelSlipState,
 };
@@ -63,6 +63,13 @@ const REFLOAT_CONFIG_SIGNATURE_BYTES: [u8; 4] = [0x90, 0xb7, 0xa9, 0xba];
 // Upstream serializes `kp` as the first float16 config value after the
 // signature; `src/conf/settings.xml:28-54` uses scale 10.
 const REFLOAT_CONFIG_KP_OFFSET: usize = 4;
+// Upstream serializes `kp2` immediately after `kp` in
+// `src/conf/settings.xml:3916-3918`; `src/conf/settings.xml:56-83` uses scale 10.
+const REFLOAT_CONFIG_KP2_OFFSET: usize = 6;
+// Upstream serializes `ki` after `kp` and `kp2` in
+// `src/conf/settings.xml:3916-3919`; `src/conf/settings.xml:85-111` uses
+// scale 100000.
+const REFLOAT_CONFIG_KI_OFFSET: usize = 8;
 // Upstream defines `hertz` in `src/conf/settings.xml:223-246`, serializes it
 // after the first seven `SerOrder` float16 entries at
 // `src/conf/settings.xml:3916-3923`, and reads it as a big-endian uint16 via
@@ -79,6 +86,32 @@ const REFLOAT_CONFIG_FAULT_IS_DUAL_SWITCH_OFFSET: usize = 39;
 // its `<ser>enable_quickstop</ser>` entry at `src/conf/settings.xml:3937`
 // lands two bools after `fault_is_dual_switch`.
 const REFLOAT_CONFIG_ENABLE_QUICKSTOP_OFFSET: usize = 41;
+// Upstream defines `fault_darkride_enabled` in
+// `src/conf/settings.xml:494-507`; its `<ser>fault_darkride_enabled</ser>`
+// entry at `src/conf/settings.xml:3938` lands after `enable_quickstop`.
+const REFLOAT_CONFIG_FAULT_DARKRIDE_ENABLED_OFFSET: usize = 42;
+// Upstream defines `fault_reversestop_enabled` immediately after
+// `fault_darkride_enabled` at `src/conf/settings.xml:3939`.
+const REFLOAT_CONFIG_FAULT_REVERSESTOP_ENABLED_OFFSET: usize = 43;
+// Upstream defines `ki_limit` in `src/conf/settings.xml:1679-1707`; its
+// `<ser>ki_limit</ser>` entry at `src/conf/settings.xml:3975` lands at byte
+// 104 in the generated default config image and uses scale 10.
+// Upstream serializes startup pitch and roll tolerances at
+// `src/conf/settings.xml:3966-3967`; both use scale 100.
+const REFLOAT_CONFIG_STARTUP_PITCH_TOLERANCE_OFFSET: usize = 91;
+const REFLOAT_CONFIG_STARTUP_ROLL_TOLERANCE_OFFSET: usize = 93;
+// Upstream serializes `startup_pushstart_enabled` at
+// `src/conf/settings.xml:3971` after the startup speed/click fields.
+const REFLOAT_CONFIG_STARTUP_PUSHSTART_ENABLED_OFFSET: usize = 100;
+const REFLOAT_CONFIG_KI_LIMIT_OFFSET: usize = 104;
+// Upstream serializes booster angle, ramp, and current immediately after
+// `ki_limit` at `src/conf/settings.xml:3975-3978`; all three use scale 100.
+const REFLOAT_CONFIG_BOOSTER_ANGLE_OFFSET: usize = 106;
+const REFLOAT_CONFIG_BOOSTER_RAMP_OFFSET: usize = 108;
+const REFLOAT_CONFIG_BOOSTER_CURRENT_OFFSET: usize = 110;
+const REFLOAT_CONFIG_BRKBOOSTER_ANGLE_OFFSET: usize = 112;
+const REFLOAT_CONFIG_BRKBOOSTER_RAMP_OFFSET: usize = 114;
+const REFLOAT_CONFIG_BRKBOOSTER_CURRENT_OFFSET: usize = 116;
 // Upstream defines `disabled` in `src/conf/settings.xml:3890-3902`; its
 // `<ser>disabled</ser>` entry at `src/conf/settings.xml:4064` lands at byte
 // 243 in the 276-byte generated config image.
@@ -595,17 +628,19 @@ unsafe fn handle_refloat_app_data_packet<
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
-fn prog_addr() -> u32 {
-    let address: u32;
+fn loaded_image_base() -> u32 {
+    let loaded_handler: usize;
     unsafe {
         core::arch::asm!(
-            "adr.w {address}, {prog_ptr}",
-            address = out(reg) address,
-            prog_ptr = sym crate::init::prog_ptr,
+            "adr {loaded_handler}, {handler}",
+            loaded_handler = out(reg) loaded_handler,
+            handler = sym refloat_handle_app_data,
             options(nomem, nostack, preserves_flags),
         );
     }
-    address
+    let loaded_handler = loaded_handler & !1;
+    let image_handler = refloat_handle_app_data as *const () as usize & !1;
+    (loaded_handler - image_handler) as u32
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
@@ -624,7 +659,7 @@ fn runtime_refloat_app_data_handler() -> ffi::AppDataHandler {
 
 #[cfg(all(not(test), target_arch = "arm"))]
 unsafe fn refloat_state_from_arg() -> Option<&'static mut RefloatAppDataState> {
-    let arg_slot = unsafe { ffi::raw::vesc_get_arg(prog_addr()) };
+    let arg_slot = unsafe { ffi::raw::vesc_get_arg(loaded_image_base()) };
     if arg_slot.is_null() {
         return None;
     }
@@ -923,16 +958,7 @@ unsafe extern "C" fn refloat_get_cfg_xml(buffer: *mut *mut u8) -> c_int {
 
 #[cfg(all(not(test), target_arch = "arm"))]
 fn runtime_refloat_config_xml() -> *const u8 {
-    let address: usize;
-    unsafe {
-        core::arch::asm!(
-            "adr.w {address}, {xml}",
-            address = out(reg) address,
-            xml = sym REFLOAT_CONFIG_XML,
-            options(nomem, nostack, preserves_flags),
-        );
-    }
-    address as *const u8
+    (loaded_image_base() as usize + REFLOAT_CONFIG_XML.as_ptr() as usize) as *const u8
 }
 
 #[cfg(any(test, not(target_arch = "arm")))]
@@ -1005,6 +1031,7 @@ pub struct RefloatAppDataState {
     serialized_config: [u8; 276],
     runtime_threads: RefloatRuntimeThreads,
     motor_control: RefloatMotorControl,
+    pid_integral_current: f32,
 }
 
 impl RefloatAppDataState {
@@ -1021,6 +1048,7 @@ impl RefloatAppDataState {
             // until the full `Data` layout is ported.
             runtime_threads: RefloatRuntimeThreads::empty(),
             motor_control: RefloatMotorControl::new(),
+            pid_integral_current: 0.0,
         }
     }
 
@@ -1405,21 +1433,59 @@ impl RefloatAppDataState {
                 FootpadSensorState::Both
             )
         );
+        let darkride_high_erpm_fault = matches!(
+            (run_state, ride_state.darkride()),
+            (RefloatRunState::Running, RefloatDarkRideState::Active)
+        ) && motor_erpm > 2000.0;
         let darkride_can_engage_fault = matches!(
             (run_state, ride_state.darkride()),
             (RefloatRunState::Running, RefloatDarkRideState::Active)
         ) && can_engage;
+        let darkride_roll_fault =
+            matches!(
+                (run_state, ride_state.darkride()),
+                (RefloatRunState::Running, RefloatDarkRideState::Upright)
+            ) && self.serialized_config[REFLOAT_CONFIG_FAULT_DARKRIDE_ENABLED_OFFSET] != 0
+                && {
+                    let roll = imu.roll().angle().as_radians().abs();
+                    roll > 100.0_f32.to_radians() && roll < 135.0_f32.to_radians()
+                };
         let state_stop_fault = flywheel_both_footpads_fault
             || reverse_stop_no_footpads_fault
             || reverse_stop_pitch_fault
             || quickstop_fault
-            || darkride_can_engage_fault;
+            || darkride_high_erpm_fault
+            || darkride_can_engage_fault
+            || darkride_roll_fault;
+        let startup_pitch_tolerance = refloat_read_scaled_i16(
+            [
+                self.serialized_config[REFLOAT_CONFIG_STARTUP_PITCH_TOLERANCE_OFFSET],
+                self.serialized_config[REFLOAT_CONFIG_STARTUP_PITCH_TOLERANCE_OFFSET + 1],
+            ],
+            100.0,
+        );
+        let startup_roll_tolerance = refloat_read_scaled_i16(
+            [
+                self.serialized_config[REFLOAT_CONFIG_STARTUP_ROLL_TOLERANCE_OFFSET],
+                self.serialized_config[REFLOAT_CONFIG_STARTUP_ROLL_TOLERANCE_OFFSET + 1],
+            ],
+            100.0,
+        );
         let ready_engage = matches!(run_state, RefloatRunState::Ready)
             && !ready_flywheel_stop
             && can_engage
             && base.attitude().balance_pitch().angle().as_radians().abs()
+                < startup_pitch_tolerance.to_radians()
+            && imu.roll().angle().as_radians().abs() < startup_roll_tolerance.to_radians();
+        let ready_push_start = matches!(run_state, RefloatRunState::Ready)
+            && self.serialized_config[REFLOAT_CONFIG_STARTUP_PUSHSTART_ENABLED_OFFSET] != 0
+            && motor_erpm.abs() > 1000.0
+            && can_engage
+            && base.attitude().balance_pitch().angle().as_radians().abs()
                 < core::f32::consts::FRAC_PI_4
-            && imu.roll().angle().as_radians().abs() < core::f32::consts::FRAC_PI_4;
+            && imu.roll().angle().as_radians().abs() < core::f32::consts::FRAC_PI_4
+            && !(self.serialized_config[REFLOAT_CONFIG_FAULT_REVERSESTOP_ENABLED_OFFSET] != 0
+                && motor_erpm < 0.0);
         let stop_condition = if flywheel_both_footpads_fault {
             // Upstream `check_faults(d)` stops RUNNING FLYWHEEL when both
             // footpads are engaged at `src/main.c:491-493`; `state_stop`
@@ -1437,26 +1503,36 @@ impl RefloatAppDataState {
             // Upstream `check_faults(d)` quick-stops no-footpad low-speed
             // pitch-runaway cases at `src/main.c:419-423`.
             RefloatStopCondition::QuickStop
+        } else if darkride_high_erpm_fault {
+            // Upstream darkride `check_faults(d)` immediately reverse-stops
+            // above 2000 ERPM at `src/main.c:363-373`.
+            RefloatStopCondition::ReverseStop
         } else if darkride_can_engage_fault {
             // Upstream darkride `check_faults(d)` allows turning it off by
             // engaging foot sensors at `src/main.c:387-390`.
             RefloatStopCondition::SwitchHalf
-        } else if ready_engage {
+        } else if darkride_roll_fault {
+            // Upstream non-darkride `check_faults(d)` stops immediately when
+            // darkride faults are enabled and roll is 100-135 degrees at
+            // `src/main.c:465-470`.
+            RefloatStopCondition::Roll
+        } else if ready_engage || ready_push_start {
             RefloatStopCondition::None
         } else {
             ride_state.stop_condition()
         };
         let run_state = if state_stop_fault {
             RefloatRunState::Ready
-        } else if ready_engage {
-            // Upstream READY engages when startup pitch/roll tolerances and
-            // `can_engage(d)` pass at `src/main.c:1033-1036`; `state_engage`
-            // moves to RUNNING and clears the stop condition at `src/state.c:36-39`.
+        } else if ready_engage || ready_push_start {
+            // Upstream READY engages when startup pitch/roll tolerances pass
+            // at `src/main.c:1033-1036`, or push-start passes the 45 degree
+            // high-ERPM gate at `src/main.c:1056-1067`; `state_engage` moves
+            // to RUNNING and clears the stop condition at `src/state.c:36-39`.
             RefloatRunState::Running
         } else {
             run_state
         };
-        let setpoint_adjustment = if ready_engage {
+        let setpoint_adjustment = if ready_engage || ready_push_start {
             RefloatSetpointAdjustment::Centering
         } else {
             ride_state.setpoint_adjustment()
@@ -1482,11 +1558,12 @@ impl RefloatAppDataState {
         .with_charging(ride_state.charging())
         .with_wheelslip(wheelslip)
         .with_darkride(ride_state.darkride());
-        let (mut balance_current, setpoints) = if resets_runtime_vars {
+        let (mut balance_current, setpoints, mut booster_current) = if resets_runtime_vars {
             // Upstream `STATE_STARTUP` calls `reset_runtime_vars(d)` before
             // `STATE_READY` at `src/main.c:833-837`; reset clears
             // `balance_current` at `src/main.c:246` and seeds runtime
             // setpoints from `d->imu.balance_pitch` at `src/main.c:249-255`.
+            self.pid_integral_current = 0.0;
             let setpoint = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(
                 base.attitude().balance_pitch().angle().as_radians() * 180.0
                     / core::f32::consts::PI,
@@ -1496,9 +1573,14 @@ impl RefloatAppDataState {
                 RefloatRealtimeRuntimeSetpoints::new(
                     setpoint, setpoint, setpoint, setpoint, setpoint, setpoint,
                 ),
+                RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
             )
         } else {
-            (base.balance_current(), base.setpoints())
+            (
+                base.balance_current(),
+                base.setpoints(),
+                base.booster_current(),
+            )
         };
         if matches!(run_state, RefloatRunState::Running) {
             let kp = refloat_read_scaled_i16(
@@ -1508,16 +1590,161 @@ impl RefloatAppDataState {
                 ],
                 10.0,
             );
+            let kp2 = refloat_read_scaled_i16(
+                [
+                    self.serialized_config[REFLOAT_CONFIG_KP2_OFFSET],
+                    self.serialized_config[REFLOAT_CONFIG_KP2_OFFSET + 1],
+                ],
+                10.0,
+            );
+            let ki = refloat_read_scaled_i16(
+                [
+                    self.serialized_config[REFLOAT_CONFIG_KI_OFFSET],
+                    self.serialized_config[REFLOAT_CONFIG_KI_OFFSET + 1],
+                ],
+                100000.0,
+            );
+            let ki_limit = refloat_read_scaled_i16(
+                [
+                    self.serialized_config[REFLOAT_CONFIG_KI_LIMIT_OFFSET],
+                    self.serialized_config[REFLOAT_CONFIG_KI_LIMIT_OFFSET + 1],
+                ],
+                10.0,
+            );
+            let booster_angle = refloat_read_scaled_i16(
+                [
+                    self.serialized_config[REFLOAT_CONFIG_BOOSTER_ANGLE_OFFSET],
+                    self.serialized_config[REFLOAT_CONFIG_BOOSTER_ANGLE_OFFSET + 1],
+                ],
+                100.0,
+            );
+            let booster_ramp = refloat_read_scaled_i16(
+                [
+                    self.serialized_config[REFLOAT_CONFIG_BOOSTER_RAMP_OFFSET],
+                    self.serialized_config[REFLOAT_CONFIG_BOOSTER_RAMP_OFFSET + 1],
+                ],
+                100.0,
+            );
+            let booster_config_current = refloat_read_scaled_i16(
+                [
+                    self.serialized_config[REFLOAT_CONFIG_BOOSTER_CURRENT_OFFSET],
+                    self.serialized_config[REFLOAT_CONFIG_BOOSTER_CURRENT_OFFSET + 1],
+                ],
+                100.0,
+            );
+            let brkbooster_angle = refloat_read_scaled_i16(
+                [
+                    self.serialized_config[REFLOAT_CONFIG_BRKBOOSTER_ANGLE_OFFSET],
+                    self.serialized_config[REFLOAT_CONFIG_BRKBOOSTER_ANGLE_OFFSET + 1],
+                ],
+                100.0,
+            );
+            let brkbooster_ramp = refloat_read_scaled_i16(
+                [
+                    self.serialized_config[REFLOAT_CONFIG_BRKBOOSTER_RAMP_OFFSET],
+                    self.serialized_config[REFLOAT_CONFIG_BRKBOOSTER_RAMP_OFFSET + 1],
+                ],
+                100.0,
+            );
+            let brkbooster_config_current = refloat_read_scaled_i16(
+                [
+                    self.serialized_config[REFLOAT_CONFIG_BRKBOOSTER_CURRENT_OFFSET],
+                    self.serialized_config[REFLOAT_CONFIG_BRKBOOSTER_CURRENT_OFFSET + 1],
+                ],
+                100.0,
+            );
             let balance_pitch_degrees = base.attitude().balance_pitch().angle().as_radians()
                 * 180.0
                 / core::f32::consts::PI;
             let setpoint_error = setpoints.board().angle().as_degrees() - balance_pitch_degrees;
+            self.pid_integral_current += setpoint_error * ki;
+            if ki_limit > 0.0 && self.pid_integral_current.abs() > ki_limit {
+                self.pid_integral_current = ki_limit * self.pid_integral_current.signum();
+            }
             let angle_p_current = setpoint_error * kp;
+            let roll = imu.roll().angle().as_radians();
+            let gyro = imu.angular_rate().xyz();
+            let sin_roll = libm::sinf(roll);
+            let cos_roll = libm::cosf(roll);
+            let mut pitch_rate = cos_roll * cos_roll * gyro[1].as_degrees_per_second()
+                + sin_roll * cos_roll * gyro[2].as_degrees_per_second();
+            if matches!(ride_state.darkride(), RefloatDarkRideState::Active) {
+                pitch_rate = -pitch_rate;
+            }
+            let rate_p_current = -pitch_rate * kp2;
+            let booster_proportional = setpoints.board().angle().as_degrees()
+                - imu.pitch().angle().as_radians() * 180.0 / core::f32::consts::PI;
+            let braking = base.motor().motor_current().current().as_amps() < 0.0;
+            let mut booster_target_current = if braking {
+                brkbooster_config_current
+            } else {
+                booster_config_current
+            };
+            let mut booster_start_angle = if braking {
+                brkbooster_angle
+            } else {
+                booster_angle
+            };
+            let booster_ramp = if braking {
+                brkbooster_ramp
+            } else {
+                booster_ramp
+            };
+            if motor_erpm.abs() > 3000.0 {
+                let speed_stiffness = ((motor_erpm.abs() - 3000.0) / 10000.0).min(1.0);
+                if braking {
+                    booster_target_current += booster_target_current * speed_stiffness;
+                } else {
+                    booster_start_angle /= 1.0 + speed_stiffness;
+                }
+            }
+            let abs_booster_proportional = booster_proportional.abs();
+            if abs_booster_proportional > booster_start_angle {
+                let past_start_angle = abs_booster_proportional - booster_start_angle;
+                if past_start_angle < booster_ramp {
+                    booster_target_current *=
+                        booster_proportional.signum() * past_start_angle / booster_ramp;
+                } else {
+                    booster_target_current *= booster_proportional.signum();
+                }
+            } else {
+                booster_target_current = 0.0;
+            }
+            let filtered_booster_current = booster_target_current * 0.01
+                + booster_current.current().current().as_amps() * 0.99;
+            booster_current = RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(
+                Current::from_amps(filtered_booster_current),
+            ));
+            let current_limit = match ride_state.mode() {
+                RefloatMode::HandTest => 7.0,
+                RefloatMode::Flywheel => 40.0,
+                RefloatMode::Normal => f32::INFINITY,
+            };
+            let mut new_current = angle_p_current
+                + self.pid_integral_current
+                + rate_p_current
+                + filtered_booster_current;
+            if new_current.abs() > current_limit {
+                new_current = new_current.signum() * current_limit;
+            }
+            if matches!(ride_state.darkride(), RefloatDarkRideState::Active) {
+                new_current = -new_current;
+            }
             let smoothed_current =
-                balance_current.current().current().as_amps() * 0.8 + angle_p_current * 0.2;
+                if matches!(ride_state.wheelslip(), RefloatWheelSlipState::Detected) {
+                    0.0
+                } else {
+                    balance_current.current().current().as_amps() * 0.8 + new_current * 0.2
+                };
             // Upstream `pid_update` computes angle P at `src/pid.c:40` and
-            // scales it by `kp` at `src/pid.c:69`; RUNNING then smooths
-            // `balance_current` at `src/main.c:949-954`.
+            // angle I at `src/pid.c:41-46`; `imu_update` computes pitch rate
+            // from gyro at `src/imu.c:45-53`, `pid_update` computes rate P at
+            // `src/pid.c:71-72`, `booster_update` filters booster current at
+            // `src/booster.c:12-50`, RUNNING clamps HANDTEST/FLYWHEEL current
+            // at `src/main.c:932-942`, flips darkride current at
+            // `src/main.c:944-946`, and zeros balance current during traction
+            // loss at `src/main.c:949-954`.
+            // `balance_current` at `src/main.c:932-954`.
             balance_current = RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(
                 Current::from_amps(smoothed_current),
             ));
@@ -1529,7 +1756,7 @@ impl RefloatAppDataState {
             RefloatAllDataStatus::new(ride_state, status.beep_reason()),
             base.footpad(),
             setpoints,
-            base.booster_current(),
+            booster_current,
             base.motor(),
         );
         self.all_data_payloads =
@@ -2447,9 +2674,10 @@ mod tests {
         );
         // Refloat calls `reset_runtime_vars(d)` before READY at
         // `src/main.c:833-837`; reset clears `balance_current` at
-        // `src/main.c:246` and seeds all runtime setpoints from
-        // `d->imu.balance_pitch` at `src/main.c:249-255`.
+        // `src/main.c:246`, resets booster at `src/main.c:248`, and seeds all
+        // runtime setpoints from `d->imu.balance_pitch` at `src/main.c:249-255`.
         assert_eq!(base.balance_current().current().current().as_amps(), 0.0);
+        assert_eq!(base.booster_current().current().current().as_amps(), 0.0);
         let expected_startup_setpoint = 1.2 * 180.0 / core::f32::consts::PI;
         assert_eq!(
             base.setpoints().board().angle().as_degrees(),
@@ -2475,6 +2703,204 @@ mod tests {
             base.setpoints().remote().angle().as_degrees(),
             expected_startup_setpoint
         );
+    }
+
+    #[test]
+    fn app_data_ready_uses_configured_startup_tolerances_like_refloat() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+        let imu = vescpkg_rs::ImuApi::new(
+            vescpkg_rs::test_support::FakeImuBindings::new()
+                .with_startup_done(true)
+                .with_attitude(
+                    ImuRoll::new(AngleRadians::from_radians(0.0)),
+                    ImuPitch::new(AngleRadians::from_radians(0.0)),
+                    ImuYaw::new(AngleRadians::from_radians(0.0)),
+                ),
+        );
+        let payloads =
+            sample_all_data_payloads_with_ride_state(RefloatRunState::Ready, RefloatMode::Normal);
+        let base = payloads.base();
+        let base = RefloatAllDataBasePayload::new(
+            base.balance_current(),
+            RefloatAllDataAttitude::new(
+                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(20.0_f32.to_radians())),
+                base.attitude().roll(),
+                base.attitude().pitch(),
+            ),
+            base.status(),
+            base.footpad(),
+            base.setpoints(),
+            base.booster_current(),
+            base.motor(),
+        );
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::new(
+            base,
+            payloads.mode2(),
+            payloads.mode3(),
+            payloads.mode4(),
+        ));
+        let mut config = *state.serialized_config();
+        config[super::REFLOAT_CONFIG_STARTUP_PITCH_TOLERANCE_OFFSET
+            ..super::REFLOAT_CONFIG_STARTUP_PITCH_TOLERANCE_OFFSET + 2]
+            .copy_from_slice(&400u16.to_be_bytes());
+        config[super::REFLOAT_CONFIG_STARTUP_ROLL_TOLERANCE_OFFSET
+            ..super::REFLOAT_CONFIG_STARTUP_ROLL_TOLERANCE_OFFSET + 2]
+            .copy_from_slice(&4500u16.to_be_bytes());
+        assert!(state.store_serialized_config(&config));
+
+        assert!(state.handle_packet_with_runtime(
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+
+        // Upstream READY engages only inside configured startup pitch/roll
+        // tolerances at `src/main.c:1033-1036`; default pitch tolerance is 4
+        // degrees, not the broad 45 degree fallback used by earlier Rust code.
+        assert_eq!(
+            state
+                .all_data_payloads()
+                .base()
+                .status()
+                .ride_state()
+                .run_state(),
+            RefloatRunState::Ready
+        );
+    }
+
+    #[test]
+    fn app_data_ready_pushstart_uses_wide_pitch_gate_like_refloat() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry =
+            MotorTelemetryApi::new(FakeMotorTelemetryBindings::new().with_runtime_motor(
+                ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1200.0)),
+                VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
+                MotorCurrent::new(Current::from_amps(0.0)),
+                BatteryCurrent::new(Current::from_amps(0.0)),
+                DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+            ));
+        let imu = vescpkg_rs::ImuApi::new(
+            vescpkg_rs::test_support::FakeImuBindings::new()
+                .with_startup_done(true)
+                .with_attitude(
+                    ImuRoll::new(AngleRadians::from_radians(0.0)),
+                    ImuPitch::new(AngleRadians::from_radians(0.0)),
+                    ImuYaw::new(AngleRadians::from_radians(0.0)),
+                ),
+        );
+        let payloads =
+            sample_all_data_payloads_with_ride_state(RefloatRunState::Ready, RefloatMode::Normal);
+        let base = payloads.base();
+        let base = RefloatAllDataBasePayload::new(
+            base.balance_current(),
+            RefloatAllDataAttitude::new(
+                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(20.0_f32.to_radians())),
+                base.attitude().roll(),
+                base.attitude().pitch(),
+            ),
+            base.status(),
+            base.footpad(),
+            base.setpoints(),
+            base.booster_current(),
+            base.motor(),
+        );
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::new(
+            base,
+            payloads.mode2(),
+            payloads.mode3(),
+            payloads.mode4(),
+        ));
+        let mut config = *state.serialized_config();
+        config[super::REFLOAT_CONFIG_STARTUP_PUSHSTART_ENABLED_OFFSET] = 1;
+        assert!(state.store_serialized_config(&config));
+
+        assert!(state.handle_packet_with_runtime(
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+
+        let ride_state = state.all_data_payloads().base().status().ride_state();
+        // Upstream READY push-start engages above 1000 ERPM when `can_engage`
+        // passes and pitch/roll are within 45 degrees at `src/main.c:1056-1067`.
+        assert_eq!(ride_state.run_state(), RefloatRunState::Running);
+        assert_eq!(
+            ride_state.setpoint_adjustment(),
+            RefloatSetpointAdjustment::Centering
+        );
+        assert_eq!(ride_state.stop_condition(), RefloatStopCondition::None);
+    }
+
+    #[test]
+    fn app_data_ready_pushstart_reverse_stop_blocks_negative_erpm_like_refloat() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry =
+            MotorTelemetryApi::new(FakeMotorTelemetryBindings::new().with_runtime_motor(
+                ElectricalSpeed::new(Rpm::from_revolutions_per_minute(-1200.0)),
+                VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
+                MotorCurrent::new(Current::from_amps(0.0)),
+                BatteryCurrent::new(Current::from_amps(0.0)),
+                DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+            ));
+        let imu = vescpkg_rs::ImuApi::new(
+            vescpkg_rs::test_support::FakeImuBindings::new()
+                .with_startup_done(true)
+                .with_attitude(
+                    ImuRoll::new(AngleRadians::from_radians(0.0)),
+                    ImuPitch::new(AngleRadians::from_radians(0.0)),
+                    ImuYaw::new(AngleRadians::from_radians(0.0)),
+                ),
+        );
+        let payloads =
+            sample_all_data_payloads_with_ride_state(RefloatRunState::Ready, RefloatMode::Normal);
+        let base = payloads.base();
+        let base = RefloatAllDataBasePayload::new(
+            base.balance_current(),
+            RefloatAllDataAttitude::new(
+                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(20.0_f32.to_radians())),
+                base.attitude().roll(),
+                base.attitude().pitch(),
+            ),
+            base.status(),
+            base.footpad(),
+            base.setpoints(),
+            base.booster_current(),
+            base.motor(),
+        );
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::new(
+            base,
+            payloads.mode2(),
+            payloads.mode3(),
+            payloads.mode4(),
+        ));
+        let mut config = *state.serialized_config();
+        config[super::REFLOAT_CONFIG_STARTUP_PUSHSTART_ENABLED_OFFSET] = 1;
+        config[super::REFLOAT_CONFIG_FAULT_REVERSESTOP_ENABLED_OFFSET] = 1;
+        assert!(state.store_serialized_config(&config));
+
+        assert!(state.handle_packet_with_runtime(
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+
+        let ride_state = state.all_data_payloads().base().status().ride_state();
+        // Upstream ignores backwards push-start when reverse stop is enabled
+        // at `src/main.c:1061-1064`.
+        assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
     }
 
     #[test]
@@ -2792,6 +3218,124 @@ mod tests {
     }
 
     #[test]
+    fn app_data_running_darkride_high_erpm_stops_like_refloat_fault_check() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry =
+            MotorTelemetryApi::new(FakeMotorTelemetryBindings::new().with_runtime_motor(
+                ElectricalSpeed::new(Rpm::from_revolutions_per_minute(2100.0)),
+                VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
+                MotorCurrent::new(Current::from_amps(0.0)),
+                BatteryCurrent::new(Current::from_amps(0.0)),
+                DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+            ));
+        let imu = vescpkg_rs::ImuApi::new(
+            vescpkg_rs::test_support::FakeImuBindings::new().with_startup_done(true),
+        );
+        let payloads =
+            sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Normal);
+        let base = payloads.base();
+        let ride_state = base
+            .status()
+            .ride_state()
+            .with_darkride(RefloatDarkRideState::Active);
+        let no_footpads = FootpadSensorSample::new(
+            AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
+            AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
+            FootpadSensorState::None,
+        );
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::new(
+            RefloatAllDataBasePayload::new(
+                base.balance_current(),
+                base.attitude(),
+                RefloatAllDataStatus::new(ride_state, base.status().beep_reason()),
+                no_footpads,
+                base.setpoints(),
+                base.booster_current(),
+                base.motor(),
+            ),
+            payloads.mode2(),
+            payloads.mode3(),
+            payloads.mode4(),
+        ));
+
+        assert!(state.handle_packet_with_runtime(
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+
+        let ride_state = state.all_data_payloads().base().status().ride_state();
+        // Upstream darkride `check_faults(d)` immediately reverse-stops above
+        // 2000 ERPM at `src/main.c:363-373`.
+        assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
+        assert_eq!(
+            ride_state.stop_condition(),
+            RefloatStopCondition::ReverseStop
+        );
+    }
+
+    #[test]
+    fn app_data_running_darkride_enabled_high_roll_stops_like_refloat_fault_check() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+        let imu = vescpkg_rs::ImuApi::new(
+            vescpkg_rs::test_support::FakeImuBindings::new()
+                .with_startup_done(true)
+                .with_attitude(
+                    ImuRoll::new(AngleRadians::from_radians(110.0_f32.to_radians())),
+                    ImuPitch::new(AngleRadians::from_radians(0.0)),
+                    ImuYaw::new(AngleRadians::from_radians(0.0)),
+                ),
+        );
+        let payloads =
+            sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Normal);
+        let base = payloads.base();
+        let no_footpads = FootpadSensorSample::new(
+            AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
+            AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
+            FootpadSensorState::None,
+        );
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::new(
+            RefloatAllDataBasePayload::new(
+                base.balance_current(),
+                base.attitude(),
+                base.status(),
+                no_footpads,
+                base.setpoints(),
+                base.booster_current(),
+                base.motor(),
+            ),
+            payloads.mode2(),
+            payloads.mode3(),
+            payloads.mode4(),
+        ));
+        let mut config = *state.serialized_config();
+        config[super::REFLOAT_CONFIG_FAULT_DARKRIDE_ENABLED_OFFSET] = 1;
+        state.store_serialized_config(&config);
+
+        assert!(state.handle_packet_with_runtime(
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+
+        let ride_state = state.all_data_payloads().base().status().ride_state();
+        // Upstream non-darkride `check_faults(d)` stops immediately when
+        // darkride faults are enabled and roll is 100-135 degrees at
+        // `src/main.c:465-470`.
+        assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
+        assert_eq!(ride_state.stop_condition(), RefloatStopCondition::Roll);
+    }
+
+    #[test]
     fn app_data_ready_normal_both_footpads_engages_like_refloat_start_conditions() {
         let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
         let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
@@ -2810,7 +3354,7 @@ mod tests {
         let upright_base = RefloatAllDataBasePayload::new(
             base.balance_current(),
             RefloatAllDataAttitude::new(
-                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(0.1)),
+                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(0.05)),
                 base.attitude().roll(),
                 base.attitude().pitch(),
             ),
@@ -2872,7 +3416,7 @@ mod tests {
         let upright_base = RefloatAllDataBasePayload::new(
             base.balance_current(),
             RefloatAllDataAttitude::new(
-                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(0.1)),
+                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(0.05)),
                 base.attitude().roll(),
                 base.attitude().pitch(),
             ),
@@ -2930,7 +3474,7 @@ mod tests {
         let upright_base = RefloatAllDataBasePayload::new(
             base.balance_current(),
             RefloatAllDataAttitude::new(
-                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(0.1)),
+                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(0.05)),
                 base.attitude().roll(),
                 base.attitude().pitch(),
             ),
@@ -3027,7 +3571,7 @@ mod tests {
         let upright_base = RefloatAllDataBasePayload::new(
             base.balance_current(),
             RefloatAllDataAttitude::new(
-                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(0.1)),
+                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(0.05)),
                 base.attitude().roll(),
                 base.attitude().pitch(),
             ),
@@ -3231,7 +3775,7 @@ mod tests {
             base.status(),
             base.footpad(),
             setpoints,
-            base.booster_current(),
+            RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
             base.motor(),
         );
         let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::new(
@@ -3288,7 +3832,7 @@ mod tests {
             base.status(),
             base.footpad(),
             setpoints,
-            base.booster_current(),
+            RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
             base.motor(),
         );
         let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::new(
@@ -3312,7 +3856,614 @@ mod tests {
         // Upstream `pid_update` computes angle P at `src/pid.c:40` and scales
         // it by `kp` at `src/pid.c:69`; RUNNING then smooths balance current
         // as `old * 0.8 + new_current * 0.2` at `src/main.c:932-954`.
-        assert_eq!(motor.bindings().current().current().as_amps(), 12.0);
+        assert!((motor.bindings().current().current().as_amps() - 12.001).abs() < 0.0001);
+        assert!(
+            (state
+                .all_data_payloads()
+                .base()
+                .balance_current()
+                .current()
+                .current()
+                .as_amps()
+                - 12.001)
+                .abs()
+                < 0.0001
+        );
+    }
+
+    #[test]
+    fn app_data_running_computes_rate_p_balance_current_like_refloat_pid() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+        let imu = ImuApi::new(
+            FakeImuBindings::new()
+                .with_startup_done(true)
+                .with_angular_rate(ImuAngularRate::new([
+                    AngularVelocity::from_degrees_per_second(0.0),
+                    AngularVelocity::from_degrees_per_second(10.0),
+                    AngularVelocity::from_degrees_per_second(0.0),
+                ])),
+        );
+        let motor = MotorControlApi::new(FakeMotorControlBindings::new());
+        let payloads =
+            sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Normal);
+        let base = payloads.base();
+        let setpoint = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(0.0));
+        let setpoints = RefloatRealtimeRuntimeSetpoints::new(
+            setpoint, setpoint, setpoint, setpoint, setpoint, setpoint,
+        );
+        let base = RefloatAllDataBasePayload::new(
+            RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            RefloatAllDataAttitude::new(
+                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(0.0)),
+                base.attitude().roll(),
+                base.attitude().pitch(),
+            ),
+            base.status(),
+            base.footpad(),
+            setpoints,
+            RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            base.motor(),
+        );
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::new(
+            base,
+            payloads.mode2(),
+            payloads.mode3(),
+            payloads.mode4(),
+        ));
+        let mut config = *state.serialized_config();
+        config[super::REFLOAT_CONFIG_KP_OFFSET..super::REFLOAT_CONFIG_KP_OFFSET + 2]
+            .copy_from_slice(&0u16.to_be_bytes());
+        config[super::REFLOAT_CONFIG_KP2_OFFSET..super::REFLOAT_CONFIG_KP2_OFFSET + 2]
+            .copy_from_slice(&20u16.to_be_bytes());
+        config[super::REFLOAT_CONFIG_KI_OFFSET..super::REFLOAT_CONFIG_KI_OFFSET + 2]
+            .copy_from_slice(&0u16.to_be_bytes());
+        assert!(state.store_serialized_config(&config));
+
+        assert!(state.handle_packet_with_runtime(
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+        assert!(state.apply_requested_motor_current(&motor));
+
+        // Upstream `imu_update` derives pitch rate from gyro at
+        // `src/imu.c:45-53`; `pid_update` computes `rate_p` at
+        // `src/pid.c:71-72`, then RUNNING smooths it into `balance_current`
+        // at `src/main.c:921-954`.
+        assert!((motor.bindings().current().current().as_amps() + 4.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn app_data_running_accumulates_angle_i_balance_current_like_refloat_pid() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+        let imu = ImuApi::new(
+            FakeImuBindings::new()
+                .with_startup_done(true)
+                .with_attitude(
+                    ImuRoll::new(AngleRadians::from_radians(0.0)),
+                    ImuPitch::new(AngleRadians::from_radians(0.0)),
+                    ImuYaw::new(AngleRadians::from_radians(0.0)),
+                ),
+        );
+        let motor = MotorControlApi::new(FakeMotorControlBindings::new());
+        let payloads =
+            sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Normal);
+        let base = payloads.base();
+        let setpoint = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(1.0));
+        let setpoints = RefloatRealtimeRuntimeSetpoints::new(
+            setpoint, setpoint, setpoint, setpoint, setpoint, setpoint,
+        );
+        let base = RefloatAllDataBasePayload::new(
+            RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            RefloatAllDataAttitude::new(
+                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(0.0)),
+                base.attitude().roll(),
+                base.attitude().pitch(),
+            ),
+            base.status(),
+            base.footpad(),
+            setpoints,
+            RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            base.motor(),
+        );
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::new(
+            base,
+            payloads.mode2(),
+            payloads.mode3(),
+            payloads.mode4(),
+        ));
+
+        assert!(state.handle_packet_with_runtime(
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+        assert!(state.apply_requested_motor_current(&motor));
+        assert!(
+            (motor.bindings().current().current().as_amps() - 4.001).abs() < 0.0001,
+            "{:?}",
+            motor.bindings().current()
+        );
+
+        assert!(state.handle_packet_with_runtime(
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+        assert!(state.apply_requested_motor_current(&motor));
+
+        // Upstream `pid_update` accumulates `pid->i += pid->p * config->ki`
+        // and clamps it at `src/pid.c:40-46`; RUNNING adds P + I before
+        // smoothing balance current at `src/main.c:932-954`.
+        assert!(
+            (motor.bindings().current().current().as_amps() - 7.2028).abs() < 0.0001,
+            "{:?}",
+            motor.bindings().current()
+        );
+    }
+
+    #[test]
+    fn app_data_running_clamps_angle_i_at_default_ki_limit_like_refloat_pid() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+        let imu = ImuApi::new(
+            FakeImuBindings::new()
+                .with_startup_done(true)
+                .with_attitude(
+                    ImuRoll::new(AngleRadians::from_radians(0.0)),
+                    ImuPitch::new(AngleRadians::from_radians(0.0)),
+                    ImuYaw::new(AngleRadians::from_radians(0.0)),
+                ),
+        );
+        let motor = MotorControlApi::new(FakeMotorControlBindings::new());
+        let payloads =
+            sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Normal);
+        let base = payloads.base();
+        let setpoint = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(10_000.0));
+        let setpoints = RefloatRealtimeRuntimeSetpoints::new(
+            setpoint, setpoint, setpoint, setpoint, setpoint, setpoint,
+        );
+        let base = RefloatAllDataBasePayload::new(
+            RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            RefloatAllDataAttitude::new(
+                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(0.0)),
+                base.attitude().roll(),
+                base.attitude().pitch(),
+            ),
+            base.status(),
+            base.footpad(),
+            setpoints,
+            RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            base.motor(),
+        );
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::new(
+            base,
+            payloads.mode2(),
+            payloads.mode3(),
+            payloads.mode4(),
+        ));
+        let mut config = *state.serialized_config();
+        config[super::REFLOAT_CONFIG_KP_OFFSET..super::REFLOAT_CONFIG_KP_OFFSET + 2]
+            .copy_from_slice(&0u16.to_be_bytes());
+        assert!(state.store_serialized_config(&config));
+
+        assert!(state.handle_packet_with_runtime(
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+        assert!(state.apply_requested_motor_current(&motor));
+
+        // Refloat default `ki_limit` is 30A (`settings.xml:1679-1707`);
+        // `pid_update` clamps the I term at `src/pid.c:40-46` before RUNNING
+        // smooths it into `balance_current` at `src/main.c:932-954`.
+        assert!((motor.bindings().current().current().as_amps() - 6.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn app_data_running_limits_handtest_and_flywheel_current_like_refloat_loop() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+        let imu = ImuApi::new(
+            FakeImuBindings::new()
+                .with_startup_done(true)
+                .with_attitude(
+                    ImuRoll::new(AngleRadians::from_radians(0.0)),
+                    ImuPitch::new(AngleRadians::from_radians(0.0)),
+                    ImuYaw::new(AngleRadians::from_radians(0.0)),
+                ),
+        );
+        let motor = MotorControlApi::new(FakeMotorControlBindings::new());
+
+        for (mode, expected_current) in [
+            (RefloatMode::HandTest, 1.4_f32),
+            (RefloatMode::Flywheel, 8.0_f32),
+        ] {
+            let payloads = sample_all_data_payloads_with_ride_state(RefloatRunState::Running, mode);
+            let base = payloads.base();
+            let setpoint = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(10.0));
+            let setpoints = RefloatRealtimeRuntimeSetpoints::new(
+                setpoint, setpoint, setpoint, setpoint, setpoint, setpoint,
+            );
+            let footpad = if matches!(mode, RefloatMode::Flywheel) {
+                FootpadSensorSample::new(
+                    AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
+                    AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
+                    FootpadSensorState::None,
+                )
+            } else {
+                base.footpad()
+            };
+            let base = RefloatAllDataBasePayload::new(
+                RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+                RefloatAllDataAttitude::new(
+                    RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(0.0)),
+                    base.attitude().roll(),
+                    base.attitude().pitch(),
+                ),
+                base.status(),
+                footpad,
+                setpoints,
+                RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+                base.motor(),
+            );
+            let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::new(
+                base,
+                payloads.mode2(),
+                payloads.mode3(),
+                payloads.mode4(),
+            ));
+
+            assert!(state.handle_packet_with_runtime(
+                &lifecycle,
+                &telemetry,
+                &imu,
+                &[
+                    REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                    RefloatAppDataCommand::RealtimeData.id(),
+                ],
+            ));
+            assert!(state.apply_requested_motor_current(&motor));
+
+            // Upstream RUNNING clamps `new_current` to 7A for HANDTEST and
+            // 40A for FLYWHEEL at `src/main.c:932-942`, then smooths it into
+            // `balance_current` at `src/main.c:949-954`.
+            assert!(
+                (motor.bindings().current().current().as_amps() - expected_current).abs() < 0.0001,
+                "{mode:?}: {:?}",
+                motor.bindings().current()
+            );
+        }
+    }
+
+    #[test]
+    fn app_data_running_adds_booster_current_like_refloat_loop() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+        let imu = ImuApi::new(
+            FakeImuBindings::new()
+                .with_startup_done(true)
+                .with_attitude(
+                    ImuRoll::new(AngleRadians::from_radians(0.0)),
+                    ImuPitch::new(AngleRadians::from_radians(0.0)),
+                    ImuYaw::new(AngleRadians::from_radians(0.0)),
+                ),
+        );
+        let motor = MotorControlApi::new(FakeMotorControlBindings::new());
+        let payloads =
+            sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Normal);
+        let base = payloads.base();
+        let setpoint = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(3.0));
+        let setpoints = RefloatRealtimeRuntimeSetpoints::new(
+            setpoint, setpoint, setpoint, setpoint, setpoint, setpoint,
+        );
+        let base = RefloatAllDataBasePayload::new(
+            RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            RefloatAllDataAttitude::new(
+                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(0.0)),
+                base.attitude().roll(),
+                base.attitude().pitch(),
+            ),
+            base.status(),
+            base.footpad(),
+            setpoints,
+            RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            base.motor(),
+        );
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::new(
+            base,
+            payloads.mode2(),
+            payloads.mode3(),
+            payloads.mode4(),
+        ));
+        let mut config = *state.serialized_config();
+        config[super::REFLOAT_CONFIG_KP_OFFSET..super::REFLOAT_CONFIG_KP_OFFSET + 2]
+            .copy_from_slice(&0u16.to_be_bytes());
+        config[super::REFLOAT_CONFIG_KP2_OFFSET..super::REFLOAT_CONFIG_KP2_OFFSET + 2]
+            .copy_from_slice(&0u16.to_be_bytes());
+        config[super::REFLOAT_CONFIG_KI_OFFSET..super::REFLOAT_CONFIG_KI_OFFSET + 2]
+            .copy_from_slice(&0u16.to_be_bytes());
+        config[super::REFLOAT_CONFIG_BOOSTER_ANGLE_OFFSET
+            ..super::REFLOAT_CONFIG_BOOSTER_ANGLE_OFFSET + 2]
+            .copy_from_slice(&100u16.to_be_bytes());
+        config[super::REFLOAT_CONFIG_BOOSTER_RAMP_OFFSET
+            ..super::REFLOAT_CONFIG_BOOSTER_RAMP_OFFSET + 2]
+            .copy_from_slice(&100u16.to_be_bytes());
+        config[super::REFLOAT_CONFIG_BOOSTER_CURRENT_OFFSET
+            ..super::REFLOAT_CONFIG_BOOSTER_CURRENT_OFFSET + 2]
+            .copy_from_slice(&2000u16.to_be_bytes());
+        assert!(state.store_serialized_config(&config));
+
+        assert!(state.handle_packet_with_runtime(
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+        assert!(state.apply_requested_motor_current(&motor));
+
+        // Upstream `booster_update` applies full configured booster current
+        // above angle+ramp at `src/booster.c:35-46`, filters it at
+        // `src/booster.c:50`, and RUNNING adds it to rate-P before smoothing
+        // `balance_current` at `src/main.c:921-954`.
+        assert!(
+            (state
+                .all_data_payloads()
+                .base()
+                .booster_current()
+                .current()
+                .current()
+                .as_amps()
+                - 0.2)
+                .abs()
+                < 0.0001
+        );
+        assert!((motor.bindings().current().current().as_amps() - 0.04).abs() < 0.0001);
+    }
+
+    #[test]
+    fn app_data_running_adds_braking_booster_current_like_refloat_loop() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry =
+            MotorTelemetryApi::new(FakeMotorTelemetryBindings::new().with_runtime_motor(
+                ElectricalSpeed::new(Rpm::from_revolutions_per_minute(0.0)),
+                VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
+                MotorCurrent::new(Current::from_amps(-2.0)),
+                BatteryCurrent::new(Current::from_amps(0.0)),
+                DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+            ));
+        let imu = ImuApi::new(
+            FakeImuBindings::new()
+                .with_startup_done(true)
+                .with_attitude(
+                    ImuRoll::new(AngleRadians::from_radians(0.0)),
+                    ImuPitch::new(AngleRadians::from_radians(3.0_f32.to_radians())),
+                    ImuYaw::new(AngleRadians::from_radians(0.0)),
+                ),
+        );
+        let motor = MotorControlApi::new(FakeMotorControlBindings::new());
+        let payloads =
+            sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Normal);
+        let base = payloads.base();
+        let setpoint = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(0.0));
+        let setpoints = RefloatRealtimeRuntimeSetpoints::new(
+            setpoint, setpoint, setpoint, setpoint, setpoint, setpoint,
+        );
+        let base = RefloatAllDataBasePayload::new(
+            RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            RefloatAllDataAttitude::new(
+                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(0.0)),
+                base.attitude().roll(),
+                base.attitude().pitch(),
+            ),
+            base.status(),
+            base.footpad(),
+            setpoints,
+            RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            base.motor(),
+        );
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::new(
+            base,
+            payloads.mode2(),
+            payloads.mode3(),
+            payloads.mode4(),
+        ));
+        let mut config = *state.serialized_config();
+        config[super::REFLOAT_CONFIG_KP_OFFSET..super::REFLOAT_CONFIG_KP_OFFSET + 2]
+            .copy_from_slice(&0u16.to_be_bytes());
+        config[super::REFLOAT_CONFIG_KP2_OFFSET..super::REFLOAT_CONFIG_KP2_OFFSET + 2]
+            .copy_from_slice(&0u16.to_be_bytes());
+        config[super::REFLOAT_CONFIG_KI_OFFSET..super::REFLOAT_CONFIG_KI_OFFSET + 2]
+            .copy_from_slice(&0u16.to_be_bytes());
+        config[super::REFLOAT_CONFIG_BRKBOOSTER_ANGLE_OFFSET
+            ..super::REFLOAT_CONFIG_BRKBOOSTER_ANGLE_OFFSET + 2]
+            .copy_from_slice(&100u16.to_be_bytes());
+        config[super::REFLOAT_CONFIG_BRKBOOSTER_RAMP_OFFSET
+            ..super::REFLOAT_CONFIG_BRKBOOSTER_RAMP_OFFSET + 2]
+            .copy_from_slice(&100u16.to_be_bytes());
+        config[super::REFLOAT_CONFIG_BRKBOOSTER_CURRENT_OFFSET
+            ..super::REFLOAT_CONFIG_BRKBOOSTER_CURRENT_OFFSET + 2]
+            .copy_from_slice(&2000u16.to_be_bytes());
+        assert!(state.store_serialized_config(&config));
+
+        assert!(state.handle_packet_with_runtime(
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+        assert!(state.apply_requested_motor_current(&motor));
+
+        // Upstream `motor_data_update` marks braking from negative motor
+        // current at `src/motor_data.c:121-123`; `booster_update` then uses
+        // `brkbooster_*` config at `src/booster.c:35-41`, applies sign from
+        // proportional at `src/booster.c:60-64`, filters at `src/booster.c:68`,
+        // and RUNNING smooths balance current at `src/main.c:921-954`.
+        assert!(
+            (state
+                .all_data_payloads()
+                .base()
+                .booster_current()
+                .current()
+                .current()
+                .as_amps()
+                + 0.2)
+                .abs()
+                < 0.0001
+        );
+        assert!((motor.bindings().current().current().as_amps() + 0.04).abs() < 0.0001);
+    }
+
+    #[test]
+    fn app_data_running_inverts_darkride_current_like_refloat_loop() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+        let imu = ImuApi::new(
+            FakeImuBindings::new()
+                .with_startup_done(true)
+                .with_attitude(
+                    ImuRoll::new(AngleRadians::from_radians(0.0)),
+                    ImuPitch::new(AngleRadians::from_radians(0.0)),
+                    ImuYaw::new(AngleRadians::from_radians(0.0)),
+                ),
+        );
+        let motor = MotorControlApi::new(FakeMotorControlBindings::new());
+        let payloads =
+            sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Normal);
+        let base = payloads.base();
+        let ride_state = base
+            .status()
+            .ride_state()
+            .with_darkride(RefloatDarkRideState::Active);
+        let no_footpads = FootpadSensorSample::new(
+            AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
+            AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
+            FootpadSensorState::None,
+        );
+        let setpoint = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(1.0));
+        let setpoints = RefloatRealtimeRuntimeSetpoints::new(
+            setpoint, setpoint, setpoint, setpoint, setpoint, setpoint,
+        );
+        let base = RefloatAllDataBasePayload::new(
+            RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            RefloatAllDataAttitude::new(
+                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(0.0)),
+                base.attitude().roll(),
+                base.attitude().pitch(),
+            ),
+            RefloatAllDataStatus::new(ride_state, base.status().beep_reason()),
+            no_footpads,
+            setpoints,
+            RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            base.motor(),
+        );
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::new(
+            base,
+            payloads.mode2(),
+            payloads.mode3(),
+            payloads.mode4(),
+        ));
+
+        assert!(state.handle_packet_with_runtime(
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+        assert!(state.apply_requested_motor_current(&motor));
+
+        // Upstream RUNNING negates `new_current` for darkride at
+        // `src/main.c:944-946`, before smoothing/requesting motor current.
+        assert!((motor.bindings().current().current().as_amps() + 4.001).abs() < 0.0001);
+    }
+
+    #[test]
+    fn app_data_running_zeroes_balance_current_during_wheelslip_like_refloat_loop() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+        let imu = ImuApi::new(
+            FakeImuBindings::new()
+                .with_startup_done(true)
+                .with_attitude(
+                    ImuRoll::new(AngleRadians::from_radians(0.0)),
+                    ImuPitch::new(AngleRadians::from_radians(0.0)),
+                    ImuYaw::new(AngleRadians::from_radians(0.0)),
+                ),
+        );
+        let motor = MotorControlApi::new(FakeMotorControlBindings::new());
+        let payloads =
+            sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Normal);
+        let base = payloads.base();
+        let ride_state = base
+            .status()
+            .ride_state()
+            .with_wheelslip(RefloatWheelSlipState::Detected);
+        let setpoint = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(1.0));
+        let setpoints = RefloatRealtimeRuntimeSetpoints::new(
+            setpoint, setpoint, setpoint, setpoint, setpoint, setpoint,
+        );
+        let base = RefloatAllDataBasePayload::new(
+            RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(10.0))),
+            RefloatAllDataAttitude::new(
+                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(0.0)),
+                base.attitude().roll(),
+                base.attitude().pitch(),
+            ),
+            RefloatAllDataStatus::new(ride_state, base.status().beep_reason()),
+            base.footpad(),
+            setpoints,
+            base.booster_current(),
+            base.motor(),
+        );
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::new(
+            base,
+            payloads.mode2(),
+            payloads.mode3(),
+            payloads.mode4(),
+        ));
+
+        assert!(state.handle_packet_with_runtime(
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+        assert!(state.apply_requested_motor_current(&motor));
+
+        // Upstream RUNNING sets `balance_current = 0` while traction loss is
+        // detected at `src/main.c:949-954`, instead of smoothing toward the
+        // computed current.
+        assert_eq!(motor.bindings().current().current().as_amps(), 0.0);
         assert_eq!(
             state
                 .all_data_payloads()
@@ -3321,7 +4472,7 @@ mod tests {
                 .current()
                 .current()
                 .as_amps(),
-            12.0
+            0.0
         );
     }
 

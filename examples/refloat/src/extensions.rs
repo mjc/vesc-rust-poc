@@ -176,31 +176,29 @@ pub unsafe fn register_refloat_loader_extensions(_info: *mut ffi::LibInfo) -> bo
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
-fn runtime_ext_set_fw_version_name() -> *const c_char {
-    let address: usize;
+fn loaded_image_base() -> usize {
+    let loaded_handler: usize;
     unsafe {
         core::arch::asm!(
-            "adr.w {address}, {name}",
-            address = out(reg) address,
-            name = sym EXT_SET_FW_VERSION_NAME_BYTES,
+            "adr {loaded_handler}, {handler}",
+            loaded_handler = out(reg) loaded_handler,
+            handler = sym ext_set_fw_version,
             options(nomem, nostack, preserves_flags),
         );
     }
-    address as *const c_char
+    let loaded_handler = loaded_handler & !1;
+    let image_handler = ext_set_fw_version as *const () as usize & !1;
+    loaded_handler - image_handler
+}
+
+#[cfg(all(not(test), target_arch = "arm"))]
+fn runtime_ext_set_fw_version_name() -> *const c_char {
+    (loaded_image_base() + EXT_SET_FW_VERSION_NAME_BYTES.as_ptr() as usize) as *const c_char
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
 fn runtime_ext_bms_name() -> *const c_char {
-    let address: usize;
-    unsafe {
-        core::arch::asm!(
-            "adr.w {address}, {name}",
-            address = out(reg) address,
-            name = sym EXT_BMS_NAME_BYTES,
-            options(nomem, nostack, preserves_flags),
-        );
-    }
-    address as *const c_char
+    (loaded_image_base() + EXT_BMS_NAME_BYTES.as_ptr() as usize) as *const c_char
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]

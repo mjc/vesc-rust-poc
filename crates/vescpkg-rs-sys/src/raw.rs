@@ -589,6 +589,7 @@ mod slots {
     fn_slot!(imu_get_roll as unsafe extern "C" fn() -> f32);
     fn_slot!(imu_get_pitch as unsafe extern "C" fn() -> f32);
     fn_slot!(imu_get_yaw as unsafe extern "C" fn() -> f32);
+    fn_slot!(imu_get_gyro as unsafe extern "C" fn(*mut f32));
     fn_slot!(send_app_data as unsafe extern "C" fn(*mut c_uchar, u32));
     fn_slot!(system_time_ticks as unsafe extern "C" fn() -> u32);
     optional_fn_slot!(thread_set_priority as unsafe extern "C" fn(c_int));
@@ -1137,6 +1138,19 @@ pub unsafe fn imu_get_pitch() -> f32 {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn imu_get_yaw() -> f32 {
     unsafe { slots::imu_get_yaw()() }
+}
+
+/// Write firmware IMU gyro axes in degrees/sec into `xyz`.
+///
+/// Refloat v1.2.1 mirrors this VESC ABI slot from
+/// `vesc_pkg_lib/vesc_c_if.h:516` and reads it in `src/imu.c:45-53`.
+///
+/// # Safety
+///
+/// `xyz` must point to three writable `f32` values, and the VESC function
+/// table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn imu_get_gyro(xyz: *mut f32) {
+    unsafe { slots::imu_get_gyro()(xyz) }
 }
 
 /// # Safety
