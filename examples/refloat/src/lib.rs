@@ -28,9 +28,14 @@ fn panic(_: &PanicInfo) -> ! {
 #[cfg(test)]
 mod tests {
     use super::domain::{
-        FootpadSensorSample, FootpadSensorState, RefloatChargingState, RefloatImuSample,
-        RefloatMode, RefloatMotorCommand, RefloatMotorTelemetry, RefloatRideState, RefloatRunState,
-        RefloatSetpointAdjustment, RefloatStopCondition, RefloatWheelSlipState,
+        FootpadSensorSample, FootpadSensorState, REFLOAT_APP_DATA_PACKAGE_ID,
+        REFLOAT_REALTIME_DATA_ITEMS, REFLOAT_REALTIME_RECORDED_ITEMS,
+        REFLOAT_REALTIME_RUNTIME_ITEMS, RefloatAppDataCommand, RefloatBeepReason,
+        RefloatChargingState, RefloatDarkRideState, RefloatDataRecorderFlags,
+        RefloatFatalErrorState, RefloatImuSample, RefloatMode, RefloatMotorCommand,
+        RefloatMotorTelemetry, RefloatRealtimeDataHeader, RefloatRealtimeDataItem,
+        RefloatRealtimeDataItemGroup, RefloatRealtimeDataRecordPolicy, RefloatRideState,
+        RefloatRunState, RefloatSetpointAdjustment, RefloatStopCondition, RefloatWheelSlipState,
     };
     use vescpkg_rs::prelude::*;
 
@@ -114,6 +119,156 @@ mod tests {
                 .with_wheelslip(RefloatWheelSlipState::Detected)
                 .float_state_compat(),
             14
+        );
+    }
+
+    #[test]
+    fn package_author_parses_refloat_app_data_commands_as_domain_enum() {
+        let commands = [
+            (0, RefloatAppDataCommand::Info),
+            (1, RefloatAppDataCommand::GetRealtimeData),
+            (2, RefloatAppDataCommand::RuntimeTune),
+            (3, RefloatAppDataCommand::TuneDefaults),
+            (4, RefloatAppDataCommand::ConfigSave),
+            (5, RefloatAppDataCommand::ConfigRestore),
+            (6, RefloatAppDataCommand::TuneOther),
+            (7, RefloatAppDataCommand::RcMove),
+            (8, RefloatAppDataCommand::Booster),
+            (9, RefloatAppDataCommand::PrintInfo),
+            (10, RefloatAppDataCommand::GetAllData),
+            (11, RefloatAppDataCommand::Experiment),
+            (12, RefloatAppDataCommand::Lock),
+            (13, RefloatAppDataCommand::HandTest),
+            (14, RefloatAppDataCommand::TuneTilt),
+            (20, RefloatAppDataCommand::LightsControl),
+            (22, RefloatAppDataCommand::Flywheel),
+            (24, RefloatAppDataCommand::LcmPoll),
+            (25, RefloatAppDataCommand::LcmLightInfo),
+            (26, RefloatAppDataCommand::LcmLightControl),
+            (27, RefloatAppDataCommand::LcmDeviceInfo),
+            (28, RefloatAppDataCommand::ChargingState),
+            (29, RefloatAppDataCommand::LcmGetBattery),
+            (31, RefloatAppDataCommand::RealtimeData),
+            (32, RefloatAppDataCommand::RealtimeDataIds),
+            (35, RefloatAppDataCommand::AlertsList),
+            (36, RefloatAppDataCommand::AlertsControl),
+            (41, RefloatAppDataCommand::DataRecordRequest),
+            (99, RefloatAppDataCommand::LcmDebug),
+        ];
+
+        assert_eq!(REFLOAT_APP_DATA_PACKAGE_ID.get(), 101);
+        assert!(commands.into_iter().all(|(id, command)| {
+            RefloatAppDataCommand::try_from_id(id)
+                .is_ok_and(|parsed| parsed == command && parsed.id() == id)
+        }));
+        assert_eq!(
+            RefloatAppDataCommand::try_from_id(200)
+                .expect_err("unstable command should stay explicit")
+                .value(),
+            200
+        );
+    }
+
+    #[test]
+    fn package_author_builds_realtime_data_header_without_raw_bit_flags() {
+        let ride_state = RefloatRideState::new(
+            RefloatRunState::Running,
+            RefloatMode::Flywheel,
+            RefloatSetpointAdjustment::PushbackLowVoltage,
+            RefloatStopCondition::QuickStop,
+        )
+        .with_charging(RefloatChargingState::Charging)
+        .with_wheelslip(RefloatWheelSlipState::Detected)
+        .with_darkride(RefloatDarkRideState::Active);
+        let recorder = RefloatDataRecorderFlags::inactive()
+            .with_recording()
+            .with_autostop();
+        let header = RefloatRealtimeDataHeader::new(
+            SystemTimestamp::new(TimestampTicks::from_ticks(123_456)),
+            ride_state,
+            FootpadSensorState::Both,
+            RefloatBeepReason::FirmwareFault,
+        )
+        .with_data_recorder(recorder)
+        .with_fatal_error(RefloatFatalErrorState::Present);
+
+        assert_eq!(header.timestamp().ticks().as_ticks(), 123_456);
+        assert_eq!(header.data_mask_compat(), 0b0000_0111);
+        assert_eq!(header.extra_flags_compat(), 0b0000_1101);
+        assert_eq!(header.state_byte_compat(), 0x23);
+        assert_eq!(header.footpad_flags_compat(), 0b1110_0011);
+        assert_eq!(header.stop_setpoint_byte_compat(), 0xB6);
+        assert_eq!(header.beep_reason_compat(), 19);
+    }
+
+    #[test]
+    fn package_author_reads_realtime_data_item_ids_as_typed_contract() {
+        assert_eq!(
+            REFLOAT_REALTIME_DATA_ITEMS.map(RefloatRealtimeDataItem::id),
+            [
+                "motor.speed",
+                "motor.erpm",
+                "motor.current",
+                "motor.dir_current",
+                "motor.filt_current",
+                "motor.duty_cycle",
+                "motor.batt_voltage",
+                "motor.batt_current",
+                "motor.mosfet_temp",
+                "motor.motor_temp",
+                "imu.pitch",
+                "imu.balance_pitch",
+                "imu.roll",
+                "footpad.adc1",
+                "footpad.adc2",
+                "remote.input",
+            ]
+        );
+        assert_eq!(
+            REFLOAT_REALTIME_RUNTIME_ITEMS.map(RefloatRealtimeDataItem::id),
+            [
+                "setpoint",
+                "atr.setpoint",
+                "brake_tilt.setpoint",
+                "torque_tilt.setpoint",
+                "turn_tilt.setpoint",
+                "remote.setpoint",
+                "balance_current",
+                "atr.accel_diff",
+                "atr.speed_boost",
+                "booster.current",
+            ]
+        );
+        assert_eq!(
+            REFLOAT_REALTIME_RECORDED_ITEMS.map(RefloatRealtimeDataItem::id),
+            [
+                "motor.erpm",
+                "motor.dir_current",
+                "motor.duty_cycle",
+                "motor.batt_voltage",
+                "imu.pitch",
+                "imu.balance_pitch",
+                "setpoint",
+                "atr.setpoint",
+                "torque_tilt.setpoint",
+                "balance_current",
+            ]
+        );
+        assert_eq!(
+            RefloatRealtimeDataItem::MotorSpeed.group(),
+            RefloatRealtimeDataItemGroup::Always
+        );
+        assert_eq!(
+            RefloatRealtimeDataItem::BalanceCurrent.group(),
+            RefloatRealtimeDataItemGroup::Runtime
+        );
+        assert_eq!(
+            RefloatRealtimeDataItem::MotorErpm.record_policy(),
+            RefloatRealtimeDataRecordPolicy::Record
+        );
+        assert_eq!(
+            RefloatRealtimeDataItem::MotorSpeed.record_policy(),
+            RefloatRealtimeDataRecordPolicy::SendOnly
         );
     }
 }

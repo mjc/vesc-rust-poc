@@ -6,8 +6,178 @@
 
 use vescpkg_rs::prelude::{
     AdcDecodedLevel, BatteryCurrent, BatteryVoltage, DirectionalMotorCurrent, DutyCycle,
-    ElectricalSpeed, ImuAngularRate, ImuPitch, ImuRoll, ImuYaw, MotorCurrent, VehicleSpeed,
+    ElectricalSpeed, ImuAngularRate, ImuPitch, ImuRoll, ImuYaw, MotorCurrent, SystemTimestamp,
+    VehicleSpeed,
 };
+
+/// Refloat app-data package ID.
+pub const REFLOAT_APP_DATA_PACKAGE_ID: RefloatAppDataPackageId = RefloatAppDataPackageId::new(101);
+
+/// Refloat app-data package identifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct RefloatAppDataPackageId(u8);
+
+impl RefloatAppDataPackageId {
+    /// Build a package ID token from the source-backed package ID.
+    const fn new(value: u8) -> Self {
+        Self(value)
+    }
+
+    /// Explicitly extract the app-data package ID.
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
+/// Refloat app-data command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum RefloatAppDataCommand {
+    /// Version/package info.
+    Info,
+    /// Realtime data request.
+    GetRealtimeData,
+    /// Runtime tune without EEPROM write.
+    RuntimeTune,
+    /// Reset tune defaults without EEPROM write.
+    TuneDefaults,
+    /// Save config to EEPROM.
+    ConfigSave,
+    /// Restore config from EEPROM.
+    ConfigRestore,
+    /// Runtime startup/config change.
+    TuneOther,
+    /// Idle motor movement.
+    RcMove,
+    /// Booster settings.
+    Booster,
+    /// Print verbose info.
+    PrintInfo,
+    /// Compact all-data response request.
+    GetAllData,
+    /// Testing/tuning experiment command.
+    Experiment,
+    /// Lock/disable command.
+    Lock,
+    /// Hand-test mode command.
+    HandTest,
+    /// Tilt tuning command.
+    TuneTilt,
+    /// Lights-control command.
+    LightsControl,
+    /// Flywheel toggle command.
+    Flywheel,
+    /// LCM poll.
+    LcmPoll,
+    /// LCM light-info request.
+    LcmLightInfo,
+    /// LCM light-control command.
+    LcmLightControl,
+    /// LCM device-info request.
+    LcmDeviceInfo,
+    /// Charging-state command.
+    ChargingState,
+    /// LCM battery request.
+    LcmGetBattery,
+    /// Realtime data path.
+    RealtimeData,
+    /// Realtime data ID list.
+    RealtimeDataIds,
+    /// Alert list request.
+    AlertsList,
+    /// Alert control command.
+    AlertsControl,
+    /// Data recorder request.
+    DataRecordRequest,
+    /// LCM debug command reserved for external debugging.
+    LcmDebug,
+}
+
+impl RefloatAppDataCommand {
+    /// Parse a Refloat app-data command ID.
+    pub const fn try_from_id(id: u8) -> Result<Self, RefloatAppDataCommandError> {
+        match id {
+            0 => Ok(Self::Info),
+            1 => Ok(Self::GetRealtimeData),
+            2 => Ok(Self::RuntimeTune),
+            3 => Ok(Self::TuneDefaults),
+            4 => Ok(Self::ConfigSave),
+            5 => Ok(Self::ConfigRestore),
+            6 => Ok(Self::TuneOther),
+            7 => Ok(Self::RcMove),
+            8 => Ok(Self::Booster),
+            9 => Ok(Self::PrintInfo),
+            10 => Ok(Self::GetAllData),
+            11 => Ok(Self::Experiment),
+            12 => Ok(Self::Lock),
+            13 => Ok(Self::HandTest),
+            14 => Ok(Self::TuneTilt),
+            20 => Ok(Self::LightsControl),
+            22 => Ok(Self::Flywheel),
+            24 => Ok(Self::LcmPoll),
+            25 => Ok(Self::LcmLightInfo),
+            26 => Ok(Self::LcmLightControl),
+            27 => Ok(Self::LcmDeviceInfo),
+            28 => Ok(Self::ChargingState),
+            29 => Ok(Self::LcmGetBattery),
+            31 => Ok(Self::RealtimeData),
+            32 => Ok(Self::RealtimeDataIds),
+            35 => Ok(Self::AlertsList),
+            36 => Ok(Self::AlertsControl),
+            41 => Ok(Self::DataRecordRequest),
+            99 => Ok(Self::LcmDebug),
+            value => Err(RefloatAppDataCommandError { value }),
+        }
+    }
+
+    /// Return the Refloat `v1.2.1` command ID.
+    pub const fn id(self) -> u8 {
+        match self {
+            Self::Info => 0,
+            Self::GetRealtimeData => 1,
+            Self::RuntimeTune => 2,
+            Self::TuneDefaults => 3,
+            Self::ConfigSave => 4,
+            Self::ConfigRestore => 5,
+            Self::TuneOther => 6,
+            Self::RcMove => 7,
+            Self::Booster => 8,
+            Self::PrintInfo => 9,
+            Self::GetAllData => 10,
+            Self::Experiment => 11,
+            Self::Lock => 12,
+            Self::HandTest => 13,
+            Self::TuneTilt => 14,
+            Self::LightsControl => 20,
+            Self::Flywheel => 22,
+            Self::LcmPoll => 24,
+            Self::LcmLightInfo => 25,
+            Self::LcmLightControl => 26,
+            Self::LcmDeviceInfo => 27,
+            Self::ChargingState => 28,
+            Self::LcmGetBattery => 29,
+            Self::RealtimeData => 31,
+            Self::RealtimeDataIds => 32,
+            Self::AlertsList => 35,
+            Self::AlertsControl => 36,
+            Self::DataRecordRequest => 41,
+            Self::LcmDebug => 99,
+        }
+    }
+}
+
+/// Error returned when a Refloat app-data command ID is unknown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RefloatAppDataCommandError {
+    value: u8,
+}
+
+impl RefloatAppDataCommandError {
+    /// Return the rejected command ID.
+    pub const fn value(self) -> u8 {
+        self.value
+    }
+}
 
 /// Refloat footpad sensor state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -23,6 +193,16 @@ pub enum FootpadSensorState {
 }
 
 impl FootpadSensorState {
+    /// Return the Refloat `v1.2.1` footpad state ID.
+    pub const fn id(self) -> u8 {
+        match self {
+            Self::None => 0,
+            Self::Left => 1,
+            Self::Right => 2,
+            Self::Both => 3,
+        }
+    }
+
     /// Return the Refloat app-data switch compatibility value.
     pub const fn switch_compat(self) -> u8 {
         match self {
@@ -80,6 +260,18 @@ pub enum RefloatRunState {
     Running,
 }
 
+impl RefloatRunState {
+    /// Return the Refloat `v1.2.1` run-state ID.
+    pub const fn id(self) -> u8 {
+        match self {
+            Self::Disabled => 0,
+            Self::Startup => 1,
+            Self::Ready => 2,
+            Self::Running => 3,
+        }
+    }
+}
+
 /// Refloat runtime mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RefloatMode {
@@ -89,6 +281,17 @@ pub enum RefloatMode {
     HandTest,
     /// Flywheel mode.
     Flywheel,
+}
+
+impl RefloatMode {
+    /// Return the Refloat `v1.2.1` mode ID.
+    pub const fn id(self) -> u8 {
+        match self {
+            Self::Normal => 0,
+            Self::HandTest => 1,
+            Self::Flywheel => 2,
+        }
+    }
 }
 
 /// Refloat stop reason.
@@ -108,6 +311,21 @@ pub enum RefloatStopCondition {
     ReverseStop,
     /// Quickstop fault.
     QuickStop,
+}
+
+impl RefloatStopCondition {
+    /// Return the Refloat `v1.2.1` stop-condition ID.
+    pub const fn id(self) -> u8 {
+        match self {
+            Self::None => 0,
+            Self::Pitch => 1,
+            Self::Roll => 2,
+            Self::SwitchHalf => 3,
+            Self::SwitchFull => 4,
+            Self::ReverseStop => 5,
+            Self::QuickStop => 6,
+        }
+    }
 }
 
 /// Refloat setpoint adjustment or pushback reason.
@@ -134,6 +352,21 @@ pub enum RefloatSetpointAdjustment {
 }
 
 impl RefloatSetpointAdjustment {
+    /// Return the Refloat `v1.2.1` realtime-data setpoint-adjustment ID.
+    pub const fn id(self) -> u8 {
+        match self {
+            Self::None => 0,
+            Self::Centering => 1,
+            Self::ReverseStop => 2,
+            Self::PushbackSpeed => 5,
+            Self::PushbackDuty => 6,
+            Self::PushbackError => 7,
+            Self::PushbackHighVoltage => 10,
+            Self::PushbackLowVoltage => 11,
+            Self::PushbackTemperature => 12,
+        }
+    }
+
     const fn is_float_state_tiltback(self) -> bool {
         matches!(
             self,
@@ -170,6 +403,456 @@ pub enum RefloatDarkRideState {
     Upright,
     /// Darkride/upside-down state is active.
     Active,
+}
+
+/// Refloat beeper reason.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum RefloatBeepReason {
+    /// No beep reason.
+    None,
+    /// Low-voltage warning.
+    LowVoltage,
+    /// High-voltage warning.
+    HighVoltage,
+    /// MOSFET temperature warning.
+    MosfetTemperature,
+    /// Motor temperature warning.
+    MotorTemperature,
+    /// Current warning.
+    Current,
+    /// Duty-cycle warning.
+    Duty,
+    /// Footpad sensor warning.
+    Sensors,
+    /// Low battery warning.
+    LowBattery,
+    /// Idle warning.
+    Idle,
+    /// Generic error warning.
+    Error,
+    /// Speed warning.
+    Speed,
+    /// BMS cell under-temperature warning.
+    CellUnderTemperature,
+    /// BMS cell over-temperature warning.
+    CellOverTemperature,
+    /// BMS low-cell-voltage warning.
+    CellLowVoltage,
+    /// BMS high-cell-voltage warning.
+    CellHighVoltage,
+    /// BMS cell-balance warning.
+    CellBalance,
+    /// BMS connection warning.
+    BmsConnection,
+    /// BMS over-temperature warning.
+    BmsOverTemperature,
+    /// Firmware fault warning.
+    FirmwareFault,
+}
+
+impl RefloatBeepReason {
+    /// Return the Refloat `v1.2.1` beep-reason ID.
+    pub const fn id(self) -> u8 {
+        match self {
+            Self::None => 0,
+            Self::LowVoltage => 1,
+            Self::HighVoltage => 2,
+            Self::MosfetTemperature => 3,
+            Self::MotorTemperature => 4,
+            Self::Current => 5,
+            Self::Duty => 6,
+            Self::Sensors => 7,
+            Self::LowBattery => 8,
+            Self::Idle => 9,
+            Self::Error => 10,
+            Self::Speed => 11,
+            Self::CellUnderTemperature => 12,
+            Self::CellOverTemperature => 13,
+            Self::CellLowVoltage => 14,
+            Self::CellHighVoltage => 15,
+            Self::CellBalance => 16,
+            Self::BmsConnection => 17,
+            Self::BmsOverTemperature => 18,
+            Self::FirmwareFault => 19,
+        }
+    }
+}
+
+/// Refloat data-recorder status flags sent in realtime data.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct RefloatDataRecorderFlags {
+    recording: bool,
+    autostart: bool,
+    autostop: bool,
+}
+
+impl RefloatDataRecorderFlags {
+    /// Return inactive data-recorder flags.
+    pub const fn inactive() -> Self {
+        Self {
+            recording: false,
+            autostart: false,
+            autostop: false,
+        }
+    }
+
+    /// Return flags with recording enabled.
+    pub const fn with_recording(mut self) -> Self {
+        self.recording = true;
+        self
+    }
+
+    /// Return flags with autostart enabled.
+    pub const fn with_autostart(mut self) -> Self {
+        self.autostart = true;
+        self
+    }
+
+    /// Return flags with autostop enabled.
+    pub const fn with_autostop(mut self) -> Self {
+        self.autostop = true;
+        self
+    }
+
+    const fn extra_flags_compat(self, fatal_error: RefloatFatalErrorState) -> u8 {
+        let fatal = match fatal_error {
+            RefloatFatalErrorState::None => 0,
+            RefloatFatalErrorState::Present => 0x8,
+        };
+        let autostop = if self.autostop { 0x4 } else { 0 };
+        let autostart = if self.autostart { 0x2 } else { 0 };
+        let recording = if self.recording { 0x1 } else { 0 };
+        fatal | autostop | autostart | recording
+    }
+}
+
+/// Refloat fatal-error state for realtime-data extra flags.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum RefloatFatalErrorState {
+    /// No fatal error is active.
+    None,
+    /// Fatal error is active.
+    Present,
+}
+
+/// Refloat realtime-data items that are always sent.
+pub const REFLOAT_REALTIME_DATA_ITEMS: [RefloatRealtimeDataItem; 16] = [
+    RefloatRealtimeDataItem::MotorSpeed,
+    RefloatRealtimeDataItem::MotorErpm,
+    RefloatRealtimeDataItem::MotorCurrent,
+    RefloatRealtimeDataItem::MotorDirectionalCurrent,
+    RefloatRealtimeDataItem::MotorFilteredCurrent,
+    RefloatRealtimeDataItem::MotorDutyCycle,
+    RefloatRealtimeDataItem::MotorBatteryVoltage,
+    RefloatRealtimeDataItem::MotorBatteryCurrent,
+    RefloatRealtimeDataItem::MotorMosfetTemperature,
+    RefloatRealtimeDataItem::MotorTemperature,
+    RefloatRealtimeDataItem::ImuPitch,
+    RefloatRealtimeDataItem::ImuBalancePitch,
+    RefloatRealtimeDataItem::ImuRoll,
+    RefloatRealtimeDataItem::FootpadAdc1,
+    RefloatRealtimeDataItem::FootpadAdc2,
+    RefloatRealtimeDataItem::RemoteInput,
+];
+
+/// Refloat realtime-data items sent only while running.
+pub const REFLOAT_REALTIME_RUNTIME_ITEMS: [RefloatRealtimeDataItem; 10] = [
+    RefloatRealtimeDataItem::Setpoint,
+    RefloatRealtimeDataItem::AtrSetpoint,
+    RefloatRealtimeDataItem::BrakeTiltSetpoint,
+    RefloatRealtimeDataItem::TorqueTiltSetpoint,
+    RefloatRealtimeDataItem::TurnTiltSetpoint,
+    RefloatRealtimeDataItem::RemoteSetpoint,
+    RefloatRealtimeDataItem::BalanceCurrent,
+    RefloatRealtimeDataItem::AtrAccelDiff,
+    RefloatRealtimeDataItem::AtrSpeedBoost,
+    RefloatRealtimeDataItem::BoosterCurrent,
+];
+
+/// Refloat realtime-data items recorded by the data recorder.
+pub const REFLOAT_REALTIME_RECORDED_ITEMS: [RefloatRealtimeDataItem; 10] = [
+    RefloatRealtimeDataItem::MotorErpm,
+    RefloatRealtimeDataItem::MotorDirectionalCurrent,
+    RefloatRealtimeDataItem::MotorDutyCycle,
+    RefloatRealtimeDataItem::MotorBatteryVoltage,
+    RefloatRealtimeDataItem::ImuPitch,
+    RefloatRealtimeDataItem::ImuBalancePitch,
+    RefloatRealtimeDataItem::Setpoint,
+    RefloatRealtimeDataItem::AtrSetpoint,
+    RefloatRealtimeDataItem::TorqueTiltSetpoint,
+    RefloatRealtimeDataItem::BalanceCurrent,
+];
+
+/// Refloat realtime-data item group.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum RefloatRealtimeDataItemGroup {
+    /// Always sent in realtime data.
+    Always,
+    /// Sent only while the board is running.
+    Runtime,
+}
+
+/// Refloat data-recorder policy for a realtime-data item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum RefloatRealtimeDataRecordPolicy {
+    /// Send in realtime data only.
+    SendOnly,
+    /// Send in realtime data and record in the data recorder.
+    Record,
+}
+
+/// Refloat realtime-data item ID.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum RefloatRealtimeDataItem {
+    /// `motor.speed`.
+    MotorSpeed,
+    /// `motor.erpm`.
+    MotorErpm,
+    /// `motor.current`.
+    MotorCurrent,
+    /// `motor.dir_current`.
+    MotorDirectionalCurrent,
+    /// `motor.filt_current`.
+    MotorFilteredCurrent,
+    /// `motor.duty_cycle`.
+    MotorDutyCycle,
+    /// `motor.batt_voltage`.
+    MotorBatteryVoltage,
+    /// `motor.batt_current`.
+    MotorBatteryCurrent,
+    /// `motor.mosfet_temp`.
+    MotorMosfetTemperature,
+    /// `motor.motor_temp`.
+    MotorTemperature,
+    /// `imu.pitch`.
+    ImuPitch,
+    /// `imu.balance_pitch`.
+    ImuBalancePitch,
+    /// `imu.roll`.
+    ImuRoll,
+    /// `footpad.adc1`.
+    FootpadAdc1,
+    /// `footpad.adc2`.
+    FootpadAdc2,
+    /// `remote.input`.
+    RemoteInput,
+    /// `setpoint`.
+    Setpoint,
+    /// `atr.setpoint`.
+    AtrSetpoint,
+    /// `brake_tilt.setpoint`.
+    BrakeTiltSetpoint,
+    /// `torque_tilt.setpoint`.
+    TorqueTiltSetpoint,
+    /// `turn_tilt.setpoint`.
+    TurnTiltSetpoint,
+    /// `remote.setpoint`.
+    RemoteSetpoint,
+    /// `balance_current`.
+    BalanceCurrent,
+    /// `atr.accel_diff`.
+    AtrAccelDiff,
+    /// `atr.speed_boost`.
+    AtrSpeedBoost,
+    /// `booster.current`.
+    BoosterCurrent,
+}
+
+impl RefloatRealtimeDataItem {
+    /// Return the Refloat `v1.2.1` realtime-data string ID.
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::MotorSpeed => "motor.speed",
+            Self::MotorErpm => "motor.erpm",
+            Self::MotorCurrent => "motor.current",
+            Self::MotorDirectionalCurrent => "motor.dir_current",
+            Self::MotorFilteredCurrent => "motor.filt_current",
+            Self::MotorDutyCycle => "motor.duty_cycle",
+            Self::MotorBatteryVoltage => "motor.batt_voltage",
+            Self::MotorBatteryCurrent => "motor.batt_current",
+            Self::MotorMosfetTemperature => "motor.mosfet_temp",
+            Self::MotorTemperature => "motor.motor_temp",
+            Self::ImuPitch => "imu.pitch",
+            Self::ImuBalancePitch => "imu.balance_pitch",
+            Self::ImuRoll => "imu.roll",
+            Self::FootpadAdc1 => "footpad.adc1",
+            Self::FootpadAdc2 => "footpad.adc2",
+            Self::RemoteInput => "remote.input",
+            Self::Setpoint => "setpoint",
+            Self::AtrSetpoint => "atr.setpoint",
+            Self::BrakeTiltSetpoint => "brake_tilt.setpoint",
+            Self::TorqueTiltSetpoint => "torque_tilt.setpoint",
+            Self::TurnTiltSetpoint => "turn_tilt.setpoint",
+            Self::RemoteSetpoint => "remote.setpoint",
+            Self::BalanceCurrent => "balance_current",
+            Self::AtrAccelDiff => "atr.accel_diff",
+            Self::AtrSpeedBoost => "atr.speed_boost",
+            Self::BoosterCurrent => "booster.current",
+        }
+    }
+
+    /// Return the Refloat `v1.2.1` realtime-data group.
+    pub const fn group(self) -> RefloatRealtimeDataItemGroup {
+        match self {
+            Self::Setpoint
+            | Self::AtrSetpoint
+            | Self::BrakeTiltSetpoint
+            | Self::TorqueTiltSetpoint
+            | Self::TurnTiltSetpoint
+            | Self::RemoteSetpoint
+            | Self::BalanceCurrent
+            | Self::AtrAccelDiff
+            | Self::AtrSpeedBoost
+            | Self::BoosterCurrent => RefloatRealtimeDataItemGroup::Runtime,
+            Self::MotorSpeed
+            | Self::MotorErpm
+            | Self::MotorCurrent
+            | Self::MotorDirectionalCurrent
+            | Self::MotorFilteredCurrent
+            | Self::MotorDutyCycle
+            | Self::MotorBatteryVoltage
+            | Self::MotorBatteryCurrent
+            | Self::MotorMosfetTemperature
+            | Self::MotorTemperature
+            | Self::ImuPitch
+            | Self::ImuBalancePitch
+            | Self::ImuRoll
+            | Self::FootpadAdc1
+            | Self::FootpadAdc2
+            | Self::RemoteInput => RefloatRealtimeDataItemGroup::Always,
+        }
+    }
+
+    /// Return the Refloat `v1.2.1` data-recorder policy.
+    pub const fn record_policy(self) -> RefloatRealtimeDataRecordPolicy {
+        match self {
+            Self::MotorErpm
+            | Self::MotorDirectionalCurrent
+            | Self::MotorDutyCycle
+            | Self::MotorBatteryVoltage
+            | Self::ImuPitch
+            | Self::ImuBalancePitch
+            | Self::Setpoint
+            | Self::AtrSetpoint
+            | Self::TorqueTiltSetpoint
+            | Self::BalanceCurrent => RefloatRealtimeDataRecordPolicy::Record,
+            Self::MotorSpeed
+            | Self::MotorCurrent
+            | Self::MotorFilteredCurrent
+            | Self::MotorBatteryCurrent
+            | Self::MotorMosfetTemperature
+            | Self::MotorTemperature
+            | Self::ImuRoll
+            | Self::FootpadAdc1
+            | Self::FootpadAdc2
+            | Self::RemoteInput
+            | Self::BrakeTiltSetpoint
+            | Self::TurnTiltSetpoint
+            | Self::RemoteSetpoint
+            | Self::AtrAccelDiff
+            | Self::AtrSpeedBoost
+            | Self::BoosterCurrent => RefloatRealtimeDataRecordPolicy::SendOnly,
+        }
+    }
+}
+
+/// Refloat realtime-data header fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RefloatRealtimeDataHeader {
+    timestamp: SystemTimestamp,
+    ride_state: RefloatRideState,
+    footpad_state: FootpadSensorState,
+    beep_reason: RefloatBeepReason,
+    fatal_error: RefloatFatalErrorState,
+    data_recorder: RefloatDataRecorderFlags,
+}
+
+impl RefloatRealtimeDataHeader {
+    /// Build the typed realtime-data header state.
+    pub const fn new(
+        timestamp: SystemTimestamp,
+        ride_state: RefloatRideState,
+        footpad_state: FootpadSensorState,
+        beep_reason: RefloatBeepReason,
+    ) -> Self {
+        Self {
+            timestamp,
+            ride_state,
+            footpad_state,
+            beep_reason,
+            fatal_error: RefloatFatalErrorState::None,
+            data_recorder: RefloatDataRecorderFlags::inactive(),
+        }
+    }
+
+    /// Return this header with fatal-error state.
+    pub const fn with_fatal_error(mut self, fatal_error: RefloatFatalErrorState) -> Self {
+        self.fatal_error = fatal_error;
+        self
+    }
+
+    /// Return this header with data-recorder flags.
+    pub const fn with_data_recorder(mut self, data_recorder: RefloatDataRecorderFlags) -> Self {
+        self.data_recorder = data_recorder;
+        self
+    }
+
+    /// Return the typed VESC system timestamp.
+    pub const fn timestamp(self) -> SystemTimestamp {
+        self.timestamp
+    }
+
+    /// Return the Refloat `v1.2.1` realtime data mask byte.
+    pub const fn data_mask_compat(self) -> u8 {
+        let runtime = match self.ride_state.run_state {
+            RefloatRunState::Running => 0x1,
+            RefloatRunState::Disabled | RefloatRunState::Startup | RefloatRunState::Ready => 0,
+        };
+        let charging = match self.ride_state.charging {
+            RefloatChargingState::NotCharging => 0,
+            RefloatChargingState::Charging => 0x2,
+        };
+
+        runtime | charging | 0x4
+    }
+
+    /// Return the Refloat `v1.2.1` realtime extra-flags byte.
+    pub const fn extra_flags_compat(self) -> u8 {
+        self.data_recorder.extra_flags_compat(self.fatal_error)
+    }
+
+    /// Return the Refloat `v1.2.1` realtime mode/run-state byte.
+    pub const fn state_byte_compat(self) -> u8 {
+        self.ride_state.mode.id() << 4 | self.ride_state.run_state.id()
+    }
+
+    /// Return the Refloat `v1.2.1` realtime footpad/ride-flags byte.
+    pub const fn footpad_flags_compat(self) -> u8 {
+        let charging = match self.ride_state.charging {
+            RefloatChargingState::NotCharging => 0,
+            RefloatChargingState::Charging => 0x20,
+        };
+        let darkride = match self.ride_state.darkride {
+            RefloatDarkRideState::Upright => 0,
+            RefloatDarkRideState::Active => 0x2,
+        };
+        let wheelslip = match self.ride_state.wheelslip {
+            RefloatWheelSlipState::None => 0,
+            RefloatWheelSlipState::Detected => 0x1,
+        };
+
+        self.footpad_state.id() << 6 | charging | darkride | wheelslip
+    }
+
+    /// Return the Refloat `v1.2.1` realtime setpoint/stop byte.
+    pub const fn stop_setpoint_byte_compat(self) -> u8 {
+        self.ride_state.setpoint_adjustment.id() << 4 | self.ride_state.stop_condition.id()
+    }
+
+    /// Return the Refloat `v1.2.1` beep-reason byte.
+    pub const fn beep_reason_compat(self) -> u8 {
+        self.beep_reason.id()
+    }
 }
 
 /// Refloat ride state as typed package-domain values.
