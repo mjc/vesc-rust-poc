@@ -12,7 +12,7 @@
 #[cfg(test)]
 extern crate std;
 
-mod balance_loop;
+mod balance;
 mod config;
 pub mod domain;
 pub mod extensions;

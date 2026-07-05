@@ -7,7 +7,7 @@ use super::state_transition::{
 };
 use super::threads::RefloatRuntimeThreads;
 use super::{refloat_ticks_elapsed, refloat_ticks_elapsed_f32, refloat_ticks_elapsed_ms};
-use crate::balance_loop::{
+use crate::balance::{
     RefloatBalanceLoopConfig, RefloatBalanceLoopInput, RefloatBalanceLoopState,
     refloat_balance_loop_step,
 };
