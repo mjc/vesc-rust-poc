@@ -15,7 +15,7 @@ use vescpkg_rs::{
 };
 
 #[cfg(any(test, target_arch = "arm"))]
-use core::ffi::{CStr, c_void};
+use core::ffi::CStr;
 
 #[cfg(any(test, target_arch = "arm"))]
 const REFLOAT_MAIN_THREAD_STACK_BYTES: usize = 4096;
@@ -89,7 +89,7 @@ pub(crate) fn start_refloat_runtime_threads_with<B: ThreadBindings>(
     state: &mut RefloatPackageState,
 ) -> bool {
     let Some(main_thread) = threads.spawn_with_state(
-        refloat_main_thread,
+        vescpkg_rs::firmware_thread_entry::<RefloatMainThread>,
         REFLOAT_MAIN_THREAD_STACK_BYTES,
         REFLOAT_MAIN_THREAD_NAME,
         state,
@@ -97,7 +97,7 @@ pub(crate) fn start_refloat_runtime_threads_with<B: ThreadBindings>(
         return false;
     };
     let Some(aux_thread) = threads.spawn_with_state(
-        refloat_aux_thread,
+        vescpkg_rs::firmware_thread_entry::<RefloatAuxThread>,
         REFLOAT_AUX_THREAD_STACK_BYTES,
         REFLOAT_AUX_THREAD_NAME,
         state,
@@ -219,59 +219,71 @@ pub fn request_refloat_runtime_thread_termination(state: &RefloatPackageState) {
 }
 
 #[cfg(any(test, target_arch = "arm"))]
-extern "C" fn refloat_main_thread(arg: *mut c_void) {
-    // C map: Refloat v1.2.1 `refloat_thd` starts at `src/main.c:767`.
-    #[cfg(all(not(test), target_arch = "arm"))]
-    {
-        if arg.is_null() {
-            return;
-        }
-        let threads = ThreadApi::new(vescpkg_rs::RealThreadBindings);
-        let telemetry = MotorTelemetryApi::new(vescpkg_rs::RealMotorTelemetryBindings);
-        let imu = ImuApi::new(vescpkg_rs::RealImuBindings);
-        let motor = MotorControlApi::new(vescpkg_rs::RealMotorControlBindings);
-        let app_data = vescpkg_rs::RealBindings;
-        let gpio = vescpkg_rs::GpioApi::new(vescpkg_rs::RealGpioBindings);
-        run_refloat_main_thread_with(&threads, || {
-            let Some(state) = vescpkg_rs::arg_mut::<RefloatPackageState>(arg) else {
-                return REFLOAT_AUX_LOOP_TIME_US;
-            };
-            let system_time_ticks = vescpkg_rs::AppDataBindings::system_time_ticks(&app_data);
-            // C map: Refloat `footpad_sensor_update` reads ADC1/ADC2 at
-            // `/Users/mjc/projects/refloat/src/footpad_sensor.c:28-31`; BLDC
-            // defines those enum slots at `/Users/mjc/projects/bldc/lispBM/c_libs/vesc_c_if.h:219-220`.
-            let (footpad_adc1, footpad_adc2) =
-                gpio.read_analog_pair(vescpkg_rs::ffi::VescPin(7), vescpkg_rs::ffi::VescPin(8));
-            tick_refloat_main_thread_with(
-                state,
-                &telemetry,
-                &imu,
-                &motor,
-                footpad_adc1,
-                footpad_adc2,
-                system_time_ticks,
-            )
-        });
-    }
+struct RefloatMainThread;
 
-    #[cfg(test)]
-    {
-        let _ = arg;
+#[cfg(any(test, target_arch = "arm"))]
+impl vescpkg_rs::FirmwareThread for RefloatMainThread {
+    type State = RefloatPackageState;
+
+    fn run(state: Option<&'static mut Self::State>) {
+        // C map: Refloat v1.2.1 `refloat_thd` starts at `src/main.c:767`.
+        #[cfg(all(not(test), target_arch = "arm"))]
+        {
+            let Some(state) = state else {
+                return;
+            };
+            let threads = ThreadApi::new(vescpkg_rs::RealThreadBindings);
+            let telemetry = MotorTelemetryApi::new(vescpkg_rs::RealMotorTelemetryBindings);
+            let imu = ImuApi::new(vescpkg_rs::RealImuBindings);
+            let motor = MotorControlApi::new(vescpkg_rs::RealMotorControlBindings);
+            let app_data = vescpkg_rs::RealBindings;
+            let gpio = vescpkg_rs::GpioApi::new(vescpkg_rs::RealGpioBindings);
+            run_refloat_main_thread_with(&threads, || {
+                let system_time_ticks = vescpkg_rs::AppDataBindings::system_time_ticks(&app_data);
+                // C map: Refloat `footpad_sensor_update` reads ADC1/ADC2 at
+                // `/Users/mjc/projects/refloat/src/footpad_sensor.c:28-31`; BLDC
+                // defines those enum slots at `/Users/mjc/projects/bldc/lispBM/c_libs/vesc_c_if.h:219-220`.
+                let (footpad_adc1, footpad_adc2) =
+                    gpio.read_analog_pair(vescpkg_rs::ffi::VescPin(7), vescpkg_rs::ffi::VescPin(8));
+                tick_refloat_main_thread_with(
+                    &mut *state,
+                    &telemetry,
+                    &imu,
+                    &motor,
+                    footpad_adc1,
+                    footpad_adc2,
+                    system_time_ticks,
+                )
+            });
+        }
+
+        #[cfg(test)]
+        {
+            let _ = state;
+        }
     }
 }
 
 #[cfg(any(test, target_arch = "arm"))]
-extern "C" fn refloat_aux_thread(_arg: *mut c_void) {
-    // C map: Refloat v1.2.1 `aux_thd` starts at `src/main.c:1130`.
-    #[cfg(all(not(test), target_arch = "arm"))]
-    {
-        let threads = ThreadApi::new(vescpkg_rs::RealThreadBindings);
-        run_refloat_aux_thread_with(&threads);
-    }
+struct RefloatAuxThread;
 
-    #[cfg(test)]
-    {
-        let _ = _arg;
+#[cfg(any(test, target_arch = "arm"))]
+impl vescpkg_rs::FirmwareThread for RefloatAuxThread {
+    type State = RefloatPackageState;
+
+    fn run(state: Option<&'static mut Self::State>) {
+        // C map: Refloat v1.2.1 `aux_thd` starts at `src/main.c:1130`.
+        #[cfg(all(not(test), target_arch = "arm"))]
+        {
+            let _ = state;
+            let threads = ThreadApi::new(vescpkg_rs::RealThreadBindings);
+            run_refloat_aux_thread_with(&threads);
+        }
+
+        #[cfg(test)]
+        {
+            let _ = state;
+        }
     }
 }
 

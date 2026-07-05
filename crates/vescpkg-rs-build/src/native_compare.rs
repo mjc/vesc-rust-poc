@@ -5,11 +5,14 @@ use crate::native_audit::defined_symbols;
 use crate::native_inspect::{SectionLayout, all_section_layouts, nm_output};
 
 const LOAD_SECTIONS: [&str; 5] = [".program_ptr", ".init_fun", ".data", ".got", ".text"];
-const CONTRACT_SYMBOLS: [&str; 8] = [
+const CONTRACT_SYMBOLS: [&str; 11] = [
     "init",
     "prog_ptr",
     "package_lib_init",
-    "refloat_handle_app_data",
+    "refloat_app_data_callback",
+    "refloat_get_cfg",
+    "refloat_set_cfg",
+    "refloat_get_cfg_xml",
     "loopback_handle_app_data",
     "ext_rust_probe_diag_v4",
     "vesc_register_loopback_app_data_handler",
@@ -82,8 +85,8 @@ fn contract_symbol_names(left: &BTreeSet<String>, right: &BTreeSet<String>) -> B
 fn stable_contract_symbol_name(name: &str) -> Option<String> {
     if CONTRACT_SYMBOLS.contains(&name) {
         Some(name.to_owned())
-    } else if name.contains("stop_refloat_app_data") {
-        Some("stop_refloat_app_data".to_owned())
+    } else if name.contains("stop_callback") {
+        Some("stop_callback".to_owned())
     } else if name.contains("stop_package") {
         Some("stop_package".to_owned())
     } else {

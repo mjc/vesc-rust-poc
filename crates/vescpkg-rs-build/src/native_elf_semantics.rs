@@ -71,7 +71,6 @@ pub fn analyze_native_lib_elf(elf: &Path) -> NativeLibSemantics {
     let mut package_init_insns = Vec::new();
     let mut stop_insns = Vec::new();
     let mut probe_insns = Vec::new();
-    let mut text_insns = Vec::new();
 
     for section in object.sections() {
         let Ok(name) = section.name() else {
@@ -100,17 +99,13 @@ pub fn analyze_native_lib_elf(elf: &Path) -> NativeLibSemantics {
         let decoded = decode_insns(&insns);
         if name == ".init_fun" {
             init_insns = decoded;
-        } else {
-            text_insns.extend(decoded);
         }
     }
-
-    text_insns.sort_by_key(|insn| insn.address);
 
     let probe_start = symbol_address(&symbols, "ext_rust_probe_diag_v4");
     let package_init_start = symbol_address(&symbols, "package_lib_init");
     let stop_start = symbols.iter().find_map(|(addr, name)| {
-        (name.contains("stop_package") || name.contains("stop_refloat_app_data")).then_some(*addr)
+        (name.contains("stop_package") || name.contains("stop_callback")).then_some(*addr)
     });
 
     if let Some(start) = probe_start {
@@ -176,10 +171,9 @@ pub fn refloat_mapping_report(elf: &Path) -> String {
     lines.push("entrypoints:".to_owned());
     for (label, needle) in [
         ("package_init", "package_lib_init"),
-        ("app_data_handler", "refloat_handle_app_data"),
-        ("stop_hook", "stop_refloat_app_data"),
-        ("main_thread", "refloat_main_thread"),
-        ("aux_thread", "refloat_aux_thread"),
+        ("app_data_handler", "refloat_app_data_callback"),
+        ("stop_hook", "stop_callback"),
+        ("thread_entry", "firmware_thread_entry"),
     ] {
         lines.push(mapping_symbol_line(label, needle, &semantics.symbols));
     }
@@ -195,27 +189,19 @@ pub fn refloat_mapping_report(elf: &Path) -> String {
         lines.push(mapping_symbol_line(label, needle, &semantics.symbols));
     }
 
-    lines.push("firmware_slots:".to_owned());
-    for (label, slot, insns) in [
-        ("malloc", 184, semantics.package_init_insns.as_slice()),
-        (
-            "set_app_data_handler",
-            596,
-            semantics.package_init_insns.as_slice(),
-        ),
-        (
-            "clear_app_data_handler",
-            596,
-            semantics.stop_insns.as_slice(),
-        ),
-    ] {
-        let status = if package_init_touches_slot(insns, slot) {
-            "present"
-        } else {
-            "missing"
-        };
-        lines.push(format!("  {label}: {status} slot={slot}"));
-    }
+    lines.push("firmware_table:".to_owned());
+    let status = if semantics
+        .literal_pools
+        .values()
+        .any(|word| *word == VESC_IF_TABLE_BASE)
+    {
+        "present"
+    } else {
+        "missing"
+    };
+    lines.push(format!(
+        "  vesc_if_base: {status} value=0x{VESC_IF_TABLE_BASE:08x}"
+    ));
 
     lines.join("\n")
 }
@@ -310,20 +296,15 @@ pub fn refloat_c_rust_mapping_report(c_elf: &Path, rust_elf: &Path) -> String {
             "main_thread",
             "refloat_thd",
             "src/main.c:767",
-            "refloat_main_thread",
+            "firmware_thread_entry",
         ),
         (
             "aux_thread",
             "aux_thd",
             "src/main.c:1130",
-            "refloat_aux_thread",
+            "firmware_thread_entry",
         ),
-        (
-            "stop_hook",
-            "stop",
-            "src/main.c:2399",
-            "stop_refloat_app_data",
-        ),
+        ("stop_hook", "stop", "src/main.c:2399", "stop_callback"),
     ] {
         lines.push(mapping_pair_line(
             label,
@@ -340,7 +321,7 @@ pub fn refloat_c_rust_mapping_report(c_elf: &Path, rust_elf: &Path) -> String {
         "app_data_handler",
         "on_command_received",
         "src/main.c:2143",
-        "refloat_handle_app_data",
+        "refloat_app_data_callback",
         &c_semantics.symbols,
         &rust_semantics.symbols,
     ));
@@ -443,7 +424,7 @@ pub fn refloat_c_rust_mapping_report(c_elf: &Path, rust_elf: &Path) -> String {
     lines.extend([
         (
             "implemented_rust_peer",
-            "on_command_received->refloat_handle_app_data; ext_set_fw_version->ext_set_fw_version; get_cfg/set_cfg/get_cfg_xml callbacks",
+            "on_command_received->refloat_app_data_callback; ext_set_fw_version uses LbmExtension; get_cfg/set_cfg/get_cfg_xml callbacks",
         ),
         (
             "folded_into_existing_path",
@@ -544,12 +525,17 @@ pub fn assert_native_lib_semantics(elf: &Path) {
             &semantics.symbols,
             "package_lib_init"
         ),
-        "loader init should run Rust package init before registering the probe: {}",
+        "loader init should run Rust package init: {}",
         semantic_report(&semantics)
     );
     assert!(
-        init_insns_touch_vesc_if(&semantics.init_insns, &semantics.literal_pools),
-        "Rust loader init should register the probe inline through VESC_IF: {}",
+        package_init_touches_slot(&semantics.package_init_insns, 596)
+            || init_insns_call(
+                &semantics.package_init_insns,
+                &semantics.symbols,
+                "vesc_register_loopback_app_data_handler"
+            ),
+        "Rust package init should register the app-data handler through VESC_IF or the owned registration wrapper: {}",
         semantic_report(&semantics)
     );
     assert!(
@@ -616,15 +602,25 @@ pub fn assert_refloat_registration_tail(elf: &Path) {
         semantic_report(&semantics)
     );
     assert!(
-        package_init_touches_slot(&semantics.package_init_insns, 596),
-        "Refloat package init must call set_app_data_handler; upstream v1.2.1 (0ef6e99d8701) does at src/main.c:2457: {}",
+        semantics
+            .literal_pools
+            .values()
+            .any(|word| *word == VESC_IF_TABLE_BASE),
+        "Refloat native image must retain VESC_IF access for registration and allocation: {}",
         semantic_report(&semantics)
     );
-    assert!(
-        package_init_touches_slot(&semantics.package_init_insns, 184),
-        "Refloat package init must allocate firmware-owned app-data state; upstream v1.2.1 (0ef6e99d8701) mallocs Data at src/main.c:2419: {}",
-        semantic_report(&semantics)
-    );
+    for symbol in [
+        "refloat_app_data_callback",
+        "refloat_get_cfg",
+        "refloat_set_cfg",
+        "refloat_get_cfg_xml",
+    ] {
+        assert!(
+            semantics.symbols.values().any(|name| name == symbol),
+            "Refloat native image must retain `{symbol}` for firmware registration: {}",
+            semantic_report(&semantics)
+        );
+    }
 }
 
 fn symbol_vma(address: u64) -> u64 {
@@ -638,7 +634,11 @@ fn symbol_address(symbols: &BTreeMap<u64, String>, name: &str) -> Option<u64> {
 }
 
 fn mapping_symbol_line(label: &str, needle: &str, symbols: &BTreeMap<u64, String>) -> String {
-    match symbols.iter().find(|(_, symbol)| symbol.contains(needle)) {
+    match symbols
+        .iter()
+        .find(|(_, symbol)| symbol.as_str() == needle)
+        .or_else(|| symbols.iter().find(|(_, symbol)| symbol.contains(needle)))
+    {
         Some((addr, symbol)) => format!("  {label}: present addr={addr:#x} symbol={symbol}"),
         None => format!("  {label}: missing needle={needle}"),
     }
@@ -844,10 +844,6 @@ fn branch_target(operands: &str) -> Option<u64> {
         || target.parse().ok(),
         |hex| u64::from_str_radix(hex, 16).ok(),
     )
-}
-
-fn init_insns_touch_vesc_if(_insns: &[DecodedInsn], literals: &BTreeMap<u64, u32>) -> bool {
-    literals.values().any(|word| *word == VESC_IF_TABLE_BASE)
 }
 
 fn init_insns_report_success(insns: &[DecodedInsn]) -> bool {

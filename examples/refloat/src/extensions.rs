@@ -30,31 +30,14 @@ const _: () = assert!(PACKAGE_EXTENSION_COUNT == 2);
 /// Upstream stores these components into `Data` at `src/main.c:2305-2311`.
 /// The loader-only Rust candidate has no upstream `Data` allocation/`ARG`
 /// install from `src/main.c:2419-2432`, so it stores only this narrow state.
-///
-#[unsafe(no_mangle)]
-pub extern "C" fn ext_set_fw_version(args: *mut u32, argn: u32) -> u32 {
-    if argn > 2 {
-        let Some(args) = vescpkg_rs::lbm_args(args, argn) else {
-            return 0;
-        };
-        #[cfg(all(not(test), target_arch = "arm"))]
-        {
-            let lbm = vescpkg_rs::LbmApi::new(vescpkg_rs::RealBindings);
-            record_refloat_firmware_version(args, |value| lbm.decode_i32(value));
-        }
-        #[cfg(any(test, not(target_arch = "arm")))]
-        record_refloat_firmware_version(args, |value| value.0 as i32);
-    }
+struct ExtSetFwVersion;
 
-    #[cfg(all(not(test), target_arch = "arm"))]
-    {
-        vescpkg_rs::LbmApi::new(vescpkg_rs::RealBindings)
-            .encode_true()
-            .0
-    }
-    #[cfg(any(test, not(target_arch = "arm")))]
-    {
-        1
+impl vescpkg_rs::LbmExtension for ExtSetFwVersion {
+    fn call(args: vescpkg_rs::LbmExtensionArgs<'_>) -> ffi::LbmValue {
+        if args.values().len() > 2 {
+            record_refloat_firmware_version(args.values(), |value| args.decode_i32(value));
+        }
+        args.true_value()
     }
 }
 
@@ -117,26 +100,22 @@ fn reset_refloat_firmware_version() {
 /// Upstream returns `d->float_conf.bms.enabled` at `src/main.c:2319-2331`; this
 /// is an intentional containment divergence while the upstream EEPROM-backed
 /// `Data.float_conf` state from `src/main.c:1190-1194` is not installed.
-///
-#[unsafe(no_mangle)]
-pub extern "C" fn ext_bms(_args: *mut u32, _argn: u32) -> u32 {
-    #[cfg(all(not(test), target_arch = "arm"))]
-    {
-        vescpkg_rs::LbmApi::new(vescpkg_rs::RealBindings)
-            .encode_nil()
-            .0
-    }
-    #[cfg(any(test, not(target_arch = "arm")))]
-    {
-        0
+struct ExtBms;
+
+impl vescpkg_rs::LbmExtension for ExtBms {
+    fn call(args: vescpkg_rs::LbmExtensionArgs<'_>) -> ffi::LbmValue {
+        args.nil_value()
     }
 }
 
 /// Return the native extension descriptors required by upstream `package.lisp`.
 pub fn package_extension_descriptors() -> [ffi::ExtensionDescriptor; PACKAGE_EXTENSION_COUNT] {
     [
-        ffi::ExtensionDescriptor::new(EXT_SET_FW_VERSION_NAME, ext_set_fw_version as _),
-        ffi::ExtensionDescriptor::new(EXT_BMS_NAME, ext_bms as _),
+        ffi::ExtensionDescriptor::new(
+            EXT_SET_FW_VERSION_NAME,
+            vescpkg_rs::lbm_extension_handler::<ExtSetFwVersion>,
+        ),
+        ffi::ExtensionDescriptor::new(EXT_BMS_NAME, vescpkg_rs::lbm_extension_handler::<ExtBms>),
     ]
 }
 

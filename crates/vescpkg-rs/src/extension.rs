@@ -2,7 +2,7 @@
 
 use core::ffi::CStr;
 
-use vescpkg_rs_sys::ExtensionHandler;
+use vescpkg_rs_sys::{ExtensionHandler, LbmValue};
 
 /// Extension-name validation failures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,4 +51,79 @@ impl ExtensionDescriptor {
             Err(ExtensionNameError::MissingExtPrefix)
         }
     }
+}
+
+/// Typed LispBM extension callback arguments.
+pub struct LbmExtensionArgs<'a> {
+    values: &'a [LbmValue],
+}
+
+impl<'a> LbmExtensionArgs<'a> {
+    fn from_raw(args: *mut u32, argn: u32) -> Option<Self> {
+        let len = usize::try_from(argn).ok()?;
+        if len == 0 {
+            return Some(Self { values: &[] });
+        }
+        crate::lbm_args(args, argn).map(|values| Self { values })
+    }
+
+    /// Return all raw LispBM values.
+    pub const fn values(&self) -> &'a [LbmValue] {
+        self.values
+    }
+
+    /// Decode one LispBM value as an integer.
+    pub fn decode_i32(&self, value: LbmValue) -> i32 {
+        #[cfg(all(not(test), target_arch = "arm"))]
+        {
+            crate::LbmApi::new(crate::RealBindings).decode_i32(value)
+        }
+        #[cfg(any(test, not(target_arch = "arm")))]
+        {
+            value.0 as i32
+        }
+    }
+
+    /// Return the firmware true value.
+    pub fn true_value(&self) -> LbmValue {
+        #[cfg(all(not(test), target_arch = "arm"))]
+        {
+            crate::LbmApi::new(crate::RealBindings).encode_true()
+        }
+        #[cfg(any(test, not(target_arch = "arm")))]
+        {
+            LbmValue(1)
+        }
+    }
+
+    /// Return the firmware nil value.
+    pub fn nil_value(&self) -> LbmValue {
+        #[cfg(all(not(test), target_arch = "arm"))]
+        {
+            crate::LbmApi::new(crate::RealBindings).encode_nil()
+        }
+        #[cfg(any(test, not(target_arch = "arm")))]
+        {
+            LbmValue(0)
+        }
+    }
+}
+
+/// Rust implementation for a LispBM extension callback.
+pub trait LbmExtension {
+    /// Handle one extension call.
+    fn call(args: LbmExtensionArgs<'_>) -> LbmValue;
+}
+
+/// Firmware ABI trampoline for a typed LispBM extension callback.
+///
+/// # Safety
+///
+/// `args` must be null with `argn == 0` or point to `argn` LispBM values that stay valid for
+/// this call.
+pub unsafe extern "C" fn lbm_extension_handler<T: LbmExtension>(args: *mut u32, argn: u32) -> u32 {
+    let Some(args) = LbmExtensionArgs::from_raw(args, argn) else {
+        return 0;
+    };
+    T::call(args).0
 }

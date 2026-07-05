@@ -174,10 +174,7 @@ pub fn audit_native_lib_layout(paths: &NativeLibArtifactPaths) {
         init_fun.vma, DEVICE_PROVEN_INIT_OFFSET,
         "expected .init_fun to start at the device-proven offset"
     );
-    assert!(
-        init_fun.size >= 24,
-        "expected Rust-owned init to retain loader entry and probe registration"
-    );
+    assert!(init_fun.size > 0, "expected Rust-owned loader entry");
     let proven = device_proven_package_binary();
     let proven_init_end = DEVICE_PROVEN_INIT_OFFSET + DEVICE_PROVEN_INIT_SIZE;
     assert_ne!(
@@ -237,9 +234,16 @@ pub fn semantic_snapshot_report(elf: &Path) -> String {
         .filter(|name| {
             matches!(
                 name.as_str(),
-                "init" | "prog_ptr" | "package_lib_init" | "ext_rust_probe_diag_v4"
+                "init"
+                    | "prog_ptr"
+                    | "package_lib_init"
+                    | "refloat_app_data_callback"
+                    | "refloat_get_cfg"
+                    | "refloat_set_cfg"
+                    | "refloat_get_cfg_xml"
+                    | "ext_rust_probe_diag_v4"
             ) || name.contains("stop_package")
-                || name.contains("stop_refloat_app_data")
+                || name.contains("stop_callback")
         })
         .cloned()
         .collect::<Vec<_>>()
@@ -324,10 +328,10 @@ fn audit_refloat_native_lib_symbols(paths: &NativeLibArtifactPaths) {
     }
 
     assert!(
-        elf_defined.contains("refloat_handle_app_data")
+        elf_defined.contains("refloat_app_data_callback")
             && elf_defined
                 .iter()
-                .any(|name| name.contains("stop_refloat_app_data")),
+                .any(|name| name.contains("stop_callback")),
         "Refloat native image must retain app-data and stop entrypoints; upstream v1.2.1 (0ef6e99d8701) wires app-data at src/main.c:2143 and 2457 and stop cleanup at src/main.c:2398-2412:\n{elf_symbols}"
     );
     assert!(

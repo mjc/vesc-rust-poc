@@ -20,6 +20,16 @@ use vescpkg_rs::test_support::{
 };
 use vescpkg_rs::{AppDataBindings, ffi};
 
+struct NoopAppData;
+
+impl vescpkg_rs::AppDataCallback for NoopAppData {
+    fn handle(_packet: ffi::AppDataPacket<'static>) {}
+}
+
+fn noop_app_data_handler() -> ffi::AppDataHandler {
+    vescpkg_rs::app_data_callback::<NoopAppData>
+}
+
 fn tick_refloat_state_and_handle_packet<B, M, I>(
     state: &mut RefloatPackageState,
     lifecycle: &RefloatPackageLifecycle<B>,
@@ -117,7 +127,7 @@ fn lifecycle_installs_app_data_handler_and_stop_cleanup() {
     };
     let mut start = vescpkg_rs::PackageStart::from_raw(&mut info);
 
-    unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
+    let handler = noop_app_data_handler();
 
     assert_eq!(lifecycle.install(&mut start, handler), Ok(()));
     assert!(info.stop_fun.is_some());
@@ -4127,7 +4137,7 @@ fn lifecycle_installs_typed_refloat_state_for_handler_retrieval() {
     let mut start = vescpkg_rs::PackageStart::from_raw(&mut info);
     let mut state = RefloatPackageState::new(sample_all_data_payloads());
 
-    unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
+    let handler = noop_app_data_handler();
 
     assert_eq!(
         lifecycle.install_with_state(&mut start, &mut state, handler),
@@ -4159,7 +4169,7 @@ fn lifecycle_installs_refloat_state_before_callbacks_like_refloat_startup() {
     let mut start = vescpkg_rs::PackageStart::from_raw(&mut info);
     let mut state = RefloatPackageState::new(sample_all_data_payloads());
 
-    unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
+    let handler = noop_app_data_handler();
 
     assert!(lifecycle.install_refloat_state(&mut start, &mut state, handler));
     // Upstream sets `info->stop_fun` and `info->arg` at `third_party/refloat/src/main.c:2431-2432`,
@@ -4175,27 +4185,15 @@ fn raw_handler_boundary_rejects_null_and_sends_valid_packets() {
     let lifecycle = RefloatPackageLifecycle::new(RecordingAppDataBindings::accepting());
     let mut state = RefloatPackageState::new(sample_all_data_payloads());
 
-    let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
-    let imu = ImuApi::new(FakeImuBindings::new());
-    assert!(!handle_refloat_app_data_packet(
-        &mut state,
-        &lifecycle,
-        &telemetry,
-        &imu,
-        core::ptr::null_mut(),
-        0,
-    ));
+    assert!(vescpkg_rs::app_data_packet(core::ptr::null_mut(), 0).is_none());
 
     let mut request = [101, 10, 0];
     let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
     let imu = ImuApi::new(FakeImuBindings::new());
+    let packet =
+        vescpkg_rs::app_data_packet(request.as_mut_ptr(), request.len() as u32).expect("packet");
     assert!(handle_refloat_app_data_packet(
-        &mut state,
-        &lifecycle,
-        &telemetry,
-        &imu,
-        request.as_mut_ptr(),
-        request.len() as u32,
+        &mut state, &lifecycle, &telemetry, &imu, packet,
     ));
     assert_eq!(lifecycle.bindings().send_calls.get(), 1);
     assert_eq!(lifecycle.bindings().last_sent_prefix.get(), [101, 10, 0]);

@@ -5,22 +5,24 @@ use super::refloat_state_from_arg;
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 use vescpkg_rs::ImuReadCallbackBindings;
 
-#[cfg(all(not(test), target_arch = "arm"))]
-extern "C" fn refloat_imu_read_callback(acc: *mut f32, gyro: *mut f32, _mag: *mut f32, dt: f32) {
-    let Some(accel) = vescpkg_rs::firmware_array(acc.cast_const()) else {
-        return;
-    };
-    let Some(gyro) = vescpkg_rs::firmware_array(gyro.cast_const()) else {
-        return;
-    };
-    let Some(state) = refloat_state_from_arg() else {
-        return;
-    };
-    refloat_imu_callback_with_state(state, accel, gyro, dt);
-}
+#[cfg(any(test, all(not(test), target_arch = "arm")))]
+struct RefloatImuRead;
 
-#[cfg(test)]
-extern "C" fn refloat_imu_read_callback(_acc: *mut f32, _gyro: *mut f32, _mag: *mut f32, _dt: f32) {
+#[cfg(any(test, all(not(test), target_arch = "arm")))]
+impl vescpkg_rs::ImuReadCallback for RefloatImuRead {
+    fn read(accel: [f32; 3], gyro: [f32; 3], dt: f32) {
+        #[cfg(all(not(test), target_arch = "arm"))]
+        {
+            let Some(state) = refloat_state_from_arg() else {
+                return;
+            };
+            refloat_imu_callback_with_state(state, accel, gyro, dt);
+        }
+        #[cfg(any(test, not(target_arch = "arm")))]
+        {
+            let _ = (accel, gyro, dt);
+        }
+    }
 }
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
@@ -39,7 +41,7 @@ pub(super) fn refloat_imu_callback_with_state(
 fn register_refloat_imu_callback_with<B: ImuReadCallbackBindings>(bindings: &B) -> bool {
     // C registers `imu_ref_callback` between thread startup and app-data
     // registration at `third_party/refloat/src/main.c:2455-2457`.
-    bindings.set_imu_read_callback_handler(refloat_imu_read_callback);
+    bindings.set_imu_read_callback_handler(vescpkg_rs::imu_read_callback::<RefloatImuRead>);
     true
 }
 

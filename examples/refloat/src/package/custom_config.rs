@@ -2,8 +2,11 @@ use super::RefloatPackageState;
 #[cfg(all(not(test), target_arch = "arm"))]
 use super::{loaded_image_base, refloat_state_from_arg};
 use crate::config::{REFLOAT_CONFIG_XML, REFLOAT_DEFAULT_CONFIG};
+#[cfg(test)]
 use core::ffi::c_int;
-use vescpkg_rs::{CustomConfigBindings, CustomConfigGetBuffer, CustomConfigXmlOut, ffi};
+#[cfg(test)]
+use vescpkg_rs::CustomConfigGetBuffer;
+use vescpkg_rs::{CustomConfigBindings, ffi};
 
 /// Register Refloat custom-config callbacks with VESC Tool.
 ///
@@ -12,15 +15,54 @@ use vescpkg_rs::{CustomConfigBindings, CustomConfigGetBuffer, CustomConfigXmlOut
 /// The Rust port keeps the generated serialized config image here until the
 /// full typed `RefloatConfig` parser/deserializer exists.
 pub fn register_refloat_custom_config<B: CustomConfigBindings>(bindings: &B) -> bool {
-    bindings.register_custom_config_callbacks(refloat_get_cfg, refloat_set_cfg, refloat_get_cfg_xml)
+    #[cfg(all(not(test), target_arch = "arm"))]
+    {
+        bindings.register_custom_config_callbacks(
+            refloat_get_cfg,
+            refloat_set_cfg,
+            refloat_get_cfg_xml,
+        )
+    }
+    #[cfg(any(test, not(target_arch = "arm")))]
+    {
+        bindings.register_custom_config_callbacks(
+            vescpkg_rs::custom_config_get::<RefloatCustomConfig>,
+            vescpkg_rs::custom_config_set::<RefloatCustomConfig>,
+            vescpkg_rs::custom_config_xml::<RefloatCustomConfig>,
+        )
+    }
 }
 
-extern "C" fn refloat_get_cfg(buffer: *mut u8, is_default: bool) -> c_int {
-    // C map: Refloat v1.2.1 `get_cfg` starts at `third_party/refloat/src/main.c:2335`.
-    let state = runtime_refloat_config_state();
-    refloat_get_cfg_with_state(buffer, is_default, state)
+struct RefloatCustomConfig;
+
+impl vescpkg_rs::CustomConfigCallback for RefloatCustomConfig {
+    const CONFIG_LEN: usize = REFLOAT_DEFAULT_CONFIG.len();
+
+    fn get_config(is_default: bool) -> Option<ffi::ConfigPayload<'static>> {
+        if !is_default {
+            let state = runtime_refloat_config_state()?;
+            return Some(ffi::ConfigPayload(state.serialized_config()));
+        }
+        Some(ffi::ConfigPayload(&REFLOAT_DEFAULT_CONFIG))
+    }
+
+    fn set_config(config: ffi::ConfigPayload<'static>) -> bool {
+        refloat_set_cfg_payload_with_state(config, runtime_refloat_config_state_mut())
+    }
+
+    fn config_xml() -> ffi::ConfigXmlBytes<'static> {
+        runtime_refloat_config_xml()
+    }
 }
 
+vescpkg_rs::firmware_custom_config_callbacks!(
+    refloat_get_cfg,
+    refloat_set_cfg,
+    refloat_get_cfg_xml,
+    RefloatCustomConfig
+);
+
+#[cfg(test)]
 fn refloat_get_cfg_with_state(
     buffer: *mut u8,
     is_default: bool,
@@ -43,7 +85,8 @@ fn refloat_get_cfg_with_state(
     copy_refloat_config(buffer, &REFLOAT_DEFAULT_CONFIG)
 }
 
-fn copy_refloat_config(buffer: *mut u8, config: &[u8; 276]) -> c_int {
+#[cfg(test)]
+fn copy_refloat_config(buffer: *mut u8, config: &[u8]) -> c_int {
     let Some(mut buffer) = CustomConfigGetBuffer::new(buffer, config.len()) else {
         return 0;
     };
@@ -60,21 +103,11 @@ fn runtime_refloat_config_state() -> Option<&'static RefloatPackageState> {
     None
 }
 
-extern "C" fn refloat_set_cfg(buffer: *mut u8) -> bool {
-    // C map: Refloat v1.2.1 `set_cfg` starts at `third_party/refloat/src/main.c:2360`.
-    let state = runtime_refloat_config_state_mut();
-    refloat_set_cfg_with_state(buffer, state)
-}
-
-pub(super) fn refloat_set_cfg_with_state(
-    buffer: *mut u8,
+fn refloat_set_cfg_payload_with_state(
+    config: ffi::ConfigPayload<'_>,
     state: Option<&mut RefloatPackageState>,
 ) -> bool {
     let Some(state) = state else {
-        return false;
-    };
-    let Some(config) = vescpkg_rs::custom_config_payload(buffer, REFLOAT_DEFAULT_CONFIG.len())
-    else {
         return false;
     };
     // Upstream `set_cfg` gates special modes, deserializes, persists, and
@@ -83,6 +116,18 @@ pub(super) fn refloat_set_cfg_with_state(
     // This byte-image step is intentionally only the deserialization/storage
     // part; EEPROM write and `configure(d)` remain separate parity work.
     state.store_serialized_config(config.0)
+}
+
+#[cfg(test)]
+pub(super) fn refloat_set_cfg_with_state(
+    buffer: *mut u8,
+    state: Option<&mut RefloatPackageState>,
+) -> bool {
+    let Some(config) = vescpkg_rs::custom_config_payload(buffer, REFLOAT_DEFAULT_CONFIG.len())
+    else {
+        return false;
+    };
+    refloat_set_cfg_payload_with_state(config, state)
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
@@ -95,20 +140,10 @@ fn runtime_refloat_config_state_mut() -> Option<&'static mut RefloatPackageState
     None
 }
 
-extern "C" fn refloat_get_cfg_xml(buffer: *mut *mut u8) -> c_int {
-    // C map: Refloat v1.2.1 `get_cfg_xml` starts at `third_party/refloat/src/main.c:2389`.
-    let Some(buffer) = CustomConfigXmlOut::new(buffer) else {
-        return 0;
-    };
-    // Upstream returns `data_refloatconfig_ + PROG_ADDR` and
-    // `DATA_REFLOATCONFIG__SIZE` at `third_party/refloat/src/main.c:2388-2396`.
-    buffer.return_xml(runtime_refloat_config_xml())
-}
-
 #[cfg(all(not(test), target_arch = "arm"))]
 fn runtime_refloat_config_xml() -> ffi::ConfigXmlBytes<'static> {
     let ptr = (loaded_image_base() as usize + REFLOAT_CONFIG_XML.as_ptr() as usize) as *const u8;
-    vescpkg_rs::config_xml_bytes(ptr, REFLOAT_CONFIG_XML.len()).expect("refloat XML image")
+    vescpkg_rs::config_xml_bytes(ptr, REFLOAT_CONFIG_XML.len()).unwrap_or(ffi::ConfigXmlBytes(&[]))
 }
 
 #[cfg(any(test, not(target_arch = "arm")))]
@@ -118,10 +153,7 @@ fn runtime_refloat_config_xml() -> ffi::ConfigXmlBytes<'static> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        refloat_get_cfg, refloat_get_cfg_with_state, refloat_get_cfg_xml,
-        refloat_set_cfg_with_state,
-    };
+    use super::{RefloatCustomConfig, refloat_get_cfg_with_state, refloat_set_cfg_with_state};
     use crate::config::{REFLOAT_CONFIG_DISABLED_OFFSET, REFLOAT_CONFIG_META_IS_DEFAULT_OFFSET};
     use crate::domain::{RefloatMode, RefloatRunState};
     use crate::package::RefloatPackageState;
@@ -133,7 +165,7 @@ mod tests {
     fn custom_config_xml_callback_returns_upstream_settings_blob() {
         let mut buffer = core::ptr::null_mut();
 
-        let len = refloat_get_cfg_xml(&mut buffer);
+        let len = unsafe { vescpkg_rs::custom_config_xml::<RefloatCustomConfig>(&mut buffer) };
 
         // Refloat v1.2.1 returns generated `data_refloatconfig_` at
         // `third_party/refloat/src/main.c:2388-2396`, produced from `third_party/refloat/src/conf/settings.xml` by
@@ -149,7 +181,9 @@ mod tests {
     fn custom_config_default_callback_returns_upstream_serialized_defaults() {
         let mut buffer = [0u8; 276];
 
-        let len = refloat_get_cfg(buffer.as_mut_ptr(), true);
+        let len = unsafe {
+            vescpkg_rs::custom_config_get::<RefloatCustomConfig>(buffer.as_mut_ptr(), true)
+        };
 
         // Refloat v1.2.1 default `get_cfg` allocates a temporary config,
         // applies generated defaults, and serializes it at `third_party/refloat/src/main.c:2339-2350`.

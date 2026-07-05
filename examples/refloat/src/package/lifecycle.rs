@@ -1,5 +1,5 @@
 use super::protocol::process_refloat_app_data;
-use super::{RefloatPackageState, register_refloat_custom_config, stop_refloat_app_data};
+use super::{RefloatPackageState, refloat_stop_handler, register_refloat_custom_config};
 use crate::domain::{RefloatAllDataPayloads, RefloatAllDataRequest};
 use vescpkg_rs::{
     AppDataBindings, AppDataHandlerRegistrationError, CustomConfigBindings,
@@ -33,7 +33,7 @@ impl<B: AppDataBindings> RefloatPackageLifecycle<B> {
     ) -> Result<(), AppDataHandlerRegistrationError> {
         let _ = self
             .lifecycle
-            .install(start, stop_refloat_app_data, handler);
+            .install(start, refloat_stop_handler(), handler);
         self.lifecycle.register_app_data_handler(handler)
     }
 
@@ -50,7 +50,7 @@ impl<B: AppDataBindings> RefloatPackageLifecycle<B> {
         handler: ffi::AppDataHandler,
     ) -> bool {
         let _ = handler;
-        start.install_loader_state(stop_refloat_app_data, state)
+        start.install_loader_state(refloat_stop_handler(), state)
     }
 
     /// Install Refloat state, stop cleanup, and app-data handler.

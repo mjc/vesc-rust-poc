@@ -65,24 +65,20 @@ fn handle_refloat_app_data_packet<B: AppDataBindings, M: MotorTelemetryBindings,
     lifecycle: &RefloatPackageLifecycle<B>,
     telemetry: &MotorTelemetryApi<M>,
     imu: &ImuApi<I>,
-    data: *mut u8,
-    len: u32,
+    packet: vescpkg_rs::ffi::AppDataPacket<'_>,
 ) -> bool {
-    let Some(bytes) = vescpkg_rs::app_data_packet(data, len) else {
-        return false;
-    };
-    state.handle_packet_with_runtime(lifecycle, telemetry, imu, bytes.0)
+    state.handle_packet_with_runtime(lifecycle, telemetry, imu, packet.0)
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
 fn loaded_image_base() -> u32 {
-    vescpkg_rs::firmware_loaded_function_offset!(refloat_handle_app_data)
+    vescpkg_rs::firmware_loaded_function_offset!(refloat_app_data_callback)
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
 fn refloat_app_data_handler() -> vescpkg_rs::ffi::AppDataHandler {
     vescpkg_rs::firmware_rebased_thumb_handler!(
-        refloat_handle_app_data,
+        refloat_app_data_callback,
         vescpkg_rs::ffi::AppDataHandler
     )
 }
@@ -95,43 +91,56 @@ fn refloat_state_from_arg() -> Option<&'static mut RefloatPackageState> {
     vescpkg_rs::RealBindings.typed_app_data_arg(loaded_image_base())
 }
 
-/// Device entrypoint invoked by firmware app-data delivery.
+/// Device app-data behavior invoked by the SDK firmware callback trampoline.
 ///
 /// C map: upstream `on_command_received` starts at `third_party/refloat/src/main.c:2143` and is
 /// registered in `third_party/refloat/src/main.c:2457`.
 #[cfg(all(not(test), target_arch = "arm"))]
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn refloat_handle_app_data(data: *mut u8, len: u32) {
-    let Some(state) = refloat_state_from_arg() else {
-        return;
-    };
-    let lifecycle = RefloatPackageLifecycle::new(vescpkg_rs::RealBindings);
-    let telemetry = MotorTelemetryApi::new(vescpkg_rs::RealMotorTelemetryBindings);
-    let imu = ImuApi::new(vescpkg_rs::RealImuBindings);
-    let _ = handle_refloat_app_data_packet(state, &lifecycle, &telemetry, &imu, data, len);
+struct RefloatAppData;
+
+#[cfg(all(not(test), target_arch = "arm"))]
+impl vescpkg_rs::AppDataCallback for RefloatAppData {
+    fn handle(packet: vescpkg_rs::ffi::AppDataPacket<'static>) {
+        let Some(state) = refloat_state_from_arg() else {
+            return;
+        };
+        let lifecycle = RefloatPackageLifecycle::new(vescpkg_rs::RealBindings);
+        let telemetry = MotorTelemetryApi::new(vescpkg_rs::RealMotorTelemetryBindings);
+        let imu = ImuApi::new(vescpkg_rs::RealImuBindings);
+        let _ = handle_refloat_app_data_packet(state, &lifecycle, &telemetry, &imu, packet);
+    }
 }
 
-extern "C" fn stop_refloat_app_data(_arg: *mut core::ffi::c_void) {
-    // C map: Refloat v1.2.1 `stop` starts at `third_party/refloat/src/main.c:2399`.
-    // Upstream stop cleanup in `third_party/refloat/src/main.c:2398-2412` clears IMU/app-data/custom
-    // config callbacks, terminates aux+main threads, destroys LEDs, and frees
-    // `Data`. This isolated handler only clears app-data/custom config and frees
-    // the narrow Rust app-data allocation if that experimental path was installed.
-    #[cfg(not(test))]
-    {
-        let _ = RefloatPackageLifecycle::new(vescpkg_rs::RealBindings).stop();
+vescpkg_rs::firmware_app_data_callback!(refloat_app_data_callback, RefloatAppData);
+
+struct RefloatStop;
+
+impl vescpkg_rs::StopCallback for RefloatStop {
+    type State = RefloatPackageState;
+
+    fn stop(context: vescpkg_rs::StopContext<Self::State>) {
+        // C map: Refloat v1.2.1 `stop` starts at `third_party/refloat/src/main.c:2399`.
+        // Upstream stop cleanup in `third_party/refloat/src/main.c:2398-2412` clears IMU/app-data/custom
+        // config callbacks, terminates aux+main threads, destroys LEDs, and frees
+        // `Data`. This isolated handler only clears app-data/custom config and frees
+        // the narrow Rust app-data allocation if that experimental path was installed.
+        #[cfg(not(test))]
+        {
+            let _ = RefloatPackageLifecycle::new(vescpkg_rs::RealBindings).stop();
+        }
+        #[cfg(not(all(not(test), target_arch = "arm")))]
+        let _ = &context;
+        #[cfg(all(not(test), target_arch = "arm"))]
+        if let Some(state) = context.state() {
+            let bindings = vescpkg_rs::RealBindings;
+            threads::request_refloat_runtime_thread_termination(state);
+            let _allocation = context.reclaim_allocation(1, &bindings);
+        }
     }
-    #[cfg(all(not(test), target_arch = "arm"))]
-    if let Some(state) = vescpkg_rs::arg_ref::<RefloatPackageState>(_arg) {
-        let bindings = vescpkg_rs::RealBindings;
-        threads::request_refloat_runtime_thread_termination(state);
-        let _allocation = vescpkg_rs::reclaim_firmware_allocation(
-            _arg.cast::<RefloatPackageState>(),
-            1,
-            &bindings,
-        );
-    }
+}
+
+fn refloat_stop_handler() -> vescpkg_rs::ffi::StopHandler {
+    vescpkg_rs::stop_callback::<RefloatStop>
 }
 
 #[cfg(test)]

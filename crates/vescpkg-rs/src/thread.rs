@@ -12,6 +12,25 @@ use crate::types::ThreadPriority;
 /// Native package thread entrypoint shape.
 pub type ThreadEntry = unsafe extern "C" fn(*mut c_void);
 
+/// Rust implementation for a firmware package thread.
+pub trait FirmwareThread {
+    /// Package state type passed as the thread argument.
+    type State: 'static;
+
+    /// Run the thread body.
+    fn run(state: Option<&'static mut Self::State>);
+}
+
+/// Firmware ABI trampoline for a typed package thread.
+///
+/// # Safety
+///
+/// `arg` must be null or point to a valid `T::State` value with exclusive access for the duration
+/// of this call.
+pub unsafe extern "C" fn firmware_thread_entry<T: FirmwareThread>(arg: *mut c_void) {
+    T::run(crate::arg_mut::<T::State>(arg));
+}
+
 /// Firmware-owned native package thread handle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FirmwareThreadHandle(NonNull<c_void>);

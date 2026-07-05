@@ -45,6 +45,32 @@ pub trait ImuBindings {
     fn quaternions(&self) -> [f32; 4];
 }
 
+/// Rust implementation for a firmware IMU read callback.
+pub trait ImuReadCallback {
+    /// Handle one IMU read callback with copied accelerometer and gyro axes.
+    fn read(accel: [f32; 3], gyro: [f32; 3], dt: f32);
+}
+
+/// Firmware ABI trampoline for a typed IMU read callback.
+///
+/// # Safety
+///
+/// `acc` and `gyro` must each point to three readable `f32` values for the duration of this call.
+pub unsafe extern "C" fn imu_read_callback<T: ImuReadCallback>(
+    acc: *mut f32,
+    gyro: *mut f32,
+    _mag: *mut f32,
+    dt: f32,
+) {
+    let Some(accel) = crate::firmware_array(acc.cast_const()) else {
+        return;
+    };
+    let Some(gyro) = crate::firmware_array(gyro.cast_const()) else {
+        return;
+    };
+    T::read(accel, gyro, dt);
+}
+
 #[cfg(not(test))]
 /// IMU binding implementation that forwards to the live firmware ABI.
 pub struct RealImuBindings;

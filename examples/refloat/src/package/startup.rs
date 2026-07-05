@@ -144,6 +144,16 @@ mod tests {
     use core::mem::MaybeUninit;
     use vescpkg_rs::{FirmwareAllocator, ffi};
 
+    struct NoopAppData;
+
+    impl vescpkg_rs::AppDataCallback for NoopAppData {
+        fn handle(_packet: ffi::AppDataPacket<'static>) {}
+    }
+
+    fn noop_app_data_handler() -> ffi::AppDataHandler {
+        vescpkg_rs::app_data_callback::<NoopAppData>
+    }
+
     #[test]
     fn startup_app_data_install_seeds_state_and_registers_handler() {
         let lifecycle = RefloatPackageLifecycle::new(RecordingAppDataBindings::accepting());
@@ -155,10 +165,11 @@ mod tests {
         let mut state = RefloatPackageState::new(sample_all_data_payloads());
         let mut start = vescpkg_rs::PackageStart::from_raw(&mut info);
 
-        extern "C" fn handler(_data: *mut u8, _len: u32) {}
-
         assert!(install_refloat_startup_app_data_with(
-            &mut start, &mut state, &lifecycle, handler
+            &mut start,
+            &mut state,
+            &lifecycle,
+            noop_app_data_handler()
         ));
         assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
         assert_eq!(
@@ -186,10 +197,11 @@ mod tests {
         let allocator = FirmwareAllocator::new(&alloc_bindings);
         let mut start = vescpkg_rs::PackageStart::from_raw(&mut info);
 
-        extern "C" fn handler(_data: *mut u8, _len: u32) {}
-
         assert!(allocate_refloat_startup_app_data_with(
-            &mut start, &allocator, &lifecycle, handler
+            &mut start,
+            &allocator,
+            &lifecycle,
+            noop_app_data_handler()
         ));
         assert_eq!(lifecycle.bindings().custom_config_register_calls.get(), 1);
         assert_eq!(alloc_bindings.malloc_calls.get(), 1);
