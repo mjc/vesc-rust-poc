@@ -3,8 +3,10 @@
 use core::cell::Cell;
 use core::ffi::c_char;
 
-use crate::bindings::{AppDataBindings, CustomConfigBindings, LbmBindings};
-use vescpkg_rs_sys::raw::{CustomConfigGet, CustomConfigSet, CustomConfigXml};
+use crate::bindings::{
+    AppDataBindings, CustomConfigBindings, ImuReadCallbackBindings, LbmBindings,
+};
+use vescpkg_rs_sys::raw::{CustomConfigGet, CustomConfigSet, CustomConfigXml, ImuReadCallback};
 use vescpkg_rs_sys::{AppDataHandler, ExtensionHandler, LbmValue};
 
 pub use crate::imu::test_support::FakeImuBindings;
@@ -102,6 +104,10 @@ pub struct FakeAppDataBindings {
     pub custom_config_register_calls: Cell<usize>,
     /// Number of custom-config clear calls observed.
     pub custom_config_clear_calls: Cell<usize>,
+    /// Number of IMU read callback registration calls observed.
+    pub imu_read_callback_calls: Cell<usize>,
+    /// Last IMU read callback pointer passed to registration.
+    pub last_imu_read_callback: Cell<usize>,
     set_handler_result: Cell<bool>,
     clear_handler_result: Cell<bool>,
     register_custom_config_result: Cell<bool>,
@@ -214,6 +220,8 @@ impl FakeAppDataBindings {
             last_len: Cell::new(0),
             custom_config_register_calls: Cell::new(0),
             custom_config_clear_calls: Cell::new(0),
+            imu_read_callback_calls: Cell::new(0),
+            last_imu_read_callback: Cell::new(0),
             set_handler_result: Cell::new(results.set_handler.accepted()),
             clear_handler_result: Cell::new(results.clear_handler.accepted()),
             register_custom_config_result: Cell::new(results.register_custom_config.accepted()),
@@ -265,6 +273,21 @@ impl CustomConfigBindings for FakeAppDataBindings {
     }
 }
 
+impl ImuReadCallbackBindings for FakeAppDataBindings {
+    unsafe fn set_imu_read_callback(&self, callback: ImuReadCallback) {
+        self.imu_read_callback_calls
+            .set(self.imu_read_callback_calls.get() + 1);
+        self.last_imu_read_callback
+            .set(callback as *const () as usize);
+    }
+
+    unsafe fn clear_imu_read_callback(&self) {
+        self.imu_read_callback_calls
+            .set(self.imu_read_callback_calls.get() + 1);
+        self.last_imu_read_callback.set(0);
+    }
+}
+
 /// C ABI stubs linked by host-side tests.
 pub mod stubs {
     /// # Safety
@@ -283,12 +306,24 @@ pub mod stubs {
     ///
     /// Test-only no-op; callers must satisfy the real app-data handler ABI.
     pub unsafe extern "C" fn app_data_handler(_data: *mut u8, _len: u32) {}
+
+    /// # Safety
+    ///
+    /// Test-only no-op; callers must satisfy the real IMU callback ABI.
+    pub unsafe extern "C" fn imu_read_callback(
+        _acc: *mut f32,
+        _gyro: *mut f32,
+        _mag: *mut f32,
+        _dt: f32,
+    ) {
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{FakeAppDataBindings, FakeBindings, stubs};
-    use crate::{AppDataBindings, CustomConfigBindings, LbmBindings};
+    use crate::{AppDataBindings, CustomConfigBindings, ImuReadCallbackBindings, LbmBindings};
+    use vescpkg_rs_sys::raw::ImuReadCallback;
     use vescpkg_rs_sys::{ExtensionHandler, LbmValue};
 
     #[test]
@@ -361,6 +396,21 @@ mod tests {
 
         assert_eq!(bindings.custom_config_register_calls.get(), 1);
         assert_eq!(bindings.custom_config_clear_calls.get(), 1);
+    }
+
+    #[test]
+    fn fake_app_data_bindings_track_imu_read_callback_registration() {
+        let bindings = FakeAppDataBindings::new();
+
+        unsafe {
+            // Refloat v1.2.1 registers `imu_ref_callback` at `src/main.c:2455`
+            // and clears it during stop at `src/main.c:2401`.
+            bindings.set_imu_read_callback(stubs::imu_read_callback as ImuReadCallback);
+            bindings.clear_imu_read_callback();
+        }
+
+        assert_eq!(bindings.imu_read_callback_calls.get(), 2);
+        assert_eq!(bindings.last_imu_read_callback.get(), 0);
     }
 
     #[test]

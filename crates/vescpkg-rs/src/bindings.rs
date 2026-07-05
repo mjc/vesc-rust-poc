@@ -2,7 +2,7 @@
 
 use core::ffi::c_char;
 
-use vescpkg_rs_sys::raw::{CustomConfigGet, CustomConfigSet, CustomConfigXml};
+use vescpkg_rs_sys::raw::{CustomConfigGet, CustomConfigSet, CustomConfigXml, ImuReadCallback};
 use vescpkg_rs_sys::{AppDataHandler, ExtensionHandler, LbmValue};
 
 /// LispBM-related firmware calls required by the SDK lifecycle layer.
@@ -79,6 +79,31 @@ pub trait CustomConfigBindings {
     unsafe fn clear_custom_configs(&self) -> bool;
 }
 
+/// Firmware calls used by package-owned IMU read callbacks.
+pub trait ImuReadCallbackBindings {
+    /// Register a package-owned IMU read callback.
+    ///
+    /// Refloat `v1.2.1` registers `imu_ref_callback` at `src/main.c:2455`;
+    /// that callback updates the balance filter at `src/main.c:760-764`.
+    ///
+    /// # Safety
+    ///
+    /// Must only be called while the firmware `VESC_IF` table is valid. The
+    /// callback must remain valid until package stop clears it or firmware
+    /// replaces it.
+    unsafe fn set_imu_read_callback(&self, callback: ImuReadCallback);
+
+    /// Clear the package-owned IMU read callback.
+    ///
+    /// Refloat clears package callbacks during stop at `src/main.c:2401-2403`;
+    /// the VESC callback slot is declared in `lispBM/c_libs/vesc_c_if.h:586`.
+    ///
+    /// # Safety
+    ///
+    /// Must only be called while the firmware `VESC_IF` table is valid.
+    unsafe fn clear_imu_read_callback(&self);
+}
+
 #[cfg(not(test))]
 /// Concrete bindings that forward calls into the live `vescpkg-rs-sys` ABI.
 pub struct RealBindings;
@@ -138,5 +163,16 @@ impl AppDataBindings for RealBindings {
 
     unsafe fn send_app_data(&self, data: *const u8, len: u32) {
         unsafe { vescpkg_rs_sys::raw::vesc_send_app_data(data, len) }
+    }
+}
+
+#[cfg(not(test))]
+impl ImuReadCallbackBindings for RealBindings {
+    unsafe fn set_imu_read_callback(&self, callback: ImuReadCallback) {
+        unsafe { vescpkg_rs_sys::raw::vesc_set_imu_read_callback(callback) }
+    }
+
+    unsafe fn clear_imu_read_callback(&self) {
+        unsafe { vescpkg_rs_sys::raw::vesc_clear_imu_read_callback() }
     }
 }

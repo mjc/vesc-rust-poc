@@ -155,6 +155,7 @@ pub(crate) fn run_refloat_main_thread_with<B: ThreadBindings, F: FnMut() -> u32>
 }
 
 #[cfg(any(test, target_arch = "arm"))]
+#[inline(always)]
 pub(crate) fn tick_refloat_main_thread_with<
     M: MotorTelemetryBindings,
     I: ImuBindings,
@@ -164,26 +165,24 @@ pub(crate) fn tick_refloat_main_thread_with<
     telemetry: &MotorTelemetryApi<M>,
     imu: &ImuApi<I>,
     motor: &MotorControlApi<C>,
+    footpad_adc1: f32,
+    footpad_adc2: f32,
     system_time_ticks: u32,
 ) -> u32 {
-    #[cfg(all(not(test), target_arch = "arm"))]
-    {
-        let _ = motor;
-        let _ = system_time_ticks;
-        state.refresh_boot_runtime_state(telemetry, imu);
-    }
-
-    #[cfg(test)]
-    {
-        state.refresh_runtime_state(telemetry, imu, system_time_ticks);
-        let run_state = state
-            .all_data_payloads()
-            .base()
-            .status()
-            .ride_state()
-            .run_state();
-        state.apply_motor_control(motor, run_state);
-    }
+    state.refresh_main_loop_runtime_state(
+        telemetry,
+        imu,
+        footpad_adc1,
+        footpad_adc2,
+        system_time_ticks,
+    );
+    let run_state = state
+        .all_data_payloads()
+        .base()
+        .status()
+        .ride_state()
+        .run_state();
+    state.apply_motor_control(motor, run_state, system_time_ticks);
 
     state.configured_loop_time_us()
 }
@@ -243,7 +242,21 @@ unsafe extern "C" fn refloat_main_thread(arg: *mut c_void) {
         let motor = MotorControlApi::new(vescpkg_rs::RealMotorControlBindings);
         run_refloat_main_thread_with(&threads, || {
             let state = unsafe { &mut *arg.cast::<RefloatAppDataState>() };
-            tick_refloat_main_thread_with(state, &telemetry, &imu, &motor, 0)
+            let system_time_ticks = unsafe { ffi::raw::vesc_system_time_ticks() };
+            // C map: Refloat `footpad_sensor_update` reads ADC1/ADC2 at
+            // `/Users/mjc/projects/refloat/src/footpad_sensor.c:28-31`; BLDC
+            // defines those enum slots at `/Users/mjc/projects/bldc/lispBM/c_libs/vesc_c_if.h:219-220`.
+            let (footpad_adc1, footpad_adc2) =
+                unsafe { ffi::raw::io_read_analog_pair(ffi::VescPin(7), ffi::VescPin(8)) };
+            tick_refloat_main_thread_with(
+                state,
+                &telemetry,
+                &imu,
+                &motor,
+                footpad_adc1,
+                footpad_adc2,
+                system_time_ticks,
+            )
         });
     }
 
@@ -271,7 +284,7 @@ unsafe extern "C" fn refloat_aux_thread(_arg: *mut c_void) {
 #[cfg(test)]
 mod tests {
     use crate::app_data::RefloatAppDataState;
-    use crate::domain::{RefloatAllDataPayloads, RefloatRunState};
+    use crate::domain::{FootpadSensorState, RefloatAllDataPayloads, RefloatRunState};
     use core::ffi::CStr;
     use vescpkg_rs::prelude::*;
     use vescpkg_rs::test_support::{
@@ -408,13 +421,17 @@ mod tests {
         state.request_motor_current(MotorCurrent::new(Current::from_amps(3.5)));
 
         super::run_refloat_main_thread_with(&threads, || {
-            super::tick_refloat_main_thread_with(&mut state, &telemetry, &imu, &motor, 0)
+            super::tick_refloat_main_thread_with(&mut state, &telemetry, &imu, &motor, 2.5, 0.0, 0)
         });
 
         // Upstream `refloat_thd` applies motor control after the state switch at
         // `src/main.c:1075`, before sleeping at `src/main.c:1080`.
         assert_eq!(motor.bindings().set_current_calls.get(), 1);
         assert_eq!(motor.bindings().current().current().as_amps(), 3.5);
+        assert_eq!(
+            state.all_data_payloads().base().footpad().state(),
+            FootpadSensorState::Left,
+        );
     }
 
     #[test]

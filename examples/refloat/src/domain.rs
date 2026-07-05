@@ -344,8 +344,8 @@ impl FootpadSensorState {
 /// Refloat footpad ADC sample and decoded state.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FootpadSensorSample {
-    adc1: AdcDecodedLevel,
-    adc2: AdcDecodedLevel,
+    adc1: f32,
+    adc2: f32,
     state: FootpadSensorState,
 }
 
@@ -356,16 +356,38 @@ impl FootpadSensorSample {
         adc2: AdcDecodedLevel,
         state: FootpadSensorState,
     ) -> Self {
+        Self {
+            adc1: adc1.ratio().as_ratio(),
+            adc2: adc2.ratio().as_ratio(),
+            state,
+        }
+    }
+
+    /// Build a footpad sample from Refloat's raw ADC pin voltages.
+    ///
+    /// C map: Refloat v1.2.1 stores `VESC_IF->io_read_analog` results in
+    /// `FootpadSensor.adc1/adc2` at `/Users/mjc/projects/refloat/src/footpad_sensor.c:28-31`.
+    pub const fn from_adc_volts(adc1: f32, adc2: f32, state: FootpadSensorState) -> Self {
         Self { adc1, adc2, state }
     }
 
     /// Return the typed ADC1 level.
     pub const fn adc1(self) -> AdcDecodedLevel {
-        self.adc1
+        AdcDecodedLevel::new(Ratio::clamped(self.adc1))
     }
 
     /// Return the typed ADC2 level.
     pub const fn adc2(self) -> AdcDecodedLevel {
+        AdcDecodedLevel::new(Ratio::clamped(self.adc2))
+    }
+
+    /// Return Refloat's raw ADC1 voltage from `src/footpad_sensor.c:28-31`.
+    pub const fn adc1_volts(self) -> f32 {
+        self.adc1
+    }
+
+    /// Return Refloat's raw ADC2 voltage from `src/footpad_sensor.c:28-31`.
+    pub const fn adc2_volts(self) -> f32 {
         self.adc2
     }
 
@@ -2602,12 +2624,12 @@ impl RefloatAllDataBasePayload {
         refloat_push_u8(
             &mut buffer,
             &mut ind,
-            refloat_scaled_u8(self.footpad.adc1().ratio().as_ratio(), 50.0),
+            refloat_scaled_u8(self.footpad.adc1_volts(), 50.0),
         );
         refloat_push_u8(
             &mut buffer,
             &mut ind,
-            refloat_scaled_u8(self.footpad.adc2().ratio().as_ratio(), 50.0),
+            refloat_scaled_u8(self.footpad.adc2_volts(), 50.0),
         );
 
         [

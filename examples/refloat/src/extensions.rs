@@ -22,45 +22,11 @@ static FW_VERSION_MINOR: AtomicI32 = AtomicI32::new(0);
 static FW_VERSION_BETA: AtomicI32 = AtomicI32::new(0);
 static FW_VERSION_RECORDED: AtomicBool = AtomicBool::new(false);
 
-#[cfg(all(not(test), target_arch = "arm"))]
-#[used]
-#[unsafe(link_section = ".text.refloat_ext_names")]
-static EXT_SET_FW_VERSION_NAME_BYTES: [u8; 19] = *b"ext-set-fw-version\0";
-
-#[cfg(all(not(test), target_arch = "arm"))]
-#[used]
-#[unsafe(link_section = ".text.refloat_ext_names")]
-static EXT_BMS_NAME_BYTES: [u8; 8] = *b"ext-bms\0";
-
 /// Extension names exported by the Refloat package loader.
 pub const PACKAGE_EXTENSION_NAMES: [&CStr; PACKAGE_EXTENSION_COUNT] =
     [EXT_SET_FW_VERSION_NAME, EXT_BMS_NAME];
 
 const _: () = assert!(PACKAGE_EXTENSION_COUNT == 2);
-
-#[cfg(all(not(test), target_arch = "arm"))]
-const _: () = assert!(matches_cstr_bytes(
-    EXT_SET_FW_VERSION_NAME,
-    &EXT_SET_FW_VERSION_NAME_BYTES
-));
-#[cfg(all(not(test), target_arch = "arm"))]
-const _: () = assert!(matches_cstr_bytes(EXT_BMS_NAME, &EXT_BMS_NAME_BYTES));
-
-#[cfg(all(not(test), target_arch = "arm"))]
-const fn matches_cstr_bytes(name: &CStr, bytes: &[u8]) -> bool {
-    let name = name.to_bytes_with_nul();
-    if name.len() != bytes.len() {
-        return false;
-    }
-    let mut index = 0;
-    while index < name.len() {
-        if name[index] != bytes[index] {
-            return false;
-        }
-        index += 1;
-    }
-    true
-}
 
 /// Called from Refloat's Lisp loader to pass firmware version components.
 ///
@@ -204,10 +170,15 @@ fn runtime_ext_set_fw_version_name() -> *const c_char {
     let address: usize;
     unsafe {
         core::arch::asm!(
-            "adr.w {address}, {name}",
+            "b 3f",
+            ".balign 4",
+            "2:",
+            ".asciz \"ext-set-fw-version\"",
+            ".balign 2",
+            "3:",
+            "adr.w {address}, 2b",
             address = out(reg) address,
-            name = sym EXT_SET_FW_VERSION_NAME_BYTES,
-            options(nomem, nostack, preserves_flags),
+            options(nostack, preserves_flags),
         );
     }
     address as *const c_char
@@ -218,10 +189,15 @@ fn runtime_ext_bms_name() -> *const c_char {
     let address: usize;
     unsafe {
         core::arch::asm!(
-            "adr.w {address}, {name}",
+            "b 3f",
+            ".balign 4",
+            "2:",
+            ".asciz \"ext-bms\"",
+            ".balign 2",
+            "3:",
+            "adr.w {address}, 2b",
             address = out(reg) address,
-            name = sym EXT_BMS_NAME_BYTES,
-            options(nomem, nostack, preserves_flags),
+            options(nostack, preserves_flags),
         );
     }
     address as *const c_char

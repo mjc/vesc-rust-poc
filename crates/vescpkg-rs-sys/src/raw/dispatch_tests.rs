@@ -7,11 +7,11 @@ use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescPin, Vesc
 
 use super::{
     CustomConfigGet, CustomConfigSet, CustomConfigXml, VescIf, conf_custom_add_config,
-    conf_custom_clear_configs, foc_get_id, io_read, io_set_mode, io_write, lbm_add_extension,
-    lbm_add_extension_with_table_base, lbm_dec_as_i32, lbm_enc_i, lbm_enc_sym_eerror,
-    lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number, mc_get_amp_hours, mc_get_amp_hours_charged,
-    mc_get_battery_level, mc_get_distance_abs, mc_get_duty_cycle_now, mc_get_fault,
-    mc_get_input_voltage_filtered, mc_get_odometer, mc_get_rpm, mc_get_speed,
+    conf_custom_clear_configs, foc_get_id, io_read, io_read_analog, io_set_mode, io_write,
+    lbm_add_extension, lbm_add_extension_with_table_base, lbm_dec_as_i32, lbm_enc_i,
+    lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number, mc_get_amp_hours,
+    mc_get_amp_hours_charged, mc_get_battery_level, mc_get_distance_abs, mc_get_duty_cycle_now,
+    mc_get_fault, mc_get_input_voltage_filtered, mc_get_odometer, mc_get_rpm, mc_get_speed,
     mc_get_tot_current_filtered, mc_get_tot_current_in_filtered, mc_get_watt_hours,
     mc_get_watt_hours_charged, mc_temp_fet_filtered, mc_temp_motor_filtered,
     vesc_clear_app_data_handler, vesc_send_app_data, vesc_set_app_data_handler, vesc_sleep_us,
@@ -130,6 +130,7 @@ static SYSTEM_TIME_TICKS: SyncCounter = SyncCounter::new();
 static IO_SET_MODE: SyncCounter = SyncCounter::new();
 static IO_WRITE: SyncCounter = SyncCounter::new();
 static IO_READ: SyncCounter = SyncCounter::new();
+static IO_READ_ANALOG: SyncCounter = SyncCounter::new();
 static MC_GET_DISTANCE_ABS: SyncCounter = SyncCounter::new();
 static MC_GET_RPM: SyncCounter = SyncCounter::new();
 static MC_GET_SPEED: SyncCounter = SyncCounter::new();
@@ -176,6 +177,7 @@ fn reset_counters() {
         &IO_SET_MODE,
         &IO_WRITE,
         &IO_READ,
+        &IO_READ_ANALOG,
         &MC_GET_RPM,
         &MC_GET_SPEED,
         &MC_GET_TOT_CURRENT_FILTERED,
@@ -309,6 +311,12 @@ extern "C" fn stub_io_read(pin: c_int) -> bool {
     pin == 3
 }
 
+extern "C" fn stub_io_read_analog(pin: c_int) -> f32 {
+    IO_READ_ANALOG.inc();
+    LAST_PIN.set(pin);
+    0.25 * pin as f32
+}
+
 extern "C" fn stub_mc_get_distance_abs() -> f32 {
     MC_GET_DISTANCE_ABS.inc();
     12.5
@@ -417,6 +425,7 @@ fn populated_table() -> VescIf {
     table.io_set_mode = Some(stub_io_set_mode);
     table.io_write = Some(stub_io_write);
     table.io_read = Some(stub_io_read);
+    table.io_read_analog = Some(stub_io_read_analog);
     table.mc_get_rpm = Some(stub_mc_get_rpm);
     table.mc_get_speed = Some(stub_mc_get_speed);
     table.mc_get_tot_current_filtered = Some(stub_mc_get_tot_current_filtered);
@@ -580,6 +589,7 @@ fn gpio_helpers_forward_through_mock_table() {
         assert!(io_set_mode(pin, mode));
         assert!(io_write(pin, 1));
         assert!(io_read(pin));
+        assert_eq!(io_read_analog(pin), 0.75);
         assert_eq!(LAST_PIN.get(), 3);
         assert_eq!(LAST_MODE.get(), 2);
         assert_eq!(LAST_LEVEL.get(), 1);
@@ -673,6 +683,10 @@ fn vesc_if_abi_gpio_offsets_match_struct_layout() {
     assert_eq!(
         VescIfAbi::IO_READ.vesc32_byte_offset(),
         vesc32(core::mem::offset_of!(VescIf, io_read))
+    );
+    assert_eq!(
+        VescIfAbi::IO_READ_ANALOG.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, io_read_analog))
     );
 }
 

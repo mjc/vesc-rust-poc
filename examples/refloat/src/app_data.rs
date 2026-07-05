@@ -1,9 +1,9 @@
 //! Refloat app-data packet processing.
 //!
 //! Refloat `v1.2.1` (`0ef6e99d8701`) anchors:
-//! - `src/main.c:2143-2295` handles incoming app-data commands.
-//! - `src/main.c:2334-2403` owns custom config get/set/XML and stop cleanup.
-//! - `src/main.c:2456-2457` registers custom config and app-data handlers.
+//! - `third_party/refloat/src/main.c:2143-2295` handles incoming app-data commands.
+//! - `third_party/refloat/src/main.c:2334-2403` owns custom config get/set/XML and stop cleanup.
+//! - `third_party/refloat/src/main.c:2456-2457` registers custom config and app-data handlers.
 //!
 //! The Rust state here is still a narrow `RefloatAppDataState`, not upstream's
 //! full `Data`; upstream shares `Data *` through `ARG` for app-data, custom
@@ -11,35 +11,44 @@
 
 #![cfg_attr(all(not(test), target_arch = "arm"), allow(dead_code))]
 
+use crate::balance_loop::{
+    RefloatBalanceLoopConfig, RefloatBalanceLoopInput, RefloatBalanceLoopState,
+    refloat_balance_loop_step,
+};
 use crate::domain::{
     FootpadSensorState, REFLOAT_APP_DATA_PACKAGE_ID, REFLOAT_REALTIME_DATA_ITEMS,
     REFLOAT_REALTIME_RUNTIME_ITEMS, RefloatAllDataAttitude, RefloatAllDataBasePayload,
     RefloatAllDataMode3Payload, RefloatAllDataMode4Payload, RefloatAllDataMotorPayload,
     RefloatAllDataPayloads, RefloatAllDataRequest, RefloatAllDataResponse, RefloatAllDataStatus,
     RefloatAppDataCommand, RefloatChargingState, RefloatDarkRideState, RefloatFirmwareFaultCode,
-    RefloatFocIdCurrent, RefloatMode, RefloatMotorCommand, RefloatRealtimeBalanceCurrent,
+    RefloatFocIdCurrent, RefloatMode, RefloatRealtimeBalanceCurrent, RefloatRealtimeBalancePitch,
     RefloatRealtimeBoosterCurrent, RefloatRealtimeChargingCurrent, RefloatRealtimeChargingVoltage,
     RefloatRealtimeDataItem, RefloatRealtimeMotorTemperatures, RefloatRealtimeRuntimeSetpoint,
     RefloatRealtimeRuntimeSetpoints, RefloatRideState, RefloatRunState, RefloatSetpointAdjustment,
     RefloatStopCondition, RefloatWheelSlipState,
 };
+use crate::motor_control::RefloatMotorControl;
 use crate::runtime::RefloatRuntimeThreads;
+use crate::state_transition::{
+    RefloatStateTransitionInput, RefloatStopEvent, refloat_first_stop_event,
+    refloat_state_transition,
+};
 use core::ffi::c_int;
 use vescpkg_rs::prelude::{
-    AngleDegrees, BatteryCurrent, BatteryVoltage, Current, MotorCurrent, SystemTimestamp,
-    TimestampTicks, Voltage,
+    AngleDegrees, AngleRadians, BatteryCurrent, BatteryVoltage, Current, MotorCurrent,
+    SystemTimestamp, TimestampTicks, Voltage,
 };
 use vescpkg_rs::{
     AppDataBindings, AppDataHandlerRegistrationError, CustomConfigBindings, ImuApi, ImuBindings,
-    LoopbackLifecycle, MotorControlApi, MotorControlBindings, MotorTelemetryApi,
-    MotorTelemetryBindings, ffi,
+    ImuReadCallbackBindings, LoopbackLifecycle, MotorControlApi, MotorControlBindings,
+    MotorTelemetryApi, MotorTelemetryBindings, ffi,
 };
 
 /// Refloat v1.2.1 generated custom-config XML blob.
 ///
-/// Upstream generates this from `src/conf/settings.xml` via `src/Makefile:28-31`
+/// Upstream generates this from `third_party/refloat/src/conf/settings.xml` via `third_party/refloat/src/Makefile:28-31`
 /// and exposes `data_refloatconfig_` through `get_cfg_xml` at
-/// `src/main.c:2388-2396`.
+/// `third_party/refloat/src/main.c:2388-2396`.
 #[cfg_attr(
     all(not(test), target_arch = "arm"),
     unsafe(link_section = ".text.refloat_config_xml")
@@ -50,8 +59,8 @@ static REFLOAT_CONFIG_XML: [u8; 25_723] = *include_bytes!("conf/refloatconfig.da
 /// Refloat v1.2.1 generated serialized default custom config.
 ///
 /// Upstream `get_cfg(..., is_default=true)` allocates `RefloatConfig`, fills
-/// defaults, serializes it, then frees it at `src/main.c:2335-2356`.
-/// `src/Makefile:28-31` generates the format from `src/conf/settings.xml`;
+/// defaults, serializes it, then frees it at `third_party/refloat/src/main.c:2335-2356`.
+/// `third_party/refloat/src/Makefile:28-31` generates the format from `third_party/refloat/src/conf/settings.xml`;
 /// generated `conf/confparser.h:11-12` defines signature `2427955642` and
 /// serialized length `276`, while generated `conf/confparser.c:8-178` and
 /// `conf/confparser.c:363-531` serialize the default values.
@@ -63,108 +72,158 @@ static REFLOAT_CONFIG_XML: [u8; 25_723] = *include_bytes!("conf/refloatconfig.da
 static REFLOAT_DEFAULT_CONFIG: [u8; 276] = *include_bytes!("conf/default_config.dat");
 const REFLOAT_CONFIG_SIGNATURE_BYTES: [u8; 4] = [0x90, 0xb7, 0xa9, 0xba];
 // Upstream serializes `kp` as the first float16 config value after the
-// signature; `src/conf/settings.xml:28-54` uses scale 10.
+// signature; `third_party/refloat/src/conf/settings.xml:28-54` uses scale 10.
 const REFLOAT_CONFIG_KP_OFFSET: usize = 4;
 // Upstream serializes `kp2` immediately after `kp` in
-// `src/conf/settings.xml:3916-3918`; `src/conf/settings.xml:56-83` uses scale 10.
+// `third_party/refloat/src/conf/settings.xml:3916-3918`; `third_party/refloat/src/conf/settings.xml:56-83` uses scale 10.
 const REFLOAT_CONFIG_KP2_OFFSET: usize = 6;
 // Upstream serializes `ki` after `kp` and `kp2` in
-// `src/conf/settings.xml:3916-3919`; `src/conf/settings.xml:85-111` uses
+// `third_party/refloat/src/conf/settings.xml:3916-3919`; `third_party/refloat/src/conf/settings.xml:85-111` uses
 // scale 100000.
 const REFLOAT_CONFIG_KI_OFFSET: usize = 8;
+// Upstream serializes Mahony pitch/roll KP after `ki` at
+// `third_party/refloat/src/conf/settings.xml:3916-3921`; both use scale 10000 and feed
+// `balance_filter_configure` at `third_party/refloat/src/balance_filter.c:64-70`.
+const REFLOAT_CONFIG_MAHONY_KP_OFFSET: usize = 10;
+const REFLOAT_CONFIG_MAHONY_KP_ROLL_OFFSET: usize = 12;
 // Upstream serializes `kp_brake` and `kp2_brake` after the two Mahony tuning
-// values at `src/conf/settings.xml:3916-3923`; both use scale 100.
+// values at `third_party/refloat/src/conf/settings.xml:3916-3923`; both use scale 100.
 const REFLOAT_CONFIG_KP_BRAKE_OFFSET: usize = 14;
 const REFLOAT_CONFIG_KP2_BRAKE_OFFSET: usize = 16;
-// Upstream defines `hertz` in `src/conf/settings.xml:223-246`, serializes it
+// Upstream defines `hertz` in `third_party/refloat/src/conf/settings.xml:223-246`, serializes it
 // after the first seven `SerOrder` float16 entries at
-// `src/conf/settings.xml:3916-3923`, and reads it as a big-endian uint16 via
-// `src/conf/buffer.c:188-191`.
+// `third_party/refloat/src/conf/settings.xml:3916-3923`, and reads it as a big-endian uint16 via
+// `third_party/refloat/src/conf/buffer.c:188-191`.
 const REFLOAT_CONFIG_HERTZ_OFFSET: usize = 18;
 const REFLOAT_CONFIG_FAULT_PITCH_OFFSET: usize = 20;
 const REFLOAT_CONFIG_FAULT_ROLL_OFFSET: usize = 22;
-// Upstream defines `fault_is_dual_switch` in `src/conf/settings.xml:454-467`;
+// Upstream serializes `fault_adc1` and `fault_adc2` immediately after
+// `fault_roll` at `third_party/refloat/src/conf/settings.xml:3927-3928`;
+// both values use `<vTxDoubleScale>1000</vTxDoubleScale>`.
+#[cfg(any(test, target_arch = "arm"))]
+const REFLOAT_CONFIG_FAULT_ADC1_OFFSET: usize = 24;
+#[cfg(any(test, target_arch = "arm"))]
+const REFLOAT_CONFIG_FAULT_ADC2_OFFSET: usize = 26;
+// Upstream defines `fault_is_dual_switch` in `third_party/refloat/src/conf/settings.xml:454-467`;
 // its `<ser>fault_is_dual_switch</ser>` entry at
-// `src/conf/settings.xml:3935` follows the first seven float16 values,
+// `third_party/refloat/src/conf/settings.xml:3935` follows the first seven float16 values,
 // hertz, four fault float16 values, footbeep, five uint16 fault fields, and
 // lands at byte 39 in the 276-byte generated config image.
 // `fault_delay_pitch` and `fault_delay_roll` are the uint16 fields at
-// `src/conf/settings.xml:3930-3931`.
+// `third_party/refloat/src/conf/settings.xml:3930-3931`.
 const REFLOAT_CONFIG_FAULT_DELAY_PITCH_OFFSET: usize = 29;
 const REFLOAT_CONFIG_FAULT_DELAY_ROLL_OFFSET: usize = 31;
 // `fault_delay_switch_half`, `fault_delay_switch_full`, and
 // `fault_adc_half_erpm` are the preceding uint16 fields at
-// `src/conf/settings.xml:3932-3934`.
+// `third_party/refloat/src/conf/settings.xml:3932-3934`.
 const REFLOAT_CONFIG_FAULT_DELAY_SWITCH_HALF_OFFSET: usize = 33;
 const REFLOAT_CONFIG_FAULT_DELAY_SWITCH_FULL_OFFSET: usize = 35;
 const REFLOAT_CONFIG_FAULT_ADC_HALF_ERPM_OFFSET: usize = 37;
 const REFLOAT_CONFIG_FAULT_IS_DUAL_SWITCH_OFFSET: usize = 39;
 const REFLOAT_CONFIG_FAULT_MOVING_FAULT_DISABLED_OFFSET: usize = 40;
-// Upstream defines `enable_quickstop` in `src/conf/settings.xml:482-493`;
-// its `<ser>enable_quickstop</ser>` entry at `src/conf/settings.xml:3937`
+// Upstream defines `enable_quickstop` in `third_party/refloat/src/conf/settings.xml:482-493`;
+// its `<ser>enable_quickstop</ser>` entry at `third_party/refloat/src/conf/settings.xml:3937`
 // lands two bools after `fault_is_dual_switch`.
 const REFLOAT_CONFIG_ENABLE_QUICKSTOP_OFFSET: usize = 41;
 // Upstream defines `fault_darkride_enabled` in
-// `src/conf/settings.xml:494-507`; its `<ser>fault_darkride_enabled</ser>`
-// entry at `src/conf/settings.xml:3938` lands after `enable_quickstop`.
+// `third_party/refloat/src/conf/settings.xml:494-507`; its
+// `<ser>fault_darkride_enabled</ser>` entry at
+// `third_party/refloat/src/conf/settings.xml:3938` lands after
+// `enable_quickstop`.
 const REFLOAT_CONFIG_FAULT_DARKRIDE_ENABLED_OFFSET: usize = 42;
 // Upstream defines `fault_reversestop_enabled` immediately after
-// `fault_darkride_enabled` at `src/conf/settings.xml:3939`.
+// `fault_darkride_enabled` at `third_party/refloat/src/conf/settings.xml:3939`.
 const REFLOAT_CONFIG_FAULT_REVERSESTOP_ENABLED_OFFSET: usize = 43;
 // Upstream serializes remote throttle fields immediately before startup
-// tolerances at `src/conf/settings.xml:3962-3967`.
+// tolerances at `third_party/refloat/src/conf/settings.xml:3962-3965`.
 const REFLOAT_CONFIG_INPUTTILT_INVERT_THROTTLE_OFFSET: usize = 84;
 const REFLOAT_CONFIG_REMOTE_THROTTLE_CURRENT_MAX_OFFSET: usize = 87;
 const REFLOAT_CONFIG_REMOTE_THROTTLE_GRACE_PERIOD_OFFSET: usize = 89;
-// Upstream defines `ki_limit` in `src/conf/settings.xml:1679-1707`; its
-// `<ser>ki_limit</ser>` entry at `src/conf/settings.xml:3975` lands at byte
-// 104 in the generated default config image and uses scale 10.
-// Upstream serializes startup pitch and roll tolerances at
-// `src/conf/settings.xml:3966-3967`; both use scale 100.
+// Upstream defines `ki_limit` in
+// `third_party/refloat/src/conf/settings.xml:1679-1707`; its
+// `<ser>ki_limit</ser>` entry at
+// `third_party/refloat/src/conf/settings.xml:3975` lands at byte 104 in the
+// generated default config image and uses scale 10.
+// Upstream serializes startup pitch/roll tolerances and startup speed at
+// `third_party/refloat/src/conf/settings.xml:3966-3968`; all use scale 100.
 const REFLOAT_CONFIG_STARTUP_PITCH_TOLERANCE_OFFSET: usize = 91;
 const REFLOAT_CONFIG_STARTUP_ROLL_TOLERANCE_OFFSET: usize = 93;
+const REFLOAT_CONFIG_STARTUP_SPEED_OFFSET: usize = 95;
 // Upstream serializes `startup_simplestart_enabled` at
-// `src/conf/settings.xml:3970` immediately before push-start.
+// `third_party/refloat/src/conf/settings.xml:3970` immediately before
+// push-start.
 const REFLOAT_CONFIG_STARTUP_SIMPLESTART_ENABLED_OFFSET: usize = 99;
 // Upstream serializes `startup_pushstart_enabled` at
-// `src/conf/settings.xml:3971` after the startup speed/click fields.
+// `third_party/refloat/src/conf/settings.xml:3971` after the startup
+// speed/click fields.
 const REFLOAT_CONFIG_STARTUP_PUSHSTART_ENABLED_OFFSET: usize = 100;
+// Upstream serializes default parking brake mode and brake current at
+// `third_party/refloat/src/conf/settings.xml:3973-3974`; the generated default
+// config stores `PARKING_BRAKE_IDLE` at byte 101 and 6.00A at bytes 102..104.
+const REFLOAT_CONFIG_PARKING_BRAKE_MODE_OFFSET: usize = 101;
+const REFLOAT_CONFIG_BRAKE_CURRENT_OFFSET: usize = 102;
 const REFLOAT_CONFIG_KI_LIMIT_OFFSET: usize = 104;
 // Upstream serializes booster angle, ramp, and current immediately after
-// `ki_limit` at `src/conf/settings.xml:3975-3978`; all three use scale 100.
+// `ki_limit` at `third_party/refloat/src/conf/settings.xml:3975-3978`; all
+// three use scale 100.
 const REFLOAT_CONFIG_BOOSTER_ANGLE_OFFSET: usize = 106;
 const REFLOAT_CONFIG_BOOSTER_RAMP_OFFSET: usize = 108;
 const REFLOAT_CONFIG_BOOSTER_CURRENT_OFFSET: usize = 110;
 const REFLOAT_CONFIG_BRKBOOSTER_ANGLE_OFFSET: usize = 112;
 const REFLOAT_CONFIG_BRKBOOSTER_RAMP_OFFSET: usize = 114;
 const REFLOAT_CONFIG_BRKBOOSTER_CURRENT_OFFSET: usize = 116;
-// Upstream defines `disabled` in `src/conf/settings.xml:3890-3902`; its
-// `<ser>disabled</ser>` entry at `src/conf/settings.xml:4064` lands at byte
+// Upstream serializes tune modifiers in
+// `third_party/refloat/src/conf/settings.xml:3952-3996`; `cmd_handtest` zeros
+// these fields at `third_party/refloat/src/main.c:1437-1443`.
+const REFLOAT_CONFIG_TILTBACK_CONSTANT_OFFSET: usize = 67;
+const REFLOAT_CONFIG_TILTBACK_VARIABLE_OFFSET: usize = 71;
+const REFLOAT_CONFIG_TORQUETILT_STRENGTH_OFFSET: usize = 126;
+const REFLOAT_CONFIG_TORQUETILT_STRENGTH_REGEN_OFFSET: usize = 128;
+const REFLOAT_CONFIG_TURNTILT_STRENGTH_OFFSET: usize = 130;
+const REFLOAT_CONFIG_ATR_STRENGTH_UP_OFFSET: usize = 145;
+const REFLOAT_CONFIG_ATR_STRENGTH_DOWN_OFFSET: usize = 147;
+
+// Upstream defines `disabled` in `third_party/refloat/src/conf/settings.xml:3890-3902`; its
+// `<ser>disabled</ser>` entry at `third_party/refloat/src/conf/settings.xml:4064` lands at byte
 // 243 in the 276-byte generated config image.
 const REFLOAT_CONFIG_DISABLED_OFFSET: usize = 243;
-// Upstream defines `meta.is_default` in `src/conf/settings.xml:3903-3914`; its
-// `<ser>meta.is_default</ser>` entry at `src/conf/settings.xml:4083` lands at
+// Upstream defines `meta.is_default` in `third_party/refloat/src/conf/settings.xml:3903-3914`; its
+// `<ser>meta.is_default</ser>` entry at `third_party/refloat/src/conf/settings.xml:4083` lands at
 // the final byte in the generated config image.
 const REFLOAT_CONFIG_META_IS_DEFAULT_OFFSET: usize = 275;
 // Refloat v1.2.1 `cmd_info` writes this version-2 response shape at
-// `src/main.c:2070-2139`.
+// `third_party/refloat/src/main.c:2070-2139`.
 const REFLOAT_INFO_RESPONSE_V2_LEN: usize = 60;
 // Refloat v1.2.1 `cmd_realtime_data_ids` writes the counted ID-list packet at
-// `src/main.c:1876-1901`.
+// `third_party/refloat/src/main.c:1876-1901`.
 const REFLOAT_REALTIME_DATA_IDS_RESPONSE_LEN: usize = 405;
 // Refloat v1.2.1 `send_realtime_data` declares its fixed buffer at
-// `src/main.c:1267-1269`.
+// `third_party/refloat/src/main.c:1267-1269`.
 const REFLOAT_GET_REALTIME_DATA_RESPONSE_LEN: usize = 72;
 // Refloat v1.2.1 `cmd_realtime_data` declares its runtime-sized packet at
-// `src/main.c:1904-1906`.
+// `third_party/refloat/src/main.c:1904-1906`.
 const REFLOAT_REALTIME_DATA_RESPONSE_CAPACITY: usize = 77;
 const REFLOAT_PACKAGE_NAME: &[u8] = b"Refloat";
 const REFLOAT_VERSION_SUFFIX: &[u8] = b"";
 const REFLOAT_GIT_HASH: u32 = 0x0ef6_e99d;
 const REFLOAT_SYSTEM_TICK_RATE_HZ: u32 = 10_000;
 
+// Refloat C builds this exact packet in `third_party/refloat/src/main.c:1876-1901`, using the ID
+// order from `third_party/refloat/src/rt_data.h:38-66` and counted-string framing from
+// `third_party/refloat/src/conf/buffer.c:147-155`. QML reads the same two string lists in
+// `ui.qml.in:926-934`.
+// Keep the materialized bytes in the loaded extension image so hardware never
+// has to dereference string-literal storage.
+#[cfg_attr(
+    all(not(test), target_arch = "arm"),
+    unsafe(link_section = ".text.refloat_realtime_data_ids")
+)]
+#[used]
+static REFLOAT_REALTIME_DATA_IDS_RESPONSE_BYTES: [u8; REFLOAT_REALTIME_DATA_IDS_RESPONSE_LEN] =
+    build_refloat_realtime_data_ids_response();
+
 /// Variable-length Refloat `COMMAND_REALTIME_DATA` response bytes from
-/// `src/main.c:1904-1960`.
+/// `third_party/refloat/src/main.c:1904-1960`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RefloatRealtimeDataResponse {
     bytes: [u8; REFLOAT_REALTIME_DATA_RESPONSE_CAPACITY],
@@ -182,15 +241,15 @@ impl RefloatRealtimeDataResponse {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefloatAppDataResponse {
-    /// Version/package-info response from `src/main.c:2070-2139`.
+    /// Version/package-info response from `third_party/refloat/src/main.c:2070-2139`.
     InfoV2([u8; REFLOAT_INFO_RESPONSE_V2_LEN]),
-    /// Legacy `COMMAND_GET_RTDATA` response from `src/main.c:1267-1310`.
+    /// Legacy `COMMAND_GET_RTDATA` response from `third_party/refloat/src/main.c:1267-1310`.
     GetRealtimeData([u8; REFLOAT_GET_REALTIME_DATA_RESPONSE_LEN]),
-    /// Realtime-data ID list response from `src/main.c:1876-1901`.
+    /// Realtime-data ID list response from `third_party/refloat/src/main.c:1876-1901`.
     RealtimeDataIds([u8; REFLOAT_REALTIME_DATA_IDS_RESPONSE_LEN]),
-    /// Realtime-data sample response from `src/main.c:1904-1960`.
+    /// Realtime-data sample response from `third_party/refloat/src/main.c:1904-1960`.
     RealtimeData(RefloatRealtimeDataResponse),
-    /// Compact all-data response from `src/main.c:1313-1399`.
+    /// Compact all-data response from `third_party/refloat/src/main.c:1313-1399`.
     AllData(RefloatAllDataResponse),
 }
 
@@ -210,7 +269,7 @@ impl RefloatAppDataResponse {
 /// Process one Refloat app-data packet from a typed all-data payload snapshot.
 ///
 /// Upstream dispatches the command byte in `on_command_received` at
-/// `src/main.c:2143-2301`.
+/// `third_party/refloat/src/main.c:2143-2301`.
 #[inline(never)]
 pub fn process_refloat_app_data(
     payloads: &RefloatAllDataPayloads,
@@ -247,7 +306,7 @@ pub fn process_refloat_app_data(
 
 fn encode_refloat_info_response_v2(request_payload: &[u8]) -> [u8; REFLOAT_INFO_RESPONSE_V2_LEN] {
     // Upstream `cmd_info` responds to QML's version-2 request at
-    // `src/main.c:2070-2139`; QML allocates the four-byte request and sets
+    // `third_party/refloat/src/main.c:2070-2139`; QML allocates the four-byte request and sets
     // version 2 at `ui.qml.in:693-697`.
     let flags = match request_payload {
         [2, flags, ..] => *flags,
@@ -271,10 +330,10 @@ fn encode_refloat_info_response_v2(request_payload: &[u8]) -> [u8; REFLOAT_INFO_
         &REFLOAT_SYSTEM_TICK_RATE_HZ.to_be_bytes(),
     );
     // Upstream derives capabilities from data-recorder and LED config at
-    // `src/main.c:2121-2132`; this Rust runtime has not ported either
+    // `third_party/refloat/src/main.c:2121-2132`; this Rust runtime has not ported either
     // capability yet, so the honest advertised capability mask is zero.
     refloat_response_push_bytes(&mut bytes, &mut index, &0u32.to_be_bytes());
-    // Upstream currently sends zero `extra_flags` at `src/main.c:2134-2135`.
+    // Upstream currently sends zero `extra_flags` at `third_party/refloat/src/main.c:2134-2135`.
     refloat_response_push_u8(&mut bytes, &mut index, 0);
     bytes
 }
@@ -291,32 +350,73 @@ fn append_fixed_ascii<const LEN: usize>(bytes: &mut [u8], index: &mut usize, val
 
 #[inline(never)]
 fn encode_refloat_realtime_data_ids_response() -> [u8; REFLOAT_REALTIME_DATA_IDS_RESPONSE_LEN] {
+    REFLOAT_REALTIME_DATA_IDS_RESPONSE_BYTES
+}
+
+// Same packet as `cmd_realtime_data_ids` in `third_party/refloat/src/main.c:1876-1901`, built as
+// bytes so the ARM image does not rely on target string-literal addresses.
+const fn build_refloat_realtime_data_ids_response() -> [u8; REFLOAT_REALTIME_DATA_IDS_RESPONSE_LEN]
+{
     let mut bytes = [0; REFLOAT_REALTIME_DATA_IDS_RESPONSE_LEN];
     let mut index = 0;
-    refloat_response_push_u8(&mut bytes, &mut index, REFLOAT_APP_DATA_PACKAGE_ID.get());
-    refloat_response_push_u8(
-        &mut bytes,
-        &mut index,
-        RefloatAppDataCommand::RealtimeDataIds.id(),
-    );
-    // Upstream sends two counted string-ID sets from `cmd_realtime_data_ids`
-    // at `/Users/mjc/projects/refloat/src/main.c:1876-1901`; QML consumes them
-    // at `/Users/mjc/projects/refloat/ui.qml.in:927-934`.
-    append_realtime_item_ids(&mut bytes, &mut index, &REFLOAT_REALTIME_DATA_ITEMS);
-    append_realtime_item_ids(&mut bytes, &mut index, &REFLOAT_REALTIME_RUNTIME_ITEMS);
+
+    index = refloat_realtime_ids_push_u8(&mut bytes, index, 101);
+    index = refloat_realtime_ids_push_u8(&mut bytes, index, 32);
+
+    index = refloat_realtime_ids_push_u8(&mut bytes, index, 16);
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"motor.speed");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"motor.erpm");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"motor.current");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"motor.dir_current");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"motor.filt_current");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"motor.duty_cycle");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"motor.batt_voltage");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"motor.batt_current");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"motor.mosfet_temp");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"motor.motor_temp");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"imu.pitch");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"imu.balance_pitch");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"imu.roll");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"footpad.adc1");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"footpad.adc2");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"remote.input");
+
+    index = refloat_realtime_ids_push_u8(&mut bytes, index, 10);
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"setpoint");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"atr.setpoint");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"brake_tilt.setpoint");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"torque_tilt.setpoint");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"turn_tilt.setpoint");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"remote.setpoint");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"balance_current");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"atr.accel_diff");
+    index = refloat_realtime_ids_push_id(&mut bytes, index, b"atr.speed_boost");
+    let _index = refloat_realtime_ids_push_id(&mut bytes, index, b"booster.current");
+
     bytes
 }
 
-fn append_realtime_item_ids<const N: usize>(
-    bytes: &mut [u8],
-    index: &mut usize,
-    items: &[RefloatRealtimeDataItem; N],
-) {
-    refloat_response_push_u8(bytes, index, N as u8);
-    for id in items.iter().map(|item| item.id().as_bytes()) {
-        refloat_response_push_u8(bytes, index, id.len() as u8);
-        refloat_response_push_bytes(bytes, index, id);
+const fn refloat_realtime_ids_push_id<const N: usize>(
+    bytes: &mut [u8; REFLOAT_REALTIME_DATA_IDS_RESPONSE_LEN],
+    index: usize,
+    value: &[u8; N],
+) -> usize {
+    let mut next = refloat_realtime_ids_push_u8(bytes, index, N as u8);
+    let mut offset = 0;
+    while offset < N {
+        next = refloat_realtime_ids_push_u8(bytes, next, value[offset]);
+        offset += 1;
     }
+    next
+}
+
+const fn refloat_realtime_ids_push_u8(
+    bytes: &mut [u8; REFLOAT_REALTIME_DATA_IDS_RESPONSE_LEN],
+    index: usize,
+    value: u8,
+) -> usize {
+    bytes[index] = value;
+    index + 1
 }
 
 fn refloat_response_push_bytes(bytes: &mut [u8], index: &mut usize, values: &[u8]) {
@@ -347,8 +447,8 @@ fn encode_refloat_get_realtime_data_response(
     let motor = base.motor();
 
     // Upstream `on_command_received` dispatches `COMMAND_GET_RTDATA` to
-    // `send_realtime_data` at `src/main.c:2162-2164`; `send_realtime_data`
-    // writes this legacy 72-byte payload at `src/main.c:1267-1310`.
+    // `send_realtime_data` at `third_party/refloat/src/main.c:2162-2164`; `send_realtime_data`
+    // writes this legacy 72-byte payload at `third_party/refloat/src/main.c:1267-1310`.
     refloat_realtime_push_u8(&mut bytes, &mut ind, REFLOAT_APP_DATA_PACKAGE_ID.get());
     refloat_realtime_push_u8(
         &mut bytes,
@@ -380,8 +480,8 @@ fn encode_refloat_get_realtime_data_response(
         &mut ind,
         (switch_state & 0x0f) + (base.status().beep_reason().id() << 4),
     );
-    refloat_realtime_push_float32_auto(&mut bytes, &mut ind, footpad.adc1().ratio().as_ratio());
-    refloat_realtime_push_float32_auto(&mut bytes, &mut ind, footpad.adc2().ratio().as_ratio());
+    refloat_realtime_push_float32_auto(&mut bytes, &mut ind, footpad.adc1_volts());
+    refloat_realtime_push_float32_auto(&mut bytes, &mut ind, footpad.adc2_volts());
 
     [
         setpoints.board(),
@@ -397,10 +497,10 @@ fn encode_refloat_get_realtime_data_response(
 
     refloat_realtime_push_float32_auto(&mut bytes, &mut ind, attitude.pitch().angle().as_radians());
     // Upstream reads `d->motor.filt_current`, `d->atr.accel_diff`, and
-    // `d->motor.dir_current` at `src/main.c:1298-1306`. The current Rust
+    // `d->motor.dir_current` at `third_party/refloat/src/main.c:1298-1306`. The current Rust
     // app-data state does not yet contain those separate runtime fields, so
     // this is explicitly a containment fallback until the shared `Data`
-    // runtime is ported from `src/main.c:2419-2461`.
+    // runtime is ported from `third_party/refloat/src/main.c:2419-2461`.
     refloat_realtime_push_float32_auto(
         &mut bytes,
         &mut ind,
@@ -448,7 +548,7 @@ fn encode_refloat_realtime_data_response(
     let charging = matches!(ride_state.charging(), RefloatChargingState::Charging);
 
     // Upstream `cmd_realtime_data` writes the realtime packet in
-    // `src/main.c:1904-1960`; QML consumes it at `ui.qml.in:853-925`.
+    // `third_party/refloat/src/main.c:1904-1960`; QML consumes it at `ui.qml.in:853-925`.
     refloat_realtime_push_u8(&mut bytes, &mut ind, REFLOAT_APP_DATA_PACKAGE_ID.get());
     refloat_realtime_push_u8(
         &mut bytes,
@@ -466,9 +566,9 @@ fn encode_refloat_realtime_data_response(
     refloat_realtime_push_u8(&mut bytes, &mut ind, mask);
 
     // The data recorder and alert tracker are still part of the unported
-    // control-loop/runtime state (`src/main.c:1927-1930`, `src/main.c:1956-1958`).
+    // control-loop/runtime state (`third_party/refloat/src/main.c:1927-1930`, `third_party/refloat/src/main.c:1956-1958`).
     refloat_realtime_push_u8(&mut bytes, &mut ind, 0);
-    // Upstream writes `d->time.now` at `src/main.c:1931`; VESC timestamps are
+    // Upstream writes `d->time.now` at `third_party/refloat/src/main.c:1931`; VESC timestamps are
     // represented as 100 us system ticks.
     refloat_realtime_push_u32(&mut bytes, &mut ind, system_timestamp.ticks().as_ticks());
 
@@ -570,8 +670,8 @@ fn realtime_value(payloads: &RefloatAllDataPayloads, item: RefloatRealtimeDataIt
         RefloatRealtimeDataItem::ImuRoll => {
             refloat_radians_to_degrees(attitude.roll().angle().as_radians())
         }
-        RefloatRealtimeDataItem::FootpadAdc1 => base.footpad().adc1().ratio().as_ratio(),
-        RefloatRealtimeDataItem::FootpadAdc2 => base.footpad().adc2().ratio().as_ratio(),
+        RefloatRealtimeDataItem::FootpadAdc1 => base.footpad().adc1_volts(),
+        RefloatRealtimeDataItem::FootpadAdc2 => base.footpad().adc2_volts(),
         RefloatRealtimeDataItem::RemoteInput => 0.0,
         RefloatRealtimeDataItem::Setpoint => setpoints.board().angle().as_degrees(),
         RefloatRealtimeDataItem::AtrSetpoint => setpoints.atr().angle().as_degrees(),
@@ -608,20 +708,20 @@ fn refloat_ticks_elapsed_f32(now: u32, then: u32, seconds: f32) -> bool {
 
 fn refloat_realtime_push_float16_auto(buffer: &mut [u8], ind: &mut usize, value: f32) {
     // Refloat forwards through `buffer_append_float16_auto` at
-    // `src/conf/buffer.c:143-145`, which writes `to_float16` big-endian.
+    // `third_party/refloat/src/conf/buffer.c:143-145`, which writes `to_float16` big-endian.
     refloat_realtime_push_u16(buffer, ind, refloat_float16_auto_bits(value));
 }
 
 fn refloat_realtime_push_float32_auto(buffer: &mut [u8], ind: &mut usize, value: f32) {
     // Refloat forwards through `buffer_append_float32_auto` at
-    // `src/conf/buffer.c:118-140`, zeroing denormal/subnormal values before
+    // `third_party/refloat/src/conf/buffer.c:118-140`, zeroing denormal/subnormal values before
     // writing big-endian IEEE-754 bits.
     let value = if value.abs() < 1.5e-38 { 0.0 } else { value };
     refloat_realtime_push_u32(buffer, ind, value.to_bits());
 }
 
 fn refloat_float16_auto_bits(value: f32) -> u16 {
-    // Refloat's `to_float16` is defined at `src/conf/buffer.c:33-43`.
+    // Refloat's `to_float16` is defined at `third_party/refloat/src/conf/buffer.c:33-43`.
     let b = value.to_bits().wrapping_add(0x0000_1000);
     let e = (b & 0x7f80_0000) >> 23;
     let m = b & 0x007f_ffff;
@@ -716,8 +816,8 @@ fn runtime_refloat_app_data_handler() -> ffi::AppDataHandler {
 #[cfg(all(not(test), target_arch = "arm"))]
 unsafe fn refloat_state_from_arg() -> Option<&'static mut RefloatAppDataState> {
     // C map: closest visible state compatibility edge is `state_compat` at
-    // Refloat v1.2.1 `src/state.c:50`; loader ARG storage happens at
-    // `src/main.c:2432`.
+    // Refloat v1.2.1 `third_party/refloat/src/state.c:50`; loader ARG storage happens at
+    // `third_party/refloat/src/main.c:2432`.
     let arg_slot = unsafe { ffi::raw::vesc_get_arg(loaded_image_base()) };
     if arg_slot.is_null() {
         return None;
@@ -732,8 +832,8 @@ unsafe fn refloat_state_from_arg() -> Option<&'static mut RefloatAppDataState> {
 
 /// Device entrypoint invoked by firmware app-data delivery.
 ///
-/// C map: upstream `on_command_received` starts at `src/main.c:2143` and is
-/// registered in `src/main.c:2457`.
+/// C map: upstream `on_command_received` starts at `third_party/refloat/src/main.c:2143` and is
+/// registered in `third_party/refloat/src/main.c:2457`.
 #[cfg(all(not(test), target_arch = "arm"))]
 #[unsafe(no_mangle)]
 #[inline(never)]
@@ -751,8 +851,8 @@ pub unsafe extern "C" fn refloat_handle_app_data(data: *mut u8, len: u32) {
 /// Install source-startup Refloat state without registering callbacks.
 ///
 /// Upstream allocates `Data`, runs `data_init`, and stores `stop`/`Data *` in
-/// loader metadata at `src/main.c:2419-2432`; callback/LispBM registration
-/// follows at `src/main.c:2455-2459`.
+/// loader metadata at `third_party/refloat/src/main.c:2419-2432`; callback/LispBM registration
+/// follows at `third_party/refloat/src/main.c:2455-2459`.
 ///
 /// # Safety
 ///
@@ -771,8 +871,8 @@ pub(crate) unsafe fn install_refloat_startup_state_with<B: AppDataBindings>(
 
 /// Install source-startup Refloat state and callback registrations.
 ///
-/// Upstream stores loader metadata at `src/main.c:2431-2432` before registering
-/// custom config/app-data callbacks at `src/main.c:2456-2457`.
+/// Upstream stores loader metadata at `third_party/refloat/src/main.c:2431-2432` before registering
+/// custom config/app-data callbacks at `third_party/refloat/src/main.c:2456-2457`.
 ///
 /// # Safety
 ///
@@ -804,11 +904,11 @@ unsafe fn clear_refloat_app_data_loader_info(info: *mut ffi::LibInfo) {
 
 /// Allocate and install source-startup Refloat state through firmware memory.
 ///
-/// Upstream uses firmware `malloc(sizeof(Data))` at `src/main.c:2419`, runs
-/// `data_init` at `src/main.c:2424`, and stores the same pointer in
-/// `info->arg` at `src/main.c:2432`. This Rust path still allocates a narrow
+/// Upstream uses firmware `malloc(sizeof(Data))` at `third_party/refloat/src/main.c:2419`, runs
+/// `data_init` at `third_party/refloat/src/main.c:2424`, and stores the same pointer in
+/// `info->arg` at `third_party/refloat/src/main.c:2432`. This Rust path still allocates a narrow
 /// `RefloatAppDataState`, but keeps the same loader metadata order before the
-/// registration tail at `src/main.c:2455-2459`.
+/// registration tail at `third_party/refloat/src/main.c:2455-2459`.
 ///
 /// # Safety
 ///
@@ -843,9 +943,9 @@ pub(crate) unsafe fn allocate_refloat_startup_state_with<
 
 /// Allocate source-startup Refloat state and register app-data callbacks.
 ///
-/// Upstream performs state setup at `src/main.c:2419-2432`, starts runtime
-/// threads at `src/main.c:2439-2449`, then registers custom config/app-data
-/// callbacks at `src/main.c:2456-2457` after IMU setup. This compatibility
+/// Upstream performs state setup at `third_party/refloat/src/main.c:2419-2432`, starts runtime
+/// threads at `third_party/refloat/src/main.c:2439-2449`, then registers custom config/app-data
+/// callbacks at `third_party/refloat/src/main.c:2456-2457` after IMU setup. This compatibility
 /// helper only keeps state-before-callback order for tests.
 ///
 /// # Safety
@@ -876,8 +976,8 @@ pub(crate) unsafe fn allocate_refloat_startup_app_data_with<
 
 /// Allocate and install Refloat startup state using firmware memory.
 ///
-/// This matches the loader metadata step from upstream `src/main.c:2419-2432`;
-/// callback/LispBM registration is a separate step at `src/main.c:2455-2459`.
+/// This matches the loader metadata step from upstream `third_party/refloat/src/main.c:2419-2432`;
+/// callback/LispBM registration is a separate step at `third_party/refloat/src/main.c:2455-2459`.
 #[cfg(all(not(test), target_arch = "arm"))]
 pub fn install_refloat_app_data_state(info: *mut ffi::LibInfo) -> bool {
     let alloc_bindings = vescpkg_rs::RealBindings;
@@ -889,9 +989,9 @@ pub fn install_refloat_app_data_state(info: *mut ffi::LibInfo) -> bool {
 
 /// Register Refloat custom config and app-data callbacks.
 ///
-/// Upstream registers these callbacks at `src/main.c:2456-2457`, after runtime
-/// thread startup at `src/main.c:2439-2449` and IMU setup at
-/// `src/main.c:2455`.
+/// Upstream registers these callbacks at `third_party/refloat/src/main.c:2456-2457`, after runtime
+/// thread startup at `third_party/refloat/src/main.c:2439-2449` and IMU setup at
+/// `third_party/refloat/src/main.c:2455`.
 #[cfg(all(not(test), target_arch = "arm"))]
 pub fn register_refloat_app_data_callbacks(info: *mut ffi::LibInfo) -> bool {
     let lifecycle = RefloatAppDataLifecycle::new(vescpkg_rs::RealBindings);
@@ -899,19 +999,79 @@ pub fn register_refloat_app_data_callbacks(info: *mut ffi::LibInfo) -> bool {
     unsafe { lifecycle.install_refloat_callbacks(info, handler) }.is_ok()
 }
 
+#[cfg(all(not(test), target_arch = "arm"))]
+unsafe extern "C" fn refloat_imu_read_callback(
+    acc: *mut f32,
+    gyro: *mut f32,
+    _mag: *mut f32,
+    dt: f32,
+) {
+    let Some(accel) = refloat_imu_vector(acc) else {
+        return;
+    };
+    let Some(gyro) = refloat_imu_vector(gyro) else {
+        return;
+    };
+    let Some(state) = (unsafe { refloat_state_from_arg() }) else {
+        return;
+    };
+    // C `imu_ref_callback` ignores mag and feeds gyro/accel/dt into
+    // `balance_filter_update` at `third_party/refloat/src/main.c:760-765`.
+    state.balance_filter.update(gyro, accel, dt);
+}
+
+#[cfg(test)]
+unsafe extern "C" fn refloat_imu_read_callback(
+    _acc: *mut f32,
+    _gyro: *mut f32,
+    _mag: *mut f32,
+    _dt: f32,
+) {
+}
+
+#[cfg(all(not(test), target_arch = "arm"))]
+fn refloat_imu_vector(values: *mut f32) -> Option<[f32; 3]> {
+    if values.is_null() {
+        return None;
+    }
+    let values = unsafe { core::slice::from_raw_parts(values as *const f32, 3) };
+    Some([*values.get(0)?, *values.get(1)?, *values.get(2)?])
+}
+
+#[cfg(any(test, all(not(test), target_arch = "arm")))]
+fn register_refloat_imu_callback_with<B: ImuReadCallbackBindings>(bindings: &B) -> bool {
+    unsafe {
+        // C registers `imu_ref_callback` between thread startup and app-data
+        // registration at `third_party/refloat/src/main.c:2455-2457`.
+        bindings.set_imu_read_callback(refloat_imu_read_callback);
+    }
+    true
+}
+
+/// Register Refloat's IMU read callback.
+///
+/// Upstream registers `imu_ref_callback` at `third_party/refloat/src/main.c:2455`; that callback
+/// maintains the balance filter used by `imu_update` at `third_party/refloat/src/imu.c:35-41`.
+#[cfg(all(not(test), target_arch = "arm"))]
+pub fn register_refloat_imu_callback(_info: *mut ffi::LibInfo) -> bool {
+    register_refloat_imu_callback_with(&vescpkg_rs::RealBindings)
+}
+
 /// Allocate startup state and register Refloat app-data callbacks.
 ///
 /// Kept as the old combined entrypoint for callers that do not need the
-/// upstream split between `src/main.c:2431-2432` and `src/main.c:2455-2459`.
+/// upstream split between `third_party/refloat/src/main.c:2431-2432` and `third_party/refloat/src/main.c:2455-2459`.
 #[cfg(all(not(test), target_arch = "arm"))]
 pub fn install_refloat_app_data(info: *mut ffi::LibInfo) -> bool {
-    install_refloat_app_data_state(info) && register_refloat_app_data_callbacks(info)
+    install_refloat_app_data_state(info)
+        && register_refloat_imu_callback(info)
+        && register_refloat_app_data_callbacks(info)
 }
 
 /// Register Refloat custom-config callbacks with VESC Tool.
 ///
 /// Upstream registers `get_cfg`, `set_cfg`, and `get_cfg_xml` at
-/// `src/main.c:2456`; those callbacks are implemented at `src/main.c:2334-2396`.
+/// `third_party/refloat/src/main.c:2456`; those callbacks are implemented at `third_party/refloat/src/main.c:2334-2396`.
 /// The Rust port does not yet generate or serialize upstream `RefloatConfig`, so
 /// these callbacks report no config payload instead of pretending to be the full
 /// confparser path.
@@ -922,7 +1082,7 @@ pub fn register_refloat_custom_config<B: CustomConfigBindings>(bindings: &B) -> 
 }
 
 unsafe extern "C" fn refloat_get_cfg(buffer: *mut u8, is_default: bool) -> c_int {
-    // C map: Refloat v1.2.1 `get_cfg` starts at `src/main.c:2335`.
+    // C map: Refloat v1.2.1 `get_cfg` starts at `third_party/refloat/src/main.c:2335`.
     let state = unsafe { runtime_refloat_config_state() };
     refloat_get_cfg_with_state(buffer, is_default, state)
 }
@@ -933,9 +1093,9 @@ fn refloat_get_cfg_with_state(
     state: Option<&RefloatAppDataState>,
 ) -> c_int {
     if !is_default {
-        // Upstream serializes `d->float_conf` at `src/main.c:2347-2350`;
+        // Upstream serializes `d->float_conf` at `third_party/refloat/src/main.c:2347-2350`;
         // `data_init` first populates it from EEPROM or generated defaults at
-        // `src/main.c:1160-1185`. The Rust state stores the serialized image
+        // `third_party/refloat/src/main.c:1160-1185`. The Rust state stores the serialized image
         // until the typed `RefloatConfig` parser/deserializer is ported.
         let Some(state) = state else {
             return 0;
@@ -943,7 +1103,7 @@ fn refloat_get_cfg_with_state(
         return copy_refloat_config(buffer, state.serialized_config());
     }
 
-    // Upstream default path is `src/main.c:2339-2350`: allocate config, call
+    // Upstream default path is `third_party/refloat/src/main.c:2339-2350`: allocate config, call
     // `confparser_set_defaults_refloatconfig`, then
     // `confparser_serialize_refloatconfig`.
     copy_refloat_config(buffer, &REFLOAT_DEFAULT_CONFIG)
@@ -970,7 +1130,7 @@ unsafe fn runtime_refloat_config_state() -> Option<&'static RefloatAppDataState>
 }
 
 unsafe extern "C" fn refloat_set_cfg(buffer: *mut u8) -> bool {
-    // C map: Refloat v1.2.1 `set_cfg` starts at `src/main.c:2360`.
+    // C map: Refloat v1.2.1 `set_cfg` starts at `third_party/refloat/src/main.c:2360`.
     let state = unsafe { runtime_refloat_config_state_mut() };
     refloat_set_cfg_with_state(buffer, state)
 }
@@ -986,7 +1146,7 @@ fn refloat_set_cfg_with_state(buffer: *mut u8, state: Option<&mut RefloatAppData
         core::slice::from_raw_parts(buffer.as_ptr().cast_const(), REFLOAT_DEFAULT_CONFIG.len())
     };
     // Upstream `set_cfg` gates special modes, deserializes, persists, and
-    // reconfigures at `src/main.c:2360-2386`; generated
+    // reconfigures at `third_party/refloat/src/main.c:2360-2386`; generated
     // `conf/confparser.c:187-190` rejects bad signatures before field reads.
     // This byte-image step is intentionally only the deserialization/storage
     // part; EEPROM write and `configure(d)` remain separate parity work.
@@ -1004,13 +1164,13 @@ unsafe fn runtime_refloat_config_state_mut() -> Option<&'static mut RefloatAppDa
 }
 
 unsafe extern "C" fn refloat_get_cfg_xml(buffer: *mut *mut u8) -> c_int {
-    // C map: Refloat v1.2.1 `get_cfg_xml` starts at `src/main.c:2389`.
+    // C map: Refloat v1.2.1 `get_cfg_xml` starts at `third_party/refloat/src/main.c:2389`.
     let xml = runtime_refloat_config_xml();
     if let Some(buffer) = unsafe { buffer.as_mut() } {
         *buffer = xml.cast_mut();
     }
     // Upstream returns `data_refloatconfig_ + PROG_ADDR` and
-    // `DATA_REFLOATCONFIG__SIZE` at `src/main.c:2388-2396`.
+    // `DATA_REFLOATCONFIG__SIZE` at `third_party/refloat/src/main.c:2388-2396`.
     REFLOAT_CONFIG_XML.len() as c_int
 }
 
@@ -1024,61 +1184,145 @@ fn runtime_refloat_config_xml() -> *const u8 {
     REFLOAT_CONFIG_XML.as_ptr()
 }
 
-/// Refloat motor-control request state.
+/// Refloat-owned balance filter state.
 ///
-/// Upstream `MotorControl` stores `current_requested` and `requested_current`
-/// at `src/motor_control.h:27-30`.
+/// C map: `BalanceFilterData` is initialized from firmware quaternions at
+/// `third_party/refloat/src/balance_filter.c:53-61`, configured at `third_party/refloat/src/balance_filter.c:64-70`,
+/// updated from `imu_ref_callback` at `third_party/refloat/src/main.c:760-765`, and read by
+/// `imu_update` at `third_party/refloat/src/imu.c:35-41`.
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct RefloatMotorControl {
-    disabled: bool,
-    requested_current: Option<RefloatMotorCommand>,
+struct RefloatBalanceFilter {
+    q0: f32,
+    q1: f32,
+    q2: f32,
+    q3: f32,
+    acc_mag: f32,
+    kp_pitch: f32,
+    kp_roll: f32,
+    kp_yaw: f32,
 }
 
-impl RefloatMotorControl {
-    const fn new() -> Self {
+impl RefloatBalanceFilter {
+    const fn source_startup() -> Self {
         Self {
-            disabled: false,
-            requested_current: None,
+            q0: 1.0,
+            q1: 0.0,
+            q2: 0.0,
+            q3: 0.0,
+            acc_mag: 1.0,
+            kp_pitch: 2.0,
+            kp_roll: 1.4,
+            kp_yaw: 1.7,
         }
     }
 
-    fn request_current(&mut self, current: MotorCurrent) {
-        // Upstream `motor_control_request_current` sets the request flag and
-        // stores the requested current at `src/motor_control.c:44-47`.
-        self.requested_current = Some(RefloatMotorCommand::new(current));
+    #[cfg(any(test, target_arch = "arm"))]
+    fn from_quaternions([q0, q1, q2, q3]: [f32; 4]) -> Self {
+        Self {
+            q0,
+            q1,
+            q2,
+            q3,
+            ..Self::source_startup()
+        }
     }
 
-    fn apply_requested_current<B: MotorControlBindings>(
-        &mut self,
-        motor: &MotorControlApi<B>,
-    ) -> bool {
-        let Some(command) = self.requested_current else {
-            return false;
-        };
-
-        motor.timeout_reset();
-        motor.set_current_off_delay(0.05);
-        motor.set_current(command.requested_current());
-        self.requested_current = None;
-        true
+    #[cfg(all(not(test), target_arch = "arm"))]
+    unsafe fn from_firmware_quaternions() -> Self {
+        let mut quaternions = [0.0; 4];
+        unsafe { ffi::raw::vesc_imu_get_quaternions(quaternions.as_mut_ptr()) };
+        Self::from_quaternions(quaternions)
     }
 
-    fn apply<B: MotorControlBindings>(
-        &mut self,
-        motor: &MotorControlApi<B>,
-        run_state: RefloatRunState,
-    ) -> bool {
-        if matches!(run_state, RefloatRunState::Disabled) {
-            if !self.disabled {
-                motor.set_current(MotorCurrent::new(Current::from_amps(0.0)));
-                self.disabled = true;
-                return true;
-            }
-            return false;
+    fn configure(&mut self, mahony_kp: f32, mahony_kp_roll: f32) {
+        // Refloat copies `mahony_kp`/`mahony_kp_roll` into the filter and
+        // averages yaw KP at `third_party/refloat/src/balance_filter.c:64-70`.
+        self.kp_pitch = mahony_kp;
+        self.kp_roll = mahony_kp_roll;
+        self.kp_yaw = (mahony_kp + mahony_kp_roll) / 2.0;
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    fn update(&mut self, gyro: [f32; 3], accel: [f32; 3], dt: f32) {
+        // Refloat's callback feeds gyro first, accel second at
+        // `third_party/refloat/src/main.c:760-765`; the Mahony update itself is
+        // `third_party/refloat/src/balance_filter.c:73-134`.
+        let [mut gx, mut gy, mut gz] = gyro;
+        let [mut ax, mut ay, mut az] = accel;
+        let accel_norm = libm::sqrtf(ax * ax + ay * ay + az * az);
+
+        if accel_norm > 0.01 {
+            let accel_confidence = self.accel_confidence(accel_norm);
+            let two_kp_pitch = 2.0 * self.kp_pitch * accel_confidence;
+            let two_kp_roll = 2.0 * self.kp_roll * accel_confidence;
+            let two_kp_yaw = 2.0 * self.kp_yaw * accel_confidence;
+            let recip_norm = Self::inv_sqrt(ax * ax + ay * ay + az * az);
+            ax *= recip_norm;
+            ay *= recip_norm;
+            az *= recip_norm;
+
+            let halfvx = self.q1 * self.q3 - self.q0 * self.q2;
+            let halfvy = self.q0 * self.q1 + self.q2 * self.q3;
+            let halfvz = self.q0 * self.q0 - 0.5 + self.q3 * self.q3;
+            let halfex = ay * halfvz - az * halfvy;
+            let halfey = az * halfvx - ax * halfvz;
+            let halfez = ax * halfvy - ay * halfvx;
+
+            gx += two_kp_roll * halfex;
+            gy += two_kp_pitch * halfey;
+            gz += two_kp_yaw * halfez;
         }
 
-        self.disabled = false;
-        self.apply_requested_current(motor)
+        gx *= 0.5 * dt;
+        gy *= 0.5 * dt;
+        gz *= 0.5 * dt;
+        let qa = self.q0;
+        let qb = self.q1;
+        let qc = self.q2;
+        self.q0 += -qb * gx - qc * gy - self.q3 * gz;
+        self.q1 += qa * gx + qc * gz - self.q3 * gy;
+        self.q2 += qa * gy - qb * gz + self.q3 * gx;
+        self.q3 += qa * gz + qb * gy - qc * gx;
+
+        let recip_norm = Self::inv_sqrt(
+            self.q0 * self.q0 + self.q1 * self.q1 + self.q2 * self.q2 + self.q3 * self.q3,
+        );
+        self.q0 *= recip_norm;
+        self.q1 *= recip_norm;
+        self.q2 *= recip_norm;
+        self.q3 *= recip_norm;
+    }
+
+    fn balance_pitch(&self) -> RefloatRealtimeBalancePitch {
+        RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(self.pitch_radians()))
+    }
+
+    fn pitch_radians(&self) -> f32 {
+        // Refloat computes pitch as `asin(-2 * (q1*q3 - q0*q2))`, clamped to
+        // +/- pi/2, at `third_party/refloat/src/balance_filter.c:145-154`.
+        let sin = -2.0 * (self.q1 * self.q3 - self.q0 * self.q2);
+        if sin < -1.0 {
+            -core::f32::consts::FRAC_PI_2
+        } else if sin > 1.0 {
+            core::f32::consts::FRAC_PI_2
+        } else {
+            libm::asinf(sin)
+        }
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    fn accel_confidence(&mut self, new_acc_mag: f32) -> f32 {
+        // Refloat filters accelerometer magnitude and clamps confidence at
+        // zero in `third_party/refloat/src/balance_filter.c:42-50`.
+        self.acc_mag = self.acc_mag * 0.9 + new_acc_mag * 0.1;
+        let confidence = 1.0 - 0.02 * libm::sqrtf((self.acc_mag - 1.0).abs());
+        if confidence > 0.0 { confidence } else { 0.0 }
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    fn inv_sqrt(value: f32) -> f32 {
+        // Refloat uses `1.0 / sqrtf(x)` at `third_party/refloat/src/balance_filter.c:38-40`.
+        1.0 / libm::sqrtf(value)
     }
 }
 
@@ -1087,8 +1331,10 @@ impl RefloatMotorControl {
 pub struct RefloatAppDataState {
     all_data_payloads: RefloatAllDataPayloads,
     serialized_config: [u8; 276],
+    handtest_config_backup: Option<[u8; 276]>,
     runtime_threads: RefloatRuntimeThreads,
     motor_control: RefloatMotorControl,
+    balance_filter: RefloatBalanceFilter,
     traction_control: bool,
     pid_integral_current: f32,
     pid_kp_brake_scale: f32,
@@ -1123,14 +1369,16 @@ impl RefloatAppDataState {
         Self {
             all_data_payloads,
             // Upstream `data_init` reads EEPROM and falls back to generated
-            // defaults at `src/main.c:1160-1185`; full EEPROM parity remains a
+            // defaults at `third_party/refloat/src/main.c:1160-1185`; full EEPROM parity remains a
             // later source-backed slice.
             serialized_config: REFLOAT_DEFAULT_CONFIG,
+            handtest_config_backup: None,
             // Upstream stores these in `Data` after spawning at
-            // `src/main.c:2439-2445`; this Rust state only tracks the handles
+            // `third_party/refloat/src/main.c:2439-2445`; this Rust state only tracks the handles
             // until the full `Data` layout is ported.
             runtime_threads: RefloatRuntimeThreads::empty(),
             motor_control: RefloatMotorControl::new(),
+            balance_filter: RefloatBalanceFilter::source_startup(),
             traction_control: false,
             pid_integral_current: 0.0,
             pid_kp_brake_scale: 1.0,
@@ -1162,10 +1410,10 @@ impl RefloatAppDataState {
 
     /// Initialize firmware-allocated startup state without a full stack copy.
     ///
-    /// C map: upstream allocates `Data` at `src/main.c:2419`, zeroes it at
-    /// `src/main.c:2421`, and initializes fields through that heap pointer in
-    /// `data_init` at `src/main.c:1160-1205` before storing `info->arg` at
-    /// `src/main.c:2432`. This mirrors that pointer-first shape for the Rust
+    /// C map: upstream allocates `Data` at `third_party/refloat/src/main.c:2419`, zeroes it at
+    /// `third_party/refloat/src/main.c:2421`, and initializes fields through that heap pointer in
+    /// `data_init` at `third_party/refloat/src/main.c:1160-1205` before storing `info->arg` at
+    /// `third_party/refloat/src/main.c:2432`. This mirrors that pointer-first shape for the Rust
     /// state allocation path.
     ///
     /// # Safety
@@ -1179,10 +1427,16 @@ impl RefloatAppDataState {
                 .write(RefloatAllDataPayloads::source_startup());
             // C source defaults: `confparser_set_defaults_refloatconfig` and
             // `confparser_serialize_refloatconfig` feed startup config at
-            // `src/main.c:1160-1185`.
+            // `third_party/refloat/src/main.c:1160-1185`.
             core::ptr::addr_of_mut!((*state).serialized_config).write(REFLOAT_DEFAULT_CONFIG);
             core::ptr::addr_of_mut!((*state).runtime_threads).write(RefloatRuntimeThreads::empty());
             core::ptr::addr_of_mut!((*state).motor_control).write(RefloatMotorControl::new());
+            #[cfg(all(not(test), target_arch = "arm"))]
+            core::ptr::addr_of_mut!((*state).balance_filter)
+                .write(RefloatBalanceFilter::from_firmware_quaternions());
+            #[cfg(any(test, not(target_arch = "arm")))]
+            core::ptr::addr_of_mut!((*state).balance_filter)
+                .write(RefloatBalanceFilter::source_startup());
             core::ptr::addr_of_mut!((*state).traction_control).write(false);
             core::ptr::addr_of_mut!((*state).pid_integral_current).write(0.0);
             core::ptr::addr_of_mut!((*state).pid_kp_brake_scale).write(1.0);
@@ -1247,8 +1501,26 @@ impl RefloatAppDataState {
         &mut self,
         motor: &MotorControlApi<B>,
         run_state: RefloatRunState,
+        system_time_ticks: u32,
     ) -> bool {
-        self.motor_control.apply(motor, run_state)
+        let base = self.all_data_payloads.base();
+        // Upstream `motor_control_configure` copies brake and parking config at
+        // `third_party/refloat/src/motor_control.c:36-40`; this Rust state keeps
+        // the serialized config as source of truth until full `Data` parity.
+        self.motor_control.apply(
+            motor,
+            run_state,
+            base.motor()
+                .electrical_speed()
+                .rpm()
+                .as_revolutions_per_minute()
+                .abs(),
+            system_time_ticks,
+            self.config_byte(REFLOAT_CONFIG_PARKING_BRAKE_MODE_OFFSET),
+            MotorCurrent::new(Current::from_amps(
+                self.config_scaled_i16(REFLOAT_CONFIG_BRAKE_CURRENT_OFFSET, 100.0),
+            )),
+        )
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -1283,6 +1555,20 @@ impl RefloatAppDataState {
         true
     }
 
+    // HANDTEST writes mirror `third_party/refloat/src/main.c:1431-1446`; keep the serialized
+    // u16 store checked so corrupt offsets cannot panic on target.
+    fn set_config_be_u16(config: &mut [u8; 276], offset: usize, value: u16) -> bool {
+        let Some(bytes) = offset
+            .checked_add(2)
+            .and_then(|end| config.get_mut(offset..end))
+            .and_then(|bytes| <&mut [u8; 2]>::try_from(bytes).ok())
+        else {
+            return false;
+        };
+        *bytes = value.to_be_bytes();
+        true
+    }
+
     fn store_serialized_config(&mut self, config: &[u8]) -> bool {
         let Ok(config) = <&[u8; 276]>::try_from(config) else {
             return false;
@@ -1293,26 +1579,36 @@ impl RefloatAppDataState {
 
         let ride_state = self.all_data_payloads.base().status().ride_state();
         // Upstream refuses VESC Tool writes outside `MODE_NORMAL` before
-        // deserializing/storing at `/Users/mjc/projects/refloat/src/main.c:2362-2368`.
+        // deserializing/storing at `third_party/refloat/src/main.c:2362-2368`.
         if !matches!(ride_state.mode(), RefloatMode::Normal) {
             return false;
         }
 
         let mut config = *config;
         // Upstream clears `d->float_conf.disabled` while running at
-        // `/Users/mjc/projects/refloat/src/main.c:2369-2372`; `disabled` is
-        // serialized from `/Users/mjc/projects/refloat/src/conf/settings.xml:3890-3902`
+        // `third_party/refloat/src/main.c:2369-2372`; `disabled` is
+        // serialized from `third_party/refloat/src/conf/settings.xml:3890-3902`
         // at byte 243.
         if matches!(ride_state.run_state(), RefloatRunState::Running) {
             Self::set_config_byte(&mut config, REFLOAT_CONFIG_DISABLED_OFFSET, 0);
         }
         // Upstream clears `d->float_conf.meta.is_default` for every write at
-        // `/Users/mjc/projects/refloat/src/main.c:2375-2377`; `meta.is_default`
-        // is serialized from `/Users/mjc/projects/refloat/src/conf/settings.xml:3903-3914`
+        // `third_party/refloat/src/main.c:2375-2377`; `meta.is_default`
+        // is serialized from `third_party/refloat/src/conf/settings.xml:3903-3914`
         // at byte 275.
         Self::set_config_byte(&mut config, REFLOAT_CONFIG_META_IS_DEFAULT_OFFSET, 0);
         self.serialized_config = config;
+        // After a successful write, C calls `configure(d)` at
+        // `third_party/refloat/src/main.c:2380-2382`, which refreshes the balance filter KP at
+        // `third_party/refloat/src/main.c:158-160`.
+        self.refresh_balance_filter_config();
         true
+    }
+
+    fn refresh_balance_filter_config(&mut self) {
+        let mahony_kp = self.config_scaled_i16(REFLOAT_CONFIG_MAHONY_KP_OFFSET, 10000.0);
+        let mahony_kp_roll = self.config_scaled_i16(REFLOAT_CONFIG_MAHONY_KP_ROLL_OFFSET, 10000.0);
+        self.balance_filter.configure(mahony_kp, mahony_kp_roll);
     }
 
     fn refresh_config_runtime_state(&mut self) {
@@ -1323,9 +1619,9 @@ impl RefloatAppDataState {
         let disabled = self.config_byte(REFLOAT_CONFIG_DISABLED_OFFSET) != 0;
         let run_state = match (ride_state.run_state(), disabled) {
             // Refloat applies `float_conf.disabled` from `configure(d)` at
-            // `/Users/mjc/projects/refloat/src/main.c:184-190`; `state_set_disabled`
+            // `third_party/refloat/src/main.c:184-190`; `state_set_disabled`
             // keeps RUNNING alive and toggles DISABLED/STARTUP at
-            // `/Users/mjc/projects/refloat/src/state.c:41-47`.
+            // `third_party/refloat/src/state.c:41-47`.
             (RefloatRunState::Running, true) => RefloatRunState::Running,
             (RefloatRunState::Disabled, false) => RefloatRunState::Startup,
             (_, true) => RefloatRunState::Disabled,
@@ -1361,8 +1657,8 @@ impl RefloatAppDataState {
     pub(crate) fn configured_loop_time_us(&self) -> u32 {
         let hertz = self.config_be_u16(REFLOAT_CONFIG_HERTZ_OFFSET);
         // Upstream `configure(d)` stores `1e6 / d->float_conf.hertz` at
-        // `/Users/mjc/projects/refloat/src/main.c:190-191`, then `refloat_thd`
-        // sleeps that value at `/Users/mjc/projects/refloat/src/main.c:1080`.
+        // `third_party/refloat/src/main.c:190-191`, then `refloat_thd`
+        // sleeps that value at `third_party/refloat/src/main.c:1080`.
         // Target Rust must not panic if config bytes are corrupt, so keep the
         // startup default instead of dividing by zero.
         1_000_000 / u32::from(hertz.max(1))
@@ -1394,9 +1690,9 @@ impl RefloatAppDataState {
     /// Handle one app-data packet in the firmware callback context.
     ///
     /// Upstream `on_command_received` dispatches commands at
-    /// `/Users/mjc/projects/refloat/src/main.c:2143-2225`; the main
+    /// `third_party/refloat/src/main.c:2143-2225`; the main
     /// `refloat_thd` owns `time_update`, `imu_update`, `motor_data_update`, and
-    /// control-loop transitions at `/Users/mjc/projects/refloat/src/main.c:772-1080`.
+    /// control-loop transitions at `third_party/refloat/src/main.c:772-1080`.
     pub fn handle_packet_with_runtime<
         B: AppDataBindings,
         M: MotorTelemetryBindings,
@@ -1417,12 +1713,12 @@ impl RefloatAppDataState {
     /// Refresh the source-backed runtime slices that Refloat updates near the
     /// top of `refloat_thd`.
     ///
-    /// C map: Refloat v1.2.1 `imu_ref_callback` starts at `src/main.c:760`.
+    /// C map: Refloat v1.2.1 `imu_ref_callback` starts at `third_party/refloat/src/main.c:760`.
     ///
     /// Upstream applies `configure(d)` before runtime work at
-    /// `src/main.c:184-191`, updates IMU at `src/main.c:775`, motor data at
-    /// `src/main.c:796`, and performs the `STATE_STARTUP` -> `STATE_READY`
-    /// gate at `src/main.c:833-838`.
+    /// `third_party/refloat/src/main.c:184-191`, updates IMU at `third_party/refloat/src/main.c:775`, motor data at
+    /// `third_party/refloat/src/main.c:796`, and performs the `STATE_STARTUP` -> `STATE_READY`
+    /// gate at `third_party/refloat/src/main.c:833-838`.
     pub(crate) fn refresh_runtime_state<M: MotorTelemetryBindings, I: ImuBindings>(
         &mut self,
         telemetry: &MotorTelemetryApi<M>,
@@ -1434,25 +1730,26 @@ impl RefloatAppDataState {
         self.refresh_imu_runtime_state(imu, system_time_ticks);
     }
 
-    /// Refresh the target boot/runtime snapshot without running experimental control logic.
+    /// Refresh the runtime slices in the target main-loop order.
     ///
-    /// C map: this keeps the pre-control ARM shape while VESCR-213's richer
-    /// state machine is being re-sliced into the C order from
-    /// `/Users/mjc/projects/refloat/src/main.c:772-1080`. It mirrors the older
-    /// Rust runtime path that booted on hardware: config disabled gate,
-    /// `motor_data_update` fields from `/Users/mjc/projects/refloat/src/motor_data.c:108-145`,
-    /// and the `STATE_STARTUP` -> `STATE_READY` IMU gate from
-    /// `/Users/mjc/projects/refloat/src/main.c:833-838`.
+    /// C map: Refloat v1.2.1 `refloat_thd` updates motor data at
+    /// `third_party/refloat/src/main.c:796`, footpad ADC state at
+    /// `third_party/refloat/src/main.c:802`, then uses that state in the
+    /// later control/fault path.
     #[cfg(any(test, target_arch = "arm"))]
-    #[inline(never)]
-    pub(crate) fn refresh_boot_runtime_state<M: MotorTelemetryBindings, I: ImuBindings>(
+    #[inline(always)]
+    pub(crate) fn refresh_main_loop_runtime_state<M: MotorTelemetryBindings, I: ImuBindings>(
         &mut self,
         telemetry: &MotorTelemetryApi<M>,
         imu: &ImuApi<I>,
+        footpad_adc1: f32,
+        footpad_adc2: f32,
+        system_time_ticks: u32,
     ) {
         self.refresh_config_runtime_state();
-        self.refresh_boot_motor_runtime_state(telemetry);
-        self.refresh_boot_imu_runtime_state(imu);
+        self.refresh_motor_runtime_state(telemetry);
+        self.refresh_footpad_runtime_state(footpad_adc1, footpad_adc2);
+        self.refresh_imu_runtime_state(imu, system_time_ticks);
     }
 
     /// Handle one app-data packet after refreshing live telemetry fields.
@@ -1463,6 +1760,9 @@ impl RefloatAppDataState {
         bytes: &[u8],
     ) -> bool {
         if self.handle_charging_state_packet(bytes) {
+            return true;
+        }
+        if self.handle_handtest_packet(bytes) {
             return true;
         }
         if let [package_id, command_id, direction, current, time, sum, ..] = bytes
@@ -1532,7 +1832,7 @@ impl RefloatAppDataState {
                     telemetry.motor_temperature(),
                 ));
             // Refloat's main loop updates `d->time.now` before app-data reads it
-            // in `cmd_realtime_data` at `src/main.c:1931`.
+            // in `cmd_realtime_data` at `third_party/refloat/src/main.c:1931`.
             let system_timestamp = SystemTimestamp::new(TimestampTicks::from_ticks(
                 lifecycle.bindings().system_time_ticks(),
             ));
@@ -1567,191 +1867,6 @@ impl RefloatAppDataState {
         lifecycle.send_all_data_response(&payloads, request)
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
-    fn refresh_boot_motor_runtime_state<M: MotorTelemetryBindings>(
-        &mut self,
-        telemetry: &MotorTelemetryApi<M>,
-    ) {
-        let payloads = self.all_data_payloads;
-        let base = payloads.base();
-        let motor = base.motor();
-        // Boot-safe target path from the last known booting runtime slice:
-        // upstream `motor_data_update` reads these fields at
-        // `/Users/mjc/projects/refloat/src/motor_data.c:108-145`.
-        let previous_battery_current = motor.battery_current().current().as_amps();
-        let next_battery_current = telemetry.battery_current().current().as_amps();
-        let motor = RefloatAllDataMotorPayload::new(
-            BatteryVoltage::new(telemetry.input_voltage_filtered().voltage()),
-            telemetry.electrical_speed(),
-            telemetry.vehicle_speed(),
-            telemetry.motor_current(),
-            BatteryCurrent::new(Current::from_amps(
-                previous_battery_current + 0.01 * (next_battery_current - previous_battery_current),
-            )),
-            telemetry.duty_cycle_now(),
-            // Upstream compact all-data reads optional `VESC_IF->foc_get_id` at
-            // `/Users/mjc/projects/refloat/src/main.c:1364-1368`.
-            telemetry.foc_id_current().map_or(
-                RefloatFocIdCurrent::unavailable(),
-                RefloatFocIdCurrent::measured,
-            ),
-        );
-        let base = RefloatAllDataBasePayload::new(
-            base.balance_current(),
-            base.attitude(),
-            base.status(),
-            base.footpad(),
-            base.setpoints(),
-            base.booster_current(),
-            motor,
-        );
-        self.all_data_payloads =
-            RefloatAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4());
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    fn refresh_boot_imu_runtime_state<I: ImuBindings>(&mut self, imu: &ImuApi<I>) {
-        let payloads = self.all_data_payloads;
-        let base = payloads.base();
-        let status = base.status();
-        let ride_state = status.ride_state();
-        let resets_runtime_vars =
-            matches!(ride_state.run_state(), RefloatRunState::Startup) && imu.startup_done();
-        let run_state = match (ride_state.run_state(), imu.startup_done()) {
-            (RefloatRunState::Startup, true) => RefloatRunState::Ready,
-            (run_state, _) => run_state,
-        };
-        let flywheel_both_footpads_fault = matches!(
-            (run_state, ride_state.mode(), base.footpad().state()),
-            (
-                RefloatRunState::Running,
-                RefloatMode::Flywheel,
-                FootpadSensorState::Both
-            )
-        );
-        let reverse_stop_no_footpads_fault = matches!(
-            (
-                run_state,
-                ride_state.setpoint_adjustment(),
-                base.footpad().state()
-            ),
-            (
-                RefloatRunState::Running,
-                RefloatSetpointAdjustment::ReverseStop,
-                FootpadSensorState::None
-            )
-        );
-        let reverse_stop_pitch_fault = matches!(
-            (run_state, ride_state.setpoint_adjustment()),
-            (
-                RefloatRunState::Running,
-                RefloatSetpointAdjustment::ReverseStop
-            )
-        ) && imu.pitch().angle().as_radians().abs()
-            > 18.0_f32.to_radians();
-        let single_footpad = matches!(
-            base.footpad().state(),
-            FootpadSensorState::Left | FootpadSensorState::Right
-        );
-        let dual_switch = self.config_byte(REFLOAT_CONFIG_FAULT_IS_DUAL_SWITCH_OFFSET) != 0;
-        let can_engage = matches!(ride_state.charging(), RefloatChargingState::NotCharging)
-            && (matches!(base.footpad().state(), FootpadSensorState::Both)
-                || single_footpad && dual_switch
-                || matches!(ride_state.mode(), RefloatMode::Flywheel));
-        let darkride_can_engage_fault = matches!(
-            (run_state, ride_state.darkride()),
-            (RefloatRunState::Running, RefloatDarkRideState::Active)
-        ) && can_engage;
-        let state_stop_fault = flywheel_both_footpads_fault
-            || reverse_stop_no_footpads_fault
-            || reverse_stop_pitch_fault
-            || darkride_can_engage_fault;
-        let ready_engage = matches!(run_state, RefloatRunState::Ready)
-            && can_engage
-            && base.attitude().balance_pitch().angle().as_radians().abs()
-                < core::f32::consts::FRAC_PI_4
-            && imu.roll().angle().as_radians().abs() < core::f32::consts::FRAC_PI_4;
-        let stop_condition = if flywheel_both_footpads_fault {
-            // Upstream `check_faults(d)` stops RUNNING FLYWHEEL when both
-            // footpads are engaged at `/Users/mjc/projects/refloat/src/main.c:491-493`.
-            RefloatStopCondition::SwitchHalf
-        } else if reverse_stop_no_footpads_fault {
-            // Upstream stops reverse-stop mode on a fully open footpad at
-            // `/Users/mjc/projects/refloat/src/main.c:418-422`.
-            RefloatStopCondition::SwitchFull
-        } else if reverse_stop_pitch_fault {
-            // Upstream stops reverse-stop mode above 18 degrees pitch at
-            // `/Users/mjc/projects/refloat/src/main.c:423-426`.
-            RefloatStopCondition::ReverseStop
-        } else if darkride_can_engage_fault {
-            // Upstream darkride can be turned off by engaging foot sensors at
-            // `/Users/mjc/projects/refloat/src/main.c:387-390`.
-            RefloatStopCondition::SwitchHalf
-        } else if ready_engage {
-            RefloatStopCondition::None
-        } else {
-            ride_state.stop_condition()
-        };
-        let run_state = if state_stop_fault {
-            RefloatRunState::Ready
-        } else if ready_engage {
-            // Upstream READY engages when startup pitch/roll tolerances and
-            // `can_engage(d)` pass at `/Users/mjc/projects/refloat/src/main.c:1033-1036`.
-            RefloatRunState::Running
-        } else {
-            run_state
-        };
-        let setpoint_adjustment = if ready_engage {
-            RefloatSetpointAdjustment::Centering
-        } else {
-            ride_state.setpoint_adjustment()
-        };
-        let wheelslip = if state_stop_fault {
-            RefloatWheelSlipState::None
-        } else {
-            ride_state.wheelslip()
-        };
-        let ride_state = RefloatRideState::new(
-            run_state,
-            ride_state.mode(),
-            setpoint_adjustment,
-            stop_condition,
-        )
-        .with_charging(ride_state.charging())
-        .with_wheelslip(wheelslip)
-        .with_darkride(ride_state.darkride());
-        let (balance_current, setpoints) = if resets_runtime_vars {
-            // Upstream `STATE_STARTUP` calls `reset_runtime_vars(d)` before
-            // `STATE_READY` at `/Users/mjc/projects/refloat/src/main.c:833-837`.
-            let setpoint = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(
-                base.attitude().balance_pitch().angle().as_radians() * 180.0
-                    / core::f32::consts::PI,
-            ));
-            (
-                RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
-                RefloatRealtimeRuntimeSetpoints::new(
-                    setpoint, setpoint, setpoint, setpoint, setpoint, setpoint,
-                ),
-            )
-        } else {
-            (base.balance_current(), base.setpoints())
-        };
-        if matches!(run_state, RefloatRunState::Running) {
-            self.request_motor_current(balance_current.current());
-        }
-        let base = RefloatAllDataBasePayload::new(
-            balance_current,
-            RefloatAllDataAttitude::new(base.attitude().balance_pitch(), imu.roll(), imu.pitch()),
-            RefloatAllDataStatus::new(ride_state, status.beep_reason()),
-            base.footpad(),
-            setpoints,
-            base.booster_current(),
-            base.motor(),
-        );
-        self.all_data_payloads =
-            RefloatAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4());
-    }
-
     fn refresh_motor_runtime_state<M: MotorTelemetryBindings>(
         &mut self,
         telemetry: &MotorTelemetryApi<M>,
@@ -1760,8 +1875,8 @@ impl RefloatAppDataState {
         let base = payloads.base();
         let motor = base.motor();
         // Refloat v1.2.1 updates motor fields in `motor_data_update` at
-        // `src/motor_data.c:108-145`. Battery current uses the same first-order
-        // smoothing expression from `src/motor_data.c:140`; this app-data
+        // `third_party/refloat/src/motor_data.c:108-145`. Battery current uses the same first-order
+        // smoothing expression from `third_party/refloat/src/motor_data.c:140`; this app-data
         // refresh is still a runtime proxy until the real source main loop runs.
         let previous_battery_current = motor.battery_current().current().as_amps();
         let next_battery_current = telemetry.battery_current().current().as_amps();
@@ -1772,7 +1887,7 @@ impl RefloatAppDataState {
         let current_acceleration = motor_erpm - self.motor_last_erpm;
         self.motor_last_erpm = motor_erpm;
         // Upstream averages acceleration over `ACCEL_ARRAY_SIZE == 40` samples
-        // in `src/motor_data.c:128-133`.
+        // in `third_party/refloat/src/motor_data.c:128-133`.
         let accel_idx = self.motor_accel_idx.min(self.motor_accel_history.len() - 1);
         let Some(previous_acceleration) = self.motor_accel_history.get(accel_idx).copied() else {
             return;
@@ -1793,7 +1908,7 @@ impl RefloatAppDataState {
             )),
             telemetry.duty_cycle_now(),
             // Upstream compact all-data reads optional `VESC_IF->foc_get_id` at
-            // `src/main.c:1364-1368` and writes 222 when the slot is absent.
+            // `third_party/refloat/src/main.c:1364-1368` and writes 222 when the slot is absent.
             telemetry.foc_id_current().map_or(
                 RefloatFocIdCurrent::unavailable(),
                 RefloatFocIdCurrent::measured,
@@ -1807,6 +1922,49 @@ impl RefloatAppDataState {
             base.setpoints(),
             base.booster_current(),
             motor,
+        );
+        self.all_data_payloads =
+            RefloatAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4());
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    #[inline(always)]
+    pub(crate) fn refresh_footpad_runtime_state(&mut self, adc1: f32, adc2: f32) {
+        let adc2 = if adc2 < 0.0 { 0.0 } else { adc2 };
+        let fault_adc1 = f32::from(self.config_be_u16(REFLOAT_CONFIG_FAULT_ADC1_OFFSET)) / 1000.0;
+        let fault_adc2 = f32::from(self.config_be_u16(REFLOAT_CONFIG_FAULT_ADC2_OFFSET)) / 1000.0;
+        // C map: Refloat v1.2.1 `footpad_sensor_update` decodes the switch
+        // state from raw ADC volts at `third_party/refloat/src/footpad_sensor.c:28-61`.
+        let mut state = FootpadSensorState::None;
+        if fault_adc1 == 0.0 && fault_adc2 == 0.0 {
+            state = FootpadSensorState::Both;
+        } else if fault_adc2 == 0.0 {
+            if adc1 > fault_adc1 {
+                state = FootpadSensorState::Both;
+            }
+        } else if fault_adc1 == 0.0 {
+            if adc2 > fault_adc2 {
+                state = FootpadSensorState::Both;
+            }
+        } else if adc1 > fault_adc1 {
+            state = if adc2 > fault_adc2 {
+                FootpadSensorState::Both
+            } else {
+                FootpadSensorState::Left
+            };
+        } else if adc2 > fault_adc2 {
+            state = FootpadSensorState::Right;
+        }
+        let payloads = self.all_data_payloads;
+        let base = payloads.base();
+        let base = RefloatAllDataBasePayload::new(
+            base.balance_current(),
+            base.attitude(),
+            base.status(),
+            crate::domain::FootpadSensorSample::from_adc_volts(adc1, adc2, state),
+            base.setpoints(),
+            base.booster_current(),
+            base.motor(),
         );
         self.all_data_payloads =
             RefloatAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4());
@@ -1881,6 +2039,17 @@ impl RefloatAppDataState {
             .rpm()
             .as_revolutions_per_minute();
         let pitch = imu.pitch().angle().as_radians();
+        // C updates `imu.balance_pitch` from the Refloat-owned balance filter
+        // before control at `third_party/refloat/src/main.c:760-775`, `third_party/refloat/src/imu.c:35-41`, and
+        // `third_party/refloat/src/balance_filter.c:145-154`; FLYWHEEL then overrides it with raw
+        // pitch at `third_party/refloat/src/imu.c:56-58`.
+        let balance_pitch = if matches!(ride_state.mode(), RefloatMode::Flywheel) {
+            RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(pitch))
+        } else {
+            self.balance_filter.balance_pitch()
+        };
+        let balance_pitch_radians = balance_pitch.angle().as_radians();
+        let balance_pitch_degrees = balance_pitch_radians * 180.0 / core::f32::consts::PI;
         let quickstop_fault = matches!(
             (run_state, base.footpad().state(), ride_state.mode()),
             (
@@ -1988,19 +2157,6 @@ impl RefloatAppDataState {
                     let roll = imu.roll().angle().as_radians().abs();
                     roll > 100.0_f32.to_radians() && roll < 135.0_f32.to_radians()
                 };
-        let state_stop_fault = flywheel_both_footpads_fault
-            || reverse_stop_no_footpads_fault
-            || reverse_stop_pitch_fault
-            || reverse_stop_timer_fault
-            || reverse_stop_total_erpm_fault
-            || full_switch_fault
-            || quickstop_fault
-            || half_switch_fault
-            || darkride_high_erpm_fault
-            || darkride_can_engage_fault
-            || roll_fault
-            || pitch_fault
-            || darkride_roll_fault;
         let startup_pitch_tolerance =
             self.config_scaled_i16(REFLOAT_CONFIG_STARTUP_PITCH_TOLERANCE_OFFSET, 100.0);
         let startup_roll_tolerance =
@@ -2008,13 +2164,12 @@ impl RefloatAppDataState {
         let ready_engage = matches!(run_state, RefloatRunState::Ready)
             && !ready_flywheel_stop
             && can_engage
-            && base.attitude().balance_pitch().angle().as_radians().abs()
-                < startup_pitch_tolerance.to_radians()
+            && balance_pitch_radians.abs() < startup_pitch_tolerance.to_radians()
             && imu.roll().angle().as_radians().abs() < startup_roll_tolerance.to_radians();
         let ready_darkride_engage = matches!(
             (run_state, ride_state.darkride()),
             (RefloatRunState::Ready, RefloatDarkRideState::Active)
-        ) && base.attitude().balance_pitch().angle().as_radians().abs()
+        ) && balance_pitch_radians.abs()
             < startup_pitch_tolerance.to_radians()
             && !refloat_ticks_elapsed(system_time_ticks, self.disengage_ticks, 1)
             && !matches!(
@@ -2025,8 +2180,7 @@ impl RefloatAppDataState {
             && self.config_byte(REFLOAT_CONFIG_STARTUP_PUSHSTART_ENABLED_OFFSET) != 0
             && motor_erpm.abs() > 1000.0
             && can_engage
-            && base.attitude().balance_pitch().angle().as_radians().abs()
-                < core::f32::consts::FRAC_PI_4
+            && balance_pitch_radians.abs() < core::f32::consts::FRAC_PI_4
             && imu.roll().angle().as_radians().abs() < core::f32::consts::FRAC_PI_4
             && !(self.config_byte(REFLOAT_CONFIG_FAULT_REVERSESTOP_ENABLED_OFFSET) != 0
                 && motor_erpm < 0.0);
@@ -2044,74 +2198,49 @@ impl RefloatAppDataState {
         {
             self.traction_control = false;
         }
-        let stop_condition = if flywheel_both_footpads_fault {
-            // Upstream `check_faults(d)` stops RUNNING FLYWHEEL when both
-            // footpads are engaged at `src/main.c:491-493`; `state_stop`
-            // moves to READY and stores STOP_SWITCH_HALF at `src/state.c:29-33`.
-            RefloatStopCondition::SwitchHalf
-        } else if reverse_stop_no_footpads_fault {
-            // Upstream `check_faults(d)` immediately stops reverse-stop mode
-            // when the footpad is fully open at `src/main.c:418-422`.
-            RefloatStopCondition::SwitchFull
-        } else if reverse_stop_pitch_fault {
-            // Upstream `check_faults(d)` immediately stops reverse-stop mode
-            // when `fabsf(d->imu.pitch) > 18` at `src/main.c:423-426`.
-            RefloatStopCondition::ReverseStop
-        } else if reverse_stop_timer_fault {
-            // Upstream `check_faults(d)` stops reverse-stop mode when pitch
-            // stays above 10 degrees for 1 second, or above 5 degrees for
-            // 2 seconds, at `src/main.c:440-448`.
-            RefloatStopCondition::ReverseStop
-        } else if reverse_stop_total_erpm_fault {
-            // Upstream `check_faults(d)` stops reverse-stop mode when
-            // `fabsf(reverse_total_erpm) > reverse_tolerance * 10` at
-            // `src/main.c:450-452`; configure seeds `reverse_tolerance` to
-            // 20000 at `src/main.c:213-215`.
-            RefloatStopCondition::ReverseStop
-        } else if full_switch_fault {
-            // Upstream `check_faults(d)` stops a fully open switch after
-            // `fault_delay_switch_full`, or after `fault_delay_switch_half`
-            // at low speed, at `src/main.c:397-410`.
-            RefloatStopCondition::SwitchFull
-        } else if quickstop_fault {
-            // Upstream `check_faults(d)` quick-stops no-footpad low-speed
-            // pitch-runaway cases at `src/main.c:419-423`.
-            RefloatStopCondition::QuickStop
-        } else if half_switch_fault {
-            // Upstream `check_faults(d)` stops a partially open switch below
-            // `fault_adc_half_erpm` after `fault_delay_switch_half` at
-            // `src/main.c:459-467`.
-            RefloatStopCondition::SwitchHalf
-        } else if darkride_high_erpm_fault {
-            // Upstream darkride `check_faults(d)` immediately reverse-stops
-            // above 2000 ERPM at `src/main.c:363-373`.
-            RefloatStopCondition::ReverseStop
-        } else if darkride_can_engage_fault {
-            // Upstream darkride `check_faults(d)` allows turning it off by
-            // engaging foot sensors at `src/main.c:387-390`.
-            RefloatStopCondition::SwitchHalf
-        } else if roll_fault {
-            // Upstream `check_faults(d)` stops roll above `fault_roll` after
-            // `fault_delay_roll` at `src/main.c:474-482`.
-            RefloatStopCondition::Roll
-        } else if pitch_fault {
-            // Upstream `check_faults(d)` stops pitch above `fault_pitch` after
-            // `fault_delay_pitch` when remote setpoint is below 30 degrees at
-            // `src/main.c:497-503`.
-            RefloatStopCondition::Pitch
-        } else if darkride_roll_fault {
-            // Upstream non-darkride `check_faults(d)` stops immediately when
-            // darkride faults are enabled and roll is 100-135 degrees at
-            // `src/main.c:465-470`.
-            RefloatStopCondition::Roll
-        } else if state_engage {
-            RefloatStopCondition::None
-        } else {
-            ride_state.stop_condition()
-        };
-        if state_stop_fault {
+        // Upstream `check_faults(d)` returns immediately after each stop branch
+        // in `third_party/refloat/src/main.c:357-509`; this call preserves the
+        // same Rust condition priority before `state_stop` writes READY and
+        // clears wheelslip at `third_party/refloat/src/state.c:29-33`.
+        let stop_event = refloat_first_stop_event(&[
+            (
+                RefloatStopEvent::FlywheelBothFootpads,
+                flywheel_both_footpads_fault,
+            ),
+            (
+                RefloatStopEvent::ReverseStopNoFootpads,
+                reverse_stop_no_footpads_fault,
+            ),
+            (RefloatStopEvent::ReverseStopPitch, reverse_stop_pitch_fault),
+            (RefloatStopEvent::ReverseStopTimer, reverse_stop_timer_fault),
+            (
+                RefloatStopEvent::ReverseStopTotalErpm,
+                reverse_stop_total_erpm_fault,
+            ),
+            (RefloatStopEvent::FullSwitch, full_switch_fault),
+            (RefloatStopEvent::QuickStop, quickstop_fault),
+            (RefloatStopEvent::HalfSwitch, half_switch_fault),
+            (RefloatStopEvent::DarkrideHighErpm, darkride_high_erpm_fault),
+            (
+                RefloatStopEvent::DarkrideCanEngage,
+                darkride_can_engage_fault,
+            ),
+            (RefloatStopEvent::Roll, roll_fault),
+            (RefloatStopEvent::Pitch, pitch_fault),
+            (RefloatStopEvent::DarkrideRoll, darkride_roll_fault),
+        ]);
+        let state_transition = refloat_state_transition(RefloatStateTransitionInput {
+            previous: ride_state,
+            run_state,
+            ready_flywheel_stop,
+            state_engage,
+            traction_loss_detected,
+            stop_event,
+        });
+        let state_stop_fault = state_transition.state_stopped;
+        if state_transition.state_stopped {
             self.disengage_ticks = system_time_ticks;
-        } else if state_engage {
+        } else if state_transition.state_engaged {
             self.engage_ticks = system_time_ticks;
         }
         if !full_switch_pending {
@@ -2136,55 +2265,21 @@ impl RefloatAppDataState {
         if !pitch_fault_pending {
             self.fault_angle_pitch_ticks = system_time_ticks;
         }
-        let run_state = if state_stop_fault {
-            RefloatRunState::Ready
-        } else if state_engage {
-            // Upstream READY engages when startup pitch/roll tolerances pass
-            // at `src/main.c:1033-1036`, darkride ignores roll during the
-            // first second after disengage at `src/main.c:1038-1054`, or
-            // push-start passes the 45 degree high-ERPM gate at
-            // `src/main.c:1056-1067`; `state_engage` moves to RUNNING and
-            // clears the stop condition at `src/state.c:36-39`; `engage(d)`
-            // refreshes the engage timer at `src/main.c:263-268`.
-            RefloatRunState::Running
-        } else {
-            run_state
-        };
-        let setpoint_adjustment = if state_engage {
-            RefloatSetpointAdjustment::Centering
-        } else {
-            ride_state.setpoint_adjustment()
-        };
-        let wheelslip = if state_stop_fault {
-            RefloatWheelSlipState::None
-        } else if traction_loss_detected {
-            RefloatWheelSlipState::Detected
-        } else {
-            ride_state.wheelslip()
-        };
-        let ride_state = RefloatRideState::new(
-            run_state,
-            if ready_flywheel_stop {
-                // Upstream READY stops FLYWHEEL on abort/both-footpad before
-                // start conditions at `src/main.c:957-963`; `flywheel_stop`
-                // returns to NORMAL mode at `src/main.c:1869-1873`.
-                RefloatMode::Normal
-            } else {
-                ride_state.mode()
-            },
-            setpoint_adjustment,
-            stop_condition,
-        )
-        .with_charging(ride_state.charging())
-        .with_wheelslip(wheelslip)
-        .with_darkride(ride_state.darkride());
+        // Upstream READY engages at `third_party/refloat/src/main.c:1033-1067`;
+        // `state_engage` writes RUNNING/CENTERING/STOP_NONE at
+        // `third_party/refloat/src/state.c:36-39`; READY flywheel abort returns
+        // to NORMAL before startup checks at `third_party/refloat/src/main.c:957-963`.
+        let mut ride_state = state_transition.ride_state;
         let reset_runtime_vars = resets_runtime_vars || state_engage;
-        let (mut balance_current, setpoints, mut booster_current) = if reset_runtime_vars {
+        let (mut balance_current, mut setpoints, mut booster_current) = if reset_runtime_vars {
             // Upstream `STATE_STARTUP` calls `reset_runtime_vars(d)` before
-            // `STATE_READY` at `src/main.c:833-837`, and `engage(d)` calls it
-            // before `state_engage(d)` at `src/main.c:263-270`; reset clears
-            // `balance_current` at `src/main.c:246` and seeds runtime
-            // setpoints from `d->imu.balance_pitch` at `src/main.c:249-255`.
+            // `STATE_READY` at `third_party/refloat/src/main.c:833-837`, and
+            // `engage(d)` calls it before `state_engage(d)` at
+            // `third_party/refloat/src/main.c:263-270`; reset clears
+            // `balance_current` at `third_party/refloat/src/main.c:246`,
+            // resets module setpoints at `third_party/refloat/src/main.c:239-244`,
+            // and seeds only the board setpoint from `d->imu.balance_pitch` at
+            // `third_party/refloat/src/main.c:249-252`.
             self.pid_integral_current = 0.0;
             self.softstart_pid_limit = 0.0;
             self.reverse_total_erpm = 0.0;
@@ -2192,13 +2287,19 @@ impl RefloatAppDataState {
             self.rc_current = 0.0;
             self.rc_steps = 0;
             let setpoint = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(
-                base.attitude().balance_pitch().angle().as_radians() * 180.0
-                    / core::f32::consts::PI,
+                balance_pitch_degrees,
             ));
+            let zero_setpoint =
+                RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(0.0));
             (
                 RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
                 RefloatRealtimeRuntimeSetpoints::new(
-                    setpoint, setpoint, setpoint, setpoint, setpoint, setpoint,
+                    setpoint,
+                    zero_setpoint,
+                    zero_setpoint,
+                    zero_setpoint,
+                    zero_setpoint,
+                    zero_setpoint,
                 ),
                 RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
             )
@@ -2212,155 +2313,130 @@ impl RefloatAppDataState {
         if matches!(run_state, RefloatRunState::Running) && !state_engage {
             if matches!(
                 ride_state.setpoint_adjustment(),
+                RefloatSetpointAdjustment::Centering
+            ) {
+                let board_setpoint_degrees = setpoints.board().angle().as_degrees();
+                if board_setpoint_degrees == 0.0 {
+                    // Upstream `calculate_setpoint_target(d)` exits
+                    // `SAT_CENTERING` when `setpoint_target_interpolated`
+                    // already equals target zero at
+                    // `third_party/refloat/src/main.c:517-520`.
+                    ride_state = RefloatRideState::new(
+                        ride_state.run_state(),
+                        ride_state.mode(),
+                        RefloatSetpointAdjustment::None,
+                        ride_state.stop_condition(),
+                    )
+                    .with_charging(ride_state.charging())
+                    .with_wheelslip(ride_state.wheelslip())
+                    .with_darkride(ride_state.darkride());
+                } else {
+                    let startup_step = self
+                        .config_scaled_i16(REFLOAT_CONFIG_STARTUP_SPEED_OFFSET, 100.0)
+                        / f32::from(self.config_be_u16(REFLOAT_CONFIG_HERTZ_OFFSET).max(1));
+                    let centered_board_degrees = if board_setpoint_degrees.abs() < startup_step {
+                        0.0
+                    } else {
+                        board_setpoint_degrees - startup_step * board_setpoint_degrees.signum()
+                    };
+                    // Upstream stores `startup_speed / hertz` at
+                    // `third_party/refloat/src/main.c:172`, selects it for
+                    // `SAT_CENTERING` at `third_party/refloat/src/main.c:304-310`,
+                    // applies `rate_limitf` at
+                    // `third_party/refloat/src/utils.c:25-33`, and assigns the
+                    // centered setpoint before PID at
+                    // `third_party/refloat/src/main.c:869-875`.
+                    let centered_board = RefloatRealtimeRuntimeSetpoint::new(
+                        AngleDegrees::from_degrees(centered_board_degrees),
+                    );
+                    setpoints = RefloatRealtimeRuntimeSetpoints::new(
+                        centered_board,
+                        setpoints.atr(),
+                        setpoints.brake_tilt(),
+                        setpoints.torque_tilt(),
+                        setpoints.turn_tilt(),
+                        setpoints.remote(),
+                    );
+                }
+            }
+            if matches!(
+                ride_state.setpoint_adjustment(),
                 RefloatSetpointAdjustment::ReverseStop
             ) {
                 // Upstream `calculate_setpoint_target(d)` accumulates ERPM
-                // while SAT_REVERSESTOP is active at `src/main.c:522-525`.
+                // while SAT_REVERSESTOP is active at `third_party/refloat/src/main.c:522-525`.
                 self.reverse_total_erpm += motor_erpm;
             }
-            let kp = self.config_scaled_i16(REFLOAT_CONFIG_KP_OFFSET, 10.0);
-            let kp2 = self.config_scaled_i16(REFLOAT_CONFIG_KP2_OFFSET, 10.0);
-            let ki = self.config_scaled_i16(REFLOAT_CONFIG_KI_OFFSET, 100000.0);
-            let kp_brake = self.config_scaled_i16(REFLOAT_CONFIG_KP_BRAKE_OFFSET, 100.0);
-            let kp2_brake = self.config_scaled_i16(REFLOAT_CONFIG_KP2_BRAKE_OFFSET, 100.0);
-            let ki_limit = self.config_scaled_i16(REFLOAT_CONFIG_KI_LIMIT_OFFSET, 10.0);
-            let booster_angle = self.config_scaled_i16(REFLOAT_CONFIG_BOOSTER_ANGLE_OFFSET, 100.0);
-            let booster_ramp = self.config_scaled_i16(REFLOAT_CONFIG_BOOSTER_RAMP_OFFSET, 100.0);
-            let booster_config_current =
-                self.config_scaled_i16(REFLOAT_CONFIG_BOOSTER_CURRENT_OFFSET, 100.0);
-            let brkbooster_angle =
-                self.config_scaled_i16(REFLOAT_CONFIG_BRKBOOSTER_ANGLE_OFFSET, 100.0);
-            let brkbooster_ramp =
-                self.config_scaled_i16(REFLOAT_CONFIG_BRKBOOSTER_RAMP_OFFSET, 100.0);
-            let brkbooster_config_current =
-                self.config_scaled_i16(REFLOAT_CONFIG_BRKBOOSTER_CURRENT_OFFSET, 100.0);
-            let balance_pitch_degrees = base.attitude().balance_pitch().angle().as_radians()
-                * 180.0
-                / core::f32::consts::PI;
-            let setpoint_error = setpoints.board().angle().as_degrees() - balance_pitch_degrees;
-            self.pid_integral_current += setpoint_error * ki;
-            if ki_limit > 0.0 && self.pid_integral_current.abs() > ki_limit {
-                self.pid_integral_current = ki_limit * self.pid_integral_current.signum();
-            }
-            if motor_erpm.abs() < 500.0 {
-                self.pid_kp_brake_scale = 0.01 + 0.99 * self.pid_kp_brake_scale;
-                self.pid_kp2_brake_scale = 0.01 + 0.99 * self.pid_kp2_brake_scale;
-                self.pid_kp_accel_scale = 0.01 + 0.99 * self.pid_kp_accel_scale;
-                self.pid_kp2_accel_scale = 0.01 + 0.99 * self.pid_kp2_accel_scale;
-            } else if motor_erpm > 0.0 {
-                self.pid_kp_brake_scale = 0.01 * kp_brake + 0.99 * self.pid_kp_brake_scale;
-                self.pid_kp2_brake_scale = 0.01 * kp2_brake + 0.99 * self.pid_kp2_brake_scale;
-                self.pid_kp_accel_scale = 0.01 + 0.99 * self.pid_kp_accel_scale;
-                self.pid_kp2_accel_scale = 0.01 + 0.99 * self.pid_kp2_accel_scale;
-            } else {
-                self.pid_kp_brake_scale = 0.01 + 0.99 * self.pid_kp_brake_scale;
-                self.pid_kp2_brake_scale = 0.01 + 0.99 * self.pid_kp2_brake_scale;
-                self.pid_kp_accel_scale = 0.01 * kp_brake + 0.99 * self.pid_kp_accel_scale;
-                self.pid_kp2_accel_scale = 0.01 * kp2_brake + 0.99 * self.pid_kp2_accel_scale;
-            }
-            let angle_p_current = setpoint_error
-                * kp
-                * if setpoint_error > 0.0 {
-                    self.pid_kp_accel_scale
-                } else {
-                    self.pid_kp_brake_scale
-                };
-            let roll = imu.roll().angle().as_radians();
             let [_, gyro_pitch, gyro_yaw] = imu.angular_rate().xyz();
-            let sin_roll = libm::sinf(roll);
-            let cos_roll = libm::cosf(roll);
-            let mut pitch_rate = cos_roll * cos_roll * gyro_pitch.as_degrees_per_second()
-                + sin_roll * cos_roll * gyro_yaw.as_degrees_per_second();
-            if matches!(ride_state.darkride(), RefloatDarkRideState::Active) {
-                pitch_rate = -pitch_rate;
-            }
-            let rate_p_current = -pitch_rate
-                * kp2
-                * if -pitch_rate > 0.0 {
-                    self.pid_kp2_accel_scale
-                } else {
-                    self.pid_kp2_brake_scale
-                };
-            let booster_proportional = setpoints.board().angle().as_degrees()
-                - imu.pitch().angle().as_radians() * 180.0 / core::f32::consts::PI;
-            let braking = base.motor().motor_current().current().as_amps() < 0.0;
-            let mut booster_target_current = if braking {
-                brkbooster_config_current
-            } else {
-                booster_config_current
-            };
-            let mut booster_start_angle = if braking {
-                brkbooster_angle
-            } else {
-                booster_angle
-            };
-            let booster_ramp = if braking {
-                brkbooster_ramp
-            } else {
-                booster_ramp
-            };
-            if motor_erpm.abs() > 3000.0 {
-                let speed_stiffness = ((motor_erpm.abs() - 3000.0) / 10000.0).min(1.0);
-                if braking {
-                    booster_target_current += booster_target_current * speed_stiffness;
-                } else {
-                    booster_start_angle /= 1.0 + speed_stiffness;
-                }
-            }
-            let abs_booster_proportional = booster_proportional.abs();
-            if abs_booster_proportional > booster_start_angle {
-                let past_start_angle = abs_booster_proportional - booster_start_angle;
-                if past_start_angle < booster_ramp {
-                    booster_target_current *=
-                        booster_proportional.signum() * past_start_angle / booster_ramp;
-                } else {
-                    booster_target_current *= booster_proportional.signum();
-                }
-            } else {
-                booster_target_current = 0.0;
-            }
-            let filtered_booster_current = booster_target_current * 0.01
-                + booster_current.current().current().as_amps() * 0.99;
+            // Upstream RUNNING executes this exact balance-current pipeline at
+            // `third_party/refloat/src/main.c:918-956`; the helper keeps the
+            // PID, booster, pitch-rate, soft-start, limit, darkride, and
+            // traction branches unit-testable while this method preserves the
+            // surrounding state-machine order.
+            let balance_loop = refloat_balance_loop_step(
+                RefloatBalanceLoopConfig {
+                    kp: self.config_scaled_i16(REFLOAT_CONFIG_KP_OFFSET, 10.0),
+                    kp2: self.config_scaled_i16(REFLOAT_CONFIG_KP2_OFFSET, 10.0),
+                    ki: self.config_scaled_i16(REFLOAT_CONFIG_KI_OFFSET, 100000.0),
+                    kp_brake: self.config_scaled_i16(REFLOAT_CONFIG_KP_BRAKE_OFFSET, 100.0),
+                    kp2_brake: self.config_scaled_i16(REFLOAT_CONFIG_KP2_BRAKE_OFFSET, 100.0),
+                    ki_limit: self.config_scaled_i16(REFLOAT_CONFIG_KI_LIMIT_OFFSET, 10.0),
+                    booster_angle: self
+                        .config_scaled_i16(REFLOAT_CONFIG_BOOSTER_ANGLE_OFFSET, 100.0),
+                    booster_ramp: self.config_scaled_i16(REFLOAT_CONFIG_BOOSTER_RAMP_OFFSET, 100.0),
+                    booster_current: self
+                        .config_scaled_i16(REFLOAT_CONFIG_BOOSTER_CURRENT_OFFSET, 100.0),
+                    brkbooster_angle: self
+                        .config_scaled_i16(REFLOAT_CONFIG_BRKBOOSTER_ANGLE_OFFSET, 100.0),
+                    brkbooster_ramp: self
+                        .config_scaled_i16(REFLOAT_CONFIG_BRKBOOSTER_RAMP_OFFSET, 100.0),
+                    brkbooster_current: self
+                        .config_scaled_i16(REFLOAT_CONFIG_BRKBOOSTER_CURRENT_OFFSET, 100.0),
+                    hertz: self.config_be_u16(REFLOAT_CONFIG_HERTZ_OFFSET),
+                },
+                RefloatBalanceLoopInput {
+                    setpoint_degrees: setpoints.board().angle().as_degrees(),
+                    balance_pitch_degrees,
+                    raw_pitch_degrees: imu.pitch().angle().as_radians() * 180.0
+                        / core::f32::consts::PI,
+                    roll_radians: imu.roll().angle().as_radians(),
+                    gyro_pitch_degrees_per_second: gyro_pitch.as_degrees_per_second(),
+                    gyro_yaw_degrees_per_second: gyro_yaw.as_degrees_per_second(),
+                    motor_erpm,
+                    motor_current_amps: base.motor().motor_current().current().as_amps(),
+                    motor_current_max_amps: self.motor_current_max.current().as_amps(),
+                    motor_current_min_amps: self.motor_current_min.current().as_amps(),
+                    mode: ride_state.mode(),
+                    darkride: ride_state.darkride(),
+                    traction_control: self.traction_control,
+                },
+                RefloatBalanceLoopState {
+                    balance_current_amps: balance_current.current().current().as_amps(),
+                    booster_current_amps: booster_current.current().current().as_amps(),
+                    pid_integral_current: self.pid_integral_current,
+                    pid_kp_brake_scale: self.pid_kp_brake_scale,
+                    pid_kp2_brake_scale: self.pid_kp2_brake_scale,
+                    pid_kp_accel_scale: self.pid_kp_accel_scale,
+                    pid_kp2_accel_scale: self.pid_kp2_accel_scale,
+                    softstart_pid_limit: self.softstart_pid_limit,
+                },
+            );
+            let balance_loop_state = balance_loop.state;
+            self.pid_integral_current = balance_loop_state.pid_integral_current;
+            self.pid_kp_brake_scale = balance_loop_state.pid_kp_brake_scale;
+            self.pid_kp2_brake_scale = balance_loop_state.pid_kp2_brake_scale;
+            self.pid_kp_accel_scale = balance_loop_state.pid_kp_accel_scale;
+            self.pid_kp2_accel_scale = balance_loop_state.pid_kp2_accel_scale;
+            self.softstart_pid_limit = balance_loop_state.softstart_pid_limit;
             booster_current = RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(
-                Current::from_amps(filtered_booster_current),
+                Current::from_amps(balance_loop_state.booster_current_amps),
             ));
-            let mut pitch_based_current = rate_p_current + filtered_booster_current;
-            if self.softstart_pid_limit < self.motor_current_max.current().as_amps() {
-                pitch_based_current = pitch_based_current.signum()
-                    * pitch_based_current.abs().min(self.softstart_pid_limit);
-                let hertz = self.config_be_u16(REFLOAT_CONFIG_HERTZ_OFFSET);
-                self.softstart_pid_limit += 100.0 / f32::from(hertz.max(1));
-            }
-            let current_limit = match ride_state.mode() {
-                RefloatMode::HandTest => 7.0,
-                RefloatMode::Flywheel => 40.0,
-                RefloatMode::Normal if braking => self.motor_current_min.current().as_amps(),
-                RefloatMode::Normal => self.motor_current_max.current().as_amps(),
-            };
-            let mut new_current = angle_p_current + self.pid_integral_current + pitch_based_current;
-            if new_current.abs() > current_limit {
-                new_current = new_current.signum() * current_limit;
-            }
-            if matches!(ride_state.darkride(), RefloatDarkRideState::Active) {
-                new_current = -new_current;
-            }
-            let smoothed_current = if self.traction_control {
-                0.0
-            } else {
-                balance_current.current().current().as_amps() * 0.8 + new_current * 0.2
-            };
-            // Upstream `pid_update` computes angle P at `src/pid.c:40` and
-            // angle I at `src/pid.c:41-46`; `imu_update` computes pitch rate
-            // from gyro at `src/imu.c:45-53`, `pid_update` computes rate P at
-            // `src/pid.c:71-72`, `booster_update` filters booster current at
-            // `src/booster.c:12-50`, RUNNING clamps HANDTEST/FLYWHEEL current
-            // at `src/main.c:932-942`, flips darkride current at
-            // `src/main.c:944-946`, and zeros balance current during traction
-            // loss at `src/main.c:949-954`.
             balance_current = RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(
-                Current::from_amps(smoothed_current),
+                Current::from_amps(balance_loop_state.balance_current_amps),
             ));
-            self.request_motor_current(balance_current.current());
+            self.request_motor_current(MotorCurrent::new(Current::from_amps(
+                balance_loop.requested_current_amps,
+            )));
         } else if matches!(run_state, RefloatRunState::Ready) && !state_stop_fault {
             if self.rc_steps != 0 {
                 self.rc_current =
@@ -2374,8 +2450,8 @@ impl RefloatAppDataState {
                     self.rc_current_target_deciamps /= 2;
                 }
                 // Upstream READY falls through to `do_rc_move(d)` at
-                // `src/main.c:1069`, where active RC move steps filter/request
-                // `rc_current` at `src/main.c:276-286`.
+                // `third_party/refloat/src/main.c:1069`, where active RC move steps filter/request
+                // `rc_current` at `third_party/refloat/src/main.c:276-286`.
                 self.request_motor_current(MotorCurrent::new(Current::from_amps(self.rc_current)));
             } else {
                 let remote_throttle_current_max =
@@ -2399,8 +2475,8 @@ impl RefloatAppDataState {
                     self.rc_current =
                         self.rc_current * 0.95 + remote_throttle_current_max * servo_val * 0.05;
                     // Upstream READY falls through to `do_rc_move(d)` at
-                    // `src/main.c:1069`, where the remote-throttle idle branch
-                    // filters and requests `rc_current` at `src/main.c:291-298`.
+                    // `third_party/refloat/src/main.c:1069`, where the remote-throttle idle branch
+                    // filters and requests `rc_current` at `third_party/refloat/src/main.c:291-298`.
                     self.request_motor_current(MotorCurrent::new(Current::from_amps(
                         self.rc_current,
                     )));
@@ -2409,9 +2485,12 @@ impl RefloatAppDataState {
                 }
             }
         }
+        // C publishes the just-refreshed `imu.balance_pitch` through app-data;
+        // normal mode comes from the balance filter at `third_party/refloat/src/imu.c:35-41`, while
+        // FLYWHEEL mirrors raw pitch at `third_party/refloat/src/imu.c:56-58`.
         let base = RefloatAllDataBasePayload::new(
             balance_current,
-            RefloatAllDataAttitude::new(base.attitude().balance_pitch(), imu.roll(), imu.pitch()),
+            RefloatAllDataAttitude::new(balance_pitch, imu.roll(), imu.pitch()),
             RefloatAllDataStatus::new(ride_state, status.beep_reason()),
             base.footpad(),
             setpoints,
@@ -2422,9 +2501,113 @@ impl RefloatAppDataState {
             RefloatAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4());
     }
 
+    fn handle_handtest_packet(&mut self, bytes: &[u8]) -> bool {
+        // QML sends `[101, COMMAND_HANDTEST, on]` from
+        // `ui.qml.in:764-768`; Refloat C dispatches it at
+        // `third_party/refloat/src/main.c:2226-2228` and applies READY/NORMAL/HANDTEST gates at
+        // `third_party/refloat/src/main.c:1421-1430`.
+        let [package_id, command_id, on, ..] = bytes else {
+            return false;
+        };
+        if *package_id != REFLOAT_APP_DATA_PACKAGE_ID.get()
+            || RefloatAppDataCommand::try_from_id(*command_id)
+                != Ok(RefloatAppDataCommand::HandTest)
+        {
+            return false;
+        }
+
+        let ride_state = self.all_data_payloads.base().status().ride_state();
+        if !matches!(
+            (ride_state.run_state(), ride_state.mode()),
+            (
+                RefloatRunState::Ready,
+                RefloatMode::Normal | RefloatMode::HandTest
+            )
+        ) {
+            return true;
+        }
+
+        let mode = if *on == 0 {
+            RefloatMode::Normal
+        } else {
+            RefloatMode::HandTest
+        };
+        self.set_ride_mode(mode);
+        self.apply_handtest_config(matches!(mode, RefloatMode::HandTest));
+        true
+    }
+
+    fn set_ride_mode(&mut self, mode: RefloatMode) {
+        // HANDTEST changes only `state.mode` in C at `third_party/refloat/src/main.c:1430`;
+        // preserve the rest of the packed Rust ride state while swapping mode.
+        let payloads = self.all_data_payloads;
+        let base = payloads.base();
+        let status = base.status();
+        let ride_state = status.ride_state();
+        let ride_state = RefloatRideState::new(
+            ride_state.run_state(),
+            mode,
+            ride_state.setpoint_adjustment(),
+            ride_state.stop_condition(),
+        )
+        .with_charging(ride_state.charging())
+        .with_wheelslip(ride_state.wheelslip())
+        .with_darkride(ride_state.darkride());
+        let base = RefloatAllDataBasePayload::new(
+            base.balance_current(),
+            base.attitude(),
+            RefloatAllDataStatus::new(ride_state, status.beep_reason()),
+            base.footpad(),
+            base.setpoints(),
+            base.booster_current(),
+            base.motor(),
+        );
+        self.all_data_payloads =
+            RefloatAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4());
+    }
+
+    fn apply_handtest_config(&mut self, enabled: bool) {
+        if !enabled {
+            if let Some(config) = self.handtest_config_backup.take() {
+                self.serialized_config = config;
+            }
+            return;
+        }
+
+        if self.handtest_config_backup.is_none() {
+            self.handtest_config_backup = Some(self.serialized_config);
+        }
+
+        // Refloat C applies temporary HANDTEST safety config at
+        // `third_party/refloat/src/main.c:1431-1446` and restores from EEPROM on off at
+        // `third_party/refloat/src/main.c:1447-1449`.
+        let mut config = self.serialized_config;
+        let writes_ok = [
+            (REFLOAT_CONFIG_KI_OFFSET, 0),
+            (REFLOAT_CONFIG_KP_BRAKE_OFFSET, 100),
+            (REFLOAT_CONFIG_KP2_BRAKE_OFFSET, 100),
+            (REFLOAT_CONFIG_BOOSTER_ANGLE_OFFSET, 10_000),
+            (REFLOAT_CONFIG_BRKBOOSTER_ANGLE_OFFSET, 10_000),
+            (REFLOAT_CONFIG_TORQUETILT_STRENGTH_OFFSET, 0),
+            (REFLOAT_CONFIG_TORQUETILT_STRENGTH_REGEN_OFFSET, 0),
+            (REFLOAT_CONFIG_ATR_STRENGTH_UP_OFFSET, 0),
+            (REFLOAT_CONFIG_ATR_STRENGTH_DOWN_OFFSET, 0),
+            (REFLOAT_CONFIG_TURNTILT_STRENGTH_OFFSET, 0),
+            (REFLOAT_CONFIG_TILTBACK_CONSTANT_OFFSET, 0),
+            (REFLOAT_CONFIG_TILTBACK_VARIABLE_OFFSET, 0),
+            (REFLOAT_CONFIG_FAULT_DELAY_PITCH_OFFSET, 50),
+            (REFLOAT_CONFIG_FAULT_DELAY_ROLL_OFFSET, 50),
+        ]
+        .into_iter()
+        .all(|(offset, value)| Self::set_config_be_u16(&mut config, offset, value));
+        if writes_ok {
+            self.serialized_config = config;
+        }
+    }
+
     fn handle_charging_state_packet(&mut self, bytes: &[u8]) -> bool {
-        // Refloat v1.2.1 routes COMMAND_CHARGING_STATE at `src/main.c:2267-2269`;
-        // the command ID is defined in `src/charging.h:25`.
+        // Refloat v1.2.1 routes COMMAND_CHARGING_STATE at `third_party/refloat/src/main.c:2267-2269`;
+        // the command ID is defined in `third_party/refloat/src/charging.h:25`.
         let [package_id, command_id, payload @ ..] = bytes else {
             return false;
         };
@@ -2528,8 +2711,8 @@ impl<B: AppDataBindings> RefloatAppDataLifecycle<B> {
     /// Install Refloat stop cleanup and package-owned state without callbacks.
     ///
     /// Upstream stores `stop` and `Data *` in loader metadata at
-    /// `src/main.c:2431-2432`, before registering custom config/app-data/LispBM
-    /// callbacks at `src/main.c:2455-2459`.
+    /// `third_party/refloat/src/main.c:2431-2432`, before registering custom config/app-data/LispBM
+    /// callbacks at `third_party/refloat/src/main.c:2455-2459`.
     ///
     /// # Safety
     ///
@@ -2552,8 +2735,8 @@ impl<B: AppDataBindings> RefloatAppDataLifecycle<B> {
     /// Install Refloat state, stop cleanup, and app-data handler.
     ///
     /// Upstream stores `Data *`/`stop` in loader metadata at
-    /// `src/main.c:2431-2432`; app-data registration follows later at
-    /// `src/main.c:2456`.
+    /// `third_party/refloat/src/main.c:2431-2432`; app-data registration follows later at
+    /// `third_party/refloat/src/main.c:2456`.
     ///
     /// # Safety
     ///
@@ -2572,12 +2755,15 @@ impl<B: AppDataBindings> RefloatAppDataLifecycle<B> {
 
     /// Clear Refloat callbacks during package stop.
     ///
-    /// Refloat `v1.2.1` clears app-data at `src/main.c:2402` and custom config
-    /// at `src/main.c:2403`.
+    /// Refloat `v1.2.1` clears IMU/app-data/custom config callbacks at
+    /// `third_party/refloat/src/main.c:2401-2403`.
     pub fn stop(&self) -> Result<(), AppDataHandlerRegistrationError>
     where
-        B: CustomConfigBindings,
+        B: CustomConfigBindings + ImuReadCallbackBindings,
     {
+        unsafe {
+            self.lifecycle.bindings().clear_imu_read_callback();
+        }
         let app_data_result = self.lifecycle.clear_app_data_handler();
         unsafe {
             let _ = self.lifecycle.bindings().clear_custom_configs();
@@ -2617,8 +2803,8 @@ impl<B: AppDataBindings> RefloatAppDataLifecycle<B> {
 impl<B: AppDataBindings + CustomConfigBindings> RefloatAppDataLifecycle<B> {
     /// Install Refloat custom config and app-data callbacks.
     ///
-    /// Upstream registers custom config before app-data at `src/main.c:2456-2457`,
-    /// after loader metadata receives `stop`/`Data *` at `src/main.c:2431-2432`.
+    /// Upstream registers custom config before app-data at `third_party/refloat/src/main.c:2456-2457`,
+    /// after loader metadata receives `stop`/`Data *` at `third_party/refloat/src/main.c:2431-2432`.
     ///
     /// # Safety
     ///
@@ -2634,8 +2820,8 @@ impl<B: AppDataBindings + CustomConfigBindings> RefloatAppDataLifecycle<B> {
 
     /// Install Refloat state plus custom config and app-data callbacks.
     ///
-    /// Upstream stores `Data *` in `info->arg` at `src/main.c:2432` before
-    /// registering custom config and app-data at `src/main.c:2456-2457`.
+    /// Upstream stores `Data *` in `info->arg` at `third_party/refloat/src/main.c:2432` before
+    /// registering custom config and app-data at `third_party/refloat/src/main.c:2456-2457`.
     ///
     /// # Safety
     ///
@@ -2654,8 +2840,8 @@ impl<B: AppDataBindings + CustomConfigBindings> RefloatAppDataLifecycle<B> {
 }
 
 unsafe extern "C" fn stop_refloat_app_data(_arg: *mut core::ffi::c_void) {
-    // C map: Refloat v1.2.1 `stop` starts at `src/main.c:2399`.
-    // Upstream stop cleanup in `src/main.c:2398-2412` clears IMU/app-data/custom
+    // C map: Refloat v1.2.1 `stop` starts at `third_party/refloat/src/main.c:2399`.
+    // Upstream stop cleanup in `third_party/refloat/src/main.c:2398-2412` clears IMU/app-data/custom
     // config callbacks, terminates aux+main threads, destroys LEDs, and frees
     // `Data`. This isolated handler only clears app-data/custom config and frees
     // the narrow Rust app-data allocation if that experimental path was installed.
@@ -2674,7 +2860,7 @@ unsafe extern "C" fn stop_refloat_app_data(_arg: *mut core::ffi::c_void) {
 
 #[cfg(test)]
 mod tests {
-    use super::{RefloatAppDataLifecycle, RefloatAppDataState};
+    use super::{RefloatAppDataLifecycle, RefloatAppDataState, RefloatBalanceFilter};
     use super::{
         allocate_refloat_startup_app_data_with, handle_refloat_app_data_packet,
         install_refloat_startup_app_data_with, process_refloat_app_data,
@@ -2698,7 +2884,10 @@ mod tests {
     use vescpkg_rs::test_support::{
         FakeImuBindings, FakeMotorControlBindings, FakeMotorTelemetryBindings,
     };
-    use vescpkg_rs::{AllocBindings, AppDataBindings, FirmwareAllocator, ffi};
+    use vescpkg_rs::{
+        AllocBindings, AppDataBindings, CustomConfigBindings, FirmwareAllocator,
+        ImuReadCallbackBindings, ffi,
+    };
 
     fn tick_refloat_state_and_handle_packet<B, M, I>(
         state: &mut RefloatAppDataState,
@@ -2714,6 +2903,17 @@ mod tests {
     {
         state.refresh_runtime_state(telemetry, imu, lifecycle.bindings().system_time_ticks());
         state.handle_packet_with_runtime(lifecycle, telemetry, imu, bytes)
+    }
+
+    fn balance_filter_with_pitch(pitch_radians: f32) -> RefloatBalanceFilter {
+        // Refloat reads pitch from quaternion with
+        // `balance_filter_get_pitch` at `third_party/refloat/src/balance_filter.c:145-154`.
+        RefloatBalanceFilter::from_quaternions([
+            libm::cosf(pitch_radians * 0.5),
+            0.0,
+            libm::sinf(pitch_radians * 0.5),
+            0.0,
+        ])
     }
 
     #[test]
@@ -2737,8 +2937,8 @@ mod tests {
         ));
 
         // Upstream `on_command_received` only dispatches app commands at
-        // `/Users/mjc/projects/refloat/src/main.c:2143-2225`; READY engage and
-        // IMU/motor refresh stay in `refloat_thd` at `src/main.c:772-1080`.
+        // `third_party/refloat/src/main.c:2143-2225`; READY engage and
+        // IMU/motor refresh stay in `refloat_thd` at `third_party/refloat/src/main.c:772-1080`.
         assert_eq!(
             state
                 .all_data_payloads()
@@ -2802,7 +3002,7 @@ mod tests {
         let bytes = response.as_bytes();
 
         // QML sends COMMAND_INFO version 2 at `ui.qml.in:693-697`; upstream
-        // `cmd_info` replies with the v2 metadata layout at `src/main.c:2108-2135`.
+        // `cmd_info` replies with the v2 metadata layout at `third_party/refloat/src/main.c:2108-2135`.
         assert_eq!(bytes.len(), 60);
         assert_eq!(&bytes[..4], &[101, 0, 2, 0]);
         assert_eq!(&bytes[4..11], b"Refloat");
@@ -2824,6 +3024,30 @@ mod tests {
 
     #[test]
     fn app_data_processes_realtime_data_ids_like_refloat_qml() {
+        fn take_id_list<'a>(bytes: &'a [u8], index: &mut usize) -> std::vec::Vec<&'a str> {
+            let count = bytes
+                .get(*index)
+                .copied()
+                .map(usize::from)
+                .expect("ID count byte");
+            *index = index.saturating_add(1);
+
+            (0..count)
+                .map(|_| {
+                    let len = bytes
+                        .get(*index)
+                        .copied()
+                        .map(usize::from)
+                        .expect("ID length byte");
+                    *index = index.saturating_add(1);
+                    let end = index.saturating_add(len);
+                    let id = bytes.get(*index..end).expect("ID bytes");
+                    *index = end;
+                    core::str::from_utf8(id).expect("ID UTF-8")
+                })
+                .collect()
+        }
+
         let response = process_refloat_app_data(
             &sample_all_data_payloads(),
             &[
@@ -2834,16 +3058,49 @@ mod tests {
         .expect("realtime data IDs request should produce a response");
         let bytes = response.as_bytes();
 
-        // QML asks for IDs at `ui.qml.in:704-705`; upstream
-        // `cmd_realtime_data_ids` writes the two counted ID sets at
-        // `src/main.c:1876-1901`.
+        // QML asks for IDs at `ui.qml.in:704-705`;
+        // upstream `cmd_realtime_data_ids` writes the counted string sets at
+        // `third_party/refloat/src/main.c:1876-1901`, using IDs from `third_party/refloat/src/rt_data.h:38-66`.
         assert_eq!(bytes.len(), 405);
-        assert_eq!(&bytes[..3], &[101, 32, 16]);
-        assert_eq!(bytes[3], b"motor.speed".len() as u8);
-        assert_eq!(&bytes[4..15], b"motor.speed");
-        assert_eq!(bytes[243], 10);
-        assert_eq!(bytes[244], b"setpoint".len() as u8);
-        assert_eq!(&bytes[245..253], b"setpoint");
+        assert_eq!(bytes.get(..2), Some(&[101, 32][..]));
+        let mut index = 2;
+        assert_eq!(
+            take_id_list(bytes, &mut index).as_slice(),
+            &[
+                "motor.speed",
+                "motor.erpm",
+                "motor.current",
+                "motor.dir_current",
+                "motor.filt_current",
+                "motor.duty_cycle",
+                "motor.batt_voltage",
+                "motor.batt_current",
+                "motor.mosfet_temp",
+                "motor.motor_temp",
+                "imu.pitch",
+                "imu.balance_pitch",
+                "imu.roll",
+                "footpad.adc1",
+                "footpad.adc2",
+                "remote.input",
+            ]
+        );
+        assert_eq!(
+            take_id_list(bytes, &mut index).as_slice(),
+            &[
+                "setpoint",
+                "atr.setpoint",
+                "brake_tilt.setpoint",
+                "torque_tilt.setpoint",
+                "turn_tilt.setpoint",
+                "remote.setpoint",
+                "balance_current",
+                "atr.accel_diff",
+                "atr.speed_boost",
+                "booster.current",
+            ]
+        );
+        assert_eq!(index, bytes.len());
     }
 
     #[test]
@@ -2858,9 +3115,9 @@ mod tests {
         .expect("legacy realtime-data request should produce a response");
         let bytes = response.as_bytes();
 
-        // Upstream dispatches `COMMAND_GET_RTDATA` at `src/main.c:2162-2164`;
+        // Upstream dispatches `COMMAND_GET_RTDATA` at `third_party/refloat/src/main.c:2162-2164`;
         // `send_realtime_data` writes this 72-byte response at
-        // `src/main.c:1267-1310`.
+        // `third_party/refloat/src/main.c:1267-1310`.
         assert_eq!(bytes.len(), 72);
         assert_eq!(&bytes[..2], &[101, 1]);
         assert_f32_be(bytes, 2, 9.0);
@@ -2895,7 +3152,7 @@ mod tests {
 
         // QML reads `c_REALTIME_DATA` at `ui.qml.in:853-925`; upstream
         // `cmd_realtime_data` writes this non-running packet shape at
-        // `src/main.c:1904-1960`.
+        // `third_party/refloat/src/main.c:1904-1960`.
         assert_eq!(bytes.len(), 53);
         assert_eq!(&bytes[..2], &[101, 31]);
         assert_eq!(bytes[2], 0x04);
@@ -2947,9 +3204,23 @@ mod tests {
         assert_eq!(lifecycle.stop(), Ok(()));
         assert_eq!(lifecycle.bindings().handler_calls.get(), 2);
         assert_eq!(lifecycle.bindings().last_handler.get(), 0);
-        // Refloat v1.2.1 stop clears app-data at `src/main.c:2402` and
-        // custom config at `src/main.c:2403`.
+        // Refloat v1.2.1 stop clears IMU/app-data/custom config callbacks at
+        // `third_party/refloat/src/main.c:2401-2403`.
+        assert_eq!(lifecycle.bindings().imu_read_callback_calls.get(), 1);
+        assert_eq!(lifecycle.bindings().last_imu_read_callback.get(), 0);
         assert_eq!(lifecycle.bindings().custom_config_clear_calls.get(), 1);
+    }
+
+    #[test]
+    fn registers_imu_callback_like_refloat_startup() {
+        let bindings = RecordingAppDataBindings::accepting();
+
+        assert!(super::register_refloat_imu_callback_with(&bindings));
+
+        // Refloat registers `imu_ref_callback` during startup at
+        // `third_party/refloat/src/main.c:2455`.
+        assert_eq!(bindings.imu_read_callback_calls.get(), 1);
+        assert_ne!(bindings.last_imu_read_callback.get(), 0);
     }
 
     #[test]
@@ -3142,6 +3413,111 @@ mod tests {
     }
 
     #[test]
+    fn app_data_handtest_command_toggles_ready_mode_like_refloat_qml() {
+        // QML sends COMMAND_HANDTEST at `refloat/ui.qml.in:764-768`; C toggles
+        // mode and temporary safety config at `third_party/refloat/src/main.c:1421-1450`.
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+        let mut state = RefloatAppDataState::new(sample_all_data_payloads_with_ride_state(
+            RefloatRunState::Ready,
+            RefloatMode::Normal,
+        ));
+        let original_config = *state.serialized_config();
+
+        assert!(state.handle_packet_with_telemetry(
+            &lifecycle,
+            &telemetry,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::HandTest.id(),
+                1,
+            ],
+        ));
+        assert_eq!(
+            state
+                .all_data_payloads()
+                .base()
+                .status()
+                .ride_state()
+                .mode(),
+            RefloatMode::HandTest
+        );
+        assert_eq!(state.config_be_u16(super::REFLOAT_CONFIG_KI_OFFSET), 0);
+        assert_eq!(
+            state.config_be_u16(super::REFLOAT_CONFIG_KP_BRAKE_OFFSET),
+            100
+        );
+        assert_eq!(
+            state.config_be_u16(super::REFLOAT_CONFIG_KP2_BRAKE_OFFSET),
+            100
+        );
+        assert_eq!(
+            state.config_be_u16(super::REFLOAT_CONFIG_BOOSTER_ANGLE_OFFSET),
+            10_000
+        );
+        assert_eq!(
+            state.config_be_u16(super::REFLOAT_CONFIG_BRKBOOSTER_ANGLE_OFFSET),
+            10_000
+        );
+        assert_eq!(
+            state.config_be_u16(super::REFLOAT_CONFIG_TORQUETILT_STRENGTH_OFFSET),
+            0
+        );
+        assert_eq!(
+            state.config_be_u16(super::REFLOAT_CONFIG_TORQUETILT_STRENGTH_REGEN_OFFSET),
+            0
+        );
+        assert_eq!(
+            state.config_be_u16(super::REFLOAT_CONFIG_ATR_STRENGTH_UP_OFFSET),
+            0
+        );
+        assert_eq!(
+            state.config_be_u16(super::REFLOAT_CONFIG_ATR_STRENGTH_DOWN_OFFSET),
+            0
+        );
+        assert_eq!(
+            state.config_be_u16(super::REFLOAT_CONFIG_TURNTILT_STRENGTH_OFFSET),
+            0
+        );
+        assert_eq!(
+            state.config_be_u16(super::REFLOAT_CONFIG_TILTBACK_CONSTANT_OFFSET),
+            0
+        );
+        assert_eq!(
+            state.config_be_u16(super::REFLOAT_CONFIG_TILTBACK_VARIABLE_OFFSET),
+            0
+        );
+        assert_eq!(
+            state.config_be_u16(super::REFLOAT_CONFIG_FAULT_DELAY_PITCH_OFFSET),
+            50
+        );
+        assert_eq!(
+            state.config_be_u16(super::REFLOAT_CONFIG_FAULT_DELAY_ROLL_OFFSET),
+            50
+        );
+
+        assert!(state.handle_packet_with_telemetry(
+            &lifecycle,
+            &telemetry,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::HandTest.id(),
+                0,
+            ],
+        ));
+        assert_eq!(
+            state
+                .all_data_payloads()
+                .base()
+                .status()
+                .ride_state()
+                .mode(),
+            RefloatMode::Normal
+        );
+        assert_eq!(state.serialized_config(), &original_config);
+    }
+
+    #[test]
     fn app_data_state_updates_mode4_charging_fields_from_charging_state_command() {
         let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
         let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
@@ -3264,8 +3640,8 @@ mod tests {
                 RefloatAppDataCommand::RealtimeData.id(),
             ],
         ));
-        // Refloat writes realtime values as float16 at `src/main.c:1943-1954`
-        // using `buffer_append_float16_auto` from `src/conf/buffer.c:143-145`.
+        // Refloat writes realtime values as float16 at `third_party/refloat/src/main.c:1943-1954`
+        // using `buffer_append_float16_auto` from `third_party/refloat/src/conf/buffer.c:143-145`.
         assert_eq!(lifecycle.bindings().send_calls.get(), 1);
         assert_eq!(lifecycle.bindings().last_sent_len.get(), 53);
         assert_eq!(lifecycle.bindings().last_sent_prefix.get(), [101, 31, 4]);
@@ -3304,7 +3680,7 @@ mod tests {
         ));
 
         // Refloat v1.2.1 writes `d->time.now` into realtime packets at
-        // `src/main.c:1931`; VESC system ticks are 100 us ticks.
+        // `third_party/refloat/src/main.c:1931`; VESC system ticks are 100 us ticks.
         assert_eq!(
             lifecycle
                 .bindings()
@@ -3369,6 +3745,7 @@ mod tests {
             RefloatRunState::Startup,
             RefloatMode::Normal,
         ));
+        state.balance_filter = balance_filter_with_pitch(1.2);
 
         assert!(tick_refloat_state_and_handle_packet(
             &mut state,
@@ -3387,36 +3764,27 @@ mod tests {
             RefloatRunState::Ready
         );
         // Refloat calls `reset_runtime_vars(d)` before READY at
-        // `src/main.c:833-837`; reset clears `balance_current` at
-        // `src/main.c:246`, resets booster at `src/main.c:248`, and seeds all
-        // runtime setpoints from `d->imu.balance_pitch` at `src/main.c:249-255`.
+        // `third_party/refloat/src/main.c:833-837`; reset clears
+        // `balance_current` at `third_party/refloat/src/main.c:246`, resets
+        // module setpoints at `third_party/refloat/src/main.c:239-244`, then
+        // seeds only the board setpoint from balance pitch at
+        // `third_party/refloat/src/main.c:249-252`.
         assert_eq!(base.balance_current().current().current().as_amps(), 0.0);
         assert_eq!(base.booster_current().current().current().as_amps(), 0.0);
         let expected_startup_setpoint = 1.2 * 180.0 / core::f32::consts::PI;
-        assert_eq!(
-            base.setpoints().board().angle().as_degrees(),
-            expected_startup_setpoint
+        assert!(
+            (base.setpoints().board().angle().as_degrees() - expected_startup_setpoint).abs()
+                < 0.0001
         );
-        assert_eq!(
-            base.setpoints().atr().angle().as_degrees(),
-            expected_startup_setpoint
-        );
-        assert_eq!(
-            base.setpoints().brake_tilt().angle().as_degrees(),
-            expected_startup_setpoint
-        );
-        assert_eq!(
-            base.setpoints().torque_tilt().angle().as_degrees(),
-            expected_startup_setpoint
-        );
-        assert_eq!(
-            base.setpoints().turn_tilt().angle().as_degrees(),
-            expected_startup_setpoint
-        );
-        assert_eq!(
-            base.setpoints().remote().angle().as_degrees(),
-            expected_startup_setpoint
-        );
+        [
+            base.setpoints().atr(),
+            base.setpoints().brake_tilt(),
+            base.setpoints().torque_tilt(),
+            base.setpoints().turn_tilt(),
+            base.setpoints().remote(),
+        ]
+        .into_iter()
+        .for_each(|setpoint| assert_eq!(setpoint.angle().as_degrees(), 0.0));
     }
 
     #[test]
@@ -3454,6 +3822,7 @@ mod tests {
             payloads.mode3(),
             payloads.mode4(),
         ));
+        state.balance_filter = balance_filter_with_pitch(20.0_f32.to_radians());
         let mut config = *state.serialized_config();
         config[super::REFLOAT_CONFIG_STARTUP_PITCH_TOLERANCE_OFFSET
             ..super::REFLOAT_CONFIG_STARTUP_PITCH_TOLERANCE_OFFSET + 2]
@@ -3475,7 +3844,7 @@ mod tests {
         ));
 
         // Upstream READY engages only inside configured startup pitch/roll
-        // tolerances at `src/main.c:1033-1036`; default pitch tolerance is 4
+        // tolerances at `third_party/refloat/src/main.c:1033-1036`; default pitch tolerance is 4
         // degrees, not the broad 45 degree fallback used by earlier Rust code.
         assert_eq!(
             state
@@ -3530,6 +3899,7 @@ mod tests {
             payloads.mode3(),
             payloads.mode4(),
         ));
+        state.balance_filter = balance_filter_with_pitch(20.0_f32.to_radians());
         let mut config = *state.serialized_config();
         config[super::REFLOAT_CONFIG_STARTUP_PUSHSTART_ENABLED_OFFSET] = 1;
         assert!(state.store_serialized_config(&config));
@@ -3547,7 +3917,7 @@ mod tests {
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream READY push-start engages above 1000 ERPM when `can_engage`
-        // passes and pitch/roll are within 45 degrees at `src/main.c:1056-1067`.
+        // passes and pitch/roll are within 45 degrees at `third_party/refloat/src/main.c:1056-1067`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Running);
         assert_eq!(
             ride_state.setpoint_adjustment(),
@@ -3598,6 +3968,7 @@ mod tests {
             payloads.mode3(),
             payloads.mode4(),
         ));
+        state.balance_filter = balance_filter_with_pitch(20.0_f32.to_radians());
         let mut config = *state.serialized_config();
         config[super::REFLOAT_CONFIG_STARTUP_PUSHSTART_ENABLED_OFFSET] = 1;
         config[super::REFLOAT_CONFIG_FAULT_REVERSESTOP_ENABLED_OFFSET] = 1;
@@ -3616,7 +3987,7 @@ mod tests {
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream ignores backwards push-start when reverse stop is enabled
-        // at `src/main.c:1061-1064`.
+        // at `third_party/refloat/src/main.c:1061-1064`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
     }
 
@@ -3645,8 +4016,8 @@ mod tests {
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream `check_faults(d)` stops RUNNING FLYWHEEL when both footpads
-        // are engaged at `src/main.c:491-493`; `state_stop` moves to READY
-        // and stores the stop condition at `src/state.c:29-33`.
+        // are engaged at `third_party/refloat/src/main.c:491-493`; `state_stop` moves to READY
+        // and stores the stop condition at `third_party/refloat/src/state.c:29-33`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
         assert_eq!(
             ride_state.stop_condition(),
@@ -3698,7 +4069,7 @@ mod tests {
         ));
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
-        // Upstream `state_stop` clears wheelslip at `src/state.c:29-33`.
+        // Upstream `state_stop` clears wheelslip at `third_party/refloat/src/state.c:29-33`.
         assert_eq!(ride_state.wheelslip(), RefloatWheelSlipState::None);
     }
 
@@ -3752,7 +4123,7 @@ mod tests {
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream `check_faults(d)` immediately stops reverse-stop mode when
-        // the footpad is fully open at `src/main.c:418-422`.
+        // the footpad is fully open at `third_party/refloat/src/main.c:418-422`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
         assert_eq!(
             ride_state.stop_condition(),
@@ -3826,7 +4197,7 @@ mod tests {
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream `check_faults(d)` quick-stops no-footpad low-speed
-        // pitch-runaway cases at `src/main.c:419-423`.
+        // pitch-runaway cases at `third_party/refloat/src/main.c:419-423`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
         assert_eq!(ride_state.stop_condition(), RefloatStopCondition::QuickStop);
     }
@@ -3877,7 +4248,7 @@ mod tests {
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream `check_faults(d)` stops a fully open switch after
-        // `fault_delay_switch_full` at `src/main.c:397-404`.
+        // `fault_delay_switch_full` at `third_party/refloat/src/main.c:397-404`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
         assert_eq!(
             ride_state.stop_condition(),
@@ -3941,7 +4312,7 @@ mod tests {
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream `check_faults(d)` stops a partially open switch below
         // `fault_adc_half_erpm` after `fault_delay_switch_half` at
-        // `src/main.c:459-467`.
+        // `third_party/refloat/src/main.c:459-467`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
         assert_eq!(
             ride_state.stop_condition(),
@@ -4000,7 +4371,7 @@ mod tests {
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream `check_faults(d)` immediately stops reverse-stop mode when
-        // `fabsf(d->imu.pitch) > 18` at `src/main.c:423-426`.
+        // `fabsf(d->imu.pitch) > 18` at `third_party/refloat/src/main.c:423-426`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
         assert_eq!(
             ride_state.stop_condition(),
@@ -4061,7 +4432,7 @@ mod tests {
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream `check_faults(d)` stops reverse-stop mode when pitch stays
-        // above 10 degrees for 1 second at `src/main.c:440-443`.
+        // above 10 degrees for 1 second at `third_party/refloat/src/main.c:440-443`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
         assert_eq!(
             ride_state.stop_condition(),
@@ -4128,8 +4499,8 @@ mod tests {
         }
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
-        // Upstream accumulates reverse-stop ERPM at `src/main.c:522-525`, then
-        // stops once it exceeds `reverse_tolerance * 10` at `src/main.c:450-452`.
+        // Upstream accumulates reverse-stop ERPM at `third_party/refloat/src/main.c:522-525`, then
+        // stops once it exceeds `reverse_tolerance * 10` at `third_party/refloat/src/main.c:450-452`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
         assert_eq!(
             ride_state.stop_condition(),
@@ -4179,7 +4550,7 @@ mod tests {
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream darkride `check_faults(d)` allows turning it off by
-        // engaging foot sensors at `src/main.c:387-390`.
+        // engaging foot sensors at `third_party/refloat/src/main.c:387-390`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
         assert_eq!(
             ride_state.stop_condition(),
@@ -4239,8 +4610,8 @@ mod tests {
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream simple-start `can_engage(d)` accepts one sensor during the
-        // first second after engage at `src/main.c:338-344`; darkride
-        // `check_faults(d)` then stops at `src/main.c:387-390`.
+        // first second after engage at `third_party/refloat/src/main.c:338-344`; darkride
+        // `check_faults(d)` then stops at `third_party/refloat/src/main.c:387-390`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
         assert_eq!(
             ride_state.stop_condition(),
@@ -4302,7 +4673,7 @@ mod tests {
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream darkride `check_faults(d)` immediately reverse-stops above
-        // 2000 ERPM at `src/main.c:363-373`.
+        // 2000 ERPM at `third_party/refloat/src/main.c:363-373`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
         assert_eq!(
             ride_state.stop_condition(),
@@ -4342,7 +4713,7 @@ mod tests {
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream `check_faults(d)` stops roll above `fault_roll` after
-        // `fault_delay_roll` at `src/main.c:474-482`.
+        // `fault_delay_roll` at `third_party/refloat/src/main.c:474-482`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
         assert_eq!(ride_state.stop_condition(), RefloatStopCondition::Roll);
     }
@@ -4380,7 +4751,7 @@ mod tests {
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream `check_faults(d)` stops pitch above `fault_pitch` after
         // `fault_delay_pitch` when remote setpoint is below 30 degrees at
-        // `src/main.c:497-503`.
+        // `third_party/refloat/src/main.c:497-503`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
         assert_eq!(ride_state.stop_condition(), RefloatStopCondition::Pitch);
     }
@@ -4438,7 +4809,7 @@ mod tests {
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream non-darkride `check_faults(d)` stops immediately when
         // darkride faults are enabled and roll is 100-135 degrees at
-        // `src/main.c:465-470`.
+        // `third_party/refloat/src/main.c:465-470`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
         assert_eq!(ride_state.stop_condition(), RefloatStopCondition::Roll);
     }
@@ -4498,7 +4869,7 @@ mod tests {
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream READY darkride ignores roll during the first second after
-        // disengage at `src/main.c:1038-1054`.
+        // disengage at `third_party/refloat/src/main.c:1038-1054`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Running);
         assert_eq!(ride_state.stop_condition(), RefloatStopCondition::None);
     }
@@ -4538,6 +4909,7 @@ mod tests {
             payloads.mode3(),
             payloads.mode4(),
         ));
+        state.balance_filter = balance_filter_with_pitch(0.05);
 
         assert!(tick_refloat_state_and_handle_packet(
             &mut state,
@@ -4552,8 +4924,8 @@ mod tests {
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream READY engages when startup pitch/roll tolerances and
-        // `can_engage(d)` pass at `src/main.c:1033-1036`; `state_engage`
-        // moves to RUNNING and sets SAT_CENTERING at `src/state.c:36-39`.
+        // `can_engage(d)` pass at `third_party/refloat/src/main.c:1033-1036`; `state_engage`
+        // moves to RUNNING and sets SAT_CENTERING at `third_party/refloat/src/state.c:36-39`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Running);
         assert_eq!(
             ride_state.setpoint_adjustment(),
@@ -4598,6 +4970,7 @@ mod tests {
             payloads.mode3(),
             payloads.mode4(),
         ));
+        state.balance_filter = balance_filter_with_pitch(0.05);
 
         assert!(tick_refloat_state_and_handle_packet(
             &mut state,
@@ -4613,8 +4986,9 @@ mod tests {
         let base = state.all_data_payloads().base();
         let ride_state = base.status().ride_state();
         // Upstream `engage(d)` calls `reset_runtime_vars(d)` before
-        // `state_engage(d)` at `src/main.c:263-270`, then breaks out of the
-        // READY branch without running the RUNNING balance-current loop.
+        // `state_engage(d)` at `third_party/refloat/src/main.c:263-270`, then
+        // breaks out of the READY branch without running the RUNNING
+        // balance-current loop.
         assert_eq!(ride_state.run_state(), RefloatRunState::Running);
         assert_eq!(base.balance_current().current().current().as_amps(), 0.0);
         assert_eq!(base.booster_current().current().current().as_amps(), 0.0);
@@ -4623,10 +4997,7 @@ mod tests {
             base.setpoints().board().angle().as_degrees(),
             expected_engage_setpoint
         );
-        assert_eq!(
-            base.setpoints().remote().angle().as_degrees(),
-            expected_engage_setpoint
-        );
+        assert_eq!(base.setpoints().remote().angle().as_degrees(), 0.0);
         assert!(!state.apply_requested_motor_current(&motor));
     }
 
@@ -4683,7 +5054,7 @@ mod tests {
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream `can_engage(d)` rejects charging state before checking
-        // footpads at `src/main.c:328-331`.
+        // footpads at `third_party/refloat/src/main.c:328-331`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
         assert_eq!(ride_state.charging(), RefloatChargingState::Charging);
     }
@@ -4751,7 +5122,7 @@ mod tests {
 
         // Upstream `do_rc_move(d)` uses default inverted throttle and filters
         // `rc_current = old * 0.95 + target * 0.05` before requesting current
-        // at `src/main.c:291-298`; 10A max with 50% input requests -0.25A.
+        // at `third_party/refloat/src/main.c:291-298`; 10A max with 50% input requests -0.25A.
         assert_eq!(motor.bindings().current().current().as_amps(), -0.25);
     }
 
@@ -4818,8 +5189,8 @@ mod tests {
         assert!(state.apply_requested_motor_current(&motor));
 
         // Upstream `cmd_rc_move` sets `rc_steps = time * 100` and target
-        // current/10 at `src/main.c:1747-1756`; `do_rc_move` filters the first
-        // READY tick by 5% at `src/main.c:276-286`.
+        // current/10 at `third_party/refloat/src/main.c:1747-1756`; `do_rc_move` filters the first
+        // READY tick by 5% at `third_party/refloat/src/main.c:276-286`.
         assert!((motor.bindings().current().current().as_amps() - 0.2).abs() < 0.0001);
     }
 
@@ -4886,7 +5257,7 @@ mod tests {
         }
 
         // Upstream `do_rc_move(d)` halves targets above 2A when `rc_counter`
-        // reaches 500 at `src/main.c:281-284`, after decrementing steps.
+        // reaches 500 at `third_party/refloat/src/main.c:281-284`, after decrementing steps.
         assert_eq!(state.rc_current_target_deciamps, 30);
         assert_eq!(state.rc_steps, 100);
     }
@@ -4945,7 +5316,7 @@ mod tests {
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream `can_engage(d)` keeps FLYWHEEL mode engaged after footpad
-        // checks at `src/main.c:346-349`.
+        // checks at `third_party/refloat/src/main.c:346-349`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Running);
         assert_eq!(
             ride_state.setpoint_adjustment(),
@@ -4984,8 +5355,8 @@ mod tests {
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream READY handles FLYWHEEL abort/both-footpad before start
-        // conditions at `src/main.c:957-963`; `flywheel_stop` returns to
-        // NORMAL mode at `src/main.c:1869-1873`.
+        // conditions at `third_party/refloat/src/main.c:957-963`; `flywheel_stop` returns to
+        // NORMAL mode at `third_party/refloat/src/main.c:1869-1873`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
         assert_eq!(ride_state.mode(), RefloatMode::Normal);
     }
@@ -5047,7 +5418,7 @@ mod tests {
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream `can_engage(d)` allows a single footpad when
-        // `fault_is_dual_switch` is enabled at `src/main.c:338-342`.
+        // `fault_is_dual_switch` is enabled at `third_party/refloat/src/main.c:338-342`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Running);
         assert_eq!(
             ride_state.setpoint_adjustment(),
@@ -5109,7 +5480,7 @@ mod tests {
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream `can_engage(d)` keeps a single footpad gated unless
-        // `fault_is_dual_switch` or simple start is enabled at `src/main.c:338-342`.
+        // `fault_is_dual_switch` or simple start is enabled at `third_party/refloat/src/main.c:338-342`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
         assert_eq!(
             ride_state.setpoint_adjustment(),
@@ -5176,7 +5547,7 @@ mod tests {
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream `can_engage(d)` allows simple-start single-sensor starts
-        // two seconds after disengage at `src/main.c:338-344`.
+        // two seconds after disengage at `third_party/refloat/src/main.c:338-344`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Running);
         assert_eq!(
             ride_state.setpoint_adjustment(),
@@ -5211,8 +5582,8 @@ mod tests {
         ));
 
         // Upstream `configure(d)` applies `disabled` before the control-loop
-        // startup gate at `src/main.c:184-190`; `state_set_disabled` forces
-        // `STATE_DISABLED` at `src/state.c:41-47`, so `src/main.c:833-838`
+        // startup gate at `third_party/refloat/src/main.c:184-190`; `state_set_disabled` forces
+        // `STATE_DISABLED` at `third_party/refloat/src/state.c:41-47`, so `third_party/refloat/src/main.c:833-838`
         // cannot promote STARTUP to READY in this configuration.
         assert_eq!(
             state
@@ -5241,8 +5612,23 @@ mod tests {
 
         // Upstream generated serialization places `hertz` after the first
         // seven float16 config fields; `configure(d)` then uses it as
-        // `1e6 / d->float_conf.hertz` at `src/main.c:190-191`.
+        // `1e6 / d->float_conf.hertz` at `third_party/refloat/src/main.c:190-191`.
         assert_eq!(state.configured_loop_time_us(), 2000);
+    }
+
+    #[test]
+    fn app_data_footpad_runtime_refresh_decodes_adc_like_refloat_sensor_update() {
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
+
+        state.refresh_footpad_runtime_state(2.5, -1.0);
+
+        let footpad = state.all_data_payloads().base().footpad();
+        // C map: Refloat v1.2.1 `footpad_sensor_update` reads ADCs, clamps
+        // missing ADC2 to zero, and decodes the switch state at
+        // `third_party/refloat/src/footpad_sensor.c:28-61`.
+        assert_eq!(footpad.state(), FootpadSensorState::Left);
+        assert_eq!(footpad.adc1_volts(), 2.5);
+        assert_eq!(footpad.adc2_volts(), 0.0);
     }
 
     #[test]
@@ -5255,7 +5641,7 @@ mod tests {
 
         // Upstream `motor_control_apply` resets timeout, keeps current control
         // on for 50ms, sends the requested current, then clears the request at
-        // `src/motor_control.c:92-99` and `src/motor_control.c:121-122`.
+        // `third_party/refloat/src/motor_control.c:92-99` and `third_party/refloat/src/motor_control.c:121-122`.
         assert_eq!(motor.bindings().timeout_reset_calls.get(), 1);
         assert_eq!(motor.bindings().set_current_off_delay_calls.get(), 1);
         assert_eq!(motor.bindings().current_off_delay_seconds(), 0.05);
@@ -5297,6 +5683,7 @@ mod tests {
             payloads.mode3(),
             payloads.mode4(),
         ));
+        state.balance_filter = balance_filter_with_pitch(1.0_f32.to_radians());
 
         assert!(tick_refloat_state_and_handle_packet(
             &mut state,
@@ -5311,8 +5698,243 @@ mod tests {
         assert!(state.apply_requested_motor_current(&motor));
 
         // Upstream RUNNING computes `d->balance_current` and then requests it
-        // via `motor_control_request_current` at `src/main.c:949-956`.
+        // via `motor_control_request_current` at `third_party/refloat/src/main.c:949-956`.
         assert_eq!(motor.bindings().current().current().as_amps(), 3.8);
+    }
+
+    #[test]
+    fn app_data_handtest_running_recenters_start_setpoint_like_refloat_loop() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+        let imu = ImuApi::new(FakeImuBindings::new().with_startup_done(true));
+        let payloads = sample_all_data_payloads_with_ride_state(
+            RefloatRunState::Running,
+            RefloatMode::HandTest,
+        );
+        let base = payloads.base();
+        let ride_state = RefloatRideState::new(
+            RefloatRunState::Running,
+            RefloatMode::HandTest,
+            RefloatSetpointAdjustment::Centering,
+            RefloatStopCondition::None,
+        );
+        let board = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(2.0));
+        let zero = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(0.0));
+        let setpoints = RefloatRealtimeRuntimeSetpoints::new(board, zero, zero, zero, zero, zero);
+        let base = RefloatAllDataBasePayload::new(
+            RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            RefloatAllDataAttitude::new(
+                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(0.0)),
+                base.attitude().roll(),
+                base.attitude().pitch(),
+            ),
+            RefloatAllDataStatus::new(ride_state, base.status().beep_reason()),
+            base.footpad(),
+            setpoints,
+            base.booster_current(),
+            base.motor(),
+        );
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::new(
+            base,
+            payloads.mode2(),
+            payloads.mode3(),
+            payloads.mode4(),
+        ));
+        state.balance_filter = balance_filter_with_pitch(0.0);
+        let mut config = *state.serialized_config();
+        config[super::REFLOAT_CONFIG_HERTZ_OFFSET..super::REFLOAT_CONFIG_HERTZ_OFFSET + 2]
+            .copy_from_slice(&100u16.to_be_bytes());
+        config[super::REFLOAT_CONFIG_STARTUP_SPEED_OFFSET
+            ..super::REFLOAT_CONFIG_STARTUP_SPEED_OFFSET + 2]
+            .copy_from_slice(&5000u16.to_be_bytes());
+        state.serialized_config = config;
+
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+
+        let base = state.all_data_payloads().base();
+        // Refloat RUNNING `SAT_CENTERING` uses `startup_speed / hertz` from
+        // `third_party/refloat/src/main.c:172` via
+        // `get_setpoint_adjustment_step_size` at
+        // `third_party/refloat/src/main.c:304-310`; `rate_limitf` applies that
+        // step toward target zero at `third_party/refloat/src/utils.c:25-33`,
+        // and the main loop publishes the new setpoint at
+        // `third_party/refloat/src/main.c:869-875`.
+        assert_eq!(base.setpoints().board().angle().as_degrees(), 1.5);
+        assert_eq!(
+            base.status().ride_state().setpoint_adjustment(),
+            RefloatSetpointAdjustment::Centering
+        );
+    }
+
+    #[test]
+    fn app_data_normal_algorithm_trace_matches_refloat_loop_order() {
+        let telemetry =
+            MotorTelemetryApi::new(FakeMotorTelemetryBindings::new().with_runtime_motor(
+                ElectricalSpeed::new(Rpm::from_revolutions_per_minute(0.0)),
+                VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
+                MotorCurrent::new(Current::from_amps(0.0)),
+                BatteryCurrent::new(Current::from_amps(0.0)),
+                DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+            ));
+        let imu = ImuApi::new(
+            FakeImuBindings::new()
+                .with_startup_done(true)
+                .with_attitude(
+                    ImuRoll::new(AngleRadians::from_radians(0.0)),
+                    ImuPitch::new(AngleRadians::from_radians(1.5_f32.to_radians())),
+                    ImuYaw::new(AngleRadians::from_radians(0.0)),
+                )
+                .with_angular_rate(ImuAngularRate::new([
+                    AngularVelocity::from_degrees_per_second(0.0),
+                    AngularVelocity::from_degrees_per_second(0.0),
+                    AngularVelocity::from_degrees_per_second(0.0),
+                ])),
+        );
+        let payloads =
+            sample_all_data_payloads_with_ride_state(RefloatRunState::Ready, RefloatMode::Normal);
+        let base = payloads.base();
+        let stopped_base = RefloatAllDataBasePayload::new(
+            RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            base.attitude(),
+            base.status(),
+            base.footpad(),
+            base.setpoints(),
+            RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            RefloatAllDataMotorPayload::new(
+                BatteryVoltage::new(Voltage::from_volts(72.0)),
+                ElectricalSpeed::new(Rpm::from_revolutions_per_minute(0.0)),
+                VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
+                MotorCurrent::new(Current::from_amps(0.0)),
+                BatteryCurrent::new(Current::from_amps(0.0)),
+                DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+                RefloatFocIdCurrent::measured(MotorCurrent::new(Current::from_amps(0.0))),
+            ),
+        );
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::new(
+            stopped_base,
+            payloads.mode2(),
+            payloads.mode3(),
+            payloads.mode4(),
+        ));
+        state.balance_filter = balance_filter_with_pitch(2.0_f32.to_radians());
+        let mut config = *state.serialized_config();
+        config[super::REFLOAT_CONFIG_HERTZ_OFFSET..super::REFLOAT_CONFIG_HERTZ_OFFSET + 2]
+            .copy_from_slice(&100u16.to_be_bytes());
+        config[super::REFLOAT_CONFIG_STARTUP_SPEED_OFFSET
+            ..super::REFLOAT_CONFIG_STARTUP_SPEED_OFFSET + 2]
+            .copy_from_slice(&5000u16.to_be_bytes());
+        state.serialized_config = config;
+
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
+            &RefloatAppDataLifecycle::new(
+                RecordingAppDataBindings::accepting().with_system_time_ticks(0),
+            ),
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+        let engaged_base = state.all_data_payloads().base();
+        let engaged_ride_state = engaged_base.status().ride_state();
+        // Upstream READY/NORMAL engages through `engage(d)` at
+        // `third_party/refloat/src/main.c:263-270`; `reset_runtime_vars(d)`
+        // seeds only the board setpoint from balance pitch at
+        // `third_party/refloat/src/main.c:239-252`, and READY breaks before
+        // RUNNING PID in `third_party/refloat/src/main.c:1018-1037`.
+        assert_eq!(engaged_ride_state.run_state(), RefloatRunState::Running);
+        assert_eq!(engaged_ride_state.mode(), RefloatMode::Normal);
+        assert_eq!(
+            engaged_ride_state.setpoint_adjustment(),
+            RefloatSetpointAdjustment::Centering
+        );
+        assert_eq!(engaged_base.setpoints().board().angle().as_degrees(), 2.0);
+        assert_eq!(
+            engaged_base.balance_current().current().current().as_amps(),
+            0.0
+        );
+
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
+            &RefloatAppDataLifecycle::new(
+                RecordingAppDataBindings::accepting().with_system_time_ticks(1),
+            ),
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+        let running_base = state.all_data_payloads().base();
+        let kp = state.config_scaled_i16(super::REFLOAT_CONFIG_KP_OFFSET, 10.0);
+        let ki = state.config_scaled_i16(super::REFLOAT_CONFIG_KI_OFFSET, 100_000.0);
+        let ki_limit = state.config_scaled_i16(super::REFLOAT_CONFIG_KI_LIMIT_OFFSET, 10.0);
+        let expected_board_setpoint = 1.5;
+        let expected_setpoint_error = expected_board_setpoint - 2.0;
+        let unclamped_i = expected_setpoint_error * ki;
+        let expected_i = if ki_limit > 0.0 && unclamped_i.abs() > ki_limit {
+            ki_limit * unclamped_i.signum()
+        } else {
+            unclamped_i
+        };
+        let current_limit = state.motor_current_max.current().as_amps();
+        let expected_new_current =
+            (expected_setpoint_error * kp + expected_i).clamp(-current_limit, current_limit);
+        let expected_smoothed_current = expected_new_current * 0.2;
+        // Upstream RUNNING centers with `startup_speed / hertz` at
+        // `third_party/refloat/src/main.c:172`,
+        // `third_party/refloat/src/main.c:304-310`, and
+        // `third_party/refloat/src/main.c:869-875`;
+        // then NORMAL PID and the regular motor-current limit run at
+        // `third_party/refloat/src/main.c:918-956` before requesting motor
+        // current. Raw pitch equals the centered board setpoint here, so the
+        // booster proportional is zero by `third_party/refloat/src/main.c:921-922`.
+        assert_eq!(
+            running_base.setpoints().board().angle().as_degrees(),
+            expected_board_setpoint
+        );
+        assert_eq!(
+            running_base.booster_current().current().current().as_amps(),
+            0.0
+        );
+        assert!(
+            (running_base.balance_current().current().current().as_amps()
+                - expected_smoothed_current)
+                .abs()
+                < 0.0001
+        );
+
+        let motor = MotorControlApi::new(FakeMotorControlBindings::new());
+        assert!(state.apply_motor_control(
+            &motor,
+            running_base.status().ride_state().run_state(),
+            1,
+        ));
+        // Upstream main loop calls `motor_control_apply` after the balance loop
+        // at `third_party/refloat/src/main.c:1075-1079`; requested current
+        // takes the current-control branch at
+        // `third_party/refloat/src/motor_control.c:92-99`.
+        assert_eq!(motor.bindings().timeout_reset_calls.get(), 1);
+        assert_eq!(motor.bindings().set_current_off_delay_calls.get(), 1);
+        assert_eq!(motor.bindings().set_current_calls.get(), 1);
+        assert!(
+            (motor.bindings().current().current().as_amps() - expected_smoothed_current).abs()
+                < 0.0001
+        );
+        assert_eq!(motor.bindings().set_duty_calls.get(), 0);
+        assert_eq!(motor.bindings().set_brake_current_calls.get(), 0);
     }
 
     #[test]
@@ -5368,9 +5990,9 @@ mod tests {
         ));
         assert!(state.apply_requested_motor_current(&motor));
 
-        // Upstream `pid_update` computes angle P at `src/pid.c:40` and scales
-        // it by `kp` at `src/pid.c:69`; RUNNING then smooths balance current
-        // as `old * 0.8 + new_current * 0.2` at `src/main.c:932-954`.
+        // Upstream `pid_update` computes angle P at `third_party/refloat/src/pid.c:40` and scales
+        // it by `kp` at `third_party/refloat/src/pid.c:69`; RUNNING then smooths balance current
+        // as `old * 0.8 + new_current * 0.2` at `third_party/refloat/src/main.c:932-954`.
         assert!((motor.bindings().current().current().as_amps() - 12.001).abs() < 0.0001);
         assert!(
             (state
@@ -5384,6 +6006,125 @@ mod tests {
                 .abs()
                 < 0.0001
         );
+    }
+
+    #[test]
+    fn app_data_running_uses_balance_filter_pitch_like_refloat_pid() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+        let imu = ImuApi::new(
+            FakeImuBindings::new()
+                .with_startup_done(true)
+                .with_attitude(
+                    ImuRoll::new(AngleRadians::from_radians(0.0)),
+                    ImuPitch::new(AngleRadians::from_radians(0.0)),
+                    ImuYaw::new(AngleRadians::from_radians(0.0)),
+                ),
+        );
+        let motor = MotorControlApi::new(FakeMotorControlBindings::new());
+        let payloads =
+            sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Normal);
+        let base = payloads.base();
+        let setpoint = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(0.0));
+        let setpoints = RefloatRealtimeRuntimeSetpoints::new(
+            setpoint, setpoint, setpoint, setpoint, setpoint, setpoint,
+        );
+        let base = RefloatAllDataBasePayload::new(
+            RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            RefloatAllDataAttitude::new(
+                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(0.0)),
+                base.attitude().roll(),
+                base.attitude().pitch(),
+            ),
+            base.status(),
+            base.footpad(),
+            setpoints,
+            RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            base.motor(),
+        );
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::new(
+            base,
+            payloads.mode2(),
+            payloads.mode3(),
+            payloads.mode4(),
+        ));
+        let mut config = *state.serialized_config();
+        assert!(RefloatAppDataState::set_config_be_u16(
+            &mut config,
+            super::REFLOAT_CONFIG_KP_OFFSET,
+            100,
+        ));
+        assert!(RefloatAppDataState::set_config_be_u16(
+            &mut config,
+            super::REFLOAT_CONFIG_KP2_OFFSET,
+            0,
+        ));
+        assert!(RefloatAppDataState::set_config_be_u16(
+            &mut config,
+            super::REFLOAT_CONFIG_KI_OFFSET,
+            0,
+        ));
+        assert!(RefloatAppDataState::set_config_be_u16(
+            &mut config,
+            super::REFLOAT_CONFIG_KP_BRAKE_OFFSET,
+            100,
+        ));
+        assert!(RefloatAppDataState::set_config_be_u16(
+            &mut config,
+            super::REFLOAT_CONFIG_BOOSTER_ANGLE_OFFSET,
+            10_000,
+        ));
+        assert!(RefloatAppDataState::set_config_be_u16(
+            &mut config,
+            super::REFLOAT_CONFIG_BOOSTER_CURRENT_OFFSET,
+            0,
+        ));
+        assert!(state.store_serialized_config(&config));
+        state.balance_filter = balance_filter_with_pitch(5.0_f32.to_radians());
+
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+        assert!(state.apply_requested_motor_current(&motor));
+
+        // C refreshes `imu.balance_pitch` from `balance_filter_get_pitch` at
+        // `third_party/refloat/src/imu.c:35-41` before `pid_update` computes
+        // `setpoint - imu->balance_pitch` at `third_party/refloat/src/pid.c:40`.
+        assert!((motor.bindings().current().current().as_amps() + 10.0).abs() < 0.0001);
+        assert!(
+            (state
+                .all_data_payloads()
+                .base()
+                .attitude()
+                .balance_pitch()
+                .angle()
+                .as_radians()
+                * 180.0
+                / core::f32::consts::PI
+                - 5.0)
+                .abs()
+                < 0.0001
+        );
+    }
+
+    #[test]
+    fn balance_filter_update_integrates_positive_pitch_like_refloat_callback() {
+        let mut filter = RefloatBalanceFilter::source_startup();
+
+        filter.update([0.0, 1.0, 0.0], [0.0, 0.0, 1.0], 0.1);
+
+        // Refloat's `imu_ref_callback` forwards gyro/accel/dt at
+        // `third_party/refloat/src/main.c:760-765`; `balance_filter_update` integrates the
+        // quaternion at `third_party/refloat/src/balance_filter.c:73-134`, and
+        // `balance_filter_get_pitch` reads it at `third_party/refloat/src/balance_filter.c:145-154`.
+        assert!(filter.pitch_radians() > 0.0);
     }
 
     #[test]
@@ -5448,9 +6189,9 @@ mod tests {
         assert!(state.apply_requested_motor_current(&motor));
 
         // Upstream `imu_update` derives pitch rate from gyro at
-        // `src/imu.c:45-53`; `pid_update` computes `rate_p` at
-        // `src/pid.c:71-72`, then RUNNING smooths it into `balance_current`
-        // at `src/main.c:921-954`.
+        // `third_party/refloat/src/imu.c:45-53`; `pid_update` computes `rate_p` at
+        // `third_party/refloat/src/pid.c:71-72`, then RUNNING smooths it into `balance_current`
+        // at `third_party/refloat/src/main.c:921-954`.
         assert!((motor.bindings().current().current().as_amps() + 4.0).abs() < 0.0001);
     }
 
@@ -5517,7 +6258,7 @@ mod tests {
         assert!(state.apply_requested_motor_current(&motor));
 
         // Upstream RUNNING soft-start limits only `rate_p + booster.current`
-        // before adding Angle P/I at `src/main.c:926-930`; a zero first-tick
+        // before adding Angle P/I at `third_party/refloat/src/main.c:926-930`; a zero first-tick
         // limit removes the -20A Rate-P contribution before smoothing.
         assert_eq!(motor.bindings().current().current().as_amps(), 0.0);
     }
@@ -5591,7 +6332,7 @@ mod tests {
         assert!(state.apply_requested_motor_current(&motor));
 
         // Upstream `pid_update` moves forward braking Angle-P scale toward
-        // `kp_brake` by 1% per tick at `src/pid.c:56-69`; with kp_brake=0 the
+        // `kp_brake` by 1% per tick at `third_party/refloat/src/pid.c:56-69`; with kp_brake=0 the
         // first tick scales -40A to -39.6A before RUNNING smooths by 0.2.
         assert!(
             (motor.bindings().current().current().as_amps() + 7.92).abs() < 0.0001,
@@ -5671,8 +6412,8 @@ mod tests {
         assert!(state.apply_requested_motor_current(&motor));
 
         // Upstream `pid_update` accumulates `pid->i += pid->p * config->ki`
-        // and clamps it at `src/pid.c:40-46`; RUNNING adds P + I before
-        // smoothing balance current at `src/main.c:932-954`.
+        // and clamps it at `third_party/refloat/src/pid.c:40-46`; RUNNING adds P + I before
+        // smoothing balance current at `third_party/refloat/src/main.c:932-954`.
         assert!(
             (motor.bindings().current().current().as_amps() - 7.2028).abs() < 0.0001,
             "{:?}",
@@ -5738,8 +6479,8 @@ mod tests {
         assert!(state.apply_requested_motor_current(&motor));
 
         // Refloat default `ki_limit` is 30A (`settings.xml:1679-1707`);
-        // `pid_update` clamps the I term at `src/pid.c:40-46` before RUNNING
-        // smooths it into `balance_current` at `src/main.c:932-954`.
+        // `pid_update` clamps the I term at `third_party/refloat/src/pid.c:40-46` before RUNNING
+        // smooths it into `balance_current` at `third_party/refloat/src/main.c:932-954`.
         assert!((motor.bindings().current().current().as_amps() - 6.0).abs() < 0.0001);
     }
 
@@ -5810,8 +6551,8 @@ mod tests {
             assert!(state.apply_requested_motor_current(&motor));
 
             // Upstream RUNNING clamps `new_current` to 7A for HANDTEST and
-            // 40A for FLYWHEEL at `src/main.c:932-942`, then smooths it into
-            // `balance_current` at `src/main.c:949-954`.
+            // 40A for FLYWHEEL at `third_party/refloat/src/main.c:932-942`, then smooths it into
+            // `balance_current` at `third_party/refloat/src/main.c:949-954`.
             assert!(
                 (motor.bindings().current().current().as_amps() - expected_current).abs() < 0.0001,
                 "{mode:?}: {:?}",
@@ -5899,8 +6640,8 @@ mod tests {
             assert!(state.apply_requested_motor_current(&motor));
 
             // Upstream `motor_data_update` caches `l_current_max` and
-            // `fabsf(l_current_min)` at `src/motor_data.c:90-91`; RUNNING uses
-            // max while accelerating and min while braking at `src/main.c:932-942`.
+            // `fabsf(l_current_min)` at `third_party/refloat/src/motor_data.c:90-91`; RUNNING uses
+            // max while accelerating and min while braking at `third_party/refloat/src/main.c:932-942`.
             assert!(
                 (motor.bindings().current().current().as_amps() - expected_current).abs() < 0.0001,
                 "{motor_current}: {:?}",
@@ -5980,9 +6721,9 @@ mod tests {
         assert!(state.apply_requested_motor_current(&motor));
 
         // Upstream `booster_update` applies full configured booster current
-        // above angle+ramp at `src/booster.c:35-46`, filters it at
-        // `src/booster.c:50`, and RUNNING adds it to rate-P before smoothing
-        // `balance_current` at `src/main.c:921-954`.
+        // above angle+ramp at `third_party/refloat/src/booster.c:35-46`, filters it at
+        // `third_party/refloat/src/booster.c:50`, and RUNNING adds it to rate-P before smoothing
+        // `balance_current` at `third_party/refloat/src/main.c:921-954`.
         assert!(
             (state
                 .all_data_payloads()
@@ -6076,10 +6817,10 @@ mod tests {
         assert!(state.apply_requested_motor_current(&motor));
 
         // Upstream `motor_data_update` marks braking from negative motor
-        // current at `src/motor_data.c:121-123`; `booster_update` then uses
-        // `brkbooster_*` config at `src/booster.c:35-41`, applies sign from
-        // proportional at `src/booster.c:60-64`, filters at `src/booster.c:68`,
-        // and RUNNING smooths balance current at `src/main.c:921-954`.
+        // current at `third_party/refloat/src/motor_data.c:121-123`; `booster_update` then uses
+        // `brkbooster_*` config at `third_party/refloat/src/booster.c:35-41`, applies sign from
+        // proportional at `third_party/refloat/src/booster.c:60-64`, filters at `third_party/refloat/src/booster.c:68`,
+        // and RUNNING smooths balance current at `third_party/refloat/src/main.c:921-954`.
         assert!(
             (state
                 .all_data_payloads()
@@ -6158,7 +6899,7 @@ mod tests {
         assert!(state.apply_requested_motor_current(&motor));
 
         // Upstream RUNNING negates `new_current` for darkride at
-        // `src/main.c:944-946`, before smoothing/requesting motor current.
+        // `third_party/refloat/src/main.c:944-946`, before smoothing/requesting motor current.
         assert!((motor.bindings().current().current().as_amps() + 4.001).abs() < 0.0001);
     }
 
@@ -6220,7 +6961,7 @@ mod tests {
         assert!(state.apply_requested_motor_current(&motor));
 
         // Upstream RUNNING only sets `balance_current = 0` when
-        // `traction_control` is set at `src/main.c:949-954`; wheelslip alone
+        // `traction_control` is set at `third_party/refloat/src/main.c:949-954`; wheelslip alone
         // remains a UI/state flag and the current path still smooths.
         assert_ne!(motor.bindings().current().current().as_amps(), 0.0);
         assert_ne!(
@@ -6306,73 +7047,10 @@ mod tests {
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
         // Upstream detects traction loss from acceleration, ERPM, and duty at
-        // `src/main.c:551-562`, then freewheels while traction control is set at
-        // `src/main.c:949-954`.
+        // `third_party/refloat/src/main.c:551-562`, then freewheels while traction control is set at
+        // `third_party/refloat/src/main.c:949-954`.
         assert_eq!(ride_state.wheelslip(), RefloatWheelSlipState::Detected);
         assert_eq!(motor.bindings().current().current().as_amps(), 0.0);
-    }
-
-    #[test]
-    fn app_data_boot_runtime_refresh_keeps_pre_control_target_shape() {
-        let telemetry =
-            MotorTelemetryApi::new(FakeMotorTelemetryBindings::new().with_runtime_motor(
-                ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1234.0)),
-                VehicleSpeed::new(Speed::from_meters_per_second(5.5)),
-                MotorCurrent::new(Current::from_amps(12.25)),
-                BatteryCurrent::new(Current::from_amps(4.0)),
-                DutyCycle::new(SignedRatio::from_ratio_const(0.375)),
-            ));
-        let imu = ImuApi::new(
-            FakeImuBindings::new()
-                .with_startup_done(true)
-                .with_attitude(
-                    ImuRoll::new(AngleRadians::from_radians(0.1)),
-                    ImuPitch::new(AngleRadians::from_radians(0.2)),
-                    ImuYaw::new(AngleRadians::from_radians(0.0)),
-                ),
-        );
-        let motor = MotorControlApi::new(FakeMotorControlBindings::new());
-        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
-
-        state.refresh_boot_runtime_state(&telemetry, &imu);
-
-        let base = state.all_data_payloads().base();
-        // Target ARM boot currently uses the last known booting pre-control
-        // runtime slice: motor fields from
-        // `/Users/mjc/projects/refloat/src/motor_data.c:108-145` plus the
-        // startup-ready gate from `/Users/mjc/projects/refloat/src/main.c:833-838`,
-        // without executing the later VESCR-213 control blob.
-        assert_eq!(
-            base.status().ride_state().run_state(),
-            RefloatRunState::Ready
-        );
-        assert_eq!(
-            base.motor()
-                .electrical_speed()
-                .rpm()
-                .as_revolutions_per_minute(),
-            1234.0
-        );
-        assert_eq!(base.attitude().roll().angle().as_radians(), 0.1);
-        assert_eq!(base.attitude().pitch().angle().as_radians(), 0.2);
-        assert!(!state.apply_requested_motor_current(&motor));
-    }
-
-    #[test]
-    fn app_data_motor_control_sets_zero_once_while_disabled_like_refloat() {
-        let motor = MotorControlApi::new(FakeMotorControlBindings::new());
-        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
-
-        assert!(state.apply_motor_control(&motor, RefloatRunState::Disabled));
-        assert_eq!(motor.bindings().set_current_calls.get(), 1);
-        assert_eq!(motor.bindings().current().current().as_amps(), 0.0);
-
-        assert!(!state.apply_motor_control(&motor, RefloatRunState::Disabled));
-        assert_eq!(motor.bindings().set_current_calls.get(), 1);
-
-        assert!(!state.apply_motor_control(&motor, RefloatRunState::Ready));
-        assert!(state.apply_motor_control(&motor, RefloatRunState::Disabled));
-        assert_eq!(motor.bindings().set_current_calls.get(), 2);
     }
 
     #[test]
@@ -6415,7 +7093,7 @@ mod tests {
     #[test]
     fn app_data_runtime_refreshes_foc_id_current_like_refloat_all_data() {
         // Refloat v1.2.1 encodes `fabsf(VESC_IF->foc_get_id()) * 3` for
-        // compact all-data at `src/main.c:1364-1368`.
+        // compact all-data at `third_party/refloat/src/main.c:1364-1368`.
         let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
         let telemetry = MotorTelemetryApi::new(
             FakeMotorTelemetryBindings::new()
@@ -6493,8 +7171,8 @@ mod tests {
         unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
 
         assert!(unsafe { lifecycle.install_refloat_state(&mut info, &mut state, handler) });
-        // Upstream sets `info->stop_fun` and `info->arg` at `src/main.c:2431-2432`,
-        // before registering custom config/app-data/extensions at `src/main.c:2455-2459`.
+        // Upstream sets `info->stop_fun` and `info->arg` at `third_party/refloat/src/main.c:2431-2432`,
+        // before registering custom config/app-data/extensions at `third_party/refloat/src/main.c:2455-2459`.
         assert_eq!(lifecycle.bindings().handler_calls.get(), 0);
         assert_eq!(lifecycle.bindings().custom_config_register_calls.get(), 0);
         assert!(info.stop_fun.is_some());
@@ -6604,8 +7282,8 @@ mod tests {
         let len = unsafe { super::refloat_get_cfg_xml(&mut buffer) };
 
         // Refloat v1.2.1 returns generated `data_refloatconfig_` at
-        // `src/main.c:2388-2396`, produced from `src/conf/settings.xml` by
-        // `src/Makefile:28-31`.
+        // `third_party/refloat/src/main.c:2388-2396`, produced from `third_party/refloat/src/conf/settings.xml` by
+        // `third_party/refloat/src/Makefile:28-31`.
         assert_eq!(len, 25_723);
         assert!(!buffer.is_null());
         let bytes = unsafe { core::slice::from_raw_parts(buffer.cast_const(), len as usize) };
@@ -6619,8 +7297,8 @@ mod tests {
         let len = unsafe { super::refloat_get_cfg(buffer.as_mut_ptr(), true) };
 
         // Refloat v1.2.1 default `get_cfg` allocates a temporary config,
-        // applies generated defaults, and serializes it at `src/main.c:2339-2350`.
-        // The generated format comes from `src/Makefile:28-31`;
+        // applies generated defaults, and serializes it at `third_party/refloat/src/main.c:2339-2350`.
+        // The generated format comes from `third_party/refloat/src/Makefile:28-31`;
         // generated `conf/confparser.h:11-12` fixes signature/length, and
         // generated `conf/confparser.c:8-178,363-531` writes these bytes.
         assert_eq!(len, 276);
@@ -6636,8 +7314,8 @@ mod tests {
         let len = super::refloat_get_cfg_with_state(buffer.as_mut_ptr(), false, Some(&state));
 
         // Upstream current `get_cfg` serializes `d->float_conf` from shared
-        // package state at `src/main.c:2347-2350`; `data_init` populates it
-        // from EEPROM or generated defaults at `src/main.c:1160-1185`.
+        // package state at `third_party/refloat/src/main.c:2347-2350`; `data_init` populates it
+        // from EEPROM or generated defaults at `third_party/refloat/src/main.c:1160-1185`.
         assert_eq!(len, 276);
         assert_eq!(buffer, *include_bytes!("conf/default_config.dat"));
     }
@@ -6657,7 +7335,7 @@ mod tests {
         let len = super::refloat_get_cfg_with_state(current.as_mut_ptr(), false, Some(&state));
 
         // Upstream `set_cfg` deserializes into `d->float_conf` at
-        // `src/main.c:2368`; generated `conf/confparser.c:187-190` rejects a
+        // `third_party/refloat/src/main.c:2368`; generated `conf/confparser.c:187-190` rejects a
         // bad signature before reading the field bytes.
         incoming[super::REFLOAT_CONFIG_META_IS_DEFAULT_OFFSET] = 0;
         assert_eq!(len, 276);
@@ -6679,7 +7357,7 @@ mod tests {
         let len = super::refloat_get_cfg_with_state(current.as_mut_ptr(), false, Some(&state));
 
         // Upstream clears `d->float_conf.meta.is_default` for every config
-        // write at `src/main.c:2375-2377`; generated
+        // write at `third_party/refloat/src/main.c:2375-2377`; generated
         // `conf/confparser.c:179` serializes that flag as the final byte.
         assert_eq!(len, 276);
         assert_eq!(current[super::REFLOAT_CONFIG_META_IS_DEFAULT_OFFSET], 0);
@@ -6700,8 +7378,8 @@ mod tests {
         let len = super::refloat_get_cfg_with_state(current.as_mut_ptr(), false, Some(&state));
 
         // Upstream refuses to persist `disabled = true` while running at
-        // `src/main.c:2369-2372`; `disabled` is serialized at
-        // `src/conf/settings.xml:4064`.
+        // `third_party/refloat/src/main.c:2369-2372`; `disabled` is serialized at
+        // `third_party/refloat/src/conf/settings.xml:4064`.
         assert_eq!(len, 276);
         assert_eq!(current[super::REFLOAT_CONFIG_DISABLED_OFFSET], 0);
     }
@@ -6724,7 +7402,7 @@ mod tests {
         let len = super::refloat_get_cfg_with_state(current.as_mut_ptr(), false, Some(&state));
 
         // Upstream rejects VESC Tool config writes outside `MODE_NORMAL` at
-        // `src/main.c:2362-2365`, before storing to EEPROM or reconfiguring.
+        // `third_party/refloat/src/main.c:2362-2365`, before storing to EEPROM or reconfiguring.
         assert_eq!(len, 276);
         assert_eq!(current, *include_bytes!("conf/default_config.dat"));
     }
@@ -6746,6 +7424,8 @@ mod tests {
         last_sent_mode4_charging_bytes: Cell<[u8; 4]>,
         custom_config_register_calls: Cell<usize>,
         custom_config_clear_calls: Cell<usize>,
+        imu_read_callback_calls: Cell<usize>,
+        last_imu_read_callback: Cell<usize>,
         system_time_ticks: Cell<u32>,
         handler_results: Cell<[bool; 2]>,
     }
@@ -6799,6 +7479,8 @@ mod tests {
                 last_sent_mode4_charging_bytes: Cell::new([0; 4]),
                 custom_config_register_calls: Cell::new(0),
                 custom_config_clear_calls: Cell::new(0),
+                imu_read_callback_calls: Cell::new(0),
+                last_imu_read_callback: Cell::new(0),
                 system_time_ticks: Cell::new(0),
                 handler_results: Cell::new([true, true]),
             }
@@ -6881,17 +7563,32 @@ mod tests {
             _set_cfg: ffi::raw::CustomConfigSet,
             _get_cfg_xml: ffi::raw::CustomConfigXml,
         ) -> bool {
-            // Refloat v1.2.1 registers custom config during init at `src/main.c:2456`.
+            // Refloat v1.2.1 registers custom config during init at `third_party/refloat/src/main.c:2456`.
             self.custom_config_register_calls
                 .set(self.custom_config_register_calls.get() + 1);
             true
         }
 
         unsafe fn clear_custom_configs(&self) -> bool {
-            // Refloat v1.2.1 clears custom config during stop at `src/main.c:2403`.
+            // Refloat v1.2.1 clears custom config during stop at `third_party/refloat/src/main.c:2403`.
             self.custom_config_clear_calls
                 .set(self.custom_config_clear_calls.get() + 1);
             true
+        }
+    }
+
+    impl ImuReadCallbackBindings for RecordingAppDataBindings {
+        unsafe fn set_imu_read_callback(&self, callback: ffi::raw::ImuReadCallback) {
+            self.imu_read_callback_calls
+                .set(self.imu_read_callback_calls.get() + 1);
+            self.last_imu_read_callback
+                .set(callback as *const () as usize);
+        }
+
+        unsafe fn clear_imu_read_callback(&self) {
+            self.imu_read_callback_calls
+                .set(self.imu_read_callback_calls.get() + 1);
+            self.last_imu_read_callback.set(0);
         }
     }
 

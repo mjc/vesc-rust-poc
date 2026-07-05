@@ -13,10 +13,13 @@
 extern crate std;
 
 pub mod app_data;
+mod balance_loop;
 pub mod domain;
 pub mod extensions;
 pub mod init;
+mod motor_control;
 pub mod runtime;
+mod state_transition;
 
 pub use init::package_lib_init;
 

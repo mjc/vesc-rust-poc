@@ -40,6 +40,139 @@ const REFLOAT_ALL_DATA_MODE4_REQUEST: CustomAppDataRequest = CustomAppDataReques
     step: "all-data",
     payload: &REFLOAT_ALL_DATA_MODE4_PAYLOAD,
 };
+// QML asks for Refloat realtime IDs with `[101, 32]` at
+// `refloat/ui.qml.in:704-705`; the app-data handler dispatches it at
+// `refloat/src/main.c:2275-2277`.
+static REFLOAT_REALTIME_DATA_IDS_PAYLOAD: [u8; 2] = [101, 32];
+const REFLOAT_REALTIME_DATA_IDS_REQUEST: CustomAppDataRequest = CustomAppDataRequest {
+    step: "realtime-data-ids",
+    payload: &REFLOAT_REALTIME_DATA_IDS_PAYLOAD,
+};
+// QML samples Refloat realtime data with `[101, 31]` every 100 ms at
+// `refloat/ui.qml.in:157-170` and `refloat/ui.qml.in:699-704`; Refloat C
+// dispatches the packet at `refloat/src/main.c:2223-2225`.
+static REFLOAT_REALTIME_DATA_PAYLOAD: [u8; 2] = [101, 31];
+const REFLOAT_REALTIME_DATA_REQUEST: CustomAppDataRequest = CustomAppDataRequest {
+    step: "realtime-data",
+    payload: &REFLOAT_REALTIME_DATA_PAYLOAD,
+};
+
+/// Decoded Refloat realtime-data ID response lists from
+/// `refloat/src/main.c:1876-1901`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RefloatRealtimeDataIds {
+    /// Items sent in every realtime-data packet.
+    pub always: Vec<String>,
+    /// Items sent only while the package reports runtime data.
+    pub runtime: Vec<String>,
+}
+
+/// Decoded Refloat realtime sample as consumed by the QML plot.
+///
+/// QML appends this row shape at
+/// `refloat/ui.qml.in:922-924` after decoding the packet fields at
+/// `refloat/ui.qml.in:860-911`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RefloatRealtimeSample {
+    /// VESC system timestamp in 100 us ticks.
+    pub timestamp_ticks: u32,
+    /// Raw package mode from QML's `modeAndState >> 4`.
+    pub package_mode: u8,
+    /// Raw package state from QML's `modeAndState & 0x0f`.
+    pub package_state: u8,
+    /// Whether QML sees runtime values in this packet.
+    pub has_runtime: bool,
+    /// Whether QML sees the package in RUNNING state.
+    pub running: bool,
+    /// Whether QML sees wheelslip active.
+    pub wheelslip: bool,
+    /// Refloat-compatible setpoint-adjustment id.
+    pub setpoint_adjustment: u8,
+    /// Refloat-compatible footpad switch id.
+    pub footpad_switch: u8,
+    /// QML realtime values keyed by the decoded realtime ID strings.
+    pub values: Vec<(String, f32)>,
+}
+
+impl RefloatRealtimeSample {
+    /// Return a realtime value by the QML/Refloat ID string.
+    ///
+    /// QML builds the value-name table from realtime ID lists at
+    /// `refloat/ui.qml.in:929-931`.
+    pub fn value(&self, name: &str) -> Option<f32> {
+        self.values
+            .iter()
+            .find_map(|(key, value)| (key == name).then_some(*value))
+    }
+}
+
+/// Decoded fields from Refloat compact all-data mode 4 from
+/// `refloat/src/main.c:1313-1399`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RefloatAllDataSnapshot {
+    /// Refloat-compatible float state id.
+    pub float_state: u8,
+    /// Refloat-compatible setpoint-adjustment id.
+    pub setpoint_adjustment: u8,
+    /// Refloat-compatible footpad switch id.
+    pub footpad_switch: u8,
+    /// Whether the legacy HANDTEST bit is set in switch state.
+    pub handtest: bool,
+    /// Balance current in amps.
+    pub balance_current_amps: f32,
+    /// Balance pitch in radians.
+    pub balance_pitch_rad: f32,
+    /// Roll in radians.
+    pub roll_rad: f32,
+    /// Pitch in radians.
+    pub pitch_rad: f32,
+    /// ADC1 volts.
+    pub adc1_volts: f32,
+    /// ADC2 volts.
+    pub adc2_volts: f32,
+    /// Battery voltage.
+    pub battery_voltage: f32,
+    /// Motor ERPM.
+    pub erpm: i16,
+    /// Motor current in amps.
+    pub motor_current_amps: f32,
+    /// Battery current in amps.
+    pub battery_current_amps: f32,
+}
+
+/// Refloat smoke probe result.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RefloatProbeReport {
+    /// Decoded realtime item IDs used by QML and Float Control.
+    pub realtime_ids: RefloatRealtimeDataIds,
+    /// Decoded realtime samples from the same QML data-log path.
+    pub realtime_samples: Vec<RefloatRealtimeSample>,
+    /// Decoded compact all-data fields used for hardware proof.
+    pub all_data_snapshot: RefloatAllDataSnapshot,
+    /// Raw mode-4 all-data response.
+    pub all_data: Vec<u8>,
+}
+
+/// Refloat probe collection options.
+///
+/// Defaults mirror QML's realtime timer at
+/// `refloat/ui.qml.in:157-170`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RefloatProbeOptions {
+    /// Number of QML realtime-log samples to collect.
+    pub realtime_sample_count: usize,
+    /// Delay between QML realtime-log samples.
+    pub realtime_sample_interval: Duration,
+}
+
+impl Default for RefloatProbeOptions {
+    fn default() -> Self {
+        Self {
+            realtime_sample_count: 1,
+            realtime_sample_interval: Duration::from_millis(100),
+        }
+    }
+}
 
 /// Progress event emitted by the diagnostic loopback runner.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -246,6 +379,232 @@ struct DiagnosticSession {
     pending: VecDeque<Vec<u8>>,
 }
 
+/// Decode Refloat `COMMAND_REALTIME_DATA_IDS`.
+///
+/// Refloat C writes two counted string lists in
+/// `refloat/src/main.c:1876-1901`, with string framing from
+/// `refloat/src/conf/buffer.c:147-155` and ID order from
+/// `refloat/src/rt_data.h:38-66`. QML reads the same lists in
+/// `refloat/ui.qml.in:926-934`.
+pub fn decode_refloat_realtime_data_ids_response(
+    payload: &[u8],
+) -> Result<RefloatRealtimeDataIds, &'static str> {
+    let mut index = 0;
+    let package_id = take_u8(payload, &mut index)?;
+    let command = take_u8(payload, &mut index)?;
+    if package_id != 101 || command != 32 {
+        return Err("not a Refloat realtime-data IDs response");
+    }
+
+    Ok(RefloatRealtimeDataIds {
+        always: take_string_list(payload, &mut index)?,
+        runtime: take_string_list(payload, &mut index)?,
+    })
+}
+
+/// Decode Refloat `COMMAND_REALTIME_DATA` exactly like the QML data plot.
+///
+/// Refloat C writes this packet in
+/// `refloat/src/main.c:1904-1960`; QML decodes the packet and appends
+/// `rtPlotData` samples at `refloat/ui.qml.in:852-925`.
+pub fn decode_refloat_realtime_data_response(
+    payload: &[u8],
+    ids: &RefloatRealtimeDataIds,
+) -> Result<RefloatRealtimeSample, &'static str> {
+    let mut index = 0;
+    let package_id = take_u8(payload, &mut index)?;
+    let command = take_u8(payload, &mut index)?;
+    if package_id != 101 || command != 31 {
+        return Err("not a Refloat realtime-data response");
+    }
+
+    let mask = take_u8(payload, &mut index)?;
+    let has_runtime = mask & 0x01 != 0;
+    let has_charging = mask & 0x02 != 0;
+    let has_alerts = mask & 0x04 != 0;
+    let _extra_flags = take_u8(payload, &mut index)?;
+    let timestamp_ticks = take_u32(payload, &mut index)?;
+    let mode_and_state = take_u8(payload, &mut index)?;
+    let sensor_and_flags = take_u8(payload, &mut index)?;
+    let setpoint_and_stop = take_u8(payload, &mut index)?;
+    let _beep_reason = take_u8(payload, &mut index)?;
+
+    let runtime_ids: &[String] = if has_runtime { &ids.runtime } else { &[] };
+    let values = ids
+        .always
+        .iter()
+        .chain(runtime_ids.iter())
+        .map(|name| take_float16_auto(payload, &mut index).map(|value| (name.clone(), value)))
+        .collect::<Result<Vec<_>, _>>()?;
+    if has_charging {
+        take_float16_auto(payload, &mut index)?;
+        take_float16_auto(payload, &mut index)?;
+    }
+    if has_alerts {
+        let end = index.saturating_add(9);
+        payload
+            .get(index..end)
+            .ok_or("truncated realtime-data alert tail")?;
+    }
+
+    // QML assigns `pkgState = modeAndState & 0x0f` at
+    // `refloat/ui.qml.in:874-878` and defines RUNNING as state id 3 at
+    // `refloat/ui.qml.in:1711-1722`.
+    Ok(RefloatRealtimeSample {
+        timestamp_ticks,
+        package_mode: mode_and_state >> 4,
+        package_state: mode_and_state & 0x0f,
+        has_runtime,
+        running: mode_and_state & 0x0f == 3,
+        wheelslip: sensor_and_flags & 0x01 != 0,
+        setpoint_adjustment: setpoint_and_stop >> 4,
+        footpad_switch: sensor_and_flags >> 6,
+        values,
+    })
+}
+
+/// Decode Refloat compact all-data mode 4.
+///
+/// Refloat C writes this packet in `refloat/src/main.c:1313-1399`: state
+/// and HANDTEST are at `refloat/src/main.c:1333-1341`, ADCs at
+/// `refloat/src/main.c:1344-1345`, setpoints at
+/// `refloat/src/main.c:1347-1353`, pitch/booster at
+/// `refloat/src/main.c:1355-1356`, motor fields at
+/// `refloat/src/main.c:1358-1364`, and mode-4 charge fields at
+/// `refloat/src/main.c:1391-1395`.
+pub fn decode_refloat_all_data_mode4_response(
+    payload: &[u8],
+) -> Result<RefloatAllDataSnapshot, &'static str> {
+    let mut index = 0;
+    let package_id = take_u8(payload, &mut index)?;
+    let command = take_u8(payload, &mut index)?;
+    let mode = take_u8(payload, &mut index)?;
+    if package_id != 101 || command != 10 || mode != 4 {
+        return Err("not a Refloat all-data mode 4 response");
+    }
+
+    let balance_current_amps = f32::from(take_i16(payload, &mut index)?) / 10.0;
+    let balance_pitch_rad = f32::from(take_i16(payload, &mut index)?) / 10.0;
+    let roll_rad = f32::from(take_i16(payload, &mut index)?) / 10.0;
+    let state = take_u8(payload, &mut index)?;
+    let switch = take_u8(payload, &mut index)? & 0x0f;
+    let adc1_volts = f32::from(take_u8(payload, &mut index)?) / 50.0;
+    let adc2_volts = f32::from(take_u8(payload, &mut index)?) / 50.0;
+    // Refloat C writes six compact setpoint bytes at
+    // `refloat/src/main.c:1347-1353`; they are not needed for pre-bench proof.
+    (0..6).try_for_each(|_| take_u8(payload, &mut index).map(drop))?;
+    let pitch_rad = f32::from(take_i16(payload, &mut index)?) / 10.0;
+    let _booster_current = take_u8(payload, &mut index)?;
+    let battery_voltage = f32::from(take_i16(payload, &mut index)?) / 10.0;
+    let erpm = take_i16(payload, &mut index)?;
+    let _vehicle_speed = take_i16(payload, &mut index)?;
+    let motor_current_amps = f32::from(take_i16(payload, &mut index)?) / 10.0;
+    let battery_current_amps = f32::from(take_i16(payload, &mut index)?) / 10.0;
+
+    Ok(RefloatAllDataSnapshot {
+        float_state: state & 0x0f,
+        setpoint_adjustment: state >> 4,
+        footpad_switch: switch & 0x07,
+        handtest: switch & 0x08 != 0,
+        balance_current_amps,
+        balance_pitch_rad,
+        roll_rad,
+        pitch_rad,
+        adc1_volts,
+        adc2_volts,
+        battery_voltage,
+        erpm,
+        motor_current_amps,
+        battery_current_amps,
+    })
+}
+
+fn take_u8(payload: &[u8], index: &mut usize) -> Result<u8, &'static str> {
+    let byte = payload
+        .get(*index)
+        .copied()
+        .ok_or("truncated realtime-data IDs response")?;
+    *index = index.saturating_add(1);
+    Ok(byte)
+}
+
+fn take_i16(payload: &[u8], index: &mut usize) -> Result<i16, &'static str> {
+    let start = *index;
+    let end = start.saturating_add(2);
+    let bytes = payload
+        .get(start..end)
+        .and_then(|bytes| <[u8; 2]>::try_from(bytes).ok())
+        .ok_or("truncated Refloat response")?;
+    *index = end;
+    Ok(i16::from_be_bytes(bytes))
+}
+
+fn take_u16(payload: &[u8], index: &mut usize) -> Result<u16, &'static str> {
+    let start = *index;
+    let end = start.saturating_add(2);
+    let bytes = payload
+        .get(start..end)
+        .and_then(|bytes| <[u8; 2]>::try_from(bytes).ok())
+        .ok_or("truncated Refloat response")?;
+    *index = end;
+    Ok(u16::from_be_bytes(bytes))
+}
+
+fn take_u32(payload: &[u8], index: &mut usize) -> Result<u32, &'static str> {
+    let start = *index;
+    let end = start.saturating_add(4);
+    let bytes = payload
+        .get(start..end)
+        .and_then(|bytes| <[u8; 4]>::try_from(bytes).ok())
+        .ok_or("truncated Refloat response")?;
+    *index = end;
+    Ok(u32::from_be_bytes(bytes))
+}
+
+fn take_float16_auto(payload: &[u8], index: &mut usize) -> Result<f32, &'static str> {
+    // QML uses the same half-float expansion at
+    // `refloat/ui.qml.in:653-662`; Refloat C writes these values with
+    // `buffer_append_float16_auto` at `refloat/src/conf/buffer.c:142-143`.
+    let bits = take_u16(payload, index)?;
+    Ok(float16_auto_to_f32(bits))
+}
+
+fn float16_auto_to_f32(bits: u16) -> f32 {
+    let sign = (u32::from(bits & 0x8000)) << 16;
+    let exponent = (bits >> 10) & 0x1f;
+    let mantissa = u32::from(bits & 0x03ff);
+    let float_bits = match (exponent, mantissa) {
+        (0, 0) => sign,
+        (0, _) => {
+            let shift = mantissa.leading_zeros() - 21;
+            let normalized_mantissa = (mantissa << (shift + 1)) & 0x03ff;
+            let normalized_exponent = 127 - 14 - shift;
+            sign | (normalized_exponent << 23) | (normalized_mantissa << 13)
+        }
+        (0x1f, _) => sign | 0x7f80_0000 | (mantissa << 13),
+        _ => sign | ((u32::from(exponent) + 112) << 23) | (mantissa << 13),
+    };
+    f32::from_bits(float_bits)
+}
+
+fn take_string_list(payload: &[u8], index: &mut usize) -> Result<Vec<String>, &'static str> {
+    let count = usize::from(take_u8(payload, index)?);
+    (0..count).map(|_| take_string(payload, index)).collect()
+}
+
+fn take_string(payload: &[u8], index: &mut usize) -> Result<String, &'static str> {
+    let len = usize::from(take_u8(payload, index)?);
+    let start = *index;
+    let end = start.saturating_add(len);
+    let bytes = payload
+        .get(start..end)
+        .ok_or("truncated realtime-data ID string")?;
+    *index = end;
+    core::str::from_utf8(bytes)
+        .map(str::to_owned)
+        .map_err(|_| "invalid realtime-data ID UTF-8")
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct CustomAppDataRequest {
     step: &'static str,
@@ -348,13 +707,73 @@ pub fn run_loopback_with_diagnostics(
     Ok(LoopbackReport::new(target, commands))
 }
 
-/// Sends one Refloat all-data app-data request and waits for a raw response.
+/// Sends Refloat realtime-ID and all-data app-data probes.
+///
+/// The first request mirrors QML startup at `refloat/ui.qml.in:704-705`; the
+/// second asks C for compact mode-4 data through
+/// `refloat/src/main.c:2210-2213`, decoded from the packet layout in
+/// `refloat/src/main.c:1313-1399`.
 pub fn run_refloat_probe_with_diagnostics(
     target: LoopbackTarget,
+    progress: impl FnMut(LoopbackProgress),
+) -> Result<RefloatProbeReport, LoopbackTransportError> {
+    run_refloat_probe_with_options(target, RefloatProbeOptions::default(), progress)
+}
+
+/// Sends Refloat realtime-ID, QML realtime-log, and all-data app-data probes.
+///
+/// Refloat QML requests realtime IDs once at
+/// `refloat/ui.qml.in:703-704`, samples realtime data on its 100 ms timer at
+/// `refloat/ui.qml.in:157-170`, and decodes samples at
+/// `refloat/ui.qml.in:852-925`.
+pub fn run_refloat_probe_with_options(
+    target: LoopbackTarget,
+    options: RefloatProbeOptions,
     mut progress: impl FnMut(LoopbackProgress),
-) -> Result<Vec<u8>, LoopbackTransportError> {
+) -> Result<RefloatProbeReport, LoopbackTransportError> {
     with_diagnostic_session(target, &mut progress, |runtime, session, progress| {
-        REFLOAT_ALL_DATA_MODE4_REQUEST.send(runtime, session, progress)
+        session.clear_pending();
+        let realtime_ids = REFLOAT_REALTIME_DATA_IDS_REQUEST
+            .send(runtime, session, progress)
+            .and_then(|response| {
+                decode_refloat_realtime_data_ids_response(&response).map_err(|error| {
+                    LoopbackTransportError::Device(format!(
+                        "{error}: response={}",
+                        hex_snippet(&response, 96)
+                    ))
+                })
+            })?;
+        let realtime_samples = (0..options.realtime_sample_count)
+            .map(|sample_index| {
+                if sample_index != 0 {
+                    std::thread::sleep(options.realtime_sample_interval);
+                }
+                session.clear_pending();
+                REFLOAT_REALTIME_DATA_REQUEST
+                    .send(runtime, session, progress)
+                    .and_then(|response| {
+                        decode_refloat_realtime_data_response(&response, &realtime_ids).map_err(
+                            |error| {
+                                LoopbackTransportError::Device(format!(
+                                    "{error}: response={}",
+                                    hex_snippet(&response, 96)
+                                ))
+                            },
+                        )
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        session.clear_pending();
+        let all_data = REFLOAT_ALL_DATA_MODE4_REQUEST.send(runtime, session, progress)?;
+        let all_data_snapshot = decode_refloat_all_data_mode4_response(&all_data)
+            .map_err(|error| LoopbackTransportError::Device(error.to_owned()))?;
+
+        Ok(RefloatProbeReport {
+            realtime_ids,
+            realtime_samples,
+            all_data_snapshot,
+            all_data,
+        })
     })
 }
 
@@ -935,7 +1354,10 @@ pub fn hex_snippet(bytes: &[u8], max_bytes: usize) -> String {
 mod tests {
     use super::{
         COMM_CUSTOM_APP_DATA, LoopbackProgress, REFLOAT_ALL_DATA_MODE4_REQUEST,
-        build_custom_app_data_packet, describe_vesc_packet, hex_snippet, timeout_error,
+        REFLOAT_REALTIME_DATA_IDS_REQUEST, REFLOAT_REALTIME_DATA_REQUEST, RefloatRealtimeDataIds,
+        build_custom_app_data_packet, decode_refloat_all_data_mode4_response,
+        decode_refloat_realtime_data_ids_response, decode_refloat_realtime_data_response,
+        describe_vesc_packet, hex_snippet, timeout_error,
     };
     use crate::loopback::LoopbackTransportError;
     use crate::vesc_uart::encode_packet;
@@ -974,6 +1396,93 @@ mod tests {
             .expect("ready");
 
         assert_eq!(decoded, [COMM_CUSTOM_APP_DATA, 101, 10, 4]);
+    }
+
+    #[test]
+    fn refloat_probe_uses_realtime_data_ids_request() {
+        let wire = build_custom_app_data_packet(REFLOAT_REALTIME_DATA_IDS_REQUEST.payload);
+        let decoded = crate::vesc_uart::PacketDecoder::new()
+            .push(&wire)
+            .expect("packet")
+            .pop()
+            .expect("ready");
+
+        assert_eq!(decoded, [COMM_CUSTOM_APP_DATA, 101, 32]);
+    }
+
+    #[test]
+    fn refloat_probe_uses_qml_realtime_data_request() {
+        let wire = build_custom_app_data_packet(REFLOAT_REALTIME_DATA_REQUEST.payload);
+        let decoded = crate::vesc_uart::PacketDecoder::new()
+            .push(&wire)
+            .expect("packet")
+            .pop()
+            .expect("ready");
+
+        assert_eq!(decoded, [COMM_CUSTOM_APP_DATA, 101, 31]);
+    }
+
+    #[test]
+    fn refloat_realtime_id_decoder_matches_qml_string_lists() {
+        let payload = [
+            101, 32, 2, 11, b'm', b'o', b't', b'o', b'r', b'.', b's', b'p', b'e', b'e', b'd', 10,
+            b'm', b'o', b't', b'o', b'r', b'.', b'e', b'r', b'p', b'm', 1, 8, b's', b'e', b't',
+            b'p', b'o', b'i', b'n', b't',
+        ];
+
+        let ids = decode_refloat_realtime_data_ids_response(&payload).expect("ids");
+
+        assert_eq!(ids.always, ["motor.speed", "motor.erpm"]);
+        assert_eq!(ids.runtime, ["setpoint"]);
+    }
+
+    #[test]
+    fn refloat_realtime_data_decoder_matches_qml_log_sample() {
+        let ids = RefloatRealtimeDataIds {
+            always: vec!["imu.pitch".to_owned(), "motor.current".to_owned()],
+            runtime: vec!["balance_current".to_owned(), "setpoint".to_owned()],
+        };
+        let payload = [
+            101, 31, 1, 0, 0, 0, 3, 0xe8, 0x13, 0xc1, 0x20, 0, 0x3c, 0, 0xc0, 0, 0x38, 0, 0x42, 0,
+        ];
+
+        let sample = decode_refloat_realtime_data_response(&payload, &ids).expect("rt sample");
+
+        assert_eq!(sample.timestamp_ticks, 1000);
+        assert_eq!(sample.package_mode, 1);
+        assert_eq!(sample.package_state, 3);
+        assert!(sample.has_runtime);
+        assert!(sample.running);
+        assert!(sample.wheelslip);
+        assert_eq!(sample.setpoint_adjustment, 2);
+        assert_eq!(sample.footpad_switch, 3);
+        assert_eq!(sample.value("imu.pitch"), Some(1.0));
+        assert_eq!(sample.value("motor.current"), Some(-2.0));
+        assert_eq!(sample.value("balance_current"), Some(0.5));
+        assert_eq!(sample.value("setpoint"), Some(3.0));
+    }
+
+    #[test]
+    fn refloat_all_data_decoder_reports_pre_bench_state_fields() {
+        let payload = [
+            101, 10, 4, 0, 25, 0, 2, 0xff, 0xfd, 0x2b, 0x0a, 125, 0, 128, 128, 128, 128, 128, 128,
+            0, 12, 128, 0x02, 0xd2, 0x04, 0xd2, 0, 0, 0, 55, 0xff, 0xf4, 128, 222,
+        ];
+
+        let snapshot = decode_refloat_all_data_mode4_response(&payload).expect("all data");
+
+        assert_eq!(snapshot.float_state, 11);
+        assert_eq!(snapshot.setpoint_adjustment, 2);
+        assert_eq!(snapshot.footpad_switch, 2);
+        assert!(snapshot.handtest);
+        assert_eq!(snapshot.balance_current_amps, 2.5);
+        assert_eq!(snapshot.pitch_rad, 1.2);
+        assert_eq!(snapshot.roll_rad, -0.3);
+        assert_eq!(snapshot.adc1_volts, 2.5);
+        assert_eq!(snapshot.battery_voltage, 72.2);
+        assert_eq!(snapshot.erpm, 1234);
+        assert_eq!(snapshot.motor_current_amps, 5.5);
+        assert_eq!(snapshot.battery_current_amps, -1.2);
     }
 
     #[test]

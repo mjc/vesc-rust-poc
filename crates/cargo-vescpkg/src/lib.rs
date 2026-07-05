@@ -37,7 +37,7 @@ pub enum Command {
     /// Read back the installed QML app payload from a target device.
     QmlAppRead(QmlAppReadCommand),
     /// Send a Refloat app-data handshake probe to a target device.
-    RefloatProbe(LoopbackCommand),
+    RefloatProbe(RefloatProbeCommand),
     /// Install a package on a target device.
     PackageInstall(PackageInstallCommand),
     /// Erase an installed package from a target device.
@@ -57,6 +57,23 @@ pub struct LoopbackCommand {
     pub device_name: Option<String>,
     /// Optional BLE address filter.
     pub address: Option<String>,
+}
+
+/// Arguments for the `refloat-probe` command.
+///
+/// The realtime sampling knobs mirror Refloat QML's 100 ms realtime poll at
+/// `refloat/ui.qml.in:157-170` and command send at
+/// `refloat/ui.qml.in:699-704`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RefloatProbeCommand {
+    /// Optional BLE device-name filter.
+    pub device_name: Option<String>,
+    /// Optional BLE address filter.
+    pub address: Option<String>,
+    /// Number of QML realtime-log samples to collect.
+    pub realtime_samples: usize,
+    /// Milliseconds between QML realtime-log samples.
+    pub realtime_sample_interval_ms: u64,
 }
 
 /// Arguments for the `lisp-probe` command.
@@ -773,10 +790,14 @@ fn loopback_target(
     }
 }
 
-fn run_refloat_probe(command: LoopbackCommand) -> ExitCode {
+fn run_refloat_probe(command: RefloatProbeCommand) -> ExitCode {
     let target = loopback_target(command.address, command.device_name);
+    let probe_options = loopback_debug::RefloatProbeOptions {
+        realtime_sample_count: command.realtime_samples,
+        realtime_sample_interval: Duration::from_millis(command.realtime_sample_interval_ms),
+    };
 
-    loopback_debug::run_refloat_probe_with_diagnostics(target, |event| {
+    loopback_debug::run_refloat_probe_with_options(target, probe_options, |event| {
         std::iter::once(event)
             .filter(loopback_debug::LoopbackProgress::should_print_to_cli)
             .for_each(|event| println!("refloat probe: {}", event.describe()));
@@ -786,11 +807,74 @@ fn run_refloat_probe(command: LoopbackCommand) -> ExitCode {
             eprintln!("refloat probe failed: {error}");
             ExitCode::from(1)
         },
-        |response| {
+        |report| {
+            // Realtime ID list print mirrors Refloat QML startup at
+            // `refloat/ui.qml.in:704-705`; C builds the two counted lists at
+            // `refloat/src/main.c:1876-1901`.
+            println!(
+                "refloat probe realtime ids: always={} [{}] runtime={} [{}]",
+                report.realtime_ids.always.len(),
+                report.realtime_ids.always.join(", "),
+                report.realtime_ids.runtime.len(),
+                report.realtime_ids.runtime.join(", ")
+            );
+            report
+                .realtime_samples
+                .iter()
+                .enumerate()
+                .for_each(|(index, sample)| {
+                    let value = |name: &str| {
+                        sample
+                            .value(name)
+                            .map(|value| format!("{value:.2}"))
+                            .unwrap_or_else(|| "NaN".to_owned())
+                    };
+                    // QML appends these fields to the realtime plot at
+                    // `refloat/ui.qml.in:922-924`; the series names come from
+                    // `refloat/ui.qml.in:2113-2136`.
+                    println!(
+                        "refloat probe rt[{index}]: t={} mode={} state={} runtime_values={} running={} wheelslip={} sat={} footpad={} pitch_deg={} balance_pitch_deg={} setpoint_deg={} balance_current={}A motor_current={}A motor_filtered={}A booster={}A erpm={} duty={}",
+                        sample.timestamp_ticks,
+                        sample.package_mode,
+                        sample.package_state,
+                        sample.has_runtime,
+                        sample.running,
+                        sample.wheelslip,
+                        sample.setpoint_adjustment,
+                        sample.footpad_switch,
+                        value("imu.pitch"),
+                        value("imu.balance_pitch"),
+                        value("setpoint"),
+                        value("balance_current"),
+                        value("motor.current"),
+                        value("motor.filt_current"),
+                        value("booster.current"),
+                        value("motor.erpm"),
+                        value("motor.duty_cycle")
+                    );
+                });
+            // State print decodes compact all-data mode 4 from
+            // `refloat/src/main.c:1313-1399`; HANDTEST and float state are
+            // packed at `refloat/src/main.c:1333-1341`.
+            println!(
+                "refloat probe state: float_state={} sat={} footpad={} handtest={} pitch={:.2} roll={:.2} balance_pitch={:.2} balance_current={:.1}A motor_current={:.1}A battery_current={:.1}A voltage={:.1}V erpm={}",
+                report.all_data_snapshot.float_state,
+                report.all_data_snapshot.setpoint_adjustment,
+                report.all_data_snapshot.footpad_switch,
+                report.all_data_snapshot.handtest,
+                report.all_data_snapshot.pitch_rad,
+                report.all_data_snapshot.roll_rad,
+                report.all_data_snapshot.balance_pitch_rad,
+                report.all_data_snapshot.balance_current_amps,
+                report.all_data_snapshot.motor_current_amps,
+                report.all_data_snapshot.battery_current_amps,
+                report.all_data_snapshot.battery_voltage,
+                report.all_data_snapshot.erpm
+            );
             println!(
                 "refloat probe ok: response_len={} response={}",
-                response.len(),
-                loopback_debug::hex_snippet(&response, 96)
+                report.all_data.len(),
+                loopback_debug::hex_snippet(&report.all_data, 96)
             );
             ExitCode::SUCCESS
         },
@@ -905,7 +989,7 @@ where
         Some("lisp-stop") => parse_lisp_stop(iter).map(Command::LispStop),
         Some("lisp-read-code") => parse_lisp_read_code(iter).map(Command::LispReadCode),
         Some("qml-app-read") => parse_qml_app_read(iter).map(Command::QmlAppRead),
-        Some("refloat-probe") => parse_loopback(iter).map(Command::RefloatProbe),
+        Some("refloat-probe") => parse_refloat_probe(iter).map(Command::RefloatProbe),
         Some("package-install") => {
             parse_package_install(iter, "package-install").map(Command::PackageInstall)
         }
@@ -952,6 +1036,52 @@ fn parse_loopback(iter: impl Iterator<Item = String>) -> Result<LoopbackCommand,
     Ok(LoopbackCommand {
         device_name,
         address,
+    })
+}
+
+fn parse_refloat_probe(
+    mut iter: impl Iterator<Item = String>,
+) -> Result<RefloatProbeCommand, ParseError> {
+    let mut device_name = None;
+    let mut address = None;
+    let mut realtime_samples = 1;
+    let mut realtime_sample_interval_ms = 100;
+
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--device" => {
+                device_name = Some(
+                    iter.next()
+                        .ok_or_else(|| ParseError::UnknownCommand("--device".to_owned()))?,
+                );
+            }
+            "--address" => {
+                address = Some(
+                    iter.next()
+                        .ok_or_else(|| ParseError::UnknownCommand("--address".to_owned()))?,
+                );
+            }
+            "--samples" => {
+                realtime_samples = iter
+                    .next()
+                    .and_then(|value| value.parse().ok())
+                    .ok_or_else(|| ParseError::UnknownCommand("--samples".to_owned()))?;
+            }
+            "--sample-interval-ms" => {
+                realtime_sample_interval_ms = iter
+                    .next()
+                    .and_then(|value| value.parse().ok())
+                    .ok_or_else(|| ParseError::UnknownCommand("--sample-interval-ms".to_owned()))?;
+            }
+            other => return Err(ParseError::UnknownCommand(other.to_owned())),
+        }
+    }
+
+    Ok(RefloatProbeCommand {
+        device_name,
+        address,
+        realtime_samples,
+        realtime_sample_interval_ms,
     })
 }
 
@@ -1274,7 +1404,8 @@ mod tests {
     use super::{
         Command, LispEvalCommand, LispProbeCommand, LispReadCodeCommand, LispStopCommand,
         LoopbackCommand, PackageEraseCommand, PackageInstallCommand, ParseError, QmlAppReadCommand,
-        SnakeCommand, SnakeRunMode, parse_args, qml_preview, snake_action_from_key,
+        RefloatProbeCommand, SnakeCommand, SnakeRunMode, parse_args, qml_preview,
+        snake_action_from_key,
     };
     use crate::snake::{
         SnakeBoardHeight, SnakeBoardWidth, SnakeDirection, SnakeLocalAction, SnakeSeed,
@@ -1382,11 +1513,17 @@ mod tests {
                 "cargo-vescpkg",
                 "refloat-probe",
                 "--device",
-                "VESC BLE UART"
+                "VESC BLE UART",
+                "--samples",
+                "50",
+                "--sample-interval-ms",
+                "100"
             ]),
-            Ok(Command::RefloatProbe(LoopbackCommand {
+            Ok(Command::RefloatProbe(RefloatProbeCommand {
                 device_name: Some("VESC BLE UART".to_owned()),
                 address: None,
+                realtime_samples: 50,
+                realtime_sample_interval_ms: 100,
             }))
         );
         assert_eq!(

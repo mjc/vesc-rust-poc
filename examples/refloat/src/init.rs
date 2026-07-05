@@ -30,6 +30,7 @@ pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
     refloat_package_start(
         || crate::app_data::install_refloat_app_data_state(info),
         || crate::runtime::start_refloat_runtime_threads(info),
+        || crate::app_data::register_refloat_imu_callback(info),
         || crate::app_data::register_refloat_app_data_callbacks(info),
         || unsafe { crate::extensions::register_refloat_loader_extensions(info) },
     )
@@ -60,18 +61,20 @@ pub extern "C" fn package_lib_init(_info: *mut ffi::LibInfo) -> bool {
     // threads at `/Users/mjc/projects/refloat/src/main.c:2439-2449`, then
     // registers IMU/custom config/app-data/LispBM at
     // `/Users/mjc/projects/refloat/src/main.c:2455-2459`.
-    refloat_package_start(|| true, || true, || true, || true)
+    refloat_package_start(|| true, || true, || true, || true, || true)
 }
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 fn refloat_package_start(
     install_state: impl FnOnce() -> bool,
     start_runtime_threads: impl FnOnce() -> bool,
+    register_imu_callback: impl FnOnce() -> bool,
     register_app_data_callbacks: impl FnOnce() -> bool,
     register_loader_extensions: impl FnOnce() -> bool,
 ) -> bool {
     install_state()
         && start_runtime_threads()
+        && register_imu_callback()
         && register_app_data_callbacks()
         && register_loader_extensions()
 }
@@ -92,6 +95,7 @@ mod tests {
     fn refloat_startup_registers_state_before_app_data_before_loader_extensions() {
         let state_calls = Cell::new(0);
         let thread_calls = Cell::new(0);
+        let imu_calls = Cell::new(0);
         let app_data_calls = Cell::new(0);
         let extension_calls = Cell::new(0);
 
@@ -111,9 +115,21 @@ mod tests {
                 true
             },
             || {
+                // Refloat registers `imu_ref_callback` after thread startup
+                // and before app-data/custom-config callbacks at
+                // `src/main.c:2455-2457`.
+                imu_calls.set(imu_calls.get() + 1);
+                assert_eq!(state_calls.get(), 1);
+                assert_eq!(thread_calls.get(), 1);
+                assert_eq!(app_data_calls.get(), 0);
+                assert_eq!(extension_calls.get(), 0);
+                true
+            },
+            || {
                 app_data_calls.set(app_data_calls.get() + 1);
                 assert_eq!(state_calls.get(), 1);
                 assert_eq!(thread_calls.get(), 1);
+                assert_eq!(imu_calls.get(), 1);
                 assert_eq!(extension_calls.get(), 0);
                 true
             },
@@ -129,6 +145,7 @@ mod tests {
         assert!(result);
         assert_eq!(state_calls.get(), 1);
         assert_eq!(thread_calls.get(), 1);
+        assert_eq!(imu_calls.get(), 1);
         assert_eq!(app_data_calls.get(), 1);
         assert_eq!(extension_calls.get(), 1);
     }
@@ -137,6 +154,7 @@ mod tests {
     fn refloat_startup_fails_when_state_install_fails() {
         assert!(!super::refloat_package_start(
             || false,
+            || true,
             || true,
             || true,
             || true
@@ -149,6 +167,18 @@ mod tests {
             || true,
             || false,
             || true,
+            || true,
+            || true
+        ));
+    }
+
+    #[test]
+    fn refloat_startup_fails_when_imu_callback_registration_fails() {
+        assert!(!super::refloat_package_start(
+            || true,
+            || true,
+            || false,
+            || true,
             || true
         ));
     }
@@ -156,6 +186,7 @@ mod tests {
     #[test]
     fn refloat_startup_fails_when_app_data_callbacks_fail() {
         assert!(!super::refloat_package_start(
+            || true,
             || true,
             || true,
             || false,
@@ -166,6 +197,7 @@ mod tests {
     #[test]
     fn refloat_startup_fails_when_loader_extensions_fail() {
         assert!(!super::refloat_package_start(
+            || true,
             || true,
             || true,
             || true,

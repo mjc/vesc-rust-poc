@@ -37,7 +37,7 @@ pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
 pub use vescpkg_rs_units as units;
 
 pub use alloc::{AllocBindings, AllocError, FirmwareAllocation, FirmwareAllocator};
-pub use bindings::{AppDataBindings, CustomConfigBindings, LbmBindings};
+pub use bindings::{AppDataBindings, CustomConfigBindings, ImuReadCallbackBindings, LbmBindings};
 pub use extension::{ExtensionDescriptor, ExtensionNameError, RegisterError};
 pub use imu::{ImuApi, ImuBindings};
 pub use lifecycle_core::{

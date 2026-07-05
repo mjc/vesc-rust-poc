@@ -371,6 +371,10 @@ fn assert_no_forbidden_runtime_symbols(elf_symbols: &str, label: &str) {
 }
 
 fn audit_refloat_native_lib_layout(paths: &NativeLibArtifactPaths) {
+    // Rust's balance-filter parity follows Refloat `src/balance_filter.c:53-154`;
+    // keep the native blob under 50 KiB while allowing that source-backed code.
+    const REFLOAT_NATIVE_BLOB_MAX_BYTES: u64 = 50 * 1024;
+
     let blob = fs::read(&paths.bin).expect("Refloat native-lib binary bytes");
     let sections = all_section_layouts(&paths.elf);
 
@@ -383,8 +387,8 @@ fn audit_refloat_native_lib_layout(paths: &NativeLibArtifactPaths) {
         .expect("Refloat native-lib binary metadata")
         .len();
     assert!(
-        native_bin_size <= 47 * 1024,
-        "expected the Refloat native blob with generated config XML to stay below 47 KiB, got {native_bin_size} bytes"
+        native_bin_size <= REFLOAT_NATIVE_BLOB_MAX_BYTES,
+        "expected the Refloat native blob with generated config XML to stay below 50 KiB, got {native_bin_size} bytes"
     );
 
     assert!(

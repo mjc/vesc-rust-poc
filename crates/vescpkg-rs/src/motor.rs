@@ -94,17 +94,33 @@ pub trait MotorControlBindings {
     /// Reset the firmware motor-command safety timeout.
     ///
     /// Refloat v1.2.1 calls this before motor-control output at
-    /// `src/motor_control.c:92-93`.
+    /// `third_party/refloat/src/motor_control.c:92-93`; the VESC ABI slot is
+    /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:538`.
     fn timeout_reset(&self);
     /// Keep current control enabled after a current command.
     ///
     /// Refloat v1.2.1 sets `0.05f` seconds before sending requested current at
-    /// `src/motor_control.c:96-99`.
+    /// `third_party/refloat/src/motor_control.c:96-99`; the VESC ABI slot is
+    /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:476`.
     fn set_current_off_delay(&self, seconds: f32);
     /// Set motor current in amps.
     ///
-    /// Refloat v1.2.1 sends the requested current at `src/motor_control.c:99`.
+    /// Refloat v1.2.1 sends the requested current at
+    /// `third_party/refloat/src/motor_control.c:99`; the VESC ABI slot is
+    /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:440`.
     fn set_current(&self, current: MotorCurrent);
+    /// Set motor duty cycle.
+    ///
+    /// Refloat v1.2.1 sends parking-brake duty zero at
+    /// `third_party/refloat/src/motor_control.c:112-114`; the VESC ABI slot is
+    /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:436`.
+    fn set_duty(&self, duty: SignedRatio);
+    /// Set motor brake current in amps.
+    ///
+    /// Refloat v1.2.1 sends idle brake current at
+    /// `third_party/refloat/src/motor_control.c:115-117`; the VESC ABI slot is
+    /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:441`.
+    fn set_brake_current(&self, current: MotorCurrent);
 }
 
 #[cfg(not(test))]
@@ -237,6 +253,14 @@ impl MotorControlBindings for RealMotorControlBindings {
 
     fn set_current(&self, current: MotorCurrent) {
         unsafe { vescpkg_rs_sys::raw::mc_set_current(current.current().as_amps()) };
+    }
+
+    fn set_duty(&self, duty: SignedRatio) {
+        unsafe { vescpkg_rs_sys::raw::mc_set_duty(duty.as_ratio()) };
+    }
+
+    fn set_brake_current(&self, current: MotorCurrent) {
+        unsafe { vescpkg_rs_sys::raw::mc_set_brake_current(current.current().as_amps()) };
     }
 }
 
@@ -402,6 +426,24 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
     /// Set motor current.
     pub fn set_current(&self, current: MotorCurrent) {
         self.bindings.set_current(current);
+    }
+
+    /// Set motor duty cycle.
+    ///
+    /// Refloat uses this for parking brake duty zero at
+    /// `third_party/refloat/src/motor_control.c:112-114`; the VESC ABI slot is
+    /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:436`.
+    pub fn set_duty(&self, duty: SignedRatio) {
+        self.bindings.set_duty(duty);
+    }
+
+    /// Set motor brake current.
+    ///
+    /// Refloat uses this for idle brake current at
+    /// `third_party/refloat/src/motor_control.c:115-117`; the VESC ABI slot is
+    /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:441`.
+    pub fn set_brake_current(&self, current: MotorCurrent) {
+        self.bindings.set_brake_current(current);
     }
 }
 
@@ -759,8 +801,24 @@ pub mod test_support {
         pub set_current_off_delay_calls: Cell<usize>,
         /// Number of current command calls observed.
         pub set_current_calls: Cell<usize>,
+        /// Number of duty command calls observed.
+        ///
+        /// Mirrors the parking-brake duty slot used by Refloat at
+        /// `third_party/refloat/src/motor_control.c:112-114`.
+        pub set_duty_calls: Cell<usize>,
+        /// Number of brake-current command calls observed.
+        ///
+        /// Mirrors the idle brake-current slot used by Refloat at
+        /// `third_party/refloat/src/motor_control.c:115-117`.
+        pub set_brake_current_calls: Cell<usize>,
         current_off_delay_seconds: Cell<f32>,
         current: Cell<MotorCurrent>,
+        // Refloat sends duty zero from the parking-brake branch at
+        // `third_party/refloat/src/motor_control.c:112-114`.
+        duty: Cell<SignedRatio>,
+        // Refloat sends brake current from the idle fallback at
+        // `third_party/refloat/src/motor_control.c:115-117`.
+        brake_current: Cell<MotorCurrent>,
     }
 
     impl Default for FakeMotorControlBindings {
@@ -776,8 +834,12 @@ pub mod test_support {
                 timeout_reset_calls: Cell::new(0),
                 set_current_off_delay_calls: Cell::new(0),
                 set_current_calls: Cell::new(0),
+                set_duty_calls: Cell::new(0),
+                set_brake_current_calls: Cell::new(0),
                 current_off_delay_seconds: Cell::new(0.0),
                 current: Cell::new(MotorCurrent::new(Current::from_amps(0.0))),
+                duty: Cell::new(SignedRatio::from_ratio_const(0.0)),
+                brake_current: Cell::new(MotorCurrent::new(Current::from_amps(0.0))),
             }
         }
 
@@ -789,6 +851,22 @@ pub mod test_support {
         /// Return the most recent current command.
         pub fn current(&self) -> MotorCurrent {
             self.current.get()
+        }
+
+        /// Return the most recent duty command.
+        ///
+        /// Refloat's parking-brake proof is
+        /// `third_party/refloat/src/motor_control.c:112-114`.
+        pub fn duty(&self) -> SignedRatio {
+            self.duty.get()
+        }
+
+        /// Return the most recent brake-current command.
+        ///
+        /// Refloat's idle brake proof is
+        /// `third_party/refloat/src/motor_control.c:115-117`.
+        pub fn brake_current(&self) -> MotorCurrent {
+            self.brake_current.get()
         }
     }
 
@@ -807,6 +885,17 @@ pub mod test_support {
         fn set_current(&self, current: MotorCurrent) {
             self.set_current_calls.set(self.set_current_calls.get() + 1);
             self.current.set(current);
+        }
+
+        fn set_duty(&self, duty: SignedRatio) {
+            self.set_duty_calls.set(self.set_duty_calls.get() + 1);
+            self.duty.set(duty);
+        }
+
+        fn set_brake_current(&self, current: MotorCurrent) {
+            self.set_brake_current_calls
+                .set(self.set_brake_current_calls.get() + 1);
+            self.brake_current.set(current);
         }
     }
 }

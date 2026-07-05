@@ -4,17 +4,17 @@ expression: report
 ---
 refloat_native_mapping:
 entrypoints:
-  package_init: present addr=0x1820 symbol=package_lib_init
-  app_data_handler: present addr=0x1a00 symbol=refloat_handle_app_data
-  stop_hook: present addr=0xf80 symbol=_ZN20vesc_example_refloat8app_data21stop_refloat_app_data17h396be9e266c760abE
-  main_thread: present addr=0x9b0 symbol=_ZN20vesc_example_refloat7runtime19refloat_main_thread17hf4b8792fbe283886E
-  aux_thread: present addr=0x980 symbol=_ZN20vesc_example_refloat7runtime18refloat_aux_thread17hc2f51d7df6be2fc3E
+  package_init: present addr=0x3050 symbol=package_lib_init
+  app_data_handler: present addr=0x32b0 symbol=refloat_handle_app_data
+  stop_hook: present addr=0x2680 symbol=_ZN20vesc_example_refloat8app_data21stop_refloat_app_data17h396be9e266c760abE
+  main_thread: present addr=0x930 symbol=_ZN20vesc_example_refloat7runtime19refloat_main_thread17hf4b8792fbe283886E
+  aux_thread: present addr=0x900 symbol=_ZN20vesc_example_refloat7runtime18refloat_aux_thread17hc2f51d7df6be2fc3E
 runtime_paths:
-  boot_runtime_refresh: present addr=0xbc0 symbol=_ZN20vesc_example_refloat8app_data19RefloatAppDataState26refresh_boot_runtime_state17hf9b923b0c6c44b60E
-  config_get: present addr=0xac0 symbol=_ZN20vesc_example_refloat8app_data15refloat_get_cfg17hd2311ee92c73b21eE
-  config_set: present addr=0xb00 symbol=_ZN20vesc_example_refloat8app_data15refloat_set_cfg17haa20e0cbfbf8af04E
-  config_xml: present addr=0xf50 symbol=_ZN20vesc_example_refloat8app_data19refloat_get_cfg_xml17h5e247df83f17f907E
-  state_from_arg: present addr=0xfd0 symbol=_ZN20vesc_example_refloat8app_data22refloat_state_from_arg17h1430520902cd9b3fE
+  boot_runtime_refresh: missing needle=refresh_boot_runtime_state
+  config_get: present addr=0x24f0 symbol=_ZN20vesc_example_refloat8app_data15refloat_get_cfg17hd2311ee92c73b21eE
+  config_set: present addr=0x2530 symbol=_ZN20vesc_example_refloat8app_data15refloat_set_cfg17haa20e0cbfbf8af04E
+  config_xml: present addr=0x2630 symbol=_ZN20vesc_example_refloat8app_data19refloat_get_cfg_xml17h5e247df83f17f907E
+  state_from_arg: present addr=0x26d0 symbol=_ZN20vesc_example_refloat8app_data22refloat_state_from_arg17h73bd7858f3196324E
 firmware_slots:
   malloc: present slot=184
   set_app_data_handler: present slot=596
