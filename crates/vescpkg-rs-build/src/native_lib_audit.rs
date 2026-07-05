@@ -8,7 +8,7 @@ use crate::native_audit::{
 };
 use crate::native_elf_semantics::{
     analyze_native_lib_elf, assert_loader_init_best_effort, assert_native_lib_semantics,
-    assert_refloat_registration_tail,
+    assert_refloat_loader_only_containment,
 };
 use crate::native_inspect::{
     SectionLayout, all_section_layouts, elf_has_no_relocations, elf_is_executable,
@@ -287,7 +287,7 @@ pub fn audit_refloat_native_lib_artifacts(paths: &NativeLibArtifactPaths) -> Str
     audit_refloat_native_lib_layout(paths);
     audit_native_lib_flat_binary(&paths.elf, &paths.bin);
     assert_loader_init_best_effort(&paths.elf);
-    assert_refloat_registration_tail(&paths.elf);
+    assert_refloat_loader_only_containment(&paths.elf);
     semantic_snapshot_report(&paths.elf)
 }
 
@@ -325,11 +325,11 @@ fn audit_refloat_native_lib_symbols(paths: &NativeLibArtifactPaths) {
     }
 
     assert!(
-        elf_defined.contains("refloat_handle_app_data")
-            && elf_defined
+        !elf_defined.contains("refloat_handle_app_data")
+            && !elf_defined
                 .iter()
                 .any(|name| name.contains("stop_refloat_app_data")),
-        "Refloat native image must retain app-data and stop entrypoints; upstream v1.2.1 (0ef6e99d8701) wires app-data at src/main.c:2143 and 2457 and stop cleanup at src/main.c:2398-2412:\n{elf_symbols}"
+        "Refloat containment image must not retain app-data entrypoints; upstream v1.2.1 (0ef6e99d8701) wires app-data at src/main.c:2143 and 2457:\n{elf_symbols}"
     );
     assert!(
         !elf_defined.contains("ext_rust_probe_diag_v4"),
@@ -416,21 +416,6 @@ fn audit_refloat_native_lib_layout(paths: &NativeLibArtifactPaths) {
     let data = section_from(&sections, ".data");
     let got = section_from(&sections, ".got");
     let text = section_from(&sections, ".text");
-    let semantics = analyze_native_lib_elf(&paths.elf);
-    let handler_thumb_addr = semantics
-        .symbols
-        .iter()
-        .find_map(|(address, name)| {
-            (name == "refloat_handle_app_data").then_some(*address as u32 | 1)
-        })
-        .expect("Refloat handler symbol must be present");
-    let got_words = blob[got.vma..got.vma + got.size]
-        .chunks_exact(4)
-        .map(|word| u32::from_le_bytes(word.try_into().expect("4-byte GOT word")));
-    assert!(
-        !got_words.into_iter().any(|word| word == handler_thumb_addr),
-        "Refloat app-data handler must be registered with a runtime PC-relative address, not stale GOT word 0x{handler_thumb_addr:08x}"
-    );
 
     assert_eq!(
         *program_ptr,

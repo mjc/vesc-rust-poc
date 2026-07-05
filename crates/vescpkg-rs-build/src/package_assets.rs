@@ -54,6 +54,24 @@ enum PackageAssetProfile {
     Refloat,
 }
 
+const REFLOAT_LOADER: &str = concat!(
+    "(import \"src/package_lib.bin\" 'package-lib)\n",
+    "(load-native-lib package-lib)\n\n",
+    "(define fw-ver (sysinfo 'fw-ver))\n",
+    "(apply ext-set-fw-version fw-ver)\n\n",
+    "; Start the BMS polling loop in a thread if enabled\n",
+    "(if (ext-bms)\n",
+    "    (if (or (>= (first fw-ver) 7) (and (= (first fw-ver) 6) (>= (second fw-ver) 5)))\n",
+    "        (progn\n",
+    "            (import \"bms.lisp\" 'bms)\n",
+    "            (read-eval-program bms)\n",
+    "            (spawn \"Refloat BMS\" 50 bms-loop)\n",
+    "        )\n",
+    "        (print \"[refloat] BMS Integration: Unsupported firmware version, 6.05+ required.\")\n",
+    "    )\n",
+    ")\n",
+);
+
 impl PackageAssets {
     /// Construct the asset set for one package layout and provenance.
     pub fn new(layout: PackageLayout, provenance: PackageProvenance) -> Self {
@@ -170,9 +188,7 @@ impl PackageAssets {
                 "(print \"vesc-rust-load-v7\")\n",
                 "(print (load-native-lib package-lib))\n",
             ),
-            PackageAssetProfile::Refloat => {
-                "(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n"
-            }
+            PackageAssetProfile::Refloat => REFLOAT_LOADER,
         }
         .to_owned()
     }
@@ -241,11 +257,26 @@ mod tests {
             PackageLayout::new(REFLOAT_PACKAGE_NAME, REFLOAT_PACKAGE_VERSION),
             PackageProvenance::empty(),
         );
-        assert_eq!(
-            refloat_assets.render_loader(),
-            "(import \"src/package_lib.bin\" 'package-lib)\n(load-native-lib package-lib)\n"
+        assert!(
+            refloat_assets
+                .render_loader()
+                .contains("(load-native-lib package-lib)")
+        );
+        assert!(
+            refloat_assets
+                .render_loader()
+                .contains("(apply ext-set-fw-version fw-ver)")
+        );
+        assert!(
+            refloat_assets
+                .render_loader()
+                .contains("(import \"bms.lisp\" 'bms)")
+        );
+        assert!(
+            refloat_assets
+                .render_loader()
+                .contains("(read-eval-program bms)")
         );
         assert!(!refloat_assets.render_loader().contains("vesc-rust-load-v7"));
-        assert!(!refloat_assets.render_loader().contains("(print"));
     }
 }

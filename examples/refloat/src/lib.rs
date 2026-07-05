@@ -14,6 +14,7 @@ extern crate std;
 
 pub mod app_data;
 pub mod domain;
+pub mod extensions;
 pub mod init;
 
 pub use init::package_lib_init;

@@ -101,7 +101,7 @@ pub unsafe extern "C" fn refloat_handle_app_data(data: *mut u8, len: u32) {
 /// `info` must be null or point to live VESC loader metadata. `state` and
 /// `handler` must remain valid until firmware clears/replaces the handler and
 /// stops the package.
-#[cfg(any(test, target_arch = "arm"))]
+#[cfg(test)]
 pub(crate) unsafe fn install_refloat_startup_app_data_with<B: AppDataBindings>(
     info: *mut ffi::LibInfo,
     state: &mut RefloatAppDataState,
@@ -112,24 +112,59 @@ pub(crate) unsafe fn install_refloat_startup_app_data_with<B: AppDataBindings>(
     unsafe { lifecycle.install_with_state(info, state, handler) }.is_ok()
 }
 
+#[cfg(any(test, target_arch = "arm"))]
+unsafe fn clear_refloat_app_data_loader_info(info: *mut ffi::LibInfo) {
+    if let Some(info) = unsafe { info.as_mut() } {
+        info.arg = core::ptr::null_mut();
+        info.stop_fun = None;
+    }
+}
+
+/// Allocate and install source-startup Refloat app-data state through firmware memory.
+///
+/// # Safety
+///
+/// `info` must be null or point to live VESC loader metadata. `handler` must
+/// remain valid until firmware clears/replaces the handler and stops the package.
+#[cfg(any(test, target_arch = "arm"))]
+pub(crate) unsafe fn allocate_refloat_startup_app_data_with<
+    A: vescpkg_rs::AllocBindings,
+    B: AppDataBindings,
+>(
+    info: *mut ffi::LibInfo,
+    allocator: &vescpkg_rs::FirmwareAllocator<'_, A>,
+    lifecycle: &RefloatAppDataLifecycle<B>,
+    handler: ffi::AppDataHandler,
+) -> bool {
+    let Ok(mut allocation) = allocator.allocate_for::<RefloatAppDataState>(1) else {
+        unsafe { clear_refloat_app_data_loader_info(info) };
+        return false;
+    };
+    let state = allocation.as_mut_ptr();
+    unsafe {
+        state.write(RefloatAppDataState::new(
+            RefloatAllDataPayloads::source_startup(),
+        ))
+    };
+    let state = unsafe { &mut *state };
+
+    if unsafe { lifecycle.install_with_state(info, state, handler) }.is_err() {
+        unsafe { clear_refloat_app_data_loader_info(info) };
+        return false;
+    }
+
+    let _ = allocation.into_raw();
+    true
+}
+
 /// Allocate and install Refloat startup app-data state using firmware memory.
 #[cfg(all(not(test), target_arch = "arm"))]
 pub fn install_refloat_app_data(info: *mut ffi::LibInfo) -> bool {
-    static mut REFLOAT_APP_DATA_STATE: RefloatAppDataState =
-        RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
-    let state_ref = unsafe { &mut *core::ptr::addr_of_mut!(REFLOAT_APP_DATA_STATE) };
-
+    let alloc_bindings = vescpkg_rs::RealBindings;
+    let allocator = vescpkg_rs::FirmwareAllocator::new(&alloc_bindings);
     let lifecycle = RefloatAppDataLifecycle::new(vescpkg_rs::RealBindings);
     let handler = runtime_refloat_app_data_handler();
-    let installed =
-        unsafe { install_refloat_startup_app_data_with(info, state_ref, &lifecycle, handler) };
-    if !installed {
-        if let Some(info) = unsafe { info.as_mut() } {
-            info.arg = core::ptr::null_mut();
-            info.stop_fun = None;
-        }
-    }
-    installed
+    unsafe { allocate_refloat_startup_app_data_with(info, &allocator, &lifecycle, handler) }
 }
 
 /// Refloat package app-data state.
@@ -375,8 +410,8 @@ unsafe extern "C" fn stop_refloat_app_data(_arg: *mut core::ffi::c_void) {
 mod tests {
     use super::{RefloatAppDataLifecycle, RefloatAppDataState};
     use super::{
-        handle_refloat_app_data_packet, install_refloat_startup_app_data_with,
-        process_refloat_app_data,
+        allocate_refloat_startup_app_data_with, handle_refloat_app_data_packet,
+        install_refloat_startup_app_data_with, process_refloat_app_data,
     };
     use crate::domain::{
         FootpadSensorSample, FootpadSensorState, REFLOAT_APP_DATA_PACKAGE_ID,
@@ -391,9 +426,11 @@ mod tests {
         RefloatSetpointAdjustment, RefloatStopCondition,
     };
     use core::cell::Cell;
+    use core::ffi::c_void;
+    use core::mem::MaybeUninit;
     use vescpkg_rs::prelude::*;
     use vescpkg_rs::test_support::FakeMotorTelemetryBindings;
-    use vescpkg_rs::{AppDataBindings, ffi};
+    use vescpkg_rs::{AllocBindings, AppDataBindings, FirmwareAllocator, ffi};
 
     #[test]
     fn app_data_processes_all_data_requests_from_payload_snapshot() {
@@ -821,6 +858,38 @@ mod tests {
         );
     }
 
+    #[test]
+    fn startup_app_data_install_uses_firmware_allocated_state() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0x2000,
+        };
+        let mut backing = MaybeUninit::<RefloatAppDataState>::uninit();
+        let alloc_bindings = RecordingAllocBindings::new(backing.as_mut_ptr().cast());
+        let allocator = FirmwareAllocator::new(&alloc_bindings);
+
+        unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
+
+        assert!(unsafe {
+            allocate_refloat_startup_app_data_with(&mut info, &allocator, &lifecycle, handler)
+        });
+        assert_eq!(alloc_bindings.malloc_calls.get(), 1);
+        assert_eq!(
+            alloc_bindings.last_requested_len.get(),
+            core::mem::size_of::<RefloatAppDataState>()
+        );
+        assert_eq!(alloc_bindings.free_calls.get(), 0);
+        assert_eq!(info.arg, backing.as_mut_ptr().cast::<c_void>());
+        assert_eq!(
+            unsafe { RefloatAppDataState::from_info_arg(&mut info) }
+                .expect("allocated state")
+                .all_data_payloads(),
+            RefloatAllDataPayloads::source_startup(),
+        );
+    }
+
     struct RecordingAppDataBindings {
         handler_calls: Cell<usize>,
         last_handler: Cell<usize>,
@@ -833,6 +902,36 @@ mod tests {
         last_sent_mode3_ride_total_bytes: Cell<[u8; 13]>,
         last_sent_mode4_charging_bytes: Cell<[u8; 4]>,
         handler_results: Cell<[bool; 2]>,
+    }
+
+    struct RecordingAllocBindings {
+        malloc_calls: Cell<usize>,
+        free_calls: Cell<usize>,
+        next_ptr: Cell<*mut c_void>,
+        last_requested_len: Cell<usize>,
+    }
+
+    impl RecordingAllocBindings {
+        fn new(next_ptr: *mut c_void) -> Self {
+            Self {
+                malloc_calls: Cell::new(0),
+                free_calls: Cell::new(0),
+                next_ptr: Cell::new(next_ptr),
+                last_requested_len: Cell::new(0),
+            }
+        }
+    }
+
+    impl AllocBindings for RecordingAllocBindings {
+        unsafe fn malloc(&self, bytes: usize) -> *mut c_void {
+            self.malloc_calls.set(self.malloc_calls.get() + 1);
+            self.last_requested_len.set(bytes);
+            self.next_ptr.get()
+        }
+
+        unsafe fn free(&self, _ptr: *mut c_void) {
+            self.free_calls.set(self.free_calls.get() + 1);
+        }
     }
 
     impl RecordingAppDataBindings {
@@ -857,6 +956,13 @@ mod tests {
         unsafe fn set_app_data_handler(&self, handler: ffi::AppDataHandler) -> bool {
             self.handler_calls.set(self.handler_calls.get() + 1);
             self.last_handler.set(handler as *const () as usize);
+            let index = self.handler_calls.get().saturating_sub(1).min(1);
+            self.handler_results.get()[index]
+        }
+
+        unsafe fn clear_app_data_handler(&self) -> bool {
+            self.handler_calls.set(self.handler_calls.get() + 1);
+            self.last_handler.set(0);
             let index = self.handler_calls.get().saturating_sub(1).min(1);
             self.handler_results.get()[index]
         }

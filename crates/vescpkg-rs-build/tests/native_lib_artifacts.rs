@@ -35,7 +35,7 @@ fn current_native_lib_preserves_known_good_loader_contract() {
 }
 
 #[test]
-fn current_refloat_native_lib_preserves_loader_contract() {
+fn current_refloat_native_lib_is_loader_only_containment_candidate() {
     let plan = NativeLibLinkPlan::for_example(repo_root(), PackageExample::Refloat);
     ensure_native_lib_artifacts(&PackageBinaryConversionPlan::for_example(
         plan.root(),
@@ -70,10 +70,10 @@ fn native_binary_comparison_report_highlights_refloat_loader_delta() {
 }
 
 #[test]
-#[ignore = "requires target/refloat-parity/refloat-vesctool.vescpkg captured from Refloat v1.2.1"]
+#[ignore = "requires target/refloat-1.2.1-upstream.vescpkg captured from Refloat v1.2.1"]
 fn captured_refloat_package_comparison_reports_native_payload_delta() {
     let root = repo_root();
-    let baseline = std::fs::read(root.join("target/refloat-parity/refloat-vesctool.vescpkg"))
+    let baseline = std::fs::read(root.join("target/refloat-1.2.1-upstream.vescpkg"))
         .expect("read Refloat v1.2.1 VESC Tool package capture");
     let target = PackageTargetPlan::for_example(
         &root,

@@ -1,33 +1,30 @@
 ---
 source: crates/vescpkg-rs-build/tests/native_lib_artifacts.rs
-assertion_line: 69
 expression: report
 ---
 native_binary: left=loopback right=refloat
 load_sections:
   .program_ptr: match size=4 vma=0x0
   .init_fun: left size=56 vma=0x4 right size=12 vma=0x4
-  .got: left size=20 vma=0x3c right size=0 vma=0xb0
-  .text: left size=407 vma=0x50 right size=4532 vma=0xb0
+  .got: left size=20 vma=0x3c right size=0 vma=0x10
+  .text: left size=407 vma=0x50 right size=131 vma=0x10
 debug_sections:
-  .debug_abbrev: right_only size=996 vma=0x0
-  .debug_aranges: right_only size=216 vma=0x0
-  .debug_frame: left size=228 vma=0x0 right size=1140 vma=0x0
-  .debug_info: right_only size=4796 vma=0x0
-  .debug_line: right_only size=5534 vma=0x0
-  .debug_ranges: right_only size=1408 vma=0x0
-  .debug_str: right_only size=4799 vma=0x0
-  .strtab: left size=286 vma=0x0 right size=1550 vma=0x0
-  .symtab: left size=592 vma=0x0 right size=1504 vma=0x0
+  .debug_abbrev: right_only size=79 vma=0x0
+  .debug_aranges: right_only size=40 vma=0x0
+  .debug_frame: left size=228 vma=0x0 right size=812 vma=0x0
+  .debug_info: right_only size=96 vma=0x0
+  .debug_line: right_only size=104 vma=0x0
+  .debug_ranges: right_only size=24 vma=0x0
+  .debug_str: right_only size=324 vma=0x0
+  .strtab: left size=286 vma=0x0 right size=277 vma=0x0
+  .symtab: left size=592 vma=0x0 right size=544 vma=0x0
 contract_symbols:
   ext_rust_probe_diag_v4: left_only
   init: both
   loopback_handle_app_data: left_only
   package_lib_init: both
   prog_ptr: both
-  refloat_handle_app_data: right_only
   stop_package: left_only
-  stop_refloat_app_data: right_only
   vesc_clear_loopback_app_data_handler: left_only
   vesc_register_loopback_app_data_handler: left_only
-defined_symbol_count: left=13 right=38
+defined_symbol_count: left=13 right=11

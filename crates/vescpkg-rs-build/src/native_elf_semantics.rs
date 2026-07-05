@@ -271,48 +271,23 @@ pub fn assert_native_stop_clears_app_data_handler(elf: &Path, name: &str) {
     assert_stop_clears_app_data_handler(&semantics, name);
 }
 
-/// Asserts the Refloat native image preserves the upstream registration tail.
-pub fn assert_refloat_registration_tail(elf: &Path) {
+/// Asserts the Refloat native image is a loader-only containment candidate.
+pub fn assert_refloat_loader_only_containment(elf: &Path) {
     let semantics = analyze_native_lib_elf(elf);
 
     assert!(
         !semantics.package_init_insns.is_empty(),
-        "Refloat package init should be decoded before registration-tail assertions: {}",
+        "Refloat package init should be decoded before containment assertions: {}",
         semantic_report(&semantics)
     );
     assert!(
-        package_init_touches_slot(&semantics.package_init_insns, 596),
-        "Refloat package init must call set_app_data_handler; upstream v1.2.1 (0ef6e99d8701) does at src/main.c:2457: {}",
+        !package_init_touches_slot(&semantics.package_init_insns, 596),
+        "Refloat containment init must not call set_app_data_handler; upstream v1.2.1 (0ef6e99d8701) does at src/main.c:2457: {}",
         semantic_report(&semantics)
     );
     assert!(
-        package_init_touches_slot(&semantics.package_init_insns, 184),
-        "Refloat package init must allocate firmware-owned app-data state; upstream v1.2.1 (0ef6e99d8701) mallocs Data at src/main.c:2419: {}",
-        semantic_report(&semantics)
-    );
-}
-
-/// Asserts the loader-facing `.init_fun` attempts setup but reports success to LispBM.
-pub fn assert_loader_init_best_effort(elf: &Path) {
-    let semantics = analyze_native_lib_elf(elf);
-
-    assert!(
-        init_insns_call(
-            &semantics.init_insns,
-            &semantics.symbols,
-            "package_lib_init"
-        ),
-        "loader init should attempt package setup before reporting success: {}",
-        semantic_report(&semantics)
-    );
-    assert!(
-        init_insns_report_success(&semantics.init_insns),
-        "loader init should report success after best-effort package setup: {}",
-        semantic_report(&semantics)
-    );
-    assert!(
-        !init_insns_have_failure_return(&semantics.init_insns),
-        "loader init should not fail load-native-lib when package setup reports false: {}",
+        !package_init_touches_slot(&semantics.package_init_insns, 184),
+        "Refloat containment init must not allocate firmware-owned app-data state; upstream v1.2.1 (0ef6e99d8701) mallocs Data at src/main.c:2419: {}",
         semantic_report(&semantics)
     );
 }

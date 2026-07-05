@@ -62,7 +62,8 @@ impl RefloatSourceAssets {
         ))
     }
 
-    fn render_ui(&self) -> Result<String, PackageError> {
+    /// Render Refloat's generated QML UI from the upstream source templates.
+    pub fn render_ui(&self) -> Result<String, PackageError> {
         let template = self.read_text("ui.qml.in")?;
         let package_name = truncate_chars(&self.read_trimmed("package_name")?, 20);
         let version = self.read_trimmed("version")?;
