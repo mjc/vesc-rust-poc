@@ -71,16 +71,71 @@ static REFLOAT_CONFIG_XML: [u8; 25_723] = *include_bytes!("conf/refloatconfig.da
 #[used]
 static REFLOAT_DEFAULT_CONFIG: [u8; 276] = *include_bytes!("conf/default_config.dat");
 const REFLOAT_CONFIG_SIGNATURE_BYTES: [u8; 4] = [0x90, 0xb7, 0xa9, 0xba];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+struct RefloatConfigOffset(usize);
+
+impl RefloatConfigOffset {
+    const fn new(offset: usize) -> Self {
+        Self(offset)
+    }
+
+    const fn get(self) -> usize {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+struct RefloatConfigScale(f32);
+
+impl RefloatConfigScale {
+    const fn new(scale: f32) -> Self {
+        Self(scale)
+    }
+
+    const fn get(self) -> f32 {
+        self.0
+    }
+}
+
+/// Typed view of one generated Refloat float16 config field.
+///
+/// Source map: upstream generated serialization order and scales come from
+/// `third_party/refloat/src/conf/settings.xml:3916-3923`; generated C reads
+/// these fields through `third_party/refloat/src/conf/confparser.c:363-531`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct RefloatScaledConfigField {
+    offset: RefloatConfigOffset,
+    scale: RefloatConfigScale,
+}
+
+impl RefloatScaledConfigField {
+    const fn new(offset: usize, scale: f32) -> Self {
+        Self {
+            offset: RefloatConfigOffset::new(offset),
+            scale: RefloatConfigScale::new(scale),
+        }
+    }
+}
+
 // Upstream serializes `kp` as the first float16 config value after the
 // signature; `third_party/refloat/src/conf/settings.xml:28-54` uses scale 10.
 const REFLOAT_CONFIG_KP_OFFSET: usize = 4;
+const REFLOAT_CONFIG_KP_FIELD: RefloatScaledConfigField =
+    RefloatScaledConfigField::new(REFLOAT_CONFIG_KP_OFFSET, 10.0);
 // Upstream serializes `kp2` immediately after `kp` in
-// `third_party/refloat/src/conf/settings.xml:3916-3918`; `third_party/refloat/src/conf/settings.xml:56-83` uses scale 10.
+// `third_party/refloat/src/conf/settings.xml:3916-3918`; `third_party/refloat/src/conf/settings.xml:55-84` uses scale 100.
 const REFLOAT_CONFIG_KP2_OFFSET: usize = 6;
+const REFLOAT_CONFIG_KP2_FIELD: RefloatScaledConfigField =
+    RefloatScaledConfigField::new(REFLOAT_CONFIG_KP2_OFFSET, 100.0);
 // Upstream serializes `ki` after `kp` and `kp2` in
 // `third_party/refloat/src/conf/settings.xml:3916-3919`; `third_party/refloat/src/conf/settings.xml:85-111` uses
 // scale 100000.
 const REFLOAT_CONFIG_KI_OFFSET: usize = 8;
+const REFLOAT_CONFIG_KI_FIELD: RefloatScaledConfigField =
+    RefloatScaledConfigField::new(REFLOAT_CONFIG_KI_OFFSET, 100_000.0);
 // Upstream serializes Mahony pitch/roll KP after `ki` at
 // `third_party/refloat/src/conf/settings.xml:3916-3921`; both use scale 10000 and feed
 // `balance_filter_configure` at `third_party/refloat/src/balance_filter.c:64-70`.
@@ -89,7 +144,11 @@ const REFLOAT_CONFIG_MAHONY_KP_ROLL_OFFSET: usize = 12;
 // Upstream serializes `kp_brake` and `kp2_brake` after the two Mahony tuning
 // values at `third_party/refloat/src/conf/settings.xml:3916-3923`; both use scale 100.
 const REFLOAT_CONFIG_KP_BRAKE_OFFSET: usize = 14;
+const REFLOAT_CONFIG_KP_BRAKE_FIELD: RefloatScaledConfigField =
+    RefloatScaledConfigField::new(REFLOAT_CONFIG_KP_BRAKE_OFFSET, 100.0);
 const REFLOAT_CONFIG_KP2_BRAKE_OFFSET: usize = 16;
+const REFLOAT_CONFIG_KP2_BRAKE_FIELD: RefloatScaledConfigField =
+    RefloatScaledConfigField::new(REFLOAT_CONFIG_KP2_BRAKE_OFFSET, 100.0);
 // Upstream defines `hertz` in `third_party/refloat/src/conf/settings.xml:223-246`, serializes it
 // after the first seven `SerOrder` float16 entries at
 // `third_party/refloat/src/conf/settings.xml:3916-3923`, and reads it as a big-endian uint16 via
@@ -1557,6 +1616,10 @@ impl RefloatAppDataState {
         refloat_read_scaled_i16(self.config_be_u16(offset).to_be_bytes(), scale)
     }
 
+    fn config_scaled_field(&self, field: RefloatScaledConfigField) -> f32 {
+        self.config_scaled_i16(field.offset.get(), field.scale.get())
+    }
+
     fn set_config_byte(config: &mut [u8; 276], offset: usize, value: u8) -> bool {
         let Some(byte) = config.get_mut(offset) else {
             return false;
@@ -2385,11 +2448,11 @@ impl RefloatAppDataState {
             // surrounding state-machine order.
             let balance_loop = refloat_balance_loop_step(
                 RefloatBalanceLoopConfig {
-                    kp: self.config_scaled_i16(REFLOAT_CONFIG_KP_OFFSET, 10.0),
-                    kp2: self.config_scaled_i16(REFLOAT_CONFIG_KP2_OFFSET, 10.0),
-                    ki: self.config_scaled_i16(REFLOAT_CONFIG_KI_OFFSET, 100000.0),
-                    kp_brake: self.config_scaled_i16(REFLOAT_CONFIG_KP_BRAKE_OFFSET, 100.0),
-                    kp2_brake: self.config_scaled_i16(REFLOAT_CONFIG_KP2_BRAKE_OFFSET, 100.0),
+                    kp: self.config_scaled_field(REFLOAT_CONFIG_KP_FIELD),
+                    kp2: self.config_scaled_field(REFLOAT_CONFIG_KP2_FIELD),
+                    ki: self.config_scaled_field(REFLOAT_CONFIG_KI_FIELD),
+                    kp_brake: self.config_scaled_field(REFLOAT_CONFIG_KP_BRAKE_FIELD),
+                    kp2_brake: self.config_scaled_field(REFLOAT_CONFIG_KP2_BRAKE_FIELD),
                     ki_limit: MotorCurrent::new(Current::from_amps(
                         self.config_scaled_i16(REFLOAT_CONFIG_KI_LIMIT_OFFSET, 10.0),
                     )),
@@ -2968,6 +3031,32 @@ mod tests {
                 .ride_state()
                 .run_state(),
             RefloatRunState::Ready
+        );
+    }
+
+    #[test]
+    fn default_config_decodes_pid_scales_like_refloat_settings() {
+        let state = RefloatAppDataState::new(sample_all_data_payloads_with_ride_state(
+            RefloatRunState::Ready,
+            RefloatMode::Normal,
+        ));
+
+        // Refloat generated settings serialize `kp` with scale 10 at
+        // `third_party/refloat/src/conf/settings.xml:28-54`, `kp2` with scale
+        // 100 at `third_party/refloat/src/conf/settings.xml:55-84`, and
+        // `kp2_brake` with scale 100 at
+        // `third_party/refloat/src/conf/settings.xml:199-222`.
+        assert_eq!(
+            state.config_scaled_field(super::REFLOAT_CONFIG_KP_FIELD),
+            20.0
+        );
+        assert_eq!(
+            state.config_scaled_field(super::REFLOAT_CONFIG_KP2_FIELD),
+            0.6
+        );
+        assert_eq!(
+            state.config_scaled_field(super::REFLOAT_CONFIG_KP2_BRAKE_FIELD),
+            1.0
         );
     }
 
@@ -6305,10 +6394,12 @@ mod tests {
         assert!(state.apply_requested_motor_current(&motor));
 
         // Upstream `imu_update` derives pitch rate from gyro at
-        // `third_party/refloat/src/imu.c:45-53`; `pid_update` computes `rate_p` at
-        // `third_party/refloat/src/pid.c:71-72`, then RUNNING smooths it into `balance_current`
-        // at `third_party/refloat/src/main.c:921-954`.
-        assert!((motor.bindings().current().current().as_amps() + 4.0).abs() < 0.0001);
+        // `third_party/refloat/src/imu.c:45-53`; `kp2` uses generated config
+        // scale 100 at `third_party/refloat/src/conf/settings.xml:55-84`;
+        // `pid_update` computes `rate_p` at `third_party/refloat/src/pid.c:71-72`,
+        // then RUNNING smooths it into `balance_current` at
+        // `third_party/refloat/src/main.c:921-954`.
+        assert!((motor.bindings().current().current().as_amps() + 0.4).abs() < 0.0001);
     }
 
     #[test]
