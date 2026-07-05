@@ -8,6 +8,7 @@ members = [
     "crates/cargo-vescpkg",
     "examples/loopback",
     "examples/snake",
+    "examples/refloat",
 ]
 default-members = [
     "crates/cargo-vescpkg",

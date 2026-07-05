@@ -1,0 +1,17 @@
+[package]
+name = "vesc-example-refloat"
+version = "0.1.0"
+edition = "2024"
+description = "Unofficial Refloat package port for Rust VESC package experiments."
+
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+vescpkg-rs = { path = "../../crates/vescpkg-rs" }
+
