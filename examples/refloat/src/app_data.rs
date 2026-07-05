@@ -5,24 +5,28 @@
 //! - `src/main.c:2334-2403` owns custom config get/set/XML and stop cleanup.
 //! - `src/main.c:2456-2457` registers custom config and app-data handlers.
 //!
-//! This module is currently disconnected from the hardware candidate's package
-//! init path while the package-corruption failure is isolated. Reconnecting it
-//! is not just a handler call: upstream shares the same `Data *` through `ARG`
-//! for app-data, custom config, BMS, threads, and stop cleanup.
+//! The Rust state here is still a narrow `RefloatAppDataState`, not upstream's
+//! full `Data`; upstream shares `Data *` through `ARG` for app-data, custom
+//! config, BMS, threads, and stop cleanup.
 
 use crate::domain::{
     REFLOAT_APP_DATA_PACKAGE_ID, REFLOAT_REALTIME_DATA_ITEMS, REFLOAT_REALTIME_RUNTIME_ITEMS,
-    RefloatAllDataMode3Payload, RefloatAllDataMode4Payload, RefloatAllDataPayloads,
-    RefloatAllDataRequest, RefloatAllDataResponse, RefloatAppDataCommand, RefloatChargingState,
-    RefloatDarkRideState, RefloatFirmwareFaultCode, RefloatMode, RefloatRealtimeChargingCurrent,
-    RefloatRealtimeChargingVoltage, RefloatRealtimeDataItem, RefloatRealtimeMotorTemperatures,
-    RefloatRunState, RefloatWheelSlipState,
+    RefloatAllDataAttitude, RefloatAllDataBasePayload, RefloatAllDataMode3Payload,
+    RefloatAllDataMode4Payload, RefloatAllDataMotorPayload, RefloatAllDataPayloads,
+    RefloatAllDataRequest, RefloatAllDataResponse, RefloatAllDataStatus, RefloatAppDataCommand,
+    RefloatChargingState, RefloatDarkRideState, RefloatFirmwareFaultCode, RefloatFocIdCurrent,
+    RefloatMode, RefloatRealtimeChargingCurrent, RefloatRealtimeChargingVoltage,
+    RefloatRealtimeDataItem, RefloatRealtimeMotorTemperatures, RefloatRideState, RefloatRunState,
+    RefloatWheelSlipState,
 };
+use crate::runtime::RefloatRuntimeThreads;
 use core::ffi::c_int;
-use vescpkg_rs::prelude::{BatteryCurrent, BatteryVoltage, Current, Voltage};
+use vescpkg_rs::prelude::{
+    BatteryCurrent, BatteryVoltage, Current, SystemTimestamp, TimestampTicks, Voltage,
+};
 use vescpkg_rs::{
-    AppDataBindings, AppDataHandlerRegistrationError, CustomConfigBindings, LoopbackLifecycle,
-    MotorTelemetryApi, MotorTelemetryBindings, ffi,
+    AppDataBindings, AppDataHandlerRegistrationError, CustomConfigBindings, ImuApi, ImuBindings,
+    LoopbackLifecycle, MotorTelemetryApi, MotorTelemetryBindings, ffi,
 };
 
 /// Refloat v1.2.1 generated custom-config XML blob.
@@ -52,6 +56,12 @@ static REFLOAT_CONFIG_XML: [u8; 25_723] = *include_bytes!("conf/refloatconfig.da
 #[used]
 static REFLOAT_DEFAULT_CONFIG: [u8; 276] = *include_bytes!("conf/default_config.dat");
 const REFLOAT_CONFIG_SIGNATURE_BYTES: [u8; 4] = [0x90, 0xb7, 0xa9, 0xba];
+// Upstream defines `hertz` in `src/conf/settings.xml:223-246`, serializes it
+// after the first seven `SerOrder` float16 entries at
+// `src/conf/settings.xml:3916-3923`, and reads it as a big-endian uint16 via
+// `src/conf/buffer.c:188-191`.
+#[cfg(any(test, target_arch = "arm"))]
+const REFLOAT_CONFIG_HERTZ_OFFSET: usize = 18;
 // Upstream defines `disabled` in `src/conf/settings.xml:3890-3902`; its
 // `<ser>disabled</ser>` entry at `src/conf/settings.xml:4064` lands at byte
 // 243 in the 276-byte generated config image.
@@ -143,7 +153,10 @@ pub fn process_refloat_app_data(
             encode_refloat_get_realtime_data_response(payloads),
         )),
         RefloatAppDataCommand::RealtimeData => Some(RefloatAppDataResponse::RealtimeData(
-            encode_refloat_realtime_data_response(payloads),
+            encode_refloat_realtime_data_response(
+                payloads,
+                SystemTimestamp::new(TimestampTicks::from_ticks(0)),
+            ),
         )),
         RefloatAppDataCommand::RealtimeDataIds => Some(RefloatAppDataResponse::RealtimeDataIds(
             encode_refloat_realtime_data_ids_response(),
@@ -333,6 +346,7 @@ fn encode_refloat_get_realtime_data_response(
 
 fn encode_refloat_realtime_data_response(
     payloads: RefloatAllDataPayloads,
+    system_timestamp: SystemTimestamp,
 ) -> RefloatRealtimeDataResponse {
     let mut bytes = [0; REFLOAT_REALTIME_DATA_RESPONSE_CAPACITY];
     let mut ind = 0;
@@ -362,7 +376,9 @@ fn encode_refloat_realtime_data_response(
     // The data recorder and alert tracker are still part of the unported
     // control-loop/runtime state (`src/main.c:1927-1930`, `src/main.c:1956-1958`).
     refloat_realtime_push_u8(&mut bytes, &mut ind, 0);
-    refloat_realtime_push_u32(&mut bytes, &mut ind, 0);
+    // Upstream writes `d->time.now` at `src/main.c:1931`; VESC timestamps are
+    // represented as 100 us system ticks.
+    refloat_realtime_push_u32(&mut bytes, &mut ind, system_timestamp.ticks().as_ticks());
 
     refloat_realtime_push_u8(
         &mut bytes,
@@ -539,10 +555,15 @@ fn refloat_realtime_push_u8(buffer: &mut [u8], ind: &mut usize, value: u8) {
 }
 
 #[cfg(any(test, target_arch = "arm"))]
-unsafe fn handle_refloat_app_data_packet<B: AppDataBindings, M: MotorTelemetryBindings>(
+unsafe fn handle_refloat_app_data_packet<
+    B: AppDataBindings,
+    M: MotorTelemetryBindings,
+    I: ImuBindings,
+>(
     state: &mut RefloatAppDataState,
     lifecycle: &RefloatAppDataLifecycle<B>,
     telemetry: &MotorTelemetryApi<M>,
+    imu: &ImuApi<I>,
     data: *mut u8,
     len: u32,
 ) -> bool {
@@ -553,7 +574,7 @@ unsafe fn handle_refloat_app_data_packet<B: AppDataBindings, M: MotorTelemetryBi
         return false;
     };
     let bytes = unsafe { core::slice::from_raw_parts(data.as_ptr().cast_const(), len) };
-    state.handle_packet_with_telemetry(lifecycle, telemetry, bytes)
+    state.handle_packet_with_runtime(lifecycle, telemetry, imu, bytes)
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
@@ -611,14 +632,36 @@ pub unsafe extern "C" fn refloat_handle_app_data(data: *mut u8, len: u32) {
     };
     let lifecycle = RefloatAppDataLifecycle::new(vescpkg_rs::RealBindings);
     let telemetry = MotorTelemetryApi::new(vescpkg_rs::RealMotorTelemetryBindings);
-    let _ = unsafe { handle_refloat_app_data_packet(state, &lifecycle, &telemetry, data, len) };
+    let imu = ImuApi::new(vescpkg_rs::RealImuBindings);
+    let _ =
+        unsafe { handle_refloat_app_data_packet(state, &lifecycle, &telemetry, &imu, data, len) };
 }
 
-/// Install source-startup Refloat app-data state through the supplied lifecycle.
+/// Install source-startup Refloat state without registering callbacks.
 ///
-/// Upstream allocates `Data`, stores it in loader metadata, and registers the
-/// stop hook at `src/main.c:2419-2432`; handler registration follows at
-/// `src/main.c:2457`.
+/// Upstream allocates `Data`, runs `data_init`, and stores `stop`/`Data *` in
+/// loader metadata at `src/main.c:2419-2432`; callback/LispBM registration
+/// follows at `src/main.c:2455-2459`.
+///
+/// # Safety
+///
+/// `info` must be null or point to live VESC loader metadata. `state` must
+/// remain valid until firmware stops the package.
+#[cfg(test)]
+pub(crate) unsafe fn install_refloat_startup_state_with<B: AppDataBindings>(
+    info: *mut ffi::LibInfo,
+    state: &mut RefloatAppDataState,
+    lifecycle: &RefloatAppDataLifecycle<B>,
+    handler: ffi::AppDataHandler,
+) -> bool {
+    *state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
+    unsafe { lifecycle.install_refloat_state(info, state, handler) }
+}
+
+/// Install source-startup Refloat state and callback registrations.
+///
+/// Upstream stores loader metadata at `src/main.c:2431-2432` before registering
+/// custom config/app-data callbacks at `src/main.c:2456-2457`.
 ///
 /// # Safety
 ///
@@ -634,8 +677,10 @@ pub(crate) unsafe fn install_refloat_startup_app_data_with<
     lifecycle: &RefloatAppDataLifecycle<B>,
     handler: ffi::AppDataHandler,
 ) -> bool {
-    *state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
-    unsafe { lifecycle.install_refloat_callbacks_with_state(info, state, handler) }.is_ok()
+    if !unsafe { install_refloat_startup_state_with(info, state, lifecycle, handler) } {
+        return false;
+    }
+    unsafe { lifecycle.install_refloat_callbacks(info, handler) }.is_ok()
 }
 
 #[cfg(any(test, target_arch = "arm"))]
@@ -646,22 +691,22 @@ unsafe fn clear_refloat_app_data_loader_info(info: *mut ffi::LibInfo) {
     }
 }
 
-/// Allocate and install source-startup Refloat app-data state through firmware memory.
+/// Allocate and install source-startup Refloat state through firmware memory.
 ///
 /// Upstream uses firmware `malloc(sizeof(Data))` at `src/main.c:2419`, runs
 /// `data_init` at `src/main.c:2424`, and stores the same pointer in
-/// `info->arg` at `src/main.c:2432`. This Rust allocation path only installs a
-/// narrow app-data snapshot, so it is not equivalent to upstream's shared
-/// Refloat state.
+/// `info->arg` at `src/main.c:2432`. This Rust path still allocates a narrow
+/// `RefloatAppDataState`, but keeps the same loader metadata order before the
+/// registration tail at `src/main.c:2455-2459`.
 ///
 /// # Safety
 ///
 /// `info` must be null or point to live VESC loader metadata. `handler` must
-/// remain valid until firmware clears/replaces the handler and stops the package.
+/// remain valid until firmware stops the package.
 #[cfg(any(test, target_arch = "arm"))]
-pub(crate) unsafe fn allocate_refloat_startup_app_data_with<
+pub(crate) unsafe fn allocate_refloat_startup_state_with<
     A: vescpkg_rs::AllocBindings,
-    B: AppDataBindings + CustomConfigBindings,
+    B: AppDataBindings,
 >(
     info: *mut ffi::LibInfo,
     allocator: &vescpkg_rs::FirmwareAllocator<'_, A>,
@@ -676,11 +721,11 @@ pub(crate) unsafe fn allocate_refloat_startup_app_data_with<
     unsafe {
         state.write(RefloatAppDataState::new(
             RefloatAllDataPayloads::source_startup(),
-        ))
-    };
+        ));
+    }
     let state = unsafe { &mut *state };
 
-    if unsafe { lifecycle.install_refloat_callbacks_with_state(info, state, handler) }.is_err() {
+    if !unsafe { lifecycle.install_refloat_state(info, state, handler) } {
         unsafe { clear_refloat_app_data_loader_info(info) };
         return false;
     }
@@ -689,14 +734,71 @@ pub(crate) unsafe fn allocate_refloat_startup_app_data_with<
     true
 }
 
-/// Allocate and install Refloat startup app-data state using firmware memory.
+/// Allocate source-startup Refloat state and register app-data callbacks.
+///
+/// Upstream performs state setup at `src/main.c:2419-2432`, starts runtime
+/// threads at `src/main.c:2439-2449`, then registers custom config/app-data
+/// callbacks at `src/main.c:2456-2457` after IMU setup. This compatibility
+/// helper only keeps state-before-callback order for tests.
+///
+/// # Safety
+///
+/// `info` must be null or point to live VESC loader metadata. `handler` must
+/// remain valid until firmware clears/replaces the handler and stops the package.
+#[cfg(test)]
+pub(crate) unsafe fn allocate_refloat_startup_app_data_with<
+    A: vescpkg_rs::AllocBindings,
+    B: AppDataBindings + CustomConfigBindings,
+>(
+    info: *mut ffi::LibInfo,
+    allocator: &vescpkg_rs::FirmwareAllocator<'_, A>,
+    lifecycle: &RefloatAppDataLifecycle<B>,
+    handler: ffi::AppDataHandler,
+) -> bool {
+    if !unsafe { allocate_refloat_startup_state_with(info, allocator, lifecycle, handler) } {
+        return false;
+    }
+
+    if unsafe { lifecycle.install_refloat_callbacks(info, handler) }.is_err() {
+        unsafe { clear_refloat_app_data_loader_info(info) };
+        return false;
+    }
+
+    true
+}
+
+/// Allocate and install Refloat startup state using firmware memory.
+///
+/// This matches the loader metadata step from upstream `src/main.c:2419-2432`;
+/// callback/LispBM registration is a separate step at `src/main.c:2455-2459`.
 #[cfg(all(not(test), target_arch = "arm"))]
-pub fn install_refloat_app_data(info: *mut ffi::LibInfo) -> bool {
+pub fn install_refloat_app_data_state(info: *mut ffi::LibInfo) -> bool {
     let alloc_bindings = vescpkg_rs::RealBindings;
     let allocator = vescpkg_rs::FirmwareAllocator::new(&alloc_bindings);
     let lifecycle = RefloatAppDataLifecycle::new(vescpkg_rs::RealBindings);
     let handler = runtime_refloat_app_data_handler();
-    unsafe { allocate_refloat_startup_app_data_with(info, &allocator, &lifecycle, handler) }
+    unsafe { allocate_refloat_startup_state_with(info, &allocator, &lifecycle, handler) }
+}
+
+/// Register Refloat custom config and app-data callbacks.
+///
+/// Upstream registers these callbacks at `src/main.c:2456-2457`, after runtime
+/// thread startup at `src/main.c:2439-2449` and IMU setup at
+/// `src/main.c:2455`.
+#[cfg(all(not(test), target_arch = "arm"))]
+pub fn register_refloat_app_data_callbacks(info: *mut ffi::LibInfo) -> bool {
+    let lifecycle = RefloatAppDataLifecycle::new(vescpkg_rs::RealBindings);
+    let handler = runtime_refloat_app_data_handler();
+    unsafe { lifecycle.install_refloat_callbacks(info, handler) }.is_ok()
+}
+
+/// Allocate startup state and register Refloat app-data callbacks.
+///
+/// Kept as the old combined entrypoint for callers that do not need the
+/// upstream split between `src/main.c:2431-2432` and `src/main.c:2455-2459`.
+#[cfg(all(not(test), target_arch = "arm"))]
+pub fn install_refloat_app_data(info: *mut ffi::LibInfo) -> bool {
+    install_refloat_app_data_state(info) && register_refloat_app_data_callbacks(info)
 }
 
 /// Register Refloat custom-config callbacks with VESC Tool.
@@ -826,6 +928,7 @@ fn runtime_refloat_config_xml() -> *const u8 {
 pub struct RefloatAppDataState {
     all_data_payloads: RefloatAllDataPayloads,
     serialized_config: [u8; 276],
+    runtime_threads: RefloatRuntimeThreads,
 }
 
 impl RefloatAppDataState {
@@ -837,12 +940,26 @@ impl RefloatAppDataState {
             // defaults at `src/main.c:1160-1185`; full EEPROM parity remains a
             // later source-backed slice.
             serialized_config: REFLOAT_DEFAULT_CONFIG,
+            // Upstream stores these in `Data` after spawning at
+            // `src/main.c:2439-2445`; this Rust state only tracks the handles
+            // until the full `Data` layout is ported.
+            runtime_threads: RefloatRuntimeThreads::empty(),
         }
     }
 
     /// Return the current all-data payload snapshot.
     pub const fn all_data_payloads(self) -> RefloatAllDataPayloads {
         self.all_data_payloads
+    }
+
+    /// Return the runtime thread handles currently owned by this package state.
+    pub const fn runtime_threads(self) -> RefloatRuntimeThreads {
+        self.runtime_threads
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn set_runtime_threads(&mut self, runtime_threads: RefloatRuntimeThreads) {
+        self.runtime_threads = runtime_threads;
     }
 
     fn serialized_config(&self) -> &[u8; 276] {
@@ -879,6 +996,59 @@ impl RefloatAppDataState {
         true
     }
 
+    fn refresh_config_runtime_state(&mut self) {
+        let payloads = self.all_data_payloads;
+        let base = payloads.base();
+        let status = base.status();
+        let ride_state = status.ride_state();
+        let disabled = self.serialized_config[REFLOAT_CONFIG_DISABLED_OFFSET] != 0;
+        let run_state = match (ride_state.run_state(), disabled) {
+            // Refloat applies `float_conf.disabled` from `configure(d)` at
+            // `src/main.c:184-190`; `state_set_disabled` keeps RUNNING alive
+            // and toggles DISABLED/STARTUP at `src/state.c:41-47`.
+            (RefloatRunState::Running, true) => RefloatRunState::Running,
+            (RefloatRunState::Disabled, false) => RefloatRunState::Startup,
+            (_, true) => RefloatRunState::Disabled,
+            (run_state, false) => run_state,
+        };
+        if run_state == ride_state.run_state() {
+            return;
+        }
+
+        let ride_state = RefloatRideState::new(
+            run_state,
+            ride_state.mode(),
+            ride_state.setpoint_adjustment(),
+            ride_state.stop_condition(),
+        )
+        .with_charging(ride_state.charging())
+        .with_wheelslip(ride_state.wheelslip())
+        .with_darkride(ride_state.darkride());
+        let base = RefloatAllDataBasePayload::new(
+            base.balance_current(),
+            base.attitude(),
+            RefloatAllDataStatus::new(ride_state, status.beep_reason()),
+            base.footpad(),
+            base.setpoints(),
+            base.booster_current(),
+            base.motor(),
+        );
+        self.all_data_payloads =
+            RefloatAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4());
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn configured_loop_time_us(&self) -> u32 {
+        let hertz = u16::from_be_bytes([
+            self.serialized_config[REFLOAT_CONFIG_HERTZ_OFFSET],
+            self.serialized_config[REFLOAT_CONFIG_HERTZ_OFFSET + 1],
+        ]);
+        // Upstream `configure(d)` stores `1e6 / d->float_conf.hertz` at
+        // `src/main.c:190-191`, then `refloat_thd` sleeps that value at
+        // `src/main.c:1080`.
+        1_000_000 / u32::from(hertz)
+    }
+
     /// Recover typed app-data state from VESC loader metadata.
     ///
     /// # Safety
@@ -900,6 +1070,43 @@ impl RefloatAppDataState {
             return true;
         }
         lifecycle.send_response(self.all_data_payloads, bytes)
+    }
+
+    /// Handle one app-data packet after refreshing the source-backed runtime slices.
+    ///
+    /// Upstream refreshes IMU angles in `src/imu.c:35-40` and gates
+    /// `STATE_STARTUP` -> `STATE_READY` on `imu_startup_done()` in
+    /// `src/main.c:833-838`. This does not model the full control loop.
+    pub fn handle_packet_with_runtime<
+        B: AppDataBindings,
+        M: MotorTelemetryBindings,
+        I: ImuBindings,
+    >(
+        &mut self,
+        lifecycle: &RefloatAppDataLifecycle<B>,
+        telemetry: &MotorTelemetryApi<M>,
+        imu: &ImuApi<I>,
+        bytes: &[u8],
+    ) -> bool {
+        self.refresh_runtime_state(telemetry, imu);
+        self.handle_packet_with_telemetry(lifecycle, telemetry, bytes)
+    }
+
+    /// Refresh the source-backed runtime slices that Refloat updates near the
+    /// top of `refloat_thd`.
+    ///
+    /// Upstream applies `configure(d)` before runtime work at
+    /// `src/main.c:184-191`, updates IMU at `src/main.c:775`, motor data at
+    /// `src/main.c:796`, and performs the `STATE_STARTUP` -> `STATE_READY`
+    /// gate at `src/main.c:833-838`.
+    pub(crate) fn refresh_runtime_state<M: MotorTelemetryBindings, I: ImuBindings>(
+        &mut self,
+        telemetry: &MotorTelemetryApi<M>,
+        imu: &ImuApi<I>,
+    ) {
+        self.refresh_config_runtime_state();
+        self.refresh_motor_runtime_state(telemetry);
+        self.refresh_imu_runtime_state(imu);
     }
 
     /// Handle one app-data packet after refreshing live telemetry fields.
@@ -946,7 +1153,12 @@ impl RefloatAppDataState {
                     telemetry.mosfet_temperature(),
                     telemetry.motor_temperature(),
                 ));
-            let response = encode_refloat_realtime_data_response(payloads);
+            // Refloat's main loop updates `d->time.now` before app-data reads it
+            // in `cmd_realtime_data` at `src/main.c:1931`.
+            let system_timestamp = SystemTimestamp::new(TimestampTicks::from_ticks(
+                lifecycle.bindings().system_time_ticks(),
+            ));
+            let response = encode_refloat_realtime_data_response(payloads, system_timestamp);
             return lifecycle.send_response_bytes(response.as_bytes());
         }
 
@@ -975,6 +1187,79 @@ impl RefloatAppDataState {
             payloads
         };
         lifecycle.send_all_data_response(payloads, request)
+    }
+
+    fn refresh_motor_runtime_state<M: MotorTelemetryBindings>(
+        &mut self,
+        telemetry: &MotorTelemetryApi<M>,
+    ) {
+        let payloads = self.all_data_payloads;
+        let base = payloads.base();
+        let motor = base.motor();
+        // Refloat v1.2.1 updates motor fields in `motor_data_update` at
+        // `src/motor_data.c:108-145`. Battery current uses the same first-order
+        // smoothing expression from `src/motor_data.c:140`; this app-data
+        // refresh is still a runtime proxy until the real source main loop runs.
+        let previous_battery_current = motor.battery_current().current().as_amps();
+        let next_battery_current = telemetry.battery_current().current().as_amps();
+        let motor = RefloatAllDataMotorPayload::new(
+            BatteryVoltage::new(telemetry.input_voltage_filtered().voltage()),
+            telemetry.electrical_speed(),
+            telemetry.vehicle_speed(),
+            telemetry.motor_current(),
+            BatteryCurrent::new(Current::from_amps(
+                previous_battery_current + 0.01 * (next_battery_current - previous_battery_current),
+            )),
+            telemetry.duty_cycle_now(),
+            // Upstream compact all-data reads optional `VESC_IF->foc_get_id` at
+            // `src/main.c:1364-1368` and writes 222 when the slot is absent.
+            telemetry.foc_id_current().map_or(
+                RefloatFocIdCurrent::unavailable(),
+                RefloatFocIdCurrent::measured,
+            ),
+        );
+        let base = RefloatAllDataBasePayload::new(
+            base.balance_current(),
+            base.attitude(),
+            base.status(),
+            base.footpad(),
+            base.setpoints(),
+            base.booster_current(),
+            motor,
+        );
+        self.all_data_payloads =
+            RefloatAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4());
+    }
+
+    fn refresh_imu_runtime_state<I: ImuBindings>(&mut self, imu: &ImuApi<I>) {
+        let payloads = self.all_data_payloads;
+        let base = payloads.base();
+        let status = base.status();
+        let ride_state = status.ride_state();
+        let run_state = match (ride_state.run_state(), imu.startup_done()) {
+            (RefloatRunState::Startup, true) => RefloatRunState::Ready,
+            (run_state, _) => run_state,
+        };
+        let ride_state = RefloatRideState::new(
+            run_state,
+            ride_state.mode(),
+            ride_state.setpoint_adjustment(),
+            ride_state.stop_condition(),
+        )
+        .with_charging(ride_state.charging())
+        .with_wheelslip(ride_state.wheelslip())
+        .with_darkride(ride_state.darkride());
+        let base = RefloatAllDataBasePayload::new(
+            base.balance_current(),
+            RefloatAllDataAttitude::new(base.attitude().balance_pitch(), imu.roll(), imu.pitch()),
+            RefloatAllDataStatus::new(ride_state, status.beep_reason()),
+            base.footpad(),
+            base.setpoints(),
+            base.booster_current(),
+            base.motor(),
+        );
+        self.all_data_payloads =
+            RefloatAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4());
     }
 
     fn handle_charging_state_packet(&mut self, bytes: &[u8]) -> bool {
@@ -1080,7 +1365,35 @@ impl<B: AppDataBindings> RefloatAppDataLifecycle<B> {
         self.lifecycle.register_app_data_handler(handler)
     }
 
+    /// Install Refloat stop cleanup and package-owned state without callbacks.
+    ///
+    /// Upstream stores `stop` and `Data *` in loader metadata at
+    /// `src/main.c:2431-2432`, before registering custom config/app-data/LispBM
+    /// callbacks at `src/main.c:2455-2459`.
+    ///
+    /// # Safety
+    ///
+    /// `info` must be null or point to live VESC loader metadata. `state` must
+    /// remain valid until the firmware stops the package. The supplied handler is
+    /// not registered here; it is only passed through the SDK lifecycle install
+    /// shape whose current implementation records the stop hook.
+    pub unsafe fn install_refloat_state(
+        &self,
+        info: *mut ffi::LibInfo,
+        state: &mut RefloatAppDataState,
+        handler: ffi::AppDataHandler,
+    ) -> bool {
+        if let Some(info) = unsafe { info.as_mut() } {
+            info.arg = core::ptr::from_mut(state).cast();
+        }
+        unsafe { self.lifecycle.install(info, stop_refloat_app_data, handler) }
+    }
+
     /// Install Refloat state, stop cleanup, and app-data handler.
+    ///
+    /// Upstream stores `Data *`/`stop` in loader metadata at
+    /// `src/main.c:2431-2432`; app-data registration follows later at
+    /// `src/main.c:2456`.
     ///
     /// # Safety
     ///
@@ -1093,10 +1406,8 @@ impl<B: AppDataBindings> RefloatAppDataLifecycle<B> {
         state: &mut RefloatAppDataState,
         handler: ffi::AppDataHandler,
     ) -> Result<(), AppDataHandlerRegistrationError> {
-        if let Some(info) = unsafe { info.as_mut() } {
-            info.arg = core::ptr::from_mut(state).cast();
-        }
-        unsafe { self.install(info, handler) }
+        let _ = unsafe { self.install_refloat_state(info, state, handler) };
+        self.lifecycle.register_app_data_handler(handler)
     }
 
     /// Clear Refloat callbacks during package stop.
@@ -1142,24 +1453,24 @@ impl<B: AppDataBindings> RefloatAppDataLifecycle<B> {
 }
 
 impl<B: AppDataBindings + CustomConfigBindings> RefloatAppDataLifecycle<B> {
-    /// Install Refloat custom config, stop cleanup, and app-data handler.
+    /// Install Refloat custom config and app-data callbacks.
     ///
-    /// Upstream registers custom config before app-data at `src/main.c:2456-2457`.
+    /// Upstream registers custom config before app-data at `src/main.c:2456-2457`,
+    /// after loader metadata receives `stop`/`Data *` at `src/main.c:2431-2432`.
     ///
     /// # Safety
     ///
-    /// `info` must be null or point to live VESC loader metadata. The supplied
-    /// handler must remain valid until firmware replaces or clears it.
+    /// The supplied handler must remain valid until firmware replaces or clears it.
     pub unsafe fn install_refloat_callbacks(
         &self,
-        info: *mut ffi::LibInfo,
+        _info: *mut ffi::LibInfo,
         handler: ffi::AppDataHandler,
     ) -> Result<(), AppDataHandlerRegistrationError> {
         let _ = register_refloat_custom_config(self.bindings());
-        unsafe { self.install(info, handler) }
+        self.lifecycle.register_app_data_handler(handler)
     }
 
-    /// Install Refloat state plus custom config, stop cleanup, and app-data.
+    /// Install Refloat state plus custom config and app-data callbacks.
     ///
     /// Upstream stores `Data *` in `info->arg` at `src/main.c:2432` before
     /// registering custom config and app-data at `src/main.c:2456-2457`.
@@ -1175,9 +1486,7 @@ impl<B: AppDataBindings + CustomConfigBindings> RefloatAppDataLifecycle<B> {
         state: &mut RefloatAppDataState,
         handler: ffi::AppDataHandler,
     ) -> Result<(), AppDataHandlerRegistrationError> {
-        if let Some(info) = unsafe { info.as_mut() } {
-            info.arg = core::ptr::from_mut(state).cast();
-        }
+        let _ = unsafe { self.install_refloat_state(info, state, handler) };
         unsafe { self.install_refloat_callbacks(info, handler) }
     }
 }
@@ -1194,6 +1503,7 @@ unsafe extern "C" fn stop_refloat_app_data(_arg: *mut core::ffi::c_void) {
     #[cfg(all(not(test), target_arch = "arm"))]
     if let Some(ptr) = core::ptr::NonNull::new(_arg.cast::<RefloatAppDataState>()) {
         let bindings = vescpkg_rs::RealBindings;
+        crate::runtime::request_refloat_runtime_thread_termination(unsafe { ptr.as_ref() });
         let _allocation =
             unsafe { vescpkg_rs::FirmwareAllocation::from_raw_parts(ptr, 1, &bindings) };
     }
@@ -1222,7 +1532,7 @@ mod tests {
     use core::ffi::c_void;
     use core::mem::MaybeUninit;
     use vescpkg_rs::prelude::*;
-    use vescpkg_rs::test_support::FakeMotorTelemetryBindings;
+    use vescpkg_rs::test_support::{FakeImuBindings, FakeMotorTelemetryBindings};
     use vescpkg_rs::{AllocBindings, AppDataBindings, FirmwareAllocator, ffi};
 
     #[test]
@@ -1762,6 +2072,202 @@ mod tests {
     }
 
     #[test]
+    fn app_data_state_refreshes_realtime_timestamp_like_refloat() {
+        let lifecycle = RefloatAppDataLifecycle::new(
+            RecordingAppDataBindings::accepting().with_system_time_ticks(0x0102_0304),
+        );
+        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
+
+        assert!(state.handle_packet_with_telemetry(
+            &lifecycle,
+            &telemetry,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+
+        // Refloat v1.2.1 writes `d->time.now` into realtime packets at
+        // `src/main.c:1931`; VESC system ticks are 100 us ticks.
+        assert_eq!(
+            lifecycle
+                .bindings()
+                .last_sent_realtime_timestamp_bytes
+                .get(),
+            [1, 2, 3, 4]
+        );
+    }
+
+    #[test]
+    fn app_data_runtime_refreshes_startup_ready_gate_and_imu_attitude_like_refloat() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+        let imu = vescpkg_rs::ImuApi::new(
+            vescpkg_rs::test_support::FakeImuBindings::new()
+                .with_startup_done(true)
+                .with_attitude(
+                    ImuRoll::new(AngleRadians::from_radians(0.25)),
+                    ImuPitch::new(AngleRadians::from_radians(-0.125)),
+                ),
+        );
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
+
+        assert!(state.handle_packet_with_runtime(
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+
+        let payloads = state.all_data_payloads();
+        assert_eq!(
+            payloads.base().status().ride_state().run_state(),
+            RefloatRunState::Ready
+        );
+        assert_eq!(payloads.base().attitude().roll().angle().as_radians(), 0.25);
+        assert_eq!(
+            payloads.base().attitude().pitch().angle().as_radians(),
+            -0.125
+        );
+    }
+
+    #[test]
+    fn app_data_runtime_applies_disabled_config_before_startup_ready_like_refloat() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+        let imu = vescpkg_rs::ImuApi::new(
+            vescpkg_rs::test_support::FakeImuBindings::new().with_startup_done(true),
+        );
+        let mut incoming = *include_bytes!("conf/default_config.dat");
+        incoming[super::REFLOAT_CONFIG_DISABLED_OFFSET] = 1;
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
+
+        assert!(super::refloat_set_cfg_with_state(
+            incoming.as_mut_ptr(),
+            Some(&mut state),
+        ));
+        assert!(state.handle_packet_with_runtime(
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+
+        // Upstream `configure(d)` applies `disabled` before the control-loop
+        // startup gate at `src/main.c:184-190`; `state_set_disabled` forces
+        // `STATE_DISABLED` at `src/state.c:41-47`, so `src/main.c:833-838`
+        // cannot promote STARTUP to READY in this configuration.
+        assert_eq!(
+            state
+                .all_data_payloads()
+                .base()
+                .status()
+                .ride_state()
+                .run_state(),
+            RefloatRunState::Disabled,
+        );
+    }
+
+    #[test]
+    fn app_data_configured_loop_time_uses_refloat_hertz_config() {
+        let mut incoming = *include_bytes!("conf/default_config.dat");
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
+
+        assert_eq!(state.configured_loop_time_us(), 1201);
+
+        incoming[super::REFLOAT_CONFIG_HERTZ_OFFSET..super::REFLOAT_CONFIG_HERTZ_OFFSET + 2]
+            .copy_from_slice(&500u16.to_be_bytes());
+        assert!(super::refloat_set_cfg_with_state(
+            incoming.as_mut_ptr(),
+            Some(&mut state),
+        ));
+
+        // Upstream generated serialization places `hertz` after the first
+        // seven float16 config fields; `configure(d)` then uses it as
+        // `1e6 / d->float_conf.hertz` at `src/main.c:190-191`.
+        assert_eq!(state.configured_loop_time_us(), 2000);
+    }
+
+    #[test]
+    fn app_data_runtime_refreshes_motor_payload_like_refloat_motor_data_update() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry =
+            MotorTelemetryApi::new(FakeMotorTelemetryBindings::new().with_runtime_motor(
+                ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1234.0)),
+                VehicleSpeed::new(Speed::from_meters_per_second(5.5)),
+                MotorCurrent::new(Current::from_amps(12.25)),
+                BatteryCurrent::new(Current::from_amps(4.0)),
+                DutyCycle::new(SignedRatio::from_ratio_const(0.375)),
+            ));
+        let imu = ImuApi::new(FakeImuBindings::new());
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
+
+        assert!(state.handle_packet_with_runtime(
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::GetAllData.id(),
+                0,
+            ],
+        ));
+
+        let motor = state.all_data_payloads().base().motor();
+        assert_eq!(
+            motor.electrical_speed().rpm().as_revolutions_per_minute(),
+            1234.0
+        );
+        assert_eq!(motor.vehicle_speed().speed().as_meters_per_second(), 5.5);
+        assert_eq!(motor.motor_current().current().as_amps(), 12.25);
+        assert_eq!(motor.battery_current().current().as_amps(), 0.04);
+        assert_eq!(motor.duty_cycle().ratio().as_ratio(), 0.375);
+    }
+
+    #[test]
+    fn app_data_runtime_refreshes_foc_id_current_like_refloat_all_data() {
+        // Refloat v1.2.1 encodes `fabsf(VESC_IF->foc_get_id()) * 3` for
+        // compact all-data at `src/main.c:1364-1368`.
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry = MotorTelemetryApi::new(
+            FakeMotorTelemetryBindings::new()
+                .with_foc_id_current(Some(MotorCurrent::new(Current::from_amps(-4.0)))),
+        );
+        let imu = ImuApi::new(FakeImuBindings::new());
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
+
+        assert!(state.handle_packet_with_runtime(
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::GetAllData.id(),
+                0,
+            ],
+        ));
+
+        let motor = state.all_data_payloads().base().motor();
+        assert_eq!(
+            motor
+                .foc_id_current()
+                .as_measured()
+                .expect("measured Id current")
+                .current()
+                .as_amps(),
+            -4.0
+        );
+        assert_eq!(lifecycle.bindings().last_sent_base_foc_id_byte.get(), 12);
+    }
+
+    #[test]
     fn lifecycle_installs_typed_refloat_state_for_handler_retrieval() {
         let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
         let mut info = ffi::LibInfo {
@@ -1793,16 +2299,39 @@ mod tests {
     }
 
     #[test]
+    fn lifecycle_installs_refloat_state_before_callbacks_like_refloat_startup() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0x2000,
+        };
+        let mut state = RefloatAppDataState::new(sample_all_data_payloads());
+
+        unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
+
+        assert!(unsafe { lifecycle.install_refloat_state(&mut info, &mut state, handler) });
+        // Upstream sets `info->stop_fun` and `info->arg` at `src/main.c:2431-2432`,
+        // before registering custom config/app-data/extensions at `src/main.c:2455-2459`.
+        assert_eq!(lifecycle.bindings().handler_calls.get(), 0);
+        assert_eq!(lifecycle.bindings().custom_config_register_calls.get(), 0);
+        assert!(info.stop_fun.is_some());
+        assert_eq!(info.arg, core::ptr::from_mut(&mut state).cast::<c_void>());
+    }
+
+    #[test]
     fn raw_handler_boundary_rejects_null_and_sends_valid_packets() {
         let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
         let mut state = RefloatAppDataState::new(sample_all_data_payloads());
 
         assert!(!unsafe {
             let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+            let imu = ImuApi::new(FakeImuBindings::new());
             handle_refloat_app_data_packet(
                 &mut state,
                 &lifecycle,
                 &telemetry,
+                &imu,
                 core::ptr::null_mut(),
                 0,
             )
@@ -1811,10 +2340,12 @@ mod tests {
         let mut request = [101, 10, 0];
         assert!(unsafe {
             let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+            let imu = ImuApi::new(FakeImuBindings::new());
             handle_refloat_app_data_packet(
                 &mut state,
                 &lifecycle,
                 &telemetry,
+                &imu,
                 request.as_mut_ptr(),
                 request.len() as u32,
             )
@@ -2022,7 +2553,9 @@ mod tests {
         send_calls: Cell<usize>,
         last_sent_len: Cell<u32>,
         last_sent_prefix: Cell<[u8; 3]>,
+        last_sent_base_foc_id_byte: Cell<u8>,
         last_sent_base_motor_voltage_bytes: Cell<[u8; 2]>,
+        last_sent_realtime_timestamp_bytes: Cell<[u8; 4]>,
         last_sent_realtime_voltage_bytes: Cell<[u8; 2]>,
         last_sent_realtime_temperature_bytes: Cell<[u8; 4]>,
         last_sent_mode2_distance_bits: Cell<u32>,
@@ -2031,6 +2564,7 @@ mod tests {
         last_sent_mode4_charging_bytes: Cell<[u8; 4]>,
         custom_config_register_calls: Cell<usize>,
         custom_config_clear_calls: Cell<usize>,
+        system_time_ticks: Cell<u32>,
         handler_results: Cell<[bool; 2]>,
     }
 
@@ -2072,7 +2606,9 @@ mod tests {
                 send_calls: Cell::new(0),
                 last_sent_len: Cell::new(0),
                 last_sent_prefix: Cell::new([0; 3]),
+                last_sent_base_foc_id_byte: Cell::new(0),
                 last_sent_base_motor_voltage_bytes: Cell::new([0; 2]),
+                last_sent_realtime_timestamp_bytes: Cell::new([0; 4]),
                 last_sent_realtime_voltage_bytes: Cell::new([0; 2]),
                 last_sent_realtime_temperature_bytes: Cell::new([0; 4]),
                 last_sent_mode2_distance_bits: Cell::new(0),
@@ -2081,8 +2617,14 @@ mod tests {
                 last_sent_mode4_charging_bytes: Cell::new([0; 4]),
                 custom_config_register_calls: Cell::new(0),
                 custom_config_clear_calls: Cell::new(0),
+                system_time_ticks: Cell::new(0),
                 handler_results: Cell::new([true, true]),
             }
+        }
+
+        fn with_system_time_ticks(self, ticks: u32) -> Self {
+            self.system_time_ticks.set(ticks);
+            self
         }
     }
 
@@ -2102,7 +2644,7 @@ mod tests {
         }
 
         fn system_time_ticks(&self) -> u32 {
-            0
+            self.system_time_ticks.get()
         }
 
         unsafe fn send_app_data(&self, data: *const u8, len: u32) {
@@ -2115,7 +2657,12 @@ mod tests {
                     self.last_sent_base_motor_voltage_bytes
                         .set([bytes[22], bytes[23]]);
                 }
+                if bytes.len() >= 34 {
+                    self.last_sent_base_foc_id_byte.set(bytes[33]);
+                }
                 if bytes.len() >= 32 && bytes[1] == RefloatAppDataCommand::RealtimeData.id() {
+                    self.last_sent_realtime_timestamp_bytes
+                        .set([bytes[4], bytes[5], bytes[6], bytes[7]]);
                     self.last_sent_realtime_voltage_bytes
                         .set([bytes[24], bytes[25]]);
                     self.last_sent_realtime_temperature_bytes

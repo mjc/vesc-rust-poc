@@ -494,6 +494,12 @@ pub mod test_support {
             self
         }
 
+        /// Return fake motor telemetry bindings returning optional FOC Id current.
+        pub fn with_foc_id_current(self, foc_id_current: Option<MotorCurrent>) -> Self {
+            self.foc_id_current.set(foc_id_current);
+            self
+        }
+
         /// Creates fake motor telemetry bindings returning voltage and temperatures.
         pub fn with_input_voltage_and_temperatures(
             input_voltage_filtered: InputVoltage,

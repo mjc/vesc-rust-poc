@@ -133,8 +133,8 @@ pub fn package_extension_descriptors() -> [ffi::ExtensionDescriptor; PACKAGE_EXT
 /// Register Refloat's loader extensions with image-rebased native handlers.
 ///
 /// Upstream registers the same names after custom config and app-data setup in
-/// `src/main.c:2456-2459`; the Rust containment init currently registers only
-/// these loader extensions.
+/// `src/main.c:2456-2459`; Rust package init reaches this after state install
+/// and runtime thread startup.
 ///
 /// # Safety
 ///

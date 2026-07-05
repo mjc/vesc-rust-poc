@@ -18,10 +18,14 @@ pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
     // runs `data_init`, installs stop/ARG, starts main+aux threads, then
     // registers IMU, custom config, app-data, and LispBM extensions.
     //
-    // This containment candidate skips upstream threads/IMU/ride control, but
-    // preserves the VESC Tool/App UI registration tail from `src/main.c:2456-2459`.
+    // This containment candidate still skips upstream `Data`/threads/IMU/ride
+    // control, but preserves the startup ordering: loader metadata at
+    // `src/main.c:2431-2432`, runtime thread spawn at `src/main.c:2439-2449`,
+    // then the registration tail from `src/main.c:2455-2459`.
     refloat_package_start(
-        || crate::app_data::install_refloat_app_data(info),
+        || crate::app_data::install_refloat_app_data_state(info),
+        || crate::runtime::start_refloat_runtime_threads(info),
+        || crate::app_data::register_refloat_app_data_callbacks(info),
         || unsafe { crate::extensions::register_refloat_loader_extensions(info) },
     )
 }
@@ -43,18 +47,23 @@ pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
 #[cfg(test)]
 #[unsafe(no_mangle)]
 pub extern "C" fn package_lib_init(_info: *mut ffi::LibInfo) -> bool {
-    // Upstream Refloat v1.2.1 installs `stop`/`Data *` at `src/main.c:2431-2432`.
-    // The current Rust containment init intentionally skips that stateful startup
-    // path and models only the registration tail at `src/main.c:2456-2459`.
-    refloat_package_start(|| true, || true)
+    // Upstream Refloat v1.2.1 installs `stop`/`Data *` at `src/main.c:2431-2432`,
+    // starts runtime threads at `src/main.c:2439-2449`, then registers
+    // IMU/custom config/app-data/LispBM at `src/main.c:2455-2459`.
+    refloat_package_start(|| true, || true, || true, || true)
 }
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 fn refloat_package_start(
-    install_app_data: impl FnOnce() -> bool,
+    install_state: impl FnOnce() -> bool,
+    start_runtime_threads: impl FnOnce() -> bool,
+    register_app_data_callbacks: impl FnOnce() -> bool,
     register_loader_extensions: impl FnOnce() -> bool,
 ) -> bool {
-    install_app_data() && register_loader_extensions()
+    install_state()
+        && start_runtime_threads()
+        && register_app_data_callbacks()
+        && register_loader_extensions()
 }
 
 /// ARM package loader entrypoint placed in `.init_fun` for VESC firmware loading.
@@ -71,34 +80,87 @@ mod tests {
     use core::cell::Cell;
 
     #[test]
-    fn refloat_startup_registers_app_data_before_loader_extensions() {
-        let extension_calls = Cell::new(0);
+    fn refloat_startup_registers_state_before_app_data_before_loader_extensions() {
+        let state_calls = Cell::new(0);
+        let thread_calls = Cell::new(0);
         let app_data_calls = Cell::new(0);
+        let extension_calls = Cell::new(0);
 
         let result = super::refloat_package_start(
             || {
+                state_calls.set(state_calls.get() + 1);
+                assert_eq!(thread_calls.get(), 0);
+                assert_eq!(app_data_calls.get(), 0);
+                assert_eq!(extension_calls.get(), 0);
+                true
+            },
+            || {
+                thread_calls.set(thread_calls.get() + 1);
+                assert_eq!(state_calls.get(), 1);
+                assert_eq!(app_data_calls.get(), 0);
+                assert_eq!(extension_calls.get(), 0);
+                true
+            },
+            || {
                 app_data_calls.set(app_data_calls.get() + 1);
+                assert_eq!(state_calls.get(), 1);
+                assert_eq!(thread_calls.get(), 1);
                 assert_eq!(extension_calls.get(), 0);
                 true
             },
             || {
                 extension_calls.set(extension_calls.get() + 1);
+                assert_eq!(state_calls.get(), 1);
+                assert_eq!(thread_calls.get(), 1);
+                assert_eq!(app_data_calls.get(), 1);
                 true
             },
         );
 
         assert!(result);
+        assert_eq!(state_calls.get(), 1);
+        assert_eq!(thread_calls.get(), 1);
         assert_eq!(app_data_calls.get(), 1);
         assert_eq!(extension_calls.get(), 1);
     }
 
     #[test]
-    fn refloat_startup_fails_when_app_data_install_fails() {
-        assert!(!super::refloat_package_start(|| false, || true));
+    fn refloat_startup_fails_when_state_install_fails() {
+        assert!(!super::refloat_package_start(
+            || false,
+            || true,
+            || true,
+            || true
+        ));
+    }
+
+    #[test]
+    fn refloat_startup_fails_when_runtime_thread_start_fails() {
+        assert!(!super::refloat_package_start(
+            || true,
+            || false,
+            || true,
+            || true
+        ));
+    }
+
+    #[test]
+    fn refloat_startup_fails_when_app_data_callbacks_fail() {
+        assert!(!super::refloat_package_start(
+            || true,
+            || true,
+            || false,
+            || true
+        ));
     }
 
     #[test]
     fn refloat_startup_fails_when_loader_extensions_fail() {
-        assert!(!super::refloat_package_start(|| true, || false));
+        assert!(!super::refloat_package_start(
+            || true,
+            || true,
+            || true,
+            || false
+        ));
     }
 }
