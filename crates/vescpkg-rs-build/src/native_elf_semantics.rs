@@ -240,27 +240,17 @@ pub fn assert_native_lib_semantics(elf: &Path) {
     assert_stop_clears_app_data_handler(&semantics, "stop_package");
 }
 
-/// Asserts the loader-facing `.init_fun` attempts setup but reports success to LispBM.
-pub fn assert_loader_init_best_effort(elf: &Path) {
+/// Asserts the loader-facing `.init_fun` returns the package init result.
+pub fn assert_loader_init_returns_package_result(elf: &Path) {
     let semantics = analyze_native_lib_elf(elf);
 
     assert!(
-        init_insns_call(
+        init_insns_transfer_to_symbol(
             &semantics.init_insns,
             &semantics.symbols,
             "package_lib_init"
         ),
-        "loader init should attempt package setup before reporting success: {}",
-        semantic_report(&semantics)
-    );
-    assert!(
-        init_insns_report_success(&semantics.init_insns),
-        "loader init should report success after best-effort package setup: {}",
-        semantic_report(&semantics)
-    );
-    assert!(
-        !init_insns_have_failure_return(&semantics.init_insns),
-        "loader init should not fail load-native-lib when package setup reports false: {}",
+        "loader init should transfer to package setup and return its result: {}",
         semantic_report(&semantics)
     );
 }
@@ -398,6 +388,17 @@ fn init_insns_call(insns: &[DecodedInsn], symbols: &BTreeMap<u64, String>, targe
     insns
         .iter()
         .any(|insn| insn.mnemonic == "bl" && insn_targets_symbol(insn, symbols, target))
+}
+
+fn init_insns_transfer_to_symbol(
+    insns: &[DecodedInsn],
+    symbols: &BTreeMap<u64, String>,
+    target: &str,
+) -> bool {
+    insns.iter().any(|insn| {
+        (insn.mnemonic == "bl" || insn.mnemonic.starts_with("b."))
+            && insn_targets_symbol(insn, symbols, target)
+    })
 }
 
 fn insn_targets_symbol(insn: &DecodedInsn, symbols: &BTreeMap<u64, String>, target: &str) -> bool {

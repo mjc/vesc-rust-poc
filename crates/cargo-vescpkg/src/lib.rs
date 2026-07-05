@@ -846,7 +846,12 @@ fn read_qml_app(
 fn qml_preview(script: &str) -> String {
     const PREVIEW_CHARS: usize = 80;
 
-    script.chars().take(PREVIEW_CHARS).collect()
+    let preview = script.chars().take(PREVIEW_CHARS).collect::<String>();
+    if script.chars().count() > PREVIEW_CHARS {
+        format!("{preview}...")
+    } else {
+        preview
+    }
 }
 
 fn run_package_install(command: PackageInstallCommand) -> ExitCode {
@@ -1269,7 +1274,7 @@ mod tests {
     use super::{
         Command, LispEvalCommand, LispProbeCommand, LispReadCodeCommand, LispStopCommand,
         LoopbackCommand, PackageEraseCommand, PackageInstallCommand, ParseError, QmlAppReadCommand,
-        SnakeCommand, SnakeRunMode, parse_args, snake_action_from_key,
+        SnakeCommand, SnakeRunMode, parse_args, qml_preview, snake_action_from_key,
     };
     use crate::snake::{
         SnakeBoardHeight, SnakeBoardWidth, SnakeDirection, SnakeLocalAction, SnakeSeed,
@@ -1609,6 +1614,12 @@ mod tests {
 
         assert_eq!(WireVersion::CURRENT.get(), 1);
         assert_eq!(u8::from(WireCommand::Status), 3);
+    }
+
+    #[test]
+    fn qml_preview_marks_truncated_scripts() {
+        assert_eq!(qml_preview("short"), "short");
+        assert!(qml_preview(&"x".repeat(81)).ends_with("..."));
     }
 
     #[test]

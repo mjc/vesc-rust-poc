@@ -71,8 +71,7 @@ fn refloat_package_start(
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".init_fun")]
 pub extern "C" fn init(info: *mut ffi::LibInfo) -> bool {
-    let _ = package_lib_init(info);
-    true
+    package_lib_init(info)
 }
 
 #[cfg(test)]

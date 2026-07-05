@@ -5,18 +5,18 @@ package onto `vescpkg-rs` and `cargo-vescpkg`.
 
 ## Source
 
-- Refloat source: local checkout at `/Users/mjc/projects/refloat`.
+- Refloat source: local checkout at `$REFLOAT_CHECKOUT`.
 - Contract version: tag `v1.2.1`.
 - Tag commit: `0ef6e99d8701886feeb7fe6c07cc4ec53fb3d97a`.
 - Tag subject: `Change version to 1.2.1`.
-- The Refloat checkout has no local `flake.nix`; use the user devshell fallback
-  when building it, expected under `/Users/mjc/cfg/devshells`.
+- The Refloat checkout has no local `flake.nix`; use a devshell fallback when
+  building it, referenced below as `$DEVSHELLS`.
 
 Inspect Refloat through Git at the tag instead of relying on the checkout's
 current detached `HEAD`:
 
 ```sh
-git -C /Users/mjc/projects/refloat show v1.2.1:src/main.c
+git -C "$REFLOAT_CHECKOUT" show v1.2.1:src/main.c
 ```
 
 ## Baseline Build Status
@@ -25,18 +25,18 @@ Baseline capture starts from a clean Git worktree at
 `target/refloat-v1.2.1-src`:
 
 ```sh
-git -C /Users/mjc/projects/refloat worktree add --detach \
-  /Users/mjc/projects/vesc-rust-poc/target/refloat-v1.2.1-src v1.2.1
+git -C "$REFLOAT_CHECKOUT" worktree add --detach \
+  "$REPO/target/refloat-v1.2.1-src" v1.2.1
 ```
 
-`/Users/mjc/cfg/devshells#refloat` still fails on Darwin while building
+`$DEVSHELLS#refloat` still fails on Darwin while building
 `compiler-rt-libc-18.1.8`, so this branch captures the baseline through the
 repo Nix shell plus an ignored desktop VESC Tool build:
 
 ```sh
-git -C /Users/mjc/projects/vesc_tool worktree add --detach \
-  /Users/mjc/projects/vesc-rust-poc/target/vesc_tool_cli HEAD
-nix develop /Users/mjc/cfg/devshells#vesc_tool -c sh -c \
+git -C "$VESC_TOOL_CHECKOUT" worktree add --detach \
+  "$REPO/target/vesc_tool_cli" HEAD
+nix develop "$DEVSHELLS#vesc_tool" -c sh -c \
   'qmake -config release "CONFIG += release_macos build_original exclude_fw" \
      QMAKE_CC=clang QMAKE_CXX=clang++ QMAKE_LINK=clang++ &&
    make -f Makefile -j$(sysctl -n hw.ncpu 2>/dev/null || echo 4)'
@@ -362,6 +362,11 @@ Current hardware evidence says the Rust-owned Refloat package can corrupt
 firmware/persistent controller state in a way the official `v1.2.1` package does
 not. Treat green host tests and matching QML/package metadata as insufficient
 until these native-behavior gaps are closed or intentionally ruled out:
+
+Release safety gate: the Rust-owned Refloat package remains experimental and
+must stay out of default/release install paths until hardware validation proves
+it no longer corrupts firmware or persistent controller state. Build/test
+artifacts are acceptable for controlled porting work only.
 
 - Native init is loader-only containment, not Refloat parity. Official Refloat
   allocates `Data`, initializes EEPROM-backed config/state, stores `info->arg`,
