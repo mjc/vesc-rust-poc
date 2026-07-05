@@ -13,8 +13,8 @@
 use crate::domain::{
     RefloatAllDataMode3Payload, RefloatAllDataMode4Payload, RefloatAllDataPayloads,
     RefloatAllDataRequest, RefloatAllDataResponse, RefloatAppDataCommand, RefloatFirmwareFaultCode,
-    RefloatRealtimeChargingCurrent, RefloatRealtimeChargingVoltage,
-    RefloatRealtimeMotorTemperatures,
+    RefloatMode, RefloatRealtimeChargingCurrent, RefloatRealtimeChargingVoltage,
+    RefloatRealtimeMotorTemperatures, RefloatRunState,
 };
 use core::ffi::c_int;
 use vescpkg_rs::prelude::{BatteryCurrent, BatteryVoltage, Current, Voltage};
@@ -22,6 +22,42 @@ use vescpkg_rs::{
     AppDataBindings, AppDataHandlerRegistrationError, CustomConfigBindings, LoopbackLifecycle,
     MotorTelemetryApi, MotorTelemetryBindings, ffi,
 };
+
+/// Refloat v1.2.1 generated custom-config XML blob.
+///
+/// Upstream generates this from `src/conf/settings.xml` via `src/Makefile:28-31`
+/// and exposes `data_refloatconfig_` through `get_cfg_xml` at
+/// `src/main.c:2388-2396`.
+#[cfg_attr(
+    all(not(test), target_arch = "arm"),
+    unsafe(link_section = ".text.refloat_config_xml")
+)]
+#[used]
+static REFLOAT_CONFIG_XML: [u8; 25_723] = *include_bytes!("conf/refloatconfig.dat");
+
+/// Refloat v1.2.1 generated serialized default custom config.
+///
+/// Upstream `get_cfg(..., is_default=true)` allocates `RefloatConfig`, fills
+/// defaults, serializes it, then frees it at `src/main.c:2335-2356`.
+/// `src/Makefile:28-31` generates the format from `src/conf/settings.xml`;
+/// generated `conf/confparser.h:11-12` defines signature `2427955642` and
+/// serialized length `276`, while generated `conf/confparser.c:8-178` and
+/// `conf/confparser.c:363-531` serialize the default values.
+#[cfg_attr(
+    all(not(test), target_arch = "arm"),
+    unsafe(link_section = ".text.refloat_default_config")
+)]
+#[used]
+static REFLOAT_DEFAULT_CONFIG: [u8; 276] = *include_bytes!("conf/default_config.dat");
+const REFLOAT_CONFIG_SIGNATURE_BYTES: [u8; 4] = [0x90, 0xb7, 0xa9, 0xba];
+// Upstream defines `disabled` in `src/conf/settings.xml:3890-3902`; its
+// `<ser>disabled</ser>` entry at `src/conf/settings.xml:4064` lands at byte
+// 243 in the 276-byte generated config image.
+const REFLOAT_CONFIG_DISABLED_OFFSET: usize = 243;
+// Upstream defines `meta.is_default` in `src/conf/settings.xml:3903-3914`; its
+// `<ser>meta.is_default</ser>` entry at `src/conf/settings.xml:4083` lands at
+// the final byte in the generated config image.
+const REFLOAT_CONFIG_META_IS_DEFAULT_OFFSET: usize = 275;
 
 /// Process one Refloat app-data packet from a typed all-data payload snapshot.
 pub fn process_refloat_app_data(
@@ -206,40 +242,171 @@ pub fn register_refloat_custom_config<B: CustomConfigBindings>(bindings: &B) -> 
     }
 }
 
-unsafe extern "C" fn refloat_get_cfg(_buffer: *mut u8, _is_default: bool) -> c_int {
-    // Upstream serializes current/default `RefloatConfig` at `src/main.c:2334-2358`.
-    0
+unsafe extern "C" fn refloat_get_cfg(buffer: *mut u8, is_default: bool) -> c_int {
+    let state = unsafe { runtime_refloat_config_state() };
+    refloat_get_cfg_with_state(buffer, is_default, state)
 }
 
-unsafe extern "C" fn refloat_set_cfg(_buffer: *mut u8) -> bool {
-    // Upstream deserializes, persists, and reconfigures at `src/main.c:2360-2386`.
-    false
+fn refloat_get_cfg_with_state(
+    buffer: *mut u8,
+    is_default: bool,
+    state: Option<&RefloatAppDataState>,
+) -> c_int {
+    if !is_default {
+        // Upstream serializes `d->float_conf` at `src/main.c:2347-2350`;
+        // `data_init` first populates it from EEPROM or generated defaults at
+        // `src/main.c:1160-1185`. The Rust state stores the serialized image
+        // until the typed `RefloatConfig` parser/deserializer is ported.
+        let Some(state) = state else {
+            return 0;
+        };
+        return copy_refloat_config(buffer, state.serialized_config());
+    }
+
+    // Upstream default path is `src/main.c:2339-2350`: allocate config, call
+    // `confparser_set_defaults_refloatconfig`, then
+    // `confparser_serialize_refloatconfig`.
+    copy_refloat_config(buffer, &REFLOAT_DEFAULT_CONFIG)
+}
+
+fn copy_refloat_config(buffer: *mut u8, config: &[u8; 276]) -> c_int {
+    let Some(buffer) = core::ptr::NonNull::new(buffer) else {
+        return 0;
+    };
+
+    unsafe { core::ptr::copy_nonoverlapping(config.as_ptr(), buffer.as_ptr(), config.len()) };
+    config.len() as c_int
+}
+
+#[cfg(all(not(test), target_arch = "arm"))]
+unsafe fn runtime_refloat_config_state() -> Option<&'static RefloatAppDataState> {
+    let state = unsafe { refloat_state_from_arg()? };
+    Some(&*state)
+}
+
+#[cfg(any(test, not(target_arch = "arm")))]
+unsafe fn runtime_refloat_config_state() -> Option<&'static RefloatAppDataState> {
+    None
+}
+
+unsafe extern "C" fn refloat_set_cfg(buffer: *mut u8) -> bool {
+    let state = unsafe { runtime_refloat_config_state_mut() };
+    refloat_set_cfg_with_state(buffer, state)
+}
+
+fn refloat_set_cfg_with_state(buffer: *mut u8, state: Option<&mut RefloatAppDataState>) -> bool {
+    let Some(buffer) = core::ptr::NonNull::new(buffer) else {
+        return false;
+    };
+    let Some(state) = state else {
+        return false;
+    };
+    let config = unsafe {
+        core::slice::from_raw_parts(buffer.as_ptr().cast_const(), REFLOAT_DEFAULT_CONFIG.len())
+    };
+    // Upstream `set_cfg` gates special modes, deserializes, persists, and
+    // reconfigures at `src/main.c:2360-2386`; generated
+    // `conf/confparser.c:187-190` rejects bad signatures before field reads.
+    // This byte-image step is intentionally only the deserialization/storage
+    // part; EEPROM write and `configure(d)` remain separate parity work.
+    state.store_serialized_config(config)
+}
+
+#[cfg(all(not(test), target_arch = "arm"))]
+unsafe fn runtime_refloat_config_state_mut() -> Option<&'static mut RefloatAppDataState> {
+    unsafe { refloat_state_from_arg() }
+}
+
+#[cfg(any(test, not(target_arch = "arm")))]
+unsafe fn runtime_refloat_config_state_mut() -> Option<&'static mut RefloatAppDataState> {
+    None
 }
 
 unsafe extern "C" fn refloat_get_cfg_xml(buffer: *mut *mut u8) -> c_int {
+    let xml = runtime_refloat_config_xml();
     if let Some(buffer) = unsafe { buffer.as_mut() } {
-        *buffer = core::ptr::null_mut();
+        *buffer = xml.cast_mut();
     }
     // Upstream returns `data_refloatconfig_ + PROG_ADDR` and
     // `DATA_REFLOATCONFIG__SIZE` at `src/main.c:2388-2396`.
-    0
+    REFLOAT_CONFIG_XML.len() as c_int
+}
+
+#[cfg(all(not(test), target_arch = "arm"))]
+fn runtime_refloat_config_xml() -> *const u8 {
+    let address: usize;
+    unsafe {
+        core::arch::asm!(
+            "adr.w {address}, {xml}",
+            address = out(reg) address,
+            xml = sym REFLOAT_CONFIG_XML,
+            options(nomem, nostack, preserves_flags),
+        );
+    }
+    address as *const u8
+}
+
+#[cfg(any(test, not(target_arch = "arm")))]
+fn runtime_refloat_config_xml() -> *const u8 {
+    REFLOAT_CONFIG_XML.as_ptr()
 }
 
 /// Refloat package app-data state.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RefloatAppDataState {
     all_data_payloads: RefloatAllDataPayloads,
+    serialized_config: [u8; 276],
 }
 
 impl RefloatAppDataState {
     /// Build app-data state from the current all-data payload snapshot.
-    pub const fn new(all_data_payloads: RefloatAllDataPayloads) -> Self {
-        Self { all_data_payloads }
+    pub fn new(all_data_payloads: RefloatAllDataPayloads) -> Self {
+        Self {
+            all_data_payloads,
+            // Upstream `data_init` reads EEPROM and falls back to generated
+            // defaults at `src/main.c:1160-1185`; full EEPROM parity remains a
+            // later source-backed slice.
+            serialized_config: REFLOAT_DEFAULT_CONFIG,
+        }
     }
 
     /// Return the current all-data payload snapshot.
     pub const fn all_data_payloads(self) -> RefloatAllDataPayloads {
         self.all_data_payloads
+    }
+
+    fn serialized_config(&self) -> &[u8; 276] {
+        &self.serialized_config
+    }
+
+    fn store_serialized_config(&mut self, config: &[u8]) -> bool {
+        let Ok(config) = <&[u8; 276]>::try_from(config) else {
+            return false;
+        };
+        if config[..4] != REFLOAT_CONFIG_SIGNATURE_BYTES {
+            return false;
+        }
+
+        let ride_state = self.all_data_payloads.base().status().ride_state();
+        // Upstream refuses VESC Tool writes outside `MODE_NORMAL` before
+        // deserializing/storing at `src/main.c:2362-2368`.
+        if !matches!(ride_state.mode(), RefloatMode::Normal) {
+            return false;
+        }
+
+        let mut config = *config;
+        // Upstream clears `d->float_conf.disabled` while running at
+        // `src/main.c:2369-2372`; `disabled` is serialized from
+        // `src/conf/settings.xml:3890-3902` at byte 243.
+        if matches!(ride_state.run_state(), RefloatRunState::Running) {
+            config[REFLOAT_CONFIG_DISABLED_OFFSET] = 0;
+        }
+        // Upstream clears `d->float_conf.meta.is_default` for every write at
+        // `src/main.c:2375-2377`; `meta.is_default` is serialized from
+        // `src/conf/settings.xml:3903-3914` at byte 275.
+        config[REFLOAT_CONFIG_META_IS_DEFAULT_OFFSET] = 0;
+        self.serialized_config = config;
+        true
     }
 
     /// Recover typed app-data state from VESC loader metadata.
@@ -1010,6 +1177,138 @@ mod tests {
         );
     }
 
+    #[test]
+    fn custom_config_xml_callback_returns_upstream_settings_blob() {
+        let mut buffer = core::ptr::null_mut();
+
+        let len = unsafe { super::refloat_get_cfg_xml(&mut buffer) };
+
+        // Refloat v1.2.1 returns generated `data_refloatconfig_` at
+        // `src/main.c:2388-2396`, produced from `src/conf/settings.xml` by
+        // `src/Makefile:28-31`.
+        assert_eq!(len, 25_723);
+        assert!(!buffer.is_null());
+        let bytes = unsafe { core::slice::from_raw_parts(buffer.cast_const(), len as usize) };
+        assert_eq!(&bytes[..6], &[0x00, 0x05, 0x5c, 0xa1, 0x78, 0xda]);
+    }
+
+    #[test]
+    fn custom_config_default_callback_returns_upstream_serialized_defaults() {
+        let mut buffer = [0u8; 276];
+
+        let len = unsafe { super::refloat_get_cfg(buffer.as_mut_ptr(), true) };
+
+        // Refloat v1.2.1 default `get_cfg` allocates a temporary config,
+        // applies generated defaults, and serializes it at `src/main.c:2339-2350`.
+        // The generated format comes from `src/Makefile:28-31`;
+        // generated `conf/confparser.h:11-12` fixes signature/length, and
+        // generated `conf/confparser.c:8-178,363-531` writes these bytes.
+        assert_eq!(len, 276);
+        assert_eq!(buffer, *include_bytes!("conf/default_config.dat"));
+        assert_eq!(&buffer[..4], &[0x90, 0xb7, 0xa9, 0xba]);
+    }
+
+    #[test]
+    fn custom_config_current_callback_reads_state_serialized_config() {
+        let state = RefloatAppDataState::new(sample_all_data_payloads());
+        let mut buffer = [0u8; 276];
+
+        let len = super::refloat_get_cfg_with_state(buffer.as_mut_ptr(), false, Some(&state));
+
+        // Upstream current `get_cfg` serializes `d->float_conf` from shared
+        // package state at `src/main.c:2347-2350`; `data_init` populates it
+        // from EEPROM or generated defaults at `src/main.c:1160-1185`.
+        assert_eq!(len, 276);
+        assert_eq!(buffer, *include_bytes!("conf/default_config.dat"));
+    }
+
+    #[test]
+    fn custom_config_set_callback_stores_serialized_config_in_state() {
+        let mut state = RefloatAppDataState::new(sample_all_data_payloads());
+        let mut incoming = *include_bytes!("conf/default_config.dat");
+        incoming[4] = 0x12;
+
+        assert!(super::refloat_set_cfg_with_state(
+            incoming.as_mut_ptr(),
+            Some(&mut state),
+        ));
+
+        let mut current = [0u8; 276];
+        let len = super::refloat_get_cfg_with_state(current.as_mut_ptr(), false, Some(&state));
+
+        // Upstream `set_cfg` deserializes into `d->float_conf` at
+        // `src/main.c:2368`; generated `conf/confparser.c:187-190` rejects a
+        // bad signature before reading the field bytes.
+        incoming[super::REFLOAT_CONFIG_META_IS_DEFAULT_OFFSET] = 0;
+        assert_eq!(len, 276);
+        assert_eq!(current, incoming);
+    }
+
+    #[test]
+    fn custom_config_set_callback_resets_is_default_flag_like_refloat() {
+        let mut state = RefloatAppDataState::new(sample_all_data_payloads());
+        let mut incoming = *include_bytes!("conf/default_config.dat");
+        incoming[super::REFLOAT_CONFIG_META_IS_DEFAULT_OFFSET] = 1;
+
+        assert!(super::refloat_set_cfg_with_state(
+            incoming.as_mut_ptr(),
+            Some(&mut state),
+        ));
+
+        let mut current = [0u8; 276];
+        let len = super::refloat_get_cfg_with_state(current.as_mut_ptr(), false, Some(&state));
+
+        // Upstream clears `d->float_conf.meta.is_default` for every config
+        // write at `src/main.c:2375-2377`; generated
+        // `conf/confparser.c:179` serializes that flag as the final byte.
+        assert_eq!(len, 276);
+        assert_eq!(current[super::REFLOAT_CONFIG_META_IS_DEFAULT_OFFSET], 0);
+    }
+
+    #[test]
+    fn custom_config_set_callback_keeps_package_enabled_while_running_like_refloat() {
+        let mut state = RefloatAppDataState::new(sample_all_data_payloads());
+        let mut incoming = *include_bytes!("conf/default_config.dat");
+        incoming[super::REFLOAT_CONFIG_DISABLED_OFFSET] = 1;
+
+        assert!(super::refloat_set_cfg_with_state(
+            incoming.as_mut_ptr(),
+            Some(&mut state),
+        ));
+
+        let mut current = [0u8; 276];
+        let len = super::refloat_get_cfg_with_state(current.as_mut_ptr(), false, Some(&state));
+
+        // Upstream refuses to persist `disabled = true` while running at
+        // `src/main.c:2369-2372`; `disabled` is serialized at
+        // `src/conf/settings.xml:4064`.
+        assert_eq!(len, 276);
+        assert_eq!(current[super::REFLOAT_CONFIG_DISABLED_OFFSET], 0);
+    }
+
+    #[test]
+    fn custom_config_set_callback_rejects_special_modes_like_refloat() {
+        let mut state = RefloatAppDataState::new(sample_all_data_payloads_with_ride_state(
+            RefloatRunState::Ready,
+            RefloatMode::HandTest,
+        ));
+        let mut incoming = *include_bytes!("conf/default_config.dat");
+        incoming[4] = 0x12;
+
+        assert!(!super::refloat_set_cfg_with_state(
+            incoming.as_mut_ptr(),
+            Some(&mut state),
+        ));
+
+        let mut current = [0u8; 276];
+        let len = super::refloat_get_cfg_with_state(current.as_mut_ptr(), false, Some(&state));
+
+        // Upstream rejects VESC Tool config writes outside `MODE_NORMAL` at
+        // `src/main.c:2362-2365`, before storing to EEPROM or reconfiguring.
+        assert_eq!(len, 276);
+        assert_eq!(current, *include_bytes!("conf/default_config.dat"));
+    }
+
     struct RecordingAppDataBindings {
         handler_calls: Cell<usize>,
         last_handler: Cell<usize>,
@@ -1151,9 +1450,16 @@ mod tests {
     }
 
     fn sample_all_data_payloads() -> RefloatAllDataPayloads {
+        sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Normal)
+    }
+
+    fn sample_all_data_payloads_with_ride_state(
+        run_state: RefloatRunState,
+        mode: RefloatMode,
+    ) -> RefloatAllDataPayloads {
         let ride_state = RefloatRideState::new(
-            RefloatRunState::Running,
-            RefloatMode::Normal,
+            run_state,
+            mode,
             RefloatSetpointAdjustment::None,
             RefloatStopCondition::None,
         );

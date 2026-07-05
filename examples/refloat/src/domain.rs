@@ -3469,6 +3469,22 @@ impl RefloatRideState {
         self
     }
 
+    /// Return the top-level run state.
+    ///
+    /// Mirrors upstream `d->state.state`, read by `set_cfg` at
+    /// `src/main.c:2369-2372`.
+    pub const fn run_state(self) -> RefloatRunState {
+        self.run_state
+    }
+
+    /// Return the runtime mode.
+    ///
+    /// Mirrors upstream `d->state.mode`, read by `set_cfg` at
+    /// `src/main.c:2362-2365`.
+    pub const fn mode(self) -> RefloatMode {
+        self.mode
+    }
+
     /// Return the Refloat app-data Float State compatibility value.
     pub const fn float_state_compat(self) -> u8 {
         if matches!(self.charging, RefloatChargingState::Charging) {
