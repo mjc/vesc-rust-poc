@@ -109,6 +109,11 @@ const REFLOAT_CONFIG_FAULT_DARKRIDE_ENABLED_OFFSET: usize = 42;
 // Upstream defines `fault_reversestop_enabled` immediately after
 // `fault_darkride_enabled` at `src/conf/settings.xml:3939`.
 const REFLOAT_CONFIG_FAULT_REVERSESTOP_ENABLED_OFFSET: usize = 43;
+// Upstream serializes remote throttle fields immediately before startup
+// tolerances at `src/conf/settings.xml:3962-3967`.
+const REFLOAT_CONFIG_INPUTTILT_INVERT_THROTTLE_OFFSET: usize = 84;
+const REFLOAT_CONFIG_REMOTE_THROTTLE_CURRENT_MAX_OFFSET: usize = 87;
+const REFLOAT_CONFIG_REMOTE_THROTTLE_GRACE_PERIOD_OFFSET: usize = 89;
 // Upstream defines `ki_limit` in `src/conf/settings.xml:1679-1707`; its
 // `<ser>ki_limit</ser>` entry at `src/conf/settings.xml:3975` lands at byte
 // 104 in the generated default config image and uses scale 10.
@@ -577,6 +582,10 @@ fn refloat_ticks_elapsed(now: u32, then: u32, seconds: u32) -> bool {
 
 fn refloat_ticks_elapsed_ms(now: u32, then: u32, milliseconds: u32) -> bool {
     now.wrapping_sub(then) > milliseconds.saturating_mul(10)
+}
+
+fn refloat_ticks_elapsed_f32(now: u32, then: u32, seconds: f32) -> bool {
+    now.wrapping_sub(then) > (seconds * 10_000.0) as u32
 }
 
 fn refloat_realtime_push_float16_auto(buffer: &mut [u8], ind: &mut usize, value: f32) {
@@ -1070,6 +1079,11 @@ pub struct RefloatAppDataState {
     motor_acceleration: f32,
     motor_accel_history: [f32; 40],
     motor_accel_idx: usize,
+    remote_input: f32,
+    rc_current: f32,
+    rc_steps: u16,
+    rc_counter: u16,
+    rc_current_target_deciamps: i16,
     engage_ticks: u32,
     disengage_ticks: u32,
     fault_switch_ticks: u32,
@@ -1107,6 +1121,11 @@ impl RefloatAppDataState {
             motor_acceleration: 0.0,
             motor_accel_history: [0.0; 40],
             motor_accel_idx: 0,
+            remote_input: 0.0,
+            rc_current: 0.0,
+            rc_steps: 0,
+            rc_counter: 0,
+            rc_current_target_deciamps: 0,
             engage_ticks: 0,
             disengage_ticks: 0,
             fault_switch_ticks: 0,
@@ -1132,6 +1151,11 @@ impl RefloatAppDataState {
     /// Request a motor current for the next motor-control apply step.
     pub fn request_motor_current(&mut self, current: MotorCurrent) {
         self.motor_control.request_current(current);
+    }
+
+    #[cfg(test)]
+    fn set_remote_input_for_test(&mut self, remote_input: f32) {
+        self.remote_input = remote_input;
     }
 
     /// Apply and clear a pending motor-current request.
@@ -1312,6 +1336,38 @@ impl RefloatAppDataState {
         bytes: &[u8],
     ) -> bool {
         if self.handle_charging_state_packet(bytes) {
+            return true;
+        }
+        if let [package_id, command_id, direction, current, time, sum, ..] = bytes
+            && *package_id == REFLOAT_APP_DATA_PACKAGE_ID.get()
+            && *command_id == RefloatAppDataCommand::RcMove.id()
+        {
+            if matches!(
+                self.all_data_payloads
+                    .base()
+                    .status()
+                    .ride_state()
+                    .run_state(),
+                RefloatRunState::Ready
+            ) {
+                self.rc_counter = 0;
+                self.rc_current_target_deciamps = if *sum != time.wrapping_add(*current) {
+                    0
+                } else if *direction == 0 {
+                    -i16::from(*current)
+                } else {
+                    i16::from(*current)
+                };
+                if self.rc_current_target_deciamps == 0 {
+                    self.rc_steps = 1;
+                    self.rc_current = 0.0;
+                } else {
+                    self.rc_steps = u16::from(*time) * 100;
+                    if self.rc_current_target_deciamps > 80 {
+                        self.rc_current_target_deciamps = 20;
+                    }
+                }
+            }
             return true;
         }
 
@@ -1849,6 +1905,8 @@ impl RefloatAppDataState {
             self.softstart_pid_limit = 0.0;
             self.reverse_total_erpm = 0.0;
             self.traction_control = false;
+            self.rc_current = 0.0;
+            self.rc_steps = 0;
             let setpoint = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(
                 base.attitude().balance_pitch().angle().as_radians() * 180.0
                     / core::f32::consts::PI,
@@ -2091,6 +2149,67 @@ impl RefloatAppDataState {
                 Current::from_amps(smoothed_current),
             ));
             self.request_motor_current(balance_current.current());
+        } else if matches!(run_state, RefloatRunState::Ready) && !state_stop_fault {
+            if self.rc_steps != 0 {
+                self.rc_current =
+                    self.rc_current * 0.95 + f32::from(self.rc_current_target_deciamps) * 0.005;
+                if motor_erpm.abs() > 800.0 {
+                    self.rc_current = 0.0;
+                }
+                self.rc_steps -= 1;
+                self.rc_counter += 1;
+                if self.rc_counter == 500 && self.rc_current_target_deciamps > 20 {
+                    self.rc_current_target_deciamps /= 2;
+                }
+                // Upstream READY falls through to `do_rc_move(d)` at
+                // `src/main.c:1069`, where active RC move steps filter/request
+                // `rc_current` at `src/main.c:276-286`.
+                self.request_motor_current(MotorCurrent::new(Current::from_amps(self.rc_current)));
+            } else {
+                let remote_throttle_current_max = refloat_read_scaled_i16(
+                    [
+                        self.serialized_config[REFLOAT_CONFIG_REMOTE_THROTTLE_CURRENT_MAX_OFFSET],
+                        self.serialized_config
+                            [REFLOAT_CONFIG_REMOTE_THROTTLE_CURRENT_MAX_OFFSET + 1],
+                    ],
+                    10.0,
+                );
+                let remote_throttle_grace_period = refloat_read_scaled_i16(
+                    [
+                        self.serialized_config[REFLOAT_CONFIG_REMOTE_THROTTLE_GRACE_PERIOD_OFFSET],
+                        self.serialized_config
+                            [REFLOAT_CONFIG_REMOTE_THROTTLE_GRACE_PERIOD_OFFSET + 1],
+                    ],
+                    10.0,
+                );
+                if remote_throttle_current_max > 0.0
+                    && refloat_ticks_elapsed_f32(
+                        system_time_ticks,
+                        self.disengage_ticks,
+                        remote_throttle_grace_period,
+                    )
+                    && self.remote_input.abs() > 0.02
+                {
+                    let servo_val = if self.serialized_config
+                        [REFLOAT_CONFIG_INPUTTILT_INVERT_THROTTLE_OFFSET]
+                        != 0
+                    {
+                        -self.remote_input
+                    } else {
+                        self.remote_input
+                    };
+                    self.rc_current =
+                        self.rc_current * 0.95 + remote_throttle_current_max * servo_val * 0.05;
+                    // Upstream READY falls through to `do_rc_move(d)` at
+                    // `src/main.c:1069`, where the remote-throttle idle branch
+                    // filters and requests `rc_current` at `src/main.c:291-298`.
+                    self.request_motor_current(MotorCurrent::new(Current::from_amps(
+                        self.rc_current,
+                    )));
+                } else {
+                    self.rc_current = 0.0;
+                }
+            }
         }
         let base = RefloatAllDataBasePayload::new(
             balance_current,
@@ -4292,6 +4411,206 @@ mod tests {
         // footpads at `src/main.c:328-331`.
         assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
         assert_eq!(ride_state.charging(), RefloatChargingState::Charging);
+    }
+
+    #[test]
+    fn app_data_ready_remote_throttle_requests_idle_current_like_refloat_do_rc_move() {
+        let lifecycle = RefloatAppDataLifecycle::new(
+            RecordingAppDataBindings::accepting().with_system_time_ticks(1),
+        );
+        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+        let imu = vescpkg_rs::ImuApi::new(
+            vescpkg_rs::test_support::FakeImuBindings::new()
+                .with_startup_done(true)
+                .with_attitude(
+                    ImuRoll::new(AngleRadians::from_radians(0.0)),
+                    ImuPitch::new(AngleRadians::from_radians(0.0)),
+                    ImuYaw::new(AngleRadians::from_radians(0.0)),
+                ),
+        );
+        let motor = MotorControlApi::new(FakeMotorControlBindings::new());
+        let payloads =
+            sample_all_data_payloads_with_ride_state(RefloatRunState::Ready, RefloatMode::Normal);
+        let base = payloads.base();
+        let no_footpads = FootpadSensorSample::new(
+            AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
+            AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
+            FootpadSensorState::None,
+        );
+        let base = RefloatAllDataBasePayload::new(
+            base.balance_current(),
+            base.attitude(),
+            base.status(),
+            no_footpads,
+            base.setpoints(),
+            base.booster_current(),
+            base.motor(),
+        );
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::new(
+            base,
+            payloads.mode2(),
+            payloads.mode3(),
+            payloads.mode4(),
+        ));
+        let mut config = *state.serialized_config();
+        config[super::REFLOAT_CONFIG_REMOTE_THROTTLE_CURRENT_MAX_OFFSET
+            ..super::REFLOAT_CONFIG_REMOTE_THROTTLE_CURRENT_MAX_OFFSET + 2]
+            .copy_from_slice(&100i16.to_be_bytes());
+        config[super::REFLOAT_CONFIG_REMOTE_THROTTLE_GRACE_PERIOD_OFFSET
+            ..super::REFLOAT_CONFIG_REMOTE_THROTTLE_GRACE_PERIOD_OFFSET + 2]
+            .copy_from_slice(&0i16.to_be_bytes());
+        assert!(state.store_serialized_config(&config));
+        state.set_remote_input_for_test(0.5);
+
+        assert!(state.handle_packet_with_runtime(
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+        assert!(state.apply_requested_motor_current(&motor));
+
+        // Upstream `do_rc_move(d)` uses default inverted throttle and filters
+        // `rc_current = old * 0.95 + target * 0.05` before requesting current
+        // at `src/main.c:291-298`; 10A max with 50% input requests -0.25A.
+        assert_eq!(motor.bindings().current().current().as_amps(), -0.25);
+    }
+
+    #[test]
+    fn app_data_rc_move_command_steps_idle_current_like_refloat_do_rc_move() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+        let imu = vescpkg_rs::ImuApi::new(
+            vescpkg_rs::test_support::FakeImuBindings::new()
+                .with_startup_done(true)
+                .with_attitude(
+                    ImuRoll::new(AngleRadians::from_radians(0.0)),
+                    ImuPitch::new(AngleRadians::from_radians(0.0)),
+                    ImuYaw::new(AngleRadians::from_radians(0.0)),
+                ),
+        );
+        let motor = MotorControlApi::new(FakeMotorControlBindings::new());
+        let payloads =
+            sample_all_data_payloads_with_ride_state(RefloatRunState::Ready, RefloatMode::Normal);
+        let base = payloads.base();
+        let no_footpads = FootpadSensorSample::new(
+            AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
+            AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
+            FootpadSensorState::None,
+        );
+        let base = RefloatAllDataBasePayload::new(
+            base.balance_current(),
+            base.attitude(),
+            base.status(),
+            no_footpads,
+            base.setpoints(),
+            base.booster_current(),
+            base.motor(),
+        );
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::new(
+            base,
+            payloads.mode2(),
+            payloads.mode3(),
+            payloads.mode4(),
+        ));
+
+        assert!(state.handle_packet_with_telemetry(
+            &lifecycle,
+            &telemetry,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RcMove.id(),
+                1,
+                40,
+                2,
+                42,
+            ],
+        ));
+        assert!(state.handle_packet_with_runtime(
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+        assert!(state.apply_requested_motor_current(&motor));
+
+        // Upstream `cmd_rc_move` sets `rc_steps = time * 100` and target
+        // current/10 at `src/main.c:1747-1756`; `do_rc_move` filters the first
+        // READY tick by 5% at `src/main.c:276-286`.
+        assert!((motor.bindings().current().current().as_amps() - 0.2).abs() < 0.0001);
+    }
+
+    #[test]
+    fn app_data_rc_move_halves_large_target_after_500_steps_like_refloat_do_rc_move() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+        let imu = vescpkg_rs::ImuApi::new(
+            vescpkg_rs::test_support::FakeImuBindings::new()
+                .with_startup_done(true)
+                .with_attitude(
+                    ImuRoll::new(AngleRadians::from_radians(0.0)),
+                    ImuPitch::new(AngleRadians::from_radians(0.0)),
+                    ImuYaw::new(AngleRadians::from_radians(0.0)),
+                ),
+        );
+        let payloads =
+            sample_all_data_payloads_with_ride_state(RefloatRunState::Ready, RefloatMode::Normal);
+        let base = payloads.base();
+        let no_footpads = FootpadSensorSample::new(
+            AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
+            AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
+            FootpadSensorState::None,
+        );
+        let base = RefloatAllDataBasePayload::new(
+            base.balance_current(),
+            base.attitude(),
+            base.status(),
+            no_footpads,
+            base.setpoints(),
+            base.booster_current(),
+            base.motor(),
+        );
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::new(
+            base,
+            payloads.mode2(),
+            payloads.mode3(),
+            payloads.mode4(),
+        ));
+
+        assert!(state.handle_packet_with_telemetry(
+            &lifecycle,
+            &telemetry,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RcMove.id(),
+                1,
+                60,
+                6,
+                66,
+            ],
+        ));
+        for _ in 0..500 {
+            assert!(state.handle_packet_with_runtime(
+                &lifecycle,
+                &telemetry,
+                &imu,
+                &[
+                    REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                    RefloatAppDataCommand::RealtimeData.id(),
+                ],
+            ));
+        }
+
+        // Upstream `do_rc_move(d)` halves targets above 2A when `rc_counter`
+        // reaches 500 at `src/main.c:281-284`, after decrementing steps.
+        assert_eq!(state.rc_current_target_deciamps, 30);
+        assert_eq!(state.rc_steps, 100);
     }
 
     #[test]

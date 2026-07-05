@@ -383,8 +383,8 @@ fn audit_refloat_native_lib_layout(paths: &NativeLibArtifactPaths) {
         .expect("Refloat native-lib binary metadata")
         .len();
     assert!(
-        native_bin_size <= 46 * 1024,
-        "expected the Refloat native blob with generated config XML to stay below 46 KiB, got {native_bin_size} bytes"
+        native_bin_size <= 47 * 1024,
+        "expected the Refloat native blob with generated config XML to stay below 47 KiB, got {native_bin_size} bytes"
     );
 
     assert!(
