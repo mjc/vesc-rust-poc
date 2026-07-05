@@ -48,7 +48,7 @@ pub use firmware::{
     StopContext, app_data_callback, app_data_packet, arg_mut, arg_ref, clear_loader_info,
     config_xml_bytes, custom_config_get, custom_config_payload, custom_config_set,
     custom_config_xml, firmware_array, install_loader_state, lbm_args, loader_info_mut,
-    loader_state_mut, stop_callback,
+    loader_state_mut, register_custom_config_callback, stop_callback,
 };
 pub use imu::{ImuApi, ImuBindings, ImuReadCallback, imu_read_callback};
 pub use init::{PackageStart, PackageStartStep, start_package};
@@ -57,7 +57,8 @@ pub use lifecycle_core::{
 };
 pub use motor::{MotorControlApi, MotorControlBindings, MotorTelemetryApi, MotorTelemetryBindings};
 pub use thread::{
-    FirmwareThread, FirmwareThreadHandle, ThreadApi, ThreadBindings, firmware_thread_entry,
+    FirmwareThread, FirmwareThreadHandle, FirmwareThreadPair, FirmwareThreadSpec, ThreadApi,
+    ThreadBindings, firmware_thread_entry,
 };
 
 #[cfg(not(test))]
@@ -103,14 +104,15 @@ pub mod prelude {
         AllocBindings, AllocError, AppDataBindings, AppDataCallback,
         AppDataHandlerRegistrationError, CustomConfigBindings, CustomConfigCallback,
         CustomConfigGetBuffer, CustomConfigXmlOut, ExtensionDescriptor, ExtensionNameError,
-        FirmwareAllocation, FirmwareAllocator, FirmwareThread, FirmwareThreadHandle, GpioApi,
-        GpioBindings, ImuApi, ImuBindings, ImuReadCallback, LbmApi, LbmBindings, LbmExtension,
-        LbmExtensionArgs, LoopbackLifecycle, MotorControlApi, MotorControlBindings,
-        MotorTelemetryApi, MotorTelemetryBindings, PackageLifecycle, PackageStart,
-        PackageStartStep, ProtocolFrame, RegisterError, StopCallback, StopContext, ThreadApi,
-        ThreadBindings, WireCommand, WireVersion, app_data_callback, custom_config_get,
-        custom_config_set, custom_config_xml, firmware_thread_entry, imu_read_callback,
-        lbm_extension_handler, start_package,
+        FirmwareAllocation, FirmwareAllocator, FirmwareThread, FirmwareThreadHandle,
+        FirmwareThreadPair, FirmwareThreadSpec, GpioApi, GpioBindings, ImuApi, ImuBindings,
+        ImuReadCallback, LbmApi, LbmBindings, LbmExtension, LbmExtensionArgs, LoopbackLifecycle,
+        MotorControlApi, MotorControlBindings, MotorTelemetryApi, MotorTelemetryBindings,
+        PackageLifecycle, PackageStart, PackageStartStep, ProtocolFrame, RegisterError,
+        StopCallback, StopContext, ThreadApi, ThreadBindings, WireCommand, WireVersion,
+        app_data_callback, custom_config_get, custom_config_set, custom_config_xml,
+        firmware_thread_entry, imu_read_callback, lbm_extension_handler,
+        register_custom_config_callback, start_package,
     };
 
     #[cfg(not(test))]

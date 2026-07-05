@@ -345,6 +345,65 @@ fn thread_api_forwards_and_maps_null_spawn_handles() {
     assert_eq!(bindings.priorities.get()[0], -1);
 }
 
+struct PairTestThread;
+
+impl crate::FirmwareThread for PairTestThread {
+    type State = u32;
+
+    fn run(_state: Option<&'static mut Self::State>) {}
+}
+
+#[test]
+fn thread_api_spawns_and_terminates_typed_thread_pair() {
+    let bindings = FakeThreadBindings::with_spawn_results([0x10, 0x20]);
+    let api = ThreadApi::new(&bindings);
+    let mut state = 42_u32;
+
+    let pair = api
+        .spawn_pair_with_state(
+            crate::FirmwareThreadSpec::<u32>::new::<PairTestThread>(256, c"first"),
+            crate::FirmwareThreadSpec::<u32>::from_entry(stub_thread_entry, 128, c"second"),
+            &mut state,
+        )
+        .expect("thread pair");
+
+    assert_eq!(
+        pair.first().map(|thread| thread.as_ptr() as usize),
+        Some(0x10)
+    );
+    assert_eq!(
+        pair.second().map(|thread| thread.as_ptr() as usize),
+        Some(0x20)
+    );
+    assert_eq!(bindings.spawn_calls.get(), 2);
+    assert_eq!(bindings.spawn_stacks.get(), [256, 128]);
+    let state_arg = core::ptr::from_mut(&mut state).cast::<core::ffi::c_void>() as usize;
+    assert_eq!(bindings.spawn_args.get(), [state_arg, state_arg]);
+
+    pair.terminate_reverse(&api);
+
+    assert_eq!(bindings.terminate_calls.get(), 2);
+    assert_eq!(bindings.terminated_threads.get(), [0x20, 0x10]);
+}
+
+#[test]
+fn thread_api_rolls_back_first_thread_when_pair_spawn_fails() {
+    let bindings = FakeThreadBindings::with_spawn_results([0x10, 0]);
+    let api = ThreadApi::new(&bindings);
+    let mut state = 42_u32;
+
+    let pair = api.spawn_pair_with_state(
+        crate::FirmwareThreadSpec::<u32>::new::<PairTestThread>(256, c"first"),
+        crate::FirmwareThreadSpec::<u32>::from_entry(stub_thread_entry, 128, c"second"),
+        &mut state,
+    );
+
+    assert!(pair.is_none());
+    assert_eq!(bindings.spawn_calls.get(), 2);
+    assert_eq!(bindings.terminate_calls.get(), 1);
+    assert_eq!(bindings.terminated_threads.get(), [0x10, 0]);
+}
+
 #[test]
 fn imu_api_forwards_attitude_getters() {
     let roll = ImuRoll::new(AngleRadians::from_radians(0.1));
@@ -446,6 +505,19 @@ fn app_data_handler_clear_reports_firmware_rejection() {
     );
     assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
     assert_eq!(lifecycle.bindings().last_handler.get(), 0);
+}
+
+#[test]
+fn loopback_lifecycle_clear_package_callbacks_clears_common_callbacks() {
+    let bindings = FakeAppDataBindings::new();
+    let lifecycle = LoopbackLifecycle::new(bindings);
+
+    assert_eq!(lifecycle.clear_package_callbacks(), Ok(()));
+    assert_eq!(lifecycle.bindings().imu_read_callback_calls.get(), 1);
+    assert_eq!(lifecycle.bindings().last_imu_read_callback.get(), 0);
+    assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
+    assert_eq!(lifecycle.bindings().last_handler.get(), 0);
+    assert_eq!(lifecycle.bindings().custom_config_clear_calls.get(), 1);
 }
 
 #[test]

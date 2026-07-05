@@ -176,6 +176,17 @@ impl<B: AppDataBindings> LoopbackLifecycle<B> {
         unsafe { app_data_handler_result(self.bindings.clear_app_data_handler()) }
     }
 
+    /// Clear the common package-owned callback registrations during package stop.
+    pub fn clear_package_callbacks(&self) -> Result<(), AppDataHandlerRegistrationError>
+    where
+        B: crate::bindings::CustomConfigBindings + crate::bindings::ImuReadCallbackBindings,
+    {
+        self.bindings.clear_imu_read_callback_handler();
+        let app_data_result = self.clear_app_data_handler();
+        let _ = self.bindings.clear_custom_config_callbacks();
+        app_data_result
+    }
+
     /// Register the app-data callback through the binding set.
     pub fn register_app_data_handler(
         &self,

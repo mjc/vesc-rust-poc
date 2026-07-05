@@ -62,6 +62,31 @@ impl PackageStart {
         crate::install_loader_state(self.info, stop_handler, state)
     }
 
+    /// Allocate package state in firmware memory and store it in loader metadata.
+    pub fn allocate_loader_state<A, T>(
+        &mut self,
+        allocator: &crate::FirmwareAllocator<'_, A>,
+        stop_handler: ffi::StopHandler,
+        state: T,
+    ) -> bool
+    where
+        A: crate::AllocBindings,
+    {
+        let Ok(mut allocation) = allocator.allocate_for::<T>(1) else {
+            self.clear_loader_info();
+            return false;
+        };
+        let state = allocation.write_first(state);
+
+        if !self.install_loader_state(stop_handler, state) {
+            self.clear_loader_info();
+            return false;
+        }
+
+        let _ = allocation.into_raw();
+        true
+    }
+
     /// Register extension descriptors using loader metadata for this package image.
     pub fn register_extensions_with<B: crate::LbmBindings>(
         &mut self,
@@ -206,6 +231,43 @@ pub fn stop_call_count_for_tests() -> usize {
 mod tests {
     use super::{init_for_tests, install_stop_hook, reset_init_call_count_for_tests};
     use crate::ffi;
+    use core::cell::Cell;
+    use core::ffi::c_void;
+    use core::mem::MaybeUninit;
+
+    struct TestAllocBindings {
+        malloc_calls: Cell<usize>,
+        free_calls: Cell<usize>,
+        last_requested_len: Cell<usize>,
+        next_ptr: Cell<*mut c_void>,
+    }
+
+    impl TestAllocBindings {
+        fn new(next_ptr: *mut c_void) -> Self {
+            Self {
+                malloc_calls: Cell::new(0),
+                free_calls: Cell::new(0),
+                last_requested_len: Cell::new(0),
+                next_ptr: Cell::new(next_ptr),
+            }
+        }
+
+        fn failing() -> Self {
+            Self::new(core::ptr::null_mut())
+        }
+    }
+
+    impl crate::AllocBindings for TestAllocBindings {
+        unsafe fn malloc(&self, bytes: usize) -> *mut c_void {
+            self.malloc_calls.set(self.malloc_calls.get() + 1);
+            self.last_requested_len.set(bytes);
+            self.next_ptr.get()
+        }
+
+        unsafe fn free(&self, _ptr: *mut c_void) {
+            self.free_calls.set(self.free_calls.get() + 1);
+        }
+    }
 
     #[test]
     fn package_init_records_device_initialization() {
@@ -294,6 +356,60 @@ mod tests {
         assert_eq!(loaded.value, 42);
 
         start.clear_loader_info();
+        assert!(info.arg.is_null());
+        assert!(info.stop_fun.is_none());
+    }
+
+    #[test]
+    fn package_start_allocates_loader_state_in_firmware_memory() {
+        #[derive(Debug, PartialEq)]
+        struct State {
+            value: u32,
+        }
+
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0,
+        };
+        let mut backing = MaybeUninit::<State>::uninit();
+        let bindings = TestAllocBindings::new(backing.as_mut_ptr().cast());
+        let allocator = crate::FirmwareAllocator::new(&bindings);
+        let mut start = super::PackageStart::from_raw(&mut info);
+
+        assert!(start.allocate_loader_state(&allocator, super::stop_package, State { value: 99 }));
+
+        assert_eq!(bindings.malloc_calls.get(), 1);
+        assert_eq!(
+            bindings.last_requested_len.get(),
+            core::mem::size_of::<State>()
+        );
+        assert_eq!(bindings.free_calls.get(), 0);
+        assert_eq!(info.arg, backing.as_mut_ptr().cast::<c_void>());
+        assert!(info.stop_fun.is_some());
+        let loaded = crate::loader_state_mut::<State>(&mut info).expect("loader state");
+        assert_eq!(loaded.value, 99);
+    }
+
+    #[test]
+    fn package_start_allocation_failure_clears_loader_metadata() {
+        #[derive(Debug, PartialEq)]
+        struct State {
+            value: u32,
+        }
+
+        let mut info = ffi::LibInfo {
+            stop_fun: Some(super::stop_package),
+            arg: 0x1234_usize as *mut c_void,
+            base_addr: 0,
+        };
+        let bindings = TestAllocBindings::failing();
+        let allocator = crate::FirmwareAllocator::new(&bindings);
+        let mut start = super::PackageStart::from_raw(&mut info);
+
+        assert!(!start.allocate_loader_state(&allocator, super::stop_package, State { value: 7 }));
+
+        assert_eq!(bindings.malloc_calls.get(), 1);
         assert!(info.arg.is_null());
         assert!(info.stop_fun.is_none());
     }

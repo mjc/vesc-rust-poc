@@ -5,6 +5,7 @@
 //! worker loops.
 
 use core::ffi::{CStr, c_char, c_void};
+use core::marker::PhantomData;
 use core::ptr::NonNull;
 
 use crate::types::ThreadPriority;
@@ -48,6 +49,86 @@ impl FirmwareThreadHandle {
     /// Return the raw firmware thread handle.
     pub const fn as_ptr(self) -> *mut c_void {
         self.0.as_ptr()
+    }
+}
+
+/// Typed firmware thread spawn settings.
+#[derive(Debug, Clone, Copy)]
+pub struct FirmwareThreadSpec<S: 'static> {
+    entry: ThreadEntry,
+    stack_bytes: usize,
+    name: &'static CStr,
+    _state: PhantomData<fn(&mut S)>,
+}
+
+impl<S: 'static> FirmwareThreadSpec<S> {
+    /// Build spawn settings for a typed firmware thread.
+    pub fn new<T>(stack_bytes: usize, name: &'static CStr) -> Self
+    where
+        T: FirmwareThread<State = S>,
+    {
+        Self::from_entry(firmware_thread_entry::<T>, stack_bytes, name)
+    }
+
+    /// Build spawn settings from a raw firmware thread entrypoint.
+    pub const fn from_entry(entry: ThreadEntry, stack_bytes: usize, name: &'static CStr) -> Self {
+        Self {
+            entry,
+            stack_bytes,
+            name,
+            _state: PhantomData,
+        }
+    }
+}
+
+/// Pair of package-owned firmware thread handles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FirmwareThreadPair {
+    first: Option<FirmwareThreadHandle>,
+    second: Option<FirmwareThreadHandle>,
+}
+
+impl FirmwareThreadPair {
+    /// Return an empty thread-handle set.
+    pub const fn empty() -> Self {
+        Self {
+            first: None,
+            second: None,
+        }
+    }
+
+    /// Build a complete thread-handle pair.
+    pub const fn new(first: FirmwareThreadHandle, second: FirmwareThreadHandle) -> Self {
+        Self {
+            first: Some(first),
+            second: Some(second),
+        }
+    }
+
+    /// Return the first thread handle.
+    pub const fn first(self) -> Option<FirmwareThreadHandle> {
+        self.first
+    }
+
+    /// Return the second thread handle.
+    pub const fn second(self) -> Option<FirmwareThreadHandle> {
+        self.second
+    }
+
+    /// Request thread termination from second to first.
+    pub fn terminate_reverse<B: ThreadBindings>(self, threads: &ThreadApi<B>) {
+        if let Some(second) = self.second {
+            threads.request_terminate(second);
+        }
+        if let Some(first) = self.first {
+            threads.request_terminate(first);
+        }
+    }
+}
+
+impl Default for FirmwareThreadPair {
+    fn default() -> Self {
+        Self::empty()
     }
 }
 
@@ -190,6 +271,25 @@ impl<B: ThreadBindings> ThreadApi<B> {
     ) -> Option<FirmwareThreadHandle> {
         let arg = core::ptr::from_mut(state).cast::<c_void>();
         unsafe { self.spawn(entry, stack_bytes, name, arg) }
+    }
+
+    /// Spawn two firmware package threads sharing typed package state.
+    pub fn spawn_pair_with_state<S>(
+        &self,
+        first: FirmwareThreadSpec<S>,
+        second: FirmwareThreadSpec<S>,
+        state: &mut S,
+    ) -> Option<FirmwareThreadPair> {
+        let first_handle =
+            self.spawn_with_state(first.entry, first.stack_bytes, first.name, state)?;
+        let Some(second_handle) =
+            self.spawn_with_state(second.entry, second.stack_bytes, second.name, state)
+        else {
+            self.request_terminate(first_handle);
+            return None;
+        };
+
+        Some(FirmwareThreadPair::new(first_handle, second_handle))
     }
 
     /// Ask a firmware thread to terminate.
