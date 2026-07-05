@@ -25,6 +25,8 @@ vescpkg_rs::package_start!(crate::package::start);
 
 #[cfg(test)]
 mod tests {
+    mod package_author;
+
     use vescpkg_rs::ffi;
 
     #[test]
@@ -45,6 +47,3 @@ fn panic(_: &PanicInfo) -> ! {
         core::hint::spin_loop();
     }
 }
-
-#[cfg(test)]
-mod package_author_tests;
