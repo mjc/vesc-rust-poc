@@ -101,16 +101,20 @@ mod tests {
         // `third_party/refloat/src/main.c:2432`; app-data/custom-config paths
         // recover package state through the same loader metadata boundary.
         assert_eq!(
-            vescpkg_rs::test_support::package_start(&mut info)
-                .with_state::<RefloatPackageState, _>(|state| state.all_data_payloads())
-                .expect("installed state"),
+            unsafe {
+                vescpkg_rs::test_support::package_start(&mut info)
+                    .with_state::<RefloatPackageState, _>(|state| state.all_data_payloads())
+            }
+            .expect("installed state"),
             sample_all_data_payloads()
         );
         let mut empty_info = vescpkg_rs::LoaderInfo::new();
         assert!(
-            vescpkg_rs::test_support::package_start(&mut empty_info)
-                .with_state::<RefloatPackageState, _>(|_| ())
-                .is_none()
+            unsafe {
+                vescpkg_rs::test_support::package_start(&mut empty_info)
+                    .with_state::<RefloatPackageState, _>(|_| ())
+            }
+            .is_none()
         );
     }
 

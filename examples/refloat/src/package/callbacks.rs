@@ -33,7 +33,7 @@ impl vescpkg_rs::StatefulAppDataCallback for RefloatAppData {
         &super::REFLOAT_RUNTIME_STATE
     }
 
-    fn handle(state: &mut Self::State, packet: vescpkg_rs::AppDataPacket<'static>) {
+    fn handle(state: &mut Self::State, packet: vescpkg_rs::AppDataPacket<'_>) {
         // C map: upstream `on_command_received` recovers `Data *` through
         // `ARG(PROG_ADDR)` before app-data dispatch at
         // `third_party/refloat/src/main.c:2143-2225`.

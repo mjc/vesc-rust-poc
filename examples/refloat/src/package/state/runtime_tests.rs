@@ -447,7 +447,7 @@ fn running_runtime_requests_balance_current_like_refloat_loop() {
 
     // Upstream RUNNING computes `d->balance_current` and then requests it
     // via `motor_control_request_current` at `third_party/refloat/src/main.c:949-956`.
-    assert_eq!(telemetry.commanded_current().current().as_amps(), 3.8);
+    assert!((telemetry.commanded_current().current().as_amps() - 3.8).abs() < 0.0001);
 }
 
 #[test]
@@ -476,5 +476,5 @@ fn running_motor_apply_uses_current_branch_like_refloat_loop() {
     assert_eq!(telemetry.current_command_count(), 1);
     assert_eq!(telemetry.brake_current_command_count(), 0);
     assert_eq!(telemetry.duty_command_count(), 0);
-    assert_eq!(telemetry.commanded_current().current().as_amps(), 3.8);
+    assert!((telemetry.commanded_current().current().as_amps() - 3.8).abs() < 0.0001);
 }

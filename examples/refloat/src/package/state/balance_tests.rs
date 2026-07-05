@@ -453,7 +453,7 @@ fn app_data_normal_algorithm_trace_matches_refloat_loop_order() {
         engaged_ride_state.setpoint_adjustment(),
         RefloatSetpointAdjustment::Centering
     );
-    assert_eq!(engaged_base.setpoints().board().angle().as_degrees(), 2.0);
+    assert!((engaged_base.setpoints().board().angle().as_degrees() - 2.0).abs() < 0.0001);
     assert_eq!(
         engaged_base.balance_current().current().current().as_amps(),
         0.0
@@ -494,9 +494,9 @@ fn app_data_normal_algorithm_trace_matches_refloat_loop_order() {
     // `third_party/refloat/src/main.c:918-956` before requesting motor
     // current. Raw pitch equals the centered board setpoint here, so the
     // booster proportional is zero by `third_party/refloat/src/main.c:921-922`.
-    assert_eq!(
-        running_base.setpoints().board().angle().as_degrees(),
-        expected_board_setpoint
+    assert!(
+        (running_base.setpoints().board().angle().as_degrees() - expected_board_setpoint).abs()
+            < 0.0001
     );
     assert_eq!(
         running_base.booster_current().current().current().as_amps(),

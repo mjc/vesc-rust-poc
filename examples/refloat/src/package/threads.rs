@@ -74,7 +74,7 @@ pub(crate) fn start_refloat_runtime_threads_with(
             main_thread.stack_size(),
             main_thread.name(),
         ),
-        vescpkg_rs::ThreadSpec::<RefloatPackageState>::stateless::<RefloatAuxThread>(
+        vescpkg_rs::ThreadSpec::<()>::stateless::<RefloatAuxThread>(
             aux_thread.stack_size(),
             aux_thread.name(),
         ),
@@ -173,12 +173,13 @@ pub(crate) fn run_refloat_aux_thread_with(threads: &impl FirmwareThreads) {
 #[cfg(all(not(test), target_arch = "arm"))]
 pub fn start_refloat_runtime_threads(start: &mut vescpkg_rs::PackageStart) -> bool {
     let firmware = vescpkg_rs::Firmware::new();
-    start
-        .with_thread_state::<RefloatPackageState, _>(|mut state| {
+    unsafe {
+        start.with_thread_state::<RefloatPackageState, _>(|mut state| {
             state.initialize_balance_filter(firmware.imu().orientation());
             start_refloat_runtime_threads_with(firmware.threads(), &mut state)
         })
-        .unwrap_or(false)
+    }
+    .unwrap_or(false)
 }
 
 /// Request runtime thread termination with live firmware bindings.
@@ -197,7 +198,7 @@ struct RefloatMainThread;
 impl vescpkg_rs::FirmwareThread for RefloatMainThread {
     type State = RefloatPackageState;
 
-    fn run(ctx: vescpkg_rs::ThreadContext<'static, Self::State>) {
+    fn run(ctx: vescpkg_rs::ThreadContext<'_, Self::State>) {
         // C map: Refloat v1.2.1 `refloat_thd` starts at
         // `third_party/refloat/src/main.c:767`.
         #[cfg(all(not(test), target_arch = "arm"))]
@@ -271,11 +272,12 @@ mod tests {
             .expect("test state");
 
         assert!(
-            start
-                .with_thread_state::<RefloatPackageState, _>(|mut state| {
+            unsafe {
+                start.with_thread_state::<RefloatPackageState, _>(|mut state| {
                     super::start_refloat_runtime_threads_with(threads, &mut state)
                 })
-                .unwrap_or(false)
+            }
+            .unwrap_or(false)
         );
 
         assert_eq!(firmware.thread_spawn_count(), 2);
@@ -309,11 +311,12 @@ mod tests {
             .expect("test state");
 
         assert!(
-            start
-                .with_thread_state::<RefloatPackageState, _>(|mut state| {
+            unsafe {
+                start.with_thread_state::<RefloatPackageState, _>(|mut state| {
                     super::start_refloat_runtime_threads_with(threads, &mut state)
                 })
-                .unwrap_or(false)
+            }
+            .unwrap_or(false)
         );
 
         // C map: Refloat stores each spawn result independently and does not
@@ -337,11 +340,12 @@ mod tests {
             .expect("test state");
 
         assert!(
-            start
-                .with_thread_state::<RefloatPackageState, _>(|mut state| {
+            unsafe {
+                start.with_thread_state::<RefloatPackageState, _>(|mut state| {
                     super::start_refloat_runtime_threads_with(threads, &mut state)
                 })
-                .unwrap_or(false)
+            }
+            .unwrap_or(false)
         );
         let expected = [
             state.runtime_threads().second(),

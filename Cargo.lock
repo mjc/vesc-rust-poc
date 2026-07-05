@@ -1334,6 +1334,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "vesc-example-refloat"
+version = "0.1.0"
+dependencies = [
+ "vescpkg-rs",
+]
+
+[[package]]
 name = "vesc-protocol"
 version = "0.1.0"
 dependencies = [

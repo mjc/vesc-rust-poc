@@ -378,7 +378,7 @@ impl RefloatMotorControlConfig<'_> {
     const PARKING_BRAKE_MODE_FIELD: CustomConfigEnumField<RefloatParkingBrakeMode> =
         CustomConfigEnumField::new(101);
     const BRAKE_CURRENT_FIELD: CustomConfigMotorCurrentField =
-        CustomConfigMotorCurrentField::new(102, 100.0);
+        CustomConfigMotorCurrentField::new(102, 100.0).expect("valid Refloat config field");
 
     pub(crate) fn parking_brake_mode(self) -> RefloatParkingBrakeMode {
         Self::PARKING_BRAKE_MODE_FIELD
@@ -399,9 +399,9 @@ impl RefloatFilterConfig<'_> {
     // Upstream serializes Mahony pitch/roll KP after `ki` at
     // `third_party/refloat/src/conf/settings.xml:3916-3921`; both use scale 10000.
     const MAHONY_KP_FIELD: CustomConfigMahonyPitchGainField =
-        CustomConfigMahonyPitchGainField::new(10, 10000.0);
+        CustomConfigMahonyPitchGainField::new(10, 10000.0).expect("valid Refloat config field");
     const MAHONY_KP_ROLL_FIELD: CustomConfigMahonyRollGainField =
-        CustomConfigMahonyRollGainField::new(12, 10000.0);
+        CustomConfigMahonyRollGainField::new(12, 10000.0).expect("valid Refloat config field");
 
     pub(crate) fn mahony_kp(self) -> MahonyPitchGain {
         Self::MAHONY_KP_FIELD.read(self.0)
@@ -419,8 +419,10 @@ pub(crate) struct RefloatFaultConfig<'a>(&'a RefloatConfigImage);
 impl RefloatFaultConfig<'_> {
     // Upstream serializes fault angles, ADC thresholds, delays, ERPM gates,
     // and feature flags at `third_party/refloat/src/conf/settings.xml:3925-3939`.
-    const PITCH_FIELD: CustomConfigAngleField = CustomConfigAngleField::new(20, 10.0);
-    const ROLL_FIELD: CustomConfigAngleField = CustomConfigAngleField::new(22, 10.0);
+    const PITCH_FIELD: CustomConfigAngleField =
+        CustomConfigAngleField::new(20, 10.0).expect("valid Refloat config field");
+    const ROLL_FIELD: CustomConfigAngleField =
+        CustomConfigAngleField::new(22, 10.0).expect("valid Refloat config field");
     #[cfg(any(test, target_arch = "arm"))]
     const ADC1_FIELD: CustomConfigVoltageField = CustomConfigVoltageField::new(24);
     #[cfg(any(test, target_arch = "arm"))]
@@ -515,10 +517,12 @@ impl RefloatStartupConfig<'_> {
     const HERTZ_FIELD: CustomConfigSampleRateField = CustomConfigSampleRateField::new(18);
     const SIMPLESTART_FIELD: CustomConfigFlagField = CustomConfigFlagField::new(99);
     const PUSHSTART_FIELD: CustomConfigFlagField = CustomConfigFlagField::new(100);
-    const PITCH_TOLERANCE_FIELD: CustomConfigAngleField = CustomConfigAngleField::new(91, 100.0);
-    const ROLL_TOLERANCE_FIELD: CustomConfigAngleField = CustomConfigAngleField::new(93, 100.0);
+    const PITCH_TOLERANCE_FIELD: CustomConfigAngleField =
+        CustomConfigAngleField::new(91, 100.0).expect("valid Refloat config field");
+    const ROLL_TOLERANCE_FIELD: CustomConfigAngleField =
+        CustomConfigAngleField::new(93, 100.0).expect("valid Refloat config field");
     const SPEED_FIELD: CustomConfigAngularVelocityField =
-        CustomConfigAngularVelocityField::new(95, 100.0);
+        CustomConfigAngularVelocityField::new(95, 100.0).expect("valid Refloat config field");
 
     pub(crate) fn sample_rate(self) -> SampleRate {
         Self::HERTZ_FIELD.read(self.0)
@@ -550,7 +554,10 @@ impl RefloatStartupConfig<'_> {
     }
 
     pub(crate) fn centering_step(self) -> AngleDegrees {
-        AngleDegrees::from(self.startup_speed() * self.sample_rate().sample_period())
+        let Some(period) = self.sample_rate().sample_period() else {
+            return AngleDegrees::from_degrees(0.0);
+        };
+        AngleDegrees::from(self.startup_speed() * period)
     }
 }
 
@@ -562,25 +569,30 @@ impl RefloatBalanceConfig<'_> {
     // Upstream serializes balance tuning fields in
     // `third_party/refloat/src/conf/settings.xml:3916-3923,3975-3984`.
     const KP_FIELD: CustomConfigAngleCurrentGainField =
-        CustomConfigAngleCurrentGainField::new(4, 10.0);
+        CustomConfigAngleCurrentGainField::new(4, 10.0).expect("valid Refloat config field");
     const KP2_FIELD: CustomConfigRateCurrentGainField =
-        CustomConfigRateCurrentGainField::new(6, 100.0);
+        CustomConfigRateCurrentGainField::new(6, 100.0).expect("valid Refloat config field");
     const KI_FIELD: CustomConfigIntegralCurrentGainField =
-        CustomConfigIntegralCurrentGainField::new(8, 100_000.0);
-    const KP_BRAKE_FIELD: CustomConfigPidScaleField = CustomConfigPidScaleField::new(14, 100.0);
-    const KP2_BRAKE_FIELD: CustomConfigPidScaleField = CustomConfigPidScaleField::new(16, 100.0);
+        CustomConfigIntegralCurrentGainField::new(8, 100_000.0)
+            .expect("valid Refloat config field");
+    const KP_BRAKE_FIELD: CustomConfigPidScaleField =
+        CustomConfigPidScaleField::new(14, 100.0).expect("valid Refloat config field");
+    const KP2_BRAKE_FIELD: CustomConfigPidScaleField =
+        CustomConfigPidScaleField::new(16, 100.0).expect("valid Refloat config field");
     const KI_LIMIT_FIELD: CustomConfigMotorCurrentField =
-        CustomConfigMotorCurrentField::new(104, 10.0);
-    const BOOSTER_ANGLE_FIELD: CustomConfigAngleField = CustomConfigAngleField::new(106, 100.0);
-    const BOOSTER_RAMP_FIELD: CustomConfigAngleField = CustomConfigAngleField::new(108, 100.0);
+        CustomConfigMotorCurrentField::new(104, 10.0).expect("valid Refloat config field");
+    const BOOSTER_ANGLE_FIELD: CustomConfigAngleField =
+        CustomConfigAngleField::new(106, 100.0).expect("valid Refloat config field");
+    const BOOSTER_RAMP_FIELD: CustomConfigAngleField =
+        CustomConfigAngleField::new(108, 100.0).expect("valid Refloat config field");
     const BOOSTER_CURRENT_FIELD: CustomConfigMotorCurrentField =
-        CustomConfigMotorCurrentField::new(110, 100.0);
+        CustomConfigMotorCurrentField::new(110, 100.0).expect("valid Refloat config field");
     const BRAKE_BOOSTER_ANGLE_FIELD: CustomConfigAngleField =
-        CustomConfigAngleField::new(112, 100.0);
+        CustomConfigAngleField::new(112, 100.0).expect("valid Refloat config field");
     const BRAKE_BOOSTER_RAMP_FIELD: CustomConfigAngleField =
-        CustomConfigAngleField::new(114, 100.0);
+        CustomConfigAngleField::new(114, 100.0).expect("valid Refloat config field");
     const BRAKE_BOOSTER_CURRENT_FIELD: CustomConfigMotorCurrentField =
-        CustomConfigMotorCurrentField::new(116, 100.0);
+        CustomConfigMotorCurrentField::new(116, 100.0).expect("valid Refloat config field");
 
     pub(crate) fn kp(self) -> AngleCurrentGain {
         Self::KP_FIELD.read(self.0)
@@ -640,8 +652,9 @@ impl RefloatRemoteThrottleConfig<'_> {
     // tolerances at `third_party/refloat/src/conf/settings.xml:3962-3965`.
     const INVERT_THROTTLE_FIELD: CustomConfigFlagField = CustomConfigFlagField::new(84);
     const CURRENT_MAX_FIELD: CustomConfigMotorCurrentField =
-        CustomConfigMotorCurrentField::new(87, 10.0);
-    const GRACE_PERIOD_FIELD: CustomConfigSecondsField = CustomConfigSecondsField::new(89, 10.0);
+        CustomConfigMotorCurrentField::new(87, 10.0).expect("valid Refloat config field");
+    const GRACE_PERIOD_FIELD: CustomConfigSecondsField =
+        CustomConfigSecondsField::new(89, 10.0).expect("valid Refloat config field");
 
     pub(crate) fn current_max(self) -> MotorCurrent {
         Self::CURRENT_MAX_FIELD.read(self.0)
