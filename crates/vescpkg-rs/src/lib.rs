@@ -18,6 +18,7 @@ pub mod alloc;
 
 mod bindings;
 mod extension;
+mod firmware;
 mod lifecycle_core;
 
 #[cfg(any(test, feature = "test-support"))]
@@ -36,9 +37,16 @@ pub mod ffi {
 pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
 pub use vescpkg_rs_units as units;
 
-pub use alloc::{AllocBindings, AllocError, FirmwareAllocation, FirmwareAllocator};
+pub use alloc::{
+    AllocBindings, AllocError, FirmwareAllocation, FirmwareAllocator, reclaim_firmware_allocation,
+};
 pub use bindings::{AppDataBindings, CustomConfigBindings, ImuReadCallbackBindings, LbmBindings};
 pub use extension::{ExtensionDescriptor, ExtensionNameError, RegisterError};
+pub use firmware::{
+    CustomConfigGetBuffer, CustomConfigXmlOut, app_data_packet, arg_mut, arg_ref,
+    clear_loader_info, config_xml_bytes, custom_config_payload, firmware_array,
+    install_loader_state, lbm_args, loader_info_mut, loader_state_mut,
+};
 pub use imu::{ImuApi, ImuBindings};
 pub use lifecycle_core::{
     AppDataHandlerRegistrationError, LbmApi, LoopbackLifecycle, PackageLifecycle,
@@ -87,11 +95,11 @@ pub mod prelude {
     };
     pub use crate::{
         AllocBindings, AllocError, AppDataBindings, AppDataHandlerRegistrationError,
-        CustomConfigBindings, ExtensionDescriptor, ExtensionNameError, FirmwareAllocation,
-        FirmwareAllocator, FirmwareThreadHandle, GpioApi, GpioBindings, ImuApi, ImuBindings,
-        LbmApi, LbmBindings, LoopbackLifecycle, MotorControlApi, MotorControlBindings,
-        MotorTelemetryApi, MotorTelemetryBindings, PackageLifecycle, ProtocolFrame, RegisterError,
-        ThreadApi, ThreadBindings, WireCommand, WireVersion,
+        CustomConfigBindings, CustomConfigGetBuffer, CustomConfigXmlOut, ExtensionDescriptor,
+        ExtensionNameError, FirmwareAllocation, FirmwareAllocator, FirmwareThreadHandle, GpioApi,
+        GpioBindings, ImuApi, ImuBindings, LbmApi, LbmBindings, LoopbackLifecycle, MotorControlApi,
+        MotorControlBindings, MotorTelemetryApi, MotorTelemetryBindings, PackageLifecycle,
+        ProtocolFrame, RegisterError, ThreadApi, ThreadBindings, WireCommand, WireVersion,
     };
 
     #[cfg(not(test))]

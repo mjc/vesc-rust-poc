@@ -32,7 +32,7 @@ pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
         || crate::runtime::start_refloat_runtime_threads(info),
         || crate::package::register_refloat_imu_callback(info),
         || crate::package::register_refloat_app_data_callbacks(info),
-        || unsafe { crate::extensions::register_refloat_loader_extensions(info) },
+        || crate::extensions::register_refloat_loader_extensions(info),
     )
 }
 

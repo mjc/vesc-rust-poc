@@ -118,7 +118,7 @@ fn lifecycle_installs_app_data_handler_and_stop_cleanup() {
 
     unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
 
-    assert_eq!(unsafe { lifecycle.install(&mut info, handler) }, Ok(()));
+    assert_eq!(lifecycle.install(&mut info, handler), Ok(()));
     assert!(info.stop_fun.is_some());
     assert_eq!(lifecycle.bindings().custom_config_register_calls.get(), 0);
     assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
@@ -4128,12 +4128,12 @@ fn lifecycle_installs_typed_refloat_state_for_handler_retrieval() {
     unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
 
     assert_eq!(
-        unsafe { lifecycle.install_with_state(&mut info, &mut state, handler) },
+        lifecycle.install_with_state(&mut info, &mut state, handler),
         Ok(())
     );
     assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
     assert_eq!(
-        unsafe { RefloatPackageState::from_info_arg(&mut info) }
+        RefloatPackageState::from_info_arg(&mut info)
             .expect("installed state")
             .all_data_payloads(),
         sample_all_data_payloads()
@@ -4143,7 +4143,7 @@ fn lifecycle_installs_typed_refloat_state_for_handler_retrieval() {
         arg: core::ptr::null_mut(),
         base_addr: 0,
     };
-    assert!(unsafe { RefloatPackageState::from_info_arg(&mut empty_info) }.is_none());
+    assert!(RefloatPackageState::from_info_arg(&mut empty_info).is_none());
 }
 
 #[test]
@@ -4158,7 +4158,7 @@ fn lifecycle_installs_refloat_state_before_callbacks_like_refloat_startup() {
 
     unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
 
-    assert!(unsafe { lifecycle.install_refloat_state(&mut info, &mut state, handler) });
+    assert!(lifecycle.install_refloat_state(&mut info, &mut state, handler));
     // Upstream sets `info->stop_fun` and `info->arg` at `third_party/refloat/src/main.c:2431-2432`,
     // before registering custom config/app-data/extensions at `third_party/refloat/src/main.c:2455-2459`.
     assert_eq!(lifecycle.bindings().handler_calls.get(), 0);
@@ -4172,32 +4172,28 @@ fn raw_handler_boundary_rejects_null_and_sends_valid_packets() {
     let lifecycle = RefloatPackageLifecycle::new(RecordingAppDataBindings::accepting());
     let mut state = RefloatPackageState::new(sample_all_data_payloads());
 
-    assert!(!unsafe {
-        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
-        let imu = ImuApi::new(FakeImuBindings::new());
-        handle_refloat_app_data_packet(
-            &mut state,
-            &lifecycle,
-            &telemetry,
-            &imu,
-            core::ptr::null_mut(),
-            0,
-        )
-    });
+    let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+    let imu = ImuApi::new(FakeImuBindings::new());
+    assert!(!handle_refloat_app_data_packet(
+        &mut state,
+        &lifecycle,
+        &telemetry,
+        &imu,
+        core::ptr::null_mut(),
+        0,
+    ));
 
     let mut request = [101, 10, 0];
-    assert!(unsafe {
-        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
-        let imu = ImuApi::new(FakeImuBindings::new());
-        handle_refloat_app_data_packet(
-            &mut state,
-            &lifecycle,
-            &telemetry,
-            &imu,
-            request.as_mut_ptr(),
-            request.len() as u32,
-        )
-    });
+    let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+    let imu = ImuApi::new(FakeImuBindings::new());
+    assert!(handle_refloat_app_data_packet(
+        &mut state,
+        &lifecycle,
+        &telemetry,
+        &imu,
+        request.as_mut_ptr(),
+        request.len() as u32,
+    ));
     assert_eq!(lifecycle.bindings().send_calls.get(), 1);
     assert_eq!(lifecycle.bindings().last_sent_prefix.get(), [101, 10, 0]);
 }

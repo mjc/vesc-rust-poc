@@ -161,6 +161,18 @@ impl<B: ThreadBindings> ThreadApi<B> {
         unsafe { FirmwareThreadHandle::from_raw(thread) }
     }
 
+    /// Spawn a firmware package thread with typed package state as its argument.
+    pub fn spawn_with_state<T>(
+        &self,
+        entry: ThreadEntry,
+        stack_bytes: usize,
+        name: &CStr,
+        state: &mut T,
+    ) -> Option<FirmwareThreadHandle> {
+        let arg = core::ptr::from_mut(state).cast::<c_void>();
+        unsafe { self.spawn(entry, stack_bytes, name, arg) }
+    }
+
     /// Ask a firmware thread to terminate.
     pub fn request_terminate(&self, thread: FirmwareThreadHandle) {
         self.bindings.request_terminate(thread);

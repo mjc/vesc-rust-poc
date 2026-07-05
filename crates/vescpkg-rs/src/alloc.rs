@@ -138,6 +138,14 @@ impl<T, B: AllocBindings> FirmwareAllocation<'_, T, B> {
         self.ptr
     }
 
+    /// Initialize the first element and return it as a mutable reference.
+    pub fn write_first(&mut self, value: T) -> &mut T {
+        unsafe {
+            self.ptr.as_ptr().write(value);
+            self.ptr.as_mut()
+        }
+    }
+
     /// Transfer ownership of the firmware pointer out of this RAII handle.
     ///
     /// The caller becomes responsible for freeing the pointer exactly once with
@@ -146,6 +154,16 @@ impl<T, B: AllocBindings> FirmwareAllocation<'_, T, B> {
         let allocation = ManuallyDrop::new(self);
         allocation.ptr
     }
+}
+
+/// Reclaim a firmware allocation pointer so dropping it frees through `bindings`.
+pub fn reclaim_firmware_allocation<'a, T, B: AllocBindings>(
+    ptr: *mut T,
+    len: usize,
+    bindings: &'a B,
+) -> Option<FirmwareAllocation<'a, T, B>> {
+    let ptr = NonNull::new(ptr)?;
+    Some(unsafe { FirmwareAllocation::from_raw_parts(ptr, len, bindings) })
 }
 
 impl<'a, T, B: AllocBindings> FirmwareAllocation<'a, T, B> {

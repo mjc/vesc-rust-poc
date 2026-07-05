@@ -83,33 +83,25 @@ impl Default for RefloatRuntimeThreads {
 /// `lispBM/lispif_c_lib.c:99-127`; Rust keeps the aux thread at the upstream
 /// size and gives the larger generated main-thread frame more room.
 ///
-/// # Safety
-///
-/// `state` must live until both spawned threads have terminated.
 #[cfg(any(test, target_arch = "arm"))]
-pub(crate) unsafe fn start_refloat_runtime_threads_with<B: ThreadBindings>(
+pub(crate) fn start_refloat_runtime_threads_with<B: ThreadBindings>(
     threads: &ThreadApi<B>,
     state: &mut RefloatPackageState,
 ) -> bool {
-    let arg = core::ptr::from_mut(state).cast::<c_void>();
-    let Some(main_thread) = (unsafe {
-        threads.spawn(
-            refloat_main_thread,
-            REFLOAT_MAIN_THREAD_STACK_BYTES,
-            REFLOAT_MAIN_THREAD_NAME,
-            arg,
-        )
-    }) else {
+    let Some(main_thread) = threads.spawn_with_state(
+        refloat_main_thread,
+        REFLOAT_MAIN_THREAD_STACK_BYTES,
+        REFLOAT_MAIN_THREAD_NAME,
+        state,
+    ) else {
         return false;
     };
-    let Some(aux_thread) = (unsafe {
-        threads.spawn(
-            refloat_aux_thread,
-            REFLOAT_AUX_THREAD_STACK_BYTES,
-            REFLOAT_AUX_THREAD_NAME,
-            arg,
-        )
-    }) else {
+    let Some(aux_thread) = threads.spawn_with_state(
+        refloat_aux_thread,
+        REFLOAT_AUX_THREAD_STACK_BYTES,
+        REFLOAT_AUX_THREAD_NAME,
+        state,
+    ) else {
         threads.request_terminate(main_thread);
         return false;
     };
@@ -207,14 +199,14 @@ pub(crate) fn run_refloat_aux_thread_with<B: ThreadBindings>(threads: &ThreadApi
 /// and callback registration (`src/main.c:2455-2459`).
 #[cfg(all(not(test), target_arch = "arm"))]
 pub fn start_refloat_runtime_threads(info: *mut ffi::LibInfo) -> bool {
-    let Some(info) = (unsafe { info.as_mut() }) else {
+    let Some(info) = vescpkg_rs::loader_info_mut(info) else {
         return false;
     };
-    let Some(state) = (unsafe { RefloatPackageState::from_info_arg(info) }) else {
+    let Some(state) = RefloatPackageState::from_info_arg(info) else {
         return false;
     };
     let threads = ThreadApi::new(vescpkg_rs::RealThreadBindings);
-    unsafe { start_refloat_runtime_threads_with(&threads, state) }
+    start_refloat_runtime_threads_with(&threads, state)
 }
 
 /// Request runtime thread termination with live firmware bindings.
@@ -227,7 +219,7 @@ pub fn request_refloat_runtime_thread_termination(state: &RefloatPackageState) {
 }
 
 #[cfg(any(test, target_arch = "arm"))]
-unsafe extern "C" fn refloat_main_thread(arg: *mut c_void) {
+extern "C" fn refloat_main_thread(arg: *mut c_void) {
     // C map: Refloat v1.2.1 `refloat_thd` starts at `src/main.c:767`.
     #[cfg(all(not(test), target_arch = "arm"))]
     {
@@ -241,7 +233,9 @@ unsafe extern "C" fn refloat_main_thread(arg: *mut c_void) {
         let app_data = vescpkg_rs::RealBindings;
         let gpio = vescpkg_rs::GpioApi::new(vescpkg_rs::RealGpioBindings);
         run_refloat_main_thread_with(&threads, || {
-            let state = unsafe { &mut *arg.cast::<RefloatPackageState>() };
+            let Some(state) = vescpkg_rs::arg_mut::<RefloatPackageState>(arg) else {
+                return false;
+            };
             let system_time_ticks = vescpkg_rs::AppDataBindings::system_time_ticks(&app_data);
             // C map: Refloat `footpad_sensor_update` reads ADC1/ADC2 at
             // `/Users/mjc/projects/refloat/src/footpad_sensor.c:28-31`; BLDC
@@ -267,7 +261,7 @@ unsafe extern "C" fn refloat_main_thread(arg: *mut c_void) {
 }
 
 #[cfg(any(test, target_arch = "arm"))]
-unsafe extern "C" fn refloat_aux_thread(_arg: *mut c_void) {
+extern "C" fn refloat_aux_thread(_arg: *mut c_void) {
     // C map: Refloat v1.2.1 `aux_thd` starts at `src/main.c:1130`.
     #[cfg(all(not(test), target_arch = "arm"))]
     {
@@ -297,7 +291,9 @@ mod tests {
         let threads = ThreadApi::new(&bindings);
         let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
 
-        assert!(unsafe { super::start_refloat_runtime_threads_with(&threads, &mut state) });
+        assert!(super::start_refloat_runtime_threads_with(
+            &threads, &mut state
+        ));
 
         assert_eq!(bindings.spawn_calls.get(), 2);
         assert_eq!(bindings.spawn_stacks.get(), [4096, 1024]);
@@ -334,7 +330,9 @@ mod tests {
         let threads = ThreadApi::new(&bindings);
         let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
 
-        assert!(!unsafe { super::start_refloat_runtime_threads_with(&threads, &mut state) });
+        assert!(!super::start_refloat_runtime_threads_with(
+            &threads, &mut state
+        ));
 
         assert_eq!(bindings.spawn_calls.get(), 2);
         assert_eq!(bindings.terminate_calls.get(), 1);

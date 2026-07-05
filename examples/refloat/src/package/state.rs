@@ -116,66 +116,6 @@ impl RefloatPackageState {
         }
     }
 
-    /// Initialize firmware-allocated startup state without a full stack copy.
-    ///
-    /// C map: upstream allocates `Data` at `third_party/refloat/src/main.c:2419`, zeroes it at
-    /// `third_party/refloat/src/main.c:2421`, and initializes fields through that heap pointer in
-    /// `data_init` at `third_party/refloat/src/main.c:1160-1205` before storing `info->arg` at
-    /// `third_party/refloat/src/main.c:2432`. This mirrors that pointer-first shape for the Rust
-    /// state allocation path.
-    ///
-    /// # Safety
-    ///
-    /// `state` must point to writable, properly aligned, uninitialized storage
-    /// for one `RefloatPackageState`.
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(super) unsafe fn write_source_startup_to(state: *mut Self) {
-        unsafe {
-            core::ptr::addr_of_mut!((*state).all_data_payloads)
-                .write(RefloatAllDataPayloads::source_startup());
-            // C source defaults: `confparser_set_defaults_refloatconfig` and
-            // `confparser_serialize_refloatconfig` feed startup config at
-            // `third_party/refloat/src/main.c:1160-1185`.
-            core::ptr::addr_of_mut!((*state).serialized_config).write(REFLOAT_DEFAULT_CONFIG);
-            core::ptr::addr_of_mut!((*state).runtime_threads).write(RefloatRuntimeThreads::empty());
-            core::ptr::addr_of_mut!((*state).motor_control).write(RefloatMotorControl::new());
-            #[cfg(all(not(test), target_arch = "arm"))]
-            core::ptr::addr_of_mut!((*state).balance_filter)
-                .write(RefloatBalanceFilter::from_firmware_quaternions());
-            #[cfg(any(test, not(target_arch = "arm")))]
-            core::ptr::addr_of_mut!((*state).balance_filter)
-                .write(RefloatBalanceFilter::source_startup());
-            core::ptr::addr_of_mut!((*state).traction_control).write(false);
-            core::ptr::addr_of_mut!((*state).pid_integral_current).write(0.0);
-            core::ptr::addr_of_mut!((*state).pid_kp_brake_scale).write(1.0);
-            core::ptr::addr_of_mut!((*state).pid_kp2_brake_scale).write(1.0);
-            core::ptr::addr_of_mut!((*state).pid_kp_accel_scale).write(1.0);
-            core::ptr::addr_of_mut!((*state).pid_kp2_accel_scale).write(1.0);
-            core::ptr::addr_of_mut!((*state).softstart_pid_limit).write(100.0);
-            core::ptr::addr_of_mut!((*state).reverse_total_erpm).write(0.0);
-            core::ptr::addr_of_mut!((*state).motor_last_erpm).write(0.0);
-            core::ptr::addr_of_mut!((*state).motor_acceleration).write(0.0);
-            core::ptr::addr_of_mut!((*state).motor_accel_history).write([0.0; 40]);
-            core::ptr::addr_of_mut!((*state).motor_accel_idx).write(0);
-            core::ptr::addr_of_mut!((*state).remote_input).write(0.0);
-            core::ptr::addr_of_mut!((*state).rc_current).write(0.0);
-            core::ptr::addr_of_mut!((*state).rc_steps).write(0);
-            core::ptr::addr_of_mut!((*state).rc_counter).write(0);
-            core::ptr::addr_of_mut!((*state).rc_current_target_deciamps).write(0);
-            core::ptr::addr_of_mut!((*state).engage_ticks).write(0);
-            core::ptr::addr_of_mut!((*state).disengage_ticks).write(0);
-            core::ptr::addr_of_mut!((*state).fault_switch_ticks).write(0);
-            core::ptr::addr_of_mut!((*state).fault_switch_half_ticks).write(0);
-            core::ptr::addr_of_mut!((*state).reverse_ticks).write(0);
-            core::ptr::addr_of_mut!((*state).fault_angle_pitch_ticks).write(0);
-            core::ptr::addr_of_mut!((*state).fault_angle_roll_ticks).write(0);
-            core::ptr::addr_of_mut!((*state).motor_current_max)
-                .write(MotorCurrent::new(Current::from_amps(100.0)));
-            core::ptr::addr_of_mut!((*state).motor_current_min)
-                .write(MotorCurrent::new(Current::from_amps(100.0)));
-        }
-    }
-
     /// Return the current all-data payload snapshot.
     pub const fn all_data_payloads(self) -> RefloatAllDataPayloads {
         self.all_data_payloads
@@ -378,13 +318,8 @@ impl RefloatPackageState {
 
     /// Recover typed app-data state from VESC loader metadata.
     ///
-    /// # Safety
-    ///
-    /// `info.arg` must either be null or contain a valid pointer to a live
-    /// `RefloatPackageState`.
-    pub unsafe fn from_info_arg(info: &mut ffi::LibInfo) -> Option<&mut Self> {
-        let ptr = core::ptr::NonNull::new(info.arg.cast::<Self>())?;
-        Some(unsafe { ptr.as_ptr().as_mut()? })
+    pub fn from_info_arg(info: &mut ffi::LibInfo) -> Option<&mut Self> {
+        vescpkg_rs::loader_state_mut(info)
     }
 
     /// Handle one app-data packet through the supplied lifecycle transport.

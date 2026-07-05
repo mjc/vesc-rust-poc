@@ -47,11 +47,7 @@ fn refloat_ticks_elapsed_f32(now: u32, then: u32, seconds: f32) -> bool {
 }
 
 #[cfg(any(test, target_arch = "arm"))]
-unsafe fn handle_refloat_app_data_packet<
-    B: AppDataBindings,
-    M: MotorTelemetryBindings,
-    I: ImuBindings,
->(
+fn handle_refloat_app_data_packet<B: AppDataBindings, M: MotorTelemetryBindings, I: ImuBindings>(
     state: &mut RefloatPackageState,
     lifecycle: &RefloatPackageLifecycle<B>,
     telemetry: &MotorTelemetryApi<M>,
@@ -59,14 +55,10 @@ unsafe fn handle_refloat_app_data_packet<
     data: *mut u8,
     len: u32,
 ) -> bool {
-    let Some(data) = core::ptr::NonNull::new(data) else {
+    let Some(bytes) = vescpkg_rs::app_data_packet(data, len) else {
         return false;
     };
-    let Ok(len) = usize::try_from(len) else {
-        return false;
-    };
-    let bytes = unsafe { core::slice::from_raw_parts(data.as_ptr().cast_const(), len) };
-    state.handle_packet_with_runtime(lifecycle, telemetry, imu, bytes)
+    state.handle_packet_with_runtime(lifecycle, telemetry, imu, bytes.0)
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
@@ -100,14 +92,11 @@ fn runtime_refloat_app_data_handler() -> ffi::AppDataHandler {
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
-unsafe fn refloat_state_from_arg() -> Option<&'static mut RefloatPackageState> {
+fn refloat_state_from_arg() -> Option<&'static mut RefloatPackageState> {
     // C map: closest visible state compatibility edge is `state_compat` at
     // Refloat v1.2.1 `third_party/refloat/src/state.c:50`; loader ARG storage happens at
     // `third_party/refloat/src/main.c:2432`.
-    let state = vescpkg_rs::RealBindings
-        .app_data_arg(loaded_image_base())?
-        .cast::<RefloatPackageState>();
-    unsafe { state.as_ptr().as_mut() }
+    vescpkg_rs::RealBindings.typed_app_data_arg(loaded_image_base())
 }
 
 /// Device entrypoint invoked by firmware app-data delivery.
@@ -117,18 +106,17 @@ unsafe fn refloat_state_from_arg() -> Option<&'static mut RefloatPackageState> {
 #[cfg(all(not(test), target_arch = "arm"))]
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub unsafe extern "C" fn refloat_handle_app_data(data: *mut u8, len: u32) {
-    let Some(state) = (unsafe { refloat_state_from_arg() }) else {
+pub extern "C" fn refloat_handle_app_data(data: *mut u8, len: u32) {
+    let Some(state) = refloat_state_from_arg() else {
         return;
     };
     let lifecycle = RefloatPackageLifecycle::new(vescpkg_rs::RealBindings);
     let telemetry = MotorTelemetryApi::new(vescpkg_rs::RealMotorTelemetryBindings);
     let imu = ImuApi::new(vescpkg_rs::RealImuBindings);
-    let _ =
-        unsafe { handle_refloat_app_data_packet(state, &lifecycle, &telemetry, &imu, data, len) };
+    let _ = handle_refloat_app_data_packet(state, &lifecycle, &telemetry, &imu, data, len);
 }
 
-unsafe extern "C" fn stop_refloat_app_data(_arg: *mut core::ffi::c_void) {
+extern "C" fn stop_refloat_app_data(_arg: *mut core::ffi::c_void) {
     // C map: Refloat v1.2.1 `stop` starts at `third_party/refloat/src/main.c:2399`.
     // Upstream stop cleanup in `third_party/refloat/src/main.c:2398-2412` clears IMU/app-data/custom
     // config callbacks, terminates aux+main threads, destroys LEDs, and frees
@@ -139,11 +127,14 @@ unsafe extern "C" fn stop_refloat_app_data(_arg: *mut core::ffi::c_void) {
         let _ = RefloatPackageLifecycle::new(vescpkg_rs::RealBindings).stop();
     }
     #[cfg(all(not(test), target_arch = "arm"))]
-    if let Some(ptr) = core::ptr::NonNull::new(_arg.cast::<RefloatPackageState>()) {
+    if let Some(state) = vescpkg_rs::arg_ref::<RefloatPackageState>(_arg) {
         let bindings = vescpkg_rs::RealBindings;
-        crate::runtime::request_refloat_runtime_thread_termination(unsafe { ptr.as_ref() });
-        let _allocation =
-            unsafe { vescpkg_rs::FirmwareAllocation::from_raw_parts(ptr, 1, &bindings) };
+        crate::runtime::request_refloat_runtime_thread_termination(state);
+        let _allocation = vescpkg_rs::reclaim_firmware_allocation(
+            _arg.cast::<RefloatPackageState>(),
+            1,
+            &bindings,
+        );
     }
 }
 

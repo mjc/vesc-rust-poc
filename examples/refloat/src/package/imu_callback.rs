@@ -8,31 +8,21 @@ use vescpkg_rs::ImuReadCallbackBindings;
 use vescpkg_rs::ffi;
 
 #[cfg(all(not(test), target_arch = "arm"))]
-unsafe extern "C" fn refloat_imu_read_callback(
-    acc: *mut f32,
-    gyro: *mut f32,
-    _mag: *mut f32,
-    dt: f32,
-) {
-    let Some(accel) = refloat_imu_vector(acc) else {
+extern "C" fn refloat_imu_read_callback(acc: *mut f32, gyro: *mut f32, _mag: *mut f32, dt: f32) {
+    let Some(accel) = vescpkg_rs::firmware_array(acc.cast_const()) else {
         return;
     };
-    let Some(gyro) = refloat_imu_vector(gyro) else {
+    let Some(gyro) = vescpkg_rs::firmware_array(gyro.cast_const()) else {
         return;
     };
-    let Some(state) = (unsafe { refloat_state_from_arg() }) else {
+    let Some(state) = refloat_state_from_arg() else {
         return;
     };
     refloat_imu_callback_with_state(state, accel, gyro, dt);
 }
 
 #[cfg(test)]
-unsafe extern "C" fn refloat_imu_read_callback(
-    _acc: *mut f32,
-    _gyro: *mut f32,
-    _mag: *mut f32,
-    _dt: f32,
-) {
+extern "C" fn refloat_imu_read_callback(_acc: *mut f32, _gyro: *mut f32, _mag: *mut f32, _dt: f32) {
 }
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
@@ -47,22 +37,11 @@ pub(super) fn refloat_imu_callback_with_state(
     state.balance_filter.update(gyro, accel, dt);
 }
 
-#[cfg(all(not(test), target_arch = "arm"))]
-fn refloat_imu_vector(values: *mut f32) -> Option<[f32; 3]> {
-    if values.is_null() {
-        return None;
-    }
-    let values = unsafe { core::slice::from_raw_parts(values as *const f32, 3) };
-    Some([*values.first()?, *values.get(1)?, *values.get(2)?])
-}
-
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 fn register_refloat_imu_callback_with<B: ImuReadCallbackBindings>(bindings: &B) -> bool {
-    unsafe {
-        // C registers `imu_ref_callback` between thread startup and app-data
-        // registration at `third_party/refloat/src/main.c:2455-2457`.
-        bindings.set_imu_read_callback(refloat_imu_read_callback);
-    }
+    // C registers `imu_ref_callback` between thread startup and app-data
+    // registration at `third_party/refloat/src/main.c:2455-2457`.
+    bindings.set_imu_read_callback_handler(refloat_imu_read_callback);
     true
 }
 

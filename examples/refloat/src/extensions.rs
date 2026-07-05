@@ -10,9 +10,6 @@ use core::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 use vescpkg_rs::ffi;
 
-#[cfg(all(not(test), target_arch = "arm"))]
-use core::ffi::c_char;
-
 const EXT_SET_FW_VERSION_NAME: &CStr = c"ext-set-fw-version";
 const EXT_BMS_NAME: &CStr = c"ext-bms";
 const PACKAGE_EXTENSION_COUNT: usize = 2;
@@ -34,15 +31,12 @@ const _: () = assert!(PACKAGE_EXTENSION_COUNT == 2);
 /// The loader-only Rust candidate has no upstream `Data` allocation/`ARG`
 /// install from `src/main.c:2419-2432`, so it stores only this narrow state.
 ///
-/// # Safety
-///
-/// `args` and `argn` are supplied by LispBM and must follow the firmware
-/// extension ABI.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ext_set_fw_version(args: *mut u32, argn: u32) -> u32 {
-    if argn > 2 && !args.is_null() {
-        let args =
-            unsafe { core::slice::from_raw_parts(args.cast::<ffi::LbmValue>(), argn as usize) };
+pub extern "C" fn ext_set_fw_version(args: *mut u32, argn: u32) -> u32 {
+    if argn > 2 {
+        let Some(args) = vescpkg_rs::lbm_args(args, argn) else {
+            return 0;
+        };
         #[cfg(all(not(test), target_arch = "arm"))]
         {
             let lbm = vescpkg_rs::LbmApi::new(vescpkg_rs::RealBindings);
@@ -122,12 +116,8 @@ fn reset_refloat_firmware_version() {
 /// is an intentional containment divergence while the upstream EEPROM-backed
 /// `Data.float_conf` state from `src/main.c:1190-1194` is not installed.
 ///
-/// # Safety
-///
-/// `args` and `argn` are supplied by LispBM and must follow the firmware
-/// extension ABI.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ext_bms(_args: *mut u32, _argn: u32) -> u32 {
+pub extern "C" fn ext_bms(_args: *mut u32, _argn: u32) -> u32 {
     #[cfg(all(not(test), target_arch = "arm"))]
     {
         vescpkg_rs::LbmApi::new(vescpkg_rs::RealBindings)
@@ -143,8 +133,8 @@ pub unsafe extern "C" fn ext_bms(_args: *mut u32, _argn: u32) -> u32 {
 /// Return the native extension descriptors required by upstream `package.lisp`.
 pub fn package_extension_descriptors() -> [ffi::ExtensionDescriptor; PACKAGE_EXTENSION_COUNT] {
     [
-        ffi::ExtensionDescriptor::new(EXT_SET_FW_VERSION_NAME, ext_set_fw_version),
-        ffi::ExtensionDescriptor::new(EXT_BMS_NAME, ext_bms),
+        ffi::ExtensionDescriptor::new(EXT_SET_FW_VERSION_NAME, ext_set_fw_version as _),
+        ffi::ExtensionDescriptor::new(EXT_BMS_NAME, ext_bms as _),
     ]
 }
 
@@ -160,14 +150,12 @@ pub fn register_refloat_loader_extensions_with<B: vescpkg_rs::LbmBindings>(
     info: &ffi::LibInfo,
     lifecycle: &vescpkg_rs::PackageLifecycle<B>,
 ) -> bool {
-    unsafe {
-        lifecycle
-            .register_extensions_from_image(
-                vescpkg_rs::ffi::NativeImage::from_info(info),
-                package_extension_descriptors(),
-            )
-            .is_ok()
-    }
+    lifecycle
+        .register_extensions_from_image(
+            vescpkg_rs::ffi::NativeImage::from_info(info),
+            package_extension_descriptors(),
+        )
+        .is_ok()
 }
 
 /// Register Refloat's loader extensions with runtime names and handlers.
@@ -176,91 +164,13 @@ pub fn register_refloat_loader_extensions_with<B: vescpkg_rs::LbmBindings>(
 /// `/Users/mjc/projects/refloat/src/main.c:2456-2459`; Rust package init
 /// reaches this after state install and runtime thread startup.
 ///
-/// # Safety
-///
-/// `info` must describe the loaded native image. The registered pointers must
-/// remain valid while firmware may call the LispBM extensions.
 #[cfg(all(not(test), target_arch = "arm"))]
-pub unsafe fn register_refloat_loader_extensions(_info: *mut ffi::LibInfo) -> bool {
+pub fn register_refloat_loader_extensions(info: *mut ffi::LibInfo) -> bool {
+    let Some(info) = vescpkg_rs::loader_info_mut(info) else {
+        return false;
+    };
     let lifecycle = vescpkg_rs::PackageLifecycle::new(vescpkg_rs::RealBindings);
-    lifecycle
-        .register_extension(vescpkg_rs::ExtensionDescriptor::new(
-            runtime_ext_set_fw_version_name(),
-            runtime_ext_set_fw_version_handler(),
-        ))
-        .is_ok()
-        && lifecycle
-            .register_extension(vescpkg_rs::ExtensionDescriptor::new(
-                runtime_ext_bms_name(),
-                runtime_ext_bms_handler(),
-            ))
-            .is_ok()
-}
-
-#[cfg(all(not(test), target_arch = "arm"))]
-fn runtime_ext_set_fw_version_name() -> *const c_char {
-    let address: usize;
-    unsafe {
-        core::arch::asm!(
-            "b 3f",
-            ".balign 4",
-            "2:",
-            ".asciz \"ext-set-fw-version\"",
-            ".balign 2",
-            "3:",
-            "adr.w {address}, 2b",
-            address = out(reg) address,
-            options(nostack, preserves_flags),
-        );
-    }
-    address as *const c_char
-}
-
-#[cfg(all(not(test), target_arch = "arm"))]
-fn runtime_ext_bms_name() -> *const c_char {
-    let address: usize;
-    unsafe {
-        core::arch::asm!(
-            "b 3f",
-            ".balign 4",
-            "2:",
-            ".asciz \"ext-bms\"",
-            ".balign 2",
-            "3:",
-            "adr.w {address}, 2b",
-            address = out(reg) address,
-            options(nostack, preserves_flags),
-        );
-    }
-    address as *const c_char
-}
-
-#[cfg(all(not(test), target_arch = "arm"))]
-fn runtime_ext_set_fw_version_handler() -> ffi::ExtensionHandler {
-    let address: usize;
-    unsafe {
-        core::arch::asm!(
-            "adr.w {address}, {handler}",
-            address = out(reg) address,
-            handler = sym ext_set_fw_version,
-            options(nomem, nostack, preserves_flags),
-        );
-        core::mem::transmute::<usize, ffi::ExtensionHandler>(address | 1)
-    }
-}
-
-#[cfg(all(not(test), target_arch = "arm"))]
-fn runtime_ext_bms_handler() -> ffi::ExtensionHandler {
-    let address: usize;
-    unsafe {
-        core::arch::asm!(
-            "adr.w {address}, {handler}",
-            address = out(reg) address,
-            handler = sym ext_bms,
-            options(nomem, nostack, preserves_flags),
-        );
-        core::mem::transmute::<usize, ffi::ExtensionHandler>(address | 1)
-    }
+    register_refloat_loader_extensions_with(info, &lifecycle)
 }
 
 #[cfg(test)]

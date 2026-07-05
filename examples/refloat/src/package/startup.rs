@@ -16,19 +16,15 @@ use vescpkg_rs::{AllocBindings, AppDataBindings, CustomConfigBindings, FirmwareA
 /// loader metadata at `third_party/refloat/src/main.c:2419-2432`; callback/LispBM registration
 /// follows at `third_party/refloat/src/main.c:2455-2459`.
 ///
-/// # Safety
-///
-/// `info` must be null or point to live VESC loader metadata. `state` must
-/// remain valid until firmware stops the package.
 #[cfg(test)]
-unsafe fn install_refloat_startup_state_with<B: AppDataBindings>(
+fn install_refloat_startup_state_with<B: AppDataBindings>(
     info: *mut ffi::LibInfo,
     state: &mut RefloatPackageState,
     lifecycle: &RefloatPackageLifecycle<B>,
     handler: ffi::AppDataHandler,
 ) -> bool {
     *state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
-    unsafe { lifecycle.install_refloat_state(info, state, handler) }
+    lifecycle.install_refloat_state(info, state, handler)
 }
 
 /// Install source-startup Refloat state and callback registrations.
@@ -36,30 +32,17 @@ unsafe fn install_refloat_startup_state_with<B: AppDataBindings>(
 /// Upstream stores loader metadata at `third_party/refloat/src/main.c:2431-2432` before registering
 /// custom config/app-data callbacks at `third_party/refloat/src/main.c:2456-2457`.
 ///
-/// # Safety
-///
-/// `info` must be null or point to live VESC loader metadata. `state` and
-/// `handler` must remain valid until firmware clears/replaces the handler and
-/// stops the package.
 #[cfg(test)]
-unsafe fn install_refloat_startup_app_data_with<B: AppDataBindings + CustomConfigBindings>(
+fn install_refloat_startup_app_data_with<B: AppDataBindings + CustomConfigBindings>(
     info: *mut ffi::LibInfo,
     state: &mut RefloatPackageState,
     lifecycle: &RefloatPackageLifecycle<B>,
     handler: ffi::AppDataHandler,
 ) -> bool {
-    if !unsafe { install_refloat_startup_state_with(info, state, lifecycle, handler) } {
+    if !install_refloat_startup_state_with(info, state, lifecycle, handler) {
         return false;
     }
-    unsafe { lifecycle.install_refloat_callbacks(info, handler) }.is_ok()
-}
-
-#[cfg(any(test, target_arch = "arm"))]
-unsafe fn clear_refloat_app_data_loader_info(info: *mut ffi::LibInfo) {
-    if let Some(info) = unsafe { info.as_mut() } {
-        info.arg = core::ptr::null_mut();
-        info.stop_fun = None;
-    }
+    lifecycle.install_refloat_callbacks(info, handler).is_ok()
 }
 
 /// Allocate and install source-startup Refloat state through firmware memory.
@@ -70,27 +53,23 @@ unsafe fn clear_refloat_app_data_loader_info(info: *mut ffi::LibInfo) {
 /// `RefloatPackageState`, but keeps the same loader metadata order before the
 /// registration tail at `third_party/refloat/src/main.c:2455-2459`.
 ///
-/// # Safety
-///
-/// `info` must be null or point to live VESC loader metadata. `handler` must
-/// remain valid until firmware stops the package.
 #[cfg(any(test, target_arch = "arm"))]
-unsafe fn allocate_refloat_startup_state_with<A: AllocBindings, B: AppDataBindings>(
+fn allocate_refloat_startup_state_with<A: AllocBindings, B: AppDataBindings>(
     info: *mut ffi::LibInfo,
     allocator: &FirmwareAllocator<'_, A>,
     lifecycle: &RefloatPackageLifecycle<B>,
     handler: ffi::AppDataHandler,
 ) -> bool {
     let Ok(mut allocation) = allocator.allocate_for::<RefloatPackageState>(1) else {
-        unsafe { clear_refloat_app_data_loader_info(info) };
+        vescpkg_rs::clear_loader_info(info);
         return false;
     };
-    let state = allocation.as_mut_ptr();
-    unsafe { RefloatPackageState::write_source_startup_to(state) };
-    let state = unsafe { &mut *state };
+    let state = allocation.write_first(RefloatPackageState::new(
+        RefloatAllDataPayloads::source_startup(),
+    ));
 
-    if !unsafe { lifecycle.install_refloat_state(info, state, handler) } {
-        unsafe { clear_refloat_app_data_loader_info(info) };
+    if !lifecycle.install_refloat_state(info, state, handler) {
+        vescpkg_rs::clear_loader_info(info);
         return false;
     }
 
@@ -105,12 +84,8 @@ unsafe fn allocate_refloat_startup_state_with<A: AllocBindings, B: AppDataBindin
 /// callbacks at `third_party/refloat/src/main.c:2456-2457` after IMU setup. This compatibility
 /// helper only keeps state-before-callback order for tests.
 ///
-/// # Safety
-///
-/// `info` must be null or point to live VESC loader metadata. `handler` must
-/// remain valid until firmware clears/replaces the handler and stops the package.
 #[cfg(test)]
-unsafe fn allocate_refloat_startup_app_data_with<
+fn allocate_refloat_startup_app_data_with<
     A: AllocBindings,
     B: AppDataBindings + CustomConfigBindings,
 >(
@@ -119,12 +94,12 @@ unsafe fn allocate_refloat_startup_app_data_with<
     lifecycle: &RefloatPackageLifecycle<B>,
     handler: ffi::AppDataHandler,
 ) -> bool {
-    if !unsafe { allocate_refloat_startup_state_with(info, allocator, lifecycle, handler) } {
+    if !allocate_refloat_startup_state_with(info, allocator, lifecycle, handler) {
         return false;
     }
 
-    if unsafe { lifecycle.install_refloat_callbacks(info, handler) }.is_err() {
-        unsafe { clear_refloat_app_data_loader_info(info) };
+    if lifecycle.install_refloat_callbacks(info, handler).is_err() {
+        vescpkg_rs::clear_loader_info(info);
         return false;
     }
 
@@ -141,7 +116,7 @@ pub fn install_refloat_package_state(info: *mut ffi::LibInfo) -> bool {
     let allocator = vescpkg_rs::FirmwareAllocator::new(&alloc_bindings);
     let lifecycle = RefloatPackageLifecycle::new(vescpkg_rs::RealBindings);
     let handler = runtime_refloat_app_data_handler();
-    unsafe { allocate_refloat_startup_state_with(info, &allocator, &lifecycle, handler) }
+    allocate_refloat_startup_state_with(info, &allocator, &lifecycle, handler)
 }
 
 /// Register Refloat custom config and app-data callbacks.
@@ -153,7 +128,7 @@ pub fn install_refloat_package_state(info: *mut ffi::LibInfo) -> bool {
 pub fn register_refloat_app_data_callbacks(info: *mut ffi::LibInfo) -> bool {
     let lifecycle = RefloatPackageLifecycle::new(vescpkg_rs::RealBindings);
     let handler = runtime_refloat_app_data_handler();
-    unsafe { lifecycle.install_refloat_callbacks(info, handler) }.is_ok()
+    lifecycle.install_refloat_callbacks(info, handler).is_ok()
 }
 
 /// Allocate startup state and register Refloat app-data callbacks.
@@ -189,18 +164,18 @@ mod tests {
         };
         let mut state = RefloatPackageState::new(sample_all_data_payloads());
 
-        unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
+        extern "C" fn handler(_data: *mut u8, _len: u32) {}
 
-        assert!(unsafe {
-            install_refloat_startup_app_data_with(&mut info, &mut state, &lifecycle, handler)
-        });
+        assert!(install_refloat_startup_app_data_with(
+            &mut info, &mut state, &lifecycle, handler
+        ));
         assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
         assert_eq!(
             state.all_data_payloads(),
             RefloatAllDataPayloads::source_startup()
         );
         assert_eq!(
-            unsafe { RefloatPackageState::from_info_arg(&mut info) }
+            RefloatPackageState::from_info_arg(&mut info)
                 .expect("installed state")
                 .all_data_payloads(),
             RefloatAllDataPayloads::source_startup(),
@@ -219,11 +194,11 @@ mod tests {
         let alloc_bindings = RecordingAllocBindings::new(backing.as_mut_ptr().cast());
         let allocator = FirmwareAllocator::new(&alloc_bindings);
 
-        unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
+        extern "C" fn handler(_data: *mut u8, _len: u32) {}
 
-        assert!(unsafe {
-            allocate_refloat_startup_app_data_with(&mut info, &allocator, &lifecycle, handler)
-        });
+        assert!(allocate_refloat_startup_app_data_with(
+            &mut info, &allocator, &lifecycle, handler
+        ));
         assert_eq!(lifecycle.bindings().custom_config_register_calls.get(), 1);
         assert_eq!(alloc_bindings.malloc_calls.get(), 1);
         assert_eq!(
@@ -233,7 +208,7 @@ mod tests {
         assert_eq!(alloc_bindings.free_calls.get(), 0);
         assert_eq!(info.arg, backing.as_mut_ptr().cast::<c_void>());
         let allocated_state =
-            unsafe { RefloatPackageState::from_info_arg(&mut info) }.expect("allocated state");
+            RefloatPackageState::from_info_arg(&mut info).expect("allocated state");
         assert_eq!(
             *allocated_state,
             RefloatPackageState::new(RefloatAllDataPayloads::source_startup()),

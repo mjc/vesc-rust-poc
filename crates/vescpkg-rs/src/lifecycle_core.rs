@@ -95,13 +95,7 @@ impl<B: LbmBindings> PackageLifecycle<B> {
     }
 
     /// Register an extension whose name and handler addresses are relative to a loaded native image.
-    ///
-    /// # Safety
-    ///
-    /// `image` must describe the native package image that owns `descriptor.name()`
-    /// and `descriptor.handler()`. The rebased pointers must remain valid for as
-    /// long as firmware may call the registered extension.
-    pub unsafe fn register_extension_from_image(
+    pub fn register_extension_from_image(
         &self,
         image: NativeImage,
         descriptor: ExtensionDescriptor,
@@ -122,18 +116,13 @@ impl<B: LbmBindings> PackageLifecycle<B> {
     }
 
     /// Register multiple extensions whose handlers are relative to one loaded native image.
-    ///
-    /// # Safety
-    ///
-    /// The safety requirements of [`Self::register_extension_from_image`] apply to every
-    /// descriptor in `descriptors`.
-    pub unsafe fn register_extensions_from_image(
+    pub fn register_extensions_from_image(
         &self,
         image: NativeImage,
         descriptors: impl IntoIterator<Item = ExtensionDescriptor>,
     ) -> Result<(), RegisterError> {
         for descriptor in descriptors {
-            unsafe { self.register_extension_from_image(image, descriptor)? };
+            self.register_extension_from_image(image, descriptor)?;
         }
         Ok(())
     }
@@ -171,20 +160,13 @@ impl<B: AppDataBindings> LoopbackLifecycle<B> {
     }
 
     /// Install the package stop hook into loader metadata.
-    ///
-    /// # Safety
-    ///
-    /// `info` must either be null or point to live loader metadata.
-    /// `stop_handler` must remain valid for as long as the firmware may call it.
-    /// The native image is built as PIC, matching refloat's VESC package model,
-    /// so this callback pointer is already a runtime address when this code executes.
-    pub unsafe fn install(
+    pub fn install(
         &self,
         info: *mut LibInfo,
         stop_handler: StopHandler,
         _app_data_handler: AppDataHandler,
     ) -> bool {
-        if let Some(info) = unsafe { info.as_mut() } {
+        if let Some(info) = crate::loader_info_mut(info) {
             info.stop_fun = Some(stop_handler);
         }
 
@@ -210,13 +192,8 @@ impl<B: AppDataBindings> LoopbackLifecycle<B> {
     }
 
     /// Send app-data bytes through the firmware callback.
-    ///
-    /// # Safety
-    ///
-    /// `data` must point to at least `len` bytes that remain valid for the duration
-    /// of the firmware call.
-    pub unsafe fn send_app_data(&self, data: *const u8, len: u32) {
-        unsafe { self.bindings.send_app_data(data, len) }
+    pub fn send_app_data(&self, data: &[u8]) -> bool {
+        self.bindings.send_app_data_bytes(data)
     }
 }
 

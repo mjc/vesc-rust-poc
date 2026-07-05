@@ -94,7 +94,7 @@ fn register_extension_from_image_reports_outcome(
     };
 
     // Test metadata models a loaded image whose descriptor pointers are image-relative.
-    let result = unsafe { register_extension_from_image(&info, &lifecycle, descriptor) };
+    let result = register_extension_from_image(&info, &lifecycle, descriptor);
 
     match mode {
         "accept" => assert_eq!(result, Ok(())),
@@ -365,7 +365,7 @@ fn imu_api_forwards_attitude_getters() {
 fn loopback_lifecycle_forwards_send_app_data(#[case] payload: [u8; 3], #[case] expected_len: u32) {
     let bindings = FakeAppDataBindings::new();
     let lifecycle = LoopbackLifecycle::new(bindings);
-    unsafe { lifecycle.send_app_data(payload.as_ptr(), expected_len) };
+    assert!(lifecycle.send_app_data(&payload));
 
     assert_eq!(lifecycle.bindings().send_calls.get(), 1);
     assert_eq!(lifecycle.bindings().last_len.get(), expected_len);
@@ -464,7 +464,7 @@ fn register_extensions_from_image_registers_each_descriptor() {
     let second = ExtensionDescriptor::new(c"ext-rust-b", stub_handler);
 
     assert_eq!(
-        unsafe { lifecycle.register_extensions_from_image(image, [first, second]) },
+        lifecycle.register_extensions_from_image(image, [first, second]),
         Ok(())
     );
     assert_eq!(lifecycle.bindings().add_calls.get(), 2);
@@ -483,7 +483,7 @@ fn loopback_lifecycle_install_sets_stop_hook() {
     unsafe extern "C" fn stop(_arg: *mut core::ffi::c_void) {}
     unsafe extern "C" fn app_data(_data: *mut u8, _len: u32) {}
 
-    assert!(unsafe { lifecycle.install(&mut info, stop, app_data) });
+    assert!(lifecycle.install(&mut info, stop, app_data));
     assert!(info.stop_fun.is_some());
 }
 
@@ -499,7 +499,7 @@ fn registers_an_extension_through_the_lifecycle_helper() {
     };
 
     assert_eq!(
-        unsafe { register_extension_from_image(&info, &lifecycle, descriptor) },
+        register_extension_from_image(&info, &lifecycle, descriptor),
         Ok(())
     );
     assert_eq!(lifecycle.bindings().add_calls.get(), 1);
@@ -519,7 +519,7 @@ fn lifecycle_descriptor_installs_the_stop_hook() {
         base_addr: 0x2000,
     };
 
-    assert!(unsafe { lifecycle.install(&mut info, stubs::stop_handler, stubs::app_data_handler) });
+    assert!(lifecycle.install(&mut info, stubs::stop_handler, stubs::app_data_handler));
 
     assert_eq!(
         info.stop_fun.expect("stop hook") as *const () as usize,

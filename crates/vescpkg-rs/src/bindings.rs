@@ -48,11 +48,25 @@ pub trait AppDataBindings {
     /// Return the package ARG pointer stored by the firmware loader.
     fn app_data_arg(&self, prog_addr: u32) -> Option<core::ptr::NonNull<core::ffi::c_void>>;
 
+    /// Return typed package state stored in the firmware ARG slot.
+    fn typed_app_data_arg<T: 'static>(&self, prog_addr: u32) -> Option<&'static mut T> {
+        crate::arg_mut(self.app_data_arg(prog_addr)?.as_ptr())
+    }
+
     /// # Safety
     ///
     /// `data` must point to at least `len` bytes that remain valid for the duration
     /// of the firmware call.
     unsafe fn send_app_data(&self, data: *const u8, len: u32);
+
+    /// Send app-data bytes through the firmware callback.
+    fn send_app_data_bytes(&self, data: &[u8]) -> bool {
+        let Ok(len) = u32::try_from(data.len()) else {
+            return false;
+        };
+        unsafe { self.send_app_data(data.as_ptr(), len) };
+        true
+    }
 }
 
 /// Firmware calls used by VESC Tool custom-config callback registration.
@@ -75,6 +89,16 @@ pub trait CustomConfigBindings {
         get_cfg_xml: CustomConfigXml,
     ) -> bool;
 
+    /// Register package-owned custom-config callbacks.
+    fn register_custom_config_callbacks(
+        &self,
+        get_cfg: CustomConfigGet,
+        set_cfg: CustomConfigSet,
+        get_cfg_xml: CustomConfigXml,
+    ) -> bool {
+        unsafe { self.register_custom_config(get_cfg, set_cfg, get_cfg_xml) }
+    }
+
     /// Clear package-owned custom-config callbacks.
     ///
     /// Refloat `v1.2.1` calls this during stop at `src/main.c:2403`; the VESC
@@ -84,6 +108,11 @@ pub trait CustomConfigBindings {
     ///
     /// Must only be called while the firmware `VESC_IF` table is valid.
     unsafe fn clear_custom_configs(&self) -> bool;
+
+    /// Clear package-owned custom-config callbacks.
+    fn clear_custom_config_callbacks(&self) -> bool {
+        unsafe { self.clear_custom_configs() }
+    }
 }
 
 /// Firmware calls used by package-owned IMU read callbacks.
@@ -100,6 +129,11 @@ pub trait ImuReadCallbackBindings {
     /// replaces it.
     unsafe fn set_imu_read_callback(&self, callback: ImuReadCallback);
 
+    /// Register a package-owned IMU read callback.
+    fn set_imu_read_callback_handler(&self, callback: ImuReadCallback) {
+        unsafe { self.set_imu_read_callback(callback) }
+    }
+
     /// Clear the package-owned IMU read callback.
     ///
     /// Refloat clears package callbacks during stop at `src/main.c:2401-2403`;
@@ -109,6 +143,11 @@ pub trait ImuReadCallbackBindings {
     ///
     /// Must only be called while the firmware `VESC_IF` table is valid.
     unsafe fn clear_imu_read_callback(&self);
+
+    /// Clear the package-owned IMU read callback.
+    fn clear_imu_read_callback_handler(&self) {
+        unsafe { self.clear_imu_read_callback() }
+    }
 }
 
 #[cfg(not(test))]
