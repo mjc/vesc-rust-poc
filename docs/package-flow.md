@@ -38,6 +38,35 @@ This is an unofficial Rust package flow and is not an official VESC project or e
 - `crates/cargo-vescpkg/tests/fake_ble_integration.rs` is the canonical host↔in-process firmware bridge: it wires `FakeFirmwareServices` from `vescpkg-rs-build` to the host `LoopbackTransport` and exercises ping/echo without hardware.
 - `package_README-gen.md` and `ui.qml` are generated artifacts, not hand-edited inputs.
 
+## Refloat Copy-Through Package Flow
+
+Refloat `v1.2.1` uses an external source tree rather than the loopback package
+layout. The source-tree build command is:
+
+```sh
+nix develop -c cargo run -p cargo-vescpkg -- build \
+  --refloat-source target/refloat-v1.2.1-src \
+  --build-date '2026-07-02 06:00:00-06:00' \
+  --git-commit 0ef6e99 \
+  --vesc-tool target/refloat-tools/vesc_tool
+```
+
+The command writes `target/refloat-v1.2.1-src/refloat.vescpkg`. It first runs
+the Refloat native payload build with the configured VESC Tool path, then
+materializes generated package assets and writes the final package through the
+Rust packer.
+
+The baseline comparison command is:
+
+```sh
+nix develop -c make -C target/refloat-v1.2.1-src \
+  VESC_TOOL="$(pwd)/target/refloat-tools/vesc_tool"
+```
+
+For the pinned `v1.2.1` inputs, the Rust package and VESC Tool baseline compare
+byte-for-byte with SHA-256
+`e894e55ab12593743e1f1e20b82f4ffad534bb28b9f56a764b4119f9e5cbd487`.
+
 ## Build And Upload Workflow
 
 1. Enter the Nix shell with `nix develop`.

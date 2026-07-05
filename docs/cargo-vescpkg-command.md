@@ -45,15 +45,44 @@ not an official VESC project or endorsed command.
 - emit the final `.vescpkg`
 - keep descriptor, source-checkout, provenance, and VESC Tool path overrides
   explicit so scripted operator runs remain reproducible
+- package descriptor-driven external packages without requiring loopback or
+  Snake-specific staging
+- for Refloat source trees, explicitly materialize generated README/QML/config
+  inputs, run the native Refloat payload build, and then emit a VESC Tool
+  compatible package
 - keep the device package wired to VESC BTLE on the firmware side
 - preserve the Predictable artifact path under `target/vescpkg`
 - keep the package-size guard and symbol checks in the workspace gates
 - own the host/operator command implementation directly, without a separate
   legacy CLI crate
 
+## Refloat Source Build
+
+The Refloat copy-through command is intentionally explicit about non-repo
+inputs:
+
+```sh
+cargo vescpkg build \
+  --refloat-source target/refloat-v1.2.1-src \
+  --build-date '2026-07-02 06:00:00-06:00' \
+  --git-commit 0ef6e99 \
+  --vesc-tool target/refloat-tools/vesc_tool
+```
+
+`--refloat-source` points at a Refloat `v1.2.1` checkout. `--build-date` and
+`--git-commit` make the generated README/config inputs reproducible.
+`--vesc-tool` is resolved before invoking Refloat's `make -C src`, so relative
+wrapper paths do not break when Make changes directories.
+
+This path currently delegates native `settings.xml` conversion and
+`package_lib.bin` generation to Refloat's own Makefile, then uses the Rust
+package writer for the final `.vescpkg`. The current branch has byte-for-byte
+package parity with `VESC Tool --buildPkgFromDesc pkgdesc.qml` for the pinned
+`v1.2.1` source inputs.
+
 ## Non-Goals
 
-- do not reimplement VESC Tool packaging behavior in a second place
+- do not duplicate Refloat's native build system in shell glue
 - do not hide the package layout or target assumptions inside ad hoc shell glue
 - do not move the device payload out of the `no_std` crate
 
