@@ -579,6 +579,7 @@ mod slots {
     fn_slot!(mc_get_battery_level as unsafe extern "C" fn(*mut f32) -> f32);
     fn_slot!(mc_get_distance_abs as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_odometer as unsafe extern "C" fn() -> u64);
+    fn_slot!(get_cfg_float as unsafe extern "C" fn(c_int) -> f32);
     fn_slot!(mc_set_current as unsafe extern "C" fn(f32));
     fn_slot!(mc_set_current_off_delay as unsafe extern "C" fn(f32));
     fn_slot!(timeout_reset as unsafe extern "C" fn());
@@ -935,6 +936,20 @@ pub unsafe fn mc_get_tot_current_filtered() -> f32 {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_tot_current_in_filtered() -> f32 {
     unsafe { slots::mc_get_tot_current_in_filtered()() }
+}
+
+/// Read a firmware motor configuration float by `CFG_PARAM_*` id.
+///
+/// Refloat v1.2.1 reads `CFG_PARAM_l_current_max` and
+/// `CFG_PARAM_l_current_min` in `src/motor_data.c:90-91`; the VESC ABI slot is
+/// declared at `vesc_pkg_lib/vesc_c_if.h:588`.
+///
+/// # Safety
+///
+/// The firmware VESC function table must be valid and `param` must be a valid
+/// firmware configuration parameter id for a float-valued setting.
+pub unsafe fn get_cfg_float(param: c_int) -> f32 {
+    unsafe { slots::get_cfg_float()(param) }
 }
 
 /// Reset the firmware motor-command safety timeout.

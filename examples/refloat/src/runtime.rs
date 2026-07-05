@@ -5,6 +5,8 @@
 
 #[cfg(any(test, target_arch = "arm"))]
 use crate::app_data::RefloatAppDataState;
+#[cfg(all(not(test), target_arch = "arm"))]
+use vescpkg_rs::AppDataBindings;
 use vescpkg_rs::FirmwareThreadHandle;
 #[cfg(all(not(test), target_arch = "arm"))]
 use vescpkg_rs::ffi;
@@ -162,8 +164,9 @@ pub(crate) fn tick_refloat_main_thread_with<
     telemetry: &MotorTelemetryApi<M>,
     imu: &ImuApi<I>,
     motor: &MotorControlApi<C>,
+    system_time_ticks: u32,
 ) -> u32 {
-    state.refresh_runtime_state(telemetry, imu);
+    state.refresh_runtime_state(telemetry, imu, system_time_ticks);
     let run_state = state
         .all_data_payloads()
         .base()
@@ -225,9 +228,16 @@ unsafe extern "C" fn refloat_main_thread(arg: *mut c_void) {
         let telemetry = MotorTelemetryApi::new(vescpkg_rs::RealMotorTelemetryBindings);
         let imu = ImuApi::new(vescpkg_rs::RealImuBindings);
         let motor = MotorControlApi::new(vescpkg_rs::RealMotorControlBindings);
+        let app_data = vescpkg_rs::RealBindings;
         run_refloat_main_thread_with(&threads, || {
             let state = unsafe { &mut *arg.cast::<RefloatAppDataState>() };
-            tick_refloat_main_thread_with(state, &telemetry, &imu, &motor)
+            tick_refloat_main_thread_with(
+                state,
+                &telemetry,
+                &imu,
+                &motor,
+                app_data.system_time_ticks(),
+            )
         });
     }
 
@@ -354,7 +364,7 @@ mod tests {
         let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
 
         super::run_refloat_main_thread_with(&threads, || {
-            state.refresh_runtime_state(&telemetry, &imu);
+            state.refresh_runtime_state(&telemetry, &imu, 0);
             state.configured_loop_time_us()
         });
 
@@ -391,7 +401,7 @@ mod tests {
         state.request_motor_current(MotorCurrent::new(Current::from_amps(3.5)));
 
         super::run_refloat_main_thread_with(&threads, || {
-            super::tick_refloat_main_thread_with(&mut state, &telemetry, &imu, &motor)
+            super::tick_refloat_main_thread_with(&mut state, &telemetry, &imu, &motor, 0)
         });
 
         // Upstream `refloat_thd` applies motor control after the state switch at

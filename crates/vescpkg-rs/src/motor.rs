@@ -9,6 +9,11 @@ use crate::types::{
 use crate::units::{Charge, Current, Distance, Energy, Ratio, Rpm, Speed, Temperature, Voltage};
 use crate::units::{OdometerMeters, SignedRatio};
 
+#[cfg(not(test))]
+const CFG_PARAM_L_CURRENT_MAX: core::ffi::c_int = 0;
+#[cfg(not(test))]
+const CFG_PARAM_L_CURRENT_MIN: core::ffi::c_int = 1;
+
 /// Motor telemetry operations backed by firmware slots.
 pub trait MotorTelemetryBindings {
     /// Return the current motor electrical RPM.
@@ -27,6 +32,18 @@ pub trait MotorTelemetryBindings {
     /// `src/motor_data.c:120`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:456`.
     fn motor_current(&self) -> MotorCurrent;
+    /// Return the configured positive motor-current limit.
+    ///
+    /// Refloat v1.2.1 reads `CFG_PARAM_l_current_max` through `get_cfg_float`
+    /// in `src/motor_data.c:91`; the VESC config id is declared at
+    /// `vesc_pkg_lib/vesc_c_if.h:243`.
+    fn motor_current_max(&self) -> MotorCurrent;
+    /// Return the configured braking-current magnitude.
+    ///
+    /// Refloat v1.2.1 stores `fabsf(CFG_PARAM_l_current_min)` in
+    /// `src/motor_data.c:90`; the VESC config id is declared at
+    /// `vesc_pkg_lib/vesc_c_if.h:244`.
+    fn motor_current_min(&self) -> MotorCurrent;
     /// Return filtered input/battery current.
     ///
     /// Refloat v1.2.1 reads `mc_get_tot_current_in_filtered()` in
@@ -115,6 +132,18 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
     fn motor_current(&self) -> MotorCurrent {
         MotorCurrent::new(Current::from_amps(unsafe {
             vescpkg_rs_sys::raw::mc_get_tot_current_filtered()
+        }))
+    }
+
+    fn motor_current_max(&self) -> MotorCurrent {
+        MotorCurrent::new(Current::from_amps(unsafe {
+            vescpkg_rs_sys::raw::get_cfg_float(CFG_PARAM_L_CURRENT_MAX)
+        }))
+    }
+
+    fn motor_current_min(&self) -> MotorCurrent {
+        MotorCurrent::new(Current::from_amps(unsafe {
+            vescpkg_rs_sys::raw::get_cfg_float(CFG_PARAM_L_CURRENT_MIN).abs()
         }))
     }
 
@@ -268,6 +297,16 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.motor_current()
     }
 
+    /// Return the configured positive motor-current limit.
+    pub fn motor_current_max(&self) -> MotorCurrent {
+        self.bindings.motor_current_max()
+    }
+
+    /// Return the configured braking-current magnitude.
+    pub fn motor_current_min(&self) -> MotorCurrent {
+        self.bindings.motor_current_min()
+    }
+
     /// Return filtered input/battery current.
     pub fn battery_current(&self) -> BatteryCurrent {
         self.bindings.battery_current()
@@ -389,6 +428,10 @@ pub mod test_support {
         pub vehicle_speed_calls: Cell<usize>,
         /// Number of motor-current calls observed.
         pub motor_current_calls: Cell<usize>,
+        /// Number of motor-current max calls observed.
+        pub motor_current_max_calls: Cell<usize>,
+        /// Number of motor-current min calls observed.
+        pub motor_current_min_calls: Cell<usize>,
         /// Number of battery-current calls observed.
         pub battery_current_calls: Cell<usize>,
         /// Number of duty-cycle calls observed.
@@ -420,6 +463,8 @@ pub mod test_support {
         electrical_speed: Cell<ElectricalSpeed>,
         vehicle_speed: Cell<VehicleSpeed>,
         motor_current: Cell<MotorCurrent>,
+        motor_current_max: Cell<MotorCurrent>,
+        motor_current_min: Cell<MotorCurrent>,
         battery_current: Cell<BatteryCurrent>,
         duty_cycle_now: Cell<DutyCycle>,
         foc_id_current: Cell<Option<MotorCurrent>>,
@@ -449,6 +494,8 @@ pub mod test_support {
                 electrical_speed_calls: Cell::new(0),
                 vehicle_speed_calls: Cell::new(0),
                 motor_current_calls: Cell::new(0),
+                motor_current_max_calls: Cell::new(0),
+                motor_current_min_calls: Cell::new(0),
                 battery_current_calls: Cell::new(0),
                 duty_cycle_now_calls: Cell::new(0),
                 foc_id_current_calls: Cell::new(0),
@@ -468,6 +515,8 @@ pub mod test_support {
                 )),
                 vehicle_speed: Cell::new(VehicleSpeed::new(Speed::from_meters_per_second(0.0))),
                 motor_current: Cell::new(MotorCurrent::new(Current::from_amps(0.0))),
+                motor_current_max: Cell::new(MotorCurrent::new(Current::from_amps(100.0))),
+                motor_current_min: Cell::new(MotorCurrent::new(Current::from_amps(100.0))),
                 battery_current: Cell::new(BatteryCurrent::new(Current::from_amps(0.0))),
                 duty_cycle_now: Cell::new(DutyCycle::new(SignedRatio::from_ratio_const(0.0))),
                 foc_id_current: Cell::new(None),
@@ -507,6 +556,17 @@ pub mod test_support {
             self.motor_current.set(motor_current);
             self.battery_current.set(battery_current);
             self.duty_cycle_now.set(duty_cycle_now);
+            self
+        }
+
+        /// Return fake motor telemetry bindings returning configured current limits.
+        pub fn with_motor_current_limits(
+            self,
+            motor_current_max: MotorCurrent,
+            motor_current_min: MotorCurrent,
+        ) -> Self {
+            self.motor_current_max.set(motor_current_max);
+            self.motor_current_min.set(motor_current_min);
             self
         }
 
@@ -593,6 +653,18 @@ pub mod test_support {
             self.motor_current_calls
                 .set(self.motor_current_calls.get() + 1);
             self.motor_current.get()
+        }
+
+        fn motor_current_max(&self) -> MotorCurrent {
+            self.motor_current_max_calls
+                .set(self.motor_current_max_calls.get() + 1);
+            self.motor_current_max.get()
+        }
+
+        fn motor_current_min(&self) -> MotorCurrent {
+            self.motor_current_min_calls
+                .set(self.motor_current_min_calls.get() + 1);
+            self.motor_current_min.get()
         }
 
         fn battery_current(&self) -> BatteryCurrent {
