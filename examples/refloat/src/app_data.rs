@@ -2135,6 +2135,7 @@ mod tests {
                 .with_attitude(
                     ImuRoll::new(AngleRadians::from_radians(0.25)),
                     ImuPitch::new(AngleRadians::from_radians(-0.125)),
+                    ImuYaw::new(AngleRadians::from_radians(0.0)),
                 ),
         );
         let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
@@ -2171,6 +2172,7 @@ mod tests {
                 .with_attitude(
                     ImuRoll::new(AngleRadians::from_radians(0.0)),
                     ImuPitch::new(AngleRadians::from_radians(0.25)),
+                    ImuYaw::new(AngleRadians::from_radians(0.0)),
                 ),
         );
         let mut state = RefloatAppDataState::new(sample_all_data_payloads_with_ride_state(

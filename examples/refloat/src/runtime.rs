@@ -325,6 +325,7 @@ mod tests {
                 .with_attitude(
                     ImuRoll::new(AngleRadians::from_radians(0.9)),
                     ImuPitch::new(AngleRadians::from_radians(14.0)),
+                    ImuYaw::new(AngleRadians::from_radians(0.0)),
                 ),
         );
         let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());

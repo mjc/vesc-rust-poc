@@ -853,6 +853,7 @@ mod tests {
         );
     }
 
+    #[test]
     fn parse_args_rejects_conflicting_package_sources() {
         for args in [
             [

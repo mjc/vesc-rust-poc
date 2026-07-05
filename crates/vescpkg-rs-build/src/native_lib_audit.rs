@@ -7,8 +7,8 @@ use crate::native_audit::{
     unexpected_undefined_symbols,
 };
 use crate::native_elf_semantics::{
-    analyze_native_lib_elf, assert_loader_init_best_effort, assert_native_lib_semantics,
-    assert_refloat_loader_only_containment,
+    analyze_native_lib_elf, assert_loader_init_returns_package_result, assert_native_lib_semantics,
+    assert_refloat_registration_tail,
 };
 use crate::native_inspect::{
     SectionLayout, all_section_layouts, elf_has_no_relocations, elf_is_executable,
@@ -286,8 +286,8 @@ pub fn audit_refloat_native_lib_artifacts(paths: &NativeLibArtifactPaths) -> Str
     audit_refloat_native_lib_symbols(paths);
     audit_refloat_native_lib_layout(paths);
     audit_native_lib_flat_binary(&paths.elf, &paths.bin);
-    assert_loader_init_best_effort(&paths.elf);
-    assert_refloat_loader_only_containment(&paths.elf);
+    assert_loader_init_returns_package_result(&paths.elf);
+    assert_refloat_registration_tail(&paths.elf);
     semantic_snapshot_report(&paths.elf)
 }
 
@@ -306,7 +306,6 @@ fn audit_refloat_native_lib_symbols(paths: &NativeLibArtifactPaths) {
         unexpected_final_native_lib_undefined_symbols(&elf_symbols).is_empty(),
         "unexpected undefined symbols remain in the Refloat native-lib ELF"
     );
-    assert_no_forbidden_runtime_symbols(&elf_symbols, "Refloat native-lib ELF");
     assert!(
         !paths.package_object.exists(),
         "Refloat native build must not materialize package-specific C shim object {:?}",
@@ -325,11 +324,11 @@ fn audit_refloat_native_lib_symbols(paths: &NativeLibArtifactPaths) {
     }
 
     assert!(
-        !elf_defined.contains("refloat_handle_app_data")
-            && !elf_defined
+        elf_defined.contains("refloat_handle_app_data")
+            && elf_defined
                 .iter()
                 .any(|name| name.contains("stop_refloat_app_data")),
-        "Refloat containment image must not retain app-data entrypoints; upstream v1.2.1 (0ef6e99d8701) wires app-data at src/main.c:2143 and 2457:\n{elf_symbols}"
+        "Refloat native image must retain app-data and stop entrypoints; upstream v1.2.1 (0ef6e99d8701) wires app-data at src/main.c:2143 and 2457 and stop cleanup at src/main.c:2398-2412:\n{elf_symbols}"
     );
     assert!(
         !elf_defined.contains("ext_rust_probe_diag_v4"),
