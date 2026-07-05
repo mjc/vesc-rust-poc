@@ -42,22 +42,22 @@ pub fn start_package(info: *mut ffi::LibInfo, steps: &[PackageStartStep]) -> boo
     true
 }
 
-/// Define the VESC firmware entrypoints for a package main function.
+/// Define the VESC firmware entrypoints for a package start function.
 #[macro_export]
-macro_rules! package_main {
-    ($main:path) => {
+macro_rules! package_start {
+    ($start:path) => {
         #[cfg(all(not(test), target_arch = "arm"))]
         #[used]
         #[unsafe(no_mangle)]
         #[unsafe(link_section = ".program_ptr")]
         pub(crate) static prog_ptr: u32 = 0;
 
-        /// Firmware loader entrypoint that runs the package main function.
+        /// Firmware loader entrypoint that runs the package start function.
         #[cfg(any(test, all(not(test), target_arch = "arm")))]
         #[inline(never)]
         #[unsafe(no_mangle)]
         pub extern "C" fn package_lib_init(info: *mut $crate::ffi::LibInfo) -> bool {
-            $main(info)
+            $start(info)
         }
 
         /// Host-linking loader shim for package crates.

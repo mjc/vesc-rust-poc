@@ -15,10 +15,21 @@ extern crate std;
 /// App-data command handler that lets VESC firmware run the package-side Snake logic.
 pub mod app_data;
 pub mod game;
-pub mod init;
 
-pub use init::package_lib_init;
 pub use vescpkg_rs::{ffi, lifecycle};
+
+vescpkg_rs::package_start!(crate::start);
+
+#[cfg(all(not(test), target_arch = "arm"))]
+pub(crate) fn start(info: *mut ffi::LibInfo) -> bool {
+    crate::app_data::install_snake_app_data(info)
+}
+
+#[cfg(test)]
+pub(crate) fn start(info: *mut ffi::LibInfo) -> bool {
+    let _ = vescpkg_rs::init::install_stop_hook(info);
+    true
+}
 
 #[cfg(not(test))]
 use core::panic::PanicInfo;
@@ -33,7 +44,7 @@ fn panic(_: &PanicInfo) -> ! {
 
 #[cfg(test)]
 mod tests {
-    use super::{ffi, game, init};
+    use super::{ffi, game};
 
     #[test]
     fn package_lib_init_installs_stop_hook() {
@@ -43,7 +54,7 @@ mod tests {
             base_addr: 0,
         };
 
-        assert!(init::package_lib_init(&mut info));
+        assert!(super::package_lib_init(&mut info));
         assert!(info.stop_fun.is_some());
     }
 

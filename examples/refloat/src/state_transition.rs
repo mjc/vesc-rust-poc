@@ -93,21 +93,13 @@ pub(crate) struct RefloatStateTransitionOutput {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RefloatStateTransitionStep {
+enum RefloatStateTransitionAction {
     Stop(RefloatStopEvent),
     Engage,
     Preserve,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct RefloatStateWrite {
-    run_state: RefloatRunState,
-    setpoint_adjustment: RefloatSetpointAdjustment,
-    stop_condition: RefloatStopCondition,
-    wheelslip: RefloatWheelSlipState,
-}
-
-impl RefloatStateTransitionStep {
+impl RefloatStateTransitionAction {
     #[inline(always)]
     fn select(input: &RefloatStateTransitionInput) -> Self {
         match (input.stop_event, input.state_engage) {
@@ -118,66 +110,63 @@ impl RefloatStateTransitionStep {
     }
 
     #[inline(always)]
-    fn output(self, input: RefloatStateTransitionInput) -> RefloatStateTransitionOutput {
-        let (state_stopped, state_engaged) = match self {
-            Self::Stop(_) => (true, false),
-            Self::Engage => (false, true),
-            Self::Preserve => (false, false),
+    fn apply(self, input: RefloatStateTransitionInput) -> RefloatStateTransitionOutput {
+        let previous = input.previous;
+        let (
+            run_state,
+            setpoint_adjustment,
+            stop_condition,
+            wheelslip,
+            state_stopped,
+            state_engaged,
+        ) = match self {
+            Self::Stop(event) => (
+                RefloatRunState::Ready,
+                previous.setpoint_adjustment(),
+                event.stop_condition(),
+                RefloatWheelSlipState::None,
+                true,
+                false,
+            ),
+            Self::Engage => (
+                RefloatRunState::Running,
+                RefloatSetpointAdjustment::Centering,
+                RefloatStopCondition::None,
+                Self::rolling_wheelslip(previous, input.traction_loss_detected),
+                false,
+                true,
+            ),
+            Self::Preserve => (
+                input.run_state,
+                previous.setpoint_adjustment(),
+                previous.stop_condition(),
+                Self::rolling_wheelslip(previous, input.traction_loss_detected),
+                false,
+                false,
+            ),
         };
 
         RefloatStateTransitionOutput {
-            ride_state: self.ride_state(input),
+            ride_state: RefloatRideState::new(
+                run_state,
+                Self::mode_after_ready_check(input),
+                setpoint_adjustment,
+                stop_condition,
+            )
+            .with_charging(previous.charging())
+            .with_wheelslip(wheelslip)
+            .with_darkride(previous.darkride()),
             state_stopped,
             state_engaged,
         }
     }
 
     #[inline(always)]
-    fn ride_state(self, input: RefloatStateTransitionInput) -> RefloatRideState {
-        let write = self.state_write(input);
-
-        RefloatRideState::new(
-            write.run_state,
-            Self::mode_after_ready_check(input),
-            write.setpoint_adjustment,
-            write.stop_condition,
-        )
-        .with_charging(input.previous.charging())
-        .with_wheelslip(write.wheelslip)
-        .with_darkride(input.previous.darkride())
-    }
-
-    #[inline(always)]
-    fn state_write(self, input: RefloatStateTransitionInput) -> RefloatStateWrite {
-        let previous = input.previous;
-
-        match self {
-            Self::Stop(event) => RefloatStateWrite {
-                run_state: RefloatRunState::Ready,
-                setpoint_adjustment: previous.setpoint_adjustment(),
-                stop_condition: event.stop_condition(),
-                wheelslip: RefloatWheelSlipState::None,
-            },
-            Self::Engage => RefloatStateWrite {
-                run_state: RefloatRunState::Running,
-                setpoint_adjustment: RefloatSetpointAdjustment::Centering,
-                stop_condition: RefloatStopCondition::None,
-                wheelslip: Self::rolling_wheelslip(previous, input.traction_loss_detected),
-            },
-            Self::Preserve => RefloatStateWrite {
-                run_state: input.run_state,
-                setpoint_adjustment: previous.setpoint_adjustment(),
-                stop_condition: previous.stop_condition(),
-                wheelslip: Self::rolling_wheelslip(previous, input.traction_loss_detected),
-            },
-        }
-    }
-
-    #[inline(always)]
     fn mode_after_ready_check(input: RefloatStateTransitionInput) -> RefloatMode {
-        match input.ready_flywheel_stop {
-            true => RefloatMode::Normal,
-            false => input.previous.mode(),
+        if input.ready_flywheel_stop {
+            RefloatMode::Normal
+        } else {
+            input.previous.mode()
         }
     }
 
@@ -186,9 +175,10 @@ impl RefloatStateTransitionStep {
         previous: RefloatRideState,
         traction_loss_detected: bool,
     ) -> RefloatWheelSlipState {
-        match traction_loss_detected {
-            true => RefloatWheelSlipState::Detected,
-            false => previous.wheelslip(),
+        if traction_loss_detected {
+            RefloatWheelSlipState::Detected
+        } else {
+            previous.wheelslip()
         }
     }
 }
@@ -204,7 +194,7 @@ impl RefloatStateTransitionStep {
 pub(crate) fn refloat_state_transition(
     input: RefloatStateTransitionInput,
 ) -> RefloatStateTransitionOutput {
-    RefloatStateTransitionStep::select(&input).output(input)
+    RefloatStateTransitionAction::select(&input).apply(input)
 }
 
 #[cfg(test)]
@@ -246,7 +236,7 @@ mod tests {
     }
 
     #[test]
-    fn state_transition_step_selects_stop_engage_or_preserve() {
+    fn state_transition_action_selects_stop_engage_or_preserve() {
         let stop_input = RefloatStateTransitionInput {
             state_engage: true,
             stop_event: Some(RefloatStopEvent::QuickStop),
@@ -259,16 +249,16 @@ mod tests {
         let preserve_input = transition_input(running_normal());
 
         assert_eq!(
-            RefloatStateTransitionStep::select(&stop_input),
-            RefloatStateTransitionStep::Stop(RefloatStopEvent::QuickStop)
+            RefloatStateTransitionAction::select(&stop_input),
+            RefloatStateTransitionAction::Stop(RefloatStopEvent::QuickStop)
         );
         assert_eq!(
-            RefloatStateTransitionStep::select(&engage_input),
-            RefloatStateTransitionStep::Engage
+            RefloatStateTransitionAction::select(&engage_input),
+            RefloatStateTransitionAction::Engage
         );
         assert_eq!(
-            RefloatStateTransitionStep::select(&preserve_input),
-            RefloatStateTransitionStep::Preserve
+            RefloatStateTransitionAction::select(&preserve_input),
+            RefloatStateTransitionAction::Preserve
         );
     }
 

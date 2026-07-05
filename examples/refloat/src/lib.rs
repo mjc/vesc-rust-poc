@@ -21,7 +21,7 @@ pub mod package;
 pub mod runtime;
 mod state_transition;
 
-vescpkg_rs::package_main!(crate::package::start);
+vescpkg_rs::package_start!(crate::package::start);
 
 #[cfg(test)]
 mod tests {
