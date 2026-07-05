@@ -23,7 +23,7 @@ not an official VESC project or endorsed command.
 - `cargo vescpkg build`
 - optional `cargo vescpkg build --package-only`
 - optional `cargo vescpkg build --target thumbv7em-none-eabihf`
-- optional `cargo vescpkg build --example loopback|snake|refloat`
+- optional `cargo vescpkg build --example loopback|snake|alloc-smoke|refloat`
 - optional `cargo vescpkg build --manifest <pkgdesc.qml>` to build a package
   from a staged VESC package descriptor
 - optional `cargo vescpkg build --refloat-source <checkout>` to package Refloat
