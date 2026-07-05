@@ -140,26 +140,6 @@ pub fn package_extension_descriptors() -> [ffi::ExtensionDescriptor; PACKAGE_EXT
     ]
 }
 
-/// Register Refloat loader extensions through a package lifecycle.
-///
-/// Upstream registers these LispBM names and handlers at
-/// `/Users/mjc/projects/refloat/src/main.c:2458-2459`.
-///
-/// This host/test helper models image-relative descriptor pointers. The target
-/// registration below uses PC-relative runtime addresses instead, matching the
-/// known-good ARM registration path.
-pub fn register_refloat_loader_extensions_with<B: vescpkg_rs::LbmBindings>(
-    info: &ffi::LibInfo,
-    lifecycle: &vescpkg_rs::PackageLifecycle<B>,
-) -> bool {
-    lifecycle
-        .register_extensions_from_image(
-            vescpkg_rs::ffi::NativeImage::from_info(info),
-            package_extension_descriptors(),
-        )
-        .is_ok()
-}
-
 /// Register Refloat's loader extensions with runtime names and handlers.
 ///
 /// Upstream reaches this after custom config and app-data setup in
@@ -168,11 +148,7 @@ pub fn register_refloat_loader_extensions_with<B: vescpkg_rs::LbmBindings>(
 ///
 #[cfg(all(not(test), target_arch = "arm"))]
 pub fn register_refloat_loader_extensions(start: &mut vescpkg_rs::PackageStart) -> bool {
-    let Some(info) = start.loader_info_mut() else {
-        return false;
-    };
-    let lifecycle = vescpkg_rs::PackageLifecycle::new(vescpkg_rs::RealBindings);
-    register_refloat_loader_extensions_with(info, &lifecycle)
+    start.register_extensions(package_extension_descriptors())
 }
 
 #[cfg(test)]
@@ -180,12 +156,11 @@ mod tests {
     use super::{
         EXT_BMS_NAME, EXT_SET_FW_VERSION_NAME, PACKAGE_EXTENSION_NAMES, RefloatFirmwareVersion,
         package_extension_descriptors, record_refloat_firmware_version,
-        recorded_refloat_firmware_version, register_refloat_loader_extensions_with,
-        reset_refloat_firmware_version,
+        recorded_refloat_firmware_version, reset_refloat_firmware_version,
     };
     use core::cell::Cell;
     use core::ffi::{CStr, c_char};
-    use vescpkg_rs::ffi::{ExtensionHandler, LbmValue, LibInfo};
+    use vescpkg_rs::ffi::{ExtensionHandler, LbmValue};
     use vescpkg_rs::{LbmBindings, PackageLifecycle};
 
     #[test]
@@ -215,38 +190,6 @@ mod tests {
     }
 
     #[test]
-    fn refloat_loader_extension_registration_rebases_handlers_from_loaded_image() {
-        let lifecycle = PackageLifecycle::new(RecordingLbmBindings::accepting());
-        let info = LibInfo {
-            stop_fun: None,
-            arg: core::ptr::null_mut(),
-            base_addr: 0x1000,
-        };
-        let descriptors = package_extension_descriptors();
-
-        assert!(register_refloat_loader_extensions_with(&info, &lifecycle));
-
-        let bindings = lifecycle.bindings();
-        assert_eq!(bindings.add_calls.get(), 2);
-        assert_eq!(
-            bindings.name_addr(0),
-            descriptors[0].name().as_ptr() as usize + 0x1000
-        );
-        assert_eq!(
-            bindings.name_addr(1),
-            descriptors[1].name().as_ptr() as usize + 0x1000
-        );
-        assert_eq!(
-            bindings.handler_addr(0),
-            descriptors[0].handler() as usize + 0x1000
-        );
-        assert_eq!(
-            bindings.handler_addr(1),
-            descriptors[1].handler() as usize + 0x1000
-        );
-    }
-
-    #[test]
     fn ext_set_fw_version_records_three_decoded_components() {
         reset_refloat_firmware_version();
 
@@ -268,7 +211,6 @@ mod tests {
     struct RecordingLbmBindings {
         add_calls: Cell<usize>,
         names: Cell<[usize; 2]>,
-        handlers: Cell<[usize; 2]>,
     }
 
     impl RecordingLbmBindings {
@@ -276,7 +218,6 @@ mod tests {
             Self {
                 add_calls: Cell::new(0),
                 names: Cell::new([0; 2]),
-                handlers: Cell::new([0; 2]),
             }
         }
 
@@ -284,26 +225,18 @@ mod tests {
             let names = self.names.get();
             unsafe { CStr::from_ptr(names[index] as *const c_char) }
         }
-
-        fn name_addr(&self, index: usize) -> usize {
-            self.names.get()[index]
-        }
-
-        fn handler_addr(&self, index: usize) -> usize {
-            self.handlers.get()[index]
-        }
     }
 
     impl LbmBindings for RecordingLbmBindings {
-        unsafe fn add_extension(&self, name: *const c_char, handler: ExtensionHandler) -> bool {
-            let index = self.add_calls.get();
-            let index = index.min(1);
+        unsafe fn add_extension(
+            &self,
+            name: *const core::ffi::c_char,
+            _handler: ExtensionHandler,
+        ) -> bool {
+            let index = self.add_calls.get().min(1);
             let mut names = self.names.get();
             names[index] = name as usize;
             self.names.set(names);
-            let mut handlers = self.handlers.get();
-            handlers[index] = handler as usize;
-            self.handlers.set(handlers);
             self.add_calls.set(self.add_calls.get() + 1);
             true
         }

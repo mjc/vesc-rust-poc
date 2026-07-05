@@ -61,10 +61,10 @@ mod tests {
         EXT_RUST_PROBE_DIAG_NAME, LbmApi, LbmCount, LbmValue, PACKAGE_EXTENSION_NAMES,
         ext_rust_probe_diag_v4, package_extension_descriptors, rust_add_extension_value,
     };
+    use vescpkg_rs::PackageStart;
     use vescpkg_rs::ffi::test_support::FakeBindings;
     use vescpkg_rs::ffi::{self, PackageLifecycle};
     use vescpkg_rs::lbm::encode_lbm_i32_raw;
-    use vescpkg_rs::lifecycle::register_extension_from_image;
 
     #[test]
     fn probe_returns_the_device_encoded_value() {
@@ -83,20 +83,18 @@ mod tests {
     }
 
     #[test]
-    fn register_package_extension_from_image_uses_the_descriptor_table() {
+    fn package_start_registers_extension_descriptor_table() {
         let bindings = FakeBindings::new();
         let lifecycle = PackageLifecycle::new(bindings);
-        let info = ffi::LibInfo {
+        let mut info = ffi::LibInfo {
             stop_fun: None,
             arg: core::ptr::null_mut(),
             base_addr: 0x2000,
         };
         let [descriptor] = package_extension_descriptors();
+        let mut start = PackageStart::from_raw(&mut info);
 
-        assert_eq!(
-            unsafe { register_extension_from_image(&info, &lifecycle, descriptor) },
-            Ok(())
-        );
+        assert!(start.register_extensions_with(&lifecycle, [descriptor]));
         assert_eq!(lifecycle.bindings().add_calls.get(), 1);
     }
 

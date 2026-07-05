@@ -13,7 +13,7 @@ extern crate std;
 
 pub mod extensions;
 
-pub use vescpkg_rs::{ProtocolFrame, WireCommand, WireVersion, ble_loopback, ffi, lbm, lifecycle};
+pub use vescpkg_rs::{ProtocolFrame, WireCommand, WireVersion, ble_loopback, ffi, lbm};
 
 vescpkg_rs::package_start!(crate::start);
 
@@ -27,30 +27,14 @@ pub(crate) fn start(start: &mut vescpkg_rs::PackageStart) -> bool {
 pub(crate) fn start(start: &mut vescpkg_rs::PackageStart) -> bool {
     let _ = start.install_stop_hook();
 
-    let Some(info) = start.loader_info_mut() else {
-        return true;
-    };
-
     let _ = vescpkg_rs::ble_loopback::register_loopback_app_data_handler();
-
-    let lifecycle = ffi::PackageLifecycle::new(ffi::RealBindings);
-    let _ = register_package_extensions(info, &lifecycle);
+    let _ = start.register_extensions(extensions::package_extension_descriptors());
 
     // Extension registration can run other firmware setup; register again so the
     // loopback handler remains the active app-data callback (refloat pattern).
     let _ = vescpkg_rs::ble_loopback::register_loopback_app_data_handler();
 
     true
-}
-
-/// Register this package's extension table using the supplied binding set.
-pub fn register_package_extensions<B: ffi::LbmBindings>(
-    info: &ffi::LibInfo,
-    lifecycle: &ffi::PackageLifecycle<B>,
-) -> bool {
-    let [descriptor] = extensions::package_extension_descriptors();
-    // VESC passes loader metadata for this native package before registration.
-    lifecycle::register_extension_from_image(info, lifecycle, descriptor).is_ok()
 }
 
 #[cfg(not(test))]
@@ -84,28 +68,5 @@ mod tests {
 
         assert!(super::package_lib_init(&mut info));
         assert!(info.stop_fun.is_some());
-    }
-}
-
-#[cfg(all(test, feature = "test-support"))]
-mod registration_tests {
-    use super::register_package_extensions;
-    use crate::extensions::package_extension_descriptors;
-    use vescpkg_rs::ffi::test_support::FakeBindings;
-    use vescpkg_rs::ffi::{self, PackageLifecycle};
-
-    #[test]
-    fn register_package_extensions_propagates_firmware_rejection() {
-        let lifecycle = PackageLifecycle::new(FakeBindings::rejecting());
-        let info = ffi::LibInfo {
-            stop_fun: None,
-            arg: core::ptr::null_mut(),
-            base_addr: 0x2000,
-        };
-        let [descriptor] = package_extension_descriptors();
-
-        assert!(!register_package_extensions(&info, &lifecycle));
-        assert_eq!(lifecycle.bindings().add_calls.get(), 1);
-        assert_eq!(descriptor.name(), package_extension_descriptors()[0].name());
     }
 }

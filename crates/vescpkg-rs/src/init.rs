@@ -61,6 +61,30 @@ impl PackageStart {
         }
         crate::install_loader_state(self.info, stop_handler, state)
     }
+
+    /// Register extension descriptors using loader metadata for this package image.
+    pub fn register_extensions_with<B: crate::LbmBindings>(
+        &mut self,
+        lifecycle: &crate::PackageLifecycle<B>,
+        descriptors: impl IntoIterator<Item = crate::ExtensionDescriptor>,
+    ) -> bool {
+        let Some(info) = self.loader_info_mut() else {
+            return false;
+        };
+        lifecycle
+            .register_extensions_from_image(ffi::NativeImage::from_info(info), descriptors)
+            .is_ok()
+    }
+
+    /// Register extension descriptors with the live firmware bindings.
+    #[cfg(all(not(test), target_arch = "arm"))]
+    pub fn register_extensions(
+        &mut self,
+        descriptors: impl IntoIterator<Item = crate::ExtensionDescriptor>,
+    ) -> bool {
+        let lifecycle = crate::PackageLifecycle::new(crate::RealBindings);
+        self.register_extensions_with(&lifecycle, descriptors)
+    }
 }
 
 /// One startup phase for a firmware package.
@@ -272,5 +296,42 @@ mod tests {
         start.clear_loader_info();
         assert!(info.arg.is_null());
         assert!(info.stop_fun.is_none());
+    }
+
+    #[test]
+    fn package_start_registers_extensions_from_loader_metadata() {
+        use crate::test_support::{FakeBindings, stubs};
+
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0x2000,
+        };
+        let lifecycle = crate::PackageLifecycle::new(FakeBindings::new());
+        let mut start = super::PackageStart::from_raw(&mut info);
+        let descriptor =
+            crate::ExtensionDescriptor::new(c"ext-start-probe", stubs::extension_handler);
+
+        assert!(start.register_extensions_with(&lifecycle, [descriptor]));
+        assert_eq!(lifecycle.bindings().add_calls.get(), 1);
+        assert_eq!(
+            lifecycle.bindings().last_name.get(),
+            descriptor.name().as_ptr() as usize + 0x2000
+        );
+        assert_eq!(
+            lifecycle.bindings().last_handler.get(),
+            descriptor.handler() as usize + 0x2000
+        );
+
+        let mut rejected_info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0x2000,
+        };
+        let rejecting_lifecycle = crate::PackageLifecycle::new(FakeBindings::rejecting());
+        let mut rejecting_start = super::PackageStart::from_raw(&mut rejected_info);
+
+        assert!(!rejecting_start.register_extensions_with(&rejecting_lifecycle, [descriptor]));
+        assert_eq!(rejecting_lifecycle.bindings().add_calls.get(), 1);
     }
 }
