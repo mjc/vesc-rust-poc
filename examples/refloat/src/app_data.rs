@@ -48,10 +48,13 @@ use crate::config::*;
 
 mod balance_filter;
 mod custom_config;
+mod imu_callback;
 mod protocol;
 
 use self::balance_filter::RefloatBalanceFilter;
 pub use self::custom_config::register_refloat_custom_config;
+#[cfg(all(not(test), target_arch = "arm"))]
+pub use self::imu_callback::register_refloat_imu_callback;
 
 fn refloat_ticks_elapsed(now: u32, then: u32, seconds: u32) -> bool {
     now.wrapping_sub(then) >= seconds.saturating_mul(10_000)
@@ -296,74 +299,6 @@ pub fn register_refloat_app_data_callbacks(info: *mut ffi::LibInfo) -> bool {
     let lifecycle = RefloatAppDataLifecycle::new(vescpkg_rs::RealBindings);
     let handler = runtime_refloat_app_data_handler();
     unsafe { lifecycle.install_refloat_callbacks(info, handler) }.is_ok()
-}
-
-#[cfg(all(not(test), target_arch = "arm"))]
-unsafe extern "C" fn refloat_imu_read_callback(
-    acc: *mut f32,
-    gyro: *mut f32,
-    _mag: *mut f32,
-    dt: f32,
-) {
-    let Some(accel) = refloat_imu_vector(acc) else {
-        return;
-    };
-    let Some(gyro) = refloat_imu_vector(gyro) else {
-        return;
-    };
-    let Some(state) = (unsafe { refloat_state_from_arg() }) else {
-        return;
-    };
-    refloat_imu_callback_with_state(state, accel, gyro, dt);
-}
-
-#[cfg(test)]
-unsafe extern "C" fn refloat_imu_read_callback(
-    _acc: *mut f32,
-    _gyro: *mut f32,
-    _mag: *mut f32,
-    _dt: f32,
-) {
-}
-
-#[cfg(any(test, all(not(test), target_arch = "arm")))]
-fn refloat_imu_callback_with_state(
-    state: &mut RefloatAppDataState,
-    accel: [f32; 3],
-    gyro: [f32; 3],
-    dt: f32,
-) {
-    // C `imu_ref_callback` ignores mag and feeds gyro/accel/dt into
-    // `balance_filter_update` at `third_party/refloat/src/main.c:760-765`.
-    state.balance_filter.update(gyro, accel, dt);
-}
-
-#[cfg(all(not(test), target_arch = "arm"))]
-fn refloat_imu_vector(values: *mut f32) -> Option<[f32; 3]> {
-    if values.is_null() {
-        return None;
-    }
-    let values = unsafe { core::slice::from_raw_parts(values as *const f32, 3) };
-    Some([*values.get(0)?, *values.get(1)?, *values.get(2)?])
-}
-
-#[cfg(any(test, all(not(test), target_arch = "arm")))]
-fn register_refloat_imu_callback_with<B: ImuReadCallbackBindings>(bindings: &B) -> bool {
-    unsafe {
-        // C registers `imu_ref_callback` between thread startup and app-data
-        // registration at `third_party/refloat/src/main.c:2455-2457`.
-        bindings.set_imu_read_callback(refloat_imu_read_callback);
-    }
-    true
-}
-
-/// Register Refloat's IMU read callback.
-///
-/// Upstream registers `imu_ref_callback` at `third_party/refloat/src/main.c:2455`; that callback
-/// maintains the balance filter used by `imu_update` at `third_party/refloat/src/imu.c:35-41`.
-#[cfg(all(not(test), target_arch = "arm"))]
-pub fn register_refloat_imu_callback(_info: *mut ffi::LibInfo) -> bool {
-    register_refloat_imu_callback_with(&vescpkg_rs::RealBindings)
 }
 
 /// Allocate startup state and register Refloat app-data callbacks.
@@ -2066,18 +2001,6 @@ mod tests {
         assert_eq!(lifecycle.bindings().imu_read_callback_calls.get(), 1);
         assert_eq!(lifecycle.bindings().last_imu_read_callback.get(), 0);
         assert_eq!(lifecycle.bindings().custom_config_clear_calls.get(), 1);
-    }
-
-    #[test]
-    fn registers_imu_callback_like_refloat_startup() {
-        let bindings = RecordingAppDataBindings::accepting();
-
-        assert!(super::register_refloat_imu_callback_with(&bindings));
-
-        // Refloat registers `imu_ref_callback` during startup at
-        // `third_party/refloat/src/main.c:2455`.
-        assert_eq!(bindings.imu_read_callback_calls.get(), 1);
-        assert_ne!(bindings.last_imu_read_callback.get(), 0);
     }
 
     #[test]
@@ -5038,7 +4961,12 @@ mod tests {
             RefloatMode::Normal,
         ));
 
-        super::refloat_imu_callback_with_state(&mut state, [0.0, 0.0, 1.0], [0.0, 1.0, 0.0], 0.1);
+        super::imu_callback::refloat_imu_callback_with_state(
+            &mut state,
+            [0.0, 0.0, 1.0],
+            [0.0, 1.0, 0.0],
+            0.1,
+        );
         assert!(tick_refloat_state_and_handle_packet(
             &mut state,
             &lifecycle,
