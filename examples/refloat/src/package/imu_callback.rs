@@ -1,5 +1,5 @@
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
-use super::RefloatAppDataState;
+use super::RefloatPackageState;
 #[cfg(all(not(test), target_arch = "arm"))]
 use super::refloat_state_from_arg;
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
@@ -37,7 +37,7 @@ unsafe extern "C" fn refloat_imu_read_callback(
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 pub(super) fn refloat_imu_callback_with_state(
-    state: &mut RefloatAppDataState,
+    state: &mut RefloatPackageState,
     accel: [f32; 3],
     gyro: [f32; 3],
     dt: f32,
@@ -78,7 +78,7 @@ pub fn register_refloat_imu_callback(_info: *mut ffi::LibInfo) -> bool {
 #[cfg(test)]
 mod tests {
     use super::register_refloat_imu_callback_with;
-    use crate::app_data::test_support::RecordingAppDataBindings;
+    use crate::package::test_support::RecordingAppDataBindings;
 
     #[test]
     fn registers_imu_callback_like_refloat_startup() {

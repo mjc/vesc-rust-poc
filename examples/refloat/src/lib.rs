@@ -12,13 +12,13 @@
 #[cfg(test)]
 extern crate std;
 
-pub mod app_data;
 mod balance_loop;
 mod config;
 pub mod domain;
 pub mod extensions;
 pub mod init;
 mod motor_control;
+pub mod package;
 pub mod runtime;
 mod state_transition;
 

@@ -28,10 +28,10 @@ pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
     // `/Users/mjc/projects/refloat/src/main.c:2439-2449`, then registration at
     // `/Users/mjc/projects/refloat/src/main.c:2455-2459`.
     refloat_package_start(
-        || crate::app_data::install_refloat_app_data_state(info),
+        || crate::package::install_refloat_package_state(info),
         || crate::runtime::start_refloat_runtime_threads(info),
-        || crate::app_data::register_refloat_imu_callback(info),
-        || crate::app_data::register_refloat_app_data_callbacks(info),
+        || crate::package::register_refloat_imu_callback(info),
+        || crate::package::register_refloat_app_data_callbacks(info),
         || unsafe { crate::extensions::register_refloat_loader_extensions(info) },
     )
 }

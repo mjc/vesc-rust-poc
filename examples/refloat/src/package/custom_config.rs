@@ -1,4 +1,4 @@
-use super::RefloatAppDataState;
+use super::RefloatPackageState;
 #[cfg(all(not(test), target_arch = "arm"))]
 use super::{loaded_image_base, refloat_state_from_arg};
 use crate::config::{REFLOAT_CONFIG_XML, REFLOAT_DEFAULT_CONFIG};
@@ -26,7 +26,7 @@ unsafe extern "C" fn refloat_get_cfg(buffer: *mut u8, is_default: bool) -> c_int
 fn refloat_get_cfg_with_state(
     buffer: *mut u8,
     is_default: bool,
-    state: Option<&RefloatAppDataState>,
+    state: Option<&RefloatPackageState>,
 ) -> c_int {
     if !is_default {
         // Upstream serializes `d->float_conf` at `third_party/refloat/src/main.c:2347-2350`;
@@ -55,13 +55,13 @@ fn copy_refloat_config(buffer: *mut u8, config: &[u8; 276]) -> c_int {
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
-unsafe fn runtime_refloat_config_state() -> Option<&'static RefloatAppDataState> {
+unsafe fn runtime_refloat_config_state() -> Option<&'static RefloatPackageState> {
     let state = unsafe { refloat_state_from_arg()? };
     Some(&*state)
 }
 
 #[cfg(any(test, not(target_arch = "arm")))]
-unsafe fn runtime_refloat_config_state() -> Option<&'static RefloatAppDataState> {
+unsafe fn runtime_refloat_config_state() -> Option<&'static RefloatPackageState> {
     None
 }
 
@@ -73,7 +73,7 @@ unsafe extern "C" fn refloat_set_cfg(buffer: *mut u8) -> bool {
 
 pub(super) fn refloat_set_cfg_with_state(
     buffer: *mut u8,
-    state: Option<&mut RefloatAppDataState>,
+    state: Option<&mut RefloatPackageState>,
 ) -> bool {
     let Some(buffer) = core::ptr::NonNull::new(buffer) else {
         return false;
@@ -93,12 +93,12 @@ pub(super) fn refloat_set_cfg_with_state(
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
-unsafe fn runtime_refloat_config_state_mut() -> Option<&'static mut RefloatAppDataState> {
+unsafe fn runtime_refloat_config_state_mut() -> Option<&'static mut RefloatPackageState> {
     unsafe { refloat_state_from_arg() }
 }
 
 #[cfg(any(test, not(target_arch = "arm")))]
-unsafe fn runtime_refloat_config_state_mut() -> Option<&'static mut RefloatAppDataState> {
+unsafe fn runtime_refloat_config_state_mut() -> Option<&'static mut RefloatPackageState> {
     None
 }
 
@@ -129,12 +129,12 @@ mod tests {
         refloat_get_cfg, refloat_get_cfg_with_state, refloat_get_cfg_xml,
         refloat_set_cfg_with_state,
     };
-    use crate::app_data::RefloatAppDataState;
-    use crate::app_data::test_support::{
-        sample_all_data_payloads, sample_all_data_payloads_with_ride_state,
-    };
     use crate::config::{REFLOAT_CONFIG_DISABLED_OFFSET, REFLOAT_CONFIG_META_IS_DEFAULT_OFFSET};
     use crate::domain::{RefloatMode, RefloatRunState};
+    use crate::package::RefloatPackageState;
+    use crate::package::test_support::{
+        sample_all_data_payloads, sample_all_data_payloads_with_ride_state,
+    };
 
     #[test]
     fn custom_config_xml_callback_returns_upstream_settings_blob() {
@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn custom_config_current_callback_reads_state_serialized_config() {
-        let state = RefloatAppDataState::new(sample_all_data_payloads());
+        let state = RefloatPackageState::new(sample_all_data_payloads());
         let mut buffer = [0u8; 276];
 
         let len = refloat_get_cfg_with_state(buffer.as_mut_ptr(), false, Some(&state));
@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn custom_config_set_callback_stores_serialized_config_in_state() {
-        let mut state = RefloatAppDataState::new(sample_all_data_payloads());
+        let mut state = RefloatPackageState::new(sample_all_data_payloads());
         let mut incoming = *include_bytes!("../conf/default_config.dat");
         incoming[4] = 0x12;
 
@@ -205,7 +205,7 @@ mod tests {
 
     #[test]
     fn custom_config_set_callback_resets_is_default_flag_like_refloat() {
-        let mut state = RefloatAppDataState::new(sample_all_data_payloads());
+        let mut state = RefloatPackageState::new(sample_all_data_payloads());
         let mut incoming = *include_bytes!("../conf/default_config.dat");
         incoming[REFLOAT_CONFIG_META_IS_DEFAULT_OFFSET] = 1;
 
@@ -226,7 +226,7 @@ mod tests {
 
     #[test]
     fn custom_config_set_callback_keeps_package_enabled_while_running_like_refloat() {
-        let mut state = RefloatAppDataState::new(sample_all_data_payloads());
+        let mut state = RefloatPackageState::new(sample_all_data_payloads());
         let mut incoming = *include_bytes!("../conf/default_config.dat");
         incoming[REFLOAT_CONFIG_DISABLED_OFFSET] = 1;
 
@@ -247,7 +247,7 @@ mod tests {
 
     #[test]
     fn custom_config_set_callback_rejects_special_modes_like_refloat() {
-        let mut state = RefloatAppDataState::new(sample_all_data_payloads_with_ride_state(
+        let mut state = RefloatPackageState::new(sample_all_data_payloads_with_ride_state(
             RefloatRunState::Ready,
             RefloatMode::HandTest,
         ));

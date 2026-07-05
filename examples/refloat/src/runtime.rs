@@ -4,7 +4,7 @@
 //! aux threads after loader metadata setup and before the registration tail.
 
 #[cfg(any(test, target_arch = "arm"))]
-use crate::app_data::RefloatAppDataState;
+use crate::package::RefloatPackageState;
 use vescpkg_rs::FirmwareThreadHandle;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::ThreadPriority;
@@ -89,7 +89,7 @@ impl Default for RefloatRuntimeThreads {
 #[cfg(any(test, target_arch = "arm"))]
 pub(crate) unsafe fn start_refloat_runtime_threads_with<B: ThreadBindings>(
     threads: &ThreadApi<B>,
-    state: &mut RefloatAppDataState,
+    state: &mut RefloatPackageState,
 ) -> bool {
     let arg = core::ptr::from_mut(state).cast::<c_void>();
     let Some(main_thread) = (unsafe {
@@ -125,7 +125,7 @@ pub(crate) unsafe fn start_refloat_runtime_threads_with<B: ThreadBindings>(
 #[cfg(any(test, target_arch = "arm"))]
 pub(crate) fn request_refloat_runtime_thread_termination_with<B: ThreadBindings>(
     threads: &ThreadApi<B>,
-    state: &RefloatAppDataState,
+    state: &RefloatPackageState,
 ) {
     let runtime_threads = state.runtime_threads();
     if let Some(aux_thread) = runtime_threads.aux_thread() {
@@ -159,7 +159,7 @@ pub(crate) fn tick_refloat_main_thread_with<
     I: ImuBindings,
     C: MotorControlBindings,
 >(
-    state: &mut RefloatAppDataState,
+    state: &mut RefloatPackageState,
     telemetry: &MotorTelemetryApi<M>,
     imu: &ImuApi<I>,
     motor: &MotorControlApi<C>,
@@ -210,7 +210,7 @@ pub fn start_refloat_runtime_threads(info: *mut ffi::LibInfo) -> bool {
     let Some(info) = (unsafe { info.as_mut() }) else {
         return false;
     };
-    let Some(state) = (unsafe { RefloatAppDataState::from_info_arg(info) }) else {
+    let Some(state) = (unsafe { RefloatPackageState::from_info_arg(info) }) else {
         return false;
     };
     let threads = ThreadApi::new(vescpkg_rs::RealThreadBindings);
@@ -221,7 +221,7 @@ pub fn start_refloat_runtime_threads(info: *mut ffi::LibInfo) -> bool {
 ///
 /// Mirrors upstream Refloat stop cleanup at `src/main.c:2404-2408`.
 #[cfg(all(not(test), target_arch = "arm"))]
-pub fn request_refloat_runtime_thread_termination(state: &RefloatAppDataState) {
+pub fn request_refloat_runtime_thread_termination(state: &RefloatPackageState) {
     let threads = ThreadApi::new(vescpkg_rs::RealThreadBindings);
     request_refloat_runtime_thread_termination_with(&threads, state);
 }
@@ -241,7 +241,7 @@ unsafe extern "C" fn refloat_main_thread(arg: *mut c_void) {
         let app_data = vescpkg_rs::RealBindings;
         let gpio = vescpkg_rs::GpioApi::new(vescpkg_rs::RealGpioBindings);
         run_refloat_main_thread_with(&threads, || {
-            let state = unsafe { &mut *arg.cast::<RefloatAppDataState>() };
+            let state = unsafe { &mut *arg.cast::<RefloatPackageState>() };
             let system_time_ticks = vescpkg_rs::AppDataBindings::system_time_ticks(&app_data);
             // C map: Refloat `footpad_sensor_update` reads ADC1/ADC2 at
             // `/Users/mjc/projects/refloat/src/footpad_sensor.c:28-31`; BLDC
@@ -283,8 +283,8 @@ unsafe extern "C" fn refloat_aux_thread(_arg: *mut c_void) {
 
 #[cfg(test)]
 mod tests {
-    use crate::app_data::RefloatAppDataState;
     use crate::domain::{FootpadSensorState, RefloatAllDataPayloads, RefloatRunState};
+    use crate::package::RefloatPackageState;
     use core::ffi::CStr;
     use vescpkg_rs::prelude::*;
     use vescpkg_rs::test_support::{
@@ -295,7 +295,7 @@ mod tests {
     fn refloat_runtime_spawns_main_with_rust_stack_and_aux_like_refloat_startup() {
         let bindings = FakeThreadBindings::with_spawn_results([0x1000, 0x2000]);
         let threads = ThreadApi::new(&bindings);
-        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
+        let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
 
         assert!(unsafe { super::start_refloat_runtime_threads_with(&threads, &mut state) });
 
@@ -332,7 +332,7 @@ mod tests {
     fn refloat_runtime_terminates_main_thread_when_aux_spawn_fails_like_refloat() {
         let bindings = FakeThreadBindings::with_spawn_results([0x1000, 0]);
         let threads = ThreadApi::new(&bindings);
-        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
+        let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
 
         assert!(!unsafe { super::start_refloat_runtime_threads_with(&threads, &mut state) });
 
@@ -347,7 +347,7 @@ mod tests {
     fn refloat_runtime_stop_terminates_aux_before_main_like_refloat() {
         let bindings = FakeThreadBindings::new();
         let threads = ThreadApi::new(&bindings);
-        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
+        let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
         let main_thread = unsafe { FirmwareThreadHandle::from_raw(0x1000 as *mut _) }
             .expect("nonnull main thread");
         let aux_thread = unsafe { FirmwareThreadHandle::from_raw(0x2000 as *mut _) }
@@ -381,7 +381,7 @@ mod tests {
                     ImuYaw::new(AngleRadians::from_radians(0.0)),
                 ),
         );
-        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
+        let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
 
         super::run_refloat_main_thread_with(&threads, || {
             state.refresh_runtime_state(&telemetry, &imu, 0);
@@ -417,7 +417,7 @@ mod tests {
         let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
         let imu = ImuApi::new(FakeImuBindings::new().with_startup_done(true));
         let motor = MotorControlApi::new(FakeMotorControlBindings::new());
-        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
+        let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
         state.request_motor_current(MotorCurrent::new(Current::from_amps(3.5)));
 
         super::run_refloat_main_thread_with(&threads, || {

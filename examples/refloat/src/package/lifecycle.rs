@@ -1,5 +1,5 @@
 use super::protocol::process_refloat_app_data;
-use super::{RefloatAppDataState, register_refloat_custom_config, stop_refloat_app_data};
+use super::{RefloatPackageState, register_refloat_custom_config, stop_refloat_app_data};
 use crate::domain::{RefloatAllDataPayloads, RefloatAllDataRequest};
 use vescpkg_rs::{
     AppDataBindings, AppDataHandlerRegistrationError, CustomConfigBindings,
@@ -7,11 +7,11 @@ use vescpkg_rs::{
 };
 
 /// Refloat app-data lifecycle wiring.
-pub struct RefloatAppDataLifecycle<B> {
+pub struct RefloatPackageLifecycle<B> {
     lifecycle: LoopbackLifecycle<B>,
 }
 
-impl<B: AppDataBindings> RefloatAppDataLifecycle<B> {
+impl<B: AppDataBindings> RefloatPackageLifecycle<B> {
     /// Build Refloat app-data lifecycle wiring from firmware bindings.
     pub fn new(bindings: B) -> Self {
         Self {
@@ -56,7 +56,7 @@ impl<B: AppDataBindings> RefloatAppDataLifecycle<B> {
     pub unsafe fn install_refloat_state(
         &self,
         info: *mut ffi::LibInfo,
-        state: &mut RefloatAppDataState,
+        state: &mut RefloatPackageState,
         handler: ffi::AppDataHandler,
     ) -> bool {
         if let Some(info) = unsafe { info.as_mut() } {
@@ -79,7 +79,7 @@ impl<B: AppDataBindings> RefloatAppDataLifecycle<B> {
     pub unsafe fn install_with_state(
         &self,
         info: *mut ffi::LibInfo,
-        state: &mut RefloatAppDataState,
+        state: &mut RefloatPackageState,
         handler: ffi::AppDataHandler,
     ) -> Result<(), AppDataHandlerRegistrationError> {
         let _ = unsafe { self.install_refloat_state(info, state, handler) };
@@ -133,7 +133,7 @@ impl<B: AppDataBindings> RefloatAppDataLifecycle<B> {
     }
 }
 
-impl<B: AppDataBindings + CustomConfigBindings> RefloatAppDataLifecycle<B> {
+impl<B: AppDataBindings + CustomConfigBindings> RefloatPackageLifecycle<B> {
     /// Install Refloat custom config and app-data callbacks.
     ///
     /// Upstream registers custom config before app-data at `third_party/refloat/src/main.c:2456-2457`,
@@ -164,7 +164,7 @@ impl<B: AppDataBindings + CustomConfigBindings> RefloatAppDataLifecycle<B> {
     pub unsafe fn install_refloat_callbacks_with_state(
         &self,
         info: *mut ffi::LibInfo,
-        state: &mut RefloatAppDataState,
+        state: &mut RefloatPackageState,
         handler: ffi::AppDataHandler,
     ) -> Result<(), AppDataHandlerRegistrationError> {
         let _ = unsafe { self.install_refloat_state(info, state, handler) };
