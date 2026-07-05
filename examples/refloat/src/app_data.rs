@@ -56,12 +56,6 @@ static REFLOAT_CONFIG_XML: [u8; 25_723] = *include_bytes!("conf/refloatconfig.da
 #[used]
 static REFLOAT_DEFAULT_CONFIG: [u8; 276] = *include_bytes!("conf/default_config.dat");
 const REFLOAT_CONFIG_SIGNATURE_BYTES: [u8; 4] = [0x90, 0xb7, 0xa9, 0xba];
-// Upstream defines `hertz` in `src/conf/settings.xml:223-246`, serializes it
-// after the first seven `SerOrder` float16 entries at
-// `src/conf/settings.xml:3916-3923`, and reads it as a big-endian uint16 via
-// `src/conf/buffer.c:188-191`.
-#[cfg(any(test, target_arch = "arm"))]
-const REFLOAT_CONFIG_HERTZ_OFFSET: usize = 18;
 // Upstream defines `disabled` in `src/conf/settings.xml:3890-3902`; its
 // `<ser>disabled</ser>` entry at `src/conf/settings.xml:4064` lands at byte
 // 243 in the 276-byte generated config image.
@@ -1035,18 +1029,6 @@ impl RefloatAppDataState {
         );
         self.all_data_payloads =
             RefloatAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4());
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn configured_loop_time_us(&self) -> u32 {
-        let hertz = u16::from_be_bytes([
-            self.serialized_config[REFLOAT_CONFIG_HERTZ_OFFSET],
-            self.serialized_config[REFLOAT_CONFIG_HERTZ_OFFSET + 1],
-        ]);
-        // Upstream `configure(d)` stores `1e6 / d->float_conf.hertz` at
-        // `src/main.c:190-191`, then `refloat_thd` sleeps that value at
-        // `src/main.c:1080`.
-        1_000_000 / u32::from(hertz)
     }
 
     /// Recover typed app-data state from VESC loader metadata.
@@ -2173,26 +2155,6 @@ mod tests {
                 .run_state(),
             RefloatRunState::Disabled,
         );
-    }
-
-    #[test]
-    fn app_data_configured_loop_time_uses_refloat_hertz_config() {
-        let mut incoming = *include_bytes!("conf/default_config.dat");
-        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
-
-        assert_eq!(state.configured_loop_time_us(), 1201);
-
-        incoming[super::REFLOAT_CONFIG_HERTZ_OFFSET..super::REFLOAT_CONFIG_HERTZ_OFFSET + 2]
-            .copy_from_slice(&500u16.to_be_bytes());
-        assert!(super::refloat_set_cfg_with_state(
-            incoming.as_mut_ptr(),
-            Some(&mut state),
-        ));
-
-        // Upstream generated serialization places `hertz` after the first
-        // seven float16 config fields; `configure(d)` then uses it as
-        // `1e6 / d->float_conf.hertz` at `src/main.c:190-191`.
-        assert_eq!(state.configured_loop_time_us(), 2000);
     }
 
     #[test]

@@ -7,17 +7,17 @@ load_sections:
   .program_ptr: match size=4 vma=0x0
   .init_fun: left size=56 vma=0x4 right size=12 vma=0x4
   .got: left size=20 vma=0x3c right size=0 vma=0x78
-  .text: left size=391 vma=0x50 right size=34521 vma=0x80
+  .text: left size=391 vma=0x50 right size=34473 vma=0x80
 debug_sections:
   .debug_abbrev: right_only size=1217 vma=0x0
-  .debug_aranges: right_only size=272 vma=0x0
-  .debug_frame: left size=228 vma=0x0 right size=1964 vma=0x0
-  .debug_info: right_only size=5220 vma=0x0
-  .debug_line: right_only size=6206 vma=0x0
-  .debug_ranges: right_only size=1504 vma=0x0
-  .debug_str: right_only size=5383 vma=0x0
-  .strtab: left size=286 vma=0x0 right size=3606 vma=0x0
-  .symtab: left size=592 vma=0x0 right size=3216 vma=0x0
+  .debug_aranges: right_only size=264 vma=0x0
+  .debug_frame: left size=228 vma=0x0 right size=1932 vma=0x0
+  .debug_info: right_only size=5192 vma=0x0
+  .debug_line: right_only size=6186 vma=0x0
+  .debug_ranges: right_only size=1496 vma=0x0
+  .debug_str: right_only size=5295 vma=0x0
+  .strtab: left size=286 vma=0x0 right size=3530 vma=0x0
+  .symtab: left size=592 vma=0x0 right size=3184 vma=0x0
 contract_symbols:
   ext_rust_probe_diag_v4: left_only
   init: both
@@ -29,4 +29,4 @@ contract_symbols:
   stop_refloat_app_data: right_only
   vesc_clear_loopback_app_data_handler: left_only
   vesc_register_loopback_app_data_handler: left_only
-defined_symbol_count: left=13 right=68
+defined_symbol_count: left=13 right=67
