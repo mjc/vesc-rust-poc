@@ -7,6 +7,8 @@ use crate::domain::RefloatAllDataPayloads;
 #[cfg(test)]
 use vescpkg_rs::CustomConfigBindings;
 #[cfg(any(test, target_arch = "arm"))]
+use vescpkg_rs::PackageStart;
+#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::{AllocBindings, AppDataBindings, FirmwareAllocator, ffi};
 
 /// Install source-startup Refloat state without registering callbacks.
@@ -17,13 +19,13 @@ use vescpkg_rs::{AllocBindings, AppDataBindings, FirmwareAllocator, ffi};
 ///
 #[cfg(test)]
 fn install_refloat_startup_state_with<B: AppDataBindings>(
-    info: *mut ffi::LibInfo,
+    start: &mut PackageStart,
     state: &mut RefloatPackageState,
     lifecycle: &RefloatPackageLifecycle<B>,
     handler: ffi::AppDataHandler,
 ) -> bool {
     *state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
-    lifecycle.install_refloat_state(info, state, handler)
+    lifecycle.install_refloat_state(start, state, handler)
 }
 
 /// Install source-startup Refloat state and callback registrations.
@@ -33,15 +35,15 @@ fn install_refloat_startup_state_with<B: AppDataBindings>(
 ///
 #[cfg(test)]
 fn install_refloat_startup_app_data_with<B: AppDataBindings + CustomConfigBindings>(
-    info: *mut ffi::LibInfo,
+    start: &mut PackageStart,
     state: &mut RefloatPackageState,
     lifecycle: &RefloatPackageLifecycle<B>,
     handler: ffi::AppDataHandler,
 ) -> bool {
-    if !install_refloat_startup_state_with(info, state, lifecycle, handler) {
+    if !install_refloat_startup_state_with(start, state, lifecycle, handler) {
         return false;
     }
-    lifecycle.install_refloat_callbacks(info, handler).is_ok()
+    lifecycle.install_refloat_callbacks(handler).is_ok()
 }
 
 /// Allocate and install source-startup Refloat state through firmware memory.
@@ -54,21 +56,21 @@ fn install_refloat_startup_app_data_with<B: AppDataBindings + CustomConfigBindin
 ///
 #[cfg(any(test, target_arch = "arm"))]
 fn allocate_refloat_startup_state_with<A: AllocBindings, B: AppDataBindings>(
-    info: *mut ffi::LibInfo,
+    start: &mut PackageStart,
     allocator: &FirmwareAllocator<'_, A>,
     lifecycle: &RefloatPackageLifecycle<B>,
     handler: ffi::AppDataHandler,
 ) -> bool {
     let Ok(mut allocation) = allocator.allocate_for::<RefloatPackageState>(1) else {
-        vescpkg_rs::clear_loader_info(info);
+        start.clear_loader_info();
         return false;
     };
     let state = allocation.write_first(RefloatPackageState::new(
         RefloatAllDataPayloads::source_startup(),
     ));
 
-    if !lifecycle.install_refloat_state(info, state, handler) {
-        vescpkg_rs::clear_loader_info(info);
+    if !lifecycle.install_refloat_state(start, state, handler) {
+        start.clear_loader_info();
         return false;
     }
 
@@ -88,17 +90,17 @@ fn allocate_refloat_startup_app_data_with<
     A: AllocBindings,
     B: AppDataBindings + CustomConfigBindings,
 >(
-    info: *mut ffi::LibInfo,
+    start: &mut PackageStart,
     allocator: &FirmwareAllocator<'_, A>,
     lifecycle: &RefloatPackageLifecycle<B>,
     handler: ffi::AppDataHandler,
 ) -> bool {
-    if !allocate_refloat_startup_state_with(info, allocator, lifecycle, handler) {
+    if !allocate_refloat_startup_state_with(start, allocator, lifecycle, handler) {
         return false;
     }
 
-    if lifecycle.install_refloat_callbacks(info, handler).is_err() {
-        vescpkg_rs::clear_loader_info(info);
+    if lifecycle.install_refloat_callbacks(handler).is_err() {
+        start.clear_loader_info();
         return false;
     }
 
@@ -110,12 +112,12 @@ fn allocate_refloat_startup_app_data_with<
 /// This matches the loader metadata step from upstream `third_party/refloat/src/main.c:2419-2432`;
 /// callback/LispBM registration is a separate step at `third_party/refloat/src/main.c:2455-2459`.
 #[cfg(all(not(test), target_arch = "arm"))]
-pub fn install_refloat_package_state(info: *mut ffi::LibInfo) -> bool {
+pub fn install_refloat_package_state(start: &mut PackageStart) -> bool {
     let alloc_bindings = vescpkg_rs::RealBindings;
     let allocator = vescpkg_rs::FirmwareAllocator::new(&alloc_bindings);
     let lifecycle = RefloatPackageLifecycle::new(vescpkg_rs::RealBindings);
     let handler = runtime_refloat_app_data_handler();
-    allocate_refloat_startup_state_with(info, &allocator, &lifecycle, handler)
+    allocate_refloat_startup_state_with(start, &allocator, &lifecycle, handler)
 }
 
 /// Register Refloat custom config and app-data callbacks.
@@ -124,10 +126,10 @@ pub fn install_refloat_package_state(info: *mut ffi::LibInfo) -> bool {
 /// thread startup at `third_party/refloat/src/main.c:2439-2449` and IMU setup at
 /// `third_party/refloat/src/main.c:2455`.
 #[cfg(all(not(test), target_arch = "arm"))]
-pub fn register_refloat_app_data_callbacks(info: *mut ffi::LibInfo) -> bool {
+pub fn register_refloat_app_data_callbacks(_start: &mut PackageStart) -> bool {
     let lifecycle = RefloatPackageLifecycle::new(vescpkg_rs::RealBindings);
     let handler = runtime_refloat_app_data_handler();
-    lifecycle.install_refloat_callbacks(info, handler).is_ok()
+    lifecycle.install_refloat_callbacks(handler).is_ok()
 }
 
 #[cfg(test)]
@@ -151,11 +153,12 @@ mod tests {
             base_addr: 0x2000,
         };
         let mut state = RefloatPackageState::new(sample_all_data_payloads());
+        let mut start = vescpkg_rs::PackageStart::from_raw(&mut info);
 
         extern "C" fn handler(_data: *mut u8, _len: u32) {}
 
         assert!(install_refloat_startup_app_data_with(
-            &mut info, &mut state, &lifecycle, handler
+            &mut start, &mut state, &lifecycle, handler
         ));
         assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
         assert_eq!(
@@ -181,11 +184,12 @@ mod tests {
         let mut backing = MaybeUninit::<RefloatPackageState>::uninit();
         let alloc_bindings = RecordingAllocBindings::new(backing.as_mut_ptr().cast());
         let allocator = FirmwareAllocator::new(&alloc_bindings);
+        let mut start = vescpkg_rs::PackageStart::from_raw(&mut info);
 
         extern "C" fn handler(_data: *mut u8, _len: u32) {}
 
         assert!(allocate_refloat_startup_app_data_with(
-            &mut info, &allocator, &lifecycle, handler
+            &mut start, &allocator, &lifecycle, handler
         ));
         assert_eq!(lifecycle.bindings().custom_config_register_calls.get(), 1);
         assert_eq!(alloc_bindings.malloc_calls.get(), 1);

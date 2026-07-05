@@ -15,26 +15,61 @@ unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
 }
 
 /// Install the package stop hook into loader metadata.
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn install_stop_hook(info: *mut ffi::LibInfo) -> bool {
-    if info.is_null() {
+fn install_stop_hook(info: *mut ffi::LibInfo) -> bool {
+    let Some(info) = crate::loader_info_mut(info) else {
         return false;
-    }
-
-    if let Some(info) = unsafe { info.as_mut() } {
-        info.stop_fun = Some(stop_package);
-    }
-
+    };
+    info.stop_fun = Some(stop_package);
     true
 }
 
+/// Safe startup context for package authors.
+pub struct PackageStart {
+    info: *mut ffi::LibInfo,
+}
+
+impl PackageStart {
+    /// Build a startup context from the firmware ABI pointer.
+    #[doc(hidden)]
+    pub fn from_raw(info: *mut ffi::LibInfo) -> Self {
+        Self { info }
+    }
+
+    /// Install the default package stop hook into loader metadata.
+    pub fn install_stop_hook(&mut self) -> bool {
+        install_stop_hook(self.info)
+    }
+
+    /// Borrow loader metadata when startup code needs loader-owned state.
+    pub fn loader_info_mut(&mut self) -> Option<&mut ffi::LibInfo> {
+        crate::loader_info_mut(self.info)
+    }
+
+    /// Clear package state and stop metadata after a startup failure.
+    pub fn clear_loader_info(&mut self) {
+        crate::clear_loader_info(self.info);
+    }
+
+    /// Store package state and a stop hook in loader metadata.
+    pub fn install_loader_state<T>(
+        &mut self,
+        stop_handler: ffi::StopHandler,
+        state: &mut T,
+    ) -> bool {
+        if self.loader_info_mut().is_none() {
+            return false;
+        }
+        crate::install_loader_state(self.info, stop_handler, state)
+    }
+}
+
 /// One startup phase for a firmware package.
-pub type PackageStartStep = fn(*mut ffi::LibInfo) -> bool;
+pub type PackageStartStep = fn(&mut PackageStart) -> bool;
 
 /// Run package startup phases in order, stopping at the first failure.
-pub fn start_package(info: *mut ffi::LibInfo, steps: &[PackageStartStep]) -> bool {
+pub fn start_package(start: &mut PackageStart, steps: &[PackageStartStep]) -> bool {
     for step in steps {
-        if !step(info) {
+        if !step(start) {
             return false;
         }
     }
@@ -57,7 +92,8 @@ macro_rules! package_start {
         #[inline(never)]
         #[unsafe(no_mangle)]
         pub extern "C" fn package_lib_init(info: *mut $crate::ffi::LibInfo) -> bool {
-            $start(info)
+            let mut start = $crate::PackageStart::from_raw(info);
+            $start(&mut start)
         }
 
         /// Host-linking loader shim for package crates.
@@ -65,7 +101,8 @@ macro_rules! package_start {
         #[inline(never)]
         #[unsafe(no_mangle)]
         pub extern "C" fn package_lib_init(info: *mut $crate::ffi::LibInfo) -> bool {
-            let _ = $crate::init::install_stop_hook(info);
+            let mut start = $crate::PackageStart::from_raw(info);
+            let _ = start.install_stop_hook();
             true
         }
 
@@ -183,25 +220,57 @@ mod tests {
 
         static CALLS: AtomicUsize = AtomicUsize::new(0);
 
-        fn first(_info: *mut ffi::LibInfo) -> bool {
+        fn first(_start: &mut super::PackageStart) -> bool {
             CALLS.fetch_add(1, Ordering::SeqCst);
             true
         }
 
-        fn second(_info: *mut ffi::LibInfo) -> bool {
+        fn second(_start: &mut super::PackageStart) -> bool {
             CALLS.fetch_add(10, Ordering::SeqCst);
             false
         }
 
-        fn skipped(_info: *mut ffi::LibInfo) -> bool {
+        fn skipped(_start: &mut super::PackageStart) -> bool {
             CALLS.fetch_add(100, Ordering::SeqCst);
             true
         }
 
         CALLS.store(0, Ordering::SeqCst);
         let steps: [super::PackageStartStep; 3] = [first, second, skipped];
+        let mut start = super::PackageStart::from_raw(core::ptr::null_mut());
 
-        assert!(!super::start_package(core::ptr::null_mut(), &steps));
+        assert!(!super::start_package(&mut start, &steps));
         assert_eq!(CALLS.load(Ordering::SeqCst), 11);
+    }
+
+    #[test]
+    fn package_start_context_installs_loader_state_without_raw_pointer() {
+        #[derive(Debug, PartialEq)]
+        struct State {
+            value: u32,
+        }
+
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0,
+        };
+        let mut state = State { value: 42 };
+        let mut start = super::PackageStart::from_raw(&mut info);
+
+        assert!(start.install_loader_state(super::stop_package, &mut state));
+        assert!(
+            start
+                .loader_info_mut()
+                .is_some_and(|info| info.stop_fun.is_some())
+        );
+        let loaded =
+            crate::loader_state_mut::<State>(start.loader_info_mut().expect("loader info"))
+                .expect("loader state");
+        assert_eq!(loaded.value, 42);
+
+        start.clear_loader_info();
+        assert!(info.arg.is_null());
+        assert!(info.stop_fun.is_none());
     }
 }

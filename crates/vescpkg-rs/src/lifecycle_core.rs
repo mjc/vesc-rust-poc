@@ -4,9 +4,7 @@ use core::ffi::CStr;
 
 use crate::bindings::{AppDataBindings, LbmBindings};
 use crate::extension::{ExtensionDescriptor, RegisterError};
-use vescpkg_rs_sys::{
-    AppDataHandler, ExtensionHandler, LbmValue, LibInfo, NativeImage, StopHandler,
-};
+use vescpkg_rs_sys::{AppDataHandler, ExtensionHandler, LbmValue, NativeImage, StopHandler};
 
 /// Thin wrapper around the LispBM binding set used by package code.
 pub struct LbmApi<B> {
@@ -162,11 +160,11 @@ impl<B: AppDataBindings> LoopbackLifecycle<B> {
     /// Install the package stop hook into loader metadata.
     pub fn install(
         &self,
-        info: *mut LibInfo,
+        start: &mut crate::PackageStart,
         stop_handler: StopHandler,
         _app_data_handler: AppDataHandler,
     ) -> bool {
-        if let Some(info) = crate::loader_info_mut(info) {
+        if let Some(info) = start.loader_info_mut() {
             info.stop_fun = Some(stop_handler);
         }
 

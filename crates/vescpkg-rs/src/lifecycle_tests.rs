@@ -479,11 +479,12 @@ fn loopback_lifecycle_install_sets_stop_hook() {
         arg: core::ptr::null_mut(),
         base_addr: 0x2000,
     };
+    let mut start = crate::PackageStart::from_raw(&mut info);
 
     unsafe extern "C" fn stop(_arg: *mut core::ffi::c_void) {}
     unsafe extern "C" fn app_data(_data: *mut u8, _len: u32) {}
 
-    assert!(lifecycle.install(&mut info, stop, app_data));
+    assert!(lifecycle.install(&mut start, stop, app_data));
     assert!(info.stop_fun.is_some());
 }
 
@@ -518,8 +519,9 @@ fn lifecycle_descriptor_installs_the_stop_hook() {
         arg: core::ptr::null_mut(),
         base_addr: 0x2000,
     };
+    let mut start = crate::PackageStart::from_raw(&mut info);
 
-    assert!(lifecycle.install(&mut info, stubs::stop_handler, stubs::app_data_handler));
+    assert!(lifecycle.install(&mut start, stubs::stop_handler, stubs::app_data_handler));
 
     assert_eq!(
         info.stop_fun.expect("stop hook") as *const () as usize,

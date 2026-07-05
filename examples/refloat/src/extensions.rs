@@ -167,8 +167,8 @@ pub fn register_refloat_loader_extensions_with<B: vescpkg_rs::LbmBindings>(
 /// reaches this after state install and runtime thread startup.
 ///
 #[cfg(all(not(test), target_arch = "arm"))]
-pub fn register_refloat_loader_extensions(info: *mut ffi::LibInfo) -> bool {
-    let Some(info) = vescpkg_rs::loader_info_mut(info) else {
+pub fn register_refloat_loader_extensions(start: &mut vescpkg_rs::PackageStart) -> bool {
+    let Some(info) = start.loader_info_mut() else {
         return false;
     };
     let lifecycle = vescpkg_rs::PackageLifecycle::new(vescpkg_rs::RealBindings);

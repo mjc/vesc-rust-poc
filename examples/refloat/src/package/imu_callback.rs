@@ -4,8 +4,6 @@ use super::RefloatPackageState;
 use super::refloat_state_from_arg;
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 use vescpkg_rs::ImuReadCallbackBindings;
-#[cfg(all(not(test), target_arch = "arm"))]
-use vescpkg_rs::ffi;
 
 #[cfg(all(not(test), target_arch = "arm"))]
 extern "C" fn refloat_imu_read_callback(acc: *mut f32, gyro: *mut f32, _mag: *mut f32, dt: f32) {
@@ -50,7 +48,7 @@ fn register_refloat_imu_callback_with<B: ImuReadCallbackBindings>(bindings: &B) 
 /// Upstream registers `imu_ref_callback` at `third_party/refloat/src/main.c:2455`; that callback
 /// maintains the balance filter used by `imu_update` at `third_party/refloat/src/imu.c:35-41`.
 #[cfg(all(not(test), target_arch = "arm"))]
-pub fn register_refloat_imu_callback(_info: *mut ffi::LibInfo) -> bool {
+pub fn register_refloat_imu_callback(_start: &mut vescpkg_rs::PackageStart) -> bool {
     register_refloat_imu_callback_with(&vescpkg_rs::RealBindings)
 }
 

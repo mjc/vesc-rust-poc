@@ -11,8 +11,6 @@
 
 #![cfg_attr(all(not(test), target_arch = "arm"), allow(dead_code))]
 
-#[cfg(any(test, all(not(test), target_arch = "arm")))]
-use vescpkg_rs::ffi;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::{AppDataBindings, ImuApi, ImuBindings, MotorTelemetryApi, MotorTelemetryBindings};
 
@@ -29,14 +27,14 @@ pub use self::lifecycle::RefloatPackageLifecycle;
 pub use self::state::RefloatPackageState;
 
 #[cfg(test)]
-pub(crate) fn start(info: *mut ffi::LibInfo) -> bool {
-    vescpkg_rs::start_package(info, &[])
+pub(crate) fn start(start: &mut vescpkg_rs::PackageStart) -> bool {
+    vescpkg_rs::start_package(start, &[])
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
-pub(crate) fn start(info: *mut ffi::LibInfo) -> bool {
+pub(crate) fn start(start: &mut vescpkg_rs::PackageStart) -> bool {
     vescpkg_rs::start_package(
-        info,
+        start,
         &[
             startup::install_refloat_package_state,
             crate::runtime::start_refloat_runtime_threads,

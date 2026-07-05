@@ -6,8 +6,6 @@
 #[cfg(any(test, target_arch = "arm"))]
 use crate::package::RefloatPackageState;
 use vescpkg_rs::FirmwareThreadHandle;
-#[cfg(all(not(test), target_arch = "arm"))]
-use vescpkg_rs::ffi;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::ThreadPriority;
 #[cfg(any(test, target_arch = "arm"))]
@@ -200,8 +198,8 @@ pub(crate) fn run_refloat_aux_thread_with<B: ThreadBindings>(threads: &ThreadApi
 /// Upstream performs this between loader metadata setup (`src/main.c:2431-2432`)
 /// and callback registration (`src/main.c:2455-2459`).
 #[cfg(all(not(test), target_arch = "arm"))]
-pub fn start_refloat_runtime_threads(info: *mut ffi::LibInfo) -> bool {
-    let Some(info) = vescpkg_rs::loader_info_mut(info) else {
+pub fn start_refloat_runtime_threads(start: &mut vescpkg_rs::PackageStart) -> bool {
+    let Some(info) = start.loader_info_mut() else {
         return false;
     };
     let Some(state) = RefloatPackageState::from_info_arg(info) else {

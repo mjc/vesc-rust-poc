@@ -21,13 +21,13 @@ pub use vescpkg_rs::{ffi, lifecycle};
 vescpkg_rs::package_start!(crate::start);
 
 #[cfg(all(not(test), target_arch = "arm"))]
-pub(crate) fn start(info: *mut ffi::LibInfo) -> bool {
-    crate::app_data::install_snake_app_data(info)
+pub(crate) fn start(start: &mut vescpkg_rs::PackageStart) -> bool {
+    crate::app_data::install_snake_app_data(start)
 }
 
 #[cfg(test)]
-pub(crate) fn start(info: *mut ffi::LibInfo) -> bool {
-    let _ = vescpkg_rs::init::install_stop_hook(info);
+pub(crate) fn start(start: &mut vescpkg_rs::PackageStart) -> bool {
+    let _ = start.install_stop_hook();
     true
 }
 

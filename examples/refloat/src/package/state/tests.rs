@@ -115,10 +115,11 @@ fn lifecycle_installs_app_data_handler_and_stop_cleanup() {
         arg: core::ptr::null_mut(),
         base_addr: 0x2000,
     };
+    let mut start = vescpkg_rs::PackageStart::from_raw(&mut info);
 
     unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
 
-    assert_eq!(lifecycle.install(&mut info, handler), Ok(()));
+    assert_eq!(lifecycle.install(&mut start, handler), Ok(()));
     assert!(info.stop_fun.is_some());
     assert_eq!(lifecycle.bindings().custom_config_register_calls.get(), 0);
     assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
@@ -4123,12 +4124,13 @@ fn lifecycle_installs_typed_refloat_state_for_handler_retrieval() {
         arg: core::ptr::null_mut(),
         base_addr: 0x2000,
     };
+    let mut start = vescpkg_rs::PackageStart::from_raw(&mut info);
     let mut state = RefloatPackageState::new(sample_all_data_payloads());
 
     unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
 
     assert_eq!(
-        lifecycle.install_with_state(&mut info, &mut state, handler),
+        lifecycle.install_with_state(&mut start, &mut state, handler),
         Ok(())
     );
     assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
@@ -4154,11 +4156,12 @@ fn lifecycle_installs_refloat_state_before_callbacks_like_refloat_startup() {
         arg: core::ptr::null_mut(),
         base_addr: 0x2000,
     };
+    let mut start = vescpkg_rs::PackageStart::from_raw(&mut info);
     let mut state = RefloatPackageState::new(sample_all_data_payloads());
 
     unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
 
-    assert!(lifecycle.install_refloat_state(&mut info, &mut state, handler));
+    assert!(lifecycle.install_refloat_state(&mut start, &mut state, handler));
     // Upstream sets `info->stop_fun` and `info->arg` at `third_party/refloat/src/main.c:2431-2432`,
     // before registering custom config/app-data/extensions at `third_party/refloat/src/main.c:2455-2459`.
     assert_eq!(lifecycle.bindings().handler_calls.get(), 0);

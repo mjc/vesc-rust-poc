@@ -187,11 +187,7 @@ unsafe extern "C" fn stop_snake_package(arg: *mut core::ffi::c_void) {
 
 /// Allocate and install the Snake package app-data state using the VESC native-library pattern.
 #[cfg(all(not(test), target_arch = "arm"))]
-pub fn install_snake_app_data(info: *mut vescpkg_rs::ffi::LibInfo) -> bool {
-    let Some(info) = (unsafe { info.as_mut() }) else {
-        return false;
-    };
-
+pub fn install_snake_app_data(start: &mut vescpkg_rs::PackageStart) -> bool {
     let bindings = vescpkg_rs::RealBindings;
     let allocator = vescpkg_rs::FirmwareAllocator::new(&bindings);
     let Ok(mut state) = allocator.allocate_for::<SnakeDeviceState>(1) else {
@@ -199,15 +195,20 @@ pub fn install_snake_app_data(info: *mut vescpkg_rs::ffi::LibInfo) -> bool {
     };
 
     unsafe { state.as_mut_ptr().write(SnakeDeviceState::new()) };
-    info.arg = state.as_mut_ptr().cast();
-    info.stop_fun = Some(stop_snake_package);
+    let state_ref = unsafe { state.as_mut_ptr().as_mut().expect("allocated state") };
+    if !start.install_loader_state(stop_snake_package, state_ref) {
+        return false;
+    }
 
+    let Some(info) = start.loader_info_mut() else {
+        start.clear_loader_info();
+        return false;
+    };
     if register_snake_app_data_handler(info) {
         let _ = state.into_raw();
         true
     } else {
-        info.arg = core::ptr::null_mut();
-        info.stop_fun = None;
+        start.clear_loader_info();
         false
     }
 }

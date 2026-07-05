@@ -48,7 +48,7 @@ pub use firmware::{
     install_loader_state, lbm_args, loader_info_mut, loader_state_mut,
 };
 pub use imu::{ImuApi, ImuBindings};
-pub use init::{PackageStartStep, start_package};
+pub use init::{PackageStart, PackageStartStep, start_package};
 pub use lifecycle_core::{
     AppDataHandlerRegistrationError, LbmApi, LoopbackLifecycle, PackageLifecycle,
 };
@@ -100,8 +100,8 @@ pub mod prelude {
         ExtensionNameError, FirmwareAllocation, FirmwareAllocator, FirmwareThreadHandle, GpioApi,
         GpioBindings, ImuApi, ImuBindings, LbmApi, LbmBindings, LoopbackLifecycle, MotorControlApi,
         MotorControlBindings, MotorTelemetryApi, MotorTelemetryBindings, PackageLifecycle,
-        PackageStartStep, ProtocolFrame, RegisterError, ThreadApi, ThreadBindings, WireCommand,
-        WireVersion, start_package,
+        PackageStart, PackageStartStep, ProtocolFrame, RegisterError, ThreadApi, ThreadBindings,
+        WireCommand, WireVersion, start_package,
     };
 
     #[cfg(not(test))]
@@ -161,8 +161,9 @@ mod tests {
         );
         let command = WireCommand::Ping;
         let switch = BrakeSwitch::Released;
+        let mut start = PackageStart::from_raw(core::ptr::null_mut());
 
-        assert!(start_package(core::ptr::null_mut(), &[]));
+        assert!(start_package(&mut start, &[]));
         assert_eq!(command, WireCommand::Ping);
         assert_eq!(switch, BrakeSwitch::Released);
         assert_eq!(telemetry.distance_abs().distance().as_meters(), 1.25);

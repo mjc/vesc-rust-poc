@@ -18,17 +18,16 @@ pub use vescpkg_rs::{ProtocolFrame, WireCommand, WireVersion, ble_loopback, ffi,
 vescpkg_rs::package_start!(crate::start);
 
 #[cfg(test)]
-pub(crate) fn start(info: *mut ffi::LibInfo) -> bool {
-    let _ = vescpkg_rs::init::install_stop_hook(info);
+pub(crate) fn start(start: &mut vescpkg_rs::PackageStart) -> bool {
+    let _ = start.install_stop_hook();
     true
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub(crate) fn start(info: *mut ffi::LibInfo) -> bool {
-    let _ = vescpkg_rs::init::install_stop_hook(info);
+pub(crate) fn start(start: &mut vescpkg_rs::PackageStart) -> bool {
+    let _ = start.install_stop_hook();
 
-    let Some(info) = (unsafe { info.as_ref() }) else {
+    let Some(info) = start.loader_info_mut() else {
         return true;
     };
 

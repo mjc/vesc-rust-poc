@@ -3,7 +3,7 @@ use super::{RefloatPackageState, register_refloat_custom_config, stop_refloat_ap
 use crate::domain::{RefloatAllDataPayloads, RefloatAllDataRequest};
 use vescpkg_rs::{
     AppDataBindings, AppDataHandlerRegistrationError, CustomConfigBindings,
-    ImuReadCallbackBindings, LoopbackLifecycle, ffi,
+    ImuReadCallbackBindings, LoopbackLifecycle, PackageStart, ffi,
 };
 
 /// Refloat app-data lifecycle wiring.
@@ -28,10 +28,12 @@ impl<B: AppDataBindings> RefloatPackageLifecycle<B> {
     ///
     pub fn install(
         &self,
-        info: *mut ffi::LibInfo,
+        start: &mut PackageStart,
         handler: ffi::AppDataHandler,
     ) -> Result<(), AppDataHandlerRegistrationError> {
-        let _ = self.lifecycle.install(info, stop_refloat_app_data, handler);
+        let _ = self
+            .lifecycle
+            .install(start, stop_refloat_app_data, handler);
         self.lifecycle.register_app_data_handler(handler)
     }
 
@@ -43,12 +45,12 @@ impl<B: AppDataBindings> RefloatPackageLifecycle<B> {
     ///
     pub fn install_refloat_state(
         &self,
-        info: *mut ffi::LibInfo,
+        start: &mut PackageStart,
         state: &mut RefloatPackageState,
         handler: ffi::AppDataHandler,
     ) -> bool {
         let _ = handler;
-        vescpkg_rs::install_loader_state(info, stop_refloat_app_data, state)
+        start.install_loader_state(stop_refloat_app_data, state)
     }
 
     /// Install Refloat state, stop cleanup, and app-data handler.
@@ -59,11 +61,11 @@ impl<B: AppDataBindings> RefloatPackageLifecycle<B> {
     ///
     pub fn install_with_state(
         &self,
-        info: *mut ffi::LibInfo,
+        start: &mut PackageStart,
         state: &mut RefloatPackageState,
         handler: ffi::AppDataHandler,
     ) -> Result<(), AppDataHandlerRegistrationError> {
-        let _ = self.install_refloat_state(info, state, handler);
+        let _ = self.install_refloat_state(start, state, handler);
         self.lifecycle.register_app_data_handler(handler)
     }
 
@@ -114,7 +116,6 @@ impl<B: AppDataBindings + CustomConfigBindings> RefloatPackageLifecycle<B> {
     ///
     pub fn install_refloat_callbacks(
         &self,
-        _info: *mut ffi::LibInfo,
         handler: ffi::AppDataHandler,
     ) -> Result<(), AppDataHandlerRegistrationError> {
         let _ = register_refloat_custom_config(self.bindings());
@@ -128,11 +129,11 @@ impl<B: AppDataBindings + CustomConfigBindings> RefloatPackageLifecycle<B> {
     ///
     pub fn install_refloat_callbacks_with_state(
         &self,
-        info: *mut ffi::LibInfo,
+        start: &mut PackageStart,
         state: &mut RefloatPackageState,
         handler: ffi::AppDataHandler,
     ) -> Result<(), AppDataHandlerRegistrationError> {
-        let _ = self.install_refloat_state(info, state, handler);
-        self.install_refloat_callbacks(info, handler)
+        let _ = self.install_refloat_state(start, state, handler);
+        self.install_refloat_callbacks(handler)
     }
 }
