@@ -72,9 +72,31 @@ pub trait MotorTelemetryBindings {
     fn input_voltage_filtered(&self) -> InputVoltage;
 }
 
+/// Motor-control operations backed by firmware slots.
+pub trait MotorControlBindings {
+    /// Reset the firmware motor-command safety timeout.
+    ///
+    /// Refloat v1.2.1 calls this before motor-control output at
+    /// `src/motor_control.c:92-93`.
+    fn timeout_reset(&self);
+    /// Keep current control enabled after a current command.
+    ///
+    /// Refloat v1.2.1 sets `0.05f` seconds before sending requested current at
+    /// `src/motor_control.c:96-99`.
+    fn set_current_off_delay(&self, seconds: f32);
+    /// Set motor current in amps.
+    ///
+    /// Refloat v1.2.1 sends the requested current at `src/motor_control.c:99`.
+    fn set_current(&self, current: MotorCurrent);
+}
+
 #[cfg(not(test))]
 /// Motor telemetry binding implementation that forwards to the live firmware ABI.
 pub struct RealMotorTelemetryBindings;
+
+#[cfg(not(test))]
+/// Motor-control binding implementation that forwards to the live firmware ABI.
+pub struct RealMotorControlBindings;
 
 #[cfg(not(test))]
 impl MotorTelemetryBindings for RealMotorTelemetryBindings {
@@ -174,6 +196,21 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
     }
 }
 
+#[cfg(not(test))]
+impl MotorControlBindings for RealMotorControlBindings {
+    fn timeout_reset(&self) {
+        unsafe { vescpkg_rs_sys::raw::timeout_reset() };
+    }
+
+    fn set_current_off_delay(&self, seconds: f32) {
+        unsafe { vescpkg_rs_sys::raw::mc_set_current_off_delay(seconds) };
+    }
+
+    fn set_current(&self, current: MotorCurrent) {
+        unsafe { vescpkg_rs_sys::raw::mc_set_current(current.current().as_amps()) };
+    }
+}
+
 fn duty_cycle_magnitude(raw_duty: f32) -> DutyCycle {
     let magnitude = if raw_duty.is_nan() {
         0.0
@@ -185,6 +222,11 @@ fn duty_cycle_magnitude(raw_duty: f32) -> DutyCycle {
 
 /// High-level motor telemetry API built on a binding implementation.
 pub struct MotorTelemetryApi<B> {
+    bindings: B,
+}
+
+/// High-level motor-control API built on a binding implementation.
+pub struct MotorControlApi<B> {
     bindings: B,
 }
 
@@ -297,10 +339,37 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
     }
 }
 
+impl<B: MotorControlBindings> MotorControlApi<B> {
+    /// Construct a new motor-control API wrapper.
+    pub fn new(bindings: B) -> Self {
+        Self { bindings }
+    }
+
+    /// Return the wrapped motor-control bindings.
+    pub fn bindings(&self) -> &B {
+        &self.bindings
+    }
+
+    /// Reset the firmware motor-command safety timeout.
+    pub fn timeout_reset(&self) {
+        self.bindings.timeout_reset();
+    }
+
+    /// Keep current control enabled after a current command.
+    pub fn set_current_off_delay(&self, seconds: f32) {
+        self.bindings.set_current_off_delay(seconds);
+    }
+
+    /// Set motor current.
+    pub fn set_current(&self, current: MotorCurrent) {
+        self.bindings.set_current(current);
+    }
+}
+
 #[cfg(any(test, feature = "test-support"))]
 /// Motor telemetry fake binding helpers exported for tests.
 pub mod test_support {
-    use super::MotorTelemetryBindings;
+    use super::{MotorControlBindings, MotorTelemetryBindings};
     use crate::types::{
         AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, DutyCycle,
         ElectricalSpeed, FirmwareFaultCode, InputVoltage, MosfetTemperature, MotorCurrent,
@@ -607,6 +676,65 @@ pub mod test_support {
             self.input_voltage_filtered_calls
                 .set(self.input_voltage_filtered_calls.get() + 1);
             self.input_voltage_filtered.get()
+        }
+    }
+
+    /// Fake motor-control bindings used by package tests.
+    pub struct FakeMotorControlBindings {
+        /// Number of timeout-reset calls observed.
+        pub timeout_reset_calls: Cell<usize>,
+        /// Number of current-off-delay calls observed.
+        pub set_current_off_delay_calls: Cell<usize>,
+        /// Number of current command calls observed.
+        pub set_current_calls: Cell<usize>,
+        current_off_delay_seconds: Cell<f32>,
+        current: Cell<MotorCurrent>,
+    }
+
+    impl Default for FakeMotorControlBindings {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl FakeMotorControlBindings {
+        /// Creates fake motor-control bindings with zeroed captured values.
+        pub fn new() -> Self {
+            Self {
+                timeout_reset_calls: Cell::new(0),
+                set_current_off_delay_calls: Cell::new(0),
+                set_current_calls: Cell::new(0),
+                current_off_delay_seconds: Cell::new(0.0),
+                current: Cell::new(MotorCurrent::new(Current::from_amps(0.0))),
+            }
+        }
+
+        /// Return the most recent current-off-delay seconds.
+        pub fn current_off_delay_seconds(&self) -> f32 {
+            self.current_off_delay_seconds.get()
+        }
+
+        /// Return the most recent current command.
+        pub fn current(&self) -> MotorCurrent {
+            self.current.get()
+        }
+    }
+
+    impl MotorControlBindings for FakeMotorControlBindings {
+        fn timeout_reset(&self) {
+            self.timeout_reset_calls
+                .set(self.timeout_reset_calls.get() + 1);
+        }
+
+        fn set_current_off_delay(&self, seconds: f32) {
+            self.set_current_off_delay_calls
+                .set(self.set_current_off_delay_calls.get() + 1);
+            self.current_off_delay_seconds.set(seconds);
+        }
+
+        fn set_current(&self, current: MotorCurrent) {
+            self.set_current_calls.set(self.set_current_calls.get() + 1);
+            self.current.set(current);
         }
     }
 }

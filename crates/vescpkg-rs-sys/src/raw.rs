@@ -579,6 +579,9 @@ mod slots {
     fn_slot!(mc_get_battery_level as unsafe extern "C" fn(*mut f32) -> f32);
     fn_slot!(mc_get_distance_abs as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_odometer as unsafe extern "C" fn() -> u64);
+    fn_slot!(mc_set_current as unsafe extern "C" fn(f32));
+    fn_slot!(mc_set_current_off_delay as unsafe extern "C" fn(f32));
+    fn_slot!(timeout_reset as unsafe extern "C" fn());
     optional_fn_slot!(foc_get_id as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_temp_fet_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_temp_motor_filtered as unsafe extern "C" fn() -> f32);
@@ -931,6 +934,44 @@ pub unsafe fn mc_get_tot_current_filtered() -> f32 {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_tot_current_in_filtered() -> f32 {
     unsafe { slots::mc_get_tot_current_in_filtered()() }
+}
+
+/// Reset the firmware motor-command safety timeout.
+///
+/// Refloat v1.2.1 calls this before every motor-control apply branch in
+/// `src/motor_control.c:92-93`; the VESC ABI slot is declared at
+/// `vesc_pkg_lib/vesc_c_if.h:510`.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn timeout_reset() {
+    unsafe { slots::timeout_reset()() }
+}
+
+/// Keep current control enabled after a current command.
+///
+/// Refloat v1.2.1 calls this before `mc_set_current` in
+/// `src/motor_control.c:96-99`; the VESC ABI slot is declared at
+/// `vesc_pkg_lib/vesc_c_if.h:478`.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn mc_set_current_off_delay(seconds: f32) {
+    unsafe { slots::mc_set_current_off_delay()(seconds) }
+}
+
+/// Set the motor current command in amps.
+///
+/// Refloat v1.2.1 sends requested current in `src/motor_control.c:96-99`; the
+/// VESC ABI slot is declared at `vesc_pkg_lib/vesc_c_if.h:440`.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn mc_set_current(amps: f32) {
+    unsafe { slots::mc_set_current()(amps) }
 }
 
 /// Return the current duty cycle.

@@ -8,7 +8,7 @@ load_sections:
   .init_fun: left size=56 vma=0x4 right size=12 vma=0x4
   .data: left size=0 vma=0x3c right size=104 vma=0x10
   .got: left size=20 vma=0x3c right size=0 vma=0x78
-  .text: left size=391 vma=0x50 right size=34857 vma=0x80
+  .text: left size=391 vma=0x50 right size=35241 vma=0x80
 debug_sections:
   .debug_abbrev: right_only size=1395 vma=0x0
   .debug_aranges: right_only size=304 vma=0x0

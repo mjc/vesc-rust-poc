@@ -43,7 +43,7 @@ pub use imu::{ImuApi, ImuBindings};
 pub use lifecycle_core::{
     AppDataHandlerRegistrationError, LbmApi, LoopbackLifecycle, PackageLifecycle,
 };
-pub use motor::{MotorTelemetryApi, MotorTelemetryBindings};
+pub use motor::{MotorControlApi, MotorControlBindings, MotorTelemetryApi, MotorTelemetryBindings};
 pub use thread::{FirmwareThreadHandle, ThreadApi, ThreadBindings};
 
 #[cfg(not(test))]
@@ -51,7 +51,7 @@ pub use bindings::RealBindings;
 #[cfg(not(test))]
 pub use imu::RealImuBindings;
 #[cfg(not(test))]
-pub use motor::RealMotorTelemetryBindings;
+pub use motor::{RealMotorControlBindings, RealMotorTelemetryBindings};
 #[cfg(not(test))]
 pub use thread::RealThreadBindings;
 
@@ -89,15 +89,15 @@ pub mod prelude {
         AllocBindings, AllocError, AppDataBindings, AppDataHandlerRegistrationError,
         CustomConfigBindings, ExtensionDescriptor, ExtensionNameError, FirmwareAllocation,
         FirmwareAllocator, FirmwareThreadHandle, GpioApi, GpioBindings, ImuApi, ImuBindings,
-        LbmApi, LbmBindings, LoopbackLifecycle, MotorTelemetryApi, MotorTelemetryBindings,
-        PackageLifecycle, ProtocolFrame, RegisterError, ThreadApi, ThreadBindings, WireCommand,
-        WireVersion,
+        LbmApi, LbmBindings, LoopbackLifecycle, MotorControlApi, MotorControlBindings,
+        MotorTelemetryApi, MotorTelemetryBindings, PackageLifecycle, ProtocolFrame, RegisterError,
+        ThreadApi, ThreadBindings, WireCommand, WireVersion,
     };
 
     #[cfg(not(test))]
     pub use crate::{
-        RealBindings, RealGpioBindings, RealImuBindings, RealMotorTelemetryBindings,
-        RealThreadBindings,
+        RealBindings, RealGpioBindings, RealImuBindings, RealMotorControlBindings,
+        RealMotorTelemetryBindings, RealThreadBindings,
     };
 }
 /// VESC-domain semantic wrappers over generic embedded units.
@@ -143,6 +143,7 @@ mod tests {
             crate::test_support::FakeMotorTelemetryBindings::new()
                 .with_distance_abs(TripDistance::new(Distance::from_meters(1.25))),
         );
+        let motor = MotorControlApi::new(crate::test_support::FakeMotorControlBindings::new());
         let imu = ImuApi::new(crate::test_support::FakeImuBindings::new());
         let _descriptor = ExtensionDescriptor::new(
             c"ext-rust-prelude",
@@ -154,6 +155,8 @@ mod tests {
         assert_eq!(command, WireCommand::Ping);
         assert_eq!(switch, BrakeSwitch::Released);
         assert_eq!(telemetry.distance_abs().distance().as_meters(), 1.25);
+        motor.set_current(MotorCurrent::new(Current::from_amps(2.5)));
+        assert_eq!(motor.bindings().current().current().as_amps(), 2.5);
         assert!(!imu.startup_done());
     }
 
