@@ -806,11 +806,11 @@ pub unsafe fn vesc_free(ptr: *mut c_void) {
 /// point to state that lives until the spawned thread terminates.
 pub unsafe fn vesc_spawn(
     entry: unsafe extern "C" fn(*mut c_void),
-    stack_words: usize,
+    stack_bytes: usize,
     name: *const c_char,
     arg: *mut c_void,
 ) -> LibThread {
-    unsafe { slots::spawn()(entry, stack_words, name, arg) }
+    unsafe { slots::spawn()(entry, stack_bytes, name, arg) }
 }
 
 /// Sleep the current firmware package thread for a number of microseconds.

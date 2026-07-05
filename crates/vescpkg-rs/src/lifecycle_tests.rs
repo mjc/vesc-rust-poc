@@ -65,14 +65,14 @@ fn register_extension_reports_outcome(
 }
 
 #[rstest]
-#[case::rebase_handler(c"ext-test", 0x31_usize, 0x2000_u32, "accept", true, 0x2031_usize)]
+#[case::rebase_name_and_handler(c"ext-test", 0x31_usize, 0x2000_u32, "accept", true, 0x2031_usize)]
 #[case::firmware_reject(c"ext-c-probe-v12", 0_usize, 0x2000_u32, "reject", false, 0_usize)]
 fn register_extension_from_image_reports_outcome(
     #[case] name: &'static core::ffi::CStr,
     #[case] handler_offset: usize,
     #[case] base_addr: u32,
     #[case] mode: &'static str,
-    #[case] check_last_handler: bool,
+    #[case] check_rebased_pointers: bool,
     #[case] expected_last_handler: usize,
 ) {
     let bindings = if mode == "reject" {
@@ -93,7 +93,7 @@ fn register_extension_from_image_reports_outcome(
         base_addr,
     };
 
-    // Test metadata models a loaded image whose handler offsets are intentionally rebased.
+    // Test metadata models a loaded image whose descriptor pointers are image-relative.
     let result = unsafe { register_extension_from_image(&info, &lifecycle, descriptor) };
 
     match mode {
@@ -101,7 +101,11 @@ fn register_extension_from_image_reports_outcome(
         "reject" => assert_eq!(result, Err(RegisterError::FirmwareRejected)),
         other => panic!("unexpected mode: {other}"),
     }
-    if check_last_handler {
+    if check_rebased_pointers {
+        assert_eq!(
+            lifecycle.bindings().last_name.get(),
+            name.as_ptr() as usize + base_addr as usize
+        );
         assert_eq!(
             lifecycle.bindings().last_handler.get(),
             expected_last_handler

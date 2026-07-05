@@ -9,6 +9,8 @@
 //! full `Data`; upstream shares `Data *` through `ARG` for app-data, custom
 //! config, BMS, threads, and stop cleanup.
 
+#![cfg_attr(all(not(test), target_arch = "arm"), allow(dead_code))]
+
 use crate::domain::{
     FootpadSensorState, REFLOAT_APP_DATA_PACKAGE_ID, REFLOAT_REALTIME_DATA_ITEMS,
     REFLOAT_REALTIME_RUNTIME_ITEMS, RefloatAllDataAttitude, RefloatAllDataBasePayload,
@@ -172,7 +174,7 @@ pub struct RefloatRealtimeDataResponse {
 impl RefloatRealtimeDataResponse {
     /// Return the encoded response bytes actually sent on the app-data wire.
     pub fn as_bytes(&self) -> &[u8] {
-        &self.bytes[..self.len]
+        self.bytes.get(..self.len).unwrap_or(&self.bytes)
     }
 }
 
@@ -209,8 +211,9 @@ impl RefloatAppDataResponse {
 ///
 /// Upstream dispatches the command byte in `on_command_received` at
 /// `src/main.c:2143-2301`.
+#[inline(never)]
 pub fn process_refloat_app_data(
-    payloads: RefloatAllDataPayloads,
+    payloads: &RefloatAllDataPayloads,
     bytes: &[u8],
 ) -> Option<RefloatAppDataResponse> {
     let [package_id, command_id, payload @ ..] = bytes else {
@@ -252,51 +255,53 @@ fn encode_refloat_info_response_v2(request_payload: &[u8]) -> [u8; REFLOAT_INFO_
     };
     let mut bytes = [0; REFLOAT_INFO_RESPONSE_V2_LEN];
     let mut index = 0;
-    bytes[index] = REFLOAT_APP_DATA_PACKAGE_ID.get();
-    index += 1;
-    bytes[index] = RefloatAppDataCommand::Info.id();
-    index += 1;
-    bytes[index] = 2;
-    index += 1;
-    bytes[index] = flags;
-    index += 1;
+    refloat_response_push_u8(&mut bytes, &mut index, REFLOAT_APP_DATA_PACKAGE_ID.get());
+    refloat_response_push_u8(&mut bytes, &mut index, RefloatAppDataCommand::Info.id());
+    refloat_response_push_u8(&mut bytes, &mut index, 2);
+    refloat_response_push_u8(&mut bytes, &mut index, flags);
     append_fixed_ascii::<20>(&mut bytes, &mut index, REFLOAT_PACKAGE_NAME);
-    bytes[index] = 1;
-    index += 1;
-    bytes[index] = 2;
-    index += 1;
-    bytes[index] = 1;
-    index += 1;
+    refloat_response_push_u8(&mut bytes, &mut index, 1);
+    refloat_response_push_u8(&mut bytes, &mut index, 2);
+    refloat_response_push_u8(&mut bytes, &mut index, 1);
     append_fixed_ascii::<20>(&mut bytes, &mut index, REFLOAT_VERSION_SUFFIX);
-    bytes[index..index + 4].copy_from_slice(&REFLOAT_GIT_HASH.to_be_bytes());
-    index += 4;
-    bytes[index..index + 4].copy_from_slice(&REFLOAT_SYSTEM_TICK_RATE_HZ.to_be_bytes());
-    index += 4;
+    refloat_response_push_bytes(&mut bytes, &mut index, &REFLOAT_GIT_HASH.to_be_bytes());
+    refloat_response_push_bytes(
+        &mut bytes,
+        &mut index,
+        &REFLOAT_SYSTEM_TICK_RATE_HZ.to_be_bytes(),
+    );
     // Upstream derives capabilities from data-recorder and LED config at
     // `src/main.c:2121-2132`; this Rust runtime has not ported either
     // capability yet, so the honest advertised capability mask is zero.
-    bytes[index..index + 4].copy_from_slice(&0u32.to_be_bytes());
-    index += 4;
+    refloat_response_push_bytes(&mut bytes, &mut index, &0u32.to_be_bytes());
     // Upstream currently sends zero `extra_flags` at `src/main.c:2134-2135`.
-    bytes[index] = 0;
+    refloat_response_push_u8(&mut bytes, &mut index, 0);
     bytes
 }
 
 fn append_fixed_ascii<const LEN: usize>(bytes: &mut [u8], index: &mut usize, value: &[u8]) {
-    let len = value.len().min(LEN);
-    bytes[*index..*index + len].copy_from_slice(&value[..len]);
-    *index += LEN;
+    let start = *index;
+    for (offset, byte) in value.iter().copied().take(LEN).enumerate() {
+        if let Some(slot) = bytes.get_mut(start.saturating_add(offset)) {
+            *slot = byte;
+        }
+    }
+    *index = start.saturating_add(LEN);
 }
 
+#[inline(never)]
 fn encode_refloat_realtime_data_ids_response() -> [u8; REFLOAT_REALTIME_DATA_IDS_RESPONSE_LEN] {
     let mut bytes = [0; REFLOAT_REALTIME_DATA_IDS_RESPONSE_LEN];
     let mut index = 0;
-    bytes[index] = REFLOAT_APP_DATA_PACKAGE_ID.get();
-    index += 1;
-    bytes[index] = RefloatAppDataCommand::RealtimeDataIds.id();
-    index += 1;
+    refloat_response_push_u8(&mut bytes, &mut index, REFLOAT_APP_DATA_PACKAGE_ID.get());
+    refloat_response_push_u8(
+        &mut bytes,
+        &mut index,
+        RefloatAppDataCommand::RealtimeDataIds.id(),
+    );
     // Upstream sends two counted string-ID sets from `cmd_realtime_data_ids`
-    // at `src/main.c:1876-1901`; QML consumes them at `ui.qml.in:927-934`.
+    // at `/Users/mjc/projects/refloat/src/main.c:1876-1901`; QML consumes them
+    // at `/Users/mjc/projects/refloat/ui.qml.in:927-934`.
     append_realtime_item_ids(&mut bytes, &mut index, &REFLOAT_REALTIME_DATA_ITEMS);
     append_realtime_item_ids(&mut bytes, &mut index, &REFLOAT_REALTIME_RUNTIME_ITEMS);
     bytes
@@ -307,18 +312,30 @@ fn append_realtime_item_ids<const N: usize>(
     index: &mut usize,
     items: &[RefloatRealtimeDataItem; N],
 ) {
-    bytes[*index] = N as u8;
-    *index += 1;
+    refloat_response_push_u8(bytes, index, N as u8);
     for id in items.iter().map(|item| item.id().as_bytes()) {
-        bytes[*index] = id.len() as u8;
-        *index += 1;
-        bytes[*index..*index + id.len()].copy_from_slice(id);
-        *index += id.len();
+        refloat_response_push_u8(bytes, index, id.len() as u8);
+        refloat_response_push_bytes(bytes, index, id);
     }
 }
 
+fn refloat_response_push_bytes(bytes: &mut [u8], index: &mut usize, values: &[u8]) {
+    values
+        .iter()
+        .copied()
+        .for_each(|byte| refloat_response_push_u8(bytes, index, byte));
+}
+
+fn refloat_response_push_u8(bytes: &mut [u8], index: &mut usize, value: u8) {
+    if let Some(slot) = bytes.get_mut(*index) {
+        *slot = value;
+    }
+    *index = index.saturating_add(1);
+}
+
+#[inline(never)]
 fn encode_refloat_get_realtime_data_response(
-    payloads: RefloatAllDataPayloads,
+    payloads: &RefloatAllDataPayloads,
 ) -> [u8; REFLOAT_GET_REALTIME_DATA_RESPONSE_LEN] {
     let mut bytes = [0; REFLOAT_GET_REALTIME_DATA_RESPONSE_LEN];
     let mut ind = 0;
@@ -418,8 +435,9 @@ fn encode_refloat_get_realtime_data_response(
     bytes
 }
 
+#[inline(never)]
 fn encode_refloat_realtime_data_response(
-    payloads: RefloatAllDataPayloads,
+    payloads: &RefloatAllDataPayloads,
     system_timestamp: SystemTimestamp,
 ) -> RefloatRealtimeDataResponse {
     let mut bytes = [0; REFLOAT_REALTIME_DATA_RESPONSE_CAPACITY];
@@ -515,7 +533,7 @@ fn encode_refloat_realtime_data_response(
     RefloatRealtimeDataResponse { bytes, len: ind }
 }
 
-fn realtime_value(payloads: RefloatAllDataPayloads, item: RefloatRealtimeDataItem) -> f32 {
+fn realtime_value(payloads: &RefloatAllDataPayloads, item: RefloatRealtimeDataItem) -> f32 {
     let base = payloads.base();
     let motor = base.motor();
     let attitude = base.attitude();
@@ -636,8 +654,10 @@ fn refloat_realtime_push_u16(buffer: &mut [u8], ind: &mut usize, value: u16) {
 }
 
 fn refloat_realtime_push_u8(buffer: &mut [u8], ind: &mut usize, value: u8) {
-    buffer[*ind] = value;
-    *ind += 1;
+    if let Some(slot) = buffer.get_mut(*ind) {
+        *slot = value;
+    }
+    *ind = ind.saturating_add(1);
 }
 
 #[cfg(any(test, target_arch = "arm"))]
@@ -809,11 +829,7 @@ pub(crate) unsafe fn allocate_refloat_startup_state_with<
         return false;
     };
     let state = allocation.as_mut_ptr();
-    unsafe {
-        state.write(RefloatAppDataState::new(
-            RefloatAllDataPayloads::source_startup(),
-        ));
-    }
+    unsafe { RefloatAppDataState::write_source_startup_to(state) };
     let state = unsafe { &mut *state };
 
     if !unsafe { lifecycle.install_refloat_state(info, state, handler) } {
@@ -1144,6 +1160,60 @@ impl RefloatAppDataState {
         }
     }
 
+    /// Initialize firmware-allocated startup state without a full stack copy.
+    ///
+    /// C map: upstream allocates `Data` at `src/main.c:2419`, zeroes it at
+    /// `src/main.c:2421`, and initializes fields through that heap pointer in
+    /// `data_init` at `src/main.c:1160-1205` before storing `info->arg` at
+    /// `src/main.c:2432`. This mirrors that pointer-first shape for the Rust
+    /// state allocation path.
+    ///
+    /// # Safety
+    ///
+    /// `state` must point to writable, properly aligned, uninitialized storage
+    /// for one `RefloatAppDataState`.
+    #[cfg(any(test, target_arch = "arm"))]
+    unsafe fn write_source_startup_to(state: *mut Self) {
+        unsafe {
+            core::ptr::addr_of_mut!((*state).all_data_payloads)
+                .write(RefloatAllDataPayloads::source_startup());
+            // C source defaults: `confparser_set_defaults_refloatconfig` and
+            // `confparser_serialize_refloatconfig` feed startup config at
+            // `src/main.c:1160-1185`.
+            core::ptr::addr_of_mut!((*state).serialized_config).write(REFLOAT_DEFAULT_CONFIG);
+            core::ptr::addr_of_mut!((*state).runtime_threads).write(RefloatRuntimeThreads::empty());
+            core::ptr::addr_of_mut!((*state).motor_control).write(RefloatMotorControl::new());
+            core::ptr::addr_of_mut!((*state).traction_control).write(false);
+            core::ptr::addr_of_mut!((*state).pid_integral_current).write(0.0);
+            core::ptr::addr_of_mut!((*state).pid_kp_brake_scale).write(1.0);
+            core::ptr::addr_of_mut!((*state).pid_kp2_brake_scale).write(1.0);
+            core::ptr::addr_of_mut!((*state).pid_kp_accel_scale).write(1.0);
+            core::ptr::addr_of_mut!((*state).pid_kp2_accel_scale).write(1.0);
+            core::ptr::addr_of_mut!((*state).softstart_pid_limit).write(100.0);
+            core::ptr::addr_of_mut!((*state).reverse_total_erpm).write(0.0);
+            core::ptr::addr_of_mut!((*state).motor_last_erpm).write(0.0);
+            core::ptr::addr_of_mut!((*state).motor_acceleration).write(0.0);
+            core::ptr::addr_of_mut!((*state).motor_accel_history).write([0.0; 40]);
+            core::ptr::addr_of_mut!((*state).motor_accel_idx).write(0);
+            core::ptr::addr_of_mut!((*state).remote_input).write(0.0);
+            core::ptr::addr_of_mut!((*state).rc_current).write(0.0);
+            core::ptr::addr_of_mut!((*state).rc_steps).write(0);
+            core::ptr::addr_of_mut!((*state).rc_counter).write(0);
+            core::ptr::addr_of_mut!((*state).rc_current_target_deciamps).write(0);
+            core::ptr::addr_of_mut!((*state).engage_ticks).write(0);
+            core::ptr::addr_of_mut!((*state).disengage_ticks).write(0);
+            core::ptr::addr_of_mut!((*state).fault_switch_ticks).write(0);
+            core::ptr::addr_of_mut!((*state).fault_switch_half_ticks).write(0);
+            core::ptr::addr_of_mut!((*state).reverse_ticks).write(0);
+            core::ptr::addr_of_mut!((*state).fault_angle_pitch_ticks).write(0);
+            core::ptr::addr_of_mut!((*state).fault_angle_roll_ticks).write(0);
+            core::ptr::addr_of_mut!((*state).motor_current_max)
+                .write(MotorCurrent::new(Current::from_amps(100.0)));
+            core::ptr::addr_of_mut!((*state).motor_current_min)
+                .write(MotorCurrent::new(Current::from_amps(100.0)));
+        }
+    }
+
     /// Return the current all-data payload snapshot.
     pub const fn all_data_payloads(self) -> RefloatAllDataPayloads {
         self.all_data_payloads
@@ -1190,32 +1260,57 @@ impl RefloatAppDataState {
         &self.serialized_config
     }
 
+    fn config_byte(&self, offset: usize) -> u8 {
+        let Some(byte) = self.serialized_config.get(offset) else {
+            return 0;
+        };
+        *byte
+    }
+
+    fn config_be_u16(&self, offset: usize) -> u16 {
+        u16::from_be_bytes([self.config_byte(offset), self.config_byte(offset + 1)])
+    }
+
+    fn config_scaled_i16(&self, offset: usize, scale: f32) -> f32 {
+        refloat_read_scaled_i16(self.config_be_u16(offset).to_be_bytes(), scale)
+    }
+
+    fn set_config_byte(config: &mut [u8; 276], offset: usize, value: u8) -> bool {
+        let Some(byte) = config.get_mut(offset) else {
+            return false;
+        };
+        *byte = value;
+        true
+    }
+
     fn store_serialized_config(&mut self, config: &[u8]) -> bool {
         let Ok(config) = <&[u8; 276]>::try_from(config) else {
             return false;
         };
-        if config[..4] != REFLOAT_CONFIG_SIGNATURE_BYTES {
+        if !config.starts_with(&REFLOAT_CONFIG_SIGNATURE_BYTES) {
             return false;
         }
 
         let ride_state = self.all_data_payloads.base().status().ride_state();
         // Upstream refuses VESC Tool writes outside `MODE_NORMAL` before
-        // deserializing/storing at `src/main.c:2362-2368`.
+        // deserializing/storing at `/Users/mjc/projects/refloat/src/main.c:2362-2368`.
         if !matches!(ride_state.mode(), RefloatMode::Normal) {
             return false;
         }
 
         let mut config = *config;
         // Upstream clears `d->float_conf.disabled` while running at
-        // `src/main.c:2369-2372`; `disabled` is serialized from
-        // `src/conf/settings.xml:3890-3902` at byte 243.
+        // `/Users/mjc/projects/refloat/src/main.c:2369-2372`; `disabled` is
+        // serialized from `/Users/mjc/projects/refloat/src/conf/settings.xml:3890-3902`
+        // at byte 243.
         if matches!(ride_state.run_state(), RefloatRunState::Running) {
-            config[REFLOAT_CONFIG_DISABLED_OFFSET] = 0;
+            Self::set_config_byte(&mut config, REFLOAT_CONFIG_DISABLED_OFFSET, 0);
         }
         // Upstream clears `d->float_conf.meta.is_default` for every write at
-        // `src/main.c:2375-2377`; `meta.is_default` is serialized from
-        // `src/conf/settings.xml:3903-3914` at byte 275.
-        config[REFLOAT_CONFIG_META_IS_DEFAULT_OFFSET] = 0;
+        // `/Users/mjc/projects/refloat/src/main.c:2375-2377`; `meta.is_default`
+        // is serialized from `/Users/mjc/projects/refloat/src/conf/settings.xml:3903-3914`
+        // at byte 275.
+        Self::set_config_byte(&mut config, REFLOAT_CONFIG_META_IS_DEFAULT_OFFSET, 0);
         self.serialized_config = config;
         true
     }
@@ -1225,11 +1320,12 @@ impl RefloatAppDataState {
         let base = payloads.base();
         let status = base.status();
         let ride_state = status.ride_state();
-        let disabled = self.serialized_config[REFLOAT_CONFIG_DISABLED_OFFSET] != 0;
+        let disabled = self.config_byte(REFLOAT_CONFIG_DISABLED_OFFSET) != 0;
         let run_state = match (ride_state.run_state(), disabled) {
             // Refloat applies `float_conf.disabled` from `configure(d)` at
-            // `src/main.c:184-190`; `state_set_disabled` keeps RUNNING alive
-            // and toggles DISABLED/STARTUP at `src/state.c:41-47`.
+            // `/Users/mjc/projects/refloat/src/main.c:184-190`; `state_set_disabled`
+            // keeps RUNNING alive and toggles DISABLED/STARTUP at
+            // `/Users/mjc/projects/refloat/src/state.c:41-47`.
             (RefloatRunState::Running, true) => RefloatRunState::Running,
             (RefloatRunState::Disabled, false) => RefloatRunState::Startup,
             (_, true) => RefloatRunState::Disabled,
@@ -1263,14 +1359,13 @@ impl RefloatAppDataState {
 
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn configured_loop_time_us(&self) -> u32 {
-        let hertz = u16::from_be_bytes([
-            self.serialized_config[REFLOAT_CONFIG_HERTZ_OFFSET],
-            self.serialized_config[REFLOAT_CONFIG_HERTZ_OFFSET + 1],
-        ]);
+        let hertz = self.config_be_u16(REFLOAT_CONFIG_HERTZ_OFFSET);
         // Upstream `configure(d)` stores `1e6 / d->float_conf.hertz` at
-        // `src/main.c:190-191`, then `refloat_thd` sleeps that value at
-        // `src/main.c:1080`.
-        1_000_000 / u32::from(hertz)
+        // `/Users/mjc/projects/refloat/src/main.c:190-191`, then `refloat_thd`
+        // sleeps that value at `/Users/mjc/projects/refloat/src/main.c:1080`.
+        // Target Rust must not panic if config bytes are corrupt, so keep the
+        // startup default instead of dividing by zero.
+        1_000_000 / u32::from(hertz.max(1))
     }
 
     /// Recover typed app-data state from VESC loader metadata.
@@ -1293,14 +1388,15 @@ impl RefloatAppDataState {
         if self.handle_charging_state_packet(bytes) {
             return true;
         }
-        lifecycle.send_response(self.all_data_payloads, bytes)
+        lifecycle.send_response(&self.all_data_payloads, bytes)
     }
 
-    /// Handle one app-data packet after refreshing the source-backed runtime slices.
+    /// Handle one app-data packet in the firmware callback context.
     ///
-    /// Upstream refreshes IMU angles in `src/imu.c:35-40` and gates
-    /// `STATE_STARTUP` -> `STATE_READY` on `imu_startup_done()` in
-    /// `src/main.c:833-838`. This does not model the full control loop.
+    /// Upstream `on_command_received` dispatches commands at
+    /// `/Users/mjc/projects/refloat/src/main.c:2143-2225`; the main
+    /// `refloat_thd` owns `time_update`, `imu_update`, `motor_data_update`, and
+    /// control-loop transitions at `/Users/mjc/projects/refloat/src/main.c:772-1080`.
     pub fn handle_packet_with_runtime<
         B: AppDataBindings,
         M: MotorTelemetryBindings,
@@ -1309,10 +1405,12 @@ impl RefloatAppDataState {
         &mut self,
         lifecycle: &RefloatAppDataLifecycle<B>,
         telemetry: &MotorTelemetryApi<M>,
-        imu: &ImuApi<I>,
+        _imu: &ImuApi<I>,
         bytes: &[u8],
     ) -> bool {
-        self.refresh_runtime_state(telemetry, imu, lifecycle.bindings().system_time_ticks());
+        #[cfg(all(not(test), not(target_arch = "arm")))]
+        self.refresh_runtime_state(telemetry, _imu, lifecycle.bindings().system_time_ticks());
+
         self.handle_packet_with_telemetry(lifecycle, telemetry, bytes)
     }
 
@@ -1334,6 +1432,27 @@ impl RefloatAppDataState {
         self.refresh_config_runtime_state();
         self.refresh_motor_runtime_state(telemetry);
         self.refresh_imu_runtime_state(imu, system_time_ticks);
+    }
+
+    /// Refresh the target boot/runtime snapshot without running experimental control logic.
+    ///
+    /// C map: this keeps the pre-control ARM shape while VESCR-213's richer
+    /// state machine is being re-sliced into the C order from
+    /// `/Users/mjc/projects/refloat/src/main.c:772-1080`. It mirrors the older
+    /// Rust runtime path that booted on hardware: config disabled gate,
+    /// `motor_data_update` fields from `/Users/mjc/projects/refloat/src/motor_data.c:108-145`,
+    /// and the `STATE_STARTUP` -> `STATE_READY` IMU gate from
+    /// `/Users/mjc/projects/refloat/src/main.c:833-838`.
+    #[cfg(any(test, target_arch = "arm"))]
+    #[inline(never)]
+    pub(crate) fn refresh_boot_runtime_state<M: MotorTelemetryBindings, I: ImuBindings>(
+        &mut self,
+        telemetry: &MotorTelemetryApi<M>,
+        imu: &ImuApi<I>,
+    ) {
+        self.refresh_config_runtime_state();
+        self.refresh_boot_motor_runtime_state(telemetry);
+        self.refresh_boot_imu_runtime_state(imu);
     }
 
     /// Handle one app-data packet after refreshing live telemetry fields.
@@ -1391,7 +1510,7 @@ impl RefloatAppDataState {
                     Ok(RefloatAppDataCommand::Info | RefloatAppDataCommand::RealtimeDataIds)
                 )
         ) {
-            return lifecycle.send_response(self.all_data_payloads, bytes);
+            return lifecycle.send_response(&self.all_data_payloads, bytes);
         }
 
         if matches!(
@@ -1417,7 +1536,7 @@ impl RefloatAppDataState {
             let system_timestamp = SystemTimestamp::new(TimestampTicks::from_ticks(
                 lifecycle.bindings().system_time_ticks(),
             ));
-            let response = encode_refloat_realtime_data_response(payloads, system_timestamp);
+            let response = encode_refloat_realtime_data_response(&payloads, system_timestamp);
             return lifecycle.send_response_bytes(response.as_bytes());
         }
 
@@ -1445,7 +1564,192 @@ impl RefloatAppDataState {
         } else {
             payloads
         };
-        lifecycle.send_all_data_response(payloads, request)
+        lifecycle.send_all_data_response(&payloads, request)
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    fn refresh_boot_motor_runtime_state<M: MotorTelemetryBindings>(
+        &mut self,
+        telemetry: &MotorTelemetryApi<M>,
+    ) {
+        let payloads = self.all_data_payloads;
+        let base = payloads.base();
+        let motor = base.motor();
+        // Boot-safe target path from the last known booting runtime slice:
+        // upstream `motor_data_update` reads these fields at
+        // `/Users/mjc/projects/refloat/src/motor_data.c:108-145`.
+        let previous_battery_current = motor.battery_current().current().as_amps();
+        let next_battery_current = telemetry.battery_current().current().as_amps();
+        let motor = RefloatAllDataMotorPayload::new(
+            BatteryVoltage::new(telemetry.input_voltage_filtered().voltage()),
+            telemetry.electrical_speed(),
+            telemetry.vehicle_speed(),
+            telemetry.motor_current(),
+            BatteryCurrent::new(Current::from_amps(
+                previous_battery_current + 0.01 * (next_battery_current - previous_battery_current),
+            )),
+            telemetry.duty_cycle_now(),
+            // Upstream compact all-data reads optional `VESC_IF->foc_get_id` at
+            // `/Users/mjc/projects/refloat/src/main.c:1364-1368`.
+            telemetry.foc_id_current().map_or(
+                RefloatFocIdCurrent::unavailable(),
+                RefloatFocIdCurrent::measured,
+            ),
+        );
+        let base = RefloatAllDataBasePayload::new(
+            base.balance_current(),
+            base.attitude(),
+            base.status(),
+            base.footpad(),
+            base.setpoints(),
+            base.booster_current(),
+            motor,
+        );
+        self.all_data_payloads =
+            RefloatAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4());
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    fn refresh_boot_imu_runtime_state<I: ImuBindings>(&mut self, imu: &ImuApi<I>) {
+        let payloads = self.all_data_payloads;
+        let base = payloads.base();
+        let status = base.status();
+        let ride_state = status.ride_state();
+        let resets_runtime_vars =
+            matches!(ride_state.run_state(), RefloatRunState::Startup) && imu.startup_done();
+        let run_state = match (ride_state.run_state(), imu.startup_done()) {
+            (RefloatRunState::Startup, true) => RefloatRunState::Ready,
+            (run_state, _) => run_state,
+        };
+        let flywheel_both_footpads_fault = matches!(
+            (run_state, ride_state.mode(), base.footpad().state()),
+            (
+                RefloatRunState::Running,
+                RefloatMode::Flywheel,
+                FootpadSensorState::Both
+            )
+        );
+        let reverse_stop_no_footpads_fault = matches!(
+            (
+                run_state,
+                ride_state.setpoint_adjustment(),
+                base.footpad().state()
+            ),
+            (
+                RefloatRunState::Running,
+                RefloatSetpointAdjustment::ReverseStop,
+                FootpadSensorState::None
+            )
+        );
+        let reverse_stop_pitch_fault = matches!(
+            (run_state, ride_state.setpoint_adjustment()),
+            (
+                RefloatRunState::Running,
+                RefloatSetpointAdjustment::ReverseStop
+            )
+        ) && imu.pitch().angle().as_radians().abs()
+            > 18.0_f32.to_radians();
+        let single_footpad = matches!(
+            base.footpad().state(),
+            FootpadSensorState::Left | FootpadSensorState::Right
+        );
+        let dual_switch = self.config_byte(REFLOAT_CONFIG_FAULT_IS_DUAL_SWITCH_OFFSET) != 0;
+        let can_engage = matches!(ride_state.charging(), RefloatChargingState::NotCharging)
+            && (matches!(base.footpad().state(), FootpadSensorState::Both)
+                || single_footpad && dual_switch
+                || matches!(ride_state.mode(), RefloatMode::Flywheel));
+        let darkride_can_engage_fault = matches!(
+            (run_state, ride_state.darkride()),
+            (RefloatRunState::Running, RefloatDarkRideState::Active)
+        ) && can_engage;
+        let state_stop_fault = flywheel_both_footpads_fault
+            || reverse_stop_no_footpads_fault
+            || reverse_stop_pitch_fault
+            || darkride_can_engage_fault;
+        let ready_engage = matches!(run_state, RefloatRunState::Ready)
+            && can_engage
+            && base.attitude().balance_pitch().angle().as_radians().abs()
+                < core::f32::consts::FRAC_PI_4
+            && imu.roll().angle().as_radians().abs() < core::f32::consts::FRAC_PI_4;
+        let stop_condition = if flywheel_both_footpads_fault {
+            // Upstream `check_faults(d)` stops RUNNING FLYWHEEL when both
+            // footpads are engaged at `/Users/mjc/projects/refloat/src/main.c:491-493`.
+            RefloatStopCondition::SwitchHalf
+        } else if reverse_stop_no_footpads_fault {
+            // Upstream stops reverse-stop mode on a fully open footpad at
+            // `/Users/mjc/projects/refloat/src/main.c:418-422`.
+            RefloatStopCondition::SwitchFull
+        } else if reverse_stop_pitch_fault {
+            // Upstream stops reverse-stop mode above 18 degrees pitch at
+            // `/Users/mjc/projects/refloat/src/main.c:423-426`.
+            RefloatStopCondition::ReverseStop
+        } else if darkride_can_engage_fault {
+            // Upstream darkride can be turned off by engaging foot sensors at
+            // `/Users/mjc/projects/refloat/src/main.c:387-390`.
+            RefloatStopCondition::SwitchHalf
+        } else if ready_engage {
+            RefloatStopCondition::None
+        } else {
+            ride_state.stop_condition()
+        };
+        let run_state = if state_stop_fault {
+            RefloatRunState::Ready
+        } else if ready_engage {
+            // Upstream READY engages when startup pitch/roll tolerances and
+            // `can_engage(d)` pass at `/Users/mjc/projects/refloat/src/main.c:1033-1036`.
+            RefloatRunState::Running
+        } else {
+            run_state
+        };
+        let setpoint_adjustment = if ready_engage {
+            RefloatSetpointAdjustment::Centering
+        } else {
+            ride_state.setpoint_adjustment()
+        };
+        let wheelslip = if state_stop_fault {
+            RefloatWheelSlipState::None
+        } else {
+            ride_state.wheelslip()
+        };
+        let ride_state = RefloatRideState::new(
+            run_state,
+            ride_state.mode(),
+            setpoint_adjustment,
+            stop_condition,
+        )
+        .with_charging(ride_state.charging())
+        .with_wheelslip(wheelslip)
+        .with_darkride(ride_state.darkride());
+        let (balance_current, setpoints) = if resets_runtime_vars {
+            // Upstream `STATE_STARTUP` calls `reset_runtime_vars(d)` before
+            // `STATE_READY` at `/Users/mjc/projects/refloat/src/main.c:833-837`.
+            let setpoint = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(
+                base.attitude().balance_pitch().angle().as_radians() * 180.0
+                    / core::f32::consts::PI,
+            ));
+            (
+                RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+                RefloatRealtimeRuntimeSetpoints::new(
+                    setpoint, setpoint, setpoint, setpoint, setpoint, setpoint,
+                ),
+            )
+        } else {
+            (base.balance_current(), base.setpoints())
+        };
+        if matches!(run_state, RefloatRunState::Running) {
+            self.request_motor_current(balance_current.current());
+        }
+        let base = RefloatAllDataBasePayload::new(
+            balance_current,
+            RefloatAllDataAttitude::new(base.attitude().balance_pitch(), imu.roll(), imu.pitch()),
+            RefloatAllDataStatus::new(ride_state, status.beep_reason()),
+            base.footpad(),
+            setpoints,
+            base.booster_current(),
+            base.motor(),
+        );
+        self.all_data_payloads =
+            RefloatAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4());
     }
 
     fn refresh_motor_runtime_state<M: MotorTelemetryBindings>(
@@ -1469,10 +1773,16 @@ impl RefloatAppDataState {
         self.motor_last_erpm = motor_erpm;
         // Upstream averages acceleration over `ACCEL_ARRAY_SIZE == 40` samples
         // in `src/motor_data.c:128-133`.
-        self.motor_acceleration +=
-            (current_acceleration - self.motor_accel_history[self.motor_accel_idx]) / 40.0;
-        self.motor_accel_history[self.motor_accel_idx] = current_acceleration;
-        self.motor_accel_idx = (self.motor_accel_idx + 1) % 40;
+        let accel_idx = self.motor_accel_idx.min(self.motor_accel_history.len() - 1);
+        let Some(previous_acceleration) = self.motor_accel_history.get(accel_idx).copied() else {
+            return;
+        };
+        self.motor_acceleration += (current_acceleration - previous_acceleration) / 40.0;
+        let Some(history) = self.motor_accel_history.get_mut(accel_idx) else {
+            return;
+        };
+        *history = current_acceleration;
+        self.motor_accel_idx = (accel_idx + 1) % 40;
         let motor = RefloatAllDataMotorPayload::new(
             BatteryVoltage::new(telemetry.input_voltage_filtered().voltage()),
             electrical_speed,
@@ -1578,8 +1888,7 @@ impl RefloatAppDataState {
                 FootpadSensorState::None,
                 mode
             ) if !matches!(mode, RefloatMode::Flywheel)
-        ) && self.serialized_config[REFLOAT_CONFIG_ENABLE_QUICKSTOP_OFFSET]
-            != 0
+        ) && self.config_byte(REFLOAT_CONFIG_ENABLE_QUICKSTOP_OFFSET) != 0
             && motor_erpm.abs() < 200.0
             && pitch.abs() > 14.0_f32.to_radians()
             && base.setpoints().remote().angle().as_degrees().abs() < 30.0
@@ -1588,29 +1897,22 @@ impl RefloatAppDataState {
             base.footpad().state(),
             FootpadSensorState::Left | FootpadSensorState::Right
         );
-        let dual_switch = self.serialized_config[REFLOAT_CONFIG_FAULT_IS_DUAL_SWITCH_OFFSET] != 0;
-        let simple_start =
-            self.serialized_config[REFLOAT_CONFIG_STARTUP_SIMPLESTART_ENABLED_OFFSET] != 0
-                && (refloat_ticks_elapsed(system_time_ticks, self.disengage_ticks, 2)
-                    || !refloat_ticks_elapsed(system_time_ticks, self.engage_ticks, 1));
+        let dual_switch = self.config_byte(REFLOAT_CONFIG_FAULT_IS_DUAL_SWITCH_OFFSET) != 0;
+        let simple_start = self.config_byte(REFLOAT_CONFIG_STARTUP_SIMPLESTART_ENABLED_OFFSET) != 0
+            && (refloat_ticks_elapsed(system_time_ticks, self.disengage_ticks, 2)
+                || !refloat_ticks_elapsed(system_time_ticks, self.engage_ticks, 1));
         let can_engage = matches!(ride_state.charging(), RefloatChargingState::NotCharging)
             && (matches!(base.footpad().state(), FootpadSensorState::Both)
                 || single_footpad && (dual_switch || simple_start)
                 || matches!(ride_state.mode(), RefloatMode::Flywheel));
-        let fault_adc_half_erpm = u16::from_be_bytes([
-            self.serialized_config[REFLOAT_CONFIG_FAULT_ADC_HALF_ERPM_OFFSET],
-            self.serialized_config[REFLOAT_CONFIG_FAULT_ADC_HALF_ERPM_OFFSET + 1],
-        ]) as f32;
-        let fault_delay_switch_half = u16::from_be_bytes([
-            self.serialized_config[REFLOAT_CONFIG_FAULT_DELAY_SWITCH_HALF_OFFSET],
-            self.serialized_config[REFLOAT_CONFIG_FAULT_DELAY_SWITCH_HALF_OFFSET + 1],
-        ]) as u32;
-        let fault_delay_switch_full = u16::from_be_bytes([
-            self.serialized_config[REFLOAT_CONFIG_FAULT_DELAY_SWITCH_FULL_OFFSET],
-            self.serialized_config[REFLOAT_CONFIG_FAULT_DELAY_SWITCH_FULL_OFFSET + 1],
-        ]) as u32;
+        let fault_adc_half_erpm =
+            f32::from(self.config_be_u16(REFLOAT_CONFIG_FAULT_ADC_HALF_ERPM_OFFSET));
+        let fault_delay_switch_half =
+            u32::from(self.config_be_u16(REFLOAT_CONFIG_FAULT_DELAY_SWITCH_HALF_OFFSET));
+        let fault_delay_switch_full =
+            u32::from(self.config_be_u16(REFLOAT_CONFIG_FAULT_DELAY_SWITCH_FULL_OFFSET));
         let switch_faults_disabled =
-            self.serialized_config[REFLOAT_CONFIG_FAULT_MOVING_FAULT_DISABLED_OFFSET] != 0
+            self.config_byte(REFLOAT_CONFIG_FAULT_MOVING_FAULT_DISABLED_OFFSET) != 0
                 && motor_erpm > fault_adc_half_erpm * 2.0
                 && imu.roll().angle().as_radians().abs() < 40.0_f32.to_radians();
         let full_switch_pending = matches!(run_state, RefloatRunState::Running)
@@ -1638,17 +1940,9 @@ impl RefloatAppDataState {
                 self.fault_switch_half_ticks,
                 fault_delay_switch_half,
             );
-        let fault_roll = refloat_read_scaled_i16(
-            [
-                self.serialized_config[REFLOAT_CONFIG_FAULT_ROLL_OFFSET],
-                self.serialized_config[REFLOAT_CONFIG_FAULT_ROLL_OFFSET + 1],
-            ],
-            10.0,
-        );
-        let fault_delay_roll = u16::from_be_bytes([
-            self.serialized_config[REFLOAT_CONFIG_FAULT_DELAY_ROLL_OFFSET],
-            self.serialized_config[REFLOAT_CONFIG_FAULT_DELAY_ROLL_OFFSET + 1],
-        ]) as u32;
+        let fault_roll = self.config_scaled_i16(REFLOAT_CONFIG_FAULT_ROLL_OFFSET, 10.0);
+        let fault_delay_roll =
+            u32::from(self.config_be_u16(REFLOAT_CONFIG_FAULT_DELAY_ROLL_OFFSET));
         let roll_fault_pending = matches!(run_state, RefloatRunState::Running)
             && imu.roll().angle().as_radians().abs() > fault_roll.to_radians();
         let roll_fault = roll_fault_pending
@@ -1657,17 +1951,9 @@ impl RefloatAppDataState {
                 self.fault_angle_roll_ticks,
                 fault_delay_roll,
             );
-        let fault_pitch = refloat_read_scaled_i16(
-            [
-                self.serialized_config[REFLOAT_CONFIG_FAULT_PITCH_OFFSET],
-                self.serialized_config[REFLOAT_CONFIG_FAULT_PITCH_OFFSET + 1],
-            ],
-            10.0,
-        );
-        let fault_delay_pitch = u16::from_be_bytes([
-            self.serialized_config[REFLOAT_CONFIG_FAULT_DELAY_PITCH_OFFSET],
-            self.serialized_config[REFLOAT_CONFIG_FAULT_DELAY_PITCH_OFFSET + 1],
-        ]) as u32;
+        let fault_pitch = self.config_scaled_i16(REFLOAT_CONFIG_FAULT_PITCH_OFFSET, 10.0);
+        let fault_delay_pitch =
+            u32::from(self.config_be_u16(REFLOAT_CONFIG_FAULT_DELAY_PITCH_OFFSET));
         let pitch_fault_pending = matches!(run_state, RefloatRunState::Running)
             && imu.pitch().angle().as_radians().abs() > fault_pitch.to_radians()
             && base.setpoints().remote().angle().as_degrees().abs() < 30.0;
@@ -1697,7 +1983,7 @@ impl RefloatAppDataState {
             matches!(
                 (run_state, ride_state.darkride()),
                 (RefloatRunState::Running, RefloatDarkRideState::Upright)
-            ) && self.serialized_config[REFLOAT_CONFIG_FAULT_DARKRIDE_ENABLED_OFFSET] != 0
+            ) && self.config_byte(REFLOAT_CONFIG_FAULT_DARKRIDE_ENABLED_OFFSET) != 0
                 && {
                     let roll = imu.roll().angle().as_radians().abs();
                     roll > 100.0_f32.to_radians() && roll < 135.0_f32.to_radians()
@@ -1715,20 +2001,10 @@ impl RefloatAppDataState {
             || roll_fault
             || pitch_fault
             || darkride_roll_fault;
-        let startup_pitch_tolerance = refloat_read_scaled_i16(
-            [
-                self.serialized_config[REFLOAT_CONFIG_STARTUP_PITCH_TOLERANCE_OFFSET],
-                self.serialized_config[REFLOAT_CONFIG_STARTUP_PITCH_TOLERANCE_OFFSET + 1],
-            ],
-            100.0,
-        );
-        let startup_roll_tolerance = refloat_read_scaled_i16(
-            [
-                self.serialized_config[REFLOAT_CONFIG_STARTUP_ROLL_TOLERANCE_OFFSET],
-                self.serialized_config[REFLOAT_CONFIG_STARTUP_ROLL_TOLERANCE_OFFSET + 1],
-            ],
-            100.0,
-        );
+        let startup_pitch_tolerance =
+            self.config_scaled_i16(REFLOAT_CONFIG_STARTUP_PITCH_TOLERANCE_OFFSET, 100.0);
+        let startup_roll_tolerance =
+            self.config_scaled_i16(REFLOAT_CONFIG_STARTUP_ROLL_TOLERANCE_OFFSET, 100.0);
         let ready_engage = matches!(run_state, RefloatRunState::Ready)
             && !ready_flywheel_stop
             && can_engage
@@ -1746,13 +2022,13 @@ impl RefloatAppDataState {
                 RefloatStopCondition::ReverseStop
             );
         let ready_push_start = matches!(run_state, RefloatRunState::Ready)
-            && self.serialized_config[REFLOAT_CONFIG_STARTUP_PUSHSTART_ENABLED_OFFSET] != 0
+            && self.config_byte(REFLOAT_CONFIG_STARTUP_PUSHSTART_ENABLED_OFFSET) != 0
             && motor_erpm.abs() > 1000.0
             && can_engage
             && base.attitude().balance_pitch().angle().as_radians().abs()
                 < core::f32::consts::FRAC_PI_4
             && imu.roll().angle().as_radians().abs() < core::f32::consts::FRAC_PI_4
-            && !(self.serialized_config[REFLOAT_CONFIG_FAULT_REVERSESTOP_ENABLED_OFFSET] != 0
+            && !(self.config_byte(REFLOAT_CONFIG_FAULT_REVERSESTOP_ENABLED_OFFSET) != 0
                 && motor_erpm < 0.0);
         let state_engage = ready_engage || ready_darkride_engage || ready_push_start;
         let traction_loss_detected = matches!(run_state, RefloatRunState::Running)
@@ -1942,90 +2218,22 @@ impl RefloatAppDataState {
                 // while SAT_REVERSESTOP is active at `src/main.c:522-525`.
                 self.reverse_total_erpm += motor_erpm;
             }
-            let kp = refloat_read_scaled_i16(
-                [
-                    self.serialized_config[REFLOAT_CONFIG_KP_OFFSET],
-                    self.serialized_config[REFLOAT_CONFIG_KP_OFFSET + 1],
-                ],
-                10.0,
-            );
-            let kp2 = refloat_read_scaled_i16(
-                [
-                    self.serialized_config[REFLOAT_CONFIG_KP2_OFFSET],
-                    self.serialized_config[REFLOAT_CONFIG_KP2_OFFSET + 1],
-                ],
-                10.0,
-            );
-            let ki = refloat_read_scaled_i16(
-                [
-                    self.serialized_config[REFLOAT_CONFIG_KI_OFFSET],
-                    self.serialized_config[REFLOAT_CONFIG_KI_OFFSET + 1],
-                ],
-                100000.0,
-            );
-            let kp_brake = refloat_read_scaled_i16(
-                [
-                    self.serialized_config[REFLOAT_CONFIG_KP_BRAKE_OFFSET],
-                    self.serialized_config[REFLOAT_CONFIG_KP_BRAKE_OFFSET + 1],
-                ],
-                100.0,
-            );
-            let kp2_brake = refloat_read_scaled_i16(
-                [
-                    self.serialized_config[REFLOAT_CONFIG_KP2_BRAKE_OFFSET],
-                    self.serialized_config[REFLOAT_CONFIG_KP2_BRAKE_OFFSET + 1],
-                ],
-                100.0,
-            );
-            let ki_limit = refloat_read_scaled_i16(
-                [
-                    self.serialized_config[REFLOAT_CONFIG_KI_LIMIT_OFFSET],
-                    self.serialized_config[REFLOAT_CONFIG_KI_LIMIT_OFFSET + 1],
-                ],
-                10.0,
-            );
-            let booster_angle = refloat_read_scaled_i16(
-                [
-                    self.serialized_config[REFLOAT_CONFIG_BOOSTER_ANGLE_OFFSET],
-                    self.serialized_config[REFLOAT_CONFIG_BOOSTER_ANGLE_OFFSET + 1],
-                ],
-                100.0,
-            );
-            let booster_ramp = refloat_read_scaled_i16(
-                [
-                    self.serialized_config[REFLOAT_CONFIG_BOOSTER_RAMP_OFFSET],
-                    self.serialized_config[REFLOAT_CONFIG_BOOSTER_RAMP_OFFSET + 1],
-                ],
-                100.0,
-            );
-            let booster_config_current = refloat_read_scaled_i16(
-                [
-                    self.serialized_config[REFLOAT_CONFIG_BOOSTER_CURRENT_OFFSET],
-                    self.serialized_config[REFLOAT_CONFIG_BOOSTER_CURRENT_OFFSET + 1],
-                ],
-                100.0,
-            );
-            let brkbooster_angle = refloat_read_scaled_i16(
-                [
-                    self.serialized_config[REFLOAT_CONFIG_BRKBOOSTER_ANGLE_OFFSET],
-                    self.serialized_config[REFLOAT_CONFIG_BRKBOOSTER_ANGLE_OFFSET + 1],
-                ],
-                100.0,
-            );
-            let brkbooster_ramp = refloat_read_scaled_i16(
-                [
-                    self.serialized_config[REFLOAT_CONFIG_BRKBOOSTER_RAMP_OFFSET],
-                    self.serialized_config[REFLOAT_CONFIG_BRKBOOSTER_RAMP_OFFSET + 1],
-                ],
-                100.0,
-            );
-            let brkbooster_config_current = refloat_read_scaled_i16(
-                [
-                    self.serialized_config[REFLOAT_CONFIG_BRKBOOSTER_CURRENT_OFFSET],
-                    self.serialized_config[REFLOAT_CONFIG_BRKBOOSTER_CURRENT_OFFSET + 1],
-                ],
-                100.0,
-            );
+            let kp = self.config_scaled_i16(REFLOAT_CONFIG_KP_OFFSET, 10.0);
+            let kp2 = self.config_scaled_i16(REFLOAT_CONFIG_KP2_OFFSET, 10.0);
+            let ki = self.config_scaled_i16(REFLOAT_CONFIG_KI_OFFSET, 100000.0);
+            let kp_brake = self.config_scaled_i16(REFLOAT_CONFIG_KP_BRAKE_OFFSET, 100.0);
+            let kp2_brake = self.config_scaled_i16(REFLOAT_CONFIG_KP2_BRAKE_OFFSET, 100.0);
+            let ki_limit = self.config_scaled_i16(REFLOAT_CONFIG_KI_LIMIT_OFFSET, 10.0);
+            let booster_angle = self.config_scaled_i16(REFLOAT_CONFIG_BOOSTER_ANGLE_OFFSET, 100.0);
+            let booster_ramp = self.config_scaled_i16(REFLOAT_CONFIG_BOOSTER_RAMP_OFFSET, 100.0);
+            let booster_config_current =
+                self.config_scaled_i16(REFLOAT_CONFIG_BOOSTER_CURRENT_OFFSET, 100.0);
+            let brkbooster_angle =
+                self.config_scaled_i16(REFLOAT_CONFIG_BRKBOOSTER_ANGLE_OFFSET, 100.0);
+            let brkbooster_ramp =
+                self.config_scaled_i16(REFLOAT_CONFIG_BRKBOOSTER_RAMP_OFFSET, 100.0);
+            let brkbooster_config_current =
+                self.config_scaled_i16(REFLOAT_CONFIG_BRKBOOSTER_CURRENT_OFFSET, 100.0);
             let balance_pitch_degrees = base.attitude().balance_pitch().angle().as_radians()
                 * 180.0
                 / core::f32::consts::PI;
@@ -2058,11 +2266,11 @@ impl RefloatAppDataState {
                     self.pid_kp_brake_scale
                 };
             let roll = imu.roll().angle().as_radians();
-            let gyro = imu.angular_rate().xyz();
+            let [_, gyro_pitch, gyro_yaw] = imu.angular_rate().xyz();
             let sin_roll = libm::sinf(roll);
             let cos_roll = libm::cosf(roll);
-            let mut pitch_rate = cos_roll * cos_roll * gyro[1].as_degrees_per_second()
-                + sin_roll * cos_roll * gyro[2].as_degrees_per_second();
+            let mut pitch_rate = cos_roll * cos_roll * gyro_pitch.as_degrees_per_second()
+                + sin_roll * cos_roll * gyro_yaw.as_degrees_per_second();
             if matches!(ride_state.darkride(), RefloatDarkRideState::Active) {
                 pitch_rate = -pitch_rate;
             }
@@ -2120,10 +2328,7 @@ impl RefloatAppDataState {
             if self.softstart_pid_limit < self.motor_current_max.current().as_amps() {
                 pitch_based_current = pitch_based_current.signum()
                     * pitch_based_current.abs().min(self.softstart_pid_limit);
-                let hertz = u16::from_be_bytes([
-                    self.serialized_config[REFLOAT_CONFIG_HERTZ_OFFSET],
-                    self.serialized_config[REFLOAT_CONFIG_HERTZ_OFFSET + 1],
-                ]);
+                let hertz = self.config_be_u16(REFLOAT_CONFIG_HERTZ_OFFSET);
                 self.softstart_pid_limit += 100.0 / f32::from(hertz.max(1));
             }
             let current_limit = match ride_state.mode() {
@@ -2152,7 +2357,6 @@ impl RefloatAppDataState {
             // at `src/main.c:932-942`, flips darkride current at
             // `src/main.c:944-946`, and zeros balance current during traction
             // loss at `src/main.c:949-954`.
-            // `balance_current` at `src/main.c:932-954`.
             balance_current = RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(
                 Current::from_amps(smoothed_current),
             ));
@@ -2174,22 +2378,10 @@ impl RefloatAppDataState {
                 // `rc_current` at `src/main.c:276-286`.
                 self.request_motor_current(MotorCurrent::new(Current::from_amps(self.rc_current)));
             } else {
-                let remote_throttle_current_max = refloat_read_scaled_i16(
-                    [
-                        self.serialized_config[REFLOAT_CONFIG_REMOTE_THROTTLE_CURRENT_MAX_OFFSET],
-                        self.serialized_config
-                            [REFLOAT_CONFIG_REMOTE_THROTTLE_CURRENT_MAX_OFFSET + 1],
-                    ],
-                    10.0,
-                );
-                let remote_throttle_grace_period = refloat_read_scaled_i16(
-                    [
-                        self.serialized_config[REFLOAT_CONFIG_REMOTE_THROTTLE_GRACE_PERIOD_OFFSET],
-                        self.serialized_config
-                            [REFLOAT_CONFIG_REMOTE_THROTTLE_GRACE_PERIOD_OFFSET + 1],
-                    ],
-                    10.0,
-                );
+                let remote_throttle_current_max =
+                    self.config_scaled_i16(REFLOAT_CONFIG_REMOTE_THROTTLE_CURRENT_MAX_OFFSET, 10.0);
+                let remote_throttle_grace_period = self
+                    .config_scaled_i16(REFLOAT_CONFIG_REMOTE_THROTTLE_GRACE_PERIOD_OFFSET, 10.0);
                 if remote_throttle_current_max > 0.0
                     && refloat_ticks_elapsed_f32(
                         system_time_ticks,
@@ -2198,14 +2390,12 @@ impl RefloatAppDataState {
                     )
                     && self.remote_input.abs() > 0.02
                 {
-                    let servo_val = if self.serialized_config
-                        [REFLOAT_CONFIG_INPUTTILT_INVERT_THROTTLE_OFFSET]
-                        != 0
-                    {
-                        -self.remote_input
-                    } else {
-                        self.remote_input
-                    };
+                    let servo_val =
+                        if self.config_byte(REFLOAT_CONFIG_INPUTTILT_INVERT_THROTTLE_OFFSET) != 0 {
+                            -self.remote_input
+                        } else {
+                            self.remote_input
+                        };
                     self.rc_current =
                         self.rc_current * 0.95 + remote_throttle_current_max * servo_val * 0.05;
                     // Upstream READY falls through to `do_rc_move(d)` at
@@ -2396,7 +2586,8 @@ impl<B: AppDataBindings> RefloatAppDataLifecycle<B> {
     }
 
     /// Process one Refloat app-data packet and send a response when accepted.
-    pub fn send_response(&self, payloads: RefloatAllDataPayloads, bytes: &[u8]) -> bool {
+    #[inline(never)]
+    pub fn send_response(&self, payloads: &RefloatAllDataPayloads, bytes: &[u8]) -> bool {
         let Some(response) = process_refloat_app_data(payloads, bytes) else {
             return false;
         };
@@ -2404,9 +2595,10 @@ impl<B: AppDataBindings> RefloatAppDataLifecycle<B> {
     }
 
     /// Encode and send one parsed Refloat all-data response.
+    #[inline(never)]
     pub fn send_all_data_response(
         &self,
-        payloads: RefloatAllDataPayloads,
+        payloads: &RefloatAllDataPayloads,
         request: RefloatAllDataRequest,
     ) -> bool {
         let response = payloads.encode_response(request);
@@ -2508,10 +2700,60 @@ mod tests {
     };
     use vescpkg_rs::{AllocBindings, AppDataBindings, FirmwareAllocator, ffi};
 
+    fn tick_refloat_state_and_handle_packet<B, M, I>(
+        state: &mut RefloatAppDataState,
+        lifecycle: &RefloatAppDataLifecycle<B>,
+        telemetry: &MotorTelemetryApi<M>,
+        imu: &ImuApi<I>,
+        bytes: &[u8],
+    ) -> bool
+    where
+        B: AppDataBindings,
+        M: MotorTelemetryBindings,
+        I: ImuBindings,
+    {
+        state.refresh_runtime_state(telemetry, imu, lifecycle.bindings().system_time_ticks());
+        state.handle_packet_with_runtime(lifecycle, telemetry, imu, bytes)
+    }
+
+    #[test]
+    fn app_data_callback_dispatches_without_main_loop_refresh_like_refloat() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+        let imu = ImuApi::new(FakeImuBindings::new().with_startup_done(true));
+        let mut state = RefloatAppDataState::new(sample_all_data_payloads_with_ride_state(
+            RefloatRunState::Ready,
+            RefloatMode::Normal,
+        ));
+
+        assert!(state.handle_packet_with_runtime(
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+
+        // Upstream `on_command_received` only dispatches app commands at
+        // `/Users/mjc/projects/refloat/src/main.c:2143-2225`; READY engage and
+        // IMU/motor refresh stay in `refloat_thd` at `src/main.c:772-1080`.
+        assert_eq!(
+            state
+                .all_data_payloads()
+                .base()
+                .status()
+                .ride_state()
+                .run_state(),
+            RefloatRunState::Ready
+        );
+    }
+
     #[test]
     fn app_data_processes_all_data_requests_from_payload_snapshot() {
         let response = process_refloat_app_data(
-            sample_all_data_payloads(),
+            &sample_all_data_payloads(),
             &[
                 REFLOAT_APP_DATA_PACKAGE_ID.get(),
                 RefloatAppDataCommand::GetAllData.id(),
@@ -2524,7 +2766,7 @@ mod tests {
         assert_eq!(&response.as_bytes()[..3], &[101, 10, 4]);
         assert_eq!(
             process_refloat_app_data(
-                sample_all_data_payloads(),
+                &sample_all_data_payloads(),
                 &[
                     REFLOAT_APP_DATA_PACKAGE_ID.get(),
                     RefloatAppDataCommand::GetAllData.id(),
@@ -2534,7 +2776,7 @@ mod tests {
         );
         assert_eq!(
             process_refloat_app_data(
-                sample_all_data_payloads(),
+                &sample_all_data_payloads(),
                 &[
                     REFLOAT_APP_DATA_PACKAGE_ID.get(),
                     RefloatAppDataCommand::PrintInfo.id(),
@@ -2548,7 +2790,7 @@ mod tests {
     #[test]
     fn app_data_processes_info_v2_request_like_refloat_qml() {
         let response = process_refloat_app_data(
-            sample_all_data_payloads(),
+            &sample_all_data_payloads(),
             &[
                 REFLOAT_APP_DATA_PACKAGE_ID.get(),
                 RefloatAppDataCommand::Info.id(),
@@ -2583,7 +2825,7 @@ mod tests {
     #[test]
     fn app_data_processes_realtime_data_ids_like_refloat_qml() {
         let response = process_refloat_app_data(
-            sample_all_data_payloads(),
+            &sample_all_data_payloads(),
             &[
                 REFLOAT_APP_DATA_PACKAGE_ID.get(),
                 RefloatAppDataCommand::RealtimeDataIds.id(),
@@ -2607,7 +2849,7 @@ mod tests {
     #[test]
     fn app_data_processes_legacy_get_rtdata_like_refloat() {
         let response = process_refloat_app_data(
-            sample_all_data_payloads(),
+            &sample_all_data_payloads(),
             &[
                 REFLOAT_APP_DATA_PACKAGE_ID.get(),
                 RefloatAppDataCommand::GetRealtimeData.id(),
@@ -2642,7 +2884,7 @@ mod tests {
     #[test]
     fn app_data_processes_non_running_realtime_data_like_refloat_qml() {
         let response = process_refloat_app_data(
-            RefloatAllDataPayloads::source_startup(),
+            &RefloatAllDataPayloads::source_startup(),
             &[
                 REFLOAT_APP_DATA_PACKAGE_ID.get(),
                 RefloatAppDataCommand::RealtimeData.id(),
@@ -2715,7 +2957,7 @@ mod tests {
         let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
 
         assert!(lifecycle.send_response(
-            sample_all_data_payloads(),
+            &sample_all_data_payloads(),
             &[
                 REFLOAT_APP_DATA_PACKAGE_ID.get(),
                 RefloatAppDataCommand::GetAllData.id(),
@@ -2727,7 +2969,7 @@ mod tests {
         assert_eq!(lifecycle.bindings().last_sent_prefix.get(), [101, 10, 4]);
 
         assert!(lifecycle.send_response(
-            sample_all_data_payloads(),
+            &sample_all_data_payloads(),
             &[
                 REFLOAT_APP_DATA_PACKAGE_ID.get(),
                 RefloatAppDataCommand::Info.id(),
@@ -2740,7 +2982,7 @@ mod tests {
         assert_eq!(lifecycle.bindings().last_sent_prefix.get(), [101, 0, 2]);
 
         assert!(!lifecycle.send_response(
-            sample_all_data_payloads(),
+            &sample_all_data_payloads(),
             &[
                 REFLOAT_APP_DATA_PACKAGE_ID.get(),
                 RefloatAppDataCommand::PrintInfo.id(),
@@ -3087,7 +3329,8 @@ mod tests {
         );
         let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -3127,7 +3370,8 @@ mod tests {
             RefloatMode::Normal,
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -3219,7 +3463,8 @@ mod tests {
             .copy_from_slice(&4500u16.to_be_bytes());
         assert!(state.store_serialized_config(&config));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -3289,7 +3534,8 @@ mod tests {
         config[super::REFLOAT_CONFIG_STARTUP_PUSHSTART_ENABLED_OFFSET] = 1;
         assert!(state.store_serialized_config(&config));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -3357,7 +3603,8 @@ mod tests {
         config[super::REFLOAT_CONFIG_FAULT_REVERSESTOP_ENABLED_OFFSET] = 1;
         assert!(state.store_serialized_config(&config));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -3385,7 +3632,8 @@ mod tests {
             RefloatMode::Flywheel,
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -3438,7 +3686,8 @@ mod tests {
             payloads.mode4(),
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -3490,7 +3739,8 @@ mod tests {
             payloads.mode4(),
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -3563,7 +3813,8 @@ mod tests {
         config[super::REFLOAT_CONFIG_ENABLE_QUICKSTOP_OFFSET] = 1;
         state.store_serialized_config(&config);
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -3613,7 +3864,8 @@ mod tests {
             payloads.mode4(),
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -3675,7 +3927,8 @@ mod tests {
             payloads.mode4(),
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -3734,7 +3987,8 @@ mod tests {
             payloads.mode4(),
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -3794,7 +4048,8 @@ mod tests {
             payloads.mode4(),
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -3860,7 +4115,8 @@ mod tests {
         ));
 
         for _ in 0..2 {
-            assert!(state.handle_packet_with_runtime(
+            assert!(tick_refloat_state_and_handle_packet(
+                &mut state,
                 &lifecycle,
                 &telemetry,
                 &imu,
@@ -3910,7 +4166,8 @@ mod tests {
             payloads.mode4(),
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -3969,7 +4226,8 @@ mod tests {
         config[super::REFLOAT_CONFIG_STARTUP_SIMPLESTART_ENABLED_OFFSET] = 1;
         assert!(state.store_serialized_config(&config));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -4031,7 +4289,8 @@ mod tests {
             payloads.mode4(),
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -4070,7 +4329,8 @@ mod tests {
             sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Normal);
         let mut state = RefloatAppDataState::new(payloads);
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -4106,7 +4366,8 @@ mod tests {
             sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Normal);
         let mut state = RefloatAppDataState::new(payloads);
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -4163,7 +4424,8 @@ mod tests {
         config[super::REFLOAT_CONFIG_FAULT_DARKRIDE_ENABLED_OFFSET] = 1;
         state.store_serialized_config(&config);
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -4223,7 +4485,8 @@ mod tests {
             payloads.mode4(),
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -4276,7 +4539,8 @@ mod tests {
             payloads.mode4(),
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -4335,7 +4599,8 @@ mod tests {
             payloads.mode4(),
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -4405,7 +4670,8 @@ mod tests {
             payloads.mode4(),
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -4471,7 +4737,8 @@ mod tests {
         assert!(state.store_serialized_config(&config));
         state.set_remote_input_for_test(0.5);
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -4538,7 +4805,8 @@ mod tests {
                 42,
             ],
         ));
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -4605,7 +4873,8 @@ mod tests {
             ],
         ));
         for _ in 0..500 {
-            assert!(state.handle_packet_with_runtime(
+            assert!(tick_refloat_state_and_handle_packet(
+                &mut state,
                 &lifecycle,
                 &telemetry,
                 &imu,
@@ -4663,7 +4932,8 @@ mod tests {
             payloads.mode4(),
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -4701,7 +4971,8 @@ mod tests {
             RefloatMode::Flywheel,
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -4763,7 +5034,8 @@ mod tests {
         config[super::REFLOAT_CONFIG_FAULT_IS_DUAL_SWITCH_OFFSET] = 1;
         assert!(state.store_serialized_config(&config));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -4824,7 +5096,8 @@ mod tests {
             payloads.mode4(),
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -4890,7 +5163,8 @@ mod tests {
         config[super::REFLOAT_CONFIG_STARTUP_SIMPLESTART_ENABLED_OFFSET] = 1;
         assert!(state.store_serialized_config(&config));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -4925,7 +5199,8 @@ mod tests {
             incoming.as_mut_ptr(),
             Some(&mut state),
         ));
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -5023,7 +5298,8 @@ mod tests {
             payloads.mode4(),
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -5080,7 +5356,8 @@ mod tests {
             payloads.mode4(),
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -5158,7 +5435,8 @@ mod tests {
             .copy_from_slice(&0u16.to_be_bytes());
         assert!(state.store_serialized_config(&config));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -5226,7 +5504,8 @@ mod tests {
             .copy_from_slice(&0u16.to_be_bytes());
         assert!(state.store_serialized_config(&config));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -5299,7 +5578,8 @@ mod tests {
             .copy_from_slice(&0u16.to_be_bytes());
         assert!(state.store_serialized_config(&config));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -5361,7 +5641,8 @@ mod tests {
             payloads.mode4(),
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -5377,7 +5658,8 @@ mod tests {
             motor.bindings().current()
         );
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -5443,7 +5725,8 @@ mod tests {
             .copy_from_slice(&0u16.to_be_bytes());
         assert!(state.store_serialized_config(&config));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -5514,7 +5797,8 @@ mod tests {
                 payloads.mode4(),
             ));
 
-            assert!(state.handle_packet_with_runtime(
+            assert!(tick_refloat_state_and_handle_packet(
+                &mut state,
                 &lifecycle,
                 &telemetry,
                 &imu,
@@ -5602,7 +5886,8 @@ mod tests {
                 .copy_from_slice(&0u16.to_be_bytes());
             assert!(state.store_serialized_config(&config));
 
-            assert!(state.handle_packet_with_runtime(
+            assert!(tick_refloat_state_and_handle_packet(
+                &mut state,
                 &lifecycle,
                 &telemetry,
                 &imu,
@@ -5682,7 +5967,8 @@ mod tests {
             .copy_from_slice(&2000u16.to_be_bytes());
         assert!(state.store_serialized_config(&config));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -5777,7 +6063,8 @@ mod tests {
             .copy_from_slice(&2000u16.to_be_bytes());
         assert!(state.store_serialized_config(&config));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -5858,7 +6145,8 @@ mod tests {
             payloads.mode4(),
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -5919,7 +6207,8 @@ mod tests {
             payloads.mode4(),
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -6003,7 +6292,8 @@ mod tests {
             payloads.mode4(),
         ));
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -6020,6 +6310,52 @@ mod tests {
         // `src/main.c:949-954`.
         assert_eq!(ride_state.wheelslip(), RefloatWheelSlipState::Detected);
         assert_eq!(motor.bindings().current().current().as_amps(), 0.0);
+    }
+
+    #[test]
+    fn app_data_boot_runtime_refresh_keeps_pre_control_target_shape() {
+        let telemetry =
+            MotorTelemetryApi::new(FakeMotorTelemetryBindings::new().with_runtime_motor(
+                ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1234.0)),
+                VehicleSpeed::new(Speed::from_meters_per_second(5.5)),
+                MotorCurrent::new(Current::from_amps(12.25)),
+                BatteryCurrent::new(Current::from_amps(4.0)),
+                DutyCycle::new(SignedRatio::from_ratio_const(0.375)),
+            ));
+        let imu = ImuApi::new(
+            FakeImuBindings::new()
+                .with_startup_done(true)
+                .with_attitude(
+                    ImuRoll::new(AngleRadians::from_radians(0.1)),
+                    ImuPitch::new(AngleRadians::from_radians(0.2)),
+                    ImuYaw::new(AngleRadians::from_radians(0.0)),
+                ),
+        );
+        let motor = MotorControlApi::new(FakeMotorControlBindings::new());
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
+
+        state.refresh_boot_runtime_state(&telemetry, &imu);
+
+        let base = state.all_data_payloads().base();
+        // Target ARM boot currently uses the last known booting pre-control
+        // runtime slice: motor fields from
+        // `/Users/mjc/projects/refloat/src/motor_data.c:108-145` plus the
+        // startup-ready gate from `/Users/mjc/projects/refloat/src/main.c:833-838`,
+        // without executing the later VESCR-213 control blob.
+        assert_eq!(
+            base.status().ride_state().run_state(),
+            RefloatRunState::Ready
+        );
+        assert_eq!(
+            base.motor()
+                .electrical_speed()
+                .rpm()
+                .as_revolutions_per_minute(),
+            1234.0
+        );
+        assert_eq!(base.attitude().roll().angle().as_radians(), 0.1);
+        assert_eq!(base.attitude().pitch().angle().as_radians(), 0.2);
+        assert!(!state.apply_requested_motor_current(&motor));
     }
 
     #[test]
@@ -6053,7 +6389,8 @@ mod tests {
         let imu = ImuApi::new(FakeImuBindings::new());
         let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -6087,7 +6424,8 @@ mod tests {
         let imu = ImuApi::new(FakeImuBindings::new());
         let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
 
-        assert!(state.handle_packet_with_runtime(
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
             &lifecycle,
             &telemetry,
             &imu,
@@ -6251,11 +6589,11 @@ mod tests {
         );
         assert_eq!(alloc_bindings.free_calls.get(), 0);
         assert_eq!(info.arg, backing.as_mut_ptr().cast::<c_void>());
+        let allocated_state =
+            unsafe { RefloatAppDataState::from_info_arg(&mut info) }.expect("allocated state");
         assert_eq!(
-            unsafe { RefloatAppDataState::from_info_arg(&mut info) }
-                .expect("allocated state")
-                .all_data_payloads(),
-            RefloatAllDataPayloads::source_startup(),
+            *allocated_state,
+            RefloatAppDataState::new(RefloatAllDataPayloads::source_startup()),
         );
     }
 

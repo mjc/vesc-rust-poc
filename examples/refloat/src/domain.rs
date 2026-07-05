@@ -2558,7 +2558,7 @@ impl RefloatAllDataBasePayload {
     }
 
     /// Encode the compact all-data base response bytes.
-    pub fn encode_base_response(self, mode: u8) -> [u8; 34] {
+    pub fn encode_base_response(&self, mode: u8) -> [u8; 34] {
         let mut buffer = [0; 34];
         let mut ind = 0;
 
@@ -2690,7 +2690,7 @@ impl RefloatAllDataBasePayload {
 
     /// Encode the compact all-data mode 4 response bytes.
     pub fn encode_mode4_response(
-        self,
+        &self,
         mode2: RefloatAllDataMode2Payload,
         mode3: RefloatAllDataMode3Payload,
         mode4: RefloatAllDataMode4Payload,
@@ -2700,7 +2700,7 @@ impl RefloatAllDataBasePayload {
 
     /// Encode the compact all-data mode 2 response bytes.
     pub fn encode_mode2_response(
-        self,
+        &self,
         mode: RefloatAllDataMode,
         mode2: RefloatAllDataMode2Payload,
     ) -> [u8; 41] {
@@ -2716,7 +2716,7 @@ impl RefloatAllDataBasePayload {
 
     /// Encode the compact all-data mode 3 response bytes.
     pub fn encode_mode3_response(
-        self,
+        &self,
         mode: RefloatAllDataMode,
         mode2: RefloatAllDataMode2Payload,
         mode3: RefloatAllDataMode3Payload,
@@ -2733,7 +2733,7 @@ impl RefloatAllDataBasePayload {
     }
 
     fn encode_mode4_response_for_mode(
-        self,
+        &self,
         mode: u8,
         mode2: RefloatAllDataMode2Payload,
         mode3: RefloatAllDataMode3Payload,
@@ -2897,7 +2897,8 @@ impl RefloatAllDataPayloads {
     ///
     /// The byte order and mode gates mirror `cmd_send_all_data` in upstream
     /// `src/main.c:1313-1399`.
-    pub fn encode_response(self, request: RefloatAllDataRequest) -> RefloatAllDataResponse {
+    #[inline(never)]
+    pub fn encode_response(&self, request: RefloatAllDataRequest) -> RefloatAllDataResponse {
         let mode = request.mode();
         if mode.includes_mode4() {
             RefloatAllDataResponse::Mode4(self.base.encode_mode4_response_for_mode(
@@ -3116,8 +3117,10 @@ fn refloat_append_all_data_mode4(
 }
 
 fn refloat_push_u8(buffer: &mut [u8], ind: &mut usize, value: u8) {
-    buffer[*ind] = value;
-    *ind += 1;
+    if let Some(slot) = buffer.get_mut(*ind) {
+        *slot = value;
+    }
+    *ind = ind.saturating_add(1);
 }
 
 fn refloat_push_i16(buffer: &mut [u8], ind: &mut usize, value: i16) {

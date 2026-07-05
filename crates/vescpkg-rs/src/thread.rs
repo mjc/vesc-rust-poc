@@ -44,7 +44,7 @@ pub trait ThreadBindings {
     unsafe fn spawn(
         &self,
         entry: ThreadEntry,
-        stack_words: usize,
+        stack_bytes: usize,
         name: *const c_char,
         arg: *mut c_void,
     ) -> *mut c_void;
@@ -66,11 +66,11 @@ impl<B: ThreadBindings + ?Sized> ThreadBindings for &B {
     unsafe fn spawn(
         &self,
         entry: ThreadEntry,
-        stack_words: usize,
+        stack_bytes: usize,
         name: *const c_char,
         arg: *mut c_void,
     ) -> *mut c_void {
-        unsafe { (*self).spawn(entry, stack_words, name, arg) }
+        unsafe { (*self).spawn(entry, stack_bytes, name, arg) }
     }
 
     fn request_terminate(&self, thread: FirmwareThreadHandle) {
@@ -99,11 +99,11 @@ impl ThreadBindings for RealThreadBindings {
     unsafe fn spawn(
         &self,
         entry: ThreadEntry,
-        stack_words: usize,
+        stack_bytes: usize,
         name: *const c_char,
         arg: *mut c_void,
     ) -> *mut c_void {
-        unsafe { vescpkg_rs_sys::raw::vesc_spawn(entry, stack_words, name, arg) }
+        unsafe { vescpkg_rs_sys::raw::vesc_spawn(entry, stack_bytes, name, arg) }
     }
 
     fn request_terminate(&self, thread: FirmwareThreadHandle) {
@@ -153,11 +153,11 @@ impl<B: ThreadBindings> ThreadApi<B> {
     pub unsafe fn spawn(
         &self,
         entry: ThreadEntry,
-        stack_words: usize,
+        stack_bytes: usize,
         name: &CStr,
         arg: *mut c_void,
     ) -> Option<FirmwareThreadHandle> {
-        let thread = unsafe { self.bindings.spawn(entry, stack_words, name.as_ptr(), arg) };
+        let thread = unsafe { self.bindings.spawn(entry, stack_bytes, name.as_ptr(), arg) };
         unsafe { FirmwareThreadHandle::from_raw(thread) }
     }
 
@@ -282,7 +282,7 @@ pub mod test_support {
         unsafe fn spawn(
             &self,
             entry: ThreadEntry,
-            stack_words: usize,
+            stack_bytes: usize,
             name: *const c_char,
             arg: *mut c_void,
         ) -> *mut c_void {
@@ -291,7 +291,7 @@ pub mod test_support {
             let index = call.min(1);
 
             let mut stacks = self.spawn_stacks.get();
-            stacks[index] = stack_words;
+            stacks[index] = stack_bytes;
             self.spawn_stacks.set(stacks);
 
             let mut names = self.spawn_names.get();

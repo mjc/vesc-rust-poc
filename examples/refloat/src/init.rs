@@ -9,21 +9,24 @@ use vescpkg_rs::ffi;
 #[unsafe(link_section = ".program_ptr")]
 pub(crate) static prog_ptr: u32 = 0;
 
-/// ARM package loader entrypoint for the containment Refloat payload.
+/// ARM package loader entrypoint for the Refloat payload.
 ///
-/// C map: Refloat v1.2.1 `INIT_FUN` starts at `src/main.c:2415`.
+/// C map: Refloat v1.2.1 `INIT_FUN` starts at
+/// `/Users/mjc/projects/refloat/src/main.c:2415`.
 #[cfg(all(not(test), target_arch = "arm"))]
 #[inline(never)]
 #[unsafe(no_mangle)]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
-    // Refloat v1.2.1 (0ef6e99d8701) `src/main.c:2419-2461` allocates `Data`,
+    // Refloat v1.2.1 (0ef6e99d8701)
+    // `/Users/mjc/projects/refloat/src/main.c:2419-2461` allocates `Data`,
     // runs `data_init`, installs stop/ARG, starts main+aux threads, then
     // registers IMU, custom config, app-data, and LispBM extensions.
     //
-    // This containment candidate still skips upstream `Data`/threads/IMU/ride
-    // control, but preserves the startup ordering: loader metadata at
-    // `src/main.c:2431-2432`, runtime thread spawn at `src/main.c:2439-2449`,
-    // then the registration tail from `src/main.c:2455-2459`.
+    // Rust installs its compact Refloat state, starts its runtime threads,
+    // and preserves the registration tail ordering: loader metadata at
+    // `/Users/mjc/projects/refloat/src/main.c:2431-2432`, thread spawn at
+    // `/Users/mjc/projects/refloat/src/main.c:2439-2449`, then registration at
+    // `/Users/mjc/projects/refloat/src/main.c:2455-2459`.
     refloat_package_start(
         || crate::app_data::install_refloat_app_data_state(info),
         || crate::runtime::start_refloat_runtime_threads(info),
@@ -35,8 +38,8 @@ pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
 /// Host non-test builds keep a generic stop-hook shim for host linking only.
 ///
 /// This is not target Refloat parity: upstream installs `stop`/`Data *` during
-/// ARM startup at `src/main.c:2431-2432`, while the containment target skips
-/// that stateful path and keeps only `src/main.c:2458-2459` loader extensions.
+/// ARM startup at `/Users/mjc/projects/refloat/src/main.c:2431-2432`, while the
+/// host shim only keeps host linking alive.
 #[cfg(all(not(test), not(target_arch = "arm")))]
 #[inline(never)]
 #[unsafe(no_mangle)]
@@ -45,15 +48,18 @@ pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
     true
 }
 
-/// Test-build package loader entrypoint for the containment side-effect boundary.
+/// Test-build package loader entrypoint for the startup side-effect boundary.
 ///
-/// C map: Refloat v1.2.1 `INIT_FUN` starts at `src/main.c:2415`.
+/// C map: Refloat v1.2.1 `INIT_FUN` starts at
+/// `/Users/mjc/projects/refloat/src/main.c:2415`.
 #[cfg(test)]
 #[unsafe(no_mangle)]
 pub extern "C" fn package_lib_init(_info: *mut ffi::LibInfo) -> bool {
-    // Upstream Refloat v1.2.1 installs `stop`/`Data *` at `src/main.c:2431-2432`,
-    // starts runtime threads at `src/main.c:2439-2449`, then registers
-    // IMU/custom config/app-data/LispBM at `src/main.c:2455-2459`.
+    // Upstream Refloat v1.2.1 installs `stop`/`Data *` at
+    // `/Users/mjc/projects/refloat/src/main.c:2431-2432`, starts runtime
+    // threads at `/Users/mjc/projects/refloat/src/main.c:2439-2449`, then
+    // registers IMU/custom config/app-data/LispBM at
+    // `/Users/mjc/projects/refloat/src/main.c:2455-2459`.
     refloat_package_start(|| true, || true, || true, || true)
 }
 

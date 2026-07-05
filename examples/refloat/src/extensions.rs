@@ -102,13 +102,16 @@ fn record_refloat_firmware_version(
     decode_i32: impl Fn(ffi::LbmValue) -> i32,
 ) {
     // Refloat v1.2.1 only updates version state when `argn > 2` at
-    // `src/main.c:2306-2310`; shorter calls still return true at `src/main.c:2311`.
-    if args.len() > 2 {
-        FW_VERSION_MAJOR.store(decode_i32(args[0]), Ordering::Relaxed);
-        FW_VERSION_MINOR.store(decode_i32(args[1]), Ordering::Relaxed);
-        FW_VERSION_BETA.store(decode_i32(args[2]), Ordering::Relaxed);
-        FW_VERSION_RECORDED.store(true, Ordering::Release);
-    }
+    // `/Users/mjc/projects/refloat/src/main.c:2306-2310`; shorter calls still
+    // return true at `/Users/mjc/projects/refloat/src/main.c:2311`.
+    let [Some(major), Some(minor), Some(beta)] = [args.first(), args.get(1), args.get(2)] else {
+        return;
+    };
+
+    FW_VERSION_MAJOR.store(decode_i32(*major), Ordering::Relaxed);
+    FW_VERSION_MINOR.store(decode_i32(*minor), Ordering::Relaxed);
+    FW_VERSION_BETA.store(decode_i32(*beta), Ordering::Relaxed);
+    FW_VERSION_RECORDED.store(true, Ordering::Release);
 }
 
 /// Return the firmware version captured from `ext-set-fw-version`, if any.
@@ -154,17 +157,38 @@ pub fn package_extension_descriptors() -> [ffi::ExtensionDescriptor; PACKAGE_EXT
     ]
 }
 
-/// Register Refloat's loader extensions with image-rebased native handlers.
+/// Register Refloat loader extensions through a package lifecycle.
 ///
-/// Upstream registers the same names after custom config and app-data setup in
-/// `src/main.c:2456-2459`; Rust package init reaches this after state install
-/// and runtime thread startup.
+/// Upstream registers these LispBM names and handlers at
+/// `/Users/mjc/projects/refloat/src/main.c:2458-2459`.
+///
+/// This host/test helper models image-relative descriptor pointers. The target
+/// registration below uses PC-relative runtime addresses instead, matching the
+/// known-good ARM registration path.
+pub fn register_refloat_loader_extensions_with<B: vescpkg_rs::LbmBindings>(
+    info: &ffi::LibInfo,
+    lifecycle: &vescpkg_rs::PackageLifecycle<B>,
+) -> bool {
+    unsafe {
+        lifecycle
+            .register_extensions_from_image(
+                vescpkg_rs::ffi::NativeImage::from_info(info),
+                package_extension_descriptors(),
+            )
+            .is_ok()
+    }
+}
+
+/// Register Refloat's loader extensions with runtime names and handlers.
+///
+/// Upstream reaches this after custom config and app-data setup in
+/// `/Users/mjc/projects/refloat/src/main.c:2456-2459`; Rust package init
+/// reaches this after state install and runtime thread startup.
 ///
 /// # Safety
 ///
-/// `info` must describe the loaded native image that owns every descriptor
-/// handler. The registered handlers must remain valid while firmware may call
-/// the LispBM extensions.
+/// `info` must describe the loaded native image. The registered pointers must
+/// remain valid while firmware may call the LispBM extensions.
 #[cfg(all(not(test), target_arch = "arm"))]
 pub unsafe fn register_refloat_loader_extensions(_info: *mut ffi::LibInfo) -> bool {
     unsafe {
@@ -176,29 +200,31 @@ pub unsafe fn register_refloat_loader_extensions(_info: *mut ffi::LibInfo) -> bo
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
-fn loaded_image_base() -> usize {
-    let loaded_handler: usize;
+fn runtime_ext_set_fw_version_name() -> *const c_char {
+    let address: usize;
     unsafe {
         core::arch::asm!(
-            "adr {loaded_handler}, {handler}",
-            loaded_handler = out(reg) loaded_handler,
-            handler = sym ext_set_fw_version,
+            "adr.w {address}, {name}",
+            address = out(reg) address,
+            name = sym EXT_SET_FW_VERSION_NAME_BYTES,
             options(nomem, nostack, preserves_flags),
         );
     }
-    let loaded_handler = loaded_handler & !1;
-    let image_handler = ext_set_fw_version as *const () as usize & !1;
-    loaded_handler - image_handler
-}
-
-#[cfg(all(not(test), target_arch = "arm"))]
-fn runtime_ext_set_fw_version_name() -> *const c_char {
-    (loaded_image_base() + EXT_SET_FW_VERSION_NAME_BYTES.as_ptr() as usize) as *const c_char
+    address as *const c_char
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
 fn runtime_ext_bms_name() -> *const c_char {
-    (loaded_image_base() + EXT_BMS_NAME_BYTES.as_ptr() as usize) as *const c_char
+    let address: usize;
+    unsafe {
+        core::arch::asm!(
+            "adr.w {address}, {name}",
+            address = out(reg) address,
+            name = sym EXT_BMS_NAME_BYTES,
+            options(nomem, nostack, preserves_flags),
+        );
+    }
+    address as *const c_char
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
@@ -234,11 +260,12 @@ mod tests {
     use super::{
         EXT_BMS_NAME, EXT_SET_FW_VERSION_NAME, PACKAGE_EXTENSION_NAMES, RefloatFirmwareVersion,
         package_extension_descriptors, record_refloat_firmware_version,
-        recorded_refloat_firmware_version, reset_refloat_firmware_version,
+        recorded_refloat_firmware_version, register_refloat_loader_extensions_with,
+        reset_refloat_firmware_version,
     };
     use core::cell::Cell;
     use core::ffi::{CStr, c_char};
-    use vescpkg_rs::ffi::{ExtensionHandler, LbmValue};
+    use vescpkg_rs::ffi::{ExtensionHandler, LbmValue, LibInfo};
     use vescpkg_rs::{LbmBindings, PackageLifecycle};
 
     #[test]
@@ -268,6 +295,38 @@ mod tests {
     }
 
     #[test]
+    fn refloat_loader_extension_registration_rebases_handlers_from_loaded_image() {
+        let lifecycle = PackageLifecycle::new(RecordingLbmBindings::accepting());
+        let info = LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0x1000,
+        };
+        let descriptors = package_extension_descriptors();
+
+        assert!(register_refloat_loader_extensions_with(&info, &lifecycle));
+
+        let bindings = lifecycle.bindings();
+        assert_eq!(bindings.add_calls.get(), 2);
+        assert_eq!(
+            bindings.name_addr(0),
+            descriptors[0].name().as_ptr() as usize + 0x1000
+        );
+        assert_eq!(
+            bindings.name_addr(1),
+            descriptors[1].name().as_ptr() as usize + 0x1000
+        );
+        assert_eq!(
+            bindings.handler_addr(0),
+            descriptors[0].handler() as usize + 0x1000
+        );
+        assert_eq!(
+            bindings.handler_addr(1),
+            descriptors[1].handler() as usize + 0x1000
+        );
+    }
+
+    #[test]
     fn ext_set_fw_version_records_three_decoded_components() {
         reset_refloat_firmware_version();
 
@@ -289,6 +348,7 @@ mod tests {
     struct RecordingLbmBindings {
         add_calls: Cell<usize>,
         names: Cell<[usize; 2]>,
+        handlers: Cell<[usize; 2]>,
     }
 
     impl RecordingLbmBindings {
@@ -296,6 +356,7 @@ mod tests {
             Self {
                 add_calls: Cell::new(0),
                 names: Cell::new([0; 2]),
+                handlers: Cell::new([0; 2]),
             }
         }
 
@@ -303,15 +364,27 @@ mod tests {
             let names = self.names.get();
             unsafe { CStr::from_ptr(names[index] as *const c_char) }
         }
+
+        fn name_addr(&self, index: usize) -> usize {
+            self.names.get()[index]
+        }
+
+        fn handler_addr(&self, index: usize) -> usize {
+            self.handlers.get()[index]
+        }
     }
 
     impl LbmBindings for RecordingLbmBindings {
-        unsafe fn add_extension(&self, name: *const c_char, _handler: ExtensionHandler) -> bool {
+        unsafe fn add_extension(&self, name: *const c_char, handler: ExtensionHandler) -> bool {
             let index = self.add_calls.get();
+            let index = index.min(1);
             let mut names = self.names.get();
-            names[index.min(1)] = name as usize;
+            names[index] = name as usize;
             self.names.set(names);
-            self.add_calls.set(index + 1);
+            let mut handlers = self.handlers.get();
+            handlers[index] = handler as usize;
+            self.handlers.set(handlers);
+            self.add_calls.set(self.add_calls.get() + 1);
             true
         }
 

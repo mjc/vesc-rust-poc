@@ -8,9 +8,9 @@ use vescpkg_rs_build::{
     PackageBinaryConversionPlan, PackageExample, PackageTargetMode, PackageTargetPlan,
     REFLOAT_PACKAGE_NAME, REFLOAT_PACKAGE_VERSION, RealPackageRunner, audit_native_lib_artifacts,
     audit_refloat_native_lib_artifacts, c_refloat_mapping_report,
-    captured_refloat_baseline_mapping_report, ensure_native_lib_artifacts,
+    captured_refloat_baseline_mapping_report, defined_symbols, ensure_native_lib_artifacts,
     ensure_repo_native_lib_artifacts, native_binary_comparison_report, native_lib_link_plan,
-    refloat_c_rust_mapping_report, refloat_mapping_report, semantic_snapshot_report,
+    nm_output, refloat_c_rust_mapping_report, refloat_mapping_report, semantic_snapshot_report,
     wire_comparison_report,
 };
 
@@ -61,6 +61,28 @@ fn current_refloat_native_lib_preserves_registration_tail_contract() {
     let (plan, conversion) = isolated_refloat_plans(&workspace);
     ensure_native_lib_artifacts(&conversion);
     audit_refloat_native_lib_artifacts(&NativeLibArtifactPaths::from_link_plan(&plan));
+}
+
+#[test]
+fn current_refloat_native_lib_has_no_panic_symbols() {
+    let workspace = TempDir::new().expect("temp workspace");
+    let (plan, conversion) = isolated_refloat_plans(&workspace);
+    ensure_native_lib_artifacts(&conversion);
+    let symbols = defined_symbols(&nm_output(&plan.elf_path()));
+    let panic_symbols = symbols
+        .into_iter()
+        .filter(|symbol| {
+            symbol.contains("panic")
+                || symbol.contains("panicking")
+                || symbol.contains("slice_index_fail")
+                || symbol.contains("len_mismatch_fail")
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        panic_symbols.is_empty(),
+        "target Refloat native ELF must not link panic paths: {panic_symbols:#?}"
+    );
 }
 
 #[test]

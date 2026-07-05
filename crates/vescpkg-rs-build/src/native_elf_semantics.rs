@@ -186,7 +186,7 @@ pub fn refloat_mapping_report(elf: &Path) -> String {
 
     lines.push("runtime_paths:".to_owned());
     for (label, needle) in [
-        ("runtime_refresh", "refresh_runtime_state"),
+        ("boot_runtime_refresh", "refresh_boot_runtime_state"),
         ("config_get", "refloat_get_cfg"),
         ("config_set", "refloat_set_cfg"),
         ("config_xml", "refloat_get_cfg_xml"),
@@ -352,13 +352,13 @@ pub fn refloat_c_rust_mapping_report(c_elf: &Path, rust_elf: &Path) -> String {
             "configure",
             "configure",
             "src/main.c:185",
-            "refresh_runtime_state",
+            "refresh_boot_runtime_state",
         ),
         (
             "imu_refresh",
             "imu_ref_callback",
             "src/main.c:760",
-            "refresh_runtime_state",
+            "refresh_boot_runtime_state",
         ),
         (
             "state_recovery",
@@ -447,7 +447,7 @@ pub fn refloat_c_rust_mapping_report(c_elf: &Path, rust_elf: &Path) -> String {
         ),
         (
             "folded_into_existing_path",
-            "configure/reconfigure/reset_runtime_vars/state_compat fold into refresh_runtime_state, typed ride-state payloads, and runtime state refresh",
+            "configure/reconfigure/reset_runtime_vars/state_compat fold into refresh_boot_runtime_state, typed ride-state payloads, and runtime state refresh",
         ),
         (
             "intentionally_omitted",

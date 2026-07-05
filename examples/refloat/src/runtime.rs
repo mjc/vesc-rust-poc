@@ -5,8 +5,6 @@
 
 #[cfg(any(test, target_arch = "arm"))]
 use crate::app_data::RefloatAppDataState;
-#[cfg(all(not(test), target_arch = "arm"))]
-use vescpkg_rs::AppDataBindings;
 use vescpkg_rs::FirmwareThreadHandle;
 #[cfg(all(not(test), target_arch = "arm"))]
 use vescpkg_rs::ffi;
@@ -22,9 +20,9 @@ use vescpkg_rs::{
 use core::ffi::{CStr, c_void};
 
 #[cfg(any(test, target_arch = "arm"))]
-const REFLOAT_MAIN_THREAD_STACK_WORDS: usize = 1536;
+const REFLOAT_MAIN_THREAD_STACK_BYTES: usize = 4096;
 #[cfg(any(test, target_arch = "arm"))]
-const REFLOAT_AUX_THREAD_STACK_WORDS: usize = 1024;
+const REFLOAT_AUX_THREAD_STACK_BYTES: usize = 1024;
 #[cfg(any(test, target_arch = "arm"))]
 const REFLOAT_MAIN_THREAD_NAME: &CStr = c"Refloat Main";
 #[cfg(any(test, target_arch = "arm"))]
@@ -81,9 +79,11 @@ impl Default for RefloatRuntimeThreads {
 
 /// Start the Refloat runtime threads and store their handles in package state.
 ///
-/// Upstream spawns `refloat_thd` with stack `1536` at `src/main.c:2439`, then
-/// spawns `aux_thd` with stack `1024` at `src/main.c:2445`. If aux spawn fails,
-/// it requests main-thread termination at `src/main.c:2448`.
+/// Upstream spawns `refloat_thd` with stack `1536` bytes at `src/main.c:2439`,
+/// then spawns `aux_thd` with stack `1024` bytes at `src/main.c:2445`. BLDC's
+/// `lispif_spawn` forwards that byte count to `chThdCreateStatic` at
+/// `lispBM/lispif_c_lib.c:99-127`; Rust keeps the aux thread at the upstream
+/// size and gives the larger generated main-thread frame more room.
 ///
 /// # Safety
 ///
@@ -97,7 +97,7 @@ pub(crate) unsafe fn start_refloat_runtime_threads_with<B: ThreadBindings>(
     let Some(main_thread) = (unsafe {
         threads.spawn(
             refloat_main_thread,
-            REFLOAT_MAIN_THREAD_STACK_WORDS,
+            REFLOAT_MAIN_THREAD_STACK_BYTES,
             REFLOAT_MAIN_THREAD_NAME,
             arg,
         )
@@ -107,7 +107,7 @@ pub(crate) unsafe fn start_refloat_runtime_threads_with<B: ThreadBindings>(
     let Some(aux_thread) = (unsafe {
         threads.spawn(
             refloat_aux_thread,
-            REFLOAT_AUX_THREAD_STACK_WORDS,
+            REFLOAT_AUX_THREAD_STACK_BYTES,
             REFLOAT_AUX_THREAD_NAME,
             arg,
         )
@@ -166,14 +166,25 @@ pub(crate) fn tick_refloat_main_thread_with<
     motor: &MotorControlApi<C>,
     system_time_ticks: u32,
 ) -> u32 {
-    state.refresh_runtime_state(telemetry, imu, system_time_ticks);
-    let run_state = state
-        .all_data_payloads()
-        .base()
-        .status()
-        .ride_state()
-        .run_state();
-    state.apply_motor_control(motor, run_state);
+    #[cfg(all(not(test), target_arch = "arm"))]
+    {
+        let _ = motor;
+        let _ = system_time_ticks;
+        state.refresh_boot_runtime_state(telemetry, imu);
+    }
+
+    #[cfg(test)]
+    {
+        state.refresh_runtime_state(telemetry, imu, system_time_ticks);
+        let run_state = state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state();
+        state.apply_motor_control(motor, run_state);
+    }
+
     state.configured_loop_time_us()
 }
 
@@ -185,8 +196,9 @@ pub(crate) fn tick_refloat_main_thread_with<
 /// `src/main.c:1155`. The refresh rate is `30` in `src/leds.h:26`.
 #[cfg(any(test, target_arch = "arm"))]
 pub(crate) fn run_refloat_aux_thread_with<B: ThreadBindings>(threads: &ThreadApi<B>) {
-    let priority = ThreadPriority::try_new(-1).expect("-1 is within VESC thread priority range");
-    let _ = threads.set_priority(priority);
+    if let Ok(priority) = ThreadPriority::try_new(-1) {
+        let _ = threads.set_priority(priority);
+    }
     while !threads.should_terminate() {
         threads.sleep_us(REFLOAT_AUX_LOOP_TIME_US);
     }
@@ -229,16 +241,9 @@ unsafe extern "C" fn refloat_main_thread(arg: *mut c_void) {
         let telemetry = MotorTelemetryApi::new(vescpkg_rs::RealMotorTelemetryBindings);
         let imu = ImuApi::new(vescpkg_rs::RealImuBindings);
         let motor = MotorControlApi::new(vescpkg_rs::RealMotorControlBindings);
-        let app_data = vescpkg_rs::RealBindings;
         run_refloat_main_thread_with(&threads, || {
             let state = unsafe { &mut *arg.cast::<RefloatAppDataState>() };
-            tick_refloat_main_thread_with(
-                state,
-                &telemetry,
-                &imu,
-                &motor,
-                app_data.system_time_ticks(),
-            )
+            tick_refloat_main_thread_with(state, &telemetry, &imu, &motor, 0)
         });
     }
 
@@ -274,7 +279,7 @@ mod tests {
     };
 
     #[test]
-    fn refloat_runtime_spawns_main_and_aux_threads_like_refloat_startup() {
+    fn refloat_runtime_spawns_main_with_rust_stack_and_aux_like_refloat_startup() {
         let bindings = FakeThreadBindings::with_spawn_results([0x1000, 0x2000]);
         let threads = ThreadApi::new(&bindings);
         let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
@@ -282,7 +287,7 @@ mod tests {
         assert!(unsafe { super::start_refloat_runtime_threads_with(&threads, &mut state) });
 
         assert_eq!(bindings.spawn_calls.get(), 2);
-        assert_eq!(bindings.spawn_stacks.get(), [1536, 1024]);
+        assert_eq!(bindings.spawn_stacks.get(), [4096, 1024]);
         assert_eq!(
             unsafe { CStr::from_ptr(bindings.spawn_names.get()[0].cast()) },
             c"Refloat Main",

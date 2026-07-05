@@ -84,13 +84,13 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         }
     }
 
-    /// Register an extension whose handler address is relative to a loaded native image.
+    /// Register an extension whose name and handler addresses are relative to a loaded native image.
     ///
     /// # Safety
     ///
-    /// `image` must describe the native package image that owns `descriptor.handler()`.
-    /// The rebased handler address must use the firmware LispBM extension ABI and remain
-    /// valid for as long as firmware may call the registered extension.
+    /// `image` must describe the native package image that owns `descriptor.name()`
+    /// and `descriptor.handler()`. The rebased pointers must remain valid for as
+    /// long as firmware may call the registered extension.
     pub unsafe fn register_extension_from_image(
         &self,
         image: NativeImage,
@@ -99,11 +99,12 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         let descriptor = descriptor
             .validate()
             .map_err(|_| RegisterError::InvalidExtensionName)?;
+        let name = image.rebase_ptr(descriptor.name().as_ptr());
         let handler_offset = descriptor.handler() as usize;
         let handler = unsafe {
             core::mem::transmute::<usize, ExtensionHandler>(image.rebase_addr(handler_offset))
         };
-        if self.api.register_extension(descriptor.name(), handler) {
+        if unsafe { self.api.bindings().add_extension(name, handler) } {
             Ok(())
         } else {
             Err(RegisterError::FirmwareRejected)
