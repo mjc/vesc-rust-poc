@@ -18,8 +18,6 @@ pub mod domain;
 pub mod extensions;
 mod motor_control;
 pub mod package;
-mod state_transition;
-pub mod threads;
 
 vescpkg_rs::package_start!(crate::package::start);
 

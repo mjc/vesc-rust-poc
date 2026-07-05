@@ -1,6 +1,11 @@
 use super::balance_filter::RefloatBalanceFilter;
 use super::lifecycle::RefloatPackageLifecycle;
 use super::protocol::encode_refloat_realtime_data_response;
+use super::state_transition::{
+    RefloatStateTransitionInput, RefloatStopEvent, refloat_first_stop_event,
+    refloat_state_transition,
+};
+use super::threads::RefloatRuntimeThreads;
 use super::{refloat_ticks_elapsed, refloat_ticks_elapsed_f32, refloat_ticks_elapsed_ms};
 use crate::balance_loop::{
     RefloatBalanceLoopConfig, RefloatBalanceLoopInput, RefloatBalanceLoopState,
@@ -20,11 +25,6 @@ use crate::domain::{
     RefloatStopCondition, RefloatWheelSlipState,
 };
 use crate::motor_control::RefloatMotorControl;
-use crate::state_transition::{
-    RefloatStateTransitionInput, RefloatStopEvent, refloat_first_stop_event,
-    refloat_state_transition,
-};
-use crate::threads::RefloatRuntimeThreads;
 use vescpkg_rs::prelude::{
     AngleDegrees, AngleRadians, BatteryCurrent, BatteryVoltage, Current, MotorCurrent, SampleRate,
     SystemTimestamp, TimestampTicks, Voltage,

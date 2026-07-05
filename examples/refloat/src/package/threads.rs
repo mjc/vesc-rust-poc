@@ -4,7 +4,7 @@
 //! aux threads after loader metadata setup and before the registration tail.
 
 #[cfg(any(test, target_arch = "arm"))]
-use crate::package::RefloatPackageState;
+use super::state::RefloatPackageState;
 use vescpkg_rs::FirmwareThreadHandle;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::ThreadPriority;
@@ -277,8 +277,8 @@ extern "C" fn refloat_aux_thread(_arg: *mut c_void) {
 
 #[cfg(test)]
 mod tests {
+    use super::super::state::RefloatPackageState;
     use crate::domain::{FootpadSensorState, RefloatAllDataPayloads, RefloatRunState};
-    use crate::package::RefloatPackageState;
     use core::ffi::CStr;
     use vescpkg_rs::prelude::*;
     use vescpkg_rs::test_support::{

@@ -21,6 +21,8 @@ mod lifecycle;
 mod protocol;
 mod startup;
 mod state;
+mod state_transition;
+mod threads;
 
 pub use self::custom_config::register_refloat_custom_config;
 pub use self::lifecycle::RefloatPackageLifecycle;
@@ -37,7 +39,7 @@ pub(crate) fn start(start: &mut vescpkg_rs::PackageStart) -> bool {
         start,
         &[
             startup::install_refloat_package_state,
-            crate::threads::start_refloat_runtime_threads,
+            threads::start_refloat_runtime_threads,
             imu_callback::register_refloat_imu_callback,
             startup::register_refloat_app_data_callbacks,
             crate::extensions::register_refloat_loader_extensions,
@@ -123,7 +125,7 @@ extern "C" fn stop_refloat_app_data(_arg: *mut core::ffi::c_void) {
     #[cfg(all(not(test), target_arch = "arm"))]
     if let Some(state) = vescpkg_rs::arg_ref::<RefloatPackageState>(_arg) {
         let bindings = vescpkg_rs::RealBindings;
-        crate::threads::request_refloat_runtime_thread_termination(state);
+        threads::request_refloat_runtime_thread_termination(state);
         let _allocation = vescpkg_rs::reclaim_firmware_allocation(
             _arg.cast::<RefloatPackageState>(),
             1,
