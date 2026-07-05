@@ -5,10 +5,11 @@
 //! should stay at explicit boundary conversions.
 
 use vescpkg_rs::prelude::{
-    AdcDecodedLevel, AngleDegrees, AngleRadians, BatteryCurrent, BatteryVoltage,
-    DirectionalMotorCurrent, DutyCycle, ElectricalSpeed, ImuAngularRate, ImuPitch, ImuRoll, ImuYaw,
-    MosfetTemperature, MotorCurrent, MotorTemperature, Ratio, SignedRatio, SystemTimestamp,
-    VehicleSpeed,
+    AdcDecodedLevel, AmpHoursCharged, AmpHoursDischarged, AngleDegrees, AngleRadians,
+    BatteryCurrent, BatteryLevel, BatteryVoltage, DirectionalMotorCurrent, DutyCycle,
+    ElectricalSpeed, ImuAngularRate, ImuPitch, ImuRoll, ImuYaw, MosfetTemperature, MotorCurrent,
+    MotorTemperature, OdometerMeters, Ratio, SignedRatio, SystemTimestamp, Temperature,
+    TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 
 /// Refloat app-data package ID.
@@ -2203,6 +2204,401 @@ impl RefloatRealtimeTail {
     /// Return firmware fault code.
     pub const fn firmware_fault_code(self) -> RefloatFirmwareFaultCode {
         self.firmware_fault_code
+    }
+}
+
+/// Refloat compact all-data attitude fields.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RefloatAllDataAttitude {
+    balance_pitch: RefloatRealtimeBalancePitch,
+    roll: ImuRoll,
+    pitch: ImuPitch,
+}
+
+impl RefloatAllDataAttitude {
+    /// Build typed compact all-data attitude fields.
+    pub const fn new(
+        balance_pitch: RefloatRealtimeBalancePitch,
+        roll: ImuRoll,
+        pitch: ImuPitch,
+    ) -> Self {
+        Self {
+            balance_pitch,
+            roll,
+            pitch,
+        }
+    }
+
+    /// Return balance pitch.
+    pub const fn balance_pitch(self) -> RefloatRealtimeBalancePitch {
+        self.balance_pitch
+    }
+
+    /// Return IMU roll.
+    pub const fn roll(self) -> ImuRoll {
+        self.roll
+    }
+
+    /// Return IMU pitch.
+    pub const fn pitch(self) -> ImuPitch {
+        self.pitch
+    }
+}
+
+/// Refloat compact all-data status fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RefloatAllDataStatus {
+    ride_state: RefloatRideState,
+    beep_reason: RefloatBeepReason,
+}
+
+impl RefloatAllDataStatus {
+    /// Build typed compact all-data status fields.
+    pub const fn new(ride_state: RefloatRideState, beep_reason: RefloatBeepReason) -> Self {
+        Self {
+            ride_state,
+            beep_reason,
+        }
+    }
+
+    /// Return ride state.
+    pub const fn ride_state(self) -> RefloatRideState {
+        self.ride_state
+    }
+
+    /// Return beep reason.
+    pub const fn beep_reason(self) -> RefloatBeepReason {
+        self.beep_reason
+    }
+}
+
+/// Refloat compact all-data FOC ID current state.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RefloatFocIdCurrent {
+    /// A measured FOC ID current is available.
+    Measured(MotorCurrent),
+    /// Refloat will emit its source-backed unavailable marker during encoding.
+    Unavailable,
+}
+
+impl RefloatFocIdCurrent {
+    /// Build a measured FOC ID current value.
+    pub const fn measured(current: MotorCurrent) -> Self {
+        Self::Measured(current)
+    }
+
+    /// Build an unavailable FOC ID current marker.
+    pub const fn unavailable() -> Self {
+        Self::Unavailable
+    }
+
+    /// Return the measured current, when available.
+    pub const fn as_measured(self) -> Option<MotorCurrent> {
+        match self {
+            Self::Measured(current) => Some(current),
+            Self::Unavailable => None,
+        }
+    }
+}
+
+/// Refloat compact all-data motor fields.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RefloatAllDataMotorPayload {
+    battery_voltage: BatteryVoltage,
+    electrical_speed: ElectricalSpeed,
+    vehicle_speed: VehicleSpeed,
+    motor_current: MotorCurrent,
+    battery_current: BatteryCurrent,
+    duty_cycle: DutyCycle,
+    foc_id_current: RefloatFocIdCurrent,
+}
+
+impl RefloatAllDataMotorPayload {
+    /// Build typed compact all-data motor fields.
+    pub const fn new(
+        battery_voltage: BatteryVoltage,
+        electrical_speed: ElectricalSpeed,
+        vehicle_speed: VehicleSpeed,
+        motor_current: MotorCurrent,
+        battery_current: BatteryCurrent,
+        duty_cycle: DutyCycle,
+        foc_id_current: RefloatFocIdCurrent,
+    ) -> Self {
+        Self {
+            battery_voltage,
+            electrical_speed,
+            vehicle_speed,
+            motor_current,
+            battery_current,
+            duty_cycle,
+            foc_id_current,
+        }
+    }
+
+    /// Return battery voltage.
+    pub const fn battery_voltage(self) -> BatteryVoltage {
+        self.battery_voltage
+    }
+
+    /// Return electrical speed.
+    pub const fn electrical_speed(self) -> ElectricalSpeed {
+        self.electrical_speed
+    }
+
+    /// Return vehicle speed.
+    pub const fn vehicle_speed(self) -> VehicleSpeed {
+        self.vehicle_speed
+    }
+
+    /// Return motor current.
+    pub const fn motor_current(self) -> MotorCurrent {
+        self.motor_current
+    }
+
+    /// Return battery current.
+    pub const fn battery_current(self) -> BatteryCurrent {
+        self.battery_current
+    }
+
+    /// Return duty cycle.
+    pub const fn duty_cycle(self) -> DutyCycle {
+        self.duty_cycle
+    }
+
+    /// Return FOC ID current state.
+    pub const fn foc_id_current(self) -> RefloatFocIdCurrent {
+        self.foc_id_current
+    }
+}
+
+/// Refloat compact all-data base payload fields.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RefloatAllDataBasePayload {
+    balance_current: RefloatRealtimeBalanceCurrent,
+    attitude: RefloatAllDataAttitude,
+    status: RefloatAllDataStatus,
+    footpad: FootpadSensorSample,
+    setpoints: RefloatRealtimeRuntimeSetpoints,
+    booster_current: RefloatRealtimeBoosterCurrent,
+    motor: RefloatAllDataMotorPayload,
+}
+
+impl RefloatAllDataBasePayload {
+    /// Build typed compact all-data base payload fields.
+    pub const fn new(
+        balance_current: RefloatRealtimeBalanceCurrent,
+        attitude: RefloatAllDataAttitude,
+        status: RefloatAllDataStatus,
+        footpad: FootpadSensorSample,
+        setpoints: RefloatRealtimeRuntimeSetpoints,
+        booster_current: RefloatRealtimeBoosterCurrent,
+        motor: RefloatAllDataMotorPayload,
+    ) -> Self {
+        Self {
+            balance_current,
+            attitude,
+            status,
+            footpad,
+            setpoints,
+            booster_current,
+            motor,
+        }
+    }
+
+    /// Return the Refloat app-data command this payload belongs to.
+    pub const fn command(self) -> RefloatAppDataCommand {
+        RefloatAppDataCommand::GetAllData
+    }
+
+    /// Return balance current.
+    pub const fn balance_current(self) -> RefloatRealtimeBalanceCurrent {
+        self.balance_current
+    }
+
+    /// Return attitude fields.
+    pub const fn attitude(self) -> RefloatAllDataAttitude {
+        self.attitude
+    }
+
+    /// Return status fields.
+    pub const fn status(self) -> RefloatAllDataStatus {
+        self.status
+    }
+
+    /// Return footpad sample.
+    pub const fn footpad(self) -> FootpadSensorSample {
+        self.footpad
+    }
+
+    /// Return runtime setpoints.
+    pub const fn setpoints(self) -> RefloatRealtimeRuntimeSetpoints {
+        self.setpoints
+    }
+
+    /// Return booster current.
+    pub const fn booster_current(self) -> RefloatRealtimeBoosterCurrent {
+        self.booster_current
+    }
+
+    /// Return motor payload.
+    pub const fn motor(self) -> RefloatAllDataMotorPayload {
+        self.motor
+    }
+}
+
+/// Refloat all-data battery-temperature state.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RefloatAllDataBatteryTemperature {
+    /// A measured battery temperature is available.
+    Measured(Temperature),
+    /// Refloat `v1.2.1` emits a zero placeholder for this field.
+    Unavailable,
+}
+
+impl RefloatAllDataBatteryTemperature {
+    /// Build a measured battery-temperature value.
+    pub const fn measured(temperature: Temperature) -> Self {
+        Self::Measured(temperature)
+    }
+
+    /// Build an unavailable battery-temperature marker.
+    pub const fn unavailable() -> Self {
+        Self::Unavailable
+    }
+
+    /// Return the measured battery temperature, when available.
+    pub const fn as_measured(self) -> Option<Temperature> {
+        match self {
+            Self::Measured(temperature) => Some(temperature),
+            Self::Unavailable => None,
+        }
+    }
+}
+
+/// Refloat all-data mode 2 extension fields.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RefloatAllDataMode2Payload {
+    distance_abs: TripDistance,
+    temperatures: RefloatRealtimeMotorTemperatures,
+    battery_temperature: RefloatAllDataBatteryTemperature,
+}
+
+impl RefloatAllDataMode2Payload {
+    /// Build typed all-data mode 2 extension fields.
+    pub const fn new(
+        distance_abs: TripDistance,
+        temperatures: RefloatRealtimeMotorTemperatures,
+        battery_temperature: RefloatAllDataBatteryTemperature,
+    ) -> Self {
+        Self {
+            distance_abs,
+            temperatures,
+            battery_temperature,
+        }
+    }
+
+    /// Return absolute distance.
+    pub const fn distance_abs(self) -> TripDistance {
+        self.distance_abs
+    }
+
+    /// Return motor temperatures.
+    pub const fn temperatures(self) -> RefloatRealtimeMotorTemperatures {
+        self.temperatures
+    }
+
+    /// Return battery-temperature state.
+    pub const fn battery_temperature(self) -> RefloatAllDataBatteryTemperature {
+        self.battery_temperature
+    }
+}
+
+/// Refloat all-data mode 3 extension fields.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RefloatAllDataMode3Payload {
+    odometer: OdometerMeters,
+    discharged_charge: AmpHoursDischarged,
+    charged_charge: AmpHoursCharged,
+    discharged_energy: WattHoursDischarged,
+    charged_energy: WattHoursCharged,
+    battery_level: BatteryLevel,
+}
+
+impl RefloatAllDataMode3Payload {
+    /// Build typed all-data mode 3 extension fields.
+    pub const fn new(
+        odometer: OdometerMeters,
+        discharged_charge: AmpHoursDischarged,
+        charged_charge: AmpHoursCharged,
+        discharged_energy: WattHoursDischarged,
+        charged_energy: WattHoursCharged,
+        battery_level: BatteryLevel,
+    ) -> Self {
+        Self {
+            odometer,
+            discharged_charge,
+            charged_charge,
+            discharged_energy,
+            charged_energy,
+            battery_level,
+        }
+    }
+
+    /// Return odometer distance.
+    pub const fn odometer(self) -> OdometerMeters {
+        self.odometer
+    }
+
+    /// Return discharged amp-hours.
+    pub const fn discharged_charge(self) -> AmpHoursDischarged {
+        self.discharged_charge
+    }
+
+    /// Return charged amp-hours.
+    pub const fn charged_charge(self) -> AmpHoursCharged {
+        self.charged_charge
+    }
+
+    /// Return discharged watt-hours.
+    pub const fn discharged_energy(self) -> WattHoursDischarged {
+        self.discharged_energy
+    }
+
+    /// Return charged watt-hours.
+    pub const fn charged_energy(self) -> WattHoursCharged {
+        self.charged_energy
+    }
+
+    /// Return battery state of charge.
+    pub const fn battery_level(self) -> BatteryLevel {
+        self.battery_level
+    }
+}
+
+/// Refloat all-data mode 4 extension fields.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RefloatAllDataMode4Payload {
+    current: RefloatRealtimeChargingCurrent,
+    voltage: RefloatRealtimeChargingVoltage,
+}
+
+impl RefloatAllDataMode4Payload {
+    /// Build typed all-data mode 4 extension fields.
+    pub const fn new(
+        current: RefloatRealtimeChargingCurrent,
+        voltage: RefloatRealtimeChargingVoltage,
+    ) -> Self {
+        Self { current, voltage }
+    }
+
+    /// Return charging current.
+    pub const fn current(self) -> RefloatRealtimeChargingCurrent {
+        self.current
+    }
+
+    /// Return charging voltage.
+    pub const fn voltage(self) -> RefloatRealtimeChargingVoltage {
+        self.voltage
     }
 }
 

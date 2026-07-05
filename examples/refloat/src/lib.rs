@@ -30,9 +30,12 @@ mod tests {
     use super::domain::{
         FootpadSensorSample, FootpadSensorState, REFLOAT_APP_DATA_PACKAGE_ID,
         REFLOAT_REALTIME_DATA_ITEMS, REFLOAT_REALTIME_RECORDED_ITEMS,
-        REFLOAT_REALTIME_RUNTIME_ITEMS, RefloatAlertId, RefloatAppDataCommand, RefloatBeepReason,
-        RefloatChargingState, RefloatDarkRideState, RefloatDataRecorderFlags,
-        RefloatFatalErrorState, RefloatFirmwareFaultCode, RefloatHardwareConfig,
+        REFLOAT_REALTIME_RUNTIME_ITEMS, RefloatAlertId, RefloatAllDataAttitude,
+        RefloatAllDataBasePayload, RefloatAllDataBatteryTemperature, RefloatAllDataMode2Payload,
+        RefloatAllDataMode3Payload, RefloatAllDataMode4Payload, RefloatAllDataMotorPayload,
+        RefloatAllDataStatus, RefloatAppDataCommand, RefloatBeepReason, RefloatChargingState,
+        RefloatDarkRideState, RefloatDataRecorderFlags, RefloatFatalErrorState,
+        RefloatFirmwareFaultCode, RefloatFocIdCurrent, RefloatHardwareConfig,
         RefloatHardwareLedsConfig, RefloatImuSample, RefloatLedAnimationMode,
         RefloatLedAnimationSpeed, RefloatLedBarConfig, RefloatLedColor, RefloatLedColorOrder,
         RefloatLedMode, RefloatLedPin, RefloatLedPinConfig, RefloatLedStripConfig,
@@ -415,6 +418,124 @@ mod tests {
         assert_eq!(tail.active_alerts().active_alert_mask_compat(), 0x1);
         assert_eq!(tail.reserved_flags().extra_flags_compat(), 0);
         assert_eq!(tail.firmware_fault_code().compat_code(), 12);
+    }
+
+    #[test]
+    fn package_author_builds_all_data_base_payload_without_raw_values() {
+        let ride_state = RefloatRideState::new(
+            RefloatRunState::Running,
+            RefloatMode::Normal,
+            RefloatSetpointAdjustment::None,
+            RefloatStopCondition::None,
+        );
+        let footpad = FootpadSensorSample::new(
+            AdcDecodedLevel::new(Ratio::from_ratio_const(0.62)),
+            AdcDecodedLevel::new(Ratio::from_ratio_const(0.57)),
+            FootpadSensorState::Both,
+        );
+        let setpoints = RefloatRealtimeRuntimeSetpoints::new(
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(1.5)),
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(0.25)),
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(-0.5)),
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(0.75)),
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(-0.125)),
+            RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(2.0)),
+        );
+        let motor = RefloatAllDataMotorPayload::new(
+            BatteryVoltage::new(Voltage::from_volts(73.5)),
+            ElectricalSpeed::new(Rpm::from_revolutions_per_minute(2420.0)),
+            VehicleSpeed::new(Speed::from_meters_per_second(3.4)),
+            MotorCurrent::new(Current::from_amps(8.25)),
+            BatteryCurrent::new(Current::from_amps(3.75)),
+            DutyCycle::new(SignedRatio::from_ratio_const(0.34)),
+            RefloatFocIdCurrent::measured(MotorCurrent::new(Current::from_amps(1.5))),
+        );
+        let payload = RefloatAllDataBasePayload::new(
+            RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(9.5))),
+            RefloatAllDataAttitude::new(
+                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(0.03)),
+                ImuRoll::new(AngleRadians::from_radians(-0.02)),
+                ImuPitch::new(AngleRadians::from_radians(0.04)),
+            ),
+            RefloatAllDataStatus::new(ride_state, RefloatBeepReason::LowVoltage),
+            footpad,
+            setpoints,
+            RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(1.25))),
+            motor,
+        );
+
+        assert_eq!(payload.command(), RefloatAppDataCommand::GetAllData);
+        assert_eq!(payload.status().ride_state().float_state_compat(), 1);
+        assert_eq!(payload.status().beep_reason().id(), 1);
+        assert_eq!(payload.footpad().state(), FootpadSensorState::Both);
+        assert_eq!(payload.setpoints().remote().angle().as_degrees(), 2.0);
+        assert_eq!(payload.attitude().pitch().angle().as_radians(), 0.04);
+        assert_eq!(payload.balance_current().current().current().as_amps(), 9.5);
+        assert_eq!(
+            payload.booster_current().current().current().as_amps(),
+            1.25
+        );
+        assert_eq!(
+            payload
+                .motor()
+                .vehicle_speed()
+                .speed()
+                .as_meters_per_second(),
+            3.4
+        );
+        assert_eq!(
+            payload
+                .motor()
+                .foc_id_current()
+                .as_measured()
+                .expect("FOC ID current should be measured")
+                .current()
+                .as_amps(),
+            1.5
+        );
+    }
+
+    #[test]
+    fn package_author_builds_all_data_extension_payloads_without_raw_values() {
+        let mode2 = RefloatAllDataMode2Payload::new(
+            TripDistance::new(Distance::from_meters(42.5)),
+            RefloatRealtimeMotorTemperatures::new(
+                MosfetTemperature::new(Temperature::from_degrees_celsius(44.0)),
+                MotorTemperature::new(Temperature::from_degrees_celsius(51.5)),
+            ),
+            RefloatAllDataBatteryTemperature::unavailable(),
+        );
+        let mode3 = RefloatAllDataMode3Payload::new(
+            OdometerMeters::from_meters(123_456),
+            AmpHoursDischarged::new(Charge::from_amp_hours(3.2)),
+            AmpHoursCharged::new(Charge::from_amp_hours(0.8)),
+            WattHoursDischarged::new(Energy::from_watt_hours(170.0)),
+            WattHoursCharged::new(Energy::from_watt_hours(18.5)),
+            BatteryLevel::new(Ratio::from_ratio_const(0.72)),
+        );
+        let mode4 = RefloatAllDataMode4Payload::new(
+            RefloatRealtimeChargingCurrent::new(BatteryCurrent::new(Current::from_amps(1.2))),
+            RefloatRealtimeChargingVoltage::new(BatteryVoltage::new(Voltage::from_volts(82.4))),
+        );
+
+        assert_eq!(mode2.distance_abs().distance().as_meters(), 42.5);
+        assert_eq!(
+            mode2
+                .temperatures()
+                .mosfet()
+                .temperature()
+                .as_degrees_celsius(),
+            44.0
+        );
+        assert!(mode2.battery_temperature().as_measured().is_none());
+        assert_eq!(mode3.odometer().as_meters(), 123_456);
+        assert_eq!(mode3.discharged_charge().charge().as_amp_hours(), 3.2);
+        assert_eq!(mode3.charged_charge().charge().as_amp_hours(), 0.8);
+        assert_eq!(mode3.discharged_energy().energy().as_watt_hours(), 170.0);
+        assert_eq!(mode3.charged_energy().energy().as_watt_hours(), 18.5);
+        assert_eq!(mode3.battery_level().ratio().as_ratio(), 0.72);
+        assert_eq!(mode4.current().current().current().as_amps(), 1.2);
+        assert_eq!(mode4.voltage().voltage().voltage().as_volts(), 82.4);
     }
 
     #[test]
