@@ -42,6 +42,43 @@ pub fn start_package(info: *mut ffi::LibInfo, steps: &[PackageStartStep]) -> boo
     true
 }
 
+/// Define the VESC firmware entrypoints for a package main function.
+#[macro_export]
+macro_rules! package_main {
+    ($main:path) => {
+        #[cfg(all(not(test), target_arch = "arm"))]
+        #[used]
+        #[unsafe(no_mangle)]
+        #[unsafe(link_section = ".program_ptr")]
+        pub(crate) static prog_ptr: u32 = 0;
+
+        /// Firmware loader entrypoint that runs the package main function.
+        #[cfg(any(test, all(not(test), target_arch = "arm")))]
+        #[inline(never)]
+        #[unsafe(no_mangle)]
+        pub extern "C" fn package_lib_init(info: *mut $crate::ffi::LibInfo) -> bool {
+            $main(info)
+        }
+
+        /// Host-linking loader shim for package crates.
+        #[cfg(all(not(test), not(target_arch = "arm")))]
+        #[inline(never)]
+        #[unsafe(no_mangle)]
+        pub extern "C" fn package_lib_init(info: *mut $crate::ffi::LibInfo) -> bool {
+            let _ = $crate::init::install_stop_hook(info);
+            true
+        }
+
+        /// ARM package initializer placed in the firmware init section.
+        #[cfg(all(not(test), target_arch = "arm"))]
+        #[unsafe(no_mangle)]
+        #[unsafe(link_section = ".init_fun")]
+        pub extern "C" fn init(info: *mut $crate::ffi::LibInfo) -> bool {
+            package_lib_init(info)
+        }
+    };
+}
+
 #[cfg(any(test, feature = "test-support"))]
 mod test_state {
     use core::sync::atomic::{AtomicUsize, Ordering};

@@ -92,13 +92,15 @@ fn record_refloat_firmware_version(
 
 /// Return the firmware version captured from `ext-set-fw-version`, if any.
 pub fn recorded_refloat_firmware_version() -> Option<RefloatFirmwareVersion> {
-    FW_VERSION_RECORDED
-        .load(Ordering::Acquire)
-        .then(|| RefloatFirmwareVersion {
-            major: FW_VERSION_MAJOR.load(Ordering::Relaxed),
-            minor: FW_VERSION_MINOR.load(Ordering::Relaxed),
-            beta: FW_VERSION_BETA.load(Ordering::Relaxed),
-        })
+    if !FW_VERSION_RECORDED.load(Ordering::Acquire) {
+        return None;
+    }
+
+    Some(RefloatFirmwareVersion {
+        major: FW_VERSION_MAJOR.load(Ordering::Relaxed),
+        minor: FW_VERSION_MINOR.load(Ordering::Relaxed),
+        beta: FW_VERSION_BETA.load(Ordering::Relaxed),
+    })
 }
 
 #[cfg(test)]

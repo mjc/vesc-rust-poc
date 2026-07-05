@@ -11,7 +11,7 @@
 
 #![cfg_attr(all(not(test), target_arch = "arm"), allow(dead_code))]
 
-#[cfg(all(not(test), target_arch = "arm"))]
+#[cfg(any(test, all(not(test), target_arch = "arm")))]
 use vescpkg_rs::ffi;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::{AppDataBindings, ImuApi, ImuBindings, MotorTelemetryApi, MotorTelemetryBindings};
@@ -25,14 +25,27 @@ mod startup;
 mod state;
 
 pub use self::custom_config::register_refloat_custom_config;
-#[cfg(all(not(test), target_arch = "arm"))]
-pub(crate) use self::imu_callback::register_refloat_imu_callback;
 pub use self::lifecycle::RefloatPackageLifecycle;
-#[cfg(all(not(test), target_arch = "arm"))]
-pub(crate) use self::startup::{
-    install_refloat_package_state, register_refloat_app_data_callbacks,
-};
 pub use self::state::RefloatPackageState;
+
+#[cfg(test)]
+pub(crate) fn main(info: *mut ffi::LibInfo) -> bool {
+    vescpkg_rs::start_package(info, &[])
+}
+
+#[cfg(all(not(test), target_arch = "arm"))]
+pub(crate) fn main(info: *mut ffi::LibInfo) -> bool {
+    vescpkg_rs::start_package(
+        info,
+        &[
+            startup::install_refloat_package_state,
+            crate::runtime::start_refloat_runtime_threads,
+            imu_callback::register_refloat_imu_callback,
+            startup::register_refloat_app_data_callbacks,
+            crate::extensions::register_refloat_loader_extensions,
+        ],
+    )
+}
 
 fn refloat_ticks_elapsed(now: u32, then: u32, seconds: u32) -> bool {
     now.wrapping_sub(then) >= seconds.saturating_mul(10_000)
