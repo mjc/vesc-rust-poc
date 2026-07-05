@@ -32,10 +32,14 @@ mod tests {
         REFLOAT_REALTIME_DATA_ITEMS, REFLOAT_REALTIME_RECORDED_ITEMS,
         REFLOAT_REALTIME_RUNTIME_ITEMS, RefloatAppDataCommand, RefloatBeepReason,
         RefloatChargingState, RefloatDarkRideState, RefloatDataRecorderFlags,
-        RefloatFatalErrorState, RefloatImuSample, RefloatMode, RefloatMotorCommand,
-        RefloatMotorTelemetry, RefloatRealtimeDataHeader, RefloatRealtimeDataItem,
-        RefloatRealtimeDataItemGroup, RefloatRealtimeDataRecordPolicy, RefloatRideState,
-        RefloatRunState, RefloatSetpointAdjustment, RefloatStopCondition, RefloatWheelSlipState,
+        RefloatFatalErrorState, RefloatHardwareConfig, RefloatHardwareLedsConfig, RefloatImuSample,
+        RefloatLedAnimationMode, RefloatLedAnimationSpeed, RefloatLedBarConfig, RefloatLedColor,
+        RefloatLedColorOrder, RefloatLedMode, RefloatLedPin, RefloatLedPinConfig,
+        RefloatLedStripConfig, RefloatLedStripOrder, RefloatLedTransition, RefloatLedsConfig,
+        RefloatMode, RefloatMotorCommand, RefloatMotorTelemetry, RefloatRealtimeDataHeader,
+        RefloatRealtimeDataItem, RefloatRealtimeDataItemGroup, RefloatRealtimeDataRecordPolicy,
+        RefloatRideState, RefloatRunState, RefloatSetpointAdjustment, RefloatStatusBarConfig,
+        RefloatStatusBarIdleTimeout, RefloatStopCondition, RefloatWheelSlipState,
     };
     use vescpkg_rs::prelude::*;
 
@@ -270,5 +274,257 @@ mod tests {
             RefloatRealtimeDataItem::MotorSpeed.record_policy(),
             RefloatRealtimeDataRecordPolicy::SendOnly
         );
+    }
+
+    #[test]
+    fn package_author_reads_hardware_led_config_without_raw_bit_masks() {
+        let disabled = RefloatHardwareLedsConfig::new(RefloatLedMode::Off);
+        let internal = RefloatHardwareLedsConfig::new(RefloatLedMode::Internal);
+        let external = RefloatHardwareLedsConfig::new(RefloatLedMode::External);
+        let both = RefloatHardwareLedsConfig::new(RefloatLedMode::Both);
+
+        assert_eq!(RefloatLedMode::Off.id(), 0);
+        assert_eq!(RefloatLedMode::Internal.id(), 0x1);
+        assert_eq!(RefloatLedMode::External.id(), 0x2);
+        assert_eq!(RefloatLedMode::Both.id(), 0x3);
+        assert!(!disabled.uses_internal_leds());
+        assert!(!disabled.uses_external_leds());
+        assert!(internal.uses_internal_leds());
+        assert!(!internal.uses_external_leds());
+        assert!(!external.uses_internal_leds());
+        assert!(external.uses_external_leds());
+        assert!(both.uses_internal_leds());
+        assert!(both.uses_external_leds());
+    }
+
+    #[test]
+    fn package_author_composes_hardware_leds_without_raw_config_fields() {
+        let defaults = RefloatHardwareLedsConfig::new(RefloatLedMode::Off);
+
+        assert_eq!(defaults.pin(), RefloatLedPin::B7);
+        assert_eq!(defaults.pin_config(), RefloatLedPinConfig::PullupTo5v);
+        assert_eq!(defaults.status_strip().order(), RefloatLedStripOrder::First);
+        assert_eq!(defaults.status_strip().count(), 10);
+        assert_eq!(defaults.front_strip().order(), RefloatLedStripOrder::Second);
+        assert_eq!(defaults.front_strip().count(), 20);
+        assert_eq!(defaults.rear_strip().order(), RefloatLedStripOrder::Third);
+        assert_eq!(defaults.rear_strip().count(), 20);
+
+        let status_strip =
+            RefloatLedStripConfig::new(RefloatLedStripOrder::First, 8, RefloatLedColorOrder::Grbw);
+        let front_strip =
+            RefloatLedStripConfig::new(RefloatLedStripOrder::Second, 24, RefloatLedColorOrder::Rgb);
+        let rear_strip =
+            RefloatLedStripConfig::new(RefloatLedStripOrder::Third, 24, RefloatLedColorOrder::Grb)
+                .with_reverse(true);
+
+        let hardware_leds = RefloatHardwareLedsConfig::new(RefloatLedMode::Both)
+            .with_pin(RefloatLedPin::C9)
+            .with_pin_config(RefloatLedPinConfig::NoPullup)
+            .with_status_strip(status_strip)
+            .with_front_strip(front_strip)
+            .with_rear_strip(rear_strip);
+        let hardware = RefloatHardwareConfig::new(hardware_leds);
+
+        assert_eq!(hardware.leds().mode(), RefloatLedMode::Both);
+        assert_eq!(hardware.leds().pin(), RefloatLedPin::C9);
+        assert_eq!(hardware.leds().pin_config(), RefloatLedPinConfig::NoPullup);
+        assert_eq!(
+            hardware.leds().status_strip().color_order(),
+            RefloatLedColorOrder::Grbw
+        );
+        assert_eq!(
+            hardware.leds().front_strip().color_order(),
+            RefloatLedColorOrder::Rgb
+        );
+        assert!(hardware.leds().rear_strip().is_reversed());
+    }
+
+    #[test]
+    fn package_author_reads_led_wiring_config_without_raw_numbers() {
+        let strip = RefloatLedStripConfig::new(
+            RefloatLedStripOrder::Second,
+            24,
+            RefloatLedColorOrder::Grbw,
+        )
+        .with_reverse(true);
+
+        assert_eq!(RefloatLedPin::B6.id(), 0);
+        assert_eq!(RefloatLedPin::B7.id(), 1);
+        assert_eq!(RefloatLedPin::C9.id(), 2);
+        assert_eq!(RefloatLedPinConfig::PullupTo5v.id(), 0);
+        assert_eq!(RefloatLedPinConfig::NoPullup.id(), 1);
+        assert_eq!(RefloatLedColorOrder::Grb.id(), 0);
+        assert_eq!(RefloatLedColorOrder::Grbw.id(), 1);
+        assert_eq!(RefloatLedColorOrder::Rgb.id(), 2);
+        assert_eq!(RefloatLedColorOrder::Wrgb.id(), 3);
+        assert_eq!(RefloatLedStripOrder::None.id(), 0);
+        assert_eq!(RefloatLedStripOrder::First.id(), 1);
+        assert_eq!(RefloatLedStripOrder::Second.id(), 2);
+        assert_eq!(RefloatLedStripOrder::Third.id(), 3);
+        assert_eq!(strip.order(), RefloatLedStripOrder::Second);
+        assert_eq!(strip.count(), 24);
+        assert_eq!(strip.color_order(), RefloatLedColorOrder::Grbw);
+        assert!(strip.is_reversed());
+    }
+
+    #[test]
+    fn package_author_reads_led_bar_config_without_raw_ids() {
+        let bar = RefloatLedBarConfig::new(
+            Ratio::from_ratio_const(0.8),
+            RefloatLedColor::Gold,
+            RefloatLedColor::Black,
+            RefloatLedAnimationMode::Pulse,
+            RefloatLedAnimationSpeed::from_units(1.5),
+        );
+
+        let color_ids = [
+            (RefloatLedColor::Black, 0),
+            (RefloatLedColor::WhiteFull, 1),
+            (RefloatLedColor::WhiteRgb, 2),
+            (RefloatLedColor::WhiteSingle, 3),
+            (RefloatLedColor::Red, 4),
+            (RefloatLedColor::Ferrari, 5),
+            (RefloatLedColor::Flame, 6),
+            (RefloatLedColor::Coral, 7),
+            (RefloatLedColor::Sunset, 8),
+            (RefloatLedColor::Sunrise, 9),
+            (RefloatLedColor::Gold, 10),
+            (RefloatLedColor::Orange, 11),
+            (RefloatLedColor::Yellow, 12),
+            (RefloatLedColor::Banana, 13),
+            (RefloatLedColor::Lime, 14),
+            (RefloatLedColor::Acid, 15),
+            (RefloatLedColor::Sage, 16),
+            (RefloatLedColor::Green, 17),
+            (RefloatLedColor::Mint, 18),
+            (RefloatLedColor::Tiffany, 19),
+            (RefloatLedColor::Cyan, 20),
+            (RefloatLedColor::Steel, 21),
+            (RefloatLedColor::Sky, 22),
+            (RefloatLedColor::Azure, 23),
+            (RefloatLedColor::Sapphire, 24),
+            (RefloatLedColor::Blue, 25),
+            (RefloatLedColor::Violet, 26),
+            (RefloatLedColor::Amethyst, 27),
+            (RefloatLedColor::Magenta, 28),
+            (RefloatLedColor::Pink, 29),
+            (RefloatLedColor::Fuchsia, 30),
+            (RefloatLedColor::Lavender, 31),
+        ];
+        let animation_ids = [
+            (RefloatLedAnimationMode::Solid, 0),
+            (RefloatLedAnimationMode::Fade, 1),
+            (RefloatLedAnimationMode::Pulse, 2),
+            (RefloatLedAnimationMode::Strobe, 3),
+            (RefloatLedAnimationMode::KnightRider, 4),
+            (RefloatLedAnimationMode::Felony, 5),
+            (RefloatLedAnimationMode::RainbowCycle, 6),
+            (RefloatLedAnimationMode::RainbowFade, 7),
+            (RefloatLedAnimationMode::RainbowRoll, 8),
+        ];
+        let transition_ids = [
+            (RefloatLedTransition::Fade, 0),
+            (RefloatLedTransition::FadeOutIn, 1),
+            (RefloatLedTransition::Cipher, 2),
+            (RefloatLedTransition::MonoCipher, 3),
+        ];
+
+        assert!(
+            color_ids
+                .iter()
+                .all(|(color, expected)| color.id() == *expected)
+        );
+        assert!(
+            animation_ids
+                .iter()
+                .all(|(mode, expected)| mode.id() == *expected)
+        );
+        assert!(
+            transition_ids
+                .iter()
+                .all(|(transition, expected)| transition.id() == *expected)
+        );
+        assert!((bar.brightness().as_ratio() - 0.8).abs() < f32::EPSILON);
+        assert_eq!(bar.primary_color(), RefloatLedColor::Gold);
+        assert_eq!(bar.secondary_color(), RefloatLedColor::Black);
+        assert_eq!(bar.animation_mode(), RefloatLedAnimationMode::Pulse);
+        assert!((bar.animation_speed().as_units() - 1.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn package_author_reads_status_bar_config_without_raw_scalars() {
+        let status = RefloatStatusBarConfig::new(
+            RefloatStatusBarIdleTimeout::from_seconds(30),
+            Ratio::from_ratio_const(0.12),
+            Ratio::from_ratio_const(0.25),
+            Ratio::from_ratio_const(0.70),
+            Ratio::from_ratio_const(0.20),
+        )
+        .showing_sensors_while_running();
+
+        assert_eq!(status.idle_timeout().as_seconds(), 30);
+        assert!((status.duty_threshold().as_ratio() - 0.12).abs() < f32::EPSILON);
+        assert!((status.red_bar_percentage().as_ratio() - 0.25).abs() < f32::EPSILON);
+        assert!(status.shows_sensors_while_running());
+        assert!((status.brightness_headlights_on().as_ratio() - 0.70).abs() < f32::EPSILON);
+        assert!((status.brightness_headlights_off().as_ratio() - 0.20).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn package_author_composes_leds_config_without_raw_flags() {
+        let headlights = RefloatLedBarConfig::new(
+            Ratio::from_ratio_const(0.9),
+            RefloatLedColor::WhiteFull,
+            RefloatLedColor::Black,
+            RefloatLedAnimationMode::Solid,
+            RefloatLedAnimationSpeed::from_units(1.0),
+        );
+        let taillights = RefloatLedBarConfig::new(
+            Ratio::from_ratio_const(0.5),
+            RefloatLedColor::Red,
+            RefloatLedColor::Black,
+            RefloatLedAnimationMode::Pulse,
+            RefloatLedAnimationSpeed::from_units(1.5),
+        );
+        let status = RefloatStatusBarConfig::new(
+            RefloatStatusBarIdleTimeout::from_seconds(45),
+            Ratio::from_ratio_const(0.10),
+            Ratio::from_ratio_const(0.20),
+            Ratio::from_ratio_const(0.75),
+            Ratio::from_ratio_const(0.25),
+        );
+
+        let leds = RefloatLedsConfig::new(
+            headlights, taillights, headlights, taillights, status, taillights,
+        )
+        .with_headlights_transition(RefloatLedTransition::FadeOutIn)
+        .with_direction_transition(RefloatLedTransition::Cipher)
+        .enabled()
+        .with_headlights_on()
+        .lights_off_when_lifted()
+        .status_on_front_when_lifted();
+
+        assert!(leds.is_enabled());
+        assert!(leds.are_headlights_on());
+        assert_eq!(
+            leds.headlights_transition(),
+            RefloatLedTransition::FadeOutIn
+        );
+        assert_eq!(leds.direction_transition(), RefloatLedTransition::Cipher);
+        assert!(leds.turns_lights_off_when_lifted());
+        assert!(leds.shows_status_on_front_when_lifted());
+        assert_eq!(
+            leds.headlights().primary_color(),
+            RefloatLedColor::WhiteFull
+        );
+        assert_eq!(leds.taillights().primary_color(), RefloatLedColor::Red);
+        assert_eq!(
+            leds.front().animation_mode(),
+            RefloatLedAnimationMode::Solid
+        );
+        assert_eq!(leds.rear().animation_mode(), RefloatLedAnimationMode::Pulse);
+        assert_eq!(leds.status().idle_timeout().as_seconds(), 45);
+        assert_eq!(leds.status_idle().primary_color(), RefloatLedColor::Red);
     }
 }
