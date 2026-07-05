@@ -370,8 +370,10 @@ Refloat has both generated C config code and firmware custom-config callbacks:
 
 ## Immediate Port Gaps
 
-- Baseline fixture: promote the local `target/refloat-parity` proof into the
-  durable fixture strategy when this branch is ready for review.
+- Rust-native artifact proof: compare the repo-built
+  `cargo vescpkg build --example refloat` package against the captured
+  copy-through `v1.2.1` package baseline, documenting intentional native payload
+  differences as the runtime port replaces C behavior.
 - Runtime API: expose enough typed lifecycle, allocation, thread, callback,
   custom config, app-data, and LispBM extension support to port behavior without
   leaking raw ABI into package code.

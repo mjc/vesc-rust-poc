@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     BLE_LOOPBACK_PACKAGE_NAME, Package, PackageBinaryConversionRunner, PackageExample,
-    PackageTargetError, PackageTargetMode, PackageTargetPlan, SNAKE_PACKAGE_NAME,
+    PackageTargetError, PackageTargetMode, PackageTargetPlan, REFLOAT_PACKAGE_NAME,
+    REFLOAT_PACKAGE_VERSION, SNAKE_PACKAGE_NAME,
     native_lib_toolchain::{NativeLibToolchain, RealNativeLibToolchain},
     refloat_native_build::{RefloatGitHash, RefloatNativeBuildPlan},
     refloat_package_assets::{RefloatBuildInfo, RefloatSourceAssets},
@@ -39,6 +40,8 @@ pub enum CargoVescPkgExample {
     Loopback,
     /// Snake package example.
     Snake,
+    /// Refloat package example.
+    Refloat,
 }
 
 /// Mutually exclusive source selected by `cargo vescpkg build`.
@@ -279,6 +282,7 @@ impl CargoVescPkgInvocation {
         match self.example() {
             CargoVescPkgExample::Loopback => BLE_LOOPBACK_PACKAGE_NAME,
             CargoVescPkgExample::Snake => SNAKE_PACKAGE_NAME,
+            CargoVescPkgExample::Refloat => REFLOAT_PACKAGE_NAME,
         }
     }
 
@@ -287,6 +291,7 @@ impl CargoVescPkgInvocation {
         match self.example() {
             CargoVescPkgExample::Loopback => PackageExample::Loopback,
             CargoVescPkgExample::Snake => PackageExample::Snake,
+            CargoVescPkgExample::Refloat => PackageExample::Refloat,
         }
     }
 
@@ -303,6 +308,7 @@ impl CargoVescPkgInvocation {
                     match example {
                         CargoVescPkgExample::Loopback => "loopback",
                         CargoVescPkgExample::Snake => "snake",
+                        CargoVescPkgExample::Refloat => "refloat",
                     }
                     .to_owned(),
                 );
@@ -505,6 +511,7 @@ where
 
     let invocation = CargoVescPkgInvocation::new(mode)
         .with_example(example)
+        .with_package_version(default_package_version(example))
         .with_target_triple(target_triple)
         .with_refloat_build_info(refloat_build_date, refloat_git_commit)
         .with_refloat_vesc_tool(refloat_vesc_tool);
@@ -524,7 +531,15 @@ fn parse_example(value: &str) -> Result<CargoVescPkgExample, CargoVescPkgParseEr
     match value {
         "loopback" => Ok(CargoVescPkgExample::Loopback),
         "snake" => Ok(CargoVescPkgExample::Snake),
+        "refloat" => Ok(CargoVescPkgExample::Refloat),
         other => Err(CargoVescPkgParseError::UnsupportedExample(other.to_owned())),
+    }
+}
+
+fn default_package_version(example: CargoVescPkgExample) -> &'static str {
+    match example {
+        CargoVescPkgExample::Loopback | CargoVescPkgExample::Snake => DEFAULT_PACKAGE_VERSION,
+        CargoVescPkgExample::Refloat => REFLOAT_PACKAGE_VERSION,
     }
 }
 
@@ -836,7 +851,6 @@ mod tests {
         );
     }
 
-    #[test]
     fn parse_args_rejects_conflicting_package_sources() {
         for args in [
             [
@@ -889,6 +903,41 @@ mod tests {
                 "--target".to_owned(),
                 DEFAULT_TARGET_TRIPLE.to_owned(),
             ]
+        );
+    }
+
+    #[test]
+    fn parses_the_refloat_example_invocation() {
+        let invocation = parse_args(["build", "--example", "refloat"])
+            .expect("parse refloat example invocation");
+
+        assert_eq!(invocation.mode(), CargoVescPkgMode::Build);
+        assert_eq!(
+            invocation.subcommand_args(),
+            vec![
+                "build".to_owned(),
+                "--example".to_owned(),
+                "refloat".to_owned(),
+                "--target".to_owned(),
+                DEFAULT_TARGET_TRIPLE.to_owned(),
+            ]
+        );
+        let plan = invocation.package_target_plan("/tmp/repo");
+        assert_eq!(
+            plan.package_output_path(),
+            PathBuf::from("target/vescpkg/Refloat-1.2.1/Refloat-1.2.1.vescpkg")
+        );
+        assert_eq!(
+            plan.build_plan().native_artifact_input_path(),
+            PathBuf::from("target/thumbv7em-none-eabihf/release/libvesc_example_refloat.a")
+        );
+        assert_eq!(
+            plan.build_plan().example_source_path(),
+            PathBuf::from("examples/refloat")
+        );
+        assert_eq!(
+            plan.build_plan().conversion_plan().command().example(),
+            crate::PackageExample::Refloat
         );
     }
 

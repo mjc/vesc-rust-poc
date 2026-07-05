@@ -16,6 +16,8 @@ pub enum PackageExample {
     Loopback,
     /// Snake package example.
     Snake,
+    /// Refloat package example.
+    Refloat,
 }
 
 impl PackageExample {
@@ -24,6 +26,7 @@ impl PackageExample {
         match self {
             Self::Loopback => PathBuf::from("examples/loopback"),
             Self::Snake => PathBuf::from("examples/snake"),
+            Self::Refloat => PathBuf::from("examples/refloat"),
         }
     }
 
@@ -36,6 +39,9 @@ impl PackageExample {
             Self::Snake => {
                 PathBuf::from("target/thumbv7em-none-eabihf/release/libvesc_example_snake.a")
             }
+            Self::Refloat => {
+                PathBuf::from("target/thumbv7em-none-eabihf/release/libvesc_example_refloat.a")
+            }
         }
     }
 
@@ -44,6 +50,7 @@ impl PackageExample {
         match self {
             Self::Loopback => "vesc-example-loopback",
             Self::Snake => "vesc-example-snake",
+            Self::Refloat => "vesc-example-refloat",
         }
     }
 
@@ -52,6 +59,7 @@ impl PackageExample {
         match self {
             Self::Loopback => PathBuf::from("target/native-lib-baseline"),
             Self::Snake => PathBuf::from("target/native-lib-snake"),
+            Self::Refloat => PathBuf::from("target/native-lib-refloat"),
         }
     }
 }
@@ -145,7 +153,14 @@ impl PackageBuildPlan {
 
     /// Return the rendered package assets for this plan.
     pub fn assets(&self) -> PackageAssets {
-        PackageAssets::new(self.layout.clone(), self.provenance.clone())
+        match self.example {
+            PackageExample::Loopback | PackageExample::Snake => {
+                PackageAssets::new(self.layout.clone(), self.provenance.clone())
+            }
+            PackageExample::Refloat => {
+                PackageAssets::refloat(self.layout.clone(), self.provenance.clone())
+            }
+        }
     }
 
     /// Render the package assets into the source tree.
@@ -272,9 +287,9 @@ impl PackageBuildPlan {
 
 #[cfg(test)]
 mod tests {
-    use super::PackageBuildPlan;
+    use super::{PackageBuildPlan, PackageExample};
     use crate::test_support::{FakeConversionRunner, PackageTestHarness};
-    use crate::{BLE_LOOPBACK_PACKAGE_NAME, PackageProvenance};
+    use crate::{BLE_LOOPBACK_PACKAGE_NAME, PackageProvenance, REFLOAT_PACKAGE_NAME};
 
     #[test]
     fn renders_the_expected_package_build_plan() {
@@ -349,6 +364,21 @@ mod tests {
                 .assets()
                 .render_readme()
                 .contains("abc123")
+        );
+    }
+
+    #[test]
+    fn renders_refloat_descriptor_with_source_package_shape() {
+        let plan = PackageBuildPlan::for_example(
+            "fixtures/native-lib-baseline",
+            REFLOAT_PACKAGE_NAME,
+            "1.2.1",
+            PackageExample::Refloat,
+        );
+
+        assert_eq!(
+            plan.assets().render_descriptor(),
+            "import QtQuick 2.15\n\nItem {\n    property string pkgName: \"Refloat\"\n    property string pkgDescriptionMd: \"package_README-gen.md\"\n    property string pkgLisp: \"lisp/package.lisp\"\n    property string pkgQml: \"ui.qml\"\n    property bool pkgQmlIsFullscreen: false\n    property string pkgOutput: \"refloat.vescpkg\"\n\n    function isCompatible (fwRxParams) {\n        if (fwRxParams.hwTypeStr().toLowerCase() != \"vesc\") {\n            return false;\n        }\n\n        return true;\n    }\n}\n"
         );
     }
 

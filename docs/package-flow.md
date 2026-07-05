@@ -67,6 +67,24 @@ For the pinned `v1.2.1` inputs, the Rust package and VESC Tool baseline compare
 byte-for-byte with SHA-256
 `e894e55ab12593743e1f1e20b82f4ffad534bb28b9f56a764b4119f9e5cbd487`.
 
+## Refloat Rust-Native Package Flow
+
+The ported Rust Refloat example uses the normal repo package target path:
+
+```sh
+nix develop -c cargo run -p cargo-vescpkg -- build --package-only --example refloat
+```
+
+This builds `vesc-example-refloat` for `thumbv7em-none-eabihf`, links and
+flattens its native payload under `target/native-lib-refloat`, and emits:
+
+```text
+target/vescpkg/Rust-Refloat-example-package-0.1.0/Rust-Refloat-example-package-0.1.0.vescpkg
+```
+
+This artifact is expected to differ from the copy-through `v1.2.1` package while
+runtime behavior is being ported into Rust.
+
 ## Build And Upload Workflow
 
 1. Enter the Nix shell with `nix develop`.

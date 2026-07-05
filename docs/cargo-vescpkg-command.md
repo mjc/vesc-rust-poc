@@ -23,6 +23,7 @@ not an official VESC project or endorsed command.
 - `cargo vescpkg build`
 - optional `cargo vescpkg build --package-only`
 - optional `cargo vescpkg build --target thumbv7em-none-eabihf`
+- optional `cargo vescpkg build --example loopback|snake|refloat`
 - optional `cargo vescpkg build --manifest <pkgdesc.qml>` to build a package
   from a staged VESC package descriptor
 - optional `cargo vescpkg build --refloat-source <checkout>` to package Refloat
@@ -79,6 +80,17 @@ This path currently delegates native `settings.xml` conversion and
 package writer for the final `.vescpkg`. The current branch has byte-for-byte
 package parity with `VESC Tool --buildPkgFromDesc pkgdesc.qml` for the pinned
 `v1.2.1` source inputs.
+
+The Rust-native Refloat example package is selected from the repo examples with:
+
+```sh
+cargo vescpkg build --package-only --example refloat
+```
+
+That emits
+`target/vescpkg/Rust-Refloat-example-package-0.1.0/Rust-Refloat-example-package-0.1.0.vescpkg`.
+It is the ported Rust package artifact, not the byte-identical Refloat
+`v1.2.1` copy-through baseline.
 
 ## Non-Goals
 

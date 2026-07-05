@@ -45,12 +45,32 @@ impl PackageProvenance {
 pub struct PackageAssets {
     layout: PackageLayout,
     provenance: PackageProvenance,
+    profile: PackageAssetProfile,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PackageAssetProfile {
+    Generic,
+    Refloat,
 }
 
 impl PackageAssets {
     /// Construct the asset set for one package layout and provenance.
     pub fn new(layout: PackageLayout, provenance: PackageProvenance) -> Self {
-        Self { layout, provenance }
+        Self {
+            layout,
+            provenance,
+            profile: PackageAssetProfile::Generic,
+        }
+    }
+
+    /// Construct the Refloat asset set for one package layout and provenance.
+    pub fn refloat(layout: PackageLayout, provenance: PackageProvenance) -> Self {
+        Self {
+            layout,
+            provenance,
+            profile: PackageAssetProfile::Refloat,
+        }
     }
 
     /// Return the package name used by the assets.
@@ -115,11 +135,31 @@ impl PackageAssets {
 
     /// Render the package descriptor QML.
     pub fn render_descriptor(&self) -> String {
-        format!(
-            "import QtQuick 2.15\n\nItem {{\n    property string pkgName: \"{}\"\n    property string pkgDescriptionMd: \"README.md\"\n    property string pkgLisp: \"code.lisp\"\n    property string pkgQml: \"\"\n    property bool pkgQmlIsFullscreen: false\n    property string pkgOutput: \"{}\"\n}}\n",
-            self.package_name(),
-            self.layout.artifact_name()
-        )
+        match self.profile {
+            PackageAssetProfile::Generic => format!(
+                "import QtQuick 2.15\n\nItem {{\n    property string pkgName: \"{}\"\n    property string pkgDescriptionMd: \"README.md\"\n    property string pkgLisp: \"code.lisp\"\n    property string pkgQml: \"\"\n    property bool pkgQmlIsFullscreen: false\n    property string pkgOutput: \"{}\"\n}}\n",
+                self.package_name(),
+                self.layout.artifact_name()
+            ),
+            PackageAssetProfile::Refloat => concat!(
+                "import QtQuick 2.15\n\n",
+                "Item {\n",
+                "    property string pkgName: \"Refloat\"\n",
+                "    property string pkgDescriptionMd: \"package_README-gen.md\"\n",
+                "    property string pkgLisp: \"lisp/package.lisp\"\n",
+                "    property string pkgQml: \"ui.qml\"\n",
+                "    property bool pkgQmlIsFullscreen: false\n",
+                "    property string pkgOutput: \"refloat.vescpkg\"\n\n",
+                "    function isCompatible (fwRxParams) {\n",
+                "        if (fwRxParams.hwTypeStr().toLowerCase() != \"vesc\") {\n",
+                "            return false;\n",
+                "        }\n\n",
+                "        return true;\n",
+                "    }\n",
+                "}\n",
+            )
+            .to_owned(),
+        }
     }
 
     /// Render the loader script that boots the package.
