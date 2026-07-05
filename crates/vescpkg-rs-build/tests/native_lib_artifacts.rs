@@ -35,7 +35,7 @@ fn current_native_lib_preserves_known_good_loader_contract() {
 }
 
 #[test]
-fn current_refloat_native_lib_is_loader_only_containment_candidate() {
+fn current_refloat_native_lib_preserves_registration_tail_contract() {
     let plan = NativeLibLinkPlan::for_example(repo_root(), PackageExample::Refloat);
     ensure_native_lib_artifacts(&PackageBinaryConversionPlan::for_example(
         plan.root(),
@@ -47,7 +47,7 @@ fn current_refloat_native_lib_is_loader_only_containment_candidate() {
 }
 
 #[test]
-fn native_binary_comparison_report_highlights_refloat_loader_delta() {
+fn native_binary_comparison_report_highlights_refloat_registration_delta() {
     let root = repo_root();
     let loopback = native_lib_link_plan();
     let refloat = NativeLibLinkPlan::for_example(root, PackageExample::Refloat);

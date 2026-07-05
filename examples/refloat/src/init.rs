@@ -14,13 +14,23 @@ pub(crate) static prog_ptr: u32 = 0;
 #[inline(never)]
 #[unsafe(no_mangle)]
 pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
-    // Refloat v1.2.1 (0ef6e99d8701) `src/main.c:2456-2459` registers custom
-    // config, app-data, then loader extensions. This candidate keeps only the
-    // loader extensions while app-data side effects are isolated on hardware.
-    refloat_package_start(|| unsafe { crate::extensions::register_refloat_loader_extensions(info) })
+    // Refloat v1.2.1 (0ef6e99d8701) `src/main.c:2419-2461` allocates `Data`,
+    // runs `data_init`, installs stop/ARG, starts main+aux threads, then
+    // registers IMU, custom config, app-data, and LispBM extensions.
+    //
+    // This containment candidate skips upstream threads/IMU/ride control, but
+    // preserves the VESC Tool/App UI registration tail from `src/main.c:2456-2459`.
+    refloat_package_start(
+        || crate::app_data::install_refloat_app_data(info),
+        || unsafe { crate::extensions::register_refloat_loader_extensions(info) },
+    )
 }
 
-/// Host non-test builds install only the stop hook.
+/// Host non-test builds keep a generic stop-hook shim for host linking only.
+///
+/// This is not target Refloat parity: upstream installs `stop`/`Data *` during
+/// ARM startup at `src/main.c:2431-2432`, while the containment target skips
+/// that stateful path and keeps only `src/main.c:2458-2459` loader extensions.
 #[cfg(all(not(test), not(target_arch = "arm")))]
 #[inline(never)]
 #[unsafe(no_mangle)]
@@ -29,17 +39,22 @@ pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
     true
 }
 
-/// Test-build package loader entrypoint that mirrors the target init behavior.
+/// Test-build package loader entrypoint for the containment side-effect boundary.
 #[cfg(test)]
 #[unsafe(no_mangle)]
-pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
-    let _ = vescpkg_rs::init::install_stop_hook(info);
-    true
+pub extern "C" fn package_lib_init(_info: *mut ffi::LibInfo) -> bool {
+    // Upstream Refloat v1.2.1 installs `stop`/`Data *` at `src/main.c:2431-2432`.
+    // The current Rust containment init intentionally skips that stateful startup
+    // path and models only the registration tail at `src/main.c:2456-2459`.
+    refloat_package_start(|| true, || true)
 }
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
-fn refloat_package_start(register_loader_extensions: impl FnOnce() -> bool) -> bool {
-    register_loader_extensions()
+fn refloat_package_start(
+    install_app_data: impl FnOnce() -> bool,
+    register_loader_extensions: impl FnOnce() -> bool,
+) -> bool {
+    install_app_data() && register_loader_extensions()
 }
 
 /// ARM package loader entrypoint placed in `.init_fun` for VESC firmware loading.
@@ -56,20 +71,34 @@ mod tests {
     use core::cell::Cell;
 
     #[test]
-    fn refloat_startup_registers_only_loader_extensions() {
+    fn refloat_startup_registers_app_data_before_loader_extensions() {
         let extension_calls = Cell::new(0);
+        let app_data_calls = Cell::new(0);
 
-        let result = super::refloat_package_start(|| {
-            extension_calls.set(extension_calls.get() + 1);
-            true
-        });
+        let result = super::refloat_package_start(
+            || {
+                app_data_calls.set(app_data_calls.get() + 1);
+                assert_eq!(extension_calls.get(), 0);
+                true
+            },
+            || {
+                extension_calls.set(extension_calls.get() + 1);
+                true
+            },
+        );
 
         assert!(result);
+        assert_eq!(app_data_calls.get(), 1);
         assert_eq!(extension_calls.get(), 1);
     }
 
     #[test]
+    fn refloat_startup_fails_when_app_data_install_fails() {
+        assert!(!super::refloat_package_start(|| false, || true));
+    }
+
+    #[test]
     fn refloat_startup_fails_when_loader_extensions_fail() {
-        assert!(!super::refloat_package_start(|| false));
+        assert!(!super::refloat_package_start(|| true, || false));
     }
 }

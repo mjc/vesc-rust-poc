@@ -63,7 +63,7 @@ mod tests {
     use vescpkg_rs::prelude::*;
 
     #[test]
-    fn package_lib_init_installs_refloat_stop_hook() {
+    fn test_package_lib_init_uses_side_effect_free_registration_tail() {
         let mut info = vescpkg_rs::ffi::LibInfo {
             stop_fun: None,
             arg: core::ptr::null_mut(),
@@ -71,7 +71,11 @@ mod tests {
         };
 
         assert!(super::init::package_lib_init(&mut info));
-        assert!(info.stop_fun.is_some());
+        // Upstream Refloat v1.2.1 installs `stop`/`Data *` at
+        // `src/main.c:2431-2432` before the registration tail at
+        // `src/main.c:2456-2459`; the test build keeps that tail side-effect free.
+        assert!(info.stop_fun.is_none());
+        assert!(info.arg.is_null());
     }
 
     #[test]

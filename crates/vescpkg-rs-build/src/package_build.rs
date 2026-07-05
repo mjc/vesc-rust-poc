@@ -186,11 +186,14 @@ impl PackageBuildPlan {
         let loader = match self.example {
             PackageExample::Loopback | PackageExample::Snake => assets.render_loader(),
             PackageExample::Refloat => {
+                // Refloat v1.2.1 (0ef6e99d8701) `lisp/package.lisp:1-17`.
                 fs::read_to_string(refloat_source_root.join("lisp/package.lisp"))?
             }
         };
         fs::write(self.source_root.join(assets.loader_path()), loader)?;
         if self.example == PackageExample::Refloat {
+            // Imported by upstream `lisp/package.lisp:11-13` when `ext-bms`
+            // reports BMS integration enabled.
             fs::copy(
                 refloat_source_root.join("lisp/bms.lisp"),
                 staging_dir.join("bms.lisp"),
@@ -271,6 +274,8 @@ impl PackageBuildPlan {
         match self.example {
             PackageExample::Loopback | PackageExample::Snake => Ok(None),
             PackageExample::Refloat => {
+                // Refloat v1.2.1 generates `ui.qml` from `ui.qml.in` in
+                // `Makefile:37-39`.
                 let qml = RefloatSourceAssets::new(self.refloat_source_root())
                     .render_ui()
                     .map_err(|error| io::Error::other(format!("{error}")))?;

@@ -5,6 +5,8 @@ use std::process::{Command, Stdio};
 use crate::{Package, PackageError};
 
 /// Fixed build metadata used when rendering Refloat's generated package assets.
+///
+/// Refloat `v1.2.1` (`0ef6e99d8701`) appends these fields in `Makefile:29-36`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RefloatBuildInfo {
     build_date: String,
@@ -36,6 +38,9 @@ impl RefloatSourceAssets {
     }
 
     /// Render and write Refloat's generated package README and UI files.
+    ///
+    /// Upstream generates these before packaging via `Makefile:10-14`,
+    /// `Makefile:29-39`.
     pub fn materialize_generated_inputs(
         &self,
         build_info: &RefloatBuildInfo,
@@ -63,6 +68,9 @@ impl RefloatSourceAssets {
     }
 
     /// Render Refloat's generated QML UI from the upstream source templates.
+    ///
+    /// Upstream renders `ui.qml.in` with package name/version and minifies via
+    /// `rjsmin.py`; see Refloat `v1.2.1` `Makefile:24-39` and `ui.qml.in:19-34`.
     pub fn render_ui(&self) -> Result<String, PackageError> {
         let template = self.read_text("ui.qml.in")?;
         let package_name = truncate_chars(&self.read_trimmed("package_name")?, 20);

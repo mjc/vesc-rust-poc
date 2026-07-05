@@ -55,6 +55,7 @@ enum PackageAssetProfile {
 }
 
 const REFLOAT_LOADER: &str = concat!(
+    // Refloat v1.2.1 (0ef6e99d8701) `lisp/package.lisp:1-17`.
     "(import \"src/package_lib.bin\" 'package-lib)\n",
     "(load-native-lib package-lib)\n\n",
     "(define fw-ver (sysinfo 'fw-ver))\n",
@@ -160,6 +161,7 @@ impl PackageAssets {
                 self.layout.artifact_name()
             ),
             PackageAssetProfile::Refloat => concat!(
+                // Refloat v1.2.1 (0ef6e99d8701) `pkgdesc.qml:1-18`.
                 "import QtQuick 2.15\n\n",
                 "Item {\n",
                 "    property string pkgName: \"Refloat\"\n",

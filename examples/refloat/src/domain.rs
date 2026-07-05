@@ -3,6 +3,14 @@
 //! These types compose the reusable `vescpkg-rs` package-author units and
 //! semantic wrappers into Refloat concepts. Raw firmware/app-data primitives
 //! should stay at explicit boundary conversions.
+//!
+//! Source anchors for the compatibility surface below are Refloat `v1.2.1`
+//! (`0ef6e99d8701`):
+//! - `src/main.c:1241-1262` defines the core app-data command IDs.
+//! - `src/lcm.h:27-33` and `src/charging.h:25` define LCM/charging command IDs.
+//! - `src/main.c:1313-1399` defines `COMMAND_GET_ALLDATA` response layout.
+//! - `src/main.c:1876-1901` defines realtime-data ID-list packet layout.
+//! - `src/main.c:1190-1205` defines startup `Data` initialization order.
 
 use vescpkg_rs::prelude::{
     AdcDecodedLevel, AmpHoursCharged, AmpHoursDischarged, AngleDegrees, AngleRadians,
@@ -13,7 +21,8 @@ use vescpkg_rs::prelude::{
     WattHoursDischarged,
 };
 
-/// Refloat app-data package ID.
+/// Refloat app-data package ID; upstream writes literal `101` in
+/// `src/main.c:1271`, `1318`, `1881`, and `1909`.
 pub const REFLOAT_APP_DATA_PACKAGE_ID: RefloatAppDataPackageId = RefloatAppDataPackageId::new(101);
 
 /// Refloat app-data package identifier.
@@ -33,7 +42,10 @@ impl RefloatAppDataPackageId {
     }
 }
 
-/// Refloat app-data command.
+/// Refloat app-data command IDs.
+///
+/// Refloat `v1.2.1` defines the core IDs in `src/main.c:1241-1262`, LCM IDs in
+/// `src/lcm.h:27-33`, and charging state in `src/charging.h:25`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RefloatAppDataCommand {
     /// Version/package info.
@@ -248,6 +260,9 @@ impl RefloatAllDataRequest {
     }
 
     /// Parse a Refloat `COMMAND_GET_ALLDATA` app-data packet.
+    ///
+    /// Upstream dispatches this command at `src/main.c:2210-2215` and encodes
+    /// responses in `src/main.c:1313-1399`.
     pub fn parse(bytes: &[u8]) -> Result<Self, RefloatAllDataRequestError> {
         let [package_id, command_id, mode] = bytes else {
             return Err(RefloatAllDataRequestError::Length {
@@ -1418,6 +1433,8 @@ impl RefloatHardwareConfig {
 }
 
 /// Refloat realtime-data items that are always sent.
+///
+/// The ID-list packet format is described in upstream `src/main.c:1884-1898`.
 pub const REFLOAT_REALTIME_DATA_ITEMS: [RefloatRealtimeDataItem; 16] = [
     RefloatRealtimeDataItem::MotorSpeed,
     RefloatRealtimeDataItem::MotorErpm,
@@ -1438,6 +1455,9 @@ pub const REFLOAT_REALTIME_DATA_ITEMS: [RefloatRealtimeDataItem; 16] = [
 ];
 
 /// Refloat realtime-data items sent only while running.
+///
+/// Upstream appends this second ID set after the always-sent set in
+/// `src/main.c:1892-1898`.
 pub const REFLOAT_REALTIME_RUNTIME_ITEMS: [RefloatRealtimeDataItem; 10] = [
     RefloatRealtimeDataItem::Setpoint,
     RefloatRealtimeDataItem::AtrSetpoint,
@@ -1452,6 +1472,9 @@ pub const REFLOAT_REALTIME_RUNTIME_ITEMS: [RefloatRealtimeDataItem; 10] = [
 ];
 
 /// Refloat realtime-data items recorded by the data recorder.
+///
+/// This list mirrors the port's current data-recorder model; re-check against
+/// upstream `src/data_recorder.c` before treating it as hardware parity.
 pub const REFLOAT_REALTIME_RECORDED_ITEMS: [RefloatRealtimeDataItem; 10] = [
     RefloatRealtimeDataItem::MotorErpm,
     RefloatRealtimeDataItem::MotorDirectionalCurrent,
@@ -2803,6 +2826,9 @@ impl RefloatAllDataPayloads {
     }
 
     /// Build the Refloat `v1.2.1` startup all-data snapshot after `data_init`.
+    ///
+    /// Upstream zeroes and initializes `Data` in `src/main.c:1190-1205`; this
+    /// Rust snapshot is a test/default model, not proof of hardware state.
     pub const fn source_startup() -> Self {
         let zero_current = Current::from_amps(0.0);
         let zero_angle = AngleRadians::from_radians(0.0);
@@ -2868,6 +2894,9 @@ impl RefloatAllDataPayloads {
     }
 
     /// Encode the source-compatible response for a parsed all-data request.
+    ///
+    /// The byte order and mode gates mirror `cmd_send_all_data` in upstream
+    /// `src/main.c:1313-1399`.
     pub fn encode_response(self, request: RefloatAllDataRequest) -> RefloatAllDataResponse {
         let mode = request.mode();
         if mode.includes_mode4() {

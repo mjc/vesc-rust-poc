@@ -1,4 +1,14 @@
 //! Refloat app-data packet processing.
+//!
+//! Refloat `v1.2.1` (`0ef6e99d8701`) anchors:
+//! - `src/main.c:2143-2295` handles incoming app-data commands.
+//! - `src/main.c:2334-2403` owns custom config get/set/XML and stop cleanup.
+//! - `src/main.c:2456-2457` registers custom config and app-data handlers.
+//!
+//! This module is currently disconnected from the hardware candidate's package
+//! init path while the package-corruption failure is isolated. Reconnecting it
+//! is not just a handler call: upstream shares the same `Data *` through `ARG`
+//! for app-data, custom config, BMS, threads, and stop cleanup.
 
 use crate::domain::{
     RefloatAllDataMode3Payload, RefloatAllDataMode4Payload, RefloatAllDataPayloads,
@@ -6,10 +16,11 @@ use crate::domain::{
     RefloatRealtimeChargingCurrent, RefloatRealtimeChargingVoltage,
     RefloatRealtimeMotorTemperatures,
 };
+use core::ffi::c_int;
 use vescpkg_rs::prelude::{BatteryCurrent, BatteryVoltage, Current, Voltage};
 use vescpkg_rs::{
-    AppDataBindings, AppDataHandlerRegistrationError, LoopbackLifecycle, MotorTelemetryApi,
-    MotorTelemetryBindings, ffi,
+    AppDataBindings, AppDataHandlerRegistrationError, CustomConfigBindings, LoopbackLifecycle,
+    MotorTelemetryApi, MotorTelemetryBindings, ffi,
 };
 
 /// Process one Refloat app-data packet from a typed all-data payload snapshot.
@@ -82,6 +93,9 @@ unsafe fn refloat_state_from_arg() -> Option<&'static mut RefloatAppDataState> {
 }
 
 /// Device entrypoint invoked by firmware app-data delivery.
+///
+/// Upstream registers `on_command_received` in `src/main.c:2457`; the handler
+/// dispatches command IDs in `src/main.c:2143-2295`.
 #[cfg(all(not(test), target_arch = "arm"))]
 #[unsafe(no_mangle)]
 #[inline(never)]
@@ -96,20 +110,26 @@ pub unsafe extern "C" fn refloat_handle_app_data(data: *mut u8, len: u32) {
 
 /// Install source-startup Refloat app-data state through the supplied lifecycle.
 ///
+/// Upstream allocates `Data`, stores it in loader metadata, and registers the
+/// stop hook at `src/main.c:2419-2432`; handler registration follows at
+/// `src/main.c:2457`.
+///
 /// # Safety
 ///
 /// `info` must be null or point to live VESC loader metadata. `state` and
 /// `handler` must remain valid until firmware clears/replaces the handler and
 /// stops the package.
 #[cfg(test)]
-pub(crate) unsafe fn install_refloat_startup_app_data_with<B: AppDataBindings>(
+pub(crate) unsafe fn install_refloat_startup_app_data_with<
+    B: AppDataBindings + CustomConfigBindings,
+>(
     info: *mut ffi::LibInfo,
     state: &mut RefloatAppDataState,
     lifecycle: &RefloatAppDataLifecycle<B>,
     handler: ffi::AppDataHandler,
 ) -> bool {
     *state = RefloatAppDataState::new(RefloatAllDataPayloads::source_startup());
-    unsafe { lifecycle.install_with_state(info, state, handler) }.is_ok()
+    unsafe { lifecycle.install_refloat_callbacks_with_state(info, state, handler) }.is_ok()
 }
 
 #[cfg(any(test, target_arch = "arm"))]
@@ -122,6 +142,12 @@ unsafe fn clear_refloat_app_data_loader_info(info: *mut ffi::LibInfo) {
 
 /// Allocate and install source-startup Refloat app-data state through firmware memory.
 ///
+/// Upstream uses firmware `malloc(sizeof(Data))` at `src/main.c:2419`, runs
+/// `data_init` at `src/main.c:2424`, and stores the same pointer in
+/// `info->arg` at `src/main.c:2432`. This Rust allocation path only installs a
+/// narrow app-data snapshot, so it is not equivalent to upstream's shared
+/// Refloat state.
+///
 /// # Safety
 ///
 /// `info` must be null or point to live VESC loader metadata. `handler` must
@@ -129,7 +155,7 @@ unsafe fn clear_refloat_app_data_loader_info(info: *mut ffi::LibInfo) {
 #[cfg(any(test, target_arch = "arm"))]
 pub(crate) unsafe fn allocate_refloat_startup_app_data_with<
     A: vescpkg_rs::AllocBindings,
-    B: AppDataBindings,
+    B: AppDataBindings + CustomConfigBindings,
 >(
     info: *mut ffi::LibInfo,
     allocator: &vescpkg_rs::FirmwareAllocator<'_, A>,
@@ -148,7 +174,7 @@ pub(crate) unsafe fn allocate_refloat_startup_app_data_with<
     };
     let state = unsafe { &mut *state };
 
-    if unsafe { lifecycle.install_with_state(info, state, handler) }.is_err() {
+    if unsafe { lifecycle.install_refloat_callbacks_with_state(info, state, handler) }.is_err() {
         unsafe { clear_refloat_app_data_loader_info(info) };
         return false;
     }
@@ -165,6 +191,38 @@ pub fn install_refloat_app_data(info: *mut ffi::LibInfo) -> bool {
     let lifecycle = RefloatAppDataLifecycle::new(vescpkg_rs::RealBindings);
     let handler = runtime_refloat_app_data_handler();
     unsafe { allocate_refloat_startup_app_data_with(info, &allocator, &lifecycle, handler) }
+}
+
+/// Register Refloat custom-config callbacks with VESC Tool.
+///
+/// Upstream registers `get_cfg`, `set_cfg`, and `get_cfg_xml` at
+/// `src/main.c:2456`; those callbacks are implemented at `src/main.c:2334-2396`.
+/// The Rust port does not yet generate or serialize upstream `RefloatConfig`, so
+/// these callbacks report no config payload instead of pretending to be the full
+/// confparser path.
+pub fn register_refloat_custom_config<B: CustomConfigBindings>(bindings: &B) -> bool {
+    unsafe {
+        bindings.register_custom_config(refloat_get_cfg, refloat_set_cfg, refloat_get_cfg_xml)
+    }
+}
+
+unsafe extern "C" fn refloat_get_cfg(_buffer: *mut u8, _is_default: bool) -> c_int {
+    // Upstream serializes current/default `RefloatConfig` at `src/main.c:2334-2358`.
+    0
+}
+
+unsafe extern "C" fn refloat_set_cfg(_buffer: *mut u8) -> bool {
+    // Upstream deserializes, persists, and reconfigures at `src/main.c:2360-2386`.
+    false
+}
+
+unsafe extern "C" fn refloat_get_cfg_xml(buffer: *mut *mut u8) -> c_int {
+    if let Some(buffer) = unsafe { buffer.as_mut() } {
+        *buffer = core::ptr::null_mut();
+    }
+    // Upstream returns `data_refloatconfig_ + PROG_ADDR` and
+    // `DATA_REFLOATCONFIG__SIZE` at `src/main.c:2388-2396`.
+    0
 }
 
 /// Refloat package app-data state.
@@ -242,6 +300,8 @@ impl RefloatAppDataState {
     }
 
     fn handle_charging_state_packet(&mut self, bytes: &[u8]) -> bool {
+        // Refloat v1.2.1 routes COMMAND_CHARGING_STATE at `src/main.c:2267-2269`;
+        // the command ID is defined in `src/charging.h:25`.
         let [package_id, command_id, payload @ ..] = bytes else {
             return false;
         };
@@ -361,9 +421,19 @@ impl<B: AppDataBindings> RefloatAppDataLifecycle<B> {
         unsafe { self.install(info, handler) }
     }
 
-    /// Clear the Refloat app-data handler during package stop.
-    pub fn stop(&self) -> Result<(), AppDataHandlerRegistrationError> {
-        self.lifecycle.clear_app_data_handler()
+    /// Clear Refloat callbacks during package stop.
+    ///
+    /// Refloat `v1.2.1` clears app-data at `src/main.c:2402` and custom config
+    /// at `src/main.c:2403`.
+    pub fn stop(&self) -> Result<(), AppDataHandlerRegistrationError>
+    where
+        B: CustomConfigBindings,
+    {
+        let app_data_result = self.lifecycle.clear_app_data_handler();
+        unsafe {
+            let _ = self.lifecycle.bindings().clear_custom_configs();
+        }
+        app_data_result
     }
 
     /// Process one Refloat app-data packet and send a response when accepted.
@@ -393,7 +463,52 @@ impl<B: AppDataBindings> RefloatAppDataLifecycle<B> {
     }
 }
 
+impl<B: AppDataBindings + CustomConfigBindings> RefloatAppDataLifecycle<B> {
+    /// Install Refloat custom config, stop cleanup, and app-data handler.
+    ///
+    /// Upstream registers custom config before app-data at `src/main.c:2456-2457`.
+    ///
+    /// # Safety
+    ///
+    /// `info` must be null or point to live VESC loader metadata. The supplied
+    /// handler must remain valid until firmware replaces or clears it.
+    pub unsafe fn install_refloat_callbacks(
+        &self,
+        info: *mut ffi::LibInfo,
+        handler: ffi::AppDataHandler,
+    ) -> Result<(), AppDataHandlerRegistrationError> {
+        let _ = register_refloat_custom_config(self.bindings());
+        unsafe { self.install(info, handler) }
+    }
+
+    /// Install Refloat state plus custom config, stop cleanup, and app-data.
+    ///
+    /// Upstream stores `Data *` in `info->arg` at `src/main.c:2432` before
+    /// registering custom config and app-data at `src/main.c:2456-2457`.
+    ///
+    /// # Safety
+    ///
+    /// `info` must be null or point to live VESC loader metadata. `state` and
+    /// `handler` must remain valid until firmware clears/replaces the handler
+    /// and stops the package.
+    pub unsafe fn install_refloat_callbacks_with_state(
+        &self,
+        info: *mut ffi::LibInfo,
+        state: &mut RefloatAppDataState,
+        handler: ffi::AppDataHandler,
+    ) -> Result<(), AppDataHandlerRegistrationError> {
+        if let Some(info) = unsafe { info.as_mut() } {
+            info.arg = core::ptr::from_mut(state).cast();
+        }
+        unsafe { self.install_refloat_callbacks(info, handler) }
+    }
+}
+
 unsafe extern "C" fn stop_refloat_app_data(_arg: *mut core::ffi::c_void) {
+    // Upstream stop cleanup in `src/main.c:2398-2412` clears IMU/app-data/custom
+    // config callbacks, terminates aux+main threads, destroys LEDs, and frees
+    // `Data`. This isolated handler only clears app-data/custom config and frees
+    // the narrow Rust app-data allocation if that experimental path was installed.
     #[cfg(not(test))]
     {
         let _ = RefloatAppDataLifecycle::new(vescpkg_rs::RealBindings).stop();
@@ -470,7 +585,7 @@ mod tests {
     }
 
     #[test]
-    fn lifecycle_installs_refloat_app_data_handler_and_stop_cleanup() {
+    fn lifecycle_installs_app_data_handler_and_stop_cleanup() {
         let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
         let mut info = ffi::LibInfo {
             stop_fun: None,
@@ -482,6 +597,7 @@ mod tests {
 
         assert_eq!(unsafe { lifecycle.install(&mut info, handler) }, Ok(()));
         assert!(info.stop_fun.is_some());
+        assert_eq!(lifecycle.bindings().custom_config_register_calls.get(), 0);
         assert_eq!(lifecycle.bindings().handler_calls.get(), 1);
         assert_eq!(
             lifecycle.bindings().last_handler.get(),
@@ -491,6 +607,9 @@ mod tests {
         assert_eq!(lifecycle.stop(), Ok(()));
         assert_eq!(lifecycle.bindings().handler_calls.get(), 2);
         assert_eq!(lifecycle.bindings().last_handler.get(), 0);
+        // Refloat v1.2.1 stop clears app-data at `src/main.c:2402` and
+        // custom config at `src/main.c:2403`.
+        assert_eq!(lifecycle.bindings().custom_config_clear_calls.get(), 1);
     }
 
     #[test]
@@ -875,6 +994,7 @@ mod tests {
         assert!(unsafe {
             allocate_refloat_startup_app_data_with(&mut info, &allocator, &lifecycle, handler)
         });
+        assert_eq!(lifecycle.bindings().custom_config_register_calls.get(), 1);
         assert_eq!(alloc_bindings.malloc_calls.get(), 1);
         assert_eq!(
             alloc_bindings.last_requested_len.get(),
@@ -901,6 +1021,8 @@ mod tests {
         last_sent_mode2_temperature_bytes: Cell<[u8; 2]>,
         last_sent_mode3_ride_total_bytes: Cell<[u8; 13]>,
         last_sent_mode4_charging_bytes: Cell<[u8; 4]>,
+        custom_config_register_calls: Cell<usize>,
+        custom_config_clear_calls: Cell<usize>,
         handler_results: Cell<[bool; 2]>,
     }
 
@@ -947,6 +1069,8 @@ mod tests {
                 last_sent_mode2_temperature_bytes: Cell::new([0; 2]),
                 last_sent_mode3_ride_total_bytes: Cell::new([0; 13]),
                 last_sent_mode4_charging_bytes: Cell::new([0; 4]),
+                custom_config_register_calls: Cell::new(0),
+                custom_config_clear_calls: Cell::new(0),
                 handler_results: Cell::new([true, true]),
             }
         }
@@ -1002,6 +1126,27 @@ mod tests {
                         .set([bytes[54], bytes[55], bytes[56], bytes[57]]);
                 }
             }
+        }
+    }
+
+    impl CustomConfigBindings for RecordingAppDataBindings {
+        unsafe fn register_custom_config(
+            &self,
+            _get_cfg: ffi::raw::CustomConfigGet,
+            _set_cfg: ffi::raw::CustomConfigSet,
+            _get_cfg_xml: ffi::raw::CustomConfigXml,
+        ) -> bool {
+            // Refloat v1.2.1 registers custom config during init at `src/main.c:2456`.
+            self.custom_config_register_calls
+                .set(self.custom_config_register_calls.get() + 1);
+            true
+        }
+
+        unsafe fn clear_custom_configs(&self) -> bool {
+            // Refloat v1.2.1 clears custom config during stop at `src/main.c:2403`.
+            self.custom_config_clear_calls
+                .set(self.custom_config_clear_calls.get() + 1);
+            true
         }
     }
 

@@ -356,6 +356,56 @@ Refloat has both generated C config code and firmware custom-config callbacks:
 - EEPROM config storage uses fixed serialized length `320` bytes rounded up to
   32-bit words.
 
+## Rust-Native Hardware Parity Gaps
+
+Current hardware evidence says the Rust-owned Refloat package can corrupt
+firmware/persistent controller state in a way the official `v1.2.1` package does
+not. Treat green host tests and matching QML/package metadata as insufficient
+until these native-behavior gaps are closed or intentionally ruled out:
+
+- Native init is loader-only containment, not Refloat parity. Official Refloat
+  allocates `Data`, initializes EEPROM-backed config/state, stores `info->arg`,
+  installs `stop_fun`, starts `Refloat Main` and `Refloat Aux`, and registers
+  IMU/custom-config/app-data/LispBM callbacks in `src/main.c:2419-2461`. The
+  Rust candidate currently only registers the two loader LispBM extensions from
+  the tail of that sequence (`src/main.c:2458-2459`).
+- App UI/config is not proven by package metadata or QML bytes. Official Refloat
+  exposes VESC Tool config through `get_cfg`, `set_cfg`, and `get_cfg_xml` in
+  `src/main.c:2334-2395`, then registers those callbacks with
+  `conf_custom_add_config` at `src/main.c:2456`. The Rust raw ABI mirrors
+  `conf_custom_add_config`/`conf_custom_clear_configs`, but there is no
+  package-author wrapper or Refloat init call yet.
+- Float Control/app-data connection is not Refloat parity unless the official
+  dispatcher is actually installed with compatible state. Official Refloat
+  registers `on_command_received` at `src/main.c:2457`; that dispatcher handles
+  command routing in `src/main.c:2143-2295` through the same `Data *` that custom
+  config, BMS, threads, and stop cleanup use.
+- The current Rust app-data path models a narrow all-data snapshot, not the
+  official shared `Data` lifecycle. Official `data_init` zeroes state, reads
+  config from EEPROM, initializes subsystems, and records odometer state in
+  `src/main.c:1190-1235`. `RefloatAllDataPayloads::source_startup()` is only a
+  test/default model.
+- Stop cleanup must be audited before reconnecting callbacks. Official `stop`
+  clears IMU, app-data, and custom config callbacks, terminates both native
+  threads, destroys LED state, and frees `Data` in `src/main.c:2398-2412`.
+  Leaving any global firmware callback pointed at unloaded Rust code is a
+  plausible device-wedging failure mode.
+- Loader extensions currently acknowledge loader calls but do not update
+  official state. Official `ext_set_fw_version` stores firmware version into
+  `Data` (`src/main.c:2305-2312`), and `ext_bms` returns
+  `d->float_conf.bms.enabled` while optionally storing BMS telemetry
+  (`src/main.c:2319-2331`). Official `lisp/package.lisp:4-17` calls these
+  immediately after native load and conditionally starts the BMS Lisp thread.
+- Allocator slot codegen is not the current suspect, but it is also not
+  exercised by the current Rust Refloat artifact. The official native import in
+  `target/refloat-1.2.1-upstream.vescpkg` calls firmware malloc during init as
+  `ldr.w r3, [r5, #184]`, `movw r0, #2120`, `blx r3`, matching
+  `VESC_IF->malloc(sizeof(Data))` at `src/main.c:2419`. The Rust
+  `vescpkg-rs-sys::raw::vesc_malloc` ARM assembly loads the same table base and
+  slot (`0x1000f800`, `#184`) and tail-calls it with the caller's `r0`; it adds
+  a null-slot guard. The current loader-only Rust Refloat package links no
+  malloc/free/app-data allocation path at all.
+
 ## Rust Ownership Map
 
 | Refloat behavior | Rust owner |
