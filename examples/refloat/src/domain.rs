@@ -5,9 +5,10 @@
 //! should stay at explicit boundary conversions.
 
 use vescpkg_rs::prelude::{
-    AdcDecodedLevel, BatteryCurrent, BatteryVoltage, DirectionalMotorCurrent, DutyCycle,
-    ElectricalSpeed, ImuAngularRate, ImuPitch, ImuRoll, ImuYaw, MotorCurrent, Ratio,
-    SystemTimestamp, VehicleSpeed,
+    AdcDecodedLevel, AngleDegrees, AngleRadians, BatteryCurrent, BatteryVoltage,
+    DirectionalMotorCurrent, DutyCycle, ElectricalSpeed, ImuAngularRate, ImuPitch, ImuRoll, ImuYaw,
+    MosfetTemperature, MotorCurrent, MotorTemperature, Ratio, SignedRatio, SystemTimestamp,
+    VehicleSpeed,
 };
 
 /// Refloat app-data package ID.
@@ -1522,6 +1523,686 @@ impl RefloatRealtimeDataItem {
             | Self::AtrSpeedBoost
             | Self::BoosterCurrent => RefloatRealtimeDataRecordPolicy::SendOnly,
         }
+    }
+}
+
+/// Refloat `motor.filt_current` realtime value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+pub struct RefloatRealtimeFilteredMotorCurrent(DirectionalMotorCurrent);
+
+impl RefloatRealtimeFilteredMotorCurrent {
+    /// Build a typed Refloat filtered-current value.
+    pub const fn new(current: DirectionalMotorCurrent) -> Self {
+        Self(current)
+    }
+
+    /// Return the typed filtered current without erasing it to a primitive.
+    pub const fn current(self) -> DirectionalMotorCurrent {
+        self.0
+    }
+}
+
+/// Refloat `imu.balance_pitch` realtime value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+pub struct RefloatRealtimeBalancePitch(AngleRadians);
+
+impl RefloatRealtimeBalancePitch {
+    /// Build a typed Refloat balance-pitch value.
+    pub const fn new(angle: AngleRadians) -> Self {
+        Self(angle)
+    }
+
+    /// Return the typed balance-pitch angle without erasing it to a primitive.
+    pub const fn angle(self) -> AngleRadians {
+        self.0
+    }
+}
+
+/// Refloat `remote.input` realtime value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+pub struct RefloatRealtimeRemoteInput(SignedRatio);
+
+impl RefloatRealtimeRemoteInput {
+    /// Build a typed Refloat remote-input value.
+    pub const fn new(ratio: SignedRatio) -> Self {
+        Self(ratio)
+    }
+
+    /// Return the typed remote input without erasing it to a primitive.
+    pub const fn ratio(self) -> SignedRatio {
+        self.0
+    }
+}
+
+/// Refloat realtime motor-current values that are always sent.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RefloatRealtimeMotorCurrents {
+    motor: MotorCurrent,
+    directional: DirectionalMotorCurrent,
+    filtered: RefloatRealtimeFilteredMotorCurrent,
+    battery: BatteryCurrent,
+}
+
+impl RefloatRealtimeMotorCurrents {
+    /// Build typed Refloat realtime current values.
+    pub const fn new(
+        motor: MotorCurrent,
+        directional: DirectionalMotorCurrent,
+        filtered: RefloatRealtimeFilteredMotorCurrent,
+        battery: BatteryCurrent,
+    ) -> Self {
+        Self {
+            motor,
+            directional,
+            filtered,
+            battery,
+        }
+    }
+
+    /// Return `motor.current`.
+    pub const fn motor(self) -> MotorCurrent {
+        self.motor
+    }
+
+    /// Return `motor.dir_current`.
+    pub const fn directional(self) -> DirectionalMotorCurrent {
+        self.directional
+    }
+
+    /// Return `motor.filt_current`.
+    pub const fn filtered(self) -> RefloatRealtimeFilteredMotorCurrent {
+        self.filtered
+    }
+
+    /// Return `motor.batt_current`.
+    pub const fn battery(self) -> BatteryCurrent {
+        self.battery
+    }
+}
+
+/// Refloat realtime motor-temperature values that are always sent.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RefloatRealtimeMotorTemperatures {
+    mosfet: MosfetTemperature,
+    motor: MotorTemperature,
+}
+
+impl RefloatRealtimeMotorTemperatures {
+    /// Build typed Refloat realtime motor-temperature values.
+    pub const fn new(mosfet: MosfetTemperature, motor: MotorTemperature) -> Self {
+        Self { mosfet, motor }
+    }
+
+    /// Return `motor.mosfet_temp`.
+    pub const fn mosfet(self) -> MosfetTemperature {
+        self.mosfet
+    }
+
+    /// Return `motor.motor_temp`.
+    pub const fn motor(self) -> MotorTemperature {
+        self.motor
+    }
+}
+
+/// Refloat realtime motor payload values that are always sent.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RefloatRealtimeMotorPayload {
+    speed: VehicleSpeed,
+    electrical_speed: ElectricalSpeed,
+    currents: RefloatRealtimeMotorCurrents,
+    duty_cycle: DutyCycle,
+    battery_voltage: BatteryVoltage,
+    temperatures: RefloatRealtimeMotorTemperatures,
+}
+
+impl RefloatRealtimeMotorPayload {
+    /// Build typed Refloat realtime motor values.
+    pub const fn new(
+        speed: VehicleSpeed,
+        electrical_speed: ElectricalSpeed,
+        currents: RefloatRealtimeMotorCurrents,
+        duty_cycle: DutyCycle,
+        battery_voltage: BatteryVoltage,
+        temperatures: RefloatRealtimeMotorTemperatures,
+    ) -> Self {
+        Self {
+            speed,
+            electrical_speed,
+            currents,
+            duty_cycle,
+            battery_voltage,
+            temperatures,
+        }
+    }
+
+    /// Return `motor.speed`.
+    pub const fn speed(self) -> VehicleSpeed {
+        self.speed
+    }
+
+    /// Return `motor.erpm`.
+    pub const fn electrical_speed(self) -> ElectricalSpeed {
+        self.electrical_speed
+    }
+
+    /// Return grouped motor-current values.
+    pub const fn currents(self) -> RefloatRealtimeMotorCurrents {
+        self.currents
+    }
+
+    /// Return `motor.duty_cycle`.
+    pub const fn duty_cycle(self) -> DutyCycle {
+        self.duty_cycle
+    }
+
+    /// Return `motor.batt_voltage`.
+    pub const fn battery_voltage(self) -> BatteryVoltage {
+        self.battery_voltage
+    }
+
+    /// Return grouped motor-temperature values.
+    pub const fn temperatures(self) -> RefloatRealtimeMotorTemperatures {
+        self.temperatures
+    }
+}
+
+/// Refloat realtime IMU payload values that are always sent.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RefloatRealtimeImuPayload {
+    pitch: ImuPitch,
+    balance_pitch: RefloatRealtimeBalancePitch,
+    roll: ImuRoll,
+}
+
+impl RefloatRealtimeImuPayload {
+    /// Build typed Refloat realtime IMU values.
+    pub const fn new(
+        pitch: ImuPitch,
+        balance_pitch: RefloatRealtimeBalancePitch,
+        roll: ImuRoll,
+    ) -> Self {
+        Self {
+            pitch,
+            balance_pitch,
+            roll,
+        }
+    }
+
+    /// Return `imu.pitch`.
+    pub const fn pitch(self) -> ImuPitch {
+        self.pitch
+    }
+
+    /// Return `imu.balance_pitch`.
+    pub const fn balance_pitch(self) -> RefloatRealtimeBalancePitch {
+        self.balance_pitch
+    }
+
+    /// Return `imu.roll`.
+    pub const fn roll(self) -> ImuRoll {
+        self.roll
+    }
+}
+
+/// Refloat realtime payload values that are always sent.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RefloatRealtimeAlwaysPayload {
+    motor: RefloatRealtimeMotorPayload,
+    imu: RefloatRealtimeImuPayload,
+    footpad: FootpadSensorSample,
+    remote_input: RefloatRealtimeRemoteInput,
+}
+
+impl RefloatRealtimeAlwaysPayload {
+    /// Build typed Refloat realtime values that are always sent.
+    pub const fn new(
+        motor: RefloatRealtimeMotorPayload,
+        imu: RefloatRealtimeImuPayload,
+        footpad: FootpadSensorSample,
+        remote_input: RefloatRealtimeRemoteInput,
+    ) -> Self {
+        Self {
+            motor,
+            imu,
+            footpad,
+            remote_input,
+        }
+    }
+
+    /// Return the source-backed item contract for this payload section.
+    pub const fn item_contract(self) -> [RefloatRealtimeDataItem; 16] {
+        REFLOAT_REALTIME_DATA_ITEMS
+    }
+
+    /// Return grouped motor values.
+    pub const fn motor(self) -> RefloatRealtimeMotorPayload {
+        self.motor
+    }
+
+    /// Return grouped IMU values.
+    pub const fn imu(self) -> RefloatRealtimeImuPayload {
+        self.imu
+    }
+
+    /// Return grouped footpad values.
+    pub const fn footpad(self) -> FootpadSensorSample {
+        self.footpad
+    }
+
+    /// Return `remote.input`.
+    pub const fn remote_input(self) -> RefloatRealtimeRemoteInput {
+        self.remote_input
+    }
+}
+
+/// Refloat runtime setpoint angle value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+pub struct RefloatRealtimeRuntimeSetpoint(AngleDegrees);
+
+impl RefloatRealtimeRuntimeSetpoint {
+    /// Build a typed Refloat runtime setpoint value.
+    pub const fn new(angle: AngleDegrees) -> Self {
+        Self(angle)
+    }
+
+    /// Return the typed setpoint angle without erasing it to a primitive.
+    pub const fn angle(self) -> AngleDegrees {
+        self.0
+    }
+}
+
+/// Refloat runtime setpoint values sent only while running.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RefloatRealtimeRuntimeSetpoints {
+    board: RefloatRealtimeRuntimeSetpoint,
+    atr: RefloatRealtimeRuntimeSetpoint,
+    brake_tilt: RefloatRealtimeRuntimeSetpoint,
+    torque_tilt: RefloatRealtimeRuntimeSetpoint,
+    turn_tilt: RefloatRealtimeRuntimeSetpoint,
+    remote: RefloatRealtimeRuntimeSetpoint,
+}
+
+impl RefloatRealtimeRuntimeSetpoints {
+    /// Build typed Refloat runtime setpoint values.
+    pub const fn new(
+        board: RefloatRealtimeRuntimeSetpoint,
+        atr: RefloatRealtimeRuntimeSetpoint,
+        brake_tilt: RefloatRealtimeRuntimeSetpoint,
+        torque_tilt: RefloatRealtimeRuntimeSetpoint,
+        turn_tilt: RefloatRealtimeRuntimeSetpoint,
+        remote: RefloatRealtimeRuntimeSetpoint,
+    ) -> Self {
+        Self {
+            board,
+            atr,
+            brake_tilt,
+            torque_tilt,
+            turn_tilt,
+            remote,
+        }
+    }
+
+    /// Return `setpoint`.
+    pub const fn board(self) -> RefloatRealtimeRuntimeSetpoint {
+        self.board
+    }
+
+    /// Return `atr.setpoint`.
+    pub const fn atr(self) -> RefloatRealtimeRuntimeSetpoint {
+        self.atr
+    }
+
+    /// Return `brake_tilt.setpoint`.
+    pub const fn brake_tilt(self) -> RefloatRealtimeRuntimeSetpoint {
+        self.brake_tilt
+    }
+
+    /// Return `torque_tilt.setpoint`.
+    pub const fn torque_tilt(self) -> RefloatRealtimeRuntimeSetpoint {
+        self.torque_tilt
+    }
+
+    /// Return `turn_tilt.setpoint`.
+    pub const fn turn_tilt(self) -> RefloatRealtimeRuntimeSetpoint {
+        self.turn_tilt
+    }
+
+    /// Return `remote.setpoint`.
+    pub const fn remote(self) -> RefloatRealtimeRuntimeSetpoint {
+        self.remote
+    }
+}
+
+/// Refloat `balance_current` runtime realtime value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+pub struct RefloatRealtimeBalanceCurrent(MotorCurrent);
+
+impl RefloatRealtimeBalanceCurrent {
+    /// Build a typed Refloat balance-current value.
+    pub const fn new(current: MotorCurrent) -> Self {
+        Self(current)
+    }
+
+    /// Return the typed balance current without erasing it to a primitive.
+    pub const fn current(self) -> MotorCurrent {
+        self.0
+    }
+}
+
+/// Refloat `atr.accel_diff` runtime realtime value.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct RefloatRealtimeAtrAccelerationDiff(f32);
+
+impl RefloatRealtimeAtrAccelerationDiff {
+    /// Build a typed Refloat ATR acceleration-difference value from ERPM delta units.
+    pub const fn from_erpm_delta(value: f32) -> Self {
+        Self(value)
+    }
+
+    /// Return the Refloat ATR acceleration-difference value in ERPM delta units.
+    pub const fn as_erpm_delta(self) -> f32 {
+        self.0
+    }
+}
+
+/// Refloat `atr.speed_boost` runtime realtime value.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct RefloatRealtimeAtrSpeedBoost(f32);
+
+impl RefloatRealtimeAtrSpeedBoost {
+    /// Build a typed Refloat ATR speed-boost value.
+    pub const fn from_units(value: f32) -> Self {
+        Self(value)
+    }
+
+    /// Return the Refloat ATR speed-boost value.
+    pub const fn as_units(self) -> f32 {
+        self.0
+    }
+}
+
+/// Refloat runtime ATR payload values.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RefloatRealtimeRuntimeAtrPayload {
+    accel_diff: RefloatRealtimeAtrAccelerationDiff,
+    speed_boost: RefloatRealtimeAtrSpeedBoost,
+}
+
+impl RefloatRealtimeRuntimeAtrPayload {
+    /// Build typed Refloat runtime ATR payload values.
+    pub const fn new(
+        accel_diff: RefloatRealtimeAtrAccelerationDiff,
+        speed_boost: RefloatRealtimeAtrSpeedBoost,
+    ) -> Self {
+        Self {
+            accel_diff,
+            speed_boost,
+        }
+    }
+
+    /// Return `atr.accel_diff`.
+    pub const fn accel_diff(self) -> RefloatRealtimeAtrAccelerationDiff {
+        self.accel_diff
+    }
+
+    /// Return `atr.speed_boost`.
+    pub const fn speed_boost(self) -> RefloatRealtimeAtrSpeedBoost {
+        self.speed_boost
+    }
+}
+
+/// Refloat `booster.current` runtime realtime value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+pub struct RefloatRealtimeBoosterCurrent(MotorCurrent);
+
+impl RefloatRealtimeBoosterCurrent {
+    /// Build a typed Refloat booster-current value.
+    pub const fn new(current: MotorCurrent) -> Self {
+        Self(current)
+    }
+
+    /// Return the typed booster current without erasing it to a primitive.
+    pub const fn current(self) -> MotorCurrent {
+        self.0
+    }
+}
+
+/// Refloat realtime payload values sent only while running.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RefloatRealtimeRuntimePayload {
+    setpoints: RefloatRealtimeRuntimeSetpoints,
+    balance_current: RefloatRealtimeBalanceCurrent,
+    atr: RefloatRealtimeRuntimeAtrPayload,
+    booster_current: RefloatRealtimeBoosterCurrent,
+}
+
+impl RefloatRealtimeRuntimePayload {
+    /// Build typed Refloat realtime values sent only while running.
+    pub const fn new(
+        setpoints: RefloatRealtimeRuntimeSetpoints,
+        balance_current: RefloatRealtimeBalanceCurrent,
+        atr: RefloatRealtimeRuntimeAtrPayload,
+        booster_current: RefloatRealtimeBoosterCurrent,
+    ) -> Self {
+        Self {
+            setpoints,
+            balance_current,
+            atr,
+            booster_current,
+        }
+    }
+
+    /// Return the source-backed item contract for this payload section.
+    pub const fn item_contract(self) -> [RefloatRealtimeDataItem; 10] {
+        REFLOAT_REALTIME_RUNTIME_ITEMS
+    }
+
+    /// Return grouped runtime setpoint values.
+    pub const fn setpoints(self) -> RefloatRealtimeRuntimeSetpoints {
+        self.setpoints
+    }
+
+    /// Return `balance_current`.
+    pub const fn balance_current(self) -> RefloatRealtimeBalanceCurrent {
+        self.balance_current
+    }
+
+    /// Return grouped ATR runtime values.
+    pub const fn atr(self) -> RefloatRealtimeRuntimeAtrPayload {
+        self.atr
+    }
+
+    /// Return `booster.current`.
+    pub const fn booster_current(self) -> RefloatRealtimeBoosterCurrent {
+        self.booster_current
+    }
+}
+
+/// Refloat `charging.current` realtime value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+pub struct RefloatRealtimeChargingCurrent(BatteryCurrent);
+
+impl RefloatRealtimeChargingCurrent {
+    /// Build a typed Refloat charging-current value.
+    pub const fn new(current: BatteryCurrent) -> Self {
+        Self(current)
+    }
+
+    /// Return the typed charging current without erasing it to a primitive.
+    pub const fn current(self) -> BatteryCurrent {
+        self.0
+    }
+}
+
+/// Refloat `charging.voltage` realtime value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+pub struct RefloatRealtimeChargingVoltage(BatteryVoltage);
+
+impl RefloatRealtimeChargingVoltage {
+    /// Build a typed Refloat charging-voltage value.
+    pub const fn new(voltage: BatteryVoltage) -> Self {
+        Self(voltage)
+    }
+
+    /// Return the typed charging voltage without erasing it to a primitive.
+    pub const fn voltage(self) -> BatteryVoltage {
+        self.0
+    }
+}
+
+/// Refloat realtime charging payload values.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RefloatRealtimeChargingPayload {
+    current: RefloatRealtimeChargingCurrent,
+    voltage: RefloatRealtimeChargingVoltage,
+}
+
+impl RefloatRealtimeChargingPayload {
+    /// Build typed Refloat realtime charging values.
+    pub const fn new(
+        current: RefloatRealtimeChargingCurrent,
+        voltage: RefloatRealtimeChargingVoltage,
+    ) -> Self {
+        Self { current, voltage }
+    }
+
+    /// Return `charging.current`.
+    pub const fn current(self) -> RefloatRealtimeChargingCurrent {
+        self.current
+    }
+
+    /// Return `charging.voltage`.
+    pub const fn voltage(self) -> RefloatRealtimeChargingVoltage {
+        self.voltage
+    }
+}
+
+/// Refloat alert ID.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum RefloatAlertId {
+    /// Firmware fault alert.
+    FirmwareFault,
+}
+
+impl RefloatAlertId {
+    /// Return the Refloat `v1.2.1` alert ID.
+    pub const fn id(self) -> u8 {
+        match self {
+            Self::FirmwareFault => 1,
+        }
+    }
+
+    const fn mask(self) -> u32 {
+        1 << (self.id() - 1)
+    }
+}
+
+/// Refloat active-alert mask appended to realtime data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct RefloatRealtimeAlertMask(u32);
+
+impl RefloatRealtimeAlertMask {
+    /// Build an empty active-alert mask.
+    pub const fn empty() -> Self {
+        Self(0)
+    }
+
+    /// Return a copy with the alert marked active.
+    pub const fn with_alert(self, alert: RefloatAlertId) -> Self {
+        Self(self.0 | alert.mask())
+    }
+
+    /// Return whether the alert is active.
+    pub const fn contains(self, alert: RefloatAlertId) -> bool {
+        self.0 & alert.mask() != 0
+    }
+
+    /// Return the Refloat-compatible active-alert mask.
+    pub const fn active_alert_mask_compat(self) -> u32 {
+        self.0
+    }
+}
+
+/// Refloat reserved realtime tail flags.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct RefloatRealtimeReservedFlags(u32);
+
+impl RefloatRealtimeReservedFlags {
+    /// Build the currently empty Refloat realtime extra-flags field.
+    pub const fn none() -> Self {
+        Self(0)
+    }
+
+    /// Return the Refloat-compatible extra-flags value.
+    pub const fn extra_flags_compat(self) -> u32 {
+        self.0
+    }
+}
+
+/// Refloat firmware fault code appended to realtime data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct RefloatFirmwareFaultCode(u8);
+
+impl RefloatFirmwareFaultCode {
+    /// Build a firmware fault-code token from the app-data compatible byte.
+    pub const fn from_compat_code(code: u8) -> Self {
+        Self(code)
+    }
+
+    /// Return the app-data compatible firmware fault-code byte.
+    pub const fn compat_code(self) -> u8 {
+        self.0
+    }
+}
+
+/// Refloat realtime tail fields appended after conditional payload values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RefloatRealtimeTail {
+    active_alerts: RefloatRealtimeAlertMask,
+    reserved_flags: RefloatRealtimeReservedFlags,
+    firmware_fault_code: RefloatFirmwareFaultCode,
+}
+
+impl RefloatRealtimeTail {
+    /// Build typed Refloat realtime tail fields.
+    pub const fn new(
+        active_alerts: RefloatRealtimeAlertMask,
+        reserved_flags: RefloatRealtimeReservedFlags,
+        firmware_fault_code: RefloatFirmwareFaultCode,
+    ) -> Self {
+        Self {
+            active_alerts,
+            reserved_flags,
+            firmware_fault_code,
+        }
+    }
+
+    /// Return active alerts.
+    pub const fn active_alerts(self) -> RefloatRealtimeAlertMask {
+        self.active_alerts
+    }
+
+    /// Return reserved extra flags.
+    pub const fn reserved_flags(self) -> RefloatRealtimeReservedFlags {
+        self.reserved_flags
+    }
+
+    /// Return firmware fault code.
+    pub const fn firmware_fault_code(self) -> RefloatFirmwareFaultCode {
+        self.firmware_fault_code
     }
 }
 
