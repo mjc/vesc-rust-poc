@@ -281,7 +281,6 @@ pub fn audit_native_lib_artifacts(paths: &NativeLibArtifactPaths) -> String {
     assert_native_lib_semantics(&paths.elf);
     semantic_snapshot_report(&paths.elf)
 }
-
 /// Runs the Refloat native-lib audit suite and returns the semantic snapshot text.
 pub fn audit_refloat_native_lib_artifacts(paths: &NativeLibArtifactPaths) -> String {
     audit_refloat_native_lib_symbols(paths);
