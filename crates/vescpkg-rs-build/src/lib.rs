@@ -112,7 +112,11 @@ pub use golden::{
 pub use manifest::{manifest_path, parse_pkgdesc, staging_dir_from_manifest};
 pub use native_audit::audit_device_proven_fixture;
 pub use native_compare::native_binary_comparison_report;
-pub use native_elf_semantics::assert_native_lib_semantics;
+pub use native_elf_semantics::{
+    assert_native_lib_semantics, c_refloat_mapping_report,
+    captured_refloat_baseline_mapping_report, refloat_c_rust_mapping_report,
+    refloat_mapping_report,
+};
 pub use native_lib_audit::{
     NativeLibArtifactPaths, audit_native_lib_artifacts, audit_native_lib_flat_binary,
     audit_native_lib_layout, audit_native_lib_symbols, audit_refloat_native_lib_artifacts,

@@ -7,9 +7,11 @@ use vescpkg_rs_build::{
     NATIVE_LIB_BIN, NATIVE_LIB_ELF, NativeLibArtifactPaths, NativeLibLinkPlan, Package,
     PackageBinaryConversionPlan, PackageExample, PackageTargetMode, PackageTargetPlan,
     REFLOAT_PACKAGE_NAME, REFLOAT_PACKAGE_VERSION, RealPackageRunner, audit_native_lib_artifacts,
-    audit_refloat_native_lib_artifacts, ensure_native_lib_artifacts,
+    audit_refloat_native_lib_artifacts, c_refloat_mapping_report,
+    captured_refloat_baseline_mapping_report, ensure_native_lib_artifacts,
     ensure_repo_native_lib_artifacts, native_binary_comparison_report, native_lib_link_plan,
-    semantic_snapshot_report, wire_comparison_report,
+    refloat_c_rust_mapping_report, refloat_mapping_report, semantic_snapshot_report,
+    wire_comparison_report,
 };
 
 fn write_fixture_artifacts(dir: &std::path::Path) -> PathBuf {
@@ -77,6 +79,61 @@ fn native_binary_comparison_report_highlights_refloat_registration_delta() {
     );
 
     insta::assert_snapshot!("native_binary_refloat_comparison", report);
+}
+
+#[test]
+fn refloat_native_mapping_report_highlights_runtime_and_firmware_edges() {
+    let workspace = TempDir::new().expect("temp workspace");
+    let (refloat, conversion) = isolated_refloat_plans(&workspace);
+    ensure_native_lib_artifacts(&conversion);
+
+    let report = refloat_mapping_report(&refloat.elf_path());
+
+    insta::assert_snapshot!("refloat_native_mapping", report);
+}
+
+#[test]
+#[ignore = "requires target/refloat-1.2.1-upstream.vescpkg captured from official Refloat v1.2.1"]
+fn captured_refloat_baseline_mapping_reports_available_native_payload_evidence() {
+    let root = repo_root();
+    let baseline = std::fs::read(root.join("target/refloat-1.2.1-upstream.vescpkg"))
+        .expect("read official Refloat package capture");
+
+    let report =
+        captured_refloat_baseline_mapping_report(&baseline).expect("baseline mapping report");
+
+    insta::assert_snapshot!("captured_refloat_baseline_mapping", report);
+}
+
+#[test]
+#[ignore = "requires /Users/mjc/projects/refloat/src/package_lib.elf rebuilt from official Refloat C"]
+fn c_refloat_mapping_reports_rebuilt_upstream_elf_edges() {
+    let report = c_refloat_mapping_report(std::path::Path::new(
+        "/Users/mjc/projects/refloat/src/package_lib.elf",
+    ));
+
+    insta::assert_snapshot!("c_refloat_native_mapping", report);
+}
+
+#[test]
+#[ignore = "requires /Users/mjc/projects/refloat/src/package_lib.elf rebuilt from official Refloat C"]
+fn refloat_c_rust_mapping_report_compares_native_edges() {
+    let workspace = TempDir::new().expect("temp workspace");
+    let (refloat, conversion) = isolated_refloat_plans(&workspace);
+    ensure_native_lib_artifacts(&conversion);
+
+    let report = refloat_c_rust_mapping_report(
+        std::path::Path::new("/Users/mjc/projects/refloat/src/package_lib.elf"),
+        &refloat.elf_path(),
+    );
+
+    assert!(report.contains("symbol=on_command_received source=src/main.c:2143"));
+    assert!(report.contains(
+        "rust=[generated config payload source=examples/refloat/src/conf/refloatconfig.dat"
+    ));
+    assert!(report.contains("helper_classification:"));
+
+    insta::assert_snapshot!("refloat_c_rust_mapping", report);
 }
 
 #[test]

@@ -10,6 +10,8 @@ use vescpkg_rs::ffi;
 pub(crate) static prog_ptr: u32 = 0;
 
 /// ARM package loader entrypoint for the containment Refloat payload.
+///
+/// C map: Refloat v1.2.1 `INIT_FUN` starts at `src/main.c:2415`.
 #[cfg(all(not(test), target_arch = "arm"))]
 #[inline(never)]
 #[unsafe(no_mangle)]
@@ -44,6 +46,8 @@ pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
 }
 
 /// Test-build package loader entrypoint for the containment side-effect boundary.
+///
+/// C map: Refloat v1.2.1 `INIT_FUN` starts at `src/main.c:2415`.
 #[cfg(test)]
 #[unsafe(no_mangle)]
 pub extern "C" fn package_lib_init(_info: *mut ffi::LibInfo) -> bool {

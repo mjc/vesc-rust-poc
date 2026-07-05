@@ -4,6 +4,9 @@ use std::path::Path;
 use capstone::prelude::*;
 use object::read::File as ObjectFile;
 use object::{Object, ObjectSection, ObjectSymbol};
+use sha2::{Digest, Sha256};
+
+use crate::package_wire::{WireError, field_bytes, parse_lisp_imports, parse_vescpkg};
 
 const VESC_IF_TABLE_BASE: u32 = 0x1000_f800;
 const PROBE_LISBM_ENCODED_42: u32 = 680;
@@ -165,6 +168,348 @@ pub fn semantic_report(semantics: &NativeLibSemantics) -> String {
     lines.join("\n")
 }
 
+/// Renders a Refloat-oriented native symbol and firmware-call mapping.
+pub fn refloat_mapping_report(elf: &Path) -> String {
+    let semantics = analyze_native_lib_elf(elf);
+    let mut lines = vec!["refloat_native_mapping:".to_owned()];
+
+    lines.push("entrypoints:".to_owned());
+    for (label, needle) in [
+        ("package_init", "package_lib_init"),
+        ("app_data_handler", "refloat_handle_app_data"),
+        ("stop_hook", "stop_refloat_app_data"),
+        ("main_thread", "refloat_main_thread"),
+        ("aux_thread", "refloat_aux_thread"),
+    ] {
+        lines.push(mapping_symbol_line(label, needle, &semantics.symbols));
+    }
+
+    lines.push("runtime_paths:".to_owned());
+    for (label, needle) in [
+        ("runtime_refresh", "refresh_runtime_state"),
+        ("config_get", "refloat_get_cfg"),
+        ("config_set", "refloat_set_cfg"),
+        ("config_xml", "refloat_get_cfg_xml"),
+        ("state_from_arg", "refloat_state_from_arg"),
+    ] {
+        lines.push(mapping_symbol_line(label, needle, &semantics.symbols));
+    }
+
+    lines.push("firmware_slots:".to_owned());
+    for (label, slot, insns) in [
+        ("malloc", 184, semantics.package_init_insns.as_slice()),
+        (
+            "set_app_data_handler",
+            596,
+            semantics.package_init_insns.as_slice(),
+        ),
+        (
+            "clear_app_data_handler",
+            596,
+            semantics.stop_insns.as_slice(),
+        ),
+    ] {
+        let status = if package_init_touches_slot(insns, slot) {
+            "present"
+        } else {
+            "missing"
+        };
+        lines.push(format!("  {label}: {status} slot={slot}"));
+    }
+
+    lines.join("\n")
+}
+
+/// Renders the upstream C Refloat ELF symbols produced before `package_lib.bin`.
+pub fn c_refloat_mapping_report(elf: &Path) -> String {
+    let semantics = analyze_native_lib_elf(elf);
+    let mut lines = vec!["c_refloat_native_mapping:".to_owned()];
+
+    lines.push("entrypoints:".to_owned());
+    for (label, needle, source) in [
+        ("package_init", "init", "src/main.c:2415"),
+        ("main_thread", "refloat_thd", "src/main.c:767"),
+        ("aux_thread", "aux_thd", "src/main.c:1130"),
+        ("stop_hook", "stop", "src/main.c:2399"),
+    ] {
+        lines.push(mapping_symbol_exact_source_line(
+            label,
+            needle,
+            source,
+            &semantics.symbols,
+        ));
+    }
+
+    lines.push("runtime_paths:".to_owned());
+    for (label, needle, source) in [
+        ("configure", "configure", "src/main.c:185"),
+        ("config_get", "get_cfg", "src/main.c:2335"),
+        ("config_set", "set_cfg", "src/main.c:2360"),
+        ("config_xml", "get_cfg_xml", "src/main.c:2389"),
+        ("imu_callback", "imu_ref_callback", "src/main.c:760"),
+        ("state_compat", "state_compat", "src/state.c:50"),
+    ] {
+        lines.push(mapping_symbol_exact_source_line(
+            label,
+            needle,
+            source,
+            &semantics.symbols,
+        ));
+    }
+
+    lines.push("config_payload:".to_owned());
+    lines.push(mapping_symbol_source_line(
+        "serialized_defaults",
+        "data_refloatconfig_",
+        "src/conf/confxml.c:5",
+        &semantics.symbols,
+    ));
+    for (label, needle, source) in [
+        (
+            "defaults",
+            "confparser_set_defaults_refloatconfig",
+            "src/conf/confparser.c:363",
+        ),
+        (
+            "serialize",
+            "confparser_serialize_refloatconfig",
+            "src/conf/confparser.c:8",
+        ),
+        (
+            "deserialize",
+            "confparser_deserialize_refloatconfig",
+            "src/conf/confparser.c:184",
+        ),
+    ] {
+        lines.push(mapping_symbol_exact_source_line(
+            label,
+            needle,
+            source,
+            &semantics.symbols,
+        ));
+    }
+
+    lines.join("\n")
+}
+
+/// Renders a side-by-side C baseline to Rust-native Refloat symbol map.
+pub fn refloat_c_rust_mapping_report(c_elf: &Path, rust_elf: &Path) -> String {
+    let c_semantics = analyze_native_lib_elf(c_elf);
+    let rust_semantics = analyze_native_lib_elf(rust_elf);
+    let mut lines = vec!["refloat_c_rust_mapping:".to_owned()];
+
+    lines.push("lifecycle:".to_owned());
+    for (label, c_symbol, c_source, rust_needle) in [
+        (
+            "package_init",
+            "init",
+            "src/main.c:2415",
+            "package_lib_init",
+        ),
+        (
+            "main_thread",
+            "refloat_thd",
+            "src/main.c:767",
+            "refloat_main_thread",
+        ),
+        (
+            "aux_thread",
+            "aux_thd",
+            "src/main.c:1130",
+            "refloat_aux_thread",
+        ),
+        (
+            "stop_hook",
+            "stop",
+            "src/main.c:2399",
+            "stop_refloat_app_data",
+        ),
+    ] {
+        lines.push(mapping_pair_line(
+            label,
+            c_symbol,
+            c_source,
+            rust_needle,
+            &c_semantics.symbols,
+            &rust_semantics.symbols,
+        ));
+    }
+
+    lines.push("app_communication:".to_owned());
+    lines.push(mapping_pair_line(
+        "app_data_handler",
+        "on_command_received",
+        "src/main.c:2143",
+        "refloat_handle_app_data",
+        &c_semantics.symbols,
+        &rust_semantics.symbols,
+    ));
+    lines.push("  app_data_registration: c=[registered source=src/main.c:2457] rust=[slot=596 set during package_lib_init]".to_owned());
+
+    lines.push("runtime:".to_owned());
+    for (label, c_symbol, c_source, rust_needle) in [
+        (
+            "configure",
+            "configure",
+            "src/main.c:185",
+            "refresh_runtime_state",
+        ),
+        (
+            "imu_refresh",
+            "imu_ref_callback",
+            "src/main.c:760",
+            "refresh_runtime_state",
+        ),
+        (
+            "state_recovery",
+            "state_compat",
+            "src/state.c:50",
+            "refloat_state_from_arg",
+        ),
+    ] {
+        lines.push(mapping_pair_line(
+            label,
+            c_symbol,
+            c_source,
+            rust_needle,
+            &c_semantics.symbols,
+            &rust_semantics.symbols,
+        ));
+    }
+
+    lines.push("config:".to_owned());
+    for (label, c_symbol, c_source, rust_needle) in [
+        (
+            "config_get",
+            "get_cfg",
+            "src/main.c:2335",
+            "refloat_get_cfg",
+        ),
+        (
+            "config_set",
+            "set_cfg",
+            "src/main.c:2360",
+            "refloat_set_cfg",
+        ),
+        (
+            "config_xml",
+            "get_cfg_xml",
+            "src/main.c:2389",
+            "refloat_get_cfg_xml",
+        ),
+    ] {
+        lines.push(mapping_pair_line(
+            label,
+            c_symbol,
+            c_source,
+            rust_needle,
+            &c_semantics.symbols,
+            &rust_semantics.symbols,
+        ));
+    }
+    for (label, c_symbol, c_source, rust_equivalent) in [
+        (
+            "c_defaults_blob",
+            "data_refloatconfig_",
+            "src/conf/confxml.c:5",
+            "generated config payload source=examples/refloat/src/conf/refloatconfig.dat:1 include=examples/refloat/src/app_data.rs:45",
+        ),
+        (
+            "c_defaults",
+            "confparser_set_defaults_refloatconfig",
+            "src/conf/confparser.c:363",
+            "generated defaults source=examples/refloat/src/conf/default_config.dat:1 include=examples/refloat/src/app_data.rs:60",
+        ),
+        (
+            "c_serialize",
+            "confparser_serialize_refloatconfig",
+            "src/conf/confparser.c:8",
+            "generated defaults copy source=examples/refloat/src/app_data.rs:910",
+        ),
+        (
+            "c_deserialize",
+            "confparser_deserialize_refloatconfig",
+            "src/conf/confparser.c:184",
+            "serialized config store source=examples/refloat/src/app_data.rs:957",
+        ),
+    ] {
+        lines.push(format!(
+            "  {label}: c=[{}] rust=[{rust_equivalent}]",
+            symbol_status_exact_at(c_symbol, c_source, &c_semantics.symbols)
+        ));
+    }
+
+    lines.push("helper_classification:".to_owned());
+    lines.extend([
+        (
+            "implemented_rust_peer",
+            "on_command_received->refloat_handle_app_data; ext_set_fw_version->ext_set_fw_version; get_cfg/set_cfg/get_cfg_xml callbacks",
+        ),
+        (
+            "folded_into_existing_path",
+            "configure/reconfigure/reset_runtime_vars/state_compat fold into refresh_runtime_state, typed ride-state payloads, and runtime state refresh",
+        ),
+        (
+            "intentionally_omitted",
+            "none declared permanent in VESCR-214; remaining helpers need porting or explicit omission evidence",
+        ),
+        (
+            "new_follow_up_ticket",
+            "VESCR-215 covers config EEPROM/startup helpers, ride/control helpers, app-data command handlers, ext_bms/fatal_error_terminate, and subsystem helpers",
+        ),
+    ].into_iter().map(|(label, detail)| format!("  {label}: {detail}")));
+
+    lines.push("rust_firmware_slots:".to_owned());
+    for (label, slot, insns) in [
+        ("malloc", 184, rust_semantics.package_init_insns.as_slice()),
+        (
+            "set_app_data_handler",
+            596,
+            rust_semantics.package_init_insns.as_slice(),
+        ),
+        (
+            "clear_app_data_handler",
+            596,
+            rust_semantics.stop_insns.as_slice(),
+        ),
+    ] {
+        let status = if package_init_touches_slot(insns, slot) {
+            "present"
+        } else {
+            "missing"
+        };
+        lines.push(format!("  {label}: {status} slot={slot}"));
+    }
+
+    lines.join("\n")
+}
+
+/// Renders the mapping evidence available from an official captured Refloat package.
+pub fn captured_refloat_baseline_mapping_report(package: &[u8]) -> Result<String, WireError> {
+    let fields = parse_vescpkg(package)?;
+    let lisp_data = field_bytes(&fields, "lispData").ok_or(WireError::UnexpectedEof)?;
+    let (_, imports) = parse_lisp_imports(lisp_data)?;
+    let Some(package_lib) = imports.iter().find(|import| import.tag == "package-lib") else {
+        return Err(WireError::UnexpectedEof);
+    };
+    let payload = package_lib.payload.as_slice();
+
+    Ok([
+        "captured_refloat_baseline_mapping:".to_owned(),
+        format!(
+            "  package_lib: size={} sha256={}",
+            payload.len(),
+            sha256_hex(payload)
+        ),
+        format!("  format: {}", native_payload_format(payload)),
+        "  symbols: unavailable captured package stores a flat native payload, not an ELF"
+            .to_owned(),
+        "  dwarf: unavailable captured package stores a flat native payload, not an ELF".to_owned(),
+        "  follow_up: compare against a rebuilt upstream C ELF with debug symbols".to_owned(),
+    ]
+    .join("\n"))
+}
+
 /// Asserts the linked native ELF preserves the expected semantic behavior.
 pub fn assert_native_lib_semantics(elf: &Path) {
     let semantics = analyze_native_lib_elf(elf);
@@ -290,6 +635,92 @@ fn symbol_address(symbols: &BTreeMap<u64, String>, name: &str) -> Option<u64> {
     symbols
         .iter()
         .find_map(|(addr, symbol)| (symbol == name).then_some(*addr))
+}
+
+fn mapping_symbol_line(label: &str, needle: &str, symbols: &BTreeMap<u64, String>) -> String {
+    match symbols.iter().find(|(_, symbol)| symbol.contains(needle)) {
+        Some((addr, symbol)) => format!("  {label}: present addr={addr:#x} symbol={symbol}"),
+        None => format!("  {label}: missing needle={needle}"),
+    }
+}
+
+fn mapping_symbol_source_line(
+    label: &str,
+    needle: &str,
+    source: &str,
+    symbols: &BTreeMap<u64, String>,
+) -> String {
+    format!(
+        "  {label}: {}",
+        symbol_status_contains_at(needle, source, symbols)
+    )
+}
+
+fn mapping_symbol_exact_source_line(
+    label: &str,
+    needle: &str,
+    source: &str,
+    symbols: &BTreeMap<u64, String>,
+) -> String {
+    format!(
+        "  {label}: {}",
+        symbol_status_exact_at(needle, source, symbols)
+    )
+}
+
+fn mapping_pair_line(
+    label: &str,
+    c_symbol: &str,
+    c_source: &str,
+    rust_needle: &str,
+    c_symbols: &BTreeMap<u64, String>,
+    rust_symbols: &BTreeMap<u64, String>,
+) -> String {
+    format!(
+        "  {label}: c=[{}] rust=[{}]",
+        symbol_status_exact_at(c_symbol, c_source, c_symbols),
+        symbol_status_contains(rust_needle, rust_symbols)
+    )
+}
+
+fn symbol_status_contains(needle: &str, symbols: &BTreeMap<u64, String>) -> String {
+    match symbols.iter().find(|(_, symbol)| symbol.contains(needle)) {
+        Some((addr, symbol)) => format!("present addr={addr:#x} symbol={symbol}"),
+        None => format!("missing needle={needle}"),
+    }
+}
+
+fn symbol_status_exact_at(needle: &str, source: &str, symbols: &BTreeMap<u64, String>) -> String {
+    match symbols.iter().find(|(_, symbol)| symbol.as_str() == needle) {
+        Some((addr, symbol)) => format!("present addr={addr:#x} symbol={symbol} source={source}"),
+        None => format!("missing symbol={needle} source={source}"),
+    }
+}
+
+fn symbol_status_contains_at(
+    needle: &str,
+    source: &str,
+    symbols: &BTreeMap<u64, String>,
+) -> String {
+    match symbols.iter().find(|(_, symbol)| symbol.contains(needle)) {
+        Some((addr, symbol)) => format!("present addr={addr:#x} symbol={symbol} source={source}"),
+        None => format!("missing needle={needle} source={source}"),
+    }
+}
+
+fn native_payload_format(payload: &[u8]) -> &'static str {
+    if payload.starts_with(b"\x7fELF") {
+        "elf"
+    } else {
+        "flat_native_payload"
+    }
+}
+
+fn sha256_hex(data: &[u8]) -> String {
+    Sha256::digest(data)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn next_symbol_address(symbols: &BTreeMap<u64, String>, start: u64) -> Option<u64> {

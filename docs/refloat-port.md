@@ -194,6 +194,101 @@ The Lisp loader imports the native payload with:
 (load-native-lib package-lib)
 ```
 
+## VESCR-206 Native Mapping
+
+The shipped official package is already past the ELF stage. The captured
+`target/refloat-1.2.1-upstream.vescpkg` contains a flat `package-lib` payload,
+not an embedded ELF:
+
+- `package-lib` bytes: `76245`
+- SHA-256:
+  `43a6d16534d09738488e8cee0bed1b414be3dd2bc939a391cdc4488b00643f8f`
+- Format: flat native payload
+- Symbols/DWARF: unavailable from the captured package itself
+
+For symbol-level comparison, rebuild the upstream C ELF from the Refloat source
+checkout:
+
+```sh
+nix develop -c make -C /Users/mjc/projects/refloat/src \
+  VESC_TOOL=/Users/mjc/projects/vesc_tool/build/macos/vesc_tool_cli
+```
+
+That produces `/Users/mjc/projects/refloat/src/package_lib.elf`, then
+`package_lib.list`, `package_lib.bin`, and `package_lib.lisp`.
+
+Current C baseline ELF map:
+
+| Concept | C symbol | Source |
+| --- | --- | --- |
+| Package init | `init` | `src/main.c:2415` |
+| Main thread | `refloat_thd` | `src/main.c:767` |
+| Aux thread | `aux_thd` | `src/main.c:1130` |
+| Stop hook | `stop` | `src/main.c:2399` |
+| IMU/runtime refresh | `imu_ref_callback` | `src/main.c:760` |
+| Loader state compatibility | `state_compat` | `src/state.c:50` |
+| Config get | `get_cfg` | `src/main.c:2335` |
+| Config set | `set_cfg` | `src/main.c:2360` |
+| Config XML | `get_cfg_xml` | `src/main.c:2389` |
+| Serialized defaults blob | `data_refloatconfig_` | `src/conf/confxml.c:5` |
+| Config defaults | `confparser_set_defaults_refloatconfig` | `src/conf/confparser.c:363` |
+| Config serialize | `confparser_serialize_refloatconfig` | `src/conf/confparser.c:8` |
+| Config deserialize | `confparser_deserialize_refloatconfig` | `src/conf/confparser.c:184` |
+
+Current Rust-native Refloat map:
+
+| Concept | Rust symbol/edge | C source |
+| --- | --- | --- |
+| Package init | `package_lib_init` | `src/main.c:2415` |
+| App-data handler | `refloat_handle_app_data` | C `on_command_received` at `src/main.c:2143`, registered at `src/main.c:2457` |
+| Main thread | `refloat_main_thread` | `src/main.c:767` |
+| Aux thread | `refloat_aux_thread` | `src/main.c:1130` |
+| Stop hook | `stop_refloat_app_data` | `src/main.c:2399` |
+| Runtime refresh | `refresh_runtime_state` | `src/main.c:760` |
+| Loader state recovery | `refloat_state_from_arg` | `src/state.c:50`, loader ARG at `src/main.c:2432` |
+| Config get | `refloat_get_cfg` | `src/main.c:2335` |
+| Config set | `refloat_set_cfg` | `src/main.c:2360` |
+| Config XML | `refloat_get_cfg_xml` | `src/main.c:2389` |
+| Firmware malloc slot | `184` | `src/main.c:2419` |
+| Firmware app-data handler slot | `596` set during init, cleared during stop | `src/main.c:2457`, `src/main.c:2402` |
+
+`refloat_handle_app_data` is the Rust peer for C `on_command_received`. The C
+symbol is present in the rebuilt ELF, and the report also records the firmware
+registration site at `src/main.c:2457`.
+
+VESCR-214 classifies the remaining helper symbols this way:
+
+- Implemented Rust peers: `on_command_received`, `ext_set_fw_version`, and the
+  custom-config callback entrypoints.
+- Folded into existing Rust paths: `configure`, `reconfigure`,
+  `reset_runtime_vars`, and `state_compat` are represented by runtime refresh,
+  typed ride-state payloads, and `RefloatAppDataState` state refresh.
+- Generated config equivalents: `data_refloatconfig_` maps to
+  `examples/refloat/src/conf/refloatconfig.dat`, while the confparser
+  defaults/serialize/deserialize surface maps to
+  `examples/refloat/src/conf/default_config.dat` plus the existing get/set
+  callback shims.
+- Follow-up work: `VESCR-215` tracks config EEPROM/startup helpers,
+  ride/control helpers, app-data command handlers, `ext_bms`,
+  `fatal_error_terminate`, and subsystem helpers.
+- Intentionally omitted: none declared permanent by VESCR-214.
+
+The stable proof lives in these ignored snapshot tests:
+
+```sh
+nix develop -c cargo test -p vescpkg-rs-build \
+  captured_refloat_baseline_mapping_reports_available_native_payload_evidence \
+  -- --ignored --nocapture
+
+nix develop -c cargo test -p vescpkg-rs-build \
+  c_refloat_mapping_reports_rebuilt_upstream_elf_edges \
+  -- --ignored --nocapture
+
+nix develop -c cargo test -p vescpkg-rs-build \
+  refloat_c_rust_mapping_report_compares_native_edges \
+  -- --ignored --nocapture
+```
+
 ## Binary-Comparison Target
 
 The port should get as close as practical to Refloat `v1.2.1` binary output.

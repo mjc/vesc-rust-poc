@@ -219,6 +219,7 @@ pub fn request_refloat_runtime_thread_termination(state: &RefloatAppDataState) {
 
 #[cfg(any(test, target_arch = "arm"))]
 unsafe extern "C" fn refloat_main_thread(arg: *mut c_void) {
+    // C map: Refloat v1.2.1 `refloat_thd` starts at `src/main.c:767`.
     #[cfg(all(not(test), target_arch = "arm"))]
     {
         if arg.is_null() {
@@ -249,6 +250,7 @@ unsafe extern "C" fn refloat_main_thread(arg: *mut c_void) {
 
 #[cfg(any(test, target_arch = "arm"))]
 unsafe extern "C" fn refloat_aux_thread(_arg: *mut c_void) {
+    // C map: Refloat v1.2.1 `aux_thd` starts at `src/main.c:1130`.
     #[cfg(all(not(test), target_arch = "arm"))]
     {
         let threads = ThreadApi::new(vescpkg_rs::RealThreadBindings);

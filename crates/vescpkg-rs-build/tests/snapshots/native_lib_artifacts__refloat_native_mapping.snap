@@ -1,0 +1,21 @@
+---
+source: crates/vescpkg-rs-build/tests/native_lib_artifacts.rs
+expression: report
+---
+refloat_native_mapping:
+entrypoints:
+  package_init: present addr=0x21e0 symbol=package_lib_init
+  app_data_handler: present addr=0x2400 symbol=refloat_handle_app_data
+  stop_hook: present addr=0x2010 symbol=_ZN20vesc_example_refloat8app_data21stop_refloat_app_data17h396be9e266c760abE
+  main_thread: present addr=0x750 symbol=_ZN20vesc_example_refloat7runtime19refloat_main_thread17hf4b8792fbe283886E
+  aux_thread: present addr=0x720 symbol=_ZN20vesc_example_refloat7runtime18refloat_aux_thread17hc2f51d7df6be2fc3E
+runtime_paths:
+  runtime_refresh: present addr=0x9b0 symbol=_ZN20vesc_example_refloat8app_data19RefloatAppDataState21refresh_runtime_state17hec78dd9c9af5adb6E
+  config_get: present addr=0x8d0 symbol=_ZN20vesc_example_refloat8app_data15refloat_get_cfg17hd2311ee92c73b21eE
+  config_set: present addr=0x910 symbol=_ZN20vesc_example_refloat8app_data15refloat_set_cfg17haa20e0cbfbf8af04E
+  config_xml: present addr=0x1fe0 symbol=_ZN20vesc_example_refloat8app_data19refloat_get_cfg_xml17h5e247df83f17f907E
+  state_from_arg: present addr=0x2060 symbol=_ZN20vesc_example_refloat8app_data22refloat_state_from_arg17h1430520902cd9b3fE
+firmware_slots:
+  malloc: present slot=184
+  set_app_data_handler: present slot=596
+  clear_app_data_handler: present slot=596

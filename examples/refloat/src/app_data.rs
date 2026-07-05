@@ -695,6 +695,9 @@ fn runtime_refloat_app_data_handler() -> ffi::AppDataHandler {
 
 #[cfg(all(not(test), target_arch = "arm"))]
 unsafe fn refloat_state_from_arg() -> Option<&'static mut RefloatAppDataState> {
+    // C map: closest visible state compatibility edge is `state_compat` at
+    // Refloat v1.2.1 `src/state.c:50`; loader ARG storage happens at
+    // `src/main.c:2432`.
     let arg_slot = unsafe { ffi::raw::vesc_get_arg(loaded_image_base()) };
     if arg_slot.is_null() {
         return None;
@@ -709,8 +712,8 @@ unsafe fn refloat_state_from_arg() -> Option<&'static mut RefloatAppDataState> {
 
 /// Device entrypoint invoked by firmware app-data delivery.
 ///
-/// Upstream registers `on_command_received` in `src/main.c:2457`; the handler
-/// dispatches command IDs in `src/main.c:2143-2295`.
+/// C map: upstream `on_command_received` starts at `src/main.c:2143` and is
+/// registered in `src/main.c:2457`.
 #[cfg(all(not(test), target_arch = "arm"))]
 #[unsafe(no_mangle)]
 #[inline(never)]
@@ -903,6 +906,7 @@ pub fn register_refloat_custom_config<B: CustomConfigBindings>(bindings: &B) -> 
 }
 
 unsafe extern "C" fn refloat_get_cfg(buffer: *mut u8, is_default: bool) -> c_int {
+    // C map: Refloat v1.2.1 `get_cfg` starts at `src/main.c:2335`.
     let state = unsafe { runtime_refloat_config_state() };
     refloat_get_cfg_with_state(buffer, is_default, state)
 }
@@ -950,6 +954,7 @@ unsafe fn runtime_refloat_config_state() -> Option<&'static RefloatAppDataState>
 }
 
 unsafe extern "C" fn refloat_set_cfg(buffer: *mut u8) -> bool {
+    // C map: Refloat v1.2.1 `set_cfg` starts at `src/main.c:2360`.
     let state = unsafe { runtime_refloat_config_state_mut() };
     refloat_set_cfg_with_state(buffer, state)
 }
@@ -983,6 +988,7 @@ unsafe fn runtime_refloat_config_state_mut() -> Option<&'static mut RefloatAppDa
 }
 
 unsafe extern "C" fn refloat_get_cfg_xml(buffer: *mut *mut u8) -> c_int {
+    // C map: Refloat v1.2.1 `get_cfg_xml` starts at `src/main.c:2389`.
     let xml = runtime_refloat_config_xml();
     if let Some(buffer) = unsafe { buffer.as_mut() } {
         *buffer = xml.cast_mut();
@@ -1312,6 +1318,8 @@ impl RefloatAppDataState {
 
     /// Refresh the source-backed runtime slices that Refloat updates near the
     /// top of `refloat_thd`.
+    ///
+    /// C map: Refloat v1.2.1 `imu_ref_callback` starts at `src/main.c:760`.
     ///
     /// Upstream applies `configure(d)` before runtime work at
     /// `src/main.c:184-191`, updates IMU at `src/main.c:775`, motor data at
@@ -2454,6 +2462,7 @@ impl<B: AppDataBindings + CustomConfigBindings> RefloatAppDataLifecycle<B> {
 }
 
 unsafe extern "C" fn stop_refloat_app_data(_arg: *mut core::ffi::c_void) {
+    // C map: Refloat v1.2.1 `stop` starts at `src/main.c:2399`.
     // Upstream stop cleanup in `src/main.c:2398-2412` clears IMU/app-data/custom
     // config callbacks, terminates aux+main threads, destroys LEDs, and frees
     // `Data`. This isolated handler only clears app-data/custom config and frees
