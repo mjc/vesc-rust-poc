@@ -170,6 +170,17 @@ mod tests {
     }
 
     #[test]
+    fn semantic_current_types_support_same_domain_arithmetic() {
+        let command = MotorCurrent::new(Current::from_amps(10.0))
+            + MotorCurrent::new(Current::from_amps(2.0));
+        let filtered = command * 0.25 - MotorCurrent::new(Current::from_amps(1.0));
+
+        assert_eq!(command.current().as_amps(), 12.0);
+        assert_eq!(filtered.current().as_amps(), 2.0);
+        assert_eq!((-filtered).current().as_amps(), -2.0);
+    }
+
+    #[test]
     fn semantic_voltage_energy_and_aggregate_current_types_wrap_units() {
         let total = TotalMotorCurrent::new(Current::from_amps(18.0));
         let directional = DirectionalMotorCurrent::new(Current::from_amps(-2.0));

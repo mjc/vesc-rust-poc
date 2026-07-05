@@ -1,7 +1,8 @@
 use super::{
-    AccelerationG, AmpHours, AngleRadians, AngularVelocity, Charge, Current, Distance,
-    DistancePerEnergy, Energy, EnergyPerDistance, Frequency, Latitude, Longitude, Percent, Power,
-    Ratio, Rpm, SampleRate, Speed, SystemTicks, Temperature, VescSeconds, Voltage, WattHours,
+    AccelerationG, AmpHours, AngleDegrees, AngleRadians, AngularVelocity, Charge, Current,
+    Distance, DistancePerEnergy, Energy, EnergyPerDistance, Frequency, Latitude, Longitude,
+    Percent, Power, Ratio, Rpm, SampleRate, Speed, SystemTicks, Temperature, VescSeconds, Voltage,
+    WattHours,
 };
 
 #[test]
@@ -61,6 +62,18 @@ fn local_unit_conversions_stay_in_the_embedded_units_layer() {
         10.0
     );
     assert_eq!(Speed::from_miles_per_hour(60.0).as_miles_per_hour(), 60.0);
+}
+
+#[test]
+fn scalar_units_support_same_unit_arithmetic_traits() {
+    let angle = AngleDegrees::from_degrees(8.0) - AngleDegrees::from_degrees(3.0);
+    let rate = -AngularVelocity::from_degrees_per_second(12.0);
+    let current = Current::from_amps(10.0) * 0.25 + Current::from_amps(1.0);
+
+    assert_eq!(angle.as_degrees(), 5.0);
+    assert_eq!(rate.as_degrees_per_second(), -12.0);
+    assert_eq!(current.as_amps(), 3.5);
+    assert_eq!((current / 2.0).as_amps(), 1.75);
 }
 
 #[test]

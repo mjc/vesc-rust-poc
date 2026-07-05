@@ -20,6 +20,46 @@ macro_rules! current_type {
                 self.0
             }
         }
+
+        impl core::ops::Add for $name {
+            type Output = Self;
+
+            fn add(self, rhs: Self) -> Self::Output {
+                Self(self.0 + rhs.0)
+            }
+        }
+
+        impl core::ops::Sub for $name {
+            type Output = Self;
+
+            fn sub(self, rhs: Self) -> Self::Output {
+                Self(self.0 - rhs.0)
+            }
+        }
+
+        impl core::ops::Mul<f32> for $name {
+            type Output = Self;
+
+            fn mul(self, rhs: f32) -> Self::Output {
+                Self(self.0 * rhs)
+            }
+        }
+
+        impl core::ops::Div<f32> for $name {
+            type Output = Self;
+
+            fn div(self, rhs: f32) -> Self::Output {
+                Self(self.0 / rhs)
+            }
+        }
+
+        impl core::ops::Neg for $name {
+            type Output = Self;
+
+            fn neg(self) -> Self::Output {
+                Self(-self.0)
+            }
+        }
     };
 }
 

@@ -35,7 +35,7 @@ use crate::state_transition::{
 };
 use core::ffi::c_int;
 use vescpkg_rs::prelude::{
-    AngleDegrees, AngleRadians, BatteryCurrent, BatteryVoltage, Current, MotorCurrent,
+    AngleDegrees, AngleRadians, BatteryCurrent, BatteryVoltage, Current, MotorCurrent, SampleRate,
     SystemTimestamp, TimestampTicks, Voltage,
 };
 use vescpkg_rs::{
@@ -2380,63 +2380,74 @@ impl RefloatAppDataState {
                     ki: self.config_scaled_i16(REFLOAT_CONFIG_KI_OFFSET, 100000.0),
                     kp_brake: self.config_scaled_i16(REFLOAT_CONFIG_KP_BRAKE_OFFSET, 100.0),
                     kp2_brake: self.config_scaled_i16(REFLOAT_CONFIG_KP2_BRAKE_OFFSET, 100.0),
-                    ki_limit: self.config_scaled_i16(REFLOAT_CONFIG_KI_LIMIT_OFFSET, 10.0),
-                    booster_angle: self
-                        .config_scaled_i16(REFLOAT_CONFIG_BOOSTER_ANGLE_OFFSET, 100.0),
-                    booster_ramp: self.config_scaled_i16(REFLOAT_CONFIG_BOOSTER_RAMP_OFFSET, 100.0),
-                    booster_current: self
-                        .config_scaled_i16(REFLOAT_CONFIG_BOOSTER_CURRENT_OFFSET, 100.0),
-                    brkbooster_angle: self
-                        .config_scaled_i16(REFLOAT_CONFIG_BRKBOOSTER_ANGLE_OFFSET, 100.0),
-                    brkbooster_ramp: self
-                        .config_scaled_i16(REFLOAT_CONFIG_BRKBOOSTER_RAMP_OFFSET, 100.0),
-                    brkbooster_current: self
-                        .config_scaled_i16(REFLOAT_CONFIG_BRKBOOSTER_CURRENT_OFFSET, 100.0),
-                    hertz: self.config_be_u16(REFLOAT_CONFIG_HERTZ_OFFSET),
+                    ki_limit: MotorCurrent::new(Current::from_amps(
+                        self.config_scaled_i16(REFLOAT_CONFIG_KI_LIMIT_OFFSET, 10.0),
+                    )),
+                    booster_angle: AngleDegrees::from_degrees(
+                        self.config_scaled_i16(REFLOAT_CONFIG_BOOSTER_ANGLE_OFFSET, 100.0),
+                    ),
+                    booster_ramp: AngleDegrees::from_degrees(
+                        self.config_scaled_i16(REFLOAT_CONFIG_BOOSTER_RAMP_OFFSET, 100.0),
+                    ),
+                    booster_current: MotorCurrent::new(Current::from_amps(
+                        self.config_scaled_i16(REFLOAT_CONFIG_BOOSTER_CURRENT_OFFSET, 100.0),
+                    )),
+                    brkbooster_angle: AngleDegrees::from_degrees(
+                        self.config_scaled_i16(REFLOAT_CONFIG_BRKBOOSTER_ANGLE_OFFSET, 100.0),
+                    ),
+                    brkbooster_ramp: AngleDegrees::from_degrees(
+                        self.config_scaled_i16(REFLOAT_CONFIG_BRKBOOSTER_RAMP_OFFSET, 100.0),
+                    ),
+                    brkbooster_current: MotorCurrent::new(Current::from_amps(
+                        self.config_scaled_i16(REFLOAT_CONFIG_BRKBOOSTER_CURRENT_OFFSET, 100.0),
+                    )),
+                    hertz: SampleRate::from_hertz(f32::from(
+                        self.config_be_u16(REFLOAT_CONFIG_HERTZ_OFFSET),
+                    )),
                 },
                 RefloatBalanceLoopInput {
-                    setpoint_degrees: setpoints.board().angle().as_degrees(),
-                    balance_pitch_degrees,
-                    raw_pitch_degrees: imu.pitch().angle().as_radians() * 180.0
-                        / core::f32::consts::PI,
-                    roll_radians: imu.roll().angle().as_radians(),
-                    gyro_pitch_degrees_per_second: gyro_pitch.as_degrees_per_second(),
-                    gyro_yaw_degrees_per_second: gyro_yaw.as_degrees_per_second(),
-                    motor_erpm,
-                    motor_current_amps: base.motor().motor_current().current().as_amps(),
-                    motor_current_max_amps: self.motor_current_max.current().as_amps(),
-                    motor_current_min_amps: self.motor_current_min.current().as_amps(),
+                    setpoint: setpoints.board(),
+                    brake_tilt_setpoint: setpoints.brake_tilt(),
+                    balance_pitch,
+                    raw_pitch: imu.pitch(),
+                    roll: imu.roll(),
+                    gyro_pitch,
+                    gyro_yaw,
+                    motor_erpm: base.motor().electrical_speed(),
+                    motor_current: base.motor().motor_current(),
+                    motor_current_max: self.motor_current_max,
+                    motor_current_min: self.motor_current_min,
                     mode: ride_state.mode(),
                     darkride: ride_state.darkride(),
                     traction_control: self.traction_control,
                 },
                 RefloatBalanceLoopState {
-                    balance_current_amps: balance_current.current().current().as_amps(),
-                    booster_current_amps: booster_current.current().current().as_amps(),
-                    pid_integral_current: self.pid_integral_current,
+                    balance_current: balance_current.current(),
+                    booster_current: booster_current.current(),
+                    pid_integral_current: MotorCurrent::new(Current::from_amps(
+                        self.pid_integral_current,
+                    )),
                     pid_kp_brake_scale: self.pid_kp_brake_scale,
                     pid_kp2_brake_scale: self.pid_kp2_brake_scale,
                     pid_kp_accel_scale: self.pid_kp_accel_scale,
                     pid_kp2_accel_scale: self.pid_kp2_accel_scale,
-                    softstart_pid_limit: self.softstart_pid_limit,
+                    softstart_pid_limit: MotorCurrent::new(Current::from_amps(
+                        self.softstart_pid_limit,
+                    )),
                 },
             );
             let balance_loop_state = balance_loop.state;
-            self.pid_integral_current = balance_loop_state.pid_integral_current;
+            self.pid_integral_current = balance_loop_state.pid_integral_current.current().as_amps();
             self.pid_kp_brake_scale = balance_loop_state.pid_kp_brake_scale;
             self.pid_kp2_brake_scale = balance_loop_state.pid_kp2_brake_scale;
             self.pid_kp_accel_scale = balance_loop_state.pid_kp_accel_scale;
             self.pid_kp2_accel_scale = balance_loop_state.pid_kp2_accel_scale;
-            self.softstart_pid_limit = balance_loop_state.softstart_pid_limit;
-            booster_current = RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(
-                Current::from_amps(balance_loop_state.booster_current_amps),
-            ));
-            balance_current = RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(
-                Current::from_amps(balance_loop_state.balance_current_amps),
-            ));
-            self.request_motor_current(MotorCurrent::new(Current::from_amps(
-                balance_loop.requested_current_amps,
-            )));
+            self.softstart_pid_limit = balance_loop_state.softstart_pid_limit.current().as_amps();
+            booster_current =
+                RefloatRealtimeBoosterCurrent::new(balance_loop_state.booster_current);
+            balance_current =
+                RefloatRealtimeBalanceCurrent::new(balance_loop_state.balance_current);
+            self.request_motor_current(balance_loop.requested_current);
         } else if matches!(run_state, RefloatRunState::Ready) && !state_stop_fault {
             if self.rc_steps != 0 {
                 self.rc_current =
@@ -6668,8 +6679,14 @@ mod tests {
             sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Normal);
         let base = payloads.base();
         let setpoint = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(3.0));
+        let zero_setpoint = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(0.0));
         let setpoints = RefloatRealtimeRuntimeSetpoints::new(
-            setpoint, setpoint, setpoint, setpoint, setpoint, setpoint,
+            setpoint,
+            zero_setpoint,
+            zero_setpoint,
+            zero_setpoint,
+            zero_setpoint,
+            zero_setpoint,
         );
         let base = RefloatAllDataBasePayload::new(
             RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
@@ -6720,10 +6737,12 @@ mod tests {
         ));
         assert!(state.apply_requested_motor_current(&motor));
 
-        // Upstream `booster_update` applies full configured booster current
-        // above angle+ramp at `third_party/refloat/src/booster.c:35-46`, filters it at
-        // `third_party/refloat/src/booster.c:50`, and RUNNING adds it to rate-P before smoothing
-        // `balance_current` at `third_party/refloat/src/main.c:921-954`.
+        // Upstream subtracts brake tilt at `third_party/refloat/src/main.c:921`,
+        // `booster_update` applies full configured booster current above
+        // angle+ramp at `third_party/refloat/src/booster.c:35-46`, filters it
+        // at `third_party/refloat/src/booster.c:74-75`, and RUNNING adds it to
+        // rate-P before smoothing `balance_current` at
+        // `third_party/refloat/src/main.c:921-954`.
         assert!(
             (state
                 .all_data_payloads()
