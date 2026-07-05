@@ -1015,9 +1015,7 @@ unsafe extern "C" fn refloat_imu_read_callback(
     let Some(state) = (unsafe { refloat_state_from_arg() }) else {
         return;
     };
-    // C `imu_ref_callback` ignores mag and feeds gyro/accel/dt into
-    // `balance_filter_update` at `third_party/refloat/src/main.c:760-765`.
-    state.balance_filter.update(gyro, accel, dt);
+    refloat_imu_callback_with_state(state, accel, gyro, dt);
 }
 
 #[cfg(test)]
@@ -1027,6 +1025,18 @@ unsafe extern "C" fn refloat_imu_read_callback(
     _mag: *mut f32,
     _dt: f32,
 ) {
+}
+
+#[cfg(any(test, all(not(test), target_arch = "arm")))]
+fn refloat_imu_callback_with_state(
+    state: &mut RefloatAppDataState,
+    accel: [f32; 3],
+    gyro: [f32; 3],
+    dt: f32,
+) {
+    // C `imu_ref_callback` ignores mag and feeds gyro/accel/dt into
+    // `balance_filter_update` at `third_party/refloat/src/main.c:760-765`.
+    state.balance_filter.update(gyro, accel, dt);
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
@@ -5714,6 +5724,63 @@ mod tests {
     }
 
     #[test]
+    fn app_data_running_motor_apply_uses_current_branch_like_refloat_loop() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+        let imu = ImuApi::new(FakeImuBindings::new().with_startup_done(true));
+        let motor = MotorControlApi::new(FakeMotorControlBindings::new());
+        let payloads =
+            sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Normal);
+        let base = payloads.base();
+        let setpoint = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(1.0));
+        let setpoints = RefloatRealtimeRuntimeSetpoints::new(
+            setpoint, setpoint, setpoint, setpoint, setpoint, setpoint,
+        );
+        let base = RefloatAllDataBasePayload::new(
+            RefloatRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(4.75))),
+            RefloatAllDataAttitude::new(
+                RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(1.0_f32.to_radians())),
+                base.attitude().roll(),
+                base.attitude().pitch(),
+            ),
+            base.status(),
+            base.footpad(),
+            setpoints,
+            RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            base.motor(),
+        );
+        let mut state = RefloatAppDataState::new(RefloatAllDataPayloads::new(
+            base,
+            payloads.mode2(),
+            payloads.mode3(),
+            payloads.mode4(),
+        ));
+        state.balance_filter = balance_filter_with_pitch(1.0_f32.to_radians());
+
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+        assert!(state.apply_motor_control(&motor, RefloatRunState::Running, 1));
+
+        // Upstream RUNNING computes and requests balance current at
+        // `third_party/refloat/src/main.c:918-956`, then `refloat_thd` calls
+        // `motor_control_apply` at `third_party/refloat/src/main.c:1076`; a
+        // current request takes the `mc_set_current` branch at
+        // `third_party/refloat/src/motor_control.c:92-121`.
+        assert_eq!(motor.bindings().set_current_calls.get(), 1);
+        assert_eq!(motor.bindings().set_brake_current_calls.get(), 0);
+        assert_eq!(motor.bindings().set_duty_calls.get(), 0);
+        assert_eq!(motor.bindings().current().current().as_amps(), 3.8);
+    }
+
+    #[test]
     fn app_data_handtest_running_recenters_start_setpoint_like_refloat_loop() {
         let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
         let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
@@ -6136,6 +6203,44 @@ mod tests {
         // quaternion at `third_party/refloat/src/balance_filter.c:73-134`, and
         // `balance_filter_get_pitch` reads it at `third_party/refloat/src/balance_filter.c:145-154`.
         assert!(filter.pitch_radians() > 0.0);
+    }
+
+    #[test]
+    fn imu_callback_state_update_feeds_normal_balance_pitch_like_refloat_loop() {
+        let lifecycle = RefloatAppDataLifecycle::new(RecordingAppDataBindings::accepting());
+        let telemetry = MotorTelemetryApi::new(FakeMotorTelemetryBindings::new());
+        let imu = ImuApi::new(FakeImuBindings::new().with_startup_done(true));
+        let mut state = RefloatAppDataState::new(sample_all_data_payloads_with_ride_state(
+            RefloatRunState::Running,
+            RefloatMode::Normal,
+        ));
+
+        super::refloat_imu_callback_with_state(&mut state, [0.0, 0.0, 1.0], [0.0, 1.0, 0.0], 0.1);
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
+            &lifecycle,
+            &telemetry,
+            &imu,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+
+        // Upstream `imu_ref_callback` updates the balance filter at
+        // `third_party/refloat/src/main.c:760-765`; the main loop copies that
+        // filter into `imu.balance_pitch` at `third_party/refloat/src/imu.c:35-41`
+        // before RUNNING PID reads it at `third_party/refloat/src/pid.c:40`.
+        assert!(
+            state
+                .all_data_payloads()
+                .base()
+                .attitude()
+                .balance_pitch()
+                .angle()
+                .as_radians()
+                > 0.0
+        );
     }
 
     #[test]

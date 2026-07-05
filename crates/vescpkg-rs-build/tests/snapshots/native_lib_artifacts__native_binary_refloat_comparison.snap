@@ -1,5 +1,6 @@
 ---
 source: crates/vescpkg-rs-build/tests/native_lib_artifacts.rs
+assertion_line: 103
 expression: report
 ---
 native_binary: left=loopback right=refloat
@@ -8,7 +9,7 @@ load_sections:
   .init_fun: left size=60 vma=0x4 right size=12 vma=0x4
   .data: left size=0 vma=0x40 right size=0 vma=0x10
   .got: left size=20 vma=0x40 right size=16 vma=0x10
-  .text: left size=391 vma=0x60 right size=50441 vma=0x20
+  .text: left size=391 vma=0x60 right size=50409 vma=0x20
 debug_sections:
   .debug_abbrev: right_only size=3749 vma=0x0
   .debug_aranges: right_only size=768 vma=0x0

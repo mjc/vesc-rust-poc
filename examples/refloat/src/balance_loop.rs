@@ -129,6 +129,27 @@ impl RefloatPitchRate {
     }
 }
 
+/// Positive magnitude used to clamp Refloat RUNNING balance current.
+///
+/// Source map: upstream chooses a scalar `current_limit` at
+/// `third_party/refloat/src/main.c:932-940`, then clamps with
+/// `fabsf(new_current) > current_limit` at `third_party/refloat/src/main.c:941-942`.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[repr(transparent)]
+struct RefloatCurrentLimitMagnitude(Current);
+
+impl RefloatCurrentLimitMagnitude {
+    #[inline(always)]
+    fn from_motor_current(limit: MotorCurrent) -> Self {
+        Self(Current::from_amps(limit.current().as_amps().abs()))
+    }
+
+    #[inline(always)]
+    fn as_amps(self) -> f32 {
+        self.0.as_amps()
+    }
+}
+
 /// Booster proportional angle supplied to upstream `booster_update`.
 ///
 /// Source map: upstream computes this as
@@ -399,21 +420,24 @@ fn refloat_current_limit(
     braking: bool,
     motor_current_max: MotorCurrent,
     motor_current_min: MotorCurrent,
-) -> MotorCurrent {
-    match mode {
+) -> RefloatCurrentLimitMagnitude {
+    RefloatCurrentLimitMagnitude::from_motor_current(match mode {
         RefloatMode::HandTest => refloat_motor_current(7.0),
         RefloatMode::Flywheel => refloat_motor_current(40.0),
         RefloatMode::Normal if braking => motor_current_min,
         RefloatMode::Normal => motor_current_max,
-    }
+    })
 }
 
 /// Source map: upstream clamps RUNNING current at
 /// `third_party/refloat/src/main.c:941-942`.
 #[inline(always)]
-fn refloat_clamp_current(current: MotorCurrent, limit: MotorCurrent) -> MotorCurrent {
-    if current.current().as_amps().abs() > limit.current().as_amps() {
-        refloat_motor_current(limit.current().as_amps() * current.current().as_amps().signum())
+fn refloat_clamp_current(
+    current: MotorCurrent,
+    limit: RefloatCurrentLimitMagnitude,
+) -> MotorCurrent {
+    if current.current().as_amps().abs() > limit.as_amps() {
+        refloat_motor_current(limit.as_amps() * current.current().as_amps().signum())
     } else {
         current
     }
@@ -633,6 +657,69 @@ mod tests {
                 assert_current_amps(output.state.balance_current, expected_amps);
             },
         );
+    }
+
+    #[test]
+    fn balance_loop_unit_treats_motor_current_min_as_magnitude_like_refloat_main_loop() {
+        let output = refloat_balance_loop_step(
+            RefloatBalanceLoopConfig {
+                kp: 10.0,
+                ..base_config()
+            },
+            RefloatBalanceLoopInput {
+                setpoint: setpoint(-10.0),
+                motor_current: current(-1.0),
+                motor_current_max: current(100.0),
+                motor_current_min: current(-2.0),
+                ..base_input()
+            },
+            base_state(),
+        );
+
+        // Upstream treats `current_limit` as a positive scalar before clamping
+        // `new_current` at `third_party/refloat/src/main.c:932-942`, even
+        // though VESC stores braking current as a negative config value.
+        assert_current_amps(output.requested_current, -0.4);
+    }
+
+    #[test]
+    fn balance_loop_unit_positive_pitch_rate_commands_negative_damping_current() {
+        let output = refloat_balance_loop_step(
+            RefloatBalanceLoopConfig {
+                kp2: 2.0,
+                ..base_config()
+            },
+            RefloatBalanceLoopInput {
+                gyro_pitch: gyro(10.0),
+                ..base_input()
+            },
+            base_state(),
+        );
+
+        // Upstream computes `rate_p = -imu->pitch_rate * kp2` at
+        // `third_party/refloat/src/pid.c:66-72`; RUNNING smooths the requested
+        // current at `third_party/refloat/src/main.c:949-954`.
+        assert_current_amps(output.requested_current, -4.0);
+    }
+
+    #[test]
+    fn balance_loop_unit_negative_pitch_rate_commands_positive_damping_current() {
+        let output = refloat_balance_loop_step(
+            RefloatBalanceLoopConfig {
+                kp2: 2.0,
+                ..base_config()
+            },
+            RefloatBalanceLoopInput {
+                gyro_pitch: gyro(-10.0),
+                ..base_input()
+            },
+            base_state(),
+        );
+
+        // Upstream computes `rate_p = -imu->pitch_rate * kp2` at
+        // `third_party/refloat/src/pid.c:66-72`; RUNNING smooths the requested
+        // current at `third_party/refloat/src/main.c:949-954`.
+        assert_current_amps(output.requested_current, 4.0);
     }
 
     #[test]
