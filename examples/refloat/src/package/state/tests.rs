@@ -1,7 +1,8 @@
-use super::handle_refloat_app_data_packet;
-use super::test_support::{
+use super::super::handle_refloat_app_data_packet;
+use super::super::test_support::{
     RecordingAppDataBindings, sample_all_data_payloads, sample_all_data_payloads_with_ride_state,
 };
+use super::super::{custom_config, imu_callback};
 use super::{RefloatBalanceFilter, RefloatPackageLifecycle, RefloatPackageState};
 use crate::domain::{
     FootpadSensorSample, FootpadSensorState, REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataAttitude,
@@ -1499,7 +1500,7 @@ fn app_data_running_darkride_simple_start_single_footpad_stops_during_engage_gra
         payloads.mode3(),
         payloads.mode4(),
     ));
-    let mut config = *include_bytes!("../conf/default_config.dat");
+    let mut config = *include_bytes!("../../conf/default_config.dat");
     config[super::REFLOAT_CONFIG_STARTUP_SIMPLESTART_ENABLED_OFFSET] = 1;
     assert!(state.store_serialized_config(&config));
 
@@ -2306,7 +2307,7 @@ fn app_data_ready_single_footpad_engages_when_dual_switch_config_is_set() {
         payloads.mode3(),
         payloads.mode4(),
     ));
-    let mut config = *include_bytes!("../conf/default_config.dat");
+    let mut config = *include_bytes!("../../conf/default_config.dat");
     config[super::REFLOAT_CONFIG_FAULT_IS_DUAL_SWITCH_OFFSET] = 1;
     assert!(state.store_serialized_config(&config));
 
@@ -2435,7 +2436,7 @@ fn app_data_ready_simple_start_single_footpad_engages_after_disengage_grace_like
         payloads.mode3(),
         payloads.mode4(),
     ));
-    let mut config = *include_bytes!("../conf/default_config.dat");
+    let mut config = *include_bytes!("../../conf/default_config.dat");
     config[super::REFLOAT_CONFIG_STARTUP_SIMPLESTART_ENABLED_OFFSET] = 1;
     assert!(state.store_serialized_config(&config));
 
@@ -2467,11 +2468,11 @@ fn app_data_runtime_applies_disabled_config_before_startup_ready_like_refloat() 
     let imu = vescpkg_rs::ImuApi::new(
         vescpkg_rs::test_support::FakeImuBindings::new().with_startup_done(true),
     );
-    let mut incoming = *include_bytes!("../conf/default_config.dat");
+    let mut incoming = *include_bytes!("../../conf/default_config.dat");
     incoming[super::REFLOAT_CONFIG_DISABLED_OFFSET] = 1;
     let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
 
-    assert!(super::custom_config::refloat_set_cfg_with_state(
+    assert!(custom_config::refloat_set_cfg_with_state(
         incoming.as_mut_ptr(),
         Some(&mut state),
     ));
@@ -2503,14 +2504,14 @@ fn app_data_runtime_applies_disabled_config_before_startup_ready_like_refloat() 
 
 #[test]
 fn app_data_configured_loop_time_uses_refloat_hertz_config() {
-    let mut incoming = *include_bytes!("../conf/default_config.dat");
+    let mut incoming = *include_bytes!("../../conf/default_config.dat");
     let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
 
     assert_eq!(state.configured_loop_time_us(), 1201);
 
     incoming[super::REFLOAT_CONFIG_HERTZ_OFFSET..super::REFLOAT_CONFIG_HERTZ_OFFSET + 2]
         .copy_from_slice(&500u16.to_be_bytes());
-    assert!(super::custom_config::refloat_set_cfg_with_state(
+    assert!(custom_config::refloat_set_cfg_with_state(
         incoming.as_mut_ptr(),
         Some(&mut state),
     ));
@@ -3077,7 +3078,7 @@ fn imu_callback_state_update_feeds_normal_balance_pitch_like_refloat_loop() {
         RefloatMode::Normal,
     ));
 
-    super::imu_callback::refloat_imu_callback_with_state(
+    imu_callback::refloat_imu_callback_with_state(
         &mut state,
         [0.0, 0.0, 1.0],
         [0.0, 1.0, 0.0],

@@ -1,8 +1,4 @@
-use super::*;
-use crate::domain::{
-    FootpadSensorSample, RefloatAllDataBatteryTemperature, RefloatAllDataMode2Payload,
-    RefloatBeepReason,
-};
+use crate::domain::*;
 use core::cell::Cell;
 use core::ffi::c_void;
 use vescpkg_rs::prelude::*;
