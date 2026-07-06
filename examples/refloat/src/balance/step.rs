@@ -103,16 +103,6 @@ fn refloat_angle_degrees_from_radians(angle: AngleRadians) -> AngleDegrees {
 }
 
 #[inline(always)]
-fn refloat_raw_pitch_degrees(pitch: ImuPitch) -> AngleDegrees {
-    refloat_angle_degrees_from_radians(pitch.angle())
-}
-
-#[inline(always)]
-fn refloat_balance_pitch_degrees(balance_pitch: RefloatRealtimeBalancePitch) -> AngleDegrees {
-    refloat_angle_degrees_from_radians(balance_pitch.angle())
-}
-
-#[inline(always)]
 fn refloat_electrical_rpm(speed: ElectricalSpeed) -> Rpm {
     speed.rpm()
 }
@@ -129,7 +119,9 @@ pub(crate) fn refloat_setpoint_error(
     setpoint: RefloatRealtimeRuntimeSetpoint,
     balance_pitch: RefloatRealtimeBalancePitch,
 ) -> RefloatSetpointError {
-    RefloatSetpointError::new(setpoint.angle() - refloat_balance_pitch_degrees(balance_pitch))
+    RefloatSetpointError::new(
+        setpoint.angle() - refloat_angle_degrees_from_radians(balance_pitch.angle()),
+    )
 }
 
 /// Source map: upstream computes roll-corrected pitch rate at
@@ -162,7 +154,9 @@ pub(crate) fn refloat_booster_proportional(
     raw_pitch: ImuPitch,
 ) -> RefloatBoosterProportional {
     RefloatBoosterProportional::new(
-        setpoint.angle() - brake_tilt.angle() - refloat_raw_pitch_degrees(raw_pitch),
+        setpoint.angle()
+            - brake_tilt.angle()
+            - refloat_angle_degrees_from_radians(raw_pitch.angle()),
     )
 }
 
