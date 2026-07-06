@@ -5,15 +5,15 @@ expression: report
 ---
 refloat_native_mapping:
 entrypoints:
-  package_init: present addr=0x32f0 symbol=package_lib_init
-  app_data_handler: present addr=0x3330 symbol=refloat_app_data_callback
-  stop_hook: present addr=0x1d90 symbol=_ZN10vescpkg_rs8firmware13stop_callback17h35c2cf89abf583f2E
+  package_init: present addr=0x3310 symbol=package_lib_init
+  app_data_handler: present addr=0x3350 symbol=refloat_app_data_callback
+  stop_hook: present addr=0x1dc0 symbol=_ZN10vescpkg_rs8firmware13stop_callback17h35c2cf89abf583f2E
   thread_entry: present addr=0x230 symbol=_ZN10vescpkg_rs6thread21firmware_thread_entry17hdb936d7224808791E
 runtime_paths:
   boot_runtime_refresh: missing needle=refresh_boot_runtime_state
-  config_get: present addr=0x37e0 symbol=refloat_get_cfg
-  config_set: present addr=0x3870 symbol=refloat_set_cfg
-  config_xml: present addr=0x3820 symbol=refloat_get_cfg_xml
-  state_from_arg: present addr=0x2850 symbol=_ZN20vesc_example_refloat7package22refloat_state_from_arg17h87ed3f51bad002f6E
+  config_get: present addr=0x3800 symbol=refloat_get_cfg
+  config_set: present addr=0x3890 symbol=refloat_set_cfg
+  config_xml: present addr=0x3840 symbol=refloat_get_cfg_xml
+  state_from_arg: present addr=0x2870 symbol=_ZN20vesc_example_refloat7package22refloat_state_from_arg17h87ed3f51bad002f6E
 firmware_table:
   vesc_if_base: present value=0x1000f800

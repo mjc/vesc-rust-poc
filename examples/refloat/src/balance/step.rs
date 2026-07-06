@@ -40,8 +40,11 @@ pub(crate) struct RefloatPitchRate(AngularVelocity);
 
 impl RefloatPitchRate {
     #[inline(always)]
-    const fn new(rate: AngularVelocity) -> Self {
-        Self(rate)
+    fn from_roll_corrected(rate: AngularVelocity, darkride: RefloatDarkRideState) -> Self {
+        Self(match darkride {
+            RefloatDarkRideState::Active => -rate,
+            RefloatDarkRideState::Upright => rate,
+        })
     }
 
     #[inline(always)]
@@ -138,11 +141,7 @@ pub(crate) fn refloat_pitch_rate(
     let cos_roll = libm::cosf(roll_radians);
     let pitch_rate = gyro_pitch * (cos_roll * cos_roll) + gyro_yaw * (sin_roll * cos_roll);
 
-    RefloatPitchRate::new(if matches!(darkride, RefloatDarkRideState::Active) {
-        -pitch_rate
-    } else {
-        pitch_rate
-    })
+    RefloatPitchRate::from_roll_corrected(pitch_rate, darkride)
 }
 
 /// Source map: upstream subtracts brake tilt before `booster_update` at
@@ -178,32 +177,82 @@ fn refloat_integral_current(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RefloatPidScaleDirection {
+    Coasting,
+    Forward,
+    Reverse,
+}
+
+impl RefloatPidScaleDirection {
+    #[inline(always)]
+    fn from_motor_erpm(motor_erpm: ElectricalSpeed) -> Self {
+        match refloat_electrical_rpm(motor_erpm).as_revolutions_per_minute() {
+            erpm if erpm.abs() < 500.0 => Self::Coasting,
+            erpm if erpm > 0.0 => Self::Forward,
+            _ => Self::Reverse,
+        }
+    }
+
+    #[inline(always)]
+    const fn targets(self, config: RefloatBalanceLoopConfig) -> RefloatPidScaleTargets {
+        match self {
+            Self::Coasting => RefloatPidScaleTargets::UNITY,
+            Self::Forward => RefloatPidScaleTargets {
+                brake_kp: config.kp_brake,
+                brake_kp2: config.kp2_brake,
+                accel_kp: 1.0,
+                accel_kp2: 1.0,
+            },
+            Self::Reverse => RefloatPidScaleTargets {
+                brake_kp: 1.0,
+                brake_kp2: 1.0,
+                accel_kp: config.kp_brake,
+                accel_kp2: config.kp2_brake,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct RefloatPidScaleTargets {
+    brake_kp: f32,
+    brake_kp2: f32,
+    accel_kp: f32,
+    accel_kp2: f32,
+}
+
+impl RefloatPidScaleTargets {
+    const UNITY: Self = Self {
+        brake_kp: 1.0,
+        brake_kp2: 1.0,
+        accel_kp: 1.0,
+        accel_kp2: 1.0,
+    };
+}
+
+#[inline(always)]
+fn refloat_smooth_pid_scale(target: f32, current: f32) -> f32 {
+    0.01 * target + 0.99 * current
+}
+
 /// Source map: upstream smooths PID brake/accel scales at
 /// `third_party/refloat/src/pid.c:48-67`.
 #[inline(always)]
 fn refloat_update_pid_scales(
     config: RefloatBalanceLoopConfig,
     motor_erpm: ElectricalSpeed,
-    mut state: RefloatBalanceLoopState,
+    state: RefloatBalanceLoopState,
 ) -> RefloatBalanceLoopState {
-    let erpm = refloat_electrical_rpm(motor_erpm).as_revolutions_per_minute();
-    if erpm.abs() < 500.0 {
-        state.pid_kp_brake_scale = 0.01 + 0.99 * state.pid_kp_brake_scale;
-        state.pid_kp2_brake_scale = 0.01 + 0.99 * state.pid_kp2_brake_scale;
-        state.pid_kp_accel_scale = 0.01 + 0.99 * state.pid_kp_accel_scale;
-        state.pid_kp2_accel_scale = 0.01 + 0.99 * state.pid_kp2_accel_scale;
-    } else if erpm > 0.0 {
-        state.pid_kp_brake_scale = 0.01 * config.kp_brake + 0.99 * state.pid_kp_brake_scale;
-        state.pid_kp2_brake_scale = 0.01 * config.kp2_brake + 0.99 * state.pid_kp2_brake_scale;
-        state.pid_kp_accel_scale = 0.01 + 0.99 * state.pid_kp_accel_scale;
-        state.pid_kp2_accel_scale = 0.01 + 0.99 * state.pid_kp2_accel_scale;
-    } else {
-        state.pid_kp_brake_scale = 0.01 + 0.99 * state.pid_kp_brake_scale;
-        state.pid_kp2_brake_scale = 0.01 + 0.99 * state.pid_kp2_brake_scale;
-        state.pid_kp_accel_scale = 0.01 * config.kp_brake + 0.99 * state.pid_kp_accel_scale;
-        state.pid_kp2_accel_scale = 0.01 * config.kp2_brake + 0.99 * state.pid_kp2_accel_scale;
+    let targets = RefloatPidScaleDirection::from_motor_erpm(motor_erpm).targets(config);
+
+    RefloatBalanceLoopState {
+        pid_kp_brake_scale: refloat_smooth_pid_scale(targets.brake_kp, state.pid_kp_brake_scale),
+        pid_kp2_brake_scale: refloat_smooth_pid_scale(targets.brake_kp2, state.pid_kp2_brake_scale),
+        pid_kp_accel_scale: refloat_smooth_pid_scale(targets.accel_kp, state.pid_kp_accel_scale),
+        pid_kp2_accel_scale: refloat_smooth_pid_scale(targets.accel_kp2, state.pid_kp2_accel_scale),
+        ..state
     }
-    state
 }
 
 /// Source map: upstream computes angle P at
@@ -538,6 +587,39 @@ mod tests {
 
     fn assert_current_amps(actual: MotorCurrent, expected: f32) {
         assert!((actual.current().as_amps() - expected).abs() < 0.0001);
+    }
+
+    fn assert_scale(actual: f32, expected: f32) {
+        assert!((actual - expected).abs() < 0.0001);
+    }
+
+    #[test]
+    fn balance_loop_unit_updates_pid_scales_by_erpm_direction_like_refloat_pid() {
+        let config = RefloatBalanceLoopConfig {
+            kp_brake: 2.0,
+            kp2_brake: 3.0,
+            ..base_config()
+        };
+        let state = base_state();
+
+        let coasting = refloat_update_pid_scales(config, erpm(0.0), state);
+        let forward = refloat_update_pid_scales(config, erpm(1000.0), state);
+        let reverse = refloat_update_pid_scales(config, erpm(-1000.0), state);
+
+        assert_scale(coasting.pid_kp_brake_scale, 1.0);
+        assert_scale(coasting.pid_kp2_brake_scale, 1.0);
+        assert_scale(coasting.pid_kp_accel_scale, 1.0);
+        assert_scale(coasting.pid_kp2_accel_scale, 1.0);
+
+        assert_scale(forward.pid_kp_brake_scale, 1.01);
+        assert_scale(forward.pid_kp2_brake_scale, 1.02);
+        assert_scale(forward.pid_kp_accel_scale, 1.0);
+        assert_scale(forward.pid_kp2_accel_scale, 1.0);
+
+        assert_scale(reverse.pid_kp_brake_scale, 1.0);
+        assert_scale(reverse.pid_kp2_brake_scale, 1.0);
+        assert_scale(reverse.pid_kp_accel_scale, 1.01);
+        assert_scale(reverse.pid_kp2_accel_scale, 1.02);
     }
 
     #[test]
