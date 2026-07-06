@@ -269,12 +269,12 @@ impl ImuQuaternion {
         self,
         f: impl FnOnce(ImuQuaternionW, ImuQuaternionX, ImuQuaternionY, ImuQuaternionZ) -> R,
     ) -> R {
-        let [w, x, y, z] = self.0;
+        let [scalar, axis_x, axis_y, axis_z] = self.0;
         f(
-            ImuQuaternionW::new(w),
-            ImuQuaternionX::new(x),
-            ImuQuaternionY::new(y),
-            ImuQuaternionZ::new(z),
+            ImuQuaternionW::new(scalar),
+            ImuQuaternionX::new(axis_x),
+            ImuQuaternionY::new(axis_y),
+            ImuQuaternionZ::new(axis_z),
         )
     }
 }

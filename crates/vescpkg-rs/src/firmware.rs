@@ -61,11 +61,11 @@ impl<T: 'static> StopContext<T> {
     }
 
     /// Reclaim the package state allocation so dropping it frees via firmware.
-    pub fn reclaim_allocation<'a, B: crate::AllocBindings>(
+    pub fn reclaim_allocation<B: crate::AllocBindings>(
         self,
         len: usize,
-        bindings: &'a B,
-    ) -> Option<crate::FirmwareAllocation<'a, T, B>> {
+        bindings: &B,
+    ) -> Option<crate::FirmwareAllocation<'_, T, B>> {
         crate::reclaim_firmware_allocation(self.arg.cast::<T>(), len, bindings)
     }
 }
@@ -130,8 +130,8 @@ macro_rules! firmware_app_data_callback {
 }
 
 /// Convert LispBM extension callback arguments into typed values.
-pub fn lbm_args(args: *mut u32, argn: u32) -> Option<&'static [LbmValue]> {
-    let len = usize::try_from(argn).ok()?;
+pub fn lbm_args(args: *mut u32, arg_count: u32) -> Option<&'static [LbmValue]> {
+    let len = usize::try_from(arg_count).ok()?;
     let args = NonNull::new(args.cast::<LbmValue>())?;
     Some(unsafe { core::slice::from_raw_parts(args.as_ptr().cast_const(), len) })
 }

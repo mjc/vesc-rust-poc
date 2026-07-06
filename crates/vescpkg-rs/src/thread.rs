@@ -53,12 +53,20 @@ impl FirmwareThreadHandle {
 }
 
 /// Typed firmware thread spawn settings.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct FirmwareThreadSpec<S: 'static> {
     entry: ThreadEntry,
     stack_bytes: usize,
     name: &'static CStr,
     _state: PhantomData<fn(&mut S)>,
+}
+
+impl<S: 'static> Copy for FirmwareThreadSpec<S> {}
+
+impl<S: 'static> Clone for FirmwareThreadSpec<S> {
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
 impl<S: 'static> FirmwareThreadSpec<S> {
@@ -280,10 +288,23 @@ impl<B: ThreadBindings> ThreadApi<B> {
         second: FirmwareThreadSpec<S>,
         state: &mut S,
     ) -> Option<FirmwareThreadPair> {
+        let FirmwareThreadSpec {
+            entry: first_entry,
+            stack_bytes: first_stack_bytes,
+            name: first_name,
+            _state: _,
+        } = first;
+        let FirmwareThreadSpec {
+            entry: second_entry,
+            stack_bytes: second_stack_bytes,
+            name: second_name,
+            _state: _,
+        } = second;
+
         let first_handle =
-            self.spawn_with_state(first.entry, first.stack_bytes, first.name, state)?;
+            self.spawn_with_state(first_entry, first_stack_bytes, first_name, state)?;
         let Some(second_handle) =
-            self.spawn_with_state(second.entry, second.stack_bytes, second.name, state)
+            self.spawn_with_state(second_entry, second_stack_bytes, second_name, state)
         else {
             self.request_terminate(first_handle);
             return None;

@@ -59,12 +59,12 @@ pub struct LbmExtensionArgs<'a> {
 }
 
 impl<'a> LbmExtensionArgs<'a> {
-    fn from_raw(args: *mut u32, argn: u32) -> Option<Self> {
-        let len = usize::try_from(argn).ok()?;
+    fn from_raw(args: *mut u32, arg_count: u32) -> Option<Self> {
+        let len = usize::try_from(arg_count).ok()?;
         if len == 0 {
             return Some(Self { values: &[] });
         }
-        crate::lbm_args(args, argn).map(|values| Self { values })
+        crate::lbm_args(args, arg_count).map(|values| Self { values })
     }
 
     /// Return all raw LispBM values.
@@ -119,10 +119,13 @@ pub trait LbmExtension {
 ///
 /// # Safety
 ///
-/// `args` must be null with `argn == 0` or point to `argn` LispBM values that stay valid for
+/// `args` must be null with `arg_count == 0` or point to `arg_count` LispBM values that stay valid for
 /// this call.
-pub unsafe extern "C" fn lbm_extension_handler<T: LbmExtension>(args: *mut u32, argn: u32) -> u32 {
-    let Some(args) = LbmExtensionArgs::from_raw(args, argn) else {
+pub unsafe extern "C" fn lbm_extension_handler<T: LbmExtension>(
+    args: *mut u32,
+    arg_count: u32,
+) -> u32 {
+    let Some(args) = LbmExtensionArgs::from_raw(args, arg_count) else {
         return 0;
     };
     T::call(args).0

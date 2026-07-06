@@ -157,11 +157,11 @@ impl<T, B: AllocBindings> FirmwareAllocation<'_, T, B> {
 }
 
 /// Reclaim a firmware allocation pointer so dropping it frees through `bindings`.
-pub fn reclaim_firmware_allocation<'a, T, B: AllocBindings>(
+pub fn reclaim_firmware_allocation<T, B: AllocBindings>(
     ptr: *mut T,
     len: usize,
-    bindings: &'a B,
-) -> Option<FirmwareAllocation<'a, T, B>> {
+    bindings: &B,
+) -> Option<FirmwareAllocation<'_, T, B>> {
     let ptr = NonNull::new(ptr)?;
     Some(unsafe { FirmwareAllocation::from_raw_parts(ptr, len, bindings) })
 }
