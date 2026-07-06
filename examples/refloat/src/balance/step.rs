@@ -32,10 +32,10 @@ fn refloat_roll_corrected_pitch_rate(
 fn refloat_booster_ramp_current(
     current: MotorCurrent,
     proportional_degrees: f32,
-    past_start_degrees: f32,
+    ramp_offset: RefloatBoosterRampOffset,
     ramp: AngleDegrees,
 ) -> MotorCurrent {
-    current * (proportional_degrees.signum() * past_start_degrees / ramp.as_degrees())
+    current * (proportional_degrees.signum() * ramp_offset.as_degrees() / ramp.as_degrees())
 }
 
 /// C map: `third_party/refloat/src/booster.c:67-69`.
@@ -128,6 +128,28 @@ impl RefloatPitchRate {
     #[inline(always)]
     const fn rate(self) -> AngularVelocity {
         self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct RefloatRollProjection {
+    sin: f32,
+    cos: f32,
+}
+
+impl RefloatRollProjection {
+    #[inline(always)]
+    fn from_roll(roll: ImuRoll) -> Self {
+        let roll_radians = roll.angle().as_radians();
+        Self {
+            sin: libm::sinf(roll_radians),
+            cos: libm::cosf(roll_radians),
+        }
+    }
+
+    #[inline(always)]
+    fn pitch_rate(self, gyro_pitch: AngularVelocity, gyro_yaw: AngularVelocity) -> AngularVelocity {
+        refloat_roll_corrected_pitch_rate(gyro_pitch, gyro_yaw, self.sin, self.cos)
     }
 }
 
@@ -236,12 +258,9 @@ pub(crate) fn refloat_pitch_rate(
     gyro_yaw: AngularVelocity,
     darkride: RefloatDarkRideState,
 ) -> RefloatPitchRate {
-    let roll_radians = roll.angle().as_radians();
-    let sin_roll = libm::sinf(roll_radians);
-    let cos_roll = libm::cosf(roll_radians);
     // C map: `third_party/refloat/src/imu.c:46-51` projects pitch/yaw gyro
     // onto board pitch rate after roll correction.
-    let pitch_rate = refloat_roll_corrected_pitch_rate(gyro_pitch, gyro_yaw, sin_roll, cos_roll);
+    let pitch_rate = RefloatRollProjection::from_roll(roll).pitch_rate(gyro_pitch, gyro_yaw);
 
     RefloatPitchRate::from_roll_corrected(pitch_rate, darkride)
 }
@@ -326,6 +345,23 @@ impl RefloatPidScaleTargets {
         accel_kp: 1.0,
         accel_kp2: 1.0,
     };
+
+    #[inline(always)]
+    fn smoothed_into(self, state: RefloatBalanceLoopState) -> RefloatBalanceLoopState {
+        RefloatBalanceLoopState {
+            pid_kp_brake_scale: refloat_smooth_pid_scale(self.brake_kp, state.pid_kp_brake_scale),
+            pid_kp2_brake_scale: refloat_smooth_pid_scale(
+                self.brake_kp2,
+                state.pid_kp2_brake_scale,
+            ),
+            pid_kp_accel_scale: refloat_smooth_pid_scale(self.accel_kp, state.pid_kp_accel_scale),
+            pid_kp2_accel_scale: refloat_smooth_pid_scale(
+                self.accel_kp2,
+                state.pid_kp2_accel_scale,
+            ),
+            ..state
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -394,6 +430,43 @@ impl RefloatBoosterBranch {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+struct RefloatBoosterRampOffset(AngleDegrees);
+
+impl RefloatBoosterRampOffset {
+    #[inline(always)]
+    fn from_profile(
+        proportional: RefloatBoosterProportional,
+        profile: RefloatBoosterProfile,
+    ) -> Self {
+        Self(AngleDegrees::from_degrees(
+            proportional.angle().as_degrees().abs() - profile.angle.as_degrees(),
+        ))
+    }
+
+    #[inline(always)]
+    fn as_degrees(self) -> f32 {
+        self.0.as_degrees()
+    }
+
+    #[inline(always)]
+    fn range(self, ramp: AngleDegrees) -> RefloatBoosterRange {
+        match self.as_degrees() {
+            degrees if degrees <= 0.0 => RefloatBoosterRange::Deadband,
+            degrees if degrees < ramp.as_degrees() => RefloatBoosterRange::Ramp(self),
+            _ => RefloatBoosterRange::Saturated,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum RefloatBoosterRange {
+    Deadband,
+    Ramp(RefloatBoosterRampOffset),
+    Saturated,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct RefloatBoosterProfile {
     current: MotorCurrent,
     angle: AngleDegrees,
@@ -423,16 +496,56 @@ impl RefloatBoosterProfile {
     #[inline(always)]
     fn target_current(self, proportional: RefloatBoosterProportional) -> MotorCurrent {
         let proportional_degrees = proportional.angle().as_degrees();
-        let past_start_angle_degrees = proportional_degrees.abs() - self.angle.as_degrees();
 
         // C map: `third_party/refloat/src/booster.c:63-72` applies booster as
         // a deadband, then a linear ramp, then saturated current.
-        match past_start_angle_degrees {
-            degrees if degrees <= 0.0 => refloat_motor_current(0.0),
-            degrees if degrees < self.ramp.as_degrees() => {
-                refloat_booster_ramp_current(self.current, proportional_degrees, degrees, self.ramp)
+        match RefloatBoosterRampOffset::from_profile(proportional, self).range(self.ramp) {
+            RefloatBoosterRange::Deadband => refloat_motor_current(0.0),
+            RefloatBoosterRange::Ramp(offset) => {
+                refloat_booster_ramp_current(self.current, proportional_degrees, offset, self.ramp)
             }
-            _ => refloat_booster_saturated_current(self.current, proportional_degrees),
+            RefloatBoosterRange::Saturated => {
+                refloat_booster_saturated_current(self.current, proportional_degrees)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+struct RefloatPitchBasedDemand(MotorCurrent);
+
+impl RefloatPitchBasedDemand {
+    #[inline(always)]
+    fn from_terms(rate_p: MotorCurrent, booster: MotorCurrent) -> Self {
+        Self(rate_p + booster)
+    }
+
+    #[inline(always)]
+    fn with_softstart(
+        self,
+        softstart_pid_limit: MotorCurrent,
+        motor_current_max: MotorCurrent,
+        hertz: SampleRate,
+    ) -> RefloatPitchBasedCurrent {
+        if softstart_pid_limit < motor_current_max {
+            RefloatPitchBasedCurrent {
+                // C map: `third_party/refloat/src/main.c:927-929` clamps only
+                // magnitude; sign remains the requested direction.
+                current: refloat_softstart_limited_current(
+                    self.0.current().as_amps(),
+                    softstart_pid_limit,
+                ),
+                // C map: `third_party/refloat/src/main.c:927-929` advances the
+                // soft-start current limit at 100 A/s.
+                softstart_pid_limit: softstart_pid_limit
+                    + refloat_motor_current(100.0 / hertz.as_hertz().max(1.0)),
+            }
+        } else {
+            RefloatPitchBasedCurrent {
+                current: self.0,
+                softstart_pid_limit,
+            }
         }
     }
 }
@@ -458,15 +571,9 @@ fn refloat_update_pid_scales(
     motor_erpm: ElectricalSpeed,
     state: RefloatBalanceLoopState,
 ) -> RefloatBalanceLoopState {
-    let targets = RefloatPidScaleDirection::from_motor_erpm(motor_erpm).targets(config);
-
-    RefloatBalanceLoopState {
-        pid_kp_brake_scale: refloat_smooth_pid_scale(targets.brake_kp, state.pid_kp_brake_scale),
-        pid_kp2_brake_scale: refloat_smooth_pid_scale(targets.brake_kp2, state.pid_kp2_brake_scale),
-        pid_kp_accel_scale: refloat_smooth_pid_scale(targets.accel_kp, state.pid_kp_accel_scale),
-        pid_kp2_accel_scale: refloat_smooth_pid_scale(targets.accel_kp2, state.pid_kp2_accel_scale),
-        ..state
-    }
+    RefloatPidScaleDirection::from_motor_erpm(motor_erpm)
+        .targets(config)
+        .smoothed_into(state)
 }
 
 /// Source map: upstream computes angle P at
@@ -545,24 +652,11 @@ fn refloat_pitch_based_current(
     motor_current_max: MotorCurrent,
     hertz: SampleRate,
 ) -> RefloatPitchBasedCurrent {
-    let pitch_based = rate_p + booster;
-    if softstart_pid_limit < motor_current_max {
-        let pitch_based_amps = pitch_based.current().as_amps();
-        RefloatPitchBasedCurrent {
-            // C map: `third_party/refloat/src/main.c:927-929` clamps only
-            // magnitude; sign remains the requested direction.
-            current: refloat_softstart_limited_current(pitch_based_amps, softstart_pid_limit),
-            // C map: `third_party/refloat/src/main.c:927-929` advances the
-            // soft-start current limit at 100 A/s.
-            softstart_pid_limit: softstart_pid_limit
-                + refloat_motor_current(100.0 / hertz.as_hertz().max(1.0)),
-        }
-    } else {
-        RefloatPitchBasedCurrent {
-            current: pitch_based,
-            softstart_pid_limit,
-        }
-    }
+    RefloatPitchBasedDemand::from_terms(rate_p, booster).with_softstart(
+        softstart_pid_limit,
+        motor_current_max,
+        hertz,
+    )
 }
 
 /// Source map: upstream selects RUNNING current limit at
