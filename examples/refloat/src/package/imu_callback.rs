@@ -9,19 +9,46 @@ use vescpkg_rs::ImuReadCallbackBindings;
 struct RefloatImuRead;
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct RefloatImuReadSample {
+    accel: [f32; 3],
+    gyro: [f32; 3],
+    dt: f32,
+}
+
+#[cfg(any(test, all(not(test), target_arch = "arm")))]
+impl RefloatImuReadSample {
+    const fn new(accel: [f32; 3], gyro: [f32; 3], dt: f32) -> Self {
+        Self { accel, gyro, dt }
+    }
+
+    fn apply_to(self, state: &mut RefloatPackageState) {
+        // C `imu_ref_callback` ignores mag and feeds gyro/accel/dt into
+        // `balance_filter_update` at `third_party/refloat/src/main.c:760-765`.
+        state.balance_filter.update(self.gyro, self.accel, self.dt);
+    }
+
+    #[cfg(all(not(test), target_arch = "arm"))]
+    fn apply_to_firmware_state(self) {
+        if let Some(state) = refloat_state_from_arg() {
+            self.apply_to(state);
+        }
+    }
+
+    #[cfg(any(test, not(target_arch = "arm")))]
+    const fn ignore_on_host(self) {
+        let _ = self;
+    }
+}
+
+#[cfg(any(test, all(not(test), target_arch = "arm")))]
 impl vescpkg_rs::ImuReadCallback for RefloatImuRead {
     fn read(accel: [f32; 3], gyro: [f32; 3], dt: f32) {
+        let sample = RefloatImuReadSample::new(accel, gyro, dt);
         #[cfg(all(not(test), target_arch = "arm"))]
-        {
-            let Some(state) = refloat_state_from_arg() else {
-                return;
-            };
-            refloat_imu_callback_with_state(state, accel, gyro, dt);
-        }
+        sample.apply_to_firmware_state();
         #[cfg(any(test, not(target_arch = "arm")))]
-        {
-            let _ = (accel, gyro, dt);
-        }
+        sample.ignore_on_host();
     }
 }
 
@@ -32,9 +59,7 @@ pub(super) fn refloat_imu_callback_with_state(
     gyro: [f32; 3],
     dt: f32,
 ) {
-    // C `imu_ref_callback` ignores mag and feeds gyro/accel/dt into
-    // `balance_filter_update` at `third_party/refloat/src/main.c:760-765`.
-    state.balance_filter.update(gyro, accel, dt);
+    RefloatImuReadSample::new(accel, gyro, dt).apply_to(state);
 }
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
