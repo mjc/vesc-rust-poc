@@ -1,4 +1,4 @@
-use super::RefloatPackageState;
+use super::{RefloatPackageState, refloat_command_payload};
 use crate::config::{
     REFLOAT_CONFIG_ATR_STRENGTH_DOWN_OFFSET, REFLOAT_CONFIG_ATR_STRENGTH_UP_OFFSET,
     REFLOAT_CONFIG_BOOSTER_ANGLE_OFFSET, REFLOAT_CONFIG_BRKBOOSTER_ANGLE_OFFSET,
@@ -9,8 +9,8 @@ use crate::config::{
     REFLOAT_CONFIG_TURNTILT_STRENGTH_OFFSET,
 };
 use crate::domain::{
-    REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataBasePayload, RefloatAllDataPayloads,
-    RefloatAllDataStatus, RefloatAppDataCommand, RefloatMode, RefloatRideState, RefloatRunState,
+    RefloatAllDataBasePayload, RefloatAllDataPayloads, RefloatAllDataStatus, RefloatAppDataCommand,
+    RefloatMode, RefloatRideState, RefloatRunState,
 };
 
 impl RefloatPackageState {
@@ -18,35 +18,23 @@ impl RefloatPackageState {
         // QML sends `[101, COMMAND_HANDTEST, on]` from `ui.qml.in:764-768`;
         // Refloat C dispatches it at `third_party/refloat/src/main.c:2226-2228`
         // and applies READY/NORMAL/HANDTEST gates at `third_party/refloat/src/main.c:1421-1430`.
-        let [package_id, command_id, on, ..] = bytes else {
-            return false;
-        };
-        if *package_id != REFLOAT_APP_DATA_PACKAGE_ID.get()
-            || RefloatAppDataCommand::try_from_id(*command_id)
-                != Ok(RefloatAppDataCommand::HandTest)
-        {
-            return false;
+        match refloat_command_payload(bytes, RefloatAppDataCommand::HandTest) {
+            Some([on, ..]) => {
+                let ride_state = self.all_data_payloads.base().status().ride_state();
+                if let (RefloatRunState::Ready, RefloatMode::Normal | RefloatMode::HandTest) =
+                    (ride_state.run_state(), ride_state.mode())
+                {
+                    let mode = match *on {
+                        0 => RefloatMode::Normal,
+                        _ => RefloatMode::HandTest,
+                    };
+                    self.set_ride_mode(mode);
+                    self.apply_handtest_config(matches!(mode, RefloatMode::HandTest));
+                }
+                true
+            }
+            _ => false,
         }
-
-        let ride_state = self.all_data_payloads.base().status().ride_state();
-        if !matches!(
-            (ride_state.run_state(), ride_state.mode()),
-            (
-                RefloatRunState::Ready,
-                RefloatMode::Normal | RefloatMode::HandTest
-            )
-        ) {
-            return true;
-        }
-
-        let mode = if *on == 0 {
-            RefloatMode::Normal
-        } else {
-            RefloatMode::HandTest
-        };
-        self.set_ride_mode(mode);
-        self.apply_handtest_config(matches!(mode, RefloatMode::HandTest));
-        true
     }
 
     fn set_ride_mode(&mut self, mode: RefloatMode) {

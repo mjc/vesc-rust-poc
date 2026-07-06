@@ -37,6 +37,18 @@ use transition::{
     refloat_state_transition,
 };
 
+#[inline]
+fn refloat_command_payload(bytes: &[u8], command: RefloatAppDataCommand) -> Option<&[u8]> {
+    match bytes {
+        [package_id, command_id, payload @ ..]
+            if *package_id == REFLOAT_APP_DATA_PACKAGE_ID.get() && *command_id == command.id() =>
+        {
+            Some(payload)
+        }
+        _ => None,
+    }
+}
+
 /// Refloat package state.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RefloatPackageState {
@@ -331,10 +343,8 @@ impl RefloatPackageState {
         lifecycle: &RefloatPackageLifecycle<B>,
         bytes: &[u8],
     ) -> bool {
-        if self.handle_charging_state_packet(bytes) {
-            return true;
-        }
-        lifecycle.send_response(&self.all_data_payloads, bytes)
+        self.handle_charging_state_packet(bytes)
+            || lifecycle.send_response(&self.all_data_payloads, bytes)
     }
 
     /// Handle one app-data packet in the firmware callback context.
@@ -402,6 +412,118 @@ impl RefloatPackageState {
         self.refresh_imu_runtime_state(imu, system_time_ticks);
     }
 
+    fn handle_rc_move_packet(&mut self, bytes: &[u8]) -> bool {
+        match refloat_command_payload(bytes, RefloatAppDataCommand::RcMove) {
+            Some([direction, current, time, sum, ..]) => {
+                if self
+                    .all_data_payloads
+                    .base()
+                    .status()
+                    .ride_state()
+                    .run_state()
+                    == RefloatRunState::Ready
+                {
+                    self.rc_counter = 0;
+                    self.rc_current_target_deciamps =
+                        match (*sum == time.wrapping_add(*current), *direction) {
+                            (false, _) => 0,
+                            (true, 0) => -i16::from(*current),
+                            (true, _) => i16::from(*current),
+                        };
+                    match self.rc_current_target_deciamps {
+                        0 => {
+                            self.rc_steps = 1;
+                            self.rc_current = 0.0;
+                        }
+                        target if target > 80 => {
+                            self.rc_steps = u16::from(*time) * 100;
+                            self.rc_current_target_deciamps = 20;
+                        }
+                        _ => {
+                            self.rc_steps = u16::from(*time) * 100;
+                        }
+                    }
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn send_metadata_packet_response<B: AppDataBindings>(
+        &self,
+        lifecycle: &RefloatPackageLifecycle<B>,
+        bytes: &[u8],
+    ) -> bool {
+        refloat_command_payload(bytes, RefloatAppDataCommand::Info)
+            .or_else(|| refloat_command_payload(bytes, RefloatAppDataCommand::RealtimeDataIds))
+            .is_some()
+            && lifecycle.send_response(&self.all_data_payloads, bytes)
+    }
+
+    fn send_realtime_data_packet_response<B: AppDataBindings, M: MotorTelemetryBindings>(
+        &self,
+        lifecycle: &RefloatPackageLifecycle<B>,
+        telemetry: &MotorTelemetryApi<M>,
+        bytes: &[u8],
+    ) -> bool {
+        match refloat_command_payload(bytes, RefloatAppDataCommand::RealtimeData) {
+            Some(_) => {
+                let payloads = self
+                    .all_data_payloads
+                    .with_base_battery_voltage(BatteryVoltage::new(
+                        telemetry.input_voltage_filtered().voltage(),
+                    ))
+                    .with_mode2_temperatures(RefloatRealtimeMotorTemperatures::new(
+                        telemetry.mosfet_temperature(),
+                        telemetry.motor_temperature(),
+                    ));
+                // Refloat's main loop updates `d->time.now` before app-data reads it
+                // in `cmd_realtime_data` at `third_party/refloat/src/main.c:1931`.
+                let system_timestamp = SystemTimestamp::new(TimestampTicks::from_ticks(
+                    lifecycle.bindings().system_time_ticks(),
+                ));
+                let response = encode_refloat_realtime_data_response(&payloads, system_timestamp);
+                lifecycle.send_response_bytes(response.as_bytes())
+            }
+            None => false,
+        }
+    }
+
+    fn send_all_data_packet_response<B: AppDataBindings, M: MotorTelemetryBindings>(
+        &self,
+        lifecycle: &RefloatPackageLifecycle<B>,
+        telemetry: &MotorTelemetryApi<M>,
+        bytes: &[u8],
+    ) -> bool {
+        match (
+            RefloatAllDataRequest::parse(bytes),
+            telemetry.firmware_fault(),
+        ) {
+            (Err(_), _) => false,
+            (Ok(_), fault) if !fault.is_none() => fault.compat_code().is_some_and(|fault_code| {
+                let response = RefloatAllDataResponse::fault(
+                    RefloatFirmwareFaultCode::from_compat_code(fault_code),
+                );
+                lifecycle.send_response_bytes(response.as_bytes())
+            }),
+            (Ok(request), _) => {
+                let mode = request.mode();
+                let payloads =
+                    self.all_data_payloads
+                        .with_base_battery_voltage(BatteryVoltage::new(
+                            telemetry.input_voltage_filtered().voltage(),
+                        ));
+                let payloads = if mode.includes_mode2() {
+                    self.runtime_all_data_payloads(payloads, telemetry, mode.includes_mode3())
+                } else {
+                    payloads
+                };
+                lifecycle.send_all_data_response(&payloads, request)
+            }
+        }
+    }
+
     /// Handle one app-data packet after refreshing live telemetry fields.
     pub fn handle_packet_with_telemetry<B: AppDataBindings, M: MotorTelemetryBindings>(
         &mut self,
@@ -409,112 +531,12 @@ impl RefloatPackageState {
         telemetry: &MotorTelemetryApi<M>,
         bytes: &[u8],
     ) -> bool {
-        if self.handle_charging_state_packet(bytes) {
-            return true;
-        }
-        if self.handle_handtest_packet(bytes) {
-            return true;
-        }
-        if let [package_id, command_id, direction, current, time, sum, ..] = bytes
-            && *package_id == REFLOAT_APP_DATA_PACKAGE_ID.get()
-            && *command_id == RefloatAppDataCommand::RcMove.id()
-        {
-            if matches!(
-                self.all_data_payloads
-                    .base()
-                    .status()
-                    .ride_state()
-                    .run_state(),
-                RefloatRunState::Ready
-            ) {
-                self.rc_counter = 0;
-                self.rc_current_target_deciamps = if *sum != time.wrapping_add(*current) {
-                    0
-                } else if *direction == 0 {
-                    -i16::from(*current)
-                } else {
-                    i16::from(*current)
-                };
-                if self.rc_current_target_deciamps == 0 {
-                    self.rc_steps = 1;
-                    self.rc_current = 0.0;
-                } else {
-                    self.rc_steps = u16::from(*time) * 100;
-                    if self.rc_current_target_deciamps > 80 {
-                        self.rc_current_target_deciamps = 20;
-                    }
-                }
-            }
-            return true;
-        }
-
-        if matches!(
-            bytes,
-            [
-                package_id,
-                command_id,
-                ..
-            ] if *package_id == REFLOAT_APP_DATA_PACKAGE_ID.get()
-                && matches!(
-                    RefloatAppDataCommand::try_from_id(*command_id),
-                    Ok(RefloatAppDataCommand::Info | RefloatAppDataCommand::RealtimeDataIds)
-                )
-        ) {
-            return lifecycle.send_response(&self.all_data_payloads, bytes);
-        }
-
-        if matches!(
-            bytes,
-            [package_id, command_id, ..]
-                if *package_id == REFLOAT_APP_DATA_PACKAGE_ID.get()
-                    && matches!(
-                        RefloatAppDataCommand::try_from_id(*command_id),
-                        Ok(RefloatAppDataCommand::RealtimeData)
-                    )
-        ) {
-            let payloads = self
-                .all_data_payloads
-                .with_base_battery_voltage(BatteryVoltage::new(
-                    telemetry.input_voltage_filtered().voltage(),
-                ))
-                .with_mode2_temperatures(RefloatRealtimeMotorTemperatures::new(
-                    telemetry.mosfet_temperature(),
-                    telemetry.motor_temperature(),
-                ));
-            // Refloat's main loop updates `d->time.now` before app-data reads it
-            // in `cmd_realtime_data` at `third_party/refloat/src/main.c:1931`.
-            let system_timestamp = SystemTimestamp::new(TimestampTicks::from_ticks(
-                lifecycle.bindings().system_time_ticks(),
-            ));
-            let response = encode_refloat_realtime_data_response(&payloads, system_timestamp);
-            return lifecycle.send_response_bytes(response.as_bytes());
-        }
-
-        let Ok(request) = RefloatAllDataRequest::parse(bytes) else {
-            return false;
-        };
-        let fault = telemetry.firmware_fault();
-        if !fault.is_none() {
-            let Some(fault_code) = fault.compat_code() else {
-                return false;
-            };
-            let response = RefloatAllDataResponse::fault(
-                RefloatFirmwareFaultCode::from_compat_code(fault_code),
-            );
-            return lifecycle.send_response_bytes(response.as_bytes());
-        }
-        let mode = request.mode();
-        let payloads = self
-            .all_data_payloads
-            .with_base_battery_voltage(BatteryVoltage::new(
-                telemetry.input_voltage_filtered().voltage(),
-            ));
-        let payloads = if mode.includes_mode2() {
-            self.runtime_all_data_payloads(payloads, telemetry, mode.includes_mode3())
-        } else {
-            payloads
-        };
-        lifecycle.send_all_data_response(&payloads, request)
+        self.handle_charging_state_packet(bytes)
+            || self.handle_handtest_packet(bytes)
+            || self.handle_rc_move_packet(bytes)
+            || self.send_metadata_packet_response(lifecycle, bytes)
+            || self.send_realtime_data_packet_response(lifecycle, telemetry, bytes)
+            || self.send_all_data_packet_response(lifecycle, telemetry, bytes)
     }
 
     fn refresh_motor_runtime_state<M: MotorTelemetryBindings>(
@@ -1165,37 +1187,39 @@ impl RefloatPackageState {
     fn handle_charging_state_packet(&mut self, bytes: &[u8]) -> bool {
         // Refloat v1.2.1 routes COMMAND_CHARGING_STATE at `third_party/refloat/src/main.c:2267-2269`;
         // the command ID is defined in `third_party/refloat/src/charging.h:25`.
-        let [package_id, command_id, payload @ ..] = bytes else {
-            return false;
-        };
-        if *package_id != crate::domain::REFLOAT_APP_DATA_PACKAGE_ID.get()
-            || RefloatAppDataCommand::try_from_id(*command_id)
-                != Ok(RefloatAppDataCommand::ChargingState)
-            || payload.len() < 6
-            || payload[0] != 151
-        {
-            return false;
+        match refloat_command_payload(bytes, RefloatAppDataCommand::ChargingState) {
+            Some(
+                [
+                    151,
+                    charging,
+                    voltage_hi,
+                    voltage_lo,
+                    current_hi,
+                    current_lo,
+                    ..,
+                ],
+            ) => {
+                let (voltage, current) = match *charging {
+                    0 => (0.0, 0.0),
+                    _ => (
+                        refloat_read_scaled_i16([*voltage_hi, *voltage_lo], 10.0),
+                        refloat_read_scaled_i16([*current_hi, *current_lo], 10.0),
+                    ),
+                };
+                self.all_data_payloads =
+                    self.all_data_payloads
+                        .with_mode4_charging(RefloatAllDataMode4Payload::new(
+                            RefloatRealtimeChargingCurrent::new(BatteryCurrent::new(
+                                Current::from_amps(current),
+                            )),
+                            RefloatRealtimeChargingVoltage::new(BatteryVoltage::new(
+                                Voltage::from_volts(voltage),
+                            )),
+                        ));
+                true
+            }
+            _ => false,
         }
-
-        let (voltage, current) = if payload[1] > 0 {
-            (
-                refloat_read_scaled_i16([payload[2], payload[3]], 10.0),
-                refloat_read_scaled_i16([payload[4], payload[5]], 10.0),
-            )
-        } else {
-            (0.0, 0.0)
-        };
-        self.all_data_payloads =
-            self.all_data_payloads
-                .with_mode4_charging(RefloatAllDataMode4Payload::new(
-                    RefloatRealtimeChargingCurrent::new(BatteryCurrent::new(Current::from_amps(
-                        current,
-                    ))),
-                    RefloatRealtimeChargingVoltage::new(BatteryVoltage::new(Voltage::from_volts(
-                        voltage,
-                    ))),
-                ));
-        true
     }
 
     fn runtime_all_data_payloads<M: MotorTelemetryBindings>(
