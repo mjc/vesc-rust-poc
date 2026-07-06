@@ -86,7 +86,7 @@ fn current_refloat_native_lib_preserves_registration_tail_contract() {
 }
 
 #[test]
-fn alloc_smoke_native_lib_preserves_refloat_loader_shape_without_runtime_helpers() {
+fn alloc_smoke_native_lib_is_self_contained_with_package_owned_alloc_helpers() {
     let workspace = TempDir::new().expect("temp workspace");
     let (plan, conversion) = isolated_alloc_smoke_plans(&workspace);
     ensure_native_lib_artifacts(&conversion);

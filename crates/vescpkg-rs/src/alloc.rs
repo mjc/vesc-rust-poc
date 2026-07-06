@@ -124,6 +124,47 @@ unsafe impl GlobalAlloc for VescAllocator {
         let original = unsafe { AllocationHeader::read_before(user) };
         unsafe { vescpkg_rs_sys::raw::vesc_free(original) };
     }
+
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        let ptr = unsafe { self.alloc(layout) };
+        if !ptr.is_null() {
+            unsafe { zero_allocation_bytes(ptr, layout.size()) };
+        }
+        ptr
+    }
+
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        if new_size == 0 {
+            unsafe { self.dealloc(ptr, layout) };
+            return ptr::null_mut();
+        }
+
+        let Ok(new_layout) = Layout::from_size_align(new_size, layout.align()) else {
+            return ptr::null_mut();
+        };
+        let new_ptr = unsafe { self.alloc(new_layout) };
+        if !new_ptr.is_null() {
+            let bytes_to_copy = layout.size().min(new_size);
+            unsafe { copy_allocation_bytes(ptr, new_ptr, bytes_to_copy) };
+            unsafe { self.dealloc(ptr, layout) };
+        }
+        new_ptr
+    }
+}
+
+#[cfg(feature = "alloc")]
+unsafe fn zero_allocation_bytes(dst: *mut u8, len: usize) {
+    for offset in 0..len {
+        unsafe { ptr::write_volatile(dst.add(offset), 0) };
+    }
+}
+
+#[cfg(feature = "alloc")]
+unsafe fn copy_allocation_bytes(src: *const u8, dst: *mut u8, len: usize) {
+    for offset in 0..len {
+        let byte = unsafe { ptr::read_volatile(src.add(offset)) };
+        unsafe { ptr::write_volatile(dst.add(offset), byte) };
+    }
 }
 
 #[cfg(feature = "alloc")]
@@ -311,7 +352,8 @@ mod tests {
     use super::{AllocBindings, AllocError, FirmwareAllocation, FirmwareAllocator};
     #[cfg(feature = "alloc")]
     use super::{
-        AllocationHeader, HEADER_ALIGN, HEADER_BYTES, aligned_user_ptr, stored_original_ptr,
+        AllocationHeader, HEADER_ALIGN, HEADER_BYTES, aligned_user_ptr, copy_allocation_bytes,
+        stored_original_ptr, zero_allocation_bytes,
     };
     #[cfg(feature = "alloc")]
     use core::alloc::Layout;
@@ -521,5 +563,27 @@ mod tests {
     #[test]
     fn aligned_user_ptr_maps_null_firmware_allocation_to_none() {
         assert_eq!(aligned_user_ptr(core::ptr::null_mut(), 4), None);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn allocation_byte_copy_preserves_dynamic_realloc_contents() {
+        let src = [1_u8, 2, 3, 4, 5];
+        let mut dst = [0_u8; 8];
+
+        unsafe { copy_allocation_bytes(src.as_ptr(), dst.as_mut_ptr(), src.len()) };
+
+        assert_eq!(&dst[..src.len()], src);
+        assert_eq!(&dst[src.len()..], &[0, 0, 0]);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn allocation_zeroing_clears_dynamic_alloc_zeroed_contents() {
+        let mut dst = [1_u8; 8];
+
+        unsafe { zero_allocation_bytes(dst.as_mut_ptr(), dst.len()) };
+
+        assert_eq!(dst, [0; 8]);
     }
 }

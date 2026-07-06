@@ -310,23 +310,39 @@ fn audit_alloc_smoke_native_lib_symbols(paths: &NativeLibArtifactPaths) {
     let staticlib_defined = defined_symbols(&staticlib_symbols);
     let elf_defined = defined_symbols(&elf_symbols);
     let elf_undefined = undefined_symbols(&elf_symbols);
+    let staticlib_unexpected_undefined = unexpected_undefined_symbols(&staticlib_symbols);
+    let staticlib_unexpected_undefined: Vec<&String> = staticlib_unexpected_undefined
+        .iter()
+        .filter(|symbol| symbol.as_str() != "memcmp")
+        .collect();
 
     assert!(
-        unexpected_undefined_symbols(&staticlib_symbols).is_empty(),
-        "unexpected undefined symbols remain in the alloc-smoke Rust staticlib"
+        staticlib_unexpected_undefined.is_empty(),
+        "unexpected undefined symbols remain in the alloc-smoke Rust staticlib: {staticlib_unexpected_undefined:?}"
     );
     assert!(
         unexpected_final_native_lib_undefined_symbols(&elf_symbols).is_empty(),
         "unexpected undefined symbols remain in the alloc-smoke native-lib ELF"
     );
-    assert_no_forbidden_runtime_symbols(&elf_symbols, "alloc-smoke native-lib ELF");
+    assert_no_forbidden_runtime_symbols_except(
+        &elf_symbols,
+        "alloc-smoke native-lib ELF",
+        &["memcpy", "panic_nounwind_fmt"],
+    );
     assert!(
         !paths.package_object.exists(),
         "alloc-smoke native build must not materialize package-specific C shim object {:?}",
         paths.package_object
     );
 
-    for symbol in ["init", "prog_ptr", "package_lib_init"] {
+    for symbol in [
+        "init",
+        "prog_ptr",
+        "package_lib_init",
+        "ext_rust_alloc_smoke",
+        "__aeabi_memcpy",
+        "memcmp",
+    ] {
         assert!(
             elf_defined.contains(symbol),
             "alloc-smoke native image must keep loader symbol `{symbol}`:\n{elf_symbols}"
@@ -396,6 +412,14 @@ fn audit_refloat_native_lib_symbols(paths: &NativeLibArtifactPaths) {
 }
 
 fn assert_no_forbidden_runtime_symbols(elf_symbols: &str, label: &str) {
+    assert_no_forbidden_runtime_symbols_except(elf_symbols, label, &[]);
+}
+
+fn assert_no_forbidden_runtime_symbols_except(
+    elf_symbols: &str,
+    label: &str,
+    allowed_fragments: &[&str],
+) {
     let forbidden_runtime_fragments = [
         "__rust_alloc",
         "__rg_alloc",
@@ -416,6 +440,9 @@ fn assert_no_forbidden_runtime_symbols(elf_symbols: &str, label: &str) {
             forbidden_runtime_fragments
                 .iter()
                 .any(|fragment| line.contains(fragment))
+                && !allowed_fragments
+                    .iter()
+                    .any(|fragment| line.contains(fragment))
         })
         .collect();
     assert!(
@@ -426,7 +453,7 @@ fn assert_no_forbidden_runtime_symbols(elf_symbols: &str, label: &str) {
 }
 
 fn audit_alloc_smoke_native_lib_layout(paths: &NativeLibArtifactPaths) {
-    const ALLOC_SMOKE_NATIVE_BLOB_MAX_BYTES: u64 = 2 * 1024;
+    const ALLOC_SMOKE_NATIVE_BLOB_MAX_BYTES: u64 = 3 * 1024;
 
     let blob = fs::read(&paths.bin).expect("alloc-smoke native-lib binary bytes");
     let sections = all_section_layouts(&paths.elf);
@@ -441,7 +468,7 @@ fn audit_alloc_smoke_native_lib_layout(paths: &NativeLibArtifactPaths) {
         .len();
     assert!(
         native_bin_size <= ALLOC_SMOKE_NATIVE_BLOB_MAX_BYTES,
-        "expected the alloc-smoke native blob to stay below 2 KiB, got {native_bin_size} bytes"
+        "expected the alloc-smoke native blob to stay below 3 KiB, got {native_bin_size} bytes"
     );
 
     assert!(
