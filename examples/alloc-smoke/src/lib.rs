@@ -12,7 +12,6 @@ extern crate std;
 use alloc::vec::Vec;
 #[cfg(not(test))]
 use core::panic::PanicInfo;
-use core::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(not(test))]
 use vescpkg_rs::VescAllocator;
 
@@ -20,20 +19,23 @@ use vescpkg_rs::VescAllocator;
 #[global_allocator]
 static ALLOCATOR: VescAllocator = VescAllocator;
 
-static ALLOC_SMOKE_LEN: AtomicUsize = AtomicUsize::new(0);
-
 vescpkg_rs::package_start!(crate::start);
 
 /// Initialize the alloc smoke package.
 pub fn start(start: &mut vescpkg_rs::PackageStart) -> bool {
     let _ = start.install_stop_hook();
     let mut bytes = Vec::new();
-    if bytes.try_reserve_exact(1).is_ok() {
-        bytes.push(42);
+    if bytes.try_reserve_exact(1).is_err() {
+        return false;
     }
-    ALLOC_SMOKE_LEN.store(bytes.len(), Ordering::Relaxed);
-    core::mem::drop(bytes);
-    true
+
+    bytes.push(42);
+    let slot = bytes.as_mut_ptr();
+    // SAFETY: `push` made the first byte initialized and valid until `bytes` is dropped.
+    unsafe {
+        core::ptr::write_volatile(slot, 42);
+        core::ptr::read_volatile(slot) == 42
+    }
 }
 
 #[cfg(not(test))]
@@ -46,8 +48,7 @@ fn panic(_: &PanicInfo) -> ! {
 
 #[cfg(test)]
 mod tests {
-    use super::{ALLOC_SMOKE_LEN, package_lib_init};
-    use core::sync::atomic::Ordering;
+    use super::package_lib_init;
 
     #[test]
     fn package_lib_init_uses_alloc_and_installs_stop_hook() {
@@ -58,7 +59,6 @@ mod tests {
         };
 
         assert!(package_lib_init(&mut info));
-        assert_eq!(ALLOC_SMOKE_LEN.load(Ordering::Relaxed), 1);
         assert!(info.stop_fun.is_some());
     }
 }

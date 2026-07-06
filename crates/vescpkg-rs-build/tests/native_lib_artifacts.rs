@@ -4,9 +4,10 @@ use std::path::PathBuf;
 
 use tempfile::TempDir;
 use vescpkg_rs_build::{
-    NATIVE_LIB_BIN, NATIVE_LIB_ELF, NativeLibArtifactPaths, NativeLibLinkPlan, Package,
-    PackageBinaryConversionPlan, PackageExample, PackageTargetMode, PackageTargetPlan,
-    REFLOAT_PACKAGE_NAME, REFLOAT_PACKAGE_VERSION, RealPackageRunner, audit_native_lib_artifacts,
+    ALLOC_SMOKE_PACKAGE_NAME, NATIVE_LIB_BIN, NATIVE_LIB_ELF, NativeLibArtifactPaths,
+    NativeLibLinkPlan, Package, PackageBinaryConversionPlan, PackageExample, PackageTargetMode,
+    PackageTargetPlan, REFLOAT_PACKAGE_NAME, REFLOAT_PACKAGE_VERSION, RealPackageRunner,
+    audit_alloc_smoke_native_lib_artifacts, audit_native_lib_artifacts,
     audit_refloat_native_lib_artifacts, c_refloat_mapping_report,
     captured_refloat_baseline_mapping_report, defined_symbols, ensure_native_lib_artifacts,
     ensure_repo_native_lib_artifacts, native_binary_comparison_report, native_lib_link_plan,
@@ -40,6 +41,27 @@ fn isolated_refloat_plans(workspace: &TempDir) -> (NativeLibLinkPlan, PackageBin
     )
 }
 
+fn isolated_alloc_smoke_plans(
+    workspace: &TempDir,
+) -> (NativeLibLinkPlan, PackageBinaryConversionPlan) {
+    let root = repo_root();
+    let native_build_dir = workspace.path().join("native-lib-alloc-smoke");
+    (
+        NativeLibLinkPlan::for_example_with_native_build_dir(
+            &root,
+            PackageExample::AllocSmoke,
+            &native_build_dir,
+        ),
+        PackageBinaryConversionPlan::for_example(
+            &root,
+            ALLOC_SMOKE_PACKAGE_NAME,
+            "0.1.0",
+            PackageExample::AllocSmoke,
+        )
+        .with_native_build_dir(native_build_dir),
+    )
+}
+
 #[test]
 fn native_lib_semantics() {
     let workspace = TempDir::new().expect("temp workspace");
@@ -61,6 +83,14 @@ fn current_refloat_native_lib_preserves_registration_tail_contract() {
     let (plan, conversion) = isolated_refloat_plans(&workspace);
     ensure_native_lib_artifacts(&conversion);
     audit_refloat_native_lib_artifacts(&NativeLibArtifactPaths::from_link_plan(&plan));
+}
+
+#[test]
+fn alloc_smoke_native_lib_preserves_refloat_loader_shape_without_runtime_helpers() {
+    let workspace = TempDir::new().expect("temp workspace");
+    let (plan, conversion) = isolated_alloc_smoke_plans(&workspace);
+    ensure_native_lib_artifacts(&conversion);
+    audit_alloc_smoke_native_lib_artifacts(&NativeLibArtifactPaths::from_link_plan(&plan));
 }
 
 #[test]

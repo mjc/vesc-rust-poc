@@ -120,9 +120,9 @@ pub use native_elf_semantics::{
     refloat_mapping_report,
 };
 pub use native_lib_audit::{
-    NativeLibArtifactPaths, audit_native_lib_artifacts, audit_native_lib_flat_binary,
-    audit_native_lib_layout, audit_native_lib_symbols, audit_refloat_native_lib_artifacts,
-    semantic_snapshot_report,
+    NativeLibArtifactPaths, audit_alloc_smoke_native_lib_artifacts, audit_native_lib_artifacts,
+    audit_native_lib_flat_binary, audit_native_lib_layout, audit_native_lib_symbols,
+    audit_refloat_native_lib_artifacts, semantic_snapshot_report,
 };
 pub use native_lib_baseline::{
     NativeLibBaselinePath, audit_baseline_fixture_layout, audit_vesc_c_if_abi_pins,

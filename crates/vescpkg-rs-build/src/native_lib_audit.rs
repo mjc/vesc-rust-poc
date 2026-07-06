@@ -295,6 +295,57 @@ pub fn audit_refloat_native_lib_artifacts(paths: &NativeLibArtifactPaths) -> Str
     semantic_snapshot_report(&paths.elf)
 }
 
+/// Runs the alloc-smoke native-lib audit suite and returns the semantic snapshot text.
+pub fn audit_alloc_smoke_native_lib_artifacts(paths: &NativeLibArtifactPaths) -> String {
+    audit_alloc_smoke_native_lib_symbols(paths);
+    audit_alloc_smoke_native_lib_layout(paths);
+    audit_native_lib_flat_binary(&paths.elf, &paths.bin);
+    assert_loader_init_returns_package_result(&paths.elf);
+    semantic_snapshot_report(&paths.elf)
+}
+
+fn audit_alloc_smoke_native_lib_symbols(paths: &NativeLibArtifactPaths) {
+    let elf_symbols = nm_output(&paths.elf);
+    let staticlib_symbols = nm_output(&paths.staticlib);
+    let staticlib_defined = defined_symbols(&staticlib_symbols);
+    let elf_defined = defined_symbols(&elf_symbols);
+    let elf_undefined = undefined_symbols(&elf_symbols);
+
+    assert!(
+        unexpected_undefined_symbols(&staticlib_symbols).is_empty(),
+        "unexpected undefined symbols remain in the alloc-smoke Rust staticlib"
+    );
+    assert!(
+        unexpected_final_native_lib_undefined_symbols(&elf_symbols).is_empty(),
+        "unexpected undefined symbols remain in the alloc-smoke native-lib ELF"
+    );
+    assert_no_forbidden_runtime_symbols(&elf_symbols, "alloc-smoke native-lib ELF");
+    assert!(
+        !paths.package_object.exists(),
+        "alloc-smoke native build must not materialize package-specific C shim object {:?}",
+        paths.package_object
+    );
+
+    for symbol in ["init", "prog_ptr", "package_lib_init"] {
+        assert!(
+            elf_defined.contains(symbol),
+            "alloc-smoke native image must keep loader symbol `{symbol}`:\n{elf_symbols}"
+        );
+        assert!(
+            staticlib_defined.contains(symbol),
+            "alloc-smoke Rust staticlib must own symbol `{symbol}`:\n{staticlib_symbols}"
+        );
+    }
+    assert!(
+        !elf_defined.contains("ext_rust_probe_diag_v4"),
+        "alloc-smoke native image should not carry loopback probe extension symbols:\n{elf_symbols}"
+    );
+    assert!(
+        elf_undefined.is_empty(),
+        "expected alloc-smoke native image to resolve the Rust package boundary completely:\n{elf_symbols}"
+    );
+}
+
 fn audit_refloat_native_lib_symbols(paths: &NativeLibArtifactPaths) {
     let elf_symbols = nm_output(&paths.elf);
     let staticlib_symbols = nm_output(&paths.staticlib);
@@ -371,6 +422,86 @@ fn assert_no_forbidden_runtime_symbols(elf_symbols: &str, label: &str) {
         forbidden_hits.is_empty(),
         "{label} must not contain allocator/std/panic/memcpy runtime symbols:\n{}\n\nfull symbols:\n{elf_symbols}",
         forbidden_hits.join("\n")
+    );
+}
+
+fn audit_alloc_smoke_native_lib_layout(paths: &NativeLibArtifactPaths) {
+    const ALLOC_SMOKE_NATIVE_BLOB_MAX_BYTES: u64 = 2 * 1024;
+
+    let blob = fs::read(&paths.bin).expect("alloc-smoke native-lib binary bytes");
+    let sections = all_section_layouts(&paths.elf);
+
+    assert!(
+        paths.bin.exists(),
+        "expected the alloc-smoke native-lib binary to be materialized"
+    );
+
+    let native_bin_size = fs::metadata(&paths.bin)
+        .expect("alloc-smoke native-lib binary metadata")
+        .len();
+    assert!(
+        native_bin_size <= ALLOC_SMOKE_NATIVE_BLOB_MAX_BYTES,
+        "expected the alloc-smoke native blob to stay below 2 KiB, got {native_bin_size} bytes"
+    );
+
+    assert!(
+        elf_is_executable(&paths.elf),
+        "expected a final executable alloc-smoke ELF at {:?}",
+        paths.elf
+    );
+    assert!(
+        elf_has_no_relocations(&paths.elf),
+        "expected no relocation records in the final alloc-smoke native-lib ELF at {:?}",
+        paths.elf
+    );
+
+    for section_name in [".program_ptr", ".init_fun", ".data", ".got", ".text"] {
+        let section = section_from(&sections, section_name);
+        let end = section.vma + section.size;
+        assert!(
+            end <= blob.len(),
+            "alloc-smoke section {section_name} at 0x{:x}..0x{:x} exceeds {}-byte blob",
+            section.vma,
+            end,
+            blob.len()
+        );
+    }
+
+    let program_ptr = section_from(&sections, ".program_ptr");
+    let init_fun = section_from(&sections, ".init_fun");
+    let data = section_from(&sections, ".data");
+    let got = section_from(&sections, ".got");
+    let text = section_from(&sections, ".text");
+
+    assert_eq!(
+        *program_ptr,
+        SectionLayout {
+            name: ".program_ptr".to_owned(),
+            size: 4,
+            vma: 0,
+        }
+    );
+    assert_eq!(init_fun.vma, program_ptr.vma + program_ptr.size);
+    assert!(
+        init_fun.size >= 4,
+        "expected alloc-smoke .init_fun to retain the loader entry"
+    );
+    assert!(
+        data.vma >= init_fun.vma + init_fun.size,
+        "expected alloc-smoke .data to load after .init_fun"
+    );
+    assert!(
+        got.vma >= data.vma + data.size,
+        "expected alloc-smoke .got to load after package-owned .data"
+    );
+    assert!(
+        text.vma >= got.vma + got.size,
+        "expected alloc-smoke .text to load after .got"
+    );
+    assert_eq!(
+        text.vma % 16,
+        0,
+        "expected alloc-smoke .text to keep VESC's 16-byte function alignment"
     );
 }
 
