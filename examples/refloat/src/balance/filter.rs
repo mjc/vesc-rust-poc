@@ -15,15 +15,11 @@ fn refloat_inv_sqrt(value: f32) -> f32 {
 
 #[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct RefloatAccelSample([f32; 3]);
-
-#[cfg(any(test, target_arch = "arm"))]
-#[derive(Debug, Clone, Copy, PartialEq)]
 struct RefloatAccelMagnitude(f32);
 
 #[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct RefloatMeasuredGravity([f32; 3]);
+pub(crate) struct MeasuredGravity([f32; 3]);
 
 #[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -65,56 +61,6 @@ struct RefloatQuaternion([f32; 4]);
 struct RefloatQuaternionDelta([f32; 4]);
 
 #[cfg(any(test, target_arch = "arm"))]
-impl RefloatAccelSample {
-    #[inline(always)]
-    const fn new(xyz: [f32; 3]) -> Self {
-        Self(xyz)
-    }
-
-    fn from_axes(x: ImuAccelerationX, y: ImuAccelerationY, z: ImuAccelerationZ) -> Self {
-        Self::new([
-            x.acceleration().as_g(),
-            y.acceleration().as_g(),
-            z.acceleration().as_g(),
-        ])
-    }
-
-    /// C map: `third_party/refloat/src/balance_filter.c:82-96`.
-    #[inline(always)]
-    fn normalized_for_feedback(self) -> Option<(RefloatAccelMagnitude, RefloatMeasuredGravity)> {
-        let length_squared = self.length_squared();
-        let accel_norm = libm::sqrtf(length_squared);
-        match accel_norm {
-            norm if norm > 0.01 => Some((
-                RefloatAccelMagnitude(norm),
-                RefloatMeasuredGravity(self.scaled(refloat_inv_sqrt(length_squared))),
-            )),
-            _ => None,
-        }
-    }
-
-    #[inline(always)]
-    fn scaled(self, scale: f32) -> [f32; 3] {
-        let [x, y, z] = self.0;
-        [x * scale, y * scale, z * scale]
-    }
-
-    #[inline(always)]
-    fn length_squared(self) -> f32 {
-        let [x, y, z] = self.0;
-        x * x + y * y + z * z
-    }
-}
-
-#[cfg(any(test, target_arch = "arm"))]
-impl From<ImuAcceleration> for RefloatAccelSample {
-    #[inline(always)]
-    fn from(acceleration: ImuAcceleration) -> Self {
-        acceleration.map_axes(Self::from_axes)
-    }
-}
-
-#[cfg(any(test, target_arch = "arm"))]
 impl RefloatAccelMagnitude {
     #[inline(always)]
     const fn as_f32(self) -> f32 {
@@ -123,7 +69,47 @@ impl RefloatAccelMagnitude {
 }
 
 #[cfg(any(test, target_arch = "arm"))]
-impl RefloatMeasuredGravity {
+impl MeasuredGravity {
+    /// C map: `third_party/refloat/src/balance_filter.c:82-96`.
+    #[inline(always)]
+    fn from_acceleration(acceleration: ImuAcceleration) -> Option<(RefloatAccelMagnitude, Self)> {
+        acceleration.map_axes(Self::from_axes)
+    }
+
+    fn from_axes(
+        x: ImuAccelerationX,
+        y: ImuAccelerationY,
+        z: ImuAccelerationZ,
+    ) -> Option<(RefloatAccelMagnitude, Self)> {
+        Self::from_xyz([
+            x.acceleration().as_g(),
+            y.acceleration().as_g(),
+            z.acceleration().as_g(),
+        ])
+    }
+
+    fn from_xyz(xyz: [f32; 3]) -> Option<(RefloatAccelMagnitude, Self)> {
+        let length_squared = Self::length_squared(xyz);
+        let accel_norm = libm::sqrtf(length_squared);
+        match accel_norm {
+            norm if norm > 0.01 => Some((
+                RefloatAccelMagnitude(norm),
+                Self::scaled(xyz, refloat_inv_sqrt(length_squared)),
+            )),
+            _ => None,
+        }
+    }
+
+    #[inline(always)]
+    fn scaled([x, y, z]: [f32; 3], scale: f32) -> Self {
+        Self([x * scale, y * scale, z * scale])
+    }
+
+    #[inline(always)]
+    fn length_squared([x, y, z]: [f32; 3]) -> f32 {
+        x * x + y * y + z * z
+    }
+
     /// C map: `third_party/refloat/src/balance_filter.c:103-106`.
     #[inline(always)]
     fn error_against(self, estimated_gravity: RefloatHalfGravity) -> RefloatGravityError {
@@ -340,8 +326,8 @@ impl RefloatBalanceFilter {
         // Refloat's callback feeds gyro first, accel second at
         // `third_party/refloat/src/main.c:760-765`; the Mahony update itself is
         // `third_party/refloat/src/balance_filter.c:73-134`.
-        let gyro = self
-            .gyro_with_accel_correction(sample.angular_rate().into(), sample.acceleration().into());
+        let gyro =
+            self.gyro_with_accel_correction(sample.angular_rate().into(), sample.acceleration());
         self.integrate_gyro(gyro, sample.period().duration().as_seconds());
         self.normalize_quaternion();
     }
@@ -376,13 +362,13 @@ impl RefloatBalanceFilter {
     fn gyro_with_accel_correction(
         &mut self,
         gyro: RefloatGyroRate,
-        accel: RefloatAccelSample,
+        acceleration: ImuAcceleration,
     ) -> RefloatCorrectedGyroRate {
-        let Some((accel_norm, accel)) = Self::normalized_accel(accel) else {
+        let Some((accel_norm, measured_gravity)) = Self::measured_gravity(acceleration) else {
             return gyro.without_accel_feedback();
         };
         let confidence = self.accel_confidence(accel_norm);
-        let error = self.accel_error(accel);
+        let error = self.accel_error(measured_gravity);
 
         // C map: `third_party/refloat/src/balance_filter.c:87-111` applies
         // Mahony proportional feedback from accelerometer confidence,
@@ -391,16 +377,16 @@ impl RefloatBalanceFilter {
     }
 
     #[cfg(any(test, target_arch = "arm"))]
-    fn normalized_accel(
-        accel: RefloatAccelSample,
-    ) -> Option<(RefloatAccelMagnitude, RefloatMeasuredGravity)> {
+    fn measured_gravity(
+        acceleration: ImuAcceleration,
+    ) -> Option<(RefloatAccelMagnitude, MeasuredGravity)> {
         // C map: `third_party/refloat/src/balance_filter.c:82-96` enters
         // feedback only when accel norm is above 0.01, then normalizes it.
-        accel.normalized_for_feedback()
+        MeasuredGravity::from_acceleration(acceleration)
     }
 
     #[cfg(any(test, target_arch = "arm"))]
-    fn accel_error(&self, accel: RefloatMeasuredGravity) -> RefloatGravityError {
+    fn accel_error(&self, accel: MeasuredGravity) -> RefloatGravityError {
         // C map: `third_party/refloat/src/balance_filter.c:98-101` computes
         // the estimated gravity half-vector from the current quaternion.
         let estimated_gravity = self.quaternion().estimated_half_gravity();
@@ -457,9 +443,7 @@ impl RefloatBalanceFilter {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        RefloatAccelSample, RefloatBalanceFilter, RefloatCorrectedGyroRate, RefloatGyroRate,
-    };
+    use super::{RefloatBalanceFilter, RefloatCorrectedGyroRate, RefloatGyroRate};
     use vescpkg_rs::prelude::{
         AccelerationG, AngularVelocity, ImuAcceleration, ImuAccelerationX, ImuAccelerationY,
         ImuAccelerationZ, ImuAngularRate, ImuAngularRatePitch, ImuAngularRateRoll,
@@ -537,9 +521,8 @@ mod tests {
 
     #[test]
     fn balance_filter_normalizes_accel_before_correction_like_refloat() {
-        let (_, unit) =
-            RefloatBalanceFilter::normalized_accel(RefloatAccelSample::new([0.0, 0.0, 2.0]))
-                .expect("nonzero accel normalizes");
+        let (_, unit) = RefloatBalanceFilter::measured_gravity(imu_acceleration(0.0, 0.0, 2.0))
+            .expect("nonzero accel normalizes");
 
         assert_eq!(unit.xyz(), [0.0, 0.0, 1.0]);
     }
@@ -550,7 +533,7 @@ mod tests {
 
         let gyro = filter.gyro_with_accel_correction(
             RefloatGyroRate::new([1.0, 2.0, 3.0]),
-            RefloatAccelSample::new([0.0, 0.0, 0.005]),
+            imu_acceleration(0.0, 0.0, 0.005),
         );
 
         assert_eq!(gyro.xyz(), [1.0, 2.0, 3.0]);
@@ -562,7 +545,7 @@ mod tests {
 
         let gyro = filter.gyro_with_accel_correction(
             RefloatGyroRate::new([1.0, 2.0, 3.0]),
-            RefloatAccelSample::new([0.0, 1.0, 0.0]),
+            imu_acceleration(0.0, 1.0, 0.0),
         );
 
         let [roll_rate, pitch_rate, yaw_rate] = gyro.xyz();
