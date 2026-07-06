@@ -170,9 +170,12 @@ unsafe fn copy_allocation_bytes(src: *const u8, dst: *mut u8, len: usize) {
 fn aligned_user_ptr(raw: *mut u8, align: usize) -> Option<NonNull<u8>> {
     let raw = NonNull::new(raw)?;
     let align = effective_align(align);
-    let start = raw.as_ptr().wrapping_add(HEADER_BYTES) as usize;
-    let aligned = start.checked_next_multiple_of(align)?;
-    let user = NonNull::new(aligned as *mut u8)?;
+    let start = raw.as_ptr().wrapping_add(HEADER_BYTES);
+    let offset = start.align_offset(align);
+    if offset == usize::MAX {
+        return None;
+    }
+    let user = NonNull::new(start.wrapping_add(offset))?;
 
     unsafe {
         AllocationHeader::write_before(user, raw);
@@ -564,7 +567,18 @@ mod tests {
         let raw = backing.as_mut_ptr();
         let user = aligned_user_ptr(raw, 64).expect("aligned pointer");
 
-        assert_eq!(user.as_ptr() as usize % 64, 0);
+        assert_eq!(user.as_ptr().addr() % 64, 0);
+        assert_eq!(unsafe { stored_original_ptr(user) }, raw.cast());
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn aligned_user_ptr_aligns_unaligned_firmware_pointer_without_losing_original() {
+        let mut backing = [0_u8; 128];
+        let raw = backing.as_mut_ptr().wrapping_add(1);
+        let user = aligned_user_ptr(raw, 16).expect("aligned pointer");
+
+        assert_eq!(user.as_ptr().addr() % 16, 0);
         assert_eq!(unsafe { stored_original_ptr(user) }, raw.cast());
     }
 
