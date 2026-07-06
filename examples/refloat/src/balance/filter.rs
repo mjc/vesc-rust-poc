@@ -1,5 +1,4 @@
 use crate::domain::RefloatRealtimeBalancePitch;
-#[cfg(any(test, target_arch = "arm"))]
 use core::marker::PhantomData;
 use vescpkg_rs::prelude::AngleRadians;
 #[cfg(any(test, target_arch = "arm"))]
@@ -15,12 +14,10 @@ fn refloat_inv_sqrt(value: f32) -> f32 {
     1.0 / libm::sqrtf(value)
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(transparent)]
 struct AxisScalar<Tag>(f32, PhantomData<fn() -> Tag>);
 
-#[cfg(any(test, target_arch = "arm"))]
 impl<Tag> AxisScalar<Tag> {
     #[inline(always)]
     const fn new(value: f32) -> Self {
@@ -95,6 +92,34 @@ type RollAngularHalfStep = AxisScalar<RollAngularHalfStepTag>;
 type PitchAngularHalfStep = AxisScalar<PitchAngularHalfStepTag>;
 #[cfg(any(test, target_arch = "arm"))]
 type YawAngularHalfStep = AxisScalar<YawAngularHalfStepTag>;
+
+enum QuaternionScalarTag {}
+enum QuaternionXTag {}
+enum QuaternionYTag {}
+enum QuaternionZTag {}
+
+type QuaternionScalar = AxisScalar<QuaternionScalarTag>;
+type QuaternionX = AxisScalar<QuaternionXTag>;
+type QuaternionY = AxisScalar<QuaternionYTag>;
+type QuaternionZ = AxisScalar<QuaternionZTag>;
+
+#[cfg(any(test, target_arch = "arm"))]
+enum QuaternionDeltaScalarTag {}
+#[cfg(any(test, target_arch = "arm"))]
+enum QuaternionDeltaXTag {}
+#[cfg(any(test, target_arch = "arm"))]
+enum QuaternionDeltaYTag {}
+#[cfg(any(test, target_arch = "arm"))]
+enum QuaternionDeltaZTag {}
+
+#[cfg(any(test, target_arch = "arm"))]
+type QuaternionDeltaScalar = AxisScalar<QuaternionDeltaScalarTag>;
+#[cfg(any(test, target_arch = "arm"))]
+type QuaternionDeltaX = AxisScalar<QuaternionDeltaXTag>;
+#[cfg(any(test, target_arch = "arm"))]
+type QuaternionDeltaY = AxisScalar<QuaternionDeltaYTag>;
+#[cfg(any(test, target_arch = "arm"))]
+type QuaternionDeltaZ = AxisScalar<QuaternionDeltaZTag>;
 
 #[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -291,33 +316,33 @@ impl AngularRateHalfStep {
 
 impl RefloatQuaternion {
     #[inline(always)]
-    const fn new(components: [f32; 4]) -> Self {
-        Self(components)
+    const fn new(scalar: QuaternionScalar, x: QuaternionX, y: QuaternionY, z: QuaternionZ) -> Self {
+        Self([scalar.0, x.0, y.0, z.0])
     }
 
     /// C map: `third_party/refloat/src/balance_filter.c:145-154`.
     #[inline(always)]
     fn pitch_projection(self) -> f32 {
-        let [q0, q1, q2, q3] = self.0;
-        -2.0 * (q1 * q3 - q0 * q2)
+        let [scalar, x, y, z] = self.0;
+        -2.0 * (x * z - scalar * y)
     }
 
     #[cfg(any(test, target_arch = "arm"))]
     #[inline(always)]
     fn length_squared(self) -> f32 {
-        let [q0, q1, q2, q3] = self.0;
-        q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3
+        let [scalar, x, y, z] = self.0;
+        scalar * scalar + x * x + y * y + z * z
     }
 
     /// C map: `third_party/refloat/src/balance_filter.c:98-101`.
     #[cfg(any(test, target_arch = "arm"))]
     #[inline(always)]
     fn estimated_half_gravity(self) -> RefloatHalfGravity {
-        let [q0, q1, q2, q3] = self.0;
+        let [scalar, x, y, z] = self.0;
         RefloatHalfGravity([
-            q1 * q3 - q0 * q2,
-            q0 * q1 + q2 * q3,
-            q0 * q0 - 0.5 + q3 * q3,
+            x * z - scalar * y,
+            scalar * x + y * z,
+            scalar * scalar - 0.5 + z * z,
         ])
     }
 
@@ -325,21 +350,31 @@ impl RefloatQuaternion {
     #[cfg(any(test, target_arch = "arm"))]
     #[inline(always)]
     fn delta_from_gyro(self, gyro_half_step: AngularRateHalfStep) -> RefloatQuaternionDelta {
-        let [q0, q1, q2, q3] = self.0;
+        let [scalar, x, y, z] = self.0;
         let [gx, gy, gz] = gyro_half_step.0;
-        let vector_dot_gyro = q1 * gx + q2 * gy + q3 * gz;
-        let vector_cross_gyro = [q2 * gz - q3 * gy, q3 * gx - q1 * gz, q1 * gy - q2 * gx];
-        RefloatQuaternionDelta([
-            -vector_dot_gyro,
-            q0 * gx + vector_cross_gyro[0],
-            q0 * gy + vector_cross_gyro[1],
-            q0 * gz + vector_cross_gyro[2],
-        ])
+        let vector_dot_gyro = x * gx + y * gy + z * gz;
+        let vector_cross_gyro = [y * gz - z * gy, z * gx - x * gz, x * gy - y * gx];
+        RefloatQuaternionDelta::new(
+            QuaternionDeltaScalar::new(-vector_dot_gyro),
+            QuaternionDeltaX::new(scalar * gx + vector_cross_gyro[0]),
+            QuaternionDeltaY::new(scalar * gy + vector_cross_gyro[1]),
+            QuaternionDeltaZ::new(scalar * gz + vector_cross_gyro[2]),
+        )
     }
 }
 
 #[cfg(any(test, target_arch = "arm"))]
 impl RefloatQuaternionDelta {
+    #[inline(always)]
+    const fn new(
+        scalar: QuaternionDeltaScalar,
+        x: QuaternionDeltaX,
+        y: QuaternionDeltaY,
+        z: QuaternionDeltaZ,
+    ) -> Self {
+        Self([scalar.0, x.0, y.0, z.0])
+    }
+
     #[inline(always)]
     const fn wxyz(self) -> [f32; 4] {
         self.0
@@ -431,7 +466,12 @@ impl RefloatBalanceFilter {
 
     #[inline(always)]
     const fn quaternion(&self) -> RefloatQuaternion {
-        RefloatQuaternion::new([self.q0, self.q1, self.q2, self.q3])
+        RefloatQuaternion::new(
+            QuaternionScalar::new(self.q0),
+            QuaternionX::new(self.q1),
+            QuaternionY::new(self.q2),
+            QuaternionZ::new(self.q3),
+        )
     }
 
     #[cfg(any(test, target_arch = "arm"))]
