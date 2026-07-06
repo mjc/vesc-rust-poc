@@ -1,8 +1,13 @@
 //! IMU helpers built on firmware IMU table slots.
 
-use crate::types::{ImuAngularRate, ImuPitch, ImuQuaternion, ImuReadSample, ImuRoll, ImuYaw};
+use crate::types::{
+    ImuAcceleration, ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ, ImuAngularRate,
+    ImuAngularRatePitch, ImuAngularRateRoll, ImuAngularRateYaw, ImuPitch, ImuQuaternion,
+    ImuReadSample, ImuRoll, ImuSamplePeriod, ImuYaw,
+};
 #[cfg(not(test))]
-use crate::units::{AngleRadians, AngularVelocity};
+use crate::units::AngleRadians;
+use crate::units::{AccelerationG, AngularVelocity, VescSeconds};
 
 /// IMU operations backed by firmware slots.
 pub trait ImuBindings {
@@ -62,13 +67,25 @@ pub unsafe extern "C" fn imu_read_callback<T: ImuReadCallback>(
     _mag: *mut f32,
     dt: f32,
 ) {
-    let Some(accel) = crate::firmware_array(acc.cast_const()) else {
+    let Some(accel) = crate::firmware_array::<f32, 3>(acc.cast_const()) else {
         return;
     };
-    let Some(gyro) = crate::firmware_array(gyro.cast_const()) else {
+    let Some(gyro) = crate::firmware_array::<f32, 3>(gyro.cast_const()) else {
         return;
     };
-    T::read(ImuReadSample::from_firmware_raw(accel, gyro, dt));
+    T::read(ImuReadSample::from_parts(
+        ImuAcceleration::from_axes(
+            ImuAccelerationX::new(AccelerationG::from_g(accel[0])),
+            ImuAccelerationY::new(AccelerationG::from_g(accel[1])),
+            ImuAccelerationZ::new(AccelerationG::from_g(accel[2])),
+        ),
+        ImuAngularRate::from_axes(
+            ImuAngularRateRoll::new(AngularVelocity::from_degrees_per_second(gyro[0])),
+            ImuAngularRatePitch::new(AngularVelocity::from_degrees_per_second(gyro[1])),
+            ImuAngularRateYaw::new(AngularVelocity::from_degrees_per_second(gyro[2])),
+        ),
+        ImuSamplePeriod::new(VescSeconds::from_seconds(dt)),
+    ));
 }
 
 #[cfg(not(test))]
@@ -102,11 +119,11 @@ impl ImuBindings for RealImuBindings {
     fn angular_rate(&self) -> ImuAngularRate {
         let mut gyro = [0.0; 3];
         unsafe { vescpkg_rs_sys::raw::imu_get_gyro(gyro.as_mut_ptr()) };
-        ImuAngularRate::from_firmware_axes([
-            AngularVelocity::from_degrees_per_second(gyro[0]),
-            AngularVelocity::from_degrees_per_second(gyro[1]),
-            AngularVelocity::from_degrees_per_second(gyro[2]),
-        ])
+        ImuAngularRate::from_axes(
+            ImuAngularRateRoll::new(AngularVelocity::from_degrees_per_second(gyro[0])),
+            ImuAngularRatePitch::new(AngularVelocity::from_degrees_per_second(gyro[1])),
+            ImuAngularRateYaw::new(AngularVelocity::from_degrees_per_second(gyro[2])),
+        )
     }
 
     fn quaternions(&self) -> ImuQuaternion {
@@ -167,7 +184,10 @@ impl<B: ImuBindings> ImuApi<B> {
 /// IMU fake binding helpers exported for tests.
 pub mod test_support {
     use super::ImuBindings;
-    use crate::types::{ImuAngularRate, ImuPitch, ImuQuaternion, ImuRoll, ImuYaw};
+    use crate::types::{
+        ImuAngularRate, ImuAngularRatePitch, ImuAngularRateRoll, ImuAngularRateYaw, ImuPitch,
+        ImuQuaternion, ImuRoll, ImuYaw,
+    };
     use crate::units::{AngleRadians, AngularVelocity};
     use core::cell::Cell;
 
@@ -214,11 +234,11 @@ pub mod test_support {
                 roll: Cell::new(ImuRoll::new(zero)),
                 pitch: Cell::new(ImuPitch::new(zero)),
                 yaw: Cell::new(ImuYaw::new(zero)),
-                angular_rate: Cell::new(ImuAngularRate::from_firmware_axes([
-                    AngularVelocity::from_degrees_per_second(0.0),
-                    AngularVelocity::from_degrees_per_second(0.0),
-                    AngularVelocity::from_degrees_per_second(0.0),
-                ])),
+                angular_rate: Cell::new(ImuAngularRate::from_axes(
+                    ImuAngularRateRoll::new(AngularVelocity::from_degrees_per_second(0.0)),
+                    ImuAngularRatePitch::new(AngularVelocity::from_degrees_per_second(0.0)),
+                    ImuAngularRateYaw::new(AngularVelocity::from_degrees_per_second(0.0)),
+                )),
                 quaternions: Cell::new(ImuQuaternion::from_firmware_wxyz([1.0, 0.0, 0.0, 0.0])),
             }
         }

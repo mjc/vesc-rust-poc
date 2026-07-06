@@ -152,10 +152,6 @@ impl ImuAcceleration {
         ]))
     }
 
-    pub(crate) const fn from_firmware_axes(xyz: [AccelerationG; 3]) -> Self {
-        Self(AxisVector3::new(xyz))
-    }
-
     /// Visit named axes without exposing firmware-order arrays.
     pub fn map_axes<R>(
         self,
@@ -185,10 +181,6 @@ impl ImuAngularRate {
             pitch.angular_velocity(),
             yaw.angular_velocity(),
         ]))
-    }
-
-    pub(crate) const fn from_firmware_axes(xyz: [AngularVelocity; 3]) -> Self {
-        Self(AxisVector3::new(xyz))
     }
 
     /// Visit named axes without exposing firmware-order arrays.
@@ -324,22 +316,6 @@ impl ImuReadSample {
             angular_rate,
             period,
         }
-    }
-
-    pub(crate) fn from_firmware_raw(accel: [f32; 3], gyro: [f32; 3], dt: f32) -> Self {
-        Self::from_parts(
-            ImuAcceleration::from_firmware_axes([
-                AccelerationG::from_g(accel[0]),
-                AccelerationG::from_g(accel[1]),
-                AccelerationG::from_g(accel[2]),
-            ]),
-            ImuAngularRate::from_firmware_axes([
-                AngularVelocity::from_degrees_per_second(gyro[0]),
-                AngularVelocity::from_degrees_per_second(gyro[1]),
-                AngularVelocity::from_degrees_per_second(gyro[2]),
-            ]),
-            ImuSamplePeriod::new(VescSeconds::from_seconds(dt)),
-        )
     }
 
     /// Return the hardware acceleration sample.
