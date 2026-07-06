@@ -157,6 +157,9 @@ macro_rules! firmware_app_data_callback {
 /// values that stay valid for the returned borrow.
 pub(crate) unsafe fn lbm_args<'a>(args: *mut u32, arg_count: u32) -> Option<&'a [LbmValue]> {
     let len = usize::try_from(arg_count).ok()?;
+    if len == 0 {
+        return Some(&[]);
+    }
     let args = NonNull::new(args.cast::<LbmValue>())?;
     Some(unsafe { core::slice::from_raw_parts(args.as_ptr().cast_const(), len) })
 }
@@ -436,6 +439,8 @@ mod tests {
     #[test]
     fn firmware_packet_and_array_helpers_reject_null() {
         assert!(app_data_packet(ptr::null_mut(), 3).is_none());
+        assert_eq!(unsafe { lbm_args(ptr::null_mut(), 0) }, Some(&[][..]));
+        assert!(unsafe { lbm_args(ptr::null_mut(), 1) }.is_none());
         assert!(firmware_array::<f32, 3>(ptr::null()).is_none());
 
         let values = [1.0_f32, 2.0, 3.0];
