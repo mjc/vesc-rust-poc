@@ -1,6 +1,6 @@
 //! IMU helpers built on firmware IMU table slots.
 
-use crate::types::{ImuAngularRate, ImuPitch, ImuRoll, ImuYaw};
+use crate::types::{ImuAngularRate, ImuPitch, ImuQuaternion, ImuReadSample, ImuRoll, ImuYaw};
 #[cfg(not(test))]
 use crate::units::{AngleRadians, AngularVelocity};
 
@@ -42,13 +42,13 @@ pub trait ImuBindings {
     fn angular_rate(&self) -> ImuAngularRate;
 
     /// Return firmware IMU quaternions.
-    fn quaternions(&self) -> [f32; 4];
+    fn quaternions(&self) -> ImuQuaternion;
 }
 
 /// Rust implementation for a firmware IMU read callback.
 pub trait ImuReadCallback {
-    /// Handle one IMU read callback with copied accelerometer and gyro axes.
-    fn read(accel: [f32; 3], gyro: [f32; 3], dt: f32);
+    /// Handle one typed hardware IMU read sample copied from the firmware callback.
+    fn read(sample: ImuReadSample);
 }
 
 /// Firmware ABI trampoline for a typed IMU read callback.
@@ -68,7 +68,7 @@ pub unsafe extern "C" fn imu_read_callback<T: ImuReadCallback>(
     let Some(gyro) = crate::firmware_array(gyro.cast_const()) else {
         return;
     };
-    T::read(accel, gyro, dt);
+    T::read(ImuReadSample::from_firmware_raw(accel, gyro, dt));
 }
 
 #[cfg(not(test))]
@@ -102,17 +102,17 @@ impl ImuBindings for RealImuBindings {
     fn angular_rate(&self) -> ImuAngularRate {
         let mut gyro = [0.0; 3];
         unsafe { vescpkg_rs_sys::raw::imu_get_gyro(gyro.as_mut_ptr()) };
-        ImuAngularRate::new([
+        ImuAngularRate::from_firmware_axes([
             AngularVelocity::from_degrees_per_second(gyro[0]),
             AngularVelocity::from_degrees_per_second(gyro[1]),
             AngularVelocity::from_degrees_per_second(gyro[2]),
         ])
     }
 
-    fn quaternions(&self) -> [f32; 4] {
+    fn quaternions(&self) -> ImuQuaternion {
         let mut quaternions = [0.0; 4];
         unsafe { vescpkg_rs_sys::raw::vesc_imu_get_quaternions(quaternions.as_mut_ptr()) };
-        quaternions
+        ImuQuaternion::from_firmware_wxyz(quaternions)
     }
 }
 
@@ -158,7 +158,7 @@ impl<B: ImuBindings> ImuApi<B> {
     }
 
     /// Return firmware IMU quaternions.
-    pub fn quaternions(&self) -> [f32; 4] {
+    pub fn quaternions(&self) -> ImuQuaternion {
         self.bindings.quaternions()
     }
 }
@@ -167,7 +167,7 @@ impl<B: ImuBindings> ImuApi<B> {
 /// IMU fake binding helpers exported for tests.
 pub mod test_support {
     use super::ImuBindings;
-    use crate::types::{ImuAngularRate, ImuPitch, ImuRoll, ImuYaw};
+    use crate::types::{ImuAngularRate, ImuPitch, ImuQuaternion, ImuRoll, ImuYaw};
     use crate::units::{AngleRadians, AngularVelocity};
     use core::cell::Cell;
 
@@ -190,7 +190,7 @@ pub mod test_support {
         pitch: Cell<ImuPitch>,
         yaw: Cell<ImuYaw>,
         angular_rate: Cell<ImuAngularRate>,
-        quaternions: Cell<[f32; 4]>,
+        quaternions: Cell<ImuQuaternion>,
     }
 
     impl Default for FakeImuBindings {
@@ -214,12 +214,12 @@ pub mod test_support {
                 roll: Cell::new(ImuRoll::new(zero)),
                 pitch: Cell::new(ImuPitch::new(zero)),
                 yaw: Cell::new(ImuYaw::new(zero)),
-                angular_rate: Cell::new(ImuAngularRate::new([
+                angular_rate: Cell::new(ImuAngularRate::from_firmware_axes([
                     AngularVelocity::from_degrees_per_second(0.0),
                     AngularVelocity::from_degrees_per_second(0.0),
                     AngularVelocity::from_degrees_per_second(0.0),
                 ])),
-                quaternions: Cell::new([1.0, 0.0, 0.0, 0.0]),
+                quaternions: Cell::new(ImuQuaternion::from_firmware_wxyz([1.0, 0.0, 0.0, 0.0])),
             }
         }
 
@@ -244,7 +244,7 @@ pub mod test_support {
         }
 
         /// Return fake IMU bindings with the supplied quaternion state.
-        pub fn with_quaternions(self, quaternions: [f32; 4]) -> Self {
+        pub fn with_quaternions(self, quaternions: ImuQuaternion) -> Self {
             self.quaternions.set(quaternions);
             self
         }
@@ -278,7 +278,7 @@ pub mod test_support {
             self.angular_rate.get()
         }
 
-        fn quaternions(&self) -> [f32; 4] {
+        fn quaternions(&self) -> ImuQuaternion {
             self.quaternion_calls.set(self.quaternion_calls.get() + 1);
             self.quaternions.get()
         }

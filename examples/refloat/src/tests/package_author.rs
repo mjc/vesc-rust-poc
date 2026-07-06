@@ -82,11 +82,11 @@ fn package_author_models_refloat_ride_inputs_without_raw_float_handoff() {
         ImuPitch::new(AngleRadians::from_radians(0.03)),
         ImuRoll::new(AngleRadians::from_radians(-0.01)),
         ImuYaw::new(AngleRadians::from_radians(1.25)),
-        ImuAngularRate::new([
-            AngularVelocity::from_degrees_per_second(12.0),
-            AngularVelocity::from_degrees_per_second(0.0),
-            AngularVelocity::from_degrees_per_second(-1.0),
-        ]),
+        ImuAngularRate::from_axes(
+            ImuAngularRateRoll::new(AngularVelocity::from_degrees_per_second(12.0)),
+            ImuAngularRatePitch::new(AngularVelocity::from_degrees_per_second(0.0)),
+            ImuAngularRateYaw::new(AngularVelocity::from_degrees_per_second(-1.0)),
+        ),
     );
     let telemetry = RefloatMotorTelemetry::new(
         ElectricalSpeed::new(Rpm::from_revolutions_per_minute(2400.0)),

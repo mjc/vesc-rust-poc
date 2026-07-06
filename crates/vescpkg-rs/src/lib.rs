@@ -90,6 +90,12 @@ pub use gpio::{GpioApi, GpioBindings};
 pub mod lbm;
 /// Higher-level lifecycle helpers for package startup and runtime behavior.
 pub mod lifecycle;
+pub use types::{
+    ImuAcceleration, ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ, ImuAngularRate,
+    ImuAngularRatePitch, ImuAngularRateRoll, ImuAngularRateYaw, ImuQuaternion, ImuQuaternionW,
+    ImuQuaternionX, ImuQuaternionY, ImuQuaternionZ, ImuReadSample, ImuSamplePeriod,
+};
+
 /// Common package-author imports for code running inside the controller.
 pub mod prelude {
     pub use crate::types::*;
@@ -143,6 +149,12 @@ mod tests {
         AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Current, Distance, Energy,
         FluxLinkage, Frequency, Inductance, Latitude, Longitude, Power, Ratio, Resistance, Rpm,
         SampleRate, SignedRatio, Speed, SystemTicks, TimestampTicks, VescSeconds, Voltage,
+    };
+
+    use crate::types::{
+        ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ, ImuAngularRatePitch,
+        ImuAngularRateRoll, ImuAngularRateYaw, ImuQuaternionW, ImuQuaternionX, ImuQuaternionY,
+        ImuQuaternionZ,
     };
 
     #[test]
@@ -381,17 +393,22 @@ mod tests {
         let roll = ImuRoll::new(AngleRadians::from_radians(0.25));
         let pitch = ImuPitch::new(AngleRadians::from_radians(-0.125));
         let yaw = ImuYaw::new(AngleRadians::from_radians(1.0));
-        let accel = ImuAcceleration::new([
-            AccelerationG::from_g(0.0),
-            AccelerationG::from_g(0.0),
-            AccelerationG::from_g(1.0),
-        ]);
-        let gyro = ImuAngularRate::new([
-            AngularVelocity::from_degrees_per_second(1.0),
-            AngularVelocity::from_degrees_per_second(2.0),
-            AngularVelocity::from_degrees_per_second(3.0),
-        ]);
-        let quat = ImuQuaternion::from_components([1.0, 0.0, 0.0, 0.0]);
+        let accel = ImuAcceleration::from_axes(
+            ImuAccelerationX::new(AccelerationG::from_g(0.0)),
+            ImuAccelerationY::new(AccelerationG::from_g(0.0)),
+            ImuAccelerationZ::new(AccelerationG::from_g(1.0)),
+        );
+        let gyro = ImuAngularRate::from_axes(
+            ImuAngularRateRoll::new(AngularVelocity::from_degrees_per_second(1.0)),
+            ImuAngularRatePitch::new(AngularVelocity::from_degrees_per_second(2.0)),
+            ImuAngularRateYaw::new(AngularVelocity::from_degrees_per_second(3.0)),
+        );
+        let quat = ImuQuaternion::from_components(
+            ImuQuaternionW::new(1.0),
+            ImuQuaternionX::new(0.0),
+            ImuQuaternionY::new(0.0),
+            ImuQuaternionZ::new(0.0),
+        );
 
         assert_eq!(adc_voltage.voltage().as_volts(), 1.65);
         assert_eq!(adc_level.ratio().as_ratio(), 0.5);
@@ -400,12 +417,19 @@ mod tests {
         assert_eq!(roll.angle().as_radians(), 0.25);
         assert_eq!(pitch.angle().as_radians(), -0.125);
         assert_eq!(yaw.angle().as_radians(), 1.0);
-        assert_eq!(accel.xyz()[2].as_g(), 1.0);
-        assert_eq!(accel.z().as_g(), 1.0);
-        assert_eq!(gyro.xyz()[1].as_degrees_per_second(), 2.0);
+        accel.map_axes(|_, _, z| assert_eq!(z.acceleration().as_g(), 1.0));
+        gyro.map_axes(|_, pitch, yaw| {
+            assert_eq!(pitch.angular_velocity().as_degrees_per_second(), 2.0);
+            assert_eq!(yaw.angular_velocity().as_degrees_per_second(), 3.0);
+        });
         assert_eq!(gyro.pitch().as_degrees_per_second(), 2.0);
         assert_eq!(gyro.yaw().as_degrees_per_second(), 3.0);
-        assert_eq!(quat.components(), [1.0, 0.0, 0.0, 0.0]);
+        quat.map_components(|w, x, y, z| {
+            assert_eq!(w, ImuQuaternionW::new(1.0));
+            assert_eq!(x, ImuQuaternionX::new(0.0));
+            assert_eq!(y, ImuQuaternionY::new(0.0));
+            assert_eq!(z, ImuQuaternionZ::new(0.0));
+        });
     }
 }
 

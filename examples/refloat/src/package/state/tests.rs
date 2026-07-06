@@ -57,6 +57,34 @@ fn balance_filter_with_pitch(pitch_radians: f32) -> RefloatBalanceFilter {
     ])
 }
 
+fn imu_acceleration(x_g: f32, y_g: f32, z_g: f32) -> ImuAcceleration {
+    ImuAcceleration::from_axes(
+        ImuAccelerationX::new(AccelerationG::from_g(x_g)),
+        ImuAccelerationY::new(AccelerationG::from_g(y_g)),
+        ImuAccelerationZ::new(AccelerationG::from_g(z_g)),
+    )
+}
+
+fn imu_period(seconds: f32) -> ImuSamplePeriod {
+    ImuSamplePeriod::new(VescSeconds::from_seconds(seconds))
+}
+
+fn imu_read_sample(
+    acceleration: ImuAcceleration,
+    angular_rate: ImuAngularRate,
+    period: ImuSamplePeriod,
+) -> ImuReadSample {
+    ImuReadSample::from_parts(acceleration, angular_rate, period)
+}
+
+fn imu_angular_rate(roll: f32, pitch: f32, yaw: f32) -> ImuAngularRate {
+    ImuAngularRate::from_axes(
+        ImuAngularRateRoll::new(AngularVelocity::from_degrees_per_second(roll)),
+        ImuAngularRatePitch::new(AngularVelocity::from_degrees_per_second(pitch)),
+        ImuAngularRateYaw::new(AngularVelocity::from_degrees_per_second(yaw)),
+    )
+}
+
 #[test]
 fn app_data_callback_dispatches_without_main_loop_refresh_like_refloat() {
     let lifecycle = RefloatPackageLifecycle::new(RecordingAppDataBindings::accepting());
@@ -2764,11 +2792,7 @@ fn app_data_normal_algorithm_trace_matches_refloat_loop_order() {
                 ImuPitch::new(AngleRadians::from_radians(1.5_f32.to_radians())),
                 ImuYaw::new(AngleRadians::from_radians(0.0)),
             )
-            .with_angular_rate(ImuAngularRate::new([
-                AngularVelocity::from_degrees_per_second(0.0),
-                AngularVelocity::from_degrees_per_second(0.0),
-                AngularVelocity::from_degrees_per_second(0.0),
-            ])),
+            .with_angular_rate(imu_angular_rate(0.0, 0.0, 0.0)),
     );
     let payloads =
         sample_all_data_payloads_with_ride_state(RefloatRunState::Ready, RefloatMode::Normal);
@@ -3091,9 +3115,11 @@ fn imu_callback_state_update_feeds_normal_balance_pitch_like_refloat_loop() {
 
     imu_callback::refloat_imu_callback_with_state(
         &mut state,
-        [0.0, 0.0, 1.0],
-        [0.0, 1.0, 0.0],
-        0.1,
+        imu_read_sample(
+            imu_acceleration(0.0, 0.0, 1.0),
+            imu_angular_rate(0.0, 1.0, 0.0),
+            imu_period(0.1),
+        ),
     );
     assert!(tick_refloat_state_and_handle_packet(
         &mut state,
@@ -3129,11 +3155,7 @@ fn app_data_running_computes_rate_p_balance_current_like_refloat_pid() {
     let imu = ImuApi::new(
         FakeImuBindings::new()
             .with_startup_done(true)
-            .with_angular_rate(ImuAngularRate::new([
-                AngularVelocity::from_degrees_per_second(0.0),
-                AngularVelocity::from_degrees_per_second(10.0),
-                AngularVelocity::from_degrees_per_second(0.0),
-            ])),
+            .with_angular_rate(imu_angular_rate(0.0, 10.0, 0.0)),
     );
     let motor = MotorControlApi::new(FakeMotorControlBindings::new());
     let payloads =
@@ -3199,11 +3221,7 @@ fn app_data_running_softstarts_pitch_based_current_like_refloat_loop() {
     let imu = ImuApi::new(
         FakeImuBindings::new()
             .with_startup_done(true)
-            .with_angular_rate(ImuAngularRate::new([
-                AngularVelocity::from_degrees_per_second(0.0),
-                AngularVelocity::from_degrees_per_second(10.0),
-                AngularVelocity::from_degrees_per_second(0.0),
-            ])),
+            .with_angular_rate(imu_angular_rate(0.0, 10.0, 0.0)),
     );
     let motor = MotorControlApi::new(FakeMotorControlBindings::new());
     let payloads =

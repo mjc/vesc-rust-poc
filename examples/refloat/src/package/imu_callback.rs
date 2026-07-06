@@ -3,7 +3,7 @@ use super::RefloatPackageState;
 #[cfg(all(not(test), target_arch = "arm"))]
 use super::refloat_state_from_arg;
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
-use vescpkg_rs::ImuReadCallbackBindings;
+use vescpkg_rs::{ImuReadCallbackBindings, ImuReadSample};
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 struct RefloatImuRead;
@@ -11,21 +11,19 @@ struct RefloatImuRead;
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct RefloatImuReadSample {
-    accel: [f32; 3],
-    gyro: [f32; 3],
-    dt: f32,
+    sample: ImuReadSample,
 }
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 impl RefloatImuReadSample {
-    const fn new(accel: [f32; 3], gyro: [f32; 3], dt: f32) -> Self {
-        Self { accel, gyro, dt }
+    const fn new(sample: ImuReadSample) -> Self {
+        Self { sample }
     }
 
     fn apply_to(self, state: &mut RefloatPackageState) {
         // C `imu_ref_callback` ignores mag and feeds gyro/accel/dt into
         // `balance_filter_update` at `third_party/refloat/src/main.c:760-765`.
-        state.balance_filter.update(self.gyro, self.accel, self.dt);
+        state.balance_filter.update(self.sample);
     }
 
     #[cfg(all(not(test), target_arch = "arm"))]
@@ -43,8 +41,8 @@ impl RefloatImuReadSample {
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 impl vescpkg_rs::ImuReadCallback for RefloatImuRead {
-    fn read(accel: [f32; 3], gyro: [f32; 3], dt: f32) {
-        let sample = RefloatImuReadSample::new(accel, gyro, dt);
+    fn read(sample: ImuReadSample) {
+        let sample = RefloatImuReadSample::new(sample);
         #[cfg(all(not(test), target_arch = "arm"))]
         sample.apply_to_firmware_state();
         #[cfg(any(test, not(target_arch = "arm")))]
@@ -55,11 +53,9 @@ impl vescpkg_rs::ImuReadCallback for RefloatImuRead {
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 pub(super) fn refloat_imu_callback_with_state(
     state: &mut RefloatPackageState,
-    accel: [f32; 3],
-    gyro: [f32; 3],
-    dt: f32,
+    sample: ImuReadSample,
 ) {
-    RefloatImuReadSample::new(accel, gyro, dt).apply_to(state);
+    RefloatImuReadSample::new(sample).apply_to(state);
 }
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]

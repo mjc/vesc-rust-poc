@@ -49,7 +49,12 @@ pub use config::{
     WheelDiameter,
 };
 pub use gnss::{GnssAccuracy, GnssAltitude, GnssHdop, GnssLatitude, GnssLongitude, GnssSpeed};
-pub use imu::{ImuAcceleration, ImuAngularRate, ImuPitch, ImuQuaternion, ImuRoll, ImuYaw};
+pub use imu::{
+    ImuAcceleration, ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ, ImuAngularRate,
+    ImuAngularRatePitch, ImuAngularRateRoll, ImuAngularRateYaw, ImuPitch, ImuQuaternion,
+    ImuQuaternionW, ImuQuaternionX, ImuQuaternionY, ImuQuaternionZ, ImuReadSample, ImuRoll,
+    ImuSamplePeriod, ImuYaw,
+};
 pub use io::{
     BaudRate, BaudRateError, PacketLength, PacketLengthError, ThreadPriority, ThreadPriorityError,
 };

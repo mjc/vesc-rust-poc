@@ -1,5 +1,10 @@
 use crate::domain::RefloatRealtimeBalancePitch;
 use vescpkg_rs::prelude::AngleRadians;
+#[cfg(any(test, target_arch = "arm"))]
+use vescpkg_rs::prelude::{
+    ImuAcceleration, ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ, ImuAngularRate,
+    ImuAngularRatePitch, ImuAngularRateRoll, ImuAngularRateYaw, ImuReadSample,
+};
 
 #[cfg(any(test, target_arch = "arm"))]
 #[inline(always)]
@@ -66,6 +71,14 @@ impl RefloatAccelSample {
         Self(xyz)
     }
 
+    fn from_axes(x: ImuAccelerationX, y: ImuAccelerationY, z: ImuAccelerationZ) -> Self {
+        Self::new([
+            x.acceleration().as_g(),
+            y.acceleration().as_g(),
+            z.acceleration().as_g(),
+        ])
+    }
+
     /// C map: `third_party/refloat/src/balance_filter.c:82-96`.
     #[inline(always)]
     fn normalized_for_feedback(self) -> Option<(RefloatAccelMagnitude, RefloatMeasuredGravity)> {
@@ -90,6 +103,14 @@ impl RefloatAccelSample {
     fn length_squared(self) -> f32 {
         let [x, y, z] = self.0;
         x * x + y * y + z * z
+    }
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+impl From<ImuAcceleration> for RefloatAccelSample {
+    #[inline(always)]
+    fn from(acceleration: ImuAcceleration) -> Self {
+        acceleration.map_axes(Self::from_axes)
     }
 }
 
@@ -144,6 +165,18 @@ impl RefloatGyroRate {
         Self(xyz)
     }
 
+    fn from_axes(
+        roll: ImuAngularRateRoll,
+        pitch: ImuAngularRatePitch,
+        yaw: ImuAngularRateYaw,
+    ) -> Self {
+        Self::new([
+            roll.angular_velocity().as_degrees_per_second(),
+            pitch.angular_velocity().as_degrees_per_second(),
+            yaw.angular_velocity().as_degrees_per_second(),
+        ])
+    }
+
     #[inline(always)]
     const fn without_accel_feedback(self) -> RefloatCorrectedGyroRate {
         RefloatCorrectedGyroRate(self.0)
@@ -163,6 +196,14 @@ impl RefloatGyroRate {
             gy + gains.pitch * halfey,
             gz + gains.yaw * halfez,
         ])
+    }
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+impl From<ImuAngularRate> for RefloatGyroRate {
+    #[inline(always)]
+    fn from(angular_rate: ImuAngularRate) -> Self {
+        angular_rate.map_axes(Self::from_axes)
     }
 }
 
@@ -295,13 +336,13 @@ impl RefloatBalanceFilter {
     }
 
     #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn update(&mut self, gyro: [f32; 3], accel: [f32; 3], dt: f32) {
+    pub(crate) fn update(&mut self, sample: ImuReadSample) {
         // Refloat's callback feeds gyro first, accel second at
         // `third_party/refloat/src/main.c:760-765`; the Mahony update itself is
         // `third_party/refloat/src/balance_filter.c:73-134`.
         let gyro = self
-            .gyro_with_accel_correction(RefloatGyroRate::new(gyro), RefloatAccelSample::new(accel));
-        self.integrate_gyro(gyro, dt);
+            .gyro_with_accel_correction(sample.angular_rate().into(), sample.acceleration().into());
+        self.integrate_gyro(gyro, sample.period().duration().as_seconds());
         self.normalize_quaternion();
     }
 
@@ -419,12 +460,49 @@ mod tests {
     use super::{
         RefloatAccelSample, RefloatBalanceFilter, RefloatCorrectedGyroRate, RefloatGyroRate,
     };
+    use vescpkg_rs::prelude::{
+        AccelerationG, AngularVelocity, ImuAcceleration, ImuAccelerationX, ImuAccelerationY,
+        ImuAccelerationZ, ImuAngularRate, ImuAngularRatePitch, ImuAngularRateRoll,
+        ImuAngularRateYaw, ImuReadSample, ImuSamplePeriod, VescSeconds,
+    };
+
+    fn imu_acceleration(x_g: f32, y_g: f32, z_g: f32) -> ImuAcceleration {
+        ImuAcceleration::from_axes(
+            ImuAccelerationX::new(AccelerationG::from_g(x_g)),
+            ImuAccelerationY::new(AccelerationG::from_g(y_g)),
+            ImuAccelerationZ::new(AccelerationG::from_g(z_g)),
+        )
+    }
+
+    fn imu_angular_rate(roll_dps: f32, pitch_dps: f32, yaw_dps: f32) -> ImuAngularRate {
+        ImuAngularRate::from_axes(
+            ImuAngularRateRoll::new(AngularVelocity::from_degrees_per_second(roll_dps)),
+            ImuAngularRatePitch::new(AngularVelocity::from_degrees_per_second(pitch_dps)),
+            ImuAngularRateYaw::new(AngularVelocity::from_degrees_per_second(yaw_dps)),
+        )
+    }
+
+    fn imu_period(seconds: f32) -> ImuSamplePeriod {
+        ImuSamplePeriod::new(VescSeconds::from_seconds(seconds))
+    }
+
+    fn imu_sample(
+        acceleration: ImuAcceleration,
+        angular_rate: ImuAngularRate,
+        period: ImuSamplePeriod,
+    ) -> ImuReadSample {
+        ImuReadSample::from_parts(acceleration, angular_rate, period)
+    }
 
     #[test]
     fn balance_filter_update_integrates_positive_pitch_like_refloat_callback() {
         let mut filter = RefloatBalanceFilter::source_startup();
 
-        filter.update([0.0, 1.0, 0.0], [0.0, 0.0, 1.0], 0.1);
+        filter.update(imu_sample(
+            imu_acceleration(0.0, 0.0, 1.0),
+            imu_angular_rate(0.0, 1.0, 0.0),
+            imu_period(0.1),
+        ));
 
         // Refloat's `imu_ref_callback` forwards gyro/accel/dt at
         // `third_party/refloat/src/main.c:760-765`; `balance_filter_update` integrates the
