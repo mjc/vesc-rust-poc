@@ -1,85 +1,225 @@
 use crate::domain::RefloatRealtimeBalancePitch;
 use vescpkg_rs::prelude::AngleRadians;
 
-/// C map: `third_party/refloat/src/balance_filter.c:145-154`.
-#[inline(always)]
-fn refloat_pitch_projection(q0: f32, q1: f32, q2: f32, q3: f32) -> f32 {
-    -2.0 * (q1 * q3 - q0 * q2)
-}
-
-/// C map: `third_party/refloat/src/balance_filter.c:82-93`.
 #[cfg(any(test, target_arch = "arm"))]
 #[inline(always)]
-fn refloat_vector_length_squared(x: f32, y: f32, z: f32) -> f32 {
-    x * x + y * y + z * z
+fn refloat_inv_sqrt(value: f32) -> f32 {
+    // Refloat uses `1.0 / sqrtf(x)` at `third_party/refloat/src/balance_filter.c:38-40`.
+    1.0 / libm::sqrtf(value)
 }
 
-/// C map: `third_party/refloat/src/balance_filter.c:82-96`.
 #[cfg(any(test, target_arch = "arm"))]
-#[inline(always)]
-fn refloat_accel_norm(ax: f32, ay: f32, az: f32) -> f32 {
-    libm::sqrtf(refloat_vector_length_squared(ax, ay, az))
+trait RefloatVector3 {
+    fn xyz(self) -> [f32; 3];
+
+    #[inline(always)]
+    fn length_squared(self) -> f32
+    where
+        Self: Sized,
+    {
+        let [x, y, z] = self.xyz();
+        x * x + y * y + z * z
+    }
+
+    #[inline(always)]
+    fn norm(self) -> f32
+    where
+        Self: Sized,
+    {
+        libm::sqrtf(self.length_squared())
+    }
 }
 
-/// C map: `third_party/refloat/src/balance_filter.c:98-101`.
 #[cfg(any(test, target_arch = "arm"))]
-#[inline(always)]
-fn refloat_estimated_half_gravity(q0: f32, q1: f32, q2: f32, q3: f32) -> [f32; 3] {
-    [
-        q1 * q3 - q0 * q2,
-        q0 * q1 + q2 * q3,
-        q0 * q0 - 0.5 + q3 * q3,
-    ]
+trait RefloatCross<Rhs> {
+    type Output;
+
+    fn cross(self, rhs: Rhs) -> Self::Output;
 }
 
-/// C map: `third_party/refloat/src/balance_filter.c:103-106`.
 #[cfg(any(test, target_arch = "arm"))]
-#[inline(always)]
-fn refloat_accel_gravity_error(
-    ax: f32,
-    ay: f32,
-    az: f32,
-    [halfvx, halfvy, halfvz]: [f32; 3],
-) -> [f32; 3] {
-    [
-        ay * halfvz - az * halfvy,
-        az * halfvx - ax * halfvz,
-        ax * halfvy - ay * halfvx,
-    ]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+struct RefloatAccel([f32; 3]);
+
+#[cfg(any(test, target_arch = "arm"))]
+impl RefloatAccel {
+    #[inline(always)]
+    const fn new(xyz: [f32; 3]) -> Self {
+        Self(xyz)
+    }
+
+    #[inline(always)]
+    const fn xyz(self) -> [f32; 3] {
+        self.0
+    }
+
+    #[inline(always)]
+    fn scaled(self, scale: f32) -> Self {
+        let [x, y, z] = self.0;
+        Self([x * scale, y * scale, z * scale])
+    }
+
+    /// C map: `third_party/refloat/src/balance_filter.c:82-96`.
+    #[inline(always)]
+    fn normalized_for_feedback(self) -> Option<(f32, Self)> {
+        let accel_norm = self.norm();
+        match accel_norm {
+            norm if norm > 0.01 => {
+                Some((norm, self.scaled(refloat_inv_sqrt(self.length_squared()))))
+            }
+            _ => None,
+        }
+    }
 }
 
-/// C map: `third_party/refloat/src/balance_filter.c:114-117`.
 #[cfg(any(test, target_arch = "arm"))]
-#[inline(always)]
-fn refloat_gyro_half_step(gx: f32, gy: f32, gz: f32, dt: f32) -> [f32; 3] {
-    [gx * 0.5 * dt, gy * 0.5 * dt, gz * 0.5 * dt]
+impl RefloatVector3 for RefloatAccel {
+    #[inline(always)]
+    fn xyz(self) -> [f32; 3] {
+        self.0
+    }
 }
 
-/// C map: `third_party/refloat/src/balance_filter.c:118-124`.
 #[cfg(any(test, target_arch = "arm"))]
-#[inline(always)]
-fn refloat_quaternion_delta(
-    q0: f32,
-    q1: f32,
-    q2: f32,
-    q3: f32,
-    gx: f32,
-    gy: f32,
-    gz: f32,
-) -> [f32; 4] {
-    [
-        -q1 * gx - q2 * gy - q3 * gz,
-        q0 * gx + q2 * gz - q3 * gy,
-        q0 * gy - q1 * gz + q3 * gx,
-        q0 * gz + q1 * gy - q2 * gx,
-    ]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+struct RefloatHalfGravity([f32; 3]);
+
+#[cfg(any(test, target_arch = "arm"))]
+impl RefloatVector3 for RefloatHalfGravity {
+    #[inline(always)]
+    fn xyz(self) -> [f32; 3] {
+        self.0
+    }
 }
 
-/// C map: `third_party/refloat/src/balance_filter.c:126-133`.
 #[cfg(any(test, target_arch = "arm"))]
-#[inline(always)]
-fn refloat_quaternion_length_squared(q0: f32, q1: f32, q2: f32, q3: f32) -> f32 {
-    q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+struct RefloatAccelGravityError([f32; 3]);
+
+#[cfg(any(test, target_arch = "arm"))]
+impl RefloatVector3 for RefloatAccelGravityError {
+    #[inline(always)]
+    fn xyz(self) -> [f32; 3] {
+        self.0
+    }
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+impl RefloatCross<RefloatHalfGravity> for RefloatAccel {
+    type Output = RefloatAccelGravityError;
+
+    /// C map: `third_party/refloat/src/balance_filter.c:103-106`.
+    #[inline(always)]
+    fn cross(self, rhs: RefloatHalfGravity) -> Self::Output {
+        let [x, y, z] = self.xyz();
+        let [rhs_x, rhs_y, rhs_z] = rhs.xyz();
+        RefloatAccelGravityError([
+            y * rhs_z - z * rhs_y,
+            z * rhs_x - x * rhs_z,
+            x * rhs_y - y * rhs_x,
+        ])
+    }
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+struct RefloatGyro([f32; 3]);
+
+#[cfg(any(test, target_arch = "arm"))]
+impl RefloatGyro {
+    #[inline(always)]
+    const fn new(xyz: [f32; 3]) -> Self {
+        Self(xyz)
+    }
+
+    /// C map: `third_party/refloat/src/balance_filter.c:114-117`.
+    #[inline(always)]
+    fn half_step(self, dt: f32) -> RefloatGyroHalfStep {
+        let [gx, gy, gz] = self.0;
+        RefloatGyroHalfStep([gx * 0.5 * dt, gy * 0.5 * dt, gz * 0.5 * dt])
+    }
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+struct RefloatGyroHalfStep([f32; 3]);
+
+#[cfg(any(test, target_arch = "arm"))]
+impl RefloatVector3 for RefloatGyroHalfStep {
+    #[inline(always)]
+    fn xyz(self) -> [f32; 3] {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+struct RefloatQuaternion([f32; 4]);
+
+impl RefloatQuaternion {
+    #[inline(always)]
+    const fn new(wxyz: [f32; 4]) -> Self {
+        Self(wxyz)
+    }
+
+    /// C map: `third_party/refloat/src/balance_filter.c:145-154`.
+    #[inline(always)]
+    fn pitch_projection(self) -> f32 {
+        let [q0, q1, q2, q3] = self.0;
+        -2.0 * (q1 * q3 - q0 * q2)
+    }
+
+    /// C map: `third_party/refloat/src/balance_filter.c:98-101`.
+    #[cfg(any(test, target_arch = "arm"))]
+    #[inline(always)]
+    fn estimated_half_gravity(self) -> RefloatHalfGravity {
+        let [q0, q1, q2, q3] = self.0;
+        RefloatHalfGravity([
+            q1 * q3 - q0 * q2,
+            q0 * q1 + q2 * q3,
+            q0 * q0 - 0.5 + q3 * q3,
+        ])
+    }
+
+    /// C map: `third_party/refloat/src/balance_filter.c:118-124`.
+    #[cfg(any(test, target_arch = "arm"))]
+    #[inline(always)]
+    fn delta_from_gyro(self, gyro_half_step: RefloatGyroHalfStep) -> RefloatQuaternionDelta {
+        let [q0, q1, q2, q3] = self.0;
+        let [gx, gy, gz] = gyro_half_step.xyz();
+        RefloatQuaternionDelta([
+            -q1 * gx - q2 * gy - q3 * gz,
+            q0 * gx + q2 * gz - q3 * gy,
+            q0 * gy - q1 * gz + q3 * gx,
+            q0 * gz + q1 * gy - q2 * gx,
+        ])
+    }
+
+    /// C map: `third_party/refloat/src/balance_filter.c:126-133`.
+    #[cfg(any(test, target_arch = "arm"))]
+    #[inline(always)]
+    fn length_squared(self) -> f32 {
+        let [q0, q1, q2, q3] = self.0;
+        q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3
+    }
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+struct RefloatQuaternionDelta([f32; 4]);
+
+#[cfg(any(test, target_arch = "arm"))]
+impl RefloatQuaternionDelta {
+    #[inline(always)]
+    const fn wxyz(self) -> [f32; 4] {
+        self.0
+    }
 }
 
 /// Refloat-owned balance filter state.
@@ -157,11 +297,16 @@ impl RefloatBalanceFilter {
         // C map: `third_party/refloat/src/balance_filter.c:145-154` uses
         // quaternion (q0, q1, q2, q3) as (w, x, y, z) and feeds this
         // orientation projection to `asinf` for pitch.
-        refloat_pitch_projection(self.q0, self.q1, self.q2, self.q3)
+        self.quaternion().pitch_projection()
     }
 
     const fn yaw_kp(mahony_kp: f32, mahony_kp_roll: f32) -> f32 {
         (mahony_kp + mahony_kp_roll) / 2.0
+    }
+
+    #[inline(always)]
+    const fn quaternion(&self) -> RefloatQuaternion {
+        RefloatQuaternion::new([self.q0, self.q1, self.q2, self.q3])
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -170,7 +315,7 @@ impl RefloatBalanceFilter {
             return [gx, gy, gz];
         };
         let confidence = self.accel_confidence(accel_norm);
-        let [halfex, halfey, halfez] = self.accel_error(accel);
+        let [halfex, halfey, halfez] = self.accel_error(accel).xyz();
 
         // C map: `third_party/refloat/src/balance_filter.c:87-111` applies
         // Mahony proportional feedback from accelerometer confidence,
@@ -183,40 +328,32 @@ impl RefloatBalanceFilter {
     }
 
     #[cfg(any(test, target_arch = "arm"))]
-    fn normalized_accel([ax, ay, az]: [f32; 3]) -> Option<(f32, [f32; 3])> {
-        let accel_norm = refloat_accel_norm(ax, ay, az);
-        match accel_norm {
-            // C map: `third_party/refloat/src/balance_filter.c:82-96` enters
-            // feedback only when accel norm is above 0.01, then normalizes it.
-            norm if norm > 0.01 => {
-                let recip_norm = Self::inv_sqrt(refloat_vector_length_squared(ax, ay, az));
-                Some((norm, [ax * recip_norm, ay * recip_norm, az * recip_norm]))
-            }
-            _ => None,
-        }
+    fn normalized_accel(accel: [f32; 3]) -> Option<(f32, RefloatAccel)> {
+        // C map: `third_party/refloat/src/balance_filter.c:82-96` enters
+        // feedback only when accel norm is above 0.01, then normalizes it.
+        RefloatAccel::new(accel).normalized_for_feedback()
     }
 
     #[cfg(any(test, target_arch = "arm"))]
-    fn accel_error(&self, [ax, ay, az]: [f32; 3]) -> [f32; 3] {
+    fn accel_error(&self, accel: RefloatAccel) -> RefloatAccelGravityError {
         // C map: `third_party/refloat/src/balance_filter.c:98-101` computes
         // the estimated gravity half-vector from the current quaternion.
-        let estimated_gravity = refloat_estimated_half_gravity(self.q0, self.q1, self.q2, self.q3);
+        let estimated_gravity = self.quaternion().estimated_half_gravity();
 
         // C map: `third_party/refloat/src/balance_filter.c:103-106` crosses
         // measured gravity (accelerometer) against estimated gravity.
-        refloat_accel_gravity_error(ax, ay, az, estimated_gravity)
+        accel.cross(estimated_gravity)
     }
 
     #[cfg(any(test, target_arch = "arm"))]
-    fn integrate_gyro(&mut self, [gx, gy, gz]: [f32; 3], dt: f32) {
+    fn integrate_gyro(&mut self, gyro: [f32; 3], dt: f32) {
         // C map: `third_party/refloat/src/balance_filter.c:114-117`
         // pre-multiplies gyro by half the tick duration.
-        let [gx, gy, gz] = refloat_gyro_half_step(gx, gy, gz, dt);
-        let [q0, q1, q2, q3] = [self.q0, self.q1, self.q2, self.q3];
+        let gyro_half_step = RefloatGyro::new(gyro).half_step(dt);
 
         // C map: `third_party/refloat/src/balance_filter.c:118-124`
         // integrates q_dot = 0.5 * q * gyro in upstream component order.
-        let [dq0, dq1, dq2, dq3] = refloat_quaternion_delta(q0, q1, q2, q3, gx, gy, gz);
+        let [dq0, dq1, dq2, dq3] = self.quaternion().delta_from_gyro(gyro_half_step).wxyz();
         self.q0 += dq0;
         self.q1 += dq1;
         self.q2 += dq2;
@@ -227,9 +364,7 @@ impl RefloatBalanceFilter {
     fn normalize_quaternion(&mut self) {
         // C map: `third_party/refloat/src/balance_filter.c:126-133` keeps the
         // integrated orientation on the unit-quaternion sphere.
-        let recip_norm = Self::inv_sqrt(refloat_quaternion_length_squared(
-            self.q0, self.q1, self.q2, self.q3,
-        ));
+        let recip_norm = refloat_inv_sqrt(self.quaternion().length_squared());
         self.q0 *= recip_norm;
         self.q1 *= recip_norm;
         self.q2 *= recip_norm;
@@ -242,12 +377,6 @@ impl RefloatBalanceFilter {
         // zero in `third_party/refloat/src/balance_filter.c:42-50`.
         self.acc_mag = self.acc_mag * 0.9 + new_acc_mag * 0.1;
         (1.0 - 0.02 * libm::sqrtf((self.acc_mag - 1.0).abs())).max(0.0)
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    fn inv_sqrt(value: f32) -> f32 {
-        // Refloat uses `1.0 / sqrtf(x)` at `third_party/refloat/src/balance_filter.c:38-40`.
-        1.0 / libm::sqrtf(value)
     }
 }
 
@@ -297,7 +426,7 @@ mod tests {
         let (_, unit) = RefloatBalanceFilter::normalized_accel([0.0, 0.0, 2.0])
             .expect("nonzero accel normalizes");
 
-        assert_eq!(unit, [0.0, 0.0, 1.0]);
+        assert_eq!(unit.xyz(), [0.0, 0.0, 1.0]);
     }
 
     #[test]

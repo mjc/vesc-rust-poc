@@ -9,17 +9,17 @@ load_sections:
   .init_fun: match size=12 vma=0x4
   .data: left size=0 vma=0x10 right size=20 vma=0x10
   .got: left size=20 vma=0x10 right size=28 vma=0x24
-  .text: left size=439 vma=0x30 right size=50489 vma=0x40
+  .text: left size=439 vma=0x30 right size=50441 vma=0x40
 debug_sections:
   .debug_abbrev: right_only size=3749 vma=0x0
   .debug_aranges: right_only size=768 vma=0x0
-  .debug_frame: left size=228 vma=0x0 right size=4068 vma=0x0
+  .debug_frame: left size=228 vma=0x0 right size=4040 vma=0x0
   .debug_info: right_only size=22624 vma=0x0
   .debug_line: right_only size=23009 vma=0x0
   .debug_ranges: right_only size=6088 vma=0x0
   .debug_str: right_only size=22972 vma=0x0
-  .strtab: left size=286 vma=0x0 right size=6465 vma=0x0
-  .symtab: left size=576 vma=0x0 right size=5408 vma=0x0
+  .strtab: left size=286 vma=0x0 right size=6373 vma=0x0
+  .symtab: left size=576 vma=0x0 right size=5376 vma=0x0
 contract_symbols:
   ext_rust_probe_diag_v4: left_only
   init: both
@@ -34,4 +34,4 @@ contract_symbols:
   stop_package: left_only
   vesc_clear_loopback_app_data_handler: left_only
   vesc_register_loopback_app_data_handler: left_only
-defined_symbol_count: left=13 right=134
+defined_symbol_count: left=13 right=133
