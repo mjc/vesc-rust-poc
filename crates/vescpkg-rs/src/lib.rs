@@ -401,7 +401,10 @@ mod tests {
         assert_eq!(pitch.angle().as_radians(), -0.125);
         assert_eq!(yaw.angle().as_radians(), 1.0);
         assert_eq!(accel.xyz()[2].as_g(), 1.0);
+        assert_eq!(accel.z().as_g(), 1.0);
         assert_eq!(gyro.xyz()[1].as_degrees_per_second(), 2.0);
+        assert_eq!(gyro.pitch().as_degrees_per_second(), 2.0);
+        assert_eq!(gyro.yaw().as_degrees_per_second(), 3.0);
         assert_eq!(quat.components(), [1.0, 0.0, 0.0, 0.0]);
     }
 }

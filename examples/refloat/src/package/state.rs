@@ -1039,7 +1039,7 @@ impl RefloatPackageState {
                 // while SAT_REVERSESTOP is active at `third_party/refloat/src/main.c:522-525`.
                 self.reverse_total_erpm += motor_erpm;
             }
-            let [_, gyro_pitch, gyro_yaw] = imu.angular_rate().xyz();
+            let gyro = imu.angular_rate();
             // Upstream RUNNING executes this exact balance-current pipeline at
             // `third_party/refloat/src/main.c:918-956`; the helper keeps the
             // PID, booster, pitch-rate, soft-start, limit, darkride, and
@@ -1083,8 +1083,8 @@ impl RefloatPackageState {
                     balance_pitch,
                     raw_pitch: imu.pitch(),
                     roll: imu.roll(),
-                    gyro_pitch,
-                    gyro_yaw,
+                    gyro_pitch: gyro.pitch(),
+                    gyro_yaw: gyro.yaw(),
                     motor_erpm: base.motor().electrical_speed(),
                     motor_current: base.motor().motor_current(),
                     motor_current_max: self.motor_current_max,
