@@ -20,6 +20,26 @@ pub fn clear_loader_info(info: *mut LibInfo) {
     }
 }
 
+/// Rebase an image-relative address through loader metadata.
+#[cfg(any(test, all(not(test), target_arch = "arm")))]
+pub(crate) fn rebase_native_handler_addr(info: &LibInfo, handler_addr: usize) -> usize {
+    vescpkg_rs_sys::NativeImage::from_info(info).rebase_addr(handler_addr)
+}
+
+pub(crate) fn stop_handler_for_loader(info: &LibInfo, stop_handler: StopHandler) -> StopHandler {
+    #[cfg(all(not(test), target_arch = "arm"))]
+    {
+        let handler_addr = rebase_native_handler_addr(info, stop_handler as *const () as usize);
+        unsafe { core::mem::transmute::<usize, StopHandler>(handler_addr) }
+    }
+
+    #[cfg(not(all(not(test), target_arch = "arm")))]
+    {
+        let _ = info;
+        stop_handler
+    }
+}
+
 /// Store package state and a stop hook in loader metadata.
 pub fn install_loader_state<T>(
     info: *mut LibInfo,
@@ -28,7 +48,7 @@ pub fn install_loader_state<T>(
 ) -> bool {
     if let Some(info) = loader_info_mut(info) {
         info.arg = ptr::from_mut(state).cast();
-        info.stop_fun = Some(stop_handler);
+        info.stop_fun = Some(stop_handler_for_loader(info, stop_handler));
     }
     true
 }
@@ -384,6 +404,17 @@ mod tests {
         clear_loader_info(&mut info);
         assert!(info.arg.is_null());
         assert!(info.stop_fun.is_none());
+    }
+
+    #[test]
+    fn native_handler_rebase_uses_loader_base_addr() {
+        let info = LibInfo {
+            stop_fun: None,
+            arg: ptr::null_mut(),
+            base_addr: 0x2000,
+        };
+
+        assert_eq!(rebase_native_handler_addr(&info, 0xb1), 0x20b1);
     }
 
     #[test]

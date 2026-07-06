@@ -36,6 +36,8 @@ pub enum Command {
     LispReadCode(LispReadCodeCommand),
     /// Read back the installed QML app payload from a target device.
     QmlAppRead(QmlAppReadCommand),
+    /// Send an alloc-smoke app-data probe to a target device.
+    AllocSmokeProbe(AllocSmokeProbeCommand),
     /// Send a Refloat app-data handshake probe to a target device.
     RefloatProbe(RefloatProbeCommand),
     /// Install a package on a target device.
@@ -123,6 +125,15 @@ pub struct QmlAppReadCommand {
     pub address: Option<String>,
 }
 
+/// Arguments for the `alloc-smoke-probe` command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AllocSmokeProbeCommand {
+    /// Optional BLE device-name filter.
+    pub device_name: Option<String>,
+    /// Optional BLE address filter.
+    pub address: Option<String>,
+}
+
 /// Arguments for package install and deploy commands.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageInstallCommand {
@@ -188,7 +199,7 @@ pub enum ParseError {
     UnknownCommand(String),
 }
 
-const HELP_TEXT: &str = "cargo vescpkg: use `build`, `layout`, `status`, `scan`, `loopback`, `lisp-probe`, `lisp-eval`, `lisp-stop`, `lisp-read-code`, `qml-app-read`, `refloat-probe`, `deploy`, `snake-deploy`, `package-install`, `erase-package`, or `snake`";
+const HELP_TEXT: &str = "cargo vescpkg: use `build`, `layout`, `status`, `scan`, `loopback`, `lisp-probe`, `lisp-eval`, `lisp-stop`, `lisp-read-code`, `qml-app-read`, `alloc-smoke-probe`, `refloat-probe`, `deploy`, `snake-deploy`, `package-install`, `erase-package`, or `snake`";
 
 /// Run a parsed CLI invocation and return the process exit code.
 pub fn run_args<I, S>(args: I) -> ExitCode
@@ -332,6 +343,7 @@ where
                 }
             }
         }
+        Ok(Command::AllocSmokeProbe(command)) => run_alloc_smoke_probe(command),
         Ok(Command::RefloatProbe(command)) => run_refloat_probe(command),
         Ok(Command::Deploy(command)) => {
             let package_path = command.package_path;
@@ -790,6 +802,26 @@ fn loopback_target(
     }
 }
 
+fn run_alloc_smoke_probe(command: AllocSmokeProbeCommand) -> ExitCode {
+    let target = loopback_target(command.address, command.device_name);
+
+    match alloc_smoke_probe::run_alloc_smoke_probe(target) {
+        Ok(report) => {
+            println!(
+                "alloc smoke probe ok on device={} service={}: response={}",
+                report.target().device_name_hint(),
+                report.target().service_name_hint(),
+                String::from_utf8_lossy(report.response())
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("alloc smoke probe failed: {error}");
+            ExitCode::from(1)
+        }
+    }
+}
+
 fn run_refloat_probe(command: RefloatProbeCommand) -> ExitCode {
     let target = loopback_target(command.address, command.device_name);
     let probe_options = loopback_debug::RefloatProbeOptions {
@@ -989,6 +1021,7 @@ where
         Some("lisp-stop") => parse_lisp_stop(iter).map(Command::LispStop),
         Some("lisp-read-code") => parse_lisp_read_code(iter).map(Command::LispReadCode),
         Some("qml-app-read") => parse_qml_app_read(iter).map(Command::QmlAppRead),
+        Some("alloc-smoke-probe") => parse_alloc_smoke_probe(iter).map(Command::AllocSmokeProbe),
         Some("refloat-probe") => parse_refloat_probe(iter).map(Command::RefloatProbe),
         Some("package-install") => {
             parse_package_install(iter, "package-install").map(Command::PackageInstall)
@@ -1149,6 +1182,17 @@ fn parse_qml_app_read(iter: impl Iterator<Item = String>) -> Result<QmlAppReadCo
     let (device_name, address) = parse_device_flags(iter)?;
 
     Ok(QmlAppReadCommand {
+        device_name,
+        address,
+    })
+}
+
+fn parse_alloc_smoke_probe(
+    iter: impl Iterator<Item = String>,
+) -> Result<AllocSmokeProbeCommand, ParseError> {
+    let (device_name, address) = parse_device_flags(iter)?;
+
+    Ok(AllocSmokeProbeCommand {
         device_name,
         address,
     })
@@ -1383,6 +1427,8 @@ fn parse_snake_tick_interval(value: &str) -> Result<snake::SnakeTickInterval, Pa
 
 mod ble_discovery;
 
+/// Alloc-smoke package app-data probe runner.
+pub mod alloc_smoke_probe;
 /// BLE UART transport, discovery, and Lisp probe helpers.
 pub mod btle;
 pub mod deploy;
@@ -1402,10 +1448,10 @@ pub mod vesc_uart;
 #[cfg(test)]
 mod tests {
     use super::{
-        Command, LispEvalCommand, LispProbeCommand, LispReadCodeCommand, LispStopCommand,
-        LoopbackCommand, PackageEraseCommand, PackageInstallCommand, ParseError, QmlAppReadCommand,
-        RefloatProbeCommand, SnakeCommand, SnakeRunMode, parse_args, qml_preview,
-        snake_action_from_key,
+        AllocSmokeProbeCommand, Command, LispEvalCommand, LispProbeCommand, LispReadCodeCommand,
+        LispStopCommand, LoopbackCommand, PackageEraseCommand, PackageInstallCommand, ParseError,
+        QmlAppReadCommand, RefloatProbeCommand, SnakeCommand, SnakeRunMode, parse_args,
+        qml_preview, snake_action_from_key,
     };
     use crate::snake::{
         SnakeBoardHeight, SnakeBoardWidth, SnakeDirection, SnakeLocalAction, SnakeSeed,
@@ -1504,6 +1550,18 @@ mod tests {
         assert_eq!(
             parse_args(["cargo-vescpkg", "qml-app-read", "--device", "VESC BLE UART"]),
             Ok(Command::QmlAppRead(QmlAppReadCommand {
+                device_name: Some("VESC BLE UART".to_owned()),
+                address: None,
+            }))
+        );
+        assert_eq!(
+            parse_args([
+                "cargo-vescpkg",
+                "alloc-smoke-probe",
+                "--device",
+                "VESC BLE UART"
+            ]),
+            Ok(Command::AllocSmokeProbe(AllocSmokeProbeCommand {
                 device_name: Some("VESC BLE UART".to_owned()),
                 address: None,
             }))

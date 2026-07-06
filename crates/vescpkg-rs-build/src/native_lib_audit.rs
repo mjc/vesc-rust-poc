@@ -339,7 +339,7 @@ fn audit_alloc_smoke_native_lib_symbols(paths: &NativeLibArtifactPaths) {
         "init",
         "prog_ptr",
         "package_lib_init",
-        "ext_rust_alloc_smoke",
+        "alloc_smoke_app_data_callback",
         "__aeabi_memcpy",
         "memcmp",
     ] {

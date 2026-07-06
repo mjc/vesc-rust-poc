@@ -19,7 +19,7 @@ fn install_stop_hook(info: *mut ffi::LibInfo) -> bool {
     let Some(info) = crate::loader_info_mut(info) else {
         return false;
     };
-    info.stop_fun = Some(stop_package);
+    info.stop_fun = Some(crate::firmware::stop_handler_for_loader(info, stop_package));
     true
 }
 

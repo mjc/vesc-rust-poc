@@ -1,6 +1,6 @@
 ---
 source: crates/vescpkg-rs-build/tests/native_lib_artifacts.rs
-assertion_line: 103
+assertion_line: 149
 expression: report
 ---
 native_binary: left=loopback right=refloat

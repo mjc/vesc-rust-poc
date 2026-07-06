@@ -165,7 +165,7 @@ impl<B: AppDataBindings> LoopbackLifecycle<B> {
         _app_data_handler: AppDataHandler,
     ) -> bool {
         if let Some(info) = start.loader_info_mut() {
-            info.stop_fun = Some(stop_handler);
+            info.stop_fun = Some(crate::firmware::stop_handler_for_loader(info, stop_handler));
         }
 
         true

@@ -1,6 +1,6 @@
 ---
 source: crates/vescpkg-rs-build/tests/native_lib_artifacts.rs
-assertion_line: 114
+assertion_line: 160
 expression: report
 ---
 refloat_native_mapping:

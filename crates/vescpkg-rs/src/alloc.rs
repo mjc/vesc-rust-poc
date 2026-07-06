@@ -154,17 +154,12 @@ unsafe impl GlobalAlloc for VescAllocator {
 
 #[cfg(feature = "alloc")]
 unsafe fn zero_allocation_bytes(dst: *mut u8, len: usize) {
-    for offset in 0..len {
-        unsafe { ptr::write_volatile(dst.add(offset), 0) };
-    }
+    unsafe { ptr::write_bytes(dst, 0, len) };
 }
 
 #[cfg(feature = "alloc")]
 unsafe fn copy_allocation_bytes(src: *const u8, dst: *mut u8, len: usize) {
-    for offset in 0..len {
-        let byte = unsafe { ptr::read_volatile(src.add(offset)) };
-        unsafe { ptr::write_volatile(dst.add(offset), byte) };
-    }
+    unsafe { ptr::copy_nonoverlapping(src, dst, len) };
 }
 
 #[cfg(feature = "alloc")]

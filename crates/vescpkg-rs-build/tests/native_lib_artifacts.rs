@@ -41,6 +41,22 @@ fn isolated_refloat_plans(workspace: &TempDir) -> (NativeLibLinkPlan, PackageBin
     )
 }
 
+fn isolated_loopback_plans(
+    workspace: &TempDir,
+) -> (NativeLibLinkPlan, PackageBinaryConversionPlan) {
+    let root = repo_root();
+    let native_build_dir = workspace.path().join("native-lib-loopback");
+    (
+        NativeLibLinkPlan::for_example_with_native_build_dir(
+            &root,
+            PackageExample::Loopback,
+            &native_build_dir,
+        ),
+        PackageBinaryConversionPlan::new(&root, "Rust BLE loopback test package", "0.1.0")
+            .with_native_build_dir(native_build_dir),
+    )
+}
+
 fn isolated_alloc_smoke_plans(
     workspace: &TempDir,
 ) -> (NativeLibLinkPlan, PackageBinaryConversionPlan) {
@@ -118,9 +134,9 @@ fn current_refloat_native_lib_has_no_panic_symbols() {
 #[test]
 fn native_binary_comparison_report_highlights_refloat_registration_delta() {
     let workspace = TempDir::new().expect("temp workspace");
-    let loopback = native_lib_link_plan();
+    let (loopback, loopback_conversion) = isolated_loopback_plans(&workspace);
     let (refloat, conversion) = isolated_refloat_plans(&workspace);
-    ensure_repo_native_lib_artifacts(loopback.root());
+    ensure_native_lib_artifacts(&loopback_conversion);
     ensure_native_lib_artifacts(&conversion);
 
     let report = native_binary_comparison_report(
