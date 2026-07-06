@@ -13,21 +13,69 @@ use crate::domain::{
     RefloatMode, RefloatRideState, RefloatRunState,
 };
 
-const REFLOAT_HANDTEST_CONFIG_WRITES: [(usize, u16); 14] = [
-    (REFLOAT_CONFIG_KI_OFFSET, 0),
-    (REFLOAT_CONFIG_KP_BRAKE_OFFSET, 100),
-    (REFLOAT_CONFIG_KP2_BRAKE_OFFSET, 100),
-    (REFLOAT_CONFIG_BOOSTER_ANGLE_OFFSET, 10_000),
-    (REFLOAT_CONFIG_BRKBOOSTER_ANGLE_OFFSET, 10_000),
-    (REFLOAT_CONFIG_TORQUETILT_STRENGTH_OFFSET, 0),
-    (REFLOAT_CONFIG_TORQUETILT_STRENGTH_REGEN_OFFSET, 0),
-    (REFLOAT_CONFIG_ATR_STRENGTH_UP_OFFSET, 0),
-    (REFLOAT_CONFIG_ATR_STRENGTH_DOWN_OFFSET, 0),
-    (REFLOAT_CONFIG_TURNTILT_STRENGTH_OFFSET, 0),
-    (REFLOAT_CONFIG_TILTBACK_CONSTANT_OFFSET, 0),
-    (REFLOAT_CONFIG_TILTBACK_VARIABLE_OFFSET, 0),
-    (REFLOAT_CONFIG_FAULT_DELAY_PITCH_OFFSET, 50),
-    (REFLOAT_CONFIG_FAULT_DELAY_ROLL_OFFSET, 50),
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RefloatHandtestConfigField {
+    offset: usize,
+}
+
+impl RefloatHandtestConfigField {
+    const fn at(offset: usize) -> Self {
+        Self { offset }
+    }
+
+    const fn write(self, value: u16) -> RefloatHandtestConfigWrite {
+        RefloatHandtestConfigWrite { field: self, value }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RefloatHandtestConfigWrite {
+    field: RefloatHandtestConfigField,
+    value: u16,
+}
+
+impl RefloatHandtestConfigWrite {
+    fn apply_to(self, config: &mut [u8; 276]) -> bool {
+        RefloatPackageState::set_config_be_u16(config, self.field.offset, self.value)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+struct RefloatHandtestSafetyConfig([u8; 276]);
+
+impl RefloatHandtestSafetyConfig {
+    fn from_config(mut config: [u8; 276]) -> Option<Self> {
+        if REFLOAT_HANDTEST_CONFIG_WRITES
+            .into_iter()
+            .all(|write| write.apply_to(&mut config))
+        {
+            Some(Self(config))
+        } else {
+            None
+        }
+    }
+
+    const fn into_bytes(self) -> [u8; 276] {
+        self.0
+    }
+}
+
+const REFLOAT_HANDTEST_CONFIG_WRITES: [RefloatHandtestConfigWrite; 14] = [
+    RefloatHandtestConfigField::at(REFLOAT_CONFIG_KI_OFFSET).write(0),
+    RefloatHandtestConfigField::at(REFLOAT_CONFIG_KP_BRAKE_OFFSET).write(100),
+    RefloatHandtestConfigField::at(REFLOAT_CONFIG_KP2_BRAKE_OFFSET).write(100),
+    RefloatHandtestConfigField::at(REFLOAT_CONFIG_BOOSTER_ANGLE_OFFSET).write(10_000),
+    RefloatHandtestConfigField::at(REFLOAT_CONFIG_BRKBOOSTER_ANGLE_OFFSET).write(10_000),
+    RefloatHandtestConfigField::at(REFLOAT_CONFIG_TORQUETILT_STRENGTH_OFFSET).write(0),
+    RefloatHandtestConfigField::at(REFLOAT_CONFIG_TORQUETILT_STRENGTH_REGEN_OFFSET).write(0),
+    RefloatHandtestConfigField::at(REFLOAT_CONFIG_ATR_STRENGTH_UP_OFFSET).write(0),
+    RefloatHandtestConfigField::at(REFLOAT_CONFIG_ATR_STRENGTH_DOWN_OFFSET).write(0),
+    RefloatHandtestConfigField::at(REFLOAT_CONFIG_TURNTILT_STRENGTH_OFFSET).write(0),
+    RefloatHandtestConfigField::at(REFLOAT_CONFIG_TILTBACK_CONSTANT_OFFSET).write(0),
+    RefloatHandtestConfigField::at(REFLOAT_CONFIG_TILTBACK_VARIABLE_OFFSET).write(0),
+    RefloatHandtestConfigField::at(REFLOAT_CONFIG_FAULT_DELAY_PITCH_OFFSET).write(50),
+    RefloatHandtestConfigField::at(REFLOAT_CONFIG_FAULT_DELAY_ROLL_OFFSET).write(50),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -157,18 +205,12 @@ impl RefloatPackageState {
         }
     }
 
-    fn handtest_safety_config(mut config: [u8; 276]) -> Option<[u8; 276]> {
+    fn handtest_safety_config(config: [u8; 276]) -> Option<[u8; 276]> {
         // Refloat C applies temporary HANDTEST safety config at
         // `third_party/refloat/src/main.c:1431-1446` and restores from EEPROM on off at
         // `third_party/refloat/src/main.c:1447-1449`.
-        if REFLOAT_HANDTEST_CONFIG_WRITES
-            .into_iter()
-            .all(|(offset, value)| Self::set_config_be_u16(&mut config, offset, value))
-        {
-            Some(config)
-        } else {
-            None
-        }
+        RefloatHandtestSafetyConfig::from_config(config)
+            .map(RefloatHandtestSafetyConfig::into_bytes)
     }
 }
 
