@@ -361,8 +361,8 @@ fn thread_api_spawns_and_terminates_typed_thread_pair() {
 
     let pair = api
         .spawn_pair_with_state(
-            &crate::FirmwareThreadSpec::<u32>::new::<PairTestThread>(256, c"first"),
-            &crate::FirmwareThreadSpec::<u32>::from_entry(stub_thread_entry, 128, c"second"),
+            crate::FirmwareThreadSpec::<u32>::new::<PairTestThread>(256, c"first"),
+            crate::FirmwareThreadSpec::<u32>::from_entry(stub_thread_entry, 128, c"second"),
             &mut state,
         )
         .expect("thread pair");
@@ -393,8 +393,8 @@ fn thread_api_rolls_back_first_thread_when_pair_spawn_fails() {
     let mut state = 42_u32;
 
     let pair = api.spawn_pair_with_state(
-        &crate::FirmwareThreadSpec::<u32>::new::<PairTestThread>(256, c"first"),
-        &crate::FirmwareThreadSpec::<u32>::from_entry(stub_thread_entry, 128, c"second"),
+        crate::FirmwareThreadSpec::<u32>::new::<PairTestThread>(256, c"first"),
+        crate::FirmwareThreadSpec::<u32>::from_entry(stub_thread_entry, 128, c"second"),
         &mut state,
     );
 
