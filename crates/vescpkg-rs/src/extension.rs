@@ -64,7 +64,7 @@ impl<'a> LbmExtensionArgs<'a> {
         if len == 0 {
             return Some(Self { values: &[] });
         }
-        crate::lbm_args(args, arg_count).map(|values| Self { values })
+        unsafe { crate::firmware::lbm_args(args, arg_count).map(|values| Self { values }) }
     }
 
     /// Return all raw LispBM values.

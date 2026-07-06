@@ -150,7 +150,12 @@ macro_rules! firmware_app_data_callback {
 }
 
 /// Convert LispBM extension callback arguments into typed values.
-pub fn lbm_args(args: *mut u32, arg_count: u32) -> Option<&'static [LbmValue]> {
+///
+/// # Safety
+///
+/// `args` must be null with `arg_count == 0` or point to `arg_count` LispBM
+/// values that stay valid for the returned borrow.
+pub(crate) unsafe fn lbm_args<'a>(args: *mut u32, arg_count: u32) -> Option<&'a [LbmValue]> {
     let len = usize::try_from(arg_count).ok()?;
     let args = NonNull::new(args.cast::<LbmValue>())?;
     Some(unsafe { core::slice::from_raw_parts(args.as_ptr().cast_const(), len) })

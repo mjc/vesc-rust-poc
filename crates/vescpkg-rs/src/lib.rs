@@ -50,8 +50,8 @@ pub use firmware::{
     AppDataCallback, CustomConfigCallback, CustomConfigGetBuffer, CustomConfigXmlOut, StopCallback,
     StopContext, app_data_callback, app_data_packet, arg_mut, arg_ref, clear_loader_info,
     config_xml_bytes, custom_config_get, custom_config_payload, custom_config_set,
-    custom_config_xml, firmware_array, install_loader_state, lbm_args, loader_info_mut,
-    loader_state_mut, register_custom_config_callback, stop_callback,
+    custom_config_xml, firmware_array, install_loader_state, loader_info_mut, loader_state_mut,
+    register_custom_config_callback, stop_callback,
 };
 pub use imu::{ImuApi, ImuBindings, ImuReadCallback, imu_read_callback};
 pub use init::{PackageStart, PackageStartStep, start_package};
