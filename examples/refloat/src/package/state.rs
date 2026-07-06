@@ -1,9 +1,5 @@
 use super::lifecycle::RefloatPackageLifecycle;
 use super::protocol::encode_refloat_realtime_data_response;
-use super::state_transition::{
-    RefloatStateTransitionInput, RefloatStopEvent, refloat_first_stop_event,
-    refloat_state_transition,
-};
 use super::threads::RefloatRuntimeThreads;
 use super::{refloat_ticks_elapsed, refloat_ticks_elapsed_f32, refloat_ticks_elapsed_ms};
 use crate::balance::{
@@ -34,6 +30,12 @@ use vescpkg_rs::{
 };
 
 mod handtest;
+mod transition;
+
+use transition::{
+    RefloatStateTransitionInput, RefloatStopEvent, refloat_first_stop_event,
+    refloat_state_transition,
+};
 
 /// Refloat package state.
 #[derive(Debug, Clone, Copy, PartialEq)]

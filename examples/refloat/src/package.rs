@@ -20,7 +20,6 @@ mod lifecycle;
 mod protocol;
 mod startup;
 mod state;
-mod state_transition;
 mod threads;
 
 pub use self::custom_config::register_refloat_custom_config;
