@@ -18,7 +18,7 @@ debug_sections:
   .debug_line: right_only size=23009 vma=0x0
   .debug_ranges: right_only size=6088 vma=0x0
   .debug_str: right_only size=22972 vma=0x0
-  .strtab: left size=286 vma=0x0 right size=6374 vma=0x0
+  .strtab: left size=286 vma=0x0 right size=6365 vma=0x0
   .symtab: left size=576 vma=0x0 right size=5360 vma=0x0
 contract_symbols:
   ext_rust_probe_diag_v4: left_only

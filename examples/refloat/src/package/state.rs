@@ -1,4 +1,3 @@
-use super::balance_filter::RefloatBalanceFilter;
 use super::lifecycle::RefloatPackageLifecycle;
 use super::protocol::encode_refloat_realtime_data_response;
 use super::state_transition::{
@@ -8,8 +7,8 @@ use super::state_transition::{
 use super::threads::RefloatRuntimeThreads;
 use super::{refloat_ticks_elapsed, refloat_ticks_elapsed_f32, refloat_ticks_elapsed_ms};
 use crate::balance::{
-    RefloatBalanceLoopConfig, RefloatBalanceLoopInput, RefloatBalanceLoopState,
-    refloat_balance_loop_step,
+    RefloatBalanceFilter, RefloatBalanceLoopConfig, RefloatBalanceLoopInput,
+    RefloatBalanceLoopState, refloat_balance_loop_step,
 };
 use crate::config::*;
 use crate::domain::{

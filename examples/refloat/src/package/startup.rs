@@ -9,7 +9,9 @@ use vescpkg_rs::CustomConfigBindings;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::PackageStart;
 #[cfg(any(test, target_arch = "arm"))]
-use vescpkg_rs::{AllocBindings, AppDataBindings, FirmwareAllocator, ffi};
+use vescpkg_rs::{AllocBindings, FirmwareAllocator};
+#[cfg(test)]
+use vescpkg_rs::{AppDataBindings, ffi};
 
 /// Install source-startup Refloat state without registering callbacks.
 ///

@@ -6,9 +6,11 @@
 //! `third_party/refloat/src/booster.c:32-75`, and pitch-rate input from
 //! `third_party/refloat/src/imu.c:43-53`.
 
+mod filter;
 mod step;
 mod types;
 
+pub(crate) use filter::RefloatBalanceFilter;
 pub(crate) use step::refloat_balance_loop_step;
 pub(crate) use types::{
     RefloatBalanceLoopConfig, RefloatBalanceLoopInput, RefloatBalanceLoopState,

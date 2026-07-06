@@ -1,6 +1,4 @@
 use crate::domain::RefloatRealtimeBalancePitch;
-#[cfg(all(not(test), target_arch = "arm"))]
-use vescpkg_rs::ImuBindings;
 use vescpkg_rs::prelude::AngleRadians;
 
 /// Refloat-owned balance filter state.
@@ -10,7 +8,7 @@ use vescpkg_rs::prelude::AngleRadians;
 /// updated from `imu_ref_callback` at `third_party/refloat/src/main.c:760-765`, and read by
 /// `imu_update` at `third_party/refloat/src/imu.c:35-41`.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct RefloatBalanceFilter {
+pub(crate) struct RefloatBalanceFilter {
     q0: f32,
     q1: f32,
     q2: f32,
@@ -22,7 +20,7 @@ pub(super) struct RefloatBalanceFilter {
 }
 
 impl RefloatBalanceFilter {
-    pub(super) const fn source_startup() -> Self {
+    pub(crate) const fn source_startup() -> Self {
         Self {
             q0: 1.0,
             q1: 0.0,
@@ -35,8 +33,8 @@ impl RefloatBalanceFilter {
         }
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(super) fn from_quaternions([q0, q1, q2, q3]: [f32; 4]) -> Self {
+    #[cfg(test)]
+    pub(crate) fn from_quaternions([q0, q1, q2, q3]: [f32; 4]) -> Self {
         Self {
             q0,
             q1,
@@ -46,12 +44,7 @@ impl RefloatBalanceFilter {
         }
     }
 
-    #[cfg(all(not(test), target_arch = "arm"))]
-    pub(super) fn from_firmware_quaternions() -> Self {
-        Self::from_quaternions(vescpkg_rs::RealImuBindings.quaternions())
-    }
-
-    pub(super) fn configure(&mut self, mahony_kp: f32, mahony_kp_roll: f32) {
+    pub(crate) fn configure(&mut self, mahony_kp: f32, mahony_kp_roll: f32) {
         // Refloat copies `mahony_kp`/`mahony_kp_roll` into the filter and
         // averages yaw KP at `third_party/refloat/src/balance_filter.c:64-70`.
         self.kp_pitch = mahony_kp;
@@ -60,7 +53,7 @@ impl RefloatBalanceFilter {
     }
 
     #[cfg(any(test, target_arch = "arm"))]
-    pub(super) fn update(&mut self, gyro: [f32; 3], accel: [f32; 3], dt: f32) {
+    pub(crate) fn update(&mut self, gyro: [f32; 3], accel: [f32; 3], dt: f32) {
         // Refloat's callback feeds gyro first, accel second at
         // `third_party/refloat/src/main.c:760-765`; the Mahony update itself is
         // `third_party/refloat/src/balance_filter.c:73-134`.
@@ -110,11 +103,11 @@ impl RefloatBalanceFilter {
         self.q3 *= recip_norm;
     }
 
-    pub(super) fn balance_pitch(&self) -> RefloatRealtimeBalancePitch {
+    pub(crate) fn balance_pitch(&self) -> RefloatRealtimeBalancePitch {
         RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(self.pitch_radians()))
     }
 
-    pub(super) fn pitch_radians(&self) -> f32 {
+    fn pitch_radians(&self) -> f32 {
         // Refloat computes pitch as `asin(-2 * (q1*q3 - q0*q2))`, clamped to
         // +/- pi/2, at `third_party/refloat/src/balance_filter.c:145-154`.
         let sin = -2.0 * (self.q1 * self.q3 - self.q0 * self.q2);

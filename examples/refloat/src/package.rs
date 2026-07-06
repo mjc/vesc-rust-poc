@@ -14,7 +14,6 @@
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::{AppDataBindings, ImuApi, ImuBindings, MotorTelemetryApi, MotorTelemetryBindings};
 
-mod balance_filter;
 mod custom_config;
 mod imu_callback;
 mod lifecycle;
