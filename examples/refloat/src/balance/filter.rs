@@ -224,11 +224,13 @@ impl RefloatQuaternion {
     fn delta_from_gyro(self, gyro_half_step: RefloatGyroHalfStep) -> RefloatQuaternionDelta {
         let [q0, q1, q2, q3] = self.0;
         let [gx, gy, gz] = gyro_half_step.0;
+        let vector_dot_gyro = q1 * gx + q2 * gy + q3 * gz;
+        let vector_cross_gyro = [q2 * gz - q3 * gy, q3 * gx - q1 * gz, q1 * gy - q2 * gx];
         RefloatQuaternionDelta([
-            -q1 * gx - q2 * gy - q3 * gz,
-            q0 * gx + q2 * gz - q3 * gy,
-            q0 * gy - q1 * gz + q3 * gx,
-            q0 * gz + q1 * gy - q2 * gx,
+            -vector_dot_gyro,
+            q0 * gx + vector_cross_gyro[0],
+            q0 * gy + vector_cross_gyro[1],
+            q0 * gz + vector_cross_gyro[2],
         ])
     }
 }
