@@ -284,8 +284,8 @@ impl<B: ThreadBindings> ThreadApi<B> {
     /// Spawn two firmware package threads sharing typed package state.
     pub fn spawn_pair_with_state<S>(
         &self,
-        first: FirmwareThreadSpec<S>,
-        second: FirmwareThreadSpec<S>,
+        first: &FirmwareThreadSpec<S>,
+        second: &FirmwareThreadSpec<S>,
         state: &mut S,
     ) -> Option<FirmwareThreadPair> {
         let FirmwareThreadSpec {

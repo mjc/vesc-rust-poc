@@ -111,11 +111,11 @@ pub(crate) fn start_refloat_runtime_threads_with<B: ThreadBindings>(
     let main_thread = RefloatRuntimeThread::Main;
     let aux_thread = RefloatRuntimeThread::Aux;
     let Some(runtime_threads) = threads.spawn_pair_with_state(
-        vescpkg_rs::FirmwareThreadSpec::<RefloatPackageState>::new::<RefloatMainThread>(
+        &vescpkg_rs::FirmwareThreadSpec::<RefloatPackageState>::new::<RefloatMainThread>(
             main_thread.stack_bytes(),
             main_thread.name(),
         ),
-        vescpkg_rs::FirmwareThreadSpec::<RefloatPackageState>::new::<RefloatAuxThread>(
+        &vescpkg_rs::FirmwareThreadSpec::<RefloatPackageState>::new::<RefloatAuxThread>(
             aux_thread.stack_bytes(),
             aux_thread.name(),
         ),
