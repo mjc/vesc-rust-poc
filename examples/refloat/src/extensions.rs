@@ -5,33 +5,59 @@
 //! both names in `src/main.c:2458-2459`. The Lisp loader calls them immediately
 //! after native load in `lisp/package.lisp:4-17`.
 
+#[cfg(any(test, target_arch = "arm"))]
 use core::ffi::CStr;
 use core::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
+#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::ffi;
-
-const EXT_SET_FW_VERSION_NAME: &CStr = c"ext-set-fw-version";
-const EXT_BMS_NAME: &CStr = c"ext-bms";
-const PACKAGE_EXTENSION_COUNT: usize = 2;
 
 static FW_VERSION_MAJOR: AtomicI32 = AtomicI32::new(0);
 static FW_VERSION_MINOR: AtomicI32 = AtomicI32::new(0);
 static FW_VERSION_BETA: AtomicI32 = AtomicI32::new(0);
 static FW_VERSION_RECORDED: AtomicBool = AtomicBool::new(false);
 
-/// Extension names exported by the Refloat package loader.
-pub const PACKAGE_EXTENSION_NAMES: [&CStr; PACKAGE_EXTENSION_COUNT] =
-    [EXT_SET_FW_VERSION_NAME, EXT_BMS_NAME];
+#[cfg(any(test, target_arch = "arm"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RefloatLoaderExtension {
+    SetFwVersion,
+    Bms,
+}
 
-const _: () = assert!(PACKAGE_EXTENSION_COUNT == 2);
+#[cfg(any(test, target_arch = "arm"))]
+impl RefloatLoaderExtension {
+    const ALL: [Self; 2] = [Self::SetFwVersion, Self::Bms];
+
+    fn name(self) -> &'static CStr {
+        match self {
+            Self::SetFwVersion => c"ext-set-fw-version",
+            Self::Bms => c"ext-bms",
+        }
+    }
+
+    fn descriptor(self) -> ffi::ExtensionDescriptor {
+        match self {
+            Self::SetFwVersion => ffi::ExtensionDescriptor::new(
+                self.name(),
+                vescpkg_rs::lbm_extension_handler::<ExtSetFwVersion>,
+            ),
+            Self::Bms => ffi::ExtensionDescriptor::new(
+                self.name(),
+                vescpkg_rs::lbm_extension_handler::<ExtBms>,
+            ),
+        }
+    }
+}
 
 /// Called from Refloat's Lisp loader to pass firmware version components.
 ///
 /// Upstream stores these components into `Data` at `src/main.c:2305-2311`.
 /// The loader-only Rust candidate has no upstream `Data` allocation/`ARG`
 /// install from `src/main.c:2419-2432`, so it stores only this narrow state.
+#[cfg(any(test, target_arch = "arm"))]
 struct ExtSetFwVersion;
 
+#[cfg(any(test, target_arch = "arm"))]
 impl vescpkg_rs::LbmExtension for ExtSetFwVersion {
     fn call(args: vescpkg_rs::LbmExtensionArgs<'_>) -> ffi::LbmValue {
         if args.values().len() > 2 {
@@ -56,6 +82,7 @@ impl RefloatFirmwareVersion {
     }
 }
 
+#[cfg(any(test, target_arch = "arm"))]
 fn record_refloat_firmware_version(
     args: &[ffi::LbmValue],
     decode_i32: impl Fn(ffi::LbmValue) -> i32,
@@ -100,8 +127,10 @@ fn reset_refloat_firmware_version() {
 /// Upstream returns `d->float_conf.bms.enabled` at `src/main.c:2319-2331`; this
 /// is an intentional containment divergence while the upstream EEPROM-backed
 /// `Data.float_conf` state from `src/main.c:1190-1194` is not installed.
+#[cfg(any(test, target_arch = "arm"))]
 struct ExtBms;
 
+#[cfg(any(test, target_arch = "arm"))]
 impl vescpkg_rs::LbmExtension for ExtBms {
     fn call(args: vescpkg_rs::LbmExtensionArgs<'_>) -> ffi::LbmValue {
         args.nil_value()
@@ -109,14 +138,11 @@ impl vescpkg_rs::LbmExtension for ExtBms {
 }
 
 /// Return the native extension descriptors required by upstream `package.lisp`.
-pub fn package_extension_descriptors() -> [ffi::ExtensionDescriptor; PACKAGE_EXTENSION_COUNT] {
-    [
-        ffi::ExtensionDescriptor::new(
-            EXT_SET_FW_VERSION_NAME,
-            vescpkg_rs::lbm_extension_handler::<ExtSetFwVersion>,
-        ),
-        ffi::ExtensionDescriptor::new(EXT_BMS_NAME, vescpkg_rs::lbm_extension_handler::<ExtBms>),
-    ]
+#[cfg(any(test, target_arch = "arm"))]
+fn package_extension_descriptors() -> impl ExactSizeIterator<Item = ffi::ExtensionDescriptor> {
+    RefloatLoaderExtension::ALL
+        .into_iter()
+        .map(RefloatLoaderExtension::descriptor)
 }
 
 /// Register Refloat's loader extensions with runtime names and handlers.
@@ -133,9 +159,9 @@ pub fn register_refloat_loader_extensions(start: &mut vescpkg_rs::PackageStart) 
 #[cfg(test)]
 mod tests {
     use super::{
-        EXT_BMS_NAME, EXT_SET_FW_VERSION_NAME, PACKAGE_EXTENSION_NAMES, RefloatFirmwareVersion,
-        package_extension_descriptors, record_refloat_firmware_version,
-        recorded_refloat_firmware_version, reset_refloat_firmware_version,
+        RefloatFirmwareVersion, RefloatLoaderExtension, package_extension_descriptors,
+        record_refloat_firmware_version, recorded_refloat_firmware_version,
+        reset_refloat_firmware_version,
     };
     use core::cell::Cell;
     use core::ffi::{CStr, c_char};
@@ -144,14 +170,20 @@ mod tests {
 
     #[test]
     fn extension_table_lists_official_refloat_loader_extensions() {
-        let descriptors = package_extension_descriptors();
+        let mut descriptors = package_extension_descriptors();
+        let names = RefloatLoaderExtension::ALL.map(RefloatLoaderExtension::name);
 
+        assert_eq!(names, [c"ext-set-fw-version", c"ext-bms"]);
+        assert_eq!(descriptors.len(), names.len());
         assert_eq!(
-            PACKAGE_EXTENSION_NAMES,
-            [EXT_SET_FW_VERSION_NAME, EXT_BMS_NAME]
+            descriptors.next().map(|descriptor| descriptor.name()),
+            Some(names[0])
         );
-        assert_eq!(descriptors[0].name(), EXT_SET_FW_VERSION_NAME);
-        assert_eq!(descriptors[1].name(), EXT_BMS_NAME);
+        assert_eq!(
+            descriptors.next().map(|descriptor| descriptor.name()),
+            Some(names[1])
+        );
+        assert!(descriptors.next().is_none());
     }
 
     #[test]
@@ -163,9 +195,10 @@ mod tests {
         }
 
         let bindings = lifecycle.bindings();
-        assert_eq!(bindings.add_calls.get(), 2);
-        assert_eq!(bindings.name(0), EXT_SET_FW_VERSION_NAME);
-        assert_eq!(bindings.name(1), EXT_BMS_NAME);
+        let names = RefloatLoaderExtension::ALL.map(RefloatLoaderExtension::name);
+        assert_eq!(bindings.add_calls.get(), RefloatLoaderExtension::ALL.len());
+        assert_eq!(bindings.name(0), names[0]);
+        assert_eq!(bindings.name(1), names[1]);
     }
 
     #[test]

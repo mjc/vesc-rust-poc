@@ -18,17 +18,35 @@ use vescpkg_rs::{
 use core::ffi::CStr;
 
 #[cfg(any(test, target_arch = "arm"))]
-const REFLOAT_MAIN_THREAD_STACK_BYTES: usize = 4096;
-#[cfg(any(test, target_arch = "arm"))]
-const REFLOAT_AUX_THREAD_STACK_BYTES: usize = 1024;
-#[cfg(any(test, target_arch = "arm"))]
-const REFLOAT_MAIN_THREAD_NAME: &CStr = c"Refloat Main";
-#[cfg(any(test, target_arch = "arm"))]
-const REFLOAT_AUX_THREAD_NAME: &CStr = c"Refloat Aux";
-#[cfg(any(test, target_arch = "arm"))]
 const REFLOAT_LEDS_REFRESH_RATE_HZ: u32 = 30;
 #[cfg(any(test, target_arch = "arm"))]
 const REFLOAT_AUX_LOOP_TIME_US: u32 = 1_000_000 / REFLOAT_LEDS_REFRESH_RATE_HZ;
+
+#[cfg(any(test, target_arch = "arm"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RefloatRuntimeThread {
+    Main,
+    Aux,
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+impl RefloatRuntimeThread {
+    const ALL: [Self; 2] = [Self::Main, Self::Aux];
+
+    const fn stack_bytes(self) -> usize {
+        match self {
+            Self::Main => 4096,
+            Self::Aux => 1024,
+        }
+    }
+
+    fn name(self) -> &'static CStr {
+        match self {
+            Self::Main => c"Refloat Main",
+            Self::Aux => c"Refloat Aux",
+        }
+    }
+}
 
 /// Refloat runtime thread handles owned by package state.
 ///
@@ -90,14 +108,16 @@ pub(crate) fn start_refloat_runtime_threads_with<B: ThreadBindings>(
     threads: &ThreadApi<B>,
     state: &mut RefloatPackageState,
 ) -> bool {
+    let main_thread = RefloatRuntimeThread::Main;
+    let aux_thread = RefloatRuntimeThread::Aux;
     let Some(runtime_threads) = threads.spawn_pair_with_state(
         vescpkg_rs::FirmwareThreadSpec::<RefloatPackageState>::new::<RefloatMainThread>(
-            REFLOAT_MAIN_THREAD_STACK_BYTES,
-            REFLOAT_MAIN_THREAD_NAME,
+            main_thread.stack_bytes(),
+            main_thread.name(),
         ),
         vescpkg_rs::FirmwareThreadSpec::<RefloatPackageState>::new::<RefloatAuxThread>(
-            REFLOAT_AUX_THREAD_STACK_BYTES,
-            REFLOAT_AUX_THREAD_NAME,
+            aux_thread.stack_bytes(),
+            aux_thread.name(),
         ),
         state,
     ) else {
@@ -300,14 +320,17 @@ mod tests {
         ));
 
         assert_eq!(bindings.spawn_calls.get(), 2);
-        assert_eq!(bindings.spawn_stacks.get(), [4096, 1024]);
+        let runtime_threads = super::RefloatRuntimeThread::ALL;
         assert_eq!(
-            unsafe { CStr::from_ptr(bindings.spawn_names.get()[0].cast()) },
-            c"Refloat Main",
+            runtime_threads.map(super::RefloatRuntimeThread::stack_bytes),
+            bindings.spawn_stacks.get()
         );
         assert_eq!(
-            unsafe { CStr::from_ptr(bindings.spawn_names.get()[1].cast()) },
-            c"Refloat Aux",
+            runtime_threads.map(super::RefloatRuntimeThread::name),
+            [
+                unsafe { CStr::from_ptr(bindings.spawn_names.get()[0].cast()) },
+                unsafe { CStr::from_ptr(bindings.spawn_names.get()[1].cast()) },
+            ]
         );
         let state_arg = core::ptr::from_mut(&mut state).cast::<core::ffi::c_void>() as usize;
         assert_eq!(bindings.spawn_args.get(), [state_arg, state_arg]);
