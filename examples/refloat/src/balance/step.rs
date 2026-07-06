@@ -86,6 +86,7 @@ impl RefloatCurrentLimitMagnitude {
     #[inline(always)]
     fn clamp(self, current: MotorCurrent) -> MotorCurrent {
         match current.current().as_amps() {
+            // Limit is a positive magnitude; preserve the command sign while clamping.
             amps if self.is_enabled() && amps.abs() > self.as_amps() => {
                 refloat_motor_current(self.as_amps() * amps.signum())
             }
@@ -159,6 +160,7 @@ pub(crate) fn refloat_pitch_rate(
     let roll_radians = roll.angle().as_radians();
     let sin_roll = libm::sinf(roll_radians);
     let cos_roll = libm::cosf(roll_radians);
+    // Project pitch/yaw gyro onto board pitch rate after roll correction.
     let pitch_rate = gyro_pitch * (cos_roll * cos_roll) + gyro_yaw * (sin_roll * cos_roll);
 
     RefloatPitchRate::from_roll_corrected(pitch_rate, darkride)
@@ -343,6 +345,7 @@ impl RefloatBoosterProfile {
         let proportional_degrees = proportional.angle().as_degrees();
         let past_start_angle_degrees = proportional_degrees.abs() - self.angle.as_degrees();
 
+        // Booster is a deadband, then a linear ramp, then saturated current.
         match past_start_angle_degrees {
             degrees if degrees <= 0.0 => refloat_motor_current(0.0),
             degrees if degrees < self.ramp.as_degrees() => {
@@ -361,6 +364,7 @@ struct RefloatPitchBasedCurrent {
 
 #[inline(always)]
 fn refloat_smooth_pid_scale(target: f32, current: f32) -> f32 {
+    // Upstream one-pole filter: move 1% toward the target per tick.
     0.01 * target + 0.99 * current
 }
 
@@ -405,6 +409,8 @@ fn refloat_rate_p_current(
     accel_scale: f32,
     brake_scale: f32,
 ) -> MotorCurrent {
+    // Damping current opposes pitch rate; choose accel/brake scale from the
+    // resulting current sign, not from pitch-rate sign directly.
     let rate_p = refloat_motor_current(-pitch_rate.rate().as_degrees_per_second() * kp2);
     let scale = RefloatPidScaleSide::from_current(rate_p).scale(accel_scale, brake_scale);
 
@@ -416,6 +422,7 @@ fn refloat_booster_speed_stiffness(motor_erpm: ElectricalSpeed) -> f32 {
     let abs_erpm = refloat_electrical_rpm(motor_erpm)
         .as_revolutions_per_minute()
         .abs();
+    // No stiffness below 3000 ERPM; linearly reaches full stiffness 10000 ERPM later.
     ((abs_erpm - 3000.0) / 10000.0).clamp(0.0, 1.0)
 }
 
@@ -440,6 +447,7 @@ fn refloat_booster_target_current(
 /// `third_party/refloat/src/booster.c:74-75`.
 #[inline(always)]
 fn refloat_filter_booster_current(target: MotorCurrent, previous: MotorCurrent) -> MotorCurrent {
+    // Same 1% one-pole filter shape as PID scale smoothing.
     target * 0.01 + previous * 0.99
 }
 
@@ -457,12 +465,14 @@ fn refloat_pitch_based_current(
     if softstart_pid_limit < motor_current_max {
         let pitch_based_amps = pitch_based.current().as_amps();
         RefloatPitchBasedCurrent {
+            // Soft-start clamps magnitude only; sign remains the requested direction.
             current: refloat_motor_current(
                 pitch_based_amps.signum()
                     * pitch_based_amps
                         .abs()
                         .min(softstart_pid_limit.current().as_amps()),
             ),
+            // Upstream advances the soft-start current limit at 100 A/s.
             softstart_pid_limit: softstart_pid_limit
                 + refloat_motor_current(100.0 / hertz.as_hertz().max(1.0)),
         }
@@ -520,6 +530,7 @@ fn refloat_next_balance_current(
     if traction_control {
         refloat_motor_current(0.0)
     } else {
+        // RUNNING output current is a faster one-pole filter: 20% new request.
         previous * 0.8 + requested * 0.2
     }
 }
@@ -919,6 +930,32 @@ mod tests {
         // `booster_update` at `third_party/refloat/src/main.c:921-922`.
         assert_current_amps(output.state.booster_current, 0.0);
         assert_current_amps(output.requested_current, 0.0);
+    }
+
+    #[test]
+    fn booster_profile_deadbands_ramps_and_saturates_like_refloat_booster() {
+        let profile = RefloatBoosterProfile {
+            current: current(20.0),
+            angle: angle(1.0),
+            ramp: angle(2.0),
+        };
+
+        assert_current_amps(
+            profile.target_current(RefloatBoosterProportional::new(angle(0.5))),
+            0.0,
+        );
+        assert_current_amps(
+            profile.target_current(RefloatBoosterProportional::new(angle(2.0))),
+            10.0,
+        );
+        assert_current_amps(
+            profile.target_current(RefloatBoosterProportional::new(angle(-2.0))),
+            -10.0,
+        );
+        assert_current_amps(
+            profile.target_current(RefloatBoosterProportional::new(angle(4.0))),
+            20.0,
+        );
     }
 
     #[test]

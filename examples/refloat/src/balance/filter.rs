@@ -73,6 +73,8 @@ impl RefloatBalanceFilter {
     }
 
     fn pitch_sin(&self) -> f32 {
+        // Quaternion (q0, q1, q2, q3) is (w, x, y, z). This is the
+        // orientation projection that upstream feeds to `asin` for pitch.
         -2.0 * (self.q1 * self.q3 - self.q0 * self.q2)
     }
 
@@ -88,6 +90,8 @@ impl RefloatBalanceFilter {
         let confidence = self.accel_confidence(accel_norm);
         let [halfex, halfey, halfez] = self.accel_error(accel);
 
+        // Mahony proportional feedback: measured-vs-estimated gravity error,
+        // scaled by accelerometer confidence and per-axis KP, corrects gyro.
         [
             gx + 2.0 * self.kp_roll * confidence * halfex,
             gy + 2.0 * self.kp_pitch * confidence * halfey,
@@ -99,6 +103,8 @@ impl RefloatBalanceFilter {
     fn normalized_accel([ax, ay, az]: [f32; 3]) -> Option<(f32, [f32; 3])> {
         let accel_norm = libm::sqrtf(ax * ax + ay * ay + az * az);
         match accel_norm {
+            // Below this threshold upstream treats the accelerometer sample as
+            // unusable and leaves the gyro uncorrected for this tick.
             norm if norm > 0.01 => {
                 let recip_norm = Self::inv_sqrt(ax * ax + ay * ay + az * az);
                 Some((norm, [ax * recip_norm, ay * recip_norm, az * recip_norm]))
@@ -109,10 +115,12 @@ impl RefloatBalanceFilter {
 
     #[cfg(any(test, target_arch = "arm"))]
     fn accel_error(&self, [ax, ay, az]: [f32; 3]) -> [f32; 3] {
+        // Estimated gravity half-vector from the current quaternion.
         let halfvx = self.q1 * self.q3 - self.q0 * self.q2;
         let halfvy = self.q0 * self.q1 + self.q2 * self.q3;
         let halfvz = self.q0 * self.q0 - 0.5 + self.q3 * self.q3;
 
+        // Cross measured gravity (accelerometer) against estimated gravity.
         [
             ay * halfvz - az * halfvy,
             az * halfvx - ax * halfvz,
@@ -122,9 +130,11 @@ impl RefloatBalanceFilter {
 
     #[cfg(any(test, target_arch = "arm"))]
     fn integrate_gyro(&mut self, [gx, gy, gz]: [f32; 3], dt: f32) {
+        // Quaternion derivative uses half angular displacement over this tick.
         let [gx, gy, gz] = [gx * 0.5 * dt, gy * 0.5 * dt, gz * 0.5 * dt];
         let [q0, q1, q2, q3] = [self.q0, self.q1, self.q2, self.q3];
 
+        // Integrate q_dot = 0.5 * q * gyro, preserving upstream component order.
         self.q0 += -q1 * gx - q2 * gy - q3 * gz;
         self.q1 += q0 * gx + q2 * gz - q3 * gy;
         self.q2 += q0 * gy - q1 * gz + q3 * gx;
@@ -133,6 +143,7 @@ impl RefloatBalanceFilter {
 
     #[cfg(any(test, target_arch = "arm"))]
     fn normalize_quaternion(&mut self) {
+        // Keep the integrated orientation on the unit-quaternion sphere.
         let recip_norm = Self::inv_sqrt(
             self.q0 * self.q0 + self.q1 * self.q1 + self.q2 * self.q2 + self.q3 * self.q3,
         );
@@ -196,5 +207,34 @@ mod tests {
         assert_eq!(filter.kp_pitch, 4.0);
         assert_eq!(filter.kp_roll, 2.0);
         assert_eq!(filter.kp_yaw, 3.0);
+    }
+
+    #[test]
+    fn balance_filter_normalizes_accel_before_correction_like_refloat() {
+        let (_, unit) = RefloatBalanceFilter::normalized_accel([0.0, 0.0, 2.0])
+            .expect("nonzero accel normalizes");
+
+        assert_eq!(unit, [0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn balance_filter_skips_accel_correction_for_tiny_sample_like_refloat() {
+        let mut filter = RefloatBalanceFilter::source_startup();
+
+        let gyro = filter.gyro_with_accel_correction([1.0, 2.0, 3.0], [0.0, 0.0, 0.005]);
+
+        assert_eq!(gyro, [1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn balance_filter_integrates_gyro_components_like_refloat() {
+        let mut filter = RefloatBalanceFilter::from_quaternions([1.0, 2.0, 3.0, 4.0]);
+
+        filter.integrate_gyro([0.2, 0.4, 0.6], 0.5);
+
+        assert!((filter.q0 - 0.0).abs() < 0.000001);
+        assert!((filter.q1 - 2.1).abs() < 0.000001);
+        assert!((filter.q2 - 3.0).abs() < 0.000001);
+        assert!((filter.q3 - 4.2).abs() < 0.000001);
     }
 }
