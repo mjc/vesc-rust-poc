@@ -1,4 +1,6 @@
 use crate::domain::RefloatRealtimeBalancePitch;
+#[cfg(any(test, target_arch = "arm"))]
+use core::marker::PhantomData;
 use vescpkg_rs::prelude::AngleRadians;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{
@@ -11,6 +13,19 @@ use vescpkg_rs::prelude::{
 fn refloat_inv_sqrt(value: f32) -> f32 {
     // Refloat uses `1.0 / sqrtf(x)` at `third_party/refloat/src/balance_filter.c:38-40`.
     1.0 / libm::sqrtf(value)
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+struct AxisScalar<Tag>(f32, PhantomData<fn() -> Tag>);
+
+#[cfg(any(test, target_arch = "arm"))]
+impl<Tag> AxisScalar<Tag> {
+    #[inline(always)]
+    const fn new(value: f32) -> Self {
+        Self(value, PhantomData)
+    }
 }
 
 #[cfg(any(test, target_arch = "arm"))]
@@ -34,6 +49,20 @@ struct RefloatGravityError([f32; 3]);
 struct RefloatAccelConfidence(f32);
 
 #[cfg(any(test, target_arch = "arm"))]
+enum RollGravityErrorTag {}
+#[cfg(any(test, target_arch = "arm"))]
+enum PitchGravityErrorTag {}
+#[cfg(any(test, target_arch = "arm"))]
+enum YawGravityErrorTag {}
+
+#[cfg(any(test, target_arch = "arm"))]
+type RollGravityError = AxisScalar<RollGravityErrorTag>;
+#[cfg(any(test, target_arch = "arm"))]
+type PitchGravityError = AxisScalar<PitchGravityErrorTag>;
+#[cfg(any(test, target_arch = "arm"))]
+type YawGravityError = AxisScalar<YawGravityErrorTag>;
+
+#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct RefloatFeedbackGains {
     roll: f32,
@@ -42,16 +71,42 @@ struct RefloatFeedbackGains {
 }
 
 #[cfg(any(test, target_arch = "arm"))]
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct RefloatGyroRate([f32; 3]);
+enum RollAngularRateTag {}
+#[cfg(any(test, target_arch = "arm"))]
+enum PitchAngularRateTag {}
+#[cfg(any(test, target_arch = "arm"))]
+enum YawAngularRateTag {}
+#[cfg(any(test, target_arch = "arm"))]
+enum RollAngularHalfStepTag {}
+#[cfg(any(test, target_arch = "arm"))]
+enum PitchAngularHalfStepTag {}
+#[cfg(any(test, target_arch = "arm"))]
+enum YawAngularHalfStepTag {}
+
+#[cfg(any(test, target_arch = "arm"))]
+type RollAngularRate = AxisScalar<RollAngularRateTag>;
+#[cfg(any(test, target_arch = "arm"))]
+type PitchAngularRate = AxisScalar<PitchAngularRateTag>;
+#[cfg(any(test, target_arch = "arm"))]
+type YawAngularRate = AxisScalar<YawAngularRateTag>;
+#[cfg(any(test, target_arch = "arm"))]
+type RollAngularHalfStep = AxisScalar<RollAngularHalfStepTag>;
+#[cfg(any(test, target_arch = "arm"))]
+type PitchAngularHalfStep = AxisScalar<PitchAngularHalfStepTag>;
+#[cfg(any(test, target_arch = "arm"))]
+type YawAngularHalfStep = AxisScalar<YawAngularHalfStepTag>;
 
 #[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct RefloatCorrectedGyroRate([f32; 3]);
+struct MeasuredAngularRate([f32; 3]);
 
 #[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct RefloatGyroHalfStep([f32; 3]);
+struct CorrectedAngularRate([f32; 3]);
+
+#[cfg(any(test, target_arch = "arm"))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct AngularRateHalfStep([f32; 3]);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct RefloatQuaternion([f32; 4]);
@@ -115,22 +170,14 @@ impl MeasuredGravity {
     fn error_against(self, estimated_gravity: RefloatHalfGravity) -> RefloatGravityError {
         let [x, y, z] = self.0;
         let [rhs_x, rhs_y, rhs_z] = estimated_gravity.0;
-        RefloatGravityError([
-            y * rhs_z - z * rhs_y,
-            z * rhs_x - x * rhs_z,
-            x * rhs_y - y * rhs_x,
-        ])
+        RefloatGravityError::new(
+            RollGravityError::new(y * rhs_z - z * rhs_y),
+            PitchGravityError::new(z * rhs_x - x * rhs_z),
+            YawGravityError::new(x * rhs_y - y * rhs_x),
+        )
     }
 
     #[cfg(test)]
-    const fn xyz(self) -> [f32; 3] {
-        self.0
-    }
-}
-
-#[cfg(any(test, target_arch = "arm"))]
-impl RefloatGravityError {
-    #[inline(always)]
     const fn xyz(self) -> [f32; 3] {
         self.0
     }
@@ -145,10 +192,23 @@ impl RefloatAccelConfidence {
 }
 
 #[cfg(any(test, target_arch = "arm"))]
-impl RefloatGyroRate {
+impl RefloatGravityError {
     #[inline(always)]
-    const fn new(xyz: [f32; 3]) -> Self {
-        Self(xyz)
+    const fn new(roll: RollGravityError, pitch: PitchGravityError, yaw: YawGravityError) -> Self {
+        Self([roll.0, pitch.0, yaw.0])
+    }
+
+    #[inline(always)]
+    const fn xyz(self) -> [f32; 3] {
+        self.0
+    }
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+impl MeasuredAngularRate {
+    #[inline(always)]
+    const fn new(roll: RollAngularRate, pitch: PitchAngularRate, yaw: YawAngularRate) -> Self {
+        Self([roll.0, pitch.0, yaw.0])
     }
 
     fn from_axes(
@@ -156,16 +216,16 @@ impl RefloatGyroRate {
         pitch: ImuAngularRatePitch,
         yaw: ImuAngularRateYaw,
     ) -> Self {
-        Self::new([
-            roll.angular_velocity().as_degrees_per_second(),
-            pitch.angular_velocity().as_degrees_per_second(),
-            yaw.angular_velocity().as_degrees_per_second(),
-        ])
+        Self::new(
+            RollAngularRate::new(roll.angular_velocity().as_degrees_per_second()),
+            PitchAngularRate::new(pitch.angular_velocity().as_degrees_per_second()),
+            YawAngularRate::new(yaw.angular_velocity().as_degrees_per_second()),
+        )
     }
 
     #[inline(always)]
-    const fn without_accel_feedback(self) -> RefloatCorrectedGyroRate {
-        RefloatCorrectedGyroRate(self.0)
+    const fn without_accel_feedback(self) -> CorrectedAngularRate {
+        CorrectedAngularRate(self.0)
     }
 
     /// C map: `third_party/refloat/src/balance_filter.c:107-111`.
@@ -174,19 +234,19 @@ impl RefloatGyroRate {
         self,
         error: RefloatGravityError,
         gains: RefloatFeedbackGains,
-    ) -> RefloatCorrectedGyroRate {
-        let [gx, gy, gz] = self.0;
-        let [halfex, halfey, halfez] = error.xyz();
-        RefloatCorrectedGyroRate([
-            gx + gains.roll * halfex,
-            gy + gains.pitch * halfey,
-            gz + gains.yaw * halfez,
+    ) -> CorrectedAngularRate {
+        let [roll_rate, pitch_rate, yaw_rate] = self.0;
+        let [roll_error, pitch_error, yaw_error] = error.xyz();
+        CorrectedAngularRate([
+            roll_rate + gains.roll * roll_error,
+            pitch_rate + gains.pitch * pitch_error,
+            yaw_rate + gains.yaw * yaw_error,
         ])
     }
 }
 
 #[cfg(any(test, target_arch = "arm"))]
-impl From<ImuAngularRate> for RefloatGyroRate {
+impl From<ImuAngularRate> for MeasuredAngularRate {
     #[inline(always)]
     fn from(angular_rate: ImuAngularRate) -> Self {
         angular_rate.map_axes(Self::from_axes)
@@ -194,22 +254,38 @@ impl From<ImuAngularRate> for RefloatGyroRate {
 }
 
 #[cfg(any(test, target_arch = "arm"))]
-impl RefloatCorrectedGyroRate {
+impl CorrectedAngularRate {
     #[cfg(test)]
-    const fn new(xyz: [f32; 3]) -> Self {
-        Self(xyz)
+    const fn new(roll: RollAngularRate, pitch: PitchAngularRate, yaw: YawAngularRate) -> Self {
+        Self([roll.0, pitch.0, yaw.0])
     }
 
     /// C map: `third_party/refloat/src/balance_filter.c:114-117`.
     #[inline(always)]
-    fn half_step(self, dt: f32) -> RefloatGyroHalfStep {
-        let [gx, gy, gz] = self.0;
-        RefloatGyroHalfStep([gx * 0.5 * dt, gy * 0.5 * dt, gz * 0.5 * dt])
+    fn half_step(self, dt: f32) -> AngularRateHalfStep {
+        let [roll_rate, pitch_rate, yaw_rate] = self.0;
+        AngularRateHalfStep::new(
+            RollAngularHalfStep::new(roll_rate * 0.5 * dt),
+            PitchAngularHalfStep::new(pitch_rate * 0.5 * dt),
+            YawAngularHalfStep::new(yaw_rate * 0.5 * dt),
+        )
     }
 
     #[cfg(test)]
     const fn xyz(self) -> [f32; 3] {
         self.0
+    }
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+impl AngularRateHalfStep {
+    #[inline(always)]
+    const fn new(
+        roll: RollAngularHalfStep,
+        pitch: PitchAngularHalfStep,
+        yaw: YawAngularHalfStep,
+    ) -> Self {
+        Self([roll.0, pitch.0, yaw.0])
     }
 }
 
@@ -248,7 +324,7 @@ impl RefloatQuaternion {
     /// C map: `third_party/refloat/src/balance_filter.c:118-124`.
     #[cfg(any(test, target_arch = "arm"))]
     #[inline(always)]
-    fn delta_from_gyro(self, gyro_half_step: RefloatGyroHalfStep) -> RefloatQuaternionDelta {
+    fn delta_from_gyro(self, gyro_half_step: AngularRateHalfStep) -> RefloatQuaternionDelta {
         let [q0, q1, q2, q3] = self.0;
         let [gx, gy, gz] = gyro_half_step.0;
         let vector_dot_gyro = q1 * gx + q2 * gy + q3 * gz;
@@ -361,9 +437,9 @@ impl RefloatBalanceFilter {
     #[cfg(any(test, target_arch = "arm"))]
     fn gyro_with_accel_correction(
         &mut self,
-        gyro: RefloatGyroRate,
+        gyro: MeasuredAngularRate,
         acceleration: ImuAcceleration,
-    ) -> RefloatCorrectedGyroRate {
+    ) -> CorrectedAngularRate {
         let Some((accel_norm, measured_gravity)) = Self::measured_gravity(acceleration) else {
             return gyro.without_accel_feedback();
         };
@@ -397,7 +473,7 @@ impl RefloatBalanceFilter {
     }
 
     #[cfg(any(test, target_arch = "arm"))]
-    fn integrate_gyro(&mut self, gyro: RefloatCorrectedGyroRate, dt: f32) {
+    fn integrate_gyro(&mut self, gyro: CorrectedAngularRate, dt: f32) {
         // C map: `third_party/refloat/src/balance_filter.c:114-117`
         // pre-multiplies gyro by half the tick duration.
         let gyro_half_step = gyro.half_step(dt);
@@ -443,7 +519,10 @@ impl RefloatBalanceFilter {
 
 #[cfg(test)]
 mod tests {
-    use super::{RefloatBalanceFilter, RefloatCorrectedGyroRate, RefloatGyroRate};
+    use super::{
+        CorrectedAngularRate, MeasuredAngularRate, PitchAngularRate, RefloatBalanceFilter,
+        RollAngularRate, YawAngularRate,
+    };
     use vescpkg_rs::prelude::{
         AccelerationG, AngularVelocity, ImuAcceleration, ImuAccelerationX, ImuAccelerationY,
         ImuAccelerationZ, ImuAngularRate, ImuAngularRatePitch, ImuAngularRateRoll,
@@ -532,7 +611,11 @@ mod tests {
         let mut filter = RefloatBalanceFilter::source_startup();
 
         let gyro = filter.gyro_with_accel_correction(
-            RefloatGyroRate::new([1.0, 2.0, 3.0]),
+            MeasuredAngularRate::new(
+                RollAngularRate::new(1.0),
+                PitchAngularRate::new(2.0),
+                YawAngularRate::new(3.0),
+            ),
             imu_acceleration(0.0, 0.0, 0.005),
         );
 
@@ -544,7 +627,11 @@ mod tests {
         let mut filter = RefloatBalanceFilter::source_startup();
 
         let gyro = filter.gyro_with_accel_correction(
-            RefloatGyroRate::new([1.0, 2.0, 3.0]),
+            MeasuredAngularRate::new(
+                RollAngularRate::new(1.0),
+                PitchAngularRate::new(2.0),
+                YawAngularRate::new(3.0),
+            ),
             imu_acceleration(0.0, 1.0, 0.0),
         );
 
@@ -558,7 +645,14 @@ mod tests {
     fn balance_filter_integrates_gyro_components_like_refloat() {
         let mut filter = RefloatBalanceFilter::from_quaternions([1.0, 2.0, 3.0, 4.0]);
 
-        filter.integrate_gyro(RefloatCorrectedGyroRate::new([0.2, 0.4, 0.6]), 0.5);
+        filter.integrate_gyro(
+            CorrectedAngularRate::new(
+                RollAngularRate::new(0.2),
+                PitchAngularRate::new(0.4),
+                YawAngularRate::new(0.6),
+            ),
+            0.5,
+        );
 
         assert!((filter.q0 - 0.0).abs() < 0.000001);
         assert!((filter.q1 - 2.1).abs() < 0.000001);
