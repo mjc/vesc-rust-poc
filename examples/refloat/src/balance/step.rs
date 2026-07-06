@@ -69,8 +69,28 @@ impl RefloatCurrentLimitMagnitude {
     }
 
     #[inline(always)]
+    fn from_amps(amps: f32) -> Self {
+        Self(Current::from_amps(amps))
+    }
+
+    #[inline(always)]
     fn as_amps(self) -> f32 {
         self.0.as_amps()
+    }
+
+    #[inline(always)]
+    fn is_enabled(self) -> bool {
+        self.as_amps() > 0.0
+    }
+
+    #[inline(always)]
+    fn clamp(self, current: MotorCurrent) -> MotorCurrent {
+        match current.current().as_amps() {
+            amps if self.is_enabled() && amps.abs() > self.as_amps() => {
+                refloat_motor_current(self.as_amps() * amps.signum())
+            }
+            _ => current,
+        }
     }
 }
 
@@ -169,12 +189,7 @@ fn refloat_integral_current(
     limit: MotorCurrent,
 ) -> MotorCurrent {
     let next = integral + refloat_motor_current(error.angle().as_degrees() * ki);
-    if limit.current().as_amps() > 0.0 && next.current().as_amps().abs() > limit.current().as_amps()
-    {
-        refloat_motor_current(limit.current().as_amps() * next.current().as_amps().signum())
-    } else {
-        next
-    }
+    RefloatCurrentLimitMagnitude::from_motor_current(limit).clamp(next)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -231,6 +246,119 @@ impl RefloatPidScaleTargets {
     };
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RefloatPidScaleSide {
+    Accel,
+    Brake,
+}
+
+impl RefloatPidScaleSide {
+    #[inline(always)]
+    fn from_setpoint_error(error: RefloatSetpointError) -> Self {
+        match error.angle().as_degrees() {
+            degrees if degrees > 0.0 => Self::Accel,
+            _ => Self::Brake,
+        }
+    }
+
+    #[inline(always)]
+    fn from_current(current: MotorCurrent) -> Self {
+        match current.current().as_amps() {
+            amps if amps > 0.0 => Self::Accel,
+            _ => Self::Brake,
+        }
+    }
+
+    #[inline(always)]
+    const fn scale(self, accel_scale: f32, brake_scale: f32) -> f32 {
+        match self {
+            Self::Accel => accel_scale,
+            Self::Brake => brake_scale,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RefloatBoosterBranch {
+    Accel,
+    Brake,
+}
+
+impl RefloatBoosterBranch {
+    #[inline(always)]
+    fn from_motor_current(motor_current: MotorCurrent) -> Self {
+        if refloat_motor_braking(motor_current) {
+            Self::Brake
+        } else {
+            Self::Accel
+        }
+    }
+
+    #[inline(always)]
+    fn profile(self, config: RefloatBalanceLoopConfig) -> RefloatBoosterProfile {
+        match self {
+            Self::Accel => RefloatBoosterProfile {
+                current: config.booster_current,
+                angle: config.booster_angle,
+                ramp: config.booster_ramp,
+            },
+            Self::Brake => RefloatBoosterProfile {
+                current: config.brkbooster_current,
+                angle: config.brkbooster_angle,
+                ramp: config.brkbooster_ramp,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct RefloatBoosterProfile {
+    current: MotorCurrent,
+    angle: AngleDegrees,
+    ramp: AngleDegrees,
+}
+
+impl RefloatBoosterProfile {
+    #[inline(always)]
+    fn with_speed_stiffness(
+        self,
+        branch: RefloatBoosterBranch,
+        motor_erpm: ElectricalSpeed,
+    ) -> Self {
+        let stiffness = refloat_booster_speed_stiffness(motor_erpm);
+        match branch {
+            RefloatBoosterBranch::Brake => Self {
+                current: self.current + self.current * stiffness,
+                ..self
+            },
+            RefloatBoosterBranch::Accel => Self {
+                angle: self.angle / (1.0 + stiffness),
+                ..self
+            },
+        }
+    }
+
+    #[inline(always)]
+    fn target_current(self, proportional: RefloatBoosterProportional) -> MotorCurrent {
+        let proportional_degrees = proportional.angle().as_degrees();
+        let past_start_angle_degrees = proportional_degrees.abs() - self.angle.as_degrees();
+
+        match past_start_angle_degrees {
+            degrees if degrees <= 0.0 => refloat_motor_current(0.0),
+            degrees if degrees < self.ramp.as_degrees() => {
+                self.current * (proportional_degrees.signum() * degrees / self.ramp.as_degrees())
+            }
+            _ => self.current * proportional_degrees.signum(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct RefloatPitchBasedCurrent {
+    current: MotorCurrent,
+    softstart_pid_limit: MotorCurrent,
+}
+
 #[inline(always)]
 fn refloat_smooth_pid_scale(target: f32, current: f32) -> f32 {
     0.01 * target + 0.99 * current
@@ -264,11 +392,7 @@ fn refloat_angle_p_current(
     accel_scale: f32,
     brake_scale: f32,
 ) -> MotorCurrent {
-    let scale = if error.angle().as_degrees() > 0.0 {
-        accel_scale
-    } else {
-        brake_scale
-    };
+    let scale = RefloatPidScaleSide::from_setpoint_error(error).scale(accel_scale, brake_scale);
     refloat_motor_current(error.angle().as_degrees() * kp * scale)
 }
 
@@ -282,12 +406,17 @@ fn refloat_rate_p_current(
     brake_scale: f32,
 ) -> MotorCurrent {
     let rate_p = refloat_motor_current(-pitch_rate.rate().as_degrees_per_second() * kp2);
-    rate_p
-        * if rate_p.current().as_amps() > 0.0 {
-            accel_scale
-        } else {
-            brake_scale
-        }
+    let scale = RefloatPidScaleSide::from_current(rate_p).scale(accel_scale, brake_scale);
+
+    rate_p * scale
+}
+
+#[inline(always)]
+fn refloat_booster_speed_stiffness(motor_erpm: ElectricalSpeed) -> f32 {
+    let abs_erpm = refloat_electrical_rpm(motor_erpm)
+        .as_revolutions_per_minute()
+        .abs();
+    ((abs_erpm - 3000.0) / 10000.0).clamp(0.0, 1.0)
 }
 
 /// Source map: upstream computes booster target current at
@@ -299,47 +428,12 @@ fn refloat_booster_target_current(
     motor_current: MotorCurrent,
     proportional: RefloatBoosterProportional,
 ) -> MotorCurrent {
-    let braking = refloat_motor_braking(motor_current);
-    let mut current = if braking {
-        config.brkbooster_current
-    } else {
-        config.booster_current
-    };
-    let mut angle = if braking {
-        config.brkbooster_angle
-    } else {
-        config.booster_angle
-    };
-    let ramp = if braking {
-        config.brkbooster_ramp
-    } else {
-        config.booster_ramp
-    };
+    let branch = RefloatBoosterBranch::from_motor_current(motor_current);
 
-    let abs_erpm = refloat_electrical_rpm(motor_erpm)
-        .as_revolutions_per_minute()
-        .abs();
-    if abs_erpm > 3000.0 {
-        let speed_stiffness = ((abs_erpm - 3000.0) / 10000.0).min(1.0);
-        if braking {
-            current = current + current * speed_stiffness;
-        } else {
-            angle = angle / (1.0 + speed_stiffness);
-        }
-    }
-
-    let proportional_degrees = proportional.angle().as_degrees();
-    let abs_proportional_degrees = proportional_degrees.abs();
-    if abs_proportional_degrees > angle.as_degrees() {
-        let past_start_angle_degrees = abs_proportional_degrees - angle.as_degrees();
-        if past_start_angle_degrees < ramp.as_degrees() {
-            current * (proportional_degrees.signum() * past_start_angle_degrees / ramp.as_degrees())
-        } else {
-            current * proportional_degrees.signum()
-        }
-    } else {
-        refloat_motor_current(0.0)
-    }
+    branch
+        .profile(config)
+        .with_speed_stiffness(branch, motor_erpm)
+        .target_current(proportional)
 }
 
 /// Source map: upstream filters booster current at
@@ -358,21 +452,25 @@ fn refloat_pitch_based_current(
     softstart_pid_limit: MotorCurrent,
     motor_current_max: MotorCurrent,
     hertz: SampleRate,
-) -> (MotorCurrent, MotorCurrent) {
+) -> RefloatPitchBasedCurrent {
     let pitch_based = rate_p + booster;
     if softstart_pid_limit < motor_current_max {
         let pitch_based_amps = pitch_based.current().as_amps();
-        (
-            refloat_motor_current(
+        RefloatPitchBasedCurrent {
+            current: refloat_motor_current(
                 pitch_based_amps.signum()
                     * pitch_based_amps
                         .abs()
                         .min(softstart_pid_limit.current().as_amps()),
             ),
-            softstart_pid_limit + refloat_motor_current(100.0 / hertz.as_hertz().max(1.0)),
-        )
+            softstart_pid_limit: softstart_pid_limit
+                + refloat_motor_current(100.0 / hertz.as_hertz().max(1.0)),
+        }
     } else {
-        (pitch_based, softstart_pid_limit)
+        RefloatPitchBasedCurrent {
+            current: pitch_based,
+            softstart_pid_limit,
+        }
     }
 }
 
@@ -385,12 +483,14 @@ fn refloat_current_limit(
     motor_current_max: MotorCurrent,
     motor_current_min: MotorCurrent,
 ) -> RefloatCurrentLimitMagnitude {
-    RefloatCurrentLimitMagnitude::from_motor_current(match mode {
-        RefloatMode::HandTest => refloat_motor_current(7.0),
-        RefloatMode::Flywheel => refloat_motor_current(40.0),
-        RefloatMode::Normal if braking => motor_current_min,
-        RefloatMode::Normal => motor_current_max,
-    })
+    match mode {
+        RefloatMode::HandTest => RefloatCurrentLimitMagnitude::from_amps(7.0),
+        RefloatMode::Flywheel => RefloatCurrentLimitMagnitude::from_amps(40.0),
+        RefloatMode::Normal if braking => {
+            RefloatCurrentLimitMagnitude::from_motor_current(motor_current_min)
+        }
+        RefloatMode::Normal => RefloatCurrentLimitMagnitude::from_motor_current(motor_current_max),
+    }
 }
 
 /// Source map: upstream clamps RUNNING current at
@@ -400,10 +500,27 @@ fn refloat_clamp_current(
     current: MotorCurrent,
     limit: RefloatCurrentLimitMagnitude,
 ) -> MotorCurrent {
-    if current.current().as_amps().abs() > limit.as_amps() {
-        refloat_motor_current(limit.as_amps() * current.current().as_amps().signum())
+    limit.clamp(current)
+}
+
+#[inline(always)]
+fn refloat_darkride_current(current: MotorCurrent, darkride: RefloatDarkRideState) -> MotorCurrent {
+    match darkride {
+        RefloatDarkRideState::Active => -current,
+        RefloatDarkRideState::Upright => current,
+    }
+}
+
+#[inline(always)]
+fn refloat_next_balance_current(
+    previous: MotorCurrent,
+    requested: MotorCurrent,
+    traction_control: bool,
+) -> MotorCurrent {
+    if traction_control {
+        refloat_motor_current(0.0)
     } else {
-        current
+        previous * 0.8 + requested * 0.2
     }
 }
 
@@ -419,16 +536,19 @@ fn refloat_clamp_current(
 pub(crate) fn refloat_balance_loop_step(
     config: RefloatBalanceLoopConfig,
     input: RefloatBalanceLoopInput,
-    mut state: RefloatBalanceLoopState,
+    state: RefloatBalanceLoopState,
 ) -> RefloatBalanceLoopOutput {
     let setpoint_error = refloat_setpoint_error(input.setpoint, input.balance_pitch);
-    state.pid_integral_current = refloat_integral_current(
-        state.pid_integral_current,
-        setpoint_error,
-        config.ki,
-        config.ki_limit,
-    );
-    state = refloat_update_pid_scales(config, input.motor_erpm, state);
+    let state = RefloatBalanceLoopState {
+        pid_integral_current: refloat_integral_current(
+            state.pid_integral_current,
+            setpoint_error,
+            config.ki,
+            config.ki_limit,
+        ),
+        ..state
+    };
+    let state = refloat_update_pid_scales(config, input.motor_erpm, state);
 
     let angle_p_current = refloat_angle_p_current(
         setpoint_error,
@@ -445,44 +565,53 @@ pub(crate) fn refloat_balance_loop_step(
         state.pid_kp2_brake_scale,
     );
 
-    let booster_proportional =
-        refloat_booster_proportional(input.setpoint, input.brake_tilt_setpoint, input.raw_pitch);
-    let booster_target_current = refloat_booster_target_current(
-        config,
-        input.motor_erpm,
-        input.motor_current,
-        booster_proportional,
-    );
-    state.booster_current =
-        refloat_filter_booster_current(booster_target_current, state.booster_current);
-
-    let (pitch_based_current, softstart_pid_limit) = refloat_pitch_based_current(
-        rate_p_current,
+    let booster_current = refloat_filter_booster_current(
+        refloat_booster_target_current(
+            config,
+            input.motor_erpm,
+            input.motor_current,
+            refloat_booster_proportional(
+                input.setpoint,
+                input.brake_tilt_setpoint,
+                input.raw_pitch,
+            ),
+        ),
         state.booster_current,
+    );
+    let pitch_based = refloat_pitch_based_current(
+        rate_p_current,
+        booster_current,
         state.softstart_pid_limit,
         input.motor_current_max,
         config.hertz,
     );
-    state.softstart_pid_limit = softstart_pid_limit;
+    let state = RefloatBalanceLoopState {
+        booster_current,
+        softstart_pid_limit: pitch_based.softstart_pid_limit,
+        ..state
+    };
 
-    let new_current = angle_p_current + state.pid_integral_current + pitch_based_current;
     let current_limit = refloat_current_limit(
         input.mode,
         refloat_motor_braking(input.motor_current),
         input.motor_current_max,
         input.motor_current_min,
     );
-    let new_current = refloat_clamp_current(new_current, current_limit);
-    let new_current = if matches!(input.darkride, RefloatDarkRideState::Active) {
-        -new_current
-    } else {
-        new_current
-    };
-
-    state.balance_current = if input.traction_control {
-        refloat_motor_current(0.0)
-    } else {
-        state.balance_current * 0.8 + new_current * 0.2
+    let requested_current = refloat_darkride_current(
+        refloat_clamp_current(
+            angle_p_current + state.pid_integral_current + pitch_based.current,
+            current_limit,
+        ),
+        input.darkride,
+    );
+    let balance_current = refloat_next_balance_current(
+        state.balance_current,
+        requested_current,
+        input.traction_control,
+    );
+    let state = RefloatBalanceLoopState {
+        balance_current,
+        ..state
     };
 
     RefloatBalanceLoopOutput {
