@@ -20,6 +20,7 @@ name = "vesc-example-loopback"
 path = "src/main.rs"
 
 [dependencies]
+vesc-protocol = { path = "../../crates/vesc-protocol" }
 vescpkg-rs = { path = "../../crates/vescpkg-rs" }
 
 [build-dependencies]
