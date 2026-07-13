@@ -34,7 +34,6 @@ const CRC16_TABLE: [u16; 256] = [
 #[derive(Debug, Default)]
 pub struct PacketDecoder {
     buffer: Vec<u8>,
-    ready: Vec<Vec<u8>>,
 }
 
 impl PacketDecoder {
@@ -43,22 +42,12 @@ impl PacketDecoder {
         Self::default()
     }
 
-    /// Pops the oldest fully decoded payload buffered by the decoder.
-    pub fn pop_ready(&mut self) -> Option<Vec<u8>> {
-        if self.ready.is_empty() {
-            None
-        } else {
-            Some(self.ready.remove(0))
-        }
-    }
-
-    /// Drops any buffered partial bytes and decoded packets.
+    /// Drops any buffered partial bytes.
     pub fn clear(&mut self) {
         self.buffer.clear();
-        self.ready.clear();
     }
 
-    /// Pushes bytes into the decoder and returns any newly decoded payloads.
+    /// Pushes bytes into the decoder and returns complete payloads.
     pub fn push(&mut self, bytes: &[u8]) -> Result<Vec<Vec<u8>>, PacketDecodeError> {
         self.buffer.extend_from_slice(bytes);
         let mut packets = Vec::new();
@@ -70,7 +59,6 @@ impl PacketDecoder {
                     self.buffer.drain(..bytes);
                 }
                 DecodeOutcome::Packet { packet, consumed } => {
-                    self.ready.push(packet.clone());
                     packets.push(packet);
                     self.buffer.drain(..consumed);
                 }
@@ -221,19 +209,14 @@ mod tests {
     }
 
     #[test]
-    fn clear_drops_partial_and_ready_packets() {
+    fn clear_drops_partial_packets() {
         let payload = [120_u8, 0, 0, 0, 8];
         let packet = encode_packet(&payload);
         let mut decoder = PacketDecoder::new();
 
         assert!(decoder.push(&packet[..3]).expect("part 1").is_empty());
-        decoder
-            .push(&encode_packet(&[131_u8, 1]))
-            .expect("ready packet");
-
         decoder.clear();
 
-        assert!(decoder.pop_ready().is_none());
         assert!(decoder.push(&packet[3..]).expect("old tail").is_empty());
     }
 }

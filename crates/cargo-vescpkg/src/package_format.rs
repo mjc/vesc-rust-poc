@@ -27,64 +27,11 @@ pub struct VescPackageInput<'a> {
     pub qml_is_fullscreen: bool,
 }
 
-/// Fully materialized package fields written to the VESC package wire format.
-#[derive(Debug, Clone)]
-pub struct VescPackageWire<'a> {
-    /// Package name field.
-    pub name: &'a str,
-    /// Plain-text description derived from the markdown source.
-    pub description: &'a str,
-    /// Markdown description field.
-    pub description_md: &'a str,
-    /// Packed Lisp payload bytes.
-    pub lisp_data: &'a [u8],
-    /// QML source field.
-    pub qml_file: &'a str,
-    /// `pkgdesc.qml` descriptor field.
-    pub pkg_desc_qml: &'a str,
-    /// Whether the package's QML app should run fullscreen.
-    pub qml_is_fullscreen: bool,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PackageField<'a> {
     Text { key: &'static str, value: &'a str },
     Bytes { key: &'static str, value: &'a [u8] },
     Bool { key: &'static str, value: bool },
-}
-
-/// Encode a decoded package back to `.vescpkg` bytes without repacking Lisp imports.
-pub fn encode_vesc_package(wire: &VescPackageWire<'_>) -> io::Result<Vec<u8>> {
-    encode_package_fields([
-        PackageField::Text {
-            key: "name",
-            value: wire.name,
-        },
-        PackageField::Text {
-            key: "description",
-            value: wire.description,
-        },
-        PackageField::Text {
-            key: "description_md",
-            value: wire.description_md,
-        },
-        PackageField::Bytes {
-            key: "lispData",
-            value: wire.lisp_data,
-        },
-        PackageField::Text {
-            key: "qmlFile",
-            value: wire.qml_file,
-        },
-        PackageField::Text {
-            key: "pkgDescQml",
-            value: wire.pkg_desc_qml,
-        },
-        PackageField::Bool {
-            key: "qmlIsFullscreen",
-            value: wire.qml_is_fullscreen,
-        },
-    ])
 }
 
 /// Builds compressed VESC package bytes from source package inputs.

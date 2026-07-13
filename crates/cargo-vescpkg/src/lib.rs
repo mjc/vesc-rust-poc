@@ -14,7 +14,7 @@ mod package_wire;
 #[command(
     name = "cargo-vescpkg",
     bin_name = "cargo vescpkg",
-    about = "Build, install, and debug Rust VESC packages",
+    about = "Build, install, and probe Rust VESC packages",
     arg_required_else_help = true
 )]
 struct Cli {
@@ -25,8 +25,6 @@ struct Cli {
 #[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
 enum Command {
     Build(BuildArgs),
-    Layout,
-    Status,
     #[command(name = "loopback")]
     Probe(DeviceArgs),
     PackageInstall(PackageInstallArgs),
@@ -80,14 +78,6 @@ where
 {
     match parse_args(args) {
         Ok(Command::Build(args)) => run_build(args),
-        Ok(Command::Layout) => {
-            println!("workspace layout is documented in docs/workspace-layout.md");
-            ExitCode::SUCCESS
-        }
-        Ok(Command::Status) => {
-            println!("status: placeholder host surface");
-            ExitCode::SUCCESS
-        }
         Ok(Command::Probe(command)) => {
             let target = loopback_target(command.address, command.device_name);
 
@@ -234,7 +224,7 @@ where
 mod ble_discovery;
 
 pub mod deploy;
-/// Loopback protocol runner and transport abstractions.
+/// Loopback target and report types.
 pub mod loopback;
 pub mod package_install;
 /// Package install transport implementations and BLE command helpers.
@@ -268,10 +258,6 @@ mod tests {
 
     #[test]
     fn parse_args_maps_commands_and_shared_device_flags() {
-        assert_eq!(
-            parse_args(["cargo-vescpkg", "layout"]).expect("layout"),
-            Command::Layout
-        );
         assert_eq!(
             parse_args([
                 "cargo-vescpkg",

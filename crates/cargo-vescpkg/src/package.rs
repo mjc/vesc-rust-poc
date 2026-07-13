@@ -3,10 +3,9 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use crate::package_format::{VescPackageWire, encode_vesc_package};
 use crate::package_wire::{WireError, parse_vescpkg};
 
-/// A decoded VESC package that can be installed or written back unchanged.
+/// A decoded VESC package ready for installation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Package {
     /// Package display name.
@@ -94,34 +93,6 @@ impl Package {
             .is_valid()
             .then_some(package)
             .ok_or(PackageError::InvalidPackage)
-    }
-
-    /// Encode this package into wire bytes.
-    pub fn to_bytes(&self) -> Result<Vec<u8>, PackageError> {
-        self.is_valid()
-            .then(|| {
-                encode_vesc_package(&VescPackageWire {
-                    name: &self.name,
-                    description: &self.description,
-                    description_md: &self.description_md,
-                    lisp_data: &self.lisp_data,
-                    qml_file: &self.qml_file,
-                    pkg_desc_qml: &self.pkg_desc_qml,
-                    qml_is_fullscreen: self.qml_is_fullscreen,
-                })
-            })
-            .ok_or(PackageError::InvalidPackage)?
-            .map_err(PackageError::Io)
-    }
-
-    /// Encode and write this package to a file.
-    pub fn write(&self, path: impl AsRef<Path>) -> Result<(), PackageError> {
-        let path = path.as_ref();
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(path, self.to_bytes()?)?;
-        Ok(())
     }
 
     /// Return whether the package contains at least one meaningful field.

@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::collections::VecDeque;
 use std::convert::TryInto;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
@@ -63,23 +62,6 @@ fn command_name(command: u8) -> &'static str {
     }
 }
 
-fn describe_vesc_packet(packet: &[u8]) -> String {
-    let command = packet.first().copied().unwrap_or(0xff);
-    format!("COMM_{command} payload={}", hex_snippet(&packet[1..], 24))
-}
-
-fn hex_snippet(bytes: &[u8], max_bytes: usize) -> String {
-    let shown = bytes.len().min(max_bytes);
-    let mut hex = bytes[..shown]
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    if bytes.len() > max_bytes {
-        hex.push('…');
-    }
-    hex
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HwType {
     Vesc,
@@ -114,7 +96,6 @@ pub(crate) struct VescSession {
     pub(crate) rx_char: Characteristic,
     responses: Receiver<Vec<u8>>,
     decoder: PacketDecoder,
-    pending: VecDeque<Vec<u8>>,
     fw_info: FwVersionInfo,
 }
 
@@ -156,7 +137,7 @@ impl VescSession {
     }
 
     pub(crate) fn clear_packet_state(&mut self) {
-        clear_response_state(&mut self.pending, &mut self.decoder, &self.responses);
+        clear_response_state(&mut self.decoder, &self.responses);
     }
 
     pub(crate) fn receive_custom_app_data(
@@ -188,19 +169,7 @@ impl VescSession {
         expected_command: u8,
         timeout: Duration,
     ) -> Result<Vec<u8>, PackageInstallError> {
-        if let Some(packet) = self.take_pending(expected_command) {
-            return Ok(packet);
-        }
-
         loop {
-            if let Some(packet) = self.decoder.pop_ready() {
-                if packet.first().copied() == Some(expected_command) {
-                    return Ok(packet);
-                }
-                self.push_pending_packet(packet, expected_command);
-                continue;
-            }
-
             let bytes = self.responses.recv_timeout(timeout).map_err(|_| {
                 PackageInstallError::Device("timed out waiting for a BLE reply".to_owned())
             })?;
@@ -212,35 +181,8 @@ impl VescSession {
                 if packet.first().copied() == Some(expected_command) {
                     return Ok(packet);
                 }
-                self.push_pending_packet(packet, expected_command);
-            }
-            if let Some(packet) = self.take_pending(expected_command) {
-                return Ok(packet);
             }
         }
-    }
-
-    fn push_pending_packet(&mut self, packet: Vec<u8>, expected_command: u8) {
-        eprintln!(
-            "package-transport: pending while waiting for {} ({}): {}",
-            command_name(expected_command),
-            expected_command,
-            describe_vesc_packet(&packet)
-        );
-        self.pending.push_back(packet);
-    }
-
-    fn take_pending(&mut self, expected_command: u8) -> Option<Vec<u8>> {
-        let len = self.pending.len();
-        for _ in 0..len {
-            let packet = self.pending.pop_front()?;
-            if packet.first().copied() == Some(expected_command) {
-                return Some(packet);
-            }
-            self.pending.push_back(packet);
-        }
-
-        None
     }
 }
 
@@ -248,12 +190,7 @@ fn drain_response_channel(responses: &Receiver<Vec<u8>>) {
     while responses.try_recv().is_ok() {}
 }
 
-fn clear_response_state(
-    pending: &mut VecDeque<Vec<u8>>,
-    decoder: &mut PacketDecoder,
-    responses: &Receiver<Vec<u8>>,
-) {
-    pending.clear();
+fn clear_response_state(decoder: &mut PacketDecoder, responses: &Receiver<Vec<u8>>) {
     decoder.clear();
     drain_response_channel(responses);
 }
@@ -516,13 +453,8 @@ impl BtlePackageInstallTransport {
         payload: &[u8],
         timeout: Duration,
     ) -> Result<(), PackageInstallError> {
-        let expected_offset = payload
-            .get(..4)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_be_bytes)
-            .ok_or_else(|| malformed_reply("write payload missing offset"))?;
         self.send_with_retries(command, payload, timeout, |response| {
-            parse_write_ack(response, command, expected_offset)
+            parse_write_ack(response, command)
         })
     }
 
@@ -668,7 +600,6 @@ async fn open_session(target: LoopbackTarget) -> Result<VescSession, PackageInst
         rx_char,
         responses: responses_rx,
         decoder: PacketDecoder::new(),
-        pending: VecDeque::new(),
         fw_info: FwVersionInfo {
             hw_type: HwType::Vesc,
         },
@@ -759,11 +690,7 @@ fn parse_simple_ack(response: &[u8], expected_command: u8) -> Result<bool, Packa
     Ok(read_u8(&mut cursor)? > 0)
 }
 
-fn parse_write_ack(
-    response: &[u8],
-    expected_command: u8,
-    _expected_offset: u32,
-) -> Result<bool, PackageInstallError> {
+fn parse_write_ack(response: &[u8], expected_command: u8) -> Result<bool, PackageInstallError> {
     let mut cursor = response;
     if read_u8(&mut cursor)? != expected_command {
         return Err(malformed_reply("unexpected BLE reply"));
@@ -820,7 +747,6 @@ mod tests {
         parse_write_ack,
     };
     use crate::vesc_uart::PacketDecoder;
-    use std::collections::VecDeque;
     use std::sync::mpsc;
 
     #[test]
@@ -856,10 +782,8 @@ mod tests {
         write_ack.push(COMM_LISP_WRITE_CODE);
         write_ack.push(1);
         write_ack.extend_from_slice(&384_u32.to_be_bytes());
-        assert!(
-            parse_write_ack(&write_ack, COMM_LISP_WRITE_CODE, 384).expect("matching write ack")
-        );
-        assert!(parse_write_ack(&write_ack, COMM_LISP_ERASE_CODE, 384).is_err());
+        assert!(parse_write_ack(&write_ack, COMM_LISP_WRITE_CODE).expect("matching write ack"));
+        assert!(parse_write_ack(&write_ack, COMM_LISP_ERASE_CODE).is_err());
 
         let wrong_command = [COMM_LISP_WRITE_CODE, 1];
         assert!(parse_simple_ack(&wrong_command, COMM_LISP_ERASE_CODE).is_err());
@@ -868,8 +792,6 @@ mod tests {
 
     #[test]
     fn write_ack_ignores_device_echoed_offset_like_vesc_tool() {
-        let expected_offset = 0;
-
         // Source: third_party/vesc_tool/codeloader.cpp:409-412 and 766-769
         // both upload callbacks explicitly ignore the echoed write offset.
         for echoed_offset in [0, 384, u32::MAX] {
@@ -877,7 +799,7 @@ mod tests {
             write_ack.extend_from_slice(&echoed_offset.to_be_bytes());
 
             assert!(
-                parse_write_ack(&write_ack, COMM_LISP_WRITE_CODE, expected_offset).expect(
+                parse_write_ack(&write_ack, COMM_LISP_WRITE_CODE).expect(
                     "VESC Tool treats ok write ACKs as success regardless of echoed offset"
                 )
             );
@@ -966,10 +888,8 @@ mod tests {
 
     #[test]
     fn clear_response_state_drops_stale_write_acks_before_next_command() {
-        let mut pending = VecDeque::from([vec![COMM_LISP_WRITE_CODE, 1, 0, 0, 0, 0]]);
         let mut decoder = PacketDecoder::new();
         let stale_packet = build_command_packet(COMM_LISP_WRITE_CODE, &[1, 0, 0, 1, 128]);
-        decoder.push(&stale_packet).expect("valid stale packet");
         decoder
             .push(&stale_packet[..3])
             .expect("partial stale packet");
@@ -978,10 +898,8 @@ mod tests {
             .expect("queued stale notification");
         drop(tx);
 
-        clear_response_state(&mut pending, &mut decoder, &rx);
+        clear_response_state(&mut decoder, &rx);
 
-        assert!(pending.is_empty());
-        assert!(decoder.pop_ready().is_none());
         assert!(
             decoder
                 .push(&stale_packet[3..])

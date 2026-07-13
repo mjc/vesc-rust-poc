@@ -9,13 +9,6 @@ use crate::loopback::LoopbackTarget;
 const VESC_BLE_UART_SERVICE_UUID: Uuid = Uuid::from_u128(0x6e400001b5a3f393e0a9e50e24dcca9e);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DiscoveredPeripheral {
-    pub identifier: String,
-    pub local_name: Option<String>,
-    pub services: Vec<Uuid>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DiscoveryError {
     InspectFailed,
 }
@@ -28,63 +21,30 @@ pub(crate) async fn find_matching_peripheral(
     adapter: &Adapter,
     target: &LoopbackTarget,
 ) -> Result<Peripheral, DiscoveryError> {
-    find_matching_peripheral_with_progress(adapter, target, |_, _| {}).await
-}
-
-pub(crate) async fn find_matching_peripheral_with_progress(
-    adapter: &Adapter,
-    target: &LoopbackTarget,
-    mut progress: impl FnMut(DiscoveredPeripheral, bool),
-) -> Result<Peripheral, DiscoveryError> {
     loop {
-        if let Some(peripheral) =
-            find_matching_cached_peripheral_with_progress(adapter, target, &mut progress).await?
-        {
-            return Ok(peripheral);
+        let peripherals = adapter
+            .peripherals()
+            .await
+            .map_err(|_| DiscoveryError::InspectFailed)?;
+        for peripheral in peripherals {
+            let Some(properties) = peripheral
+                .properties()
+                .await
+                .map_err(|_| DiscoveryError::InspectFailed)?
+            else {
+                continue;
+            };
+            if target_matches_properties(
+                target,
+                Some(&properties.address.to_string()),
+                properties.local_name.as_deref(),
+                &properties.services,
+            ) {
+                return Ok(peripheral);
+            }
         }
-
         time::sleep(Duration::from_millis(100)).await;
     }
-}
-
-async fn find_matching_cached_peripheral_with_progress(
-    adapter: &Adapter,
-    target: &LoopbackTarget,
-    progress: &mut impl FnMut(DiscoveredPeripheral, bool),
-) -> Result<Option<Peripheral>, DiscoveryError> {
-    let peripherals = adapter
-        .peripherals()
-        .await
-        .map_err(|_| DiscoveryError::InspectFailed)?;
-
-    for peripheral in peripherals {
-        let Some(properties) = peripheral
-            .properties()
-            .await
-            .map_err(|_| DiscoveryError::InspectFailed)?
-        else {
-            continue;
-        };
-
-        let device = DiscoveredPeripheral {
-            identifier: properties.address.to_string(),
-            local_name: properties.local_name,
-            services: properties.services,
-        };
-        let matched = target_matches_properties(
-            target,
-            Some(&device.identifier),
-            device.local_name.as_deref(),
-            &device.services,
-        );
-        progress(device.clone(), matched);
-
-        if matched {
-            return Ok(Some(peripheral));
-        }
-    }
-
-    Ok(None)
 }
 
 fn target_matches_properties(
