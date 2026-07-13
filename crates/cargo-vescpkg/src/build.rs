@@ -330,9 +330,6 @@ mod tests {
 
     #[test]
     fn package_slug_matches_existing_artifact_names() {
-        assert_eq!(
-            package_slug("Rust BLE loopback test package"),
-            "Rust-BLE-loopback-test-package"
-        );
+        assert_eq!(package_slug("A minimal package"), "A-minimal-package");
     }
 }

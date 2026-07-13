@@ -7,7 +7,7 @@ use std::time::Duration;
 use btleplug::api::{Central, Characteristic, Manager as _, Peripheral as _, WriteType};
 use btleplug::platform::{Manager, Peripheral};
 use futures_util::StreamExt;
-use tokio::runtime::{Builder, Runtime};
+use tokio::runtime::Builder;
 use tokio::time;
 use uuid::Uuid;
 use vesc_protocol::WireCommand;
@@ -35,11 +35,6 @@ const POST_INSTALL_SETTLE: Duration = Duration::from_millis(1500);
 const FW_VERSION_PREFLIGHT_ATTEMPTS: usize = 5;
 const FW_VERSION_PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(2);
 const FW_VERSION_PREFLIGHT_RETRY_DELAY: Duration = Duration::from_millis(500);
-static REFLOAT_ALL_DATA_MODE4_PAYLOAD: [u8; 3] = [101, 10, 4];
-const REFLOAT_ALL_DATA_MODE4_REQUEST: CustomAppDataRequest = CustomAppDataRequest {
-    step: "all-data",
-    payload: &REFLOAT_ALL_DATA_MODE4_PAYLOAD,
-};
 
 /// Progress event emitted by the diagnostic loopback runner.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -246,36 +241,6 @@ struct DiagnosticSession {
     pending: VecDeque<Vec<u8>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct CustomAppDataRequest {
-    step: &'static str,
-    payload: &'static [u8],
-}
-
-impl CustomAppDataRequest {
-    fn send(
-        self,
-        runtime: &Runtime,
-        session: &mut DiagnosticSession,
-        progress: &mut impl FnMut(LoopbackProgress),
-    ) -> Result<Vec<u8>, LoopbackTransportError> {
-        let wire = build_custom_app_data_packet(self.payload);
-        progress(LoopbackProgress::StepStarted { step: self.step });
-        progress(LoopbackProgress::Sending {
-            step: self.step,
-            wire_hex: hex_snippet(&wire, 48),
-            bytes: wire.len(),
-        });
-        runtime.block_on(write_ble_uart_packet(
-            &session.peripheral,
-            &session.rx_char,
-            &wire,
-        ))?;
-
-        session.receive_custom_app_data_payload_with_progress(self.step, progress)
-    }
-}
-
 /// Runs the loopback protocol over BLE while reporting detailed diagnostic progress.
 pub fn run_loopback_with_diagnostics(
     target: LoopbackTarget,
@@ -346,43 +311,6 @@ pub fn run_loopback_with_diagnostics(
     }
 
     Ok(LoopbackReport::new(target, commands))
-}
-
-/// Sends one Refloat all-data app-data request and waits for a raw response.
-pub fn run_refloat_probe_with_diagnostics(
-    target: LoopbackTarget,
-    mut progress: impl FnMut(LoopbackProgress),
-) -> Result<Vec<u8>, LoopbackTransportError> {
-    with_diagnostic_session(target, &mut progress, |runtime, session, progress| {
-        REFLOAT_ALL_DATA_MODE4_REQUEST.send(runtime, session, progress)
-    })
-}
-
-fn with_diagnostic_session<P, R>(
-    target: LoopbackTarget,
-    progress: &mut P,
-    run: impl FnOnce(&Runtime, &mut DiagnosticSession, &mut P) -> Result<R, LoopbackTransportError>,
-) -> Result<R, LoopbackTransportError>
-where
-    P: FnMut(LoopbackProgress),
-{
-    progress(LoopbackProgress::StartingRuntime);
-    let runtime = Builder::new_multi_thread()
-        .enable_all()
-        .worker_threads(1)
-        .build()
-        .map_err(|_| device_error("failed to start the BLE runtime"))?;
-
-    progress(LoopbackProgress::OpeningSession {
-        target: describe_loopback_target(&target),
-    });
-    let mut session = runtime.block_on(open_session_with_progress(target, progress))?;
-    progress(LoopbackProgress::SessionOpened);
-    std::thread::sleep(POST_INSTALL_SETTLE);
-
-    runtime.block_on(run_fw_version_preflight(&mut session, progress))?;
-    session.clear_pending();
-    run(&runtime, &mut session, progress)
 }
 
 async fn open_session_with_progress(
@@ -933,10 +861,7 @@ pub fn hex_snippet(bytes: &[u8], max_bytes: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        COMM_CUSTOM_APP_DATA, LoopbackProgress, REFLOAT_ALL_DATA_MODE4_REQUEST,
-        build_custom_app_data_packet, describe_vesc_packet, hex_snippet, timeout_error,
-    };
+    use super::{LoopbackProgress, describe_vesc_packet, hex_snippet, timeout_error};
     use crate::loopback::LoopbackTransportError;
     use crate::vesc_uart::encode_packet;
     use std::time::Duration;
@@ -962,18 +887,6 @@ mod tests {
             }
             .should_print_to_cli()
         );
-    }
-
-    #[test]
-    fn refloat_probe_uses_all_data_mode4_request() {
-        let wire = build_custom_app_data_packet(REFLOAT_ALL_DATA_MODE4_REQUEST.payload);
-        let decoded = crate::vesc_uart::PacketDecoder::new()
-            .push(&wire)
-            .expect("packet")
-            .pop()
-            .expect("ready");
-
-        assert_eq!(decoded, [COMM_CUSTOM_APP_DATA, 101, 10, 4]);
     }
 
     #[test]

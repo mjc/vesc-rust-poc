@@ -1,14 +1,12 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::convert::TryInto;
-use std::io::Read;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::Duration;
 
 use btleplug::api::{Central, Characteristic, Manager as _, Peripheral as _, WriteType};
 use btleplug::platform::{Manager, Peripheral};
-use flate2::read::ZlibDecoder;
 use futures_util::StreamExt;
 use tokio::runtime::{Builder, Runtime};
 use tokio::time;
@@ -42,8 +40,6 @@ const LISP_ERASE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
 // Source: third_party/vesc_tool/codeloader.cpp:402-408 and 759-765
 // lispUpload()/qmlUpload() wait 1000 ms per chunk write acknowledgement.
 const WRITE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(1);
-const QML_READ_TIMEOUT: Duration = Duration::from_millis(1500);
-const QML_READ_INITIAL_LEN: u32 = 10;
 const CHUNK_SIZE: usize = 384;
 // Source: third_party/vesc_tool/bleuart.cpp:134-147 splits BLE writes into
 // 20-byte WriteWithoutResponse chunks.
@@ -55,10 +51,8 @@ const QML_UPLOAD_LIMIT: usize = 1024 * 120;
 const LISP_UPLOAD_LIMIT_ESP32: usize = 1024 * 512 - 6;
 const LISP_UPLOAD_LIMIT_VESC: usize = 1024 * 128 - 6;
 
-const COMM_GET_QML_UI_APP: u8 = 118;
 const COMM_QMLUI_ERASE: u8 = 120;
 const COMM_QMLUI_WRITE: u8 = 121;
-const COMM_LISP_READ_CODE: u8 = 130;
 const COMM_LISP_WRITE_CODE: u8 = 131;
 const COMM_LISP_ERASE_CODE: u8 = 132;
 const COMM_LISP_SET_RUNNING: u8 = 133;
@@ -69,10 +63,8 @@ fn command_name(command: u8) -> &'static str {
     match command {
         COMM_FW_VERSION => "COMM_FW_VERSION",
         COMM_CUSTOM_APP_DATA => "COMM_CUSTOM_APP_DATA",
-        COMM_GET_QML_UI_APP => "COMM_GET_QML_UI_APP",
         COMM_QMLUI_ERASE => "COMM_QMLUI_ERASE",
         COMM_QMLUI_WRITE => "COMM_QMLUI_WRITE",
-        COMM_LISP_READ_CODE => "COMM_LISP_READ_CODE",
         COMM_LISP_WRITE_CODE => "COMM_LISP_WRITE_CODE",
         COMM_LISP_ERASE_CODE => "COMM_LISP_ERASE_CODE",
         COMM_LISP_SET_RUNNING => "COMM_LISP_SET_RUNNING",
@@ -107,14 +99,6 @@ impl HwType {
 struct FwVersionInfo {
     hw_type: HwType,
     has_qml_app: bool,
-}
-
-/// Result of reading the installed QML app payload from firmware.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct QmlAppRead {
-    pub(crate) has_qml_app: bool,
-    pub(crate) compressed: Vec<u8>,
-    pub(crate) decompressed: Option<String>,
 }
 
 #[derive(Debug)]
@@ -339,81 +323,6 @@ impl BtlePackageInstallTransport {
             LoopbackTransportError::Device("BLE transport has not been opened".to_owned())
         })?;
         f(&self.runtime, session)
-    }
-
-    pub(crate) fn read_lisp_code(
-        &self,
-        offset: u32,
-        len: u32,
-    ) -> Result<LispCodeRead, PackageInstallError> {
-        let mut payload = Vec::with_capacity(8);
-        payload.extend_from_slice(&len.to_be_bytes());
-        payload.extend_from_slice(&offset.to_be_bytes());
-        let response = self.write_command(COMM_LISP_READ_CODE, &payload, FW_VERSION_TIMEOUT)?;
-        parse_lisp_code_read(&response)
-    }
-
-    pub(crate) fn read_qml_app(&self) -> Result<QmlAppRead, PackageInstallError> {
-        let has_qml_app = self.with_session(|session| {
-            session.clear_packet_state();
-            let info = session.query_fw_info_with_timeout(&self.runtime, FW_VERSION_TIMEOUT)?;
-            session.fw_info = info;
-            Ok(info.has_qml_app)
-        })?;
-
-        if !has_qml_app {
-            return Ok(QmlAppRead {
-                has_qml_app,
-                compressed: Vec::new(),
-                decompressed: None,
-            });
-        }
-
-        let compressed = self.read_qml_ui(COMM_GET_QML_UI_APP)?;
-        let decompressed = decompress_qml_readback(&compressed)?;
-        Ok(QmlAppRead {
-            has_qml_app,
-            compressed,
-            decompressed: Some(decompressed),
-        })
-    }
-
-    fn read_qml_ui(&self, command: u8) -> Result<Vec<u8>, PackageInstallError> {
-        let first = self.read_qml_ui_chunk(command, QML_READ_INITIAL_LEN, 0)?;
-        let total_len = first.total_len as usize;
-        if total_len > QML_UPLOAD_LIMIT {
-            return Err(PackageInstallError::Device(
-                "reported QML app is too large".to_owned(),
-            ));
-        }
-
-        let mut data = Vec::with_capacity(total_len);
-        append_qml_chunk(&mut data, &first)?;
-
-        while data.len() < total_len {
-            let remaining = total_len - data.len();
-            let len = remaining.min(CHUNK_SIZE) as u32;
-            let chunk = self.read_qml_ui_chunk(command, len, data.len() as u32)?;
-            if chunk.total_len as usize != total_len {
-                return Err(malformed_reply("QML readback length changed"));
-            }
-            append_qml_chunk(&mut data, &chunk)?;
-        }
-
-        Ok(data)
-    }
-
-    fn read_qml_ui_chunk(
-        &self,
-        command: u8,
-        len: u32,
-        offset: u32,
-    ) -> Result<QmlUiRead, PackageInstallError> {
-        let mut payload = Vec::with_capacity(8);
-        payload.extend_from_slice(&len.to_be_bytes());
-        payload.extend_from_slice(&offset.to_be_bytes());
-        let response = self.write_command(command, &payload, QML_READ_TIMEOUT)?;
-        parse_qml_ui_read(&response, command)
     }
 
     fn open_session(&self, target: LoopbackTarget) -> Result<(), PackageInstallError> {
@@ -911,89 +820,6 @@ fn parse_write_ack(
     Ok(ok)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct LispCodeRead {
-    pub(crate) total_len: u32,
-    pub(crate) offset: u32,
-    pub(crate) data: Vec<u8>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct QmlUiRead {
-    total_len: u32,
-    offset: u32,
-    data: Vec<u8>,
-}
-
-fn parse_qml_ui_read(
-    response: &[u8],
-    expected_command: u8,
-) -> Result<QmlUiRead, PackageInstallError> {
-    let mut cursor = response;
-    if read_u8(&mut cursor)? != expected_command {
-        return Err(malformed_reply("unexpected BLE reply while reading QML UI"));
-    }
-
-    let total_len = read_u32_be(&mut cursor)?;
-    let offset = read_u32_be(&mut cursor)?;
-    Ok(QmlUiRead {
-        total_len,
-        offset,
-        data: cursor.to_vec(),
-    })
-}
-
-fn append_qml_chunk(data: &mut Vec<u8>, read: &QmlUiRead) -> Result<(), PackageInstallError> {
-    if read.offset as usize != data.len() {
-        return Err(malformed_reply("unexpected QML readback offset"));
-    }
-    if data.len() + read.data.len() > read.total_len as usize {
-        return Err(malformed_reply("QML readback chunk exceeds total length"));
-    }
-    if read.data.is_empty() && data.len() < read.total_len as usize {
-        return Err(malformed_reply("empty QML readback chunk"));
-    }
-    data.extend_from_slice(&read.data);
-    Ok(())
-}
-
-fn decompress_qml_readback(compressed: &[u8]) -> Result<String, PackageInstallError> {
-    let mut cursor = compressed;
-    let expected_len = read_u32_be(&mut cursor)? as usize;
-    if expected_len > QML_UPLOAD_LIMIT {
-        return Err(PackageInstallError::Device(
-            "QML readback decompressed length is too large".to_owned(),
-        ));
-    }
-    let decoder = ZlibDecoder::new(cursor);
-    let mut raw = Vec::with_capacity(expected_len);
-    decoder
-        .take(expected_len as u64 + 1)
-        .read_to_end(&mut raw)
-        .map_err(|error| PackageInstallError::Io(error.to_string()))?;
-    if raw.len() != expected_len {
-        return Err(malformed_reply("QML readback decompressed length mismatch"));
-    }
-    String::from_utf8(raw).map_err(|_| malformed_reply("QML readback is not UTF-8"))
-}
-
-fn parse_lisp_code_read(response: &[u8]) -> Result<LispCodeRead, PackageInstallError> {
-    let mut cursor = response;
-    if read_u8(&mut cursor)? != COMM_LISP_READ_CODE {
-        return Err(malformed_reply(
-            "unexpected BLE reply while reading Lisp code",
-        ));
-    }
-
-    let total_len = read_u32_be(&mut cursor)?;
-    let offset = read_u32_be(&mut cursor)?;
-    Ok(LispCodeRead {
-        total_len,
-        offset,
-        data: cursor.to_vec(),
-    })
-}
-
 fn read_string(cursor: &mut &[u8]) -> Result<String, PackageInstallError> {
     let Some(len) = cursor.iter().position(|byte| *byte == 0) else {
         return Err(malformed_reply("missing NUL terminator"));
@@ -1033,18 +859,14 @@ fn malformed_reply(reason: &str) -> PackageInstallError {
 #[cfg(test)]
 mod tests {
     use super::{
-        COMM_FW_VERSION, COMM_GET_QML_UI_APP, COMM_LISP_ERASE_CODE, COMM_LISP_READ_CODE,
-        COMM_LISP_SET_RUNNING, COMM_LISP_WRITE_CODE, COMM_QMLUI_ERASE, COMM_QMLUI_WRITE,
-        FwVersionInfo, HwType, QML_UPLOAD_LIMIT, QmlUiRead, append_qml_chunk, ble_write_chunks,
+        COMM_FW_VERSION, COMM_LISP_ERASE_CODE, COMM_LISP_SET_RUNNING, COMM_LISP_WRITE_CODE,
+        COMM_QMLUI_ERASE, COMM_QMLUI_WRITE, FwVersionInfo, HwType, ble_write_chunks,
         build_command_packet, build_lisp_upload_payload, build_qml_upload_payload,
-        clear_response_state, decompress_qml_readback, drain_response_channel,
-        parse_fw_version_info, parse_lisp_code_read, parse_qml_ui_read, parse_simple_ack,
+        clear_response_state, drain_response_channel, parse_fw_version_info, parse_simple_ack,
         parse_write_ack,
     };
     use crate::vesc_uart::PacketDecoder;
-    use flate2::{Compression, write::ZlibEncoder};
     use std::collections::VecDeque;
-    use std::io::Write;
     use std::sync::mpsc;
 
     #[test]
@@ -1125,82 +947,6 @@ mod tests {
                 )
             );
         }
-    }
-
-    #[test]
-    fn parses_lisp_code_read_replies() {
-        let mut response = Vec::new();
-        response.push(COMM_LISP_READ_CODE);
-        response.extend_from_slice(&1024_u32.to_be_bytes());
-        response.extend_from_slice(&384_u32.to_be_bytes());
-        response.extend_from_slice(b"(print \"hello\")");
-
-        let read = parse_lisp_code_read(&response).expect("readback reply");
-
-        assert_eq!(read.total_len, 1024);
-        assert_eq!(read.offset, 384);
-        assert_eq!(read.data, b"(print \"hello\")");
-        assert!(parse_lisp_code_read(&[COMM_LISP_READ_CODE, 0]).is_err());
-    }
-
-    #[test]
-    fn parses_qml_app_read_replies() {
-        let mut response = Vec::new();
-        response.push(COMM_GET_QML_UI_APP);
-        response.extend_from_slice(&1024_u32.to_be_bytes());
-        response.extend_from_slice(&384_u32.to_be_bytes());
-        response.extend_from_slice(b"qml");
-
-        let read = parse_qml_ui_read(&response, COMM_GET_QML_UI_APP).expect("qml reply");
-
-        assert_eq!(read.total_len, 1024);
-        assert_eq!(read.offset, 384);
-        assert_eq!(read.data, b"qml");
-        assert!(parse_qml_ui_read(&[COMM_GET_QML_UI_APP, 0], COMM_GET_QML_UI_APP).is_err());
-    }
-
-    #[test]
-    fn append_qml_chunk_rejects_data_past_reported_total() {
-        let mut data = vec![1, 2];
-        let read = QmlUiRead {
-            total_len: 3,
-            offset: 2,
-            data: vec![3, 4],
-        };
-
-        assert!(append_qml_chunk(&mut data, &read).is_err());
-        assert_eq!(data, vec![1, 2]);
-    }
-
-    #[test]
-    fn decompress_qml_readback_rejects_oversized_lengths_before_allocating() {
-        let mut compressed = ((QML_UPLOAD_LIMIT + 1) as u32).to_be_bytes().to_vec();
-        compressed.extend_from_slice(b"not zlib");
-
-        let error = decompress_qml_readback(&compressed).expect_err("oversized readback");
-
-        assert_eq!(
-            error.to_string(),
-            "device error: QML readback decompressed length is too large"
-        );
-    }
-
-    #[test]
-    fn decompress_qml_readback_rejects_output_past_expected_length() {
-        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
-        encoder
-            .write_all(b"too long")
-            .expect("write compressed qml");
-        let zlib = encoder.finish().expect("finish compressed qml");
-        let mut compressed = 1_u32.to_be_bytes().to_vec();
-        compressed.extend_from_slice(&zlib);
-
-        let error = decompress_qml_readback(&compressed).expect_err("oversized output");
-
-        assert_eq!(
-            error.to_string(),
-            "device error: QML readback decompressed length mismatch"
-        );
     }
 
     #[test]

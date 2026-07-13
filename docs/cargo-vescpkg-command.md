@@ -26,7 +26,5 @@ under Cargo's target directory at `vescpkg/`.
 - `cargo vescpkg package-install <package.vescpkg>`
 - `cargo vescpkg erase-package`
 - `cargo vescpkg loopback`
-- `cargo vescpkg lisp-probe`
-- `cargo vescpkg refloat-probe`
 
 The checked workspace path remains `nix develop -c make check`.

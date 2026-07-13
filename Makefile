@@ -34,7 +34,7 @@ ifdef DEVICE_ADDRESS
 DEVICE_FLAGS += --address $(DEVICE_ADDRESS)
 endif
 
-.PHONY: check check-full pre-commit fmt clippy clippy-pedantic vescpkg-rs-sys-target-check arm-clippy arm-gates test package package-only deploy deploy-install lisp-probe clean status
+.PHONY: check check-full pre-commit fmt clippy clippy-pedantic vescpkg-rs-sys-target-check arm-clippy arm-gates test package package-only deploy deploy-install clean status
 
 # --- verification -----------------------------------------------------------
 #
@@ -84,9 +84,6 @@ deploy: package-only
 
 deploy-install: package-only
 	$(CARGO) run -p cargo-vescpkg -- package-install $(PACKAGE) $(DEVICE_FLAGS)
-
-lisp-probe:
-	$(CARGO) run -p cargo-vescpkg -- lisp-probe $(DEVICE_FLAGS)
 
 clean:
 	$(CARGO) clean

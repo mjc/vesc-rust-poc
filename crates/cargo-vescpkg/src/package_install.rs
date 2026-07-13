@@ -585,7 +585,7 @@ mod tests {
     fn build_package_bytes() -> Vec<u8> {
         let mut data = Vec::new();
         write_string(&mut data, "VESC Packet");
-        write_field(&mut data, "name", b"Rust BLE loopback test package");
+        write_field(&mut data, "name", b"A minimal package");
         write_field(&mut data, "qmlFile", b"import QtQuick 2.15\nItem {}\n");
         write_field(
             &mut data,
@@ -622,7 +622,7 @@ mod tests {
     #[test]
     fn decodes_a_compressed_vesc_package() {
         let package = decode_package(&build_package_bytes()).expect("package");
-        assert_eq!(package.name, "Rust BLE loopback test package");
+        assert_eq!(package.name, "A minimal package");
         assert!(package.qml_is_fullscreen);
         assert!(package.is_valid());
     }

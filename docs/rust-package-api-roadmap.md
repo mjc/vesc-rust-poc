@@ -55,7 +55,7 @@ remember firmware polarity.
 ## Next Migration Ladder
 
 1. Keep artifact, size, symbol, and ABI guards green under `nix develop -c make package`.
-2. Hardware-validate install, `lisp-probe`, and `loopback` after each native boundary change.
+2. Hardware-validate install and `loopback` after each native boundary change.
 3. Grow `vescpkg-rs` only where tests prove the ABI boundary is stable.
 4. Keep `cargo vescpkg build` driven by Cargo metadata and compiler artifacts.
 5. Replace generic VESC references only after tests prove byte/layout equivalence.
