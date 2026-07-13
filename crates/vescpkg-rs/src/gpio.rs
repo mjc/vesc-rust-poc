@@ -83,5 +83,8 @@ mod tests {
         let (first, second) = gpio.read_analog_pair(AnalogPin::new(42), AnalogPin::new(43));
         assert_eq!(first.as_volts(), 1.2);
         assert_eq!(second.as_volts(), 3.4);
+        assert_eq!(gpio.test.analog_pair_calls.get(), 1);
+        assert_eq!(gpio.test.last_pin.get(), 42);
+        assert_eq!(gpio.test.last_second_pin.get(), 43);
     }
 }

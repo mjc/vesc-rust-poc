@@ -1267,6 +1267,8 @@ pub unsafe fn vesc_system_time_ticks() -> u32 {
         if let Some(system_time_ticks) = slots::system_time_ticks() {
             system_time_ticks()
         } else {
+            // Legacy VESC tables expose seconds only. The firmware system tick
+            // is 100 microseconds (10 kHz), matching chVTGetSystemTimeX().
             (slots::system_time()() * 10_000.0) as u32
         }
     }

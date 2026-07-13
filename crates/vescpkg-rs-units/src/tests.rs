@@ -107,13 +107,21 @@ fn angular_velocity_over_time_is_an_angle_in_radians() {
 #[test]
 fn sample_rate_reports_one_sample_period() {
     assert_eq!(
-        SampleRate::from_hertz(200.0).sample_period().as_seconds(),
+        SampleRate::from_hertz(200.0)
+            .sample_period()
+            .unwrap()
+            .as_seconds(),
         0.005
     );
     assert_eq!(
-        SampleRate::from_hertz(0.0).sample_period().as_seconds(),
-        1.0
+        SampleRate::from_hertz(0.5)
+            .sample_period()
+            .unwrap()
+            .as_seconds(),
+        2.0
     );
+    assert_eq!(SampleRate::from_hertz(0.0).sample_period(), None);
+    assert_eq!(SampleRate::from_hertz(f32::NAN).sample_period(), None);
 }
 
 #[test]

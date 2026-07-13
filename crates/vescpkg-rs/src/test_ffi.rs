@@ -78,7 +78,15 @@ pub(crate) struct MotorOutputState {
     pub brake_current: f32,
 }
 
-pub(crate) fn lock_firmware() {
+pub(crate) struct FirmwareLockGuard;
+
+impl Drop for FirmwareLockGuard {
+    fn drop(&mut self) {
+        LOCKED.store(false, Ordering::Release);
+    }
+}
+
+pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     while LOCKED
         .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
         .is_err()
@@ -145,10 +153,7 @@ pub(crate) fn lock_firmware() {
     THREAD_PRIORITIES
         .iter()
         .for_each(|slot| slot.store(0, Ordering::Relaxed));
-}
-
-pub(crate) fn unlock_firmware() {
-    LOCKED.store(false, Ordering::Release);
+    FirmwareLockGuard
 }
 
 fn load(value: &AtomicU32) -> f32 {

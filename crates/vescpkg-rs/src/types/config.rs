@@ -85,14 +85,15 @@ impl<const LEN: usize> CustomConfigImage<LEN> {
         &self.0
     }
 
-    /// Read one byte, returning zero for out-of-range generated offsets.
-    pub(crate) fn byte_at(&self, offset: usize) -> u8 {
-        self.0.get(offset).copied().unwrap_or(0)
-    }
-
     /// Read one big-endian `u16`, returning zero for out-of-range generated offsets.
     pub(crate) fn be_u16_at(&self, offset: usize) -> u16 {
-        u16::from_be_bytes([self.byte_at(offset), self.byte_at(offset + 1)])
+        let Some(end) = offset.checked_add(2) else {
+            return 0;
+        };
+        let Some(bytes) = self.0.get(offset..end) else {
+            return 0;
+        };
+        u16::from_be_bytes([bytes[0], bytes[1]])
     }
 
     /// Read a generated boolean flag.
@@ -171,7 +172,7 @@ impl CustomConfigDurationField {
         editor: &mut CustomConfigEditor<'_, LEN>,
         duration: crate::VescSeconds,
     ) -> Option<()> {
-        editor.set_be_u16_at(self.0.get(), (duration.as_seconds() * 1000.0) as u16)
+        editor.set_be_u16_at(self.0.get(), finite_u16(duration.as_seconds() * 1000.0)?)
     }
 }
 
@@ -201,7 +202,7 @@ impl CustomConfigVoltageField {
         editor: &mut CustomConfigEditor<'_, LEN>,
         voltage: crate::units::Voltage,
     ) -> Option<()> {
-        editor.set_be_u16_at(self.0.get(), (voltage.as_volts() * 1000.0) as u16)
+        editor.set_be_u16_at(self.0.get(), finite_u16(voltage.as_volts() * 1000.0)?)
     }
 }
 
@@ -236,7 +237,10 @@ impl CustomConfigElectricalSpeedField {
         editor: &mut CustomConfigEditor<'_, LEN>,
         speed: super::motion::ElectricalSpeed,
     ) -> Option<()> {
-        editor.set_be_u16_at(self.0.get(), speed.rpm().as_revolutions_per_minute() as u16)
+        editor.set_be_u16_at(
+            self.0.get(),
+            finite_u16(speed.rpm().as_revolutions_per_minute())?,
+        )
     }
 }
 
@@ -266,7 +270,7 @@ impl CustomConfigSampleRateField {
         editor: &mut CustomConfigEditor<'_, LEN>,
         sample_rate: crate::SampleRate,
     ) -> Option<()> {
-        editor.set_be_u16_at(self.0.get(), sample_rate.as_hertz() as u16)
+        editor.set_be_u16_at(self.0.get(), finite_u16(sample_rate.as_hertz())?)
     }
 }
 
@@ -345,10 +349,14 @@ struct CustomConfigScaledField {
 }
 
 impl CustomConfigScaledField {
-    const fn new(offset: usize, scale: f32) -> Self {
-        Self {
-            offset: CustomConfigOffset::new(offset),
-            scale,
+    const fn new(offset: usize, scale: f32) -> Option<Self> {
+        if scale.is_finite() && scale > 0.0 {
+            Some(Self {
+                offset: CustomConfigOffset::new(offset),
+                scale,
+            })
+        } else {
+            None
         }
     }
 
@@ -362,8 +370,17 @@ impl CustomConfigScaledField {
         editor: &mut CustomConfigEditor<'_, LEN>,
         value: f32,
     ) -> Option<()> {
-        editor.set_be_u16_at(self.offset.get(), (value * self.scale) as i16 as u16)
+        editor.set_be_u16_at(self.offset.get(), finite_i16(value * self.scale)? as u16)
     }
+}
+
+fn finite_u16(value: f32) -> Option<u16> {
+    (value.is_finite() && value >= 0.0 && value <= f32::from(u16::MAX)).then_some(value as u16)
+}
+
+fn finite_i16(value: f32) -> Option<i16> {
+    (value.is_finite() && value >= f32::from(i16::MIN) && value <= f32::from(i16::MAX))
+        .then_some(value as i16)
 }
 
 macro_rules! semantic_scaled_config_field {
@@ -375,8 +392,11 @@ macro_rules! semantic_scaled_config_field {
 
         impl $name {
             /// Name a generated scaled field by its serialized offset and scale.
-            pub const fn new(offset: usize, scale: f32) -> Self {
-                Self(CustomConfigScaledField::new(offset, scale))
+            pub const fn new(offset: usize, scale: f32) -> Option<Self> {
+                match CustomConfigScaledField::new(offset, scale) {
+                    Some(field) => Some(Self(field)),
+                    None => None,
+                }
             }
 
             /// Decode the field directly into its semantic value.
@@ -649,50 +669,105 @@ mod tests {
         let mut image = CustomConfigImage::new([0x00, 0x7b]);
 
         assert_eq!(
-            CustomConfigMotorCurrentField::new(0, 10.0).read(&image),
+            CustomConfigMotorCurrentField::new(0, 10.0)
+                .unwrap()
+                .read(&image),
             crate::MotorCurrent::new(crate::Current::from_amps(12.3))
         );
         assert_eq!(
-            CustomConfigAngleField::new(0, 10.0).read(&image),
+            CustomConfigAngleField::new(0, 10.0).unwrap().read(&image),
             crate::AngleDegrees::from_degrees(12.3)
         );
         assert_eq!(
-            CustomConfigAngularVelocityField::new(0, 10.0).read(&image),
+            CustomConfigAngularVelocityField::new(0, 10.0)
+                .unwrap()
+                .read(&image),
             crate::AngularVelocity::from_degrees_per_second(12.3)
         );
         assert_eq!(
-            CustomConfigSecondsField::new(0, 10.0).read(&image),
+            CustomConfigSecondsField::new(0, 10.0).unwrap().read(&image),
             crate::VescSeconds::from_seconds(12.3)
         );
         assert_eq!(
-            CustomConfigMahonyPitchGainField::new(0, 10.0).read(&image),
+            CustomConfigMahonyPitchGainField::new(0, 10.0)
+                .unwrap()
+                .read(&image),
             crate::MahonyPitchGain::new(12.3)
         );
         assert_eq!(
-            CustomConfigMahonyRollGainField::new(0, 10.0).read(&image),
+            CustomConfigMahonyRollGainField::new(0, 10.0)
+                .unwrap()
+                .read(&image),
             crate::MahonyRollGain::new(12.3)
         );
         assert_eq!(
-            CustomConfigAngleCurrentGainField::new(0, 10.0).read(&image),
+            CustomConfigAngleCurrentGainField::new(0, 10.0)
+                .unwrap()
+                .read(&image),
             crate::AngleCurrentGain::new(12.3)
         );
         assert_eq!(
-            CustomConfigRateCurrentGainField::new(0, 10.0).read(&image),
+            CustomConfigRateCurrentGainField::new(0, 10.0)
+                .unwrap()
+                .read(&image),
             crate::RateCurrentGain::new(12.3)
         );
         assert_eq!(
-            CustomConfigIntegralCurrentGainField::new(0, 10.0).read(&image),
+            CustomConfigIntegralCurrentGainField::new(0, 10.0)
+                .unwrap()
+                .read(&image),
             crate::IntegralCurrentGain::new(12.3)
         );
         assert_eq!(
-            CustomConfigPidScaleField::new(0, 10.0).read(&image),
+            CustomConfigPidScaleField::new(0, 10.0)
+                .unwrap()
+                .read(&image),
             crate::PidScale::new(12.3)
         );
 
         CustomConfigAngleField::new(0, 10.0)
+            .unwrap()
             .write(&mut image.editor(), crate::AngleDegrees::from_degrees(-4.2))
             .expect("valid generated field");
         assert_eq!(image.as_bytes(), &[0xff, 0xd6]);
+    }
+
+    #[test]
+    fn config_fields_reject_incomplete_or_unrepresentable_values() {
+        let image = CustomConfigImage::new([0x12]);
+        assert_eq!(image.be_u16_at(0), 0);
+        assert_eq!(image.be_u16_at(usize::MAX), 0);
+
+        let mut image = CustomConfigImage::new([0_u8; 2]);
+        assert!(
+            CustomConfigDurationField::new(0)
+                .write(&mut image.editor(), crate::VescSeconds::from_seconds(-1.0))
+                .is_none()
+        );
+        assert!(
+            CustomConfigVoltageField::new(0)
+                .write(
+                    &mut image.editor(),
+                    crate::units::Voltage::from_volts(f32::INFINITY)
+                )
+                .is_none()
+        );
+        assert!(
+            CustomConfigSampleRateField::new(0)
+                .write(&mut image.editor(), crate::SampleRate::from_hertz(f32::NAN))
+                .is_none()
+        );
+        assert!(CustomConfigAngleField::new(0, 0.0).is_none());
+        assert!(CustomConfigAngleField::new(0, f32::INFINITY).is_none());
+        assert!(
+            CustomConfigAngleField::new(0, 10.0)
+                .unwrap()
+                .write(
+                    &mut image.editor(),
+                    crate::AngleDegrees::from_degrees(4_000.0)
+                )
+                .is_none()
+        );
     }
 
     #[test]

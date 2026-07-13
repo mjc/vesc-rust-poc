@@ -174,10 +174,10 @@ pub unsafe extern "C" fn imu_read_callback<T: ImuReadCallback>(
     _mag: *mut f32,
     dt: f32,
 ) {
-    let Some(accel) = crate::firmware_array::<f32, 3>(acc.cast_const()) else {
+    let Some(accel) = (unsafe { crate::firmware_array::<f32, 3>(acc.cast_const()) }) else {
         return;
     };
-    let Some(gyro) = crate::firmware_array::<f32, 3>(gyro.cast_const()) else {
+    let Some(gyro) = (unsafe { crate::firmware_array::<f32, 3>(gyro.cast_const()) }) else {
         return;
     };
     // BLDC calls package IMU read callbacks with gyro axes already converted
@@ -385,9 +385,8 @@ mod tests {
     static LOADER_STATE: AtomicPtr<State> = AtomicPtr::new(core::ptr::null_mut());
     static OBSERVED_SAMPLES: AtomicU8 = AtomicU8::new(0);
 
-    fn loader_state() -> Option<&'static mut State> {
+    unsafe fn loader_state() -> Option<NonNull<State>> {
         NonNull::new(LOADER_STATE.load(Ordering::Acquire))
-            .map(|mut state| unsafe { state.as_mut() })
     }
 
     impl ImuReadHandler for RuntimeImuRead {
@@ -411,7 +410,12 @@ mod tests {
         fn state_source() -> crate::PackageStateAccess<'static, Self::State> {
             // C map: generated package callbacks use `ARG(PROG_ADDR)` from
             // `third_party/vesc_pkg_lib/vesc_c_if.h:697-700` as this fallback.
-            crate::PackageStateAccess::with_firmware_fallback(&LOADER_RUNTIME_STATE, loader_state)
+            unsafe {
+                crate::PackageStateAccess::with_firmware_fallback(
+                    &LOADER_RUNTIME_STATE,
+                    loader_state,
+                )
+            }
         }
 
         fn read(state: &mut Self::State, _sample: ImuReadSample) {

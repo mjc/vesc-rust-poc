@@ -162,7 +162,7 @@ struct PairTestThread;
 impl crate::FirmwareThread for PairTestThread {
     type State = u32;
 
-    fn run(_ctx: crate::ThreadContext<'static, Self::State>) {}
+    fn run(_ctx: crate::ThreadContext<'_, Self::State>) {}
 }
 
 #[test]
@@ -178,7 +178,7 @@ fn thread_api_spawns_and_terminates_typed_thread_pair() {
                     crate::ThreadStackSize::from_bytes(256),
                     crate::thread_name!("first"),
                 ),
-                crate::ThreadSpec::<u32>::from_entry(
+                crate::ThreadSpec::<()>::from_entry(
                     stub_thread_entry,
                     crate::ThreadStackSize::from_bytes(128),
                     crate::thread_name!("second"),
@@ -200,7 +200,7 @@ fn thread_api_spawns_and_terminates_typed_thread_pair() {
     assert_eq!(bindings.spawn_calls.get(), 2);
     assert_eq!(bindings.spawn_stacks.get(), [256, 128]);
     let state_arg = core::ptr::from_mut(&mut state).cast::<core::ffi::c_void>() as usize;
-    assert_eq!(bindings.spawn_args.get(), [state_arg, state_arg]);
+    assert_eq!(bindings.spawn_args.get(), [state_arg, 0]);
 
     pair.terminate_reverse(&api);
 
@@ -221,7 +221,7 @@ fn thread_api_preserves_first_thread_when_second_spawn_fails() {
                     crate::ThreadStackSize::from_bytes(256),
                     crate::thread_name!("first"),
                 ),
-                crate::ThreadSpec::<u32>::from_entry(
+                crate::ThreadSpec::<()>::from_entry(
                     stub_thread_entry,
                     crate::ThreadStackSize::from_bytes(128),
                     crate::thread_name!("second"),
@@ -306,6 +306,7 @@ fn loopback_lifecycle_registers_custom_config_before_app_data() {
     assert_eq!(
         lifecycle.register_custom_config_then_app_data(
             |bindings| {
+                assert_eq!(bindings.handler_calls.get(), 0);
                 unsafe {
                     bindings.register_custom_config(
                         custom_config_get,

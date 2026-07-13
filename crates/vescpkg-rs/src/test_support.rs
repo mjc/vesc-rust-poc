@@ -19,6 +19,7 @@ use vescpkg_rs_sys::AppDataHandler;
 #[cfg(all(feature = "test-support", not(test)))]
 pub struct FirmwareTest {
     firmware: crate::Firmware,
+    _lock: crate::test_ffi::FirmwareLockGuard,
 }
 
 #[cfg(all(feature = "test-support", not(test)))]
@@ -26,9 +27,10 @@ impl FirmwareTest {
     /// Reset this thread's fake firmware state and construct normal capabilities.
     #[must_use]
     pub fn new() -> Self {
-        crate::test_ffi::lock_firmware();
+        let lock = crate::test_ffi::lock_firmware();
         Self {
             firmware: crate::Firmware::new(),
+            _lock: lock,
         }
     }
 
@@ -326,12 +328,6 @@ impl Default for FirmwareTest {
     }
 }
 
-#[cfg(all(feature = "test-support", not(test)))]
-impl Drop for FirmwareTest {
-    fn drop(&mut self) {
-        crate::test_ffi::unlock_firmware();
-    }
-}
 use vescpkg_rs_sys::ExtensionHandler;
 #[cfg(not(test))]
 use vescpkg_rs_sys::LbmValue;
@@ -833,6 +829,12 @@ mod tests {
             // Refloat v1.2.1 registers `imu_ref_callback` at `src/main.c:2455`
             // and clears it during stop at `src/main.c:2401`.
             bindings.set_imu_read_callback(stubs::imu_read_callback as ImuReadCallback);
+        }
+        assert_eq!(
+            bindings.last_imu_read_callback.get(),
+            stubs::imu_read_callback as *const () as usize
+        );
+        unsafe {
             bindings.clear_imu_read_callback();
         }
 

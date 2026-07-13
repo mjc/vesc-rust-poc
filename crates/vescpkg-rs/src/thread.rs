@@ -307,7 +307,7 @@ pub trait FirmwareThread {
     type State: 'static;
 
     /// Run the thread body.
-    fn run(ctx: ThreadContext<'static, Self::State>);
+    fn run(ctx: ThreadContext<'_, Self::State>);
 }
 
 /// Rust implementation for a firmware package thread that does not need package state.
@@ -323,7 +323,7 @@ pub trait StatelessFirmwareThread {
 /// `arg` must be null or point to a valid `T::State` value with exclusive access for the duration
 /// of this call.
 pub(crate) unsafe extern "C" fn firmware_thread_entry<T: FirmwareThread>(arg: *mut c_void) {
-    let Some(state) = crate::arg_mut::<T::State>(arg) else {
+    let Some(state) = (unsafe { crate::arg_mut::<T::State>(arg) }) else {
         return;
     };
     #[cfg(test)]
@@ -489,12 +489,12 @@ pub struct ThreadPair {
 #[derive(Debug, Clone, Copy)]
 pub struct ThreadPairSpec<S: 'static> {
     first: ThreadSpec<S>,
-    second: ThreadSpec<S>,
+    second: ThreadSpec<()>,
 }
 
 impl<S: 'static> ThreadPairSpec<S> {
-    /// Build a typed firmware thread-pair spec from two thread specs.
-    pub const fn new(first: ThreadSpec<S>, second: ThreadSpec<S>) -> Self {
+    /// Build a pair with one stateful thread and one stateless thread.
+    pub const fn new(first: ThreadSpec<S>, second: ThreadSpec<()>) -> Self {
         Self { first, second }
     }
 
@@ -504,7 +504,7 @@ impl<S: 'static> ThreadPairSpec<S> {
     }
 
     /// Return the second thread spec.
-    pub const fn second(self) -> ThreadSpec<S> {
+    pub const fn second(self) -> ThreadSpec<()> {
         self.second
     }
 }
@@ -722,9 +722,8 @@ impl<B: ThreadBindings> ThreadApi<B> {
     ///
     /// # Safety
     ///
-    /// State is passed to both firmware threads as a raw pointer. It must
-    /// remain valid until both threads exit or are terminated, and callers must
-    /// ensure the two thread entries coordinate any shared mutable access.
+    /// State is passed only to the first firmware thread. It must remain valid
+    /// until that thread exits or is terminated.
     #[allow(clippy::needless_pass_by_value)]
     pub(crate) unsafe fn spawn_thread_pair_with_state<S>(
         &self,
@@ -733,23 +732,24 @@ impl<B: ThreadBindings> ThreadApi<B> {
     ) -> Option<ThreadPair> {
         let ThreadPairSpec { first, second } = pair;
         let arg = core::ptr::from_mut(state).cast::<c_void>();
-        let spawn = |thread: ThreadSpec<S>| {
+        let spawn = |entry, stack_size: ThreadStackSize, name: ThreadName, arg| {
             // C map: lispif_spawn consumes the runtime entry, name, and
             // argument addresses unchanged at
             // third_party/vesc/lispBM/lispif_c_lib.c:98-125.
             let thread = unsafe {
-                self.bindings.spawn(
-                    thread.entry,
-                    thread.stack_size.bytes(),
-                    thread.name.as_cstr().as_ptr(),
-                    arg,
-                )
+                self.bindings
+                    .spawn(entry, stack_size.bytes(), name.as_cstr().as_ptr(), arg)
             };
             unsafe { ThreadHandle::from_firmware(thread) }
         };
 
-        let first_handle = spawn(first)?;
-        let Some(second_handle) = spawn(second) else {
+        let first_handle = spawn(first.entry, first.stack_size, first.name, arg)?;
+        let Some(second_handle) = spawn(
+            second.entry,
+            second.stack_size,
+            second.name,
+            core::ptr::null_mut(),
+        ) else {
             return Some(ThreadPair::with_first(first_handle));
         };
 
@@ -977,7 +977,7 @@ mod tests {
     impl FirmwareThread for RecordingThread {
         type State = u32;
 
-        fn run(mut ctx: ThreadContext<'static, Self::State>) {
+        fn run(mut ctx: ThreadContext<'_, Self::State>) {
             RUN_CALLS.fetch_add(1, Ordering::SeqCst);
             *ctx.state() += 1;
             OBSERVED_STATE.store(*ctx.state(), Ordering::SeqCst);
@@ -1054,7 +1054,7 @@ mod tests {
     }
 
     #[test]
-    fn thread_pair_spec_spawns_threads_with_shared_state() {
+    fn thread_pair_spec_passes_state_only_to_the_stateful_thread() {
         let bindings = FakeThreadBindings::with_spawn_results([0x1000, 0x2000]);
         let threads = ThreadApi::new(&bindings);
         let first_name = crate::thread_name!("first");
@@ -1094,7 +1094,7 @@ mod tests {
                 .map(|name| unsafe { CStr::from_ptr(name) }),
             [first_name.as_cstr(), second_name.as_cstr()]
         );
-        assert_eq!(bindings.spawn_args.get(), [state_arg, state_arg]);
+        assert_eq!(bindings.spawn_args.get(), [state_arg, 0]);
         assert_eq!(bindings.terminate_calls.get(), 0);
     }
 

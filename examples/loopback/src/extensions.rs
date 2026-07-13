@@ -18,7 +18,7 @@ struct RustProbeDiag;
 
 impl LbmExtension for RustProbeDiag {
     fn call(_args: LispArgs<'_>) -> LispValue {
-        LispValue::integer(42)
+        LispValue::integer(42).expect("42 fits the LispBM immediate integer")
     }
 }
 
@@ -41,7 +41,7 @@ pub(crate) fn rust_add(a: i32, b: i32) -> i32 {
 
 #[cfg(all(test, feature = "test-support"))]
 fn rust_add_extension_value() -> LispValue {
-    LispValue::integer(rust_add(20, 22))
+    LispValue::integer(rust_add(20, 22)).expect("42 fits the LispBM immediate integer")
 }
 
 #[cfg(all(test, feature = "test-support"))]
@@ -84,11 +84,11 @@ mod tests {
 
     #[test]
     fn rust_add_extension_returns_a_constant_encoded_probe_value() {
-        assert!(rust_add_extension_value() == LispValue::integer(42));
+        assert!(rust_add_extension_value() == LispValue::integer(42).unwrap());
     }
 
     #[test]
     fn rust_add_extension_does_not_depend_on_live_argument_shape() {
-        assert!(rust_add_extension_value() == LispValue::integer(42));
+        assert!(rust_add_extension_value() == LispValue::integer(42).unwrap());
     }
 }

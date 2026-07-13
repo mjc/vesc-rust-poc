@@ -6,6 +6,8 @@ use vescpkg_rs_sys::{ExtensionHandler, LbmValue};
 
 const LBM_INT_TAG: u32 = 0x8;
 const LBM_VALUE_SHIFT: u32 = 4;
+const LBM_INT_MIN: i32 = -(1 << 27);
+const LBM_INT_MAX: i32 = (1 << 27) - 1;
 
 const fn encode_integer(value: i32) -> u32 {
     value.wrapping_shl(LBM_VALUE_SHIFT) as u32 | LBM_INT_TAG
@@ -22,8 +24,12 @@ pub struct LispValue(LbmValue);
 
 impl LispValue {
     /// Create a LispBM integer value using the device's integer encoding.
-    pub const fn integer(value: i32) -> Self {
-        Self(LbmValue(encode_integer(value)))
+    pub const fn integer(value: i32) -> Option<Self> {
+        if value >= LBM_INT_MIN && value <= LBM_INT_MAX {
+            Some(Self(LbmValue(encode_integer(value))))
+        } else {
+            None
+        }
     }
 
     pub(crate) const fn raw(self) -> LbmValue {
@@ -309,13 +315,13 @@ mod tests {
 
     impl super::LbmExtension for IntegerExtension {
         fn call(_args: LispArgs<'_>) -> LispValue {
-            LispValue::integer(42)
+            LispValue::integer(42).unwrap()
         }
     }
 
     impl super::LbmExtension for EchoIntegerExtension {
         fn call(args: LispArgs<'_>) -> LispValue {
-            LispValue::integer(args.integer(0).unwrap_or_default())
+            LispValue::integer(args.integer(0).unwrap_or_default()).unwrap()
         }
     }
 
@@ -344,6 +350,14 @@ mod tests {
             unsafe { super::lbm_extension_handler::<IntegerExtension>(core::ptr::null_mut(), 0) },
             super::encode_integer(42),
         );
+    }
+
+    #[test]
+    fn typed_lisp_integer_rejects_values_outside_the_immediate_payload() {
+        assert!(LispValue::integer(super::LBM_INT_MIN).is_some());
+        assert!(LispValue::integer(super::LBM_INT_MAX).is_some());
+        assert!(LispValue::integer(super::LBM_INT_MIN - 1).is_none());
+        assert!(LispValue::integer(super::LBM_INT_MAX + 1).is_none());
     }
 
     #[test]

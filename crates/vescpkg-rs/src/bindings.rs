@@ -5,6 +5,7 @@ use core::ffi::c_char;
 
 use crate::ffi::{CustomConfigGet, CustomConfigSet, CustomConfigXml, ImuReadCallback};
 use crate::types::{PackageArgument, PackageProgramAddress};
+use core::ptr::NonNull;
 use vescpkg_rs_sys::AppDataHandler;
 #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 use vescpkg_rs_sys::ExtensionHandler;
@@ -76,15 +77,18 @@ pub(crate) trait AppDataBindings {
     /// `third_party/vesc/lispBM/lispif_c_lib.c:151-156`.
     fn arg(&self, prog_addr: PackageProgramAddress) -> Option<PackageArgument>;
 
-    /// Borrow the typed package state stored in `ARG` for `prog_addr`.
-    fn arg_state_ptr<T: 'static>(
+    /// Return the typed package-state pointer stored in `ARG` for `prog_addr`.
+    ///
+    /// # Safety
+    ///
+    /// The firmware argument must point to a live `T`, and the caller must
+    /// coordinate all shared and mutable access to that value.
+    unsafe fn arg_state_ptr<T: 'static>(
         &self,
         prog_addr: PackageProgramAddress,
-    ) -> Option<&'static mut T> {
-        self.arg(prog_addr).map(|argument| {
-            let mut state = unsafe { argument.state_ptr() };
-            unsafe { state.as_mut() }
-        })
+    ) -> Option<NonNull<T>> {
+        self.arg(prog_addr)
+            .map(|argument| unsafe { argument.state_ptr() })
     }
 
     /// # Safety

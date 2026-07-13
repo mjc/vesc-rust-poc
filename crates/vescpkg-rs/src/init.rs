@@ -16,7 +16,7 @@ unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
 
 /// Install the package stop hook into loader metadata.
 fn install_stop_hook(info: *mut ffi::LibInfo) -> Result<(), PackageStartError> {
-    let Some(info) = crate::loader_info_mut(info) else {
+    let Some(info) = (unsafe { crate::loader_info_mut(info) }) else {
         return Err(PackageStartError::LoaderUnavailable);
     };
     info.stop_fun = Some(crate::firmware::stop_handler_for_loader(info, stop_package));
@@ -127,7 +127,7 @@ impl PackageLoaderStateGuard {
 impl Drop for PackageLoaderStateGuard {
     fn drop(&mut self) {
         if !self.committed {
-            crate::clear_loader_info(self.info);
+            unsafe { crate::clear_loader_info(self.info) };
         }
     }
 }
@@ -169,15 +169,15 @@ impl<'a, T, B: crate::alloc::AllocBindings> FirmwareLoaderStateGuard<'a, T, B> {
 impl<T, B: crate::alloc::AllocBindings> Drop for FirmwareLoaderStateGuard<'_, T, B> {
     fn drop(&mut self) {
         if !self.committed {
-            crate::clear_loader_info(self.info);
+            unsafe { crate::clear_loader_info(self.info) };
         }
     }
 }
 
 /// Loader metadata and runtime-slot state cleared on drop unless committed.
 pub struct PackageLoaderRuntimeStateGuard<'a, L, T: 'static> {
-    loader: L,
     runtime: crate::PackageStateGuard<'a, T>,
+    loader: L,
 }
 
 impl PackageLoaderRuntimeStateGuard<'_, PackageLoaderStateGuard, ()> {
@@ -186,7 +186,7 @@ impl PackageLoaderRuntimeStateGuard<'_, PackageLoaderStateGuard, ()> {
         loader: PackageLoaderStateGuard,
         runtime: crate::PackageStateGuard<'_, T>,
     ) -> PackageLoaderRuntimeStateGuard<'_, PackageLoaderStateGuard, T> {
-        PackageLoaderRuntimeStateGuard { loader, runtime }
+        PackageLoaderRuntimeStateGuard { runtime, loader }
     }
 }
 
@@ -208,7 +208,7 @@ impl<'a, T: 'static, B: crate::alloc::AllocBindings>
         loader: FirmwareLoaderStateGuard<'a, T, B>,
         runtime: crate::PackageStateGuard<'a, T>,
     ) -> Self {
-        Self { loader, runtime }
+        Self { runtime, loader }
     }
 
     /// Mutably borrow the installed firmware-owned state before commit.
@@ -235,7 +235,7 @@ impl PackageStart {
     }
 
     fn raw_info_mut(&mut self) -> Option<&mut ffi::LibInfo> {
-        crate::loader_info_mut(self.info.cast())
+        unsafe { crate::loader_info_mut(self.info.cast()) }
     }
 
     /// Install the default package stop hook into loader metadata.
@@ -253,27 +253,39 @@ impl PackageStart {
     }
 
     /// Run an operation with typed package state stored in loader metadata.
-    pub fn with_state<T: 'static, R>(&mut self, operation: impl FnOnce(&mut T) -> R) -> Option<R> {
+    ///
+    /// # Safety
+    ///
+    /// Loader metadata must contain a live, exclusively borrowed `T`.
+    pub unsafe fn with_state<T: 'static, R>(
+        &mut self,
+        operation: impl FnOnce(&mut T) -> R,
+    ) -> Option<R> {
         self.raw_info_mut()
-            .and_then(crate::loader_state_mut::<T>)
+            .and_then(|info| unsafe { crate::loader_state_mut::<T>(info) })
             .map(operation)
     }
 
     /// Run an operation with loader-owned state that may start package threads.
     #[inline(always)]
-    pub fn with_thread_state<T: 'static, R>(
+    ///
+    /// # Safety
+    ///
+    /// Loader metadata must contain a live `T` that remains exclusively owned
+    /// by the spawned stateful thread until it exits.
+    pub unsafe fn with_thread_state<T: 'static, R>(
         &mut self,
         operation: impl FnOnce(PackageThreadState<'_, T>) -> R,
     ) -> Option<R> {
         self.raw_info_mut()
-            .and_then(crate::loader_state_mut::<T>)
+            .and_then(|info| unsafe { crate::loader_state_mut::<T>(info) })
             .map(|state| operation(PackageThreadState { state }))
     }
 
     /// Borrow typed package state stored in loader metadata.
     #[cfg(test)]
-    pub(crate) fn loader_state_mut<T: 'static>(&mut self) -> Option<&mut T> {
-        crate::loader_state_mut(self.raw_info_mut()?)
+    pub(crate) unsafe fn loader_state_mut<T: 'static>(&mut self) -> Option<&mut T> {
+        unsafe { crate::loader_state_mut(self.raw_info_mut()?) }
     }
 
     /// Borrow the loader-backed native image identity for this package.
@@ -298,13 +310,15 @@ impl PackageStart {
             return false;
         };
         let (get, set, xml) = T::image_addresses();
-        crate::register_custom_config_callbacks_from_image(
-            bindings,
-            image,
-            unsafe { core::mem::transmute::<usize, ffi::CustomConfigGet>(get) },
-            unsafe { core::mem::transmute::<usize, ffi::CustomConfigSet>(set) },
-            unsafe { core::mem::transmute::<usize, ffi::CustomConfigXml>(xml) },
-        )
+        unsafe {
+            crate::register_custom_config_callbacks_from_image(
+                bindings,
+                image,
+                core::mem::transmute::<usize, ffi::CustomConfigGet>(get),
+                core::mem::transmute::<usize, ffi::CustomConfigSet>(set),
+                core::mem::transmute::<usize, ffi::CustomConfigXml>(xml),
+            )
+        }
     }
 
     /// Return the loaded package program identity, when firmware supplied one.
@@ -398,12 +412,16 @@ impl PackageStart {
         if !self.register_stateful_custom_config_with_bindings::<B, C, LEN>(bindings) {
             return Err(crate::AppDataHandlerRegistrationError::FirmwareRejected);
         }
-        callback.register_with_bindings(bindings)
+        if let Err(error) = callback.register_with_bindings(bindings) {
+            let _ = unsafe { bindings.clear_custom_configs() };
+            return Err(error);
+        }
+        Ok(())
     }
 
     /// Clear package state and stop metadata after a startup failure.
     pub(crate) fn clear_loader_info(&mut self) {
-        crate::clear_loader_info(self.info.cast());
+        unsafe { crate::clear_loader_info(self.info.cast()) };
     }
 
     /// Store package state and install a typed stop callback in loader metadata.
@@ -430,7 +448,7 @@ impl PackageStart {
         if self.loader_info_mut().is_none() {
             return false;
         }
-        crate::install_loader_state(self.info.cast(), stop_handler, state)
+        unsafe { crate::install_loader_state(self.info.cast(), stop_handler, state) }
     }
 
     /// Store package state and clear it automatically unless the guard commits.
@@ -690,8 +708,8 @@ impl PackageStart {
         let info = self
             .raw_info_mut()
             .ok_or(PackageStartError::LoaderUnavailable)?;
-        let state =
-            crate::loader_state_mut::<T>(info).ok_or(PackageStartError::LoaderUnavailable)?;
+        let state = unsafe { crate::loader_state_mut::<T>(info) }
+            .ok_or(PackageStartError::LoaderUnavailable)?;
         unsafe { runtime.install(state) };
         Ok(())
     }
@@ -1002,7 +1020,7 @@ mod tests {
                 .loader_info_mut()
                 .is_some_and(|info| info.has_stop_handler())
         );
-        let loaded = start.loader_state_mut::<State>().expect("loader state");
+        let loaded = unsafe { start.loader_state_mut::<State>() }.expect("loader state");
         assert_eq!(loaded.value, 42);
 
         start.clear_loader_info();
@@ -1026,7 +1044,9 @@ mod tests {
         let mut start = super::PackageStart::from_raw(&mut info);
 
         assert!(start.install_state_with_handler(super::stop_package, &mut state));
-        start.loader_state_mut::<State>().expect("state").value = 7;
+        unsafe { start.loader_state_mut::<State>() }
+            .expect("state")
+            .value = 7;
 
         assert_eq!(state, State { value: 7 });
     }
@@ -1042,14 +1062,14 @@ mod tests {
         };
         let mut start = super::PackageStart::from_raw(&mut info);
 
-        assert!(start.loader_state_mut::<State>().is_none());
+        assert!(unsafe { start.loader_state_mut::<State>() }.is_none());
     }
 
     #[test]
     fn package_start_loader_state_rejects_null_metadata() {
         let mut start = super::PackageStart::from_raw(core::ptr::null_mut());
 
-        assert!(start.loader_state_mut::<u32>().is_none());
+        assert!(unsafe { start.loader_state_mut::<u32>() }.is_none());
     }
 
     #[test]
@@ -1318,6 +1338,27 @@ mod tests {
         assert!(!runtime.is_installed());
         assert!(info.arg.is_null());
         assert!(info.stop_fun.is_none());
+
+        let bindings = FakeAppDataBindings::with_set_handler_result(false);
+        let runtime = crate::PackageStateStore::<u8>::new();
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0x3000,
+        };
+        let mut state = 42_u8;
+        let mut start = super::PackageStart::from_raw(&mut info);
+        let _guard = start
+            .install_runtime_state_guard_with_handler(super::stop_package, &mut state, &runtime)
+            .expect("loader runtime state guard");
+
+        assert_eq!(
+            start.register_callbacks_with_bindings::<Config, Callback, 1, _>(&bindings),
+            Err(crate::AppDataHandlerRegistrationError::FirmwareRejected)
+        );
+        assert_eq!(bindings.custom_config_register_calls.get(), 1);
+        assert_eq!(bindings.handler_calls.get(), 1);
+        assert_eq!(bindings.custom_config_clear_calls.get(), 1);
     }
 
     #[test]
@@ -1389,7 +1430,7 @@ mod tests {
         assert_eq!(bindings.free_calls.get(), 0);
         assert_eq!(info.arg, backing.as_mut_ptr().cast::<c_void>());
         assert!(info.stop_fun.is_some());
-        let loaded = crate::loader_state_mut::<State>(&mut info).expect("loader state");
+        let loaded = unsafe { crate::loader_state_mut::<State>(&mut info) }.expect("loader state");
         assert_eq!(loaded.value, 99);
     }
 
@@ -1453,7 +1494,7 @@ mod tests {
         assert_eq!(bindings.free_calls.get(), 0);
         assert_eq!(info.arg, backing.as_mut_ptr().cast::<c_void>());
         assert!(info.stop_fun.is_some());
-        let loaded = crate::loader_state_mut::<State>(&mut info).expect("loader state");
+        let loaded = unsafe { crate::loader_state_mut::<State>(&mut info) }.expect("loader state");
         assert_eq!(loaded.value, 99);
     }
 
@@ -1564,7 +1605,7 @@ mod tests {
         assert_eq!(runtime.with(|state| state.value), Some(99));
         assert_eq!(info.arg, backing.as_mut_ptr().cast::<c_void>());
         assert!(info.stop_fun.is_some());
-        let loaded = crate::loader_state_mut::<State>(&mut info).expect("loader state");
+        let loaded = unsafe { crate::loader_state_mut::<State>(&mut info) }.expect("loader state");
         assert_eq!(loaded.value, 99);
         runtime.clear();
     }

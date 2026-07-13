@@ -31,13 +31,18 @@ impl AsRef<[u8]> for AppDataPacket<'_> {
 }
 
 /// Borrow nullable loader metadata from a firmware entrypoint.
-pub fn loader_info_mut(info: *mut LibInfo) -> Option<&'static mut LibInfo> {
+///
+/// # Safety
+///
+/// `info` must be null or point to live, exclusively borrowed loader metadata
+/// for the returned borrow.
+pub unsafe fn loader_info_mut<'a>(info: *mut LibInfo) -> Option<&'a mut LibInfo> {
     NonNull::new(info).map(|mut info| unsafe { info.as_mut() })
 }
 
 /// Clear package state and stop metadata when startup fails.
-pub fn clear_loader_info(info: *mut LibInfo) {
-    if let Some(info) = loader_info_mut(info) {
+pub unsafe fn clear_loader_info(info: *mut LibInfo) {
+    if let Some(info) = unsafe { loader_info_mut(info) } {
         info.arg = ptr::null_mut();
         info.stop_fun = None;
     }
@@ -64,12 +69,18 @@ pub(crate) fn stop_handler_for_loader(info: &LibInfo, stop_handler: StopHandler)
 }
 
 /// Store package state and a stop hook in loader metadata.
-pub fn install_loader_state<T>(
+///
+/// # Safety
+///
+/// `info` must satisfy [`loader_info_mut`]'s contract. `state` must remain live
+/// at the same address until the loader has stopped every callback and thread
+/// that can access it and cleared the metadata.
+pub unsafe fn install_loader_state<T>(
     info: *mut LibInfo,
     stop_handler: StopHandler,
     state: &mut T,
 ) -> bool {
-    let Some(info) = loader_info_mut(info) else {
+    let Some(info) = (unsafe { loader_info_mut(info) }) else {
         return false;
     };
     info.arg = ptr::from_mut(state).cast();
@@ -78,26 +89,41 @@ pub fn install_loader_state<T>(
 }
 
 /// Recover typed package state from loader metadata.
-pub fn loader_state_mut<T: 'static>(info: &mut LibInfo) -> Option<&mut T> {
-    arg_mut(info.arg)
+///
+/// # Safety
+///
+/// The loader argument must point to a live `T`, and the caller must hold
+/// exclusive access for the returned borrow.
+pub unsafe fn loader_state_mut<'a, T: 'static>(info: &mut LibInfo) -> Option<&'a mut T> {
+    unsafe { arg_mut(info.arg) }
 }
 
 /// Recover typed package state from a firmware ARG pointer.
-pub fn arg_mut<T: 'static>(arg: *mut c_void) -> Option<&'static mut T> {
+///
+/// # Safety
+///
+/// `arg` must be null or point to a live `T` that is exclusively borrowed for
+/// the returned lifetime.
+pub unsafe fn arg_mut<'a, T: 'static>(arg: *mut c_void) -> Option<&'a mut T> {
     NonNull::new(arg.cast::<T>()).map(|mut arg| unsafe { arg.as_mut() })
 }
 
 /// Borrow typed package state from a firmware ARG pointer.
-pub fn arg_ref<T: 'static>(arg: *mut c_void) -> Option<&'static T> {
+///
+/// # Safety
+///
+/// `arg` must be null or point to a live `T` that is not mutably borrowed for
+/// the returned lifetime.
+pub unsafe fn arg_ref<'a, T: 'static>(arg: *mut c_void) -> Option<&'a T> {
     NonNull::new(arg.cast::<T>()).map(|arg| unsafe { arg.as_ref() })
 }
 
 /// Typed context passed to package stop callbacks.
-pub struct StopContext<T: 'static> {
-    state: Option<&'static T>,
+pub struct StopContext<'a, T: 'static> {
+    state: Option<&'a T>,
 }
 
-impl<T: 'static> StopContext<T> {
+impl<T: 'static> StopContext<'_, T> {
     /// Borrow the package state, when firmware provided one.
     pub const fn state(&self) -> Option<&T> {
         self.state
@@ -110,7 +136,7 @@ pub trait StopCallback {
     type State: 'static;
 
     /// Stop package-owned runtime resources.
-    fn stop(context: StopContext<Self::State>);
+    fn stop(context: StopContext<'_, Self::State>);
 }
 
 /// Firmware ABI trampoline for a typed package stop callback.
@@ -120,7 +146,7 @@ pub trait StopCallback {
 /// `arg` must be null or point to a valid `T::State` value for the duration of this call.
 pub unsafe extern "C" fn stop_callback<T: StopCallback>(arg: *mut c_void) {
     T::stop(StopContext {
-        state: arg_ref::<T::State>(arg),
+        state: unsafe { arg_ref::<T::State>(arg) },
     });
 }
 
@@ -140,15 +166,15 @@ pub(crate) unsafe extern "C" fn owned_stop_callback<T: StopCallback>(arg: *mut c
 
 /// Convert firmware app-data callback arguments into a packet view.
 #[cfg(any(test, not(feature = "test-support")))]
-pub(crate) fn app_data_packet(data: *mut u8, len: u32) -> Option<AppDataPacket<'static>> {
+pub(crate) unsafe fn app_data_packet<'a>(data: *mut u8, len: u32) -> Option<AppDataPacket<'a>> {
     let len = usize::try_from(len).ok()?;
-    borrowed_bytes(data.cast_const(), len).map(AppDataPacket)
+    unsafe { borrowed_bytes(data.cast_const(), len) }.map(AppDataPacket)
 }
 
 /// Rust implementation for an app-data callback.
 pub trait AppDataCallback {
     /// Handle one firmware app-data packet.
-    fn handle(packet: AppDataPacket<'static>);
+    fn handle(packet: AppDataPacket<'_>);
 }
 
 /// App-data behavior backed by package state recovered from firmware.
@@ -160,7 +186,7 @@ pub trait StatefulAppDataCallback {
     fn runtime_state() -> &'static crate::PackageStateStore<Self::State>;
 
     /// Handle one firmware app-data packet with package state.
-    fn handle(state: &mut Self::State, packet: AppDataPacket<'static>);
+    fn handle(state: &mut Self::State, packet: AppDataPacket<'_>);
 }
 
 /// Package-local app-data callback generated by the firmware callback macros.
@@ -188,7 +214,7 @@ pub trait PackageAppDataCallback {
 /// call.
 #[cfg(any(test, not(feature = "test-support")))]
 pub unsafe extern "C" fn app_data_callback<T: AppDataCallback>(data: *mut u8, len: u32) {
-    if let Some(packet) = app_data_packet(data, len) {
+    if let Some(packet) = unsafe { app_data_packet(data, len) } {
         T::handle(packet);
     }
 }
@@ -227,11 +253,13 @@ macro_rules! firmware_stateful_app_data_callback {
     ($name:ident, $callback:ty, $state_source_name:ident) => {
         #[cfg(all(not(test), target_arch = "arm"))]
         #[inline(never)]
-        fn package_state_mut()
-        -> Option<&'static mut <$callback as $crate::StatefulAppDataCallback>::State> {
-            $crate::__macro_support::__firmware_package_state_mut::<
-                <$callback as $crate::StatefulAppDataCallback>::State,
-            >($crate::firmware_package_program_address!($name))
+        unsafe fn package_state_ptr()
+        -> Option<core::ptr::NonNull<<$callback as $crate::StatefulAppDataCallback>::State>> {
+            unsafe {
+                $crate::__macro_support::__firmware_package_state_ptr::<
+                    <$callback as $crate::StatefulAppDataCallback>::State,
+                >($crate::firmware_package_program_address!($name))
+            }
         }
 
         #[cfg(all(not(test), target_arch = "arm"))]
@@ -244,16 +272,20 @@ macro_rules! firmware_stateful_app_data_callback {
             'static,
             <$callback as $crate::StatefulAppDataCallback>::State,
         > {
-            $crate::PackageStateAccess::with_firmware_fallback(runtime, package_state_mut)
+            unsafe {
+                $crate::PackageStateAccess::with_firmware_fallback(runtime, package_state_ptr)
+            }
         }
 
         #[cfg(all(not(test), target_arch = "arm"))]
         impl $crate::AppDataCallback for $callback {
-            fn handle(packet: $crate::AppDataPacket<'static>) {
-                let Some(state) = package_state_mut() else {
-                    return;
-                };
-                <$callback as $crate::StatefulAppDataCallback>::handle(state, packet);
+            fn handle(packet: $crate::AppDataPacket<'_>) {
+                let source = $state_source_name(
+                    <$callback as $crate::StatefulAppDataCallback>::runtime_state(),
+                );
+                let _ = source.with_mut(|state| {
+                    <$callback as $crate::StatefulAppDataCallback>::handle(state, packet);
+                });
             }
         }
 
@@ -313,12 +345,12 @@ impl<'a> ConfigXml<'a> {
 }
 
 /// Mutable custom-config output buffer for `get_cfg` callbacks.
-struct CustomConfigGetBuffer(MutablePacket<'static>);
+struct CustomConfigGetBuffer<'a>(MutablePacket<'a>);
 
-impl CustomConfigGetBuffer {
+impl CustomConfigGetBuffer<'_> {
     /// Borrow the firmware-provided output buffer.
-    pub fn new(buffer: *mut u8, len: usize) -> Option<Self> {
-        mutable_bytes(buffer, len).map(Self)
+    pub unsafe fn new<'a>(buffer: *mut u8, len: usize) -> Option<CustomConfigGetBuffer<'a>> {
+        unsafe { mutable_bytes(buffer, len) }.map(CustomConfigGetBuffer)
     }
 
     /// Write serialized config bytes into the firmware-provided output buffer.
@@ -332,8 +364,8 @@ impl CustomConfigGetBuffer {
 }
 
 /// Borrowed custom-config input for `set_cfg` callbacks.
-fn custom_config_payload(buffer: *mut u8, len: usize) -> Option<ConfigBytes<'static>> {
-    borrowed_bytes(buffer.cast_const(), len).map(ConfigBytes::new)
+unsafe fn custom_config_payload<'a>(buffer: *mut u8, len: usize) -> Option<ConfigBytes<'a>> {
+    unsafe { borrowed_bytes(buffer.cast_const(), len) }.map(ConfigBytes::new)
 }
 
 /// Custom-config behavior backed by a reusable package state source.
@@ -397,7 +429,7 @@ pub unsafe extern "C" fn stateful_custom_config_get<T, const LEN: usize>(
 where
     T: SourceCustomConfigCallback<LEN>,
 {
-    let Some(mut buffer) = CustomConfigGetBuffer::new(buffer, LEN) else {
+    let Some(mut buffer) = (unsafe { CustomConfigGetBuffer::new(buffer, LEN) }) else {
         return 0;
     };
     if is_default {
@@ -418,7 +450,7 @@ pub unsafe extern "C" fn stateful_custom_config_set<T, const LEN: usize>(buffer:
 where
     T: SourceCustomConfigCallback<LEN>,
 {
-    let Some(payload) = custom_config_payload(buffer, LEN) else {
+    let Some(payload) = (unsafe { custom_config_payload(buffer, LEN) }) else {
         return false;
     };
     T::state_source()
@@ -488,7 +520,13 @@ fn rebase_custom_config_xml_callback(
 /// VESC records the loaded native image base at `third_party/vesc/lispBM/lispif_c_lib.c:1095-1098`,
 /// and custom-config registration checks loaded function pointers in
 /// `third_party/vesc/conf_custom.c:34-42`.
-pub fn register_custom_config_callbacks_from_image<B>(
+///
+/// # Safety
+///
+/// `image` must own all three callback addresses, and rebasing each address
+/// must produce a valid executable function pointer that remains installed
+/// until the callbacks are cleared.
+pub unsafe fn register_custom_config_callbacks_from_image<B>(
     bindings: &B,
     image: NativeImage,
     get_cfg: crate::ffi::CustomConfigGet,
@@ -610,23 +648,42 @@ macro_rules! firmware_package_state_mut {
 }
 
 /// Macro implementation hook for the firmware ARG-backed package state path.
+///
+/// # Safety
+///
+/// The package argument must point to a live `$state`, and the caller must
+/// guarantee exclusive access for the returned borrow.
 #[doc(hidden)]
 #[cfg(not(test))]
-pub fn __firmware_package_state_mut<T: 'static>(
+pub unsafe fn __firmware_package_state_mut<'a, T: 'static>(
     program: crate::PackageProgramAddress,
-) -> Option<&'static mut T> {
+) -> Option<&'a mut T> {
+    let mut state = unsafe { __firmware_package_state_ptr(program) }?;
+    Some(unsafe { state.as_mut() })
+}
+
+/// Macro implementation hook for scoped firmware callback state access.
+#[doc(hidden)]
+#[cfg(not(test))]
+pub unsafe fn __firmware_package_state_ptr<T: 'static>(
+    program: crate::PackageProgramAddress,
+) -> Option<NonNull<T>> {
     let bindings = crate::bindings::RealBindings;
-    crate::bindings::AppDataBindings::arg_state_ptr::<T>(&bindings, program)
+    unsafe { crate::bindings::AppDataBindings::arg_state_ptr::<T>(&bindings, program) }
 }
 
 /// Copy a fixed-size firmware array into Rust-owned storage.
-pub fn firmware_array<T: Copy, const N: usize>(values: *const T) -> Option<[T; N]> {
+///
+/// # Safety
+///
+/// `values` must be null or point to `N` initialized, readable `T` values.
+pub unsafe fn firmware_array<T: Copy, const N: usize>(values: *const T) -> Option<[T; N]> {
     let values = NonNull::new(values.cast_mut())?;
     let values = unsafe { core::slice::from_raw_parts(values.as_ptr().cast_const(), N) };
     values.try_into().ok()
 }
 
-fn borrowed_bytes(data: *const u8, len: usize) -> Option<&'static [u8]> {
+unsafe fn borrowed_bytes<'a>(data: *const u8, len: usize) -> Option<&'a [u8]> {
     if len == 0 {
         return Some(&[]);
     }
@@ -635,7 +692,7 @@ fn borrowed_bytes(data: *const u8, len: usize) -> Option<&'static [u8]> {
     Some(unsafe { core::slice::from_raw_parts(data.as_ptr().cast_const(), len) })
 }
 
-fn mutable_bytes(data: *mut u8, len: usize) -> Option<MutablePacket<'static>> {
+unsafe fn mutable_bytes<'a>(data: *mut u8, len: usize) -> Option<MutablePacket<'a>> {
     let data = NonNull::new(data)?;
     Some(MutablePacket(unsafe {
         core::slice::from_raw_parts_mut(data.as_ptr(), len)
@@ -659,13 +716,13 @@ mod tests {
             base_addr: 0,
         };
 
-        assert!(install_loader_state(&mut info, stop, &mut state));
-        *loader_state_mut::<u32>(&mut info).expect("state") = 7;
+        assert!(unsafe { install_loader_state(&mut info, stop, &mut state) });
+        *unsafe { loader_state_mut::<u32>(&mut info) }.expect("state") = 7;
 
         assert_eq!(state, 7);
         assert!(info.stop_fun.is_some());
 
-        clear_loader_info(&mut info);
+        unsafe { clear_loader_info(&mut info) };
         assert!(info.arg.is_null());
         assert!(info.stop_fun.is_none());
     }
@@ -689,8 +746,10 @@ mod tests {
         let prog_addr = crate::PackageProgramAddress::new(0x2000);
 
         assert!(
-            crate::bindings::AppDataBindings::arg_state_ptr::<State>(&bindings, prog_addr)
-                .is_none()
+            unsafe {
+                crate::bindings::AppDataBindings::arg_state_ptr::<State>(&bindings, prog_addr)
+            }
+            .is_none()
         );
     }
 
@@ -708,10 +767,11 @@ mod tests {
             .app_data_arg
             .set(ptr::from_mut(&mut state).cast::<c_void>() as usize);
 
-        let state_ptr =
+        let mut state_ptr = unsafe {
             crate::bindings::AppDataBindings::arg_state_ptr::<State>(&bindings, prog_addr)
-                .expect("state");
-        state_ptr.value = 9;
+        }
+        .expect("state");
+        unsafe { state_ptr.as_mut() }.value = 9;
 
         assert_eq!(state, State { value: 9 });
     }
@@ -771,7 +831,7 @@ mod tests {
         };
         let mut state = State { value: 7 };
 
-        assert!(install_loader_state(&mut info, stop, &mut state));
+        assert!(unsafe { install_loader_state(&mut info, stop, &mut state) });
 
         let bindings = FirmwareArgLookup {
             loaded_prog_addr: crate::PackageProgramAddress::new(info.base_addr),
@@ -784,16 +844,19 @@ mod tests {
         // that address/pointer plumbing typed as `PackageProgramAddress`,
         // `PackageArgument`, and finally package-owned `State`.
         assert!(
-            crate::bindings::AppDataBindings::arg_state_ptr::<State>(
-                &bindings,
-                crate::PackageProgramAddress::new(0x2004),
-            )
+            unsafe {
+                crate::bindings::AppDataBindings::arg_state_ptr::<State>(
+                    &bindings,
+                    crate::PackageProgramAddress::new(0x2004),
+                )
+            }
             .is_none()
         );
-        let state_ptr =
+        let mut state_ptr = unsafe {
             crate::bindings::AppDataBindings::arg_state_ptr::<State>(&bindings, program.address())
-                .expect("package ARG state");
-        state_ptr.value = 9;
+        }
+        .expect("package ARG state");
+        unsafe { state_ptr.as_mut() }.value = 9;
 
         assert_eq!(state, State { value: 9 });
     }
@@ -801,27 +864,30 @@ mod tests {
     #[test]
     fn custom_config_get_buffer_writes_payload_bytes() {
         let mut buffer = [0_u8; 3];
-        let mut output =
-            CustomConfigGetBuffer::new(buffer.as_mut_ptr(), buffer.len()).expect("config output");
+        let mut output = unsafe { CustomConfigGetBuffer::new(buffer.as_mut_ptr(), buffer.len()) }
+            .expect("config output");
 
         assert_eq!(output.write(ConfigBytes::new(b"abc")), 3);
         assert_eq!(&buffer, b"abc");
-        assert!(CustomConfigGetBuffer::new(ptr::null_mut(), 3).is_none());
+        assert!(unsafe { CustomConfigGetBuffer::new(ptr::null_mut(), 3) }.is_none());
     }
 
     #[test]
     fn firmware_packet_and_array_helpers_reject_null() {
         assert_eq!(unsafe { lbm_args(ptr::null_mut(), 0) }, Some(&[][..]));
         assert!(unsafe { lbm_args(ptr::null_mut(), 1) }.is_none());
-        assert!(firmware_array::<f32, 3>(ptr::null()).is_none());
+        assert!(unsafe { firmware_array::<f32, 3>(ptr::null()) }.is_none());
 
         let values = [1.0_f32, 2.0, 3.0];
-        assert_eq!(firmware_array::<f32, 3>(values.as_ptr()), Some(values));
+        assert_eq!(
+            unsafe { firmware_array::<f32, 3>(values.as_ptr()) },
+            Some(values)
+        );
     }
 
     #[test]
     fn app_data_packet_accepts_empty_packet() {
-        let packet = app_data_packet(ptr::null_mut(), 0).expect("empty packet is valid");
+        let packet = unsafe { app_data_packet(ptr::null_mut(), 0) }.expect("empty packet is valid");
 
         assert!(packet.as_bytes().is_empty());
     }
@@ -829,14 +895,15 @@ mod tests {
     #[test]
     fn app_data_packet_accepts_nonempty_packet() {
         let mut bytes = [3_u8, 1, 4];
-        let packet = app_data_packet(bytes.as_mut_ptr(), bytes.len() as u32).expect("valid packet");
+        let packet = unsafe { app_data_packet(bytes.as_mut_ptr(), bytes.len() as u32) }
+            .expect("valid packet");
 
         assert_eq!(packet.as_bytes(), &[3, 1, 4]);
     }
 
     #[test]
     fn app_data_packet_rejects_null_nonempty_packet() {
-        assert!(app_data_packet(ptr::null_mut(), 3).is_none());
+        assert!(unsafe { app_data_packet(ptr::null_mut(), 3) }.is_none());
     }
 
     #[test]
@@ -848,7 +915,7 @@ mod tests {
         static CALLS: AtomicUsize = AtomicUsize::new(0);
 
         impl AppDataCallback for RecordingAppData {
-            fn handle(_packet: AppDataPacket<'static>) {
+            fn handle(_packet: AppDataPacket<'_>) {
                 CALLS.fetch_add(1, Ordering::SeqCst);
             }
         }
@@ -870,7 +937,7 @@ mod tests {
         static LAST_LEN: AtomicUsize = AtomicUsize::new(usize::MAX);
 
         impl AppDataCallback for RecordingAppData {
-            fn handle(packet: AppDataPacket<'static>) {
+            fn handle(packet: AppDataPacket<'_>) {
                 CALLS.fetch_add(1, Ordering::SeqCst);
                 LAST_LEN.store(packet.0.len(), Ordering::SeqCst);
             }
@@ -906,7 +973,7 @@ mod tests {
 
         static RUNTIME: PackageStateStore<State> = PackageStateStore::new();
 
-        fn no_state() -> Option<&'static mut State> {
+        unsafe fn no_state() -> Option<NonNull<State>> {
             None
         }
 
@@ -914,7 +981,7 @@ mod tests {
             type State = State;
 
             fn state_source() -> PackageStateAccess<'static, Self::State> {
-                PackageStateAccess::with_firmware_fallback(&RUNTIME, no_state)
+                unsafe { PackageStateAccess::with_firmware_fallback(&RUNTIME, no_state) }
             }
 
             fn default_config() -> ConfigBytes<'static> {
@@ -940,13 +1007,15 @@ mod tests {
         let set_cfg = stateful_custom_config_set::<TestCustomConfig, 3>;
         let get_cfg_xml = stateful_custom_config_xml::<TestCustomConfig, 3>;
 
-        assert!(register_custom_config_callbacks_from_image(
-            &bindings,
-            image,
-            get_cfg,
-            set_cfg,
-            get_cfg_xml,
-        ));
+        assert!(unsafe {
+            register_custom_config_callbacks_from_image(
+                &bindings,
+                image,
+                get_cfg,
+                set_cfg,
+                get_cfg_xml,
+            )
+        });
         assert_eq!(bindings.custom_config_register_calls.get(), 1);
         assert_eq!(
             bindings.last_custom_config_get.get(),
@@ -976,7 +1045,7 @@ mod tests {
 
         static SLOT: PackageStateStore<State> = PackageStateStore::new();
 
-        fn no_state() -> Option<&'static mut State> {
+        unsafe fn no_state() -> Option<NonNull<State>> {
             None
         }
 
@@ -984,7 +1053,7 @@ mod tests {
             type State = State;
 
             fn state_source() -> PackageStateAccess<'static, Self::State> {
-                PackageStateAccess::with_firmware_fallback(&SLOT, no_state)
+                unsafe { PackageStateAccess::with_firmware_fallback(&SLOT, no_state) }
             }
 
             fn default_config() -> ConfigBytes<'static> {
@@ -1066,16 +1135,15 @@ mod tests {
         static RUNTIME: PackageStateStore<State> = PackageStateStore::new();
         static FALLBACK: AtomicPtr<State> = AtomicPtr::new(ptr::null_mut());
 
-        fn fallback_state() -> Option<&'static mut State> {
+        unsafe fn fallback_state() -> Option<NonNull<State>> {
             NonNull::new(FALLBACK.load(Ordering::Acquire))
-                .map(|mut state| unsafe { state.as_mut() })
         }
 
         impl SourceCustomConfigCallback<5> for TestCustomConfig {
             type State = State;
 
             fn state_source() -> PackageStateAccess<'static, Self::State> {
-                PackageStateAccess::with_firmware_fallback(&RUNTIME, fallback_state)
+                unsafe { PackageStateAccess::with_firmware_fallback(&RUNTIME, fallback_state) }
             }
 
             fn default_config() -> ConfigBytes<'static> {

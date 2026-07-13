@@ -1,7 +1,8 @@
 //! Package state shared by startup and firmware callbacks.
 
+use core::hint::spin_loop;
 use core::ptr::NonNull;
-use core::sync::atomic::{AtomicPtr, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
 /// Mutable package state installed by firmware startup and accessed by callbacks.
 ///
@@ -9,6 +10,17 @@ use core::sync::atomic::{AtomicPtr, Ordering};
 /// [`Self::with_mut`], which keeps the temporary state borrow within the callback.
 pub struct PackageStateStore<T> {
     state: AtomicPtr<T>,
+    borrowed: AtomicBool,
+}
+
+struct PackageStateBorrow<'a, T> {
+    store: &'a PackageStateStore<T>,
+}
+
+impl<T> Drop for PackageStateBorrow<'_, T> {
+    fn drop(&mut self) {
+        self.store.borrowed.store(false, Ordering::Release);
+    }
 }
 
 /// Runtime-state publication cleared on drop unless committed.
@@ -41,10 +53,10 @@ impl<T: 'static> Drop for PackageStateGuard<'_, T> {
 /// callbacks that can run without that slot installed.
 pub struct PackageStateAccess<'a, T: 'static> {
     runtime: &'a PackageStateStore<T>,
-    fallback: fn() -> Option<&'static mut T>,
+    fallback: unsafe fn() -> Option<NonNull<T>>,
 }
 
-fn no_package_state<T>() -> Option<&'static mut T> {
+unsafe fn no_package_state<T>() -> Option<NonNull<T>> {
     None
 }
 
@@ -71,10 +83,11 @@ impl<'a, T: 'static> PackageStateAccess<'a, T> {
     /// # Safety
     ///
     /// The fallback must return a non-null pointer to a live `T` whenever it returns
-    /// `Some`. The pointed-to state must remain valid for the duration of each callback.
-    pub const fn with_firmware_fallback(
+    /// `Some`. The pointed-to state must remain valid for the duration of each callback,
+    /// and all callback access to that state must be coordinated through this store.
+    pub const unsafe fn with_firmware_fallback(
         runtime: &'a PackageStateStore<T>,
-        fallback: fn() -> Option<&'static mut T>,
+        fallback: unsafe fn() -> Option<NonNull<T>>,
     ) -> Self {
         Self { runtime, fallback }
     }
@@ -99,7 +112,26 @@ impl<T: 'static> PackageStateStore<T> {
     pub const fn new() -> Self {
         Self {
             state: AtomicPtr::new(core::ptr::null_mut()),
+            borrowed: AtomicBool::new(false),
         }
+    }
+
+    fn try_borrow(&self) -> Option<PackageStateBorrow<'_, T>> {
+        self.borrowed
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .ok()
+            .map(|_| PackageStateBorrow { store: self })
+    }
+
+    fn borrow_exclusive(&self) -> PackageStateBorrow<'_, T> {
+        while self
+            .borrowed
+            .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
+            spin_loop();
+        }
+        PackageStateBorrow { store: self }
     }
 
     /// Install package state for later callback access.
@@ -128,6 +160,7 @@ impl<T: 'static> PackageStateStore<T> {
 
     /// Clear the installed state pointer.
     pub fn clear(&self) {
+        let _borrow = self.borrow_exclusive();
         self.state.store(core::ptr::null_mut(), Ordering::Release);
     }
 
@@ -142,39 +175,38 @@ impl<T: 'static> PackageStateStore<T> {
     #[inline(always)]
     #[must_use]
     pub fn with<R>(&self, f: impl for<'state> FnOnce(&'state T) -> R) -> Option<R> {
-        let state = NonNull::new(self.state.load(Ordering::Acquire))?;
-        Some(f(unsafe { state.as_ref() }))
+        self.with_fallback(no_package_state::<T>, f)
     }
 
     /// Run `f` with installed mutable package state, when present.
     #[inline(always)]
     #[must_use]
     pub fn with_mut<R>(&self, f: impl for<'state> FnOnce(&'state mut T) -> R) -> Option<R> {
-        self.with_mut_fallback(|| None, f)
+        self.with_mut_fallback(no_package_state::<T>, f)
     }
 
     #[inline(always)]
     fn with_fallback<R>(
         &self,
-        fallback: fn() -> Option<&'static mut T>,
+        fallback: unsafe fn() -> Option<NonNull<T>>,
         f: impl for<'state> FnOnce(&'state T) -> R,
     ) -> Option<R> {
-        let state = NonNull::new(self.state.load(Ordering::Acquire))
-            .map(|state| unsafe { state.as_ref() })
-            .or_else(|| fallback().map(|state| &*state))?;
-        Some(f(state))
+        let _borrow = self.try_borrow()?;
+        let state =
+            NonNull::new(self.state.load(Ordering::Acquire)).or_else(|| unsafe { fallback() })?;
+        Some(f(unsafe { state.as_ref() }))
     }
 
     #[inline(always)]
     fn with_mut_fallback<R>(
         &self,
-        fallback: fn() -> Option<&'static mut T>,
+        fallback: unsafe fn() -> Option<NonNull<T>>,
         f: impl for<'state> FnOnce(&'state mut T) -> R,
     ) -> Option<R> {
-        let state = NonNull::new(self.state.load(Ordering::Acquire))
-            .map(|mut state| unsafe { state.as_mut() })
-            .or_else(fallback)?;
-        Some(f(state))
+        let _borrow = self.try_borrow()?;
+        let mut state =
+            NonNull::new(self.state.load(Ordering::Acquire)).or_else(|| unsafe { fallback() })?;
+        Some(f(unsafe { state.as_mut() }))
     }
 }
 
@@ -198,8 +230,8 @@ mod tests {
 
     static FALLBACK: AtomicPtr<State> = AtomicPtr::new(core::ptr::null_mut());
 
-    fn fallback() -> Option<&'static mut State> {
-        NonNull::new(FALLBACK.load(Ordering::Acquire)).map(|mut state| unsafe { state.as_mut() })
+    unsafe fn fallback() -> Option<NonNull<State>> {
+        NonNull::new(FALLBACK.load(Ordering::Acquire))
     }
 
     #[test]
@@ -218,9 +250,26 @@ mod tests {
     }
 
     #[test]
+    fn runtime_slot_rejects_reentrant_state_borrows() {
+        let slot = PackageStateStore::new();
+        let state = Box::leak(Box::new(State { value: 1 }));
+        unsafe { slot.install(state) };
+
+        assert_eq!(
+            slot.with_mut(|state| {
+                state.value += 1;
+                assert_eq!(slot.with(|_| ()), None);
+                assert_eq!(slot.with_mut(|_| ()), None);
+            }),
+            Some(())
+        );
+        assert_eq!(slot.with(|state| state.value), Some(2));
+    }
+
+    #[test]
     fn state_source_prefers_runtime_then_loader_fallback() {
         let runtime = PackageStateStore::new();
-        let source = PackageStateAccess::with_firmware_fallback(&runtime, fallback);
+        let source = unsafe { PackageStateAccess::with_firmware_fallback(&runtime, fallback) };
         let fallback = Box::leak(Box::new(State { value: 22 }));
         let runtime_state = Box::leak(Box::new(State { value: 11 }));
         FALLBACK.store(fallback, Ordering::Release);
