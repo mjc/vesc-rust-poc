@@ -168,13 +168,6 @@ struct LispImportPayload {
     data: Vec<u8>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct LispImportTableEntry<'a> {
-    tag: &'a str,
-    offset: usize,
-    size: usize,
-}
-
 fn pack_lisp_imports(code_str: &str, editor_path: &Path) -> io::Result<Vec<u8>> {
     let imports = code_str
         .lines()
@@ -183,31 +176,45 @@ fn pack_lisp_imports(code_str: &str, editor_path: &Path) -> io::Result<Vec<u8>> 
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
-
-    let mut packed = lisp_code_prefix(code_str);
-
-    let file_table_size = imports
+    let count = i16::try_from(imports.len())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "too many Lisp imports"))?;
+    let table_size = imports
         .iter()
         .map(|import| import.tag.len() + 9)
         .sum::<usize>();
-    let num_imports = i16::try_from(imports.len()).map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "too many Lisp imports for a VESC package",
-        )
-    })?;
-    packed.extend_from_slice(&num_imports.to_be_bytes());
+    let mut packed = lisp_code_prefix(code_str);
+    append_i16_be(&mut packed, count);
 
-    let payload_start = packed.len() + file_table_size - 2;
-    let table_entries = lisp_import_table_entries(&imports, payload_start)?;
-    table_entries
-        .iter()
-        .try_for_each(|entry| append_lisp_import_table_entry(&mut packed, *entry))?;
+    let mut offset = packed
+        .len()
+        .checked_add(table_size)
+        .and_then(|value| value.checked_sub(2))
+        .ok_or_else(lisp_import_offset_overflow)?;
+    let mut offsets = Vec::with_capacity(imports.len());
+    for import in &imports {
+        offset = align_lisp_payload_offset(offset)?;
+        offsets.push(offset);
+        offset = offset
+            .checked_add(import.data.len())
+            .ok_or_else(lisp_import_offset_overflow)?;
+    }
 
-    imports
-        .iter()
-        .for_each(|import| append_aligned_lisp_payload(&mut packed, &import.data));
-
+    for (import, offset) in imports.iter().zip(offsets) {
+        append_string(&mut packed, &import.tag);
+        append_i32_be(
+            &mut packed,
+            i32::try_from(offset).map_err(|_| lisp_import_offset_overflow())?,
+        );
+        append_i32_be(
+            &mut packed,
+            i32::try_from(import.data.len()).map_err(|_| lisp_import_offset_overflow())?,
+        );
+    }
+    for import in imports {
+        let padding = (4 - ((packed.len() - 2) % 4)) % 4;
+        packed.extend(std::iter::repeat_n(0, padding));
+        packed.extend_from_slice(&import.data);
+    }
     Ok(packed)
 }
 
@@ -234,64 +241,6 @@ fn read_lisp_import(line: &str, editor_path: &Path) -> io::Result<Option<LispImp
             })
         })
         .transpose()
-}
-
-fn lisp_import_table_entries<'a>(
-    imports: &'a [LispImportPayload],
-    payload_start: usize,
-) -> io::Result<Vec<LispImportTableEntry<'a>>> {
-    imports
-        .iter()
-        .try_fold(
-            (Vec::with_capacity(imports.len()), payload_start),
-            |(mut entries, offset), import| {
-                let aligned_offset = align_lisp_payload_offset(offset)?;
-                entries.push(LispImportTableEntry {
-                    tag: &import.tag,
-                    offset: aligned_offset,
-                    size: import.data.len(),
-                });
-                Ok((
-                    entries,
-                    aligned_offset
-                        .checked_add(import.data.len())
-                        .ok_or_else(lisp_import_offset_overflow)?,
-                ))
-            },
-        )
-        .map(|(entries, _)| entries)
-}
-
-fn append_lisp_import_table_entry(
-    packed: &mut Vec<u8>,
-    entry: LispImportTableEntry<'_>,
-) -> io::Result<()> {
-    append_string(packed, entry.tag);
-    append_i32_be(
-        packed,
-        i32::try_from(entry.offset).map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Lisp import offset exceeds the VESC package limit",
-            )
-        })?,
-    );
-    append_i32_be(
-        packed,
-        i32::try_from(entry.size).map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Lisp import payload exceeds the VESC package limit",
-            )
-        })?,
-    );
-    Ok(())
-}
-
-fn append_aligned_lisp_payload(packed: &mut Vec<u8>, data: &[u8]) {
-    let padding = (4 - ((packed.len() - 2) % 4)) % 4;
-    packed.extend(std::iter::repeat_n(0, padding));
-    packed.extend_from_slice(data);
 }
 
 fn align_lisp_payload_offset(offset: usize) -> io::Result<usize> {

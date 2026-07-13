@@ -51,17 +51,6 @@ const COMM_LISP_SET_RUNNING: u8 = 133;
 const COMM_FW_VERSION: u8 = 0;
 const COMM_CUSTOM_APP_DATA: u8 = 36;
 
-fn command_name(command: u8) -> &'static str {
-    match command {
-        COMM_FW_VERSION => "COMM_FW_VERSION",
-        COMM_CUSTOM_APP_DATA => "COMM_CUSTOM_APP_DATA",
-        COMM_LISP_WRITE_CODE => "COMM_LISP_WRITE_CODE",
-        COMM_LISP_ERASE_CODE => "COMM_LISP_ERASE_CODE",
-        COMM_LISP_SET_RUNNING => "COMM_LISP_SET_RUNNING",
-        _ => "UNKNOWN",
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HwType {
     Vesc,
@@ -299,8 +288,12 @@ impl BtlePackageInstallTransport {
         payload: &[u8],
         timeout: Duration,
     ) -> Result<Vec<u8>, PackageInstallError> {
-        let packet = build_command_packet(command, payload);
+        self.write_packet(command, payload)?;
+        self.with_session(|session| session.recv_packet(command, timeout))
+    }
 
+    fn write_packet(&self, command: u8, payload: &[u8]) -> Result<(), PackageInstallError> {
+        let packet = build_command_packet(command, payload);
         self.with_session(|session| {
             session.clear_packet_state();
             self.runtime
@@ -311,8 +304,7 @@ impl BtlePackageInstallTransport {
                 ))
                 .map_err(|_| {
                     PackageInstallError::Device("failed to write a BLE command".to_owned())
-                })?;
-            session.recv_packet(command, timeout)
+                })
         })
     }
 
@@ -321,11 +313,9 @@ impl BtlePackageInstallTransport {
         command: u8,
         payload: &[u8],
         timeout: Duration,
-        mut response_is_ok: impl FnMut(&[u8]) -> Result<bool, PackageInstallError>,
+        response_is_ok: impl FnMut(&[u8]) -> Result<bool, PackageInstallError>,
     ) -> Result<(), PackageInstallError> {
-        self.send_with_attempts(command, payload, timeout, WRITE_RETRIES, |response| {
-            response_is_ok(response)
-        })
+        self.send_with_attempts(command, payload, timeout, WRITE_RETRIES, response_is_ok)
     }
 
     fn send_with_attempts(
@@ -337,97 +327,31 @@ impl BtlePackageInstallTransport {
         mut response_is_ok: impl FnMut(&[u8]) -> Result<bool, PackageInstallError>,
     ) -> Result<(), PackageInstallError> {
         debug_assert!(attempts > 0);
-
+        let mut last_error = None;
         for attempt in 0..attempts {
-            eprintln!(
-                "package-transport: send {} ({}) attempt {}/{} payload={} timeout={:?}",
-                command_name(command),
-                command,
-                attempt + 1,
-                attempts,
-                payload.len(),
-                timeout
-            );
-            match self.write_command(command, payload, timeout) {
-                Ok(response) => match response_is_ok(&response) {
-                    Ok(true) => {
-                        eprintln!(
-                            "package-transport: ack {} ({}) attempt {}/{} response={}",
-                            command_name(command),
-                            command,
-                            attempt + 1,
-                            attempts,
-                            response.len()
-                        );
-                        return Ok(());
-                    }
-                    Ok(false) if attempt + 1 < attempts => {
-                        eprintln!(
-                            "package-transport: rejected {} ({}) attempt {}/{}; retrying",
-                            command_name(command),
-                            command,
-                            attempt + 1,
-                            attempts
-                        );
-                        continue;
-                    }
-                    Ok(false) => {
-                        eprintln!(
-                            "package-transport: rejected {} ({}) attempt {}/{}",
-                            command_name(command),
-                            command,
-                            attempt + 1,
-                            attempts
-                        );
-                        return Err(PackageInstallError::Device(
+            let result = self
+                .write_command(command, payload, timeout)
+                .and_then(|response| {
+                    if response_is_ok(&response)? {
+                        Ok(())
+                    } else {
+                        Err(PackageInstallError::Device(
                             "device rejected the package write".to_owned(),
-                        ));
+                        ))
                     }
-                    Err(error) if attempt + 1 < attempts => {
-                        eprintln!(
-                            "package-transport: invalid {} ({}) response attempt {}/{}: {error}; retrying",
-                            command_name(command),
-                            command,
-                            attempt + 1,
-                            attempts
-                        );
-                        continue;
-                    }
-                    Err(error) => {
-                        eprintln!(
-                            "package-transport: invalid {} ({}) response attempt {}/{}: {error}",
-                            command_name(command),
-                            command,
-                            attempt + 1,
-                            attempts
-                        );
-                        return Err(error);
-                    }
-                },
-                Err(error) if attempt + 1 < attempts => {
-                    eprintln!(
-                        "package-transport: error {} ({}) attempt {}/{}: {error}; retrying",
-                        command_name(command),
-                        command,
-                        attempt + 1,
-                        attempts
-                    );
-                    continue;
-                }
+                });
+            match result {
+                Ok(()) => return Ok(()),
                 Err(error) => {
-                    eprintln!(
-                        "package-transport: error {} ({}) attempt {}/{}: {error}",
-                        command_name(command),
-                        command,
-                        attempt + 1,
-                        attempts
-                    );
-                    return Err(error);
+                    last_error = Some(error);
+                    if attempt + 1 == attempts {
+                        break;
+                    }
                 }
             }
         }
-
-        unreachable!("retry loop always returns");
+        Err(last_error
+            .unwrap_or_else(|| PackageInstallError::Device("package write did not run".to_owned())))
     }
 
     fn expect_single_ok(
@@ -462,19 +386,7 @@ impl BtlePackageInstallTransport {
         // Source: third_party/vesc_tool/codeloader.cpp:1014-1016 and
         // third_party/vesc_tool/commands.cpp:2234-2240 send lispSetRunning(1)
         // without waiting for lispRunningResRx.
-        let packet = build_command_packet(command, payload);
-        self.with_session(|session| {
-            session.clear_packet_state();
-            self.runtime
-                .block_on(write_ble_uart_packet(
-                    &session.peripheral,
-                    &session.rx_char,
-                    &packet,
-                ))
-                .map_err(|_| {
-                    PackageInstallError::Device("failed to write a BLE command".to_owned())
-                })
-        })
+        self.write_packet(command, payload)
     }
 }
 
@@ -702,13 +614,16 @@ fn parse_write_ack(response: &[u8], expected_command: u8) -> Result<bool, Packag
     Ok(ok)
 }
 
-fn read_string(cursor: &mut &[u8]) -> Result<String, PackageInstallError> {
+fn read_string<'a>(cursor: &mut &'a [u8]) -> Result<&'a str, PackageInstallError> {
     let Some(len) = cursor.iter().position(|byte| *byte == 0) else {
         return Err(malformed_reply("missing NUL terminator"));
     };
-    let bytes = take_bytes(cursor, len)?;
-    take_bytes(cursor, 1)?;
-    String::from_utf8(bytes).map_err(|_| malformed_reply("invalid UTF-8"))
+    if cursor.len() <= len {
+        return Err(malformed_reply("truncated BLE reply"));
+    }
+    let bytes = &cursor[..len];
+    *cursor = &cursor[len + 1..];
+    std::str::from_utf8(bytes).map_err(|_| malformed_reply("invalid UTF-8"))
 }
 
 fn read_u8(cursor: &mut &[u8]) -> Result<u8, PackageInstallError> {
@@ -725,13 +640,13 @@ fn read_u32_be(cursor: &mut &[u8]) -> Result<u32, PackageInstallError> {
     ))
 }
 
-fn take_bytes(cursor: &mut &[u8], len: usize) -> Result<Vec<u8>, PackageInstallError> {
+fn take_bytes<'a>(cursor: &mut &'a [u8], len: usize) -> Result<&'a [u8], PackageInstallError> {
     if cursor.len() < len {
         return Err(malformed_reply("truncated BLE reply"));
     }
     let (head, tail) = cursor.split_at(len);
     *cursor = tail;
-    Ok(head.to_vec())
+    Ok(head)
 }
 
 fn malformed_reply(reason: &str) -> PackageInstallError {

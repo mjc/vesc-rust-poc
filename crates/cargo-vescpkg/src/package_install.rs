@@ -4,7 +4,6 @@
 //! Device install is a CLI concern because it owns transport, firmware state,
 //! and operator-facing recovery behavior.
 
-use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::path::Path;
 
@@ -89,78 +88,6 @@ pub trait PackageInstallTransport {
     fn set_running(&self, running: bool) -> Result<(), PackageInstallError>;
     /// Requests a firmware reload after package changes complete.
     fn reload_firmware(&self) -> Result<(), PackageInstallError>;
-}
-
-/// In-memory transport used by tests to capture install sequencing.
-#[derive(Debug, Default)]
-pub struct FakePackageInstallTransport {
-    reject_erase_lisp: Cell<bool>,
-    reject_set_running_true: Cell<bool>,
-    fail_set_running_true_io: Cell<bool>,
-    /// Recorded transport steps for assertions in tests and golden checks.
-    pub steps: RefCell<Vec<PackageInstallStep>>,
-}
-
-impl FakePackageInstallTransport {
-    /// Controls whether erasing Lisp reports device rejection.
-    pub fn reject_erase_lisp(&self) {
-        self.reject_erase_lisp.set(true);
-    }
-
-    /// Controls whether starting Lisp reports device rejection.
-    pub fn reject_set_running_true(&self) {
-        self.reject_set_running_true.set(true);
-    }
-
-    /// Controls whether starting Lisp reports a host transport failure.
-    pub fn fail_set_running_true_io(&self) {
-        self.fail_set_running_true_io.set(true);
-    }
-}
-
-impl PackageInstallTransport for FakePackageInstallTransport {
-    fn erase_lisp(&self, bytes: usize) -> Result<(), PackageInstallError> {
-        self.steps
-            .borrow_mut()
-            .push(PackageInstallStep::EraseLisp { bytes });
-        if self.reject_erase_lisp.get() {
-            return Err(PackageInstallError::Device(
-                "device rejected the package erase".to_owned(),
-            ));
-        }
-        Ok(())
-    }
-
-    fn upload_lisp(&self, lisp: &[u8]) -> Result<(), PackageInstallError> {
-        self.steps
-            .borrow_mut()
-            .push(PackageInstallStep::UploadLisp { bytes: lisp.len() });
-        Ok(())
-    }
-
-    fn set_running(&self, running: bool) -> Result<(), PackageInstallError> {
-        self.steps
-            .borrow_mut()
-            .push(PackageInstallStep::SetRunning { running });
-        if running && self.reject_set_running_true.get() {
-            return Err(PackageInstallError::Device(
-                "device rejected the package write".to_owned(),
-            ));
-        }
-        if running && self.fail_set_running_true_io.get() {
-            return Err(PackageInstallError::Io(
-                "failed to write set-running command".to_owned(),
-            ));
-        }
-        Ok(())
-    }
-
-    fn reload_firmware(&self) -> Result<(), PackageInstallError> {
-        self.steps
-            .borrow_mut()
-            .push(PackageInstallStep::ReloadFirmware);
-        Ok(())
-    }
 }
 
 /// Reads and decodes a package from a filesystem path.
@@ -362,11 +289,78 @@ fn step_error(step: impl AsRef<str>, error: PackageInstallError) -> PackageInsta
 #[cfg(test)]
 mod tests {
     use super::{
-        FakePackageInstallTransport, PackageInstallError, PackageInstallStep, decode_package,
+        PackageInstallError, PackageInstallStep, PackageInstallTransport, decode_package,
         erase_package, install_package,
     };
     use flate2::{Compression, write::ZlibEncoder};
+    use std::cell::{Cell, RefCell};
     use std::io::Write;
+
+    #[derive(Debug, Default)]
+    struct FakePackageInstallTransport {
+        reject_erase_lisp: Cell<bool>,
+        reject_set_running_true: Cell<bool>,
+        fail_set_running_true_io: Cell<bool>,
+        steps: RefCell<Vec<PackageInstallStep>>,
+    }
+
+    impl FakePackageInstallTransport {
+        fn reject_erase_lisp(&self) {
+            self.reject_erase_lisp.set(true);
+        }
+        fn reject_set_running_true(&self) {
+            self.reject_set_running_true.set(true);
+        }
+        fn fail_set_running_true_io(&self) {
+            self.fail_set_running_true_io.set(true);
+        }
+    }
+
+    impl PackageInstallTransport for FakePackageInstallTransport {
+        fn erase_lisp(&self, bytes: usize) -> Result<(), PackageInstallError> {
+            self.steps
+                .borrow_mut()
+                .push(PackageInstallStep::EraseLisp { bytes });
+            if self.reject_erase_lisp.get() {
+                Err(PackageInstallError::Device(
+                    "device rejected the package erase".to_owned(),
+                ))
+            } else {
+                Ok(())
+            }
+        }
+
+        fn upload_lisp(&self, lisp: &[u8]) -> Result<(), PackageInstallError> {
+            self.steps
+                .borrow_mut()
+                .push(PackageInstallStep::UploadLisp { bytes: lisp.len() });
+            Ok(())
+        }
+
+        fn set_running(&self, running: bool) -> Result<(), PackageInstallError> {
+            self.steps
+                .borrow_mut()
+                .push(PackageInstallStep::SetRunning { running });
+            if running && self.reject_set_running_true.get() {
+                return Err(PackageInstallError::Device(
+                    "device rejected the package write".to_owned(),
+                ));
+            }
+            if running && self.fail_set_running_true_io.get() {
+                return Err(PackageInstallError::Io(
+                    "failed to write set-running command".to_owned(),
+                ));
+            }
+            Ok(())
+        }
+
+        fn reload_firmware(&self) -> Result<(), PackageInstallError> {
+            self.steps
+                .borrow_mut()
+                .push(PackageInstallStep::ReloadFirmware);
+            Ok(())
+        }
+    }
 
     fn build_package_bytes() -> Vec<u8> {
         let mut data = Vec::new();
