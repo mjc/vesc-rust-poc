@@ -4,13 +4,9 @@
 //! Device install is a CLI concern because it owns transport, firmware state,
 //! and operator-facing recovery behavior.
 
-use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 use std::fmt;
-use std::io::Write;
 use std::path::Path;
-
-use flate2::{Compression, write::ZlibEncoder};
 
 use crate::loopback::LoopbackTarget;
 use crate::package_transport::BtlePackageInstallTransport;
@@ -22,18 +18,6 @@ pub use crate::package::Package as VescPackage;
 /// Steps emitted while installing or erasing a package over the firmware transport.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PackageInstallStep {
-    /// Reserve flash space for the package's QML payload.
-    EraseQml {
-        /// Total QML erase size in bytes.
-        bytes: usize,
-    },
-    /// Write the compressed QML payload and fullscreen flag.
-    UploadQml {
-        /// Compressed QML payload size in bytes.
-        bytes: usize,
-        /// Whether the uploaded QML app should run fullscreen.
-        fullscreen: bool,
-    },
     /// Reserve flash space for the package's Lisp payload.
     EraseLisp {
         /// Total Lisp erase size in bytes.
@@ -97,12 +81,6 @@ impl From<crate::package::PackageError> for PackageInstallError {
 
 /// Firmware-side transport operations needed to install or erase a package.
 pub trait PackageInstallTransport {
-    /// Returns whether a QML app is already present on the target.
-    fn has_qml_app(&self) -> Result<bool, PackageInstallError>;
-    /// Erases enough space for a QML payload of `bytes` bytes.
-    fn erase_qml(&self, bytes: usize) -> Result<(), PackageInstallError>;
-    /// Uploads a compressed QML payload and its fullscreen setting.
-    fn upload_qml(&self, qml: &[u8], fullscreen: bool) -> Result<(), PackageInstallError>;
     /// Erases enough space for a Lisp payload of `bytes` bytes.
     fn erase_lisp(&self, bytes: usize) -> Result<(), PackageInstallError>;
     /// Uploads the Lisp payload bytes.
@@ -116,7 +94,6 @@ pub trait PackageInstallTransport {
 /// In-memory transport used by tests to capture install sequencing.
 #[derive(Debug, Default)]
 pub struct FakePackageInstallTransport {
-    has_qml_app: Cell<bool>,
     reject_erase_lisp: Cell<bool>,
     reject_set_running_true: Cell<bool>,
     fail_set_running_true_io: Cell<bool>,
@@ -125,11 +102,6 @@ pub struct FakePackageInstallTransport {
 }
 
 impl FakePackageInstallTransport {
-    /// Controls whether the fake transport reports an existing QML app.
-    pub fn set_has_qml_app(&self, has_qml_app: bool) {
-        self.has_qml_app.set(has_qml_app);
-    }
-
     /// Controls whether erasing Lisp reports device rejection.
     pub fn reject_erase_lisp(&self) {
         self.reject_erase_lisp.set(true);
@@ -147,25 +119,6 @@ impl FakePackageInstallTransport {
 }
 
 impl PackageInstallTransport for FakePackageInstallTransport {
-    fn has_qml_app(&self) -> Result<bool, PackageInstallError> {
-        Ok(self.has_qml_app.get())
-    }
-
-    fn erase_qml(&self, bytes: usize) -> Result<(), PackageInstallError> {
-        self.steps
-            .borrow_mut()
-            .push(PackageInstallStep::EraseQml { bytes });
-        Ok(())
-    }
-
-    fn upload_qml(&self, qml: &[u8], fullscreen: bool) -> Result<(), PackageInstallError> {
-        self.steps.borrow_mut().push(PackageInstallStep::UploadQml {
-            bytes: qml.len(),
-            fullscreen,
-        });
-        Ok(())
-    }
-
     fn erase_lisp(&self, bytes: usize) -> Result<(), PackageInstallError> {
         self.steps
             .borrow_mut()
@@ -207,150 +160,6 @@ impl PackageInstallTransport for FakePackageInstallTransport {
             .borrow_mut()
             .push(PackageInstallStep::ReloadFirmware);
         Ok(())
-    }
-}
-
-enum InstallOperation<'a> {
-    EraseQml { bytes: usize },
-    UploadQml { qml: Vec<u8>, fullscreen: bool },
-    EraseLisp { bytes: usize },
-    UploadLisp { lisp: &'a [u8] },
-    SetRunning { running: bool },
-    ReloadFirmware,
-}
-
-impl InstallOperation<'_> {
-    fn step(&self) -> PackageInstallStep {
-        match self {
-            Self::EraseQml { bytes } => PackageInstallStep::EraseQml { bytes: *bytes },
-            Self::UploadQml { qml, fullscreen } => PackageInstallStep::UploadQml {
-                bytes: qml.len(),
-                fullscreen: *fullscreen,
-            },
-            Self::EraseLisp { bytes } => PackageInstallStep::EraseLisp { bytes: *bytes },
-            Self::UploadLisp { lisp } => PackageInstallStep::UploadLisp { bytes: lisp.len() },
-            Self::SetRunning { running } => PackageInstallStep::SetRunning { running: *running },
-            Self::ReloadFirmware => PackageInstallStep::ReloadFirmware,
-        }
-    }
-
-    fn label(&self) -> Cow<'_, str> {
-        match self {
-            Self::EraseQml { bytes } => Cow::Owned(format!("erase QML {bytes} bytes")),
-            Self::UploadQml { qml, .. } => Cow::Owned(format!("upload QML {} bytes", qml.len())),
-            Self::EraseLisp { bytes } => Cow::Owned(format!("erase Lisp {bytes} bytes")),
-            Self::UploadLisp { lisp } => Cow::Owned(format!("upload Lisp {} bytes", lisp.len())),
-            Self::SetRunning { running } => Cow::Owned(format!("set Lisp running {running}")),
-            Self::ReloadFirmware => Cow::Borrowed("reload firmware"),
-        }
-    }
-
-    fn run<T: PackageInstallTransport>(&self, transport: &T) -> Result<(), PackageInstallError> {
-        match self {
-            Self::EraseQml { bytes } => transport.erase_qml(*bytes),
-            Self::UploadQml { qml, fullscreen } => transport.upload_qml(qml, *fullscreen),
-            Self::EraseLisp { bytes } => transport.erase_lisp(*bytes),
-            Self::UploadLisp { lisp } => transport.upload_lisp(lisp),
-            Self::SetRunning { running } => transport.set_running(*running),
-            Self::ReloadFirmware => transport.reload_firmware(),
-        }
-        .map_err(|error| step_error(self.label(), error))
-    }
-
-    fn run_for_install<T: PackageInstallTransport>(
-        &self,
-        transport: &T,
-    ) -> Result<(), PackageInstallError> {
-        match self.run(transport) {
-            Err(PackageInstallError::Device(_))
-                if matches!(self, Self::SetRunning { running: true }) =>
-            {
-                Ok(())
-            }
-            result => result,
-        }
-    }
-}
-
-enum PackageQml<'a> {
-    Upload { script: &'a str, fullscreen: bool },
-    EraseExisting,
-    LeaveEmpty,
-}
-
-impl<'a> PackageQml<'a> {
-    fn from_package<T: PackageInstallTransport>(
-        package: &'a VescPackage,
-        transport: &T,
-    ) -> Result<Self, PackageInstallError> {
-        match package.qml_file.as_str() {
-            "" if transport.has_qml_app()? => Ok(Self::EraseExisting),
-            "" => Ok(Self::LeaveEmpty),
-            script => Ok(Self::Upload {
-                script,
-                fullscreen: package.qml_is_fullscreen,
-            }),
-        }
-    }
-
-    fn into_operations(
-        self,
-    ) -> Result<impl Iterator<Item = InstallOperation<'a>>, PackageInstallError> {
-        let operations = match self {
-            Self::Upload { script, fullscreen } => {
-                let qml = qml_compress(script)?;
-                [
-                    Some(InstallOperation::EraseQml {
-                        bytes: qml.len() + 100,
-                    }),
-                    Some(InstallOperation::UploadQml { qml, fullscreen }),
-                ]
-            }
-            Self::EraseExisting => [
-                Some(InstallOperation::EraseQml {
-                    bytes: PACKAGE_ERASE_BYTES,
-                }),
-                None,
-            ],
-            Self::LeaveEmpty => [None, None],
-        };
-
-        Ok(operations.into_iter().flatten())
-    }
-}
-
-enum PackageLisp<'a> {
-    Upload(&'a [u8]),
-    EraseEmpty,
-}
-
-impl<'a> PackageLisp<'a> {
-    fn from_package(package: &'a VescPackage) -> Self {
-        match package.lisp_data.as_slice() {
-            [] => Self::EraseEmpty,
-            lisp => Self::Upload(lisp),
-        }
-    }
-
-    fn into_operations(self) -> impl Iterator<Item = InstallOperation<'a>> {
-        let operations = match self {
-            Self::Upload(lisp) => [
-                Some(InstallOperation::EraseLisp {
-                    bytes: lisp.len() + 100,
-                }),
-                Some(InstallOperation::UploadLisp { lisp }),
-                Some(InstallOperation::SetRunning { running: true }),
-            ],
-            Self::EraseEmpty => [
-                Some(InstallOperation::EraseLisp {
-                    bytes: PACKAGE_ERASE_BYTES,
-                }),
-                None,
-                None,
-            ],
-        };
-
-        operations.into_iter().flatten()
     }
 }
 
@@ -404,12 +213,53 @@ pub fn install_package<T: PackageInstallTransport>(
 ) -> Result<PackageInstallReport, PackageInstallError> {
     let package = checked_package(package)?;
 
-    execute_install_plan(transport, install_operations(package, transport)?).map(|steps| {
-        PackageInstallReport {
-            package_name: package.name.clone(),
-            steps,
+    let mut steps = Vec::new();
+    let mut first_error = None;
+    let lisp = (!package.lisp_data.is_empty()).then_some(package.lisp_data.as_slice());
+    let erase_bytes = lisp.map_or(PACKAGE_ERASE_BYTES, |data| data.len() + 100);
+
+    try_step(
+        &mut steps,
+        &mut first_error,
+        PackageInstallStep::EraseLisp { bytes: erase_bytes },
+        || transport.erase_lisp(erase_bytes),
+    );
+    if first_error.is_none()
+        && let Some(lisp) = lisp
+    {
+        try_step(
+            &mut steps,
+            &mut first_error,
+            PackageInstallStep::UploadLisp { bytes: lisp.len() },
+            || transport.upload_lisp(lisp),
+        );
+        if first_error.is_none() {
+            match transport.set_running(true) {
+                Ok(()) => steps.push(PackageInstallStep::SetRunning { running: true }),
+                Err(PackageInstallError::Device(_)) => {
+                    steps.push(PackageInstallStep::SetRunning { running: true });
+                }
+                Err(error) => first_error = Some(step_error("set Lisp running true", error)),
+            }
         }
-    })
+    }
+    let reload = PackageInstallStep::ReloadFirmware;
+    match transport.reload_firmware() {
+        Ok(()) => steps.push(reload),
+        Err(error) => {
+            first_error.get_or_insert(step_error("reload firmware", error));
+        }
+    }
+
+    first_error.map_or_else(
+        || {
+            Ok(PackageInstallReport {
+                package_name: package.name.clone(),
+                steps,
+            })
+        },
+        Err,
+    )
 }
 
 /// Erases any installed package payloads from the target and reloads firmware state.
@@ -417,32 +267,24 @@ pub fn erase_package<T: PackageInstallTransport>(
     transport: &T,
 ) -> Result<PackageInstallReport, PackageInstallError> {
     // Source: third_party/vesc_tool/codeloader.cpp:1072-1090
-    // uninstallVescPackage() erases Lisp first, then QML, then reloads firmware
-    // and returns resLisp && resQml.
+    // uninstallVescPackage() erases Lisp, reloads firmware, and returns the
+    // erase result.
     let mut steps = Vec::new();
     let mut first_error = None;
-    for op in [
-        InstallOperation::EraseLisp {
+    try_step(
+        &mut steps,
+        &mut first_error,
+        PackageInstallStep::EraseLisp {
             bytes: PACKAGE_ERASE_BYTES,
         },
-        InstallOperation::EraseQml {
-            bytes: PACKAGE_ERASE_BYTES,
-        },
-    ] {
-        let step = op.step();
-        if let Err(error) = op.run(transport) {
-            first_error.get_or_insert(error);
-        } else {
-            steps.push(step);
+        || transport.erase_lisp(PACKAGE_ERASE_BYTES),
+    );
+    let reload = PackageInstallStep::ReloadFirmware;
+    match transport.reload_firmware() {
+        Ok(()) => steps.push(reload),
+        Err(error) => {
+            first_error.get_or_insert(step_error("reload firmware", error));
         }
-    }
-
-    let reload = InstallOperation::ReloadFirmware;
-    let reload_step = reload.step();
-    if let Err(error) = reload.run(transport) {
-        first_error.get_or_insert(error);
-    } else {
-        steps.push(reload_step);
     }
 
     if let Some(error) = first_error {
@@ -462,63 +304,25 @@ fn checked_package(package: &VescPackage) -> Result<&VescPackage, PackageInstall
         .ok_or(PackageInstallError::InvalidPackage)
 }
 
-fn install_operations<'a, T: PackageInstallTransport>(
-    package: &'a VescPackage,
-    transport: &T,
-) -> Result<impl Iterator<Item = InstallOperation<'a>>, PackageInstallError> {
-    Ok(PackageQml::from_package(package, transport)?
-        .into_operations()?
-        .chain(PackageLisp::from_package(package).into_operations())
-        .chain([InstallOperation::ReloadFirmware]))
-}
-
-fn execute_install_plan<'a, T, I>(
-    transport: &T,
-    operations: I,
-) -> Result<Vec<PackageInstallStep>, PackageInstallError>
-where
-    T: PackageInstallTransport,
-    I: IntoIterator<Item = InstallOperation<'a>>,
-{
-    // Source: third_party/vesc_tool/codeloader.cpp:1007-1024 installVescPackage()
-    // gates later QML/Lisp steps on res, but always sleeps and reloads firmware
-    // before returning res.
-    let mut steps = Vec::new();
-    let mut first_error = None;
-    let mut reload = None;
-
-    for op in operations {
-        if matches!(op, InstallOperation::ReloadFirmware) {
-            reload = Some(op);
-            continue;
-        }
-
-        if first_error.is_some() {
-            continue;
-        }
-
-        let step = op.step();
-        if let Err(error) = op.run_for_install(transport) {
-            first_error.get_or_insert(error);
-        } else {
-            steps.push(step);
-        }
+fn try_step(
+    steps: &mut Vec<PackageInstallStep>,
+    first_error: &mut Option<PackageInstallError>,
+    step: PackageInstallStep,
+    run: impl FnOnce() -> Result<(), PackageInstallError>,
+) {
+    if first_error.is_some() {
+        return;
     }
-
-    if let Some(reload) = reload {
-        let step = reload.step();
-        if let Err(error) = reload.run_for_install(transport) {
-            first_error.get_or_insert(error);
-        } else {
-            steps.push(step);
-        }
+    let label = match &step {
+        PackageInstallStep::EraseLisp { bytes } => format!("erase Lisp {bytes} bytes"),
+        PackageInstallStep::UploadLisp { bytes } => format!("upload Lisp {bytes} bytes"),
+        PackageInstallStep::SetRunning { running } => format!("set Lisp running {running}"),
+        PackageInstallStep::ReloadFirmware => "reload firmware".to_owned(),
+    };
+    match run() {
+        Ok(()) => steps.push(step),
+        Err(error) => *first_error = Some(step_error(label, error)),
     }
-
-    if let Some(error) = first_error {
-        return Err(error);
-    }
-
-    Ok(steps)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -555,44 +359,24 @@ fn step_error(step: impl AsRef<str>, error: PackageInstallError) -> PackageInsta
     }
 }
 
-fn qml_compress(script: &str) -> Result<Vec<u8>, PackageInstallError> {
-    let raw = format!("import Vedder.vesc.vescinterface 1.0;import \"qrc:/mobile\";{script}")
-        .into_bytes();
-    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
-    encoder
-        .write_all(&raw)
-        .map_err(|error| PackageInstallError::Io(error.to_string()))?;
-    let compressed = encoder
-        .finish()
-        .map_err(|error| PackageInstallError::Io(error.to_string()))?;
-
-    Ok((raw.len() as u32)
-        .to_be_bytes()
-        .into_iter()
-        .chain(compressed)
-        .collect())
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
         FakePackageInstallTransport, PackageInstallError, PackageInstallStep, decode_package,
         erase_package, install_package,
     };
-    use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
-    use std::io::{Read, Write};
+    use flate2::{Compression, write::ZlibEncoder};
+    use std::io::Write;
 
     fn build_package_bytes() -> Vec<u8> {
         let mut data = Vec::new();
         write_string(&mut data, "VESC Packet");
         write_field(&mut data, "name", b"A minimal package");
-        write_field(&mut data, "qmlFile", b"import QtQuick 2.15\nItem {}\n");
         write_field(
             &mut data,
             "lispData",
             b"(load-native-lib \"src/package_lib.bin\")\n",
         );
-        write_field(&mut data, "qmlIsFullscreen", &[1]);
         q_compress(&data)
     }
 
@@ -623,7 +407,6 @@ mod tests {
     fn decodes_a_compressed_vesc_package() {
         let package = decode_package(&build_package_bytes()).expect("package");
         assert_eq!(package.name, "A minimal package");
-        assert!(package.qml_is_fullscreen);
         assert!(package.is_valid());
     }
 
@@ -634,30 +417,21 @@ mod tests {
 
         install_package(&package, &transport).expect("install");
         erase_package(&transport).expect("erase");
-        assert_eq!(transport.steps.borrow().len(), 9);
+        assert_eq!(transport.steps.borrow().len(), 6);
     }
 
     #[test]
     fn installs_package_in_vesc_tool_order() {
         let package = decode_package(&build_package_bytes()).expect("package");
         let transport = FakePackageInstallTransport::default();
-        let qml = super::qml_compress("import QtQuick 2.15\nItem {}\n").expect("qml");
-
         let report = install_package(&package, &transport).expect("report");
 
         // Source: third_party/vesc_tool/codeloader.cpp:994-1024
-        // installVescPackage() runs QML erase/upload, Lisp erase/upload,
-        // lispSetRunning(1), then sleep/reload.
+        // installVescPackage() runs Lisp erase/upload, lispSetRunning(1),
+        // then sleep/reload.
         assert_eq!(
             report.steps,
             vec![
-                PackageInstallStep::EraseQml {
-                    bytes: qml.len() + 100
-                },
-                PackageInstallStep::UploadQml {
-                    bytes: qml.len(),
-                    fullscreen: true
-                },
                 PackageInstallStep::EraseLisp {
                     bytes: package.lisp_data.len() + 100
                 },
@@ -668,24 +442,6 @@ mod tests {
                 PackageInstallStep::ReloadFirmware,
             ]
         );
-    }
-
-    #[test]
-    fn qml_compress_prepends_vesc_tool_mobile_imports() {
-        let qml = super::qml_compress("import QtQuick 2.15\nItem {}\n").expect("qml");
-        let raw_len = u32::from_be_bytes(qml[0..4].try_into().expect("qCompress length"));
-        let mut decoder = ZlibDecoder::new(&qml[4..]);
-        let mut raw = String::new();
-        decoder
-            .read_to_string(&mut raw)
-            .expect("decompress generated qml");
-
-        // Source: third_party/vesc_tool/codeloader.cpp:750-754
-        // qmlCompress() prepends the same imports before qCompress(..., 9).
-        assert_eq!(raw.len(), raw_len as usize);
-        assert!(raw.starts_with(
-            "import Vedder.vesc.vescinterface 1.0;import \"qrc:/mobile\";import QtQuick 2.15\n"
-        ));
     }
 
     #[test]
@@ -728,8 +484,6 @@ mod tests {
         let package = decode_package(&build_package_bytes()).expect("package");
         let transport = FakePackageInstallTransport::default();
         transport.reject_erase_lisp();
-        let qml = super::qml_compress("import QtQuick 2.15\nItem {}\n").expect("qml");
-
         let error = install_package(&package, &transport).expect_err("install should fail");
 
         assert!(error.to_string().contains(&format!(
@@ -742,13 +496,6 @@ mod tests {
         assert_eq!(
             &*transport.steps.borrow(),
             &[
-                PackageInstallStep::EraseQml {
-                    bytes: qml.len() + 100,
-                },
-                PackageInstallStep::UploadQml {
-                    bytes: qml.len(),
-                    fullscreen: true,
-                },
                 PackageInstallStep::EraseLisp {
                     bytes: package.lisp_data.len() + 100,
                 },
@@ -758,40 +505,16 @@ mod tests {
     }
 
     #[test]
-    fn erases_existing_qml_when_new_package_has_none() {
-        let mut package = decode_package(&build_package_bytes()).expect("package");
-        package.qml_file.clear();
-        let transport = FakePackageInstallTransport::default();
-        transport.set_has_qml_app(true);
-
-        let report = install_package(&package, &transport).expect("report");
-
-        // Source: third_party/vesc_tool/codeloader.cpp:1001-1004
-        // installVescPackage() erases old QML only when no new QML exists and
-        // hasQmlApp is true.
-        assert_eq!(
-            report.steps.first(),
-            Some(&PackageInstallStep::EraseQml {
-                bytes: super::PACKAGE_ERASE_BYTES,
-            })
-        );
-    }
-
-    #[test]
     fn erases_package_in_vesc_tool_order() {
         let transport = FakePackageInstallTransport::default();
         let report = erase_package(&transport).expect("report");
         assert_eq!(report.package_name, "installed package");
         // Source: third_party/vesc_tool/codeloader.cpp:1083-1089
-        // uninstallVescPackage() erases Lisp, erases QML, reloads, then returns
-        // resLisp && resQml.
+        // uninstallVescPackage() erases Lisp, reloads, then returns the result.
         assert_eq!(
             &*transport.steps.borrow(),
             &[
                 PackageInstallStep::EraseLisp {
-                    bytes: super::PACKAGE_ERASE_BYTES,
-                },
-                PackageInstallStep::EraseQml {
                     bytes: super::PACKAGE_ERASE_BYTES,
                 },
                 PackageInstallStep::ReloadFirmware,
@@ -800,23 +523,18 @@ mod tests {
     }
 
     #[test]
-    fn erase_package_attempts_qml_and_reload_after_lisp_erase_failure() {
+    fn erase_package_reloads_after_lisp_erase_failure() {
         let transport = FakePackageInstallTransport::default();
         transport.reject_erase_lisp();
 
         let error = erase_package(&transport).expect_err("erase should fail");
 
         assert!(error.to_string().contains("erase Lisp 16 bytes"));
-        // Source: third_party/vesc_tool/codeloader.cpp:1083-1089
-        // uninstallVescPackage() stores resLisp before qmlErase(16), so QML
-        // erase and reload still run.
+        // Reload still runs after the Lisp erase reports failure.
         assert_eq!(
             &*transport.steps.borrow(),
             &[
                 PackageInstallStep::EraseLisp {
-                    bytes: super::PACKAGE_ERASE_BYTES,
-                },
-                PackageInstallStep::EraseQml {
                     bytes: super::PACKAGE_ERASE_BYTES,
                 },
                 PackageInstallStep::ReloadFirmware,

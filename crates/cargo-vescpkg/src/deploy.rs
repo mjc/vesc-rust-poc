@@ -7,7 +7,6 @@ use vesc_protocol::WireCommand;
 use vesc_protocol::ble_loopback::LoopbackPacket;
 
 use crate::loopback::{LoopbackReport, LoopbackTarget, LoopbackTransportError};
-use crate::loopback_debug::{LoopbackProgress, hex_snippet};
 use crate::package_install::{PackageInstallError, PackageInstallReport, read_package_from_path};
 use crate::package_transport::{BtlePackageInstallTransport, VescSession};
 use crate::vesc_uart::encode_packet;
@@ -15,6 +14,100 @@ use crate::vesc_uart::encode_packet;
 const COMM_CUSTOM_APP_DATA: u8 = 36;
 const POST_INSTALL_SETTLE: Duration = Duration::from_millis(1500);
 const LOOPBACK_RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
+
+/// Progress emitted by package install and loopback operations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoopbackProgress {
+    /// The BLE session is ready for package operations.
+    SessionOpened,
+    /// A named protocol step is starting.
+    StepStarted {
+        /// Step name.
+        step: &'static str,
+    },
+    /// A protocol packet is being sent.
+    Sending {
+        /// Step name.
+        step: &'static str,
+        /// Encoded packet preview.
+        wire_hex: String,
+        /// Encoded packet length.
+        bytes: usize,
+    },
+    /// A non-loopback packet was received during preflight.
+    NonAppDataPacket {
+        /// Step name.
+        step: &'static str,
+        /// Packet summary.
+        summary: String,
+    },
+    /// A protocol reply was received.
+    ReplyReceived {
+        /// Step name.
+        step: &'static str,
+        /// Reply preview.
+        wire_hex: String,
+        /// Decoded command.
+        command: WireCommand,
+    },
+    /// A protocol step completed.
+    StepSucceeded {
+        /// Step name.
+        step: &'static str,
+        /// Decoded command.
+        command: WireCommand,
+    },
+}
+
+impl LoopbackProgress {
+    /// Returns whether the event belongs in normal CLI output.
+    pub fn should_print_to_cli(&self) -> bool {
+        true
+    }
+
+    /// Formats the event for the CLI.
+    pub fn describe(&self) -> String {
+        match self {
+            Self::SessionOpened => "BLE session open".to_owned(),
+            Self::StepStarted { step } => format!("step {step}: starting"),
+            Self::Sending {
+                step,
+                wire_hex,
+                bytes,
+            } => format!("step {step}: sending {bytes} byte(s) wire={wire_hex}"),
+            Self::NonAppDataPacket { step, summary } => {
+                format!("step {step}: received {summary}")
+            }
+            Self::ReplyReceived {
+                step,
+                wire_hex,
+                command,
+            } => format!("step {step}: reply {command:?} wire={wire_hex}"),
+            Self::StepSucceeded { step, command } => {
+                format!("step {step}: succeeded ({command:?})")
+            }
+        }
+    }
+}
+
+/// Opens BLE and runs the standard package app-data loopback sequence.
+pub fn run_loopback_probe(
+    target: LoopbackTarget,
+    mut progress: impl FnMut(LoopbackProgress),
+) -> Result<LoopbackReport, DeployError> {
+    let transport = BtlePackageInstallTransport::new().map_err(DeployError::Transport)?;
+    transport
+        .open(target.clone())
+        .map_err(DeployError::Transport)?;
+    progress(LoopbackProgress::SessionOpened);
+    let result = transport
+        .with_loopback_session(|runtime, session| {
+            run_loopback_on_session(runtime, session, target, &mut progress)
+        })
+        .map_err(DeployError::Loopback);
+    transport.close();
+    result
+}
 
 /// Reads a `.vescpkg`, installs it over BLE, and runs a loopback smoke test.
 pub fn run_deploy(
@@ -129,6 +222,18 @@ fn build_custom_app_data_packet(payload: &[u8]) -> Vec<u8> {
     data.push(COMM_CUSTOM_APP_DATA);
     data.extend_from_slice(payload);
     encode_packet(&data)
+}
+
+fn hex_snippet(bytes: &[u8], max_bytes: usize) -> String {
+    let shown = bytes.len().min(max_bytes);
+    let mut hex = bytes[..shown]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    if bytes.len() > max_bytes {
+        hex.push('…');
+    }
+    hex
 }
 
 fn map_package_device_error(error: PackageInstallError) -> LoopbackTransportError {

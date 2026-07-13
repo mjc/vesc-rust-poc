@@ -47,51 +47,6 @@ pub(crate) async fn find_matching_peripheral_with_progress(
     }
 }
 
-pub fn describe_loopback_target(target: &LoopbackTarget) -> String {
-    match (target.address(), target.requires_explicit_match()) {
-        (Some(address), _) => format!("address={address}"),
-        (None, true) => format!("device={}", target.device_name_hint()),
-        (None, false) => format!(
-            "default (name={}, service={}, or VESC BLE UART service)",
-            target.device_name_hint(),
-            target.service_name_hint()
-        ),
-    }
-}
-
-pub fn describe_discovered_peripheral(device: &DiscoveredPeripheral) -> String {
-    let name = device.local_name.as_deref().unwrap_or("<unnamed>");
-    format!("{} name={name}", device.identifier)
-}
-
-pub(crate) async fn collect_discovered_peripherals(
-    adapter: &Adapter,
-) -> Result<Vec<DiscoveredPeripheral>, DiscoveryError> {
-    let peripherals = adapter
-        .peripherals()
-        .await
-        .map_err(|_| DiscoveryError::InspectFailed)?;
-
-    let mut devices = Vec::new();
-    for peripheral in peripherals {
-        let Some(properties) = peripheral
-            .properties()
-            .await
-            .map_err(|_| DiscoveryError::InspectFailed)?
-        else {
-            continue;
-        };
-
-        devices.push(DiscoveredPeripheral {
-            identifier: properties.address.to_string(),
-            local_name: properties.local_name,
-            services: properties.services,
-        });
-    }
-
-    Ok(devices)
-}
-
 async fn find_matching_cached_peripheral_with_progress(
     adapter: &Adapter,
     target: &LoopbackTarget,

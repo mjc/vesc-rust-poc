@@ -27,7 +27,8 @@ enum Command {
     Build(BuildArgs),
     Layout,
     Status,
-    Loopback(DeviceArgs),
+    #[command(name = "loopback")]
+    Probe(DeviceArgs),
     PackageInstall(PackageInstallArgs),
     ErasePackage(PackageEraseArgs),
     Deploy(PackageInstallArgs),
@@ -87,10 +88,10 @@ where
             println!("status: placeholder host surface");
             ExitCode::SUCCESS
         }
-        Ok(Command::Loopback(command)) => {
+        Ok(Command::Probe(command)) => {
             let target = loopback_target(command.address, command.device_name);
 
-            match loopback_debug::run_loopback_with_diagnostics(target, |event| {
+            match deploy::run_loopback_probe(target, |event| {
                 if event.should_print_to_cli() {
                     println!("loopback: {}", event.describe());
                 }
@@ -235,7 +236,6 @@ mod ble_discovery;
 pub mod deploy;
 /// Loopback protocol runner and transport abstractions.
 pub mod loopback;
-pub mod loopback_debug;
 pub mod package_install;
 /// Package install transport implementations and BLE command helpers.
 pub mod package_transport;
@@ -282,7 +282,7 @@ mod tests {
                 "AA:BB:CC:DD:EE:FF",
             ])
             .expect("loopback"),
-            Command::Loopback(DeviceArgs {
+            Command::Probe(DeviceArgs {
                 device_name: Some("Floatwheel PintV".to_owned()),
                 address: Some("AA:BB:CC:DD:EE:FF".to_owned()),
             })

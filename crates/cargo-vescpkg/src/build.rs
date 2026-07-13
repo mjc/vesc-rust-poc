@@ -326,10 +326,30 @@ fn package_slug(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::package_slug;
+    use super::{package_slug, select_package};
+    use serde_json::json;
 
     #[test]
     fn package_slug_matches_existing_artifact_names() {
         assert_eq!(package_slug("A minimal package"), "A-minimal-package");
+    }
+
+    #[test]
+    fn selects_any_single_binary_package_from_cargo_metadata() {
+        let metadata = json!({
+            "packages": [{
+                "name": "minimal-package",
+                "id": "path+file:///tmp/minimal-package#0.1.0",
+                "version": "0.1.0",
+                "targets": [{"name": "minimal-package", "kind": ["bin"]}],
+                "metadata": {"vescpkg": {"name": "Minimal package"}}
+            }]
+        });
+
+        let package = select_package(&metadata, "minimal-package").expect("package metadata");
+
+        assert_eq!(package.name, "minimal-package");
+        assert_eq!(package.target_name, "minimal-package");
+        assert_eq!(package.display_name, "Minimal package");
     }
 }
