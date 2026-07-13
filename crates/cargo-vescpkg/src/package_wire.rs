@@ -5,6 +5,7 @@ use flate2::read::ZlibDecoder;
 
 /// Wire-format header prefix used by VESC package archives.
 const VESC_PACKET_HEADER: &str = "VESC Packet";
+const MAX_DECOMPRESSED_PACKAGE_BYTES: usize = 16 * 1024 * 1024;
 
 /// One decoded key/value field from a `.vescpkg` payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,6 +34,11 @@ fn decompress(data: &[u8]) -> Result<Vec<u8>, WireError> {
     }
 
     let expected_len = u32::from_be_bytes(data[..4].try_into().expect("slice length")) as usize;
+    if expected_len > MAX_DECOMPRESSED_PACKAGE_BYTES {
+        return Err(WireError(format!(
+            "vescpkg decompressed payload exceeds {MAX_DECOMPRESSED_PACKAGE_BYTES} bytes"
+        )));
+    }
     let mut decoder = ZlibDecoder::new(&data[4..]).take(expected_len as u64 + 1);
     let mut bytes = Vec::new();
     decoder
@@ -96,4 +102,22 @@ fn take(cursor: &mut &[u8], len: usize) -> Result<Vec<u8>, WireError> {
     let (head, tail) = cursor.split_at(len);
     *cursor = tail;
     Ok(head.to_vec())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MAX_DECOMPRESSED_PACKAGE_BYTES, WireError, decompress};
+
+    #[test]
+    fn rejects_unreasonable_decompressed_length() {
+        let declared = (MAX_DECOMPRESSED_PACKAGE_BYTES + 1) as u32;
+        let error = decompress(&declared.to_be_bytes()).expect_err("length must be rejected");
+
+        assert_eq!(
+            error,
+            WireError(format!(
+                "vescpkg decompressed payload exceeds {MAX_DECOMPRESSED_PACKAGE_BYTES} bytes"
+            ))
+        );
+    }
 }
