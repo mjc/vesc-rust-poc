@@ -3,7 +3,7 @@
 #![allow(missing_docs)]
 
 #[cfg(target_arch = "arm")]
-extern crate vesc_example_loopback;
+use vesc_example_loopback as _;
 
 #[cfg(target_arch = "arm")]
 #[panic_handler]

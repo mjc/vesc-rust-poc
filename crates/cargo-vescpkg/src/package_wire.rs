@@ -57,9 +57,12 @@ fn parse_raw(raw: &[u8]) -> Result<Vec<PackageField>, WireError> {
     let mut fields = Vec::new();
     while !cursor.is_empty() {
         let key = read_string(&mut cursor)?;
-        let len = read_i32_be(&mut cursor)?;
-        let len = usize::try_from(len)
-            .map_err(|_| WireError("unexpected end of vescpkg wire data".to_owned()))?;
+        let field_len = read_i32_be(&mut cursor)?;
+        let len = usize::try_from(field_len).map_err(|_| {
+            WireError(format!(
+                "negative vescpkg field length {field_len} for {key}"
+            ))
+        })?;
         let value = take(&mut cursor, len)?;
         fields.push(PackageField { key, value });
     }

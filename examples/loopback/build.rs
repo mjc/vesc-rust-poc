@@ -14,7 +14,7 @@ fn main() {
         println!("cargo::rerun-if-changed=package/{name}");
     }
 
-    if env::var_os("TARGET").is_some_and(|target| target == "thumbv7em-none-eabihf") {
+    if env::var("TARGET").is_ok_and(|target| target == "thumbv7em-none-eabihf") {
         let linker_script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../vescpkg-link.ld");
         println!("cargo::rerun-if-changed={}", linker_script.display());
         for arg in [
