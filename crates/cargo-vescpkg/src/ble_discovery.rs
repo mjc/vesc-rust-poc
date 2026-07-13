@@ -27,12 +27,9 @@ pub(crate) async fn find_matching_peripheral(
             .await
             .map_err(|_| DiscoveryError::InspectFailed)?;
         for peripheral in peripherals {
-            let Some(properties) = peripheral
-                .properties()
-                .await
-                .map_err(|_| DiscoveryError::InspectFailed)?
-            else {
-                continue;
+            let properties = match peripheral.properties().await {
+                Ok(Some(properties)) => properties,
+                Ok(None) | Err(_) => continue,
             };
             if target_matches_properties(
                 target,

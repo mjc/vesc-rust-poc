@@ -78,57 +78,57 @@ where
 {
     match parse_args(args) {
         Ok(Command::Build(args)) => run_build(args),
-        Ok(Command::Probe(command)) => {
-            let target = loopback_target(command.address, command.device_name);
-
-            match deploy::run_loopback_probe(target, |event| println!("loopback: {event}")) {
-                Ok(report) => {
-                    println!(
-                        "loopback ok on device={} service={}: {:?}",
-                        report.target().device_name_hint(),
-                        report.target().service_name_hint(),
-                        report.commands()
-                    );
-                    ExitCode::SUCCESS
-                }
-                Err(error) => {
-                    eprintln!("loopback failed: {error}");
-                    ExitCode::from(1)
-                }
-            }
-        }
-        Ok(Command::Deploy(command)) => {
-            let package_path = command.package_path;
-            let target = loopback_target(command.device.address, command.device.device_name);
-
-            match deploy::run_deploy(&package_path, target, |event| {
-                println!("loopback: {event}");
-            }) {
-                Ok((install, report)) => {
-                    println!(
-                        "package install ok for {}: {:?}",
-                        install.package_name, install.steps
-                    );
-                    println!(
-                        "loopback ok on device={} service={}: {:?}",
-                        report.target().device_name_hint(),
-                        report.target().service_name_hint(),
-                        report.commands()
-                    );
-                    ExitCode::SUCCESS
-                }
-                Err(error) => {
-                    eprintln!("deploy failed: {error}");
-                    ExitCode::from(1)
-                }
-            }
-        }
+        Ok(Command::Probe(command)) => run_probe(command),
+        Ok(Command::Deploy(command)) => run_deploy(command),
         Ok(Command::PackageInstall(command)) => run_package_install(command),
         Ok(Command::ErasePackage(command)) => run_package_erase(command),
         Err(error) => {
             let exit_code = u8::try_from(error.exit_code()).unwrap_or(2);
             let _ = error.print();
             ExitCode::from(exit_code)
+        }
+    }
+}
+
+fn print_loopback_report(report: &loopback::LoopbackReport) {
+    println!(
+        "loopback ok on device={} service={}: {:?}",
+        report.target().device_name_hint(),
+        report.target().service_name_hint(),
+        report.commands()
+    );
+}
+
+fn run_probe(command: DeviceArgs) -> ExitCode {
+    let target = loopback_target(command.address, command.device_name);
+    match deploy::run_loopback_probe(target, |event| println!("loopback: {event}")) {
+        Ok(report) => {
+            print_loopback_report(&report);
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("loopback failed: {error}");
+            ExitCode::from(1)
+        }
+    }
+}
+
+fn run_deploy(command: PackageInstallArgs) -> ExitCode {
+    let target = loopback_target(command.device.address, command.device.device_name);
+    match deploy::run_deploy(&command.package_path, target, |event| {
+        println!("loopback: {event}");
+    }) {
+        Ok((install, report)) => {
+            println!(
+                "package install ok for {}: {:?}",
+                install.package_name, install.steps
+            );
+            print_loopback_report(&report);
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("deploy failed: {error}");
+            ExitCode::from(1)
         }
     }
 }
@@ -325,6 +325,27 @@ mod tests {
                     address: None,
                 },
                 no_preflight: true,
+            })
+        );
+    }
+
+    #[test]
+    fn parse_args_maps_deploy_package_and_device_flags() {
+        assert_eq!(
+            parse_args([
+                "cargo-vescpkg",
+                "deploy",
+                "target/loopback.vescpkg",
+                "--device",
+                "VESC BLE UART",
+            ])
+            .expect("deploy package"),
+            Command::Deploy(PackageInstallArgs {
+                package_path: "target/loopback.vescpkg".to_owned(),
+                device: DeviceArgs {
+                    device_name: Some("VESC BLE UART".to_owned()),
+                    address: None,
+                },
             })
         );
     }

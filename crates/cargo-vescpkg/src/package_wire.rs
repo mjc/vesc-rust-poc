@@ -33,7 +33,7 @@ fn decompress(data: &[u8]) -> Result<Vec<u8>, WireError> {
     }
 
     let expected_len = u32::from_be_bytes(data[..4].try_into().expect("slice length")) as usize;
-    let mut decoder = ZlibDecoder::new(&data[4..]);
+    let mut decoder = ZlibDecoder::new(&data[4..]).take(expected_len as u64 + 1);
     let mut bytes = Vec::new();
     decoder
         .read_to_end(&mut bytes)
