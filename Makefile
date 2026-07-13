@@ -34,7 +34,7 @@ ifdef DEVICE_ADDRESS
 DEVICE_FLAGS += --address $(DEVICE_ADDRESS)
 endif
 
-.PHONY: check check-full pre-commit fmt clippy clippy-pedantic vescpkg-rs-sys-target-check check-ffi-header arm-clippy arm-gates native-audit test package package-only deploy deploy-install lisp-probe clean status
+.PHONY: check check-full pre-commit fmt clippy clippy-pedantic vescpkg-rs-sys-target-check arm-clippy arm-gates test package package-only deploy deploy-install lisp-probe clean status
 
 # --- verification -----------------------------------------------------------
 #
@@ -44,7 +44,7 @@ endif
 
 check: fmt clippy test
 
-check-full: check check-ffi-header arm-gates
+check-full: check arm-gates
 
 pre-commit: check-full
 
@@ -61,16 +61,10 @@ vescpkg-rs-sys-target-check:
 	test "$$($(CARGO) tree -p vescpkg-rs-sys --edges normal --no-default-features --prefix none | wc -l | tr -d ' ')" = 1
 	$(CARGO) check -p vescpkg-rs-sys --target $(ARM_TARGET) --no-default-features
 
-check-ffi-header:
-	$(CARGO) run -p vescpkg-rs-build --bin ffi-compare
-
 arm-clippy:
 	$(CARGO) clippy -p vesc-example-loopback --lib --release --target $(ARM_TARGET) -- $(CLIPPY_PEDANTIC_FLAGS)
 
-arm-gates: vescpkg-rs-sys-target-check arm-clippy native-audit
-
-native-audit: package-only
-	$(CARGO) test -p vescpkg-rs-build native_lib -- --nocapture
+arm-gates: vescpkg-rs-sys-target-check arm-clippy package-only
 
 test:
 	$(CARGO) nextest run --workspace --features test-support
@@ -78,10 +72,12 @@ test:
 # --- packaging & device -----------------------------------------------------
 
 package: check
-	$(CARGO) run -p cargo-vescpkg -- build
+	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-loopback
+	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-alloc-smoke
 
 package-only:
-	$(CARGO) run -p cargo-vescpkg -- build --package-only
+	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-loopback
+	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-alloc-smoke
 
 deploy: package-only
 	$(CARGO) run -p cargo-vescpkg -- deploy $(PACKAGE) $(DEVICE_FLAGS)

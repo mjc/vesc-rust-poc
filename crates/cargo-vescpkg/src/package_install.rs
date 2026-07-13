@@ -1,6 +1,6 @@
 //! Host-side VESC package install protocol.
 //!
-//! Package construction and `.vescpkg` decoding live in `vescpkg_rs_build`.
+//! Package construction and `.vescpkg` decoding live in this crate.
 //! Device install is a CLI concern because it owns transport, firmware state,
 //! and operator-facing recovery behavior.
 
@@ -17,7 +17,7 @@ use crate::package_transport::BtlePackageInstallTransport;
 
 const PACKAGE_ERASE_BYTES: usize = 16;
 
-pub use vescpkg_rs_build::Package as VescPackage;
+pub use crate::package::Package as VescPackage;
 
 /// Steps emitted while installing or erasing a package over the firmware transport.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,11 +85,11 @@ impl fmt::Display for PackageInstallError {
 
 impl std::error::Error for PackageInstallError {}
 
-impl From<vescpkg_rs_build::PackageError> for PackageInstallError {
-    fn from(error: vescpkg_rs_build::PackageError) -> Self {
+impl From<crate::package::PackageError> for PackageInstallError {
+    fn from(error: crate::package::PackageError) -> Self {
         match error {
-            vescpkg_rs_build::PackageError::Io(error) => Self::Io(error.to_string()),
-            vescpkg_rs_build::PackageError::InvalidPackage => Self::InvalidPackage,
+            crate::package::PackageError::Io(error) => Self::Io(error.to_string()),
+            crate::package::PackageError::InvalidPackage => Self::InvalidPackage,
             other => Self::Io(other.to_string()),
         }
     }
@@ -416,7 +416,7 @@ pub fn install_package<T: PackageInstallTransport>(
 pub fn erase_package<T: PackageInstallTransport>(
     transport: &T,
 ) -> Result<PackageInstallReport, PackageInstallError> {
-    // Source: ~/projects/vesc_tool/codeloader.cpp:1072-1090
+    // Source: third_party/vesc_tool/codeloader.cpp:1072-1090
     // uninstallVescPackage() erases Lisp first, then QML, then reloads firmware
     // and returns resLisp && resQml.
     let mut steps = Vec::new();
@@ -480,7 +480,7 @@ where
     T: PackageInstallTransport,
     I: IntoIterator<Item = InstallOperation<'a>>,
 {
-    // Source: ~/projects/vesc_tool/codeloader.cpp:1007-1024 installVescPackage()
+    // Source: third_party/vesc_tool/codeloader.cpp:1007-1024 installVescPackage()
     // gates later QML/Lisp steps on res, but always sleeps and reloads firmware
     // before returning res.
     let mut steps = Vec::new();
@@ -645,7 +645,7 @@ mod tests {
 
         let report = install_package(&package, &transport).expect("report");
 
-        // Source: ~/projects/vesc_tool/codeloader.cpp:994-1024
+        // Source: third_party/vesc_tool/codeloader.cpp:994-1024
         // installVescPackage() runs QML erase/upload, Lisp erase/upload,
         // lispSetRunning(1), then sleep/reload.
         assert_eq!(
@@ -680,7 +680,7 @@ mod tests {
             .read_to_string(&mut raw)
             .expect("decompress generated qml");
 
-        // Source: ~/projects/vesc_tool/codeloader.cpp:750-754
+        // Source: third_party/vesc_tool/codeloader.cpp:750-754
         // qmlCompress() prepends the same imports before qCompress(..., 9).
         assert_eq!(raw.len(), raw_len as usize);
         assert!(raw.starts_with(
@@ -696,8 +696,8 @@ mod tests {
 
         let report = install_package(&package, &transport).expect("report");
 
-        // Source: ~/projects/vesc_tool/codeloader.cpp:1014-1016 and
-        // ~/projects/vesc_tool/commands.cpp:2234-2240. VESC Tool sends
+        // Source: third_party/vesc_tool/codeloader.cpp:1014-1016 and
+        // third_party/vesc_tool/commands.cpp:2234-2240. VESC Tool sends
         // lispSetRunning(1) and does not wait for lispRunningResRx.
         assert!(
             report
@@ -736,7 +736,7 @@ mod tests {
             "erase Lisp {} bytes",
             package.lisp_data.len() + 100
         )));
-        // Source: ~/projects/vesc_tool/codeloader.cpp:1007-1024
+        // Source: third_party/vesc_tool/codeloader.cpp:1007-1024
         // installVescPackage() stops later Lisp work when res goes false, but
         // still sleeps and reloads firmware before returning res.
         assert_eq!(
@@ -766,7 +766,7 @@ mod tests {
 
         let report = install_package(&package, &transport).expect("report");
 
-        // Source: ~/projects/vesc_tool/codeloader.cpp:1001-1004
+        // Source: third_party/vesc_tool/codeloader.cpp:1001-1004
         // installVescPackage() erases old QML only when no new QML exists and
         // hasQmlApp is true.
         assert_eq!(
@@ -782,7 +782,7 @@ mod tests {
         let transport = FakePackageInstallTransport::default();
         let report = erase_package(&transport).expect("report");
         assert_eq!(report.package_name, "installed package");
-        // Source: ~/projects/vesc_tool/codeloader.cpp:1083-1089
+        // Source: third_party/vesc_tool/codeloader.cpp:1083-1089
         // uninstallVescPackage() erases Lisp, erases QML, reloads, then returns
         // resLisp && resQml.
         assert_eq!(
@@ -807,7 +807,7 @@ mod tests {
         let error = erase_package(&transport).expect_err("erase should fail");
 
         assert!(error.to_string().contains("erase Lisp 16 bytes"));
-        // Source: ~/projects/vesc_tool/codeloader.cpp:1083-1089
+        // Source: third_party/vesc_tool/codeloader.cpp:1083-1089
         // uninstallVescPackage() stores resLisp before qmlErase(16), so QML
         // erase and reload still run.
         assert_eq!(

@@ -29,6 +29,7 @@
           };
 
           cargo-llvm-cov = pkgs.cargo-llvm-cov;
+          cargo-binutils = pkgs.cargo-binutils;
 
           cargo-test-changed = pkgs.rustPlatform.buildRustPackage rec {
             pname = "cargo-test-changed";
@@ -67,6 +68,7 @@
             cargo-insta
             cargo-test-changed
             cargo-llvm-cov
+            cargo-binutils
             cargo-hack
           ];
 
@@ -94,6 +96,7 @@
           };
 
           cargo-llvm-cov = pkgs.cargo-llvm-cov;
+          cargo-binutils = pkgs.cargo-binutils;
 
           cargo-test-changed = pkgs.rustPlatform.buildRustPackage rec {
             pname = "cargo-test-changed";
@@ -144,6 +147,7 @@
               cargo-insta
               cargo-test-changed
               cargo-llvm-cov
+              cargo-binutils
             ];
           } ''
             ${checkEnv}
@@ -171,6 +175,7 @@
               cargo-insta
               cargo-test-changed
               cargo-llvm-cov
+              cargo-binutils
             ];
           } ''
             ${checkEnv}

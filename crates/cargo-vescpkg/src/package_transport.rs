@@ -30,25 +30,25 @@ const FW_VERSION_OPEN_ATTEMPTS: usize = 3;
 const FW_VERSION_OPEN_RETRY_DELAY: Duration = Duration::from_millis(750);
 const RECOVERY_SET_RUNNING_TIMEOUT: Duration = Duration::from_secs(15);
 const POST_LISP_UPLOAD_SETTLE: Duration = Duration::from_secs(2);
-// Source: ~/projects/vesc_tool/codeloader.cpp:1023-1024 installVescPackage()
+// Source: third_party/vesc_tool/codeloader.cpp:1023-1024 installVescPackage()
 // sleeps 500 ms, then calls VescInterface::reloadFirmware().
 const POST_PACKAGE_INSTALL_SETTLE: Duration = Duration::from_millis(500);
-// Source: ~/projects/vesc_tool/codeloader.cpp:711-731 CodeLoader::qmlErase()
+// Source: third_party/vesc_tool/codeloader.cpp:711-731 CodeLoader::qmlErase()
 // uses timeoutTimer.start(6000) after one qmlUiErase() send.
 const QML_ERASE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(6);
-// Source: ~/projects/vesc_tool/codeloader.cpp:81-101 CodeLoader::lispErase()
+// Source: third_party/vesc_tool/codeloader.cpp:81-101 CodeLoader::lispErase()
 // uses timeoutTimer.start(8000) after one lispEraseCode() send.
 const LISP_ERASE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
-// Source: ~/projects/vesc_tool/codeloader.cpp:402-408 and 759-765
+// Source: third_party/vesc_tool/codeloader.cpp:402-408 and 759-765
 // lispUpload()/qmlUpload() wait 1000 ms per chunk write acknowledgement.
 const WRITE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(1);
 const QML_READ_TIMEOUT: Duration = Duration::from_millis(1500);
 const QML_READ_INITIAL_LEN: u32 = 10;
 const CHUNK_SIZE: usize = 384;
-// Source: ~/projects/vesc_tool/bleuart.cpp:134-147 splits BLE writes into
+// Source: third_party/vesc_tool/bleuart.cpp:134-147 splits BLE writes into
 // 20-byte WriteWithoutResponse chunks.
 const BLE_WRITE_CHUNK_SIZE: usize = 20;
-// Source: ~/projects/vesc_tool/codeloader.cpp:423-432 and 780-789
+// Source: third_party/vesc_tool/codeloader.cpp:423-432 and 780-789
 // writeChunk() retries chunk writes with int tries = 5.
 const WRITE_RETRIES: usize = 5;
 const QML_UPLOAD_LIMIT: usize = 1024 * 120;
@@ -583,7 +583,7 @@ impl BtlePackageInstallTransport {
         payload: &[u8],
         timeout: Duration,
     ) -> Result<(), PackageInstallError> {
-        // Source: ~/projects/vesc_tool/codeloader.cpp:101-103 and 731-733
+        // Source: third_party/vesc_tool/codeloader.cpp:101-103 and 731-733
         // send erase once and wait once; only chunk writes retry.
         let response = self.write_command(command, payload, timeout)?;
         match parse_simple_ack(&response, command)? {
@@ -611,8 +611,8 @@ impl BtlePackageInstallTransport {
     }
 
     fn write_without_reply(&self, command: u8, payload: &[u8]) -> Result<(), PackageInstallError> {
-        // Source: ~/projects/vesc_tool/codeloader.cpp:1014-1016 and
-        // ~/projects/vesc_tool/commands.cpp:2234-2240 send lispSetRunning(1)
+        // Source: third_party/vesc_tool/codeloader.cpp:1014-1016 and
+        // third_party/vesc_tool/commands.cpp:2234-2240 send lispSetRunning(1)
         // without waiting for lispRunningResRx.
         let packet = build_command_packet(command, payload);
         self.with_session(|session| {
@@ -695,7 +695,7 @@ impl PackageInstallTransport for BtlePackageInstallTransport {
     }
 
     fn reload_firmware(&self) -> Result<(), PackageInstallError> {
-        // Source: ~/projects/vesc_tool/vescinterface.h:260-263 only marks
+        // Source: third_party/vesc_tool/vescinterface.h:260-263 only marks
         // cached firmware, QML, and config state stale via updateFwRx(false).
         thread::sleep(POST_PACKAGE_INSTALL_SETTLE);
         self.with_session(|session| {
@@ -1082,7 +1082,7 @@ mod tests {
 
     #[test]
     fn parse_ack_packets_covers_write_and_erase_replies() {
-        // Source: ~/projects/vesc_tool/commands.cpp:932-940 and 1008-1016
+        // Source: third_party/vesc_tool/commands.cpp:932-940 and 1008-1016
         // parses one-byte erase ACKs and write ACKs with ok plus echoed offset.
         assert!(parse_simple_ack(&[COMM_QMLUI_ERASE, 1], COMM_QMLUI_ERASE).expect("qml ack"));
         assert!(
@@ -1113,7 +1113,7 @@ mod tests {
     fn write_ack_ignores_device_echoed_offset_like_vesc_tool() {
         let expected_offset = 0;
 
-        // Source: ~/projects/vesc_tool/codeloader.cpp:409-412 and 766-769
+        // Source: third_party/vesc_tool/codeloader.cpp:409-412 and 766-769
         // both upload callbacks explicitly ignore the echoed write offset.
         for echoed_offset in [0, 384, u32::MAX] {
             let mut write_ack = Vec::from([COMM_LISP_WRITE_CODE, 1]);
@@ -1206,7 +1206,7 @@ mod tests {
     #[test]
     fn rejects_oversized_qml_uploads() {
         let qml = vec![0_u8; 1024 * 120];
-        // Source: ~/projects/vesc_tool/codeloader.cpp:804-807
+        // Source: third_party/vesc_tool/codeloader.cpp:804-807
         // qmlUpload() rejects payloads larger than 1024 * 120 after headers.
         assert!(build_qml_upload_payload(&qml, false).is_err());
     }
@@ -1218,7 +1218,7 @@ mod tests {
         let mut crc_input = Vec::from(2_u16.to_be_bytes());
         crc_input.extend_from_slice(&qml);
 
-        // Source: ~/projects/vesc_tool/codeloader.cpp:794-802
+        // Source: third_party/vesc_tool/codeloader.cpp:794-802
         // qmlUpload() writes len, crc, fullscreen flag, then script bytes.
         assert_eq!(&payload[0..4], &(qml.len() as u32).to_be_bytes());
         assert_eq!(
@@ -1232,7 +1232,7 @@ mod tests {
     #[test]
     fn lisp_upload_limits_depend_on_hardware_type() {
         let vesc_lisp = vec![0_u8; 1024 * 128];
-        // Source: ~/projects/vesc_tool/codeloader.cpp:389-397
+        // Source: third_party/vesc_tool/codeloader.cpp:389-397
         // lispUpload() uses 128 KiB - 6 bytes for VESC and 512 KiB - 6 for ESP32.
         assert!(build_lisp_upload_payload(&vesc_lisp, HwType::Vesc).is_err());
 
@@ -1249,7 +1249,7 @@ mod tests {
 
         let payload = build_lisp_upload_payload(&lisp_data, HwType::Vesc).expect("lisp payload");
 
-        // Source: ~/projects/vesc_tool/codeloader.cpp:383-387
+        // Source: third_party/vesc_tool/codeloader.cpp:383-387
         // lispUpload() writes len as vb.size() - 2, crc over vb, then vb bytes.
         assert_eq!(
             u32::from_be_bytes(payload[0..4].try_into().expect("length header")),
@@ -1269,8 +1269,8 @@ mod tests {
             let payload = bytes.to_be_bytes();
             let expected_tail = payload.to_vec();
             for command in [COMM_QMLUI_ERASE, COMM_LISP_ERASE_CODE] {
-                // Source: ~/projects/vesc_tool/commands.cpp:2122-2127 and
-                // ~/projects/vesc_tool/commands.cpp:2226-2231. Both erase
+                // Source: third_party/vesc_tool/commands.cpp:2122-2127 and
+                // third_party/vesc_tool/commands.cpp:2226-2231. Both erase
                 // commands encode command byte plus big-endian int32 size.
                 let packet = build_command_packet(command, &payload);
                 assert!(
@@ -1297,7 +1297,7 @@ mod tests {
             .map(<[u8]>::len)
             .collect::<Vec<_>>();
 
-        // Source: ~/projects/vesc_tool/bleuart.cpp:134-147
+        // Source: third_party/vesc_tool/bleuart.cpp:134-147
         // BleUart::writeData() sends repeated 20-byte chunks then the remainder.
         assert_eq!(chunks, vec![20, 20, 1]);
     }
@@ -1345,7 +1345,7 @@ mod tests {
 
     #[test]
     fn lisp_set_running_packet_matches_vesc_tool() {
-        // Source: ~/projects/vesc_tool/commands.cpp:2234-2240
+        // Source: third_party/vesc_tool/commands.cpp:2234-2240
         // lispSetRunning() encodes command byte plus int8 running flag.
         let packet = build_command_packet(COMM_LISP_SET_RUNNING, &[1]);
         let decoded = PacketDecoder::new()
@@ -1359,13 +1359,13 @@ mod tests {
 
     #[test]
     fn erase_waits_match_vesc_tool_package_installer() {
-        // Source: ~/projects/vesc_tool/codeloader.cpp:711-731
+        // Source: third_party/vesc_tool/codeloader.cpp:711-731
         // qmlErase() waits up to 6000 ms for one erase response.
         assert_eq!(
             super::QML_ERASE_RESPONSE_TIMEOUT,
             std::time::Duration::from_secs(6)
         );
-        // Source: ~/projects/vesc_tool/codeloader.cpp:81-101
+        // Source: third_party/vesc_tool/codeloader.cpp:81-101
         // lispErase() waits up to 8000 ms for one erase response.
         assert_eq!(
             super::LISP_ERASE_RESPONSE_TIMEOUT,
@@ -1375,14 +1375,14 @@ mod tests {
 
     #[test]
     fn write_retry_count_matches_vesc_tool_chunk_uploads() {
-        // Source: ~/projects/vesc_tool/codeloader.cpp:423-432 and 780-789
+        // Source: third_party/vesc_tool/codeloader.cpp:423-432 and 780-789
         // both writeChunk lambdas use int tries = 5.
         assert_eq!(super::WRITE_RETRIES, 5);
     }
 
     #[test]
     fn package_install_refresh_wait_matches_vesc_tool() {
-        // Source: ~/projects/vesc_tool/codeloader.cpp:1023-1024
+        // Source: third_party/vesc_tool/codeloader.cpp:1023-1024
         // installVescPackage() sleeps 500 ms before reloadFirmware().
         assert_eq!(
             super::POST_PACKAGE_INSTALL_SETTLE,
