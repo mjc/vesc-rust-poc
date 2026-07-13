@@ -16,7 +16,6 @@ vescpkg-rs-units = { path = "../vescpkg-rs-units", default-features = false }
 alloc = []
 math = ["dep:libm"]
 test-support = []
-alloc = []
 
 [dev-dependencies]
 rstest = "0.26"

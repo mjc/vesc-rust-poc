@@ -11,7 +11,7 @@ extern crate std;
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 use alloc::vec::Vec;
-#[cfg(all(not(test), target_arch = "arm"))]
+#[cfg(not(test))]
 use vescpkg_rs::VescAllocator;
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
@@ -19,64 +19,72 @@ use vesc_protocol::ble_loopback::{LoopbackError, MAX_LOOPBACK_FRAME_BYTES, handl
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 use vesc_protocol::{WireCommand, WireVersion};
 
-#[cfg(not(test))]
-use vescpkg_rs::{ffi, init as pkg_init};
-
+#[cfg(any(test, all(not(test), target_arch = "arm")))]
+use vescpkg_rs::PackageStart;
 #[cfg(all(not(test), target_arch = "arm"))]
+use vescpkg_rs::{Firmware, PackageAppDataCallback};
+
+#[cfg(not(test))]
 #[global_allocator]
 static ALLOCATOR: VescAllocator = VescAllocator;
 
-#[cfg(all(not(test), target_arch = "arm"))]
-#[used]
-#[unsafe(no_mangle)]
-#[unsafe(link_section = ".program_ptr")]
-static prog_ptr: u32 = 0;
-
-/// Package loader entrypoint that installs the stop hook.
-#[cfg(not(test))]
-#[unsafe(no_mangle)]
-pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
-    pkg_init::install_stop_hook(info)
-}
-
-/// Test-build package loader entrypoint.
-#[cfg(test)]
-#[unsafe(no_mangle)]
-pub extern "C" fn package_lib_init(info: *mut vescpkg_rs::ffi::LibInfo) -> bool {
-    vescpkg_rs::init::install_stop_hook(info)
-}
-
-/// Firmware package entrypoint that registers the alloc-smoke app-data probe.
-#[cfg(all(not(test), target_arch = "arm"))]
-#[unsafe(no_mangle)]
-#[unsafe(link_section = ".init_fun")]
-pub extern "C" fn init(info: *mut ffi::LibInfo) -> bool {
-    if !package_lib_init(info) {
-        return false;
-    }
-    unsafe { ffi::raw::vesc_set_app_data_handler(alloc_smoke_app_data_callback) }
-}
+vescpkg_rs::package_start!(crate::start);
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 const ALLOC_SMOKE_CANDIDATES: usize = 5;
 
-/// Initialize the alloc smoke package.
 #[cfg(all(not(test), target_arch = "arm"))]
-unsafe extern "C" fn alloc_smoke_app_data_callback(data: *mut u8, len: u32) {
-    if data.is_null() || len == 0 {
-        return;
+struct AllocSmokeAppData;
+
+#[cfg(all(not(test), target_arch = "arm"))]
+impl PackageAppDataCallback for AllocSmokeAppData {
+    fn image_address() -> usize {
+        alloc_smoke_app_data_callback as *const () as usize
     }
-    let bytes = unsafe { core::slice::from_raw_parts(data.cast_const(), len as usize) };
-    if classify_alloc_smoke_app_data(bytes) == AllocSmokeAppDataAction::Ignore {
-        return;
+}
+
+/// Initialize the alloc smoke package.
+#[cfg(any(test, all(not(test), target_arch = "arm")))]
+fn start(start: &mut PackageStart) -> bool {
+    if start.install_stop_hook().is_err() {
+        return false;
     }
-    let now_ms = u64::from(unsafe { ffi::raw::vesc_system_time_ticks() }) / 10;
+    #[cfg(all(not(test), target_arch = "arm"))]
+    {
+        let Some(callback) = start.app_data_callback::<AllocSmokeAppData>() else {
+            return false;
+        };
+        if callback.register().is_err() {
+            return false;
+        }
+    }
+    true
+}
+
+/// Device entrypoint invoked by firmware app-data delivery.
+///
+/// # Safety
+///
+/// `data` must be null with `len == 0` or point to `len` readable bytes that
+/// remain valid for the duration of this call.
+#[unsafe(no_mangle)]
+#[inline(never)]
+#[cfg(all(not(test), target_arch = "arm"))]
+pub unsafe extern "C" fn alloc_smoke_app_data_callback(data: *mut u8, len: u32) {
+    let Some(bytes) = (!data.is_null() && len != 0)
+        .then(|| unsafe { core::slice::from_raw_parts(data.cast_const(), len as usize) })
+    else {
+        return;
+    };
+    let firmware = Firmware::new();
+    let app_data = firmware.app_data();
+    let now_ms = u64::from(app_data.system_time_ticks().as_ticks()) / 10;
     let Ok((response, response_len)) = alloc_smoke_loopback(bytes, now_ms) else {
         return;
     };
-    unsafe {
-        ffi::raw::vesc_send_app_data(response.as_ptr(), response_len as u32);
-    }
+    let _ = response
+        .get(..response_len)
+        .is_some_and(|response| app_data.send(response).is_ok());
 }
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
