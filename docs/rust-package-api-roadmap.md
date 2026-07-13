@@ -10,8 +10,8 @@ Rust package API.
 
 - `crates/vescpkg-rs-sys` — raw firmware ABI (`no_std`, unsafe table calls)
 - `crates/vescpkg-rs` — target-side SDK linked into native packages
-- `examples/loopback` — BLE loopback reference package staticlib
-- `crates/vescpkg-rs-build` — host-side `.vescpkg` format/build/install
+- `examples/loopback` — BLE loopback reference package ELF
+- `crates/cargo-vescpkg` — host-side `.vescpkg` format/build/install
 - `crates/vesc-protocol` — shared wire protocol types
 - `crates/cargo-vescpkg` — `cargo vescpkg` host command surface
 
@@ -19,7 +19,8 @@ Rust package API.
 
 - `nix develop -c make check`
 - `nix develop -c make check-full`
-- `nix develop -c make hack-check` — `cargo-hack --each-feature` matrix for host crates plus thumb release lib build for `vesc-example-loopback`
+- `nix develop -c make check-full` — strict host checks, target checks, package
+  ELF build, and `.vescpkg` emission
 
 ## Deferred:
 
@@ -35,8 +36,8 @@ filtered by the `hil` nextest profile.
 - Rust exports `prog_ptr` and `init` for the native loader.
 - Rust owns LispBM extension table registration.
 - Rust owns BLE app-data and stop-hook lifecycle setup.
-- `vescpkg-rs-build` still uses the generic VESC linker and conversion references:
-  `src/vesc_c_if.h`, `src/link.ld`, `src/rules.mk`, and `scripts/conv.py`.
+- Cargo uses the checked-in package linker script and emits the final ELF;
+  `cargo-vescpkg` only packages the Cargo artifact after the build.
 
 ## Package-Author API Surface
 
@@ -56,7 +57,7 @@ remember firmware polarity.
 1. Keep artifact, size, symbol, and ABI guards green under `nix develop -c make package`.
 2. Hardware-validate install, `lisp-probe`, and `loopback` after each native boundary change.
 3. Grow `vescpkg-rs` only where tests prove the ABI boundary is stable.
-4. Grow `cargo vescpkg build` from the tested `vescpkg-rs-build` boundary.
+4. Keep `cargo vescpkg build` driven by Cargo metadata and compiler artifacts.
 5. Replace generic VESC references only after tests prove byte/layout equivalence.
 
 ## Guardrail

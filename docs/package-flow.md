@@ -1,78 +1,48 @@
-# Rust VESC Package Flow
+# Rust VESC package flow
 
-This note characterizes the package path that the Rust VESC package experiment should support.
-This is an unofficial Rust package flow and is not an official VESC project or endorsed toolchain.
+`cargo-vescpkg` is the user-facing Cargo subcommand. Cargo packages are
+ordinary inputs selected with `-p`; they are not host-side plugins.
 
-## Inputs
+## Build
 
-- `pkgdesc.qml` defines the package name, description markdown, Lisp loader, QML file, fullscreen flag, and final package output name.
-- `fixtures/native-lib-baseline/package/code.lisp` loads `src/package_lib.bin` and registers Lisp-side behavior for the baseline package.
-- `target/thumbv7em-none-eabihf/release/libvesc_example_loopback.a` and the generic VESC references in `fixtures/native-lib-baseline/src/` model the native-library build flow that produces the Rust-backed binary payload.
-- `lisp/bms.lisp` is imported by the package loader when BMS integration is enabled.
-- `package_README.md`, `ui.qml.in`, `package_name`, and `version` feed generated package assets.
+```bash
+nix develop -c cargo vescpkg build -p vesc-example-loopback
+nix develop -c cargo vescpkg build -p vesc-example-alloc-smoke
+```
 
-## Native Payload Path
+Each package owns its target library, package metadata, package assets, and
+small build script. Cargo links the library and package entrypoint into one
+`thumbv7em-none-eabihf` ELF using `examples/vescpkg-link.ld`. The build script
+copies package assets into Cargo's `OUT_DIR` and declares the package directory
+as its rerun input.
 
-- `crates/vescpkg-rs-build` owns package staging, conversion, and inspection.
-- `fixtures/native-lib-baseline/src/rules.mk` and `scripts/conv.py` are placeholder references retained for VESC layout parity; the Rust build path compiles via `native_lib_materialize` and copies `native_lib.bin` to `package_lib.bin` without invoking them.
-- The native build stays in the VESC native-library flow; the package layer does not build the final payload directly.
+`cargo-vescpkg` runs one Cargo build, consumes `compiler-artifact` and
+`build-script-executed` JSON, converts the final ELF with `rust-objcopy`, and
+assembles the `.vescpkg` archive under Cargo's target directory. It never writes
+generated assets into the source tree and never invokes Make, a nested build,
+the VESC Tool source tree, or a package-specific host adapter.
 
-## Package Assembly
+The target directory can be overridden normally:
 
-| Tier | Command | Scope |
-|------|---------|-------|
-| Fast (default) | `make check` | fmt, clippy, thumb sys check, ARM loopback clippy, and workspace nextest |
-| Package build | `make package-only` | package staging, conversion, and `.vescpkg` emission through `cargo-vescpkg` |
-| Embedded audit | `make native-audit` | package build plus native-lib semantic audit |
-| Full gate | `make check-full` | default checks plus ARM/package audit gates |
-| HIL (manual) | `cargo nextest run -p cargo-vescpkg --profile hil -- --ignored` | ignored hardware sketch; needs `VESC_DEVICE` + `VESC_BLE_ADDR` |
+```bash
+nix develop -c sh -lc \
+  'export CARGO_TARGET_DIR="$PWD/target/custom"; cargo vescpkg build -p vesc-example-loopback'
+```
 
-- The root `Makefile` gates packaging behind tests.
-- `make check` runs formatting, linting, target checks, and the workspace `nextest` default profile.
-- `make check-full` adds the embedded native-lib audit tier on top of `check`.
-- `make package` runs the checked package build wrapper and emits the final `.vescpkg` path.
-- `make package-only` skips the top-level `check` dependency for debugging the `cargo-vescpkg` wrapper itself.
-- `make` currently defaults to `check`; the package-build command path lives in the repo now instead of an ad hoc shell fragment.
-- Set `INSTA_UPDATE=always` when intentionally refreshing package or native-lib snapshots.
-- Set `VESC_PKG_DISASM=1` to print optional native-lib disassembly during the embedded audit.
-- `crates/cargo-vescpkg/tests/fake_ble_integration.rs` is the canonical host↔in-process firmware bridge: it wires `FakeFirmwareServices` from `vescpkg-rs-build` to the host `LoopbackTransport` and exercises ping/echo without hardware.
-- `package_README-gen.md` and `ui.qml` are generated artifacts, not hand-edited inputs.
+## Checks
 
-## Build And Upload Workflow
+- `nix develop -c make check` runs formatting, strict host checks, target checks,
+  and workspace tests.
+- `nix develop -c make check-full` also builds the package ELF and `.vescpkg`.
+- `cargo nextest run -p cargo-vescpkg --profile hil -- --ignored` is the
+  hardware lane and requires an attached VESC plus its device selection.
 
-1. Enter the Nix shell with `nix develop`.
-2. Run `make check-full` before packaging native-boundary changes; `make check` is enough for host-only edits.
-3. Use `make package-only` to exercise staging, conversion, package emission, and artifact inspection through `cargo-vescpkg`.
-4. Use `make package` for the checked path that still emits the final `.vescpkg` from the local Rust packer.
-5. Upload the emitted package in VESC Tool, then run the host `loopback` command against the device-side package.
+The generated package is decoded by the same package reader used by the install
+path before BLE transport is opened. A successful hardware sign-off still
+requires installing and probing both loopback and alloc-smoke packages.
 
-The current package name is `Rust BLE loopback test package`, and the predictable output path is
-`target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/Rust-BLE-loopback-test-package-0.1.0.vescpkg`.
+## Deferred hardware tooling
 
-## Device Assumptions
-
-- The target firmware must expose the BLE loopback package entrypoint.
-- The device must be able to stay connected long enough for the loopback exchange.
-- The host and device should agree on the `vesc_protocol` wire version before any real hardware smoke test.
-
-## Troubleshooting
-
-- If `make check` fails early, start with `make test` and `make symbol-check` to narrow the failure.
-- If generated files drift, run `make clean` before rebuilding.
-- If the host loopback fails with a scan timeout, the adapter or device was not discovered in time.
-- If the host loopback fails with connect failure, retry the connection path before blaming the package.
-- If the host loopback fails with a missing service error, the device-side package likely did not advertise the loopback service.
-
-## Build Metadata
-
-- The generated README appends version, build date, and git commit details.
-- `VESC_PKG_GIT_COMMIT` and `VESC_PKG_BUILD_DATE` feed the package provenance fields when they are set.
-- `ui.qml` is templated from `ui.qml.in` with package name and version substitutions.
-- The package output name is the package name with a `.vescpkg` suffix.
-
-## What This Means For Rust
-
-- The Rust path should keep the same separation between package metadata and native payload generation.
-- The first Rust proof should keep the native-library flow for ELF/bin generation and let the Rust packer own the final `.vescpkg` emission.
-- Package staging, package asset rendering, artifact inspection, and final package emission
-  belong in the dedicated `vescpkg-rs-build` crate rather than ad hoc shell fragments.
+`cargo-flash`/probe-rs are not part of this build path. VESC package deployment
+uses a bespoke VESC transport and will be designed separately before adding
+deployment tooling to the devshell.

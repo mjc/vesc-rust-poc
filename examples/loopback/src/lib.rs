@@ -1,6 +1,6 @@
 //! BLE loopback VESC package payload.
 //!
-//! This crate is the linkable staticlib artifact (`libvesc_example_loopback.a`). Generic loader,
+//! This crate is the package library linked into the Cargo-owned final ELF. Generic loader,
 //! lifecycle, and firmware wrapper code lives in `vescpkg-rs`.
 //!
 //! Device builds must stay `no_std` and must not link `alloc` or `std`.
@@ -11,26 +11,16 @@
 #[cfg(test)]
 extern crate std;
 
+mod app_data;
 pub mod extensions;
-pub mod init;
+pub mod package;
 
-pub use init::package_lib_init;
+pub use package::package_lib_init;
 pub use vescpkg_rs::{ProtocolFrame, WireCommand, WireVersion, ble_loopback, ffi, lbm, lifecycle};
-
-#[cfg(not(test))]
-use core::panic::PanicInfo;
-
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(_: &PanicInfo) -> ! {
-    loop {
-        core::hint::spin_loop();
-    }
-}
 
 #[cfg(test)]
 mod tests {
-    use super::{extensions, init};
+    use super::extensions;
 
     #[test]
     fn rust_add_stays_a_plain_integer_function() {
@@ -46,7 +36,7 @@ mod tests {
             base_addr: 0,
         };
 
-        assert!(init::package_lib_init(&mut info));
+        assert!(super::package_lib_init(&mut info));
         assert!(info.stop_fun.is_some());
     }
 }

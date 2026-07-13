@@ -1,4 +1,4 @@
-//! Native loader entrypoints for the BLE loopback proof-of-concept package.
+//! Package startup and loader wiring for the BLE loopback example.
 
 use vescpkg_rs::{ffi, init as pkg_init, lifecycle};
 
@@ -40,14 +40,14 @@ pub extern "C" fn init(info: *mut ffi::LibInfo) -> bool {
         return true;
     };
 
-    let _ = vescpkg_rs::ble_loopback::register_loopback_app_data_handler();
+    let _ = crate::app_data::register();
 
     let lifecycle = ffi::PackageLifecycle::new(ffi::RealBindings);
     let _ = register_package_extensions(info, &lifecycle);
 
     // Extension registration can run other firmware setup; register again so the
     // loopback handler remains the active app-data callback (refloat pattern).
-    let _ = vescpkg_rs::ble_loopback::register_loopback_app_data_handler();
+    let _ = crate::app_data::register();
 
     true
 }

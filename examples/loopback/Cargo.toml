@@ -6,11 +6,18 @@ description = "Unofficial BLE loopback example package for Rust VESC package exp
 
 publish = false
 
+[package.metadata.vescpkg]
+name = "Rust BLE loopback test package"
+
 [lints]
 workspace = true
 
 [lib]
-crate-type = ["staticlib"]
+crate-type = ["rlib"]
+
+[[bin]]
+name = "vesc-example-loopback"
+path = "src/main.rs"
 
 [dependencies]
 vescpkg-rs = { path = "../../crates/vescpkg-rs" }
