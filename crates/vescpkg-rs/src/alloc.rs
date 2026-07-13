@@ -8,14 +8,101 @@
 //! firmware `free` on [`Drop`], and callers should use raw pointers until they
 //! have explicitly initialized the allocation.
 //!
-//! A future optional feature may expose a `#[global_allocator]` type for package
-//! crates that deliberately opt into `alloc`. That feature must live in
-//! `vescpkg-rs`, stay off by default, and document alignment limitations and
-//! out-of-memory behavior.
+//! The optional `alloc` feature exposes [`VescAllocator`] for package crates
+//! that deliberately opt into Rust's `alloc` collections.
 
+#[cfg(feature = "alloc")]
+use core::alloc::{GlobalAlloc, Layout};
 use core::ffi::c_void;
 use core::mem::{ManuallyDrop, size_of};
+#[cfg(feature = "alloc")]
+use core::ptr;
 use core::ptr::NonNull;
+
+#[cfg(feature = "alloc")]
+const ALLOC_HEADER_BYTES: usize = size_of::<*mut c_void>();
+
+/// Firmware-backed global allocator for package-local `alloc` collections.
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct VescAllocator;
+
+#[cfg(feature = "alloc")]
+unsafe impl GlobalAlloc for VescAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        if layout.size() == 0 {
+            return NonNull::<u8>::dangling().as_ptr();
+        }
+
+        let Some(bytes) = layout
+            .size()
+            .checked_add(ALLOC_HEADER_BYTES)
+            .and_then(|bytes| bytes.checked_add(layout.align().saturating_sub(1)))
+        else {
+            return ptr::null_mut();
+        };
+        let raw = unsafe { vescpkg_rs_sys::raw::vesc_malloc(bytes) }.cast::<u8>();
+        let Some(raw) = NonNull::new(raw) else {
+            return ptr::null_mut();
+        };
+        let start = raw.as_ptr().wrapping_add(ALLOC_HEADER_BYTES);
+        let offset = start.align_offset(layout.align());
+        if offset == usize::MAX {
+            unsafe { vescpkg_rs_sys::raw::vesc_free(raw.as_ptr().cast()) };
+            return ptr::null_mut();
+        }
+        let user = start.wrapping_add(offset);
+        unsafe {
+            ptr::copy_nonoverlapping(
+                (&raw.as_ptr().cast::<c_void>() as *const *mut c_void).cast::<u8>(),
+                user.sub(ALLOC_HEADER_BYTES),
+                ALLOC_HEADER_BYTES,
+            );
+        }
+        user
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
+        if ptr.is_null() {
+            return;
+        }
+        let mut raw = ptr::null_mut::<c_void>();
+        unsafe {
+            ptr::copy_nonoverlapping(
+                ptr.sub(ALLOC_HEADER_BYTES),
+                (&mut raw as *mut *mut c_void).cast::<u8>(),
+                ALLOC_HEADER_BYTES,
+            );
+            vescpkg_rs_sys::raw::vesc_free(raw);
+        }
+    }
+
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        let ptr = unsafe { self.alloc(layout) };
+        if !ptr.is_null() {
+            unsafe { ptr::write_bytes(ptr, 0, layout.size()) };
+        }
+        ptr
+    }
+
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        if ptr.is_null() {
+            let Ok(layout) = Layout::from_size_align(new_size, layout.align()) else {
+                return ptr::null_mut();
+            };
+            return unsafe { self.alloc(layout) };
+        }
+        let Ok(new_layout) = Layout::from_size_align(new_size, layout.align()) else {
+            return ptr::null_mut();
+        };
+        let replacement = unsafe { self.alloc(new_layout) };
+        if !replacement.is_null() {
+            unsafe { ptr::copy_nonoverlapping(ptr, replacement, layout.size().min(new_size)) };
+            unsafe { self.dealloc(ptr, layout) };
+        }
+        replacement
+    }
+}
 
 /// Firmware allocation failures reported by [`FirmwareAllocator`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

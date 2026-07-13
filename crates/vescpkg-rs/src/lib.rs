@@ -36,6 +36,8 @@ pub mod ffi {
 pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
 pub use vescpkg_rs_units as units;
 
+#[cfg(feature = "alloc")]
+pub use alloc::VescAllocator;
 pub use alloc::{AllocBindings, AllocError, FirmwareAllocation, FirmwareAllocator};
 pub use bindings::{AppDataBindings, CustomConfigBindings, LbmBindings};
 pub use extension::{ExtensionDescriptor, ExtensionNameError, RegisterError};

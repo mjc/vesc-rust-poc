@@ -265,7 +265,7 @@ fn resolve_staged_import_path(staging_dir: &Path, import_path: &str) -> io::Resu
         || path.is_absolute()
         || path
             .components()
-            .any(|component| matches!(component, Component::ParentDir))
+            .any(|component| matches!(component, Component::ParentDir | Component::Prefix(_)))
     {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,

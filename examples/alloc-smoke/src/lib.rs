@@ -19,57 +19,71 @@ use vesc_protocol::ble_loopback::{LoopbackError, MAX_LOOPBACK_FRAME_BYTES, handl
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 use vesc_protocol::{WireCommand, WireVersion};
 
+#[cfg(all(not(test), target_arch = "arm"))]
+use vescpkg_rs::ble_loopback::process_loopback_app_data;
+#[cfg(not(test))]
+use vescpkg_rs::{ffi, init as pkg_init};
+
 #[cfg(not(test))]
 #[global_allocator]
 static ALLOCATOR: VescAllocator = VescAllocator;
 
-vescpkg_rs::package_start!(crate::start);
+#[cfg(all(not(test), target_arch = "arm"))]
+#[used]
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".program_ptr")]
+static PROG_PTR: u32 = 0;
+
+/// Package loader entrypoint that installs the stop hook.
+#[cfg(not(test))]
+#[unsafe(no_mangle)]
+pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
+    pkg_init::install_stop_hook(info)
+}
+
+/// Test-build package loader entrypoint.
+#[cfg(test)]
+#[unsafe(no_mangle)]
+pub extern "C" fn package_lib_init(info: *mut vescpkg_rs::ffi::LibInfo) -> bool {
+    vescpkg_rs::init::install_stop_hook(info)
+}
+
+/// Firmware package entrypoint that registers the alloc-smoke app-data probe.
+#[cfg(all(not(test), target_arch = "arm"))]
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".init_fun")]
+pub extern "C" fn init(info: *mut ffi::LibInfo) -> bool {
+    if !package_lib_init(info) {
+        return false;
+    }
+    unsafe { ffi::raw::vesc_set_app_data_handler(alloc_smoke_app_data_callback) }
+}
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 const ALLOC_SMOKE_CANDIDATES: usize = 5;
 
 /// Initialize the alloc smoke package.
-pub fn start(start: &mut vescpkg_rs::PackageStart) -> bool {
-    if start.install_stop_hook().is_err() {
-        return false;
-    }
-
-    #[cfg(all(not(test), target_arch = "arm"))]
-    {
-        let Some(callback) = start.app_data_callback::<AllocSmokeAppData>() else {
-            return false;
-        };
-        if callback.register().is_err() {
-            return false;
-        }
-    }
-
-    true
-}
-
 #[cfg(all(not(test), target_arch = "arm"))]
-struct AllocSmokeAppData;
-
-#[cfg(all(not(test), target_arch = "arm"))]
-impl vescpkg_rs::AppDataCallback for AllocSmokeAppData {
-    fn handle(packet: vescpkg_rs::AppDataPacket<'_>) {
-        match classify_alloc_smoke_app_data(packet.as_bytes()) {
-            AllocSmokeAppDataAction::Ignore => {}
-            AllocSmokeAppDataAction::Loopback => {
-                let now_ms = u64::from(
-                    vescpkg_rs::Firmware::new()
-                        .app_data()
-                        .system_time_ticks()
-                        .as_ticks(),
-                ) / 10;
-                if let Ok((response, response_len)) =
-                    alloc_smoke_loopback(packet.as_bytes(), now_ms)
-                {
-                    send_app_data(&response[..response_len]);
-                }
-            }
-        }
+unsafe extern "C" fn alloc_smoke_app_data_callback(data: *mut u8, len: u32) {
+    if data.is_null() || len == 0 {
+        return;
     }
+    let bytes = unsafe { core::slice::from_raw_parts(data.cast_const(), len as usize) };
+    let now_ms = u64::from(unsafe { ffi::raw::vesc_system_time_ticks() }) / 10;
+    let Some((response, response_len)) = process_loopback_app_data(bytes, now_ms) else {
+        return;
+    };
+
+    let mut candidates = Vec::with_capacity(ALLOC_SMOKE_CANDIDATES);
+    for _ in 0..ALLOC_SMOKE_CANDIDATES {
+        candidates.push(response[..response_len].to_vec());
+    }
+    let rotation = response_len % candidates.len();
+    candidates.rotate_left(rotation);
+    let Some(selected) = candidates.first() else {
+        return;
+    };
+    unsafe { ffi::raw::vesc_send_app_data(selected.as_ptr().cast_mut(), selected.len() as u32) };
 }
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
@@ -91,38 +105,6 @@ fn alloc_smoke_loopback(
         *destination = *source;
     }
     Ok((output, selected.len()))
-}
-
-#[cfg(all(not(test), target_arch = "arm"))]
-impl vescpkg_rs::PackageAppDataCallback for AllocSmokeAppData {
-    fn image_address() -> usize {
-        alloc_smoke_app_data_callback as *const () as usize
-    }
-}
-
-/// Device entrypoint invoked by firmware app-data delivery.
-///
-/// # Safety
-///
-/// `data` must be null with `len == 0` or point to `len` readable bytes that
-/// remain valid for the duration of this call.
-#[unsafe(no_mangle)]
-#[inline(never)]
-#[cfg(all(not(test), target_arch = "arm"))]
-pub unsafe extern "C" fn alloc_smoke_app_data_callback(data: *mut u8, len: u32) {
-    let Some(bytes) = (!data.is_null() && len != 0)
-        .then(|| unsafe { core::slice::from_raw_parts(data.cast_const(), len as usize) })
-    else {
-        return;
-    };
-    <AllocSmokeAppData as vescpkg_rs::AppDataCallback>::handle(
-        vescpkg_rs::AppDataPacket::from_bytes(bytes),
-    );
-}
-
-#[cfg(all(not(test), target_arch = "arm"))]
-fn send_app_data(bytes: &[u8]) {
-    let _ = vescpkg_rs::Firmware::new().app_data().send(bytes);
 }
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]

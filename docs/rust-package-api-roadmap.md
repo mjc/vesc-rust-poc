@@ -18,7 +18,6 @@ Rust package API.
 ## Validation
 
 - `make check`
-- `make check-full`
 - `make check-full` — strict host checks, target checks, package
   ELF build, and `.vescpkg` emission
 
