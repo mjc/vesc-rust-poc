@@ -1,7 +1,9 @@
 //! Safe adapters for firmware callback pointers.
 
 use core::ffi::{c_int, c_void};
-use core::ptr::{self, NonNull};
+#[cfg(test)]
+use core::ptr;
+use core::ptr::NonNull;
 
 use vescpkg_rs_sys::{LbmValue, LibInfo, MutablePacket, NativeImage, StopHandler};
 
@@ -40,14 +42,6 @@ pub unsafe fn loader_info_mut<'a>(info: *mut LibInfo) -> Option<&'a mut LibInfo>
     NonNull::new(info).map(|mut info| unsafe { info.as_mut() })
 }
 
-/// Clear package state and stop metadata when startup fails.
-pub unsafe fn clear_loader_info(info: *mut LibInfo) {
-    if let Some(info) = unsafe { loader_info_mut(info) } {
-        info.arg = ptr::null_mut();
-        info.stop_fun = None;
-    }
-}
-
 /// Rebase an image-relative address through loader metadata.
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 pub(crate) fn rebase_native_handler_addr(info: &LibInfo, handler_addr: usize) -> usize {
@@ -68,36 +62,6 @@ pub(crate) fn stop_handler_for_loader(info: &LibInfo, stop_handler: StopHandler)
     }
 }
 
-/// Store package state and a stop hook in loader metadata.
-///
-/// # Safety
-///
-/// `info` must satisfy [`loader_info_mut`]'s contract. `state` must remain live
-/// at the same address until the loader has stopped every callback and thread
-/// that can access it and cleared the metadata.
-pub unsafe fn install_loader_state<T>(
-    info: *mut LibInfo,
-    stop_handler: StopHandler,
-    state: &mut T,
-) -> bool {
-    let Some(info) = (unsafe { loader_info_mut(info) }) else {
-        return false;
-    };
-    info.arg = ptr::from_mut(state).cast();
-    info.stop_fun = Some(stop_handler_for_loader(info, stop_handler));
-    true
-}
-
-/// Recover typed package state from loader metadata.
-///
-/// # Safety
-///
-/// The loader argument must point to a live `T`, and the caller must hold
-/// exclusive access for the returned borrow.
-pub unsafe fn loader_state_mut<'a, T: 'static>(info: &mut LibInfo) -> Option<&'a mut T> {
-    unsafe { arg_mut(info.arg) }
-}
-
 /// Recover typed package state from a firmware ARG pointer.
 ///
 /// # Safety
@@ -106,62 +70,6 @@ pub unsafe fn loader_state_mut<'a, T: 'static>(info: &mut LibInfo) -> Option<&'a
 /// the returned lifetime.
 pub unsafe fn arg_mut<'a, T: 'static>(arg: *mut c_void) -> Option<&'a mut T> {
     NonNull::new(arg.cast::<T>()).map(|mut arg| unsafe { arg.as_mut() })
-}
-
-/// Borrow typed package state from a firmware ARG pointer.
-///
-/// # Safety
-///
-/// `arg` must be null or point to a live `T` that is not mutably borrowed for
-/// the returned lifetime.
-pub unsafe fn arg_ref<'a, T: 'static>(arg: *mut c_void) -> Option<&'a T> {
-    NonNull::new(arg.cast::<T>()).map(|arg| unsafe { arg.as_ref() })
-}
-
-/// Typed context passed to package stop callbacks.
-pub struct StopContext<'a, T: 'static> {
-    state: Option<&'a T>,
-}
-
-impl<T: 'static> StopContext<'_, T> {
-    /// Borrow the package state, when firmware provided one.
-    pub const fn state(&self) -> Option<&T> {
-        self.state
-    }
-}
-
-/// Rust implementation for a package stop callback.
-pub trait StopCallback {
-    /// Package state stored in loader metadata.
-    type State: 'static;
-
-    /// Stop package-owned runtime resources.
-    fn stop(context: StopContext<'_, Self::State>);
-}
-
-/// Firmware ABI trampoline for a typed package stop callback.
-///
-/// # Safety
-///
-/// `arg` must be null or point to a valid `T::State` value for the duration of this call.
-pub unsafe extern "C" fn stop_callback<T: StopCallback>(arg: *mut c_void) {
-    T::stop(StopContext {
-        state: unsafe { arg_ref::<T::State>(arg) },
-    });
-}
-
-/// Stop callback for state whose allocation ownership belongs to the SDK.
-///
-/// C map: VESC invokes `stop_fun(arg)` during unload at
-/// `third_party/vesc/lispBM/lispif_c_lib.c:1131-1150`; Refloat performs its
-/// cleanup and frees `Data` at `third_party/refloat/src/main.c:2399-2412`.
-pub(crate) unsafe extern "C" fn owned_stop_callback<T: StopCallback>(arg: *mut c_void) {
-    unsafe { stop_callback::<T>(arg) };
-    #[cfg(all(not(test), target_arch = "arm"))]
-    {
-        let bindings = crate::bindings::RealBindings;
-        let _ = crate::alloc::reclaim_firmware_allocation(arg.cast::<T::State>(), &bindings);
-    }
 }
 
 /// Convert firmware app-data callback arguments into a packet view.
@@ -705,28 +613,6 @@ mod tests {
     use crate::PackageStateAccess;
     use std::boxed::Box;
 
-    unsafe extern "C" fn stop(_arg: *mut c_void) {}
-
-    #[test]
-    fn loader_state_round_trips_through_loader_info() {
-        let mut state = 42_u32;
-        let mut info = LibInfo {
-            stop_fun: None,
-            arg: ptr::null_mut(),
-            base_addr: 0,
-        };
-
-        assert!(unsafe { install_loader_state(&mut info, stop, &mut state) });
-        *unsafe { loader_state_mut::<u32>(&mut info) }.expect("state") = 7;
-
-        assert_eq!(state, 7);
-        assert!(info.stop_fun.is_some());
-
-        unsafe { clear_loader_info(&mut info) };
-        assert!(info.arg.is_null());
-        assert!(info.stop_fun.is_none());
-    }
-
     #[test]
     fn native_handler_rebase_uses_loader_base_addr() {
         let info = LibInfo {
@@ -831,7 +717,7 @@ mod tests {
         };
         let mut state = State { value: 7 };
 
-        assert!(unsafe { install_loader_state(&mut info, stop, &mut state) });
+        info.arg = core::ptr::from_mut(&mut state).cast();
 
         let bindings = FirmwareArgLookup {
             loaded_prog_addr: crate::PackageProgramAddress::new(info.base_addr),

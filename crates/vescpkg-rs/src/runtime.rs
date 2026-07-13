@@ -23,27 +23,6 @@ impl<T> Drop for PackageStateBorrow<'_, T> {
     }
 }
 
-/// Runtime-state publication cleared on drop unless committed.
-pub struct PackageStateGuard<'a, T: 'static> {
-    slot: &'a PackageStateStore<T>,
-    committed: bool,
-}
-
-impl<T> PackageStateGuard<'_, T> {
-    /// Keep the installed runtime state after the guard is dropped.
-    pub fn commit(mut self) {
-        self.committed = true;
-    }
-}
-
-impl<T: 'static> Drop for PackageStateGuard<'_, T> {
-    fn drop(&mut self) {
-        if !self.committed {
-            self.slot.clear();
-        }
-    }
-}
-
 /// Package state shared by package callbacks.
 ///
 /// C map: `ARG(PROG_ADDR)` resolves the package's loader-owned state at
@@ -140,22 +119,10 @@ impl<T: 'static> PackageStateStore<T> {
     ///
     /// `state` must outlive every callback that can access this slot, and the
     /// caller must clear the slot before freeing it.
+    #[cfg(test)]
     pub(crate) unsafe fn install(&self, state: &mut T) {
         self.state
             .store(core::ptr::from_mut(state), Ordering::Release);
-    }
-
-    /// Install package state that is cleared unless the returned guard commits.
-    ///
-    /// # Safety
-    ///
-    /// Same requirements as [`Self::install`].
-    pub(crate) unsafe fn install_guard(&self, state: &mut T) -> PackageStateGuard<'_, T> {
-        unsafe { self.install(state) };
-        PackageStateGuard {
-            slot: self,
-            committed: false,
-        }
     }
 
     /// Clear the installed state pointer.

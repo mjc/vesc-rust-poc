@@ -489,10 +489,9 @@ mod tests {
         // `third_party/vesc/lispBM/lispif_c_lib.c:151-158`; the IMU adapter
         // dispatches the package state source like Refloat's callback at
         // `third_party/refloat/src/main.c:759-764`.
-        {
-            let _state = unsafe { RUNTIME_STATE.install_guard(&mut state) };
-            <RuntimeImuRead as ImuReadCallback>::read(typed_sample());
-        }
+        unsafe { RUNTIME_STATE.install(&mut state) };
+        <RuntimeImuRead as ImuReadCallback>::read(typed_sample());
+        RUNTIME_STATE.clear();
         assert_eq!(state.samples, 1);
         assert_eq!(OBSERVED_SAMPLES.load(Ordering::SeqCst), 1);
 

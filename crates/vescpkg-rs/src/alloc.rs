@@ -1,11 +1,4 @@
-//! Explicit firmware allocation handles for VESC native packages.
-//!
-//! VESC native packages can allocate from firmware-provided allocator slots.
-//! By default this module only wraps those slots with explicit RAII handles.
-//!
-//! Memory returned by firmware `malloc` is uninitialized. The handle frees via
-//! firmware `free` on [`Drop`], and callers should use raw pointers until they
-//! have explicitly initialized the allocation.
+//! Firmware allocator support for VESC native packages.
 //!
 //! With the `alloc` feature enabled, package crates may install
 //! [`VescAllocator`] as their package-local `#[global_allocator]` and then use
@@ -19,32 +12,19 @@
 
 #[cfg(feature = "alloc")]
 use core::alloc::{GlobalAlloc, Layout};
+#[cfg(feature = "alloc")]
 use core::ffi::c_void;
-use core::mem::{ManuallyDrop, size_of};
+#[cfg(feature = "alloc")]
+use core::mem::size_of;
 #[cfg(feature = "alloc")]
 use core::ptr;
+#[cfg(feature = "alloc")]
 use core::ptr::NonNull;
 
 #[cfg(feature = "alloc")]
 const HEADER_BYTES: usize = size_of::<*mut c_void>();
 #[cfg(feature = "alloc")]
 const HEADER_ALIGN: usize = core::mem::align_of::<*mut c_void>();
-
-/// Firmware allocation failures reported by [`FirmwareAllocator`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AllocError {
-    /// Zero-byte allocations are rejected.
-    ZeroLength,
-    /// Zero-sized element allocations are rejected.
-    ZeroSizedType,
-    /// Element size multiplied by count overflowed `usize`.
-    SizeOverflow,
-    /// Firmware allocator returned null for the requested byte count.
-    OutOfMemory {
-        /// Requested byte count.
-        bytes: usize,
-    },
-}
 
 #[cfg(feature = "alloc")]
 #[derive(Debug, Clone, Copy)]
@@ -198,150 +178,8 @@ unsafe fn stored_original_ptr(user: NonNull<u8>) -> *mut c_void {
     unsafe { AllocationHeader::read_before(user) }
 }
 
-/// Firmware allocation and free calls used by the SDK allocator wrapper.
-pub trait AllocBindings {
-    /// # Safety
-    ///
-    /// The returned pointer, if non-null, must be freed by [`AllocBindings::free`]
-    /// exactly once.
-    unsafe fn malloc(&self, bytes: usize) -> *mut c_void;
-
-    /// # Safety
-    ///
-    /// `ptr` must be null or a pointer returned by this allocator that has not
-    /// already been freed.
-    unsafe fn free(&self, ptr: *mut c_void);
-}
-
-#[cfg(not(test))]
-impl AllocBindings for crate::bindings::RealBindings {
-    unsafe fn malloc(&self, bytes: usize) -> *mut c_void {
-        unsafe { crate::ffi::vesc_malloc(bytes) }
-    }
-
-    unsafe fn free(&self, ptr: *mut c_void) {
-        unsafe { crate::ffi::vesc_free(ptr) }
-    }
-}
-
-/// Explicit firmware allocator backed by an [`AllocBindings`] implementation.
-#[derive(Debug, Clone, Copy)]
-pub struct FirmwareAllocator<'a, B> {
-    bindings: &'a B,
-}
-
-impl<'a, B: AllocBindings> FirmwareAllocator<'a, B> {
-    /// Create an allocator wrapper around firmware allocation bindings.
-    pub const fn new(bindings: &'a B) -> Self {
-        Self { bindings }
-    }
-
-    /// Allocate space for `count` uninitialized values of `T`.
-    pub(crate) fn allocate_for<T>(
-        &self,
-        count: usize,
-    ) -> Result<FirmwareAllocation<'a, T, B>, AllocError>
-    where
-        T: Sized,
-    {
-        let elem_size = size_of::<T>();
-        if elem_size == 0 {
-            return Err(AllocError::ZeroSizedType);
-        }
-        if count == 0 {
-            return Err(AllocError::ZeroLength);
-        }
-
-        let bytes = elem_size
-            .checked_mul(count)
-            .ok_or(AllocError::SizeOverflow)?;
-        let ptr = unsafe { self.bindings.malloc(bytes) };
-        let ptr = NonNull::new(ptr.cast::<T>()).ok_or(AllocError::OutOfMemory { bytes })?;
-
-        Ok(FirmwareAllocation {
-            ptr,
-            bindings: self.bindings,
-        })
-    }
-}
-
-#[cfg(not(test))]
-static LIVE_BINDINGS: crate::bindings::RealBindings = crate::bindings::RealBindings;
-
-#[cfg(not(test))]
-impl FirmwareAllocator<'static, crate::bindings::RealBindings> {
-    /// Construct an allocator backed by the live package ABI without exposing its binding type.
-    #[inline(always)]
-    pub fn live() -> Self {
-        Self::new(&LIVE_BINDINGS)
-    }
-}
-
-/// Owned firmware allocation pointer freed on drop.
-
-#[derive(Debug)]
-pub(crate) struct FirmwareAllocation<'a, T, B: AllocBindings> {
-    ptr: NonNull<T>,
-    bindings: &'a B,
-}
-
-impl<T, B: AllocBindings> FirmwareAllocation<'_, T, B> {
-    /// Return the allocation pointer as mutable.
-    pub(crate) const fn as_mut_ptr(&mut self) -> *mut T {
-        self.ptr.as_ptr()
-    }
-
-    /// Initialize the first element and return it as a mutable reference.
-    pub(crate) fn write_first(&mut self, value: T) -> &mut T {
-        unsafe {
-            self.ptr.as_ptr().write(value);
-            self.ptr.as_mut()
-        }
-    }
-
-    /// Transfer ownership of the firmware pointer out of this RAII handle.
-    ///
-    /// The caller becomes responsible for freeing the pointer exactly once with
-    /// the same firmware allocator.
-    pub(crate) fn into_raw(self) -> NonNull<T> {
-        let allocation = ManuallyDrop::new(self);
-        allocation.ptr
-    }
-}
-
-/// Reclaim a firmware allocation pointer so dropping it frees through `bindings`.
-#[cfg(all(not(test), target_arch = "arm"))]
-pub fn reclaim_firmware_allocation<T, B: AllocBindings>(
-    ptr: *mut T,
-    bindings: &B,
-) -> Option<FirmwareAllocation<'_, T, B>> {
-    let ptr = NonNull::new(ptr)?;
-    Some(unsafe { FirmwareAllocation::from_raw_parts(ptr, bindings) })
-}
-
-#[cfg(any(test, all(not(test), target_arch = "arm")))]
-#[allow(clippy::elidable_lifetime_names)]
-impl<'a, T, B: AllocBindings> FirmwareAllocation<'a, T, B> {
-    /// Build an owned firmware allocation handle from raw parts.
-    ///
-    /// # Safety
-    ///
-    /// `ptr` must have been returned by `bindings.malloc` and be uniquely owned
-    /// by this handle.
-    pub(crate) unsafe fn from_raw_parts(ptr: NonNull<T>, bindings: &'a B) -> Self {
-        Self { ptr, bindings }
-    }
-}
-
-impl<T, B: AllocBindings> Drop for FirmwareAllocation<'_, T, B> {
-    fn drop(&mut self) {
-        unsafe { self.bindings.free(self.ptr.as_ptr().cast()) }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{AllocBindings, AllocError, FirmwareAllocation, FirmwareAllocator};
     #[cfg(feature = "alloc")]
     use super::{
         AllocationHeader, HEADER_ALIGN, HEADER_BYTES, VescAllocator, aligned_user_ptr,
@@ -349,144 +187,8 @@ mod tests {
     };
     #[cfg(feature = "alloc")]
     use core::alloc::{GlobalAlloc, Layout};
-    use core::cell::Cell;
-    use core::ffi::c_void;
+    #[cfg(feature = "alloc")]
     use core::ptr::NonNull;
-    use std::vec;
-
-    #[derive(Debug)]
-    struct FakeAllocBindings {
-        malloc_calls: Cell<usize>,
-        free_calls: Cell<usize>,
-        last_requested_len: Cell<usize>,
-        next_ptr: Cell<*mut c_void>,
-        last_freed: Cell<usize>,
-    }
-
-    impl FakeAllocBindings {
-        fn new(ptr: *mut c_void) -> Self {
-            Self {
-                malloc_calls: Cell::new(0),
-                free_calls: Cell::new(0),
-                last_requested_len: Cell::new(0),
-                next_ptr: Cell::new(ptr),
-                last_freed: Cell::new(0),
-            }
-        }
-
-        fn failing() -> Self {
-            Self::new(core::ptr::null_mut())
-        }
-    }
-
-    impl AllocBindings for FakeAllocBindings {
-        unsafe fn malloc(&self, bytes: usize) -> *mut c_void {
-            self.malloc_calls.set(self.malloc_calls.get() + 1);
-            self.last_requested_len.set(bytes);
-            self.next_ptr.get()
-        }
-
-        unsafe fn free(&self, ptr: *mut c_void) {
-            self.free_calls.set(self.free_calls.get() + 1);
-            self.last_freed.set(ptr as usize);
-        }
-    }
-
-    #[test]
-    fn allocation_drop_calls_firmware_free_once() {
-        let mut backing = vec![0_u8; 4];
-        let ptr = backing.as_mut_ptr();
-        let bindings = FakeAllocBindings::new(ptr.cast());
-        let allocator = FirmwareAllocator::new(&bindings);
-
-        {
-            let mut allocation = allocator.allocate_for::<u8>(4).expect("allocation");
-            assert_eq!(allocation.as_mut_ptr(), ptr);
-        }
-
-        assert_eq!(bindings.free_calls.get(), 1);
-        assert_eq!(bindings.last_freed.get(), ptr as usize);
-    }
-
-    #[test]
-    fn malloc_null_maps_to_out_of_memory() {
-        let bindings = FakeAllocBindings::failing();
-        let allocator = FirmwareAllocator::new(&bindings);
-
-        let error = allocator.allocate_for::<u8>(7).unwrap_err();
-
-        assert_eq!(error, AllocError::OutOfMemory { bytes: 7 });
-    }
-
-    #[test]
-    fn allocate_for_uses_checked_type_size_times_count() {
-        let mut backing = vec![0_u32; 3];
-        let bindings = FakeAllocBindings::new(backing.as_mut_ptr().cast());
-        let allocator = FirmwareAllocator::new(&bindings);
-
-        let mut allocation = allocator.allocate_for::<u32>(3).expect("allocation");
-
-        assert_eq!(bindings.last_requested_len.get(), 12);
-        assert_eq!(allocation.as_mut_ptr(), backing.as_mut_ptr());
-    }
-
-    #[test]
-    fn allocate_for_rejects_size_overflow() {
-        let mut backing = vec![0_u8; 1];
-        let bindings = FakeAllocBindings::new(backing.as_mut_ptr().cast());
-        let allocator = FirmwareAllocator::new(&bindings);
-
-        let error = allocator.allocate_for::<u16>(usize::MAX).unwrap_err();
-
-        assert_eq!(error, AllocError::SizeOverflow);
-        assert_eq!(bindings.malloc_calls.get(), 0);
-    }
-
-    #[test]
-    fn allocate_for_rejects_zero_sized_types() {
-        let mut backing = vec![0_u8; 1];
-        let bindings = FakeAllocBindings::new(backing.as_mut_ptr().cast());
-        let allocator = FirmwareAllocator::new(&bindings);
-
-        assert_eq!(
-            allocator.allocate_for::<()>(1).unwrap_err(),
-            AllocError::ZeroSizedType
-        );
-        assert_eq!(
-            allocator.allocate_for::<u8>(0).unwrap_err(),
-            AllocError::ZeroLength
-        );
-        assert_eq!(bindings.malloc_calls.get(), 0);
-    }
-
-    #[test]
-    fn into_raw_prevents_drop_from_freeing() {
-        let mut backing = vec![0_u8; 4];
-        let ptr = backing.as_mut_ptr();
-        let bindings = FakeAllocBindings::new(ptr.cast());
-        let allocator = FirmwareAllocator::new(&bindings);
-
-        let allocation = allocator.allocate_for::<u8>(4).expect("allocation");
-        let raw = allocation.into_raw();
-
-        assert_eq!(raw.as_ptr(), ptr);
-        assert_eq!(bindings.free_calls.get(), 0);
-    }
-
-    #[test]
-    fn from_raw_parts_frees_on_drop() {
-        let mut backing = vec![0_u16; 2];
-        let ptr = NonNull::new(backing.as_mut_ptr()).expect("nonnull");
-        let bindings = FakeAllocBindings::new(ptr.as_ptr().cast());
-
-        {
-            let _allocation = unsafe { FirmwareAllocation::from_raw_parts(ptr, &bindings) };
-        }
-
-        assert_eq!(bindings.free_calls.get(), 1);
-        assert_eq!(bindings.last_freed.get(), ptr.as_ptr() as usize);
-    }
-
     #[cfg(feature = "alloc")]
     #[test]
     fn allocation_request_includes_alignment_and_header_space() {

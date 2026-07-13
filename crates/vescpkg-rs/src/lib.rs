@@ -35,6 +35,8 @@ pub mod test_support;
 
 /// Internal ABI seam. `vescpkg-rs-sys` selects the real or test implementation.
 pub(crate) mod ffi {
+    #[cfg(test)]
+    pub use vescpkg_rs_sys::StopHandler;
     #[allow(unused_imports)]
     pub use vescpkg_rs_sys::raw::{
         CustomConfigGet, CustomConfigSet, CustomConfigXml, ImuReadCallback,
@@ -47,7 +49,7 @@ pub(crate) mod ffi {
         vesc_clear_imu_read_callback, vesc_free, vesc_get_arg, vesc_malloc, vesc_send_app_data,
         vesc_set_app_data_handler, vesc_set_imu_read_callback, vesc_system_time_ticks,
     };
-    pub use vescpkg_rs_sys::{AppDataHandler, LibInfo, NativeImage, StopHandler};
+    pub use vescpkg_rs_sys::{AppDataHandler, LibInfo, NativeImage};
 
     #[cfg(all(feature = "test-support", not(test)))]
     use crate::test_ffi as selected_ffi;
@@ -90,29 +92,15 @@ pub mod __macro_support;
 
 pub use firmware::{
     AppDataCallback, AppDataPacket, ConfigBytes, ConfigXml, PackageAppDataCallback,
-    PackageCustomConfigCallback, SourceCustomConfigCallback, StatefulAppDataCallback, StopCallback,
-    StopContext,
+    PackageCustomConfigCallback, SourceCustomConfigCallback, StatefulAppDataCallback,
 };
-#[cfg(test)]
 pub(crate) use firmware::{
-    arg_mut, clear_loader_info, firmware_array, install_loader_state, loader_info_mut,
-    loader_state_mut, register_custom_config_callbacks_from_image, stop_callback,
-};
-#[cfg(all(feature = "test-support", not(test)))]
-pub(crate) use firmware::{
-    arg_mut, clear_loader_info, firmware_array, install_loader_state, loader_info_mut,
-    loader_state_mut, register_custom_config_callbacks_from_image, stop_callback,
-};
-#[cfg(not(any(test, feature = "test-support")))]
-pub(crate) use firmware::{
-    arg_mut, clear_loader_info, firmware_array, install_loader_state, loader_info_mut,
-    loader_state_mut, register_custom_config_callbacks_from_image, stop_callback,
+    arg_mut, firmware_array, loader_info_mut, register_custom_config_callbacks_from_image,
 };
 pub use imu::{Imu, ImuReadHandler, PackageImuReadCallback};
-pub use init::{PackageStart, PackageStartError, PackageThreadState};
+pub use init::{PackageStart, PackageStartError};
 pub use lifecycle_core::{AppDataHandlerRegistrationError, AppDataSendError};
 pub use motor::{MotorOutput, MotorTelemetry};
-pub(crate) use runtime::PackageStateGuard;
 pub use runtime::{PackageStateAccess, PackageStateStore};
 pub use thread::{
     Firmware, FirmwareAppData, FirmwareLisp, FirmwareThread, FirmwareThreads,
@@ -152,9 +140,8 @@ pub mod prelude {
         LbmExtension, LispArgs, LispValue, MotorOutput, MotorTelemetry, PackageStart,
         PackageStartError, PackageStateAccess, PackageStateStore, RegisterError,
         SourceCustomConfigCallback, StatefulAppDataCallback, StatefulLbmExtension,
-        StatelessFirmwareThread, StatelessThreadContext, StopCallback, StopContext, ThreadContext,
-        ThreadError, ThreadHandle, ThreadName, ThreadPair, ThreadPairSpec, ThreadSpec,
-        ThreadStackSize,
+        StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadHandle,
+        ThreadName, ThreadPair, ThreadPairSpec, ThreadSpec, ThreadStackSize,
     };
 }
 

@@ -19,13 +19,7 @@ use crate::types::ThreadPriority;
 use crate::units::TimestampTicks;
 
 mod private {
-    pub trait FirmwareThreads {
-        unsafe fn spawn_thread_pair_with_state<S>(
-            &self,
-            pair: super::ThreadPairSpec<S>,
-            state: &mut S,
-        ) -> Option<super::ThreadPair>;
-    }
+    pub trait FirmwareThreads {}
 }
 
 /// Native package thread entrypoint shape.
@@ -556,6 +550,17 @@ impl ThreadPair {
 
 /// Typed firmware thread operations available to package code.
 pub trait FirmwareThreads: private::FirmwareThreads {
+    /// Spawn a stateful thread followed by a stateless thread.
+    ///
+    /// # Safety
+    ///
+    /// `state` must remain valid until the first thread exits or is terminated.
+    unsafe fn spawn_thread_pair_with_state<S>(
+        &self,
+        pair: ThreadPairSpec<S>,
+        state: &mut S,
+    ) -> Option<ThreadPair>;
+
     /// Ask a firmware thread to terminate.
     fn request_terminate(&self, thread: ThreadHandle);
 
@@ -567,15 +572,6 @@ pub trait FirmwareThreads: private::FirmwareThreads {
 
     /// Set the current package thread priority when supported by firmware.
     fn set_priority(&self, priority: ThreadPriority) -> Result<(), ThreadError>;
-}
-
-#[inline(always)]
-pub(crate) unsafe fn spawn_thread_pair_with_state<S>(
-    threads: &impl FirmwareThreads,
-    pair: ThreadPairSpec<S>,
-    state: &mut S,
-) -> Option<ThreadPair> {
-    unsafe { private::FirmwareThreads::spawn_thread_pair_with_state(threads, pair, state) }
 }
 
 impl Default for ThreadPair {
@@ -680,8 +676,9 @@ pub struct ThreadApi<B> {
     bindings: B,
 }
 
-impl<B: ThreadBindings> private::FirmwareThreads for ThreadApi<B> {
-    #[inline(always)]
+impl<B: ThreadBindings> private::FirmwareThreads for ThreadApi<B> {}
+
+impl<B: ThreadBindings> FirmwareThreads for ThreadApi<B> {
     unsafe fn spawn_thread_pair_with_state<S>(
         &self,
         pair: ThreadPairSpec<S>,
@@ -689,9 +686,7 @@ impl<B: ThreadBindings> private::FirmwareThreads for ThreadApi<B> {
     ) -> Option<ThreadPair> {
         unsafe { self.spawn_thread_pair_with_state(pair, state) }
     }
-}
 
-impl<B: ThreadBindings> FirmwareThreads for ThreadApi<B> {
     fn request_terminate(&self, thread: ThreadHandle) {
         self.request_terminate(thread);
     }

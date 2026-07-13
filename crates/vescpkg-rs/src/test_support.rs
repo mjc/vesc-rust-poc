@@ -332,15 +332,6 @@ use vescpkg_rs_sys::ExtensionHandler;
 #[cfg(not(test))]
 use vescpkg_rs_sys::LbmValue;
 
-/// Install test state and clear it when the returned guard is dropped.
-pub fn install_state<'a, T: 'static>(
-    store: &'a crate::PackageStateStore<T>,
-    state: &'a mut T,
-) -> impl Drop + 'a {
-    // The shared lifetime keeps the borrowed state alive for the guard.
-    unsafe { store.install_guard(state) }
-}
-
 /// Build a startup context for a typed loader fixture.
 pub fn package_start(info: &mut crate::LoaderInfo) -> crate::PackageStart {
     crate::PackageStart::from_raw(info)
