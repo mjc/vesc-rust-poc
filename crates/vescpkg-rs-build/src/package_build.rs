@@ -14,45 +14,27 @@ use crate::package_format::{LispImportPolicy, VescPackageInput, write_vesc_packa
 pub enum PackageExample {
     /// BLE loopback package example.
     Loopback,
-    /// Snake package example.
-    Snake,
 }
 
 impl PackageExample {
     /// Return the example source directory.
     pub fn source_path(self) -> PathBuf {
-        match self {
-            Self::Loopback => PathBuf::from("examples/loopback"),
-            Self::Snake => PathBuf::from("examples/snake"),
-        }
+        PathBuf::from("examples/loopback")
     }
 
     /// Return the built staticlib input path for this example.
     pub fn native_artifact_input_path(self) -> PathBuf {
-        match self {
-            Self::Loopback => {
-                PathBuf::from("target/thumbv7em-none-eabihf/release/libvesc_example_loopback.a")
-            }
-            Self::Snake => {
-                PathBuf::from("target/thumbv7em-none-eabihf/release/libvesc_example_snake.a")
-            }
-        }
+        PathBuf::from("target/thumbv7em-none-eabihf/release/libvesc_example_loopback.a")
     }
 
     /// Return the Cargo package that builds this example staticlib.
     pub fn cargo_package_name(self) -> &'static str {
-        match self {
-            Self::Loopback => "vesc-example-loopback",
-            Self::Snake => "vesc-example-snake",
-        }
+        "vesc-example-loopback"
     }
 
     /// Return the native build artifact directory for this example.
     pub fn native_build_dir(self) -> PathBuf {
-        match self {
-            Self::Loopback => PathBuf::from("target/native-lib-baseline"),
-            Self::Snake => PathBuf::from("target/native-lib-snake"),
-        }
+        PathBuf::from("target/native-lib-baseline")
     }
 }
 

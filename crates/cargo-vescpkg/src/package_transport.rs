@@ -341,17 +341,6 @@ impl BtlePackageInstallTransport {
         f(&self.runtime, session)
     }
 
-    pub(crate) fn with_app_data_session<R>(
-        &self,
-        f: impl FnOnce(&Runtime, &mut VescSession) -> Result<R, PackageInstallError>,
-    ) -> Result<R, PackageInstallError> {
-        let mut session = self.session.borrow_mut();
-        let session = session.as_mut().ok_or_else(|| {
-            PackageInstallError::Device("BLE transport has not been opened".to_owned())
-        })?;
-        f(&self.runtime, session)
-    }
-
     pub(crate) fn read_lisp_code(
         &self,
         offset: u32,
