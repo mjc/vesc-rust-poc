@@ -30,7 +30,6 @@ conversion belongs in `vesc-protocol`.
 - Use explicit named accessors; do not add `From<Unit> for f32`
 - No dependency on `vescpkg-rs-build` or `cargo-vescpkg`
 - Keep VESC-specific meaning out of the units crate
-- Keep higher-level `uom` compatibility deferred until after snake game completion
 
 ## Status
 

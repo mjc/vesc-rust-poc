@@ -187,18 +187,20 @@ mod tests {
 
     #[test]
     fn selected_example_drives_staticlib_package_and_object_paths() {
-        let plan =
-            NativeLibLinkPlan::for_example("fixtures/native-lib-baseline", PackageExample::Snake);
+        let plan = NativeLibLinkPlan::for_example(
+            "fixtures/native-lib-baseline",
+            PackageExample::Loopback,
+        );
 
         assert_eq!(
             plan.rust_staticlib_path(),
             PathBuf::from("fixtures/native-lib-baseline")
-                .join("target/thumbv7em-none-eabihf/release/libvesc_example_snake.a")
+                .join("target/thumbv7em-none-eabihf/release/libvesc_example_loopback.a")
         );
-        assert_eq!(plan.rust_package_name(), "vesc-example-snake");
+        assert_eq!(plan.rust_package_name(), "vesc-example-loopback");
         assert_eq!(
             plan.rust_package_source_path(),
-            PathBuf::from("fixtures/native-lib-baseline").join("examples/snake")
+            PathBuf::from("fixtures/native-lib-baseline").join("examples/loopback")
         );
     }
 }

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     BLE_LOOPBACK_PACKAGE_NAME, Package, PackageBinaryConversionRunner, PackageExample,
-    PackageTargetError, PackageTargetMode, PackageTargetPlan, SNAKE_PACKAGE_NAME,
+    PackageTargetError, PackageTargetMode, PackageTargetPlan,
     native_lib_toolchain::{NativeLibToolchain, RealNativeLibToolchain},
     refloat_native_build::{RefloatGitHash, RefloatNativeBuildPlan},
     refloat_package_assets::{RefloatBuildInfo, RefloatSourceAssets},
@@ -37,8 +37,6 @@ pub enum CargoVescPkgMode {
 pub enum CargoVescPkgExample {
     /// Existing BLE loopback package example.
     Loopback,
-    /// Snake package example.
-    Snake,
 }
 
 /// Mutually exclusive source selected by `cargo vescpkg build`.
@@ -276,18 +274,12 @@ impl CargoVescPkgInvocation {
 
     /// Return the package name associated with the selected example.
     pub fn package_name(&self) -> &'static str {
-        match self.example() {
-            CargoVescPkgExample::Loopback => BLE_LOOPBACK_PACKAGE_NAME,
-            CargoVescPkgExample::Snake => SNAKE_PACKAGE_NAME,
-        }
+        BLE_LOOPBACK_PACKAGE_NAME
     }
 
     /// Return the build-layer package example associated with this invocation.
     pub fn package_example(&self) -> PackageExample {
-        match self.example() {
-            CargoVescPkgExample::Loopback => PackageExample::Loopback,
-            CargoVescPkgExample::Snake => PackageExample::Snake,
-        }
+        PackageExample::Loopback
     }
 
     /// Render the cargo subcommand arguments implied by this invocation.
@@ -297,16 +289,6 @@ impl CargoVescPkgInvocation {
             args.push("--package-only".to_owned());
         }
         match &self.source {
-            CargoVescPkgSource::Example(example) if *example != CargoVescPkgExample::Loopback => {
-                args.push("--example".to_owned());
-                args.push(
-                    match example {
-                        CargoVescPkgExample::Loopback => "loopback",
-                        CargoVescPkgExample::Snake => "snake",
-                    }
-                    .to_owned(),
-                );
-            }
             CargoVescPkgSource::Example(_) => {}
             CargoVescPkgSource::Manifest(manifest_path) => {
                 args.push("--manifest".to_owned());
@@ -523,7 +505,6 @@ where
 fn parse_example(value: &str) -> Result<CargoVescPkgExample, CargoVescPkgParseError> {
     match value {
         "loopback" => Ok(CargoVescPkgExample::Loopback),
-        "snake" => Ok(CargoVescPkgExample::Snake),
         other => Err(CargoVescPkgParseError::UnsupportedExample(other.to_owned())),
     }
 }
@@ -800,43 +781,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_the_snake_example_invocation() {
-        let invocation =
-            parse_args(["build", "--example", "snake"]).expect("parse snake example invocation");
-
-        assert_eq!(invocation.mode(), CargoVescPkgMode::Build);
-        assert_eq!(
-            invocation.subcommand_args(),
-            vec![
-                "build".to_owned(),
-                "--example".to_owned(),
-                "snake".to_owned(),
-                "--target".to_owned(),
-                DEFAULT_TARGET_TRIPLE.to_owned(),
-            ]
-        );
-        let plan = invocation.package_target_plan("/tmp/repo");
-        assert_eq!(
-            plan.package_output_path(),
-            PathBuf::from(
-                "target/vescpkg/Rust-Snake-example-package-0.1.0/Rust-Snake-example-package-0.1.0.vescpkg"
-            )
-        );
-        assert_eq!(
-            plan.build_plan().native_artifact_input_path(),
-            PathBuf::from("target/thumbv7em-none-eabihf/release/libvesc_example_snake.a")
-        );
-        assert_eq!(
-            plan.build_plan().example_source_path(),
-            PathBuf::from("examples/snake")
-        );
-        assert_eq!(
-            plan.build_plan().conversion_plan().command().example(),
-            crate::PackageExample::Snake
-        );
-    }
-
-    #[test]
     fn parse_args_rejects_conflicting_package_sources() {
         for args in [
             [
@@ -849,11 +793,17 @@ mod tests {
             [
                 "build",
                 "--example",
-                "snake",
+                "loopback",
                 "--manifest",
                 "refloat/pkgdesc.qml",
             ],
-            ["build", "--example", "snake", "--refloat-source", "refloat"],
+            [
+                "build",
+                "--example",
+                "loopback",
+                "--refloat-source",
+                "refloat",
+            ],
         ] {
             assert_eq!(
                 parse_args(args),
