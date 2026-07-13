@@ -1,8 +1,0 @@
----
-source: crates/vescpkg-rs-build/tests/golden_packaging.rs
-assertion_line: 76
-expression: lisp_import_summary(&lisp_data)
----
-code_len=110
-imports=1
-import[0]: tag=package-lib offset=136 size=488 payload_fp=dbcc984ba72b5ccc
