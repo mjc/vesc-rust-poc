@@ -6,8 +6,8 @@ ordinary inputs selected with `-p`; they are not host-side plugins.
 ## Build
 
 ```bash
-nix develop -c cargo vescpkg build -p vesc-example-loopback
-nix develop -c cargo vescpkg build -p vesc-example-alloc-smoke
+cargo run -p cargo-vescpkg -- build -p vesc-example-loopback
+cargo run -p cargo-vescpkg -- build -p vesc-example-alloc-smoke
 ```
 
 Each package owns its target library, package metadata, package assets, and
@@ -25,15 +25,15 @@ the VESC Tool source tree, or a package-specific host adapter.
 The target directory can be overridden normally:
 
 ```bash
-nix develop -c sh -lc \
-  'export CARGO_TARGET_DIR="$PWD/target/custom"; cargo vescpkg build -p vesc-example-loopback'
+CARGO_TARGET_DIR="$PWD/target/custom" \
+  cargo run -p cargo-vescpkg -- build -p vesc-example-loopback
 ```
 
 ## Checks
 
-- `nix develop -c make check` runs formatting, strict host checks, target checks,
+- `make check` runs formatting, strict host checks, target checks,
   and workspace tests.
-- `nix develop -c make check-full` also builds the package ELF and `.vescpkg`.
+- `make check-full` also builds the package ELF and `.vescpkg`.
 - `cargo nextest run -p cargo-vescpkg --profile hil -- --ignored` is the
   hardware lane and requires an attached VESC plus its device selection.
 
@@ -43,6 +43,6 @@ requires installing and probing both loopback and alloc-smoke packages.
 
 ## Deferred hardware tooling
 
-`cargo-flash`/probe-rs are not part of this build path. VESC package deployment
-uses a bespoke VESC transport and will be designed separately before adding
-deployment tooling to the devshell.
+`cargo-flash`/probe-rs are not part of this build path. Package deployment is
+supported through `cargo-vescpkg deploy` and `package-install` over the bespoke
+VESC transport; only the separate flashing-tool integration is deferred.

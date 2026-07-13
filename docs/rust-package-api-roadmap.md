@@ -11,15 +11,15 @@ Rust package API.
 - `crates/vescpkg-rs-sys` — raw firmware ABI (`no_std`, unsafe table calls)
 - `crates/vescpkg-rs` — target-side SDK linked into native packages
 - `examples/loopback` — BLE loopback reference package ELF
-- `crates/cargo-vescpkg` — host-side `.vescpkg` format/build/install
+- `crates/cargo-vescpkg` — `cargo vescpkg` host command surface for `.vescpkg`
+  format/build/install
 - `crates/vesc-protocol` — shared wire protocol types
-- `crates/cargo-vescpkg` — `cargo vescpkg` host command surface
 
 ## Validation
 
-- `nix develop -c make check`
-- `nix develop -c make check-full`
-- `nix develop -c make check-full` — strict host checks, target checks, package
+- `make check`
+- `make check-full`
+- `make check-full` — strict host checks, target checks, package
   ELF build, and `.vescpkg` emission
 
 ## Deferred:
@@ -54,7 +54,7 @@ remember firmware polarity.
 
 ## Next Migration Ladder
 
-1. Keep artifact, size, symbol, and ABI guards green under `nix develop -c make package`.
+1. Keep artifact, size, symbol, and ABI guards green under `make package`.
 2. Hardware-validate install and `loopback` after each native boundary change.
 3. Grow `vescpkg-rs` only where tests prove the ABI boundary is stable.
 4. Keep `cargo vescpkg build` driven by Cargo metadata and compiler artifacts.

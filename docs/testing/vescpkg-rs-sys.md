@@ -9,7 +9,7 @@ Strategy for the `vescpkg-rs-sys` crate: a hand-maintained, `no_std` firmware AB
 | Compile-fail | `unsafe` required, no `std` leak, crate-internal test harness | `tests/ui/`, trybuild |
 | Layout / ABI pins | `LibInfo`, `VescIf` size/offsets, newtypes | `src/tests.rs` |
 | Raw dispatch | mock `VescIf` + stub call recording | `src/raw/dispatch_tests.rs` |
-| Header parity | generated ABI checks | `make check-full` |
+| Header parity | generated ABI checks | `make check` |
 | Thumb/asm smoke | `ldr` immediates vs `VescIfAbi` | `src/tests.rs` |
 
 ## Public export inventory
@@ -66,9 +66,9 @@ Production ARM builds keep inline `asm!` dispatch; host/test builds use `Option<
 
 | Command | Scope |
 |---------|--------|
-| `nix develop -c make check` | fmt, clippy, default nextest (includes vescpkg-rs-sys unit + dispatch) |
-| `nix develop -c make vescpkg-rs-sys-target-check` | no normal deps + `thumbv7em-none-eabihf` check |
-| `nix develop -c make check-full` | check + ARM/package build gates |
+| `make check` | fmt, clippy, default nextest (includes vescpkg-rs-sys unit + dispatch) |
+| `make vescpkg-rs-sys-target-check` | no normal deps + `thumbv7em-none-eabihf` check |
+| `make check-full` | check + ARM/package build gates |
 
 ## Adding a new `raw::*` wrapper
 
@@ -83,7 +83,7 @@ Production ARM builds keep inline `asm!` dispatch; host/test builds use `Option<
 Host dispatch tests can be run under Miri to exercise the crate-internal mock-table harness:
 
 ```bash
-nix develop -c cargo +nightly miri test -p vescpkg-rs-sys
+cargo +nightly miri test -p vescpkg-rs-sys
 ```
 
 Miri does not cover the ARM `asm!` dispatch path (`cfg(all(target_arch = "arm", not(test)))`). Treat Miri as a harness sanity check, not firmware validation.

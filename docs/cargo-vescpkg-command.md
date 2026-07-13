@@ -11,7 +11,7 @@ providers. Package-specific metadata lives in `[package.metadata.vescpkg]`.
 ## Build
 
 ```bash
-nix develop -c cargo vescpkg build -p vesc-example-loopback
+cargo run -p cargo-vescpkg -- build -p vesc-example-loopback
 ```
 
 Build options are Cargo-shaped: `--manifest-path`, `--target`, `--profile`, and
@@ -22,9 +22,9 @@ under Cargo's target directory at `vescpkg/`.
 
 ## Device commands
 
-- `cargo vescpkg deploy <package.vescpkg>`
-- `cargo vescpkg package-install <package.vescpkg>`
-- `cargo vescpkg erase-package`
-- `cargo vescpkg loopback`
+- `cargo run -p cargo-vescpkg -- deploy <package.vescpkg>`
+- `cargo run -p cargo-vescpkg -- package-install <package.vescpkg>`
+- `cargo run -p cargo-vescpkg -- erase-package`
+- `cargo run -p cargo-vescpkg -- loopback`
 
-The checked workspace path remains `nix develop -c make check`.
+The checked workspace path remains `make check`.
