@@ -46,20 +46,24 @@ pub fn run_deploy(
         .open(target.clone())
         .map_err(DeployError::Transport)?;
 
-    let install = crate::package_install::install_package(&package, &transport)
-        .map_err(DeployError::Transport)?;
+    let result = (|| {
+        let install = crate::package_install::install_package(&package, &transport)
+            .map_err(DeployError::Transport)?;
 
-    progress("BLE session open".to_owned());
-    std::thread::sleep(POST_INSTALL_SETTLE);
+        progress("BLE session open".to_owned());
+        std::thread::sleep(POST_INSTALL_SETTLE);
 
-    let loopback = transport
-        .with_loopback_session(|runtime, session| {
-            run_loopback_on_session(runtime, session, target.clone(), &mut progress)
-        })
-        .map_err(DeployError::Loopback)?;
+        let loopback = transport
+            .with_loopback_session(|runtime, session| {
+                run_loopback_on_session(runtime, session, target.clone(), &mut progress)
+            })
+            .map_err(DeployError::Loopback)?;
+
+        Ok((install, loopback))
+    })();
 
     transport.close();
-    Ok((install, loopback))
+    result
 }
 
 fn run_loopback_on_session(
