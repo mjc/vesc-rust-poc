@@ -81,11 +81,7 @@ where
         Ok(Command::Probe(command)) => {
             let target = loopback_target(command.address, command.device_name);
 
-            match deploy::run_loopback_probe(target, |event| {
-                if event.should_print_to_cli() {
-                    println!("loopback: {}", event.describe());
-                }
-            }) {
+            match deploy::run_loopback_probe(target, |event| println!("loopback: {event}")) {
                 Ok(report) => {
                     println!(
                         "loopback ok on device={} service={}: {:?}",
@@ -106,9 +102,7 @@ where
             let target = loopback_target(command.device.address, command.device.device_name);
 
             match deploy::run_deploy(&package_path, target, |event| {
-                if event.should_print_to_cli() {
-                    println!("loopback: {}", event.describe());
-                }
+                println!("loopback: {event}");
             }) {
                 Ok((install, report)) => {
                     println!(
@@ -148,13 +142,13 @@ fn run_build(args: BuildArgs) -> ExitCode {
         }
     };
 
-    let options = build::BuildOptions::new(
-        args.package,
-        args.manifest_path,
-        args.target,
-        args.profile,
-        args.features,
-    );
+    let options = build::BuildOptions {
+        package: args.package,
+        manifest_path: args.manifest_path,
+        target: args.target,
+        profile: args.profile,
+        features: args.features,
+    };
     match build::build_package(&root, &options) {
         Ok(path) => {
             println!("{}", path.display());

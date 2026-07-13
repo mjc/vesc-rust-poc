@@ -600,12 +600,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "libm"
-version = "0.2.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
-
-[[package]]
 name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1235,18 +1229,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "vesc-example-alloc-smoke"
-version = "0.1.0"
-dependencies = [
- "vesc-protocol",
- "vescpkg-rs",
-]
-
-[[package]]
 name = "vesc-example-loopback"
 version = "0.1.0"
 dependencies = [
- "vesc-protocol",
  "vescpkg-rs",
 ]
 
@@ -1261,7 +1246,6 @@ dependencies = [
 name = "vescpkg-rs"
 version = "0.1.0"
 dependencies = [
- "libm",
  "rstest",
  "trybuild",
  "vesc-protocol",

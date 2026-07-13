@@ -1,10 +1,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output};
 
 use serde_json::Value;
 
-use crate::package_format::{VescPackageInput, write_vesc_package};
+use crate::package_format::{VescPackageInput, build_vesc_package};
 
 const DEFAULT_LOADER: &str = concat!(
     "(import \"src/package_lib.bin\" 'package-lib)\n",
@@ -21,42 +21,12 @@ pub(crate) struct BuildOptions {
     pub(crate) features: Option<String>,
 }
 
-impl BuildOptions {
-    pub(crate) fn new(
-        package: String,
-        manifest_path: Option<PathBuf>,
-        target: String,
-        profile: String,
-        features: Option<String>,
-    ) -> Self {
-        Self {
-            package,
-            manifest_path,
-            target,
-            profile,
-            features,
-        }
-    }
-}
-
 #[derive(Debug)]
-pub(crate) enum BuildError {
-    Io(std::io::Error),
-    Cargo(String),
-    Metadata(String),
-    Package(String),
-    Artifact(String),
-}
+pub(crate) struct BuildError(String);
 
 impl std::fmt::Display for BuildError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Io(error) => write!(formatter, "I/O error: {error}"),
-            Self::Cargo(error) => write!(formatter, "Cargo build failed: {error}"),
-            Self::Metadata(error) => write!(formatter, "Cargo metadata failed: {error}"),
-            Self::Package(error) => write!(formatter, "invalid package configuration: {error}"),
-            Self::Artifact(error) => write!(formatter, "invalid Cargo artifact: {error}"),
-        }
+        formatter.write_str(&self.0)
     }
 }
 
@@ -64,7 +34,7 @@ impl std::error::Error for BuildError {}
 
 impl From<std::io::Error> for BuildError {
     fn from(error: std::io::Error) -> Self {
-        Self::Io(error)
+        Self(error.to_string())
     }
 }
 
@@ -83,13 +53,6 @@ struct CargoArtifacts {
     out_dir: Option<PathBuf>,
 }
 
-#[derive(Debug)]
-struct PackageAssets {
-    description_md: String,
-    loader: String,
-    descriptor: String,
-}
-
 pub(crate) fn build_package(root: &Path, options: &BuildOptions) -> Result<PathBuf, BuildError> {
     let metadata = cargo_metadata(root, options)?;
     let package = select_package(&metadata, &options.package)?;
@@ -105,22 +68,47 @@ pub(crate) fn build_package(root: &Path, options: &BuildOptions) -> Result<PathB
     }
     fs::create_dir_all(output_dir.join("src"))?;
     write_flattened_elf(&artifacts.elf, &output_dir.join("src/package_lib.bin"))?;
-    let assets = package_assets(&artifacts, &package, &artifact_name)?;
+    let generated = artifacts.out_dir.as_ref().map(|path| path.join("vescpkg"));
+    let read = |name: &str| {
+        generated
+            .as_ref()
+            .map(|path| path.join(name))
+            .filter(|path| path.is_file())
+            .map(fs::read_to_string)
+            .transpose()
+    };
+    let description_md = read("README.md")?
+        .unwrap_or_else(|| format!("{} {}\n", package.display_name, package.version));
+    let loader = read("code.lisp")?.unwrap_or_else(|| DEFAULT_LOADER.to_owned());
+    let descriptor = read("pkgdesc.qml")?.unwrap_or_else(|| {
+        format!(
+            "import QtQuick 2.15\n\nItem {{\n    property string pkgName: \"{}\"\n    property string pkgDescriptionMd: \"README.md\"\n    property string pkgLisp: \"code.lisp\"\n    property string pkgQml: \"\"\n    property bool pkgQmlIsFullscreen: false\n    property string pkgOutput: \"{artifact_name}.vescpkg\"\n}}\n",
+            package.display_name
+        )
+    });
     let output = output_dir.join(format!("{artifact_name}.vescpkg"));
-    write_vesc_package(
-        &output,
-        &VescPackageInput {
-            name: &package.display_name,
-            description_md: &assets.description_md,
-            lisp_source: &assets.loader,
-            lisp_editor_path: &output_dir,
-            qml_file: "",
-            pkg_desc_qml: &assets.descriptor,
-            qml_is_fullscreen: false,
-        },
-    )?;
+    let bytes = build_vesc_package(&VescPackageInput {
+        name: &package.display_name,
+        description_md: &description_md,
+        lisp_source: &loader,
+        lisp_editor_path: &output_dir,
+        qml_file: "",
+        pkg_desc_qml: &descriptor,
+        qml_is_fullscreen: false,
+    })?;
+    fs::write(&output, bytes)?;
 
     Ok(output)
+}
+
+fn command_output(command: &mut Command) -> Result<Output, BuildError> {
+    let output = command.output()?;
+    match output.status.success() {
+        true => Ok(output),
+        false => Err(BuildError(
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        )),
+    }
 }
 
 fn cargo_metadata(root: &Path, options: &BuildOptions) -> Result<Value, BuildError> {
@@ -131,19 +119,20 @@ fn cargo_metadata(root: &Path, options: &BuildOptions) -> Result<Value, BuildErr
     if let Some(path) = &options.manifest_path {
         command.args([
             "--manifest-path",
-            path.to_str().ok_or_else(|| {
-                BuildError::Metadata("manifest path is not valid UTF-8".to_owned())
-            })?,
+            path.to_str()
+                .ok_or_else(|| BuildError("manifest path is not valid UTF-8".to_owned()))?,
         ]);
     }
-    let output = command.output()?;
-    if !output.status.success() {
-        return Err(BuildError::Metadata(
-            String::from_utf8_lossy(&output.stderr).into_owned(),
-        ));
-    }
+    let output = command_output(&mut command)?;
     serde_json::from_slice(&output.stdout)
-        .map_err(|error| BuildError::Metadata(format!("invalid Cargo metadata JSON: {error}")))
+        .map_err(|error| BuildError(format!("invalid Cargo metadata JSON: {error}")))
+}
+
+#[must_use]
+fn is_binary_target(target: &Value) -> bool {
+    target["kind"]
+        .as_array()
+        .is_some_and(|kinds| kinds.iter().any(|kind| kind == "bin"))
 }
 
 fn select_package(metadata: &Value, requested: &str) -> Result<PackageMetadata, BuildError> {
@@ -154,29 +143,25 @@ fn select_package(metadata: &Value, requested: &str) -> Result<PackageMetadata, 
                 .iter()
                 .find(|package| package["name"].as_str() == Some(requested))
         })
-        .ok_or_else(|| BuildError::Package(format!("Cargo package `{requested}` was not found")))?;
+        .ok_or_else(|| BuildError(format!("Cargo package `{requested}` was not found")))?;
     let name = package["name"]
         .as_str()
-        .ok_or_else(|| BuildError::Package("package has no name".to_owned()))?;
+        .ok_or_else(|| BuildError("package has no name".to_owned()))?;
     let id = package["id"]
         .as_str()
-        .ok_or_else(|| BuildError::Package(format!("package `{name}` has no package ID")))?;
+        .ok_or_else(|| BuildError(format!("package `{name}` has no package ID")))?;
     let version = package["version"]
         .as_str()
-        .ok_or_else(|| BuildError::Package(format!("package `{name}` has no version")))?;
+        .ok_or_else(|| BuildError(format!("package `{name}` has no version")))?;
     let binary_targets = package["targets"]
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|target| {
-            target["kind"]
-                .as_array()
-                .is_some_and(|kinds| kinds.iter().any(|kind| kind == "bin"))
-        })
+        .filter(|target| is_binary_target(target))
         .filter_map(|target| target["name"].as_str())
         .collect::<Vec<_>>();
     let [target_name] = binary_targets.as_slice() else {
-        return Err(BuildError::Package(format!(
+        return Err(BuildError(format!(
             "package `{name}` must have exactly one binary target (found {})",
             binary_targets.len()
         )));
@@ -199,7 +184,7 @@ fn metadata_target_dir(metadata: &Value) -> Result<PathBuf, BuildError> {
     metadata["target_directory"]
         .as_str()
         .map(PathBuf::from)
-        .ok_or_else(|| BuildError::Metadata("Cargo metadata has no target directory".to_owned()))
+        .ok_or_else(|| BuildError("Cargo metadata has no target directory".to_owned()))
 }
 
 fn cargo_build(
@@ -222,45 +207,24 @@ fn cargo_build(
         command.args([
             "--manifest-path",
             path.to_str()
-                .ok_or_else(|| BuildError::Cargo("manifest path is not valid UTF-8".to_owned()))?,
+                .ok_or_else(|| BuildError("manifest path is not valid UTF-8".to_owned()))?,
         ]);
     }
     if let Some(features) = &options.features {
         command.args(["--features", features]);
     }
-    let output = command.output()?;
-    if !output.status.success() {
-        return Err(BuildError::Cargo(
-            String::from_utf8_lossy(&output.stderr).into_owned(),
-        ));
-    }
-
-    let mut elf = None;
-    let mut out_dir = None;
-    for message in output
+    let output = command_output(&mut command)?;
+    let (elf, out_dir) = output
         .stdout
         .split(|byte| *byte == b'\n')
         .filter_map(|line| serde_json::from_slice::<Value>(line).ok())
-    {
-        if message["reason"] == "build-script-executed"
-            && message["package_id"].as_str() == Some(package.id.as_str())
-        {
-            out_dir = message["out_dir"].as_str().map(PathBuf::from);
-        }
-        if message["reason"] != "compiler-artifact"
-            || message["package_id"].as_str() != Some(package.id.as_str())
-            || message["target"]["name"].as_str() != Some(package.target_name.as_str())
-            || !message["target"]["kind"]
-                .as_array()
-                .is_some_and(|kinds| kinds.iter().any(|kind| kind == "bin"))
-        {
-            continue;
-        }
-        elf = message["executable"].as_str().map(PathBuf::from);
-    }
+        .fold((None, None), |(elf, out_dir), message| {
+            let (message_elf, message_out_dir) = cargo_message_artifacts(&message, package);
+            (message_elf.or(elf), message_out_dir.or(out_dir))
+        });
 
     let elf = elf.ok_or_else(|| {
-        BuildError::Cargo(format!(
+        BuildError(format!(
             "Cargo produced no final binary for `{}`",
             package.name
         ))
@@ -268,32 +232,24 @@ fn cargo_build(
     Ok(CargoArtifacts { elf, out_dir })
 }
 
-fn package_assets(
-    artifacts: &CargoArtifacts,
+#[must_use]
+fn cargo_message_artifacts(
+    message: &Value,
     package: &PackageMetadata,
-    artifact_name: &str,
-) -> Result<PackageAssets, BuildError> {
-    let generated = artifacts.out_dir.as_ref().map(|path| path.join("vescpkg"));
-    let read = |name: &str| {
-        generated
-            .as_ref()
-            .map(|path| path.join(name))
-            .filter(|path| path.is_file())
-            .map(fs::read_to_string)
-            .transpose()
-    };
-    Ok(PackageAssets {
-        description_md: read("README.md")?.unwrap_or_else(|| {
-            format!("{} {}\n", package.display_name, package.version)
-        }),
-        loader: read("code.lisp")?.unwrap_or_else(|| DEFAULT_LOADER.to_owned()),
-        descriptor: read("pkgdesc.qml")?.unwrap_or_else(|| {
-            format!(
-                "import QtQuick 2.15\n\nItem {{\n    property string pkgName: \"{}\"\n    property string pkgDescriptionMd: \"README.md\"\n    property string pkgLisp: \"code.lisp\"\n    property string pkgQml: \"\"\n    property bool pkgQmlIsFullscreen: false\n    property string pkgOutput: \"{artifact_name}.vescpkg\"\n}}\n",
-                package.display_name
-            )
-        }),
-    })
+) -> (Option<PathBuf>, Option<PathBuf>) {
+    let out_dir = (message["reason"] == "build-script-executed"
+        && message["package_id"].as_str() == Some(package.id.as_str()))
+    .then(|| message["out_dir"].as_str())
+    .flatten()
+    .map(PathBuf::from);
+    let elf = (message["reason"] == "compiler-artifact"
+        && message["package_id"].as_str() == Some(package.id.as_str())
+        && message["target"]["name"].as_str() == Some(package.target_name.as_str())
+        && is_binary_target(&message["target"]))
+    .then(|| message["executable"].as_str())
+    .flatten()
+    .map(PathBuf::from);
+    (elf, out_dir)
 }
 
 fn write_flattened_elf(elf: &Path, output: &Path) -> Result<(), BuildError> {
@@ -302,14 +258,12 @@ fn write_flattened_elf(elf: &Path, output: &Path) -> Result<(), BuildError> {
         .args(["-O", "binary"])
         .arg(output)
         .status()?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(BuildError::Artifact(format!(
+    status.success().then_some(()).ok_or_else(|| {
+        BuildError(format!(
             "rust-objcopy failed for {} with {status}",
             elf.display()
-        )))
-    }
+        ))
+    })
 }
 
 fn package_slug(name: &str) -> String {

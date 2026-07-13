@@ -74,20 +74,6 @@ pub fn build_vesc_package(input: &VescPackageInput<'_>) -> io::Result<Vec<u8>> {
     ])
 }
 
-/// Builds a VESC package and writes the resulting bytes to `output_path`.
-pub fn write_vesc_package(
-    output_path: impl AsRef<Path>,
-    input: &VescPackageInput<'_>,
-) -> io::Result<Vec<u8>> {
-    let bytes = build_vesc_package(input)?;
-
-    if let Some(parent) = output_path.as_ref().parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(output_path.as_ref(), &bytes)?;
-    Ok(bytes)
-}
-
 fn encode_package_fields<'a>(
     fields: impl IntoIterator<Item = PackageField<'a>>,
 ) -> io::Result<Vec<u8>> {
@@ -275,73 +261,19 @@ fn markdown_description_html(markdown: &str) -> String {
 }
 
 fn resolve_staged_import_path(staging_dir: &Path, import_path: &str) -> io::Result<PathBuf> {
-    let relative = staging_relative_import_path(import_path)?;
-    let candidate = staging_dir.join(&relative);
-    reject_symlink_path(staging_dir, &candidate)?;
-    if candidate.exists() {
-        let canonical_base = staging_dir.canonicalize()?;
-        let canonical_candidate = candidate.canonicalize()?;
-        if canonical_candidate.starts_with(canonical_base) {
-            return Ok(candidate);
-        }
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!(
-                "Lisp import must stay inside the staging directory: {}",
-                candidate.display()
-            ),
-        ));
-    }
-    Ok(candidate)
-}
-
-fn staging_relative_import_path(import_path: &str) -> io::Result<PathBuf> {
     let path = Path::new(import_path);
     if path.as_os_str().is_empty()
-        || !path
+        || path.is_absolute()
+        || path
             .components()
-            .all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
+            .any(|component| matches!(component, Component::ParentDir))
     {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!("Lisp import must be relative to the staging directory: {import_path}"),
         ));
     }
-    Ok(path.to_path_buf())
-}
-
-fn reject_symlink_path(base_path: &Path, path: &Path) -> io::Result<()> {
-    let relative = path.strip_prefix(base_path).map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!(
-                "Lisp import must stay inside the staging directory: {}",
-                path.display()
-            ),
-        )
-    })?;
-    let mut current = base_path.to_path_buf();
-    for component in relative.components() {
-        let Component::Normal(name) = component else {
-            continue;
-        };
-        current.push(name);
-        match fs::symlink_metadata(&current) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    format!(
-                        "Lisp imports must not traverse symlinks: {}",
-                        current.display()
-                    ),
-                ));
-            }
-            Ok(_) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-            Err(error) => return Err(error),
-        }
-    }
-    Ok(())
+    Ok(staging_dir.join(path))
 }
 
 fn parse_import_line(line: &str) -> Option<(String, String)> {

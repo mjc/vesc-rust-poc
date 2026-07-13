@@ -12,11 +12,6 @@ pub struct PacketDecoder {
 }
 
 impl PacketDecoder {
-    /// Creates an empty incremental packet decoder.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Drops any buffered partial bytes.
     pub fn clear(&mut self) {
         self.buffer.clear();
@@ -173,7 +168,7 @@ mod tests {
             u16::from(packet[packet.len() - 3]) << 8 | u16::from(packet[packet.len() - 2])
         );
 
-        let mut decoder = PacketDecoder::new();
+        let mut decoder = PacketDecoder::default();
         let packets = decoder.push(&packet).expect("packets");
         assert_eq!(packets, vec![payload.to_vec()]);
     }
@@ -182,7 +177,7 @@ mod tests {
     fn decodes_split_packets() {
         let payload = [120_u8, 0, 0, 0, 8];
         let packet = encode_packet(&payload);
-        let mut decoder = PacketDecoder::new();
+        let mut decoder = PacketDecoder::default();
 
         assert!(decoder.push(&packet[..3]).expect("part 1").is_empty());
         let packets = decoder.push(&packet[3..]).expect("part 2");
@@ -193,7 +188,7 @@ mod tests {
     fn clear_drops_partial_packets() {
         let payload = [120_u8, 0, 0, 0, 8];
         let packet = encode_packet(&payload);
-        let mut decoder = PacketDecoder::new();
+        let mut decoder = PacketDecoder::default();
 
         assert!(decoder.push(&packet[..3]).expect("part 1").is_empty());
         decoder.clear();

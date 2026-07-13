@@ -15,91 +15,16 @@ const COMM_CUSTOM_APP_DATA: u8 = 36;
 const POST_INSTALL_SETTLE: Duration = Duration::from_millis(1500);
 const LOOPBACK_RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
 
-/// Progress emitted by package install and loopback operations.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LoopbackProgress {
-    /// The BLE session is ready for package operations.
-    SessionOpened,
-    /// A named protocol step is starting.
-    StepStarted {
-        /// Step name.
-        step: &'static str,
-    },
-    /// A protocol packet is being sent.
-    Sending {
-        /// Step name.
-        step: &'static str,
-        /// Encoded packet preview.
-        wire_hex: String,
-        /// Encoded packet length.
-        bytes: usize,
-    },
-    /// A non-loopback packet was received during preflight.
-    NonAppDataPacket {
-        /// Step name.
-        step: &'static str,
-        /// Packet summary.
-        summary: String,
-    },
-    /// A protocol reply was received.
-    ReplyReceived {
-        /// Step name.
-        step: &'static str,
-        /// Reply preview.
-        wire_hex: String,
-        /// Decoded command.
-        command: WireCommand,
-    },
-    /// A protocol step completed.
-    StepSucceeded {
-        /// Step name.
-        step: &'static str,
-        /// Decoded command.
-        command: WireCommand,
-    },
-}
-
-impl LoopbackProgress {
-    /// Returns whether the event belongs in normal CLI output.
-    pub fn should_print_to_cli(&self) -> bool {
-        true
-    }
-
-    /// Formats the event for the CLI.
-    pub fn describe(&self) -> String {
-        match self {
-            Self::SessionOpened => "BLE session open".to_owned(),
-            Self::StepStarted { step } => format!("step {step}: starting"),
-            Self::Sending {
-                step,
-                wire_hex,
-                bytes,
-            } => format!("step {step}: sending {bytes} byte(s) wire={wire_hex}"),
-            Self::NonAppDataPacket { step, summary } => {
-                format!("step {step}: received {summary}")
-            }
-            Self::ReplyReceived {
-                step,
-                wire_hex,
-                command,
-            } => format!("step {step}: reply {command:?} wire={wire_hex}"),
-            Self::StepSucceeded { step, command } => {
-                format!("step {step}: succeeded ({command:?})")
-            }
-        }
-    }
-}
-
 /// Opens BLE and runs the standard package app-data loopback sequence.
 pub fn run_loopback_probe(
     target: LoopbackTarget,
-    mut progress: impl FnMut(LoopbackProgress),
+    mut progress: impl FnMut(String),
 ) -> Result<LoopbackReport, DeployError> {
     let transport = BtlePackageInstallTransport::new().map_err(DeployError::Transport)?;
     transport
         .open(target.clone())
         .map_err(DeployError::Transport)?;
-    progress(LoopbackProgress::SessionOpened);
+    progress("BLE session open".to_owned());
     let result = transport
         .with_loopback_session(|runtime, session| {
             run_loopback_on_session(runtime, session, target, &mut progress)
@@ -113,7 +38,7 @@ pub fn run_loopback_probe(
 pub fn run_deploy(
     package_path: &str,
     target: LoopbackTarget,
-    mut progress: impl FnMut(LoopbackProgress),
+    mut progress: impl FnMut(String),
 ) -> Result<(PackageInstallReport, LoopbackReport), DeployError> {
     let package = read_package_from_path(package_path).map_err(DeployError::Package)?;
     let transport = BtlePackageInstallTransport::new().map_err(DeployError::Transport)?;
@@ -124,7 +49,7 @@ pub fn run_deploy(
     let install = crate::package_install::install_package(&package, &transport)
         .map_err(DeployError::Transport)?;
 
-    progress(LoopbackProgress::SessionOpened);
+    progress("BLE session open".to_owned());
     std::thread::sleep(POST_INSTALL_SETTLE);
 
     let loopback = transport
@@ -141,18 +66,13 @@ fn run_loopback_on_session(
     runtime: &Runtime,
     session: &mut VescSession,
     target: LoopbackTarget,
-    progress: &mut impl FnMut(LoopbackProgress),
+    progress: &mut impl FnMut(String),
 ) -> Result<LoopbackReport, LoopbackTransportError> {
-    progress(LoopbackProgress::StepStarted {
-        step: "fw-version-preflight",
-    });
+    progress("step fw-version-preflight: starting".to_owned());
     session
         .confirm_fw_version(runtime)
         .map_err(map_package_device_error)?;
-    progress(LoopbackProgress::NonAppDataPacket {
-        step: "fw-version-preflight",
-        summary: "COMM_FW_VERSION ok".to_owned(),
-    });
+    progress("step fw-version-preflight: received COMM_FW_VERSION ok".to_owned());
 
     session.clear_packet_state();
 
@@ -178,14 +98,14 @@ fn run_loopback_on_session(
     let mut commands = Vec::with_capacity(steps.len());
     for (step, packet) in steps {
         session.clear_packet_state();
-        progress(LoopbackProgress::StepStarted { step });
+        progress(format!("step {step}: starting"));
         let (payload, len) = packet.encode();
         let wire = build_custom_app_data_packet(&payload[..len]);
-        progress(LoopbackProgress::Sending {
-            step,
-            wire_hex: hex_snippet(&wire, 48),
-            bytes: wire.len(),
-        });
+        progress(format!(
+            "step {step}: sending {} byte(s) wire={}",
+            wire.len(),
+            hex_snippet(&wire, 48)
+        ));
         runtime
             .block_on(crate::package_transport::write_ble_uart_packet(
                 &session.peripheral,
@@ -197,20 +117,13 @@ fn run_loopback_on_session(
         let response = session
             .receive_custom_app_data(LOOPBACK_RESPONSE_TIMEOUT)
             .map_err(map_package_device_error)?;
-        progress(LoopbackProgress::ReplyReceived {
-            step,
-            wire_hex: hex_snippet(&response, 32),
-            command: LoopbackPacket::decode(&response)
-                .map_err(LoopbackTransportError::Protocol)?
-                .frame()
-                .command(),
-        });
         let decoded =
             LoopbackPacket::decode(&response).map_err(LoopbackTransportError::Protocol)?;
-        progress(LoopbackProgress::StepSucceeded {
-            step,
-            command: decoded.frame().command(),
-        });
+        progress(format!(
+            "step {step}: reply {:?} wire={}",
+            decoded.frame().command(),
+            hex_snippet(&response, 32)
+        ));
         commands.push(decoded.frame().command());
     }
 

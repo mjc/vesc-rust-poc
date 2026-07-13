@@ -3,7 +3,35 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use crate::package_wire::{WireError, parse_vescpkg};
+use crate::package_wire::{PackageField, WireError, parse_vescpkg};
+
+/// Rendering mode for an embedded QML App UI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum QmlAppUiMode {
+    Embedded,
+    Fullscreen,
+}
+
+impl QmlAppUiMode {
+    const fn from_package_value(value: u8) -> Self {
+        if value == 0 {
+            Self::Embedded
+        } else {
+            Self::Fullscreen
+        }
+    }
+
+    pub(crate) const fn is_fullscreen(self) -> bool {
+        matches!(self, Self::Fullscreen)
+    }
+}
+
+/// Embedded QML App UI source and rendering mode.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QmlAppUi {
+    pub(crate) source: String,
+    pub(crate) mode: QmlAppUiMode,
+}
 
 /// A decoded VESC package ready for installation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,12 +44,73 @@ pub struct Package {
     pub description_md: String,
     /// Packed Lisp source and imported native payloads.
     pub lisp_data: Vec<u8>,
-    /// Embedded QML source.
-    pub qml_file: String,
-    /// Package descriptor QML.
-    pub pkg_desc_qml: String,
-    /// Whether the QML app runs fullscreen.
-    pub qml_is_fullscreen: bool,
+    /// Embedded QML App UI, if the package provides one.
+    pub qml_app_ui: Option<QmlAppUi>,
+}
+
+#[derive(Debug)]
+struct PackageDecoder {
+    package: Package,
+    qml_source: Option<String>,
+    qml_mode: QmlAppUiMode,
+}
+
+impl PackageDecoder {
+    #[must_use]
+    fn new() -> Self {
+        Self {
+            package: Package {
+                name: String::new(),
+                description: String::new(),
+                description_md: String::new(),
+                lisp_data: Vec::new(),
+                qml_app_ui: None,
+            },
+            qml_source: None,
+            qml_mode: QmlAppUiMode::Embedded,
+        }
+    }
+
+    fn apply(mut self, field: PackageField) -> Result<Self, PackageError> {
+        let PackageField { key, value } = field;
+
+        match key.as_str() {
+            "name" => self.package.name = decode_text(value)?,
+            "description" => self.package.description = decode_text(value)?,
+            "description_md" => self.package.description_md = decode_text(value)?,
+            "lispData" => self.package.lisp_data = value,
+            "qmlFile" => self.qml_source = Some(decode_text(value)?),
+            "qmlIsFullscreen" => {
+                self.qml_mode =
+                    QmlAppUiMode::from_package_value(value.first().copied().unwrap_or_default());
+            }
+            _ => {}
+        }
+
+        Ok(self)
+    }
+
+    fn into_package(self) -> Result<Package, PackageError> {
+        let Self {
+            package,
+            qml_source,
+            qml_mode,
+        } = self;
+        let package = Package {
+            qml_app_ui: qml_source
+                .filter(|source| !source.is_empty())
+                .map(|source| QmlAppUi {
+                    source,
+                    mode: qml_mode,
+                }),
+            ..package
+        };
+
+        package
+            .is_valid()
+            .then_some(package)
+            .ok_or(PackageError::InvalidPackage)
+    }
 }
 
 #[derive(Debug)]
@@ -63,49 +152,58 @@ impl Package {
 
     /// Decode package bytes.
     pub fn from_bytes(data: &[u8]) -> Result<Self, PackageError> {
-        let mut package = Self {
-            name: String::new(),
-            description: String::new(),
-            description_md: String::new(),
-            lisp_data: Vec::new(),
-            qml_file: String::new(),
-            pkg_desc_qml: String::new(),
-            qml_is_fullscreen: false,
-        };
-
-        for field in parse_vescpkg(data)? {
-            match field.key.as_str() {
-                "name" => package.name = decode_text(field.value)?,
-                "description" => package.description = decode_text(field.value)?,
-                "description_md" => package.description_md = decode_text(field.value)?,
-                "lispData" => package.lisp_data = field.value,
-                "qmlFile" => package.qml_file = decode_text(field.value)?,
-                "pkgDescQml" => package.pkg_desc_qml = decode_text(field.value)?,
-                "qmlIsFullscreen" => {
-                    package.qml_is_fullscreen =
-                        field.value.first().copied().unwrap_or_default() != 0;
-                }
-                _ => {}
-            }
-        }
-
-        package
-            .is_valid()
-            .then_some(package)
-            .ok_or(PackageError::InvalidPackage)
+        parse_vescpkg(data)?
+            .into_iter()
+            .try_fold(PackageDecoder::new(), PackageDecoder::apply)?
+            .into_package()
     }
 
-    /// Return whether the package contains at least one meaningful field.
+    /// Returns whether the package contains at least one meaningful field.
     pub fn is_valid(&self) -> bool {
         !self.name.is_empty()
             || !self.description.is_empty()
             || !self.description_md.is_empty()
             || !self.lisp_data.is_empty()
-            || !self.qml_file.is_empty()
-            || !self.pkg_desc_qml.is_empty()
+            || self.qml_app_ui.is_some()
     }
 }
 
 fn decode_text(bytes: Vec<u8>) -> Result<String, PackageError> {
     String::from_utf8(bytes).map_err(|_| PackageError::InvalidPackage)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::package_wire::PackageField;
+
+    #[test]
+    fn decoder_keeps_qml_mode_when_seen_before_source() {
+        let package = [
+            PackageField {
+                key: "name".to_owned(),
+                value: b"Refloat".to_vec(),
+            },
+            PackageField {
+                key: "qmlIsFullscreen".to_owned(),
+                value: vec![1],
+            },
+            PackageField {
+                key: "qmlFile".to_owned(),
+                value: b"Item {}".to_vec(),
+            },
+        ]
+        .into_iter()
+        .try_fold(PackageDecoder::new(), PackageDecoder::apply)
+        .and_then(PackageDecoder::into_package)
+        .expect("valid package");
+
+        assert_eq!(
+            package.qml_app_ui,
+            Some(QmlAppUi {
+                source: "Item {}".to_owned(),
+                mode: QmlAppUiMode::Fullscreen,
+            })
+        );
+    }
 }

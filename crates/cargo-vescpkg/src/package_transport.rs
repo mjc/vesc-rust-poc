@@ -29,11 +29,14 @@ const POST_LISP_UPLOAD_SETTLE: Duration = Duration::from_secs(2);
 // Source: third_party/vesc_tool/codeloader.cpp:1023-1024 installVescPackage()
 // sleeps 500 ms, then calls VescInterface::reloadFirmware().
 const POST_PACKAGE_INSTALL_SETTLE: Duration = Duration::from_millis(500);
+// Source: third_party/vesc_tool/codeloader.cpp:711-731 CodeLoader::qmlErase()
+// uses timeoutTimer.start(6000) after one qmlUiErase() send.
+const QML_ERASE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(6);
 // Source: third_party/vesc_tool/codeloader.cpp:81-101 CodeLoader::lispErase()
 // uses timeoutTimer.start(8000) after one lispEraseCode() send.
 const LISP_ERASE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
 // Source: third_party/vesc_tool/codeloader.cpp:402-408 and 759-765
-// lispUpload() waits 1000 ms per chunk write acknowledgement.
+// lispUpload()/qmlUpload() wait 1000 ms per chunk write acknowledgement.
 const WRITE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(1);
 const CHUNK_SIZE: usize = 384;
 // Source: third_party/vesc_tool/bleuart.cpp:134-147 splits BLE writes into
@@ -42,9 +45,12 @@ const BLE_WRITE_CHUNK_SIZE: usize = 20;
 // Source: third_party/vesc_tool/codeloader.cpp:423-432 and 780-789
 // writeChunk() retries chunk writes with int tries = 5.
 const WRITE_RETRIES: usize = 5;
+const QML_UPLOAD_LIMIT: usize = 1024 * 120;
 const LISP_UPLOAD_LIMIT_ESP32: usize = 1024 * 512 - 6;
 const LISP_UPLOAD_LIMIT_VESC: usize = 1024 * 128 - 6;
 
+const COMM_QMLUI_ERASE: u8 = 120;
+const COMM_QMLUI_WRITE: u8 = 121;
 const COMM_LISP_WRITE_CODE: u8 = 131;
 const COMM_LISP_ERASE_CODE: u8 = 132;
 const COMM_LISP_SET_RUNNING: u8 = 133;
@@ -77,6 +83,7 @@ impl HwType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct FwVersionInfo {
     hw_type: HwType,
+    has_qml_app: bool,
 }
 
 #[derive(Debug)]
@@ -382,6 +389,17 @@ impl BtlePackageInstallTransport {
         })
     }
 
+    fn upload_code(&self, command: u8, payload: &[u8]) -> Result<(), PackageInstallError> {
+        for (offset, chunk) in payload.chunks(CHUNK_SIZE).enumerate() {
+            let mut command_payload = Vec::with_capacity(4 + chunk.len());
+            command_payload.extend_from_slice(&((offset * CHUNK_SIZE) as u32).to_be_bytes());
+            command_payload.extend_from_slice(chunk);
+            self.expect_write_ok(command, &command_payload, WRITE_RESPONSE_TIMEOUT)?;
+        }
+
+        Ok(())
+    }
+
     fn write_without_reply(&self, command: u8, payload: &[u8]) -> Result<(), PackageInstallError> {
         // Source: third_party/vesc_tool/codeloader.cpp:1014-1016 and
         // third_party/vesc_tool/commands.cpp:2234-2240 send lispSetRunning(1)
@@ -391,6 +409,23 @@ impl BtlePackageInstallTransport {
 }
 
 impl PackageInstallTransport for BtlePackageInstallTransport {
+    fn has_qml_app(&self) -> Result<bool, PackageInstallError> {
+        self.with_session(|session| Ok(session.fw_info.has_qml_app))
+    }
+
+    fn erase_qml(&self, bytes: usize) -> Result<(), PackageInstallError> {
+        self.expect_single_ok(
+            COMM_QMLUI_ERASE,
+            &(bytes as i32).to_be_bytes(),
+            QML_ERASE_RESPONSE_TIMEOUT,
+        )
+    }
+
+    fn upload_qml(&self, qml: &[u8], fullscreen: bool) -> Result<(), PackageInstallError> {
+        let payload = build_qml_upload_payload(qml, fullscreen)?;
+        self.upload_code(COMM_QMLUI_WRITE, &payload)
+    }
+
     fn erase_lisp(&self, bytes: usize) -> Result<(), PackageInstallError> {
         self.expect_single_ok(
             COMM_LISP_ERASE_CODE,
@@ -402,18 +437,7 @@ impl PackageInstallTransport for BtlePackageInstallTransport {
     fn upload_lisp(&self, lisp: &[u8]) -> Result<(), PackageInstallError> {
         let hw_type = self.with_session(|session| Ok(session.fw_info.hw_type))?;
         let payload = build_lisp_upload_payload(lisp, hw_type)?;
-
-        for (offset, chunk) in payload.chunks(CHUNK_SIZE).enumerate() {
-            let mut command_payload = Vec::with_capacity(4 + chunk.len());
-            let offset = (offset * CHUNK_SIZE) as u32;
-            command_payload.extend_from_slice(&offset.to_be_bytes());
-            command_payload.extend_from_slice(chunk);
-            self.expect_write_ok(
-                COMM_LISP_WRITE_CODE,
-                &command_payload,
-                WRITE_RESPONSE_TIMEOUT,
-            )?;
-        }
+        self.upload_code(COMM_LISP_WRITE_CODE, &payload)?;
 
         thread::sleep(POST_LISP_UPLOAD_SETTLE);
         self.with_session(|session| {
@@ -430,9 +454,12 @@ impl PackageInstallTransport for BtlePackageInstallTransport {
 
     fn reload_firmware(&self) -> Result<(), PackageInstallError> {
         // Source: third_party/vesc_tool/vescinterface.h:260-263 only marks
-        // cached firmware and config state stale via updateFwRx(false).
+        // cached firmware, QML, and config state stale via updateFwRx(false).
         thread::sleep(POST_PACKAGE_INSTALL_SETTLE);
-        Ok(())
+        self.with_session(|session| {
+            session.fw_info.has_qml_app = false;
+            Ok(())
+        })
     }
 }
 
@@ -511,9 +538,10 @@ async fn open_session(target: LoopbackTarget) -> Result<VescSession, PackageInst
         peripheral,
         rx_char,
         responses: responses_rx,
-        decoder: PacketDecoder::new(),
+        decoder: PacketDecoder::default(),
         fw_info: FwVersionInfo {
             hw_type: HwType::Vesc,
+            has_qml_app: false,
         },
     })
 }
@@ -588,9 +616,12 @@ fn parse_fw_version_info(response: &[u8]) -> Result<FwVersionInfo, PackageInstal
     let _custom_config_num = read_i8(&mut cursor)?;
     let _has_phase_filters = read_i8(&mut cursor)?;
     let _qml_hw = read_i8(&mut cursor)?;
-    let _qml_app = read_i8(&mut cursor)?;
+    let qml_app = read_i8(&mut cursor)?;
 
-    Ok(FwVersionInfo { hw_type })
+    Ok(FwVersionInfo {
+        hw_type,
+        has_qml_app: qml_app > 0,
+    })
 }
 
 fn parse_simple_ack(response: &[u8], expected_command: u8) -> Result<bool, PackageInstallError> {
@@ -653,6 +684,24 @@ fn malformed_reply(reason: &str) -> PackageInstallError {
     PackageInstallError::Device(reason.to_owned())
 }
 
+fn build_qml_upload_payload(qml: &[u8], fullscreen: bool) -> Result<Vec<u8>, PackageInstallError> {
+    let fullscreen_flag = if fullscreen { 2_u16 } else { 1_u16 };
+    let mut crc_input = Vec::with_capacity(2 + qml.len());
+    crc_input.extend_from_slice(&fullscreen_flag.to_be_bytes());
+    crc_input.extend_from_slice(qml);
+
+    let mut payload = Vec::with_capacity(4 + 2 + crc_input.len());
+    payload.extend_from_slice(&(qml.len() as u32).to_be_bytes());
+    payload.extend_from_slice(&crate::vesc_uart::crc16(&crc_input).to_be_bytes());
+    payload.extend_from_slice(&crc_input);
+
+    if payload.len() > QML_UPLOAD_LIMIT {
+        return Err(PackageInstallError::Device("not enough space".to_owned()));
+    }
+
+    Ok(payload)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -676,7 +725,8 @@ mod tests {
         assert_eq!(
             parse_fw_version_info(&response).expect("firmware info"),
             FwVersionInfo {
-                hw_type: HwType::VescBms
+                hw_type: HwType::VescBms,
+                has_qml_app: true,
             }
         );
     }
@@ -733,6 +783,22 @@ mod tests {
     }
 
     #[test]
+    fn qml_upload_payload_matches_qmlui_header_contract() {
+        let qml = [0, 0, 0, 3, 0x78, 0xda];
+        let payload = super::build_qml_upload_payload(&qml, false).expect("payload");
+
+        // Source: third_party/vesc_tool/codeloader.cpp:785-790.
+        // QMLUI stores its compressed script length, CRC over the display mode
+        // and script, then the mode followed by the script itself.
+        assert_eq!(&payload[..4], &(qml.len() as u32).to_be_bytes());
+        assert_eq!(&payload[6..], &[0, 1, 0, 0, 0, 3, 0x78, 0xda]);
+        assert_eq!(
+            u16::from_be_bytes(payload[4..6].try_into().expect("CRC")),
+            crate::vesc_uart::crc16(&payload[6..])
+        );
+    }
+
+    #[test]
     fn lisp_upload_payload_matches_flash_helper_header_contract() {
         let mut lisp_data = Vec::new();
         lisp_data.extend_from_slice(&0_u16.to_be_bytes());
@@ -764,7 +830,7 @@ mod tests {
             let packet = build_command_packet(command, &payload);
             assert!(!packet.is_empty(), "command should produce a framed packet");
 
-            let decoded = PacketDecoder::new()
+            let decoded = PacketDecoder::default()
                 .push(&packet)
                 .expect("valid packet")
                 .pop()
@@ -803,7 +869,7 @@ mod tests {
 
     #[test]
     fn clear_response_state_drops_stale_write_acks_before_next_command() {
-        let mut decoder = PacketDecoder::new();
+        let mut decoder = PacketDecoder::default();
         let stale_packet = build_command_packet(COMM_LISP_WRITE_CODE, &[1, 0, 0, 1, 128]);
         decoder
             .push(&stale_packet[..3])
@@ -829,7 +895,7 @@ mod tests {
         // Source: third_party/vesc_tool/commands.cpp:2234-2240
         // lispSetRunning() encodes command byte plus int8 running flag.
         let packet = build_command_packet(COMM_LISP_SET_RUNNING, &[1]);
-        let decoded = PacketDecoder::new()
+        let decoded = PacketDecoder::default()
             .push(&packet)
             .expect("valid packet")
             .pop()
