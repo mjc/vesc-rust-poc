@@ -1,6 +1,5 @@
 //! Package lifecycle helpers built on binding traits.
 
-#[cfg(any(test, feature = "test-support"))]
 #[cfg(test)]
 use crate::bindings::AppDataBindings;
 use crate::bindings::LbmBindings;
@@ -8,7 +7,6 @@ use crate::bindings::LbmBindings;
 use crate::extension::{ExtensionDescriptor, RegisterError};
 #[cfg(not(test))]
 use vescpkg_rs_sys::LbmValue;
-#[cfg(any(test, feature = "test-support"))]
 #[cfg(test)]
 use vescpkg_rs_sys::{AppDataHandler, StopHandler};
 #[cfg(any(test, feature = "test-support", target_arch = "arm"))]

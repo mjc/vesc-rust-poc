@@ -119,7 +119,6 @@ impl ExtensionDescriptor {
         Self { name, handler }
     }
 
-    /// Build a descriptor from its name and handler.
     /// Build a descriptor for a stateless typed extension callback.
     #[inline(always)]
     pub const fn typed<T: LbmExtension>(name: ExtensionName) -> Self {

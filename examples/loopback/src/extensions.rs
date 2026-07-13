@@ -47,8 +47,8 @@ fn rust_add_extension_value() -> LispValue {
 #[cfg(all(test, feature = "test-support"))]
 mod tests {
     use super::{
-        EXT_RUST_PROBE_DIAG_NAME, LispValue, PACKAGE_EXTENSION_NAMES,
-        package_extension_descriptors, rust_add_extension_value,
+        EXT_RUST_PROBE_DIAG_NAME, LbmExtension, LispArgs, LispValue, PACKAGE_EXTENSION_NAMES,
+        RustProbeDiag, package_extension_descriptors, rust_add_extension_value,
     };
     use vescpkg_rs::LoaderInfo;
     use vescpkg_rs::test_support::TestExtensionRegistry;
@@ -88,7 +88,7 @@ mod tests {
     }
 
     #[test]
-    fn rust_add_extension_does_not_depend_on_live_argument_shape() {
-        assert!(rust_add_extension_value() == LispValue::integer(42).unwrap());
+    fn rust_probe_diag_ignores_lisp_arguments() {
+        assert!(RustProbeDiag::call(LispArgs::empty()) == LispValue::integer(42).unwrap());
     }
 }

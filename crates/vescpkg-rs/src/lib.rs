@@ -132,7 +132,7 @@ mod motor;
 mod thread;
 
 pub use gpio::{AnalogPin, Gpio};
-/// Higher-level lifecycle helpers for package startup and runtime behavior.
+/// VESC-domain semantic types re-exported at the crate root.
 pub use types::*;
 
 /// Common package-author imports for code running inside the controller.

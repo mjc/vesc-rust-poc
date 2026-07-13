@@ -24,18 +24,35 @@ pub(crate) fn start(start: &mut vescpkg_rs::PackageStart) -> bool {
     true
 }
 
+#[cfg(any(test, all(not(test), target_arch = "arm")))]
+fn register_required<S>(
+    start: &mut S,
+    install_stop: impl FnOnce(&mut S) -> bool,
+    register_app_data: impl FnOnce(&mut S) -> bool,
+    register_extensions: impl FnOnce(&mut S) -> bool,
+    restore_app_data: impl FnOnce(&mut S) -> bool,
+) -> bool {
+    install_stop(start)
+        && register_app_data(start)
+        && register_extensions(start)
+        && restore_app_data(start)
+}
+
 #[cfg(all(not(test), target_arch = "arm"))]
 pub(crate) fn start(start: &mut vescpkg_rs::PackageStart) -> bool {
-    let _ = start.install_stop_hook();
-
-    let _ = app_data::register(start);
-    let _ = start.register_extensions(extensions::package_extension_descriptors());
-
-    // Extension registration can run other firmware setup; register again so the
-    // loopback handler remains the active app-data callback (refloat pattern).
-    let _ = app_data::register(start);
-
-    true
+    register_required(
+        start,
+        |start| start.install_stop_hook().is_ok(),
+        app_data::register,
+        |start| {
+            start
+                .register_extensions(extensions::package_extension_descriptors())
+                .is_ok()
+        },
+        // Extension registration can run other firmware setup; register again so
+        // the loopback handler remains the active app-data callback.
+        app_data::register,
+    )
 }
 
 #[cfg(test)]
@@ -54,5 +71,26 @@ mod tests {
 
         assert!(super::package_lib_init(&mut info));
         assert!(info.has_stop_handler());
+    }
+
+    #[test]
+    fn required_registration_propagates_every_failure() {
+        fn step(state: &mut (usize, Option<usize>)) -> bool {
+            let current = state.0;
+            state.0 += 1;
+            state.1 != Some(current)
+        }
+
+        for failed in 0..4 {
+            let mut state = (0, Some(failed));
+            assert!(!super::register_required(
+                &mut state, step, step, step, step
+            ));
+            assert_eq!(state.0, failed + 1);
+        }
+
+        let mut state = (0, None);
+        assert!(super::register_required(&mut state, step, step, step, step));
+        assert_eq!(state.0, 4);
     }
 }

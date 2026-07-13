@@ -49,7 +49,7 @@ impl AngleDegrees {
     /// Create an angle value from radians.
     #[inline(always)]
     pub fn from_radians(value: f32) -> Self {
-        Self::from_degrees(value * 180.0 / core::f32::consts::PI)
+        Self::from_degrees(value * DEGREES_PER_RADIAN)
     }
 
     /// Return this angle value in radians.
@@ -69,7 +69,7 @@ impl AngleRadians {
     /// Return this angle value in degrees.
     #[inline(always)]
     pub fn as_degrees(self) -> f32 {
-        self.as_radians() * 180.0 / core::f32::consts::PI
+        self.as_radians() * DEGREES_PER_RADIAN
     }
 }
 
