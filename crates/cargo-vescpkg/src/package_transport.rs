@@ -100,7 +100,12 @@ impl VescSession {
         &mut self,
         runtime: &Runtime,
     ) -> Result<(), PackageInstallError> {
-        self.query_fw_info(runtime).map(|_| ())
+        self.query_fw_info_with_retries(
+            runtime,
+            FW_VERSION_OPEN_ATTEMPTS,
+            FW_VERSION_OPEN_RETRY_DELAY,
+        )
+        .map(|_| ())
     }
 
     fn query_fw_info(&mut self, runtime: &Runtime) -> Result<FwVersionInfo, PackageInstallError> {
@@ -113,23 +118,10 @@ impl VescSession {
         attempts: usize,
         retry_delay: Duration,
     ) -> Result<FwVersionInfo, PackageInstallError> {
-        let mut last_error = None;
-        for attempt in 1..=attempts {
+        retry(attempts, retry_delay, || {
             self.clear_packet_state();
-            match self.query_fw_info(runtime) {
-                Ok(info) => return Ok(info),
-                Err(error) => {
-                    last_error = Some(error);
-                    if attempt != attempts {
-                        thread::sleep(retry_delay);
-                    }
-                }
-            }
-        }
-
-        Err(last_error.unwrap_or_else(|| {
-            PackageInstallError::Device("timed out waiting for firmware preflight".to_owned())
-        }))
+            self.query_fw_info(runtime)
+        })
     }
 
     pub(crate) fn clear_packet_state(&mut self) {
@@ -180,6 +172,23 @@ impl VescSession {
             }
         }
     }
+}
+
+fn retry<T, E>(
+    attempts: usize,
+    retry_delay: Duration,
+    mut operation: impl FnMut() -> Result<T, E>,
+) -> Result<T, E> {
+    debug_assert!(attempts > 0);
+    let mut result = operation();
+    for _ in 1..attempts {
+        if result.is_ok() {
+            return result;
+        }
+        thread::sleep(retry_delay);
+        result = operation();
+    }
+    result
 }
 
 fn drain_response_channel(responses: &Receiver<Vec<u8>>) {
@@ -708,7 +717,7 @@ mod tests {
         COMM_FW_VERSION, COMM_LISP_ERASE_CODE, COMM_LISP_SET_RUNNING, COMM_LISP_WRITE_CODE,
         FwVersionInfo, HwType, ble_write_chunks, build_command_packet, build_lisp_upload_payload,
         clear_response_state, drain_response_channel, parse_fw_version_info, parse_simple_ack,
-        parse_write_ack,
+        parse_write_ack, retry,
     };
     use crate::vesc_uart::PacketDecoder;
     use std::sync::mpsc;
@@ -729,6 +738,18 @@ mod tests {
                 has_qml_app: true,
             }
         );
+    }
+
+    #[test]
+    fn firmware_preflight_retries_a_transient_failure() {
+        let mut attempts = 0;
+        let result = retry(3, std::time::Duration::ZERO, || {
+            attempts += 1;
+            (attempts == 2).then_some(()).ok_or("transient timeout")
+        });
+
+        assert_eq!(result, Ok(()));
+        assert_eq!(attempts, 2);
     }
 
     #[test]
