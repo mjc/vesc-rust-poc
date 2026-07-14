@@ -1,6 +1,7 @@
 //! Target package proving ordinary Rust `alloc` use can run on the VESC allocator.
 
 #![no_std]
+#![forbid(unsafe_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(clippy::missing_safety_doc)]
 

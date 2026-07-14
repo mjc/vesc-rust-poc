@@ -6,6 +6,7 @@
 //! Device builds must stay `no_std` and must not link `alloc` or `std`.
 
 #![no_std]
+#![forbid(unsafe_code)]
 #![forbid(unused_extern_crates)]
 
 #[cfg(test)]
