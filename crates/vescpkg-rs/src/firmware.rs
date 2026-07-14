@@ -596,6 +596,10 @@ unsafe fn borrowed_bytes<'a>(data: *const u8, len: usize) -> Option<&'a [u8]> {
         return Some(&[]);
     }
 
+    if len > isize::MAX as usize {
+        return None;
+    }
+
     let data = NonNull::new(data.cast_mut())?;
     Some(unsafe { core::slice::from_raw_parts(data.as_ptr().cast_const(), len) })
 }
@@ -790,6 +794,13 @@ mod tests {
     #[test]
     fn app_data_packet_rejects_null_nonempty_packet() {
         assert!(unsafe { app_data_packet(ptr::null_mut(), 3) }.is_none());
+    }
+
+    #[test]
+    fn borrowed_bytes_rejects_lengths_larger_than_isize() {
+        let data = NonNull::<u8>::dangling().as_ptr();
+
+        assert!(unsafe { borrowed_bytes(data, usize::MAX) }.is_none());
     }
 
     #[test]
