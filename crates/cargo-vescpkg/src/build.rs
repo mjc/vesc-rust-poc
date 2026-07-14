@@ -12,6 +12,7 @@ const DEFAULT_LOADER: &str = concat!(
     "(print \"vesc-rust-load-v7\")\n",
     "(print (load-native-lib package-lib))\n",
 );
+const VESC_TARGET: &str = "thumbv7em-none-eabihf";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BuildOptions {
@@ -63,6 +64,7 @@ struct CargoArtifacts {
 }
 
 pub(crate) fn build_package(root: &Path, options: &BuildOptions) -> Result<PathBuf, BuildError> {
+    validate_target(&options.target)?;
     let metadata = cargo_metadata(root, options)?;
     let package = select_package(&metadata, &options.package)?;
     let artifacts = cargo_build(root, options, &package)?;
@@ -114,6 +116,12 @@ pub(crate) fn build_package(root: &Path, options: &BuildOptions) -> Result<PathB
     Ok(output)
 }
 
+fn validate_target(target: &str) -> Result<(), BuildError> {
+    (target == VESC_TARGET)
+        .then_some(())
+        .ok_or_else(|| BuildError(format!("unsupported VESC package target `{target}`")))
+}
+
 fn stage_generated_assets(generated: &Path, output: &Path) -> Result<(), BuildError> {
     for name in [
         "README.md",
@@ -137,10 +145,29 @@ fn command_output(command: &mut Command) -> Result<Output, BuildError> {
     }
     match output.status.success() {
         true => Ok(output),
-        false => Err(BuildError(
-            String::from_utf8_lossy(&output.stderr).into_owned(),
-        )),
+        false => Err(BuildError(command_failure_message(
+            &output.stdout,
+            &output.stderr,
+        ))),
     }
+}
+
+fn command_failure_message(stdout: &[u8], stderr: &[u8]) -> String {
+    let rendered = cargo_rendered_diagnostics(stdout);
+    if rendered.is_empty() {
+        String::from_utf8_lossy(stderr).into_owned()
+    } else {
+        rendered
+    }
+}
+
+fn cargo_rendered_diagnostics(stdout: &[u8]) -> String {
+    stdout
+        .split(|byte| *byte == b'\n')
+        .filter_map(|line| serde_json::from_slice::<Value>(line).ok())
+        .filter(|message| message["reason"] == "compiler-message")
+        .filter_map(|message| message["message"]["rendered"].as_str().map(str::to_owned))
+        .collect()
 }
 
 fn cargo_metadata(root: &Path, options: &BuildOptions) -> Result<Value, BuildError> {
@@ -391,14 +418,42 @@ fn package_slug(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        PackageMetadata, PayloadKind, cargo_message_artifacts, package_slug, select_package,
-        stage_generated_assets, staticlib_linker_script,
+        PackageMetadata, PayloadKind, cargo_message_artifacts, command_failure_message,
+        package_slug, select_package, stage_generated_assets, staticlib_linker_script,
+        validate_target,
     };
     use serde_json::json;
 
     #[test]
     fn package_slug_matches_existing_artifact_names() {
         assert_eq!(package_slug("A minimal package"), "A-minimal-package");
+    }
+
+    #[test]
+    fn rejects_non_vesc_build_targets() {
+        let error = validate_target("aarch64-apple-darwin").expect_err("host target");
+
+        assert_eq!(
+            error.to_string(),
+            "unsupported VESC package target `aarch64-apple-darwin`"
+        );
+    }
+
+    #[test]
+    fn accepts_the_vesc_build_target() {
+        assert!(validate_target("thumbv7em-none-eabihf").is_ok());
+    }
+
+    #[test]
+    fn preserves_rendered_cargo_diagnostics() {
+        let stdout = br#"{"reason":"compiler-message","message":{"rendered":"error[E0308]: mismatched types\n"}}
+{"reason":"build-finished","success":false}
+"#;
+
+        assert_eq!(
+            command_failure_message(stdout, b"error: could not compile `broken`"),
+            "error[E0308]: mismatched types\n"
+        );
     }
 
     #[test]
