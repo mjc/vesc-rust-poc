@@ -22,7 +22,7 @@ pub fn run_loopback_probe(
 ) -> Result<LoopbackReport, DeployError> {
     let transport = BtlePackageInstallTransport::new().map_err(DeployError::Transport)?;
     transport
-        .open(target.clone())
+        .open_without_preflight(target.clone())
         .map_err(DeployError::Transport)?;
     progress("BLE session open".to_owned());
     let result = transport
