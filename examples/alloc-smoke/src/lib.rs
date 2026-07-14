@@ -17,9 +17,6 @@ use vescpkg_rs::VescAllocator;
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 use vesc_protocol::ble_loopback::{LoopbackError, MAX_LOOPBACK_FRAME_BYTES, handle_loopback_frame};
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
-use vesc_protocol::{WireCommand, WireVersion};
-
-#[cfg(any(test, all(not(test), target_arch = "arm")))]
 use vescpkg_rs::PackageStart;
 #[cfg(all(not(test), target_arch = "arm"))]
 use vescpkg_rs::{Firmware, PackageAppDataCallback};
@@ -108,48 +105,8 @@ fn alloc_smoke_loopback(
     Ok((output, selected.len()))
 }
 
-#[cfg(any(test, all(not(test), target_arch = "arm")))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AllocSmokeAppDataAction {
-    Ignore,
-    Loopback,
-}
-
-#[cfg(any(test, all(not(test), target_arch = "arm")))]
-fn classify_alloc_smoke_app_data(packet: &[u8]) -> AllocSmokeAppDataAction {
-    if packet.len() >= 3
-        && packet.first().copied() == Some(WireVersion::CURRENT.get())
-        && packet
-            .get(1)
-            .and_then(|command| WireCommand::try_from(*command).ok())
-            .is_some()
-    {
-        AllocSmokeAppDataAction::Loopback
-    } else {
-        AllocSmokeAppDataAction::Ignore
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{AllocSmokeAppDataAction, classify_alloc_smoke_app_data};
-
-    #[test]
-    fn alloc_smoke_app_data_accepts_loopback_frames() {
-        assert_eq!(
-            classify_alloc_smoke_app_data(&[1, 1, 0]),
-            AllocSmokeAppDataAction::Loopback
-        );
-    }
-
-    #[test]
-    fn alloc_smoke_app_data_ignores_unrelated_requests() {
-        assert_eq!(
-            classify_alloc_smoke_app_data(b"hello?"),
-            AllocSmokeAppDataAction::Ignore
-        );
-    }
-
     #[test]
     fn alloc_smoke_loopback_allocates_and_preserves_echo() {
         let request = [1, 2, 2, 9, 8];
