@@ -347,6 +347,11 @@ pub fn install_state<'a, T: Send + 'static>(
     ClearOnDrop(store)
 }
 
+/// Clear package state left behind by a callback-focused host test.
+pub fn clear_state<T: Send + 'static>(store: &crate::PackageStateStore<T>) {
+    store.clear();
+}
+
 /// Build a startup context for a typed loader fixture.
 pub fn package_start(info: &mut crate::LoaderInfo) -> crate::PackageStart<'_> {
     crate::PackageStart::from_info(info)
