@@ -13,7 +13,7 @@ use crate::motor_control::RefloatMotorControl;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::Voltage;
 use vescpkg_rs::prelude::{AngleRadians, Current, MotorCurrent, Rpm, TimestampTicks};
-use vescpkg_rs::{Imu, MotorOutput, MotorTelemetry, ThreadPair};
+use vescpkg_rs::{Imu, MotorOutput, MotorTelemetry};
 
 #[cfg(test)]
 mod balance_tests;
@@ -64,7 +64,6 @@ pub struct RefloatPackageState {
     all_data_payloads: RefloatAllDataPayloads,
     serialized_config: RefloatConfigImage,
     handtest_config_backup: Option<RefloatConfigImage>,
-    runtime_threads: ThreadPair,
     motor_control: RefloatMotorControl,
     balance_filter: BalanceFilter,
     traction_control: bool,
@@ -93,10 +92,6 @@ impl RefloatPackageState {
             // later source-backed slice.
             serialized_config: RefloatConfigImage::defaults(),
             handtest_config_backup: None,
-            // Upstream stores these in `Data` after spawning at
-            // `third_party/refloat/src/main.c:2439-2445`; this Rust state only tracks the handles
-            // until the full `Data` layout is ported.
-            runtime_threads: ThreadPair::empty(),
             motor_control: RefloatMotorControl::new(),
             balance_filter: BalanceFilter::source_startup(),
             traction_control: false,
@@ -119,11 +114,6 @@ impl RefloatPackageState {
     /// Return the current all-data payload snapshot.
     pub const fn all_data_payloads(self) -> RefloatAllDataPayloads {
         self.all_data_payloads
-    }
-
-    /// Return the runtime thread handles currently owned by this package state.
-    pub const fn runtime_threads(self) -> ThreadPair {
-        self.runtime_threads
     }
 
     /// Request a motor current for the next motor-control apply step.
@@ -156,11 +146,6 @@ impl RefloatPackageState {
             self.serialized_config.motor_control().parking_brake_mode(),
             self.serialized_config.motor_control().brake_current(),
         )
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn set_runtime_threads(&mut self, runtime_threads: ThreadPair) {
-        self.runtime_threads = runtime_threads;
     }
 
     #[cfg(any(test, target_arch = "arm"))]

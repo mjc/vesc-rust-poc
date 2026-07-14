@@ -9,7 +9,7 @@ use super::state::RefloatPackageState;
 use core::time::Duration;
 #[cfg(all(not(test), target_arch = "arm"))]
 use vescpkg_rs::AnalogPin;
-#[cfg(any(test, target_arch = "arm"))]
+#[cfg(target_arch = "arm")]
 use vescpkg_rs::ThreadStackSize;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::ThreadPriority;
@@ -25,17 +25,15 @@ const REFLOAT_AUX_LOOP_TIME_US: u32 = 1_000_000 / REFLOAT_LEDS_REFRESH_RATE_HZ;
 
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::Voltage;
-#[cfg(any(test, target_arch = "arm"))]
+#[cfg(target_arch = "arm")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RefloatRuntimeThread {
     Main,
     Aux,
 }
 
-#[cfg(any(test, target_arch = "arm"))]
+#[cfg(target_arch = "arm")]
 impl RefloatRuntimeThread {
-    const ALL: [Self; 2] = [Self::Main, Self::Aux];
-
     const fn stack_bytes(self) -> usize {
         match self {
             Self::Main => 1536,
@@ -55,21 +53,18 @@ impl RefloatRuntimeThread {
     }
 }
 
-/// Start the Refloat runtime threads and store their handles in package state.
+/// Describe the Refloat runtime thread pair.
 ///
 /// Upstream passes its position-independent refloat_thd, aux_thd, and
 /// thread-name addresses directly to spawn with stacks of 1536 and
 /// 1024 bytes at third_party/refloat/src/main.c:2438-2445. VESC forwards
 /// those runtime addresses and byte counts to chThdCreateStatic at
 /// third_party/vesc/lispBM/lispif_c_lib.c:98-125.
-#[cfg(any(test, target_arch = "arm"))]
-pub(crate) fn start_refloat_runtime_threads_with(
-    threads: &impl FirmwareThreads,
-    state: &mut RefloatPackageState,
-) -> bool {
+#[cfg(target_arch = "arm")]
+fn refloat_runtime_thread_pair() -> vescpkg_rs::ThreadPairSpec<RefloatPackageState> {
     let main_thread = RefloatRuntimeThread::Main;
     let aux_thread = RefloatRuntimeThread::Aux;
-    let runtime_threads = vescpkg_rs::ThreadPairSpec::new(
+    vescpkg_rs::ThreadPairSpec::new(
         vescpkg_rs::ThreadSpec::<RefloatPackageState>::new::<RefloatMainThread>(
             main_thread.stack_size(),
             main_thread.name(),
@@ -78,27 +73,7 @@ pub(crate) fn start_refloat_runtime_threads_with(
             aux_thread.stack_size(),
             aux_thread.name(),
         ),
-    );
-    let Some(runtime_threads) =
-        (unsafe { threads.spawn_thread_pair_with_state(runtime_threads, state) })
-    else {
-        return false;
-    };
-
-    state.set_runtime_threads(runtime_threads);
-    true
-}
-
-/// Request runtime thread termination in Refloat stop order.
-///
-/// Upstream stops aux first at `third_party/refloat/src/main.c:2404-2406`, then main at
-/// `third_party/refloat/src/main.c:2407-2409`.
-#[cfg(any(test, target_arch = "arm"))]
-pub(crate) fn request_refloat_runtime_thread_termination_with(
-    threads: &impl FirmwareThreads,
-    state: &RefloatPackageState,
-) {
-    state.runtime_threads().terminate_reverse(threads);
+    )
 }
 
 /// Run Refloat's source-backed main thread tick loop.
@@ -173,39 +148,34 @@ pub(crate) fn run_refloat_aux_thread_with(threads: &impl FirmwareThreads) {
 /// (third_party/refloat/src/main.c:2431-2432) and callback registration
 /// (third_party/refloat/src/main.c:2455-2459).
 #[cfg(all(not(test), target_arch = "arm"))]
-pub fn start_refloat_runtime_threads(start: &mut vescpkg_rs::PackageStart) -> bool {
+pub fn start_refloat_runtime_threads(start: &mut vescpkg_rs::PackageStart<'_>) -> bool {
     let firmware = vescpkg_rs::Firmware::new();
-    unsafe {
-        start.with_runtime_state::<RefloatPackageState, _>(|state| {
+    if start
+        .with_runtime_state::<RefloatPackageState, _>(|state| {
             state.initialize_balance_filter(firmware.imu().orientation());
-            start_refloat_runtime_threads_with(firmware.threads(), state)
         })
+        .is_none()
+    {
+        return false;
     }
-    .unwrap_or(false)
+    start
+        .spawn_thread_pair(refloat_runtime_thread_pair())
+        .is_ok()
 }
 
-/// Request runtime thread termination with live firmware bindings.
-///
-/// Mirrors upstream Refloat stop cleanup at `third_party/refloat/src/main.c:2404-2408`.
-#[cfg(all(not(test), target_arch = "arm"))]
-pub fn request_refloat_runtime_thread_termination(state: &RefloatPackageState) {
-    let firmware = vescpkg_rs::Firmware::new();
-    request_refloat_runtime_thread_termination_with(firmware.threads(), state);
-}
-
-#[cfg(any(test, target_arch = "arm"))]
+#[cfg(target_arch = "arm")]
 struct RefloatMainThread;
 
-#[cfg(any(test, target_arch = "arm"))]
+#[cfg(target_arch = "arm")]
 impl vescpkg_rs::FirmwareThread for RefloatMainThread {
     type State = RefloatPackageState;
 
-    fn run(ctx: vescpkg_rs::ThreadContext<'_, Self::State>) {
+    fn run(ctx: vescpkg_rs::ThreadContext<Self::State>) {
         // C map: Refloat v1.2.1 `refloat_thd` starts at
         // `third_party/refloat/src/main.c:767`.
         #[cfg(all(not(test), target_arch = "arm"))]
         {
-            let (state, firmware) = ctx.into_parts();
+            let firmware = ctx.firmware();
             run_refloat_main_thread_with(firmware.threads(), || {
                 let system_time_ticks = firmware.app_data().system_time_ticks().as_ticks();
                 // C map: Refloat `footpad_sensor_update` reads ADC1/ADC2 at
@@ -214,15 +184,18 @@ impl vescpkg_rs::FirmwareThread for RefloatMainThread {
                 let (footpad_voltage1, footpad_voltage2) = firmware
                     .gpio()
                     .read_analog_pair(AnalogPin::new(7), AnalogPin::new(8));
-                tick_refloat_main_thread_with(
-                    state,
-                    firmware.telemetry(),
-                    firmware.imu(),
-                    firmware.motor(),
-                    footpad_voltage1,
-                    footpad_voltage2,
-                    system_time_ticks,
-                )
+                ctx.with_state_mut(|state| {
+                    tick_refloat_main_thread_with(
+                        state,
+                        firmware.telemetry(),
+                        firmware.imu(),
+                        firmware.motor(),
+                        footpad_voltage1,
+                        footpad_voltage2,
+                        system_time_ticks,
+                    )
+                })
+                .unwrap_or(1)
             });
         }
 
@@ -233,10 +206,10 @@ impl vescpkg_rs::FirmwareThread for RefloatMainThread {
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
+#[cfg(target_arch = "arm")]
 struct RefloatAuxThread;
 
-#[cfg(any(test, target_arch = "arm"))]
+#[cfg(target_arch = "arm")]
 impl vescpkg_rs::StatelessFirmwareThread for RefloatAuxThread {
     fn run(ctx: vescpkg_rs::StatelessThreadContext) {
         // C map: Refloat v1.2.1 `aux_thd` starts at
@@ -260,70 +233,6 @@ mod tests {
     use core::time::Duration;
     use vescpkg_rs::prelude::*;
     use vescpkg_rs::test_support::FirmwareTest;
-
-    #[test]
-    fn refloat_runtime_spawns_threads_with_refloat_startup_stack_sizes() {
-        let firmware = FirmwareTest::new();
-        let threads = firmware.threads();
-        let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
-        assert!(super::start_refloat_runtime_threads_with(
-            threads, &mut state
-        ));
-
-        assert_eq!(firmware.thread_spawn_count(), 2);
-        let runtime_threads = super::RefloatRuntimeThread::ALL;
-        assert_eq!(
-            runtime_threads.map(|thread| ThreadStackSize::from_bytes(thread.stack_bytes())),
-            firmware.spawned_thread_stack_sizes()
-        );
-        assert_eq!(
-            runtime_threads.map(super::RefloatRuntimeThread::name),
-            [
-                vescpkg_rs::thread_name!("Refloat Main"),
-                vescpkg_rs::thread_name!("Refloat Aux"),
-            ]
-        );
-        assert!(state.runtime_threads().first().is_some());
-        assert!(state.runtime_threads().second().is_some());
-        assert_eq!(firmware.thread_termination_count(), 0);
-    }
-
-    #[test]
-    fn refloat_runtime_keeps_main_thread_when_aux_spawn_fails_like_refloat() {
-        let firmware = FirmwareTest::new();
-        firmware.fail_second_thread_spawn();
-        let threads = firmware.threads();
-        let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
-        assert!(super::start_refloat_runtime_threads_with(
-            threads, &mut state
-        ));
-
-        // C map: Refloat stores each spawn result independently and does not
-        // terminate main_thread when aux_thread is null at
-        // third_party/refloat/src/main.c:2439-2445.
-        assert_eq!(firmware.thread_spawn_count(), 2);
-        assert_eq!(firmware.thread_termination_count(), 0);
-        assert!(state.runtime_threads().first().is_some());
-        assert_eq!(state.runtime_threads().second(), None);
-    }
-
-    #[test]
-    fn refloat_runtime_stop_terminates_aux_before_main_like_refloat() {
-        let firmware = FirmwareTest::new();
-        let threads = firmware.threads();
-        let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
-        assert!(super::start_refloat_runtime_threads_with(
-            threads, &mut state
-        ));
-        let expected = [
-            state.runtime_threads().second(),
-            state.runtime_threads().first(),
-        ];
-        super::request_refloat_runtime_thread_termination_with(threads, &state);
-
-        assert_eq!(firmware.thread_termination_count(), 2);
-        assert_eq!(firmware.terminated_threads(), expected);
-    }
 
     #[test]
     fn refloat_main_thread_tick_refreshes_runtime_state_and_sleeps_like_refloat_loop() {

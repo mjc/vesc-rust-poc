@@ -106,7 +106,7 @@ pub(super) fn install_test_refloat_runtime_state<'a>(
 
 #[cfg(test)]
 pub(super) fn clear_test_refloat_config_state_sources() {
-    super::REFLOAT_RUNTIME_STATE.clear();
+    vescpkg_rs::test_support::clear_state(&super::REFLOAT_RUNTIME_STATE);
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]

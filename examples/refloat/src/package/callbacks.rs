@@ -5,8 +5,6 @@
 
 #[cfg(any(test, target_arch = "arm"))]
 use super::state::RefloatPackageState;
-#[cfg(all(not(test), target_arch = "arm"))]
-use super::threads;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::{Imu, MotorTelemetry};
 
@@ -64,19 +62,9 @@ impl vescpkg_rs::PackageRuntimeState for RefloatPackageState {
         &super::REFLOAT_RUNTIME_STATE
     }
 
-    fn stop(&self) {
-        // C map: Refloat v1.2.1 `stop` starts at `third_party/refloat/src/main.c:2399`.
-        // Upstream stop cleanup in `third_party/refloat/src/main.c:2398-2412` clears IMU/app-data/custom
-        // config callbacks, terminates aux+main threads, destroys LEDs, and frees
-        // `Data`. This isolated handler only clears app-data/custom config and frees
-        // the narrow Rust app-data allocation if that experimental path was installed.
-        super::REFLOAT_RUNTIME_STATE.clear();
-        #[cfg(not(test))]
-        {
-            let _ = vescpkg_rs::Firmware::new().clear_package_callbacks();
-        }
-        #[cfg(all(not(test), target_arch = "arm"))]
-        threads::request_refloat_runtime_thread_termination(self);
+    fn stop(&mut self) {
+        // The SDK clears callbacks and joins both package threads before this
+        // package-specific cleanup hook runs.
     }
 }
 
