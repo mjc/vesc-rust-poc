@@ -46,6 +46,14 @@ struct PackageMetadata {
     target_name: String,
     version: String,
     display_name: String,
+    payload_kind: PayloadKind,
+    force_c_float_math: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PayloadKind {
+    Binary,
+    Staticlib,
 }
 
 #[derive(Debug)]
@@ -70,21 +78,25 @@ pub(crate) fn build_package(root: &Path, options: &BuildOptions) -> Result<PathB
     fs::create_dir_all(output_dir.join("src"))?;
     write_flattened_elf(&artifacts.elf, &output_dir.join("src/package_lib.bin"))?;
     let generated = artifacts.out_dir.as_ref().map(|path| path.join("vescpkg"));
+    if let Some(generated) = generated.as_ref() {
+        stage_generated_assets(generated, &output_dir)?;
+    }
     let read = |name: &str| {
-        generated
-            .as_ref()
-            .map(|path| path.join(name))
-            .filter(|path| path.is_file())
+        let path = output_dir.join(name);
+        path.is_file()
+            .then_some(path)
             .map(fs::read_to_string)
             .transpose()
     };
     let description_md = read("README.md")?
         .unwrap_or_else(|| format!("{} {}\n", package.display_name, package.version));
     let loader = read("code.lisp")?.unwrap_or_else(|| DEFAULT_LOADER.to_owned());
+    let qml = read("ui.qml")?.unwrap_or_default();
+    let qml_path = if qml.is_empty() { "" } else { "ui.qml" };
     let descriptor = read("pkgdesc.qml")?.unwrap_or_else(|| {
         format!(
-            "import QtQuick 2.15\n\nItem {{\n    property string pkgName: \"{}\"\n    property string pkgDescriptionMd: \"README.md\"\n    property string pkgLisp: \"code.lisp\"\n    property string pkgQml: \"\"\n    property bool pkgQmlIsFullscreen: false\n    property string pkgOutput: \"{artifact_name}.vescpkg\"\n}}\n",
-            package.display_name
+            "import QtQuick 2.15\n\nItem {{\n    property string pkgName: \"{}\"\n    property string pkgDescriptionMd: \"README.md\"\n    property string pkgLisp: \"code.lisp\"\n    property string pkgQml: \"{qml_path}\"\n    property bool pkgQmlIsFullscreen: false\n    property string pkgOutput: \"{artifact_name}.vescpkg\"\n}}\n",
+            package.display_name,
         )
     });
     let output = output_dir.join(format!("{artifact_name}.vescpkg"));
@@ -93,13 +105,29 @@ pub(crate) fn build_package(root: &Path, options: &BuildOptions) -> Result<PathB
         description_md: &description_md,
         lisp_source: &loader,
         lisp_editor_path: &output_dir,
-        qml_file: "",
+        qml_file: &qml,
         pkg_desc_qml: &descriptor,
         qml_is_fullscreen: false,
     })?;
     fs::write(&output, bytes)?;
 
     Ok(output)
+}
+
+fn stage_generated_assets(generated: &Path, output: &Path) -> Result<(), BuildError> {
+    for name in [
+        "README.md",
+        "pkgdesc.qml",
+        "code.lisp",
+        "bms.lisp",
+        "ui.qml",
+    ] {
+        let source = generated.join(name);
+        if source.is_file() {
+            fs::copy(source, output.join(name))?;
+        }
+    }
+    Ok(())
 }
 
 fn command_output(command: &mut Command) -> Result<Output, BuildError> {
@@ -139,6 +167,13 @@ fn is_binary_target(target: &Value) -> bool {
         .is_some_and(|kinds| kinds.iter().any(|kind| kind == "bin"))
 }
 
+#[must_use]
+fn is_staticlib_target(target: &Value) -> bool {
+    target["crate_types"]
+        .as_array()
+        .is_some_and(|types| types.iter().any(|kind| kind == "staticlib"))
+}
+
 fn select_package(metadata: &Value, requested: &str) -> Result<PackageMetadata, BuildError> {
     let package = metadata["packages"]
         .as_array()
@@ -154,33 +189,49 @@ fn select_package(metadata: &Value, requested: &str) -> Result<PackageMetadata, 
     let id = package["id"]
         .as_str()
         .ok_or_else(|| BuildError(format!("package `{name}` has no package ID")))?;
-    let version = package["version"]
+    let cargo_version = package["version"]
         .as_str()
         .ok_or_else(|| BuildError(format!("package `{name}` has no version")))?;
-    let binary_targets = package["targets"]
+    let payload_targets = package["targets"]
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|target| is_binary_target(target))
-        .filter_map(|target| target["name"].as_str())
+        .filter_map(|target| {
+            let kind = if is_binary_target(target) {
+                PayloadKind::Binary
+            } else if is_staticlib_target(target) {
+                PayloadKind::Staticlib
+            } else {
+                return None;
+            };
+            Some((target["name"].as_str()?, kind))
+        })
         .collect::<Vec<_>>();
-    let [target_name] = binary_targets.as_slice() else {
+    let [(target_name, payload_kind)] = payload_targets.as_slice() else {
         return Err(BuildError(format!(
-            "package `{name}` must have exactly one binary target (found {})",
-            binary_targets.len()
+            "package `{name}` must have exactly one binary or staticlib target (found {})",
+            payload_targets.len()
         )));
     };
     let display_name = package["metadata"]["vescpkg"]["name"]
         .as_str()
         .unwrap_or(name)
         .to_owned();
+    let version = package["metadata"]["vescpkg"]["version"]
+        .as_str()
+        .unwrap_or(cargo_version)
+        .to_owned();
 
     Ok(PackageMetadata {
         id: id.to_owned(),
         name: name.to_owned(),
         target_name: (*target_name).to_owned(),
-        version: version.to_owned(),
+        version,
         display_name,
+        payload_kind: *payload_kind,
+        force_c_float_math: package["metadata"]["vescpkg"]["force-c-float-math"]
+            .as_bool()
+            .unwrap_or(false),
     })
 }
 
@@ -217,8 +268,14 @@ fn cargo_build(
     if let Some(features) = &options.features {
         command.args(["--features", features]);
     }
+    if package.payload_kind == PayloadKind::Staticlib {
+        let rustflags = std::env::var("RUSTFLAGS").unwrap_or_default();
+        command
+            .env_remove("CARGO_ENCODED_RUSTFLAGS")
+            .env("RUSTFLAGS", format!("{rustflags} -C relocation-model=pic"));
+    }
     let output = command_output(&mut command)?;
-    let (elf, out_dir) = output
+    let (payload, out_dir) = output
         .stdout
         .split(|byte| *byte == b'\n')
         .filter_map(|line| serde_json::from_slice::<Value>(line).ok())
@@ -227,12 +284,16 @@ fn cargo_build(
             (message_elf.or(elf), message_out_dir.or(out_dir))
         });
 
-    let elf = elf.ok_or_else(|| {
+    let payload = payload.ok_or_else(|| {
         BuildError(format!(
-            "Cargo produced no final binary for `{}`",
+            "Cargo produced no final payload for `{}`",
             package.name
         ))
     })?;
+    let elf = match package.payload_kind {
+        PayloadKind::Binary => payload,
+        PayloadKind::Staticlib => link_staticlib(root, &payload, package.force_c_float_math)?,
+    };
     Ok(CargoArtifacts { elf, out_dir })
 }
 
@@ -246,14 +307,59 @@ fn cargo_message_artifacts(
     .then(|| message["out_dir"].as_str())
     .flatten()
     .map(PathBuf::from);
-    let elf = (message["reason"] == "compiler-artifact"
+    let payload = (message["reason"] == "compiler-artifact"
         && message["package_id"].as_str() == Some(package.id.as_str())
-        && message["target"]["name"].as_str() == Some(package.target_name.as_str())
-        && is_binary_target(&message["target"]))
-    .then(|| message["executable"].as_str())
-    .flatten()
-    .map(PathBuf::from);
-    (elf, out_dir)
+        && message["target"]["name"].as_str() == Some(package.target_name.as_str()))
+    .then(|| match package.payload_kind {
+        PayloadKind::Binary => message["executable"].as_str().map(PathBuf::from),
+        PayloadKind::Staticlib => message["filenames"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .find(|path| path.ends_with(".a"))
+            .map(PathBuf::from),
+    })
+    .flatten();
+    (payload, out_dir)
+}
+
+fn link_staticlib(
+    root: &Path,
+    archive: &Path,
+    force_c_float_math: bool,
+) -> Result<PathBuf, BuildError> {
+    let elf = archive.with_extension("elf");
+    let mut command = Command::new("arm-none-eabi-gcc");
+    command.args([
+        "-nostartfiles",
+        "-static",
+        "-mcpu=cortex-m4",
+        "-mthumb",
+        "-mfloat-abi=hard",
+        "-mfpu=fpv4-sp-d16",
+    ]);
+    if force_c_float_math {
+        command.args([
+            "-Wl,--undefined=asinf",
+            "-Wl,--undefined=cosf",
+            "-Wl,--undefined=sinf",
+            "-Wl,--undefined=sqrtf",
+            "-lm",
+        ]);
+    }
+    command
+        .arg(archive)
+        .args(["-Wl,--gc-sections", "-Wl,--undefined=init", "-T"])
+        .arg(staticlib_linker_script(root))
+        .arg("-o")
+        .arg(&elf);
+    command_output(&mut command)?;
+    Ok(elf)
+}
+
+fn staticlib_linker_script(root: &Path) -> PathBuf {
+    root.join("examples/vescpkg-link.ld")
 }
 
 fn write_flattened_elf(elf: &Path, output: &Path) -> Result<(), BuildError> {
@@ -284,12 +390,45 @@ fn package_slug(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{PackageMetadata, cargo_message_artifacts, package_slug, select_package};
+    use super::{
+        PackageMetadata, PayloadKind, cargo_message_artifacts, package_slug, select_package,
+        stage_generated_assets, staticlib_linker_script,
+    };
     use serde_json::json;
 
     #[test]
     fn package_slug_matches_existing_artifact_names() {
         assert_eq!(package_slug("A minimal package"), "A-minimal-package");
+    }
+
+    #[test]
+    fn staticlibs_use_the_cargo_package_linker_script() {
+        assert_eq!(
+            staticlib_linker_script(std::path::Path::new("/repo")),
+            std::path::PathBuf::from("/repo/examples/vescpkg-link.ld")
+        );
+    }
+
+    #[test]
+    fn stages_generated_qml_and_lisp_imports() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let generated = temp.path().join("generated");
+        let output = temp.path().join("output");
+        std::fs::create_dir_all(&generated).expect("generated directory");
+        std::fs::create_dir_all(&output).expect("output directory");
+        std::fs::write(generated.join("ui.qml"), "Item {}\n").expect("QML");
+        std::fs::write(generated.join("bms.lisp"), "(define bms true)\n").expect("BMS Lisp");
+
+        stage_generated_assets(&generated, &output).expect("stage assets");
+
+        assert_eq!(
+            std::fs::read_to_string(output.join("ui.qml")).expect("staged QML"),
+            "Item {}\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(output.join("bms.lisp")).expect("staged BMS Lisp"),
+            "(define bms true)\n"
+        );
     }
 
     #[test]
@@ -309,6 +448,34 @@ mod tests {
         assert_eq!(package.name, "minimal-package");
         assert_eq!(package.target_name, "minimal-package");
         assert_eq!(package.display_name, "Minimal package");
+        assert_eq!(package.payload_kind, PayloadKind::Binary);
+    }
+
+    #[test]
+    fn selects_a_staticlib_package_from_cargo_metadata() {
+        let metadata = json!({
+            "packages": [{
+                "name": "static-package",
+                "id": "path+file:///tmp/static-package#0.1.0",
+                "version": "0.1.0",
+                "targets": [{
+                    "name": "static_package",
+                    "kind": ["lib"],
+                    "crate_types": ["staticlib"]
+                }],
+                "metadata": {"vescpkg": {
+                    "name": "Static package",
+                    "version": "1.2.1",
+                    "force-c-float-math": true
+                }}
+            }]
+        });
+
+        let package = select_package(&metadata, "static-package").expect("package metadata");
+
+        assert_eq!(package.payload_kind, PayloadKind::Staticlib);
+        assert_eq!(package.version, "1.2.1");
+        assert!(package.force_c_float_math);
     }
 
     #[test]
@@ -319,6 +486,8 @@ mod tests {
             target_name: "minimal-package".to_owned(),
             version: "0.1.0".to_owned(),
             display_name: "Minimal package".to_owned(),
+            payload_kind: PayloadKind::Binary,
+            force_c_float_math: false,
         };
         let artifact = json!({
             "reason": "compiler-artifact",
@@ -347,5 +516,33 @@ mod tests {
             (None, Some("/tmp/out".into()))
         );
         assert_eq!(cargo_message_artifacts(&unrelated, &package), (None, None));
+    }
+
+    #[test]
+    fn selects_staticlib_archive_from_build_artifacts() {
+        let package = PackageMetadata {
+            id: "path+file:///tmp/static-package#0.1.0".to_owned(),
+            name: "static-package".to_owned(),
+            target_name: "static_package".to_owned(),
+            version: "0.1.0".to_owned(),
+            display_name: "Static package".to_owned(),
+            payload_kind: PayloadKind::Staticlib,
+            force_c_float_math: false,
+        };
+        let artifact = json!({
+            "reason": "compiler-artifact",
+            "package_id": "path+file:///tmp/static-package#0.1.0",
+            "target": {
+                "name": "static_package",
+                "kind": ["lib"],
+                "crate_types": ["staticlib"]
+            },
+            "filenames": ["/tmp/libstatic_package.a"]
+        });
+
+        assert_eq!(
+            cargo_message_artifacts(&artifact, &package),
+            (Some("/tmp/libstatic_package.a".into()), None)
+        );
     }
 }
