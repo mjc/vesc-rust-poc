@@ -151,6 +151,19 @@ pub mod prelude {
 /// VESC-domain semantic wrappers over generic embedded units.
 mod types;
 
+/// Define package data retained in a named firmware image section.
+#[macro_export]
+macro_rules! firmware_section_static {
+    ($section:literal, $visibility:vis static $name:ident: $type:ty = $value:expr) => {
+        #[cfg_attr(
+            all(not(test), target_arch = "arm"),
+            unsafe(link_section = $section)
+        )]
+        #[used]
+        $visibility static $name: $type = $value;
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use crate::types::{
