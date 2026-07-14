@@ -76,7 +76,7 @@ pub unsafe fn arg_mut<'a, T: 'static>(arg: *mut c_void) -> Option<&'a mut T> {
 #[cfg(any(test, not(feature = "test-support")))]
 pub(crate) unsafe fn app_data_packet<'a>(data: *mut u8, len: u32) -> Option<AppDataPacket<'a>> {
     let len = usize::try_from(len).ok()?;
-    unsafe { borrowed_bytes(data.cast_const(), len) }.map(AppDataPacket)
+    unsafe { borrowed_slice(data.cast_const(), len) }.map(AppDataPacket)
 }
 
 /// Rust implementation for an app-data callback.
@@ -209,11 +209,7 @@ macro_rules! firmware_stateful_app_data_callback {
 /// values that stay valid for the returned borrow.
 pub(crate) unsafe fn lbm_args<'a>(args: *mut u32, arg_count: u32) -> Option<&'a [LbmValue]> {
     let len = usize::try_from(arg_count).ok()?;
-    if len == 0 {
-        return Some(&[]);
-    }
-    let args = NonNull::new(args.cast::<LbmValue>())?;
-    Some(unsafe { core::slice::from_raw_parts(args.as_ptr().cast_const(), len) })
+    unsafe { borrowed_slice(args.cast::<LbmValue>().cast_const(), len) }
 }
 
 /// Borrowed serialized custom-config bytes.
@@ -273,7 +269,7 @@ impl CustomConfigGetBuffer<'_> {
 
 /// Borrowed custom-config input for `set_cfg` callbacks.
 unsafe fn custom_config_payload<'a>(buffer: *mut u8, len: usize) -> Option<ConfigBytes<'a>> {
-    unsafe { borrowed_bytes(buffer.cast_const(), len) }.map(ConfigBytes::new)
+    unsafe { borrowed_slice(buffer.cast_const(), len) }.map(ConfigBytes::new)
 }
 
 /// Custom-config behavior backed by a reusable package state source.
@@ -591,17 +587,16 @@ pub unsafe fn firmware_array<T: Copy, const N: usize>(values: *const T) -> Optio
     values.try_into().ok()
 }
 
-unsafe fn borrowed_bytes<'a>(data: *const u8, len: usize) -> Option<&'a [u8]> {
+unsafe fn borrowed_slice<'a, T>(data: *const T, len: usize) -> Option<&'a [T]> {
     if len == 0 {
         return Some(&[]);
     }
 
-    if len > isize::MAX as usize {
-        return None;
-    }
+    len.checked_mul(core::mem::size_of::<T>())
+        .filter(|bytes| *bytes <= isize::MAX as usize)?;
 
     let data = NonNull::new(data.cast_mut())?;
-    Some(unsafe { core::slice::from_raw_parts(data.as_ptr().cast_const(), len) })
+    Some(unsafe { core::slice::from_raw_parts(data.as_ptr(), len) })
 }
 
 unsafe fn mutable_bytes<'a>(data: *mut u8, len: usize) -> Option<MutablePacket<'a>> {
@@ -797,10 +792,10 @@ mod tests {
     }
 
     #[test]
-    fn borrowed_bytes_rejects_lengths_larger_than_isize() {
+    fn borrowed_slice_rejects_lengths_larger_than_isize() {
         let data = NonNull::<u8>::dangling().as_ptr();
 
-        assert!(unsafe { borrowed_bytes(data, usize::MAX) }.is_none());
+        assert!(unsafe { borrowed_slice(data, usize::MAX) }.is_none());
     }
 
     #[test]
