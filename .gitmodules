@@ -1,3 +1,6 @@
 [submodule "third_party/vesc_pkg_lib"]
 	path = third_party/vesc_pkg_lib
 	url = https://github.com/lukash/vesc_pkg_lib
+[submodule "third_party/refloat"]
+	path = third_party/refloat
+	url = https://github.com/lukash/refloat.git
