@@ -1,5 +1,5 @@
 use core::cell::Cell;
-use core::ffi::{c_char, c_int, c_uchar};
+use core::ffi::{c_char, c_int, c_uchar, c_void};
 
 use crate::c_vesc_if;
 use crate::test_support::{empty_table, with_table};
@@ -14,8 +14,9 @@ use super::{
     mc_get_fault, mc_get_input_voltage_filtered, mc_get_odometer, mc_get_rpm, mc_get_speed,
     mc_get_tot_current_filtered, mc_get_tot_current_in_filtered, mc_get_watt_hours,
     mc_get_watt_hours_charged, mc_temp_fet_filtered, mc_temp_motor_filtered,
-    vesc_clear_app_data_handler, vesc_send_app_data, vesc_set_app_data_handler, vesc_sleep_us,
-    vesc_system_time_ticks, vesc_thread_set_priority,
+    vesc_clear_app_data_handler, vesc_mutex_create, vesc_mutex_lock, vesc_mutex_unlock,
+    vesc_send_app_data, vesc_set_app_data_handler, vesc_sleep_us, vesc_system_time_ticks,
+    vesc_thread_set_priority,
 };
 
 struct SyncCounter(Cell<usize>);
@@ -126,6 +127,9 @@ static CUSTOM_CONFIG_SET: SyncCounter = SyncCounter::new();
 static CUSTOM_CONFIG_XML: SyncCounter = SyncCounter::new();
 static SLEEP_US: SyncCounter = SyncCounter::new();
 static THREAD_SET_PRIORITY: SyncCounter = SyncCounter::new();
+static MUTEX_CREATE: SyncCounter = SyncCounter::new();
+static MUTEX_LOCK: SyncCounter = SyncCounter::new();
+static MUTEX_UNLOCK: SyncCounter = SyncCounter::new();
 static SYSTEM_TIME: SyncCounter = SyncCounter::new();
 static SYSTEM_TIME_TICKS: SyncCounter = SyncCounter::new();
 static IO_SET_MODE: SyncCounter = SyncCounter::new();
@@ -174,6 +178,9 @@ fn reset_counters() {
         &CUSTOM_CONFIG_XML,
         &SLEEP_US,
         &THREAD_SET_PRIORITY,
+        &MUTEX_CREATE,
+        &MUTEX_LOCK,
+        &MUTEX_UNLOCK,
         &SYSTEM_TIME,
         &SYSTEM_TIME_TICKS,
         &IO_SET_MODE,
@@ -296,6 +303,21 @@ extern "C" fn stub_sleep_us(micros: u32) {
 extern "C" fn stub_thread_set_priority(priority: c_int) {
     THREAD_SET_PRIORITY.inc();
     LAST_THREAD_PRIORITY.set(priority);
+}
+
+extern "C" fn stub_mutex_create() -> *mut c_void {
+    MUTEX_CREATE.inc();
+    0xCAFEusize as *mut c_void
+}
+
+extern "C" fn stub_mutex_lock(mutex: *mut c_void) {
+    assert_eq!(mutex as usize, 0xCAFE);
+    MUTEX_LOCK.inc();
+}
+
+extern "C" fn stub_mutex_unlock(mutex: *mut c_void) {
+    assert_eq!(mutex as usize, 0xCAFE);
+    MUTEX_UNLOCK.inc();
 }
 
 extern "C" fn stub_io_set_mode(pin: c_int, mode: c_int) -> bool {
@@ -428,6 +450,9 @@ fn populated_table() -> VescIf {
     table.conf_custom_clear_configs = Some(stub_conf_custom_clear_configs);
     table.sleep_us = Some(stub_sleep_us);
     table.thread_set_priority = Some(stub_thread_set_priority);
+    table.mutex_create = Some(stub_mutex_create);
+    table.mutex_lock = Some(stub_mutex_lock);
+    table.mutex_unlock = Some(stub_mutex_unlock);
     table.system_time = Some(stub_system_time);
     table.system_time_ticks = Some(stub_system_time_ticks);
     table.io_set_mode = Some(stub_io_set_mode);
@@ -582,6 +607,19 @@ fn thread_set_priority_forwards_through_mock_table() {
 
         assert_eq!(THREAD_SET_PRIORITY.get(), 1);
         assert_eq!(LAST_THREAD_PRIORITY.get(), -1);
+    });
+}
+
+#[test]
+fn mutex_helpers_forward_through_mock_table() {
+    with_populated_table(|| unsafe {
+        let mutex = vesc_mutex_create();
+        vesc_mutex_lock(mutex);
+        vesc_mutex_unlock(mutex);
+
+        assert_eq!(MUTEX_CREATE.get(), 1);
+        assert_eq!(MUTEX_LOCK.get(), 1);
+        assert_eq!(MUTEX_UNLOCK.get(), 1);
     });
 }
 

@@ -446,7 +446,7 @@ macro_rules! vesc_slot_word_from {
 mod slots {
     use super::{
         AppDataHandler, CustomConfigGet, CustomConfigSet, CustomConfigXml, ExtensionHandler,
-        ImuReadCallback, LibThread, VescIfAbi, c_char, c_int, c_uchar, c_void,
+        ImuReadCallback, LibMutex, LibThread, VescIfAbi, c_char, c_int, c_uchar, c_void,
     };
     #[cfg(not(all(target_arch = "arm", not(test))))]
     use super::{VescIf, vesc_if};
@@ -556,6 +556,9 @@ mod slots {
             as unsafe extern "C" fn(CustomConfigGet, CustomConfigSet, CustomConfigXml)
     );
     fn_slot!(conf_custom_clear_configs as unsafe extern "C" fn());
+    fn_slot!(mutex_create as unsafe extern "C" fn() -> LibMutex);
+    fn_slot!(mutex_lock as unsafe extern "C" fn(LibMutex));
+    fn_slot!(mutex_unlock as unsafe extern "C" fn(LibMutex));
     fn_slot!(malloc as unsafe extern "C" fn(usize) -> *mut c_void);
     fn_slot!(free as unsafe extern "C" fn(*mut c_void));
     fn_slot!(sleep_us as unsafe extern "C" fn(u32));
@@ -823,6 +826,38 @@ pub unsafe fn conf_custom_clear_configs() -> bool {
         slots::conf_custom_clear_configs()();
         true
     }
+}
+
+/// Allocate and initialize a firmware mutex.
+///
+/// The returned mutex belongs to the firmware reserve heap and must eventually
+/// be released with [`vesc_free`].
+///
+/// # Safety
+///
+/// The firmware `VESC_IF` table must be valid.
+pub unsafe fn vesc_mutex_create() -> LibMutex {
+    unsafe { slots::mutex_create()() }
+}
+
+/// Lock a firmware mutex, blocking the current firmware thread.
+///
+/// # Safety
+///
+/// `mutex` must be a live handle returned by [`vesc_mutex_create`]. The mutex
+/// is non-recursive and must not already be owned by the current thread.
+pub unsafe fn vesc_mutex_lock(mutex: LibMutex) {
+    unsafe { slots::mutex_lock()(mutex) };
+}
+
+/// Unlock a firmware mutex owned by the current firmware thread.
+///
+/// # Safety
+///
+/// `mutex` must be a live handle returned by [`vesc_mutex_create`] and locked
+/// by the current thread.
+pub unsafe fn vesc_mutex_unlock(mutex: LibMutex) {
+    unsafe { slots::mutex_unlock()(mutex) };
 }
 
 /// Allocate memory from the firmware LispBM reserve heap.
