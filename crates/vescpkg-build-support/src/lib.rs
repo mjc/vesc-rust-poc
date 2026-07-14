@@ -10,7 +10,10 @@ pub fn build_package(manifest_dir: &Path) {
     let assets = Path::new(&out_dir).join("vescpkg");
     fs::create_dir_all(assets.join("src")).expect("create package asset directory");
     for name in ["README.md", "pkgdesc.qml", "code.lisp"] {
-        fs::copy(Path::new("package").join(name), assets.join(name)).expect("copy package asset");
+        let source = Path::new("package").join(name);
+        if source.exists() {
+            fs::copy(source, assets.join(name)).expect("copy package asset");
+        }
         println!("cargo::rerun-if-changed=package/{name}");
     }
 

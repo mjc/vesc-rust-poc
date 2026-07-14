@@ -75,7 +75,7 @@ unsafe extern "C" fn alloc_smoke_app_data_callback(data: *mut u8, len: u32) {
         return;
     };
     unsafe {
-        ffi::raw::vesc_send_app_data(response.as_ptr().cast_mut(), response_len as u32);
+        ffi::raw::vesc_send_app_data(response.as_ptr(), response_len as u32);
     }
 }
 
