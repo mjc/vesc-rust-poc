@@ -6,6 +6,8 @@ use vescpkg_rs_sys::{ExtensionHandler, LbmValue};
 
 const LBM_INT_TAG: u32 = 0x8;
 const LBM_VALUE_SHIFT: u32 = 4;
+#[cfg(any(test, not(target_arch = "arm")))]
+const LBM_TRUE: u32 = 2 << LBM_VALUE_SHIFT;
 const LBM_VALUE_TAG_MASK: u32 = (1 << LBM_VALUE_SHIFT) - 1;
 const LBM_INT_MIN: i32 = -(1 << 27);
 const LBM_INT_MAX: i32 = (1 << 27) - 1;
@@ -215,7 +217,7 @@ impl LispArgs<'_> {
         }
         #[cfg(any(test, not(target_arch = "arm")))]
         {
-            LispValue(LbmValue(1))
+            LispValue(LbmValue(LBM_TRUE))
         }
     }
 
@@ -348,7 +350,7 @@ mod tests {
 
         assert_eq!(
             unsafe { stateful_lbm_extension_handler::<TestExtension>(core::ptr::null_mut(), 0) },
-            1
+            super::LBM_TRUE
         );
         assert_eq!(*state, State { calls: 1 });
 
