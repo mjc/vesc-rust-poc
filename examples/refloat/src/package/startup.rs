@@ -18,10 +18,10 @@ fn install_refloat_startup_state_with(
 ) -> bool {
     *state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
     start
-        .install_runtime_state::<super::callbacks::RefloatStop>(
+        .install_runtime_state(core::mem::replace(
             state,
-            &super::REFLOAT_RUNTIME_STATE,
-        )
+            RefloatPackageState::new(RefloatAllDataPayloads::source_startup()),
+        ))
         .is_ok()
 }
 
@@ -36,10 +36,9 @@ fn install_refloat_startup_state_with(
 #[cfg(target_arch = "arm")]
 fn allocate_refloat_startup_state(start: &mut PackageStart) -> bool {
     start
-        .allocate_runtime_state::<super::callbacks::RefloatStop>(
-            RefloatPackageState::new(RefloatAllDataPayloads::source_startup()),
-            &super::REFLOAT_RUNTIME_STATE,
-        )
+        .install_runtime_state(RefloatPackageState::new(
+            RefloatAllDataPayloads::source_startup(),
+        ))
         .is_ok()
 }
 
@@ -91,19 +90,16 @@ mod tests {
     fn package_start_installs_typed_refloat_state_for_handler_retrieval() {
         let mut info = vescpkg_rs::LoaderInfo::new();
         let mut start = vescpkg_rs::test_support::package_start(&mut info);
-        let mut state = RefloatPackageState::new(sample_all_data_payloads());
+        let state = RefloatPackageState::new(sample_all_data_payloads());
 
-        assert_eq!(
-            start.install_state::<crate::package::callbacks::RefloatStop>(&mut state),
-            Ok(())
-        );
+        assert_eq!(start.install_runtime_state(state), Ok(()));
         // C map: Refloat stores `Data *` in `info->arg` at
         // `third_party/refloat/src/main.c:2432`; app-data/custom-config paths
         // recover package state through the same loader metadata boundary.
         assert_eq!(
             unsafe {
                 vescpkg_rs::test_support::package_start(&mut info)
-                    .with_state::<RefloatPackageState, _>(|state| state.all_data_payloads())
+                    .with_runtime_state::<RefloatPackageState, _>(|state| state.all_data_payloads())
             }
             .expect("installed state"),
             sample_all_data_payloads()
@@ -112,7 +108,7 @@ mod tests {
         assert!(
             unsafe {
                 vescpkg_rs::test_support::package_start(&mut empty_info)
-                    .with_state::<RefloatPackageState, _>(|_| ())
+                    .with_runtime_state::<RefloatPackageState, _>(|_| ())
             }
             .is_none()
         );
@@ -122,12 +118,9 @@ mod tests {
     fn package_start_installs_refloat_state_before_callbacks_like_refloat_startup() {
         let mut info = vescpkg_rs::LoaderInfo::new();
         let mut start = vescpkg_rs::test_support::package_start(&mut info);
-        let mut state = RefloatPackageState::new(sample_all_data_payloads());
+        let state = RefloatPackageState::new(sample_all_data_payloads());
 
-        assert_eq!(
-            start.install_state::<crate::package::callbacks::RefloatStop>(&mut state),
-            Ok(())
-        );
+        assert_eq!(start.install_runtime_state(state), Ok(()));
         // Upstream sets `info->stop_fun` and `info->arg` at `third_party/refloat/src/main.c:2431-2432`,
         // before registering custom config/app-data/extensions at `third_party/refloat/src/main.c:2455-2459`.
         assert!(info.has_stop_handler());

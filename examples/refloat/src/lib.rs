@@ -4,7 +4,7 @@
 //! semantics for the Rust port. Generic loader, lifecycle, firmware, units, and
 //! semantic wrapper code lives in `vescpkg-rs`.
 //!
-//! Device builds must stay `no_std` and must not link `alloc` or `std`.
+//! Device builds stay `no_std`; startup state is allocated directly by firmware.
 //!
 //! Source map: package initialization mirrors Refloat's `start`/`stop` wiring at
 //! `third_party/refloat/src/main.c:2401-2460`.
@@ -14,6 +14,12 @@
 
 #[cfg(test)]
 extern crate std;
+#[cfg(all(not(test), not(target_arch = "arm")))]
+extern crate std;
+
+#[cfg(all(not(test), not(target_arch = "arm")))]
+#[global_allocator]
+static HOST_ALLOCATOR: std::alloc::System = std::alloc::System;
 
 mod balance;
 pub mod bms;
@@ -41,10 +47,10 @@ mod tests {
     }
 }
 
-#[cfg(not(test))]
+#[cfg(all(not(test), target_arch = "arm"))]
 use core::panic::PanicInfo;
 
-#[cfg(not(test))]
+#[cfg(all(not(test), target_arch = "arm"))]
 #[panic_handler]
 fn panic(_: &PanicInfo) -> ! {
     loop {

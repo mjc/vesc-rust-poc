@@ -65,7 +65,7 @@ impl RefloatRuntimeThread {
 #[cfg(any(test, target_arch = "arm"))]
 pub(crate) fn start_refloat_runtime_threads_with(
     threads: &impl FirmwareThreads,
-    state: &mut vescpkg_rs::PackageThreadState<'_, RefloatPackageState>,
+    state: &mut RefloatPackageState,
 ) -> bool {
     let main_thread = RefloatRuntimeThread::Main;
     let aux_thread = RefloatRuntimeThread::Aux;
@@ -79,7 +79,9 @@ pub(crate) fn start_refloat_runtime_threads_with(
             aux_thread.name(),
         ),
     );
-    let Some(runtime_threads) = state.spawn_thread_pair(threads, runtime_threads) else {
+    let Some(runtime_threads) =
+        (unsafe { threads.spawn_thread_pair_with_state(runtime_threads, state) })
+    else {
         return false;
     };
 
@@ -174,9 +176,9 @@ pub(crate) fn run_refloat_aux_thread_with(threads: &impl FirmwareThreads) {
 pub fn start_refloat_runtime_threads(start: &mut vescpkg_rs::PackageStart) -> bool {
     let firmware = vescpkg_rs::Firmware::new();
     unsafe {
-        start.with_thread_state::<RefloatPackageState, _>(|mut state| {
+        start.with_runtime_state::<RefloatPackageState, _>(|state| {
             state.initialize_balance_filter(firmware.imu().orientation());
-            start_refloat_runtime_threads_with(firmware.threads(), &mut state)
+            start_refloat_runtime_threads_with(firmware.threads(), state)
         })
     }
     .unwrap_or(false)
@@ -256,29 +258,17 @@ mod tests {
     use super::super::state::RefloatPackageState;
     use crate::domain::{FootpadSensorState, RefloatAllDataPayloads, RefloatRunState};
     use core::time::Duration;
-    use vescpkg_rs::LoaderInfo;
     use vescpkg_rs::prelude::*;
-    use vescpkg_rs::test_support::{FirmwareTest, package_start};
+    use vescpkg_rs::test_support::FirmwareTest;
 
     #[test]
     fn refloat_runtime_spawns_threads_with_refloat_startup_stack_sizes() {
         let firmware = FirmwareTest::new();
         let threads = firmware.threads();
         let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
-        let mut info = LoaderInfo::new();
-        let mut start = package_start(&mut info);
-        start
-            .install_state::<super::super::callbacks::RefloatStop>(&mut state)
-            .expect("test state");
-
-        assert!(
-            unsafe {
-                start.with_thread_state::<RefloatPackageState, _>(|mut state| {
-                    super::start_refloat_runtime_threads_with(threads, &mut state)
-                })
-            }
-            .unwrap_or(false)
-        );
+        assert!(super::start_refloat_runtime_threads_with(
+            threads, &mut state
+        ));
 
         assert_eq!(firmware.thread_spawn_count(), 2);
         let runtime_threads = super::RefloatRuntimeThread::ALL;
@@ -304,20 +294,9 @@ mod tests {
         firmware.fail_second_thread_spawn();
         let threads = firmware.threads();
         let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
-        let mut info = LoaderInfo::new();
-        let mut start = package_start(&mut info);
-        start
-            .install_state::<super::super::callbacks::RefloatStop>(&mut state)
-            .expect("test state");
-
-        assert!(
-            unsafe {
-                start.with_thread_state::<RefloatPackageState, _>(|mut state| {
-                    super::start_refloat_runtime_threads_with(threads, &mut state)
-                })
-            }
-            .unwrap_or(false)
-        );
+        assert!(super::start_refloat_runtime_threads_with(
+            threads, &mut state
+        ));
 
         // C map: Refloat stores each spawn result independently and does not
         // terminate main_thread when aux_thread is null at
@@ -333,20 +312,9 @@ mod tests {
         let firmware = FirmwareTest::new();
         let threads = firmware.threads();
         let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
-        let mut info = LoaderInfo::new();
-        let mut start = package_start(&mut info);
-        start
-            .install_state::<super::super::callbacks::RefloatStop>(&mut state)
-            .expect("test state");
-
-        assert!(
-            unsafe {
-                start.with_thread_state::<RefloatPackageState, _>(|mut state| {
-                    super::start_refloat_runtime_threads_with(threads, &mut state)
-                })
-            }
-            .unwrap_or(false)
-        );
+        assert!(super::start_refloat_runtime_threads_with(
+            threads, &mut state
+        ));
         let expected = [
             state.runtime_threads().second(),
             state.runtime_threads().first(),

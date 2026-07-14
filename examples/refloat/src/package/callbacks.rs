@@ -59,13 +59,12 @@ vescpkg_rs::firmware_stateful_app_data_callback!(
 );
 
 #[cfg(any(test, target_arch = "arm"))]
-pub(crate) struct RefloatStop;
+impl vescpkg_rs::PackageRuntimeState for RefloatPackageState {
+    fn runtime_store() -> &'static vescpkg_rs::PackageStateStore<Self> {
+        &super::REFLOAT_RUNTIME_STATE
+    }
 
-#[cfg(any(test, target_arch = "arm"))]
-impl vescpkg_rs::StopCallback for RefloatStop {
-    type State = RefloatPackageState;
-
-    fn stop(context: vescpkg_rs::StopContext<Self::State>) {
+    fn stop(&self) {
         // C map: Refloat v1.2.1 `stop` starts at `third_party/refloat/src/main.c:2399`.
         // Upstream stop cleanup in `third_party/refloat/src/main.c:2398-2412` clears IMU/app-data/custom
         // config callbacks, terminates aux+main threads, destroys LEDs, and frees
@@ -76,12 +75,8 @@ impl vescpkg_rs::StopCallback for RefloatStop {
         {
             let _ = vescpkg_rs::Firmware::new().clear_package_callbacks();
         }
-        #[cfg(not(all(not(test), target_arch = "arm")))]
-        let _ = &context;
         #[cfg(all(not(test), target_arch = "arm"))]
-        if let Some(state) = context.state() {
-            threads::request_refloat_runtime_thread_termination(state);
-        }
+        threads::request_refloat_runtime_thread_termination(self);
     }
 }
 
