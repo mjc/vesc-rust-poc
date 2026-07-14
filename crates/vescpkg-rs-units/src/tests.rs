@@ -122,6 +122,10 @@ fn sample_rate_reports_one_sample_period() {
     );
     assert_eq!(SampleRate::from_hertz(0.0).sample_period(), None);
     assert_eq!(SampleRate::from_hertz(f32::NAN).sample_period(), None);
+    assert_eq!(
+        SampleRate::from_hertz(f32::from_bits(1)).sample_period(),
+        None
+    );
 }
 
 #[test]
@@ -140,11 +144,26 @@ fn scalar_units_support_same_unit_arithmetic_traits() {
         0.0_f32.to_bits()
     );
     assert_eq!(rate.signum(), -1.0);
+    assert_eq!(Current::ZERO.signum(), 1.0);
+    assert_eq!(Current::from_amps(-0.0).signum(), 1.0);
+    assert_eq!(Current::from_amps(f32::NAN).signum(), 1.0);
     assert!(current.is_positive());
     assert!(Current::ZERO.is_zero());
     assert_eq!(
         Current::from_amps(4.0)
             .min(Current::from_amps(6.0))
+            .as_amps(),
+        4.0
+    );
+    assert_eq!(
+        Current::from_amps(6.0)
+            .min(Current::from_amps(f32::NAN))
+            .as_amps(),
+        6.0
+    );
+    assert_eq!(
+        Current::from_amps(4.0)
+            .max(Current::from_amps(f32::NAN))
             .as_amps(),
         4.0
     );

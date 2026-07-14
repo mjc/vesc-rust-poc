@@ -22,8 +22,8 @@ scalar_unit!(SampleRate, from_hertz, as_hertz, "hertz");
 impl SampleRate {
     /// Return the duration of one sample at this rate.
     pub fn sample_period(self) -> Option<VescSeconds> {
-        let hertz = self.as_hertz();
-        (hertz.is_finite() && hertz > 0.0).then(|| VescSeconds::from_seconds(1.0 / hertz))
+        let seconds = 1.0 / self.as_hertz();
+        (seconds.is_finite() && seconds > 0.0).then(|| VescSeconds::from_seconds(seconds))
     }
 }
 

@@ -25,16 +25,10 @@ macro_rules! scalar_unit {
                 Self(self.0.abs())
             }
 
-            /// Return -1.0, 0.0, or 1.0 according to this value's sign.
+            /// Return -1.0 for negative values and 1.0 otherwise, matching VESC `SIGN`.
             #[inline(always)]
             pub const fn signum(self) -> f32 {
-                if self.0 > 0.0 {
-                    1.0
-                } else if self.0 < 0.0 {
-                    -1.0
-                } else {
-                    0.0
-                }
+                if self.0 < 0.0 { -1.0 } else { 1.0 }
             }
 
             /// Return true when this value is greater than zero.
@@ -58,13 +52,13 @@ macro_rules! scalar_unit {
             /// Return the smaller same-unit value.
             #[inline(always)]
             pub fn min(self, rhs: Self) -> Self {
-                if self.0 < rhs.0 { self } else { rhs }
+                Self(self.0.min(rhs.0))
             }
 
             /// Return the larger same-unit value.
             #[inline(always)]
             pub fn max(self, rhs: Self) -> Self {
-                if self.0 > rhs.0 { self } else { rhs }
+                Self(self.0.max(rhs.0))
             }
         }
 
