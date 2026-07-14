@@ -11,6 +11,8 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(clippy::missing_safety_doc)]
 
+#[cfg(any(test, feature = "alloc", feature = "test-support"))]
+extern crate alloc as rust_alloc;
 #[cfg(test)]
 extern crate std;
 
@@ -101,7 +103,7 @@ pub use imu::{Imu, ImuReadHandler, PackageImuReadCallback};
 pub use init::{PackageStart, PackageStartError};
 pub use lifecycle_core::{AppDataHandlerRegistrationError, AppDataSendError};
 pub use motor::{MotorOutput, MotorTelemetry};
-pub use runtime::{PackageStateAccess, PackageStateStore};
+pub use runtime::{PackageRuntimeState, PackageStateAccess, PackageStateStore};
 pub use thread::{
     Firmware, FirmwareAppData, FirmwareLisp, FirmwareThread, FirmwareThreads,
     StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadHandle,

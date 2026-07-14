@@ -13,6 +13,15 @@ pub struct PackageStateStore<T> {
     borrowed: AtomicBool,
 }
 
+/// Loader-owned package state with package-specific stop behavior.
+pub trait PackageRuntimeState: Sized + 'static {
+    /// Return the callback-visible slot for this state.
+    fn runtime_store() -> &'static PackageStateStore<Self>;
+
+    /// Stop package-owned resources before the state is freed.
+    fn stop(&self);
+}
+
 struct PackageStateBorrow<'a, T> {
     store: &'a PackageStateStore<T>,
 }
@@ -119,7 +128,6 @@ impl<T: 'static> PackageStateStore<T> {
     ///
     /// `state` must outlive every callback that can access this slot, and the
     /// caller must clear the slot before freeing it.
-    #[cfg(test)]
     pub(crate) unsafe fn install(&self, state: &mut T) {
         self.state
             .store(core::ptr::from_mut(state), Ordering::Release);

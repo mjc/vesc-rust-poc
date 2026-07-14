@@ -2,6 +2,27 @@
 
 use crate::ffi;
 
+#[cfg(any(test, feature = "test-support", target_arch = "arm"))]
+unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
+    arg: *mut core::ffi::c_void,
+) {
+    let Some(state) = core::ptr::NonNull::new(arg.cast::<T>()) else {
+        return;
+    };
+    unsafe { state.as_ref() }.stop();
+    T::runtime_store().clear();
+    #[cfg(all(not(test), target_arch = "arm"))]
+    {
+        let _ = crate::Firmware::new().clear_package_callbacks();
+        unsafe { state.as_ptr().drop_in_place() };
+        unsafe { ffi::vesc_free(state.as_ptr().cast()) };
+    }
+    #[cfg(not(target_arch = "arm"))]
+    {
+        drop(unsafe { crate::rust_alloc::boxed::Box::from_raw(state.as_ptr()) });
+    }
+}
+
 unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
     #[cfg(all(not(test), target_arch = "arm"))]
     {
@@ -28,6 +49,8 @@ fn install_stop_hook(info: *mut ffi::LibInfo) -> Result<(), PackageStartError> {
 pub enum PackageStartError {
     /// The firmware did not provide loader metadata for this package.
     LoaderUnavailable,
+    /// Firmware could not allocate the requested package state.
+    AllocationFailed,
 }
 
 #[doc(hidden)]
@@ -118,6 +141,57 @@ impl PackageStart {
     /// package state is later exposed through `ARG` at `:698-699`.
     pub fn install_stop_hook(&mut self) -> Result<(), PackageStartError> {
         install_stop_hook(self.info.cast())
+    }
+
+    /// Allocate loader-owned package state and publish it for callbacks.
+    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
+    pub fn install_runtime_state<T: crate::PackageRuntimeState>(
+        &mut self,
+        state_value: T,
+    ) -> Result<(), PackageStartError> {
+        let info = self
+            .raw_info_mut()
+            .ok_or(PackageStartError::LoaderUnavailable)?;
+
+        #[cfg(target_arch = "arm")]
+        let mut state_ptr = {
+            let state = unsafe { ffi::vesc_malloc(core::mem::size_of::<T>()) }.cast::<T>();
+            let state =
+                core::ptr::NonNull::new(state).ok_or(PackageStartError::AllocationFailed)?;
+            unsafe { state.as_ptr().write(state_value) };
+            state
+        };
+        #[cfg(target_arch = "arm")]
+        let state = unsafe { state_ptr.as_mut() };
+
+        #[cfg(not(target_arch = "arm"))]
+        let mut owned_state = crate::rust_alloc::boxed::Box::new(state_value);
+        #[cfg(not(target_arch = "arm"))]
+        let state = owned_state.as_mut();
+
+        let state_ptr = core::ptr::from_mut(state);
+        unsafe { T::runtime_store().install(state) };
+        info.arg = state_ptr.cast();
+        info.stop_fun = Some(crate::firmware::stop_handler_for_loader(
+            info,
+            stop_owned_package_state::<T>,
+        ));
+        #[cfg(not(target_arch = "arm"))]
+        let _ = crate::rust_alloc::boxed::Box::into_raw(owned_state);
+        Ok(())
+    }
+
+    /// Run startup work with loader-owned package state.
+    ///
+    /// # Safety
+    ///
+    /// Loader metadata must contain a live `T` exclusively owned by this package.
+    pub unsafe fn with_runtime_state<T: 'static, R>(
+        &mut self,
+        operation: impl FnOnce(&mut T) -> R,
+    ) -> Option<R> {
+        let info = self.raw_info_mut()?;
+        unsafe { crate::arg_mut::<T>(info.arg) }.map(operation)
     }
 
     /// Borrow typed loader metadata.
@@ -409,10 +483,32 @@ mod tests {
     };
     use crate::ffi;
     use crate::test_support::FakeAppDataBindings;
+    use core::sync::atomic::{AtomicUsize, Ordering};
 
     struct TestPackageImuRead;
 
     static TEST_IMU_STATE: crate::PackageStateStore<()> = crate::PackageStateStore::new();
+    static OWNED_STATE: crate::PackageStateStore<OwnedState> = crate::PackageStateStore::new();
+    static OWNED_STATE_STOPS: AtomicUsize = AtomicUsize::new(0);
+    static OWNED_STATE_DROPS: AtomicUsize = AtomicUsize::new(0);
+
+    struct OwnedState(u32);
+
+    impl crate::PackageRuntimeState for OwnedState {
+        fn runtime_store() -> &'static crate::PackageStateStore<Self> {
+            &OWNED_STATE
+        }
+
+        fn stop(&self) {
+            OWNED_STATE_STOPS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    impl Drop for OwnedState {
+        fn drop(&mut self) {
+            OWNED_STATE_DROPS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
 
     impl crate::ImuReadHandler for TestPackageImuRead {
         type State = ();
@@ -465,6 +561,31 @@ mod tests {
             install_stop_hook(core::ptr::null_mut()),
             Err(PackageStartError::LoaderUnavailable)
         );
+    }
+
+    #[test]
+    fn package_start_owns_runtime_state_until_stop() {
+        OWNED_STATE_STOPS.store(0, Ordering::Relaxed);
+        OWNED_STATE_DROPS.store(0, Ordering::Relaxed);
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0,
+        };
+        let mut start = super::PackageStart::from_raw(&mut info);
+
+        assert_eq!(start.install_runtime_state(OwnedState(37)), Ok(()));
+        assert_eq!(
+            unsafe { start.with_runtime_state::<OwnedState, _>(|state| state.0) },
+            Some(37)
+        );
+        assert_eq!(OWNED_STATE.with(|state| state.0), Some(37));
+
+        unsafe { info.stop_fun.expect("owned state stop hook")(info.arg) };
+
+        assert_eq!(OWNED_STATE_STOPS.load(Ordering::Relaxed), 1);
+        assert_eq!(OWNED_STATE_DROPS.load(Ordering::Relaxed), 1);
+        assert_eq!(OWNED_STATE.with(|state| state.0), None);
     }
 
     #[test]

@@ -332,6 +332,21 @@ use vescpkg_rs_sys::ExtensionHandler;
 #[cfg(not(test))]
 use vescpkg_rs_sys::LbmValue;
 
+/// Install borrowed state for callback-focused host tests.
+pub fn install_state<'a, T: 'static>(
+    store: &'a crate::PackageStateStore<T>,
+    state: &'a mut T,
+) -> impl Drop + 'a {
+    unsafe { store.install(state) };
+    struct ClearOnDrop<'a, T: 'static>(&'a crate::PackageStateStore<T>);
+    impl<T: 'static> Drop for ClearOnDrop<'_, T> {
+        fn drop(&mut self) {
+            self.0.clear();
+        }
+    }
+    ClearOnDrop(store)
+}
+
 /// Build a startup context for a typed loader fixture.
 pub fn package_start(info: &mut crate::LoaderInfo) -> crate::PackageStart {
     crate::PackageStart::from_raw(info)
