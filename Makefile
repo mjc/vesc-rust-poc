@@ -76,7 +76,7 @@ package-only:
 	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-refloat
 
 deploy:
-	$(CARGO) run -p cargo-vescpkg -- deploy -p vesc-example-loopback $(DEVICE_FLAGS)
+	$(CARGO) run -p cargo-vescpkg -- deploy -p vesc-example-refloat $(DEVICE_FLAGS)
 
 clean:
 	$(CARGO) clean
