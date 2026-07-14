@@ -215,7 +215,7 @@ impl PackageStart {
     ) -> bool
     where
         B: crate::bindings::CustomConfigBindings,
-        T: crate::PackageCustomConfigCallback<LEN>,
+        T: crate::__macro_support::PackageCustomConfigCallback<LEN>,
     {
         let Some(image) = self.native_image() else {
             return false;
@@ -247,7 +247,7 @@ impl PackageStart {
     /// C map: Refloat's `on_command_received` is a package-local function at
     /// `third_party/refloat/src/main.c:2142-2143` and is registered at `:2456`.
     #[inline(always)]
-    pub fn app_data_callback<T: crate::PackageAppDataCallback>(
+    pub fn app_data_callback<T: crate::__macro_support::PackageAppDataCallback>(
         &mut self,
     ) -> Option<LoadedAppDataCallback> {
         let image = self.native_image()?;
@@ -263,7 +263,7 @@ impl PackageStart {
     /// `third_party/vesc/imu/imu.c:581-582` and `:704-727`.
     #[cfg(not(test))]
     #[inline(always)]
-    pub fn register_imu_read_callback<T: crate::PackageImuReadCallback>(
+    pub fn register_imu_read_callback<T: crate::__macro_support::PackageImuReadCallback>(
         &mut self,
     ) -> Result<(), PackageStartError> {
         self.register_imu_read_callback_with_bindings::<T, _>(&crate::bindings::RealBindings)
@@ -275,7 +275,7 @@ impl PackageStart {
         bindings: &B,
     ) -> Result<(), PackageStartError>
     where
-        T: crate::PackageImuReadCallback,
+        T: crate::__macro_support::PackageImuReadCallback,
         B: crate::bindings::ImuReadCallbackBindings,
     {
         let Some(image) = self.native_image() else {
@@ -301,8 +301,8 @@ impl PackageStart {
         &mut self,
     ) -> Result<(), crate::AppDataHandlerRegistrationError>
     where
-        C: crate::PackageCustomConfigCallback<LEN>,
-        A: crate::PackageAppDataCallback,
+        C: crate::__macro_support::PackageCustomConfigCallback<LEN>,
+        A: crate::__macro_support::PackageAppDataCallback,
     {
         self.register_callbacks_with_bindings::<C, A, LEN, _>(&crate::bindings::RealBindings)
     }
@@ -313,8 +313,8 @@ impl PackageStart {
         bindings: &B,
     ) -> Result<(), crate::AppDataHandlerRegistrationError>
     where
-        C: crate::PackageCustomConfigCallback<LEN>,
-        A: crate::PackageAppDataCallback,
+        C: crate::__macro_support::PackageCustomConfigCallback<LEN>,
+        A: crate::__macro_support::PackageAppDataCallback,
         B: crate::bindings::AppDataBindings + crate::bindings::CustomConfigBindings,
     {
         let callback = self
@@ -371,7 +371,11 @@ impl PackageStart {
 
 /// Construct the startup context for the exported package entry trampoline.
 #[doc(hidden)]
-pub fn __package_start_from_raw(info: *mut crate::LoaderInfo) -> PackageStart {
+///
+/// # Safety
+///
+/// `info` must be null or point to loader metadata that remains valid for package startup.
+pub unsafe fn __package_start_from_raw(info: *mut crate::LoaderInfo) -> PackageStart {
     PackageStart::from_raw(info)
 }
 
@@ -390,7 +394,7 @@ macro_rules! package_start {
         #[inline(never)]
         #[unsafe(no_mangle)]
         extern "C" fn package_lib_init(info: *mut $crate::LoaderInfo) -> bool {
-            let mut start = $crate::__macro_support::__package_start_from_raw(info);
+            let mut start = unsafe { $crate::__macro_support::__package_start_from_raw(info) };
             $start(&mut start)
         }
 
@@ -399,7 +403,7 @@ macro_rules! package_start {
         #[inline(never)]
         #[unsafe(no_mangle)]
         extern "C" fn package_lib_init(info: *mut $crate::LoaderInfo) -> bool {
-            let mut start = $crate::__macro_support::__package_start_from_raw(info);
+            let mut start = unsafe { $crate::__macro_support::__package_start_from_raw(info) };
             let _ = start.install_stop_hook();
             true
         }
@@ -520,7 +524,7 @@ mod tests {
         fn read(_state: &mut Self::State, _sample: crate::ImuReadSample) {}
     }
 
-    impl crate::PackageImuReadCallback for TestPackageImuRead {
+    unsafe impl crate::__macro_support::PackageImuReadCallback for TestPackageImuRead {
         fn image_address() -> usize {
             crate::test_support::stubs::imu_read_callback as *const () as usize
         }
@@ -614,7 +618,7 @@ mod tests {
 
         struct Callback;
 
-        impl crate::PackageAppDataCallback for Callback {
+        unsafe impl crate::__macro_support::PackageAppDataCallback for Callback {
             fn image_address() -> usize {
                 handler as *const () as usize
             }
@@ -651,7 +655,7 @@ mod tests {
 
         static CONFIG_STATE: crate::PackageStateStore<()> = crate::PackageStateStore::new();
 
-        impl crate::PackageAppDataCallback for Callback {
+        unsafe impl crate::__macro_support::PackageAppDataCallback for Callback {
             fn image_address() -> usize {
                 handler as *const () as usize
             }
@@ -742,7 +746,7 @@ mod tests {
         assert_eq!(
             bindings.last_imu_read_callback.get(),
             image.rebase_addr(
-                <TestPackageImuRead as crate::PackageImuReadCallback>::image_address()
+                <TestPackageImuRead as crate::__macro_support::PackageImuReadCallback>::image_address()
             )
         );
     }

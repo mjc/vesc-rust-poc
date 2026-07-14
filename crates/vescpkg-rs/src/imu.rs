@@ -109,7 +109,7 @@ pub trait ImuReadHandler {
 
 /// Concrete package-local IMU callback generated for a typed handler.
 #[doc(hidden)]
-pub trait PackageImuReadCallback: ImuReadHandler {
+pub unsafe trait PackageImuReadCallback: ImuReadHandler {
     /// Return the callback's image-relative function address.
     #[doc(hidden)]
     fn image_address() -> usize;
@@ -126,7 +126,7 @@ macro_rules! firmware_imu_read_callback {
             unsafe { $crate::__macro_support::imu_read_callback::<$handler>(acc, gyro, mag, dt) }
         }
 
-        impl $crate::PackageImuReadCallback for $handler {
+        unsafe impl $crate::__macro_support::PackageImuReadCallback for $handler {
             #[inline(always)]
             fn image_address() -> usize {
                 $name as *const () as usize

@@ -93,13 +93,13 @@ pub use extension::{LbmExtension, LispArgs, LispValue, StatefulLbmExtension};
 pub mod __macro_support;
 
 pub use firmware::{
-    AppDataCallback, AppDataPacket, ConfigBytes, ConfigXml, PackageAppDataCallback,
-    PackageCustomConfigCallback, SourceCustomConfigCallback, StatefulAppDataCallback,
+    AppDataCallback, AppDataPacket, ConfigBytes, ConfigXml, SourceCustomConfigCallback,
+    StatefulAppDataCallback,
 };
 pub(crate) use firmware::{
     arg_mut, firmware_array, loader_info_mut, register_custom_config_callbacks_from_image,
 };
-pub use imu::{Imu, ImuReadHandler, PackageImuReadCallback};
+pub use imu::{Imu, ImuReadHandler};
 pub use init::{PackageStart, PackageStartError};
 pub use lifecycle_core::{AppDataHandlerRegistrationError, AppDataSendError};
 pub use motor::{MotorOutput, MotorTelemetry};
