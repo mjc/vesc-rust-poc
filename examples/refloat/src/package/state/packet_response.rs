@@ -93,7 +93,7 @@ impl RefloatPackageState {
                             telemetry.input_voltage_filtered().voltage(),
                         ));
                 let payloads = if mode.includes_mode2() {
-                    self.runtime_all_data_payloads(payloads, telemetry, mode.includes_mode3())
+                    Self::runtime_all_data_payloads(payloads, telemetry, mode.includes_mode3())
                 } else {
                     payloads
                 };
@@ -104,7 +104,6 @@ impl RefloatPackageState {
     }
 
     fn runtime_all_data_payloads(
-        self,
         payloads: RefloatAllDataPayloads,
         telemetry: &impl MotorTelemetry,
         include_mode3: bool,

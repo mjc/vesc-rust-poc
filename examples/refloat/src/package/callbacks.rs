@@ -72,7 +72,8 @@ impl vescpkg_rs::PackageRuntimeState for RefloatPackageState {
 mod tests {
     use super::handle_refloat_app_data_packet;
     use crate::domain::{
-        REFLOAT_APP_DATA_PACKAGE_ID, RefloatAppDataCommand, RefloatMode, RefloatRunState,
+        REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataMode, RefloatAppDataCommand, RefloatMode,
+        RefloatRunState,
     };
     use crate::package::RefloatPackageState;
     use crate::package::test_support::{
@@ -121,7 +122,7 @@ mod tests {
         let request = [
             REFLOAT_APP_DATA_PACKAGE_ID.get(),
             RefloatAppDataCommand::GetAllData.id(),
-            0,
+            RefloatAllDataMode::base().source_id(),
         ];
         let packet = AppDataPacket::from_bytes(&request);
         assert!(handle_packet(

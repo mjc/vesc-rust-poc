@@ -1,10 +1,10 @@
 use super::RefloatPackageState;
 use crate::domain::{
     FootpadSensorSample, FootpadSensorState, REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataAttitude,
-    RefloatAllDataBasePayload, RefloatAllDataPayloads, RefloatAllDataStatus, RefloatAppDataCommand,
-    RefloatDarkRideState, RefloatMode, RefloatRealtimeBalanceCurrent, RefloatRealtimeBalancePitch,
-    RefloatRealtimeBoosterCurrent, RefloatRealtimeRuntimeSetpoint, RefloatRealtimeRuntimeSetpoints,
-    RefloatRunState, RefloatWheelSlipState,
+    RefloatAllDataBasePayload, RefloatAllDataMode, RefloatAllDataPayloads, RefloatAllDataStatus,
+    RefloatAppDataCommand, RefloatDarkRideState, RefloatMode, RefloatRealtimeBalanceCurrent,
+    RefloatRealtimeBalancePitch, RefloatRealtimeBoosterCurrent, RefloatRealtimeRuntimeSetpoint,
+    RefloatRealtimeRuntimeSetpoints, RefloatRunState, RefloatWheelSlipState,
 };
 use crate::package::test_support::{
     sample_all_data_payloads, sample_all_data_payloads_with_ride_state,
@@ -119,9 +119,14 @@ fn base_all_data_does_not_refresh_distance_or_temperatures() {
     let mut state = RefloatPackageState::new(sample_all_data_payloads());
 
     assert_eq!(
-        handle_all_data_mode(&mut state, app_data, telemetry, 0)
-            .unwrap()
-            .len(),
+        handle_all_data_mode(
+            &mut state,
+            app_data,
+            telemetry,
+            RefloatAllDataMode::base().source_id(),
+        )
+        .unwrap()
+        .len(),
         34
     );
 }
@@ -135,7 +140,13 @@ fn base_battery_voltage_refreshes_from_motor_telemetry() {
     let telemetry = bindings.telemetry();
     let mut state = RefloatPackageState::new(sample_all_data_payloads());
 
-    let packet = handle_all_data_mode(&mut state, app_data, telemetry, 0).unwrap();
+    let packet = handle_all_data_mode(
+        &mut state,
+        app_data,
+        telemetry,
+        RefloatAllDataMode::base().source_id(),
+    )
+    .unwrap();
     assert_eq!(packet.len(), 34);
     assert_eq!(&packet[22..24], &[3, 74]);
 }

@@ -7,7 +7,8 @@ use crate::config::RefloatParkingBrakeMode;
 use crate::domain::{RefloatMotorCommand, RefloatRunState};
 use vescpkg_rs::MotorOutput;
 use vescpkg_rs::prelude::{
-    Current, CurrentOffDelay, MotorCurrent, Rpm, SignedRatio, TimestampTicks, VescSeconds,
+    Current, CurrentOffDelay, MotorCurrent, Rpm, SYSTEM_TICK_RATE_HZ, SignedRatio, TimestampTicks,
+    VescSeconds,
 };
 const CURRENT_OFF_DELAY: CurrentOffDelay = CurrentOffDelay::new(VescSeconds::from_seconds(0.05));
 
@@ -115,7 +116,7 @@ impl RefloatMotorControl {
         if system_time_ticks
             .as_ticks()
             .wrapping_sub(self.brake_timer_ticks.as_ticks())
-            > 10_000
+            > SYSTEM_TICK_RATE_HZ as u32
         {
             // Upstream releases idle motor output by setting 0A once
             // `timer_older(time, brake_timer, 1)` passes at

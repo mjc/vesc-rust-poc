@@ -7,6 +7,10 @@ use std::process::{Command, Stdio};
 fn main() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     let refloat = manifest.join("../../third_party/refloat");
+    assert!(
+        refloat.is_dir(),
+        "missing third_party/refloat; run `git submodule update --init third_party/refloat` from the workspace root"
+    );
     let output =
         Path::new(&std::env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR")).join("vescpkg");
     std::fs::create_dir_all(&output).expect("create Refloat package assets");

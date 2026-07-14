@@ -1,4 +1,5 @@
 use crate::domain::{REFLOAT_APP_DATA_PACKAGE_ID, RefloatAppDataCommand};
+use vescpkg_rs::prelude::SYSTEM_TICK_RATE_HZ;
 
 // Refloat v1.2.1 `cmd_info` writes this version-2 response shape at
 // `third_party/refloat/src/main.c:2070-2139`.
@@ -10,7 +11,7 @@ pub(super) const REFLOAT_REALTIME_DATA_IDS_RESPONSE_LEN: usize = 405;
 const REFLOAT_PACKAGE_NAME: &[u8] = b"Refloat";
 const REFLOAT_VERSION_SUFFIX: &[u8] = b"";
 const REFLOAT_GIT_HASH: u32 = 0x0ef6_e99d;
-const REFLOAT_SYSTEM_TICK_RATE_HZ: u32 = 10_000;
+const REFLOAT_SYSTEM_TICK_RATE_HZ: u32 = SYSTEM_TICK_RATE_HZ as u32;
 
 // Refloat C builds this exact packet in `third_party/refloat/src/main.c:1876-1901`, using the ID
 // order from `third_party/refloat/src/rt_data.h:38-66` and counted-string framing from
@@ -182,7 +183,7 @@ mod tests {
         );
         assert_eq!(
             u32::from_be_bytes([bytes[51], bytes[52], bytes[53], bytes[54]]),
-            10_000
+            REFLOAT_SYSTEM_TICK_RATE_HZ
         );
         assert_eq!(
             u32::from_be_bytes([bytes[55], bytes[56], bytes[57], bytes[58]]),
