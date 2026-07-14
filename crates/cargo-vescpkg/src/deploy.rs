@@ -146,7 +146,8 @@ fn hex_snippet(bytes: &[u8], max_bytes: usize) -> String {
     let mut hex = bytes[..shown]
         .iter()
         .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
+        .collect::<Vec<_>>()
+        .join("");
     if bytes.len() > max_bytes {
         hex.push('…');
     }
