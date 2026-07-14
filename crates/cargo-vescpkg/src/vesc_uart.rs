@@ -5,6 +5,28 @@ const START_16B: u8 = 3;
 const START_24B: u8 = 4;
 const STOP_BYTE: u8 = 3;
 
+const CRC16_TABLE: [u16; 256] = crc16_table();
+
+const fn crc16_table() -> [u16; 256] {
+    let mut table = [0; 256];
+    let mut index = 0;
+    while index < table.len() {
+        let mut crc = (index as u16) << 8;
+        let mut bit = 0;
+        while bit < 8 {
+            crc = if crc & 0x8000 != 0 {
+                (crc << 1) ^ 0x1021
+            } else {
+                crc << 1
+            };
+            bit += 1;
+        }
+        table[index] = crc;
+        index += 1;
+    }
+    table
+}
+
 /// Incremental decoder for VESC UART packet frames.
 #[derive(Debug, Default)]
 pub struct PacketDecoder {
@@ -73,16 +95,8 @@ pub fn encode_packet(payload: &[u8]) -> Vec<u8> {
 
 /// Computes the VESC UART CRC16 checksum for `buf`.
 pub fn crc16(buf: &[u8]) -> u16 {
-    buf.iter().fold(0u16, |mut crc, byte| {
-        crc ^= u16::from(*byte) << 8;
-        for _ in 0..8 {
-            crc = if crc & 0x8000 != 0 {
-                (crc << 1) ^ 0x1021
-            } else {
-                crc << 1
-            };
-        }
-        crc
+    buf.iter().fold(0u16, |crc, byte| {
+        CRC16_TABLE[usize::from((crc >> 8) as u8 ^ *byte)] ^ (crc << 8)
     })
 }
 
