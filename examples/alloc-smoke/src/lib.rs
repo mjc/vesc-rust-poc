@@ -30,7 +30,7 @@ static ALLOCATOR: VescAllocator = VescAllocator;
 #[used]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".program_ptr")]
-static PROG_PTR: u32 = 0;
+static prog_ptr: u32 = 0;
 
 /// Package loader entrypoint that installs the stop hook.
 #[cfg(not(test))]
