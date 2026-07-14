@@ -135,6 +135,10 @@ fn scalar_units_support_same_unit_arithmetic_traits() {
     assert_eq!(current.as_amps(), 3.5);
     assert_eq!((current / 2.0).as_amps(), 1.75);
     assert_eq!((-angle).abs().as_degrees(), 5.0);
+    assert_eq!(
+        Current::from_amps(-0.0).abs().as_amps().to_bits(),
+        0.0_f32.to_bits()
+    );
     assert_eq!(rate.signum(), -1.0);
     assert!(current.is_positive());
     assert!(Current::ZERO.is_zero());

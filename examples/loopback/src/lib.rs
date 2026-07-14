@@ -20,8 +20,7 @@ vescpkg_rs::package_start!(crate::start);
 
 #[cfg(test)]
 pub(crate) fn start(start: &mut vescpkg_rs::PackageStart) -> bool {
-    let _ = start.install_stop_hook();
-    true
+    start.install_stop_hook().is_ok()
 }
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]

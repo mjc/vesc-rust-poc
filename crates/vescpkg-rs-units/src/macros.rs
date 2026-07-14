@@ -22,7 +22,7 @@ macro_rules! scalar_unit {
             /// Return the absolute magnitude in the same unit.
             #[inline(always)]
             pub const fn abs(self) -> Self {
-                if self.0 < 0.0 { Self(-self.0) } else { self }
+                Self(self.0.abs())
             }
 
             /// Return -1.0, 0.0, or 1.0 according to this value's sign.
