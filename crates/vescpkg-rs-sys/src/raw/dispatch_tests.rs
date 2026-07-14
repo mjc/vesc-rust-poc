@@ -244,7 +244,7 @@ extern "C" fn stub_lbm_is_number(value: u32) -> bool {
 extern "C" fn stub_set_app_data_handler(handler: Option<AppDataHandler>) -> bool {
     SET_APP_DATA_HANDLER.inc();
     LAST_HANDLER_INSTALLED.set(handler.is_some());
-    true
+    handler.is_some()
 }
 
 extern "C" fn stub_send_app_data(_data: *mut c_uchar, len: u32) {
@@ -535,7 +535,7 @@ fn app_data_helpers_forward_through_mock_table() {
 
         assert!(vesc_set_app_data_handler(handler));
         assert!(LAST_HANDLER_INSTALLED.get());
-        assert!(vesc_clear_app_data_handler());
+        let _: () = vesc_clear_app_data_handler();
         assert!(!LAST_HANDLER_INSTALLED.get());
 
         let payload = [1_u8, 2, 3];

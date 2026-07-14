@@ -333,13 +333,13 @@ use vescpkg_rs_sys::ExtensionHandler;
 use vescpkg_rs_sys::LbmValue;
 
 /// Install borrowed state for callback-focused host tests.
-pub fn install_state<'a, T: 'static>(
+pub fn install_state<'a, T: Send + 'static>(
     store: &'a crate::PackageStateStore<T>,
     state: &'a mut T,
 ) -> impl Drop + 'a {
-    unsafe { store.install(state) };
-    struct ClearOnDrop<'a, T: 'static>(&'a crate::PackageStateStore<T>);
-    impl<T: 'static> Drop for ClearOnDrop<'_, T> {
+    unsafe { store.install(state) }.unwrap();
+    struct ClearOnDrop<'a, T: Send + 'static>(&'a crate::PackageStateStore<T>);
+    impl<T: Send + 'static> Drop for ClearOnDrop<'_, T> {
         fn drop(&mut self) {
             self.0.clear();
         }
@@ -348,13 +348,13 @@ pub fn install_state<'a, T: 'static>(
 }
 
 /// Build a startup context for a typed loader fixture.
-pub fn package_start(info: &mut crate::LoaderInfo) -> crate::PackageStart {
-    crate::PackageStart::from_raw(info)
+pub fn package_start(info: &mut crate::LoaderInfo) -> crate::PackageStart<'_> {
+    crate::PackageStart::from_info(info)
 }
 
 /// Build a startup context with no loader metadata for rejection-path tests.
-pub fn package_start_without_loader() -> crate::PackageStart {
-    crate::PackageStart::from_raw(core::ptr::null_mut())
+pub fn package_start_without_loader() -> crate::PackageStart<'static> {
+    unsafe { crate::PackageStart::from_raw(core::ptr::null_mut()) }
 }
 
 /// Semantic extension registry for downstream package tests.
@@ -382,7 +382,7 @@ impl TestExtensionRegistry {
     /// Register extension descriptors through the package loader test seam.
     pub fn register(
         &self,
-        start: &mut crate::PackageStart,
+        start: &mut crate::PackageStart<'_>,
         descriptors: impl IntoIterator<Item = crate::ExtensionDescriptor>,
     ) -> Result<(), crate::RegisterError> {
         let lifecycle = PackageLifecycle::new(&self.bindings);

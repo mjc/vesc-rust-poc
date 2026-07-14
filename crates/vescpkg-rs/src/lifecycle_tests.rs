@@ -158,23 +158,33 @@ fn thread_api_clamps_sleep_duration_to_firmware_range() {
 }
 
 struct PairTestThread;
+struct PairTestState(u32);
+static PAIR_TEST_STATE: crate::PackageStateStore<PairTestState> = crate::PackageStateStore::new();
+
+impl crate::PackageRuntimeState for PairTestState {
+    fn runtime_store() -> &'static crate::PackageStateStore<Self> {
+        &PAIR_TEST_STATE
+    }
+
+    fn stop(&mut self) {}
+}
 
 impl crate::FirmwareThread for PairTestThread {
-    type State = u32;
+    type State = PairTestState;
 
-    fn run(_ctx: crate::ThreadContext<'_, Self::State>) {}
+    fn run(_ctx: crate::ThreadContext<Self::State>) {}
 }
 
 #[test]
 fn thread_api_spawns_and_terminates_typed_thread_pair() {
     let bindings = FakeThreadBindings::with_spawn_results([0x10, 0x20]);
     let api = ThreadApi::new(&bindings);
-    let mut state = 42_u32;
+    let mut state = PairTestState(42);
 
-    let pair = unsafe {
-        api.spawn_thread_pair_with_state(
+    let pair = api
+        .spawn_thread_pair(
             crate::ThreadPairSpec::new(
-                crate::ThreadSpec::<u32>::new::<PairTestThread>(
+                crate::ThreadSpec::<PairTestState>::new::<PairTestThread>(
                     crate::ThreadStackSize::from_bytes(256),
                     crate::thread_name!("first"),
                 ),
@@ -184,23 +194,17 @@ fn thread_api_spawns_and_terminates_typed_thread_pair() {
                     crate::thread_name!("second"),
                 ),
             ),
-            &mut state,
+            core::ptr::NonNull::from(&mut state),
         )
-    }
-    .expect("thread pair");
+        .expect("thread pair");
 
-    assert_eq!(
-        pair.first().map(|thread| thread.as_ptr() as usize),
-        Some(0x10)
-    );
-    assert_eq!(
-        pair.second().map(|thread| thread.as_ptr() as usize),
-        Some(0x20)
-    );
+    assert_eq!(pair.first().as_ptr() as usize, 0x10);
+    assert_eq!(pair.second().as_ptr() as usize, 0x20);
     assert_eq!(bindings.spawn_calls.get(), 2);
     assert_eq!(bindings.spawn_stacks.get(), [256, 128]);
     let state_arg = core::ptr::from_mut(&mut state).cast::<core::ffi::c_void>() as usize;
     assert_eq!(bindings.spawn_args.get(), [state_arg, 0]);
+    assert_eq!(state.0, 42);
 
     pair.terminate_reverse(&api);
 
@@ -212,33 +216,27 @@ fn thread_api_spawns_and_terminates_typed_thread_pair() {
 fn thread_api_preserves_first_thread_when_second_spawn_fails() {
     let bindings = FakeThreadBindings::with_spawn_results([0x10, 0]);
     let api = ThreadApi::new(&bindings);
-    let mut state = 42_u32;
+    let mut state = PairTestState(42);
 
-    let pair = unsafe {
-        api.spawn_thread_pair_with_state(
-            crate::ThreadPairSpec::new(
-                crate::ThreadSpec::<u32>::new::<PairTestThread>(
-                    crate::ThreadStackSize::from_bytes(256),
-                    crate::thread_name!("first"),
-                ),
-                crate::ThreadSpec::<()>::from_entry(
-                    stub_thread_entry,
-                    crate::ThreadStackSize::from_bytes(128),
-                    crate::thread_name!("second"),
-                ),
+    let pair = api.spawn_thread_pair(
+        crate::ThreadPairSpec::new(
+            crate::ThreadSpec::<PairTestState>::new::<PairTestThread>(
+                crate::ThreadStackSize::from_bytes(256),
+                crate::thread_name!("first"),
             ),
-            &mut state,
-        )
-    };
-
-    let pair = pair.expect("first thread remains live");
-    assert_eq!(
-        pair.first().map(|thread| thread.as_ptr() as usize),
-        Some(0x10)
+            crate::ThreadSpec::<()>::from_entry(
+                stub_thread_entry,
+                crate::ThreadStackSize::from_bytes(128),
+                crate::thread_name!("second"),
+            ),
+        ),
+        core::ptr::NonNull::from(&mut state),
     );
-    assert_eq!(pair.second(), None);
+
+    assert_eq!(pair, None);
     assert_eq!(bindings.spawn_calls.get(), 2);
-    assert_eq!(bindings.terminate_calls.get(), 0);
+    assert_eq!(bindings.terminate_calls.get(), 1);
+    assert_eq!(bindings.terminated_threads.get()[0], 0x10);
 }
 
 #[rstest]
@@ -431,7 +429,7 @@ fn loopback_lifecycle_install_sets_stop_hook() {
         arg: core::ptr::null_mut(),
         base_addr: 0x2000,
     };
-    let mut start = crate::PackageStart::from_raw(&mut info);
+    let mut start = crate::PackageStart::from_lib_info(&mut info);
 
     unsafe extern "C" fn stop(_arg: *mut core::ffi::c_void) {}
     assert_eq!(
@@ -473,7 +471,7 @@ fn lifecycle_descriptor_installs_the_stop_hook() {
         arg: core::ptr::null_mut(),
         base_addr: 0x2000,
     };
-    let mut start = crate::PackageStart::from_raw(&mut info);
+    let mut start = crate::PackageStart::from_lib_info(&mut info);
 
     assert_eq!(
         LoopbackLifecycle::<FakeAppDataBindings>::install(&mut start, stubs::stop_handler),

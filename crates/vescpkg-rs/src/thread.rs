@@ -9,6 +9,7 @@ use core::marker::PhantomData;
 use core::ptr::NonNull;
 use core::time::Duration;
 
+use crate::PackageRuntimeState;
 use crate::bindings::AppDataBindings;
 #[cfg(not(test))]
 use crate::extension::LispValue;
@@ -257,51 +258,50 @@ impl Default for StatelessThreadContext {
 }
 
 /// Runtime context passed to a typed firmware package thread.
-pub struct ThreadContext<'a, S: 'static> {
-    state: &'a mut S,
+pub struct ThreadContext<S: PackageRuntimeState> {
+    state: NonNull<S>,
     firmware: Firmware,
 }
 
-impl<'a, S: 'static> ThreadContext<'a, S> {
-    /// Build a thread context from explicit state and firmware capabilities.
-    pub fn new(state: &'a mut S, firmware: Firmware) -> Self {
+impl<S: PackageRuntimeState> ThreadContext<S> {
+    fn new(state: NonNull<S>, firmware: Firmware) -> Self {
         Self { state, firmware }
     }
 
     /// Build a thread context backed by the live VESC package ABI.
     #[cfg(not(test))]
-    fn from_entry(state: &'a mut S) -> Self {
+    fn from_entry(state: NonNull<S>) -> Self {
         Self::new(state, Firmware::new())
     }
 
     #[cfg(test)]
-    fn test(state: &'a mut S) -> Self {
+    fn test(state: NonNull<S>) -> Self {
         Self::new(state, Firmware::test())
     }
 
-    /// Return mutable package state.
-    pub fn state(&mut self) -> &mut S {
-        self.state
+    /// Run a closure with exclusive package-state access.
+    #[must_use]
+    pub fn with_state_mut<R>(
+        &self,
+        operation: impl for<'state> FnOnce(&'state mut S) -> R,
+    ) -> Option<R> {
+        S::runtime_store()
+            .with_expected_mut(crate::runtime::ExpectedState::Exact(self.state), operation)
     }
 
     /// Return firmware capabilities for this package thread.
     pub fn firmware(&self) -> &Firmware {
         &self.firmware
     }
-
-    /// Split the context into package state and firmware capabilities.
-    pub fn into_parts(self) -> (&'a mut S, Firmware) {
-        (self.state, self.firmware)
-    }
 }
 
 /// Rust implementation for a firmware package thread.
 pub trait FirmwareThread {
     /// Package state type passed as the thread argument.
-    type State: 'static;
+    type State: PackageRuntimeState;
 
     /// Run the thread body.
-    fn run(ctx: ThreadContext<'_, Self::State>);
+    fn run(ctx: ThreadContext<Self::State>);
 }
 
 /// Rust implementation for a firmware package thread that does not need package state.
@@ -314,10 +314,9 @@ pub trait StatelessFirmwareThread {
 ///
 /// # Safety
 ///
-/// `arg` must be null or point to a valid `T::State` value with exclusive access for the duration
-/// of this call.
+/// `arg` must point to the live package state installed in `T::State::runtime_store()`.
 pub(crate) unsafe extern "C" fn firmware_thread_entry<T: FirmwareThread>(arg: *mut c_void) {
-    let Some(state) = (unsafe { crate::arg_mut::<T::State>(arg) }) else {
+    let Some(state) = NonNull::new(arg.cast::<T::State>()) else {
         return;
     };
     #[cfg(test)]
@@ -342,8 +341,12 @@ pub(crate) unsafe extern "C" fn stateless_firmware_thread_entry<T: StatelessFirm
 }
 
 /// Firmware-owned native package thread handle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ThreadHandle(NonNull<c_void>);
+
+// SAFETY: this is an opaque firmware thread identity. Moving ownership of the
+// handle does not move or access the firmware thread itself.
+unsafe impl Send for ThreadHandle {}
 
 impl ThreadHandle {
     pub(crate) unsafe fn from_firmware(thread: *mut c_void) -> Option<Self> {
@@ -351,7 +354,7 @@ impl ThreadHandle {
     }
 
     /// Return the raw firmware thread handle.
-    pub(crate) const fn as_ptr(self) -> *mut c_void {
+    pub(crate) const fn as_ptr(&self) -> *mut c_void {
         self.0.as_ptr()
     }
 }
@@ -473,10 +476,10 @@ impl<S: 'static> ThreadSpec<S> {
 }
 
 /// Pair of package-owned firmware thread handles.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ThreadPair {
-    first: Option<ThreadHandle>,
-    second: Option<ThreadHandle>,
+    first: ThreadHandle,
+    second: ThreadHandle,
 }
 
 /// Typed firmware thread-pair spawn settings.
@@ -504,63 +507,30 @@ impl<S: 'static> ThreadPairSpec<S> {
 }
 
 impl ThreadPair {
-    /// Return an empty thread-handle set.
-    pub const fn empty() -> Self {
-        Self {
-            first: None,
-            second: None,
-        }
-    }
-
     /// Build a complete thread-handle pair.
     pub const fn new(first: ThreadHandle, second: ThreadHandle) -> Self {
-        Self {
-            first: Some(first),
-            second: Some(second),
-        }
-    }
-
-    const fn with_first(first: ThreadHandle) -> Self {
-        Self {
-            first: Some(first),
-            second: None,
-        }
+        Self { first, second }
     }
 
     /// Return the first thread handle.
-    pub const fn first(self) -> Option<ThreadHandle> {
-        self.first
+    pub const fn first(&self) -> &ThreadHandle {
+        &self.first
     }
 
     /// Return the second thread handle.
-    pub const fn second(self) -> Option<ThreadHandle> {
-        self.second
+    pub const fn second(&self) -> &ThreadHandle {
+        &self.second
     }
 
     /// Request thread termination from second to first.
     pub fn terminate_reverse(self, threads: &impl FirmwareThreads) {
-        if let Some(second) = self.second {
-            threads.request_terminate(second);
-        }
-        if let Some(first) = self.first {
-            threads.request_terminate(first);
-        }
+        threads.request_terminate(self.second);
+        threads.request_terminate(self.first);
     }
 }
 
 /// Typed firmware thread operations available to package code.
 pub trait FirmwareThreads: private::FirmwareThreads {
-    /// Spawn a stateful thread followed by a stateless thread.
-    ///
-    /// # Safety
-    ///
-    /// `state` must remain valid until the first thread exits or is terminated.
-    unsafe fn spawn_thread_pair_with_state<S>(
-        &self,
-        pair: ThreadPairSpec<S>,
-        state: &mut S,
-    ) -> Option<ThreadPair>;
-
     /// Ask a firmware thread to terminate.
     fn request_terminate(&self, thread: ThreadHandle);
 
@@ -572,12 +542,6 @@ pub trait FirmwareThreads: private::FirmwareThreads {
 
     /// Set the current package thread priority when supported by firmware.
     fn set_priority(&self, priority: ThreadPriority) -> Result<(), ThreadError>;
-}
-
-impl Default for ThreadPair {
-    fn default() -> Self {
-        Self::empty()
-    }
 }
 
 /// Binding surface for VESC native package thread functions.
@@ -679,14 +643,6 @@ pub struct ThreadApi<B> {
 impl<B: ThreadBindings> private::FirmwareThreads for ThreadApi<B> {}
 
 impl<B: ThreadBindings> FirmwareThreads for ThreadApi<B> {
-    unsafe fn spawn_thread_pair_with_state<S>(
-        &self,
-        pair: ThreadPairSpec<S>,
-        state: &mut S,
-    ) -> Option<ThreadPair> {
-        unsafe { self.spawn_thread_pair_with_state(pair, state) }
-    }
-
     fn request_terminate(&self, thread: ThreadHandle) {
         self.request_terminate(thread);
     }
@@ -715,18 +671,14 @@ impl<B: ThreadBindings> ThreadApi<B> {
     /// C map: Refloat passes its position-independent thread and string addresses
     /// directly to spawn at third_party/refloat/src/main.c:2438-2444.
     ///
-    /// # Safety
-    ///
-    /// State is passed only to the first firmware thread. It must remain valid
-    /// until that thread exits or is terminated.
     #[allow(clippy::needless_pass_by_value)]
-    pub(crate) unsafe fn spawn_thread_pair_with_state<S>(
+    pub(crate) fn spawn_thread_pair<S>(
         &self,
         pair: ThreadPairSpec<S>,
-        state: &mut S,
+        state: NonNull<S>,
     ) -> Option<ThreadPair> {
         let ThreadPairSpec { first, second } = pair;
-        let arg = core::ptr::from_mut(state).cast::<c_void>();
+        let arg = state.as_ptr().cast::<c_void>();
         let spawn = |entry, stack_size: ThreadStackSize, name: ThreadName, arg| {
             // C map: lispif_spawn consumes the runtime entry, name, and
             // argument addresses unchanged at
@@ -745,7 +697,8 @@ impl<B: ThreadBindings> ThreadApi<B> {
             second.name,
             core::ptr::null_mut(),
         ) else {
-            return Some(ThreadPair::with_first(first_handle));
+            self.request_terminate(first_handle);
+            return None;
         };
 
         Some(ThreadPair::new(first_handle, second_handle))
@@ -929,8 +882,8 @@ pub mod test_support {
 mod tests {
     use super::{
         AppDataApi, FirmwareThread, StatelessFirmwareThread, StatelessThreadContext, ThreadApi,
-        ThreadContext, ThreadHandle, ThreadPairSpec, ThreadSpec, ThreadStackSize,
-        firmware_thread_entry, stateless_firmware_thread_entry,
+        ThreadContext, ThreadPairSpec, ThreadSpec, ThreadStackSize, firmware_thread_entry,
+        stateless_firmware_thread_entry,
     };
     use core::ffi::CStr;
     use core::ffi::c_void;
@@ -952,6 +905,20 @@ mod tests {
     }
 
     #[test]
+    fn app_data_payload_stops_at_the_firmware_packet_limit() {
+        let bindings = crate::test_support::FakeAppDataBindings::new();
+        let app_data = AppDataApi::new(&bindings);
+
+        assert_eq!(app_data.send(&[0; 511]), Ok(()));
+        assert_eq!(
+            app_data.send(&[0; 512]),
+            Err(crate::AppDataSendError::PayloadTooLarge)
+        );
+        assert_eq!(bindings.send_calls.get(), 1);
+        assert_eq!(bindings.last_len.get(), 511);
+    }
+
+    #[test]
     fn semantic_thread_capability_hides_binding_shape() {
         let bindings = FakeThreadBindings::new();
         let threads = ThreadApi::new(&bindings);
@@ -965,17 +932,30 @@ mod tests {
 
     static RUN_CALLS: AtomicUsize = AtomicUsize::new(0);
     static OBSERVED_STATE: AtomicU32 = AtomicU32::new(0);
+    static THREAD_STATE: crate::PackageStateStore<ThreadState> = crate::PackageStateStore::new();
+
+    struct ThreadState(u32);
+
+    impl crate::PackageRuntimeState for ThreadState {
+        fn runtime_store() -> &'static crate::PackageStateStore<Self> {
+            &THREAD_STATE
+        }
+
+        fn stop(&mut self) {}
+    }
 
     struct RecordingThread;
     struct RecordingStatelessThread;
 
     impl FirmwareThread for RecordingThread {
-        type State = u32;
+        type State = ThreadState;
 
-        fn run(mut ctx: ThreadContext<'_, Self::State>) {
+        fn run(ctx: ThreadContext<Self::State>) {
             RUN_CALLS.fetch_add(1, Ordering::SeqCst);
-            *ctx.state() += 1;
-            OBSERVED_STATE.store(*ctx.state(), Ordering::SeqCst);
+            let _ = ctx.with_state_mut(|state| {
+                state.0 += 1;
+                OBSERVED_STATE.store(state.0, Ordering::SeqCst);
+            });
         }
     }
 
@@ -1000,14 +980,16 @@ mod tests {
     fn firmware_thread_entry_passes_typed_state_through_context() {
         RUN_CALLS.store(0, Ordering::SeqCst);
         OBSERVED_STATE.store(0, Ordering::SeqCst);
-        let state = Box::leak(Box::new(41_u32));
+        let state = Box::leak(Box::new(ThreadState(41)));
+        unsafe { THREAD_STATE.install(state) }.unwrap();
 
         unsafe {
             firmware_thread_entry::<RecordingThread>(core::ptr::from_mut(state).cast::<c_void>());
         }
 
         assert_eq!(RUN_CALLS.load(Ordering::SeqCst), 1);
-        assert_eq!(*state, 42);
+        THREAD_STATE.clear();
+        assert_eq!(state.0, 42);
         assert_eq!(OBSERVED_STATE.load(Ordering::SeqCst), 42);
     }
 
@@ -1070,14 +1052,15 @@ mod tests {
         let mut state = 7_u32;
         let state_arg = core::ptr::from_mut(&mut state).cast::<c_void>() as usize;
 
-        let handles = unsafe { threads.spawn_thread_pair_with_state(pair, &mut state) };
+        let handles = threads.spawn_thread_pair(pair, core::ptr::NonNull::from(&mut state));
 
         assert_eq!(
-            handles.map(|pair| (pair.first(), pair.second())),
-            Some((
-                unsafe { ThreadHandle::from_firmware(0x1000 as *mut c_void) },
-                unsafe { ThreadHandle::from_firmware(0x2000 as *mut c_void) },
-            ))
+            handles.as_ref().map(|pair| pair.first().as_ptr()),
+            Some(0x1000 as *mut c_void)
+        );
+        assert_eq!(
+            handles.as_ref().map(|pair| pair.second().as_ptr()),
+            Some(0x2000 as *mut c_void)
         );
         assert_eq!(bindings.spawn_calls.get(), 2);
         assert_eq!(bindings.spawn_entries.get(), entries);
@@ -1094,7 +1077,7 @@ mod tests {
     }
 
     #[test]
-    fn thread_pair_spec_preserves_first_when_second_spawn_fails() {
+    fn thread_pair_spec_terminates_first_when_second_spawn_fails() {
         let bindings = FakeThreadBindings::with_spawn_results([0x1000, 0]);
         let threads = ThreadApi::new(&bindings);
         let pair = ThreadPairSpec::new(
@@ -1111,17 +1094,12 @@ mod tests {
         );
         let mut state = 7_u32;
 
-        let handles = unsafe { threads.spawn_thread_pair_with_state(pair, &mut state) };
+        let handles = threads.spawn_thread_pair(pair, core::ptr::NonNull::from(&mut state));
 
-        assert_eq!(
-            handles.map(|pair| (pair.first(), pair.second())),
-            Some((
-                unsafe { ThreadHandle::from_firmware(0x1000 as *mut c_void) },
-                None,
-            ))
-        );
+        assert_eq!(handles, None);
         assert_eq!(bindings.spawn_calls.get(), 2);
-        assert_eq!(bindings.terminate_calls.get(), 0);
+        assert_eq!(bindings.terminate_calls.get(), 1);
+        assert_eq!(bindings.terminated_threads.get()[0], 0x1000);
     }
 
     #[test]

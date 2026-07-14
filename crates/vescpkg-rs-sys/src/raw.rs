@@ -745,8 +745,8 @@ unsafe fn vesc_set_app_data_handler_slot(handler: Option<AppDataHandler>) -> boo
 ///
 /// Must only be called when the firmware `VESC_IF` table is valid, same as
 /// [`vesc_set_app_data_handler`].
-pub unsafe fn vesc_clear_app_data_handler() -> bool {
-    unsafe { vesc_set_app_data_handler_slot(None) }
+pub unsafe fn vesc_clear_app_data_handler() {
+    let _ = unsafe { vesc_set_app_data_handler_slot(None) };
 }
 
 /// Register the firmware IMU read callback.

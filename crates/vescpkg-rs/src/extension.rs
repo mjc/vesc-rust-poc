@@ -248,7 +248,7 @@ pub trait LbmExtension {
 /// State-backed LispBM extension behavior for package authors.
 pub trait StatefulLbmExtension {
     /// Package state installed by startup.
-    type State: 'static;
+    type State: Send + 'static;
 
     /// Runtime state shared with package callbacks.
     fn runtime_state() -> &'static crate::PackageStateStore<Self::State>;
@@ -346,7 +346,7 @@ mod tests {
         );
 
         let state = Box::leak(Box::new(State { calls: 0 }));
-        unsafe { SLOT.install(state) };
+        unsafe { SLOT.install(state) }.unwrap();
 
         assert_eq!(
             unsafe { stateful_lbm_extension_handler::<TestExtension>(core::ptr::null_mut(), 0) },

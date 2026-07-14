@@ -1,6 +1,8 @@
 //! Safe adapters for firmware callback pointers.
 
-use core::ffi::{c_int, c_void};
+use core::ffi::c_int;
+#[cfg(test)]
+use core::ffi::c_void;
 #[cfg(test)]
 use core::ptr;
 use core::ptr::NonNull;
@@ -62,16 +64,6 @@ pub(crate) fn stop_handler_for_loader(info: &LibInfo, stop_handler: StopHandler)
     }
 }
 
-/// Recover typed package state from a firmware ARG pointer.
-///
-/// # Safety
-///
-/// `arg` must be null or point to a live `T` that is exclusively borrowed for
-/// the returned lifetime.
-pub unsafe fn arg_mut<'a, T: 'static>(arg: *mut c_void) -> Option<&'a mut T> {
-    NonNull::new(arg.cast::<T>()).map(|mut arg| unsafe { arg.as_mut() })
-}
-
 /// Convert firmware app-data callback arguments into a packet view.
 #[cfg(any(test, not(feature = "test-support")))]
 pub(crate) unsafe fn app_data_packet<'a>(data: *mut u8, len: u32) -> Option<AppDataPacket<'a>> {
@@ -88,7 +80,7 @@ pub trait AppDataCallback {
 /// App-data behavior backed by package state recovered from firmware.
 pub trait StatefulAppDataCallback {
     /// Package state installed by startup.
-    type State: 'static;
+    type State: Send + 'static;
 
     /// Runtime state shared with package callbacks.
     fn runtime_state() -> &'static crate::PackageStateStore<Self::State>;
@@ -275,7 +267,7 @@ unsafe fn custom_config_payload<'a>(buffer: *mut u8, len: usize) -> Option<Confi
 /// Custom-config behavior backed by a reusable package state source.
 pub trait SourceCustomConfigCallback<const LEN: usize> {
     /// Package state installed by startup.
-    type State: 'static;
+    type State: Send + 'static;
 
     /// Return the state source used by this callback family.
     fn state_source() -> crate::PackageStateAccess<'static, Self::State>;
@@ -540,41 +532,6 @@ macro_rules! firmware_package_program_address {
 #[macro_export]
 macro_rules! firmware_package_program {
     ($symbol:path) => {{ $crate::PackageProgram::new($crate::firmware_package_program_address!($symbol)) }};
-}
-
-/// Borrow typed package state for the package image that owns a callback symbol.
-///
-/// This is the Rust package-author API for VESC's `ARG(PROG_ADDR)` state lookup:
-/// the caller names a package-local symbol and receives typed package state.
-///
-/// C map: VESC package callbacks commonly recover state through `ARG`, defined
-/// as `*VESC_IF->get_arg(PROG_ADDR)` in
-/// `third_party/vesc_pkg_lib/vesc_c_if.h:697-700`. Firmware stores the same
-/// `PROG_ADDR` before calling native init at
-/// `third_party/vesc/lispBM/lispif_c_lib.c:1087-1100`, then matches it in
-/// `lib_get_arg` at `third_party/vesc/lispBM/lispif_c_lib.c:151-156`.
-#[macro_export]
-macro_rules! firmware_package_state_mut {
-    ($state:ty, $symbol:path) => {{
-        $crate::__macro_support::__firmware_package_state_mut::<$state>(
-            $crate::firmware_package_program_address!($symbol),
-        )
-    }};
-}
-
-/// Macro implementation hook for the firmware ARG-backed package state path.
-///
-/// # Safety
-///
-/// The package argument must point to a live `$state`, and the caller must
-/// guarantee exclusive access for the returned borrow.
-#[doc(hidden)]
-#[cfg(not(test))]
-pub unsafe fn __firmware_package_state_mut<'a, T: 'static>(
-    program: crate::PackageProgramAddress,
-) -> Option<&'a mut T> {
-    let mut state = unsafe { __firmware_package_state_ptr(program) }?;
-    Some(unsafe { state.as_mut() })
 }
 
 /// Macro implementation hook for scoped firmware callback state access.
@@ -948,15 +905,11 @@ mod tests {
 
         static SLOT: PackageStateStore<State> = PackageStateStore::new();
 
-        unsafe fn no_state() -> Option<NonNull<State>> {
-            None
-        }
-
         impl SourceCustomConfigCallback<5> for TestCustomConfig {
             type State = State;
 
             fn state_source() -> PackageStateAccess<'static, Self::State> {
-                unsafe { PackageStateAccess::with_firmware_fallback(&SLOT, no_state) }
+                PackageStateAccess::runtime(&SLOT)
             }
 
             fn default_config() -> ConfigBytes<'static> {
@@ -985,7 +938,7 @@ mod tests {
         let state = Box::leak(Box::new(State {
             config: CustomConfigImage::new([1, 2, 3, 4, 9]),
         }));
-        unsafe { SLOT.install(state) };
+        unsafe { SLOT.install(state) }.unwrap();
 
         let mut out = [0_u8; 5];
         assert_eq!(
@@ -1022,7 +975,7 @@ mod tests {
     }
 
     #[test]
-    fn source_custom_config_callback_prefers_runtime_and_falls_back_to_loader_state() {
+    fn source_custom_config_callback_validates_loader_state_identity() {
         use crate::types::CustomConfigImage;
         use crate::{PackageStateAccess, PackageStateStore};
         use core::ptr::NonNull;
@@ -1076,16 +1029,12 @@ mod tests {
         // `ARG(PROG_ADDR)` at `third_party/vesc_pkg_lib/vesc_c_if.h:697-700`;
         // VESC resolves that package argument at
         // `third_party/vesc/lispBM/lispif_c_lib.c:151-158`. The Rust runtime
-        // slot is preferred while installed, then the callback falls back to
-        // that firmware-owned state.
+        // slot and loader ARG must identify the same firmware-owned state.
         let runtime_state = Box::leak(Box::new(State {
             config: CustomConfigImage::new([1, 2, 3, 4, 9]),
         }));
-        let fallback_state_value = Box::leak(Box::new(State {
-            config: CustomConfigImage::new([1, 2, 3, 4, 8]),
-        }));
-        unsafe { RUNTIME.install(runtime_state) };
-        FALLBACK.store(core::ptr::from_mut(fallback_state_value), Ordering::Release);
+        unsafe { RUNTIME.install(runtime_state) }.unwrap();
+        FALLBACK.store(core::ptr::from_mut(runtime_state), Ordering::Release);
 
         let mut out = [0_u8; 5];
         assert_eq!(
@@ -1099,14 +1048,12 @@ mod tests {
             stateful_custom_config_set::<TestCustomConfig, 5>(incoming.as_mut_ptr())
         });
         assert_eq!(runtime_state.config.as_bytes(), &[1, 2, 3, 4, 7]);
-        assert_eq!(fallback_state_value.config.as_bytes(), &[1, 2, 3, 4, 8]);
 
         RUNTIME.clear();
         assert_eq!(
             unsafe { stateful_custom_config_get::<TestCustomConfig, 5>(out.as_mut_ptr(), false) },
-            5
+            0
         );
-        assert_eq!(out, [1, 2, 3, 4, 8]);
         assert!(!unsafe { stateful_custom_config_set::<TestCustomConfig, 5>(ptr::null_mut()) });
 
         FALLBACK.store(ptr::null_mut(), Ordering::Release);

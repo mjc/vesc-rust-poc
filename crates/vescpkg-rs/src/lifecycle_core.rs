@@ -150,7 +150,7 @@ pub enum AppDataHandlerRegistrationError {
 /// Failure returned when an app-data payload cannot cross the firmware ABI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppDataSendError {
-    /// The payload is larger than the firmware length field can represent.
+    /// The payload does not fit the firmware's 512-byte command buffer.
     PayloadTooLarge,
 }
 
@@ -171,7 +171,7 @@ impl<B: AppDataBindings> LoopbackLifecycle<B> {
 
     /// Install the package stop hook into loader metadata.
     pub fn install(
-        start: &mut crate::PackageStart,
+        start: &mut crate::PackageStart<'_>,
         stop_handler: StopHandler,
     ) -> Result<(), AppDataHandlerRegistrationError> {
         let Some(info) = start.loader_info_mut() else {

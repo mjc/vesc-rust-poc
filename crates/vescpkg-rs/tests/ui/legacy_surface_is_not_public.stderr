@@ -78,6 +78,14 @@ error[E0624]: associated function `from_raw` is private
 13 |     let _ = PackageStart::from_raw::<&mut vescpkg_rs::LoaderInfo>;
    |                           ^^^^^^^^ private associated function
    |
-  --> <BASE_DIR>/crates/vescpkg-rs/src/init.rs:127:4
+  --> <BASE_DIR>/crates/vescpkg-rs/src/init.rs:136:4
    |
    = note: private associated function defined here
+
+error[E0107]: associated function takes 0 generic arguments but 1 generic argument was supplied
+  --> tests/ui/legacy_surface_is_not_public.rs:13:27
+   |
+13 |     let _ = PackageStart::from_raw::<&mut vescpkg_rs::LoaderInfo>;
+   |                           ^^^^^^^^------------------------------- help: remove the unnecessary generics
+   |                           |
+   |                           expected 0 generic arguments

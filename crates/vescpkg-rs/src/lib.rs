@@ -48,8 +48,9 @@ pub(crate) mod ffi {
         conf_custom_add_config, conf_custom_clear_configs, io_read, io_read_analog_pair,
         io_set_mode, io_write, lbm_add_extension, lbm_dec_as_i32, lbm_enc_i, lbm_enc_sym_eerror,
         lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number, vesc_clear_app_data_handler,
-        vesc_clear_imu_read_callback, vesc_free, vesc_get_arg, vesc_malloc, vesc_send_app_data,
-        vesc_set_app_data_handler, vesc_set_imu_read_callback, vesc_system_time_ticks,
+        vesc_clear_imu_read_callback, vesc_free, vesc_get_arg, vesc_malloc, vesc_mutex_create,
+        vesc_mutex_lock, vesc_mutex_unlock, vesc_send_app_data, vesc_set_app_data_handler,
+        vesc_set_imu_read_callback, vesc_system_time_ticks,
     };
     pub use vescpkg_rs_sys::{AppDataHandler, LibInfo, NativeImage};
 
@@ -97,7 +98,7 @@ pub use firmware::{
     StatefulAppDataCallback,
 };
 pub(crate) use firmware::{
-    arg_mut, firmware_array, loader_info_mut, register_custom_config_callbacks_from_image,
+    firmware_array, loader_info_mut, register_custom_config_callbacks_from_image,
 };
 pub use imu::{Imu, ImuReadHandler};
 pub use init::{PackageStart, PackageStartError};

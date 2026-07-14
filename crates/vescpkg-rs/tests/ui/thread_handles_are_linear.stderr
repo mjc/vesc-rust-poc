@@ -1,0 +1,19 @@
+error[E0382]: use of moved value: `handle`
+ --> tests/ui/thread_handles_are_linear.rs:3:19
+  |
+1 | fn duplicate_handle(handle: vescpkg_rs::ThreadHandle) {
+  |                     ------ move occurs because `handle` has type `ThreadHandle`, which does not implement the `Copy` trait
+2 |     let _first = handle;
+  |                  ------ value moved here
+3 |     let _second = handle;
+  |                   ^^^^^^ value used here after move
+
+error[E0382]: use of moved value: `pair`
+ --> tests/ui/thread_handles_are_linear.rs:8:19
+  |
+6 | fn duplicate_pair(pair: vescpkg_rs::ThreadPair) {
+  |                   ---- move occurs because `pair` has type `ThreadPair`, which does not implement the `Copy` trait
+7 |     let _first = pair;
+  |                  ---- value moved here
+8 |     let _second = pair;
+  |                   ^^^^ value used here after move

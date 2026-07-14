@@ -98,7 +98,7 @@ pub trait ImuReadCallback {
 /// the typed state source and handles typed samples.
 pub trait ImuReadHandler {
     /// Package state installed during startup.
-    type State: 'static;
+    type State: Send + 'static;
 
     /// Package state access shared with the package's other firmware callbacks.
     fn state_source() -> crate::PackageStateAccess<'static, Self::State>;
@@ -489,7 +489,7 @@ mod tests {
         // `third_party/vesc/lispBM/lispif_c_lib.c:151-158`; the IMU adapter
         // dispatches the package state source like Refloat's callback at
         // `third_party/refloat/src/main.c:759-764`.
-        unsafe { RUNTIME_STATE.install(&mut state) };
+        unsafe { RUNTIME_STATE.install(&mut state) }.unwrap();
         <RuntimeImuRead as ImuReadCallback>::read(typed_sample());
         RUNTIME_STATE.clear();
         assert_eq!(state.samples, 1);
@@ -500,13 +500,15 @@ mod tests {
     }
 
     #[test]
-    fn imu_read_handler_falls_back_to_loader_package_state() {
+    fn imu_read_handler_validates_loader_package_state_identity() {
         let mut state = State { samples: 0 };
+        unsafe { LOADER_RUNTIME_STATE.install(&mut state) }.unwrap();
         LOADER_STATE.store(&mut state, Ordering::Release);
 
         <LoaderImuRead as ImuReadCallback>::read(typed_sample());
 
         LOADER_STATE.store(core::ptr::null_mut(), Ordering::Release);
+        LOADER_RUNTIME_STATE.clear();
         assert_eq!(state.samples, 1);
     }
 

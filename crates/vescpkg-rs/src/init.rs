@@ -2,23 +2,57 @@
 
 use crate::ffi;
 
+const MAX_CUSTOM_CONFIG_LEN: usize = 510;
+
+#[cfg(any(test, target_arch = "arm"))]
+fn state_allocation_size<T>() -> Option<usize> {
+    core::mem::size_of::<T>()
+        .max(1)
+        .checked_add(core::mem::align_of::<T>() - 1)
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+fn align_state_pointer<T>(
+    allocation: core::ptr::NonNull<core::ffi::c_void>,
+) -> core::ptr::NonNull<T> {
+    let align = core::mem::align_of::<T>();
+    let address = allocation.as_ptr() as usize;
+    let aligned = (address + align - 1) & !(align - 1);
+    unsafe { core::ptr::NonNull::new_unchecked(aligned as *mut T) }
+}
+
 #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
     arg: *mut core::ffi::c_void,
 ) {
-    let Some(state) = core::ptr::NonNull::new(arg.cast::<T>()) else {
+    let Some(mut state) = core::ptr::NonNull::new(arg.cast::<T>()) else {
         return;
     };
-    unsafe { state.as_ref() }.stop();
-    T::runtime_store().clear();
+    let runtime = T::runtime_store();
+    runtime.begin_stop();
     #[cfg(all(not(test), target_arch = "arm"))]
     {
-        let _ = crate::Firmware::new().clear_package_callbacks();
+        let firmware = crate::Firmware::new();
+        let _ = firmware.clear_package_callbacks();
+        if let Some(threads) = runtime.take_threads() {
+            threads.terminate_reverse(firmware.threads());
+        }
+    }
+    let resources = runtime.finish_stop();
+    unsafe { state.as_mut() }.stop();
+    #[cfg(all(not(test), target_arch = "arm"))]
+    {
         unsafe { state.as_ptr().drop_in_place() };
-        unsafe { ffi::vesc_free(state.as_ptr().cast()) };
+        if let Some(allocation) = resources.allocation {
+            unsafe { ffi::vesc_free(allocation.as_ptr()) };
+        }
+        if let Some(mutex) = resources.mutex {
+            unsafe { ffi::vesc_free(mutex.as_ptr()) };
+        }
     }
     #[cfg(not(target_arch = "arm"))]
     {
+        let _ = resources;
         drop(unsafe { crate::rust_alloc::boxed::Box::from_raw(state.as_ptr()) });
     }
 }
@@ -51,35 +85,18 @@ pub enum PackageStartError {
     LoaderUnavailable,
     /// Firmware could not allocate the requested package state.
     AllocationFailed,
-}
-
-#[doc(hidden)]
-pub trait LoaderInfoPointer {
-    fn into_loader_info(self) -> *mut crate::LoaderInfo;
-}
-
-impl LoaderInfoPointer for *mut crate::LoaderInfo {
-    fn into_loader_info(self) -> *mut crate::LoaderInfo {
-        self
-    }
-}
-
-impl LoaderInfoPointer for &mut crate::LoaderInfo {
-    fn into_loader_info(self) -> *mut crate::LoaderInfo {
-        self
-    }
-}
-
-#[cfg(any(test, feature = "test-support"))]
-impl LoaderInfoPointer for &mut vescpkg_rs_sys::LibInfo {
-    fn into_loader_info(self) -> *mut crate::LoaderInfo {
-        (self as *mut vescpkg_rs_sys::LibInfo).cast()
-    }
+    /// Package startup already installed runtime state.
+    StateAlreadyInstalled,
+    /// Firmware could not start the complete package thread pair.
+    ThreadSpawnFailed,
+    /// Package startup already installed its firmware thread pair.
+    ThreadsAlreadyInstalled,
 }
 
 /// Safe startup context for package authors.
-pub struct PackageStart {
+pub struct PackageStart<'info> {
     info: *mut crate::LoaderInfo,
+    _info: core::marker::PhantomData<&'info mut crate::LoaderInfo>,
 }
 
 /// Package-local app-data callback rebased into its loaded firmware image.
@@ -122,11 +139,29 @@ impl LoadedAppDataCallback {
     }
 }
 
-impl PackageStart {
-    /// Build a startup context from the firmware ABI pointer.
-    pub(crate) fn from_raw<I: LoaderInfoPointer>(info: I) -> Self {
+impl<'info> PackageStart<'info> {
+    /// Build a startup context tied to borrowed loader metadata.
+    #[doc(hidden)]
+    pub fn from_info(info: &'info mut crate::LoaderInfo) -> Self {
         Self {
-            info: info.into_loader_info(),
+            info,
+            _info: core::marker::PhantomData,
+        }
+    }
+
+    /// Build a startup context from the firmware ABI pointer.
+    pub(crate) unsafe fn from_raw(info: *mut crate::LoaderInfo) -> Self {
+        Self {
+            info,
+            _info: core::marker::PhantomData,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_lib_info(info: &'info mut ffi::LibInfo) -> Self {
+        Self {
+            info: core::ptr::from_mut(info).cast(),
+            _info: core::marker::PhantomData,
         }
     }
 
@@ -154,12 +189,13 @@ impl PackageStart {
             .ok_or(PackageStartError::LoaderUnavailable)?;
 
         #[cfg(target_arch = "arm")]
-        let mut state_ptr = {
-            let state = unsafe { ffi::vesc_malloc(core::mem::size_of::<T>()) }.cast::<T>();
-            let state =
-                core::ptr::NonNull::new(state).ok_or(PackageStartError::AllocationFailed)?;
+        let (mut state_ptr, allocation) = {
+            let bytes = state_allocation_size::<T>().ok_or(PackageStartError::AllocationFailed)?;
+            let allocation = core::ptr::NonNull::new(unsafe { ffi::vesc_malloc(bytes) })
+                .ok_or(PackageStartError::AllocationFailed)?;
+            let state = align_state_pointer::<T>(allocation);
             unsafe { state.as_ptr().write(state_value) };
-            state
+            (state, allocation)
         };
         #[cfg(target_arch = "arm")]
         let state = unsafe { state_ptr.as_mut() };
@@ -168,9 +204,26 @@ impl PackageStart {
         let mut owned_state = crate::rust_alloc::boxed::Box::new(state_value);
         #[cfg(not(target_arch = "arm"))]
         let state = owned_state.as_mut();
+        #[cfg(not(target_arch = "arm"))]
+        let allocation = core::ptr::NonNull::from(&mut *state).cast();
 
         let state_ptr = core::ptr::from_mut(state);
-        unsafe { T::runtime_store().install(state) };
+        if let Err(error) = unsafe { T::runtime_store().install_owned(state, allocation) } {
+            #[cfg(target_arch = "arm")]
+            {
+                unsafe { state_ptr.drop_in_place() };
+                unsafe { ffi::vesc_free(allocation.as_ptr()) };
+            }
+            return Err(match error {
+                crate::runtime::PackageStateInstallError::AlreadyInstalled => {
+                    PackageStartError::StateAlreadyInstalled
+                }
+                #[cfg(target_arch = "arm")]
+                crate::runtime::PackageStateInstallError::MutexUnavailable => {
+                    PackageStartError::AllocationFailed
+                }
+            });
+        }
         info.arg = state_ptr.cast();
         info.stop_fun = Some(crate::firmware::stop_handler_for_loader(
             info,
@@ -182,16 +235,50 @@ impl PackageStart {
     }
 
     /// Run startup work with loader-owned package state.
-    ///
-    /// # Safety
-    ///
-    /// Loader metadata must contain a live `T` exclusively owned by this package.
-    pub unsafe fn with_runtime_state<T: 'static, R>(
+    pub fn with_runtime_state<T: crate::PackageRuntimeState, R>(
         &mut self,
         operation: impl FnOnce(&mut T) -> R,
     ) -> Option<R> {
-        let info = self.raw_info_mut()?;
-        unsafe { crate::arg_mut::<T>(info.arg) }.map(operation)
+        let state = self
+            .raw_info_mut()
+            .and_then(|info| core::ptr::NonNull::new(info.arg.cast::<T>()))?;
+        T::runtime_store().with_expected_mut(crate::runtime::ExpectedState::Exact(state), operation)
+    }
+
+    /// Start and retain a complete package-owned firmware thread pair.
+    #[cfg(not(test))]
+    pub fn spawn_thread_pair<T: crate::PackageRuntimeState>(
+        &mut self,
+        pair: crate::ThreadPairSpec<T>,
+    ) -> Result<(), PackageStartError> {
+        self.spawn_thread_pair_with_bindings(pair, crate::thread::RealThreadBindings)
+    }
+
+    pub(crate) fn spawn_thread_pair_with_bindings<T, B>(
+        &mut self,
+        pair: crate::ThreadPairSpec<T>,
+        bindings: B,
+    ) -> Result<(), PackageStartError>
+    where
+        T: crate::PackageRuntimeState,
+        B: crate::thread::ThreadBindings,
+    {
+        let state = self
+            .raw_info_mut()
+            .and_then(|info| core::ptr::NonNull::new(info.arg.cast::<T>()))
+            .ok_or(PackageStartError::LoaderUnavailable)?;
+        T::runtime_store()
+            .with_expected(crate::runtime::ExpectedState::Exact(state), |_| ())
+            .ok_or(PackageStartError::LoaderUnavailable)?;
+        let threads = crate::thread::ThreadApi::new(&bindings)
+            .spawn_thread_pair(pair, state)
+            .ok_or(PackageStartError::ThreadSpawnFailed)?;
+        T::runtime_store()
+            .install_threads(threads)
+            .map_err(|threads| {
+                threads.terminate_reverse(&crate::thread::ThreadApi::new(bindings));
+                PackageStartError::ThreadsAlreadyInstalled
+            })
     }
 
     /// Borrow typed loader metadata.
@@ -217,7 +304,7 @@ impl PackageStart {
         B: crate::bindings::CustomConfigBindings,
         T: crate::__macro_support::PackageCustomConfigCallback<LEN>,
     {
-        let Some(image) = self.native_image() else {
+        let Some(image) = self.native_image().filter(|_| LEN <= MAX_CUSTOM_CONFIG_LEN) else {
             return false;
         };
         let (get, set, xml) = T::image_addresses();
@@ -375,8 +462,8 @@ impl PackageStart {
 /// # Safety
 ///
 /// `info` must be null or point to loader metadata that remains valid for package startup.
-pub unsafe fn __package_start_from_raw(info: *mut crate::LoaderInfo) -> PackageStart {
-    PackageStart::from_raw(info)
+pub unsafe fn __package_start_from_raw<'info>(info: *mut crate::LoaderInfo) -> PackageStart<'info> {
+    unsafe { PackageStart::from_raw(info) }
 }
 
 /// Define the VESC firmware entrypoints for a package start function.
@@ -483,7 +570,8 @@ pub fn stop_call_count_for_tests() -> usize {
 #[cfg(test)]
 mod tests {
     use super::{
-        PackageStartError, init_for_tests, install_stop_hook, reset_init_call_count_for_tests,
+        PackageStartError, align_state_pointer, init_for_tests, install_stop_hook,
+        reset_init_call_count_for_tests, state_allocation_size,
     };
     use crate::ffi;
     use crate::test_support::FakeAppDataBindings;
@@ -495,15 +583,41 @@ mod tests {
     static OWNED_STATE: crate::PackageStateStore<OwnedState> = crate::PackageStateStore::new();
     static OWNED_STATE_STOPS: AtomicUsize = AtomicUsize::new(0);
     static OWNED_STATE_DROPS: AtomicUsize = AtomicUsize::new(0);
+    static SPAWN_STATE: crate::PackageStateStore<SpawnState> = crate::PackageStateStore::new();
 
     struct OwnedState(u32);
+    struct SpawnState;
+
+    impl crate::PackageRuntimeState for SpawnState {
+        fn runtime_store() -> &'static crate::PackageStateStore<Self> {
+            &SPAWN_STATE
+        }
+
+        fn stop(&mut self) {}
+    }
+
+    #[repr(align(64))]
+    struct AlignedState([u8; 64]);
+
+    #[test]
+    fn state_allocation_preserves_alignment_and_supports_zero_sized_state() {
+        assert_eq!(AlignedState([0; 64]).0.len(), 64);
+        assert_eq!(state_allocation_size::<AlignedState>(), Some(127));
+        assert_eq!(state_allocation_size::<()>(), Some(1));
+
+        let allocation = core::ptr::NonNull::new(65_usize as *mut core::ffi::c_void).unwrap();
+        assert_eq!(
+            align_state_pointer::<AlignedState>(allocation).as_ptr() as usize,
+            128
+        );
+    }
 
     impl crate::PackageRuntimeState for OwnedState {
         fn runtime_store() -> &'static crate::PackageStateStore<Self> {
             &OWNED_STATE
         }
 
-        fn stop(&self) {
+        fn stop(&mut self) {
             OWNED_STATE_STOPS.fetch_add(1, Ordering::Relaxed);
         }
     }
@@ -576,11 +690,11 @@ mod tests {
             arg: core::ptr::null_mut(),
             base_addr: 0,
         };
-        let mut start = super::PackageStart::from_raw(&mut info);
+        let mut start = super::PackageStart::from_lib_info(&mut info);
 
         assert_eq!(start.install_runtime_state(OwnedState(37)), Ok(()));
         assert_eq!(
-            unsafe { start.with_runtime_state::<OwnedState, _>(|state| state.0) },
+            start.with_runtime_state::<OwnedState, _>(|state| state.0),
             Some(37)
         );
         assert_eq!(OWNED_STATE.with(|state| state.0), Some(37));
@@ -593,13 +707,53 @@ mod tests {
     }
 
     #[test]
+    fn package_start_spawns_threads_with_the_loader_state_identity() {
+        unsafe extern "C" fn thread_entry(_arg: *mut core::ffi::c_void) {}
+
+        let bindings = crate::thread::test_support::FakeThreadBindings::new();
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0,
+        };
+        let (stop, arg) = {
+            let mut start = super::PackageStart::from_lib_info(&mut info);
+            start.install_runtime_state(SpawnState).unwrap();
+            let state_arg = start.raw_info_mut().unwrap().arg as usize;
+            let pair = crate::ThreadPairSpec::new(
+                crate::ThreadSpec::<SpawnState>::from_entry(
+                    thread_entry,
+                    crate::ThreadStackSize::from_bytes(256),
+                    crate::thread_name!("main"),
+                ),
+                crate::ThreadSpec::<()>::from_entry(
+                    thread_entry,
+                    crate::ThreadStackSize::from_bytes(128),
+                    crate::thread_name!("aux"),
+                ),
+            );
+
+            assert_eq!(
+                start.spawn_thread_pair_with_bindings(pair, &bindings),
+                Ok(())
+            );
+            assert_eq!(bindings.spawn_args.get(), [state_arg, 0]);
+            (
+                start.raw_info_mut().unwrap().stop_fun.unwrap(),
+                start.raw_info_mut().unwrap().arg,
+            )
+        };
+        unsafe { stop(arg) };
+    }
+
+    #[test]
     fn package_start_exposes_loader_native_image_identity() {
         let mut info = ffi::LibInfo {
             stop_fun: None,
             arg: core::ptr::null_mut(),
             base_addr: 0x2000,
         };
-        let mut start = super::PackageStart::from_raw(&mut info);
+        let mut start = super::PackageStart::from_lib_info(&mut info);
 
         let image = start.native_image().expect("native image");
         assert_eq!(image.rebase_addr(0x31), 0x2031);
@@ -630,7 +784,7 @@ mod tests {
             arg: core::ptr::null_mut(),
             base_addr: 0x3000,
         };
-        let mut start = super::PackageStart::from_raw(&mut info);
+        let mut start = super::PackageStart::from_lib_info(&mut info);
 
         let callback = start
             .app_data_callback::<Callback>()
@@ -698,7 +852,7 @@ mod tests {
             arg: core::ptr::null_mut(),
             base_addr: 0x3000,
         };
-        let mut start = super::PackageStart::from_raw(&mut info);
+        let mut start = super::PackageStart::from_lib_info(&mut info);
 
         assert_eq!(
             start.register_callbacks_with_bindings::<Config, Callback, 1, _>(&bindings),
@@ -713,7 +867,7 @@ mod tests {
             arg: core::ptr::null_mut(),
             base_addr: 0x3000,
         };
-        let mut start = super::PackageStart::from_raw(&mut info);
+        let mut start = super::PackageStart::from_lib_info(&mut info);
 
         assert_eq!(
             start.register_callbacks_with_bindings::<Config, Callback, 1, _>(&bindings),
@@ -725,6 +879,56 @@ mod tests {
     }
 
     #[test]
+    fn package_start_rejects_custom_config_larger_than_the_firmware_buffer() {
+        struct Config;
+
+        static CONFIG_STATE: crate::PackageStateStore<()> = crate::PackageStateStore::new();
+        static CONFIG: [u8; 511] = [0; 511];
+
+        impl crate::SourceCustomConfigCallback<511> for Config {
+            type State = ();
+
+            fn state_source() -> crate::PackageStateAccess<'static, Self::State> {
+                crate::PackageStateAccess::runtime(&CONFIG_STATE)
+            }
+
+            fn default_config() -> crate::ConfigBytes<'static> {
+                crate::ConfigBytes::new(&CONFIG)
+            }
+
+            fn current_config(_state: &Self::State) -> Option<crate::ConfigBytes<'_>> {
+                Some(crate::ConfigBytes::new(&CONFIG))
+            }
+
+            fn set_config(_state: &mut Self::State, _config: crate::ConfigBytes<'_>) -> bool {
+                true
+            }
+
+            fn config_xml() -> crate::ConfigXml<'static> {
+                crate::ConfigXml::new(b"<Config/>")
+            }
+        }
+        crate::firmware_stateful_custom_config_callbacks!(
+            oversized_config_get,
+            oversized_config_set,
+            oversized_config_xml,
+            Config,
+            511
+        );
+
+        let bindings = FakeAppDataBindings::new();
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0x3000,
+        };
+        let mut start = super::PackageStart::from_lib_info(&mut info);
+
+        assert!(!start.register_stateful_custom_config_with_bindings::<_, Config, 511>(&bindings));
+        assert_eq!(bindings.custom_config_register_calls.get(), 0);
+    }
+
+    #[test]
     fn package_start_registers_typed_imu_callback_from_loader_image() {
         let bindings = FakeAppDataBindings::new();
         let mut info = ffi::LibInfo {
@@ -733,7 +937,7 @@ mod tests {
             base_addr: 0x3000,
         };
         let image = ffi::NativeImage::from_info(&info);
-        let mut start = super::PackageStart::from_raw(&mut info);
+        let mut start = super::PackageStart::from_lib_info(&mut info);
 
         assert_eq!(
             start.register_imu_read_callback_with_bindings::<TestPackageImuRead, _>(&bindings),
@@ -754,7 +958,7 @@ mod tests {
     #[test]
     fn package_start_rejects_imu_callback_without_loader_metadata() {
         let bindings = FakeAppDataBindings::new();
-        let mut start = super::PackageStart::from_raw(core::ptr::null_mut());
+        let mut start = unsafe { super::PackageStart::from_raw(core::ptr::null_mut()) };
 
         assert_eq!(
             start.register_imu_read_callback_with_bindings::<TestPackageImuRead, _>(&bindings),
@@ -774,7 +978,7 @@ mod tests {
         };
         let bindings = FakeBindings::new();
         let lifecycle = crate::lifecycle_core::PackageLifecycle::new(&bindings);
-        let mut start = super::PackageStart::from_raw(&mut info);
+        let mut start = super::PackageStart::from_lib_info(&mut info);
         let descriptor = crate::ExtensionDescriptor::from_handler(
             crate::extension_name!("ext-start-probe"),
             stubs::extension_handler,
@@ -801,7 +1005,7 @@ mod tests {
         };
         let rejecting_bindings = FakeBindings::rejecting();
         let rejecting_lifecycle = crate::lifecycle_core::PackageLifecycle::new(&rejecting_bindings);
-        let mut rejecting_start = super::PackageStart::from_raw(&mut rejected_info);
+        let mut rejecting_start = super::PackageStart::from_lib_info(&mut rejected_info);
 
         assert_eq!(
             rejecting_start.register_extensions_with(&rejecting_lifecycle, [descriptor]),

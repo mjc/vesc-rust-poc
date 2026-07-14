@@ -12,6 +12,8 @@ use vescpkg_rs_sys::ExtensionHandler;
 #[cfg(not(test))]
 use vescpkg_rs_sys::LbmValue;
 
+const MAX_APP_DATA_PAYLOAD_LEN: usize = 511;
+
 /// LispBM-related firmware calls required by the SDK lifecycle layer.
 pub(crate) trait LbmBindings {
     #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
@@ -99,11 +101,9 @@ pub(crate) trait AppDataBindings {
 
     /// Send app-data bytes through the firmware callback.
     fn send_app_data_bytes(&self, data: &[u8]) -> bool {
-        let Ok(len) = u32::try_from(data.len()) else {
-            return false;
-        };
-        unsafe { self.send_app_data(data.as_ptr(), len) };
-        true
+        (data.len() <= MAX_APP_DATA_PAYLOAD_LEN)
+            .then(|| unsafe { self.send_app_data(data.as_ptr(), data.len() as u32) })
+            .is_some()
     }
 }
 
@@ -282,7 +282,8 @@ impl AppDataBindings for RealBindings {
     }
 
     unsafe fn clear_app_data_handler(&self) -> bool {
-        unsafe { crate::ffi::vesc_clear_app_data_handler() }
+        unsafe { crate::ffi::vesc_clear_app_data_handler() };
+        true
     }
 
     fn system_time_ticks(&self) -> u32 {
