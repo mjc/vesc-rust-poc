@@ -6,6 +6,7 @@ use vescpkg_rs_sys::{ExtensionHandler, LbmValue};
 
 const LBM_INT_TAG: u32 = 0x8;
 const LBM_VALUE_SHIFT: u32 = 4;
+const LBM_VALUE_TAG_MASK: u32 = (1 << LBM_VALUE_SHIFT) - 1;
 const LBM_INT_MIN: i32 = -(1 << 27);
 const LBM_INT_MAX: i32 = (1 << 27) - 1;
 
@@ -16,6 +17,10 @@ const fn encode_integer(value: i32) -> u32 {
 #[cfg(any(test, not(target_arch = "arm")))]
 const fn decode_integer(value: u32) -> i32 {
     (value as i32) >> LBM_VALUE_SHIFT
+}
+
+const fn is_integer(value: u32) -> bool {
+    value & LBM_VALUE_TAG_MASK == LBM_INT_TAG
 }
 
 /// A LispBM value that can only be produced by the SDK's typed argument API.
@@ -184,9 +189,12 @@ impl LispArgs<'_> {
         self.values.is_empty()
     }
 
-    /// Return an argument as an integer when it exists.
+    /// Return an argument when it has LispBM's immediate-integer encoding.
     pub fn integer(&self, index: usize) -> Option<i32> {
         let value = *self.values.get(index)?;
+        if !is_integer(value.0) {
+            return None;
+        }
         #[cfg(all(not(test), target_arch = "arm"))]
         {
             let firmware = crate::Firmware::new();
@@ -225,6 +233,10 @@ impl LispArgs<'_> {
     }
 }
 
+fn canonical_nil_raw() -> u32 {
+    LispArgs::empty().nil_value().raw().0
+}
+
 /// Rust implementation for a LispBM extension callback.
 pub trait LbmExtension {
     /// Handle one extension call.
@@ -254,7 +266,7 @@ pub unsafe extern "C" fn lbm_extension_handler<T: LbmExtension>(
     arg_count: u32,
 ) -> u32 {
     let Some(args) = LispArgs::from_raw(args, arg_count) else {
-        return 0;
+        return canonical_nil_raw();
     };
     T::call(args).raw().0
 }
@@ -270,7 +282,7 @@ pub unsafe extern "C" fn stateful_lbm_extension_handler<T: StatefulLbmExtension>
     arg_count: u32,
 ) -> u32 {
     let Some(args) = LispArgs::from_raw(args, arg_count) else {
-        return 0;
+        return canonical_nil_raw();
     };
     let nil = args.nil_value();
     T::runtime_state()
@@ -370,6 +382,33 @@ mod tests {
                 )
             },
             super::encode_integer(37),
+        );
+    }
+
+    #[test]
+    fn typed_lisp_args_reject_non_integer_values() {
+        let mut values = [0_u32];
+        let args = super::LispArgs::from_raw(values.as_mut_ptr(), values.len() as u32)
+            .expect("valid arguments");
+
+        assert_eq!(args.integer(0), None);
+    }
+
+    #[test]
+    fn extension_handlers_return_canonical_nil_for_invalid_arguments() {
+        let nil = super::LispArgs::empty().nil_value().raw().0;
+
+        assert_eq!(
+            unsafe {
+                super::lbm_extension_handler::<EchoIntegerExtension>(core::ptr::null_mut(), 1)
+            },
+            nil
+        );
+        assert_eq!(
+            unsafe {
+                super::stateful_lbm_extension_handler::<TestExtension>(core::ptr::null_mut(), 1)
+            },
+            nil
         );
     }
 
