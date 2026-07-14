@@ -81,7 +81,7 @@ pub enum PackageInstallError {
     /// The device rejected or failed a transport operation.
     Device(String),
     /// The package bytes failed structural validation before install.
-    InvalidPackage,
+    InvalidPackage(&'static str),
 }
 
 impl fmt::Display for PackageInstallError {
@@ -89,7 +89,7 @@ impl fmt::Display for PackageInstallError {
         match self {
             Self::Io(reason) => write!(f, "io error: {reason}"),
             Self::Device(reason) => write!(f, "device error: {reason}"),
-            Self::InvalidPackage => f.write_str("invalid VESC package"),
+            Self::InvalidPackage(reason) => write!(f, "invalid VESC package: {reason}"),
         }
     }
 }
@@ -100,7 +100,7 @@ impl From<crate::package::PackageError> for PackageInstallError {
     fn from(error: crate::package::PackageError) -> Self {
         match error {
             crate::package::PackageError::Io(error) => Self::Io(error.to_string()),
-            crate::package::PackageError::InvalidPackage => Self::InvalidPackage,
+            crate::package::PackageError::InvalidPackage(reason) => Self::InvalidPackage(reason),
             other => Self::Io(other.to_string()),
         }
     }
@@ -354,10 +354,8 @@ pub fn erase_package<T: PackageInstallTransport>(
 }
 
 fn checked_package(package: &VescPackage) -> Result<&VescPackage, PackageInstallError> {
-    package
-        .is_valid()
-        .then_some(package)
-        .ok_or(PackageInstallError::InvalidPackage)
+    package.validate_for_install()?;
+    Ok(package)
 }
 
 fn qml_compress(script: &str) -> Result<Vec<u8>, PackageInstallError> {
@@ -407,7 +405,7 @@ fn step_error(step: impl AsRef<str>, error: PackageInstallError) -> PackageInsta
         PackageInstallError::Io(reason) => {
             PackageInstallError::Io(format!("{}: {reason}", step.as_ref()))
         }
-        PackageInstallError::InvalidPackage => PackageInstallError::InvalidPackage,
+        PackageInstallError::InvalidPackage(reason) => PackageInstallError::InvalidPackage(reason),
     }
 }
 
@@ -579,7 +577,7 @@ mod tests {
         assert_eq!(package.name, "A minimal package");
         assert_eq!(qml.source, "import QtQuick 2.15\nItem {}\n");
         assert_eq!(qml.mode, crate::package::QmlAppUiMode::Fullscreen);
-        assert!(package.is_valid());
+        assert!(package.validate_for_install().is_ok());
     }
 
     #[test]

@@ -106,10 +106,8 @@ impl PackageDecoder {
             ..package
         };
 
-        package
-            .is_valid()
-            .then_some(package)
-            .ok_or(PackageError::InvalidPackage)
+        package.validate_for_install()?;
+        Ok(package)
     }
 }
 
@@ -117,7 +115,7 @@ impl PackageDecoder {
 pub enum PackageError {
     Io(io::Error),
     Wire(WireError),
-    InvalidPackage,
+    InvalidPackage(&'static str),
 }
 
 impl fmt::Display for PackageError {
@@ -125,7 +123,7 @@ impl fmt::Display for PackageError {
         match self {
             Self::Io(error) => write!(f, "io error: {error}"),
             Self::Wire(error) => error.fmt(f),
-            Self::InvalidPackage => f.write_str("invalid VESC package"),
+            Self::InvalidPackage(reason) => write!(f, "invalid VESC package: {reason}"),
         }
     }
 }
@@ -158,18 +156,18 @@ impl Package {
             .into_package()
     }
 
-    /// Returns whether the package contains at least one meaningful field.
-    pub fn is_valid(&self) -> bool {
-        !self.name.is_empty()
-            || !self.description.is_empty()
-            || !self.description_md.is_empty()
-            || !self.lisp_data.is_empty()
-            || self.qml_app_ui.is_some()
+    pub(crate) fn validate_for_install(&self) -> Result<(), PackageError> {
+        (!self.lisp_data.is_empty() || self.qml_app_ui.is_some())
+            .then_some(())
+            .ok_or(PackageError::InvalidPackage(
+                "package has no Lisp or QML payload",
+            ))
     }
 }
 
 fn decode_text(bytes: Vec<u8>) -> Result<String, PackageError> {
-    String::from_utf8(bytes).map_err(|_| PackageError::InvalidPackage)
+    String::from_utf8(bytes)
+        .map_err(|_| PackageError::InvalidPackage("text field is not valid UTF-8"))
 }
 
 #[cfg(test)]
@@ -219,7 +217,27 @@ mod tests {
 
         assert!(matches!(
             Package::from_bytes(&bytes),
-            Err(PackageError::InvalidPackage)
+            Err(PackageError::InvalidPackage(
+                "package has no Lisp or QML payload"
+            ))
+        ));
+    }
+
+    #[test]
+    fn rejects_metadata_without_an_installable_payload() {
+        let package = Package {
+            name: "metadata only".to_owned(),
+            description: "no code".to_owned(),
+            description_md: String::new(),
+            lisp_data: Vec::new(),
+            qml_app_ui: None,
+        };
+
+        assert!(matches!(
+            package.validate_for_install(),
+            Err(PackageError::InvalidPackage(
+                "package has no Lisp or QML payload"
+            ))
         ));
     }
 }
