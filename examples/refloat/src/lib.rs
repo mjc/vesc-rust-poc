@@ -10,6 +10,7 @@
 //! `third_party/refloat/src/main.c:2401-2460`.
 
 #![no_std]
+#![forbid(unsafe_code)]
 #![forbid(unused_extern_crates)]
 
 #[cfg(test)]

@@ -18,13 +18,11 @@ const REFLOAT_SYSTEM_TICK_RATE_HZ: u32 = 10_000;
 // `ui.qml.in:926-934`.
 // Keep the materialized bytes in the loaded extension image so hardware never
 // has to dereference string-literal storage.
-#[cfg_attr(
-    all(not(test), target_arch = "arm"),
-    unsafe(link_section = ".text.refloat_realtime_data_ids")
-)]
-#[used]
-static REFLOAT_REALTIME_DATA_IDS_RESPONSE_BYTES: [u8; REFLOAT_REALTIME_DATA_IDS_RESPONSE_LEN] =
-    build_refloat_realtime_data_ids_response();
+vescpkg_rs::firmware_section_static!(
+    ".text.refloat_realtime_data_ids",
+    static REFLOAT_REALTIME_DATA_IDS_RESPONSE_BYTES: [u8; REFLOAT_REALTIME_DATA_IDS_RESPONSE_LEN] =
+        build_refloat_realtime_data_ids_response()
+);
 
 pub(in crate::package) fn encode_refloat_info_response_v2(
     request_payload: &[u8],

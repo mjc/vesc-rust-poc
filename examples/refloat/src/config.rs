@@ -22,32 +22,25 @@ use vescpkg_rs::{
 
 mod handtest_safety;
 
-/// Refloat v1.2.1 generated custom-config XML blob.
-///
-/// Upstream generates this from `third_party/refloat/src/conf/settings.xml` via `third_party/refloat/src/Makefile:28-31`
-/// and exposes `data_refloatconfig_` through `get_cfg_xml` at
-/// `third_party/refloat/src/main.c:2388-2396`.
-#[cfg_attr(
-    all(not(test), target_arch = "arm"),
-    unsafe(link_section = ".text.refloat_config_xml")
-)]
-#[used]
-pub(crate) static REFLOAT_CONFIG_XML: [u8; 25_723] = *include_bytes!("conf/refloatconfig.dat");
+// Refloat v1.2.1 generated custom-config XML blob. Upstream generates this from
+// `third_party/refloat/src/conf/settings.xml` via `third_party/refloat/src/Makefile:28-31`
+// and exposes `data_refloatconfig_` through `get_cfg_xml` at
+// `third_party/refloat/src/main.c:2388-2396`.
+vescpkg_rs::firmware_section_static!(
+    ".text.refloat_config_xml",
+    pub(crate) static REFLOAT_CONFIG_XML: [u8; 25_723] = *include_bytes!("conf/refloatconfig.dat")
+);
 
-/// Refloat v1.2.1 generated serialized default custom config.
-///
-/// Upstream `get_cfg(..., is_default=true)` allocates `RefloatConfig`, fills
-/// defaults, serializes it, then frees it at `third_party/refloat/src/main.c:2335-2356`.
-/// `third_party/refloat/src/Makefile:12-13` declares the generated
-/// `conf/confparser.*` files, and `third_party/refloat/src/Makefile:28-29`
-/// regenerates them from `third_party/refloat/src/conf/settings.xml`. The
-/// vendored byte image below is the source-backed serialized default.
-#[cfg_attr(
-    all(not(test), target_arch = "arm"),
-    unsafe(link_section = ".text.refloat_default_config")
-)]
-#[used]
-pub(crate) static REFLOAT_DEFAULT_CONFIG: [u8; 276] = *include_bytes!("conf/default_config.dat");
+// Refloat v1.2.1 generated serialized default custom config. Upstream
+// `get_cfg(..., is_default=true)` allocates `RefloatConfig`, fills defaults,
+// serializes it, then frees it at `third_party/refloat/src/main.c:2335-2356`.
+// `third_party/refloat/src/Makefile:12-13` declares the generated
+// `conf/confparser.*` files, and `third_party/refloat/src/Makefile:28-29`
+// regenerates them from `third_party/refloat/src/conf/settings.xml`.
+vescpkg_rs::firmware_section_static!(
+    ".text.refloat_default_config",
+    pub(crate) static REFLOAT_DEFAULT_CONFIG: [u8; 276] = *include_bytes!("conf/default_config.dat")
+);
 // Upstream generated `conf/confparser.h` derives signature `2427955642`
 // (`0x90b7a9ba`) and serialized length `276` from
 // `third_party/refloat/src/conf/settings.xml`; the generator is wired in
