@@ -8,15 +8,11 @@
 
 #[cfg(any(test, target_arch = "arm"))]
 use crate::bms::ExtBms;
-use core::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+#[cfg(any(test, target_arch = "arm"))]
+use crate::package::RefloatPackageState;
 
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::{ExtensionDescriptor, LispArgs, LispValue};
-
-static FW_VERSION_MAJOR: AtomicI32 = AtomicI32::new(0);
-static FW_VERSION_MINOR: AtomicI32 = AtomicI32::new(0);
-static FW_VERSION_BETA: AtomicI32 = AtomicI32::new(0);
-static FW_VERSION_RECORDED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,7 +34,7 @@ impl RefloatLoaderExtension {
 
     fn descriptor(self) -> ExtensionDescriptor {
         match self {
-            Self::SetFwVersion => ExtensionDescriptor::typed::<ExtSetFwVersion>(self.name()),
+            Self::SetFwVersion => ExtensionDescriptor::stateful::<ExtSetFwVersion>(self.name()),
             Self::Bms => ExtensionDescriptor::stateful::<ExtBms>(self.name()),
         }
     }
@@ -53,13 +49,19 @@ impl RefloatLoaderExtension {
 struct ExtSetFwVersion;
 
 #[cfg(any(test, target_arch = "arm"))]
-impl vescpkg_rs::LbmExtension for ExtSetFwVersion {
-    fn call(args: LispArgs<'_>) -> LispValue {
+impl vescpkg_rs::StatefulLbmExtension for ExtSetFwVersion {
+    type State = RefloatPackageState;
+
+    fn runtime_state() -> &'static vescpkg_rs::PackageStateStore<Self::State> {
+        &crate::package::REFLOAT_RUNTIME_STATE
+    }
+
+    fn call(state: &mut Self::State, args: LispArgs<'_>) -> LispValue {
         if args.len() > 2
             && let (Some(major), Some(minor), Some(beta)) =
                 (args.integer(0), args.integer(1), args.integer(2))
         {
-            record_refloat_firmware_version(&[major, minor, beta]);
+            record_refloat_firmware_version(state, &[major, minor, beta]);
         }
         args.true_value()
     }
@@ -81,38 +83,14 @@ impl RefloatFirmwareVersion {
 }
 
 #[cfg(any(test, target_arch = "arm"))]
-fn record_refloat_firmware_version(args: &[i32]) {
+fn record_refloat_firmware_version(state: &mut RefloatPackageState, args: &[i32]) {
     // Refloat v1.2.1 only updates version state when `argn > 2` at
     // `third_party/refloat/src/main.c:2306-2310`; shorter calls still
     // return true at `third_party/refloat/src/main.c:2311`.
     let [major, minor, beta] = args else {
         return;
     };
-    FW_VERSION_MAJOR.store(*major, Ordering::Relaxed);
-    FW_VERSION_MINOR.store(*minor, Ordering::Relaxed);
-    FW_VERSION_BETA.store(*beta, Ordering::Relaxed);
-    FW_VERSION_RECORDED.store(true, Ordering::Release);
-}
-
-/// Return the firmware version captured from `ext-set-fw-version`, if any.
-pub fn recorded_refloat_firmware_version() -> Option<RefloatFirmwareVersion> {
-    if !FW_VERSION_RECORDED.load(Ordering::Acquire) {
-        return None;
-    }
-
-    Some(RefloatFirmwareVersion {
-        major: FW_VERSION_MAJOR.load(Ordering::Relaxed),
-        minor: FW_VERSION_MINOR.load(Ordering::Relaxed),
-        beta: FW_VERSION_BETA.load(Ordering::Relaxed),
-    })
-}
-
-#[cfg(test)]
-fn reset_refloat_firmware_version() {
-    FW_VERSION_MAJOR.store(0, Ordering::Relaxed);
-    FW_VERSION_MINOR.store(0, Ordering::Relaxed);
-    FW_VERSION_BETA.store(0, Ordering::Relaxed);
-    FW_VERSION_RECORDED.store(false, Ordering::Release);
+    state.record_firmware_version(RefloatFirmwareVersion::new(*major, *minor, *beta));
 }
 
 /// Return the native extension descriptors required by upstream `package.lisp`.
@@ -143,9 +121,10 @@ pub fn register_refloat_loader_extensions(
 mod tests {
     use super::{
         RefloatFirmwareVersion, RefloatLoaderExtension, package_extension_descriptors,
-        record_refloat_firmware_version, recorded_refloat_firmware_version,
-        reset_refloat_firmware_version,
+        record_refloat_firmware_version,
     };
+    use crate::package::RefloatPackageState;
+    use crate::package::test_support::sample_all_data_payloads;
     use vescpkg_rs::LoaderInfo;
     use vescpkg_rs::test_support::TestExtensionRegistry;
 
@@ -193,17 +172,17 @@ mod tests {
 
     #[test]
     fn ext_set_fw_version_records_three_decoded_components() {
-        reset_refloat_firmware_version();
+        let mut state = RefloatPackageState::new(sample_all_data_payloads());
 
         // Refloat v1.2.1 stores firmware version only when `argn > 2` at
         // `third_party/refloat/src/main.c:2306-2310`; shorter calls still return true at
         // `third_party/refloat/src/main.c:2311`.
-        record_refloat_firmware_version(&[6, 5]);
-        assert_eq!(recorded_refloat_firmware_version(), None);
+        record_refloat_firmware_version(&mut state, &[6, 5]);
+        assert_eq!(state.recorded_firmware_version(), None);
 
-        record_refloat_firmware_version(&[6, 2, 0]);
+        record_refloat_firmware_version(&mut state, &[6, 2, 0]);
         assert_eq!(
-            recorded_refloat_firmware_version(),
+            state.recorded_firmware_version(),
             Some(RefloatFirmwareVersion::new(6, 2, 0))
         );
     }

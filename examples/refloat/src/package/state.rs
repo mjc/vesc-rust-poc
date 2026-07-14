@@ -9,6 +9,8 @@ use crate::domain::{
     RefloatRealtimeRuntimeSetpoints, RefloatRideState, RefloatRunState, RefloatSetpointAdjustment,
     RefloatStopCondition, RefloatWheelSlipState,
 };
+#[cfg(any(test, target_arch = "arm"))]
+use crate::extensions::RefloatFirmwareVersion;
 use crate::motor_control::RefloatMotorControl;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::Voltage;
@@ -80,6 +82,8 @@ pub struct RefloatPackageState {
     fault_angle_roll_ticks: TimestampTicks,
     motor_current_max: MotorCurrent,
     motor_current_min: MotorCurrent,
+    #[cfg(any(test, target_arch = "arm"))]
+    firmware_version: Option<RefloatFirmwareVersion>,
 }
 
 impl RefloatPackageState {
@@ -108,7 +112,19 @@ impl RefloatPackageState {
             fault_angle_roll_ticks: TimestampTicks::from_ticks(0),
             motor_current_max: MotorCurrent::new(Current::ZERO),
             motor_current_min: MotorCurrent::new(Current::ZERO),
+            #[cfg(any(test, target_arch = "arm"))]
+            firmware_version: None,
         }
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn record_firmware_version(&mut self, version: RefloatFirmwareVersion) {
+        self.firmware_version = Some(version);
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn recorded_firmware_version(&self) -> Option<RefloatFirmwareVersion> {
+        self.firmware_version
     }
 
     /// Return the current all-data payload snapshot.
