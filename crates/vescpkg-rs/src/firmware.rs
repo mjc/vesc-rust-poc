@@ -593,7 +593,7 @@ unsafe fn borrowed_slice<'a, T>(data: *const T, len: usize) -> Option<&'a [T]> {
     }
 
     len.checked_mul(core::mem::size_of::<T>())
-        .filter(|bytes| *bytes <= isize::MAX as usize)?;
+        .filter(|bytes| isize::try_from(*bytes).is_ok())?;
 
     let data = NonNull::new(data.cast_mut())?;
     Some(unsafe { core::slice::from_raw_parts(data.as_ptr(), len) })
