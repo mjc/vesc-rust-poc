@@ -72,7 +72,7 @@ Production ARM builds keep inline `asm!` dispatch; host/test builds use `Option<
 
 ## Adding a new `raw::*` wrapper
 
-1. Add field to `raw::VescIf` in header order (run header parity when available).
+1. Add field to `raw::VescIf` in header order and keep the generated parity checks green.
 2. Add `VescIfAbi` slot to `USED_SLOTS`.
 3. Extend `vesc_if_offsets_for_tests()` and layout tests.
 4. Add dispatch tests (Some + None paths) using `test_support`.

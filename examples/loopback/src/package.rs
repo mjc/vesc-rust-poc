@@ -34,20 +34,28 @@ pub extern "C" fn package_lib_init(info: *mut ffi::LibInfo) -> bool {
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".init_fun")]
 pub extern "C" fn init(info: *mut ffi::LibInfo) -> bool {
-    let _ = package_lib_init(info);
+    if !package_lib_init(info) {
+        return false;
+    }
 
     let Some(info) = (unsafe { info.as_ref() }) else {
-        return true;
+        return false;
     };
 
-    let _ = crate::app_data::register();
+    if !crate::app_data::register() {
+        return false;
+    }
 
     let lifecycle = ffi::PackageLifecycle::new(ffi::RealBindings);
-    let _ = register_package_extensions(info, &lifecycle);
+    if !register_package_extensions(info, &lifecycle) {
+        return false;
+    }
 
     // Extension registration can run other firmware setup; register again so the
     // loopback handler remains the active app-data callback (refloat pattern).
-    let _ = crate::app_data::register();
+    if !crate::app_data::register() {
+        return false;
+    }
 
     true
 }

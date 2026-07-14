@@ -62,8 +62,8 @@ unsafe impl GlobalAlloc for VescAllocator {
         user
     }
 
-    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
-        if ptr.is_null() {
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        if ptr.is_null() || layout.size() == 0 {
             return;
         }
         let mut raw = ptr::null_mut::<c_void>();

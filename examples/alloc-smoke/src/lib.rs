@@ -11,7 +11,7 @@ extern crate std;
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 use alloc::vec::Vec;
-#[cfg(not(test))]
+#[cfg(all(not(test), target_arch = "arm"))]
 use vescpkg_rs::VescAllocator;
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
@@ -19,12 +19,10 @@ use vesc_protocol::ble_loopback::{LoopbackError, MAX_LOOPBACK_FRAME_BYTES, handl
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 use vesc_protocol::{WireCommand, WireVersion};
 
-#[cfg(all(not(test), target_arch = "arm"))]
-use vescpkg_rs::ble_loopback::process_loopback_app_data;
 #[cfg(not(test))]
 use vescpkg_rs::{ffi, init as pkg_init};
 
-#[cfg(not(test))]
+#[cfg(all(not(test), target_arch = "arm"))]
 #[global_allocator]
 static ALLOCATOR: VescAllocator = VescAllocator;
 
@@ -69,21 +67,16 @@ unsafe extern "C" fn alloc_smoke_app_data_callback(data: *mut u8, len: u32) {
         return;
     }
     let bytes = unsafe { core::slice::from_raw_parts(data.cast_const(), len as usize) };
-    let now_ms = u64::from(unsafe { ffi::raw::vesc_system_time_ticks() }) / 10;
-    let Some((response, response_len)) = process_loopback_app_data(bytes, now_ms) else {
+    if classify_alloc_smoke_app_data(bytes) == AllocSmokeAppDataAction::Ignore {
         return;
-    };
-
-    let mut candidates = Vec::with_capacity(ALLOC_SMOKE_CANDIDATES);
-    for _ in 0..ALLOC_SMOKE_CANDIDATES {
-        candidates.push(response[..response_len].to_vec());
     }
-    let rotation = response_len % candidates.len();
-    candidates.rotate_left(rotation);
-    let Some(selected) = candidates.first() else {
+    let now_ms = u64::from(unsafe { ffi::raw::vesc_system_time_ticks() }) / 10;
+    let Ok((response, response_len)) = alloc_smoke_loopback(bytes, now_ms) else {
         return;
     };
-    unsafe { ffi::raw::vesc_send_app_data(selected.as_ptr().cast_mut(), selected.len() as u32) };
+    unsafe {
+        ffi::raw::vesc_send_app_data(response.as_ptr().cast_mut(), response_len as u32);
+    }
 }
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]

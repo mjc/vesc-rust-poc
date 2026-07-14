@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -103,6 +104,9 @@ pub(crate) fn build_package(root: &Path, options: &BuildOptions) -> Result<PathB
 
 fn command_output(command: &mut Command) -> Result<Output, BuildError> {
     let output = command.output()?;
+    if !output.stderr.is_empty() {
+        let _ = std::io::stderr().write_all(&output.stderr);
+    }
     match output.status.success() {
         true => Ok(output),
         false => Err(BuildError(
@@ -280,7 +284,7 @@ fn package_slug(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{package_slug, select_package};
+    use super::{PackageMetadata, cargo_message_artifacts, package_slug, select_package};
     use serde_json::json;
 
     #[test]
@@ -305,5 +309,43 @@ mod tests {
         assert_eq!(package.name, "minimal-package");
         assert_eq!(package.target_name, "minimal-package");
         assert_eq!(package.display_name, "Minimal package");
+    }
+
+    #[test]
+    fn selects_only_matching_build_artifacts() {
+        let package = PackageMetadata {
+            id: "path+file:///tmp/minimal-package#0.1.0".to_owned(),
+            name: "minimal-package".to_owned(),
+            target_name: "minimal-package".to_owned(),
+            version: "0.1.0".to_owned(),
+            display_name: "Minimal package".to_owned(),
+        };
+        let artifact = json!({
+            "reason": "compiler-artifact",
+            "package_id": "path+file:///tmp/minimal-package#0.1.0",
+            "target": {"name": "minimal-package", "kind": ["bin"]},
+            "executable": "/tmp/minimal-package"
+        });
+        let build_script = json!({
+            "reason": "build-script-executed",
+            "package_id": "path+file:///tmp/minimal-package#0.1.0",
+            "out_dir": "/tmp/out"
+        });
+        let unrelated = json!({
+            "reason": "compiler-artifact",
+            "package_id": "path+file:///tmp/other#0.1.0",
+            "target": {"name": "minimal-package", "kind": ["bin"]},
+            "executable": "/tmp/other"
+        });
+
+        assert_eq!(
+            cargo_message_artifacts(&artifact, &package),
+            (Some("/tmp/minimal-package".into()), None)
+        );
+        assert_eq!(
+            cargo_message_artifacts(&build_script, &package),
+            (None, Some("/tmp/out".into()))
+        );
+        assert_eq!(cargo_message_artifacts(&unrelated, &package), (None, None));
     }
 }

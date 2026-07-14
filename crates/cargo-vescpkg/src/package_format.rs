@@ -276,14 +276,12 @@ fn resolve_staged_import_path(staging_dir: &Path, import_path: &str) -> io::Resu
 }
 
 fn parse_import_line(line: &str) -> Option<(String, String)> {
-    let mut trimmed = line.trim_start();
-    while trimmed.starts_with("( ") {
-        trimmed = &trimmed[1..];
-    }
-
-    if !trimmed.starts_with("(import ") {
+    let trimmed = line.trim_start().strip_prefix('(')?.trim_start();
+    let trimmed = trimmed.strip_prefix("import")?;
+    if !trimmed.chars().next().is_some_and(char::is_whitespace) {
         return None;
     }
+    let trimmed = trimmed.trim_start();
 
     let start = trimmed.find('"')?;
     let end = trimmed.rfind('"')?;
@@ -302,4 +300,17 @@ fn parse_import_line(line: &str) -> Option<(String, String)> {
     }
 
     Some((path, tag))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_import_line;
+
+    #[test]
+    fn parses_import_lines_with_whitespace_after_parenthesis() {
+        assert_eq!(
+            parse_import_line("( import \"src/package_lib.bin\" 'package-lib)"),
+            Some(("src/package_lib.bin".to_owned(), "package-lib".to_owned()))
+        );
+    }
 }

@@ -55,6 +55,12 @@ struct DeviceArgs {
     address: Option<String>,
 }
 
+impl DeviceArgs {
+    fn into_target(self) -> loopback::LoopbackTarget {
+        loopback_target(self.address, self.device_name)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Args)]
 struct PackageInstallArgs {
     package_path: String,
@@ -100,7 +106,7 @@ fn print_loopback_report(report: &loopback::LoopbackReport) {
 }
 
 fn run_probe(command: DeviceArgs) -> ExitCode {
-    let target = loopback_target(command.address, command.device_name);
+    let target = command.into_target();
     match deploy::run_loopback_probe(target, |event| println!("loopback: {event}")) {
         Ok(report) => {
             print_loopback_report(&report);
@@ -114,7 +120,7 @@ fn run_probe(command: DeviceArgs) -> ExitCode {
 }
 
 fn run_deploy(command: PackageInstallArgs) -> ExitCode {
-    let target = loopback_target(command.device.address, command.device.device_name);
+    let target = command.device.into_target();
     match deploy::run_deploy(&command.package_path, target, |event| {
         println!("loopback: {event}");
     }) {
@@ -173,7 +179,7 @@ fn loopback_target(
 }
 
 fn run_package_install(command: PackageInstallArgs) -> ExitCode {
-    let target = loopback_target(command.device.address, command.device.device_name);
+    let target = command.device.into_target();
     match package_install::install_over_ble(command.package_path, target) {
         Ok(report) => {
             println!(
@@ -190,7 +196,7 @@ fn run_package_install(command: PackageInstallArgs) -> ExitCode {
 }
 
 fn run_package_erase(command: PackageEraseArgs) -> ExitCode {
-    let target = loopback_target(command.device.address, command.device.device_name);
+    let target = command.device.into_target();
     match package_install::erase_over_ble(target, command.no_preflight) {
         Ok(report) => {
             println!("package erase ok: {:?}", report.steps);

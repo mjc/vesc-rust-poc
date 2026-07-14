@@ -71,9 +71,7 @@ test:
 
 # --- packaging & device -----------------------------------------------------
 
-package: check
-	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-loopback
-	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-alloc-smoke
+package: check package-only
 
 package-only:
 	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-loopback

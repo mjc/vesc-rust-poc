@@ -176,6 +176,8 @@ fn decode_text(bytes: Vec<u8>) -> Result<String, PackageError> {
 mod tests {
     use super::*;
     use crate::package_wire::PackageField;
+    use flate2::{Compression, write::ZlibEncoder};
+    use std::io::Write;
 
     #[test]
     fn decoder_keeps_qml_mode_when_seen_before_source() {
@@ -205,5 +207,19 @@ mod tests {
                 mode: QmlAppUiMode::Fullscreen,
             })
         );
+    }
+
+    #[test]
+    fn rejects_a_package_with_no_meaningful_fields() {
+        let raw = b"VESC Packet\0";
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(raw).expect("compress package");
+        let mut bytes = (raw.len() as u32).to_be_bytes().to_vec();
+        bytes.extend(encoder.finish().expect("finish package"));
+
+        assert!(matches!(
+            Package::from_bytes(&bytes),
+            Err(PackageError::InvalidPackage)
+        ));
     }
 }

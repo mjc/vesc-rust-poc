@@ -2,6 +2,7 @@
 members = [
     "crates/vescpkg-rs-sys",
     "crates/vescpkg-rs-units",
+    "crates/vescpkg-build-support",
     "crates/vescpkg-rs",
     "crates/vesc-protocol",
     "crates/cargo-vescpkg",
