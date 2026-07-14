@@ -16,9 +16,11 @@ fn align_state_pointer<T>(
     allocation: core::ptr::NonNull<core::ffi::c_void>,
 ) -> core::ptr::NonNull<T> {
     let align = core::mem::align_of::<T>();
-    let address = allocation.as_ptr() as usize;
-    let aligned = (address + align - 1) & !(align - 1);
-    unsafe { core::ptr::NonNull::new_unchecked(aligned as *mut T) }
+    let aligned = allocation
+        .as_ptr()
+        .map_addr(|address| (address + align - 1) & !(align - 1))
+        .cast::<T>();
+    unsafe { core::ptr::NonNull::new_unchecked(aligned) }
 }
 
 #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
@@ -29,7 +31,9 @@ unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
         return;
     };
     let runtime = T::runtime_store();
-    runtime.begin_stop();
+    if !runtime.begin_stop() {
+        return;
+    }
     #[cfg(all(not(test), target_arch = "arm"))]
     {
         let firmware = crate::Firmware::new();
@@ -699,7 +703,9 @@ mod tests {
         );
         assert_eq!(OWNED_STATE.with(|state| state.0), Some(37));
 
-        unsafe { info.stop_fun.expect("owned state stop hook")(info.arg) };
+        let stop = info.stop_fun.expect("owned state stop hook");
+        unsafe { stop(info.arg) };
+        unsafe { stop(info.arg) };
 
         assert_eq!(OWNED_STATE_STOPS.load(Ordering::Relaxed), 1);
         assert_eq!(OWNED_STATE_DROPS.load(Ordering::Relaxed), 1);

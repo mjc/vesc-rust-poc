@@ -267,15 +267,17 @@ impl<T: Send + 'static> PackageStateStore<T> {
     /// Clear the installed state pointer.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn clear(&self) {
-        self.begin_stop();
+        if !self.begin_stop() {
+            return;
+        }
         let _ = self.take_threads();
         let _ = self.finish_stop();
     }
 
-    pub(crate) fn begin_stop(&self) {
-        let _ = self
-            .phase
-            .compare_exchange(RUNNING, STOPPING, Ordering::AcqRel, Ordering::Acquire);
+    pub(crate) fn begin_stop(&self) -> bool {
+        self.phase
+            .compare_exchange(RUNNING, STOPPING, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
     }
 
     pub(crate) fn install_threads(
