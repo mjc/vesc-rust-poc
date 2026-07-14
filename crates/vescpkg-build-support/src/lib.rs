@@ -10,11 +10,11 @@ pub fn build_package(manifest_dir: &Path) {
     let assets = Path::new(&out_dir).join("vescpkg");
     fs::create_dir_all(assets.join("src")).expect("create package asset directory");
     for name in ["README.md", "pkgdesc.qml", "code.lisp"] {
-        let source = Path::new("package").join(name);
+        let source = manifest_dir.join("package").join(name);
         if source.exists() {
-            fs::copy(source, assets.join(name)).expect("copy package asset");
+            fs::copy(&source, assets.join(name)).expect("copy package asset");
         }
-        println!("cargo::rerun-if-changed=package/{name}");
+        println!("cargo::rerun-if-changed={}", source.display());
     }
 
     if env::var("TARGET").is_ok_and(|target| target == "thumbv7em-none-eabihf") {
