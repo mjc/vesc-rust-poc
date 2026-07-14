@@ -7,30 +7,123 @@ use core::marker::PhantomData;
 use core::ptr::NonNull;
 #[cfg(not(target_arch = "arm"))]
 use core::sync::atomic::AtomicBool;
-use core::sync::atomic::{AtomicPtr, AtomicU8, AtomicUsize, Ordering};
+#[cfg(not(target_arch = "arm"))]
+use core::sync::atomic::AtomicPtr;
+use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
+#[cfg(not(target_arch = "arm"))]
 const EMPTY: u8 = 0;
+#[cfg(not(target_arch = "arm"))]
 const INSTALLING: u8 = 1;
 const RUNNING: u8 = 2;
 const STOPPING: u8 = 3;
 const STOPPED: u8 = 4;
 
-/// Mutable package state installed by firmware startup and accessed by callbacks.
+/// Package-state identity shared by firmware startup and callbacks.
 ///
-/// The state pointer never escapes this type. Callers use [`Self::with`] or
-/// [`Self::with_mut`], which keeps the temporary state borrow within the callback.
+/// On firmware this is a zero-sized marker: mutable lifecycle state lives in
+/// firmware heap RAM beside `T`, never in the flash-backed package image.
+/// Callers use [`Self::with`] or [`Self::with_mut`] so temporary state borrows
+/// remain scoped to a callback.
 pub struct PackageStateStore<T> {
+    #[cfg(not(target_arch = "arm"))]
     state: AtomicPtr<T>,
-    #[cfg(target_arch = "arm")]
-    allocation: AtomicPtr<core::ffi::c_void>,
-    #[cfg(target_arch = "arm")]
-    mutex: AtomicPtr<core::ffi::c_void>,
+    #[cfg(not(target_arch = "arm"))]
     phase: AtomicU8,
+    #[cfg(not(target_arch = "arm"))]
     active: AtomicUsize,
     #[cfg(not(target_arch = "arm"))]
     host_lock: AtomicBool,
+    #[cfg(not(target_arch = "arm"))]
     threads: UnsafeCell<Option<crate::ThreadPair>>,
     _state: PhantomData<UnsafeCell<T>>,
+}
+
+#[cfg(target_arch = "arm")]
+const _: [(); 0] = [(); core::mem::size_of::<PackageStateStore<()>>()];
+
+#[cfg(target_arch = "arm")]
+const RUNTIME_MAGIC: u32 = 0x5652_5354;
+
+#[cfg(target_arch = "arm")]
+#[repr(C)]
+struct FirmwareRuntime {
+    magic: u32,
+    state: *mut core::ffi::c_void,
+    allocation: *mut core::ffi::c_void,
+    mutex: *mut core::ffi::c_void,
+    phase: AtomicU8,
+    active: AtomicUsize,
+    threads: UnsafeCell<Option<crate::ThreadPair>>,
+}
+
+#[cfg(target_arch = "arm")]
+// SAFETY: every mutable field is accessed while `mutex` is held, except the
+// atomic lifecycle counters used to admit and drain those locked accesses.
+unsafe impl Sync for FirmwareRuntime {}
+
+#[cfg(target_arch = "arm")]
+const fn firmware_state_alignment<T>() -> usize {
+    let pointer = core::mem::align_of::<*mut FirmwareRuntime>();
+    let state = core::mem::align_of::<T>();
+    if state > pointer { state } else { pointer }
+}
+
+#[cfg(target_arch = "arm")]
+pub(crate) fn firmware_runtime_allocation_size<T>() -> Option<usize> {
+    core::mem::size_of::<FirmwareRuntime>()
+        .checked_add(core::mem::size_of::<*mut FirmwareRuntime>())?
+        .checked_add(firmware_state_alignment::<T>() - 1)?
+        .checked_add(if core::mem::size_of::<T>() == 0 {
+            1
+        } else {
+            core::mem::size_of::<T>()
+        })
+}
+
+#[cfg(target_arch = "arm")]
+/// Return the `T` address within a runtime allocation and install its backlink.
+///
+/// # Safety
+///
+/// `allocation` must point to writable firmware heap memory of at least
+/// `firmware_runtime_allocation_size::<T>()` bytes.
+pub(crate) unsafe fn firmware_runtime_state_pointer<T>(
+    allocation: NonNull<core::ffi::c_void>,
+) -> NonNull<T> {
+    let after_runtime = allocation.as_ptr().cast::<u8>().wrapping_add(
+        core::mem::size_of::<FirmwareRuntime>() + core::mem::size_of::<*mut FirmwareRuntime>(),
+    );
+    let align = firmware_state_alignment::<T>();
+    let state = after_runtime
+        .map_addr(|address| (address + align - 1) & !(align - 1))
+        .cast::<T>();
+    let backlink = state.cast::<*mut FirmwareRuntime>().wrapping_sub(1);
+    // SAFETY: the allocation-size calculation reserves this pointer-sized slot
+    // immediately before the aligned state address.
+    unsafe { backlink.write(allocation.as_ptr().cast()) };
+    // SAFETY: adding an in-bounds offset to a non-null allocation cannot yield null.
+    unsafe { NonNull::new_unchecked(state) }
+}
+
+#[cfg(target_arch = "arm")]
+/// Resolve the live runtime header installed immediately before `state`.
+///
+/// # Safety
+///
+/// `state` must be the `T` pointer produced by [`firmware_runtime_state_pointer`]
+/// and its allocation must remain live for the returned reference.
+unsafe fn firmware_runtime_from_state<T>(state: NonNull<T>) -> Option<&'static FirmwareRuntime> {
+    let backlink = state
+        .cast::<*mut FirmwareRuntime>()
+        .as_ptr()
+        .wrapping_sub(1);
+    // SAFETY: the caller guarantees `state` was produced by the layout helper,
+    // which initialized the in-bounds backlink slot.
+    let runtime = unsafe { NonNull::new(backlink.read()) }?;
+    // SAFETY: the caller also guarantees the runtime allocation remains live.
+    let runtime = unsafe { runtime.as_ref() };
+    (runtime.magic == RUNTIME_MAGIC && runtime.state == state.as_ptr().cast()).then_some(runtime)
 }
 
 // SAFETY: all access to `T` is serialized by the firmware mutex on device and
@@ -48,14 +141,19 @@ pub trait PackageRuntimeState: Sized + Send + 'static {
 }
 
 struct PackageStateBorrow<'a, T> {
+    #[cfg(not(target_arch = "arm"))]
     store: &'a PackageStateStore<T>,
+    #[cfg(target_arch = "arm")]
+    runtime: &'a FirmwareRuntime,
+    _state: PhantomData<&'a T>,
 }
 
 impl<T> Drop for PackageStateBorrow<'_, T> {
     fn drop(&mut self) {
         #[cfg(target_arch = "arm")]
-        unsafe {
-            crate::ffi::vesc_mutex_unlock(self.store.mutex.load(Ordering::Acquire));
+        {
+            // SAFETY: the guard exists only after locking this live runtime mutex.
+            unsafe { crate::ffi::vesc_mutex_unlock(self.runtime.mutex) };
         }
         #[cfg(not(target_arch = "arm"))]
         self.store.host_lock.store(false, Ordering::Release);
@@ -63,17 +161,25 @@ impl<T> Drop for PackageStateBorrow<'_, T> {
 }
 
 struct PackageStateEntry<'a, T> {
+    #[cfg(not(target_arch = "arm"))]
     store: &'a PackageStateStore<T>,
+    #[cfg(target_arch = "arm")]
+    runtime: &'a FirmwareRuntime,
+    _state: PhantomData<&'a T>,
 }
 
 impl<T> Drop for PackageStateEntry<'_, T> {
     fn drop(&mut self) {
+        #[cfg(target_arch = "arm")]
+        self.runtime.active.fetch_sub(1, Ordering::AcqRel);
+        #[cfg(not(target_arch = "arm"))]
         self.store.active.fetch_sub(1, Ordering::AcqRel);
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PackageStateInstallError {
+    #[cfg(not(target_arch = "arm"))]
     AlreadyInstalled,
     #[cfg(target_arch = "arm")]
     MutexUnavailable,
@@ -87,11 +193,13 @@ pub(crate) struct PackageStateResources {
 }
 
 enum StateIdentity<T> {
+    #[cfg(not(target_arch = "arm"))]
     Installed,
     Firmware(unsafe fn() -> Option<NonNull<T>>),
 }
 
 pub(crate) enum ExpectedState<T> {
+    #[cfg(not(target_arch = "arm"))]
     Any,
     Exact(NonNull<T>),
 }
@@ -135,6 +243,7 @@ impl<T: Send + 'static> Copy for PackageStateAccess<'_, T> {}
 impl<'a, T: Send + 'static> PackageStateAccess<'a, T> {
     /// Build a source backed only by the installed runtime slot.
     #[must_use]
+    #[cfg(not(target_arch = "arm"))]
     pub const fn runtime(runtime: &'a PackageStateStore<T>) -> Self {
         Self {
             runtime,
@@ -175,38 +284,34 @@ impl<'a, T: Send + 'static> PackageStateAccess<'a, T> {
 
     fn expected_state(&self) -> Option<ExpectedState<T>> {
         match self.identity {
+            #[cfg(not(target_arch = "arm"))]
             StateIdentity::Installed => Some(ExpectedState::Any),
             StateIdentity::Firmware(state) => unsafe { state() }.map(ExpectedState::Exact),
         }
     }
 }
 
+#[cfg_attr(target_arch = "arm", allow(clippy::unused_self))]
 impl<T: Send + 'static> PackageStateStore<T> {
     /// Create an empty package-state slot.
     pub const fn new() -> Self {
         Self {
+            #[cfg(not(target_arch = "arm"))]
             state: AtomicPtr::new(core::ptr::null_mut()),
-            #[cfg(target_arch = "arm")]
-            allocation: AtomicPtr::new(core::ptr::null_mut()),
-            #[cfg(target_arch = "arm")]
-            mutex: AtomicPtr::new(core::ptr::null_mut()),
+            #[cfg(not(target_arch = "arm"))]
             phase: AtomicU8::new(EMPTY),
+            #[cfg(not(target_arch = "arm"))]
             active: AtomicUsize::new(0),
             #[cfg(not(target_arch = "arm"))]
             host_lock: AtomicBool::new(false),
+            #[cfg(not(target_arch = "arm"))]
             threads: UnsafeCell::new(None),
             _state: PhantomData,
         }
     }
 
+    #[cfg(not(target_arch = "arm"))]
     fn borrow_exclusive(&self) -> PackageStateBorrow<'_, T> {
-        #[cfg(target_arch = "arm")]
-        {
-            let mutex = NonNull::new(self.mutex.load(Ordering::Acquire))
-                .expect("running package state owns a mutex");
-            unsafe { crate::ffi::vesc_mutex_lock(mutex.as_ptr()) };
-        }
-        #[cfg(not(target_arch = "arm"))]
         while self
             .host_lock
             .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -214,7 +319,23 @@ impl<T: Send + 'static> PackageStateStore<T> {
         {
             spin_loop();
         }
-        PackageStateBorrow { store: self }
+        PackageStateBorrow {
+            store: self,
+            _state: PhantomData,
+        }
+    }
+
+    #[cfg(target_arch = "arm")]
+    fn borrow_exclusive<'runtime>(
+        &self,
+        runtime: &'runtime FirmwareRuntime,
+    ) -> PackageStateBorrow<'runtime, T> {
+        // SAFETY: a running runtime owns this firmware mutex until stop drains guards.
+        unsafe { crate::ffi::vesc_mutex_lock(runtime.mutex) };
+        PackageStateBorrow {
+            runtime,
+            _state: PhantomData,
+        }
     }
 
     /// Install package state for later callback access.
@@ -234,61 +355,102 @@ impl<T: Send + 'static> PackageStateStore<T> {
         state: &mut T,
         allocation: NonNull<core::ffi::c_void>,
     ) -> Result<(), PackageStateInstallError> {
-        let phase = self.phase.load(Ordering::Acquire);
-        if !matches!(phase, EMPTY | STOPPED)
-            || self
-                .phase
-                .compare_exchange(phase, INSTALLING, Ordering::AcqRel, Ordering::Acquire)
-                .is_err()
-        {
-            return Err(PackageStateInstallError::AlreadyInstalled);
-        }
-
-        #[cfg(target_arch = "arm")]
-        {
-            let mutex =
-                NonNull::new(unsafe { crate::ffi::vesc_mutex_create() }).ok_or_else(|| {
-                    self.phase.store(EMPTY, Ordering::Release);
-                    PackageStateInstallError::MutexUnavailable
-                })?;
-            self.mutex.store(mutex.as_ptr(), Ordering::Release);
-        }
-        self.state
-            .store(core::ptr::from_mut(state), Ordering::Release);
-        #[cfg(target_arch = "arm")]
-        self.allocation
-            .store(allocation.as_ptr(), Ordering::Release);
         #[cfg(not(target_arch = "arm"))]
-        let _ = allocation;
-        self.phase.store(RUNNING, Ordering::Release);
-        Ok(())
+        {
+            let phase = self.phase.load(Ordering::Acquire);
+            if !matches!(phase, EMPTY | STOPPED)
+                || self
+                    .phase
+                    .compare_exchange(phase, INSTALLING, Ordering::AcqRel, Ordering::Acquire)
+                    .is_err()
+            {
+                return Err(PackageStateInstallError::AlreadyInstalled);
+            }
+            self.state
+                .store(core::ptr::from_mut(state), Ordering::Release);
+            let _ = allocation;
+            self.phase.store(RUNNING, Ordering::Release);
+            Ok(())
+        }
+        #[cfg(target_arch = "arm")]
+        {
+            // SAFETY: the VESC interface table is live throughout native package execution.
+            let mutex = NonNull::new(unsafe { crate::ffi::vesc_mutex_create() })
+                .ok_or(PackageStateInstallError::MutexUnavailable)?;
+            let runtime = allocation.cast::<FirmwareRuntime>();
+            // SAFETY: `allocation` reserves and aligns a `FirmwareRuntime` header
+            // before `state`; startup has exclusive ownership of it here.
+            unsafe {
+                runtime.as_ptr().write(FirmwareRuntime {
+                    magic: RUNTIME_MAGIC,
+                    state: core::ptr::from_mut(state).cast(),
+                    allocation: allocation.as_ptr(),
+                    mutex: mutex.as_ptr(),
+                    phase: AtomicU8::new(RUNNING),
+                    active: AtomicUsize::new(0),
+                    threads: UnsafeCell::new(None),
+                });
+            }
+            Ok(())
+        }
     }
 
     /// Clear the installed state pointer.
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(all(any(test, feature = "test-support"), not(target_arch = "arm")))]
     pub(crate) fn clear(&self) {
-        if !self.begin_stop() {
+        let Some(state) = NonNull::new(self.state.load(Ordering::Acquire)) else {
+            return;
+        };
+        if !self.begin_stop(state) {
             return;
         }
-        let _ = self.take_threads();
-        let _ = self.finish_stop();
+        let _ = self.take_threads(state);
+        let _ = self.finish_stop(state);
     }
 
-    pub(crate) fn begin_stop(&self) -> bool {
-        self.phase
+    pub(crate) fn begin_stop(&self, state: NonNull<T>) -> bool {
+        #[cfg(not(target_arch = "arm"))]
+        let phase = {
+            let _ = state;
+            &self.phase
+        };
+        #[cfg(target_arch = "arm")]
+        // SAFETY: lifecycle methods receive the exact live loader state pointer.
+        let Some(phase) =
+            (unsafe { firmware_runtime_from_state(state) }).map(|runtime| &runtime.phase)
+        else {
+            return false;
+        };
+        phase
             .compare_exchange(RUNNING, STOPPING, Ordering::AcqRel, Ordering::Acquire)
             .is_ok()
     }
 
     pub(crate) fn install_threads(
         &self,
+        state: NonNull<T>,
         threads: crate::ThreadPair,
     ) -> Result<(), crate::ThreadPair> {
+        #[cfg(not(target_arch = "arm"))]
         let _borrow = self.borrow_exclusive();
-        if self.phase.load(Ordering::Acquire) != RUNNING {
+        #[cfg(not(target_arch = "arm"))]
+        let (phase, slot) = {
+            let _ = state;
+            (&self.phase, &self.threads)
+        };
+        #[cfg(target_arch = "arm")]
+        // SAFETY: thread installation receives the exact live loader state pointer.
+        let Some(runtime) = (unsafe { firmware_runtime_from_state(state) }) else {
+            return Err(threads);
+        };
+        #[cfg(target_arch = "arm")]
+        let _borrow = self.borrow_exclusive(runtime);
+        #[cfg(target_arch = "arm")]
+        let (phase, slot) = (&runtime.phase, &runtime.threads);
+        if phase.load(Ordering::Acquire) != RUNNING {
             return Err(threads);
         }
-        let slot = unsafe { &mut *self.threads.get() };
+        let slot = unsafe { &mut *slot.get() };
         if slot.is_some() {
             Err(threads)
         } else {
@@ -297,31 +459,60 @@ impl<T: Send + 'static> PackageStateStore<T> {
         }
     }
 
-    pub(crate) fn take_threads(&self) -> Option<crate::ThreadPair> {
+    pub(crate) fn take_threads(&self, state: NonNull<T>) -> Option<crate::ThreadPair> {
+        #[cfg(not(target_arch = "arm"))]
         let _borrow = self.borrow_exclusive();
-        unsafe { &mut *self.threads.get() }.take()
+        #[cfg(not(target_arch = "arm"))]
+        let slot = {
+            let _ = state;
+            &self.threads
+        };
+        #[cfg(target_arch = "arm")]
+        // SAFETY: stop receives the exact live loader state pointer before freeing it.
+        let runtime = unsafe { firmware_runtime_from_state(state) }?;
+        #[cfg(target_arch = "arm")]
+        let _borrow = self.borrow_exclusive(runtime);
+        #[cfg(target_arch = "arm")]
+        let slot = &runtime.threads;
+        unsafe { &mut *slot.get() }.take()
     }
 
-    pub(crate) fn finish_stop(&self) -> PackageStateResources {
-        while self.active.load(Ordering::Acquire) != 0 {
+    pub(crate) fn finish_stop(&self, state: NonNull<T>) -> PackageStateResources {
+        #[cfg(not(target_arch = "arm"))]
+        let active = {
+            let _ = state;
+            &self.active
+        };
+        #[cfg(target_arch = "arm")]
+        // SAFETY: stop receives the exact live loader state pointer before freeing it.
+        let runtime = unsafe { firmware_runtime_from_state(state) }
+            .expect("installed package state owns a runtime control block");
+        #[cfg(target_arch = "arm")]
+        let active = &runtime.active;
+        while active.load(Ordering::Acquire) != 0 {
             #[cfg(target_arch = "arm")]
             unsafe {
+                // SAFETY: VESC sleep is valid in the stop callback's thread context.
                 crate::ffi::vesc_sleep_us(1);
             }
             #[cfg(not(target_arch = "arm"))]
             spin_loop();
         }
+        #[cfg(not(target_arch = "arm"))]
         let borrow = self.borrow_exclusive();
+        #[cfg(target_arch = "arm")]
+        let borrow = self.borrow_exclusive(runtime);
+        #[cfg(not(target_arch = "arm"))]
         self.state.store(core::ptr::null_mut(), Ordering::Release);
         #[cfg(target_arch = "arm")]
-        let allocation = NonNull::new(
-            self.allocation
-                .swap(core::ptr::null_mut(), Ordering::AcqRel),
-        );
+        let allocation = NonNull::new(runtime.allocation);
         drop(borrow);
         #[cfg(target_arch = "arm")]
-        let mutex = NonNull::new(self.mutex.swap(core::ptr::null_mut(), Ordering::AcqRel));
+        let mutex = NonNull::new(runtime.mutex);
+        #[cfg(not(target_arch = "arm"))]
         self.phase.store(STOPPED, Ordering::Release);
+        #[cfg(target_arch = "arm")]
+        runtime.phase.store(STOPPED, Ordering::Release);
         PackageStateResources {
             #[cfg(target_arch = "arm")]
             allocation,
@@ -332,7 +523,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
 
     /// Whether startup has installed state.
     #[must_use]
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(all(any(test, feature = "test-support"), not(target_arch = "arm")))]
     pub fn is_installed(&self) -> bool {
         !self.state.load(Ordering::Acquire).is_null()
     }
@@ -340,6 +531,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
     /// Run `f` with installed package state, when present.
     #[inline(always)]
     #[must_use]
+    #[cfg(not(target_arch = "arm"))]
     pub fn with<R>(&self, f: impl for<'state> FnOnce(&'state T) -> R) -> Option<R> {
         self.with_expected(ExpectedState::Any, f)
     }
@@ -347,6 +539,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
     /// Run `f` with installed mutable package state, when present.
     #[inline(always)]
     #[must_use]
+    #[cfg(not(target_arch = "arm"))]
     pub fn with_mut<R>(&self, f: impl for<'state> FnOnce(&'state mut T) -> R) -> Option<R> {
         self.with_expected_mut(ExpectedState::Any, f)
     }
@@ -357,10 +550,20 @@ impl<T: Send + 'static> PackageStateStore<T> {
         expected: ExpectedState<T>,
         f: impl for<'state> FnOnce(&'state T) -> R,
     ) -> Option<R> {
-        let _entry = self.enter()?;
-        let _borrow = self.borrow_exclusive();
-        let state = self.running_state(expected)?;
-        Some(f(unsafe { state.as_ref() }))
+        #[cfg(not(target_arch = "arm"))]
+        {
+            let _entry = self.enter()?;
+            let _borrow = self.borrow_exclusive();
+            let state = self.running_state(expected)?;
+            Some(f(unsafe { state.as_ref() }))
+        }
+        #[cfg(target_arch = "arm")]
+        {
+            let (state, runtime) = self.running_firmware(expected)?;
+            let _entry = self.enter(runtime)?;
+            let _borrow = self.borrow_exclusive(runtime);
+            (runtime.phase.load(Ordering::Acquire) == RUNNING).then(|| f(unsafe { state.as_ref() }))
+        }
     }
 
     #[inline(always)]
@@ -369,31 +572,77 @@ impl<T: Send + 'static> PackageStateStore<T> {
         expected: ExpectedState<T>,
         f: impl for<'state> FnOnce(&'state mut T) -> R,
     ) -> Option<R> {
-        let _entry = self.enter()?;
-        let _borrow = self.borrow_exclusive();
-        let mut state = self.running_state(expected)?;
-        Some(f(unsafe { state.as_mut() }))
+        #[cfg(not(target_arch = "arm"))]
+        {
+            let _entry = self.enter()?;
+            let _borrow = self.borrow_exclusive();
+            let mut state = self.running_state(expected)?;
+            Some(f(unsafe { state.as_mut() }))
+        }
+        #[cfg(target_arch = "arm")]
+        {
+            let (mut state, runtime) = self.running_firmware(expected)?;
+            let _entry = self.enter(runtime)?;
+            let _borrow = self.borrow_exclusive(runtime);
+            (runtime.phase.load(Ordering::Acquire) == RUNNING).then(|| f(unsafe { state.as_mut() }))
+        }
     }
 
+    #[cfg(not(target_arch = "arm"))]
     fn enter(&self) -> Option<PackageStateEntry<'_, T>> {
         (self.phase.load(Ordering::Acquire) == RUNNING).then_some(())?;
         self.active.fetch_add(1, Ordering::AcqRel);
         if self.phase.load(Ordering::Acquire) == RUNNING {
-            Some(PackageStateEntry { store: self })
+            Some(PackageStateEntry {
+                store: self,
+                _state: PhantomData,
+            })
         } else {
             self.active.fetch_sub(1, Ordering::AcqRel);
             None
         }
     }
 
+    #[cfg(target_arch = "arm")]
+    fn enter<'runtime>(
+        &self,
+        runtime: &'runtime FirmwareRuntime,
+    ) -> Option<PackageStateEntry<'runtime, T>> {
+        (runtime.phase.load(Ordering::Acquire) == RUNNING).then_some(())?;
+        runtime.active.fetch_add(1, Ordering::AcqRel);
+        if runtime.phase.load(Ordering::Acquire) == RUNNING {
+            Some(PackageStateEntry {
+                runtime,
+                _state: PhantomData,
+            })
+        } else {
+            runtime.active.fetch_sub(1, Ordering::AcqRel);
+            None
+        }
+    }
+
+    #[cfg(not(target_arch = "arm"))]
     fn running_state(&self, expected: ExpectedState<T>) -> Option<NonNull<T>> {
         (self.phase.load(Ordering::Acquire) == RUNNING).then_some(())?;
         let state = NonNull::new(self.state.load(Ordering::Acquire))?;
         match expected {
+            #[cfg(not(target_arch = "arm"))]
             ExpectedState::Any => Some(state),
             ExpectedState::Exact(expected) if expected == state => Some(state),
             ExpectedState::Exact(_) => None,
         }
+    }
+
+    #[cfg(target_arch = "arm")]
+    fn running_firmware(
+        &self,
+        expected: ExpectedState<T>,
+    ) -> Option<(NonNull<T>, &'static FirmwareRuntime)> {
+        let ExpectedState::Exact(state) = expected;
+        // SAFETY: target `ExpectedState::Exact` originates from the loader ARG
+        // or a thread argument installed by this runtime.
+        let runtime = unsafe { firmware_runtime_from_state(state) }?;
+        (runtime.phase.load(Ordering::Acquire) == RUNNING).then_some((state, runtime))
     }
 }
 

@@ -11,7 +11,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(clippy::missing_safety_doc)]
 
-#[cfg(any(test, feature = "alloc", feature = "test-support"))]
+#[cfg(any(test, all(not(target_arch = "arm"), feature = "test-support")))]
 extern crate alloc as rust_alloc;
 #[cfg(test)]
 extern crate std;

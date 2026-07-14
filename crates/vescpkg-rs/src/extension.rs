@@ -287,11 +287,21 @@ pub unsafe extern "C" fn stateful_lbm_extension_handler<T: StatefulLbmExtension>
         return canonical_nil_raw();
     };
     let nil = args.nil_value();
-    T::runtime_state()
-        .with_mut(|state| T::call(state, args))
-        .unwrap_or(nil)
-        .raw()
-        .0
+    #[cfg(all(not(test), target_arch = "arm"))]
+    let program = crate::firmware_package_program_address!(stateful_lbm_extension_handler::<T>);
+    #[cfg(all(not(test), target_arch = "arm"))]
+    // SAFETY: `program` is derived from this registered package handler, so
+    // VESC returns the live `T::State` installed in this package's ARG slot.
+    let result = unsafe { crate::firmware::__firmware_package_state_ptr::<T::State>(program) }
+        .and_then(|state| {
+            T::runtime_state()
+                .with_expected_mut(crate::runtime::ExpectedState::Exact(state), |state| {
+                    T::call(state, args)
+                })
+        });
+    #[cfg(any(test, not(target_arch = "arm")))]
+    let result = T::runtime_state().with_mut(|state| T::call(state, args));
+    result.unwrap_or(nil).raw().0
 }
 
 #[cfg(test)]

@@ -4,14 +4,19 @@ use crate::ffi;
 
 const MAX_CUSTOM_CONFIG_LEN: usize = 510;
 
-#[cfg(any(test, target_arch = "arm"))]
+#[cfg(test)]
 fn state_allocation_size<T>() -> Option<usize> {
     core::mem::size_of::<T>()
         .max(1)
         .checked_add(core::mem::align_of::<T>() - 1)
 }
 
-#[cfg(any(test, target_arch = "arm"))]
+#[cfg(all(not(test), target_arch = "arm"))]
+fn state_allocation_size<T>() -> Option<usize> {
+    crate::runtime::firmware_runtime_allocation_size::<T>()
+}
+
+#[cfg(test)]
 fn align_state_pointer<T>(
     allocation: core::ptr::NonNull<core::ffi::c_void>,
 ) -> core::ptr::NonNull<T> {
@@ -23,6 +28,13 @@ fn align_state_pointer<T>(
     unsafe { core::ptr::NonNull::new_unchecked(aligned) }
 }
 
+#[cfg(all(not(test), target_arch = "arm"))]
+fn align_state_pointer<T>(
+    allocation: core::ptr::NonNull<core::ffi::c_void>,
+) -> core::ptr::NonNull<T> {
+    unsafe { crate::runtime::firmware_runtime_state_pointer(allocation) }
+}
+
 #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
     arg: *mut core::ffi::c_void,
@@ -31,18 +43,18 @@ unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
         return;
     };
     let runtime = T::runtime_store();
-    if !runtime.begin_stop() {
+    if !runtime.begin_stop(state) {
         return;
     }
     #[cfg(all(not(test), target_arch = "arm"))]
     {
         let firmware = crate::Firmware::new();
         let _ = firmware.clear_package_callbacks();
-        if let Some(threads) = runtime.take_threads() {
+        if let Some(threads) = runtime.take_threads(state) {
             threads.terminate_reverse(firmware.threads());
         }
     }
-    let resources = runtime.finish_stop();
+    let resources = runtime.finish_stop(state);
     unsafe { state.as_mut() }.stop();
     #[cfg(all(not(test), target_arch = "arm"))]
     {
@@ -191,6 +203,9 @@ impl<'info> PackageStart<'info> {
         let info = self
             .raw_info_mut()
             .ok_or(PackageStartError::LoaderUnavailable)?;
+        if !info.arg.is_null() {
+            return Err(PackageStartError::StateAlreadyInstalled);
+        }
 
         #[cfg(target_arch = "arm")]
         let (mut state_ptr, allocation) = {
@@ -219,6 +234,7 @@ impl<'info> PackageStart<'info> {
                 unsafe { ffi::vesc_free(allocation.as_ptr()) };
             }
             return Err(match error {
+                #[cfg(not(target_arch = "arm"))]
                 crate::runtime::PackageStateInstallError::AlreadyInstalled => {
                     PackageStartError::StateAlreadyInstalled
                 }
@@ -278,7 +294,7 @@ impl<'info> PackageStart<'info> {
             .spawn_thread_pair(pair, state)
             .ok_or(PackageStartError::ThreadSpawnFailed)?;
         T::runtime_store()
-            .install_threads(threads)
+            .install_threads(state, threads)
             .map_err(|threads| {
                 threads.terminate_reverse(&crate::thread::ThreadApi::new(bindings));
                 PackageStartError::ThreadsAlreadyInstalled
@@ -698,6 +714,10 @@ mod tests {
 
         assert_eq!(start.install_runtime_state(OwnedState(37)), Ok(()));
         assert_eq!(
+            start.install_runtime_state(OwnedState(99)),
+            Err(super::PackageStartError::StateAlreadyInstalled)
+        );
+        assert_eq!(
             start.with_runtime_state::<OwnedState, _>(|state| state.0),
             Some(37)
         );
@@ -708,7 +728,7 @@ mod tests {
         unsafe { stop(info.arg) };
 
         assert_eq!(OWNED_STATE_STOPS.load(Ordering::Relaxed), 1);
-        assert_eq!(OWNED_STATE_DROPS.load(Ordering::Relaxed), 1);
+        assert_eq!(OWNED_STATE_DROPS.load(Ordering::Relaxed), 2);
         assert_eq!(OWNED_STATE.with(|state| state.0), None);
     }
 
