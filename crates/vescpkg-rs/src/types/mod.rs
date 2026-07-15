@@ -37,6 +37,7 @@ mod power;
 mod ratio;
 mod temperature;
 mod time;
+mod version;
 
 pub use adc::{AdcDecodedLevel, AdcVoltage, BrakeLeverLevel, BrakeSwitch};
 pub use battery::{
@@ -94,3 +95,4 @@ pub use temperature::{
 pub use time::{
     CurrentOffDelay, PpmAge, RemoteAge, SystemDuration, SystemTimestamp, TimeoutDuration,
 };
+pub use version::FirmwareVersion;
