@@ -30,17 +30,44 @@ pub fn build_package(manifest_dir: &Path) {
 }
 
 fn copy_package_assets(manifest_dir: &Path, assets: &Path) {
+    let package = manifest_dir.join("package");
+    println!("cargo::rerun-if-changed={}", package.display());
     if assets.exists() {
         fs::remove_dir_all(assets).expect("clear package asset directory");
     }
-    fs::create_dir_all(assets.join("src")).expect("create package asset directory");
-    for name in ["README.md", "pkgdesc.qml", "code.lisp"] {
-        let source = manifest_dir.join("package").join(name);
-        if source.exists() {
-            fs::copy(&source, assets.join(name)).expect("copy package asset");
-        }
-        println!("cargo::rerun-if-changed={}", source.display());
+    fs::create_dir_all(assets).expect("create package asset directory");
+    if package.exists() {
+        copy_asset_tree(&package, assets, &package).expect("copy package assets");
     }
+}
+
+fn copy_asset_tree(source: &Path, destination: &Path, root: &Path) -> std::io::Result<()> {
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let source = entry.path();
+        let relative = source
+            .strip_prefix(root)
+            .expect("asset is below package root");
+        if relative == Path::new("src/package_lib.bin") {
+            return Err(std::io::Error::other(
+                "package asset `src/package_lib.bin` conflicts with the native payload",
+            ));
+        }
+        let destination = destination.join(entry.file_name());
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            fs::create_dir_all(&destination)?;
+            copy_asset_tree(&source, &destination, root)?;
+        } else if file_type.is_file() {
+            fs::copy(source, destination)?;
+        } else {
+            return Err(std::io::Error::other(format!(
+                "package asset `{}` must be a regular file or directory",
+                source.display()
+            )));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -62,6 +89,32 @@ mod tests {
         copy_package_assets(&manifest, &assets);
 
         assert!(!assets.join("README.md").exists());
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn nested_package_assets_are_copied_and_deleted() {
+        let root = env::temp_dir().join(format!(
+            "vescpkg-build-support-nested-{}",
+            std::process::id()
+        ));
+        let manifest = root.join("manifest");
+        let source = manifest.join("package/lib/config/defaults.lisp");
+        let assets = root.join("assets");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(source.parent().expect("package directory")).expect("create package");
+        fs::write(&source, "(define x 1)\n").expect("write package asset");
+
+        copy_package_assets(&manifest, &assets);
+        assert_eq!(
+            fs::read_to_string(assets.join("lib/config/defaults.lisp"))
+                .expect("copied nested asset"),
+            "(define x 1)\n"
+        );
+
+        fs::remove_file(source).expect("remove nested package asset");
+        copy_package_assets(&manifest, &assets);
+        assert!(!assets.join("lib/config/defaults.lisp").exists());
         fs::remove_dir_all(root).expect("remove test directory");
     }
 }

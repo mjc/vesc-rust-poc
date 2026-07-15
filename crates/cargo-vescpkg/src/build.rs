@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Output};
 
 use serde_json::Value;
@@ -71,9 +71,13 @@ pub(crate) fn build_package(root: &Path, options: &BuildOptions) -> Result<PathB
     let artifacts = cargo_build(root, &workspace_root, options, &package)?;
     let package_slug = package_slug(&package.display_name);
     let artifact_name = format!("{package_slug}-{}", package.version);
-    let output_dir = metadata_target_dir(&metadata)?
-        .join("vescpkg")
-        .join(&artifact_name);
+    let artifact_root = metadata_target_dir(&metadata)?.join("vescpkg");
+    let output_dir = artifact_root.join(&artifact_name);
+    if output_dir.parent() != Some(artifact_root.as_path()) {
+        return Err(BuildError(
+            "package artifact escaped its output root".to_owned(),
+        ));
+    }
 
     if output_dir.exists() {
         fs::remove_dir_all(&output_dir)?;
@@ -124,19 +128,59 @@ fn validate_target(target: &str) -> Result<(), BuildError> {
 }
 
 fn stage_generated_assets(generated: &Path, output: &Path) -> Result<(), BuildError> {
-    for name in [
-        "README.md",
-        "pkgdesc.qml",
-        "code.lisp",
-        "bms.lisp",
-        "ui.qml",
-    ] {
-        let source = generated.join(name);
-        if source.is_file() {
-            fs::copy(source, output.join(name))?;
+    if !generated.exists() {
+        return Ok(());
+    }
+    stage_generated_asset_tree(generated, output, generated)
+}
+
+fn stage_generated_asset_tree(
+    source_root: &Path,
+    output: &Path,
+    source_dir: &Path,
+) -> Result<(), BuildError> {
+    for entry in fs::read_dir(source_dir)? {
+        let entry = entry?;
+        let source = entry.path();
+        let relative = source
+            .strip_prefix(source_root)
+            .map_err(|error| BuildError(error.to_string()))?;
+        if relative == Path::new("src/package_lib.bin") {
+            return Err(BuildError(
+                "generated asset `src/package_lib.bin` conflicts with the native payload"
+                    .to_owned(),
+            ));
+        }
+        let destination = output.join(relative);
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            fs::create_dir_all(&destination)?;
+            stage_generated_asset_tree(source_root, output, &source)?;
+        } else if file_type.is_file() {
+            if let Some(parent) = destination.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::copy(source, destination)?;
+        } else {
+            return Err(BuildError(format!(
+                "generated package asset `{}` must be a regular file or directory",
+                source.display()
+            )));
         }
     }
     Ok(())
+}
+
+fn validate_path_component(label: &str, value: &str) -> Result<(), BuildError> {
+    let mut components = Path::new(value).components();
+    let is_normal = matches!(components.next(), Some(Component::Normal(_)))
+        && components.next().is_none()
+        && !value.contains(['/', '\\']);
+    is_normal.then_some(()).ok_or_else(|| {
+        BuildError(format!(
+            "{label} `{value}` must be one normal filesystem path component"
+        ))
+    })
 }
 
 fn command_output(command: &mut Command) -> Result<Output, BuildError> {
@@ -249,6 +293,7 @@ fn select_package(metadata: &Value, requested: &str) -> Result<PackageMetadata, 
         .as_str()
         .unwrap_or(cargo_version)
         .to_owned();
+    validate_path_component("package version", &version)?;
 
     Ok(PackageMetadata {
         id: id.to_owned(),
@@ -500,6 +545,44 @@ mod tests {
     }
 
     #[test]
+    fn stages_nested_generated_assets() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let generated = temp.path().join("generated");
+        let output = temp.path().join("output");
+        std::fs::create_dir_all(generated.join("lib/config")).expect("generated directory");
+        std::fs::create_dir_all(&output).expect("output directory");
+        std::fs::write(generated.join("lib/config/defaults.lisp"), "(define x 1)\n")
+            .expect("nested Lisp");
+
+        stage_generated_assets(&generated, &output).expect("stage assets");
+
+        assert_eq!(
+            std::fs::read_to_string(output.join("lib/config/defaults.lisp"))
+                .expect("staged nested Lisp"),
+            "(define x 1)\n"
+        );
+    }
+
+    #[test]
+    fn generated_assets_cannot_replace_the_native_payload() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let generated = temp.path().join("generated");
+        let output = temp.path().join("output");
+        std::fs::create_dir_all(generated.join("src")).expect("generated directory");
+        std::fs::create_dir_all(output.join("src")).expect("output directory");
+        std::fs::write(generated.join("src/package_lib.bin"), b"asset").expect("asset payload");
+        std::fs::write(output.join("src/package_lib.bin"), b"native").expect("native payload");
+
+        let error = stage_generated_assets(&generated, &output).expect_err("reserved payload");
+
+        assert!(error.to_string().contains("src/package_lib.bin"));
+        assert_eq!(
+            std::fs::read(output.join("src/package_lib.bin")).expect("native payload"),
+            b"native"
+        );
+    }
+
+    #[test]
     fn selects_any_single_binary_package_from_cargo_metadata() {
         let metadata = json!({
             "packages": [{
@@ -544,6 +627,27 @@ mod tests {
         assert_eq!(package.payload_kind, PayloadKind::Staticlib);
         assert_eq!(package.version, "1.2.1");
         assert!(package.force_c_float_math);
+    }
+
+    #[test]
+    fn rejects_a_version_that_is_not_one_path_component() {
+        let metadata = json!({
+            "packages": [{
+                "name": "static-package",
+                "id": "path+file:///tmp/static-package#0.1.0",
+                "version": "0.1.0",
+                "targets": [{
+                    "name": "static_package",
+                    "kind": ["lib"],
+                    "crate_types": ["staticlib"]
+                }],
+                "metadata": {"vescpkg": {"version": "../../outside"}}
+            }]
+        });
+
+        let error = select_package(&metadata, "static-package").expect_err("unsafe version");
+
+        assert!(error.to_string().contains("version"));
     }
 
     #[test]
