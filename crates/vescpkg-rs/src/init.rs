@@ -207,6 +207,20 @@ impl<'info> PackageStart<'info> {
         &mut self,
         state_value: T,
     ) -> Result<(), PackageStartError> {
+        self.install_runtime_state_with(state_value, |state, allocation| unsafe {
+            T::runtime_store().install_owned(state, allocation)
+        })
+    }
+
+    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
+    fn install_runtime_state_with<T: crate::PackageRuntimeState>(
+        &mut self,
+        state_value: T,
+        install: impl FnOnce(
+            &mut T,
+            core::ptr::NonNull<core::ffi::c_void>,
+        ) -> Result<(), crate::runtime::PackageStateInstallError>,
+    ) -> Result<(), PackageStartError> {
         let info = self
             .raw_info_mut()
             .ok_or(PackageStartError::LoaderUnavailable)?;
@@ -234,7 +248,7 @@ impl<'info> PackageStart<'info> {
         let allocation = core::ptr::NonNull::from(&mut *state).cast();
 
         let state_ptr = core::ptr::from_mut(state);
-        if let Err(error) = unsafe { T::runtime_store().install_owned(state, allocation) } {
+        if let Err(error) = install(state, allocation) {
             #[cfg(target_arch = "arm")]
             {
                 unsafe { state_ptr.drop_in_place() };
@@ -245,7 +259,7 @@ impl<'info> PackageStart<'info> {
                 crate::runtime::PackageStateInstallError::AlreadyInstalled => {
                     PackageStartError::StateAlreadyInstalled
                 }
-                #[cfg(target_arch = "arm")]
+                #[cfg(any(test, target_arch = "arm"))]
                 crate::runtime::PackageStateInstallError::MutexUnavailable => {
                     PackageStartError::AllocationFailed
                 }
@@ -644,6 +658,8 @@ mod tests {
     static OWNED_STATE: crate::PackageStateStore<OwnedState> = crate::PackageStateStore::new();
     static OWNED_STATE_STOPS: AtomicUsize = AtomicUsize::new(0);
     static OWNED_STATE_DROPS: AtomicUsize = AtomicUsize::new(0);
+    static FAILED_STATE: crate::PackageStateStore<FailedState> = crate::PackageStateStore::new();
+    static FAILED_STATE_DROPS: AtomicUsize = AtomicUsize::new(0);
     static EXTENSION_REGISTRATION_STATE: crate::PackageStateStore<ExtensionRegistrationState> =
         crate::PackageStateStore::new();
     static REGISTRATION_STATE: crate::PackageStateStore<RegistrationState> =
@@ -652,6 +668,7 @@ mod tests {
     static SPAWN_STATE: crate::PackageStateStore<SpawnState> = crate::PackageStateStore::new();
 
     struct OwnedState(u32);
+    struct FailedState;
     struct ExtensionRegistrationState;
     struct RegistrationState;
     struct ReloadState(u32);
@@ -721,6 +738,20 @@ mod tests {
 
         fn stop(&mut self) {
             OWNED_STATE_STOPS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    impl crate::PackageRuntimeState for FailedState {
+        fn runtime_store() -> &'static crate::PackageStateStore<Self> {
+            &FAILED_STATE
+        }
+
+        fn stop(&mut self) {}
+    }
+
+    impl Drop for FailedState {
+        fn drop(&mut self) {
+            FAILED_STATE_DROPS.fetch_add(1, Ordering::Relaxed);
         }
     }
 
@@ -828,6 +859,27 @@ mod tests {
         assert_eq!(OWNED_STATE_STOPS.load(Ordering::Relaxed), 1);
         assert_eq!(OWNED_STATE_DROPS.load(Ordering::Relaxed), 2);
         assert_eq!(OWNED_STATE.with(|state| state.0), None);
+    }
+
+    #[test]
+    fn mutex_allocation_failure_drops_state_before_publishing_loader_metadata() {
+        FAILED_STATE_DROPS.store(0, Ordering::Relaxed);
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0,
+        };
+        let mut start = super::PackageStart::from_lib_info(&mut info);
+
+        let result = start.install_runtime_state_with(FailedState, |_, _| {
+            Err(crate::runtime::PackageStateInstallError::MutexUnavailable)
+        });
+
+        assert_eq!(result, Err(PackageStartError::AllocationFailed));
+        assert_eq!(FAILED_STATE_DROPS.load(Ordering::Relaxed), 1);
+        assert!(info.arg.is_null());
+        assert!(info.stop_fun.is_none());
+        assert!(!FAILED_STATE.is_installed());
     }
 
     #[test]

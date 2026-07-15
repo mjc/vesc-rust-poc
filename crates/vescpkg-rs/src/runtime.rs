@@ -188,7 +188,7 @@ impl<T> Drop for PackageStateEntry<'_, T> {
 pub(crate) enum PackageStateInstallError {
     #[cfg(not(target_arch = "arm"))]
     AlreadyInstalled,
-    #[cfg(target_arch = "arm")]
+    #[cfg(any(test, target_arch = "arm"))]
     MutexUnavailable,
 }
 
