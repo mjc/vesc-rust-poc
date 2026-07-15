@@ -114,8 +114,8 @@ impl RefloatMotorControl {
             self.brake_timer_ticks = system_time_ticks;
         }
         if system_time_ticks
+            .wrapping_duration_since(self.brake_timer_ticks)
             .as_ticks()
-            .wrapping_sub(self.brake_timer_ticks.as_ticks())
             > SYSTEM_TICK_RATE_HZ as u32
         {
             // Upstream releases idle motor output by setting 0A once

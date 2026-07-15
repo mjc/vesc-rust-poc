@@ -85,6 +85,22 @@ mod tests {
     }
 
     #[test]
+    fn refloat_ticks_elapsed_matches_timer_older_across_tick_wrap() {
+        let then = TimestampTicks::from_ticks(u32::MAX - 5_000);
+
+        assert!(!refloat_ticks_elapsed(
+            TimestampTicks::from_ticks(4_999),
+            then,
+            1,
+        ));
+        assert!(refloat_ticks_elapsed(
+            TimestampTicks::from_ticks(5_000),
+            then,
+            1,
+        ));
+    }
+
+    #[test]
     fn startup_ignores_registration_failures_after_required_setup() {
         let registrations = core::cell::Cell::new(0);
 
