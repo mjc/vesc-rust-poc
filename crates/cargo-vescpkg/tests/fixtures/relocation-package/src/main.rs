@@ -9,6 +9,11 @@ pub struct LoaderInfo {
     base_addr: u32,
 }
 
+#[used]
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".program_ptr")]
+static prog_ptr: u32 = 0;
+
 #[cfg(not(any(
     feature = "marked-image-offset",
     feature = "unmarked-image-offset"
@@ -35,6 +40,7 @@ core::arch::global_asm!(
 );
 
 #[unsafe(no_mangle)]
+#[unsafe(link_section = ".init_fun")]
 pub extern "C" fn init(info: *const LoaderInfo) -> bool {
     #[cfg(not(any(
         feature = "marked-image-offset",

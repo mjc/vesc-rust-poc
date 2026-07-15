@@ -12,8 +12,8 @@ const DEFAULT_LOADER: &str = concat!(
     "(print \"vesc-rust-load-v7\")\n",
     "(print (load-native-lib package-lib))\n",
 );
-// PIC stores function offsets in `.got`. SDK callback macros emit symbol-table-only aliases
-// for offsets they explicitly rebase against the loaded image before use.
+// PIC may store function offsets in `.got`. SDK callback macros emit symbol-table-only aliases
+// for package-local addresses they normalize against the loaded image before use.
 const IMAGE_OFFSET_MARKER_PREFIX: &str = "__vescpkg_image_offset_";
 const VESC_TARGET: &str = "thumbv7em-none-eabihf";
 
@@ -514,9 +514,29 @@ fn validate_flat_image_relocations(elf: &Path) -> Result<(), BuildError> {
         )));
     }
     let report = String::from_utf8_lossy(&output.stdout);
+    validate_loader_entrypoint_layout(&report)?;
     let allow_got = validate_image_offset_relocations(&report)?;
     validate_writable_section_report(&report, allow_got)?;
     validate_relocation_report(&report)
+}
+
+fn validate_loader_entrypoint_layout(report: &str) -> Result<(), BuildError> {
+    let symbol_address = |name| {
+        report.lines().find_map(|line| {
+            let fields = line.split_whitespace().collect::<Vec<_>>();
+            (fields.get(7) == Some(&name) && fields.get(6) != Some(&"UND"))
+                .then(|| usize::from_str_radix(fields.get(1)?, 16).ok())
+                .flatten()
+        })
+    };
+    let prog_ptr = symbol_address("prog_ptr");
+    let init = symbol_address("init");
+    if prog_ptr == Some(0) && init.is_some_and(|address| address & !1 == 4) {
+        return Ok(());
+    }
+    Err(BuildError(format!(
+        "invalid VESC loader entrypoint layout: expected `prog_ptr` at 0x0 and `init` at 0x4, found {prog_ptr:?} and {init:?}"
+    )))
 }
 
 fn validate_image_offset_relocations(report: &str) -> Result<bool, BuildError> {
@@ -545,7 +565,7 @@ fn validate_image_offset_relocations(report: &str) -> Result<bool, BuildError> {
             }
             if !image_offset_symbols.contains(&symbol) {
                 return Err(BuildError(format!(
-                    "unmarked image-offset symbol `{symbol}` in `{relocation_section}`; SDK-rebased callbacks must emit a `{IMAGE_OFFSET_MARKER_PREFIX}{symbol}` alias"
+                    "unmarked image-offset symbol `{symbol}` in `{relocation_section}`; SDK-resolved callbacks must emit a `{IMAGE_OFFSET_MARKER_PREFIX}{symbol}` alias"
                 )));
             }
             allow_got = true;
@@ -672,7 +692,8 @@ mod tests {
         cargo_build_command, cargo_message_artifacts, command_failure_message,
         metadata_workspace_root, package_slug, select_package, stage_generated_assets,
         staticlib_linker_script, validate_descriptor_fullscreen, validate_image_offset_relocations,
-        validate_relocation_report, validate_target, validate_writable_section_report,
+        validate_loader_entrypoint_layout, validate_relocation_report, validate_target,
+        validate_writable_section_report,
     };
     use crate::package::Package;
     use serde_json::json;
@@ -881,6 +902,29 @@ Relocation section '.rel.rodata' at offset 0x100 contains 1 entry:\n\
                 .to_string()
                 .contains("pointer-bearing loadable statics")
         );
+    }
+
+    #[test]
+    fn accepts_the_vesc_loader_entrypoint_layout() {
+        let report = "\
+Symbol table '.symtab' contains 2 entries:\n\
+   Num:    Value  Size Type    Bind   Vis      Ndx Name\n\
+     1: 00000000     4 OBJECT  GLOBAL DEFAULT    1 prog_ptr\n\
+     2: 00000005    12 FUNC    GLOBAL DEFAULT    2 init\n";
+
+        assert!(validate_loader_entrypoint_layout(report).is_ok());
+    }
+
+    #[test]
+    fn rejects_a_helper_before_the_vesc_loader_entrypoint() {
+        let report = "\
+Symbol table '.symtab' contains 2 entries:\n\
+   Num:    Value  Size Type    Bind   Vis      Ndx Name\n\
+     1: 00000000     4 OBJECT  GLOBAL DEFAULT    1 prog_ptr\n\
+     2: 0000000f    12 FUNC    GLOBAL DEFAULT    2 init\n";
+
+        let error = validate_loader_entrypoint_layout(report).expect_err("misplaced init");
+        assert!(error.to_string().contains("`init` at 0x4"));
     }
 
     #[test]
