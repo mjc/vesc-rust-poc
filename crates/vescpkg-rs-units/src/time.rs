@@ -19,6 +19,15 @@ scalar_unit!(VescSeconds, from_seconds, as_seconds, "VESC float seconds");
 scalar_unit!(Frequency, from_hertz, as_hertz, "hertz");
 scalar_unit!(SampleRate, from_hertz, as_hertz, "hertz");
 
+impl TimestampTicks {
+    /// Return the unsigned wrapping duration since an earlier VESC timestamp.
+    #[must_use]
+    #[inline(always)]
+    pub const fn wrapping_duration_since(self, earlier: Self) -> SystemTicks {
+        SystemTicks::from_ticks(self.as_ticks().wrapping_sub(earlier.as_ticks()))
+    }
+}
+
 impl SampleRate {
     /// Return the duration of one sample at this rate.
     pub fn sample_period(self) -> Option<VescSeconds> {

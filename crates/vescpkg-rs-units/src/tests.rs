@@ -1,8 +1,8 @@
 use super::{
     AccelerationG, AmpHours, AngleDegrees, AngleRadians, AngularVelocity, Charge, Current,
     Distance, DistancePerEnergy, Energy, EnergyPerDistance, Frequency, Latitude, Longitude,
-    Percent, Power, Ratio, Rpm, SampleRate, Speed, SystemTicks, Temperature, VescSeconds, Voltage,
-    WattHours,
+    Percent, Power, Ratio, Rpm, SampleRate, Speed, SystemTicks, Temperature, TimestampTicks,
+    VescSeconds, Voltage, WattHours,
 };
 
 #[test]
@@ -334,6 +334,14 @@ fn fugit_timer_aliases_model_vesc_system_ticks() {
 
     assert_eq!(ticks.as_ticks(), 10_000);
     assert_eq!(ticks.as_millis(), 1_000);
+}
+
+#[test]
+fn timestamp_delta_preserves_vesc_unsigned_wraparound() {
+    let then = TimestampTicks::from_ticks(u32::MAX - 4);
+    let now = TimestampTicks::from_ticks(5);
+
+    assert_eq!(now.wrapping_duration_since(then).as_ticks(), 10);
 }
 
 #[test]
