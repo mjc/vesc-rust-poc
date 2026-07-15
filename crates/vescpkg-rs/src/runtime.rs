@@ -469,7 +469,7 @@ impl<'a, T: Send + 'static> PackageStateAccess<'a, T> {
     /// The fallback must return a non-null pointer to a live `T` whenever it returns
     /// `Some`. The pointed-to state must remain valid for the duration of each callback,
     /// and all callback access to that state must be coordinated through this store.
-    pub const unsafe fn with_firmware_fallback(
+    pub(crate) const unsafe fn with_firmware_fallback(
         runtime: &'a PackageStateStore<T>,
         firmware_state: unsafe fn() -> Option<NonNull<T>>,
     ) -> Self {

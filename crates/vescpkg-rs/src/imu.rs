@@ -411,10 +411,7 @@ mod tests {
             // C map: generated package callbacks use `ARG(PROG_ADDR)` from
             // `third_party/vesc_pkg_lib/vesc_c_if.h:697-700` as this fallback.
             unsafe {
-                crate::PackageStateAccess::with_firmware_fallback(
-                    &LOADER_RUNTIME_STATE,
-                    loader_state,
-                )
+                crate::__macro_support::__package_state_access(&LOADER_RUNTIME_STATE, loader_state)
             }
         }
 

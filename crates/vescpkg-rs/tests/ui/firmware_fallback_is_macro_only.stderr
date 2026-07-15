@@ -1,0 +1,10 @@
+error[E0624]: associated function `with_firmware_fallback` is private
+  --> tests/ui/firmware_fallback_is_macro_only.rs:12:42
+   |
+12 |     let _ = unsafe { PackageStateAccess::with_firmware_fallback(&runtime, firmware_state) };
+   |                                          ^^^^^^^^^^^^^^^^^^^^^^ private associated function
+   |
+  --> <BASE_DIR>/crates/vescpkg-rs/src/runtime.rs:472:4
+  ::: <BASE_DIR>/crates/vescpkg-rs/src/runtime.rs:475:13
+   |
+   = note: private associated function defined here

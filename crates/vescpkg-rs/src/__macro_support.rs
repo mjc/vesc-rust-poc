@@ -1,5 +1,19 @@
 //! Hidden implementation hooks for exported package macros.
 
+/// Build package state access from a macro-generated firmware lookup.
+///
+/// # Safety
+///
+/// `firmware_state` must return the live state installed in `runtime`, and that state must
+/// remain valid for the duration of each callback.
+#[doc(hidden)]
+pub const unsafe fn __package_state_access<T: Send + 'static>(
+    runtime: &crate::PackageStateStore<T>,
+    firmware_state: unsafe fn() -> Option<core::ptr::NonNull<T>>,
+) -> crate::PackageStateAccess<'_, T> {
+    unsafe { crate::PackageStateAccess::with_firmware_fallback(runtime, firmware_state) }
+}
+
 #[cfg(not(test))]
 pub use crate::firmware::__firmware_package_state_ptr;
 #[cfg(not(any(test, feature = "test-support")))]

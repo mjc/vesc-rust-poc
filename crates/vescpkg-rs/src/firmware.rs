@@ -188,9 +188,7 @@ macro_rules! firmware_stateful_app_data_callback {
             'static,
             <$callback as $crate::StatefulAppDataCallback>::State,
         > {
-            unsafe {
-                $crate::PackageStateAccess::with_firmware_fallback(runtime, package_state_ptr)
-            }
+            unsafe { $crate::__macro_support::__package_state_access(runtime, package_state_ptr) }
         }
 
         #[cfg(all(not(test), target_arch = "arm"))]
@@ -866,7 +864,7 @@ mod tests {
             type State = State;
 
             fn state_source() -> PackageStateAccess<'static, Self::State> {
-                unsafe { PackageStateAccess::with_firmware_fallback(&RUNTIME, no_state) }
+                unsafe { crate::__macro_support::__package_state_access(&RUNTIME, no_state) }
             }
 
             fn default_config() -> ConfigBytes<'static> {
@@ -1024,7 +1022,7 @@ mod tests {
             type State = State;
 
             fn state_source() -> PackageStateAccess<'static, Self::State> {
-                unsafe { PackageStateAccess::with_firmware_fallback(&RUNTIME, fallback_state) }
+                unsafe { crate::__macro_support::__package_state_access(&RUNTIME, fallback_state) }
             }
 
             fn default_config() -> ConfigBytes<'static> {
