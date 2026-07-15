@@ -95,10 +95,8 @@ fn record_refloat_firmware_version(state: &mut RefloatPackageState, args: &[i32]
 
 /// Return the native extension descriptors required by upstream `package.lisp`.
 #[cfg(any(test, target_arch = "arm"))]
-fn package_extension_descriptors() -> impl ExactSizeIterator<Item = ExtensionDescriptor> {
-    RefloatLoaderExtension::ALL
-        .into_iter()
-        .map(RefloatLoaderExtension::descriptor)
+fn package_extension_descriptors() -> [ExtensionDescriptor; RefloatLoaderExtension::ALL.len()] {
+    RefloatLoaderExtension::ALL.map(RefloatLoaderExtension::descriptor)
 }
 
 /// Register Refloat's loader extensions with runtime names and handlers.
@@ -130,7 +128,7 @@ mod tests {
 
     #[test]
     fn extension_table_lists_official_refloat_loader_extensions() {
-        let mut descriptors = package_extension_descriptors();
+        let mut descriptors = package_extension_descriptors().into_iter();
         let names = RefloatLoaderExtension::ALL.map(RefloatLoaderExtension::name);
 
         assert_eq!(
@@ -165,7 +163,7 @@ mod tests {
             Ok(())
         );
 
-        for (descriptor, name) in package_extension_descriptors().zip(names) {
+        for (descriptor, name) in package_extension_descriptors().into_iter().zip(names) {
             assert_eq!(registry.register(&mut start, [descriptor]), Ok(()));
             assert_eq!(registry.last_registered_name(), Some(name.as_str()));
         }
