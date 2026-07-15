@@ -129,7 +129,7 @@ pub struct ExtensionDescriptor {
 }
 
 impl ExtensionDescriptor {
-    pub(crate) const fn from_handler(name: ExtensionName, handler: ExtensionHandler) -> Self {
+    pub(crate) fn from_handler(name: ExtensionName, handler: ExtensionHandler) -> Self {
         Self {
             name,
             handler,
@@ -139,13 +139,13 @@ impl ExtensionDescriptor {
 
     /// Build a descriptor for a stateless typed extension callback.
     #[inline(always)]
-    pub const fn typed<T: LbmExtension>(name: ExtensionName) -> Self {
+    pub fn typed<T: LbmExtension>(name: ExtensionName) -> Self {
         Self::from_handler(name, lbm_extension_handler::<T>)
     }
 
     /// Build a descriptor for a runtime-state-backed typed extension callback.
     #[inline(always)]
-    pub const fn stateful<T: StatefulLbmExtension>(name: ExtensionName) -> Self {
+    pub fn stateful<T: StatefulLbmExtension>(name: ExtensionName) -> Self {
         Self {
             name,
             handler: stateful_lbm_extension_handler::<T>,
