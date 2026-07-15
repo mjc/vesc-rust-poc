@@ -1,3 +1,4 @@
+use super::feedback::FilteredAccelMagnitude;
 use super::scalar::AxisScalar;
 use vescpkg_rs::prelude::{ImuAcceleration, ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ};
 
@@ -49,8 +50,11 @@ impl AccelMagnitude {
     /// C map: `calculate_acc_confidence` low-pass filters `data->acc_mag` at
     /// `third_party/refloat/src/balance_filter.c:42-50`.
     #[inline(always)]
-    pub(super) const fn blend_with_filtered(self, filtered_magnitude: f32) -> f32 {
-        filtered_magnitude * 0.9 + self.0 * 0.1
+    pub(super) const fn blend_with_filtered(
+        self,
+        filtered_magnitude: FilteredAccelMagnitude,
+    ) -> FilteredAccelMagnitude {
+        FilteredAccelMagnitude::new(filtered_magnitude.0 * 0.9 + self.0 * 0.1)
     }
 }
 

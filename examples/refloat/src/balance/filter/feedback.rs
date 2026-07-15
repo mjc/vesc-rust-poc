@@ -18,7 +18,7 @@ pub(super) struct MahonyFeedbackGains {
     yaw: YawAccelCorrectionGain,
 }
 
-enum FilteredAccelMagnitudeTag {}
+pub(super) enum FilteredAccelMagnitudeTag {}
 #[cfg(any(test, target_arch = "arm"))]
 enum PitchAccelCorrectionGainTag {}
 enum PitchFeedbackGainTag {}
@@ -31,7 +31,7 @@ enum YawFeedbackGainTag {}
 
 // C map: upstream balance_filter keeps Mahony pitch/roll KP as scalar config
 // inputs and uses accel confidence as a scalar feedback weight.
-type FilteredAccelMagnitude = AxisScalar<FilteredAccelMagnitudeTag>;
+pub(super) type FilteredAccelMagnitude = AxisScalar<FilteredAccelMagnitudeTag>;
 #[cfg(any(test, target_arch = "arm"))]
 type PitchAccelCorrectionGain = AxisScalar<PitchAccelCorrectionGainTag>;
 type PitchFeedbackGain = AxisScalar<PitchFeedbackGainTag>;
@@ -122,7 +122,7 @@ impl AccelConfidenceFilter {
     pub(super) fn confidence(&mut self, new_acc_mag: AccelMagnitude) -> AccelConfidence {
         // C map: `third_party/refloat/src/balance_filter.c:42-50` filters
         // accelerometer magnitude and clamps the confidence at zero.
-        self.magnitude.0 = new_acc_mag.blend_with_filtered(self.magnitude.0);
+        self.magnitude = new_acc_mag.blend_with_filtered(self.magnitude);
         AccelConfidence::new((1.0 - 0.02 * sqrt((self.magnitude.0 - 1.0).abs())).max(0.0))
     }
 }
