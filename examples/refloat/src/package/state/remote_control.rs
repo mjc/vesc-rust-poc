@@ -134,7 +134,7 @@ pub(super) fn handle_packet(
     // six-byte packets at `third_party/refloat/src/main.c:2186-2192`; `cmd_rc_move`
     // mutates RC move state only while READY at `third_party/refloat/src/main.c:1735-1758`.
     match refloat_command_payload(bytes, RefloatAppDataCommand::RcMove) {
-        Some([direction, current, time, sum, ..]) => {
+        Some([direction, current, time, sum]) => {
             if all_data_payloads.base().status().ride_state().run_state() == RefloatRunState::Ready
             {
                 remote_control.queue_move(RemoteMove::from_refloat_command(
@@ -308,8 +308,11 @@ impl RemoteControlState {
 
 #[cfg(test)]
 mod tests {
-    use super::{RemoteControlState, RemoteCurrentTarget, RemoteMove};
-    use crate::domain::{RefloatMode, RefloatRealtimeRemoteInput, RefloatRunState};
+    use super::{RemoteControlState, RemoteCurrentTarget, RemoteMove, handle_packet};
+    use crate::domain::{
+        REFLOAT_APP_DATA_PACKAGE_ID, RefloatAppDataCommand, RefloatMode,
+        RefloatRealtimeRemoteInput, RefloatRunState,
+    };
     use crate::package::state::RefloatPackageState;
     use crate::package::test_support::{
         RefloatConfigTestBytes, editable_config_from_bytes,
@@ -382,6 +385,25 @@ mod tests {
         // current/10 at `third_party/refloat/src/main.c:1747-1756`; `do_rc_move` filters the first
         // READY tick by 5% at `third_party/refloat/src/main.c:276-286`.
         assert!((requested_current.current().as_amps() - 0.2).abs() < 0.0001);
+    }
+
+    #[test]
+    fn rc_move_rejects_a_trailing_payload_byte_without_queueing_current() {
+        let mut remote_control = RemoteControlState::default();
+        let payloads =
+            sample_all_data_payloads_with_ride_state(RefloatRunState::Ready, RefloatMode::Normal);
+        let packet = [
+            REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            RefloatAppDataCommand::RcMove.id(),
+            1,
+            40,
+            2,
+            42,
+            0,
+        ];
+
+        assert!(!handle_packet(payloads, &mut remote_control, &packet));
+        assert_eq!(remote_control.request_active_move_current(Rpm::ZERO), None);
     }
 
     #[test]
