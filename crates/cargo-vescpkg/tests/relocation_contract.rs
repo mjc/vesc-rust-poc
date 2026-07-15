@@ -1,10 +1,10 @@
-//! End-to-end flat-image relocation rejection.
+//! End-to-end flat-image rejection.
 
 use std::path::Path;
 use std::process::Command;
 
 #[test]
-fn rejects_a_pointer_bearing_loadable_static() {
+fn rejects_a_writable_pointer_bearing_static() {
     let manifest =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/relocation-package/Cargo.toml");
     let target = tempfile::tempdir().expect("fixture target directory");
@@ -17,9 +17,8 @@ fn rejects_a_pointer_bearing_loadable_static() {
 
     assert!(!output.status.success());
     let error = String::from_utf8_lossy(&output.stderr);
-    assert!(error.contains("unsupported absolute relocation"), "{error}");
     assert!(
-        error.contains("pointer-bearing loadable statics"),
+        error.contains("unsupported writable section `.data`"),
         "{error}"
     );
 }

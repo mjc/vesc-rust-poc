@@ -400,10 +400,7 @@ fn cargo_build_command(
 ) -> Result<Command, BuildError> {
     let mut command = Command::new("cargo");
     command.current_dir(root).args([
-        match package.payload_kind {
-            PayloadKind::Binary => "build",
-            PayloadKind::Staticlib => "rustc",
-        },
+        "rustc",
         "--message-format=json-render-diagnostics",
         "--target",
         &options.target,
@@ -412,6 +409,10 @@ fn cargo_build_command(
         "--package",
         &package.name,
     ]);
+    match package.payload_kind {
+        PayloadKind::Binary => command.args(["--bin", &package.target_name]),
+        PayloadKind::Staticlib => command.arg("--lib"),
+    };
     if let Some(path) = &options.manifest_path {
         command.args([
             "--manifest-path",
@@ -422,9 +423,7 @@ fn cargo_build_command(
     if let Some(features) = &options.features {
         command.args(["--features", features]);
     }
-    if package.payload_kind == PayloadKind::Staticlib {
-        command.args(["--", "-C", "relocation-model=pic"]);
-    }
+    command.args(["--", "-C", "relocation-model=pic"]);
     Ok(command)
 }
 
@@ -877,12 +876,48 @@ Relocation section '.rel.data' at offset 0x100 contains 2 entries:\n\
             .collect::<Vec<_>>();
 
         assert_eq!(args.first().map(String::as_str), Some("rustc"));
+        assert!(args.iter().any(|arg| arg == "--lib"));
         assert!(args.ends_with(&[
             "--".to_owned(),
             "-C".to_owned(),
             "relocation-model=pic".to_owned(),
         ]));
         assert!(env.is_empty());
+    }
+
+    #[test]
+    fn binary_build_uses_pic_for_the_selected_cargo_target() {
+        let package = PackageMetadata {
+            id: "fixture".to_owned(),
+            name: "fixture".to_owned(),
+            target_name: "fixture-bin".to_owned(),
+            version: "0.1.0".to_owned(),
+            display_name: "Fixture".to_owned(),
+            payload_kind: PayloadKind::Binary,
+            qml_fullscreen: false,
+        };
+        let options = BuildOptions {
+            package: "fixture".to_owned(),
+            manifest_path: None,
+            target: VESC_TARGET.to_owned(),
+            profile: "release".to_owned(),
+            features: None,
+        };
+
+        let command =
+            cargo_build_command(Path::new("/repo"), &options, &package).expect("Cargo command");
+        let args = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+
+        assert_eq!(args.first().map(String::as_str), Some("rustc"));
+        assert!(args.windows(2).any(|args| args == ["--bin", "fixture-bin"]));
+        assert!(args.ends_with(&[
+            "--".to_owned(),
+            "-C".to_owned(),
+            "relocation-model=pic".to_owned(),
+        ]));
     }
 
     #[test]
