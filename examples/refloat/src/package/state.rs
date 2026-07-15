@@ -9,12 +9,10 @@ use crate::domain::{
     RefloatRealtimeRuntimeSetpoints, RefloatRideState, RefloatRunState, RefloatSetpointAdjustment,
     RefloatStopCondition, RefloatWheelSlipState,
 };
-#[cfg(any(test, target_arch = "arm"))]
-use crate::extensions::RefloatFirmwareVersion;
 use crate::motor_control::RefloatMotorControl;
-#[cfg(any(test, target_arch = "arm"))]
-use vescpkg_rs::prelude::Voltage;
 use vescpkg_rs::prelude::{AngleRadians, Current, MotorCurrent, Rpm, TimestampTicks};
+#[cfg(any(test, target_arch = "arm"))]
+use vescpkg_rs::prelude::{FirmwareVersion, Voltage};
 use vescpkg_rs::{Imu, MotorOutput, MotorTelemetry};
 
 #[cfg(test)]
@@ -84,7 +82,7 @@ pub struct RefloatPackageState {
     motor_current_max: MotorCurrent,
     motor_current_min: MotorCurrent,
     #[cfg(any(test, target_arch = "arm"))]
-    firmware_version: Option<RefloatFirmwareVersion>,
+    firmware_version: Option<FirmwareVersion>,
 }
 
 impl RefloatPackageState {
@@ -120,12 +118,12 @@ impl RefloatPackageState {
     }
 
     #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn record_firmware_version(&mut self, version: RefloatFirmwareVersion) {
+    pub(crate) fn record_firmware_version(&mut self, version: FirmwareVersion) {
         self.firmware_version = Some(version);
     }
 
     #[cfg(test)]
-    pub(crate) const fn recorded_firmware_version(&self) -> Option<RefloatFirmwareVersion> {
+    pub(crate) const fn recorded_firmware_version(&self) -> Option<FirmwareVersion> {
         self.firmware_version
     }
 

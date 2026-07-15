@@ -12,7 +12,7 @@ use crate::bms::ExtBms;
 use crate::package::RefloatPackageState;
 
 #[cfg(any(test, target_arch = "arm"))]
-use vescpkg_rs::{ExtensionDescriptor, LispArgs, LispValue};
+use vescpkg_rs::{ExtensionDescriptor, FirmwareVersion, LispArgs, LispValue};
 
 #[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,21 +67,6 @@ impl vescpkg_rs::StatefulLbmExtension for ExtSetFwVersion {
     }
 }
 
-/// Firmware version captured from Refloat's loader extension call.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RefloatFirmwareVersion {
-    major: i32,
-    minor: i32,
-    beta: i32,
-}
-
-impl RefloatFirmwareVersion {
-    /// Create a captured firmware-version tuple.
-    pub const fn new(major: i32, minor: i32, beta: i32) -> Self {
-        Self { major, minor, beta }
-    }
-}
-
 #[cfg(any(test, target_arch = "arm"))]
 fn record_refloat_firmware_version(state: &mut RefloatPackageState, args: &[i32]) {
     // Refloat v1.2.1 only updates version state when `argn > 2` at
@@ -90,7 +75,7 @@ fn record_refloat_firmware_version(state: &mut RefloatPackageState, args: &[i32]
     let [major, minor, beta] = args else {
         return;
     };
-    state.record_firmware_version(RefloatFirmwareVersion::new(*major, *minor, *beta));
+    state.record_firmware_version(FirmwareVersion::new(*major, *minor, *beta));
 }
 
 /// Return the native extension descriptors required by upstream `package.lisp`.
@@ -118,7 +103,7 @@ pub fn register_refloat_loader_extensions(
 #[cfg(test)]
 mod tests {
     use super::{
-        RefloatFirmwareVersion, RefloatLoaderExtension, package_extension_descriptors,
+        FirmwareVersion, RefloatLoaderExtension, package_extension_descriptors,
         record_refloat_firmware_version,
     };
     use crate::package::RefloatPackageState;
@@ -189,7 +174,7 @@ mod tests {
         record_refloat_firmware_version(&mut state, &[6, 2, 0]);
         assert_eq!(
             state.recorded_firmware_version(),
-            Some(RefloatFirmwareVersion::new(6, 2, 0))
+            Some(FirmwareVersion::new(6, 2, 0))
         );
     }
 }
