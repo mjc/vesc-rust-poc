@@ -222,6 +222,23 @@ impl FirmwareFaultCode {
     }
 }
 
+/// Firmware fault code encoded in the app-data compatible byte format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct FirmwareFaultCompatCode(u8);
+
+impl FirmwareFaultCompatCode {
+    /// Build a token from an app-data compatible fault code byte.
+    pub const fn from_compat_code(code: u8) -> Self {
+        Self(code)
+    }
+
+    /// Return the app-data compatible fault code byte.
+    pub const fn compat_code(self) -> u8 {
+        self.0
+    }
+}
+
 current_type!(MotorCurrent, "Motor phase/current-control current.");
 current_type!(BrakeCurrent, "Motor braking current.");
 current_type!(HandbrakeCurrent, "Handbrake current command.");

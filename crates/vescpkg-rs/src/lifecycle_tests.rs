@@ -4,7 +4,7 @@ use crate::lifecycle_core::{LbmApi, PackageLifecycle};
 use crate::test_support::{FakeBindings, stubs};
 use crate::thread::ThreadApi;
 use crate::thread::test_support::FakeThreadBindings;
-use crate::types::FirmwareFaultCode;
+use crate::types::{FirmwareFaultCode, FirmwareFaultCompatCode};
 use rstest::rstest;
 use vescpkg_rs_sys::{ExtensionHandler, LibInfo, NativeImage};
 
@@ -116,6 +116,10 @@ fn firmware_fault_code_preserves_raw_values_until_compat_encoding() {
     assert_eq!(valid.compat_code(), Some(5));
     assert_eq!(negative.compat_code(), None);
     assert_eq!(too_large.compat_code(), None);
+    assert_eq!(
+        FirmwareFaultCompatCode::from_compat_code(5).compat_code(),
+        5
+    );
 }
 
 #[test]
