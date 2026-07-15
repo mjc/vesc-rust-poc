@@ -67,7 +67,8 @@ pub(crate) fn build_package(root: &Path, options: &BuildOptions) -> Result<PathB
     validate_target(&options.target)?;
     let metadata = cargo_metadata(root, options)?;
     let package = select_package(&metadata, &options.package)?;
-    let artifacts = cargo_build(root, options, &package)?;
+    let workspace_root = metadata_workspace_root(&metadata)?;
+    let artifacts = cargo_build(root, &workspace_root, options, &package)?;
     let package_slug = package_slug(&package.display_name);
     let artifact_name = format!("{package_slug}-{}", package.version);
     let output_dir = metadata_target_dir(&metadata)?
@@ -269,8 +270,16 @@ fn metadata_target_dir(metadata: &Value) -> Result<PathBuf, BuildError> {
         .ok_or_else(|| BuildError("Cargo metadata has no target directory".to_owned()))
 }
 
+fn metadata_workspace_root(metadata: &Value) -> Result<PathBuf, BuildError> {
+    metadata["workspace_root"]
+        .as_str()
+        .map(PathBuf::from)
+        .ok_or_else(|| BuildError("Cargo metadata has no workspace root".to_owned()))
+}
+
 fn cargo_build(
     root: &Path,
+    workspace_root: &Path,
     options: &BuildOptions,
     package: &PackageMetadata,
 ) -> Result<CargoArtifacts, BuildError> {
@@ -319,7 +328,9 @@ fn cargo_build(
     })?;
     let elf = match package.payload_kind {
         PayloadKind::Binary => payload,
-        PayloadKind::Staticlib => link_staticlib(root, &payload, package.force_c_float_math)?,
+        PayloadKind::Staticlib => {
+            link_staticlib(workspace_root, &payload, package.force_c_float_math)?
+        }
     };
     Ok(CargoArtifacts { elf, out_dir })
 }
@@ -419,8 +430,8 @@ fn package_slug(name: &str) -> String {
 mod tests {
     use super::{
         PackageMetadata, PayloadKind, cargo_message_artifacts, command_failure_message,
-        package_slug, select_package, stage_generated_assets, staticlib_linker_script,
-        validate_target,
+        metadata_workspace_root, package_slug, select_package, stage_generated_assets,
+        staticlib_linker_script, validate_target,
     };
     use serde_json::json;
 
@@ -458,8 +469,10 @@ mod tests {
 
     #[test]
     fn staticlibs_use_the_cargo_package_linker_script() {
+        let metadata = json!({"workspace_root": "/repo"});
+
         assert_eq!(
-            staticlib_linker_script(std::path::Path::new("/repo")),
+            staticlib_linker_script(&metadata_workspace_root(&metadata).expect("workspace root")),
             std::path::PathBuf::from("/repo/examples/vescpkg-link.ld")
         );
     }
