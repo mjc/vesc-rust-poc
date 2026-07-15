@@ -78,9 +78,6 @@ unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
 }
 
 unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
-    #[cfg(all(not(test), target_arch = "arm"))]
-    crate::runtime::take_stateless_callbacks().clear_registered(&crate::bindings::RealBindings);
-
     #[cfg(test)]
     {
         record_stop_call_for_tests();
@@ -92,6 +89,9 @@ fn install_stop_hook(info: *mut ffi::LibInfo) -> Result<(), PackageStartError> {
     let Some(info) = (unsafe { crate::loader_info_mut(info) }) else {
         return Err(PackageStartError::LoaderUnavailable);
     };
+    if info.stop_fun.is_some() {
+        return Err(PackageStartError::StateAlreadyInstalled);
+    }
     info.stop_fun = Some(crate::firmware::stop_handler_for_loader(info, stop_package));
     Ok(())
 }
@@ -127,7 +127,7 @@ pub struct PackageStart<'info> {
 /// after any callbacks that firmware requires to be installed first.
 pub struct LoadedAppDataCallback {
     handler: ffi::AppDataHandler,
-    recorder: Option<CallbackRecorder>,
+    recorder: CallbackRecorder,
 }
 
 impl LoadedAppDataCallback {
@@ -142,26 +142,13 @@ impl LoadedAppDataCallback {
         self.register_with_bindings(&crate::bindings::RealBindings)
     }
 
-    /// Register this callback through explicit test bindings.
-    #[cfg(test)]
-    pub(crate) fn register_with<B: crate::bindings::AppDataBindings>(
-        self,
-        bindings: &B,
-    ) -> Result<(), crate::AppDataHandlerRegistrationError> {
-        self.register_with_bindings(bindings)
-    }
-
     #[inline(always)]
     fn register_with_bindings<B: crate::bindings::AppDataBindings>(
         self,
         bindings: &B,
     ) -> Result<(), crate::AppDataHandlerRegistrationError> {
         let registered = unsafe { bindings.set_app_data_handler(self.handler) };
-        if registered
-            && self
-                .recorder
-                .is_none_or(crate::runtime::CallbackRecorder::record_app_data)
-        {
+        if registered && self.recorder.record_app_data() {
             return Ok(());
         }
         if registered {
@@ -214,11 +201,6 @@ impl<'info> PackageStart<'info> {
     /// package state is later exposed through `ARG` at `:698-699`.
     pub fn install_stop_hook(&mut self) -> Result<(), PackageStartError> {
         install_stop_hook(self.info.cast())?;
-        #[cfg(target_arch = "arm")]
-        {
-            crate::runtime::reset_stateless_callbacks();
-            self.callback_recorder = Some(CallbackRecorder::stateless());
-        }
         Ok(())
     }
 
@@ -245,7 +227,7 @@ impl<'info> PackageStart<'info> {
         let info = self
             .raw_info_mut()
             .ok_or(PackageStartError::LoaderUnavailable)?;
-        if info.stop_fun.is_some() {
+        if info.stop_fun.is_some() || !info.arg.is_null() {
             return Err(PackageStartError::StateAlreadyInstalled);
         }
 
@@ -297,6 +279,21 @@ impl<'info> PackageStart<'info> {
         self.state_type = Some(TypeId::of::<T>());
         self.callback_recorder = Some(callback_recorder);
         Ok(())
+    }
+
+    /// Commit a successful package start, or stop and roll back a failed start.
+    #[doc(hidden)]
+    pub fn finish_start(mut self, started: bool) -> bool {
+        let running = self
+            .callback_recorder
+            .map_or(started, |recorder| recorder.finish_start(started));
+        if !started
+            && let Some(info) = self.raw_info_mut()
+            && let Some(stop) = info.stop_fun
+        {
+            unsafe { stop(info.arg) };
+        }
+        running
     }
 
     fn state_type_matches<T: 'static>(&self) -> bool {
@@ -426,16 +423,15 @@ impl<'info> PackageStart<'info> {
     pub fn app_data_callback<T: crate::__macro_support::PackageAppDataCallback>(
         &mut self,
     ) -> Option<LoadedAppDataCallback> {
-        if T::state_type().is_some_and(|state_type| self.state_type != Some(state_type)) {
+        let state_type = T::state_type()?;
+        if self.state_type != Some(state_type) {
             return None;
         }
+        let recorder = self.callback_recorder?;
         let image = self.native_image()?;
         let address = image.rebase_addr(T::image_address());
         let handler = unsafe { core::mem::transmute::<usize, ffi::AppDataHandler>(address) };
-        Some(LoadedAppDataCallback {
-            handler,
-            recorder: self.callback_recorder,
-        })
+        Some(LoadedAppDataCallback { handler, recorder })
     }
 
     /// Register a concrete package-local typed IMU callback.
@@ -604,7 +600,8 @@ macro_rules! package_start {
         #[unsafe(no_mangle)]
         extern "C" fn package_lib_init(info: *mut $crate::LoaderInfo) -> bool {
             let mut start = unsafe { $crate::__macro_support::__package_start_from_raw(info) };
-            $start(&mut start)
+            let started = $start(&mut start);
+            start.finish_start(started)
         }
 
         /// Host-linking loader shim for package crates.
@@ -719,7 +716,7 @@ mod tests {
     struct FailedState;
     struct ExtensionRegistrationState;
     struct RegistrationState;
-    struct ReloadState(u32);
+    struct ReloadState;
     struct SpawnState;
     struct TestImuState;
 
@@ -900,13 +897,40 @@ mod tests {
         );
         assert_eq!(OWNED_STATE.with(|state| state.0), Some(37));
 
-        let stop = info.stop_fun.expect("owned state stop hook");
-        unsafe { stop(info.arg) };
-        unsafe { stop(info.arg) };
+        let stop = start
+            .raw_info_mut()
+            .unwrap()
+            .stop_fun
+            .expect("owned state stop hook");
+        let arg = start.raw_info_mut().unwrap().arg;
+        assert!(start.finish_start(true));
+        unsafe { stop(arg) };
+        unsafe { stop(arg) };
 
         assert_eq!(OWNED_STATE_STOPS.load(Ordering::Relaxed), 1);
         assert_eq!(OWNED_STATE_DROPS.load(Ordering::Relaxed), 2);
         assert_eq!(OWNED_STATE.with(|state| state.0), None);
+    }
+
+    #[test]
+    fn failed_package_start_rolls_back_owned_runtime_state() {
+        OWNED_STATE_STOPS.store(0, Ordering::Relaxed);
+        OWNED_STATE_DROPS.store(0, Ordering::Relaxed);
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0,
+        };
+        let mut start = super::PackageStart::from_lib_info(&mut info);
+
+        start.install_runtime_state(OwnedState(37)).unwrap();
+        assert!(!start.finish_start(false));
+
+        assert_eq!(OWNED_STATE_STOPS.load(Ordering::Relaxed), 1);
+        assert_eq!(OWNED_STATE_DROPS.load(Ordering::Relaxed), 1);
+        assert_eq!(OWNED_STATE.with(|state| state.0), None);
+        unsafe { info.stop_fun.unwrap()(info.arg) };
+        assert_eq!(OWNED_STATE_STOPS.load(Ordering::Relaxed), 1);
     }
 
     #[test]
@@ -931,7 +955,7 @@ mod tests {
     }
 
     #[test]
-    fn package_start_reuses_a_loader_slot_with_a_stopped_tombstone() {
+    fn package_start_rejects_a_loader_slot_with_a_stopped_tombstone() {
         let mut info = ffi::LibInfo {
             stop_fun: None,
             arg: core::ptr::null_mut(),
@@ -939,20 +963,22 @@ mod tests {
         };
 
         let mut start = super::PackageStart::from_lib_info(&mut info);
-        start.install_runtime_state(ReloadState(37)).unwrap();
-        let stop = info.stop_fun.expect("first stop hook");
-        unsafe { stop(info.arg) };
+        start.install_runtime_state(ReloadState).unwrap();
+        let stop = start
+            .raw_info_mut()
+            .unwrap()
+            .stop_fun
+            .expect("first stop hook");
+        let arg = start.raw_info_mut().unwrap().arg;
+        assert!(start.finish_start(true));
+        unsafe { stop(arg) };
 
         info.stop_fun = None;
         let mut reloaded = super::PackageStart::from_lib_info(&mut info);
-        reloaded.install_runtime_state(ReloadState(99)).unwrap();
         assert_eq!(
-            reloaded.with_runtime_state::<ReloadState, _>(|state| state.0),
-            Some(99)
+            reloaded.install_runtime_state(ReloadState),
+            Err(PackageStartError::StateAlreadyInstalled)
         );
-
-        let stop = info.stop_fun.expect("reloaded stop hook");
-        unsafe { stop(info.arg) };
     }
 
     #[test]
@@ -987,10 +1013,12 @@ mod tests {
                 Ok(())
             );
             assert_eq!(bindings.spawn_args.get(), [state_arg, 0]);
-            (
+            let stop = (
                 start.raw_info_mut().unwrap().stop_fun.unwrap(),
                 start.raw_info_mut().unwrap().arg,
-            )
+            );
+            assert!(start.finish_start(true));
+            stop
         };
         unsafe { stop(arg) };
     }
@@ -1062,7 +1090,7 @@ mod tests {
     }
 
     #[test]
-    fn package_start_registers_typed_app_data_callback_from_loader_image() {
+    fn package_start_rejects_stateless_app_data_callback_registration() {
         unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
 
         struct Callback;
@@ -1080,18 +1108,13 @@ mod tests {
             base_addr: 0x3000,
         };
         let mut start = super::PackageStart::from_lib_info(&mut info);
+        start.install_stop_hook().unwrap();
 
-        let callback = start
-            .app_data_callback::<Callback>()
-            .expect("loaded callback");
-        assert_eq!(callback.register_with(&bindings), Ok(()));
-        // C map: Refloat stores package state before registering its app-data
-        // callback at `third_party/refloat/src/main.c:2431-2456`; VESC retains
-        // the rebased callback at `third_party/vesc/comm/commands.c:1820-1828`.
-        assert_eq!(bindings.handler_calls.get(), 1);
+        assert!(start.app_data_callback::<Callback>().is_none());
+        assert_eq!(bindings.handler_calls.get(), 0);
         assert_eq!(
-            bindings.last_handler.get(),
-            ffi::NativeImage::from_info(&info).rebase_addr(handler as *const () as usize)
+            start.install_stop_hook(),
+            Err(PackageStartError::StateAlreadyInstalled)
         );
     }
 
@@ -1117,6 +1140,10 @@ mod tests {
         unsafe impl crate::__macro_support::PackageAppDataCallback for Callback {
             fn image_address() -> usize {
                 handler as *const () as usize
+            }
+
+            fn state_type() -> Option<core::any::TypeId> {
+                Some(core::any::TypeId::of::<ConfigState>())
             }
         }
 
@@ -1167,8 +1194,14 @@ mod tests {
         assert_eq!(bindings.custom_config_register_calls.get(), 1);
         assert_eq!(bindings.handler_calls.get(), 0);
 
-        let stop = info.stop_fun.expect("first config state stop hook");
-        unsafe { stop(info.arg) };
+        let stop = start
+            .raw_info_mut()
+            .unwrap()
+            .stop_fun
+            .expect("first config state stop hook");
+        let arg = start.raw_info_mut().unwrap().arg;
+        assert!(start.finish_start(true));
+        unsafe { stop(arg) };
 
         let bindings = FakeAppDataBindings::with_set_handler_result(false);
         let mut info = ffi::LibInfo {
@@ -1187,8 +1220,14 @@ mod tests {
         assert_eq!(bindings.handler_calls.get(), 1);
         assert_eq!(bindings.custom_config_clear_calls.get(), 1);
 
-        let stop = info.stop_fun.expect("second config state stop hook");
-        unsafe { stop(info.arg) };
+        let stop = start
+            .raw_info_mut()
+            .unwrap()
+            .stop_fun
+            .expect("second config state stop hook");
+        let arg = start.raw_info_mut().unwrap().arg;
+        assert!(start.finish_start(true));
+        unsafe { stop(arg) };
     }
 
     #[test]
@@ -1268,8 +1307,14 @@ mod tests {
             )
         );
 
-        let stop = info.stop_fun.expect("IMU state stop hook");
-        unsafe { stop(info.arg) };
+        let stop = start
+            .raw_info_mut()
+            .unwrap()
+            .stop_fun
+            .expect("IMU state stop hook");
+        let arg = start.raw_info_mut().unwrap().arg;
+        assert!(start.finish_start(true));
+        unsafe { stop(arg) };
     }
 
     #[test]
@@ -1303,8 +1348,14 @@ mod tests {
         );
         assert!(start.app_data_callback::<WrongAppDataCallback>().is_none());
 
-        let stop = info.stop_fun.expect("registration state stop hook");
-        unsafe { stop(info.arg) };
+        let stop = start
+            .raw_info_mut()
+            .unwrap()
+            .stop_fun
+            .expect("registration state stop hook");
+        let arg = start.raw_info_mut().unwrap().arg;
+        assert!(start.finish_start(true));
+        unsafe { stop(arg) };
     }
 
     #[test]
@@ -1404,7 +1455,13 @@ mod tests {
         );
         assert_eq!(bindings.add_calls.get(), 0);
 
-        let stop = info.stop_fun.expect("extension state stop hook");
-        unsafe { stop(info.arg) };
+        let stop = start
+            .raw_info_mut()
+            .unwrap()
+            .stop_fun
+            .expect("extension state stop hook");
+        let arg = start.raw_info_mut().unwrap().arg;
+        assert!(start.finish_start(true));
+        unsafe { stop(arg) };
     }
 }

@@ -15,7 +15,6 @@ use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
 #[cfg(not(target_arch = "arm"))]
 const EMPTY: u8 = 0;
-#[cfg(not(target_arch = "arm"))]
 const INSTALLING: u8 = 1;
 const RUNNING: u8 = 2;
 const STOPPING: u8 = 3;
@@ -35,16 +34,6 @@ pub(crate) struct CallbackRegistrations {
 }
 
 impl CallbackRegistrations {
-    #[cfg(target_arch = "arm")]
-    pub(crate) fn take(flags: &AtomicU8) -> Self {
-        let flags = flags.swap(0, Ordering::AcqRel);
-        Self {
-            app_data: flags & APP_DATA_CALLBACK != 0,
-            custom_config: flags & CUSTOM_CONFIG_CALLBACKS != 0,
-            imu: flags & IMU_CALLBACK != 0,
-        }
-    }
-
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn clear_registered<B>(self, bindings: &B)
     where
@@ -68,6 +57,7 @@ impl CallbackRegistrations {
 #[derive(Clone, Copy)]
 pub(crate) struct CallbackRecorder {
     state: NonNull<core::ffi::c_void>,
+    finish_start: unsafe fn(NonNull<core::ffi::c_void>, bool) -> bool,
     app_data: unsafe fn(NonNull<core::ffi::c_void>) -> bool,
     custom_config: unsafe fn(NonNull<core::ffi::c_void>) -> bool,
     clear_custom_config: unsafe fn(NonNull<core::ffi::c_void>) -> bool,
@@ -81,6 +71,12 @@ impl CallbackRecorder {
             state: NonNull<core::ffi::c_void>,
         ) -> bool {
             T::runtime_store().record_app_data_callback(state.cast())
+        }
+        unsafe fn finish_start<T: crate::PackageRuntimeState>(
+            state: NonNull<core::ffi::c_void>,
+            started: bool,
+        ) -> bool {
+            T::runtime_store().finish_start(state.cast(), started)
         }
         unsafe fn custom_config<T: crate::PackageRuntimeState>(
             state: NonNull<core::ffi::c_void>,
@@ -98,11 +94,16 @@ impl CallbackRecorder {
 
         Self {
             state: state.cast(),
+            finish_start: finish_start::<T>,
             app_data: app_data::<T>,
             custom_config: custom_config::<T>,
             clear_custom_config: clear_custom_config::<T>,
             imu: imu::<T>,
         }
+    }
+
+    pub(crate) fn finish_start(self, started: bool) -> bool {
+        unsafe { (self.finish_start)(self.state, started) }
     }
 
     pub(crate) fn record_app_data(self) -> bool {
@@ -123,44 +124,31 @@ impl CallbackRecorder {
 }
 
 #[cfg(target_arch = "arm")]
-static STATELESS_CALLBACKS: AtomicU8 = AtomicU8::new(0);
-
-#[cfg(target_arch = "arm")]
 #[derive(Clone, Copy)]
-pub(crate) enum CallbackRecorder {
-    Runtime(NonNull<core::ffi::c_void>),
-    Stateless,
-}
+pub(crate) struct CallbackRecorder(NonNull<core::ffi::c_void>);
 
 #[cfg(target_arch = "arm")]
 impl CallbackRecorder {
     pub(crate) fn new<T: crate::PackageRuntimeState>(state: NonNull<T>) -> Self {
-        Self::Runtime(state.cast())
-    }
-
-    pub(crate) const fn stateless() -> Self {
-        Self::Stateless
+        Self(state.cast())
     }
 
     fn update(self, flag: u8, registered: bool) -> bool {
-        match self {
-            Self::Runtime(state) => unsafe {
-                update_firmware_callbacks(state, |callbacks| match flag {
-                    APP_DATA_CALLBACK => callbacks.app_data = registered,
-                    CUSTOM_CONFIG_CALLBACKS => callbacks.custom_config = registered,
-                    IMU_CALLBACK => callbacks.imu = registered,
-                    _ => {}
-                })
-            },
-            Self::Stateless => {
-                if registered {
-                    STATELESS_CALLBACKS.fetch_or(flag, Ordering::AcqRel);
-                } else {
-                    STATELESS_CALLBACKS.fetch_and(!flag, Ordering::AcqRel);
-                }
-                true
-            }
+        unsafe {
+            update_firmware_callbacks(self.0, |callbacks| match flag {
+                APP_DATA_CALLBACK => callbacks.app_data = registered,
+                CUSTOM_CONFIG_CALLBACKS => callbacks.custom_config = registered,
+                IMU_CALLBACK => callbacks.imu = registered,
+                _ => {}
+            })
         }
+    }
+
+    pub(crate) fn finish_start(self, started: bool) -> bool {
+        let Some(runtime) = (unsafe { firmware_runtime_from_untyped_state(self.0) }) else {
+            return false;
+        };
+        finish_firmware_start(runtime, started)
     }
 
     pub(crate) fn record_app_data(self) -> bool {
@@ -178,16 +166,6 @@ impl CallbackRecorder {
     pub(crate) fn record_imu(self) -> bool {
         self.update(IMU_CALLBACK, true)
     }
-}
-
-#[cfg(target_arch = "arm")]
-pub(crate) fn reset_stateless_callbacks() {
-    STATELESS_CALLBACKS.store(0, Ordering::Release);
-}
-
-#[cfg(target_arch = "arm")]
-pub(crate) fn take_stateless_callbacks() -> CallbackRegistrations {
-    CallbackRegistrations::take(&STATELESS_CALLBACKS)
 }
 
 /// Package-state identity shared by firmware startup and callbacks.
@@ -290,6 +268,14 @@ pub(crate) unsafe fn firmware_runtime_state_pointer<T>(
 unsafe fn firmware_runtime_from_state<T: 'static>(
     state: NonNull<T>,
 ) -> Option<&'static FirmwareRuntime> {
+    let runtime = unsafe { firmware_runtime_from_untyped_state(state.cast()) }?;
+    (runtime.state_type == TypeId::of::<T>()).then_some(runtime)
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+unsafe fn firmware_runtime_from_untyped_state(
+    state: NonNull<core::ffi::c_void>,
+) -> Option<&'static FirmwareRuntime> {
     let backlink = state
         .cast::<*mut FirmwareRuntime>()
         .as_ptr()
@@ -299,10 +285,7 @@ unsafe fn firmware_runtime_from_state<T: 'static>(
     let runtime = unsafe { NonNull::new(backlink.read()) }?;
     // SAFETY: the caller also guarantees the runtime allocation remains live.
     let runtime = unsafe { runtime.as_ref() };
-    (runtime.magic == RUNTIME_MAGIC
-        && runtime.state_type == TypeId::of::<T>()
-        && runtime.state == state.as_ptr().cast())
-    .then_some(runtime)
+    (runtime.magic == RUNTIME_MAGIC && runtime.state == state.as_ptr()).then_some(runtime)
 }
 
 #[cfg(target_arch = "arm")]
@@ -310,19 +293,11 @@ unsafe fn update_firmware_callbacks(
     state: NonNull<core::ffi::c_void>,
     update: impl FnOnce(&mut CallbackRegistrations),
 ) -> bool {
-    let backlink = state
-        .cast::<*mut FirmwareRuntime>()
-        .as_ptr()
-        .wrapping_sub(1);
-    let Some(runtime) = (unsafe { NonNull::new(backlink.read()) }) else {
+    let Some(runtime) = (unsafe { firmware_runtime_from_untyped_state(state) }) else {
         return false;
     };
-    let runtime = unsafe { runtime.as_ref() };
-    if runtime.magic != RUNTIME_MAGIC || runtime.state != state.as_ptr() {
-        return false;
-    }
     unsafe { crate::ffi::vesc_mutex_lock(runtime.mutex) };
-    let running = runtime.phase.load(Ordering::Acquire) == RUNNING;
+    let running = matches!(runtime.phase.load(Ordering::Acquire), INSTALLING | RUNNING);
     if running {
         update(unsafe { &mut *runtime.callbacks.get() });
     }
@@ -405,16 +380,27 @@ fn finish_firmware_runtime(runtime: &FirmwareRuntime) -> PackageStateResources {
 
 #[cfg(any(test, target_arch = "arm"))]
 fn enter_firmware(runtime: &FirmwareRuntime) -> bool {
-    if runtime.phase.load(Ordering::Acquire) != RUNNING {
+    if !matches!(runtime.phase.load(Ordering::Acquire), INSTALLING | RUNNING) {
         return false;
     }
     runtime.active.fetch_add(1, Ordering::AcqRel);
-    if runtime.phase.load(Ordering::Acquire) == RUNNING {
+    if matches!(runtime.phase.load(Ordering::Acquire), INSTALLING | RUNNING) {
         true
     } else {
         runtime.active.fetch_sub(1, Ordering::AcqRel);
         false
     }
+}
+
+#[cfg(target_arch = "arm")]
+fn finish_firmware_start(runtime: &FirmwareRuntime, started: bool) -> bool {
+    let running = started
+        && runtime
+            .phase
+            .compare_exchange(INSTALLING, RUNNING, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok();
+    runtime.active.fetch_sub(1, Ordering::AcqRel);
+    running
 }
 
 enum StateIdentity<T> {
@@ -577,8 +563,10 @@ impl<T: Send + 'static> PackageStateStore<T> {
     /// caller must clear the slot before freeing it.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) unsafe fn install(&self, state: &mut T) -> Result<(), PackageStateInstallError> {
-        let allocation = NonNull::from(&mut *state).cast();
-        unsafe { self.install_owned(state, allocation) }
+        let state_ptr = NonNull::from(&mut *state);
+        unsafe { self.install_owned(state, state_ptr.cast()) }?;
+        let _ = self.finish_start(state_ptr, true);
+        Ok(())
     }
 
     pub(crate) unsafe fn install_owned(
@@ -600,7 +588,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
             self.state
                 .store(core::ptr::from_mut(state), Ordering::Release);
             let _ = allocation;
-            self.phase.store(RUNNING, Ordering::Release);
+            self.active.store(1, Ordering::Release);
             Ok(())
         }
         #[cfg(target_arch = "arm")]
@@ -617,14 +605,40 @@ impl<T: Send + 'static> PackageStateStore<T> {
                     state_type: TypeId::of::<T>(),
                     state: core::ptr::from_mut(state).cast(),
                     mutex: mutex.as_ptr(),
-                    phase: AtomicU8::new(RUNNING),
-                    active: AtomicUsize::new(0),
+                    phase: AtomicU8::new(INSTALLING),
+                    active: AtomicUsize::new(1),
                     threads: UnsafeCell::new(None),
                     callbacks: UnsafeCell::new(CallbackRegistrations::default()),
                 });
             }
             Ok(())
         }
+    }
+
+    #[cfg_attr(target_arch = "arm", allow(dead_code))]
+    pub(crate) fn finish_start(&self, state: NonNull<T>, started: bool) -> bool {
+        #[cfg(not(target_arch = "arm"))]
+        let Some(runtime_state) = NonNull::new(self.state.load(Ordering::Acquire)) else {
+            return false;
+        };
+        #[cfg(not(target_arch = "arm"))]
+        if runtime_state != state {
+            return false;
+        }
+        #[cfg(not(target_arch = "arm"))]
+        let (phase, active) = (&self.phase, &self.active);
+        #[cfg(target_arch = "arm")]
+        let Some(runtime) = (unsafe { firmware_runtime_from_state(state) }) else {
+            return false;
+        };
+        #[cfg(target_arch = "arm")]
+        let (phase, active) = (&runtime.phase, &runtime.active);
+        let running = started
+            && phase
+                .compare_exchange(INSTALLING, RUNNING, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok();
+        active.fetch_sub(1, Ordering::AcqRel);
+        running
     }
 
     /// Clear the installed state pointer.
@@ -653,9 +667,18 @@ impl<T: Send + 'static> PackageStateStore<T> {
         else {
             return false;
         };
-        phase
-            .compare_exchange(RUNNING, STOPPING, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
+        loop {
+            let current = phase.load(Ordering::Acquire);
+            if !matches!(current, INSTALLING | RUNNING) {
+                return false;
+            }
+            if phase
+                .compare_exchange(current, STOPPING, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                return true;
+            }
+        }
     }
 
     pub(crate) fn install_threads(
@@ -679,7 +702,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
         let _borrow = self.borrow_exclusive(runtime);
         #[cfg(target_arch = "arm")]
         let (phase, slot) = (&runtime.phase, &runtime.threads);
-        if phase.load(Ordering::Acquire) != RUNNING {
+        if !matches!(phase.load(Ordering::Acquire), INSTALLING | RUNNING) {
             return Err(threads);
         }
         let slot = unsafe { &mut *slot.get() };
@@ -751,7 +774,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
         let _borrow = self.borrow_exclusive(runtime);
         #[cfg(target_arch = "arm")]
         let (phase, callbacks) = (&runtime.phase, &runtime.callbacks);
-        if phase.load(Ordering::Acquire) != RUNNING {
+        if !matches!(phase.load(Ordering::Acquire), INSTALLING | RUNNING) {
             return false;
         }
         update(unsafe { &mut *callbacks.get() });
@@ -857,7 +880,8 @@ impl<T: Send + 'static> PackageStateStore<T> {
             let (state, runtime) = self.running_firmware(expected)?;
             let _entry = self.enter(runtime)?;
             let _borrow = self.borrow_exclusive(runtime);
-            (runtime.phase.load(Ordering::Acquire) == RUNNING).then(|| f(unsafe { state.as_ref() }))
+            matches!(runtime.phase.load(Ordering::Acquire), INSTALLING | RUNNING)
+                .then(|| f(unsafe { state.as_ref() }))
         }
     }
 
@@ -879,15 +903,16 @@ impl<T: Send + 'static> PackageStateStore<T> {
             let (mut state, runtime) = self.running_firmware(expected)?;
             let _entry = self.enter(runtime)?;
             let _borrow = self.borrow_exclusive(runtime);
-            (runtime.phase.load(Ordering::Acquire) == RUNNING).then(|| f(unsafe { state.as_mut() }))
+            matches!(runtime.phase.load(Ordering::Acquire), INSTALLING | RUNNING)
+                .then(|| f(unsafe { state.as_mut() }))
         }
     }
 
     #[cfg(not(target_arch = "arm"))]
     fn enter(&self) -> Option<PackageStateEntry<'_, T>> {
-        (self.phase.load(Ordering::Acquire) == RUNNING).then_some(())?;
+        matches!(self.phase.load(Ordering::Acquire), INSTALLING | RUNNING).then_some(())?;
         self.active.fetch_add(1, Ordering::AcqRel);
-        if self.phase.load(Ordering::Acquire) == RUNNING {
+        if matches!(self.phase.load(Ordering::Acquire), INSTALLING | RUNNING) {
             Some(PackageStateEntry {
                 store: self,
                 _state: PhantomData,
@@ -911,7 +936,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
 
     #[cfg(not(target_arch = "arm"))]
     fn running_state(&self, expected: ExpectedState<T>) -> Option<NonNull<T>> {
-        (self.phase.load(Ordering::Acquire) == RUNNING).then_some(())?;
+        matches!(self.phase.load(Ordering::Acquire), INSTALLING | RUNNING).then_some(())?;
         let state = NonNull::new(self.state.load(Ordering::Acquire))?;
         match expected {
             #[cfg(not(target_arch = "arm"))]
@@ -936,7 +961,8 @@ impl<T: Send + 'static> PackageStateStore<T> {
         // SAFETY: target `ExpectedState::Exact` originates from the loader ARG
         // or a thread argument installed by this runtime.
         let runtime = unsafe { firmware_runtime_from_state(state) }?;
-        (runtime.phase.load(Ordering::Acquire) == RUNNING).then_some((state, runtime))
+        matches!(runtime.phase.load(Ordering::Acquire), INSTALLING | RUNNING)
+            .then_some((state, runtime))
     }
 }
 
@@ -1161,6 +1187,32 @@ mod tests {
         assert_eq!(clear_done_rx.recv().unwrap(), ());
         clear.join().unwrap();
         assert_eq!(slot.with(|state| state.value), None);
+    }
+
+    #[test]
+    fn stop_during_install_waits_for_start_to_finish() {
+        let slot: &'static PackageStateStore<State> = Box::leak(Box::new(PackageStateStore::new()));
+        let state = Box::leak(Box::new(State { value: 0 }));
+        let state_ptr = NonNull::from(&mut *state);
+        unsafe { slot.install_owned(state, state_ptr.cast()) }.unwrap();
+        assert!(slot.begin_stop(state_ptr));
+        let (stop_done_tx, stop_done_rx) = std::sync::mpsc::channel();
+        let state_address = state_ptr.as_ptr() as usize;
+
+        let stop = std::thread::spawn(move || {
+            let state_ptr = NonNull::new(state_address as *mut State).unwrap();
+            let _ = slot.finish_stop(state_ptr);
+            stop_done_tx.send(()).unwrap();
+        });
+        assert!(
+            stop_done_rx
+                .recv_timeout(std::time::Duration::from_millis(20))
+                .is_err()
+        );
+
+        assert!(!slot.finish_start(state_ptr, true));
+        assert_eq!(stop_done_rx.recv().unwrap(), ());
+        stop.join().unwrap();
     }
 
     #[test]

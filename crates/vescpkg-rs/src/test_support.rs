@@ -758,9 +758,9 @@ mod tests {
     #[test]
     fn stop_package_runs_the_owned_state_stop_hook_once() {
         let mut info = crate::LoaderInfo::new();
-        super::package_start(&mut info)
-            .install_runtime_state(OwnedTestState)
-            .unwrap();
+        let mut start = super::package_start(&mut info);
+        start.install_runtime_state(OwnedTestState).unwrap();
+        assert!(start.finish_start(true));
 
         assert!(super::stop_package(&mut info));
         assert!(!OWNED_TEST_STATE.is_installed());
