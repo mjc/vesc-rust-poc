@@ -126,6 +126,8 @@ macro_rules! firmware_imu_read_callback {
             unsafe { $crate::__macro_support::imu_read_callback::<$handler>(acc, gyro, mag, dt) }
         }
 
+        $crate::__vescpkg_image_offset!($name);
+
         unsafe impl $crate::__macro_support::PackageImuReadCallback for $handler {
             #[inline(always)]
             fn image_address() -> usize {

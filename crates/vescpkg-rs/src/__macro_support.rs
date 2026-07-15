@@ -1,5 +1,23 @@
 //! Hidden implementation hooks for exported package macros.
 
+/// Mark a function symbol as an image offset explicitly rebased by generated SDK code.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __vescpkg_image_offset {
+    ($name:ident) => {
+        #[cfg(all(not(test), target_arch = "arm"))]
+        core::arch::global_asm!(
+            concat!(".global __vescpkg_image_offset_", stringify!($name)),
+            concat!(
+                ".set __vescpkg_image_offset_",
+                stringify!($name),
+                ", ",
+                stringify!($name)
+            ),
+        );
+    };
+}
+
 /// Build package state access from a macro-generated firmware lookup.
 ///
 /// # Safety
