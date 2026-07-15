@@ -227,7 +227,9 @@ impl<'info> PackageStart<'info> {
         let info = self
             .raw_info_mut()
             .ok_or(PackageStartError::LoaderUnavailable)?;
-        if info.stop_fun.is_some() || !info.arg.is_null() {
+        // VESC marks loader slots free by clearing `stop_fun`; it intentionally
+        // leaves the previous package's `arg` behind when reusing the slot.
+        if info.stop_fun.is_some() {
             return Err(PackageStartError::StateAlreadyInstalled);
         }
 
@@ -977,7 +979,7 @@ mod tests {
     }
 
     #[test]
-    fn package_start_rejects_a_loader_slot_with_a_stopped_tombstone() {
+    fn package_start_reuses_a_loader_slot_with_a_stopped_tombstone() {
         let mut info = ffi::LibInfo {
             stop_fun: None,
             arg: core::ptr::null_mut(),
@@ -996,11 +998,11 @@ mod tests {
         unsafe { stop(arg) };
 
         info.stop_fun = None;
+        assert_eq!(info.arg, arg);
         let mut reloaded = super::PackageStart::from_lib_info(&mut info);
-        assert_eq!(
-            reloaded.install_runtime_state(ReloadState),
-            Err(PackageStartError::StateAlreadyInstalled)
-        );
+        assert_eq!(reloaded.install_runtime_state(ReloadState), Ok(()));
+        assert!(!reloaded.raw_info_mut().unwrap().arg.is_null());
+        assert!(reloaded.finish_start(true));
     }
 
     #[test]
