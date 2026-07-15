@@ -65,6 +65,8 @@ pub enum RegisterError {
     FirmwareRejected,
     /// The package loader metadata was unavailable.
     LoaderUnavailable,
+    /// A stateful extension named a different runtime state type.
+    StateTypeMismatch,
 }
 
 /// A static name assigned to a LispBM extension.
@@ -119,11 +121,20 @@ pub struct ExtensionDescriptor {
         allow(dead_code)
     )]
     handler: ExtensionHandler,
+    #[cfg_attr(
+        not(any(test, feature = "test-support", target_arch = "arm")),
+        allow(dead_code)
+    )]
+    state_type: Option<fn() -> core::any::TypeId>,
 }
 
 impl ExtensionDescriptor {
     pub(crate) const fn from_handler(name: ExtensionName, handler: ExtensionHandler) -> Self {
-        Self { name, handler }
+        Self {
+            name,
+            handler,
+            state_type: None,
+        }
     }
 
     /// Build a descriptor for a stateless typed extension callback.
@@ -135,7 +146,11 @@ impl ExtensionDescriptor {
     /// Build a descriptor for a runtime-state-backed typed extension callback.
     #[inline(always)]
     pub const fn stateful<T: StatefulLbmExtension>(name: ExtensionName) -> Self {
-        Self::from_handler(name, stateful_lbm_extension_handler::<T>)
+        Self {
+            name,
+            handler: stateful_lbm_extension_handler::<T>,
+            state_type: Some(runtime_state_type::<T::State>),
+        }
     }
 
     /// Return the descriptor name.
@@ -149,6 +164,11 @@ impl ExtensionDescriptor {
         self.handler
     }
 
+    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
+    pub(crate) fn state_type(self) -> Option<core::any::TypeId> {
+        self.state_type.map(|state_type| state_type())
+    }
+
     /// Validate the descriptor name prefix expected by the firmware.
     pub fn validate(self) -> Result<Self, ExtensionNameError> {
         if self.name.as_cstr().to_bytes().starts_with(b"ext-") {
@@ -157,6 +177,10 @@ impl ExtensionDescriptor {
             Err(ExtensionNameError::MissingExtPrefix)
         }
     }
+}
+
+fn runtime_state_type<T: 'static>() -> core::any::TypeId {
+    core::any::TypeId::of::<T>()
 }
 
 /// Typed LispBM extension callback arguments.

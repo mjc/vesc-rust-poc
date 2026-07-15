@@ -385,10 +385,10 @@ impl TestExtensionRegistry {
     }
 
     /// Register extension descriptors through the package loader test seam.
-    pub fn register(
+    pub fn register<const N: usize>(
         &self,
         start: &mut crate::PackageStart<'_>,
-        descriptors: impl IntoIterator<Item = crate::ExtensionDescriptor>,
+        descriptors: [crate::ExtensionDescriptor; N],
     ) -> Result<(), crate::RegisterError> {
         let lifecycle = PackageLifecycle::new(&self.bindings);
         start.register_extensions_with(&lifecycle, descriptors)

@@ -1,5 +1,7 @@
 //! Package state shared by startup and firmware callbacks.
 
+#[cfg(any(test, target_arch = "arm"))]
+use core::any::TypeId;
 use core::cell::UnsafeCell;
 #[cfg(not(target_arch = "arm"))]
 use core::hint::spin_loop;
@@ -42,34 +44,34 @@ pub struct PackageStateStore<T> {
 #[cfg(target_arch = "arm")]
 const _: [(); 0] = [(); core::mem::size_of::<PackageStateStore<()>>()];
 
-#[cfg(target_arch = "arm")]
+#[cfg(any(test, target_arch = "arm"))]
 const RUNTIME_MAGIC: u32 = 0x5652_5354;
 
-#[cfg(target_arch = "arm")]
+#[cfg(any(test, target_arch = "arm"))]
 #[repr(C)]
 struct FirmwareRuntime {
     magic: u32,
+    state_type: TypeId,
     state: *mut core::ffi::c_void,
-    allocation: *mut core::ffi::c_void,
     mutex: *mut core::ffi::c_void,
     phase: AtomicU8,
     active: AtomicUsize,
     threads: UnsafeCell<Option<crate::ThreadPair>>,
 }
 
-#[cfg(target_arch = "arm")]
+#[cfg(any(test, target_arch = "arm"))]
 // SAFETY: every mutable field is accessed while `mutex` is held, except the
 // atomic lifecycle counters used to admit and drain those locked accesses.
 unsafe impl Sync for FirmwareRuntime {}
 
-#[cfg(target_arch = "arm")]
+#[cfg(any(test, target_arch = "arm"))]
 const fn firmware_state_alignment<T>() -> usize {
     let pointer = core::mem::align_of::<*mut FirmwareRuntime>();
     let state = core::mem::align_of::<T>();
     if state > pointer { state } else { pointer }
 }
 
-#[cfg(target_arch = "arm")]
+#[cfg(any(test, target_arch = "arm"))]
 pub(crate) fn firmware_runtime_allocation_size<T>() -> Option<usize> {
     core::mem::size_of::<FirmwareRuntime>()
         .checked_add(core::mem::size_of::<*mut FirmwareRuntime>())?
@@ -81,7 +83,7 @@ pub(crate) fn firmware_runtime_allocation_size<T>() -> Option<usize> {
         })
 }
 
-#[cfg(target_arch = "arm")]
+#[cfg(any(test, target_arch = "arm"))]
 /// Return the `T` address within a runtime allocation and install its backlink.
 ///
 /// # Safety
@@ -106,14 +108,16 @@ pub(crate) unsafe fn firmware_runtime_state_pointer<T>(
     unsafe { NonNull::new_unchecked(state) }
 }
 
-#[cfg(target_arch = "arm")]
+#[cfg(any(test, target_arch = "arm"))]
 /// Resolve the live runtime header installed immediately before `state`.
 ///
 /// # Safety
 ///
 /// `state` must be the `T` pointer produced by [`firmware_runtime_state_pointer`]
 /// and its allocation must remain live for the returned reference.
-unsafe fn firmware_runtime_from_state<T>(state: NonNull<T>) -> Option<&'static FirmwareRuntime> {
+unsafe fn firmware_runtime_from_state<T: 'static>(
+    state: NonNull<T>,
+) -> Option<&'static FirmwareRuntime> {
     let backlink = state
         .cast::<*mut FirmwareRuntime>()
         .as_ptr()
@@ -123,7 +127,10 @@ unsafe fn firmware_runtime_from_state<T>(state: NonNull<T>) -> Option<&'static F
     let runtime = unsafe { NonNull::new(backlink.read()) }?;
     // SAFETY: the caller also guarantees the runtime allocation remains live.
     let runtime = unsafe { runtime.as_ref() };
-    (runtime.magic == RUNTIME_MAGIC && runtime.state == state.as_ptr().cast()).then_some(runtime)
+    (runtime.magic == RUNTIME_MAGIC
+        && runtime.state_type == TypeId::of::<T>()
+        && runtime.state == state.as_ptr().cast())
+    .then_some(runtime)
 }
 
 // SAFETY: all access to `T` is serialized by the firmware mutex on device and
@@ -187,9 +194,30 @@ pub(crate) enum PackageStateInstallError {
 
 pub(crate) struct PackageStateResources {
     #[cfg(target_arch = "arm")]
-    pub(crate) allocation: Option<NonNull<core::ffi::c_void>>,
-    #[cfg(target_arch = "arm")]
     pub(crate) mutex: Option<NonNull<core::ffi::c_void>>,
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+fn finish_firmware_runtime(runtime: &FirmwareRuntime) -> PackageStateResources {
+    runtime.phase.store(STOPPED, Ordering::Release);
+    PackageStateResources {
+        #[cfg(target_arch = "arm")]
+        mutex: NonNull::new(runtime.mutex),
+    }
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+fn enter_firmware(runtime: &FirmwareRuntime) -> bool {
+    if runtime.phase.load(Ordering::Acquire) != RUNNING {
+        return false;
+    }
+    runtime.active.fetch_add(1, Ordering::AcqRel);
+    if runtime.phase.load(Ordering::Acquire) == RUNNING {
+        true
+    } else {
+        runtime.active.fetch_sub(1, Ordering::AcqRel);
+        false
+    }
 }
 
 enum StateIdentity<T> {
@@ -383,8 +411,8 @@ impl<T: Send + 'static> PackageStateStore<T> {
             unsafe {
                 runtime.as_ptr().write(FirmwareRuntime {
                     magic: RUNTIME_MAGIC,
+                    state_type: TypeId::of::<T>(),
                     state: core::ptr::from_mut(state).cast(),
-                    allocation: allocation.as_ptr(),
                     mutex: mutex.as_ptr(),
                     phase: AtomicU8::new(RUNNING),
                     active: AtomicUsize::new(0),
@@ -468,7 +496,8 @@ impl<T: Send + 'static> PackageStateStore<T> {
             &self.threads
         };
         #[cfg(target_arch = "arm")]
-        // SAFETY: stop receives the exact live loader state pointer before freeing it.
+        // SAFETY: stop receives the exact loader state pointer retained by the
+        // runtime tombstone for the lifetime of the firmware process.
         let runtime = unsafe { firmware_runtime_from_state(state) }?;
         #[cfg(target_arch = "arm")]
         let _borrow = self.borrow_exclusive(runtime);
@@ -484,7 +513,8 @@ impl<T: Send + 'static> PackageStateStore<T> {
             &self.active
         };
         #[cfg(target_arch = "arm")]
-        // SAFETY: stop receives the exact live loader state pointer before freeing it.
+        // SAFETY: stop receives the exact loader state pointer retained by the
+        // runtime tombstone for the lifetime of the firmware process.
         let runtime = unsafe { firmware_runtime_from_state(state) }
             .expect("installed package state owns a runtime control block");
         #[cfg(target_arch = "arm")]
@@ -504,21 +534,14 @@ impl<T: Send + 'static> PackageStateStore<T> {
         let borrow = self.borrow_exclusive(runtime);
         #[cfg(not(target_arch = "arm"))]
         self.state.store(core::ptr::null_mut(), Ordering::Release);
-        #[cfg(target_arch = "arm")]
-        let allocation = NonNull::new(runtime.allocation);
         drop(borrow);
-        #[cfg(target_arch = "arm")]
-        let mutex = NonNull::new(runtime.mutex);
         #[cfg(not(target_arch = "arm"))]
-        self.phase.store(STOPPED, Ordering::Release);
-        #[cfg(target_arch = "arm")]
-        runtime.phase.store(STOPPED, Ordering::Release);
-        PackageStateResources {
-            #[cfg(target_arch = "arm")]
-            allocation,
-            #[cfg(target_arch = "arm")]
-            mutex,
+        {
+            self.phase.store(STOPPED, Ordering::Release);
+            PackageStateResources {}
         }
+        #[cfg(target_arch = "arm")]
+        finish_firmware_runtime(runtime)
     }
 
     /// Whether startup has installed state.
@@ -608,17 +631,10 @@ impl<T: Send + 'static> PackageStateStore<T> {
         &self,
         runtime: &'runtime FirmwareRuntime,
     ) -> Option<PackageStateEntry<'runtime, T>> {
-        (runtime.phase.load(Ordering::Acquire) == RUNNING).then_some(())?;
-        runtime.active.fetch_add(1, Ordering::AcqRel);
-        if runtime.phase.load(Ordering::Acquire) == RUNNING {
-            Some(PackageStateEntry {
-                runtime,
-                _state: PhantomData,
-            })
-        } else {
-            runtime.active.fetch_sub(1, Ordering::AcqRel);
-            None
-        }
+        enter_firmware(runtime).then(|| PackageStateEntry {
+            runtime,
+            _state: PhantomData,
+        })
     }
 
     #[cfg(not(target_arch = "arm"))]
@@ -633,12 +649,16 @@ impl<T: Send + 'static> PackageStateStore<T> {
         }
     }
 
-    #[cfg(target_arch = "arm")]
+    #[cfg(any(test, target_arch = "arm"))]
     fn running_firmware(
         &self,
         expected: ExpectedState<T>,
     ) -> Option<(NonNull<T>, &'static FirmwareRuntime)> {
-        let ExpectedState::Exact(state) = expected;
+        let state = match expected {
+            ExpectedState::Exact(state) => state,
+            #[cfg(not(target_arch = "arm"))]
+            ExpectedState::Any => return None,
+        };
         // SAFETY: target `ExpectedState::Exact` originates from the loader ARG
         // or a thread argument installed by this runtime.
         let runtime = unsafe { firmware_runtime_from_state(state) }?;
@@ -654,9 +674,16 @@ impl<T: Send + 'static> Default for PackageStateStore<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::{PackageStateAccess, PackageStateInstallError, PackageStateStore};
+    use super::{
+        ExpectedState, FirmwareRuntime, PackageStateAccess, PackageStateInstallError,
+        PackageStateStore, RUNNING, RUNTIME_MAGIC, STOPPED, STOPPING, enter_firmware,
+        finish_firmware_runtime, firmware_runtime_allocation_size, firmware_runtime_from_state,
+        firmware_runtime_state_pointer,
+    };
+    use core::any::TypeId;
+    use core::cell::UnsafeCell;
     use core::ptr::NonNull;
-    use core::sync::atomic::{AtomicPtr, Ordering};
+    use core::sync::atomic::{AtomicPtr, AtomicU8, AtomicUsize, Ordering};
     use std::boxed::Box;
 
     #[derive(Debug, PartialEq, Eq)]
@@ -664,10 +691,108 @@ mod tests {
         value: u32,
     }
 
+    #[repr(transparent)]
+    struct WrongState(u32);
+
     static FALLBACK: AtomicPtr<State> = AtomicPtr::new(core::ptr::null_mut());
 
     unsafe fn fallback() -> Option<NonNull<State>> {
         NonNull::new(FALLBACK.load(Ordering::Acquire))
+    }
+
+    #[test]
+    fn firmware_runtime_rejects_a_caller_claiming_the_wrong_state_type() {
+        let bytes = firmware_runtime_allocation_size::<State>().expect("runtime allocation size");
+        let words = bytes.div_ceil(core::mem::size_of::<usize>());
+        let mut backing = std::vec![0usize; words];
+        let allocation = NonNull::new(backing.as_mut_ptr().cast()).expect("allocation");
+        let state = unsafe { firmware_runtime_state_pointer::<State>(allocation) };
+        let runtime = allocation.cast::<FirmwareRuntime>();
+        unsafe {
+            runtime.as_ptr().write(FirmwareRuntime {
+                magic: RUNTIME_MAGIC,
+                state_type: TypeId::of::<State>(),
+                state: state.as_ptr().cast(),
+                mutex: core::ptr::null_mut(),
+                phase: AtomicU8::new(RUNNING),
+                active: AtomicUsize::new(0),
+                threads: UnsafeCell::new(None),
+            });
+        }
+
+        assert!(unsafe { firmware_runtime_from_state(state.cast::<WrongState>()) }.is_none());
+    }
+
+    #[test]
+    fn stopped_firmware_runtime_remains_a_tombstone_for_late_callbacks() {
+        let bytes = firmware_runtime_allocation_size::<State>().expect("runtime allocation size");
+        let words = bytes.div_ceil(core::mem::size_of::<usize>());
+        let mut backing = std::vec![0usize; words];
+        let allocation = NonNull::new(backing.as_mut_ptr().cast()).expect("allocation");
+        let state = unsafe { firmware_runtime_state_pointer::<State>(allocation) };
+        let runtime = allocation.cast::<FirmwareRuntime>();
+        unsafe {
+            runtime.as_ptr().write(FirmwareRuntime {
+                magic: RUNTIME_MAGIC,
+                state_type: TypeId::of::<State>(),
+                state: state.as_ptr().cast(),
+                mutex: core::ptr::null_mut(),
+                phase: AtomicU8::new(STOPPING),
+                active: AtomicUsize::new(0),
+                threads: UnsafeCell::new(None),
+            });
+        }
+        let runtime = unsafe { runtime.as_ref() };
+
+        let _resources = finish_firmware_runtime(runtime);
+
+        assert_eq!(runtime.phase.load(Ordering::Acquire), STOPPED);
+        assert!(unsafe { firmware_runtime_from_state(state) }.is_some());
+        assert!(
+            PackageStateStore::new()
+                .running_firmware(ExpectedState::Exact(state))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn callback_resolving_state_before_stop_cannot_enter_after_stop() {
+        let bytes = firmware_runtime_allocation_size::<State>().expect("runtime allocation size");
+        let words = bytes.div_ceil(core::mem::size_of::<usize>());
+        let mut backing = std::vec![0usize; words];
+        let allocation = NonNull::new(backing.as_mut_ptr().cast()).expect("allocation");
+        let state = unsafe { firmware_runtime_state_pointer::<State>(allocation) };
+        let runtime = allocation.cast::<FirmwareRuntime>();
+        unsafe {
+            runtime.as_ptr().write(FirmwareRuntime {
+                magic: RUNTIME_MAGIC,
+                state_type: TypeId::of::<State>(),
+                state: state.as_ptr().cast(),
+                mutex: core::ptr::null_mut(),
+                phase: AtomicU8::new(RUNNING),
+                active: AtomicUsize::new(0),
+                threads: UnsafeCell::new(None),
+            });
+        }
+        let runtime = unsafe { runtime.as_ref() };
+        let state_address = state.as_ptr() as usize;
+        let (resolved_tx, resolved_rx) = std::sync::mpsc::channel();
+        let (resume_tx, resume_rx) = std::sync::mpsc::channel();
+        let callback = std::thread::spawn(move || {
+            let state = NonNull::new(state_address as *mut State).expect("state");
+            let runtime = unsafe { firmware_runtime_from_state(state) }.expect("runtime");
+            resolved_tx.send(()).expect("resolved");
+            resume_rx.recv().expect("resume");
+            enter_firmware(runtime)
+        });
+
+        resolved_rx.recv().expect("callback resolved state");
+        runtime.phase.store(STOPPING, Ordering::Release);
+        let _resources = finish_firmware_runtime(runtime);
+        resume_tx.send(()).expect("resume callback");
+
+        assert!(!callback.join().expect("callback"));
+        assert_eq!(runtime.active.load(Ordering::Acquire), 0);
     }
 
     #[test]

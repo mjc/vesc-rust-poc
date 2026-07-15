@@ -1,6 +1,7 @@
 //! Native VESC package loader helpers shared across package payloads.
 
 use crate::ffi;
+use core::any::TypeId;
 
 const MAX_CUSTOM_CONFIG_LEN: usize = 510;
 
@@ -59,12 +60,12 @@ unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
     #[cfg(all(not(test), target_arch = "arm"))]
     {
         unsafe { state.as_ptr().drop_in_place() };
-        if let Some(allocation) = resources.allocation {
-            unsafe { ffi::vesc_free(allocation.as_ptr()) };
-        }
         if let Some(mutex) = resources.mutex {
             unsafe { ffi::vesc_free(mutex.as_ptr()) };
         }
+        // VESC cannot unregister LispBM extensions or quiesce callbacks that
+        // already loaded this ARG. Keep the allocation as a STOPPED admission
+        // tombstone; late callbacks inspect it without touching dropped `T`.
     }
     #[cfg(not(target_arch = "arm"))]
     {
@@ -103,6 +104,8 @@ pub enum PackageStartError {
     AllocationFailed,
     /// Package startup already installed runtime state.
     StateAlreadyInstalled,
+    /// A state-backed operation named a different runtime state type.
+    StateTypeMismatch,
     /// Firmware could not start the complete package thread pair.
     ThreadSpawnFailed,
     /// Package startup already installed its firmware thread pair.
@@ -112,6 +115,7 @@ pub enum PackageStartError {
 /// Safe startup context for package authors.
 pub struct PackageStart<'info> {
     info: *mut crate::LoaderInfo,
+    state_type: Option<TypeId>,
     _info: core::marker::PhantomData<&'info mut crate::LoaderInfo>,
 }
 
@@ -161,6 +165,7 @@ impl<'info> PackageStart<'info> {
     pub fn from_info(info: &'info mut crate::LoaderInfo) -> Self {
         Self {
             info,
+            state_type: None,
             _info: core::marker::PhantomData,
         }
     }
@@ -169,6 +174,7 @@ impl<'info> PackageStart<'info> {
     pub(crate) unsafe fn from_raw(info: *mut crate::LoaderInfo) -> Self {
         Self {
             info,
+            state_type: None,
             _info: core::marker::PhantomData,
         }
     }
@@ -177,6 +183,7 @@ impl<'info> PackageStart<'info> {
     pub(crate) fn from_lib_info(info: &'info mut ffi::LibInfo) -> Self {
         Self {
             info: core::ptr::from_mut(info).cast(),
+            state_type: None,
             _info: core::marker::PhantomData,
         }
     }
@@ -203,7 +210,7 @@ impl<'info> PackageStart<'info> {
         let info = self
             .raw_info_mut()
             .ok_or(PackageStartError::LoaderUnavailable)?;
-        if !info.arg.is_null() {
+        if info.stop_fun.is_some() {
             return Err(PackageStartError::StateAlreadyInstalled);
         }
 
@@ -251,7 +258,12 @@ impl<'info> PackageStart<'info> {
         ));
         #[cfg(not(target_arch = "arm"))]
         let _ = crate::rust_alloc::boxed::Box::into_raw(owned_state);
+        self.state_type = Some(TypeId::of::<T>());
         Ok(())
+    }
+
+    fn state_type_matches<T: 'static>(&self) -> bool {
+        self.state_type == Some(TypeId::of::<T>())
     }
 
     /// Run startup work with loader-owned package state.
@@ -327,6 +339,9 @@ impl<'info> PackageStart<'info> {
         let Some(image) = self.native_image().filter(|_| LEN <= MAX_CUSTOM_CONFIG_LEN) else {
             return false;
         };
+        if !self.state_type_matches::<T::State>() {
+            return false;
+        }
         let (get, set, xml) = T::image_addresses();
         unsafe {
             crate::register_custom_config_callbacks_from_image(
@@ -357,6 +372,9 @@ impl<'info> PackageStart<'info> {
     pub fn app_data_callback<T: crate::__macro_support::PackageAppDataCallback>(
         &mut self,
     ) -> Option<LoadedAppDataCallback> {
+        if T::state_type().is_some_and(|state_type| self.state_type != Some(state_type)) {
+            return None;
+        }
         let image = self.native_image()?;
         let address = image.rebase_addr(T::image_address());
         let handler = unsafe { core::mem::transmute::<usize, ffi::AppDataHandler>(address) };
@@ -388,6 +406,9 @@ impl<'info> PackageStart<'info> {
         let Some(image) = self.native_image() else {
             return Err(PackageStartError::LoaderUnavailable);
         };
+        if !self.state_type_matches::<T::State>() {
+            return Err(PackageStartError::StateTypeMismatch);
+        }
         let address = image.rebase_addr(T::image_address());
         let callback = unsafe { core::mem::transmute::<usize, ffi::ImuReadCallback>(address) };
         bindings.set_imu_read_callback_handler(callback);
@@ -439,11 +460,21 @@ impl<'info> PackageStart<'info> {
 
     #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     /// Register extension descriptors using loader metadata for this package image.
-    fn register_extensions_with_lifecycle<B: crate::bindings::LbmBindings>(
+    fn register_extensions_with_lifecycle<B, const N: usize>(
         &mut self,
         lifecycle: &crate::lifecycle_core::PackageLifecycle<B>,
-        descriptors: impl IntoIterator<Item = crate::ExtensionDescriptor>,
-    ) -> Result<(), crate::RegisterError> {
+        descriptors: [crate::ExtensionDescriptor; N],
+    ) -> Result<(), crate::RegisterError>
+    where
+        B: crate::bindings::LbmBindings,
+    {
+        if descriptors.iter().copied().any(|descriptor| {
+            descriptor
+                .state_type()
+                .is_some_and(|state_type| self.state_type != Some(state_type))
+        }) {
+            return Err(crate::RegisterError::StateTypeMismatch);
+        }
         let info = self
             .raw_info_mut()
             .ok_or(crate::RegisterError::LoaderUnavailable)?;
@@ -457,19 +488,22 @@ impl<'info> PackageStart<'info> {
 
     /// Register extension descriptors through the test-support lifecycle seam.
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn register_extensions_with<B: crate::bindings::LbmBindings>(
+    pub(crate) fn register_extensions_with<B, const N: usize>(
         &mut self,
         lifecycle: &crate::lifecycle_core::PackageLifecycle<B>,
-        descriptors: impl IntoIterator<Item = crate::ExtensionDescriptor>,
-    ) -> Result<(), crate::RegisterError> {
+        descriptors: [crate::ExtensionDescriptor; N],
+    ) -> Result<(), crate::RegisterError>
+    where
+        B: crate::bindings::LbmBindings,
+    {
         self.register_extensions_with_lifecycle(lifecycle, descriptors)
     }
 
     /// Register extension descriptors with the live firmware bindings.
     #[cfg(all(not(test), target_arch = "arm"))]
-    pub fn register_extensions(
+    pub fn register_extensions<const N: usize>(
         &mut self,
-        descriptors: impl IntoIterator<Item = crate::ExtensionDescriptor>,
+        descriptors: [crate::ExtensionDescriptor; N],
     ) -> Result<(), crate::RegisterError> {
         let lifecycle = crate::lifecycle_core::PackageLifecycle::new(crate::bindings::RealBindings);
         self.register_extensions_with_lifecycle(&lifecycle, descriptors)
@@ -598,15 +632,57 @@ mod tests {
     use core::sync::atomic::{AtomicUsize, Ordering};
 
     struct TestPackageImuRead;
+    struct WrongPackageImuRead;
 
-    static TEST_IMU_STATE: crate::PackageStateStore<()> = crate::PackageStateStore::new();
+    static TEST_IMU_STATE: crate::PackageStateStore<TestImuState> = crate::PackageStateStore::new();
     static OWNED_STATE: crate::PackageStateStore<OwnedState> = crate::PackageStateStore::new();
     static OWNED_STATE_STOPS: AtomicUsize = AtomicUsize::new(0);
     static OWNED_STATE_DROPS: AtomicUsize = AtomicUsize::new(0);
+    static EXTENSION_REGISTRATION_STATE: crate::PackageStateStore<ExtensionRegistrationState> =
+        crate::PackageStateStore::new();
+    static REGISTRATION_STATE: crate::PackageStateStore<RegistrationState> =
+        crate::PackageStateStore::new();
+    static RELOAD_STATE: crate::PackageStateStore<ReloadState> = crate::PackageStateStore::new();
     static SPAWN_STATE: crate::PackageStateStore<SpawnState> = crate::PackageStateStore::new();
 
     struct OwnedState(u32);
+    struct ExtensionRegistrationState;
+    struct RegistrationState;
+    struct ReloadState(u32);
     struct SpawnState;
+    struct TestImuState;
+
+    impl crate::PackageRuntimeState for ExtensionRegistrationState {
+        fn runtime_store() -> &'static crate::PackageStateStore<Self> {
+            &EXTENSION_REGISTRATION_STATE
+        }
+
+        fn stop(&mut self) {}
+    }
+
+    impl crate::PackageRuntimeState for TestImuState {
+        fn runtime_store() -> &'static crate::PackageStateStore<Self> {
+            &TEST_IMU_STATE
+        }
+
+        fn stop(&mut self) {}
+    }
+
+    impl crate::PackageRuntimeState for ReloadState {
+        fn runtime_store() -> &'static crate::PackageStateStore<Self> {
+            &RELOAD_STATE
+        }
+
+        fn stop(&mut self) {}
+    }
+
+    impl crate::PackageRuntimeState for RegistrationState {
+        fn runtime_store() -> &'static crate::PackageStateStore<Self> {
+            &REGISTRATION_STATE
+        }
+
+        fn stop(&mut self) {}
+    }
 
     impl crate::PackageRuntimeState for SpawnState {
         fn runtime_store() -> &'static crate::PackageStateStore<Self> {
@@ -649,7 +725,7 @@ mod tests {
     }
 
     impl crate::ImuReadHandler for TestPackageImuRead {
-        type State = ();
+        type State = TestImuState;
 
         fn state_source() -> crate::PackageStateAccess<'static, Self::State> {
             crate::PackageStateAccess::runtime(&TEST_IMU_STATE)
@@ -659,6 +735,22 @@ mod tests {
     }
 
     unsafe impl crate::__macro_support::PackageImuReadCallback for TestPackageImuRead {
+        fn image_address() -> usize {
+            crate::test_support::stubs::imu_read_callback as *const () as usize
+        }
+    }
+
+    impl crate::ImuReadHandler for WrongPackageImuRead {
+        type State = ();
+
+        fn state_source() -> crate::PackageStateAccess<'static, Self::State> {
+            unreachable!("registration rejects the mismatched type before callback dispatch")
+        }
+
+        fn read(_state: &mut Self::State, _sample: crate::ImuReadSample) {}
+    }
+
+    unsafe impl crate::__macro_support::PackageImuReadCallback for WrongPackageImuRead {
         fn image_address() -> usize {
             crate::test_support::stubs::imu_read_callback as *const () as usize
         }
@@ -730,6 +822,31 @@ mod tests {
         assert_eq!(OWNED_STATE_STOPS.load(Ordering::Relaxed), 1);
         assert_eq!(OWNED_STATE_DROPS.load(Ordering::Relaxed), 2);
         assert_eq!(OWNED_STATE.with(|state| state.0), None);
+    }
+
+    #[test]
+    fn package_start_reuses_a_loader_slot_with_a_stopped_tombstone() {
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0,
+        };
+
+        let mut start = super::PackageStart::from_lib_info(&mut info);
+        start.install_runtime_state(ReloadState(37)).unwrap();
+        let stop = info.stop_fun.expect("first stop hook");
+        unsafe { stop(info.arg) };
+
+        info.stop_fun = None;
+        let mut reloaded = super::PackageStart::from_lib_info(&mut info);
+        reloaded.install_runtime_state(ReloadState(99)).unwrap();
+        assert_eq!(
+            reloaded.with_runtime_state::<ReloadState, _>(|state| state.0),
+            Some(99)
+        );
+
+        let stop = info.stop_fun.expect("reloaded stop hook");
+        unsafe { stop(info.arg) };
     }
 
     #[test]
@@ -832,8 +949,18 @@ mod tests {
 
         struct Callback;
         struct Config;
+        struct ConfigState;
 
-        static CONFIG_STATE: crate::PackageStateStore<()> = crate::PackageStateStore::new();
+        static CONFIG_STATE: crate::PackageStateStore<ConfigState> =
+            crate::PackageStateStore::new();
+
+        impl crate::PackageRuntimeState for ConfigState {
+            fn runtime_store() -> &'static crate::PackageStateStore<Self> {
+                &CONFIG_STATE
+            }
+
+            fn stop(&mut self) {}
+        }
 
         unsafe impl crate::__macro_support::PackageAppDataCallback for Callback {
             fn image_address() -> usize {
@@ -842,7 +969,7 @@ mod tests {
         }
 
         impl crate::SourceCustomConfigCallback<1> for Config {
-            type State = ();
+            type State = ConfigState;
 
             fn state_source() -> crate::PackageStateAccess<'static, Self::State> {
                 crate::PackageStateAccess::runtime(&CONFIG_STATE)
@@ -879,6 +1006,7 @@ mod tests {
             base_addr: 0x3000,
         };
         let mut start = super::PackageStart::from_lib_info(&mut info);
+        start.install_runtime_state(ConfigState).unwrap();
 
         assert_eq!(
             start.register_callbacks_with_bindings::<Config, Callback, 1, _>(&bindings),
@@ -887,6 +1015,9 @@ mod tests {
         assert_eq!(bindings.custom_config_register_calls.get(), 1);
         assert_eq!(bindings.handler_calls.get(), 0);
 
+        let stop = info.stop_fun.expect("first config state stop hook");
+        unsafe { stop(info.arg) };
+
         let bindings = FakeAppDataBindings::with_set_handler_result(false);
         let mut info = ffi::LibInfo {
             stop_fun: None,
@@ -894,6 +1025,7 @@ mod tests {
             base_addr: 0x3000,
         };
         let mut start = super::PackageStart::from_lib_info(&mut info);
+        start.install_runtime_state(ConfigState).unwrap();
 
         assert_eq!(
             start.register_callbacks_with_bindings::<Config, Callback, 1, _>(&bindings),
@@ -902,6 +1034,9 @@ mod tests {
         assert_eq!(bindings.custom_config_register_calls.get(), 1);
         assert_eq!(bindings.handler_calls.get(), 1);
         assert_eq!(bindings.custom_config_clear_calls.get(), 1);
+
+        let stop = info.stop_fun.expect("second config state stop hook");
+        unsafe { stop(info.arg) };
     }
 
     #[test]
@@ -964,6 +1099,7 @@ mod tests {
         };
         let image = ffi::NativeImage::from_info(&info);
         let mut start = super::PackageStart::from_lib_info(&mut info);
+        start.install_runtime_state(TestImuState).unwrap();
 
         assert_eq!(
             start.register_imu_read_callback_with_bindings::<TestPackageImuRead, _>(&bindings),
@@ -979,6 +1115,44 @@ mod tests {
                 <TestPackageImuRead as crate::__macro_support::PackageImuReadCallback>::image_address()
             )
         );
+
+        let stop = info.stop_fun.expect("IMU state stop hook");
+        unsafe { stop(info.arg) };
+    }
+
+    #[test]
+    fn package_start_rejects_a_callback_for_a_different_runtime_state() {
+        unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
+
+        struct WrongAppDataCallback;
+
+        unsafe impl crate::__macro_support::PackageAppDataCallback for WrongAppDataCallback {
+            fn image_address() -> usize {
+                handler as *const () as usize
+            }
+
+            fn state_type() -> Option<core::any::TypeId> {
+                Some(core::any::TypeId::of::<()>())
+            }
+        }
+
+        let bindings = FakeAppDataBindings::new();
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0x3000,
+        };
+        let mut start = super::PackageStart::from_lib_info(&mut info);
+        start.install_runtime_state(RegistrationState).unwrap();
+
+        assert_eq!(
+            start.register_imu_read_callback_with_bindings::<WrongPackageImuRead, _>(&bindings),
+            Err(super::PackageStartError::StateTypeMismatch)
+        );
+        assert!(start.app_data_callback::<WrongAppDataCallback>().is_none());
+
+        let stop = info.stop_fun.expect("registration state stop hook");
+        unsafe { stop(info.arg) };
     }
 
     #[test]
@@ -1037,5 +1211,48 @@ mod tests {
             rejecting_start.register_extensions_with(&rejecting_lifecycle, [descriptor]),
             Err(crate::RegisterError::FirmwareRejected)
         );
+    }
+
+    #[test]
+    fn package_start_rejects_an_extension_for_a_different_runtime_state() {
+        struct WrongExtension;
+
+        static WRONG_STATE: crate::PackageStateStore<()> = crate::PackageStateStore::new();
+
+        impl crate::StatefulLbmExtension for WrongExtension {
+            type State = ();
+
+            fn runtime_state() -> &'static crate::PackageStateStore<Self::State> {
+                &WRONG_STATE
+            }
+
+            fn call(_state: &mut Self::State, _args: crate::LispArgs<'_>) -> crate::LispValue {
+                unreachable!("registration rejects the mismatched extension")
+            }
+        }
+
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0x2000,
+        };
+        let bindings = crate::test_support::FakeBindings::new();
+        let lifecycle = crate::lifecycle_core::PackageLifecycle::new(&bindings);
+        let mut start = super::PackageStart::from_lib_info(&mut info);
+        start
+            .install_runtime_state(ExtensionRegistrationState)
+            .unwrap();
+        let descriptor = crate::ExtensionDescriptor::stateful::<WrongExtension>(
+            crate::extension_name!("ext-wrong-state"),
+        );
+
+        assert_eq!(
+            start.register_extensions_with(&lifecycle, [descriptor]),
+            Err(crate::RegisterError::StateTypeMismatch)
+        );
+        assert_eq!(bindings.add_calls.get(), 0);
+
+        let stop = info.stop_fun.expect("extension state stop hook");
+        unsafe { stop(info.arg) };
     }
 }
