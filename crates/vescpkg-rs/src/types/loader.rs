@@ -42,6 +42,14 @@ impl LoaderInfo {
         self.0.stop_fun.is_some()
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn stop_for_test(&mut self) -> bool {
+        self.0.stop_fun.take().is_some_and(|stop| {
+            unsafe { stop(self.0.arg) };
+            true
+        })
+    }
+
     /// Set the package argument for host-side loader tests.
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_argument(&mut self, argument: Option<PackageArgument>) {

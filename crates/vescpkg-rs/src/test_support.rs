@@ -357,6 +357,11 @@ pub fn package_start(info: &mut crate::LoaderInfo) -> crate::PackageStart<'_> {
     crate::PackageStart::from_info(info)
 }
 
+/// Run and clear the loader-owned package stop hook.
+pub fn stop_package(info: &mut crate::LoaderInfo) -> bool {
+    info.stop_for_test()
+}
+
 /// Build a startup context with no loader metadata for rejection-path tests.
 pub fn package_start_without_loader() -> crate::PackageStart<'static> {
     unsafe { crate::PackageStart::from_raw(core::ptr::null_mut()) }
@@ -765,6 +770,31 @@ mod tests {
     };
     use crate::ffi::ImuReadCallback;
     use vescpkg_rs_sys::ExtensionHandler;
+
+    struct OwnedTestState;
+
+    static OWNED_TEST_STATE: crate::PackageStateStore<OwnedTestState> =
+        crate::PackageStateStore::new();
+
+    impl crate::PackageRuntimeState for OwnedTestState {
+        fn runtime_store() -> &'static crate::PackageStateStore<Self> {
+            &OWNED_TEST_STATE
+        }
+
+        fn stop(&mut self) {}
+    }
+
+    #[test]
+    fn stop_package_runs_the_owned_state_stop_hook_once() {
+        let mut info = crate::LoaderInfo::new();
+        super::package_start(&mut info)
+            .install_runtime_state(OwnedTestState)
+            .unwrap();
+
+        assert!(super::stop_package(&mut info));
+        assert!(!OWNED_TEST_STATE.is_installed());
+        assert!(!super::stop_package(&mut info));
+    }
 
     #[test]
     fn fake_bindings_default_and_rejecting_paths() {

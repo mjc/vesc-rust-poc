@@ -62,7 +62,7 @@ error[E0624]: method `get` is private
 11 |     let _ = PackageProgramAddress::new(0).get();
    |                                           ^^^ private method
    |
-  --> <BASE_DIR>/crates/vescpkg-rs/src/types/loader.rs:93:4
+  --> <BASE_DIR>/crates/vescpkg-rs/src/types/loader.rs:101:4
    |
    = note: private method defined here
 
