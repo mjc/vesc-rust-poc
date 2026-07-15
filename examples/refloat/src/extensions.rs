@@ -172,6 +172,7 @@ mod tests {
             registry.registration_count(),
             RefloatLoaderExtension::ALL.len()
         );
+        assert!(start.finish_start(true));
         assert!(vescpkg_rs::test_support::stop_package(&mut info));
     }
 

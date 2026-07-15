@@ -108,6 +108,7 @@ mod tests {
                 .with_runtime_state::<RefloatPackageState, _>(|_| ())
                 .is_none()
         );
+        assert!(start.finish_start(true));
         assert!(vescpkg_rs::test_support::stop_package(&mut info));
     }
 
@@ -121,6 +122,7 @@ mod tests {
         assert_eq!(start.install_runtime_state(state), Ok(()));
         // Upstream sets `info->stop_fun` and `info->arg` at `third_party/refloat/src/main.c:2431-2432`,
         // before registering custom config/app-data/extensions at `third_party/refloat/src/main.c:2455-2459`.
+        assert!(start.finish_start(true));
         assert!(info.has_stop_handler());
         assert!(info.argument().is_some());
         assert!(vescpkg_rs::test_support::stop_package(&mut info));
