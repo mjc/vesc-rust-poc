@@ -48,7 +48,6 @@ struct PackageMetadata {
     version: String,
     display_name: String,
     payload_kind: PayloadKind,
-    force_c_float_math: bool,
     qml_fullscreen: bool,
 }
 
@@ -70,7 +69,7 @@ pub(crate) fn build_package(root: &Path, options: &BuildOptions) -> Result<PathB
     let package = select_package(&metadata, &options.package)?;
     let workspace_root = metadata_workspace_root(&metadata)?;
     let artifacts = cargo_build(root, &workspace_root, options, &package)?;
-    validate_flat_image_relocations(&artifacts.elf, package.force_c_float_math)?;
+    validate_flat_image_relocations(&artifacts.elf)?;
     let package_slug = package_slug(&package.display_name);
     let artifact_name = format!("{package_slug}-{}", package.version);
     let artifact_root = metadata_target_dir(&metadata)?.join("vescpkg");
@@ -344,9 +343,6 @@ fn select_package(metadata: &Value, requested: &str) -> Result<PackageMetadata, 
         version,
         display_name,
         payload_kind: *payload_kind,
-        force_c_float_math: package["metadata"]["vescpkg"]["force-c-float-math"]
-            .as_bool()
-            .unwrap_or(false),
         qml_fullscreen: package["metadata"]["vescpkg"]["qml-fullscreen"]
             .as_bool()
             .unwrap_or(false),
@@ -373,9 +369,41 @@ fn cargo_build(
     options: &BuildOptions,
     package: &PackageMetadata,
 ) -> Result<CargoArtifacts, BuildError> {
+    let mut command = cargo_build_command(root, options, package)?;
+    let output = command_output(&mut command)?;
+    let (payload, out_dir) = output
+        .stdout
+        .split(|byte| *byte == b'\n')
+        .filter_map(|line| serde_json::from_slice::<Value>(line).ok())
+        .fold((None, None), |(elf, out_dir), message| {
+            let (message_elf, message_out_dir) = cargo_message_artifacts(&message, package);
+            (message_elf.or(elf), message_out_dir.or(out_dir))
+        });
+
+    let payload = payload.ok_or_else(|| {
+        BuildError(format!(
+            "Cargo produced no final payload for `{}`",
+            package.name
+        ))
+    })?;
+    let elf = match package.payload_kind {
+        PayloadKind::Binary => payload,
+        PayloadKind::Staticlib => link_staticlib(workspace_root, &payload)?,
+    };
+    Ok(CargoArtifacts { elf, out_dir })
+}
+
+fn cargo_build_command(
+    root: &Path,
+    options: &BuildOptions,
+    package: &PackageMetadata,
+) -> Result<Command, BuildError> {
     let mut command = Command::new("cargo");
     command.current_dir(root).args([
-        "build",
+        match package.payload_kind {
+            PayloadKind::Binary => "build",
+            PayloadKind::Staticlib => "rustc",
+        },
         "--message-format=json-render-diagnostics",
         "--target",
         &options.target,
@@ -395,34 +423,9 @@ fn cargo_build(
         command.args(["--features", features]);
     }
     if package.payload_kind == PayloadKind::Staticlib {
-        let rustflags = std::env::var("RUSTFLAGS").unwrap_or_default();
-        command
-            .env_remove("CARGO_ENCODED_RUSTFLAGS")
-            .env("RUSTFLAGS", format!("{rustflags} -C relocation-model=pic"));
+        command.args(["--", "-C", "relocation-model=pic"]);
     }
-    let output = command_output(&mut command)?;
-    let (payload, out_dir) = output
-        .stdout
-        .split(|byte| *byte == b'\n')
-        .filter_map(|line| serde_json::from_slice::<Value>(line).ok())
-        .fold((None, None), |(elf, out_dir), message| {
-            let (message_elf, message_out_dir) = cargo_message_artifacts(&message, package);
-            (message_elf.or(elf), message_out_dir.or(out_dir))
-        });
-
-    let payload = payload.ok_or_else(|| {
-        BuildError(format!(
-            "Cargo produced no final payload for `{}`",
-            package.name
-        ))
-    })?;
-    let elf = match package.payload_kind {
-        PayloadKind::Binary => payload,
-        PayloadKind::Staticlib => {
-            link_staticlib(workspace_root, &payload, package.force_c_float_math)?
-        }
-    };
-    Ok(CargoArtifacts { elf, out_dir })
+    Ok(command)
 }
 
 #[must_use]
@@ -452,11 +455,7 @@ fn cargo_message_artifacts(
     (payload, out_dir)
 }
 
-fn link_staticlib(
-    root: &Path,
-    archive: &Path,
-    force_c_float_math: bool,
-) -> Result<PathBuf, BuildError> {
+fn link_staticlib(root: &Path, archive: &Path) -> Result<PathBuf, BuildError> {
     let elf = archive.with_extension("elf");
     let mut command = Command::new("arm-none-eabi-gcc");
     command.args([
@@ -467,15 +466,6 @@ fn link_staticlib(
         "-mfloat-abi=hard",
         "-mfpu=fpv4-sp-d16",
     ]);
-    if force_c_float_math {
-        command.args([
-            "-Wl,--undefined=asinf",
-            "-Wl,--undefined=cosf",
-            "-Wl,--undefined=sinf",
-            "-Wl,--undefined=sqrtf",
-            "-lm",
-        ]);
-    }
     command
         .arg(archive)
         .args([
@@ -509,12 +499,9 @@ fn write_flattened_elf(elf: &Path, output: &Path) -> Result<(), BuildError> {
     })
 }
 
-fn validate_flat_image_relocations(
-    elf: &Path,
-    allow_c_float_math_runtime: bool,
-) -> Result<(), BuildError> {
+fn validate_flat_image_relocations(elf: &Path) -> Result<(), BuildError> {
     let output = Command::new("arm-none-eabi-readelf")
-        .args(["--relocs", "--wide"])
+        .args(["--relocs", "--sections", "--wide"])
         .arg(elf)
         .output()?;
     if !output.status.success() {
@@ -524,17 +511,12 @@ fn validate_flat_image_relocations(
             output.status
         )));
     }
-    validate_relocation_report(
-        &String::from_utf8_lossy(&output.stdout),
-        allow_c_float_math_runtime,
-    )
+    let report = String::from_utf8_lossy(&output.stdout);
+    validate_writable_section_report(&report)?;
+    validate_relocation_report(&report)
 }
 
-fn validate_relocation_report(
-    report: &str,
-    allow_c_float_math_runtime: bool,
-) -> Result<(), BuildError> {
-    const RUNTIME_REBASED_CODE: [&str; 2] = [".rel.init_fun", ".rel.text"];
+fn validate_relocation_report(report: &str) -> Result<(), BuildError> {
     const NON_LOADABLE_PREFIXES: [&str; 2] = [".rel.debug", ".rel.comment"];
     const ABSOLUTE_RELOCATIONS: [&str; 4] = [
         "R_ARM_ABS32",
@@ -555,20 +537,37 @@ fn validate_relocation_report(
         let relocation = line
             .split_whitespace()
             .find(|field| ABSOLUTE_RELOCATIONS.contains(field));
-        let symbol = line.split_whitespace().last().unwrap_or_default();
         let non_loadable = NON_LOADABLE_PREFIXES
             .iter()
             .any(|prefix| relocation_section.starts_with(prefix));
-        let c_float_math_runtime = allow_c_float_math_runtime
-            && relocation_section == ".rel.data"
-            && matches!(symbol, "_impure_data" | "__sf");
         if let Some(relocation) = relocation
-            && !RUNTIME_REBASED_CODE.contains(&relocation_section)
             && !non_loadable
-            && !c_float_math_runtime
         {
             return Err(BuildError(format!(
                 "unsupported absolute relocation `{relocation}` in `{relocation_section}`; VESC flat images cannot contain pointer-bearing loadable statics"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_writable_section_report(report: &str) -> Result<(), BuildError> {
+    for line in report.lines() {
+        let fields = line.split_whitespace().collect::<Vec<_>>();
+        let Some(name_index) = fields
+            .iter()
+            .position(|field| matches!(*field, ".data" | ".bss"))
+        else {
+            continue;
+        };
+        let section = fields[name_index];
+        let size = fields
+            .get(name_index + 4)
+            .and_then(|size| usize::from_str_radix(size, 16).ok())
+            .ok_or_else(|| BuildError(format!("could not read `{section}` section size")))?;
+        if size != 0 {
+            return Err(BuildError(format!(
+                "unsupported writable section `{section}` ({size} bytes); VESC flat images execute in place"
             )));
         }
     }
@@ -590,13 +589,15 @@ fn package_slug(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        PackageMetadata, PayloadKind, build_package_bytes, cargo_message_artifacts,
-        command_failure_message, metadata_workspace_root, package_slug, select_package,
-        stage_generated_assets, staticlib_linker_script, validate_descriptor_fullscreen,
-        validate_relocation_report, validate_target,
+        BuildOptions, PackageMetadata, PayloadKind, VESC_TARGET, build_package_bytes,
+        cargo_build_command, cargo_message_artifacts, command_failure_message,
+        metadata_workspace_root, package_slug, select_package, stage_generated_assets,
+        staticlib_linker_script, validate_descriptor_fullscreen, validate_relocation_report,
+        validate_target, validate_writable_section_report,
     };
     use crate::package::Package;
     use serde_json::json;
+    use std::path::Path;
 
     #[test]
     fn package_slug_matches_existing_artifact_names() {
@@ -735,7 +736,6 @@ mod tests {
                 "metadata": {"vescpkg": {
                     "name": "Static package",
                     "version": "1.2.1",
-                    "force-c-float-math": true,
                     "qml-fullscreen": true
                 }}
             }]
@@ -745,7 +745,6 @@ mod tests {
 
         assert_eq!(package.payload_kind, PayloadKind::Staticlib);
         assert_eq!(package.version, "1.2.1");
-        assert!(package.force_c_float_math);
         assert!(package.qml_fullscreen);
     }
 
@@ -769,7 +768,6 @@ mod tests {
             version: "0.1.0".to_owned(),
             display_name: "Fullscreen fixture".to_owned(),
             payload_kind: PayloadKind::Binary,
-            force_c_float_math: false,
             qml_fullscreen: true,
         };
 
@@ -796,7 +794,7 @@ Relocation section '.rel.rodata' at offset 0x100 contains 1 entry:\n\
  Offset     Info    Type                Sym. Value  Symbol's Name\n\
 00000000  00000102 R_ARM_ABS32            00000004   STATIC_NAME\n";
 
-        let error = validate_relocation_report(report, false).expect_err("pointer-bearing static");
+        let error = validate_relocation_report(report).expect_err("pointer-bearing static");
 
         assert!(error.to_string().contains("R_ARM_ABS32"));
         assert!(
@@ -807,13 +805,13 @@ Relocation section '.rel.rodata' at offset 0x100 contains 1 entry:\n\
     }
 
     #[test]
-    fn permits_runtime_rebased_code_literals() {
+    fn rejects_absolute_relocations_in_code() {
         let report = "\
 Relocation section '.rel.text' at offset 0x100 contains 1 entry:\n\
  Offset     Info    Type                Sym. Value  Symbol's Name\n\
 00000070  00000e02 R_ARM_ABS32            00000191   stop_package\n";
 
-        assert!(validate_relocation_report(report, false).is_ok());
+        assert!(validate_relocation_report(report).is_err());
     }
 
     #[test]
@@ -823,19 +821,68 @@ Relocation section '.rel.debug_frame' at offset 0x100 contains 1 entry:\n\
  Offset     Info    Type                Sym. Value  Symbol's Name\n\
 00000014  00000902 R_ARM_ABS32            00000000   .debug_frame\n";
 
-        assert!(validate_relocation_report(report, false).is_ok());
+        assert!(validate_relocation_report(report).is_ok());
     }
 
     #[test]
-    fn permits_newlib_state_pulled_in_by_requested_c_float_math() {
+    fn rejects_newlib_state_even_when_c_float_math_was_requested() {
         let report = "\
 Relocation section '.rel.data' at offset 0x100 contains 2 entries:\n\
  Offset     Info    Type                Sym. Value  Symbol's Name\n\
 00000010  00013502 R_ARM_ABS32            00000018   _impure_data\n\
 0000001c  00012602 R_ARM_ABS32            00000218   __sf\n";
 
-        assert!(validate_relocation_report(report, true).is_ok());
-        assert!(validate_relocation_report(report, false).is_err());
+        assert!(validate_relocation_report(report).is_err());
+    }
+
+    #[test]
+    fn rejects_nonempty_writable_sections() {
+        let report = "\
+  [ 2] .data             PROGBITS        00000010 001010 00000c 00  WA  0   0  4\n\
+  [ 3] .bss              NOBITS          0000001c 00101c 000001 00  WA  0   0  1\n";
+
+        let error = validate_writable_section_report(report).expect_err("writable section");
+
+        assert!(error.to_string().contains(".data"));
+    }
+
+    #[test]
+    fn staticlib_build_uses_cargo_rustc_without_overriding_configured_flags() {
+        let package = PackageMetadata {
+            id: "fixture".to_owned(),
+            name: "fixture".to_owned(),
+            target_name: "fixture".to_owned(),
+            version: "0.1.0".to_owned(),
+            display_name: "Fixture".to_owned(),
+            payload_kind: PayloadKind::Staticlib,
+            qml_fullscreen: false,
+        };
+        let options = BuildOptions {
+            package: "fixture".to_owned(),
+            manifest_path: None,
+            target: VESC_TARGET.to_owned(),
+            profile: "release".to_owned(),
+            features: None,
+        };
+
+        let command =
+            cargo_build_command(Path::new("/repo"), &options, &package).expect("Cargo command");
+        let args = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        let env = command
+            .get_envs()
+            .map(|(name, value)| (name.to_owned(), value.map(ToOwned::to_owned)))
+            .collect::<Vec<_>>();
+
+        assert_eq!(args.first().map(String::as_str), Some("rustc"));
+        assert!(args.ends_with(&[
+            "--".to_owned(),
+            "-C".to_owned(),
+            "relocation-model=pic".to_owned(),
+        ]));
+        assert!(env.is_empty());
     }
 
     #[test]
@@ -868,7 +915,6 @@ Relocation section '.rel.data' at offset 0x100 contains 2 entries:\n\
             version: "0.1.0".to_owned(),
             display_name: "Minimal package".to_owned(),
             payload_kind: PayloadKind::Binary,
-            force_c_float_math: false,
             qml_fullscreen: false,
         };
         let artifact = json!({
@@ -909,7 +955,6 @@ Relocation section '.rel.data' at offset 0x100 contains 2 entries:\n\
             version: "0.1.0".to_owned(),
             display_name: "Static package".to_owned(),
             payload_kind: PayloadKind::Staticlib,
-            force_c_float_math: false,
             qml_fullscreen: false,
         };
         let artifact = json!({
