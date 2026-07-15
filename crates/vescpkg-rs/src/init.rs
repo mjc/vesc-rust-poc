@@ -271,6 +271,9 @@ impl<'info> PackageStart<'info> {
         &mut self,
         operation: impl FnOnce(&mut T) -> R,
     ) -> Option<R> {
+        if !self.state_type_matches::<T>() {
+            return None;
+        }
         let state = self
             .raw_info_mut()
             .and_then(|info| core::ptr::NonNull::new(info.arg.cast::<T>()))?;
@@ -295,6 +298,9 @@ impl<'info> PackageStart<'info> {
         T: crate::PackageRuntimeState,
         B: crate::thread::ThreadBindings,
     {
+        if !self.state_type_matches::<T>() {
+            return Err(PackageStartError::StateTypeMismatch);
+        }
         let state = self
             .raw_info_mut()
             .and_then(|info| core::ptr::NonNull::new(info.arg.cast::<T>()))
@@ -887,6 +893,52 @@ mod tests {
             )
         };
         unsafe { stop(arg) };
+    }
+
+    #[test]
+    fn fresh_package_start_rejects_a_poisoned_loader_arg_before_state_access() {
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::without_provenance_mut(1),
+            base_addr: 0,
+        };
+        let mut start = super::PackageStart::from_lib_info(&mut info);
+
+        assert_eq!(
+            start.with_runtime_state::<OwnedState, _>(|state| state.0),
+            None
+        );
+    }
+
+    #[test]
+    fn fresh_package_start_rejects_thread_spawn_before_reading_a_poisoned_arg() {
+        unsafe extern "C" fn thread_entry(_arg: *mut core::ffi::c_void) {}
+
+        let bindings = crate::thread::test_support::FakeThreadBindings::new();
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::without_provenance_mut(1),
+            base_addr: 0,
+        };
+        let mut start = super::PackageStart::from_lib_info(&mut info);
+        let pair = crate::ThreadPairSpec::new(
+            crate::ThreadSpec::<SpawnState>::from_entry(
+                thread_entry,
+                crate::ThreadStackSize::from_bytes(256),
+                crate::thread_name!("main"),
+            ),
+            crate::ThreadSpec::<()>::from_entry(
+                thread_entry,
+                crate::ThreadStackSize::from_bytes(128),
+                crate::thread_name!("aux"),
+            ),
+        );
+
+        assert_eq!(
+            start.spawn_thread_pair_with_bindings(pair, &bindings),
+            Err(PackageStartError::StateTypeMismatch)
+        );
+        assert_eq!(bindings.spawn_calls.get(), 0);
     }
 
     #[test]
