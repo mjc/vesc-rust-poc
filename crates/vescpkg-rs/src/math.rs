@@ -1,33 +1,8 @@
 //! Float math entrypoints for native package code.
 //!
-//! VESC firmware links packages with the C/newlib math library. ARM package
-//! builds call those symbols directly; host builds use Rust `libm` so ordinary
-//! tests do not depend on an embedded linker.
-
-#[cfg(target_arch = "arm")]
-unsafe extern "C" {
-    #[link_name = "asinf"]
-    fn c_asinf(x: f32) -> f32;
-    #[link_name = "cosf"]
-    fn c_cosf(x: f32) -> f32;
-    #[link_name = "sinf"]
-    fn c_sinf(x: f32) -> f32;
-    #[link_name = "sqrtf"]
-    fn c_sqrtf(x: f32) -> f32;
-}
+//! Rust `libm` keeps package math position-independent on both firmware and host.
 
 /// Computes arcsine for a single-precision input.
-#[cfg(target_arch = "arm")]
-#[inline(always)]
-#[must_use]
-pub fn asin(x: f32) -> f32 {
-    // SAFETY: the package final link resolves this symbol from the VESC C math
-    // environment. `asinf` has the standard C ABI signature `float(float)`.
-    unsafe { c_asinf(x) }
-}
-
-/// Computes arcsine for a single-precision input.
-#[cfg(not(target_arch = "arm"))]
 #[inline(always)]
 #[must_use]
 pub fn asin(x: f32) -> f32 {
@@ -35,16 +10,6 @@ pub fn asin(x: f32) -> f32 {
 }
 
 /// Computes cosine for a single-precision input.
-#[cfg(target_arch = "arm")]
-#[inline(always)]
-#[must_use]
-pub fn cos(x: f32) -> f32 {
-    // SAFETY: see `asinf`.
-    unsafe { c_cosf(x) }
-}
-
-/// Computes cosine for a single-precision input.
-#[cfg(not(target_arch = "arm"))]
 #[inline(always)]
 #[must_use]
 pub fn cos(x: f32) -> f32 {
@@ -52,16 +17,6 @@ pub fn cos(x: f32) -> f32 {
 }
 
 /// Computes sine for a single-precision input.
-#[cfg(target_arch = "arm")]
-#[inline(always)]
-#[must_use]
-pub fn sin(x: f32) -> f32 {
-    // SAFETY: see `asinf`.
-    unsafe { c_sinf(x) }
-}
-
-/// Computes sine for a single-precision input.
-#[cfg(not(target_arch = "arm"))]
 #[inline(always)]
 #[must_use]
 pub fn sin(x: f32) -> f32 {
@@ -69,16 +24,6 @@ pub fn sin(x: f32) -> f32 {
 }
 
 /// Computes square root for a single-precision input.
-#[cfg(target_arch = "arm")]
-#[inline(always)]
-#[must_use]
-pub fn sqrt(x: f32) -> f32 {
-    // SAFETY: see `asinf`.
-    unsafe { c_sqrtf(x) }
-}
-
-/// Computes square root for a single-precision input.
-#[cfg(not(target_arch = "arm"))]
 #[inline(always)]
 #[must_use]
 pub fn sqrt(x: f32) -> f32 {
