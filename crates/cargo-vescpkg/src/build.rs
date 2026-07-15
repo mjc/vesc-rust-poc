@@ -49,6 +49,7 @@ struct PackageMetadata {
     display_name: String,
     payload_kind: PayloadKind,
     force_c_float_math: bool,
+    qml_fullscreen: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -88,6 +89,18 @@ pub(crate) fn build_package(root: &Path, options: &BuildOptions) -> Result<PathB
     if let Some(generated) = generated.as_ref() {
         stage_generated_assets(generated, &output_dir)?;
     }
+    let bytes = build_package_bytes(&package, &artifact_name, &output_dir)?;
+    let output = output_dir.join(format!("{artifact_name}.vescpkg"));
+    fs::write(&output, bytes)?;
+
+    Ok(output)
+}
+
+fn build_package_bytes(
+    package: &PackageMetadata,
+    artifact_name: &str,
+    output_dir: &Path,
+) -> Result<Vec<u8>, BuildError> {
     let read = |name: &str| {
         let path = output_dir.join(name);
         path.is_file()
@@ -102,23 +115,51 @@ pub(crate) fn build_package(root: &Path, options: &BuildOptions) -> Result<PathB
     let qml_path = if qml.is_empty() { "" } else { "ui.qml" };
     let descriptor = read("pkgdesc.qml")?.unwrap_or_else(|| {
         format!(
-            "import QtQuick 2.15\n\nItem {{\n    property string pkgName: \"{}\"\n    property string pkgDescriptionMd: \"README.md\"\n    property string pkgLisp: \"code.lisp\"\n    property string pkgQml: \"{qml_path}\"\n    property bool pkgQmlIsFullscreen: false\n    property string pkgOutput: \"{artifact_name}.vescpkg\"\n}}\n",
-            package.display_name,
+            "import QtQuick 2.15\n\nItem {{\n    property string pkgName: \"{}\"\n    property string pkgDescriptionMd: \"README.md\"\n    property string pkgLisp: \"code.lisp\"\n    property string pkgQml: \"{qml_path}\"\n    property bool pkgQmlIsFullscreen: {}\n    property string pkgOutput: \"{artifact_name}.vescpkg\"\n}}\n",
+            package.display_name, package.qml_fullscreen,
         )
     });
-    let output = output_dir.join(format!("{artifact_name}.vescpkg"));
-    let bytes = build_vesc_package(&VescPackageInput {
+    validate_descriptor_fullscreen(&descriptor, package.qml_fullscreen)?;
+    build_vesc_package(&VescPackageInput {
         name: &package.display_name,
         description_md: &description_md,
         lisp_source: &loader,
-        lisp_editor_path: &output_dir,
+        lisp_editor_path: output_dir,
         qml_file: &qml,
         pkg_desc_qml: &descriptor,
-        qml_is_fullscreen: false,
-    })?;
-    fs::write(&output, bytes)?;
+        qml_is_fullscreen: package.qml_fullscreen,
+    })
+    .map_err(BuildError::from)
+}
 
-    Ok(output)
+fn validate_descriptor_fullscreen(descriptor: &str, expected: bool) -> Result<(), BuildError> {
+    let declared = descriptor
+        .lines()
+        .filter_map(|line| line.split_once(':'))
+        .filter(|(declaration, _)| {
+            declaration
+                .split_whitespace()
+                .eq(["property", "bool", "pkgQmlIsFullscreen"])
+        })
+        .map(|(_, value)| value.split_whitespace().next().unwrap_or_default())
+        .map(|value| match value {
+            "true" => Ok(true),
+            "false" => Ok(false),
+            _ => Err(BuildError(format!(
+                "pkgQmlIsFullscreen must be the literal `true` or `false`, found `{value}`"
+            ))),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    match declared.as_slice() {
+        [] => Ok(()),
+        [actual] if *actual == expected => Ok(()),
+        [actual] => Err(BuildError(format!(
+            "pkgdesc.qml declares pkgQmlIsFullscreen={actual}, but Cargo metadata declares qml-fullscreen={expected}"
+        ))),
+        _ => Err(BuildError(
+            "pkgdesc.qml declares pkgQmlIsFullscreen more than once".to_owned(),
+        )),
+    }
 }
 
 fn validate_target(target: &str) -> Result<(), BuildError> {
@@ -305,6 +346,9 @@ fn select_package(metadata: &Value, requested: &str) -> Result<PackageMetadata, 
         force_c_float_math: package["metadata"]["vescpkg"]["force-c-float-math"]
             .as_bool()
             .unwrap_or(false),
+        qml_fullscreen: package["metadata"]["vescpkg"]["qml-fullscreen"]
+            .as_bool()
+            .unwrap_or(false),
     })
 }
 
@@ -474,10 +518,12 @@ fn package_slug(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        PackageMetadata, PayloadKind, cargo_message_artifacts, command_failure_message,
-        metadata_workspace_root, package_slug, select_package, stage_generated_assets,
-        staticlib_linker_script, validate_target,
+        PackageMetadata, PayloadKind, build_package_bytes, cargo_message_artifacts,
+        command_failure_message, metadata_workspace_root, package_slug, select_package,
+        stage_generated_assets, staticlib_linker_script, validate_descriptor_fullscreen,
+        validate_target,
     };
+    use crate::package::Package;
     use serde_json::json;
 
     #[test]
@@ -617,7 +663,8 @@ mod tests {
                 "metadata": {"vescpkg": {
                     "name": "Static package",
                     "version": "1.2.1",
-                    "force-c-float-math": true
+                    "force-c-float-math": true,
+                    "qml-fullscreen": true
                 }}
             }]
         });
@@ -627,6 +674,47 @@ mod tests {
         assert_eq!(package.payload_kind, PayloadKind::Staticlib);
         assert_eq!(package.version, "1.2.1");
         assert!(package.force_c_float_math);
+        assert!(package.qml_fullscreen);
+    }
+
+    #[test]
+    fn builds_and_decodes_a_fullscreen_qml_package() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        std::fs::write(temp.path().join("ui.qml"), "import QtQuick 2.15\nItem {}\n")
+            .expect("QML fixture");
+        std::fs::write(
+            temp.path().join("pkgdesc.qml"),
+            "Item {\n    property bool pkgQmlIsFullscreen: true\n}\n",
+        )
+        .expect("descriptor fixture");
+        std::fs::create_dir(temp.path().join("src")).expect("payload directory");
+        std::fs::write(temp.path().join("src/package_lib.bin"), b"native")
+            .expect("payload fixture");
+        let package = PackageMetadata {
+            id: "fixture".to_owned(),
+            name: "fixture".to_owned(),
+            target_name: "fixture".to_owned(),
+            version: "0.1.0".to_owned(),
+            display_name: "Fullscreen fixture".to_owned(),
+            payload_kind: PayloadKind::Binary,
+            force_c_float_math: false,
+            qml_fullscreen: true,
+        };
+
+        let bytes = build_package_bytes(&package, "Fullscreen-fixture-0.1.0", temp.path())
+            .expect("build package");
+        let decoded = Package::from_bytes(&bytes).expect("decode package");
+
+        assert!(decoded.qml_app_ui.expect("QML app UI").mode.is_fullscreen());
+    }
+
+    #[test]
+    fn rejects_conflicting_fullscreen_metadata_and_descriptor() {
+        let error =
+            validate_descriptor_fullscreen("property bool pkgQmlIsFullscreen: true\n", false)
+                .expect_err("contradictory descriptor");
+
+        assert!(error.to_string().contains("Cargo metadata"));
     }
 
     #[test]
@@ -660,6 +748,7 @@ mod tests {
             display_name: "Minimal package".to_owned(),
             payload_kind: PayloadKind::Binary,
             force_c_float_math: false,
+            qml_fullscreen: false,
         };
         let artifact = json!({
             "reason": "compiler-artifact",
@@ -700,6 +789,7 @@ mod tests {
             display_name: "Static package".to_owned(),
             payload_kind: PayloadKind::Staticlib,
             force_c_float_math: false,
+            qml_fullscreen: false,
         };
         let artifact = json!({
             "reason": "compiler-artifact",

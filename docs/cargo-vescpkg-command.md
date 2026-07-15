@@ -8,6 +8,17 @@ optionally installs it.
 Cargo packages are inputs selected with normal Cargo semantics, not plugins or
 providers. Package-specific metadata lives in `[package.metadata.vescpkg]`.
 
+```toml
+[package.metadata.vescpkg]
+name = "Package display name"
+qml-fullscreen = true
+```
+
+`qml-fullscreen` defaults to `false`. If `package/pkgdesc.qml` also declares
+`pkgQmlIsFullscreen`, both values must agree. The complete `package/` asset tree
+is staged recursively; `src/package_lib.bin` is reserved for the compiled
+native payload.
+
 ## Build
 
 ```bash
