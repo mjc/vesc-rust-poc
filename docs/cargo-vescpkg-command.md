@@ -19,6 +19,12 @@ qml-fullscreen = true
 is staged recursively; `src/package_lib.bin` is reserved for the compiled
 native payload.
 
+VESC loads the native payload as a flat image and does not relocate pointers.
+Package code must construct reference- and pointer-bearing values at runtime;
+loadable statics containing absolute pointers are unsupported. The final ARM
+link preserves relocation records, and `cargo-vescpkg` rejects absolute
+relocations in static data before flattening the ELF.
+
 ## Build
 
 ```bash

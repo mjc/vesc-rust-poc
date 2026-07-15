@@ -20,6 +20,7 @@ pub fn build_package(manifest_dir: &Path) {
             "-mthumb",
             "-mfloat-abi=hard",
             "-mfpu=fpv4-sp-d16",
+            "-Wl,--emit-relocs",
             "-Wl,--gc-sections",
             "-Wl,--undefined=init",
         ] {

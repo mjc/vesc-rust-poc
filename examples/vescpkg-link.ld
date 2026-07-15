@@ -46,6 +46,10 @@ SECTIONS
     {
         *(.text)
         *(.text*)
+    } > MEM
+
+    .rodata : ALIGN(4)
+    {
         *(.rodata)
         *(.rodata.*)
     } > MEM

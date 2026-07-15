@@ -70,6 +70,7 @@ pub(crate) fn build_package(root: &Path, options: &BuildOptions) -> Result<PathB
     let package = select_package(&metadata, &options.package)?;
     let workspace_root = metadata_workspace_root(&metadata)?;
     let artifacts = cargo_build(root, &workspace_root, options, &package)?;
+    validate_flat_image_relocations(&artifacts.elf)?;
     let package_slug = package_slug(&package.display_name);
     let artifact_name = format!("{package_slug}-{}", package.version);
     let artifact_root = metadata_target_dir(&metadata)?.join("vescpkg");
@@ -477,7 +478,12 @@ fn link_staticlib(
     }
     command
         .arg(archive)
-        .args(["-Wl,--gc-sections", "-Wl,--undefined=init", "-T"])
+        .args([
+            "-Wl,--emit-relocs",
+            "-Wl,--gc-sections",
+            "-Wl,--undefined=init",
+            "-T",
+        ])
         .arg(staticlib_linker_script(root))
         .arg("-o")
         .arg(&elf);
@@ -503,6 +509,53 @@ fn write_flattened_elf(elf: &Path, output: &Path) -> Result<(), BuildError> {
     })
 }
 
+fn validate_flat_image_relocations(elf: &Path) -> Result<(), BuildError> {
+    let output = Command::new("arm-none-eabi-readelf")
+        .args(["--relocs", "--wide"])
+        .arg(elf)
+        .output()?;
+    if !output.status.success() {
+        return Err(BuildError(format!(
+            "arm-none-eabi-readelf failed for {} with {}",
+            elf.display(),
+            output.status
+        )));
+    }
+    validate_relocation_report(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn validate_relocation_report(report: &str) -> Result<(), BuildError> {
+    const RUNTIME_REBASED_CODE: [&str; 2] = [".rel.init_fun", ".rel.text"];
+    const ABSOLUTE_RELOCATIONS: [&str; 4] = [
+        "R_ARM_ABS32",
+        "R_ARM_TARGET1",
+        "R_ARM_MOVW_ABS_NC",
+        "R_ARM_MOVT_ABS",
+    ];
+
+    let mut relocation_section = "";
+    for line in report.lines() {
+        if let Some(section) = line
+            .strip_prefix("Relocation section '")
+            .and_then(|line| line.split_once('\'').map(|(section, _)| section))
+        {
+            relocation_section = section;
+            continue;
+        }
+        let relocation = line
+            .split_whitespace()
+            .find(|field| ABSOLUTE_RELOCATIONS.contains(field));
+        if let Some(relocation) = relocation
+            && !RUNTIME_REBASED_CODE.contains(&relocation_section)
+        {
+            return Err(BuildError(format!(
+                "unsupported absolute relocation `{relocation}` in `{relocation_section}`; VESC flat images cannot contain pointer-bearing loadable statics"
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn package_slug(name: &str) -> String {
     name.chars()
         .map(|character| {
@@ -521,7 +574,7 @@ mod tests {
         PackageMetadata, PayloadKind, build_package_bytes, cargo_message_artifacts,
         command_failure_message, metadata_workspace_root, package_slug, select_package,
         stage_generated_assets, staticlib_linker_script, validate_descriptor_fullscreen,
-        validate_target,
+        validate_relocation_report, validate_target,
     };
     use crate::package::Package;
     use serde_json::json;
@@ -715,6 +768,33 @@ mod tests {
                 .expect_err("contradictory descriptor");
 
         assert!(error.to_string().contains("Cargo metadata"));
+    }
+
+    #[test]
+    fn rejects_absolute_relocations_in_loadable_static_data() {
+        let report = "\
+Relocation section '.rel.rodata' at offset 0x100 contains 1 entry:\n\
+ Offset     Info    Type                Sym. Value  Symbol's Name\n\
+00000000  00000102 R_ARM_ABS32            00000004   STATIC_NAME\n";
+
+        let error = validate_relocation_report(report).expect_err("pointer-bearing static");
+
+        assert!(error.to_string().contains("R_ARM_ABS32"));
+        assert!(
+            error
+                .to_string()
+                .contains("pointer-bearing loadable statics")
+        );
+    }
+
+    #[test]
+    fn permits_runtime_rebased_code_literals() {
+        let report = "\
+Relocation section '.rel.text' at offset 0x100 contains 1 entry:\n\
+ Offset     Info    Type                Sym. Value  Symbol's Name\n\
+00000070  00000e02 R_ARM_ABS32            00000191   stop_package\n";
+
+        assert!(validate_relocation_report(report).is_ok());
     }
 
     #[test]
