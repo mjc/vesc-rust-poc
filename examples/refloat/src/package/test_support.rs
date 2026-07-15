@@ -4,6 +4,26 @@ use crate::config::{RefloatConfigEditor, RefloatConfigImage};
 use crate::domain::*;
 use vescpkg_rs::prelude::*;
 
+static REFLOAT_RUNTIME_STATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+pub(crate) struct RefloatRuntimeStateLock {
+    _guard: std::sync::MutexGuard<'static, ()>,
+}
+
+impl Drop for RefloatRuntimeStateLock {
+    fn drop(&mut self) {
+        vescpkg_rs::test_support::clear_state(&super::REFLOAT_RUNTIME_STATE);
+    }
+}
+
+pub(crate) fn lock_refloat_runtime_state() -> RefloatRuntimeStateLock {
+    let guard = REFLOAT_RUNTIME_STATE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    vescpkg_rs::test_support::clear_state(&super::REFLOAT_RUNTIME_STATE);
+    RefloatRuntimeStateLock { _guard: guard }
+}
+
 pub(crate) fn sample_all_data_payloads() -> RefloatAllDataPayloads {
     sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Normal)
 }

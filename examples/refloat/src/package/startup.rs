@@ -64,7 +64,7 @@ pub fn register_refloat_app_data_callbacks(start: &mut PackageStart) -> bool {
 #[cfg(test)]
 mod tests {
     use crate::package::RefloatPackageState;
-    use crate::package::test_support::sample_all_data_payloads;
+    use crate::package::test_support::{lock_refloat_runtime_state, sample_all_data_payloads};
 
     fn assert_no_runtime_state() {
         assert!(!crate::package::REFLOAT_RUNTIME_STATE.is_installed());
@@ -72,8 +72,7 @@ mod tests {
 
     #[test]
     fn startup_state_install_rejects_null_loader_metadata_without_runtime_slot() {
-        let _state_sources =
-            crate::package::custom_config::lock_test_refloat_config_state_sources_for_package();
+        let _runtime_state = lock_refloat_runtime_state();
         let mut start = vescpkg_rs::test_support::package_start_without_loader();
         let mut state = RefloatPackageState::new(sample_all_data_payloads());
 
@@ -88,6 +87,7 @@ mod tests {
 
     #[test]
     fn package_start_installs_typed_refloat_state_for_handler_retrieval() {
+        let _runtime_state = lock_refloat_runtime_state();
         let mut info = vescpkg_rs::LoaderInfo::new();
         let mut start = vescpkg_rs::test_support::package_start(&mut info);
         let state = RefloatPackageState::new(sample_all_data_payloads());
@@ -108,10 +108,12 @@ mod tests {
                 .with_runtime_state::<RefloatPackageState, _>(|_| ())
                 .is_none()
         );
+        assert!(vescpkg_rs::test_support::stop_package(&mut info));
     }
 
     #[test]
     fn package_start_installs_refloat_state_before_callbacks_like_refloat_startup() {
+        let _runtime_state = lock_refloat_runtime_state();
         let mut info = vescpkg_rs::LoaderInfo::new();
         let mut start = vescpkg_rs::test_support::package_start(&mut info);
         let state = RefloatPackageState::new(sample_all_data_payloads());
@@ -121,5 +123,6 @@ mod tests {
         // before registering custom config/app-data/extensions at `third_party/refloat/src/main.c:2455-2459`.
         assert!(info.has_stop_handler());
         assert!(info.argument().is_some());
+        assert!(vescpkg_rs::test_support::stop_package(&mut info));
     }
 }

@@ -69,32 +69,8 @@ pub(super) fn register_refloat_callbacks(
 }
 
 #[cfg(test)]
-static TEST_REFLOAT_CONFIG_STATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-#[cfg(test)]
-pub(super) struct TestRefloatConfigStateLock {
-    _guard: std::sync::MutexGuard<'static, ()>,
-}
-
-#[cfg(test)]
-impl Drop for TestRefloatConfigStateLock {
-    fn drop(&mut self) {
-        clear_test_refloat_config_state_sources();
-    }
-}
-
-#[cfg(test)]
-pub(super) fn lock_test_refloat_config_state_sources() -> TestRefloatConfigStateLock {
-    let guard = TEST_REFLOAT_CONFIG_STATE_LOCK
-        .lock()
-        .expect("test custom-config state lock");
-    clear_test_refloat_config_state_sources();
-    TestRefloatConfigStateLock { _guard: guard }
-}
-
-#[cfg(test)]
-pub(in crate::package) fn lock_test_refloat_config_state_sources_for_package() -> impl Drop {
-    lock_test_refloat_config_state_sources()
+pub(super) fn lock_test_refloat_config_state_sources() -> impl Drop {
+    super::test_support::lock_refloat_runtime_state()
 }
 
 #[cfg(test)]
@@ -102,11 +78,6 @@ pub(super) fn install_test_refloat_runtime_state<'a>(
     state: &'a mut RefloatPackageState,
 ) -> impl Drop + 'a {
     vescpkg_rs::test_support::install_state(&super::REFLOAT_RUNTIME_STATE, state)
-}
-
-#[cfg(test)]
-pub(super) fn clear_test_refloat_config_state_sources() {
-    vescpkg_rs::test_support::clear_state(&super::REFLOAT_RUNTIME_STATE);
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]

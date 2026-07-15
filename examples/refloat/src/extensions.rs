@@ -124,7 +124,7 @@ mod tests {
         record_refloat_firmware_version,
     };
     use crate::package::RefloatPackageState;
-    use crate::package::test_support::sample_all_data_payloads;
+    use crate::package::test_support::{lock_refloat_runtime_state, sample_all_data_payloads};
     use vescpkg_rs::LoaderInfo;
     use vescpkg_rs::test_support::TestExtensionRegistry;
 
@@ -154,10 +154,16 @@ mod tests {
 
     #[test]
     fn package_lifecycle_registers_official_refloat_loader_extensions() {
+        let _runtime_state = lock_refloat_runtime_state();
         let registry = TestExtensionRegistry::accepting();
         let mut info = LoaderInfo::new();
         let mut start = vescpkg_rs::test_support::package_start(&mut info);
         let names = RefloatLoaderExtension::ALL.map(RefloatLoaderExtension::name);
+
+        assert_eq!(
+            start.install_runtime_state(RefloatPackageState::new(sample_all_data_payloads())),
+            Ok(())
+        );
 
         for (descriptor, name) in package_extension_descriptors().zip(names) {
             assert_eq!(registry.register(&mut start, [descriptor]), Ok(()));
@@ -168,6 +174,7 @@ mod tests {
             registry.registration_count(),
             RefloatLoaderExtension::ALL.len()
         );
+        assert!(vescpkg_rs::test_support::stop_package(&mut info));
     }
 
     #[test]
