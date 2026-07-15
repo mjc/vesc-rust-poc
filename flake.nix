@@ -55,6 +55,7 @@
             gcc
             gcc-arm-embedded
             pkg-config
+            python3
             qt5.qtbase.dev
             qt5.qttools
             qt5.qtquickcontrols2
@@ -137,6 +138,7 @@
               dbus.dev
               gcc
               pkg-config
+              python3
               qt5.qtbase.dev
               qt5.qttools
               qt5.qtquickcontrols2
@@ -166,6 +168,7 @@
               gcc
               gcc-arm-embedded
               pkg-config
+              python3
               qt5.qtbase.dev
               qt5.qttools
               qt5.qtquickcontrols2
