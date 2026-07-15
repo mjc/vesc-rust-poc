@@ -70,7 +70,7 @@ pub(crate) fn build_package(root: &Path, options: &BuildOptions) -> Result<PathB
     let package = select_package(&metadata, &options.package)?;
     let workspace_root = metadata_workspace_root(&metadata)?;
     let artifacts = cargo_build(root, &workspace_root, options, &package)?;
-    validate_flat_image_relocations(&artifacts.elf)?;
+    validate_flat_image_relocations(&artifacts.elf, package.force_c_float_math)?;
     let package_slug = package_slug(&package.display_name);
     let artifact_name = format!("{package_slug}-{}", package.version);
     let artifact_root = metadata_target_dir(&metadata)?.join("vescpkg");
@@ -509,7 +509,10 @@ fn write_flattened_elf(elf: &Path, output: &Path) -> Result<(), BuildError> {
     })
 }
 
-fn validate_flat_image_relocations(elf: &Path) -> Result<(), BuildError> {
+fn validate_flat_image_relocations(
+    elf: &Path,
+    allow_c_float_math_runtime: bool,
+) -> Result<(), BuildError> {
     let output = Command::new("arm-none-eabi-readelf")
         .args(["--relocs", "--wide"])
         .arg(elf)
@@ -521,11 +524,18 @@ fn validate_flat_image_relocations(elf: &Path) -> Result<(), BuildError> {
             output.status
         )));
     }
-    validate_relocation_report(&String::from_utf8_lossy(&output.stdout))
+    validate_relocation_report(
+        &String::from_utf8_lossy(&output.stdout),
+        allow_c_float_math_runtime,
+    )
 }
 
-fn validate_relocation_report(report: &str) -> Result<(), BuildError> {
+fn validate_relocation_report(
+    report: &str,
+    allow_c_float_math_runtime: bool,
+) -> Result<(), BuildError> {
     const RUNTIME_REBASED_CODE: [&str; 2] = [".rel.init_fun", ".rel.text"];
+    const NON_LOADABLE_PREFIXES: [&str; 2] = [".rel.debug", ".rel.comment"];
     const ABSOLUTE_RELOCATIONS: [&str; 4] = [
         "R_ARM_ABS32",
         "R_ARM_TARGET1",
@@ -545,8 +555,17 @@ fn validate_relocation_report(report: &str) -> Result<(), BuildError> {
         let relocation = line
             .split_whitespace()
             .find(|field| ABSOLUTE_RELOCATIONS.contains(field));
+        let symbol = line.split_whitespace().last().unwrap_or_default();
+        let non_loadable = NON_LOADABLE_PREFIXES
+            .iter()
+            .any(|prefix| relocation_section.starts_with(prefix));
+        let c_float_math_runtime = allow_c_float_math_runtime
+            && relocation_section == ".rel.data"
+            && matches!(symbol, "_impure_data" | "__sf");
         if let Some(relocation) = relocation
             && !RUNTIME_REBASED_CODE.contains(&relocation_section)
+            && !non_loadable
+            && !c_float_math_runtime
         {
             return Err(BuildError(format!(
                 "unsupported absolute relocation `{relocation}` in `{relocation_section}`; VESC flat images cannot contain pointer-bearing loadable statics"
@@ -777,7 +796,7 @@ Relocation section '.rel.rodata' at offset 0x100 contains 1 entry:\n\
  Offset     Info    Type                Sym. Value  Symbol's Name\n\
 00000000  00000102 R_ARM_ABS32            00000004   STATIC_NAME\n";
 
-        let error = validate_relocation_report(report).expect_err("pointer-bearing static");
+        let error = validate_relocation_report(report, false).expect_err("pointer-bearing static");
 
         assert!(error.to_string().contains("R_ARM_ABS32"));
         assert!(
@@ -794,7 +813,29 @@ Relocation section '.rel.text' at offset 0x100 contains 1 entry:\n\
  Offset     Info    Type                Sym. Value  Symbol's Name\n\
 00000070  00000e02 R_ARM_ABS32            00000191   stop_package\n";
 
-        assert!(validate_relocation_report(report).is_ok());
+        assert!(validate_relocation_report(report, false).is_ok());
+    }
+
+    #[test]
+    fn ignores_debug_relocations_omitted_from_the_flat_binary() {
+        let report = "\
+Relocation section '.rel.debug_frame' at offset 0x100 contains 1 entry:\n\
+ Offset     Info    Type                Sym. Value  Symbol's Name\n\
+00000014  00000902 R_ARM_ABS32            00000000   .debug_frame\n";
+
+        assert!(validate_relocation_report(report, false).is_ok());
+    }
+
+    #[test]
+    fn permits_newlib_state_pulled_in_by_requested_c_float_math() {
+        let report = "\
+Relocation section '.rel.data' at offset 0x100 contains 2 entries:\n\
+ Offset     Info    Type                Sym. Value  Symbol's Name\n\
+00000010  00013502 R_ARM_ABS32            00000018   _impure_data\n\
+0000001c  00012602 R_ARM_ABS32            00000218   __sf\n";
+
+        assert!(validate_relocation_report(report, true).is_ok());
+        assert!(validate_relocation_report(report, false).is_err());
     }
 
     #[test]
