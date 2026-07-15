@@ -61,6 +61,11 @@ impl core::ops::Deref for RefloatConfigImage {
 }
 
 impl RefloatConfigImage {
+    // Generated `hardware.leds.mode` is the first field in the final hardware
+    // block at `third_party/refloat/src/conf/settings.xml:4049-4064`.
+    const HARDWARE_LED_MODE_FIELD: CustomConfigEnumField<RefloatHardwareLedMode> =
+        CustomConfigEnumField::new(224);
+
     pub(crate) const fn defaults() -> Self {
         Self(CustomConfigImage::new(REFLOAT_DEFAULT_CONFIG))
     }
@@ -78,6 +83,12 @@ impl RefloatConfigImage {
 
     pub(crate) const fn as_bytes(&self) -> &[u8; REFLOAT_CONFIG_LEN] {
         self.0.as_bytes()
+    }
+
+    pub(crate) fn hardware_led_mode_id(&self) -> u8 {
+        Self::HARDWARE_LED_MODE_FIELD
+            .read(&self.0)
+            .map_or(0, |mode| mode.0)
     }
 
     fn flag(&self, field: CustomConfigFlagField) -> bool {
@@ -136,6 +147,15 @@ impl RefloatConfigImage {
 
     pub(crate) fn editor(&mut self) -> RefloatConfigEditor<'_> {
         RefloatConfigEditor(self.0.editor())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RefloatHardwareLedMode(u8);
+
+impl From<u8> for RefloatHardwareLedMode {
+    fn from(value: u8) -> Self {
+        Self(value)
     }
 }
 

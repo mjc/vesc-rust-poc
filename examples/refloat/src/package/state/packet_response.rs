@@ -1,5 +1,5 @@
 use super::super::protocol::{
-    encode_refloat_info_response_v2, encode_refloat_realtime_data_ids_response,
+    encode_refloat_info_response, encode_refloat_realtime_data_ids_response,
     encode_refloat_realtime_data_response,
 };
 use super::RefloatPackageState;
@@ -21,9 +21,13 @@ impl RefloatPackageState {
         if let Some(payload) = refloat_command_payload(bytes, RefloatAppDataCommand::Info) {
             // C map: `on_command_received` dispatches COMMAND_INFO at
             // `third_party/refloat/src/main.c:2158-2160`; `cmd_info` writes
-            // the v2 metadata packet at `third_party/refloat/src/main.c:2070-2139`.
-            let response = encode_refloat_info_response_v2(payload);
-            return send(&response);
+            // the requested v1 or v2 metadata shape at
+            // `third_party/refloat/src/main.c:2070-2139`.
+            let response = encode_refloat_info_response(
+                payload,
+                self.serialized_config.hardware_led_mode_id(),
+            );
+            return send(response.as_bytes());
         }
 
         if refloat_command_payload(bytes, RefloatAppDataCommand::RealtimeDataIds).is_some() {
@@ -165,6 +169,25 @@ mod tests {
         // Refloat v1.2.1 writes `d->time.now` into realtime packets at
         // `third_party/refloat/src/main.c:1931`; VESC system ticks are 100 us ticks.
         assert_eq!(&packet[4..8], &[1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn metadata_packet_response_defaults_to_legacy_info_like_refloat() {
+        let state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+        let mut packet = Vec::new();
+
+        assert!(state.send_metadata_packet_response(
+            &mut |bytes| {
+                packet.extend_from_slice(bytes);
+                true
+            },
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::Info.id(),
+            ],
+        ));
+
+        assert_eq!(packet, [101, 0, 12, 1, 0]);
     }
 
     #[test]

@@ -10,6 +10,10 @@ pub(super) const REFLOAT_REALTIME_DATA_IDS_RESPONSE_LEN: usize = 405;
 
 const REFLOAT_PACKAGE_NAME: &[u8] = b"Refloat";
 const REFLOAT_VERSION_SUFFIX: &[u8] = b"";
+const REFLOAT_MAJOR_VERSION: u8 = 1;
+const REFLOAT_MINOR_VERSION: u8 = 2;
+const REFLOAT_PATCH_VERSION: u8 = 1;
+const REFLOAT_BUILD_NUMBER: u8 = 1;
 const REFLOAT_GIT_HASH: u32 = 0x0ef6_e99d;
 const REFLOAT_SYSTEM_TICK_RATE_HZ: u32 = SYSTEM_TICK_RATE_HZ as u32;
 
@@ -25,26 +29,54 @@ vescpkg_rs::firmware_section_static!(
         build_refloat_realtime_data_ids_response()
 );
 
-pub(in crate::package) fn encode_refloat_info_response_v2(
+pub(in crate::package) struct RefloatInfoResponse {
+    bytes: [u8; REFLOAT_INFO_RESPONSE_V2_LEN],
+    len: usize,
+}
+
+impl RefloatInfoResponse {
+    pub(in crate::package) fn as_bytes(&self) -> &[u8] {
+        &self.bytes[..self.len]
+    }
+}
+
+pub(in crate::package) fn encode_refloat_info_response(
     request_payload: &[u8],
-) -> [u8; REFLOAT_INFO_RESPONSE_V2_LEN] {
-    // Upstream `cmd_info` responds to QML's version-2 request at
-    // `third_party/refloat/src/main.c:2070-2139`; QML allocates the four-byte request and sets
-    // version 2 at `ui.qml.in:693-697`.
-    let flags = match request_payload {
-        [2, flags, ..] => *flags,
-        _ => 0,
-    };
+    hardware_led_mode: u8,
+) -> RefloatInfoResponse {
+    let version = request_payload.first().copied().unwrap_or(1);
     let mut bytes = [0; REFLOAT_INFO_RESPONSE_V2_LEN];
     let mut index = 0;
     refloat_response_push_u8(&mut bytes, &mut index, REFLOAT_APP_DATA_PACKAGE_ID.get());
     refloat_response_push_u8(&mut bytes, &mut index, RefloatAppDataCommand::Info.id());
+    if version == 1 {
+        refloat_response_push_u8(
+            &mut bytes,
+            &mut index,
+            REFLOAT_MAJOR_VERSION * 10 + REFLOAT_MINOR_VERSION,
+        );
+        refloat_response_push_u8(&mut bytes, &mut index, REFLOAT_BUILD_NUMBER);
+        let legacy_led_type = if hardware_led_mode & 0x2 == 0 {
+            hardware_led_mode
+        } else {
+            3
+        };
+        refloat_response_push_u8(&mut bytes, &mut index, legacy_led_type);
+        return RefloatInfoResponse { bytes, len: index };
+    }
+
+    // Unknown versions use the highest known response with flags cleared,
+    // matching upstream's `default` arm.
+    let flags = match request_payload {
+        [2, flags, ..] => *flags,
+        _ => 0,
+    };
     refloat_response_push_u8(&mut bytes, &mut index, 2);
     refloat_response_push_u8(&mut bytes, &mut index, flags);
     append_fixed_ascii::<20>(&mut bytes, &mut index, REFLOAT_PACKAGE_NAME);
-    refloat_response_push_u8(&mut bytes, &mut index, 1);
-    refloat_response_push_u8(&mut bytes, &mut index, 2);
-    refloat_response_push_u8(&mut bytes, &mut index, 1);
+    refloat_response_push_u8(&mut bytes, &mut index, REFLOAT_MAJOR_VERSION);
+    refloat_response_push_u8(&mut bytes, &mut index, REFLOAT_MINOR_VERSION);
+    refloat_response_push_u8(&mut bytes, &mut index, REFLOAT_PATCH_VERSION);
     append_fixed_ascii::<20>(&mut bytes, &mut index, REFLOAT_VERSION_SUFFIX);
     refloat_response_push_bytes(&mut bytes, &mut index, &REFLOAT_GIT_HASH.to_be_bytes());
     refloat_response_push_bytes(
@@ -58,7 +90,7 @@ pub(in crate::package) fn encode_refloat_info_response_v2(
     refloat_response_push_bytes(&mut bytes, &mut index, &0u32.to_be_bytes());
     // Upstream currently sends zero `extra_flags` at `third_party/refloat/src/main.c:2134-2135`.
     refloat_response_push_u8(&mut bytes, &mut index, 0);
-    bytes
+    RefloatInfoResponse { bytes, len: index }
 }
 
 fn append_fixed_ascii<const LEN: usize>(bytes: &mut [u8], index: &mut usize, value: &[u8]) {
@@ -169,7 +201,8 @@ mod tests {
 
     #[test]
     fn info_v2_response_matches_refloat_qml_metadata() {
-        let bytes = encode_refloat_info_response_v2(&[2, 0]);
+        let response = encode_refloat_info_response(&[2, 0], 0);
+        let bytes = response.as_bytes();
 
         // QML sends COMMAND_INFO version 2 at `ui.qml.in:693-697`; upstream
         // `cmd_info` replies with the v2 metadata layout at `third_party/refloat/src/main.c:2108-2135`.
@@ -190,6 +223,34 @@ mod tests {
             0
         );
         assert_eq!(bytes[59], 0);
+        assert_eq!(
+            &encode_refloat_info_response(&[2, 0xa5], 0).as_bytes()[..4],
+            &[101, 0, 2, 0xa5]
+        );
+    }
+
+    #[test]
+    fn info_v1_response_matches_refloat_legacy_shape_and_led_mapping() {
+        assert_eq!(
+            encode_refloat_info_response(&[], 1).as_bytes(),
+            &[101, 0, 12, 1, 1]
+        );
+        assert_eq!(
+            encode_refloat_info_response(&[1], 2).as_bytes(),
+            &[101, 0, 12, 1, 3]
+        );
+        assert_eq!(
+            encode_refloat_info_response(&[1], 3).as_bytes(),
+            &[101, 0, 12, 1, 3]
+        );
+    }
+
+    #[test]
+    fn unknown_info_version_uses_v2_without_echoing_flags() {
+        let response = encode_refloat_info_response(&[99, 0xff], 0);
+
+        assert_eq!(&response.as_bytes()[..4], &[101, 0, 2, 0]);
+        assert_eq!(response.as_bytes().len(), REFLOAT_INFO_RESPONSE_V2_LEN);
     }
 
     #[test]
