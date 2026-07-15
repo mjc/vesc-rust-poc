@@ -9,6 +9,7 @@ workspace = true
 
 [dependencies]
 libm = { version = "0.2", optional = true }
+vesc-protocol = { path = "../vesc-protocol" }
 vescpkg-rs-sys = { path = "../vescpkg-rs-sys" }
 vescpkg-rs-units = { path = "../vescpkg-rs-units", default-features = false }
 
@@ -19,5 +20,4 @@ test-support = []
 
 [dev-dependencies]
 rstest = "0.26"
-vesc-protocol = { path = "../vesc-protocol" }
 trybuild = "1"

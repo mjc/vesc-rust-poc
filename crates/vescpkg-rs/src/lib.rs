@@ -69,6 +69,7 @@ pub(crate) mod ffi {
     use vescpkg_rs_sys::raw as selected_ffi;
 }
 
+pub use vesc_protocol::buffer as protocol_buffer;
 use vescpkg_rs_units as units;
 pub use vescpkg_rs_units::{
     AccelerationG, AmpHours, AngleDegrees, AngleRadians, AngularVelocity, Charge, Current,
