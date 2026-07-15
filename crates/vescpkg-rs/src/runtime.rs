@@ -650,6 +650,8 @@ impl<T: Send + 'static> PackageStateStore<T> {
     }
 
     #[cfg(any(test, target_arch = "arm"))]
+    #[cfg_attr(not(target_arch = "arm"), allow(clippy::unused_self))]
+    #[cfg_attr(target_arch = "arm", allow(clippy::infallible_destructuring_match))]
     fn running_firmware(
         &self,
         expected: ExpectedState<T>,
@@ -884,6 +886,32 @@ mod tests {
         assert_eq!(clear_done_rx.recv().unwrap(), ());
         clear.join().unwrap();
         assert_eq!(slot.with(|state| state.value), None);
+    }
+
+    #[test]
+    fn stop_takes_threads_before_termination_without_holding_the_state_gate() {
+        let slot = PackageStateStore::new();
+        let state = Box::leak(Box::new(State { value: 0 }));
+        let state_ptr = NonNull::from(&mut *state);
+        unsafe { slot.install(state) }.unwrap();
+        let mut first_token = 0_u8;
+        let mut second_token = 0_u8;
+        let first = unsafe {
+            crate::ThreadHandle::from_firmware(core::ptr::from_mut(&mut first_token).cast())
+        }
+        .unwrap();
+        let second = unsafe {
+            crate::ThreadHandle::from_firmware(core::ptr::from_mut(&mut second_token).cast())
+        }
+        .unwrap();
+        slot.install_threads(state_ptr, crate::ThreadPair::new(first, second))
+            .unwrap();
+
+        assert!(slot.begin_stop(state_ptr));
+        let _threads = slot.take_threads(state_ptr).expect("installed thread pair");
+
+        assert!(!slot.host_lock.load(Ordering::Acquire));
+        let _ = slot.finish_stop(state_ptr);
     }
 
     #[test]
