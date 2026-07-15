@@ -20,7 +20,7 @@ use vesc_protocol::ble_loopback::{LoopbackError, MAX_LOOPBACK_FRAME_BYTES, handl
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 use vescpkg_rs::PackageStart;
 #[cfg(all(not(test), target_arch = "arm"))]
-use vescpkg_rs::{AppDataCallback, AppDataPacket, Firmware};
+use vescpkg_rs::{AppDataPacket, Firmware, StatefulAppDataCallback};
 
 #[cfg(all(not(test), target_arch = "arm"))]
 #[global_allocator]
@@ -37,9 +37,31 @@ const ALLOC_SMOKE_CANDIDATES: usize = 5;
 #[cfg(all(not(test), target_arch = "arm"))]
 struct AllocSmokeAppData;
 
+#[cfg(any(test, all(not(test), target_arch = "arm")))]
+struct AllocSmokeState;
+
+#[cfg(any(test, all(not(test), target_arch = "arm")))]
+static ALLOC_SMOKE_STATE: vescpkg_rs::PackageStateStore<AllocSmokeState> =
+    vescpkg_rs::PackageStateStore::new();
+
+#[cfg(any(test, all(not(test), target_arch = "arm")))]
+impl vescpkg_rs::PackageRuntimeState for AllocSmokeState {
+    fn runtime_store() -> &'static vescpkg_rs::PackageStateStore<Self> {
+        &ALLOC_SMOKE_STATE
+    }
+
+    fn stop(&mut self) {}
+}
+
 #[cfg(all(not(test), target_arch = "arm"))]
-impl AppDataCallback for AllocSmokeAppData {
-    fn handle(packet: AppDataPacket<'_>) {
+impl StatefulAppDataCallback for AllocSmokeAppData {
+    type State = AllocSmokeState;
+
+    fn runtime_state() -> &'static vescpkg_rs::PackageStateStore<Self::State> {
+        &ALLOC_SMOKE_STATE
+    }
+
+    fn handle(_state: &mut Self::State, packet: AppDataPacket<'_>) {
         let firmware = Firmware::new();
         let app_data = firmware.app_data();
         let now_ms = u64::from(app_data.system_time_ticks().as_ticks()) / 10;
@@ -52,12 +74,12 @@ impl AppDataCallback for AllocSmokeAppData {
     }
 }
 
-vescpkg_rs::firmware_app_data_callback!(alloc_smoke_app_data_callback, AllocSmokeAppData);
+vescpkg_rs::firmware_stateful_app_data_callback!(alloc_smoke_app_data_callback, AllocSmokeAppData);
 
 /// Initialize the alloc smoke package.
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 fn start(start: &mut PackageStart) -> bool {
-    if start.install_stop_hook().is_err() {
+    if start.install_runtime_state(AllocSmokeState).is_err() {
         return false;
     }
     #[cfg(all(not(test), target_arch = "arm"))]

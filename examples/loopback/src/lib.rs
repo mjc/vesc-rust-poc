@@ -17,11 +17,27 @@ pub mod extensions;
 
 pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
 
+#[cfg(any(test, all(not(test), target_arch = "arm")))]
+pub(crate) struct LoopbackState;
+
+#[cfg(any(test, all(not(test), target_arch = "arm")))]
+pub(crate) static LOOPBACK_STATE: vescpkg_rs::PackageStateStore<LoopbackState> =
+    vescpkg_rs::PackageStateStore::new();
+
+#[cfg(any(test, all(not(test), target_arch = "arm")))]
+impl vescpkg_rs::PackageRuntimeState for LoopbackState {
+    fn runtime_store() -> &'static vescpkg_rs::PackageStateStore<Self> {
+        &LOOPBACK_STATE
+    }
+
+    fn stop(&mut self) {}
+}
+
 vescpkg_rs::package_start!(crate::start);
 
 #[cfg(test)]
 pub(crate) fn start(start: &mut vescpkg_rs::PackageStart) -> bool {
-    start.install_stop_hook().is_ok()
+    start.install_runtime_state(LoopbackState).is_ok()
 }
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
@@ -42,7 +58,7 @@ fn register_required<S>(
 pub(crate) fn start(start: &mut vescpkg_rs::PackageStart) -> bool {
     register_required(
         start,
-        |start| start.install_stop_hook().is_ok(),
+        |start| start.install_runtime_state(LoopbackState).is_ok(),
         app_data::register,
         |start| {
             start

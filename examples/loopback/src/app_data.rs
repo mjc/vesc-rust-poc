@@ -1,12 +1,18 @@
 #![cfg(all(not(test), target_arch = "arm"))]
 
 use vesc_protocol::ble_loopback::handle_loopback_frame;
-use vescpkg_rs::{AppDataCallback, AppDataPacket, Firmware, PackageStart};
+use vescpkg_rs::{AppDataPacket, Firmware, PackageStart, StatefulAppDataCallback};
 
 struct LoopbackAppData;
 
-impl AppDataCallback for LoopbackAppData {
-    fn handle(packet: AppDataPacket<'_>) {
+impl StatefulAppDataCallback for LoopbackAppData {
+    type State = crate::LoopbackState;
+
+    fn runtime_state() -> &'static vescpkg_rs::PackageStateStore<Self::State> {
+        &crate::LOOPBACK_STATE
+    }
+
+    fn handle(_state: &mut Self::State, packet: AppDataPacket<'_>) {
         let firmware = Firmware::new();
         let app_data = firmware.app_data();
         let now_ms = u64::from(app_data.system_time_ticks().as_ticks()) / 10;
@@ -18,7 +24,7 @@ impl AppDataCallback for LoopbackAppData {
     }
 }
 
-vescpkg_rs::firmware_app_data_callback!(loopback_handle_app_data, LoopbackAppData);
+vescpkg_rs::firmware_stateful_app_data_callback!(loopback_handle_app_data, LoopbackAppData);
 
 /// Register the package-local callback that VESC stores in
 /// `third_party/vesc/comm/commands.c:1820-1828`.
