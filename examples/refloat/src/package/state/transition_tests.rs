@@ -315,6 +315,8 @@ fn app_data_running_roll_stopped_after_delay_like_refloat_fault_check() {
     let ride_state = state.all_data_payloads().base().status().ride_state();
     assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
     assert_eq!(ride_state.stop_condition(), RefloatStopCondition::Roll);
+    assert!(!state.apply_requested_motor_current(telemetry.motor()));
+    assert_eq!(telemetry.current_command_count(), 0);
 }
 
 #[test]

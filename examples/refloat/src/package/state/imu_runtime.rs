@@ -384,7 +384,7 @@ pub(super) fn refresh(state: &mut RefloatPackageState, imu: &impl Imu, system_ti
             base.booster_current(),
         )
     };
-    if matches!(run_state, RefloatRunState::Running) && !state_engage {
+    if matches!(run_state, RefloatRunState::Running) && !state_engage && !state_stop_fault {
         if matches!(
             ride_state.setpoint_adjustment(),
             RefloatSetpointAdjustment::Centering
