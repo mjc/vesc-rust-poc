@@ -1,6 +1,7 @@
 //! Native VESC package loader helpers shared across package payloads.
 
 use crate::ffi;
+use crate::runtime::CallbackRecorder;
 use core::any::TypeId;
 
 const MAX_CUSTOM_CONFIG_LEN: usize = 510;
@@ -50,7 +51,9 @@ unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
     #[cfg(all(not(test), target_arch = "arm"))]
     {
         let firmware = crate::Firmware::new();
-        let _ = firmware.clear_package_callbacks();
+        runtime
+            .take_callbacks(state)
+            .clear_registered(&crate::bindings::RealBindings);
         if let Some(threads) = runtime.take_threads(state) {
             threads.terminate_reverse(firmware.threads());
         }
@@ -76,9 +79,7 @@ unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
 
 unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
     #[cfg(all(not(test), target_arch = "arm"))]
-    {
-        let _ = crate::Firmware::new().clear_package_callbacks();
-    }
+    crate::runtime::take_stateless_callbacks().clear_registered(&crate::bindings::RealBindings);
 
     #[cfg(test)]
     {
@@ -116,6 +117,7 @@ pub enum PackageStartError {
 pub struct PackageStart<'info> {
     info: *mut crate::LoaderInfo,
     state_type: Option<TypeId>,
+    callback_recorder: Option<CallbackRecorder>,
     _info: core::marker::PhantomData<&'info mut crate::LoaderInfo>,
 }
 
@@ -125,6 +127,7 @@ pub struct PackageStart<'info> {
 /// after any callbacks that firmware requires to be installed first.
 pub struct LoadedAppDataCallback {
     handler: ffi::AppDataHandler,
+    recorder: Option<CallbackRecorder>,
 }
 
 impl LoadedAppDataCallback {
@@ -153,9 +156,18 @@ impl LoadedAppDataCallback {
         self,
         bindings: &B,
     ) -> Result<(), crate::AppDataHandlerRegistrationError> {
-        unsafe { bindings.set_app_data_handler(self.handler) }
-            .then_some(())
-            .ok_or(crate::AppDataHandlerRegistrationError::FirmwareRejected)
+        let registered = unsafe { bindings.set_app_data_handler(self.handler) };
+        if registered
+            && self
+                .recorder
+                .is_none_or(crate::runtime::CallbackRecorder::record_app_data)
+        {
+            return Ok(());
+        }
+        if registered {
+            let _ = unsafe { bindings.clear_app_data_handler() };
+        }
+        Err(crate::AppDataHandlerRegistrationError::FirmwareRejected)
     }
 }
 
@@ -166,6 +178,7 @@ impl<'info> PackageStart<'info> {
         Self {
             info,
             state_type: None,
+            callback_recorder: None,
             _info: core::marker::PhantomData,
         }
     }
@@ -175,6 +188,7 @@ impl<'info> PackageStart<'info> {
         Self {
             info,
             state_type: None,
+            callback_recorder: None,
             _info: core::marker::PhantomData,
         }
     }
@@ -184,6 +198,7 @@ impl<'info> PackageStart<'info> {
         Self {
             info: core::ptr::from_mut(info).cast(),
             state_type: None,
+            callback_recorder: None,
             _info: core::marker::PhantomData,
         }
     }
@@ -198,7 +213,13 @@ impl<'info> PackageStart<'info> {
     /// `third_party/refloat/vesc_pkg_lib/vesc_c_if.h:675-677`; the matching
     /// package state is later exposed through `ARG` at `:698-699`.
     pub fn install_stop_hook(&mut self) -> Result<(), PackageStartError> {
-        install_stop_hook(self.info.cast())
+        install_stop_hook(self.info.cast())?;
+        #[cfg(target_arch = "arm")]
+        {
+            crate::runtime::reset_stateless_callbacks();
+            self.callback_recorder = Some(CallbackRecorder::stateless());
+        }
+        Ok(())
     }
 
     /// Allocate loader-owned package state and publish it for callbacks.
@@ -270,9 +291,11 @@ impl<'info> PackageStart<'info> {
             info,
             stop_owned_package_state::<T>,
         ));
+        let callback_recorder = CallbackRecorder::new(core::ptr::NonNull::from(&mut *state));
         #[cfg(not(target_arch = "arm"))]
         let _ = crate::rust_alloc::boxed::Box::into_raw(owned_state);
         self.state_type = Some(TypeId::of::<T>());
+        self.callback_recorder = Some(callback_recorder);
         Ok(())
     }
 
@@ -362,15 +385,26 @@ impl<'info> PackageStart<'info> {
         if !self.state_type_matches::<T::State>() {
             return false;
         }
+        let Some(recorder) = self.callback_recorder else {
+            return false;
+        };
         let (get, set, xml) = T::image_addresses();
-        unsafe {
-            crate::register_custom_config_callbacks_from_image(
-                bindings,
-                image,
-                core::mem::transmute::<usize, ffi::CustomConfigGet>(get),
-                core::mem::transmute::<usize, ffi::CustomConfigSet>(set),
-                core::mem::transmute::<usize, ffi::CustomConfigXml>(xml),
+        let callbacks = unsafe {
+            (
+                core::mem::transmute::<usize, ffi::CustomConfigGet>(image.rebase_addr(get)),
+                core::mem::transmute::<usize, ffi::CustomConfigSet>(image.rebase_addr(set)),
+                core::mem::transmute::<usize, ffi::CustomConfigXml>(image.rebase_addr(xml)),
             )
+        };
+        let registered =
+            bindings.register_custom_config_callbacks(callbacks.0, callbacks.1, callbacks.2);
+        if registered && recorder.record_custom_config() {
+            true
+        } else {
+            if registered {
+                let _ = unsafe { bindings.clear_custom_configs() };
+            }
+            false
         }
     }
 
@@ -398,7 +432,10 @@ impl<'info> PackageStart<'info> {
         let image = self.native_image()?;
         let address = image.rebase_addr(T::image_address());
         let handler = unsafe { core::mem::transmute::<usize, ffi::AppDataHandler>(address) };
-        Some(LoadedAppDataCallback { handler })
+        Some(LoadedAppDataCallback {
+            handler,
+            recorder: self.callback_recorder,
+        })
     }
 
     /// Register a concrete package-local typed IMU callback.
@@ -429,10 +466,18 @@ impl<'info> PackageStart<'info> {
         if !self.state_type_matches::<T::State>() {
             return Err(PackageStartError::StateTypeMismatch);
         }
+        let recorder = self
+            .callback_recorder
+            .ok_or(PackageStartError::StateTypeMismatch)?;
         let address = image.rebase_addr(T::image_address());
         let callback = unsafe { core::mem::transmute::<usize, ffi::ImuReadCallback>(address) };
         bindings.set_imu_read_callback_handler(callback);
-        Ok(())
+        if recorder.record_imu() {
+            Ok(())
+        } else {
+            unsafe { bindings.clear_imu_read_callback() };
+            Err(PackageStartError::StateTypeMismatch)
+        }
     }
 
     /// Register this package's typed custom config and app-data callback.
@@ -473,6 +518,9 @@ impl<'info> PackageStart<'info> {
         }
         if let Err(error) = callback.register_with_bindings(bindings) {
             let _ = unsafe { bindings.clear_custom_configs() };
+            if let Some(recorder) = self.callback_recorder {
+                let _ = recorder.clear_custom_config();
+            }
             return Err(error);
         }
         Ok(())

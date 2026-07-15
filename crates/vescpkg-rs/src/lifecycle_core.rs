@@ -1,14 +1,10 @@
 //! Package lifecycle helpers built on binding traits.
 
-#[cfg(test)]
-use crate::bindings::AppDataBindings;
 use crate::bindings::LbmBindings;
 #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 use crate::extension::{ExtensionDescriptor, RegisterError};
 #[cfg(not(test))]
 use vescpkg_rs_sys::LbmValue;
-#[cfg(test)]
-use vescpkg_rs_sys::{AppDataHandler, StopHandler};
 #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 use vescpkg_rs_sys::{ExtensionHandler, NativeImage};
 
@@ -134,12 +130,6 @@ impl<B: LbmBindings> PackageLifecycle<B> {
     }
 }
 
-/// Package lifecycle controller for loopback and app-data flows.
-#[cfg(test)]
-pub(crate) struct LoopbackLifecycle<B> {
-    bindings: B,
-}
-
 /// Error returned when app-data handler registration fails.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppDataHandlerRegistrationError {
@@ -160,83 +150,4 @@ impl core::fmt::Display for AppDataHandlerRegistrationError {
             Self::FirmwareRejected => f.write_str("firmware rejected app-data handler update"),
         }
     }
-}
-
-#[cfg(test)]
-impl<B: AppDataBindings> LoopbackLifecycle<B> {
-    /// Construct a loopback lifecycle controller.
-    pub fn new(bindings: B) -> Self {
-        Self { bindings }
-    }
-
-    /// Install the package stop hook into loader metadata.
-    pub fn install(
-        start: &mut crate::PackageStart<'_>,
-        stop_handler: StopHandler,
-    ) -> Result<(), AppDataHandlerRegistrationError> {
-        let Some(info) = start.loader_info_mut() else {
-            return Err(AppDataHandlerRegistrationError::FirmwareRejected);
-        };
-        info.set_stop_handler(stop_handler);
-        Ok(())
-    }
-
-    /// Clear the app-data callback through the binding set.
-    pub fn clear_app_data_handler(&self) -> Result<(), AppDataHandlerRegistrationError> {
-        unsafe { app_data_handler_result(self.bindings.clear_app_data_handler()) }
-    }
-
-    /// Clear the common package-owned callback registrations during package stop.
-    pub fn clear_package_callbacks(&self) -> Result<(), AppDataHandlerRegistrationError>
-    where
-        B: crate::bindings::CustomConfigBindings + crate::bindings::ImuReadCallbackBindings,
-    {
-        self.bindings.clear_imu_read_callback_handler();
-        let app_data_result = self.clear_app_data_handler();
-        if !self.bindings.clear_custom_config_callbacks() {
-            return Err(AppDataHandlerRegistrationError::FirmwareRejected);
-        }
-
-        app_data_result
-    }
-
-    /// Register the app-data callback through the binding set.
-    pub fn register_app_data_handler(
-        &self,
-        handler: AppDataHandler,
-    ) -> Result<(), AppDataHandlerRegistrationError> {
-        unsafe { app_data_handler_result(self.bindings.set_app_data_handler(handler)) }
-    }
-
-    /// Register custom-config callbacks before app-data, preserving VESC Tool startup order.
-    pub fn register_custom_config_then_app_data(
-        &self,
-        register_custom_config: impl FnOnce(&B) -> Result<(), AppDataHandlerRegistrationError>,
-        handler: AppDataHandler,
-    ) -> Result<(), AppDataHandlerRegistrationError> {
-        register_custom_config(&self.bindings)?;
-        self.register_app_data_handler(handler)
-    }
-
-    /// Return the current firmware time tick counter.
-    #[cfg(test)]
-    pub fn system_time_ticks(&self) -> vescpkg_rs_units::TimestampTicks {
-        vescpkg_rs_units::TimestampTicks::from_ticks(self.bindings.system_time_ticks())
-    }
-
-    /// Send app-data bytes through the firmware callback.
-    #[cfg(test)]
-    pub fn send_app_data(&self, data: &[u8]) -> Result<(), AppDataSendError> {
-        self.bindings
-            .send_app_data_bytes(data)
-            .then_some(())
-            .ok_or(AppDataSendError::PayloadTooLarge)
-    }
-}
-
-#[cfg(test)]
-fn app_data_handler_result(accepted: bool) -> Result<(), AppDataHandlerRegistrationError> {
-    accepted
-        .then_some(())
-        .ok_or(AppDataHandlerRegistrationError::FirmwareRejected)
 }

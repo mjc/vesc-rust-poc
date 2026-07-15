@@ -13,8 +13,6 @@ use crate::PackageRuntimeState;
 use crate::bindings::AppDataBindings;
 #[cfg(not(test))]
 use crate::extension::LispValue;
-#[cfg(not(test))]
-use crate::lifecycle_core::AppDataHandlerRegistrationError;
 use crate::lifecycle_core::AppDataSendError;
 use crate::types::ThreadPriority;
 use crate::units::TimestampTicks;
@@ -143,23 +141,6 @@ impl Firmware {
     #[cfg(not(test))]
     pub fn app_data(&self) -> &FirmwareAppData {
         &self.app_data
-    }
-
-    /// Clear package-owned IMU, app-data, and custom-config callbacks.
-    ///
-    /// C map: Refloat clears those callbacks in that order at
-    /// `third_party/refloat/src/main.c:2401-2403`.
-    #[cfg(not(test))]
-    pub fn clear_package_callbacks(&self) -> Result<(), AppDataHandlerRegistrationError> {
-        use crate::bindings::{AppDataBindings, CustomConfigBindings, ImuReadCallbackBindings};
-
-        let bindings = crate::bindings::RealBindings;
-        bindings.clear_imu_read_callback_handler();
-        // SAFETY: `Firmware` is only constructed after package startup has installed VESC_IF.
-        let app_data_cleared = unsafe { bindings.clear_app_data_handler() };
-        (bindings.clear_custom_config_callbacks() && app_data_cleared)
-            .then_some(())
-            .ok_or(AppDataHandlerRegistrationError::FirmwareRejected)
     }
 
     /// Borrow typed LispBM capabilities without exposing the binding type.

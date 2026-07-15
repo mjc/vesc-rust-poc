@@ -20,6 +20,175 @@ const INSTALLING: u8 = 1;
 const RUNNING: u8 = 2;
 const STOPPING: u8 = 3;
 const STOPPED: u8 = 4;
+#[cfg(target_arch = "arm")]
+const APP_DATA_CALLBACK: u8 = 1;
+#[cfg(target_arch = "arm")]
+const CUSTOM_CONFIG_CALLBACKS: u8 = 1 << 1;
+#[cfg(target_arch = "arm")]
+const IMU_CALLBACK: u8 = 1 << 2;
+
+#[derive(Clone, Copy, Default)]
+pub(crate) struct CallbackRegistrations {
+    app_data: bool,
+    custom_config: bool,
+    imu: bool,
+}
+
+impl CallbackRegistrations {
+    #[cfg(target_arch = "arm")]
+    pub(crate) fn take(flags: &AtomicU8) -> Self {
+        let flags = flags.swap(0, Ordering::AcqRel);
+        Self {
+            app_data: flags & APP_DATA_CALLBACK != 0,
+            custom_config: flags & CUSTOM_CONFIG_CALLBACKS != 0,
+            imu: flags & IMU_CALLBACK != 0,
+        }
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn clear_registered<B>(self, bindings: &B)
+    where
+        B: crate::bindings::AppDataBindings
+            + crate::bindings::CustomConfigBindings
+            + crate::bindings::ImuReadCallbackBindings,
+    {
+        if self.imu {
+            unsafe { bindings.clear_imu_read_callback() };
+        }
+        if self.app_data {
+            let _ = unsafe { bindings.clear_app_data_handler() };
+        }
+        if self.custom_config {
+            let _ = unsafe { bindings.clear_custom_configs() };
+        }
+    }
+}
+
+#[cfg(not(target_arch = "arm"))]
+#[derive(Clone, Copy)]
+pub(crate) struct CallbackRecorder {
+    state: NonNull<core::ffi::c_void>,
+    app_data: unsafe fn(NonNull<core::ffi::c_void>) -> bool,
+    custom_config: unsafe fn(NonNull<core::ffi::c_void>) -> bool,
+    clear_custom_config: unsafe fn(NonNull<core::ffi::c_void>) -> bool,
+    imu: unsafe fn(NonNull<core::ffi::c_void>) -> bool,
+}
+
+#[cfg(not(target_arch = "arm"))]
+impl CallbackRecorder {
+    pub(crate) fn new<T: crate::PackageRuntimeState>(state: NonNull<T>) -> Self {
+        unsafe fn app_data<T: crate::PackageRuntimeState>(
+            state: NonNull<core::ffi::c_void>,
+        ) -> bool {
+            T::runtime_store().record_app_data_callback(state.cast())
+        }
+        unsafe fn custom_config<T: crate::PackageRuntimeState>(
+            state: NonNull<core::ffi::c_void>,
+        ) -> bool {
+            T::runtime_store().record_custom_config_callbacks(state.cast())
+        }
+        unsafe fn clear_custom_config<T: crate::PackageRuntimeState>(
+            state: NonNull<core::ffi::c_void>,
+        ) -> bool {
+            T::runtime_store().clear_custom_config_registration(state.cast())
+        }
+        unsafe fn imu<T: crate::PackageRuntimeState>(state: NonNull<core::ffi::c_void>) -> bool {
+            T::runtime_store().record_imu_callback(state.cast())
+        }
+
+        Self {
+            state: state.cast(),
+            app_data: app_data::<T>,
+            custom_config: custom_config::<T>,
+            clear_custom_config: clear_custom_config::<T>,
+            imu: imu::<T>,
+        }
+    }
+
+    pub(crate) fn record_app_data(self) -> bool {
+        unsafe { (self.app_data)(self.state) }
+    }
+
+    pub(crate) fn record_custom_config(self) -> bool {
+        unsafe { (self.custom_config)(self.state) }
+    }
+
+    pub(crate) fn clear_custom_config(self) -> bool {
+        unsafe { (self.clear_custom_config)(self.state) }
+    }
+
+    pub(crate) fn record_imu(self) -> bool {
+        unsafe { (self.imu)(self.state) }
+    }
+}
+
+#[cfg(target_arch = "arm")]
+static STATELESS_CALLBACKS: AtomicU8 = AtomicU8::new(0);
+
+#[cfg(target_arch = "arm")]
+#[derive(Clone, Copy)]
+pub(crate) enum CallbackRecorder {
+    Runtime(NonNull<core::ffi::c_void>),
+    Stateless,
+}
+
+#[cfg(target_arch = "arm")]
+impl CallbackRecorder {
+    pub(crate) fn new<T: crate::PackageRuntimeState>(state: NonNull<T>) -> Self {
+        Self::Runtime(state.cast())
+    }
+
+    pub(crate) const fn stateless() -> Self {
+        Self::Stateless
+    }
+
+    fn update(self, flag: u8, registered: bool) -> bool {
+        match self {
+            Self::Runtime(state) => unsafe {
+                update_firmware_callbacks(state, |callbacks| match flag {
+                    APP_DATA_CALLBACK => callbacks.app_data = registered,
+                    CUSTOM_CONFIG_CALLBACKS => callbacks.custom_config = registered,
+                    IMU_CALLBACK => callbacks.imu = registered,
+                    _ => {}
+                })
+            },
+            Self::Stateless => {
+                if registered {
+                    STATELESS_CALLBACKS.fetch_or(flag, Ordering::AcqRel);
+                } else {
+                    STATELESS_CALLBACKS.fetch_and(!flag, Ordering::AcqRel);
+                }
+                true
+            }
+        }
+    }
+
+    pub(crate) fn record_app_data(self) -> bool {
+        self.update(APP_DATA_CALLBACK, true)
+    }
+
+    pub(crate) fn record_custom_config(self) -> bool {
+        self.update(CUSTOM_CONFIG_CALLBACKS, true)
+    }
+
+    pub(crate) fn clear_custom_config(self) -> bool {
+        self.update(CUSTOM_CONFIG_CALLBACKS, false)
+    }
+
+    pub(crate) fn record_imu(self) -> bool {
+        self.update(IMU_CALLBACK, true)
+    }
+}
+
+#[cfg(target_arch = "arm")]
+pub(crate) fn reset_stateless_callbacks() {
+    STATELESS_CALLBACKS.store(0, Ordering::Release);
+}
+
+#[cfg(target_arch = "arm")]
+pub(crate) fn take_stateless_callbacks() -> CallbackRegistrations {
+    CallbackRegistrations::take(&STATELESS_CALLBACKS)
+}
 
 /// Package-state identity shared by firmware startup and callbacks.
 ///
@@ -38,6 +207,8 @@ pub struct PackageStateStore<T> {
     host_lock: AtomicBool,
     #[cfg(not(target_arch = "arm"))]
     threads: UnsafeCell<Option<crate::ThreadPair>>,
+    #[cfg(not(target_arch = "arm"))]
+    callbacks: UnsafeCell<CallbackRegistrations>,
     _state: PhantomData<UnsafeCell<T>>,
 }
 
@@ -57,6 +228,7 @@ struct FirmwareRuntime {
     phase: AtomicU8,
     active: AtomicUsize,
     threads: UnsafeCell<Option<crate::ThreadPair>>,
+    callbacks: UnsafeCell<CallbackRegistrations>,
 }
 
 #[cfg(any(test, target_arch = "arm"))]
@@ -131,6 +303,31 @@ unsafe fn firmware_runtime_from_state<T: 'static>(
         && runtime.state_type == TypeId::of::<T>()
         && runtime.state == state.as_ptr().cast())
     .then_some(runtime)
+}
+
+#[cfg(target_arch = "arm")]
+unsafe fn update_firmware_callbacks(
+    state: NonNull<core::ffi::c_void>,
+    update: impl FnOnce(&mut CallbackRegistrations),
+) -> bool {
+    let backlink = state
+        .cast::<*mut FirmwareRuntime>()
+        .as_ptr()
+        .wrapping_sub(1);
+    let Some(runtime) = (unsafe { NonNull::new(backlink.read()) }) else {
+        return false;
+    };
+    let runtime = unsafe { runtime.as_ref() };
+    if runtime.magic != RUNTIME_MAGIC || runtime.state != state.as_ptr() {
+        return false;
+    }
+    unsafe { crate::ffi::vesc_mutex_lock(runtime.mutex) };
+    let running = runtime.phase.load(Ordering::Acquire) == RUNNING;
+    if running {
+        update(unsafe { &mut *runtime.callbacks.get() });
+    }
+    unsafe { crate::ffi::vesc_mutex_unlock(runtime.mutex) };
+    running
 }
 
 // SAFETY: all access to `T` is serialized by the firmware mutex on device and
@@ -334,6 +531,12 @@ impl<T: Send + 'static> PackageStateStore<T> {
             host_lock: AtomicBool::new(false),
             #[cfg(not(target_arch = "arm"))]
             threads: UnsafeCell::new(None),
+            #[cfg(not(target_arch = "arm"))]
+            callbacks: UnsafeCell::new(CallbackRegistrations {
+                app_data: false,
+                custom_config: false,
+                imu: false,
+            }),
             _state: PhantomData,
         }
     }
@@ -417,6 +620,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
                     phase: AtomicU8::new(RUNNING),
                     active: AtomicUsize::new(0),
                     threads: UnsafeCell::new(None),
+                    callbacks: UnsafeCell::new(CallbackRegistrations::default()),
                 });
             }
             Ok(())
@@ -504,6 +708,74 @@ impl<T: Send + 'static> PackageStateStore<T> {
         #[cfg(target_arch = "arm")]
         let slot = &runtime.threads;
         unsafe { &mut *slot.get() }.take()
+    }
+
+    #[cfg(not(target_arch = "arm"))]
+    pub(crate) fn record_app_data_callback(&self, state: NonNull<T>) -> bool {
+        self.update_callbacks(state, |callbacks| callbacks.app_data = true)
+    }
+
+    #[cfg(not(target_arch = "arm"))]
+    pub(crate) fn record_custom_config_callbacks(&self, state: NonNull<T>) -> bool {
+        self.update_callbacks(state, |callbacks| callbacks.custom_config = true)
+    }
+
+    #[cfg(not(target_arch = "arm"))]
+    pub(crate) fn clear_custom_config_registration(&self, state: NonNull<T>) -> bool {
+        self.update_callbacks(state, |callbacks| callbacks.custom_config = false)
+    }
+
+    #[cfg(not(target_arch = "arm"))]
+    pub(crate) fn record_imu_callback(&self, state: NonNull<T>) -> bool {
+        self.update_callbacks(state, |callbacks| callbacks.imu = true)
+    }
+
+    #[cfg(not(target_arch = "arm"))]
+    fn update_callbacks(
+        &self,
+        state: NonNull<T>,
+        update: impl FnOnce(&mut CallbackRegistrations),
+    ) -> bool {
+        #[cfg(not(target_arch = "arm"))]
+        let _borrow = self.borrow_exclusive();
+        #[cfg(not(target_arch = "arm"))]
+        let (phase, callbacks) = {
+            let _ = state;
+            (&self.phase, &self.callbacks)
+        };
+        #[cfg(target_arch = "arm")]
+        let Some(runtime) = (unsafe { firmware_runtime_from_state(state) }) else {
+            return false;
+        };
+        #[cfg(target_arch = "arm")]
+        let _borrow = self.borrow_exclusive(runtime);
+        #[cfg(target_arch = "arm")]
+        let (phase, callbacks) = (&runtime.phase, &runtime.callbacks);
+        if phase.load(Ordering::Acquire) != RUNNING {
+            return false;
+        }
+        update(unsafe { &mut *callbacks.get() });
+        true
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn take_callbacks(&self, state: NonNull<T>) -> CallbackRegistrations {
+        #[cfg(not(target_arch = "arm"))]
+        let _borrow = self.borrow_exclusive();
+        #[cfg(not(target_arch = "arm"))]
+        let callbacks = {
+            let _ = state;
+            &self.callbacks
+        };
+        #[cfg(target_arch = "arm")]
+        let Some(runtime) = (unsafe { firmware_runtime_from_state(state) }) else {
+            return CallbackRegistrations::default();
+        };
+        #[cfg(target_arch = "arm")]
+        let _borrow = self.borrow_exclusive(runtime);
+        #[cfg(target_arch = "arm")]
+        let callbacks = &runtime.callbacks;
+        core::mem::take(unsafe { &mut *callbacks.get() })
     }
 
     pub(crate) fn finish_stop(&self, state: NonNull<T>) -> PackageStateResources {
@@ -719,6 +991,7 @@ mod tests {
                 phase: AtomicU8::new(RUNNING),
                 active: AtomicUsize::new(0),
                 threads: UnsafeCell::new(None),
+                callbacks: UnsafeCell::new(super::CallbackRegistrations::default()),
             });
         }
 
@@ -742,6 +1015,7 @@ mod tests {
                 phase: AtomicU8::new(STOPPING),
                 active: AtomicUsize::new(0),
                 threads: UnsafeCell::new(None),
+                callbacks: UnsafeCell::new(super::CallbackRegistrations::default()),
             });
         }
         let runtime = unsafe { runtime.as_ref() };
@@ -774,6 +1048,7 @@ mod tests {
                 phase: AtomicU8::new(RUNNING),
                 active: AtomicUsize::new(0),
                 threads: UnsafeCell::new(None),
+                callbacks: UnsafeCell::new(super::CallbackRegistrations::default()),
             });
         }
         let runtime = unsafe { runtime.as_ref() };
@@ -933,5 +1208,29 @@ mod tests {
         runtime.clear();
         assert_eq!(source.with(|state| state.value), None);
         FALLBACK.store(core::ptr::null_mut(), Ordering::Release);
+    }
+
+    #[test]
+    fn stop_clears_only_callbacks_registered_by_the_package() {
+        let runtime = PackageStateStore::new();
+        let state = Box::leak(Box::new(State { value: 0 }));
+        let state_ptr = NonNull::from(&mut *state);
+        unsafe { runtime.install(state) }.unwrap();
+        assert!(runtime.record_app_data_callback(state_ptr));
+        assert!(runtime.record_imu_callback(state_ptr));
+
+        let bindings = crate::test_support::FakeAppDataBindings::new();
+        runtime
+            .take_callbacks(state_ptr)
+            .clear_registered(&bindings);
+        assert_eq!(bindings.handler_calls.get(), 1);
+        assert_eq!(bindings.custom_config_clear_calls.get(), 0);
+        assert_eq!(bindings.imu_read_callback_calls.get(), 1);
+
+        super::CallbackRegistrations::default().clear_registered(&bindings);
+        assert_eq!(bindings.handler_calls.get(), 1);
+        assert_eq!(bindings.custom_config_clear_calls.get(), 0);
+        assert_eq!(bindings.imu_read_callback_calls.get(), 1);
+        runtime.clear();
     }
 }

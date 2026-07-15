@@ -7,7 +7,9 @@ use core::ffi::c_void;
 use core::ptr;
 use core::ptr::NonNull;
 
-use vescpkg_rs_sys::{LbmValue, LibInfo, MutablePacket, NativeImage, StopHandler};
+#[cfg(test)]
+use vescpkg_rs_sys::NativeImage;
+use vescpkg_rs_sys::{LbmValue, LibInfo, MutablePacket, StopHandler};
 
 /// Borrowed application-data bytes delivered by firmware.
 #[repr(transparent)]
@@ -406,6 +408,7 @@ where
     buffer.return_xml(T::config_xml())
 }
 
+#[cfg(test)]
 fn rebase_custom_config_get_callback(
     image: NativeImage,
     callback: crate::ffi::CustomConfigGet,
@@ -414,6 +417,7 @@ fn rebase_custom_config_get_callback(
     unsafe { core::mem::transmute::<usize, crate::ffi::CustomConfigGet>(address) }
 }
 
+#[cfg(test)]
 fn rebase_custom_config_set_callback(
     image: NativeImage,
     callback: crate::ffi::CustomConfigSet,
@@ -422,6 +426,7 @@ fn rebase_custom_config_set_callback(
     unsafe { core::mem::transmute::<usize, crate::ffi::CustomConfigSet>(address) }
 }
 
+#[cfg(test)]
 fn rebase_custom_config_xml_callback(
     image: NativeImage,
     callback: crate::ffi::CustomConfigXml,
@@ -441,7 +446,8 @@ fn rebase_custom_config_xml_callback(
 /// `image` must own all three callback addresses, and rebasing each address
 /// must produce a valid executable function pointer that remains installed
 /// until the callbacks are cleared.
-pub unsafe fn register_custom_config_callbacks_from_image<B>(
+#[cfg(test)]
+unsafe fn register_custom_config_callbacks_from_image<B>(
     bindings: &B,
     image: NativeImage,
     get_cfg: crate::ffi::CustomConfigGet,

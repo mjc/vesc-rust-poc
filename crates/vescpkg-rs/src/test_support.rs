@@ -516,9 +516,7 @@ pub(crate) struct FakeAppDataBindings {
     /// Fake package ARG pointer returned by the app-data binding.
     pub app_data_arg: Cell<usize>,
     set_handler_result: Cell<bool>,
-    clear_handler_result: Cell<bool>,
     register_custom_config_result: Cell<bool>,
-    clear_custom_configs_result: Cell<bool>,
 }
 
 #[derive(Clone, Copy)]
@@ -546,9 +544,7 @@ impl FirmwareCallResult {
 #[cfg(test)]
 struct FakeAppDataResults {
     set_handler: FirmwareCallResult,
-    clear_handler: FirmwareCallResult,
     register_custom_config: FirmwareCallResult,
-    clear_custom_configs: FirmwareCallResult,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -556,9 +552,7 @@ struct FakeAppDataResults {
 impl FakeAppDataResults {
     const ACCEPT_ALL: Self = Self {
         set_handler: FirmwareCallResult::Accept,
-        clear_handler: FirmwareCallResult::Accept,
         register_custom_config: FirmwareCallResult::Accept,
-        clear_custom_configs: FirmwareCallResult::Accept,
     };
 }
 
@@ -593,18 +587,6 @@ impl FakeAppDataBindings {
         )
     }
 
-    /// Creates fake app-data bindings with an explicit handler clear result.
-    #[cfg(test)]
-    pub fn with_clear_handler_result(clear_handler_result: bool) -> Self {
-        Self::with_ticks_and_results(
-            0,
-            FakeAppDataResults {
-                clear_handler: FirmwareCallResult::from_bool(clear_handler_result),
-                ..FakeAppDataResults::ACCEPT_ALL
-            },
-        )
-    }
-
     /// Creates fake app-data bindings with an explicit custom-config registration result.
     pub fn with_register_custom_config_result(register_custom_config_result: bool) -> Self {
         Self::with_ticks_and_results(
@@ -613,18 +595,6 @@ impl FakeAppDataBindings {
                 register_custom_config: FirmwareCallResult::from_bool(
                     register_custom_config_result,
                 ),
-                ..FakeAppDataResults::ACCEPT_ALL
-            },
-        )
-    }
-
-    /// Creates fake app-data bindings with an explicit custom-config clear result.
-    #[cfg(test)]
-    pub fn with_clear_custom_configs_result(clear_custom_configs_result: bool) -> Self {
-        Self::with_ticks_and_results(
-            0,
-            FakeAppDataResults {
-                clear_custom_configs: FirmwareCallResult::from_bool(clear_custom_configs_result),
                 ..FakeAppDataResults::ACCEPT_ALL
             },
         )
@@ -647,9 +617,7 @@ impl FakeAppDataBindings {
             last_imu_read_callback: Cell::new(0),
             app_data_arg: Cell::new(0),
             set_handler_result: Cell::new(results.set_handler.accepted()),
-            clear_handler_result: Cell::new(results.clear_handler.accepted()),
             register_custom_config_result: Cell::new(results.register_custom_config.accepted()),
-            clear_custom_configs_result: Cell::new(results.clear_custom_configs.accepted()),
         }
     }
 }
@@ -665,7 +633,7 @@ impl AppDataBindings for FakeAppDataBindings {
     unsafe fn clear_app_data_handler(&self) -> bool {
         self.handler_calls.set(self.handler_calls.get() + 1);
         self.last_handler.set(0);
-        self.clear_handler_result.get()
+        true
     }
 
     fn system_time_ticks(&self) -> u32 {
@@ -706,7 +674,10 @@ impl CustomConfigBindings for FakeAppDataBindings {
     unsafe fn clear_custom_configs(&self) -> bool {
         self.custom_config_clear_calls
             .set(self.custom_config_clear_calls.get() + 1);
-        self.clear_custom_configs_result.get()
+        self.last_custom_config_get.set(0);
+        self.last_custom_config_set.set(0);
+        self.last_custom_config_xml.set(0);
+        true
     }
 }
 
@@ -904,17 +875,6 @@ mod tests {
         }
 
         assert_eq!(bindings.custom_config_register_calls.get(), 1);
-    }
-
-    #[test]
-    fn fake_app_data_bindings_can_reject_custom_config_clear() {
-        let bindings = FakeAppDataBindings::with_clear_custom_configs_result(false);
-
-        unsafe {
-            assert!(!bindings.clear_custom_configs());
-        }
-
-        assert_eq!(bindings.custom_config_clear_calls.get(), 1);
     }
 
     #[test]

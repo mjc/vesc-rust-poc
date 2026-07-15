@@ -61,11 +61,7 @@ pub(crate) trait AppDataBindings {
     /// `handler` must remain valid until it is replaced or cleared.
     unsafe fn set_app_data_handler(&self, handler: AppDataHandler) -> bool;
 
-    /// Clear the current app-data handler.
-    ///
-    /// # Safety
-    ///
-    /// Must only be called while the firmware `VESC_IF` table is valid.
+    /// Clear this package's app-data handler.
     unsafe fn clear_app_data_handler(&self) -> bool;
 
     /// Return the current firmware tick counter.
@@ -159,20 +155,8 @@ pub(crate) trait CustomConfigBindings {
         unsafe { self.register_custom_config(get_cfg, set_cfg, get_cfg_xml) }
     }
 
-    /// Clear package-owned custom-config callbacks.
-    ///
-    /// Refloat `v1.2.1` calls this during stop at `src/main.c:2403`; the VESC
-    /// function-table slot is declared in `vesc_pkg_lib/vesc_c_if.h:553`.
-    ///
-    /// # Safety
-    ///
-    /// Must only be called while the firmware `VESC_IF` table is valid.
+    /// Clear this package's custom-config callbacks.
     unsafe fn clear_custom_configs(&self) -> bool;
-
-    /// Clear package-owned custom-config callbacks.
-    fn clear_custom_config_callbacks(&self) -> bool {
-        unsafe { self.clear_custom_configs() }
-    }
 }
 
 impl<B: CustomConfigBindings + ?Sized> CustomConfigBindings for &B {
@@ -209,20 +193,8 @@ pub(crate) trait ImuReadCallbackBindings {
         unsafe { self.set_imu_read_callback(callback) }
     }
 
-    /// Clear the package-owned IMU read callback.
-    ///
-    /// Refloat clears package callbacks during stop at `src/main.c:2401-2403`;
-    /// the VESC callback slot is declared in `lispBM/c_libs/vesc_c_if.h:586`.
-    ///
-    /// # Safety
-    ///
-    /// Must only be called while the firmware `VESC_IF` table is valid.
+    /// Clear this package's IMU callback.
     unsafe fn clear_imu_read_callback(&self);
-
-    /// Clear the package-owned IMU read callback.
-    fn clear_imu_read_callback_handler(&self) {
-        unsafe { self.clear_imu_read_callback() }
-    }
 }
 
 impl<B: ImuReadCallbackBindings + ?Sized> ImuReadCallbackBindings for &B {

@@ -1,13 +1,10 @@
-use crate::bindings::CustomConfigBindings;
+use crate::RegisterError;
 use crate::extension::ExtensionDescriptor;
-use crate::lifecycle_core::{
-    AppDataHandlerRegistrationError, LbmApi, LoopbackLifecycle, PackageLifecycle,
-};
-use crate::test_support::{FakeAppDataBindings, FakeBindings, stubs};
+use crate::lifecycle_core::{LbmApi, PackageLifecycle};
+use crate::test_support::{FakeBindings, stubs};
 use crate::thread::ThreadApi;
 use crate::thread::test_support::FakeThreadBindings;
 use crate::types::FirmwareFaultCode;
-use crate::{RegisterError, ffi};
 use rstest::rstest;
 use vescpkg_rs_sys::{ExtensionHandler, LibInfo, NativeImage};
 
@@ -16,18 +13,6 @@ unsafe extern "C" fn stub_handler(_args: *mut u32, _count: u32) -> u32 {
 }
 
 unsafe extern "C" fn stub_thread_entry(_arg: *mut core::ffi::c_void) {}
-
-unsafe extern "C" fn custom_config_get(_buffer: *mut u8, _is_default: bool) -> core::ffi::c_int {
-    0
-}
-
-unsafe extern "C" fn custom_config_set(_buffer: *mut u8) -> bool {
-    true
-}
-
-unsafe extern "C" fn custom_config_xml(_buffer: *mut *mut u8) -> core::ffi::c_int {
-    0
-}
 
 const EXT_HOST_TEST_PROBE_NAME: crate::ExtensionName = crate::extension_name!("ext-c-probe-v12");
 
@@ -118,21 +103,6 @@ fn lbm_api_registers_extensions_through_bindings() {
     assert_eq!(
         api.register_extension(crate::extension_name!("ext-rust-add"), stub_handler),
         Ok(())
-    );
-}
-
-#[rstest]
-#[case::default_ticks(0, 0)]
-#[case::configured_ticks(1234, 1234)]
-fn loopback_lifecycle_forwards_system_time_ticks(
-    #[case] configured_ticks: u32,
-    #[case] expected_ticks: u32,
-) {
-    let bindings = FakeAppDataBindings::with_ticks(configured_ticks);
-    let lifecycle = LoopbackLifecycle::new(&bindings);
-    assert_eq!(
-        lifecycle.system_time_ticks(),
-        crate::units::TimestampTicks::from_ticks(expected_ticks)
     );
 }
 
@@ -239,164 +209,6 @@ fn thread_api_preserves_first_thread_when_second_spawn_fails() {
     assert_eq!(bindings.terminated_threads.get()[0], 0x10);
 }
 
-#[rstest]
-#[case::three_byte_payload([1_u8, 2, 3], 3)]
-fn loopback_lifecycle_forwards_send_app_data(#[case] payload: [u8; 3], #[case] expected_len: u32) {
-    let bindings = FakeAppDataBindings::new();
-    let lifecycle = LoopbackLifecycle::new(&bindings);
-    assert_eq!(lifecycle.send_app_data(&payload), Ok(()));
-
-    assert_eq!(bindings.send_calls.get(), 1);
-    assert_eq!(bindings.last_len.get(), expected_len);
-    assert_eq!(bindings.last_data.get(), payload.as_ptr() as usize);
-}
-
-#[rstest]
-#[case::register_stub("register", 1, true)]
-#[case::register_custom("register", 1, false)]
-#[case::clear("clear", 1, false)]
-fn loopback_lifecycle_app_data_handler_forwards_to_bindings(
-    #[case] mode: &'static str,
-    #[case] expected_handler_calls: usize,
-    #[case] use_stub_handler: bool,
-) {
-    let bindings = FakeAppDataBindings::new();
-    let lifecycle = LoopbackLifecycle::new(&bindings);
-
-    unsafe extern "C" fn custom_handler(_data: *mut u8, _len: u32) {}
-
-    if mode == "register" {
-        let registered = if use_stub_handler {
-            stubs::app_data_handler
-        } else {
-            custom_handler
-        };
-        assert_eq!(lifecycle.register_app_data_handler(registered), Ok(()));
-        assert_eq!(
-            bindings.last_handler.get(),
-            registered as *const () as usize
-        );
-    } else {
-        assert_eq!(lifecycle.clear_app_data_handler(), Ok(()));
-        assert_eq!(bindings.last_handler.get(), 0);
-    }
-
-    assert_eq!(bindings.handler_calls.get(), expected_handler_calls);
-}
-
-#[test]
-fn app_data_handler_registration_reports_firmware_rejection() {
-    let bindings = FakeAppDataBindings::with_set_handler_result(false);
-    let lifecycle = LoopbackLifecycle::new(&bindings);
-
-    assert_eq!(
-        lifecycle.register_app_data_handler(stubs::app_data_handler),
-        Err(AppDataHandlerRegistrationError::FirmwareRejected)
-    );
-    assert_eq!(bindings.handler_calls.get(), 1);
-}
-
-#[test]
-fn loopback_lifecycle_registers_custom_config_before_app_data() {
-    let bindings = FakeAppDataBindings::new();
-    let lifecycle = LoopbackLifecycle::new(&bindings);
-
-    assert_eq!(
-        lifecycle.register_custom_config_then_app_data(
-            |bindings| {
-                assert_eq!(bindings.handler_calls.get(), 0);
-                unsafe {
-                    bindings.register_custom_config(
-                        custom_config_get,
-                        custom_config_set,
-                        custom_config_xml,
-                    )
-                }
-                .then_some(())
-                .ok_or(AppDataHandlerRegistrationError::FirmwareRejected)
-            },
-            stubs::app_data_handler,
-        ),
-        Ok(())
-    );
-
-    assert_eq!(bindings.custom_config_register_calls.get(), 1);
-    assert_eq!(bindings.handler_calls.get(), 1);
-    assert_eq!(
-        bindings.last_handler.get(),
-        stubs::app_data_handler as *const () as usize
-    );
-}
-
-#[test]
-fn loopback_lifecycle_skips_app_data_when_custom_config_registration_fails() {
-    let bindings = FakeAppDataBindings::with_register_custom_config_result(false);
-    let lifecycle = LoopbackLifecycle::new(&bindings);
-
-    assert_eq!(
-        lifecycle.register_custom_config_then_app_data(
-            |bindings| {
-                unsafe {
-                    bindings.register_custom_config(
-                        custom_config_get,
-                        custom_config_set,
-                        custom_config_xml,
-                    )
-                }
-                .then_some(())
-                .ok_or(AppDataHandlerRegistrationError::FirmwareRejected)
-            },
-            stubs::app_data_handler,
-        ),
-        Err(AppDataHandlerRegistrationError::FirmwareRejected)
-    );
-
-    assert_eq!(bindings.custom_config_register_calls.get(), 1);
-    assert_eq!(bindings.handler_calls.get(), 0);
-}
-
-#[test]
-fn app_data_handler_clear_reports_firmware_rejection() {
-    let bindings = FakeAppDataBindings::with_clear_handler_result(false);
-    let lifecycle = LoopbackLifecycle::new(&bindings);
-
-    assert_eq!(
-        lifecycle.clear_app_data_handler(),
-        Err(AppDataHandlerRegistrationError::FirmwareRejected)
-    );
-    assert_eq!(bindings.handler_calls.get(), 1);
-    assert_eq!(bindings.last_handler.get(), 0);
-}
-
-#[test]
-fn loopback_lifecycle_clear_package_callbacks_clears_common_callbacks() {
-    let bindings = FakeAppDataBindings::new();
-    let lifecycle = LoopbackLifecycle::new(&bindings);
-
-    assert_eq!(lifecycle.clear_package_callbacks(), Ok(()));
-    assert_eq!(bindings.imu_read_callback_calls.get(), 1);
-    assert_eq!(bindings.last_imu_read_callback.get(), 0);
-    assert_eq!(bindings.handler_calls.get(), 1);
-    assert_eq!(bindings.last_handler.get(), 0);
-    assert_eq!(bindings.custom_config_clear_calls.get(), 1);
-    // C map: Refloat clears IMU, app-data, and custom-config callbacks at
-    // `third_party/refloat/src/main.c:2401-2403`.
-}
-
-#[test]
-fn loopback_lifecycle_clear_package_callbacks_reports_custom_config_failure() {
-    let bindings = FakeAppDataBindings::with_clear_custom_configs_result(false);
-    let lifecycle = LoopbackLifecycle::new(&bindings);
-
-    assert_eq!(
-        lifecycle.clear_package_callbacks(),
-        Err(AppDataHandlerRegistrationError::FirmwareRejected)
-    );
-    assert_eq!(bindings.imu_read_callback_calls.get(), 1);
-    assert_eq!(bindings.handler_calls.get(), 1);
-    assert_eq!(bindings.custom_config_clear_calls.get(), 1);
-}
-
 #[test]
 fn extension_descriptor_validate_accepts_ext_prefix() {
     let descriptor =
@@ -423,23 +235,6 @@ fn register_extensions_from_image_registers_each_descriptor() {
 }
 
 #[test]
-fn loopback_lifecycle_install_sets_stop_hook() {
-    let mut info = LibInfo {
-        stop_fun: None,
-        arg: core::ptr::null_mut(),
-        base_addr: 0x2000,
-    };
-    let mut start = crate::PackageStart::from_lib_info(&mut info);
-
-    unsafe extern "C" fn stop(_arg: *mut core::ffi::c_void) {}
-    assert_eq!(
-        LoopbackLifecycle::<FakeAppDataBindings>::install(&mut start, stop),
-        Ok(())
-    );
-    assert!(info.stop_fun.is_some());
-}
-
-#[test]
 fn registers_an_extension_through_the_lifecycle_helper() {
     let bindings = FakeBindings::new();
     let lifecycle = PackageLifecycle::new(&bindings);
@@ -461,26 +256,4 @@ fn registers_an_extension_through_the_lifecycle_helper() {
         EXT_HOST_TEST_PROBE_NAME.as_cstr().to_bytes_with_nul(),
         b"ext-c-probe-v12\0"
     );
-}
-
-#[test]
-fn lifecycle_descriptor_installs_the_stop_hook() {
-    let bindings = FakeAppDataBindings::new();
-    let mut info = ffi::LibInfo {
-        stop_fun: None,
-        arg: core::ptr::null_mut(),
-        base_addr: 0x2000,
-    };
-    let mut start = crate::PackageStart::from_lib_info(&mut info);
-
-    assert_eq!(
-        LoopbackLifecycle::<FakeAppDataBindings>::install(&mut start, stubs::stop_handler),
-        Ok(())
-    );
-
-    assert_eq!(
-        info.stop_fun.expect("stop hook") as *const () as usize,
-        stubs::stop_handler as *const () as usize
-    );
-    assert_eq!(bindings.handler_calls.get(), 0);
 }

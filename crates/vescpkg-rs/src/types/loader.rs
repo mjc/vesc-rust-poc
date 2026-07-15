@@ -61,14 +61,6 @@ impl LoaderInfo {
     pub const fn set_program_address(&mut self, address: PackageProgramAddress) {
         self.0.base_addr = address.get();
     }
-
-    #[cfg(test)]
-    pub(crate) fn set_stop_handler(&mut self, stop_handler: crate::ffi::StopHandler) {
-        self.0.stop_fun = Some(crate::firmware::stop_handler_for_loader(
-            &self.0,
-            stop_handler,
-        ));
-    }
 }
 
 #[cfg(any(test, feature = "test-support"))]

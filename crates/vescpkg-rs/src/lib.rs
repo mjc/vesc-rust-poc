@@ -37,9 +37,6 @@ pub mod test_support;
 
 /// Internal ABI seam. `vescpkg-rs-sys` selects the real or test implementation.
 pub(crate) mod ffi {
-    #[cfg(test)]
-    pub use vescpkg_rs_sys::StopHandler;
-    #[allow(unused_imports)]
     pub use vescpkg_rs_sys::raw::{
         CustomConfigGet, CustomConfigSet, CustomConfigXml, ImuReadCallback,
     };
@@ -97,9 +94,7 @@ pub use firmware::{
     AppDataCallback, AppDataPacket, ConfigBytes, ConfigXml, SourceCustomConfigCallback,
     StatefulAppDataCallback,
 };
-pub(crate) use firmware::{
-    firmware_array, loader_info_mut, register_custom_config_callbacks_from_image,
-};
+pub(crate) use firmware::{firmware_array, loader_info_mut};
 pub use imu::{Imu, ImuReadHandler};
 pub use init::{PackageStart, PackageStartError};
 pub use lifecycle_core::{AppDataHandlerRegistrationError, AppDataSendError};
