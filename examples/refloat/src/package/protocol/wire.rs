@@ -20,8 +20,8 @@ pub(super) fn refloat_realtime_push_float16_auto(buffer: &mut [u8], ind: &mut us
 #[cfg(test)]
 pub(super) fn refloat_realtime_push_float32_auto(buffer: &mut [u8], ind: &mut usize, value: f32) {
     // Refloat forwards through `buffer_append_float32_auto` at
-    // `third_party/refloat/src/conf/buffer.c:118-140`, zeroing denormal/subnormal values before
-    // writing big-endian IEEE-754 bits.
+    // `third_party/refloat/src/conf/buffer.c:118-140`, preserving its exact
+    // `1.5e-38` cutoff before big-endian encoding.
     crate::wire::push_float32_auto(buffer, ind, value);
 }
 

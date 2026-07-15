@@ -32,8 +32,9 @@ pub(crate) fn push_u32(buffer: &mut [u8], ind: &mut usize, value: u32) {
 }
 
 pub(crate) fn push_float32_auto(buffer: &mut [u8], ind: &mut usize, value: f32) {
-    // C map: `buffer_append_float32_auto` zeros subnormals before writing the
-    // big-endian IEEE-754 bits at `third_party/refloat/src/conf/buffer.c:118-140`.
+    // C map: `buffer_append_float32_auto` intentionally uses a `1.5e-38`
+    // cutoff, which also zeros the smallest normal values, at
+    // `third_party/refloat/src/conf/buffer.c:118-140`.
     let value = if value.abs() < 1.5e-38 { 0.0 } else { value };
     push_u32(buffer, ind, value.to_bits());
 }

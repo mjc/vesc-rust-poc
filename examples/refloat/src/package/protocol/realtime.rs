@@ -358,6 +358,17 @@ mod tests {
     }
 
     #[test]
+    fn float32_auto_zeros_small_normal_like_refloat() {
+        let value = 1.25e-38_f32;
+        let mut bytes = [0xff; 4];
+        let mut index = 0;
+
+        refloat_realtime_push_float32_auto(&mut bytes, &mut index, value);
+
+        assert_eq!((value.is_normal(), index, bytes), (true, 4, [0; 4]));
+    }
+
+    #[test]
     fn app_data_processes_non_running_realtime_data_like_refloat_qml() {
         let response = encode_refloat_realtime_data_response(
             &RefloatAllDataPayloads::source_startup(),
