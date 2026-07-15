@@ -32,11 +32,13 @@ pub(crate) fn push_u32(buffer: &mut [u8], ind: &mut usize, value: u32) {
 }
 
 pub(crate) fn push_float32_auto(buffer: &mut [u8], ind: &mut usize, value: f32) {
-    // C map: `buffer_append_float32_auto` intentionally uses a `1.5e-38`
-    // cutoff, which also zeros the smallest normal values, at
-    // `third_party/refloat/src/conf/buffer.c:118-140`.
-    let value = if value.abs() < 1.5e-38 { 0.0 } else { value };
-    push_u32(buffer, ind, value.to_bits());
+    // C map: the shared codec preserves `buffer_append_float32_auto`'s exact
+    // `1.5e-38` cutoff from `third_party/refloat/src/conf/buffer.c:118-140`.
+    push_u32(buffer, ind, float32_auto_bits(value));
+}
+
+fn float32_auto_bits(value: f32) -> u32 {
+    vescpkg_rs::protocol_buffer::float32_auto_bits(value)
 }
 
 pub(crate) fn degrees(angle: AngleRadians) -> f32 {
