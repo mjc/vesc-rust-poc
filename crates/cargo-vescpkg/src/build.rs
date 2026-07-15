@@ -12,6 +12,9 @@ const DEFAULT_LOADER: &str = concat!(
     "(print \"vesc-rust-load-v7\")\n",
     "(print (load-native-lib package-lib))\n",
 );
+// PIC stores function offsets in `.got`. SDK callback macros emit symbol-table-only aliases
+// for offsets they explicitly rebase against the loaded image before use.
+const IMAGE_OFFSET_MARKER_PREFIX: &str = "__vescpkg_image_offset_";
 const VESC_TARGET: &str = "thumbv7em-none-eabihf";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -500,7 +503,7 @@ fn write_flattened_elf(elf: &Path, output: &Path) -> Result<(), BuildError> {
 
 fn validate_flat_image_relocations(elf: &Path) -> Result<(), BuildError> {
     let output = Command::new("arm-none-eabi-readelf")
-        .args(["--relocs", "--sections", "--wide"])
+        .args(["--relocs", "--sections", "--symbols", "--wide"])
         .arg(elf)
         .output()?;
     if !output.status.success() {
@@ -511,8 +514,44 @@ fn validate_flat_image_relocations(elf: &Path) -> Result<(), BuildError> {
         )));
     }
     let report = String::from_utf8_lossy(&output.stdout);
-    validate_writable_section_report(&report)?;
+    let allow_got = validate_image_offset_relocations(&report)?;
+    validate_writable_section_report(&report, allow_got)?;
     validate_relocation_report(&report)
+}
+
+fn validate_image_offset_relocations(report: &str) -> Result<bool, BuildError> {
+    let image_offset_symbols = image_offset_symbols(report);
+    let mut relocation_section = "";
+    let mut allow_got = false;
+    for line in report.lines() {
+        if let Some(section) = line
+            .strip_prefix("Relocation section '")
+            .and_then(|line| line.split_once('\'').map(|(section, _)| section))
+        {
+            relocation_section = section;
+            continue;
+        }
+        let fields = line.split_whitespace().collect::<Vec<_>>();
+        if let Some(relocation) = fields
+            .iter()
+            .copied()
+            .find(|field| field.starts_with("R_ARM_") && field.contains("GOT"))
+        {
+            let symbol = fields.last().copied().unwrap_or_default();
+            if relocation != "R_ARM_GOT_PREL" {
+                return Err(BuildError(format!(
+                    "unsupported GOT relocation `{relocation}` in `{relocation_section}`; VESC flat images only support marked image offsets"
+                )));
+            }
+            if !image_offset_symbols.contains(&symbol) {
+                return Err(BuildError(format!(
+                    "unmarked image-offset symbol `{symbol}` in `{relocation_section}`; SDK-rebased callbacks must emit a `{IMAGE_OFFSET_MARKER_PREFIX}{symbol}` alias"
+                )));
+            }
+            allow_got = true;
+        }
+    }
+    Ok(allow_got)
 }
 
 fn validate_relocation_report(report: &str) -> Result<(), BuildError> {
@@ -550,21 +589,62 @@ fn validate_relocation_report(report: &str) -> Result<(), BuildError> {
     Ok(())
 }
 
-fn validate_writable_section_report(report: &str) -> Result<(), BuildError> {
+fn section_header(line: &str) -> Option<(&str, &str, &str, &str)> {
+    let fields = line.split_whitespace().collect::<Vec<_>>();
+    let name_index = fields.iter().position(|field| field.starts_with('.'))?;
+    let index = fields
+        .get(name_index.checked_sub(1)?)?
+        .trim_matches(['[', ']']);
+    index.parse::<usize>().ok()?;
+    Some((
+        index,
+        fields[name_index],
+        fields.get(name_index + 4)?,
+        fields.get(name_index + 6)?,
+    ))
+}
+
+fn image_offset_symbols(report: &str) -> Vec<&str> {
+    let symbols = report
+        .lines()
+        .filter_map(|line| {
+            let fields = line.split_whitespace().collect::<Vec<_>>();
+            Some((
+                fields.get(1).copied()?,
+                fields.get(3).copied()?,
+                fields.get(6).copied()?,
+                fields.get(7).copied()?,
+            ))
+        })
+        .collect::<Vec<_>>();
+
+    symbols
+        .iter()
+        .filter_map(|(value, kind, section, name)| {
+            (*kind == "FUNC"
+                && symbols
+                    .iter()
+                    .any(|(marker_value, _, marker_section, marker)| {
+                        *marker_value == *value
+                            && *marker_section == *section
+                            && marker
+                                .strip_prefix(IMAGE_OFFSET_MARKER_PREFIX)
+                                .is_some_and(|marked| marked == *name)
+                    }))
+            .then_some(*name)
+        })
+        .collect()
+}
+
+fn validate_writable_section_report(report: &str, allow_got: bool) -> Result<(), BuildError> {
     for line in report.lines() {
-        let fields = line.split_whitespace().collect::<Vec<_>>();
-        let Some(name_index) = fields
-            .iter()
-            .position(|field| matches!(*field, ".data" | ".bss"))
-        else {
+        let Some((_, section, size, flags)) = section_header(line) else {
             continue;
         };
-        let section = fields[name_index];
-        let size = fields
-            .get(name_index + 4)
-            .and_then(|size| usize::from_str_radix(size, 16).ok())
-            .ok_or_else(|| BuildError(format!("could not read `{section}` section size")))?;
-        if size != 0 {
+        let size = usize::from_str_radix(size, 16)
+            .map_err(|_| BuildError(format!("could not read `{section}` section size")))?;
+        let writable = flags.contains('W') && flags.contains('A');
+        if size != 0 && writable && !(section == ".got" && allow_got) {
             return Err(BuildError(format!(
                 "unsupported writable section `{section}` ({size} bytes); VESC flat images execute in place"
             )));
@@ -591,8 +671,8 @@ mod tests {
         BuildOptions, PackageMetadata, PayloadKind, VESC_TARGET, build_package_bytes,
         cargo_build_command, cargo_message_artifacts, command_failure_message,
         metadata_workspace_root, package_slug, select_package, stage_generated_assets,
-        staticlib_linker_script, validate_descriptor_fullscreen, validate_relocation_report,
-        validate_target, validate_writable_section_report,
+        staticlib_linker_script, validate_descriptor_fullscreen, validate_image_offset_relocations,
+        validate_relocation_report, validate_target, validate_writable_section_report,
     };
     use crate::package::Package;
     use serde_json::json;
@@ -840,9 +920,52 @@ Relocation section '.rel.data' at offset 0x100 contains 2 entries:\n\
   [ 2] .data             PROGBITS        00000010 001010 00000c 00  WA  0   0  4\n\
   [ 3] .bss              NOBITS          0000001c 00101c 000001 00  WA  0   0  1\n";
 
-        let error = validate_writable_section_report(report).expect_err("writable section");
+        let error = validate_writable_section_report(report, false).expect_err("writable section");
 
         assert!(error.to_string().contains(".data"));
+    }
+
+    #[test]
+    fn rejects_nonempty_custom_writable_sections() {
+        let report = "\
+  [ 2] .package_state    PROGBITS        00000010 001010 00000c 00  WA  0   0  4\n";
+
+        let error = validate_writable_section_report(report, false).expect_err("writable section");
+
+        assert!(error.to_string().contains(".package_state"));
+    }
+
+    #[test]
+    fn rejects_image_offsets_without_symbol_alias_markers() {
+        let report = "\
+Section Headers:\n\
+  [ 2] .text             PROGBITS 00000010 001010 000004 00  AX  0   0  4\n\
+Relocation section '.rel.text' at offset 0x100 contains 1 entry:\n\
+ Offset     Info    Type                Sym. Value  Symbol's Name\n\
+00000000  00000160 R_ARM_GOT_PREL         00000010   callback\n\
+Symbol table '.symtab' contains 2 entries:\n\
+   Num:    Value  Size Type    Bind   Vis      Ndx Name\n\
+     1: 00000010     4 FUNC    GLOBAL DEFAULT    2 callback\n";
+
+        let error = validate_image_offset_relocations(report).expect_err("invalid marker");
+
+        assert!(error.to_string().contains("unmarked image-offset symbol"));
+    }
+
+    #[test]
+    fn accepts_symbol_alias_image_offset_markers() {
+        let report = "\
+Section Headers:\n\
+  [ 2] .text             PROGBITS 00000010 001010 000004 00  AX  0   0  4\n\
+Relocation section '.rel.text' at offset 0x100 contains 1 entry:\n\
+ Offset     Info    Type                Sym. Value  Symbol's Name\n\
+00000000  00000160 R_ARM_GOT_PREL         00000010   callback\n\
+Symbol table '.symtab' contains 3 entries:\n\
+   Num:    Value  Size Type    Bind   Vis      Ndx Name\n\
+     1: 00000010     4 FUNC    GLOBAL DEFAULT    2 callback\n\
+     2: 00000010     0 NOTYPE  GLOBAL DEFAULT    2 __vescpkg_image_offset_callback\n";
+
+        assert!(validate_image_offset_relocations(report).expect("marked offset"));
     }
 
     #[test]
