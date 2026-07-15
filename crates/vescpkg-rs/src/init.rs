@@ -121,7 +121,7 @@ pub struct PackageStart<'info> {
     _info: core::marker::PhantomData<&'info mut crate::LoaderInfo>,
 }
 
-/// Package-local app-data callback rebased into its loaded firmware image.
+/// Package-local app-data callback resolved into its loaded firmware image.
 ///
 /// Construct this through [`PackageStart::app_data_callback`], then register it
 /// after any callbacks that firmware requires to be installed first.
@@ -367,7 +367,7 @@ impl<'info> PackageStart<'info> {
     /// Register typed state-backed custom-config callbacks for this package.
     ///
     /// The callback macro supplies concrete package-local symbols. VESC validates and
-    /// stores those rebased addresses at `third_party/vesc/conf_custom.c:34-42`.
+    /// stores those resolved addresses at `third_party/vesc/conf_custom.c:34-42`.
     pub(crate) fn register_stateful_custom_config_with_bindings<B, T, const LEN: usize>(
         &mut self,
         bindings: &B,
@@ -388,9 +388,9 @@ impl<'info> PackageStart<'info> {
         let (get, set, xml) = T::image_addresses();
         let callbacks = unsafe {
             (
-                core::mem::transmute::<usize, ffi::CustomConfigGet>(image.rebase_addr(get)),
-                core::mem::transmute::<usize, ffi::CustomConfigSet>(image.rebase_addr(set)),
-                core::mem::transmute::<usize, ffi::CustomConfigXml>(image.rebase_addr(xml)),
+                core::mem::transmute::<usize, ffi::CustomConfigGet>(image.resolve_addr(get)),
+                core::mem::transmute::<usize, ffi::CustomConfigSet>(image.resolve_addr(set)),
+                core::mem::transmute::<usize, ffi::CustomConfigXml>(image.resolve_addr(xml)),
             )
         };
         let registered =
@@ -429,7 +429,7 @@ impl<'info> PackageStart<'info> {
         }
         let recorder = self.callback_recorder?;
         let image = self.native_image()?;
-        let address = image.rebase_addr(T::image_address());
+        let address = image.resolve_addr(T::image_address());
         let handler = unsafe { core::mem::transmute::<usize, ffi::AppDataHandler>(address) };
         Some(LoadedAppDataCallback { handler, recorder })
     }
@@ -465,7 +465,7 @@ impl<'info> PackageStart<'info> {
         let recorder = self
             .callback_recorder
             .ok_or(PackageStartError::StateTypeMismatch)?;
-        let address = image.rebase_addr(T::image_address());
+        let address = image.resolve_addr(T::image_address());
         let callback = unsafe { core::mem::transmute::<usize, ffi::ImuReadCallback>(address) };
         bindings.set_imu_read_callback_handler(callback);
         if recorder.record_imu() {
@@ -478,7 +478,7 @@ impl<'info> PackageStart<'info> {
 
     /// Register this package's typed custom config and app-data callback.
     ///
-    /// The app-data callback is rebased before either firmware call, while
+    /// The app-data callback is resolved before either firmware call, while
     /// firmware receives custom config before app data.
     ///
     /// C map: Refloat registers custom config and then `on_command_received` at
@@ -543,7 +543,7 @@ impl<'info> PackageStart<'info> {
             .raw_info_mut()
             .ok_or(crate::RegisterError::LoaderUnavailable)?;
         // SAFETY: `info` is the loader metadata just installed for this package
-        // image, so extension descriptor pointers are rebased against the image
+        // image, so extension descriptor pointers are resolved against the image
         // that owns them.
         unsafe {
             lifecycle.register_extensions_from_image(ffi::NativeImage::from_info(info), descriptors)
@@ -594,6 +594,27 @@ macro_rules! package_start {
         #[unsafe(link_section = ".program_ptr")]
         pub(crate) static prog_ptr: u32 = 0;
 
+        /// Return this package's loaded image base for stateful callbacks.
+        #[cfg(all(not(test), target_arch = "arm"))]
+        #[doc(hidden)]
+        #[inline(never)]
+        #[unsafe(no_mangle)]
+        #[unsafe(link_section = ".program_address")]
+        pub extern "C" fn __vescpkg_program_address() -> u32 {
+            let address: u32;
+            // SAFETY: `prog_ptr` is the first word in the package image and
+            // this helper is linked into the adjacent program-address section, within the
+            // range of Thumb's PC-relative `adr` instruction.
+            unsafe {
+                core::arch::asm!(
+                    "adr {address}, prog_ptr",
+                    address = out(reg) address,
+                    options(readonly, nostack, preserves_flags),
+                );
+            }
+            address
+        }
+
         /// Firmware loader entrypoint that runs the package start function.
         #[cfg(any(test, all(not(test), target_arch = "arm")))]
         #[inline(never)]
@@ -601,7 +622,8 @@ macro_rules! package_start {
         extern "C" fn package_lib_init(info: *mut $crate::LoaderInfo) -> bool {
             let mut start = unsafe { $crate::__macro_support::__package_start_from_raw(info) };
             let started = $start(&mut start);
-            start.finish_start(started)
+            let _ = start.finish_start(started);
+            true
         }
 
         /// Host-linking loader shim for package crates.
@@ -1297,12 +1319,12 @@ mod tests {
             Ok(())
         );
         // C map: Refloat registers `imu_ref_callback` at
-        // `third_party/refloat/src/main.c:2454`; VESC stores the rebased pointer
+        // `third_party/refloat/src/main.c:2454`; VESC stores the resolved pointer
         // at `third_party/vesc/imu/imu.c:581-582`.
         assert_eq!(bindings.imu_read_callback_calls.get(), 1);
         assert_eq!(
             bindings.last_imu_read_callback.get(),
-            image.rebase_addr(
+            image.resolve_addr(
                 <TestPackageImuRead as crate::__macro_support::PackageImuReadCallback>::image_address()
             )
         );
@@ -1396,10 +1418,7 @@ mod tests {
             bindings.last_name.get(),
             descriptor.name().as_cstr().as_ptr() as usize
         );
-        assert_eq!(
-            bindings.last_handler.get(),
-            descriptor.handler() as usize + 0x2000
-        );
+        assert_eq!(bindings.last_handler.get(), descriptor.handler() as usize);
 
         let mut rejected_info = ffi::LibInfo {
             stop_fun: None,

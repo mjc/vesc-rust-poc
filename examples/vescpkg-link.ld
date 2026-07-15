@@ -20,6 +20,12 @@ SECTIONS
         *(.init_fun)
     } > MEM
 
+    .program_address : ALIGN(4)
+    {
+        . = ALIGN(4);
+        *(.program_address)
+    } > MEM
+
     .data : ALIGN(4)
     {
         . = ALIGN(4);

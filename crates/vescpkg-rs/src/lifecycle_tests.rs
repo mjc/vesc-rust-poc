@@ -50,11 +50,12 @@ fn register_extension_reports_outcome(
 }
 
 #[rstest]
-#[case::rebase_handler_only(crate::extension_name!("ext-test"), 0x31_usize, 0x2000_u32, "accept", true, 0x2031_usize)]
+#[case::resolve_handler_offset(crate::extension_name!("ext-test"), 0x31_usize, 0x2000_u32, "accept", true, 0x2031_usize)]
+#[case::preserve_loaded_handler(crate::extension_name!("ext-loaded"), 0x2031_usize, 0x2000_u32, "accept", true, 0x2031_usize)]
 #[case::firmware_reject(crate::extension_name!("ext-c-probe-v12"), 0_usize, 0x2000_u32, "reject", false, 0_usize)]
 fn register_extension_from_image_reports_outcome(
     #[case] name: crate::ExtensionName,
-    #[case] handler_offset: usize,
+    #[case] handler_address: usize,
     #[case] base_addr: u32,
     #[case] mode: &'static str,
     #[case] check_registered_pointers: bool,
@@ -66,10 +67,10 @@ fn register_extension_from_image_reports_outcome(
         FakeBindings::new()
     };
     let lifecycle = PackageLifecycle::new(&bindings);
-    let handler = if handler_offset == 0 {
+    let handler = if handler_address == 0 {
         stubs::extension_handler
     } else {
-        handler_at_offset(handler_offset)
+        handler_at_offset(handler_address)
     };
     let descriptor = ExtensionDescriptor::from_handler(name, handler);
     let info = LibInfo {

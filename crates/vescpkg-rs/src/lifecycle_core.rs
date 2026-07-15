@@ -82,13 +82,13 @@ impl<B: LbmBindings> PackageLifecycle<B> {
     /// Register an extension whose handler address is relative to a loaded native image.
     ///
     /// The descriptor name is a Rust `CStr` reference produced by package code, so on target it is
-    /// already a runtime PC-relative pointer. Only the function handler comes from an image-relative
-    /// function pointer slot and needs rebasing through loader metadata.
+    /// already a runtime PC-relative pointer. PIC may materialize the handler as either an image
+    /// offset or an already loaded address, so loader metadata resolves both forms.
     ///
     /// # Safety
     ///
     /// `image` must describe the loaded native package image that owns
-    /// `descriptor`. The rebased handler address must be a valid firmware
+    /// `descriptor`. The resolved handler address must be a valid firmware
     /// LispBM extension function and remain valid for as long as firmware may
     /// call the registered extension.
     pub(crate) unsafe fn register_extension_from_image(
@@ -100,9 +100,9 @@ impl<B: LbmBindings> PackageLifecycle<B> {
             .validate()
             .map_err(|_| RegisterError::InvalidExtensionName)?;
         let name = descriptor.name().as_cstr().as_ptr();
-        let handler_offset = descriptor.handler() as usize;
+        let handler_address = descriptor.handler() as usize;
         let handler = unsafe {
-            core::mem::transmute::<usize, ExtensionHandler>(image.rebase_addr(handler_offset))
+            core::mem::transmute::<usize, ExtensionHandler>(image.resolve_addr(handler_address))
         };
         if unsafe { self.api.bindings.add_extension(name, handler) } {
             Ok(())
@@ -116,7 +116,7 @@ impl<B: LbmBindings> PackageLifecycle<B> {
     /// # Safety
     ///
     /// `image` must describe the loaded native package image that owns every
-    /// descriptor. Each rebased handler address must be a valid firmware LispBM
+    /// descriptor. Each resolved handler address must be a valid firmware LispBM
     /// extension function and remain callable by firmware after registration.
     pub(crate) unsafe fn register_extensions_from_image(
         &self,

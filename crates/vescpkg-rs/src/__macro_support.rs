@@ -1,6 +1,6 @@
 //! Hidden implementation hooks for exported package macros.
 
-/// Mark a function symbol as an image offset explicitly rebased by generated SDK code.
+/// Mark a function symbol whose PIC reference may materialize through the GOT.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __vescpkg_image_offset {

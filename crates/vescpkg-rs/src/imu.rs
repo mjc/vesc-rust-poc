@@ -110,7 +110,7 @@ pub trait ImuReadHandler {
 /// Concrete package-local IMU callback generated for a typed handler.
 #[doc(hidden)]
 pub unsafe trait PackageImuReadCallback: ImuReadHandler {
-    /// Return the callback's image-relative function address.
+    /// Return the callback's package-local function address.
     #[doc(hidden)]
     fn image_address() -> usize;
 }

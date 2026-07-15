@@ -27,6 +27,14 @@ fn native_image_rebases_image_data_offsets() {
 }
 
 #[test]
+fn native_image_resolves_relative_and_loaded_code_addresses() {
+    let image = NativeImage::new(0x2000);
+
+    assert_eq!(image.resolve_addr(0x61), 0x2061);
+    assert_eq!(image.resolve_addr(0x2061), 0x2061);
+}
+
+#[test]
 fn native_image_from_info_uses_loader_base_addr() {
     let info = LibInfo {
         stop_fun: None,
