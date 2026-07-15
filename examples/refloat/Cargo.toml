@@ -9,7 +9,6 @@ publish = false
 [package.metadata.vescpkg]
 name = "Refloat"
 version = "1.2.1"
-force-c-float-math = true
 
 [lints]
 workspace = true
