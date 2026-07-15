@@ -73,6 +73,7 @@ pub struct RefloatPackageState {
     reverse_total_erpm: Rpm,
     motor_acceleration: MotorAccelerationTracker,
     remote_control: RemoteControlState,
+    charging_ticks: TimestampTicks,
     engage_ticks: TimestampTicks,
     disengage_ticks: TimestampTicks,
     fault_switch_ticks: TimestampTicks,
@@ -103,6 +104,7 @@ impl RefloatPackageState {
             reverse_total_erpm: Rpm::ZERO,
             motor_acceleration: MotorAccelerationTracker::default(),
             remote_control: RemoteControlState::default(),
+            charging_ticks: TimestampTicks::from_ticks(0),
             engage_ticks: TimestampTicks::from_ticks(0),
             disengage_ticks: TimestampTicks::from_ticks(0),
             fault_switch_ticks: TimestampTicks::from_ticks(0),
@@ -241,6 +243,7 @@ impl RefloatPackageState {
         self.refresh_config_runtime_state();
         self.refresh_motor_runtime_state(telemetry);
         self.refresh_footpad_runtime_state(footpad_adc1, footpad_adc2);
+        self.refresh_charging_runtime_state(system_time_ticks);
         self.refresh_imu_runtime_state(imu, system_time_ticks);
     }
 
@@ -256,7 +259,7 @@ impl RefloatPackageState {
         send: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
-        self.handle_charging_state_packet(bytes)
+        self.handle_charging_state_packet(now, bytes)
             || self.handle_handtest_packet(bytes)
             || self.handle_rc_move_packet(bytes)
             || self.send_metadata_packet_response(send, bytes)
@@ -278,10 +281,24 @@ impl RefloatPackageState {
         imu_runtime::refresh(self, imu, system_time_ticks);
     }
 
-    fn handle_charging_state_packet(&mut self, bytes: &[u8]) -> bool {
+    #[cfg(any(test, target_arch = "arm"))]
+    fn refresh_charging_runtime_state(&mut self, system_time_ticks: u32) {
+        self.all_data_payloads = charging::timeout(
+            self.all_data_payloads,
+            TimestampTicks::from_ticks(system_time_ticks),
+            self.charging_ticks,
+        );
+    }
+
+    fn handle_charging_state_packet(
+        &mut self,
+        now: &mut impl FnMut() -> TimestampTicks,
+        bytes: &[u8],
+    ) -> bool {
         match charging::handle_packet(self.all_data_payloads, bytes) {
             Some(payloads) => {
                 self.all_data_payloads = payloads;
+                self.charging_ticks = now();
                 true
             }
             None => false,

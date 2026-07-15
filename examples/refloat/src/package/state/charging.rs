@@ -4,6 +4,10 @@ use crate::domain::{
     RefloatAllDataStatus, RefloatAppDataCommand, RefloatChargingState,
     RefloatRealtimeChargingCurrent, RefloatRealtimeChargingVoltage,
 };
+#[cfg(any(test, target_arch = "arm"))]
+use crate::package::time::refloat_ticks_elapsed;
+#[cfg(any(test, target_arch = "arm"))]
+use vescpkg_rs::prelude::TimestampTicks;
 use vescpkg_rs::prelude::{BatteryCurrent, BatteryVoltage, Current, Voltage};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -87,11 +91,45 @@ pub(super) fn handle_packet(
     )
 }
 
+#[cfg(any(test, target_arch = "arm"))]
+pub(super) fn timeout(
+    payloads: RefloatAllDataPayloads,
+    now: TimestampTicks,
+    last_update: TimestampTicks,
+) -> RefloatAllDataPayloads {
+    let base = payloads.base();
+    let status = base.status();
+    let ride_state = status.ride_state();
+    if !matches!(ride_state.charging(), RefloatChargingState::Charging)
+        || !refloat_ticks_elapsed(now, last_update, 5)
+    {
+        return payloads;
+    }
+
+    let base = RefloatAllDataBasePayload::new(
+        base.balance_current(),
+        base.attitude(),
+        RefloatAllDataStatus::new(
+            ride_state.with_charging(RefloatChargingState::NotCharging),
+            status.beep_reason(),
+        ),
+        base.footpad(),
+        base.setpoints(),
+        base.booster_current(),
+        base.motor(),
+    );
+    RefloatAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::REFLOAT_APP_DATA_PACKAGE_ID;
-    use crate::package::test_support::sample_all_data_payloads;
+    use crate::domain::{REFLOAT_APP_DATA_PACKAGE_ID, RefloatMode, RefloatRunState};
+    use crate::package::test_support::{
+        sample_all_data_payloads, sample_all_data_payloads_with_ride_state,
+    };
+    use vescpkg_rs::prelude::{AngleRadians, ImuPitch, ImuRoll, ImuYaw, TimestampTicks};
+    use vescpkg_rs::test_support::FirmwareTest;
 
     #[test]
     fn charging_state_command_updates_status_and_mode4_payload_like_refloat() {
@@ -158,5 +196,59 @@ mod tests {
             inactive.mode4().voltage().voltage().voltage().as_volts(),
             0.0
         );
+    }
+
+    #[test]
+    fn charging_times_out_after_five_seconds_and_allows_ready_to_engage() {
+        let telemetry = FirmwareTest::new();
+        telemetry.set_imu_startup_done(true);
+        telemetry.set_imu_attitude(
+            ImuRoll::new(AngleRadians::ZERO),
+            ImuPitch::new(AngleRadians::ZERO),
+            ImuYaw::new(AngleRadians::ZERO),
+        );
+        let mut state = crate::package::RefloatPackageState::new(
+            sample_all_data_payloads_with_ride_state(RefloatRunState::Ready, RefloatMode::Normal),
+        );
+        let packet = [
+            REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            RefloatAppDataCommand::ChargingState.id(),
+            151,
+            1,
+            1,
+            244,
+            0,
+            123,
+        ];
+        let mut now = || TimestampTicks::from_ticks(10_000);
+        let mut discard = |_bytes: &[u8]| true;
+        assert!(state.handle_packet_with_telemetry(
+            telemetry.telemetry(),
+            &mut now,
+            &mut discard,
+            &packet,
+        ));
+
+        state.refresh_main_loop_runtime_state(
+            telemetry.telemetry(),
+            telemetry.imu(),
+            Voltage::from_volts(2.5),
+            Voltage::from_volts(2.5),
+            60_000,
+        );
+        let ride_state = state.all_data_payloads().base().status().ride_state();
+        assert_eq!(ride_state.charging(), RefloatChargingState::Charging);
+        assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
+
+        state.refresh_main_loop_runtime_state(
+            telemetry.telemetry(),
+            telemetry.imu(),
+            Voltage::from_volts(2.5),
+            Voltage::from_volts(2.5),
+            60_001,
+        );
+        let ride_state = state.all_data_payloads().base().status().ride_state();
+        assert_eq!(ride_state.charging(), RefloatChargingState::NotCharging);
+        assert_eq!(ride_state.run_state(), RefloatRunState::Running);
     }
 }
