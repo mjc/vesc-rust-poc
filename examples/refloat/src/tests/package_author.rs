@@ -7,15 +7,15 @@ use crate::domain::{
     RefloatAllDataPayloads, RefloatAllDataRequest, RefloatAllDataRequestError,
     RefloatAllDataResponse, RefloatAllDataStatus, RefloatAppDataCommand, RefloatBeepReason,
     RefloatChargingState, RefloatDarkRideState, RefloatDataRecorderFlags, RefloatFatalErrorState,
-    RefloatFirmwareFaultCode, RefloatFocIdCurrent, RefloatMode, RefloatMotorCommand,
-    RefloatRealtimeAlertMask, RefloatRealtimeAlwaysPayload, RefloatRealtimeAtrAccelerationDiff,
-    RefloatRealtimeAtrSpeedBoost, RefloatRealtimeBalanceCurrent, RefloatRealtimeBalancePitch,
-    RefloatRealtimeBoosterCurrent, RefloatRealtimeChargingCurrent, RefloatRealtimeChargingPayload,
-    RefloatRealtimeChargingVoltage, RefloatRealtimeDataHeader, RefloatRealtimeDataItem,
-    RefloatRealtimeDataItemGroup, RefloatRealtimeDataRecordPolicy,
-    RefloatRealtimeFilteredMotorCurrent, RefloatRealtimeImuPayload, RefloatRealtimeMotorCurrents,
-    RefloatRealtimeMotorPayload, RefloatRealtimeMotorTemperatures, RefloatRealtimeRemoteInput,
-    RefloatRealtimeReservedFlags, RefloatRealtimeRuntimeAtrPayload, RefloatRealtimeRuntimePayload,
+    RefloatFocIdCurrent, RefloatMode, RefloatMotorCommand, RefloatRealtimeAlertMask,
+    RefloatRealtimeAlwaysPayload, RefloatRealtimeAtrAccelerationDiff, RefloatRealtimeAtrSpeedBoost,
+    RefloatRealtimeBalanceCurrent, RefloatRealtimeBalancePitch, RefloatRealtimeBoosterCurrent,
+    RefloatRealtimeChargingCurrent, RefloatRealtimeChargingPayload, RefloatRealtimeChargingVoltage,
+    RefloatRealtimeDataHeader, RefloatRealtimeDataItem, RefloatRealtimeDataItemGroup,
+    RefloatRealtimeDataRecordPolicy, RefloatRealtimeFilteredMotorCurrent,
+    RefloatRealtimeImuPayload, RefloatRealtimeMotorCurrents, RefloatRealtimeMotorPayload,
+    RefloatRealtimeMotorTemperatures, RefloatRealtimeRemoteInput, RefloatRealtimeReservedFlags,
+    RefloatRealtimeRuntimeAtrPayload, RefloatRealtimeRuntimePayload,
     RefloatRealtimeRuntimeSetpoint, RefloatRealtimeRuntimeSetpoints, RefloatRealtimeTail,
     RefloatRideState, RefloatRunState, RefloatSetpointAdjustment, RefloatStopCondition,
     RefloatWheelSlipState,
@@ -461,7 +461,7 @@ fn package_author_builds_realtime_charging_and_tail_without_raw_values() {
     let tail = RefloatRealtimeTail::new(
         RefloatRealtimeAlertMask::empty().with_alert(RefloatAlertId::FirmwareFault),
         RefloatRealtimeReservedFlags::none(),
-        RefloatFirmwareFaultCode::from_compat_code(12),
+        FirmwareFaultCompatCode::from_compat_code(12),
     );
 
     assert_eq!(charging.current().current().current().as_amps(), 4.2);
@@ -645,7 +645,7 @@ fn package_author_encodes_all_data_base_response_like_refloat_v1_2_1() {
 #[test]
 fn package_author_encodes_all_data_fault_response_like_refloat_v1_2_1() {
     assert_eq!(
-        RefloatAllDataResponse::fault(RefloatFirmwareFaultCode::from_compat_code(5)).as_bytes(),
+        RefloatAllDataResponse::fault(FirmwareFaultCompatCode::from_compat_code(5)).as_bytes(),
         &[101, 10, 69, 5]
     );
 }

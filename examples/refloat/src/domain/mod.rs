@@ -32,8 +32,8 @@ pub use self::app_data::{
 pub use self::motor_command::RefloatMotorCommand;
 pub use self::realtime::{
     REFLOAT_REALTIME_DATA_ITEMS, REFLOAT_REALTIME_RECORDED_ITEMS, REFLOAT_REALTIME_RUNTIME_ITEMS,
-    RefloatAlertId, RefloatFirmwareFaultCode, RefloatRealtimeAlertMask,
-    RefloatRealtimeAlwaysPayload, RefloatRealtimeAtrAccelerationDiff, RefloatRealtimeAtrSpeedBoost,
+    RefloatAlertId, RefloatRealtimeAlertMask, RefloatRealtimeAlwaysPayload,
+    RefloatRealtimeAtrAccelerationDiff, RefloatRealtimeAtrSpeedBoost,
     RefloatRealtimeBalanceCurrent, RefloatRealtimeBalancePitch, RefloatRealtimeBoosterCurrent,
     RefloatRealtimeChargingCurrent, RefloatRealtimeChargingPayload, RefloatRealtimeChargingVoltage,
     RefloatRealtimeDataHeader, RefloatRealtimeDataItem, RefloatRealtimeDataItemGroup,

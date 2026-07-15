@@ -20,14 +20,14 @@ use super::wire::{
 };
 use super::{
     FootpadSensorSample, FootpadSensorState, REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataMode,
-    RefloatAllDataRequest, RefloatAppDataCommand, RefloatFirmwareFaultCode, RefloatRideState,
+    RefloatAllDataRequest, RefloatAppDataCommand, RefloatRideState,
 };
 use vescpkg_rs::prelude::{
     AdcDecodedLevel, AmpHoursCharged, AmpHoursDischarged, AngleDegrees, AngleRadians,
     BatteryCurrent, BatteryLevel, BatteryVoltage, Charge, Current, Distance, DutyCycle,
-    ElectricalSpeed, Energy, ImuPitch, ImuRoll, MosfetTemperature, MotorCurrent, MotorTemperature,
-    OdometerMeters, Ratio, Rpm, SignedRatio, Speed, Temperature, TripDistance, VehicleSpeed,
-    Voltage, WattHoursCharged, WattHoursDischarged,
+    ElectricalSpeed, Energy, FirmwareFaultCompatCode, ImuPitch, ImuRoll, MosfetTemperature,
+    MotorCurrent, MotorTemperature, OdometerMeters, Ratio, Rpm, SignedRatio, Speed, Temperature,
+    TripDistance, VehicleSpeed, Voltage, WattHoursCharged, WattHoursDischarged,
 };
 
 /// Fixed-size Refloat all-data response bytes.
@@ -47,7 +47,7 @@ pub enum RefloatAllDataResponse {
 
 impl RefloatAllDataResponse {
     /// Encode a Refloat all-data fault response.
-    pub const fn fault(fault: RefloatFirmwareFaultCode) -> Self {
+    pub const fn fault(fault: FirmwareFaultCompatCode) -> Self {
         Self::Fault([
             REFLOAT_APP_DATA_PACKAGE_ID.get(),
             RefloatAppDataCommand::GetAllData.id(),

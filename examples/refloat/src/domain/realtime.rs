@@ -10,8 +10,8 @@ use super::{
 };
 use vescpkg_rs::prelude::{
     AngleDegrees, AngleRadians, BatteryCurrent, BatteryVoltage, DirectionalMotorCurrent, DutyCycle,
-    ElectricalSpeed, ImuPitch, ImuRoll, MosfetTemperature, MotorCurrent, MotorTemperature,
-    SignedRatio, SystemTimestamp, VehicleSpeed,
+    ElectricalSpeed, FirmwareFaultCompatCode, ImuPitch, ImuRoll, MosfetTemperature, MotorCurrent,
+    MotorTemperature, SignedRatio, SystemTimestamp, VehicleSpeed,
 };
 
 /// The ID-list packet format is described in upstream `third_party/refloat/src/main.c:1884-1898`.
@@ -876,23 +876,6 @@ impl RefloatRealtimeReservedFlags {
     }
 }
 
-/// Refloat firmware fault code appended to realtime data.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct RefloatFirmwareFaultCode(u8);
-
-impl RefloatFirmwareFaultCode {
-    /// Build a firmware fault-code token from the app-data compatible byte.
-    pub const fn from_compat_code(code: u8) -> Self {
-        Self(code)
-    }
-
-    /// Return the app-data compatible firmware fault-code byte.
-    pub const fn compat_code(self) -> u8 {
-        self.0
-    }
-}
-
 /// Refloat realtime tail fields appended after conditional payload values.
 ///
 /// Source map: upstream appends active-alert mask, reserved flags, and firmware
@@ -901,7 +884,7 @@ impl RefloatFirmwareFaultCode {
 pub struct RefloatRealtimeTail {
     active_alerts: RefloatRealtimeAlertMask,
     reserved_flags: RefloatRealtimeReservedFlags,
-    firmware_fault_code: RefloatFirmwareFaultCode,
+    firmware_fault_code: FirmwareFaultCompatCode,
 }
 
 impl RefloatRealtimeTail {
@@ -909,7 +892,7 @@ impl RefloatRealtimeTail {
     pub const fn new(
         active_alerts: RefloatRealtimeAlertMask,
         reserved_flags: RefloatRealtimeReservedFlags,
-        firmware_fault_code: RefloatFirmwareFaultCode,
+        firmware_fault_code: FirmwareFaultCompatCode,
     ) -> Self {
         Self {
             active_alerts,
@@ -929,7 +912,7 @@ impl RefloatRealtimeTail {
     }
 
     /// Return firmware fault code.
-    pub const fn firmware_fault_code(self) -> RefloatFirmwareFaultCode {
+    pub const fn firmware_fault_code(self) -> FirmwareFaultCompatCode {
         self.firmware_fault_code
     }
 }

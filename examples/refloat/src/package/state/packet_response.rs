@@ -6,11 +6,12 @@ use super::RefloatPackageState;
 use super::refloat_command_payload;
 use crate::domain::{
     RefloatAllDataMode3Payload, RefloatAllDataPayloads, RefloatAllDataRequest,
-    RefloatAllDataResponse, RefloatAppDataCommand, RefloatFirmwareFaultCode,
-    RefloatRealtimeMotorTemperatures,
+    RefloatAllDataResponse, RefloatAppDataCommand, RefloatRealtimeMotorTemperatures,
 };
 use vescpkg_rs::MotorTelemetry;
-use vescpkg_rs::prelude::{BatteryVoltage, SystemTimestamp, TimestampTicks};
+use vescpkg_rs::prelude::{
+    BatteryVoltage, FirmwareFaultCompatCode, SystemTimestamp, TimestampTicks,
+};
 
 impl RefloatPackageState {
     pub(super) fn send_metadata_packet_response(
@@ -85,7 +86,7 @@ impl RefloatPackageState {
             (Err(_), _) => false,
             (Ok(_), fault) if !fault.is_none() => fault.compat_code().is_some_and(|fault_code| {
                 let response = RefloatAllDataResponse::fault(
-                    RefloatFirmwareFaultCode::from_compat_code(fault_code),
+                    FirmwareFaultCompatCode::from_compat_code(fault_code),
                 );
                 send(response.as_bytes())
             }),
