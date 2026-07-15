@@ -214,10 +214,13 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
 {
-    let args = args
+    let mut args = args
         .into_iter()
         .map(|arg| arg.as_ref().to_owned())
         .collect::<Vec<_>>();
+    if args.get(1).is_some_and(|arg| arg == "vescpkg") {
+        args.remove(1);
+    }
     Cli::try_parse_from(args).map(|cli| cli.command)
 }
 
@@ -254,6 +257,20 @@ mod tests {
         assert_eq!(args.package, "minimal-package");
         assert_eq!(args.target, "thumbv7em-none-eabihf");
         assert_eq!(args.profile, "release");
+    }
+
+    #[test]
+    fn parse_args_accepts_the_cargo_subcommand_shim() {
+        let command = parse_args([
+            "cargo-vescpkg",
+            "vescpkg",
+            "build",
+            "--package",
+            "minimal-package",
+        ])
+        .expect("parse Cargo subcommand invocation");
+
+        assert!(matches!(command, Command::Build(_)));
     }
 
     #[test]
