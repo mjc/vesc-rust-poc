@@ -3,11 +3,11 @@ use core::hint::spin_loop;
 use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 use crate::{
-    AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, DirectionalMotorCurrent,
+    AmpHoursCharged, AmpHoursDischarged, BatteryLevel, DCurrent, DirectionalMotorCurrent,
     DutyCycle, ElectricalSpeed, FirmwareFaultCode, ImuAngularRate, ImuOrientation, ImuPitch,
-    ImuRoll, ImuYaw, InputVoltage, MosfetTemperature, MotorCurrent, MotorCurrentLimit,
-    MotorTemperature, OdometerMeters, TripDistance, VehicleSpeed, WattHoursCharged,
-    WattHoursDischarged,
+    ImuRoll, ImuYaw, InputCurrent, InputVoltage, MosfetTemperature, MotorCurrentLimit,
+    MotorTemperature, OdometerMeters, TotalMotorCurrent, TripDistance, VehicleSpeed,
+    WattHoursCharged, WattHoursDischarged,
 };
 
 // C map: these host replacements model the motor slots declared at
@@ -35,7 +35,7 @@ static MOTOR_CURRENT: AtomicU32 = AtomicU32::new(0);
 static DIRECTIONAL_MOTOR_CURRENT: AtomicU32 = AtomicU32::new(0);
 static MOTOR_CURRENT_MAX: AtomicU32 = AtomicU32::new(0);
 static MOTOR_CURRENT_MIN: AtomicU32 = AtomicU32::new(0);
-static BATTERY_CURRENT: AtomicU32 = AtomicU32::new(0);
+static INPUT_CURRENT: AtomicU32 = AtomicU32::new(0);
 static DUTY_CYCLE: AtomicU32 = AtomicU32::new(0);
 static FOC_ID_CURRENT: AtomicU32 = AtomicU32::new(0);
 static HAS_FOC_ID_CURRENT: AtomicBool = AtomicBool::new(false);
@@ -110,7 +110,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     DIRECTIONAL_MOTOR_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_CURRENT_MAX.store(100.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_CURRENT_MIN.store((-100.0_f32).to_bits(), Ordering::Relaxed);
-    BATTERY_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    INPUT_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
     DUTY_CYCLE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     FOC_ID_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
     HAS_FOC_ID_CURRENT.store(false, Ordering::Relaxed);
@@ -170,8 +170,8 @@ fn store(value: &AtomicU32, raw: f32) {
 pub(crate) fn set_runtime_motor(
     electrical_speed: ElectricalSpeed,
     vehicle_speed: VehicleSpeed,
-    motor_current: MotorCurrent,
-    battery_current: BatteryCurrent,
+    motor_current: TotalMotorCurrent,
+    input_current: InputCurrent,
     duty_cycle: DutyCycle,
 ) {
     store(
@@ -180,7 +180,7 @@ pub(crate) fn set_runtime_motor(
     );
     store(&VEHICLE_SPEED, vehicle_speed.speed().as_meters_per_second());
     store(&MOTOR_CURRENT, motor_current.current().as_amps());
-    store(&BATTERY_CURRENT, battery_current.current().as_amps());
+    store(&INPUT_CURRENT, input_current.current().as_amps());
     store(&DUTY_CYCLE, duty_cycle.ratio().as_ratio());
 }
 
@@ -230,7 +230,7 @@ pub(crate) fn set_ride_totals(
         &WATT_HOURS_CHARGED,
         watt_hours_charged.energy().as_watt_hours(),
     );
-    store(&BATTERY_LEVEL, battery_level.ratio().as_ratio());
+    store(&BATTERY_LEVEL, battery_level.as_fraction());
 }
 
 pub(crate) fn set_firmware_fault(fault: FirmwareFaultCode) {
@@ -245,7 +245,7 @@ pub(crate) fn set_input_voltage(voltage: InputVoltage) {
     store(&INPUT_VOLTAGE, voltage.voltage().as_volts());
 }
 
-pub(crate) fn set_foc_id_current(current: Option<MotorCurrent>) {
+pub(crate) fn set_foc_id_current(current: Option<DCurrent>) {
     HAS_FOC_ID_CURRENT.store(current.is_some(), Ordering::Relaxed);
     if let Some(value) = current {
         store(&FOC_ID_CURRENT, value.current().as_amps());
@@ -389,7 +389,7 @@ pub unsafe fn get_cfg_float(param: i32) -> f32 {
 }
 
 pub unsafe fn mc_get_tot_current_in_filtered() -> f32 {
-    load(&BATTERY_CURRENT)
+    load(&INPUT_CURRENT)
 }
 
 pub unsafe fn mc_get_duty_cycle_now() -> f32 {

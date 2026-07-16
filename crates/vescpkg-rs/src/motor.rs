@@ -1,13 +1,13 @@
 //! Motor telemetry helpers built on firmware motor-control table slots.
 
 use crate::types::{
-    AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, CurrentOffDelay,
-    DirectionalMotorCurrent, DutyCycle, ElectricalSpeed, FirmwareFaultCode, InputVoltage,
-    MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, TripDistance,
-    VehicleSpeed, WattHoursCharged, WattHoursDischarged,
+    AmpHoursCharged, AmpHoursDischarged, BatteryLevel, BrakeCurrent, CurrentOffDelay, DCurrent,
+    DirectionalMotorCurrent, DutyCycle, ElectricalSpeed, FirmwareFaultCode, InputCurrent,
+    InputVoltage, MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature,
+    TotalMotorCurrent, TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 #[cfg(not(test))]
-use crate::units::{Charge, Current, Distance, Energy, Ratio, Rpm, Speed, Temperature, Voltage};
+use crate::units::{Charge, Current, Distance, Energy, Rpm, Speed, Temperature, Voltage};
 use crate::units::{OdometerMeters, SignedRatio};
 
 #[cfg(not(test))]
@@ -33,7 +33,7 @@ pub trait MotorTelemetryBindings {
     /// Refloat v1.2.1 reads `mc_get_tot_current_filtered()` in
     /// `src/motor_data.c:120`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:456`.
-    fn motor_current(&self) -> MotorCurrent;
+    fn motor_current(&self) -> TotalMotorCurrent;
     /// Return filtered motor current with the configured motor direction applied.
     fn directional_motor_current(&self) -> DirectionalMotorCurrent;
     /// Return the configured positive motor-current limit.
@@ -53,7 +53,7 @@ pub trait MotorTelemetryBindings {
     /// Refloat v1.2.1 reads `mc_get_tot_current_in_filtered()` in
     /// `src/motor_data.c:140`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:460`.
-    fn battery_current(&self) -> BatteryCurrent;
+    fn battery_current(&self) -> InputCurrent;
     /// Return the current signed duty cycle.
     ///
     /// The firmware value is clamped to the signed ratio range, with NaN
@@ -67,7 +67,7 @@ pub trait MotorTelemetryBindings {
     /// Refloat v1.2.1 reads optional `foc_get_id` while encoding compact
     /// all-data at `src/main.c:1364-1368`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:616`.
-    fn foc_id_current(&self) -> Option<MotorCurrent>;
+    fn foc_id_current(&self) -> Option<DCurrent>;
     /// Return the absolute distance travelled by the motor/vehicle.
     fn distance_abs(&self) -> TripDistance;
     /// Return the filtered MOSFET/FET temperature.
@@ -102,7 +102,7 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
         (**self).vehicle_speed()
     }
 
-    fn motor_current(&self) -> MotorCurrent {
+    fn motor_current(&self) -> TotalMotorCurrent {
         (**self).motor_current()
     }
 
@@ -118,7 +118,7 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
         (**self).motor_current_min()
     }
 
-    fn battery_current(&self) -> BatteryCurrent {
+    fn battery_current(&self) -> InputCurrent {
         (**self).battery_current()
     }
 
@@ -126,7 +126,7 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
         (**self).duty_cycle_now()
     }
 
-    fn foc_id_current(&self) -> Option<MotorCurrent> {
+    fn foc_id_current(&self) -> Option<DCurrent> {
         (**self).foc_id_current()
     }
 
@@ -201,13 +201,13 @@ pub trait MotorControlBindings {
     /// Refloat v1.2.1 sends parking-brake duty zero at
     /// `third_party/refloat/src/motor_control.c:112-114`; the VESC ABI slot is
     /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:436`.
-    fn set_duty(&self, duty: SignedRatio);
+    fn set_duty(&self, duty: DutyCycle);
     /// Set motor brake current in amps.
     ///
     /// Refloat v1.2.1 sends idle brake current at
     /// `third_party/refloat/src/motor_control.c:115-117`; the VESC ABI slot is
     /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:441`.
-    fn set_brake_current(&self, current: MotorCurrent);
+    fn set_brake_current(&self, current: BrakeCurrent);
 }
 
 #[cfg(not(test))]
@@ -224,11 +224,11 @@ impl<B: MotorControlBindings + ?Sized> MotorControlBindings for &B {
         (**self).set_current(current);
     }
 
-    fn set_duty(&self, duty: SignedRatio) {
+    fn set_duty(&self, duty: DutyCycle) {
         (**self).set_duty(duty);
     }
 
-    fn set_brake_current(&self, current: MotorCurrent) {
+    fn set_brake_current(&self, current: BrakeCurrent) {
         (**self).set_brake_current(current);
     }
 }
@@ -255,8 +255,8 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         }))
     }
 
-    fn motor_current(&self) -> MotorCurrent {
-        MotorCurrent::new(Current::from_amps(unsafe {
+    fn motor_current(&self) -> TotalMotorCurrent {
+        TotalMotorCurrent::new(Current::from_amps(unsafe {
             crate::ffi::mc_get_tot_current_filtered()
         }))
     }
@@ -279,8 +279,8 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         }))
     }
 
-    fn battery_current(&self) -> BatteryCurrent {
-        BatteryCurrent::new(Current::from_amps(unsafe {
+    fn battery_current(&self) -> InputCurrent {
+        InputCurrent::new(Current::from_amps(unsafe {
             crate::ffi::mc_get_tot_current_in_filtered()
         }))
     }
@@ -289,8 +289,8 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         duty_cycle_from_firmware(unsafe { crate::ffi::mc_get_duty_cycle_now() })
     }
 
-    fn foc_id_current(&self) -> Option<MotorCurrent> {
-        unsafe { crate::ffi::foc_get_id() }.map(|amps| MotorCurrent::new(Current::from_amps(amps)))
+    fn foc_id_current(&self) -> Option<DCurrent> {
+        unsafe { crate::ffi::foc_get_id() }.map(|amps| DCurrent::new(Current::from_amps(amps)))
     }
 
     fn distance_abs(&self) -> TripDistance {
@@ -340,9 +340,9 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
     }
 
     fn battery_level(&self) -> BatteryLevel {
-        BatteryLevel::new(Ratio::clamped(unsafe {
+        BatteryLevel::from_fraction(unsafe {
             crate::ffi::mc_get_battery_level(core::ptr::null_mut())
-        }))
+        })
     }
 
     fn firmware_fault(&self) -> FirmwareFaultCode {
@@ -370,11 +370,11 @@ impl MotorControlBindings for RealMotorControlBindings {
         unsafe { crate::ffi::mc_set_current(current.current().as_amps()) };
     }
 
-    fn set_duty(&self, duty: SignedRatio) {
-        unsafe { crate::ffi::mc_set_duty(duty.as_ratio()) };
+    fn set_duty(&self, duty: DutyCycle) {
+        unsafe { crate::ffi::mc_set_duty(duty.ratio().as_ratio()) };
     }
 
-    fn set_brake_current(&self, current: MotorCurrent) {
+    fn set_brake_current(&self, current: BrakeCurrent) {
         unsafe { crate::ffi::mc_set_brake_current(current.current().as_amps()) };
     }
 }
@@ -405,7 +405,7 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     /// Return firmware-calculated vehicle speed.
     fn vehicle_speed(&self) -> VehicleSpeed;
     /// Return filtered total motor current.
-    fn motor_current(&self) -> MotorCurrent;
+    fn motor_current(&self) -> TotalMotorCurrent;
     /// Return filtered motor current with the configured motor direction applied.
     fn directional_motor_current(&self) -> DirectionalMotorCurrent;
     /// Return the configured positive motor-current limit.
@@ -413,11 +413,11 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     /// Return the configured braking-current magnitude.
     fn motor_current_min(&self) -> MotorCurrentLimit;
     /// Return filtered input/battery current.
-    fn battery_current(&self) -> BatteryCurrent;
-    /// Return the current duty-cycle magnitude.
+    fn battery_current(&self) -> InputCurrent;
+    /// Return the current signed duty cycle.
     fn duty_cycle_now(&self) -> DutyCycle;
     /// Return optional FOC d-axis current.
-    fn foc_id_current(&self) -> Option<MotorCurrent>;
+    fn foc_id_current(&self) -> Option<DCurrent>;
     /// Return the absolute distance travelled by the motor/vehicle.
     fn distance_abs(&self) -> TripDistance;
     /// Return the filtered MOSFET/FET temperature.
@@ -454,10 +454,10 @@ pub trait MotorOutput: private::MotorOutput {
     fn set_current(&self, current: MotorCurrent);
 
     /// Apply a duty-cycle command.
-    fn set_duty(&self, duty: SignedRatio);
+    fn set_duty(&self, duty: DutyCycle);
 
     /// Apply a braking-current command.
-    fn set_brake_current(&self, current: MotorCurrent);
+    fn set_brake_current(&self, current: BrakeCurrent);
 }
 
 /// High-level motor-control API built on a binding implementation.
@@ -496,7 +496,7 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
     }
 
     /// Return filtered total motor current.
-    pub fn motor_current(&self) -> MotorCurrent {
+    pub fn motor_current(&self) -> TotalMotorCurrent {
         self.bindings.motor_current()
     }
 
@@ -516,17 +516,17 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
     }
 
     /// Return filtered input/battery current.
-    pub fn battery_current(&self) -> BatteryCurrent {
+    pub fn battery_current(&self) -> InputCurrent {
         self.bindings.battery_current()
     }
 
-    /// Return the current duty-cycle magnitude.
+    /// Return the current signed duty cycle.
     pub fn duty_cycle_now(&self) -> DutyCycle {
         self.bindings.duty_cycle_now()
     }
 
     /// Return optional FOC d-axis Id current.
-    pub fn foc_id_current(&self) -> Option<MotorCurrent> {
+    pub fn foc_id_current(&self) -> Option<DCurrent> {
         self.bindings.foc_id_current()
     }
 
@@ -599,7 +599,7 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
         self.vehicle_speed()
     }
 
-    fn motor_current(&self) -> MotorCurrent {
+    fn motor_current(&self) -> TotalMotorCurrent {
         self.motor_current()
     }
 
@@ -615,7 +615,7 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
         self.motor_current_min()
     }
 
-    fn battery_current(&self) -> BatteryCurrent {
+    fn battery_current(&self) -> InputCurrent {
         self.battery_current()
     }
 
@@ -623,7 +623,7 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
         self.duty_cycle_now()
     }
 
-    fn foc_id_current(&self) -> Option<MotorCurrent> {
+    fn foc_id_current(&self) -> Option<DCurrent> {
         self.foc_id_current()
     }
 
@@ -698,7 +698,7 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
     /// Refloat uses this for parking brake duty zero at
     /// `third_party/refloat/src/motor_control.c:112-114`; the VESC ABI slot is
     /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:436`.
-    pub fn set_duty(&self, duty: SignedRatio) {
+    pub fn set_duty(&self, duty: DutyCycle) {
         self.bindings.set_duty(duty);
     }
 
@@ -707,7 +707,7 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
     /// Refloat uses this for idle brake current at
     /// `third_party/refloat/src/motor_control.c:115-117`; the VESC ABI slot is
     /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:441`.
-    pub fn set_brake_current(&self, current: MotorCurrent) {
+    pub fn set_brake_current(&self, current: BrakeCurrent) {
         self.bindings.set_brake_current(current);
     }
 }
@@ -729,11 +729,11 @@ impl<B: MotorControlBindings> MotorOutput for MotorControlApi<B> {
         MotorControlApi::set_current(self, current);
     }
 
-    fn set_duty(&self, duty: SignedRatio) {
+    fn set_duty(&self, duty: DutyCycle) {
         MotorControlApi::set_duty(self, duty);
     }
 
-    fn set_brake_current(&self, current: MotorCurrent) {
+    fn set_brake_current(&self, current: BrakeCurrent) {
         MotorControlApi::set_brake_current(self, current);
     }
 }

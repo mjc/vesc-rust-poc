@@ -161,15 +161,15 @@ impl FirmwareTest {
         self,
         electrical_speed: crate::ElectricalSpeed,
         vehicle_speed: crate::VehicleSpeed,
-        motor_current: crate::MotorCurrent,
-        battery_current: crate::BatteryCurrent,
+        motor_current: crate::TotalMotorCurrent,
+        input_current: crate::InputCurrent,
         duty_cycle: crate::DutyCycle,
     ) -> Self {
         crate::test_ffi::set_runtime_motor(
             electrical_speed,
             vehicle_speed,
             motor_current,
-            battery_current,
+            input_current,
             duty_cycle,
         );
         self
@@ -262,7 +262,7 @@ impl FirmwareTest {
 
     #[must_use]
     /// Configure the optional typed FOC d-axis current.
-    pub fn with_foc_id_current(self, current: Option<crate::MotorCurrent>) -> Self {
+    pub fn with_foc_id_current(self, current: Option<crate::DCurrent>) -> Self {
         crate::test_ffi::set_foc_id_current(current);
         self
     }
@@ -315,14 +315,16 @@ impl FirmwareTest {
 
     #[must_use]
     /// Return the latest duty-cycle write as the SDK domain type.
-    pub fn commanded_duty(&self) -> crate::SignedRatio {
-        crate::SignedRatio::clamped(crate::test_ffi::motor_output().duty)
+    pub fn commanded_duty(&self) -> crate::DutyCycle {
+        crate::DutyCycle::new(crate::SignedRatio::clamped(
+            crate::test_ffi::motor_output().duty,
+        ))
     }
 
     #[must_use]
     /// Return the latest brake-current write as the SDK domain type.
-    pub fn commanded_brake_current(&self) -> crate::MotorCurrent {
-        crate::MotorCurrent::new(crate::Current::from_amps(
+    pub fn commanded_brake_current(&self) -> crate::BrakeCurrent {
+        crate::BrakeCurrent::new(crate::Current::from_amps(
             crate::test_ffi::motor_output().brake_current,
         ))
     }

@@ -5,6 +5,10 @@ use vescpkg_rs_sys::VescPin;
 use crate::types::AdcVoltage;
 use crate::units::Voltage;
 
+fn adc_voltage_from_firmware(raw: f32) -> Option<AdcVoltage> {
+    (raw >= 0.0).then(|| AdcVoltage::new(Voltage::from_volts(raw)))
+}
+
 /// A firmware analog-input pin.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
@@ -48,7 +52,7 @@ impl Gpio {
         &self,
         first: AnalogPin,
         second: AnalogPin,
-    ) -> (AdcVoltage, AdcVoltage) {
+    ) -> (Option<AdcVoltage>, Option<AdcVoltage>) {
         let first = first.firmware_pin();
         let second = second.firmware_pin();
         #[cfg(test)]
@@ -60,16 +64,16 @@ impl Gpio {
             self.test.last_second_pin.set(second.0);
             let (first, second) = self.test.analog_pair.get();
             (
-                AdcVoltage::new(Voltage::from_volts(first)),
-                AdcVoltage::new(Voltage::from_volts(second)),
+                adc_voltage_from_firmware(first),
+                adc_voltage_from_firmware(second),
             )
         }
         #[cfg(not(test))]
         {
             let (first, second) = unsafe { crate::ffi::io_read_analog_pair(first, second) };
             (
-                AdcVoltage::new(Voltage::from_volts(first)),
-                AdcVoltage::new(Voltage::from_volts(second)),
+                adc_voltage_from_firmware(first),
+                adc_voltage_from_firmware(second),
             )
         }
     }
@@ -92,10 +96,20 @@ mod tests {
     fn gpio_uses_one_semantic_capability() {
         let gpio = Gpio::test((1.2, 3.4));
         let (first, second) = gpio.read_analog_pair(AnalogPin::ADC1, AnalogPin::ADC2);
-        assert_eq!(first.voltage().as_volts(), 1.2);
-        assert_eq!(second.voltage().as_volts(), 3.4);
+        assert_eq!(first.unwrap().voltage().as_volts(), 1.2);
+        assert_eq!(second.unwrap().voltage().as_volts(), 3.4);
         assert_eq!(gpio.test.analog_pair_calls.get(), 1);
         assert_eq!(gpio.test.last_pin.get(), 7);
         assert_eq!(gpio.test.last_second_pin.get(), 8);
+    }
+
+    #[test]
+    fn negative_firmware_voltage_means_adc_is_unavailable() {
+        let gpio = Gpio::test((1.2, -1.0));
+
+        assert_eq!(
+            gpio.read_analog_pair(AnalogPin::ADC1, AnalogPin::ADC2).1,
+            None
+        );
     }
 }

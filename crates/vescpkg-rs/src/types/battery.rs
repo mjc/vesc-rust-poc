@@ -1,6 +1,6 @@
 //! Battery and input semantic wrappers.
 
-use crate::units::{Charge, Current, Energy, Ratio, Voltage};
+use crate::units::{Charge, Current, Energy, Voltage};
 
 macro_rules! current_type {
     ($name:ident, $doc:literal) => {
@@ -86,27 +86,6 @@ macro_rules! charge_type {
     };
 }
 
-macro_rules! ratio_type {
-    ($name:ident, $doc:literal) => {
-        #[doc = $doc]
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-        #[repr(transparent)]
-        pub struct $name(Ratio);
-
-        impl $name {
-            /// Wrap a generic ratio with battery domain meaning.
-            pub const fn new(ratio: Ratio) -> Self {
-                Self(ratio)
-            }
-
-            /// Return the typed ratio without erasing it to a primitive.
-            pub const fn ratio(self) -> Ratio {
-                self.0
-            }
-        }
-    };
-}
-
 current_type!(BatteryCurrent, "Battery-side current.");
 current_type!(InputCurrent, "Controller input current.");
 voltage_type!(InputVoltage, "Controller input voltage.");
@@ -117,4 +96,36 @@ energy_type!(WattHoursCharged, "Charged watt-hours.");
 energy_type!(WattHoursRemaining, "Remaining watt-hours.");
 charge_type!(AmpHoursDischarged, "Discharged amp-hours.");
 charge_type!(AmpHoursCharged, "Charged amp-hours.");
-ratio_type!(BatteryLevel, "Battery state-of-charge ratio.");
+
+/// Firmware-reported battery state-of-charge fraction.
+///
+/// VESC can report values above `1.0` when the measured voltage exceeds the
+/// configured full-voltage threshold, so this is intentionally not a bounded
+/// [`crate::Ratio`].
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct BatteryLevel(f32);
+
+impl BatteryLevel {
+    /// Preserve the raw fraction reported by firmware.
+    pub const fn from_fraction(fraction: f32) -> Self {
+        Self(fraction)
+    }
+
+    /// Return the raw firmware fraction.
+    pub const fn as_fraction(self) -> f32 {
+        self.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BatteryLevel;
+
+    #[test]
+    fn battery_level_preserves_firmware_fraction_above_one() {
+        let level = BatteryLevel::from_fraction(1.1);
+
+        assert_eq!(level.as_fraction(), 1.1);
+    }
+}
