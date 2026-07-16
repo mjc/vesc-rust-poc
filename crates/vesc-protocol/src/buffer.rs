@@ -27,6 +27,16 @@ pub fn append_u32(buffer: &mut [u8], index: &mut usize, value: u32) {
     append_u8(buffer, index, byte0);
 }
 
+/// Decode a signed big-endian 16-bit value using VESC's scaled-float convention.
+#[must_use]
+#[inline(always)]
+pub fn get_float16(buffer: &[u8], scale: f32, index: &mut usize) -> Option<f32> {
+    let end = index.checked_add(2)?;
+    let bytes: [u8; 2] = buffer.get(*index..end)?.try_into().ok()?;
+    *index = end;
+    Some(f32::from(i16::from_be_bytes(bytes)) / scale)
+}
+
 /// Append VESC's automatic 16-bit float representation.
 #[inline(always)]
 pub fn append_float16_auto(buffer: &mut [u8], index: &mut usize, value: f32) {
@@ -70,7 +80,20 @@ pub fn float32_auto_bits(value: f32) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{append_float16_auto, append_float32_auto};
+    use super::{append_float16_auto, append_float32_auto, get_float16};
+
+    #[test]
+    fn float16_decoder_matches_vesc_scaling_and_bounds() {
+        let mut index = 1;
+
+        assert_eq!(
+            get_float16(&[0xff, 0xff, 0x85], 10.0, &mut index),
+            Some(-12.3)
+        );
+        assert_eq!(index, 3);
+        assert_eq!(get_float16(&[0xff, 0xff, 0x85], 10.0, &mut index), None);
+        assert_eq!(index, 3);
+    }
 
     #[test]
     fn float32_auto_preserves_vesc_cutoff() {
