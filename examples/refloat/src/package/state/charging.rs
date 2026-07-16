@@ -11,29 +11,6 @@ use vescpkg_rs::prelude::TimestampTicks;
 use vescpkg_rs::prelude::{BatteryCurrent, BatteryVoltage, Current, Voltage};
 use vescpkg_rs::protocol_buffer::get_float16;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[repr(transparent)]
-struct ChargingScalar(f32);
-
-impl ChargingScalar {
-    #[inline(never)]
-    fn from_wire(hi: u8, lo: u8) -> Self {
-        let mut index = 0;
-        Self(
-            get_float16(&[hi, lo], 10.0, &mut index)
-                .expect("two bytes always contain one VESC float16"),
-        )
-    }
-
-    const fn voltage(self) -> BatteryVoltage {
-        BatteryVoltage::new(Voltage::from_volts(self.0))
-    }
-
-    const fn current(self) -> BatteryCurrent {
-        BatteryCurrent::new(Current::from_amps(self.0))
-    }
-}
-
 pub(super) fn handle_packet(
     payloads: RefloatAllDataPayloads,
     bytes: &[u8],
@@ -55,15 +32,18 @@ pub(super) fn handle_packet(
 
     // C map: `charging_state_request` expects magic 151 plus signed float16
     // voltage/current with scale 10 at `third_party/refloat/src/charging.c:37-63`.
-    let scaled_i16 = |hi, lo| ChargingScalar::from_wire(hi, lo);
+    let scaled_i16 = |hi, lo| {
+        let mut index = 0;
+        get_float16(&[hi, lo], 10.0, &mut index).expect("two bytes always contain one VESC float16")
+    };
     let (voltage, current) = match *charging {
         0 => (
             BatteryVoltage::new(Voltage::ZERO),
             BatteryCurrent::new(Current::ZERO),
         ),
         _ => (
-            scaled_i16(*voltage_hi, *voltage_lo).voltage(),
-            scaled_i16(*current_hi, *current_lo).current(),
+            BatteryVoltage::new(Voltage::from_volts(scaled_i16(*voltage_hi, *voltage_lo))),
+            BatteryCurrent::new(Current::from_amps(scaled_i16(*current_hi, *current_lo))),
         ),
     };
 
