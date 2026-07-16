@@ -3,10 +3,11 @@ use core::hint::spin_loop;
 use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 use crate::{
-    AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, DutyCycle, ElectricalSpeed,
-    FirmwareFaultCode, ImuAngularRate, ImuOrientation, ImuPitch, ImuRoll, ImuYaw, InputVoltage,
-    MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, OdometerMeters,
-    TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
+    AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, DirectionalMotorCurrent,
+    DutyCycle, ElectricalSpeed, FirmwareFaultCode, ImuAngularRate, ImuOrientation, ImuPitch,
+    ImuRoll, ImuYaw, InputVoltage, MosfetTemperature, MotorCurrent, MotorCurrentLimit,
+    MotorTemperature, OdometerMeters, TripDistance, VehicleSpeed, WattHoursCharged,
+    WattHoursDischarged,
 };
 
 // C map: these host replacements model the motor slots declared at
@@ -31,6 +32,7 @@ static BRAKE_CURRENT: AtomicU32 = AtomicU32::new(0);
 static ELECTRICAL_SPEED: AtomicU32 = AtomicU32::new(0);
 static VEHICLE_SPEED: AtomicU32 = AtomicU32::new(0);
 static MOTOR_CURRENT: AtomicU32 = AtomicU32::new(0);
+static DIRECTIONAL_MOTOR_CURRENT: AtomicU32 = AtomicU32::new(0);
 static MOTOR_CURRENT_MAX: AtomicU32 = AtomicU32::new(0);
 static MOTOR_CURRENT_MIN: AtomicU32 = AtomicU32::new(0);
 static BATTERY_CURRENT: AtomicU32 = AtomicU32::new(0);
@@ -105,6 +107,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     ELECTRICAL_SPEED.store(0.0_f32.to_bits(), Ordering::Relaxed);
     VEHICLE_SPEED.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    DIRECTIONAL_MOTOR_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_CURRENT_MAX.store(100.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_CURRENT_MIN.store((-100.0_f32).to_bits(), Ordering::Relaxed);
     BATTERY_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -184,6 +187,10 @@ pub(crate) fn set_runtime_motor(
 pub(crate) fn set_motor_current_limits(max: MotorCurrentLimit, min: MotorCurrentLimit) {
     store(&MOTOR_CURRENT_MAX, max.current().as_amps());
     store(&MOTOR_CURRENT_MIN, -min.current().as_amps());
+}
+
+pub(crate) fn set_directional_motor_current(current: DirectionalMotorCurrent) {
+    store(&DIRECTIONAL_MOTOR_CURRENT, current.current().as_amps());
 }
 
 pub(crate) fn set_distance_abs(distance: TripDistance) {
@@ -363,6 +370,10 @@ pub unsafe fn mc_get_speed() -> f32 {
 
 pub unsafe fn mc_get_tot_current_filtered() -> f32 {
     load(&MOTOR_CURRENT)
+}
+
+pub unsafe fn mc_get_tot_current_directional_filtered() -> f32 {
+    load(&DIRECTIONAL_MOTOR_CURRENT)
 }
 
 pub unsafe fn get_cfg_float(param: i32) -> f32 {

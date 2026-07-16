@@ -187,6 +187,13 @@ impl FirmwareTest {
     }
 
     #[must_use]
+    /// Configure the filtered directional motor current.
+    pub fn with_directional_motor_current(self, current: crate::DirectionalMotorCurrent) -> Self {
+        crate::test_ffi::set_directional_motor_current(current);
+        self
+    }
+
+    #[must_use]
     /// Configure the typed absolute trip distance.
     pub fn with_distance_abs(self, distance: crate::TripDistance) -> Self {
         crate::test_ffi::set_distance_abs(distance);

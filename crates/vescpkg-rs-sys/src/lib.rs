@@ -46,6 +46,7 @@ macro_rules! vesc_if_used_slots {
             MC_GET_RPM => mc_get_rpm,
             MC_GET_SPEED => mc_get_speed,
             MC_GET_TOT_CURRENT_FILTERED => mc_get_tot_current_filtered,
+            MC_GET_TOT_CURRENT_DIRECTIONAL_FILTERED => mc_get_tot_current_directional_filtered,
             MC_GET_TOT_CURRENT_IN_FILTERED => mc_get_tot_current_in_filtered,
             MC_GET_AMP_HOURS => mc_get_amp_hours,
             MC_GET_AMP_HOURS_CHARGED => mc_get_amp_hours_charged,

@@ -578,6 +578,7 @@ mod slots {
     fn_slot!(mc_get_rpm as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_speed as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_tot_current_filtered as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_get_tot_current_directional_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_tot_current_in_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_duty_cycle_now as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_input_voltage_filtered as unsafe extern "C" fn() -> f32);
@@ -1012,6 +1013,19 @@ pub unsafe fn mc_get_speed() -> f32 {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_tot_current_filtered() -> f32 {
     unsafe { slots::mc_get_tot_current_filtered()() }
+}
+
+/// Return direction-adjusted filtered motor current.
+///
+/// Refloat v1.2.1 reads this in `motor_data_update` at
+/// `src/motor_data.c:121`; the VESC ABI slot is declared at
+/// `vesc_pkg_lib/vesc_c_if.h:458`.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn mc_get_tot_current_directional_filtered() -> f32 {
+    unsafe { slots::mc_get_tot_current_directional_filtered()() }
 }
 
 /// Return filtered input/battery current.

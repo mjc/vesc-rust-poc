@@ -12,11 +12,11 @@ use super::{
     lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number, mc_get_amp_hours,
     mc_get_amp_hours_charged, mc_get_battery_level, mc_get_distance_abs, mc_get_duty_cycle_now,
     mc_get_fault, mc_get_input_voltage_filtered, mc_get_odometer, mc_get_rpm, mc_get_speed,
-    mc_get_tot_current_filtered, mc_get_tot_current_in_filtered, mc_get_watt_hours,
-    mc_get_watt_hours_charged, mc_temp_fet_filtered, mc_temp_motor_filtered,
-    vesc_clear_app_data_handler, vesc_mutex_create, vesc_mutex_lock, vesc_mutex_unlock,
-    vesc_send_app_data, vesc_set_app_data_handler, vesc_sleep_us, vesc_system_time_ticks,
-    vesc_thread_set_priority,
+    mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
+    mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
+    mc_temp_fet_filtered, mc_temp_motor_filtered, vesc_clear_app_data_handler, vesc_mutex_create,
+    vesc_mutex_lock, vesc_mutex_unlock, vesc_send_app_data, vesc_set_app_data_handler,
+    vesc_sleep_us, vesc_system_time_ticks, vesc_thread_set_priority,
 };
 
 struct SyncCounter(Cell<usize>);
@@ -140,6 +140,7 @@ static MC_GET_DISTANCE_ABS: SyncCounter = SyncCounter::new();
 static MC_GET_RPM: SyncCounter = SyncCounter::new();
 static MC_GET_SPEED: SyncCounter = SyncCounter::new();
 static MC_GET_TOT_CURRENT_FILTERED: SyncCounter = SyncCounter::new();
+static MC_GET_TOT_CURRENT_DIRECTIONAL_FILTERED: SyncCounter = SyncCounter::new();
 static MC_GET_TOT_CURRENT_IN_FILTERED: SyncCounter = SyncCounter::new();
 static MC_GET_DUTY_CYCLE_NOW: SyncCounter = SyncCounter::new();
 static FOC_GET_ID: SyncCounter = SyncCounter::new();
@@ -190,6 +191,7 @@ fn reset_counters() {
         &MC_GET_RPM,
         &MC_GET_SPEED,
         &MC_GET_TOT_CURRENT_FILTERED,
+        &MC_GET_TOT_CURRENT_DIRECTIONAL_FILTERED,
         &MC_GET_TOT_CURRENT_IN_FILTERED,
         &MC_GET_DUTY_CYCLE_NOW,
         &FOC_GET_ID,
@@ -366,6 +368,11 @@ extern "C" fn stub_mc_get_tot_current_filtered() -> f32 {
     33.5
 }
 
+extern "C" fn stub_mc_get_tot_current_directional_filtered() -> f32 {
+    MC_GET_TOT_CURRENT_DIRECTIONAL_FILTERED.inc();
+    -21.25
+}
+
 extern "C" fn stub_mc_get_tot_current_in_filtered() -> f32 {
     MC_GET_TOT_CURRENT_IN_FILTERED.inc();
     -8.25
@@ -462,6 +469,8 @@ fn populated_table() -> VescIf {
     table.mc_get_rpm = Some(stub_mc_get_rpm);
     table.mc_get_speed = Some(stub_mc_get_speed);
     table.mc_get_tot_current_filtered = Some(stub_mc_get_tot_current_filtered);
+    table.mc_get_tot_current_directional_filtered =
+        Some(stub_mc_get_tot_current_directional_filtered);
     table.mc_get_tot_current_in_filtered = Some(stub_mc_get_tot_current_in_filtered);
     table.mc_get_duty_cycle_now = Some(stub_mc_get_duty_cycle_now);
     table.foc_get_id = Some(stub_foc_get_id);
@@ -629,6 +638,7 @@ fn runtime_motor_helpers_forward_through_mock_table() {
         assert_eq!(mc_get_rpm(), 3210.0);
         assert_eq!(mc_get_speed(), 12.25);
         assert_eq!(mc_get_tot_current_filtered(), 33.5);
+        assert_eq!(mc_get_tot_current_directional_filtered(), -21.25);
         assert_eq!(mc_get_tot_current_in_filtered(), -8.25);
         assert_eq!(mc_get_duty_cycle_now(), -0.42);
         assert_eq!(foc_get_id(), Some(1.5));
@@ -636,6 +646,7 @@ fn runtime_motor_helpers_forward_through_mock_table() {
         assert_eq!(MC_GET_RPM.get(), 1);
         assert_eq!(MC_GET_SPEED.get(), 1);
         assert_eq!(MC_GET_TOT_CURRENT_FILTERED.get(), 1);
+        assert_eq!(MC_GET_TOT_CURRENT_DIRECTIONAL_FILTERED.get(), 1);
         assert_eq!(MC_GET_TOT_CURRENT_IN_FILTERED.get(), 1);
         assert_eq!(MC_GET_DUTY_CYCLE_NOW.get(), 1);
         assert_eq!(FOC_GET_ID.get(), 1);

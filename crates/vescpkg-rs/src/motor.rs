@@ -1,10 +1,10 @@
 //! Motor telemetry helpers built on firmware motor-control table slots.
 
 use crate::types::{
-    AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, CurrentOffDelay, DutyCycle,
-    ElectricalSpeed, FirmwareFaultCode, InputVoltage, MosfetTemperature, MotorCurrent,
-    MotorCurrentLimit, MotorTemperature, TripDistance, VehicleSpeed, WattHoursCharged,
-    WattHoursDischarged,
+    AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, CurrentOffDelay,
+    DirectionalMotorCurrent, DutyCycle, ElectricalSpeed, FirmwareFaultCode, InputVoltage,
+    MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, TripDistance,
+    VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 #[cfg(not(test))]
 use crate::units::{Charge, Current, Distance, Energy, Ratio, Rpm, Speed, Temperature, Voltage};
@@ -34,6 +34,8 @@ pub trait MotorTelemetryBindings {
     /// `src/motor_data.c:120`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:456`.
     fn motor_current(&self) -> MotorCurrent;
+    /// Return filtered motor current with the configured motor direction applied.
+    fn directional_motor_current(&self) -> DirectionalMotorCurrent;
     /// Return the configured positive motor-current limit.
     ///
     /// Refloat v1.2.1 reads `CFG_PARAM_l_current_max` through `get_cfg_float`
@@ -102,6 +104,10 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
 
     fn motor_current(&self) -> MotorCurrent {
         (**self).motor_current()
+    }
+
+    fn directional_motor_current(&self) -> DirectionalMotorCurrent {
+        (**self).directional_motor_current()
     }
 
     fn motor_current_max(&self) -> MotorCurrentLimit {
@@ -255,6 +261,12 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         }))
     }
 
+    fn directional_motor_current(&self) -> DirectionalMotorCurrent {
+        DirectionalMotorCurrent::new(Current::from_amps(unsafe {
+            crate::ffi::mc_get_tot_current_directional_filtered()
+        }))
+    }
+
     fn motor_current_max(&self) -> MotorCurrentLimit {
         MotorCurrentLimit::from_positive_current(Current::from_amps(unsafe {
             crate::ffi::get_cfg_float(CFG_PARAM_L_CURRENT_MAX)
@@ -394,6 +406,8 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn vehicle_speed(&self) -> VehicleSpeed;
     /// Return filtered total motor current.
     fn motor_current(&self) -> MotorCurrent;
+    /// Return filtered motor current with the configured motor direction applied.
+    fn directional_motor_current(&self) -> DirectionalMotorCurrent;
     /// Return the configured positive motor-current limit.
     fn motor_current_max(&self) -> MotorCurrentLimit;
     /// Return the configured braking-current magnitude.
@@ -484,6 +498,11 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
     /// Return filtered total motor current.
     pub fn motor_current(&self) -> MotorCurrent {
         self.bindings.motor_current()
+    }
+
+    /// Return filtered motor current with the configured motor direction applied.
+    pub fn directional_motor_current(&self) -> DirectionalMotorCurrent {
+        self.bindings.directional_motor_current()
     }
 
     /// Return the configured positive motor-current limit.
@@ -582,6 +601,10 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
 
     fn motor_current(&self) -> MotorCurrent {
         self.motor_current()
+    }
+
+    fn directional_motor_current(&self) -> DirectionalMotorCurrent {
+        self.directional_motor_current()
     }
 
     fn motor_current_max(&self) -> MotorCurrentLimit {
