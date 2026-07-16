@@ -7,25 +7,6 @@ use vescpkg_rs::ImuReadSample;
 struct RefloatImuRead;
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct RefloatImuReadSample {
-    sample: ImuReadSample,
-}
-
-#[cfg(any(test, all(not(test), target_arch = "arm")))]
-impl RefloatImuReadSample {
-    const fn new(sample: ImuReadSample) -> Self {
-        Self { sample }
-    }
-
-    fn apply_to(self, state: &mut RefloatPackageState) {
-        // C map: `imu_ref_callback` ignores mag and feeds gyro/accel/dt into
-        // `balance_filter_update` at `third_party/refloat/src/main.c:760-765`.
-        state.update_balance_filter(self.sample);
-    }
-}
-
-#[cfg(any(test, all(not(test), target_arch = "arm")))]
 impl vescpkg_rs::ImuReadHandler for RefloatImuRead {
     type State = RefloatPackageState;
 
@@ -50,7 +31,7 @@ impl vescpkg_rs::ImuReadHandler for RefloatImuRead {
     fn read(state: &mut Self::State, sample: ImuReadSample) {
         // C map: `imu_ref_callback` resolves `Data` through `ARG` and updates
         // its balance filter at `third_party/refloat/src/main.c:759-764`.
-        RefloatImuReadSample::new(sample).apply_to(state);
+        state.update_balance_filter(sample);
     }
 }
 
@@ -62,7 +43,7 @@ pub(super) fn refloat_imu_callback_with_state(
     state: &mut RefloatPackageState,
     sample: ImuReadSample,
 ) {
-    RefloatImuReadSample::new(sample).apply_to(state);
+    state.update_balance_filter(sample);
 }
 
 /// Register Refloat's concrete IMU read handler.
