@@ -760,8 +760,6 @@ mod tests {
         fn runtime_store() -> &'static crate::PackageStateStore<Self> {
             &OWNED_TEST_STATE
         }
-
-        fn stop(&mut self) {}
     }
 
     #[test]

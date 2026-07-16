@@ -11,6 +11,14 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(clippy::missing_safety_doc)]
 
+#[cfg(target_arch = "arm")]
+#[panic_handler]
+fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
+    loop {
+        core::hint::spin_loop();
+    }
+}
+
 #[cfg(any(test, all(not(target_arch = "arm"), feature = "test-support")))]
 extern crate alloc as rust_alloc;
 #[cfg(test)]

@@ -316,7 +316,7 @@ pub trait PackageRuntimeState: Sized + Send + 'static {
     fn runtime_store() -> &'static PackageStateStore<Self>;
 
     /// Stop package-owned resources before the state is freed.
-    fn stop(&mut self);
+    fn stop(&mut self) {}
 }
 
 struct PackageStateBorrow<'a, T> {

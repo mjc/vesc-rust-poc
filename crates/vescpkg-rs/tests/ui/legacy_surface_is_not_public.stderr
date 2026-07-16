@@ -45,7 +45,7 @@ error[E0603]: module `bindings` is private
   |                      ^^^^^^^^ private module
   |
 note: the module `bindings` is defined here
- --> <BASE_DIR>/crates/vescpkg-rs/src/lib.rs:22:0
+ --> <BASE_DIR>/crates/vescpkg-rs/src/lib.rs:30:0
 
 error[E0603]: module `ffi` is private
  --> tests/ui/legacy_surface_is_not_public.rs:2:48
@@ -54,7 +54,7 @@ error[E0603]: module `ffi` is private
   |                                                ^^^ private module
   |
 note: the module `ffi` is defined here
- --> <BASE_DIR>/crates/vescpkg-rs/src/lib.rs:39:0
+ --> <BASE_DIR>/crates/vescpkg-rs/src/lib.rs:47:0
 
 error[E0624]: method `get` is private
   --> tests/ui/legacy_surface_is_not_public.rs:11:43

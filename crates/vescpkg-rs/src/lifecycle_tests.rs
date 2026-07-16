@@ -141,8 +141,6 @@ impl crate::PackageRuntimeState for PairTestState {
     fn runtime_store() -> &'static crate::PackageStateStore<Self> {
         &PAIR_TEST_STATE
     }
-
-    fn stop(&mut self) {}
 }
 
 impl crate::FirmwareThread for PairTestThread {

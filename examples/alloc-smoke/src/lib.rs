@@ -49,8 +49,6 @@ impl vescpkg_rs::PackageRuntimeState for AllocSmokeState {
     fn runtime_store() -> &'static vescpkg_rs::PackageStateStore<Self> {
         &ALLOC_SMOKE_STATE
     }
-
-    fn stop(&mut self) {}
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]

@@ -29,8 +29,6 @@ impl vescpkg_rs::PackageRuntimeState for LoopbackState {
     fn runtime_store() -> &'static vescpkg_rs::PackageStateStore<Self> {
         &LOOPBACK_STATE
     }
-
-    fn stop(&mut self) {}
 }
 
 vescpkg_rs::package_start!(crate::start);

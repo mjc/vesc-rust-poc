@@ -921,8 +921,6 @@ mod tests {
         fn runtime_store() -> &'static crate::PackageStateStore<Self> {
             &THREAD_STATE
         }
-
-        fn stop(&mut self) {}
     }
 
     struct RecordingThread;

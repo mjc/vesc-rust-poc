@@ -748,40 +748,30 @@ mod tests {
         fn runtime_store() -> &'static crate::PackageStateStore<Self> {
             &EXTENSION_REGISTRATION_STATE
         }
-
-        fn stop(&mut self) {}
     }
 
     impl crate::PackageRuntimeState for TestImuState {
         fn runtime_store() -> &'static crate::PackageStateStore<Self> {
             &TEST_IMU_STATE
         }
-
-        fn stop(&mut self) {}
     }
 
     impl crate::PackageRuntimeState for ReloadState {
         fn runtime_store() -> &'static crate::PackageStateStore<Self> {
             &RELOAD_STATE
         }
-
-        fn stop(&mut self) {}
     }
 
     impl crate::PackageRuntimeState for RegistrationState {
         fn runtime_store() -> &'static crate::PackageStateStore<Self> {
             &REGISTRATION_STATE
         }
-
-        fn stop(&mut self) {}
     }
 
     impl crate::PackageRuntimeState for SpawnState {
         fn runtime_store() -> &'static crate::PackageStateStore<Self> {
             &SPAWN_STATE
         }
-
-        fn stop(&mut self) {}
     }
 
     #[repr(align(64))]
@@ -814,8 +804,6 @@ mod tests {
         fn runtime_store() -> &'static crate::PackageStateStore<Self> {
             &FAILED_STATE
         }
-
-        fn stop(&mut self) {}
     }
 
     impl Drop for FailedState {
@@ -1157,8 +1145,6 @@ mod tests {
             fn runtime_store() -> &'static crate::PackageStateStore<Self> {
                 &CONFIG_STATE
             }
-
-            fn stop(&mut self) {}
         }
 
         unsafe impl crate::__macro_support::PackageAppDataCallback for Callback {
