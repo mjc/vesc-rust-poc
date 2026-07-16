@@ -85,7 +85,7 @@ fn mode3_ride_totals_refresh_from_motor_telemetry() {
         AmpHoursCharged::new(Charge::from_amp_hours(0.8)),
         WattHoursDischarged::new(Energy::from_watt_hours(170.0)),
         WattHoursCharged::new(Energy::from_watt_hours(18.5)),
-        BatteryLevel::new(Ratio::from_ratio_const(0.72)),
+        BatteryLevel::from_fraction(1.10),
     );
     let telemetry = bindings.telemetry();
     let mut state = RefloatPackageState::new(sample_all_data_payloads());
@@ -94,7 +94,7 @@ fn mode3_ride_totals_refresh_from_motor_telemetry() {
     assert_eq!(packet.len(), 54);
     assert_eq!(
         &packet[41..54],
-        &[0, 1, 226, 64, 0, 32, 0, 8, 0, 170, 0, 18, 144]
+        &[0, 1, 226, 64, 0, 32, 0, 8, 0, 170, 0, 18, 220]
     );
 }
 
@@ -192,8 +192,8 @@ fn darkride_traction_loss_refreshes_like_refloat_loop() {
     let firmware = FirmwareTest::new().with_runtime_motor(
         ElectricalSpeed::new(Rpm::from_revolutions_per_minute(-3_000.0)),
         VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
-        MotorCurrent::new(Current::from_amps(0.0)),
-        BatteryCurrent::new(Current::from_amps(0.0)),
+        TotalMotorCurrent::new(Current::from_amps(0.0)),
+        InputCurrent::new(Current::from_amps(0.0)),
         DutyCycle::new(SignedRatio::from_ratio_const(0.5)),
     );
     firmware.set_imu_startup_done(true);

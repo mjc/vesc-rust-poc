@@ -2,14 +2,14 @@ use super::RefloatPackageState;
 use crate::domain::{
     RefloatAllDataBasePayload, RefloatAllDataPayloads, RefloatFootpadSample, RefloatFootpadState,
 };
-use vescpkg_rs::prelude::{AdcVoltage, Voltage};
+use vescpkg_rs::prelude::AdcVoltage;
 
 #[inline(always)]
 pub(super) fn refresh(state: &mut RefloatPackageState, adc1: AdcVoltage, adc2: AdcVoltage) {
     // C map: state derives footpad sensor state from raw ADC volts at
     // `third_party/refloat/src/footpad_sensor.c:28-61`.
     let adc1 = adc1.voltage();
-    let adc2 = adc2_zero_floor(adc2.voltage());
+    let adc2 = adc2.voltage();
     let faults = state.serialized_config.faults();
     let sample = RefloatFootpadSample::new(
         adc1,
@@ -35,17 +35,6 @@ pub(super) fn refresh(state: &mut RefloatPackageState, adc1: AdcVoltage, adc2: A
     );
     state.all_data_payloads =
         RefloatAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4());
-}
-
-#[inline(always)]
-fn adc2_zero_floor(adc2: Voltage) -> Voltage {
-    // C map: `footpad_sensor_update` clamps a missing ADC2 read to zero at
-    // `third_party/refloat/src/footpad_sensor.c:28-61`.
-    if adc2.as_volts() < 0.0 {
-        Voltage::from_volts(0.0)
-    } else {
-        adc2
-    }
 }
 
 #[inline(always)]

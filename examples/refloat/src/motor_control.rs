@@ -7,8 +7,8 @@ use crate::config::RefloatParkingBrakeMode;
 use crate::domain::{RefloatMotorCommand, RefloatRunState};
 use vescpkg_rs::MotorOutput;
 use vescpkg_rs::prelude::{
-    Current, CurrentOffDelay, MotorCurrent, Rpm, SYSTEM_TICK_RATE_HZ, SignedRatio, TimestampTicks,
-    VescSeconds,
+    BrakeCurrent, Current, CurrentOffDelay, DutyCycle, MotorCurrent, Rpm, SYSTEM_TICK_RATE_HZ,
+    SignedRatio, TimestampTicks, VescSeconds,
 };
 const CURRENT_OFF_DELAY: CurrentOffDelay = CurrentOffDelay::new(VescSeconds::from_seconds(0.05));
 
@@ -126,11 +126,11 @@ impl RefloatMotorControl {
         } else if self.parking_brake_active && abs_erpm < Rpm::from_revolutions_per_minute(2000.0) {
             // Upstream parking brake applies duty zero below 2000 ERPM at
             // `third_party/refloat/src/motor_control.c:112-114`.
-            motor.set_duty(SignedRatio::from_ratio_const(0.0));
+            motor.set_duty(DutyCycle::new(SignedRatio::from_ratio_const(0.0)));
         } else {
             // Upstream idle fallback applies configured brake current at
             // `third_party/refloat/src/motor_control.c:115-117`.
-            motor.set_brake_current(brake_current);
+            motor.set_brake_current(BrakeCurrent::new(brake_current.current()));
         }
         true
     }
@@ -191,7 +191,7 @@ mod tests {
         // `third_party/refloat/src/motor_control.c:112-114`.
         assert_eq!(motor.keep_alive_count(), 1);
         assert_eq!(motor.duty_command_count(), 1);
-        assert_eq!(motor.commanded_duty().as_ratio(), 0.0);
+        assert_eq!(motor.commanded_duty().ratio().as_ratio(), 0.0);
         assert_eq!(motor.current_command_count(), 0);
         assert_eq!(motor.brake_current_command_count(), 0);
     }

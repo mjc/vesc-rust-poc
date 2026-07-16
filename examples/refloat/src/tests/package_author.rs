@@ -569,7 +569,7 @@ fn package_author_builds_all_data_extension_payloads_without_raw_values() {
         AmpHoursCharged::new(Charge::from_amp_hours(0.8)),
         WattHoursDischarged::new(Energy::from_watt_hours(170.0)),
         WattHoursCharged::new(Energy::from_watt_hours(18.5)),
-        BatteryLevel::new(Ratio::from_ratio_const(0.72)),
+        BatteryLevel::from_fraction(0.72),
     );
     let mode4 = RefloatAllDataMode4Payload::new(
         RefloatRealtimeChargingCurrent::new(BatteryCurrent::new(Current::from_amps(1.2))),
@@ -591,7 +591,7 @@ fn package_author_builds_all_data_extension_payloads_without_raw_values() {
     assert_eq!(mode3.charged_charge().charge().as_amp_hours(), 0.8);
     assert_eq!(mode3.discharged_energy().energy().as_watt_hours(), 170.0);
     assert_eq!(mode3.charged_energy().energy().as_watt_hours(), 18.5);
-    assert_eq!(mode3.battery_level().ratio().as_ratio(), 0.72);
+    assert_eq!(mode3.battery_level().as_fraction(), 0.72);
     assert_eq!(mode4.current().current().current().as_amps(), 1.2);
     assert_eq!(mode4.voltage().voltage().voltage().as_volts(), 82.4);
 }
@@ -724,7 +724,7 @@ fn package_author_encodes_all_data_mode4_response_like_refloat_v1_2_1() {
         AmpHoursCharged::new(Charge::from_amp_hours(0.8)),
         WattHoursDischarged::new(Energy::from_watt_hours(170.0)),
         WattHoursCharged::new(Energy::from_watt_hours(18.5)),
-        BatteryLevel::new(Ratio::from_ratio_const(0.72)),
+        BatteryLevel::from_fraction(0.72),
     );
     let mode4 = RefloatAllDataMode4Payload::new(
         RefloatRealtimeChargingCurrent::new(BatteryCurrent::new(Current::from_amps(1.2))),
@@ -804,7 +804,7 @@ fn package_author_dispatches_all_data_responses_from_typed_request_mode() {
             AmpHoursCharged::new(Charge::from_amp_hours(0.8)),
             WattHoursDischarged::new(Energy::from_watt_hours(170.0)),
             WattHoursCharged::new(Energy::from_watt_hours(18.5)),
-            BatteryLevel::new(Ratio::from_ratio_const(0.72)),
+            BatteryLevel::from_fraction(0.72),
         ),
         RefloatAllDataMode4Payload::new(
             RefloatRealtimeChargingCurrent::new(BatteryCurrent::new(Current::from_amps(1.2))),

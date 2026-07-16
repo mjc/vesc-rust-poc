@@ -115,8 +115,8 @@ fn app_data_ready_pushstart_uses_wide_pitch_gate_like_refloat() {
     let telemetry = FirmwareTest::new().with_runtime_motor(
         ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1200.0)),
         VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
-        MotorCurrent::new(Current::from_amps(0.0)),
-        BatteryCurrent::new(Current::from_amps(0.0)),
+        TotalMotorCurrent::new(Current::from_amps(0.0)),
+        InputCurrent::new(Current::from_amps(0.0)),
         DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
     );
     configure_ready_imu(&telemetry, AngleRadians::ZERO);
@@ -158,8 +158,8 @@ fn app_data_ready_pushstart_reverse_stop_blocks_negative_erpm_like_refloat() {
     let telemetry = FirmwareTest::new().with_runtime_motor(
         ElectricalSpeed::new(Rpm::from_revolutions_per_minute(-1200.0)),
         VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
-        MotorCurrent::new(Current::from_amps(0.0)),
-        BatteryCurrent::new(Current::from_amps(0.0)),
+        TotalMotorCurrent::new(Current::from_amps(0.0)),
+        InputCurrent::new(Current::from_amps(0.0)),
         DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
     );
     configure_ready_imu(&telemetry, AngleRadians::ZERO);

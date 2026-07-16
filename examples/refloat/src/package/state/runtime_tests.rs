@@ -319,8 +319,8 @@ fn motor_payload_refreshes_like_refloat_motor_data_update() {
         .with_runtime_motor(
             ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1234.0)),
             VehicleSpeed::new(Speed::from_meters_per_second(5.5)),
-            MotorCurrent::new(Current::from_amps(12.25)),
-            BatteryCurrent::new(Current::from_amps(4.0)),
+            TotalMotorCurrent::new(Current::from_amps(12.25)),
+            InputCurrent::new(Current::from_amps(4.0)),
             DutyCycle::new(SignedRatio::from_ratio_const(-0.375)),
         )
         .with_directional_motor_current(DirectionalMotorCurrent::new(Current::from_amps(-6.75)));
@@ -365,7 +365,7 @@ fn foc_id_current_refreshes_like_refloat_all_data() {
     // compact all-data at `third_party/refloat/src/main.c:1364-1368`.
     let now = TimestampTicks::from_ticks(0);
     let telemetry =
-        FirmwareTest::new().with_foc_id_current(Some(MotorCurrent::new(Current::from_amps(-4.0))));
+        FirmwareTest::new().with_foc_id_current(Some(DCurrent::new(Current::from_amps(-4.0))));
     let imu = telemetry.imu();
     let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
     state.refresh_runtime_state(telemetry.telemetry(), imu, now);

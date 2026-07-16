@@ -27,7 +27,7 @@ use vescpkg_rs::prelude::{
     AmpHoursCharged, AmpHoursDischarged, AngleDegrees, AngleRadians, BatteryCurrent, BatteryLevel,
     BatteryVoltage, Charge, Current, DirectionalMotorCurrent, Distance, DutyCycle, ElectricalSpeed,
     Energy, FirmwareFaultWireCode, ImuPitch, ImuRoll, MosfetTemperature, MotorCurrent,
-    MotorTemperature, OdometerMeters, Ratio, Rpm, SignedRatio, Speed, Temperature, TripDistance,
+    MotorTemperature, OdometerMeters, Rpm, SignedRatio, Speed, Temperature, TripDistance,
     VehicleSpeed, Voltage, WattHoursCharged, WattHoursDischarged,
 };
 
@@ -633,7 +633,7 @@ impl RefloatAllDataPayloads {
                 AmpHoursCharged::new(Charge::from_amp_hours(0.0)),
                 WattHoursDischarged::new(Energy::from_watt_hours(0.0)),
                 WattHoursCharged::new(Energy::from_watt_hours(0.0)),
-                BatteryLevel::new(Ratio::from_ratio_const(0.0)),
+                BatteryLevel::from_fraction(0.0),
             ),
             RefloatAllDataMode4Payload::new(
                 RefloatRealtimeChargingCurrent::new(zero_battery_current),

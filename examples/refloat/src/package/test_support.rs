@@ -94,7 +94,7 @@ pub(super) fn sample_all_data_payloads_with_ride_state(
             AmpHoursCharged::new(Charge::from_amp_hours(0.8)),
             WattHoursDischarged::new(Energy::from_watt_hours(170.0)),
             WattHoursCharged::new(Energy::from_watt_hours(18.5)),
-            BatteryLevel::new(Ratio::from_ratio_const(0.72)),
+            BatteryLevel::from_fraction(0.72),
         ),
         RefloatAllDataMode4Payload::new(
             RefloatRealtimeChargingCurrent::new(BatteryCurrent::new(Current::from_amps(1.2))),

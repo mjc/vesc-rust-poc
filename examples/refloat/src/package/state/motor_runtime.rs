@@ -6,7 +6,7 @@ use crate::domain::{
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{
     BatteryCurrent, BatteryVoltage, Current, DirectionalMotorCurrent, DutyCycle, Frequency,
-    SampleRate, SignedRatio,
+    MotorCurrent, SampleRate, SignedRatio,
 };
 
 const CURRENT_FILTER_Q: f32 = 0.707;
@@ -99,7 +99,7 @@ pub(super) fn refresh(state: &mut RefloatPackageState, telemetry: &impl MotorTel
         electrical_speed,
         telemetry.vehicle_speed(),
         RefloatRealtimeMotorCurrents::new(
-            telemetry.motor_current(),
+            MotorCurrent::new(telemetry.motor_current().current()),
             directional_current,
             filtered_current,
             BatteryCurrent::new(Current::from_amps(
@@ -114,10 +114,11 @@ pub(super) fn refresh(state: &mut RefloatPackageState, telemetry: &impl MotorTel
         )),
         // Upstream compact all-data reads optional `VESC_IF->foc_get_id` at
         // `third_party/refloat/src/main.c:1364-1368` and writes 222 when the slot is absent.
-        telemetry.foc_id_current().map_or(
-            RefloatFocIdCurrent::unavailable(),
-            RefloatFocIdCurrent::measured,
-        ),
+        telemetry
+            .foc_id_current()
+            .map_or(RefloatFocIdCurrent::unavailable(), |current| {
+                RefloatFocIdCurrent::measured(MotorCurrent::new(current.current()))
+            }),
     );
     let base = RefloatAllDataBasePayload::new(
         base.balance_current(),

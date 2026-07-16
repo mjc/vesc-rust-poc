@@ -383,8 +383,8 @@ fn app_data_normal_algorithm_trace_matches_refloat_loop_order() {
     let telemetry = FirmwareTest::new().with_runtime_motor(
         ElectricalSpeed::new(Rpm::from_revolutions_per_minute(0.0)),
         VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
-        MotorCurrent::new(Current::from_amps(0.0)),
-        BatteryCurrent::new(Current::from_amps(0.0)),
+        TotalMotorCurrent::new(Current::from_amps(0.0)),
+        InputCurrent::new(Current::from_amps(0.0)),
         DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
     );
     telemetry.set_imu_startup_done(true);

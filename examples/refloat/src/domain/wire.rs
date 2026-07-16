@@ -83,7 +83,7 @@ pub(super) fn refloat_append_all_data_mode3(
     refloat_push_u8(
         buffer,
         ind,
-        refloat_scaled_u8(mode3.battery_level().ratio().as_ratio().min(1.25), 200.0),
+        refloat_scaled_u8(mode3.battery_level().as_fraction().min(1.25), 200.0),
     );
 }
 

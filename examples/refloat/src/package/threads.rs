@@ -100,8 +100,8 @@ pub(crate) fn tick_refloat_main_thread_with(
     telemetry: &impl MotorTelemetry,
     imu: &impl Imu,
     motor: &impl MotorOutput,
-    footpad_adc1: AdcVoltage,
-    footpad_adc2: AdcVoltage,
+    footpad_adc1: Option<AdcVoltage>,
+    footpad_adc2: Option<AdcVoltage>,
     system_time_ticks: TimestampTicks,
 ) -> u32 {
     // C map: `refloat_thd` refreshes runtime inputs, executes state/control
@@ -110,8 +110,8 @@ pub(crate) fn tick_refloat_main_thread_with(
     state.refresh_main_loop_runtime_state(
         telemetry,
         imu,
-        footpad_adc1,
-        footpad_adc2,
+        refloat_adc_or_zero(footpad_adc1),
+        refloat_adc_or_zero(footpad_adc2),
         system_time_ticks,
     );
     let run_state = state
@@ -123,6 +123,11 @@ pub(crate) fn tick_refloat_main_thread_with(
     state.apply_motor_control(motor, run_state, system_time_ticks);
 
     state.configured_loop_time_us()
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+fn refloat_adc_or_zero(adc: Option<AdcVoltage>) -> AdcVoltage {
+    adc.unwrap_or(AdcVoltage::new(vescpkg_rs::Voltage::ZERO))
 }
 
 /// Run Refloat's source-backed auxiliary thread scheduler shell.
@@ -239,8 +244,8 @@ mod tests {
         let telemetry = FirmwareTest::new().with_runtime_motor(
             ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1234.0)),
             VehicleSpeed::new(Speed::from_meters_per_second(5.5)),
-            MotorCurrent::new(Current::from_amps(12.25)),
-            BatteryCurrent::new(Current::from_amps(6.5)),
+            TotalMotorCurrent::new(Current::from_amps(12.25)),
+            InputCurrent::new(Current::from_amps(6.5)),
             DutyCycle::new(SignedRatio::from_ratio_const(0.375)),
         );
         telemetry.set_imu_startup_done(true);
@@ -301,8 +306,8 @@ mod tests {
                 telemetry.telemetry(),
                 imu,
                 bindings,
-                AdcVoltage::new(Voltage::from_volts(2.5)),
-                AdcVoltage::new(Voltage::from_volts(0.0)),
+                Some(AdcVoltage::new(Voltage::from_volts(2.5))),
+                Some(AdcVoltage::new(Voltage::from_volts(0.0))),
                 TimestampTicks::from_ticks(0),
             )
         });
@@ -315,6 +320,14 @@ mod tests {
         assert_eq!(
             state.all_data_payloads().base().footpad().state(),
             RefloatFootpadState::Left,
+        );
+    }
+
+    #[test]
+    fn missing_firmware_adc_becomes_zero_at_the_refloat_boundary() {
+        assert_eq!(
+            super::refloat_adc_or_zero(None),
+            AdcVoltage::new(Voltage::ZERO)
         );
     }
 

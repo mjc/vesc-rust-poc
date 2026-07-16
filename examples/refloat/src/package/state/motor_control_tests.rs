@@ -45,8 +45,8 @@ fn running_limits_normal_current_from_motor_config_like_refloat_loop() {
             .with_runtime_motor(
                 ElectricalSpeed::new(Rpm::from_revolutions_per_minute(0.0)),
                 VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
-                MotorCurrent::new(Current::from_amps(motor_current)),
-                BatteryCurrent::new(Current::from_amps(0.0)),
+                TotalMotorCurrent::new(Current::from_amps(motor_current)),
+                InputCurrent::new(Current::from_amps(0.0)),
                 DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
             )
             .with_motor_current_limits(
