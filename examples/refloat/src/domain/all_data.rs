@@ -6,6 +6,7 @@
 use super::realtime::{
     RefloatRealtimeBalanceCurrent, RefloatRealtimeBalancePitch, RefloatRealtimeBoosterCurrent,
     RefloatRealtimeChargingCurrent, RefloatRealtimeChargingVoltage,
+    RefloatRealtimeFilteredMotorCurrent, RefloatRealtimeMotorCurrents,
     RefloatRealtimeMotorTemperatures, RefloatRealtimeRuntimeSetpoint,
     RefloatRealtimeRuntimeSetpoints,
 };
@@ -24,10 +25,10 @@ use super::{
 };
 use vescpkg_rs::prelude::{
     AmpHoursCharged, AmpHoursDischarged, AngleDegrees, AngleRadians, BatteryCurrent, BatteryLevel,
-    BatteryVoltage, Charge, Current, Distance, DutyCycle, ElectricalSpeed, Energy,
-    FirmwareFaultCompatCode, ImuPitch, ImuRoll, MosfetTemperature, MotorCurrent, MotorTemperature,
-    OdometerMeters, Ratio, Rpm, SignedRatio, Speed, Temperature, TripDistance, VehicleSpeed,
-    Voltage, WattHoursCharged, WattHoursDischarged,
+    BatteryVoltage, Charge, Current, DirectionalMotorCurrent, Distance, DutyCycle, ElectricalSpeed,
+    Energy, FirmwareFaultCompatCode, ImuPitch, ImuRoll, MosfetTemperature, MotorCurrent,
+    MotorTemperature, OdometerMeters, Ratio, Rpm, SignedRatio, Speed, Temperature, TripDistance,
+    VehicleSpeed, Voltage, WattHoursCharged, WattHoursDischarged,
 };
 
 /// Fixed-size Refloat all-data response bytes.
@@ -168,8 +169,7 @@ pub struct RefloatAllDataMotorPayload {
     battery_voltage: BatteryVoltage,
     electrical_speed: ElectricalSpeed,
     vehicle_speed: VehicleSpeed,
-    motor_current: MotorCurrent,
-    battery_current: BatteryCurrent,
+    currents: RefloatRealtimeMotorCurrents,
     duty_cycle: DutyCycle,
     foc_id_current: RefloatFocIdCurrent,
 }
@@ -180,8 +180,7 @@ impl RefloatAllDataMotorPayload {
         battery_voltage: BatteryVoltage,
         electrical_speed: ElectricalSpeed,
         vehicle_speed: VehicleSpeed,
-        motor_current: MotorCurrent,
-        battery_current: BatteryCurrent,
+        currents: RefloatRealtimeMotorCurrents,
         duty_cycle: DutyCycle,
         foc_id_current: RefloatFocIdCurrent,
     ) -> Self {
@@ -189,8 +188,7 @@ impl RefloatAllDataMotorPayload {
             battery_voltage,
             electrical_speed,
             vehicle_speed,
-            motor_current,
-            battery_current,
+            currents,
             duty_cycle,
             foc_id_current,
         }
@@ -207,8 +205,7 @@ impl RefloatAllDataMotorPayload {
             battery_voltage,
             electrical_speed: self.electrical_speed,
             vehicle_speed: self.vehicle_speed,
-            motor_current: self.motor_current,
-            battery_current: self.battery_current,
+            currents: self.currents,
             duty_cycle: self.duty_cycle,
             foc_id_current: self.foc_id_current,
         }
@@ -226,12 +223,27 @@ impl RefloatAllDataMotorPayload {
 
     /// Return motor current.
     pub const fn motor_current(self) -> MotorCurrent {
-        self.motor_current
+        self.currents.motor()
+    }
+
+    /// Return grouped Refloat motor currents.
+    pub const fn currents(self) -> RefloatRealtimeMotorCurrents {
+        self.currents
+    }
+
+    /// Return directional motor current.
+    pub const fn directional_motor_current(self) -> DirectionalMotorCurrent {
+        self.currents.directional()
+    }
+
+    /// Return Refloat's filtered directional motor current.
+    pub const fn filtered_motor_current(self) -> RefloatRealtimeFilteredMotorCurrent {
+        self.currents.filtered()
     }
 
     /// Return battery current.
     pub const fn battery_current(self) -> BatteryCurrent {
-        self.battery_current
+        self.currents.battery()
     }
 
     /// Return duty cycle.
@@ -595,8 +607,14 @@ impl RefloatAllDataPayloads {
                     zero_voltage,
                     ElectricalSpeed::new(Rpm::from_revolutions_per_minute(0.0)),
                     VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
-                    zero_motor_current,
-                    zero_battery_current,
+                    RefloatRealtimeMotorCurrents::new(
+                        zero_motor_current,
+                        DirectionalMotorCurrent::new(zero_motor_current.current()),
+                        RefloatRealtimeFilteredMotorCurrent::new(DirectionalMotorCurrent::new(
+                            zero_motor_current.current(),
+                        )),
+                        zero_battery_current,
+                    ),
                     DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
                     RefloatFocIdCurrent::unavailable(),
                 ),

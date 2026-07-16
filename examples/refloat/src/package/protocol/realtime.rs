@@ -111,14 +111,11 @@ fn encode_refloat_get_realtime_data_response(
         refloat_degrees(attitude.pitch().angle()),
     );
     // Upstream reads `d->motor.filt_current`, `d->atr.accel_diff`, and
-    // `d->motor.dir_current` at `third_party/refloat/src/main.c:1298-1306`. The current Rust
-    // app-data state does not yet contain those separate runtime fields, so
-    // this is explicitly a containment fallback until the shared `Data`
-    // runtime is ported from `third_party/refloat/src/main.c:2419-2461`.
+    // `d->motor.dir_current` at `third_party/refloat/src/main.c:1298-1306`.
     refloat_realtime_push_float32_auto(
         &mut bytes,
         &mut ind,
-        motor.motor_current().current().as_amps(),
+        motor.filtered_motor_current().current().current().as_amps(),
     );
     refloat_realtime_push_float32_auto(&mut bytes, &mut ind, 0.0);
     if matches!(ride_state.charging(), RefloatChargingState::Charging) {
@@ -141,7 +138,7 @@ fn encode_refloat_get_realtime_data_response(
         refloat_realtime_push_float32_auto(
             &mut bytes,
             &mut ind,
-            motor.motor_current().current().as_amps(),
+            motor.directional_motor_current().current().as_amps(),
         );
     }
     refloat_realtime_push_float32_auto(&mut bytes, &mut ind, 0.0);
@@ -265,9 +262,11 @@ fn realtime_value(payloads: &RefloatAllDataPayloads, item: RefloatRealtimeDataIt
         }
         RefloatRealtimeDataItem::MotorCurrent => motor.motor_current().current().as_amps(),
         RefloatRealtimeDataItem::MotorDirectionalCurrent => {
-            motor.motor_current().current().as_amps()
+            motor.directional_motor_current().current().as_amps()
         }
-        RefloatRealtimeDataItem::MotorFilteredCurrent => motor.motor_current().current().as_amps(),
+        RefloatRealtimeDataItem::MotorFilteredCurrent => {
+            motor.filtered_motor_current().current().current().as_amps()
+        }
         RefloatRealtimeDataItem::MotorDutyCycle => motor.duty_cycle().ratio().as_ratio(),
         RefloatRealtimeDataItem::MotorBatteryVoltage => {
             motor.battery_voltage().voltage().as_volts()

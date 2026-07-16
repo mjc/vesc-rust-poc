@@ -68,8 +68,14 @@ pub(super) fn sample_all_data_payloads_with_ride_state(
                 BatteryVoltage::new(Voltage::from_volts(72.0)),
                 ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1200.0)),
                 VehicleSpeed::new(Speed::from_meters_per_second(3.0)),
-                MotorCurrent::new(Current::from_amps(5.0)),
-                BatteryCurrent::new(Current::from_amps(-2.0)),
+                RefloatRealtimeMotorCurrents::new(
+                    MotorCurrent::new(Current::from_amps(5.0)),
+                    DirectionalMotorCurrent::new(Current::from_amps(5.0)),
+                    RefloatRealtimeFilteredMotorCurrent::new(DirectionalMotorCurrent::new(
+                        Current::from_amps(5.0),
+                    )),
+                    BatteryCurrent::new(Current::from_amps(-2.0)),
+                ),
                 DutyCycle::new(SignedRatio::from_ratio_const(-0.25)),
                 RefloatFocIdCurrent::measured(MotorCurrent::new(Current::from_amps(2.0))),
             ),

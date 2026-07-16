@@ -315,13 +315,15 @@ fn ready_normal_charging_does_not_engage_like_refloat_can_engage() {
 #[test]
 fn motor_payload_refreshes_like_refloat_motor_data_update() {
     let app_data = TimestampTicks::from_ticks(0);
-    let telemetry = FirmwareTest::new().with_runtime_motor(
-        ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1234.0)),
-        VehicleSpeed::new(Speed::from_meters_per_second(5.5)),
-        MotorCurrent::new(Current::from_amps(12.25)),
-        BatteryCurrent::new(Current::from_amps(4.0)),
-        DutyCycle::new(SignedRatio::from_ratio_const(0.375)),
-    );
+    let telemetry = FirmwareTest::new()
+        .with_runtime_motor(
+            ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1234.0)),
+            VehicleSpeed::new(Speed::from_meters_per_second(5.5)),
+            MotorCurrent::new(Current::from_amps(12.25)),
+            BatteryCurrent::new(Current::from_amps(4.0)),
+            DutyCycle::new(SignedRatio::from_ratio_const(-0.375)),
+        )
+        .with_directional_motor_current(DirectionalMotorCurrent::new(Current::from_amps(-6.75)));
     let imu = telemetry.imu();
     let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
 
@@ -344,8 +346,17 @@ fn motor_payload_refreshes_like_refloat_motor_data_update() {
     );
     assert_eq!(motor.vehicle_speed().speed().as_meters_per_second(), 5.5);
     assert_eq!(motor.motor_current().current().as_amps(), 12.25);
+    assert_eq!(motor.directional_motor_current().current().as_amps(), -6.75,);
+    let normalized_frequency = 5.0 / 832.0;
+    let k = vescpkg_rs::tan(core::f32::consts::PI * normalized_frequency);
+    let first_filtered_sample = -6.75 * k * k / (1.0 + k / 0.707 + k * k);
+    assert!(
+        (motor.filtered_motor_current().current().current().as_amps() - first_filtered_sample)
+            .abs()
+            < 0.0001
+    );
     assert_eq!(motor.battery_current().current().as_amps(), 0.04);
-    assert_eq!(motor.duty_cycle().ratio().as_ratio(), 0.375);
+    assert_eq!(motor.duty_cycle().ratio().as_ratio(), 0.00375);
 }
 
 #[test]

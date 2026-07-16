@@ -13,7 +13,7 @@ use vescpkg_rs::prelude::{
 use vescpkg_rs::{
     CustomConfigAngleCurrentGainField, CustomConfigAngleField, CustomConfigAngularVelocityField,
     CustomConfigDurationField, CustomConfigEditor, CustomConfigElectricalSpeedField,
-    CustomConfigEnumField, CustomConfigFlagField, CustomConfigImage,
+    CustomConfigEnumField, CustomConfigFlagField, CustomConfigFrequencyField, CustomConfigImage,
     CustomConfigIntegralCurrentGainField, CustomConfigMahonyPitchGainField,
     CustomConfigMahonyRollGainField, CustomConfigMotorCurrentField, CustomConfigPidScaleField,
     CustomConfigRateCurrentGainField, CustomConfigResetField, CustomConfigSampleRateField,
@@ -61,6 +61,9 @@ impl core::ops::Deref for RefloatConfigImage {
 }
 
 impl RefloatConfigImage {
+    const ATR_FILTER_FIELD: CustomConfigFrequencyField =
+        CustomConfigFrequencyField::new(165, 100.0).expect("valid Refloat config field");
+
     // Generated `hardware.leds.mode` is the first field in the final hardware
     // block at `third_party/refloat/src/conf/settings.xml:4049-4064`.
     const HARDWARE_LED_MODE_FIELD: CustomConfigEnumField<RefloatHardwareLedMode> =
@@ -143,6 +146,10 @@ impl RefloatConfigImage {
             brkbooster_current: balance.brake_booster_current(),
             hertz: self.startup().sample_rate(),
         }
+    }
+
+    pub(crate) fn motor_current_filter_frequency(&self) -> vescpkg_rs::Frequency {
+        Self::ATR_FILTER_FIELD.read(self)
     }
 
     pub(crate) fn editor(&mut self) -> RefloatConfigEditor<'_> {

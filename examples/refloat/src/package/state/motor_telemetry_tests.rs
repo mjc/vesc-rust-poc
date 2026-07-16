@@ -1,11 +1,11 @@
 use super::RefloatPackageState;
 use crate::domain::{
     REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataAttitude, RefloatAllDataBasePayload,
-    RefloatAllDataMode, RefloatAllDataPayloads, RefloatAllDataStatus, RefloatAppDataCommand,
-    RefloatDarkRideState, RefloatFootpadSample, RefloatFootpadState, RefloatMode,
-    RefloatRealtimeBalanceCurrent, RefloatRealtimeBalancePitch, RefloatRealtimeBoosterCurrent,
-    RefloatRealtimeRuntimeSetpoint, RefloatRealtimeRuntimeSetpoints, RefloatRunState,
-    RefloatWheelSlipState,
+    RefloatAllDataMode, RefloatAllDataMotorPayload, RefloatAllDataPayloads, RefloatAllDataStatus,
+    RefloatAppDataCommand, RefloatDarkRideState, RefloatFootpadSample, RefloatFootpadState,
+    RefloatMode, RefloatRealtimeBalanceCurrent, RefloatRealtimeBalancePitch,
+    RefloatRealtimeBoosterCurrent, RefloatRealtimeRuntimeSetpoint, RefloatRealtimeRuntimeSetpoints,
+    RefloatRunState, RefloatWheelSlipState,
 };
 use crate::package::test_support::{
     sample_all_data_payloads, sample_all_data_payloads_with_ride_state,
@@ -208,6 +208,15 @@ fn darkride_traction_loss_refreshes_like_refloat_loop() {
     let payloads =
         sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Normal);
     let base = payloads.base();
+    let source_motor = base.motor();
+    let motor = RefloatAllDataMotorPayload::new(
+        source_motor.battery_voltage(),
+        source_motor.electrical_speed(),
+        source_motor.vehicle_speed(),
+        source_motor.currents(),
+        DutyCycle::new(SignedRatio::from_ratio_const(0.5)),
+        source_motor.foc_id_current(),
+    );
     let ride_state = base
         .status()
         .ride_state()
@@ -233,7 +242,7 @@ fn darkride_traction_loss_refreshes_like_refloat_loop() {
             no_footpads,
             setpoints,
             RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
-            base.motor(),
+            motor,
         ),
         payloads.mode2(),
         payloads.mode3(),

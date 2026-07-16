@@ -497,8 +497,14 @@ fn package_author_builds_all_data_base_payload_without_raw_values() {
         BatteryVoltage::new(Voltage::from_volts(73.5)),
         ElectricalSpeed::new(Rpm::from_revolutions_per_minute(2420.0)),
         VehicleSpeed::new(Speed::from_meters_per_second(3.4)),
-        MotorCurrent::new(Current::from_amps(8.25)),
-        BatteryCurrent::new(Current::from_amps(3.75)),
+        RefloatRealtimeMotorCurrents::new(
+            MotorCurrent::new(Current::from_amps(8.25)),
+            DirectionalMotorCurrent::new(Current::from_amps(8.25)),
+            RefloatRealtimeFilteredMotorCurrent::new(DirectionalMotorCurrent::new(
+                Current::from_amps(8.25),
+            )),
+            BatteryCurrent::new(Current::from_amps(3.75)),
+        ),
         DutyCycle::new(SignedRatio::from_ratio_const(0.34)),
         RefloatFocIdCurrent::measured(MotorCurrent::new(Current::from_amps(1.5))),
     );
@@ -626,8 +632,14 @@ fn package_author_encodes_all_data_base_response_like_refloat_v1_2_1() {
             BatteryVoltage::new(Voltage::from_volts(72.0)),
             ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1200.0)),
             VehicleSpeed::new(Speed::from_meters_per_second(3.0)),
-            MotorCurrent::new(Current::from_amps(5.0)),
-            BatteryCurrent::new(Current::from_amps(-2.0)),
+            RefloatRealtimeMotorCurrents::new(
+                MotorCurrent::new(Current::from_amps(5.0)),
+                DirectionalMotorCurrent::new(Current::from_amps(5.0)),
+                RefloatRealtimeFilteredMotorCurrent::new(DirectionalMotorCurrent::new(
+                    Current::from_amps(5.0),
+                )),
+                BatteryCurrent::new(Current::from_amps(-2.0)),
+            ),
             DutyCycle::new(SignedRatio::from_ratio_const(-0.25)),
             RefloatFocIdCurrent::measured(MotorCurrent::new(Current::from_amps(2.0))),
         ),
@@ -686,8 +698,14 @@ fn package_author_encodes_all_data_mode4_response_like_refloat_v1_2_1() {
             BatteryVoltage::new(Voltage::from_volts(72.0)),
             ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1200.0)),
             VehicleSpeed::new(Speed::from_meters_per_second(3.0)),
-            MotorCurrent::new(Current::from_amps(5.0)),
-            BatteryCurrent::new(Current::from_amps(-2.0)),
+            RefloatRealtimeMotorCurrents::new(
+                MotorCurrent::new(Current::from_amps(5.0)),
+                DirectionalMotorCurrent::new(Current::from_amps(5.0)),
+                RefloatRealtimeFilteredMotorCurrent::new(DirectionalMotorCurrent::new(
+                    Current::from_amps(5.0),
+                )),
+                BatteryCurrent::new(Current::from_amps(-2.0)),
+            ),
             DutyCycle::new(SignedRatio::from_ratio_const(-0.25)),
             RefloatFocIdCurrent::measured(MotorCurrent::new(Current::from_amps(2.0))),
         ),
@@ -760,8 +778,14 @@ fn package_author_dispatches_all_data_responses_from_typed_request_mode() {
                 BatteryVoltage::new(Voltage::from_volts(72.0)),
                 ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1200.0)),
                 VehicleSpeed::new(Speed::from_meters_per_second(3.0)),
-                MotorCurrent::new(Current::from_amps(5.0)),
-                BatteryCurrent::new(Current::from_amps(-2.0)),
+                RefloatRealtimeMotorCurrents::new(
+                    MotorCurrent::new(Current::from_amps(5.0)),
+                    DirectionalMotorCurrent::new(Current::from_amps(5.0)),
+                    RefloatRealtimeFilteredMotorCurrent::new(DirectionalMotorCurrent::new(
+                        Current::from_amps(5.0),
+                    )),
+                    BatteryCurrent::new(Current::from_amps(-2.0)),
+                ),
                 DutyCycle::new(SignedRatio::from_ratio_const(-0.25)),
                 RefloatFocIdCurrent::measured(MotorCurrent::new(Current::from_amps(2.0))),
             ),

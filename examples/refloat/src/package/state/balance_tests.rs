@@ -8,7 +8,8 @@ use crate::domain::{
     RefloatAllDataMotorPayload, RefloatAllDataPayloads, RefloatAllDataStatus,
     RefloatAppDataCommand, RefloatFocIdCurrent, RefloatFootpadSample, RefloatFootpadState,
     RefloatMode, RefloatRealtimeBalanceCurrent, RefloatRealtimeBalancePitch,
-    RefloatRealtimeBoosterCurrent, RefloatRealtimeRuntimeSetpoint, RefloatRealtimeRuntimeSetpoints,
+    RefloatRealtimeBoosterCurrent, RefloatRealtimeFilteredMotorCurrent,
+    RefloatRealtimeMotorCurrents, RefloatRealtimeRuntimeSetpoint, RefloatRealtimeRuntimeSetpoints,
     RefloatRunState, RefloatSetpointAdjustment, RefloatWheelSlipState,
 };
 use vescpkg_rs::prelude::*;
@@ -412,8 +413,14 @@ fn app_data_normal_algorithm_trace_matches_refloat_loop_order() {
             BatteryVoltage::new(Voltage::from_volts(72.0)),
             ElectricalSpeed::new(Rpm::from_revolutions_per_minute(0.0)),
             VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
-            MotorCurrent::new(Current::from_amps(0.0)),
-            BatteryCurrent::new(Current::from_amps(0.0)),
+            RefloatRealtimeMotorCurrents::new(
+                MotorCurrent::new(Current::from_amps(0.0)),
+                DirectionalMotorCurrent::new(Current::from_amps(0.0)),
+                RefloatRealtimeFilteredMotorCurrent::new(DirectionalMotorCurrent::new(
+                    Current::from_amps(0.0),
+                )),
+                BatteryCurrent::new(Current::from_amps(0.0)),
+            ),
             DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
             RefloatFocIdCurrent::measured(MotorCurrent::new(Current::from_amps(0.0))),
         ),
