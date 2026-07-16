@@ -14,7 +14,7 @@ use crate::domain::{RefloatDarkRideState, RefloatMode, RefloatRealtimeRuntimeSet
 #[cfg(test)]
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngularVelocity, Current, ElectricalSpeed, ImuRoll,
-    IntegralCurrentGain, MotorCurrent, PidScale, RateCurrentGain, SampleRate,
+    IntegralCurrentGain, MotorCurrent, MotorCurrentLimit, PidScale, RateCurrentGain, SampleRate,
 };
 
 impl LoopState {
@@ -65,6 +65,10 @@ mod tests {
         MotorCurrent::new(current)
     }
 
+    fn motor_current_limit(current: Current) -> MotorCurrentLimit {
+        MotorCurrentLimit::new(current)
+    }
+
     fn electrical_speed(speed: Rpm) -> ElectricalSpeed {
         ElectricalSpeed::new(speed)
     }
@@ -84,7 +88,7 @@ mod tests {
             ki: IntegralCurrentGain::new(0.0),
             kp_brake: PidScale::new(1.0),
             kp2_brake: PidScale::new(1.0),
-            ki_limit: motor_current(Current::from_amps(0.0)),
+            ki_limit: motor_current_limit(Current::from_amps(0.0)),
             booster_angle: AngleDegrees::from_degrees(0.0),
             booster_ramp: AngleDegrees::from_degrees(0.0),
             booster_current: motor_current(Current::from_amps(0.0)),
@@ -108,8 +112,8 @@ mod tests {
             gyro_yaw: AngularVelocity::from_degrees_per_second(0.0),
             motor_erpm: electrical_speed(Rpm::from_revolutions_per_minute(0.0)),
             motor_current: motor_current(Current::from_amps(1.0)),
-            motor_current_max: motor_current(Current::from_amps(100.0)),
-            motor_current_min: motor_current(Current::from_amps(100.0)),
+            motor_current_max: motor_current_limit(Current::from_amps(100.0)),
+            motor_current_min: motor_current_limit(Current::from_amps(100.0)),
             mode: RefloatMode::Normal,
             darkride: RefloatDarkRideState::Upright,
             traction_control: false,
@@ -207,8 +211,8 @@ mod tests {
                     LoopInput {
                         setpoint: board_setpoint,
                         motor_current: measured_current,
-                        motor_current_max: motor_current(Current::from_amps(3.0)),
-                        motor_current_min: current_limit,
+                        motor_current_max: motor_current_limit(Current::from_amps(3.0)),
+                        motor_current_min: motor_current_limit(current_limit.current()),
                         ..base_input()
                     },
                     base_state(),
@@ -233,8 +237,8 @@ mod tests {
             LoopInput {
                 setpoint: setpoint(AngleDegrees::from_degrees(-10.0)),
                 motor_current: motor_current(Current::from_amps(-1.0)),
-                motor_current_max: motor_current(Current::from_amps(100.0)),
-                motor_current_min: motor_current(Current::from_amps(-2.0)),
+                motor_current_max: motor_current_limit(Current::from_amps(100.0)),
+                motor_current_min: motor_current_limit(Current::from_amps(-2.0)),
                 ..base_input()
             },
             base_state(),
@@ -247,6 +251,24 @@ mod tests {
             output.requested_current,
             motor_current(Current::from_amps(-0.4)),
         );
+    }
+
+    #[test]
+    fn balance_loop_unit_clamps_to_a_zero_firmware_current_limit() {
+        let output = advance_loop(
+            LoopConfig {
+                kp: AngleCurrentGain::new(10.0),
+                ..base_config()
+            },
+            LoopInput {
+                setpoint: setpoint(AngleDegrees::from_degrees(10.0)),
+                motor_current_max: motor_current_limit(Current::ZERO),
+                ..base_input()
+            },
+            base_state(),
+        );
+
+        assert_eq!(output.requested_current.current(), Current::ZERO);
     }
 
     #[test]
@@ -310,8 +332,8 @@ mod tests {
             LoopInput {
                 setpoint: setpoint(AngleDegrees::from_degrees(3.0)),
                 motor_current: motor_current(Current::from_amps(1.0)),
-                motor_current_max: motor_current(Current::from_amps(3.0)),
-                motor_current_min: motor_current(Current::from_amps(2.0)),
+                motor_current_max: motor_current_limit(Current::from_amps(3.0)),
+                motor_current_min: motor_current_limit(Current::from_amps(2.0)),
                 ..base_input()
             },
             LoopState {

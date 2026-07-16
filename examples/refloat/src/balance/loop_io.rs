@@ -1,7 +1,7 @@
 use crate::domain::{RefloatDarkRideState, RefloatMode, RefloatRealtimeRuntimeSetpoint};
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngularVelocity, Current, ElectricalSpeed, ImuRoll,
-    IntegralCurrentGain, MotorCurrent, PidScale, RateCurrentGain, SampleRate,
+    IntegralCurrentGain, MotorCurrent, MotorCurrentLimit, PidScale, RateCurrentGain, SampleRate,
 };
 
 /// Config inputs consumed by one Refloat RUNNING balance-current step.
@@ -17,7 +17,7 @@ pub(crate) struct LoopConfig {
     pub(crate) ki: IntegralCurrentGain,
     pub(crate) kp_brake: PidScale,
     pub(crate) kp2_brake: PidScale,
-    pub(crate) ki_limit: MotorCurrent,
+    pub(crate) ki_limit: MotorCurrentLimit,
     pub(crate) booster_angle: AngleDegrees,
     pub(crate) booster_ramp: AngleDegrees,
     pub(crate) booster_current: MotorCurrent,
@@ -43,8 +43,8 @@ pub(crate) struct LoopInput {
     pub(crate) gyro_yaw: AngularVelocity,
     pub(crate) motor_erpm: ElectricalSpeed,
     pub(crate) motor_current: MotorCurrent,
-    pub(crate) motor_current_max: MotorCurrent,
-    pub(crate) motor_current_min: MotorCurrent,
+    pub(crate) motor_current_max: MotorCurrentLimit,
+    pub(crate) motor_current_min: MotorCurrentLimit,
     pub(crate) mode: RefloatMode,
     pub(crate) darkride: RefloatDarkRideState,
     pub(crate) traction_control: bool,

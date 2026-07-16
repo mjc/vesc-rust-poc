@@ -2,55 +2,13 @@ use super::booster::Branch;
 use super::loop_io::LoopInput;
 use super::loop_io::LoopState;
 use crate::domain::{RefloatDarkRideState, RefloatMode};
-use vescpkg_rs::prelude::{Current, MotorCurrent, SampleRate};
+use vescpkg_rs::prelude::{Current, MotorCurrent, MotorCurrentLimit, SampleRate};
 
 // C map: upstream chooses these scalar current limits and ramp values inside
 // `third_party/refloat/src/main.c:924-954`.
 const HANDTEST_CURRENT_LIMIT_AMPS: f32 = 7.0;
 const FLYWHEEL_CURRENT_LIMIT_AMPS: f32 = 40.0;
 const SOFTSTART_CURRENT_RAMP_AMPS_PER_SECOND: f32 = 100.0;
-
-/// Positive magnitude used to clamp Refloat RUNNING balance current.
-///
-/// Source map: upstream chooses a scalar `current_limit` at
-/// `third_party/refloat/src/main.c:932-940`, then clamps with
-/// `fabsf(new_current) > current_limit` at `third_party/refloat/src/main.c:941-942`.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-#[repr(transparent)]
-pub(super) struct LimitMagnitude(Current);
-
-impl LimitMagnitude {
-    #[inline(always)]
-    pub(super) fn from_motor_current(limit: MotorCurrent) -> Self {
-        // C map: `third_party/refloat/src/main.c:934-940` selects the active
-        // motor limit as a signed value and we keep only its magnitude here.
-        Self(limit.current().abs())
-    }
-
-    #[inline(always)]
-    fn from_amps(amps: f32) -> Self {
-        // C map: upstream hardcodes 7A and 40A mode limits at
-        // `third_party/refloat/src/main.c:934-940`.
-        Self(Current::from_amps(amps))
-    }
-
-    #[inline(always)]
-    fn is_enabled(self) -> bool {
-        self.0.is_positive()
-    }
-
-    #[inline(always)]
-    pub(super) fn clamp(self, current: MotorCurrent) -> MotorCurrent {
-        let requested = current.current();
-        // C map: `third_party/refloat/src/main.c:941-942` treats the limit as
-        // a positive magnitude and preserves command sign.
-        if self.is_enabled() && requested.abs() > self.0 {
-            MotorCurrent::new(self.0 * requested.signum())
-        } else {
-            current
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(transparent)]
@@ -68,10 +26,10 @@ impl PitchBasedDemand {
     fn with_softstart(
         self,
         softstart_pid_limit: MotorCurrent,
-        motor_current_max: MotorCurrent,
+        motor_current_max: MotorCurrentLimit,
         hertz: SampleRate,
     ) -> PitchBasedCurrent {
-        if softstart_pid_limit < motor_current_max {
+        if softstart_pid_limit.current() < motor_current_max.current() {
             let pitch_based = self.0.current();
             PitchBasedCurrent {
                 // C map: `third_party/refloat/src/main.c:927-929` clamps only
@@ -109,7 +67,7 @@ impl PitchBasedCurrent {
         rate_p: MotorCurrent,
         booster: MotorCurrent,
         softstart_pid_limit: MotorCurrent,
-        motor_current_max: MotorCurrent,
+        motor_current_max: MotorCurrentLimit,
         hertz: SampleRate,
     ) -> Self {
         PitchBasedDemand::from_terms(rate_p, booster).with_softstart(
@@ -133,7 +91,7 @@ impl RequestedCurrent {
     }
 
     #[inline(always)]
-    pub(super) fn clamped_to(self, limit: LimitMagnitude) -> Self {
+    pub(super) fn clamped_to(self, limit: MotorCurrentLimit) -> Self {
         // C map: `third_party/refloat/src/main.c:941-942` clamps the requested
         // balance current to the selected magnitude while preserving sign.
         Self(limit.clamp(self.0))
@@ -167,16 +125,18 @@ impl RequestedCurrent {
 
 impl LoopInput {
     #[inline(always)]
-    pub(super) fn current_limit(self) -> LimitMagnitude {
+    pub(super) fn current_limit(self) -> MotorCurrentLimit {
         let braking = Branch::from_motor_current(self.motor_current).is_braking();
 
         match self.mode {
-            RefloatMode::HandTest => LimitMagnitude::from_amps(HANDTEST_CURRENT_LIMIT_AMPS),
-            RefloatMode::Flywheel => LimitMagnitude::from_amps(FLYWHEEL_CURRENT_LIMIT_AMPS),
-            RefloatMode::Normal if braking => {
-                LimitMagnitude::from_motor_current(self.motor_current_min)
+            RefloatMode::HandTest => {
+                MotorCurrentLimit::new(Current::from_amps(HANDTEST_CURRENT_LIMIT_AMPS))
             }
-            RefloatMode::Normal => LimitMagnitude::from_motor_current(self.motor_current_max),
+            RefloatMode::Flywheel => {
+                MotorCurrentLimit::new(Current::from_amps(FLYWHEEL_CURRENT_LIMIT_AMPS))
+            }
+            RefloatMode::Normal if braking => self.motor_current_min,
+            RefloatMode::Normal => self.motor_current_max,
         }
     }
 }

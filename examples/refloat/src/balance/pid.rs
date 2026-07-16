@@ -1,8 +1,10 @@
-use super::current::{LimitMagnitude, PitchBasedCurrent, RequestedCurrent};
+use super::current::{PitchBasedCurrent, RequestedCurrent};
 use super::loop_io::{LoopConfig, LoopInput, LoopState};
 use crate::domain::{RefloatDarkRideState, RefloatRealtimeRuntimeSetpoint};
 use vescpkg_rs::prelude::SampleRate;
-use vescpkg_rs::prelude::{AngleDegrees, AngularVelocity, ElectricalSpeed, ImuRoll, MotorCurrent};
+use vescpkg_rs::prelude::{
+    AngleDegrees, AngularVelocity, ElectricalSpeed, ImuRoll, MotorCurrent, MotorCurrentLimit,
+};
 use vescpkg_rs::{AngleCurrentGain, IntegralCurrentGain, PidScale, RateCurrentGain, Rpm};
 
 /// Board setpoint error used by Refloat PID P/I terms.
@@ -37,12 +39,12 @@ impl SetpointError {
         self,
         integral: MotorCurrent,
         ki: IntegralCurrentGain,
-        limit: MotorCurrent,
+        limit: MotorCurrentLimit,
     ) -> MotorCurrent {
         // C map: `third_party/refloat/src/pid.c:40-46` integrates `p * ki`, then
         // clamps by `ki_limit` while preserving sign.
         let next = integral + self.angle() * ki;
-        LimitMagnitude::from_motor_current(limit).clamp(next)
+        limit.clamp(next)
     }
 
     #[inline(always)]
@@ -301,7 +303,7 @@ impl Currents {
         self,
         booster_current: MotorCurrent,
         softstart_pid_limit: MotorCurrent,
-        motor_current_max: MotorCurrent,
+        motor_current_max: MotorCurrentLimit,
         hertz: SampleRate,
     ) -> PitchBasedCurrent {
         PitchBasedCurrent::from_rate_and_booster(

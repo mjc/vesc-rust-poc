@@ -7,8 +7,8 @@ use crate::balance::LoopConfig;
 use vescpkg_rs::CustomConfigVoltageField;
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngularVelocity, ElectricalSpeed, IntegralCurrentGain,
-    MahonyPitchGain, MahonyRollGain, MotorCurrent, PidScale, RateCurrentGain, SampleRate,
-    VescSeconds,
+    MahonyPitchGain, MahonyRollGain, MotorCurrent, MotorCurrentLimit, PidScale, RateCurrentGain,
+    SampleRate, VescSeconds,
 };
 use vescpkg_rs::{
     CustomConfigAngleCurrentGainField, CustomConfigAngleField, CustomConfigAngularVelocityField,
@@ -627,8 +627,8 @@ impl RefloatBalanceConfig<'_> {
         Self::KP2_BRAKE_FIELD.read(self.0)
     }
 
-    pub(crate) fn ki_limit(self) -> MotorCurrent {
-        Self::KI_LIMIT_FIELD.read(self.0)
+    pub(crate) fn ki_limit(self) -> MotorCurrentLimit {
+        MotorCurrentLimit::new(Self::KI_LIMIT_FIELD.read(self.0).current())
     }
 
     pub(crate) fn booster_angle(self) -> AngleDegrees {
