@@ -94,14 +94,11 @@ pub trait ImuReadCallback {
 /// Typed IMU sample handler for package-owned state.
 ///
 /// VESC package callbacks recover package state through `ARG(PROG_ADDR)` at
-/// `third_party/vesc_pkg_lib/vesc_c_if.h:697-700`; package code only chooses
-/// the typed state source and handles typed samples.
+/// `third_party/vesc_pkg_lib/vesc_c_if.h:697-700`; the generated callback
+/// shares the package's runtime state and package code only handles typed samples.
 pub trait ImuReadHandler {
     /// Package state installed during startup.
-    type State: Send + 'static;
-
-    /// Package state access shared with the package's other firmware callbacks.
-    fn state_source() -> crate::PackageStateAccess<'static, Self::State>;
+    type State: crate::PackageRuntimeState;
 
     /// Handle one typed hardware IMU sample.
     fn read(state: &mut Self::State, sample: ImuReadSample);
@@ -110,6 +107,20 @@ pub trait ImuReadHandler {
 /// Concrete package-local IMU callback generated for a typed handler.
 #[doc(hidden)]
 pub unsafe trait PackageImuReadCallback: ImuReadHandler {
+    /// Return state access rooted in this package's loader identity.
+    #[doc(hidden)]
+    #[cfg(target_arch = "arm")]
+    fn state_source() -> crate::PackageStateAccess<'static, Self::State>;
+
+    /// Return host-test state access rooted in the package runtime store.
+    #[doc(hidden)]
+    #[cfg(not(target_arch = "arm"))]
+    fn state_source() -> crate::PackageStateAccess<'static, Self::State> {
+        crate::PackageStateAccess::runtime(
+            <Self::State as crate::PackageRuntimeState>::runtime_store(),
+        )
+    }
+
     /// Return the callback's package-local function address.
     #[doc(hidden)]
     fn image_address() -> usize;
@@ -129,6 +140,26 @@ macro_rules! firmware_imu_read_callback {
         $crate::__vescpkg_image_offset!($name);
 
         unsafe impl $crate::__macro_support::PackageImuReadCallback for $handler {
+            #[cfg(target_arch = "arm")]
+            #[inline(always)]
+            fn state_source() -> $crate::PackageStateAccess<'static, Self::State> {
+                unsafe fn package_state_ptr()
+                -> Option<core::ptr::NonNull<<$handler as $crate::ImuReadHandler>::State>> {
+                    unsafe {
+                        $crate::__macro_support::__firmware_package_state_ptr::<
+                            <$handler as $crate::ImuReadHandler>::State,
+                        >($crate::firmware_package_program_address!($name))
+                    }
+                }
+
+                unsafe {
+                    $crate::__macro_support::__package_state_access(
+                        <<$handler as $crate::ImuReadHandler>::State as $crate::PackageRuntimeState>::runtime_store(),
+                        package_state_ptr,
+                    )
+                }
+            }
+
             #[inline(always)]
             fn image_address() -> usize {
                 $name as *const () as usize
@@ -153,12 +184,12 @@ fn dispatch_imu_read<T: ImuReadHandler>(
 
 impl<T> ImuReadCallback for T
 where
-    T: ImuReadHandler,
+    T: PackageImuReadCallback,
 {
     #[inline(always)]
     fn read(sample: ImuReadSample) {
         #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
-        dispatch_imu_read::<T>(T::state_source(), sample);
+        dispatch_imu_read::<T>(<T as PackageImuReadCallback>::state_source(), sample);
         #[cfg(all(not(test), not(feature = "test-support"), not(target_arch = "arm")))]
         let _ = sample;
     }
@@ -355,7 +386,7 @@ impl<B: ImuBindings> Imu for ImuApi<B> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ImuReadCallback, ImuReadHandler, imu_read_callback};
+    use super::{ImuReadCallback, ImuReadHandler, PackageImuReadCallback, imu_read_callback};
     use crate::types::{
         ImuAcceleration, ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ, ImuAngularRate,
         ImuAngularRatePitch, ImuAngularRateRoll, ImuAngularRateYaw, ImuReadSample, ImuSamplePeriod,
@@ -391,16 +422,24 @@ mod tests {
         NonNull::new(LOADER_STATE.load(Ordering::Acquire))
     }
 
+    impl crate::PackageRuntimeState for State {
+        fn runtime_store() -> &'static crate::PackageStateStore<Self> {
+            &RUNTIME_STATE
+        }
+    }
+
     impl ImuReadHandler for RuntimeImuRead {
         type State = State;
-
-        fn state_source() -> crate::PackageStateAccess<'static, Self::State> {
-            crate::PackageStateAccess::runtime(&RUNTIME_STATE)
-        }
 
         fn read(state: &mut Self::State, _sample: ImuReadSample) {
             state.samples += 1;
             OBSERVED_SAMPLES.store(state.samples, Ordering::SeqCst);
+        }
+    }
+
+    unsafe impl PackageImuReadCallback for RuntimeImuRead {
+        fn image_address() -> usize {
+            0
         }
     }
 
@@ -409,6 +448,12 @@ mod tests {
     impl ImuReadHandler for LoaderImuRead {
         type State = State;
 
+        fn read(state: &mut Self::State, _sample: ImuReadSample) {
+            state.samples += 1;
+        }
+    }
+
+    unsafe impl PackageImuReadCallback for LoaderImuRead {
         fn state_source() -> crate::PackageStateAccess<'static, Self::State> {
             // C map: generated package callbacks use `ARG(PROG_ADDR)` from
             // `third_party/vesc_pkg_lib/vesc_c_if.h:697-700` as this fallback.
@@ -417,8 +462,8 @@ mod tests {
             }
         }
 
-        fn read(state: &mut Self::State, _sample: ImuReadSample) {
-            state.samples += 1;
+        fn image_address() -> usize {
+            0
         }
     }
 

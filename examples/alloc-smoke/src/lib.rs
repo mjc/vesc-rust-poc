@@ -55,10 +55,6 @@ impl vescpkg_rs::PackageRuntimeState for AllocSmokeState {
 impl StatefulAppDataCallback for AllocSmokeAppData {
     type State = AllocSmokeState;
 
-    fn runtime_state() -> &'static vescpkg_rs::PackageStateStore<Self::State> {
-        &ALLOC_SMOKE_STATE
-    }
-
     fn handle(_state: &mut Self::State, packet: AppDataPacket<'_>) {
         let firmware = Firmware::new();
         let app_data = firmware.app_data();

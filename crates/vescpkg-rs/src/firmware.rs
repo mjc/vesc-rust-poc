@@ -82,10 +82,7 @@ pub trait AppDataCallback {
 /// App-data behavior backed by package state recovered from firmware.
 pub trait StatefulAppDataCallback {
     /// Package state installed by startup.
-    type State: Send + 'static;
-
-    /// Runtime state shared with package callbacks.
-    fn runtime_state() -> &'static crate::PackageStateStore<Self::State>;
+    type State: crate::PackageRuntimeState;
 
     /// Handle one firmware app-data packet with package state.
     fn handle(state: &mut Self::State, packet: AppDataPacket<'_>);
@@ -167,9 +164,6 @@ macro_rules! firmware_app_data_callback {
 #[macro_export]
 macro_rules! firmware_stateful_app_data_callback {
     ($name:ident, $callback:ty) => {
-        $crate::firmware_stateful_app_data_callback!($name, $callback, package_state_source);
-    };
-    ($name:ident, $callback:ty, $state_source_name:ident) => {
         #[cfg(all(not(test), target_arch = "arm"))]
         #[inline(never)]
         unsafe fn package_state_ptr()
@@ -182,24 +176,14 @@ macro_rules! firmware_stateful_app_data_callback {
         }
 
         #[cfg(all(not(test), target_arch = "arm"))]
-        #[inline(always)]
-        pub(crate) fn $state_source_name(
-            runtime: &'static $crate::PackageStateStore<
-                <$callback as $crate::StatefulAppDataCallback>::State,
-            >,
-        ) -> $crate::PackageStateAccess<
-            'static,
-            <$callback as $crate::StatefulAppDataCallback>::State,
-        > {
-            unsafe { $crate::__macro_support::__package_state_access(runtime, package_state_ptr) }
-        }
-
-        #[cfg(all(not(test), target_arch = "arm"))]
         impl $crate::AppDataCallback for $callback {
             fn handle(packet: $crate::AppDataPacket<'_>) {
-                let source = $state_source_name(
-                    <$callback as $crate::StatefulAppDataCallback>::runtime_state(),
-                );
+                let source = unsafe {
+                    $crate::__macro_support::__package_state_access(
+                        <<$callback as $crate::StatefulAppDataCallback>::State as $crate::PackageRuntimeState>::runtime_store(),
+                        package_state_ptr,
+                    )
+                };
                 let _ = source.with_mut(|state| {
                     <$callback as $crate::StatefulAppDataCallback>::handle(state, packet);
                 });
@@ -286,13 +270,10 @@ unsafe fn custom_config_payload<'a>(buffer: *mut u8, len: usize) -> Option<Confi
     unsafe { borrowed_slice(buffer.cast_const(), len) }.map(ConfigBytes::new)
 }
 
-/// Custom-config behavior backed by a reusable package state source.
-pub trait SourceCustomConfigCallback<const LEN: usize> {
+/// Custom-config behavior backed by package runtime state.
+pub trait StatefulCustomConfigCallback<const LEN: usize> {
     /// Package state installed by startup.
-    type State: Send + 'static;
-
-    /// Return the state source used by this callback family.
-    fn state_source() -> crate::PackageStateAccess<'static, Self::State>;
+    type State: crate::PackageRuntimeState;
 
     /// Return the static serialized default config.
     fn default_config() -> ConfigBytes<'static>;
@@ -313,8 +294,22 @@ pub trait SourceCustomConfigCallback<const LEN: usize> {
 /// [`crate::firmware_stateful_custom_config_callbacks`].
 #[doc(hidden)]
 pub unsafe trait PackageCustomConfigCallback<const LEN: usize>:
-    SourceCustomConfigCallback<LEN> + Sized
+    StatefulCustomConfigCallback<LEN> + Sized
 {
+    /// Return state access rooted in this package's loader identity.
+    #[doc(hidden)]
+    #[cfg(target_arch = "arm")]
+    fn state_source() -> crate::PackageStateAccess<'static, Self::State>;
+
+    /// Return host-test state access rooted in the package runtime store.
+    #[doc(hidden)]
+    #[cfg(not(target_arch = "arm"))]
+    fn state_source() -> crate::PackageStateAccess<'static, Self::State> {
+        crate::PackageStateAccess::runtime(
+            <Self::State as crate::PackageRuntimeState>::runtime_store(),
+        )
+    }
+
     /// Return package-local get, set, and XML callback addresses.
     #[doc(hidden)]
     fn image_addresses() -> (usize, usize, usize);
@@ -345,7 +340,7 @@ pub unsafe extern "C" fn stateful_custom_config_get<T, const LEN: usize>(
     is_default: bool,
 ) -> c_int
 where
-    T: SourceCustomConfigCallback<LEN>,
+    T: PackageCustomConfigCallback<LEN>,
 {
     let Some(mut buffer) = (unsafe { CustomConfigGetBuffer::new(buffer, LEN) }) else {
         return 0;
@@ -366,7 +361,7 @@ where
 /// `buffer` must point to `LEN` readable bytes for the duration of this call.
 pub unsafe extern "C" fn stateful_custom_config_set<T, const LEN: usize>(buffer: *mut u8) -> bool
 where
-    T: SourceCustomConfigCallback<LEN>,
+    T: PackageCustomConfigCallback<LEN>,
 {
     let Some(payload) = (unsafe { custom_config_payload(buffer, LEN) }) else {
         return false;
@@ -401,7 +396,7 @@ pub unsafe extern "C" fn stateful_custom_config_xml<T, const LEN: usize>(
     buffer: *mut *mut u8,
 ) -> c_int
 where
-    T: SourceCustomConfigCallback<LEN>,
+    T: PackageCustomConfigCallback<LEN>,
 {
     let Some(buffer) = CustomConfigXmlOut::new(buffer) else {
         return 0;
@@ -513,6 +508,33 @@ macro_rules! firmware_stateful_custom_config_callbacks {
         $crate::__vescpkg_image_offset!($xml_name);
 
         unsafe impl $crate::__macro_support::PackageCustomConfigCallback<$len> for $callback {
+            #[cfg(target_arch = "arm")]
+            #[inline(always)]
+            fn state_source() -> $crate::PackageStateAccess<
+                'static,
+                <$callback as $crate::StatefulCustomConfigCallback<$len>>::State,
+            > {
+                unsafe fn package_state_ptr()
+                -> Option<
+                    core::ptr::NonNull<
+                        <$callback as $crate::StatefulCustomConfigCallback<$len>>::State,
+                    >,
+                > {
+                    unsafe {
+                        $crate::__macro_support::__firmware_package_state_ptr::<
+                            <$callback as $crate::StatefulCustomConfigCallback<$len>>::State,
+                        >($crate::firmware_package_program_address!($get_name))
+                    }
+                }
+
+                unsafe {
+                    $crate::__macro_support::__package_state_access(
+                        <<$callback as $crate::StatefulCustomConfigCallback<$len>>::State as $crate::PackageRuntimeState>::runtime_store(),
+                        package_state_ptr,
+                    )
+                }
+            }
+
             #[inline(always)]
             fn image_addresses() -> (usize, usize, usize) {
                 (
@@ -601,7 +623,6 @@ unsafe fn mutable_bytes<'a>(data: *mut u8, len: usize) -> Option<MutablePacket<'
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::PackageStateAccess;
     use std::boxed::Box;
 
     #[test]
@@ -858,16 +879,14 @@ mod tests {
 
         static RUNTIME: PackageStateStore<State> = PackageStateStore::new();
 
-        unsafe fn no_state() -> Option<NonNull<State>> {
-            None
+        impl crate::PackageRuntimeState for State {
+            fn runtime_store() -> &'static PackageStateStore<Self> {
+                &RUNTIME
+            }
         }
 
-        impl SourceCustomConfigCallback<3> for TestCustomConfig {
+        impl StatefulCustomConfigCallback<3> for TestCustomConfig {
             type State = State;
-
-            fn state_source() -> PackageStateAccess<'static, Self::State> {
-                unsafe { crate::__macro_support::__package_state_access(&RUNTIME, no_state) }
-            }
 
             fn default_config() -> ConfigBytes<'static> {
                 ConfigBytes::new(b"abc")
@@ -883,6 +902,12 @@ mod tests {
 
             fn config_xml() -> ConfigXml<'static> {
                 ConfigXml::new(b"<x/>")
+            }
+        }
+
+        unsafe impl PackageCustomConfigCallback<3> for TestCustomConfig {
+            fn image_addresses() -> (usize, usize, usize) {
+                (0, 0, 0)
             }
         }
 
@@ -930,12 +955,14 @@ mod tests {
 
         static SLOT: PackageStateStore<State> = PackageStateStore::new();
 
-        impl SourceCustomConfigCallback<5> for TestCustomConfig {
-            type State = State;
-
-            fn state_source() -> PackageStateAccess<'static, Self::State> {
-                PackageStateAccess::runtime(&SLOT)
+        impl crate::PackageRuntimeState for State {
+            fn runtime_store() -> &'static PackageStateStore<Self> {
+                &SLOT
             }
+        }
+
+        impl StatefulCustomConfigCallback<5> for TestCustomConfig {
+            type State = State;
 
             fn default_config() -> ConfigBytes<'static> {
                 ConfigBytes::new(&[1, 2, 3, 4, 0])
@@ -957,6 +984,12 @@ mod tests {
 
             fn config_xml() -> ConfigXml<'static> {
                 ConfigXml::new(b"<typed/>")
+            }
+        }
+
+        unsafe impl PackageCustomConfigCallback<5> for TestCustomConfig {
+            fn image_addresses() -> (usize, usize, usize) {
+                (0, 0, 0)
             }
         }
 
@@ -1000,7 +1033,7 @@ mod tests {
     }
 
     #[test]
-    fn source_custom_config_callback_validates_loader_state_identity() {
+    fn stateful_custom_config_callback_validates_loader_state_identity() {
         use crate::types::CustomConfigImage;
         use crate::{PackageStateAccess, PackageStateStore};
         use core::ptr::NonNull;
@@ -1020,12 +1053,14 @@ mod tests {
             NonNull::new(FALLBACK.load(Ordering::Acquire))
         }
 
-        impl SourceCustomConfigCallback<5> for TestCustomConfig {
-            type State = State;
-
-            fn state_source() -> PackageStateAccess<'static, Self::State> {
-                unsafe { crate::__macro_support::__package_state_access(&RUNTIME, fallback_state) }
+        impl crate::PackageRuntimeState for State {
+            fn runtime_store() -> &'static PackageStateStore<Self> {
+                &RUNTIME
             }
+        }
+
+        impl StatefulCustomConfigCallback<5> for TestCustomConfig {
+            type State = State;
 
             fn default_config() -> ConfigBytes<'static> {
                 ConfigBytes::new(&[1, 2, 3, 4, 0])
@@ -1047,6 +1082,16 @@ mod tests {
 
             fn config_xml() -> ConfigXml<'static> {
                 ConfigXml::new(b"<source/>")
+            }
+        }
+
+        unsafe impl PackageCustomConfigCallback<5> for TestCustomConfig {
+            fn state_source() -> PackageStateAccess<'static, Self::State> {
+                unsafe { crate::__macro_support::__package_state_access(&RUNTIME, fallback_state) }
+            }
+
+            fn image_addresses() -> (usize, usize, usize) {
+                (0, 0, 0)
             }
         }
 

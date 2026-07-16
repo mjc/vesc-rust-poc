@@ -15,5 +15,5 @@ help: a similar name exists in the module
 help: a similar name exists in the module
   |
 2 -     PackageAppDataCallback, PackageCustomConfigCallback, PackageImuReadCallback,
-2 +     PackageAppDataCallback, SourceCustomConfigCallback, PackageImuReadCallback,
+2 +     PackageAppDataCallback, StatefulCustomConfigCallback, PackageImuReadCallback,
   |

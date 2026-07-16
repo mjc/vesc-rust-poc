@@ -743,6 +743,7 @@ mod tests {
     struct ReloadState;
     struct SpawnState;
     struct TestImuState;
+    struct WrongImuState;
 
     impl crate::PackageRuntimeState for ExtensionRegistrationState {
         fn runtime_store() -> &'static crate::PackageStateStore<Self> {
@@ -753,6 +754,12 @@ mod tests {
     impl crate::PackageRuntimeState for TestImuState {
         fn runtime_store() -> &'static crate::PackageStateStore<Self> {
             &TEST_IMU_STATE
+        }
+    }
+
+    impl crate::PackageRuntimeState for WrongImuState {
+        fn runtime_store() -> &'static crate::PackageStateStore<Self> {
+            unreachable!("registration rejects the mismatched type before callback dispatch")
         }
     }
 
@@ -821,10 +828,6 @@ mod tests {
     impl crate::ImuReadHandler for TestPackageImuRead {
         type State = TestImuState;
 
-        fn state_source() -> crate::PackageStateAccess<'static, Self::State> {
-            crate::PackageStateAccess::runtime(&TEST_IMU_STATE)
-        }
-
         fn read(_state: &mut Self::State, _sample: crate::ImuReadSample) {}
     }
 
@@ -835,11 +838,7 @@ mod tests {
     }
 
     impl crate::ImuReadHandler for WrongPackageImuRead {
-        type State = ();
-
-        fn state_source() -> crate::PackageStateAccess<'static, Self::State> {
-            unreachable!("registration rejects the mismatched type before callback dispatch")
-        }
+        type State = WrongImuState;
 
         fn read(_state: &mut Self::State, _sample: crate::ImuReadSample) {}
     }
@@ -1157,12 +1156,8 @@ mod tests {
             }
         }
 
-        impl crate::SourceCustomConfigCallback<1> for Config {
+        impl crate::StatefulCustomConfigCallback<1> for Config {
             type State = ConfigState;
-
-            fn state_source() -> crate::PackageStateAccess<'static, Self::State> {
-                crate::PackageStateAccess::runtime(&CONFIG_STATE)
-            }
 
             fn default_config() -> crate::ConfigBytes<'static> {
                 crate::ConfigBytes::new(&[0])
@@ -1243,16 +1238,20 @@ mod tests {
     #[test]
     fn package_start_rejects_custom_config_larger_than_the_firmware_buffer() {
         struct Config;
+        struct ConfigState;
 
-        static CONFIG_STATE: crate::PackageStateStore<()> = crate::PackageStateStore::new();
+        static CONFIG_STATE: crate::PackageStateStore<ConfigState> =
+            crate::PackageStateStore::new();
         static CONFIG: [u8; 511] = [0; 511];
 
-        impl crate::SourceCustomConfigCallback<511> for Config {
-            type State = ();
-
-            fn state_source() -> crate::PackageStateAccess<'static, Self::State> {
-                crate::PackageStateAccess::runtime(&CONFIG_STATE)
+        impl crate::PackageRuntimeState for ConfigState {
+            fn runtime_store() -> &'static crate::PackageStateStore<Self> {
+                &CONFIG_STATE
             }
+        }
+
+        impl crate::StatefulCustomConfigCallback<511> for Config {
+            type State = ConfigState;
 
             fn default_config() -> crate::ConfigBytes<'static> {
                 crate::ConfigBytes::new(&CONFIG)
@@ -1425,16 +1424,19 @@ mod tests {
 
     #[test]
     fn package_start_rejects_an_extension_for_a_different_runtime_state() {
+        struct WrongState;
         struct WrongExtension;
 
-        static WRONG_STATE: crate::PackageStateStore<()> = crate::PackageStateStore::new();
+        static WRONG_STATE: crate::PackageStateStore<WrongState> = crate::PackageStateStore::new();
 
-        impl crate::StatefulLbmExtension for WrongExtension {
-            type State = ();
-
-            fn runtime_state() -> &'static crate::PackageStateStore<Self::State> {
+        impl crate::PackageRuntimeState for WrongState {
+            fn runtime_store() -> &'static crate::PackageStateStore<Self> {
                 &WRONG_STATE
             }
+        }
+
+        impl crate::StatefulLbmExtension for WrongExtension {
+            type State = WrongState;
 
             fn call(_state: &mut Self::State, _args: crate::LispArgs<'_>) -> crate::LispValue {
                 unreachable!("registration rejects the mismatched extension")

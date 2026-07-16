@@ -8,10 +8,6 @@ struct LoopbackAppData;
 impl StatefulAppDataCallback for LoopbackAppData {
     type State = crate::LoopbackState;
 
-    fn runtime_state() -> &'static vescpkg_rs::PackageStateStore<Self::State> {
-        &crate::LOOPBACK_STATE
-    }
-
     fn handle(_state: &mut Self::State, packet: AppDataPacket<'_>) {
         let firmware = Firmware::new();
         let app_data = firmware.app_data();

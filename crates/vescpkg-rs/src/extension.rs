@@ -272,10 +272,7 @@ pub trait LbmExtension {
 /// State-backed LispBM extension behavior for package authors.
 pub trait StatefulLbmExtension {
     /// Package state installed by startup.
-    type State: Send + 'static;
-
-    /// Runtime state shared with package callbacks.
-    fn runtime_state() -> &'static crate::PackageStateStore<Self::State>;
+    type State: crate::PackageRuntimeState;
 
     /// Handle one extension call with the current package state.
     fn call(state: &mut Self::State, args: LispArgs<'_>) -> LispValue;
@@ -318,20 +315,21 @@ pub unsafe extern "C" fn stateful_lbm_extension_handler<T: StatefulLbmExtension>
     // VESC returns the live `T::State` installed in this package's ARG slot.
     let result = unsafe { crate::firmware::__firmware_package_state_ptr::<T::State>(program) }
         .and_then(|state| {
-            T::runtime_state()
+            <T::State as crate::PackageRuntimeState>::runtime_store()
                 .with_expected_mut(crate::runtime::ExpectedState::Exact(state), |state| {
                     T::call(state, args)
                 })
         });
     #[cfg(any(test, not(target_arch = "arm")))]
-    let result = T::runtime_state().with_mut(|state| T::call(state, args));
+    let result = <T::State as crate::PackageRuntimeState>::runtime_store()
+        .with_mut(|state| T::call(state, args));
     result.unwrap_or(nil).raw().0
 }
 
 #[cfg(test)]
 mod tests {
     use super::{LispArgs, LispValue, StatefulLbmExtension, stateful_lbm_extension_handler};
-    use crate::PackageStateStore;
+    use crate::{PackageRuntimeState, PackageStateStore};
     use std::boxed::Box;
 
     #[derive(Debug, PartialEq, Eq)]
@@ -347,12 +345,14 @@ mod tests {
 
     static SLOT: PackageStateStore<State> = PackageStateStore::new();
 
-    impl StatefulLbmExtension for TestExtension {
-        type State = State;
-
-        fn runtime_state() -> &'static PackageStateStore<Self::State> {
+    impl PackageRuntimeState for State {
+        fn runtime_store() -> &'static PackageStateStore<Self> {
             &SLOT
         }
+    }
+
+    impl StatefulLbmExtension for TestExtension {
+        type State = State;
 
         fn call(state: &mut Self::State, args: LispArgs<'_>) -> LispValue {
             state.calls += 1;
