@@ -27,7 +27,7 @@ mod lifecycle_core;
 #[cfg(feature = "math")]
 mod math;
 #[cfg(feature = "math")]
-pub use math::{asin, cos, sin, sqrt};
+pub use math::{asin, cos, sin, sqrt, tan};
 mod runtime;
 #[cfg(all(feature = "test-support", not(test)))]
 mod test_ffi;
