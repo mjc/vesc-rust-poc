@@ -12,7 +12,7 @@ use vescpkg_rs::AnalogPin;
 #[cfg(target_arch = "arm")]
 use vescpkg_rs::ThreadStackSize;
 #[cfg(any(test, target_arch = "arm"))]
-use vescpkg_rs::prelude::ThreadPriority;
+use vescpkg_rs::prelude::{ThreadPriority, TimestampTicks};
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::{FirmwareThreads, Imu, MotorOutput, MotorTelemetry};
 
@@ -102,7 +102,7 @@ pub(crate) fn tick_refloat_main_thread_with(
     motor: &impl MotorOutput,
     footpad_adc1: AdcVoltage,
     footpad_adc2: AdcVoltage,
-    system_time_ticks: u32,
+    system_time_ticks: TimestampTicks,
 ) -> u32 {
     // C map: `refloat_thd` refreshes runtime inputs, executes state/control
     // logic, applies motor control, then sleeps `loop_time_us` through
@@ -177,7 +177,7 @@ impl vescpkg_rs::FirmwareThread for RefloatMainThread {
         {
             let firmware = ctx.firmware();
             run_refloat_main_thread_with(firmware.threads(), || {
-                let system_time_ticks = firmware.app_data().system_time_ticks().as_ticks();
+                let system_time_ticks = firmware.app_data().system_time_ticks();
                 // C map: Refloat `footpad_sensor_update` reads ADC1/ADC2 at
                 // `third_party/refloat/src/footpad_sensor.c:28-31`; VESC
                 // defines those enum slots at `third_party/vesc/lispBM/c_libs/vesc_c_if.h:219-220`.
@@ -255,7 +255,7 @@ mod tests {
         let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
 
         super::run_refloat_main_thread_with(threads, || {
-            state.refresh_runtime_state(telemetry.telemetry(), imu, 0);
+            state.refresh_runtime_state(telemetry.telemetry(), imu, TimestampTicks::from_ticks(0));
             state.configured_loop_time_us()
         });
 
@@ -303,7 +303,7 @@ mod tests {
                 bindings,
                 AdcVoltage::new(Voltage::from_volts(2.5)),
                 AdcVoltage::new(Voltage::from_volts(0.0)),
-                0,
+                TimestampTicks::from_ticks(0),
             )
         });
 

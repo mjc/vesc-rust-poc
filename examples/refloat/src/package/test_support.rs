@@ -146,7 +146,7 @@ pub(super) fn tick_refloat_state_and_handle_packet(
     imu: &impl vescpkg_rs::Imu,
     bytes: &[u8],
 ) -> bool {
-    state.refresh_runtime_state(telemetry, imu, now.as_ticks());
+    state.refresh_runtime_state(telemetry, imu, now);
     let mut now = || now;
     let mut discard = |_bytes: &[u8]| true;
     state.handle_packet_with_runtime(telemetry, imu, &mut now, &mut discard, bytes)

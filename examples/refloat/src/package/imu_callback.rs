@@ -96,7 +96,7 @@ mod tests {
                 imu_period(VescSeconds::from_seconds(0.1)),
             ),
         );
-        state.refresh_runtime_state(telemetry.telemetry(), imu, 0);
+        state.refresh_runtime_state(telemetry.telemetry(), imu, TimestampTicks::from_ticks(0));
 
         // C map: `imu_ref_callback` applies each sample to the balance filter at
         // `third_party/refloat/src/main.c:759-764`; the main loop publishes that
@@ -140,7 +140,7 @@ mod tests {
                 imu_period(VescSeconds::from_seconds(0.1)),
             ),
         );
-        state.refresh_runtime_state(telemetry.telemetry(), imu, 0);
+        state.refresh_runtime_state(telemetry.telemetry(), imu, TimestampTicks::from_ticks(0));
 
         // Upstream `imu_ref_callback` updates the balance filter at
         // `third_party/refloat/src/main.c:760-765`; the main loop copies that

@@ -240,7 +240,7 @@ fn darkride_traction_loss_refreshes_like_refloat_loop() {
         payloads.mode4(),
     ));
 
-    state.refresh_runtime_state(telemetry, imu, now.as_ticks());
+    state.refresh_runtime_state(telemetry, imu, now);
     let mut now = || now;
     let mut discard = |_bytes: &[u8]| true;
     assert!(state.handle_packet_with_runtime(

@@ -11,8 +11,11 @@ use vescpkg_rs::prelude::AngleDegrees;
 /// handling live in `third_party/refloat/src/main.c:263-509`,
 /// `third_party/refloat/src/main.c:551-574`, `third_party/refloat/src/main.c:760-775`,
 /// `third_party/refloat/src/main.c:833-838`, and `third_party/refloat/src/main.c:957-1067`.
-pub(super) fn refresh(state: &mut RefloatPackageState, imu: &impl Imu, system_time_ticks: u32) {
-    let system_time_ticks = TimestampTicks::from_ticks(system_time_ticks);
+pub(super) fn refresh(
+    state: &mut RefloatPackageState,
+    imu: &impl Imu,
+    system_time_ticks: TimestampTicks,
+) {
     let payloads = state.all_data_payloads;
     let base = payloads.base();
     let status = base.status();

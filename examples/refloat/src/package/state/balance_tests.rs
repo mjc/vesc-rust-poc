@@ -508,9 +508,11 @@ fn app_data_normal_algorithm_trace_matches_refloat_loop_order() {
             < 0.0001
     );
     let bindings = telemetry.motor();
-    assert!(
-        state.apply_motor_control(bindings, running_base.status().ride_state().run_state(), 1,)
-    );
+    assert!(state.apply_motor_control(
+        bindings,
+        running_base.status().ride_state().run_state(),
+        TimestampTicks::from_ticks(1),
+    ));
     // Upstream main loop calls `motor_control_apply` after the balance loop
     // at `third_party/refloat/src/main.c:1075-1079`; requested current
     // takes the current-control branch at

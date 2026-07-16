@@ -357,7 +357,7 @@ fn foc_id_current_refreshes_like_refloat_all_data() {
         FirmwareTest::new().with_foc_id_current(Some(MotorCurrent::new(Current::from_amps(-4.0))));
     let imu = telemetry.imu();
     let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
-    state.refresh_runtime_state(telemetry.telemetry(), imu, now.as_ticks());
+    state.refresh_runtime_state(telemetry.telemetry(), imu, now);
 
     let mut packet = Vec::new();
     let mut now = || now;
@@ -466,7 +466,11 @@ fn running_motor_apply_uses_current_branch_like_refloat_loop() {
             RefloatAppDataCommand::RealtimeData.id(),
         ],
     ));
-    assert!(state.apply_motor_control(bindings, RefloatRunState::Running, 1));
+    assert!(state.apply_motor_control(
+        bindings,
+        RefloatRunState::Running,
+        TimestampTicks::from_ticks(1),
+    ));
 
     // Upstream RUNNING computes and requests balance current at
     // `third_party/refloat/src/main.c:918-956`, then `refloat_thd` calls

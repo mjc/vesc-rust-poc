@@ -257,7 +257,7 @@ mod tests {
             telemetry.imu(),
             AdcVoltage::new(Voltage::from_volts(2.5)),
             AdcVoltage::new(Voltage::from_volts(2.5)),
-            60_000,
+            TimestampTicks::from_ticks(60_000),
         );
         let ride_state = state.all_data_payloads().base().status().ride_state();
         assert_eq!(ride_state.charging(), RefloatChargingState::Charging);
@@ -268,7 +268,7 @@ mod tests {
             telemetry.imu(),
             AdcVoltage::new(Voltage::from_volts(2.5)),
             AdcVoltage::new(Voltage::from_volts(2.5)),
-            60_001,
+            TimestampTicks::from_ticks(60_001),
         );
         let ride_state = state.all_data_payloads().base().status().ride_state();
         assert_eq!(ride_state.charging(), RefloatChargingState::NotCharging);

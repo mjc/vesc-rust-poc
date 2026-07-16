@@ -149,9 +149,8 @@ impl RefloatPackageState {
         &mut self,
         motor: &impl MotorOutput,
         run_state: RefloatRunState,
-        system_time_ticks: u32,
+        system_time_ticks: TimestampTicks,
     ) -> bool {
-        let system_time_ticks = TimestampTicks::from_ticks(system_time_ticks);
         let base = self.all_data_payloads.base();
         // Upstream `motor_control_configure` copies brake and parking config at
         // `third_party/refloat/src/motor_control.c:36-40`; this Rust state keeps
@@ -206,7 +205,7 @@ impl RefloatPackageState {
         bytes: &[u8],
     ) -> bool {
         #[cfg(all(not(test), not(target_arch = "arm")))]
-        self.refresh_runtime_state(telemetry, _imu, now().as_ticks());
+        self.refresh_runtime_state(telemetry, _imu, now());
 
         self.handle_packet_with_telemetry(telemetry, now, send, bytes)
     }
@@ -224,7 +223,7 @@ impl RefloatPackageState {
         &mut self,
         telemetry: &impl MotorTelemetry,
         imu: &impl Imu,
-        system_time_ticks: u32,
+        system_time_ticks: TimestampTicks,
     ) {
         self.refresh_config_runtime_state();
         self.refresh_motor_runtime_state(telemetry);
@@ -238,7 +237,7 @@ impl RefloatPackageState {
         imu: &impl Imu,
         footpad_adc1: AdcVoltage,
         footpad_adc2: AdcVoltage,
-        system_time_ticks: u32,
+        system_time_ticks: TimestampTicks,
     ) {
         self.refresh_config_runtime_state();
         self.refresh_motor_runtime_state(telemetry);
@@ -277,15 +276,15 @@ impl RefloatPackageState {
         footpad_runtime::refresh(self, adc1, adc2);
     }
 
-    fn refresh_imu_runtime_state(&mut self, imu: &impl Imu, system_time_ticks: u32) {
+    fn refresh_imu_runtime_state(&mut self, imu: &impl Imu, system_time_ticks: TimestampTicks) {
         imu_runtime::refresh(self, imu, system_time_ticks);
     }
 
     #[cfg(any(test, target_arch = "arm"))]
-    fn refresh_charging_runtime_state(&mut self, system_time_ticks: u32) {
+    fn refresh_charging_runtime_state(&mut self, system_time_ticks: TimestampTicks) {
         self.all_data_payloads = charging::timeout(
             self.all_data_payloads,
-            TimestampTicks::from_ticks(system_time_ticks),
+            system_time_ticks,
             self.charging_ticks,
         );
     }
