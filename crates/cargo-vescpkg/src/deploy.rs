@@ -7,12 +7,11 @@ use vesc_protocol::WireCommand;
 use vesc_protocol::ble_loopback::LoopbackPacket;
 
 use crate::loopback::{LoopbackReport, LoopbackTarget, LoopbackTransportError};
-use crate::package_install::{PackageInstallError, PackageInstallReport, read_package_from_path};
+use crate::package_install::PackageInstallError;
 use crate::package_transport::{BtlePackageInstallTransport, VescSession};
 use crate::vesc_uart::encode_packet;
 
 const COMM_CUSTOM_APP_DATA: u8 = 36;
-const POST_INSTALL_SETTLE: Duration = Duration::from_millis(1500);
 const LOOPBACK_RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
 
 /// Opens BLE and runs the standard package app-data loopback sequence.
@@ -30,38 +29,6 @@ pub fn run_loopback_probe(
             run_loopback_on_session(runtime, session, target, &mut progress)
         })
         .map_err(DeployError::Loopback);
-    transport.close();
-    result
-}
-
-/// Reads a `.vescpkg`, installs it over BLE, and runs a loopback smoke test.
-pub fn run_deploy(
-    package_path: &str,
-    target: LoopbackTarget,
-    mut progress: impl FnMut(String),
-) -> Result<(PackageInstallReport, LoopbackReport), DeployError> {
-    let package = read_package_from_path(package_path).map_err(DeployError::Package)?;
-    let transport = BtlePackageInstallTransport::new().map_err(DeployError::Transport)?;
-    transport
-        .open(target.clone())
-        .map_err(DeployError::Transport)?;
-
-    let result = (|| {
-        let install = crate::package_install::install_package(&package, &transport)
-            .map_err(DeployError::Transport)?;
-
-        progress("BLE session open".to_owned());
-        std::thread::sleep(POST_INSTALL_SETTLE);
-
-        let loopback = transport
-            .with_loopback_session(|runtime, session| {
-                run_loopback_on_session(runtime, session, target.clone(), &mut progress)
-            })
-            .map_err(DeployError::Loopback)?;
-
-        Ok((install, loopback))
-    })();
-
     transport.close();
     result
 }
@@ -161,11 +128,9 @@ fn map_package_device_error(error: PackageInstallError) -> LoopbackTransportErro
     }
 }
 
-/// Errors returned by the build, install, and loopback deploy flow.
+/// Errors returned by the loopback probe.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeployError {
-    /// Reading or decoding the package failed.
-    Package(PackageInstallError),
     /// Installing or erasing the package over the transport failed.
     Transport(PackageInstallError),
     /// The post-deploy loopback smoke test failed.
@@ -175,7 +140,6 @@ pub enum DeployError {
 impl std::fmt::Display for DeployError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Package(error) => write!(f, "failed to read package: {error}"),
             Self::Transport(error) => write!(f, "package install failed: {error}"),
             Self::Loopback(error) => write!(f, "loopback failed: {error}"),
         }

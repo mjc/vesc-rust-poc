@@ -45,4 +45,4 @@ requires installing and probing both loopback and alloc-smoke packages.
 
 `cargo-flash`/probe-rs are not part of this build path. Package deployment is
 supported through `cargo-vescpkg deploy` and `package-install` over the bespoke
-VESC transport; only the separate flashing-tool integration is deferred.
+VESC transport; loopback verification is a separate command.

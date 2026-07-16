@@ -1,7 +1,6 @@
 .DEFAULT_GOAL := check
 
 CARGO   ?= cargo
-PACKAGE := target/vescpkg/Rust-BLE-loopback-test-package-0.1.0/Rust-BLE-loopback-test-package-0.1.0.vescpkg
 ARM_TARGET := thumbv7em-none-eabihf
 
 CLIPPY_FLAGS := -D warnings
@@ -34,7 +33,7 @@ ifdef DEVICE_ADDRESS
 DEVICE_FLAGS += --address $(DEVICE_ADDRESS)
 endif
 
-.PHONY: check check-full pre-commit fmt clippy clippy-pedantic vescpkg-rs-sys-target-check arm-clippy arm-gates test package package-only deploy deploy-install clean status
+.PHONY: check check-full pre-commit fmt clippy clippy-pedantic vescpkg-rs-sys-target-check arm-clippy arm-gates test package package-only deploy clean status
 
 # --- verification -----------------------------------------------------------
 #
@@ -77,11 +76,8 @@ package-only:
 	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-loopback
 	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-alloc-smoke
 
-deploy: package-only
-	$(CARGO) run -p cargo-vescpkg -- deploy $(PACKAGE) $(DEVICE_FLAGS)
-
-deploy-install: package-only
-	$(CARGO) run -p cargo-vescpkg -- package-install $(PACKAGE) $(DEVICE_FLAGS)
+deploy:
+	$(CARGO) run -p cargo-vescpkg -- deploy -p vesc-example-loopback $(DEVICE_FLAGS)
 
 clean:
 	$(CARGO) clean

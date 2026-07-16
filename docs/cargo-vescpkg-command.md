@@ -39,9 +39,12 @@ under Cargo's target directory at `vescpkg/`.
 
 ## Device commands
 
-- `cargo run -p cargo-vescpkg -- deploy <package.vescpkg>`
+- `cargo run -p cargo-vescpkg -- deploy -p vesc-example-loopback`
 - `cargo run -p cargo-vescpkg -- package-install <package.vescpkg>`
 - `cargo run -p cargo-vescpkg -- erase-package`
 - `cargo run -p cargo-vescpkg -- loopback`
+
+`deploy` builds the selected Cargo package and installs the resulting artifact.
+The separate `loopback` command probes a running loopback package.
 
 The checked workspace path remains `make check`.

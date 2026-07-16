@@ -29,7 +29,7 @@ enum Command {
     Probe(DeviceArgs),
     PackageInstall(PackageInstallArgs),
     ErasePackage(PackageEraseArgs),
-    Deploy(PackageInstallArgs),
+    Deploy(DeployArgs),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Args)]
@@ -63,7 +63,15 @@ impl DeviceArgs {
 
 #[derive(Debug, Clone, PartialEq, Eq, Args)]
 struct PackageInstallArgs {
-    package_path: String,
+    package_path: PathBuf,
+    #[command(flatten)]
+    device: DeviceArgs,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Args)]
+struct DeployArgs {
+    #[command(flatten)]
+    build: BuildArgs,
     #[command(flatten)]
     device: DeviceArgs,
 }
@@ -119,19 +127,12 @@ fn run_probe(command: DeviceArgs) -> ExitCode {
     }
 }
 
-fn run_deploy(command: PackageInstallArgs) -> ExitCode {
-    let target = command.device.into_target();
-    match deploy::run_deploy(&command.package_path, target, |event| {
-        println!("loopback: {event}");
-    }) {
-        Ok((install, report)) => {
-            println!(
-                "package install ok for {}: {:?}",
-                install.package_name, install.steps
-            );
-            print_loopback_report(&report);
-            ExitCode::SUCCESS
-        }
+fn run_deploy(command: DeployArgs) -> ExitCode {
+    match build_package(command.build) {
+        Ok(package_path) => run_package_install(PackageInstallArgs {
+            package_path,
+            device: command.device,
+        }),
         Err(error) => {
             eprintln!("deploy failed: {error}");
             ExitCode::from(1)
@@ -140,22 +141,7 @@ fn run_deploy(command: PackageInstallArgs) -> ExitCode {
 }
 
 fn run_build(args: BuildArgs) -> ExitCode {
-    let root = match std::env::current_dir() {
-        Ok(root) => root,
-        Err(error) => {
-            eprintln!("failed to resolve current directory: {error}");
-            return ExitCode::from(1);
-        }
-    };
-
-    let options = build::BuildOptions {
-        package: args.package,
-        manifest_path: args.manifest_path,
-        target: args.target,
-        profile: args.profile,
-        features: args.features,
-    };
-    match build::build_package(&root, &options) {
+    match build_package(args) {
         Ok(path) => {
             println!("{}", path.display());
             ExitCode::SUCCESS
@@ -165,6 +151,20 @@ fn run_build(args: BuildArgs) -> ExitCode {
             ExitCode::from(1)
         }
     }
+}
+
+fn build_package(args: BuildArgs) -> Result<PathBuf, String> {
+    let root = std::env::current_dir()
+        .map_err(|error| format!("failed to resolve current directory: {error}"))?;
+
+    let options = build::BuildOptions {
+        package: args.package,
+        manifest_path: args.manifest_path,
+        target: args.target,
+        profile: args.profile,
+        features: args.features,
+    };
+    build::build_package(&root, &options).map_err(|error| error.to_string())
 }
 
 fn loopback_target(
@@ -237,7 +237,10 @@ pub mod vesc_uart;
 
 #[cfg(test)]
 mod tests {
-    use super::{Command, DeviceArgs, PackageEraseArgs, PackageInstallArgs, parse_args};
+    use super::{
+        BuildArgs, Command, DeployArgs, DeviceArgs, PackageEraseArgs, PackageInstallArgs,
+        parse_args,
+    };
 
     #[test]
     fn parse_args_builds_typed_package_options() {
@@ -326,7 +329,7 @@ mod tests {
             ])
             .expect("package install"),
             Command::PackageInstall(PackageInstallArgs {
-                package_path: "foo.vescpkg".to_owned(),
+                package_path: "foo.vescpkg".into(),
                 device: DeviceArgs {
                     device_name: None,
                     address: Some("AA:BB:CC:DD:EE:FF".to_owned()),
@@ -358,13 +361,20 @@ mod tests {
             parse_args([
                 "cargo-vescpkg",
                 "deploy",
-                "target/loopback.vescpkg",
+                "-p",
+                "vesc-example-loopback",
                 "--device",
                 "VESC BLE UART",
             ])
             .expect("deploy package"),
-            Command::Deploy(PackageInstallArgs {
-                package_path: "target/loopback.vescpkg".to_owned(),
+            Command::Deploy(DeployArgs {
+                build: BuildArgs {
+                    package: "vesc-example-loopback".to_owned(),
+                    manifest_path: None,
+                    target: "thumbv7em-none-eabihf".to_owned(),
+                    profile: "release".to_owned(),
+                    features: None,
+                },
                 device: DeviceArgs {
                     device_name: Some("VESC BLE UART".to_owned()),
                     address: None,
