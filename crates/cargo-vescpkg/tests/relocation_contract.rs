@@ -1,11 +1,19 @@
 //! End-to-end flat-image rejection.
 
+use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
 
 fn build_fixture(feature: Option<&str>) -> Output {
-    let manifest =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/relocation-package/Cargo.toml");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/relocation-package");
+    let workspace = tempfile::tempdir().expect("standalone fixture workspace");
+    for path in ["Cargo.lock", "Cargo.toml", "src/main.rs"] {
+        let destination = workspace.path().join(path);
+        fs::create_dir_all(destination.parent().expect("fixture file parent"))
+            .expect("fixture directory");
+        fs::copy(fixture.join(path), destination).expect("copy fixture file");
+    }
+    let manifest = workspace.path().join("Cargo.toml");
     let target = tempfile::tempdir().expect("fixture target directory");
     let mut command = Command::new(env!("CARGO_BIN_EXE_cargo-vescpkg"));
     command
@@ -37,7 +45,7 @@ fn rejects_an_unmarked_pic_function_pointer() {
 }
 
 #[test]
-fn accepts_an_explicit_image_offset_function() {
+fn builds_a_standalone_staticlib_with_valid_loader_entrypoints() {
     let output = build_fixture(Some("marked-image-offset"));
 
     assert!(

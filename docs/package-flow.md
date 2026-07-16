@@ -11,16 +11,16 @@ cargo run -p cargo-vescpkg -- build -p vesc-example-alloc-smoke
 ```
 
 Each package owns its target library, package metadata, package assets, and
-small build script. Cargo links the library and package entrypoint into one
-`thumbv7em-none-eabihf` ELF using `examples/vescpkg-link.ld`. The build script
-copies package assets into Cargo's `OUT_DIR` and declares the package directory
-as its rerun input.
+small build script. Cargo links binary targets into one `thumbv7em-none-eabihf`
+ELF using `examples/vescpkg-link.ld`. The build script copies package assets
+into Cargo's `OUT_DIR` and declares the package directory as its rerun input.
 
 `cargo-vescpkg` runs one Cargo build, consumes `compiler-artifact` and
-`build-script-executed` JSON, converts the final ELF with `rust-objcopy`, and
-assembles the `.vescpkg` archive under Cargo's target directory. It never writes
-generated assets into the source tree and never invokes Make, a nested build,
-the VESC Tool source tree, or a package-specific host adapter.
+`build-script-executed` JSON, links static libraries with its embedded VESC
+linker script, converts the final ELF with `rust-objcopy`, and assembles the
+`.vescpkg` archive under Cargo's target directory. It never writes generated
+assets into the source tree and never invokes Make, a nested build, the VESC
+Tool source tree, or a package-specific host adapter.
 
 The target directory can be overridden normally:
 

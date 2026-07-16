@@ -15,6 +15,7 @@ const DEFAULT_LOADER: &str = concat!(
 // PIC may store function offsets in `.got`. SDK callback macros emit symbol-table-only aliases
 // for package-local addresses they normalize against the loaded image before use.
 const IMAGE_OFFSET_MARKER_PREFIX: &str = "__vescpkg_image_offset_";
+const STATICLIB_LINKER_SCRIPT: &[u8] = include_bytes!("vescpkg-link.ld");
 const VESC_TARGET: &str = "thumbv7em-none-eabihf";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,8 +71,7 @@ pub(crate) fn build_package(root: &Path, options: &BuildOptions) -> Result<PathB
     validate_target(&options.target)?;
     let metadata = cargo_metadata(root, options)?;
     let package = select_package(&metadata, &options.package)?;
-    let workspace_root = metadata_workspace_root(&metadata)?;
-    let artifacts = cargo_build(root, &workspace_root, options, &package)?;
+    let artifacts = cargo_build(root, options, &package)?;
     validate_flat_image_relocations(&artifacts.elf)?;
     let package_slug = package_slug(&package.display_name);
     let artifact_name = format!("{package_slug}-{}", package.version);
@@ -359,16 +359,8 @@ fn metadata_target_dir(metadata: &Value) -> Result<PathBuf, BuildError> {
         .ok_or_else(|| BuildError("Cargo metadata has no target directory".to_owned()))
 }
 
-fn metadata_workspace_root(metadata: &Value) -> Result<PathBuf, BuildError> {
-    metadata["workspace_root"]
-        .as_str()
-        .map(PathBuf::from)
-        .ok_or_else(|| BuildError("Cargo metadata has no workspace root".to_owned()))
-}
-
 fn cargo_build(
     root: &Path,
-    workspace_root: &Path,
     options: &BuildOptions,
     package: &PackageMetadata,
 ) -> Result<CargoArtifacts, BuildError> {
@@ -391,7 +383,7 @@ fn cargo_build(
     })?;
     let elf = match package.payload_kind {
         PayloadKind::Binary => payload,
-        PayloadKind::Staticlib => link_staticlib(workspace_root, &payload)?,
+        PayloadKind::Staticlib => link_staticlib(&payload)?,
     };
     Ok(CargoArtifacts { elf, out_dir })
 }
@@ -457,8 +449,10 @@ fn cargo_message_artifacts(
     (payload, out_dir)
 }
 
-fn link_staticlib(root: &Path, archive: &Path) -> Result<PathBuf, BuildError> {
+fn link_staticlib(archive: &Path) -> Result<PathBuf, BuildError> {
     let elf = archive.with_extension("elf");
+    let linker_script = archive.with_extension("vescpkg-link.ld");
+    fs::write(&linker_script, STATICLIB_LINKER_SCRIPT)?;
     let mut command = Command::new("arm-none-eabi-gcc");
     command.args([
         "-nostartfiles",
@@ -476,15 +470,11 @@ fn link_staticlib(root: &Path, archive: &Path) -> Result<PathBuf, BuildError> {
             "-Wl,--undefined=init",
             "-T",
         ])
-        .arg(staticlib_linker_script(root))
+        .arg(linker_script)
         .arg("-o")
         .arg(&elf);
     command_output(&mut command)?;
     Ok(elf)
-}
-
-fn staticlib_linker_script(root: &Path) -> PathBuf {
-    root.join("examples/vescpkg-link.ld")
 }
 
 fn write_flattened_elf(elf: &Path, output: &Path) -> Result<(), BuildError> {
@@ -689,11 +679,10 @@ fn package_slug(name: &str) -> String {
 mod tests {
     use super::{
         BuildOptions, PackageMetadata, PayloadKind, VESC_TARGET, build_package_bytes,
-        cargo_build_command, cargo_message_artifacts, command_failure_message,
-        metadata_workspace_root, package_slug, select_package, stage_generated_assets,
-        staticlib_linker_script, validate_descriptor_fullscreen, validate_image_offset_relocations,
-        validate_loader_entrypoint_layout, validate_relocation_report, validate_target,
-        validate_writable_section_report,
+        cargo_build_command, cargo_message_artifacts, command_failure_message, package_slug,
+        select_package, stage_generated_assets, validate_descriptor_fullscreen,
+        validate_image_offset_relocations, validate_loader_entrypoint_layout,
+        validate_relocation_report, validate_target, validate_writable_section_report,
     };
     use crate::package::Package;
     use serde_json::json;
@@ -728,16 +717,6 @@ mod tests {
         assert_eq!(
             command_failure_message(stdout, b"error: could not compile `broken`"),
             "error[E0308]: mismatched types\n"
-        );
-    }
-
-    #[test]
-    fn staticlibs_use_the_cargo_package_linker_script() {
-        let metadata = json!({"workspace_root": "/repo"});
-
-        assert_eq!(
-            staticlib_linker_script(&metadata_workspace_root(&metadata).expect("workspace root")),
-            std::path::PathBuf::from("/repo/examples/vescpkg-link.ld")
         );
     }
 
