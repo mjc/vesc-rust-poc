@@ -52,14 +52,13 @@ pub trait MotorTelemetryBindings {
     /// `src/motor_data.c:140`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:460`.
     fn battery_current(&self) -> BatteryCurrent;
-    /// Return the current duty-cycle magnitude.
+    /// Return the current signed duty cycle.
     ///
-    /// The value is the absolute value of firmware `mc_get_duty_cycle_now()`,
-    /// clamped to the signed ratio range and therefore always non-negative.
+    /// The firmware value is clamped to the signed ratio range, with NaN
+    /// normalized to zero.
     ///
-    /// Refloat v1.2.1 stores `fabsf(mc_get_duty_cycle_now())` as
-    /// `duty_raw` in `src/motor_data.c:124`; the VESC ABI slot is declared at
-    /// `vesc_pkg_lib/vesc_c_if.h:448`.
+    /// VESC applies motor direction in `mc_interface_get_duty_cycle_now`; the
+    /// ABI slot is declared at `vesc_pkg_lib/vesc_c_if.h:448`.
     fn duty_cycle_now(&self) -> DutyCycle;
     /// Return optional FOC d-axis Id current.
     ///
@@ -275,7 +274,7 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
     }
 
     fn duty_cycle_now(&self) -> DutyCycle {
-        duty_cycle_magnitude(unsafe { crate::ffi::mc_get_duty_cycle_now() })
+        duty_cycle_from_firmware(unsafe { crate::ffi::mc_get_duty_cycle_now() })
     }
 
     fn foc_id_current(&self) -> Option<MotorCurrent> {
@@ -368,13 +367,12 @@ impl MotorControlBindings for RealMotorControlBindings {
     }
 }
 
-fn duty_cycle_magnitude(raw_duty: f32) -> DutyCycle {
-    let magnitude = if raw_duty.is_nan() {
+fn duty_cycle_from_firmware(raw_duty: f32) -> DutyCycle {
+    DutyCycle::new(SignedRatio::clamped(if raw_duty.is_nan() {
         0.0
     } else {
-        raw_duty.abs()
-    };
-    DutyCycle::new(SignedRatio::clamped(magnitude))
+        raw_duty
+    }))
 }
 
 /// High-level motor telemetry API built on a binding implementation.
@@ -456,13 +454,13 @@ pub struct MotorControlApi<B> {
 
 #[cfg(test)]
 mod tests {
-    use super::duty_cycle_magnitude;
+    use super::duty_cycle_from_firmware;
 
     #[test]
-    fn duty_cycle_magnitude_never_reports_negative_nan() {
-        assert_eq!(duty_cycle_magnitude(f32::NAN).ratio().as_ratio(), 0.0);
-        assert_eq!(duty_cycle_magnitude(-0.42).ratio().as_ratio(), 0.42);
-        assert_eq!(duty_cycle_magnitude(2.0).ratio().as_ratio(), 1.0);
+    fn duty_cycle_preserves_direction_and_normalizes_invalid_values() {
+        assert_eq!(duty_cycle_from_firmware(f32::NAN).ratio().as_ratio(), 0.0);
+        assert_eq!(duty_cycle_from_firmware(-0.42).ratio().as_ratio(), -0.42);
+        assert_eq!(duty_cycle_from_firmware(2.0).ratio().as_ratio(), 1.0);
     }
 }
 
