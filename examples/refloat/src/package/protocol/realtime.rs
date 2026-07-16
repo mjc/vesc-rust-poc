@@ -1,8 +1,7 @@
 #[cfg(test)]
 use super::wire::refloat_realtime_push_float32_auto;
 use super::wire::{
-    refloat_degrees, refloat_realtime_push_float16_auto, refloat_realtime_push_u8,
-    refloat_realtime_push_u32,
+    push_refloat_float16, refloat_degrees, refloat_realtime_push_u8, refloat_realtime_push_u32,
 };
 #[cfg(test)]
 use crate::domain::RefloatMode;
@@ -213,24 +212,20 @@ pub(in crate::package) fn encode_refloat_realtime_data_response(
     refloat_realtime_push_u8(&mut bytes, &mut ind, base.status().beep_reason().id());
 
     REFLOAT_REALTIME_DATA_ITEMS.into_iter().for_each(|item| {
-        refloat_realtime_push_float16_auto(&mut bytes, &mut ind, realtime_value(payloads, item))
+        push_refloat_float16(&mut bytes, &mut ind, realtime_value(payloads, item))
     });
     if running {
         REFLOAT_REALTIME_RUNTIME_ITEMS.into_iter().for_each(|item| {
-            refloat_realtime_push_float16_auto(
-                &mut bytes,
-                &mut ind,
-                realtime_value(payloads, item),
-            );
+            push_refloat_float16(&mut bytes, &mut ind, realtime_value(payloads, item));
         });
     }
     if charging {
-        refloat_realtime_push_float16_auto(
+        push_refloat_float16(
             &mut bytes,
             &mut ind,
             payloads.mode4().current().current().current().as_amps(),
         );
-        refloat_realtime_push_float16_auto(
+        push_refloat_float16(
             &mut bytes,
             &mut ind,
             payloads.mode4().voltage().voltage().voltage().as_volts(),
