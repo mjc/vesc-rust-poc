@@ -2,6 +2,7 @@
 
 use vescpkg_rs_sys::VescPin;
 
+use crate::types::AdcVoltage;
 use crate::units::Voltage;
 
 /// A firmware analog-input pin.
@@ -10,10 +11,10 @@ use crate::units::Voltage;
 pub struct AnalogPin(u8);
 
 impl AnalogPin {
-    /// Name an analog pin by its VESC firmware pin number.
-    pub const fn new(number: u8) -> Self {
-        Self(number)
-    }
+    /// VESC's first external analog input.
+    pub const ADC1: Self = Self(7);
+    /// VESC's second external analog input.
+    pub const ADC2: Self = Self(8);
 
     const fn firmware_pin(self) -> VescPin {
         VescPin(self.0 as i32)
@@ -43,7 +44,11 @@ impl Gpio {
     }
 
     /// Read two analog pins as typed firmware-scaled voltages.
-    pub fn read_analog_pair(&self, first: AnalogPin, second: AnalogPin) -> (Voltage, Voltage) {
+    pub fn read_analog_pair(
+        &self,
+        first: AnalogPin,
+        second: AnalogPin,
+    ) -> (AdcVoltage, AdcVoltage) {
         let first = first.firmware_pin();
         let second = second.firmware_pin();
         #[cfg(test)]
@@ -54,12 +59,18 @@ impl Gpio {
             self.test.last_pin.set(first.0);
             self.test.last_second_pin.set(second.0);
             let (first, second) = self.test.analog_pair.get();
-            (Voltage::from_volts(first), Voltage::from_volts(second))
+            (
+                AdcVoltage::new(Voltage::from_volts(first)),
+                AdcVoltage::new(Voltage::from_volts(second)),
+            )
         }
         #[cfg(not(test))]
         {
             let (first, second) = unsafe { crate::ffi::io_read_analog_pair(first, second) };
-            (Voltage::from_volts(first), Voltage::from_volts(second))
+            (
+                AdcVoltage::new(Voltage::from_volts(first)),
+                AdcVoltage::new(Voltage::from_volts(second)),
+            )
         }
     }
 }
@@ -80,11 +91,11 @@ mod tests {
     #[test]
     fn gpio_uses_one_semantic_capability() {
         let gpio = Gpio::test((1.2, 3.4));
-        let (first, second) = gpio.read_analog_pair(AnalogPin::new(42), AnalogPin::new(43));
-        assert_eq!(first.as_volts(), 1.2);
-        assert_eq!(second.as_volts(), 3.4);
+        let (first, second) = gpio.read_analog_pair(AnalogPin::ADC1, AnalogPin::ADC2);
+        assert_eq!(first.voltage().as_volts(), 1.2);
+        assert_eq!(second.voltage().as_volts(), 3.4);
         assert_eq!(gpio.test.analog_pair_calls.get(), 1);
-        assert_eq!(gpio.test.last_pin.get(), 42);
-        assert_eq!(gpio.test.last_second_pin.get(), 43);
+        assert_eq!(gpio.test.last_pin.get(), 7);
+        assert_eq!(gpio.test.last_second_pin.get(), 8);
     }
 }
