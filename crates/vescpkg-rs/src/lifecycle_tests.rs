@@ -117,9 +117,13 @@ fn firmware_fault_code_preserves_raw_values_until_compat_encoding() {
     assert_eq!(negative.compat_code(), None);
     assert_eq!(too_large.compat_code(), None);
     assert_eq!(
-        FirmwareFaultCompatCode::from_compat_code(5).compat_code(),
+        FirmwareFaultCompatCode::try_from(valid)
+            .expect("valid firmware fault code")
+            .compat_code(),
         5
     );
+    assert!(FirmwareFaultCompatCode::try_from(negative).is_err());
+    assert!(FirmwareFaultCompatCode::try_from(too_large).is_err());
 }
 
 #[test]

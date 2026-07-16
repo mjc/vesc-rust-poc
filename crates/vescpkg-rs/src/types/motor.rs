@@ -239,6 +239,14 @@ impl FirmwareFaultCompatCode {
     }
 }
 
+impl TryFrom<FirmwareFaultCode> for FirmwareFaultCompatCode {
+    type Error = core::num::TryFromIntError;
+
+    fn try_from(code: FirmwareFaultCode) -> Result<Self, Self::Error> {
+        u8::try_from(code.0).map(Self)
+    }
+}
+
 /// Positive motor-current limit magnitude.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 #[repr(transparent)]
