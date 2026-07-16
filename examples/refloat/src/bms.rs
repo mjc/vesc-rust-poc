@@ -21,10 +21,6 @@ pub(crate) struct ExtBms;
 impl vescpkg_rs::StatefulLbmExtension for ExtBms {
     type State = RefloatPackageState;
 
-    fn runtime_state() -> &'static vescpkg_rs::PackageStateStore<Self::State> {
-        &crate::package::REFLOAT_RUNTIME_STATE
-    }
-
     fn call(_state: &mut Self::State, args: vescpkg_rs::LispArgs<'_>) -> LispValue {
         args.nil_value()
     }

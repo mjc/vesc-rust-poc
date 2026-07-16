@@ -3,7 +3,6 @@
 //! C map: package init stores loader ARG/stop handlers and registers app-data
 //! callbacks at `third_party/refloat/src/main.c:2419-2461`.
 
-#[cfg(any(test, target_arch = "arm"))]
 use super::state::RefloatPackageState;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::{Imu, MotorTelemetry};
@@ -27,10 +26,6 @@ pub(crate) struct RefloatAppData;
 impl vescpkg_rs::StatefulAppDataCallback for RefloatAppData {
     type State = RefloatPackageState;
 
-    fn runtime_state() -> &'static vescpkg_rs::PackageStateStore<Self::State> {
-        &super::REFLOAT_RUNTIME_STATE
-    }
-
     fn handle(state: &mut Self::State, packet: vescpkg_rs::AppDataPacket<'_>) {
         // C map: upstream `on_command_received` recovers `Data *` through
         // `ARG(PROG_ADDR)` before app-data dispatch at
@@ -50,13 +45,8 @@ impl vescpkg_rs::StatefulAppDataCallback for RefloatAppData {
     }
 }
 
-vescpkg_rs::firmware_stateful_app_data_callback!(
-    refloat_app_data_callback,
-    RefloatAppData,
-    refloat_app_data_state_source
-);
+vescpkg_rs::firmware_stateful_app_data_callback!(refloat_app_data_callback, RefloatAppData);
 
-#[cfg(any(test, target_arch = "arm"))]
 impl vescpkg_rs::PackageRuntimeState for RefloatPackageState {
     fn runtime_store() -> &'static vescpkg_rs::PackageStateStore<Self> {
         &super::REFLOAT_RUNTIME_STATE

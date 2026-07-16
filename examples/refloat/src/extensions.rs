@@ -52,10 +52,6 @@ struct ExtSetFwVersion;
 impl vescpkg_rs::StatefulLbmExtension for ExtSetFwVersion {
     type State = RefloatPackageState;
 
-    fn runtime_state() -> &'static vescpkg_rs::PackageStateStore<Self::State> {
-        &crate::package::REFLOAT_RUNTIME_STATE
-    }
-
     fn call(state: &mut Self::State, args: LispArgs<'_>) -> LispValue {
         if args.len() > 2
             && let (Some(major), Some(minor), Some(beta)) =

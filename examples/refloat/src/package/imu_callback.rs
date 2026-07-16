@@ -10,24 +10,6 @@ struct RefloatImuRead;
 impl vescpkg_rs::ImuReadHandler for RefloatImuRead {
     type State = RefloatPackageState;
 
-    fn state_source() -> vescpkg_rs::PackageStateAccess<'static, Self::State> {
-        #[cfg(test)]
-        {
-            vescpkg_rs::PackageStateAccess::runtime(&super::REFLOAT_RUNTIME_STATE)
-        }
-        #[cfg(all(not(test), target_arch = "arm"))]
-        {
-            // C map: Refloat's IMU, app-data, and custom-config callbacks all
-            // recover the same `Data *` through `ARG(PROG_ADDR)` at
-            // `third_party/refloat/src/main.c:759-764`,
-            // `third_party/refloat/src/main.c:2143-2225`, and
-            // `third_party/refloat/src/main.c:2243-2288`. Reusing the generated
-            // app-data source keeps that identity explicit and supplies the
-            // loader fallback when the Rust runtime slot is not installed.
-            super::callbacks::refloat_app_data_state_source(&super::REFLOAT_RUNTIME_STATE)
-        }
-    }
-
     fn read(state: &mut Self::State, sample: ImuReadSample) {
         // C map: `imu_ref_callback` resolves `Data` through `ARG` and updates
         // its balance filter at `third_party/refloat/src/main.c:759-764`.

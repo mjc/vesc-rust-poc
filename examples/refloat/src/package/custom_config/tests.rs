@@ -1,5 +1,5 @@
 use super::{
-    RefloatCustomConfig, install_test_refloat_runtime_state, lock_test_refloat_config_state_sources,
+    RefloatCustomConfig, install_test_refloat_runtime_state, lock_test_refloat_config_state,
 };
 use crate::config::REFLOAT_CONFIG_LEN;
 use crate::domain::{RefloatMode, RefloatRunState};
@@ -8,7 +8,7 @@ use crate::package::test_support::{
     RefloatConfigTestBytes, default_refloat_config_bytes, editable_config_from_state,
     sample_all_data_payloads, sample_all_data_payloads_with_ride_state,
 };
-use vescpkg_rs::{ConfigBytes, SourceCustomConfigCallback};
+use vescpkg_rs::{ConfigBytes, StatefulCustomConfigCallback};
 
 fn refloat_config_with_hertz(hertz: u16) -> [u8; REFLOAT_CONFIG_LEN] {
     let mut config = default_refloat_config_bytes();
@@ -19,8 +19,8 @@ fn refloat_config_with_hertz(hertz: u16) -> [u8; REFLOAT_CONFIG_LEN] {
     config
 }
 
-fn source_current_config() -> Option<[u8; REFLOAT_CONFIG_LEN]> {
-    RefloatCustomConfig::state_source()
+fn runtime_current_config() -> Option<[u8; REFLOAT_CONFIG_LEN]> {
+    crate::package::REFLOAT_RUNTIME_STATE
         .with(|state| {
             RefloatCustomConfig::current_config(state)
                 .and_then(|config| config.as_bytes().try_into().ok())
@@ -28,8 +28,8 @@ fn source_current_config() -> Option<[u8; REFLOAT_CONFIG_LEN]> {
         .flatten()
 }
 
-fn source_set_config(config: &[u8]) -> bool {
-    RefloatCustomConfig::state_source()
+fn runtime_set_config(config: &[u8]) -> bool {
+    crate::package::REFLOAT_RUNTIME_STATE
         .with_mut(|state| RefloatCustomConfig::set_config(state, ConfigBytes::new(config)))
         .unwrap_or(false)
 }
@@ -64,7 +64,7 @@ fn custom_config_default_callback_returns_upstream_serialized_defaults() {
 
 #[test]
 fn stateful_custom_config_current_callback_reads_runtime_slot_state() {
-    let _state_sources = lock_test_refloat_config_state_sources();
+    let _state_lock = lock_test_refloat_config_state();
     let mut state = RefloatPackageState::new(sample_all_data_payloads());
     let mut incoming = default_refloat_config_bytes();
     incoming.edit_refloat_config(|config| {
@@ -76,7 +76,7 @@ fn stateful_custom_config_current_callback_reads_runtime_slot_state() {
     ));
     let _runtime_state = install_test_refloat_runtime_state(&mut state);
 
-    let current = source_current_config();
+    let current = runtime_current_config();
 
     // C map: current `get_cfg` reads shared package state at
     // `third_party/refloat/src/main.c:2347-2350`; the generic Rust callback
@@ -85,37 +85,37 @@ fn stateful_custom_config_current_callback_reads_runtime_slot_state() {
 }
 
 #[test]
-fn stateful_custom_config_current_callback_returns_none_without_state_source() {
-    let _state_sources = lock_test_refloat_config_state_sources();
+fn stateful_custom_config_current_callback_returns_none_without_runtime_state() {
+    let _state_lock = lock_test_refloat_config_state();
 
     // C map: upstream current `get_cfg` needs `Data *` to serialize
     // `d->float_conf` at `third_party/refloat/src/main.c:2347-2350`; without
     // either Rust runtime state or firmware `ARG`, no current config exists.
-    assert_eq!(source_current_config(), None);
+    assert_eq!(runtime_current_config(), None);
 }
 
 #[test]
 fn stateful_custom_config_set_callback_writes_runtime_state() {
-    let _state_sources = lock_test_refloat_config_state_sources();
+    let _state_lock = lock_test_refloat_config_state();
     let mut state = RefloatPackageState::new(sample_all_data_payloads());
     let _runtime_state = install_test_refloat_runtime_state(&mut state);
     let incoming = refloat_config_with_hertz(500);
 
-    assert!(source_set_config(&incoming));
+    assert!(runtime_set_config(&incoming));
 
     // C map: upstream `set_cfg` mutates `d->float_conf` at
     // `third_party/refloat/src/main.c:2360-2368`.
-    assert_eq!(source_current_config(), Some(incoming));
+    assert_eq!(runtime_current_config(), Some(incoming));
 }
 
 #[test]
-fn stateful_custom_config_set_callback_returns_false_without_state_source() {
-    let _state_sources = lock_test_refloat_config_state_sources();
+fn stateful_custom_config_set_callback_returns_false_without_runtime_state() {
+    let _state_lock = lock_test_refloat_config_state();
     let incoming = refloat_config_with_hertz(500);
 
     // C map: upstream `set_cfg` needs `Data *` before storing into
     // `d->float_conf` at `third_party/refloat/src/main.c:2368`.
-    assert!(!source_set_config(&incoming));
+    assert!(!runtime_set_config(&incoming));
 }
 
 #[test]

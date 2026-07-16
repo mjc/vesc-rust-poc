@@ -47,14 +47,3 @@ mod tests {
         assert!(super::package_lib_init(core::ptr::null_mut::<LoaderInfo>()));
     }
 }
-
-#[cfg(all(not(test), target_arch = "arm"))]
-use core::panic::PanicInfo;
-
-#[cfg(all(not(test), target_arch = "arm"))]
-#[panic_handler]
-fn panic(_: &PanicInfo) -> ! {
-    loop {
-        core::hint::spin_loop();
-    }
-}

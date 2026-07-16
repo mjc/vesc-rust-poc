@@ -12,12 +12,8 @@ pub struct RefloatCustomConfig;
 
 // C map: this trait is the typed equivalent of `get_cfg`, `set_cfg`, and
 // `get_cfg_xml` in `third_party/refloat/src/main.c:2334-2396`.
-impl vescpkg_rs::SourceCustomConfigCallback<REFLOAT_CONFIG_LEN> for RefloatCustomConfig {
+impl vescpkg_rs::StatefulCustomConfigCallback<REFLOAT_CONFIG_LEN> for RefloatCustomConfig {
     type State = RefloatPackageState;
-
-    fn state_source() -> vescpkg_rs::PackageStateAccess<'static, Self::State> {
-        refloat_custom_config_state_source()
-    }
 
     // C map: `get_cfg` serializes `data_refloatconfig` for the default request.
     fn default_config() -> ConfigBytes<'static> {
@@ -69,7 +65,7 @@ pub(super) fn register_refloat_callbacks(
 }
 
 #[cfg(test)]
-pub(super) fn lock_test_refloat_config_state_sources() -> impl Drop {
+pub(super) fn lock_test_refloat_config_state() -> impl Drop {
     super::test_support::lock_refloat_runtime_state()
 }
 
@@ -78,28 +74,6 @@ pub(super) fn install_test_refloat_runtime_state<'a>(
     state: &'a mut RefloatPackageState,
 ) -> impl Drop + 'a {
     vescpkg_rs::test_support::install_state(&super::REFLOAT_RUNTIME_STATE, state)
-}
-
-#[cfg(all(not(test), target_arch = "arm"))]
-fn refloat_custom_config_state_source()
--> vescpkg_rs::PackageStateAccess<'static, RefloatPackageState> {
-    // C map: upstream custom-config callbacks recover `Data *` through
-    // `ARG(PROG_ADDR)` before `get_cfg` reads `d->float_conf` at
-    // `third_party/refloat/src/main.c:2347-2350` or `set_cfg` mutates it at
-    // `third_party/refloat/src/main.c:2368`.
-    super::callbacks::refloat_app_data_state_source(&super::REFLOAT_RUNTIME_STATE)
-}
-
-#[cfg(test)]
-fn refloat_custom_config_state_source()
--> vescpkg_rs::PackageStateAccess<'static, RefloatPackageState> {
-    vescpkg_rs::PackageStateAccess::runtime(&super::REFLOAT_RUNTIME_STATE)
-}
-
-#[cfg(all(not(test), not(target_arch = "arm")))]
-fn refloat_custom_config_state_source()
--> vescpkg_rs::PackageStateAccess<'static, RefloatPackageState> {
-    vescpkg_rs::PackageStateAccess::runtime(&super::REFLOAT_RUNTIME_STATE)
 }
 
 fn refloat_set_cfg_payload_with_state(
