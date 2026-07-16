@@ -5,8 +5,8 @@ use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, AtomicUsiz
 use crate::{
     AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, DutyCycle, ElectricalSpeed,
     FirmwareFaultCode, ImuAngularRate, ImuOrientation, ImuPitch, ImuRoll, ImuYaw, InputVoltage,
-    MosfetTemperature, MotorCurrent, MotorTemperature, OdometerMeters, TripDistance, VehicleSpeed,
-    WattHoursCharged, WattHoursDischarged,
+    MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, OdometerMeters,
+    TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 
 // C map: these host replacements model the motor slots declared at
@@ -181,7 +181,7 @@ pub(crate) fn set_runtime_motor(
     store(&DUTY_CYCLE, duty_cycle.ratio().as_ratio());
 }
 
-pub(crate) fn set_motor_current_limits(max: MotorCurrent, min: MotorCurrent) {
+pub(crate) fn set_motor_current_limits(max: MotorCurrentLimit, min: MotorCurrentLimit) {
     store(&MOTOR_CURRENT_MAX, max.current().as_amps());
     store(&MOTOR_CURRENT_MIN, -min.current().as_amps());
 }

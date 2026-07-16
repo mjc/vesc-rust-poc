@@ -3,7 +3,8 @@
 use crate::types::{
     AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, CurrentOffDelay, DutyCycle,
     ElectricalSpeed, FirmwareFaultCode, InputVoltage, MosfetTemperature, MotorCurrent,
-    MotorTemperature, TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
+    MotorCurrentLimit, MotorTemperature, TripDistance, VehicleSpeed, WattHoursCharged,
+    WattHoursDischarged,
 };
 #[cfg(not(test))]
 use crate::units::{Charge, Current, Distance, Energy, Ratio, Rpm, Speed, Temperature, Voltage};
@@ -38,13 +39,13 @@ pub trait MotorTelemetryBindings {
     /// Refloat v1.2.1 reads `CFG_PARAM_l_current_max` through `get_cfg_float`
     /// in `src/motor_data.c:91`; the VESC config id is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:243`.
-    fn motor_current_max(&self) -> MotorCurrent;
+    fn motor_current_max(&self) -> MotorCurrentLimit;
     /// Return the configured braking-current magnitude.
     ///
     /// Refloat v1.2.1 stores `fabsf(CFG_PARAM_l_current_min)` in
     /// `src/motor_data.c:90`; the VESC config id is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:244`.
-    fn motor_current_min(&self) -> MotorCurrent;
+    fn motor_current_min(&self) -> MotorCurrentLimit;
     /// Return filtered input/battery current.
     ///
     /// Refloat v1.2.1 reads `mc_get_tot_current_in_filtered()` in
@@ -104,11 +105,11 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
         (**self).motor_current()
     }
 
-    fn motor_current_max(&self) -> MotorCurrent {
+    fn motor_current_max(&self) -> MotorCurrentLimit {
         (**self).motor_current_max()
     }
 
-    fn motor_current_min(&self) -> MotorCurrent {
+    fn motor_current_min(&self) -> MotorCurrentLimit {
         (**self).motor_current_min()
     }
 
@@ -255,15 +256,15 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         }))
     }
 
-    fn motor_current_max(&self) -> MotorCurrent {
-        MotorCurrent::new(Current::from_amps(unsafe {
+    fn motor_current_max(&self) -> MotorCurrentLimit {
+        MotorCurrentLimit::from_positive_current(Current::from_amps(unsafe {
             crate::ffi::get_cfg_float(CFG_PARAM_L_CURRENT_MAX)
         }))
     }
 
-    fn motor_current_min(&self) -> MotorCurrent {
-        MotorCurrent::new(Current::from_amps(unsafe {
-            crate::ffi::get_cfg_float(CFG_PARAM_L_CURRENT_MIN).abs()
+    fn motor_current_min(&self) -> MotorCurrentLimit {
+        MotorCurrentLimit::new(Current::from_amps(unsafe {
+            crate::ffi::get_cfg_float(CFG_PARAM_L_CURRENT_MIN)
         }))
     }
 
@@ -396,9 +397,9 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     /// Return filtered total motor current.
     fn motor_current(&self) -> MotorCurrent;
     /// Return the configured positive motor-current limit.
-    fn motor_current_max(&self) -> MotorCurrent;
+    fn motor_current_max(&self) -> MotorCurrentLimit;
     /// Return the configured braking-current magnitude.
-    fn motor_current_min(&self) -> MotorCurrent;
+    fn motor_current_min(&self) -> MotorCurrentLimit;
     /// Return filtered input/battery current.
     fn battery_current(&self) -> BatteryCurrent;
     /// Return the current duty-cycle magnitude.
@@ -488,12 +489,12 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
     }
 
     /// Return the configured positive motor-current limit.
-    pub fn motor_current_max(&self) -> MotorCurrent {
+    pub fn motor_current_max(&self) -> MotorCurrentLimit {
         self.bindings.motor_current_max()
     }
 
     /// Return the configured braking-current magnitude.
-    pub fn motor_current_min(&self) -> MotorCurrent {
+    pub fn motor_current_min(&self) -> MotorCurrentLimit {
         self.bindings.motor_current_min()
     }
 
@@ -585,11 +586,11 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
         self.motor_current()
     }
 
-    fn motor_current_max(&self) -> MotorCurrent {
+    fn motor_current_max(&self) -> MotorCurrentLimit {
         self.motor_current_max()
     }
 
-    fn motor_current_min(&self) -> MotorCurrent {
+    fn motor_current_min(&self) -> MotorCurrentLimit {
         self.motor_current_min()
     }
 

@@ -179,8 +179,8 @@ impl FirmwareTest {
     /// Configure the typed positive and braking motor-current limits.
     pub fn with_motor_current_limits(
         self,
-        max: crate::MotorCurrent,
-        min: crate::MotorCurrent,
+        max: crate::MotorCurrentLimit,
+        min: crate::MotorCurrentLimit,
     ) -> Self {
         crate::test_ffi::set_motor_current_limits(max, min);
         self

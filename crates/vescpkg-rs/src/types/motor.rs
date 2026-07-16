@@ -239,6 +239,29 @@ impl FirmwareFaultCompatCode {
     }
 }
 
+/// Positive motor-current limit magnitude.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct MotorCurrentLimit(Current);
+
+impl MotorCurrentLimit {
+    /// Normalize a configured motor-current limit to its positive magnitude.
+    pub const fn new(current: Current) -> Self {
+        Self(current.abs())
+    }
+
+    /// Preserve a firmware value whose positive-limit contract is already established.
+    #[cfg(not(test))]
+    pub(crate) const fn from_positive_current(current: Current) -> Self {
+        Self(current)
+    }
+
+    /// Return the positive current-limit magnitude.
+    pub const fn current(self) -> Current {
+        self.0
+    }
+}
+
 current_type!(MotorCurrent, "Motor phase/current-control current.");
 current_type!(BrakeCurrent, "Motor braking current.");
 current_type!(HandbrakeCurrent, "Handbrake current command.");
@@ -254,3 +277,16 @@ voltage_type!(AudioVoltage, "Audio/haptic voltage command.");
 frequency_type!(AudioFrequency, "Audio/haptic frequency command.");
 sample_rate_type!(AudioSampleRate, "Sample rate for audio sample playback.");
 seconds_type!(AudioDuration, "Audio/haptic playback duration.");
+
+#[cfg(test)]
+mod tests {
+    use super::MotorCurrentLimit;
+    use crate::Current;
+
+    #[test]
+    fn current_limit_normalizes_firmware_sign() {
+        let limit = MotorCurrentLimit::new(Current::from_amps(-40.0));
+
+        assert_eq!(limit.current(), Current::from_amps(40.0));
+    }
+}
