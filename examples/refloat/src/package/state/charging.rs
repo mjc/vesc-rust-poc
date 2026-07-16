@@ -9,7 +9,20 @@ use crate::package::time::refloat_ticks_elapsed;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::TimestampTicks;
 use vescpkg_rs::prelude::{BatteryCurrent, BatteryVoltage, Current, Voltage};
-use vescpkg_rs::protocol_buffer::get_float16;
+
+const CHARGING_WIRE_SCALE: f32 = 10.0;
+
+fn decode_charging_voltage(hi: u8, lo: u8) -> BatteryVoltage {
+    BatteryVoltage::new(Voltage::from_volts(
+        f32::from(i16::from_be_bytes([hi, lo])) / CHARGING_WIRE_SCALE,
+    ))
+}
+
+fn decode_charging_current(hi: u8, lo: u8) -> BatteryCurrent {
+    BatteryCurrent::new(Current::from_amps(
+        f32::from(i16::from_be_bytes([hi, lo])) / CHARGING_WIRE_SCALE,
+    ))
+}
 
 pub(super) fn handle_packet(
     payloads: RefloatAllDataPayloads,
@@ -32,18 +45,14 @@ pub(super) fn handle_packet(
 
     // C map: `charging_state_request` expects magic 151 plus signed float16
     // voltage/current with scale 10 at `third_party/refloat/src/charging.c:37-63`.
-    let scaled_i16 = |hi, lo| {
-        let mut index = 0;
-        get_float16(&[hi, lo], 10.0, &mut index).expect("two bytes always contain one VESC float16")
-    };
     let (voltage, current) = match *charging {
         0 => (
             BatteryVoltage::new(Voltage::ZERO),
             BatteryCurrent::new(Current::ZERO),
         ),
         _ => (
-            BatteryVoltage::new(Voltage::from_volts(scaled_i16(*voltage_hi, *voltage_lo))),
-            BatteryCurrent::new(Current::from_amps(scaled_i16(*current_hi, *current_lo))),
+            decode_charging_voltage(*voltage_hi, *voltage_lo),
+            decode_charging_current(*current_hi, *current_lo),
         ),
     };
 
