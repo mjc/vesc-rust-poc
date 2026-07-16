@@ -1,16 +1,17 @@
 use super::RefloatPackageState;
 use crate::domain::{
-    FootpadSensorSample, FootpadSensorState, RefloatAllDataBasePayload, RefloatAllDataPayloads,
+    RefloatAllDataBasePayload, RefloatAllDataPayloads, RefloatFootpadSample, RefloatFootpadState,
 };
-use vescpkg_rs::prelude::Voltage;
+use vescpkg_rs::prelude::{AdcVoltage, Voltage};
 
 #[inline(always)]
-pub(super) fn refresh(state: &mut RefloatPackageState, adc1: Voltage, adc2: Voltage) {
+pub(super) fn refresh(state: &mut RefloatPackageState, adc1: AdcVoltage, adc2: AdcVoltage) {
     // C map: state derives footpad sensor state from raw ADC volts at
     // `third_party/refloat/src/footpad_sensor.c:28-61`.
-    let adc2 = adc2_zero_floor(adc2);
+    let adc1 = adc1.voltage();
+    let adc2 = adc2_zero_floor(adc2.voltage());
     let faults = state.serialized_config.faults();
-    let sample = FootpadSensorSample::from_adc_volts(
+    let sample = RefloatFootpadSample::new(
         adc1,
         adc2,
         sensor_state(
@@ -53,28 +54,28 @@ fn sensor_state(
     adc2_volts: f32,
     fault_adc1: f32,
     fault_adc2: f32,
-) -> FootpadSensorState {
+) -> RefloatFootpadState {
     // C map: Refloat v1.2.1 `footpad_sensor_update` decodes the switch
     // state from raw ADC volts at `third_party/refloat/src/footpad_sensor.c:28-61`.
-    let mut state = FootpadSensorState::None;
+    let mut state = RefloatFootpadState::None;
     if fault_adc1 == 0.0 && fault_adc2 == 0.0 {
-        state = FootpadSensorState::Both;
+        state = RefloatFootpadState::Both;
     } else if fault_adc2 == 0.0 {
         if adc1_volts > fault_adc1 {
-            state = FootpadSensorState::Both;
+            state = RefloatFootpadState::Both;
         }
     } else if fault_adc1 == 0.0 {
         if adc2_volts > fault_adc2 {
-            state = FootpadSensorState::Both;
+            state = RefloatFootpadState::Both;
         }
     } else if adc1_volts > fault_adc1 {
         state = if adc2_volts > fault_adc2 {
-            FootpadSensorState::Both
+            RefloatFootpadState::Both
         } else {
-            FootpadSensorState::Left
+            RefloatFootpadState::Left
         };
     } else if adc2_volts > fault_adc2 {
-        state = FootpadSensorState::Right;
+        state = RefloatFootpadState::Right;
     }
     state
 }

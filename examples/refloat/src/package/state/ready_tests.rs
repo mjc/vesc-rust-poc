@@ -4,9 +4,9 @@ use super::super::test_support::{
 };
 use super::RefloatPackageState;
 use crate::domain::{
-    FootpadSensorSample, FootpadSensorState, RefloatAllDataAttitude, RefloatAllDataBasePayload,
-    RefloatAllDataPayloads, RefloatMode, RefloatRealtimeBalancePitch, RefloatRunState,
-    RefloatSetpointAdjustment, RefloatStopCondition,
+    RefloatAllDataAttitude, RefloatAllDataBasePayload, RefloatAllDataPayloads,
+    RefloatFootpadSample, RefloatFootpadState, RefloatMode, RefloatRealtimeBalancePitch,
+    RefloatRunState, RefloatSetpointAdjustment, RefloatStopCondition,
 };
 use vescpkg_rs::prelude::*;
 use vescpkg_rs::test_support::FirmwareTest;
@@ -36,7 +36,7 @@ fn ready_payloads(mode: RefloatMode, balance_pitch: AngleDegrees) -> RefloatAllD
 fn ready_payloads_with_footpads(
     mode: RefloatMode,
     balance_pitch: AngleDegrees,
-    footpad: FootpadSensorSample,
+    footpad: RefloatFootpadSample,
 ) -> RefloatAllDataPayloads {
     // C map: this variant keeps the same READY base shape while substituting the
     // footpad sample that Refloat's READY loop inspects before engagement.
@@ -232,10 +232,10 @@ fn app_data_ready_flywheel_without_footpads_engages_like_refloat_can_engage() {
     let telemetry = FirmwareTest::new();
     configure_ready_imu(&telemetry, AngleRadians::from_radians(0.1));
     let imu = telemetry.imu();
-    let no_footpads = FootpadSensorSample::new(
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
-        FootpadSensorState::None,
+    let no_footpads = RefloatFootpadSample::new(
+        Voltage::from_volts(0.0),
+        Voltage::from_volts(0.0),
+        RefloatFootpadState::None,
     );
     let mut state = RefloatPackageState::new(ready_payloads_with_footpads(
         RefloatMode::Flywheel,
@@ -273,10 +273,10 @@ fn app_data_ready_flywheel_both_footpads_stops_flywheel_like_refloat_ready_loop(
     let payloads =
         sample_all_data_payloads_with_ride_state(RefloatRunState::Ready, RefloatMode::Flywheel);
     let base = payloads.base();
-    let both_footpads = FootpadSensorSample::new(
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
-        AdcDecodedLevel::new(Ratio::from_ratio_const(1.0)),
-        FootpadSensorState::Both,
+    let both_footpads = RefloatFootpadSample::new(
+        Voltage::from_volts(0.0),
+        Voltage::from_volts(1.0),
+        RefloatFootpadState::Both,
     );
     let mut state = RefloatPackageState::new(RefloatAllDataPayloads::new(
         RefloatAllDataBasePayload::new(
@@ -324,10 +324,10 @@ fn app_data_ready_single_footpad_engages_when_dual_switch_config_is_set() {
     let imu = telemetry.imu();
     let payloads = ready_payloads(RefloatMode::Normal, AngleDegrees::from_degrees(0.05));
     let base = payloads.base();
-    let single_footpad = FootpadSensorSample::new(
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.8)),
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
-        FootpadSensorState::Left,
+    let single_footpad = RefloatFootpadSample::new(
+        Voltage::from_volts(0.8),
+        Voltage::from_volts(0.0),
+        RefloatFootpadState::Left,
     );
     let upright_base = RefloatAllDataBasePayload::new(
         base.balance_current(),
@@ -381,10 +381,10 @@ fn app_data_ready_single_footpad_default_config_does_not_engage_like_refloat_can
     let imu = telemetry.imu();
     let payloads = ready_payloads(RefloatMode::Normal, AngleDegrees::from_degrees(0.05));
     let base = payloads.base();
-    let single_footpad = FootpadSensorSample::new(
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.8)),
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
-        FootpadSensorState::Left,
+    let single_footpad = RefloatFootpadSample::new(
+        Voltage::from_volts(0.8),
+        Voltage::from_volts(0.0),
+        RefloatFootpadState::Left,
     );
     let upright_base = RefloatAllDataBasePayload::new(
         base.balance_current(),
@@ -435,10 +435,10 @@ fn app_data_ready_simple_start_single_footpad_engages_after_disengage_grace_like
     let imu = telemetry.imu();
     let payloads = ready_payloads(RefloatMode::Normal, AngleDegrees::from_degrees(0.05));
     let base = payloads.base();
-    let single_footpad = FootpadSensorSample::new(
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.8)),
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
-        FootpadSensorState::Left,
+    let single_footpad = RefloatFootpadSample::new(
+        Voltage::from_volts(0.8),
+        Voltage::from_volts(0.0),
+        RefloatFootpadState::Left,
     );
     let base = RefloatAllDataBasePayload::new(
         base.balance_current(),

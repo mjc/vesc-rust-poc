@@ -1,13 +1,13 @@
 use crate::domain::{
-    FootpadSensorSample, FootpadSensorState, REFLOAT_APP_DATA_PACKAGE_ID,
-    REFLOAT_REALTIME_DATA_ITEMS, REFLOAT_REALTIME_RECORDED_ITEMS, REFLOAT_REALTIME_RUNTIME_ITEMS,
-    RefloatAlertId, RefloatAllDataAttitude, RefloatAllDataBasePayload,
-    RefloatAllDataBatteryTemperature, RefloatAllDataMode, RefloatAllDataMode2Payload,
-    RefloatAllDataMode3Payload, RefloatAllDataMode4Payload, RefloatAllDataMotorPayload,
-    RefloatAllDataPayloads, RefloatAllDataRequest, RefloatAllDataRequestError,
-    RefloatAllDataResponse, RefloatAllDataStatus, RefloatAppDataCommand, RefloatBeepReason,
-    RefloatChargingState, RefloatDarkRideState, RefloatDataRecorderFlags, RefloatFatalErrorState,
-    RefloatFocIdCurrent, RefloatMode, RefloatMotorCommand, RefloatRealtimeAlertMask,
+    REFLOAT_APP_DATA_PACKAGE_ID, REFLOAT_REALTIME_DATA_ITEMS, REFLOAT_REALTIME_RECORDED_ITEMS,
+    REFLOAT_REALTIME_RUNTIME_ITEMS, RefloatAlertId, RefloatAllDataAttitude,
+    RefloatAllDataBasePayload, RefloatAllDataBatteryTemperature, RefloatAllDataMode,
+    RefloatAllDataMode2Payload, RefloatAllDataMode3Payload, RefloatAllDataMode4Payload,
+    RefloatAllDataMotorPayload, RefloatAllDataPayloads, RefloatAllDataRequest,
+    RefloatAllDataRequestError, RefloatAllDataResponse, RefloatAllDataStatus,
+    RefloatAppDataCommand, RefloatBeepReason, RefloatChargingState, RefloatDarkRideState,
+    RefloatDataRecorderFlags, RefloatFatalErrorState, RefloatFocIdCurrent, RefloatFootpadSample,
+    RefloatFootpadState, RefloatMode, RefloatMotorCommand, RefloatRealtimeAlertMask,
     RefloatRealtimeAlwaysPayload, RefloatRealtimeAtrAccelerationDiff, RefloatRealtimeAtrSpeedBoost,
     RefloatRealtimeBalanceCurrent, RefloatRealtimeBalancePitch, RefloatRealtimeBoosterCurrent,
     RefloatRealtimeChargingCurrent, RefloatRealtimeChargingPayload, RefloatRealtimeChargingVoltage,
@@ -58,7 +58,7 @@ fn package_author_builds_source_startup_all_data_payload() {
             RefloatBeepReason::None,
         )
     );
-    assert_eq!(payloads.base().footpad().state(), FootpadSensorState::None);
+    assert_eq!(payloads.base().footpad().state(), RefloatFootpadState::None);
     assert_eq!(
         response.as_bytes(),
         &[
@@ -71,10 +71,10 @@ fn package_author_builds_source_startup_all_data_payload() {
 
 #[test]
 fn package_author_models_refloat_ride_inputs_without_raw_float_handoff() {
-    let footpad = FootpadSensorSample::new(
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.65)),
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.72)),
-        FootpadSensorState::Both,
+    let footpad = RefloatFootpadSample::new(
+        Voltage::from_volts(0.65),
+        Voltage::from_volts(0.72),
+        RefloatFootpadState::Both,
     );
     let attitude = ImuAttitude::new(
         ImuRoll::new(AngleRadians::from_radians(-0.01)),
@@ -90,7 +90,7 @@ fn package_author_models_refloat_ride_inputs_without_raw_float_handoff() {
     let motor_current = DirectionalMotorCurrent::new(Current::from_amps(8.0));
     let battery_current = BatteryCurrent::new(Current::from_amps(3.0));
 
-    assert_eq!(footpad.state(), FootpadSensorState::Both);
+    assert_eq!(footpad.state(), RefloatFootpadState::Both);
     assert_eq!(attitude.pitch().angle().as_radians(), 0.03);
     assert_eq!(angular_rate.roll().as_degrees_per_second(), 12.0);
     assert_eq!(electrical_speed.rpm().as_revolutions_per_minute(), 2400.0);
@@ -255,7 +255,7 @@ fn package_author_builds_realtime_data_header_without_raw_bit_flags() {
     let header = RefloatRealtimeDataHeader::new(
         SystemTimestamp::new(TimestampTicks::from_ticks(123_456)),
         ride_state,
-        FootpadSensorState::Both,
+        RefloatFootpadState::Both,
         RefloatBeepReason::FirmwareFault,
     )
     .with_data_recorder(recorder)
@@ -366,10 +366,10 @@ fn package_author_builds_realtime_always_payload_without_raw_values() {
         RefloatRealtimeBalancePitch::new(AngleRadians::from_radians(0.03)),
         ImuRoll::new(AngleRadians::from_radians(-0.02)),
     );
-    let footpad = FootpadSensorSample::new(
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.61)),
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.58)),
-        FootpadSensorState::Both,
+    let footpad = RefloatFootpadSample::new(
+        Voltage::from_volts(0.61),
+        Voltage::from_volts(0.58),
+        RefloatFootpadState::Both,
     );
     let payload = RefloatRealtimeAlwaysPayload::new(
         motor,
@@ -414,7 +414,7 @@ fn package_author_builds_realtime_always_payload_without_raw_values() {
         52.0
     );
     assert_eq!(payload.imu().balance_pitch().angle().as_radians(), 0.03);
-    assert_eq!(payload.footpad().state(), FootpadSensorState::Both);
+    assert_eq!(payload.footpad().state(), RefloatFootpadState::Both);
     assert_eq!(payload.remote_input().ratio().as_ratio(), 0.18);
 }
 
@@ -480,10 +480,10 @@ fn package_author_builds_all_data_base_payload_without_raw_values() {
         RefloatSetpointAdjustment::None,
         RefloatStopCondition::None,
     );
-    let footpad = FootpadSensorSample::new(
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.62)),
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.57)),
-        FootpadSensorState::Both,
+    let footpad = RefloatFootpadSample::new(
+        Voltage::from_volts(0.62),
+        Voltage::from_volts(0.57),
+        RefloatFootpadState::Both,
     );
     let setpoints = RefloatRealtimeRuntimeSetpoints::new(
         RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(1.5)),
@@ -519,7 +519,7 @@ fn package_author_builds_all_data_base_payload_without_raw_values() {
     assert_eq!(payload.command(), RefloatAppDataCommand::GetAllData);
     assert_eq!(payload.status().ride_state().float_state_compat(), 1);
     assert_eq!(payload.status().beep_reason().id(), 1);
-    assert_eq!(payload.footpad().state(), FootpadSensorState::Both);
+    assert_eq!(payload.footpad().state(), RefloatFootpadState::Both);
     assert_eq!(payload.setpoints().remote().angle().as_degrees(), 2.0);
     assert_eq!(payload.attitude().pitch().angle().as_radians(), 0.04);
     assert_eq!(payload.balance_current().current().current().as_amps(), 9.5);
@@ -598,10 +598,10 @@ fn package_author_encodes_all_data_base_response_like_refloat_v1_2_1() {
         RefloatSetpointAdjustment::None,
         RefloatStopCondition::None,
     );
-    let footpad = FootpadSensorSample::new(
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.60)),
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.40)),
-        FootpadSensorState::Both,
+    let footpad = RefloatFootpadSample::new(
+        Voltage::from_volts(0.60),
+        Voltage::from_volts(0.40),
+        RefloatFootpadState::Both,
     );
     let setpoints = RefloatRealtimeRuntimeSetpoints::new(
         RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(1.0)),
@@ -658,10 +658,10 @@ fn package_author_encodes_all_data_mode4_response_like_refloat_v1_2_1() {
         RefloatSetpointAdjustment::None,
         RefloatStopCondition::None,
     );
-    let footpad = FootpadSensorSample::new(
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.60)),
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.40)),
-        FootpadSensorState::Both,
+    let footpad = RefloatFootpadSample::new(
+        Voltage::from_volts(0.60),
+        Voltage::from_volts(0.40),
+        RefloatFootpadState::Both,
     );
     let setpoints = RefloatRealtimeRuntimeSetpoints::new(
         RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(1.0)),
@@ -731,10 +731,10 @@ fn package_author_dispatches_all_data_responses_from_typed_request_mode() {
         RefloatSetpointAdjustment::None,
         RefloatStopCondition::None,
     );
-    let footpad = FootpadSensorSample::new(
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.60)),
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.40)),
-        FootpadSensorState::Both,
+    let footpad = RefloatFootpadSample::new(
+        Voltage::from_volts(0.60),
+        Voltage::from_volts(0.40),
+        RefloatFootpadState::Both,
     );
     let setpoints = RefloatRealtimeRuntimeSetpoints::new(
         RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(1.0)),

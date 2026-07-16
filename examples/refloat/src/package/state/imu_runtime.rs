@@ -28,7 +28,7 @@ pub(super) fn refresh(state: &mut RefloatPackageState, imu: &impl Imu, system_ti
         (
             RefloatRunState::Running,
             RefloatMode::Flywheel,
-            FootpadSensorState::Both
+            RefloatFootpadState::Both
         )
     );
     let reverse_stop_no_footpads_fault = matches!(
@@ -40,7 +40,7 @@ pub(super) fn refresh(state: &mut RefloatPackageState, imu: &impl Imu, system_ti
         (
             RefloatRunState::Running,
             RefloatSetpointAdjustment::ReverseStop,
-            FootpadSensorState::None
+            RefloatFootpadState::None
         )
     );
     let reverse_stop_active = matches!(
@@ -114,7 +114,7 @@ pub(super) fn refresh(state: &mut RefloatPackageState, imu: &impl Imu, system_ti
         (run_state, base.footpad().state(), ride_state.mode()),
         (
             RefloatRunState::Running,
-            FootpadSensorState::None,
+            RefloatFootpadState::None,
             mode
         ) if !matches!(mode, RefloatMode::Flywheel)
     ) && faults.quickstop_enabled()
@@ -124,14 +124,14 @@ pub(super) fn refresh(state: &mut RefloatPackageState, imu: &impl Imu, system_ti
         && (pitch >= AngleRadians::ZERO) == (motor_erpm >= Rpm::ZERO);
     let single_footpad = matches!(
         base.footpad().state(),
-        FootpadSensorState::Left | FootpadSensorState::Right
+        RefloatFootpadState::Left | RefloatFootpadState::Right
     );
     let dual_switch = faults.dual_switch();
     let simple_start = startup.simplestart_enabled()
         && (refloat_ticks_elapsed(system_time_ticks, state.disengage_ticks, 2)
             || !refloat_ticks_elapsed(system_time_ticks, state.engage_ticks, 1));
     let can_engage = matches!(ride_state.charging(), RefloatChargingState::NotCharging)
-        && (matches!(base.footpad().state(), FootpadSensorState::Both)
+        && (matches!(base.footpad().state(), RefloatFootpadState::Both)
             || single_footpad && (dual_switch || simple_start)
             || matches!(ride_state.mode(), RefloatMode::Flywheel));
     let fault_adc_half_erpm = faults.adc_half_erpm().rpm();
@@ -142,7 +142,7 @@ pub(super) fn refresh(state: &mut RefloatPackageState, imu: &impl Imu, system_ti
         && roll_abs < moving_fault.roll;
     let full_switch_pending = !darkride_active
         && matches!(run_state, RefloatRunState::Running)
-        && matches!(base.footpad().state(), FootpadSensorState::None)
+        && matches!(base.footpad().state(), RefloatFootpadState::None)
         && !matches!(ride_state.mode(), RefloatMode::Flywheel);
     let full_switch_fault = full_switch_pending
         && !switch_faults_disabled
@@ -193,7 +193,7 @@ pub(super) fn refresh(state: &mut RefloatPackageState, imu: &impl Imu, system_ti
         (
             RefloatRunState::Ready,
             RefloatMode::Flywheel,
-            FootpadSensorState::Both
+            RefloatFootpadState::Both
         )
     );
     let darkride_high_erpm_pending = darkride_active && motor_erpm > darkride.timed_high_erpm;

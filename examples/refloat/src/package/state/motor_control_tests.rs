@@ -4,9 +4,9 @@ use super::super::test_support::{
 };
 use super::RefloatPackageState;
 use crate::domain::{
-    FootpadSensorSample, FootpadSensorState, REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataAttitude,
-    RefloatAllDataBasePayload, RefloatAllDataPayloads, RefloatAllDataStatus, RefloatAppDataCommand,
-    RefloatMode, RefloatRealtimeBalanceCurrent, RefloatRealtimeBalancePitch,
+    REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataAttitude, RefloatAllDataBasePayload,
+    RefloatAllDataPayloads, RefloatAllDataStatus, RefloatAppDataCommand, RefloatFootpadSample,
+    RefloatFootpadState, RefloatMode, RefloatRealtimeBalanceCurrent, RefloatRealtimeBalancePitch,
     RefloatRealtimeBoosterCurrent, RefloatRealtimeRuntimeSetpoint, RefloatRealtimeRuntimeSetpoints,
     RefloatRideState, RefloatRunState, RefloatSetpointAdjustment, RefloatStopCondition,
 };
@@ -86,10 +86,10 @@ fn running_limits_normal_current_from_motor_config_like_refloat_loop() {
                 ),
                 base.status().beep_reason(),
             ),
-            FootpadSensorSample::new(
-                AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
-                AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
-                FootpadSensorState::None,
+            RefloatFootpadSample::new(
+                Voltage::from_volts(0.0),
+                Voltage::from_volts(0.0),
+                RefloatFootpadState::None,
             ),
             setpoints,
             RefloatRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),

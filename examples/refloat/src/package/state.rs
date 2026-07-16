@@ -2,17 +2,17 @@ use super::time::{refloat_ticks_elapsed, refloat_ticks_elapsed_seconds};
 use crate::balance::{BalanceFilter, LoopInput, LoopState};
 use crate::config::*;
 use crate::domain::{
-    FootpadSensorState, REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataAttitude,
-    RefloatAllDataBasePayload, RefloatAllDataPayloads, RefloatAllDataStatus, RefloatAppDataCommand,
-    RefloatChargingState, RefloatDarkRideState, RefloatMode, RefloatRealtimeBalanceCurrent,
+    REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataAttitude, RefloatAllDataBasePayload,
+    RefloatAllDataPayloads, RefloatAllDataStatus, RefloatAppDataCommand, RefloatChargingState,
+    RefloatDarkRideState, RefloatFootpadState, RefloatMode, RefloatRealtimeBalanceCurrent,
     RefloatRealtimeBalancePitch, RefloatRealtimeBoosterCurrent, RefloatRealtimeRuntimeSetpoint,
     RefloatRealtimeRuntimeSetpoints, RefloatRideState, RefloatRunState, RefloatSetpointAdjustment,
     RefloatStopCondition, RefloatWheelSlipState,
 };
 use crate::motor_control::RefloatMotorControl;
-use vescpkg_rs::prelude::{AngleRadians, Current, MotorCurrent, Rpm, TimestampTicks};
 #[cfg(any(test, target_arch = "arm"))]
-use vescpkg_rs::prelude::{FirmwareVersion, Voltage};
+use vescpkg_rs::prelude::{AdcVoltage, FirmwareVersion};
+use vescpkg_rs::prelude::{AngleRadians, Current, MotorCurrent, Rpm, TimestampTicks};
 use vescpkg_rs::{Imu, MotorOutput, MotorTelemetry};
 
 #[cfg(test)]
@@ -234,8 +234,8 @@ impl RefloatPackageState {
         &mut self,
         telemetry: &impl MotorTelemetry,
         imu: &impl Imu,
-        footpad_adc1: Voltage,
-        footpad_adc2: Voltage,
+        footpad_adc1: AdcVoltage,
+        footpad_adc2: AdcVoltage,
         system_time_ticks: u32,
     ) {
         self.refresh_config_runtime_state();
@@ -271,7 +271,7 @@ impl RefloatPackageState {
 
     #[cfg(any(test, target_arch = "arm"))]
     #[inline(always)]
-    pub(crate) fn refresh_footpad_runtime_state(&mut self, adc1: Voltage, adc2: Voltage) {
+    pub(crate) fn refresh_footpad_runtime_state(&mut self, adc1: AdcVoltage, adc2: AdcVoltage) {
         footpad_runtime::refresh(self, adc1, adc2);
     }
 

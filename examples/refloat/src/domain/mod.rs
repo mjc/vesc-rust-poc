@@ -49,4 +49,4 @@ pub use self::state::{
     RefloatFatalErrorState, RefloatMode, RefloatRunState, RefloatSetpointAdjustment,
     RefloatStopCondition, RefloatWheelSlipState,
 };
-pub use crate::footpad::{FootpadSensorSample, FootpadSensorState};
+pub use crate::footpad::{RefloatFootpadSample, RefloatFootpadState};

@@ -7,7 +7,7 @@
 //! (`0ef6e99d8701`):
 //! - `third_party/refloat/src/footpad_sensor.c:28-31` stores raw ADC1/ADC2 readings.
 
-use vescpkg_rs::prelude::{AdcDecodedLevel, Ratio, Voltage};
+use vescpkg_rs::prelude::Voltage;
 
 /// Refloat footpad sensor state.
 ///
@@ -60,41 +60,12 @@ pub struct RefloatFootpadSample {
 }
 
 impl RefloatFootpadSample {
-    /// Build a footpad sensor sample from typed ADC levels and decoded state.
-    ///
-    /// C map: `third_party/refloat/src/footpad_sensor.c:22-32`.
-    pub const fn new(
-        adc1: AdcDecodedLevel,
-        adc2: AdcDecodedLevel,
-        state: RefloatFootpadState,
-    ) -> Self {
-        Self {
-            adc1: Voltage::from_volts(adc1.ratio().as_ratio()),
-            adc2: Voltage::from_volts(adc2.ratio().as_ratio()),
-            state,
-        }
-    }
-
     /// Build a footpad sample from Refloat's raw ADC pin voltages.
     ///
     /// C map: Refloat v1.2.1 stores `VESC_IF->io_read_analog` results in
     /// `FootpadSensor.adc1/adc2` at `third_party/refloat/src/footpad_sensor.c:28-31`.
-    pub const fn from_adc_volts(adc1: Voltage, adc2: Voltage, state: RefloatFootpadState) -> Self {
+    pub const fn new(adc1: Voltage, adc2: Voltage, state: RefloatFootpadState) -> Self {
         Self { adc1, adc2, state }
-    }
-
-    /// Return the typed ADC1 level.
-    ///
-    /// C map: `third_party/refloat/src/footpad_sensor.h:29-32`.
-    pub const fn adc1(self) -> AdcDecodedLevel {
-        AdcDecodedLevel::new(Ratio::clamped(self.adc1.as_volts()))
-    }
-
-    /// Return the typed ADC2 level.
-    ///
-    /// C map: `third_party/refloat/src/footpad_sensor.h:29-32`.
-    pub const fn adc2(self) -> AdcDecodedLevel {
-        AdcDecodedLevel::new(Ratio::clamped(self.adc2.as_volts()))
     }
 
     /// Return Refloat's raw ADC1 voltage from `third_party/refloat/src/footpad_sensor.c:28-31`.
@@ -114,13 +85,3 @@ impl RefloatFootpadSample {
         self.state
     }
 }
-
-/// Backwards-compatible Refloat footpad state name.
-///
-/// C map: `third_party/refloat/src/footpad_sensor.h:22-27`.
-pub type FootpadSensorState = RefloatFootpadState;
-
-/// Backwards-compatible Refloat footpad sample name.
-///
-/// C map: `third_party/refloat/src/footpad_sensor.h:29-32`.
-pub type FootpadSensorSample = RefloatFootpadSample;

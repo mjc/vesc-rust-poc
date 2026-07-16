@@ -38,10 +38,10 @@ pub(super) fn sample_all_data_payloads_with_ride_state(
         RefloatSetpointAdjustment::None,
         RefloatStopCondition::None,
     );
-    let footpad = FootpadSensorSample::new(
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.60)),
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.40)),
-        FootpadSensorState::Both,
+    let footpad = RefloatFootpadSample::new(
+        Voltage::from_volts(0.60),
+        Voltage::from_volts(0.40),
+        RefloatFootpadState::Both,
     );
     let setpoints = RefloatRealtimeRuntimeSetpoints::new(
         RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(1.0)),

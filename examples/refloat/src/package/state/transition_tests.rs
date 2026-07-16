@@ -3,8 +3,8 @@ use super::super::test_support::{
 };
 use super::RefloatPackageState;
 use crate::domain::{
-    FootpadSensorSample, FootpadSensorState, RefloatAllDataBasePayload, RefloatAllDataPayloads,
-    RefloatAllDataStatus, RefloatDarkRideState, RefloatMode, RefloatRunState, RefloatStopCondition,
+    RefloatAllDataBasePayload, RefloatAllDataPayloads, RefloatAllDataStatus, RefloatDarkRideState,
+    RefloatFootpadSample, RefloatFootpadState, RefloatMode, RefloatRunState, RefloatStopCondition,
     RefloatWheelSlipState,
 };
 use vescpkg_rs::prelude::*;
@@ -40,10 +40,10 @@ fn darkride_payloads(mode: RefloatMode) -> RefloatAllDataPayloads {
 fn darkride_no_footpads_payloads(mode: RefloatMode) -> RefloatAllDataPayloads {
     let payloads = darkride_payloads(mode);
     let base = payloads.base();
-    let no_footpads = FootpadSensorSample::new(
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
-        FootpadSensorState::None,
+    let no_footpads = RefloatFootpadSample::new(
+        Voltage::from_volts(0.0),
+        Voltage::from_volts(0.0),
+        RefloatFootpadState::None,
     );
     RefloatAllDataPayloads::new(
         RefloatAllDataBasePayload::new(
@@ -221,10 +221,10 @@ fn app_data_running_darkride_enabled_high_roll_stops_like_refloat_fault_check() 
     let imu = telemetry.imu();
     let payloads = running_payloads(RefloatMode::Normal);
     let base = payloads.base();
-    let no_footpads = FootpadSensorSample::new(
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
-        FootpadSensorState::None,
+    let no_footpads = RefloatFootpadSample::new(
+        Voltage::from_volts(0.0),
+        Voltage::from_volts(0.0),
+        RefloatFootpadState::None,
     );
     let mut state = RefloatPackageState::new(RefloatAllDataPayloads::new(
         RefloatAllDataBasePayload::new(
@@ -367,10 +367,10 @@ fn app_data_running_darkride_simple_start_single_footpad_stops_during_engage_gra
         .status()
         .ride_state()
         .with_darkride(RefloatDarkRideState::Active);
-    let single_footpad = FootpadSensorSample::new(
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.8)),
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
-        FootpadSensorState::Left,
+    let single_footpad = RefloatFootpadSample::new(
+        Voltage::from_volts(0.8),
+        Voltage::from_volts(0.0),
+        RefloatFootpadState::Left,
     );
     let mut state = RefloatPackageState::new(RefloatAllDataPayloads::new(
         RefloatAllDataBasePayload::new(

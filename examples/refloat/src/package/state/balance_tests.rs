@@ -4,12 +4,12 @@ use super::super::test_support::{
 };
 use super::RefloatPackageState;
 use crate::domain::{
-    FootpadSensorSample, FootpadSensorState, REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataAttitude,
-    RefloatAllDataBasePayload, RefloatAllDataMotorPayload, RefloatAllDataPayloads,
-    RefloatAllDataStatus, RefloatAppDataCommand, RefloatFocIdCurrent, RefloatMode,
-    RefloatRealtimeBalanceCurrent, RefloatRealtimeBalancePitch, RefloatRealtimeBoosterCurrent,
-    RefloatRealtimeRuntimeSetpoint, RefloatRealtimeRuntimeSetpoints, RefloatRunState,
-    RefloatSetpointAdjustment, RefloatWheelSlipState,
+    REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataAttitude, RefloatAllDataBasePayload,
+    RefloatAllDataMotorPayload, RefloatAllDataPayloads, RefloatAllDataStatus,
+    RefloatAppDataCommand, RefloatFocIdCurrent, RefloatFootpadSample, RefloatFootpadState,
+    RefloatMode, RefloatRealtimeBalanceCurrent, RefloatRealtimeBalancePitch,
+    RefloatRealtimeBoosterCurrent, RefloatRealtimeRuntimeSetpoint, RefloatRealtimeRuntimeSetpoints,
+    RefloatRunState, RefloatSetpointAdjustment, RefloatWheelSlipState,
 };
 use vescpkg_rs::prelude::*;
 use vescpkg_rs::test_support::FirmwareTest;
@@ -255,10 +255,10 @@ fn app_data_running_limits_handtest_and_flywheel_current_like_refloat_loop() {
             setpoint, setpoint, setpoint, setpoint, setpoint, setpoint,
         );
         let footpad = if matches!(mode, RefloatMode::Flywheel) {
-            FootpadSensorSample::new(
-                AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
-                AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
-                FootpadSensorState::None,
+            RefloatFootpadSample::new(
+                Voltage::from_volts(0.0),
+                Voltage::from_volts(0.0),
+                RefloatFootpadState::None,
             )
         } else {
             base.footpad()

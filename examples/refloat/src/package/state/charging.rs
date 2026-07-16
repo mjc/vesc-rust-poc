@@ -133,7 +133,9 @@ mod tests {
     use crate::package::test_support::{
         sample_all_data_payloads, sample_all_data_payloads_with_ride_state,
     };
-    use vescpkg_rs::prelude::{AngleRadians, ImuPitch, ImuRoll, ImuYaw, TimestampTicks};
+    use vescpkg_rs::prelude::{
+        AdcVoltage, AngleRadians, ImuPitch, ImuRoll, ImuYaw, TimestampTicks,
+    };
     use vescpkg_rs::test_support::FirmwareTest;
 
     #[test]
@@ -253,8 +255,8 @@ mod tests {
         state.refresh_main_loop_runtime_state(
             telemetry.telemetry(),
             telemetry.imu(),
-            Voltage::from_volts(2.5),
-            Voltage::from_volts(2.5),
+            AdcVoltage::new(Voltage::from_volts(2.5)),
+            AdcVoltage::new(Voltage::from_volts(2.5)),
             60_000,
         );
         let ride_state = state.all_data_payloads().base().status().ride_state();
@@ -264,8 +266,8 @@ mod tests {
         state.refresh_main_loop_runtime_state(
             telemetry.telemetry(),
             telemetry.imu(),
-            Voltage::from_volts(2.5),
-            Voltage::from_volts(2.5),
+            AdcVoltage::new(Voltage::from_volts(2.5)),
+            AdcVoltage::new(Voltage::from_volts(2.5)),
             60_001,
         );
         let ride_state = state.all_data_payloads().base().status().ride_state();

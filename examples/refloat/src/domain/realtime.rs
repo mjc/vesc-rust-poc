@@ -4,8 +4,8 @@
 //! `third_party/refloat/src/rt_data.h:38-66` and `third_party/refloat/src/main.c:1876-1960`.
 
 use super::{
-    FootpadSensorSample, FootpadSensorState, RefloatBeepReason, RefloatChargingState,
-    RefloatDarkRideState, RefloatDataRecorderFlags, RefloatFatalErrorState, RefloatRideState,
+    RefloatBeepReason, RefloatChargingState, RefloatDarkRideState, RefloatDataRecorderFlags,
+    RefloatFatalErrorState, RefloatFootpadSample, RefloatFootpadState, RefloatRideState,
     RefloatRunState, RefloatWheelSlipState,
 };
 use vescpkg_rs::prelude::{
@@ -477,7 +477,7 @@ impl RefloatRealtimeImuPayload {
 pub struct RefloatRealtimeAlwaysPayload {
     motor: RefloatRealtimeMotorPayload,
     imu: RefloatRealtimeImuPayload,
-    footpad: FootpadSensorSample,
+    footpad: RefloatFootpadSample,
     remote_input: RefloatRealtimeRemoteInput,
 }
 
@@ -486,7 +486,7 @@ impl RefloatRealtimeAlwaysPayload {
     pub const fn new(
         motor: RefloatRealtimeMotorPayload,
         imu: RefloatRealtimeImuPayload,
-        footpad: FootpadSensorSample,
+        footpad: RefloatFootpadSample,
         remote_input: RefloatRealtimeRemoteInput,
     ) -> Self {
         Self {
@@ -513,7 +513,7 @@ impl RefloatRealtimeAlwaysPayload {
     }
 
     /// Return grouped footpad values.
-    pub const fn footpad(self) -> FootpadSensorSample {
+    pub const fn footpad(self) -> RefloatFootpadSample {
         self.footpad
     }
 
@@ -925,7 +925,7 @@ impl RefloatRealtimeTail {
 pub struct RefloatRealtimeDataHeader {
     timestamp: SystemTimestamp,
     ride_state: RefloatRideState,
-    footpad_state: FootpadSensorState,
+    footpad_state: RefloatFootpadState,
     beep_reason: RefloatBeepReason,
     fatal_error: RefloatFatalErrorState,
     data_recorder: RefloatDataRecorderFlags,
@@ -936,7 +936,7 @@ impl RefloatRealtimeDataHeader {
     pub const fn new(
         timestamp: SystemTimestamp,
         ride_state: RefloatRideState,
-        footpad_state: FootpadSensorState,
+        footpad_state: RefloatFootpadState,
         beep_reason: RefloatBeepReason,
     ) -> Self {
         Self {

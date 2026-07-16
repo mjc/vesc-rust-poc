@@ -24,7 +24,7 @@ const REFLOAT_LEDS_REFRESH_RATE_HZ: u32 = 30;
 const REFLOAT_AUX_LOOP_TIME_US: u32 = 1_000_000 / REFLOAT_LEDS_REFRESH_RATE_HZ;
 
 #[cfg(any(test, target_arch = "arm"))]
-use vescpkg_rs::prelude::Voltage;
+use vescpkg_rs::prelude::AdcVoltage;
 #[cfg(target_arch = "arm")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RefloatRuntimeThread {
@@ -100,8 +100,8 @@ pub(crate) fn tick_refloat_main_thread_with(
     telemetry: &impl MotorTelemetry,
     imu: &impl Imu,
     motor: &impl MotorOutput,
-    footpad_adc1: Voltage,
-    footpad_adc2: Voltage,
+    footpad_adc1: AdcVoltage,
+    footpad_adc2: AdcVoltage,
     system_time_ticks: u32,
 ) -> u32 {
     // C map: `refloat_thd` refreshes runtime inputs, executes state/control
@@ -183,7 +183,7 @@ impl vescpkg_rs::FirmwareThread for RefloatMainThread {
                 // defines those enum slots at `third_party/vesc/lispBM/c_libs/vesc_c_if.h:219-220`.
                 let (footpad_voltage1, footpad_voltage2) = firmware
                     .gpio()
-                    .read_analog_pair(AnalogPin::new(7), AnalogPin::new(8));
+                    .read_analog_pair(AnalogPin::ADC1, AnalogPin::ADC2);
                 ctx.with_state_mut(|state| {
                     tick_refloat_main_thread_with(
                         state,
@@ -229,7 +229,7 @@ impl vescpkg_rs::StatelessFirmwareThread for RefloatAuxThread {
 #[cfg(test)]
 mod tests {
     use super::super::state::RefloatPackageState;
-    use crate::domain::{FootpadSensorState, RefloatAllDataPayloads, RefloatRunState};
+    use crate::domain::{RefloatAllDataPayloads, RefloatFootpadState, RefloatRunState};
     use core::time::Duration;
     use vescpkg_rs::prelude::*;
     use vescpkg_rs::test_support::FirmwareTest;
@@ -301,8 +301,8 @@ mod tests {
                 telemetry.telemetry(),
                 imu,
                 bindings,
-                Voltage::from_volts(2.5),
-                Voltage::from_volts(0.0),
+                AdcVoltage::new(Voltage::from_volts(2.5)),
+                AdcVoltage::new(Voltage::from_volts(0.0)),
                 0,
             )
         });
@@ -314,7 +314,7 @@ mod tests {
         assert_eq!(telemetry.commanded_current().current().as_amps(), 3.5);
         assert_eq!(
             state.all_data_payloads().base().footpad().state(),
-            FootpadSensorState::Left,
+            RefloatFootpadState::Left,
         );
     }
 

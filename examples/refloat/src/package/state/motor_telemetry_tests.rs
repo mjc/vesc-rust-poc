@@ -1,10 +1,11 @@
 use super::RefloatPackageState;
 use crate::domain::{
-    FootpadSensorSample, FootpadSensorState, REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataAttitude,
-    RefloatAllDataBasePayload, RefloatAllDataMode, RefloatAllDataPayloads, RefloatAllDataStatus,
-    RefloatAppDataCommand, RefloatDarkRideState, RefloatMode, RefloatRealtimeBalanceCurrent,
-    RefloatRealtimeBalancePitch, RefloatRealtimeBoosterCurrent, RefloatRealtimeRuntimeSetpoint,
-    RefloatRealtimeRuntimeSetpoints, RefloatRunState, RefloatWheelSlipState,
+    REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataAttitude, RefloatAllDataBasePayload,
+    RefloatAllDataMode, RefloatAllDataPayloads, RefloatAllDataStatus, RefloatAppDataCommand,
+    RefloatDarkRideState, RefloatFootpadSample, RefloatFootpadState, RefloatMode,
+    RefloatRealtimeBalanceCurrent, RefloatRealtimeBalancePitch, RefloatRealtimeBoosterCurrent,
+    RefloatRealtimeRuntimeSetpoint, RefloatRealtimeRuntimeSetpoints, RefloatRunState,
+    RefloatWheelSlipState,
 };
 use crate::package::test_support::{
     sample_all_data_payloads, sample_all_data_payloads_with_ride_state,
@@ -211,10 +212,10 @@ fn darkride_traction_loss_refreshes_like_refloat_loop() {
         .status()
         .ride_state()
         .with_darkride(RefloatDarkRideState::Active);
-    let no_footpads = FootpadSensorSample::new(
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
-        AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
-        FootpadSensorState::None,
+    let no_footpads = RefloatFootpadSample::new(
+        Voltage::from_volts(0.0),
+        Voltage::from_volts(0.0),
+        RefloatFootpadState::None,
     );
     let setpoint = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(1.0));
     let setpoints = RefloatRealtimeRuntimeSetpoints::new(

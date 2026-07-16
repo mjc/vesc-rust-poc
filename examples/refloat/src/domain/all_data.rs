@@ -19,15 +19,15 @@ use super::wire::{
     refloat_push_u8, refloat_scaled_u8,
 };
 use super::{
-    FootpadSensorSample, FootpadSensorState, REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataMode,
-    RefloatAllDataRequest, RefloatAppDataCommand, RefloatRideState,
+    REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataMode, RefloatAllDataRequest, RefloatAppDataCommand,
+    RefloatFootpadSample, RefloatFootpadState, RefloatRideState,
 };
 use vescpkg_rs::prelude::{
-    AdcDecodedLevel, AmpHoursCharged, AmpHoursDischarged, AngleDegrees, AngleRadians,
-    BatteryCurrent, BatteryLevel, BatteryVoltage, Charge, Current, Distance, DutyCycle,
-    ElectricalSpeed, Energy, FirmwareFaultCompatCode, ImuPitch, ImuRoll, MosfetTemperature,
-    MotorCurrent, MotorTemperature, OdometerMeters, Ratio, Rpm, SignedRatio, Speed, Temperature,
-    TripDistance, VehicleSpeed, Voltage, WattHoursCharged, WattHoursDischarged,
+    AmpHoursCharged, AmpHoursDischarged, AngleDegrees, AngleRadians, BatteryCurrent, BatteryLevel,
+    BatteryVoltage, Charge, Current, Distance, DutyCycle, ElectricalSpeed, Energy,
+    FirmwareFaultCompatCode, ImuPitch, ImuRoll, MosfetTemperature, MotorCurrent, MotorTemperature,
+    OdometerMeters, Ratio, Rpm, SignedRatio, Speed, Temperature, TripDistance, VehicleSpeed,
+    Voltage, WattHoursCharged, WattHoursDischarged,
 };
 
 /// Fixed-size Refloat all-data response bytes.
@@ -251,7 +251,7 @@ pub struct RefloatAllDataBasePayload {
     balance_current: RefloatRealtimeBalanceCurrent,
     attitude: RefloatAllDataAttitude,
     status: RefloatAllDataStatus,
-    footpad: FootpadSensorSample,
+    footpad: RefloatFootpadSample,
     setpoints: RefloatRealtimeRuntimeSetpoints,
     booster_current: RefloatRealtimeBoosterCurrent,
     motor: RefloatAllDataMotorPayload,
@@ -263,7 +263,7 @@ impl RefloatAllDataBasePayload {
         balance_current: RefloatRealtimeBalanceCurrent,
         attitude: RefloatAllDataAttitude,
         status: RefloatAllDataStatus,
-        footpad: FootpadSensorSample,
+        footpad: RefloatFootpadSample,
         setpoints: RefloatRealtimeRuntimeSetpoints,
         booster_current: RefloatRealtimeBoosterCurrent,
         motor: RefloatAllDataMotorPayload,
@@ -498,7 +498,7 @@ impl RefloatAllDataBasePayload {
     }
 
     /// Return footpad sample.
-    pub const fn footpad(self) -> FootpadSensorSample {
+    pub const fn footpad(self) -> RefloatFootpadSample {
         self.footpad
     }
 
@@ -582,10 +582,10 @@ impl RefloatAllDataPayloads {
                     ImuPitch::new(zero_angle),
                 ),
                 RefloatAllDataStatus::new(ride_state, RefloatBeepReason::None),
-                FootpadSensorSample::new(
-                    AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
-                    AdcDecodedLevel::new(Ratio::from_ratio_const(0.0)),
-                    FootpadSensorState::None,
+                RefloatFootpadSample::new(
+                    Voltage::from_volts(0.0),
+                    Voltage::from_volts(0.0),
+                    RefloatFootpadState::None,
                 ),
                 RefloatRealtimeRuntimeSetpoints::new(
                     setpoint, setpoint, setpoint, setpoint, setpoint, setpoint,
