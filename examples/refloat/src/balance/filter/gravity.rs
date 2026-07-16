@@ -1,9 +1,7 @@
-use super::feedback::FilteredAccelMagnitude;
 use super::scalar::AxisScalar;
-use vescpkg_rs::prelude::{ImuAcceleration, ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ};
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct AccelMagnitude(f32);
+use vescpkg_rs::prelude::{
+    AccelerationG, ImuAcceleration, ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct MeasuredGravity {
@@ -46,24 +44,12 @@ pub(super) type HalfGravityX = AxisScalar<HalfGravityXTag>;
 pub(super) type HalfGravityY = AxisScalar<HalfGravityYTag>;
 pub(super) type HalfGravityZ = AxisScalar<HalfGravityZTag>;
 
-impl AccelMagnitude {
-    /// C map: `calculate_acc_confidence` low-pass filters `data->acc_mag` at
-    /// `third_party/refloat/src/balance_filter.c:42-50`.
-    #[inline(always)]
-    pub(super) const fn blend_with_filtered(
-        self,
-        filtered_magnitude: FilteredAccelMagnitude,
-    ) -> FilteredAccelMagnitude {
-        FilteredAccelMagnitude::new(filtered_magnitude.0 * 0.9 + self.0 * 0.1)
-    }
-}
-
 impl MeasuredGravity {
     /// C map: `third_party/refloat/src/balance_filter.c:82-96`.
     #[inline(always)]
     pub(super) fn from_acceleration(
         acceleration: ImuAcceleration,
-    ) -> Option<(AccelMagnitude, Self)> {
+    ) -> Option<(AccelerationG, Self)> {
         acceleration.map_axes(Self::from_axes)
     }
 
@@ -71,7 +57,7 @@ impl MeasuredGravity {
         x: ImuAccelerationX,
         y: ImuAccelerationY,
         z: ImuAccelerationZ,
-    ) -> Option<(AccelMagnitude, Self)> {
+    ) -> Option<(AccelerationG, Self)> {
         // C map: `third_party/refloat/src/balance_filter.c:82-96` extracts
         // axis samples before normalizing the measured gravity vector.
         Self::from_measured_axes(
@@ -85,14 +71,14 @@ impl MeasuredGravity {
         x: MeasuredGravityX,
         y: MeasuredGravityY,
         z: MeasuredGravityZ,
-    ) -> Option<(AccelMagnitude, Self)> {
+    ) -> Option<(AccelerationG, Self)> {
         // C map: `third_party/refloat/src/balance_filter.c:82-96` rejects
         // tiny accel vectors, otherwise stores the norm and normalized sample.
         let sample = Self { x, y, z };
         let length_squared = sample.length_squared();
         let accel_norm = sqrt(length_squared);
         match accel_norm {
-            norm if norm > 0.01 => Some((AccelMagnitude(norm), sample.scaled(1.0 / norm))),
+            norm if norm > 0.01 => Some((AccelerationG::from_g(norm), sample.scaled(1.0 / norm))),
             _ => None,
         }
     }

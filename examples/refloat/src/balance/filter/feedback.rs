@@ -1,6 +1,7 @@
 #[cfg(any(test, target_arch = "arm"))]
-use super::gravity::{AccelMagnitude, PitchGravityError, RollGravityError, YawGravityError};
+use super::gravity::{PitchGravityError, RollGravityError, YawGravityError};
 use super::scalar::AxisScalar;
+use vescpkg_rs::prelude::AccelerationG;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::AngularVelocity;
 pub(crate) use vescpkg_rs::{MahonyPitchGain, MahonyRollGain};
@@ -18,7 +19,6 @@ pub(super) struct MahonyFeedbackGains {
     yaw: YawAccelCorrectionGain,
 }
 
-pub(super) enum FilteredAccelMagnitudeTag {}
 #[cfg(any(test, target_arch = "arm"))]
 enum PitchAccelCorrectionGainTag {}
 enum PitchFeedbackGainTag {}
@@ -31,7 +31,6 @@ enum YawFeedbackGainTag {}
 
 // C map: upstream balance_filter keeps Mahony pitch/roll KP as scalar config
 // inputs and uses accel confidence as a scalar feedback weight.
-pub(super) type FilteredAccelMagnitude = AxisScalar<FilteredAccelMagnitudeTag>;
 #[cfg(any(test, target_arch = "arm"))]
 type PitchAccelCorrectionGain = AxisScalar<PitchAccelCorrectionGainTag>;
 type PitchFeedbackGain = AxisScalar<PitchFeedbackGainTag>;
@@ -44,7 +43,7 @@ type YawFeedbackGain = AxisScalar<YawFeedbackGainTag>;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct AccelConfidenceFilter {
-    magnitude: FilteredAccelMagnitude,
+    magnitude: AccelerationG,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -114,16 +113,16 @@ impl AccelConfidenceFilter {
         // C map: `third_party/refloat/src/balance_filter.c:53-62` initializes
         // accelerometer magnitude confidence state to gravity.
         Self {
-            magnitude: FilteredAccelMagnitude::new(1.0),
+            magnitude: AccelerationG::from_g(1.0),
         }
     }
 
     #[cfg(any(test, target_arch = "arm"))]
-    pub(super) fn confidence(&mut self, new_acc_mag: AccelMagnitude) -> AccelConfidence {
+    pub(super) fn confidence(&mut self, new_acc_mag: AccelerationG) -> AccelConfidence {
         // C map: `third_party/refloat/src/balance_filter.c:42-50` filters
         // accelerometer magnitude and clamps the confidence at zero.
-        self.magnitude = new_acc_mag.blend_with_filtered(self.magnitude);
-        AccelConfidence::new((1.0 - 0.02 * sqrt((self.magnitude.0 - 1.0).abs())).max(0.0))
+        self.magnitude = self.magnitude * 0.9 + new_acc_mag * 0.1;
+        AccelConfidence::new((1.0 - 0.02 * sqrt((self.magnitude.as_g() - 1.0).abs())).max(0.0))
     }
 }
 

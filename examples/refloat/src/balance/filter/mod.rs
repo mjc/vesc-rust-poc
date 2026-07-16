@@ -3,7 +3,7 @@ use crate::domain::RefloatRealtimeBalancePitch;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::ImuOrientation;
 #[cfg(any(test, target_arch = "arm"))]
-use vescpkg_rs::prelude::{ImuAcceleration, ImuReadSample};
+use vescpkg_rs::prelude::{AccelerationG, ImuAcceleration, ImuReadSample};
 
 mod feedback;
 #[cfg(any(test, target_arch = "arm"))]
@@ -17,7 +17,7 @@ mod scalar;
 use feedback::{AccelConfidence, MahonyFeedbackGains};
 use feedback::{AccelConfidenceFilter, MahonyFeedbackConfig};
 #[cfg(any(test, target_arch = "arm"))]
-use gravity::{AccelMagnitude, GravityError, MeasuredGravity};
+use gravity::{GravityError, MeasuredGravity};
 use orientation::EstimatedOrientation;
 #[cfg(any(test, target_arch = "arm"))]
 use rate::{CorrectedAngularRate, MeasuredAngularRate};
@@ -103,9 +103,7 @@ impl BalanceFilter {
     }
 
     #[cfg(any(test, target_arch = "arm"))]
-    fn measured_gravity(
-        acceleration: ImuAcceleration,
-    ) -> Option<(AccelMagnitude, MeasuredGravity)> {
+    fn measured_gravity(acceleration: ImuAcceleration) -> Option<(AccelerationG, MeasuredGravity)> {
         // C map: `third_party/refloat/src/balance_filter.c:82-96` enters
         // feedback only when accel norm is above 0.01, then normalizes it.
         MeasuredGravity::from_acceleration(acceleration)
@@ -142,7 +140,7 @@ impl BalanceFilter {
     }
 
     #[cfg(any(test, target_arch = "arm"))]
-    fn accel_confidence(&mut self, new_acc_mag: AccelMagnitude) -> AccelConfidence {
+    fn accel_confidence(&mut self, new_acc_mag: AccelerationG) -> AccelConfidence {
         // C map: `third_party/refloat/src/balance_filter.c:42-50` filters the
         // accelerometer magnitude and decays confidence toward zero.
         self.accel_confidence.confidence(new_acc_mag)
