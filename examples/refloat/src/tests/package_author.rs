@@ -461,7 +461,7 @@ fn package_author_builds_realtime_charging_and_tail_without_raw_values() {
     let tail = RefloatRealtimeTail::new(
         RefloatRealtimeAlertMask::empty().with_alert(RefloatAlertId::FirmwareFault),
         RefloatRealtimeReservedFlags::none(),
-        FirmwareFaultCompatCode::from_compat_code(12),
+        FirmwareFaultWireCode::from_wire_code(12),
     );
 
     assert_eq!(charging.current().current().current().as_amps(), 4.2);
@@ -469,7 +469,7 @@ fn package_author_builds_realtime_charging_and_tail_without_raw_values() {
     assert!(tail.active_alerts().contains(RefloatAlertId::FirmwareFault));
     assert_eq!(tail.active_alerts().active_alert_mask_compat(), 0x1);
     assert_eq!(tail.reserved_flags().extra_flags_compat(), 0);
-    assert_eq!(tail.firmware_fault_code().compat_code(), 12);
+    assert_eq!(tail.firmware_fault_code().wire_code(), 12);
 }
 
 #[test]
@@ -657,7 +657,7 @@ fn package_author_encodes_all_data_base_response_like_refloat_v1_2_1() {
 #[test]
 fn package_author_encodes_all_data_fault_response_like_refloat_v1_2_1() {
     assert_eq!(
-        RefloatAllDataResponse::fault(FirmwareFaultCompatCode::from_compat_code(5)).as_bytes(),
+        RefloatAllDataResponse::fault(FirmwareFaultWireCode::from_wire_code(5)).as_bytes(),
         &[101, 10, 69, 5]
     );
 }

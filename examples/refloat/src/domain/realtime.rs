@@ -10,7 +10,7 @@ use super::{
 };
 use vescpkg_rs::prelude::{
     AngleDegrees, AngleRadians, BatteryCurrent, BatteryVoltage, DirectionalMotorCurrent, DutyCycle,
-    ElectricalSpeed, FirmwareFaultCompatCode, ImuPitch, ImuRoll, MosfetTemperature, MotorCurrent,
+    ElectricalSpeed, FirmwareFaultWireCode, ImuPitch, ImuRoll, MosfetTemperature, MotorCurrent,
     MotorTemperature, SignedRatio, SystemTimestamp, VehicleSpeed,
 };
 
@@ -884,7 +884,7 @@ impl RefloatRealtimeReservedFlags {
 pub struct RefloatRealtimeTail {
     active_alerts: RefloatRealtimeAlertMask,
     reserved_flags: RefloatRealtimeReservedFlags,
-    firmware_fault_code: FirmwareFaultCompatCode,
+    firmware_fault_code: FirmwareFaultWireCode,
 }
 
 impl RefloatRealtimeTail {
@@ -892,7 +892,7 @@ impl RefloatRealtimeTail {
     pub const fn new(
         active_alerts: RefloatRealtimeAlertMask,
         reserved_flags: RefloatRealtimeReservedFlags,
-        firmware_fault_code: FirmwareFaultCompatCode,
+        firmware_fault_code: FirmwareFaultWireCode,
     ) -> Self {
         Self {
             active_alerts,
@@ -912,7 +912,7 @@ impl RefloatRealtimeTail {
     }
 
     /// Return firmware fault code.
-    pub const fn firmware_fault_code(self) -> FirmwareFaultCompatCode {
+    pub const fn firmware_fault_code(self) -> FirmwareFaultWireCode {
         self.firmware_fault_code
     }
 }

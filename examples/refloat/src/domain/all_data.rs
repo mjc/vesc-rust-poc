@@ -26,7 +26,7 @@ use super::{
 use vescpkg_rs::prelude::{
     AmpHoursCharged, AmpHoursDischarged, AngleDegrees, AngleRadians, BatteryCurrent, BatteryLevel,
     BatteryVoltage, Charge, Current, DirectionalMotorCurrent, Distance, DutyCycle, ElectricalSpeed,
-    Energy, FirmwareFaultCompatCode, ImuPitch, ImuRoll, MosfetTemperature, MotorCurrent,
+    Energy, FirmwareFaultWireCode, ImuPitch, ImuRoll, MosfetTemperature, MotorCurrent,
     MotorTemperature, OdometerMeters, Ratio, Rpm, SignedRatio, Speed, Temperature, TripDistance,
     VehicleSpeed, Voltage, WattHoursCharged, WattHoursDischarged,
 };
@@ -48,12 +48,12 @@ pub enum RefloatAllDataResponse {
 
 impl RefloatAllDataResponse {
     /// Encode a Refloat all-data fault response.
-    pub const fn fault(fault: FirmwareFaultCompatCode) -> Self {
+    pub const fn fault(fault: FirmwareFaultWireCode) -> Self {
         Self::Fault([
             REFLOAT_APP_DATA_PACKAGE_ID.get(),
             RefloatAppDataCommand::GetAllData.id(),
             69,
-            fault.compat_code(),
+            fault.wire_code(),
         ])
     }
 

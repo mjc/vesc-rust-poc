@@ -102,7 +102,7 @@ fn mode3_ride_totals_refresh_from_motor_telemetry() {
 fn fault_response_skips_mode_telemetry_refresh() {
     let app_data = TimestampTicks::from_ticks(0);
 
-    let bindings = FirmwareTest::new().with_firmware_fault(FirmwareFaultCode::from_compat_code(5));
+    let bindings = FirmwareTest::new().with_firmware_fault(FirmwareFaultCode::from_wire_code(5));
     let telemetry = bindings.telemetry();
     let mut state = RefloatPackageState::new(sample_all_data_payloads());
 
