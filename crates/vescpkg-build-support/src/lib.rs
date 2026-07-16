@@ -6,9 +6,7 @@ use std::path::Path;
 
 /// Copy package assets and configure the ARM package linker when requested.
 pub fn build_package(manifest_dir: &Path) {
-    let out_dir = env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR");
-    let assets = Path::new(&out_dir).join("vescpkg");
-    copy_package_assets(manifest_dir, &assets);
+    prepare_package_assets(manifest_dir);
 
     if env::var("TARGET").is_ok_and(|target| target == "thumbv7em-none-eabihf") {
         let linker_script = manifest_dir.join("../vescpkg-link.ld");
@@ -28,6 +26,14 @@ pub fn build_package(manifest_dir: &Path) {
         }
         println!("cargo::rustc-link-arg=-T{}", linker_script.display());
     }
+}
+
+/// Prepare a clean generated-asset directory and copy static package assets into it.
+pub fn prepare_package_assets(manifest_dir: &Path) -> std::path::PathBuf {
+    let out_dir = env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR");
+    let assets = Path::new(&out_dir).join("vescpkg");
+    copy_package_assets(manifest_dir, &assets);
+    assets
 }
 
 fn copy_package_assets(manifest_dir: &Path, assets: &Path) {
