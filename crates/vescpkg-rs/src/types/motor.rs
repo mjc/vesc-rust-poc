@@ -260,6 +260,19 @@ impl MotorCurrentLimit {
     pub const fn current(self) -> Current {
         self.0
     }
+
+    /// Clamp a signed motor current to this positive magnitude.
+    ///
+    /// This follows VESC's comparison semantics: a zero limit clamps nonzero
+    /// current to signed zero, while NaN operands leave the current unchanged.
+    pub const fn clamp(self, current: MotorCurrent) -> MotorCurrent {
+        let requested = current.current();
+        if requested.abs().as_amps() > self.0.as_amps() {
+            MotorCurrent::new(Current::from_amps(self.0.as_amps() * requested.signum()))
+        } else {
+            current
+        }
+    }
 }
 
 current_type!(MotorCurrent, "Motor phase/current-control current.");
@@ -280,7 +293,7 @@ seconds_type!(AudioDuration, "Audio/haptic playback duration.");
 
 #[cfg(test)]
 mod tests {
-    use super::MotorCurrentLimit;
+    use super::{MotorCurrent, MotorCurrentLimit};
     use crate::Current;
 
     #[test]
@@ -288,5 +301,56 @@ mod tests {
         let limit = MotorCurrentLimit::new(Current::from_amps(-40.0));
 
         assert_eq!(limit.current(), Current::from_amps(40.0));
+    }
+
+    #[test]
+    fn current_limit_clamps_magnitude_and_preserves_direction() {
+        let limit = MotorCurrentLimit::new(Current::from_amps(40.0));
+
+        assert_eq!(
+            limit.clamp(MotorCurrent::new(Current::from_amps(25.0))),
+            MotorCurrent::new(Current::from_amps(25.0))
+        );
+        assert_eq!(
+            limit.clamp(MotorCurrent::new(Current::from_amps(50.0))),
+            MotorCurrent::new(Current::from_amps(40.0))
+        );
+        assert_eq!(
+            limit.clamp(MotorCurrent::new(Current::from_amps(-50.0))),
+            MotorCurrent::new(Current::from_amps(-40.0))
+        );
+    }
+
+    #[test]
+    fn zero_current_limit_clamps_nonzero_current_to_signed_zero() {
+        let limit = MotorCurrentLimit::new(Current::from_amps(0.0));
+
+        assert_eq!(
+            limit
+                .clamp(MotorCurrent::new(Current::from_amps(4.0)))
+                .current()
+                .as_amps()
+                .to_bits(),
+            0.0_f32.to_bits()
+        );
+        assert_eq!(
+            limit
+                .clamp(MotorCurrent::new(Current::from_amps(-4.0)))
+                .current()
+                .as_amps()
+                .to_bits(),
+            (-0.0_f32).to_bits()
+        );
+    }
+
+    #[test]
+    fn nan_current_or_limit_follows_vesc_comparison_semantics() {
+        let nan_current = MotorCurrent::new(Current::from_amps(f32::NAN));
+        let finite_limit = MotorCurrentLimit::new(Current::from_amps(40.0));
+        assert!(finite_limit.clamp(nan_current).current().as_amps().is_nan());
+
+        let nan_limit = MotorCurrentLimit::new(Current::from_amps(f32::NAN));
+        let finite_current = MotorCurrent::new(Current::from_amps(50.0));
+        assert_eq!(nan_limit.clamp(finite_current), finite_current);
     }
 }
