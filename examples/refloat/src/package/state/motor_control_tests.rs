@@ -50,8 +50,8 @@ fn running_limits_normal_current_from_motor_config_like_refloat_loop() {
                 DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
             )
             .with_motor_current_limits(
-                MotorCurrent::new(Current::from_amps(3.0)),
-                MotorCurrent::new(Current::from_amps(2.0)),
+                MotorCurrentLimit::new(Current::from_amps(3.0)),
+                MotorCurrentLimit::new(Current::from_amps(2.0)),
             );
         telemetry.set_imu_startup_done(true);
         telemetry.set_imu_attitude(

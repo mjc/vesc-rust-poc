@@ -4,7 +4,7 @@ use crate::domain::{
     RefloatFocIdCurrent,
 };
 use vescpkg_rs::MotorTelemetry;
-use vescpkg_rs::prelude::{BatteryCurrent, BatteryVoltage, Current};
+use vescpkg_rs::prelude::{BatteryCurrent, BatteryVoltage, Current, MotorCurrent};
 
 pub(super) fn refresh(state: &mut RefloatPackageState, telemetry: &impl MotorTelemetry) {
     let payloads = state.all_data_payloads;
@@ -16,8 +16,8 @@ pub(super) fn refresh(state: &mut RefloatPackageState, telemetry: &impl MotorTel
     // refresh is still a runtime proxy until the real source main loop runs.
     let previous_battery_current = motor.battery_current().current().as_amps();
     let next_battery_current = telemetry.battery_current().current().as_amps();
-    state.motor_current_max = telemetry.motor_current_max();
-    state.motor_current_min = telemetry.motor_current_min();
+    state.motor_current_max = MotorCurrent::new(telemetry.motor_current_max().current());
+    state.motor_current_min = MotorCurrent::new(telemetry.motor_current_min().current());
     let electrical_speed = telemetry.electrical_speed();
     let motor_erpm = electrical_speed.rpm();
     // Upstream averages acceleration over `ACCEL_ARRAY_SIZE == 40` samples
