@@ -9,6 +9,7 @@ use crate::package::time::refloat_ticks_elapsed;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::TimestampTicks;
 use vescpkg_rs::prelude::{BatteryCurrent, BatteryVoltage, Current, Voltage};
+use vescpkg_rs::protocol_buffer::get_float16;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(transparent)]
@@ -17,7 +18,11 @@ struct ChargingScalar(f32);
 impl ChargingScalar {
     #[inline(never)]
     fn from_wire(hi: u8, lo: u8) -> Self {
-        Self(f32::from(i16::from_be_bytes([hi, lo])) / 10.0)
+        let mut index = 0;
+        Self(
+            get_float16(&[hi, lo], 10.0, &mut index)
+                .expect("two bytes always contain one VESC float16"),
+        )
     }
 
     const fn voltage(self) -> BatteryVoltage {
@@ -195,6 +200,22 @@ mod tests {
         assert_eq!(
             inactive.mode4().voltage().voltage().voltage().as_volts(),
             0.0
+        );
+    }
+
+    #[test]
+    fn charging_packet_rejects_short_inactive_measurements_like_refloat() {
+        assert!(
+            handle_packet(
+                sample_all_data_payloads(),
+                &[
+                    REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                    RefloatAppDataCommand::ChargingState.id(),
+                    151,
+                    0,
+                ],
+            )
+            .is_none()
         );
     }
 
