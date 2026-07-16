@@ -11,9 +11,7 @@ fn main() {
         refloat.is_dir(),
         "missing third_party/refloat; run `git submodule update --init third_party/refloat` from the workspace root"
     );
-    let output =
-        Path::new(&std::env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR")).join("vescpkg");
-    std::fs::create_dir_all(&output).expect("create Refloat package assets");
+    let output = vescpkg_build_support::prepare_package_assets(manifest);
 
     for (source, target) in [
         ("package_README.md", "README.md"),
