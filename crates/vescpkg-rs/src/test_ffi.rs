@@ -234,7 +234,11 @@ pub(crate) fn set_ride_totals(
 }
 
 pub(crate) fn set_firmware_fault(fault: FirmwareFaultCode) {
-    FIRMWARE_FAULT.store(fault.compat_code().map_or(0, i32::from), Ordering::Relaxed);
+    FIRMWARE_FAULT.store(
+        crate::FirmwareFaultWireCode::try_from(fault)
+            .map_or(0, |fault| i32::from(fault.wire_code())),
+        Ordering::Relaxed,
+    );
 }
 
 pub(crate) fn set_input_voltage(voltage: InputVoltage) {

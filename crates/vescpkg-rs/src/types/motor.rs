@@ -202,18 +202,9 @@ impl FirmwareFaultCode {
         Self(code)
     }
 
-    /// Build a firmware fault-code token from the app-data compatible byte.
-    pub const fn from_compat_code(code: u8) -> Self {
+    /// Build a firmware fault-code token from its byte wire representation.
+    pub const fn from_wire_code(code: u8) -> Self {
         Self(code as i32)
-    }
-
-    /// Return the app-data compatible fault code byte, if the raw code fits.
-    pub const fn compat_code(self) -> Option<u8> {
-        if self.0 >= 0 && self.0 <= u8::MAX as i32 {
-            Some(self.0 as u8)
-        } else {
-            None
-        }
     }
 
     /// Return true when the firmware reports no active fault.
@@ -222,24 +213,24 @@ impl FirmwareFaultCode {
     }
 }
 
-/// Firmware fault code encoded in the app-data compatible byte format.
+/// Firmware fault code encoded in the app-data byte format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
-pub struct FirmwareFaultCompatCode(u8);
+pub struct FirmwareFaultWireCode(u8);
 
-impl FirmwareFaultCompatCode {
-    /// Build a token from an app-data compatible fault code byte.
-    pub const fn from_compat_code(code: u8) -> Self {
+impl FirmwareFaultWireCode {
+    /// Build a token from an app-data fault-code byte.
+    pub const fn from_wire_code(code: u8) -> Self {
         Self(code)
     }
 
-    /// Return the app-data compatible fault code byte.
-    pub const fn compat_code(self) -> u8 {
+    /// Return the app-data fault-code byte.
+    pub const fn wire_code(self) -> u8 {
         self.0
     }
 }
 
-impl TryFrom<FirmwareFaultCode> for FirmwareFaultCompatCode {
+impl TryFrom<FirmwareFaultCode> for FirmwareFaultWireCode {
     type Error = core::num::TryFromIntError;
 
     fn try_from(code: FirmwareFaultCode) -> Result<Self, Self::Error> {

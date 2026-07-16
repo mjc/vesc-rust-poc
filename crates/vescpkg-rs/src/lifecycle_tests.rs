@@ -4,7 +4,7 @@ use crate::lifecycle_core::{LbmApi, PackageLifecycle};
 use crate::test_support::{FakeBindings, stubs};
 use crate::thread::ThreadApi;
 use crate::thread::test_support::FakeThreadBindings;
-use crate::types::{FirmwareFaultCode, FirmwareFaultCompatCode};
+use crate::types::{FirmwareFaultCode, FirmwareFaultWireCode};
 use rstest::rstest;
 use vescpkg_rs_sys::{ExtensionHandler, LibInfo, NativeImage};
 
@@ -108,22 +108,19 @@ fn lbm_api_registers_extensions_through_bindings() {
 }
 
 #[test]
-fn firmware_fault_code_preserves_raw_values_until_compat_encoding() {
+fn firmware_fault_code_preserves_raw_values_until_wire_encoding() {
     let valid = FirmwareFaultCode::from_raw_code(5);
     let negative = FirmwareFaultCode::from_raw_code(-1);
     let too_large = FirmwareFaultCode::from_raw_code(256);
 
-    assert_eq!(valid.compat_code(), Some(5));
-    assert_eq!(negative.compat_code(), None);
-    assert_eq!(too_large.compat_code(), None);
     assert_eq!(
-        FirmwareFaultCompatCode::try_from(valid)
+        FirmwareFaultWireCode::try_from(valid)
             .expect("valid firmware fault code")
-            .compat_code(),
+            .wire_code(),
         5
     );
-    assert!(FirmwareFaultCompatCode::try_from(negative).is_err());
-    assert!(FirmwareFaultCompatCode::try_from(too_large).is_err());
+    assert!(FirmwareFaultWireCode::try_from(negative).is_err());
+    assert!(FirmwareFaultWireCode::try_from(too_large).is_err());
 }
 
 #[test]
