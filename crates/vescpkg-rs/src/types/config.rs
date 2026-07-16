@@ -446,6 +446,13 @@ semantic_scaled_config_field!(
     "Generated scaled-seconds field descriptor."
 );
 semantic_scaled_config_field!(
+    CustomConfigFrequencyField,
+    crate::Frequency,
+    crate::Frequency::from_hertz,
+    crate::Frequency::as_hertz,
+    "Generated scaled-frequency field descriptor."
+);
+semantic_scaled_config_field!(
     CustomConfigMahonyPitchGainField,
     crate::MahonyPitchGain,
     crate::MahonyPitchGain::new,
@@ -574,12 +581,13 @@ mod tests {
         CustomConfigAngleCurrentGainField, CustomConfigAngleField,
         CustomConfigAngularVelocityField, CustomConfigDurationField,
         CustomConfigElectricalSpeedField, CustomConfigEnumField, CustomConfigFlagField,
-        CustomConfigImage, CustomConfigIntegralCurrentGainField, CustomConfigMahonyPitchGainField,
-        CustomConfigMahonyRollGainField, CustomConfigMotorCurrentField, CustomConfigPidScaleField,
-        CustomConfigRateCurrentGainField, CustomConfigResetField, CustomConfigSampleRateField,
-        CustomConfigSecondsField, CustomConfigVoltageField,
+        CustomConfigFrequencyField, CustomConfigImage, CustomConfigIntegralCurrentGainField,
+        CustomConfigMahonyPitchGainField, CustomConfigMahonyRollGainField,
+        CustomConfigMotorCurrentField, CustomConfigPidScaleField, CustomConfigRateCurrentGainField,
+        CustomConfigResetField, CustomConfigSampleRateField, CustomConfigSecondsField,
+        CustomConfigVoltageField,
     };
-    use crate::{ElectricalSpeed, Rpm, SampleRate, VescSeconds, Voltage};
+    use crate::{ElectricalSpeed, Frequency, Rpm, SampleRate, VescSeconds, Voltage};
 
     const SIGNATURE: [u8; 4] = [0x90, 0xb7, 0xa9, 0xba];
 
@@ -609,6 +617,19 @@ mod tests {
             Some(()),
         );
         assert_eq!(image.as_bytes(), &[0x01, 0xf4]);
+    }
+
+    #[test]
+    fn scaled_frequency_field_round_trips_hertz() {
+        let field = CustomConfigFrequencyField::new(0, 100.0).expect("valid scale");
+        let mut image = CustomConfigImage::new([0x01, 0xf4]);
+
+        assert_eq!(field.read(&image), Frequency::from_hertz(5.0));
+        assert_eq!(
+            field.write(&mut image.editor(), Frequency::from_hertz(7.5)),
+            Some(()),
+        );
+        assert_eq!(image.as_bytes(), &[0x02, 0xee]);
     }
 
     #[test]
