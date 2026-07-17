@@ -549,6 +549,11 @@ impl<T: Send + 'static> PackageStateStore<T> {
         }
     }
 
+    #[cfg(not(target_arch = "arm"))]
+    fn owns(&self, state: NonNull<T>) -> bool {
+        NonNull::new(self.state.load(Ordering::Acquire)) == Some(state)
+    }
+
     #[cfg(target_arch = "arm")]
     fn borrow_exclusive<'runtime>(
         &self,
@@ -657,7 +662,9 @@ impl<T: Send + 'static> PackageStateStore<T> {
     pub(crate) fn begin_stop(&self, state: NonNull<T>) -> bool {
         #[cfg(not(target_arch = "arm"))]
         let phase = {
-            let _ = state;
+            if !self.owns(state) {
+                return false;
+            }
             &self.phase
         };
         #[cfg(target_arch = "arm")]
@@ -690,7 +697,9 @@ impl<T: Send + 'static> PackageStateStore<T> {
         let _borrow = self.borrow_exclusive();
         #[cfg(not(target_arch = "arm"))]
         let (phase, slot) = {
-            let _ = state;
+            if !self.owns(state) {
+                return Err(threads);
+            }
             (&self.phase, &self.threads)
         };
         #[cfg(target_arch = "arm")]
@@ -719,7 +728,9 @@ impl<T: Send + 'static> PackageStateStore<T> {
         let _borrow = self.borrow_exclusive();
         #[cfg(not(target_arch = "arm"))]
         let slot = {
-            let _ = state;
+            if !self.owns(state) {
+                return None;
+            }
             &self.threads
         };
         #[cfg(target_arch = "arm")]
@@ -763,7 +774,9 @@ impl<T: Send + 'static> PackageStateStore<T> {
         let _borrow = self.borrow_exclusive();
         #[cfg(not(target_arch = "arm"))]
         let (phase, callbacks) = {
-            let _ = state;
+            if !self.owns(state) {
+                return false;
+            }
             (&self.phase, &self.callbacks)
         };
         #[cfg(target_arch = "arm")]
@@ -787,7 +800,9 @@ impl<T: Send + 'static> PackageStateStore<T> {
         let _borrow = self.borrow_exclusive();
         #[cfg(not(target_arch = "arm"))]
         let callbacks = {
-            let _ = state;
+            if !self.owns(state) {
+                return CallbackRegistrations::default();
+            }
             &self.callbacks
         };
         #[cfg(target_arch = "arm")]
@@ -804,7 +819,9 @@ impl<T: Send + 'static> PackageStateStore<T> {
     pub(crate) fn finish_stop(&self, state: NonNull<T>) {
         #[cfg(not(target_arch = "arm"))]
         let active = {
-            let _ = state;
+            if !self.owns(state) {
+                return;
+            }
             &self.active
         };
         #[cfg(target_arch = "arm")]
@@ -1299,6 +1316,23 @@ mod tests {
         assert_eq!(bindings.handler_calls.get(), 1);
         assert_eq!(bindings.custom_config_clear_calls.get(), 0);
         assert_eq!(bindings.imu_read_callback_calls.get(), 1);
+        runtime.clear();
+    }
+
+    #[test]
+    fn stale_state_cannot_stop_or_update_the_current_installation() {
+        let runtime = PackageStateStore::new();
+        let installed = Box::leak(Box::new(State { value: 0 }));
+        let foreign = Box::leak(Box::new(State { value: 0 }));
+        let installed_id = NonNull::from(&mut *installed);
+        let foreign_id = NonNull::from(&mut *foreign);
+        unsafe { runtime.install(installed) }.unwrap();
+
+        assert!(!runtime.begin_stop(foreign_id));
+        assert!(!runtime.record_app_data_callback(foreign_id));
+        runtime.take_callbacks(foreign_id);
+        assert!(runtime.record_app_data_callback(installed_id));
+
         runtime.clear();
     }
 }

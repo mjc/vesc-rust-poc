@@ -263,8 +263,9 @@ impl AppDataBindings for RealBindings {
     }
 
     fn arg(&self, prog_addr: PackageProgramAddress) -> Option<PackageArgument> {
-        let slot = unsafe { crate::ffi::vesc_get_arg(prog_addr.get()).as_mut()? };
-        core::ptr::NonNull::new(*slot).map(PackageArgument::new)
+        let slot = unsafe { crate::ffi::vesc_get_arg(prog_addr.get()) };
+        let arg = unsafe { core::ptr::NonNull::new(slot)?.as_ptr().read() };
+        core::ptr::NonNull::new(arg).map(PackageArgument::new)
     }
 
     unsafe fn send_app_data(&self, data: *const u8, len: u32) {

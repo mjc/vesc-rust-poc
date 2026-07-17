@@ -694,10 +694,12 @@ impl<B: ThreadBindings> ThreadApi<B> {
         Self { bindings }
     }
 
-    /// Spawn firmware threads in order while preserving the first on a second-spawn failure.
+    /// Spawn firmware threads in order, terminating the first if the second cannot start.
     ///
     /// C map: Refloat passes its position-independent thread and string addresses
     /// directly to spawn at third_party/refloat/src/main.c:2438-2444.
+    /// VESC's `lib_request_terminate` does not return until the thread has
+    /// terminated (`lispBM/lispif_c_lib.c:126-145`).
     ///
     #[allow(clippy::needless_pass_by_value)]
     pub(crate) fn spawn_thread_pair<S>(
