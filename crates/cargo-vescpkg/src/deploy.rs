@@ -7,59 +7,43 @@ use vesc_protocol::WireCommand;
 use vesc_protocol::ble_loopback::LoopbackPacket;
 
 use crate::loopback::{LoopbackReport, LoopbackTarget, LoopbackTransportError};
-use crate::loopback_debug::{LoopbackProgress, hex_snippet};
-use crate::package_install::{PackageInstallError, PackageInstallReport, read_package_from_path};
+use crate::package_install::PackageInstallError;
 use crate::package_transport::{BtlePackageInstallTransport, VescSession};
 use crate::vesc_uart::encode_packet;
 
 const COMM_CUSTOM_APP_DATA: u8 = 36;
-const POST_INSTALL_SETTLE: Duration = Duration::from_millis(1500);
 const LOOPBACK_RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
 
-/// Reads a `.vescpkg`, installs it over BLE, and runs a loopback smoke test.
-pub fn run_deploy(
-    package_path: &str,
+/// Opens BLE and runs the standard package app-data loopback sequence.
+pub fn run_loopback_probe(
     target: LoopbackTarget,
-    mut progress: impl FnMut(LoopbackProgress),
-) -> Result<(PackageInstallReport, LoopbackReport), DeployError> {
-    let package = read_package_from_path(package_path).map_err(DeployError::Package)?;
+    mut progress: impl FnMut(String),
+) -> Result<LoopbackReport, DeployError> {
     let transport = BtlePackageInstallTransport::new().map_err(DeployError::Transport)?;
     transport
-        .open(target.clone())
+        .open_without_preflight(target.clone())
         .map_err(DeployError::Transport)?;
-
-    let install = crate::package_install::install_package(&package, &transport)
-        .map_err(DeployError::Transport)?;
-
-    progress(LoopbackProgress::SessionOpened);
-    std::thread::sleep(POST_INSTALL_SETTLE);
-
-    let loopback = transport
+    progress("BLE session open".to_owned());
+    let result = transport
         .with_loopback_session(|runtime, session| {
-            run_loopback_on_session(runtime, session, target.clone(), &mut progress)
+            run_loopback_on_session(runtime, session, target, &mut progress)
         })
-        .map_err(DeployError::Loopback)?;
-
+        .map_err(DeployError::Loopback);
     transport.close();
-    Ok((install, loopback))
+    result
 }
 
 fn run_loopback_on_session(
     runtime: &Runtime,
     session: &mut VescSession,
     target: LoopbackTarget,
-    progress: &mut impl FnMut(LoopbackProgress),
+    progress: &mut impl FnMut(String),
 ) -> Result<LoopbackReport, LoopbackTransportError> {
-    progress(LoopbackProgress::StepStarted {
-        step: "fw-version-preflight",
-    });
+    progress("step fw-version-preflight: starting".to_owned());
     session
         .confirm_fw_version(runtime)
         .map_err(map_package_device_error)?;
-    progress(LoopbackProgress::NonAppDataPacket {
-        step: "fw-version-preflight",
-        summary: "COMM_FW_VERSION ok".to_owned(),
-    });
+    progress("step fw-version-preflight: received COMM_FW_VERSION ok".to_owned());
 
     session.clear_packet_state();
 
@@ -85,14 +69,14 @@ fn run_loopback_on_session(
     let mut commands = Vec::with_capacity(steps.len());
     for (step, packet) in steps {
         session.clear_packet_state();
-        progress(LoopbackProgress::StepStarted { step });
+        progress(format!("step {step}: starting"));
         let (payload, len) = packet.encode();
         let wire = build_custom_app_data_packet(&payload[..len]);
-        progress(LoopbackProgress::Sending {
-            step,
-            wire_hex: hex_snippet(&wire, 48),
-            bytes: wire.len(),
-        });
+        progress(format!(
+            "step {step}: sending {} byte(s) wire={}",
+            wire.len(),
+            hex_snippet(&wire, 48)
+        ));
         runtime
             .block_on(crate::package_transport::write_ble_uart_packet(
                 &session.peripheral,
@@ -104,20 +88,13 @@ fn run_loopback_on_session(
         let response = session
             .receive_custom_app_data(LOOPBACK_RESPONSE_TIMEOUT)
             .map_err(map_package_device_error)?;
-        progress(LoopbackProgress::ReplyReceived {
-            step,
-            wire_hex: hex_snippet(&response, 32),
-            command: LoopbackPacket::decode(&response)
-                .map_err(LoopbackTransportError::Protocol)?
-                .frame()
-                .command(),
-        });
         let decoded =
             LoopbackPacket::decode(&response).map_err(LoopbackTransportError::Protocol)?;
-        progress(LoopbackProgress::StepSucceeded {
-            step,
-            command: decoded.frame().command(),
-        });
+        progress(format!(
+            "step {step}: reply {:?} wire={}",
+            decoded.frame().command(),
+            hex_snippet(&response, 32)
+        ));
         commands.push(decoded.frame().command());
     }
 
@@ -131,6 +108,19 @@ fn build_custom_app_data_packet(payload: &[u8]) -> Vec<u8> {
     encode_packet(&data)
 }
 
+fn hex_snippet(bytes: &[u8], max_bytes: usize) -> String {
+    let shown = bytes.len().min(max_bytes);
+    let mut hex = bytes[..shown]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<Vec<_>>()
+        .join("");
+    if bytes.len() > max_bytes {
+        hex.push('…');
+    }
+    hex
+}
+
 fn map_package_device_error(error: PackageInstallError) -> LoopbackTransportError {
     match error {
         PackageInstallError::Device(reason) => LoopbackTransportError::Device(reason),
@@ -138,11 +128,9 @@ fn map_package_device_error(error: PackageInstallError) -> LoopbackTransportErro
     }
 }
 
-/// Errors returned by the build, install, and loopback deploy flow.
+/// Errors returned by the loopback probe.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeployError {
-    /// Reading or decoding the package failed.
-    Package(PackageInstallError),
     /// Installing or erasing the package over the transport failed.
     Transport(PackageInstallError),
     /// The post-deploy loopback smoke test failed.
@@ -152,7 +140,6 @@ pub enum DeployError {
 impl std::fmt::Display for DeployError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Package(error) => write!(f, "failed to read package: {error}"),
             Self::Transport(error) => write!(f, "package install failed: {error}"),
             Self::Loopback(error) => write!(f, "loopback failed: {error}"),
         }

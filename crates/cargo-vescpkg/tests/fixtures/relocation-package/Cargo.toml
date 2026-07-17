@@ -1,0 +1,19 @@
+[package]
+name = "relocation-package"
+version = "0.1.0"
+edition = "2024"
+publish = false
+autobins = false
+
+[lib]
+path = "src/main.rs"
+crate-type = ["staticlib"]
+
+[package.metadata.vescpkg]
+name = "Relocation rejection fixture"
+
+[features]
+marked-image-offset = []
+unmarked-image-offset = []
+
+[workspace]

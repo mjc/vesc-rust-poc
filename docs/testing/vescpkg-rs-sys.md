@@ -9,7 +9,7 @@ Strategy for the `vescpkg-rs-sys` crate: a hand-maintained, `no_std` firmware AB
 | Compile-fail | `unsafe` required, no `std` leak, crate-internal test harness | `tests/ui/`, trybuild |
 | Layout / ABI pins | `LibInfo`, `VescIf` size/offsets, newtypes | `src/tests.rs` |
 | Raw dispatch | mock `VescIf` + stub call recording | `src/raw/dispatch_tests.rs` |
-| Header parity | `ffi-compare` vs `vesc_c_if.h` | `make check-ffi-header` + optional full Refloat header checks |
+| Header parity | generated ABI checks | `make check` |
 | Thumb/asm smoke | `ldr` immediates vs `VescIfAbi` | `src/tests.rs` |
 
 ## Public export inventory
@@ -59,38 +59,20 @@ Production ARM builds keep inline `asm!` dispatch; host/test builds use `Option<
 |-------|------|
 | `vescpkg-rs-sys` | Layout + raw dispatch |
 | `vescpkg-rs` | Safe bindings, lifecycle, extension semantics |
-| `vescpkg-rs-build` | Symbol audit, elf semantics, package pipeline |
+| `cargo-vescpkg` | Cargo artifacts, native link, package pipeline |
 | HIL / real VESC | Manual `cargo-vescpkg` profiles |
 
 ## CI commands
 
 | Command | Scope |
 |---------|--------|
-| `nix develop -c make check` | fmt, clippy, default nextest (includes vescpkg-rs-sys unit + dispatch) |
-| `nix develop -c make vescpkg-rs-sys-target-check` | no normal deps + `thumbv7em-none-eabihf` check |
-| `nix develop -c make check-ffi-header` | bundled fixture `vesc_c_if.h` loopback slot-order parity |
-| `nix develop -c make native-audit` | package-only + native-lib tests |
-| `nix develop -c make check-full` | check + header parity + ARM gates + native audit |
-
-`check-ffi-header` runs `ffi-compare` against the bundled
-`fixtures/native-lib-baseline/src/vesc_c_if.h` header. Set `VESC_C_IF_HEADER`
-to compare another header with the same default loopback slot set:
-
-```bash
-nix develop -c env VESC_C_IF_HEADER=target/refloat-v1.2.1-src/vesc_pkg_lib/vesc_c_if.h make check-ffi-header
-```
-
-For the complete pinned Rust surface, run the helper directly against a full
-Refloat or VESC header:
-
-```bash
-nix develop -c cargo run -p vescpkg-rs-build --bin ffi-compare -- --used-slots target/refloat-v1.2.1-src/vesc_pkg_lib/vesc_c_if.h crates/vescpkg-rs-sys/src/raw.rs
-nix develop -c cargo run -p vescpkg-rs-build --bin ffi-compare -- --full target/refloat-v1.2.1-src/vesc_pkg_lib/vesc_c_if.h crates/vescpkg-rs-sys/src/raw.rs
-```
+| `make check` | fmt, clippy, default nextest (includes vescpkg-rs-sys unit + dispatch) |
+| `make vescpkg-rs-sys-target-check` | no normal deps + `thumbv7em-none-eabihf` check |
+| `make check-full` | check + ARM/package build gates |
 
 ## Adding a new `raw::*` wrapper
 
-1. Add field to `raw::VescIf` in header order (run header parity when available).
+1. Add field to `raw::VescIf` in header order and keep the generated parity checks green.
 2. Add `VescIfAbi` slot to `USED_SLOTS`.
 3. Extend `vesc_if_offsets_for_tests()` and layout tests.
 4. Add dispatch tests (Some + None paths) using `test_support`.
@@ -101,7 +83,7 @@ nix develop -c cargo run -p vescpkg-rs-build --bin ffi-compare -- --full target/
 Host dispatch tests can be run under Miri to exercise the crate-internal mock-table harness:
 
 ```bash
-nix develop -c cargo +nightly miri test -p vescpkg-rs-sys
+cargo +nightly miri test -p vescpkg-rs-sys
 ```
 
 Miri does not cover the ARM `asm!` dispatch path (`cfg(all(target_arch = "arm", not(test)))`). Treat Miri as a harness sanity check, not firmware validation.

@@ -28,7 +28,7 @@ conversion belongs in `vesc-protocol`.
 - Default features do not enable `std`, `alloc`, or `uom`
 - Use `fugit` for VESC system tick duration/instant modeling
 - Use explicit named accessors; do not add `From<Unit> for f32`
-- No dependency on `vescpkg-rs-build` or `cargo-vescpkg`
+- No dependency on host-only `cargo-vescpkg`
 - Keep VESC-specific meaning out of the units crate
 
 ## Status

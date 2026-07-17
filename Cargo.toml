@@ -2,15 +2,17 @@
 members = [
     "crates/vescpkg-rs-sys",
     "crates/vescpkg-rs-units",
+    "crates/vescpkg-build-support",
     "crates/vescpkg-rs",
     "crates/vesc-protocol",
-    "crates/vescpkg-rs-build",
     "crates/cargo-vescpkg",
     "examples/loopback",
+    "examples/alloc-smoke",
 ]
 default-members = [
     "crates/cargo-vescpkg",
     "examples/loopback",
+    "examples/alloc-smoke",
 ]
 resolver = "2"
 

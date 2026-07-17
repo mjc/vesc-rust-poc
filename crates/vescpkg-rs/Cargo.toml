@@ -14,6 +14,7 @@ vescpkg-rs-units = { path = "../vescpkg-rs-units", default-features = false }
 
 [features]
 test-support = []
+alloc = []
 
 [dev-dependencies]
 rstest = "0.26"

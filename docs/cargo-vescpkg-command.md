@@ -1,65 +1,50 @@
 # Cargo VescPkg Command
 
-This note captures the intended Cargo entrypoint for the Rust-backed VESC
-package flow.
+`cargo-vescpkg` is the only host-side Cargo external subcommand in this
+experiment. Cargo owns compilation and the final embedded ELF link; the command
+consumes Cargo's artifact JSON, flattens that ELF, assembles the package, and
+optionally installs it.
 
-This is an unofficial Cargo subcommand for Rust VESC package experiments; it is
-not an official VESC project or endorsed command.
+Cargo packages are inputs selected with normal Cargo semantics, not plugins or
+providers. Package-specific metadata lives in `[package.metadata.vescpkg]`.
 
-## Contract
+```toml
+[package.metadata.vescpkg]
+name = "Package display name"
+qml-fullscreen = true
+```
 
-- The command surface should stay thin.
-- The shared implementation should live in `crates/vescpkg-rs-build`.
-- The command should build on the existing package plans rather than duplicating
-  staging or artifact layout logic.
-- Operator workflows live in `cargo-vescpkg`; package users invoke them through
-  `cargo vescpkg`.
-- The package target is the device-side BTLE loopback package, not a generic
-  archive builder.
-- The current checked workflow remains `nix develop -c make check`.
+`qml-fullscreen` defaults to `false`. If `package/pkgdesc.qml` also declares
+`pkgQmlIsFullscreen`, both values must agree. The complete `package/` asset tree
+is staged recursively; `src/package_lib.bin` is reserved for the compiled
+native payload.
 
-## Intended Shape
+VESC loads the native payload as a flat image and does not relocate pointers.
+Package code must construct reference- and pointer-bearing values at runtime;
+loadable statics containing absolute pointers are unsupported. The final ARM
+link preserves relocation records, and `cargo-vescpkg` rejects absolute
+relocations in static data before flattening the ELF.
 
-- `cargo vescpkg build`
-- optional `cargo vescpkg build --package-only`
-- optional `cargo vescpkg build --target thumbv7em-none-eabihf`
-- optional `cargo vescpkg build --manifest <pkgdesc.qml>` to build a package
-  from a staged VESC package descriptor
-- optional `cargo vescpkg build --refloat-source <checkout>` to package Refloat
-  sources from an explicit checkout
-- optional `cargo vescpkg build --build-date <date>` and
-  `--git-commit <rev>` to stamp reproducible package provenance
-- `cargo vescpkg deploy <package.vescpkg>`
-- `cargo vescpkg package-install <package.vescpkg>`
-- `cargo vescpkg erase-package`
-- `cargo vescpkg loopback`
-- `cargo vescpkg lisp-probe`
-- `cargo vescpkg refloat-probe --vesc-tool <path>` to run the Refloat package
-  probe through an explicit VESC Tool CLI
-- the repo prototype lives in the thin `crates/cargo-vescpkg` subcommand crate
+## Build
 
-## Responsibilities
+```bash
+cargo run -p cargo-vescpkg -- build -p vesc-example-loopback
+```
 
-- run the Rust build for the device crate when needed
-- stage package assets
-- emit the final `.vescpkg`
-- keep descriptor, source-checkout, provenance, and VESC Tool path overrides
-  explicit so scripted operator runs remain reproducible
-- keep the device package wired to VESC BTLE on the firmware side
-- preserve the Predictable artifact path under `target/vescpkg`
-- keep the package-size guard and symbol checks in the workspace gates
-- own the host/operator command implementation directly, without a separate
-  legacy CLI crate
+Build options are Cargo-shaped: `--manifest-path`, `--target`, `--profile`, and
+`--features`. The build invokes `cargo metadata` and one
+`cargo build --message-format=json-render-diagnostics`, selects the requested
+package's final binary artifact, converts it with `rust-objcopy`, and emits it
+under Cargo's target directory at `vescpkg/`.
 
-## Non-Goals
+## Device commands
 
-- do not reimplement VESC Tool packaging behavior in a second place
-- do not hide the package layout or target assumptions inside ad hoc shell glue
-- do not move the device payload out of the `no_std` crate
+- `cargo run -p cargo-vescpkg -- deploy -p vesc-example-loopback`
+- `cargo run -p cargo-vescpkg -- package-install <package.vescpkg>`
+- `cargo run -p cargo-vescpkg -- erase-package`
+- `cargo run -p cargo-vescpkg -- loopback`
 
-## Notes
+`deploy` builds the selected Cargo package and installs the resulting artifact.
+The separate `loopback` command probes a running loopback package.
 
-- `xtask` remains a fallback shape if Cargo subcommand plumbing is too much for
-  the first version.
-- The eventual command should remain a wrapper around the same package plan and
-  artifact contract that the Makefile already exercises.
+The checked workspace path remains `make check`.

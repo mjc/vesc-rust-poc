@@ -1,0 +1,27 @@
+[package]
+name = "vesc-example-alloc-smoke"
+version = "0.1.0"
+edition = "2024"
+description = "Minimal VESC package proving Rust alloc can use firmware allocation."
+
+publish = false
+
+[package.metadata.vescpkg]
+name = "Rust alloc smoke package"
+
+[lints]
+workspace = true
+
+[lib]
+crate-type = ["rlib"]
+
+[[bin]]
+name = "vesc-example-alloc-smoke"
+path = "src/main.rs"
+
+[dependencies]
+vesc-protocol = { path = "../../crates/vesc-protocol" }
+vescpkg-rs = { path = "../../crates/vescpkg-rs", features = ["alloc"] }
+
+[build-dependencies]
+vescpkg-build-support = { path = "../../crates/vescpkg-build-support" }
