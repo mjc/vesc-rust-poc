@@ -159,12 +159,12 @@ fn thread_api_spawns_and_terminates_typed_thread_pair() {
         .spawn_thread_pair(
             crate::ThreadPairSpec::new(
                 crate::ThreadSpec::<PairTestState>::new::<PairTestThread>(
-                    crate::ThreadStackSize::from_bytes(256),
+                    crate::ThreadStackSize::from_bytes(1_536),
                     crate::thread_name!("first"),
                 ),
                 crate::ThreadSpec::<()>::from_entry(
                     stub_thread_entry,
-                    crate::ThreadStackSize::from_bytes(128),
+                    crate::ThreadStackSize::from_bytes(1_024),
                     crate::thread_name!("second"),
                 ),
             ),
@@ -175,7 +175,7 @@ fn thread_api_spawns_and_terminates_typed_thread_pair() {
     assert_eq!(pair.first().as_ptr() as usize, 0x10);
     assert_eq!(pair.second().as_ptr() as usize, 0x20);
     assert_eq!(bindings.spawn_calls.get(), 2);
-    assert_eq!(bindings.spawn_stacks.get(), [256, 128]);
+    assert_eq!(bindings.spawn_stacks.get(), [1_536, 1_024]);
     let state_arg = core::ptr::from_mut(&mut state).cast::<core::ffi::c_void>() as usize;
     assert_eq!(bindings.spawn_args.get(), [state_arg, 0]);
     assert_eq!(state.0, 42);
@@ -195,12 +195,12 @@ fn thread_api_preserves_first_thread_when_second_spawn_fails() {
     let pair = api.spawn_thread_pair(
         crate::ThreadPairSpec::new(
             crate::ThreadSpec::<PairTestState>::new::<PairTestThread>(
-                crate::ThreadStackSize::from_bytes(256),
+                crate::ThreadStackSize::from_bytes(1_536),
                 crate::thread_name!("first"),
             ),
             crate::ThreadSpec::<()>::from_entry(
                 stub_thread_entry,
-                crate::ThreadStackSize::from_bytes(128),
+                crate::ThreadStackSize::from_bytes(1_024),
                 crate::thread_name!("second"),
             ),
         ),

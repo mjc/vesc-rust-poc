@@ -291,6 +291,30 @@ pub trait StatelessFirmwareThread {
     fn run(ctx: StatelessThreadContext);
 }
 
+const RETURNED_THREAD_POLL_INTERVAL: Duration = Duration::from_millis(1);
+
+fn wait_for_firmware_termination(threads: &impl FirmwareThreads) {
+    while !threads.should_terminate() {
+        threads.sleep_for(RETURNED_THREAD_POLL_INTERVAL);
+    }
+}
+
+fn run_firmware_thread_until_terminated<T: FirmwareThread>(
+    context: ThreadContext<T::State>,
+    threads: &impl FirmwareThreads,
+) {
+    T::run(context);
+    wait_for_firmware_termination(threads);
+}
+
+fn run_stateless_firmware_thread_until_terminated<T: StatelessFirmwareThread>(
+    context: StatelessThreadContext,
+    threads: &impl FirmwareThreads,
+) {
+    T::run(context);
+    wait_for_firmware_termination(threads);
+}
+
 /// Firmware ABI trampoline for a typed package thread.
 ///
 /// # Safety
@@ -303,7 +327,10 @@ pub(crate) unsafe extern "C" fn firmware_thread_entry<T: FirmwareThread>(arg: *m
     #[cfg(test)]
     T::run(ThreadContext::test(state));
     #[cfg(not(test))]
-    T::run(ThreadContext::from_entry(state));
+    run_firmware_thread_until_terminated::<T>(
+        ThreadContext::from_entry(state),
+        &ThreadApi::new(RealThreadBindings),
+    );
 }
 
 /// Firmware ABI trampoline for a typed package thread without package state.
@@ -318,7 +345,10 @@ pub(crate) unsafe extern "C" fn stateless_firmware_thread_entry<T: StatelessFirm
     #[cfg(test)]
     T::run(StatelessThreadContext::test());
     #[cfg(not(test))]
-    T::run(StatelessThreadContext::new());
+    run_stateless_firmware_thread_until_terminated::<T>(
+        StatelessThreadContext::new(),
+        &ThreadApi::new(RealThreadBindings),
+    );
 }
 
 /// Firmware-owned native package thread handle.
@@ -396,9 +426,26 @@ macro_rules! thread_name {
 pub struct ThreadStackSize(usize);
 
 impl ThreadStackSize {
+    const MIN_BYTES: usize = 416;
+    const WORKING_AREA_ALIGNMENT_BYTES: usize = 8;
+
     /// Build a stack size from its firmware byte count.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `bytes` cannot hold VESC's pinned ChibiOS working area or
+    /// is not a multiple of its required size alignment. VESC owns the
+    /// working-area allocation and remains responsible for aligning its base.
     #[must_use]
     pub const fn from_bytes(bytes: usize) -> Self {
+        assert!(
+            bytes >= Self::MIN_BYTES,
+            "thread working-area size must be at least 416 bytes"
+        );
+        assert!(
+            bytes.is_multiple_of(Self::WORKING_AREA_ALIGNMENT_BYTES),
+            "thread working-area size must be a multiple of 8 bytes"
+        );
         Self(bytes)
     }
 
@@ -790,6 +837,11 @@ pub mod test_support {
                 priority_result: Cell::new(true),
             }
         }
+
+        pub(crate) fn with_termination_after_checks(self, checks: usize) -> Self {
+            self.should_terminate_after_calls.set(checks);
+            self
+        }
     }
 
     impl ThreadBindings for FakeThreadBindings {
@@ -870,6 +922,7 @@ mod tests {
     use core::ffi::c_void;
     use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
     use std::boxed::Box;
+    use std::sync::Mutex;
 
     use crate::thread::test_support::FakeThreadBindings;
     use crate::units::TimestampTicks;
@@ -913,6 +966,9 @@ mod tests {
 
     static RUN_CALLS: AtomicUsize = AtomicUsize::new(0);
     static OBSERVED_STATE: AtomicU32 = AtomicU32::new(0);
+    static RETURNED_STATEFUL_RUNS: AtomicUsize = AtomicUsize::new(0);
+    static RETURNED_STATELESS_RUNS: AtomicUsize = AtomicUsize::new(0);
+    static THREAD_ENTRY_TEST_LOCK: Mutex<()> = Mutex::new(());
     static THREAD_STATE: crate::PackageStateStore<ThreadState> = crate::PackageStateStore::new();
 
     struct ThreadState(u32);
@@ -925,6 +981,8 @@ mod tests {
 
     struct RecordingThread;
     struct RecordingStatelessThread;
+    struct ReturningThread;
+    struct ReturningStatelessThread;
 
     impl FirmwareThread for RecordingThread {
         type State = ThreadState;
@@ -944,8 +1002,75 @@ mod tests {
         }
     }
 
+    impl FirmwareThread for ReturningThread {
+        type State = ThreadState;
+
+        fn run(_ctx: ThreadContext<Self::State>) {
+            RETURNED_STATEFUL_RUNS.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    impl StatelessFirmwareThread for ReturningStatelessThread {
+        fn run(_ctx: StatelessThreadContext) {
+            RETURNED_STATELESS_RUNS.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn returned_stateful_thread_waits_for_firmware_termination() {
+        RETURNED_STATEFUL_RUNS.store(0, Ordering::SeqCst);
+        let bindings = FakeThreadBindings::new().with_termination_after_checks(3);
+        let threads = ThreadApi::new(&bindings);
+        let state = Box::leak(Box::new(ThreadState(0)));
+
+        super::run_firmware_thread_until_terminated::<ReturningThread>(
+            ThreadContext::test(core::ptr::NonNull::from(state)),
+            &threads,
+        );
+
+        assert_eq!(RETURNED_STATEFUL_RUNS.load(Ordering::SeqCst), 1);
+        assert_eq!(bindings.should_terminate_calls.get(), 3);
+        assert_eq!(bindings.sleep_calls.get(), 2);
+        assert_eq!(bindings.sleep_micros.get(), [1_000, 1_000]);
+    }
+
+    #[test]
+    fn returned_stateless_thread_waits_for_firmware_termination() {
+        RETURNED_STATELESS_RUNS.store(0, Ordering::SeqCst);
+        let bindings = FakeThreadBindings::new().with_termination_after_checks(3);
+        let threads = ThreadApi::new(&bindings);
+
+        super::run_stateless_firmware_thread_until_terminated::<ReturningStatelessThread>(
+            StatelessThreadContext::test(),
+            &threads,
+        );
+
+        assert_eq!(RETURNED_STATELESS_RUNS.load(Ordering::SeqCst), 1);
+        assert_eq!(bindings.should_terminate_calls.get(), 3);
+        assert_eq!(bindings.sleep_calls.get(), 2);
+        assert_eq!(bindings.sleep_micros.get(), [1_000, 1_000]);
+    }
+
+    #[test]
+    fn thread_stack_size_accepts_chibios_minimum_and_refloat_sizes() {
+        assert_eq!(ThreadStackSize::from_bytes(416).bytes(), 416);
+        assert_eq!(ThreadStackSize::from_bytes(1_024).bytes(), 1_024);
+        assert_eq!(ThreadStackSize::from_bytes(1_536).bytes(), 1_536);
+    }
+
+    #[test]
+    fn thread_stack_size_rejects_undersized_working_areas() {
+        assert!(std::panic::catch_unwind(|| ThreadStackSize::from_bytes(408)).is_err());
+    }
+
+    #[test]
+    fn thread_stack_size_rejects_nonmultiple_working_area_sizes() {
+        assert!(std::panic::catch_unwind(|| ThreadStackSize::from_bytes(420)).is_err());
+    }
+
     #[test]
     fn firmware_thread_entry_returns_without_state() {
+        let _guard = THREAD_ENTRY_TEST_LOCK.lock().unwrap();
         RUN_CALLS.store(0, Ordering::SeqCst);
         OBSERVED_STATE.store(0, Ordering::SeqCst);
 
@@ -957,6 +1082,7 @@ mod tests {
 
     #[test]
     fn firmware_thread_entry_passes_typed_state_through_context() {
+        let _guard = THREAD_ENTRY_TEST_LOCK.lock().unwrap();
         RUN_CALLS.store(0, Ordering::SeqCst);
         OBSERVED_STATE.store(0, Ordering::SeqCst);
         let state = Box::leak(Box::new(ThreadState(41)));
@@ -974,6 +1100,7 @@ mod tests {
 
     #[test]
     fn stateless_firmware_thread_entry_ignores_raw_arg() {
+        let _guard = THREAD_ENTRY_TEST_LOCK.lock().unwrap();
         RUN_CALLS.store(0, Ordering::SeqCst);
         OBSERVED_STATE.store(0, Ordering::SeqCst);
 
@@ -987,6 +1114,7 @@ mod tests {
 
     #[test]
     fn stateless_firmware_thread_entry_ignores_nonnull_raw_arg() {
+        let _guard = THREAD_ENTRY_TEST_LOCK.lock().unwrap();
         RUN_CALLS.store(0, Ordering::SeqCst);
         OBSERVED_STATE.store(0, Ordering::SeqCst);
 
@@ -1002,6 +1130,7 @@ mod tests {
 
     #[test]
     fn stateless_thread_context_can_run_without_firmware_context() {
+        let _guard = THREAD_ENTRY_TEST_LOCK.lock().unwrap();
         RUN_CALLS.store(0, Ordering::SeqCst);
 
         RecordingStatelessThread::run(StatelessThreadContext::test());
@@ -1018,12 +1147,12 @@ mod tests {
         let pair = ThreadPairSpec::new(
             ThreadSpec::from_entry(
                 stateless_firmware_thread_entry::<RecordingStatelessThread>,
-                ThreadStackSize::from_bytes(128),
+                ThreadStackSize::from_bytes(1_536),
                 first_name,
             ),
             ThreadSpec::from_entry(
                 stateless_firmware_thread_entry::<RecordingStatelessThread>,
-                ThreadStackSize::from_bytes(256),
+                ThreadStackSize::from_bytes(1_024),
                 second_name,
             ),
         );
@@ -1043,7 +1172,7 @@ mod tests {
         );
         assert_eq!(bindings.spawn_calls.get(), 2);
         assert_eq!(bindings.spawn_entries.get(), entries);
-        assert_eq!(bindings.spawn_stacks.get(), [128, 256]);
+        assert_eq!(bindings.spawn_stacks.get(), [1_536, 1_024]);
         assert_eq!(
             bindings
                 .spawn_names
@@ -1062,12 +1191,12 @@ mod tests {
         let pair = ThreadPairSpec::new(
             ThreadSpec::from_entry(
                 stateless_firmware_thread_entry::<RecordingStatelessThread>,
-                ThreadStackSize::from_bytes(128),
+                ThreadStackSize::from_bytes(1_536),
                 crate::thread_name!("first"),
             ),
             ThreadSpec::from_entry(
                 stateless_firmware_thread_entry::<RecordingStatelessThread>,
-                ThreadStackSize::from_bytes(256),
+                ThreadStackSize::from_bytes(1_024),
                 crate::thread_name!("second"),
             ),
         );

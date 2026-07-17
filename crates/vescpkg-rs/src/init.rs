@@ -1000,12 +1000,12 @@ mod tests {
             let pair = crate::ThreadPairSpec::new(
                 crate::ThreadSpec::<SpawnState>::from_entry(
                     thread_entry,
-                    crate::ThreadStackSize::from_bytes(256),
+                    crate::ThreadStackSize::from_bytes(1_536),
                     crate::thread_name!("main"),
                 ),
                 crate::ThreadSpec::<()>::from_entry(
                     thread_entry,
-                    crate::ThreadStackSize::from_bytes(128),
+                    crate::ThreadStackSize::from_bytes(1_024),
                     crate::thread_name!("aux"),
                 ),
             );
@@ -1054,12 +1054,12 @@ mod tests {
         let pair = crate::ThreadPairSpec::new(
             crate::ThreadSpec::<SpawnState>::from_entry(
                 thread_entry,
-                crate::ThreadStackSize::from_bytes(256),
+                crate::ThreadStackSize::from_bytes(1_536),
                 crate::thread_name!("main"),
             ),
             crate::ThreadSpec::<()>::from_entry(
                 thread_entry,
-                crate::ThreadStackSize::from_bytes(128),
+                crate::ThreadStackSize::from_bytes(1_024),
                 crate::thread_name!("aux"),
             ),
         );

@@ -101,8 +101,9 @@ impl FirmwareTest {
 
     #[must_use]
     /// Return stack sizes from the first two firmware thread spawns.
-    pub fn spawned_thread_stack_sizes(&self) -> [crate::ThreadStackSize; 2] {
-        crate::test_ffi::thread_spawn_stacks().map(crate::ThreadStackSize::from_bytes)
+    pub fn spawned_thread_stack_sizes(&self) -> [Option<crate::ThreadStackSize>; 2] {
+        crate::test_ffi::thread_spawn_stacks()
+            .map(|bytes| (bytes != 0).then(|| crate::ThreadStackSize::from_bytes(bytes)))
     }
 
     #[must_use]
