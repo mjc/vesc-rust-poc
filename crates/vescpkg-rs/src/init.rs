@@ -525,6 +525,12 @@ impl<'info> PackageStart<'info> {
     where
         B: crate::bindings::LbmBindings,
     {
+        descriptors.iter().copied().try_for_each(|descriptor| {
+            descriptor
+                .validate()
+                .map(|_| ())
+                .map_err(|_| crate::RegisterError::InvalidExtensionName)
+        })?;
         if descriptors.iter().copied().any(|descriptor| {
             descriptor
                 .state_type()
@@ -1411,6 +1417,34 @@ mod tests {
             rejecting_start.register_extensions_with(&rejecting_lifecycle, [descriptor]),
             Err(crate::RegisterError::FirmwareRejected)
         );
+    }
+
+    #[test]
+    fn package_start_preflights_all_extension_names_before_registration() {
+        use crate::test_support::{FakeBindings, stubs};
+
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0x2000,
+        };
+        let bindings = FakeBindings::new();
+        let lifecycle = crate::lifecycle_core::PackageLifecycle::new(&bindings);
+        let mut start = super::PackageStart::from_lib_info(&mut info);
+        let valid = crate::ExtensionDescriptor::from_handler(
+            crate::extension_name!("ext-valid"),
+            stubs::extension_handler,
+        );
+        let invalid = crate::ExtensionDescriptor::from_handler(
+            crate::extension_name!("invalid"),
+            stubs::extension_handler,
+        );
+
+        assert_eq!(
+            start.register_extensions_with(&lifecycle, [valid, invalid]),
+            Err(crate::RegisterError::InvalidExtensionName)
+        );
+        assert_eq!(bindings.add_calls.get(), 0);
     }
 
     #[test]
