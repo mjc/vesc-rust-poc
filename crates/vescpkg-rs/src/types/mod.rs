@@ -64,9 +64,10 @@ pub use control::{
 pub use gnss::{GnssAccuracy, GnssAltitude, GnssHdop, GnssLatitude, GnssLongitude, GnssSpeed};
 pub use imu::{
     ImuAcceleration, ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ, ImuAngularRate,
-    ImuAngularRatePitch, ImuAngularRateRoll, ImuAngularRateYaw, ImuAttitude, ImuOrientation,
-    ImuPitch, ImuQuaternion, ImuQuaternionW, ImuQuaternionX, ImuQuaternionY, ImuQuaternionZ,
-    ImuReadSample, ImuRoll, ImuSamplePeriod, ImuYaw,
+    ImuAngularRatePitch, ImuAngularRateRoll, ImuAngularRateYaw, ImuAttitude, ImuMagneticField,
+    ImuMagneticFieldX, ImuMagneticFieldY, ImuMagneticFieldZ, ImuOrientation, ImuPitch,
+    ImuQuaternion, ImuQuaternionW, ImuQuaternionX, ImuQuaternionY, ImuQuaternionZ, ImuReadSample,
+    ImuRoll, ImuSamplePeriod, ImuYaw,
 };
 pub use io::{
     BaudRate, BaudRateError, PacketLength, PacketLengthError, ThreadPriority, ThreadPriorityError,

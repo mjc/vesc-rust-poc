@@ -82,9 +82,9 @@ use vescpkg_rs_units as units;
 pub use vescpkg_rs_units::{
     AccelerationG, AmpHours, AngleDegrees, AngleRadians, AngularVelocity, Charge, Current,
     Distance, DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage, Frequency, Height,
-    Inductance, Latitude, Longitude, OdometerMeters, Percent, Power, Ratio, Resistance, Rpm,
-    SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed, SystemInstant, SystemTicks, Temperature,
-    TimestampTicks, VescSeconds, Voltage, WattHours,
+    Inductance, Latitude, Longitude, MagneticFluxDensity, OdometerMeters, Percent, Power, Ratio,
+    Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed, SystemInstant,
+    SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage, WattHours,
 };
 
 #[cfg(feature = "alloc")]
@@ -138,19 +138,20 @@ pub mod prelude {
     pub use crate::units::{
         AccelerationG, AmpHours, AngleDegrees, AngleRadians, AngularVelocity, BoundedUnitError,
         Charge, Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage,
-        Frequency, Height, Inductance, Latitude, Longitude, OdometerMeters, Percent, Power, Ratio,
-        Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed, SystemInstant,
-        SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage, WattHours,
+        Frequency, Height, Inductance, Latitude, Longitude, MagneticFluxDensity, OdometerMeters,
+        Percent, Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed,
+        SystemInstant, SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage, WattHours,
     };
     pub use crate::{
         AnalogPin, AppDataCallback, AppDataHandlerRegistrationError, AppDataSendError, ConfigBytes,
         ConfigXml, ExtensionDescriptor, ExtensionName, ExtensionNameError, ExtensionRegistration,
         Firmware, FirmwareAppData, FirmwareLisp, FirmwareThread, FirmwareThreads, Gpio, Imu,
         ImuReadHandler, LbmExtension, LispArgs, LispValue, MotorOutput, MotorTelemetry,
-        PackageStart, PackageStartError, PackageStateAccess, PackageStateStore, RegisterError,
-        StatefulAppDataCallback, StatefulCustomConfigCallback, StatefulLbmExtension,
-        StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadHandle,
-        ThreadName, ThreadPair, ThreadPairSpec, ThreadSpec, ThreadStackSize,
+        PackageRuntimeState, PackageStart, PackageStartError, PackageStateAccess,
+        PackageStateStore, RegisterError, StatefulAppDataCallback, StatefulCustomConfigCallback,
+        StatefulLbmExtension, StatelessFirmwareThread, StatelessThreadContext, ThreadContext,
+        ThreadError, ThreadHandle, ThreadName, ThreadPair, ThreadPairSpec, ThreadSpec,
+        ThreadStackSize,
     };
 }
 

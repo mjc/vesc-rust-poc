@@ -79,7 +79,9 @@ pub mod temperature;
 pub mod time;
 
 pub use battery::{AmpHours, Charge, DistancePerEnergy, Energy, EnergyPerDistance, WattHours};
-pub use electrical::{Current, FluxLinkage, Inductance, Power, Resistance, Voltage};
+pub use electrical::{
+    Current, FluxLinkage, Inductance, MagneticFluxDensity, Power, Resistance, Voltage,
+};
 pub use gnss::{Height, Latitude, Longitude};
 pub use motion::{
     AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Distance, OdometerMeters, Rpm,
@@ -97,9 +99,10 @@ pub mod prelude {
     pub use crate::{
         AccelerationG, AmpHours, AngleDegrees, AngleRadians, AngularVelocity, BoundedUnitError,
         Charge, Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage,
-        Frequency, Height, Inductance, Latitude, Longitude, OdometerMeters, Percent, Power, Ratio,
-        Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed, SystemInstant,
-        SystemTicks, TachometerSteps, Temperature, TimestampTicks, VescSeconds, Voltage, WattHours,
+        Frequency, Height, Inductance, Latitude, Longitude, MagneticFluxDensity, OdometerMeters,
+        Percent, Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio,
+        Speed, SystemInstant, SystemTicks, TachometerSteps, Temperature, TimestampTicks,
+        VescSeconds, Voltage, WattHours,
     };
 }
 

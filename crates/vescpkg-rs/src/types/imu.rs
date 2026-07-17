@@ -2,7 +2,9 @@
 
 use core::{fmt, marker::PhantomData};
 
-use crate::units::{AccelerationG, AngleRadians, AngularVelocity, VescSeconds};
+use crate::units::{
+    AccelerationG, AngleRadians, AngularVelocity, MagneticFluxDensity, VescSeconds,
+};
 
 macro_rules! attitude_type {
     ($name:ident, $doc:literal) => {
@@ -112,6 +114,7 @@ impl<Component: Copy, Tag> AxisVector3<Component, Tag> {
 
 enum ImuAccelerationTag {}
 enum ImuAngularRateTag {}
+enum ImuMagneticFieldTag {}
 
 macro_rules! axis_type {
     ($name:ident, $unit:ty, $getter:ident, $doc:literal) => {
@@ -169,6 +172,24 @@ axis_type!(
     AngularVelocity,
     angular_velocity,
     "Hardware IMU yaw-axis angular-rate sample."
+);
+axis_type!(
+    ImuMagneticFieldX,
+    MagneticFluxDensity,
+    magnetic_flux_density,
+    "Hardware IMU magnetic x-axis sample."
+);
+axis_type!(
+    ImuMagneticFieldY,
+    MagneticFluxDensity,
+    magnetic_flux_density,
+    "Hardware IMU magnetic y-axis sample."
+);
+axis_type!(
+    ImuMagneticFieldZ,
+    MagneticFluxDensity,
+    magnetic_flux_density,
+    "Hardware IMU magnetic z-axis sample."
 );
 
 /// Firmware IMU acceleration vector in g units.
@@ -246,6 +267,37 @@ impl ImuAngularRate {
     /// Return yaw-axis angular rate.
     pub const fn yaw(self) -> AngularVelocity {
         self.0.z()
+    }
+}
+
+/// Firmware IMU magnetic-field vector in microteslas.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ImuMagneticField(AxisVector3<MagneticFluxDensity, ImuMagneticFieldTag>);
+
+impl ImuMagneticField {
+    /// Wrap named hardware magnetic-field axes.
+    pub const fn from_axes(
+        x: ImuMagneticFieldX,
+        y: ImuMagneticFieldY,
+        z: ImuMagneticFieldZ,
+    ) -> Self {
+        Self(AxisVector3::new([
+            x.magnetic_flux_density(),
+            y.magnetic_flux_density(),
+            z.magnetic_flux_density(),
+        ]))
+    }
+
+    /// Visit named axes without exposing firmware-order arrays.
+    pub fn map_axes<R>(
+        self,
+        f: impl FnOnce(ImuMagneticFieldX, ImuMagneticFieldY, ImuMagneticFieldZ) -> R,
+    ) -> R {
+        f(
+            ImuMagneticFieldX::new(self.0.x()),
+            ImuMagneticFieldY::new(self.0.y()),
+            ImuMagneticFieldZ::new(self.0.z()),
+        )
     }
 }
 
@@ -406,6 +458,7 @@ impl ImuSamplePeriod {
 pub struct ImuReadSample {
     acceleration: ImuAcceleration,
     angular_rate: ImuAngularRate,
+    magnetic_field: ImuMagneticField,
     period: ImuSamplePeriod,
 }
 impl ImuReadSample {
@@ -413,11 +466,13 @@ impl ImuReadSample {
     pub const fn from_parts(
         acceleration: ImuAcceleration,
         angular_rate: ImuAngularRate,
+        magnetic_field: ImuMagneticField,
         period: ImuSamplePeriod,
     ) -> Self {
         Self {
             acceleration,
             angular_rate,
+            magnetic_field,
             period,
         }
     }
@@ -430,6 +485,11 @@ impl ImuReadSample {
     /// Return the hardware angular-rate sample.
     pub const fn angular_rate(self) -> ImuAngularRate {
         self.angular_rate
+    }
+
+    /// Return the hardware magnetic-field sample.
+    pub const fn magnetic_field(self) -> ImuMagneticField {
+        self.magnetic_field
     }
 
     /// Return the sample period.

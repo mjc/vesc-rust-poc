@@ -4,12 +4,13 @@
 use crate::types::ImuQuaternion;
 use crate::types::{
     ImuAcceleration, ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ, ImuAngularRate,
-    ImuAngularRatePitch, ImuAngularRateRoll, ImuAngularRateYaw, ImuAttitude, ImuOrientation,
-    ImuPitch, ImuReadSample, ImuRoll, ImuSamplePeriod, ImuYaw,
+    ImuAngularRatePitch, ImuAngularRateRoll, ImuAngularRateYaw, ImuAttitude, ImuMagneticField,
+    ImuMagneticFieldX, ImuMagneticFieldY, ImuMagneticFieldZ, ImuOrientation, ImuPitch,
+    ImuReadSample, ImuRoll, ImuSamplePeriod, ImuYaw,
 };
 #[cfg(not(test))]
 use crate::units::AngleRadians;
-use crate::units::{AccelerationG, AngularVelocity, VescSeconds};
+use crate::units::{AccelerationG, AngularVelocity, MagneticFluxDensity, VescSeconds};
 
 /// IMU operations backed by firmware slots.
 #[cfg(not(test))]
@@ -199,18 +200,22 @@ where
 ///
 /// # Safety
 ///
-/// `acc` and `gyro` must each point to three readable `f32` values for the duration of this call.
+/// `acc`, `gyro`, and `mag` must each point to three readable `f32` values for the duration of
+/// this call.
 #[doc(hidden)]
 pub unsafe extern "C" fn imu_read_callback<T: ImuReadCallback>(
     acc: *mut f32,
     gyro: *mut f32,
-    _mag: *mut f32,
+    mag: *mut f32,
     dt: f32,
 ) {
     let Some(accel) = (unsafe { crate::firmware_array::<f32, 3>(acc.cast_const()) }) else {
         return;
     };
     let Some(gyro) = (unsafe { crate::firmware_array::<f32, 3>(gyro.cast_const()) }) else {
+        return;
+    };
+    let Some(mag) = (unsafe { crate::firmware_array::<f32, 3>(mag.cast_const()) }) else {
         return;
     };
     // BLDC calls package IMU read callbacks with gyro axes already converted
@@ -225,6 +230,11 @@ pub unsafe extern "C" fn imu_read_callback<T: ImuReadCallback>(
             ImuAngularRateRoll::new(AngularVelocity::from_radians_per_second(gyro[0])),
             ImuAngularRatePitch::new(AngularVelocity::from_radians_per_second(gyro[1])),
             ImuAngularRateYaw::new(AngularVelocity::from_radians_per_second(gyro[2])),
+        ),
+        ImuMagneticField::from_axes(
+            ImuMagneticFieldX::new(MagneticFluxDensity::from_microteslas(mag[0])),
+            ImuMagneticFieldY::new(MagneticFluxDensity::from_microteslas(mag[1])),
+            ImuMagneticFieldZ::new(MagneticFluxDensity::from_microteslas(mag[2])),
         ),
         ImuSamplePeriod::new(VescSeconds::from_seconds(dt)),
     ));
@@ -389,9 +399,10 @@ mod tests {
     use super::{ImuReadCallback, ImuReadHandler, PackageImuReadCallback, imu_read_callback};
     use crate::types::{
         ImuAcceleration, ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ, ImuAngularRate,
-        ImuAngularRatePitch, ImuAngularRateRoll, ImuAngularRateYaw, ImuReadSample, ImuSamplePeriod,
+        ImuAngularRatePitch, ImuAngularRateRoll, ImuAngularRateYaw, ImuMagneticField,
+        ImuMagneticFieldX, ImuMagneticFieldY, ImuMagneticFieldZ, ImuReadSample, ImuSamplePeriod,
     };
-    use crate::units::{AccelerationG, AngularVelocity, VescSeconds};
+    use crate::units::{AccelerationG, AngularVelocity, MagneticFluxDensity, VescSeconds};
     use core::f32::consts::FRAC_PI_2;
     use core::ptr::NonNull;
     use core::sync::atomic::{AtomicPtr, AtomicU8, Ordering};
@@ -481,6 +492,11 @@ mod tests {
                 )),
                 ImuAngularRateYaw::new(AngularVelocity::from_radians_per_second(-FRAC_PI_2)),
             ),
+            ImuMagneticField::from_axes(
+                ImuMagneticFieldX::new(MagneticFluxDensity::from_microteslas(4.0)),
+                ImuMagneticFieldY::new(MagneticFluxDensity::from_microteslas(5.0)),
+                ImuMagneticFieldZ::new(MagneticFluxDensity::from_microteslas(6.0)),
+            ),
             ImuSamplePeriod::new(VescSeconds::from_seconds(0.02)),
         )
     }
@@ -489,7 +505,7 @@ mod tests {
     fn imu_read_callback_maps_firmware_callback_gyro_radians_per_second() {
         let mut acc = [1.0, 2.0, 3.0];
         let mut gyro = [FRAC_PI_2, core::f32::consts::PI, -FRAC_PI_2];
-        let mut mag = [0.0; 3];
+        let mut mag = [4.0, 5.0, 6.0];
 
         unsafe {
             imu_read_callback::<CaptureImuRead>(
@@ -520,6 +536,16 @@ mod tests {
                 )
             }),
             (90.0, 180.0, -90.0)
+        );
+        assert_eq!(
+            sample.magnetic_field().map_axes(|x, y, z| {
+                (
+                    x.magnetic_flux_density().as_microteslas(),
+                    y.magnetic_flux_density().as_microteslas(),
+                    z.magnetic_flux_density().as_microteslas(),
+                )
+            }),
+            (4.0, 5.0, 6.0)
         );
         assert_eq!(sample.period().duration().as_seconds(), 0.02);
     }
