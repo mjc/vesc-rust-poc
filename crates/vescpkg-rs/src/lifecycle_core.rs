@@ -140,7 +140,7 @@ pub enum AppDataHandlerRegistrationError {
 /// Failure returned when an app-data payload cannot cross the firmware ABI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppDataSendError {
-    /// The payload does not fit the firmware's 512-byte command buffer.
+    /// The payload exceeds the firmware's 511-byte app-data limit.
     PayloadTooLarge,
 }
 
