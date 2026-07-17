@@ -23,6 +23,9 @@ path = "src/main.rs"
 vesc-protocol = { path = "../../crates/vesc-protocol" }
 vescpkg-rs = { path = "../../crates/vescpkg-rs" }
 
+[dev-dependencies]
+vescpkg-rs = { path = "../../crates/vescpkg-rs", features = ["test-support"] }
+
 [build-dependencies]
 vescpkg-build-support = { path = "../../crates/vescpkg-build-support" }
 
