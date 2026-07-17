@@ -233,8 +233,24 @@ fn register_extensions_from_image_registers_each_descriptor() {
 
     assert_eq!(
         unsafe { lifecycle.register_extensions_from_image(image, [first, second]) },
-        Ok(())
+        crate::ExtensionRegistration::new(2, 2)
     );
+    assert_eq!(bindings.add_calls.get(), 2);
+}
+
+#[test]
+fn extension_batch_reports_partial_registration_without_short_circuiting() {
+    let bindings = FakeBindings::with_add_results([true, false]);
+    let lifecycle = PackageLifecycle::new(&bindings);
+    let image = NativeImage::new(0x2000);
+    let first =
+        ExtensionDescriptor::from_handler(crate::extension_name!("ext-rust-a"), stub_handler);
+    let second =
+        ExtensionDescriptor::from_handler(crate::extension_name!("ext-rust-b"), stub_handler);
+
+    let registration = unsafe { lifecycle.register_extensions_from_image(image, [first, second]) };
+
+    assert_eq!(registration, crate::ExtensionRegistration::new(2, 1));
     assert_eq!(bindings.add_calls.get(), 2);
 }
 

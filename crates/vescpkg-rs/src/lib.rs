@@ -89,7 +89,9 @@ pub use vescpkg_rs_units::{
 
 #[cfg(feature = "alloc")]
 pub use alloc::VescAllocator;
-pub use extension::{ExtensionDescriptor, ExtensionName, ExtensionNameError, RegisterError};
+pub use extension::{
+    ExtensionDescriptor, ExtensionName, ExtensionNameError, ExtensionRegistration, RegisterError,
+};
 pub use extension::{LbmExtension, LispArgs, LispValue, StatefulLbmExtension};
 
 // Exported macros need public implementation hooks after downstream expansion.
@@ -142,10 +144,10 @@ pub mod prelude {
     };
     pub use crate::{
         AnalogPin, AppDataCallback, AppDataHandlerRegistrationError, AppDataSendError, ConfigBytes,
-        ConfigXml, ExtensionDescriptor, ExtensionName, ExtensionNameError, Firmware,
-        FirmwareAppData, FirmwareLisp, FirmwareThread, FirmwareThreads, Gpio, Imu, ImuReadHandler,
-        LbmExtension, LispArgs, LispValue, MotorOutput, MotorTelemetry, PackageStart,
-        PackageStartError, PackageStateAccess, PackageStateStore, RegisterError,
+        ConfigXml, ExtensionDescriptor, ExtensionName, ExtensionNameError, ExtensionRegistration,
+        Firmware, FirmwareAppData, FirmwareLisp, FirmwareThread, FirmwareThreads, Gpio, Imu,
+        ImuReadHandler, LbmExtension, LispArgs, LispValue, MotorOutput, MotorTelemetry,
+        PackageStart, PackageStartError, PackageStateAccess, PackageStateStore, RegisterError,
         StatefulAppDataCallback, StatefulCustomConfigCallback, StatefulLbmExtension,
         StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadHandle,
         ThreadName, ThreadPair, ThreadPairSpec, ThreadSpec, ThreadStackSize,

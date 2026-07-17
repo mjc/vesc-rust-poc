@@ -78,7 +78,7 @@ error[E0624]: associated function `from_raw` is private
 13 |     let _ = PackageStart::from_raw::<&mut vescpkg_rs::LoaderInfo>;
    |                           ^^^^^^^^ private associated function
    |
-  --> <BASE_DIR>/crates/vescpkg-rs/src/init.rs:170:4
+  --> <BASE_DIR>/crates/vescpkg-rs/src/init.rs:178:4
    |
    = note: private associated function defined here
 

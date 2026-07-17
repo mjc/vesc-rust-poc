@@ -67,8 +67,13 @@ mod tests {
         let mut info = LoaderInfo::new();
         let [descriptor] = package_extension_descriptors();
         let mut start = vescpkg_rs::test_support::package_start(&mut info);
+        start.install_stop_hook().unwrap();
 
-        assert_eq!(registry.register(&mut start, [descriptor]), Ok(()));
+        assert!(
+            registry
+                .register(&mut start, [descriptor])
+                .is_ok_and(vescpkg_rs::ExtensionRegistration::is_complete)
+        );
         assert_eq!(registry.registration_count(), 1);
     }
 

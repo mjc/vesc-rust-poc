@@ -61,7 +61,7 @@ pub(crate) fn start(start: &mut vescpkg_rs::PackageStart) -> bool {
         |start| {
             start
                 .register_extensions(extensions::package_extension_descriptors())
-                .is_ok()
+                .is_ok_and(vescpkg_rs::ExtensionRegistration::is_complete)
         },
         // Extension registration can run other firmware setup; register again so
         // the loopback handler remains the active app-data callback.

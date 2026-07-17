@@ -65,8 +65,42 @@ pub enum RegisterError {
     FirmwareRejected,
     /// The package loader metadata was unavailable.
     LoaderUnavailable,
+    /// The package image did not install the stop hook that retains its loader slot.
+    PackageNotRetained,
     /// A stateful extension named a different runtime state type.
     StateTypeMismatch,
+}
+
+/// Result of registering a package's LispBM extension table.
+///
+/// VESC exposes extension insertion but not removal through `VESC_IF`, so a
+/// batch can be partially registered. Once any entry succeeds, the SDK keeps
+/// the native image loaded even if later package startup reports failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExtensionRegistration {
+    requested: usize,
+    registered: usize,
+}
+
+impl ExtensionRegistration {
+    pub(crate) const fn new(requested: usize, registered: usize) -> Self {
+        Self {
+            requested,
+            registered,
+        }
+    }
+
+    /// Return how many extension handlers firmware accepted.
+    #[must_use]
+    pub const fn registered(self) -> usize {
+        self.registered
+    }
+
+    /// Return whether firmware accepted every requested extension.
+    #[must_use]
+    pub const fn is_complete(self) -> bool {
+        self.registered == self.requested
+    }
 }
 
 /// A static name assigned to a LispBM extension.

@@ -110,10 +110,17 @@ pub enum PackageStartError {
 }
 
 /// Safe startup context for package authors.
+///
+/// VESC can load up to ten native libraries in one Lisp package, but its IMU,
+/// app-data, and custom-config callbacks are package-global singleton slots.
+/// One coordinator library must own those registrations for the package;
+/// secondary libraries must communicate through that owner instead of replacing
+/// the global handlers.
 pub struct PackageStart<'info> {
     info: *mut crate::LoaderInfo,
     state_type: Option<TypeId>,
     callback_recorder: Option<CallbackRecorder>,
+    extension_image_pinned: bool,
     _info: core::marker::PhantomData<&'info mut crate::LoaderInfo>,
 }
 
@@ -162,6 +169,7 @@ impl<'info> PackageStart<'info> {
             info,
             state_type: None,
             callback_recorder: None,
+            extension_image_pinned: false,
             _info: core::marker::PhantomData,
         }
     }
@@ -172,6 +180,7 @@ impl<'info> PackageStart<'info> {
             info,
             state_type: None,
             callback_recorder: None,
+            extension_image_pinned: false,
             _info: core::marker::PhantomData,
         }
     }
@@ -182,6 +191,7 @@ impl<'info> PackageStart<'info> {
             info: core::ptr::from_mut(info).cast(),
             state_type: None,
             callback_recorder: None,
+            extension_image_pinned: false,
             _info: core::marker::PhantomData,
         }
     }
@@ -276,6 +286,10 @@ impl<'info> PackageStart<'info> {
 
     /// Commit a successful package start, or stop and roll back a failed start.
     ///
+    /// An image that has already published a LispBM extension cannot be rolled
+    /// back because VESC does not expose extension removal through `VESC_IF`.
+    /// Such an image remains loaded until the package-wide Lisp restart.
+    ///
     /// C map: VESC uses the init result as the Lisp load result, but selects a
     /// reusable loader slot by `stop_fun == NULL` and only clears that field on
     /// unload/stop (`lispBM/lispif_c_lib.c:1087-1155`). Refloat returns false
@@ -283,6 +297,10 @@ impl<'info> PackageStart<'info> {
     /// failed Rust start must both run its stop hook and release the loader slot.
     #[doc(hidden)]
     pub fn finish_start(mut self, started: bool) -> bool {
+        // VESC_IF can add LispBM extensions but cannot remove them. Once a
+        // handler is published, keep its native image and runtime alive until
+        // the package-wide Lisp restart resets the extension table.
+        let started = started || self.extension_image_pinned;
         let running = self
             .callback_recorder
             .map_or(started, |recorder| recorder.finish_start(started));
@@ -435,6 +453,9 @@ impl<'info> PackageStart<'info> {
 
     /// Register a concrete package-local typed IMU callback.
     ///
+    /// This claims the package-global IMU callback slot. Call it only from the
+    /// package's designated coordinator native library.
+    ///
     /// C map: Refloat registers `imu_ref_callback` at
     /// `third_party/refloat/src/main.c:2454`; VESC stores and invokes it through
     /// `third_party/vesc/imu/imu.c:581-582` and `:704-727`.
@@ -476,6 +497,9 @@ impl<'info> PackageStart<'info> {
     }
 
     /// Register this package's typed custom config and app-data callback.
+    ///
+    /// This claims package-global callback slots. Call it only from the
+    /// package's designated coordinator native library.
     ///
     /// The app-data callback is resolved before either firmware call, while
     /// firmware receives custom config before app data.
@@ -527,7 +551,7 @@ impl<'info> PackageStart<'info> {
         &mut self,
         lifecycle: &crate::lifecycle_core::PackageLifecycle<B>,
         descriptors: [crate::ExtensionDescriptor; N],
-    ) -> Result<(), crate::RegisterError>
+    ) -> Result<crate::ExtensionRegistration, crate::RegisterError>
     where
         B: crate::bindings::LbmBindings,
     {
@@ -547,12 +571,17 @@ impl<'info> PackageStart<'info> {
         let info = self
             .raw_info_mut()
             .ok_or(crate::RegisterError::LoaderUnavailable)?;
+        if info.stop_fun.is_none() {
+            return Err(crate::RegisterError::PackageNotRetained);
+        }
         // SAFETY: `info` is the loader metadata just installed for this package
         // image, so extension descriptor pointers are resolved against the image
         // that owns them.
-        unsafe {
+        let registration = unsafe {
             lifecycle.register_extensions_from_image(ffi::NativeImage::from_info(info), descriptors)
-        }
+        };
+        self.extension_image_pinned |= registration.registered() != 0;
+        Ok(registration)
     }
 
     /// Register extension descriptors through the test-support lifecycle seam.
@@ -561,7 +590,7 @@ impl<'info> PackageStart<'info> {
         &mut self,
         lifecycle: &crate::lifecycle_core::PackageLifecycle<B>,
         descriptors: [crate::ExtensionDescriptor; N],
-    ) -> Result<(), crate::RegisterError>
+    ) -> Result<crate::ExtensionRegistration, crate::RegisterError>
     where
         B: crate::bindings::LbmBindings,
     {
@@ -569,11 +598,15 @@ impl<'info> PackageStart<'info> {
     }
 
     /// Register extension descriptors with the live firmware bindings.
+    ///
+    /// Firmware may accept only part of the table. The returned report exposes
+    /// that outcome, and any accepted handler pins this native image until the
+    /// package-wide Lisp restart.
     #[cfg(all(not(test), target_arch = "arm"))]
     pub fn register_extensions<const N: usize>(
         &mut self,
         descriptors: [crate::ExtensionDescriptor; N],
-    ) -> Result<(), crate::RegisterError> {
+    ) -> Result<crate::ExtensionRegistration, crate::RegisterError> {
         let lifecycle = crate::lifecycle_core::PackageLifecycle::new(crate::bindings::RealBindings);
         self.register_extensions_with_lifecycle(&lifecycle, descriptors)
     }
@@ -1411,6 +1444,7 @@ mod tests {
         let bindings = FakeBindings::new();
         let lifecycle = crate::lifecycle_core::PackageLifecycle::new(&bindings);
         let mut start = super::PackageStart::from_lib_info(&mut info);
+        start.install_stop_hook().unwrap();
         let descriptor = crate::ExtensionDescriptor::from_handler(
             crate::extension_name!("ext-start-probe"),
             stubs::extension_handler,
@@ -1418,7 +1452,7 @@ mod tests {
 
         assert_eq!(
             start.register_extensions_with(&lifecycle, [descriptor]),
-            Ok(())
+            Ok(crate::ExtensionRegistration::new(1, 1))
         );
         assert_eq!(bindings.add_calls.get(), 1);
         assert_eq!(
@@ -1435,11 +1469,65 @@ mod tests {
         let rejecting_bindings = FakeBindings::rejecting();
         let rejecting_lifecycle = crate::lifecycle_core::PackageLifecycle::new(&rejecting_bindings);
         let mut rejecting_start = super::PackageStart::from_lib_info(&mut rejected_info);
+        rejecting_start.install_stop_hook().unwrap();
 
         assert_eq!(
             rejecting_start.register_extensions_with(&rejecting_lifecycle, [descriptor]),
-            Err(crate::RegisterError::FirmwareRejected)
+            Ok(crate::ExtensionRegistration::new(1, 0))
         );
+    }
+
+    #[test]
+    fn package_start_keeps_an_extension_image_loaded_after_later_failure() {
+        use crate::test_support::{FakeBindings, stubs};
+
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0x2000,
+        };
+        let bindings = FakeBindings::with_add_results([true, false]);
+        let lifecycle = crate::lifecycle_core::PackageLifecycle::new(&bindings);
+        let mut start = super::PackageStart::from_lib_info(&mut info);
+        start.install_stop_hook().unwrap();
+        let first = crate::ExtensionDescriptor::from_handler(
+            crate::extension_name!("ext-start-a"),
+            stubs::extension_handler,
+        );
+        let second = crate::ExtensionDescriptor::from_handler(
+            crate::extension_name!("ext-start-b"),
+            stubs::extension_handler,
+        );
+
+        assert_eq!(
+            start.register_extensions_with(&lifecycle, [first, second]),
+            Ok(crate::ExtensionRegistration::new(2, 1))
+        );
+        assert!(start.finish_start(false));
+    }
+
+    #[test]
+    fn package_start_rejects_extensions_before_the_image_is_retained() {
+        use crate::test_support::{FakeBindings, stubs};
+
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0x2000,
+        };
+        let bindings = FakeBindings::new();
+        let lifecycle = crate::lifecycle_core::PackageLifecycle::new(&bindings);
+        let mut start = super::PackageStart::from_lib_info(&mut info);
+        let descriptor = crate::ExtensionDescriptor::from_handler(
+            crate::extension_name!("ext-unretained"),
+            stubs::extension_handler,
+        );
+
+        assert_eq!(
+            start.register_extensions_with(&lifecycle, [descriptor]),
+            Err(crate::RegisterError::PackageNotRetained)
+        );
+        assert_eq!(bindings.add_calls.get(), 0);
     }
 
     #[test]

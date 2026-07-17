@@ -2,7 +2,7 @@
 
 use crate::bindings::LbmBindings;
 #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
-use crate::extension::{ExtensionDescriptor, RegisterError};
+use crate::extension::{ExtensionDescriptor, ExtensionRegistration, RegisterError};
 #[cfg(not(test))]
 use vescpkg_rs_sys::LbmValue;
 #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
@@ -122,11 +122,16 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         &self,
         image: NativeImage,
         descriptors: impl IntoIterator<Item = ExtensionDescriptor>,
-    ) -> Result<(), RegisterError> {
+    ) -> ExtensionRegistration {
+        let mut requested = 0;
+        let mut registered = 0;
         for descriptor in descriptors {
-            unsafe { self.register_extension_from_image(image, descriptor)? };
+            requested += 1;
+            registered += usize::from(
+                unsafe { self.register_extension_from_image(image, descriptor) }.is_ok(),
+            );
         }
-        Ok(())
+        ExtensionRegistration::new(requested, registered)
     }
 }
 
