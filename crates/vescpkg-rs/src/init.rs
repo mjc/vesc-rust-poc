@@ -275,16 +275,22 @@ impl<'info> PackageStart<'info> {
     }
 
     /// Commit a successful package start, or stop and roll back a failed start.
+    ///
+    /// C map: VESC uses the init result as the Lisp load result, but selects a
+    /// reusable loader slot by `stop_fun == NULL` and only clears that field on
+    /// unload/stop (`lispBM/lispif_c_lib.c:1087-1155`). Refloat returns false
+    /// for allocation and thread-spawn failures (`src/main.c:2664-2702`), so a
+    /// failed Rust start must both run its stop hook and release the loader slot.
     #[doc(hidden)]
     pub fn finish_start(mut self, started: bool) -> bool {
         let running = self
             .callback_recorder
             .map_or(started, |recorder| recorder.finish_start(started));
-        if !started
-            && let Some(info) = self.raw_info_mut()
-            && let Some(stop) = info.stop_fun
-        {
-            unsafe { stop(info.arg) };
+        if !running && let Some(info) = self.raw_info_mut() {
+            let arg = info.arg;
+            if let Some(stop) = info.stop_fun.take() {
+                unsafe { stop(arg) };
+            }
         }
         running
     }
@@ -621,8 +627,7 @@ macro_rules! package_start {
         extern "C" fn package_lib_init(info: *mut $crate::LoaderInfo) -> bool {
             let mut start = unsafe { $crate::__macro_support::__package_start_from_raw(info) };
             let started = $start(&mut start);
-            let _ = start.finish_start(started);
-            true
+            start.finish_start(started)
         }
 
         /// Host-linking loader shim for package crates.
@@ -741,6 +746,18 @@ mod tests {
     struct SpawnState;
     struct TestImuState;
     struct WrongImuState;
+
+    mod failing_entrypoint {
+        fn start(_: &mut crate::PackageStart<'_>) -> bool {
+            false
+        }
+
+        crate::package_start!(start);
+
+        pub(super) fn run(info: &mut crate::LoaderInfo) -> bool {
+            package_lib_init(info)
+        }
+    }
 
     impl crate::PackageRuntimeState for ExtensionRegistrationState {
         fn runtime_store() -> &'static crate::PackageStateStore<Self> {
@@ -876,6 +893,13 @@ mod tests {
     }
 
     #[test]
+    fn package_entrypoint_propagates_start_failure() {
+        let mut info = crate::LoaderInfo::new();
+
+        assert!(!failing_entrypoint::run(&mut info));
+    }
+
+    #[test]
     fn install_stop_hook_rejects_null_loader_metadata() {
         assert_eq!(
             install_stop_hook(core::ptr::null_mut()),
@@ -937,8 +961,7 @@ mod tests {
         assert_eq!(OWNED_STATE_STOPS.load(Ordering::Relaxed), 1);
         assert_eq!(OWNED_STATE_DROPS.load(Ordering::Relaxed), 1);
         assert_eq!(OWNED_STATE.with(|state| state.0), None);
-        unsafe { info.stop_fun.unwrap()(info.arg) };
-        assert_eq!(OWNED_STATE_STOPS.load(Ordering::Relaxed), 1);
+        assert!(info.stop_fun.is_none());
     }
 
     #[test]
