@@ -58,21 +58,17 @@ unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
             threads.terminate_reverse(firmware.threads());
         }
     }
-    let resources = runtime.finish_stop(state);
+    runtime.finish_stop(state);
     unsafe { state.as_mut() }.stop();
     #[cfg(all(not(test), target_arch = "arm"))]
     {
         unsafe { state.as_ptr().drop_in_place() };
-        if let Some(mutex) = resources.mutex {
-            unsafe { ffi::vesc_free(mutex.as_ptr()) };
-        }
         // VESC cannot unregister LispBM extensions or quiesce callbacks that
         // already loaded this ARG. Keep the allocation as a STOPPED admission
         // tombstone; late callbacks inspect it without touching dropped `T`.
     }
     #[cfg(not(target_arch = "arm"))]
     {
-        let _ = resources;
         drop(unsafe { crate::rust_alloc::boxed::Box::from_raw(state.as_ptr()) });
     }
 }
@@ -260,13 +256,8 @@ impl<'info> PackageStart<'info> {
                 unsafe { ffi::vesc_free(allocation.as_ptr()) };
             }
             return Err(match error {
-                #[cfg(not(target_arch = "arm"))]
                 crate::runtime::PackageStateInstallError::AlreadyInstalled => {
                     PackageStartError::StateAlreadyInstalled
-                }
-                #[cfg(any(test, target_arch = "arm"))]
-                crate::runtime::PackageStateInstallError::MutexUnavailable => {
-                    PackageStartError::AllocationFailed
                 }
             });
         }
@@ -945,7 +936,7 @@ mod tests {
     }
 
     #[test]
-    fn mutex_allocation_failure_drops_state_before_publishing_loader_metadata() {
+    fn runtime_install_failure_drops_state_before_publishing_loader_metadata() {
         FAILED_STATE_DROPS.store(0, Ordering::Relaxed);
         let mut info = ffi::LibInfo {
             stop_fun: None,
@@ -955,10 +946,10 @@ mod tests {
         let mut start = super::PackageStart::from_lib_info(&mut info);
 
         let result = start.install_runtime_state_with(FailedState, |_, _| {
-            Err(crate::runtime::PackageStateInstallError::MutexUnavailable)
+            Err(crate::runtime::PackageStateInstallError::AlreadyInstalled)
         });
 
-        assert_eq!(result, Err(PackageStartError::AllocationFailed));
+        assert_eq!(result, Err(PackageStartError::StateAlreadyInstalled));
         assert_eq!(FAILED_STATE_DROPS.load(Ordering::Relaxed), 1);
         assert!(info.arg.is_null());
         assert!(info.stop_fun.is_none());

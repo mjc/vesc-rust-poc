@@ -8,10 +8,8 @@ use core::hint::spin_loop;
 use core::marker::PhantomData;
 use core::ptr::NonNull;
 #[cfg(not(target_arch = "arm"))]
-use core::sync::atomic::AtomicBool;
-#[cfg(not(target_arch = "arm"))]
 use core::sync::atomic::AtomicPtr;
-use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 
 #[cfg(not(target_arch = "arm"))]
 const EMPTY: u8 = 0;
@@ -202,7 +200,7 @@ struct FirmwareRuntime {
     magic: u32,
     state_type: TypeId,
     state: *mut core::ffi::c_void,
-    mutex: *mut core::ffi::c_void,
+    state_lock: AtomicBool,
     phase: AtomicU8,
     active: AtomicUsize,
     threads: UnsafeCell<Option<crate::ThreadPair>>,
@@ -210,7 +208,7 @@ struct FirmwareRuntime {
 }
 
 #[cfg(any(test, target_arch = "arm"))]
-// SAFETY: every mutable field is accessed while `mutex` is held, except the
+// SAFETY: every mutable field is accessed while `state_lock` is held, except the
 // atomic lifecycle counters used to admit and drain those locked accesses.
 unsafe impl Sync for FirmwareRuntime {}
 
@@ -288,6 +286,34 @@ unsafe fn firmware_runtime_from_untyped_state(
     (runtime.magic == RUNTIME_MAGIC && runtime.state == state.as_ptr()).then_some(runtime)
 }
 
+#[cfg(any(test, target_arch = "arm"))]
+struct FirmwareRuntimeBorrow<'a>(&'a FirmwareRuntime);
+
+#[cfg(any(test, target_arch = "arm"))]
+impl Drop for FirmwareRuntimeBorrow<'_> {
+    fn drop(&mut self) {
+        self.0.state_lock.store(false, Ordering::Release);
+    }
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+fn borrow_firmware_runtime(runtime: &FirmwareRuntime) -> FirmwareRuntimeBorrow<'_> {
+    while runtime
+        .state_lock
+        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
+        #[cfg(target_arch = "arm")]
+        unsafe {
+            // SAFETY: firmware callbacks and package threads run in ChibiOS thread context.
+            crate::ffi::vesc_sleep_us(1);
+        }
+        #[cfg(not(target_arch = "arm"))]
+        spin_loop();
+    }
+    FirmwareRuntimeBorrow(runtime)
+}
+
 #[cfg(target_arch = "arm")]
 unsafe fn update_firmware_callbacks(
     state: NonNull<core::ffi::c_void>,
@@ -296,16 +322,15 @@ unsafe fn update_firmware_callbacks(
     let Some(runtime) = (unsafe { firmware_runtime_from_untyped_state(state) }) else {
         return false;
     };
-    unsafe { crate::ffi::vesc_mutex_lock(runtime.mutex) };
+    let _borrow = borrow_firmware_runtime(runtime);
     let running = matches!(runtime.phase.load(Ordering::Acquire), INSTALLING | RUNNING);
     if running {
         update(unsafe { &mut *runtime.callbacks.get() });
     }
-    unsafe { crate::ffi::vesc_mutex_unlock(runtime.mutex) };
     running
 }
 
-// SAFETY: all access to `T` is serialized by the firmware mutex on device and
+// SAFETY: all access to `T` is serialized by the runtime state lock on device and
 // by the host-only test lock otherwise. Moving access between firmware threads
 // therefore requires `T: Send`, not `T: Sync`.
 unsafe impl<T: Send> Sync for PackageStateStore<T> {}
@@ -319,22 +344,15 @@ pub trait PackageRuntimeState: Sized + Send + 'static {
     fn stop(&mut self) {}
 }
 
+#[cfg(not(target_arch = "arm"))]
 struct PackageStateBorrow<'a, T> {
-    #[cfg(not(target_arch = "arm"))]
     store: &'a PackageStateStore<T>,
-    #[cfg(target_arch = "arm")]
-    runtime: &'a FirmwareRuntime,
     _state: PhantomData<&'a T>,
 }
 
+#[cfg(not(target_arch = "arm"))]
 impl<T> Drop for PackageStateBorrow<'_, T> {
     fn drop(&mut self) {
-        #[cfg(target_arch = "arm")]
-        {
-            // SAFETY: the guard exists only after locking this live runtime mutex.
-            unsafe { crate::ffi::vesc_mutex_unlock(self.runtime.mutex) };
-        }
-        #[cfg(not(target_arch = "arm"))]
         self.store.host_lock.store(false, Ordering::Release);
     }
 }
@@ -357,25 +375,14 @@ impl<T> Drop for PackageStateEntry<'_, T> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(target_arch = "arm", allow(dead_code))]
 pub(crate) enum PackageStateInstallError {
-    #[cfg(not(target_arch = "arm"))]
     AlreadyInstalled,
-    #[cfg(any(test, target_arch = "arm"))]
-    MutexUnavailable,
-}
-
-pub(crate) struct PackageStateResources {
-    #[cfg(target_arch = "arm")]
-    pub(crate) mutex: Option<NonNull<core::ffi::c_void>>,
 }
 
 #[cfg(any(test, target_arch = "arm"))]
-fn finish_firmware_runtime(runtime: &FirmwareRuntime) -> PackageStateResources {
+fn finish_firmware_runtime(runtime: &FirmwareRuntime) {
     runtime.phase.store(STOPPED, Ordering::Release);
-    PackageStateResources {
-        #[cfg(target_arch = "arm")]
-        mutex: NonNull::new(runtime.mutex),
-    }
 }
 
 #[cfg(any(test, target_arch = "arm"))]
@@ -546,13 +553,8 @@ impl<T: Send + 'static> PackageStateStore<T> {
     fn borrow_exclusive<'runtime>(
         &self,
         runtime: &'runtime FirmwareRuntime,
-    ) -> PackageStateBorrow<'runtime, T> {
-        // SAFETY: a running runtime owns this firmware mutex until stop drains guards.
-        unsafe { crate::ffi::vesc_mutex_lock(runtime.mutex) };
-        PackageStateBorrow {
-            runtime,
-            _state: PhantomData,
-        }
+    ) -> FirmwareRuntimeBorrow<'runtime> {
+        borrow_firmware_runtime(runtime)
     }
 
     /// Install package state for later callback access.
@@ -569,6 +571,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
         Ok(())
     }
 
+    #[cfg_attr(target_arch = "arm", allow(clippy::unnecessary_wraps))]
     pub(crate) unsafe fn install_owned(
         &self,
         state: &mut T,
@@ -593,9 +596,6 @@ impl<T: Send + 'static> PackageStateStore<T> {
         }
         #[cfg(target_arch = "arm")]
         {
-            // SAFETY: the VESC interface table is live throughout native package execution.
-            let mutex = NonNull::new(unsafe { crate::ffi::vesc_mutex_create() })
-                .ok_or(PackageStateInstallError::MutexUnavailable)?;
             let runtime = allocation.cast::<FirmwareRuntime>();
             // SAFETY: `allocation` reserves and aligns a `FirmwareRuntime` header
             // before `state`; startup has exclusive ownership of it here.
@@ -604,7 +604,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
                     magic: RUNTIME_MAGIC,
                     state_type: TypeId::of::<T>(),
                     state: core::ptr::from_mut(state).cast(),
-                    mutex: mutex.as_ptr(),
+                    state_lock: AtomicBool::new(false),
                     phase: AtomicU8::new(INSTALLING),
                     active: AtomicUsize::new(1),
                     threads: UnsafeCell::new(None),
@@ -651,7 +651,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
             return;
         }
         let _ = self.take_threads(state);
-        let _ = self.finish_stop(state);
+        self.finish_stop(state);
     }
 
     pub(crate) fn begin_stop(&self, state: NonNull<T>) -> bool {
@@ -801,7 +801,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
         core::mem::take(unsafe { &mut *callbacks.get() })
     }
 
-    pub(crate) fn finish_stop(&self, state: NonNull<T>) -> PackageStateResources {
+    pub(crate) fn finish_stop(&self, state: NonNull<T>) {
         #[cfg(not(target_arch = "arm"))]
         let active = {
             let _ = state;
@@ -831,10 +831,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
         self.state.store(core::ptr::null_mut(), Ordering::Release);
         drop(borrow);
         #[cfg(not(target_arch = "arm"))]
-        {
-            self.phase.store(STOPPED, Ordering::Release);
-            PackageStateResources {}
-        }
+        self.phase.store(STOPPED, Ordering::Release);
         #[cfg(target_arch = "arm")]
         finish_firmware_runtime(runtime)
     }
@@ -983,7 +980,7 @@ mod tests {
     use core::any::TypeId;
     use core::cell::UnsafeCell;
     use core::ptr::NonNull;
-    use core::sync::atomic::{AtomicPtr, AtomicU8, AtomicUsize, Ordering};
+    use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU8, AtomicUsize, Ordering};
     use std::boxed::Box;
 
     #[derive(Debug, PartialEq, Eq)]
@@ -1001,6 +998,25 @@ mod tests {
     }
 
     #[test]
+    fn firmware_runtime_owns_its_state_lock() {
+        let runtime = FirmwareRuntime {
+            magic: RUNTIME_MAGIC,
+            state_type: TypeId::of::<State>(),
+            state: core::ptr::null_mut(),
+            state_lock: AtomicBool::new(false),
+            phase: AtomicU8::new(RUNNING),
+            active: AtomicUsize::new(0),
+            threads: UnsafeCell::new(None),
+            callbacks: UnsafeCell::new(super::CallbackRegistrations::default()),
+        };
+
+        let borrow = super::borrow_firmware_runtime(&runtime);
+        assert!(runtime.state_lock.load(Ordering::Acquire));
+        drop(borrow);
+        assert!(!runtime.state_lock.load(Ordering::Acquire));
+    }
+
+    #[test]
     fn firmware_runtime_rejects_a_caller_claiming_the_wrong_state_type() {
         let bytes = firmware_runtime_allocation_size::<State>().expect("runtime allocation size");
         let words = bytes.div_ceil(core::mem::size_of::<usize>());
@@ -1013,7 +1029,7 @@ mod tests {
                 magic: RUNTIME_MAGIC,
                 state_type: TypeId::of::<State>(),
                 state: state.as_ptr().cast(),
-                mutex: core::ptr::null_mut(),
+                state_lock: AtomicBool::new(false),
                 phase: AtomicU8::new(RUNNING),
                 active: AtomicUsize::new(0),
                 threads: UnsafeCell::new(None),
@@ -1037,7 +1053,7 @@ mod tests {
                 magic: RUNTIME_MAGIC,
                 state_type: TypeId::of::<State>(),
                 state: state.as_ptr().cast(),
-                mutex: core::ptr::null_mut(),
+                state_lock: AtomicBool::new(false),
                 phase: AtomicU8::new(STOPPING),
                 active: AtomicUsize::new(0),
                 threads: UnsafeCell::new(None),
@@ -1046,7 +1062,7 @@ mod tests {
         }
         let runtime = unsafe { runtime.as_ref() };
 
-        let _resources = finish_firmware_runtime(runtime);
+        finish_firmware_runtime(runtime);
 
         assert_eq!(runtime.phase.load(Ordering::Acquire), STOPPED);
         assert!(unsafe { firmware_runtime_from_state(state) }.is_some());
@@ -1070,7 +1086,7 @@ mod tests {
                 magic: RUNTIME_MAGIC,
                 state_type: TypeId::of::<State>(),
                 state: state.as_ptr().cast(),
-                mutex: core::ptr::null_mut(),
+                state_lock: AtomicBool::new(false),
                 phase: AtomicU8::new(RUNNING),
                 active: AtomicUsize::new(0),
                 threads: UnsafeCell::new(None),
@@ -1091,7 +1107,7 @@ mod tests {
 
         resolved_rx.recv().expect("callback resolved state");
         runtime.phase.store(STOPPING, Ordering::Release);
-        let _resources = finish_firmware_runtime(runtime);
+        finish_firmware_runtime(runtime);
         resume_tx.send(()).expect("resume callback");
 
         assert!(!callback.join().expect("callback"));
@@ -1201,7 +1217,7 @@ mod tests {
 
         let stop = std::thread::spawn(move || {
             let state_ptr = NonNull::new(state_address as *mut State).unwrap();
-            let _ = slot.finish_stop(state_ptr);
+            slot.finish_stop(state_ptr);
             stop_done_tx.send(()).unwrap();
         });
         assert!(
@@ -1238,7 +1254,7 @@ mod tests {
         let _threads = slot.take_threads(state_ptr).expect("installed thread pair");
 
         assert!(!slot.host_lock.load(Ordering::Acquire));
-        let _ = slot.finish_stop(state_ptr);
+        slot.finish_stop(state_ptr);
     }
 
     #[test]
