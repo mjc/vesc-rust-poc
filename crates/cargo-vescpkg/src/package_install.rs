@@ -386,7 +386,7 @@ fn with_open_transport<R>(
     open_mode: OpenMode,
     run: impl FnOnce(&BtlePackageInstallTransport) -> Result<R, PackageInstallError>,
 ) -> Result<R, PackageInstallError> {
-    let transport = BtlePackageInstallTransport::new()?;
+    let transport = BtlePackageInstallTransport::new_with_progress()?;
     match open_mode {
         OpenMode::Preflight => transport.open(target)?,
         OpenMode::NoPreflightRecovery => transport.open_without_preflight(target)?,

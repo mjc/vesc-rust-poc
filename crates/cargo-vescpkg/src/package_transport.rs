@@ -2,11 +2,12 @@ use std::cell::RefCell;
 use std::convert::TryInto;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use btleplug::api::{Central, Characteristic, Manager as _, Peripheral as _, WriteType};
 use btleplug::platform::{Manager, Peripheral};
 use futures_util::StreamExt;
+use indicatif::{ProgressBar, ProgressStyle};
 use tokio::runtime::{Builder, Runtime};
 use tokio::time;
 
@@ -29,12 +30,10 @@ const POST_LISP_UPLOAD_SETTLE: Duration = Duration::from_secs(2);
 // Source: third_party/vesc_tool/codeloader.cpp:1023-1024 installVescPackage()
 // sleeps 500 ms, then calls VescInterface::reloadFirmware().
 const POST_PACKAGE_INSTALL_SETTLE: Duration = Duration::from_millis(500);
-// Source: third_party/vesc_tool/codeloader.cpp:711-731 CodeLoader::qmlErase()
-// uses timeoutTimer.start(6000) after one qmlUiErase() send.
-const QML_ERASE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(6);
-// Source: third_party/vesc_tool/codeloader.cpp:81-101 CodeLoader::lispErase()
-// uses timeoutTimer.start(8000) after one lispEraseCode() send.
-const LISP_ERASE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
+// VESC Tool waits 6 seconds for QML and 8 seconds for Lisp, but the firmware
+// acknowledges only after synchronous native shutdown and flash erasure.
+const ERASE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(15);
+const ERASE_ATTEMPTS: usize = 2;
 // Source: third_party/vesc_tool/codeloader.cpp:402-408 and 759-765
 // lispUpload()/qmlUpload() wait 1000 ms per chunk write acknowledgement.
 const WRITE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(1);
@@ -157,21 +156,56 @@ impl VescSession {
         expected_command: u8,
         timeout: Duration,
     ) -> Result<Vec<u8>, PackageInstallError> {
-        loop {
-            let bytes = self.responses.recv_timeout(timeout).map_err(|_| {
-                PackageInstallError::Device("timed out waiting for a BLE reply".to_owned())
-            })?;
+        recv_packet_until(
+            &self.responses,
+            &mut self.decoder,
+            expected_command,
+            Instant::now() + timeout,
+        )
+    }
+}
 
-            let packets = self.decoder.push(&bytes).map_err(|_| {
-                PackageInstallError::Device("failed to decode a BLE reply".to_owned())
-            })?;
-            for packet in packets {
-                if packet.first().copied() == Some(expected_command) {
-                    return Ok(packet);
-                }
+fn recv_packet_until(
+    responses: &Receiver<Vec<u8>>,
+    decoder: &mut PacketDecoder,
+    expected_command: u8,
+    deadline: Instant,
+) -> Result<Vec<u8>, PackageInstallError> {
+    let timeout_error =
+        || PackageInstallError::Device("timed out waiting for a BLE reply".to_owned());
+
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(timeout_error());
+        }
+
+        let bytes = responses
+            .recv_timeout(remaining)
+            .map_err(|_| timeout_error())?;
+        let packets = decoder
+            .push(&bytes)
+            .map_err(|_| PackageInstallError::Device("failed to decode a BLE reply".to_owned()))?;
+        for packet in packets {
+            if packet.first().copied() == Some(expected_command) {
+                return Ok(packet);
             }
         }
     }
+}
+
+fn spinner_style() -> ProgressStyle {
+    ProgressStyle::with_template("{spinner:.cyan} {msg} [{elapsed_precise}]")
+        .expect("valid spinner template")
+        .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
+}
+
+fn bar_style() -> ProgressStyle {
+    ProgressStyle::with_template(
+        "{spinner:.cyan} {msg} [{bar:36.cyan/blue}] {bytes}/{total_bytes} {percent:>3}% {bytes_per_sec} {eta}",
+    )
+    .expect("valid progress template")
+    .progress_chars("=>-")
 }
 
 fn retry<T, E>(
@@ -205,11 +239,20 @@ fn clear_response_state(decoder: &mut PacketDecoder, responses: &Receiver<Vec<u8
 pub struct BtlePackageInstallTransport {
     runtime: Runtime,
     session: RefCell<Option<VescSession>>,
+    show_progress: bool,
 }
 
 impl BtlePackageInstallTransport {
     /// Creates a BLE package install transport with its own single-worker runtime.
     pub fn new() -> Result<Self, PackageInstallError> {
+        Self::create(false)
+    }
+
+    pub(crate) fn new_with_progress() -> Result<Self, PackageInstallError> {
+        Self::create(true)
+    }
+
+    fn create(show_progress: bool) -> Result<Self, PackageInstallError> {
         let runtime = Builder::new_multi_thread()
             .enable_all()
             .worker_threads(1)
@@ -221,12 +264,50 @@ impl BtlePackageInstallTransport {
         Ok(Self {
             runtime,
             session: RefCell::new(None),
+            show_progress,
         })
+    }
+
+    fn spinner(&self, message: &str) -> ProgressBar {
+        let progress = if self.show_progress {
+            ProgressBar::new_spinner()
+        } else {
+            ProgressBar::hidden()
+        };
+        progress.set_style(spinner_style());
+        progress.set_message(message.to_owned());
+        progress.enable_steady_tick(Duration::from_millis(80));
+        progress
+    }
+
+    fn progress_bar(&self, bytes: usize, message: &str) -> ProgressBar {
+        let progress = if self.show_progress {
+            ProgressBar::new(bytes as u64)
+        } else {
+            ProgressBar::hidden()
+        };
+        progress.set_style(bar_style());
+        progress.set_message(message.to_owned());
+        progress
+    }
+
+    fn with_spinner<T>(
+        &self,
+        message: &str,
+        operation: impl FnOnce() -> Result<T, PackageInstallError>,
+    ) -> Result<T, PackageInstallError> {
+        let progress = self.spinner(message);
+        let result = operation();
+        match &result {
+            Ok(_) => progress.finish_with_message(format!("{message} done")),
+            Err(_) => progress.abandon_with_message(format!("{message} failed")),
+        }
+        result
     }
 
     /// Opens a package install session to `target`.
     pub fn open(&self, target: LoopbackTarget) -> Result<(), PackageInstallError> {
-        self.open_session(target)
+        self.with_spinner("Connecting to VESC", || self.open_session(target))
     }
 
     /// Opens a BLE UART session without querying firmware metadata.
@@ -234,11 +315,13 @@ impl BtlePackageInstallTransport {
         &self,
         target: LoopbackTarget,
     ) -> Result<(), PackageInstallError> {
-        let session = self
-            .runtime
-            .block_on(async move { open_session(target).await })?;
-        *self.session.borrow_mut() = Some(session);
-        Ok(())
+        self.with_spinner("Connecting to VESC", || {
+            let session = self
+                .runtime
+                .block_on(async move { open_session(target).await })?;
+            *self.session.borrow_mut() = Some(session);
+            Ok(())
+        })
     }
 
     /// Best-effort short-timeout stop used when normal preflight is unavailable.
@@ -370,15 +453,15 @@ impl BtlePackageInstallTransport {
             .unwrap_or_else(|| PackageInstallError::Device("package write did not run".to_owned())))
     }
 
-    fn expect_single_ok(
+    fn expect_erase_ok(
         &self,
         command: u8,
         payload: &[u8],
         timeout: Duration,
     ) -> Result<(), PackageInstallError> {
-        // Source: third_party/vesc_tool/codeloader.cpp:101-103 and 731-733
-        // send erase once and wait once; only chunk writes retry.
-        let response = self.write_command(command, payload, timeout)?;
+        let response = retry(ERASE_ATTEMPTS, Duration::ZERO, || {
+            self.write_command(command, payload, timeout)
+        })?;
         match parse_simple_ack(&response, command)? {
             true => Ok(()),
             false => Err(PackageInstallError::Device(
@@ -398,14 +481,27 @@ impl BtlePackageInstallTransport {
         })
     }
 
-    fn upload_code(&self, command: u8, payload: &[u8]) -> Result<(), PackageInstallError> {
+    fn upload_code(
+        &self,
+        command: u8,
+        payload: &[u8],
+        label: &str,
+    ) -> Result<(), PackageInstallError> {
+        let progress = self.progress_bar(payload.len(), label);
         for (offset, chunk) in payload.chunks(CHUNK_SIZE).enumerate() {
             let mut command_payload = Vec::with_capacity(4 + chunk.len());
             command_payload.extend_from_slice(&((offset * CHUNK_SIZE) as u32).to_be_bytes());
             command_payload.extend_from_slice(chunk);
-            self.expect_write_ok(command, &command_payload, WRITE_RESPONSE_TIMEOUT)?;
+            if let Err(error) =
+                self.expect_write_ok(command, &command_payload, WRITE_RESPONSE_TIMEOUT)
+            {
+                progress.abandon_with_message(format!("{label} failed"));
+                return Err(error);
+            }
+            progress.inc(chunk.len() as u64);
         }
 
+        progress.finish_with_message(format!("{label} done"));
         Ok(())
     }
 
@@ -423,30 +519,34 @@ impl PackageInstallTransport for BtlePackageInstallTransport {
     }
 
     fn erase_qml(&self, bytes: usize) -> Result<(), PackageInstallError> {
-        self.expect_single_ok(
-            COMM_QMLUI_ERASE,
-            &(bytes as i32).to_be_bytes(),
-            QML_ERASE_RESPONSE_TIMEOUT,
-        )
+        self.with_spinner("Erasing QML", || {
+            self.expect_erase_ok(
+                COMM_QMLUI_ERASE,
+                &(bytes as i32).to_be_bytes(),
+                ERASE_RESPONSE_TIMEOUT,
+            )
+        })
     }
 
     fn upload_qml(&self, qml: &[u8], fullscreen: bool) -> Result<(), PackageInstallError> {
         let payload = build_qml_upload_payload(qml, fullscreen)?;
-        self.upload_code(COMM_QMLUI_WRITE, &payload)
+        self.upload_code(COMM_QMLUI_WRITE, &payload, "Uploading QML")
     }
 
     fn erase_lisp(&self, bytes: usize) -> Result<(), PackageInstallError> {
-        self.expect_single_ok(
-            COMM_LISP_ERASE_CODE,
-            &(bytes as i32).to_be_bytes(),
-            LISP_ERASE_RESPONSE_TIMEOUT,
-        )
+        self.with_spinner("Erasing Lisp", || {
+            self.expect_erase_ok(
+                COMM_LISP_ERASE_CODE,
+                &(bytes as i32).to_be_bytes(),
+                ERASE_RESPONSE_TIMEOUT,
+            )
+        })
     }
 
     fn upload_lisp(&self, lisp: &[u8]) -> Result<(), PackageInstallError> {
         let hw_type = self.with_session(|session| Ok(session.fw_info.hw_type))?;
         let payload = build_lisp_upload_payload(lisp, hw_type)?;
-        self.upload_code(COMM_LISP_WRITE_CODE, &payload)?;
+        self.upload_code(COMM_LISP_WRITE_CODE, &payload, "Uploading Lisp")?;
 
         thread::sleep(POST_LISP_UPLOAD_SETTLE);
         self.with_session(|session| {
@@ -458,16 +558,20 @@ impl PackageInstallTransport for BtlePackageInstallTransport {
     }
 
     fn set_running(&self, running: bool) -> Result<(), PackageInstallError> {
-        self.write_without_reply(COMM_LISP_SET_RUNNING, &[u8::from(running)])
+        self.with_spinner("Starting Lisp", || {
+            self.write_without_reply(COMM_LISP_SET_RUNNING, &[u8::from(running)])
+        })
     }
 
     fn reload_firmware(&self) -> Result<(), PackageInstallError> {
         // Source: third_party/vesc_tool/vescinterface.h:260-263 only marks
         // cached firmware, QML, and config state stale via updateFwRx(false).
-        thread::sleep(POST_PACKAGE_INSTALL_SETTLE);
-        self.with_session(|session| {
-            session.fw_info.has_qml_app = false;
-            Ok(())
+        self.with_spinner("Reloading package state", || {
+            thread::sleep(POST_PACKAGE_INSTALL_SETTLE);
+            self.with_session(|session| {
+                session.fw_info.has_qml_app = false;
+                Ok(())
+            })
         })
     }
 }
@@ -717,10 +821,12 @@ mod tests {
         COMM_FW_VERSION, COMM_LISP_ERASE_CODE, COMM_LISP_SET_RUNNING, COMM_LISP_WRITE_CODE,
         FwVersionInfo, HwType, ble_write_chunks, build_command_packet, build_lisp_upload_payload,
         clear_response_state, drain_response_channel, parse_fw_version_info, parse_simple_ack,
-        parse_write_ack, retry,
+        parse_write_ack, recv_packet_until, retry,
     };
-    use crate::vesc_uart::PacketDecoder;
+    use crate::vesc_uart::{PacketDecoder, encode_packet};
     use std::sync::mpsc;
+    use std::thread;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn parses_fw_version_replies() {
@@ -912,6 +1018,34 @@ mod tests {
     }
 
     #[test]
+    fn unrelated_packets_do_not_extend_the_response_deadline() {
+        let (tx, rx) = mpsc::channel();
+        let sender = thread::spawn(move || {
+            for _ in 0..100 {
+                if tx.send(encode_packet(&[COMM_LISP_SET_RUNNING, 1])).is_err() {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(5));
+            }
+        });
+        let started = Instant::now();
+
+        let error = recv_packet_until(
+            &rx,
+            &mut PacketDecoder::default(),
+            COMM_LISP_ERASE_CODE,
+            started + Duration::from_millis(40),
+        )
+        .expect_err("unrelated packets must not reset the timeout");
+        let elapsed = started.elapsed();
+        drop(rx);
+        sender.join().expect("notification sender");
+
+        assert!(error.to_string().contains("timed out"));
+        assert!(elapsed < Duration::from_millis(250), "elapsed {elapsed:?}");
+    }
+
+    #[test]
     fn lisp_set_running_packet_matches_vesc_tool() {
         // Source: third_party/vesc_tool/commands.cpp:2234-2240
         // lispSetRunning() encodes command byte plus int8 running flag.
@@ -926,13 +1060,12 @@ mod tests {
     }
 
     #[test]
-    fn erase_wait_matches_package_installer() {
-        // Source: third_party/vesc_tool/codeloader.cpp:81-101
-        // lispErase() waits up to 8000 ms for one erase response.
+    fn erase_wait_covers_native_shutdown_and_retries_uncertain_acks() {
         assert_eq!(
-            super::LISP_ERASE_RESPONSE_TIMEOUT,
-            std::time::Duration::from_secs(8)
+            super::ERASE_RESPONSE_TIMEOUT,
+            std::time::Duration::from_secs(15)
         );
+        assert_eq!(super::ERASE_ATTEMPTS, 2);
     }
 
     #[test]

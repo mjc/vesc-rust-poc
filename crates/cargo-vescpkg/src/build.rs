@@ -229,11 +229,13 @@ fn validate_path_component(label: &str, value: &str) -> Result<(), BuildError> {
 
 fn command_output(command: &mut Command) -> Result<Output, BuildError> {
     let output = command.output()?;
-    if !output.stderr.is_empty() {
-        let _ = std::io::stderr().write_all(&output.stderr);
-    }
     match output.status.success() {
-        true => Ok(output),
+        true => {
+            if !output.stderr.is_empty() {
+                let _ = std::io::stderr().write_all(&output.stderr);
+            }
+            Ok(output)
+        }
         false => Err(BuildError(command_failure_message(
             &output.stdout,
             &output.stderr,

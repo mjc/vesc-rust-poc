@@ -182,10 +182,7 @@ fn run_package_install(command: PackageInstallArgs) -> ExitCode {
     let target = command.device.into_target();
     match package_install::install_over_ble(command.package_path, target) {
         Ok(report) => {
-            println!(
-                "package install ok for {}: {:?}",
-                report.package_name, report.steps
-            );
+            println!("Installed {}", report.package_name);
             ExitCode::SUCCESS
         }
         Err(error) => {
@@ -198,8 +195,8 @@ fn run_package_install(command: PackageInstallArgs) -> ExitCode {
 fn run_package_erase(command: PackageEraseArgs) -> ExitCode {
     let target = command.device.into_target();
     match package_install::erase_over_ble(target, command.no_preflight) {
-        Ok(report) => {
-            println!("package erase ok: {:?}", report.steps);
+        Ok(_) => {
+            println!("Package erased");
             ExitCode::SUCCESS
         }
         Err(error) => {
