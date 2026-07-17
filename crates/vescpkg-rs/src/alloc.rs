@@ -80,10 +80,6 @@ struct AllocationSizeOverflow;
 #[cfg(feature = "alloc")]
 unsafe impl GlobalAlloc for VescAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if layout.size() == 0 {
-            return NonNull::<u8>::dangling().as_ptr().with_addr(layout.align());
-        }
-
         match AllocationHeader::request_bytes(layout) {
             Ok(request) => {
                 let raw = unsafe { crate::ffi::vesc_malloc(request) }.cast::<u8>();
@@ -99,8 +95,8 @@ unsafe impl GlobalAlloc for VescAllocator {
         }
     }
 
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        if ptr.is_null() || layout.size() == 0 {
+    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
+        if ptr.is_null() {
             return;
         }
 
@@ -182,13 +178,11 @@ unsafe fn stored_original_ptr(user: NonNull<u8>) -> *mut c_void {
 mod tests {
     #[cfg(feature = "alloc")]
     use super::{
-        AllocationHeader, HEADER_ALIGN, HEADER_BYTES, VescAllocator, aligned_user_ptr,
-        copy_allocation_bytes, stored_original_ptr, zero_allocation_bytes,
+        AllocationHeader, HEADER_ALIGN, HEADER_BYTES, aligned_user_ptr, copy_allocation_bytes,
+        stored_original_ptr, zero_allocation_bytes,
     };
     #[cfg(feature = "alloc")]
-    use core::alloc::{GlobalAlloc, Layout};
-    #[cfg(feature = "alloc")]
-    use core::ptr::NonNull;
+    use core::alloc::Layout;
     #[cfg(feature = "alloc")]
     #[test]
     fn allocation_request_includes_alignment_and_header_space() {
@@ -209,26 +203,6 @@ mod tests {
             AllocationHeader::request_bytes(layout),
             Ok(1 + HEADER_BYTES + HEADER_ALIGN - 1)
         );
-    }
-
-    #[cfg(feature = "alloc")]
-    #[test]
-    fn global_allocator_returns_aligned_dangling_pointer_for_zero_sized_layouts() {
-        let layout = Layout::from_size_align(0, 32).expect("valid layout");
-
-        let ptr = unsafe { VescAllocator.alloc(layout) };
-
-        assert!(!ptr.is_null());
-        assert_eq!(ptr.addr() % layout.align(), 0);
-    }
-
-    #[cfg(feature = "alloc")]
-    #[test]
-    fn global_allocator_dealloc_ignores_zero_sized_layouts() {
-        let layout = Layout::from_size_align(0, 32).expect("valid layout");
-        let ptr = NonNull::<u8>::dangling().as_ptr().with_addr(layout.align());
-
-        unsafe { VescAllocator.dealloc(ptr, layout) };
     }
 
     #[cfg(feature = "alloc")]
