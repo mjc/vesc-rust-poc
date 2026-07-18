@@ -27,8 +27,9 @@ Hardware-in-the-loop validation is intentionally out of the default CI path.
 Symbol resolution, and semantic instruction audits against device-proven fixtures;
 `cargo vescpkg` exercises install/loopback against real hardware manually.
 
-The ignored sketch lives in `crates/cargo-vescpkg/tests/hil_loopback.rs` and is
-filtered by the `hil` nextest profile.
+The feature-gated, ignored sketch lives in
+`crates/cargo-vescpkg/tests/hil_loopback.rs` and is filtered by the `hil`
+nextest profile.
 
 ## Current Rust-Owned Boundary
 
