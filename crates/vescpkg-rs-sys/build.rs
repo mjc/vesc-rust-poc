@@ -22,7 +22,8 @@ fn main() {
     );
 
     let source = fs::read_to_string(&header).expect("third_party/vesc_pkg_lib/vesc_c_if.h");
-    let fields = parse_vesc_if_fields(&source);
+    let fields = parse_vesc_if_fields(&source)
+        .unwrap_or_else(|error| panic!("failed to parse {}: {error}", header.display()));
     assert!(
         !fields.is_empty(),
         "failed to parse vesc_c_if fields from {}",
@@ -39,20 +40,16 @@ struct Field {
     line: usize,
 }
 
-fn parse_vesc_if_fields(source: &str) -> Vec<Field> {
+fn parse_vesc_if_fields(source: &str) -> Result<Vec<Field>, String> {
     let lines: Vec<_> = source.lines().collect();
-    let Some(end) = lines
+    let end = lines
         .iter()
         .position(|line| line.trim().starts_with("} vesc_c_if"))
-    else {
-        return Vec::new();
-    };
-    let Some(start) = lines[..end]
+        .ok_or_else(|| "missing `} vesc_c_if`".to_owned())?;
+    let start = lines[..end]
         .iter()
         .rposition(|line| line.trim() == "typedef struct {")
-    else {
-        return Vec::new();
-    };
+        .ok_or_else(|| "missing `typedef struct {` before vesc_c_if".to_owned())?;
 
     let mut fields = Vec::new();
     let mut pending = String::new();
@@ -69,19 +66,32 @@ fn parse_vesc_if_fields(source: &str) -> Vec<Field> {
         pending.push_str(fragment);
 
         if fragment.contains(';') {
-            if let Some(name) = parse_field_name(&pending) {
+            let (name, width) = parse_field_name(&pending)
+                .ok_or_else(|| format!("unsupported declaration: {}", pending.trim()))?;
+            let line = pending_line.expect("pending declaration line");
+
+            for element in 0..width {
                 fields.push(Field {
-                    name,
+                    name: if width == 1 {
+                        name.clone()
+                    } else {
+                        format!("{name}_{element}")
+                    },
                     index: fields.len(),
-                    line: pending_line.expect("pending declaration line"),
+                    line,
                 });
             }
+
             pending.clear();
             pending_line = None;
         }
     }
 
-    fields
+    if !pending.is_empty() {
+        return Err(format!("unterminated declaration: {}", pending.trim()));
+    }
+
+    Ok(fields)
 }
 
 fn declaration_fragment(line: &str) -> Option<&str> {
@@ -93,16 +103,27 @@ fn declaration_fragment(line: &str) -> Option<&str> {
         .filter(|line| !line.starts_with('*'))
 }
 
-fn parse_field_name(declaration: &str) -> Option<String> {
-    c_function_pointer_field(declaration).or_else(|| c_scalar_field(declaration))
+fn parse_field_name(declaration: &str) -> Option<(String, usize)> {
+    let declarator =
+        c_function_pointer_field(declaration).or_else(|| c_scalar_field(declaration))?;
+    field_declarator(declarator)
+}
+
+fn field_declarator(declarator: String) -> Option<(String, usize)> {
+    if is_c_identifier(&declarator) {
+        return Some((declarator, 1));
+    }
+
+    let declarator = declarator.strip_suffix(']')?;
+    let (name, width) = declarator.rsplit_once('[')?;
+    let width = width.parse::<usize>().ok().filter(|width| *width > 0)?;
+    is_c_identifier(name).then(|| (name.to_owned(), width))
 }
 
 fn c_function_pointer_field(declaration: &str) -> Option<String> {
     declaration.find("(*").and_then(|start| {
         let rest = &declaration[start + 2..];
-        rest.find(')')
-            .map(|end| rest[..end].trim().to_owned())
-            .filter(|name| is_c_identifier(name))
+        rest.find(')').map(|end| rest[..end].trim().to_owned())
     })
 }
 
@@ -113,7 +134,6 @@ fn c_scalar_field(declaration: &str) -> Option<String> {
         .map(str::trim)
         .and_then(|declaration| declaration.split_whitespace().last())
         .map(|token| token.trim_matches('*').to_owned())
-        .filter(|name| is_c_identifier(name))
 }
 
 fn is_c_identifier(name: &str) -> bool {
