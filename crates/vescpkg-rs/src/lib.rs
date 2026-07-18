@@ -139,8 +139,9 @@ pub mod prelude {
         AccelerationG, AmpHours, AngleDegrees, AngleRadians, AngularVelocity, BoundedUnitError,
         Charge, Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage,
         Frequency, Height, Inductance, Latitude, Longitude, MagneticFluxDensity, OdometerMeters,
-        Percent, Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed,
-        SystemInstant, SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage, WattHours,
+        Percent, Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio,
+        Speed, SystemInstant, SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
+        WattHours,
     };
     pub use crate::{
         AnalogPin, AppDataCallback, AppDataHandlerRegistrationError, AppDataSendError, ConfigBytes,
@@ -220,7 +221,7 @@ mod tests {
     fn config_bytes_are_a_regular_borrowed_value() {
         use crate::prelude::*;
 
-        let config = ConfigBytes::new(b"config");
+        let config: ConfigBytes<'_, 6> = ConfigBytes::new(b"config");
         let xml = ConfigXml::new(b"<config/>");
 
         assert_eq!(config.as_bytes(), b"config");

@@ -7,7 +7,7 @@ error[E0603]: module `types` is private
   |                                private module
   |
 note: the module `types` is defined here
- --> <BASE_DIR>/crates/vescpkg-rs/src/lib.rs:159:0
+ --> <BASE_DIR>/crates/vescpkg-rs/src/lib.rs:160:0
 
 error[E0603]: module `types` is private
  --> tests/ui/public_modules_are_shallow.rs:4:30
@@ -18,7 +18,7 @@ error[E0603]: module `types` is private
   |                              private module
   |
 note: the module `types` is defined here
- --> <BASE_DIR>/crates/vescpkg-rs/src/lib.rs:159:0
+ --> <BASE_DIR>/crates/vescpkg-rs/src/lib.rs:160:0
 
 error[E0603]: crate `units` is private
  --> tests/ui/public_modules_are_shallow.rs:5:31

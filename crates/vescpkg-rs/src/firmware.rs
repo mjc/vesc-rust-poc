@@ -210,20 +210,23 @@ pub(crate) unsafe fn lbm_args<'a>(args: *mut u32, arg_count: u32) -> Option<&'a 
     unsafe { borrowed_slice(args.cast::<LbmValue>().cast_const(), len) }
 }
 
-/// Borrowed serialized custom-config bytes.
+/// Borrowed serialized custom-config bytes with their firmware ABI length.
+///
+/// VESC's `set_cfg` callback carries only a pointer, so the callback's const
+/// `LEN` is the length contract shared by get, set, and package state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ConfigBytes<'a>(&'a [u8]);
+pub struct ConfigBytes<'a, const LEN: usize>(&'a [u8; LEN]);
 
-impl<'a> ConfigBytes<'a> {
+impl<'a, const LEN: usize> ConfigBytes<'a, LEN> {
     /// Wrap serialized configuration bytes.
     #[must_use]
-    pub const fn new(bytes: &'a [u8]) -> Self {
+    pub const fn new(bytes: &'a [u8; LEN]) -> Self {
         Self(bytes)
     }
 
     /// Return the serialized configuration bytes.
     #[must_use]
-    pub const fn as_bytes(self) -> &'a [u8] {
+    pub const fn as_bytes(self) -> &'a [u8; LEN] {
         self.0
     }
 }
@@ -256,7 +259,7 @@ impl CustomConfigGetBuffer<'_> {
     }
 
     /// Write serialized config bytes into the firmware-provided output buffer.
-    fn write(&mut self, payload: ConfigBytes<'_>) -> c_int {
+    fn write<const LEN: usize>(&mut self, payload: ConfigBytes<'_, LEN>) -> c_int {
         if payload.as_bytes().len() > self.0.0.len() {
             return 0;
         }
@@ -266,8 +269,11 @@ impl CustomConfigGetBuffer<'_> {
 }
 
 /// Borrowed custom-config input for `set_cfg` callbacks.
-unsafe fn custom_config_payload<'a>(buffer: *mut u8, len: usize) -> Option<ConfigBytes<'a>> {
-    unsafe { borrowed_slice(buffer.cast_const(), len) }.map(ConfigBytes::new)
+unsafe fn custom_config_payload<'a, const LEN: usize>(
+    buffer: *mut u8,
+) -> Option<ConfigBytes<'a, LEN>> {
+    let bytes = unsafe { borrowed_slice(buffer.cast_const(), LEN) }?;
+    <&[u8; LEN]>::try_from(bytes).ok().map(ConfigBytes::new)
 }
 
 /// Custom-config behavior backed by package runtime state.
@@ -276,13 +282,13 @@ pub trait StatefulCustomConfigCallback<const LEN: usize> {
     type State: crate::PackageRuntimeState;
 
     /// Return the static serialized default config.
-    fn default_config() -> ConfigBytes<'static>;
+    fn default_config() -> ConfigBytes<'static, LEN>;
 
     /// Return the current config borrowed from package state.
-    fn current_config(state: &Self::State) -> Option<ConfigBytes<'_>>;
+    fn current_config(state: &Self::State) -> Option<ConfigBytes<'_, LEN>>;
 
     /// Store config bytes borrowed for the duration of this callback.
-    fn set_config(state: &mut Self::State, config: ConfigBytes<'_>) -> bool;
+    fn set_config(state: &mut Self::State, config: ConfigBytes<'_, LEN>) -> bool;
 
     /// Return the config XML bytes.
     fn config_xml() -> ConfigXml<'static>;
@@ -358,12 +364,14 @@ where
 ///
 /// # Safety
 ///
-/// `buffer` must point to `LEN` readable bytes for the duration of this call.
+/// VESC must uphold its `set_cfg` callback contract: `buffer` points to the
+/// complete `LEN`-byte serialized config for the duration of this call. The C
+/// callback ABI does not provide a separate runtime length.
 pub unsafe extern "C" fn stateful_custom_config_set<T, const LEN: usize>(buffer: *mut u8) -> bool
 where
     T: PackageCustomConfigCallback<LEN>,
 {
-    let Some(payload) = (unsafe { custom_config_payload(buffer, LEN) }) else {
+    let Some(payload) = (unsafe { custom_config_payload::<LEN>(buffer) }) else {
         return false;
     };
     T::state_source()
@@ -888,15 +896,15 @@ mod tests {
         impl StatefulCustomConfigCallback<3> for TestCustomConfig {
             type State = State;
 
-            fn default_config() -> ConfigBytes<'static> {
+            fn default_config() -> ConfigBytes<'static, 3> {
                 ConfigBytes::new(b"abc")
             }
 
-            fn current_config(_state: &Self::State) -> Option<ConfigBytes<'_>> {
+            fn current_config(_state: &Self::State) -> Option<ConfigBytes<'_, 3>> {
                 Some(ConfigBytes::new(b"abc"))
             }
 
-            fn set_config(_state: &mut Self::State, _config: ConfigBytes<'_>) -> bool {
+            fn set_config(_state: &mut Self::State, _config: ConfigBytes<'_, 3>) -> bool {
                 true
             }
 
@@ -964,15 +972,15 @@ mod tests {
         impl StatefulCustomConfigCallback<5> for TestCustomConfig {
             type State = State;
 
-            fn default_config() -> ConfigBytes<'static> {
+            fn default_config() -> ConfigBytes<'static, 5> {
                 ConfigBytes::new(&[1, 2, 3, 4, 0])
             }
 
-            fn current_config(state: &Self::State) -> Option<ConfigBytes<'_>> {
+            fn current_config(state: &Self::State) -> Option<ConfigBytes<'_, 5>> {
                 Some(ConfigBytes::new(state.config.as_bytes()))
             }
 
-            fn set_config(state: &mut Self::State, config: ConfigBytes<'_>) -> bool {
+            fn set_config(state: &mut Self::State, config: ConfigBytes<'_, 5>) -> bool {
                 let Some(config) =
                     CustomConfigImage::from_serialized(config.as_bytes(), [1, 2, 3, 4])
                 else {
@@ -1062,15 +1070,15 @@ mod tests {
         impl StatefulCustomConfigCallback<5> for TestCustomConfig {
             type State = State;
 
-            fn default_config() -> ConfigBytes<'static> {
+            fn default_config() -> ConfigBytes<'static, 5> {
                 ConfigBytes::new(&[1, 2, 3, 4, 0])
             }
 
-            fn current_config(state: &Self::State) -> Option<ConfigBytes<'_>> {
+            fn current_config(state: &Self::State) -> Option<ConfigBytes<'_, 5>> {
                 Some(ConfigBytes::new(state.config.as_bytes()))
             }
 
-            fn set_config(state: &mut Self::State, config: ConfigBytes<'_>) -> bool {
+            fn set_config(state: &mut Self::State, config: ConfigBytes<'_, 5>) -> bool {
                 let Some(config) =
                     CustomConfigImage::from_serialized(config.as_bytes(), [1, 2, 3, 4])
                 else {

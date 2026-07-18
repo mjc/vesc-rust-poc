@@ -623,10 +623,7 @@ mod tests {
         let mut image = CustomConfigImage::new([0x00, 0xc8]);
 
         assert_eq!(field.read(&image), Some(SampleRate::from_hertz(200.0)));
-        assert_eq!(
-            CustomConfigSampleRateField::new(99).read(&image),
-            None,
-        );
+        assert_eq!(CustomConfigSampleRateField::new(99).read(&image), None,);
         assert_eq!(
             field.write(&mut image.editor(), SampleRate::from_hertz(500.0)),
             Some(()),
@@ -681,10 +678,7 @@ mod tests {
         let field = CustomConfigDurationField::new(0);
         let mut image = CustomConfigImage::new([0x04, 0xe2]);
 
-        assert_eq!(
-            field.read(&image),
-            Some(VescSeconds::from_seconds(1.25))
-        );
+        assert_eq!(field.read(&image), Some(VescSeconds::from_seconds(1.25)));
         assert_eq!(
             field.write(&mut image.editor(), VescSeconds::from_seconds(2.5)),
             Some(()),

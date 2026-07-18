@@ -1212,15 +1212,15 @@ mod tests {
         impl crate::StatefulCustomConfigCallback<1> for Config {
             type State = ConfigState;
 
-            fn default_config() -> crate::ConfigBytes<'static> {
+            fn default_config() -> crate::ConfigBytes<'static, 1> {
                 crate::ConfigBytes::new(&[0])
             }
 
-            fn current_config(_state: &Self::State) -> Option<crate::ConfigBytes<'_>> {
+            fn current_config(_state: &Self::State) -> Option<crate::ConfigBytes<'_, 1>> {
                 Some(crate::ConfigBytes::new(&[0]))
             }
 
-            fn set_config(_state: &mut Self::State, _config: crate::ConfigBytes<'_>) -> bool {
+            fn set_config(_state: &mut Self::State, _config: crate::ConfigBytes<'_, 1>) -> bool {
                 true
             }
 
@@ -1306,15 +1306,15 @@ mod tests {
         impl crate::StatefulCustomConfigCallback<511> for Config {
             type State = ConfigState;
 
-            fn default_config() -> crate::ConfigBytes<'static> {
+            fn default_config() -> crate::ConfigBytes<'static, 511> {
                 crate::ConfigBytes::new(&CONFIG)
             }
 
-            fn current_config(_state: &Self::State) -> Option<crate::ConfigBytes<'_>> {
+            fn current_config(_state: &Self::State) -> Option<crate::ConfigBytes<'_, 511>> {
                 Some(crate::ConfigBytes::new(&CONFIG))
             }
 
-            fn set_config(_state: &mut Self::State, _config: crate::ConfigBytes<'_>) -> bool {
+            fn set_config(_state: &mut Self::State, _config: crate::ConfigBytes<'_, 511>) -> bool {
                 true
             }
 
