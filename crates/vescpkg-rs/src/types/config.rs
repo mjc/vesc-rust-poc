@@ -85,15 +85,11 @@ impl<const LEN: usize> CustomConfigImage<LEN> {
         &self.0
     }
 
-    /// Read one big-endian `u16`, returning zero for out-of-range generated offsets.
-    pub(crate) fn be_u16_at(&self, offset: usize) -> u16 {
-        let Some(end) = offset.checked_add(2) else {
-            return 0;
-        };
-        let Some(bytes) = self.0.get(offset..end) else {
-            return 0;
-        };
-        u16::from_be_bytes([bytes[0], bytes[1]])
+    /// Read one big-endian `u16`, returning `None` for out-of-range generated offsets.
+    pub(crate) fn be_u16_at(&self, offset: usize) -> Option<u16> {
+        let end = offset.checked_add(2)?;
+        let bytes = <&[u8; 2]>::try_from(self.0.get(offset..end)?).ok()?;
+        Some(u16::from_be_bytes(*bytes))
     }
 
     /// Read a generated boolean flag.
@@ -162,8 +158,13 @@ impl CustomConfigDurationField {
 
     /// Decode the field directly into a duration.
     #[inline(always)]
-    pub fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> crate::VescSeconds {
-        crate::VescSeconds::from_seconds(f32::from(image.be_u16_at(self.0.get())) / 1000.0)
+    pub fn read<const LEN: usize>(
+        self,
+        image: &CustomConfigImage<LEN>,
+    ) -> Option<crate::VescSeconds> {
+        image
+            .be_u16_at(self.0.get())
+            .map(|value| crate::VescSeconds::from_seconds(f32::from(value) / 1000.0))
     }
 
     /// Encode a semantic duration into its generated millisecond field.
@@ -192,8 +193,13 @@ impl CustomConfigVoltageField {
 
     /// Decode the field directly into voltage.
     #[inline(always)]
-    pub fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> crate::units::Voltage {
-        crate::units::Voltage::from_volts(f32::from(image.be_u16_at(self.0.get())) / 1000.0)
+    pub fn read<const LEN: usize>(
+        self,
+        image: &CustomConfigImage<LEN>,
+    ) -> Option<crate::units::Voltage> {
+        image
+            .be_u16_at(self.0.get())
+            .map(|value| crate::units::Voltage::from_volts(f32::from(value) / 1000.0))
     }
 
     /// Encode semantic voltage into its generated millivolt field.
@@ -225,10 +231,12 @@ impl CustomConfigElectricalSpeedField {
     pub fn read<const LEN: usize>(
         self,
         image: &CustomConfigImage<LEN>,
-    ) -> super::motion::ElectricalSpeed {
-        super::motion::ElectricalSpeed::new(crate::units::Rpm::from_revolutions_per_minute(
-            f32::from(image.be_u16_at(self.0.get())),
-        ))
+    ) -> Option<super::motion::ElectricalSpeed> {
+        image.be_u16_at(self.0.get()).map(|value| {
+            super::motion::ElectricalSpeed::new(crate::units::Rpm::from_revolutions_per_minute(
+                f32::from(value),
+            ))
+        })
     }
 
     /// Encode semantic electrical speed into its generated ERPM field.
@@ -260,8 +268,13 @@ impl CustomConfigSampleRateField {
 
     /// Decode the field directly into its semantic sample-rate value.
     #[inline(always)]
-    pub fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> crate::SampleRate {
-        crate::SampleRate::from_hertz(f32::from(image.be_u16_at(self.0.get())))
+    pub fn read<const LEN: usize>(
+        self,
+        image: &CustomConfigImage<LEN>,
+    ) -> Option<crate::SampleRate> {
+        image
+            .be_u16_at(self.0.get())
+            .map(|value| crate::SampleRate::from_hertz(f32::from(value)))
     }
 
     /// Encode a semantic sample rate into its generated unsigned field.
@@ -361,8 +374,10 @@ impl CustomConfigScaledField {
     }
 
     #[inline(always)]
-    fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> f32 {
-        f32::from(image.be_u16_at(self.offset.get()) as i16) / self.scale
+    fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> Option<f32> {
+        image
+            .be_u16_at(self.offset.get())
+            .map(|value| f32::from(value as i16) / self.scale)
     }
 
     fn write<const LEN: usize>(
@@ -401,8 +416,8 @@ macro_rules! semantic_scaled_config_field {
 
             /// Decode the field directly into its semantic value.
             #[inline(always)]
-            pub fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> $value {
-                ($decode)(self.0.read(image))
+            pub fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> Option<$value> {
+                self.0.read(image).map($decode)
             }
 
             /// Encode a semantic value into its generated scaled field.
@@ -607,10 +622,10 @@ mod tests {
         let field = CustomConfigSampleRateField::new(0);
         let mut image = CustomConfigImage::new([0x00, 0xc8]);
 
-        assert_eq!(field.read(&image), SampleRate::from_hertz(200.0));
+        assert_eq!(field.read(&image), Some(SampleRate::from_hertz(200.0)));
         assert_eq!(
             CustomConfigSampleRateField::new(99).read(&image),
-            SampleRate::from_hertz(0.0),
+            None,
         );
         assert_eq!(
             field.write(&mut image.editor(), SampleRate::from_hertz(500.0)),
@@ -624,7 +639,7 @@ mod tests {
         let field = CustomConfigFrequencyField::new(0, 100.0).expect("valid scale");
         let mut image = CustomConfigImage::new([0x01, 0xf4]);
 
-        assert_eq!(field.read(&image), Frequency::from_hertz(5.0));
+        assert_eq!(field.read(&image), Some(Frequency::from_hertz(5.0)));
         assert_eq!(
             field.write(&mut image.editor(), Frequency::from_hertz(7.5)),
             Some(()),
@@ -639,11 +654,13 @@ mod tests {
 
         assert_eq!(
             field.read(&image),
-            ElectricalSpeed::new(Rpm::from_revolutions_per_minute(12_345.0)),
+            Some(ElectricalSpeed::new(Rpm::from_revolutions_per_minute(
+                12_345.0,
+            ))),
         );
         let speed = ElectricalSpeed::new(Rpm::from_revolutions_per_minute(5432.0));
         assert_eq!(field.write(&mut image.editor(), speed), Some(()));
-        assert_eq!(field.read(&image), speed);
+        assert_eq!(field.read(&image), Some(speed));
     }
 
     #[test]
@@ -651,12 +668,12 @@ mod tests {
         let field = CustomConfigVoltageField::new(0);
         let mut image = CustomConfigImage::new([0x0c, 0xe4]);
 
-        assert_eq!(field.read(&image), Voltage::from_volts(3.3));
+        assert_eq!(field.read(&image), Some(Voltage::from_volts(3.3)));
         assert_eq!(
             field.write(&mut image.editor(), Voltage::from_volts(4.2)),
             Some(()),
         );
-        assert_eq!(field.read(&image), Voltage::from_volts(4.2));
+        assert_eq!(field.read(&image), Some(Voltage::from_volts(4.2)));
     }
 
     #[test]
@@ -664,12 +681,15 @@ mod tests {
         let field = CustomConfigDurationField::new(0);
         let mut image = CustomConfigImage::new([0x04, 0xe2]);
 
-        assert_eq!(field.read(&image), VescSeconds::from_seconds(1.25));
+        assert_eq!(
+            field.read(&image),
+            Some(VescSeconds::from_seconds(1.25))
+        );
         assert_eq!(
             field.write(&mut image.editor(), VescSeconds::from_seconds(2.5)),
             Some(()),
         );
-        assert_eq!(field.read(&image), VescSeconds::from_seconds(2.5));
+        assert_eq!(field.read(&image), Some(VescSeconds::from_seconds(2.5)));
     }
 
     #[test]
@@ -693,57 +713,57 @@ mod tests {
             CustomConfigMotorCurrentField::new(0, 10.0)
                 .unwrap()
                 .read(&image),
-            crate::MotorCurrent::new(crate::Current::from_amps(12.3))
+            Some(crate::MotorCurrent::new(crate::Current::from_amps(12.3)))
         );
         assert_eq!(
             CustomConfigAngleField::new(0, 10.0).unwrap().read(&image),
-            crate::AngleDegrees::from_degrees(12.3)
+            Some(crate::AngleDegrees::from_degrees(12.3))
         );
         assert_eq!(
             CustomConfigAngularVelocityField::new(0, 10.0)
                 .unwrap()
                 .read(&image),
-            crate::AngularVelocity::from_degrees_per_second(12.3)
+            Some(crate::AngularVelocity::from_degrees_per_second(12.3))
         );
         assert_eq!(
             CustomConfigSecondsField::new(0, 10.0).unwrap().read(&image),
-            crate::VescSeconds::from_seconds(12.3)
+            Some(crate::VescSeconds::from_seconds(12.3))
         );
         assert_eq!(
             CustomConfigMahonyPitchGainField::new(0, 10.0)
                 .unwrap()
                 .read(&image),
-            crate::MahonyPitchGain::new(12.3)
+            Some(crate::MahonyPitchGain::new(12.3))
         );
         assert_eq!(
             CustomConfigMahonyRollGainField::new(0, 10.0)
                 .unwrap()
                 .read(&image),
-            crate::MahonyRollGain::new(12.3)
+            Some(crate::MahonyRollGain::new(12.3))
         );
         assert_eq!(
             CustomConfigAngleCurrentGainField::new(0, 10.0)
                 .unwrap()
                 .read(&image),
-            crate::AngleCurrentGain::new(12.3)
+            Some(crate::AngleCurrentGain::new(12.3))
         );
         assert_eq!(
             CustomConfigRateCurrentGainField::new(0, 10.0)
                 .unwrap()
                 .read(&image),
-            crate::RateCurrentGain::new(12.3)
+            Some(crate::RateCurrentGain::new(12.3))
         );
         assert_eq!(
             CustomConfigIntegralCurrentGainField::new(0, 10.0)
                 .unwrap()
                 .read(&image),
-            crate::IntegralCurrentGain::new(12.3)
+            Some(crate::IntegralCurrentGain::new(12.3))
         );
         assert_eq!(
             CustomConfigPidScaleField::new(0, 10.0)
                 .unwrap()
                 .read(&image),
-            crate::PidScale::new(12.3)
+            Some(crate::PidScale::new(12.3))
         );
 
         CustomConfigAngleField::new(0, 10.0)
@@ -756,8 +776,8 @@ mod tests {
     #[test]
     fn config_fields_reject_incomplete_or_unrepresentable_values() {
         let image = CustomConfigImage::new([0x12]);
-        assert_eq!(image.be_u16_at(0), 0);
-        assert_eq!(image.be_u16_at(usize::MAX), 0);
+        assert_eq!(image.be_u16_at(0), None);
+        assert_eq!(image.be_u16_at(usize::MAX), None);
 
         let mut image = CustomConfigImage::new([0_u8; 2]);
         assert!(
