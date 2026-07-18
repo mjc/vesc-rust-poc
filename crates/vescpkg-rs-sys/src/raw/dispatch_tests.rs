@@ -610,12 +610,34 @@ fn sleep_us_forwards_through_mock_table() {
 }
 
 #[test]
+#[should_panic(expected = "mock VESC_IF table must populate required slot")]
+fn missing_required_slot_fails_loudly() {
+    let mut table = populated_table();
+    table.sleep_us = None;
+
+    with_table(&table, || unsafe {
+        vesc_sleep_us(1);
+    });
+}
+
+#[test]
 fn thread_set_priority_forwards_through_mock_table() {
     with_populated_table(|| unsafe {
         assert!(vesc_thread_set_priority(-1));
 
         assert_eq!(THREAD_SET_PRIORITY.get(), 1);
         assert_eq!(LAST_THREAD_PRIORITY.get(), -1);
+    });
+}
+
+#[test]
+fn thread_set_priority_reports_absence_on_pre_6_06_tables() {
+    let mut table = populated_table();
+    table.thread_set_priority = None;
+
+    with_table(&table, || unsafe {
+        assert!(!vesc_thread_set_priority(-1));
+        assert_eq!(THREAD_SET_PRIORITY.get(), 0);
     });
 }
 
@@ -651,6 +673,17 @@ fn runtime_motor_helpers_forward_through_mock_table() {
         assert_eq!(MC_GET_DUTY_CYCLE_NOW.get(), 1);
         assert_eq!(FOC_GET_ID.get(), 1);
         assert_eq!(LAST_FOC_ID.get(), 1.5);
+    });
+}
+
+#[test]
+fn foc_get_id_reports_absence_when_the_motor_does_not_expose_it() {
+    let mut table = populated_table();
+    table.foc_get_id = None;
+
+    with_table(&table, || unsafe {
+        assert_eq!(foc_get_id(), None);
+        assert_eq!(FOC_GET_ID.get(), 0);
     });
 }
 

@@ -595,6 +595,8 @@ mod slots {
     fn_slot!(mc_set_current_off_delay as unsafe extern "C" fn(f32));
     fn_slot!(mc_set_brake_current as unsafe extern "C" fn(f32));
     fn_slot!(timeout_reset as unsafe extern "C" fn());
+    // Refloat capability-probes this pre-6.05 slot because not every motor
+    // implementation populates the FOC-specific function.
     optional_fn_slot!(foc_get_id as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_temp_fet_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_temp_motor_filtered as unsafe extern "C" fn() -> f32);
@@ -606,7 +608,9 @@ mod slots {
     fn_slot!(imu_get_quaternions as unsafe extern "C" fn(*mut f32));
     fn_slot!(send_app_data as unsafe extern "C" fn(*mut c_uchar, u32));
     fn_slot!(system_time as unsafe extern "C" fn() -> f32);
+    // Appended in firmware 6.05; older tables fall back to `system_time`.
     optional_fn_slot!(system_time_ticks as unsafe extern "C" fn() -> u32);
+    // Appended in firmware 6.06; callers treat absence as an unsupported hint.
     optional_fn_slot!(thread_set_priority as unsafe extern "C" fn(c_int));
     fn_slot!(io_set_mode as unsafe extern "C" fn(c_int, c_int) -> bool);
     fn_slot!(io_write as unsafe extern "C" fn(c_int, c_int) -> bool);
