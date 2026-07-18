@@ -48,6 +48,10 @@ vescpkg_rs::firmware_section_static!(
 pub(crate) const REFLOAT_CONFIG_SIGNATURE_BYTES: [u8; 4] = [0x90, 0xb7, 0xa9, 0xba];
 pub(crate) const REFLOAT_CONFIG_LEN: usize = REFLOAT_DEFAULT_CONFIG.len();
 
+fn generated_field<T>(value: Option<T>) -> T {
+    value.expect("generated Refloat field must fit its config image")
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub(crate) struct RefloatConfigImage(CustomConfigImage<REFLOAT_CONFIG_LEN>);
@@ -61,13 +65,15 @@ impl core::ops::Deref for RefloatConfigImage {
 }
 
 impl RefloatConfigImage {
-    const ATR_FILTER_FIELD: CustomConfigFrequencyField =
-        CustomConfigFrequencyField::new(165, 100.0).expect("valid Refloat config field");
+    const ATR_FILTER_FIELD: CustomConfigFrequencyField = vescpkg_rs::generated_custom_config_field!(CustomConfigFrequencyField, len: REFLOAT_CONFIG_LEN, offset: 165, scale: 100.0);
 
     // Generated `hardware.leds.mode` is the first field in the final hardware
     // block at `third_party/refloat/src/conf/settings.xml:4049-4064`.
-    const HARDWARE_LED_MODE_FIELD: CustomConfigEnumField<RefloatHardwareLedMode> =
-        CustomConfigEnumField::new(224);
+    const HARDWARE_LED_MODE_FIELD: CustomConfigEnumField<RefloatHardwareLedMode> = vescpkg_rs::generated_custom_config_field!(
+        CustomConfigEnumField<RefloatHardwareLedMode>,
+        len: REFLOAT_CONFIG_LEN,
+        offset: 224
+    );
 
     pub(crate) const fn defaults() -> Self {
         Self(CustomConfigImage::new(REFLOAT_DEFAULT_CONFIG))
@@ -149,7 +155,7 @@ impl RefloatConfigImage {
     }
 
     pub(crate) fn motor_current_filter_frequency(&self) -> vescpkg_rs::Frequency {
-        Self::ATR_FILTER_FIELD.read(self)
+        generated_field(Self::ATR_FILTER_FIELD.read(self))
     }
 
     pub(crate) fn editor(&mut self) -> RefloatConfigEditor<'_> {
@@ -354,10 +360,10 @@ pub(crate) struct RefloatMetadataConfig<'a>(&'a RefloatConfigImage);
 impl RefloatMetadataConfig<'_> {
     // Upstream defines `disabled` in `third_party/refloat/src/conf/settings.xml:3890-3902`;
     // its `<ser>disabled</ser>` entry at `third_party/refloat/src/conf/settings.xml:4064`.
-    const DISABLED_FIELD: CustomConfigFlagField = CustomConfigFlagField::new(243);
+    const DISABLED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 243);
     // Upstream defines `meta.is_default` in `third_party/refloat/src/conf/settings.xml:3903-3914`;
     // its `<ser>meta.is_default</ser>` entry at `third_party/refloat/src/conf/settings.xml:4083`.
-    const IS_DEFAULT_FIELD: CustomConfigFlagField = CustomConfigFlagField::new(275);
+    const IS_DEFAULT_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 275);
 
     pub(crate) fn disabled(self) -> bool {
         self.0.flag(Self::DISABLED_FIELD)
@@ -395,10 +401,12 @@ pub(crate) struct RefloatMotorControlConfig<'a>(&'a RefloatConfigImage);
 impl RefloatMotorControlConfig<'_> {
     // Upstream serializes default parking brake mode and brake current at
     // `third_party/refloat/src/conf/settings.xml:3973-3974`.
-    const PARKING_BRAKE_MODE_FIELD: CustomConfigEnumField<RefloatParkingBrakeMode> =
-        CustomConfigEnumField::new(101);
-    const BRAKE_CURRENT_FIELD: CustomConfigMotorCurrentField =
-        CustomConfigMotorCurrentField::new(102, 100.0).expect("valid Refloat config field");
+    const PARKING_BRAKE_MODE_FIELD: CustomConfigEnumField<RefloatParkingBrakeMode> = vescpkg_rs::generated_custom_config_field!(
+        CustomConfigEnumField<RefloatParkingBrakeMode>,
+        len: REFLOAT_CONFIG_LEN,
+        offset: 101
+    );
+    const BRAKE_CURRENT_FIELD: CustomConfigMotorCurrentField = vescpkg_rs::generated_custom_config_field!(CustomConfigMotorCurrentField, len: REFLOAT_CONFIG_LEN, offset: 102, scale: 100.0);
 
     pub(crate) fn parking_brake_mode(self) -> RefloatParkingBrakeMode {
         Self::PARKING_BRAKE_MODE_FIELD
@@ -407,7 +415,7 @@ impl RefloatMotorControlConfig<'_> {
     }
 
     pub(crate) fn brake_current(self) -> MotorCurrent {
-        Self::BRAKE_CURRENT_FIELD.read(self.0)
+        generated_field(Self::BRAKE_CURRENT_FIELD.read(self.0))
     }
 }
 
@@ -418,17 +426,15 @@ pub(crate) struct RefloatFilterConfig<'a>(&'a RefloatConfigImage);
 impl RefloatFilterConfig<'_> {
     // Upstream serializes Mahony pitch/roll KP after `ki` at
     // `third_party/refloat/src/conf/settings.xml:3916-3921`; both use scale 10000.
-    const MAHONY_KP_FIELD: CustomConfigMahonyPitchGainField =
-        CustomConfigMahonyPitchGainField::new(10, 10000.0).expect("valid Refloat config field");
-    const MAHONY_KP_ROLL_FIELD: CustomConfigMahonyRollGainField =
-        CustomConfigMahonyRollGainField::new(12, 10000.0).expect("valid Refloat config field");
+    const MAHONY_KP_FIELD: CustomConfigMahonyPitchGainField = vescpkg_rs::generated_custom_config_field!(CustomConfigMahonyPitchGainField, len: REFLOAT_CONFIG_LEN, offset: 10, scale: 10000.0);
+    const MAHONY_KP_ROLL_FIELD: CustomConfigMahonyRollGainField = vescpkg_rs::generated_custom_config_field!(CustomConfigMahonyRollGainField, len: REFLOAT_CONFIG_LEN, offset: 12, scale: 10000.0);
 
     pub(crate) fn mahony_kp(self) -> MahonyPitchGain {
-        Self::MAHONY_KP_FIELD.read(self.0)
+        generated_field(Self::MAHONY_KP_FIELD.read(self.0))
     }
 
     pub(crate) fn mahony_kp_roll(self) -> MahonyRollGain {
-        Self::MAHONY_KP_ROLL_FIELD.read(self.0)
+        generated_field(Self::MAHONY_KP_ROLL_FIELD.read(self.0))
     }
 }
 
@@ -439,42 +445,37 @@ pub(crate) struct RefloatFaultConfig<'a>(&'a RefloatConfigImage);
 impl RefloatFaultConfig<'_> {
     // Upstream serializes fault angles, ADC thresholds, delays, ERPM gates,
     // and feature flags at `third_party/refloat/src/conf/settings.xml:3925-3939`.
-    const PITCH_FIELD: CustomConfigAngleField =
-        CustomConfigAngleField::new(20, 10.0).expect("valid Refloat config field");
-    const ROLL_FIELD: CustomConfigAngleField =
-        CustomConfigAngleField::new(22, 10.0).expect("valid Refloat config field");
+    const PITCH_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 20, scale: 10.0);
+    const ROLL_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 22, scale: 10.0);
     #[cfg(any(test, target_arch = "arm"))]
-    const ADC1_FIELD: CustomConfigVoltageField = CustomConfigVoltageField::new(24);
+    const ADC1_FIELD: CustomConfigVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigVoltageField, len: REFLOAT_CONFIG_LEN, offset: 24);
     #[cfg(any(test, target_arch = "arm"))]
-    const ADC2_FIELD: CustomConfigVoltageField = CustomConfigVoltageField::new(26);
+    const ADC2_FIELD: CustomConfigVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigVoltageField, len: REFLOAT_CONFIG_LEN, offset: 26);
     const DELAY_PITCH_OFFSET: usize = 29;
     const DELAY_ROLL_OFFSET: usize = 31;
-    const DELAY_PITCH_FIELD: CustomConfigDurationField =
-        CustomConfigDurationField::new(Self::DELAY_PITCH_OFFSET);
-    const DELAY_ROLL_FIELD: CustomConfigDurationField =
-        CustomConfigDurationField::new(Self::DELAY_ROLL_OFFSET);
-    const DELAY_SWITCH_HALF_FIELD: CustomConfigDurationField = CustomConfigDurationField::new(33);
-    const DELAY_SWITCH_FULL_FIELD: CustomConfigDurationField = CustomConfigDurationField::new(35);
-    const ADC_HALF_ERPM_FIELD: CustomConfigElectricalSpeedField =
-        CustomConfigElectricalSpeedField::new(37);
-    const DUAL_SWITCH_FIELD: CustomConfigFlagField = CustomConfigFlagField::new(39);
-    const MOVING_FAULT_DISABLED_FIELD: CustomConfigFlagField = CustomConfigFlagField::new(40);
-    const QUICKSTOP_FIELD: CustomConfigFlagField = CustomConfigFlagField::new(41);
-    const DARKRIDE_FIELD: CustomConfigFlagField = CustomConfigFlagField::new(42);
-    const REVERSESTOP_FIELD: CustomConfigFlagField = CustomConfigFlagField::new(43);
+    const DELAY_PITCH_FIELD: CustomConfigDurationField = vescpkg_rs::generated_custom_config_field!(CustomConfigDurationField, len: REFLOAT_CONFIG_LEN, offset: Self::DELAY_PITCH_OFFSET);
+    const DELAY_ROLL_FIELD: CustomConfigDurationField = vescpkg_rs::generated_custom_config_field!(CustomConfigDurationField, len: REFLOAT_CONFIG_LEN, offset: Self::DELAY_ROLL_OFFSET);
+    const DELAY_SWITCH_HALF_FIELD: CustomConfigDurationField = vescpkg_rs::generated_custom_config_field!(CustomConfigDurationField, len: REFLOAT_CONFIG_LEN, offset: 33);
+    const DELAY_SWITCH_FULL_FIELD: CustomConfigDurationField = vescpkg_rs::generated_custom_config_field!(CustomConfigDurationField, len: REFLOAT_CONFIG_LEN, offset: 35);
+    const ADC_HALF_ERPM_FIELD: CustomConfigElectricalSpeedField = vescpkg_rs::generated_custom_config_field!(CustomConfigElectricalSpeedField, len: REFLOAT_CONFIG_LEN, offset: 37);
+    const DUAL_SWITCH_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 39);
+    const MOVING_FAULT_DISABLED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 40);
+    const QUICKSTOP_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 41);
+    const DARKRIDE_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 42);
+    const REVERSESTOP_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 43);
 
     fn delay_at(self, field: CustomConfigDurationField) -> VescSeconds {
-        field.read(self.0)
+        generated_field(field.read(self.0))
     }
 
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn adc1_voltage(self) -> vescpkg_rs::Voltage {
-        Self::ADC1_FIELD.read(self.0)
+        generated_field(Self::ADC1_FIELD.read(self.0))
     }
 
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn adc2_voltage(self) -> vescpkg_rs::Voltage {
-        Self::ADC2_FIELD.read(self.0)
+        generated_field(Self::ADC2_FIELD.read(self.0))
     }
 
     pub(crate) fn quickstop_enabled(self) -> bool {
@@ -486,7 +487,7 @@ impl RefloatFaultConfig<'_> {
     }
 
     pub(crate) fn adc_half_erpm(self) -> ElectricalSpeed {
-        Self::ADC_HALF_ERPM_FIELD.read(self.0)
+        generated_field(Self::ADC_HALF_ERPM_FIELD.read(self.0))
     }
 
     pub(crate) fn switch_half_delay(self) -> VescSeconds {
@@ -502,7 +503,7 @@ impl RefloatFaultConfig<'_> {
     }
 
     pub(crate) fn roll_angle(self) -> AngleDegrees {
-        Self::ROLL_FIELD.read(self.0)
+        generated_field(Self::ROLL_FIELD.read(self.0))
     }
 
     pub(crate) fn roll_delay(self) -> VescSeconds {
@@ -510,7 +511,7 @@ impl RefloatFaultConfig<'_> {
     }
 
     pub(crate) fn pitch_angle(self) -> AngleDegrees {
-        Self::PITCH_FIELD.read(self.0)
+        generated_field(Self::PITCH_FIELD.read(self.0))
     }
 
     pub(crate) fn pitch_delay(self) -> VescSeconds {
@@ -534,18 +535,15 @@ impl RefloatStartupConfig<'_> {
     // Upstream defines `hertz` at `third_party/refloat/src/conf/settings.xml:223-246`,
     // then serializes startup tolerances/speed/flags at
     // `third_party/refloat/src/conf/settings.xml:3966-3972`.
-    const HERTZ_FIELD: CustomConfigSampleRateField = CustomConfigSampleRateField::new(18);
-    const SIMPLESTART_FIELD: CustomConfigFlagField = CustomConfigFlagField::new(99);
-    const PUSHSTART_FIELD: CustomConfigFlagField = CustomConfigFlagField::new(100);
-    const PITCH_TOLERANCE_FIELD: CustomConfigAngleField =
-        CustomConfigAngleField::new(91, 100.0).expect("valid Refloat config field");
-    const ROLL_TOLERANCE_FIELD: CustomConfigAngleField =
-        CustomConfigAngleField::new(93, 100.0).expect("valid Refloat config field");
-    const SPEED_FIELD: CustomConfigAngularVelocityField =
-        CustomConfigAngularVelocityField::new(95, 100.0).expect("valid Refloat config field");
+    const HERTZ_FIELD: CustomConfigSampleRateField = vescpkg_rs::generated_custom_config_field!(CustomConfigSampleRateField, len: REFLOAT_CONFIG_LEN, offset: 18);
+    const SIMPLESTART_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 99);
+    const PUSHSTART_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 100);
+    const PITCH_TOLERANCE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 91, scale: 100.0);
+    const ROLL_TOLERANCE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 93, scale: 100.0);
+    const SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: REFLOAT_CONFIG_LEN, offset: 95, scale: 100.0);
 
     pub(crate) fn sample_rate(self) -> SampleRate {
-        Self::HERTZ_FIELD.read(self.0)
+        generated_field(Self::HERTZ_FIELD.read(self.0))
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -558,11 +556,11 @@ impl RefloatStartupConfig<'_> {
     }
 
     pub(crate) fn pitch_tolerance(self) -> AngleDegrees {
-        Self::PITCH_TOLERANCE_FIELD.read(self.0)
+        generated_field(Self::PITCH_TOLERANCE_FIELD.read(self.0))
     }
 
     pub(crate) fn roll_tolerance(self) -> AngleDegrees {
-        Self::ROLL_TOLERANCE_FIELD.read(self.0)
+        generated_field(Self::ROLL_TOLERANCE_FIELD.read(self.0))
     }
 
     pub(crate) fn pushstart_enabled(self) -> bool {
@@ -570,7 +568,7 @@ impl RefloatStartupConfig<'_> {
     }
 
     pub(crate) fn startup_speed(self) -> AngularVelocity {
-        Self::SPEED_FIELD.read(self.0)
+        generated_field(Self::SPEED_FIELD.read(self.0))
     }
 
     pub(crate) fn centering_step(self) -> AngleDegrees {
@@ -588,78 +586,65 @@ pub(crate) struct RefloatBalanceConfig<'a>(&'a RefloatConfigImage);
 impl RefloatBalanceConfig<'_> {
     // Upstream serializes balance tuning fields in
     // `third_party/refloat/src/conf/settings.xml:3916-3923,3975-3984`.
-    const KP_FIELD: CustomConfigAngleCurrentGainField =
-        CustomConfigAngleCurrentGainField::new(4, 10.0).expect("valid Refloat config field");
-    const KP2_FIELD: CustomConfigRateCurrentGainField =
-        CustomConfigRateCurrentGainField::new(6, 100.0).expect("valid Refloat config field");
-    const KI_FIELD: CustomConfigIntegralCurrentGainField =
-        CustomConfigIntegralCurrentGainField::new(8, 100_000.0)
-            .expect("valid Refloat config field");
-    const KP_BRAKE_FIELD: CustomConfigPidScaleField =
-        CustomConfigPidScaleField::new(14, 100.0).expect("valid Refloat config field");
-    const KP2_BRAKE_FIELD: CustomConfigPidScaleField =
-        CustomConfigPidScaleField::new(16, 100.0).expect("valid Refloat config field");
-    const KI_LIMIT_FIELD: CustomConfigMotorCurrentField =
-        CustomConfigMotorCurrentField::new(104, 10.0).expect("valid Refloat config field");
-    const BOOSTER_ANGLE_FIELD: CustomConfigAngleField =
-        CustomConfigAngleField::new(106, 100.0).expect("valid Refloat config field");
-    const BOOSTER_RAMP_FIELD: CustomConfigAngleField =
-        CustomConfigAngleField::new(108, 100.0).expect("valid Refloat config field");
-    const BOOSTER_CURRENT_FIELD: CustomConfigMotorCurrentField =
-        CustomConfigMotorCurrentField::new(110, 100.0).expect("valid Refloat config field");
-    const BRAKE_BOOSTER_ANGLE_FIELD: CustomConfigAngleField =
-        CustomConfigAngleField::new(112, 100.0).expect("valid Refloat config field");
-    const BRAKE_BOOSTER_RAMP_FIELD: CustomConfigAngleField =
-        CustomConfigAngleField::new(114, 100.0).expect("valid Refloat config field");
-    const BRAKE_BOOSTER_CURRENT_FIELD: CustomConfigMotorCurrentField =
-        CustomConfigMotorCurrentField::new(116, 100.0).expect("valid Refloat config field");
+    const KP_FIELD: CustomConfigAngleCurrentGainField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleCurrentGainField, len: REFLOAT_CONFIG_LEN, offset: 4, scale: 10.0);
+    const KP2_FIELD: CustomConfigRateCurrentGainField = vescpkg_rs::generated_custom_config_field!(CustomConfigRateCurrentGainField, len: REFLOAT_CONFIG_LEN, offset: 6, scale: 100.0);
+    const KI_FIELD: CustomConfigIntegralCurrentGainField = vescpkg_rs::generated_custom_config_field!(CustomConfigIntegralCurrentGainField, len: REFLOAT_CONFIG_LEN, offset: 8, scale: 100_000.0);
+    const KP_BRAKE_FIELD: CustomConfigPidScaleField = vescpkg_rs::generated_custom_config_field!(CustomConfigPidScaleField, len: REFLOAT_CONFIG_LEN, offset: 14, scale: 100.0);
+    const KP2_BRAKE_FIELD: CustomConfigPidScaleField = vescpkg_rs::generated_custom_config_field!(CustomConfigPidScaleField, len: REFLOAT_CONFIG_LEN, offset: 16, scale: 100.0);
+    const KI_LIMIT_FIELD: CustomConfigMotorCurrentField = vescpkg_rs::generated_custom_config_field!(CustomConfigMotorCurrentField, len: REFLOAT_CONFIG_LEN, offset: 104, scale: 10.0);
+    const BOOSTER_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 106, scale: 100.0);
+    const BOOSTER_RAMP_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 108, scale: 100.0);
+    const BOOSTER_CURRENT_FIELD: CustomConfigMotorCurrentField = vescpkg_rs::generated_custom_config_field!(CustomConfigMotorCurrentField, len: REFLOAT_CONFIG_LEN, offset: 110, scale: 100.0);
+    const BRAKE_BOOSTER_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 112, scale: 100.0);
+    const BRAKE_BOOSTER_RAMP_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 114, scale: 100.0);
+    const BRAKE_BOOSTER_CURRENT_FIELD: CustomConfigMotorCurrentField = vescpkg_rs::generated_custom_config_field!(CustomConfigMotorCurrentField, len: REFLOAT_CONFIG_LEN, offset: 116, scale: 100.0);
 
     pub(crate) fn kp(self) -> AngleCurrentGain {
-        Self::KP_FIELD.read(self.0)
+        generated_field(Self::KP_FIELD.read(self.0))
     }
 
     pub(crate) fn kp2(self) -> RateCurrentGain {
-        Self::KP2_FIELD.read(self.0)
+        generated_field(Self::KP2_FIELD.read(self.0))
     }
 
     pub(crate) fn ki(self) -> IntegralCurrentGain {
-        Self::KI_FIELD.read(self.0)
+        generated_field(Self::KI_FIELD.read(self.0))
     }
 
     pub(crate) fn kp_brake(self) -> PidScale {
-        Self::KP_BRAKE_FIELD.read(self.0)
+        generated_field(Self::KP_BRAKE_FIELD.read(self.0))
     }
 
     pub(crate) fn kp2_brake(self) -> PidScale {
-        Self::KP2_BRAKE_FIELD.read(self.0)
+        generated_field(Self::KP2_BRAKE_FIELD.read(self.0))
     }
 
     pub(crate) fn ki_limit(self) -> MotorCurrentLimit {
-        MotorCurrentLimit::new(Self::KI_LIMIT_FIELD.read(self.0).current())
+        MotorCurrentLimit::new(generated_field(Self::KI_LIMIT_FIELD.read(self.0)).current())
     }
 
     pub(crate) fn booster_angle(self) -> AngleDegrees {
-        Self::BOOSTER_ANGLE_FIELD.read(self.0)
+        generated_field(Self::BOOSTER_ANGLE_FIELD.read(self.0))
     }
 
     pub(crate) fn booster_ramp(self) -> AngleDegrees {
-        Self::BOOSTER_RAMP_FIELD.read(self.0)
+        generated_field(Self::BOOSTER_RAMP_FIELD.read(self.0))
     }
 
     pub(crate) fn booster_current(self) -> MotorCurrent {
-        Self::BOOSTER_CURRENT_FIELD.read(self.0)
+        generated_field(Self::BOOSTER_CURRENT_FIELD.read(self.0))
     }
 
     pub(crate) fn brake_booster_angle(self) -> AngleDegrees {
-        Self::BRAKE_BOOSTER_ANGLE_FIELD.read(self.0)
+        generated_field(Self::BRAKE_BOOSTER_ANGLE_FIELD.read(self.0))
     }
 
     pub(crate) fn brake_booster_ramp(self) -> AngleDegrees {
-        Self::BRAKE_BOOSTER_RAMP_FIELD.read(self.0)
+        generated_field(Self::BRAKE_BOOSTER_RAMP_FIELD.read(self.0))
     }
 
     pub(crate) fn brake_booster_current(self) -> MotorCurrent {
-        Self::BRAKE_BOOSTER_CURRENT_FIELD.read(self.0)
+        generated_field(Self::BRAKE_BOOSTER_CURRENT_FIELD.read(self.0))
     }
 }
 
@@ -670,18 +655,16 @@ pub(crate) struct RefloatRemoteThrottleConfig<'a>(&'a RefloatConfigImage);
 impl RefloatRemoteThrottleConfig<'_> {
     // Upstream serializes remote throttle fields immediately before startup
     // tolerances at `third_party/refloat/src/conf/settings.xml:3962-3965`.
-    const INVERT_THROTTLE_FIELD: CustomConfigFlagField = CustomConfigFlagField::new(84);
-    const CURRENT_MAX_FIELD: CustomConfigMotorCurrentField =
-        CustomConfigMotorCurrentField::new(87, 10.0).expect("valid Refloat config field");
-    const GRACE_PERIOD_FIELD: CustomConfigSecondsField =
-        CustomConfigSecondsField::new(89, 10.0).expect("valid Refloat config field");
+    const INVERT_THROTTLE_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 84);
+    const CURRENT_MAX_FIELD: CustomConfigMotorCurrentField = vescpkg_rs::generated_custom_config_field!(CustomConfigMotorCurrentField, len: REFLOAT_CONFIG_LEN, offset: 87, scale: 10.0);
+    const GRACE_PERIOD_FIELD: CustomConfigSecondsField = vescpkg_rs::generated_custom_config_field!(CustomConfigSecondsField, len: REFLOAT_CONFIG_LEN, offset: 89, scale: 10.0);
 
     pub(crate) fn current_max(self) -> MotorCurrent {
-        Self::CURRENT_MAX_FIELD.read(self.0)
+        generated_field(Self::CURRENT_MAX_FIELD.read(self.0))
     }
 
     pub(crate) fn grace_period(self) -> VescSeconds {
-        Self::GRACE_PERIOD_FIELD.read(self.0)
+        generated_field(Self::GRACE_PERIOD_FIELD.read(self.0))
     }
 
     pub(crate) fn invert_throttle(self) -> bool {
@@ -692,10 +675,10 @@ impl RefloatRemoteThrottleConfig<'_> {
 // Upstream HANDTEST temporarily disables tune modifiers at
 // `third_party/refloat/src/main.c:1431-1444`; these offsets follow the
 // generated serialized field order in `third_party/refloat/src/conf/settings.xml:3943-3961`.
-const TILTBACK_CONSTANT_FIELD: CustomConfigResetField = CustomConfigResetField::new(67);
-const TILTBACK_VARIABLE_FIELD: CustomConfigResetField = CustomConfigResetField::new(71);
-const TORQUE_TILT_STRENGTH_FIELD: CustomConfigResetField = CustomConfigResetField::new(126);
-const TORQUE_TILT_REGEN_STRENGTH_FIELD: CustomConfigResetField = CustomConfigResetField::new(128);
-const TURN_TILT_STRENGTH_FIELD: CustomConfigResetField = CustomConfigResetField::new(130);
-const ATR_STRENGTH_UP_FIELD: CustomConfigResetField = CustomConfigResetField::new(145);
-const ATR_STRENGTH_DOWN_FIELD: CustomConfigResetField = CustomConfigResetField::new(147);
+const TILTBACK_CONSTANT_FIELD: CustomConfigResetField = vescpkg_rs::generated_custom_config_field!(CustomConfigResetField, len: REFLOAT_CONFIG_LEN, offset: 67);
+const TILTBACK_VARIABLE_FIELD: CustomConfigResetField = vescpkg_rs::generated_custom_config_field!(CustomConfigResetField, len: REFLOAT_CONFIG_LEN, offset: 71);
+const TORQUE_TILT_STRENGTH_FIELD: CustomConfigResetField = vescpkg_rs::generated_custom_config_field!(CustomConfigResetField, len: REFLOAT_CONFIG_LEN, offset: 126);
+const TORQUE_TILT_REGEN_STRENGTH_FIELD: CustomConfigResetField = vescpkg_rs::generated_custom_config_field!(CustomConfigResetField, len: REFLOAT_CONFIG_LEN, offset: 128);
+const TURN_TILT_STRENGTH_FIELD: CustomConfigResetField = vescpkg_rs::generated_custom_config_field!(CustomConfigResetField, len: REFLOAT_CONFIG_LEN, offset: 130);
+const ATR_STRENGTH_UP_FIELD: CustomConfigResetField = vescpkg_rs::generated_custom_config_field!(CustomConfigResetField, len: REFLOAT_CONFIG_LEN, offset: 145);
+const ATR_STRENGTH_DOWN_FIELD: CustomConfigResetField = vescpkg_rs::generated_custom_config_field!(CustomConfigResetField, len: REFLOAT_CONFIG_LEN, offset: 147);

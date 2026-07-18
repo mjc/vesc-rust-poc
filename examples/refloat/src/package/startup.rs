@@ -88,7 +88,7 @@ mod tests {
     #[test]
     fn package_start_installs_typed_refloat_state_for_handler_retrieval() {
         let _runtime_state = lock_refloat_runtime_state();
-        let mut info = vescpkg_rs::LoaderInfo::new();
+        let mut info = vescpkg_rs::test_support::LoaderInfo::new();
         let mut start = vescpkg_rs::test_support::package_start(&mut info);
         let state = RefloatPackageState::new(sample_all_data_payloads());
 
@@ -102,7 +102,7 @@ mod tests {
                 .expect("installed state"),
             sample_all_data_payloads()
         );
-        let mut empty_info = vescpkg_rs::LoaderInfo::new();
+        let mut empty_info = vescpkg_rs::test_support::LoaderInfo::new();
         assert!(
             vescpkg_rs::test_support::package_start(&mut empty_info)
                 .with_runtime_state::<RefloatPackageState, _>(|_| ())
@@ -115,7 +115,7 @@ mod tests {
     #[test]
     fn package_start_installs_refloat_state_before_callbacks_like_refloat_startup() {
         let _runtime_state = lock_refloat_runtime_state();
-        let mut info = vescpkg_rs::LoaderInfo::new();
+        let mut info = vescpkg_rs::test_support::LoaderInfo::new();
         let mut start = vescpkg_rs::test_support::package_start(&mut info);
         let state = RefloatPackageState::new(sample_all_data_payloads());
 

@@ -40,7 +40,7 @@ vescpkg_rs::package_start!(crate::package::start);
 mod tests {
     mod package_author;
 
-    use vescpkg_rs::LoaderInfo;
+    use vescpkg_rs::test_support::LoaderInfo;
 
     #[test]
     fn package_lib_init_runs_refloat_start() {

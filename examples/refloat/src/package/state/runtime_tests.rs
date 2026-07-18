@@ -365,7 +365,7 @@ fn foc_id_current_refreshes_like_refloat_all_data() {
     // compact all-data at `third_party/refloat/src/main.c:1364-1368`.
     let now = TimestampTicks::from_ticks(0);
     let telemetry =
-        FirmwareTest::new().with_foc_id_current(Some(DCurrent::new(Current::from_amps(-4.0))));
+        FirmwareTest::new().with_d_axis_current(Some(DCurrent::new(Current::from_amps(-4.0))));
     let imu = telemetry.imu();
     let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
     state.refresh_runtime_state(telemetry.telemetry(), imu, now);

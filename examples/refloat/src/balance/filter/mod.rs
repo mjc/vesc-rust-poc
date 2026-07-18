@@ -165,8 +165,10 @@ mod tests {
     use vescpkg_rs::prelude::{
         AccelerationG, AngularVelocity, ImuAcceleration, ImuAccelerationX, ImuAccelerationY,
         ImuAccelerationZ, ImuAngularRate, ImuAngularRatePitch, ImuAngularRateRoll,
-        ImuAngularRateYaw, ImuOrientation, ImuQuaternion, ImuQuaternionW, ImuQuaternionX,
-        ImuQuaternionY, ImuQuaternionZ, ImuReadSample, ImuSamplePeriod, VescSeconds,
+        ImuAngularRateYaw, ImuMagneticField, ImuMagneticFieldX, ImuMagneticFieldY,
+        ImuMagneticFieldZ, ImuOrientation, ImuQuaternion, ImuQuaternionW, ImuQuaternionX,
+        ImuQuaternionY, ImuQuaternionZ, ImuReadSample, ImuSamplePeriod, MagneticFluxDensity,
+        VescSeconds,
     };
 
     fn imu_accel_x(acceleration: AccelerationG) -> ImuAccelerationX {
@@ -213,12 +215,20 @@ mod tests {
         ImuSamplePeriod::new(period)
     }
 
+    fn imu_magnetic_field() -> ImuMagneticField {
+        ImuMagneticField::from_axes(
+            ImuMagneticFieldX::new(MagneticFluxDensity::from_microteslas(0.0)),
+            ImuMagneticFieldY::new(MagneticFluxDensity::from_microteslas(0.0)),
+            ImuMagneticFieldZ::new(MagneticFluxDensity::from_microteslas(0.0)),
+        )
+    }
+
     fn imu_sample(
         acceleration: ImuAcceleration,
         angular_rate: ImuAngularRate,
         period: ImuSamplePeriod,
     ) -> ImuReadSample {
-        ImuReadSample::from_parts(acceleration, angular_rate, period)
+        ImuReadSample::from_parts(acceleration, angular_rate, imu_magnetic_field(), period)
     }
 
     #[test]

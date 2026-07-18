@@ -80,9 +80,9 @@ pub(super) fn refresh(state: &mut RefloatPackageState, telemetry: &impl MotorTel
     let previous_battery_current = motor.battery_current().current().as_amps();
     let next_battery_current = telemetry.battery_current().current().as_amps();
     let previous_duty_cycle = motor.duty_cycle().ratio().as_ratio();
-    let raw_duty_cycle = telemetry.duty_cycle_now().ratio().as_ratio().abs();
-    state.motor_current_max = telemetry.motor_current_max();
-    state.motor_current_min = telemetry.motor_current_min();
+    let raw_duty_cycle = telemetry.duty_cycle().ratio().as_ratio().abs();
+    state.motor_current_max = telemetry.drive_current_limit();
+    state.motor_current_min = telemetry.brake_current_limit();
     state.motor_current_filter.configure(
         state.serialized_config.motor_current_filter_frequency(),
         state.serialized_config.startup().sample_rate(),
@@ -95,7 +95,7 @@ pub(super) fn refresh(state: &mut RefloatPackageState, telemetry: &impl MotorTel
     // in `third_party/refloat/src/motor_data.c:128-133`.
     state.motor_acceleration.record(motor_erpm);
     let motor = RefloatAllDataMotorPayload::new(
-        BatteryVoltage::new(telemetry.input_voltage_filtered().voltage()),
+        BatteryVoltage::new(telemetry.input_voltage().voltage()),
         electrical_speed,
         telemetry.vehicle_speed(),
         RefloatRealtimeMotorCurrents::new(
@@ -115,7 +115,7 @@ pub(super) fn refresh(state: &mut RefloatPackageState, telemetry: &impl MotorTel
         // Upstream compact all-data reads optional `VESC_IF->foc_get_id` at
         // `third_party/refloat/src/main.c:1364-1368` and writes 222 when the slot is absent.
         telemetry
-            .foc_id_current()
+            .d_axis_current()
             .map_or(RefloatFocIdCurrent::unavailable(), |current| {
                 RefloatFocIdCurrent::measured(MotorCurrent::new(current.current()))
             }),

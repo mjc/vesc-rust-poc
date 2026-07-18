@@ -27,6 +27,7 @@ use crate::leds::{
     RefloatStatusBarIdleTimeout,
 };
 use vescpkg_rs::prelude::*;
+use vescpkg_rs::test_support::LoaderInfo;
 
 #[test]
 fn test_package_lib_init_uses_side_effect_free_registration_tail() {

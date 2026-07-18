@@ -31,9 +31,8 @@ impl vescpkg_rs::StatefulAppDataCallback for RefloatAppData {
         // `ARG(PROG_ADDR)` before app-data dispatch at
         // `third_party/refloat/src/main.c:2143-2225`.
         let firmware = vescpkg_rs::Firmware::new();
-        let app_data = firmware.app_data();
-        let mut now = || app_data.system_time_ticks();
-        let mut send = |bytes: &[u8]| app_data.send(bytes).is_ok();
+        let mut now = || firmware.clock().now().ticks();
+        let mut send = |bytes: &[u8]| firmware.app_data().send(bytes).is_ok();
         let _ = handle_refloat_app_data_packet(
             state,
             firmware.telemetry(),

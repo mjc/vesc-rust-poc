@@ -21,8 +21,8 @@ pub(crate) struct ExtBms;
 impl vescpkg_rs::StatefulLbmExtension for ExtBms {
     type State = RefloatPackageState;
 
-    fn call(_state: &mut Self::State, args: vescpkg_rs::LispArgs<'_>) -> LispValue {
-        args.nil_value()
+    fn call(_state: &mut Self::State, _args: vescpkg_rs::LispArgs<'_>) -> LispValue {
+        LispValue::nil()
     }
 }
 
@@ -31,7 +31,7 @@ mod tests {
     use super::ExtBms;
     use crate::package::RefloatPackageState;
     use crate::package::test_support::sample_all_data_payloads;
-    use vescpkg_rs::{LispArgs, StatefulLbmExtension};
+    use vescpkg_rs::{LispArgs, LispValue, StatefulLbmExtension};
 
     #[test]
     fn ext_bms_returns_nil_while_typed_bms_config_is_unwired() {
@@ -40,7 +40,7 @@ mod tests {
         // matches startup defaults where BMS integration is disabled.
         let mut state = RefloatPackageState::new(sample_all_data_payloads());
         let args = LispArgs::empty();
-        let nil = args.nil_value();
+        let nil = LispValue::nil();
         let value = ExtBms::call(&mut state, args);
 
         assert!(value == nil);

@@ -14,21 +14,27 @@ pub struct RefloatCustomConfig;
 // `get_cfg_xml` in `third_party/refloat/src/main.c:2334-2396`.
 impl vescpkg_rs::StatefulCustomConfigCallback<REFLOAT_CONFIG_LEN> for RefloatCustomConfig {
     type State = RefloatPackageState;
+    type Error = ();
 
     // C map: `get_cfg` serializes `data_refloatconfig` for the default request.
-    fn default_config() -> ConfigBytes<'static> {
+    fn default_config() -> ConfigBytes<'static, REFLOAT_CONFIG_LEN> {
         ConfigBytes::new(&REFLOAT_DEFAULT_CONFIG)
     }
 
     // C map: `get_cfg` serializes active `d->float_conf` for the current request.
-    fn current_config<'state>(state: &'state Self::State) -> Option<ConfigBytes<'state>> {
-        Some(ConfigBytes::new(state.serialized_config()))
+    fn current_config(state: &Self::State) -> ConfigBytes<'_, REFLOAT_CONFIG_LEN> {
+        ConfigBytes::new(state.serialized_config())
     }
 
     // C map: `set_cfg` in upstream validates/sanitizes, stores into `d->float_conf`,
     // and (in C) persists/reconfigures via EEPROM + `configure(d)`.
-    fn set_config(state: &mut Self::State, config: ConfigBytes<'_>) -> bool {
+    fn set_config(
+        state: &mut Self::State,
+        config: ConfigBytes<'_, REFLOAT_CONFIG_LEN>,
+    ) -> Result<(), Self::Error> {
         refloat_set_cfg_payload_with_state(config, state)
+            .then_some(())
+            .ok_or(())
     }
 
     // C map: `get_cfg_xml` in upstream returns `data_refloatconfig_` directly.
@@ -77,7 +83,7 @@ pub(super) fn install_test_refloat_runtime_state<'a>(
 }
 
 fn refloat_set_cfg_payload_with_state(
-    config: ConfigBytes<'_>,
+    config: ConfigBytes<'_, REFLOAT_CONFIG_LEN>,
     state: &mut RefloatPackageState,
 ) -> bool {
     // Upstream `set_cfg` gates special modes, deserializes, persists, and

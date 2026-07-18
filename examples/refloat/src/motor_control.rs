@@ -126,7 +126,7 @@ impl RefloatMotorControl {
         } else if self.parking_brake_active && abs_erpm < Rpm::from_revolutions_per_minute(2000.0) {
             // Upstream parking brake applies duty zero below 2000 ERPM at
             // `third_party/refloat/src/motor_control.c:112-114`.
-            motor.set_duty(DutyCycle::new(SignedRatio::from_ratio_const(0.0)));
+            motor.set_duty_cycle(DutyCycle::new(SignedRatio::from_ratio_const(0.0)));
         } else {
             // Upstream idle fallback applies configured brake current at
             // `third_party/refloat/src/motor_control.c:115-117`.

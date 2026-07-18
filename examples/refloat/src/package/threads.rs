@@ -53,7 +53,7 @@ impl RefloatRuntimeThread {
     }
 }
 
-/// Describe the Refloat runtime thread pair.
+/// Describe the Refloat runtime threads.
 ///
 /// Upstream passes its position-independent refloat_thd, aux_thd, and
 /// thread-name addresses directly to spawn with stacks of 1536 and
@@ -61,19 +61,19 @@ impl RefloatRuntimeThread {
 /// those runtime addresses and byte counts to chThdCreateStatic at
 /// third_party/vesc/lispBM/lispif_c_lib.c:98-125.
 #[cfg(target_arch = "arm")]
-fn refloat_runtime_thread_pair() -> vescpkg_rs::ThreadPairSpec<RefloatPackageState> {
+fn refloat_runtime_threads() -> [vescpkg_rs::ThreadSpec<RefloatPackageState>; 2] {
     let main_thread = RefloatRuntimeThread::Main;
     let aux_thread = RefloatRuntimeThread::Aux;
-    vescpkg_rs::ThreadPairSpec::new(
+    [
         vescpkg_rs::ThreadSpec::<RefloatPackageState>::new::<RefloatMainThread>(
             main_thread.stack_size(),
             main_thread.name(),
         ),
-        vescpkg_rs::ThreadSpec::<()>::stateless::<RefloatAuxThread>(
+        vescpkg_rs::ThreadSpec::<RefloatPackageState>::stateless::<RefloatAuxThread>(
             aux_thread.stack_size(),
             aux_thread.name(),
         ),
-    )
+    ]
 }
 
 /// Run Refloat's source-backed main thread tick loop.
@@ -100,8 +100,8 @@ pub(crate) fn tick_refloat_main_thread_with(
     telemetry: &impl MotorTelemetry,
     imu: &impl Imu,
     motor: &impl MotorOutput,
-    footpad_adc1: Option<AdcVoltage>,
-    footpad_adc2: Option<AdcVoltage>,
+    footpad_adc1: AdcVoltage,
+    footpad_adc2: AdcVoltage,
     system_time_ticks: TimestampTicks,
 ) -> u32 {
     // C map: `refloat_thd` refreshes runtime inputs, executes state/control
@@ -110,8 +110,8 @@ pub(crate) fn tick_refloat_main_thread_with(
     state.refresh_main_loop_runtime_state(
         telemetry,
         imu,
-        refloat_adc_or_zero(footpad_adc1),
-        refloat_adc_or_zero(footpad_adc2),
+        footpad_adc1,
+        footpad_adc2,
         system_time_ticks,
     );
     let run_state = state
@@ -123,11 +123,6 @@ pub(crate) fn tick_refloat_main_thread_with(
     state.apply_motor_control(motor, run_state, system_time_ticks);
 
     state.configured_loop_time_us()
-}
-
-#[cfg(any(test, target_arch = "arm"))]
-fn refloat_adc_or_zero(adc: Option<AdcVoltage>) -> AdcVoltage {
-    adc.unwrap_or(AdcVoltage::new(vescpkg_rs::Voltage::ZERO))
 }
 
 /// Run Refloat's source-backed auxiliary thread scheduler shell.
@@ -163,9 +158,7 @@ pub fn start_refloat_runtime_threads(start: &mut vescpkg_rs::PackageStart<'_>) -
     {
         return false;
     }
-    start
-        .spawn_thread_pair(refloat_runtime_thread_pair())
-        .is_ok()
+    start.spawn_threads(refloat_runtime_threads()).is_ok()
 }
 
 #[cfg(target_arch = "arm")]
@@ -182,13 +175,12 @@ impl vescpkg_rs::FirmwareThread for RefloatMainThread {
         {
             let firmware = ctx.firmware();
             run_refloat_main_thread_with(firmware.threads(), || {
-                let system_time_ticks = firmware.app_data().system_time_ticks();
+                let system_time_ticks = firmware.clock().now().ticks();
                 // C map: Refloat `footpad_sensor_update` reads ADC1/ADC2 at
                 // `third_party/refloat/src/footpad_sensor.c:28-31`; VESC
                 // defines those enum slots at `third_party/vesc/lispBM/c_libs/vesc_c_if.h:219-220`.
-                let (footpad_voltage1, footpad_voltage2) = firmware
-                    .gpio()
-                    .read_analog_pair(AnalogPin::ADC1, AnalogPin::ADC2);
+                let footpad_voltage1 = firmware.gpio().read_analog(AnalogPin::ADC1);
+                let footpad_voltage2 = firmware.gpio().read_analog(AnalogPin::ADC2);
                 ctx.with_state_mut(|state| {
                     tick_refloat_main_thread_with(
                         state,
@@ -306,8 +298,8 @@ mod tests {
                 telemetry.telemetry(),
                 imu,
                 bindings,
-                Some(AdcVoltage::new(Voltage::from_volts(2.5))),
-                Some(AdcVoltage::new(Voltage::from_volts(0.0))),
+                AdcVoltage::new(Voltage::from_volts(2.5)),
+                AdcVoltage::new(Voltage::from_volts(0.0)),
                 TimestampTicks::from_ticks(0),
             )
         });
@@ -320,14 +312,6 @@ mod tests {
         assert_eq!(
             state.all_data_payloads().base().footpad().state(),
             RefloatFootpadState::Left,
-        );
-    }
-
-    #[test]
-    fn missing_firmware_adc_becomes_zero_at_the_refloat_boundary() {
-        assert_eq!(
-            super::refloat_adc_or_zero(None),
-            AdcVoltage::new(Voltage::ZERO)
         );
     }
 

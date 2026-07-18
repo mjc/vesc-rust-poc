@@ -53,7 +53,7 @@ impl RefloatPackageState {
                 let payloads = self
                     .all_data_payloads
                     .with_base_battery_voltage(BatteryVoltage::new(
-                        telemetry.input_voltage_filtered().voltage(),
+                        telemetry.input_voltage().voltage(),
                     ))
                     .with_mode2_temperatures(RefloatRealtimeMotorTemperatures::new(
                         telemetry.mosfet_temperature(),
@@ -93,7 +93,7 @@ impl RefloatPackageState {
                 let payloads =
                     self.all_data_payloads
                         .with_base_battery_voltage(BatteryVoltage::new(
-                            telemetry.input_voltage_filtered().voltage(),
+                            telemetry.input_voltage().voltage(),
                         ));
                 let payloads = if mode.includes_mode2() {
                     Self::runtime_all_data_payloads(payloads, telemetry, mode.includes_mode3())
@@ -115,7 +115,7 @@ impl RefloatPackageState {
         // `third_party/refloat/src/main.c:1373-1379`; mode >= 3 appends ride
         // totals at `third_party/refloat/src/main.c:1381-1389`.
         let payloads = payloads
-            .with_mode2_distance_abs(telemetry.distance_abs())
+            .with_mode2_distance_abs(telemetry.trip_distance())
             .with_mode2_temperatures(RefloatRealtimeMotorTemperatures::new(
                 telemetry.mosfet_temperature(),
                 telemetry.motor_temperature(),

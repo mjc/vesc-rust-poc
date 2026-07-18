@@ -196,7 +196,16 @@ pub(super) fn imu_read_sample(
     angular_rate: ImuAngularRate,
     period: ImuSamplePeriod,
 ) -> ImuReadSample {
-    ImuReadSample::from_parts(acceleration, angular_rate, period)
+    ImuReadSample::from_parts(
+        acceleration,
+        angular_rate,
+        ImuMagneticField::from_axes(
+            ImuMagneticFieldX::new(MagneticFluxDensity::from_microteslas(0.0)),
+            ImuMagneticFieldY::new(MagneticFluxDensity::from_microteslas(0.0)),
+            ImuMagneticFieldZ::new(MagneticFluxDensity::from_microteslas(0.0)),
+        ),
+        period,
+    )
 }
 
 pub(super) fn imu_roll_rate(rate: AngularVelocity) -> ImuAngularRateRoll {

@@ -47,7 +47,7 @@ fn mode2_distance_refreshes_from_motor_telemetry() {
     let app_data = TimestampTicks::from_ticks(0);
 
     let bindings =
-        FirmwareTest::new().with_distance_abs(TripDistance::new(Distance::from_meters(12.5)));
+        FirmwareTest::new().with_trip_distance(TripDistance::new(Distance::from_meters(12.5)));
     let telemetry = bindings.telemetry();
     let mut state = RefloatPackageState::new(sample_all_data_payloads());
 
@@ -115,7 +115,7 @@ fn base_all_data_does_not_refresh_distance_or_temperatures() {
     let app_data = TimestampTicks::from_ticks(0);
 
     let bindings =
-        FirmwareTest::new().with_distance_abs(TripDistance::new(Distance::from_meters(12.5)));
+        FirmwareTest::new().with_trip_distance(TripDistance::new(Distance::from_meters(12.5)));
     let telemetry = bindings.telemetry();
     let mut state = RefloatPackageState::new(sample_all_data_payloads());
 
@@ -136,8 +136,8 @@ fn base_all_data_does_not_refresh_distance_or_temperatures() {
 fn base_battery_voltage_refreshes_from_motor_telemetry() {
     let app_data = TimestampTicks::from_ticks(0);
 
-    let bindings = FirmwareTest::new()
-        .with_input_voltage_filtered(InputVoltage::new(Voltage::from_volts(84.2)));
+    let bindings =
+        FirmwareTest::new().with_input_voltage(InputVoltage::new(Voltage::from_volts(84.2)));
     let telemetry = bindings.telemetry();
     let mut state = RefloatPackageState::new(sample_all_data_payloads());
 

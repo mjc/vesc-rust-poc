@@ -54,12 +54,15 @@ impl vescpkg_rs::StatefulLbmExtension for ExtSetFwVersion {
 
     fn call(state: &mut Self::State, args: LispArgs<'_>) -> LispValue {
         if args.len() > 2
-            && let (Some(major), Some(minor), Some(beta)) =
-                (args.integer(0), args.integer(1), args.integer(2))
+            && let (Some(major), Some(minor), Some(beta)) = (
+                args.get(0).and_then(LispValue::as_i32),
+                args.get(1).and_then(LispValue::as_i32),
+                args.get(2).and_then(LispValue::as_i32),
+            )
         {
             record_refloat_firmware_version(state, &[major, minor, beta]);
         }
-        args.true_value()
+        LispValue::true_value()
     }
 }
 
@@ -93,7 +96,9 @@ pub fn register_refloat_loader_extensions(
     // C map: Refloat registers loader extensions from the loaded package image at
     // `third_party/refloat/src/main.c:2458-2459`; VESC stores that image base in loader
     // metadata before calling init at `third_party/vesc/lispBM/lispif_c_lib.c:1087-1100`.
-    start.register_extensions(package_extension_descriptors())
+    start
+        .register_extensions(package_extension_descriptors())
+        .map(|_| ())
 }
 
 #[cfg(test)]
@@ -104,8 +109,7 @@ mod tests {
     };
     use crate::package::RefloatPackageState;
     use crate::package::test_support::{lock_refloat_runtime_state, sample_all_data_payloads};
-    use vescpkg_rs::LoaderInfo;
-    use vescpkg_rs::test_support::TestExtensionRegistry;
+    use vescpkg_rs::test_support::{LoaderInfo, TestExtensionRegistry};
 
     #[test]
     fn extension_table_lists_official_refloat_loader_extensions() {
@@ -145,7 +149,12 @@ mod tests {
         );
 
         for (descriptor, name) in package_extension_descriptors().into_iter().zip(names) {
-            assert_eq!(registry.register(&mut start, [descriptor]), Ok(()));
+            assert_eq!(
+                registry
+                    .register(&mut start, [descriptor])
+                    .map(|registration| (registration.registered(), registration.is_complete())),
+                Ok((1, true))
+            );
             assert_eq!(registry.last_registered_name(), Some(name.as_str()));
         }
 
