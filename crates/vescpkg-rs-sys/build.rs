@@ -199,3 +199,39 @@ fn submodule_commit(workspace: &Path) -> Option<String> {
         .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
         .filter(|commit| !commit.is_empty())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::parse_vesc_if_fields;
+
+    #[test]
+    fn fixed_size_arrays_contribute_each_vesc32_slot() {
+        let source = r#"
+typedef struct {
+    void (*before)(void);
+    void *reserved[3];
+    void (*after)(void);
+} vesc_c_if;
+"#;
+
+        let fields = parse_vesc_if_fields(source).expect("valid VESC_IF fixture");
+
+        assert_eq!(fields.len(), 5);
+        assert_eq!(fields.last().map(|field| field.index), Some(4));
+    }
+
+    #[test]
+    fn unsupported_declarations_fail_instead_of_shifting_offsets() {
+        let source = r#"
+typedef struct {
+    void (*before)(void);
+    unsigned flags : 1;
+    void (*after)(void);
+} vesc_c_if;
+"#;
+
+        let error = parse_vesc_if_fields(source).expect_err("bitfields are not ABI slots");
+
+        assert!(error.contains("unsigned flags : 1;"));
+    }
+}
