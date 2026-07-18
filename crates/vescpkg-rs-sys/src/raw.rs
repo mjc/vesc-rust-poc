@@ -1379,6 +1379,8 @@ pub fn vesc_if_offsets_for_tests() -> [usize; VescIfAbi::USED_SLOT_COUNT] {
     vesc_if_used_slots!(offsets)
 }
 #[cfg(test)]
+mod abi_audit;
+#[cfg(test)]
 mod dispatch_tests;
 
 /// Returns `VescIf` size, alignment, and final-slot offset for ABI layout tests.
