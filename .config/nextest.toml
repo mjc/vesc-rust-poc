@@ -1,6 +1,6 @@
 [store]
 dir = "target/nextest"
 
-# Hardware-in-the-loop only (`#[ignore]` by default; run with `--profile hil -- --run-ignored`).
+# Hardware-in-the-loop only (`hil` feature + `#[ignore]`; run with `--profile hil -- --run-ignored`).
 [profile.hil]
 default-filter = 'test(hil_loopback_sketch)'

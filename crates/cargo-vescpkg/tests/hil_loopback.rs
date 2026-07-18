@@ -1,7 +1,9 @@
 //! Hardware-in-the-loop sketch. Requires `VESC_DEVICE` and `VESC_BLE_ADDR`.
 //!
 //! Run explicitly with:
-//! `cargo nextest run -p cargo-vescpkg --profile hil -- --ignored`
+//! `cargo nextest run -p cargo-vescpkg --features hil --profile hil -- --ignored`
+
+#![cfg(feature = "hil")]
 
 #[test]
 #[ignore = "requires VESC hardware; run via nextest hil profile"]
