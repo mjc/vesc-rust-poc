@@ -34,7 +34,7 @@ CARGO_TARGET_DIR="$PWD/target/custom" \
 - `make check` runs formatting, strict host checks, target checks,
   and workspace tests.
 - `make check-full` also builds the package ELF and `.vescpkg`.
-- `cargo nextest run -p cargo-vescpkg --profile hil -- --ignored` is the
+- `cargo nextest run -p cargo-vescpkg --features hil --profile hil -- --ignored` is the
   hardware lane and requires an attached VESC plus its device selection.
 
 The generated package is decoded by the same package reader used by the install

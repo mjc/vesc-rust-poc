@@ -31,7 +31,7 @@ mod bindings;
 mod extension;
 mod firmware;
 mod lifecycle_core;
-/// Float math entrypoints backed by the VESC C math library on package builds.
+/// Float math entrypoints backed by Rust `libm` on package and host builds.
 #[cfg(feature = "math")]
 mod math;
 #[cfg(feature = "math")]
