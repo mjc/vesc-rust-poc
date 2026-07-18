@@ -46,8 +46,10 @@ fn libclang_agrees_with_generated_vesc_if_inventory() {
         .into_iter()
         .filter(|entity| entity.get_kind() == EntityKind::FieldDecl)
         .collect();
+    let rust_offsets = crate::c_vesc_if::rust_field_offsets!(VescIf);
 
     assert_eq!(fields.len(), crate::c_vesc_if::SLOTS.len());
+    assert_eq!(rust_offsets.len(), fields.len());
     assert_eq!(
         core::mem::size_of::<VescIf>() / core::mem::size_of::<usize>(),
         fields.len(),
@@ -66,6 +68,11 @@ fn libclang_agrees_with_generated_vesc_if_inventory() {
         assert_eq!(
             byte_offset, slot.vesc32_byte_offset,
             "VESC32 offset drifted for {name}"
+        );
+        assert_eq!(
+            (rust_offsets[slot.index] / core::mem::size_of::<usize>()) * 4,
+            byte_offset,
+            "Rust VescIf offset drifted for {name}"
         );
         assert_eq!(ty.get_sizeof().expect("sized vesc_c_if field"), 4, "{name}");
         assert_eq!(

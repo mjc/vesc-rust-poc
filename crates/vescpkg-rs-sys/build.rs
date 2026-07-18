@@ -78,6 +78,24 @@ fn generated_rust(workspace: &Path, slots: &[SlotDeclaration]) -> String {
     }
     rust.push_str("];\n\n");
 
+    rust.push_str("#[cfg(test)]\n");
+    rust.push_str("macro_rules! rust_field_offsets {\n");
+    rust.push_str("    ($table:path) => {\n");
+    rust.push_str("        [\n");
+    for slot in slots {
+        writeln!(
+            rust,
+            "            core::mem::offset_of!($table, {}),",
+            slot.rust_name
+        )
+        .expect("write generated Rust");
+    }
+    rust.push_str("        ]\n");
+    rust.push_str("    };\n");
+    rust.push_str("}\n");
+    rust.push_str("#[cfg(test)]\n");
+    rust.push_str("pub(crate) use rust_field_offsets;\n\n");
+
     for slot in slots {
         writeln!(rust, "pub(crate) mod {} {{", slot.rust_name).expect("write generated Rust");
         writeln!(

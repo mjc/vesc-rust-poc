@@ -57,8 +57,9 @@ Production ARM builds keep inline `asm!` dispatch; host/test builds use `Option<
 
 `raw::abi_audit` asks libclang to lay out the pinned `vesc_c_if` for
 `arm-none-eabi`, then compares every field's name, declaration shape, size,
-and byte offset with the generated slot inventory. This deliberately does not
-reuse the build script's C declaration parser.
+and byte offset with both the generated slot inventory and the hand-written
+Rust `VescIf` table. This deliberately does not reuse the build script's C
+declaration parser.
 
 Libclang is a test-only dependency. Normal `vescpkg-rs-sys` builds remain
 dependency-free; the Nix development shell supplies libclang and sets
