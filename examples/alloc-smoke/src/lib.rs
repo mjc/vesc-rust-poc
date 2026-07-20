@@ -35,6 +35,7 @@ const ALLOC_SMOKE_CANDIDATES: usize = 5;
 #[cfg(all(not(test), target_arch = "arm"))]
 struct AllocSmokeAppData;
 
+#[cfg_attr(not(any(test, target_arch = "arm")), allow(dead_code))]
 struct AllocSmokeState;
 
 vescpkg_rs::package_start!(crate::start, AllocSmokeState);

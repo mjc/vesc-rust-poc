@@ -17,6 +17,7 @@ pub mod extensions;
 
 pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
 
+#[cfg_attr(not(any(test, target_arch = "arm")), allow(dead_code))]
 pub(crate) struct LoopbackState;
 
 vescpkg_rs::package_start!(crate::start, LoopbackState);

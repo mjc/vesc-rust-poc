@@ -590,7 +590,6 @@ impl FakeAppDataBindings {
             0,
             FakeAppDataResults {
                 set_handler: FirmwareCallResult::from_bool(set_handler_result),
-                ..FakeAppDataResults::ACCEPT_ALL
             },
         )
     }

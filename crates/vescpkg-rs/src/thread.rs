@@ -443,7 +443,6 @@ impl ThreadWorkingAreaSize {
     const WORKING_AREA_ALIGNMENT_BYTES: usize = 8;
 
     /// Build a working-area size from its firmware byte count.
-    #[must_use]
     pub const fn try_from_bytes(bytes: usize) -> Result<Self, ThreadWorkingAreaSizeError> {
         if bytes < Self::MIN_BYTES {
             return Err(ThreadWorkingAreaSizeError::TooSmall);

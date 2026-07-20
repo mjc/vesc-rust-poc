@@ -127,6 +127,7 @@ pub unsafe trait PackageAppDataCallback: AppDataHandler + Sized {
 /// `data` must be null with `len == 0` or point to `len` readable bytes that stay valid for this
 /// call.
 #[cfg(any(test, not(feature = "test-support")))]
+#[cfg_attr(test, allow(dead_code))]
 pub unsafe extern "C" fn app_data_handler<T: PackageAppDataCallback>(data: *mut u8, len: u32) {
     let Some(packet) = (unsafe { app_data_packet(data, len) }) else {
         return;
