@@ -1,6 +1,5 @@
-use crate::RegisterError;
 use crate::bindings::LbmBindings;
-use crate::extension::ExtensionDescriptor;
+use crate::extension::{ExtensionDescriptor, ExtensionRegistrationError};
 use crate::lifecycle_core::{LbmApi, PackageLifecycle};
 use crate::test_support::{FakeBindings, stubs};
 use crate::thread::ThreadApi;
@@ -62,7 +61,7 @@ fn register_extension_reports_outcome(
     let result = lifecycle.register_extension(descriptor);
 
     match mode {
-        "reject" => assert_eq!(result, Err(RegisterError::FirmwareRejected)),
+        "reject" => assert_eq!(result, Err(ExtensionRegistrationError::FirmwareRejected)),
         "accept" => assert_eq!(result, Ok(())),
         other => panic!("unexpected mode: {other}"),
     }
@@ -105,7 +104,7 @@ fn register_extension_from_image_reports_outcome(
 
     match mode {
         "accept" => assert_eq!(result, Ok(())),
-        "reject" => assert_eq!(result, Err(RegisterError::FirmwareRejected)),
+        "reject" => assert_eq!(result, Err(ExtensionRegistrationError::FirmwareRejected)),
         other => panic!("unexpected mode: {other}"),
     }
     if check_registered_pointers {

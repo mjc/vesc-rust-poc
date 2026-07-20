@@ -116,15 +116,9 @@ impl TryFrom<i32> for LispValue {
 
 /// Errors returned when extension registration fails.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RegisterError {
+pub(crate) enum ExtensionRegistrationError {
     /// Firmware rejected the registration request.
     FirmwareRejected,
-    /// The package loader metadata was unavailable.
-    LoaderUnavailable,
-    /// The package image did not install the stop hook that retains its loader slot.
-    PackageNotRetained,
-    /// A stateful extension named a different runtime state type.
-    StateTypeMismatch,
 }
 
 /// Result of registering a package's LispBM extension table.

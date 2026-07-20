@@ -95,6 +95,7 @@ fn install_stop_hook(info: *mut ffi::LibInfo) -> Result<(), PackageStartError> {
 
 /// Failure while preparing package startup against firmware loader metadata.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum PackageStartError {
     /// The firmware did not provide loader metadata for this package.
     LoaderUnavailable,
@@ -108,7 +109,36 @@ pub enum PackageStartError {
     ThreadSpawnFailed,
     /// Package startup already installed its firmware thread group.
     ThreadsAlreadyInstalled,
+    /// Firmware rejected the package app-data handler.
+    AppDataHandlerRejected,
+    /// Serialized custom config cannot fit in the firmware packet buffer.
+    CustomConfigTooLarge,
+    /// Extension registration requires a retained package image.
+    PackageNotRetained,
+    /// Firmware rejected at least one required LispBM extension.
+    ExtensionRegistrationIncomplete,
 }
+
+impl core::fmt::Display for PackageStartError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::LoaderUnavailable => "package loader metadata is unavailable",
+            Self::AllocationFailed => "firmware could not allocate package state",
+            Self::StateAlreadyInstalled => "package state is already installed",
+            Self::StateTypeMismatch => "package operation uses the wrong state type",
+            Self::ThreadSpawnFailed => "firmware could not spawn a package thread",
+            Self::ThreadsAlreadyInstalled => "package threads are already installed",
+            Self::AppDataHandlerRejected => "firmware rejected the app-data handler",
+            Self::CustomConfigTooLarge => "custom config exceeds the firmware packet limit",
+            Self::PackageNotRetained => "package image is not retained",
+            Self::ExtensionRegistrationIncomplete => {
+                "firmware rejected a required LispBM extension"
+            }
+        })
+    }
+}
+
+impl core::error::Error for PackageStartError {}
 
 /// Safe startup context for package authors.
 ///
@@ -142,7 +172,7 @@ impl LoadedAppDataCallback {
     /// callback at `third_party/vesc/comm/commands.c:1820-1828`.
     #[cfg(not(test))]
     #[inline(always)]
-    pub fn register(self) -> Result<(), crate::AppDataHandlerRegistrationError> {
+    pub fn register(self) -> Result<(), PackageStartError> {
         self.register_with_bindings(&crate::bindings::RealBindings)
     }
 
@@ -150,7 +180,7 @@ impl LoadedAppDataCallback {
     fn register_with_bindings<B: crate::bindings::AppDataBindings>(
         self,
         bindings: &B,
-    ) -> Result<(), crate::AppDataHandlerRegistrationError> {
+    ) -> Result<(), PackageStartError> {
         let registered = unsafe { bindings.set_app_data_handler(self.handler) };
         if registered && self.recorder.record_app_data() {
             return Ok(());
@@ -158,7 +188,7 @@ impl LoadedAppDataCallback {
         if registered {
             let _ = unsafe { bindings.clear_app_data_handler() };
         }
-        Err(crate::AppDataHandlerRegistrationError::FirmwareRejected)
+        Err(PackageStartError::AppDataHandlerRejected)
     }
 }
 
@@ -387,20 +417,23 @@ impl<'info> PackageStart<'info> {
     pub(crate) fn register_stateful_custom_config_with_bindings<B, T, const LEN: usize>(
         &mut self,
         bindings: &B,
-    ) -> bool
+    ) -> Result<(), PackageStartError>
     where
         B: crate::bindings::CustomConfigBindings,
         T: crate::__macro_support::PackageCustomConfigCallback<LEN>,
     {
-        let Some(image) = self.native_image().filter(|_| LEN <= MAX_CUSTOM_CONFIG_LEN) else {
-            return false;
-        };
-        if !self.state_type_matches::<T::State>() {
-            return false;
+        if LEN > MAX_CUSTOM_CONFIG_LEN {
+            return Err(PackageStartError::CustomConfigTooLarge);
         }
-        let Some(recorder) = self.callback_recorder else {
-            return false;
-        };
+        let image = self
+            .native_image()
+            .ok_or(PackageStartError::LoaderUnavailable)?;
+        if !self.state_type_matches::<T::State>() {
+            return Err(PackageStartError::StateTypeMismatch);
+        }
+        let recorder = self
+            .callback_recorder
+            .ok_or(PackageStartError::StateTypeMismatch)?;
         let (get, set, xml) = T::image_addresses();
         let callbacks = unsafe {
             (
@@ -411,10 +444,10 @@ impl<'info> PackageStart<'info> {
         };
         bindings.register_custom_config_callbacks(callbacks.0, callbacks.1, callbacks.2);
         if recorder.record_custom_config() {
-            true
+            Ok(())
         } else {
             unsafe { bindings.clear_custom_configs() };
-            false
+            Err(PackageStartError::StateTypeMismatch)
         }
     }
 
@@ -499,9 +532,7 @@ impl<'info> PackageStart<'info> {
     /// callback at `third_party/vesc/comm/commands.c:1820-1828`.
     #[cfg(not(test))]
     #[inline(always)]
-    pub fn register_callbacks<C, A, const LEN: usize>(
-        &mut self,
-    ) -> Result<(), crate::AppDataHandlerRegistrationError>
+    pub fn register_callbacks<C, A, const LEN: usize>(&mut self) -> Result<(), PackageStartError>
     where
         C: crate::__macro_support::PackageCustomConfigCallback<LEN>,
         A: crate::__macro_support::PackageAppDataCallback,
@@ -513,7 +544,7 @@ impl<'info> PackageStart<'info> {
     fn register_callbacks_with_bindings<C, A, const LEN: usize, B>(
         &mut self,
         bindings: &B,
-    ) -> Result<(), crate::AppDataHandlerRegistrationError>
+    ) -> Result<(), PackageStartError>
     where
         C: crate::__macro_support::PackageCustomConfigCallback<LEN>,
         A: crate::__macro_support::PackageAppDataCallback,
@@ -521,10 +552,8 @@ impl<'info> PackageStart<'info> {
     {
         let callback = self
             .app_data_callback::<A>()
-            .ok_or(crate::AppDataHandlerRegistrationError::FirmwareRejected)?;
-        if !self.register_stateful_custom_config_with_bindings::<B, C, LEN>(bindings) {
-            return Err(crate::AppDataHandlerRegistrationError::FirmwareRejected);
-        }
+            .ok_or(PackageStartError::StateTypeMismatch)?;
+        self.register_stateful_custom_config_with_bindings::<B, C, LEN>(bindings)?;
         if let Err(error) = callback.register_with_bindings(bindings) {
             unsafe { bindings.clear_custom_configs() };
             if let Some(recorder) = self.callback_recorder {
@@ -541,7 +570,7 @@ impl<'info> PackageStart<'info> {
         &mut self,
         lifecycle: &crate::lifecycle_core::PackageLifecycle<B>,
         descriptors: [crate::ExtensionDescriptor; N],
-    ) -> Result<crate::ExtensionRegistration, crate::RegisterError>
+    ) -> Result<crate::ExtensionRegistration, PackageStartError>
     where
         B: crate::bindings::LbmBindings,
     {
@@ -550,13 +579,13 @@ impl<'info> PackageStart<'info> {
                 .state_type()
                 .is_some_and(|state_type| self.state_type != Some(state_type))
         }) {
-            return Err(crate::RegisterError::StateTypeMismatch);
+            return Err(PackageStartError::StateTypeMismatch);
         }
         let info = self
             .raw_info_mut()
-            .ok_or(crate::RegisterError::LoaderUnavailable)?;
+            .ok_or(PackageStartError::LoaderUnavailable)?;
         if info.stop_fun.is_none() {
-            return Err(crate::RegisterError::PackageNotRetained);
+            return Err(PackageStartError::PackageNotRetained);
         }
         // SAFETY: `info` is the loader metadata just installed for this package
         // image, so extension descriptor pointers are resolved against the image
@@ -574,7 +603,7 @@ impl<'info> PackageStart<'info> {
         &mut self,
         lifecycle: &crate::lifecycle_core::PackageLifecycle<B>,
         descriptors: [crate::ExtensionDescriptor; N],
-    ) -> Result<crate::ExtensionRegistration, crate::RegisterError>
+    ) -> Result<crate::ExtensionRegistration, PackageStartError>
     where
         B: crate::bindings::LbmBindings,
     {
@@ -590,7 +619,7 @@ impl<'info> PackageStart<'info> {
     pub fn register_extensions<const N: usize>(
         &mut self,
         descriptors: [crate::ExtensionDescriptor; N],
-    ) -> Result<crate::ExtensionRegistration, crate::RegisterError> {
+    ) -> Result<crate::ExtensionRegistration, PackageStartError> {
         let lifecycle = crate::lifecycle_core::PackageLifecycle::new(crate::bindings::RealBindings);
         self.register_extensions_with_lifecycle(&lifecycle, descriptors)
     }
@@ -643,7 +672,7 @@ macro_rules! package_start {
         #[unsafe(no_mangle)]
         extern "C" fn package_lib_init(info: *mut $crate::__macro_support::LoaderInfo) -> bool {
             let mut start = unsafe { $crate::__macro_support::__package_start_from_raw(info) };
-            let started = $start(&mut start);
+            let started = $start(&mut start).is_ok();
             start.finish_start(started)
         }
 
@@ -765,8 +794,8 @@ mod tests {
     struct WrongImuState;
 
     mod failing_entrypoint {
-        fn start(_: &mut crate::PackageStart<'_>) -> bool {
-            false
+        fn start(_: &mut crate::PackageStart<'_>) -> Result<(), crate::PackageStartError> {
+            Err(crate::PackageStartError::LoaderUnavailable)
         }
 
         crate::package_start!(start);
@@ -1225,7 +1254,7 @@ mod tests {
 
         assert_eq!(
             start.register_callbacks_with_bindings::<Config, Callback, 1, _>(&bindings),
-            Err(crate::AppDataHandlerRegistrationError::FirmwareRejected)
+            Err(PackageStartError::AppDataHandlerRejected)
         );
         assert_eq!(bindings.custom_config_register_calls.get(), 1);
         assert_eq!(bindings.handler_calls.get(), 1);
@@ -1295,7 +1324,10 @@ mod tests {
         };
         let mut start = super::PackageStart::from_lib_info(&mut info);
 
-        assert!(!start.register_stateful_custom_config_with_bindings::<_, Config, 511>(&bindings));
+        assert_eq!(
+            start.register_stateful_custom_config_with_bindings::<_, Config, 511>(&bindings),
+            Err(PackageStartError::CustomConfigTooLarge)
+        );
         assert_eq!(bindings.custom_config_register_calls.get(), 0);
     }
 
@@ -1482,7 +1514,7 @@ mod tests {
 
         assert_eq!(
             start.register_extensions_with(&lifecycle, [descriptor]),
-            Err(crate::RegisterError::PackageNotRetained)
+            Err(PackageStartError::PackageNotRetained)
         );
         assert_eq!(bindings.add_calls.get(), 0);
     }
@@ -1525,7 +1557,7 @@ mod tests {
 
         assert_eq!(
             start.register_extensions_with(&lifecycle, [descriptor]),
-            Err(crate::RegisterError::StateTypeMismatch)
+            Err(PackageStartError::StateTypeMismatch)
         );
         assert_eq!(bindings.add_calls.get(), 0);
 

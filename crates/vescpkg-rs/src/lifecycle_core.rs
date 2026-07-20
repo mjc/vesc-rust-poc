@@ -2,7 +2,7 @@
 
 use crate::bindings::LbmBindings;
 #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
-use crate::extension::{ExtensionDescriptor, ExtensionRegistration, RegisterError};
+use crate::extension::{ExtensionDescriptor, ExtensionRegistration, ExtensionRegistrationError};
 use vescpkg_rs_sys::LbmValue;
 #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 use vescpkg_rs_sys::{ExtensionHandler, NativeImage};
@@ -24,13 +24,13 @@ impl<B: LbmBindings> LbmApi<B> {
         &self,
         name: crate::ExtensionName,
         handler: ExtensionHandler,
-    ) -> Result<(), RegisterError> {
+    ) -> Result<(), ExtensionRegistrationError> {
         unsafe {
             self.bindings
                 .add_extension(name.as_cstr().as_ptr(), handler)
         }
         .then_some(())
-        .ok_or(RegisterError::FirmwareRejected)
+        .ok_or(ExtensionRegistrationError::FirmwareRejected)
     }
 
     /// Decode a LispBM numeric value into an `i32`.
@@ -74,7 +74,10 @@ impl<B: LbmBindings> PackageLifecycle<B> {
 
     /// Register a validated extension descriptor with firmware.
     #[cfg(test)]
-    pub fn register_extension(&self, descriptor: ExtensionDescriptor) -> Result<(), RegisterError> {
+    pub fn register_extension(
+        &self,
+        descriptor: ExtensionDescriptor,
+    ) -> Result<(), ExtensionRegistrationError> {
         self.api
             .register_extension(descriptor.name(), descriptor.handler())
     }
@@ -95,7 +98,7 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         &self,
         image: NativeImage,
         descriptor: ExtensionDescriptor,
-    ) -> Result<(), RegisterError> {
+    ) -> Result<(), ExtensionRegistrationError> {
         let name = descriptor.name().as_cstr().as_ptr();
         let handler_address = descriptor.handler() as usize;
         let handler = unsafe {
@@ -104,7 +107,7 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         if unsafe { self.api.bindings.add_extension(name, handler) } {
             Ok(())
         } else {
-            Err(RegisterError::FirmwareRejected)
+            Err(ExtensionRegistrationError::FirmwareRejected)
         }
     }
 
@@ -132,24 +135,20 @@ impl<B: LbmBindings> PackageLifecycle<B> {
     }
 }
 
-/// Error returned when app-data handler registration fails.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AppDataHandlerRegistrationError {
-    /// Firmware rejected the handler update.
-    FirmwareRejected,
-}
-
 /// Failure returned when an app-data payload cannot cross the firmware ABI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum AppDataSendError {
     /// The payload exceeds the firmware's 511-byte app-data limit.
     PayloadTooLarge,
 }
 
-impl core::fmt::Display for AppDataHandlerRegistrationError {
+impl core::fmt::Display for AppDataSendError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::FirmwareRejected => f.write_str("firmware rejected app-data handler update"),
+            Self::PayloadTooLarge => f.write_str("app-data payload exceeds 511 bytes"),
         }
     }
 }
+
+impl core::error::Error for AppDataSendError {}

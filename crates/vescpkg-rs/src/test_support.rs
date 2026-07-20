@@ -401,7 +401,7 @@ impl TestExtensionRegistry {
         &self,
         start: &mut crate::PackageStart<'_>,
         descriptors: [crate::ExtensionDescriptor; N],
-    ) -> Result<crate::ExtensionRegistration, crate::RegisterError> {
+    ) -> Result<crate::ExtensionRegistration, crate::PackageStartError> {
         let lifecycle = PackageLifecycle::new(&self.bindings);
         start.register_extensions_with(&lifecycle, descriptors)
     }

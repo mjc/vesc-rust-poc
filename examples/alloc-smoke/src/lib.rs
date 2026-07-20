@@ -72,20 +72,16 @@ vescpkg_rs::firmware_stateful_app_data_callback!(alloc_smoke_app_data_callback, 
 
 /// Initialize the alloc smoke package.
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
-fn start(start: &mut PackageStart) -> bool {
-    if start.install_runtime_state(AllocSmokeState).is_err() {
-        return false;
-    }
+fn start(start: &mut PackageStart) -> Result<(), vescpkg_rs::PackageStartError> {
+    start.install_runtime_state(AllocSmokeState)?;
     #[cfg(all(not(test), target_arch = "arm"))]
     {
-        let Some(callback) = start.app_data_callback::<AllocSmokeAppData>() else {
-            return false;
-        };
-        if callback.register().is_err() {
-            return false;
-        }
+        start
+            .app_data_callback::<AllocSmokeAppData>()
+            .ok_or(vescpkg_rs::PackageStartError::StateTypeMismatch)?
+            .register()?;
     }
-    true
+    Ok(())
 }
 
 #[cfg(any(test, all(not(test), target_arch = "arm")))]

@@ -89,7 +89,7 @@ pub use vescpkg_rs_units::{
 
 #[cfg(feature = "alloc")]
 pub use alloc::VescAllocator;
-pub use extension::{ExtensionDescriptor, ExtensionName, ExtensionRegistration, RegisterError};
+pub use extension::{ExtensionDescriptor, ExtensionName, ExtensionRegistration};
 pub use extension::{LbmExtension, LispArgs, LispIntegerError, LispValue, StatefulLbmExtension};
 
 // Exported macros need public implementation hooks after downstream expansion.
@@ -106,7 +106,7 @@ pub use firmware::{
 pub(crate) use firmware::{firmware_array, loader_info_mut};
 pub use imu::{Imu, ImuReadHandler};
 pub use init::{PackageStart, PackageStartError};
-pub use lifecycle_core::{AppDataHandlerRegistrationError, AppDataSendError};
+pub use lifecycle_core::AppDataSendError;
 pub use motor::{MotorOutput, MotorTelemetry};
 pub use runtime::{PackageRuntimeState, PackageStateAccess, PackageStateStore};
 pub use thread::{
@@ -141,14 +141,14 @@ pub mod prelude {
         SystemInstant, SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
     };
     pub use crate::{
-        AnalogPin, AppDataCallback, AppDataHandlerRegistrationError, AppDataSendError, ConfigBytes,
-        ConfigXml, ExtensionDescriptor, ExtensionName, ExtensionRegistration, Firmware,
-        FirmwareAppData, FirmwareClock, FirmwareThread, FirmwareThreads, Gpio, Imu, ImuReadHandler,
-        LbmExtension, LispArgs, LispIntegerError, LispValue, MotorOutput, MotorTelemetry,
-        PackageRuntimeState, PackageStart, PackageStartError, PackageStateAccess,
-        PackageStateStore, RegisterError, StatefulAppDataCallback, StatefulCustomConfigCallback,
-        StatefulLbmExtension, StatelessFirmwareThread, StatelessThreadContext, ThreadContext,
-        ThreadError, ThreadName, ThreadSpec, ThreadStackSize,
+        AnalogPin, AppDataCallback, AppDataSendError, ConfigBytes, ConfigXml, ExtensionDescriptor,
+        ExtensionName, ExtensionRegistration, Firmware, FirmwareAppData, FirmwareClock,
+        FirmwareThread, FirmwareThreads, Gpio, Imu, ImuReadHandler, LbmExtension, LispArgs,
+        LispIntegerError, LispValue, MotorOutput, MotorTelemetry, PackageRuntimeState,
+        PackageStart, PackageStartError, PackageStateAccess, PackageStateStore,
+        StatefulAppDataCallback, StatefulCustomConfigCallback, StatefulLbmExtension,
+        StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadName,
+        ThreadSpec, ThreadStackSize,
     };
 }
 
