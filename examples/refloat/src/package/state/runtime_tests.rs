@@ -20,7 +20,7 @@ use std::vec::Vec;
 fn startup_ready_gate_refreshes_imu_attitude_like_refloat() {
     let app_data = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     telemetry.set_imu_attitude(
         ImuRoll::new(AngleRadians::from_radians(0.25)),
         ImuPitch::new(AngleRadians::from_radians(-0.125)),
@@ -71,7 +71,7 @@ fn startup_balance_filter_uses_firmware_orientation_like_refloat_data_init() {
 fn startup_ready_gate_does_not_engage_active_footpads_until_next_loop() {
     let app_data = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     let imu = telemetry.imu();
     let mut state = RefloatPackageState::new(sample_all_data_payloads_with_ride_state(
         RefloatRunState::Startup,
@@ -107,7 +107,7 @@ fn startup_ready_gate_does_not_engage_active_footpads_until_next_loop() {
 fn startup_ready_resets_runtime_vars_like_refloat() {
     let app_data = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     telemetry.set_imu_attitude(
         ImuRoll::new(AngleRadians::from_radians(0.0)),
         ImuPitch::new(AngleRadians::from_radians(0.25)),
@@ -160,7 +160,7 @@ fn startup_ready_resets_runtime_vars_like_refloat() {
 fn disabled_config_applies_before_startup_ready_like_refloat() {
     let app_data = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     let imu = telemetry.imu();
     let mut incoming = default_refloat_config_bytes();
     incoming.edit_refloat_config(|config| {
@@ -200,7 +200,7 @@ fn disabled_config_applies_before_startup_ready_like_refloat() {
 fn ready_engage_resets_runtime_vars_like_refloat() {
     let app_data = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     telemetry.set_imu_attitude(
         ImuRoll::new(AngleRadians::from_radians(0.0)),
         ImuPitch::new(AngleRadians::from_radians(0.0)),
@@ -265,7 +265,7 @@ fn ready_engage_resets_runtime_vars_like_refloat() {
 fn ready_normal_charging_does_not_engage_like_refloat_can_engage() {
     let app_data = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     let imu = telemetry.imu();
     let payloads =
         sample_all_data_payloads_with_ride_state(RefloatRunState::Ready, RefloatMode::Normal);
@@ -406,7 +406,7 @@ fn running_runtime_fixture() -> (TimestampTicks, FirmwareTest, RefloatPackageSta
     // same way Refloat refreshes it before balance-current and motor-control math.
     let now = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     let payloads =
         sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Normal);
     let base = payloads.base();

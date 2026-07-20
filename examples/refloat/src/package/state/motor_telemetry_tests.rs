@@ -196,7 +196,7 @@ fn darkride_traction_loss_refreshes_like_refloat_loop() {
         InputCurrent::new(Current::from_amps(0.0)),
         DutyCycle::new(SignedRatio::from_ratio_const(0.5)),
     );
-    firmware.set_imu_startup_done(true);
+    firmware.set_imu_ready(true);
     firmware.set_imu_attitude(
         ImuRoll::new(AngleRadians::from_radians(0.0)),
         ImuPitch::new(AngleRadians::from_radians(0.0)),

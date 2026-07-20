@@ -290,7 +290,7 @@ mod tests {
     fn app_data_handtest_running_recenters_start_setpoint_like_refloat_loop() {
         let lifecycle = TimestampTicks::from_ticks(0);
         let telemetry = FirmwareTest::new();
-        telemetry.set_imu_startup_done(true);
+        telemetry.set_imu_ready(true);
         let imu = telemetry.imu();
         let payloads = sample_all_data_payloads_with_ride_state(
             RefloatRunState::Running,

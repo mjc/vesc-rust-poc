@@ -40,7 +40,7 @@ fn ready_darkride_payloads() -> RefloatAllDataPayloads {
 fn configure_ready_darkride_imu(firmware: &FirmwareTest) {
     // C map: Refloat's darkride READY gate wants a near-upside-down roll
     // sample while pitch and yaw stay neutral.
-    firmware.set_imu_startup_done(true);
+    firmware.set_imu_ready(true);
     firmware.set_imu_attitude(
         ImuRoll::new(AngleRadians::from_degrees(170.0)),
         ImuPitch::new(AngleRadians::ZERO),

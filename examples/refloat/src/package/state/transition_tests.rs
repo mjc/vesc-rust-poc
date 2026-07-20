@@ -68,7 +68,7 @@ fn app_data_running_flywheel_both_footpads_stops_like_refloat_fault_check() {
     // `state_stop` at `third_party/refloat/src/state.c:29-33`.
     let lifecycle = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     let imu = telemetry.imu();
     let mut state = RefloatPackageState::new(sample_all_data_payloads_with_ride_state(
         RefloatRunState::Running,
@@ -100,7 +100,7 @@ fn app_data_running_flywheel_stop_clears_wheelslip_like_refloat_state_stop() {
     // clears wheelslip at `third_party/refloat/src/state.c:29-33`.
     let lifecycle = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     let imu = telemetry.imu();
     let payloads =
         sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Flywheel);
@@ -147,7 +147,7 @@ fn app_data_running_darkride_footpads_stop_like_refloat_fault_check() {
     // `state_stop` at `third_party/refloat/src/state.c:29-33`.
     let lifecycle = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     let imu = telemetry.imu();
     let mut state = RefloatPackageState::new(darkride_payloads(RefloatMode::Normal));
 
@@ -182,7 +182,7 @@ fn app_data_running_darkride_timed_low_erpm_stops_like_refloat_fault_check() {
         InputCurrent::new(Current::from_amps(0.0)),
         DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
     );
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     let imu = telemetry.imu();
     let mut state = RefloatPackageState::new(darkride_payloads(RefloatMode::Normal));
 
@@ -212,7 +212,7 @@ fn app_data_running_darkride_enabled_high_roll_stops_like_refloat_fault_check() 
     // `third_party/refloat/src/main.c:465-470`.
     let lifecycle = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     telemetry.set_imu_attitude(
         ImuRoll::new(AngleRadians::from_degrees(110.0)),
         ImuPitch::new(AngleRadians::from_radians(0.0)),
@@ -266,7 +266,7 @@ fn app_data_running_darkride_no_footpads_does_not_use_normal_full_switch_fault()
     // full-switch path at `third_party/refloat/src/main.c:392-425`.
     let lifecycle = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     let imu = telemetry.imu();
     let mut state = RefloatPackageState::new(darkride_no_footpads_payloads(RefloatMode::Normal));
 
@@ -292,7 +292,7 @@ fn app_data_running_roll_stopped_after_delay_like_refloat_fault_check() {
     // `third_party/refloat/src/main.c:474-482`.
     let lifecycle = TimestampTicks::from_ticks(3_000);
     let telemetry = FirmwareTest::new();
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     telemetry.set_imu_attitude(
         ImuRoll::new(AngleRadians::from_degrees(70.0)),
         ImuPitch::new(AngleRadians::from_radians(0.0)),
@@ -326,7 +326,7 @@ fn app_data_running_pitch_stopped_after_delay_like_refloat_fault_check() {
     // `third_party/refloat/src/main.c:497-503`.
     let lifecycle = TimestampTicks::from_ticks(3_000);
     let telemetry = FirmwareTest::new();
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     telemetry.set_imu_attitude(
         ImuRoll::new(AngleRadians::from_radians(0.0)),
         ImuPitch::new(AngleRadians::from_degrees(70.0)),
@@ -358,7 +358,7 @@ fn app_data_running_darkride_simple_start_single_footpad_stops_during_engage_gra
     // `third_party/refloat/src/main.c:387-390`.
     let lifecycle = TimestampTicks::from_ticks(5_000);
     let telemetry = FirmwareTest::new();
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     let imu = telemetry.imu();
     let payloads =
         sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Normal);
@@ -421,7 +421,7 @@ fn app_data_running_darkride_high_erpm_stops_like_refloat_fault_check() {
         InputCurrent::new(Current::from_amps(0.0)),
         DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
     );
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     let imu = telemetry.imu();
     let mut state = RefloatPackageState::new(darkride_payloads(RefloatMode::Normal));
 

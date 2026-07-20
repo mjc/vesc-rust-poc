@@ -55,7 +55,7 @@ mod tests {
     #[test]
     fn imu_read_handler_updates_refloat_balance_filter() {
         let telemetry = FirmwareTest::new();
-        telemetry.set_imu_startup_done(true);
+        telemetry.set_imu_ready(true);
         let imu = telemetry.imu();
         let mut state = RefloatPackageState::new(sample_all_data_payloads_with_ride_state(
             RefloatRunState::Running,
@@ -99,7 +99,7 @@ mod tests {
     #[test]
     fn imu_callback_state_update_feeds_normal_balance_pitch_like_refloat_loop() {
         let telemetry = FirmwareTest::new();
-        telemetry.set_imu_startup_done(true);
+        telemetry.set_imu_ready(true);
         let imu = telemetry.imu();
         let mut state = RefloatPackageState::new(sample_all_data_payloads_with_ride_state(
             RefloatRunState::Running,

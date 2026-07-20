@@ -19,7 +19,7 @@ use vescpkg_rs::test_support::FirmwareTest;
 fn app_data_running_uses_balance_filter_pitch_like_refloat_pid() {
     let lifecycle = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     telemetry.set_imu_attitude(
         ImuRoll::new(AngleRadians::from_radians(0.0)),
         ImuPitch::new(AngleRadians::from_radians(0.0)),
@@ -99,7 +99,7 @@ fn app_data_running_uses_balance_filter_pitch_like_refloat_pid() {
 fn app_data_running_accumulates_angle_i_balance_current_like_refloat_pid() {
     let lifecycle = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     telemetry.set_imu_attitude(
         ImuRoll::new(AngleRadians::from_radians(0.0)),
         ImuPitch::new(AngleRadians::from_radians(0.0)),
@@ -176,7 +176,7 @@ fn app_data_running_accumulates_angle_i_balance_current_like_refloat_pid() {
 fn app_data_running_clamps_angle_i_at_default_ki_limit_like_refloat_pid() {
     let lifecycle = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     telemetry.set_imu_attitude(
         ImuRoll::new(AngleRadians::from_radians(0.0)),
         ImuPitch::new(AngleRadians::from_radians(0.0)),
@@ -236,7 +236,7 @@ fn app_data_running_clamps_angle_i_at_default_ki_limit_like_refloat_pid() {
 fn app_data_running_limits_handtest_and_flywheel_current_like_refloat_loop() {
     let lifecycle = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     telemetry.set_imu_attitude(
         ImuRoll::new(AngleRadians::from_radians(0.0)),
         ImuPitch::new(AngleRadians::from_radians(0.0)),
@@ -311,7 +311,7 @@ fn app_data_running_limits_handtest_and_flywheel_current_like_refloat_loop() {
 fn app_data_running_wheelslip_without_traction_control_smooths_current_like_refloat_loop() {
     let lifecycle = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     telemetry.set_imu_attitude(
         ImuRoll::new(AngleRadians::from_radians(0.0)),
         ImuPitch::new(AngleRadians::from_radians(0.0)),
@@ -387,7 +387,7 @@ fn app_data_normal_algorithm_trace_matches_refloat_loop_order() {
         InputCurrent::new(Current::from_amps(0.0)),
         DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
     );
-    telemetry.set_imu_startup_done(true);
+    telemetry.set_imu_ready(true);
     telemetry.set_imu_attitude(
         ImuRoll::new(AngleRadians::from_radians(0.0)),
         ImuPitch::new(AngleRadians::from_degrees(1.5)),

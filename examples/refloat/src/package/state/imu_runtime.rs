@@ -21,8 +21,8 @@ pub(super) fn refresh(
     let status = base.status();
     let ride_state = status.ride_state();
     let resets_runtime_vars =
-        matches!(ride_state.run_state(), RefloatRunState::Startup) && imu.startup_done();
-    let run_state = match (ride_state.run_state(), imu.startup_done()) {
+        matches!(ride_state.run_state(), RefloatRunState::Startup) && imu.is_ready();
+    let run_state = match (ride_state.run_state(), imu.is_ready()) {
         (RefloatRunState::Startup, true) => RefloatRunState::Ready,
         (run_state, _) => run_state,
     };

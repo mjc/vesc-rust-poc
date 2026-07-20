@@ -61,7 +61,7 @@ fn ready_payloads_with_footpads(
 fn configure_ready_imu(firmware: &FirmwareTest, roll: AngleRadians) {
     // C map: Refloat's READY tests drive the IMU attitude gate with a single
     // pitch/roll sample while leaving yaw at zero.
-    firmware.set_imu_startup_done(true);
+    firmware.set_imu_ready(true);
     firmware.set_imu_attitude(
         ImuRoll::new(roll),
         ImuPitch::new(AngleRadians::from_radians(0.0)),

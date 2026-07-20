@@ -213,7 +213,7 @@ mod tests {
     #[test]
     fn charging_times_out_after_five_seconds_and_allows_ready_to_engage() {
         let telemetry = FirmwareTest::new();
-        telemetry.set_imu_startup_done(true);
+        telemetry.set_imu_ready(true);
         telemetry.set_imu_attitude(
             ImuRoll::new(AngleRadians::ZERO),
             ImuPitch::new(AngleRadians::ZERO),
