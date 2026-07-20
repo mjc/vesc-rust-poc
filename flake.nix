@@ -70,6 +70,7 @@
             cargo-llvm-cov
             cargo-binutils
             cargo-hack
+            libclang.lib
           ];
 
           shellHook = ''
@@ -79,6 +80,7 @@
             rust_sysroot="$(rustc --print sysroot)"
             export LLVM_COV="$rust_sysroot/lib/rustlib/$host_target/bin/llvm-cov"
             export LLVM_PROFDATA="$rust_sysroot/lib/rustlib/$host_target/bin/llvm-profdata"
+            export LIBCLANG_PATH="${pkgs.libclang.lib}/lib"
           '';
         in
         {
@@ -125,6 +127,7 @@
           rust_sysroot="$(rustc --print sysroot)"
           export LLVM_COV="$rust_sysroot/lib/rustlib/$host_target/bin/llvm-cov"
           export LLVM_PROFDATA="$rust_sysroot/lib/rustlib/$host_target/bin/llvm-profdata"
+          export LIBCLANG_PATH="${pkgs.libclang.lib}/lib"
         '';
         in
         {
@@ -148,6 +151,7 @@
               cargo-test-changed
               cargo-llvm-cov
               cargo-binutils
+              libclang.lib
             ];
           } ''
             ${checkEnv}
@@ -176,6 +180,7 @@
               cargo-test-changed
               cargo-llvm-cov
               cargo-binutils
+              libclang.lib
             ];
           } ''
             ${checkEnv}

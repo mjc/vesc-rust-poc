@@ -8,12 +8,18 @@ use std::{
     process::Command,
 };
 
+#[path = "build/vesc_if.rs"]
+mod vesc_if;
+
+use vesc_if::SlotDeclaration;
+
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("manifest dir"));
     let workspace = manifest_dir.join("../..");
     let header = workspace.join("third_party/vesc_pkg_lib/vesc_c_if.h");
     let out = PathBuf::from(env::var("OUT_DIR").expect("out dir")).join("c_vesc_if.rs");
 
+    println!("cargo::rustc-check-cfg=cfg(coverage)");
     println!("cargo:rerun-if-changed={}", header.display());
     println!(
         "cargo:rerun-if-changed={}",
@@ -21,109 +27,18 @@ fn main() {
     );
 
     let source = fs::read_to_string(&header).expect("third_party/vesc_pkg_lib/vesc_c_if.h");
-    let fields = parse_vesc_if_fields(&source);
+    let slots = vesc_if::parse(&source)
+        .unwrap_or_else(|error| panic!("failed to parse {}: {error}", header.display()));
     assert!(
-        !fields.is_empty(),
-        "failed to parse vesc_c_if fields from {}",
+        !slots.is_empty(),
+        "failed to parse vesc_c_if slots from {}",
         header.display()
     );
 
-    fs::write(out, generated_rust(&workspace, &fields)).expect("write generated c_vesc_if.rs");
+    fs::write(out, generated_rust(&workspace, &slots)).expect("write generated c_vesc_if.rs");
 }
 
-#[derive(Debug)]
-struct Field {
-    name: String,
-    index: usize,
-    line: usize,
-}
-
-fn parse_vesc_if_fields(source: &str) -> Vec<Field> {
-    let lines: Vec<_> = source.lines().collect();
-    let Some(end) = lines
-        .iter()
-        .position(|line| line.trim().starts_with("} vesc_c_if"))
-    else {
-        return Vec::new();
-    };
-    let Some(start) = lines[..end]
-        .iter()
-        .rposition(|line| line.trim() == "typedef struct {")
-    else {
-        return Vec::new();
-    };
-
-    let mut fields = Vec::new();
-    let mut pending = String::new();
-    let mut pending_line = None;
-
-    for (offset, line) in lines[start + 1..end].iter().enumerate() {
-        let line_number = start + offset + 2;
-        let Some(fragment) = declaration_fragment(line) else {
-            continue;
-        };
-
-        pending_line.get_or_insert(line_number);
-        pending.push(' ');
-        pending.push_str(fragment);
-
-        if fragment.contains(';') {
-            if let Some(name) = parse_field_name(&pending) {
-                fields.push(Field {
-                    name,
-                    index: fields.len(),
-                    line: pending_line.expect("pending declaration line"),
-                });
-            }
-            pending.clear();
-            pending_line = None;
-        }
-    }
-
-    fields
-}
-
-fn declaration_fragment(line: &str) -> Option<&str> {
-    line.split("//")
-        .next()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .filter(|line| !line.starts_with("/*"))
-        .filter(|line| !line.starts_with('*'))
-}
-
-fn parse_field_name(declaration: &str) -> Option<String> {
-    c_function_pointer_field(declaration).or_else(|| c_scalar_field(declaration))
-}
-
-fn c_function_pointer_field(declaration: &str) -> Option<String> {
-    declaration.find("(*").and_then(|start| {
-        let rest = &declaration[start + 2..];
-        rest.find(')')
-            .map(|end| rest[..end].trim().to_owned())
-            .filter(|name| is_c_identifier(name))
-    })
-}
-
-fn c_scalar_field(declaration: &str) -> Option<String> {
-    declaration
-        .trim()
-        .strip_suffix(';')
-        .map(str::trim)
-        .and_then(|declaration| declaration.split_whitespace().last())
-        .map(|token| token.trim_matches('*').to_owned())
-        .filter(|name| is_c_identifier(name))
-}
-
-fn is_c_identifier(name: &str) -> bool {
-    let mut chars = name.chars();
-    chars
-        .next()
-        .is_some_and(|ch| ch == '_' || ch.is_ascii_alphabetic())
-        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
-}
-
-fn generated_rust(workspace: &Path, fields: &[Field]) -> String {
+fn generated_rust(workspace: &Path, slots: &[SlotDeclaration]) -> String {
     let commit = submodule_commit(workspace).unwrap_or_else(|| "unknown".to_owned());
     let mut rust = String::new();
 
@@ -145,39 +60,57 @@ fn generated_rust(workspace: &Path, fields: &[Field]) -> String {
     writeln!(
         rust,
         "pub(crate) const FIELD_COUNT: usize = {};",
-        fields.len()
+        slots.len()
     )
     .expect("write generated Rust");
     rust.push('\n');
     rust.push_str("pub(crate) const SLOTS: [Slot; FIELD_COUNT] = [\n");
-    for field in fields {
+    for slot in slots {
         writeln!(
             rust,
             "    Slot {{ name: \"{}\", index: {}, vesc32_byte_offset: {}, header_line: {} }},",
-            field.name,
-            field.index,
-            field.index * 4,
-            field.line
+            slot.c_name,
+            slot.index,
+            slot.index * 4,
+            slot.line
         )
         .expect("write generated Rust");
     }
     rust.push_str("];\n\n");
 
-    for field in fields {
-        writeln!(rust, "pub(crate) mod {} {{", field.name).expect("write generated Rust");
+    rust.push_str("#[cfg(test)]\n");
+    rust.push_str("macro_rules! rust_field_offsets {\n");
+    rust.push_str("    ($table:path) => {\n");
+    rust.push_str("        [\n");
+    for slot in slots {
+        writeln!(
+            rust,
+            "            core::mem::offset_of!($table, {}),",
+            slot.rust_name
+        )
+        .expect("write generated Rust");
+    }
+    rust.push_str("        ]\n");
+    rust.push_str("    };\n");
+    rust.push_str("}\n");
+    rust.push_str("#[cfg(test)]\n");
+    rust.push_str("pub(crate) use rust_field_offsets;\n\n");
+
+    for slot in slots {
+        writeln!(rust, "pub(crate) mod {} {{", slot.rust_name).expect("write generated Rust");
         writeln!(
             rust,
             "    pub(crate) const NAME: &str = \"{}\";",
-            field.name
+            slot.c_name
         )
         .expect("write generated Rust");
-        writeln!(rust, "    pub(crate) const INDEX: usize = {};", field.index)
+        writeln!(rust, "    pub(crate) const INDEX: usize = {};", slot.index)
             .expect("write generated Rust");
         rust.push_str("    pub(crate) const VESC32_BYTE_OFFSET: usize = INDEX * 4;\n");
         writeln!(
             rust,
             "    pub(crate) const HEADER_LINE: usize = {};",
-            field.line
+            slot.line
         )
         .expect("write generated Rust");
         rust.push_str("}\n\n");

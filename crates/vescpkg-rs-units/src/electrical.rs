@@ -12,6 +12,12 @@ scalar_unit!(Power, from_watts, as_watts, "watts");
 scalar_unit!(Resistance, from_ohms, as_ohms, "ohms");
 scalar_unit!(Inductance, from_henries, as_henries, "henries");
 scalar_unit!(FluxLinkage, from_webers, as_webers, "webers");
+scalar_unit!(
+    MagneticFluxDensity,
+    from_microteslas,
+    as_microteslas,
+    "microteslas"
+);
 
 impl Mul<Current> for Voltage {
     type Output = Power;

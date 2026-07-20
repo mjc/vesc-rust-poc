@@ -1,0 +1,13 @@
+error[E0308]: mismatched types
+  --> tests/ui/imu_vectors_not_interchangeable.rs:23:17
+   |
+23 |     update_gyro(accel);
+   |     ----------- ^^^^^ expected `ImuAngularRate`, found `ImuAcceleration`
+   |     |
+   |     arguments to this function are incorrect
+   |
+note: function defined here
+  --> tests/ui/imu_vectors_not_interchangeable.rs:8:4
+   |
+ 8 | fn update_gyro(_: ImuAngularRate) {}
+   |    ^^^^^^^^^^^ -----------------

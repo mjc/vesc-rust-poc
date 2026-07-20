@@ -30,11 +30,6 @@ impl AdcDecodedLevel {
         Self(level)
     }
 
-    /// Compatibility constructor matching checked semantic-token style.
-    pub const fn try_new(level: Ratio) -> Result<Self, core::convert::Infallible> {
-        Ok(Self(level))
-    }
-
     /// Return the typed ratio without erasing it to a primitive.
     pub const fn ratio(self) -> Ratio {
         self.0

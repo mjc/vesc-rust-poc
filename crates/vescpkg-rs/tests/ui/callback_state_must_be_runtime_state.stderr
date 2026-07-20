@@ -1,0 +1,13 @@
+error[E0277]: the trait bound `State: PackageRuntimeState` is not satisfied
+ --> tests/ui/callback_state_must_be_runtime_state.rs:5:18
+  |
+5 |     type State = State;
+  |                  ^^^^^ unsatisfied trait bound
+  |
+help: the trait `PackageRuntimeState` is not implemented for `State`
+ --> tests/ui/callback_state_must_be_runtime_state.rs:1:1
+  |
+1 | struct State;
+  | ^^^^^^^^^^^^
+note: required by a bound in `vescpkg_rs::AppDataHandler::State`
+ --> <BASE_DIR>/crates/vescpkg-rs/src/firmware.rs:79:4

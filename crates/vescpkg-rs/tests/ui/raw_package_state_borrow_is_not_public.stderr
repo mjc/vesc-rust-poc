@@ -1,0 +1,5 @@
+error[E0433]: cannot find `firmware_package_state_mut` in `vescpkg_rs`
+ --> tests/ui/raw_package_state_borrow_is_not_public.rs:2:34
+  |
+2 |     let _ = unsafe { vescpkg_rs::firmware_package_state_mut!(u32, main) };
+  |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^ could not find `firmware_package_state_mut` in `vescpkg_rs`

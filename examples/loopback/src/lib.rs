@@ -6,6 +6,7 @@
 //! Device builds must stay `no_std` and must not link `alloc` or `std`.
 
 #![no_std]
+#![forbid(unsafe_code)]
 #![forbid(unused_extern_crates)]
 
 #[cfg(test)]
@@ -13,10 +14,37 @@ extern crate std;
 
 mod app_data;
 pub mod extensions;
-pub mod package;
 
-pub use package::package_lib_init;
-pub use vescpkg_rs::{ProtocolFrame, WireCommand, WireVersion, ble_loopback, ffi, lbm, lifecycle};
+pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
+
+#[cfg_attr(not(any(test, target_arch = "arm")), allow(dead_code))]
+pub(crate) struct LoopbackState;
+
+vescpkg_rs::package_start!(crate::start, LoopbackState);
+
+#[cfg(test)]
+pub(crate) fn start(
+    start: &mut vescpkg_rs::PackageStart,
+) -> Result<(), vescpkg_rs::PackageStartError> {
+    start.install_runtime_state(LoopbackState)
+}
+
+#[cfg(all(not(test), target_arch = "arm"))]
+pub(crate) fn start(
+    start: &mut vescpkg_rs::PackageStart,
+) -> Result<(), vescpkg_rs::PackageStartError> {
+    start.install_runtime_state(LoopbackState)?;
+    app_data::register(start)?;
+    if !start
+        .register_extensions(extensions::package_extension_descriptors())?
+        .is_complete()
+    {
+        return Err(vescpkg_rs::PackageStartError::ExtensionRegistrationIncomplete);
+    }
+    // Extension registration can run other firmware setup; register again so
+    // the loopback handler remains the active app-data callback.
+    app_data::register(start)
+}
 
 #[cfg(test)]
 mod tests {
@@ -30,13 +58,9 @@ mod tests {
 
     #[test]
     fn package_lib_init_runs_the_device_loopback_entrypoint_path() {
-        let mut info = super::ffi::LibInfo {
-            stop_fun: None,
-            arg: core::ptr::null_mut(),
-            base_addr: 0,
-        };
+        let mut info = vescpkg_rs::test_support::LoaderInfo::new();
 
         assert!(super::package_lib_init(&mut info));
-        assert!(info.stop_fun.is_some());
+        assert!(info.has_stop_handler());
     }
 }

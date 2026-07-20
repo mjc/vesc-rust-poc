@@ -9,10 +9,10 @@ The current release artifacts produced by `cargo vescpkg build` are:
 
 | artifact | SHA-256 |
 | --- | --- |
-| `Rust-BLE-loopback-test-package-0.1.0.vescpkg` | `b11d23463f6832da25377fde6d10616a1f9cf36013f8d1834e0ec13dca57c881` |
-| `Rust-alloc-smoke-package-0.1.0.vescpkg` | `5690a9897a74e6f66b0fb425e3476b5fca342870cddc5d21b11f337c6fd91720` |
-| loopback `src/package_lib.bin` | `14c8f5f3b1e5dfa8414555b62c18ee46f24ef6487910385ca7e4bacc61cd24cc` |
-| alloc-smoke `src/package_lib.bin` | `09a9067e7598021f6f194f72cb251460971ecf33f5577a1af4962f87c0e2fdef` |
+| `Rust-BLE-loopback-test-package-0.1.0.vescpkg` | `36a3106194ff948dca7127c523e754925cbb0505b1b783c18d9a0427bd093e57` |
+| `Rust-alloc-smoke-package-0.1.0.vescpkg` | `f32f6621f505fa4e3660e16f4ad520afa86bb7c2155fd261272010aaad7f3439` |
+| loopback `src/package_lib.bin` | `5f8d468fa9c0d79738e1b96a8258d3ed9bf79df881ca0b134b901a4312fe5a48` |
+| alloc-smoke `src/package_lib.bin` | `879713045ecbb3257ce3af077911a51895a5d0a1bb9ed968a735331c98327e20` |
 
 `cargo test -p cargo-vescpkg` decodes the compressed wire fixture through the
 same package reader used by installation. The hardware gate was run with the

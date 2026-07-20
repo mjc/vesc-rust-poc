@@ -11,8 +11,8 @@ impl CanControllerId {
         Self(id)
     }
 
-    /// Explicitly extract the raw controller ID.
-    pub const fn get(self) -> u8 {
+    /// Encode the controller ID for the CAN boundary.
+    pub const fn as_u8(self) -> u8 {
         self.0
     }
 }
@@ -35,8 +35,8 @@ impl CanStandardId {
         }
     }
 
-    /// Explicitly extract the raw standard CAN identifier.
-    pub const fn get(self) -> u16 {
+    /// Encode the standard CAN identifier for the protocol boundary.
+    pub const fn as_u16(self) -> u16 {
         self.0
     }
 }
@@ -46,6 +46,14 @@ impl CanStandardId {
 pub struct CanStandardIdError {
     value: u16,
 }
+
+impl core::fmt::Display for CanStandardIdError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "standard CAN ID {} exceeds 0x7ff", self.value)
+    }
+}
+
+impl core::error::Error for CanStandardIdError {}
 
 impl CanStandardIdError {
     /// Return the rejected ID.
@@ -72,8 +80,8 @@ impl CanExtendedId {
         }
     }
 
-    /// Explicitly extract the raw extended CAN identifier.
-    pub const fn get(self) -> u32 {
+    /// Encode the extended CAN identifier for the protocol boundary.
+    pub const fn as_u32(self) -> u32 {
         self.0
     }
 }
@@ -83,6 +91,14 @@ impl CanExtendedId {
 pub struct CanExtendedIdError {
     value: u32,
 }
+
+impl core::fmt::Display for CanExtendedIdError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "extended CAN ID {} exceeds 0x1fff_ffff", self.value)
+    }
+}
+
+impl core::error::Error for CanExtendedIdError {}
 
 /// Classic CAN payload length in bytes.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -102,8 +118,8 @@ impl CanPayloadLen {
         }
     }
 
-    /// Explicitly extract the raw payload length.
-    pub const fn get(self) -> u8 {
+    /// Encode the payload length for the protocol boundary.
+    pub const fn as_u8(self) -> u8 {
         self.0
     }
 }
@@ -113,6 +129,18 @@ impl CanPayloadLen {
 pub struct CanPayloadLenError {
     value: u8,
 }
+
+impl core::fmt::Display for CanPayloadLenError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "classic CAN payload length {} exceeds 8 bytes",
+            self.value
+        )
+    }
+}
+
+impl core::error::Error for CanPayloadLenError {}
 
 impl CanPayloadLenError {
     /// Return the rejected length.

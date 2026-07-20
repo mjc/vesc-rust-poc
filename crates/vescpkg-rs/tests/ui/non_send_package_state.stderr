@@ -1,0 +1,19 @@
+error[E0277]: `Rc<()>` cannot be sent between threads safely
+ --> tests/ui/non_send_package_state.rs:3:15
+  |
+3 | static STATE: vescpkg_rs::PackageStateStore<Rc<()>> = vescpkg_rs::PackageStateStore::new();
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<()>` cannot be sent between threads safely
+  |
+  = help: the trait `Send` is not implemented for `Rc<()>`
+  = note: required for `PackageStateStore<Rc<()>>` to implement `Sync`
+  = note: shared static variables must have a type that implements `Sync`
+
+error[E0277]: `Rc<()>` cannot be sent between threads safely
+ --> tests/ui/non_send_package_state.rs:3:55
+  |
+3 | static STATE: vescpkg_rs::PackageStateStore<Rc<()>> = vescpkg_rs::PackageStateStore::new();
+  |                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<()>` cannot be sent between threads safely
+  |
+  = help: the trait `Send` is not implemented for `Rc<()>`
+note: required by a bound in `PackageStateStore::<T>::new`
+ --> <BASE_DIR>/crates/vescpkg-rs/src/runtime.rs:515:4

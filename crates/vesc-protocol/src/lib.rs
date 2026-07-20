@@ -19,6 +19,8 @@ extern crate std;
 
 /// BLE loopback wire-format helpers and response handling.
 pub mod ble_loopback;
+/// VESC firmware buffer-compatible primitive encoders.
+pub mod buffer;
 
 /// Version tag carried by the shared loopback wire frame.
 ///

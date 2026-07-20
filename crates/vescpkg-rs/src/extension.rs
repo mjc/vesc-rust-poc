@@ -2,53 +2,525 @@
 
 use core::ffi::CStr;
 
-use vescpkg_rs_sys::ExtensionHandler;
+use vescpkg_rs_sys::{ExtensionHandler, LbmValue};
 
-/// Extension-name validation failures.
+const LBM_INT_TAG: u32 = 0x8;
+const LBM_VALUE_SHIFT: u32 = 4;
+#[cfg(any(test, not(target_arch = "arm")))]
+const LBM_TRUE: u32 = 2 << LBM_VALUE_SHIFT;
+#[cfg(test)]
+const LBM_VALUE_TAG_MASK: u32 = (1 << LBM_VALUE_SHIFT) - 1;
+const LBM_INT_MIN: i32 = -(1 << 27);
+const LBM_INT_MAX: i32 = (1 << 27) - 1;
+
+const fn encode_integer(value: i32) -> u32 {
+    value.wrapping_shl(LBM_VALUE_SHIFT) as u32 | LBM_INT_TAG
+}
+
+#[cfg(test)]
+const fn decode_integer(value: u32) -> i32 {
+    (value as i32) >> LBM_VALUE_SHIFT
+}
+
+#[cfg(test)]
+const fn is_integer(value: u32) -> bool {
+    value & LBM_VALUE_TAG_MASK == LBM_INT_TAG
+}
+
+/// A LispBM value that can only be produced by the SDK's typed argument API.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct LispValue(LbmValue);
+
+impl LispValue {
+    /// Decode this value as a LispBM integer.
+    pub fn as_i32(self) -> Option<i32> {
+        #[cfg(not(test))]
+        {
+            crate::lifecycle_core::LbmApi::new(crate::bindings::RealBindings).decode_i32(self.raw())
+        }
+        #[cfg(test)]
+        {
+            is_integer(self.raw().0).then(|| decode_integer(self.raw().0))
+        }
+    }
+
+    /// Return LispBM true.
+    pub fn true_value() -> Self {
+        #[cfg(all(not(test), target_arch = "arm"))]
+        {
+            Self::from_raw(
+                crate::lifecycle_core::LbmApi::new(crate::bindings::RealBindings).encode_true(),
+            )
+        }
+        #[cfg(any(test, not(target_arch = "arm")))]
+        {
+            Self(LbmValue(LBM_TRUE))
+        }
+    }
+
+    /// Return LispBM nil.
+    pub fn nil() -> Self {
+        #[cfg(all(not(test), target_arch = "arm"))]
+        {
+            Self::from_raw(
+                crate::lifecycle_core::LbmApi::new(crate::bindings::RealBindings).encode_nil(),
+            )
+        }
+        #[cfg(any(test, not(target_arch = "arm")))]
+        {
+            Self(LbmValue(0))
+        }
+    }
+
+    /// Convert a Rust boolean to LispBM true or nil.
+    pub fn boolean(value: bool) -> Self {
+        if value {
+            Self::true_value()
+        } else {
+            Self::nil()
+        }
+    }
+
+    pub(crate) const fn raw(self) -> LbmValue {
+        self.0
+    }
+
+    pub(crate) const fn from_raw(value: LbmValue) -> Self {
+        Self(value)
+    }
+}
+
+/// Error returned when an integer cannot use LispBM's immediate representation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExtensionNameError {
-    /// The name did not start with the required `ext-` prefix.
-    MissingExtPrefix,
+pub struct LispIntegerError {
+    value: i32,
+}
+
+impl LispIntegerError {
+    /// Return the rejected integer.
+    pub const fn value(self) -> i32 {
+        self.value
+    }
+}
+
+impl core::fmt::Display for LispIntegerError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "{} is outside LispBM's immediate integer range",
+            self.value
+        )
+    }
+}
+
+impl core::error::Error for LispIntegerError {}
+
+impl TryFrom<i32> for LispValue {
+    type Error = LispIntegerError;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        (LBM_INT_MIN..=LBM_INT_MAX)
+            .contains(&value)
+            .then(|| Self(LbmValue(encode_integer(value))))
+            .ok_or(LispIntegerError { value })
+    }
 }
 
 /// Errors returned when extension registration fails.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RegisterError {
-    /// The extension name failed validation.
-    InvalidExtensionName,
+pub(crate) enum ExtensionRegistrationError {
     /// Firmware rejected the registration request.
     FirmwareRejected,
+}
+
+/// Result of registering a package's LispBM extension table.
+///
+/// VESC exposes extension insertion but not removal through `VESC_IF`, so a
+/// batch can be partially registered. Once any entry succeeds, the SDK keeps
+/// the native image loaded even if later package startup reports failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExtensionRegistration {
+    requested: usize,
+    registered: usize,
+}
+
+impl ExtensionRegistration {
+    pub(crate) const fn new(requested: usize, registered: usize) -> Self {
+        Self {
+            requested,
+            registered,
+        }
+    }
+
+    /// Return how many extension handlers firmware accepted.
+    #[must_use]
+    pub const fn registered(self) -> usize {
+        self.registered
+    }
+
+    /// Return whether firmware accepted every requested extension.
+    #[must_use]
+    pub const fn is_complete(self) -> bool {
+        self.registered == self.requested
+    }
+}
+
+/// A static name assigned to a LispBM extension.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct ExtensionName(&'static [u8]);
+
+impl ExtensionName {
+    /// Build a name from the terminated storage generated by `extension_name!`.
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn __from_terminated(name: &'static str) -> Option<Self> {
+        let bytes = name.as_bytes();
+        if bytes.len() < 5
+            || bytes[0] != b'e'
+            || bytes[1] != b'x'
+            || bytes[2] != b't'
+            || bytes[3] != b'-'
+        {
+            return None;
+        }
+        match CStr::from_bytes_with_nul(bytes) {
+            Ok(_) => Some(Self(name.as_bytes())),
+            Err(_) => None,
+        }
+    }
+
+    pub(crate) const fn as_cstr(self) -> &'static CStr {
+        // SAFETY: the macro support hook validates the terminating NUL byte.
+        unsafe { CStr::from_bytes_with_nul_unchecked(self.0) }
+    }
+
+    /// Return the validated Rust extension name without its ABI terminator.
+    pub fn as_str(self) -> &'static str {
+        let bytes = &self.0[..self.0.len() - 1];
+        // SAFETY: the macro support hook accepts only valid C strings built
+        // from UTF-8 Rust string literals.
+        unsafe { core::str::from_utf8_unchecked(bytes) }
+    }
+}
+
+/// Create a checked static LispBM extension name from a Rust string literal.
+#[macro_export]
+macro_rules! extension_name {
+    ($name:literal) => {
+        const {
+            match $crate::ExtensionName::__from_terminated(concat!($name, "\0")) {
+                Some(name) => name,
+                None => panic!("extension name must begin with `ext-` and contain no NUL"),
+            }
+        }
+    };
 }
 
 /// A validated extension registration request.
 #[derive(Clone, Copy)]
 pub struct ExtensionDescriptor {
-    name: &'static CStr,
+    name: ExtensionName,
+    #[cfg_attr(
+        not(any(test, feature = "test-support", target_arch = "arm")),
+        allow(dead_code)
+    )]
     handler: ExtensionHandler,
+    #[cfg_attr(
+        not(any(test, feature = "test-support", target_arch = "arm")),
+        allow(dead_code)
+    )]
+    state_type: Option<fn() -> core::any::TypeId>,
 }
 
 impl ExtensionDescriptor {
-    /// Build a descriptor from its name and handler.
-    pub const fn new(name: &'static CStr, handler: ExtensionHandler) -> Self {
-        Self { name, handler }
+    pub(crate) fn from_handler(name: ExtensionName, handler: ExtensionHandler) -> Self {
+        Self {
+            name,
+            handler,
+            state_type: None,
+        }
+    }
+
+    /// Build a descriptor for a stateless typed extension callback.
+    #[inline(always)]
+    pub fn typed<T: LbmExtension>(name: ExtensionName) -> Self {
+        Self::from_handler(name, lbm_extension_handler::<T>)
+    }
+
+    /// Build a descriptor for a runtime-state-backed typed extension callback.
+    #[inline(always)]
+    pub fn stateful<T: StatefulLbmExtension>(name: ExtensionName) -> Self {
+        Self {
+            name,
+            handler: stateful_lbm_extension_handler::<T>,
+            state_type: Some(runtime_state_type::<T::State>),
+        }
     }
 
     /// Return the descriptor name.
-    pub const fn name(self) -> &'static CStr {
+    pub const fn name(self) -> ExtensionName {
         self.name
     }
 
+    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     /// Return the descriptor handler.
-    pub const fn handler(self) -> ExtensionHandler {
+    pub(crate) const fn handler(self) -> ExtensionHandler {
         self.handler
     }
 
-    /// Validate the descriptor name prefix expected by the firmware.
-    pub fn validate(self) -> Result<Self, ExtensionNameError> {
-        if self.name.to_bytes().starts_with(b"ext-") {
-            Ok(self)
-        } else {
-            Err(ExtensionNameError::MissingExtPrefix)
+    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
+    pub(crate) fn state_type(self) -> Option<core::any::TypeId> {
+        self.state_type.map(|state_type| state_type())
+    }
+}
+
+fn runtime_state_type<T: 'static>() -> core::any::TypeId {
+    core::any::TypeId::of::<T>()
+}
+
+/// Typed LispBM extension callback arguments.
+pub struct LispArgs<'a> {
+    values: &'a [LbmValue],
+}
+
+impl LispArgs<'static> {
+    /// Construct an empty extension argument list.
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self { values: &[] }
+    }
+}
+
+impl LispArgs<'_> {
+    fn from_raw(args: *mut u32, arg_count: u32) -> Option<Self> {
+        let len = usize::try_from(arg_count).ok()?;
+        if len == 0 {
+            return Some(Self { values: &[] });
         }
+        unsafe { crate::firmware::lbm_args(args, arg_count).map(|values| Self { values }) }
+    }
+
+    /// Return the number of arguments supplied by LispBM.
+    pub const fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    /// Return whether LispBM supplied no arguments.
+    pub const fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
+    /// Return one argument by position.
+    pub fn get(&self, index: usize) -> Option<LispValue> {
+        self.values.get(index).copied().map(LispValue::from_raw)
+    }
+}
+
+fn canonical_nil_raw() -> u32 {
+    LispValue::nil().raw().0
+}
+
+/// Rust implementation for a LispBM extension callback.
+pub trait LbmExtension {
+    /// Handle one extension call.
+    fn call(args: LispArgs<'_>) -> LispValue;
+}
+
+/// State-backed LispBM extension behavior for package authors.
+pub trait StatefulLbmExtension {
+    /// Package state installed by startup.
+    type State: crate::PackageRuntimeState;
+
+    /// Handle one extension call with the current package state.
+    fn call(state: &mut Self::State, args: LispArgs<'_>) -> LispValue;
+}
+
+/// Firmware ABI trampoline for a typed LispBM extension callback.
+///
+/// # Safety
+///
+/// `args` must be null with `arg_count == 0` or point to `arg_count` LispBM values that stay valid for
+/// this call.
+pub unsafe extern "C" fn lbm_extension_handler<T: LbmExtension>(
+    args: *mut u32,
+    arg_count: u32,
+) -> u32 {
+    let Some(args) = LispArgs::from_raw(args, arg_count) else {
+        return canonical_nil_raw();
+    };
+    T::call(args).raw().0
+}
+
+/// Firmware ABI trampoline for a state-backed LispBM extension callback.
+///
+/// # Safety
+///
+/// `args` must be null with `arg_count == 0` or point to `arg_count` LispBM values that stay valid for
+/// this call.
+pub unsafe extern "C" fn stateful_lbm_extension_handler<T: StatefulLbmExtension>(
+    args: *mut u32,
+    arg_count: u32,
+) -> u32 {
+    let Some(args) = LispArgs::from_raw(args, arg_count) else {
+        return canonical_nil_raw();
+    };
+    let nil = LispValue::nil();
+    #[cfg(all(not(test), target_arch = "arm"))]
+    let program = crate::firmware_package_program_address!(stateful_lbm_extension_handler::<T>);
+    #[cfg(all(not(test), target_arch = "arm"))]
+    // SAFETY: `program` is derived from this registered package handler, so
+    // VESC returns the live `T::State` installed in this package's ARG slot.
+    let result = unsafe { crate::firmware::__firmware_package_state_ptr::<T::State>(program) }
+        .and_then(|state| {
+            <T::State as crate::PackageRuntimeState>::runtime_store()
+                .with_expected_mut(crate::runtime::ExpectedState::Exact(state), |state| {
+                    T::call(state, args)
+                })
+        });
+    #[cfg(any(test, not(target_arch = "arm")))]
+    let result = <T::State as crate::PackageRuntimeState>::runtime_store()
+        .with_mut(|state| T::call(state, args));
+    result.unwrap_or(nil).raw().0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{LispArgs, LispValue, StatefulLbmExtension, stateful_lbm_extension_handler};
+    use crate::{PackageRuntimeState, PackageStateStore};
+    use std::boxed::Box;
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct State {
+        calls: u32,
+    }
+
+    struct TestExtension;
+
+    struct IntegerExtension;
+
+    struct EchoIntegerExtension;
+
+    static SLOT: PackageStateStore<State> = PackageStateStore::new();
+
+    impl PackageRuntimeState for State {
+        fn runtime_store() -> &'static PackageStateStore<Self> {
+            &SLOT
+        }
+    }
+
+    impl StatefulLbmExtension for TestExtension {
+        type State = State;
+
+        fn call(state: &mut Self::State, args: LispArgs<'_>) -> LispValue {
+            state.calls += 1;
+            let _ = args;
+            LispValue::true_value()
+        }
+    }
+
+    impl super::LbmExtension for IntegerExtension {
+        fn call(_args: LispArgs<'_>) -> LispValue {
+            LispValue::try_from(42).unwrap()
+        }
+    }
+
+    impl super::LbmExtension for EchoIntegerExtension {
+        fn call(args: LispArgs<'_>) -> LispValue {
+            args.get(0)
+                .and_then(LispValue::as_i32)
+                .and_then(|value| LispValue::try_from(value).ok())
+                .unwrap_or_else(LispValue::nil)
+        }
+    }
+
+    #[test]
+    fn stateful_lbm_extension_handler_passes_package_state() {
+        assert_eq!(
+            unsafe { stateful_lbm_extension_handler::<TestExtension>(core::ptr::null_mut(), 0) },
+            0
+        );
+
+        let state = Box::leak(Box::new(State { calls: 0 }));
+        unsafe { SLOT.install(state) }.unwrap();
+
+        assert_eq!(
+            unsafe { stateful_lbm_extension_handler::<TestExtension>(core::ptr::null_mut(), 0) },
+            super::LBM_TRUE
+        );
+        assert_eq!(*state, State { calls: 1 });
+
+        SLOT.clear();
+    }
+
+    #[test]
+    fn typed_lisp_integer_keeps_device_encoding_inside_the_sdk() {
+        assert_eq!(
+            unsafe { super::lbm_extension_handler::<IntegerExtension>(core::ptr::null_mut(), 0) },
+            super::encode_integer(42),
+        );
+    }
+
+    #[test]
+    fn typed_lisp_integer_rejects_values_outside_the_immediate_payload() {
+        assert!(LispValue::try_from(super::LBM_INT_MIN).is_ok());
+        assert!(LispValue::try_from(super::LBM_INT_MAX).is_ok());
+        assert!(LispValue::try_from(super::LBM_INT_MIN - 1).is_err());
+        assert!(LispValue::try_from(super::LBM_INT_MAX + 1).is_err());
+    }
+
+    #[test]
+    fn typed_lisp_args_decode_device_integer_encoding() {
+        let mut args = [super::encode_integer(37)];
+        assert_eq!(
+            unsafe {
+                super::lbm_extension_handler::<EchoIntegerExtension>(
+                    args.as_mut_ptr().cast(),
+                    args.len() as u32,
+                )
+            },
+            super::encode_integer(37),
+        );
+    }
+
+    #[test]
+    fn typed_lisp_args_reject_non_integer_values() {
+        let mut values = [0_u32];
+        let args = super::LispArgs::from_raw(values.as_mut_ptr(), values.len() as u32)
+            .expect("valid arguments");
+
+        assert_eq!(args.get(0).and_then(LispValue::as_i32), None);
+    }
+
+    #[test]
+    fn extension_handlers_return_canonical_nil_for_invalid_arguments() {
+        let nil = LispValue::nil().raw().0;
+
+        assert_eq!(
+            unsafe {
+                super::lbm_extension_handler::<EchoIntegerExtension>(core::ptr::null_mut(), 1)
+            },
+            nil
+        );
+        assert_eq!(
+            unsafe {
+                super::stateful_lbm_extension_handler::<TestExtension>(core::ptr::null_mut(), 1)
+            },
+            nil
+        );
+    }
+
+    #[test]
+    fn extension_name_exposes_rust_text_without_abi_terminator() {
+        let name = crate::extension_name!("ext-example");
+
+        assert_eq!(name.as_str(), "ext-example");
+        assert_eq!(
+            super::ExtensionName::__from_terminated("ext-example\0")
+                .map(super::ExtensionName::as_str),
+            Some("ext-example")
+        );
+        assert!(super::ExtensionName::__from_terminated("ext-example").is_none());
+        assert!(super::ExtensionName::__from_terminated("ext\0-example\0").is_none());
     }
 }

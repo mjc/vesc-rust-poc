@@ -51,6 +51,20 @@ impl NativeImage {
         self.rebase_offset(ImageOffset::new(image_addr)).0
     }
 
+    /// Resolve a package-local address materialized by position-independent code.
+    ///
+    /// Rust may load the same function as either an image-relative GOT value or
+    /// an already relocated PC-relative address. VESC loads package images above
+    /// their link-time offset range, so only values below the image base need
+    /// rebasing.
+    pub fn resolve_addr(self, address: usize) -> usize {
+        if address < self.base_addr.0 {
+            self.rebase_addr(address)
+        } else {
+            address
+        }
+    }
+
     /// Rebase a raw pointer into the native image address space.
     pub fn rebase_ptr<T>(self, ptr: *const T) -> *const T {
         self.rebase_addr(ptr as usize) as *const T

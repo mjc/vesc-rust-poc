@@ -1,5 +1,5 @@
 use core::cell::Cell;
-use core::ffi::{c_char, c_int, c_uchar};
+use core::ffi::{c_char, c_int, c_uchar, c_void};
 
 use crate::c_vesc_if;
 use crate::test_support::{empty_table, with_table};
@@ -7,15 +7,16 @@ use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescPin, Vesc
 
 use super::{
     CustomConfigGet, CustomConfigSet, CustomConfigXml, VescIf, conf_custom_add_config,
-    conf_custom_clear_configs, foc_get_id, io_read, io_set_mode, io_write, lbm_add_extension,
-    lbm_add_extension_with_table_base, lbm_dec_as_i32, lbm_enc_i, lbm_enc_sym_eerror,
-    lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number, mc_get_amp_hours, mc_get_amp_hours_charged,
-    mc_get_battery_level, mc_get_distance_abs, mc_get_duty_cycle_now, mc_get_fault,
-    mc_get_input_voltage_filtered, mc_get_odometer, mc_get_rpm, mc_get_speed,
-    mc_get_tot_current_filtered, mc_get_tot_current_in_filtered, mc_get_watt_hours,
-    mc_get_watt_hours_charged, mc_temp_fet_filtered, mc_temp_motor_filtered,
-    vesc_clear_app_data_handler, vesc_send_app_data, vesc_set_app_data_handler, vesc_sleep_us,
-    vesc_system_time_ticks, vesc_thread_set_priority,
+    conf_custom_clear_configs, foc_get_id, io_read, io_read_analog, io_set_mode, io_write,
+    lbm_add_extension, lbm_add_extension_with_table_base, lbm_dec_as_i32, lbm_enc_i,
+    lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number, mc_get_amp_hours,
+    mc_get_amp_hours_charged, mc_get_battery_level, mc_get_distance_abs, mc_get_duty_cycle_now,
+    mc_get_fault, mc_get_input_voltage_filtered, mc_get_odometer, mc_get_rpm, mc_get_speed,
+    mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
+    mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
+    mc_temp_fet_filtered, mc_temp_motor_filtered, vesc_clear_app_data_handler, vesc_mutex_create,
+    vesc_mutex_lock, vesc_mutex_unlock, vesc_send_app_data, vesc_set_app_data_handler,
+    vesc_sleep_us, vesc_system_time_ticks, vesc_thread_set_priority,
 };
 
 struct SyncCounter(Cell<usize>);
@@ -126,14 +127,20 @@ static CUSTOM_CONFIG_SET: SyncCounter = SyncCounter::new();
 static CUSTOM_CONFIG_XML: SyncCounter = SyncCounter::new();
 static SLEEP_US: SyncCounter = SyncCounter::new();
 static THREAD_SET_PRIORITY: SyncCounter = SyncCounter::new();
+static MUTEX_CREATE: SyncCounter = SyncCounter::new();
+static MUTEX_LOCK: SyncCounter = SyncCounter::new();
+static MUTEX_UNLOCK: SyncCounter = SyncCounter::new();
+static SYSTEM_TIME: SyncCounter = SyncCounter::new();
 static SYSTEM_TIME_TICKS: SyncCounter = SyncCounter::new();
 static IO_SET_MODE: SyncCounter = SyncCounter::new();
 static IO_WRITE: SyncCounter = SyncCounter::new();
 static IO_READ: SyncCounter = SyncCounter::new();
+static IO_READ_ANALOG: SyncCounter = SyncCounter::new();
 static MC_GET_DISTANCE_ABS: SyncCounter = SyncCounter::new();
 static MC_GET_RPM: SyncCounter = SyncCounter::new();
 static MC_GET_SPEED: SyncCounter = SyncCounter::new();
 static MC_GET_TOT_CURRENT_FILTERED: SyncCounter = SyncCounter::new();
+static MC_GET_TOT_CURRENT_DIRECTIONAL_FILTERED: SyncCounter = SyncCounter::new();
 static MC_GET_TOT_CURRENT_IN_FILTERED: SyncCounter = SyncCounter::new();
 static MC_GET_DUTY_CYCLE_NOW: SyncCounter = SyncCounter::new();
 static FOC_GET_ID: SyncCounter = SyncCounter::new();
@@ -172,13 +179,19 @@ fn reset_counters() {
         &CUSTOM_CONFIG_XML,
         &SLEEP_US,
         &THREAD_SET_PRIORITY,
+        &MUTEX_CREATE,
+        &MUTEX_LOCK,
+        &MUTEX_UNLOCK,
+        &SYSTEM_TIME,
         &SYSTEM_TIME_TICKS,
         &IO_SET_MODE,
         &IO_WRITE,
         &IO_READ,
+        &IO_READ_ANALOG,
         &MC_GET_RPM,
         &MC_GET_SPEED,
         &MC_GET_TOT_CURRENT_FILTERED,
+        &MC_GET_TOT_CURRENT_DIRECTIONAL_FILTERED,
         &MC_GET_TOT_CURRENT_IN_FILTERED,
         &MC_GET_DUTY_CYCLE_NOW,
         &FOC_GET_ID,
@@ -233,7 +246,7 @@ extern "C" fn stub_lbm_is_number(value: u32) -> bool {
 extern "C" fn stub_set_app_data_handler(handler: Option<AppDataHandler>) -> bool {
     SET_APP_DATA_HANDLER.inc();
     LAST_HANDLER_INSTALLED.set(handler.is_some());
-    true
+    handler.is_some()
 }
 
 extern "C" fn stub_send_app_data(_data: *mut c_uchar, len: u32) {
@@ -279,6 +292,11 @@ extern "C" fn stub_system_time_ticks() -> u32 {
     42
 }
 
+extern "C" fn stub_system_time() -> f32 {
+    SYSTEM_TIME.inc();
+    1.25
+}
+
 extern "C" fn stub_sleep_us(micros: u32) {
     SLEEP_US.inc();
     LAST_SLEEP_US.set(micros);
@@ -287,6 +305,21 @@ extern "C" fn stub_sleep_us(micros: u32) {
 extern "C" fn stub_thread_set_priority(priority: c_int) {
     THREAD_SET_PRIORITY.inc();
     LAST_THREAD_PRIORITY.set(priority);
+}
+
+extern "C" fn stub_mutex_create() -> *mut c_void {
+    MUTEX_CREATE.inc();
+    0xCAFEusize as *mut c_void
+}
+
+extern "C" fn stub_mutex_lock(mutex: *mut c_void) {
+    assert_eq!(mutex as usize, 0xCAFE);
+    MUTEX_LOCK.inc();
+}
+
+extern "C" fn stub_mutex_unlock(mutex: *mut c_void) {
+    assert_eq!(mutex as usize, 0xCAFE);
+    MUTEX_UNLOCK.inc();
 }
 
 extern "C" fn stub_io_set_mode(pin: c_int, mode: c_int) -> bool {
@@ -309,6 +342,12 @@ extern "C" fn stub_io_read(pin: c_int) -> bool {
     pin == 3
 }
 
+extern "C" fn stub_io_read_analog(pin: c_int) -> f32 {
+    IO_READ_ANALOG.inc();
+    LAST_PIN.set(pin);
+    0.25 * pin as f32
+}
+
 extern "C" fn stub_mc_get_distance_abs() -> f32 {
     MC_GET_DISTANCE_ABS.inc();
     12.5
@@ -327,6 +366,11 @@ extern "C" fn stub_mc_get_speed() -> f32 {
 extern "C" fn stub_mc_get_tot_current_filtered() -> f32 {
     MC_GET_TOT_CURRENT_FILTERED.inc();
     33.5
+}
+
+extern "C" fn stub_mc_get_tot_current_directional_filtered() -> f32 {
+    MC_GET_TOT_CURRENT_DIRECTIONAL_FILTERED.inc();
+    -21.25
 }
 
 extern "C" fn stub_mc_get_tot_current_in_filtered() -> f32 {
@@ -413,13 +457,20 @@ fn populated_table() -> VescIf {
     table.conf_custom_clear_configs = Some(stub_conf_custom_clear_configs);
     table.sleep_us = Some(stub_sleep_us);
     table.thread_set_priority = Some(stub_thread_set_priority);
+    table.mutex_create = Some(stub_mutex_create);
+    table.mutex_lock = Some(stub_mutex_lock);
+    table.mutex_unlock = Some(stub_mutex_unlock);
+    table.system_time = Some(stub_system_time);
     table.system_time_ticks = Some(stub_system_time_ticks);
     table.io_set_mode = Some(stub_io_set_mode);
     table.io_write = Some(stub_io_write);
     table.io_read = Some(stub_io_read);
+    table.io_read_analog = Some(stub_io_read_analog);
     table.mc_get_rpm = Some(stub_mc_get_rpm);
     table.mc_get_speed = Some(stub_mc_get_speed);
     table.mc_get_tot_current_filtered = Some(stub_mc_get_tot_current_filtered);
+    table.mc_get_tot_current_directional_filtered =
+        Some(stub_mc_get_tot_current_directional_filtered);
     table.mc_get_tot_current_in_filtered = Some(stub_mc_get_tot_current_in_filtered);
     table.mc_get_duty_cycle_now = Some(stub_mc_get_duty_cycle_now);
     table.foc_get_id = Some(stub_foc_get_id);
@@ -493,7 +544,7 @@ fn app_data_helpers_forward_through_mock_table() {
 
         assert!(vesc_set_app_data_handler(handler));
         assert!(LAST_HANDLER_INSTALLED.get());
-        assert!(vesc_clear_app_data_handler());
+        let _: () = vesc_clear_app_data_handler();
         assert!(!LAST_HANDLER_INSTALLED.get());
 
         let payload = [1_u8, 2, 3];
@@ -508,18 +559,14 @@ fn custom_config_helpers_forward_through_mock_table() {
     // Refloat v1.2.1 registers these callbacks in `src/main.c:2456`, clears them
     // in `src/main.c:2403`, and gets the ABI slots from `vesc_pkg_lib/vesc_c_if.h:549-553`.
     with_populated_table(|| unsafe {
-        assert!(conf_custom_add_config(
-            custom_config_get,
-            custom_config_set,
-            custom_config_xml,
-        ));
+        conf_custom_add_config(custom_config_get, custom_config_set, custom_config_xml);
         assert_eq!(CONF_CUSTOM_ADD_CONFIG.get(), 1);
         assert_eq!(CUSTOM_CONFIG_GET.get(), 1);
         assert_eq!(CUSTOM_CONFIG_SET.get(), 1);
         assert_eq!(CUSTOM_CONFIG_XML.get(), 1);
         assert!(LAST_CUSTOM_CONFIG_DEFAULT.get());
 
-        assert!(conf_custom_clear_configs());
+        conf_custom_clear_configs();
         assert_eq!(CONF_CUSTOM_CLEAR_CONFIGS.get(), 1);
     });
 }
@@ -528,6 +575,23 @@ fn custom_config_helpers_forward_through_mock_table() {
 fn system_time_ticks_forwards_through_mock_table() {
     with_populated_table(|| unsafe {
         assert_eq!(vesc_system_time_ticks(), 42);
+        assert_eq!(SYSTEM_TIME_TICKS.get(), 1);
+        assert_eq!(SYSTEM_TIME.get(), 0);
+    });
+}
+
+#[test]
+fn system_time_ticks_falls_back_to_seconds_when_tick_slot_is_absent_like_refloat() {
+    let mut table = populated_table();
+    table.system_time_ticks = None;
+
+    with_table(&table, || {
+        reset_counters();
+        let ticks = unsafe { vesc_system_time_ticks() };
+
+        assert_eq!(ticks, 12_500);
+        assert_eq!(SYSTEM_TIME_TICKS.get(), 0);
+        assert_eq!(SYSTEM_TIME.get(), 1);
     });
 }
 
@@ -542,6 +606,17 @@ fn sleep_us_forwards_through_mock_table() {
 }
 
 #[test]
+#[should_panic(expected = "mock VESC_IF table must populate required slot")]
+fn missing_required_slot_fails_loudly() {
+    let mut table = populated_table();
+    table.sleep_us = None;
+
+    with_table(&table, || unsafe {
+        vesc_sleep_us(1);
+    });
+}
+
+#[test]
 fn thread_set_priority_forwards_through_mock_table() {
     with_populated_table(|| unsafe {
         assert!(vesc_thread_set_priority(-1));
@@ -552,11 +627,36 @@ fn thread_set_priority_forwards_through_mock_table() {
 }
 
 #[test]
+fn thread_set_priority_reports_absence_on_pre_6_06_tables() {
+    let mut table = populated_table();
+    table.thread_set_priority = None;
+
+    with_table(&table, || unsafe {
+        assert!(!vesc_thread_set_priority(-1));
+        assert_eq!(THREAD_SET_PRIORITY.get(), 0);
+    });
+}
+
+#[test]
+fn mutex_helpers_forward_through_mock_table() {
+    with_populated_table(|| unsafe {
+        let mutex = vesc_mutex_create();
+        vesc_mutex_lock(mutex);
+        vesc_mutex_unlock(mutex);
+
+        assert_eq!(MUTEX_CREATE.get(), 1);
+        assert_eq!(MUTEX_LOCK.get(), 1);
+        assert_eq!(MUTEX_UNLOCK.get(), 1);
+    });
+}
+
+#[test]
 fn runtime_motor_helpers_forward_through_mock_table() {
     with_populated_table(|| unsafe {
         assert_eq!(mc_get_rpm(), 3210.0);
         assert_eq!(mc_get_speed(), 12.25);
         assert_eq!(mc_get_tot_current_filtered(), 33.5);
+        assert_eq!(mc_get_tot_current_directional_filtered(), -21.25);
         assert_eq!(mc_get_tot_current_in_filtered(), -8.25);
         assert_eq!(mc_get_duty_cycle_now(), -0.42);
         assert_eq!(foc_get_id(), Some(1.5));
@@ -564,10 +664,22 @@ fn runtime_motor_helpers_forward_through_mock_table() {
         assert_eq!(MC_GET_RPM.get(), 1);
         assert_eq!(MC_GET_SPEED.get(), 1);
         assert_eq!(MC_GET_TOT_CURRENT_FILTERED.get(), 1);
+        assert_eq!(MC_GET_TOT_CURRENT_DIRECTIONAL_FILTERED.get(), 1);
         assert_eq!(MC_GET_TOT_CURRENT_IN_FILTERED.get(), 1);
         assert_eq!(MC_GET_DUTY_CYCLE_NOW.get(), 1);
         assert_eq!(FOC_GET_ID.get(), 1);
         assert_eq!(LAST_FOC_ID.get(), 1.5);
+    });
+}
+
+#[test]
+fn foc_get_id_reports_absence_when_the_motor_does_not_expose_it() {
+    let mut table = populated_table();
+    table.foc_get_id = None;
+
+    with_table(&table, || unsafe {
+        assert_eq!(foc_get_id(), None);
+        assert_eq!(FOC_GET_ID.get(), 0);
     });
 }
 
@@ -580,6 +692,7 @@ fn gpio_helpers_forward_through_mock_table() {
         assert!(io_set_mode(pin, mode));
         assert!(io_write(pin, 1));
         assert!(io_read(pin));
+        assert_eq!(io_read_analog(pin), 0.75);
         assert_eq!(LAST_PIN.get(), 3);
         assert_eq!(LAST_MODE.get(), 2);
         assert_eq!(LAST_LEVEL.get(), 1);
@@ -673,6 +786,10 @@ fn vesc_if_abi_gpio_offsets_match_struct_layout() {
     assert_eq!(
         VescIfAbi::IO_READ.vesc32_byte_offset(),
         vesc32(core::mem::offset_of!(VescIf, io_read))
+    );
+    assert_eq!(
+        VescIfAbi::IO_READ_ANALOG.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, io_read_analog))
     );
 }
 

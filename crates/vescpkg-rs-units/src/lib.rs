@@ -78,8 +78,10 @@ pub mod ratio;
 pub mod temperature;
 pub mod time;
 
-pub use battery::{AmpHours, Charge, DistancePerEnergy, Energy, EnergyPerDistance, WattHours};
-pub use electrical::{Current, FluxLinkage, Inductance, Power, Resistance, Voltage};
+pub use battery::{Charge, DistancePerEnergy, Energy, EnergyPerDistance};
+pub use electrical::{
+    Current, FluxLinkage, Inductance, MagneticFluxDensity, Power, Resistance, Voltage,
+};
 pub use gnss::{Height, Latitude, Longitude};
 pub use motion::{
     AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Distance, OdometerMeters, Rpm,
@@ -88,18 +90,17 @@ pub use motion::{
 pub use ratio::{Percent, Ratio, SignedRatio};
 pub use temperature::Temperature;
 pub use time::{
-    Frequency, SYSTEM_TICK_RATE_HZ, SampleRate, SystemInstant, SystemTicks, TimestampTicks,
-    VescSeconds,
+    Frequency, SYSTEM_TICK_RATE_HZ, SampleRate, SystemTicks, TimestampTicks, VescSeconds,
 };
 
 /// Common package-author imports for typed unit calculations.
 pub mod prelude {
     pub use crate::{
-        AccelerationG, AmpHours, AngleDegrees, AngleRadians, AngularVelocity, BoundedUnitError,
-        Charge, Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage,
-        Frequency, Height, Inductance, Latitude, Longitude, OdometerMeters, Percent, Power, Ratio,
-        Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed, SystemInstant,
-        SystemTicks, TachometerSteps, Temperature, TimestampTicks, VescSeconds, Voltage, WattHours,
+        AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, BoundedUnitError, Charge,
+        Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage, Frequency,
+        Height, Inductance, Latitude, Longitude, MagneticFluxDensity, OdometerMeters, Percent,
+        Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed,
+        SystemTicks, TachometerSteps, Temperature, TimestampTicks, VescSeconds, Voltage,
     };
 }
 
@@ -135,3 +136,11 @@ impl BoundedUnitError {
         self.max
     }
 }
+
+impl core::fmt::Display for BoundedUnitError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{} is outside {}..={}", self.value, self.min, self.max)
+    }
+}
+
+impl core::error::Error for BoundedUnitError {}

@@ -1,15 +1,14 @@
 //! Package lifecycle helpers built on binding traits.
 
-use core::ffi::CStr;
-
-use crate::bindings::{AppDataBindings, LbmBindings};
-use crate::extension::{ExtensionDescriptor, RegisterError};
-use vescpkg_rs_sys::{
-    AppDataHandler, ExtensionHandler, LbmValue, LibInfo, NativeImage, StopHandler,
-};
+use crate::bindings::LbmBindings;
+#[cfg(any(test, feature = "test-support", target_arch = "arm"))]
+use crate::extension::{ExtensionDescriptor, ExtensionRegistration, ExtensionRegistrationError};
+use vescpkg_rs_sys::LbmValue;
+#[cfg(any(test, feature = "test-support", target_arch = "arm"))]
+use vescpkg_rs_sys::{ExtensionHandler, NativeImage};
 
 /// Thin wrapper around the LispBM binding set used by package code.
-pub struct LbmApi<B> {
+pub(crate) struct LbmApi<B> {
     bindings: B,
 }
 
@@ -19,42 +18,52 @@ impl<B: LbmBindings> LbmApi<B> {
         Self { bindings }
     }
 
-    /// Return the underlying bindings implementation.
-    pub fn bindings(&self) -> &B {
-        &self.bindings
-    }
-
     /// Register one LispBM extension name and handler.
-    pub fn register_extension(&self, name: &CStr, handler: ExtensionHandler) -> bool {
-        unsafe { self.bindings.add_extension(name.as_ptr(), handler) }
+    #[cfg(test)]
+    pub fn register_extension(
+        &self,
+        name: crate::ExtensionName,
+        handler: ExtensionHandler,
+    ) -> Result<(), ExtensionRegistrationError> {
+        unsafe {
+            self.bindings
+                .add_extension(name.as_cstr().as_ptr(), handler)
+        }
+        .then_some(())
+        .ok_or(ExtensionRegistrationError::FirmwareRejected)
     }
 
-    /// Decode a LispBM integer value into an `i32`.
-    pub fn decode_i32(&self, value: LbmValue) -> i32 {
-        unsafe { self.bindings.decode_i32(value) }
+    /// Decode a LispBM numeric value into an `i32`.
+    pub fn decode_i32(&self, value: LbmValue) -> Option<i32> {
+        unsafe {
+            self.bindings
+                .is_number(value)
+                .then(|| self.bindings.decode_i32(value))
+        }
     }
 
-    /// Encode an `i32` as a LispBM value.
-    pub fn encode_i32(&self, value: i32) -> LbmValue {
-        unsafe { self.bindings.encode_i32(value) }
+    /// Return the LispBM true value.
+    #[cfg(not(test))]
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    pub fn encode_true(&self) -> LbmValue {
+        self.bindings.encode_true()
     }
 
-    /// Check whether a LispBM value is numeric.
-    pub fn is_number(&self, value: LbmValue) -> bool {
-        unsafe { self.bindings.is_number(value) }
-    }
-
-    /// Return the LispBM eval-error value.
-    pub fn encode_eval_error(&self) -> LbmValue {
-        unsafe { self.bindings.encode_eval_error() }
+    /// Return the LispBM nil value.
+    #[cfg(not(test))]
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    pub fn encode_nil(&self) -> LbmValue {
+        self.bindings.encode_nil()
     }
 }
 
+#[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 /// Package lifecycle controller that owns the shared LispBM API wrapper.
-pub struct PackageLifecycle<B> {
+pub(crate) struct PackageLifecycle<B> {
     api: LbmApi<B>,
 }
 
+#[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 impl<B: LbmBindings> PackageLifecycle<B> {
     /// Construct a package lifecycle controller.
     pub fn new(bindings: B) -> Self {
@@ -63,50 +72,42 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         }
     }
 
-    /// Return the wrapped LispBM API helper.
-    pub fn bindings(&self) -> &B {
-        self.api.bindings()
-    }
-
     /// Register a validated extension descriptor with firmware.
-    pub fn register_extension(&self, descriptor: ExtensionDescriptor) -> Result<(), RegisterError> {
-        let descriptor = descriptor
-            .validate()
-            .map_err(|_| RegisterError::InvalidExtensionName)?;
-
-        if self
-            .api
+    #[cfg(test)]
+    pub fn register_extension(
+        &self,
+        descriptor: ExtensionDescriptor,
+    ) -> Result<(), ExtensionRegistrationError> {
+        self.api
             .register_extension(descriptor.name(), descriptor.handler())
-        {
-            Ok(())
-        } else {
-            Err(RegisterError::FirmwareRejected)
-        }
     }
 
     /// Register an extension whose handler address is relative to a loaded native image.
     ///
+    /// The descriptor name is a Rust `CStr` reference produced by package code, so on target it is
+    /// already a runtime PC-relative pointer. PIC may materialize the handler as either an image
+    /// offset or an already loaded address, so loader metadata resolves both forms.
+    ///
     /// # Safety
     ///
-    /// `image` must describe the native package image that owns `descriptor.handler()`.
-    /// The rebased handler address must use the firmware LispBM extension ABI and remain
-    /// valid for as long as firmware may call the registered extension.
-    pub unsafe fn register_extension_from_image(
+    /// `image` must describe the loaded native package image that owns
+    /// `descriptor`. The resolved handler address must be a valid firmware
+    /// LispBM extension function and remain valid for as long as firmware may
+    /// call the registered extension.
+    pub(crate) unsafe fn register_extension_from_image(
         &self,
         image: NativeImage,
         descriptor: ExtensionDescriptor,
-    ) -> Result<(), RegisterError> {
-        let descriptor = descriptor
-            .validate()
-            .map_err(|_| RegisterError::InvalidExtensionName)?;
-        let handler_offset = descriptor.handler() as usize;
+    ) -> Result<(), ExtensionRegistrationError> {
+        let name = descriptor.name().as_cstr().as_ptr();
+        let handler_address = descriptor.handler() as usize;
         let handler = unsafe {
-            core::mem::transmute::<usize, ExtensionHandler>(image.rebase_addr(handler_offset))
+            core::mem::transmute::<usize, ExtensionHandler>(image.resolve_addr(handler_address))
         };
-        if self.api.register_extension(descriptor.name(), handler) {
+        if unsafe { self.api.bindings.add_extension(name, handler) } {
             Ok(())
         } else {
-            Err(RegisterError::FirmwareRejected)
+            Err(ExtensionRegistrationError::FirmwareRejected)
         }
     }
 
@@ -114,103 +115,40 @@ impl<B: LbmBindings> PackageLifecycle<B> {
     ///
     /// # Safety
     ///
-    /// The safety requirements of [`Self::register_extension_from_image`] apply to every
-    /// descriptor in `descriptors`.
-    pub unsafe fn register_extensions_from_image(
+    /// `image` must describe the loaded native package image that owns every
+    /// descriptor. Each resolved handler address must be a valid firmware LispBM
+    /// extension function and remain callable by firmware after registration.
+    pub(crate) unsafe fn register_extensions_from_image(
         &self,
         image: NativeImage,
         descriptors: impl IntoIterator<Item = ExtensionDescriptor>,
-    ) -> Result<(), RegisterError> {
+    ) -> ExtensionRegistration {
+        let mut requested = 0;
+        let mut registered = 0;
         for descriptor in descriptors {
-            unsafe { self.register_extension_from_image(image, descriptor)? };
+            requested += 1;
+            registered += usize::from(
+                unsafe { self.register_extension_from_image(image, descriptor) }.is_ok(),
+            );
         }
-        Ok(())
+        ExtensionRegistration::new(requested, registered)
     }
 }
 
-/// Package lifecycle controller for loopback and app-data flows.
-pub struct LoopbackLifecycle<B> {
-    bindings: B,
-}
-
-/// Error returned when app-data handler registration fails.
+/// Failure returned when an app-data payload cannot cross the firmware ABI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AppDataHandlerRegistrationError {
-    /// Firmware rejected the handler update.
-    FirmwareRejected,
+#[non_exhaustive]
+pub enum AppDataSendError {
+    /// The payload exceeds the firmware's 511-byte app-data limit.
+    PayloadTooLarge,
 }
 
-impl core::fmt::Display for AppDataHandlerRegistrationError {
+impl core::fmt::Display for AppDataSendError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::FirmwareRejected => f.write_str("firmware rejected app-data handler update"),
+            Self::PayloadTooLarge => f.write_str("app-data payload exceeds 511 bytes"),
         }
     }
 }
 
-impl<B: AppDataBindings> LoopbackLifecycle<B> {
-    /// Construct a loopback lifecycle controller.
-    pub fn new(bindings: B) -> Self {
-        Self { bindings }
-    }
-
-    /// Return the wrapped app-data bindings.
-    pub fn bindings(&self) -> &B {
-        &self.bindings
-    }
-
-    /// Install the package stop hook into loader metadata.
-    ///
-    /// # Safety
-    ///
-    /// `info` must either be null or point to live loader metadata.
-    /// `stop_handler` must remain valid for as long as the firmware may call it.
-    /// The native image is built as PIC, matching refloat's VESC package model,
-    /// so this callback pointer is already a runtime address when this code executes.
-    pub unsafe fn install(
-        &self,
-        info: *mut LibInfo,
-        stop_handler: StopHandler,
-        _app_data_handler: AppDataHandler,
-    ) -> bool {
-        if let Some(info) = unsafe { info.as_mut() } {
-            info.stop_fun = Some(stop_handler);
-        }
-
-        true
-    }
-
-    /// Clear the app-data callback through the binding set.
-    pub fn clear_app_data_handler(&self) -> Result<(), AppDataHandlerRegistrationError> {
-        unsafe { app_data_handler_result(self.bindings.clear_app_data_handler()) }
-    }
-
-    /// Register the app-data callback through the binding set.
-    pub fn register_app_data_handler(
-        &self,
-        handler: AppDataHandler,
-    ) -> Result<(), AppDataHandlerRegistrationError> {
-        unsafe { app_data_handler_result(self.bindings.set_app_data_handler(handler)) }
-    }
-
-    /// Return the current firmware time tick counter.
-    pub fn system_time_ticks(&self) -> u32 {
-        self.bindings.system_time_ticks()
-    }
-
-    /// Send app-data bytes through the firmware callback.
-    ///
-    /// # Safety
-    ///
-    /// `data` must point to at least `len` bytes that remain valid for the duration
-    /// of the firmware call.
-    pub unsafe fn send_app_data(&self, data: *const u8, len: u32) {
-        unsafe { self.bindings.send_app_data(data, len) }
-    }
-}
-
-fn app_data_handler_result(accepted: bool) -> Result<(), AppDataHandlerRegistrationError> {
-    accepted
-        .then_some(())
-        .ok_or(AppDataHandlerRegistrationError::FirmwareRejected)
-}
+impl core::error::Error for AppDataSendError {}

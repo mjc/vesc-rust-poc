@@ -8,13 +8,15 @@ description = "Unofficial Rust package-author API for code running inside VESC p
 workspace = true
 
 [dependencies]
-vescpkg-rs-sys = { path = "../vescpkg-rs-sys" }
+libm = { version = "0.2", optional = true }
 vesc-protocol = { path = "../vesc-protocol" }
+vescpkg-rs-sys = { path = "../vescpkg-rs-sys" }
 vescpkg-rs-units = { path = "../vescpkg-rs-units", default-features = false }
 
 [features]
-test-support = []
 alloc = []
+math = ["dep:libm"]
+test-support = []
 
 [dev-dependencies]
 rstest = "0.26"
