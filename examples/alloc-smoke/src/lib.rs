@@ -29,27 +29,15 @@ static ALLOCATOR: VescAllocator = VescAllocator;
 #[global_allocator]
 static ALLOCATOR: std::alloc::System = std::alloc::System;
 
-vescpkg_rs::package_start!(crate::start);
-
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 const ALLOC_SMOKE_CANDIDATES: usize = 5;
 
 #[cfg(all(not(test), target_arch = "arm"))]
 struct AllocSmokeAppData;
 
-#[cfg(any(test, all(not(test), target_arch = "arm")))]
 struct AllocSmokeState;
 
-#[cfg(any(test, all(not(test), target_arch = "arm")))]
-static ALLOC_SMOKE_STATE: vescpkg_rs::PackageStateStore<AllocSmokeState> =
-    vescpkg_rs::PackageStateStore::new();
-
-#[cfg(any(test, all(not(test), target_arch = "arm")))]
-impl vescpkg_rs::PackageRuntimeState for AllocSmokeState {
-    fn runtime_store() -> &'static vescpkg_rs::PackageStateStore<Self> {
-        &ALLOC_SMOKE_STATE
-    }
-}
+vescpkg_rs::package_start!(crate::start, AllocSmokeState);
 
 #[cfg(all(not(test), target_arch = "arm"))]
 impl AppDataHandler for AllocSmokeAppData {
