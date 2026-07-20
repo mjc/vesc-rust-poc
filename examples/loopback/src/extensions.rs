@@ -18,7 +18,7 @@ struct RustProbeDiag;
 
 impl LbmExtension for RustProbeDiag {
     fn call(_args: LispArgs<'_>) -> LispValue {
-        LispValue::integer(42).expect("42 fits the LispBM immediate integer")
+        LispValue::try_from(42).expect("42 fits the LispBM immediate integer")
     }
 }
 
@@ -41,7 +41,7 @@ pub(crate) fn rust_add(a: i32, b: i32) -> i32 {
 
 #[cfg(all(test, feature = "test-support"))]
 fn rust_add_extension_value() -> LispValue {
-    LispValue::integer(rust_add(20, 22)).expect("42 fits the LispBM immediate integer")
+    LispValue::try_from(rust_add(20, 22)).expect("42 fits the LispBM immediate integer")
 }
 
 #[cfg(all(test, feature = "test-support"))]
@@ -50,8 +50,7 @@ mod tests {
         EXT_RUST_PROBE_DIAG_NAME, LbmExtension, LispArgs, LispValue, PACKAGE_EXTENSION_NAMES,
         RustProbeDiag, package_extension_descriptors, rust_add_extension_value,
     };
-    use vescpkg_rs::LoaderInfo;
-    use vescpkg_rs::test_support::TestExtensionRegistry;
+    use vescpkg_rs::test_support::{LoaderInfo, TestExtensionRegistry};
 
     #[test]
     fn package_extension_table_lists_the_device_probe_descriptor() {
@@ -89,11 +88,11 @@ mod tests {
 
     #[test]
     fn rust_add_extension_returns_a_constant_encoded_probe_value() {
-        assert!(rust_add_extension_value() == LispValue::integer(42).unwrap());
+        assert!(rust_add_extension_value() == LispValue::try_from(42).unwrap());
     }
 
     #[test]
     fn rust_probe_diag_ignores_lisp_arguments() {
-        assert!(RustProbeDiag::call(LispArgs::empty()) == LispValue::integer(42).unwrap());
+        assert!(RustProbeDiag::call(LispArgs::empty()) == LispValue::try_from(42).unwrap());
     }
 }

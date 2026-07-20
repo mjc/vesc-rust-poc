@@ -81,7 +81,7 @@ mod tests {
 
     #[test]
     fn package_lib_init_runs_the_device_loopback_entrypoint_path() {
-        let mut info = vescpkg_rs::LoaderInfo::new();
+        let mut info = vescpkg_rs::test_support::LoaderInfo::new();
 
         assert!(super::package_lib_init(&mut info));
         assert!(info.has_stop_handler());
