@@ -254,7 +254,7 @@ fn package_author_builds_realtime_data_header_without_raw_bit_flags() {
         .with_recording()
         .with_autostop();
     let header = RefloatRealtimeDataHeader::new(
-        SystemTimestamp::new(TimestampTicks::from_ticks(123_456)),
+        TimestampTicks::from_ticks(123_456),
         ride_state,
         RefloatFootpadState::Both,
         RefloatBeepReason::FirmwareFault,
@@ -262,7 +262,7 @@ fn package_author_builds_realtime_data_header_without_raw_bit_flags() {
     .with_data_recorder(recorder)
     .with_fatal_error(RefloatFatalErrorState::Present);
 
-    assert_eq!(header.timestamp().ticks().as_ticks(), 123_456);
+    assert_eq!(header.timestamp().as_ticks(), 123_456);
     assert_eq!(header.data_mask_compat(), 0b0000_0111);
     assert_eq!(header.extra_flags_compat(), 0b0000_1101);
     assert_eq!(header.state_byte_compat(), 0x23);

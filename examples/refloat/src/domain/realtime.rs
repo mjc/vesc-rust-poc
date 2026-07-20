@@ -11,7 +11,7 @@ use super::{
 use vescpkg_rs::prelude::{
     AngleDegrees, AngleRadians, BatteryCurrent, BatteryVoltage, DirectionalMotorCurrent, DutyCycle,
     ElectricalSpeed, FirmwareFaultWireCode, ImuPitch, ImuRoll, MosfetTemperature, MotorCurrent,
-    MotorTemperature, SignedRatio, SystemTimestamp, VehicleSpeed,
+    MotorTemperature, SignedRatio, TimestampTicks, VehicleSpeed,
 };
 
 /// The ID-list packet format is described in upstream `third_party/refloat/src/main.c:1884-1898`.
@@ -923,7 +923,7 @@ impl RefloatRealtimeTail {
 /// `third_party/refloat/src/main.c:1912-1941`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RefloatRealtimeDataHeader {
-    timestamp: SystemTimestamp,
+    timestamp: TimestampTicks,
     ride_state: RefloatRideState,
     footpad_state: RefloatFootpadState,
     beep_reason: RefloatBeepReason,
@@ -934,7 +934,7 @@ pub struct RefloatRealtimeDataHeader {
 impl RefloatRealtimeDataHeader {
     /// Build the typed realtime-data header state.
     pub const fn new(
-        timestamp: SystemTimestamp,
+        timestamp: TimestampTicks,
         ride_state: RefloatRideState,
         footpad_state: RefloatFootpadState,
         beep_reason: RefloatBeepReason,
@@ -962,7 +962,7 @@ impl RefloatRealtimeDataHeader {
     }
 
     /// Return the typed VESC system timestamp.
-    pub const fn timestamp(self) -> SystemTimestamp {
+    pub const fn timestamp(self) -> TimestampTicks {
         self.timestamp
     }
 

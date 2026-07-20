@@ -10,7 +10,7 @@ use crate::domain::{
     RefloatAllDataPayloads, RefloatAppDataCommand, RefloatChargingState, RefloatDarkRideState,
     RefloatRealtimeDataItem, RefloatRunState, RefloatWheelSlipState,
 };
-use vescpkg_rs::prelude::SystemTimestamp;
+use vescpkg_rs::prelude::TimestampTicks;
 
 // Refloat v1.2.1 `send_realtime_data` declares its fixed buffer at
 // `third_party/refloat/src/main.c:1267-1269`.
@@ -148,7 +148,7 @@ fn encode_refloat_get_realtime_data_response(
 #[inline(never)]
 pub(in crate::package) fn encode_refloat_realtime_data_response(
     payloads: &RefloatAllDataPayloads,
-    system_timestamp: SystemTimestamp,
+    system_timestamp: TimestampTicks,
 ) -> RefloatRealtimeDataResponse {
     let mut bytes = [0; REFLOAT_REALTIME_DATA_RESPONSE_CAPACITY];
     let mut ind = 0;
@@ -180,7 +180,7 @@ pub(in crate::package) fn encode_refloat_realtime_data_response(
     refloat_realtime_push_u8(&mut bytes, &mut ind, 0);
     // Upstream writes `d->time.now` at `third_party/refloat/src/main.c:1931`; VESC timestamps are
     // represented as 100 us system ticks.
-    refloat_realtime_push_u32(&mut bytes, &mut ind, system_timestamp.ticks().as_ticks());
+    refloat_realtime_push_u32(&mut bytes, &mut ind, system_timestamp.as_ticks());
 
     refloat_realtime_push_u8(
         &mut bytes,
@@ -310,7 +310,7 @@ fn realtime_value(payloads: &RefloatAllDataPayloads, item: RefloatRealtimeDataIt
 mod tests {
     use super::super::super::test_support::sample_all_data_payloads;
     use super::*;
-    use vescpkg_rs::prelude::{AngleDegrees, AngleRadians, SystemTimestamp, TimestampTicks};
+    use vescpkg_rs::prelude::{AngleDegrees, AngleRadians, TimestampTicks};
 
     #[test]
     fn app_data_processes_legacy_get_rtdata_like_refloat() {
@@ -366,7 +366,7 @@ mod tests {
     fn app_data_processes_non_running_realtime_data_like_refloat_qml() {
         let response = encode_refloat_realtime_data_response(
             &RefloatAllDataPayloads::source_startup(),
-            SystemTimestamp::new(TimestampTicks::from_ticks(0)),
+            TimestampTicks::from_ticks(0),
         );
         let bytes = response.as_bytes();
 

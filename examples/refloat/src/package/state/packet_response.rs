@@ -9,7 +9,7 @@ use crate::domain::{
     RefloatAllDataResponse, RefloatAppDataCommand, RefloatRealtimeMotorTemperatures,
 };
 use vescpkg_rs::MotorTelemetry;
-use vescpkg_rs::prelude::{BatteryVoltage, FirmwareFaultWireCode, SystemTimestamp, TimestampTicks};
+use vescpkg_rs::prelude::{BatteryVoltage, FirmwareFaultWireCode, TimestampTicks};
 
 impl RefloatPackageState {
     pub(super) fn send_metadata_packet_response(
@@ -61,7 +61,7 @@ impl RefloatPackageState {
                     ));
                 // Refloat's main loop updates `d->time.now` before app-data reads it
                 // in `cmd_realtime_data` at `third_party/refloat/src/main.c:1931`.
-                let system_timestamp = SystemTimestamp::new(now());
+                let system_timestamp = now();
                 let response = encode_refloat_realtime_data_response(&payloads, system_timestamp);
                 send(response.as_bytes())
             }
