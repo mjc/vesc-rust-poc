@@ -1,4 +1,4 @@
-//! Energy, charge, efficiency units, and compatibility names.
+//! Energy, charge, and efficiency units.
 
 use core::ops::Div;
 
@@ -10,10 +10,6 @@ const METERS_PER_MILE: f32 = 1609.344;
 
 scalar_unit!(Energy, from_watt_hours, as_watt_hours, "watt-hours");
 scalar_unit!(Charge, from_amp_hours, as_amp_hours, "amp-hours");
-/// Compatibility alias for older package code; prefer [`Energy`] in new APIs.
-pub type WattHours = Energy;
-/// Compatibility alias for older package code; prefer [`Charge`] in new APIs.
-pub type AmpHours = Charge;
 scalar_unit!(
     EnergyPerDistance,
     from_watt_hours_per_meter,

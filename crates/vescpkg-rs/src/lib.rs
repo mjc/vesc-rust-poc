@@ -80,11 +80,11 @@ pub(crate) mod ffi {
 pub use vesc_protocol::buffer as protocol_buffer;
 use vescpkg_rs_units as units;
 pub use vescpkg_rs_units::{
-    AccelerationG, AmpHours, AngleDegrees, AngleRadians, AngularVelocity, Charge, Current,
-    Distance, DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage, Frequency, Height,
-    Inductance, Latitude, Longitude, MagneticFluxDensity, OdometerMeters, Percent, Power, Ratio,
-    Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed, SystemInstant,
-    SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage, WattHours,
+    AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Charge, Current, Distance,
+    DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage, Frequency, Height, Inductance,
+    Latitude, Longitude, MagneticFluxDensity, OdometerMeters, Percent, Power, Ratio, Resistance,
+    Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed, SystemInstant, SystemTicks,
+    Temperature, TimestampTicks, VescSeconds, Voltage,
 };
 
 #[cfg(feature = "alloc")]
@@ -134,12 +134,11 @@ pub use types::*;
 pub mod prelude {
     pub use crate::types::*;
     pub use crate::units::{
-        AccelerationG, AmpHours, AngleDegrees, AngleRadians, AngularVelocity, BoundedUnitError,
-        Charge, Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage,
-        Frequency, Height, Inductance, Latitude, Longitude, MagneticFluxDensity, OdometerMeters,
-        Percent, Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio,
-        Speed, SystemInstant, SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
-        WattHours,
+        AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, BoundedUnitError, Charge,
+        Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage, Frequency,
+        Height, Inductance, Latitude, Longitude, MagneticFluxDensity, OdometerMeters, Percent,
+        Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed,
+        SystemInstant, SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
     };
     pub use crate::{
         AnalogPin, AppDataCallback, AppDataHandlerRegistrationError, AppDataSendError, ConfigBytes,
@@ -417,8 +416,7 @@ mod tests {
     #[test]
     fn semantic_adc_and_proven_imu_types_wrap_firmware_units() {
         let adc_voltage = AdcVoltage::new(Voltage::from_volts(1.65));
-        let adc_level = AdcDecodedLevel::try_new(Ratio::from_ratio(0.5).expect("normalized level"))
-            .expect("firmware decoded ADC level");
+        let adc_level = AdcDecodedLevel::new(Ratio::from_ratio(0.5).expect("normalized level"));
         let brake_lever = BrakeLeverLevel::new(Ratio::from_ratio(0.35).expect("brake lever level"));
         let brake_switch = BrakeSwitch::Pressed;
         let roll = ImuRoll::new(AngleRadians::from_radians(0.25));

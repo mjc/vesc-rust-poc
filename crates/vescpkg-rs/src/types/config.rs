@@ -568,7 +568,7 @@ pub struct GearRatio(f32);
 impl GearRatio {
     /// Create a checked positive gear ratio.
     pub const fn try_new(ratio: f32) -> Result<Self, GearRatioError> {
-        if ratio > 0.0 {
+        if ratio.is_finite() && ratio > 0.0 {
             Ok(Self(ratio))
         } else {
             Err(GearRatioError { value: ratio })
@@ -581,7 +581,7 @@ impl GearRatio {
     }
 }
 
-/// Error returned when a gear ratio is zero, negative, or NaN.
+/// Error returned when a gear ratio is not finite and positive.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GearRatioError {
     value: f32,
@@ -913,5 +913,12 @@ mod tests {
             .clear(&mut image.editor())
             .expect("valid generated field");
         assert_eq!(image.as_bytes(), &[7, 0, 0]);
+    }
+
+    #[test]
+    fn gear_ratio_rejects_non_finite_values() {
+        assert!(super::GearRatio::try_new(f32::INFINITY).is_err());
+        assert!(super::GearRatio::try_new(f32::NEG_INFINITY).is_err());
+        assert!(super::GearRatio::try_new(f32::NAN).is_err());
     }
 }

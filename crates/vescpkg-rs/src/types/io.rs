@@ -43,7 +43,7 @@ impl ThreadPriorityError {
 macro_rules! nonzero_u32_token {
     ($name:ident, $error:ident, $doc:literal, $error_doc:literal) => {
         #[doc = $doc]
-        #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
         #[repr(transparent)]
         pub struct $name(u32);
 

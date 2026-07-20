@@ -1,8 +1,7 @@
 use super::{
-    AccelerationG, AmpHours, AngleDegrees, AngleRadians, AngularVelocity, Charge, Current,
-    Distance, DistancePerEnergy, Energy, EnergyPerDistance, Frequency, Latitude, Longitude,
-    Percent, Power, Ratio, Rpm, SampleRate, Speed, SystemTicks, Temperature, TimestampTicks,
-    VescSeconds, Voltage, WattHours,
+    AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Charge, Current, Distance,
+    DistancePerEnergy, Energy, EnergyPerDistance, Frequency, Latitude, Longitude, Percent, Power,
+    Ratio, Rpm, SampleRate, Speed, SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
 };
 
 #[test]
@@ -37,19 +36,6 @@ fn scalar_units_round_trip_through_named_accessors() {
         AngularVelocity::from_degrees_per_second(90.0).as_degrees_per_second(),
         90.0
     );
-}
-
-#[test]
-fn unit_name_energy_and_charge_aliases_are_compatibility_names() {
-    let stored_energy: Energy = WattHours::from_watt_hours(70.0);
-    let legacy_energy_name: WattHours = Energy::from_joules(7200.0);
-    let stored_charge: Charge = AmpHours::from_amp_hours(3.2);
-    let legacy_charge_name: AmpHours = Charge::from_amp_hours(1.25);
-
-    assert_eq!(stored_energy.as_watt_hours(), 70.0);
-    assert_eq!(legacy_energy_name.as_watt_hours(), 2.0);
-    assert_eq!(stored_charge.as_amp_hours(), 3.2);
-    assert_eq!(legacy_charge_name.as_amp_hours(), 1.25);
 }
 
 #[test]
