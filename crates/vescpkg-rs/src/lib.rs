@@ -111,7 +111,7 @@ pub use runtime::{PackageRuntimeState, PackageStateAccess, PackageStateStore};
 pub use thread::{
     Firmware, FirmwareAppData, FirmwareClock, FirmwareThread, FirmwareThreads,
     StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadName,
-    ThreadSpec, ThreadStackSize,
+    ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError,
 };
 
 /// GPIO bindings and convenience wrappers for package code.
@@ -147,7 +147,7 @@ pub mod prelude {
         PackageStart, PackageStartError, PackageStateAccess, PackageStateStore,
         StatefulCustomConfigCallback, StatefulLbmExtension, StatelessFirmwareThread,
         StatelessThreadContext, ThreadContext, ThreadError, ThreadName, ThreadSpec,
-        ThreadStackSize,
+        ThreadWorkingAreaSize, ThreadWorkingAreaSizeError,
     };
 }
 

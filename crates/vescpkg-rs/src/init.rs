@@ -1075,12 +1075,12 @@ mod tests {
             let specs = [
                 crate::ThreadSpec::<SpawnState>::from_stateful_entry(
                     thread_entry,
-                    crate::ThreadStackSize::from_bytes(1_536),
+                    crate::ThreadWorkingAreaSize::try_from_bytes(1_536).unwrap(),
                     crate::thread_name!("main"),
                 ),
                 crate::ThreadSpec::<SpawnState>::from_stateless_entry(
                     thread_entry,
-                    crate::ThreadStackSize::from_bytes(1_024),
+                    crate::ThreadWorkingAreaSize::try_from_bytes(1_024).unwrap(),
                     crate::thread_name!("aux"),
                 ),
             ];
@@ -1126,12 +1126,12 @@ mod tests {
         let specs = [
             crate::ThreadSpec::<SpawnState>::from_stateful_entry(
                 thread_entry,
-                crate::ThreadStackSize::from_bytes(1_536),
+                crate::ThreadWorkingAreaSize::try_from_bytes(1_536).unwrap(),
                 crate::thread_name!("main"),
             ),
             crate::ThreadSpec::<SpawnState>::from_stateless_entry(
                 thread_entry,
-                crate::ThreadStackSize::from_bytes(1_024),
+                crate::ThreadWorkingAreaSize::try_from_bytes(1_024).unwrap(),
                 crate::thread_name!("aux"),
             ),
         ];

@@ -185,11 +185,11 @@ fn thread_api_spawns_and_terminates_typed_thread_group() {
         .spawn_threads(
             [
                 crate::ThreadSpec::<GroupTestState>::new::<GroupTestThread>(
-                    crate::ThreadStackSize::from_bytes(1_536),
+                    crate::ThreadWorkingAreaSize::try_from_bytes(1_536).unwrap(),
                     crate::thread_name!("first"),
                 ),
                 crate::ThreadSpec::<GroupTestState>::stateless::<GroupTestStatelessThread>(
-                    crate::ThreadStackSize::from_bytes(1_024),
+                    crate::ThreadWorkingAreaSize::try_from_bytes(1_024).unwrap(),
                     crate::thread_name!("second"),
                 ),
             ],
@@ -218,11 +218,11 @@ fn thread_api_terminates_first_thread_when_second_spawn_fails() {
     let threads = api.spawn_threads(
         [
             crate::ThreadSpec::<GroupTestState>::new::<GroupTestThread>(
-                crate::ThreadStackSize::from_bytes(1_536),
+                crate::ThreadWorkingAreaSize::try_from_bytes(1_536).unwrap(),
                 crate::thread_name!("first"),
             ),
             crate::ThreadSpec::<GroupTestState>::stateless::<GroupTestStatelessThread>(
-                crate::ThreadStackSize::from_bytes(1_024),
+                crate::ThreadWorkingAreaSize::try_from_bytes(1_024).unwrap(),
                 crate::thread_name!("second"),
             ),
         ],

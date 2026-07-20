@@ -404,32 +404,45 @@ macro_rules! thread_name {
     };
 }
 
-/// Stack size passed to a firmware thread in bytes.
+/// ChibiOS working-area size passed to a firmware thread in bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ThreadStackSize(usize);
+pub struct ThreadWorkingAreaSize(usize);
 
-impl ThreadStackSize {
+/// Invalid ChibiOS thread working-area size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ThreadWorkingAreaSizeError {
+    /// The working area cannot hold ChibiOS's required thread metadata and stack.
+    TooSmall,
+    /// The working-area byte count does not satisfy ChibiOS alignment.
+    Misaligned,
+}
+
+impl core::fmt::Display for ThreadWorkingAreaSizeError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::TooSmall => "thread working area must be at least 416 bytes",
+            Self::Misaligned => "thread working area must be a multiple of 8 bytes",
+        })
+    }
+}
+
+impl core::error::Error for ThreadWorkingAreaSizeError {}
+
+impl ThreadWorkingAreaSize {
     const MIN_BYTES: usize = 416;
     const WORKING_AREA_ALIGNMENT_BYTES: usize = 8;
 
-    /// Build a stack size from its firmware byte count.
-    ///
-    /// # Panics
-    ///
-    /// Panics when `bytes` cannot hold VESC's pinned ChibiOS working area or
-    /// is not a multiple of its required size alignment. VESC owns the
-    /// working-area allocation and remains responsible for aligning its base.
+    /// Build a working-area size from its firmware byte count.
     #[must_use]
-    pub const fn from_bytes(bytes: usize) -> Self {
-        assert!(
-            bytes >= Self::MIN_BYTES,
-            "thread working-area size must be at least 416 bytes"
-        );
-        assert!(
-            bytes.is_multiple_of(Self::WORKING_AREA_ALIGNMENT_BYTES),
-            "thread working-area size must be a multiple of 8 bytes"
-        );
-        Self(bytes)
+    pub const fn try_from_bytes(bytes: usize) -> Result<Self, ThreadWorkingAreaSizeError> {
+        if bytes < Self::MIN_BYTES {
+            return Err(ThreadWorkingAreaSizeError::TooSmall);
+        }
+        if !bytes.is_multiple_of(Self::WORKING_AREA_ALIGNMENT_BYTES) {
+            return Err(ThreadWorkingAreaSizeError::Misaligned);
+        }
+        Ok(Self(bytes))
     }
 
     pub(crate) const fn bytes(self) -> usize {
@@ -441,7 +454,7 @@ impl ThreadStackSize {
 #[derive(Debug)]
 pub struct ThreadSpec<S: 'static> {
     entry: ThreadEntry,
-    stack_size: ThreadStackSize,
+    stack_size: ThreadWorkingAreaSize,
     name: ThreadName,
     argument: ThreadArgument,
     _state: PhantomData<fn(&mut S)>,
@@ -463,7 +476,7 @@ impl<S: 'static> Clone for ThreadSpec<S> {
 
 impl<S: 'static> ThreadSpec<S> {
     /// Build spawn settings for a typed firmware thread.
-    pub fn new<T>(stack_size: ThreadStackSize, name: ThreadName) -> Self
+    pub fn new<T>(stack_size: ThreadWorkingAreaSize, name: ThreadName) -> Self
     where
         T: FirmwareThread<State = S>,
     {
@@ -476,7 +489,7 @@ impl<S: 'static> ThreadSpec<S> {
     }
 
     /// Build spawn settings for a typed firmware thread that ignores package state.
-    pub fn stateless<T>(stack_size: ThreadStackSize, name: ThreadName) -> Self
+    pub fn stateless<T>(stack_size: ThreadWorkingAreaSize, name: ThreadName) -> Self
     where
         T: StatelessFirmwareThread,
     {
@@ -491,7 +504,7 @@ impl<S: 'static> ThreadSpec<S> {
     /// Build spawn settings from a raw firmware thread entrypoint.
     const fn from_entry(
         entry: ThreadEntry,
-        stack_size: ThreadStackSize,
+        stack_size: ThreadWorkingAreaSize,
         name: ThreadName,
         argument: ThreadArgument,
     ) -> Self {
@@ -507,7 +520,7 @@ impl<S: 'static> ThreadSpec<S> {
     #[cfg(test)]
     pub(crate) const fn from_stateful_entry(
         entry: ThreadEntry,
-        stack_size: ThreadStackSize,
+        stack_size: ThreadWorkingAreaSize,
         name: ThreadName,
     ) -> Self {
         Self::from_entry(entry, stack_size, name, ThreadArgument::PackageState)
@@ -516,7 +529,7 @@ impl<S: 'static> ThreadSpec<S> {
     #[cfg(test)]
     pub(crate) const fn from_stateless_entry(
         entry: ThreadEntry,
-        stack_size: ThreadStackSize,
+        stack_size: ThreadWorkingAreaSize,
         name: ThreadName,
     ) -> Self {
         Self::from_entry(entry, stack_size, name, ThreadArgument::None)
@@ -926,8 +939,8 @@ pub mod test_support {
 mod tests {
     use super::{
         AppDataApi, FirmwareThread, StatelessFirmwareThread, StatelessThreadContext, ThreadApi,
-        ThreadContext, ThreadSpec, ThreadStackSize, VESC_MAX_SAFE_SLEEP_MICROS,
-        firmware_thread_entry, stateless_firmware_thread_entry,
+        ThreadContext, ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError,
+        VESC_MAX_SAFE_SLEEP_MICROS, firmware_thread_entry, stateless_firmware_thread_entry,
     };
     use core::ffi::CStr;
     use core::ffi::c_void;
@@ -1081,20 +1094,39 @@ mod tests {
     }
 
     #[test]
-    fn thread_stack_size_accepts_chibios_minimum_and_refloat_sizes() {
-        assert_eq!(ThreadStackSize::from_bytes(416).bytes(), 416);
-        assert_eq!(ThreadStackSize::from_bytes(1_024).bytes(), 1_024);
-        assert_eq!(ThreadStackSize::from_bytes(1_536).bytes(), 1_536);
+    fn thread_working_area_size_accepts_chibios_minimum_and_refloat_sizes() {
+        assert_eq!(
+            ThreadWorkingAreaSize::try_from_bytes(416).unwrap().bytes(),
+            416
+        );
+        assert_eq!(
+            ThreadWorkingAreaSize::try_from_bytes(1_024)
+                .unwrap()
+                .bytes(),
+            1_024
+        );
+        assert_eq!(
+            ThreadWorkingAreaSize::try_from_bytes(1_536)
+                .unwrap()
+                .bytes(),
+            1_536
+        );
     }
 
     #[test]
-    fn thread_stack_size_rejects_undersized_working_areas() {
-        assert!(std::panic::catch_unwind(|| ThreadStackSize::from_bytes(408)).is_err());
+    fn thread_working_area_size_rejects_undersized_values() {
+        assert_eq!(
+            ThreadWorkingAreaSize::try_from_bytes(408),
+            Err(ThreadWorkingAreaSizeError::TooSmall)
+        );
     }
 
     #[test]
-    fn thread_stack_size_rejects_nonmultiple_working_area_sizes() {
-        assert!(std::panic::catch_unwind(|| ThreadStackSize::from_bytes(420)).is_err());
+    fn thread_working_area_size_rejects_misaligned_values() {
+        assert_eq!(
+            ThreadWorkingAreaSize::try_from_bytes(420),
+            Err(ThreadWorkingAreaSizeError::Misaligned)
+        );
     }
 
     #[test]
@@ -1177,17 +1209,17 @@ mod tests {
         let specs = [
             ThreadSpec::from_stateful_entry(
                 stateless_firmware_thread_entry::<RecordingStatelessThread>,
-                ThreadStackSize::from_bytes(1_536),
+                ThreadWorkingAreaSize::try_from_bytes(1_536).unwrap(),
                 first_name,
             ),
             ThreadSpec::from_stateless_entry(
                 stateless_firmware_thread_entry::<RecordingStatelessThread>,
-                ThreadStackSize::from_bytes(1_024),
+                ThreadWorkingAreaSize::try_from_bytes(1_024).unwrap(),
                 second_name,
             ),
             ThreadSpec::from_stateless_entry(
                 stateless_firmware_thread_entry::<RecordingStatelessThread>,
-                ThreadStackSize::from_bytes(768),
+                ThreadWorkingAreaSize::try_from_bytes(768).unwrap(),
                 third_name,
             ),
         ];
@@ -1243,17 +1275,17 @@ mod tests {
         let specs = [
             ThreadSpec::from_stateful_entry(
                 stateless_firmware_thread_entry::<RecordingStatelessThread>,
-                ThreadStackSize::from_bytes(1_536),
+                ThreadWorkingAreaSize::try_from_bytes(1_536).unwrap(),
                 crate::thread_name!("first"),
             ),
             ThreadSpec::from_stateless_entry(
                 stateless_firmware_thread_entry::<RecordingStatelessThread>,
-                ThreadStackSize::from_bytes(1_024),
+                ThreadWorkingAreaSize::try_from_bytes(1_024).unwrap(),
                 crate::thread_name!("second"),
             ),
             ThreadSpec::from_stateless_entry(
                 stateless_firmware_thread_entry::<RecordingStatelessThread>,
-                ThreadStackSize::from_bytes(768),
+                ThreadWorkingAreaSize::try_from_bytes(768).unwrap(),
                 crate::thread_name!("third"),
             ),
         ];
