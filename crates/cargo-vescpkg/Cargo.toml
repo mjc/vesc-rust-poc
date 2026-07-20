@@ -4,9 +4,6 @@ version = "0.1.0"
 edition = "2024"
 description = "Unofficial Cargo subcommand for building, installing, and debugging Rust VESC package artifacts."
 
-[features]
-hil = []
-
 [lints]
 workspace = true
 

@@ -34,15 +34,14 @@ CARGO_TARGET_DIR="$PWD/target/custom" \
 - `make check` runs formatting, strict host checks, target checks,
   and workspace tests.
 - `make check-full` also builds the package ELF and `.vescpkg`.
-- `cargo nextest run -p cargo-vescpkg --features hil --profile hil -- --ignored` is the
-  hardware lane and requires an attached VESC plus its device selection.
 
 The generated package is decoded by the same package reader used by the install
-path before BLE transport is opened. A successful hardware sign-off still
-requires installing and probing both loopback and alloc-smoke packages.
+path before BLE transport is opened. This repository has no automated hardware
+test. A hardware sign-off must record the exact deploy/probe command, device,
+and result.
 
 ## Deferred hardware tooling
 
 `cargo-flash`/probe-rs are not part of this build path. Package deployment is
 supported through `cargo-vescpkg deploy` and `package-install` over the bespoke
-VESC transport; loopback verification is a separate command.
+VESC transport; loopback verification is a separate manual command.

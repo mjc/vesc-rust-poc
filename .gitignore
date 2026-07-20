@@ -1,8 +1,6 @@
 /target
 *.vescpkg
 *.bin
-!fixtures/golden/**/*.bin
-!fixtures/golden/**/*.elf
 .direnv
 
 # MemPalace per-project files (issue #185)

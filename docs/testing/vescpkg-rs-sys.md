@@ -72,7 +72,7 @@ dependency-free; the Nix development shell supplies libclang and sets
 | `vescpkg-rs-sys` | Layout + raw dispatch |
 | `vescpkg-rs` | Safe bindings, lifecycle, extension semantics |
 | `cargo-vescpkg` | Cargo artifacts, native link, package pipeline |
-| HIL / real VESC | Manual `cargo-vescpkg` profiles |
+| HIL / real VESC | Manual deployment and probe; no automated repo test |
 
 ## CI commands
 

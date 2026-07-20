@@ -21,15 +21,9 @@ Rust package API.
 - `make check-full` — strict host checks, target checks, package
   ELF build, and `.vescpkg` emission
 
-## Deferred:
-
-Hardware-in-the-loop validation is intentionally out of the default CI path.
-Symbol resolution, and semantic instruction audits against device-proven fixtures;
-`cargo vescpkg` exercises install/loopback against real hardware manually.
-
-The feature-gated, ignored sketch lives in
-`crates/cargo-vescpkg/tests/hil_loopback.rs` and is filtered by the `hil`
-nextest profile.
+Hardware validation is not implemented by this repository's automated test
+suite. Manual device results count as proof only when the command, device, and
+captured result are recorded.
 
 ## Current Rust-Owned Boundary
 
