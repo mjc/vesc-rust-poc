@@ -47,6 +47,14 @@ pub struct CanStandardIdError {
     value: u16,
 }
 
+impl core::fmt::Display for CanStandardIdError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "standard CAN ID {} exceeds 0x7ff", self.value)
+    }
+}
+
+impl core::error::Error for CanStandardIdError {}
+
 impl CanStandardIdError {
     /// Return the rejected ID.
     pub const fn value(self) -> u16 {
@@ -84,6 +92,14 @@ pub struct CanExtendedIdError {
     value: u32,
 }
 
+impl core::fmt::Display for CanExtendedIdError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "extended CAN ID {} exceeds 0x1fff_ffff", self.value)
+    }
+}
+
+impl core::error::Error for CanExtendedIdError {}
+
 /// Classic CAN payload length in bytes.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
@@ -113,6 +129,18 @@ impl CanPayloadLen {
 pub struct CanPayloadLenError {
     value: u8,
 }
+
+impl core::fmt::Display for CanPayloadLenError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "classic CAN payload length {} exceeds 8 bytes",
+            self.value
+        )
+    }
+}
+
+impl core::error::Error for CanPayloadLenError {}
 
 impl CanPayloadLenError {
     /// Return the rejected length.

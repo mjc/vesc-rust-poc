@@ -103,6 +103,18 @@ impl LispIntegerError {
     }
 }
 
+impl core::fmt::Display for LispIntegerError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "{} is outside LispBM's immediate integer range",
+            self.value
+        )
+    }
+}
+
+impl core::error::Error for LispIntegerError {}
+
 impl TryFrom<i32> for LispValue {
     type Error = LispIntegerError;
 

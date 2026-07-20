@@ -40,6 +40,14 @@ impl ThreadPriorityError {
     }
 }
 
+impl core::fmt::Display for ThreadPriorityError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "thread priority {} is outside -5..=5", self.value)
+    }
+}
+
+impl core::error::Error for ThreadPriorityError {}
+
 macro_rules! nonzero_u32_token {
     ($name:ident, $error:ident, $doc:literal, $error_doc:literal) => {
         #[doc = $doc]
@@ -75,6 +83,14 @@ macro_rules! nonzero_u32_token {
                 self.value
             }
         }
+
+        impl core::fmt::Display for $error {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                write!(f, "{} must be non-zero", stringify!($name))
+            }
+        }
+
+        impl core::error::Error for $error {}
     };
 }
 

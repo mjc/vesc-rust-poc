@@ -386,10 +386,19 @@ impl ThreadName {
 
 /// Failure returned when firmware rejects a thread operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ThreadError {
     /// The requested thread priority is not supported by this firmware.
     PriorityUnsupported,
 }
+
+impl core::fmt::Display for ThreadError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("firmware does not support the requested thread priority")
+    }
+}
+
+impl core::error::Error for ThreadError {}
 
 /// Create a checked static firmware thread name from a Rust string literal.
 #[macro_export]

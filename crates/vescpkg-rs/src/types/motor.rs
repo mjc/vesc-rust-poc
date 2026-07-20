@@ -190,6 +190,14 @@ impl AudioChannelError {
     }
 }
 
+impl core::fmt::Display for AudioChannelError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "audio channel {} is outside 0..=3", self.value)
+    }
+}
+
+impl core::error::Error for AudioChannelError {}
+
 /// Firmware motor fault code token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]

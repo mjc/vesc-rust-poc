@@ -594,6 +594,14 @@ impl GearRatioError {
     }
 }
 
+impl core::fmt::Display for GearRatioError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{} is not a finite positive gear ratio", self.value)
+    }
+}
+
+impl core::error::Error for GearRatioError {}
+
 positive_count_type!(
     MotorPoleCount,
     MotorPoleCountError,

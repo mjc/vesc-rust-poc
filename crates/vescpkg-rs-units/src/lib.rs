@@ -136,3 +136,11 @@ impl BoundedUnitError {
         self.max
     }
 }
+
+impl core::fmt::Display for BoundedUnitError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{} is outside {}..={}", self.value, self.min, self.max)
+    }
+}
+
+impl core::error::Error for BoundedUnitError {}
