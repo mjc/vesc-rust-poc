@@ -1,8 +1,0 @@
-error[E0515]: cannot return value referencing local variable `info`
- --> tests/ui/package_start_borrows_loader.rs:3:5
-  |
-3 |     vescpkg_rs::PackageStart::from_info(&mut info)
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^---------^
-  |     |                                   |
-  |     |                                   `info` is borrowed here
-  |     returns a value referencing data owned by the current function

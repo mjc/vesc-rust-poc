@@ -1,7 +1,7 @@
 use vescpkg_rs::{
     app_data_packet, bindings, encode_integer, ffi, PackageProgramAddress, ProtocolFrame,
     FirmwareThreadHandle, FirmwareThreadPair, FirmwareThreadPairSpec, FirmwareThreadSpec,
-    WireCommand, WireVersion, PackageStart,
+    ThreadGroup, ThreadHandle, WireCommand, WireVersion, PackageStart,
 };
 
 fn main() {

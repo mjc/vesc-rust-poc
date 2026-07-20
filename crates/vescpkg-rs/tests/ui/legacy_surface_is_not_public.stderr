@@ -1,4 +1,4 @@
-error[E0432]: unresolved imports `vescpkg_rs::app_data_packet`, `vescpkg_rs::encode_integer`, `vescpkg_rs::ProtocolFrame`, `vescpkg_rs::FirmwareThreadHandle`, `vescpkg_rs::FirmwareThreadPair`, `vescpkg_rs::FirmwareThreadPairSpec`, `vescpkg_rs::FirmwareThreadSpec`, `vescpkg_rs::WireCommand`, `vescpkg_rs::WireVersion`
+error[E0432]: unresolved imports `vescpkg_rs::app_data_packet`, `vescpkg_rs::encode_integer`, `vescpkg_rs::ProtocolFrame`, `vescpkg_rs::FirmwareThreadHandle`, `vescpkg_rs::FirmwareThreadPair`, `vescpkg_rs::FirmwareThreadPairSpec`, `vescpkg_rs::FirmwareThreadSpec`, `vescpkg_rs::ThreadGroup`, `vescpkg_rs::ThreadHandle`, `vescpkg_rs::WireCommand`, `vescpkg_rs::WireVersion`
  --> tests/ui/legacy_surface_is_not_public.rs:2:5
   |
 2 |     app_data_packet, bindings, encode_integer, ffi, PackageProgramAddress, ProtocolFrame,
@@ -12,10 +12,12 @@ error[E0432]: unresolved imports `vescpkg_rs::app_data_packet`, `vescpkg_rs::enc
   |     |                     |                   no `FirmwareThreadPairSpec` in the root
   |     |                     no `FirmwareThreadPair` in the root
   |     no `FirmwareThreadHandle` in the root
-4 |     WireCommand, WireVersion, PackageStart,
-  |     ^^^^^^^^^^^  ^^^^^^^^^^^ no `WireVersion` in the root
-  |     |
-  |     no `WireCommand` in the root
+4 |     ThreadGroup, ThreadHandle, WireCommand, WireVersion, PackageStart,
+  |     ^^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^^^^
+  |     |            |             |
+  |     |            |             no `WireCommand` in the root
+  |     |            no `ThreadHandle` in the root
+  |     no `ThreadGroup` in the root
   |
 help: a similar name exists in the module
   |
@@ -37,6 +39,11 @@ help: a similar name exists in the module
 3 -     FirmwareThreadHandle, FirmwareThreadPair, FirmwareThreadPairSpec, FirmwareThreadSpec,
 3 +     FirmwareThreadHandle, FirmwareThreadPair, FirmwareThreadPairSpec, FirmwareThread,
   |
+help: a similar name exists in the module
+  |
+4 -     ThreadGroup, ThreadHandle, WireCommand, WireVersion, PackageStart,
+4 +     ThreadGroup, ThreadName, WireCommand, WireVersion, PackageStart,
+  |
 
 error[E0603]: module `bindings` is private
  --> tests/ui/legacy_surface_is_not_public.rs:2:22
@@ -56,15 +63,45 @@ error[E0603]: module `ffi` is private
 note: the module `ffi` is defined here
  --> <BASE_DIR>/crates/vescpkg-rs/src/lib.rs:47:0
 
-error[E0624]: method `get` is private
-  --> tests/ui/legacy_surface_is_not_public.rs:11:43
+error[E0603]: struct `PackageProgramAddress` is private
+ --> tests/ui/legacy_surface_is_not_public.rs:2:53
+  |
+2 |     app_data_packet, bindings, encode_integer, ffi, PackageProgramAddress, ProtocolFrame,
+  |                                                     ^^^^^^^^^^^^^^^^^^^^^ private struct
+  |
+note: the struct `PackageProgramAddress` is defined here
+ --> <BASE_DIR>/crates/vescpkg-rs/src/lib.rs:158:43
+help: import `PackageProgramAddress` directly
+  |
+2 |     app_data_packet, bindings, encode_integer, ffi, vescpkg_rs::types::loader::PackageProgramAddress, ProtocolFrame,
+  |                                                     +++++++++++++++++++++++++++
+
+error[E0603]: struct `LoaderInfo` is private
+  --> tests/ui/legacy_surface_is_not_public.rs:12:25
    |
-11 |     let _ = PackageProgramAddress::new(0).get();
-   |                                           ^^^ private method
+12 |     let _ = vescpkg_rs::LoaderInfo::as_mut_ptr;
+   |                         ^^^^^^^^^^ private struct
    |
-  --> <BASE_DIR>/crates/vescpkg-rs/src/types/loader.rs:93:4
+note: the struct `LoaderInfo` is defined here
+  --> <BASE_DIR>/crates/vescpkg-rs/src/lib.rs:158:31
+help: import `LoaderInfo` directly
    |
-   = note: private method defined here
+12 -     let _ = vescpkg_rs::LoaderInfo::as_mut_ptr;
+12 +     let _ = vescpkg_rs::types::loader::LoaderInfo;
+   |
+
+error[E0603]: struct `LoaderInfo` is private
+  --> tests/ui/legacy_surface_is_not_public.rs:13:55
+   |
+13 |     let _ = PackageStart::from_raw::<&mut vescpkg_rs::LoaderInfo>;
+   |                                                       ^^^^^^^^^^ private struct
+   |
+note: the struct `LoaderInfo` is defined here
+  --> <BASE_DIR>/crates/vescpkg-rs/src/lib.rs:158:31
+help: import `LoaderInfo` directly
+   |
+13 |     let _ = PackageStart::from_raw::<&mut vescpkg_rs::types::loader::LoaderInfo>;
+   |                                                       +++++++++++++++
 
 error[E0599]: no associated function or constant named `as_mut_ptr` found for struct `LoaderInfo` in the current scope
   --> tests/ui/legacy_surface_is_not_public.rs:12:37
@@ -78,7 +115,7 @@ error[E0624]: associated function `from_raw` is private
 13 |     let _ = PackageStart::from_raw::<&mut vescpkg_rs::LoaderInfo>;
    |                           ^^^^^^^^ private associated function
    |
-  --> <BASE_DIR>/crates/vescpkg-rs/src/init.rs:178:4
+  --> <BASE_DIR>/crates/vescpkg-rs/src/init.rs:179:4
    |
    = note: private associated function defined here
 
