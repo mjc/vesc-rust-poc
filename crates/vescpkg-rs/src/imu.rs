@@ -20,7 +20,7 @@ pub trait ImuBindings {
     /// Refloat v1.2.1 gates `STATE_STARTUP` -> `STATE_READY` on this at
     /// `src/main.c:833-838`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:510`.
-    fn startup_done(&self) -> bool;
+    fn is_ready(&self) -> bool;
 
     /// Return firmware IMU roll.
     ///
@@ -61,8 +61,8 @@ pub trait ImuBindings {
 
 #[cfg(not(test))]
 impl<B: ImuBindings + ?Sized> ImuBindings for &B {
-    fn startup_done(&self) -> bool {
-        (**self).startup_done()
+    fn is_ready(&self) -> bool {
+        (**self).is_ready()
     }
 
     fn roll(&self) -> ImuRoll {
@@ -250,7 +250,7 @@ pub struct RealImuBindings;
 
 #[cfg(not(test))]
 impl ImuBindings for RealImuBindings {
-    fn startup_done(&self) -> bool {
+    fn is_ready(&self) -> bool {
         unsafe { crate::ffi::imu_startup_done() }
     }
 
@@ -302,7 +302,7 @@ mod private {
 /// Semantic IMU capability used by package code.
 pub trait Imu: private::Imu {
     /// Return whether firmware IMU startup has completed.
-    fn startup_done(&self) -> bool;
+    fn is_ready(&self) -> bool;
     /// Return the current typed roll angle.
     fn roll(&self) -> ImuRoll;
     /// Return the current typed pitch angle.
@@ -325,8 +325,8 @@ impl<B: ImuBindings> ImuApi<B> {
     }
 
     /// Return whether firmware IMU startup has completed.
-    pub fn startup_done(&self) -> bool {
-        self.bindings.startup_done()
+    pub fn is_ready(&self) -> bool {
+        self.bindings.is_ready()
     }
 
     /// Return firmware IMU roll.
@@ -365,8 +365,8 @@ impl<B: ImuBindings> private::Imu for ImuApi<B> {}
 
 #[cfg(not(test))]
 impl<B: ImuBindings> Imu for ImuApi<B> {
-    fn startup_done(&self) -> bool {
-        self.startup_done()
+    fn is_ready(&self) -> bool {
+        self.is_ready()
     }
 
     fn roll(&self) -> ImuRoll {

@@ -54,7 +54,7 @@ impl FirmwareTest {
     }
 
     /// Configure whether firmware IMU startup has completed.
-    pub fn set_imu_startup_done(&self, done: bool) {
+    pub fn set_imu_ready(&self, done: bool) {
         crate::test_ffi::set_imu_startup_done(done);
     }
 
