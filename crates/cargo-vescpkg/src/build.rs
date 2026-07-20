@@ -519,7 +519,7 @@ fn write_flattened_elf(elf: &Path, output: &Path) -> Result<(), BuildError> {
 }
 
 fn validate_flat_image_relocations(elf: &Path) -> Result<(), BuildError> {
-    let output = Command::new("rust-readobj")
+    let output = Command::new("llvm-readobj")
         .args([
             "--elf-output-style=JSON",
             "--relocations",
@@ -530,7 +530,7 @@ fn validate_flat_image_relocations(elf: &Path) -> Result<(), BuildError> {
         .output()?;
     if !output.status.success() {
         return Err(BuildError(format!(
-            "rust-readobj failed for {} with {}",
+            "llvm-readobj failed for {} with {}",
             elf.display(),
             output.status
         )));
@@ -547,7 +547,7 @@ fn required_array<'a>(value: &'a Value, key: &str) -> Result<&'a [Value], BuildE
         .get(key)
         .and_then(Value::as_array)
         .map(Vec::as_slice)
-        .ok_or_else(|| BuildError(format!("rust-readobj JSON is missing `{key}`")))
+        .ok_or_else(|| BuildError(format!("llvm-readobj JSON is missing `{key}`")))
 }
 
 fn required_name<'a>(value: &'a Value, key: &str) -> Result<&'a str, BuildError> {
@@ -555,19 +555,19 @@ fn required_name<'a>(value: &'a Value, key: &str) -> Result<&'a str, BuildError>
         .get(key)
         .and_then(|field| field.get("Name"))
         .and_then(Value::as_str)
-        .ok_or_else(|| BuildError(format!("rust-readobj JSON is missing `{key}.Name`")))
+        .ok_or_else(|| BuildError(format!("llvm-readobj JSON is missing `{key}.Name`")))
 }
 
 fn parse_elf_report(bytes: &[u8]) -> Result<ElfReport, BuildError> {
     let json: Value = serde_json::from_slice(bytes)
-        .map_err(|error| BuildError(format!("invalid rust-readobj JSON: {error}")))?;
+        .map_err(|error| BuildError(format!("invalid llvm-readobj JSON: {error}")))?;
     let file = json
         .as_array()
         .and_then(|files| files.first())
-        .ok_or_else(|| BuildError("rust-readobj JSON contains no ELF file".to_owned()))?;
+        .ok_or_else(|| BuildError("llvm-readobj JSON contains no ELF file".to_owned()))?;
     let summary = file
         .get("FileSummary")
-        .ok_or_else(|| BuildError("rust-readobj JSON is missing `FileSummary`".to_owned()))?;
+        .ok_or_else(|| BuildError("llvm-readobj JSON is missing `FileSummary`".to_owned()))?;
     if summary.get("Format").and_then(Value::as_str) != Some("elf32-littlearm")
         || summary.get("Arch").and_then(Value::as_str) != Some("arm")
     {
@@ -581,7 +581,7 @@ fn parse_elf_report(bytes: &[u8]) -> Result<ElfReport, BuildError> {
         .map(|entry| {
             let section = entry
                 .get("Section")
-                .ok_or_else(|| BuildError("invalid rust-readobj section".to_owned()))?;
+                .ok_or_else(|| BuildError("invalid llvm-readobj section".to_owned()))?;
             let flags = required_array(
                 section
                     .get("Flags")
@@ -614,7 +614,7 @@ fn parse_elf_report(bytes: &[u8]) -> Result<ElfReport, BuildError> {
         .map(|entry| {
             let symbol = entry
                 .get("Symbol")
-                .ok_or_else(|| BuildError("invalid rust-readobj symbol".to_owned()))?;
+                .ok_or_else(|| BuildError("invalid llvm-readobj symbol".to_owned()))?;
             Ok(ElfSymbol {
                 name: required_name(symbol, "Name")?.to_owned(),
                 value: symbol
@@ -640,7 +640,7 @@ fn parse_elf_report(bytes: &[u8]) -> Result<ElfReport, BuildError> {
         for entry in required_array(group, "Relocs")? {
             let relocation = entry
                 .get("Relocation")
-                .ok_or_else(|| BuildError("invalid rust-readobj relocation".to_owned()))?;
+                .ok_or_else(|| BuildError("invalid llvm-readobj relocation".to_owned()))?;
             relocations.push(ElfRelocation {
                 section: section.name.clone(),
                 kind: required_name(relocation, "Type")?.to_owned(),
