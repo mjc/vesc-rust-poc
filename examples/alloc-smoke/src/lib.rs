@@ -58,7 +58,7 @@ impl AppDataHandler for AllocSmokeAppData {
     fn handle(_state: &mut Self::State, packet: AppDataPacket<'_>) {
         let firmware = Firmware::new();
         let app_data = firmware.app_data();
-        let now_ms = u64::from(firmware.clock().now().ticks().as_ticks()) / 10;
+        let now_ms = u64::from(firmware.clock().now().as_ticks()) / 10;
         let Ok((response, response_len)) = alloc_smoke_loopback(packet.as_bytes(), now_ms) else {
             return;
         };

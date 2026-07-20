@@ -90,8 +90,7 @@ pub use motion::{
 pub use ratio::{Percent, Ratio, SignedRatio};
 pub use temperature::Temperature;
 pub use time::{
-    Frequency, SYSTEM_TICK_RATE_HZ, SampleRate, SystemInstant, SystemTicks, TimestampTicks,
-    VescSeconds,
+    Frequency, SYSTEM_TICK_RATE_HZ, SampleRate, SystemTicks, TimestampTicks, VescSeconds,
 };
 
 /// Common package-author imports for typed unit calculations.
@@ -101,8 +100,7 @@ pub mod prelude {
         Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage, Frequency,
         Height, Inductance, Latitude, Longitude, MagneticFluxDensity, OdometerMeters, Percent,
         Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed,
-        SystemInstant, SystemTicks, TachometerSteps, Temperature, TimestampTicks, VescSeconds,
-        Voltage,
+        SystemTicks, TachometerSteps, Temperature, TimestampTicks, VescSeconds, Voltage,
     };
 }
 

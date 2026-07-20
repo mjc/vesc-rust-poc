@@ -94,7 +94,5 @@ pub use ratio::{
 pub use temperature::{
     FetTemperature, MosfetTemperature, MotorTemperature, TemperatureLimitEnd, TemperatureLimitStart,
 };
-pub use time::{
-    CurrentOffDelay, PpmAge, RemoteAge, SystemDuration, SystemTimestamp, TimeoutDuration,
-};
+pub use time::{CurrentOffDelay, PpmAge, RemoteAge, SystemDuration, TimeoutDuration};
 pub use version::FirmwareVersion;

@@ -83,8 +83,8 @@ pub use vescpkg_rs_units::{
     AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Charge, Current, Distance,
     DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage, Frequency, Height, Inductance,
     Latitude, Longitude, MagneticFluxDensity, OdometerMeters, Percent, Power, Ratio, Resistance,
-    Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed, SystemInstant, SystemTicks,
-    Temperature, TimestampTicks, VescSeconds, Voltage,
+    Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed, SystemTicks, Temperature,
+    TimestampTicks, VescSeconds, Voltage,
 };
 
 #[cfg(feature = "alloc")]
@@ -137,7 +137,7 @@ pub mod prelude {
         Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage, Frequency,
         Height, Inductance, Latitude, Longitude, MagneticFluxDensity, OdometerMeters, Percent,
         Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed,
-        SystemInstant, SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
+        SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
     };
     pub use crate::{
         AnalogPin, AppDataHandler, AppDataSendError, ConfigBytes, ConfigXml, ExtensionDescriptor,
@@ -180,8 +180,8 @@ mod tests {
         ImuOrientation, ImuPitch, ImuQuaternion, ImuQuaternionW, ImuQuaternionX, ImuQuaternionY,
         ImuQuaternionZ, ImuRoll, ImuYaw, JoystickX, JoystickY, MechanicalSpeed, MotorCurrent,
         MotorPoleCount, OpenLoopPhase, PacketLength, PeakPower, PidPosition, PpmAge, PpmInput, Pwm,
-        QVoltage, RemoteAge, SystemDuration, SystemTimestamp, ThreadPriority, TimeoutDuration,
-        TotalMotorCurrent, TripDistance, VehicleSpeed, WattHoursDischarged, WheelDiameter,
+        QVoltage, RemoteAge, SystemDuration, ThreadPriority, TimeoutDuration, TotalMotorCurrent,
+        TripDistance, VehicleSpeed, WattHoursDischarged, WheelDiameter,
     };
     use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
     use vescpkg_rs_units::{
@@ -356,13 +356,13 @@ mod tests {
     fn semantic_time_types_wrap_fugit_and_tick_units() {
         let ticks = SystemTicks::from_ticks(25_000);
         let seconds = VescSeconds::from_seconds(2.5);
-        let timestamp = SystemTimestamp::new(TimestampTicks::from_ticks(123_456));
+        let timestamp = TimestampTicks::from_ticks(123_456);
         let duration = SystemDuration::new(ticks);
         let timeout = TimeoutDuration::new(seconds);
         let remote_age = RemoteAge::new(seconds);
         let ppm_age = PpmAge::new(seconds);
 
-        assert_eq!(timestamp.ticks().as_ticks(), 123_456);
+        assert_eq!(timestamp.as_ticks(), 123_456);
         assert_eq!(duration.duration().as_ticks(), 25_000);
         assert_eq!(timeout.duration().as_seconds(), 2.5);
         assert_eq!(remote_age.duration().as_seconds(), 2.5);

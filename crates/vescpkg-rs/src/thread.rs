@@ -12,7 +12,6 @@ use core::time::Duration;
 use crate::PackageRuntimeState;
 use crate::bindings::AppDataBindings;
 use crate::lifecycle_core::AppDataSendError;
-use crate::types::SystemTimestamp;
 use crate::types::ThreadPriority;
 use crate::units::TimestampTicks;
 
@@ -64,7 +63,7 @@ impl FirmwareClock {
     /// Return the current firmware system timestamp.
     #[cfg(not(test))]
     #[inline(always)]
-    pub fn now(&self) -> SystemTimestamp {
+    pub fn now(&self) -> TimestampTicks {
         self.api.system_timestamp()
     }
 }
@@ -81,10 +80,8 @@ impl<B: AppDataBindings> AppDataApi<B> {
     }
 
     /// Return the current firmware system time in ticks.
-    pub(crate) fn system_timestamp(&self) -> SystemTimestamp {
-        SystemTimestamp::new(TimestampTicks::from_ticks(
-            self.bindings.system_time_ticks(),
-        ))
+    pub(crate) fn system_timestamp(&self) -> TimestampTicks {
+        TimestampTicks::from_ticks(self.bindings.system_time_ticks())
     }
 
     /// Send one app-data response.
@@ -940,7 +937,6 @@ mod tests {
     use std::sync::Mutex;
 
     use crate::thread::test_support::FakeThreadBindings;
-    use crate::types::SystemTimestamp;
     use crate::units::TimestampTicks;
 
     #[test]
@@ -948,10 +944,7 @@ mod tests {
         let bindings = crate::test_support::FakeAppDataBindings::new();
         let app_data = AppDataApi::new(&bindings);
 
-        assert_eq!(
-            app_data.system_timestamp(),
-            SystemTimestamp::new(TimestampTicks::from_ticks(0))
-        );
+        assert_eq!(app_data.system_timestamp(), TimestampTicks::from_ticks(0));
         assert_eq!(app_data.send(&[1, 2, 3]), Ok(()));
         assert_eq!(bindings.send_calls.get(), 1);
         assert_eq!(bindings.last_len.get(), 3);

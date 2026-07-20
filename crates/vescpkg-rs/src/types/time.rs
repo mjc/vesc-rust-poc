@@ -1,23 +1,6 @@
 //! Time semantic wrappers.
 
-use crate::units::{SystemTicks, TimestampTicks, VescSeconds};
-
-/// System timestamp captured in VESC 100 us ticks.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[repr(transparent)]
-pub struct SystemTimestamp(TimestampTicks);
-
-impl SystemTimestamp {
-    /// Wrap timestamp ticks with system timestamp meaning.
-    pub const fn new(ticks: TimestampTicks) -> Self {
-        Self(ticks)
-    }
-
-    /// Return the typed timestamp ticks without erasing them to a primitive.
-    pub const fn ticks(self) -> TimestampTicks {
-        self.0
-    }
-}
+use crate::units::{SystemTicks, VescSeconds};
 
 macro_rules! duration_type {
     ($name:ident, $doc:literal) => {
