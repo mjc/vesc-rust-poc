@@ -25,7 +25,6 @@ fn native_image_rebases_image_data_offsets() {
     );
     assert_eq!(image.rebase_ptr(0x1df as *const c_char) as usize, 0x21df);
 }
-
 #[test]
 fn native_image_resolves_relative_and_loaded_code_addresses() {
     let image = NativeImage::new(0x2000);
@@ -111,17 +110,6 @@ fn raw_vesc_if_mock_function_slots_have_pointer_layout() {
 fn vesc_if_slot_constants_name_the_package_header_offsets() {
     assert_eq!(VescIfAbi::BASE_ADDR, NativeAddress(0x1000_f800));
     assert_eq!(VescIfAbi::USED_SLOT_COUNT, VescIfAbi::USED_SLOTS.len());
-
-    for slot in VescIfAbi::USED_SLOTS {
-        let generated = crate::c_vesc_if::SLOTS
-            .iter()
-            .find(|generated| generated.name == slot.name())
-            .expect("used VESC_IF slot must exist in generated header inventory");
-
-        assert_eq!(generated.index, slot.slot_index());
-        assert_eq!(generated.vesc32_byte_offset, slot.vesc32_byte_offset());
-    }
-
     assert!(VescIfAbi::USED_SLOTS.contains(&VescIfAbi::SLEEP_US));
     assert!(VescIfAbi::USED_SLOTS.contains(&VescIfAbi::FOC_GET_ID));
     assert!(VescIfAbi::USED_SLOTS.contains(&VescIfAbi::THREAD_SET_PRIORITY));
@@ -226,23 +214,4 @@ fn transparent_wrappers_expose_raw_tuple_fields() {
     let point = PlotPoint { x: 1.5, y: 2.5 };
     assert_eq!(point.x, 1.5);
     assert_eq!(point.y, 2.5);
-}
-
-#[test]
-fn vesc_if_used_slots_match_generated_header_descriptors() {
-    assert_eq!(crate::c_vesc_if::FIELD_COUNT, VescIfAbi::FIELD_COUNT);
-    assert_eq!(crate::c_vesc_if::SLOTS[0].name, "lbm_add_extension");
-    assert_eq!(
-        crate::c_vesc_if::SLOTS[crate::c_vesc_if::FIELD_COUNT - 1].name,
-        "shutdown_disable"
-    );
-
-    for slot in VescIfAbi::USED_SLOTS {
-        let generated = crate::c_vesc_if::SLOTS
-            .iter()
-            .find(|generated| generated.name == slot.name())
-            .expect("used VESC_IF slot must exist in generated header inventory");
-
-        assert_eq!(generated.vesc32_byte_offset, slot.vesc32_byte_offset());
-    }
 }

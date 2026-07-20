@@ -13,7 +13,7 @@ const SCALAR_FIELDS: [&str; 5] = [
 ];
 
 #[test]
-fn libclang_agrees_with_generated_vesc_if_inventory() {
+fn libclang_agrees_with_rust_vesc_if_inventory() {
     let header = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../third_party/vesc_pkg_lib/vesc_c_if.h");
     let clang = Clang::new().expect("load libclang; enter the Nix dev shell");
@@ -46,39 +46,49 @@ fn libclang_agrees_with_generated_vesc_if_inventory() {
         .into_iter()
         .filter(|entity| entity.get_kind() == EntityKind::FieldDecl)
         .collect();
-    let rust_offsets = crate::c_vesc_if::rust_field_offsets!(VescIf);
 
-    assert_eq!(fields.len(), crate::c_vesc_if::SLOTS.len());
-    assert_eq!(rust_offsets.len(), fields.len());
+    assert_eq!(fields.len(), crate::VescIfAbi::FIELD_COUNT);
     assert_eq!(
         core::mem::size_of::<VescIf>() / core::mem::size_of::<usize>(),
         fields.len(),
         "Rust VescIf must contain one pointer-sized word per C field"
     );
 
-    for (field, slot) in fields.iter().zip(crate::c_vesc_if::SLOTS) {
+    for field in &fields {
         let name = field.get_name().expect("named vesc_c_if field");
         let ty = field.get_type().expect("typed vesc_c_if field");
-        let byte_offset = field
-            .get_offset_of_field()
-            .expect("laid-out vesc_c_if field")
-            / 8;
-
-        assert_eq!(name, slot.name, "slot {} name drifted", slot.index);
-        assert_eq!(
-            byte_offset, slot.vesc32_byte_offset,
-            "VESC32 offset drifted for {name}"
-        );
-        assert_eq!(
-            (rust_offsets[slot.index] / core::mem::size_of::<usize>()) * 4,
-            byte_offset,
-            "Rust VescIf offset drifted for {name}"
-        );
         assert_eq!(ty.get_sizeof().expect("sized vesc_c_if field"), 4, "{name}");
         assert_eq!(
             is_function_pointer(ty),
             !SCALAR_FIELDS.contains(&name.as_str()),
             "declaration shape drifted for {name}"
+        );
+    }
+
+    for (slot, rust_offset) in crate::VescIfAbi::USED_SLOTS
+        .into_iter()
+        .zip(super::vesc_if_offsets_for_tests())
+    {
+        let field = fields
+            .iter()
+            .find(|field| field.get_name().as_deref() == Some(slot.name()))
+            .expect("used Rust slot must exist in vesc_c_if");
+        let byte_offset = field
+            .get_offset_of_field()
+            .expect("laid-out vesc_c_if field")
+            / 8;
+
+        assert_eq!(
+            byte_offset,
+            slot.vesc32_byte_offset(),
+            "VESC32 offset drifted for {}",
+            slot.name()
+        );
+        assert_eq!(
+            (rust_offset / core::mem::size_of::<usize>()) * 4,
+            byte_offset,
+            "Rust VescIf offset drifted for {}",
+            slot.name()
         );
     }
 }

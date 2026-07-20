@@ -91,10 +91,6 @@ macro_rules! vesc_if_used_slots {
     };
 }
 
-#[allow(dead_code)]
-mod c_vesc_if {
-    include!(concat!(env!("OUT_DIR"), "/c_vesc_if.rs"));
-}
 mod loader;
 mod types;
 mod vesc_if;

@@ -1,7 +1,6 @@
 use core::cell::Cell;
 use core::ffi::{c_char, c_int, c_uchar, c_void};
 
-use crate::c_vesc_if;
 use crate::test_support::{empty_table, with_table};
 use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescPin, VescPinMode};
 
@@ -632,6 +631,7 @@ fn thread_set_priority_reports_absence_on_pre_6_06_tables() {
     table.thread_set_priority = None;
 
     with_table(&table, || unsafe {
+        reset_counters();
         assert!(!vesc_thread_set_priority(-1));
         assert_eq!(THREAD_SET_PRIORITY.get(), 0);
     });
@@ -725,49 +725,6 @@ fn motor_data_helpers_forward_through_mock_table() {
         assert_eq!(MC_GET_FAULT.get(), 1);
         assert_eq!(MC_GET_INPUT_VOLTAGE_FILTERED.get(), 1);
     });
-}
-
-#[test]
-fn generated_vesc_if_inventory_matches_pinned_upstream_header() {
-    assert_eq!(
-        c_vesc_if::HEADER_REPO,
-        "https://github.com/lukash/vesc_pkg_lib"
-    );
-    assert_eq!(c_vesc_if::FIELD_COUNT, 253);
-    assert_eq!(VescIfAbi::FIELD_COUNT, c_vesc_if::FIELD_COUNT);
-
-    assert_eq!(c_vesc_if::lbm_add_extension::INDEX, 0);
-    assert_eq!(c_vesc_if::lbm_add_extension::VESC32_BYTE_OFFSET, 0);
-    assert_eq!(c_vesc_if::lbm_add_extension::HEADER_LINE, 325);
-    assert_eq!(c_vesc_if::send_app_data::INDEX, 148);
-    assert_eq!(c_vesc_if::set_app_data_handler::INDEX, 149);
-    assert_eq!(c_vesc_if::mc_get_fault::INDEX, 92);
-    assert_eq!(c_vesc_if::system_time_ticks::INDEX, 238);
-    assert_eq!(c_vesc_if::shutdown_disable::INDEX, 252);
-    assert_eq!(c_vesc_if::shutdown_disable::HEADER_LINE, 672);
-
-    assert_eq!(c_vesc_if::SLOTS[0].name, c_vesc_if::lbm_add_extension::NAME);
-    assert_eq!(
-        c_vesc_if::SLOTS[c_vesc_if::FIELD_COUNT - 1].name,
-        c_vesc_if::shutdown_disable::NAME
-    );
-    assert_eq!(
-        c_vesc_if::SLOTS[c_vesc_if::FIELD_COUNT - 1].vesc32_byte_offset,
-        c_vesc_if::shutdown_disable::VESC32_BYTE_OFFSET
-    );
-}
-
-#[test]
-fn public_vesc_if_slots_are_projected_from_generated_inventory() {
-    for slot in VescIfAbi::USED_SLOTS {
-        let generated = c_vesc_if::SLOTS
-            .iter()
-            .find(|generated| generated.name == slot.name())
-            .expect("used slot must exist in generated upstream inventory");
-
-        assert_eq!(generated.index, slot.slot_index());
-        assert_eq!(generated.vesc32_byte_offset, slot.vesc32_byte_offset());
-    }
 }
 
 #[test]

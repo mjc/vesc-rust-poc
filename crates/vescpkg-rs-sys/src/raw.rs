@@ -408,6 +408,26 @@ pub struct VescIf {
     shutdown_disable: Option<unsafe extern "C" fn(bool)>,
 }
 
+pub(crate) const VESC_IF_FIELD_COUNT: usize =
+    core::mem::size_of::<VescIf>() / core::mem::size_of::<usize>();
+
+pub(crate) struct VescIfOffsets;
+
+macro_rules! define_vesc_if_offsets {
+    ($($const_name:ident => $field:ident),+ $(,)?) => {
+        impl VescIfOffsets {
+            $(
+                pub(crate) const $const_name: usize =
+                    (core::mem::offset_of!(VescIf, $field)
+                        / core::mem::size_of::<usize>())
+                        * 4;
+            )+
+        }
+    };
+}
+
+vesc_if_used_slots!(define_vesc_if_offsets);
+
 #[cfg(not(all(target_arch = "arm", not(test))))]
 #[inline(always)]
 unsafe fn vesc_if() -> *const VescIf {
@@ -437,9 +457,12 @@ unsafe fn load_vesc_if_word_from<const OFFSET: usize>(vesc_if: usize) -> usize {
 #[cfg(all(target_arch = "arm", not(test)))]
 macro_rules! vesc_slot_word_from {
     ($vesc_if:expr, $name:ident) => {
-        crate::raw::load_vesc_if_word_from::<{ crate::c_vesc_if::$name::VESC32_BYTE_OFFSET }>(
-            $vesc_if as usize,
-        )
+        crate::raw::load_vesc_if_word_from::<
+            {
+                (core::mem::offset_of!($crate::raw::VescIf, $name) / core::mem::size_of::<usize>())
+                    * 4
+            },
+        >($vesc_if as usize)
     };
 }
 

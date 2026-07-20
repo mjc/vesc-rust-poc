@@ -1,6 +1,6 @@
 //! Documented VESC firmware function-table slots used by Rust packages.
 
-use crate::{c_vesc_if, image::NativeAddress};
+use crate::image::NativeAddress;
 
 /// One entry in the VESC firmware function table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,15 +45,15 @@ macro_rules! define_vesc_if_abi {
             /// Base address of the firmware function table on VESC targets.
             pub const BASE_ADDR: NativeAddress = NativeAddress(0x1000_f800);
             /// Number of entries in the pinned upstream `vesc_c_if` table.
-            pub const FIELD_COUNT: usize = c_vesc_if::FIELD_COUNT;
+            pub const FIELD_COUNT: usize = crate::raw::VESC_IF_FIELD_COUNT;
             /// Number of `VESC_IF` slots that this crate currently relies on.
             pub const USED_SLOT_COUNT: usize = count_idents!($($slot_name),+);
 
             $(
                 #[doc = concat!("Slot for `", stringify!($slot_name), "`.")]
                 pub const $const_name: VescIfSlot = VescIfSlot::new(
-                    c_vesc_if::$slot_name::NAME,
-                    c_vesc_if::$slot_name::VESC32_BYTE_OFFSET,
+                    stringify!($slot_name),
+                    crate::raw::VescIfOffsets::$const_name,
                 );
             )+
 
