@@ -92,7 +92,7 @@ fn package_extension_descriptors() -> [ExtensionDescriptor; RefloatLoaderExtensi
 #[cfg(all(not(test), target_arch = "arm"))]
 pub fn register_refloat_loader_extensions(
     start: &mut vescpkg_rs::PackageStart,
-) -> Result<(), vescpkg_rs::RegisterError> {
+) -> Result<(), vescpkg_rs::PackageStartError> {
     // C map: Refloat registers loader extensions from the loaded package image at
     // `third_party/refloat/src/main.c:2458-2459`; VESC stores that image base in loader
     // metadata before calling init at `third_party/vesc/lispBM/lispif_c_lib.c:1087-1100`.

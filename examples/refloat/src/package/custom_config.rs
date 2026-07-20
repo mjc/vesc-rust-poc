@@ -62,7 +62,7 @@ vescpkg_rs::firmware_stateful_custom_config_callbacks!(
 #[cfg(all(not(test), target_arch = "arm"))]
 pub(super) fn register_refloat_callbacks(
     start: &mut PackageStart,
-) -> Result<(), vescpkg_rs::AppDataHandlerRegistrationError> {
+) -> Result<(), vescpkg_rs::PackageStartError> {
     start.register_callbacks::<
         RefloatCustomConfig,
         super::callbacks::RefloatAppData,
@@ -79,7 +79,7 @@ pub(super) fn lock_test_refloat_config_state() -> impl Drop {
 pub(super) fn install_test_refloat_runtime_state<'a>(
     state: &'a mut RefloatPackageState,
 ) -> impl Drop + 'a {
-    vescpkg_rs::test_support::install_state(&super::REFLOAT_RUNTIME_STATE, state)
+    vescpkg_rs::test_support::install_state(&crate::__VESCPKG_PACKAGE_STATE, state)
 }
 
 fn refloat_set_cfg_payload_with_state(

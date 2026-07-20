@@ -10,7 +10,7 @@ use core::time::Duration;
 #[cfg(all(not(test), target_arch = "arm"))]
 use vescpkg_rs::AnalogPin;
 #[cfg(target_arch = "arm")]
-use vescpkg_rs::ThreadStackSize;
+use vescpkg_rs::ThreadWorkingAreaSize;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{ThreadPriority, TimestampTicks};
 #[cfg(any(test, target_arch = "arm"))]
@@ -41,8 +41,11 @@ impl RefloatRuntimeThread {
         }
     }
 
-    const fn stack_size(self) -> ThreadStackSize {
-        ThreadStackSize::from_bytes(self.stack_bytes())
+    const fn working_area_size(self) -> ThreadWorkingAreaSize {
+        match ThreadWorkingAreaSize::try_from_bytes(self.stack_bytes()) {
+            Ok(size) => size,
+            Err(_) => panic!("Refloat thread working-area size must satisfy ChibiOS"),
+        }
     }
 
     fn name(self) -> vescpkg_rs::ThreadName {
@@ -66,11 +69,11 @@ fn refloat_runtime_threads() -> [vescpkg_rs::ThreadSpec<RefloatPackageState>; 2]
     let aux_thread = RefloatRuntimeThread::Aux;
     [
         vescpkg_rs::ThreadSpec::<RefloatPackageState>::new::<RefloatMainThread>(
-            main_thread.stack_size(),
+            main_thread.working_area_size(),
             main_thread.name(),
         ),
         vescpkg_rs::ThreadSpec::<RefloatPackageState>::stateless::<RefloatAuxThread>(
-            aux_thread.stack_size(),
+            aux_thread.working_area_size(),
             aux_thread.name(),
         ),
     ]
@@ -148,7 +151,9 @@ pub(crate) fn run_refloat_aux_thread_with(threads: &impl FirmwareThreads) {
 /// (third_party/refloat/src/main.c:2431-2432) and callback registration
 /// (third_party/refloat/src/main.c:2455-2459).
 #[cfg(all(not(test), target_arch = "arm"))]
-pub fn start_refloat_runtime_threads(start: &mut vescpkg_rs::PackageStart<'_>) -> bool {
+pub fn start_refloat_runtime_threads(
+    start: &mut vescpkg_rs::PackageStart<'_>,
+) -> Result<(), vescpkg_rs::PackageStartError> {
     let firmware = vescpkg_rs::Firmware::new();
     if start
         .with_runtime_state::<RefloatPackageState, _>(|state| {
@@ -156,9 +161,9 @@ pub fn start_refloat_runtime_threads(start: &mut vescpkg_rs::PackageStart<'_>) -
         })
         .is_none()
     {
-        return false;
+        return Err(vescpkg_rs::PackageStartError::StateTypeMismatch);
     }
-    start.spawn_threads(refloat_runtime_threads()).is_ok()
+    start.spawn_threads(refloat_runtime_threads())
 }
 
 #[cfg(target_arch = "arm")]
@@ -175,7 +180,7 @@ impl vescpkg_rs::FirmwareThread for RefloatMainThread {
         {
             let firmware = ctx.firmware();
             run_refloat_main_thread_with(firmware.threads(), || {
-                let system_time_ticks = firmware.clock().now().ticks();
+                let system_time_ticks = firmware.clock().now();
                 // C map: Refloat `footpad_sensor_update` reads ADC1/ADC2 at
                 // `third_party/refloat/src/footpad_sensor.c:28-31`; VESC
                 // defines those enum slots at `third_party/vesc/lispBM/c_libs/vesc_c_if.h:219-220`.
@@ -240,7 +245,7 @@ mod tests {
             InputCurrent::new(Current::from_amps(6.5)),
             DutyCycle::new(SignedRatio::from_ratio_const(0.375)),
         );
-        telemetry.set_imu_startup_done(true);
+        telemetry.set_imu_ready(true);
         telemetry.terminate_threads_after_checks(2);
         let threads = telemetry.threads();
         telemetry.set_imu_attitude(
@@ -286,7 +291,7 @@ mod tests {
         let telemetry = FirmwareTest::new();
         telemetry.terminate_threads_after_checks(2);
         let threads = telemetry.threads();
-        telemetry.set_imu_startup_done(true);
+        telemetry.set_imu_ready(true);
         let imu = telemetry.imu();
         let bindings = telemetry.motor();
         let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());

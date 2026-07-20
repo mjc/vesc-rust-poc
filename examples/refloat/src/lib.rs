@@ -34,7 +34,7 @@ mod motor_control;
 pub mod package;
 mod wire;
 
-vescpkg_rs::package_start!(crate::package::start);
+vescpkg_rs::package_start!(crate::package::start, crate::package::RefloatPackageState);
 
 #[cfg(test)]
 mod tests {

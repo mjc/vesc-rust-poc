@@ -20,9 +20,6 @@ mod state;
 mod threads;
 mod time;
 
-pub(crate) static REFLOAT_RUNTIME_STATE: vescpkg_rs::PackageStateStore<RefloatPackageState> =
-    vescpkg_rs::PackageStateStore::new();
-
 pub use self::custom_config::RefloatCustomConfig;
 pub use self::state::RefloatPackageState;
 
@@ -41,26 +38,31 @@ fn finish_startup(required_setup: bool, registrations: impl FnOnce()) -> bool {
 }
 
 #[cfg(test)]
-pub(crate) fn start(start: &mut vescpkg_rs::PackageStart) -> bool {
+pub(crate) fn start(
+    start: &mut vescpkg_rs::PackageStart,
+) -> Result<(), vescpkg_rs::PackageStartError> {
     let _ = start;
-    true
+    Ok(())
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
-pub(crate) fn start(start: &mut vescpkg_rs::PackageStart) -> bool {
+pub(crate) fn start(
+    start: &mut vescpkg_rs::PackageStart,
+) -> Result<(), vescpkg_rs::PackageStartError> {
     // C map: package init allocates Data, refreshes motor config, installs stop
     // state, spawns main/aux threads, registers callbacks, and adds loader
     // extensions at `third_party/refloat/src/main.c:2419-2461`.
     // VESC calls native init at `base + 4 | 1` without relocating data words at
     // `third_party/vesc/lispBM/lispif_c_lib.c:1087-1100`, so keep this as direct calls;
     // a function-pointer table would contain image-relative addresses.
-    let required_setup = startup::install_refloat_package_state(start)
-        && threads::start_refloat_runtime_threads(start);
-    finish_startup(required_setup, || {
+    startup::install_refloat_package_state(start)?;
+    threads::start_refloat_runtime_threads(start)?;
+    let _ = finish_startup(true, || {
         let _ = imu_callback::register_refloat_imu_callback(start);
         let _ = startup::register_refloat_app_data_callbacks(start);
         let _ = crate::extensions::register_refloat_loader_extensions(start);
-    })
+    });
+    Ok(())
 }
 
 #[cfg(test)]

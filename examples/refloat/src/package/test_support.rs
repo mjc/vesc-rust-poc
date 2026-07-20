@@ -12,7 +12,7 @@ pub(crate) struct RefloatRuntimeStateLock {
 
 impl Drop for RefloatRuntimeStateLock {
     fn drop(&mut self) {
-        vescpkg_rs::test_support::clear_state(&super::REFLOAT_RUNTIME_STATE);
+        vescpkg_rs::test_support::clear_state(&crate::__VESCPKG_PACKAGE_STATE);
     }
 }
 
@@ -20,7 +20,7 @@ pub(crate) fn lock_refloat_runtime_state() -> RefloatRuntimeStateLock {
     let guard = REFLOAT_RUNTIME_STATE_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    vescpkg_rs::test_support::clear_state(&super::REFLOAT_RUNTIME_STATE);
+    vescpkg_rs::test_support::clear_state(&crate::__VESCPKG_PACKAGE_STATE);
     RefloatRuntimeStateLock { _guard: guard }
 }
 

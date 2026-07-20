@@ -34,12 +34,12 @@ fn install_refloat_startup_state_with(
 /// registration tail at `third_party/refloat/src/main.c:2455-2459`.
 ///
 #[cfg(target_arch = "arm")]
-fn allocate_refloat_startup_state(start: &mut PackageStart) -> bool {
-    start
-        .install_runtime_state(RefloatPackageState::new(
-            RefloatAllDataPayloads::source_startup(),
-        ))
-        .is_ok()
+fn allocate_refloat_startup_state(
+    start: &mut PackageStart,
+) -> Result<(), vescpkg_rs::PackageStartError> {
+    start.install_runtime_state(RefloatPackageState::new(
+        RefloatAllDataPayloads::source_startup(),
+    ))
 }
 
 /// Allocate and install Refloat startup state using firmware memory.
@@ -47,7 +47,9 @@ fn allocate_refloat_startup_state(start: &mut PackageStart) -> bool {
 /// This matches the loader metadata step from upstream `third_party/refloat/src/main.c:2419-2432`;
 /// callback/LispBM registration is a separate step at `third_party/refloat/src/main.c:2455-2459`.
 #[cfg(all(not(test), target_arch = "arm"))]
-pub fn install_refloat_package_state(start: &mut PackageStart) -> bool {
+pub fn install_refloat_package_state(
+    start: &mut PackageStart,
+) -> Result<(), vescpkg_rs::PackageStartError> {
     allocate_refloat_startup_state(start)
 }
 
@@ -67,7 +69,7 @@ mod tests {
     use crate::package::test_support::{lock_refloat_runtime_state, sample_all_data_payloads};
 
     fn assert_no_runtime_state() {
-        assert!(!crate::package::REFLOAT_RUNTIME_STATE.is_installed());
+        assert!(!crate::__VESCPKG_PACKAGE_STATE.is_installed());
     }
 
     #[test]

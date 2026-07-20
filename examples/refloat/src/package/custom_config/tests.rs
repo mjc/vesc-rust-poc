@@ -20,12 +20,12 @@ fn refloat_config_with_hertz(hertz: u16) -> [u8; REFLOAT_CONFIG_LEN] {
 }
 
 fn runtime_current_config() -> Option<[u8; REFLOAT_CONFIG_LEN]> {
-    crate::package::REFLOAT_RUNTIME_STATE
+    crate::__VESCPKG_PACKAGE_STATE
         .with(|state| *RefloatCustomConfig::current_config(state).as_bytes())
 }
 
 fn runtime_set_config(config: &[u8; REFLOAT_CONFIG_LEN]) -> bool {
-    crate::package::REFLOAT_RUNTIME_STATE
+    crate::__VESCPKG_PACKAGE_STATE
         .with_mut(|state| RefloatCustomConfig::set_config(state, ConfigBytes::new(config)))
         .is_some_and(|result| result.is_ok())
 }

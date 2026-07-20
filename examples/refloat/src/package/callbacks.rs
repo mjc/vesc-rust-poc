@@ -3,6 +3,7 @@
 //! C map: package init stores loader ARG/stop handlers and registers app-data
 //! callbacks at `third_party/refloat/src/main.c:2419-2461`.
 
+#[cfg(any(test, target_arch = "arm"))]
 use super::state::RefloatPackageState;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::{Imu, MotorTelemetry};
@@ -23,7 +24,7 @@ pub(crate) fn handle_refloat_app_data_packet(
 pub(crate) struct RefloatAppData;
 
 #[cfg(all(not(test), target_arch = "arm"))]
-impl vescpkg_rs::StatefulAppDataCallback for RefloatAppData {
+impl vescpkg_rs::AppDataHandler for RefloatAppData {
     type State = RefloatPackageState;
 
     fn handle(state: &mut Self::State, packet: vescpkg_rs::AppDataPacket<'_>) {
@@ -31,7 +32,7 @@ impl vescpkg_rs::StatefulAppDataCallback for RefloatAppData {
         // `ARG(PROG_ADDR)` before app-data dispatch at
         // `third_party/refloat/src/main.c:2143-2225`.
         let firmware = vescpkg_rs::Firmware::new();
-        let mut now = || firmware.clock().now().ticks();
+        let mut now = || firmware.clock().now();
         let mut send = |bytes: &[u8]| firmware.app_data().send(bytes).is_ok();
         let _ = handle_refloat_app_data_packet(
             state,
@@ -45,17 +46,6 @@ impl vescpkg_rs::StatefulAppDataCallback for RefloatAppData {
 }
 
 vescpkg_rs::firmware_stateful_app_data_callback!(refloat_app_data_callback, RefloatAppData);
-
-impl vescpkg_rs::PackageRuntimeState for RefloatPackageState {
-    fn runtime_store() -> &'static vescpkg_rs::PackageStateStore<Self> {
-        &super::REFLOAT_RUNTIME_STATE
-    }
-
-    fn stop(&mut self) {
-        // The SDK clears callbacks and joins both package threads before this
-        // package-specific cleanup hook runs.
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -131,7 +121,7 @@ mod tests {
         let app_data = TimestampTicks::from_ticks(0);
         let mut sent = Vec::new();
         let telemetry = FirmwareTest::new();
-        telemetry.set_imu_startup_done(true);
+        telemetry.set_imu_ready(true);
         let imu = telemetry.imu();
         let mut state = RefloatPackageState::new(sample_all_data_payloads_with_ride_state(
             RefloatRunState::Ready,
