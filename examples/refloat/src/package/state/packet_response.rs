@@ -41,6 +41,22 @@ impl RefloatPackageState {
         false
     }
 
+    pub(super) fn send_legacy_realtime_data_packet_response(
+        &self,
+        send: &mut impl FnMut(&[u8]) -> bool,
+        bytes: &[u8],
+    ) -> bool {
+        match refloat_command_payload(bytes, RefloatAppDataCommand::GetRealtimeData) {
+            Some(_) => {
+                // C map: `on_command_received` dispatches legacy `COMMAND_GET_RTDATA` at
+                // `third_party/refloat/src/main.c:2162-2164`.
+                let response = encode_refloat_get_realtime_data_response(&self.all_data_payloads);
+                send(&response)
+            }
+            None => false,
+        }
+    }
+
     pub(super) fn send_realtime_data_packet_response(
         &self,
         telemetry: &impl MotorTelemetry,
@@ -48,13 +64,6 @@ impl RefloatPackageState {
         send: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
-        // C map: `on_command_received` dispatches legacy `COMMAND_GET_RTDATA` at
-        // `third_party/refloat/src/main.c:2162-2164`.
-        if refloat_command_payload(bytes, RefloatAppDataCommand::GetRealtimeData).is_some() {
-            let response = encode_refloat_get_realtime_data_response(&self.all_data_payloads);
-            return send(&response);
-        }
-
         match refloat_command_payload(bytes, RefloatAppDataCommand::RealtimeData) {
             Some(_) => {
                 let payloads = self
