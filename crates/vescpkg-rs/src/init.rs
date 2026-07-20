@@ -409,14 +409,11 @@ impl<'info> PackageStart<'info> {
                 core::mem::transmute::<usize, ffi::CustomConfigXml>(image.resolve_addr(xml)),
             )
         };
-        let registered =
-            bindings.register_custom_config_callbacks(callbacks.0, callbacks.1, callbacks.2);
-        if registered && recorder.record_custom_config() {
+        bindings.register_custom_config_callbacks(callbacks.0, callbacks.1, callbacks.2);
+        if recorder.record_custom_config() {
             true
         } else {
-            if registered {
-                let _ = unsafe { bindings.clear_custom_configs() };
-            }
+            unsafe { bindings.clear_custom_configs() };
             false
         }
     }
@@ -529,7 +526,7 @@ impl<'info> PackageStart<'info> {
             return Err(crate::AppDataHandlerRegistrationError::FirmwareRejected);
         }
         if let Err(error) = callback.register_with_bindings(bindings) {
-            let _ = unsafe { bindings.clear_custom_configs() };
+            unsafe { bindings.clear_custom_configs() };
             if let Some(recorder) = self.callback_recorder {
                 let _ = recorder.clear_custom_config();
             }
@@ -1160,7 +1157,7 @@ mod tests {
     }
 
     #[test]
-    fn package_start_stops_callback_registration_when_custom_config_is_rejected() {
+    fn package_start_clears_custom_config_when_app_data_is_rejected() {
         unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
 
         struct Callback;
@@ -1216,31 +1213,6 @@ mod tests {
             Config,
             1
         );
-
-        let bindings = FakeAppDataBindings::with_register_custom_config_result(false);
-        let mut info = ffi::LibInfo {
-            stop_fun: None,
-            arg: core::ptr::null_mut(),
-            base_addr: 0x3000,
-        };
-        let mut start = super::PackageStart::from_lib_info(&mut info);
-        start.install_runtime_state(ConfigState).unwrap();
-
-        assert_eq!(
-            start.register_callbacks_with_bindings::<Config, Callback, 1, _>(&bindings),
-            Err(crate::AppDataHandlerRegistrationError::FirmwareRejected)
-        );
-        assert_eq!(bindings.custom_config_register_calls.get(), 1);
-        assert_eq!(bindings.handler_calls.get(), 0);
-
-        let stop = start
-            .raw_info_mut()
-            .unwrap()
-            .stop_fun
-            .expect("first config state stop hook");
-        let arg = start.raw_info_mut().unwrap().arg;
-        assert!(start.finish_start(true));
-        unsafe { stop(arg) };
 
         let bindings = FakeAppDataBindings::with_set_handler_result(false);
         let mut info = ffi::LibInfo {

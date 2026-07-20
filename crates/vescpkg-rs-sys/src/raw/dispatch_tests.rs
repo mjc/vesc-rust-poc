@@ -559,18 +559,14 @@ fn custom_config_helpers_forward_through_mock_table() {
     // Refloat v1.2.1 registers these callbacks in `src/main.c:2456`, clears them
     // in `src/main.c:2403`, and gets the ABI slots from `vesc_pkg_lib/vesc_c_if.h:549-553`.
     with_populated_table(|| unsafe {
-        assert!(conf_custom_add_config(
-            custom_config_get,
-            custom_config_set,
-            custom_config_xml,
-        ));
+        conf_custom_add_config(custom_config_get, custom_config_set, custom_config_xml);
         assert_eq!(CONF_CUSTOM_ADD_CONFIG.get(), 1);
         assert_eq!(CUSTOM_CONFIG_GET.get(), 1);
         assert_eq!(CUSTOM_CONFIG_SET.get(), 1);
         assert_eq!(CUSTOM_CONFIG_XML.get(), 1);
         assert!(LAST_CUSTOM_CONFIG_DEFAULT.get());
 
-        assert!(conf_custom_clear_configs());
+        conf_custom_clear_configs();
         assert_eq!(CONF_CUSTOM_CLEAR_CONFIGS.get(), 1);
     });
 }

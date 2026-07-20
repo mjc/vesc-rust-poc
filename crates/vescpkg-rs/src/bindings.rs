@@ -149,7 +149,7 @@ pub(crate) trait CustomConfigBindings {
         get_cfg: CustomConfigGet,
         set_cfg: CustomConfigSet,
         get_cfg_xml: CustomConfigXml,
-    ) -> bool;
+    );
 
     /// Register package-owned custom-config callbacks.
     fn register_custom_config_callbacks(
@@ -157,12 +157,12 @@ pub(crate) trait CustomConfigBindings {
         get_cfg: CustomConfigGet,
         set_cfg: CustomConfigSet,
         get_cfg_xml: CustomConfigXml,
-    ) -> bool {
+    ) {
         unsafe { self.register_custom_config(get_cfg, set_cfg, get_cfg_xml) }
     }
 
     /// Clear this package's custom-config callbacks.
-    unsafe fn clear_custom_configs(&self) -> bool;
+    unsafe fn clear_custom_configs(&self);
 }
 
 impl<B: CustomConfigBindings + ?Sized> CustomConfigBindings for &B {
@@ -171,11 +171,11 @@ impl<B: CustomConfigBindings + ?Sized> CustomConfigBindings for &B {
         get_cfg: CustomConfigGet,
         set_cfg: CustomConfigSet,
         get_cfg_xml: CustomConfigXml,
-    ) -> bool {
+    ) {
         unsafe { (**self).register_custom_config(get_cfg, set_cfg, get_cfg_xml) }
     }
 
-    unsafe fn clear_custom_configs(&self) -> bool {
+    unsafe fn clear_custom_configs(&self) {
         unsafe { (**self).clear_custom_configs() }
     }
 }
@@ -248,11 +248,11 @@ impl CustomConfigBindings for RealBindings {
         get_cfg: CustomConfigGet,
         set_cfg: CustomConfigSet,
         get_cfg_xml: CustomConfigXml,
-    ) -> bool {
+    ) {
         unsafe { crate::ffi::conf_custom_add_config(get_cfg, set_cfg, get_cfg_xml) }
     }
 
-    unsafe fn clear_custom_configs(&self) -> bool {
+    unsafe fn clear_custom_configs(&self) {
         unsafe { crate::ffi::conf_custom_clear_configs() }
     }
 }

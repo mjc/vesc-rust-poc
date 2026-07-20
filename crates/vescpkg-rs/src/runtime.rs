@@ -46,7 +46,7 @@ impl CallbackRegistrations {
             let _ = unsafe { bindings.clear_app_data_handler() };
         }
         if self.custom_config {
-            let _ = unsafe { bindings.clear_custom_configs() };
+            unsafe { bindings.clear_custom_configs() };
         }
     }
 }

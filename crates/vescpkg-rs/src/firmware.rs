@@ -459,8 +459,7 @@ unsafe fn register_custom_config_callbacks_from_image<B>(
     get_cfg: crate::ffi::CustomConfigGet,
     set_cfg: crate::ffi::CustomConfigSet,
     get_cfg_xml: crate::ffi::CustomConfigXml,
-) -> bool
-where
+) where
     B: crate::bindings::CustomConfigBindings,
 {
     bindings.register_custom_config_callbacks(
@@ -924,7 +923,7 @@ mod tests {
         let set_cfg = stateful_custom_config_set::<TestCustomConfig, 3>;
         let get_cfg_xml = stateful_custom_config_xml::<TestCustomConfig, 3>;
 
-        assert!(unsafe {
+        unsafe {
             register_custom_config_callbacks_from_image(
                 &bindings,
                 image,
@@ -932,7 +931,7 @@ mod tests {
                 set_cfg,
                 get_cfg_xml,
             )
-        });
+        };
         assert_eq!(bindings.custom_config_register_calls.get(), 1);
         assert_eq!(
             bindings.last_custom_config_get.get(),

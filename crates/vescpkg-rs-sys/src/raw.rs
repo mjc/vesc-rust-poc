@@ -811,11 +811,8 @@ pub unsafe fn conf_custom_add_config(
     get_cfg: CustomConfigGet,
     set_cfg: CustomConfigSet,
     get_cfg_xml: CustomConfigXml,
-) -> bool {
-    unsafe {
-        slots::conf_custom_add_config()(get_cfg, set_cfg, get_cfg_xml);
-        true
-    }
+) {
+    unsafe { slots::conf_custom_add_config()(get_cfg, set_cfg, get_cfg_xml) }
 }
 
 /// Clear firmware custom-config callbacks.
@@ -826,11 +823,8 @@ pub unsafe fn conf_custom_add_config(
 /// # Safety
 ///
 /// Must only be called while the firmware `VESC_IF` table is valid.
-pub unsafe fn conf_custom_clear_configs() -> bool {
-    unsafe {
-        slots::conf_custom_clear_configs()();
-        true
-    }
+pub unsafe fn conf_custom_clear_configs() {
+    unsafe { slots::conf_custom_clear_configs()() }
 }
 
 /// Allocate and initialize a firmware mutex.

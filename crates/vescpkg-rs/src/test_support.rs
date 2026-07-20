@@ -526,7 +526,6 @@ pub(crate) struct FakeAppDataBindings {
     /// Fake package ARG pointer returned by the app-data binding.
     pub app_data_arg: Cell<usize>,
     set_handler_result: Cell<bool>,
-    register_custom_config_result: Cell<bool>,
 }
 
 #[derive(Clone, Copy)]
@@ -554,7 +553,6 @@ impl FirmwareCallResult {
 #[cfg(test)]
 struct FakeAppDataResults {
     set_handler: FirmwareCallResult,
-    register_custom_config: FirmwareCallResult,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -562,7 +560,6 @@ struct FakeAppDataResults {
 impl FakeAppDataResults {
     const ACCEPT_ALL: Self = Self {
         set_handler: FirmwareCallResult::Accept,
-        register_custom_config: FirmwareCallResult::Accept,
     };
 }
 
@@ -597,19 +594,6 @@ impl FakeAppDataBindings {
         )
     }
 
-    /// Creates fake app-data bindings with an explicit custom-config registration result.
-    pub fn with_register_custom_config_result(register_custom_config_result: bool) -> Self {
-        Self::with_ticks_and_results(
-            0,
-            FakeAppDataResults {
-                register_custom_config: FirmwareCallResult::from_bool(
-                    register_custom_config_result,
-                ),
-                ..FakeAppDataResults::ACCEPT_ALL
-            },
-        )
-    }
-
     fn with_ticks_and_results(ticks: u32, results: FakeAppDataResults) -> Self {
         Self {
             handler_calls: Cell::new(0),
@@ -627,7 +611,6 @@ impl FakeAppDataBindings {
             last_imu_read_callback: Cell::new(0),
             app_data_arg: Cell::new(0),
             set_handler_result: Cell::new(results.set_handler.accepted()),
-            register_custom_config_result: Cell::new(results.register_custom_config.accepted()),
         }
     }
 }
@@ -669,7 +652,7 @@ impl CustomConfigBindings for FakeAppDataBindings {
         get_cfg: CustomConfigGet,
         set_cfg: CustomConfigSet,
         get_cfg_xml: CustomConfigXml,
-    ) -> bool {
+    ) {
         self.custom_config_register_calls
             .set(self.custom_config_register_calls.get() + 1);
         self.last_custom_config_get
@@ -678,16 +661,14 @@ impl CustomConfigBindings for FakeAppDataBindings {
             .set(set_cfg as *const () as usize);
         self.last_custom_config_xml
             .set(get_cfg_xml as *const () as usize);
-        self.register_custom_config_result.get()
     }
 
-    unsafe fn clear_custom_configs(&self) -> bool {
+    unsafe fn clear_custom_configs(&self) {
         self.custom_config_clear_calls
             .set(self.custom_config_clear_calls.get() + 1);
         self.last_custom_config_get.set(0);
         self.last_custom_config_set.set(0);
         self.last_custom_config_xml.set(0);
-        true
     }
 }
 
@@ -833,8 +814,8 @@ mod tests {
             // Refloat v1.2.1 registers these three callbacks at `src/main.c:2456`;
             // the VESC function-table slots are declared in
             // `vesc_pkg_lib/vesc_c_if.h:549-553`.
-            assert!(bindings.register_custom_config(get_cfg, set_cfg, get_cfg_xml));
-            assert!(bindings.clear_custom_configs());
+            bindings.register_custom_config(get_cfg, set_cfg, get_cfg_xml);
+            bindings.clear_custom_configs();
         }
 
         assert_eq!(bindings.custom_config_register_calls.get(), 1);
@@ -860,29 +841,6 @@ mod tests {
 
         assert_eq!(bindings.imu_read_callback_calls.get(), 2);
         assert_eq!(bindings.last_imu_read_callback.get(), 0);
-    }
-
-    #[test]
-    fn fake_app_data_bindings_can_reject_custom_config_registration() {
-        let bindings = FakeAppDataBindings::with_register_custom_config_result(false);
-
-        unsafe extern "C" fn get_cfg(_data: *mut u8, _is_default: bool) -> core::ffi::c_int {
-            0
-        }
-
-        unsafe extern "C" fn set_cfg(_data: *mut u8) -> bool {
-            true
-        }
-
-        unsafe extern "C" fn get_cfg_xml(_data: *mut *mut u8) -> core::ffi::c_int {
-            0
-        }
-
-        unsafe {
-            assert!(!bindings.register_custom_config(get_cfg, set_cfg, get_cfg_xml));
-        }
-
-        assert_eq!(bindings.custom_config_register_calls.get(), 1);
     }
 
     #[test]
