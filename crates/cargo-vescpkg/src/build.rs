@@ -67,6 +67,37 @@ struct CargoArtifacts {
     out_dir: Option<PathBuf>,
 }
 
+#[derive(Debug)]
+struct ElfSection {
+    index: u64,
+    name: String,
+    size: u64,
+    allocated: bool,
+    writable: bool,
+}
+
+#[derive(Debug)]
+struct ElfSymbol {
+    name: String,
+    value: u64,
+    kind: String,
+    section: String,
+}
+
+#[derive(Debug)]
+struct ElfRelocation {
+    section: String,
+    kind: String,
+    symbol: String,
+}
+
+#[derive(Debug)]
+struct ElfReport {
+    sections: Vec<ElfSection>,
+    symbols: Vec<ElfSymbol>,
+    relocations: Vec<ElfRelocation>,
+}
+
 pub(crate) fn build_package(root: &Path, options: &BuildOptions) -> Result<PathBuf, BuildError> {
     validate_target(&options.target)?;
     let metadata = cargo_metadata(root, options)?;
@@ -455,26 +486,20 @@ fn link_staticlib(archive: &Path) -> Result<PathBuf, BuildError> {
     let elf = archive.with_extension("elf");
     let linker_script = archive.with_extension("vescpkg-link.ld");
     fs::write(&linker_script, STATICLIB_LINKER_SCRIPT)?;
-    let mut command = Command::new("arm-none-eabi-gcc");
+    let mut command = Command::new("rust-lld");
     command.args([
-        "-nostartfiles",
+        "-flavor",
+        "gnu",
+        "-m",
+        "armelf",
         "-static",
-        "-mcpu=cortex-m4",
-        "-mthumb",
-        "-mfloat-abi=hard",
-        "-mfpu=fpv4-sp-d16",
+        "--emit-relocs",
+        "--gc-sections",
+        "--undefined=init",
+        "--entry=init",
+        "-T",
     ]);
-    command
-        .arg(archive)
-        .args([
-            "-Wl,--emit-relocs",
-            "-Wl,--gc-sections",
-            "-Wl,--undefined=init",
-            "-T",
-        ])
-        .arg(linker_script)
-        .arg("-o")
-        .arg(&elf);
+    command.arg(linker_script).arg(archive).arg("-o").arg(&elf);
     command_output(&mut command)?;
     Ok(elf)
 }
@@ -494,32 +519,150 @@ fn write_flattened_elf(elf: &Path, output: &Path) -> Result<(), BuildError> {
 }
 
 fn validate_flat_image_relocations(elf: &Path) -> Result<(), BuildError> {
-    let output = Command::new("arm-none-eabi-readelf")
-        .args(["--relocs", "--sections", "--symbols", "--wide"])
+    let output = Command::new("rust-readobj")
+        .args([
+            "--elf-output-style=JSON",
+            "--relocations",
+            "--sections",
+            "--symbols",
+        ])
         .arg(elf)
         .output()?;
     if !output.status.success() {
         return Err(BuildError(format!(
-            "arm-none-eabi-readelf failed for {} with {}",
+            "rust-readobj failed for {} with {}",
             elf.display(),
             output.status
         )));
     }
-    let report = String::from_utf8_lossy(&output.stdout);
+    let report = parse_elf_report(&output.stdout)?;
     validate_loader_entrypoint_layout(&report)?;
     let allow_got = validate_image_offset_relocations(&report)?;
     validate_writable_section_report(&report, allow_got)?;
     validate_relocation_report(&report)
 }
 
-fn validate_loader_entrypoint_layout(report: &str) -> Result<(), BuildError> {
-    let symbol_address = |name| {
-        report.lines().find_map(|line| {
-            let fields = line.split_whitespace().collect::<Vec<_>>();
-            (fields.get(7) == Some(&name) && fields.get(6) != Some(&"UND"))
-                .then(|| usize::from_str_radix(fields.get(1)?, 16).ok())
-                .flatten()
+fn required_array<'a>(value: &'a Value, key: &str) -> Result<&'a [Value], BuildError> {
+    value
+        .get(key)
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .ok_or_else(|| BuildError(format!("rust-readobj JSON is missing `{key}`")))
+}
+
+fn required_name<'a>(value: &'a Value, key: &str) -> Result<&'a str, BuildError> {
+    value
+        .get(key)
+        .and_then(|field| field.get("Name"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| BuildError(format!("rust-readobj JSON is missing `{key}.Name`")))
+}
+
+fn parse_elf_report(bytes: &[u8]) -> Result<ElfReport, BuildError> {
+    let json: Value = serde_json::from_slice(bytes)
+        .map_err(|error| BuildError(format!("invalid rust-readobj JSON: {error}")))?;
+    let file = json
+        .as_array()
+        .and_then(|files| files.first())
+        .ok_or_else(|| BuildError("rust-readobj JSON contains no ELF file".to_owned()))?;
+    let summary = file
+        .get("FileSummary")
+        .ok_or_else(|| BuildError("rust-readobj JSON is missing `FileSummary`".to_owned()))?;
+    if summary.get("Format").and_then(Value::as_str) != Some("elf32-littlearm")
+        || summary.get("Arch").and_then(Value::as_str) != Some("arm")
+    {
+        return Err(BuildError(
+            "native payload must be a 32-bit little-endian ARM ELF".to_owned(),
+        ));
+    }
+
+    let sections = required_array(file, "Sections")?
+        .iter()
+        .map(|entry| {
+            let section = entry
+                .get("Section")
+                .ok_or_else(|| BuildError("invalid rust-readobj section".to_owned()))?;
+            let flags = required_array(
+                section
+                    .get("Flags")
+                    .ok_or_else(|| BuildError("section is missing flags".to_owned()))?,
+                "Flags",
+            )?;
+            let has_flag = |name| {
+                flags
+                    .iter()
+                    .any(|flag| flag.get("Name").and_then(Value::as_str) == Some(name))
+            };
+            Ok(ElfSection {
+                index: section
+                    .get("Index")
+                    .and_then(Value::as_u64)
+                    .ok_or_else(|| BuildError("section is missing its index".to_owned()))?,
+                name: required_name(section, "Name")?.to_owned(),
+                size: section
+                    .get("Size")
+                    .and_then(Value::as_u64)
+                    .ok_or_else(|| BuildError("section is missing its size".to_owned()))?,
+                allocated: has_flag("SHF_ALLOC"),
+                writable: has_flag("SHF_WRITE"),
+            })
         })
+        .collect::<Result<Vec<_>, BuildError>>()?;
+
+    let symbols = required_array(file, "Symbols")?
+        .iter()
+        .map(|entry| {
+            let symbol = entry
+                .get("Symbol")
+                .ok_or_else(|| BuildError("invalid rust-readobj symbol".to_owned()))?;
+            Ok(ElfSymbol {
+                name: required_name(symbol, "Name")?.to_owned(),
+                value: symbol
+                    .get("Value")
+                    .and_then(Value::as_u64)
+                    .ok_or_else(|| BuildError("symbol is missing its value".to_owned()))?,
+                kind: required_name(symbol, "Type")?.to_owned(),
+                section: required_name(symbol, "Section")?.to_owned(),
+            })
+        })
+        .collect::<Result<Vec<_>, BuildError>>()?;
+
+    let mut relocations = Vec::new();
+    for group in required_array(file, "Relocations")? {
+        let section_index = group
+            .get("SectionIndex")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| BuildError("relocation group is missing its section".to_owned()))?;
+        let section = sections
+            .iter()
+            .find(|section| section.index == section_index)
+            .ok_or_else(|| BuildError(format!("unknown relocation section {section_index}")))?;
+        for entry in required_array(group, "Relocs")? {
+            let relocation = entry
+                .get("Relocation")
+                .ok_or_else(|| BuildError("invalid rust-readobj relocation".to_owned()))?;
+            relocations.push(ElfRelocation {
+                section: section.name.clone(),
+                kind: required_name(relocation, "Type")?.to_owned(),
+                symbol: required_name(relocation, "Symbol")?.to_owned(),
+            });
+        }
+    }
+
+    Ok(ElfReport {
+        sections,
+        symbols,
+        relocations,
+    })
+}
+
+fn validate_loader_entrypoint_layout(report: &ElfReport) -> Result<(), BuildError> {
+    let symbol_address = |name| {
+        report
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name == name && symbol.section != "Undefined")
+            .map(|symbol| symbol.value)
     };
     let prog_ptr = symbol_address("prog_ptr");
     let init = symbol_address("init");
@@ -531,33 +674,21 @@ fn validate_loader_entrypoint_layout(report: &str) -> Result<(), BuildError> {
     )))
 }
 
-fn validate_image_offset_relocations(report: &str) -> Result<bool, BuildError> {
+fn validate_image_offset_relocations(report: &ElfReport) -> Result<bool, BuildError> {
     let image_offset_symbols = image_offset_symbols(report);
-    let mut relocation_section = "";
     let mut allow_got = false;
-    for line in report.lines() {
-        if let Some(section) = line
-            .strip_prefix("Relocation section '")
-            .and_then(|line| line.split_once('\'').map(|(section, _)| section))
-        {
-            relocation_section = section;
-            continue;
-        }
-        let fields = line.split_whitespace().collect::<Vec<_>>();
-        if let Some(relocation) = fields
-            .iter()
-            .copied()
-            .find(|field| field.starts_with("R_ARM_") && field.contains("GOT"))
-        {
-            let symbol = fields.last().copied().unwrap_or_default();
-            if relocation != "R_ARM_GOT_PREL" {
+    for relocation in &report.relocations {
+        if relocation.kind.starts_with("R_ARM_") && relocation.kind.contains("GOT") {
+            if relocation.kind != "R_ARM_GOT_PREL" {
                 return Err(BuildError(format!(
-                    "unsupported GOT relocation `{relocation}` in `{relocation_section}`; VESC flat images only support marked image offsets"
+                    "unsupported GOT relocation `{}` in `{}`; VESC flat images only support marked image offsets",
+                    relocation.kind, relocation.section
                 )));
             }
-            if !image_offset_symbols.contains(&symbol) {
+            if !image_offset_symbols.contains(&relocation.symbol.as_str()) {
                 return Err(BuildError(format!(
-                    "unmarked image-offset symbol `{symbol}` in `{relocation_section}`; SDK-resolved callbacks must emit a `{IMAGE_OFFSET_MARKER_PREFIX}{symbol}` alias"
+                    "unmarked image-offset symbol `{}` in `{}`; SDK-resolved callbacks must emit a `{IMAGE_OFFSET_MARKER_PREFIX}{}` alias",
+                    relocation.symbol, relocation.section, relocation.symbol
                 )));
             }
             allow_got = true;
@@ -566,7 +697,7 @@ fn validate_image_offset_relocations(report: &str) -> Result<bool, BuildError> {
     Ok(allow_got)
 }
 
-fn validate_relocation_report(report: &str) -> Result<(), BuildError> {
+fn validate_relocation_report(report: &ElfReport) -> Result<(), BuildError> {
     const NON_LOADABLE_PREFIXES: [&str; 2] = [".rel.debug", ".rel.comment"];
     const ABSOLUTE_RELOCATIONS: [&str; 4] = [
         "R_ARM_ABS32",
@@ -575,90 +706,49 @@ fn validate_relocation_report(report: &str) -> Result<(), BuildError> {
         "R_ARM_MOVT_ABS",
     ];
 
-    let mut relocation_section = "";
-    for line in report.lines() {
-        if let Some(section) = line
-            .strip_prefix("Relocation section '")
-            .and_then(|line| line.split_once('\'').map(|(section, _)| section))
-        {
-            relocation_section = section;
-            continue;
-        }
-        let relocation = line
-            .split_whitespace()
-            .find(|field| ABSOLUTE_RELOCATIONS.contains(field));
+    for relocation in &report.relocations {
         let non_loadable = NON_LOADABLE_PREFIXES
             .iter()
-            .any(|prefix| relocation_section.starts_with(prefix));
-        if let Some(relocation) = relocation
-            && !non_loadable
-        {
+            .any(|prefix| relocation.section.starts_with(prefix));
+        if ABSOLUTE_RELOCATIONS.contains(&relocation.kind.as_str()) && !non_loadable {
             return Err(BuildError(format!(
-                "unsupported absolute relocation `{relocation}` in `{relocation_section}`; VESC flat images cannot contain pointer-bearing loadable statics"
+                "unsupported absolute relocation `{}` in `{}`; VESC flat images cannot contain pointer-bearing loadable statics",
+                relocation.kind, relocation.section
             )));
         }
     }
     Ok(())
 }
 
-fn section_header(line: &str) -> Option<(&str, &str, &str, &str)> {
-    let fields = line.split_whitespace().collect::<Vec<_>>();
-    let name_index = fields.iter().position(|field| field.starts_with('.'))?;
-    let index = fields
-        .get(name_index.checked_sub(1)?)?
-        .trim_matches(['[', ']']);
-    index.parse::<usize>().ok()?;
-    Some((
-        index,
-        fields[name_index],
-        fields.get(name_index + 4)?,
-        fields.get(name_index + 6)?,
-    ))
-}
-
-fn image_offset_symbols(report: &str) -> Vec<&str> {
-    let symbols = report
-        .lines()
-        .filter_map(|line| {
-            let fields = line.split_whitespace().collect::<Vec<_>>();
-            Some((
-                fields.get(1).copied()?,
-                fields.get(3).copied()?,
-                fields.get(6).copied()?,
-                fields.get(7).copied()?,
-            ))
-        })
-        .collect::<Vec<_>>();
-
-    symbols
+fn image_offset_symbols(report: &ElfReport) -> Vec<&str> {
+    report
+        .symbols
         .iter()
-        .filter_map(|(value, kind, section, name)| {
-            (*kind == "FUNC"
-                && symbols
-                    .iter()
-                    .any(|(marker_value, _, marker_section, marker)| {
-                        *marker_value == *value
-                            && *marker_section == *section
-                            && marker
-                                .strip_prefix(IMAGE_OFFSET_MARKER_PREFIX)
-                                .is_some_and(|marked| marked == *name)
-                    }))
-            .then_some(*name)
+        .filter_map(|symbol| {
+            (symbol.kind == "Function"
+                && report.symbols.iter().any(|marker| {
+                    marker.value == symbol.value
+                        && marker.section == symbol.section
+                        && marker
+                            .name
+                            .strip_prefix(IMAGE_OFFSET_MARKER_PREFIX)
+                            .is_some_and(|marked| marked == symbol.name)
+                }))
+            .then_some(symbol.name.as_str())
         })
         .collect()
 }
 
-fn validate_writable_section_report(report: &str, allow_got: bool) -> Result<(), BuildError> {
-    for line in report.lines() {
-        let Some((_, section, size, flags)) = section_header(line) else {
-            continue;
-        };
-        let size = usize::from_str_radix(size, 16)
-            .map_err(|_| BuildError(format!("could not read `{section}` section size")))?;
-        let writable = flags.contains('W') && flags.contains('A');
-        if size != 0 && writable && !(section == ".got" && allow_got) {
+fn validate_writable_section_report(report: &ElfReport, allow_got: bool) -> Result<(), BuildError> {
+    for section in &report.sections {
+        if section.size != 0
+            && section.writable
+            && section.allocated
+            && !(section.name == ".got" && allow_got)
+        {
             return Err(BuildError(format!(
-                "unsupported writable section `{section}` ({size} bytes); VESC flat images execute in place"
+                "unsupported writable section `{}` ({} bytes); VESC flat images execute in place",
+                section.name, section.size
             )));
         }
     }
@@ -680,15 +770,55 @@ fn package_slug(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        BuildOptions, PackageMetadata, PayloadKind, VESC_TARGET, build_package_bytes,
-        cargo_build_command, cargo_message_artifacts, command_failure_message, package_slug,
-        select_package, stage_generated_assets, validate_descriptor_fullscreen,
-        validate_image_offset_relocations, validate_loader_entrypoint_layout,
-        validate_relocation_report, validate_target, validate_writable_section_report,
+        BuildOptions, ElfRelocation, ElfReport, ElfSection, ElfSymbol, PackageMetadata,
+        PayloadKind, VESC_TARGET, build_package_bytes, cargo_build_command,
+        cargo_message_artifacts, command_failure_message, package_slug, select_package,
+        stage_generated_assets, validate_descriptor_fullscreen, validate_image_offset_relocations,
+        validate_loader_entrypoint_layout, validate_relocation_report, validate_target,
+        validate_writable_section_report,
     };
     use crate::package::Package;
     use serde_json::json;
     use std::path::Path;
+
+    fn elf_report(
+        sections: Vec<ElfSection>,
+        symbols: Vec<ElfSymbol>,
+        relocations: Vec<ElfRelocation>,
+    ) -> ElfReport {
+        ElfReport {
+            sections,
+            symbols,
+            relocations,
+        }
+    }
+
+    fn section(name: &str, size: u64, writable: bool) -> ElfSection {
+        ElfSection {
+            index: 0,
+            name: name.to_owned(),
+            size,
+            allocated: true,
+            writable,
+        }
+    }
+
+    fn symbol(name: &str, value: u64, kind: &str) -> ElfSymbol {
+        ElfSymbol {
+            name: name.to_owned(),
+            value,
+            kind: kind.to_owned(),
+            section: ".text".to_owned(),
+        }
+    }
+
+    fn relocation(section: &str, kind: &str, symbol: &str) -> ElfRelocation {
+        ElfRelocation {
+            section: section.to_owned(),
+            kind: kind.to_owned(),
+            symbol: symbol.to_owned(),
+        }
+    }
 
     #[test]
     fn package_slug_matches_existing_artifact_names() {
@@ -870,12 +1000,13 @@ mod tests {
 
     #[test]
     fn rejects_absolute_relocations_in_loadable_static_data() {
-        let report = "\
-Relocation section '.rel.rodata' at offset 0x100 contains 1 entry:\n\
- Offset     Info    Type                Sym. Value  Symbol's Name\n\
-00000000  00000102 R_ARM_ABS32            00000004   STATIC_NAME\n";
+        let report = elf_report(
+            vec![],
+            vec![],
+            vec![relocation(".rel.rodata", "R_ARM_ABS32", "STATIC_NAME")],
+        );
 
-        let error = validate_relocation_report(report).expect_err("pointer-bearing static");
+        let error = validate_relocation_report(&report).expect_err("pointer-bearing static");
 
         assert!(error.to_string().contains("R_ARM_ABS32"));
         assert!(
@@ -887,110 +1018,120 @@ Relocation section '.rel.rodata' at offset 0x100 contains 1 entry:\n\
 
     #[test]
     fn accepts_the_vesc_loader_entrypoint_layout() {
-        let report = "\
-Symbol table '.symtab' contains 2 entries:\n\
-   Num:    Value  Size Type    Bind   Vis      Ndx Name\n\
-     1: 00000000     4 OBJECT  GLOBAL DEFAULT    1 prog_ptr\n\
-     2: 00000005    12 FUNC    GLOBAL DEFAULT    2 init\n";
+        let report = elf_report(
+            vec![],
+            vec![
+                symbol("prog_ptr", 0, "Object"),
+                symbol("init", 5, "Function"),
+            ],
+            vec![],
+        );
 
-        assert!(validate_loader_entrypoint_layout(report).is_ok());
+        assert!(validate_loader_entrypoint_layout(&report).is_ok());
     }
 
     #[test]
     fn rejects_a_helper_before_the_vesc_loader_entrypoint() {
-        let report = "\
-Symbol table '.symtab' contains 2 entries:\n\
-   Num:    Value  Size Type    Bind   Vis      Ndx Name\n\
-     1: 00000000     4 OBJECT  GLOBAL DEFAULT    1 prog_ptr\n\
-     2: 0000000f    12 FUNC    GLOBAL DEFAULT    2 init\n";
+        let report = elf_report(
+            vec![],
+            vec![
+                symbol("prog_ptr", 0, "Object"),
+                symbol("init", 15, "Function"),
+            ],
+            vec![],
+        );
 
-        let error = validate_loader_entrypoint_layout(report).expect_err("misplaced init");
+        let error = validate_loader_entrypoint_layout(&report).expect_err("misplaced init");
         assert!(error.to_string().contains("`init` at 0x4"));
     }
 
     #[test]
     fn rejects_absolute_relocations_in_code() {
-        let report = "\
-Relocation section '.rel.text' at offset 0x100 contains 1 entry:\n\
- Offset     Info    Type                Sym. Value  Symbol's Name\n\
-00000070  00000e02 R_ARM_ABS32            00000191   stop_package\n";
+        let report = elf_report(
+            vec![],
+            vec![],
+            vec![relocation(".rel.text", "R_ARM_ABS32", "stop_package")],
+        );
 
-        assert!(validate_relocation_report(report).is_err());
+        assert!(validate_relocation_report(&report).is_err());
     }
 
     #[test]
     fn ignores_debug_relocations_omitted_from_the_flat_binary() {
-        let report = "\
-Relocation section '.rel.debug_frame' at offset 0x100 contains 1 entry:\n\
- Offset     Info    Type                Sym. Value  Symbol's Name\n\
-00000014  00000902 R_ARM_ABS32            00000000   .debug_frame\n";
+        let report = elf_report(
+            vec![],
+            vec![],
+            vec![relocation(
+                ".rel.debug_frame",
+                "R_ARM_ABS32",
+                ".debug_frame",
+            )],
+        );
 
-        assert!(validate_relocation_report(report).is_ok());
+        assert!(validate_relocation_report(&report).is_ok());
     }
 
     #[test]
     fn rejects_newlib_state_even_when_c_float_math_was_requested() {
-        let report = "\
-Relocation section '.rel.data' at offset 0x100 contains 2 entries:\n\
- Offset     Info    Type                Sym. Value  Symbol's Name\n\
-00000010  00013502 R_ARM_ABS32            00000018   _impure_data\n\
-0000001c  00012602 R_ARM_ABS32            00000218   __sf\n";
+        let report = elf_report(
+            vec![],
+            vec![],
+            vec![
+                relocation(".rel.data", "R_ARM_ABS32", "_impure_data"),
+                relocation(".rel.data", "R_ARM_ABS32", "__sf"),
+            ],
+        );
 
-        assert!(validate_relocation_report(report).is_err());
+        assert!(validate_relocation_report(&report).is_err());
     }
 
     #[test]
     fn rejects_nonempty_writable_sections() {
-        let report = "\
-  [ 2] .data             PROGBITS        00000010 001010 00000c 00  WA  0   0  4\n\
-  [ 3] .bss              NOBITS          0000001c 00101c 000001 00  WA  0   0  1\n";
+        let report = elf_report(
+            vec![section(".data", 12, true), section(".bss", 1, true)],
+            vec![],
+            vec![],
+        );
 
-        let error = validate_writable_section_report(report, false).expect_err("writable section");
+        let error = validate_writable_section_report(&report, false).expect_err("writable section");
 
         assert!(error.to_string().contains(".data"));
     }
 
     #[test]
     fn rejects_nonempty_custom_writable_sections() {
-        let report = "\
-  [ 2] .package_state    PROGBITS        00000010 001010 00000c 00  WA  0   0  4\n";
+        let report = elf_report(vec![section(".package_state", 12, true)], vec![], vec![]);
 
-        let error = validate_writable_section_report(report, false).expect_err("writable section");
+        let error = validate_writable_section_report(&report, false).expect_err("writable section");
 
         assert!(error.to_string().contains(".package_state"));
     }
 
     #[test]
     fn rejects_image_offsets_without_symbol_alias_markers() {
-        let report = "\
-Section Headers:\n\
-  [ 2] .text             PROGBITS 00000010 001010 000004 00  AX  0   0  4\n\
-Relocation section '.rel.text' at offset 0x100 contains 1 entry:\n\
- Offset     Info    Type                Sym. Value  Symbol's Name\n\
-00000000  00000160 R_ARM_GOT_PREL         00000010   callback\n\
-Symbol table '.symtab' contains 2 entries:\n\
-   Num:    Value  Size Type    Bind   Vis      Ndx Name\n\
-     1: 00000010     4 FUNC    GLOBAL DEFAULT    2 callback\n";
+        let report = elf_report(
+            vec![section(".text", 4, false)],
+            vec![symbol("callback", 16, "Function")],
+            vec![relocation(".rel.text", "R_ARM_GOT_PREL", "callback")],
+        );
 
-        let error = validate_image_offset_relocations(report).expect_err("invalid marker");
+        let error = validate_image_offset_relocations(&report).expect_err("invalid marker");
 
         assert!(error.to_string().contains("unmarked image-offset symbol"));
     }
 
     #[test]
     fn accepts_symbol_alias_image_offset_markers() {
-        let report = "\
-Section Headers:\n\
-  [ 2] .text             PROGBITS 00000010 001010 000004 00  AX  0   0  4\n\
-Relocation section '.rel.text' at offset 0x100 contains 1 entry:\n\
- Offset     Info    Type                Sym. Value  Symbol's Name\n\
-00000000  00000160 R_ARM_GOT_PREL         00000010   callback\n\
-Symbol table '.symtab' contains 3 entries:\n\
-   Num:    Value  Size Type    Bind   Vis      Ndx Name\n\
-     1: 00000010     4 FUNC    GLOBAL DEFAULT    2 callback\n\
-     2: 00000010     0 NOTYPE  GLOBAL DEFAULT    2 __vescpkg_image_offset_callback\n";
+        let report = elf_report(
+            vec![section(".text", 4, false)],
+            vec![
+                symbol("callback", 16, "Function"),
+                symbol("__vescpkg_image_offset_callback", 16, "None"),
+            ],
+            vec![relocation(".rel.text", "R_ARM_GOT_PREL", "callback")],
+        );
 
-        assert!(validate_image_offset_relocations(report).expect("marked offset"));
+        assert!(validate_image_offset_relocations(&report).expect("marked offset"));
     }
 
     #[test]
