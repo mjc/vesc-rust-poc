@@ -144,10 +144,9 @@ pub mod prelude {
         ExtensionName, ExtensionRegistration, Firmware, FirmwareAppData, FirmwareClock,
         FirmwareThread, FirmwareThreads, Gpio, Imu, ImuReadHandler, LbmExtension, LispArgs,
         LispIntegerError, LispValue, MotorOutput, MotorTelemetry, PackageRuntimeState,
-        PackageStart, PackageStartError, PackageStateAccess, PackageStateStore,
-        StatefulCustomConfigCallback, StatefulLbmExtension, StatelessFirmwareThread,
-        StatelessThreadContext, ThreadContext, ThreadError, ThreadName, ThreadSpec,
-        ThreadWorkingAreaSize, ThreadWorkingAreaSizeError,
+        PackageStart, PackageStartError, StatefulCustomConfigCallback, StatefulLbmExtension,
+        StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadName,
+        ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError,
     };
 }
 
