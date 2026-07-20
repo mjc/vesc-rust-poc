@@ -182,7 +182,7 @@ pub struct PackageStateStore<T> {
     #[cfg(not(target_arch = "arm"))]
     host_lock: AtomicBool,
     #[cfg(not(target_arch = "arm"))]
-    threads: UnsafeCell<Option<crate::ThreadPair>>,
+    threads: UnsafeCell<Option<crate::thread::ThreadGroup>>,
     #[cfg(not(target_arch = "arm"))]
     callbacks: UnsafeCell<CallbackRegistrations>,
     _state: PhantomData<UnsafeCell<T>>,
@@ -203,7 +203,7 @@ struct FirmwareRuntime {
     state_lock: AtomicBool,
     phase: AtomicU8,
     active: AtomicUsize,
-    threads: UnsafeCell<Option<crate::ThreadPair>>,
+    threads: UnsafeCell<Option<crate::thread::ThreadGroup>>,
     callbacks: UnsafeCell<CallbackRegistrations>,
 }
 
@@ -691,39 +691,39 @@ impl<T: Send + 'static> PackageStateStore<T> {
     pub(crate) fn install_threads(
         &self,
         state: NonNull<T>,
-        threads: crate::ThreadPair,
-    ) -> Result<(), crate::ThreadPair> {
+        threads: &mut Option<crate::thread::ThreadGroup>,
+    ) -> bool {
         #[cfg(not(target_arch = "arm"))]
         let _borrow = self.borrow_exclusive();
         #[cfg(not(target_arch = "arm"))]
         let (phase, slot) = {
             if !self.owns(state) {
-                return Err(threads);
+                return false;
             }
             (&self.phase, &self.threads)
         };
         #[cfg(target_arch = "arm")]
         // SAFETY: thread installation receives the exact live loader state pointer.
         let Some(runtime) = (unsafe { firmware_runtime_from_state(state) }) else {
-            return Err(threads);
+            return false;
         };
         #[cfg(target_arch = "arm")]
         let _borrow = self.borrow_exclusive(runtime);
         #[cfg(target_arch = "arm")]
         let (phase, slot) = (&runtime.phase, &runtime.threads);
         if !matches!(phase.load(Ordering::Acquire), INSTALLING | RUNNING) {
-            return Err(threads);
+            return false;
         }
         let slot = unsafe { &mut *slot.get() };
         if slot.is_some() {
-            Err(threads)
+            false
         } else {
-            *slot = Some(threads);
-            Ok(())
+            *slot = threads.take();
+            true
         }
     }
 
-    pub(crate) fn take_threads(&self, state: NonNull<T>) -> Option<crate::ThreadPair> {
+    pub(crate) fn take_threads(&self, state: NonNull<T>) -> Option<crate::thread::ThreadGroup> {
         #[cfg(not(target_arch = "arm"))]
         let _borrow = self.borrow_exclusive();
         #[cfg(not(target_arch = "arm"))]
@@ -1257,18 +1257,23 @@ mod tests {
         let mut first_token = 0_u8;
         let mut second_token = 0_u8;
         let first = unsafe {
-            crate::ThreadHandle::from_firmware(core::ptr::from_mut(&mut first_token).cast())
+            crate::thread::ThreadHandle::from_firmware(core::ptr::from_mut(&mut first_token).cast())
         }
         .unwrap();
         let second = unsafe {
-            crate::ThreadHandle::from_firmware(core::ptr::from_mut(&mut second_token).cast())
+            crate::thread::ThreadHandle::from_firmware(
+                core::ptr::from_mut(&mut second_token).cast(),
+            )
         }
         .unwrap();
-        slot.install_threads(state_ptr, crate::ThreadPair::new(first, second))
-            .unwrap();
+        let mut threads = Some(crate::thread::ThreadGroup::from_handles([first, second]));
+        assert!(slot.install_threads(state_ptr, &mut threads));
+        assert!(threads.is_none());
 
         assert!(slot.begin_stop(state_ptr));
-        let _threads = slot.take_threads(state_ptr).expect("installed thread pair");
+        let _threads = slot
+            .take_threads(state_ptr)
+            .expect("installed thread group");
 
         assert!(!slot.host_lock.load(Ordering::Acquire));
         slot.finish_stop(state_ptr);

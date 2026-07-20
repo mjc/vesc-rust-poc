@@ -50,8 +50,8 @@ pub(crate) mod ffi {
     };
     #[allow(unused_imports)]
     pub use vescpkg_rs_sys::raw::{
-        conf_custom_add_config, conf_custom_clear_configs, io_read, io_read_analog_pair,
-        io_set_mode, io_write, lbm_add_extension, lbm_dec_as_i32, lbm_enc_i, lbm_enc_sym_eerror,
+        conf_custom_add_config, conf_custom_clear_configs, io_read, io_read_analog, io_set_mode,
+        io_write, lbm_add_extension, lbm_dec_as_i32, lbm_enc_i, lbm_enc_sym_eerror,
         lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number, vesc_clear_app_data_handler,
         vesc_clear_imu_read_callback, vesc_free, vesc_get_arg, vesc_malloc, vesc_mutex_create,
         vesc_mutex_lock, vesc_mutex_unlock, vesc_send_app_data, vesc_set_app_data_handler,
@@ -89,10 +89,8 @@ pub use vescpkg_rs_units::{
 
 #[cfg(feature = "alloc")]
 pub use alloc::VescAllocator;
-pub use extension::{
-    ExtensionDescriptor, ExtensionName, ExtensionNameError, ExtensionRegistration, RegisterError,
-};
-pub use extension::{LbmExtension, LispArgs, LispValue, StatefulLbmExtension};
+pub use extension::{ExtensionDescriptor, ExtensionName, ExtensionRegistration, RegisterError};
+pub use extension::{LbmExtension, LispArgs, LispIntegerError, LispValue, StatefulLbmExtension};
 
 // Exported macros need public implementation hooks after downstream expansion.
 // Keep those hooks in one hidden namespace instead of the package-author root.
@@ -112,9 +110,9 @@ pub use lifecycle_core::{AppDataHandlerRegistrationError, AppDataSendError};
 pub use motor::{MotorOutput, MotorTelemetry};
 pub use runtime::{PackageRuntimeState, PackageStateAccess, PackageStateStore};
 pub use thread::{
-    Firmware, FirmwareAppData, FirmwareLisp, FirmwareThread, FirmwareThreads,
-    StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadHandle,
-    ThreadName, ThreadPair, ThreadPairSpec, ThreadSpec, ThreadStackSize,
+    Firmware, FirmwareAppData, FirmwareClock, FirmwareThread, FirmwareThreads,
+    StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadName,
+    ThreadSpec, ThreadStackSize,
 };
 
 /// GPIO bindings and convenience wrappers for package code.
@@ -145,19 +143,19 @@ pub mod prelude {
     };
     pub use crate::{
         AnalogPin, AppDataCallback, AppDataHandlerRegistrationError, AppDataSendError, ConfigBytes,
-        ConfigXml, ExtensionDescriptor, ExtensionName, ExtensionNameError, ExtensionRegistration,
-        Firmware, FirmwareAppData, FirmwareLisp, FirmwareThread, FirmwareThreads, Gpio, Imu,
-        ImuReadHandler, LbmExtension, LispArgs, LispValue, MotorOutput, MotorTelemetry,
+        ConfigXml, ExtensionDescriptor, ExtensionName, ExtensionRegistration, Firmware,
+        FirmwareAppData, FirmwareClock, FirmwareThread, FirmwareThreads, Gpio, Imu, ImuReadHandler,
+        LbmExtension, LispArgs, LispIntegerError, LispValue, MotorOutput, MotorTelemetry,
         PackageRuntimeState, PackageStart, PackageStartError, PackageStateAccess,
         PackageStateStore, RegisterError, StatefulAppDataCallback, StatefulCustomConfigCallback,
         StatefulLbmExtension, StatelessFirmwareThread, StatelessThreadContext, ThreadContext,
-        ThreadError, ThreadHandle, ThreadName, ThreadPair, ThreadPairSpec, ThreadSpec,
-        ThreadStackSize,
+        ThreadError, ThreadName, ThreadSpec, ThreadStackSize,
     };
 }
 
 /// VESC-domain semantic wrappers over generic embedded units.
 mod types;
+pub(crate) use types::loader::{LoaderInfo, PackageProgramAddress};
 
 /// Define package data retained in a named firmware image section.
 #[macro_export]

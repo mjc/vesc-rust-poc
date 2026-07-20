@@ -95,40 +95,6 @@ impl PackageProgramAddress {
     }
 }
 
-/// Loaded native package program identity.
-///
-/// This is the package-author-facing handle for VESC's `PROG_ADDR`; use it to
-/// recover package-owned state instead of caching raw loader addresses.
-///
-/// C map: wraps `PROG_ADDR` from `third_party/vesc_pkg_lib/vesc_c_if.h:697`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct PackageProgram(PackageProgramAddress);
-
-impl PackageProgram {
-    /// Wrap a firmware-provided package program address for macro expansion.
-    #[doc(hidden)]
-    #[inline]
-    #[must_use]
-    pub const fn new(address: PackageProgramAddress) -> Self {
-        Self(address)
-    }
-
-    /// Return the typed program address for this package.
-    #[inline]
-    #[must_use]
-    pub const fn address(self) -> PackageProgramAddress {
-        self.0
-    }
-}
-
-impl From<PackageProgramAddress> for PackageProgram {
-    #[inline]
-    fn from(address: PackageProgramAddress) -> Self {
-        Self::new(address)
-    }
-}
-
 /// Loader argument attached to a native package program.
 ///
 /// C map: this is the Rust package-author wrapper for `ARG` from

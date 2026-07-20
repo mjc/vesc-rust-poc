@@ -50,12 +50,13 @@ unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
     }
     #[cfg(all(not(test), target_arch = "arm"))]
     {
-        let firmware = crate::Firmware::new();
         runtime
             .take_callbacks(state)
             .clear_registered(&crate::bindings::RealBindings);
         if let Some(threads) = runtime.take_threads(state) {
-            threads.terminate_reverse(firmware.threads());
+            threads.terminate_reverse(&crate::thread::ThreadApi::new(
+                crate::thread::RealThreadBindings,
+            ));
         }
     }
     runtime.finish_stop(state);
@@ -103,9 +104,9 @@ pub enum PackageStartError {
     StateAlreadyInstalled,
     /// A state-backed operation named a different runtime state type.
     StateTypeMismatch,
-    /// Firmware could not start the complete package thread pair.
+    /// Firmware could not start every requested package thread.
     ThreadSpawnFailed,
-    /// Package startup already installed its firmware thread pair.
+    /// Package startup already installed its firmware thread group.
     ThreadsAlreadyInstalled,
 }
 
@@ -331,18 +332,18 @@ impl<'info> PackageStart<'info> {
         T::runtime_store().with_expected_mut(crate::runtime::ExpectedState::Exact(state), operation)
     }
 
-    /// Start and retain a complete package-owned firmware thread pair.
+    /// Start and retain package-owned firmware threads.
     #[cfg(not(test))]
-    pub fn spawn_thread_pair<T: crate::PackageRuntimeState>(
+    pub fn spawn_threads<T: crate::PackageRuntimeState, const N: usize>(
         &mut self,
-        pair: crate::ThreadPairSpec<T>,
+        specs: [crate::ThreadSpec<T>; N],
     ) -> Result<(), PackageStartError> {
-        self.spawn_thread_pair_with_bindings(pair, crate::thread::RealThreadBindings)
+        self.spawn_threads_with_bindings(specs, crate::thread::RealThreadBindings)
     }
 
-    pub(crate) fn spawn_thread_pair_with_bindings<T, B>(
+    pub(crate) fn spawn_threads_with_bindings<T, B, const N: usize>(
         &mut self,
-        pair: crate::ThreadPairSpec<T>,
+        specs: [crate::ThreadSpec<T>; N],
         bindings: B,
     ) -> Result<(), PackageStartError>
     where
@@ -360,19 +361,17 @@ impl<'info> PackageStart<'info> {
             .with_expected(crate::runtime::ExpectedState::Exact(state), |_| ())
             .ok_or(PackageStartError::LoaderUnavailable)?;
         let threads = crate::thread::ThreadApi::new(&bindings)
-            .spawn_thread_pair(pair, state)
+            .spawn_threads(specs, state)
             .ok_or(PackageStartError::ThreadSpawnFailed)?;
-        T::runtime_store()
-            .install_threads(state, threads)
-            .map_err(|threads| {
-                threads.terminate_reverse(&crate::thread::ThreadApi::new(bindings));
-                PackageStartError::ThreadsAlreadyInstalled
-            })
-    }
-
-    /// Borrow typed loader metadata.
-    pub(crate) fn loader_info_mut(&mut self) -> Option<&mut crate::LoaderInfo> {
-        (!self.info.is_null()).then(|| unsafe { &mut *self.info })
+        let mut threads = Some(threads);
+        if T::runtime_store().install_threads(state, &mut threads) {
+            Ok(())
+        } else {
+            threads
+                .expect("failed installation retains the thread group")
+                .terminate_reverse(&crate::thread::ThreadApi::new(bindings));
+            Err(PackageStartError::ThreadsAlreadyInstalled)
+        }
     }
 
     /// Borrow the loader-backed native image identity for this package.
@@ -420,12 +419,6 @@ impl<'info> PackageStart<'info> {
             }
             false
         }
-    }
-
-    /// Return the loaded package program identity, when firmware supplied one.
-    pub fn program(&mut self) -> Option<crate::PackageProgram> {
-        self.loader_info_mut()
-            .map(|info| crate::PackageProgram::new(info.program_address()))
     }
 
     /// Load a typed app-data callback from this package image.
@@ -555,12 +548,6 @@ impl<'info> PackageStart<'info> {
     where
         B: crate::bindings::LbmBindings,
     {
-        descriptors.iter().copied().try_for_each(|descriptor| {
-            descriptor
-                .validate()
-                .map(|_| ())
-                .map_err(|_| crate::RegisterError::InvalidExtensionName)
-        })?;
         if descriptors.iter().copied().any(|descriptor| {
             descriptor
                 .state_type()
@@ -657,7 +644,7 @@ macro_rules! package_start {
         #[cfg(any(test, all(not(test), target_arch = "arm")))]
         #[inline(never)]
         #[unsafe(no_mangle)]
-        extern "C" fn package_lib_init(info: *mut $crate::LoaderInfo) -> bool {
+        extern "C" fn package_lib_init(info: *mut $crate::__macro_support::LoaderInfo) -> bool {
             let mut start = unsafe { $crate::__macro_support::__package_start_from_raw(info) };
             let started = $start(&mut start);
             start.finish_start(started)
@@ -667,7 +654,7 @@ macro_rules! package_start {
         #[cfg(all(not(test), not(target_arch = "arm")))]
         #[inline(never)]
         #[unsafe(no_mangle)]
-        extern "C" fn package_lib_init(info: *mut $crate::LoaderInfo) -> bool {
+        extern "C" fn package_lib_init(info: *mut $crate::__macro_support::LoaderInfo) -> bool {
             let mut start = unsafe { $crate::__macro_support::__package_start_from_raw(info) };
             let _ = start.install_stop_hook();
             true
@@ -677,7 +664,7 @@ macro_rules! package_start {
         #[cfg(all(not(test), target_arch = "arm"))]
         #[unsafe(no_mangle)]
         #[unsafe(link_section = ".init_fun")]
-        pub extern "C" fn init(info: *mut $crate::LoaderInfo) -> bool {
+        pub extern "C" fn init(info: *mut $crate::__macro_support::LoaderInfo) -> bool {
             package_lib_init(info)
         }
     };
@@ -1059,24 +1046,21 @@ mod tests {
             let mut start = super::PackageStart::from_lib_info(&mut info);
             start.install_runtime_state(SpawnState).unwrap();
             let state_arg = start.raw_info_mut().unwrap().arg as usize;
-            let pair = crate::ThreadPairSpec::new(
-                crate::ThreadSpec::<SpawnState>::from_entry(
+            let specs = [
+                crate::ThreadSpec::<SpawnState>::from_stateful_entry(
                     thread_entry,
                     crate::ThreadStackSize::from_bytes(1_536),
                     crate::thread_name!("main"),
                 ),
-                crate::ThreadSpec::<()>::from_entry(
+                crate::ThreadSpec::<SpawnState>::from_stateless_entry(
                     thread_entry,
                     crate::ThreadStackSize::from_bytes(1_024),
                     crate::thread_name!("aux"),
                 ),
-            );
+            ];
 
-            assert_eq!(
-                start.spawn_thread_pair_with_bindings(pair, &bindings),
-                Ok(())
-            );
-            assert_eq!(bindings.spawn_args.get(), [state_arg, 0]);
+            assert_eq!(start.spawn_threads_with_bindings(specs, &bindings), Ok(()));
+            assert_eq!(bindings.spawn_args.get(), [state_arg, 0, 0]);
             let stop = (
                 start.raw_info_mut().unwrap().stop_fun.unwrap(),
                 start.raw_info_mut().unwrap().arg,
@@ -1113,28 +1097,28 @@ mod tests {
             base_addr: 0,
         };
         let mut start = super::PackageStart::from_lib_info(&mut info);
-        let pair = crate::ThreadPairSpec::new(
-            crate::ThreadSpec::<SpawnState>::from_entry(
+        let specs = [
+            crate::ThreadSpec::<SpawnState>::from_stateful_entry(
                 thread_entry,
                 crate::ThreadStackSize::from_bytes(1_536),
                 crate::thread_name!("main"),
             ),
-            crate::ThreadSpec::<()>::from_entry(
+            crate::ThreadSpec::<SpawnState>::from_stateless_entry(
                 thread_entry,
                 crate::ThreadStackSize::from_bytes(1_024),
                 crate::thread_name!("aux"),
             ),
-        );
+        ];
 
         assert_eq!(
-            start.spawn_thread_pair_with_bindings(pair, &bindings),
+            start.spawn_threads_with_bindings(specs, &bindings),
             Err(PackageStartError::StateTypeMismatch)
         );
         assert_eq!(bindings.spawn_calls.get(), 0);
     }
 
     #[test]
-    fn package_start_exposes_loader_native_image_identity() {
+    fn package_start_exposes_native_image_identity_internally() {
         let mut info = ffi::LibInfo {
             stop_fun: None,
             arg: core::ptr::null_mut(),
@@ -1144,13 +1128,6 @@ mod tests {
 
         let image = start.native_image().expect("native image");
         assert_eq!(image.rebase_addr(0x31), 0x2031);
-
-        let program = start.program().expect("package program");
-        assert_eq!(program.address(), crate::PackageProgramAddress::new(0x2000));
-        assert_eq!(
-            start.program().map(|program| program.address().get()),
-            Some(0x2000)
-        );
     }
 
     #[test]
@@ -1211,17 +1188,21 @@ mod tests {
 
         impl crate::StatefulCustomConfigCallback<1> for Config {
             type State = ConfigState;
+            type Error = ();
 
             fn default_config() -> crate::ConfigBytes<'static, 1> {
                 crate::ConfigBytes::new(&[0])
             }
 
-            fn current_config(_state: &Self::State) -> Option<crate::ConfigBytes<'_, 1>> {
-                Some(crate::ConfigBytes::new(&[0]))
+            fn current_config(_state: &Self::State) -> crate::ConfigBytes<'_, 1> {
+                crate::ConfigBytes::new(&[0])
             }
 
-            fn set_config(_state: &mut Self::State, _config: crate::ConfigBytes<'_, 1>) -> bool {
-                true
+            fn set_config(
+                _state: &mut Self::State,
+                _config: crate::ConfigBytes<'_, 1>,
+            ) -> Result<(), Self::Error> {
+                Ok(())
             }
 
             fn config_xml() -> crate::ConfigXml<'static> {
@@ -1305,17 +1286,21 @@ mod tests {
 
         impl crate::StatefulCustomConfigCallback<511> for Config {
             type State = ConfigState;
+            type Error = ();
 
             fn default_config() -> crate::ConfigBytes<'static, 511> {
                 crate::ConfigBytes::new(&CONFIG)
             }
 
-            fn current_config(_state: &Self::State) -> Option<crate::ConfigBytes<'_, 511>> {
-                Some(crate::ConfigBytes::new(&CONFIG))
+            fn current_config(_state: &Self::State) -> crate::ConfigBytes<'_, 511> {
+                crate::ConfigBytes::new(&CONFIG)
             }
 
-            fn set_config(_state: &mut Self::State, _config: crate::ConfigBytes<'_, 511>) -> bool {
-                true
+            fn set_config(
+                _state: &mut Self::State,
+                _config: crate::ConfigBytes<'_, 511>,
+            ) -> Result<(), Self::Error> {
+                Ok(())
             }
 
             fn config_xml() -> crate::ConfigXml<'static> {
@@ -1526,34 +1511,6 @@ mod tests {
         assert_eq!(
             start.register_extensions_with(&lifecycle, [descriptor]),
             Err(crate::RegisterError::PackageNotRetained)
-        );
-        assert_eq!(bindings.add_calls.get(), 0);
-    }
-
-    #[test]
-    fn package_start_preflights_all_extension_names_before_registration() {
-        use crate::test_support::{FakeBindings, stubs};
-
-        let mut info = ffi::LibInfo {
-            stop_fun: None,
-            arg: core::ptr::null_mut(),
-            base_addr: 0x2000,
-        };
-        let bindings = FakeBindings::new();
-        let lifecycle = crate::lifecycle_core::PackageLifecycle::new(&bindings);
-        let mut start = super::PackageStart::from_lib_info(&mut info);
-        let valid = crate::ExtensionDescriptor::from_handler(
-            crate::extension_name!("ext-valid"),
-            stubs::extension_handler,
-        );
-        let invalid = crate::ExtensionDescriptor::from_handler(
-            crate::extension_name!("invalid"),
-            stubs::extension_handler,
-        );
-
-        assert_eq!(
-            start.register_extensions_with(&lifecycle, [valid, invalid]),
-            Err(crate::RegisterError::InvalidExtensionName)
         );
         assert_eq!(bindings.add_calls.get(), 0);
     }

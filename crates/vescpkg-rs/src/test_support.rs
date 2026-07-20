@@ -9,9 +9,10 @@ use crate::bindings::{AppDataBindings, CustomConfigBindings, ImuReadCallbackBind
 #[cfg(test)]
 use crate::ffi::{CustomConfigGet, CustomConfigSet, CustomConfigXml, ImuReadCallback};
 use crate::lifecycle_core::PackageLifecycle;
+pub use crate::types::loader::LoaderInfo;
 #[cfg(any(test, feature = "test-support"))]
 #[cfg(test)]
-use crate::types::{PackageArgument, PackageProgramAddress};
+use crate::{PackageArgument, PackageProgramAddress};
 #[cfg(test)]
 use vescpkg_rs_sys::AppDataHandler;
 
@@ -113,12 +114,9 @@ impl FirmwareTest {
     }
 
     #[must_use]
-    /// Return handles from the first two termination requests.
-    pub fn terminated_threads(&self) -> [Option<crate::ThreadHandle>; 2] {
-        crate::test_ffi::thread_terminated().map(|address| {
-            // SAFETY: these addresses were returned by the private fake firmware.
-            unsafe { crate::ThreadHandle::from_firmware(address as *mut core::ffi::c_void) }
-        })
+    /// Return raw addresses from the first two termination requests.
+    pub fn terminated_thread_addresses(&self) -> [Option<usize>; 2] {
+        crate::test_ffi::thread_terminated().map(|address| (address != 0).then_some(address))
     }
 
     #[must_use]
@@ -196,7 +194,7 @@ impl FirmwareTest {
 
     #[must_use]
     /// Configure the typed absolute trip distance.
-    pub fn with_distance_abs(self, distance: crate::TripDistance) -> Self {
+    pub fn with_trip_distance(self, distance: crate::TripDistance) -> Self {
         crate::test_ffi::set_distance_abs(distance);
         self
     }
@@ -243,7 +241,7 @@ impl FirmwareTest {
 
     #[must_use]
     /// Configure the typed filtered input voltage.
-    pub fn with_input_voltage_filtered(self, voltage: crate::InputVoltage) -> Self {
+    pub fn with_input_voltage(self, voltage: crate::InputVoltage) -> Self {
         crate::test_ffi::set_input_voltage(voltage);
         self
     }
@@ -263,7 +261,7 @@ impl FirmwareTest {
 
     #[must_use]
     /// Configure the optional typed FOC d-axis current.
-    pub fn with_foc_id_current(self, current: Option<crate::DCurrent>) -> Self {
+    pub fn with_d_axis_current(self, current: Option<crate::DCurrent>) -> Self {
         crate::test_ffi::set_foc_id_current(current);
         self
     }
@@ -339,7 +337,6 @@ impl Default for FirmwareTest {
 }
 
 use vescpkg_rs_sys::ExtensionHandler;
-#[cfg(not(test))]
 use vescpkg_rs_sys::LbmValue;
 
 /// Install borrowed state for callback-focused host tests.
@@ -478,9 +475,12 @@ impl LbmBindings for FakeBindings {
         self.add_results.get()[index]
     }
 
-    #[cfg(not(test))]
-    unsafe fn decode_i32(&self, value: LbmValue) -> i32 {
-        value.0 as i32
+    unsafe fn is_number(&self, _value: LbmValue) -> bool {
+        false
+    }
+
+    unsafe fn decode_i32(&self, _value: LbmValue) -> i32 {
+        unreachable!("extension registration does not decode LispBM values")
     }
 
     #[cfg(not(test))]

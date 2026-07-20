@@ -1,4 +1,5 @@
 use crate::RegisterError;
+use crate::bindings::LbmBindings;
 use crate::extension::ExtensionDescriptor;
 use crate::lifecycle_core::{LbmApi, PackageLifecycle};
 use crate::test_support::{FakeBindings, stubs};
@@ -6,13 +7,35 @@ use crate::thread::ThreadApi;
 use crate::thread::test_support::FakeThreadBindings;
 use crate::types::{FirmwareFaultCode, FirmwareFaultWireCode};
 use rstest::rstest;
-use vescpkg_rs_sys::{ExtensionHandler, LibInfo, NativeImage};
+use vescpkg_rs_sys::{ExtensionHandler, LbmValue, LibInfo, NativeImage};
 
 unsafe extern "C" fn stub_handler(_args: *mut u32, _count: u32) -> u32 {
     0
 }
 
-unsafe extern "C" fn stub_thread_entry(_arg: *mut core::ffi::c_void) {}
+struct NumericBindings {
+    encoded: LbmValue,
+    decoded: i32,
+}
+
+impl LbmBindings for NumericBindings {
+    unsafe fn add_extension(
+        &self,
+        _name: *const core::ffi::c_char,
+        _handler: ExtensionHandler,
+    ) -> bool {
+        unreachable!("numeric conversion does not register extensions")
+    }
+
+    unsafe fn is_number(&self, value: LbmValue) -> bool {
+        value == self.encoded
+    }
+
+    unsafe fn decode_i32(&self, value: LbmValue) -> i32 {
+        assert_eq!(value, self.encoded);
+        self.decoded
+    }
+}
 
 const EXT_HOST_TEST_PROBE_NAME: crate::ExtensionName = crate::extension_name!("ext-c-probe-v12");
 
@@ -21,8 +44,6 @@ fn handler_at_offset(offset: usize) -> ExtensionHandler {
 }
 
 #[rstest]
-#[case::invalid_name(crate::extension_name!("bad-name"), "invalid", 0_usize)]
-#[case::missing_ext_prefix(crate::extension_name!("rust-probe-v5"), "invalid", 0_usize)]
 #[case::firmware_reject(crate::extension_name!("ext-rust-reject"), "reject", 1_usize)]
 #[case::success(crate::extension_name!("ext-rust-ok"), "accept", 1_usize)]
 fn register_extension_reports_outcome(
@@ -41,7 +62,6 @@ fn register_extension_reports_outcome(
     let result = lifecycle.register_extension(descriptor);
 
     match mode {
-        "invalid" => assert_eq!(result, Err(RegisterError::InvalidExtensionName)),
         "reject" => assert_eq!(result, Err(RegisterError::FirmwareRejected)),
         "accept" => assert_eq!(result, Ok(())),
         other => panic!("unexpected mode: {other}"),
@@ -108,6 +128,18 @@ fn lbm_api_registers_extensions_through_bindings() {
 }
 
 #[test]
+fn lbm_api_decodes_firmware_i32_values() {
+    let encoded = LbmValue(0x2800_0001);
+    let api = LbmApi::new(NumericBindings {
+        encoded,
+        decoded: i32::MAX,
+    });
+
+    assert_eq!(api.decode_i32(encoded), Some(i32::MAX));
+    assert_eq!(api.decode_i32(LbmValue(0)), None);
+}
+
+#[test]
 fn firmware_fault_code_preserves_raw_values_until_wire_encoding() {
     let valid = FirmwareFaultCode::from_raw_code(5);
     let negative = FirmwareFaultCode::from_raw_code(-1);
@@ -123,102 +155,85 @@ fn firmware_fault_code_preserves_raw_values_until_wire_encoding() {
     assert!(FirmwareFaultWireCode::try_from(too_large).is_err());
 }
 
-#[test]
-fn thread_api_clamps_sleep_duration_to_firmware_range() {
-    let bindings = FakeThreadBindings::new();
-    let api = ThreadApi::new(&bindings);
+struct GroupTestThread;
+struct GroupTestStatelessThread;
+struct GroupTestState(u32);
+static GROUP_TEST_STATE: crate::PackageStateStore<GroupTestState> = crate::PackageStateStore::new();
 
-    api.sleep_for(core::time::Duration::MAX);
-
-    assert_eq!(bindings.sleep_micros.get()[0], u32::MAX);
-}
-
-struct PairTestThread;
-struct PairTestState(u32);
-static PAIR_TEST_STATE: crate::PackageStateStore<PairTestState> = crate::PackageStateStore::new();
-
-impl crate::PackageRuntimeState for PairTestState {
+impl crate::PackageRuntimeState for GroupTestState {
     fn runtime_store() -> &'static crate::PackageStateStore<Self> {
-        &PAIR_TEST_STATE
+        &GROUP_TEST_STATE
     }
 }
 
-impl crate::FirmwareThread for PairTestThread {
-    type State = PairTestState;
+impl crate::FirmwareThread for GroupTestThread {
+    type State = GroupTestState;
 
     fn run(_ctx: crate::ThreadContext<Self::State>) {}
 }
 
-#[test]
-fn thread_api_spawns_and_terminates_typed_thread_pair() {
-    let bindings = FakeThreadBindings::with_spawn_results([0x10, 0x20]);
-    let api = ThreadApi::new(&bindings);
-    let mut state = PairTestState(42);
+impl crate::StatelessFirmwareThread for GroupTestStatelessThread {
+    fn run(_ctx: crate::StatelessThreadContext) {}
+}
 
-    let pair = api
-        .spawn_thread_pair(
-            crate::ThreadPairSpec::new(
-                crate::ThreadSpec::<PairTestState>::new::<PairTestThread>(
+#[test]
+fn thread_api_spawns_and_terminates_typed_thread_group() {
+    let bindings = FakeThreadBindings::with_spawn_results([0x10, 0x20, 0]);
+    let api = ThreadApi::new(&bindings);
+    let mut state = GroupTestState(42);
+
+    let threads = api
+        .spawn_threads(
+            [
+                crate::ThreadSpec::<GroupTestState>::new::<GroupTestThread>(
                     crate::ThreadStackSize::from_bytes(1_536),
                     crate::thread_name!("first"),
                 ),
-                crate::ThreadSpec::<()>::from_entry(
-                    stub_thread_entry,
+                crate::ThreadSpec::<GroupTestState>::stateless::<GroupTestStatelessThread>(
                     crate::ThreadStackSize::from_bytes(1_024),
                     crate::thread_name!("second"),
                 ),
-            ),
+            ],
             core::ptr::NonNull::from(&mut state),
         )
-        .expect("thread pair");
+        .expect("thread group");
 
-    assert_eq!(pair.first().as_ptr() as usize, 0x10);
-    assert_eq!(pair.second().as_ptr() as usize, 0x20);
     assert_eq!(bindings.spawn_calls.get(), 2);
-    assert_eq!(bindings.spawn_stacks.get(), [1_536, 1_024]);
+    assert_eq!(bindings.spawn_stacks.get(), [1_536, 1_024, 0]);
     let state_arg = core::ptr::from_mut(&mut state).cast::<core::ffi::c_void>() as usize;
-    assert_eq!(bindings.spawn_args.get(), [state_arg, 0]);
+    assert_eq!(bindings.spawn_args.get(), [state_arg, 0, 0]);
     assert_eq!(state.0, 42);
 
-    pair.terminate_reverse(&api);
+    threads.terminate_reverse(&api);
 
     assert_eq!(bindings.terminate_calls.get(), 2);
-    assert_eq!(bindings.terminated_threads.get(), [0x20, 0x10]);
+    assert_eq!(bindings.terminated_threads.get(), [0x20, 0x10, 0]);
 }
 
 #[test]
-fn thread_api_preserves_first_thread_when_second_spawn_fails() {
-    let bindings = FakeThreadBindings::with_spawn_results([0x10, 0]);
+fn thread_api_terminates_first_thread_when_second_spawn_fails() {
+    let bindings = FakeThreadBindings::with_spawn_results([0x10, 0, 0]);
     let api = ThreadApi::new(&bindings);
-    let mut state = PairTestState(42);
+    let mut state = GroupTestState(42);
 
-    let pair = api.spawn_thread_pair(
-        crate::ThreadPairSpec::new(
-            crate::ThreadSpec::<PairTestState>::new::<PairTestThread>(
+    let threads = api.spawn_threads(
+        [
+            crate::ThreadSpec::<GroupTestState>::new::<GroupTestThread>(
                 crate::ThreadStackSize::from_bytes(1_536),
                 crate::thread_name!("first"),
             ),
-            crate::ThreadSpec::<()>::from_entry(
-                stub_thread_entry,
+            crate::ThreadSpec::<GroupTestState>::stateless::<GroupTestStatelessThread>(
                 crate::ThreadStackSize::from_bytes(1_024),
                 crate::thread_name!("second"),
             ),
-        ),
+        ],
         core::ptr::NonNull::from(&mut state),
     );
 
-    assert_eq!(pair, None);
+    assert_eq!(threads, None);
     assert_eq!(bindings.spawn_calls.get(), 2);
     assert_eq!(bindings.terminate_calls.get(), 1);
     assert_eq!(bindings.terminated_threads.get()[0], 0x10);
-}
-
-#[test]
-fn extension_descriptor_validate_accepts_ext_prefix() {
-    let descriptor =
-        ExtensionDescriptor::from_handler(crate::extension_name!("ext-rust-ok"), stub_handler);
-
-    assert!(descriptor.validate().is_ok());
 }
 
 #[test]

@@ -30,7 +30,7 @@ mod control;
 mod gnss;
 mod imu;
 mod io;
-mod loader;
+pub(crate) mod loader;
 mod motion;
 mod motor;
 mod power;
@@ -76,7 +76,6 @@ pub use io::{
 pub use loader::PackageArgument;
 #[cfg(not(any(test, feature = "test-support")))]
 pub(crate) use loader::PackageArgument;
-pub use loader::{LoaderInfo, PackageProgram, PackageProgramAddress};
 pub use motion::{
     AbsoluteTachometerSteps, ElectricalSpeed, MechanicalSpeed, OpenLoopPhase, PidPosition,
     TachometerSteps, TripDistance, VehicleSpeed,

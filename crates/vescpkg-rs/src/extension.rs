@@ -8,6 +8,7 @@ const LBM_INT_TAG: u32 = 0x8;
 const LBM_VALUE_SHIFT: u32 = 4;
 #[cfg(any(test, not(target_arch = "arm")))]
 const LBM_TRUE: u32 = 2 << LBM_VALUE_SHIFT;
+#[cfg(test)]
 const LBM_VALUE_TAG_MASK: u32 = (1 << LBM_VALUE_SHIFT) - 1;
 const LBM_INT_MIN: i32 = -(1 << 27);
 const LBM_INT_MAX: i32 = (1 << 27) - 1;
@@ -16,11 +17,12 @@ const fn encode_integer(value: i32) -> u32 {
     value.wrapping_shl(LBM_VALUE_SHIFT) as u32 | LBM_INT_TAG
 }
 
-#[cfg(any(test, not(target_arch = "arm")))]
+#[cfg(test)]
 const fn decode_integer(value: u32) -> i32 {
     (value as i32) >> LBM_VALUE_SHIFT
 }
 
+#[cfg(test)]
 const fn is_integer(value: u32) -> bool {
     value & LBM_VALUE_TAG_MASK == LBM_INT_TAG
 }
@@ -30,12 +32,52 @@ const fn is_integer(value: u32) -> bool {
 pub struct LispValue(LbmValue);
 
 impl LispValue {
-    /// Create a LispBM integer value using the device's integer encoding.
-    pub const fn integer(value: i32) -> Option<Self> {
-        if value >= LBM_INT_MIN && value <= LBM_INT_MAX {
-            Some(Self(LbmValue(encode_integer(value))))
+    /// Decode this value as a LispBM integer.
+    pub fn as_i32(self) -> Option<i32> {
+        #[cfg(not(test))]
+        {
+            crate::lifecycle_core::LbmApi::new(crate::bindings::RealBindings).decode_i32(self.raw())
+        }
+        #[cfg(test)]
+        {
+            is_integer(self.raw().0).then(|| decode_integer(self.raw().0))
+        }
+    }
+
+    /// Return LispBM true.
+    pub fn true_value() -> Self {
+        #[cfg(all(not(test), target_arch = "arm"))]
+        {
+            Self::from_raw(
+                crate::lifecycle_core::LbmApi::new(crate::bindings::RealBindings).encode_true(),
+            )
+        }
+        #[cfg(any(test, not(target_arch = "arm")))]
+        {
+            Self(LbmValue(LBM_TRUE))
+        }
+    }
+
+    /// Return LispBM nil.
+    pub fn nil() -> Self {
+        #[cfg(all(not(test), target_arch = "arm"))]
+        {
+            Self::from_raw(
+                crate::lifecycle_core::LbmApi::new(crate::bindings::RealBindings).encode_nil(),
+            )
+        }
+        #[cfg(any(test, not(target_arch = "arm")))]
+        {
+            Self(LbmValue(0))
+        }
+    }
+
+    /// Convert a Rust boolean to LispBM true or nil.
+    pub fn boolean(value: bool) -> Self {
+        if value {
+            Self::true_value()
         } else {
-            None
+            Self::nil()
         }
     }
 
@@ -43,24 +85,38 @@ impl LispValue {
         self.0
     }
 
-    #[cfg(not(test))]
     pub(crate) const fn from_raw(value: LbmValue) -> Self {
         Self(value)
     }
 }
 
-/// Extension-name validation failures.
+/// Error returned when an integer cannot use LispBM's immediate representation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExtensionNameError {
-    /// The name did not start with the required `ext-` prefix.
-    MissingExtPrefix,
+pub struct LispIntegerError {
+    value: i32,
+}
+
+impl LispIntegerError {
+    /// Return the rejected integer.
+    pub const fn value(self) -> i32 {
+        self.value
+    }
+}
+
+impl TryFrom<i32> for LispValue {
+    type Error = LispIntegerError;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        (LBM_INT_MIN..=LBM_INT_MAX)
+            .contains(&value)
+            .then(|| Self(LbmValue(encode_integer(value))))
+            .ok_or(LispIntegerError { value })
+    }
 }
 
 /// Errors returned when extension registration fails.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RegisterError {
-    /// The extension name failed validation.
-    InvalidExtensionName,
     /// Firmware rejected the registration request.
     FirmwareRejected,
     /// The package loader metadata was unavailable.
@@ -113,7 +169,16 @@ impl ExtensionName {
     #[doc(hidden)]
     #[must_use]
     pub const fn __from_terminated(name: &'static str) -> Option<Self> {
-        match CStr::from_bytes_with_nul(name.as_bytes()) {
+        let bytes = name.as_bytes();
+        if bytes.len() < 5
+            || bytes[0] != b'e'
+            || bytes[1] != b'x'
+            || bytes[2] != b't'
+            || bytes[3] != b'-'
+        {
+            return None;
+        }
+        match CStr::from_bytes_with_nul(bytes) {
             Ok(_) => Some(Self(name.as_bytes())),
             Err(_) => None,
         }
@@ -140,7 +205,7 @@ macro_rules! extension_name {
         const {
             match $crate::ExtensionName::__from_terminated(concat!($name, "\0")) {
                 Some(name) => name,
-                None => panic!("extension name literal must not contain NUL"),
+                None => panic!("extension name must begin with `ext-` and contain no NUL"),
             }
         }
     };
@@ -202,15 +267,6 @@ impl ExtensionDescriptor {
     pub(crate) fn state_type(self) -> Option<core::any::TypeId> {
         self.state_type.map(|state_type| state_type())
     }
-
-    /// Validate the descriptor name prefix expected by the firmware.
-    pub fn validate(self) -> Result<Self, ExtensionNameError> {
-        if self.name.as_cstr().to_bytes().starts_with(b"ext-") {
-            Ok(self)
-        } else {
-            Err(ExtensionNameError::MissingExtPrefix)
-        }
-    }
 }
 
 fn runtime_state_type<T: 'static>() -> core::any::TypeId {
@@ -249,52 +305,14 @@ impl LispArgs<'_> {
         self.values.is_empty()
     }
 
-    /// Return an argument when it has LispBM's immediate-integer encoding.
-    pub fn integer(&self, index: usize) -> Option<i32> {
-        let value = *self.values.get(index)?;
-        if !is_integer(value.0) {
-            return None;
-        }
-        #[cfg(all(not(test), target_arch = "arm"))]
-        {
-            let firmware = crate::Firmware::new();
-            Some(firmware.lisp().decode_i32(LispValue::from_raw(value)))
-        }
-        #[cfg(any(test, not(target_arch = "arm")))]
-        {
-            Some(decode_integer(value.0))
-        }
-    }
-
-    /// Return the firmware true value.
-    pub fn true_value(&self) -> LispValue {
-        #[cfg(all(not(test), target_arch = "arm"))]
-        {
-            let firmware = crate::Firmware::new();
-            firmware.lisp().encode_true()
-        }
-        #[cfg(any(test, not(target_arch = "arm")))]
-        {
-            LispValue(LbmValue(LBM_TRUE))
-        }
-    }
-
-    /// Return the firmware nil value.
-    pub fn nil_value(&self) -> LispValue {
-        #[cfg(all(not(test), target_arch = "arm"))]
-        {
-            let firmware = crate::Firmware::new();
-            firmware.lisp().encode_nil()
-        }
-        #[cfg(any(test, not(target_arch = "arm")))]
-        {
-            LispValue(LbmValue(0))
-        }
+    /// Return one argument by position.
+    pub fn get(&self, index: usize) -> Option<LispValue> {
+        self.values.get(index).copied().map(LispValue::from_raw)
     }
 }
 
 fn canonical_nil_raw() -> u32 {
-    LispArgs::empty().nil_value().raw().0
+    LispValue::nil().raw().0
 }
 
 /// Rust implementation for a LispBM extension callback.
@@ -341,7 +359,7 @@ pub unsafe extern "C" fn stateful_lbm_extension_handler<T: StatefulLbmExtension>
     let Some(args) = LispArgs::from_raw(args, arg_count) else {
         return canonical_nil_raw();
     };
-    let nil = args.nil_value();
+    let nil = LispValue::nil();
     #[cfg(all(not(test), target_arch = "arm"))]
     let program = crate::firmware_package_program_address!(stateful_lbm_extension_handler::<T>);
     #[cfg(all(not(test), target_arch = "arm"))]
@@ -390,19 +408,23 @@ mod tests {
 
         fn call(state: &mut Self::State, args: LispArgs<'_>) -> LispValue {
             state.calls += 1;
-            args.true_value()
+            let _ = args;
+            LispValue::true_value()
         }
     }
 
     impl super::LbmExtension for IntegerExtension {
         fn call(_args: LispArgs<'_>) -> LispValue {
-            LispValue::integer(42).unwrap()
+            LispValue::try_from(42).unwrap()
         }
     }
 
     impl super::LbmExtension for EchoIntegerExtension {
         fn call(args: LispArgs<'_>) -> LispValue {
-            LispValue::integer(args.integer(0).unwrap_or_default()).unwrap()
+            args.get(0)
+                .and_then(LispValue::as_i32)
+                .and_then(|value| LispValue::try_from(value).ok())
+                .unwrap_or_else(LispValue::nil)
         }
     }
 
@@ -435,10 +457,10 @@ mod tests {
 
     #[test]
     fn typed_lisp_integer_rejects_values_outside_the_immediate_payload() {
-        assert!(LispValue::integer(super::LBM_INT_MIN).is_some());
-        assert!(LispValue::integer(super::LBM_INT_MAX).is_some());
-        assert!(LispValue::integer(super::LBM_INT_MIN - 1).is_none());
-        assert!(LispValue::integer(super::LBM_INT_MAX + 1).is_none());
+        assert!(LispValue::try_from(super::LBM_INT_MIN).is_ok());
+        assert!(LispValue::try_from(super::LBM_INT_MAX).is_ok());
+        assert!(LispValue::try_from(super::LBM_INT_MIN - 1).is_err());
+        assert!(LispValue::try_from(super::LBM_INT_MAX + 1).is_err());
     }
 
     #[test]
@@ -461,12 +483,12 @@ mod tests {
         let args = super::LispArgs::from_raw(values.as_mut_ptr(), values.len() as u32)
             .expect("valid arguments");
 
-        assert_eq!(args.integer(0), None);
+        assert_eq!(args.get(0).and_then(LispValue::as_i32), None);
     }
 
     #[test]
     fn extension_handlers_return_canonical_nil_for_invalid_arguments() {
-        let nil = super::LispArgs::empty().nil_value().raw().0;
+        let nil = LispValue::nil().raw().0;
 
         assert_eq!(
             unsafe {

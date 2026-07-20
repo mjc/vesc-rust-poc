@@ -280,15 +280,18 @@ unsafe fn custom_config_payload<'a, const LEN: usize>(
 pub trait StatefulCustomConfigCallback<const LEN: usize> {
     /// Package state installed by startup.
     type State: crate::PackageRuntimeState;
+    /// Package-specific configuration rejection.
+    type Error;
 
     /// Return the static serialized default config.
     fn default_config() -> ConfigBytes<'static, LEN>;
 
     /// Return the current config borrowed from package state.
-    fn current_config(state: &Self::State) -> Option<ConfigBytes<'_, LEN>>;
+    fn current_config(state: &Self::State) -> ConfigBytes<'_, LEN>;
 
     /// Store config bytes borrowed for the duration of this callback.
-    fn set_config(state: &mut Self::State, config: ConfigBytes<'_, LEN>) -> bool;
+    fn set_config(state: &mut Self::State, config: ConfigBytes<'_, LEN>)
+    -> Result<(), Self::Error>;
 
     /// Return the config XML bytes.
     fn config_xml() -> ConfigXml<'static>;
@@ -355,8 +358,7 @@ where
         return buffer.write(T::default_config());
     }
     T::state_source()
-        .with(|state| T::current_config(state).map(|config| buffer.write(config)))
-        .flatten()
+        .with(|state| buffer.write(T::current_config(state)))
         .unwrap_or(0)
 }
 
@@ -375,7 +377,7 @@ where
         return false;
     };
     T::state_source()
-        .with_mut(|state| T::set_config(state, payload))
+        .with_mut(|state| T::set_config(state, payload).is_ok())
         .unwrap_or(false)
 }
 
@@ -578,14 +580,8 @@ macro_rules! firmware_package_program_address {
         }
         // SAFETY: `package_start!` defines this package-local helper with the
         // declared C ABI and return type.
-        $crate::PackageProgramAddress::new(unsafe { __vescpkg_program_address() })
+        $crate::__macro_support::PackageProgramAddress::new(unsafe { __vescpkg_program_address() })
     }};
-}
-
-/// Compute the loaded package program identity for the image that owns a symbol.
-#[macro_export]
-macro_rules! firmware_package_program {
-    ($symbol:path) => {{ $crate::PackageProgram::new($crate::firmware_package_program_address!($symbol)) }};
 }
 
 /// Macro implementation hook for scoped firmware callback state access.
@@ -730,11 +726,11 @@ mod tests {
         // C map: native package startup is called with `loaded_libs[i]`, whose
         // `base_addr` was set from the package image address at
         // `third_party/vesc/lispBM/lispif_c_lib.c:1093-1100`.
-        let program = crate::PackageProgram::new(crate::PackageProgramAddress::new(0x2000));
+        let program = crate::PackageProgramAddress::new(0x2000);
         let mut info = LibInfo {
             stop_fun: None,
             arg: ptr::null_mut(),
-            base_addr: program.address().get(),
+            base_addr: program.get(),
         };
         let mut state = State { value: 7 };
 
@@ -759,10 +755,9 @@ mod tests {
             }
             .is_none()
         );
-        let mut state_ptr = unsafe {
-            crate::bindings::AppDataBindings::arg_state_ptr::<State>(&bindings, program.address())
-        }
-        .expect("package ARG state");
+        let mut state_ptr =
+            unsafe { crate::bindings::AppDataBindings::arg_state_ptr::<State>(&bindings, program) }
+                .expect("package ARG state");
         unsafe { state_ptr.as_mut() }.value = 9;
 
         assert_eq!(state, State { value: 9 });
@@ -895,17 +890,21 @@ mod tests {
 
         impl StatefulCustomConfigCallback<3> for TestCustomConfig {
             type State = State;
+            type Error = ();
 
             fn default_config() -> ConfigBytes<'static, 3> {
                 ConfigBytes::new(b"abc")
             }
 
-            fn current_config(_state: &Self::State) -> Option<ConfigBytes<'_, 3>> {
-                Some(ConfigBytes::new(b"abc"))
+            fn current_config(_state: &Self::State) -> ConfigBytes<'_, 3> {
+                ConfigBytes::new(b"abc")
             }
 
-            fn set_config(_state: &mut Self::State, _config: ConfigBytes<'_, 3>) -> bool {
-                true
+            fn set_config(
+                _state: &mut Self::State,
+                _config: ConfigBytes<'_, 3>,
+            ) -> Result<(), Self::Error> {
+                Ok(())
             }
 
             fn config_xml() -> ConfigXml<'static> {
@@ -971,23 +970,24 @@ mod tests {
 
         impl StatefulCustomConfigCallback<5> for TestCustomConfig {
             type State = State;
+            type Error = ();
 
             fn default_config() -> ConfigBytes<'static, 5> {
                 ConfigBytes::new(&[1, 2, 3, 4, 0])
             }
 
-            fn current_config(state: &Self::State) -> Option<ConfigBytes<'_, 5>> {
-                Some(ConfigBytes::new(state.config.as_bytes()))
+            fn current_config(state: &Self::State) -> ConfigBytes<'_, 5> {
+                ConfigBytes::new(state.config.as_bytes())
             }
 
-            fn set_config(state: &mut Self::State, config: ConfigBytes<'_, 5>) -> bool {
-                let Some(config) =
-                    CustomConfigImage::from_serialized(config.as_bytes(), [1, 2, 3, 4])
-                else {
-                    return false;
-                };
+            fn set_config(
+                state: &mut Self::State,
+                config: ConfigBytes<'_, 5>,
+            ) -> Result<(), Self::Error> {
+                let config =
+                    CustomConfigImage::from_serialized(config.as_bytes(), [1, 2, 3, 4]).ok_or(())?;
                 state.config = config;
-                true
+                Ok(())
             }
 
             fn config_xml() -> ConfigXml<'static> {
@@ -1069,23 +1069,24 @@ mod tests {
 
         impl StatefulCustomConfigCallback<5> for TestCustomConfig {
             type State = State;
+            type Error = ();
 
             fn default_config() -> ConfigBytes<'static, 5> {
                 ConfigBytes::new(&[1, 2, 3, 4, 0])
             }
 
-            fn current_config(state: &Self::State) -> Option<ConfigBytes<'_, 5>> {
-                Some(ConfigBytes::new(state.config.as_bytes()))
+            fn current_config(state: &Self::State) -> ConfigBytes<'_, 5> {
+                ConfigBytes::new(state.config.as_bytes())
             }
 
-            fn set_config(state: &mut Self::State, config: ConfigBytes<'_, 5>) -> bool {
-                let Some(config) =
-                    CustomConfigImage::from_serialized(config.as_bytes(), [1, 2, 3, 4])
-                else {
-                    return false;
-                };
+            fn set_config(
+                state: &mut Self::State,
+                config: ConfigBytes<'_, 5>,
+            ) -> Result<(), Self::Error> {
+                let config =
+                    CustomConfigImage::from_serialized(config.as_bytes(), [1, 2, 3, 4]).ok_or(())?;
                 state.config = config;
-                true
+                Ok(())
             }
 
             fn config_xml() -> ConfigXml<'static> {

@@ -11,9 +11,8 @@ use core::time::Duration;
 
 use crate::PackageRuntimeState;
 use crate::bindings::AppDataBindings;
-#[cfg(not(test))]
-use crate::extension::LispValue;
 use crate::lifecycle_core::AppDataSendError;
+use crate::types::SystemTimestamp;
 use crate::types::ThreadPriority;
 use crate::units::TimestampTicks;
 
@@ -39,13 +38,6 @@ impl FirmwareAppData {
         }
     }
 
-    /// Return the current firmware system time in ticks.
-    #[cfg(not(test))]
-    #[inline(always)]
-    pub fn system_time_ticks(&self) -> TimestampTicks {
-        self.api.system_time_ticks()
-    }
-
     /// Send one app-data response.
     #[cfg(not(test))]
     #[inline(always)]
@@ -54,36 +46,26 @@ impl FirmwareAppData {
     }
 }
 
-/// Typed LispBM capability available to package code.
-pub struct FirmwareLisp {
+/// Firmware monotonic clock capability available to package code.
+pub struct FirmwareClock {
     #[cfg(not(test))]
-    api: crate::lifecycle_core::LbmApi<crate::bindings::RealBindings>,
+    api: AppDataApi<crate::bindings::RealBindings>,
 }
 
-impl FirmwareLisp {
+impl FirmwareClock {
     #[cfg(not(test))]
+    #[inline(always)]
     pub(crate) fn new() -> Self {
         Self {
-            api: crate::lifecycle_core::LbmApi::new(crate::bindings::RealBindings),
+            api: AppDataApi::new(crate::bindings::RealBindings),
         }
     }
 
-    /// Decode a LispBM integer value.
+    /// Return the current firmware system timestamp.
     #[cfg(not(test))]
-    pub fn decode_i32(&self, value: LispValue) -> i32 {
-        crate::lifecycle_core::LbmApi::decode_i32(&self.api, value.raw())
-    }
-
-    /// Return LispBM's true value.
-    #[cfg(not(test))]
-    pub fn encode_true(&self) -> LispValue {
-        LispValue::from_raw(crate::lifecycle_core::LbmApi::encode_true(&self.api))
-    }
-
-    /// Return LispBM's nil value.
-    #[cfg(not(test))]
-    pub fn encode_nil(&self) -> LispValue {
-        LispValue::from_raw(crate::lifecycle_core::LbmApi::encode_nil(&self.api))
+    #[inline(always)]
+    pub fn now(&self) -> SystemTimestamp {
+        self.api.system_timestamp()
     }
 }
 
@@ -99,8 +81,10 @@ impl<B: AppDataBindings> AppDataApi<B> {
     }
 
     /// Return the current firmware system time in ticks.
-    pub(crate) fn system_time_ticks(&self) -> TimestampTicks {
-        TimestampTicks::from_ticks(self.bindings.system_time_ticks())
+    pub(crate) fn system_timestamp(&self) -> SystemTimestamp {
+        SystemTimestamp::new(TimestampTicks::from_ticks(
+            self.bindings.system_time_ticks(),
+        ))
     }
 
     /// Send one app-data response.
@@ -119,7 +103,7 @@ pub struct Firmware {
     #[cfg(not(test))]
     app_data: FirmwareAppData,
     #[cfg(not(test))]
-    lisp: FirmwareLisp,
+    clock: FirmwareClock,
     #[cfg(not(test))]
     gpio: crate::Gpio,
     #[cfg(not(test))]
@@ -143,10 +127,10 @@ impl Firmware {
         &self.app_data
     }
 
-    /// Borrow typed LispBM capabilities without exposing the binding type.
+    /// Borrow the firmware monotonic clock.
     #[cfg(not(test))]
-    pub fn lisp(&self) -> &FirmwareLisp {
-        &self.lisp
+    pub fn clock(&self) -> &FirmwareClock {
+        &self.clock
     }
 
     /// Borrow firmware GPIO capabilities without exposing the binding type.
@@ -179,7 +163,7 @@ impl Firmware {
         Self {
             threads: ThreadApi::new(RealThreadBindings),
             app_data: FirmwareAppData::new(),
-            lisp: FirmwareLisp::new(),
+            clock: FirmwareClock::new(),
             gpio: crate::Gpio::new(),
             imu: crate::imu::ImuApi::new(crate::imu::RealImuBindings),
             telemetry: crate::motor::MotorTelemetryApi::new(
@@ -292,6 +276,8 @@ pub trait StatelessFirmwareThread {
 }
 
 const RETURNED_THREAD_POLL_INTERVAL: Duration = Duration::from_millis(1);
+// `US2ST` in VESC's ChibiOS uses 32-bit arithmetic at 10 kHz.
+const VESC_MAX_SAFE_SLEEP_MICROS: u32 = (u32::MAX - 999_999) / 10_000;
 
 fn wait_for_firmware_termination(threads: &impl FirmwareThreads) {
     while !threads.should_terminate() {
@@ -353,7 +339,7 @@ pub(crate) unsafe extern "C" fn stateless_firmware_thread_entry<T: StatelessFirm
 
 /// Firmware-owned native package thread handle.
 #[derive(Debug, PartialEq, Eq)]
-pub struct ThreadHandle(NonNull<c_void>);
+pub(crate) struct ThreadHandle(NonNull<c_void>);
 
 // SAFETY: this is an opaque firmware thread identity. Moving ownership of the
 // handle does not move or access the firmware thread itself.
@@ -460,7 +446,14 @@ pub struct ThreadSpec<S: 'static> {
     entry: ThreadEntry,
     stack_size: ThreadStackSize,
     name: ThreadName,
+    argument: ThreadArgument,
     _state: PhantomData<fn(&mut S)>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ThreadArgument {
+    PackageState,
+    None,
 }
 
 impl<S: 'static> Copy for ThreadSpec<S> {}
@@ -477,7 +470,12 @@ impl<S: 'static> ThreadSpec<S> {
     where
         T: FirmwareThread<State = S>,
     {
-        Self::from_entry(firmware_thread_entry::<T>, stack_size, name)
+        Self::from_entry(
+            firmware_thread_entry::<T>,
+            stack_size,
+            name,
+            ThreadArgument::PackageState,
+        )
     }
 
     /// Build spawn settings for a typed firmware thread that ignores package state.
@@ -485,83 +483,93 @@ impl<S: 'static> ThreadSpec<S> {
     where
         T: StatelessFirmwareThread,
     {
-        Self::from_entry(stateless_firmware_thread_entry::<T>, stack_size, name)
+        Self::from_entry(
+            stateless_firmware_thread_entry::<T>,
+            stack_size,
+            name,
+            ThreadArgument::None,
+        )
     }
 
     /// Build spawn settings from a raw firmware thread entrypoint.
-    pub(crate) const fn from_entry(
+    const fn from_entry(
         entry: ThreadEntry,
         stack_size: ThreadStackSize,
         name: ThreadName,
+        argument: ThreadArgument,
     ) -> Self {
         Self {
             entry,
             stack_size,
             name,
+            argument,
             _state: PhantomData,
         }
     }
+
+    #[cfg(test)]
+    pub(crate) const fn from_stateful_entry(
+        entry: ThreadEntry,
+        stack_size: ThreadStackSize,
+        name: ThreadName,
+    ) -> Self {
+        Self::from_entry(entry, stack_size, name, ThreadArgument::PackageState)
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn from_stateless_entry(
+        entry: ThreadEntry,
+        stack_size: ThreadStackSize,
+        name: ThreadName,
+    ) -> Self {
+        Self::from_entry(entry, stack_size, name, ThreadArgument::None)
+    }
 }
 
-/// Pair of package-owned firmware thread handles.
+const MAX_PACKAGE_THREADS: usize = 20;
+
 #[derive(Debug, PartialEq, Eq)]
-pub struct ThreadPair {
-    first: ThreadHandle,
-    second: ThreadHandle,
+pub(crate) struct ThreadGroup {
+    handles: [Option<ThreadHandle>; MAX_PACKAGE_THREADS],
 }
 
-/// Typed firmware thread-pair spawn settings.
-#[derive(Debug, Clone, Copy)]
-pub struct ThreadPairSpec<S: 'static> {
-    first: ThreadSpec<S>,
-    second: ThreadSpec<()>,
-}
-
-impl<S: 'static> ThreadPairSpec<S> {
-    /// Build a pair with one stateful thread and one stateless thread.
-    pub const fn new(first: ThreadSpec<S>, second: ThreadSpec<()>) -> Self {
-        Self { first, second }
+impl ThreadGroup {
+    fn new() -> Self {
+        Self {
+            handles: [const { None }; MAX_PACKAGE_THREADS],
+        }
     }
 
-    /// Return the first thread spec.
-    pub const fn first(self) -> ThreadSpec<S> {
-        self.first
+    fn push(&mut self, handle: ThreadHandle) -> bool {
+        self.handles
+            .iter_mut()
+            .find(|slot| slot.is_none())
+            .is_some_and(|slot| {
+                *slot = Some(handle);
+                true
+            })
     }
 
-    /// Return the second thread spec.
-    pub const fn second(self) -> ThreadSpec<()> {
-        self.second
-    }
-}
-
-impl ThreadPair {
-    /// Build a complete thread-handle pair.
-    pub const fn new(first: ThreadHandle, second: ThreadHandle) -> Self {
-        Self { first, second }
+    #[cfg(test)]
+    pub(crate) fn from_handles<const N: usize>(handles: [ThreadHandle; N]) -> Self {
+        let mut group = Self::new();
+        handles.into_iter().for_each(|handle| {
+            assert!(group.push(handle));
+        });
+        group
     }
 
-    /// Return the first thread handle.
-    pub const fn first(&self) -> &ThreadHandle {
-        &self.first
-    }
-
-    /// Return the second thread handle.
-    pub const fn second(&self) -> &ThreadHandle {
-        &self.second
-    }
-
-    /// Request thread termination from second to first.
-    pub fn terminate_reverse(self, threads: &impl FirmwareThreads) {
-        threads.request_terminate(self.second);
-        threads.request_terminate(self.first);
+    pub(crate) fn terminate_reverse<B: ThreadBindings>(self, threads: &ThreadApi<B>) {
+        self.handles
+            .into_iter()
+            .rev()
+            .flatten()
+            .for_each(|thread| threads.request_terminate(thread));
     }
 }
 
 /// Typed firmware thread operations available to package code.
 pub trait FirmwareThreads: private::FirmwareThreads {
-    /// Ask a firmware thread to terminate.
-    fn request_terminate(&self, thread: ThreadHandle);
-
     /// Return whether the current package thread should terminate.
     fn should_terminate(&self) -> bool;
 
@@ -671,10 +679,6 @@ pub struct ThreadApi<B> {
 impl<B: ThreadBindings> private::FirmwareThreads for ThreadApi<B> {}
 
 impl<B: ThreadBindings> FirmwareThreads for ThreadApi<B> {
-    fn request_terminate(&self, thread: ThreadHandle) {
-        self.request_terminate(thread);
-    }
-
     fn should_terminate(&self) -> bool {
         self.should_terminate()
     }
@@ -694,48 +698,52 @@ impl<B: ThreadBindings> ThreadApi<B> {
         Self { bindings }
     }
 
-    /// Spawn firmware threads in order, terminating the first if the second cannot start.
+    /// Spawn firmware threads in order, terminating the started subset if one cannot start.
     ///
     /// C map: Refloat passes its position-independent thread and string addresses
     /// directly to spawn at third_party/refloat/src/main.c:2438-2444.
     /// VESC's `lib_request_terminate` does not return until the thread has
     /// terminated (`lispBM/lispif_c_lib.c:126-145`).
     ///
-    #[allow(clippy::needless_pass_by_value)]
-    pub(crate) fn spawn_thread_pair<S>(
+    /// The 20-slot limit is shared by all native libraries in firmware. This
+    /// local bound only prevents one start operation from exceeding that hard
+    /// ceiling; firmware remains authoritative when other libraries use slots.
+    pub(crate) fn spawn_threads<S, const N: usize>(
         &self,
-        pair: ThreadPairSpec<S>,
+        specs: [ThreadSpec<S>; N],
         state: NonNull<S>,
-    ) -> Option<ThreadPair> {
-        let ThreadPairSpec { first, second } = pair;
-        let arg = state.as_ptr().cast::<c_void>();
-        let spawn = |entry, stack_size: ThreadStackSize, name: ThreadName, arg| {
+    ) -> Option<ThreadGroup> {
+        if N > MAX_PACKAGE_THREADS {
+            return None;
+        }
+        let mut threads = ThreadGroup::new();
+        for spec in specs {
+            let arg = match spec.argument {
+                ThreadArgument::PackageState => state.as_ptr().cast::<c_void>(),
+                ThreadArgument::None => core::ptr::null_mut(),
+            };
             // C map: lispif_spawn consumes the runtime entry, name, and
             // argument addresses unchanged at
             // third_party/vesc/lispBM/lispif_c_lib.c:98-125.
             let thread = unsafe {
-                self.bindings
-                    .spawn(entry, stack_size.bytes(), name.as_cstr().as_ptr(), arg)
+                self.bindings.spawn(
+                    spec.entry,
+                    spec.stack_size.bytes(),
+                    spec.name.as_cstr().as_ptr(),
+                    arg,
+                )
             };
-            unsafe { ThreadHandle::from_firmware(thread) }
-        };
-
-        let first_handle = spawn(first.entry, first.stack_size, first.name, arg)?;
-        let Some(second_handle) = spawn(
-            second.entry,
-            second.stack_size,
-            second.name,
-            core::ptr::null_mut(),
-        ) else {
-            self.request_terminate(first_handle);
-            return None;
-        };
-
-        Some(ThreadPair::new(first_handle, second_handle))
+            let Some(handle) = (unsafe { ThreadHandle::from_firmware(thread) }) else {
+                threads.terminate_reverse(self);
+                return None;
+            };
+            debug_assert!(threads.push(handle));
+        }
+        Some(threads)
     }
 
     /// Ask a firmware thread to terminate.
-    pub fn request_terminate(&self, thread: ThreadHandle) {
+    fn request_terminate(&self, thread: ThreadHandle) {
         self.bindings.request_terminate(thread);
     }
 
@@ -749,8 +757,12 @@ impl<B: ThreadBindings> ThreadApi<B> {
     /// Refloat's main runtime thread sleeps with `VESC_IF->sleep_us` at
     /// `src/main.c:1080`.
     pub fn sleep_for(&self, duration: Duration) {
-        let micros = duration.as_micros().min(u128::from(u32::MAX)) as u32;
-        self.bindings.sleep_us(micros);
+        let mut micros = duration.as_nanos().div_ceil(1_000);
+        while micros != 0 {
+            let chunk = micros.min(u128::from(VESC_MAX_SAFE_SLEEP_MICROS)) as u32;
+            self.bindings.sleep_us(chunk);
+            micros -= u128::from(chunk);
+        }
     }
 
     /// Set the current package thread priority when supported by firmware.
@@ -787,20 +799,20 @@ pub mod test_support {
         /// Number of priority calls observed.
         pub(crate) priority_calls: Cell<usize>,
         /// Spawn stack sizes by call order.
-        pub(crate) spawn_stacks: Cell<[usize; 2]>,
+        pub(crate) spawn_stacks: Cell<[usize; 3]>,
         /// Spawn names by call order.
-        pub(crate) spawn_names: Cell<[*const c_char; 2]>,
+        pub(crate) spawn_names: Cell<[*const c_char; 3]>,
         /// Spawn args by call order.
-        pub(crate) spawn_args: Cell<[usize; 2]>,
+        pub(crate) spawn_args: Cell<[usize; 3]>,
         /// Spawn entries by call order.
-        pub(crate) spawn_entries: Cell<[usize; 2]>,
+        pub(crate) spawn_entries: Cell<[usize; 3]>,
         /// Terminated thread handles by call order.
-        pub(crate) terminated_threads: Cell<[usize; 2]>,
+        pub(crate) terminated_threads: Cell<[usize; 3]>,
         /// Sleep durations by call order.
         pub(crate) sleep_micros: Cell<[u32; 2]>,
         /// Thread priorities by call order.
         pub(crate) priorities: Cell<[i8; 2]>,
-        spawn_results: Cell<[usize; 2]>,
+        spawn_results: Cell<[usize; 3]>,
         should_terminate_result: Cell<bool>,
         should_terminate_after_calls: Cell<usize>,
         priority_result: Cell<bool>,
@@ -813,24 +825,24 @@ pub mod test_support {
     }
 
     impl FakeThreadBindings {
-        /// Creates fake thread bindings returning two non-null handles.
+        /// Creates fake thread bindings returning three non-null handles.
         pub fn new() -> Self {
-            Self::with_spawn_results([1, 2])
+            Self::with_spawn_results([1, 2, 3])
         }
 
         /// Creates fake thread bindings returning explicit raw spawn handles.
-        pub fn with_spawn_results(spawn_results: [usize; 2]) -> Self {
+        pub fn with_spawn_results(spawn_results: [usize; 3]) -> Self {
             Self {
                 spawn_calls: Cell::new(0),
                 terminate_calls: Cell::new(0),
                 should_terminate_calls: Cell::new(0),
                 sleep_calls: Cell::new(0),
                 priority_calls: Cell::new(0),
-                spawn_stacks: Cell::new([0, 0]),
-                spawn_names: Cell::new([core::ptr::null(), core::ptr::null()]),
-                spawn_args: Cell::new([0, 0]),
-                spawn_entries: Cell::new([0, 0]),
-                terminated_threads: Cell::new([0, 0]),
+                spawn_stacks: Cell::new([0, 0, 0]),
+                spawn_names: Cell::new([core::ptr::null(), core::ptr::null(), core::ptr::null()]),
+                spawn_args: Cell::new([0, 0, 0]),
+                spawn_entries: Cell::new([0, 0, 0]),
+                terminated_threads: Cell::new([0, 0, 0]),
                 sleep_micros: Cell::new([0, 0]),
                 priorities: Cell::new([0, 0]),
                 spawn_results: Cell::new(spawn_results),
@@ -856,7 +868,7 @@ pub mod test_support {
         ) -> *mut c_void {
             let call = self.spawn_calls.get();
             self.spawn_calls.set(call + 1);
-            let index = call.min(1);
+            let index = call.min(2);
 
             let mut stacks = self.spawn_stacks.get();
             stacks[index] = stack_bytes;
@@ -880,7 +892,7 @@ pub mod test_support {
         fn request_terminate(&self, thread: ThreadHandle) {
             let call = self.terminate_calls.get();
             self.terminate_calls.set(call + 1);
-            let index = call.min(1);
+            let index = call.min(2);
             let mut threads = self.terminated_threads.get();
             threads[index] = thread.as_ptr() as usize;
             self.terminated_threads.set(threads);
@@ -917,16 +929,18 @@ pub mod test_support {
 mod tests {
     use super::{
         AppDataApi, FirmwareThread, StatelessFirmwareThread, StatelessThreadContext, ThreadApi,
-        ThreadContext, ThreadPairSpec, ThreadSpec, ThreadStackSize, firmware_thread_entry,
-        stateless_firmware_thread_entry,
+        ThreadContext, ThreadSpec, ThreadStackSize, VESC_MAX_SAFE_SLEEP_MICROS,
+        firmware_thread_entry, stateless_firmware_thread_entry,
     };
     use core::ffi::CStr;
     use core::ffi::c_void;
     use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+    use core::time::Duration;
     use std::boxed::Box;
     use std::sync::Mutex;
 
     use crate::thread::test_support::FakeThreadBindings;
+    use crate::types::SystemTimestamp;
     use crate::units::TimestampTicks;
 
     #[test]
@@ -934,7 +948,10 @@ mod tests {
         let bindings = crate::test_support::FakeAppDataBindings::new();
         let app_data = AppDataApi::new(&bindings);
 
-        assert_eq!(app_data.system_time_ticks(), TimestampTicks::from_ticks(0));
+        assert_eq!(
+            app_data.system_timestamp(),
+            SystemTimestamp::new(TimestampTicks::from_ticks(0))
+        );
         assert_eq!(app_data.send(&[1, 2, 3]), Ok(()));
         assert_eq!(bindings.send_calls.get(), 1);
         assert_eq!(bindings.last_len.get(), 3);
@@ -964,6 +981,23 @@ mod tests {
         }
 
         assert!(!accepts_semantic_threads(&threads));
+    }
+
+    #[test]
+    fn sleep_for_stays_within_vesc_chibios_conversion_range() {
+        let zero = FakeThreadBindings::new();
+        ThreadApi::new(&zero).sleep_for(Duration::ZERO);
+        assert_eq!(zero.sleep_calls.get(), 0);
+
+        let sub_microsecond = FakeThreadBindings::new();
+        ThreadApi::new(&sub_microsecond).sleep_for(Duration::from_nanos(1));
+        assert_eq!(sub_microsecond.sleep_micros.get(), [1, 0]);
+
+        let overflow = FakeThreadBindings::new();
+        ThreadApi::new(&overflow).sleep_for(Duration::from_micros(
+            u64::from(VESC_MAX_SAFE_SLEEP_MICROS) + 1,
+        ));
+        assert_eq!(overflow.sleep_micros.get(), [VESC_MAX_SAFE_SLEEP_MICROS, 1]);
     }
 
     static RUN_CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -1141,75 +1175,103 @@ mod tests {
     }
 
     #[test]
-    fn thread_pair_spec_passes_state_only_to_the_stateful_thread() {
-        let bindings = FakeThreadBindings::with_spawn_results([0x1000, 0x2000]);
+    fn thread_specs_pass_state_only_to_stateful_threads() {
+        let bindings = FakeThreadBindings::with_spawn_results([0x1000, 0x2000, 0x3000]);
         let threads = ThreadApi::new(&bindings);
         let first_name = crate::thread_name!("first");
         let second_name = crate::thread_name!("second");
-        let pair = ThreadPairSpec::new(
-            ThreadSpec::from_entry(
+        let third_name = crate::thread_name!("third");
+        let specs = [
+            ThreadSpec::from_stateful_entry(
                 stateless_firmware_thread_entry::<RecordingStatelessThread>,
                 ThreadStackSize::from_bytes(1_536),
                 first_name,
             ),
-            ThreadSpec::from_entry(
+            ThreadSpec::from_stateless_entry(
                 stateless_firmware_thread_entry::<RecordingStatelessThread>,
                 ThreadStackSize::from_bytes(1_024),
                 second_name,
             ),
-        );
-        let entries = [pair.first().entry as usize, pair.second().entry as usize];
+            ThreadSpec::from_stateless_entry(
+                stateless_firmware_thread_entry::<RecordingStatelessThread>,
+                ThreadStackSize::from_bytes(768),
+                third_name,
+            ),
+        ];
+        let entries = specs.map(|spec| spec.entry as usize);
         let mut state = 7_u32;
         let state_arg = core::ptr::from_mut(&mut state).cast::<c_void>() as usize;
 
-        let handles = threads.spawn_thread_pair(pair, core::ptr::NonNull::from(&mut state));
+        let handles = threads.spawn_threads(specs, core::ptr::NonNull::from(&mut state));
 
         assert_eq!(
-            handles.as_ref().map(|pair| pair.first().as_ptr()),
+            handles
+                .as_ref()
+                .and_then(|group| group.handles[0].as_ref())
+                .map(|handle| handle.as_ptr()),
             Some(0x1000 as *mut c_void)
         );
         assert_eq!(
-            handles.as_ref().map(|pair| pair.second().as_ptr()),
+            handles
+                .as_ref()
+                .and_then(|group| group.handles[2].as_ref())
+                .map(|handle| handle.as_ptr()),
+            Some(0x3000 as *mut c_void)
+        );
+        assert_eq!(
+            handles
+                .as_ref()
+                .and_then(|group| group.handles[1].as_ref())
+                .map(|handle| handle.as_ptr()),
             Some(0x2000 as *mut c_void)
         );
-        assert_eq!(bindings.spawn_calls.get(), 2);
+        assert_eq!(bindings.spawn_calls.get(), 3);
         assert_eq!(bindings.spawn_entries.get(), entries);
-        assert_eq!(bindings.spawn_stacks.get(), [1_536, 1_024]);
+        assert_eq!(bindings.spawn_stacks.get(), [1_536, 1_024, 768]);
         assert_eq!(
             bindings
                 .spawn_names
                 .get()
                 .map(|name| unsafe { CStr::from_ptr(name) }),
-            [first_name.as_cstr(), second_name.as_cstr()]
+            [
+                first_name.as_cstr(),
+                second_name.as_cstr(),
+                third_name.as_cstr()
+            ]
         );
-        assert_eq!(bindings.spawn_args.get(), [state_arg, 0]);
+        assert_eq!(bindings.spawn_args.get(), [state_arg, 0, 0]);
         assert_eq!(bindings.terminate_calls.get(), 0);
     }
 
     #[test]
-    fn thread_pair_spec_terminates_first_when_second_spawn_fails() {
-        let bindings = FakeThreadBindings::with_spawn_results([0x1000, 0]);
+    fn thread_specs_terminate_started_threads_when_a_later_spawn_fails() {
+        let bindings = FakeThreadBindings::with_spawn_results([0x1000, 0x2000, 0]);
         let threads = ThreadApi::new(&bindings);
-        let pair = ThreadPairSpec::new(
-            ThreadSpec::from_entry(
+        let specs = [
+            ThreadSpec::from_stateful_entry(
                 stateless_firmware_thread_entry::<RecordingStatelessThread>,
                 ThreadStackSize::from_bytes(1_536),
                 crate::thread_name!("first"),
             ),
-            ThreadSpec::from_entry(
+            ThreadSpec::from_stateless_entry(
                 stateless_firmware_thread_entry::<RecordingStatelessThread>,
                 ThreadStackSize::from_bytes(1_024),
                 crate::thread_name!("second"),
             ),
-        );
+            ThreadSpec::from_stateless_entry(
+                stateless_firmware_thread_entry::<RecordingStatelessThread>,
+                ThreadStackSize::from_bytes(768),
+                crate::thread_name!("third"),
+            ),
+        ];
         let mut state = 7_u32;
 
-        let handles = threads.spawn_thread_pair(pair, core::ptr::NonNull::from(&mut state));
+        let handles = threads.spawn_threads(specs, core::ptr::NonNull::from(&mut state));
 
         assert_eq!(handles, None);
-        assert_eq!(bindings.spawn_calls.get(), 2);
-        assert_eq!(bindings.terminate_calls.get(), 1);
-        assert_eq!(bindings.terminated_threads.get()[0], 0x1000);
+        assert_eq!(bindings.spawn_calls.get(), 3);
+        assert_eq!(bindings.terminate_calls.get(), 2);
+        assert_eq!(bindings.terminated_threads.get(), [0x2000, 0x1000, 0]);
     }
 
     #[test]

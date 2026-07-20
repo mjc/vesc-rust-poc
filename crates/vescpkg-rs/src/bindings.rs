@@ -4,12 +4,11 @@
 use core::ffi::c_char;
 
 use crate::ffi::{CustomConfigGet, CustomConfigSet, CustomConfigXml, ImuReadCallback};
-use crate::types::{PackageArgument, PackageProgramAddress};
+use crate::{PackageArgument, PackageProgramAddress};
 use core::ptr::NonNull;
 use vescpkg_rs_sys::AppDataHandler;
 #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 use vescpkg_rs_sys::ExtensionHandler;
-#[cfg(not(test))]
 use vescpkg_rs_sys::LbmValue;
 
 const MAX_APP_DATA_PAYLOAD_LEN: usize = 511;
@@ -23,13 +22,17 @@ pub(crate) trait LbmBindings {
     unsafe fn add_extension(&self, name: *const c_char, handler: ExtensionHandler) -> bool;
     /// # Safety
     /// `value` must be a valid firmware-provided LispBM value.
-    #[cfg(not(test))]
+    unsafe fn is_number(&self, value: LbmValue) -> bool;
+    /// # Safety
+    /// `value` must be a valid firmware-provided LispBM value.
     unsafe fn decode_i32(&self, value: LbmValue) -> i32;
     /// Return the firmware's true symbol.
     #[cfg(not(test))]
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
     fn encode_true(&self) -> LbmValue;
     /// Return the firmware's nil symbol.
     #[cfg(not(test))]
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
     fn encode_nil(&self) -> LbmValue;
 }
 
@@ -39,7 +42,10 @@ impl<B: LbmBindings + ?Sized> LbmBindings for &B {
         unsafe { (**self).add_extension(name, handler) }
     }
 
-    #[cfg(not(test))]
+    unsafe fn is_number(&self, value: LbmValue) -> bool {
+        unsafe { (**self).is_number(value) }
+    }
+
     unsafe fn decode_i32(&self, value: LbmValue) -> i32 {
         unsafe { (**self).decode_i32(value) }
     }
@@ -216,6 +222,10 @@ impl LbmBindings for RealBindings {
     #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     unsafe fn add_extension(&self, name: *const c_char, handler: ExtensionHandler) -> bool {
         unsafe { crate::ffi::lbm_add_extension(name, handler) }
+    }
+
+    unsafe fn is_number(&self, value: LbmValue) -> bool {
+        unsafe { crate::ffi::lbm_is_number(value) }
     }
 
     unsafe fn decode_i32(&self, value: LbmValue) -> i32 {

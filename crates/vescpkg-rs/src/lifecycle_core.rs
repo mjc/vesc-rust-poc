@@ -3,7 +3,6 @@
 use crate::bindings::LbmBindings;
 #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 use crate::extension::{ExtensionDescriptor, ExtensionRegistration, RegisterError};
-#[cfg(not(test))]
 use vescpkg_rs_sys::LbmValue;
 #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 use vescpkg_rs_sys::{ExtensionHandler, NativeImage};
@@ -34,20 +33,25 @@ impl<B: LbmBindings> LbmApi<B> {
         .ok_or(RegisterError::FirmwareRejected)
     }
 
-    /// Decode a LispBM integer value into an `i32`.
-    #[cfg(not(test))]
-    pub fn decode_i32(&self, value: LbmValue) -> i32 {
-        unsafe { self.bindings.decode_i32(value) }
+    /// Decode a LispBM numeric value into an `i32`.
+    pub fn decode_i32(&self, value: LbmValue) -> Option<i32> {
+        unsafe {
+            self.bindings
+                .is_number(value)
+                .then(|| self.bindings.decode_i32(value))
+        }
     }
 
     /// Return the LispBM true value.
     #[cfg(not(test))]
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
     pub fn encode_true(&self) -> LbmValue {
         self.bindings.encode_true()
     }
 
     /// Return the LispBM nil value.
     #[cfg(not(test))]
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
     pub fn encode_nil(&self) -> LbmValue {
         self.bindings.encode_nil()
     }
@@ -71,10 +75,6 @@ impl<B: LbmBindings> PackageLifecycle<B> {
     /// Register a validated extension descriptor with firmware.
     #[cfg(test)]
     pub fn register_extension(&self, descriptor: ExtensionDescriptor) -> Result<(), RegisterError> {
-        let descriptor = descriptor
-            .validate()
-            .map_err(|_| RegisterError::InvalidExtensionName)?;
-
         self.api
             .register_extension(descriptor.name(), descriptor.handler())
     }
@@ -96,9 +96,6 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         image: NativeImage,
         descriptor: ExtensionDescriptor,
     ) -> Result<(), RegisterError> {
-        let descriptor = descriptor
-            .validate()
-            .map_err(|_| RegisterError::InvalidExtensionName)?;
         let name = descriptor.name().as_cstr().as_ptr();
         let handler_address = descriptor.handler() as usize;
         let handler = unsafe {
