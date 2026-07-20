@@ -1,8 +1,0 @@
-#!/usr/bin/env sh
-set -eu
-
-if command -v nix >/dev/null 2>&1 && [ -f flake.nix ]; then
-	exec nix develop -c make pre-commit
-fi
-
-exec make pre-commit
