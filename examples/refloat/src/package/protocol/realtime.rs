@@ -1,9 +1,7 @@
-#[cfg(test)]
 use super::wire::refloat_realtime_push_float32_auto;
 use super::wire::{
     push_refloat_float16, refloat_degrees, refloat_realtime_push_u8, refloat_realtime_push_u32,
 };
-#[cfg(test)]
 use crate::domain::RefloatMode;
 use crate::domain::{
     REFLOAT_APP_DATA_PACKAGE_ID, REFLOAT_REALTIME_DATA_ITEMS, REFLOAT_REALTIME_RUNTIME_ITEMS,
@@ -14,7 +12,6 @@ use vescpkg_rs::prelude::TimestampTicks;
 
 // Refloat v1.2.1 `send_realtime_data` declares its fixed buffer at
 // `third_party/refloat/src/main.c:1267-1269`.
-#[cfg(test)]
 const REFLOAT_GET_REALTIME_DATA_RESPONSE_LEN: usize = 72;
 // Refloat v1.2.1 `cmd_realtime_data` declares its runtime-sized packet at
 // `third_party/refloat/src/main.c:1904-1906`.
@@ -36,8 +33,7 @@ impl RefloatRealtimeDataResponse {
 }
 
 #[inline(never)]
-#[cfg(test)]
-fn encode_refloat_get_realtime_data_response(
+pub(in crate::package) fn encode_refloat_get_realtime_data_response(
     payloads: &RefloatAllDataPayloads,
 ) -> [u8; REFLOAT_GET_REALTIME_DATA_RESPONSE_LEN] {
     let mut bytes = [0; REFLOAT_GET_REALTIME_DATA_RESPONSE_LEN];

@@ -1,6 +1,6 @@
 use super::super::protocol::{
-    encode_refloat_info_response, encode_refloat_realtime_data_ids_response,
-    encode_refloat_realtime_data_response,
+    encode_refloat_get_realtime_data_response, encode_refloat_info_response,
+    encode_refloat_realtime_data_ids_response, encode_refloat_realtime_data_response,
 };
 use super::RefloatPackageState;
 use super::refloat_command_payload;
@@ -48,6 +48,13 @@ impl RefloatPackageState {
         send: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
+        // C map: `on_command_received` dispatches legacy `COMMAND_GET_RTDATA` at
+        // `third_party/refloat/src/main.c:2162-2164`.
+        if refloat_command_payload(bytes, RefloatAppDataCommand::GetRealtimeData).is_some() {
+            let response = encode_refloat_get_realtime_data_response(&self.all_data_payloads);
+            return send(&response);
+        }
+
         match refloat_command_payload(bytes, RefloatAppDataCommand::RealtimeData) {
             Some(_) => {
                 let payloads = self

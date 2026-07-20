@@ -37,7 +37,6 @@ fn encode_refloat_float16(value: f32) -> u16 {
     (((bits & 0x8000_0000) >> 16) | normalized | denormalized | saturated) as u16
 }
 
-#[cfg(test)]
 pub(super) fn refloat_realtime_push_float32_auto(buffer: &mut [u8], ind: &mut usize, value: f32) {
     // Refloat forwards through `buffer_append_float32_auto` at
     // `third_party/refloat/src/conf/buffer.c:118-140`, preserving its exact
