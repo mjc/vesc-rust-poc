@@ -1157,35 +1157,6 @@ mod tests {
     }
 
     #[test]
-    fn package_start_rejects_stateless_app_data_callback_registration() {
-        unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
-
-        struct Callback;
-
-        unsafe impl crate::__macro_support::PackageAppDataCallback for Callback {
-            fn image_address() -> usize {
-                handler as *const () as usize
-            }
-        }
-
-        let bindings = FakeAppDataBindings::new();
-        let mut info = ffi::LibInfo {
-            stop_fun: None,
-            arg: core::ptr::null_mut(),
-            base_addr: 0x3000,
-        };
-        let mut start = super::PackageStart::from_lib_info(&mut info);
-        start.install_stop_hook().unwrap();
-
-        assert!(start.app_data_callback::<Callback>().is_none());
-        assert_eq!(bindings.handler_calls.get(), 0);
-        assert_eq!(
-            start.install_stop_hook(),
-            Err(PackageStartError::StateAlreadyInstalled)
-        );
-    }
-
-    #[test]
     fn package_start_clears_custom_config_when_app_data_is_rejected() {
         unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
 
@@ -1202,13 +1173,15 @@ mod tests {
             }
         }
 
+        impl crate::AppDataHandler for Callback {
+            type State = ConfigState;
+
+            fn handle(_: &mut Self::State, _: crate::AppDataPacket<'_>) {}
+        }
+
         unsafe impl crate::__macro_support::PackageAppDataCallback for Callback {
             fn image_address() -> usize {
                 handler as *const () as usize
-            }
-
-            fn state_type() -> Option<core::any::TypeId> {
-                Some(core::any::TypeId::of::<ConfigState>())
             }
         }
 
@@ -1374,13 +1347,15 @@ mod tests {
 
         struct WrongAppDataCallback;
 
+        impl crate::AppDataHandler for WrongAppDataCallback {
+            type State = WrongImuState;
+
+            fn handle(_: &mut Self::State, _: crate::AppDataPacket<'_>) {}
+        }
+
         unsafe impl crate::__macro_support::PackageAppDataCallback for WrongAppDataCallback {
             fn image_address() -> usize {
                 handler as *const () as usize
-            }
-
-            fn state_type() -> Option<core::any::TypeId> {
-                Some(core::any::TypeId::of::<()>())
             }
         }
 

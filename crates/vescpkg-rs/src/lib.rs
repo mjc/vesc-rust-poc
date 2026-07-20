@@ -100,8 +100,7 @@ pub use extension::{LbmExtension, LispArgs, LispIntegerError, LispValue, Statefu
 pub mod __macro_support;
 
 pub use firmware::{
-    AppDataCallback, AppDataPacket, ConfigBytes, ConfigXml, StatefulAppDataCallback,
-    StatefulCustomConfigCallback,
+    AppDataHandler, AppDataPacket, ConfigBytes, ConfigXml, StatefulCustomConfigCallback,
 };
 pub(crate) use firmware::{firmware_array, loader_info_mut};
 pub use imu::{Imu, ImuReadHandler};
@@ -141,14 +140,14 @@ pub mod prelude {
         SystemInstant, SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
     };
     pub use crate::{
-        AnalogPin, AppDataCallback, AppDataSendError, ConfigBytes, ConfigXml, ExtensionDescriptor,
+        AnalogPin, AppDataHandler, AppDataSendError, ConfigBytes, ConfigXml, ExtensionDescriptor,
         ExtensionName, ExtensionRegistration, Firmware, FirmwareAppData, FirmwareClock,
         FirmwareThread, FirmwareThreads, Gpio, Imu, ImuReadHandler, LbmExtension, LispArgs,
         LispIntegerError, LispValue, MotorOutput, MotorTelemetry, PackageRuntimeState,
         PackageStart, PackageStartError, PackageStateAccess, PackageStateStore,
-        StatefulAppDataCallback, StatefulCustomConfigCallback, StatefulLbmExtension,
-        StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadName,
-        ThreadSpec, ThreadStackSize,
+        StatefulCustomConfigCallback, StatefulLbmExtension, StatelessFirmwareThread,
+        StatelessThreadContext, ThreadContext, ThreadError, ThreadName, ThreadSpec,
+        ThreadStackSize,
     };
 }
 

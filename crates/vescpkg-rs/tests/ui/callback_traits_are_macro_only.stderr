@@ -10,10 +10,5 @@ error[E0432]: unresolved imports `vescpkg_rs::PackageAppDataCallback`, `vescpkg_
 help: a similar name exists in the module
   |
 2 -     PackageAppDataCallback, PackageCustomConfigCallback, PackageImuReadCallback,
-2 +     AppDataCallback, PackageCustomConfigCallback, PackageImuReadCallback,
-  |
-help: a similar name exists in the module
-  |
-2 -     PackageAppDataCallback, PackageCustomConfigCallback, PackageImuReadCallback,
 2 +     PackageAppDataCallback, StatefulCustomConfigCallback, PackageImuReadCallback,
   |

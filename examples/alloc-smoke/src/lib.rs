@@ -20,7 +20,7 @@ use vesc_protocol::ble_loopback::{LoopbackError, MAX_LOOPBACK_FRAME_BYTES, handl
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 use vescpkg_rs::PackageStart;
 #[cfg(all(not(test), target_arch = "arm"))]
-use vescpkg_rs::{AppDataPacket, Firmware, StatefulAppDataCallback};
+use vescpkg_rs::{AppDataHandler, AppDataPacket, Firmware};
 
 #[cfg(all(not(test), target_arch = "arm"))]
 #[global_allocator]
@@ -52,7 +52,7 @@ impl vescpkg_rs::PackageRuntimeState for AllocSmokeState {
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
-impl StatefulAppDataCallback for AllocSmokeAppData {
+impl AppDataHandler for AllocSmokeAppData {
     type State = AllocSmokeState;
 
     fn handle(_state: &mut Self::State, packet: AppDataPacket<'_>) {

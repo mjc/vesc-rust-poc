@@ -1,11 +1,11 @@
 #![cfg(all(not(test), target_arch = "arm"))]
 
 use vesc_protocol::ble_loopback::handle_loopback_frame;
-use vescpkg_rs::{AppDataPacket, Firmware, PackageStart, StatefulAppDataCallback};
+use vescpkg_rs::{AppDataHandler, AppDataPacket, Firmware, PackageStart};
 
 struct LoopbackAppData;
 
-impl StatefulAppDataCallback for LoopbackAppData {
+impl AppDataHandler for LoopbackAppData {
     type State = crate::LoopbackState;
 
     fn handle(_state: &mut Self::State, packet: AppDataPacket<'_>) {
