@@ -264,6 +264,7 @@ impl RefloatPackageState {
             || self.handle_handtest_packet(bytes)
             || self.handle_rc_move_packet(bytes)
             || self.send_metadata_packet_response(send, bytes)
+            || self.send_legacy_realtime_data_packet_response(send, bytes)
             || self.send_realtime_data_packet_response(telemetry, now, send, bytes)
             || self.send_all_data_packet_response(telemetry, send, bytes)
     }
