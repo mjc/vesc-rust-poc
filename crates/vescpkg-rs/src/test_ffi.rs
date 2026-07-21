@@ -1,6 +1,8 @@
 use core::ffi::{c_char, c_void};
 use core::hint::spin_loop;
-use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{
+    AtomicBool, AtomicI32, AtomicU8, AtomicU32, AtomicU64, AtomicUsize, Ordering,
+};
 
 use crate::{
     AmpHoursCharged, AmpHoursDischarged, BatteryLevel, DCurrent, DirectionalMotorCurrent,
@@ -76,6 +78,9 @@ static EEPROM: [AtomicU32; EEPROM_WORDS] = [const { AtomicU32::new(0) }; EEPROM_
 static EEPROM_PRESENT: [AtomicBool; EEPROM_WORDS] =
     [const { AtomicBool::new(false) }; EEPROM_WORDS];
 static EEPROM_WRITE_FAILURE: AtomicI32 = AtomicI32::new(-1);
+const NVM_BYTES: usize = 256;
+static NVM: [AtomicU8; NVM_BYTES] = [const { AtomicU8::new(0) }; NVM_BYTES];
+static NVM_FAILURE: AtomicBool = AtomicBool::new(false);
 
 pub(crate) struct MotorOutputState {
     pub keep_alive_count: usize,
@@ -173,6 +178,8 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
         .iter()
         .for_each(|slot| slot.store(false, Ordering::Relaxed));
     EEPROM_WRITE_FAILURE.store(-1, Ordering::Relaxed);
+    NVM.iter().for_each(|byte| byte.store(0, Ordering::Relaxed));
+    NVM_FAILURE.store(false, Ordering::Relaxed);
     FirmwareLockGuard
 }
 
@@ -214,6 +221,60 @@ pub unsafe fn store_eeprom_word(word: *mut u32, address: i32) -> bool {
 
 pub(crate) fn fail_eeprom_write(address: crate::CustomEepromAddress) {
     EEPROM_WRITE_FAILURE.store(address.get(), Ordering::Relaxed);
+}
+
+pub unsafe fn read_nvm(buffer: *mut u8, offset: u32, len: u32) -> Option<bool> {
+    let Some(end) = offset
+        .checked_add(len)
+        .and_then(|end| usize::try_from(end).ok())
+    else {
+        return Some(false);
+    };
+    let start = usize::try_from(offset).ok()?;
+    let Some(buffer) = core::ptr::NonNull::new(buffer) else {
+        return Some(false);
+    };
+    if end > NVM_BYTES || NVM_FAILURE.load(Ordering::Relaxed) {
+        return Some(false);
+    }
+    for index in 0..usize::try_from(len).ok()? {
+        unsafe {
+            buffer
+                .as_ptr()
+                .add(index)
+                .write(NVM[start + index].load(Ordering::Relaxed));
+        }
+    }
+    Some(true)
+}
+
+pub unsafe fn write_nvm(buffer: *mut u8, offset: u32, len: u32) -> Option<bool> {
+    let Some(end) = offset
+        .checked_add(len)
+        .and_then(|end| usize::try_from(end).ok())
+    else {
+        return Some(false);
+    };
+    let start = usize::try_from(offset).ok()?;
+    let Some(buffer) = core::ptr::NonNull::new(buffer) else {
+        return Some(false);
+    };
+    if end > NVM_BYTES || NVM_FAILURE.load(Ordering::Relaxed) {
+        return Some(false);
+    }
+    for index in 0..usize::try_from(len).ok()? {
+        let byte = unsafe { buffer.as_ptr().add(index).read() };
+        NVM[start + index].store(byte, Ordering::Relaxed);
+    }
+    Some(true)
+}
+
+pub unsafe fn wipe_nvm() -> Option<bool> {
+    if NVM_FAILURE.load(Ordering::Relaxed) {
+        return Some(false);
+    }
+    NVM.iter().for_each(|byte| byte.store(0, Ordering::Relaxed));
+    Some(true)
 }
 
 fn load(value: &AtomicU32) -> f32 {

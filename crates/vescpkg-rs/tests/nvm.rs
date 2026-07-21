@@ -30,9 +30,7 @@ fn nvm_rejects_ranges_that_overflow_the_firmware_offset() {
     let mut bytes = [0; 2];
 
     assert_eq!(
-        firmware
-            .nvm()
-            .read(NvmOffset::new(u32::MAX), &mut bytes),
+        firmware.nvm().read(NvmOffset::new(u32::MAX), &mut bytes),
         Err(NvmError::InvalidRange)
     );
 }

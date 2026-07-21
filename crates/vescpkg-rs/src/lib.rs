@@ -36,6 +36,7 @@ mod lifecycle_core;
 /// Float math entrypoints backed by Rust `libm` on package and host builds.
 #[cfg(feature = "math")]
 mod math;
+mod nvm;
 #[cfg(feature = "math")]
 pub use math::{asin, cos, sin, sqrt, tan};
 mod runtime;
@@ -72,9 +73,10 @@ pub(crate) mod ffi {
         mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
         mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
         mc_set_brake_current, mc_set_current, mc_set_current_off_delay, mc_set_duty,
-        mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, store_eeprom_word,
-        timeout_reset, vesc_imu_get_quaternions, vesc_request_terminate, vesc_should_terminate,
-        vesc_sleep_us, vesc_spawn, vesc_thread_set_priority,
+        mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm,
+        store_eeprom_word, timeout_reset, vesc_imu_get_quaternions, vesc_request_terminate,
+        vesc_should_terminate, vesc_sleep_us, vesc_spawn, vesc_thread_set_priority, wipe_nvm,
+        write_nvm,
     };
     #[cfg(any(test, not(feature = "test-support")))]
     use vescpkg_rs_sys::raw as selected_ffi;
@@ -111,6 +113,7 @@ pub use imu::{Imu, ImuReadHandler};
 pub use init::{PackageStart, PackageStartError};
 pub use lifecycle_core::AppDataSendError;
 pub use motor::{MotorOutput, MotorTelemetry};
+pub use nvm::{Nvm, NvmError, NvmOffset};
 pub use runtime::{PackageRuntimeState, PackageStateAccess, PackageStateStore};
 pub use thread::{
     Firmware, FirmwareAppData, FirmwareClock, FirmwareThread, FirmwareThreads,
@@ -147,10 +150,11 @@ pub mod prelude {
         AnalogPin, AppDataHandler, AppDataSendError, ConfigBytes, ConfigXml, DigitalOutputLevel,
         DigitalPin, ExtensionDescriptor, ExtensionName, ExtensionRegistration, Firmware,
         FirmwareAppData, FirmwareClock, FirmwareThread, FirmwareThreads, Gpio, Imu, ImuReadHandler,
-        LbmExtension, LispArgs, LispIntegerError, LispValue, MotorOutput, MotorTelemetry,
-        PackageRuntimeState, PackageStart, PackageStartError, StatefulCustomConfigCallback,
-        StatefulLbmExtension, StatelessFirmwareThread, StatelessThreadContext, ThreadContext,
-        ThreadError, ThreadName, ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError,
+        LbmExtension, LispArgs, LispIntegerError, LispValue, MotorOutput, MotorTelemetry, Nvm,
+        NvmError, NvmOffset, PackageRuntimeState, PackageStart, PackageStartError,
+        StatefulCustomConfigCallback, StatefulLbmExtension, StatelessFirmwareThread,
+        StatelessThreadContext, ThreadContext, ThreadError, ThreadName, ThreadSpec,
+        ThreadWorkingAreaSize, ThreadWorkingAreaSizeError,
     };
 }
 

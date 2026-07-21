@@ -102,6 +102,8 @@ pub struct Firmware {
     #[cfg(not(test))]
     clock: FirmwareClock,
     #[cfg(not(test))]
+    nvm: crate::Nvm,
+    #[cfg(not(test))]
     gpio: crate::Gpio,
     #[cfg(not(test))]
     imu: crate::imu::ImuApi<crate::imu::RealImuBindings>,
@@ -128,6 +130,12 @@ impl Firmware {
     #[cfg(not(test))]
     pub fn clock(&self) -> &FirmwareClock {
         &self.clock
+    }
+
+    /// Borrow the firmware byte-addressed NVM capability.
+    #[cfg(not(test))]
+    pub fn nvm(&self) -> &crate::Nvm {
+        &self.nvm
     }
 
     /// Borrow firmware GPIO capabilities without exposing the binding type.
@@ -161,6 +169,7 @@ impl Firmware {
             threads: ThreadApi::new(RealThreadBindings),
             app_data: FirmwareAppData::new(),
             clock: FirmwareClock::new(),
+            nvm: crate::Nvm::new(),
             gpio: crate::Gpio::new(),
             imu: crate::imu::ImuApi::new(crate::imu::RealImuBindings),
             telemetry: crate::motor::MotorTelemetryApi::new(
