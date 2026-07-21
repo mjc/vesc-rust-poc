@@ -411,6 +411,8 @@ pub(super) fn refresh(
         if battery_voltage < high_voltage_threshold {
             state.high_voltage_ticks = system_time_ticks;
         }
+        let motor_duty = base.motor().duty_cycle().magnitude();
+        let above_wheelslip_duty_limit = motor_duty > state.duty_max_with_margin.ratio();
         let entered_reverse_stop = reverse_stop_entry_pending;
         if entered_reverse_stop {
             // Refloat carries an existing HV/LV/temperature target into
@@ -429,6 +431,8 @@ pub(super) fn refresh(
             ride_state =
                 ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::ReverseStop);
         }
+        // C map: these are the detection and active-wheelslip branches in
+        // `calculate_setpoint_target` at `third_party/refloat/src/main.c:551-575`.
         let wheelslip_branch_active = if traction_loss_detected {
             state.wheelslip_ticks = system_time_ticks;
             if darkride_active {
@@ -444,7 +448,7 @@ pub(super) fn refresh(
             if motor_acceleration.abs() < traction_loss.acceleration_clear {
                 state.traction_control = false;
             }
-            if base.motor().duty_cycle().magnitude() > state.duty_max_with_margin.ratio() {
+            if above_wheelslip_duty_limit {
                 state.wheelslip_ticks = system_time_ticks;
             } else if refloat_ticks_elapsed_seconds(
                 system_time_ticks,
@@ -567,8 +571,11 @@ pub(super) fn refresh(
             }
         }
         if matches!(ride_state.wheelslip(), RefloatWheelSlipState::Detected)
-            && base.motor().duty_cycle().magnitude() > state.duty_max_with_margin.ratio()
+            && above_wheelslip_duty_limit
         {
+            // Upstream forces the target back to zero after every protective
+            // selection while wheelslip remains above the motor duty limit at
+            // `third_party/refloat/src/main.c:719-721`.
             setpoints =
                 setpoints.with_board(RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::ZERO));
         }
