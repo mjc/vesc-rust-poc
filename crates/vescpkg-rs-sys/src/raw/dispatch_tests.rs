@@ -1,5 +1,5 @@
 use core::cell::Cell;
-use core::ffi::{c_char, c_int, c_uchar, c_void};
+use core::ffi::{c_char, c_int, c_uchar, c_uint, c_void};
 
 use crate::c_vesc_if;
 use crate::test_support::{empty_table, with_table};
@@ -16,9 +16,9 @@ use super::{
     mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
     mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
     mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, remote_state,
-    store_eeprom_word, vesc_clear_app_data_handler, vesc_mutex_create, vesc_mutex_lock,
+    read_nvm, store_eeprom_word, vesc_clear_app_data_handler, vesc_mutex_create, vesc_mutex_lock,
     vesc_mutex_unlock, vesc_send_app_data, vesc_set_app_data_handler, vesc_sleep_us,
-    vesc_system_time_ticks, vesc_thread_set_priority,
+    vesc_system_time_ticks, vesc_thread_set_priority, wipe_nvm, write_nvm,
 };
 
 struct SyncCounter(Cell<usize>);
@@ -518,6 +518,30 @@ extern "C" fn stub_mc_get_input_voltage_filtered() -> f32 {
     84.2
 }
 
+unsafe extern "C" fn stub_read_nvm(buffer: *mut u8, offset: c_uint, len: c_uint) -> bool {
+    let Some(buffer) = (unsafe { buffer.cast::<[u8; 4]>().as_mut() }) else {
+        return false;
+    };
+    if len != buffer.len() as c_uint {
+        return false;
+    }
+    buffer.copy_from_slice(&[
+        offset as u8,
+        offset.wrapping_add(1) as u8,
+        offset.wrapping_add(2) as u8,
+        offset.wrapping_add(3) as u8,
+    ]);
+    true
+}
+
+unsafe extern "C" fn stub_write_nvm(_buffer: *mut u8, _offset: c_uint, len: c_uint) -> bool {
+    len != 0
+}
+
+unsafe extern "C" fn stub_wipe_nvm() -> bool {
+    true
+}
+
 fn populated_table() -> VescIf {
     let mut table = empty_table();
     table.lbm_add_extension = Some(stub_lbm_add_extension);
@@ -576,6 +600,30 @@ fn with_populated_table<R>(body: impl FnOnce() -> R) -> R {
         reset_counters();
         body()
     })
+}
+
+#[test]
+fn nvm_dispatch_reports_firmware_results_and_absence() {
+    let mut table = populated_table();
+    table.read_nvm = Some(stub_read_nvm);
+    table.write_nvm = Some(stub_write_nvm);
+    table.wipe_nvm = Some(stub_wipe_nvm);
+
+    with_table(&table, || unsafe {
+        let mut bytes = [0; 4];
+        assert_eq!(read_nvm(bytes.as_mut_ptr(), 7, bytes.len() as c_uint), Some(true));
+        assert_eq!(bytes, [7, 8, 9, 10]);
+        assert_eq!(write_nvm(bytes.as_mut_ptr(), 7, bytes.len() as c_uint), Some(true));
+        assert_eq!(wipe_nvm(), Some(true));
+    });
+
+    let table = populated_table();
+    with_table(&table, || unsafe {
+        let mut bytes = [0; 4];
+        assert_eq!(read_nvm(bytes.as_mut_ptr(), 0, bytes.len() as c_uint), None);
+        assert_eq!(write_nvm(bytes.as_mut_ptr(), 0, bytes.len() as c_uint), None);
+        assert_eq!(wipe_nvm(), None);
+    });
 }
 
 #[test]
