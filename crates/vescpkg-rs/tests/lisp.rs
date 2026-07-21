@@ -41,4 +41,8 @@ fn lisp_values_expose_explicit_kind_predicates() {
     assert_eq!(pair.cdr(), Some(character));
     assert_eq!(pair.reverse_list(), Some(pair));
     assert_eq!(integer.reverse_list(), None);
+
+    let string = LispValue::from_u32(0x1234);
+    assert_eq!(string.with_str(|value| value.to_bytes()), Some(&b"vesc"[..]));
+    assert_eq!(integer.with_str(|value| value.to_bytes()), None);
 }
