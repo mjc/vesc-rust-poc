@@ -36,6 +36,41 @@ pub union EepromVar {
     pub as_float: f32,
 }
 
+impl EepromVar {
+    /// Construct an EEPROM value with the unsigned interpretation selected.
+    pub const fn from_u32(value: u32) -> Self {
+        Self { as_u32: value }
+    }
+
+    /// Construct an EEPROM value with the signed interpretation selected.
+    pub const fn from_i32(value: i32) -> Self {
+        Self { as_i32: value }
+    }
+
+    /// Construct an EEPROM value with the floating-point interpretation selected.
+    pub const fn from_float(value: f32) -> Self {
+        Self { as_float: value }
+    }
+
+    /// Read the value using the unsigned interpretation.
+    pub const fn read_u32(self) -> u32 {
+        // All bit patterns are valid for u32, so this interpretation is safe.
+        unsafe { self.as_u32 }
+    }
+
+    /// Read the value using the signed interpretation.
+    pub const fn read_i32(self) -> i32 {
+        // All bit patterns are valid for i32, so this interpretation is safe.
+        unsafe { self.as_i32 }
+    }
+
+    /// Read the value using the floating-point interpretation.
+    pub const fn read_float(self) -> f32 {
+        // All bit patterns are valid for f32, including NaNs and infinities.
+        unsafe { self.as_float }
+    }
+}
+
 /// CAN status message returned by the first status-message slots.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
