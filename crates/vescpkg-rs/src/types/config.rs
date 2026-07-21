@@ -511,6 +511,13 @@ semantic_scaled_config_field!(
     "Generated scaled-seconds field descriptor."
 );
 semantic_scaled_config_field!(
+    CustomConfigScaledVoltageField,
+    crate::Voltage,
+    crate::Voltage::from_volts,
+    crate::Voltage::as_volts,
+    "Generated scaled-voltage field descriptor."
+);
+semantic_scaled_config_field!(
     CustomConfigFrequencyField,
     crate::Frequency,
     crate::Frequency::from_hertz,
@@ -694,7 +701,7 @@ mod tests {
         CustomConfigMahonyPitchGainField, CustomConfigMahonyRollGainField,
         CustomConfigMotorCurrentField, CustomConfigPidScaleField, CustomConfigRateCurrentGainField,
         CustomConfigRatioField, CustomConfigResetField, CustomConfigSampleRateField,
-        CustomConfigSecondsField, CustomConfigVoltageField,
+        CustomConfigScaledVoltageField, CustomConfigSecondsField, CustomConfigVoltageField,
     };
     use crate::{ElectricalSpeed, Frequency, Rpm, SampleRate, VescSeconds, Voltage};
 
@@ -844,6 +851,10 @@ mod tests {
         assert_eq!(
             field!(CustomConfigSecondsField).read(&image),
             Some(crate::VescSeconds::from_seconds(12.3))
+        );
+        assert_eq!(
+            field!(CustomConfigScaledVoltageField).read(&image),
+            Some(crate::Voltage::from_volts(12.3))
         );
         assert_eq!(
             field!(CustomConfigMahonyPitchGainField).read(&image),
