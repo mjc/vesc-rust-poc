@@ -756,6 +756,7 @@ mod slots {
     fn_slot!(lbm_dec_as_u32 as unsafe extern "C" fn(crate::LbmValue) -> u32);
     fn_slot!(lbm_dec_as_i32 as unsafe extern "C" fn(u32) -> i32);
     fn_slot!(lbm_enc_i as unsafe extern "C" fn(i32) -> u32);
+    fn_slot!(lbm_enc_u32 as unsafe extern "C" fn(u32) -> LbmValue);
     fn_slot!(lbm_is_number as unsafe extern "C" fn(u32) -> bool);
     fn_slot!(lbm_is_char as unsafe extern "C" fn(LbmValue) -> bool);
     fn_slot!(lbm_is_symbol as unsafe extern "C" fn(LbmValue) -> bool);
@@ -954,6 +955,13 @@ pub unsafe fn lbm_enc_i(value: i32) -> LbmValue {
     unsafe {
         LbmValue(slots::lbm_enc_i()(value))
     }
+}
+
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn lbm_enc_u32(value: u32) -> LbmValue {
+    unsafe { slots::lbm_enc_u32()(value) }
 }
 
 /// # Safety
