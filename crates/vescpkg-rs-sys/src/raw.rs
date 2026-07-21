@@ -3,22 +3,146 @@
 use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescIfPresence};
 use core::ffi::{c_char, c_int, c_uchar, c_uint, c_void};
 
-type LbmFlatValue = c_void;
 type LibThread = *mut c_void;
 type LibMutex = *mut c_void;
 type LibSemaphore = *mut c_void;
 type GpioPort = c_void;
 type HwType = c_int;
-type CanStatusMsg = c_void;
-type CanStatusMsg2 = c_void;
-type CanStatusMsg3 = c_void;
-type CanStatusMsg4 = c_void;
-type CanStatusMsg5 = c_void;
-type CanStatusMsg6 = c_void;
-type PacketState = c_void;
-type EepromVar = c_void;
-type GnssData = c_void;
-type AttitudeInfo = c_void;
+
+/// Opaque LispBM flattening buffer from `lbm_flat_value_t`.
+#[repr(C)]
+#[allow(missing_docs)]
+pub struct LbmFlatValue {
+    pub buf: *mut u8,
+    pub buf_size: u32,
+    pub buf_pos: u32,
+}
+
+/// Header for an externally backed LispBM array.
+#[repr(C)]
+#[allow(missing_docs)]
+pub struct LbmArrayHeader {
+    pub size: u32,
+    pub data: *mut u32,
+}
+
+/// EEPROM ABI value union; the active interpretation is selected by the caller.
+#[repr(C)]
+#[derive(Clone, Copy)]
+#[allow(missing_docs)]
+pub union EepromVar {
+    pub as_u32: u32,
+    pub as_i32: i32,
+    pub as_float: f32,
+}
+
+/// CAN status message returned by the first status-message slots.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+#[allow(missing_docs)]
+pub struct CanStatusMsg {
+    pub id: c_int,
+    pub rx_time: u32,
+    pub rpm: f32,
+    pub current: f32,
+    pub duty: f32,
+}
+
+/// Extended CAN status message 2.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+#[allow(missing_docs)]
+pub struct CanStatusMsg2 {
+    pub id: c_int,
+    pub rx_time: u32,
+    pub amp_hours: f32,
+    pub amp_hours_charged: f32,
+}
+
+/// Extended CAN status message 3.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+#[allow(missing_docs)]
+pub struct CanStatusMsg3 {
+    pub id: c_int,
+    pub rx_time: u32,
+    pub watt_hours: f32,
+    pub watt_hours_charged: f32,
+}
+
+/// Extended CAN status message 4.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+#[allow(missing_docs)]
+pub struct CanStatusMsg4 {
+    pub id: c_int,
+    pub rx_time: u32,
+    pub temp_fet: f32,
+    pub temp_motor: f32,
+    pub current_in: f32,
+    pub pid_pos_now: f32,
+}
+
+/// Extended CAN status message 5.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+#[allow(missing_docs)]
+pub struct CanStatusMsg5 {
+    pub id: c_int,
+    pub rx_time: u32,
+    pub v_in: f32,
+    pub tacho_value: i32,
+}
+
+/// Extended CAN status message 6.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+#[allow(missing_docs)]
+pub struct CanStatusMsg6 {
+    pub id: c_int,
+    pub rx_time: u32,
+    pub adc_1: f32,
+    pub adc_2: f32,
+    pub adc_3: f32,
+    pub ppm: f32,
+}
+
+/// GNSS state mirrored from the firmware ABI.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+#[allow(missing_docs)]
+pub struct GnssData {
+    pub lat: f64,
+    pub lon: f64,
+    pub height: f32,
+    pub speed: f32,
+    pub hdop: f32,
+    pub ms_today: i32,
+    pub yy: i8,
+    pub mo: i8,
+    pub dd: i8,
+    pub last_update: u32,
+}
+
+/// AHRS attitude state mirrored from the firmware ABI.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+#[allow(missing_docs)]
+pub struct AttitudeInfo {
+    pub q0: f32,
+    pub q1: f32,
+    pub q2: f32,
+    pub q3: f32,
+    pub integral_fbx: f32,
+    pub integral_fby: f32,
+    pub integral_fbz: f32,
+    pub acc_mag_p: f32,
+    pub initial_update_done: c_int,
+    pub acc_confidence_decay: f32,
+    pub kp: f32,
+    pub ki: f32,
+    pub beta: f32,
+}
 
 /// Raw remote-control state mirrored from the firmware ABI.
 #[repr(C)]
@@ -37,6 +161,22 @@ type PwmCallback = unsafe extern "C" fn();
 type PacketSendCallback = unsafe extern "C" fn(*mut c_uchar, c_uint);
 type PacketProcessCallback = unsafe extern "C" fn(*mut c_uchar, c_uint);
 type TerminalCallback = unsafe extern "C" fn(c_int, *const *const c_char);
+
+const PACKET_MAX_PL_LEN: usize = 512;
+const PACKET_BUFFER_LEN: usize = PACKET_MAX_PL_LEN + 8;
+
+/// Packet framing state from `PACKET_STATE_t`.
+#[repr(C)]
+#[allow(missing_docs)]
+pub struct PacketState {
+    pub send_func: Option<PacketSendCallback>,
+    pub process_func: Option<PacketProcessCallback>,
+    pub rx_read_ptr: u32,
+    pub rx_write_ptr: u32,
+    pub bytes_left: c_int,
+    pub rx_buffer: [u8; PACKET_BUFFER_LEN],
+    pub tx_buffer: [u8; PACKET_BUFFER_LEN],
+}
 /// Refloat/VESC Tool custom-config serializer callback.
 ///
 /// Refloat `v1.2.1` passes `get_cfg` to `conf_custom_add_config` in

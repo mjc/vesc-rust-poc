@@ -260,7 +260,7 @@ extern "C" fn stub_lbm_is_number(value: u32) -> bool {
     value == 7
 }
 
-extern "C" fn stub_read_eeprom_var(word: *mut c_void, address: c_int) -> bool {
+extern "C" fn stub_read_eeprom_var(word: *mut super::EepromVar, address: c_int) -> bool {
     READ_EEPROM_VAR.inc();
     LAST_EEPROM_ADDRESS.set(address);
     let Some(word) = (unsafe { word.cast::<u32>().as_mut() }) else {
@@ -270,7 +270,7 @@ extern "C" fn stub_read_eeprom_var(word: *mut c_void, address: c_int) -> bool {
     true
 }
 
-extern "C" fn stub_store_eeprom_var(word: *mut c_void, address: c_int) -> bool {
+extern "C" fn stub_store_eeprom_var(word: *mut super::EepromVar, address: c_int) -> bool {
     STORE_EEPROM_VAR.inc();
     LAST_EEPROM_ADDRESS.set(address);
     let Some(word) = (unsafe { word.cast::<u32>().as_ref() }) else {

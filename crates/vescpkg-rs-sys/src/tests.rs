@@ -108,6 +108,39 @@ fn raw_vesc_if_mock_function_slots_have_pointer_layout() {
 }
 
 #[test]
+fn concrete_abi_types_match_the_pinned_stm32_word_layout() {
+    let pointer_size = core::mem::size_of::<usize>();
+    assert_eq!(core::mem::size_of::<crate::raw::EepromVar>(), 4);
+    assert_eq!(
+        core::mem::size_of::<crate::raw::LbmFlatValue>(),
+        pointer_size + 8
+    );
+    assert_eq!(
+        core::mem::size_of::<crate::raw::LbmArrayHeader>(),
+        pointer_size + 8
+    );
+    assert_eq!(core::mem::size_of::<crate::raw::CanStatusMsg>(), 20);
+    assert_eq!(core::mem::size_of::<crate::raw::CanStatusMsg2>(), 16);
+    assert_eq!(core::mem::size_of::<crate::raw::CanStatusMsg3>(), 16);
+    assert_eq!(core::mem::size_of::<crate::raw::CanStatusMsg4>(), 24);
+    assert_eq!(core::mem::size_of::<crate::raw::CanStatusMsg5>(), 16);
+    assert_eq!(core::mem::size_of::<crate::raw::CanStatusMsg6>(), 24);
+    assert_eq!(core::mem::size_of::<crate::raw::GnssData>(), 40);
+    assert_eq!(core::mem::size_of::<crate::raw::AttitudeInfo>(), 52);
+    assert_eq!(core::mem::size_of::<crate::raw::RemoteState>(), 16);
+    let packet_size = pointer_size * 2 + 12 + (512 + 8) * 2;
+    assert_eq!(
+        core::mem::size_of::<crate::raw::PacketState>(),
+        (packet_size + pointer_size - 1) / pointer_size * pointer_size
+    );
+    assert_eq!(core::mem::offset_of!(crate::raw::GnssData, last_update), 36);
+    assert_eq!(
+        core::mem::offset_of!(crate::raw::AttitudeInfo, initial_update_done),
+        32
+    );
+}
+
+#[test]
 fn vesc_if_slot_constants_name_the_package_header_offsets() {
     assert_eq!(VescIfAbi::BASE_ADDR, NativeAddress(0x1000_f800));
     assert_eq!(VescIfAbi::USED_SLOT_COUNT, VescIfAbi::USED_SLOTS.len());
