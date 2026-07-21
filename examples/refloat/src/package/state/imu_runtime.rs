@@ -8,6 +8,17 @@ use crate::bms::RefloatBmsFault;
 use crate::domain::RefloatBeepReason;
 use vescpkg_rs::prelude::{AngleDegrees, VescSeconds, Voltage};
 
+fn pack_voltage_threshold(
+    configured: Voltage,
+    battery_cell_count: Option<BatteryCellCount>,
+) -> Voltage {
+    if configured.as_volts() < 10.0 {
+        battery_cell_count.map_or(configured, |count| configured * count)
+    } else {
+        configured
+    }
+}
+
 pub(super) fn startup_ready_beep_count(
     warning_threshold: Voltage,
     battery_voltage: Voltage,
@@ -53,14 +64,10 @@ pub(super) fn refresh(
         (run_state, _) => run_state,
     };
     if resets_runtime_vars {
-        let configured_low_voltage = state.serialized_config.low_voltage_threshold();
-        let low_voltage_threshold = if configured_low_voltage.as_volts() < 10.0 {
-            state
-                .battery_cell_count
-                .map_or(configured_low_voltage, |count| configured_low_voltage * count)
-        } else {
-            configured_low_voltage
-        };
+        let low_voltage_threshold = pack_voltage_threshold(
+            state.serialized_config.low_voltage_threshold(),
+            state.battery_cell_count,
+        );
         let warning_threshold = low_voltage_threshold + Voltage::from_volts(5.0);
         let battery_voltage = base.motor().battery_voltage().voltage();
         if battery_voltage < warning_threshold {
@@ -439,16 +446,10 @@ pub(super) fn refresh(
         )
     };
     if matches!(run_state, RefloatRunState::Running) && !state_engage && !state_stop_fault {
-        let configured_high_voltage = state.serialized_config.high_voltage_threshold();
-        let high_voltage_threshold = if configured_high_voltage.as_volts() < 10.0 {
-            state
-                .battery_cell_count
-                .map_or(configured_high_voltage, |count| {
-                    configured_high_voltage * count
-                })
-        } else {
-            configured_high_voltage
-        };
+        let high_voltage_threshold = pack_voltage_threshold(
+            state.serialized_config.high_voltage_threshold(),
+            state.battery_cell_count,
+        );
         let battery_voltage = base.motor().battery_voltage().voltage();
         #[cfg(any(test, target_arch = "arm"))]
         let bms_cell_over_voltage = state.bms_faults.contains(RefloatBmsFault::CellOverVoltage);

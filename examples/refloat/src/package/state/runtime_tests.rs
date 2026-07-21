@@ -145,10 +145,7 @@ fn startup_ready_beep_count_truncates_and_caps_voltage_deficit_like_refloat() {
 
     for (battery_voltage, expected) in cases {
         assert_eq!(
-            super::imu_runtime::startup_ready_beep_count(
-                warning_threshold,
-                battery_voltage
-            ),
+            super::imu_runtime::startup_ready_beep_count(warning_threshold, battery_voltage),
             expected,
             "battery voltage: {battery_voltage:?}"
         );
