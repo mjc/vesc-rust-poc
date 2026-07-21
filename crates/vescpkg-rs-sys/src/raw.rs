@@ -768,6 +768,7 @@ mod slots {
     fn_slot!(lbm_cons as unsafe extern "C" fn(LbmValue, LbmValue) -> LbmValue);
     fn_slot!(lbm_car as unsafe extern "C" fn(LbmValue) -> LbmValue);
     fn_slot!(lbm_cdr as unsafe extern "C" fn(LbmValue) -> LbmValue);
+    fn_slot!(lbm_list_destructive_reverse as unsafe extern "C" fn(LbmValue) -> LbmValue);
     fn_slot!(set_app_data_handler as unsafe extern "C" fn(Option<AppDataHandler>) -> bool);
     fn_slot!(imu_set_read_callback as unsafe extern "C" fn(Option<ImuReadCallback>));
     fn_slot!(read_eeprom_var as unsafe extern "C" fn(*mut EepromVar, c_int) -> bool);
@@ -1053,6 +1054,13 @@ pub unsafe fn lbm_car(value: LbmValue) -> LbmValue {
 /// `value` must be a LispBM cons cell supplied by the firmware.
 pub unsafe fn lbm_cdr(value: LbmValue) -> LbmValue {
     unsafe { slots::lbm_cdr()(value) }
+}
+
+/// # Safety
+///
+/// `value` must be a mutable LispBM list owned by the current evaluation.
+pub unsafe fn lbm_list_destructive_reverse(value: LbmValue) -> LbmValue {
+    unsafe { slots::lbm_list_destructive_reverse()(value) }
 }
 
 /// # Safety

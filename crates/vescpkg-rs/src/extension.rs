@@ -135,6 +135,14 @@ impl LispValue {
             .then(|| Self::from_raw(unsafe { crate::ffi::lbm_cdr(self.raw()) }))
     }
 
+    /// Destructively reverse a firmware-owned list while retaining its handle.
+    #[cfg(not(test))]
+    pub fn reverse_list(self) -> Option<Self> {
+        self.is_cons().then(|| {
+            Self::from_raw(unsafe { crate::ffi::lbm_list_destructive_reverse(self.raw()) })
+        })
+    }
+
     /// Convert any LispBM numeric value to an `i32`.
     #[cfg(not(test))]
     pub fn decode_number_as_i32(self) -> Option<i32> {

@@ -368,6 +368,10 @@ pub unsafe fn lbm_cdr(_value: LbmValue) -> LbmValue {
     LbmValue(LBM_CONS_CDR.load(Ordering::Relaxed))
 }
 
+pub unsafe fn lbm_list_destructive_reverse(value: LbmValue) -> LbmValue {
+    value
+}
+
 pub unsafe fn lbm_is_char(value: LbmValue) -> bool {
     value.0 & 0x0f == 0x04
 }
