@@ -111,7 +111,6 @@ impl RefloatPackageState {
         config: crate::config::RefloatConfigImage,
     ) {
         self.serialized_config = config;
-        self.write_config_to_eeprom();
     }
 
     #[cfg(test)]
@@ -146,6 +145,7 @@ impl RefloatPackageState {
         // at byte 275.
         config.editor().clear_meta_is_default();
         self.serialized_config = config;
+        self.write_config_to_eeprom();
         // After a successful write, C calls `configure(d)` at
         // `third_party/refloat/src/main.c:2380-2382`, which refreshes the balance filter KP at
         // `third_party/refloat/src/main.c:158-160`.

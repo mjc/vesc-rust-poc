@@ -549,3 +549,25 @@ fn successful_config_write_reconfigures_and_acknowledges_like_refloat() {
         assert_eq!(changes.last(), Some(&expected_last));
     }
 }
+
+#[test]
+fn store_serialized_config_persists_for_restart_like_refloat_set_cfg() {
+    let _firmware = FirmwareTest::new();
+    let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    let mut bytes = default_refloat_config_bytes();
+    bytes.edit_refloat_config(|config| {
+        assert!(config.set_kp(vescpkg_rs::AngleCurrentGain::new(15.0)));
+    });
+
+    assert!(state.store_serialized_config(&bytes));
+
+    let restarted = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    assert_eq!(
+        restarted
+            .serialized_config
+            .balance()
+            .kp()
+            .as_amps_per_degree(),
+        15.0,
+    );
+}
