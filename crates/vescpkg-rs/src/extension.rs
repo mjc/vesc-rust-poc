@@ -25,7 +25,7 @@ const fn is_integer(value: u32) -> bool {
 }
 
 /// A LispBM value that can only be produced by the SDK's typed argument API.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LispValue(LbmValue);
 
 impl LispValue {
@@ -113,6 +113,26 @@ impl LispValue {
     #[must_use]
     pub fn is_byte_array(self) -> bool {
         unsafe { crate::ffi::lbm_is_byte_array(self.raw()) }
+    }
+
+    /// Construct a LispBM cons cell from two owned value handles.
+    #[cfg(not(test))]
+    pub fn cons(car: Self, cdr: Self) -> Self {
+        Self::from_raw(unsafe { crate::ffi::lbm_cons(car.raw(), cdr.raw()) })
+    }
+
+    /// Read the head of a cons cell while preserving its firmware ownership.
+    #[cfg(not(test))]
+    pub fn car(self) -> Option<Self> {
+        self.is_cons()
+            .then(|| Self::from_raw(unsafe { crate::ffi::lbm_car(self.raw()) }))
+    }
+
+    /// Read the tail of a cons cell while preserving its firmware ownership.
+    #[cfg(not(test))]
+    pub fn cdr(self) -> Option<Self> {
+        self.is_cons()
+            .then(|| Self::from_raw(unsafe { crate::ffi::lbm_cdr(self.raw()) }))
     }
 
     /// Convert any LispBM numeric value to an `i32`.

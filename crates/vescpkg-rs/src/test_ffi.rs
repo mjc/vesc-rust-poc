@@ -83,6 +83,8 @@ const NVM_BYTES: usize = 256;
 static NVM: [AtomicU8; NVM_BYTES] = [const { AtomicU8::new(0) }; NVM_BYTES];
 static NVM_FAILURE: AtomicBool = AtomicBool::new(false);
 static LBM_FLOAT_BITS: AtomicU32 = AtomicU32::new(0);
+static LBM_CONS_CAR: AtomicU32 = AtomicU32::new(0);
+static LBM_CONS_CDR: AtomicU32 = AtomicU32::new(0);
 static CLOCK_TICKS: AtomicU32 = AtomicU32::new(0);
 static TIMER_TICKS: AtomicU32 = AtomicU32::new(0);
 static MUTEX_TOKEN: u8 = 0;
@@ -352,6 +354,20 @@ pub unsafe fn lbm_enc_u32(value: u32) -> LbmValue {
     LbmValue(value << 4 | 0x08)
 }
 
+pub unsafe fn lbm_cons(car: LbmValue, cdr: LbmValue) -> LbmValue {
+    LBM_CONS_CAR.store(car.0, Ordering::Relaxed);
+    LBM_CONS_CDR.store(cdr.0, Ordering::Relaxed);
+    LbmValue(0x20)
+}
+
+pub unsafe fn lbm_car(_value: LbmValue) -> LbmValue {
+    LbmValue(LBM_CONS_CAR.load(Ordering::Relaxed))
+}
+
+pub unsafe fn lbm_cdr(_value: LbmValue) -> LbmValue {
+    LbmValue(LBM_CONS_CDR.load(Ordering::Relaxed))
+}
+
 pub unsafe fn lbm_is_char(value: LbmValue) -> bool {
     value.0 & 0x0f == 0x04
 }
@@ -361,7 +377,7 @@ pub unsafe fn lbm_is_symbol(_value: LbmValue) -> bool {
 }
 
 pub unsafe fn lbm_is_cons(_value: LbmValue) -> bool {
-    false
+    _value.0 == 0x20
 }
 
 pub unsafe fn lbm_is_byte_array(_value: LbmValue) -> bool {

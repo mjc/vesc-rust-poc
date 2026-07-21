@@ -765,6 +765,9 @@ mod slots {
     fn_slot!(lbm_is_symbol as unsafe extern "C" fn(LbmValue) -> bool);
     fn_slot!(lbm_is_cons as unsafe extern "C" fn(LbmValue) -> bool);
     fn_slot!(lbm_is_byte_array as unsafe extern "C" fn(LbmValue) -> bool);
+    fn_slot!(lbm_cons as unsafe extern "C" fn(LbmValue, LbmValue) -> LbmValue);
+    fn_slot!(lbm_car as unsafe extern "C" fn(LbmValue) -> LbmValue);
+    fn_slot!(lbm_cdr as unsafe extern "C" fn(LbmValue) -> LbmValue);
     fn_slot!(set_app_data_handler as unsafe extern "C" fn(Option<AppDataHandler>) -> bool);
     fn_slot!(imu_set_read_callback as unsafe extern "C" fn(Option<ImuReadCallback>));
     fn_slot!(read_eeprom_var as unsafe extern "C" fn(*mut EepromVar, c_int) -> bool);
@@ -1029,6 +1032,27 @@ pub unsafe fn lbm_is_cons(value: LbmValue) -> bool {
 /// `value` must be a LispBM value supplied by the firmware.
 pub unsafe fn lbm_is_byte_array(value: LbmValue) -> bool {
     unsafe { slots::lbm_is_byte_array()(value) }
+}
+
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn lbm_cons(car: LbmValue, cdr: LbmValue) -> LbmValue {
+    unsafe { slots::lbm_cons()(car, cdr) }
+}
+
+/// # Safety
+///
+/// `value` must be a LispBM cons cell supplied by the firmware.
+pub unsafe fn lbm_car(value: LbmValue) -> LbmValue {
+    unsafe { slots::lbm_car()(value) }
+}
+
+/// # Safety
+///
+/// `value` must be a LispBM cons cell supplied by the firmware.
+pub unsafe fn lbm_cdr(value: LbmValue) -> LbmValue {
+    unsafe { slots::lbm_cdr()(value) }
 }
 
 /// # Safety
