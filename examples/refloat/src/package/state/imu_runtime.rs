@@ -471,6 +471,45 @@ pub(super) fn refresh(
                 );
             }
         }
+        if !matches!(
+            ride_state.setpoint_adjustment(),
+            RefloatSetpointAdjustment::Centering | RefloatSetpointAdjustment::ReverseStop
+        ) && !matches!(ride_state.wheelslip(), RefloatWheelSlipState::Detected)
+            && !matches!(ride_state.mode(), RefloatMode::Flywheel)
+        {
+            let duty_pushback_active = base.motor().duty_cycle().ratio().as_ratio()
+                > state.serialized_config.duty_pushback_threshold().as_ratio();
+            let board_setpoint = if duty_pushback_active {
+                let angle = state.serialized_config.duty_pushback_angle();
+                ride_state =
+                    ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackDuty);
+                Some(if motor_erpm.is_positive() {
+                    angle
+                } else {
+                    -angle
+                })
+            } else if matches!(
+                ride_state.setpoint_adjustment(),
+                RefloatSetpointAdjustment::PushbackDuty
+            ) {
+                ride_state = ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::None);
+                Some(AngleDegrees::ZERO)
+            } else {
+                None
+            };
+            if let Some(board_setpoint) = board_setpoint {
+                // Refloat selects duty pushback after reverse stop and
+                // wheelslip at `third_party/refloat/src/main.c:551-592`.
+                setpoints = RefloatRealtimeRuntimeSetpoints::new(
+                    RefloatRealtimeRuntimeSetpoint::new(board_setpoint),
+                    setpoints.atr(),
+                    setpoints.brake_tilt(),
+                    setpoints.torque_tilt(),
+                    setpoints.turn_tilt(),
+                    setpoints.remote(),
+                );
+            }
+        }
         let gyro = imu.angular_rate();
         // Upstream RUNNING executes this exact balance-current pipeline at
         // `third_party/refloat/src/main.c:918-956`; the helper keeps the
