@@ -19,8 +19,9 @@ use crate::motor_control::RefloatMotorControl;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{AdcVoltage, FirmwareVersion};
 use vescpkg_rs::prelude::{
-    AngleRadians, BatteryCellCount, Current, DutyCycleLimit, MotorCurrent, MotorCurrentLimit,
-    Ratio, Rpm, TimestampTicks,
+    AngleRadians, BatteryCellCount, Current, DutyCycleLimit, MosfetTemperature, MotorCurrent,
+    MotorCurrentLimit, MotorTemperature, Ratio, Rpm, Temperature, TemperatureLimitStart,
+    TimestampTicks,
 };
 use vescpkg_rs::{Imu, MotorOutput, MotorTelemetry};
 
@@ -104,6 +105,10 @@ pub struct RefloatPackageState {
     duty_max_with_margin: DutyCycleLimit,
     motor_current_max: MotorCurrentLimit,
     motor_current_min: MotorCurrentLimit,
+    mosfet_temperature: MosfetTemperature,
+    motor_temperature: MotorTemperature,
+    mosfet_temperature_limit_start: TemperatureLimitStart,
+    motor_temperature_limit_start: TemperatureLimitStart,
     battery_cell_count: Option<BatteryCellCount>,
     #[cfg(any(test, target_arch = "arm"))]
     firmware_version: Option<FirmwareVersion>,
@@ -151,6 +156,10 @@ impl RefloatPackageState {
             duty_max_with_margin: DutyCycleLimit::new(Ratio::from_ratio_const(0.0)),
             motor_current_max: MotorCurrentLimit::new(Current::ZERO),
             motor_current_min: MotorCurrentLimit::new(Current::ZERO),
+            mosfet_temperature: MosfetTemperature::new(Temperature::ZERO),
+            motor_temperature: MotorTemperature::new(Temperature::ZERO),
+            mosfet_temperature_limit_start: TemperatureLimitStart::new(Temperature::ZERO),
+            motor_temperature_limit_start: TemperatureLimitStart::new(Temperature::ZERO),
             battery_cell_count: None,
             #[cfg(any(test, target_arch = "arm"))]
             firmware_version: None,

@@ -951,6 +951,53 @@ fn first_beeper_high_tick(state: &mut RefloatPackageState, limit: usize) -> Opti
     (1..=limit).find(|_| matches!(state.tick_beeper(), Some(RefloatBeeperLevel::High)))
 }
 
+#[test]
+fn running_temperature_warning_uses_refloat_margin_priority_and_long_alert() {
+    let cases = [
+        (
+            MosfetTemperature::new(Temperature::from_degrees_celsius(82.5)),
+            MotorTemperature::new(Temperature::from_degrees_celsius(20.0)),
+            RefloatBeepReason::MosfetTemperature,
+        ),
+        (
+            MosfetTemperature::new(Temperature::from_degrees_celsius(20.0)),
+            MotorTemperature::new(Temperature::from_degrees_celsius(92.5)),
+            RefloatBeepReason::MotorTemperature,
+        ),
+        (
+            MosfetTemperature::new(Temperature::from_degrees_celsius(82.5)),
+            MotorTemperature::new(Temperature::from_degrees_celsius(92.5)),
+            RefloatBeepReason::MosfetTemperature,
+        ),
+    ];
+
+    for (mosfet_temperature, motor_temperature, expected_reason) in cases {
+        let (app_data, telemetry, mut state) = running_protective_pushback_fixture(
+            SignedRatio::from_ratio_const(0.0),
+            Rpm::from_revolutions_per_minute(1_000.0),
+            RefloatSetpointAdjustment::None,
+            InputVoltage::new(Voltage::from_volts(72.0)),
+        );
+        let telemetry = telemetry
+            .with_temperature_limit_starts(
+                TemperatureLimitStart::new(Temperature::from_degrees_celsius(85.0)),
+                TemperatureLimitStart::new(Temperature::from_degrees_celsius(95.0)),
+            )
+            .with_temperatures(mosfet_temperature, motor_temperature);
+        enable_beeper(&mut state);
+
+        tick_running_protective_pushback(&mut state, &telemetry, app_data);
+
+        let base = state.all_data_payloads().base();
+        assert_eq!(base.status().beep_reason(), expected_reason);
+        assert_eq!(
+            base.status().ride_state().setpoint_adjustment(),
+            RefloatSetpointAdjustment::None
+        );
+        assert_eq!(first_beeper_high_tick(&mut state, 600), Some(600));
+    }
+}
+
 fn record_bms_sample(
     state: &mut RefloatPackageState,
     cell_low_voltage: Voltage,

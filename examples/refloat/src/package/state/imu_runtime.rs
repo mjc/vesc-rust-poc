@@ -6,7 +6,7 @@ use super::*;
 #[cfg(any(test, target_arch = "arm"))]
 use crate::bms::RefloatBmsFault;
 use crate::domain::RefloatBeepReason;
-use vescpkg_rs::prelude::{AngleDegrees, VescSeconds, Voltage};
+use vescpkg_rs::prelude::{AngleDegrees, Temperature, VescSeconds, Voltage};
 
 fn pack_voltage_threshold(
     configured: Voltage,
@@ -480,6 +480,28 @@ pub(super) fn refresh(
         };
         #[cfg(not(any(test, target_arch = "arm")))]
         let bms_temperature_reason: Option<RefloatBeepReason> = None;
+        let temperature_warning_margin = Temperature::from_degrees_celsius(3.0);
+        let temperature_tiltback_margin = Temperature::from_degrees_celsius(1.0);
+        let mosfet_temperature_threshold =
+            state.mosfet_temperature_limit_start.temperature() - temperature_warning_margin;
+        let motor_temperature_threshold =
+            state.motor_temperature_limit_start.temperature() - temperature_warning_margin;
+        let motor_temperature_warning =
+            if state.mosfet_temperature.temperature() > mosfet_temperature_threshold {
+                Some((
+                    RefloatBeepReason::MosfetTemperature,
+                    state.mosfet_temperature.temperature()
+                        > mosfet_temperature_threshold + temperature_tiltback_margin,
+                ))
+            } else if state.motor_temperature.temperature() > motor_temperature_threshold {
+                Some((
+                    RefloatBeepReason::MotorTemperature,
+                    state.motor_temperature.temperature()
+                        > motor_temperature_threshold + temperature_tiltback_margin,
+                ))
+            } else {
+                None
+            };
         #[cfg(any(test, target_arch = "arm"))]
         let bms_cell_under_voltage = state.bms_faults.contains(RefloatBmsFault::CellUnderVoltage);
         #[cfg(not(any(test, target_arch = "arm")))]
@@ -656,6 +678,23 @@ pub(super) fn refresh(
                 } else {
                     -angle
                 })
+            } else if let Some((temperature_reason, tiltback)) = motor_temperature_warning {
+                beep_reason = temperature_reason;
+                beeper_alert = Some(RefloatBeeperAlert::Long(RefloatBeeperCount::THREE));
+                if tiltback {
+                    let angle = state.serialized_config.low_voltage_pushback_angle();
+                    ride_state = ride_state
+                        .with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackTemperature);
+                    Some(if motor_erpm.is_positive() {
+                        angle
+                    } else {
+                        -angle
+                    })
+                } else {
+                    ride_state =
+                        ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::None);
+                    None
+                }
             } else if let Some(temperature_reason) = bms_temperature_reason {
                 beep_reason = temperature_reason;
                 beeper_alert = Some(RefloatBeeperAlert::Long(RefloatBeeperCount::THREE));
