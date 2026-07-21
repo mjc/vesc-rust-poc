@@ -54,6 +54,12 @@ impl LispValue {
         Self::from_raw(unsafe { crate::ffi::lbm_enc_u32(value) })
     }
 
+    /// Encode a signed integer through the firmware's LispBM representation.
+    #[cfg(not(test))]
+    pub fn from_i32(value: i32) -> Self {
+        Self::from_raw(unsafe { crate::ffi::lbm_enc_i(value) })
+    }
+
     /// Return whether this value is an immediate LispBM integer.
     #[must_use]
     pub const fn is_integer(self) -> bool {

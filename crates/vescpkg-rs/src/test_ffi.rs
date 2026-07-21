@@ -318,6 +318,14 @@ pub unsafe fn lbm_dec_as_u32(value: LbmValue) -> u32 {
     (value.0 as i32 >> 4) as u32
 }
 
+pub unsafe fn lbm_dec_as_i32(value: LbmValue) -> i32 {
+    (value.0 as i32) >> 4
+}
+
+pub unsafe fn lbm_enc_i(value: i32) -> LbmValue {
+    LbmValue((value << 4) as u32 | 0x08)
+}
+
 pub unsafe fn lbm_enc_u32(value: u32) -> LbmValue {
     LbmValue(value << 4 | 0x08)
 }

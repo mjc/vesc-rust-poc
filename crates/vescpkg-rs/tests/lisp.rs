@@ -22,5 +22,5 @@ fn lisp_values_expose_explicit_kind_predicates() {
     assert_eq!(encoded.decode_number_as_u32(), Some(23));
 
     let signed = LispValue::from_i32(41);
-    assert_eq!(signed.decode_number_as_i32(), Some(42));
+    assert_eq!(signed.decode_number_as_i32(), Some(41));
 }
