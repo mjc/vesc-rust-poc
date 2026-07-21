@@ -261,6 +261,7 @@ pub(super) fn handle_runtime_tune_packet(state: &mut RefloatPackageState, bytes:
         state.alert_beeper(RefloatBeeperAlert::Long(RefloatBeeperCount::ONE));
     }
 
+    state.refresh_balance_filter_config();
     state.refresh_config_runtime_state();
     true
 }
@@ -422,6 +423,7 @@ pub(super) fn handle_other_tune_packet(state: &mut RefloatPackageState, bytes: &
     }
 
     debug_assert!(updated);
+    state.refresh_balance_filter_config();
     state.refresh_config_runtime_state();
     true
 }
