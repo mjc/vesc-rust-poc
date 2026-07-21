@@ -440,6 +440,31 @@ fn running_runtime_fixture() -> (TimestampTicks, FirmwareTest, RefloatPackageSta
     (now, telemetry, state)
 }
 
+fn ready_bms_fixture() -> (FirmwareTest, RefloatPackageState) {
+    let telemetry = FirmwareTest::new();
+    telemetry.set_imu_ready(true);
+    let payloads =
+        sample_all_data_payloads_with_ride_state(RefloatRunState::Ready, RefloatMode::Normal);
+    let base = payloads.base();
+    let base = RefloatAllDataBasePayload::new(
+        base.balance_current(),
+        base.attitude(),
+        base.status(),
+        RefloatFootpadSample::new(Voltage::ZERO, Voltage::ZERO, RefloatFootpadState::None),
+        base.setpoints(),
+        base.booster_current(),
+        base.motor(),
+    );
+    let state = RefloatPackageState::new(RefloatAllDataPayloads::new(
+        base,
+        payloads.mode2(),
+        payloads.mode3(),
+        payloads.mode4(),
+    ));
+
+    (telemetry, state)
+}
+
 fn running_reverse_stop_fixture(
     reverse_total_erpm: Rpm,
     board_setpoint: AngleDegrees,
@@ -1283,6 +1308,64 @@ fn bms_cell_under_voltage_bypasses_pack_sag_checks_like_refloat() {
     assert_eq!(
         base.status().beep_reason(),
         RefloatBeepReason::CellLowVoltage
+    );
+}
+
+#[test]
+fn ready_bms_connection_alert_uses_strict_fifteen_second_timer_like_refloat() {
+    let (telemetry, mut state) = ready_bms_fixture();
+    enable_bms(&mut state);
+    record_bms_sample(
+        &mut state,
+        Voltage::from_volts(4.0),
+        Voltage::from_volts(4.1),
+        RefloatBmsTemperature::from_degrees_celsius(20),
+        RefloatBmsTemperature::from_degrees_celsius(30),
+        RefloatBmsTemperature::from_degrees_celsius(35),
+        VescSeconds::from_seconds(6.0),
+    );
+    state.refresh_bms_runtime_state(TimestampTicks::from_ticks(0));
+    state.refresh_bms_runtime_state(TimestampTicks::from_ticks(50_001));
+
+    state.refresh_imu_runtime_state(telemetry.imu(), TimestampTicks::from_ticks(150_000));
+    assert_ne!(
+        state.all_data_payloads().base().status().beep_reason(),
+        RefloatBeepReason::BmsConnection,
+    );
+
+    state.refresh_imu_runtime_state(telemetry.imu(), TimestampTicks::from_ticks(150_001));
+    assert_eq!(
+        state.all_data_payloads().base().status().beep_reason(),
+        RefloatBeepReason::BmsConnection,
+    );
+}
+
+#[test]
+fn ready_bms_cell_balance_alert_requires_disengage_and_alert_delays_like_refloat() {
+    let (telemetry, mut state) = ready_bms_fixture();
+    enable_bms(&mut state);
+    record_bms_sample(
+        &mut state,
+        Voltage::from_volts(3.8),
+        Voltage::from_volts(4.1),
+        RefloatBmsTemperature::from_degrees_celsius(20),
+        RefloatBmsTemperature::from_degrees_celsius(30),
+        RefloatBmsTemperature::from_degrees_celsius(35),
+        VescSeconds::ZERO,
+    );
+    state.refresh_bms_runtime_state(TimestampTicks::from_ticks(0));
+    state.disengage_ticks = TimestampTicks::from_ticks(100_000);
+
+    state.refresh_imu_runtime_state(telemetry.imu(), TimestampTicks::from_ticks(150_000));
+    assert_ne!(
+        state.all_data_payloads().base().status().beep_reason(),
+        RefloatBeepReason::CellBalance,
+    );
+
+    state.refresh_imu_runtime_state(telemetry.imu(), TimestampTicks::from_ticks(150_001));
+    assert_eq!(
+        state.all_data_payloads().base().status().beep_reason(),
+        RefloatBeepReason::CellBalance,
     );
 }
 

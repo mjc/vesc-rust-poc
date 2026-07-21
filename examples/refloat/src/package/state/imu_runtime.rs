@@ -705,6 +705,22 @@ pub(super) fn refresh(
     {
         state.request_motor_current(current);
     }
+    #[cfg(any(test, target_arch = "arm"))]
+    if matches!(run_state, RefloatRunState::Ready) && !ready_flywheel_stop {
+        let connection_fault = state.bms_faults.contains(RefloatBmsFault::Connection);
+        let balance_fault = state.bms_faults.contains(RefloatBmsFault::CellBalance)
+            && refloat_ticks_elapsed(system_time_ticks, state.disengage_ticks, 5);
+        if (connection_fault || balance_fault)
+            && refloat_ticks_elapsed(system_time_ticks, state.bms_alert_ticks, 15)
+        {
+            state.bms_alert_ticks = system_time_ticks;
+            beep_reason = if connection_fault {
+                RefloatBeepReason::BmsConnection
+            } else {
+                RefloatBeepReason::CellBalance
+            };
+        }
+    }
     // C publishes the just-refreshed `imu.balance_pitch` through app-data;
     // normal mode comes from the balance filter at `third_party/refloat/src/imu.c:35-41`, while
     // FLYWHEEL mirrors raw pitch at `third_party/refloat/src/imu.c:56-58`.
