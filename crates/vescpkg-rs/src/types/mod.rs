@@ -54,8 +54,9 @@ pub use config::{
     CustomConfigMahonyRollGainField, CustomConfigMotorCurrentField, CustomConfigPidScaleField,
     CustomConfigRateCurrentGainField, CustomConfigRatioField, CustomConfigResetField,
     CustomConfigSampleRateField, CustomConfigScaledVoltageField, CustomConfigSecondsField,
-    CustomConfigVoltageField, FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance,
-    GearRatio, GearRatioError, MotorPoleCount, MotorPoleCountError, WheelDiameter, WireByte,
+    CustomConfigVoltageField, CustomConfigWireByteField, FocMotorFluxLinkage, FocMotorInductance,
+    FocMotorResistance, GearRatio, GearRatioError, MotorPoleCount, MotorPoleCountError,
+    WheelDiameter, WireByte,
 };
 pub use control::{
     AngleCurrentGain, IntegralCurrentGain, MahonyPitchGain, MahonyRollGain, PidScale,

@@ -369,6 +369,35 @@ impl CustomConfigFlagField {
     }
 }
 
+/// Generated raw-byte custom-config field descriptor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct CustomConfigWireByteField(CustomConfigOffset);
+
+impl CustomConfigWireByteField {
+    #[doc(hidden)]
+    pub const fn __from_generated<const LEN: usize>(offset: usize) -> Self {
+        assert!(offset < LEN, "generated config field is out of bounds");
+        Self(CustomConfigOffset::new(offset))
+    }
+
+    /// Read the field without erasing its wire type.
+    #[inline(always)]
+    pub fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> Option<WireByte> {
+        image.0.get(self.0.get()).copied().map(WireByte::new)
+    }
+
+    /// Write the field without exposing primitive conversion to package code.
+    #[inline(always)]
+    pub fn write<const LEN: usize>(
+        self,
+        editor: &mut CustomConfigEditor<'_, LEN>,
+        value: WireByte,
+    ) -> Option<()> {
+        editor.set_byte_at(self.0.get(), value.0)
+    }
+}
+
 /// Generated enum custom-config field descriptor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
@@ -732,10 +761,28 @@ mod tests {
         CustomConfigMotorCurrentField, CustomConfigPidScaleField, CustomConfigRateCurrentGainField,
         CustomConfigRatioField, CustomConfigResetField, CustomConfigSampleRateField,
         CustomConfigScaledVoltageField, CustomConfigSecondsField, CustomConfigVoltageField,
+        CustomConfigWireByteField, WireByte,
     };
     use crate::{ElectricalSpeed, Frequency, Rpm, SampleRate, VescSeconds, Voltage};
 
     const SIGNATURE: [u8; 4] = [0x90, 0xb7, 0xa9, 0xba];
+
+    #[test]
+    fn wire_byte_field_round_trips_without_erasing_its_type() {
+        let field = crate::generated_custom_config_field!(
+            CustomConfigWireByteField,
+            len: 1,
+            offset: 0
+        );
+        let mut image = CustomConfigImage::new([7]);
+
+        assert_eq!(field.read(&image), Some(WireByte::new(7)));
+        assert_eq!(
+            field.write(&mut image.editor(), WireByte::new(42)),
+            Some(())
+        );
+        assert_eq!(field.read(&image), Some(WireByte::new(42)));
+    }
 
     #[test]
     fn custom_config_image_rejects_wrong_length_or_signature() {
