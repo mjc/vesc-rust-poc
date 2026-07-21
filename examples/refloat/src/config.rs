@@ -76,7 +76,6 @@ impl RefloatConfigImage {
     // Generated `is_beeper_enabled` follows the 18-byte hardware LED block
     // beginning at offset 224; upstream serializes it immediately before
     // `disabled` at offset 243 (`third_party/refloat/src/conf/settings.xml:4049-4064`).
-    #[cfg(any(test, target_arch = "arm"))]
     const BEEPER_ENABLED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 242);
 
     // Generated `hardware.leds.mode` is the first field in the final hardware
@@ -195,7 +194,6 @@ impl RefloatConfigImage {
         generated_field(Self::LOW_VOLTAGE_PUSHBACK_ANGLE_FIELD.read(self))
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn beeper_enabled(&self) -> bool {
         self.flag(Self::BEEPER_ENABLED_FIELD)
     }

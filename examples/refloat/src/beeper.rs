@@ -1,6 +1,7 @@
 //! Refloat external-beeper sequencing.
 
 /// External-beeper output level.
+#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RefloatBeeperLevel {
     Low,
@@ -12,6 +13,7 @@ pub(crate) enum RefloatBeeperLevel {
 pub(crate) enum RefloatBeeperAlert {
     ThreeShort,
     ThreeLong,
+    #[cfg(any(test, target_arch = "arm"))]
     FourShort,
 }
 
@@ -21,12 +23,14 @@ struct RefloatBeeperTransitions(u8);
 impl RefloatBeeperTransitions {
     const NONE: Self = Self(0);
     const THREE_BEEPS: Self = Self(7);
+    #[cfg(any(test, target_arch = "arm"))]
     const FOUR_BEEPS: Self = Self(9);
 
     const fn is_empty(self) -> bool {
         self.0 == 0
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
     fn advance(&mut self) -> RefloatBeeperLevel {
         self.0 -= 1;
         if self.0 & 1 == 1 {
@@ -51,6 +55,7 @@ struct RefloatBeeperCountdown(u16);
 impl RefloatBeeperCountdown {
     const IDLE: Self = Self(0);
 
+    #[cfg(any(test, target_arch = "arm"))]
     fn tick(&mut self) -> bool {
         self.0 -= 1;
         self.0 == 0
@@ -94,6 +99,7 @@ impl RefloatBeeper {
                 self.transitions = RefloatBeeperTransitions::THREE_BEEPS;
                 self.period = RefloatBeeperPeriod::LONG;
             }
+            #[cfg(any(test, target_arch = "arm"))]
             RefloatBeeperAlert::FourShort => {
                 self.transitions = RefloatBeeperTransitions::FOUR_BEEPS;
                 self.period = RefloatBeeperPeriod::SHORT;
@@ -102,6 +108,11 @@ impl RefloatBeeper {
         self.countdown.restart(self.period);
     }
 
+    pub(crate) fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn tick(&mut self) -> Option<RefloatBeeperLevel> {
         if !self.enabled || self.transitions.is_empty() || !self.countdown.tick() {
             return None;

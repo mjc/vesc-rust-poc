@@ -1,6 +1,9 @@
 use super::time::{refloat_ticks_elapsed, refloat_ticks_elapsed_seconds};
 use crate::balance::{BalanceFilter, LoopInput, LoopState};
 #[cfg(any(test, target_arch = "arm"))]
+use crate::beeper::RefloatBeeperLevel;
+use crate::beeper::{RefloatBeeper, RefloatBeeperAlert};
+#[cfg(any(test, target_arch = "arm"))]
 use crate::bms::RefloatBmsFaults;
 use crate::bms::RefloatBmsSample;
 use crate::config::*;
@@ -69,6 +72,7 @@ fn refloat_command_payload(bytes: &[u8], command: RefloatAppDataCommand) -> Opti
 pub struct RefloatPackageState {
     all_data_payloads: RefloatAllDataPayloads,
     serialized_config: RefloatConfigImage,
+    beeper: RefloatBeeper,
     bms_sample: RefloatBmsSample,
     #[cfg(any(test, target_arch = "arm"))]
     bms_faults: RefloatBmsFaults,
@@ -107,12 +111,14 @@ pub struct RefloatPackageState {
 impl RefloatPackageState {
     /// Build app-data state from the current all-data payload snapshot.
     pub fn new(all_data_payloads: RefloatAllDataPayloads) -> Self {
+        let serialized_config = RefloatConfigImage::defaults();
         Self {
             all_data_payloads,
             // Upstream `data_init` reads EEPROM and falls back to generated
             // defaults at `third_party/refloat/src/main.c:1160-1185`; full EEPROM parity remains a
             // later source-backed slice.
-            serialized_config: RefloatConfigImage::defaults(),
+            serialized_config,
+            beeper: RefloatBeeper::new(serialized_config.beeper_enabled()),
             bms_sample: RefloatBmsSample::source_startup(),
             #[cfg(any(test, target_arch = "arm"))]
             bms_faults: RefloatBmsFaults::NONE,
@@ -157,6 +163,15 @@ impl RefloatPackageState {
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn record_bms_sample(&mut self, sample: RefloatBmsSample) {
         self.bms_sample = sample;
+    }
+
+    pub(crate) fn alert_beeper(&mut self, alert: RefloatBeeperAlert) {
+        self.beeper.alert(alert);
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn tick_beeper(&mut self) -> Option<RefloatBeeperLevel> {
+        self.beeper.tick()
     }
 
     #[cfg(any(test, target_arch = "arm"))]

@@ -23,7 +23,6 @@ extern crate std;
 static HOST_ALLOCATOR: std::alloc::System = std::alloc::System;
 
 mod balance;
-#[cfg(test)]
 mod beeper;
 pub mod bms;
 mod config;
