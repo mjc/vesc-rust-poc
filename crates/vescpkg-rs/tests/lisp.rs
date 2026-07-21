@@ -39,4 +39,6 @@ fn lisp_values_expose_explicit_kind_predicates() {
     assert!(pair.is_cons());
     assert_eq!(pair.car(), Some(integer));
     assert_eq!(pair.cdr(), Some(character));
+    assert_eq!(pair.reverse_list(), Some(pair));
+    assert_eq!(integer.reverse_list(), None);
 }
