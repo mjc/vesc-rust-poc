@@ -1,6 +1,6 @@
-use super::RefloatPackageState;
+use super::{RefloatPackageState, config_storage::REFLOAT_EEPROM_LEN};
 use crate::beeper::RefloatBeeperLevel;
-use crate::config::{REFLOAT_CONFIG_LEN, RefloatConfigImage};
+use crate::config::RefloatConfigImage;
 use crate::domain::{
     REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataPayloads, RefloatAppDataCommand, RefloatMode,
     RefloatRunState,
@@ -562,9 +562,17 @@ fn store_serialized_config_persists_for_restart_like_refloat_set_cfg() {
     });
 
     assert!(state.store_serialized_config(&bytes));
-    let mut persisted = [0; REFLOAT_CONFIG_LEN];
+    let mut persisted = [0; REFLOAT_EEPROM_LEN];
     assert!(firmware.eeprom().read_bytes(&mut persisted));
-    assert_eq!(persisted, *state.serialized_config.as_bytes());
+    assert_eq!(
+        &persisted[..state.serialized_config.as_bytes().len()],
+        state.serialized_config.as_bytes(),
+    );
+    assert!(
+        persisted[state.serialized_config.as_bytes().len()..]
+            .iter()
+            .all(|byte| *byte == 0)
+    );
 
     let restarted =
         RefloatPackageState::from_persisted_config(RefloatAllDataPayloads::source_startup());

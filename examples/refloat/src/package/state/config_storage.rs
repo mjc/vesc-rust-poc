@@ -4,16 +4,20 @@ use crate::domain::{
     REFLOAT_APP_DATA_PACKAGE_ID, RefloatAppDataCommand, RefloatMode, RefloatRunState,
 };
 
+pub(super) const REFLOAT_EEPROM_LEN: usize = 320;
+
 impl RefloatPackageState {
     fn write_config_to_eeprom(&self) -> bool {
-        vescpkg_rs::CustomEeprom::new().write_bytes(self.serialized_config.as_bytes())
+        let mut image = [0; REFLOAT_EEPROM_LEN];
+        image[..REFLOAT_CONFIG_LEN].copy_from_slice(self.serialized_config.as_bytes());
+        vescpkg_rs::CustomEeprom::new().write_bytes(&image)
     }
 
     pub(super) fn read_config_from_eeprom(&mut self) {
-        let mut bytes = [0_u8; REFLOAT_CONFIG_LEN];
-        let read = vescpkg_rs::CustomEeprom::new().read_bytes(&mut bytes);
+        let mut image = [0; REFLOAT_EEPROM_LEN];
+        let read = vescpkg_rs::CustomEeprom::new().read_bytes(&mut image);
         self.serialized_config = read
-            .then(|| RefloatConfigImage::from_serialized(&bytes))
+            .then(|| RefloatConfigImage::from_serialized(&image[..REFLOAT_CONFIG_LEN]))
             .flatten()
             .unwrap_or_else(RefloatConfigImage::defaults);
     }
