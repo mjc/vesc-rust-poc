@@ -7,6 +7,7 @@
 //!
 //! Testing strategy: see `docs/testing/vescpkg-rs-sys.md`.
 
+#![doc = include_str!("compile_fail_contracts.md")]
 #![no_std]
 #![forbid(unused_extern_crates)]
 #![deny(unsafe_op_in_unsafe_fn)]
@@ -38,6 +39,8 @@ macro_rules! vesc_if_used_slots {
             LBM_ENC_SYM_NIL => lbm_enc_sym_nil,
             LBM_ENC_SYM_TRUE => lbm_enc_sym_true,
             LBM_ENC_SYM_EERROR => lbm_enc_sym_eerror,
+            READ_EEPROM_VAR => read_eeprom_var,
+            STORE_EEPROM_VAR => store_eeprom_var,
             CONF_CUSTOM_ADD_CONFIG => conf_custom_add_config,
             CONF_CUSTOM_CLEAR_CONFIGS => conf_custom_clear_configs,
             MUTEX_CREATE => mutex_create,

@@ -6,6 +6,7 @@
 //! Device builds stay `no_std`; package crates must opt into the `alloc`
 //! feature before installing the VESC-backed global allocator.
 
+#![doc = include_str!("compile_fail_contracts.md")]
 #![no_std]
 #![forbid(unused_extern_crates)]
 #![deny(unsafe_op_in_unsafe_fn)]

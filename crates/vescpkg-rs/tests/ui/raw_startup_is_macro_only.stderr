@@ -1,7 +1,0 @@
-error[E0133]: call to unsafe function `vescpkg_rs::__macro_support::__package_start_from_raw` is unsafe and requires unsafe block
- --> tests/ui/raw_startup_is_macro_only.rs:2:13
-  |
-2 |     let _ = vescpkg_rs::__macro_support::__package_start_from_raw(core::ptr::null_mut());
-  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
-  |
-  = note: consult the function's documentation for information on how to avoid undefined behavior
