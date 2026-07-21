@@ -22,7 +22,7 @@ impl RefloatPackageState {
             })
     }
 
-    fn read_config_from_eeprom(&mut self) {
+    pub(super) fn read_config_from_eeprom(&mut self) {
         let eeprom = vescpkg_rs::CustomEeprom::new();
         let mut bytes = [0_u8; REFLOAT_CONFIG_LEN];
         let read = bytes.chunks_exact_mut(4).enumerate().all(|(index, bytes)| {
@@ -168,7 +168,7 @@ impl RefloatPackageState {
         true
     }
 
-    fn refresh_balance_filter_config(&mut self) {
+    pub(super) fn refresh_balance_filter_config(&mut self) {
         // C map: `reconfigure(d)` refreshes Mahony filter gains through
         // `balance_filter_configure` at `third_party/refloat/src/main.c:154-160`.
         self.balance_filter

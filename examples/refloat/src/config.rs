@@ -23,7 +23,10 @@ use vescpkg_rs::{
     CustomConfigWireByteField,
 };
 
+mod flywheel;
 mod handtest_safety;
+
+pub(crate) use flywheel::RefloatFlywheelConfig;
 
 // Refloat v1.2.1 generated custom-config XML blob. Upstream generates this from
 // `third_party/refloat/src/conf/settings.xml` via `third_party/refloat/src/Makefile:28-31`
@@ -203,6 +206,16 @@ impl RefloatConfigImage {
 
     pub(crate) fn duty_pushback_threshold(&self) -> Ratio {
         generated_field(Self::DUTY_PUSHBACK_THRESHOLD_FIELD.read(self))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn duty_pushback_speed(&self) -> AngularVelocity {
+        generated_field(Self::DUTY_PUSHBACK_SPEED_FIELD.read(self))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn tiltback_return_speed(&self) -> AngularVelocity {
+        generated_field(Self::TILTBACK_RETURN_SPEED_FIELD.read(self))
     }
 
     pub(crate) fn high_voltage_pushback_angle(&self) -> AngleDegrees {

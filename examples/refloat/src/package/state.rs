@@ -30,6 +30,7 @@ mod balance_tests;
 mod charging;
 mod config_runtime;
 mod config_storage;
+mod flywheel;
 #[cfg(any(test, target_arch = "arm"))]
 mod footpad_runtime;
 mod handtest;
@@ -50,6 +51,7 @@ mod tuning;
 #[cfg(test)]
 mod tuning_tests;
 
+use flywheel::RefloatFlywheelOffsets;
 use motor_acceleration::MotorAccelerationTracker;
 use remote_control::RemoteControlState;
 use transition::{
@@ -86,6 +88,8 @@ pub struct RefloatPackageState {
     #[cfg(any(test, target_arch = "arm"))]
     bms_alert_ticks: TimestampTicks,
     handtest_config_backup: Option<RefloatConfigImage>,
+    flywheel_offsets: RefloatFlywheelOffsets,
+    flywheel_abort: bool,
     motor_control: RefloatMotorControl,
     balance_filter: BalanceFilter,
     traction_control: bool,
@@ -139,6 +143,8 @@ impl RefloatPackageState {
             #[cfg(any(test, target_arch = "arm"))]
             bms_alert_ticks: TimestampTicks::from_ticks(0),
             handtest_config_backup: None,
+            flywheel_offsets: RefloatFlywheelOffsets::source_startup(),
+            flywheel_abort: false,
             motor_control: RefloatMotorControl::new(),
             balance_filter: BalanceFilter::source_startup(),
             traction_control: false,
@@ -373,6 +379,7 @@ impl RefloatPackageState {
         self.handle_charging_state_packet(now, bytes)
             || self.handle_handtest_packet(bytes)
             || self.handle_config_command(bytes)
+            || self.handle_flywheel_packet(bytes)
             || tuning::handle_runtime_tune_packet(self, bytes)
             || tuning::handle_tilt_tune_packet(self, bytes)
             || tuning::handle_other_tune_packet(self, bytes)
@@ -425,6 +432,8 @@ impl RefloatPackageState {
 
 #[cfg(test)]
 mod config_tests;
+#[cfg(test)]
+mod flywheel_tests;
 #[cfg(test)]
 mod footpad_tests;
 #[cfg(test)]

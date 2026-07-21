@@ -7,6 +7,7 @@ use super::*;
 use crate::bms::RefloatBmsFault;
 use crate::domain::RefloatBeepReason;
 use vescpkg_rs::prelude::{AngleDegrees, Temperature, VescSeconds, Voltage};
+use vescpkg_rs::{ImuPitch, ImuRoll};
 
 fn pack_voltage_threshold(
     configured: Voltage,
@@ -59,7 +60,7 @@ pub(super) fn refresh(
     let mut ride_state = status.ride_state();
     let resets_runtime_vars =
         matches!(ride_state.run_state(), RefloatRunState::Startup) && imu.is_ready();
-    let run_state = match (ride_state.run_state(), imu.is_ready()) {
+    let mut run_state = match (ride_state.run_state(), imu.is_ready()) {
         (RefloatRunState::Startup, true) => RefloatRunState::Ready,
         (run_state, _) => run_state,
     };
@@ -120,10 +121,23 @@ pub(super) fn refresh(
             RefloatSetpointAdjustment::ReverseStop
         )
     );
-    let pitch = imu.pitch().angle();
+    let (imu_pitch, imu_roll) = if matches!(ride_state.mode(), RefloatMode::Flywheel) {
+        let (pitch, roll) = state.flywheel_attitude(
+            ride_state.mode(),
+            AngleDegrees::from(imu.pitch().angle()),
+            AngleDegrees::from(imu.roll().angle()),
+        );
+        (
+            ImuPitch::new(AngleRadians::from(pitch)),
+            ImuRoll::new(AngleRadians::from(roll)),
+        )
+    } else {
+        (imu.pitch(), imu.roll())
+    };
+    let pitch = imu_pitch.angle();
     let pitch_degrees = AngleDegrees::from(pitch);
     let pitch_abs = pitch_degrees.abs();
-    let roll = imu.roll().angle();
+    let roll = imu_roll.angle();
     let roll_degrees = AngleDegrees::from(roll);
     let roll_abs = roll_degrees.abs();
     let remote_setpoint_abs = base.setpoints().remote().angle().abs();
@@ -178,6 +192,18 @@ pub(super) fn refresh(
     };
     let balance_pitch_degrees = balance_pitch.angle_degrees();
     let balance_pitch_abs = balance_pitch_degrees.abs();
+    let ready_flywheel_stop = matches!(run_state, RefloatRunState::Ready)
+        && matches!(ride_state.mode(), RefloatMode::Flywheel)
+        && (state.flywheel_abort || matches!(base.footpad().state(), RefloatFootpadState::Both));
+    if ready_flywheel_stop {
+        state.restore_flywheel_config();
+        run_state = state
+            .all_data_payloads
+            .base()
+            .status()
+            .ride_state()
+            .run_state();
+    }
     let faults = state.serialized_config.faults();
     let startup = state.serialized_config.startup();
     let quickstop_fault = matches!(
@@ -258,14 +284,6 @@ pub(super) fn refresh(
             state.fault_angle_pitch_ticks,
             fault_delay_pitch,
         );
-    let ready_flywheel_stop = matches!(
-        (run_state, ride_state.mode(), base.footpad().state()),
-        (
-            RefloatRunState::Ready,
-            RefloatMode::Flywheel,
-            RefloatFootpadState::Both
-        )
-    );
     let darkride_high_erpm_pending = darkride_active && motor_erpm > darkride.timed_high_erpm;
     let darkride_high_erpm_fault = darkride_high_erpm_pending
         && (refloat_ticks_elapsed_seconds(
@@ -394,6 +412,7 @@ pub(super) fn refresh(
     let state_stop_fault = state_transition.state_stopped;
     if state_transition.state_stopped {
         state.disengage_ticks = system_time_ticks;
+        state.flywheel_abort |= flywheel_both_footpads_fault;
     } else if state_transition.state_engaged {
         state.engage_ticks = system_time_ticks;
     }
@@ -777,7 +796,7 @@ pub(super) fn refresh(
                 setpoint: setpoints.board(),
                 brake_tilt_setpoint: setpoints.brake_tilt(),
                 balance_pitch: balance_pitch.angle_degrees(),
-                raw_pitch: AngleDegrees::from(imu.pitch().angle()),
+                raw_pitch: pitch_degrees,
                 roll: imu.roll(),
                 gyro_pitch: gyro.pitch(),
                 gyro_yaw: gyro.yaw(),
@@ -848,7 +867,7 @@ pub(super) fn refresh(
     // FLYWHEEL mirrors raw pitch at `third_party/refloat/src/imu.c:56-58`.
     let base = RefloatAllDataBasePayload::new(
         balance_current,
-        RefloatAllDataAttitude::new(balance_pitch, imu.roll(), imu.pitch()),
+        RefloatAllDataAttitude::new(balance_pitch, imu_roll, imu_pitch),
         RefloatAllDataStatus::new(ride_state, beep_reason),
         base.footpad(),
         setpoints,
