@@ -52,10 +52,10 @@ pub use config::{
     CustomConfigFlagField, CustomConfigFrequencyField, CustomConfigImage,
     CustomConfigIntegralCurrentGainField, CustomConfigMahonyPitchGainField,
     CustomConfigMahonyRollGainField, CustomConfigMotorCurrentField, CustomConfigPidScaleField,
-    CustomConfigRateCurrentGainField, CustomConfigResetField, CustomConfigSampleRateField,
-    CustomConfigSecondsField, CustomConfigVoltageField, FocMotorFluxLinkage, FocMotorInductance,
-    FocMotorResistance, GearRatio, GearRatioError, MotorPoleCount, MotorPoleCountError,
-    WheelDiameter,
+    CustomConfigRateCurrentGainField, CustomConfigRatioField, CustomConfigResetField,
+    CustomConfigSampleRateField, CustomConfigSecondsField, CustomConfigVoltageField,
+    FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance, GearRatio, GearRatioError,
+    MotorPoleCount, MotorPoleCountError, WheelDiameter,
 };
 pub use control::{
     AngleCurrentGain, IntegralCurrentGain, MahonyPitchGain, MahonyRollGain, PidScale,

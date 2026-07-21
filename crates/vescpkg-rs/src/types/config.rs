@@ -560,6 +560,42 @@ semantic_scaled_config_field!(
     "Generated PID-scale field descriptor."
 );
 
+/// Generated unsigned-ratio field descriptor.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+pub struct CustomConfigRatioField(CustomConfigScaledField);
+
+impl CustomConfigRatioField {
+    #[doc(hidden)]
+    pub const fn __from_generated<const LEN: usize>(offset: usize, scale: f32) -> Self {
+        assert!(
+            LEN >= 2 && offset <= LEN - 2,
+            "generated config field is out of bounds"
+        );
+        match CustomConfigScaledField::new(offset, scale) {
+            Some(field) => Self(field),
+            None => panic!("generated config field scale must be finite and positive"),
+        }
+    }
+
+    /// Decode the field directly into an unsigned ratio.
+    #[inline(always)]
+    pub fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> Option<crate::Ratio> {
+        self.0
+            .read(image)
+            .and_then(|value| crate::Ratio::from_ratio(value).ok())
+    }
+
+    /// Encode an unsigned ratio into its generated scaled field.
+    pub fn write<const LEN: usize>(
+        self,
+        editor: &mut CustomConfigEditor<'_, LEN>,
+        value: crate::Ratio,
+    ) -> Option<()> {
+        self.0.write(editor, value.as_ratio())
+    }
+}
+
 /// Gear reduction ratio configured for speed/distance calculations.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 #[repr(transparent)]
@@ -657,8 +693,8 @@ mod tests {
         CustomConfigFrequencyField, CustomConfigImage, CustomConfigIntegralCurrentGainField,
         CustomConfigMahonyPitchGainField, CustomConfigMahonyRollGainField,
         CustomConfigMotorCurrentField, CustomConfigPidScaleField, CustomConfigRateCurrentGainField,
-        CustomConfigResetField, CustomConfigSampleRateField, CustomConfigSecondsField,
-        CustomConfigVoltageField,
+        CustomConfigRatioField, CustomConfigResetField, CustomConfigSampleRateField,
+        CustomConfigSecondsField, CustomConfigVoltageField,
     };
     use crate::{ElectricalSpeed, Frequency, Rpm, SampleRate, VescSeconds, Voltage};
 
@@ -833,6 +869,18 @@ mod tests {
             field!(CustomConfigPidScaleField).read(&image),
             Some(crate::PidScale::new(12.3))
         );
+
+        image = CustomConfigImage::new([0x00, 0x08]);
+        assert_eq!(
+            field!(CustomConfigRatioField).read(&image),
+            Some(crate::Ratio::from_ratio_const(0.8))
+        );
+        assert_eq!(
+            field!(CustomConfigRatioField)
+                .write(&mut image.editor(), crate::Ratio::from_ratio_const(0.5),),
+            Some(())
+        );
+        assert_eq!(image.as_bytes(), &[0x00, 0x05]);
 
         field!(CustomConfigAngleField)
             .write(&mut image.editor(), crate::AngleDegrees::from_degrees(-4.2))
