@@ -104,6 +104,36 @@ impl FirmwareTest {
         crate::test_ffi::mutex_free_count()
     }
 
+    /// Return the number of fake firmware semaphore waits.
+    #[must_use]
+    pub fn semaphore_wait_count(&self) -> usize {
+        crate::test_ffi::semaphore_wait_count()
+    }
+
+    /// Return the most recent fake timed-wait timeout.
+    #[must_use]
+    pub fn semaphore_timed_wait_ticks(&self) -> Option<u32> {
+        crate::test_ffi::semaphore_timed_wait_ticks()
+    }
+
+    /// Return the number of fake firmware semaphore signals.
+    #[must_use]
+    pub fn semaphore_signal_count(&self) -> usize {
+        crate::test_ffi::semaphore_signal_count()
+    }
+
+    /// Return the number of fake firmware semaphore resets.
+    #[must_use]
+    pub fn semaphore_reset_count(&self) -> usize {
+        crate::test_ffi::semaphore_reset_count()
+    }
+
+    /// Return the number of fake firmware semaphore releases.
+    #[must_use]
+    pub fn semaphore_free_count(&self) -> usize {
+        crate::test_ffi::semaphore_free_count()
+    }
+
     /// Make writes to one custom-EEPROM address fail.
     pub fn fail_eeprom_write(&self, address: crate::CustomEepromAddress) {
         crate::test_ffi::fail_eeprom_write(address);

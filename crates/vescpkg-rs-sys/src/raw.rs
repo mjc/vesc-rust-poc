@@ -656,8 +656,8 @@ mod slots {
     use super::{
         AppDataHandler, CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5,
         CanStatusMsg6, CustomConfigGet, CustomConfigSet, CustomConfigXml, EepromVar,
-        ExtensionHandler, GnssData, ImuReadCallback, LibMutex, LibThread, RemoteState, VescIfAbi,
-        c_char, c_int, c_uchar, c_uint, c_void,
+        ExtensionHandler, GnssData, ImuReadCallback, LibMutex, LibSemaphore, LibThread,
+        RemoteState, VescIfAbi, c_char, c_int, c_uchar, c_uint, c_void,
     };
     #[cfg(not(all(target_arch = "arm", not(test))))]
     use super::{VescIf, vesc_if};
@@ -773,6 +773,11 @@ mod slots {
     fn_slot!(mutex_create as unsafe extern "C" fn() -> LibMutex);
     fn_slot!(mutex_lock as unsafe extern "C" fn(LibMutex));
     fn_slot!(mutex_unlock as unsafe extern "C" fn(LibMutex));
+    fn_slot!(sem_create as unsafe extern "C" fn() -> LibSemaphore);
+    fn_slot!(sem_wait as unsafe extern "C" fn(LibSemaphore));
+    fn_slot!(sem_signal as unsafe extern "C" fn(LibSemaphore));
+    fn_slot!(sem_wait_to as unsafe extern "C" fn(LibSemaphore, u32) -> bool);
+    fn_slot!(sem_reset as unsafe extern "C" fn(LibSemaphore));
     fn_slot!(malloc as unsafe extern "C" fn(usize) -> *mut c_void);
     fn_slot!(free as unsafe extern "C" fn(*mut c_void));
     fn_slot!(sleep_us as unsafe extern "C" fn(u32));
@@ -1175,6 +1180,52 @@ pub unsafe fn vesc_mutex_lock(mutex: LibMutex) {
 /// by the current thread.
 pub unsafe fn vesc_mutex_unlock(mutex: LibMutex) {
     unsafe { slots::mutex_unlock()(mutex) };
+}
+
+/// Allocate and initialize a firmware semaphore.
+///
+/// # Safety
+///
+/// The firmware function table must be valid; the returned handle must be
+/// released with [`vesc_free`].
+pub unsafe fn vesc_sem_create() -> *mut c_void {
+    unsafe { slots::sem_create()() }
+}
+
+/// Block until a firmware semaphore is signaled.
+///
+/// # Safety
+///
+/// `semaphore` must be a live handle returned by [`vesc_sem_create`].
+pub unsafe fn vesc_sem_wait(semaphore: *mut c_void) {
+    unsafe { slots::sem_wait()(semaphore) };
+}
+
+/// Signal a firmware semaphore.
+///
+/// # Safety
+///
+/// `semaphore` must be a live handle returned by [`vesc_sem_create`].
+pub unsafe fn vesc_sem_signal(semaphore: *mut c_void) {
+    unsafe { slots::sem_signal()(semaphore) };
+}
+
+/// Wait for a firmware semaphore for at most `ticks` system ticks.
+///
+/// # Safety
+///
+/// `semaphore` must be a live handle returned by [`vesc_sem_create`].
+pub unsafe fn vesc_sem_wait_to(semaphore: *mut c_void, ticks: u32) -> bool {
+    unsafe { slots::sem_wait_to()(semaphore, ticks) }
+}
+
+/// Reset a firmware semaphore to its unsignaled state.
+///
+/// # Safety
+///
+/// `semaphore` must be a live handle returned by [`vesc_sem_create`].
+pub unsafe fn vesc_sem_reset(semaphore: *mut c_void) {
+    unsafe { slots::sem_reset()(semaphore) };
 }
 
 /// Allocate memory from the firmware LispBM reserve heap.

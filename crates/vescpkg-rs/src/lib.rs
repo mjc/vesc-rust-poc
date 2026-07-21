@@ -75,7 +75,8 @@ pub(crate) mod ffi {
         mc_set_brake_current, mc_set_current, mc_set_current_off_delay, mc_set_duty,
         mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm,
         store_eeprom_word, timeout_reset, vesc_free, vesc_imu_get_quaternions, vesc_mutex_create,
-        vesc_mutex_lock, vesc_mutex_unlock, vesc_request_terminate, vesc_should_terminate,
+        vesc_mutex_lock, vesc_mutex_unlock, vesc_request_terminate, vesc_sem_create,
+        vesc_sem_reset, vesc_sem_signal, vesc_sem_wait, vesc_sem_wait_to, vesc_should_terminate,
         vesc_sleep_us, vesc_spawn, vesc_system_time_seconds, vesc_system_time_ticks,
         vesc_thread_set_priority, vesc_timer_seconds_elapsed_since, vesc_timer_time_now,
         vesc_timestamp_age_seconds, wipe_nvm, write_nvm,
@@ -117,7 +118,7 @@ pub use lifecycle_core::AppDataSendError;
 pub use motor::{MotorOutput, MotorTelemetry};
 pub use nvm::{Nvm, NvmError, NvmOffset};
 pub use runtime::{PackageRuntimeState, PackageStateAccess, PackageStateStore};
-pub use sync::{FirmwareMutex, FirmwareMutexGuard};
+pub use sync::{FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore};
 pub use thread::{
     Firmware, FirmwareAppData, FirmwareClock, FirmwareThread, FirmwareThreads,
     StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadName,
@@ -152,12 +153,13 @@ pub mod prelude {
     pub use crate::{
         AnalogPin, AppDataHandler, AppDataSendError, ConfigBytes, ConfigXml, DigitalOutputLevel,
         DigitalPin, ExtensionDescriptor, ExtensionName, ExtensionRegistration, Firmware,
-        FirmwareAppData, FirmwareClock, FirmwareMutex, FirmwareMutexGuard, FirmwareThread,
-        FirmwareThreads, Gpio, Imu, ImuReadHandler, LbmExtension, LispArgs, LispIntegerError,
-        LispValue, MotorOutput, MotorTelemetry, Nvm, NvmError, NvmOffset, PackageRuntimeState,
-        PackageStart, PackageStartError, StatefulCustomConfigCallback, StatefulLbmExtension,
-        StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadName,
-        ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant,
+        FirmwareAppData, FirmwareClock, FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore,
+        FirmwareThread, FirmwareThreads, Gpio, Imu, ImuReadHandler, LbmExtension, LispArgs,
+        LispIntegerError, LispValue, MotorOutput, MotorTelemetry, Nvm, NvmError, NvmOffset,
+        PackageRuntimeState, PackageStart, PackageStartError, StatefulCustomConfigCallback,
+        StatefulLbmExtension, StatelessFirmwareThread, StatelessThreadContext, ThreadContext,
+        ThreadError, ThreadName, ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError,
+        TimerInstant,
     };
 }
 
