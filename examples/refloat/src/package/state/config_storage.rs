@@ -6,35 +6,12 @@ use crate::domain::{
 
 impl RefloatPackageState {
     fn write_config_to_eeprom(&self) -> bool {
-        let eeprom = vescpkg_rs::CustomEeprom::new();
-        self.serialized_config
-            .as_bytes()
-            .chunks_exact(4)
-            .enumerate()
-            .all(|(index, bytes)| {
-                let Some(address) = vescpkg_rs::CustomEepromAddress::from_index(index) else {
-                    return false;
-                };
-                let Some(bytes) = <&[u8; 4]>::try_from(bytes).ok() else {
-                    return false;
-                };
-                eeprom.write(address, vescpkg_rs::EepromWord::from_ne_bytes(*bytes))
-            })
+        vescpkg_rs::CustomEeprom::new().write_bytes(self.serialized_config.as_bytes())
     }
 
     pub(super) fn read_config_from_eeprom(&mut self) {
-        let eeprom = vescpkg_rs::CustomEeprom::new();
         let mut bytes = [0_u8; REFLOAT_CONFIG_LEN];
-        let read = bytes.chunks_exact_mut(4).enumerate().all(|(index, bytes)| {
-            let Some(address) = vescpkg_rs::CustomEepromAddress::from_index(index) else {
-                return false;
-            };
-            let Some(word) = eeprom.read(address) else {
-                return false;
-            };
-            bytes.copy_from_slice(&word.to_ne_bytes());
-            true
-        });
+        let read = vescpkg_rs::CustomEeprom::new().read_bytes(&mut bytes);
         self.serialized_config = read
             .then(|| RefloatConfigImage::from_serialized(&bytes))
             .flatten()

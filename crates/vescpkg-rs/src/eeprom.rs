@@ -60,4 +60,42 @@ impl CustomEeprom {
         let mut word = u32::from_ne_bytes(word.to_ne_bytes());
         unsafe { crate::ffi::store_eeprom_word(&mut word, address.get()) }
     }
+
+    /// Read a serialized byte image from consecutive custom-EEPROM words.
+    ///
+    /// Returns `false` when any required word is absent or its address cannot
+    /// be represented. Bytes read before a failure remain in `bytes`.
+    pub fn read_bytes(self, bytes: &mut [u8]) -> bool {
+        bytes
+            .chunks_mut(size_of::<EepromWord>())
+            .enumerate()
+            .all(|(index, bytes)| {
+                let Some(address) = CustomEepromAddress::from_index(index) else {
+                    return false;
+                };
+                let Some(word) = self.read(address) else {
+                    return false;
+                };
+                bytes.copy_from_slice(&word.to_ne_bytes()[..bytes.len()]);
+                true
+            })
+    }
+
+    /// Store a serialized byte image in consecutive custom-EEPROM words.
+    ///
+    /// A final partial word is padded with zeroes. Returns `false` after the
+    /// first address or firmware write failure.
+    pub fn write_bytes(self, bytes: &[u8]) -> bool {
+        bytes
+            .chunks(size_of::<EepromWord>())
+            .enumerate()
+            .all(|(index, bytes)| {
+                let Some(address) = CustomEepromAddress::from_index(index) else {
+                    return false;
+                };
+                let mut word = [0; size_of::<EepromWord>()];
+                word[..bytes.len()].copy_from_slice(bytes);
+                self.write(address, EepromWord::from_ne_bytes(word))
+            })
+    }
 }
