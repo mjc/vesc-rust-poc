@@ -8,7 +8,6 @@ const LBM_INT_TAG: u32 = 0x8;
 const LBM_VALUE_SHIFT: u32 = 4;
 #[cfg(any(test, not(target_arch = "arm")))]
 const LBM_TRUE: u32 = 2 << LBM_VALUE_SHIFT;
-#[cfg(test)]
 const LBM_VALUE_TAG_MASK: u32 = (1 << LBM_VALUE_SHIFT) - 1;
 const LBM_INT_MIN: i32 = -(1 << 27);
 const LBM_INT_MAX: i32 = (1 << 27) - 1;
@@ -17,12 +16,10 @@ const fn encode_integer(value: i32) -> u32 {
     value.wrapping_shl(LBM_VALUE_SHIFT) as u32 | LBM_INT_TAG
 }
 
-#[cfg(test)]
 const fn decode_integer(value: u32) -> i32 {
     (value as i32) >> LBM_VALUE_SHIFT
 }
 
-#[cfg(test)]
 const fn is_integer(value: u32) -> bool {
     value & LBM_VALUE_TAG_MASK == LBM_INT_TAG
 }
@@ -32,16 +29,23 @@ const fn is_integer(value: u32) -> bool {
 pub struct LispValue(LbmValue);
 
 impl LispValue {
-    /// Decode this value as a LispBM integer.
-    pub fn as_i32(self) -> Option<i32> {
-        #[cfg(not(test))]
-        {
-            crate::lifecycle_core::LbmApi::new(crate::bindings::RealBindings).decode_i32(self.raw())
-        }
-        #[cfg(test)]
-        {
-            is_integer(self.raw().0).then(|| decode_integer(self.raw().0))
-        }
+    /// Convert any LispBM numeric value to an `f32`.
+    #[cfg(not(test))]
+    pub fn decode_number_as_f32(self) -> Option<f32> {
+        crate::lifecycle_core::LbmApi::new(crate::bindings::RealBindings)
+            .decode_number_as_f32(self.raw())
+    }
+
+    /// Decode this value only when it is an immediate LispBM integer.
+    pub fn decode_i32_exact(self) -> Option<i32> {
+        is_integer(self.raw().0).then(|| decode_integer(self.raw().0))
+    }
+
+    /// Convert any LispBM numeric value to an `i32`.
+    #[cfg(not(test))]
+    pub fn decode_number_as_i32(self) -> Option<i32> {
+        crate::lifecycle_core::LbmApi::new(crate::bindings::RealBindings)
+            .decode_number_as_i32(self.raw())
     }
 
     /// Return LispBM true.
@@ -428,7 +432,7 @@ mod tests {
     impl super::LbmExtension for EchoIntegerExtension {
         fn call(args: LispArgs<'_>) -> LispValue {
             args.get(0)
-                .and_then(LispValue::as_i32)
+                .and_then(LispValue::decode_i32_exact)
                 .and_then(|value| LispValue::try_from(value).ok())
                 .unwrap_or_else(LispValue::nil)
         }
@@ -489,7 +493,7 @@ mod tests {
         let args = super::LispArgs::from_raw(values.as_mut_ptr(), values.len() as u32)
             .expect("valid arguments");
 
-        assert_eq!(args.get(0).and_then(LispValue::as_i32), None);
+        assert_eq!(args.get(0).and_then(LispValue::decode_i32_exact), None);
     }
 
     #[test]

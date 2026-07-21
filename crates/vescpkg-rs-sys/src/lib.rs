@@ -29,6 +29,7 @@ macro_rules! vesc_if_used_slots {
     ($macro:ident) => {
         $macro! {
             LBM_ADD_EXTENSION => lbm_add_extension,
+            LBM_DEC_AS_FLOAT => lbm_dec_as_float,
             LBM_DEC_AS_I32 => lbm_dec_as_i32,
             LBM_ENC_I => lbm_enc_i,
             LBM_IS_NUMBER => lbm_is_number,

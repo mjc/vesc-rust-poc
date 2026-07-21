@@ -8,11 +8,11 @@ use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescPin, Vesc
 use super::{
     CustomConfigGet, CustomConfigSet, CustomConfigXml, VescIf, conf_custom_add_config,
     conf_custom_clear_configs, foc_get_id, io_read, io_read_analog, io_set_mode, io_write,
-    lbm_add_extension, lbm_add_extension_with_table_base, lbm_dec_as_i32, lbm_enc_i,
-    lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number, mc_get_amp_hours,
-    mc_get_amp_hours_charged, mc_get_battery_level, mc_get_distance_abs, mc_get_duty_cycle_now,
-    mc_get_fault, mc_get_input_voltage_filtered, mc_get_odometer, mc_get_rpm, mc_get_speed,
-    mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
+    lbm_add_extension, lbm_add_extension_with_table_base, lbm_dec_as_float, lbm_dec_as_i32,
+    lbm_enc_i, lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number,
+    mc_get_amp_hours, mc_get_amp_hours_charged, mc_get_battery_level, mc_get_distance_abs,
+    mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered, mc_get_odometer,
+    mc_get_rpm, mc_get_speed, mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
     mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
     mc_temp_fet_filtered, mc_temp_motor_filtered, vesc_clear_app_data_handler, vesc_mutex_create,
     vesc_mutex_lock, vesc_mutex_unlock, vesc_send_app_data, vesc_set_app_data_handler,
@@ -115,6 +115,7 @@ impl SyncBool {
 
 static LBM_ADD_EXTENSION: SyncCounter = SyncCounter::new();
 static LBM_DEC_AS_I32: SyncCounter = SyncCounter::new();
+static LBM_DEC_AS_FLOAT: SyncCounter = SyncCounter::new();
 static LBM_ENC_I: SyncCounter = SyncCounter::new();
 static LBM_IS_NUMBER: SyncCounter = SyncCounter::new();
 static SET_APP_DATA_HANDLER: SyncCounter = SyncCounter::new();
@@ -168,6 +169,7 @@ fn reset_counters() {
     for counter in [
         &LBM_ADD_EXTENSION,
         &LBM_DEC_AS_I32,
+        &LBM_DEC_AS_FLOAT,
         &LBM_ENC_I,
         &LBM_IS_NUMBER,
         &SET_APP_DATA_HANDLER,
@@ -230,6 +232,12 @@ extern "C" fn stub_lbm_dec_as_i32(value: u32) -> i32 {
     LBM_DEC_AS_I32.inc();
     LAST_LBM_VALUE.set(value);
     value as i32
+}
+
+extern "C" fn stub_lbm_dec_as_float(value: LbmValue) -> f32 {
+    LBM_DEC_AS_FLOAT.inc();
+    LAST_LBM_VALUE.set(value.0);
+    4.25
 }
 
 extern "C" fn stub_lbm_enc_i(value: i32) -> u32 {
@@ -445,6 +453,7 @@ extern "C" fn stub_mc_get_input_voltage_filtered() -> f32 {
 fn populated_table() -> VescIf {
     let mut table = empty_table();
     table.lbm_add_extension = Some(stub_lbm_add_extension);
+    table.lbm_dec_as_float = Some(stub_lbm_dec_as_float);
     table.lbm_dec_as_i32 = Some(stub_lbm_dec_as_i32);
     table.lbm_enc_i = Some(stub_lbm_enc_i);
     table.lbm_is_number = Some(stub_lbm_is_number);
@@ -527,6 +536,9 @@ fn lbm_add_extension_with_table_base_uses_mock_when_base_matches_firmware_addr()
 #[test]
 fn lbm_value_helpers_forward_through_mock_table() {
     with_populated_table(|| unsafe {
+        assert_eq!(lbm_dec_as_float(LbmValue(9)), 4.25);
+        assert_eq!(LAST_LBM_VALUE.get(), 9);
+        assert_eq!(LBM_DEC_AS_FLOAT.get(), 1);
         assert_eq!(lbm_dec_as_i32(LbmValue(9)), 9);
         assert_eq!(lbm_enc_i(4), LbmValue(5));
         assert!(lbm_is_number(LbmValue(7)));

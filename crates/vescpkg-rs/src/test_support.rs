@@ -498,6 +498,10 @@ impl LbmBindings for FakeBindings {
         unreachable!("extension registration does not decode LispBM values")
     }
 
+    unsafe fn decode_f32(&self, _value: LbmValue) -> f32 {
+        unreachable!("extension registration does not decode LispBM values")
+    }
+
     #[cfg(not(test))]
     fn encode_true(&self) -> LbmValue {
         LbmValue(1)

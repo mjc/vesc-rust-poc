@@ -541,6 +541,7 @@ mod slots {
         }
     }
 
+    fn_slot!(lbm_dec_as_float as unsafe extern "C" fn(crate::LbmValue) -> f32);
     fn_slot!(lbm_dec_as_i32 as unsafe extern "C" fn(u32) -> i32);
     fn_slot!(lbm_enc_i as unsafe extern "C" fn(i32) -> u32);
     fn_slot!(lbm_is_number as unsafe extern "C" fn(u32) -> bool);
@@ -656,6 +657,13 @@ pub unsafe fn lbm_add_extension_with_table_base(
     unsafe {
         slots::lbm_add_extension_from(vesc_if_base as usize)(name as *mut c_char, handler)
     }
+}
+
+/// # Safety
+///
+/// `value` must be a LispBM value supplied by the firmware.
+pub unsafe fn lbm_dec_as_float(value: LbmValue) -> f32 {
+    unsafe { slots::lbm_dec_as_float()(value) }
 }
 
 /// # Safety

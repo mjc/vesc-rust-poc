@@ -25,6 +25,9 @@ pub(crate) trait LbmBindings {
     unsafe fn is_number(&self, value: LbmValue) -> bool;
     /// # Safety
     /// `value` must be a valid firmware-provided LispBM value.
+    unsafe fn decode_f32(&self, value: LbmValue) -> f32;
+    /// # Safety
+    /// `value` must be a valid firmware-provided LispBM value.
     unsafe fn decode_i32(&self, value: LbmValue) -> i32;
     /// Return the firmware's true symbol.
     #[cfg(not(test))]
@@ -48,6 +51,10 @@ impl<B: LbmBindings + ?Sized> LbmBindings for &B {
 
     unsafe fn decode_i32(&self, value: LbmValue) -> i32 {
         unsafe { (**self).decode_i32(value) }
+    }
+
+    unsafe fn decode_f32(&self, value: LbmValue) -> f32 {
+        unsafe { (**self).decode_f32(value) }
     }
 
     #[cfg(not(test))]
@@ -230,6 +237,10 @@ impl LbmBindings for RealBindings {
 
     unsafe fn decode_i32(&self, value: LbmValue) -> i32 {
         unsafe { crate::ffi::lbm_dec_as_i32(value) }
+    }
+
+    unsafe fn decode_f32(&self, value: LbmValue) -> f32 {
+        unsafe { crate::ffi::lbm_dec_as_float(value) }
     }
 
     fn encode_true(&self) -> LbmValue {
