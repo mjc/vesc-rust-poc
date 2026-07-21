@@ -835,6 +835,7 @@ fn thread_set_priority_reports_absence_on_pre_6_06_tables() {
     table.thread_set_priority = None;
 
     with_table(&table, || unsafe {
+        reset_counters();
         assert!(!vesc_thread_set_priority(-1));
         assert_eq!(THREAD_SET_PRIORITY.get(), 0);
     });
