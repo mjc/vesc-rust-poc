@@ -8,6 +8,16 @@ pub(crate) enum RefloatBeeperLevel {
     High,
 }
 
+#[cfg(any(test, target_arch = "arm"))]
+impl RefloatBeeperLevel {
+    pub(crate) const fn digital_output(self) -> vescpkg_rs::DigitalOutputLevel {
+        match self {
+            Self::Low => vescpkg_rs::DigitalOutputLevel::Low,
+            Self::High => vescpkg_rs::DigitalOutputLevel::High,
+        }
+    }
+}
+
 /// Source-defined alert sequences used by Refloat's BMS paths.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RefloatBeeperAlert {

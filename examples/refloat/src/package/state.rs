@@ -169,6 +169,11 @@ impl RefloatPackageState {
         self.beeper.alert(alert);
     }
 
+    #[cfg(target_arch = "arm")]
+    pub(crate) fn beeper_enabled(&self) -> bool {
+        self.serialized_config.beeper_enabled()
+    }
+
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn tick_beeper(&mut self) -> Option<RefloatBeeperLevel> {
         self.beeper.tick()
