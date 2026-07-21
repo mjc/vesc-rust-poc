@@ -136,6 +136,11 @@ impl RefloatConfigImage {
         RefloatMetadataConfig(self)
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) const fn bms(&self) -> RefloatBmsConfig<'_> {
+        RefloatBmsConfig(self)
+    }
+
     pub(crate) fn balance_loop_config(&self) -> LoopConfig {
         // C map: `configure(d)` consumes these generated `float_conf` fields to
         // drive the control loop and timing at `third_party/refloat/src/main.c:161-199`;
@@ -392,6 +397,27 @@ impl RefloatMetadataConfig<'_> {
     #[cfg(test)]
     pub(crate) fn is_default(self) -> bool {
         self.0.flag(Self::IS_DEFAULT_FIELD)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+#[cfg(any(test, target_arch = "arm"))]
+pub(crate) struct RefloatBmsConfig<'a>(&'a RefloatConfigImage);
+
+#[cfg(any(test, target_arch = "arm"))]
+impl RefloatBmsConfig<'_> {
+    // Generated Refloat v1.2.1 serialization places `bms.enabled` after the
+    // haptic fields and before the six BMS thresholds at
+    // `third_party/refloat/src/conf/settings.xml:4076-4082`.
+    const ENABLED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(
+        CustomConfigFlagField,
+        len: REFLOAT_CONFIG_LEN,
+        offset: 265
+    );
+
+    pub(crate) fn enabled(self) -> bool {
+        self.0.flag(Self::ENABLED_FIELD)
     }
 }
 

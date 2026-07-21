@@ -1,7 +1,6 @@
 //! Refloat BMS support.
 //!
-//! This module owns Refloat-specific BMS extension behavior. Typed package
-//! BMS config/state wiring is tracked separately by VESCR-261.
+//! This module owns Refloat-specific BMS extension behavior.
 
 #[cfg(any(test, target_arch = "arm"))]
 use crate::package::RefloatPackageState;
@@ -10,10 +9,8 @@ use vescpkg_rs::LispValue;
 
 /// Called from Refloat's Lisp loader and BMS polling loop.
 ///
-/// Returns nil for now, matching a startup config with BMS integration disabled.
 /// Upstream returns `d->float_conf.bms.enabled` at
-/// `third_party/refloat/src/main.c:2319-2331`; VESCR-261 tracks wiring this callback
-/// to typed package state so enabled BMS configs can match upstream too.
+/// `third_party/refloat/src/main.c:2319-2331`.
 #[cfg(any(test, target_arch = "arm"))]
 pub(crate) struct ExtBms;
 
@@ -21,28 +18,44 @@ pub(crate) struct ExtBms;
 impl vescpkg_rs::StatefulLbmExtension for ExtBms {
     type State = RefloatPackageState;
 
-    fn call(_state: &mut Self::State, _args: vescpkg_rs::LispArgs<'_>) -> LispValue {
-        LispValue::nil()
+    fn call(state: &mut Self::State, _args: vescpkg_rs::LispArgs<'_>) -> LispValue {
+        LispValue::boolean(state.bms_enabled())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::ExtBms;
-    use crate::package::RefloatPackageState;
+    use crate::config::REFLOAT_DEFAULT_CONFIG;
     use crate::package::test_support::sample_all_data_payloads;
-    use vescpkg_rs::{LispArgs, LispValue, StatefulLbmExtension};
+    use crate::package::{RefloatCustomConfig, RefloatPackageState};
+    use vescpkg_rs::{
+        ConfigBytes, LispArgs, LispValue, StatefulCustomConfigCallback, StatefulLbmExtension,
+    };
 
     #[test]
-    fn ext_bms_returns_nil_while_typed_bms_config_is_unwired() {
+    fn ext_bms_returns_nil_when_bms_integration_is_disabled() {
         // Refloat returns `d->float_conf.bms.enabled` at
-        // `third_party/refloat/src/main.c:2319-2331`; the Rust port currently
-        // matches startup defaults where BMS integration is disabled.
+        // `third_party/refloat/src/main.c:2319-2331`.
         let mut state = RefloatPackageState::new(sample_all_data_payloads());
         let args = LispArgs::empty();
         let nil = LispValue::nil();
         let value = ExtBms::call(&mut state, args);
 
         assert!(value == nil);
+    }
+
+    #[test]
+    fn ext_bms_returns_true_when_bms_integration_is_enabled() {
+        let mut state = RefloatPackageState::new(sample_all_data_payloads());
+        let mut config = REFLOAT_DEFAULT_CONFIG;
+        // Generated Refloat v1.2.1 order places `bms.enabled` after the final
+        // haptic field and before the BMS thresholds at settings.xml:4076-4082.
+        config[265] = 1;
+        assert!(RefloatCustomConfig::set_config(&mut state, ConfigBytes::new(&config)).is_ok());
+
+        let value = ExtBms::call(&mut state, LispArgs::empty());
+
+        assert!(value == LispValue::true_value());
     }
 }
