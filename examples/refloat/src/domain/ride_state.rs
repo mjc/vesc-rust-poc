@@ -59,6 +59,15 @@ impl RefloatRideState {
         self
     }
 
+    /// Return this state with the requested setpoint adjustment.
+    pub(crate) const fn with_setpoint_adjustment(
+        mut self,
+        setpoint_adjustment: RefloatSetpointAdjustment,
+    ) -> Self {
+        self.setpoint_adjustment = setpoint_adjustment;
+        self
+    }
+
     /// Return the top-level run state.
     ///
     /// Mirrors upstream `d->state.state`, read by `set_cfg` at

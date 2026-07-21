@@ -388,6 +388,20 @@ pub(super) fn refresh(
         )
     };
     if matches!(run_state, RefloatRunState::Running) && !state_engage && !state_stop_fault {
+        let entered_reverse_stop = !matches!(
+            ride_state.setpoint_adjustment(),
+            RefloatSetpointAdjustment::Centering | RefloatSetpointAdjustment::ReverseStop
+        ) && faults.reversestop_enabled()
+            && motor_erpm < -reverse_stop.entry_erpm
+            && !darkride_active;
+        if entered_reverse_stop {
+            // C enters reverse stop before every protective pushback branch at
+            // `third_party/refloat/src/main.c:538-552`.
+            state.reverse_total_erpm = Rpm::ZERO;
+            state.reverse_ticks = system_time_ticks;
+            ride_state =
+                ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::ReverseStop);
+        }
         if matches!(
             ride_state.setpoint_adjustment(),
             RefloatSetpointAdjustment::Centering
@@ -398,15 +412,7 @@ pub(super) fn refresh(
                 // `SAT_CENTERING` when `setpoint_target_interpolated`
                 // already equals target zero at
                 // `third_party/refloat/src/main.c:517-520`.
-                ride_state = RefloatRideState::new(
-                    ride_state.run_state(),
-                    ride_state.mode(),
-                    RefloatSetpointAdjustment::None,
-                    ride_state.stop_condition(),
-                )
-                .with_charging(ride_state.charging())
-                .with_wheelslip(ride_state.wheelslip())
-                .with_darkride(ride_state.darkride());
+                ride_state = ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::None);
             } else {
                 let startup_step = startup.centering_step();
                 let centered_board = if board_setpoint.abs() < startup_step {
@@ -435,7 +441,8 @@ pub(super) fn refresh(
         if matches!(
             ride_state.setpoint_adjustment(),
             RefloatSetpointAdjustment::ReverseStop
-        ) {
+        ) && !entered_reverse_stop
+        {
             // Upstream `calculate_setpoint_target(d)` accumulates ERPM
             // while SAT_REVERSESTOP is active at `third_party/refloat/src/main.c:522-525`.
             state.reverse_total_erpm = state.reverse_total_erpm + motor_erpm;

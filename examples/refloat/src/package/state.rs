@@ -6,7 +6,7 @@ use crate::domain::{
     RefloatAllDataPayloads, RefloatAllDataStatus, RefloatAppDataCommand, RefloatChargingState,
     RefloatDarkRideState, RefloatFootpadState, RefloatMode, RefloatRealtimeBalanceCurrent,
     RefloatRealtimeBalancePitch, RefloatRealtimeBoosterCurrent, RefloatRealtimeRuntimeSetpoint,
-    RefloatRealtimeRuntimeSetpoints, RefloatRideState, RefloatRunState, RefloatSetpointAdjustment,
+    RefloatRealtimeRuntimeSetpoints, RefloatRunState, RefloatSetpointAdjustment,
     RefloatStopCondition, RefloatWheelSlipState,
 };
 use crate::motor_control::RefloatMotorControl;

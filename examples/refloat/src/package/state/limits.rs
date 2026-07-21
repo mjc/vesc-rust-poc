@@ -16,6 +16,7 @@ impl QuickStopLimits {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct ReverseStopLimits {
+    pub(super) entry_erpm: Rpm,
     pub(super) total_erpm: Rpm,
     pub(super) pitch: AngleDegrees,
     pub(super) timer_fast_pitch: AngleDegrees,
@@ -23,8 +24,11 @@ pub(super) struct ReverseStopLimits {
 }
 
 impl ReverseStopLimits {
-    // C map: reverse-stop pitch/timer/ERPM thresholds at `third_party/refloat/src/main.c:436-455`.
+    // C map: reverse-stop entry and fault thresholds at
+    // `third_party/refloat/src/main.c:436-455` and
+    // `third_party/refloat/src/main.c:538-552`.
     pub(super) const REFLOAT: Self = Self {
+        entry_erpm: Rpm::from_revolutions_per_minute(200.0),
         total_erpm: Rpm::from_revolutions_per_minute(200_000.0),
         pitch: AngleDegrees::from_degrees(18.0),
         timer_fast_pitch: AngleDegrees::from_degrees(10.0),
