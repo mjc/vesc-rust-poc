@@ -8,7 +8,7 @@ use vescpkg_rs::CustomConfigVoltageField;
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngularVelocity, ElectricalSpeed, IntegralCurrentGain,
     MahonyPitchGain, MahonyRollGain, MotorCurrent, MotorCurrentLimit, PidScale, RateCurrentGain,
-    Ratio, SampleRate, VescSeconds,
+    Ratio, SampleRate, VescSeconds, Voltage,
 };
 use vescpkg_rs::{
     CustomConfigAngleCurrentGainField, CustomConfigAngleField, CustomConfigAngularVelocityField,
@@ -17,7 +17,7 @@ use vescpkg_rs::{
     CustomConfigIntegralCurrentGainField, CustomConfigMahonyPitchGainField,
     CustomConfigMahonyRollGainField, CustomConfigMotorCurrentField, CustomConfigPidScaleField,
     CustomConfigRateCurrentGainField, CustomConfigRatioField, CustomConfigResetField,
-    CustomConfigSampleRateField, CustomConfigSecondsField,
+    CustomConfigSampleRateField, CustomConfigScaledVoltageField, CustomConfigSecondsField,
 };
 
 mod handtest_safety;
@@ -68,6 +68,8 @@ impl RefloatConfigImage {
     const ATR_FILTER_FIELD: CustomConfigFrequencyField = vescpkg_rs::generated_custom_config_field!(CustomConfigFrequencyField, len: REFLOAT_CONFIG_LEN, offset: 165, scale: 100.0);
     const DUTY_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 44, scale: 100.0);
     const DUTY_PUSHBACK_THRESHOLD_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: REFLOAT_CONFIG_LEN, offset: 48, scale: 1000.0);
+    const HIGH_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 51, scale: 100.0);
+    const HIGH_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigScaledVoltageField, len: REFLOAT_CONFIG_LEN, offset: 55, scale: 100.0);
 
     // Generated `hardware.leds.mode` is the first field in the final hardware
     // block at `third_party/refloat/src/conf/settings.xml:4049-4064`.
@@ -166,6 +168,14 @@ impl RefloatConfigImage {
 
     pub(crate) fn duty_pushback_threshold(&self) -> Ratio {
         generated_field(Self::DUTY_PUSHBACK_THRESHOLD_FIELD.read(self))
+    }
+
+    pub(crate) fn high_voltage_pushback_angle(&self) -> AngleDegrees {
+        generated_field(Self::HIGH_VOLTAGE_PUSHBACK_ANGLE_FIELD.read(self))
+    }
+
+    pub(crate) fn high_voltage_threshold(&self) -> Voltage {
+        generated_field(Self::HIGH_VOLTAGE_THRESHOLD_FIELD.read(self))
     }
 
     pub(crate) fn editor(&mut self) -> RefloatConfigEditor<'_> {

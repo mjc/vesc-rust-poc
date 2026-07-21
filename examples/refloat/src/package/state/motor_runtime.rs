@@ -83,6 +83,7 @@ pub(super) fn refresh(state: &mut RefloatPackageState, telemetry: &impl MotorTel
     let raw_duty_cycle = telemetry.duty_cycle().ratio().as_ratio().abs();
     state.motor_current_max = telemetry.drive_current_limit();
     state.motor_current_min = telemetry.brake_current_limit();
+    state.battery_cell_count = telemetry.battery_cell_count();
     state.motor_current_filter.configure(
         state.serialized_config.motor_current_filter_frequency(),
         state.serialized_config.startup().sample_rate(),
