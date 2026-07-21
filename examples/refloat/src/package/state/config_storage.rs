@@ -4,43 +4,25 @@ use crate::domain::{
     REFLOAT_APP_DATA_PACKAGE_ID, RefloatAppDataCommand, RefloatMode, RefloatRunState,
 };
 
+pub(super) const REFLOAT_EEPROM_LEN: usize = 320;
+
 impl RefloatPackageState {
     fn write_config_to_eeprom(&self) -> bool {
-        let eeprom = vescpkg_rs::CustomEeprom::new();
-        self.serialized_config
-            .as_bytes()
-            .chunks_exact(4)
-            .enumerate()
-            .all(|(index, bytes)| {
-                let Some(address) = vescpkg_rs::CustomEepromAddress::from_index(index) else {
-                    return false;
-                };
-                let Some(bytes) = <&[u8; 4]>::try_from(bytes).ok() else {
-                    return false;
-                };
-                eeprom.write(address, vescpkg_rs::EepromWord::from_ne_bytes(*bytes))
-            })
+        let mut image = [0; REFLOAT_EEPROM_LEN];
+        image[..REFLOAT_CONFIG_LEN].copy_from_slice(self.serialized_config.as_bytes());
+        vescpkg_rs::CustomEeprom::new().write_bytes(&image)
     }
 
     pub(super) fn read_config_from_eeprom(&mut self) {
-        let eeprom = vescpkg_rs::CustomEeprom::new();
-        let mut bytes = [0_u8; REFLOAT_CONFIG_LEN];
-        let read = bytes.chunks_exact_mut(4).enumerate().all(|(index, bytes)| {
-            let Some(address) = vescpkg_rs::CustomEepromAddress::from_index(index) else {
-                return false;
-            };
-            let Some(word) = eeprom.read(address) else {
-                return false;
-            };
-            bytes.copy_from_slice(&word.to_ne_bytes());
-            true
-        });
+        let mut image = [0; REFLOAT_EEPROM_LEN];
+        let read = vescpkg_rs::CustomEeprom::new().read_bytes(&mut image);
         self.serialized_config = read
-            .then(|| RefloatConfigImage::from_serialized(&bytes))
+            .then(|| RefloatConfigImage::from_serialized(&image[..REFLOAT_CONFIG_LEN]))
             .flatten()
             .unwrap_or_else(RefloatConfigImage::defaults);
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
     pub(super) fn load_persisted_config_on_startup(&mut self) {
         self.read_config_from_eeprom();
         self.refresh_balance_filter_config();

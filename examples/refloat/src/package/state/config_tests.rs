@@ -1,4 +1,4 @@
-use super::RefloatPackageState;
+use super::{RefloatPackageState, config_storage::REFLOAT_EEPROM_LEN};
 use crate::beeper::RefloatBeeperLevel;
 use crate::config::RefloatConfigImage;
 use crate::domain::{
@@ -11,7 +11,7 @@ use crate::package::test_support::{
 };
 use std::{vec, vec::Vec};
 use vescpkg_rs::test_support::FirmwareTest;
-use vescpkg_rs::{MahonyPitchGain, MahonyRollGain, TimestampTicks};
+use vescpkg_rs::{Current, MahonyPitchGain, MahonyRollGain, MotorCurrent, TimestampTicks};
 
 fn handle_config_command(
     firmware: &FirmwareTest,
@@ -97,7 +97,8 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
     assert_eq!(state.serialized_config, saved);
     assert_eq!(state.tick_beeper(), None);
 
-    let restarted = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    let restarted =
+        RefloatPackageState::from_persisted_config(RefloatAllDataPayloads::source_startup());
     assert_eq!(restarted.serialized_config, saved);
 }
 
@@ -207,7 +208,8 @@ fn lock_restores_persisted_config_then_disables_and_saves() {
         ],
     );
 
-    let restarted = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    let restarted =
+        RefloatPackageState::from_persisted_config(RefloatAllDataPayloads::source_startup());
     assert!(restarted.serialized_config.metadata().disabled());
 }
 
@@ -270,6 +272,27 @@ fn default_config_decodes_pid_scales_like_refloat_settings() {
     assert_eq!(balance.kp().as_amps_per_degree(), 20.0);
     assert_eq!(balance.kp2().as_amps_per_degree_per_second(), 0.6);
     assert_eq!(balance.kp2_brake().value(), 1.0);
+}
+
+#[test]
+fn ki_limit_accepts_zero_sentinel_and_rejects_invalid_values() {
+    let mut bytes = default_refloat_config_bytes();
+    // Refloat's VESC Tool metadata defines zero as the disabled-limit sentinel
+    // at `third_party/refloat/src/conf/settings.xml:1679-1707`.
+    bytes.edit_refloat_config(|config| {
+        assert!(config.set_ki_limit(MotorCurrent::new(Current::ZERO)));
+        assert!(!config.set_ki_limit(MotorCurrent::new(Current::from_amps(-1.0))));
+        assert!(!config.set_ki_limit(MotorCurrent::new(Current::from_amps(f32::NAN))));
+        assert!(!config.set_ki_limit(MotorCurrent::new(Current::from_amps(f32::INFINITY))));
+    });
+
+    assert_eq!(
+        editable_config_from_bytes(&bytes)
+            .balance()
+            .ki_limit()
+            .current(),
+        Current::ZERO
+    );
 }
 
 #[test]
@@ -552,7 +575,7 @@ fn successful_config_write_reconfigures_and_acknowledges_like_refloat() {
 
 #[test]
 fn store_serialized_config_persists_for_restart_like_refloat_set_cfg() {
-    let _firmware = FirmwareTest::new();
+    let firmware = FirmwareTest::new();
     let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
     let mut bytes = default_refloat_config_bytes();
     bytes.edit_refloat_config(|config| {
@@ -560,8 +583,20 @@ fn store_serialized_config_persists_for_restart_like_refloat_set_cfg() {
     });
 
     assert!(state.store_serialized_config(&bytes));
+    let mut persisted = [0; REFLOAT_EEPROM_LEN];
+    assert!(firmware.eeprom().read_bytes(&mut persisted));
+    assert_eq!(
+        &persisted[..state.serialized_config.as_bytes().len()],
+        state.serialized_config.as_bytes(),
+    );
+    assert!(
+        persisted[state.serialized_config.as_bytes().len()..]
+            .iter()
+            .all(|byte| *byte == 0)
+    );
 
-    let restarted = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    let restarted =
+        RefloatPackageState::from_persisted_config(RefloatAllDataPayloads::source_startup());
     assert_eq!(
         restarted
             .serialized_config

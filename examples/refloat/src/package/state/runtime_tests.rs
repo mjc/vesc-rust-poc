@@ -218,6 +218,11 @@ fn startup_ready_resets_runtime_vars_like_refloat() {
     let imu = telemetry.imu();
     let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
     state.set_balance_filter_for_test(balance_filter_with_pitch(AngleRadians::from_radians(1.2)));
+    state.balance_loop.pid.integral_current = MotorCurrent::new(Current::from_amps(8.0));
+    state.balance_loop.pid.kp_brake_scale = PidScale::new(0.2);
+    state.balance_loop.pid.kp2_brake_scale = PidScale::new(0.3);
+    state.balance_loop.pid.kp_accel_scale = PidScale::new(0.4);
+    state.balance_loop.pid.kp2_accel_scale = PidScale::new(0.5);
 
     assert!(tick_refloat_state_and_handle_packet(
         &mut state,
@@ -243,6 +248,14 @@ fn startup_ready_resets_runtime_vars_like_refloat() {
     // `third_party/refloat/src/main.c:249-252`.
     assert_eq!(base.balance_current().current().current().as_amps(), 0.0);
     assert_eq!(base.booster_current().current().current().as_amps(), 0.0);
+    assert_eq!(
+        state.balance_loop.pid.integral_current.current(),
+        Current::ZERO
+    );
+    assert_eq!(state.balance_loop.pid.kp_brake_scale, PidScale::new(1.0));
+    assert_eq!(state.balance_loop.pid.kp2_brake_scale, PidScale::new(1.0));
+    assert_eq!(state.balance_loop.pid.kp_accel_scale, PidScale::new(1.0));
+    assert_eq!(state.balance_loop.pid.kp2_accel_scale, PidScale::new(1.0));
     let expected_startup_setpoint = AngleRadians::from_radians(1.2).as_degrees();
     assert!(
         (base.setpoints().board().angle().as_degrees() - expected_startup_setpoint).abs() < 0.0001
@@ -333,6 +346,11 @@ fn ready_engage_resets_runtime_vars_like_refloat() {
         payloads.mode4(),
     ));
     state.set_balance_filter_for_test(balance_filter_with_pitch(AngleRadians::from_radians(0.05)));
+    state.balance_loop.pid.integral_current = MotorCurrent::new(Current::from_amps(8.0));
+    state.balance_loop.pid.kp_brake_scale = PidScale::new(0.2);
+    state.balance_loop.pid.kp2_brake_scale = PidScale::new(0.3);
+    state.balance_loop.pid.kp_accel_scale = PidScale::new(0.4);
+    state.balance_loop.pid.kp2_accel_scale = PidScale::new(0.5);
 
     assert!(tick_refloat_state_and_handle_packet(
         &mut state,
@@ -360,6 +378,14 @@ fn ready_engage_resets_runtime_vars_like_refloat() {
         expected_engage_setpoint
     );
     assert_eq!(base.setpoints().remote().angle().as_degrees(), 0.0);
+    assert_eq!(
+        state.balance_loop.pid.integral_current.current(),
+        Current::ZERO
+    );
+    assert_eq!(state.balance_loop.pid.kp_brake_scale, PidScale::new(1.0));
+    assert_eq!(state.balance_loop.pid.kp2_brake_scale, PidScale::new(1.0));
+    assert_eq!(state.balance_loop.pid.kp_accel_scale, PidScale::new(1.0));
+    assert_eq!(state.balance_loop.pid.kp2_accel_scale, PidScale::new(1.0));
     assert!(!state.apply_requested_motor_current(bindings));
 }
 
@@ -1039,9 +1065,8 @@ fn running_enters_duty_pushback_above_configured_threshold_like_refloat() {
         ],
     ));
 
-    // Default Refloat duty pushback is 5 degrees above 0.80 duty at
-    // `third_party/refloat/src/conf/settings.xml:524-593`; runtime selection
-    // is `third_party/refloat/src/main.c:577-592`.
+    // Default Refloat duty pushback targets 5 degrees above 0.80 duty and
+    // moves by `duty_pushback_speed / hertz` each loop.
     let base = state.all_data_payloads().base();
     assert_eq!(
         base.status().ride_state().setpoint_adjustment(),
@@ -1049,7 +1074,7 @@ fn running_enters_duty_pushback_above_configured_threshold_like_refloat() {
     );
     assert_eq!(
         base.setpoints().board().angle(),
-        AngleDegrees::from_degrees(5.0),
+        state.runtime_duty_pushback_step(),
     );
 }
 
@@ -1202,7 +1227,7 @@ fn running_duty_pushback_uses_negative_target_for_reverse_erpm_like_refloat() {
 
     assert_eq!(
         state.all_data_payloads().base().setpoints().board().angle(),
-        AngleDegrees::from_degrees(-5.0),
+        -state.runtime_duty_pushback_step(),
     );
 }
 
@@ -1259,7 +1284,10 @@ fn running_duty_pushback_clears_below_threshold_like_refloat() {
         base.status().ride_state().setpoint_adjustment(),
         RefloatSetpointAdjustment::None,
     );
-    assert_eq!(base.setpoints().board().angle(), AngleDegrees::ZERO);
+    assert_eq!(
+        base.setpoints().board().angle(),
+        AngleDegrees::from_degrees(5.0) - state.runtime_tiltback_return_step(),
+    );
 }
 
 #[test]
@@ -1722,7 +1750,7 @@ fn running_duty_pushback_precedes_high_voltage_like_refloat() {
     );
     assert_eq!(
         base.setpoints().board().angle(),
-        AngleDegrees::from_degrees(5.0),
+        state.runtime_duty_pushback_step(),
     );
 }
 
@@ -1746,7 +1774,10 @@ fn running_runtime_requests_balance_current_like_refloat_loop() {
 
     // Upstream RUNNING computes `d->balance_current` and then requests it
     // via `motor_control_request_current` at `third_party/refloat/src/main.c:949-956`.
-    assert!((telemetry.commanded_current().current().as_amps() - 3.8).abs() < 0.0001);
+    assert_eq!(
+        telemetry.commanded_current(),
+        state.all_data_payloads().base().balance_current().current()
+    );
 }
 
 #[test]
@@ -1779,5 +1810,8 @@ fn running_motor_apply_uses_current_branch_like_refloat_loop() {
     assert_eq!(telemetry.current_command_count(), 1);
     assert_eq!(telemetry.brake_current_command_count(), 0);
     assert_eq!(telemetry.duty_command_count(), 0);
-    assert!((telemetry.commanded_current().current().as_amps() - 3.8).abs() < 0.0001);
+    assert_eq!(
+        telemetry.commanded_current(),
+        state.all_data_payloads().base().balance_current().current()
+    );
 }

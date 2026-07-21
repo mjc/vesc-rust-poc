@@ -1,5 +1,5 @@
 use super::time::{refloat_ticks_elapsed, refloat_ticks_elapsed_seconds};
-use crate::balance::{BalanceFilter, LoopInput, LoopState};
+use crate::balance::{BalanceFilter, LoopConfig, LoopInput, LoopState};
 #[cfg(any(test, target_arch = "arm"))]
 use crate::beeper::RefloatBeeperLevel;
 use crate::beeper::{RefloatBeeper, RefloatBeeperAlert, RefloatBeeperCount};
@@ -88,8 +88,8 @@ pub struct RefloatPackageState {
     bms_start_ticks: Option<TimestampTicks>,
     #[cfg(any(test, target_arch = "arm"))]
     bms_alert_ticks: TimestampTicks,
-    handtest_config_backup: Option<RefloatConfigImage>,
     flywheel_offsets: RefloatFlywheelOffsets,
+    flywheel_runtime_config: Option<RefloatFlywheelConfig>,
     flywheel_abort: bool,
     motor_control: RefloatMotorControl,
     balance_filter: BalanceFilter,
@@ -129,10 +129,8 @@ impl RefloatPackageState {
     /// Build app-data state from the current all-data payload snapshot.
     pub fn new(all_data_payloads: RefloatAllDataPayloads) -> Self {
         let serialized_config = RefloatConfigImage::defaults();
-        let mut state = Self {
+        Self {
             all_data_payloads,
-            // Upstream `data_init` reads EEPROM and falls back to generated
-            // defaults at `third_party/refloat/src/main.c:1160-1185`.
             serialized_config,
             beeper: RefloatBeeper::new(serialized_config.beeper_enabled()),
             beeper_pin_configured: false,
@@ -144,8 +142,8 @@ impl RefloatPackageState {
             bms_start_ticks: None,
             #[cfg(any(test, target_arch = "arm"))]
             bms_alert_ticks: TimestampTicks::from_ticks(0),
-            handtest_config_backup: None,
             flywheel_offsets: RefloatFlywheelOffsets::source_startup(),
+            flywheel_runtime_config: None,
             flywheel_abort: false,
             motor_control: RefloatMotorControl::new(),
             balance_filter: BalanceFilter::source_startup(),
@@ -179,7 +177,16 @@ impl RefloatPackageState {
             battery_cell_count: None,
             #[cfg(any(test, target_arch = "arm"))]
             firmware_version: None,
-        };
+        }
+    }
+
+    /// Build startup state and apply the config persisted by firmware.
+    ///
+    /// Upstream `data_init` reads EEPROM and falls back to generated defaults
+    /// at `third_party/refloat/src/main.c:1160-1185`.
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(super) fn from_persisted_config(all_data_payloads: RefloatAllDataPayloads) -> Self {
+        let mut state = Self::new(all_data_payloads);
         state.load_persisted_config_on_startup();
         state
     }

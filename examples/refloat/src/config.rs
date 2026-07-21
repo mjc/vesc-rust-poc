@@ -217,12 +217,10 @@ impl RefloatConfigImage {
         generated_field(Self::FOOT_BEEP_ENABLED_FIELD.read(self))
     }
 
-    #[cfg(test)]
     pub(crate) fn duty_pushback_speed(&self) -> AngularVelocity {
         generated_field(Self::DUTY_PUSHBACK_SPEED_FIELD.read(self))
     }
 
-    #[cfg(test)]
     pub(crate) fn tiltback_return_speed(&self) -> AngularVelocity {
         generated_field(Self::TILTBACK_RETURN_SPEED_FIELD.read(self))
     }
@@ -397,6 +395,10 @@ impl RefloatConfigEditor<'_> {
     }
 
     pub(crate) fn set_ki_limit(&mut self, current: MotorCurrent) -> bool {
+        let amps = current.current().as_amps();
+        if !amps.is_finite() || amps < 0.0 {
+            return false;
+        }
         RefloatBalanceConfig::KI_LIMIT_FIELD
             .write(self, current)
             .is_some()

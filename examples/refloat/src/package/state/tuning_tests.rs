@@ -93,6 +93,7 @@ fn runtime_tune_applies_all_three_refloat_blocks_and_long_acknowledgement() {
     let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
     assert!(state.serialized_config.editor().set_beeper_enabled(true));
     state.refresh_config_runtime_state();
+    let balance_filter_before_tune = state.balance_filter;
     let mut now = || TimestampTicks::from_ticks(0);
     let mut send = |_bytes: &[u8]| true;
 
@@ -122,6 +123,10 @@ fn runtime_tune_applies_all_three_refloat_blocks_and_long_acknowledgement() {
             0x82,
         ],
     ));
+
+    let mut expected_balance_filter = balance_filter_before_tune;
+    expected_balance_filter.configure_from(state.serialized_config.filter());
+    assert_eq!(state.balance_filter, expected_balance_filter);
 
     let bytes = state.serialized_config.as_bytes();
     for (offset, expected) in [

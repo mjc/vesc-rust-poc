@@ -9,6 +9,21 @@ use crate::domain::RefloatBeepReason;
 use vescpkg_rs::prelude::{AngleDegrees, Temperature, VescSeconds, Voltage};
 use vescpkg_rs::{ImuPitch, ImuRoll};
 
+fn rate_limit_angle(
+    current: AngleDegrees,
+    target: AngleDegrees,
+    step: AngleDegrees,
+) -> AngleDegrees {
+    let difference = target - current;
+    if difference.abs() < step {
+        target
+    } else if difference > AngleDegrees::ZERO {
+        current + step
+    } else {
+        current - step
+    }
+}
+
 fn pack_voltage_threshold(
     configured: Voltage,
     battery_cell_count: Option<BatteryCellCount>,
@@ -468,7 +483,7 @@ pub(super) fn refresh(
         // resets module setpoints at `third_party/refloat/src/main.c:239-244`,
         // and seeds only the board setpoint from `d->imu.balance_pitch` at
         // `third_party/refloat/src/main.c:249-252`.
-        state.balance_loop.pid_integral_current = MotorCurrent::new(Current::ZERO);
+        state.balance_loop.reset_pid();
         state.balance_loop.softstart_pid_limit = MotorCurrent::new(Current::ZERO);
         state.reverse_total_erpm = Rpm::ZERO;
         state.traction_control = false;
@@ -676,18 +691,23 @@ pub(super) fn refresh(
             && !matches!(ride_state.wheelslip(), RefloatWheelSlipState::Detected)
         {
             let duty_pushback_active = base.motor().duty_cycle().ratio().as_ratio()
-                > state.serialized_config.duty_pushback_threshold().as_ratio();
+                > state.runtime_duty_pushback_threshold().as_ratio();
             let board_setpoint = if duty_pushback_active {
-                let angle = state.serialized_config.duty_pushback_angle();
+                let angle = state.runtime_duty_pushback_angle();
                 if !matches!(ride_state.mode(), RefloatMode::Flywheel) {
                     ride_state = ride_state
                         .with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackDuty);
                 }
-                Some(if motor_erpm.is_positive() {
+                let target = if motor_erpm.is_positive() {
                     angle
                 } else {
                     -angle
-                })
+                };
+                Some(rate_limit_angle(
+                    setpoints.board().angle(),
+                    target,
+                    state.runtime_duty_pushback_step(),
+                ))
             } else if base.motor().duty_cycle().ratio().as_ratio() > 0.05
                 && (battery_voltage > high_voltage_threshold || bms_cell_over_voltage)
             {
@@ -777,7 +797,17 @@ pub(super) fn refresh(
                     | RefloatSetpointAdjustment::PushbackTemperature
             ) {
                 ride_state = ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::None);
-                Some(AngleDegrees::ZERO)
+                Some(rate_limit_angle(
+                    setpoints.board().angle(),
+                    AngleDegrees::ZERO,
+                    state.runtime_tiltback_return_step(),
+                ))
+            } else if !setpoints.board().angle().is_zero() {
+                Some(rate_limit_angle(
+                    setpoints.board().angle(),
+                    AngleDegrees::ZERO,
+                    state.runtime_tiltback_return_step(),
+                ))
             } else {
                 None
             };
@@ -821,7 +851,7 @@ pub(super) fn refresh(
         loop_state.balance_current = balance_current.current();
         loop_state.booster_current = booster_current.current();
         let balance_loop = loop_state.advance_balance_loop(
-            state.serialized_config.balance_loop_config(),
+            state.runtime_balance_loop_config(),
             LoopInput {
                 setpoint: setpoints.board(),
                 brake_tilt_setpoint: setpoints.brake_tilt(),
