@@ -58,6 +58,7 @@ fn default_scaled_config_fields_decode_to_semantic_values() {
     assert_eq!(startup.pitch_tolerance().as_degrees(), 4.0);
     assert_eq!(startup.roll_tolerance().as_degrees(), 45.0);
     assert_eq!(startup.startup_speed().as_degrees_per_second(), 30.0);
+    assert_eq!(config.low_voltage_pushback_angle().as_degrees(), 10.0);
     assert_eq!(balance.kp().as_amps_per_degree(), 20.0);
     assert_eq!(balance.kp2().as_amps_per_degree_per_second(), 0.6);
     assert_eq!(balance.ki().as_amps_per_degree_per_tick(), 0.005);

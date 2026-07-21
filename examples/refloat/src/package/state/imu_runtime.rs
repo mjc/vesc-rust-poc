@@ -3,6 +3,9 @@ use super::limits::{
     ReverseStopLimits, TractionLossLimits,
 };
 use super::*;
+#[cfg(any(test, target_arch = "arm"))]
+use crate::bms::RefloatBmsFault;
+use crate::domain::RefloatBeepReason;
 use vescpkg_rs::prelude::{AngleDegrees, VescSeconds, Voltage};
 
 /// Refloat runtime refresh of IMU-derived state and control-loop faults.
@@ -19,6 +22,7 @@ pub(super) fn refresh(
     let payloads = state.all_data_payloads;
     let base = payloads.base();
     let status = base.status();
+    let mut beep_reason = status.beep_reason();
     let ride_state = status.ride_state();
     let resets_runtime_vars =
         matches!(ride_state.run_state(), RefloatRunState::Startup) && imu.is_ready();
@@ -405,10 +409,43 @@ pub(super) fn refresh(
             configured_high_voltage
         };
         let battery_voltage = base.motor().battery_voltage().voltage();
+        #[cfg(any(test, target_arch = "arm"))]
+        let bms_cell_over_voltage = state.bms_faults.contains(RefloatBmsFault::CellOverVoltage);
+        #[cfg(not(any(test, target_arch = "arm")))]
+        let bms_cell_over_voltage = false;
+        #[cfg(any(test, target_arch = "arm"))]
+        let bms_connection_fault = state.bms_faults.contains(RefloatBmsFault::Connection);
+        #[cfg(not(any(test, target_arch = "arm")))]
+        let bms_connection_fault = false;
+        #[cfg(any(test, target_arch = "arm"))]
+        let bms_temperature_reason = if state
+            .bms_faults
+            .contains(RefloatBmsFault::CellOverTemperature)
+        {
+            Some(RefloatBeepReason::CellOverTemperature)
+        } else if state
+            .bms_faults
+            .contains(RefloatBmsFault::CellUnderTemperature)
+        {
+            Some(RefloatBeepReason::CellUnderTemperature)
+        } else if state
+            .bms_faults
+            .contains(RefloatBmsFault::BmsOverTemperature)
+        {
+            Some(RefloatBeepReason::BmsOverTemperature)
+        } else {
+            None
+        };
+        #[cfg(not(any(test, target_arch = "arm")))]
+        let bms_temperature_reason: Option<RefloatBeepReason> = None;
+        #[cfg(any(test, target_arch = "arm"))]
+        let bms_cell_under_voltage = state.bms_faults.contains(RefloatBmsFault::CellUnderVoltage);
+        #[cfg(not(any(test, target_arch = "arm")))]
+        let bms_cell_under_voltage = false;
         // Refloat refreshes this before every setpoint-adjustment branch at
-        // `third_party/refloat/src/main.c:512-518`. The BMS overvoltage
-        // exception remains pending until typed BMS state is wired.
-        if battery_voltage < high_voltage_threshold {
+        // `third_party/refloat/src/main.c:512-518`, except while a cell
+        // over-voltage fault is active.
+        if battery_voltage < high_voltage_threshold && !bms_cell_over_voltage {
             state.high_voltage_ticks = system_time_ticks;
         }
         let motor_duty = base.motor().duty_cycle().magnitude();
@@ -538,16 +575,59 @@ pub(super) fn refresh(
                     -angle
                 })
             } else if base.motor().duty_cycle().ratio().as_ratio() > 0.05
-                && battery_voltage > high_voltage_threshold
-                && (refloat_ticks_elapsed_seconds(
+                && (battery_voltage > high_voltage_threshold || bms_cell_over_voltage)
+            {
+                beep_reason = if bms_cell_over_voltage {
+                    RefloatBeepReason::CellHighVoltage
+                } else {
+                    RefloatBeepReason::HighVoltage
+                };
+                if refloat_ticks_elapsed_seconds(
                     system_time_ticks,
                     state.high_voltage_ticks,
                     VescSeconds::from_seconds(0.5),
-                ) || battery_voltage > high_voltage_threshold + Voltage::from_volts(1.0))
-            {
+                ) || battery_voltage > high_voltage_threshold + Voltage::from_volts(1.0)
+                    || bms_cell_over_voltage
+                {
+                    let angle = state.serialized_config.high_voltage_pushback_angle();
+                    ride_state = ride_state
+                        .with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackHighVoltage);
+                    Some(if motor_erpm.is_positive() {
+                        angle
+                    } else {
+                        -angle
+                    })
+                } else {
+                    ride_state =
+                        ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::None);
+                    None
+                }
+            } else if bms_connection_fault {
+                beep_reason = RefloatBeepReason::BmsConnection;
                 let angle = state.serialized_config.high_voltage_pushback_angle();
+                ride_state =
+                    ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackError);
+                Some(if motor_erpm.is_positive() {
+                    angle
+                } else {
+                    -angle
+                })
+            } else if let Some(temperature_reason) = bms_temperature_reason {
+                beep_reason = temperature_reason;
+                let angle = state.serialized_config.low_voltage_pushback_angle();
                 ride_state = ride_state
-                    .with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackHighVoltage);
+                    .with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackTemperature);
+                Some(if motor_erpm.is_positive() {
+                    angle
+                } else {
+                    -angle
+                })
+            } else if base.motor().duty_cycle().ratio().as_ratio() > 0.05 && bms_cell_under_voltage
+            {
+                beep_reason = RefloatBeepReason::CellLowVoltage;
+                let angle = state.serialized_config.low_voltage_pushback_angle();
+                ride_state = ride_state
+                    .with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackLowVoltage);
                 Some(if motor_erpm.is_positive() {
                     angle
                 } else {
@@ -557,6 +637,9 @@ pub(super) fn refresh(
                 ride_state.setpoint_adjustment(),
                 RefloatSetpointAdjustment::PushbackDuty
                     | RefloatSetpointAdjustment::PushbackHighVoltage
+                    | RefloatSetpointAdjustment::PushbackError
+                    | RefloatSetpointAdjustment::PushbackLowVoltage
+                    | RefloatSetpointAdjustment::PushbackTemperature
             ) {
                 ride_state = ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::None);
                 Some(AngleDegrees::ZERO)
@@ -622,13 +705,29 @@ pub(super) fn refresh(
     {
         state.request_motor_current(current);
     }
+    #[cfg(any(test, target_arch = "arm"))]
+    if matches!(run_state, RefloatRunState::Ready) && !ready_flywheel_stop {
+        let connection_fault = state.bms_faults.contains(RefloatBmsFault::Connection);
+        let balance_fault = state.bms_faults.contains(RefloatBmsFault::CellBalance)
+            && refloat_ticks_elapsed(system_time_ticks, state.disengage_ticks, 5);
+        if (connection_fault || balance_fault)
+            && refloat_ticks_elapsed(system_time_ticks, state.bms_alert_ticks, 15)
+        {
+            state.bms_alert_ticks = system_time_ticks;
+            beep_reason = if connection_fault {
+                RefloatBeepReason::BmsConnection
+            } else {
+                RefloatBeepReason::CellBalance
+            };
+        }
+    }
     // C publishes the just-refreshed `imu.balance_pitch` through app-data;
     // normal mode comes from the balance filter at `third_party/refloat/src/imu.c:35-41`, while
     // FLYWHEEL mirrors raw pitch at `third_party/refloat/src/imu.c:56-58`.
     let base = RefloatAllDataBasePayload::new(
         balance_current,
         RefloatAllDataAttitude::new(balance_pitch, imu.roll(), imu.pitch()),
-        RefloatAllDataStatus::new(ride_state, status.beep_reason()),
+        RefloatAllDataStatus::new(ride_state, beep_reason),
         base.footpad(),
         setpoints,
         booster_current,

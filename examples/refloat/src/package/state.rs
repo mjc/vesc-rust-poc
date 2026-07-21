@@ -74,6 +74,8 @@ pub struct RefloatPackageState {
     bms_faults: RefloatBmsFaults,
     #[cfg(any(test, target_arch = "arm"))]
     bms_start_ticks: Option<TimestampTicks>,
+    #[cfg(any(test, target_arch = "arm"))]
+    bms_alert_ticks: TimestampTicks,
     handtest_config_backup: Option<RefloatConfigImage>,
     motor_control: RefloatMotorControl,
     balance_filter: BalanceFilter,
@@ -116,6 +118,8 @@ impl RefloatPackageState {
             bms_faults: RefloatBmsFaults::NONE,
             #[cfg(any(test, target_arch = "arm"))]
             bms_start_ticks: None,
+            #[cfg(any(test, target_arch = "arm"))]
+            bms_alert_ticks: TimestampTicks::from_ticks(0),
             handtest_config_backup: None,
             motor_control: RefloatMotorControl::new(),
             balance_filter: BalanceFilter::source_startup(),
