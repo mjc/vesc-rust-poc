@@ -34,3 +34,15 @@ fn nvm_rejects_ranges_that_overflow_the_firmware_offset() {
         Err(NvmError::InvalidRange)
     );
 }
+
+#[test]
+fn nvm_reports_firmware_operation_failures() {
+    let firmware = FirmwareTest::new();
+    firmware.fail_nvm_operations();
+    let offset = NvmOffset::new(0);
+    let mut bytes = [0; 1];
+
+    assert_eq!(firmware.nvm().read(offset, &mut bytes), Err(NvmError::FirmwareFailure));
+    assert_eq!(firmware.nvm().write(offset, &bytes), Err(NvmError::FirmwareFailure));
+    assert_eq!(firmware.nvm().wipe(), Err(NvmError::FirmwareFailure));
+}
