@@ -32,4 +32,9 @@ fn lisp_values_expose_explicit_kind_predicates() {
     let floating = LispValue::from_f32(3.5);
     assert!(floating.is_number());
     assert_eq!(floating.decode_number_as_f32(), Some(3.5));
+
+    let pair = LispValue::cons(integer, character);
+    assert!(pair.is_cons());
+    assert_eq!(pair.car(), Some(integer));
+    assert_eq!(pair.cdr(), Some(character));
 }
