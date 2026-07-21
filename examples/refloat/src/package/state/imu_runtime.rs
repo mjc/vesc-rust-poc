@@ -398,15 +398,7 @@ pub(super) fn refresh(
                 // `SAT_CENTERING` when `setpoint_target_interpolated`
                 // already equals target zero at
                 // `third_party/refloat/src/main.c:517-520`.
-                ride_state = RefloatRideState::new(
-                    ride_state.run_state(),
-                    ride_state.mode(),
-                    RefloatSetpointAdjustment::None,
-                    ride_state.stop_condition(),
-                )
-                .with_charging(ride_state.charging())
-                .with_wheelslip(ride_state.wheelslip())
-                .with_darkride(ride_state.darkride());
+                ride_state = ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::None);
             } else {
                 let startup_step = startup.centering_step();
                 let centered_board = if board_setpoint.abs() < startup_step {
