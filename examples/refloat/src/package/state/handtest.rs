@@ -133,7 +133,7 @@ impl RefloatPackageState {
         }
     }
 
-    fn set_ride_mode(&mut self, mode: RefloatMode) {
+    pub(super) fn set_ride_mode(&mut self, mode: RefloatMode) {
         // HANDTEST changes only `state.mode` in C at `third_party/refloat/src/main.c:1430`;
         // preserve the rest of the packed Rust ride state while swapping mode.
         let payloads = self.all_data_payloads;

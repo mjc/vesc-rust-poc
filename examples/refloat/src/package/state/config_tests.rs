@@ -1,13 +1,39 @@
 use super::RefloatPackageState;
 use crate::beeper::RefloatBeeperLevel;
 use crate::config::RefloatConfigImage;
-use crate::domain::{RefloatAllDataPayloads, RefloatMode, RefloatRunState};
+use crate::domain::{
+    REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataPayloads, RefloatAppDataCommand, RefloatMode,
+    RefloatRunState,
+};
 use crate::package::test_support::{
     RefloatConfigTestBytes, default_refloat_config_bytes, editable_config_from_bytes,
     editable_config_from_state, sample_all_data_payloads_with_ride_state,
 };
-use std::vec::Vec;
-use vescpkg_rs::{MahonyPitchGain, MahonyRollGain};
+use std::{vec, vec::Vec};
+use vescpkg_rs::test_support::FirmwareTest;
+use vescpkg_rs::{MahonyPitchGain, MahonyRollGain, TimestampTicks};
+
+fn handle_config_command(
+    firmware: &FirmwareTest,
+    state: &mut RefloatPackageState,
+    command: RefloatAppDataCommand,
+    payload: &[u8],
+) -> bool {
+    let mut packet = vec![REFLOAT_APP_DATA_PACKAGE_ID.get(), command.id()];
+    packet.extend_from_slice(payload);
+    state.handle_packet_with_telemetry(
+        firmware.telemetry(),
+        &mut || TimestampTicks::from_ticks(0),
+        &mut |_bytes| true,
+        &packet,
+    )
+}
+
+fn drain_one_short_beep(state: &mut RefloatPackageState) -> Vec<(u32, RefloatBeeperLevel)> {
+    (1..=240)
+        .filter_map(|tick| state.tick_beeper().map(|level| (tick, level)))
+        .collect()
+}
 
 #[test]
 fn configured_loop_time_uses_refloat_hertz_config() {
@@ -25,6 +51,210 @@ fn configured_loop_time_uses_refloat_hertz_config() {
     // seven float16 config fields; `configure(d)` then uses it as
     // `1e6 / d->float_conf.hertz` at `third_party/refloat/src/main.c:190-191`.
     assert_eq!(state.configured_loop_time_us(), 2000);
+}
+
+#[test]
+fn config_save_restore_and_startup_round_trip_custom_eeprom() {
+    let firmware = FirmwareTest::new();
+    let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    assert!(state.serialized_config.editor().set_beeper_enabled(true));
+    state.refresh_config_runtime_state();
+    assert!(
+        state
+            .serialized_config
+            .editor()
+            .set_kp(vescpkg_rs::AngleCurrentGain::new(15.0))
+    );
+    let saved = state.serialized_config;
+
+    assert!(handle_config_command(
+        &firmware,
+        &mut state,
+        RefloatAppDataCommand::ConfigSave,
+        &[],
+    ));
+    assert_eq!(
+        drain_one_short_beep(&mut state),
+        [
+            (80, RefloatBeeperLevel::Low),
+            (160, RefloatBeeperLevel::High),
+            (240, RefloatBeeperLevel::Low),
+        ],
+    );
+
+    assert!(
+        state
+            .serialized_config
+            .editor()
+            .set_kp(vescpkg_rs::AngleCurrentGain::new(5.0))
+    );
+    assert!(handle_config_command(
+        &firmware,
+        &mut state,
+        RefloatAppDataCommand::ConfigRestore,
+        &[],
+    ));
+    assert_eq!(state.serialized_config, saved);
+    assert_eq!(state.tick_beeper(), None);
+
+    let restarted = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    assert_eq!(restarted.serialized_config, saved);
+}
+
+#[test]
+fn config_save_failure_has_no_write_acknowledgement() {
+    let firmware = FirmwareTest::new();
+    let address = vescpkg_rs::CustomEepromAddress::from_index(0).expect("zero fits");
+    firmware.fail_eeprom_write(address);
+    let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+
+    assert!(handle_config_command(
+        &firmware,
+        &mut state,
+        RefloatAppDataCommand::ConfigSave,
+        &[],
+    ));
+    assert_eq!(state.tick_beeper(), None);
+    assert_eq!(firmware.eeprom().read(address), None);
+}
+
+#[test]
+fn tune_defaults_resets_only_the_fields_named_by_refloat() {
+    let firmware = FirmwareTest::new();
+    let defaults = default_refloat_config_bytes();
+    let mut changed = defaults;
+    for range in [4..18, 67..75, 77..79, 91..101, 102..118, 130..175] {
+        changed[range].fill(0xAA);
+    }
+    changed[242] = 0;
+    changed[48] = 0x55;
+    changed[75] = 0x66;
+    changed[118] = 0x77;
+    let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    state.replace_serialized_config_for_test(
+        RefloatConfigImage::from_serialized(&changed).expect("valid test image"),
+    );
+
+    assert!(handle_config_command(
+        &firmware,
+        &mut state,
+        RefloatAppDataCommand::TuneDefaults,
+        &[],
+    ));
+    let actual = state.serialized_config.as_bytes();
+    for range in [4..18, 67..75, 77..79, 91..101, 102..118, 130..175] {
+        assert_eq!(&actual[range.clone()], &defaults[range]);
+    }
+    assert_eq!(actual[242], defaults[242]);
+    assert_eq!(actual[48], 0x55);
+    assert_eq!(actual[75], 0x66);
+    assert_eq!(actual[118], 0x77);
+    assert_eq!(state.tick_beeper(), None);
+}
+
+#[test]
+fn lock_restores_persisted_config_then_disables_and_saves() {
+    let firmware = FirmwareTest::new();
+    let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    assert!(state.serialized_config.editor().set_beeper_enabled(true));
+    state.refresh_config_runtime_state();
+    assert!(
+        state
+            .serialized_config
+            .editor()
+            .set_kp(vescpkg_rs::AngleCurrentGain::new(15.0))
+    );
+    assert!(handle_config_command(
+        &firmware,
+        &mut state,
+        RefloatAppDataCommand::ConfigSave,
+        &[],
+    ));
+    let _ = drain_one_short_beep(&mut state);
+    assert!(
+        state
+            .serialized_config
+            .editor()
+            .set_kp(vescpkg_rs::AngleCurrentGain::new(5.0))
+    );
+
+    assert!(handle_config_command(
+        &firmware,
+        &mut state,
+        RefloatAppDataCommand::Lock,
+        &[1],
+    ));
+    assert_eq!(
+        state.balance_config_for_test().kp().as_amps_per_degree(),
+        15.0
+    );
+    assert!(state.serialized_config.metadata().disabled());
+    assert!(matches!(
+        state
+            .all_data_payloads
+            .base()
+            .status()
+            .ride_state()
+            .run_state(),
+        RefloatRunState::Disabled
+    ));
+    assert_eq!(
+        drain_one_short_beep(&mut state),
+        [
+            (80, RefloatBeeperLevel::Low),
+            (160, RefloatBeeperLevel::High),
+            (240, RefloatBeeperLevel::Low),
+        ],
+    );
+
+    let restarted = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    assert!(restarted.serialized_config.metadata().disabled());
+}
+
+#[test]
+fn lock_is_ignored_while_running_like_refloat() {
+    let firmware = FirmwareTest::new();
+    let mut state = RefloatPackageState::new(sample_all_data_payloads_with_ride_state(
+        RefloatRunState::Running,
+        RefloatMode::Normal,
+    ));
+    assert!(
+        state
+            .serialized_config
+            .editor()
+            .set_kp(vescpkg_rs::AngleCurrentGain::new(15.0))
+    );
+    let before = state.serialized_config;
+
+    assert!(handle_config_command(
+        &firmware,
+        &mut state,
+        RefloatAppDataCommand::Lock,
+        &[1],
+    ));
+
+    assert_eq!(state.serialized_config, before);
+    assert_eq!(state.tick_beeper(), None);
+    assert_eq!(
+        RefloatPackageState::new(RefloatAllDataPayloads::source_startup()).serialized_config,
+        RefloatConfigImage::defaults(),
+    );
+}
+
+#[test]
+fn lock_rejects_a_missing_disabled_flag() {
+    let firmware = FirmwareTest::new();
+    let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    let before = state.serialized_config;
+
+    assert!(!handle_config_command(
+        &firmware,
+        &mut state,
+        RefloatAppDataCommand::Lock,
+        &[],
+    ));
+
+    assert_eq!(state.serialized_config, before);
 }
 
 #[test]
@@ -318,4 +548,26 @@ fn successful_config_write_reconfigures_and_acknowledges_like_refloat() {
         assert_eq!(changes.len(), expected_changes);
         assert_eq!(changes.last(), Some(&expected_last));
     }
+}
+
+#[test]
+fn store_serialized_config_persists_for_restart_like_refloat_set_cfg() {
+    let _firmware = FirmwareTest::new();
+    let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    let mut bytes = default_refloat_config_bytes();
+    bytes.edit_refloat_config(|config| {
+        assert!(config.set_kp(vescpkg_rs::AngleCurrentGain::new(15.0)));
+    });
+
+    assert!(state.store_serialized_config(&bytes));
+
+    let restarted = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    assert_eq!(
+        restarted
+            .serialized_config
+            .balance()
+            .kp()
+            .as_amps_per_degree(),
+        15.0,
+    );
 }

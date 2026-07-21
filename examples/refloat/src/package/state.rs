@@ -30,6 +30,7 @@ mod balance_tests;
 mod charging;
 mod config_runtime;
 mod config_storage;
+mod flywheel;
 #[cfg(any(test, target_arch = "arm"))]
 mod footpad_runtime;
 mod handtest;
@@ -50,6 +51,7 @@ mod tuning;
 #[cfg(test)]
 mod tuning_tests;
 
+use flywheel::RefloatFlywheelOffsets;
 use motor_acceleration::MotorAccelerationTracker;
 use remote_control::RemoteControlState;
 use transition::{
@@ -78,6 +80,7 @@ pub struct RefloatPackageState {
     serialized_config: RefloatConfigImage,
     beeper: RefloatBeeper,
     beeper_pin_configured: bool,
+    duty_beeping: bool,
     bms_sample: RefloatBmsSample,
     #[cfg(any(test, target_arch = "arm"))]
     bms_faults: RefloatBmsFaults,
@@ -86,6 +89,8 @@ pub struct RefloatPackageState {
     #[cfg(any(test, target_arch = "arm"))]
     bms_alert_ticks: TimestampTicks,
     handtest_config_backup: Option<RefloatConfigImage>,
+    flywheel_offsets: RefloatFlywheelOffsets,
+    flywheel_abort: bool,
     motor_control: RefloatMotorControl,
     balance_filter: BalanceFilter,
     traction_control: bool,
@@ -124,14 +129,14 @@ impl RefloatPackageState {
     /// Build app-data state from the current all-data payload snapshot.
     pub fn new(all_data_payloads: RefloatAllDataPayloads) -> Self {
         let serialized_config = RefloatConfigImage::defaults();
-        Self {
+        let mut state = Self {
             all_data_payloads,
             // Upstream `data_init` reads EEPROM and falls back to generated
-            // defaults at `third_party/refloat/src/main.c:1160-1185`; full EEPROM parity remains a
-            // later source-backed slice.
+            // defaults at `third_party/refloat/src/main.c:1160-1185`.
             serialized_config,
             beeper: RefloatBeeper::new(serialized_config.beeper_enabled()),
             beeper_pin_configured: false,
+            duty_beeping: false,
             bms_sample: RefloatBmsSample::source_startup(),
             #[cfg(any(test, target_arch = "arm"))]
             bms_faults: RefloatBmsFaults::NONE,
@@ -140,6 +145,8 @@ impl RefloatPackageState {
             #[cfg(any(test, target_arch = "arm"))]
             bms_alert_ticks: TimestampTicks::from_ticks(0),
             handtest_config_backup: None,
+            flywheel_offsets: RefloatFlywheelOffsets::source_startup(),
+            flywheel_abort: false,
             motor_control: RefloatMotorControl::new(),
             balance_filter: BalanceFilter::source_startup(),
             traction_control: false,
@@ -172,7 +179,9 @@ impl RefloatPackageState {
             battery_cell_count: None,
             #[cfg(any(test, target_arch = "arm"))]
             firmware_version: None,
-        }
+        };
+        state.load_persisted_config_on_startup();
+        state
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -189,9 +198,22 @@ impl RefloatPackageState {
         self.beeper.alert(alert);
     }
 
+    pub(crate) fn force_beeper_on(&mut self) {
+        self.beeper.on(true);
+    }
+
+    pub(crate) fn release_beeper(&mut self) {
+        self.beeper.off(false);
+    }
+
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn tick_beeper(&mut self) -> Option<RefloatBeeperLevel> {
         self.beeper.tick()
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn take_beeper_level(&mut self) -> Option<RefloatBeeperLevel> {
+        self.beeper.take_level()
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -371,6 +393,11 @@ impl RefloatPackageState {
     ) -> bool {
         self.handle_charging_state_packet(now, bytes)
             || self.handle_handtest_packet(bytes)
+            || self.handle_config_command(bytes)
+            || self.handle_flywheel_packet(bytes)
+            || tuning::handle_runtime_tune_packet(self, bytes)
+            || tuning::handle_tilt_tune_packet(self, bytes)
+            || tuning::handle_other_tune_packet(self, bytes)
             || tuning::handle_booster_packet(self, bytes)
             || self.handle_rc_move_packet(bytes)
             || self.send_metadata_packet_response(send, bytes)
@@ -420,6 +447,8 @@ impl RefloatPackageState {
 
 #[cfg(test)]
 mod config_tests;
+#[cfg(test)]
+mod flywheel_tests;
 #[cfg(test)]
 mod footpad_tests;
 #[cfg(test)]

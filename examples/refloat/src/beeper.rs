@@ -110,6 +110,7 @@ pub(crate) struct RefloatBeeper {
     transitions: RefloatBeeperTransitions,
     period: RefloatBeeperPeriod,
     countdown: RefloatBeeperCountdown,
+    pending_high: Option<bool>,
 }
 
 impl RefloatBeeper {
@@ -119,6 +120,7 @@ impl RefloatBeeper {
             transitions: RefloatBeeperTransitions::NONE,
             period: RefloatBeeperPeriod::SHORT,
             countdown: RefloatBeeperCountdown::IDLE,
+            pending_high: None,
         }
     }
 
@@ -135,14 +137,40 @@ impl RefloatBeeper {
         self.enabled = enabled;
     }
 
+    pub(crate) fn on(&mut self, force: bool) {
+        if self.enabled && (force || self.transitions.is_empty()) {
+            self.pending_high = Some(true);
+        }
+    }
+
+    pub(crate) fn off(&mut self, force: bool) {
+        if force || self.transitions.is_empty() {
+            self.pending_high = Some(false);
+        }
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn take_level(&mut self) -> Option<RefloatBeeperLevel> {
+        self.pending_high.take().map(|high| {
+            if high {
+                RefloatBeeperLevel::High
+            } else {
+                RefloatBeeperLevel::Low
+            }
+        })
+    }
+
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn tick(&mut self) -> Option<RefloatBeeperLevel> {
-        if !self.enabled || self.transitions.is_empty() || !self.countdown.tick() {
-            return None;
+        if self.enabled && !self.transitions.is_empty() && self.countdown.tick() {
+            self.countdown.restart(self.period);
+            self.pending_high = Some(matches!(
+                self.transitions.advance(),
+                RefloatBeeperLevel::High
+            ));
         }
 
-        self.countdown.restart(self.period);
-        Some(self.transitions.advance())
+        self.take_level()
     }
 }
 
@@ -162,6 +190,16 @@ mod tests {
 
         assert!(config.beeper_enabled());
         assert_eq!(config.as_bytes()[242], 1);
+    }
+
+    #[test]
+    fn continuous_warning_flags_decode_exact_refloat_generated_offsets() {
+        let config = RefloatConfigImage::defaults();
+
+        assert!(config.foot_beep_enabled());
+        assert!(!config.duty_beep_enabled());
+        assert_eq!(config.as_bytes()[28], 1);
+        assert_eq!(config.as_bytes()[50], 0);
     }
 
     #[test]
@@ -234,5 +272,43 @@ mod tests {
 
         assert_eq!(changes.len(), 15);
         assert_eq!(changes.last(), Some(&(4_500, RefloatBeeperLevel::Low)));
+    }
+
+    #[test]
+    fn continuous_beeper_respects_alert_guard_and_force_like_refloat() {
+        let mut beeper = RefloatBeeper::new(true);
+        beeper.alert(RefloatBeeperAlert::Short(RefloatBeeperCount::ONE));
+
+        beeper.off(false);
+        assert_eq!(beeper.take_level(), None);
+        beeper.on(true);
+        assert_eq!(beeper.take_level(), Some(RefloatBeeperLevel::High));
+
+        let changes: Vec<_> = (1..=240)
+            .filter_map(|tick| beeper.tick().map(|level| (tick, level)))
+            .collect();
+        assert_eq!(
+            changes,
+            [
+                (80, RefloatBeeperLevel::Low),
+                (160, RefloatBeeperLevel::High),
+                (240, RefloatBeeperLevel::Low),
+            ]
+        );
+
+        beeper.on(false);
+        assert_eq!(beeper.take_level(), Some(RefloatBeeperLevel::High));
+        beeper.off(false);
+        assert_eq!(beeper.take_level(), Some(RefloatBeeperLevel::Low));
+    }
+
+    #[test]
+    fn disabled_beeper_rejects_on_but_still_allows_forced_off_like_refloat() {
+        let mut beeper = RefloatBeeper::new(false);
+
+        beeper.on(true);
+        assert_eq!(beeper.take_level(), None);
+        beeper.off(true);
+        assert_eq!(beeper.take_level(), Some(RefloatBeeperLevel::Low));
     }
 }
