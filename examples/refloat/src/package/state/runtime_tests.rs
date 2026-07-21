@@ -1559,6 +1559,44 @@ fn ready_bms_cell_balance_alert_requires_disengage_and_alert_delays_like_refloat
 }
 
 #[test]
+fn ready_idle_nag_waits_for_stable_voltage_and_beeps_every_minute_like_refloat() {
+    let (telemetry, mut state) = ready_bms_fixture();
+    enable_beeper(&mut state);
+    let imu = telemetry.imu();
+
+    state.refresh_imu_runtime_state(imu, TimestampTicks::from_ticks(18_000_000));
+    assert_ne!(
+        state.all_data_payloads().base().status().beep_reason(),
+        RefloatBeepReason::Idle,
+    );
+
+    state.refresh_imu_runtime_state(imu, TimestampTicks::from_ticks(18_600_000));
+    assert_ne!(
+        state.all_data_payloads().base().status().beep_reason(),
+        RefloatBeepReason::Idle,
+    );
+
+    state.refresh_imu_runtime_state(imu, TimestampTicks::from_ticks(18_600_001));
+    assert_ne!(
+        state.all_data_payloads().base().status().beep_reason(),
+        RefloatBeepReason::Idle,
+    );
+
+    state.refresh_imu_runtime_state(imu, TimestampTicks::from_ticks(19_200_001));
+    assert_ne!(
+        state.all_data_payloads().base().status().beep_reason(),
+        RefloatBeepReason::Idle,
+    );
+
+    state.refresh_imu_runtime_state(imu, TimestampTicks::from_ticks(19_200_002));
+    assert_eq!(
+        state.all_data_payloads().base().status().beep_reason(),
+        RefloatBeepReason::Idle,
+    );
+    assert_eq!(first_beeper_high_tick(&mut state, 600), Some(600));
+}
+
+#[test]
 fn running_high_voltage_pushback_uses_strict_half_second_delay_like_refloat() {
     let (_, telemetry, mut state) = running_protective_pushback_fixture(
         SignedRatio::from_ratio_const(0.10),

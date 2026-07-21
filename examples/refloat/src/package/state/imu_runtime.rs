@@ -63,6 +63,11 @@ pub(super) fn refresh(
         (RefloatRunState::Startup, true) => RefloatRunState::Ready,
         (run_state, _) => run_state,
     };
+    if matches!(run_state, RefloatRunState::Running) {
+        // `time_update` refreshes Refloat's idle timer on every RUNNING loop
+        // at `third_party/refloat/src/time.c:38-43`.
+        state.idle_ticks = system_time_ticks;
+    }
     if matches!(
         (run_state, ride_state.darkride()),
         (RefloatRunState::Ready, RefloatDarkRideState::Active)
@@ -815,6 +820,24 @@ pub(super) fn refresh(
                 RefloatBeepReason::CellBalance
             };
             beeper_alert = Some(RefloatBeeperAlert::FourShort);
+        }
+        // READY nags after 30 idle minutes, at most once per minute, and
+        // suppresses the alert while pack voltage rises in Refloat C at
+        // `third_party/refloat/src/main.c:1010-1023`.
+        if refloat_ticks_elapsed(system_time_ticks, state.idle_ticks, 1_800) {
+            if refloat_ticks_elapsed(system_time_ticks, state.nag_ticks, 60) {
+                state.nag_ticks = system_time_ticks;
+                let battery_voltage = base.motor().battery_voltage();
+                if battery_voltage > state.idle_voltage {
+                    state.idle_voltage = battery_voltage;
+                } else {
+                    beep_reason = RefloatBeepReason::Idle;
+                    beeper_alert = Some(RefloatBeeperAlert::Long(RefloatBeeperCount::TWO));
+                }
+            }
+        } else {
+            state.nag_ticks = system_time_ticks;
+            state.idle_voltage = BatteryVoltage::new(Voltage::ZERO);
         }
     }
     if let Some(alert) = beeper_alert {

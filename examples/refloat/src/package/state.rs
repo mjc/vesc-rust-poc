@@ -19,9 +19,9 @@ use crate::motor_control::RefloatMotorControl;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{AdcVoltage, FirmwareVersion};
 use vescpkg_rs::prelude::{
-    AngleRadians, BatteryCellCount, Current, DutyCycleLimit, MosfetTemperature, MotorCurrent,
-    MotorCurrentLimit, MotorTemperature, Ratio, Rpm, Temperature, TemperatureLimitStart,
-    TimestampTicks,
+    AngleRadians, BatteryCellCount, BatteryVoltage, Current, DutyCycleLimit, MosfetTemperature,
+    MotorCurrent, MotorCurrentLimit, MotorTemperature, Ratio, Rpm, Temperature,
+    TemperatureLimitStart, TimestampTicks, Voltage,
 };
 use vescpkg_rs::{Imu, MotorOutput, MotorTelemetry};
 
@@ -94,6 +94,9 @@ pub struct RefloatPackageState {
     charging_ticks: TimestampTicks,
     engage_ticks: TimestampTicks,
     disengage_ticks: TimestampTicks,
+    idle_ticks: TimestampTicks,
+    nag_ticks: TimestampTicks,
+    idle_voltage: BatteryVoltage,
     fault_switch_ticks: TimestampTicks,
     fault_switch_half_ticks: TimestampTicks,
     reverse_ticks: TimestampTicks,
@@ -145,6 +148,9 @@ impl RefloatPackageState {
             charging_ticks: TimestampTicks::from_ticks(0),
             engage_ticks: TimestampTicks::from_ticks(0),
             disengage_ticks: TimestampTicks::from_ticks(0),
+            idle_ticks: TimestampTicks::from_ticks(0),
+            nag_ticks: TimestampTicks::from_ticks(0),
+            idle_voltage: BatteryVoltage::new(Voltage::ZERO),
             fault_switch_ticks: TimestampTicks::from_ticks(0),
             fault_switch_half_ticks: TimestampTicks::from_ticks(0),
             reverse_ticks: TimestampTicks::from_ticks(0),
