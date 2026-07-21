@@ -9,6 +9,21 @@ use crate::domain::RefloatBeepReason;
 use vescpkg_rs::prelude::{AngleDegrees, Temperature, VescSeconds, Voltage};
 use vescpkg_rs::{ImuPitch, ImuRoll};
 
+fn rate_limit_angle(
+    current: AngleDegrees,
+    target: AngleDegrees,
+    step: AngleDegrees,
+) -> AngleDegrees {
+    let difference = target - current;
+    if difference.abs() < step {
+        target
+    } else if difference > AngleDegrees::ZERO {
+        current + step
+    } else {
+        current - step
+    }
+}
+
 fn pack_voltage_threshold(
     configured: Voltage,
     battery_cell_count: Option<BatteryCellCount>,
@@ -683,11 +698,16 @@ pub(super) fn refresh(
                     ride_state = ride_state
                         .with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackDuty);
                 }
-                Some(if motor_erpm.is_positive() {
+                let target = if motor_erpm.is_positive() {
                     angle
                 } else {
                     -angle
-                })
+                };
+                Some(rate_limit_angle(
+                    setpoints.board().angle(),
+                    target,
+                    state.runtime_duty_pushback_step(),
+                ))
             } else if base.motor().duty_cycle().ratio().as_ratio() > 0.05
                 && (battery_voltage > high_voltage_threshold || bms_cell_over_voltage)
             {
@@ -777,7 +797,17 @@ pub(super) fn refresh(
                     | RefloatSetpointAdjustment::PushbackTemperature
             ) {
                 ride_state = ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::None);
-                Some(AngleDegrees::ZERO)
+                Some(rate_limit_angle(
+                    setpoints.board().angle(),
+                    AngleDegrees::ZERO,
+                    state.runtime_tiltback_return_step(),
+                ))
+            } else if !setpoints.board().angle().is_zero() {
+                Some(rate_limit_angle(
+                    setpoints.board().angle(),
+                    AngleDegrees::ZERO,
+                    state.runtime_tiltback_return_step(),
+                ))
             } else {
                 None
             };

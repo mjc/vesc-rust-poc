@@ -9,7 +9,7 @@ use crate::package::test_support::{
 };
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngleRadians, AngularVelocity, DutyCycle, RateCurrentGain,
-    Ratio, SignedRatio, Voltage,
+    Ratio, SignedRatio, Temperature, TemperatureLimitStart, Voltage,
 };
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{ImuPitch, ImuRoll, ImuYaw, WireByte};
@@ -101,7 +101,7 @@ fn set_duty_cycle(state: &mut RefloatPackageState, duty_cycle: DutyCycle) {
     let base = payloads.base();
     let motor = base.motor();
     let motor = RefloatAllDataMotorPayload::new(
-        motor.battery_voltage(),
+        BatteryVoltage::new(Voltage::from_volts(60.0)),
         motor.electrical_speed(),
         motor.vehicle_speed(),
         motor.currents(),
@@ -376,7 +376,10 @@ fn flywheel_pitch_rate_projection_uses_raw_roll_before_calibration_offset() {
 
 #[test]
 fn flywheel_applies_duty_pushback_without_exposing_pushback_status() {
-    let firmware = FirmwareTest::new();
+    let firmware = FirmwareTest::new().with_temperature_limit_starts(
+        TemperatureLimitStart::new(Temperature::from_degrees_celsius(85.0)),
+        TemperatureLimitStart::new(Temperature::from_degrees_celsius(95.0)),
+    );
     firmware.set_imu_ready(true);
     firmware.set_imu_attitude(
         ImuRoll::new(AngleRadians::ZERO),
@@ -387,6 +390,9 @@ fn flywheel_applies_duty_pushback_without_exposing_pushback_status() {
         AngleDegrees::from_degrees(80.0),
         AngleDegrees::ZERO,
     ));
+    let ready_payloads = state.all_data_payloads;
+    state.refresh_motor_runtime_state(firmware.telemetry());
+    state.all_data_payloads = ready_payloads;
     assert!(state.handle_flywheel_packet(&flywheel_packet(&[0x81, 0, 0, 0, 0, 1])));
     set_ride_state(&mut state, RefloatRunState::Running);
     set_footpad(&mut state, RefloatFootpadState::None);
@@ -394,17 +400,30 @@ fn flywheel_applies_duty_pushback_without_exposing_pushback_status() {
         &mut state,
         DutyCycle::new(SignedRatio::from_ratio_const(0.2)),
     );
+    let initial_board_setpoint = state.all_data_payloads().base().setpoints().board().angle();
+    let duty_step = AngleDegrees::from_degrees(5.0 / 832.0);
 
     state.refresh_imu_runtime_state(firmware.imu(), TimestampTicks::from_ticks(1));
 
     let base = state.all_data_payloads().base();
     assert_eq!(
         base.setpoints().board().angle(),
-        AngleDegrees::from_degrees(2.0)
+        initial_board_setpoint + duty_step
     );
     assert_eq!(
         base.status().ride_state().setpoint_adjustment(),
         RefloatSetpointAdjustment::None
+    );
+
+    set_duty_cycle(
+        &mut state,
+        DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+    );
+    state.refresh_imu_runtime_state(firmware.imu(), TimestampTicks::from_ticks(2));
+
+    assert_eq!(
+        state.all_data_payloads().base().setpoints().board().angle(),
+        initial_board_setpoint + duty_step - duty_step,
     );
 }
 

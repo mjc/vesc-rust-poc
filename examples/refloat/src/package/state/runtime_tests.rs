@@ -1039,9 +1039,8 @@ fn running_enters_duty_pushback_above_configured_threshold_like_refloat() {
         ],
     ));
 
-    // Default Refloat duty pushback is 5 degrees above 0.80 duty at
-    // `third_party/refloat/src/conf/settings.xml:524-593`; runtime selection
-    // is `third_party/refloat/src/main.c:577-592`.
+    // Default Refloat duty pushback targets 5 degrees above 0.80 duty and
+    // moves by `duty_pushback_speed / hertz` each loop.
     let base = state.all_data_payloads().base();
     assert_eq!(
         base.status().ride_state().setpoint_adjustment(),
@@ -1049,7 +1048,7 @@ fn running_enters_duty_pushback_above_configured_threshold_like_refloat() {
     );
     assert_eq!(
         base.setpoints().board().angle(),
-        AngleDegrees::from_degrees(5.0),
+        state.runtime_duty_pushback_step(),
     );
 }
 
@@ -1202,7 +1201,7 @@ fn running_duty_pushback_uses_negative_target_for_reverse_erpm_like_refloat() {
 
     assert_eq!(
         state.all_data_payloads().base().setpoints().board().angle(),
-        AngleDegrees::from_degrees(-5.0),
+        -state.runtime_duty_pushback_step(),
     );
 }
 
@@ -1259,7 +1258,10 @@ fn running_duty_pushback_clears_below_threshold_like_refloat() {
         base.status().ride_state().setpoint_adjustment(),
         RefloatSetpointAdjustment::None,
     );
-    assert_eq!(base.setpoints().board().angle(), AngleDegrees::ZERO);
+    assert_eq!(
+        base.setpoints().board().angle(),
+        AngleDegrees::from_degrees(5.0) - state.runtime_tiltback_return_step(),
+    );
 }
 
 #[test]
@@ -1722,7 +1724,7 @@ fn running_duty_pushback_precedes_high_voltage_like_refloat() {
     );
     assert_eq!(
         base.setpoints().board().angle(),
-        AngleDegrees::from_degrees(5.0),
+        state.runtime_duty_pushback_step(),
     );
 }
 

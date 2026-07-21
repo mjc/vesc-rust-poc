@@ -217,12 +217,10 @@ impl RefloatConfigImage {
         generated_field(Self::FOOT_BEEP_ENABLED_FIELD.read(self))
     }
 
-    #[cfg(test)]
     pub(crate) fn duty_pushback_speed(&self) -> AngularVelocity {
         generated_field(Self::DUTY_PUSHBACK_SPEED_FIELD.read(self))
     }
 
-    #[cfg(test)]
     pub(crate) fn tiltback_return_speed(&self) -> AngularVelocity {
         generated_field(Self::TILTBACK_RETURN_SPEED_FIELD.read(self))
     }

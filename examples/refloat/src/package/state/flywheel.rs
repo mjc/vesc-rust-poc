@@ -210,6 +210,32 @@ impl RefloatPackageState {
         )
     }
 
+    pub(super) fn runtime_duty_pushback_step(&self) -> AngleDegrees {
+        let speed = self.flywheel_runtime_config.map_or_else(
+            || self.serialized_config.duty_pushback_speed(),
+            |config| config.duty_speed,
+        );
+        self.runtime_setpoint_step(speed)
+    }
+
+    pub(super) fn runtime_tiltback_return_step(&self) -> AngleDegrees {
+        let speed = self.flywheel_runtime_config.map_or_else(
+            || self.serialized_config.tiltback_return_speed(),
+            |config| config.duty_speed,
+        );
+        self.runtime_setpoint_step(speed)
+    }
+
+    fn runtime_setpoint_step(&self, speed: AngularVelocity) -> AngleDegrees {
+        self.serialized_config
+            .startup()
+            .sample_rate()
+            .sample_period()
+            .map_or(AngleDegrees::ZERO, |period| {
+                AngleDegrees::from(speed * period)
+            })
+    }
+
     pub(super) fn runtime_balance_loop_config(&self) -> LoopConfig {
         let mut config = self.serialized_config.balance_loop_config();
         if let Some(flywheel) = self.flywheel_runtime_config {
