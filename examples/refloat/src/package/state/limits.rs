@@ -17,6 +17,7 @@ impl QuickStopLimits {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct ReverseStopLimits {
     pub(super) entry_erpm: Rpm,
+    pub(super) tolerance_erpm: Rpm,
     pub(super) total_erpm: Rpm,
     pub(super) pitch: AngleDegrees,
     pub(super) timer_fast_pitch: AngleDegrees,
@@ -29,11 +30,20 @@ impl ReverseStopLimits {
     // `third_party/refloat/src/main.c:538-552`.
     pub(super) const REFLOAT: Self = Self {
         entry_erpm: Rpm::from_revolutions_per_minute(200.0),
+        tolerance_erpm: Rpm::from_revolutions_per_minute(20_000.0),
         total_erpm: Rpm::from_revolutions_per_minute(200_000.0),
         pitch: AngleDegrees::from_degrees(18.0),
         timer_fast_pitch: AngleDegrees::from_degrees(10.0),
         timer_slow_pitch: AngleDegrees::from_degrees(5.0),
     };
+
+    pub(super) fn target_angle(self, reverse_total_erpm: Rpm) -> AngleDegrees {
+        // C map: `REVSTOP_ERPM_INCR` and the target calculation at
+        // `third_party/refloat/src/main.c:100,525-529`.
+        AngleDegrees::from_degrees(
+            (reverse_total_erpm.abs() - self.tolerance_erpm).as_revolutions_per_minute() * 0.000_08,
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

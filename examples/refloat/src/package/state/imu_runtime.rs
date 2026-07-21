@@ -443,9 +443,33 @@ pub(super) fn refresh(
             RefloatSetpointAdjustment::ReverseStop
         ) && !entered_reverse_stop
         {
-            // Upstream `calculate_setpoint_target(d)` accumulates ERPM
-            // while SAT_REVERSESTOP is active at `third_party/refloat/src/main.c:522-525`.
+            // Upstream `calculate_setpoint_target(d)` accumulates ERPM, grows
+            // the nose-down target past tolerance, and exits below half
+            // tolerance while moving forward at
+            // `third_party/refloat/src/main.c:522-536`.
             state.reverse_total_erpm = state.reverse_total_erpm + motor_erpm;
+            let reverse_total_erpm = state.reverse_total_erpm.abs();
+            let board_setpoint = if reverse_total_erpm > reverse_stop.tolerance_erpm {
+                Some(reverse_stop.target_angle(state.reverse_total_erpm))
+            } else if reverse_total_erpm <= reverse_stop.tolerance_erpm * 0.5
+                && !motor_erpm.is_negative()
+            {
+                state.reverse_total_erpm = Rpm::ZERO;
+                ride_state = ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::None);
+                Some(AngleDegrees::ZERO)
+            } else {
+                None
+            };
+            if let Some(board_setpoint) = board_setpoint {
+                setpoints = RefloatRealtimeRuntimeSetpoints::new(
+                    RefloatRealtimeRuntimeSetpoint::new(board_setpoint),
+                    setpoints.atr(),
+                    setpoints.brake_tilt(),
+                    setpoints.torque_tilt(),
+                    setpoints.turn_tilt(),
+                    setpoints.remote(),
+                );
+            }
         }
         let gyro = imu.angular_rate();
         // Upstream RUNNING executes this exact balance-current pipeline at
