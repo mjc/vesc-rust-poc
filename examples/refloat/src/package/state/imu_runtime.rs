@@ -31,6 +31,20 @@ pub(super) fn refresh(
         (RefloatRunState::Startup, true) => RefloatRunState::Ready,
         (run_state, _) => run_state,
     };
+    if resets_runtime_vars {
+        let configured_low_voltage = state.serialized_config.low_voltage_threshold();
+        let low_voltage_threshold = if configured_low_voltage.as_volts() < 10.0 {
+            state
+                .battery_cell_count
+                .map_or(configured_low_voltage, |count| configured_low_voltage * count)
+        } else {
+            configured_low_voltage
+        };
+        let warning_threshold = low_voltage_threshold + Voltage::from_volts(5.0);
+        if base.motor().battery_voltage().voltage() >= warning_threshold {
+            beeper_alert = Some(RefloatBeeperAlert::Long(RefloatBeeperCount::ONE));
+        }
+    }
     let flywheel_both_footpads_fault = matches!(
         (run_state, ride_state.mode(), base.footpad().state()),
         (

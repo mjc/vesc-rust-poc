@@ -56,6 +56,40 @@ fn startup_ready_gate_refreshes_imu_attitude_like_refloat() {
 }
 
 #[test]
+fn startup_ready_above_low_voltage_margin_schedules_one_long_beep_like_refloat() {
+    let telemetry = FirmwareTest::new()
+        .with_input_voltage(InputVoltage::new(Voltage::from_volts(60.0)))
+        .with_battery_cell_count(BatteryCellCount::try_new(18).expect("18s battery"));
+    telemetry.set_imu_ready(true);
+    let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    enable_beeper(&mut state);
+
+    assert!(tick_refloat_state_and_handle_packet(
+        &mut state,
+        TimestampTicks::from_ticks(0),
+        telemetry.telemetry(),
+        telemetry.imu(),
+        &[
+            REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            RefloatAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+
+    let changes: Vec<_> = (1..=900)
+        .filter_map(|tick| state.tick_beeper().map(|level| (tick, level)))
+        .collect();
+
+    assert_eq!(
+        changes,
+        [
+            (300, RefloatBeeperLevel::Low),
+            (600, RefloatBeeperLevel::High),
+            (900, RefloatBeeperLevel::Low),
+        ]
+    );
+}
+
+#[test]
 fn startup_balance_filter_uses_firmware_orientation_like_refloat_data_init() {
     let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
     state.initialize_balance_filter(ImuOrientation::from_quaternion(
