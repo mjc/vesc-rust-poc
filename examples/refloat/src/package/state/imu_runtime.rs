@@ -490,7 +490,7 @@ pub(super) fn refresh(
                 })
             } else if matches!(
                 ride_state.setpoint_adjustment(),
-                RefloatSetpointAdjustment::PushbackDuty
+                RefloatSetpointAdjustment::None | RefloatSetpointAdjustment::PushbackDuty
             ) {
                 ride_state = ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::None);
                 Some(AngleDegrees::ZERO)
