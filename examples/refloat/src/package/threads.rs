@@ -285,7 +285,7 @@ impl vescpkg_rs::StatelessFirmwareThread for RefloatAuxThread {
 #[cfg(test)]
 mod tests {
     use super::super::state::RefloatPackageState;
-    use crate::beeper::RefloatBeeperAlert;
+    use crate::beeper::{RefloatBeeperAlert, RefloatBeeperCount};
     use crate::domain::{RefloatAllDataPayloads, RefloatFootpadState, RefloatRunState};
     use crate::package::test_support::default_refloat_config_bytes;
     use core::time::Duration;
@@ -387,7 +387,7 @@ mod tests {
         config[242] = 1;
         assert!(state.store_serialized_config(&config));
         state.refresh_runtime_state(telemetry.telemetry(), imu, TimestampTicks::from_ticks(0));
-        state.alert_beeper(RefloatBeeperAlert::ThreeShort);
+        state.alert_beeper(RefloatBeeperAlert::Short(RefloatBeeperCount::THREE));
         let mut changes = std::vec::Vec::new();
         let mut configure_ticks = std::vec::Vec::new();
 

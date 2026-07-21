@@ -1,4 +1,4 @@
-use super::{RefloatBeeperAlert, RefloatPackageState};
+use super::{RefloatBeeperAlert, RefloatBeeperCount, RefloatPackageState};
 use crate::config::RefloatConfigImage;
 use crate::domain::{RefloatMode, RefloatRunState};
 
@@ -69,9 +69,9 @@ impl RefloatPackageState {
             .ride_state()
             .run_state();
         self.alert_beeper(if matches!(run_state, RefloatRunState::Disabled) {
-            RefloatBeeperAlert::ThreeShort
+            RefloatBeeperAlert::Short(RefloatBeeperCount::THREE)
         } else {
-            RefloatBeeperAlert::OneShort
+            RefloatBeeperAlert::Short(RefloatBeeperCount::ONE)
         });
         true
     }
