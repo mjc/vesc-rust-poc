@@ -698,6 +698,23 @@ fn running_protective_pushback_fixture(
     (app_data, telemetry, state)
 }
 
+fn tick_running_protective_pushback(
+    state: &mut RefloatPackageState,
+    telemetry: &FirmwareTest,
+    now: TimestampTicks,
+) {
+    assert!(tick_refloat_state_and_handle_packet(
+        state,
+        now,
+        telemetry.telemetry(),
+        telemetry.imu(),
+        &[
+            REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            RefloatAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+}
+
 #[test]
 fn running_enters_duty_pushback_above_configured_threshold_like_refloat() {
     let (app_data, telemetry, mut state) = running_protective_pushback_fixture(
@@ -842,6 +859,77 @@ fn running_enters_high_voltage_pushback_one_volt_above_threshold_like_refloat() 
     assert_eq!(
         base.setpoints().board().angle(),
         AngleDegrees::from_degrees(8.0),
+    );
+}
+
+#[test]
+fn running_high_voltage_pushback_uses_strict_half_second_delay_like_refloat() {
+    let (_, telemetry, mut state) = running_protective_pushback_fixture(
+        SignedRatio::from_ratio_const(0.10),
+        Rpm::from_revolutions_per_minute(1_000.0),
+        RefloatSetpointAdjustment::None,
+        InputVoltage::new(Voltage::from_volts(78.0)),
+    );
+
+    tick_running_protective_pushback(&mut state, &telemetry, TimestampTicks::from_ticks(5_000));
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .setpoint_adjustment(),
+        RefloatSetpointAdjustment::None,
+    );
+
+    tick_running_protective_pushback(&mut state, &telemetry, TimestampTicks::from_ticks(5_001));
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .setpoint_adjustment(),
+        RefloatSetpointAdjustment::PushbackHighVoltage,
+    );
+}
+
+#[test]
+fn running_high_voltage_pushback_uses_negative_target_for_reverse_erpm_like_refloat() {
+    let (app_data, telemetry, mut state) = running_protective_pushback_fixture(
+        SignedRatio::from_ratio_const(0.10),
+        Rpm::from_revolutions_per_minute(-1_000.0),
+        RefloatSetpointAdjustment::None,
+        InputVoltage::new(Voltage::from_volts(78.5)),
+    );
+
+    tick_running_protective_pushback(&mut state, &telemetry, app_data);
+
+    assert_eq!(
+        state.all_data_payloads().base().setpoints().board().angle(),
+        AngleDegrees::from_degrees(-8.0),
+    );
+}
+
+#[test]
+fn running_duty_pushback_precedes_high_voltage_like_refloat() {
+    let (app_data, telemetry, mut state) = running_protective_pushback_fixture(
+        SignedRatio::from_ratio_const(0.81),
+        Rpm::from_revolutions_per_minute(1_000.0),
+        RefloatSetpointAdjustment::None,
+        InputVoltage::new(Voltage::from_volts(78.5)),
+    );
+
+    tick_running_protective_pushback(&mut state, &telemetry, app_data);
+
+    let base = state.all_data_payloads().base();
+    assert_eq!(
+        base.status().ride_state().setpoint_adjustment(),
+        RefloatSetpointAdjustment::PushbackDuty,
+    );
+    assert_eq!(
+        base.setpoints().board().angle(),
+        AngleDegrees::from_degrees(5.0),
     );
 }
 
