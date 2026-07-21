@@ -1,5 +1,5 @@
 use super::RefloatPackageState;
-use crate::beeper::RefloatBeeperLevel;
+use crate::beeper::{RefloatBeeperCount, RefloatBeeperLevel};
 use crate::bms::{RefloatBmsSample, RefloatBmsTemperature};
 use crate::domain::{
     REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataAttitude, RefloatAllDataBasePayload,
@@ -126,6 +126,33 @@ fn startup_ready_below_low_voltage_margin_reports_low_battery_and_beeps_twice() 
             (1_500, RefloatBeeperLevel::Low),
         ]
     );
+}
+
+#[test]
+fn startup_ready_beep_count_truncates_and_caps_voltage_deficit_like_refloat() {
+    let warning_threshold = Voltage::from_volts(59.0);
+    let cases = [
+        (Voltage::from_volts(60.0), RefloatBeeperCount::ONE),
+        (Voltage::from_volts(58.9), RefloatBeeperCount::ONE),
+        (Voltage::from_volts(58.0), RefloatBeeperCount::TWO),
+        (Voltage::from_volts(57.0), RefloatBeeperCount::THREE),
+        (Voltage::from_volts(56.0), RefloatBeeperCount::FOUR),
+        (Voltage::from_volts(55.0), RefloatBeeperCount::FIVE),
+        (Voltage::from_volts(54.0), RefloatBeeperCount::SIX),
+        (Voltage::from_volts(53.0), RefloatBeeperCount::SEVEN),
+        (Voltage::from_volts(40.0), RefloatBeeperCount::SEVEN),
+    ];
+
+    for (battery_voltage, expected) in cases {
+        assert_eq!(
+            super::imu_runtime::startup_ready_beep_count(
+                warning_threshold,
+                battery_voltage
+            ),
+            expected,
+            "battery voltage: {battery_voltage:?}"
+        );
+    }
 }
 
 #[test]

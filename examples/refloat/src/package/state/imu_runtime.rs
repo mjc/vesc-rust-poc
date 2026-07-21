@@ -8,6 +8,27 @@ use crate::bms::RefloatBmsFault;
 use crate::domain::RefloatBeepReason;
 use vescpkg_rs::prelude::{AngleDegrees, VescSeconds, Voltage};
 
+pub(super) fn startup_ready_beep_count(
+    warning_threshold: Voltage,
+    battery_voltage: Voltage,
+) -> RefloatBeeperCount {
+    if battery_voltage + Voltage::from_volts(6.0) <= warning_threshold {
+        RefloatBeeperCount::SEVEN
+    } else if battery_voltage + Voltage::from_volts(5.0) <= warning_threshold {
+        RefloatBeeperCount::SIX
+    } else if battery_voltage + Voltage::from_volts(4.0) <= warning_threshold {
+        RefloatBeeperCount::FIVE
+    } else if battery_voltage + Voltage::from_volts(3.0) <= warning_threshold {
+        RefloatBeeperCount::FOUR
+    } else if battery_voltage + Voltage::from_volts(2.0) <= warning_threshold {
+        RefloatBeeperCount::THREE
+    } else if battery_voltage + Voltage::from_volts(1.0) <= warning_threshold {
+        RefloatBeeperCount::TWO
+    } else {
+        RefloatBeeperCount::ONE
+    }
+}
+
 /// Refloat runtime refresh of IMU-derived state and control-loop faults.
 ///
 /// C map: upstream `check_faults`, READY engage, startup reset, and traction
@@ -41,12 +62,14 @@ pub(super) fn refresh(
             configured_low_voltage
         };
         let warning_threshold = low_voltage_threshold + Voltage::from_volts(5.0);
-        if base.motor().battery_voltage().voltage() >= warning_threshold {
-            beeper_alert = Some(RefloatBeeperAlert::Long(RefloatBeeperCount::ONE));
-        } else {
+        let battery_voltage = base.motor().battery_voltage().voltage();
+        if battery_voltage < warning_threshold {
             beep_reason = RefloatBeepReason::LowBattery;
-            beeper_alert = Some(RefloatBeeperAlert::Long(RefloatBeeperCount::TWO));
         }
+        beeper_alert = Some(RefloatBeeperAlert::Long(startup_ready_beep_count(
+            warning_threshold,
+            battery_voltage,
+        )));
     }
     let flywheel_both_footpads_fault = matches!(
         (run_state, ride_state.mode(), base.footpad().state()),

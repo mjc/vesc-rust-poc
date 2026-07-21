@@ -34,6 +34,9 @@ impl RefloatBeeperCount {
     pub(crate) const ONE: Self = Self(1);
     pub(crate) const TWO: Self = Self(2);
     pub(crate) const THREE: Self = Self(3);
+    pub(crate) const FOUR: Self = Self(4);
+    pub(crate) const FIVE: Self = Self(5);
+    pub(crate) const SIX: Self = Self(6);
     pub(crate) const SEVEN: Self = Self(7);
 }
 
