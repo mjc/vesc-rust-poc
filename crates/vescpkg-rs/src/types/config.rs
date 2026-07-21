@@ -2,6 +2,43 @@
 
 use core::marker::PhantomData;
 
+/// One protocol byte kept typed while mapping wire values into semantic units.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct WireByte(u8);
+
+impl WireByte {
+    /// Wrap one byte received from a validated protocol payload.
+    pub const fn new(value: u8) -> Self {
+        Self(value)
+    }
+
+    /// Apply a wire scale and offset directly through a semantic constructor.
+    pub fn scaled<T>(self, scale: f32, offset: f32, constructor: fn(f32) -> T) -> T {
+        constructor(f32::from(self.0) * scale + offset)
+    }
+
+    /// Apply a rational wire scale in protocol operation order.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `denominator` is zero or non-finite.
+    pub fn scaled_ratio<T>(
+        self,
+        numerator: f32,
+        denominator: f32,
+        offset: f32,
+        constructor: fn(f32) -> T,
+    ) -> T {
+        assert!(
+            denominator.is_finite() && denominator != 0.0,
+            "wire scale denominator must be finite and non-zero"
+        );
+        constructor((f32::from(self.0) * numerator) / denominator + offset)
+    }
+}
+
+pub use crate::units::{BatteryCellCount, BatteryCellCountError};
 use crate::units::{Distance, FluxLinkage, Inductance, Resistance};
 
 macro_rules! positive_count_type {
@@ -332,6 +369,35 @@ impl CustomConfigFlagField {
     }
 }
 
+/// Generated raw-byte custom-config field descriptor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct CustomConfigWireByteField(CustomConfigOffset);
+
+impl CustomConfigWireByteField {
+    #[doc(hidden)]
+    pub const fn __from_generated<const LEN: usize>(offset: usize) -> Self {
+        assert!(offset < LEN, "generated config field is out of bounds");
+        Self(CustomConfigOffset::new(offset))
+    }
+
+    /// Read the field without erasing its wire type.
+    #[inline(always)]
+    pub fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> Option<WireByte> {
+        image.0.get(self.0.get()).copied().map(WireByte::new)
+    }
+
+    /// Write the field without exposing primitive conversion to package code.
+    #[inline(always)]
+    pub fn write<const LEN: usize>(
+        self,
+        editor: &mut CustomConfigEditor<'_, LEN>,
+        value: WireByte,
+    ) -> Option<()> {
+        editor.set_byte_at(self.0.get(), value.0)
+    }
+}
+
 /// Generated enum custom-config field descriptor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
@@ -511,6 +577,13 @@ semantic_scaled_config_field!(
     "Generated scaled-seconds field descriptor."
 );
 semantic_scaled_config_field!(
+    CustomConfigScaledVoltageField,
+    crate::Voltage,
+    crate::Voltage::from_volts,
+    crate::Voltage::as_volts,
+    "Generated scaled-voltage field descriptor."
+);
+semantic_scaled_config_field!(
     CustomConfigFrequencyField,
     crate::Frequency,
     crate::Frequency::from_hertz,
@@ -560,6 +633,42 @@ semantic_scaled_config_field!(
     "Generated PID-scale field descriptor."
 );
 
+/// Generated unsigned-ratio field descriptor.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+pub struct CustomConfigRatioField(CustomConfigScaledField);
+
+impl CustomConfigRatioField {
+    #[doc(hidden)]
+    pub const fn __from_generated<const LEN: usize>(offset: usize, scale: f32) -> Self {
+        assert!(
+            LEN >= 2 && offset <= LEN - 2,
+            "generated config field is out of bounds"
+        );
+        match CustomConfigScaledField::new(offset, scale) {
+            Some(field) => Self(field),
+            None => panic!("generated config field scale must be finite and positive"),
+        }
+    }
+
+    /// Decode the field directly into an unsigned ratio.
+    #[inline(always)]
+    pub fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> Option<crate::Ratio> {
+        self.0
+            .read(image)
+            .and_then(|value| crate::Ratio::from_ratio(value).ok())
+    }
+
+    /// Encode an unsigned ratio into its generated scaled field.
+    pub fn write<const LEN: usize>(
+        self,
+        editor: &mut CustomConfigEditor<'_, LEN>,
+        value: crate::Ratio,
+    ) -> Option<()> {
+        self.0.write(editor, value.as_ratio())
+    }
+}
+
 /// Gear reduction ratio configured for speed/distance calculations.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 #[repr(transparent)]
@@ -608,13 +717,6 @@ positive_count_type!(
     "Configured motor pole count.",
     "Error returned when the motor pole count is zero."
 );
-positive_count_type!(
-    BatteryCellCount,
-    BatteryCellCountError,
-    "Configured battery cell count.",
-    "Error returned when the battery cell count is zero."
-);
-
 unit_type!(
     WheelDiameter,
     Distance,
@@ -657,12 +759,30 @@ mod tests {
         CustomConfigFrequencyField, CustomConfigImage, CustomConfigIntegralCurrentGainField,
         CustomConfigMahonyPitchGainField, CustomConfigMahonyRollGainField,
         CustomConfigMotorCurrentField, CustomConfigPidScaleField, CustomConfigRateCurrentGainField,
-        CustomConfigResetField, CustomConfigSampleRateField, CustomConfigSecondsField,
-        CustomConfigVoltageField,
+        CustomConfigRatioField, CustomConfigResetField, CustomConfigSampleRateField,
+        CustomConfigScaledVoltageField, CustomConfigSecondsField, CustomConfigVoltageField,
+        CustomConfigWireByteField, WireByte,
     };
     use crate::{ElectricalSpeed, Frequency, Rpm, SampleRate, VescSeconds, Voltage};
 
     const SIGNATURE: [u8; 4] = [0x90, 0xb7, 0xa9, 0xba];
+
+    #[test]
+    fn wire_byte_field_round_trips_without_erasing_its_type() {
+        let field = crate::generated_custom_config_field!(
+            CustomConfigWireByteField,
+            len: 1,
+            offset: 0
+        );
+        let mut image = CustomConfigImage::new([7]);
+
+        assert_eq!(field.read(&image), Some(WireByte::new(7)));
+        assert_eq!(
+            field.write(&mut image.editor(), WireByte::new(42)),
+            Some(())
+        );
+        assert_eq!(field.read(&image), Some(WireByte::new(42)));
+    }
 
     #[test]
     fn custom_config_image_rejects_wrong_length_or_signature() {
@@ -810,6 +930,10 @@ mod tests {
             Some(crate::VescSeconds::from_seconds(12.3))
         );
         assert_eq!(
+            field!(CustomConfigScaledVoltageField).read(&image),
+            Some(crate::Voltage::from_volts(12.3))
+        );
+        assert_eq!(
             field!(CustomConfigMahonyPitchGainField).read(&image),
             Some(crate::MahonyPitchGain::new(12.3))
         );
@@ -833,6 +957,18 @@ mod tests {
             field!(CustomConfigPidScaleField).read(&image),
             Some(crate::PidScale::new(12.3))
         );
+
+        image = CustomConfigImage::new([0x00, 0x08]);
+        assert_eq!(
+            field!(CustomConfigRatioField).read(&image),
+            Some(crate::Ratio::from_ratio_const(0.8))
+        );
+        assert_eq!(
+            field!(CustomConfigRatioField)
+                .write(&mut image.editor(), crate::Ratio::from_ratio_const(0.5),),
+            Some(())
+        );
+        assert_eq!(image.as_bytes(), &[0x00, 0x05]);
 
         field!(CustomConfigAngleField)
             .write(&mut image.editor(), crate::AngleDegrees::from_degrees(-4.2))
@@ -886,6 +1022,37 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    #[test]
+    fn wire_byte_maps_directly_into_semantic_scaled_values() {
+        let byte = super::WireByte::new(42);
+
+        assert_eq!(
+            byte.scaled(0.5, -1.0, crate::AngleDegrees::from_degrees),
+            crate::AngleDegrees::from_degrees(20.0)
+        );
+        assert_eq!(
+            byte.scaled_ratio(1.0, 2.0, -1.0, crate::AngleDegrees::from_degrees),
+            crate::AngleDegrees::from_degrees(20.0)
+        );
+    }
+
+    #[test]
+    fn wire_byte_rejects_invalid_ratio_denominators() {
+        for denominator in [0.0, f32::INFINITY, f32::NEG_INFINITY, f32::NAN] {
+            assert!(
+                std::panic::catch_unwind(|| {
+                    super::WireByte::new(42).scaled_ratio(
+                        1.0,
+                        denominator,
+                        0.0,
+                        crate::AngleDegrees::from_degrees,
+                    )
+                })
+                .is_err()
+            );
+        }
     }
 
     #[test]

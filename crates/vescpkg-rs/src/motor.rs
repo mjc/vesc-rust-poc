@@ -1,19 +1,28 @@
 //! Motor telemetry helpers built on firmware motor-control table slots.
 
 use crate::types::{
-    AmpHoursCharged, AmpHoursDischarged, BatteryLevel, BrakeCurrent, CurrentOffDelay, DCurrent,
-    DirectionalMotorCurrent, DutyCycle, ElectricalSpeed, FirmwareFaultCode, InputCurrent,
-    InputVoltage, MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature,
-    TotalMotorCurrent, TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
+    AmpHoursCharged, AmpHoursDischarged, BatteryCellCount, BatteryLevel, BrakeCurrent,
+    CurrentOffDelay, DCurrent, DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed,
+    FirmwareFaultCode, InputCurrent, InputVoltage, MosfetTemperature, MotorCurrent,
+    MotorCurrentLimit, MotorTemperature, TemperatureLimitStart, TotalMotorCurrent, TripDistance,
+    VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 #[cfg(not(test))]
 use crate::units::{Charge, Current, Distance, Energy, Rpm, Speed, Temperature, Voltage};
-use crate::units::{OdometerMeters, SignedRatio};
+use crate::units::{OdometerMeters, Ratio, SignedRatio};
 
 #[cfg(not(test))]
 const CFG_PARAM_L_CURRENT_MAX: core::ffi::c_int = 0;
 #[cfg(not(test))]
 const CFG_PARAM_L_CURRENT_MIN: core::ffi::c_int = 1;
+#[cfg(not(test))]
+const CFG_PARAM_L_TEMP_FET_START: core::ffi::c_int = 16;
+#[cfg(not(test))]
+const CFG_PARAM_L_TEMP_MOTOR_START: core::ffi::c_int = 18;
+#[cfg(not(test))]
+const CFG_PARAM_L_MAX_DUTY: core::ffi::c_int = 22;
+#[cfg(not(test))]
+const CFG_PARAM_SI_BATTERY_CELLS: core::ffi::c_int = 43;
 
 /// Motor telemetry operations backed by firmware slots.
 #[cfg(not(test))]
@@ -48,6 +57,18 @@ pub trait MotorTelemetryBindings {
     /// `src/motor_data.c:90`; the VESC config id is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:244`.
     fn brake_current_limit(&self) -> MotorCurrentLimit;
+    /// Return the configured MOSFET temperature limit-start threshold.
+    fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart;
+    /// Return the configured motor temperature limit-start threshold.
+    fn motor_temperature_limit_start(&self) -> TemperatureLimitStart;
+    /// Return the configured maximum duty-cycle limit.
+    ///
+    /// Refloat v1.2.1 reads `CFG_PARAM_l_max_duty` through `get_cfg_float`
+    /// in `src/motor_data.c:97`; the VESC config id is declared at
+    /// `vesc_pkg_lib/vesc_c_if.h:271` and has ABI value 22.
+    fn duty_cycle_limit(&self) -> DutyCycleLimit;
+    /// Return the configured battery cell count, when positive and representable.
+    fn battery_cell_count(&self) -> Option<BatteryCellCount>;
     /// Return filtered input/battery current.
     ///
     /// Refloat v1.2.1 reads `mc_get_tot_current_in_filtered()` in
@@ -116,6 +137,22 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
 
     fn brake_current_limit(&self) -> MotorCurrentLimit {
         (**self).brake_current_limit()
+    }
+
+    fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart {
+        (**self).mosfet_temperature_limit_start()
+    }
+
+    fn motor_temperature_limit_start(&self) -> TemperatureLimitStart {
+        (**self).motor_temperature_limit_start()
+    }
+
+    fn duty_cycle_limit(&self) -> DutyCycleLimit {
+        (**self).duty_cycle_limit()
+    }
+
+    fn battery_cell_count(&self) -> Option<BatteryCellCount> {
+        (**self).battery_cell_count()
     }
 
     fn battery_current(&self) -> InputCurrent {
@@ -279,6 +316,28 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         }))
     }
 
+    fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart {
+        TemperatureLimitStart::new(Temperature::from_degrees_celsius(unsafe {
+            crate::ffi::get_cfg_float(CFG_PARAM_L_TEMP_FET_START)
+        }))
+    }
+
+    fn motor_temperature_limit_start(&self) -> TemperatureLimitStart {
+        TemperatureLimitStart::new(Temperature::from_degrees_celsius(unsafe {
+            crate::ffi::get_cfg_float(CFG_PARAM_L_TEMP_MOTOR_START)
+        }))
+    }
+
+    fn duty_cycle_limit(&self) -> DutyCycleLimit {
+        duty_cycle_limit_from_firmware(unsafe { crate::ffi::get_cfg_float(CFG_PARAM_L_MAX_DUTY) })
+    }
+
+    fn battery_cell_count(&self) -> Option<BatteryCellCount> {
+        battery_cell_count_from_firmware(unsafe {
+            crate::ffi::get_cfg_int(CFG_PARAM_SI_BATTERY_CELLS)
+        })
+    }
+
     fn battery_current(&self) -> InputCurrent {
         InputCurrent::new(Current::from_amps(unsafe {
             crate::ffi::mc_get_tot_current_in_filtered()
@@ -387,6 +446,20 @@ fn duty_cycle_from_firmware(raw_duty: f32) -> DutyCycle {
     }))
 }
 
+fn duty_cycle_limit_from_firmware(raw_limit: f32) -> DutyCycleLimit {
+    DutyCycleLimit::new(Ratio::clamped(if raw_limit.is_nan() {
+        0.0
+    } else {
+        raw_limit
+    }))
+}
+
+fn battery_cell_count_from_firmware(raw_count: i32) -> Option<BatteryCellCount> {
+    u16::try_from(raw_count)
+        .ok()
+        .and_then(|count| BatteryCellCount::try_new(count).ok())
+}
+
 /// High-level motor telemetry API built on a binding implementation.
 #[cfg(not(test))]
 pub struct MotorTelemetryApi<B> {
@@ -412,6 +485,14 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn drive_current_limit(&self) -> MotorCurrentLimit;
     /// Return the configured braking-current magnitude.
     fn brake_current_limit(&self) -> MotorCurrentLimit;
+    /// Return the configured MOSFET temperature limit-start threshold.
+    fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart;
+    /// Return the configured motor temperature limit-start threshold.
+    fn motor_temperature_limit_start(&self) -> TemperatureLimitStart;
+    /// Return the configured maximum duty-cycle limit.
+    fn duty_cycle_limit(&self) -> DutyCycleLimit;
+    /// Return the configured battery cell count, when available.
+    fn battery_cell_count(&self) -> Option<BatteryCellCount>;
     /// Return filtered input/battery current.
     fn battery_current(&self) -> InputCurrent;
     /// Return the current signed duty cycle.
@@ -468,13 +549,53 @@ pub struct MotorControlApi<B> {
 
 #[cfg(test)]
 mod tests {
-    use super::duty_cycle_from_firmware;
+    use super::{
+        battery_cell_count_from_firmware, duty_cycle_from_firmware, duty_cycle_limit_from_firmware,
+    };
+    use crate::{DutyCycle, Ratio, SignedRatio};
 
     #[test]
     fn duty_cycle_preserves_direction_and_normalizes_invalid_values() {
         assert_eq!(duty_cycle_from_firmware(f32::NAN).ratio().as_ratio(), 0.0);
         assert_eq!(duty_cycle_from_firmware(-0.42).ratio().as_ratio(), -0.42);
         assert_eq!(duty_cycle_from_firmware(2.0).ratio().as_ratio(), 1.0);
+    }
+
+    #[test]
+    fn battery_cell_count_accepts_only_positive_u16_firmware_values() {
+        assert_eq!(battery_cell_count_from_firmware(-1), None);
+        assert_eq!(battery_cell_count_from_firmware(0), None);
+        assert_eq!(battery_cell_count_from_firmware(65_536), None);
+        assert_eq!(
+            battery_cell_count_from_firmware(18),
+            Some(crate::BatteryCellCount::try_new(18).expect("positive count")),
+        );
+    }
+
+    #[test]
+    fn duty_cycle_limit_normalizes_firmware_config_at_the_boundary() {
+        assert_eq!(
+            duty_cycle_limit_from_firmware(f32::NAN).ratio().as_ratio(),
+            0.0
+        );
+        assert_eq!(
+            duty_cycle_limit_from_firmware(0.95).ratio().as_ratio(),
+            0.95
+        );
+        assert_eq!(duty_cycle_limit_from_firmware(2.0).ratio().as_ratio(), 1.0);
+        assert_eq!(
+            duty_cycle_limit_from_firmware(0.95)
+                .reduced_by(Ratio::from_ratio_const(0.05))
+                .ratio()
+                .as_ratio(),
+            0.9
+        );
+        assert_eq!(
+            DutyCycle::new(SignedRatio::from_ratio_const(-0.85))
+                .magnitude()
+                .as_ratio(),
+            0.85
+        );
     }
 }
 
@@ -513,6 +634,26 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
     /// Return the configured braking-current magnitude.
     pub fn brake_current_limit(&self) -> MotorCurrentLimit {
         self.bindings.brake_current_limit()
+    }
+
+    /// Return the configured MOSFET temperature limit-start threshold.
+    pub fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart {
+        self.bindings.mosfet_temperature_limit_start()
+    }
+
+    /// Return the configured motor temperature limit-start threshold.
+    pub fn motor_temperature_limit_start(&self) -> TemperatureLimitStart {
+        self.bindings.motor_temperature_limit_start()
+    }
+
+    /// Return the configured maximum duty-cycle limit.
+    pub fn duty_cycle_limit(&self) -> DutyCycleLimit {
+        self.bindings.duty_cycle_limit()
+    }
+
+    /// Return the configured battery cell count, when available.
+    pub fn battery_cell_count(&self) -> Option<BatteryCellCount> {
+        self.bindings.battery_cell_count()
     }
 
     /// Return filtered input/battery current.
@@ -613,6 +754,22 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
 
     fn brake_current_limit(&self) -> MotorCurrentLimit {
         self.brake_current_limit()
+    }
+
+    fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart {
+        self.mosfet_temperature_limit_start()
+    }
+
+    fn motor_temperature_limit_start(&self) -> TemperatureLimitStart {
+        self.motor_temperature_limit_start()
+    }
+
+    fn duty_cycle_limit(&self) -> DutyCycleLimit {
+        self.duty_cycle_limit()
+    }
+
+    fn battery_cell_count(&self) -> Option<BatteryCellCount> {
+        self.battery_cell_count()
     }
 
     fn battery_current(&self) -> InputCurrent {

@@ -53,6 +53,17 @@ impl FirmwareTest {
         self.firmware.imu()
     }
 
+    /// Access the same package custom-EEPROM range used on hardware.
+    #[must_use]
+    pub const fn eeprom(&self) -> crate::CustomEeprom {
+        crate::CustomEeprom::new()
+    }
+
+    /// Make writes to one custom-EEPROM address fail.
+    pub fn fail_eeprom_write(&self, address: crate::CustomEepromAddress) {
+        crate::test_ffi::fail_eeprom_write(address);
+    }
+
     /// Configure whether firmware IMU startup has completed.
     pub fn set_imu_ready(&self, done: bool) {
         crate::test_ffi::set_imu_startup_done(done);
@@ -183,6 +194,31 @@ impl FirmwareTest {
         min: crate::MotorCurrentLimit,
     ) -> Self {
         crate::test_ffi::set_motor_current_limits(max, min);
+        self
+    }
+
+    #[must_use]
+    /// Configure the typed maximum motor duty-cycle limit.
+    pub fn with_duty_cycle_limit(self, limit: crate::DutyCycleLimit) -> Self {
+        crate::test_ffi::set_duty_cycle_limit(limit);
+        self
+    }
+
+    #[must_use]
+    /// Configure the typed MOSFET and motor temperature limit-start thresholds.
+    pub fn with_temperature_limit_starts(
+        self,
+        mosfet: crate::TemperatureLimitStart,
+        motor: crate::TemperatureLimitStart,
+    ) -> Self {
+        crate::test_ffi::set_temperature_limit_starts(mosfet, motor);
+        self
+    }
+
+    #[must_use]
+    /// Configure the typed firmware battery cell count.
+    pub fn with_battery_cell_count(self, count: crate::BatteryCellCount) -> Self {
+        crate::test_ffi::set_battery_cell_count(count);
         self
     }
 
@@ -481,6 +517,10 @@ impl LbmBindings for FakeBindings {
     }
 
     unsafe fn decode_i32(&self, _value: LbmValue) -> i32 {
+        unreachable!("extension registration does not decode LispBM values")
+    }
+
+    unsafe fn decode_f32(&self, _value: LbmValue) -> f32 {
         unreachable!("extension registration does not decode LispBM values")
     }
 

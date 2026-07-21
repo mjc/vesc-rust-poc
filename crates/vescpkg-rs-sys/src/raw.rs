@@ -445,8 +445,9 @@ macro_rules! vesc_slot_word_from {
 
 mod slots {
     use super::{
-        AppDataHandler, CustomConfigGet, CustomConfigSet, CustomConfigXml, ExtensionHandler,
-        ImuReadCallback, LibMutex, LibThread, VescIfAbi, c_char, c_int, c_uchar, c_void,
+        AppDataHandler, CustomConfigGet, CustomConfigSet, CustomConfigXml, EepromVar,
+        ExtensionHandler, ImuReadCallback, LibMutex, LibThread, VescIfAbi, c_char, c_int, c_uchar,
+        c_void,
     };
     #[cfg(not(all(target_arch = "arm", not(test))))]
     use super::{VescIf, vesc_if};
@@ -541,11 +542,14 @@ mod slots {
         }
     }
 
+    fn_slot!(lbm_dec_as_float as unsafe extern "C" fn(crate::LbmValue) -> f32);
     fn_slot!(lbm_dec_as_i32 as unsafe extern "C" fn(u32) -> i32);
     fn_slot!(lbm_enc_i as unsafe extern "C" fn(i32) -> u32);
     fn_slot!(lbm_is_number as unsafe extern "C" fn(u32) -> bool);
     fn_slot!(set_app_data_handler as unsafe extern "C" fn(Option<AppDataHandler>) -> bool);
     fn_slot!(imu_set_read_callback as unsafe extern "C" fn(Option<ImuReadCallback>));
+    fn_slot!(read_eeprom_var as unsafe extern "C" fn(*mut EepromVar, c_int) -> bool);
+    fn_slot!(store_eeprom_var as unsafe extern "C" fn(*mut EepromVar, c_int) -> bool);
 
     word_slot!(lbm_enc_sym_nil);
     word_slot!(lbm_enc_sym_true);
@@ -590,6 +594,7 @@ mod slots {
     fn_slot!(mc_get_distance_abs as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_odometer as unsafe extern "C" fn() -> u64);
     fn_slot!(get_cfg_float as unsafe extern "C" fn(c_int) -> f32);
+    fn_slot!(get_cfg_int as unsafe extern "C" fn(c_int) -> c_int);
     fn_slot!(mc_set_duty as unsafe extern "C" fn(f32));
     fn_slot!(mc_set_current as unsafe extern "C" fn(f32));
     fn_slot!(mc_set_current_off_delay as unsafe extern "C" fn(f32));
@@ -660,6 +665,13 @@ pub unsafe fn lbm_add_extension_with_table_base(
 /// # Safety
 ///
 /// `value` must be a LispBM value supplied by the firmware.
+pub unsafe fn lbm_dec_as_float(value: LbmValue) -> f32 {
+    unsafe { slots::lbm_dec_as_float()(value) }
+}
+
+/// # Safety
+///
+/// `value` must be a LispBM value supplied by the firmware.
 pub unsafe fn lbm_dec_as_i32(value: LbmValue) -> i32 {
     #[cfg(all(target_arch = "arm", not(test)))]
     unsafe {
@@ -721,6 +733,26 @@ pub unsafe fn lbm_enc_sym_true() -> LbmValue {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn lbm_enc_sym_eerror() -> LbmValue {
     unsafe { LbmValue(slots::lbm_enc_sym_eerror() as u32) }
+}
+
+/// Read one native-endian word from the package custom-EEPROM range.
+///
+/// # Safety
+///
+/// `word` must be valid for one `u32` write and the firmware function table
+/// must remain valid for the duration of the call.
+pub unsafe fn read_eeprom_word(word: *mut u32, address: c_int) -> bool {
+    unsafe { slots::read_eeprom_var()(word.cast(), address) }
+}
+
+/// Write one native-endian word to the package custom-EEPROM range.
+///
+/// # Safety
+///
+/// `word` must be valid for one `u32` read and the firmware function table
+/// must remain valid for the duration of the call.
+pub unsafe fn store_eeprom_word(word: *mut u32, address: c_int) -> bool {
+    unsafe { slots::store_eeprom_var()(word.cast(), address) }
 }
 
 /// Register the firmware app-data callback using the refloat/C ABI.
@@ -1051,6 +1083,20 @@ pub unsafe fn mc_get_tot_current_in_filtered() -> f32 {
 /// firmware configuration parameter id for a float-valued setting.
 pub unsafe fn get_cfg_float(param: c_int) -> f32 {
     unsafe { slots::get_cfg_float()(param) }
+}
+
+/// Read a firmware motor configuration integer by `CFG_PARAM_*` id.
+///
+/// Refloat v1.2.1 reads `CFG_PARAM_si_battery_cells` in
+/// `src/motor_data.c:76`; the VESC ABI slot is declared at
+/// `vesc_pkg_lib/vesc_c_if.h:590`.
+///
+/// # Safety
+///
+/// The firmware VESC function table must be valid and `param` must be a valid
+/// firmware configuration parameter id for an integer-valued setting.
+pub unsafe fn get_cfg_int(param: c_int) -> c_int {
+    unsafe { slots::get_cfg_int()(param) }
 }
 
 /// Reset the firmware motor-command safety timeout.

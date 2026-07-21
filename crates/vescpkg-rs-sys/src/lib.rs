@@ -7,6 +7,7 @@
 //!
 //! Testing strategy: see `docs/testing/vescpkg-rs-sys.md`.
 
+#![doc = include_str!("compile_fail_contracts.md")]
 #![no_std]
 #![forbid(unused_extern_crates)]
 #![deny(unsafe_op_in_unsafe_fn)]
@@ -29,6 +30,7 @@ macro_rules! vesc_if_used_slots {
     ($macro:ident) => {
         $macro! {
             LBM_ADD_EXTENSION => lbm_add_extension,
+            LBM_DEC_AS_FLOAT => lbm_dec_as_float,
             LBM_DEC_AS_I32 => lbm_dec_as_i32,
             LBM_ENC_I => lbm_enc_i,
             LBM_IS_NUMBER => lbm_is_number,
@@ -37,6 +39,8 @@ macro_rules! vesc_if_used_slots {
             LBM_ENC_SYM_NIL => lbm_enc_sym_nil,
             LBM_ENC_SYM_TRUE => lbm_enc_sym_true,
             LBM_ENC_SYM_EERROR => lbm_enc_sym_eerror,
+            READ_EEPROM_VAR => read_eeprom_var,
+            STORE_EEPROM_VAR => store_eeprom_var,
             CONF_CUSTOM_ADD_CONFIG => conf_custom_add_config,
             CONF_CUSTOM_CLEAR_CONFIGS => conf_custom_clear_configs,
             MUTEX_CREATE => mutex_create,
@@ -65,6 +69,7 @@ macro_rules! vesc_if_used_slots {
             MC_GET_DISTANCE_ABS => mc_get_distance_abs,
             MC_GET_ODOMETER => mc_get_odometer,
             GET_CFG_FLOAT => get_cfg_float,
+            GET_CFG_INT => get_cfg_int,
             MC_SET_DUTY => mc_set_duty,
             MC_SET_CURRENT => mc_set_current,
             MC_SET_CURRENT_OFF_DELAY => mc_set_current_off_delay,

@@ -8,15 +8,16 @@ use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescPin, Vesc
 use super::{
     CustomConfigGet, CustomConfigSet, CustomConfigXml, VescIf, conf_custom_add_config,
     conf_custom_clear_configs, foc_get_id, io_read, io_read_analog, io_set_mode, io_write,
-    lbm_add_extension, lbm_add_extension_with_table_base, lbm_dec_as_i32, lbm_enc_i,
-    lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number, mc_get_amp_hours,
-    mc_get_amp_hours_charged, mc_get_battery_level, mc_get_distance_abs, mc_get_duty_cycle_now,
-    mc_get_fault, mc_get_input_voltage_filtered, mc_get_odometer, mc_get_rpm, mc_get_speed,
-    mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
+    lbm_add_extension, lbm_add_extension_with_table_base, lbm_dec_as_float, lbm_dec_as_i32,
+    lbm_enc_i, lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number,
+    mc_get_amp_hours, mc_get_amp_hours_charged, mc_get_battery_level, mc_get_distance_abs,
+    mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered, mc_get_odometer,
+    mc_get_rpm, mc_get_speed, mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
     mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
-    mc_temp_fet_filtered, mc_temp_motor_filtered, vesc_clear_app_data_handler, vesc_mutex_create,
-    vesc_mutex_lock, vesc_mutex_unlock, vesc_send_app_data, vesc_set_app_data_handler,
-    vesc_sleep_us, vesc_system_time_ticks, vesc_thread_set_priority,
+    mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, store_eeprom_word,
+    vesc_clear_app_data_handler, vesc_mutex_create, vesc_mutex_lock, vesc_mutex_unlock,
+    vesc_send_app_data, vesc_set_app_data_handler, vesc_sleep_us, vesc_system_time_ticks,
+    vesc_thread_set_priority,
 };
 
 struct SyncCounter(Cell<usize>);
@@ -115,6 +116,7 @@ impl SyncBool {
 
 static LBM_ADD_EXTENSION: SyncCounter = SyncCounter::new();
 static LBM_DEC_AS_I32: SyncCounter = SyncCounter::new();
+static LBM_DEC_AS_FLOAT: SyncCounter = SyncCounter::new();
 static LBM_ENC_I: SyncCounter = SyncCounter::new();
 static LBM_IS_NUMBER: SyncCounter = SyncCounter::new();
 static SET_APP_DATA_HANDLER: SyncCounter = SyncCounter::new();
@@ -154,6 +156,8 @@ static MC_GET_BATTERY_LEVEL: SyncCounter = SyncCounter::new();
 static MC_GET_ODOMETER: SyncCounter = SyncCounter::new();
 static MC_GET_FAULT: SyncCounter = SyncCounter::new();
 static MC_GET_INPUT_VOLTAGE_FILTERED: SyncCounter = SyncCounter::new();
+static READ_EEPROM_VAR: SyncCounter = SyncCounter::new();
+static STORE_EEPROM_VAR: SyncCounter = SyncCounter::new();
 static LAST_PIN: SyncI32 = SyncI32::new();
 static LAST_MODE: SyncI32 = SyncI32::new();
 static LAST_LEVEL: SyncI32 = SyncI32::new();
@@ -163,11 +167,14 @@ static LAST_THREAD_PRIORITY: SyncI32 = SyncI32::new();
 static LAST_FOC_ID: SyncF32 = SyncF32::new();
 static LAST_HANDLER_INSTALLED: SyncBool = SyncBool::new();
 static LAST_CUSTOM_CONFIG_DEFAULT: SyncBool = SyncBool::new();
+static LAST_EEPROM_ADDRESS: SyncI32 = SyncI32::new();
+static LAST_EEPROM_WORD: SyncU32 = SyncU32::new();
 
 fn reset_counters() {
     for counter in [
         &LBM_ADD_EXTENSION,
         &LBM_DEC_AS_I32,
+        &LBM_DEC_AS_FLOAT,
         &LBM_ENC_I,
         &LBM_IS_NUMBER,
         &SET_APP_DATA_HANDLER,
@@ -206,6 +213,8 @@ fn reset_counters() {
         &MC_GET_ODOMETER,
         &MC_GET_FAULT,
         &MC_GET_INPUT_VOLTAGE_FILTERED,
+        &READ_EEPROM_VAR,
+        &STORE_EEPROM_VAR,
     ] {
         counter.set(0);
     }
@@ -219,6 +228,8 @@ fn reset_counters() {
     LAST_FOC_ID.set(0.0);
     LAST_HANDLER_INSTALLED.set(false);
     LAST_CUSTOM_CONFIG_DEFAULT.set(false);
+    LAST_EEPROM_ADDRESS.set(0);
+    LAST_EEPROM_WORD.set(0);
 }
 
 extern "C" fn stub_lbm_add_extension(_name: *mut c_char, _handler: ExtensionHandler) -> bool {
@@ -232,6 +243,12 @@ extern "C" fn stub_lbm_dec_as_i32(value: u32) -> i32 {
     value as i32
 }
 
+extern "C" fn stub_lbm_dec_as_float(value: LbmValue) -> f32 {
+    LBM_DEC_AS_FLOAT.inc();
+    LAST_LBM_VALUE.set(value.0);
+    4.25
+}
+
 extern "C" fn stub_lbm_enc_i(value: i32) -> u32 {
     LBM_ENC_I.inc();
     value as u32 + 1
@@ -241,6 +258,26 @@ extern "C" fn stub_lbm_is_number(value: u32) -> bool {
     LBM_IS_NUMBER.inc();
     LAST_LBM_VALUE.set(value);
     value == 7
+}
+
+extern "C" fn stub_read_eeprom_var(word: *mut c_void, address: c_int) -> bool {
+    READ_EEPROM_VAR.inc();
+    LAST_EEPROM_ADDRESS.set(address);
+    let Some(word) = (unsafe { word.cast::<u32>().as_mut() }) else {
+        return false;
+    };
+    *word = 0x1234_5678;
+    true
+}
+
+extern "C" fn stub_store_eeprom_var(word: *mut c_void, address: c_int) -> bool {
+    STORE_EEPROM_VAR.inc();
+    LAST_EEPROM_ADDRESS.set(address);
+    let Some(word) = (unsafe { word.cast::<u32>().as_ref() }) else {
+        return false;
+    };
+    LAST_EEPROM_WORD.set(*word);
+    true
 }
 
 extern "C" fn stub_set_app_data_handler(handler: Option<AppDataHandler>) -> bool {
@@ -445,12 +482,15 @@ extern "C" fn stub_mc_get_input_voltage_filtered() -> f32 {
 fn populated_table() -> VescIf {
     let mut table = empty_table();
     table.lbm_add_extension = Some(stub_lbm_add_extension);
+    table.lbm_dec_as_float = Some(stub_lbm_dec_as_float);
     table.lbm_dec_as_i32 = Some(stub_lbm_dec_as_i32);
     table.lbm_enc_i = Some(stub_lbm_enc_i);
     table.lbm_is_number = Some(stub_lbm_is_number);
     table.lbm_enc_sym_nil = 0xAABB_0000;
     table.lbm_enc_sym_true = 0xAABB_1100;
     table.lbm_enc_sym_eerror = 0xAABB_CC00;
+    table.read_eeprom_var = Some(stub_read_eeprom_var);
+    table.store_eeprom_var = Some(stub_store_eeprom_var);
     table.set_app_data_handler = Some(stub_set_app_data_handler);
     table.send_app_data = Some(stub_send_app_data);
     table.conf_custom_add_config = Some(stub_conf_custom_add_config);
@@ -527,6 +567,9 @@ fn lbm_add_extension_with_table_base_uses_mock_when_base_matches_firmware_addr()
 #[test]
 fn lbm_value_helpers_forward_through_mock_table() {
     with_populated_table(|| unsafe {
+        assert_eq!(lbm_dec_as_float(LbmValue(9)), 4.25);
+        assert_eq!(LAST_LBM_VALUE.get(), 9);
+        assert_eq!(LBM_DEC_AS_FLOAT.get(), 1);
         assert_eq!(lbm_dec_as_i32(LbmValue(9)), 9);
         assert_eq!(lbm_enc_i(4), LbmValue(5));
         assert!(lbm_is_number(LbmValue(7)));
@@ -534,6 +577,23 @@ fn lbm_value_helpers_forward_through_mock_table() {
         assert_eq!(lbm_enc_sym_nil(), LbmValue(0xAABB_0000));
         assert_eq!(lbm_enc_sym_true(), LbmValue(0xAABB_1100));
         assert_eq!(lbm_enc_sym_eerror(), LbmValue(0xAABB_CC00));
+    });
+}
+
+#[test]
+fn eeprom_helpers_forward_word_pointers_and_addresses() {
+    with_populated_table(|| unsafe {
+        let mut read_word = 0;
+        assert!(read_eeprom_word(&mut read_word, 7));
+        assert_eq!(read_word, 0x1234_5678);
+        assert_eq!(READ_EEPROM_VAR.get(), 1);
+        assert_eq!(LAST_EEPROM_ADDRESS.get(), 7);
+
+        let mut stored_word = 0xAABB_CCDD;
+        assert!(store_eeprom_word(&mut stored_word, 9));
+        assert_eq!(STORE_EEPROM_VAR.get(), 1);
+        assert_eq!(LAST_EEPROM_ADDRESS.get(), 9);
+        assert_eq!(LAST_EEPROM_WORD.get(), stored_word);
     });
 }
 

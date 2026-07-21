@@ -6,6 +6,7 @@
 //! Device builds stay `no_std`; package crates must opt into the `alloc`
 //! feature before installing the VESC-backed global allocator.
 
+#![doc = include_str!("compile_fail_contracts.md")]
 #![no_std]
 #![forbid(unused_extern_crates)]
 #![deny(unsafe_op_in_unsafe_fn)]
@@ -28,6 +29,7 @@ extern crate std;
 mod alloc;
 
 mod bindings;
+mod eeprom;
 mod extension;
 mod firmware;
 mod lifecycle_core;
@@ -51,11 +53,11 @@ pub(crate) mod ffi {
     #[allow(unused_imports)]
     pub use vescpkg_rs_sys::raw::{
         conf_custom_add_config, conf_custom_clear_configs, io_read, io_read_analog, io_set_mode,
-        io_write, lbm_add_extension, lbm_dec_as_i32, lbm_enc_i, lbm_enc_sym_eerror,
-        lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number, vesc_clear_app_data_handler,
-        vesc_clear_imu_read_callback, vesc_free, vesc_get_arg, vesc_malloc, vesc_mutex_create,
-        vesc_mutex_lock, vesc_mutex_unlock, vesc_send_app_data, vesc_set_app_data_handler,
-        vesc_set_imu_read_callback, vesc_system_time_ticks,
+        io_write, lbm_add_extension, lbm_dec_as_float, lbm_dec_as_i32, lbm_enc_i,
+        lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number,
+        vesc_clear_app_data_handler, vesc_clear_imu_read_callback, vesc_free, vesc_get_arg,
+        vesc_malloc, vesc_mutex_create, vesc_mutex_lock, vesc_mutex_unlock, vesc_send_app_data,
+        vesc_set_app_data_handler, vesc_set_imu_read_callback, vesc_system_time_ticks,
     };
     pub use vescpkg_rs_sys::{AppDataHandler, LibInfo, NativeImage};
 
@@ -63,15 +65,16 @@ pub(crate) mod ffi {
     use crate::test_ffi as selected_ffi;
     #[allow(unused_imports)]
     pub use selected_ffi::{
-        foc_get_id, get_cfg_float, imu_get_gyro, imu_get_pitch, imu_get_roll, imu_get_yaw,
-        imu_startup_done, mc_get_amp_hours, mc_get_amp_hours_charged, mc_get_battery_level,
-        mc_get_distance_abs, mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered,
-        mc_get_odometer, mc_get_rpm, mc_get_speed, mc_get_tot_current_directional_filtered,
-        mc_get_tot_current_filtered, mc_get_tot_current_in_filtered, mc_get_watt_hours,
-        mc_get_watt_hours_charged, mc_set_brake_current, mc_set_current, mc_set_current_off_delay,
-        mc_set_duty, mc_temp_fet_filtered, mc_temp_motor_filtered, timeout_reset,
-        vesc_imu_get_quaternions, vesc_request_terminate, vesc_should_terminate, vesc_sleep_us,
-        vesc_spawn, vesc_thread_set_priority,
+        foc_get_id, get_cfg_float, get_cfg_int, imu_get_gyro, imu_get_pitch, imu_get_roll,
+        imu_get_yaw, imu_startup_done, mc_get_amp_hours, mc_get_amp_hours_charged,
+        mc_get_battery_level, mc_get_distance_abs, mc_get_duty_cycle_now, mc_get_fault,
+        mc_get_input_voltage_filtered, mc_get_odometer, mc_get_rpm, mc_get_speed,
+        mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
+        mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
+        mc_set_brake_current, mc_set_current, mc_set_current_off_delay, mc_set_duty,
+        mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, store_eeprom_word,
+        timeout_reset, vesc_imu_get_quaternions, vesc_request_terminate, vesc_should_terminate,
+        vesc_sleep_us, vesc_spawn, vesc_thread_set_priority,
     };
     #[cfg(any(test, not(feature = "test-support")))]
     use vescpkg_rs_sys::raw as selected_ffi;
@@ -80,15 +83,16 @@ pub(crate) mod ffi {
 pub use vesc_protocol::buffer as protocol_buffer;
 use vescpkg_rs_units as units;
 pub use vescpkg_rs_units::{
-    AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Charge, Current, Distance,
-    DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage, Frequency, Height, Inductance,
-    Latitude, Longitude, MagneticFluxDensity, OdometerMeters, Percent, Power, Ratio, Resistance,
-    Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed, SystemTicks, Temperature,
-    TimestampTicks, VescSeconds, Voltage,
+    AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, BatteryCellCount,
+    BatteryCellCountError, Charge, Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance,
+    FluxLinkage, Frequency, Height, Inductance, Latitude, Longitude, MagneticFluxDensity,
+    OdometerMeters, Percent, Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate,
+    SignedRatio, Speed, SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
 };
 
 #[cfg(feature = "alloc")]
 pub use alloc::VescAllocator;
+pub use eeprom::{CustomEeprom, CustomEepromAddress, EepromWord};
 pub use extension::{ExtensionDescriptor, ExtensionName, ExtensionRegistration};
 pub use extension::{LbmExtension, LispArgs, LispIntegerError, LispValue, StatefulLbmExtension};
 
@@ -125,7 +129,7 @@ mod motor;
 /// Firmware thread bindings and convenience wrappers for package code.
 mod thread;
 
-pub use gpio::{AnalogPin, Gpio};
+pub use gpio::{AnalogPin, DigitalOutputLevel, DigitalPin, Gpio};
 /// VESC-domain semantic types re-exported at the crate root.
 pub use types::*;
 
@@ -140,13 +144,13 @@ pub mod prelude {
         SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
     };
     pub use crate::{
-        AnalogPin, AppDataHandler, AppDataSendError, ConfigBytes, ConfigXml, ExtensionDescriptor,
-        ExtensionName, ExtensionRegistration, Firmware, FirmwareAppData, FirmwareClock,
-        FirmwareThread, FirmwareThreads, Gpio, Imu, ImuReadHandler, LbmExtension, LispArgs,
-        LispIntegerError, LispValue, MotorOutput, MotorTelemetry, PackageRuntimeState,
-        PackageStart, PackageStartError, StatefulCustomConfigCallback, StatefulLbmExtension,
-        StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadName,
-        ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError,
+        AnalogPin, AppDataHandler, AppDataSendError, ConfigBytes, ConfigXml, DigitalOutputLevel,
+        DigitalPin, ExtensionDescriptor, ExtensionName, ExtensionRegistration, Firmware,
+        FirmwareAppData, FirmwareClock, FirmwareThread, FirmwareThreads, Gpio, Imu, ImuReadHandler,
+        LbmExtension, LispArgs, LispIntegerError, LispValue, MotorOutput, MotorTelemetry,
+        PackageRuntimeState, PackageStart, PackageStartError, StatefulCustomConfigCallback,
+        StatefulLbmExtension, StatelessFirmwareThread, StatelessThreadContext, ThreadContext,
+        ThreadError, ThreadName, ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError,
     };
 }
 

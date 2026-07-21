@@ -1,7 +1,8 @@
 use super::{
-    AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Charge, Current, Distance,
-    DistancePerEnergy, Energy, EnergyPerDistance, Frequency, Latitude, Longitude, Percent, Power,
-    Ratio, Rpm, SampleRate, Speed, SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
+    AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, BatteryCellCount, Charge, Current,
+    Distance, DistancePerEnergy, Energy, EnergyPerDistance, Frequency, Latitude, Longitude,
+    Percent, Power, Ratio, Rpm, SampleRate, Speed, SystemTicks, Temperature, TimestampTicks,
+    VescSeconds, Voltage,
 };
 
 #[test]
@@ -36,6 +37,29 @@ fn scalar_units_round_trip_through_named_accessors() {
         AngularVelocity::from_degrees_per_second(90.0).as_degrees_per_second(),
         90.0
     );
+}
+
+#[test]
+fn battery_cell_count_rejects_zero_and_preserves_positive_counts() {
+    assert_eq!(
+        BatteryCellCount::try_new(0)
+            .expect_err("zero cells must be rejected")
+            .value(),
+        0,
+    );
+    assert_eq!(
+        BatteryCellCount::try_new(18).expect("18s battery").as_u16(),
+        18,
+    );
+}
+
+#[test]
+fn battery_cell_count_scales_per_cell_voltage_without_erasing_units() {
+    let cells = BatteryCellCount::try_new(18).expect("18s battery");
+    let per_cell = Voltage::from_volts(4.3);
+
+    assert_eq!((per_cell * cells).as_volts(), 77.4);
+    assert_eq!((cells * per_cell).as_volts(), 77.4);
 }
 
 #[test]

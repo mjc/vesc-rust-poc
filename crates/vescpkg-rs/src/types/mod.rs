@@ -52,10 +52,11 @@ pub use config::{
     CustomConfigFlagField, CustomConfigFrequencyField, CustomConfigImage,
     CustomConfigIntegralCurrentGainField, CustomConfigMahonyPitchGainField,
     CustomConfigMahonyRollGainField, CustomConfigMotorCurrentField, CustomConfigPidScaleField,
-    CustomConfigRateCurrentGainField, CustomConfigResetField, CustomConfigSampleRateField,
-    CustomConfigSecondsField, CustomConfigVoltageField, FocMotorFluxLinkage, FocMotorInductance,
+    CustomConfigRateCurrentGainField, CustomConfigRatioField, CustomConfigResetField,
+    CustomConfigSampleRateField, CustomConfigScaledVoltageField, CustomConfigSecondsField,
+    CustomConfigVoltageField, CustomConfigWireByteField, FocMotorFluxLinkage, FocMotorInductance,
     FocMotorResistance, GearRatio, GearRatioError, MotorPoleCount, MotorPoleCountError,
-    WheelDiameter,
+    WheelDiameter, WireByte,
 };
 pub use control::{
     AngleCurrentGain, IntegralCurrentGain, MahonyPitchGain, MahonyRollGain, PidScale,
@@ -88,8 +89,8 @@ pub use motor::{
 };
 pub use power::{AveragePower, PeakPower};
 pub use ratio::{
-    BrakeCurrentRelative, CurrentRelative, DutyCycle, HandbrakeRelative, JoystickX, JoystickY,
-    PpmInput, Pwm,
+    BrakeCurrentRelative, CurrentRelative, DutyCycle, DutyCycleLimit, HandbrakeRelative, JoystickX,
+    JoystickY, PpmInput, Pwm,
 };
 pub use temperature::{
     FetTemperature, MosfetTemperature, MotorTemperature, TemperatureLimitEnd, TemperatureLimitStart,

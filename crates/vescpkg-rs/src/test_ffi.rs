@@ -35,6 +35,10 @@ static MOTOR_CURRENT: AtomicU32 = AtomicU32::new(0);
 static DIRECTIONAL_MOTOR_CURRENT: AtomicU32 = AtomicU32::new(0);
 static MOTOR_CURRENT_MAX: AtomicU32 = AtomicU32::new(0);
 static MOTOR_CURRENT_MIN: AtomicU32 = AtomicU32::new(0);
+static MOSFET_TEMPERATURE_LIMIT_START: AtomicU32 = AtomicU32::new(0);
+static MOTOR_TEMPERATURE_LIMIT_START: AtomicU32 = AtomicU32::new(0);
+static DUTY_CYCLE_LIMIT: AtomicU32 = AtomicU32::new(0);
+static BATTERY_CELL_COUNT: AtomicI32 = AtomicI32::new(0);
 static INPUT_CURRENT: AtomicU32 = AtomicU32::new(0);
 static DUTY_CYCLE: AtomicU32 = AtomicU32::new(0);
 static FOC_ID_CURRENT: AtomicU32 = AtomicU32::new(0);
@@ -67,6 +71,11 @@ static THREAD_SLEEP_COUNT: AtomicUsize = AtomicUsize::new(0);
 static THREAD_SLEEP_MICROS: [AtomicU32; 2] = [const { AtomicU32::new(0) }; 2];
 static THREAD_PRIORITY_COUNT: AtomicUsize = AtomicUsize::new(0);
 static THREAD_PRIORITIES: [AtomicI32; 2] = [const { AtomicI32::new(0) }; 2];
+const EEPROM_WORDS: usize = 128;
+static EEPROM: [AtomicU32; EEPROM_WORDS] = [const { AtomicU32::new(0) }; EEPROM_WORDS];
+static EEPROM_PRESENT: [AtomicBool; EEPROM_WORDS] =
+    [const { AtomicBool::new(false) }; EEPROM_WORDS];
+static EEPROM_WRITE_FAILURE: AtomicI32 = AtomicI32::new(-1);
 
 pub(crate) struct MotorOutputState {
     pub keep_alive_count: usize,
@@ -110,6 +119,10 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     DIRECTIONAL_MOTOR_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_CURRENT_MAX.store(100.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_CURRENT_MIN.store((-100.0_f32).to_bits(), Ordering::Relaxed);
+    MOSFET_TEMPERATURE_LIMIT_START.store(85.0_f32.to_bits(), Ordering::Relaxed);
+    MOTOR_TEMPERATURE_LIMIT_START.store(85.0_f32.to_bits(), Ordering::Relaxed);
+    DUTY_CYCLE_LIMIT.store(0.95_f32.to_bits(), Ordering::Relaxed);
+    BATTERY_CELL_COUNT.store(0, Ordering::Relaxed);
     INPUT_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
     DUTY_CYCLE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     FOC_ID_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -156,7 +169,51 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     THREAD_PRIORITIES
         .iter()
         .for_each(|slot| slot.store(0, Ordering::Relaxed));
+    EEPROM_PRESENT
+        .iter()
+        .for_each(|slot| slot.store(false, Ordering::Relaxed));
+    EEPROM_WRITE_FAILURE.store(-1, Ordering::Relaxed);
     FirmwareLockGuard
+}
+
+pub unsafe fn read_eeprom_word(word: *mut u32, address: i32) -> bool {
+    let Some(index) = usize::try_from(address)
+        .ok()
+        .filter(|index| *index < EEPROM_WORDS)
+    else {
+        return false;
+    };
+    if !EEPROM_PRESENT[index].load(Ordering::Relaxed) {
+        return false;
+    }
+    if let Some(word) = unsafe { word.as_mut() } {
+        *word = EEPROM[index].load(Ordering::Relaxed);
+        true
+    } else {
+        false
+    }
+}
+
+pub unsafe fn store_eeprom_word(word: *mut u32, address: i32) -> bool {
+    let Some(index) = usize::try_from(address)
+        .ok()
+        .filter(|index| *index < EEPROM_WORDS)
+    else {
+        return false;
+    };
+    if EEPROM_WRITE_FAILURE.load(Ordering::Relaxed) == address {
+        return false;
+    }
+    let Some(word) = (unsafe { word.as_ref() }) else {
+        return false;
+    };
+    EEPROM[index].store(*word, Ordering::Relaxed);
+    EEPROM_PRESENT[index].store(true, Ordering::Relaxed);
+    true
+}
+
+pub(crate) fn fail_eeprom_write(address: crate::CustomEepromAddress) {
+    EEPROM_WRITE_FAILURE.store(address.get(), Ordering::Relaxed);
 }
 
 fn load(value: &AtomicU32) -> f32 {
@@ -187,6 +244,28 @@ pub(crate) fn set_runtime_motor(
 pub(crate) fn set_motor_current_limits(max: MotorCurrentLimit, min: MotorCurrentLimit) {
     store(&MOTOR_CURRENT_MAX, max.current().as_amps());
     store(&MOTOR_CURRENT_MIN, -min.current().as_amps());
+}
+
+pub(crate) fn set_duty_cycle_limit(limit: crate::DutyCycleLimit) {
+    store(&DUTY_CYCLE_LIMIT, limit.ratio().as_ratio());
+}
+
+pub(crate) fn set_temperature_limit_starts(
+    mosfet: crate::TemperatureLimitStart,
+    motor: crate::TemperatureLimitStart,
+) {
+    store(
+        &MOSFET_TEMPERATURE_LIMIT_START,
+        mosfet.temperature().as_degrees_celsius(),
+    );
+    store(
+        &MOTOR_TEMPERATURE_LIMIT_START,
+        motor.temperature().as_degrees_celsius(),
+    );
+}
+
+pub(crate) fn set_battery_cell_count(count: crate::BatteryCellCount) {
+    BATTERY_CELL_COUNT.store(i32::from(count.as_u16()), Ordering::Relaxed);
 }
 
 pub(crate) fn set_directional_motor_current(current: DirectionalMotorCurrent) {
@@ -384,7 +463,17 @@ pub unsafe fn get_cfg_float(param: i32) -> f32 {
     match param {
         0 => load(&MOTOR_CURRENT_MAX),
         1 => load(&MOTOR_CURRENT_MIN),
+        16 => load(&MOSFET_TEMPERATURE_LIMIT_START),
+        18 => load(&MOTOR_TEMPERATURE_LIMIT_START),
+        22 => load(&DUTY_CYCLE_LIMIT),
         _ => 0.0,
+    }
+}
+
+pub unsafe fn get_cfg_int(param: i32) -> i32 {
+    match param {
+        43 => BATTERY_CELL_COUNT.load(Ordering::Relaxed),
+        _ => 0,
     }
 }
 
