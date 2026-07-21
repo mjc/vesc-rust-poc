@@ -43,6 +43,9 @@ pub(super) fn refresh(
         let warning_threshold = low_voltage_threshold + Voltage::from_volts(5.0);
         if base.motor().battery_voltage().voltage() >= warning_threshold {
             beeper_alert = Some(RefloatBeeperAlert::Long(RefloatBeeperCount::ONE));
+        } else {
+            beep_reason = RefloatBeepReason::LowBattery;
+            beeper_alert = Some(RefloatBeeperAlert::Long(RefloatBeeperCount::TWO));
         }
     }
     let flywheel_both_footpads_fault = matches!(

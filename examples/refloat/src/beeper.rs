@@ -32,6 +32,7 @@ pub(crate) struct RefloatBeeperCount(u8);
 
 impl RefloatBeeperCount {
     pub(crate) const ONE: Self = Self(1);
+    pub(crate) const TWO: Self = Self(2);
     pub(crate) const THREE: Self = Self(3);
     pub(crate) const SEVEN: Self = Self(7);
 }
