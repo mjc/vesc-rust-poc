@@ -4,8 +4,8 @@ use crate::types::{
     AmpHoursCharged, AmpHoursDischarged, BatteryCellCount, BatteryLevel, BrakeCurrent,
     CurrentOffDelay, DCurrent, DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed,
     FirmwareFaultCode, InputCurrent, InputVoltage, MosfetTemperature, MotorCurrent,
-    MotorCurrentLimit, MotorTemperature, TotalMotorCurrent, TripDistance, VehicleSpeed,
-    WattHoursCharged, WattHoursDischarged,
+    MotorCurrentLimit, MotorTemperature, TemperatureLimitStart, TotalMotorCurrent, TripDistance,
+    VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 #[cfg(not(test))]
 use crate::units::{Charge, Current, Distance, Energy, Rpm, Speed, Temperature, Voltage};
@@ -15,6 +15,10 @@ use crate::units::{OdometerMeters, Ratio, SignedRatio};
 const CFG_PARAM_L_CURRENT_MAX: core::ffi::c_int = 0;
 #[cfg(not(test))]
 const CFG_PARAM_L_CURRENT_MIN: core::ffi::c_int = 1;
+#[cfg(not(test))]
+const CFG_PARAM_L_TEMP_FET_START: core::ffi::c_int = 16;
+#[cfg(not(test))]
+const CFG_PARAM_L_TEMP_MOTOR_START: core::ffi::c_int = 18;
 #[cfg(not(test))]
 const CFG_PARAM_L_MAX_DUTY: core::ffi::c_int = 22;
 #[cfg(not(test))]
@@ -53,6 +57,10 @@ pub trait MotorTelemetryBindings {
     /// `src/motor_data.c:90`; the VESC config id is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:244`.
     fn brake_current_limit(&self) -> MotorCurrentLimit;
+    /// Return the configured MOSFET temperature limit-start threshold.
+    fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart;
+    /// Return the configured motor temperature limit-start threshold.
+    fn motor_temperature_limit_start(&self) -> TemperatureLimitStart;
     /// Return the configured maximum duty-cycle limit.
     ///
     /// Refloat v1.2.1 reads `CFG_PARAM_l_max_duty` through `get_cfg_float`
@@ -129,6 +137,14 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
 
     fn brake_current_limit(&self) -> MotorCurrentLimit {
         (**self).brake_current_limit()
+    }
+
+    fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart {
+        (**self).mosfet_temperature_limit_start()
+    }
+
+    fn motor_temperature_limit_start(&self) -> TemperatureLimitStart {
+        (**self).motor_temperature_limit_start()
     }
 
     fn duty_cycle_limit(&self) -> DutyCycleLimit {
@@ -300,6 +316,18 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         }))
     }
 
+    fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart {
+        TemperatureLimitStart::new(Temperature::from_degrees_celsius(unsafe {
+            crate::ffi::get_cfg_float(CFG_PARAM_L_TEMP_FET_START)
+        }))
+    }
+
+    fn motor_temperature_limit_start(&self) -> TemperatureLimitStart {
+        TemperatureLimitStart::new(Temperature::from_degrees_celsius(unsafe {
+            crate::ffi::get_cfg_float(CFG_PARAM_L_TEMP_MOTOR_START)
+        }))
+    }
+
     fn duty_cycle_limit(&self) -> DutyCycleLimit {
         duty_cycle_limit_from_firmware(unsafe { crate::ffi::get_cfg_float(CFG_PARAM_L_MAX_DUTY) })
     }
@@ -457,6 +485,10 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn drive_current_limit(&self) -> MotorCurrentLimit;
     /// Return the configured braking-current magnitude.
     fn brake_current_limit(&self) -> MotorCurrentLimit;
+    /// Return the configured MOSFET temperature limit-start threshold.
+    fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart;
+    /// Return the configured motor temperature limit-start threshold.
+    fn motor_temperature_limit_start(&self) -> TemperatureLimitStart;
     /// Return the configured maximum duty-cycle limit.
     fn duty_cycle_limit(&self) -> DutyCycleLimit;
     /// Return the configured battery cell count, when available.
@@ -604,6 +636,16 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.brake_current_limit()
     }
 
+    /// Return the configured MOSFET temperature limit-start threshold.
+    pub fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart {
+        self.bindings.mosfet_temperature_limit_start()
+    }
+
+    /// Return the configured motor temperature limit-start threshold.
+    pub fn motor_temperature_limit_start(&self) -> TemperatureLimitStart {
+        self.bindings.motor_temperature_limit_start()
+    }
+
     /// Return the configured maximum duty-cycle limit.
     pub fn duty_cycle_limit(&self) -> DutyCycleLimit {
         self.bindings.duty_cycle_limit()
@@ -712,6 +754,14 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
 
     fn brake_current_limit(&self) -> MotorCurrentLimit {
         self.brake_current_limit()
+    }
+
+    fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart {
+        self.mosfet_temperature_limit_start()
+    }
+
+    fn motor_temperature_limit_start(&self) -> TemperatureLimitStart {
+        self.motor_temperature_limit_start()
     }
 
     fn duty_cycle_limit(&self) -> DutyCycleLimit {
