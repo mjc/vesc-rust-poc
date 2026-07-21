@@ -117,6 +117,18 @@ mod tests {
     use std::vec::Vec;
 
     use super::{RefloatBeeper, RefloatBeeperAlert, RefloatBeeperLevel};
+    use crate::config::RefloatConfigImage;
+
+    #[test]
+    fn beeper_enable_decodes_exact_refloat_generated_offset() {
+        let mut config = RefloatConfigImage::defaults();
+        assert!(!config.beeper_enabled());
+
+        assert!(config.editor().set_beeper_enabled(true));
+
+        assert!(config.beeper_enabled());
+        assert_eq!(config.as_bytes()[242], 1);
+    }
 
     #[test]
     fn three_short_alert_matches_refloat_transition_sequence() {

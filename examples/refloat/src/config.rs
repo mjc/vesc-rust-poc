@@ -73,6 +73,11 @@ impl RefloatConfigImage {
     const HIGH_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 51, scale: 100.0);
     const HIGH_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigScaledVoltageField, len: REFLOAT_CONFIG_LEN, offset: 55, scale: 100.0);
     const LOW_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 57, scale: 100.0);
+    // Generated `is_beeper_enabled` follows the 18-byte hardware LED block
+    // beginning at offset 224; upstream serializes it immediately before
+    // `disabled` at offset 243 (`third_party/refloat/src/conf/settings.xml:4049-4064`).
+    #[cfg(any(test, target_arch = "arm"))]
+    const BEEPER_ENABLED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 242);
 
     // Generated `hardware.leds.mode` is the first field in the final hardware
     // block at `third_party/refloat/src/conf/settings.xml:4049-4064`.
@@ -190,6 +195,11 @@ impl RefloatConfigImage {
         generated_field(Self::LOW_VOLTAGE_PUSHBACK_ANGLE_FIELD.read(self))
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn beeper_enabled(&self) -> bool {
+        self.flag(Self::BEEPER_ENABLED_FIELD)
+    }
+
     pub(crate) fn editor(&mut self) -> RefloatConfigEditor<'_> {
         RefloatConfigEditor(self.0.editor())
     }
@@ -246,6 +256,11 @@ impl RefloatConfigEditor<'_> {
     #[cfg(test)]
     pub(crate) fn set_disabled(&mut self, disabled: bool) -> bool {
         self.set_flag(RefloatMetadataConfig::DISABLED_FIELD, disabled)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_beeper_enabled(&mut self, enabled: bool) -> bool {
+        self.set_flag(RefloatConfigImage::BEEPER_ENABLED_FIELD, enabled)
     }
 
     #[cfg(test)]
