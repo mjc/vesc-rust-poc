@@ -13,7 +13,7 @@ use crate::PackageRuntimeState;
 use crate::bindings::AppDataBindings;
 use crate::lifecycle_core::AppDataSendError;
 use crate::types::ThreadPriority;
-use crate::units::TimestampTicks;
+use crate::units::{TimestampTicks, VescSeconds};
 
 mod private {
     pub trait FirmwareThreads {}
@@ -66,6 +66,20 @@ impl FirmwareClock {
     pub fn now(&self) -> TimestampTicks {
         self.api.system_timestamp()
     }
+
+    /// Return firmware uptime in the native floating-point seconds domain.
+    #[cfg(not(test))]
+    #[inline(always)]
+    pub fn uptime(&self) -> VescSeconds {
+        self.api.system_uptime()
+    }
+
+    /// Ask firmware for the age of a timestamp, including its rollover rules.
+    #[cfg(not(test))]
+    #[inline(always)]
+    pub fn age(&self, timestamp: TimestampTicks) -> VescSeconds {
+        self.api.timestamp_age(timestamp)
+    }
 }
 
 /// Internal firmware app-data API built on a binding implementation.
@@ -82,6 +96,16 @@ impl<B: AppDataBindings> AppDataApi<B> {
     /// Return the current firmware system time in ticks.
     pub(crate) fn system_timestamp(&self) -> TimestampTicks {
         TimestampTicks::from_ticks(self.bindings.system_time_ticks())
+    }
+
+    /// Return firmware uptime in floating-point seconds.
+    pub(crate) fn system_uptime(&self) -> VescSeconds {
+        VescSeconds::from_seconds(self.bindings.system_time_seconds())
+    }
+
+    /// Return firmware-computed age for a system timestamp.
+    pub(crate) fn timestamp_age(&self, timestamp: TimestampTicks) -> VescSeconds {
+        VescSeconds::from_seconds(self.bindings.timestamp_age_seconds(timestamp.as_ticks()))
     }
 
     /// Send one app-data response.

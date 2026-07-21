@@ -850,6 +850,7 @@ mod slots {
     fn_slot!(imu_get_quaternions as unsafe extern "C" fn(*mut f32));
     fn_slot!(send_app_data as unsafe extern "C" fn(*mut c_uchar, u32));
     fn_slot!(system_time as unsafe extern "C" fn() -> f32);
+    fn_slot!(ts_to_age_s as unsafe extern "C" fn(u32) -> f32);
     // Appended in firmware 6.05; older tables fall back to `system_time`.
     optional_fn_slot!(system_time_ticks as unsafe extern "C" fn() -> u32);
     // Appended in firmware 6.06; callers treat absence as an unsupported hint.
@@ -1711,6 +1712,24 @@ pub unsafe fn vesc_system_time_ticks() -> u32 {
             (slots::system_time()() * 10_000.0) as u32
         }
     }
+}
+
+/// Return firmware uptime in its native floating-point seconds domain.
+///
+/// # Safety
+///
+/// The VESC function table at [`VescIfAbi::BASE_ADDR`] must be valid.
+pub unsafe fn vesc_system_time_seconds() -> f32 {
+    unsafe { slots::system_time()() }
+}
+
+/// Return the age of a firmware system timestamp in floating-point seconds.
+///
+/// # Safety
+///
+/// The VESC function table at [`VescIfAbi::BASE_ADDR`] must be valid.
+pub unsafe fn vesc_timestamp_age_seconds(timestamp: u32) -> f32 {
+    unsafe { slots::ts_to_age_s()(timestamp) }
 }
 
 /// # Safety

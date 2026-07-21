@@ -65,6 +65,17 @@ impl FirmwareTest {
         crate::Nvm::new()
     }
 
+    /// Borrow the firmware clock capability used on hardware.
+    #[must_use]
+    pub fn clock(&self) -> &crate::FirmwareClock {
+        self.firmware.clock()
+    }
+
+    /// Set the fake firmware system timestamp.
+    pub fn set_clock_ticks(&self, ticks: u32) {
+        crate::test_ffi::set_clock_ticks(ticks);
+    }
+
     /// Make the fake firmware reject every NVM operation.
     pub fn fail_nvm_operations(&self) {
         crate::test_ffi::fail_nvm_operations(true);
@@ -682,6 +693,14 @@ impl AppDataBindings for FakeAppDataBindings {
 
     fn system_time_ticks(&self) -> u32 {
         self.ticks.get()
+    }
+
+    fn system_time_seconds(&self) -> f32 {
+        self.ticks.get() as f32 / 10_000.0
+    }
+
+    fn timestamp_age_seconds(&self, timestamp: u32) -> f32 {
+        self.ticks.get().wrapping_sub(timestamp) as f32 / 10_000.0
     }
 
     fn arg(&self, _prog_addr: PackageProgramAddress) -> Option<PackageArgument> {

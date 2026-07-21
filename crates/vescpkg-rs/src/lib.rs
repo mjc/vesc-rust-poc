@@ -58,7 +58,7 @@ pub(crate) mod ffi {
         lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number,
         vesc_clear_app_data_handler, vesc_clear_imu_read_callback, vesc_free, vesc_get_arg,
         vesc_malloc, vesc_mutex_create, vesc_mutex_lock, vesc_mutex_unlock, vesc_send_app_data,
-        vesc_set_app_data_handler, vesc_set_imu_read_callback, vesc_system_time_ticks,
+        vesc_set_app_data_handler, vesc_set_imu_read_callback,
     };
     pub use vescpkg_rs_sys::{AppDataHandler, LibInfo, NativeImage};
 
@@ -75,7 +75,8 @@ pub(crate) mod ffi {
         mc_set_brake_current, mc_set_current, mc_set_current_off_delay, mc_set_duty,
         mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm,
         store_eeprom_word, timeout_reset, vesc_imu_get_quaternions, vesc_request_terminate,
-        vesc_should_terminate, vesc_sleep_us, vesc_spawn, vesc_thread_set_priority, wipe_nvm,
+        vesc_should_terminate, vesc_sleep_us, vesc_spawn, vesc_system_time_seconds,
+        vesc_system_time_ticks, vesc_thread_set_priority, vesc_timestamp_age_seconds, wipe_nvm,
         write_nvm,
     };
     #[cfg(any(test, not(feature = "test-support")))]

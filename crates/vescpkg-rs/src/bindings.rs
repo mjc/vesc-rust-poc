@@ -80,6 +80,12 @@ pub(crate) trait AppDataBindings {
     /// Return the current firmware tick counter.
     fn system_time_ticks(&self) -> u32;
 
+    /// Return firmware uptime in floating-point seconds.
+    fn system_time_seconds(&self) -> f32;
+
+    /// Return the firmware-computed age of a system timestamp in seconds.
+    fn timestamp_age_seconds(&self, timestamp: u32) -> f32;
+
     /// Return the package `ARG` pointer stored by the firmware loader.
     ///
     /// C map: VESC package `ARG` calls `VESC_IF->get_arg(PROG_ADDR)` in
@@ -127,6 +133,14 @@ impl<B: AppDataBindings + ?Sized> AppDataBindings for &B {
 
     fn system_time_ticks(&self) -> u32 {
         (**self).system_time_ticks()
+    }
+
+    fn system_time_seconds(&self) -> f32 {
+        (**self).system_time_seconds()
+    }
+
+    fn timestamp_age_seconds(&self, timestamp: u32) -> f32 {
+        (**self).timestamp_age_seconds(timestamp)
     }
 
     fn arg(&self, prog_addr: PackageProgramAddress) -> Option<PackageArgument> {
@@ -281,6 +295,14 @@ impl AppDataBindings for RealBindings {
 
     fn system_time_ticks(&self) -> u32 {
         unsafe { crate::ffi::vesc_system_time_ticks() }
+    }
+
+    fn system_time_seconds(&self) -> f32 {
+        unsafe { crate::ffi::vesc_system_time_seconds() }
+    }
+
+    fn timestamp_age_seconds(&self, timestamp: u32) -> f32 {
+        unsafe { crate::ffi::vesc_timestamp_age_seconds(timestamp) }
     }
 
     fn arg(&self, prog_addr: PackageProgramAddress) -> Option<PackageArgument> {
