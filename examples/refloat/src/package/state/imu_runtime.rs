@@ -412,9 +412,21 @@ pub(super) fn refresh(
             && motor_erpm < -reverse_stop.entry_erpm
             && !darkride_active;
         if entered_reverse_stop {
-            // C enters reverse stop before every protective pushback branch at
-            // `third_party/refloat/src/main.c:538-552`.
-            state.reverse_total_erpm = Rpm::ZERO;
+            // Refloat carries an existing HV/LV/temperature target into
+            // reverse-stop at `third_party/refloat/src/main.c:538-550`.
+            state.reverse_total_erpm = if matches!(
+                ride_state.setpoint_adjustment(),
+                RefloatSetpointAdjustment::PushbackHighVoltage
+                    | RefloatSetpointAdjustment::PushbackLowVoltage
+                    | RefloatSetpointAdjustment::PushbackTemperature
+            ) {
+                Rpm::from_revolutions_per_minute(-(
+                    reverse_stop.tolerance_erpm.as_revolutions_per_minute()
+                        + setpoints.board().angle().as_degrees() / 0.000_08
+                ))
+            } else {
+                Rpm::ZERO
+            };
             state.reverse_ticks = system_time_ticks;
             ride_state =
                 ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::ReverseStop);

@@ -531,6 +531,37 @@ fn running_enters_reverse_stop_from_reverse_motor_speed_like_refloat() {
 }
 
 #[test]
+fn running_reverse_stop_carries_error_pushback_into_erpm_like_refloat() {
+    let (app_data, telemetry, mut state) = running_protective_pushback_fixture(
+        SignedRatio::from_ratio_const(0.10),
+        Rpm::from_revolutions_per_minute(-201.0),
+        RefloatSetpointAdjustment::PushbackHighVoltage,
+        InputVoltage::new(Voltage::from_volts(72.0)),
+    );
+    edit_config(&mut state, |config| {
+        assert!(config.set_reversestop_enabled(true));
+    });
+
+    tick_running_protective_pushback(&mut state, &telemetry, app_data);
+
+    // Refloat seeds `-(20_000 + -8 / 0.00008)` when reverse-stop interrupts
+    // an error pushback at `third_party/refloat/src/main.c:538-550`.
+    assert_eq!(
+        state.reverse_total_erpm,
+        Rpm::from_revolutions_per_minute(80_000.0),
+    );
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .setpoint_adjustment(),
+        RefloatSetpointAdjustment::ReverseStop,
+    );
+}
+
+#[test]
 fn running_reverse_stop_grows_target_past_erpm_tolerance_like_refloat() {
     let (app_data, telemetry, mut state) = running_reverse_stop_fixture(
         Rpm::from_revolutions_per_minute(-20_000.0),
@@ -674,7 +705,13 @@ fn running_protective_pushback_fixture(
     let board_setpoint = match adjustment {
         RefloatSetpointAdjustment::Centering => AngleDegrees::from_degrees(1.0),
         RefloatSetpointAdjustment::PushbackDuty => AngleDegrees::from_degrees(5.0),
+        RefloatSetpointAdjustment::PushbackHighVoltage => AngleDegrees::from_degrees(8.0),
         _ => AngleDegrees::ZERO,
+    };
+    let board_setpoint = if motor_erpm.is_negative() {
+        -board_setpoint
+    } else {
+        board_setpoint
     };
     let setpoints = base
         .setpoints()
