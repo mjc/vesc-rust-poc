@@ -37,37 +37,45 @@ pub union EepromVar {
 }
 
 impl EepromVar {
+    /// Construct an EEPROM value from its raw 32-bit representation.
+    pub const fn from_bits(bits: u32) -> Self {
+        Self { as_u32: bits }
+    }
+
     /// Construct an EEPROM value with the unsigned interpretation selected.
     pub const fn from_u32(value: u32) -> Self {
-        Self { as_u32: value }
+        Self::from_bits(value)
     }
 
     /// Construct an EEPROM value with the signed interpretation selected.
     pub const fn from_i32(value: i32) -> Self {
-        Self { as_i32: value }
+        Self::from_bits(value as u32)
     }
 
     /// Construct an EEPROM value with the floating-point interpretation selected.
     pub const fn from_float(value: f32) -> Self {
-        Self { as_float: value }
+        Self::from_bits(value.to_bits())
     }
 
-    /// Read the value using the unsigned interpretation.
-    pub const fn read_u32(self) -> u32 {
+    /// Return the raw 32-bit representation of the value.
+    pub const fn to_bits(self) -> u32 {
         // All bit patterns are valid for u32, so this interpretation is safe.
         unsafe { self.as_u32 }
     }
 
+    /// Read the value using the unsigned interpretation.
+    pub const fn read_u32(self) -> u32 {
+        self.to_bits()
+    }
+
     /// Read the value using the signed interpretation.
     pub const fn read_i32(self) -> i32 {
-        // All bit patterns are valid for i32, so this interpretation is safe.
-        unsafe { self.as_i32 }
+        self.to_bits() as i32
     }
 
     /// Read the value using the floating-point interpretation.
     pub const fn read_float(self) -> f32 {
-        // All bit patterns are valid for f32, including NaNs and infinities.
-        unsafe { self.as_float }
+        f32::from_bits(self.to_bits())
     }
 }
 
