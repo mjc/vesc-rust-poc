@@ -21,6 +21,7 @@ impl RefloatBeeperLevel {
 /// Source-defined alert sequences used by Refloat's BMS paths.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RefloatBeeperAlert {
+    OneShort,
     ThreeShort,
     Long(RefloatBeeperCount),
     #[cfg(any(test, target_arch = "arm"))]
@@ -79,6 +80,10 @@ impl RefloatBeeperPeriod {
 impl RefloatBeeperAlert {
     const fn sequence(self) -> (RefloatBeeperTransitions, RefloatBeeperPeriod) {
         match self {
+            Self::OneShort => (
+                RefloatBeeperTransitions::from_beeps(RefloatBeeperCount::ONE),
+                RefloatBeeperPeriod::SHORT,
+            ),
             Self::ThreeShort => (
                 RefloatBeeperTransitions::THREE_BEEPS,
                 RefloatBeeperPeriod::SHORT,

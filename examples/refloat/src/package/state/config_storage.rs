@@ -1,4 +1,4 @@
-use super::RefloatPackageState;
+use super::{RefloatBeeperAlert, RefloatPackageState};
 use crate::config::RefloatConfigImage;
 use crate::domain::{RefloatMode, RefloatRunState};
 
@@ -58,6 +58,21 @@ impl RefloatPackageState {
         // `third_party/refloat/src/main.c:2380-2382`, which refreshes the balance filter KP at
         // `third_party/refloat/src/main.c:158-160`.
         self.refresh_balance_filter_config();
+        self.refresh_config_runtime_state();
+        // `configure(d)` applies the new beeper setting, then acknowledges
+        // disabled state with three short beeps and every other state with one
+        // at `third_party/refloat/src/main.c:219-227`.
+        let run_state = self
+            .all_data_payloads
+            .base()
+            .status()
+            .ride_state()
+            .run_state();
+        self.alert_beeper(if matches!(run_state, RefloatRunState::Disabled) {
+            RefloatBeeperAlert::ThreeShort
+        } else {
+            RefloatBeeperAlert::OneShort
+        });
         true
     }
 
