@@ -158,6 +158,8 @@ fn vesc_if_slot_constants_name_the_package_header_offsets() {
     assert!(VescIfAbi::USED_SLOTS.contains(&VescIfAbi::SLEEP_US));
     assert!(VescIfAbi::USED_SLOTS.contains(&VescIfAbi::FOC_GET_ID));
     assert!(VescIfAbi::USED_SLOTS.contains(&VescIfAbi::THREAD_SET_PRIORITY));
+    assert_eq!(VescIfAbi::CAN_GET_STATUS_MSG_INDEX.slot_index(), 75);
+    assert_eq!(VescIfAbi::SHUTDOWN_DISABLE.slot_index(), 252);
 }
 #[test]
 fn vesc_if_slot_host_byte_offset_scales_with_pointer_width() {

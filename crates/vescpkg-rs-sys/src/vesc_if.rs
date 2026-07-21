@@ -259,4 +259,4 @@ macro_rules! define_vesc_if_abi {
     };
 }
 
-vesc_if_compat_constants!(define_vesc_if_abi);
+c_vesc_if::define_vesc_if_manifest_constants!(define_vesc_if_abi);

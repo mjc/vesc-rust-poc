@@ -112,6 +112,23 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
     }
     rust.push_str("];\n\n");
 
+    rust.push_str("macro_rules! define_vesc_if_manifest_constants {\n");
+    rust.push_str("    ($macro:ident) => {\n");
+    rust.push_str("        $macro! {\n");
+    for slot in slots {
+        writeln!(
+            rust,
+            "            {} => {},",
+            slot.rust_name.to_ascii_uppercase(),
+            slot.rust_name
+        )
+        .expect("write generated Rust");
+    }
+    rust.push_str("        }\n");
+    rust.push_str("    };\n");
+    rust.push_str("}\n");
+    rust.push_str("pub(crate) use define_vesc_if_manifest_constants;\n\n");
+
     rust.push_str("#[cfg(test)]\n");
     rust.push_str("macro_rules! rust_field_offsets {\n");
     rust.push_str("    ($table:path) => {\n");
