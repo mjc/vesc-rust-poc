@@ -48,6 +48,24 @@ signed_ratio_type!(
     DutyCycle,
     "Signed controller duty-cycle command ratio in `-1.0..=1.0`."
 );
+ratio_type!(
+    DutyCycleLimit,
+    "Configured maximum controller duty-cycle ratio in `0.0..=1.0`."
+);
+
+impl DutyCycle {
+    /// Return the unsigned magnitude used by firmware protection thresholds.
+    pub fn magnitude(self) -> Ratio {
+        Ratio::clamped(self.ratio().as_ratio().abs())
+    }
+}
+
+impl DutyCycleLimit {
+    /// Reduce this configured limit by a typed safety margin.
+    pub fn reduced_by(self, margin: Ratio) -> Self {
+        Self::new(Ratio::clamped(self.ratio().as_ratio() - margin.as_ratio()))
+    }
+}
 ratio_type!(Pwm, "Normalized PWM output command ratio in `0.0..=1.0`.");
 signed_ratio_type!(
     CurrentRelative,

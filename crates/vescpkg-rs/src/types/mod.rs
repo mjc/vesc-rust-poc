@@ -88,8 +88,8 @@ pub use motor::{
 };
 pub use power::{AveragePower, PeakPower};
 pub use ratio::{
-    BrakeCurrentRelative, CurrentRelative, DutyCycle, HandbrakeRelative, JoystickX, JoystickY,
-    PpmInput, Pwm,
+    BrakeCurrentRelative, CurrentRelative, DutyCycle, DutyCycleLimit, HandbrakeRelative, JoystickX,
+    JoystickY, PpmInput, Pwm,
 };
 pub use temperature::{
     FetTemperature, MosfetTemperature, MotorTemperature, TemperatureLimitEnd, TemperatureLimitStart,
