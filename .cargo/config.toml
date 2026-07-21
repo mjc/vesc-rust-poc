@@ -1,2 +1,2 @@
 [target.thumbv7em-none-eabihf]
-linker = "rust-lld"
+linker = "arm-none-eabi-gcc"

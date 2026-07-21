@@ -12,11 +12,15 @@ pub fn build_package(manifest_dir: &Path) {
         let linker_script = manifest_dir.join("../vescpkg-link.ld");
         println!("cargo::rerun-if-changed={}", linker_script.display());
         for arg in [
+            "-nostartfiles",
             "-static",
-            "--emit-relocs",
-            "--gc-sections",
-            "--undefined=init",
-            "--entry=init",
+            "-mcpu=cortex-m4",
+            "-mthumb",
+            "-mfloat-abi=hard",
+            "-mfpu=fpv4-sp-d16",
+            "-Wl,--emit-relocs",
+            "-Wl,--gc-sections",
+            "-Wl,--undefined=init",
         ] {
             println!("cargo::rustc-link-arg={arg}");
         }
