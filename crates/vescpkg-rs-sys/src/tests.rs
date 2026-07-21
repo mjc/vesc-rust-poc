@@ -1,15 +1,15 @@
 #[allow(unused_imports)]
 use crate::{
-    AppDataLen, AppDataPacket, CanControllerId, CanFrameLen, CanPayload, CanStatusIndex, CfgFloat,
-    CfgInt, CfgParam, CommandPacket, ConfigPayload, ConfigSetResult, ConfigXmlBytes, EepromAddress,
-    EepromVar, FirmwareNonNull, FirmwarePtr, GpioPin, GpioPortPtr, HalfDuplex, HardwareType,
-    ImageOffset, LbmBoolSymbol, LbmCid, LbmCount, LbmErrorSymbol, LbmFloat, LbmInt, LbmIoSymbol,
-    LbmNilSymbol, LbmSymbol, LbmType, LbmUint, LbmValue, LibInfo, LibInfoAbi, LoaderBaseAddress,
-    MallocLen, MotorIndex, MutablePacket, MutexHandle, NativeAddress, NativeImage, NvmAddress,
-    NvmBytes, NvmLen, OwnedFirmwareAllocation, PlotAxisName, PlotGraphIndex, PlotGraphName,
-    PlotPoint, ProgramAddress, ReplyPacket, SemaphoreHandle, StackSizeBytes, SystemTicks,
-    ThreadHandle, ThreadName, UartBaudRate, UartWriteLen, VescIfAbi, VescIfSlot, VescPin,
-    VescPinMode,
+    AbiError, AppDataLen, AppDataPacket, CanControllerId, CanFrameLen, CanPayload, CanStatusIndex,
+    CfgFloat, CfgInt, CfgParam, CommandPacket, ConfigPayload, ConfigSetResult, ConfigXmlBytes,
+    EepromAddress, EepromVar, FirmwareNonNull, FirmwarePtr, GpioPin, GpioPortPtr, HalfDuplex,
+    HardwareType, ImageOffset, LbmBoolSymbol, LbmCid, LbmCount, LbmErrorSymbol, LbmFloat, LbmInt,
+    LbmIoSymbol, LbmNilSymbol, LbmSymbol, LbmType, LbmUint, LbmValue, LibInfo, LibInfoAbi,
+    LoaderBaseAddress, MallocLen, MotorIndex, MutablePacket, MutexHandle, NativeAddress,
+    NativeImage, NvmAddress, NvmBytes, NvmLen, OwnedFirmwareAllocation, PlotAxisName,
+    PlotGraphIndex, PlotGraphName, PlotPoint, ProgramAddress, ReplyPacket, SemaphoreHandle,
+    StackSizeBytes, Stm32AbiRevision, SystemTicks, ThreadHandle, ThreadName, UartBaudRate,
+    UartWriteLen, VescIfAbi, VescIfSlot, VescIfSlotKind, VescPin, VescPinMode,
 };
 use core::ffi::{CStr, c_char};
 
@@ -252,6 +252,11 @@ fn vesc_if_used_slots_match_generated_header_descriptors() {
         VescIfAbi::ALL_ENTRIES[0].declaration(),
         "load_extension_fptr lbm_add_extension;"
     );
+    assert_eq!(VescIfAbi::ALL_ENTRIES[0].kind(), VescIfSlotKind::Function);
+    assert_eq!(
+        VescIfAbi::ALL_ENTRIES[crate::c_vesc_if::lbm_enc_sym_nil::INDEX].kind(),
+        VescIfSlotKind::Scalar
+    );
 
     for slot in VescIfAbi::USED_SLOTS {
         let generated = crate::c_vesc_if::SLOTS
@@ -261,4 +266,37 @@ fn vesc_if_used_slots_match_generated_header_descriptors() {
 
         assert_eq!(generated.vesc32_byte_offset, slot.vesc32_byte_offset());
     }
+}
+
+#[test]
+fn vesc_if_presence_tracks_holes_and_profiles_from_observed_words() {
+    let mut words = [1_usize; VescIfAbi::FIELD_COUNT];
+    words[crate::c_vesc_if::system_time_ticks::INDEX] = 0;
+    words[crate::c_vesc_if::thread_set_priority::INDEX] = 0;
+
+    let presence = crate::VescIfPresence::from_words(&words);
+    assert!(presence.contains(VescIfAbi::LBM_ADD_EXTENSION));
+    assert!(!presence.contains(VescIfAbi::SYSTEM_TIME_TICKS));
+    assert!(!presence.supports_revision(Stm32AbiRevision::Firmware605));
+    assert_eq!(presence.revision(), Stm32AbiRevision::Base);
+
+    let base_words = [1_usize; VescIfAbi::BASE_SLOT_COUNT];
+    let base_presence = crate::VescIfPresence::from_words(&base_words);
+    assert!(base_presence.supports_revision(Stm32AbiRevision::Base));
+    assert_eq!(base_presence.revision(), Stm32AbiRevision::Base);
+
+    assert_eq!(
+        base_presence.require("thread priority", VescIfAbi::THREAD_SET_PRIORITY),
+        Err(AbiError::MissingRequired {
+            capability: "thread priority",
+            slot: VescIfAbi::THREAD_SET_PRIORITY,
+        })
+    );
+    assert_eq!(
+        base_presence.optional("thread priority", VescIfAbi::THREAD_SET_PRIORITY),
+        Err(AbiError::Unsupported {
+            capability: "thread priority",
+            slot: VescIfAbi::THREAD_SET_PRIORITY,
+        })
+    );
 }

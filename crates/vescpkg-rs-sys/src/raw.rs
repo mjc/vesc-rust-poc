@@ -1,6 +1,6 @@
 #![cfg_attr(test, allow(dead_code))]
 
-use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi};
+use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescIfPresence};
 use core::ffi::{c_char, c_int, c_uchar, c_uint, c_void};
 
 type LbmFlatValue = c_void;
@@ -406,6 +406,30 @@ pub struct VescIf {
     // intentionally updating that baseline.
     thread_set_priority: Option<unsafe extern "C" fn(c_int)>,
     shutdown_disable: Option<unsafe extern "C" fn(bool)>,
+}
+
+impl VescIf {
+    /// Inspect this host-side table without exposing its raw fields.
+    pub fn presence(&self) -> VescIfPresence {
+        let words = unsafe {
+            core::slice::from_raw_parts(
+                (self as *const Self).cast::<usize>(),
+                VescIfAbi::FIELD_COUNT,
+            )
+        };
+        VescIfPresence::from_words(words)
+    }
+}
+
+/// Inspect a target table while bounding reads to the caller-provided table width.
+///
+/// # Safety
+///
+/// `base` must point to at least `available_slots` contiguous pointer-sized ABI words.
+pub unsafe fn vesc_if_presence_from(base: usize, available_slots: usize) -> VescIfPresence {
+    let slot_count = core::cmp::min(available_slots, VescIfAbi::FIELD_COUNT);
+    let words = unsafe { core::slice::from_raw_parts(base as *const usize, slot_count) };
+    VescIfPresence::from_words(words)
 }
 
 #[cfg(not(all(target_arch = "arm", not(test))))]

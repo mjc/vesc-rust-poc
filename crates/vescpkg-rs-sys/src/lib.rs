@@ -115,7 +115,10 @@ pub mod views;
 pub use image::{ImageOffset, NativeAddress, NativeImage};
 pub use loader::{AppDataHandler, ExtensionHandler, LibInfo, LibInfoAbi, StopHandler};
 pub use types::*;
-pub use vesc_if::{VescIfAbi, VescIfManifestEntry, VescIfSlot};
+pub use vesc_if::{
+    AbiError, Stm32AbiRevision, VescIfAbi, VescIfManifestEntry, VescIfPresence, VescIfSlot,
+    VescIfSlotKind,
+};
 pub use views::{
     AppDataPacket, CanPayload, CommandPacket, ConfigPayload, ConfigXmlBytes, MutablePacket,
     NvmBytes, PlotAxisName, PlotGraphName, ReplyPacket, ThreadName,

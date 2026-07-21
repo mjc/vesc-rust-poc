@@ -5,7 +5,7 @@ use std::{env, fmt::Write as _, fs, path::PathBuf};
 #[path = "build/vesc_if.rs"]
 mod vesc_if;
 
-use vesc_if::SlotDeclaration;
+use vesc_if::{SlotDeclaration, SlotKind};
 
 const HEADER_REPO: &str = "https://github.com/lukash/vesc_pkg_lib";
 const HEADER_COMMIT: &str = "e8bdc8296b90a266713da3762868f0d18ec027fe";
@@ -45,6 +45,7 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
     rust.push_str("    pub(crate) vesc32_byte_offset: usize,\n");
     rust.push_str("    pub(crate) header_line: usize,\n");
     rust.push_str("    pub(crate) declaration: &'static str,\n");
+    rust.push_str("    pub(crate) kind: crate::VescIfSlotKind,\n");
     rust.push_str("}\n\n");
     writeln!(
         rust,
@@ -72,12 +73,13 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
     for slot in slots {
         writeln!(
             rust,
-            "    Slot {{ name: \"{}\", index: {}, vesc32_byte_offset: {}, header_line: {}, declaration: {:?} }},",
+            "    Slot {{ name: \"{}\", index: {}, vesc32_byte_offset: {}, header_line: {}, declaration: {:?}, kind: crate::VescIfSlotKind::{} }},",
             slot.c_name,
             slot.index,
             slot.index * 4,
             slot.line,
-            slot.declaration
+            slot.declaration,
+            slot_kind_name(slot.kind)
         )
         .expect("write generated Rust");
     }
@@ -87,11 +89,12 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
     for slot in slots {
         writeln!(
             rust,
-            "    crate::VescIfManifestEntry {{ slot: crate::VescIfSlot::new(\"{}\", {}), header_line: {}, declaration: {:?} }},",
+            "    crate::VescIfManifestEntry {{ slot: crate::VescIfSlot::new(\"{}\", {}), header_line: {}, declaration: {:?}, kind: crate::VescIfSlotKind::{} }},",
             slot.c_name,
             slot.index * 4,
             slot.line,
-            slot.declaration
+            slot.declaration,
+            slot_kind_name(slot.kind)
         )
         .expect("write generated Rust");
     }
@@ -148,4 +151,11 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
     }
 
     rust
+}
+
+fn slot_kind_name(kind: SlotKind) -> &'static str {
+    match kind {
+        SlotKind::Function => "Function",
+        SlotKind::Scalar => "Scalar",
+    }
 }

@@ -5,12 +5,20 @@ pub(crate) struct SlotDeclaration {
     pub(crate) c_name: String,
     pub(crate) rust_name: String,
     pub(crate) declaration: String,
+    pub(crate) kind: SlotKind,
     pub(crate) index: usize,
     pub(crate) line: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SlotKind {
+    Function,
+    Scalar,
+}
+
 pub(crate) fn parse(source: &str) -> Result<Vec<SlotDeclaration>, String> {
     let lines: Vec<_> = source.lines().collect();
+    let function_typedefs = function_typedef_names(source);
     let end = lines
         .iter()
         .position(|line| line.trim().starts_with("} vesc_c_if"))
@@ -40,6 +48,13 @@ pub(crate) fn parse(source: &str) -> Result<Vec<SlotDeclaration>, String> {
             let (name, width) = parse_declarator(&pending)
                 .ok_or_else(|| format!("unsupported declaration: {}", pending.trim()))?;
             let line = pending_line.expect("pending declaration line");
+            let kind = if c_function_pointer_field(&pending).is_some()
+                || starts_with_function_typedef(&pending, &function_typedefs)
+            {
+                SlotKind::Function
+            } else {
+                SlotKind::Scalar
+            };
 
             for element in 0..width {
                 slots.push(SlotDeclaration {
@@ -54,6 +69,7 @@ pub(crate) fn parse(source: &str) -> Result<Vec<SlotDeclaration>, String> {
                         format!("{name}_{element}")
                     },
                     declaration: pending.trim().to_owned(),
+                    kind,
                     index: slots.len(),
                     line,
                 });
@@ -101,6 +117,27 @@ fn c_function_pointer_field(declaration: &str) -> Option<String> {
     })
 }
 
+fn function_typedef_names(source: &str) -> Vec<String> {
+    source
+        .split(';')
+        .filter_map(|declaration| {
+            let start = declaration.find("(*")? + 2;
+            let end = declaration[start..].find(')')? + start;
+            let name = declaration[start..end].trim();
+            is_c_identifier(name).then(|| name.to_owned())
+        })
+        .collect()
+}
+
+fn starts_with_function_typedef(declaration: &str, names: &[String]) -> bool {
+    let declaration = declaration.trim_start();
+    names.iter().any(|name| {
+        declaration
+            .strip_prefix(name)
+            .is_some_and(|rest| rest.starts_with(char::is_whitespace))
+    })
+}
+
 fn c_scalar_field(declaration: &str) -> Option<String> {
     declaration
         .trim()
@@ -125,6 +162,7 @@ mod tests {
     #[test]
     fn parses_scalar_function_pointer_and_multiline_declarations() {
         let source = r#"
+typedef bool (*load_extension_fptr)(char*, void*);
 typedef struct {
     load_extension_fptr lbm_add_extension;
     void (*send_packet)(
@@ -142,11 +180,13 @@ typedef struct {
             slots[0].declaration,
             "load_extension_fptr lbm_add_extension;"
         );
+        assert_eq!(slots[0].kind, super::SlotKind::Function);
         assert_eq!(slots[1].c_name, "send_packet");
         assert_eq!(
             slots[1].declaration,
             "void (*send_packet)( unsigned char *data, unsigned int len );"
         );
+        assert_eq!(slots[1].kind, super::SlotKind::Function);
         assert_eq!(slots[1].index, 1);
     }
 
