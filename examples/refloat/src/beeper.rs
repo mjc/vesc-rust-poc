@@ -23,8 +23,16 @@ impl RefloatBeeperLevel {
 pub(crate) enum RefloatBeeperAlert {
     ThreeShort,
     ThreeLong,
+    Long(RefloatBeeperCount),
     #[cfg(any(test, target_arch = "arm"))]
     FourShort,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RefloatBeeperCount(u8);
+
+impl RefloatBeeperCount {
+    pub(crate) const SEVEN: Self = Self(7);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,6 +46,10 @@ impl RefloatBeeperTransitions {
 
     const fn is_empty(self) -> bool {
         self.0 == 0
+    }
+
+    const fn from_beeps(count: RefloatBeeperCount) -> Self {
+        Self(count.0 * 2 + 1)
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -68,6 +80,10 @@ impl RefloatBeeperAlert {
             ),
             Self::ThreeLong => (
                 RefloatBeeperTransitions::THREE_BEEPS,
+                RefloatBeeperPeriod::LONG,
+            ),
+            Self::Long(count) => (
+                RefloatBeeperTransitions::from_beeps(count),
                 RefloatBeeperPeriod::LONG,
             ),
             #[cfg(any(test, target_arch = "arm"))]
@@ -143,7 +159,9 @@ impl RefloatBeeper {
 mod tests {
     use std::vec::Vec;
 
-    use super::{RefloatBeeper, RefloatBeeperAlert, RefloatBeeperLevel};
+    use super::{
+        RefloatBeeper, RefloatBeeperAlert, RefloatBeeperCount, RefloatBeeperLevel,
+    };
     use crate::config::RefloatConfigImage;
 
     #[test]
@@ -214,5 +232,18 @@ mod tests {
 
         assert_eq!(changes.len(), 9);
         assert_eq!(changes.last(), Some(&(720, RefloatBeeperLevel::Low)));
+    }
+
+    #[test]
+    fn seven_long_alert_uses_refloat_capped_transition_count() {
+        let mut beeper = RefloatBeeper::new(true);
+        beeper.alert(RefloatBeeperAlert::Long(RefloatBeeperCount::SEVEN));
+
+        let changes: Vec<_> = (1..=4_500)
+            .filter_map(|tick| beeper.tick().map(|level| (tick, level)))
+            .collect();
+
+        assert_eq!(changes.len(), 15);
+        assert_eq!(changes.last(), Some(&(4_500, RefloatBeeperLevel::Low)));
     }
 }
