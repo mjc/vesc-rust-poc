@@ -11,6 +11,7 @@ use crate::{
     MotorTemperature, OdometerMeters, TotalMotorCurrent, TripDistance, VehicleSpeed,
     WattHoursCharged, WattHoursDischarged,
 };
+use vescpkg_rs_sys::LbmValue;
 
 // C map: these host replacements model the motor slots declared at
 // `third_party/vesc_pkg_lib/vesc_c_if.h:435-476`. Refloat reads them in
@@ -307,6 +308,26 @@ pub unsafe fn wipe_nvm() -> Option<bool> {
 
 pub(crate) fn fail_nvm_operations(fail: bool) {
     NVM_FAILURE.store(fail, Ordering::Relaxed);
+}
+
+pub unsafe fn lbm_is_number(value: LbmValue) -> bool {
+    value.0 & 0x0f == 0x08
+}
+
+pub unsafe fn lbm_is_char(_value: LbmValue) -> bool {
+    false
+}
+
+pub unsafe fn lbm_is_symbol(_value: LbmValue) -> bool {
+    false
+}
+
+pub unsafe fn lbm_is_cons(_value: LbmValue) -> bool {
+    false
+}
+
+pub unsafe fn lbm_is_byte_array(_value: LbmValue) -> bool {
+    false
 }
 
 pub unsafe fn vesc_system_time_ticks() -> u32 {

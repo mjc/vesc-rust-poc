@@ -656,7 +656,7 @@ mod slots {
     use super::{
         AppDataHandler, CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5,
         CanStatusMsg6, CustomConfigGet, CustomConfigSet, CustomConfigXml, EepromVar,
-        ExtensionHandler, GnssData, ImuReadCallback, LibMutex, LibSemaphore, LibThread,
+        ExtensionHandler, GnssData, ImuReadCallback, LbmValue, LibMutex, LibSemaphore, LibThread,
         RemoteState, VescIfAbi, c_char, c_int, c_uchar, c_uint, c_void,
     };
     #[cfg(not(all(target_arch = "arm", not(test))))]
@@ -756,6 +756,10 @@ mod slots {
     fn_slot!(lbm_dec_as_i32 as unsafe extern "C" fn(u32) -> i32);
     fn_slot!(lbm_enc_i as unsafe extern "C" fn(i32) -> u32);
     fn_slot!(lbm_is_number as unsafe extern "C" fn(u32) -> bool);
+    fn_slot!(lbm_is_char as unsafe extern "C" fn(LbmValue) -> bool);
+    fn_slot!(lbm_is_symbol as unsafe extern "C" fn(LbmValue) -> bool);
+    fn_slot!(lbm_is_cons as unsafe extern "C" fn(LbmValue) -> bool);
+    fn_slot!(lbm_is_byte_array as unsafe extern "C" fn(LbmValue) -> bool);
     fn_slot!(set_app_data_handler as unsafe extern "C" fn(Option<AppDataHandler>) -> bool);
     fn_slot!(imu_set_read_callback as unsafe extern "C" fn(Option<ImuReadCallback>));
     fn_slot!(read_eeprom_var as unsafe extern "C" fn(*mut EepromVar, c_int) -> bool);
@@ -957,6 +961,34 @@ pub unsafe fn lbm_is_number(value: LbmValue) -> bool {
     unsafe {
         slots::lbm_is_number()(value.0)
     }
+}
+
+/// # Safety
+///
+/// `value` must be a LispBM value supplied by the firmware.
+pub unsafe fn lbm_is_char(value: LbmValue) -> bool {
+    unsafe { slots::lbm_is_char()(value) }
+}
+
+/// # Safety
+///
+/// `value` must be a LispBM value supplied by the firmware.
+pub unsafe fn lbm_is_symbol(value: LbmValue) -> bool {
+    unsafe { slots::lbm_is_symbol()(value) }
+}
+
+/// # Safety
+///
+/// `value` must be a LispBM value supplied by the firmware.
+pub unsafe fn lbm_is_cons(value: LbmValue) -> bool {
+    unsafe { slots::lbm_is_cons()(value) }
+}
+
+/// # Safety
+///
+/// `value` must be a LispBM value supplied by the firmware.
+pub unsafe fn lbm_is_byte_array(value: LbmValue) -> bool {
+    unsafe { slots::lbm_is_byte_array()(value) }
 }
 
 /// # Safety

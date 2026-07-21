@@ -2,8 +2,8 @@
 
 //! Integration tests for the safe LispBM value predicates.
 
-use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::LispValue;
+use vescpkg_rs::test_support::FirmwareTest;
 
 #[test]
 fn lisp_values_expose_explicit_kind_predicates() {

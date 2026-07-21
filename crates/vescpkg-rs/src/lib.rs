@@ -56,9 +56,9 @@ pub(crate) mod ffi {
     pub use vescpkg_rs_sys::raw::{
         conf_custom_add_config, conf_custom_clear_configs, io_read, io_read_analog, io_set_mode,
         io_write, lbm_add_extension, lbm_dec_as_float, lbm_dec_as_i32, lbm_enc_i,
-        lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number,
-        vesc_clear_app_data_handler, vesc_clear_imu_read_callback, vesc_get_arg, vesc_malloc,
-        vesc_send_app_data, vesc_set_app_data_handler, vesc_set_imu_read_callback,
+        lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true, vesc_clear_app_data_handler,
+        vesc_clear_imu_read_callback, vesc_get_arg, vesc_malloc, vesc_send_app_data,
+        vesc_set_app_data_handler, vesc_set_imu_read_callback,
     };
     pub use vescpkg_rs_sys::{AppDataHandler, LibInfo, NativeImage};
 
@@ -67,13 +67,13 @@ pub(crate) mod ffi {
     #[allow(unused_imports)]
     pub use selected_ffi::{
         foc_get_id, get_cfg_float, get_cfg_int, imu_get_gyro, imu_get_pitch, imu_get_roll,
-        imu_get_yaw, imu_startup_done, mc_get_amp_hours, mc_get_amp_hours_charged,
-        mc_get_battery_level, mc_get_distance_abs, mc_get_duty_cycle_now, mc_get_fault,
-        mc_get_input_voltage_filtered, mc_get_odometer, mc_get_rpm, mc_get_speed,
-        mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
-        mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
-        mc_set_brake_current, mc_set_current, mc_set_current_off_delay, mc_set_duty,
-        mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm,
+        imu_get_yaw, imu_startup_done, lbm_is_byte_array, lbm_is_char, lbm_is_cons, lbm_is_number,
+        lbm_is_symbol, mc_get_amp_hours, mc_get_amp_hours_charged, mc_get_battery_level,
+        mc_get_distance_abs, mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered,
+        mc_get_odometer, mc_get_rpm, mc_get_speed, mc_get_tot_current_directional_filtered,
+        mc_get_tot_current_filtered, mc_get_tot_current_in_filtered, mc_get_watt_hours,
+        mc_get_watt_hours_charged, mc_set_brake_current, mc_set_current, mc_set_current_off_delay,
+        mc_set_duty, mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm,
         store_eeprom_word, timeout_reset, vesc_free, vesc_imu_get_quaternions, vesc_mutex_create,
         vesc_mutex_lock, vesc_mutex_unlock, vesc_request_terminate, vesc_sem_create,
         vesc_sem_reset, vesc_sem_signal, vesc_sem_wait, vesc_sem_wait_to, vesc_should_terminate,

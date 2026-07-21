@@ -41,6 +41,42 @@ impl LispValue {
         is_integer(self.raw().0).then(|| decode_integer(self.raw().0))
     }
 
+    /// Return whether this value is an immediate LispBM integer.
+    #[must_use]
+    pub const fn is_integer(self) -> bool {
+        is_integer(self.raw().0)
+    }
+
+    /// Return whether firmware classifies this value as numeric.
+    #[must_use]
+    pub fn is_number(self) -> bool {
+        unsafe { crate::ffi::lbm_is_number(self.raw()) }
+    }
+
+    /// Return whether firmware classifies this value as a character.
+    #[must_use]
+    pub fn is_char(self) -> bool {
+        unsafe { crate::ffi::lbm_is_char(self.raw()) }
+    }
+
+    /// Return whether firmware classifies this value as a symbol.
+    #[must_use]
+    pub fn is_symbol(self) -> bool {
+        unsafe { crate::ffi::lbm_is_symbol(self.raw()) }
+    }
+
+    /// Return whether firmware classifies this value as a cons cell.
+    #[must_use]
+    pub fn is_cons(self) -> bool {
+        unsafe { crate::ffi::lbm_is_cons(self.raw()) }
+    }
+
+    /// Return whether firmware classifies this value as a byte array.
+    #[must_use]
+    pub fn is_byte_array(self) -> bool {
+        unsafe { crate::ffi::lbm_is_byte_array(self.raw()) }
+    }
+
     /// Convert any LispBM numeric value to an `i32`.
     #[cfg(not(test))]
     pub fn decode_number_as_i32(self) -> Option<i32> {
