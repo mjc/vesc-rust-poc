@@ -1231,13 +1231,20 @@ pub unsafe fn vesc_get_arg(prog_addr: u32) -> *mut *mut c_void {
     unsafe { slots::get_arg()(prog_addr) }
 }
 
+/// Copy a firmware-owned record without allowing a null pointer to cross the
+/// raw boundary. The firmware records are `Copy` snapshots, so the returned
+/// value is independent of the firmware's storage.
+unsafe fn copy_firmware_record<T: Copy>(record: *const T) -> Option<T> {
+    unsafe { record.as_ref().copied() }
+}
+
 macro_rules! copy_optional_status {
     ($wrapper:ident, $slot:ident, $status:ty) => {
         /// Copy one firmware-owned CAN status record, returning `None` when the
         /// slot or indexed record is unavailable.
         pub unsafe fn $wrapper(index: c_int) -> Option<$status> {
             let loader = unsafe { slots::$slot()? };
-            unsafe { loader(index).as_ref().copied() }
+            unsafe { copy_firmware_record(loader(index)) }
         }
     };
 }
@@ -1279,7 +1286,7 @@ copy_optional_status!(can_status_msg_6_id, can_get_status_msg_6_id, CanStatusMsg
 /// current GNSS record is unavailable.
 pub unsafe fn gnss_snapshot() -> Option<GnssData> {
     let loader = unsafe { slots::mc_gnss()? };
-    unsafe { loader().as_ref().copied() }
+    unsafe { copy_firmware_record(loader()) }
 }
 
 /// Copy the current remote-control state returned by firmware.
