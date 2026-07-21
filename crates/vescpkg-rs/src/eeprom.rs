@@ -93,12 +93,12 @@ impl CustomEeprom {
     pub fn read(self, address: CustomEepromAddress) -> Option<EepromWord> {
         let mut word = 0_u32;
         unsafe { crate::ffi::read_eeprom_word(&mut word, address.get()) }
-            .then(|| EepromWord::from_ne_bytes(word.to_ne_bytes()))
+            .then(|| EepromWord::from_u32(word))
     }
 
     /// Store one word and report firmware success.
     pub fn write(self, address: CustomEepromAddress, word: EepromWord) -> bool {
-        let mut word = u32::from_ne_bytes(word.to_ne_bytes());
+        let mut word = word.to_u32();
         unsafe { crate::ffi::store_eeprom_word(&mut word, address.get()) }
     }
 
