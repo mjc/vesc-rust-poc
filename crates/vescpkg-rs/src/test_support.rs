@@ -187,6 +187,13 @@ impl FirmwareTest {
     }
 
     #[must_use]
+    /// Configure the typed maximum motor duty-cycle limit.
+    pub fn with_duty_cycle_limit(self, limit: crate::DutyCycleLimit) -> Self {
+        crate::test_ffi::set_duty_cycle_limit(limit);
+        self
+    }
+
+    #[must_use]
     /// Configure the typed firmware battery cell count.
     pub fn with_battery_cell_count(self, count: crate::BatteryCellCount) -> Self {
         crate::test_ffi::set_battery_cell_count(count);

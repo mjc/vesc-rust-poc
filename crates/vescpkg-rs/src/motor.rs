@@ -2,19 +2,21 @@
 
 use crate::types::{
     AmpHoursCharged, AmpHoursDischarged, BatteryCellCount, BatteryLevel, BrakeCurrent,
-    CurrentOffDelay, DCurrent, DirectionalMotorCurrent, DutyCycle, ElectricalSpeed,
+    CurrentOffDelay, DCurrent, DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed,
     FirmwareFaultCode, InputCurrent, InputVoltage, MosfetTemperature, MotorCurrent,
     MotorCurrentLimit, MotorTemperature, TotalMotorCurrent, TripDistance, VehicleSpeed,
     WattHoursCharged, WattHoursDischarged,
 };
 #[cfg(not(test))]
 use crate::units::{Charge, Current, Distance, Energy, Rpm, Speed, Temperature, Voltage};
-use crate::units::{OdometerMeters, SignedRatio};
+use crate::units::{OdometerMeters, Ratio, SignedRatio};
 
 #[cfg(not(test))]
 const CFG_PARAM_L_CURRENT_MAX: core::ffi::c_int = 0;
 #[cfg(not(test))]
 const CFG_PARAM_L_CURRENT_MIN: core::ffi::c_int = 1;
+#[cfg(not(test))]
+const CFG_PARAM_L_MAX_DUTY: core::ffi::c_int = 22;
 #[cfg(not(test))]
 const CFG_PARAM_SI_BATTERY_CELLS: core::ffi::c_int = 43;
 
@@ -51,6 +53,12 @@ pub trait MotorTelemetryBindings {
     /// `src/motor_data.c:90`; the VESC config id is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:244`.
     fn brake_current_limit(&self) -> MotorCurrentLimit;
+    /// Return the configured maximum duty-cycle limit.
+    ///
+    /// Refloat v1.2.1 reads `CFG_PARAM_l_max_duty` through `get_cfg_float`
+    /// in `src/motor_data.c:97`; the VESC config id is declared at
+    /// `vesc_pkg_lib/vesc_c_if.h:271` and has ABI value 22.
+    fn duty_cycle_limit(&self) -> DutyCycleLimit;
     /// Return the configured battery cell count, when positive and representable.
     fn battery_cell_count(&self) -> Option<BatteryCellCount>;
     /// Return filtered input/battery current.
@@ -121,6 +129,10 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
 
     fn brake_current_limit(&self) -> MotorCurrentLimit {
         (**self).brake_current_limit()
+    }
+
+    fn duty_cycle_limit(&self) -> DutyCycleLimit {
+        (**self).duty_cycle_limit()
     }
 
     fn battery_cell_count(&self) -> Option<BatteryCellCount> {
@@ -288,6 +300,10 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         }))
     }
 
+    fn duty_cycle_limit(&self) -> DutyCycleLimit {
+        duty_cycle_limit_from_firmware(unsafe { crate::ffi::get_cfg_float(CFG_PARAM_L_MAX_DUTY) })
+    }
+
     fn battery_cell_count(&self) -> Option<BatteryCellCount> {
         battery_cell_count_from_firmware(unsafe {
             crate::ffi::get_cfg_int(CFG_PARAM_SI_BATTERY_CELLS)
@@ -402,6 +418,14 @@ fn duty_cycle_from_firmware(raw_duty: f32) -> DutyCycle {
     }))
 }
 
+fn duty_cycle_limit_from_firmware(raw_limit: f32) -> DutyCycleLimit {
+    DutyCycleLimit::new(Ratio::clamped(if raw_limit.is_nan() {
+        0.0
+    } else {
+        raw_limit
+    }))
+}
+
 fn battery_cell_count_from_firmware(raw_count: i32) -> Option<BatteryCellCount> {
     u16::try_from(raw_count)
         .ok()
@@ -433,6 +457,8 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn drive_current_limit(&self) -> MotorCurrentLimit;
     /// Return the configured braking-current magnitude.
     fn brake_current_limit(&self) -> MotorCurrentLimit;
+    /// Return the configured maximum duty-cycle limit.
+    fn duty_cycle_limit(&self) -> DutyCycleLimit;
     /// Return the configured battery cell count, when available.
     fn battery_cell_count(&self) -> Option<BatteryCellCount>;
     /// Return filtered input/battery current.
@@ -491,7 +517,10 @@ pub struct MotorControlApi<B> {
 
 #[cfg(test)]
 mod tests {
-    use super::{battery_cell_count_from_firmware, duty_cycle_from_firmware};
+    use super::{
+        battery_cell_count_from_firmware, duty_cycle_from_firmware, duty_cycle_limit_from_firmware,
+    };
+    use crate::{DutyCycle, Ratio, SignedRatio};
 
     #[test]
     fn duty_cycle_preserves_direction_and_normalizes_invalid_values() {
@@ -508,6 +537,32 @@ mod tests {
         assert_eq!(
             battery_cell_count_from_firmware(18),
             Some(crate::BatteryCellCount::try_new(18).expect("positive count")),
+        );
+    }
+
+    #[test]
+    fn duty_cycle_limit_normalizes_firmware_config_at_the_boundary() {
+        assert_eq!(
+            duty_cycle_limit_from_firmware(f32::NAN).ratio().as_ratio(),
+            0.0
+        );
+        assert_eq!(
+            duty_cycle_limit_from_firmware(0.95).ratio().as_ratio(),
+            0.95
+        );
+        assert_eq!(duty_cycle_limit_from_firmware(2.0).ratio().as_ratio(), 1.0);
+        assert_eq!(
+            duty_cycle_limit_from_firmware(0.95)
+                .reduced_by(Ratio::from_ratio_const(0.05))
+                .ratio()
+                .as_ratio(),
+            0.9
+        );
+        assert_eq!(
+            DutyCycle::new(SignedRatio::from_ratio_const(-0.85))
+                .magnitude()
+                .as_ratio(),
+            0.85
         );
     }
 }
@@ -547,6 +602,11 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
     /// Return the configured braking-current magnitude.
     pub fn brake_current_limit(&self) -> MotorCurrentLimit {
         self.bindings.brake_current_limit()
+    }
+
+    /// Return the configured maximum duty-cycle limit.
+    pub fn duty_cycle_limit(&self) -> DutyCycleLimit {
+        self.bindings.duty_cycle_limit()
     }
 
     /// Return the configured battery cell count, when available.
@@ -652,6 +712,10 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
 
     fn brake_current_limit(&self) -> MotorCurrentLimit {
         self.brake_current_limit()
+    }
+
+    fn duty_cycle_limit(&self) -> DutyCycleLimit {
+        self.duty_cycle_limit()
     }
 
     fn battery_cell_count(&self) -> Option<BatteryCellCount> {
