@@ -115,6 +115,22 @@ impl LispValue {
         unsafe { crate::ffi::lbm_is_byte_array(self.raw()) }
     }
 
+    /// Borrow firmware-owned string bytes for the duration of a callback.
+    ///
+    /// The callback boundary prevents the returned `CStr` from escaping the
+    /// evaluation that owns the LispBM storage.
+    #[cfg(not(test))]
+    pub fn with_str<R>(self, f: impl FnOnce(&CStr) -> R) -> Option<R> {
+        if !self.is_byte_array() {
+            return None;
+        }
+        let pointer = unsafe { crate::ffi::lbm_dec_str(self.raw()) };
+        (!pointer.is_null()).then(|| {
+            let value = unsafe { CStr::from_ptr(pointer) };
+            f(value)
+        })
+    }
+
     /// Construct a LispBM cons cell from two owned value handles.
     #[cfg(not(test))]
     pub fn cons(car: Self, cdr: Self) -> Self {

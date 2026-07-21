@@ -85,6 +85,7 @@ static NVM_FAILURE: AtomicBool = AtomicBool::new(false);
 static LBM_FLOAT_BITS: AtomicU32 = AtomicU32::new(0);
 static LBM_CONS_CAR: AtomicU32 = AtomicU32::new(0);
 static LBM_CONS_CDR: AtomicU32 = AtomicU32::new(0);
+static LBM_STRING: [u8; 5] = *b"vesc\0";
 static CLOCK_TICKS: AtomicU32 = AtomicU32::new(0);
 static TIMER_TICKS: AtomicU32 = AtomicU32::new(0);
 static MUTEX_TOKEN: u8 = 0;
@@ -333,6 +334,10 @@ pub unsafe fn lbm_dec_as_float(value: LbmValue) -> f32 {
     }
 }
 
+pub unsafe fn lbm_dec_str(_value: LbmValue) -> *mut c_char {
+    LBM_STRING.as_ptr().cast_mut().cast()
+}
+
 pub unsafe fn lbm_enc_i(value: i32) -> LbmValue {
     LbmValue((value << 4) as u32 | 0x08)
 }
@@ -385,7 +390,7 @@ pub unsafe fn lbm_is_cons(_value: LbmValue) -> bool {
 }
 
 pub unsafe fn lbm_is_byte_array(_value: LbmValue) -> bool {
-    false
+    _value.0 == (0x1234 << 4 | 0x08)
 }
 
 pub unsafe fn vesc_system_time_ticks() -> u32 {

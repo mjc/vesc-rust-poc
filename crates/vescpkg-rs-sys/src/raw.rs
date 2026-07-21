@@ -760,6 +760,7 @@ mod slots {
     fn_slot!(lbm_enc_char as unsafe extern "C" fn(u8) -> LbmValue);
     fn_slot!(lbm_enc_float as unsafe extern "C" fn(f32) -> LbmValue);
     fn_slot!(lbm_enc_u32 as unsafe extern "C" fn(u32) -> LbmValue);
+    fn_slot!(lbm_dec_str as unsafe extern "C" fn(LbmValue) -> *mut c_char);
     fn_slot!(lbm_is_number as unsafe extern "C" fn(u32) -> bool);
     fn_slot!(lbm_is_char as unsafe extern "C" fn(LbmValue) -> bool);
     fn_slot!(lbm_is_symbol as unsafe extern "C" fn(LbmValue) -> bool);
@@ -990,6 +991,14 @@ pub unsafe fn lbm_enc_char(value: u8) -> LbmValue {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn lbm_enc_u32(value: u32) -> LbmValue {
     unsafe { slots::lbm_enc_u32()(value) }
+}
+
+/// # Safety
+///
+/// `value` must be a LispBM string/byte-array value whose firmware-owned
+/// storage remains valid for the duration of the call.
+pub unsafe fn lbm_dec_str(value: LbmValue) -> *mut c_char {
+    unsafe { slots::lbm_dec_str()(value) }
 }
 
 /// # Safety
