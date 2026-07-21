@@ -99,3 +99,46 @@ fn app_data_ready_darkride_after_grace_engages_with_upside_down_roll_like_refloa
     assert_eq!(ride_state.run_state(), RefloatRunState::Running);
     assert_eq!(ride_state.stop_condition(), RefloatStopCondition::None);
 }
+
+#[test]
+fn ready_darkride_disables_and_alerts_after_ten_seconds_like_refloat() {
+    let telemetry = FirmwareTest::new();
+    telemetry.set_imu_ready(true);
+    telemetry.set_imu_attitude(
+        ImuRoll::new(AngleRadians::from_degrees(90.0)),
+        ImuPitch::new(AngleRadians::ZERO),
+        ImuYaw::new(AngleRadians::ZERO),
+    );
+    let imu = telemetry.imu();
+
+    for (ticks, expected_darkride, expected_first_high) in [
+        (100_000, RefloatDarkRideState::Active, None),
+        (100_001, RefloatDarkRideState::Upright, Some(600)),
+    ] {
+        let mut state = RefloatPackageState::new(ready_darkride_payloads());
+        assert!(state.serialized_config.editor().set_beeper_enabled(true));
+        state.refresh_config_runtime_state();
+
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
+            TimestampTicks::from_ticks(ticks),
+            telemetry.telemetry(),
+            imu,
+            &[
+                crate::domain::REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                crate::domain::RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+
+        let ride_state = state.all_data_payloads().base().status().ride_state();
+        assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
+        assert_eq!(ride_state.darkride(), expected_darkride);
+        assert_eq!(
+            (1..=600).find(|_| matches!(
+                state.tick_beeper(),
+                Some(crate::beeper::RefloatBeeperLevel::High)
+            )),
+            expected_first_high,
+        );
+    }
+}

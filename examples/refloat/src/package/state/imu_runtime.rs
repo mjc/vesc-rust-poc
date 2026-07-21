@@ -56,13 +56,23 @@ pub(super) fn refresh(
     let status = base.status();
     let mut beep_reason = status.beep_reason();
     let mut beeper_alert = None;
-    let ride_state = status.ride_state();
+    let mut ride_state = status.ride_state();
     let resets_runtime_vars =
         matches!(ride_state.run_state(), RefloatRunState::Startup) && imu.is_ready();
     let run_state = match (ride_state.run_state(), imu.is_ready()) {
         (RefloatRunState::Startup, true) => RefloatRunState::Ready,
         (run_state, _) => run_state,
     };
+    if matches!(
+        (run_state, ride_state.darkride()),
+        (RefloatRunState::Ready, RefloatDarkRideState::Active)
+    ) && refloat_ticks_elapsed(system_time_ticks, state.disengage_ticks, 10)
+    {
+        // Refloat removes the post-flip darkride grace before READY engagement
+        // and emits one long alert at `third_party/refloat/src/main.c:984-992`.
+        ride_state = ride_state.with_darkride(RefloatDarkRideState::Upright);
+        beeper_alert = Some(RefloatBeeperAlert::Long(RefloatBeeperCount::ONE));
+    }
     if resets_runtime_vars {
         let low_voltage_threshold = pack_voltage_threshold(
             state.serialized_config.low_voltage_threshold(),
