@@ -87,7 +87,10 @@ static MUTEX_TOKEN: u8 = 0;
 static MUTEX_LOCK_COUNT: AtomicUsize = AtomicUsize::new(0);
 static MUTEX_UNLOCK_COUNT: AtomicUsize = AtomicUsize::new(0);
 static MUTEX_FREE_COUNT: AtomicUsize = AtomicUsize::new(0);
+static MUTEX_CREATE_FAILURE: AtomicBool = AtomicBool::new(false);
 static SEMAPHORE_TOKEN: u8 = 0;
+static SEMAPHORE_CREATE_FAILURE: AtomicBool = AtomicBool::new(false);
+static SEMAPHORE_TIMEOUT_FAILURE: AtomicBool = AtomicBool::new(false);
 static SEMAPHORE_WAIT_COUNT: AtomicUsize = AtomicUsize::new(0);
 static SEMAPHORE_TIMED_WAIT_TICKS: AtomicU32 = AtomicU32::new(u32::MAX);
 static SEMAPHORE_SIGNAL_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -197,11 +200,14 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     MUTEX_LOCK_COUNT.store(0, Ordering::Relaxed);
     MUTEX_UNLOCK_COUNT.store(0, Ordering::Relaxed);
     MUTEX_FREE_COUNT.store(0, Ordering::Relaxed);
+    MUTEX_CREATE_FAILURE.store(false, Ordering::Relaxed);
     SEMAPHORE_WAIT_COUNT.store(0, Ordering::Relaxed);
     SEMAPHORE_TIMED_WAIT_TICKS.store(u32::MAX, Ordering::Relaxed);
     SEMAPHORE_SIGNAL_COUNT.store(0, Ordering::Relaxed);
     SEMAPHORE_RESET_COUNT.store(0, Ordering::Relaxed);
     SEMAPHORE_FREE_COUNT.store(0, Ordering::Relaxed);
+    SEMAPHORE_CREATE_FAILURE.store(false, Ordering::Relaxed);
+    SEMAPHORE_TIMEOUT_FAILURE.store(false, Ordering::Relaxed);
     FirmwareLockGuard
 }
 
@@ -332,6 +338,9 @@ pub(crate) fn set_timer_ticks(ticks: u32) {
 }
 
 pub unsafe fn vesc_mutex_create() -> *mut c_void {
+    if MUTEX_CREATE_FAILURE.load(Ordering::Relaxed) {
+        return core::ptr::null_mut();
+    }
     core::ptr::addr_of!(MUTEX_TOKEN).cast::<c_void>().cast_mut()
 }
 
@@ -344,6 +353,9 @@ pub unsafe fn vesc_mutex_unlock(_mutex: *mut c_void) {
 }
 
 pub unsafe fn vesc_sem_create() -> *mut c_void {
+    if SEMAPHORE_CREATE_FAILURE.load(Ordering::Relaxed) {
+        return core::ptr::null_mut();
+    }
     core::ptr::addr_of!(SEMAPHORE_TOKEN)
         .cast::<c_void>()
         .cast_mut()
@@ -355,7 +367,7 @@ pub unsafe fn vesc_sem_wait(_semaphore: *mut c_void) {
 
 pub unsafe fn vesc_sem_wait_to(_semaphore: *mut c_void, ticks: u32) -> bool {
     SEMAPHORE_TIMED_WAIT_TICKS.store(ticks, Ordering::Relaxed);
-    true
+    !SEMAPHORE_TIMEOUT_FAILURE.load(Ordering::Relaxed)
 }
 
 pub unsafe fn vesc_sem_signal(_semaphore: *mut c_void) {
@@ -410,6 +422,18 @@ pub(crate) fn semaphore_reset_count() -> usize {
 
 pub(crate) fn semaphore_free_count() -> usize {
     SEMAPHORE_FREE_COUNT.load(Ordering::Relaxed)
+}
+
+pub(crate) fn fail_mutex_creation(fail: bool) {
+    MUTEX_CREATE_FAILURE.store(fail, Ordering::Relaxed);
+}
+
+pub(crate) fn fail_semaphore_creation(fail: bool) {
+    SEMAPHORE_CREATE_FAILURE.store(fail, Ordering::Relaxed);
+}
+
+pub(crate) fn fail_semaphore_timeout(fail: bool) {
+    SEMAPHORE_TIMEOUT_FAILURE.store(fail, Ordering::Relaxed);
 }
 
 fn load(value: &AtomicU32) -> f32 {

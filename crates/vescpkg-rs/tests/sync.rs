@@ -47,6 +47,7 @@ fn synchronization_creation_and_timed_wait_failures_are_reported() {
     assert!(FirmwareMutex::new().is_none());
     assert!(FirmwareSemaphore::new().is_none());
 
+    drop(firmware);
     let semaphore = FirmwareSemaphore::new();
     assert!(semaphore.is_none());
 

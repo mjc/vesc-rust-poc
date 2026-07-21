@@ -134,6 +134,21 @@ impl FirmwareTest {
         crate::test_ffi::semaphore_free_count()
     }
 
+    /// Make the fake firmware reject mutex creation.
+    pub fn fail_mutex_creation(&self) {
+        crate::test_ffi::fail_mutex_creation(true);
+    }
+
+    /// Make the fake firmware reject semaphore creation.
+    pub fn fail_semaphore_creation(&self) {
+        crate::test_ffi::fail_semaphore_creation(true);
+    }
+
+    /// Make the fake firmware time out semaphore waits.
+    pub fn fail_semaphore_timeout(&self) {
+        crate::test_ffi::fail_semaphore_timeout(true);
+    }
+
     /// Make writes to one custom-EEPROM address fail.
     pub fn fail_eeprom_write(&self, address: crate::CustomEepromAddress) {
         crate::test_ffi::fail_eeprom_write(address);
