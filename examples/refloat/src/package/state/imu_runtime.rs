@@ -23,6 +23,7 @@ pub(super) fn refresh(
     let base = payloads.base();
     let status = base.status();
     let mut beep_reason = status.beep_reason();
+    let mut beeper_alert = None;
     let ride_state = status.ride_state();
     let resets_runtime_vars =
         matches!(ride_state.run_state(), RefloatRunState::Startup) && imu.is_ready();
@@ -582,6 +583,7 @@ pub(super) fn refresh(
                 } else {
                     RefloatBeepReason::HighVoltage
                 };
+                beeper_alert = Some(RefloatBeeperAlert::ThreeShort);
                 if refloat_ticks_elapsed_seconds(
                     system_time_ticks,
                     state.high_voltage_ticks,
@@ -604,6 +606,7 @@ pub(super) fn refresh(
                 }
             } else if bms_connection_fault {
                 beep_reason = RefloatBeepReason::BmsConnection;
+                beeper_alert = Some(RefloatBeeperAlert::ThreeLong);
                 let angle = state.serialized_config.high_voltage_pushback_angle();
                 ride_state =
                     ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackError);
@@ -614,6 +617,7 @@ pub(super) fn refresh(
                 })
             } else if let Some(temperature_reason) = bms_temperature_reason {
                 beep_reason = temperature_reason;
+                beeper_alert = Some(RefloatBeeperAlert::ThreeLong);
                 let angle = state.serialized_config.low_voltage_pushback_angle();
                 ride_state = ride_state
                     .with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackTemperature);
@@ -625,6 +629,7 @@ pub(super) fn refresh(
             } else if base.motor().duty_cycle().ratio().as_ratio() > 0.05 && bms_cell_under_voltage
             {
                 beep_reason = RefloatBeepReason::CellLowVoltage;
+                beeper_alert = Some(RefloatBeeperAlert::ThreeShort);
                 let angle = state.serialized_config.low_voltage_pushback_angle();
                 ride_state = ride_state
                     .with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackLowVoltage);
@@ -719,7 +724,11 @@ pub(super) fn refresh(
             } else {
                 RefloatBeepReason::CellBalance
             };
+            beeper_alert = Some(RefloatBeeperAlert::FourShort);
         }
+    }
+    if let Some(alert) = beeper_alert {
+        state.alert_beeper(alert);
     }
     // C publishes the just-refreshed `imu.balance_pitch` through app-data;
     // normal mode comes from the balance filter at `third_party/refloat/src/imu.c:35-41`, while

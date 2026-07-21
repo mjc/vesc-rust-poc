@@ -5,6 +5,9 @@ use crate::domain::{
 };
 
 pub(super) fn refresh(state: &mut RefloatPackageState) {
+    state
+        .beeper
+        .set_enabled(state.serialized_config.beeper_enabled());
     let payloads = state.all_data_payloads;
     let base = payloads.base();
     let status = base.status();

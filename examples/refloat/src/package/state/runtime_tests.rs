@@ -1,4 +1,5 @@
 use super::RefloatPackageState;
+use crate::beeper::RefloatBeeperLevel;
 use crate::bms::{RefloatBmsSample, RefloatBmsTemperature};
 use crate::domain::{
     REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataAttitude, RefloatAllDataBasePayload,
@@ -844,6 +845,15 @@ fn enable_bms(state: &mut RefloatPackageState) {
     assert!(state.store_serialized_config(&config));
 }
 
+fn enable_beeper(state: &mut RefloatPackageState) {
+    assert!(state.serialized_config.editor().set_beeper_enabled(true));
+    state.refresh_config_runtime_state();
+}
+
+fn first_beeper_high_tick(state: &mut RefloatPackageState, limit: usize) -> Option<usize> {
+    (1..=limit).find(|_| matches!(state.tick_beeper(), Some(RefloatBeeperLevel::High)))
+}
+
 fn record_bms_sample(
     state: &mut RefloatPackageState,
     cell_low_voltage: Voltage,
@@ -1147,6 +1157,7 @@ fn bms_cell_over_voltage_enters_immediate_high_voltage_pushback_like_refloat() {
         InputVoltage::new(Voltage::from_volts(72.0)),
     );
     enable_bms(&mut state);
+    enable_beeper(&mut state);
     record_bms_sample(
         &mut state,
         Voltage::from_volts(4.0),
@@ -1174,6 +1185,7 @@ fn bms_cell_over_voltage_enters_immediate_high_voltage_pushback_like_refloat() {
         RefloatBeepReason::CellHighVoltage
     );
     assert_eq!(state.high_voltage_ticks, TimestampTicks::from_ticks(0));
+    assert_eq!(first_beeper_high_tick(&mut state, 160), Some(160));
 }
 
 #[test]
@@ -1185,6 +1197,7 @@ fn bms_connection_fault_uses_high_voltage_angle_and_error_pushback_like_refloat(
         InputVoltage::new(Voltage::from_volts(72.0)),
     );
     enable_bms(&mut state);
+    enable_beeper(&mut state);
     record_bms_sample(
         &mut state,
         Voltage::from_volts(4.0),
@@ -1213,6 +1226,7 @@ fn bms_connection_fault_uses_high_voltage_angle_and_error_pushback_like_refloat(
         base.status().beep_reason(),
         RefloatBeepReason::BmsConnection
     );
+    assert_eq!(first_beeper_high_tick(&mut state, 600), Some(600));
 }
 
 #[test]
@@ -1246,6 +1260,7 @@ fn bms_temperature_faults_use_low_voltage_angle_and_source_reason_order() {
             InputVoltage::new(Voltage::from_volts(72.0)),
         );
         enable_bms(&mut state);
+        enable_beeper(&mut state);
         record_bms_sample(
             &mut state,
             Voltage::from_volts(4.0),
@@ -1270,6 +1285,7 @@ fn bms_temperature_faults_use_low_voltage_angle_and_source_reason_order() {
             AngleDegrees::from_degrees(10.0),
         );
         assert_eq!(base.status().beep_reason(), expected_reason);
+        assert_eq!(first_beeper_high_tick(&mut state, 600), Some(600));
     }
 }
 
@@ -1282,6 +1298,7 @@ fn bms_cell_under_voltage_bypasses_pack_sag_checks_like_refloat() {
         InputVoltage::new(Voltage::from_volts(72.0)),
     );
     enable_bms(&mut state);
+    enable_beeper(&mut state);
     record_bms_sample(
         &mut state,
         Voltage::from_volts(2.6),
@@ -1309,6 +1326,7 @@ fn bms_cell_under_voltage_bypasses_pack_sag_checks_like_refloat() {
         base.status().beep_reason(),
         RefloatBeepReason::CellLowVoltage
     );
+    assert_eq!(first_beeper_high_tick(&mut state, 160), Some(160));
 }
 
 #[test]
@@ -1338,6 +1356,33 @@ fn ready_bms_connection_alert_uses_strict_fifteen_second_timer_like_refloat() {
         state.all_data_payloads().base().status().beep_reason(),
         RefloatBeepReason::BmsConnection,
     );
+}
+
+#[test]
+fn ready_bms_connection_alert_schedules_four_short_beeps_like_refloat() {
+    let (telemetry, mut state) = ready_bms_fixture();
+    enable_bms(&mut state);
+    assert!(state.serialized_config.editor().set_beeper_enabled(true));
+    state.refresh_config_runtime_state();
+    record_bms_sample(
+        &mut state,
+        Voltage::from_volts(4.0),
+        Voltage::from_volts(4.1),
+        RefloatBmsTemperature::from_degrees_celsius(20),
+        RefloatBmsTemperature::from_degrees_celsius(30),
+        RefloatBmsTemperature::from_degrees_celsius(35),
+        VescSeconds::from_seconds(6.0),
+    );
+    state.refresh_bms_runtime_state(TimestampTicks::from_ticks(0));
+    state.refresh_bms_runtime_state(TimestampTicks::from_ticks(50_001));
+    state.refresh_imu_runtime_state(telemetry.imu(), TimestampTicks::from_ticks(150_001));
+
+    let changes: Vec<_> = (1..=720)
+        .filter_map(|tick| state.tick_beeper().map(|level| (tick, level)))
+        .collect();
+
+    assert_eq!(changes.len(), 9);
+    assert_eq!(changes.last(), Some(&(720, RefloatBeeperLevel::Low)));
 }
 
 #[test]
