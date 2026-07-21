@@ -7,7 +7,7 @@ use crate::domain::{
     RefloatRunState, RefloatSetpointAdjustment,
 };
 use crate::package::test_support::{
-    RefloatConfigTestBytes, balance_filter_with_pitch, default_refloat_config_bytes,
+    RefloatConfigTestBytes, balance_filter_with_pitch, default_refloat_config_bytes, edit_config,
     editable_config_from_state, sample_all_data_payloads_with_ride_state,
     tick_refloat_state_and_handle_packet,
 };
@@ -453,6 +453,9 @@ fn running_enters_reverse_stop_from_reverse_motor_speed_like_refloat() {
         RefloatRunState::Running,
         RefloatMode::Normal,
     ));
+    edit_config(&mut state, |config| {
+        assert!(config.set_reversestop_enabled(true));
+    });
 
     assert!(tick_refloat_state_and_handle_packet(
         &mut state,
