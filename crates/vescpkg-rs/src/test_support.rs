@@ -187,6 +187,13 @@ impl FirmwareTest {
     }
 
     #[must_use]
+    /// Configure the typed firmware battery cell count.
+    pub fn with_battery_cell_count(self, count: crate::BatteryCellCount) -> Self {
+        crate::test_ffi::set_battery_cell_count(count);
+        self
+    }
+
+    #[must_use]
     /// Configure the filtered directional motor current.
     pub fn with_directional_motor_current(self, current: crate::DirectionalMotorCurrent) -> Self {
         crate::test_ffi::set_directional_motor_current(current);
