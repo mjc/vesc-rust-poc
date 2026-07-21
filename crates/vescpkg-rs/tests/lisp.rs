@@ -13,6 +13,8 @@ fn lisp_values_expose_explicit_kind_predicates() {
     assert!(integer.is_integer());
     assert!(integer.is_number());
     assert_eq!(integer.decode_char(), None);
+    assert_eq!(integer.car(), None);
+    assert_eq!(integer.cdr(), None);
     assert!(!integer.is_char());
     assert!(!integer.is_symbol());
     assert!(!integer.is_cons());
