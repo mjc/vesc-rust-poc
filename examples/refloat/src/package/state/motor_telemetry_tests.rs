@@ -153,6 +153,28 @@ fn base_battery_voltage_refreshes_from_motor_telemetry() {
 }
 
 #[test]
+fn motor_runtime_tracks_typed_refloat_wheelslip_duty_inputs() {
+    let firmware = FirmwareTest::new()
+        .with_runtime_motor(
+            ElectricalSpeed::new(Rpm::ZERO),
+            VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
+            TotalMotorCurrent::new(Current::ZERO),
+            InputCurrent::new(Current::ZERO),
+            DutyCycle::new(SignedRatio::from_ratio_const(-0.84)),
+        )
+        .with_duty_cycle_limit(DutyCycleLimit::new(Ratio::from_ratio_const(0.95)));
+    let mut state = RefloatPackageState::new(sample_all_data_payloads());
+
+    state.refresh_motor_runtime_state(firmware.telemetry());
+
+    assert_eq!(state.motor_duty_raw, Ratio::from_ratio_const(0.84));
+    assert_eq!(
+        state.duty_max_with_margin,
+        DutyCycleLimit::new(Ratio::from_ratio_const(0.90))
+    );
+}
+
+#[test]
 fn realtime_voltage_and_temperatures_refresh_from_motor_telemetry() {
     let now = TimestampTicks::from_ticks(0);
     let bindings = FirmwareTest::new().with_input_voltage_and_temperatures(

@@ -13,7 +13,8 @@ use crate::motor_control::RefloatMotorControl;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{AdcVoltage, FirmwareVersion};
 use vescpkg_rs::prelude::{
-    AngleRadians, BatteryCellCount, Current, MotorCurrent, MotorCurrentLimit, Rpm, TimestampTicks,
+    AngleRadians, BatteryCellCount, Current, DutyCycleLimit, MotorCurrent, MotorCurrentLimit,
+    Ratio, Rpm, TimestampTicks,
 };
 use vescpkg_rs::{Imu, MotorOutput, MotorTelemetry};
 
@@ -83,6 +84,8 @@ pub struct RefloatPackageState {
     fault_angle_pitch_ticks: TimestampTicks,
     fault_angle_roll_ticks: TimestampTicks,
     high_voltage_ticks: TimestampTicks,
+    motor_duty_raw: Ratio,
+    duty_max_with_margin: DutyCycleLimit,
     motor_current_max: MotorCurrentLimit,
     motor_current_min: MotorCurrentLimit,
     battery_cell_count: Option<BatteryCellCount>,
@@ -117,6 +120,8 @@ impl RefloatPackageState {
             fault_angle_pitch_ticks: TimestampTicks::from_ticks(0),
             fault_angle_roll_ticks: TimestampTicks::from_ticks(0),
             high_voltage_ticks: TimestampTicks::from_ticks(0),
+            motor_duty_raw: Ratio::from_ratio_const(0.0),
+            duty_max_with_margin: DutyCycleLimit::new(Ratio::from_ratio_const(0.0)),
             motor_current_max: MotorCurrentLimit::new(Current::ZERO),
             motor_current_min: MotorCurrentLimit::new(Current::ZERO),
             battery_cell_count: None,
