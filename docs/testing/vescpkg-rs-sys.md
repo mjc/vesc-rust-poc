@@ -9,7 +9,7 @@ Strategy for the `vescpkg-rs-sys` crate: a hand-maintained, `no_std` firmware AB
 | Compile-fail | `unsafe` required, no `std` leak, crate-internal test harness | `tests/ui/`, trybuild |
 | Layout / ABI pins | `LibInfo`, `VescIf` size/offsets, newtypes | `src/tests.rs` |
 | Raw dispatch | mock `VescIf` + stub call recording | `src/raw/dispatch_tests.rs` |
-| Header parity | independent libclang audit of generated slots | `src/raw/abi_audit.rs` |
+| Header parity | independent libclang audit of Rust-derived slots | `src/raw/abi_audit.rs` |
 | Thumb/asm smoke | `ldr` immediates vs `VescIfAbi` | `src/tests.rs` |
 
 ## Public export inventory
@@ -57,9 +57,9 @@ Production ARM builds keep inline `asm!` dispatch; host/test builds use `Option<
 
 `raw::abi_audit` asks libclang to lay out the pinned `vesc_c_if` for
 `arm-none-eabi`, then compares every field's name, declaration shape, size,
-and byte offset with both the generated slot inventory and the hand-written
-Rust `VescIf` table. This deliberately does not reuse the build script's C
-declaration parser.
+and byte offset against the hand-written Rust `VescIf` table and its derived
+`VescIfAbi::FIELD_COUNT`, `USED_SLOTS`, and `vesc_if_offsets_for_tests()`
+inventory.
 
 Libclang is a test-only dependency. Normal `vescpkg-rs-sys` builds remain
 dependency-free; the Nix development shell supplies libclang and sets
@@ -84,7 +84,7 @@ dependency-free; the Nix development shell supplies libclang and sets
 
 ## Adding a new `raw::*` wrapper
 
-1. Add field to `raw::VescIf` in header order and keep the generated parity checks green.
+1. Add the field to `raw::VescIf` in header order and keep the Rust-derived parity checks green.
 2. Add `VescIfAbi` slot to `USED_SLOTS`.
 3. Extend `vesc_if_offsets_for_tests()` and layout tests.
 4. Add dispatch tests (Some + None paths) using `test_support`.

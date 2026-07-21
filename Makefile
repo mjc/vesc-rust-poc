@@ -33,17 +33,19 @@ ifdef DEVICE_ADDRESS
 DEVICE_FLAGS += --address $(DEVICE_ADDRESS)
 endif
 
-.PHONY: check check-full fmt clippy clippy-pedantic vescpkg-rs-sys-target-check arm-clippy arm-gates test package package-only deploy clean status
+.PHONY: check check-full pre-commit fmt clippy clippy-pedantic vescpkg-rs-sys-target-check arm-clippy arm-gates test package package-only deploy clean status
 
 # --- verification -----------------------------------------------------------
 #
 # Policy: local `check` keeps exactly one workspace nextest invocation.
-# ARM/package gates live in `check-full` so the native loopback
+# ARM/package gates live in `pre-commit`/`check-full` so the native loopback
 # binary is audited without multiplying the default test matrix.
 
 check: fmt clippy test
 
 check-full: check arm-gates
+
+pre-commit: check-full
 
 fmt:
 	$(CARGO) fmt --all --check
