@@ -49,30 +49,28 @@ impl Nvm {
     /// Read bytes beginning at `offset` into an owned caller buffer.
     pub fn read(self, offset: NvmOffset, bytes: &mut [u8]) -> Result<(), NvmError> {
         let len = checked_len(offset, bytes.len())?;
-        match unsafe { crate::ffi::read_nvm(bytes.as_mut_ptr(), offset.get(), len) } {
-            None => Err(NvmError::Unsupported),
-            Some(true) => Ok(()),
-            Some(false) => Err(NvmError::FirmwareFailure),
-        }
+        operation_result(unsafe { crate::ffi::read_nvm(bytes.as_mut_ptr(), offset.get(), len) })
     }
 
     /// Write bytes beginning at `offset` from a caller buffer.
     pub fn write(self, offset: NvmOffset, bytes: &[u8]) -> Result<(), NvmError> {
         let len = checked_len(offset, bytes.len())?;
-        match unsafe { crate::ffi::write_nvm(bytes.as_ptr().cast_mut(), offset.get(), len) } {
-            None => Err(NvmError::Unsupported),
-            Some(true) => Ok(()),
-            Some(false) => Err(NvmError::FirmwareFailure),
-        }
+        operation_result(unsafe {
+            crate::ffi::write_nvm(bytes.as_ptr().cast_mut(), offset.get(), len)
+        })
     }
 
     /// Erase the complete firmware NVM region.
     pub fn wipe(self) -> Result<(), NvmError> {
-        match unsafe { crate::ffi::wipe_nvm() } {
-            None => Err(NvmError::Unsupported),
-            Some(true) => Ok(()),
-            Some(false) => Err(NvmError::FirmwareFailure),
-        }
+        operation_result(unsafe { crate::ffi::wipe_nvm() })
+    }
+}
+
+fn operation_result(result: Option<bool>) -> Result<(), NvmError> {
+    match result {
+        None => Err(NvmError::Unsupported),
+        Some(true) => Ok(()),
+        Some(false) => Err(NvmError::FirmwareFailure),
     }
 }
 
