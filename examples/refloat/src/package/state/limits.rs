@@ -148,6 +148,8 @@ pub(super) struct TractionLossLimits {
     pub(super) acceleration_clear: Rpm,
     pub(super) duty: SignedRatio,
     pub(super) duty_margin: Ratio,
+    pub(super) clear_delay: VescSeconds,
+    pub(super) raw_duty_clear: Ratio,
     pub(super) erpm: Rpm,
 }
 
@@ -159,6 +161,8 @@ impl TractionLossLimits {
         acceleration_clear: Rpm::from_revolutions_per_minute(10.0),
         duty: SignedRatio::from_ratio_const(0.3),
         duty_margin: Ratio::from_ratio_const(0.05),
+        clear_delay: VescSeconds::from_seconds(0.2),
+        raw_duty_clear: Ratio::from_ratio_const(0.85),
         erpm: Rpm::from_revolutions_per_minute(2000.0),
     };
 }
@@ -226,6 +230,11 @@ mod tests {
         assert_eq!(
             traction_loss.duty_margin,
             vescpkg_rs::prelude::Ratio::from_ratio_const(0.05)
+        );
+        assert_eq!(traction_loss.clear_delay, VescSeconds::from_seconds(0.2));
+        assert_eq!(
+            traction_loss.raw_duty_clear,
+            vescpkg_rs::prelude::Ratio::from_ratio_const(0.85)
         );
     }
 }

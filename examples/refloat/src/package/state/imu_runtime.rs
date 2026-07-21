@@ -262,20 +262,6 @@ pub(super) fn refresh(
         && roll_abs < push_start.angle
         && !(faults.reversestop_enabled() && motor_erpm.is_negative());
     let state_engage = ready_engage || ready_darkride_engage || ready_push_start;
-    let motor_acceleration = state.motor_acceleration.average();
-    let traction_loss_detected = matches!(run_state, RefloatRunState::Running)
-        && !matches!(ride_state.mode(), RefloatMode::Flywheel)
-        && motor_acceleration.abs() > traction_loss.acceleration_detect
-        && motor_acceleration.signum() == motor_erpm.signum()
-        && base.motor().duty_cycle().ratio() > traction_loss.duty
-        && motor_erpm.abs() > traction_loss.erpm;
-    if traction_loss_detected {
-        state.traction_control = matches!(ride_state.darkride(), RefloatDarkRideState::Active);
-    } else if matches!(ride_state.wheelslip(), RefloatWheelSlipState::Detected)
-        && motor_acceleration.abs() < traction_loss.acceleration_clear
-    {
-        state.traction_control = false;
-    }
     // Upstream `check_faults(d)` returns immediately after each stop branch
     // in `third_party/refloat/src/main.c:357-509`; this call preserves the
     // same Rust condition priority before `state_stop` writes READY and
@@ -310,6 +296,26 @@ pub(super) fn refresh(
         (RefloatStopEvent::Pitch, pitch_fault),
         (RefloatStopEvent::DarkrideRoll, darkride_roll_fault),
     ]);
+    let reverse_stop_entry_pending = !matches!(
+        ride_state.setpoint_adjustment(),
+        RefloatSetpointAdjustment::Centering | RefloatSetpointAdjustment::ReverseStop
+    ) && faults.reversestop_enabled()
+        && motor_erpm < -reverse_stop.entry_erpm
+        && !darkride_active;
+    let motor_acceleration = state.motor_acceleration.average();
+    let traction_loss_detected = stop_event.is_none()
+        && !state_engage
+        && !matches!(
+            ride_state.setpoint_adjustment(),
+            RefloatSetpointAdjustment::Centering | RefloatSetpointAdjustment::ReverseStop
+        )
+        && !reverse_stop_entry_pending
+        && matches!(run_state, RefloatRunState::Running)
+        && !matches!(ride_state.mode(), RefloatMode::Flywheel)
+        && motor_acceleration.abs() > traction_loss.acceleration_detect
+        && motor_acceleration.signum() == motor_erpm.signum()
+        && base.motor().duty_cycle().ratio() > traction_loss.duty
+        && motor_erpm.abs() > traction_loss.erpm;
     let state_transition = refloat_state_transition(RefloatStateTransitionInput {
         previous: ride_state,
         run_state,
@@ -405,12 +411,7 @@ pub(super) fn refresh(
         if battery_voltage < high_voltage_threshold {
             state.high_voltage_ticks = system_time_ticks;
         }
-        let entered_reverse_stop = !matches!(
-            ride_state.setpoint_adjustment(),
-            RefloatSetpointAdjustment::Centering | RefloatSetpointAdjustment::ReverseStop
-        ) && faults.reversestop_enabled()
-            && motor_erpm < -reverse_stop.entry_erpm
-            && !darkride_active;
+        let entered_reverse_stop = reverse_stop_entry_pending;
         if entered_reverse_stop {
             // Refloat carries an existing HV/LV/temperature target into
             // reverse-stop at `third_party/refloat/src/main.c:538-550`.
@@ -428,6 +429,36 @@ pub(super) fn refresh(
             ride_state =
                 ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::ReverseStop);
         }
+        let wheelslip_branch_active = if traction_loss_detected {
+            state.wheelslip_ticks = system_time_ticks;
+            if darkride_active {
+                state.traction_control = true;
+            }
+            true
+        } else if matches!(ride_state.wheelslip(), RefloatWheelSlipState::Detected)
+            && !matches!(
+                ride_state.setpoint_adjustment(),
+                RefloatSetpointAdjustment::Centering | RefloatSetpointAdjustment::ReverseStop
+            )
+        {
+            if motor_acceleration.abs() < traction_loss.acceleration_clear {
+                state.traction_control = false;
+            }
+            if base.motor().duty_cycle().magnitude() > state.duty_max_with_margin.ratio() {
+                state.wheelslip_ticks = system_time_ticks;
+            } else if refloat_ticks_elapsed_seconds(
+                system_time_ticks,
+                state.wheelslip_ticks,
+                traction_loss.clear_delay,
+            ) && state.motor_duty_raw < traction_loss.raw_duty_clear
+            {
+                state.traction_control = false;
+                ride_state = ride_state.with_wheelslip(RefloatWheelSlipState::None);
+            }
+            true
+        } else {
+            false
+        };
         if matches!(
             ride_state.setpoint_adjustment(),
             RefloatSetpointAdjustment::Centering
@@ -487,7 +518,8 @@ pub(super) fn refresh(
         if !matches!(
             ride_state.setpoint_adjustment(),
             RefloatSetpointAdjustment::Centering | RefloatSetpointAdjustment::ReverseStop
-        ) && !matches!(ride_state.wheelslip(), RefloatWheelSlipState::Detected)
+        ) && !wheelslip_branch_active
+            && !matches!(ride_state.wheelslip(), RefloatWheelSlipState::Detected)
             && !matches!(ride_state.mode(), RefloatMode::Flywheel)
         {
             let duty_pushback_active = base.motor().duty_cycle().ratio().as_ratio()
@@ -533,6 +565,12 @@ pub(super) fn refresh(
                 setpoints =
                     setpoints.with_board(RefloatRealtimeRuntimeSetpoint::new(board_setpoint));
             }
+        }
+        if matches!(ride_state.wheelslip(), RefloatWheelSlipState::Detected)
+            && base.motor().duty_cycle().magnitude() > state.duty_max_with_margin.ratio()
+        {
+            setpoints =
+                setpoints.with_board(RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::ZERO));
         }
         let gyro = imu.angular_rate();
         // Upstream RUNNING executes this exact balance-current pipeline at

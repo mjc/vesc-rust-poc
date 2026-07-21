@@ -210,7 +210,7 @@ fn realtime_voltage_and_temperatures_refresh_from_motor_telemetry() {
 
 #[test]
 fn darkride_traction_loss_refreshes_like_refloat_loop() {
-    let now = TimestampTicks::from_ticks(0);
+    let now = TimestampTicks::from_ticks(1_234);
     let firmware = FirmwareTest::new().with_runtime_motor(
         ElectricalSpeed::new(Rpm::from_revolutions_per_minute(-3_000.0)),
         VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
@@ -272,6 +272,7 @@ fn darkride_traction_loss_refreshes_like_refloat_loop() {
     ));
 
     state.refresh_runtime_state(telemetry, imu, now);
+    let expected_wheelslip_ticks = now;
     let mut now = || now;
     let mut discard = |_bytes: &[u8]| true;
     assert!(state.handle_packet_with_runtime(
@@ -291,5 +292,10 @@ fn darkride_traction_loss_refreshes_like_refloat_loop() {
     // `third_party/refloat/src/main.c:551-562`, then freewheels while traction control is set at
     // `third_party/refloat/src/main.c:949-954`.
     assert_eq!(ride_state.wheelslip(), RefloatWheelSlipState::Detected);
+    assert_eq!(
+        ride_state.setpoint_adjustment(),
+        crate::domain::RefloatSetpointAdjustment::None
+    );
+    assert_eq!(state.wheelslip_ticks, expected_wheelslip_ticks);
     assert_eq!(firmware.commanded_current().current().as_amps(), 0.0);
 }
