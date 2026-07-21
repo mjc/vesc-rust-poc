@@ -428,14 +428,7 @@ pub(super) fn refresh(
                 // centered setpoint before PID at
                 // `third_party/refloat/src/main.c:869-875`.
                 let centered_board = RefloatRealtimeRuntimeSetpoint::new(centered_board);
-                setpoints = RefloatRealtimeRuntimeSetpoints::new(
-                    centered_board,
-                    setpoints.atr(),
-                    setpoints.brake_tilt(),
-                    setpoints.torque_tilt(),
-                    setpoints.turn_tilt(),
-                    setpoints.remote(),
-                );
+                setpoints = setpoints.with_board(centered_board);
             }
         }
         if matches!(
@@ -461,14 +454,8 @@ pub(super) fn refresh(
                 None
             };
             if let Some(board_setpoint) = board_setpoint {
-                setpoints = RefloatRealtimeRuntimeSetpoints::new(
-                    RefloatRealtimeRuntimeSetpoint::new(board_setpoint),
-                    setpoints.atr(),
-                    setpoints.brake_tilt(),
-                    setpoints.torque_tilt(),
-                    setpoints.turn_tilt(),
-                    setpoints.remote(),
-                );
+                setpoints =
+                    setpoints.with_board(RefloatRealtimeRuntimeSetpoint::new(board_setpoint));
             }
         }
         if !matches!(
@@ -500,14 +487,8 @@ pub(super) fn refresh(
             if let Some(board_setpoint) = board_setpoint {
                 // Refloat selects duty pushback after reverse stop and
                 // wheelslip at `third_party/refloat/src/main.c:551-592`.
-                setpoints = RefloatRealtimeRuntimeSetpoints::new(
-                    RefloatRealtimeRuntimeSetpoint::new(board_setpoint),
-                    setpoints.atr(),
-                    setpoints.brake_tilt(),
-                    setpoints.torque_tilt(),
-                    setpoints.turn_tilt(),
-                    setpoints.remote(),
-                );
+                setpoints =
+                    setpoints.with_board(RefloatRealtimeRuntimeSetpoint::new(board_setpoint));
             }
         }
         let gyro = imu.angular_rate();
