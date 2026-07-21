@@ -1,5 +1,8 @@
 use super::time::{refloat_ticks_elapsed, refloat_ticks_elapsed_seconds};
 use crate::balance::{BalanceFilter, LoopInput, LoopState};
+#[cfg(any(test, target_arch = "arm"))]
+use crate::bms::RefloatBmsFaults;
+use crate::bms::RefloatBmsSample;
 use crate::config::*;
 use crate::domain::{
     REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataAttitude, RefloatAllDataBasePayload,
@@ -66,6 +69,11 @@ fn refloat_command_payload(bytes: &[u8], command: RefloatAppDataCommand) -> Opti
 pub struct RefloatPackageState {
     all_data_payloads: RefloatAllDataPayloads,
     serialized_config: RefloatConfigImage,
+    bms_sample: RefloatBmsSample,
+    #[cfg(any(test, target_arch = "arm"))]
+    bms_faults: RefloatBmsFaults,
+    #[cfg(any(test, target_arch = "arm"))]
+    bms_start_ticks: Option<TimestampTicks>,
     handtest_config_backup: Option<RefloatConfigImage>,
     motor_control: RefloatMotorControl,
     balance_filter: BalanceFilter,
@@ -103,6 +111,11 @@ impl RefloatPackageState {
             // defaults at `third_party/refloat/src/main.c:1160-1185`; full EEPROM parity remains a
             // later source-backed slice.
             serialized_config: RefloatConfigImage::defaults(),
+            bms_sample: RefloatBmsSample::source_startup(),
+            #[cfg(any(test, target_arch = "arm"))]
+            bms_faults: RefloatBmsFaults::NONE,
+            #[cfg(any(test, target_arch = "arm"))]
+            bms_start_ticks: None,
             handtest_config_backup: None,
             motor_control: RefloatMotorControl::new(),
             balance_filter: BalanceFilter::source_startup(),
@@ -135,6 +148,44 @@ impl RefloatPackageState {
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn record_firmware_version(&mut self, version: FirmwareVersion) {
         self.firmware_version = Some(version);
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn record_bms_sample(&mut self, sample: RefloatBmsSample) {
+        self.bms_sample = sample;
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    /// Recompute the BMS fault mask before control-loop state selection.
+    ///
+    /// C map: `bms_update` runs immediately before state logic at
+    /// `third_party/refloat/src/main.c:824-831`.
+    pub(crate) fn refresh_bms_runtime_state(&mut self, system_time_ticks: TimestampTicks) {
+        let bms = self.serialized_config.bms();
+        let enabled = bms.enabled();
+        let thresholds = bms.thresholds();
+        let start_ticks = *self.bms_start_ticks.get_or_insert(system_time_ticks);
+        let startup_timeout_elapsed = refloat_ticks_elapsed_seconds(
+            system_time_ticks,
+            start_ticks,
+            vescpkg_rs::VescSeconds::from_seconds(5.0),
+        );
+        self.bms_faults = RefloatBmsFaults::evaluate(
+            enabled,
+            self.bms_sample,
+            thresholds,
+            startup_timeout_elapsed,
+        );
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn bms_sample_for_test(&self) -> RefloatBmsSample {
+        self.bms_sample
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn bms_faults_for_test(&self) -> RefloatBmsFaults {
+        self.bms_faults
     }
 
     #[cfg(test)]
@@ -256,6 +307,7 @@ impl RefloatPackageState {
         self.refresh_motor_runtime_state(telemetry);
         self.refresh_footpad_runtime_state(footpad_adc1, footpad_adc2);
         self.refresh_charging_runtime_state(system_time_ticks);
+        self.refresh_bms_runtime_state(system_time_ticks);
         self.refresh_imu_runtime_state(imu, system_time_ticks);
     }
 

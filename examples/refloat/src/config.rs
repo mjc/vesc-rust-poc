@@ -4,6 +4,8 @@
 
 use crate::balance::LoopConfig;
 #[cfg(any(test, target_arch = "arm"))]
+use crate::bms::{RefloatBmsTemperature, RefloatBmsThresholds};
+#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::CustomConfigVoltageField;
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngularVelocity, ElectricalSpeed, IntegralCurrentGain,
@@ -134,6 +136,11 @@ impl RefloatConfigImage {
 
     pub(crate) const fn metadata(&self) -> RefloatMetadataConfig<'_> {
         RefloatMetadataConfig(self)
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) const fn bms(&self) -> RefloatBmsConfig<'_> {
+        RefloatBmsConfig(self)
     }
 
     pub(crate) fn balance_loop_config(&self) -> LoopConfig {
@@ -392,6 +399,65 @@ impl RefloatMetadataConfig<'_> {
     #[cfg(test)]
     pub(crate) fn is_default(self) -> bool {
         self.0.flag(Self::IS_DEFAULT_FIELD)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+#[cfg(any(test, target_arch = "arm"))]
+pub(crate) struct RefloatBmsConfig<'a>(&'a RefloatConfigImage);
+
+#[cfg(any(test, target_arch = "arm"))]
+impl RefloatBmsConfig<'_> {
+    // Generated Refloat v1.2.1 serialization places `bms.enabled` after the
+    // haptic fields and before the six BMS thresholds at
+    // `third_party/refloat/src/conf/settings.xml:4076-4082`.
+    const ENABLED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(
+        CustomConfigFlagField,
+        len: REFLOAT_CONFIG_LEN,
+        offset: 265
+    );
+    const CELL_LOW_VOLTAGE_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(
+        CustomConfigScaledVoltageField,
+        len: REFLOAT_CONFIG_LEN,
+        offset: 266,
+        scale: 1000.0
+    );
+    const CELL_HIGH_VOLTAGE_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(
+        CustomConfigScaledVoltageField,
+        len: REFLOAT_CONFIG_LEN,
+        offset: 268,
+        scale: 1000.0
+    );
+    const CELL_BALANCE_VOLTAGE_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(
+        CustomConfigScaledVoltageField,
+        len: REFLOAT_CONFIG_LEN,
+        offset: 270,
+        scale: 1000.0
+    );
+    const CELL_HIGH_TEMPERATURE_OFFSET: usize = 272;
+    const CELL_LOW_TEMPERATURE_OFFSET: usize = 273;
+    const BMS_HIGH_TEMPERATURE_OFFSET: usize = 274;
+
+    pub(crate) fn enabled(self) -> bool {
+        self.0.flag(Self::ENABLED_FIELD)
+    }
+
+    pub(crate) fn thresholds(self) -> RefloatBmsThresholds {
+        RefloatBmsThresholds::new(
+            generated_field(Self::CELL_LOW_VOLTAGE_FIELD.read(self.0)),
+            generated_field(Self::CELL_HIGH_VOLTAGE_FIELD.read(self.0)),
+            generated_field(Self::CELL_BALANCE_VOLTAGE_FIELD.read(self.0)),
+            RefloatBmsTemperature::from_config_byte(
+                self.0.as_bytes()[Self::CELL_LOW_TEMPERATURE_OFFSET],
+            ),
+            RefloatBmsTemperature::from_config_byte(
+                self.0.as_bytes()[Self::CELL_HIGH_TEMPERATURE_OFFSET],
+            ),
+            RefloatBmsTemperature::from_config_byte(
+                self.0.as_bytes()[Self::BMS_HIGH_TEMPERATURE_OFFSET],
+            ),
+        )
     }
 }
 

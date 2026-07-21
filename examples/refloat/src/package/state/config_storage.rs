@@ -3,6 +3,11 @@ use crate::config::RefloatConfigImage;
 use crate::domain::{RefloatMode, RefloatRunState};
 
 impl RefloatPackageState {
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn bms_enabled(&self) -> bool {
+        self.serialized_config.bms().enabled()
+    }
+
     pub(in crate::package) fn serialized_config(&self) -> &[u8; 276] {
         // C map: `get_cfg(..., is_default=false)` serializes the current
         // `d->float_conf` image at `third_party/refloat/src/main.c:2335-2356`.
