@@ -1,4 +1,4 @@
-use super::RefloatPackageState;
+use super::{RefloatPackageState, limits::TractionLossLimits};
 use crate::domain::{
     RefloatAllDataBasePayload, RefloatAllDataMotorPayload, RefloatAllDataPayloads,
     RefloatFocIdCurrent, RefloatRealtimeFilteredMotorCurrent, RefloatRealtimeMotorCurrents,
@@ -81,6 +81,10 @@ pub(super) fn refresh(state: &mut RefloatPackageState, telemetry: &impl MotorTel
     let next_battery_current = telemetry.battery_current().current().as_amps();
     let previous_duty_cycle = motor.duty_cycle().ratio().as_ratio();
     let raw_duty_cycle = telemetry.duty_cycle().ratio().as_ratio().abs();
+    state.motor_duty_raw = telemetry.duty_cycle().magnitude();
+    state.duty_max_with_margin = telemetry
+        .duty_cycle_limit()
+        .reduced_by(TractionLossLimits::REFLOAT.duty_margin);
     state.motor_current_max = telemetry.drive_current_limit();
     state.motor_current_min = telemetry.brake_current_limit();
     state.battery_cell_count = telemetry.battery_cell_count();

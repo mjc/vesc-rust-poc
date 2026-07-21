@@ -789,6 +789,12 @@ fn set_protective_ride_state(
         RefloatAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4());
 }
 
+fn settle_motor_acceleration(state: &mut RefloatPackageState, motor_erpm: Rpm) {
+    for _ in 0..40 {
+        state.motor_acceleration.record(motor_erpm);
+    }
+}
+
 fn tick_running_protective_pushback(
     state: &mut RefloatPackageState,
     telemetry: &FirmwareTest,
@@ -838,6 +844,133 @@ fn running_enters_duty_pushback_above_configured_threshold_like_refloat() {
         base.setpoints().board().angle(),
         AngleDegrees::from_degrees(5.0),
     );
+}
+
+#[test]
+fn running_wheelslip_refreshes_timer_and_zeros_target_above_max_duty_like_refloat() {
+    let (_, telemetry, mut state) = running_protective_pushback_fixture(
+        SignedRatio::from_ratio_const(0.91),
+        Rpm::from_revolutions_per_minute(1_000.0),
+        RefloatSetpointAdjustment::PushbackDuty,
+        InputVoltage::new(Voltage::from_volts(72.0)),
+    );
+    set_protective_ride_state(
+        &mut state,
+        RefloatMode::Normal,
+        RefloatSetpointAdjustment::PushbackDuty,
+        RefloatWheelSlipState::Detected,
+    );
+    settle_motor_acceleration(&mut state, Rpm::from_revolutions_per_minute(1_000.0));
+    state.traction_control = true;
+    state.wheelslip_ticks = TimestampTicks::from_ticks(1);
+    let now = TimestampTicks::from_ticks(5_000);
+
+    tick_running_protective_pushback(&mut state, &telemetry, now);
+
+    assert_eq!(state.wheelslip_ticks, now);
+    assert!(!state.traction_control);
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .wheelslip(),
+        RefloatWheelSlipState::Detected
+    );
+    assert_eq!(
+        state.all_data_payloads().base().setpoints().board().angle(),
+        AngleDegrees::ZERO
+    );
+}
+
+#[test]
+fn running_wheelslip_exit_uses_strict_timer_and_raw_duty_thresholds_like_refloat() {
+    let (_, telemetry, mut state) = running_protective_pushback_fixture(
+        SignedRatio::from_ratio_const(0.84),
+        Rpm::from_revolutions_per_minute(1_000.0),
+        RefloatSetpointAdjustment::None,
+        InputVoltage::new(Voltage::from_volts(72.0)),
+    );
+    set_protective_ride_state(
+        &mut state,
+        RefloatMode::Normal,
+        RefloatSetpointAdjustment::None,
+        RefloatWheelSlipState::Detected,
+    );
+    settle_motor_acceleration(&mut state, Rpm::from_revolutions_per_minute(1_000.0));
+    state.wheelslip_ticks = TimestampTicks::from_ticks(0);
+
+    tick_running_protective_pushback(&mut state, &telemetry, TimestampTicks::from_ticks(2_000));
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .wheelslip(),
+        RefloatWheelSlipState::Detected
+    );
+
+    tick_running_protective_pushback(&mut state, &telemetry, TimestampTicks::from_ticks(2_001));
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .wheelslip(),
+        RefloatWheelSlipState::None
+    );
+    drop(telemetry);
+
+    let (_, telemetry, mut state) = running_protective_pushback_fixture(
+        SignedRatio::from_ratio_const(0.85),
+        Rpm::from_revolutions_per_minute(1_000.0),
+        RefloatSetpointAdjustment::None,
+        InputVoltage::new(Voltage::from_volts(72.0)),
+    );
+    set_protective_ride_state(
+        &mut state,
+        RefloatMode::Normal,
+        RefloatSetpointAdjustment::None,
+        RefloatWheelSlipState::Detected,
+    );
+    settle_motor_acceleration(&mut state, Rpm::from_revolutions_per_minute(1_000.0));
+    state.wheelslip_ticks = TimestampTicks::from_ticks(0);
+
+    tick_running_protective_pushback(&mut state, &telemetry, TimestampTicks::from_ticks(2_001));
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .wheelslip(),
+        RefloatWheelSlipState::Detected
+    );
+}
+
+#[test]
+fn reverse_stop_entry_precedes_wheelslip_detection_like_refloat() {
+    let (now, telemetry, mut state) = running_protective_pushback_fixture(
+        SignedRatio::from_ratio_const(0.50),
+        Rpm::from_revolutions_per_minute(-3_000.0),
+        RefloatSetpointAdjustment::None,
+        InputVoltage::new(Voltage::from_volts(72.0)),
+    );
+    edit_config(&mut state, |config| {
+        assert!(config.set_reversestop_enabled(true));
+    });
+
+    tick_running_protective_pushback(&mut state, &telemetry, now);
+
+    let ride_state = state.all_data_payloads().base().status().ride_state();
+    assert_eq!(
+        ride_state.setpoint_adjustment(),
+        RefloatSetpointAdjustment::ReverseStop
+    );
+    assert_eq!(ride_state.wheelslip(), RefloatWheelSlipState::None);
 }
 
 #[test]

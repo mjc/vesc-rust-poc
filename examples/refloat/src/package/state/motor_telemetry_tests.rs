@@ -153,6 +153,28 @@ fn base_battery_voltage_refreshes_from_motor_telemetry() {
 }
 
 #[test]
+fn motor_runtime_tracks_typed_refloat_wheelslip_duty_inputs() {
+    let firmware = FirmwareTest::new()
+        .with_runtime_motor(
+            ElectricalSpeed::new(Rpm::ZERO),
+            VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
+            TotalMotorCurrent::new(Current::ZERO),
+            InputCurrent::new(Current::ZERO),
+            DutyCycle::new(SignedRatio::from_ratio_const(-0.84)),
+        )
+        .with_duty_cycle_limit(DutyCycleLimit::new(Ratio::from_ratio_const(0.95)));
+    let mut state = RefloatPackageState::new(sample_all_data_payloads());
+
+    state.refresh_motor_runtime_state(firmware.telemetry());
+
+    assert_eq!(state.motor_duty_raw, Ratio::from_ratio_const(0.84));
+    assert_eq!(
+        state.duty_max_with_margin,
+        DutyCycleLimit::new(Ratio::from_ratio_const(0.90))
+    );
+}
+
+#[test]
 fn realtime_voltage_and_temperatures_refresh_from_motor_telemetry() {
     let now = TimestampTicks::from_ticks(0);
     let bindings = FirmwareTest::new().with_input_voltage_and_temperatures(
@@ -188,7 +210,7 @@ fn realtime_voltage_and_temperatures_refresh_from_motor_telemetry() {
 
 #[test]
 fn darkride_traction_loss_refreshes_like_refloat_loop() {
-    let now = TimestampTicks::from_ticks(0);
+    let now = TimestampTicks::from_ticks(1_234);
     let firmware = FirmwareTest::new().with_runtime_motor(
         ElectricalSpeed::new(Rpm::from_revolutions_per_minute(-3_000.0)),
         VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
@@ -250,6 +272,7 @@ fn darkride_traction_loss_refreshes_like_refloat_loop() {
     ));
 
     state.refresh_runtime_state(telemetry, imu, now);
+    let expected_wheelslip_ticks = now;
     let mut now = || now;
     let mut discard = |_bytes: &[u8]| true;
     assert!(state.handle_packet_with_runtime(
@@ -269,5 +292,10 @@ fn darkride_traction_loss_refreshes_like_refloat_loop() {
     // `third_party/refloat/src/main.c:551-562`, then freewheels while traction control is set at
     // `third_party/refloat/src/main.c:949-954`.
     assert_eq!(ride_state.wheelslip(), RefloatWheelSlipState::Detected);
+    assert_eq!(
+        ride_state.setpoint_adjustment(),
+        crate::domain::RefloatSetpointAdjustment::None
+    );
+    assert_eq!(state.wheelslip_ticks, expected_wheelslip_ticks);
     assert_eq!(firmware.commanded_current().current().as_amps(), 0.0);
 }
