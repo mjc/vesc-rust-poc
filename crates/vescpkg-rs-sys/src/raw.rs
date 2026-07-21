@@ -1654,16 +1654,10 @@ pub unsafe fn io_read_analog_pair(first: crate::VescPin, second: crate::VescPin)
     (unsafe { read(first.0) }, unsafe { read(second.0) })
 }
 
-/// Returns selected `VescIf` field offsets for ABI layout tests.
+/// Returns all generated `VescIf` field offsets for ABI layout tests.
 #[cfg(test)]
 pub fn vesc_if_offsets_for_tests() -> [usize; VescIfAbi::USED_SLOT_COUNT] {
-    macro_rules! offsets {
-        ($($const_name:ident => $slot_name:ident),+ $(,)?) => {
-            [$(core::mem::offset_of!(VescIf, $slot_name)),+]
-        };
-    }
-
-    vesc_if_used_slots!(offsets)
+    VescIfAbi::USED_SLOTS.map(|slot| slot.host_byte_offset(core::mem::size_of::<usize>()))
 }
 #[cfg(test)]
 mod abi_audit;

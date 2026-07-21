@@ -17,16 +17,7 @@
 extern crate std;
 
 mod image;
-macro_rules! count_idents {
-    ($($ident:ident),* $(,)?) => {
-        0usize $(+ count_idents!(@one $ident))*
-    };
-    (@one $ident:ident) => {
-        1usize
-    };
-}
-
-macro_rules! vesc_if_used_slots {
+macro_rules! vesc_if_compat_constants {
     ($macro:ident) => {
         $macro! {
             LBM_ADD_EXTENSION => lbm_add_extension,

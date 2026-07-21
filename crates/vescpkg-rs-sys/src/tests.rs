@@ -262,7 +262,7 @@ fn transparent_wrappers_expose_raw_tuple_fields() {
 }
 
 #[test]
-fn vesc_if_used_slots_match_generated_header_descriptors() {
+fn vesc_if_manifest_matches_generated_header_descriptors() {
     assert_eq!(crate::c_vesc_if::FIELD_COUNT, VescIfAbi::FIELD_COUNT);
     assert_eq!(VescIfAbi::ALL_SLOTS.len(), VescIfAbi::FIELD_COUNT);
     assert_eq!(VescIfAbi::ALL_ENTRIES.len(), VescIfAbi::FIELD_COUNT);
