@@ -14,7 +14,7 @@ fn adc_voltage_from_firmware(raw: f32) -> AdcVoltage {
 /// A firmware analog-input pin.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct AnalogPin(u8);
+pub struct AnalogPin(i32);
 
 impl AnalogPin {
     /// VESC's first external analog input.
@@ -23,7 +23,7 @@ impl AnalogPin {
     pub const ADC2: Self = Self(8);
 
     const fn firmware_pin(self) -> VescPin {
-        VescPin(self.0 as i32)
+        VescPin(self.0)
     }
 }
 
