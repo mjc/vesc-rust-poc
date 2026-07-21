@@ -46,6 +46,9 @@ mod runtime_tests;
 mod transition;
 #[cfg(test)]
 mod transition_tests;
+mod tuning;
+#[cfg(test)]
+mod tuning_tests;
 
 use motor_acceleration::MotorAccelerationTracker;
 use remote_control::RemoteControlState;
@@ -368,6 +371,7 @@ impl RefloatPackageState {
     ) -> bool {
         self.handle_charging_state_packet(now, bytes)
             || self.handle_handtest_packet(bytes)
+            || tuning::handle_booster_packet(self, bytes)
             || self.handle_rc_move_packet(bytes)
             || self.send_metadata_packet_response(send, bytes)
             || self.send_legacy_realtime_data_packet_response(send, bytes)
