@@ -595,6 +595,46 @@ fn running_reverse_stop_exits_below_half_tolerance_while_moving_forward_like_ref
 }
 
 #[test]
+fn running_reverse_stop_stays_active_at_half_tolerance_while_reversing_like_refloat() {
+    let (app_data, telemetry, mut state) = running_reverse_stop_fixture(
+        Rpm::from_revolutions_per_minute(-9_999.0),
+        AngleDegrees::from_degrees(0.25),
+        Rpm::from_revolutions_per_minute(-1.0),
+    );
+
+    assert!(tick_refloat_state_and_handle_packet(
+        &mut state,
+        app_data,
+        telemetry.telemetry(),
+        telemetry.imu(),
+        &[
+            REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            RefloatAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+
+    // C requires both half tolerance and nonnegative instantaneous ERPM at
+    // `third_party/refloat/src/main.c:530-536`.
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .setpoint_adjustment(),
+        RefloatSetpointAdjustment::ReverseStop,
+    );
+    assert_eq!(
+        state.reverse_total_erpm,
+        Rpm::from_revolutions_per_minute(-10_000.0),
+    );
+    assert_eq!(
+        state.all_data_payloads().base().setpoints().board().angle(),
+        AngleDegrees::from_degrees(0.25),
+    );
+}
+
+#[test]
 fn running_runtime_requests_balance_current_like_refloat_loop() {
     let (app_data, telemetry, mut state) = running_runtime_fixture();
     let imu = telemetry.imu();
