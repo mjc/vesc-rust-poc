@@ -1,5 +1,6 @@
 use super::time::{refloat_ticks_elapsed, refloat_ticks_elapsed_seconds};
 use crate::balance::{BalanceFilter, LoopInput, LoopState};
+use crate::bms::RefloatBmsSample;
 use crate::config::*;
 use crate::domain::{
     REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataAttitude, RefloatAllDataBasePayload,
@@ -66,6 +67,7 @@ fn refloat_command_payload(bytes: &[u8], command: RefloatAppDataCommand) -> Opti
 pub struct RefloatPackageState {
     all_data_payloads: RefloatAllDataPayloads,
     serialized_config: RefloatConfigImage,
+    bms_sample: RefloatBmsSample,
     handtest_config_backup: Option<RefloatConfigImage>,
     motor_control: RefloatMotorControl,
     balance_filter: BalanceFilter,
@@ -103,6 +105,7 @@ impl RefloatPackageState {
             // defaults at `third_party/refloat/src/main.c:1160-1185`; full EEPROM parity remains a
             // later source-backed slice.
             serialized_config: RefloatConfigImage::defaults(),
+            bms_sample: RefloatBmsSample::source_startup(),
             handtest_config_backup: None,
             motor_control: RefloatMotorControl::new(),
             balance_filter: BalanceFilter::source_startup(),
@@ -135,6 +138,16 @@ impl RefloatPackageState {
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn record_firmware_version(&mut self, version: FirmwareVersion) {
         self.firmware_version = Some(version);
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn record_bms_sample(&mut self, sample: RefloatBmsSample) {
+        self.bms_sample = sample;
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn bms_sample_for_test(&self) -> RefloatBmsSample {
+        self.bms_sample
     }
 
     #[cfg(test)]
