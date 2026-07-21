@@ -225,3 +225,47 @@ fn runtime_tune_preserves_refloat_progressive_payload_lengths() {
     );
     assert_eq!(state.tick_beeper(), None);
 }
+
+#[test]
+fn tilt_tune_applies_duty_settings_and_three_short_beeps() {
+    let firmware = FirmwareTest::new();
+    let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    assert!(state.serialized_config.editor().set_beeper_enabled(true));
+    state.refresh_config_runtime_state();
+    let mut now = || TimestampTicks::from_ticks(0);
+    let mut send = |_bytes: &[u8]| true;
+
+    assert!(state.handle_packet_with_telemetry(
+        firmware.telemetry(),
+        &mut now,
+        &mut send,
+        &[
+            REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            RefloatAppDataCommand::TuneTilt.id(),
+            1,
+            15,
+            85,
+            25,
+            30,
+        ],
+    ));
+
+    let bytes = state.serialized_config.as_bytes();
+    assert_eq!(&bytes[44..51], &[0x00, 0xFA, 0x01, 0x2C, 0x03, 0x52, 1]);
+    assert_eq!(&bytes[64..66], &[0x00, 0x96]);
+    let changes: Vec<_> = (1..=560)
+        .filter_map(|tick| state.tick_beeper().map(|level| (tick, level)))
+        .collect();
+    assert_eq!(
+        changes,
+        [
+            (80, RefloatBeeperLevel::Low),
+            (160, RefloatBeeperLevel::High),
+            (240, RefloatBeeperLevel::Low),
+            (320, RefloatBeeperLevel::High),
+            (400, RefloatBeeperLevel::Low),
+            (480, RefloatBeeperLevel::High),
+            (560, RefloatBeeperLevel::Low),
+        ],
+    );
+}

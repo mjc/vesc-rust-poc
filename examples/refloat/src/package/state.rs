@@ -372,6 +372,7 @@ impl RefloatPackageState {
         self.handle_charging_state_packet(now, bytes)
             || self.handle_handtest_packet(bytes)
             || tuning::handle_runtime_tune_packet(self, bytes)
+            || tuning::handle_tilt_tune_packet(self, bytes)
             || tuning::handle_booster_packet(self, bytes)
             || self.handle_rc_move_packet(bytes)
             || self.send_metadata_packet_response(send, bytes)

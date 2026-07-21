@@ -1,7 +1,7 @@
 use super::*;
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngularVelocity, Current, ElectricalSpeed, IntegralCurrentGain,
-    MahonyPitchGain, MotorCurrent, PidScale, RateCurrentGain, Rpm, WireByte,
+    MahonyPitchGain, MotorCurrent, PidScale, RateCurrentGain, Ratio, Rpm, WireByte,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -262,6 +262,48 @@ pub(super) fn handle_runtime_tune_packet(state: &mut RefloatPackageState, bytes:
     }
 
     state.refresh_config_runtime_state();
+    true
+}
+
+pub(super) fn handle_tilt_tune_packet(state: &mut RefloatPackageState, bytes: &[u8]) -> bool {
+    let Some([flags, return_speed, duty, duty_angle, duty_speed, ..]) =
+        refloat_command_payload(bytes, RefloatAppDataCommand::TuneTilt)
+    else {
+        return false;
+    };
+
+    let mut config = state.serialized_config.editor();
+    let mut updated = [
+        config.set_duty_beep_enabled(*flags & 0x01 != 0),
+        config.set_duty_pushback_threshold(WireByte::new(*duty).scaled_ratio(
+            1.0,
+            100.0,
+            0.0,
+            Ratio::from_ratio_const,
+        )),
+        config.set_duty_pushback_angle(WireByte::new(*duty_angle).scaled(
+            0.1,
+            0.0,
+            AngleDegrees::from_degrees,
+        )),
+        config.set_duty_pushback_speed(WireByte::new(*duty_speed).scaled(
+            0.1,
+            0.0,
+            AngularVelocity::from_degrees_per_second,
+        )),
+    ]
+    .into_iter()
+    .all(core::convert::identity);
+    if *return_speed != 0 {
+        updated &= config.set_tiltback_return_speed(WireByte::new(*return_speed).scaled(
+            0.1,
+            0.0,
+            AngularVelocity::from_degrees_per_second,
+        ));
+    }
+    debug_assert!(updated);
+    state.refresh_config_runtime_state();
+    state.alert_beeper(RefloatBeeperAlert::Short(RefloatBeeperCount::THREE));
     true
 }
 

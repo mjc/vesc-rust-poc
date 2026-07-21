@@ -69,7 +69,10 @@ impl core::ops::Deref for RefloatConfigImage {
 impl RefloatConfigImage {
     const ATR_FILTER_FIELD: CustomConfigFrequencyField = vescpkg_rs::generated_custom_config_field!(CustomConfigFrequencyField, len: REFLOAT_CONFIG_LEN, offset: 165, scale: 100.0);
     const DUTY_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 44, scale: 100.0);
+    const DUTY_PUSHBACK_SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: REFLOAT_CONFIG_LEN, offset: 46, scale: 100.0);
     const DUTY_PUSHBACK_THRESHOLD_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: REFLOAT_CONFIG_LEN, offset: 48, scale: 1000.0);
+    const DUTY_BEEP_ENABLED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 50);
+    const TILTBACK_RETURN_SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: REFLOAT_CONFIG_LEN, offset: 64, scale: 100.0);
     const HIGH_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 51, scale: 100.0);
     const HIGH_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigScaledVoltageField, len: REFLOAT_CONFIG_LEN, offset: 55, scale: 100.0);
     const LOW_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 57, scale: 100.0);
@@ -371,6 +374,34 @@ impl RefloatConfigEditor<'_> {
     pub(crate) fn set_mahony_kp(&mut self, gain: MahonyPitchGain) -> bool {
         RefloatFilterConfig::MAHONY_KP_FIELD
             .write(self, gain)
+            .is_some()
+    }
+
+    pub(crate) fn set_duty_beep_enabled(&mut self, enabled: bool) -> bool {
+        self.set_flag(RefloatConfigImage::DUTY_BEEP_ENABLED_FIELD, enabled)
+    }
+
+    pub(crate) fn set_duty_pushback_angle(&mut self, angle: AngleDegrees) -> bool {
+        RefloatConfigImage::DUTY_PUSHBACK_ANGLE_FIELD
+            .write(self, angle)
+            .is_some()
+    }
+
+    pub(crate) fn set_duty_pushback_speed(&mut self, speed: AngularVelocity) -> bool {
+        RefloatConfigImage::DUTY_PUSHBACK_SPEED_FIELD
+            .write(self, speed)
+            .is_some()
+    }
+
+    pub(crate) fn set_duty_pushback_threshold(&mut self, threshold: Ratio) -> bool {
+        RefloatConfigImage::DUTY_PUSHBACK_THRESHOLD_FIELD
+            .write(self, threshold)
+            .is_some()
+    }
+
+    pub(crate) fn set_tiltback_return_speed(&mut self, speed: AngularVelocity) -> bool {
+        RefloatConfigImage::TILTBACK_RETURN_SPEED_FIELD
+            .write(self, speed)
             .is_some()
     }
 
