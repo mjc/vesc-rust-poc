@@ -126,7 +126,7 @@ mod motor;
 /// Firmware thread bindings and convenience wrappers for package code.
 mod thread;
 
-pub use gpio::{AnalogPin, Gpio};
+pub use gpio::{AnalogPin, DigitalOutputLevel, DigitalPin, Gpio};
 /// VESC-domain semantic types re-exported at the crate root.
 pub use types::*;
 
@@ -141,13 +141,13 @@ pub mod prelude {
         SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
     };
     pub use crate::{
-        AnalogPin, AppDataHandler, AppDataSendError, ConfigBytes, ConfigXml, ExtensionDescriptor,
-        ExtensionName, ExtensionRegistration, Firmware, FirmwareAppData, FirmwareClock,
-        FirmwareThread, FirmwareThreads, Gpio, Imu, ImuReadHandler, LbmExtension, LispArgs,
-        LispIntegerError, LispValue, MotorOutput, MotorTelemetry, PackageRuntimeState,
-        PackageStart, PackageStartError, StatefulCustomConfigCallback, StatefulLbmExtension,
-        StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadName,
-        ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError,
+        AnalogPin, AppDataHandler, AppDataSendError, ConfigBytes, ConfigXml, DigitalOutputLevel,
+        DigitalPin, ExtensionDescriptor, ExtensionName, ExtensionRegistration, Firmware,
+        FirmwareAppData, FirmwareClock, FirmwareThread, FirmwareThreads, Gpio, Imu, ImuReadHandler,
+        LbmExtension, LispArgs, LispIntegerError, LispValue, MotorOutput, MotorTelemetry,
+        PackageRuntimeState, PackageStart, PackageStartError, StatefulCustomConfigCallback,
+        StatefulLbmExtension, StatelessFirmwareThread, StatelessThreadContext, ThreadContext,
+        ThreadError, ThreadName, ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError,
     };
 }
 
