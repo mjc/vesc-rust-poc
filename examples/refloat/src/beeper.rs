@@ -59,6 +59,26 @@ impl RefloatBeeperPeriod {
     const LONG: Self = Self(300);
 }
 
+impl RefloatBeeperAlert {
+    const fn sequence(self) -> (RefloatBeeperTransitions, RefloatBeeperPeriod) {
+        match self {
+            Self::ThreeShort => (
+                RefloatBeeperTransitions::THREE_BEEPS,
+                RefloatBeeperPeriod::SHORT,
+            ),
+            Self::ThreeLong => (
+                RefloatBeeperTransitions::THREE_BEEPS,
+                RefloatBeeperPeriod::LONG,
+            ),
+            #[cfg(any(test, target_arch = "arm"))]
+            Self::FourShort => (
+                RefloatBeeperTransitions::FOUR_BEEPS,
+                RefloatBeeperPeriod::SHORT,
+            ),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RefloatBeeperCountdown(u16);
 
@@ -100,21 +120,7 @@ impl RefloatBeeper {
             return;
         }
 
-        match alert {
-            RefloatBeeperAlert::ThreeShort => {
-                self.transitions = RefloatBeeperTransitions::THREE_BEEPS;
-                self.period = RefloatBeeperPeriod::SHORT;
-            }
-            RefloatBeeperAlert::ThreeLong => {
-                self.transitions = RefloatBeeperTransitions::THREE_BEEPS;
-                self.period = RefloatBeeperPeriod::LONG;
-            }
-            #[cfg(any(test, target_arch = "arm"))]
-            RefloatBeeperAlert::FourShort => {
-                self.transitions = RefloatBeeperTransitions::FOUR_BEEPS;
-                self.period = RefloatBeeperPeriod::SHORT;
-            }
-        }
+        (self.transitions, self.period) = alert.sequence();
         self.countdown.restart(self.period);
     }
 
