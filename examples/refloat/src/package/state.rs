@@ -124,11 +124,10 @@ impl RefloatPackageState {
     /// Build app-data state from the current all-data payload snapshot.
     pub fn new(all_data_payloads: RefloatAllDataPayloads) -> Self {
         let serialized_config = RefloatConfigImage::defaults();
-        Self {
+        let mut state = Self {
             all_data_payloads,
             // Upstream `data_init` reads EEPROM and falls back to generated
-            // defaults at `third_party/refloat/src/main.c:1160-1185`; full EEPROM parity remains a
-            // later source-backed slice.
+            // defaults at `third_party/refloat/src/main.c:1160-1185`.
             serialized_config,
             beeper: RefloatBeeper::new(serialized_config.beeper_enabled()),
             beeper_pin_configured: false,
@@ -172,7 +171,9 @@ impl RefloatPackageState {
             battery_cell_count: None,
             #[cfg(any(test, target_arch = "arm"))]
             firmware_version: None,
-        }
+        };
+        state.load_persisted_config_on_startup();
+        state
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -371,6 +372,7 @@ impl RefloatPackageState {
     ) -> bool {
         self.handle_charging_state_packet(now, bytes)
             || self.handle_handtest_packet(bytes)
+            || self.handle_config_command(bytes)
             || tuning::handle_runtime_tune_packet(self, bytes)
             || tuning::handle_tilt_tune_packet(self, bytes)
             || tuning::handle_other_tune_packet(self, bytes)

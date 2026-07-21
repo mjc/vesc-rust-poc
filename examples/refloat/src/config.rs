@@ -119,6 +119,15 @@ impl RefloatConfigImage {
         self.0.as_bytes()
     }
 
+    pub(crate) fn reset_tune_defaults(&mut self) {
+        let mut bytes = *self.as_bytes();
+        for range in [4..18, 67..75, 77..79, 91..101, 102..118, 130..175] {
+            bytes[range.clone()].copy_from_slice(&REFLOAT_DEFAULT_CONFIG[range]);
+        }
+        bytes[242] = REFLOAT_DEFAULT_CONFIG[242];
+        self.0 = CustomConfigImage::new(bytes);
+    }
+
     pub(crate) fn hardware_led_mode_id(&self) -> u8 {
         Self::HARDWARE_LED_MODE_FIELD
             .read(&self.0)
@@ -269,7 +278,6 @@ impl RefloatConfigEditor<'_> {
         self.set_flag(RefloatMetadataConfig::DISABLED_FIELD, false);
     }
 
-    #[cfg(test)]
     pub(crate) fn set_disabled(&mut self, disabled: bool) -> bool {
         self.set_flag(RefloatMetadataConfig::DISABLED_FIELD, disabled)
     }
