@@ -73,6 +73,7 @@ impl RefloatConfigImage {
     const HIGH_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 51, scale: 100.0);
     const HIGH_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigScaledVoltageField, len: REFLOAT_CONFIG_LEN, offset: 55, scale: 100.0);
     const LOW_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 57, scale: 100.0);
+    const LOW_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigScaledVoltageField, len: REFLOAT_CONFIG_LEN, offset: 61, scale: 100.0);
     // Generated `is_beeper_enabled` follows the 18-byte hardware LED block
     // beginning at offset 224; upstream serializes it immediately before
     // `disabled` at offset 243 (`third_party/refloat/src/conf/settings.xml:4049-4064`).
@@ -192,6 +193,10 @@ impl RefloatConfigImage {
 
     pub(crate) fn low_voltage_pushback_angle(&self) -> AngleDegrees {
         generated_field(Self::LOW_VOLTAGE_PUSHBACK_ANGLE_FIELD.read(self))
+    }
+
+    pub(crate) fn low_voltage_threshold(&self) -> Voltage {
+        generated_field(Self::LOW_VOLTAGE_THRESHOLD_FIELD.read(self))
     }
 
     pub(crate) fn beeper_enabled(&self) -> bool {

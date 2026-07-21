@@ -22,9 +22,22 @@ impl RefloatBeeperLevel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RefloatBeeperAlert {
     ThreeShort,
-    ThreeLong,
+    Long(RefloatBeeperCount),
     #[cfg(any(test, target_arch = "arm"))]
     FourShort,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RefloatBeeperCount(u8);
+
+impl RefloatBeeperCount {
+    pub(crate) const ONE: Self = Self(1);
+    pub(crate) const TWO: Self = Self(2);
+    pub(crate) const THREE: Self = Self(3);
+    pub(crate) const FOUR: Self = Self(4);
+    pub(crate) const FIVE: Self = Self(5);
+    pub(crate) const SIX: Self = Self(6);
+    pub(crate) const SEVEN: Self = Self(7);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,6 +51,10 @@ impl RefloatBeeperTransitions {
 
     const fn is_empty(self) -> bool {
         self.0 == 0
+    }
+
+    const fn from_beeps(count: RefloatBeeperCount) -> Self {
+        Self(count.0 * 2 + 1)
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -66,8 +83,8 @@ impl RefloatBeeperAlert {
                 RefloatBeeperTransitions::THREE_BEEPS,
                 RefloatBeeperPeriod::SHORT,
             ),
-            Self::ThreeLong => (
-                RefloatBeeperTransitions::THREE_BEEPS,
+            Self::Long(count) => (
+                RefloatBeeperTransitions::from_beeps(count),
                 RefloatBeeperPeriod::LONG,
             ),
             #[cfg(any(test, target_arch = "arm"))]
@@ -143,7 +160,7 @@ impl RefloatBeeper {
 mod tests {
     use std::vec::Vec;
 
-    use super::{RefloatBeeper, RefloatBeeperAlert, RefloatBeeperLevel};
+    use super::{RefloatBeeper, RefloatBeeperAlert, RefloatBeeperCount, RefloatBeeperLevel};
     use crate::config::RefloatConfigImage;
 
     #[test]
@@ -183,7 +200,7 @@ mod tests {
     #[test]
     fn three_long_alert_uses_refloat_long_period() {
         let mut beeper = RefloatBeeper::new(true);
-        beeper.alert(RefloatBeeperAlert::ThreeLong);
+        beeper.alert(RefloatBeeperAlert::Long(RefloatBeeperCount::THREE));
 
         let changes: Vec<_> = (1..=2_100)
             .filter_map(|tick| beeper.tick().map(|level| (tick, level)))
@@ -214,5 +231,18 @@ mod tests {
 
         assert_eq!(changes.len(), 9);
         assert_eq!(changes.last(), Some(&(720, RefloatBeeperLevel::Low)));
+    }
+
+    #[test]
+    fn seven_long_alert_uses_refloat_capped_transition_count() {
+        let mut beeper = RefloatBeeper::new(true);
+        beeper.alert(RefloatBeeperAlert::Long(RefloatBeeperCount::SEVEN));
+
+        let changes: Vec<_> = (1..=4_500)
+            .filter_map(|tick| beeper.tick().map(|level| (tick, level)))
+            .collect();
+
+        assert_eq!(changes.len(), 15);
+        assert_eq!(changes.last(), Some(&(4_500, RefloatBeeperLevel::Low)));
     }
 }

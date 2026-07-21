@@ -6,7 +6,39 @@ use super::*;
 #[cfg(any(test, target_arch = "arm"))]
 use crate::bms::RefloatBmsFault;
 use crate::domain::RefloatBeepReason;
-use vescpkg_rs::prelude::{AngleDegrees, VescSeconds, Voltage};
+use vescpkg_rs::prelude::{AngleDegrees, Temperature, VescSeconds, Voltage};
+
+fn pack_voltage_threshold(
+    configured: Voltage,
+    battery_cell_count: Option<BatteryCellCount>,
+) -> Voltage {
+    if configured.as_volts() < 10.0 {
+        battery_cell_count.map_or(configured, |count| configured * count)
+    } else {
+        configured
+    }
+}
+
+pub(super) fn startup_ready_beep_count(
+    warning_threshold: Voltage,
+    battery_voltage: Voltage,
+) -> RefloatBeeperCount {
+    if battery_voltage + Voltage::from_volts(6.0) <= warning_threshold {
+        RefloatBeeperCount::SEVEN
+    } else if battery_voltage + Voltage::from_volts(5.0) <= warning_threshold {
+        RefloatBeeperCount::SIX
+    } else if battery_voltage + Voltage::from_volts(4.0) <= warning_threshold {
+        RefloatBeeperCount::FIVE
+    } else if battery_voltage + Voltage::from_volts(3.0) <= warning_threshold {
+        RefloatBeeperCount::FOUR
+    } else if battery_voltage + Voltage::from_volts(2.0) <= warning_threshold {
+        RefloatBeeperCount::THREE
+    } else if battery_voltage + Voltage::from_volts(1.0) <= warning_threshold {
+        RefloatBeeperCount::TWO
+    } else {
+        RefloatBeeperCount::ONE
+    }
+}
 
 /// Refloat runtime refresh of IMU-derived state and control-loop faults.
 ///
@@ -24,13 +56,43 @@ pub(super) fn refresh(
     let status = base.status();
     let mut beep_reason = status.beep_reason();
     let mut beeper_alert = None;
-    let ride_state = status.ride_state();
+    let mut ride_state = status.ride_state();
     let resets_runtime_vars =
         matches!(ride_state.run_state(), RefloatRunState::Startup) && imu.is_ready();
     let run_state = match (ride_state.run_state(), imu.is_ready()) {
         (RefloatRunState::Startup, true) => RefloatRunState::Ready,
         (run_state, _) => run_state,
     };
+    if matches!(run_state, RefloatRunState::Running) {
+        // `time_update` refreshes Refloat's idle timer on every RUNNING loop
+        // at `third_party/refloat/src/time.c:38-43`.
+        state.idle_ticks = system_time_ticks;
+    }
+    if matches!(
+        (run_state, ride_state.darkride()),
+        (RefloatRunState::Ready, RefloatDarkRideState::Active)
+    ) && refloat_ticks_elapsed(system_time_ticks, state.disengage_ticks, 10)
+    {
+        // Refloat removes the post-flip darkride grace before READY engagement
+        // and emits one long alert at `third_party/refloat/src/main.c:984-992`.
+        ride_state = ride_state.with_darkride(RefloatDarkRideState::Upright);
+        beeper_alert = Some(RefloatBeeperAlert::Long(RefloatBeeperCount::ONE));
+    }
+    if resets_runtime_vars {
+        let low_voltage_threshold = pack_voltage_threshold(
+            state.serialized_config.low_voltage_threshold(),
+            state.battery_cell_count,
+        );
+        let warning_threshold = low_voltage_threshold + Voltage::from_volts(5.0);
+        let battery_voltage = base.motor().battery_voltage().voltage();
+        if battery_voltage < warning_threshold {
+            beep_reason = RefloatBeepReason::LowBattery;
+        }
+        beeper_alert = Some(RefloatBeeperAlert::Long(startup_ready_beep_count(
+            warning_threshold,
+            battery_voltage,
+        )));
+    }
     let flywheel_both_footpads_fault = matches!(
         (run_state, ride_state.mode(), base.footpad().state()),
         (
@@ -399,16 +461,10 @@ pub(super) fn refresh(
         )
     };
     if matches!(run_state, RefloatRunState::Running) && !state_engage && !state_stop_fault {
-        let configured_high_voltage = state.serialized_config.high_voltage_threshold();
-        let high_voltage_threshold = if configured_high_voltage.as_volts() < 10.0 {
-            state
-                .battery_cell_count
-                .map_or(configured_high_voltage, |count| {
-                    configured_high_voltage * count
-                })
-        } else {
-            configured_high_voltage
-        };
+        let high_voltage_threshold = pack_voltage_threshold(
+            state.serialized_config.high_voltage_threshold(),
+            state.battery_cell_count,
+        );
         let battery_voltage = base.motor().battery_voltage().voltage();
         #[cfg(any(test, target_arch = "arm"))]
         let bms_cell_over_voltage = state.bms_faults.contains(RefloatBmsFault::CellOverVoltage);
@@ -439,6 +495,28 @@ pub(super) fn refresh(
         };
         #[cfg(not(any(test, target_arch = "arm")))]
         let bms_temperature_reason: Option<RefloatBeepReason> = None;
+        let temperature_warning_margin = Temperature::from_degrees_celsius(3.0);
+        let temperature_tiltback_margin = Temperature::from_degrees_celsius(1.0);
+        let mosfet_temperature_threshold =
+            state.mosfet_temperature_limit_start.temperature() - temperature_warning_margin;
+        let motor_temperature_threshold =
+            state.motor_temperature_limit_start.temperature() - temperature_warning_margin;
+        let motor_temperature_warning =
+            if state.mosfet_temperature.temperature() > mosfet_temperature_threshold {
+                Some((
+                    RefloatBeepReason::MosfetTemperature,
+                    state.mosfet_temperature.temperature()
+                        > mosfet_temperature_threshold + temperature_tiltback_margin,
+                ))
+            } else if state.motor_temperature.temperature() > motor_temperature_threshold {
+                Some((
+                    RefloatBeepReason::MotorTemperature,
+                    state.motor_temperature.temperature()
+                        > motor_temperature_threshold + temperature_tiltback_margin,
+                ))
+            } else {
+                None
+            };
         #[cfg(any(test, target_arch = "arm"))]
         let bms_cell_under_voltage = state.bms_faults.contains(RefloatBmsFault::CellUnderVoltage);
         #[cfg(not(any(test, target_arch = "arm")))]
@@ -606,7 +684,7 @@ pub(super) fn refresh(
                 }
             } else if bms_connection_fault {
                 beep_reason = RefloatBeepReason::BmsConnection;
-                beeper_alert = Some(RefloatBeeperAlert::ThreeLong);
+                beeper_alert = Some(RefloatBeeperAlert::Long(RefloatBeeperCount::THREE));
                 let angle = state.serialized_config.high_voltage_pushback_angle();
                 ride_state =
                     ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackError);
@@ -615,9 +693,26 @@ pub(super) fn refresh(
                 } else {
                     -angle
                 })
+            } else if let Some((temperature_reason, tiltback)) = motor_temperature_warning {
+                beep_reason = temperature_reason;
+                beeper_alert = Some(RefloatBeeperAlert::Long(RefloatBeeperCount::THREE));
+                if tiltback {
+                    let angle = state.serialized_config.low_voltage_pushback_angle();
+                    ride_state = ride_state
+                        .with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackTemperature);
+                    Some(if motor_erpm.is_positive() {
+                        angle
+                    } else {
+                        -angle
+                    })
+                } else {
+                    ride_state =
+                        ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::None);
+                    None
+                }
             } else if let Some(temperature_reason) = bms_temperature_reason {
                 beep_reason = temperature_reason;
-                beeper_alert = Some(RefloatBeeperAlert::ThreeLong);
+                beeper_alert = Some(RefloatBeeperAlert::Long(RefloatBeeperCount::THREE));
                 let angle = state.serialized_config.low_voltage_pushback_angle();
                 ride_state = ride_state
                     .with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackTemperature);
@@ -725,6 +820,24 @@ pub(super) fn refresh(
                 RefloatBeepReason::CellBalance
             };
             beeper_alert = Some(RefloatBeeperAlert::FourShort);
+        }
+        // READY nags after 30 idle minutes, at most once per minute, and
+        // suppresses the alert while pack voltage rises in Refloat C at
+        // `third_party/refloat/src/main.c:1010-1023`.
+        if refloat_ticks_elapsed(system_time_ticks, state.idle_ticks, 1_800) {
+            if refloat_ticks_elapsed(system_time_ticks, state.nag_ticks, 60) {
+                state.nag_ticks = system_time_ticks;
+                let battery_voltage = base.motor().battery_voltage();
+                if battery_voltage > state.idle_voltage {
+                    state.idle_voltage = battery_voltage;
+                } else {
+                    beep_reason = RefloatBeepReason::Idle;
+                    beeper_alert = Some(RefloatBeeperAlert::Long(RefloatBeeperCount::TWO));
+                }
+            }
+        } else {
+            state.nag_ticks = system_time_ticks;
+            state.idle_voltage = BatteryVoltage::new(Voltage::ZERO);
         }
     }
     if let Some(alert) = beeper_alert {

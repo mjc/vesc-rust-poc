@@ -1,5 +1,5 @@
 use super::RefloatPackageState;
-use crate::beeper::RefloatBeeperLevel;
+use crate::beeper::{RefloatBeeperCount, RefloatBeeperLevel};
 use crate::bms::{RefloatBmsSample, RefloatBmsTemperature};
 use crate::domain::{
     REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataAttitude, RefloatAllDataBasePayload,
@@ -53,6 +53,103 @@ fn startup_ready_gate_refreshes_imu_attitude_like_refloat() {
         payloads.base().attitude().pitch().angle().as_radians(),
         -0.125
     );
+}
+
+#[test]
+fn startup_ready_above_low_voltage_margin_schedules_one_long_beep_like_refloat() {
+    let telemetry = FirmwareTest::new()
+        .with_input_voltage(InputVoltage::new(Voltage::from_volts(60.0)))
+        .with_battery_cell_count(BatteryCellCount::try_new(18).expect("18s battery"));
+    telemetry.set_imu_ready(true);
+    let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    enable_beeper(&mut state);
+
+    assert!(tick_refloat_state_and_handle_packet(
+        &mut state,
+        TimestampTicks::from_ticks(0),
+        telemetry.telemetry(),
+        telemetry.imu(),
+        &[
+            REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            RefloatAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+
+    let changes: Vec<_> = (1..=900)
+        .filter_map(|tick| state.tick_beeper().map(|level| (tick, level)))
+        .collect();
+
+    assert_eq!(
+        changes,
+        [
+            (300, RefloatBeeperLevel::Low),
+            (600, RefloatBeeperLevel::High),
+            (900, RefloatBeeperLevel::Low),
+        ]
+    );
+}
+
+#[test]
+fn startup_ready_below_low_voltage_margin_reports_low_battery_and_beeps_twice() {
+    let telemetry = FirmwareTest::new()
+        .with_input_voltage(InputVoltage::new(Voltage::from_volts(58.0)))
+        .with_battery_cell_count(BatteryCellCount::try_new(18).expect("18s battery"));
+    telemetry.set_imu_ready(true);
+    let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    enable_beeper(&mut state);
+
+    assert!(tick_refloat_state_and_handle_packet(
+        &mut state,
+        TimestampTicks::from_ticks(0),
+        telemetry.telemetry(),
+        telemetry.imu(),
+        &[
+            REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            RefloatAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+
+    assert_eq!(
+        state.all_data_payloads().base().status().beep_reason(),
+        RefloatBeepReason::LowBattery
+    );
+    let changes: Vec<_> = (1..=1_500)
+        .filter_map(|tick| state.tick_beeper().map(|level| (tick, level)))
+        .collect();
+    assert_eq!(
+        changes,
+        [
+            (300, RefloatBeeperLevel::Low),
+            (600, RefloatBeeperLevel::High),
+            (900, RefloatBeeperLevel::Low),
+            (1_200, RefloatBeeperLevel::High),
+            (1_500, RefloatBeeperLevel::Low),
+        ]
+    );
+}
+
+#[test]
+fn startup_ready_beep_count_truncates_and_caps_voltage_deficit_like_refloat() {
+    let warning_threshold = Voltage::from_volts(59.0);
+    let cases = [
+        (Voltage::from_volts(60.0), RefloatBeeperCount::ONE),
+        (Voltage::from_volts(58.9), RefloatBeeperCount::ONE),
+        (Voltage::from_volts(58.0), RefloatBeeperCount::TWO),
+        (Voltage::from_volts(57.0), RefloatBeeperCount::THREE),
+        (Voltage::from_volts(56.0), RefloatBeeperCount::FOUR),
+        (Voltage::from_volts(55.0), RefloatBeeperCount::FIVE),
+        (Voltage::from_volts(54.0), RefloatBeeperCount::SIX),
+        (Voltage::from_volts(53.0), RefloatBeeperCount::SEVEN),
+        (Voltage::from_volts(40.0), RefloatBeeperCount::SEVEN),
+    ];
+
+    for (battery_voltage, expected) in cases {
+        assert_eq!(
+            super::imu_runtime::startup_ready_beep_count(warning_threshold, battery_voltage),
+            expected,
+            "battery voltage: {battery_voltage:?}"
+        );
+    }
 }
 
 #[test]
@@ -854,6 +951,53 @@ fn first_beeper_high_tick(state: &mut RefloatPackageState, limit: usize) -> Opti
     (1..=limit).find(|_| matches!(state.tick_beeper(), Some(RefloatBeeperLevel::High)))
 }
 
+#[test]
+fn running_temperature_warning_uses_refloat_margin_priority_and_long_alert() {
+    let cases = [
+        (
+            MosfetTemperature::new(Temperature::from_degrees_celsius(82.5)),
+            MotorTemperature::new(Temperature::from_degrees_celsius(20.0)),
+            RefloatBeepReason::MosfetTemperature,
+        ),
+        (
+            MosfetTemperature::new(Temperature::from_degrees_celsius(20.0)),
+            MotorTemperature::new(Temperature::from_degrees_celsius(92.5)),
+            RefloatBeepReason::MotorTemperature,
+        ),
+        (
+            MosfetTemperature::new(Temperature::from_degrees_celsius(82.5)),
+            MotorTemperature::new(Temperature::from_degrees_celsius(92.5)),
+            RefloatBeepReason::MosfetTemperature,
+        ),
+    ];
+
+    for (mosfet_temperature, motor_temperature, expected_reason) in cases {
+        let (app_data, telemetry, mut state) = running_protective_pushback_fixture(
+            SignedRatio::from_ratio_const(0.0),
+            Rpm::from_revolutions_per_minute(1_000.0),
+            RefloatSetpointAdjustment::None,
+            InputVoltage::new(Voltage::from_volts(72.0)),
+        );
+        let telemetry = telemetry
+            .with_temperature_limit_starts(
+                TemperatureLimitStart::new(Temperature::from_degrees_celsius(85.0)),
+                TemperatureLimitStart::new(Temperature::from_degrees_celsius(95.0)),
+            )
+            .with_temperatures(mosfet_temperature, motor_temperature);
+        enable_beeper(&mut state);
+
+        tick_running_protective_pushback(&mut state, &telemetry, app_data);
+
+        let base = state.all_data_payloads().base();
+        assert_eq!(base.status().beep_reason(), expected_reason);
+        assert_eq!(
+            base.status().ride_state().setpoint_adjustment(),
+            RefloatSetpointAdjustment::None
+        );
+        assert_eq!(first_beeper_high_tick(&mut state, 600), Some(600));
+    }
+}
+
 fn record_bms_sample(
     state: &mut RefloatPackageState,
     cell_low_voltage: Voltage,
@@ -1412,6 +1556,44 @@ fn ready_bms_cell_balance_alert_requires_disengage_and_alert_delays_like_refloat
         state.all_data_payloads().base().status().beep_reason(),
         RefloatBeepReason::CellBalance,
     );
+}
+
+#[test]
+fn ready_idle_nag_waits_for_stable_voltage_and_beeps_every_minute_like_refloat() {
+    let (telemetry, mut state) = ready_bms_fixture();
+    enable_beeper(&mut state);
+    let imu = telemetry.imu();
+
+    state.refresh_imu_runtime_state(imu, TimestampTicks::from_ticks(18_000_000));
+    assert_ne!(
+        state.all_data_payloads().base().status().beep_reason(),
+        RefloatBeepReason::Idle,
+    );
+
+    state.refresh_imu_runtime_state(imu, TimestampTicks::from_ticks(18_600_000));
+    assert_ne!(
+        state.all_data_payloads().base().status().beep_reason(),
+        RefloatBeepReason::Idle,
+    );
+
+    state.refresh_imu_runtime_state(imu, TimestampTicks::from_ticks(18_600_001));
+    assert_ne!(
+        state.all_data_payloads().base().status().beep_reason(),
+        RefloatBeepReason::Idle,
+    );
+
+    state.refresh_imu_runtime_state(imu, TimestampTicks::from_ticks(19_200_001));
+    assert_ne!(
+        state.all_data_payloads().base().status().beep_reason(),
+        RefloatBeepReason::Idle,
+    );
+
+    state.refresh_imu_runtime_state(imu, TimestampTicks::from_ticks(19_200_002));
+    assert_eq!(
+        state.all_data_payloads().base().status().beep_reason(),
+        RefloatBeepReason::Idle,
+    );
+    assert_eq!(first_beeper_high_tick(&mut state, 600), Some(600));
 }
 
 #[test]

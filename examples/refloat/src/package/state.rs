@@ -2,7 +2,7 @@ use super::time::{refloat_ticks_elapsed, refloat_ticks_elapsed_seconds};
 use crate::balance::{BalanceFilter, LoopInput, LoopState};
 #[cfg(any(test, target_arch = "arm"))]
 use crate::beeper::RefloatBeeperLevel;
-use crate::beeper::{RefloatBeeper, RefloatBeeperAlert};
+use crate::beeper::{RefloatBeeper, RefloatBeeperAlert, RefloatBeeperCount};
 #[cfg(any(test, target_arch = "arm"))]
 use crate::bms::RefloatBmsFaults;
 use crate::bms::RefloatBmsSample;
@@ -19,8 +19,9 @@ use crate::motor_control::RefloatMotorControl;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{AdcVoltage, FirmwareVersion};
 use vescpkg_rs::prelude::{
-    AngleRadians, BatteryCellCount, Current, DutyCycleLimit, MotorCurrent, MotorCurrentLimit,
-    Ratio, Rpm, TimestampTicks,
+    AngleRadians, BatteryCellCount, BatteryVoltage, Current, DutyCycleLimit, MosfetTemperature,
+    MotorCurrent, MotorCurrentLimit, MotorTemperature, Ratio, Rpm, Temperature,
+    TemperatureLimitStart, TimestampTicks, Voltage,
 };
 use vescpkg_rs::{Imu, MotorOutput, MotorTelemetry};
 
@@ -93,6 +94,9 @@ pub struct RefloatPackageState {
     charging_ticks: TimestampTicks,
     engage_ticks: TimestampTicks,
     disengage_ticks: TimestampTicks,
+    idle_ticks: TimestampTicks,
+    nag_ticks: TimestampTicks,
+    idle_voltage: BatteryVoltage,
     fault_switch_ticks: TimestampTicks,
     fault_switch_half_ticks: TimestampTicks,
     reverse_ticks: TimestampTicks,
@@ -104,6 +108,10 @@ pub struct RefloatPackageState {
     duty_max_with_margin: DutyCycleLimit,
     motor_current_max: MotorCurrentLimit,
     motor_current_min: MotorCurrentLimit,
+    mosfet_temperature: MosfetTemperature,
+    motor_temperature: MotorTemperature,
+    mosfet_temperature_limit_start: TemperatureLimitStart,
+    motor_temperature_limit_start: TemperatureLimitStart,
     battery_cell_count: Option<BatteryCellCount>,
     #[cfg(any(test, target_arch = "arm"))]
     firmware_version: Option<FirmwareVersion>,
@@ -140,6 +148,9 @@ impl RefloatPackageState {
             charging_ticks: TimestampTicks::from_ticks(0),
             engage_ticks: TimestampTicks::from_ticks(0),
             disengage_ticks: TimestampTicks::from_ticks(0),
+            idle_ticks: TimestampTicks::from_ticks(0),
+            nag_ticks: TimestampTicks::from_ticks(0),
+            idle_voltage: BatteryVoltage::new(Voltage::ZERO),
             fault_switch_ticks: TimestampTicks::from_ticks(0),
             fault_switch_half_ticks: TimestampTicks::from_ticks(0),
             reverse_ticks: TimestampTicks::from_ticks(0),
@@ -151,6 +162,10 @@ impl RefloatPackageState {
             duty_max_with_margin: DutyCycleLimit::new(Ratio::from_ratio_const(0.0)),
             motor_current_max: MotorCurrentLimit::new(Current::ZERO),
             motor_current_min: MotorCurrentLimit::new(Current::ZERO),
+            mosfet_temperature: MosfetTemperature::new(Temperature::ZERO),
+            motor_temperature: MotorTemperature::new(Temperature::ZERO),
+            mosfet_temperature_limit_start: TemperatureLimitStart::new(Temperature::ZERO),
+            motor_temperature_limit_start: TemperatureLimitStart::new(Temperature::ZERO),
             battery_cell_count: None,
             #[cfg(any(test, target_arch = "arm"))]
             firmware_version: None,
