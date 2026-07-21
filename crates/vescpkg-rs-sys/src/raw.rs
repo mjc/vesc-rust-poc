@@ -146,13 +146,15 @@ pub struct AttitudeInfo {
 
 /// Raw remote-control state mirrored from the firmware ABI.
 #[repr(C)]
+#[derive(Debug, Clone, Copy)]
+#[allow(missing_docs)]
 pub struct RemoteState {
-    js_x: f32,
-    js_y: f32,
-    bt_c: bool,
-    bt_z: bool,
-    is_rev: bool,
-    age_s: f32,
+    pub js_x: f32,
+    pub js_y: f32,
+    pub bt_c: bool,
+    pub bt_z: bool,
+    pub is_rev: bool,
+    pub age_s: f32,
 }
 
 type CanRxCallback = unsafe extern "C" fn(u32, *mut u8, u8) -> bool;
@@ -611,8 +613,8 @@ mod slots {
     use super::{
         AppDataHandler, CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5,
         CanStatusMsg6, CustomConfigGet, CustomConfigSet, CustomConfigXml, EepromVar,
-        ExtensionHandler, ImuReadCallback, LibMutex, LibThread, VescIfAbi, c_char, c_int, c_uchar,
-        c_void,
+        ExtensionHandler, GnssData, ImuReadCallback, LibMutex, LibThread, RemoteState, VescIfAbi,
+        c_char, c_int, c_uchar, c_void,
     };
     #[cfg(not(all(target_arch = "arm", not(test))))]
     use super::{VescIf, vesc_if};
@@ -765,6 +767,8 @@ mod slots {
         can_get_status_msg_6_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg6
     );
     optional_fn_slot!(can_get_status_msg_6_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg6);
+    optional_fn_slot!(mc_gnss as unsafe extern "C" fn() -> *mut GnssData);
+    fn_slot!(get_remote_state as unsafe extern "C" fn() -> RemoteState);
     fn_slot!(mc_get_fault as unsafe extern "C" fn() -> c_int);
     fn_slot!(mc_get_rpm as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_speed as unsafe extern "C" fn() -> f32);
@@ -1227,6 +1231,18 @@ copy_optional_status!(
     CanStatusMsg6
 );
 copy_optional_status!(can_status_msg_6_id, can_get_status_msg_6_id, CanStatusMsg6);
+
+/// Copy the firmware-owned GNSS record, returning `None` when the slot or
+/// current GNSS record is unavailable.
+pub unsafe fn gnss_snapshot() -> Option<GnssData> {
+    let loader = unsafe { slots::mc_gnss()? };
+    unsafe { loader().as_ref().copied() }
+}
+
+/// Copy the current remote-control state returned by firmware.
+pub unsafe fn remote_state() -> RemoteState {
+    unsafe { slots::get_remote_state()() }
+}
 
 /// Return the active motor fault code, or zero for no fault.
 ///
