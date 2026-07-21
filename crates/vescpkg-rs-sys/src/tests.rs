@@ -231,11 +231,20 @@ fn transparent_wrappers_expose_raw_tuple_fields() {
 #[test]
 fn vesc_if_used_slots_match_generated_header_descriptors() {
     assert_eq!(crate::c_vesc_if::FIELD_COUNT, VescIfAbi::FIELD_COUNT);
+    assert_eq!(VescIfAbi::ALL_SLOTS.len(), VescIfAbi::FIELD_COUNT);
     assert_eq!(crate::c_vesc_if::SLOTS[0].name, "lbm_add_extension");
     assert_eq!(
         crate::c_vesc_if::SLOTS[crate::c_vesc_if::FIELD_COUNT - 1].name,
         "shutdown_disable"
     );
+    for (index, slot) in VescIfAbi::ALL_SLOTS.iter().enumerate() {
+        assert_eq!(slot.slot_index(), index);
+        assert_eq!(slot.name(), crate::c_vesc_if::SLOTS[index].name);
+        assert_eq!(
+            slot.vesc32_byte_offset(),
+            crate::c_vesc_if::SLOTS[index].vesc32_byte_offset
+        );
+    }
 
     for slot in VescIfAbi::USED_SLOTS {
         let generated = crate::c_vesc_if::SLOTS

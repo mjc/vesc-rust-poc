@@ -46,6 +46,18 @@ macro_rules! define_vesc_if_abi {
             pub const BASE_ADDR: NativeAddress = NativeAddress(0x1000_f800);
             /// Number of entries in the pinned upstream `vesc_c_if` table.
             pub const FIELD_COUNT: usize = c_vesc_if::FIELD_COUNT;
+            /// Complete ordered manifest of every entry in the pinned `VESC_IF` table.
+            ///
+            /// The smaller `USED_SLOTS` list below remains the compatibility surface for
+            /// wrappers that this crate has typed so far. `ALL_SLOTS` is the authoritative
+            /// layout inventory and is generated directly from the pinned header.
+            pub const ALL_SLOTS: [VescIfSlot; Self::FIELD_COUNT] = c_vesc_if::ALL_SLOTS;
+            /// Repository containing the pinned ABI header.
+            pub const SOURCE_REPOSITORY: &str = c_vesc_if::HEADER_REPO;
+            /// Commit containing the pinned ABI header.
+            pub const SOURCE_COMMIT: &str = c_vesc_if::HEADER_COMMIT;
+            /// Workspace-relative path to the pinned ABI header.
+            pub const SOURCE_HEADER: &str = c_vesc_if::HEADER_PATH;
             /// Number of `VESC_IF` slots that this crate currently relies on.
             pub const USED_SLOT_COUNT: usize = count_idents!($($slot_name),+);
 

@@ -2,7 +2,7 @@ use std::{path::PathBuf, vec::Vec};
 
 use clang::{Clang, EntityKind, Index, Type, TypeKind};
 
-use super::VescIf;
+use super::{VescIf, VescIfAbi};
 
 const SCALAR_FIELDS: [&str; 5] = [
     "lbm_enc_sym_nil",
@@ -15,7 +15,8 @@ const SCALAR_FIELDS: [&str; 5] = [
 #[test]
 fn libclang_agrees_with_generated_vesc_if_inventory() {
     let header = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../third_party/vesc_pkg_lib/vesc_c_if.h");
+        .join("../..")
+        .join(VescIfAbi::SOURCE_HEADER);
     let clang = Clang::new().expect("load libclang; enter the Nix dev shell");
     let index = Index::new(&clang, false, false);
     let translation_unit = index
@@ -48,7 +49,7 @@ fn libclang_agrees_with_generated_vesc_if_inventory() {
         .collect();
     let rust_offsets = crate::c_vesc_if::rust_field_offsets!(VescIf);
 
-    assert_eq!(fields.len(), crate::c_vesc_if::SLOTS.len());
+    assert_eq!(fields.len(), VescIfAbi::ALL_SLOTS.len());
     assert_eq!(rust_offsets.len(), fields.len());
     assert_eq!(
         core::mem::size_of::<VescIf>() / core::mem::size_of::<usize>(),
@@ -56,7 +57,7 @@ fn libclang_agrees_with_generated_vesc_if_inventory() {
         "Rust VescIf must contain one pointer-sized word per C field"
     );
 
-    for (field, slot) in fields.iter().zip(crate::c_vesc_if::SLOTS) {
+    for (index, (field, slot)) in fields.iter().zip(VescIfAbi::ALL_SLOTS).enumerate() {
         let name = field.get_name().expect("named vesc_c_if field");
         let ty = field.get_type().expect("typed vesc_c_if field");
         let byte_offset = field
@@ -64,13 +65,14 @@ fn libclang_agrees_with_generated_vesc_if_inventory() {
             .expect("laid-out vesc_c_if field")
             / 8;
 
-        assert_eq!(name, slot.name, "slot {} name drifted", slot.index);
+        assert_eq!(name, slot.name(), "slot {index} name drifted");
         assert_eq!(
-            byte_offset, slot.vesc32_byte_offset,
+            byte_offset,
+            slot.vesc32_byte_offset(),
             "VESC32 offset drifted for {name}"
         );
         assert_eq!(
-            (rust_offsets[slot.index] / core::mem::size_of::<usize>()) * 4,
+            (rust_offsets[index] / core::mem::size_of::<usize>()) * 4,
             byte_offset,
             "Rust VescIf offset drifted for {name}"
         );

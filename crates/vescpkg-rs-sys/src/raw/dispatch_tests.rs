@@ -790,8 +790,16 @@ fn motor_data_helpers_forward_through_mock_table() {
 #[test]
 fn generated_vesc_if_inventory_matches_pinned_upstream_header() {
     assert_eq!(
-        c_vesc_if::HEADER_REPO,
+        VescIfAbi::SOURCE_REPOSITORY,
         "https://github.com/lukash/vesc_pkg_lib"
+    );
+    assert_eq!(
+        VescIfAbi::SOURCE_COMMIT,
+        "e8bdc8296b90a266713da3762868f0d18ec027fe"
+    );
+    assert_eq!(
+        VescIfAbi::SOURCE_HEADER,
+        "third_party/vesc_pkg_lib/vesc_c_if.h"
     );
     assert_eq!(c_vesc_if::FIELD_COUNT, 253);
     assert_eq!(VescIfAbi::FIELD_COUNT, c_vesc_if::FIELD_COUNT);
