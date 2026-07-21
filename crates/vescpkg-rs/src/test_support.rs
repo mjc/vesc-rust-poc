@@ -86,6 +86,24 @@ impl FirmwareTest {
         crate::test_ffi::fail_nvm_operations(true);
     }
 
+    /// Return the number of fake firmware mutex locks.
+    #[must_use]
+    pub fn mutex_lock_count(&self) -> usize {
+        crate::test_ffi::mutex_lock_count()
+    }
+
+    /// Return the number of fake firmware mutex unlocks.
+    #[must_use]
+    pub fn mutex_unlock_count(&self) -> usize {
+        crate::test_ffi::mutex_unlock_count()
+    }
+
+    /// Return the number of fake firmware frees for mutex ownership.
+    #[must_use]
+    pub fn mutex_free_count(&self) -> usize {
+        crate::test_ffi::mutex_free_count()
+    }
+
     /// Make writes to one custom-EEPROM address fail.
     pub fn fail_eeprom_write(&self, address: crate::CustomEepromAddress) {
         crate::test_ffi::fail_eeprom_write(address);

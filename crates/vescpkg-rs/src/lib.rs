@@ -40,6 +40,7 @@ mod nvm;
 #[cfg(feature = "math")]
 pub use math::{asin, cos, sin, sqrt, tan};
 mod runtime;
+mod sync;
 #[cfg(all(feature = "test-support", not(test)))]
 mod test_ffi;
 
@@ -56,9 +57,8 @@ pub(crate) mod ffi {
         conf_custom_add_config, conf_custom_clear_configs, io_read, io_read_analog, io_set_mode,
         io_write, lbm_add_extension, lbm_dec_as_float, lbm_dec_as_i32, lbm_enc_i,
         lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number,
-        vesc_clear_app_data_handler, vesc_clear_imu_read_callback, vesc_free, vesc_get_arg,
-        vesc_malloc, vesc_mutex_create, vesc_mutex_lock, vesc_mutex_unlock, vesc_send_app_data,
-        vesc_set_app_data_handler, vesc_set_imu_read_callback,
+        vesc_clear_app_data_handler, vesc_clear_imu_read_callback, vesc_get_arg, vesc_malloc,
+        vesc_send_app_data, vesc_set_app_data_handler, vesc_set_imu_read_callback,
     };
     pub use vescpkg_rs_sys::{AppDataHandler, LibInfo, NativeImage};
 
@@ -74,10 +74,11 @@ pub(crate) mod ffi {
         mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
         mc_set_brake_current, mc_set_current, mc_set_current_off_delay, mc_set_duty,
         mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm,
-        store_eeprom_word, timeout_reset, vesc_imu_get_quaternions, vesc_request_terminate,
-        vesc_should_terminate, vesc_sleep_us, vesc_spawn, vesc_system_time_seconds,
-        vesc_system_time_ticks, vesc_thread_set_priority, vesc_timer_seconds_elapsed_since,
-        vesc_timer_time_now, vesc_timestamp_age_seconds, wipe_nvm, write_nvm,
+        store_eeprom_word, timeout_reset, vesc_free, vesc_imu_get_quaternions, vesc_mutex_create,
+        vesc_mutex_lock, vesc_mutex_unlock, vesc_request_terminate, vesc_should_terminate,
+        vesc_sleep_us, vesc_spawn, vesc_system_time_seconds, vesc_system_time_ticks,
+        vesc_thread_set_priority, vesc_timer_seconds_elapsed_since, vesc_timer_time_now,
+        vesc_timestamp_age_seconds, wipe_nvm, write_nvm,
     };
     #[cfg(any(test, not(feature = "test-support")))]
     use vescpkg_rs_sys::raw as selected_ffi;
@@ -116,6 +117,7 @@ pub use lifecycle_core::AppDataSendError;
 pub use motor::{MotorOutput, MotorTelemetry};
 pub use nvm::{Nvm, NvmError, NvmOffset};
 pub use runtime::{PackageRuntimeState, PackageStateAccess, PackageStateStore};
+pub use sync::{FirmwareMutex, FirmwareMutexGuard};
 pub use thread::{
     Firmware, FirmwareAppData, FirmwareClock, FirmwareThread, FirmwareThreads,
     StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadName,
@@ -150,12 +152,12 @@ pub mod prelude {
     pub use crate::{
         AnalogPin, AppDataHandler, AppDataSendError, ConfigBytes, ConfigXml, DigitalOutputLevel,
         DigitalPin, ExtensionDescriptor, ExtensionName, ExtensionRegistration, Firmware,
-        FirmwareAppData, FirmwareClock, FirmwareThread, FirmwareThreads, Gpio, Imu, ImuReadHandler,
-        LbmExtension, LispArgs, LispIntegerError, LispValue, MotorOutput, MotorTelemetry, Nvm,
-        NvmError, NvmOffset, PackageRuntimeState, PackageStart, PackageStartError,
-        StatefulCustomConfigCallback, StatefulLbmExtension, StatelessFirmwareThread,
-        StatelessThreadContext, ThreadContext, ThreadError, ThreadName, ThreadSpec,
-        ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant,
+        FirmwareAppData, FirmwareClock, FirmwareMutex, FirmwareMutexGuard, FirmwareThread,
+        FirmwareThreads, Gpio, Imu, ImuReadHandler, LbmExtension, LispArgs, LispIntegerError,
+        LispValue, MotorOutput, MotorTelemetry, Nvm, NvmError, NvmOffset, PackageRuntimeState,
+        PackageStart, PackageStartError, StatefulCustomConfigCallback, StatefulLbmExtension,
+        StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadName,
+        ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant,
     };
 }
 

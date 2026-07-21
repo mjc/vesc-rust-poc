@@ -83,6 +83,10 @@ static NVM: [AtomicU8; NVM_BYTES] = [const { AtomicU8::new(0) }; NVM_BYTES];
 static NVM_FAILURE: AtomicBool = AtomicBool::new(false);
 static CLOCK_TICKS: AtomicU32 = AtomicU32::new(0);
 static TIMER_TICKS: AtomicU32 = AtomicU32::new(0);
+static MUTEX_TOKEN: u8 = 0;
+static MUTEX_LOCK_COUNT: AtomicUsize = AtomicUsize::new(0);
+static MUTEX_UNLOCK_COUNT: AtomicUsize = AtomicUsize::new(0);
+static MUTEX_FREE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 pub(crate) struct MotorOutputState {
     pub keep_alive_count: usize,
@@ -184,6 +188,9 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     NVM_FAILURE.store(false, Ordering::Relaxed);
     CLOCK_TICKS.store(0, Ordering::Relaxed);
     TIMER_TICKS.store(0, Ordering::Relaxed);
+    MUTEX_LOCK_COUNT.store(0, Ordering::Relaxed);
+    MUTEX_UNLOCK_COUNT.store(0, Ordering::Relaxed);
+    MUTEX_FREE_COUNT.store(0, Ordering::Relaxed);
     FirmwareLockGuard
 }
 
@@ -311,6 +318,34 @@ pub(crate) fn set_clock_ticks(ticks: u32) {
 
 pub(crate) fn set_timer_ticks(ticks: u32) {
     TIMER_TICKS.store(ticks, Ordering::Relaxed);
+}
+
+pub unsafe fn vesc_mutex_create() -> *mut c_void {
+    core::ptr::addr_of!(MUTEX_TOKEN).cast::<c_void>().cast_mut()
+}
+
+pub unsafe fn vesc_mutex_lock(_mutex: *mut c_void) {
+    MUTEX_LOCK_COUNT.fetch_add(1, Ordering::Relaxed);
+}
+
+pub unsafe fn vesc_mutex_unlock(_mutex: *mut c_void) {
+    MUTEX_UNLOCK_COUNT.fetch_add(1, Ordering::Relaxed);
+}
+
+pub unsafe fn vesc_free(_pointer: *mut c_void) {
+    MUTEX_FREE_COUNT.fetch_add(1, Ordering::Relaxed);
+}
+
+pub(crate) fn mutex_lock_count() -> usize {
+    MUTEX_LOCK_COUNT.load(Ordering::Relaxed)
+}
+
+pub(crate) fn mutex_unlock_count() -> usize {
+    MUTEX_UNLOCK_COUNT.load(Ordering::Relaxed)
+}
+
+pub(crate) fn mutex_free_count() -> usize {
+    MUTEX_FREE_COUNT.load(Ordering::Relaxed)
 }
 
 fn load(value: &AtomicU32) -> f32 {

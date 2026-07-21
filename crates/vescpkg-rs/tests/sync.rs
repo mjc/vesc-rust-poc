@@ -2,8 +2,8 @@
 
 //! Integration tests for RAII firmware synchronization.
 
-use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::FirmwareMutex;
+use vescpkg_rs::test_support::FirmwareTest;
 
 #[test]
 fn mutex_guard_unlocks_before_owned_mutex_is_released() {
