@@ -15,8 +15,8 @@ use super::{
     mc_get_fault, mc_get_input_voltage_filtered, mc_get_odometer, mc_get_rpm, mc_get_speed,
     mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
     mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
-    mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, remote_state,
-    read_nvm, store_eeprom_word, vesc_clear_app_data_handler, vesc_mutex_create, vesc_mutex_lock,
+    mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm, remote_state,
+    store_eeprom_word, vesc_clear_app_data_handler, vesc_mutex_create, vesc_mutex_lock,
     vesc_mutex_unlock, vesc_send_app_data, vesc_set_app_data_handler, vesc_sleep_us,
     vesc_system_time_ticks, vesc_thread_set_priority, wipe_nvm, write_nvm,
 };
@@ -611,9 +611,15 @@ fn nvm_dispatch_reports_firmware_results_and_absence() {
 
     with_table(&table, || unsafe {
         let mut bytes = [0; 4];
-        assert_eq!(read_nvm(bytes.as_mut_ptr(), 7, bytes.len() as c_uint), Some(true));
+        assert_eq!(
+            read_nvm(bytes.as_mut_ptr(), 7, bytes.len() as c_uint),
+            Some(true)
+        );
         assert_eq!(bytes, [7, 8, 9, 10]);
-        assert_eq!(write_nvm(bytes.as_mut_ptr(), 7, bytes.len() as c_uint), Some(true));
+        assert_eq!(
+            write_nvm(bytes.as_mut_ptr(), 7, bytes.len() as c_uint),
+            Some(true)
+        );
         assert_eq!(wipe_nvm(), Some(true));
     });
 
@@ -621,7 +627,10 @@ fn nvm_dispatch_reports_firmware_results_and_absence() {
     with_table(&table, || unsafe {
         let mut bytes = [0; 4];
         assert_eq!(read_nvm(bytes.as_mut_ptr(), 0, bytes.len() as c_uint), None);
-        assert_eq!(write_nvm(bytes.as_mut_ptr(), 0, bytes.len() as c_uint), None);
+        assert_eq!(
+            write_nvm(bytes.as_mut_ptr(), 0, bytes.len() as c_uint),
+            None
+        );
         assert_eq!(wipe_nvm(), None);
     });
 }

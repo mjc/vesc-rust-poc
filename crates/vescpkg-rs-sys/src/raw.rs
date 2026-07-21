@@ -657,7 +657,7 @@ mod slots {
         AppDataHandler, CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5,
         CanStatusMsg6, CustomConfigGet, CustomConfigSet, CustomConfigXml, EepromVar,
         ExtensionHandler, GnssData, ImuReadCallback, LibMutex, LibThread, RemoteState, VescIfAbi,
-        c_char, c_int, c_uchar, c_void,
+        c_char, c_int, c_uchar, c_uint, c_void,
     };
     #[cfg(not(all(target_arch = "arm", not(test))))]
     use super::{VescIf, vesc_if};
@@ -811,6 +811,9 @@ mod slots {
     );
     optional_fn_slot!(can_get_status_msg_6_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg6);
     optional_fn_slot!(mc_gnss as unsafe extern "C" fn() -> *mut GnssData);
+    optional_fn_slot!(read_nvm as unsafe extern "C" fn(*mut u8, c_uint, c_uint) -> bool);
+    optional_fn_slot!(write_nvm as unsafe extern "C" fn(*mut u8, c_uint, c_uint) -> bool);
+    optional_fn_slot!(wipe_nvm as unsafe extern "C" fn() -> bool);
     fn_slot!(get_remote_state as unsafe extern "C" fn() -> RemoteState);
     fn_slot!(mc_get_fault as unsafe extern "C" fn() -> c_int);
     fn_slot!(mc_get_rpm as unsafe extern "C" fn() -> f32);
@@ -987,6 +990,44 @@ pub unsafe fn read_eeprom_word(word: *mut u32, address: c_int) -> bool {
 /// must remain valid for the duration of the call.
 pub unsafe fn store_eeprom_word(word: *mut u32, address: c_int) -> bool {
     unsafe { slots::store_eeprom_var()(word.cast(), address) }
+}
+
+/// Read a byte range from firmware NVM when the optional slot is present.
+///
+/// The outer `Option` reports whether the firmware exposes NVM; the inner
+/// `bool` is the firmware's read result.
+///
+/// # Safety
+///
+/// `buffer` must be valid for `len` writable bytes, and the firmware function
+/// table must remain valid for the duration of the call.
+pub unsafe fn read_nvm(buffer: *mut u8, offset: c_uint, len: c_uint) -> Option<bool> {
+    unsafe { slots::read_nvm() }.map(|read| unsafe { read(buffer, offset, len) })
+}
+
+/// Write a byte range to firmware NVM when the optional slot is present.
+///
+/// The outer `Option` reports whether the firmware exposes NVM; the inner
+/// `bool` is the firmware's write result.
+///
+/// # Safety
+///
+/// `buffer` must be valid for `len` readable bytes, and the firmware function
+/// table must remain valid for the duration of the call.
+pub unsafe fn write_nvm(buffer: *mut u8, offset: c_uint, len: c_uint) -> Option<bool> {
+    unsafe { slots::write_nvm() }.map(|write| unsafe { write(buffer, offset, len) })
+}
+
+/// Wipe firmware NVM when the optional slot is present.
+///
+/// The outer `Option` reports whether the firmware exposes NVM; the inner
+/// `bool` is the firmware's wipe result.
+///
+/// # Safety
+///
+/// The firmware function table must remain valid for the duration of the call.
+pub unsafe fn wipe_nvm() -> Option<bool> {
+    unsafe { slots::wipe_nvm() }.map(|wipe| unsafe { wipe() })
 }
 
 /// Register the firmware app-data callback using the refloat/C ABI.
