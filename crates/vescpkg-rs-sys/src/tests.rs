@@ -141,6 +141,18 @@ fn concrete_abi_types_match_the_pinned_stm32_word_layout() {
 }
 
 #[test]
+fn eeprom_values_round_trip_through_typed_union_helpers() {
+    let unsigned = crate::raw::EepromVar::from_u32(0xfeed_beef);
+    assert_eq!(unsigned.read_u32(), 0xfeed_beef);
+
+    let signed = crate::raw::EepromVar::from_i32(-42);
+    assert_eq!(signed.read_i32(), -42);
+
+    let floating = crate::raw::EepromVar::from_float(12.5);
+    assert_eq!(floating.read_float(), 12.5);
+}
+
+#[test]
 fn vesc_if_slot_constants_name_the_package_header_offsets() {
     assert_eq!(VescIfAbi::BASE_ADDR, NativeAddress(0x1000_f800));
     assert_eq!(VescIfAbi::USED_SLOT_COUNT, VescIfAbi::USED_SLOTS.len());
