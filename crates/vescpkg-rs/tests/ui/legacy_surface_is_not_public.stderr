@@ -19,10 +19,6 @@ error[E0432]: unresolved imports `vescpkg_rs::app_data_packet`, `vescpkg_rs::enc
   |     |            no `ThreadHandle` in the root
   |     no `ThreadGroup` in the root
   |
-  = help: consider importing this struct instead:
-          vescpkg_rs_sys::ThreadHandle
-  = help: consider importing this enum instead:
-          vesc_protocol::WireCommand
 help: a similar name exists in the module
   |
 2 -     app_data_packet, bindings, encode_integer, ffi, PackageProgramAddress, ProtocolFrame,
@@ -74,11 +70,7 @@ error[E0603]: struct `PackageProgramAddress` is private
   |                                                     ^^^^^^^^^^^^^^^^^^^^^ private struct
   |
 note: the struct `PackageProgramAddress` is defined here
- --> <BASE_DIR>/crates/vescpkg-rs/src/lib.rs:156:43
-help: import `PackageProgramAddress` directly
-  |
-2 |     app_data_packet, bindings, encode_integer, ffi, vescpkg_rs::types::loader::PackageProgramAddress, ProtocolFrame,
-  |                                                     +++++++++++++++++++++++++++
+ --> <BASE_DIR>/crates/vescpkg-rs/src/lib.rs:155:43
 
 error[E0603]: struct `LoaderInfo` is private
   --> tests/ui/legacy_surface_is_not_public.rs:12:25
@@ -87,7 +79,7 @@ error[E0603]: struct `LoaderInfo` is private
    |                         ^^^^^^^^^^ private struct
    |
 note: the struct `LoaderInfo` is defined here
-  --> <BASE_DIR>/crates/vescpkg-rs/src/lib.rs:156:31
+  --> <BASE_DIR>/crates/vescpkg-rs/src/lib.rs:155:31
 help: import `LoaderInfo` directly
    |
 12 -     let _ = vescpkg_rs::LoaderInfo::as_mut_ptr;
@@ -101,17 +93,17 @@ error[E0603]: struct `LoaderInfo` is private
    |                                                       ^^^^^^^^^^ private struct
    |
 note: the struct `LoaderInfo` is defined here
-  --> <BASE_DIR>/crates/vescpkg-rs/src/lib.rs:156:31
+  --> <BASE_DIR>/crates/vescpkg-rs/src/lib.rs:155:31
 help: import `LoaderInfo` directly
    |
 13 |     let _ = PackageStart::from_raw::<&mut vescpkg_rs::types::loader::LoaderInfo>;
    |                                                       +++++++++++++++
 
-error[E0599]: no function or associated item named `as_mut_ptr` found for struct `vescpkg_rs::__macro_support::LoaderInfo` in the current scope
+error[E0599]: no associated function or constant named `as_mut_ptr` found for struct `LoaderInfo` in the current scope
   --> tests/ui/legacy_surface_is_not_public.rs:12:37
    |
 12 |     let _ = vescpkg_rs::LoaderInfo::as_mut_ptr;
-   |                                     ^^^^^^^^^^ function or associated item not found in `vescpkg_rs::__macro_support::LoaderInfo`
+   |                                     ^^^^^^^^^^ associated function or constant not found in `LoaderInfo`
 
 error[E0624]: associated function `from_raw` is private
   --> tests/ui/legacy_surface_is_not_public.rs:13:27

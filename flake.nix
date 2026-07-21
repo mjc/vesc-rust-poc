@@ -23,7 +23,7 @@
     {
       devShells = forSystems (pkgs:
         let
-          rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+          rustToolchain = pkgs.rust-bin.stable."1.97.1".default.override {
             targets = [ "thumbv7em-none-eabihf" ];
             extensions = [ "llvm-tools-preview" "rust-src" ];
           };
@@ -92,7 +92,7 @@
 
       checks = forSystems (pkgs:
         let
-          rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+          rustToolchain = pkgs.rust-bin.stable."1.97.1".default.override {
             targets = [ "thumbv7em-none-eabihf" ];
             extensions = [ "llvm-tools-preview" "rust-src" ];
           };
