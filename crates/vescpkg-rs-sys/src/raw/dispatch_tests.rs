@@ -10,7 +10,8 @@ use super::{
     can_status_msg_index, conf_custom_add_config, conf_custom_clear_configs, foc_get_id,
     gnss_snapshot, io_read, io_read_analog, io_set_mode, io_write, lbm_add_extension,
     lbm_add_extension_with_table_base, lbm_dec_as_float, lbm_dec_as_i32, lbm_dec_char,
-    lbm_enc_char, lbm_enc_i, lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number,
+    lbm_car, lbm_cdr, lbm_cons, lbm_enc_char, lbm_enc_i, lbm_enc_sym_eerror, lbm_enc_sym_nil,
+    lbm_enc_sym_true, lbm_is_number,
     mc_get_amp_hours, mc_get_amp_hours_charged, mc_get_battery_level, mc_get_distance_abs,
     mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered, mc_get_odometer,
     mc_get_rpm, mc_get_speed, mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
@@ -695,6 +696,16 @@ fn lbm_character_helpers_forward_through_mock_table() {
         let value = lbm_enc_char(b'V');
         assert_eq!(value, LbmValue(0x56));
         assert_eq!(lbm_dec_char(value), b'V');
+    });
+}
+
+#[test]
+fn lbm_cons_helpers_forward_through_mock_table() {
+    with_populated_table(|| unsafe {
+        let pair = lbm_cons(LbmValue(1), LbmValue(2));
+        assert_eq!(pair, LbmValue(0x20));
+        assert_eq!(lbm_car(pair), LbmValue(0x11));
+        assert_eq!(lbm_cdr(pair), LbmValue(0x22));
     });
 }
 
