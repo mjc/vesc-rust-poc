@@ -17,6 +17,17 @@ impl WireByte {
     pub fn scaled<T>(self, scale: f32, offset: f32, constructor: fn(f32) -> T) -> T {
         constructor(f32::from(self.0) * scale + offset)
     }
+
+    /// Apply a rational wire scale in protocol operation order.
+    pub fn scaled_ratio<T>(
+        self,
+        numerator: f32,
+        denominator: f32,
+        offset: f32,
+        constructor: fn(f32) -> T,
+    ) -> T {
+        constructor((f32::from(self.0) * numerator) / denominator + offset)
+    }
 }
 
 pub use crate::units::{BatteryCellCount, BatteryCellCountError};
