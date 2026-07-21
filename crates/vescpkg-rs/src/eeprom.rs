@@ -28,6 +28,42 @@ impl CustomEepromAddress {
 pub struct EepromWord([u8; 4]);
 
 impl EepromWord {
+    /// Construct one word from a native-endian unsigned integer.
+    #[must_use]
+    pub const fn from_u32(value: u32) -> Self {
+        Self::from_ne_bytes(value.to_ne_bytes())
+    }
+
+    /// Recover the native-endian unsigned integer represented by this word.
+    #[must_use]
+    pub const fn to_u32(self) -> u32 {
+        u32::from_ne_bytes(self.0)
+    }
+
+    /// Construct one word from a native-endian signed integer.
+    #[must_use]
+    pub const fn from_i32(value: i32) -> Self {
+        Self::from_ne_bytes(value.to_ne_bytes())
+    }
+
+    /// Recover the native-endian signed integer represented by this word.
+    #[must_use]
+    pub const fn to_i32(self) -> i32 {
+        i32::from_ne_bytes(self.0)
+    }
+
+    /// Construct one word from a native-endian `f32` bit pattern.
+    #[must_use]
+    pub const fn from_f32(value: f32) -> Self {
+        Self::from_ne_bytes(value.to_ne_bytes())
+    }
+
+    /// Recover the native-endian `f32` bit pattern represented by this word.
+    #[must_use]
+    pub const fn to_f32(self) -> f32 {
+        f32::from_ne_bytes(self.0)
+    }
+
     /// Construct one word from four serialized bytes.
     #[must_use]
     pub const fn from_ne_bytes(bytes: [u8; 4]) -> Self {
