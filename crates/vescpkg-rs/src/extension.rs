@@ -41,6 +41,13 @@ impl LispValue {
         is_integer(self.raw().0).then(|| decode_integer(self.raw().0))
     }
 
+    /// Convert a firmware-classified numeric value to an unsigned integer.
+    #[cfg(not(test))]
+    pub fn decode_number_as_u32(self) -> Option<u32> {
+        self.is_number()
+            .then(|| unsafe { crate::ffi::lbm_dec_as_u32(self.raw()) })
+    }
+
     /// Return whether this value is an immediate LispBM integer.
     #[must_use]
     pub const fn is_integer(self) -> bool {
