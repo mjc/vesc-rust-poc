@@ -28,4 +28,8 @@ fn lisp_values_expose_explicit_kind_predicates() {
     let character = LispValue::from_char(b'V');
     assert!(character.is_char());
     assert_eq!(character.decode_char(), Some(b'V'));
+
+    let floating = LispValue::from_f32(3.5);
+    assert!(floating.is_number());
+    assert_eq!(floating.decode_number_as_f32(), Some(3.5));
 }
