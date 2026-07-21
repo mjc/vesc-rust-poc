@@ -99,3 +99,31 @@ pub(super) fn handle_booster_packet(state: &mut RefloatPackageState, bytes: &[u8
     state.alert_beeper(RefloatBeeperAlert::Short(RefloatBeeperCount::ONE));
     true
 }
+
+#[cfg(test)]
+mod tests {
+    use super::RefloatTuneNibble;
+    use vescpkg_rs::prelude::{AngleDegrees, Current, MotorCurrent};
+
+    #[test]
+    fn tune_nibble_keeps_exact_endpoints_without_primitive_conversions() {
+        assert_eq!(RefloatTuneNibble::low(0xF0), RefloatTuneNibble(0));
+        assert_eq!(RefloatTuneNibble::high(0xF0), RefloatTuneNibble(15));
+        assert_eq!(
+            RefloatTuneNibble(0).angle_from(AngleDegrees::from_degrees(5.0)),
+            AngleDegrees::from_degrees(5.0),
+        );
+        assert_eq!(
+            RefloatTuneNibble(15).angle_from(AngleDegrees::from_degrees(5.0)),
+            AngleDegrees::from_degrees(20.0),
+        );
+        assert_eq!(
+            RefloatTuneNibble(0).booster_current(),
+            MotorCurrent::new(Current::ZERO),
+        );
+        assert_eq!(
+            RefloatTuneNibble(15).booster_current(),
+            MotorCurrent::new(Current::from_amps(38.0)),
+        );
+    }
+}
