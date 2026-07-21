@@ -232,6 +232,7 @@ fn transparent_wrappers_expose_raw_tuple_fields() {
 fn vesc_if_used_slots_match_generated_header_descriptors() {
     assert_eq!(crate::c_vesc_if::FIELD_COUNT, VescIfAbi::FIELD_COUNT);
     assert_eq!(VescIfAbi::ALL_SLOTS.len(), VescIfAbi::FIELD_COUNT);
+    assert_eq!(VescIfAbi::ALL_ENTRIES.len(), VescIfAbi::FIELD_COUNT);
     assert_eq!(crate::c_vesc_if::SLOTS[0].name, "lbm_add_extension");
     assert_eq!(
         crate::c_vesc_if::SLOTS[crate::c_vesc_if::FIELD_COUNT - 1].name,
@@ -244,7 +245,13 @@ fn vesc_if_used_slots_match_generated_header_descriptors() {
             slot.vesc32_byte_offset(),
             crate::c_vesc_if::SLOTS[index].vesc32_byte_offset
         );
+        assert_eq!(VescIfAbi::ALL_ENTRIES[index].slot(), *slot);
     }
+    assert_eq!(VescIfAbi::ALL_ENTRIES[0].header_line(), 325);
+    assert_eq!(
+        VescIfAbi::ALL_ENTRIES[0].declaration(),
+        "load_extension_fptr lbm_add_extension;"
+    );
 
     for slot in VescIfAbi::USED_SLOTS {
         let generated = crate::c_vesc_if::SLOTS

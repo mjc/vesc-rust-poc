@@ -4,6 +4,7 @@
 pub(crate) struct SlotDeclaration {
     pub(crate) c_name: String,
     pub(crate) rust_name: String,
+    pub(crate) declaration: String,
     pub(crate) index: usize,
     pub(crate) line: usize,
 }
@@ -52,6 +53,7 @@ pub(crate) fn parse(source: &str) -> Result<Vec<SlotDeclaration>, String> {
                     } else {
                         format!("{name}_{element}")
                     },
+                    declaration: pending.trim().to_owned(),
                     index: slots.len(),
                     line,
                 });
@@ -136,7 +138,15 @@ typedef struct {
 
         assert_eq!(slots.len(), 2);
         assert_eq!(slots[0].c_name, "lbm_add_extension");
+        assert_eq!(
+            slots[0].declaration,
+            "load_extension_fptr lbm_add_extension;"
+        );
         assert_eq!(slots[1].c_name, "send_packet");
+        assert_eq!(
+            slots[1].declaration,
+            "void (*send_packet)( unsigned char *data, unsigned int len );"
+        );
         assert_eq!(slots[1].index, 1);
     }
 

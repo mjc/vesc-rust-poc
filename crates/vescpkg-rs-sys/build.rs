@@ -44,6 +44,7 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
     rust.push_str("    pub(crate) index: usize,\n");
     rust.push_str("    pub(crate) vesc32_byte_offset: usize,\n");
     rust.push_str("    pub(crate) header_line: usize,\n");
+    rust.push_str("    pub(crate) declaration: &'static str,\n");
     rust.push_str("}\n\n");
     writeln!(
         rust,
@@ -71,11 +72,26 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
     for slot in slots {
         writeln!(
             rust,
-            "    Slot {{ name: \"{}\", index: {}, vesc32_byte_offset: {}, header_line: {} }},",
+            "    Slot {{ name: \"{}\", index: {}, vesc32_byte_offset: {}, header_line: {}, declaration: {:?} }},",
             slot.c_name,
             slot.index,
             slot.index * 4,
-            slot.line
+            slot.line,
+            slot.declaration
+        )
+        .expect("write generated Rust");
+    }
+    rust.push_str("];\n\n");
+
+    rust.push_str("pub(crate) const ALL_ENTRIES: [crate::VescIfManifestEntry; FIELD_COUNT] = [\n");
+    for slot in slots {
+        writeln!(
+            rust,
+            "    crate::VescIfManifestEntry {{ slot: crate::VescIfSlot::new(\"{}\", {}), header_line: {}, declaration: {:?} }},",
+            slot.c_name,
+            slot.index * 4,
+            slot.line,
+            slot.declaration
         )
         .expect("write generated Rust");
     }

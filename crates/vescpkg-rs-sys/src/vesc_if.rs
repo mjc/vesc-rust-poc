@@ -9,6 +9,31 @@ pub struct VescIfSlot {
     offset: usize,
 }
 
+/// Complete metadata for one entry in the pinned VESC firmware table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VescIfManifestEntry {
+    pub(crate) slot: VescIfSlot,
+    pub(crate) header_line: usize,
+    pub(crate) declaration: &'static str,
+}
+
+impl VescIfManifestEntry {
+    /// Return the slot identity and 32-bit offset.
+    pub const fn slot(self) -> VescIfSlot {
+        self.slot
+    }
+
+    /// Return the source header line for this declaration.
+    pub const fn header_line(self) -> usize {
+        self.header_line
+    }
+
+    /// Return the normalized C declaration captured from the pinned header.
+    pub const fn declaration(self) -> &'static str {
+        self.declaration
+    }
+}
+
 impl VescIfSlot {
     /// Create a named slot at the given 32-bit byte offset.
     pub const fn new(name: &'static str, offset: usize) -> Self {
@@ -52,6 +77,9 @@ macro_rules! define_vesc_if_abi {
             /// wrappers that this crate has typed so far. `ALL_SLOTS` is the authoritative
             /// layout inventory and is generated directly from the pinned header.
             pub const ALL_SLOTS: [VescIfSlot; Self::FIELD_COUNT] = c_vesc_if::ALL_SLOTS;
+            /// Complete declaration, source-line, and offset metadata for every ABI slot.
+            pub const ALL_ENTRIES: [VescIfManifestEntry; Self::FIELD_COUNT] =
+                c_vesc_if::ALL_ENTRIES;
             /// Repository containing the pinned ABI header.
             pub const SOURCE_REPOSITORY: &str = c_vesc_if::HEADER_REPO;
             /// Commit containing the pinned ABI header.
