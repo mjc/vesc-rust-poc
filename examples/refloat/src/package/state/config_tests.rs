@@ -1,10 +1,12 @@
 use super::RefloatPackageState;
+use crate::beeper::RefloatBeeperLevel;
 use crate::config::RefloatConfigImage;
 use crate::domain::{RefloatAllDataPayloads, RefloatMode, RefloatRunState};
 use crate::package::test_support::{
     RefloatConfigTestBytes, default_refloat_config_bytes, editable_config_from_bytes,
     editable_config_from_state, sample_all_data_payloads_with_ride_state,
 };
+use std::vec::Vec;
 use vescpkg_rs::{MahonyPitchGain, MahonyRollGain};
 
 #[test]
@@ -271,4 +273,49 @@ fn store_serialized_config_clears_default_and_keeps_enabled_while_running_like_r
     let current = editable_config_from_state(&state);
     assert!(!current.metadata().disabled());
     assert!(!current.metadata().is_default());
+}
+
+#[test]
+fn successful_config_write_reconfigures_and_acknowledges_like_refloat() {
+    for (disabled, expected_run_state, expected_changes, expected_last) in [
+        (
+            false,
+            RefloatRunState::Ready,
+            3,
+            (240, RefloatBeeperLevel::Low),
+        ),
+        (
+            true,
+            RefloatRunState::Disabled,
+            7,
+            (560, RefloatBeeperLevel::Low),
+        ),
+    ] {
+        let mut state = RefloatPackageState::new(sample_all_data_payloads_with_ride_state(
+            RefloatRunState::Ready,
+            RefloatMode::Normal,
+        ));
+        let mut bytes = default_refloat_config_bytes();
+        bytes.edit_refloat_config(|config| {
+            assert!(config.set_beeper_enabled(true));
+            assert!(config.set_disabled(disabled));
+        });
+
+        assert!(state.store_serialized_config(&bytes));
+
+        assert_eq!(
+            state
+                .all_data_payloads()
+                .base()
+                .status()
+                .ride_state()
+                .run_state(),
+            expected_run_state,
+        );
+        let changes: Vec<_> = (1..=560)
+            .filter_map(|tick| state.tick_beeper().map(|level| (tick, level)))
+            .collect();
+        assert_eq!(changes.len(), expected_changes);
+        assert_eq!(changes.last(), Some(&expected_last));
+    }
 }

@@ -360,42 +360,36 @@ impl RefloatConfigEditor<'_> {
             .is_some()
     }
 
-    #[cfg(test)]
     pub(crate) fn set_booster_angle(&mut self, angle: AngleDegrees) -> bool {
         RefloatBalanceConfig::BOOSTER_ANGLE_FIELD
             .write(self, angle)
             .is_some()
     }
 
-    #[cfg(test)]
     pub(crate) fn set_booster_ramp(&mut self, angle: AngleDegrees) -> bool {
         RefloatBalanceConfig::BOOSTER_RAMP_FIELD
             .write(self, angle)
             .is_some()
     }
 
-    #[cfg(test)]
     pub(crate) fn set_booster_current(&mut self, current: MotorCurrent) -> bool {
         RefloatBalanceConfig::BOOSTER_CURRENT_FIELD
             .write(self, current)
             .is_some()
     }
 
-    #[cfg(test)]
     pub(crate) fn set_brake_booster_angle(&mut self, angle: AngleDegrees) -> bool {
         RefloatBalanceConfig::BRAKE_BOOSTER_ANGLE_FIELD
             .write(self, angle)
             .is_some()
     }
 
-    #[cfg(test)]
     pub(crate) fn set_brake_booster_ramp(&mut self, angle: AngleDegrees) -> bool {
         RefloatBalanceConfig::BRAKE_BOOSTER_RAMP_FIELD
             .write(self, angle)
             .is_some()
     }
 
-    #[cfg(test)]
     pub(crate) fn set_brake_booster_current(&mut self, current: MotorCurrent) -> bool {
         RefloatBalanceConfig::BRAKE_BOOSTER_CURRENT_FIELD
             .write(self, current)

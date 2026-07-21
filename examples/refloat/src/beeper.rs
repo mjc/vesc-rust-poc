@@ -21,10 +21,8 @@ impl RefloatBeeperLevel {
 /// Source-defined alert sequences used by Refloat's BMS paths.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RefloatBeeperAlert {
-    ThreeShort,
+    Short(RefloatBeeperCount),
     Long(RefloatBeeperCount),
-    #[cfg(any(test, target_arch = "arm"))]
-    FourShort,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,9 +43,6 @@ struct RefloatBeeperTransitions(u8);
 
 impl RefloatBeeperTransitions {
     const NONE: Self = Self(0);
-    const THREE_BEEPS: Self = Self(7);
-    #[cfg(any(test, target_arch = "arm"))]
-    const FOUR_BEEPS: Self = Self(9);
 
     const fn is_empty(self) -> bool {
         self.0 == 0
@@ -79,18 +74,13 @@ impl RefloatBeeperPeriod {
 impl RefloatBeeperAlert {
     const fn sequence(self) -> (RefloatBeeperTransitions, RefloatBeeperPeriod) {
         match self {
-            Self::ThreeShort => (
-                RefloatBeeperTransitions::THREE_BEEPS,
+            Self::Short(count) => (
+                RefloatBeeperTransitions::from_beeps(count),
                 RefloatBeeperPeriod::SHORT,
             ),
             Self::Long(count) => (
                 RefloatBeeperTransitions::from_beeps(count),
                 RefloatBeeperPeriod::LONG,
-            ),
-            #[cfg(any(test, target_arch = "arm"))]
-            Self::FourShort => (
-                RefloatBeeperTransitions::FOUR_BEEPS,
-                RefloatBeeperPeriod::SHORT,
             ),
         }
     }
@@ -177,7 +167,7 @@ mod tests {
     #[test]
     fn three_short_alert_matches_refloat_transition_sequence() {
         let mut beeper = RefloatBeeper::new(true);
-        beeper.alert(RefloatBeeperAlert::ThreeShort);
+        beeper.alert(RefloatBeeperAlert::Short(RefloatBeeperCount::THREE));
 
         let changes: Vec<_> = (1..=560)
             .filter_map(|tick| beeper.tick().map(|level| (tick, level)))
@@ -223,7 +213,7 @@ mod tests {
     #[test]
     fn four_short_alert_uses_refloat_transition_count() {
         let mut beeper = RefloatBeeper::new(true);
-        beeper.alert(RefloatBeeperAlert::FourShort);
+        beeper.alert(RefloatBeeperAlert::Short(RefloatBeeperCount::FOUR));
 
         let changes: Vec<_> = (1..=720)
             .filter_map(|tick| beeper.tick().map(|level| (tick, level)))

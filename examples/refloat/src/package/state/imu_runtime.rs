@@ -661,7 +661,7 @@ pub(super) fn refresh(
                 } else {
                     RefloatBeepReason::HighVoltage
                 };
-                beeper_alert = Some(RefloatBeeperAlert::ThreeShort);
+                beeper_alert = Some(RefloatBeeperAlert::Short(RefloatBeeperCount::THREE));
                 if refloat_ticks_elapsed_seconds(
                     system_time_ticks,
                     state.high_voltage_ticks,
@@ -724,7 +724,7 @@ pub(super) fn refresh(
             } else if base.motor().duty_cycle().ratio().as_ratio() > 0.05 && bms_cell_under_voltage
             {
                 beep_reason = RefloatBeepReason::CellLowVoltage;
-                beeper_alert = Some(RefloatBeeperAlert::ThreeShort);
+                beeper_alert = Some(RefloatBeeperAlert::Short(RefloatBeeperCount::THREE));
                 let angle = state.serialized_config.low_voltage_pushback_angle();
                 ride_state = ride_state
                     .with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackLowVoltage);
@@ -819,7 +819,7 @@ pub(super) fn refresh(
             } else {
                 RefloatBeepReason::CellBalance
             };
-            beeper_alert = Some(RefloatBeeperAlert::FourShort);
+            beeper_alert = Some(RefloatBeeperAlert::Short(RefloatBeeperCount::FOUR));
         }
         // READY nags after 30 idle minutes, at most once per minute, and
         // suppresses the alert while pack voltage rises in Refloat C at
