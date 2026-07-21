@@ -1,5 +1,5 @@
 use super::time::{refloat_ticks_elapsed, refloat_ticks_elapsed_seconds};
-use crate::balance::{BalanceFilter, LoopInput, LoopState};
+use crate::balance::{BalanceFilter, LoopConfig, LoopInput, LoopState};
 #[cfg(any(test, target_arch = "arm"))]
 use crate::beeper::RefloatBeeperLevel;
 use crate::beeper::{RefloatBeeper, RefloatBeeperAlert, RefloatBeeperCount};
@@ -88,8 +88,8 @@ pub struct RefloatPackageState {
     bms_start_ticks: Option<TimestampTicks>,
     #[cfg(any(test, target_arch = "arm"))]
     bms_alert_ticks: TimestampTicks,
-    handtest_config_backup: Option<RefloatConfigImage>,
     flywheel_offsets: RefloatFlywheelOffsets,
+    flywheel_runtime_config: Option<RefloatFlywheelConfig>,
     flywheel_abort: bool,
     motor_control: RefloatMotorControl,
     balance_filter: BalanceFilter,
@@ -144,8 +144,8 @@ impl RefloatPackageState {
             bms_start_ticks: None,
             #[cfg(any(test, target_arch = "arm"))]
             bms_alert_ticks: TimestampTicks::from_ticks(0),
-            handtest_config_backup: None,
             flywheel_offsets: RefloatFlywheelOffsets::source_startup(),
+            flywheel_runtime_config: None,
             flywheel_abort: false,
             motor_control: RefloatMotorControl::new(),
             balance_filter: BalanceFilter::source_startup(),

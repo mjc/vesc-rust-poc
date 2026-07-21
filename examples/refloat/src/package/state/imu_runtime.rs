@@ -676,9 +676,9 @@ pub(super) fn refresh(
             && !matches!(ride_state.wheelslip(), RefloatWheelSlipState::Detected)
         {
             let duty_pushback_active = base.motor().duty_cycle().ratio().as_ratio()
-                > state.serialized_config.duty_pushback_threshold().as_ratio();
+                > state.runtime_duty_pushback_threshold().as_ratio();
             let board_setpoint = if duty_pushback_active {
-                let angle = state.serialized_config.duty_pushback_angle();
+                let angle = state.runtime_duty_pushback_angle();
                 if !matches!(ride_state.mode(), RefloatMode::Flywheel) {
                     ride_state = ride_state
                         .with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackDuty);
@@ -821,7 +821,7 @@ pub(super) fn refresh(
         loop_state.balance_current = balance_current.current();
         loop_state.booster_current = booster_current.current();
         let balance_loop = loop_state.advance_balance_loop(
-            state.serialized_config.balance_loop_config(),
+            state.runtime_balance_loop_config(),
             LoopInput {
                 setpoint: setpoints.board(),
                 brake_tilt_setpoint: setpoints.brake_tilt(),

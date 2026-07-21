@@ -180,6 +180,7 @@ impl RefloatPackageState {
             .editor()
             .apply_flywheel_overrides(start.config);
         debug_assert!(updated);
+        self.flywheel_runtime_config = Some(start.config);
     }
 
     pub(super) fn stop_flywheel(&mut self) {
@@ -189,9 +190,33 @@ impl RefloatPackageState {
     pub(super) fn restore_flywheel_config(&mut self) {
         self.force_beeper_on();
         self.set_ride_mode(RefloatMode::Normal);
+        self.flywheel_runtime_config = None;
         self.read_config_from_eeprom();
         self.refresh_balance_filter_config();
         self.refresh_config_runtime_state();
+    }
+
+    pub(super) fn runtime_duty_pushback_threshold(&self) -> Ratio {
+        self.flywheel_runtime_config.map_or_else(
+            || self.serialized_config.duty_pushback_threshold(),
+            |config| config.duty_threshold,
+        )
+    }
+
+    pub(super) fn runtime_duty_pushback_angle(&self) -> AngleDegrees {
+        self.flywheel_runtime_config.map_or_else(
+            || self.serialized_config.duty_pushback_angle(),
+            |config| config.duty_angle,
+        )
+    }
+
+    pub(super) fn runtime_balance_loop_config(&self) -> LoopConfig {
+        let mut config = self.serialized_config.balance_loop_config();
+        if let Some(flywheel) = self.flywheel_runtime_config {
+            config.kp = flywheel.kp;
+            config.kp2 = flywheel.kp2;
+        }
+        config
     }
 
     pub(super) fn flywheel_attitude(
