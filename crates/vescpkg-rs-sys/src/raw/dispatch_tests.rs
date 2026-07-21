@@ -9,12 +9,12 @@ use super::{
     CanStatusMsg, CustomConfigGet, CustomConfigSet, CustomConfigXml, GnssData, RemoteState, VescIf,
     can_status_msg_index, conf_custom_add_config, conf_custom_clear_configs, foc_get_id,
     gnss_snapshot, io_read, io_read_analog, io_set_mode, io_write, lbm_add_extension,
-    lbm_add_extension_with_table_base, lbm_dec_as_float, lbm_dec_as_i32, lbm_dec_char,
-    lbm_car, lbm_cdr, lbm_cons, lbm_enc_char, lbm_enc_i, lbm_enc_sym_eerror, lbm_enc_sym_nil,
-    lbm_enc_sym_true, lbm_is_number,
-    mc_get_amp_hours, mc_get_amp_hours_charged, mc_get_battery_level, mc_get_distance_abs,
-    mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered, mc_get_odometer,
-    mc_get_rpm, mc_get_speed, mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
+    lbm_add_extension_with_table_base, lbm_car, lbm_cdr, lbm_cons, lbm_dec_as_float,
+    lbm_dec_as_i32, lbm_dec_char, lbm_enc_char, lbm_enc_i, lbm_enc_sym_eerror, lbm_enc_sym_nil,
+    lbm_enc_sym_true, lbm_is_number, mc_get_amp_hours, mc_get_amp_hours_charged,
+    mc_get_battery_level, mc_get_distance_abs, mc_get_duty_cycle_now, mc_get_fault,
+    mc_get_input_voltage_filtered, mc_get_odometer, mc_get_rpm, mc_get_speed,
+    mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
     mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
     mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm, remote_state,
     store_eeprom_word, vesc_clear_app_data_handler, vesc_mutex_create, vesc_mutex_lock,
@@ -281,6 +281,18 @@ extern "C" fn stub_lbm_dec_char(value: LbmValue) -> u8 {
 
 extern "C" fn stub_lbm_enc_char(value: u8) -> LbmValue {
     LbmValue(value as u32)
+}
+
+extern "C" fn stub_lbm_cons(_car: LbmValue, _cdr: LbmValue) -> LbmValue {
+    LbmValue(0x20)
+}
+
+extern "C" fn stub_lbm_car(_value: LbmValue) -> LbmValue {
+    LbmValue(0x11)
+}
+
+extern "C" fn stub_lbm_cdr(_value: LbmValue) -> LbmValue {
+    LbmValue(0x22)
 }
 
 extern "C" fn stub_lbm_is_number(value: u32) -> bool {
@@ -559,6 +571,9 @@ fn populated_table() -> VescIf {
     table.lbm_dec_char = Some(stub_lbm_dec_char);
     table.lbm_enc_i = Some(stub_lbm_enc_i);
     table.lbm_enc_char = Some(stub_lbm_enc_char);
+    table.lbm_cons = Some(stub_lbm_cons);
+    table.lbm_car = Some(stub_lbm_car);
+    table.lbm_cdr = Some(stub_lbm_cdr);
     table.lbm_is_number = Some(stub_lbm_is_number);
     table.lbm_enc_sym_nil = 0xAABB_0000;
     table.lbm_enc_sym_true = 0xAABB_1100;
