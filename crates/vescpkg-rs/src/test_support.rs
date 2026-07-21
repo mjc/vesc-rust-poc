@@ -76,6 +76,11 @@ impl FirmwareTest {
         crate::test_ffi::set_clock_ticks(ticks);
     }
 
+    /// Set the fake high-resolution timer counter.
+    pub fn set_timer_ticks(&self, ticks: u32) {
+        crate::test_ffi::set_timer_ticks(ticks);
+    }
+
     /// Make the fake firmware reject every NVM operation.
     pub fn fail_nvm_operations(&self) {
         crate::test_ffi::fail_nvm_operations(true);
@@ -701,6 +706,14 @@ impl AppDataBindings for FakeAppDataBindings {
 
     fn timestamp_age_seconds(&self, timestamp: u32) -> f32 {
         self.ticks.get().wrapping_sub(timestamp) as f32 / 10_000.0
+    }
+
+    fn timer_time_now(&self) -> u32 {
+        self.ticks.get()
+    }
+
+    fn timer_seconds_elapsed_since(&self, timestamp: u32) -> f32 {
+        self.ticks.get().wrapping_sub(timestamp) as f32 / 1_000_000.0
     }
 
     fn arg(&self, _prog_addr: PackageProgramAddress) -> Option<PackageArgument> {

@@ -82,6 +82,7 @@ const NVM_BYTES: usize = 256;
 static NVM: [AtomicU8; NVM_BYTES] = [const { AtomicU8::new(0) }; NVM_BYTES];
 static NVM_FAILURE: AtomicBool = AtomicBool::new(false);
 static CLOCK_TICKS: AtomicU32 = AtomicU32::new(0);
+static TIMER_TICKS: AtomicU32 = AtomicU32::new(0);
 
 pub(crate) struct MotorOutputState {
     pub keep_alive_count: usize,
@@ -182,6 +183,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     NVM.iter().for_each(|byte| byte.store(0, Ordering::Relaxed));
     NVM_FAILURE.store(false, Ordering::Relaxed);
     CLOCK_TICKS.store(0, Ordering::Relaxed);
+    TIMER_TICKS.store(0, Ordering::Relaxed);
     FirmwareLockGuard
 }
 
@@ -295,8 +297,20 @@ pub unsafe fn vesc_timestamp_age_seconds(timestamp: u32) -> f32 {
     CLOCK_TICKS.load(Ordering::Relaxed).wrapping_sub(timestamp) as f32 / 10_000.0
 }
 
+pub unsafe fn vesc_timer_time_now() -> u32 {
+    TIMER_TICKS.load(Ordering::Relaxed)
+}
+
+pub unsafe fn vesc_timer_seconds_elapsed_since(timestamp: u32) -> f32 {
+    TIMER_TICKS.load(Ordering::Relaxed).wrapping_sub(timestamp) as f32 / 1_000_000.0
+}
+
 pub(crate) fn set_clock_ticks(ticks: u32) {
     CLOCK_TICKS.store(ticks, Ordering::Relaxed);
+}
+
+pub(crate) fn set_timer_ticks(ticks: u32) {
+    TIMER_TICKS.store(ticks, Ordering::Relaxed);
 }
 
 fn load(value: &AtomicU32) -> f32 {

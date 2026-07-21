@@ -86,6 +86,12 @@ pub(crate) trait AppDataBindings {
     /// Return the firmware-computed age of a system timestamp in seconds.
     fn timestamp_age_seconds(&self, timestamp: u32) -> f32;
 
+    /// Return the current high-resolution timer instant.
+    fn timer_time_now(&self) -> u32;
+
+    /// Return high-resolution elapsed time since a timer instant.
+    fn timer_seconds_elapsed_since(&self, timestamp: u32) -> f32;
+
     /// Return the package `ARG` pointer stored by the firmware loader.
     ///
     /// C map: VESC package `ARG` calls `VESC_IF->get_arg(PROG_ADDR)` in
@@ -141,6 +147,14 @@ impl<B: AppDataBindings + ?Sized> AppDataBindings for &B {
 
     fn timestamp_age_seconds(&self, timestamp: u32) -> f32 {
         (**self).timestamp_age_seconds(timestamp)
+    }
+
+    fn timer_time_now(&self) -> u32 {
+        (**self).timer_time_now()
+    }
+
+    fn timer_seconds_elapsed_since(&self, timestamp: u32) -> f32 {
+        (**self).timer_seconds_elapsed_since(timestamp)
     }
 
     fn arg(&self, prog_addr: PackageProgramAddress) -> Option<PackageArgument> {
@@ -303,6 +317,14 @@ impl AppDataBindings for RealBindings {
 
     fn timestamp_age_seconds(&self, timestamp: u32) -> f32 {
         unsafe { crate::ffi::vesc_timestamp_age_seconds(timestamp) }
+    }
+
+    fn timer_time_now(&self) -> u32 {
+        unsafe { crate::ffi::vesc_timer_time_now() }
+    }
+
+    fn timer_seconds_elapsed_since(&self, timestamp: u32) -> f32 {
+        unsafe { crate::ffi::vesc_timer_seconds_elapsed_since(timestamp) }
     }
 
     fn arg(&self, prog_addr: PackageProgramAddress) -> Option<PackageArgument> {

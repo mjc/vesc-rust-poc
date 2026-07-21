@@ -28,6 +28,23 @@ pub struct FirmwareAppData {
     api: AppDataApi<crate::bindings::RealBindings>,
 }
 
+/// Opaque high-resolution firmware timer instant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct TimerInstant(u32);
+
+impl TimerInstant {
+    /// Construct an instant from the firmware timer's raw counter.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Self {
+        Self(raw)
+    }
+
+    pub(crate) const fn raw(self) -> u32 {
+        self.0
+    }
+}
+
 impl FirmwareAppData {
     #[cfg(not(test))]
     #[inline(always)]
@@ -80,6 +97,20 @@ impl FirmwareClock {
     pub fn age(&self, timestamp: TimestampTicks) -> VescSeconds {
         self.api.timestamp_age(timestamp)
     }
+
+    /// Return the current high-resolution timer instant.
+    #[cfg(not(test))]
+    #[inline(always)]
+    pub fn timer_now(&self) -> TimerInstant {
+        self.api.timer_now()
+    }
+
+    /// Return high-resolution elapsed time since `earlier`.
+    #[cfg(not(test))]
+    #[inline(always)]
+    pub fn timer_elapsed_since(&self, earlier: TimerInstant) -> VescSeconds {
+        self.api.timer_elapsed_since(earlier)
+    }
 }
 
 /// Internal firmware app-data API built on a binding implementation.
@@ -106,6 +137,16 @@ impl<B: AppDataBindings> AppDataApi<B> {
     /// Return firmware-computed age for a system timestamp.
     pub(crate) fn timestamp_age(&self, timestamp: TimestampTicks) -> VescSeconds {
         VescSeconds::from_seconds(self.bindings.timestamp_age_seconds(timestamp.as_ticks()))
+    }
+
+    /// Return the current high-resolution timer instant.
+    pub(crate) fn timer_now(&self) -> TimerInstant {
+        TimerInstant::from_raw(self.bindings.timer_time_now())
+    }
+
+    /// Return high-resolution elapsed time since a timer instant.
+    pub(crate) fn timer_elapsed_since(&self, earlier: TimerInstant) -> VescSeconds {
+        VescSeconds::from_seconds(self.bindings.timer_seconds_elapsed_since(earlier.raw()))
     }
 
     /// Send one app-data response.

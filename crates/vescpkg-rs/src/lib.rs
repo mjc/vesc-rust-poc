@@ -76,8 +76,8 @@ pub(crate) mod ffi {
         mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm,
         store_eeprom_word, timeout_reset, vesc_imu_get_quaternions, vesc_request_terminate,
         vesc_should_terminate, vesc_sleep_us, vesc_spawn, vesc_system_time_seconds,
-        vesc_system_time_ticks, vesc_thread_set_priority, vesc_timestamp_age_seconds, wipe_nvm,
-        write_nvm,
+        vesc_system_time_ticks, vesc_thread_set_priority, vesc_timer_seconds_elapsed_since,
+        vesc_timer_time_now, vesc_timestamp_age_seconds, wipe_nvm, write_nvm,
     };
     #[cfg(any(test, not(feature = "test-support")))]
     use vescpkg_rs_sys::raw as selected_ffi;
@@ -119,7 +119,7 @@ pub use runtime::{PackageRuntimeState, PackageStateAccess, PackageStateStore};
 pub use thread::{
     Firmware, FirmwareAppData, FirmwareClock, FirmwareThread, FirmwareThreads,
     StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadName,
-    ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError,
+    ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant,
 };
 
 /// GPIO bindings and convenience wrappers for package code.
@@ -155,7 +155,7 @@ pub mod prelude {
         NvmError, NvmOffset, PackageRuntimeState, PackageStart, PackageStartError,
         StatefulCustomConfigCallback, StatefulLbmExtension, StatelessFirmwareThread,
         StatelessThreadContext, ThreadContext, ThreadError, ThreadName, ThreadSpec,
-        ThreadWorkingAreaSize, ThreadWorkingAreaSizeError,
+        ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant,
     };
 }
 

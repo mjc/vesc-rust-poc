@@ -3,7 +3,7 @@
 //! Integration tests for the distinct firmware clock domains.
 
 use vescpkg_rs::test_support::FirmwareTest;
-use vescpkg_rs::{TimestampTicks, TimerInstant, VescSeconds};
+use vescpkg_rs::{TimerInstant, TimestampTicks, VescSeconds};
 
 #[test]
 fn firmware_clock_exposes_ticks_uptime_and_timestamp_age_separately() {
