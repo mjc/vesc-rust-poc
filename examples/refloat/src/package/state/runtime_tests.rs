@@ -635,6 +635,71 @@ fn running_reverse_stop_stays_active_at_half_tolerance_while_reversing_like_refl
 }
 
 #[test]
+fn running_enters_duty_pushback_above_configured_threshold_like_refloat() {
+    let app_data = TimestampTicks::from_ticks(0);
+    let duty_cycle = DutyCycle::new(SignedRatio::from_ratio_const(0.81));
+    let telemetry = FirmwareTest::new().with_runtime_motor(
+        ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1_000.0)),
+        VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
+        TotalMotorCurrent::new(Current::from_amps(0.0)),
+        InputCurrent::new(Current::from_amps(0.0)),
+        duty_cycle,
+    );
+    telemetry.set_imu_ready(true);
+    let payloads =
+        sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Normal);
+    let base = payloads.base();
+    let motor = base.motor();
+    let motor = crate::domain::RefloatAllDataMotorPayload::new(
+        motor.battery_voltage(),
+        motor.electrical_speed(),
+        motor.vehicle_speed(),
+        motor.currents(),
+        duty_cycle,
+        motor.foc_id_current(),
+    );
+    let base = RefloatAllDataBasePayload::new(
+        base.balance_current(),
+        base.attitude(),
+        base.status(),
+        base.footpad(),
+        base.setpoints(),
+        base.booster_current(),
+        motor,
+    );
+    let mut state = RefloatPackageState::new(RefloatAllDataPayloads::new(
+        base,
+        payloads.mode2(),
+        payloads.mode3(),
+        payloads.mode4(),
+    ));
+
+    assert!(tick_refloat_state_and_handle_packet(
+        &mut state,
+        app_data,
+        telemetry.telemetry(),
+        telemetry.imu(),
+        &[
+            REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            RefloatAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+
+    // Default Refloat duty pushback is 5 degrees above 0.80 duty at
+    // `third_party/refloat/src/conf/settings.xml:524-593`; runtime selection
+    // is `third_party/refloat/src/main.c:577-592`.
+    let base = state.all_data_payloads().base();
+    assert_eq!(
+        base.status().ride_state().setpoint_adjustment(),
+        RefloatSetpointAdjustment::PushbackDuty,
+    );
+    assert_eq!(
+        base.setpoints().board().angle(),
+        AngleDegrees::from_degrees(5.0),
+    );
+}
+
+#[test]
 fn running_runtime_requests_balance_current_like_refloat_loop() {
     let (app_data, telemetry, mut state) = running_runtime_fixture();
     let imu = telemetry.imu();
