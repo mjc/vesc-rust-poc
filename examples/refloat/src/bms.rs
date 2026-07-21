@@ -234,7 +234,7 @@ mod tests {
     use crate::package::{RefloatCustomConfig, RefloatPackageState};
     use vescpkg_rs::{
         ConfigBytes, LispArgs, LispValue, StatefulCustomConfigCallback, StatefulLbmExtension,
-        VescSeconds, Voltage,
+        TimestampTicks, VescSeconds, Voltage,
     };
 
     fn sample() -> RefloatBmsSample {
@@ -442,5 +442,33 @@ mod tests {
         let value = ExtBms::call(&mut state, LispArgs::empty());
 
         assert!(value == LispValue::true_value());
+    }
+
+    #[test]
+    fn runtime_bms_connection_fault_uses_refloat_startup_timer_boundary() {
+        let mut state = RefloatPackageState::new(sample_all_data_payloads());
+        let mut config = REFLOAT_DEFAULT_CONFIG;
+        config[265] = 1;
+        assert!(RefloatCustomConfig::set_config(&mut state, ConfigBytes::new(&config)).is_ok());
+
+        state.refresh_bms_runtime_state(TimestampTicks::from_ticks(10_000));
+        assert!(
+            !state
+                .bms_faults_for_test()
+                .contains(RefloatBmsFault::Connection)
+        );
+
+        state.refresh_bms_runtime_state(TimestampTicks::from_ticks(60_000));
+        assert!(
+            !state
+                .bms_faults_for_test()
+                .contains(RefloatBmsFault::Connection)
+        );
+
+        state.refresh_bms_runtime_state(TimestampTicks::from_ticks(60_001));
+        assert_eq!(
+            state.bms_faults_for_test(),
+            RefloatBmsFaults::from_fault(RefloatBmsFault::Connection)
+        );
     }
 }
