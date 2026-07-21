@@ -32,3 +32,20 @@ fn firmware_clock_keeps_high_resolution_timer_instants_distinct() {
         VescSeconds::from_seconds(0.5)
     );
 }
+
+#[test]
+fn firmware_clock_ages_roll_over_without_mixing_clock_domains() {
+    let firmware = FirmwareTest::new();
+    firmware.set_clock_ticks(5);
+    firmware.set_timer_ticks(5);
+    let clock = firmware.clock();
+
+    assert_eq!(
+        clock.age(TimestampTicks::from_ticks(u32::MAX - 4)),
+        VescSeconds::from_seconds(0.001)
+    );
+    assert_eq!(
+        clock.timer_elapsed_since(TimerInstant::from_raw(u32::MAX - 4)),
+        VescSeconds::from_seconds(0.00001)
+    );
+}
