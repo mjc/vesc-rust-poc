@@ -57,6 +57,12 @@ impl PidScale {
     pub const fn value(self) -> f32 {
         self.0
     }
+
+    /// Apply another dimensionless control scale.
+    #[inline(always)]
+    pub const fn scaled_by(self, scale: Self) -> Self {
+        Self(self.0 * scale.0)
+    }
 }
 
 /// Board-angle error to motor-current gain.

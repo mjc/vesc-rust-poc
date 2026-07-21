@@ -17,6 +17,25 @@ impl WireByte {
     pub fn scaled<T>(self, scale: f32, offset: f32, constructor: fn(f32) -> T) -> T {
         constructor(f32::from(self.0) * scale + offset)
     }
+
+    /// Apply a rational wire scale in protocol operation order.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `denominator` is zero or non-finite.
+    pub fn scaled_ratio<T>(
+        self,
+        numerator: f32,
+        denominator: f32,
+        offset: f32,
+        constructor: fn(f32) -> T,
+    ) -> T {
+        assert!(
+            denominator.is_finite() && denominator != 0.0,
+            "wire scale denominator must be finite and non-zero"
+        );
+        constructor((f32::from(self.0) * numerator) / denominator + offset)
+    }
 }
 
 pub use crate::units::{BatteryCellCount, BatteryCellCountError};
@@ -966,6 +985,27 @@ mod tests {
             byte.scaled(0.5, -1.0, crate::AngleDegrees::from_degrees),
             crate::AngleDegrees::from_degrees(20.0)
         );
+        assert_eq!(
+            byte.scaled_ratio(1.0, 2.0, -1.0, crate::AngleDegrees::from_degrees),
+            crate::AngleDegrees::from_degrees(20.0)
+        );
+    }
+
+    #[test]
+    fn wire_byte_rejects_invalid_ratio_denominators() {
+        for denominator in [0.0, f32::INFINITY, f32::NEG_INFINITY, f32::NAN] {
+            assert!(
+                std::panic::catch_unwind(|| {
+                    super::WireByte::new(42).scaled_ratio(
+                        1.0,
+                        denominator,
+                        0.0,
+                        crate::AngleDegrees::from_degrees,
+                    )
+                })
+                .is_err()
+            );
+        }
     }
 
     #[test]
