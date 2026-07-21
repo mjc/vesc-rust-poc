@@ -634,12 +634,15 @@ fn running_reverse_stop_stays_active_at_half_tolerance_while_reversing_like_refl
     );
 }
 
-#[test]
-fn running_enters_duty_pushback_above_configured_threshold_like_refloat() {
+fn running_duty_pushback_fixture(
+    duty_ratio: SignedRatio,
+    motor_erpm: Rpm,
+    adjustment: RefloatSetpointAdjustment,
+) -> (TimestampTicks, FirmwareTest, RefloatPackageState) {
     let app_data = TimestampTicks::from_ticks(0);
-    let duty_cycle = DutyCycle::new(SignedRatio::from_ratio_const(0.81));
+    let duty_cycle = DutyCycle::new(duty_ratio);
     let telemetry = FirmwareTest::new().with_runtime_motor(
-        ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1_000.0)),
+        ElectricalSpeed::new(motor_erpm),
         VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
         TotalMotorCurrent::new(Current::from_amps(0.0)),
         InputCurrent::new(Current::from_amps(0.0)),
@@ -658,21 +661,38 @@ fn running_enters_duty_pushback_above_configured_threshold_like_refloat() {
         duty_cycle,
         motor.foc_id_current(),
     );
+    let status = RefloatAllDataStatus::new(
+        base.status()
+            .ride_state()
+            .with_setpoint_adjustment(adjustment),
+        base.status().beep_reason(),
+    );
     let base = RefloatAllDataBasePayload::new(
         base.balance_current(),
         base.attitude(),
-        base.status(),
+        status,
         base.footpad(),
         base.setpoints(),
         base.booster_current(),
         motor,
     );
-    let mut state = RefloatPackageState::new(RefloatAllDataPayloads::new(
+    let state = RefloatPackageState::new(RefloatAllDataPayloads::new(
         base,
         payloads.mode2(),
         payloads.mode3(),
         payloads.mode4(),
     ));
+
+    (app_data, telemetry, state)
+}
+
+#[test]
+fn running_enters_duty_pushback_above_configured_threshold_like_refloat() {
+    let (app_data, telemetry, mut state) = running_duty_pushback_fixture(
+        SignedRatio::from_ratio_const(0.81),
+        Rpm::from_revolutions_per_minute(1_000.0),
+        RefloatSetpointAdjustment::None,
+    );
 
     assert!(tick_refloat_state_and_handle_packet(
         &mut state,
@@ -697,6 +717,85 @@ fn running_enters_duty_pushback_above_configured_threshold_like_refloat() {
         base.setpoints().board().angle(),
         AngleDegrees::from_degrees(5.0),
     );
+}
+
+#[test]
+fn running_duty_pushback_uses_negative_target_for_reverse_erpm_like_refloat() {
+    let (app_data, telemetry, mut state) = running_duty_pushback_fixture(
+        SignedRatio::from_ratio_const(0.81),
+        Rpm::from_revolutions_per_minute(-1_000.0),
+        RefloatSetpointAdjustment::None,
+    );
+
+    assert!(tick_refloat_state_and_handle_packet(
+        &mut state,
+        app_data,
+        telemetry.telemetry(),
+        telemetry.imu(),
+        &[
+            REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            RefloatAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+
+    assert_eq!(
+        state.all_data_payloads().base().setpoints().board().angle(),
+        AngleDegrees::from_degrees(-5.0),
+    );
+}
+
+#[test]
+fn running_duty_at_threshold_does_not_push_back_like_refloat() {
+    let (app_data, telemetry, mut state) = running_duty_pushback_fixture(
+        SignedRatio::from_ratio_const(0.80),
+        Rpm::from_revolutions_per_minute(1_000.0),
+        RefloatSetpointAdjustment::None,
+    );
+
+    assert!(tick_refloat_state_and_handle_packet(
+        &mut state,
+        app_data,
+        telemetry.telemetry(),
+        telemetry.imu(),
+        &[
+            REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            RefloatAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+
+    let base = state.all_data_payloads().base();
+    assert_eq!(
+        base.status().ride_state().setpoint_adjustment(),
+        RefloatSetpointAdjustment::None,
+    );
+    assert_eq!(base.setpoints().board().angle(), AngleDegrees::ZERO);
+}
+
+#[test]
+fn running_duty_pushback_clears_below_threshold_like_refloat() {
+    let (app_data, telemetry, mut state) = running_duty_pushback_fixture(
+        SignedRatio::from_ratio_const(0.79),
+        Rpm::from_revolutions_per_minute(1_000.0),
+        RefloatSetpointAdjustment::PushbackDuty,
+    );
+
+    assert!(tick_refloat_state_and_handle_packet(
+        &mut state,
+        app_data,
+        telemetry.telemetry(),
+        telemetry.imu(),
+        &[
+            REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            RefloatAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+
+    let base = state.all_data_payloads().base();
+    assert_eq!(
+        base.status().ride_state().setpoint_adjustment(),
+        RefloatSetpointAdjustment::None,
+    );
+    assert_eq!(base.setpoints().board().angle(), AngleDegrees::ZERO);
 }
 
 #[test]
