@@ -2,7 +2,7 @@ use super::time::{refloat_ticks_elapsed, refloat_ticks_elapsed_seconds};
 use crate::balance::{BalanceFilter, LoopInput, LoopState};
 #[cfg(any(test, target_arch = "arm"))]
 use crate::beeper::RefloatBeeperLevel;
-use crate::beeper::{RefloatBeeper, RefloatBeeperAlert};
+use crate::beeper::{RefloatBeeper, RefloatBeeperAlert, RefloatBeeperCount};
 #[cfg(any(test, target_arch = "arm"))]
 use crate::bms::RefloatBmsFaults;
 use crate::bms::RefloatBmsSample;

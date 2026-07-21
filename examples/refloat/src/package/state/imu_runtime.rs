@@ -606,7 +606,7 @@ pub(super) fn refresh(
                 }
             } else if bms_connection_fault {
                 beep_reason = RefloatBeepReason::BmsConnection;
-                beeper_alert = Some(RefloatBeeperAlert::ThreeLong);
+                beeper_alert = Some(RefloatBeeperAlert::Long(RefloatBeeperCount::THREE));
                 let angle = state.serialized_config.high_voltage_pushback_angle();
                 ride_state =
                     ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackError);
@@ -617,7 +617,7 @@ pub(super) fn refresh(
                 })
             } else if let Some(temperature_reason) = bms_temperature_reason {
                 beep_reason = temperature_reason;
-                beeper_alert = Some(RefloatBeeperAlert::ThreeLong);
+                beeper_alert = Some(RefloatBeeperAlert::Long(RefloatBeeperCount::THREE));
                 let angle = state.serialized_config.low_voltage_pushback_angle();
                 ride_state = ride_state
                     .with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackTemperature);
