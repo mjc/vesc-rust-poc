@@ -266,6 +266,7 @@ fn transparent_wrappers_expose_raw_tuple_fields() {
 #[test]
 fn vesc_if_manifest_matches_generated_header_descriptors() {
     assert_eq!(crate::c_vesc_if::FIELD_COUNT, VescIfAbi::FIELD_COUNT);
+    assert_eq!(VescIfAbi::CALLABLE_SLOT_COUNT, 248);
     assert_eq!(VescIfAbi::ALL_SLOTS.len(), VescIfAbi::FIELD_COUNT);
     assert_eq!(VescIfAbi::ALL_ENTRIES.len(), VescIfAbi::FIELD_COUNT);
     assert_eq!(crate::c_vesc_if::SLOTS[0].name, "lbm_add_extension");
@@ -291,6 +292,13 @@ fn vesc_if_manifest_matches_generated_header_descriptors() {
     assert_eq!(
         VescIfAbi::ALL_ENTRIES[crate::c_vesc_if::lbm_enc_sym_nil::INDEX].kind(),
         VescIfSlotKind::Scalar
+    );
+    assert_eq!(
+        VescIfAbi::ALL_ENTRIES
+            .iter()
+            .filter(|entry| entry.is_callable())
+            .count(),
+        VescIfAbi::CALLABLE_SLOT_COUNT
     );
 
     for slot in VescIfAbi::USED_SLOTS {

@@ -68,6 +68,15 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
         slots.len()
     )
     .expect("write generated Rust");
+    writeln!(
+        rust,
+        "pub(crate) const CALLABLE_SLOT_COUNT: usize = {};",
+        slots
+            .iter()
+            .filter(|slot| matches!(slot.kind, SlotKind::Function))
+            .count()
+    )
+    .expect("write generated Rust");
     rust.push('\n');
     rust.push_str("pub(crate) const SLOTS: [Slot; FIELD_COUNT] = [\n");
     for slot in slots {

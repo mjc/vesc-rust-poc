@@ -224,6 +224,8 @@ macro_rules! define_vesc_if_abi {
             pub const BASE_ADDR: NativeAddress = NativeAddress(0x1000_f800);
             /// Number of entries in the pinned upstream `vesc_c_if` table.
             pub const FIELD_COUNT: usize = c_vesc_if::FIELD_COUNT;
+            /// Number of callable function-pointer entries in the manifest.
+            pub const CALLABLE_SLOT_COUNT: usize = c_vesc_if::CALLABLE_SLOT_COUNT;
             /// First slot added by the firmware 6.05 interface extension.
             pub const BASE_SLOT_COUNT: usize = c_vesc_if::lbm_start_flatten::INDEX;
             /// First slot added by the firmware 6.06 interface extension.
