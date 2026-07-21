@@ -3,7 +3,7 @@ use super::limits::{
     ReverseStopLimits, TractionLossLimits,
 };
 use super::*;
-use vescpkg_rs::prelude::AngleDegrees;
+use vescpkg_rs::prelude::{AngleDegrees, VescSeconds, Voltage};
 
 /// Refloat runtime refresh of IMU-derived state and control-loop faults.
 ///
@@ -388,6 +388,23 @@ pub(super) fn refresh(
         )
     };
     if matches!(run_state, RefloatRunState::Running) && !state_engage && !state_stop_fault {
+        let configured_high_voltage = state.serialized_config.high_voltage_threshold();
+        let high_voltage_threshold = if configured_high_voltage.as_volts() < 10.0 {
+            state
+                .battery_cell_count
+                .map_or(configured_high_voltage, |count| {
+                    configured_high_voltage * count
+                })
+        } else {
+            configured_high_voltage
+        };
+        let battery_voltage = base.motor().battery_voltage().voltage();
+        // Refloat refreshes this before every setpoint-adjustment branch at
+        // `third_party/refloat/src/main.c:512-518`. The BMS overvoltage
+        // exception remains pending until typed BMS state is wired.
+        if battery_voltage < high_voltage_threshold {
+            state.high_voltage_ticks = system_time_ticks;
+        }
         let entered_reverse_stop = !matches!(
             ride_state.setpoint_adjustment(),
             RefloatSetpointAdjustment::Centering | RefloatSetpointAdjustment::ReverseStop
@@ -395,9 +412,18 @@ pub(super) fn refresh(
             && motor_erpm < -reverse_stop.entry_erpm
             && !darkride_active;
         if entered_reverse_stop {
-            // C enters reverse stop before every protective pushback branch at
-            // `third_party/refloat/src/main.c:538-552`.
-            state.reverse_total_erpm = Rpm::ZERO;
+            // Refloat carries an existing HV/LV/temperature target into
+            // reverse-stop at `third_party/refloat/src/main.c:538-550`.
+            state.reverse_total_erpm = if matches!(
+                ride_state.setpoint_adjustment(),
+                RefloatSetpointAdjustment::PushbackHighVoltage
+                    | RefloatSetpointAdjustment::PushbackLowVoltage
+                    | RefloatSetpointAdjustment::PushbackTemperature
+            ) {
+                reverse_stop.carryover_total_erpm(setpoints.board().angle())
+            } else {
+                Rpm::ZERO
+            };
             state.reverse_ticks = system_time_ticks;
             ride_state =
                 ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::ReverseStop);
@@ -475,9 +501,26 @@ pub(super) fn refresh(
                 } else {
                     -angle
                 })
+            } else if base.motor().duty_cycle().ratio().as_ratio() > 0.05
+                && battery_voltage > high_voltage_threshold
+                && (refloat_ticks_elapsed_seconds(
+                    system_time_ticks,
+                    state.high_voltage_ticks,
+                    VescSeconds::from_seconds(0.5),
+                ) || battery_voltage > high_voltage_threshold + Voltage::from_volts(1.0))
+            {
+                let angle = state.serialized_config.high_voltage_pushback_angle();
+                ride_state = ride_state
+                    .with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackHighVoltage);
+                Some(if motor_erpm.is_positive() {
+                    angle
+                } else {
+                    -angle
+                })
             } else if matches!(
                 ride_state.setpoint_adjustment(),
                 RefloatSetpointAdjustment::PushbackDuty
+                    | RefloatSetpointAdjustment::PushbackHighVoltage
             ) {
                 ride_state = ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::None);
                 Some(AngleDegrees::ZERO)

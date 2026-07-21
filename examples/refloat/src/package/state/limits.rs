@@ -1,6 +1,29 @@
 use vescpkg_rs::prelude::{AngleDegrees, Rpm, SignedRatio, VescSeconds};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+struct ReverseStopRate {
+    angle: AngleDegrees,
+    erpm: Rpm,
+}
+
+impl ReverseStopRate {
+    const REFLOAT: Self = Self {
+        angle: AngleDegrees::from_degrees(0.08),
+        erpm: Rpm::from_revolutions_per_minute(1_000.0),
+    };
+
+    #[must_use]
+    fn angle_for(self, erpm: Rpm) -> AngleDegrees {
+        self.angle * (erpm / self.erpm)
+    }
+
+    #[must_use]
+    fn erpm_for(self, angle: AngleDegrees) -> Rpm {
+        self.erpm * (angle / self.angle)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct QuickStopLimits {
     pub(super) stopped_erpm: Rpm,
     pub(super) pitch: AngleDegrees,
@@ -22,6 +45,7 @@ pub(super) struct ReverseStopLimits {
     pub(super) pitch: AngleDegrees,
     pub(super) timer_fast_pitch: AngleDegrees,
     pub(super) timer_slow_pitch: AngleDegrees,
+    rate: ReverseStopRate,
 }
 
 impl ReverseStopLimits {
@@ -35,14 +59,22 @@ impl ReverseStopLimits {
         pitch: AngleDegrees::from_degrees(18.0),
         timer_fast_pitch: AngleDegrees::from_degrees(10.0),
         timer_slow_pitch: AngleDegrees::from_degrees(5.0),
+        rate: ReverseStopRate::REFLOAT,
     };
 
+    #[must_use]
+    pub(super) fn carryover_total_erpm(self, interpolated_target: AngleDegrees) -> Rpm {
+        // C map: preserve an error-pushback target when entering reverse-stop
+        // at `third_party/refloat/src/main.c:541-546`.
+        -(self.tolerance_erpm + self.rate.erpm_for(interpolated_target))
+    }
+
+    #[must_use]
     pub(super) fn target_angle(self, reverse_total_erpm: Rpm) -> AngleDegrees {
         // C map: `REVSTOP_ERPM_INCR` and the target calculation at
         // `third_party/refloat/src/main.c:100,525-529`.
-        AngleDegrees::from_degrees(
-            (reverse_total_erpm.abs() - self.tolerance_erpm).as_revolutions_per_minute() * 0.000_08,
-        )
+        self.rate
+            .angle_for(reverse_total_erpm.abs() - self.tolerance_erpm)
     }
 }
 
