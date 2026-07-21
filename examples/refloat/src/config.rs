@@ -8,7 +8,7 @@ use vescpkg_rs::CustomConfigVoltageField;
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngularVelocity, ElectricalSpeed, IntegralCurrentGain,
     MahonyPitchGain, MahonyRollGain, MotorCurrent, MotorCurrentLimit, PidScale, RateCurrentGain,
-    SampleRate, VescSeconds,
+    Ratio, SampleRate, VescSeconds,
 };
 use vescpkg_rs::{
     CustomConfigAngleCurrentGainField, CustomConfigAngleField, CustomConfigAngularVelocityField,
@@ -16,8 +16,8 @@ use vescpkg_rs::{
     CustomConfigEnumField, CustomConfigFlagField, CustomConfigFrequencyField, CustomConfigImage,
     CustomConfigIntegralCurrentGainField, CustomConfigMahonyPitchGainField,
     CustomConfigMahonyRollGainField, CustomConfigMotorCurrentField, CustomConfigPidScaleField,
-    CustomConfigRateCurrentGainField, CustomConfigResetField, CustomConfigSampleRateField,
-    CustomConfigSecondsField,
+    CustomConfigRateCurrentGainField, CustomConfigRatioField, CustomConfigResetField,
+    CustomConfigSampleRateField, CustomConfigSecondsField,
 };
 
 mod handtest_safety;
@@ -66,6 +66,8 @@ impl core::ops::Deref for RefloatConfigImage {
 
 impl RefloatConfigImage {
     const ATR_FILTER_FIELD: CustomConfigFrequencyField = vescpkg_rs::generated_custom_config_field!(CustomConfigFrequencyField, len: REFLOAT_CONFIG_LEN, offset: 165, scale: 100.0);
+    const DUTY_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 44, scale: 100.0);
+    const DUTY_PUSHBACK_THRESHOLD_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: REFLOAT_CONFIG_LEN, offset: 48, scale: 1000.0);
 
     // Generated `hardware.leds.mode` is the first field in the final hardware
     // block at `third_party/refloat/src/conf/settings.xml:4049-4064`.
@@ -156,6 +158,14 @@ impl RefloatConfigImage {
 
     pub(crate) fn motor_current_filter_frequency(&self) -> vescpkg_rs::Frequency {
         generated_field(Self::ATR_FILTER_FIELD.read(self))
+    }
+
+    pub(crate) fn duty_pushback_angle(&self) -> AngleDegrees {
+        generated_field(Self::DUTY_PUSHBACK_ANGLE_FIELD.read(self))
+    }
+
+    pub(crate) fn duty_pushback_threshold(&self) -> Ratio {
+        generated_field(Self::DUTY_PUSHBACK_THRESHOLD_FIELD.read(self))
     }
 
     pub(crate) fn editor(&mut self) -> RefloatConfigEditor<'_> {
