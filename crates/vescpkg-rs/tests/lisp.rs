@@ -23,4 +23,8 @@ fn lisp_values_expose_explicit_kind_predicates() {
 
     let signed = LispValue::from_i32(41);
     assert_eq!(signed.decode_number_as_i32(), Some(41));
+
+    let character = LispValue::from_char(b'V');
+    assert!(character.is_char());
+    assert_eq!(character.decode_char(), Some(b'V'));
 }
