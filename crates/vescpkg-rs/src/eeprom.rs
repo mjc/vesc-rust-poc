@@ -1,7 +1,5 @@
 //! Typed access to the package custom-EEPROM range.
 
-use core::mem::size_of;
-
 /// Word address passed to the firmware custom-EEPROM interface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
@@ -28,6 +26,9 @@ impl CustomEepromAddress {
 pub struct EepromWord([u8; 4]);
 
 impl EepromWord {
+    /// Number of serialized bytes in one EEPROM word.
+    pub const BYTE_LEN: usize = 4;
+
     /// Construct one word from a native-endian unsigned integer.
     #[must_use]
     pub const fn from_u32(value: u32) -> Self {
@@ -108,7 +109,7 @@ impl CustomEeprom {
     /// be represented. Bytes read before a failure remain in `bytes`.
     pub fn read_bytes(self, bytes: &mut [u8]) -> bool {
         bytes
-            .chunks_mut(size_of::<EepromWord>())
+            .chunks_mut(EepromWord::BYTE_LEN)
             .enumerate()
             .all(|(index, bytes)| {
                 let Some(address) = CustomEepromAddress::from_index(index) else {
@@ -128,13 +129,13 @@ impl CustomEeprom {
     /// first address or firmware write failure.
     pub fn write_bytes(self, bytes: &[u8]) -> bool {
         bytes
-            .chunks(size_of::<EepromWord>())
+            .chunks(EepromWord::BYTE_LEN)
             .enumerate()
             .all(|(index, bytes)| {
                 let Some(address) = CustomEepromAddress::from_index(index) else {
                     return false;
                 };
-                let mut word = [0; size_of::<EepromWord>()];
+                let mut word = [0; EepromWord::BYTE_LEN];
                 word[..bytes.len()].copy_from_slice(bytes);
                 self.write(address, EepromWord::from_ne_bytes(word))
             })
