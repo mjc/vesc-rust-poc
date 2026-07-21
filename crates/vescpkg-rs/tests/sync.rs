@@ -38,3 +38,20 @@ fn semaphore_exposes_wait_timeout_signal_reset_and_release() {
     drop(semaphore);
     assert_eq!(firmware.semaphore_free_count(), 1);
 }
+
+#[test]
+fn synchronization_creation_and_timed_wait_failures_are_reported() {
+    let firmware = FirmwareTest::new();
+    firmware.fail_mutex_creation();
+    firmware.fail_semaphore_creation();
+    assert!(FirmwareMutex::new().is_none());
+    assert!(FirmwareSemaphore::new().is_none());
+
+    let semaphore = FirmwareSemaphore::new();
+    assert!(semaphore.is_none());
+
+    let firmware = FirmwareTest::new();
+    let semaphore = FirmwareSemaphore::new().expect("fake firmware creates a semaphore");
+    firmware.fail_semaphore_timeout();
+    assert!(!semaphore.wait_timeout(SystemTicks::from_ticks(5)));
+}
