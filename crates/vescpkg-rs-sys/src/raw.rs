@@ -1002,7 +1002,9 @@ pub unsafe fn store_eeprom_word(word: *mut u32, address: c_int) -> bool {
 /// `buffer` must be valid for `len` writable bytes, and the firmware function
 /// table must remain valid for the duration of the call.
 pub unsafe fn read_nvm(buffer: *mut u8, offset: c_uint, len: c_uint) -> Option<bool> {
-    unsafe { slots::read_nvm() }.map(|read| unsafe { read(buffer, offset, len) })
+    optional_bool_call(unsafe { slots::read_nvm() }, |read| unsafe {
+        read(buffer, offset, len)
+    })
 }
 
 /// Write a byte range to firmware NVM when the optional slot is present.
@@ -1015,7 +1017,9 @@ pub unsafe fn read_nvm(buffer: *mut u8, offset: c_uint, len: c_uint) -> Option<b
 /// `buffer` must be valid for `len` readable bytes, and the firmware function
 /// table must remain valid for the duration of the call.
 pub unsafe fn write_nvm(buffer: *mut u8, offset: c_uint, len: c_uint) -> Option<bool> {
-    unsafe { slots::write_nvm() }.map(|write| unsafe { write(buffer, offset, len) })
+    optional_bool_call(unsafe { slots::write_nvm() }, |write| unsafe {
+        write(buffer, offset, len)
+    })
 }
 
 /// Wipe firmware NVM when the optional slot is present.
@@ -1027,7 +1031,11 @@ pub unsafe fn write_nvm(buffer: *mut u8, offset: c_uint, len: c_uint) -> Option<
 ///
 /// The firmware function table must remain valid for the duration of the call.
 pub unsafe fn wipe_nvm() -> Option<bool> {
-    unsafe { slots::wipe_nvm() }.map(|wipe| unsafe { wipe() })
+    optional_bool_call(unsafe { slots::wipe_nvm() }, |wipe| unsafe { wipe() })
+}
+
+fn optional_bool_call<F>(loader: Option<F>, invoke: impl FnOnce(F) -> bool) -> Option<bool> {
+    loader.map(invoke)
 }
 
 /// Register the firmware app-data callback using the refloat/C ABI.
