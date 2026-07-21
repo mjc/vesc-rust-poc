@@ -82,6 +82,7 @@ static EEPROM_WRITE_FAILURE: AtomicI32 = AtomicI32::new(-1);
 const NVM_BYTES: usize = 256;
 static NVM: [AtomicU8; NVM_BYTES] = [const { AtomicU8::new(0) }; NVM_BYTES];
 static NVM_FAILURE: AtomicBool = AtomicBool::new(false);
+static LBM_FLOAT_BITS: AtomicU32 = AtomicU32::new(0);
 static CLOCK_TICKS: AtomicU32 = AtomicU32::new(0);
 static TIMER_TICKS: AtomicU32 = AtomicU32::new(0);
 static MUTEX_TOKEN: u8 = 0;
@@ -311,7 +312,7 @@ pub(crate) fn fail_nvm_operations(fail: bool) {
 }
 
 pub unsafe fn lbm_is_number(value: LbmValue) -> bool {
-    value.0 & 0x0f == 0x08
+    value.0 & 0x0f == 0x08 || value.0 == 0x10
 }
 
 pub unsafe fn lbm_dec_as_u32(value: LbmValue) -> u32 {
@@ -322,8 +323,21 @@ pub unsafe fn lbm_dec_as_i32(value: LbmValue) -> i32 {
     (value.0 as i32) >> 4
 }
 
+pub unsafe fn lbm_dec_as_float(value: LbmValue) -> f32 {
+    if value.0 == 0x10 {
+        f32::from_bits(LBM_FLOAT_BITS.load(Ordering::Relaxed))
+    } else {
+        0.0
+    }
+}
+
 pub unsafe fn lbm_enc_i(value: i32) -> LbmValue {
     LbmValue((value << 4) as u32 | 0x08)
+}
+
+pub unsafe fn lbm_enc_float(value: f32) -> LbmValue {
+    LBM_FLOAT_BITS.store(value.to_bits(), Ordering::Relaxed);
+    LbmValue(0x10)
 }
 
 pub unsafe fn lbm_dec_char(value: LbmValue) -> u8 {

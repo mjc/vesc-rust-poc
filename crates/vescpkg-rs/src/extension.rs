@@ -60,6 +60,12 @@ impl LispValue {
         Self::from_raw(unsafe { crate::ffi::lbm_enc_i(value) })
     }
 
+    /// Encode an `f32` through the firmware's LispBM representation.
+    #[cfg(not(test))]
+    pub fn from_f32(value: f32) -> Self {
+        Self::from_raw(unsafe { crate::ffi::lbm_enc_float(value) })
+    }
+
     /// Decode a LispBM character value.
     #[cfg(not(test))]
     pub fn decode_char(self) -> Option<u8> {
