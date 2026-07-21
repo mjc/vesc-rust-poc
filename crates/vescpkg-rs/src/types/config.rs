@@ -2,6 +2,7 @@
 
 use core::marker::PhantomData;
 
+pub use crate::units::{BatteryCellCount, BatteryCellCountError};
 use crate::units::{Distance, FluxLinkage, Inductance, Resistance};
 
 macro_rules! positive_count_type {
@@ -644,13 +645,6 @@ positive_count_type!(
     "Configured motor pole count.",
     "Error returned when the motor pole count is zero."
 );
-positive_count_type!(
-    BatteryCellCount,
-    BatteryCellCountError,
-    "Configured battery cell count.",
-    "Error returned when the battery cell count is zero."
-);
-
 unit_type!(
     WheelDiameter,
     Distance,

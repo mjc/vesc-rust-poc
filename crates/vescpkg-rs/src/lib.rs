@@ -63,15 +63,16 @@ pub(crate) mod ffi {
     use crate::test_ffi as selected_ffi;
     #[allow(unused_imports)]
     pub use selected_ffi::{
-        foc_get_id, get_cfg_float, imu_get_gyro, imu_get_pitch, imu_get_roll, imu_get_yaw,
-        imu_startup_done, mc_get_amp_hours, mc_get_amp_hours_charged, mc_get_battery_level,
-        mc_get_distance_abs, mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered,
-        mc_get_odometer, mc_get_rpm, mc_get_speed, mc_get_tot_current_directional_filtered,
-        mc_get_tot_current_filtered, mc_get_tot_current_in_filtered, mc_get_watt_hours,
-        mc_get_watt_hours_charged, mc_set_brake_current, mc_set_current, mc_set_current_off_delay,
-        mc_set_duty, mc_temp_fet_filtered, mc_temp_motor_filtered, timeout_reset,
-        vesc_imu_get_quaternions, vesc_request_terminate, vesc_should_terminate, vesc_sleep_us,
-        vesc_spawn, vesc_thread_set_priority,
+        foc_get_id, get_cfg_float, get_cfg_int, imu_get_gyro, imu_get_pitch, imu_get_roll,
+        imu_get_yaw, imu_startup_done, mc_get_amp_hours, mc_get_amp_hours_charged,
+        mc_get_battery_level, mc_get_distance_abs, mc_get_duty_cycle_now, mc_get_fault,
+        mc_get_input_voltage_filtered, mc_get_odometer, mc_get_rpm, mc_get_speed,
+        mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
+        mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
+        mc_set_brake_current, mc_set_current, mc_set_current_off_delay, mc_set_duty,
+        mc_temp_fet_filtered, mc_temp_motor_filtered, timeout_reset, vesc_imu_get_quaternions,
+        vesc_request_terminate, vesc_should_terminate, vesc_sleep_us, vesc_spawn,
+        vesc_thread_set_priority,
     };
     #[cfg(any(test, not(feature = "test-support")))]
     use vescpkg_rs_sys::raw as selected_ffi;
@@ -80,11 +81,11 @@ pub(crate) mod ffi {
 pub use vesc_protocol::buffer as protocol_buffer;
 use vescpkg_rs_units as units;
 pub use vescpkg_rs_units::{
-    AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Charge, Current, Distance,
-    DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage, Frequency, Height, Inductance,
-    Latitude, Longitude, MagneticFluxDensity, OdometerMeters, Percent, Power, Ratio, Resistance,
-    Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed, SystemTicks, Temperature,
-    TimestampTicks, VescSeconds, Voltage,
+    AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, BatteryCellCount,
+    BatteryCellCountError, Charge, Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance,
+    FluxLinkage, Frequency, Height, Inductance, Latitude, Longitude, MagneticFluxDensity,
+    OdometerMeters, Percent, Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate,
+    SignedRatio, Speed, SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
 };
 
 #[cfg(feature = "alloc")]

@@ -590,6 +590,7 @@ mod slots {
     fn_slot!(mc_get_distance_abs as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_odometer as unsafe extern "C" fn() -> u64);
     fn_slot!(get_cfg_float as unsafe extern "C" fn(c_int) -> f32);
+    fn_slot!(get_cfg_int as unsafe extern "C" fn(c_int) -> c_int);
     fn_slot!(mc_set_duty as unsafe extern "C" fn(f32));
     fn_slot!(mc_set_current as unsafe extern "C" fn(f32));
     fn_slot!(mc_set_current_off_delay as unsafe extern "C" fn(f32));
@@ -1051,6 +1052,20 @@ pub unsafe fn mc_get_tot_current_in_filtered() -> f32 {
 /// firmware configuration parameter id for a float-valued setting.
 pub unsafe fn get_cfg_float(param: c_int) -> f32 {
     unsafe { slots::get_cfg_float()(param) }
+}
+
+/// Read a firmware motor configuration integer by `CFG_PARAM_*` id.
+///
+/// Refloat v1.2.1 reads `CFG_PARAM_si_battery_cells` in
+/// `src/motor_data.c:76`; the VESC ABI slot is declared at
+/// `vesc_pkg_lib/vesc_c_if.h:590`.
+///
+/// # Safety
+///
+/// The firmware VESC function table must be valid and `param` must be a valid
+/// firmware configuration parameter id for an integer-valued setting.
+pub unsafe fn get_cfg_int(param: c_int) -> c_int {
+    unsafe { slots::get_cfg_int()(param) }
 }
 
 /// Reset the firmware motor-command safety timeout.

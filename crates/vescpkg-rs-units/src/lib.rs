@@ -80,7 +80,8 @@ pub mod time;
 
 pub use battery::{Charge, DistancePerEnergy, Energy, EnergyPerDistance};
 pub use electrical::{
-    Current, FluxLinkage, Inductance, MagneticFluxDensity, Power, Resistance, Voltage,
+    BatteryCellCount, BatteryCellCountError, Current, FluxLinkage, Inductance, MagneticFluxDensity,
+    Power, Resistance, Voltage,
 };
 pub use gnss::{Height, Latitude, Longitude};
 pub use motion::{
@@ -96,11 +97,12 @@ pub use time::{
 /// Common package-author imports for typed unit calculations.
 pub mod prelude {
     pub use crate::{
-        AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, BoundedUnitError, Charge,
-        Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage, Frequency,
-        Height, Inductance, Latitude, Longitude, MagneticFluxDensity, OdometerMeters, Percent,
-        Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed,
-        SystemTicks, TachometerSteps, Temperature, TimestampTicks, VescSeconds, Voltage,
+        AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, BatteryCellCount,
+        BatteryCellCountError, BoundedUnitError, Charge, Current, Distance, DistancePerEnergy,
+        Energy, EnergyPerDistance, FluxLinkage, Frequency, Height, Inductance, Latitude, Longitude,
+        MagneticFluxDensity, OdometerMeters, Percent, Power, Ratio, Resistance, Rpm,
+        SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed, SystemTicks, TachometerSteps,
+        Temperature, TimestampTicks, VescSeconds, Voltage,
     };
 }
 

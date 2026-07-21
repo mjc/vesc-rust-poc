@@ -65,6 +65,7 @@ macro_rules! vesc_if_used_slots {
             MC_GET_DISTANCE_ABS => mc_get_distance_abs,
             MC_GET_ODOMETER => mc_get_odometer,
             GET_CFG_FLOAT => get_cfg_float,
+            GET_CFG_INT => get_cfg_int,
             MC_SET_DUTY => mc_set_duty,
             MC_SET_CURRENT => mc_set_current,
             MC_SET_CURRENT_OFF_DELAY => mc_set_current_off_delay,
