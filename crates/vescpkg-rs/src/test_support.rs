@@ -53,6 +53,17 @@ impl FirmwareTest {
         self.firmware.imu()
     }
 
+    /// Access the same package custom-EEPROM range used on hardware.
+    #[must_use]
+    pub const fn eeprom(&self) -> crate::CustomEeprom {
+        crate::CustomEeprom::new()
+    }
+
+    /// Make writes to one custom-EEPROM address fail.
+    pub fn fail_eeprom_write(&self, address: crate::CustomEepromAddress) {
+        crate::test_ffi::fail_eeprom_write(address);
+    }
+
     /// Configure whether firmware IMU startup has completed.
     pub fn set_imu_ready(&self, done: bool) {
         crate::test_ffi::set_imu_startup_done(done);

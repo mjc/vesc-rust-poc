@@ -71,6 +71,11 @@ static THREAD_SLEEP_COUNT: AtomicUsize = AtomicUsize::new(0);
 static THREAD_SLEEP_MICROS: [AtomicU32; 2] = [const { AtomicU32::new(0) }; 2];
 static THREAD_PRIORITY_COUNT: AtomicUsize = AtomicUsize::new(0);
 static THREAD_PRIORITIES: [AtomicI32; 2] = [const { AtomicI32::new(0) }; 2];
+const EEPROM_WORDS: usize = 128;
+static EEPROM: [AtomicU32; EEPROM_WORDS] = [const { AtomicU32::new(0) }; EEPROM_WORDS];
+static EEPROM_PRESENT: [AtomicBool; EEPROM_WORDS] =
+    [const { AtomicBool::new(false) }; EEPROM_WORDS];
+static EEPROM_WRITE_FAILURE: AtomicI32 = AtomicI32::new(-1);
 
 pub(crate) struct MotorOutputState {
     pub keep_alive_count: usize,
@@ -164,7 +169,51 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     THREAD_PRIORITIES
         .iter()
         .for_each(|slot| slot.store(0, Ordering::Relaxed));
+    EEPROM_PRESENT
+        .iter()
+        .for_each(|slot| slot.store(false, Ordering::Relaxed));
+    EEPROM_WRITE_FAILURE.store(-1, Ordering::Relaxed);
     FirmwareLockGuard
+}
+
+pub unsafe fn read_eeprom_word(word: *mut u32, address: i32) -> bool {
+    let Some(index) = usize::try_from(address)
+        .ok()
+        .filter(|index| *index < EEPROM_WORDS)
+    else {
+        return false;
+    };
+    if !EEPROM_PRESENT[index].load(Ordering::Relaxed) {
+        return false;
+    }
+    if let Some(word) = unsafe { word.as_mut() } {
+        *word = EEPROM[index].load(Ordering::Relaxed);
+        true
+    } else {
+        false
+    }
+}
+
+pub unsafe fn store_eeprom_word(word: *mut u32, address: i32) -> bool {
+    let Some(index) = usize::try_from(address)
+        .ok()
+        .filter(|index| *index < EEPROM_WORDS)
+    else {
+        return false;
+    };
+    if EEPROM_WRITE_FAILURE.load(Ordering::Relaxed) == address {
+        return false;
+    }
+    let Some(word) = (unsafe { word.as_ref() }) else {
+        return false;
+    };
+    EEPROM[index].store(*word, Ordering::Relaxed);
+    EEPROM_PRESENT[index].store(true, Ordering::Relaxed);
+    true
+}
+
+pub(crate) fn fail_eeprom_write(address: crate::CustomEepromAddress) {
+    EEPROM_WRITE_FAILURE.store(address.get(), Ordering::Relaxed);
 }
 
 fn load(value: &AtomicU32) -> f32 {
