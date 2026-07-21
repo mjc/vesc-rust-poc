@@ -65,6 +65,11 @@ impl FirmwareTest {
         crate::Nvm::new()
     }
 
+    /// Make the fake firmware reject every NVM operation.
+    pub fn fail_nvm_operations(&self) {
+        crate::test_ffi::fail_nvm_operations(true);
+    }
+
     /// Make writes to one custom-EEPROM address fail.
     pub fn fail_eeprom_write(&self, address: crate::CustomEepromAddress) {
         crate::test_ffi::fail_eeprom_write(address);

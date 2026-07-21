@@ -42,7 +42,13 @@ fn nvm_reports_firmware_operation_failures() {
     let offset = NvmOffset::new(0);
     let mut bytes = [0; 1];
 
-    assert_eq!(firmware.nvm().read(offset, &mut bytes), Err(NvmError::FirmwareFailure));
-    assert_eq!(firmware.nvm().write(offset, &bytes), Err(NvmError::FirmwareFailure));
+    assert_eq!(
+        firmware.nvm().read(offset, &mut bytes),
+        Err(NvmError::FirmwareFailure)
+    );
+    assert_eq!(
+        firmware.nvm().write(offset, &bytes),
+        Err(NvmError::FirmwareFailure)
+    );
     assert_eq!(firmware.nvm().wipe(), Err(NvmError::FirmwareFailure));
 }

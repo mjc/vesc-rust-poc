@@ -277,6 +277,10 @@ pub unsafe fn wipe_nvm() -> Option<bool> {
     Some(true)
 }
 
+pub(crate) fn fail_nvm_operations(fail: bool) {
+    NVM_FAILURE.store(fail, Ordering::Relaxed);
+}
+
 fn load(value: &AtomicU32) -> f32 {
     f32::from_bits(value.load(Ordering::Relaxed))
 }
