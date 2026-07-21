@@ -32,6 +32,18 @@ const fn is_integer(value: u32) -> bool {
 pub struct LispValue(LbmValue);
 
 impl LispValue {
+    /// Decode this value as a LispBM floating-point number.
+    pub fn as_f32(self) -> Option<f32> {
+        #[cfg(not(test))]
+        {
+            crate::lifecycle_core::LbmApi::new(crate::bindings::RealBindings).decode_f32(self.raw())
+        }
+        #[cfg(test)]
+        {
+            (self.raw().0 != 0).then(|| f32::from_bits(self.raw().0))
+        }
+    }
+
     /// Decode this value as a LispBM integer.
     pub fn as_i32(self) -> Option<i32> {
         #[cfg(not(test))]
@@ -481,6 +493,15 @@ mod tests {
             },
             super::encode_integer(37),
         );
+    }
+
+    #[test]
+    fn typed_lisp_args_decode_device_number_as_float() {
+        let mut values = [37.0_f32.to_bits()];
+        let args = super::LispArgs::from_raw(values.as_mut_ptr(), values.len() as u32)
+            .expect("valid arguments");
+
+        assert_eq!(args.get(0).and_then(LispValue::as_f32), Some(37.0));
     }
 
     #[test]

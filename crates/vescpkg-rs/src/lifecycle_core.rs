@@ -42,6 +42,15 @@ impl<B: LbmBindings> LbmApi<B> {
         }
     }
 
+    /// Decode a LispBM numeric value into an `f32`.
+    pub fn decode_f32(&self, value: LbmValue) -> Option<f32> {
+        unsafe {
+            self.bindings
+                .is_number(value)
+                .then(|| self.bindings.decode_f32(value))
+        }
+    }
+
     /// Return the LispBM true value.
     #[cfg(not(test))]
     #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]

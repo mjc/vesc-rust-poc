@@ -15,6 +15,7 @@ unsafe extern "C" fn stub_handler(_args: *mut u32, _count: u32) -> u32 {
 struct NumericBindings {
     encoded: LbmValue,
     decoded: i32,
+    decoded_float: f32,
 }
 
 impl LbmBindings for NumericBindings {
@@ -33,6 +34,11 @@ impl LbmBindings for NumericBindings {
     unsafe fn decode_i32(&self, value: LbmValue) -> i32 {
         assert_eq!(value, self.encoded);
         self.decoded
+    }
+
+    unsafe fn decode_f32(&self, value: LbmValue) -> f32 {
+        assert_eq!(value, self.encoded);
+        self.decoded_float
     }
 }
 
@@ -132,10 +138,24 @@ fn lbm_api_decodes_firmware_i32_values() {
     let api = LbmApi::new(NumericBindings {
         encoded,
         decoded: i32::MAX,
+        decoded_float: 4.25,
     });
 
     assert_eq!(api.decode_i32(encoded), Some(i32::MAX));
     assert_eq!(api.decode_i32(LbmValue(0)), None);
+}
+
+#[test]
+fn lbm_api_decodes_firmware_float_values() {
+    let encoded = LbmValue(0x2800_0001);
+    let api = LbmApi::new(NumericBindings {
+        encoded,
+        decoded: i32::MAX,
+        decoded_float: 4.25,
+    });
+
+    assert_eq!(api.decode_f32(encoded), Some(4.25));
+    assert_eq!(api.decode_f32(LbmValue(0)), None);
 }
 
 #[test]
