@@ -667,12 +667,20 @@ fn running_duty_pushback_fixture(
             .with_setpoint_adjustment(adjustment),
         base.status().beep_reason(),
     );
+    let board_setpoint = if matches!(adjustment, RefloatSetpointAdjustment::PushbackDuty) {
+        AngleDegrees::from_degrees(5.0)
+    } else {
+        AngleDegrees::ZERO
+    };
+    let setpoints = base
+        .setpoints()
+        .with_board(RefloatRealtimeRuntimeSetpoint::new(board_setpoint));
     let base = RefloatAllDataBasePayload::new(
         base.balance_current(),
         base.attitude(),
         status,
         base.footpad(),
-        base.setpoints(),
+        setpoints,
         base.booster_current(),
         motor,
     );
