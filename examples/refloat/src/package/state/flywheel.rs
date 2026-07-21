@@ -183,25 +183,15 @@ impl RefloatPackageState {
     }
 
     pub(super) fn stop_flywheel(&mut self) {
-        self.set_ride_mode(RefloatMode::Normal);
         self.restore_flywheel_config();
     }
 
     pub(super) fn restore_flywheel_config(&mut self) {
+        self.force_beeper_on();
+        self.set_ride_mode(RefloatMode::Normal);
         self.read_config_from_eeprom();
         self.refresh_balance_filter_config();
         self.refresh_config_runtime_state();
-        let run_state = self
-            .all_data_payloads
-            .base()
-            .status()
-            .ride_state()
-            .run_state();
-        self.alert_beeper(if matches!(run_state, RefloatRunState::Disabled) {
-            RefloatBeeperAlert::Short(RefloatBeeperCount::THREE)
-        } else {
-            RefloatBeeperAlert::Short(RefloatBeeperCount::ONE)
-        });
     }
 
     pub(super) fn flywheel_attitude(

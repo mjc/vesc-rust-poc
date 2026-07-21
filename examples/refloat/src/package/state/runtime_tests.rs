@@ -82,6 +82,7 @@ fn startup_ready_above_low_voltage_margin_schedules_one_long_beep_like_refloat()
     assert_eq!(
         changes,
         [
+            (1, RefloatBeeperLevel::Low),
             (300, RefloatBeeperLevel::Low),
             (600, RefloatBeeperLevel::High),
             (900, RefloatBeeperLevel::Low),
@@ -119,6 +120,7 @@ fn startup_ready_below_low_voltage_margin_reports_low_battery_and_beeps_twice() 
     assert_eq!(
         changes,
         [
+            (1, RefloatBeeperLevel::Low),
             (300, RefloatBeeperLevel::Low),
             (600, RefloatBeeperLevel::High),
             (900, RefloatBeeperLevel::Low),
@@ -1525,7 +1527,11 @@ fn ready_bms_connection_alert_schedules_four_short_beeps_like_refloat() {
         .filter_map(|tick| state.tick_beeper().map(|level| (tick, level)))
         .collect();
 
-    assert_eq!(changes.len(), 9);
+    // The main loop's preceding footpad `beep_off(false)` writes low before
+    // the BMS alert is queued; the four-beep sequence still contributes the
+    // following nine transitions exactly like Refloat.
+    assert_eq!(changes.len(), 10);
+    assert_eq!(changes.first(), Some(&(1, RefloatBeeperLevel::Low)));
     assert_eq!(changes.last(), Some(&(720, RefloatBeeperLevel::Low)));
 }
 

@@ -181,6 +181,21 @@ pub(super) fn refresh(
         )
         && state.reverse_total_erpm.abs() > reverse_stop.total_erpm;
     let motor_erpm = base.motor().electrical_speed().rpm();
+    let switch_warning_erpm = if state.serialized_config.foot_beep_enabled() {
+        Rpm::from_revolutions_per_minute(2_000.0)
+    } else {
+        Rpm::from_revolutions_per_minute(100_000.0)
+    };
+    let footpad_warning = matches!(run_state, RefloatRunState::Running)
+        && !matches!(ride_state.mode(), RefloatMode::Flywheel)
+        && matches!(base.footpad().state(), RefloatFootpadState::None)
+        && motor_erpm.abs() > switch_warning_erpm;
+    if footpad_warning {
+        state.force_beeper_on();
+        beep_reason = RefloatBeepReason::Sensors;
+    } else {
+        state.release_beeper();
+    }
     // C updates `imu.balance_pitch` from the Refloat-owned balance filter
     // before control at `third_party/refloat/src/main.c:760-775`, `third_party/refloat/src/imu.c:35-41`, and
     // `third_party/refloat/src/balance_filter.c:145-154`; FLYWHEEL then overrides it with raw
@@ -659,14 +674,15 @@ pub(super) fn refresh(
             RefloatSetpointAdjustment::Centering | RefloatSetpointAdjustment::ReverseStop
         ) && !wheelslip_branch_active
             && !matches!(ride_state.wheelslip(), RefloatWheelSlipState::Detected)
-            && !matches!(ride_state.mode(), RefloatMode::Flywheel)
         {
             let duty_pushback_active = base.motor().duty_cycle().ratio().as_ratio()
                 > state.serialized_config.duty_pushback_threshold().as_ratio();
             let board_setpoint = if duty_pushback_active {
                 let angle = state.serialized_config.duty_pushback_angle();
-                ride_state =
-                    ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackDuty);
+                if !matches!(ride_state.mode(), RefloatMode::Flywheel) {
+                    ride_state = ride_state
+                        .with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackDuty);
+                }
                 Some(if motor_erpm.is_positive() {
                     angle
                 } else {
@@ -780,6 +796,20 @@ pub(super) fn refresh(
             // `third_party/refloat/src/main.c:719-721`.
             setpoints =
                 setpoints.with_board(RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::ZERO));
+        }
+        if !matches!(ride_state.mode(), RefloatMode::Flywheel) {
+            let duty_warning = matches!(
+                ride_state.setpoint_adjustment(),
+                RefloatSetpointAdjustment::PushbackDuty
+            ) && (state.serialized_config.duty_beep_enabled()
+                || state.serialized_config.duty_pushback_angle().is_zero());
+            if duty_warning {
+                state.force_beeper_on();
+                state.duty_beeping = true;
+                beep_reason = RefloatBeepReason::Duty;
+            } else if state.duty_beeping {
+                state.release_beeper();
+            }
         }
         let gyro = imu.angular_rate();
         // Upstream RUNNING executes this exact balance-current pipeline at

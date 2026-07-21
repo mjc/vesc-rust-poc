@@ -147,7 +147,7 @@ pub(crate) fn tick_refloat_main_thread_with(
     // `third_party/refloat/src/main.c:772-1080`.
     // C calls `beeper_update` before its state switch at
     // `third_party/refloat/src/main.c:776-824`.
-    let beeper_level = state
+    let alert_level = state
         .tick_beeper()
         .map(crate::beeper::RefloatBeeperLevel::digital_output);
     state.refresh_main_loop_runtime_state(
@@ -164,6 +164,10 @@ pub(crate) fn tick_refloat_main_thread_with(
         .ride_state()
         .run_state();
     state.apply_motor_control(motor, run_state, system_time_ticks);
+    let beeper_level = state
+        .take_beeper_level()
+        .map(crate::beeper::RefloatBeeperLevel::digital_output)
+        .or(alert_level);
 
     RefloatMainThreadTick::new(
         state.configured_loop_time_us(),
@@ -286,8 +290,13 @@ impl vescpkg_rs::StatelessFirmwareThread for RefloatAuxThread {
 mod tests {
     use super::super::state::RefloatPackageState;
     use crate::beeper::{RefloatBeeperAlert, RefloatBeeperCount};
-    use crate::domain::{RefloatAllDataPayloads, RefloatFootpadState, RefloatRunState};
-    use crate::package::test_support::default_refloat_config_bytes;
+    use crate::domain::{
+        RefloatAllDataPayloads, RefloatBeepReason, RefloatFootpadState, RefloatMode,
+        RefloatRunState, RefloatSetpointAdjustment,
+    };
+    use crate::package::test_support::{
+        default_refloat_config_bytes, sample_all_data_payloads_with_ride_state,
+    };
     use core::time::Duration;
     use vescpkg_rs::prelude::*;
     use vescpkg_rs::test_support::FirmwareTest;
@@ -417,6 +426,132 @@ mod tests {
                 (160, DigitalOutputLevel::High),
             ]
         );
+    }
+
+    #[test]
+    fn refloat_main_thread_forces_footpad_warning_on_and_off_like_refloat() {
+        let firmware = FirmwareTest::new().with_runtime_motor(
+            ElectricalSpeed::new(Rpm::from_revolutions_per_minute(3_000.0)),
+            VehicleSpeed::new(Speed::ZERO),
+            TotalMotorCurrent::new(Current::ZERO),
+            InputCurrent::new(Current::ZERO),
+            DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+        );
+        firmware.set_imu_ready(true);
+        let mut state = RefloatPackageState::new(sample_all_data_payloads_with_ride_state(
+            RefloatRunState::Running,
+            RefloatMode::Normal,
+        ));
+        let mut config = default_refloat_config_bytes();
+        config[242] = 1;
+        assert!(state.store_serialized_config(&config));
+        for _ in 0..=240 {
+            let _ = state.tick_beeper();
+        }
+
+        let warning = super::tick_refloat_main_thread_with(
+            &mut state,
+            firmware.telemetry(),
+            firmware.imu(),
+            firmware.motor(),
+            AdcVoltage::new(Voltage::ZERO),
+            AdcVoltage::new(Voltage::ZERO),
+            TimestampTicks::from_ticks(1),
+        );
+        assert_eq!(warning.beeper_level(), Some(DigitalOutputLevel::High));
+        assert_eq!(
+            state.all_data_payloads().base().status().beep_reason(),
+            RefloatBeepReason::Sensors
+        );
+
+        let restored = super::tick_refloat_main_thread_with(
+            &mut state,
+            firmware.telemetry(),
+            firmware.imu(),
+            firmware.motor(),
+            AdcVoltage::new(Voltage::from_volts(3.0)),
+            AdcVoltage::new(Voltage::from_volts(3.0)),
+            TimestampTicks::from_ticks(2),
+        );
+        assert_eq!(restored.beeper_level(), Some(DigitalOutputLevel::Low));
+    }
+
+    #[test]
+    fn refloat_main_thread_holds_duty_warning_for_duty_pushback_like_refloat() {
+        let mut firmware = FirmwareTest::new().with_runtime_motor(
+            ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1_200.0)),
+            VehicleSpeed::new(Speed::ZERO),
+            TotalMotorCurrent::new(Current::ZERO),
+            InputCurrent::new(Current::ZERO),
+            DutyCycle::new(SignedRatio::from_ratio_const(0.9)),
+        );
+        firmware.set_imu_ready(true);
+        let mut state = RefloatPackageState::new(sample_all_data_payloads_with_ride_state(
+            RefloatRunState::Running,
+            RefloatMode::Normal,
+        ));
+        let mut config = default_refloat_config_bytes();
+        config[50] = 1;
+        config[242] = 1;
+        assert!(state.store_serialized_config(&config));
+        for _ in 0..=240 {
+            let _ = state.tick_beeper();
+        }
+
+        let warning_tick = (1..=400).find(|tick| {
+            super::tick_refloat_main_thread_with(
+                &mut state,
+                firmware.telemetry(),
+                firmware.imu(),
+                firmware.motor(),
+                AdcVoltage::new(Voltage::from_volts(3.0)),
+                AdcVoltage::new(Voltage::from_volts(3.0)),
+                TimestampTicks::from_ticks(*tick),
+            )
+            .beeper_level()
+                == Some(DigitalOutputLevel::High)
+        });
+
+        let status = state.all_data_payloads().base().status();
+        assert_eq!(status.ride_state().run_state(), RefloatRunState::Running);
+        assert!(
+            state
+                .all_data_payloads()
+                .base()
+                .motor()
+                .duty_cycle()
+                .ratio()
+                .as_ratio()
+                > 0.8
+        );
+        assert_eq!(
+            status.ride_state().setpoint_adjustment(),
+            RefloatSetpointAdjustment::PushbackDuty
+        );
+        assert_eq!(status.beep_reason(), RefloatBeepReason::Duty);
+        assert!(warning_tick.is_some());
+
+        firmware = firmware.with_runtime_motor(
+            ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1_200.0)),
+            VehicleSpeed::new(Speed::ZERO),
+            TotalMotorCurrent::new(Current::ZERO),
+            InputCurrent::new(Current::ZERO),
+            DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+        );
+        let release_tick = (401..=800).find(|tick| {
+            super::tick_refloat_main_thread_with(
+                &mut state,
+                firmware.telemetry(),
+                firmware.imu(),
+                firmware.motor(),
+                AdcVoltage::new(Voltage::from_volts(3.0)),
+                AdcVoltage::new(Voltage::from_volts(3.0)),
+                TimestampTicks::from_ticks(*tick),
+            )
+            .beeper_level()
+                == Some(DigitalOutputLevel::Low)
+        });
+        assert!(release_tick.is_some());
     }
 
     #[test]

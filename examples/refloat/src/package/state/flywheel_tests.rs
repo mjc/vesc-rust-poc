@@ -1,13 +1,15 @@
 use super::*;
 use crate::domain::{
-    RefloatAllDataBasePayload, RefloatAllDataStatus, RefloatFootpadSample, RefloatFootpadState,
-    RefloatRideState,
+    RefloatAllDataBasePayload, RefloatAllDataMotorPayload, RefloatAllDataStatus,
+    RefloatFootpadSample, RefloatFootpadState, RefloatRideState,
 };
 use crate::package::test_support::{
     imu_angular_rate, imu_pitch_rate, imu_roll_rate, imu_yaw_rate,
     sample_all_data_payloads_with_ride_state,
 };
-use vescpkg_rs::prelude::{AngleDegrees, AngleRadians, AngularVelocity, Voltage};
+use vescpkg_rs::prelude::{
+    AngleDegrees, AngleRadians, AngularVelocity, DutyCycle, SignedRatio, Voltage,
+};
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{ImuPitch, ImuRoll, ImuYaw};
 
@@ -86,6 +88,34 @@ fn set_footpad(state: &mut RefloatPackageState, footpad: RefloatFootpadState) {
             base.setpoints(),
             base.booster_current(),
             base.motor(),
+        ),
+        payloads.mode2(),
+        payloads.mode3(),
+        payloads.mode4(),
+    );
+}
+
+fn set_duty_cycle(state: &mut RefloatPackageState, duty_cycle: DutyCycle) {
+    let payloads = state.all_data_payloads;
+    let base = payloads.base();
+    let motor = base.motor();
+    let motor = RefloatAllDataMotorPayload::new(
+        motor.battery_voltage(),
+        motor.electrical_speed(),
+        motor.vehicle_speed(),
+        motor.currents(),
+        duty_cycle,
+        motor.foc_id_current(),
+    );
+    state.all_data_payloads = RefloatAllDataPayloads::new(
+        RefloatAllDataBasePayload::new(
+            base.balance_current(),
+            base.attitude(),
+            base.status(),
+            base.footpad(),
+            base.setpoints(),
+            base.booster_current(),
+            motor,
         ),
         payloads.mode2(),
         payloads.mode3(),
@@ -197,6 +227,7 @@ fn flywheel_stop_restores_the_persisted_config() {
             .editor()
             .set_kp(vescpkg_rs::AngleCurrentGain::new(12.0))
     );
+    assert!(state.serialized_config.editor().set_beeper_enabled(true));
     let persisted = *state.serialized_config.as_bytes();
     assert!(state.store_serialized_config(&persisted));
 
@@ -226,6 +257,7 @@ fn flywheel_stop_restores_the_persisted_config() {
         state.serialized_config.balance().kp().as_amps_per_degree(),
         12.0
     );
+    assert_eq!(state.take_beeper_level(), Some(RefloatBeeperLevel::High));
 }
 
 #[test]
@@ -305,6 +337,40 @@ fn flywheel_pitch_rate_projection_uses_raw_roll_before_calibration_offset() {
     // Refloat computes pitch-rate projection from the raw 90-degree roll, so
     // gyro pitch is fully suppressed even though the calibrated roll is zero.
     assert!((pitching - stationary).abs() < Current::from_amps(0.0001));
+}
+
+#[test]
+fn flywheel_applies_duty_pushback_without_exposing_pushback_status() {
+    let firmware = FirmwareTest::new();
+    firmware.set_imu_ready(true);
+    firmware.set_imu_attitude(
+        ImuRoll::new(AngleRadians::ZERO),
+        ImuPitch::new(AngleRadians::from_degrees(80.0)),
+        ImuYaw::new(AngleRadians::ZERO),
+    );
+    let mut state = RefloatPackageState::new(ready_at(
+        AngleDegrees::from_degrees(80.0),
+        AngleDegrees::ZERO,
+    ));
+    assert!(state.handle_flywheel_packet(&flywheel_packet(&[0x81, 0, 0, 0, 0, 1])));
+    set_ride_state(&mut state, RefloatRunState::Running);
+    set_footpad(&mut state, RefloatFootpadState::None);
+    set_duty_cycle(
+        &mut state,
+        DutyCycle::new(SignedRatio::from_ratio_const(0.2)),
+    );
+
+    state.refresh_imu_runtime_state(firmware.imu(), TimestampTicks::from_ticks(1));
+
+    let base = state.all_data_payloads().base();
+    assert_eq!(
+        base.setpoints().board().angle(),
+        AngleDegrees::from_degrees(2.0)
+    );
+    assert_eq!(
+        base.status().ride_state().setpoint_adjustment(),
+        RefloatSetpointAdjustment::None
+    );
 }
 
 #[test]

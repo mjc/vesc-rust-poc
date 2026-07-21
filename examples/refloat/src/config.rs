@@ -76,6 +76,7 @@ impl RefloatConfigImage {
     const DUTY_PUSHBACK_SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: REFLOAT_CONFIG_LEN, offset: 46, scale: 100.0);
     const DUTY_PUSHBACK_THRESHOLD_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: REFLOAT_CONFIG_LEN, offset: 48, scale: 1000.0);
     const DUTY_BEEP_ENABLED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 50);
+    const FOOT_BEEP_ENABLED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 28);
     const TILTBACK_RETURN_SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: REFLOAT_CONFIG_LEN, offset: 64, scale: 100.0);
     const TILTBACK_CONSTANT_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 67, scale: 1000.0);
     const TILTBACK_CONSTANT_ERPM_FIELD: CustomConfigElectricalSpeedField = vescpkg_rs::generated_custom_config_field!(CustomConfigElectricalSpeedField, len: REFLOAT_CONFIG_LEN, offset: 69);
@@ -206,6 +207,14 @@ impl RefloatConfigImage {
 
     pub(crate) fn duty_pushback_threshold(&self) -> Ratio {
         generated_field(Self::DUTY_PUSHBACK_THRESHOLD_FIELD.read(self))
+    }
+
+    pub(crate) fn duty_beep_enabled(&self) -> bool {
+        generated_field(Self::DUTY_BEEP_ENABLED_FIELD.read(self))
+    }
+
+    pub(crate) fn foot_beep_enabled(&self) -> bool {
+        generated_field(Self::FOOT_BEEP_ENABLED_FIELD.read(self))
     }
 
     #[cfg(test)]
