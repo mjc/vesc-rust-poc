@@ -2,6 +2,23 @@
 
 use core::marker::PhantomData;
 
+/// One protocol byte kept typed while mapping wire values into semantic units.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct WireByte(u8);
+
+impl WireByte {
+    /// Wrap one byte received from a validated protocol payload.
+    pub const fn new(value: u8) -> Self {
+        Self(value)
+    }
+
+    /// Apply a wire scale and offset directly through a semantic constructor.
+    pub fn scaled<T>(self, scale: f32, offset: f32, constructor: fn(f32) -> T) -> T {
+        constructor(f32::from(self.0) * scale + offset)
+    }
+}
+
 pub use crate::units::{BatteryCellCount, BatteryCellCountError};
 use crate::units::{Distance, FluxLinkage, Inductance, Resistance};
 
@@ -938,6 +955,16 @@ mod tests {
                 crate::AngleDegrees::from_degrees(4_000.0)
             )
             .is_none()
+        );
+    }
+
+    #[test]
+    fn wire_byte_maps_directly_into_semantic_scaled_values() {
+        let byte = super::WireByte::new(42);
+
+        assert_eq!(
+            byte.scaled(0.5, -1.0, crate::AngleDegrees::from_degrees),
+            crate::AngleDegrees::from_degrees(20.0)
         );
     }
 
