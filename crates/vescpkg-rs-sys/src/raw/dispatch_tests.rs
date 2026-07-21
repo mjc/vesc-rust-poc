@@ -6,18 +6,18 @@ use crate::test_support::{empty_table, with_table};
 use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescPin, VescPinMode};
 
 use super::{
-    CustomConfigGet, CustomConfigSet, CustomConfigXml, VescIf, conf_custom_add_config,
-    conf_custom_clear_configs, foc_get_id, io_read, io_read_analog, io_set_mode, io_write,
-    lbm_add_extension, lbm_add_extension_with_table_base, lbm_dec_as_float, lbm_dec_as_i32,
-    lbm_enc_i, lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number,
-    mc_get_amp_hours, mc_get_amp_hours_charged, mc_get_battery_level, mc_get_distance_abs,
-    mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered, mc_get_odometer,
-    mc_get_rpm, mc_get_speed, mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
-    mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
-    mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, store_eeprom_word,
-    vesc_clear_app_data_handler, vesc_mutex_create, vesc_mutex_lock, vesc_mutex_unlock,
-    vesc_send_app_data, vesc_set_app_data_handler, vesc_sleep_us, vesc_system_time_ticks,
-    vesc_thread_set_priority,
+    CanStatusMsg, CustomConfigGet, CustomConfigSet, CustomConfigXml, VescIf, can_status_msg_index,
+    conf_custom_add_config, conf_custom_clear_configs, foc_get_id, io_read, io_read_analog,
+    io_set_mode, io_write, lbm_add_extension, lbm_add_extension_with_table_base, lbm_dec_as_float,
+    lbm_dec_as_i32, lbm_enc_i, lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true,
+    lbm_is_number, mc_get_amp_hours, mc_get_amp_hours_charged, mc_get_battery_level,
+    mc_get_distance_abs, mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered,
+    mc_get_odometer, mc_get_rpm, mc_get_speed, mc_get_tot_current_directional_filtered,
+    mc_get_tot_current_filtered, mc_get_tot_current_in_filtered, mc_get_watt_hours,
+    mc_get_watt_hours_charged, mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word,
+    store_eeprom_word, vesc_clear_app_data_handler, vesc_mutex_create, vesc_mutex_lock,
+    vesc_mutex_unlock, vesc_send_app_data, vesc_set_app_data_handler, vesc_sleep_us,
+    vesc_system_time_ticks, vesc_thread_set_priority,
 };
 
 struct SyncCounter(Cell<usize>);
@@ -169,6 +169,13 @@ static LAST_HANDLER_INSTALLED: SyncBool = SyncBool::new();
 static LAST_CUSTOM_CONFIG_DEFAULT: SyncBool = SyncBool::new();
 static LAST_EEPROM_ADDRESS: SyncI32 = SyncI32::new();
 static LAST_EEPROM_WORD: SyncU32 = SyncU32::new();
+static CAN_STATUS: CanStatusMsg = CanStatusMsg {
+    id: 17,
+    rx_time: 1234,
+    rpm: 1500.0,
+    current: 4.5,
+    duty: 0.25,
+};
 
 fn reset_counters() {
     for counter in [
@@ -278,6 +285,10 @@ extern "C" fn stub_store_eeprom_var(word: *mut super::EepromVar, address: c_int)
     };
     LAST_EEPROM_WORD.set(*word);
     true
+}
+
+extern "C" fn stub_can_get_status_msg_index(_index: c_int) -> *mut CanStatusMsg {
+    &CAN_STATUS as *const CanStatusMsg as *mut CanStatusMsg
 }
 
 extern "C" fn stub_set_app_data_handler(handler: Option<AppDataHandler>) -> bool {
@@ -491,6 +502,7 @@ fn populated_table() -> VescIf {
     table.lbm_enc_sym_eerror = 0xAABB_CC00;
     table.read_eeprom_var = Some(stub_read_eeprom_var);
     table.store_eeprom_var = Some(stub_store_eeprom_var);
+    table.can_get_status_msg_index = Some(stub_can_get_status_msg_index);
     table.set_app_data_handler = Some(stub_set_app_data_handler);
     table.send_app_data = Some(stub_send_app_data);
     table.conf_custom_add_config = Some(stub_conf_custom_add_config);
@@ -594,6 +606,26 @@ fn eeprom_helpers_forward_word_pointers_and_addresses() {
         assert_eq!(STORE_EEPROM_VAR.get(), 1);
         assert_eq!(LAST_EEPROM_ADDRESS.get(), 9);
         assert_eq!(LAST_EEPROM_WORD.get(), stored_word);
+    });
+}
+
+#[test]
+fn can_status_loader_copies_firmware_owned_records() {
+    with_populated_table(|| unsafe {
+        let status = can_status_msg_index(3).expect("mock CAN status record");
+        assert_eq!(status.id, 17);
+        assert_eq!(status.rx_time, 1234);
+        assert_eq!(status.rpm, 1500.0);
+        assert_eq!(status.current, 4.5);
+        assert_eq!(status.duty, 0.25);
+    });
+}
+
+#[test]
+fn absent_can_status_loader_returns_none_without_calling_a_null_slot() {
+    let table = empty_table();
+    with_table(&table, || unsafe {
+        assert!(can_status_msg_index(0).is_none());
     });
 }
 

@@ -609,7 +609,8 @@ macro_rules! vesc_slot_word_from {
 
 mod slots {
     use super::{
-        AppDataHandler, CustomConfigGet, CustomConfigSet, CustomConfigXml, EepromVar,
+        AppDataHandler, CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5,
+        CanStatusMsg6, CustomConfigGet, CustomConfigSet, CustomConfigXml, EepromVar,
         ExtensionHandler, ImuReadCallback, LibMutex, LibThread, VescIfAbi, c_char, c_int, c_uchar,
         c_void,
     };
@@ -742,6 +743,28 @@ mod slots {
     fn_slot!(request_terminate as unsafe extern "C" fn(LibThread));
     fn_slot!(should_terminate as unsafe extern "C" fn() -> bool);
     fn_slot!(get_arg as unsafe extern "C" fn(u32) -> *mut *mut c_void);
+    optional_fn_slot!(can_get_status_msg_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg);
+    optional_fn_slot!(can_get_status_msg_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg);
+    optional_fn_slot!(
+        can_get_status_msg_2_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg2
+    );
+    optional_fn_slot!(can_get_status_msg_2_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg2);
+    optional_fn_slot!(
+        can_get_status_msg_3_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg3
+    );
+    optional_fn_slot!(can_get_status_msg_3_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg3);
+    optional_fn_slot!(
+        can_get_status_msg_4_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg4
+    );
+    optional_fn_slot!(can_get_status_msg_4_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg4);
+    optional_fn_slot!(
+        can_get_status_msg_5_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg5
+    );
+    optional_fn_slot!(can_get_status_msg_5_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg5);
+    optional_fn_slot!(
+        can_get_status_msg_6_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg6
+    );
+    optional_fn_slot!(can_get_status_msg_6_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg6);
     fn_slot!(mc_get_fault as unsafe extern "C" fn() -> c_int);
     fn_slot!(mc_get_rpm as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_speed as unsafe extern "C" fn() -> f32);
@@ -1160,6 +1183,50 @@ pub unsafe fn vesc_should_terminate() -> bool {
 pub unsafe fn vesc_get_arg(prog_addr: u32) -> *mut *mut c_void {
     unsafe { slots::get_arg()(prog_addr) }
 }
+
+macro_rules! copy_optional_status {
+    ($wrapper:ident, $slot:ident, $status:ty) => {
+        /// Copy one firmware-owned CAN status record, returning `None` when the
+        /// slot or indexed record is unavailable.
+        pub unsafe fn $wrapper(index: c_int) -> Option<$status> {
+            let loader = unsafe { slots::$slot()? };
+            unsafe { loader(index).as_ref().copied() }
+        }
+    };
+}
+
+copy_optional_status!(can_status_msg_index, can_get_status_msg_index, CanStatusMsg);
+copy_optional_status!(can_status_msg_id, can_get_status_msg_id, CanStatusMsg);
+copy_optional_status!(
+    can_status_msg_2_index,
+    can_get_status_msg_2_index,
+    CanStatusMsg2
+);
+copy_optional_status!(can_status_msg_2_id, can_get_status_msg_2_id, CanStatusMsg2);
+copy_optional_status!(
+    can_status_msg_3_index,
+    can_get_status_msg_3_index,
+    CanStatusMsg3
+);
+copy_optional_status!(can_status_msg_3_id, can_get_status_msg_3_id, CanStatusMsg3);
+copy_optional_status!(
+    can_status_msg_4_index,
+    can_get_status_msg_4_index,
+    CanStatusMsg4
+);
+copy_optional_status!(can_status_msg_4_id, can_get_status_msg_4_id, CanStatusMsg4);
+copy_optional_status!(
+    can_status_msg_5_index,
+    can_get_status_msg_5_index,
+    CanStatusMsg5
+);
+copy_optional_status!(can_status_msg_5_id, can_get_status_msg_5_id, CanStatusMsg5);
+copy_optional_status!(
+    can_status_msg_6_index,
+    can_get_status_msg_6_index,
+    CanStatusMsg6
+);
+copy_optional_status!(can_status_msg_6_id, can_get_status_msg_6_id, CanStatusMsg6);
 
 /// Return the active motor fault code, or zero for no fault.
 ///
