@@ -72,7 +72,6 @@ impl RefloatConfigImage {
     const DUTY_PUSHBACK_THRESHOLD_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: REFLOAT_CONFIG_LEN, offset: 48, scale: 1000.0);
     const HIGH_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 51, scale: 100.0);
     const HIGH_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigScaledVoltageField, len: REFLOAT_CONFIG_LEN, offset: 55, scale: 100.0);
-    #[cfg(any(test, target_arch = "arm"))]
     const LOW_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 57, scale: 100.0);
 
     // Generated `hardware.leds.mode` is the first field in the final hardware
@@ -187,7 +186,6 @@ impl RefloatConfigImage {
         generated_field(Self::HIGH_VOLTAGE_THRESHOLD_FIELD.read(self))
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn low_voltage_pushback_angle(&self) -> AngleDegrees {
         generated_field(Self::LOW_VOLTAGE_PUSHBACK_ANGLE_FIELD.read(self))
     }

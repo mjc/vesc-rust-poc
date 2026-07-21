@@ -823,14 +823,17 @@ fn record_bms_sample(
     state: &mut RefloatPackageState,
     cell_low_voltage: Voltage,
     cell_high_voltage: Voltage,
+    cell_low_temperature: RefloatBmsTemperature,
+    cell_high_temperature: RefloatBmsTemperature,
+    bms_high_temperature: RefloatBmsTemperature,
     message_age: VescSeconds,
 ) {
     state.record_bms_sample(RefloatBmsSample::new(
         cell_low_voltage,
         cell_high_voltage,
-        RefloatBmsTemperature::from_degrees_celsius(20),
-        RefloatBmsTemperature::from_degrees_celsius(30),
-        RefloatBmsTemperature::from_degrees_celsius(35),
+        cell_low_temperature,
+        cell_high_temperature,
+        bms_high_temperature,
         message_age,
     ));
 }
@@ -1123,6 +1126,9 @@ fn bms_cell_over_voltage_enters_immediate_high_voltage_pushback_like_refloat() {
         &mut state,
         Voltage::from_volts(4.0),
         Voltage::from_volts(4.4),
+        RefloatBmsTemperature::from_degrees_celsius(20),
+        RefloatBmsTemperature::from_degrees_celsius(30),
+        RefloatBmsTemperature::from_degrees_celsius(35),
         VescSeconds::ZERO,
     );
     state.refresh_bms_runtime_state(now);
@@ -1158,6 +1164,9 @@ fn bms_connection_fault_uses_high_voltage_angle_and_error_pushback_like_refloat(
         &mut state,
         Voltage::from_volts(4.0),
         Voltage::from_volts(4.1),
+        RefloatBmsTemperature::from_degrees_celsius(20),
+        RefloatBmsTemperature::from_degrees_celsius(30),
+        RefloatBmsTemperature::from_degrees_celsius(35),
         VescSeconds::from_seconds(6.0),
     );
     state.refresh_bms_runtime_state(TimestampTicks::from_ticks(0));
@@ -1178,6 +1187,102 @@ fn bms_connection_fault_uses_high_voltage_angle_and_error_pushback_like_refloat(
     assert_eq!(
         base.status().beep_reason(),
         RefloatBeepReason::BmsConnection
+    );
+}
+
+#[test]
+fn bms_temperature_faults_use_low_voltage_angle_and_source_reason_order() {
+    let cases = [
+        (
+            RefloatBmsTemperature::from_degrees_celsius(20),
+            RefloatBmsTemperature::from_degrees_celsius(46),
+            RefloatBmsTemperature::from_degrees_celsius(35),
+            RefloatBeepReason::CellOverTemperature,
+        ),
+        (
+            RefloatBmsTemperature::from_degrees_celsius(-1),
+            RefloatBmsTemperature::from_degrees_celsius(30),
+            RefloatBmsTemperature::from_degrees_celsius(35),
+            RefloatBeepReason::CellUnderTemperature,
+        ),
+        (
+            RefloatBmsTemperature::from_degrees_celsius(20),
+            RefloatBmsTemperature::from_degrees_celsius(30),
+            RefloatBmsTemperature::from_degrees_celsius(61),
+            RefloatBeepReason::BmsOverTemperature,
+        ),
+    ];
+
+    for (cell_low_temperature, cell_high_temperature, bms_temperature, expected_reason) in cases {
+        let (_, telemetry, mut state) = running_protective_pushback_fixture(
+            SignedRatio::from_ratio_const(0.10),
+            Rpm::from_revolutions_per_minute(1_000.0),
+            RefloatSetpointAdjustment::None,
+            InputVoltage::new(Voltage::from_volts(72.0)),
+        );
+        enable_bms(&mut state);
+        record_bms_sample(
+            &mut state,
+            Voltage::from_volts(4.0),
+            Voltage::from_volts(4.1),
+            cell_low_temperature,
+            cell_high_temperature,
+            bms_temperature,
+            VescSeconds::ZERO,
+        );
+        let now = TimestampTicks::from_ticks(0);
+        state.refresh_bms_runtime_state(now);
+
+        tick_running_protective_pushback(&mut state, &telemetry, now);
+
+        let base = state.all_data_payloads().base();
+        assert_eq!(
+            base.status().ride_state().setpoint_adjustment(),
+            RefloatSetpointAdjustment::PushbackTemperature,
+        );
+        assert_eq!(
+            base.setpoints().board().angle(),
+            AngleDegrees::from_degrees(10.0),
+        );
+        assert_eq!(base.status().beep_reason(), expected_reason);
+    }
+}
+
+#[test]
+fn bms_cell_under_voltage_bypasses_pack_sag_checks_like_refloat() {
+    let (_, telemetry, mut state) = running_protective_pushback_fixture(
+        SignedRatio::from_ratio_const(0.10),
+        Rpm::from_revolutions_per_minute(1_000.0),
+        RefloatSetpointAdjustment::None,
+        InputVoltage::new(Voltage::from_volts(72.0)),
+    );
+    enable_bms(&mut state);
+    record_bms_sample(
+        &mut state,
+        Voltage::from_volts(2.6),
+        Voltage::from_volts(2.7),
+        RefloatBmsTemperature::from_degrees_celsius(20),
+        RefloatBmsTemperature::from_degrees_celsius(30),
+        RefloatBmsTemperature::from_degrees_celsius(35),
+        VescSeconds::ZERO,
+    );
+    let now = TimestampTicks::from_ticks(0);
+    state.refresh_bms_runtime_state(now);
+
+    tick_running_protective_pushback(&mut state, &telemetry, now);
+
+    let base = state.all_data_payloads().base();
+    assert_eq!(
+        base.status().ride_state().setpoint_adjustment(),
+        RefloatSetpointAdjustment::PushbackLowVoltage,
+    );
+    assert_eq!(
+        base.setpoints().board().angle(),
+        AngleDegrees::from_degrees(10.0),
+    );
+    assert_eq!(
+        base.status().beep_reason(),
+        RefloatBeepReason::CellLowVoltage
     );
 }
 

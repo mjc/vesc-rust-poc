@@ -417,6 +417,31 @@ pub(super) fn refresh(
         let bms_connection_fault = state.bms_faults.contains(RefloatBmsFault::Connection);
         #[cfg(not(any(test, target_arch = "arm")))]
         let bms_connection_fault = false;
+        #[cfg(any(test, target_arch = "arm"))]
+        let bms_temperature_reason = if state
+            .bms_faults
+            .contains(RefloatBmsFault::CellOverTemperature)
+        {
+            Some(RefloatBeepReason::CellOverTemperature)
+        } else if state
+            .bms_faults
+            .contains(RefloatBmsFault::CellUnderTemperature)
+        {
+            Some(RefloatBeepReason::CellUnderTemperature)
+        } else if state
+            .bms_faults
+            .contains(RefloatBmsFault::BmsOverTemperature)
+        {
+            Some(RefloatBeepReason::BmsOverTemperature)
+        } else {
+            None
+        };
+        #[cfg(not(any(test, target_arch = "arm")))]
+        let bms_temperature_reason: Option<RefloatBeepReason> = None;
+        #[cfg(any(test, target_arch = "arm"))]
+        let bms_cell_under_voltage = state.bms_faults.contains(RefloatBmsFault::CellUnderVoltage);
+        #[cfg(not(any(test, target_arch = "arm")))]
+        let bms_cell_under_voltage = false;
         // Refloat refreshes this before every setpoint-adjustment branch at
         // `third_party/refloat/src/main.c:512-518`, except while a cell
         // over-voltage fault is active.
@@ -587,11 +612,34 @@ pub(super) fn refresh(
                 } else {
                     -angle
                 })
+            } else if let Some(temperature_reason) = bms_temperature_reason {
+                beep_reason = temperature_reason;
+                let angle = state.serialized_config.low_voltage_pushback_angle();
+                ride_state = ride_state
+                    .with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackTemperature);
+                Some(if motor_erpm.is_positive() {
+                    angle
+                } else {
+                    -angle
+                })
+            } else if base.motor().duty_cycle().ratio().as_ratio() > 0.05 && bms_cell_under_voltage
+            {
+                beep_reason = RefloatBeepReason::CellLowVoltage;
+                let angle = state.serialized_config.low_voltage_pushback_angle();
+                ride_state = ride_state
+                    .with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackLowVoltage);
+                Some(if motor_erpm.is_positive() {
+                    angle
+                } else {
+                    -angle
+                })
             } else if matches!(
                 ride_state.setpoint_adjustment(),
                 RefloatSetpointAdjustment::PushbackDuty
                     | RefloatSetpointAdjustment::PushbackHighVoltage
                     | RefloatSetpointAdjustment::PushbackError
+                    | RefloatSetpointAdjustment::PushbackLowVoltage
+                    | RefloatSetpointAdjustment::PushbackTemperature
             ) {
                 ride_state = ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::None);
                 Some(AngleDegrees::ZERO)
