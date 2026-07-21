@@ -445,8 +445,9 @@ macro_rules! vesc_slot_word_from {
 
 mod slots {
     use super::{
-        AppDataHandler, CustomConfigGet, CustomConfigSet, CustomConfigXml, ExtensionHandler,
-        ImuReadCallback, LibMutex, LibThread, VescIfAbi, c_char, c_int, c_uchar, c_void,
+        AppDataHandler, CustomConfigGet, CustomConfigSet, CustomConfigXml, EepromVar,
+        ExtensionHandler, ImuReadCallback, LibMutex, LibThread, VescIfAbi, c_char, c_int, c_uchar,
+        c_void,
     };
     #[cfg(not(all(target_arch = "arm", not(test))))]
     use super::{VescIf, vesc_if};
@@ -547,6 +548,8 @@ mod slots {
     fn_slot!(lbm_is_number as unsafe extern "C" fn(u32) -> bool);
     fn_slot!(set_app_data_handler as unsafe extern "C" fn(Option<AppDataHandler>) -> bool);
     fn_slot!(imu_set_read_callback as unsafe extern "C" fn(Option<ImuReadCallback>));
+    fn_slot!(read_eeprom_var as unsafe extern "C" fn(*mut EepromVar, c_int) -> bool);
+    fn_slot!(store_eeprom_var as unsafe extern "C" fn(*mut EepromVar, c_int) -> bool);
 
     word_slot!(lbm_enc_sym_nil);
     word_slot!(lbm_enc_sym_true);
@@ -730,6 +733,26 @@ pub unsafe fn lbm_enc_sym_true() -> LbmValue {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn lbm_enc_sym_eerror() -> LbmValue {
     unsafe { LbmValue(slots::lbm_enc_sym_eerror() as u32) }
+}
+
+/// Read one native-endian word from the package custom-EEPROM range.
+///
+/// # Safety
+///
+/// `word` must be valid for one `u32` write and the firmware function table
+/// must remain valid for the duration of the call.
+pub unsafe fn read_eeprom_word(word: *mut u32, address: c_int) -> bool {
+    unsafe { slots::read_eeprom_var()(word.cast(), address) }
+}
+
+/// Write one native-endian word to the package custom-EEPROM range.
+///
+/// # Safety
+///
+/// `word` must be valid for one `u32` read and the firmware function table
+/// must remain valid for the duration of the call.
+pub unsafe fn store_eeprom_word(word: *mut u32, address: c_int) -> bool {
+    unsafe { slots::store_eeprom_var()(word.cast(), address) }
 }
 
 /// Register the firmware app-data callback using the refloat/C ABI.

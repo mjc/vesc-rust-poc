@@ -28,6 +28,7 @@ extern crate std;
 mod alloc;
 
 mod bindings;
+mod eeprom;
 mod extension;
 mod firmware;
 mod lifecycle_core;
@@ -70,9 +71,9 @@ pub(crate) mod ffi {
         mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
         mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
         mc_set_brake_current, mc_set_current, mc_set_current_off_delay, mc_set_duty,
-        mc_temp_fet_filtered, mc_temp_motor_filtered, timeout_reset, vesc_imu_get_quaternions,
-        vesc_request_terminate, vesc_should_terminate, vesc_sleep_us, vesc_spawn,
-        vesc_thread_set_priority,
+        mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, store_eeprom_word,
+        timeout_reset, vesc_imu_get_quaternions, vesc_request_terminate, vesc_should_terminate,
+        vesc_sleep_us, vesc_spawn, vesc_thread_set_priority,
     };
     #[cfg(any(test, not(feature = "test-support")))]
     use vescpkg_rs_sys::raw as selected_ffi;
@@ -90,6 +91,7 @@ pub use vescpkg_rs_units::{
 
 #[cfg(feature = "alloc")]
 pub use alloc::VescAllocator;
+pub use eeprom::{CustomEeprom, CustomEepromAddress, EepromWord};
 pub use extension::{ExtensionDescriptor, ExtensionName, ExtensionRegistration};
 pub use extension::{LbmExtension, LispArgs, LispIntegerError, LispValue, StatefulLbmExtension};
 
