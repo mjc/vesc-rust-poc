@@ -1,6 +1,6 @@
 use super::RefloatPackageState;
 use crate::beeper::RefloatBeeperLevel;
-use crate::config::RefloatConfigImage;
+use crate::config::{REFLOAT_CONFIG_LEN, RefloatConfigImage};
 use crate::domain::{
     REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataPayloads, RefloatAppDataCommand, RefloatMode,
     RefloatRunState,
@@ -97,7 +97,8 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
     assert_eq!(state.serialized_config, saved);
     assert_eq!(state.tick_beeper(), None);
 
-    let restarted = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    let restarted =
+        RefloatPackageState::from_persisted_config(RefloatAllDataPayloads::source_startup());
     assert_eq!(restarted.serialized_config, saved);
 }
 
@@ -207,7 +208,8 @@ fn lock_restores_persisted_config_then_disables_and_saves() {
         ],
     );
 
-    let restarted = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    let restarted =
+        RefloatPackageState::from_persisted_config(RefloatAllDataPayloads::source_startup());
     assert!(restarted.serialized_config.metadata().disabled());
 }
 
@@ -552,7 +554,7 @@ fn successful_config_write_reconfigures_and_acknowledges_like_refloat() {
 
 #[test]
 fn store_serialized_config_persists_for_restart_like_refloat_set_cfg() {
-    let _firmware = FirmwareTest::new();
+    let firmware = FirmwareTest::new();
     let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
     let mut bytes = default_refloat_config_bytes();
     bytes.edit_refloat_config(|config| {
@@ -560,8 +562,12 @@ fn store_serialized_config_persists_for_restart_like_refloat_set_cfg() {
     });
 
     assert!(state.store_serialized_config(&bytes));
+    let mut persisted = [0; REFLOAT_CONFIG_LEN];
+    assert!(firmware.eeprom().read_bytes(&mut persisted));
+    assert_eq!(persisted, *state.serialized_config.as_bytes());
 
-    let restarted = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    let restarted =
+        RefloatPackageState::from_persisted_config(RefloatAllDataPayloads::source_startup());
     assert_eq!(
         restarted
             .serialized_config

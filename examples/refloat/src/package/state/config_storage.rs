@@ -18,6 +18,7 @@ impl RefloatPackageState {
             .unwrap_or_else(RefloatConfigImage::defaults);
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
     pub(super) fn load_persisted_config_on_startup(&mut self) {
         self.read_config_from_eeprom();
         self.refresh_balance_filter_config();
