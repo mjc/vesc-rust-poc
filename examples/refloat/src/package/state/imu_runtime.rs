@@ -420,10 +420,7 @@ pub(super) fn refresh(
                     | RefloatSetpointAdjustment::PushbackLowVoltage
                     | RefloatSetpointAdjustment::PushbackTemperature
             ) {
-                Rpm::from_revolutions_per_minute(-(
-                    reverse_stop.tolerance_erpm.as_revolutions_per_minute()
-                        + setpoints.board().angle().as_degrees() / 0.000_08
-                ))
+                reverse_stop.carryover_total_erpm(setpoints.board().angle())
             } else {
                 Rpm::ZERO
             };
