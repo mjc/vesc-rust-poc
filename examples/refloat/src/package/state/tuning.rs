@@ -307,6 +307,125 @@ pub(super) fn handle_tilt_tune_packet(state: &mut RefloatPackageState, bytes: &[
     true
 }
 
+pub(super) fn handle_other_tune_packet(state: &mut RefloatPackageState, bytes: &[u8]) -> bool {
+    let Some(
+        [
+            flags,
+            startup_speed,
+            pitch_tolerance,
+            roll_tolerance,
+            brake_current,
+            click_current,
+            tilt_constant,
+            nose_speed,
+            constant_erpm,
+            variable_rate,
+            variable_max,
+            variable_erpm,
+            optional_input @ ..,
+        ],
+    ) = refloat_command_payload(bytes, RefloatAppDataCommand::TuneOther)
+    else {
+        return false;
+    };
+
+    let mut config = state.serialized_config.editor();
+    let mut updated = [
+        config.set_beeper_enabled(*flags & 0x02 != 0),
+        config.set_reversestop_enabled(*flags & 0x04 != 0),
+        config.set_dual_switch(*flags & 0x08 != 0),
+        config.set_darkride_enabled(*flags & 0x10 != 0),
+        config.set_dirty_landings_enabled(*flags & 0x20 != 0),
+        config.set_simplestart_enabled(*flags & 0x40 != 0),
+        config.set_pushstart_enabled(*flags & 0x80 != 0),
+        config.set_startup_speed(WireByte::new(*startup_speed).scaled(
+            1.0,
+            0.0,
+            AngularVelocity::from_degrees_per_second,
+        )),
+        config.set_startup_pitch_tolerance(WireByte::new(*pitch_tolerance).scaled(
+            0.1,
+            0.0,
+            AngleDegrees::from_degrees,
+        )),
+        config.set_startup_roll_tolerance(WireByte::new(*roll_tolerance).scaled(
+            1.0,
+            0.0,
+            AngleDegrees::from_degrees,
+        )),
+        config.set_brake_current(MotorCurrent::new(WireByte::new(*brake_current).scaled(
+            0.5,
+            0.0,
+            Current::from_amps,
+        ))),
+        config.set_startup_click_current(WireByte::new(*click_current)),
+    ]
+    .into_iter()
+    .all(core::convert::identity);
+
+    if (80..=120).contains(tilt_constant) {
+        updated &= [
+            config.set_tiltback_constant(WireByte::new(*tilt_constant).scaled(
+                0.5,
+                -50.0,
+                AngleDegrees::from_degrees,
+            )),
+            config.set_tiltback_constant_erpm(WireByte::new(*constant_erpm).scaled(
+                100.0,
+                0.0,
+                electrical_speed,
+            )),
+            config.set_tiltback_variable(WireByte::new(*variable_rate).scaled(
+                0.01,
+                0.0,
+                PidScale::new,
+            )),
+            config.set_tiltback_variable_max(WireByte::new(*variable_max).scaled(
+                0.1,
+                0.0,
+                AngleDegrees::from_degrees,
+            )),
+            config.set_tiltback_variable_erpm(WireByte::new(*variable_erpm).scaled(
+                100.0,
+                0.0,
+                electrical_speed,
+            )),
+        ]
+        .into_iter()
+        .all(core::convert::identity);
+        if *nose_speed != 0 {
+            updated &= config.set_nose_angling_speed(WireByte::new(*nose_speed).scaled(
+                0.1,
+                0.0,
+                AngularVelocity::from_degrees_per_second,
+            ));
+        }
+    }
+
+    if let [input, input_speed, ..] = optional_input {
+        let remote_type = *input & 0x03;
+        if remote_type <= 2 {
+            updated &= config.set_input_tilt_remote_type(WireByte::new(remote_type));
+            if remote_type != 0 {
+                updated &= config.set_input_tilt_angle_limit(WireByte::new(*input >> 2).scaled(
+                    1.0,
+                    0.0,
+                    AngleDegrees::from_degrees,
+                ));
+                updated &= config.set_input_tilt_speed(WireByte::new(*input_speed).scaled(
+                    1.0,
+                    0.0,
+                    AngularVelocity::from_degrees_per_second,
+                ));
+            }
+        }
+    }
+
+    debug_assert!(updated);
+    state.refresh_config_runtime_state();
+    true
+}
+
 pub(super) fn handle_booster_packet(state: &mut RefloatPackageState, bytes: &[u8]) -> bool {
     let Some(
         [

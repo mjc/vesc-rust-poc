@@ -269,3 +269,132 @@ fn tilt_tune_applies_duty_settings_and_three_short_beeps() {
         ],
     );
 }
+
+#[test]
+fn tune_other_applies_startup_nose_and_input_settings_without_alerting() {
+    let firmware = FirmwareTest::new();
+    let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    let mut now = || TimestampTicks::from_ticks(0);
+    let mut send = |_bytes: &[u8]| true;
+
+    assert!(state.handle_packet_with_telemetry(
+        firmware.telemetry(),
+        &mut now,
+        &mut send,
+        &[
+            REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            RefloatAppDataCommand::TuneOther.id(),
+            0xFE,
+            25,
+            20,
+            15,
+            25,
+            7,
+            110,
+            30,
+            20,
+            25,
+            35,
+            40,
+            50,
+            8,
+        ],
+    ));
+
+    let bytes = state.serialized_config.as_bytes();
+    assert_eq!(&bytes[39..44], &[1, 0, 1, 1, 1]);
+    assert_eq!(
+        &bytes[67..84],
+        &[
+            0x13, 0x88, 0x07, 0xD0, 0x00, 0xFA, 0x01, 0x5E, 0x0F, 0xA0, 0x01, 0x2C, 2, 0x04, 0xB0,
+            0x03, 0x20
+        ]
+    );
+    assert_eq!(
+        &bytes[91..101],
+        &[0x00, 0xC8, 0x05, 0xDC, 0x09, 0xC4, 7, 1, 1, 1]
+    );
+    assert_eq!(&bytes[102..104], &[0x04, 0xE2]);
+    assert_eq!(bytes[242], 1);
+    assert_eq!(state.tick_beeper(), None);
+}
+
+#[test]
+fn tune_other_preserves_refloat_payload_and_value_gates() {
+    let firmware = FirmwareTest::new();
+    let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    let original_nose = state.serialized_config.as_bytes()[67..84].to_vec();
+    let mut now = || TimestampTicks::from_ticks(0);
+    let mut send = |_bytes: &[u8]| true;
+
+    assert!(!state.handle_packet_with_telemetry(
+        firmware.telemetry(),
+        &mut now,
+        &mut send,
+        &[
+            REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            RefloatAppDataCommand::TuneOther.id(),
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            121,
+            6,
+            7,
+            8,
+            9,
+        ],
+    ));
+
+    assert!(state.handle_packet_with_telemetry(
+        firmware.telemetry(),
+        &mut now,
+        &mut send,
+        &[
+            REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            RefloatAppDataCommand::TuneOther.id(),
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            121,
+            6,
+            7,
+            8,
+            9,
+            10,
+        ],
+    ));
+    assert_eq!(&state.serialized_config.as_bytes()[67..84], original_nose);
+
+    let original_input = state.serialized_config.as_bytes()[79..84].to_vec();
+    assert!(state.handle_packet_with_telemetry(
+        firmware.telemetry(),
+        &mut now,
+        &mut send,
+        &[
+            REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            RefloatAppDataCommand::TuneOther.id(),
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            121,
+            6,
+            7,
+            8,
+            9,
+            10,
+            3,
+            11,
+        ],
+    ));
+    assert_eq!(&state.serialized_config.as_bytes()[79..84], original_input);
+    assert_eq!(state.tick_beeper(), None);
+}
