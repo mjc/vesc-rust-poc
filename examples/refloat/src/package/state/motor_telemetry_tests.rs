@@ -76,6 +76,23 @@ fn mode2_temperatures_refresh_from_motor_telemetry() {
 }
 
 #[test]
+fn motor_temperature_limit_starts_are_typed_firmware_config() {
+    let firmware = FirmwareTest::new().with_temperature_limit_starts(
+        TemperatureLimitStart::new(Temperature::from_degrees_celsius(82.0)),
+        TemperatureLimitStart::new(Temperature::from_degrees_celsius(91.0)),
+    );
+
+    assert_eq!(
+        firmware.telemetry().mosfet_temperature_limit_start(),
+        TemperatureLimitStart::new(Temperature::from_degrees_celsius(82.0))
+    );
+    assert_eq!(
+        firmware.telemetry().motor_temperature_limit_start(),
+        TemperatureLimitStart::new(Temperature::from_degrees_celsius(91.0))
+    );
+}
+
+#[test]
 fn mode3_ride_totals_refresh_from_motor_telemetry() {
     let app_data = TimestampTicks::from_ticks(0);
 

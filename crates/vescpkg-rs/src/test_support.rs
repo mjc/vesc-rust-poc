@@ -194,6 +194,17 @@ impl FirmwareTest {
     }
 
     #[must_use]
+    /// Configure the typed MOSFET and motor temperature limit-start thresholds.
+    pub fn with_temperature_limit_starts(
+        self,
+        mosfet: crate::TemperatureLimitStart,
+        motor: crate::TemperatureLimitStart,
+    ) -> Self {
+        crate::test_ffi::set_temperature_limit_starts(mosfet, motor);
+        self
+    }
+
+    #[must_use]
     /// Configure the typed firmware battery cell count.
     pub fn with_battery_cell_count(self, count: crate::BatteryCellCount) -> Self {
         crate::test_ffi::set_battery_cell_count(count);
