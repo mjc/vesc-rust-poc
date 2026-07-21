@@ -149,7 +149,7 @@ impl RefloatStateTransitionAction {
             ),
             Self::Preserve => (
                 input.run_state,
-                previous.setpoint_adjustment(),
+                Self::rolling_setpoint_adjustment(previous, input.traction_loss_detected),
                 previous.stop_condition(),
                 Self::rolling_wheelslip(previous, input.traction_loss_detected),
                 false,
@@ -169,6 +169,20 @@ impl RefloatStateTransitionAction {
             .with_darkride(previous.darkride()),
             state_stopped,
             state_engaged,
+        }
+    }
+
+    #[inline(always)]
+    fn rolling_setpoint_adjustment(
+        previous: RefloatRideState,
+        traction_loss_detected: bool,
+    ) -> RefloatSetpointAdjustment {
+        // Refloat clears `sat` on the same branch that marks wheelslip at
+        // `third_party/refloat/src/main.c:551-562`.
+        if traction_loss_detected {
+            RefloatSetpointAdjustment::None
+        } else {
+            previous.setpoint_adjustment()
         }
     }
 
@@ -370,7 +384,9 @@ mod tests {
 
     #[test]
     fn state_transition_marks_wheelslip_without_stopping_like_refloat_traction_flag() {
-        let previous = running_normal().with_darkride(RefloatDarkRideState::Active);
+        let previous = running_normal()
+            .with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackDuty)
+            .with_darkride(RefloatDarkRideState::Active);
         let output = refloat_state_transition(RefloatStateTransitionInput {
             traction_loss_detected: true,
             ..transition_input(previous)
@@ -383,7 +399,25 @@ mod tests {
             RefloatWheelSlipState::Detected
         );
         assert_eq!(output.ride_state.darkride(), RefloatDarkRideState::Active);
+        assert_eq!(
+            output.ride_state.setpoint_adjustment(),
+            RefloatSetpointAdjustment::None,
+        );
         assert!(!output.state_stopped);
+    }
+
+    #[test]
+    fn state_transition_preserves_pushback_without_traction_loss() {
+        let previous =
+            running_normal().with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackDuty);
+
+        let output = refloat_state_transition(transition_input(previous));
+
+        assert_eq!(
+            output.ride_state.setpoint_adjustment(),
+            RefloatSetpointAdjustment::PushbackDuty,
+        );
+        assert_eq!(output.ride_state.wheelslip(), RefloatWheelSlipState::None);
     }
 
     #[test]

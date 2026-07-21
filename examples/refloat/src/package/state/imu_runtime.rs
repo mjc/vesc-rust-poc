@@ -393,7 +393,7 @@ pub(super) fn refresh(
             state
                 .battery_cell_count
                 .map_or(configured_high_voltage, |count| {
-                    configured_high_voltage * f32::from(count.as_u16())
+                    configured_high_voltage * count
                 })
         } else {
             configured_high_voltage

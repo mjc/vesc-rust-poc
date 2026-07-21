@@ -2,9 +2,10 @@ use super::RefloatPackageState;
 use crate::domain::{
     REFLOAT_APP_DATA_PACKAGE_ID, RefloatAllDataAttitude, RefloatAllDataBasePayload,
     RefloatAllDataPayloads, RefloatAllDataStatus, RefloatAppDataCommand, RefloatChargingState,
-    RefloatMode, RefloatRealtimeBalanceCurrent, RefloatRealtimeBalancePitch,
-    RefloatRealtimeBoosterCurrent, RefloatRealtimeRuntimeSetpoint, RefloatRealtimeRuntimeSetpoints,
-    RefloatRunState, RefloatSetpointAdjustment,
+    RefloatFootpadSample, RefloatFootpadState, RefloatMode, RefloatRealtimeBalanceCurrent,
+    RefloatRealtimeBalancePitch, RefloatRealtimeBoosterCurrent, RefloatRealtimeRuntimeSetpoint,
+    RefloatRealtimeRuntimeSetpoints, RefloatRideState, RefloatRunState, RefloatSetpointAdjustment,
+    RefloatWheelSlipState,
 };
 use crate::package::test_support::{
     RefloatConfigTestBytes, balance_filter_with_pitch, default_refloat_config_bytes, edit_config,
@@ -531,34 +532,49 @@ fn running_enters_reverse_stop_from_reverse_motor_speed_like_refloat() {
 }
 
 #[test]
-fn running_reverse_stop_carries_error_pushback_into_erpm_like_refloat() {
-    let (app_data, telemetry, mut state) = running_protective_pushback_fixture(
-        SignedRatio::from_ratio_const(0.10),
-        Rpm::from_revolutions_per_minute(-201.0),
-        RefloatSetpointAdjustment::PushbackHighVoltage,
-        InputVoltage::new(Voltage::from_volts(72.0)),
-    );
-    edit_config(&mut state, |config| {
-        assert!(config.set_reversestop_enabled(true));
-    });
+fn running_reverse_stop_carries_only_error_pushbacks_into_erpm_like_refloat() {
+    let cases = [
+        (
+            RefloatSetpointAdjustment::PushbackHighVoltage,
+            Rpm::from_revolutions_per_minute(80_000.0),
+        ),
+        (
+            RefloatSetpointAdjustment::PushbackLowVoltage,
+            Rpm::from_revolutions_per_minute(80_000.0),
+        ),
+        (
+            RefloatSetpointAdjustment::PushbackTemperature,
+            Rpm::from_revolutions_per_minute(80_000.0),
+        ),
+        (RefloatSetpointAdjustment::PushbackDuty, Rpm::ZERO),
+    ];
 
-    tick_running_protective_pushback(&mut state, &telemetry, app_data);
+    for (adjustment, expected_total_erpm) in cases {
+        let (app_data, telemetry, mut state) = running_protective_pushback_fixture(
+            SignedRatio::from_ratio_const(0.10),
+            Rpm::from_revolutions_per_minute(-201.0),
+            adjustment,
+            InputVoltage::new(Voltage::from_volts(72.0)),
+        );
+        edit_config(&mut state, |config| {
+            assert!(config.set_reversestop_enabled(true));
+        });
 
-    // Refloat seeds `-(20_000 + -8 / 0.00008)` when reverse-stop interrupts
-    // an error pushback at `third_party/refloat/src/main.c:538-550`.
-    assert_eq!(
-        state.reverse_total_erpm,
-        Rpm::from_revolutions_per_minute(80_000.0),
-    );
-    assert_eq!(
-        state
-            .all_data_payloads()
-            .base()
-            .status()
-            .ride_state()
-            .setpoint_adjustment(),
-        RefloatSetpointAdjustment::ReverseStop,
-    );
+        tick_running_protective_pushback(&mut state, &telemetry, app_data);
+
+        // Refloat carries only SAT values at or above `SAT_PB_HIGH_VOLTAGE`
+        // into reverse-stop at `third_party/refloat/src/main.c:538-550`.
+        assert_eq!(state.reverse_total_erpm, expected_total_erpm);
+        assert_eq!(
+            state
+                .all_data_payloads()
+                .base()
+                .status()
+                .ride_state()
+                .setpoint_adjustment(),
+            RefloatSetpointAdjustment::ReverseStop,
+        );
+    }
 }
 
 #[test]
@@ -705,7 +721,9 @@ fn running_protective_pushback_fixture(
     let board_setpoint = match adjustment {
         RefloatSetpointAdjustment::Centering => AngleDegrees::from_degrees(1.0),
         RefloatSetpointAdjustment::PushbackDuty => AngleDegrees::from_degrees(5.0),
-        RefloatSetpointAdjustment::PushbackHighVoltage => AngleDegrees::from_degrees(8.0),
+        RefloatSetpointAdjustment::PushbackHighVoltage
+        | RefloatSetpointAdjustment::PushbackLowVoltage
+        | RefloatSetpointAdjustment::PushbackTemperature => AngleDegrees::from_degrees(8.0),
         _ => AngleDegrees::ZERO,
     };
     let board_setpoint = if motor_erpm.is_negative() {
@@ -733,6 +751,42 @@ fn running_protective_pushback_fixture(
     ));
 
     (app_data, telemetry, state)
+}
+
+fn set_protective_ride_state(
+    state: &mut RefloatPackageState,
+    mode: RefloatMode,
+    adjustment: RefloatSetpointAdjustment,
+    wheelslip: RefloatWheelSlipState,
+) {
+    let payloads = state.all_data_payloads();
+    let base = payloads.base();
+    let previous = base.status().ride_state();
+    let ride_state = RefloatRideState::new(
+        previous.run_state(),
+        mode,
+        adjustment,
+        previous.stop_condition(),
+    )
+    .with_charging(previous.charging())
+    .with_wheelslip(wheelslip)
+    .with_darkride(previous.darkride());
+    let footpad = if matches!(mode, RefloatMode::Flywheel) {
+        RefloatFootpadSample::new(Voltage::ZERO, Voltage::ZERO, RefloatFootpadState::None)
+    } else {
+        base.footpad()
+    };
+    let base = RefloatAllDataBasePayload::new(
+        base.balance_current(),
+        base.attitude(),
+        RefloatAllDataStatus::new(ride_state, base.status().beep_reason()),
+        footpad,
+        base.setpoints(),
+        base.booster_current(),
+        base.motor(),
+    );
+    state.all_data_payloads =
+        RefloatAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4());
 }
 
 fn tick_running_protective_pushback(
@@ -932,20 +986,52 @@ fn running_high_voltage_pushback_uses_strict_half_second_delay_like_refloat() {
 }
 
 #[test]
-fn running_low_voltage_refreshes_high_voltage_timer_while_centering_like_refloat() {
-    let (_, telemetry, mut state) = running_protective_pushback_fixture(
-        SignedRatio::from_ratio_const(0.10),
-        Rpm::from_revolutions_per_minute(1_000.0),
-        RefloatSetpointAdjustment::Centering,
-        InputVoltage::new(Voltage::from_volts(72.0)),
-    );
+fn running_low_voltage_refreshes_high_voltage_timer_before_every_selection_branch_like_refloat() {
+    let cases = [
+        (
+            RefloatMode::Normal,
+            RefloatSetpointAdjustment::Centering,
+            RefloatWheelSlipState::None,
+        ),
+        (
+            RefloatMode::Normal,
+            RefloatSetpointAdjustment::ReverseStop,
+            RefloatWheelSlipState::None,
+        ),
+        (
+            RefloatMode::Normal,
+            RefloatSetpointAdjustment::None,
+            RefloatWheelSlipState::Detected,
+        ),
+        (
+            RefloatMode::Flywheel,
+            RefloatSetpointAdjustment::None,
+            RefloatWheelSlipState::None,
+        ),
+    ];
     let now = TimestampTicks::from_ticks(10_000);
 
-    tick_running_protective_pushback(&mut state, &telemetry, now);
+    for (mode, adjustment, wheelslip) in cases {
+        let (_, telemetry, mut state) = running_protective_pushback_fixture(
+            SignedRatio::from_ratio_const(0.10),
+            Rpm::from_revolutions_per_minute(-1_000.0),
+            adjustment,
+            InputVoltage::new(Voltage::from_volts(72.0)),
+        );
+        set_protective_ride_state(&mut state, mode, adjustment, wheelslip);
+        if matches!(adjustment, RefloatSetpointAdjustment::ReverseStop) {
+            state.reverse_ticks = now;
+        }
 
-    // Refloat refreshes this timer before every setpoint-adjustment branch at
-    // `third_party/refloat/src/main.c:512-518`.
-    assert_eq!(state.high_voltage_ticks, now);
+        tick_running_protective_pushback(&mut state, &telemetry, now);
+
+        // Refloat refreshes this timer before every setpoint-adjustment branch
+        // at `third_party/refloat/src/main.c:512-518`.
+        assert_eq!(
+            state.high_voltage_ticks, now,
+            "mode={mode:?}, adjustment={adjustment:?}, wheelslip={wheelslip:?}",
+        );
+    }
 }
 
 #[test]

@@ -19,6 +19,56 @@ scalar_unit!(
     "microteslas"
 );
 
+/// Positive number of series-connected battery cells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct BatteryCellCount(u16);
+
+impl BatteryCellCount {
+    /// Create a checked non-zero battery cell count.
+    pub const fn try_new(count: u16) -> Result<Self, BatteryCellCountError> {
+        if count == 0 {
+            Err(BatteryCellCountError { value: count })
+        } else {
+            Ok(Self(count))
+        }
+    }
+
+    /// Encode the count for a firmware boundary.
+    pub const fn as_u16(self) -> u16 {
+        self.0
+    }
+}
+
+/// Error returned when the battery cell count is zero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BatteryCellCountError {
+    value: u16,
+}
+
+impl BatteryCellCountError {
+    /// Return the rejected count.
+    pub const fn value(self) -> u16 {
+        self.value
+    }
+}
+
+impl Mul<BatteryCellCount> for Voltage {
+    type Output = Voltage;
+
+    fn mul(self, rhs: BatteryCellCount) -> Self::Output {
+        Voltage::from_volts(self.as_volts() * f32::from(rhs.0))
+    }
+}
+
+impl Mul<Voltage> for BatteryCellCount {
+    type Output = Voltage;
+
+    fn mul(self, rhs: Voltage) -> Self::Output {
+        rhs * self
+    }
+}
+
 impl Mul<Current> for Voltage {
     type Output = Power;
 

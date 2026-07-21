@@ -81,11 +81,11 @@ pub(crate) mod ffi {
 pub use vesc_protocol::buffer as protocol_buffer;
 use vescpkg_rs_units as units;
 pub use vescpkg_rs_units::{
-    AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Charge, Current, Distance,
-    DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage, Frequency, Height, Inductance,
-    Latitude, Longitude, MagneticFluxDensity, OdometerMeters, Percent, Power, Ratio, Resistance,
-    Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed, SystemTicks, Temperature,
-    TimestampTicks, VescSeconds, Voltage,
+    AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, BatteryCellCount,
+    BatteryCellCountError, Charge, Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance,
+    FluxLinkage, Frequency, Height, Inductance, Latitude, Longitude, MagneticFluxDensity,
+    OdometerMeters, Percent, Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate,
+    SignedRatio, Speed, SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
 };
 
 #[cfg(feature = "alloc")]
