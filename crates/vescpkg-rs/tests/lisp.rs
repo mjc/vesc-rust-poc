@@ -48,4 +48,8 @@ fn lisp_values_expose_explicit_kind_predicates() {
         Some(true)
     );
     assert_eq!(integer.with_str(|value| value.to_bytes() == b"vesc"), None);
+
+    let bytes = LispValue::try_byte_array(4).expect("host fake allocates byte arrays");
+    assert!(bytes.is_byte_array());
+    assert_eq!(LispValue::try_byte_array(usize::MAX), None);
 }
