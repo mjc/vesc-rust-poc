@@ -73,6 +73,7 @@ pub struct RefloatPackageState {
     all_data_payloads: RefloatAllDataPayloads,
     serialized_config: RefloatConfigImage,
     beeper: RefloatBeeper,
+    beeper_pin_configured: bool,
     bms_sample: RefloatBmsSample,
     #[cfg(any(test, target_arch = "arm"))]
     bms_faults: RefloatBmsFaults,
@@ -119,6 +120,7 @@ impl RefloatPackageState {
             // later source-backed slice.
             serialized_config,
             beeper: RefloatBeeper::new(serialized_config.beeper_enabled()),
+            beeper_pin_configured: false,
             bms_sample: RefloatBmsSample::source_startup(),
             #[cfg(any(test, target_arch = "arm"))]
             bms_faults: RefloatBmsFaults::NONE,
@@ -169,14 +171,16 @@ impl RefloatPackageState {
         self.beeper.alert(alert);
     }
 
-    #[cfg(target_arch = "arm")]
-    pub(crate) fn beeper_enabled(&self) -> bool {
-        self.serialized_config.beeper_enabled()
-    }
-
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn tick_beeper(&mut self) -> Option<RefloatBeeperLevel> {
         self.beeper.tick()
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn take_beeper_configuration_request(&mut self) -> bool {
+        let configure = self.serialized_config.beeper_enabled() && !self.beeper_pin_configured;
+        self.beeper_pin_configured |= configure;
+        configure
     }
 
     #[cfg(any(test, target_arch = "arm"))]

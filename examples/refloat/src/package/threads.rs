@@ -100,14 +100,20 @@ pub(crate) fn run_refloat_main_thread_with<F: FnMut() -> u32>(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RefloatMainThreadTick {
     sleep_us: u32,
+    configure_beeper: bool,
     beeper_level: Option<vescpkg_rs::DigitalOutputLevel>,
 }
 
 #[cfg(any(test, target_arch = "arm"))]
 impl RefloatMainThreadTick {
-    const fn new(sleep_us: u32, beeper_level: Option<vescpkg_rs::DigitalOutputLevel>) -> Self {
+    const fn new(
+        sleep_us: u32,
+        configure_beeper: bool,
+        beeper_level: Option<vescpkg_rs::DigitalOutputLevel>,
+    ) -> Self {
         Self {
             sleep_us,
+            configure_beeper,
             beeper_level,
         }
     }
@@ -118,6 +124,10 @@ impl RefloatMainThreadTick {
 
     const fn beeper_level(self) -> Option<vescpkg_rs::DigitalOutputLevel> {
         self.beeper_level
+    }
+
+    const fn configure_beeper(self) -> bool {
+        self.configure_beeper
     }
 }
 
@@ -155,7 +165,11 @@ pub(crate) fn tick_refloat_main_thread_with(
         .run_state();
     state.apply_motor_control(motor, run_state, system_time_ticks);
 
-    RefloatMainThreadTick::new(state.configured_loop_time_us(), beeper_level)
+    RefloatMainThreadTick::new(
+        state.configured_loop_time_us(),
+        state.take_beeper_configuration_request(),
+        beeper_level,
+    )
 }
 
 /// Run Refloat's source-backed auxiliary thread scheduler shell.
@@ -185,16 +199,13 @@ pub fn start_refloat_runtime_threads(
     start: &mut vescpkg_rs::PackageStart<'_>,
 ) -> Result<(), vescpkg_rs::PackageStartError> {
     let firmware = vescpkg_rs::Firmware::new();
-    let Some(beeper_enabled) = start.with_runtime_state::<RefloatPackageState, _>(|state| {
-        state.initialize_balance_filter(firmware.imu().orientation());
-        state.beeper_enabled()
-    }) else {
+    if start
+        .with_runtime_state::<RefloatPackageState, _>(|state| {
+            state.initialize_balance_filter(firmware.imu().orientation());
+        })
+        .is_none()
+    {
         return Err(vescpkg_rs::PackageStartError::StateTypeMismatch);
-    };
-    if beeper_enabled {
-        let _ = firmware
-            .gpio()
-            .configure_output(vescpkg_rs::DigitalPin::PPM);
     }
     start.spawn_threads(refloat_runtime_threads())
 }
@@ -231,6 +242,11 @@ impl vescpkg_rs::FirmwareThread for RefloatMainThread {
                     )
                 });
                 tick.map_or(1, |tick| {
+                    if tick.configure_beeper() {
+                        let _ = firmware
+                            .gpio()
+                            .configure_output(vescpkg_rs::DigitalPin::PPM);
+                    }
                     if let Some(level) = tick.beeper_level() {
                         let _ = firmware.gpio().write(vescpkg_rs::DigitalPin::PPM, level);
                     }
@@ -373,6 +389,7 @@ mod tests {
         state.refresh_runtime_state(telemetry.telemetry(), imu, TimestampTicks::from_ticks(0));
         state.alert_beeper(RefloatBeeperAlert::ThreeShort);
         let mut changes = std::vec::Vec::new();
+        let mut configure_ticks = std::vec::Vec::new();
 
         for tick in 1..=160 {
             let result = super::tick_refloat_main_thread_with(
@@ -387,8 +404,12 @@ mod tests {
             if let Some(level) = result.beeper_level() {
                 changes.push((tick, level));
             }
+            if result.configure_beeper() {
+                configure_ticks.push(tick);
+            }
         }
 
+        assert_eq!(configure_ticks, [1]);
         assert_eq!(
             changes,
             [
