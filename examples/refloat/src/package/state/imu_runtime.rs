@@ -388,6 +388,23 @@ pub(super) fn refresh(
         )
     };
     if matches!(run_state, RefloatRunState::Running) && !state_engage && !state_stop_fault {
+        let configured_high_voltage = state.serialized_config.high_voltage_threshold();
+        let high_voltage_threshold = if configured_high_voltage.as_volts() < 10.0 {
+            state
+                .battery_cell_count
+                .map_or(configured_high_voltage, |count| {
+                    configured_high_voltage * f32::from(count.as_u16())
+                })
+        } else {
+            configured_high_voltage
+        };
+        let battery_voltage = base.motor().battery_voltage().voltage();
+        // Refloat refreshes this before every setpoint-adjustment branch at
+        // `third_party/refloat/src/main.c:512-518`. The BMS overvoltage
+        // exception remains pending until typed BMS state is wired.
+        if battery_voltage < high_voltage_threshold {
+            state.high_voltage_ticks = system_time_ticks;
+        }
         let entered_reverse_stop = !matches!(
             ride_state.setpoint_adjustment(),
             RefloatSetpointAdjustment::Centering | RefloatSetpointAdjustment::ReverseStop
@@ -464,20 +481,6 @@ pub(super) fn refresh(
         ) && !matches!(ride_state.wheelslip(), RefloatWheelSlipState::Detected)
             && !matches!(ride_state.mode(), RefloatMode::Flywheel)
         {
-            let configured_high_voltage = state.serialized_config.high_voltage_threshold();
-            let high_voltage_threshold = if configured_high_voltage.as_volts() < 10.0 {
-                state
-                    .battery_cell_count
-                    .map_or(configured_high_voltage, |count| {
-                        configured_high_voltage * f32::from(count.as_u16())
-                    })
-            } else {
-                configured_high_voltage
-            };
-            let battery_voltage = base.motor().battery_voltage().voltage();
-            if battery_voltage < high_voltage_threshold {
-                state.high_voltage_ticks = system_time_ticks;
-            }
             let duty_pushback_active = base.motor().duty_cycle().ratio().as_ratio()
                 > state.serialized_config.duty_pushback_threshold().as_ratio();
             let board_setpoint = if duty_pushback_active {

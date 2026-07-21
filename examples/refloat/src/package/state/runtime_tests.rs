@@ -671,10 +671,10 @@ fn running_protective_pushback_fixture(
             .with_setpoint_adjustment(adjustment),
         base.status().beep_reason(),
     );
-    let board_setpoint = if matches!(adjustment, RefloatSetpointAdjustment::PushbackDuty) {
-        AngleDegrees::from_degrees(5.0)
-    } else {
-        AngleDegrees::ZERO
+    let board_setpoint = match adjustment {
+        RefloatSetpointAdjustment::Centering => AngleDegrees::from_degrees(1.0),
+        RefloatSetpointAdjustment::PushbackDuty => AngleDegrees::from_degrees(5.0),
+        _ => AngleDegrees::ZERO,
     };
     let setpoints = base
         .setpoints()
@@ -892,6 +892,23 @@ fn running_high_voltage_pushback_uses_strict_half_second_delay_like_refloat() {
             .setpoint_adjustment(),
         RefloatSetpointAdjustment::PushbackHighVoltage,
     );
+}
+
+#[test]
+fn running_low_voltage_refreshes_high_voltage_timer_while_centering_like_refloat() {
+    let (_, telemetry, mut state) = running_protective_pushback_fixture(
+        SignedRatio::from_ratio_const(0.10),
+        Rpm::from_revolutions_per_minute(1_000.0),
+        RefloatSetpointAdjustment::Centering,
+        InputVoltage::new(Voltage::from_volts(72.0)),
+    );
+    let now = TimestampTicks::from_ticks(10_000);
+
+    tick_running_protective_pushback(&mut state, &telemetry, now);
+
+    // Refloat refreshes this timer before every setpoint-adjustment branch at
+    // `third_party/refloat/src/main.c:512-518`.
+    assert_eq!(state.high_voltage_ticks, now);
 }
 
 #[test]
