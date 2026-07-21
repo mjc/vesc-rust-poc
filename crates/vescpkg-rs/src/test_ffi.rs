@@ -326,12 +326,20 @@ pub unsafe fn lbm_enc_i(value: i32) -> LbmValue {
     LbmValue((value << 4) as u32 | 0x08)
 }
 
+pub unsafe fn lbm_dec_char(value: LbmValue) -> u8 {
+    (value.0 >> 4) as u8
+}
+
+pub unsafe fn lbm_enc_char(value: u8) -> LbmValue {
+    LbmValue((value as u32) << 4 | 0x04)
+}
+
 pub unsafe fn lbm_enc_u32(value: u32) -> LbmValue {
     LbmValue(value << 4 | 0x08)
 }
 
-pub unsafe fn lbm_is_char(_value: LbmValue) -> bool {
-    false
+pub unsafe fn lbm_is_char(value: LbmValue) -> bool {
+    value.0 & 0x0f == 0x04
 }
 
 pub unsafe fn lbm_is_symbol(_value: LbmValue) -> bool {

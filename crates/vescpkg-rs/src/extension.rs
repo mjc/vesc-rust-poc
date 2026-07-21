@@ -60,6 +60,19 @@ impl LispValue {
         Self::from_raw(unsafe { crate::ffi::lbm_enc_i(value) })
     }
 
+    /// Decode a LispBM character value.
+    #[cfg(not(test))]
+    pub fn decode_char(self) -> Option<u8> {
+        self.is_char()
+            .then(|| unsafe { crate::ffi::lbm_dec_char(self.raw()) })
+    }
+
+    /// Encode a byte as a LispBM character value.
+    #[cfg(not(test))]
+    pub fn from_char(value: u8) -> Self {
+        Self::from_raw(unsafe { crate::ffi::lbm_enc_char(value) })
+    }
+
     /// Return whether this value is an immediate LispBM integer.
     #[must_use]
     pub const fn is_integer(self) -> bool {
