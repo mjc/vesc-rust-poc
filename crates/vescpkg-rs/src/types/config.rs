@@ -78,6 +78,62 @@ impl BatteryChemistry {
     }
 }
 
+/// CAN baud-rate selector used by the VESC application configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CanBaudRate {
+    /// 125 kbit/s (`CAN_BAUD_125K`).
+    Kbps125,
+    /// 250 kbit/s (`CAN_BAUD_250K`).
+    Kbps250,
+    /// 500 kbit/s (`CAN_BAUD_500K`).
+    Kbps500,
+    /// 1 Mbit/s (`CAN_BAUD_1M`).
+    Mbps1,
+    /// 10 kbit/s (`CAN_BAUD_10K`).
+    Kbps10,
+    /// 20 kbit/s (`CAN_BAUD_20K`).
+    Kbps20,
+    /// 50 kbit/s (`CAN_BAUD_50K`).
+    Kbps50,
+    /// 75 kbit/s (`CAN_BAUD_75K`).
+    Kbps75,
+    /// 100 kbit/s (`CAN_BAUD_100K`).
+    Kbps100,
+}
+
+impl CanBaudRate {
+    /// Decode the VESC `CAN_BAUD` enum value.
+    pub const fn from_raw(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(Self::Kbps125),
+            1 => Some(Self::Kbps250),
+            2 => Some(Self::Kbps500),
+            3 => Some(Self::Mbps1),
+            4 => Some(Self::Kbps10),
+            5 => Some(Self::Kbps20),
+            6 => Some(Self::Kbps50),
+            7 => Some(Self::Kbps75),
+            8 => Some(Self::Kbps100),
+            _ => None,
+        }
+    }
+
+    /// Encode the VESC `CAN_BAUD` enum value.
+    pub const fn as_u8(self) -> u8 {
+        match self {
+            Self::Kbps125 => 0,
+            Self::Kbps250 => 1,
+            Self::Kbps500 => 2,
+            Self::Mbps1 => 3,
+            Self::Kbps10 => 4,
+            Self::Kbps20 => 5,
+            Self::Kbps50 => 6,
+            Self::Kbps75 => 7,
+            Self::Kbps100 => 8,
+        }
+    }
+}
+
 macro_rules! positive_count_type {
     ($name:ident, $error:ident, $doc:literal, $error_doc:literal) => {
         #[doc = $doc]
