@@ -9,5 +9,3 @@ pub(in crate::package) use self::metadata::{
 pub(super) use self::realtime::encode_refloat_get_realtime_data_response;
 pub(super) use self::realtime::encode_refloat_get_realtime_data_response_with_remote;
 pub(super) use self::realtime::encode_refloat_realtime_data_response_with_runtime;
-#[cfg(any(test, target_arch = "arm"))]
-pub(in crate::package) use self::realtime::realtime_value;

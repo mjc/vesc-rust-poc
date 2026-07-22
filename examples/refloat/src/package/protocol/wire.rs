@@ -19,7 +19,7 @@ pub(super) fn push_refloat_float16(buffer: &mut [u8], ind: &mut usize, value: f3
 
 #[must_use]
 #[inline(always)]
-pub(in crate::package) fn encode_refloat_float16(value: f32) -> u16 {
+fn encode_refloat_float16(value: f32) -> u16 {
     let bits = value.to_bits().wrapping_add(0x0000_1000);
     let exponent = (bits & 0x7f80_0000) >> 23;
     let mantissa = bits & 0x007f_ffff;

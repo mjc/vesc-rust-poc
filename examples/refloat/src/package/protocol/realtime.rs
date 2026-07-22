@@ -279,7 +279,7 @@ pub(in crate::package) fn encode_refloat_realtime_data_response_with_runtime(
     RefloatRealtimeDataResponse { bytes, len: ind }
 }
 
-pub(in crate::package) fn realtime_value(
+fn realtime_value(
     payloads: &RefloatAllDataPayloads,
     item: RefloatRealtimeDataItem,
     remote_input: crate::domain::RefloatRealtimeRemoteInput,

@@ -1031,11 +1031,6 @@ pub(super) fn refresh(
             state.idle_voltage = BatteryVoltage::new(Voltage::ZERO);
         }
     }
-    if state_transition.state_stopped {
-        state.trigger_data_recorder(false);
-    } else if state_transition.state_engaged {
-        state.trigger_data_recorder(true);
-    }
     if let Some(alert) = beeper_alert {
         state.alert_beeper(alert);
     }

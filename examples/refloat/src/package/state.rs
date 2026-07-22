@@ -32,9 +32,6 @@ mod balance_tests;
 mod charging;
 mod config_runtime;
 mod config_storage;
-mod data_recorder;
-#[cfg(test)]
-mod data_recorder_tests;
 mod flywheel;
 #[cfg(any(test, target_arch = "arm"))]
 mod footpad_runtime;
@@ -60,7 +57,6 @@ mod tuning;
 mod tuning_tests;
 
 use alert_tracker::AlertTrackerState;
-use data_recorder::DataRecorderState;
 use flywheel::RefloatFlywheelOffsets;
 #[cfg(any(test, target_arch = "arm"))]
 use haptic_feedback::{HapticFeedbackInput, HapticFeedbackState};
@@ -87,13 +83,11 @@ fn refloat_command_payload(bytes: &[u8], command: RefloatAppDataCommand) -> Opti
 }
 
 /// Refloat package state.
-#[cfg_attr(test, derive(Debug, Clone, Copy, PartialEq))]
-#[cfg_attr(not(test), derive(Debug, PartialEq))]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RefloatPackageState {
     all_data_payloads: RefloatAllDataPayloads,
     serialized_config: RefloatConfigImage,
     alert_tracker: AlertTrackerState,
-    data_recorder: DataRecorderState,
     #[cfg(any(test, target_arch = "arm"))]
     haptic_feedback: HapticFeedbackState,
     beeper: RefloatBeeper,
@@ -158,7 +152,6 @@ impl RefloatPackageState {
             all_data_payloads,
             serialized_config,
             alert_tracker: AlertTrackerState::default(),
-            data_recorder: DataRecorderState::default(),
             #[cfg(any(test, target_arch = "arm"))]
             haptic_feedback: HapticFeedbackState::new(),
             beeper: RefloatBeeper::new(serialized_config.beeper_enabled()),
@@ -342,7 +335,7 @@ impl RefloatPackageState {
     }
 
     /// Return the current all-data payload snapshot.
-    pub const fn all_data_payloads(&self) -> RefloatAllDataPayloads {
+    pub const fn all_data_payloads(self) -> RefloatAllDataPayloads {
         self.all_data_payloads
     }
 
@@ -550,7 +543,6 @@ impl RefloatPackageState {
             || tuning::handle_booster_packet(self, bytes)
             || self.handle_rc_move_packet(bytes)
             || self.handle_alert_packet(telemetry, send, bytes)
-            || self.handle_data_recorder_packet(send, bytes)
             || self.send_metadata_packet_response(send, bytes)
             || self.send_legacy_realtime_data_packet_response(send, bytes)
             || self.send_realtime_data_packet_response(telemetry, now, send, bytes)
