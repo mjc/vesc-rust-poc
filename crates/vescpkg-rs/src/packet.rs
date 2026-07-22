@@ -1,10 +1,13 @@
 //! Owned packet framing around the concrete VESC `PACKET_STATE_t` layout.
 
 use core::marker::PhantomData;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use vescpkg_rs_sys::raw::{PACKET_BUFFER_LEN, PACKET_MAX_PL_LEN, PacketState};
 
 const MAX_PACKET_BYTES: usize = PACKET_MAX_PL_LEN;
+
+static PACKET_CODEC_REGISTERED: AtomicBool = AtomicBool::new(false);
 
 /// Failure returned by packet framing operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,6 +17,8 @@ pub enum PacketError {
     Unavailable,
     /// A packet exceeds the pinned firmware framing buffer.
     PacketTooLong,
+    /// Another packet codec already owns the global firmware callback.
+    Busy,
 }
 
 /// Safe callback behavior for a packet codec.
@@ -54,12 +59,21 @@ impl<H: PacketHandler> PacketCodec<H> {
 
     /// Register the package-owned state and typed callback trampolines.
     pub fn register(&mut self) -> Result<PacketRegistration<'_, H>, PacketError> {
+        if PACKET_CODEC_REGISTERED
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Err(PacketError::Busy);
+        }
         let registered = unsafe {
             crate::ffi::packet_init(packet_send::<H>, packet_process::<H>, &mut self.state)
         };
-        registered
-            .then_some(PacketRegistration { codec: self })
-            .ok_or(PacketError::Unavailable)
+        if registered {
+            Ok(PacketRegistration { codec: self })
+        } else {
+            PACKET_CODEC_REGISTERED.store(false, Ordering::Release);
+            Err(PacketError::Unavailable)
+        }
     }
 }
 
@@ -97,6 +111,7 @@ impl<H: PacketHandler> PacketRegistration<'_, H> {
 impl<H: PacketHandler> Drop for PacketRegistration<'_, H> {
     fn drop(&mut self) {
         let _ = unsafe { crate::ffi::packet_reset(&mut self.codec.state) };
+        PACKET_CODEC_REGISTERED.store(false, Ordering::Release);
     }
 }
 
