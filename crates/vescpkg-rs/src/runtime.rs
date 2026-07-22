@@ -9,6 +9,8 @@ use core::marker::PhantomData;
 use core::ptr::NonNull;
 #[cfg(not(target_arch = "arm"))]
 use core::sync::atomic::AtomicPtr;
+#[cfg(any(test, target_arch = "arm"))]
+use core::sync::atomic::AtomicU32;
 use core::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 
 #[cfg(not(target_arch = "arm"))]
@@ -236,8 +238,25 @@ struct FirmwareRuntime {
     state_lock: AtomicBool,
     phase: AtomicU8,
     active: AtomicUsize,
+    gpio_leases: AtomicU32,
     threads: UnsafeCell<Option<crate::thread::ThreadGroup>>,
     callbacks: UnsafeCell<CallbackRegistrations>,
+}
+
+#[cfg(target_arch = "arm")]
+pub(crate) unsafe fn firmware_runtime_gpio_leases<T: 'static>(
+    state: NonNull<T>,
+) -> Option<&'static AtomicU32> {
+    // SAFETY: the state pointer is supplied by the typed thread entrypoint and
+    // was allocated with the runtime backlink immediately before `T`.
+    unsafe { firmware_runtime_from_state(state) }.map(|runtime| &runtime.gpio_leases)
+}
+
+#[cfg(target_arch = "arm")]
+pub(crate) unsafe fn reset_firmware_runtime_gpio_leases<T: 'static>(state: NonNull<T>) {
+    if let Some(leases) = unsafe { firmware_runtime_gpio_leases(state) } {
+        leases.store(0, Ordering::Release);
+    }
 }
 
 #[cfg(any(test, target_arch = "arm"))]
@@ -651,6 +670,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
                     state_lock: AtomicBool::new(false),
                     phase: AtomicU8::new(INSTALLING),
                     active: AtomicUsize::new(1),
+                    gpio_leases: AtomicU32::new(0),
                     threads: UnsafeCell::new(None),
                     callbacks: UnsafeCell::new(CallbackRegistrations::default()),
                 });
@@ -1062,7 +1082,7 @@ mod tests {
     use core::any::TypeId;
     use core::cell::UnsafeCell;
     use core::ptr::NonNull;
-    use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU8, AtomicUsize, Ordering};
+    use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU8, AtomicU32, AtomicUsize, Ordering};
     use std::boxed::Box;
 
     #[derive(Debug, PartialEq, Eq)]
@@ -1088,6 +1108,7 @@ mod tests {
             state_lock: AtomicBool::new(false),
             phase: AtomicU8::new(RUNNING),
             active: AtomicUsize::new(0),
+            gpio_leases: AtomicU32::new(0),
             threads: UnsafeCell::new(None),
             callbacks: UnsafeCell::new(super::CallbackRegistrations::default()),
         };
@@ -1114,6 +1135,7 @@ mod tests {
                 state_lock: AtomicBool::new(false),
                 phase: AtomicU8::new(RUNNING),
                 active: AtomicUsize::new(0),
+                gpio_leases: AtomicU32::new(0),
                 threads: UnsafeCell::new(None),
                 callbacks: UnsafeCell::new(super::CallbackRegistrations::default()),
             });
@@ -1138,6 +1160,7 @@ mod tests {
                 state_lock: AtomicBool::new(false),
                 phase: AtomicU8::new(STOPPING),
                 active: AtomicUsize::new(0),
+                gpio_leases: AtomicU32::new(0),
                 threads: UnsafeCell::new(None),
                 callbacks: UnsafeCell::new(super::CallbackRegistrations::default()),
             });
@@ -1171,6 +1194,7 @@ mod tests {
                 state_lock: AtomicBool::new(false),
                 phase: AtomicU8::new(RUNNING),
                 active: AtomicUsize::new(0),
+                gpio_leases: AtomicU32::new(0),
                 threads: UnsafeCell::new(None),
                 callbacks: UnsafeCell::new(super::CallbackRegistrations::default()),
             });

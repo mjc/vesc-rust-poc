@@ -280,6 +280,17 @@ impl Firmware {
     /// Construct firmware capabilities backed by the live VESC package ABI.
     #[cfg(not(test))]
     pub fn new() -> Self {
+        Self::with_gpio(crate::Gpio::new())
+    }
+
+    #[cfg(all(not(test), target_arch = "arm"))]
+    fn from_state<S: PackageRuntimeState>(state: NonNull<S>) -> Self {
+        let leases = unsafe { crate::runtime::firmware_runtime_gpio_leases(state) };
+        Self::with_gpio(crate::Gpio::from_runtime_leases(leases))
+    }
+
+    #[cfg(not(test))]
+    fn with_gpio(gpio: crate::Gpio) -> Self {
         Self {
             can: crate::CanBus::new(),
             threads: ThreadApi::new(RealThreadBindings),
@@ -287,8 +298,7 @@ impl Firmware {
             clock: FirmwareClock::new(),
             nvm: crate::Nvm::new(),
             eeprom: crate::CustomEeprom::new(),
-            gpio: crate::Gpio::new(),
-            input: crate::ControllerInput::new(),
+            gpio,
             imu: crate::imu::ImuApi::new(crate::imu::RealImuBindings),
             telemetry: crate::motor::MotorTelemetryApi::new(
                 crate::motor::RealMotorTelemetryBindings,
@@ -360,7 +370,12 @@ impl<S: PackageRuntimeState> ThreadContext<S> {
     }
 
     /// Build a thread context backed by the live VESC package ABI.
-    #[cfg(not(test))]
+    #[cfg(all(not(test), target_arch = "arm"))]
+    fn from_entry(state: NonNull<S>) -> Self {
+        Self::new(state, Firmware::from_state(state))
+    }
+
+    #[cfg(all(not(test), not(target_arch = "arm")))]
     fn from_entry(state: NonNull<S>) -> Self {
         Self::new(state, Firmware::new())
     }

@@ -14,6 +14,7 @@ fn adc_voltage_from_firmware(raw: f32) -> AdcVoltage {
     AdcVoltage::new(Voltage::from_volts(raw))
 }
 
+#[cfg(not(target_arch = "arm"))]
 static GPIO_LEASES: AtomicU32 = AtomicU32::new(0);
 
 /// Firmware GPIO configuration modes from `VESC_PIN_MODE`.
@@ -180,6 +181,8 @@ impl DigitalOutputLevel {
 
 /// Firmware GPIO capability.
 pub struct Gpio {
+    #[cfg(target_arch = "arm")]
+    leases: Option<&'static AtomicU32>,
     #[cfg(test)]
     test: TestGpio,
 }
@@ -187,7 +190,15 @@ pub struct Gpio {
 impl Gpio {
     #[cfg(not(test))]
     pub(crate) const fn new() -> Self {
-        Self {}
+        Self {
+            #[cfg(target_arch = "arm")]
+            leases: None,
+        }
+    }
+
+    #[cfg(target_arch = "arm")]
+    pub(crate) fn from_runtime_leases(leases: Option<&'static AtomicU32>) -> Self {
+        Self { leases }
     }
 
     #[cfg(test)]
@@ -202,24 +213,42 @@ impl Gpio {
 
     /// Acquire exclusive ownership of a digital pin.
     pub fn acquire_digital(&self, pin: DigitalPin) -> Result<DigitalGpioLease<'_>, GpioError> {
-        let token = claim(pin.0.0)?;
+        let leases = self.lease_state()?;
+        let token = claim(leases, pin.0.0)?;
         Ok(DigitalGpioLease {
             gpio: self,
             pin,
             token,
+            leases,
             mode: Cell::new(None),
         })
     }
 
     /// Acquire exclusive ownership of an analog pin.
     pub fn acquire_analog(&self, pin: AnalogPin) -> Result<AnalogGpioLease<'_>, GpioError> {
-        let token = claim(pin.0)?;
+        let leases = self.lease_state()?;
+        let token = claim(leases, pin.0)?;
         Ok(AnalogGpioLease {
             gpio: self,
             pin,
             token,
+            leases,
             mode: Cell::new(None),
         })
+    }
+
+    // The host fixture uses one process-wide bitmap; firmware uses the
+    // loader-owned runtime bitmap attached to this capability.
+    #[allow(clippy::unused_self, clippy::unnecessary_wraps)]
+    fn lease_state(&self) -> Result<&'static AtomicU32, GpioError> {
+        #[cfg(target_arch = "arm")]
+        {
+            self.leases.ok_or(GpioError::FirmwareRejected)
+        }
+        #[cfg(not(target_arch = "arm"))]
+        {
+            Ok(&GPIO_LEASES)
+        }
     }
 
     /// Read one analog pin as a typed firmware-scaled voltage.
@@ -255,6 +284,7 @@ pub struct DigitalGpioLease<'a> {
     gpio: &'a Gpio,
     pin: DigitalPin,
     token: u32,
+    leases: &'a AtomicU32,
     mode: Cell<Option<GpioMode>>,
 }
 
@@ -294,7 +324,7 @@ impl DigitalGpioLease<'_> {
 
 impl Drop for DigitalGpioLease<'_> {
     fn drop(&mut self) {
-        GPIO_LEASES.fetch_and(!self.token, Ordering::Release);
+        self.leases.fetch_and(!self.token, Ordering::Release);
     }
 }
 
@@ -303,6 +333,7 @@ pub struct AnalogGpioLease<'a> {
     gpio: &'a Gpio,
     pin: AnalogPin,
     token: u32,
+    leases: &'a AtomicU32,
     mode: Cell<Option<GpioMode>>,
 }
 
@@ -330,18 +361,18 @@ impl AnalogGpioLease<'_> {
 
 impl Drop for AnalogGpioLease<'_> {
     fn drop(&mut self) {
-        GPIO_LEASES.fetch_and(!self.token, Ordering::Release);
+        self.leases.fetch_and(!self.token, Ordering::Release);
     }
 }
 
-fn claim(pin: i32) -> Result<u32, GpioError> {
+fn claim(leases: &AtomicU32, pin: i32) -> Result<u32, GpioError> {
     let Some(token) = (pin >= 0)
         .then_some(1_u32.checked_shl(pin as u32))
         .flatten()
     else {
         return Err(GpioError::FirmwareRejected);
     };
-    GPIO_LEASES
+    leases
         .fetch_update(Ordering::Acquire, Ordering::Relaxed, |used| {
             (used & token == 0).then_some(used | token)
         })
@@ -349,7 +380,7 @@ fn claim(pin: i32) -> Result<u32, GpioError> {
         .map_err(|_| GpioError::Busy)
 }
 
-#[cfg(any(feature = "test-support", target_arch = "arm"))]
+#[cfg(all(feature = "test-support", not(target_arch = "arm")))]
 pub(crate) fn reset_leases() {
     GPIO_LEASES.store(0, Ordering::Release);
 }
