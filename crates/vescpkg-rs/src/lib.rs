@@ -64,6 +64,7 @@ pub(crate) mod ffi {
         can_set_rpm, can_set_sid_callback, can_status_msg_2_id, can_status_msg_3_id,
         can_status_msg_4_id, can_status_msg_5_id, can_status_msg_6_id, can_status_msg_id,
         can_transmit_eid, can_transmit_sid, get_ppm, get_ppm_age, remote_state, store_backup_data,
+        timeout_has_timeout, timeout_reset, timeout_secs_since_update,
     };
     #[allow(unused_imports)]
     pub use vescpkg_rs_sys::raw::{
@@ -86,7 +87,8 @@ pub(crate) mod ffi {
         can_set_rpm, can_set_sid_callback, can_status_msg_2_id, can_status_msg_3_id,
         can_status_msg_4_id, can_status_msg_5_id, can_status_msg_6_id, can_status_msg_id,
         can_transmit_eid, can_transmit_sid, get_ppm, get_ppm_age, io_read, io_read_analog,
-        io_set_mode, io_write, printf_data, remote_state, store_backup_data,
+        io_set_mode, io_write, printf_data, remote_state, store_backup_data, timeout_has_timeout,
+        timeout_reset, timeout_secs_since_update,
     };
     #[allow(unused_imports)]
     pub use selected_ffi::{
@@ -104,12 +106,12 @@ pub(crate) mod ffi {
         mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
         mc_set_brake_current, mc_set_current, mc_set_current_off_delay, mc_set_duty,
         mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm,
-        store_eeprom_word, timeout_reset, vesc_free, vesc_imu_get_quaternions, vesc_mutex_create,
-        vesc_mutex_lock, vesc_mutex_unlock, vesc_request_terminate, vesc_sem_create,
-        vesc_sem_reset, vesc_sem_signal, vesc_sem_wait, vesc_sem_wait_to, vesc_should_terminate,
-        vesc_sleep_us, vesc_spawn, vesc_system_time_seconds, vesc_system_time_ticks,
-        vesc_thread_set_priority, vesc_timer_seconds_elapsed_since, vesc_timer_time_now,
-        vesc_timestamp_age_seconds, wipe_nvm, write_nvm,
+        store_eeprom_word, vesc_free, vesc_imu_get_quaternions, vesc_mutex_create, vesc_mutex_lock,
+        vesc_mutex_unlock, vesc_request_terminate, vesc_sem_create, vesc_sem_reset,
+        vesc_sem_signal, vesc_sem_wait, vesc_sem_wait_to, vesc_should_terminate, vesc_sleep_us,
+        vesc_spawn, vesc_system_time_seconds, vesc_system_time_ticks, vesc_thread_set_priority,
+        vesc_timer_seconds_elapsed_since, vesc_timer_time_now, vesc_timestamp_age_seconds,
+        wipe_nvm, write_nvm,
     };
     #[cfg(any(test, not(feature = "test-support")))]
     use vescpkg_rs_sys::raw as selected_ffi;
@@ -137,7 +139,7 @@ pub use extension::{
     LbmExtension, LispArgs, LispContextId, LispFlatValue, LispIntegerError, LispMessageError,
     LispProcess, LispSymbol, LispValue, StatefulLbmExtension,
 };
-pub use inputs::{FirmwareInputs, InputError, PpmSnapshot, RemoteInputSnapshot};
+pub use inputs::{FirmwareInputs, InputError, PpmSnapshot, RemoteInputSnapshot, TimeoutSnapshot};
 pub use logging::{FirmwareLog, LogError};
 
 // Exported macros need public implementation hooks after downstream expansion.

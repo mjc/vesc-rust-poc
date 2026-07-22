@@ -1099,6 +1099,14 @@ pub unsafe fn timeout_reset() {
     KEEP_ALIVE_COUNT.fetch_add(1, Ordering::Relaxed);
 }
 
+pub unsafe fn timeout_has_timeout() -> bool {
+    true
+}
+
+pub unsafe fn timeout_secs_since_update() -> f32 {
+    1.5
+}
+
 pub unsafe fn mc_set_current_off_delay(seconds: f32) {
     CURRENT_OFF_DELAY_COUNT.fetch_add(1, Ordering::Relaxed);
     CURRENT_OFF_DELAY.store(seconds.to_bits(), Ordering::Relaxed);

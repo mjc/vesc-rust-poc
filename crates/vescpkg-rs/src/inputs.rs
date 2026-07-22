@@ -1,6 +1,6 @@
 //! Typed controller input and output-safety capabilities.
 
-use crate::types::{JoystickX, JoystickY, PpmAge, PpmInput, RemoteAge};
+use crate::types::{JoystickX, JoystickY, PpmAge, PpmInput, RemoteAge, TimeoutDuration};
 use crate::{SignedRatio, VescSeconds};
 
 /// Failure returned when an input/safety capability is unavailable or rejects a request.
@@ -73,6 +73,25 @@ pub struct PpmSnapshot {
     age: PpmAge,
 }
 
+/// Snapshot of the firmware motor-command timeout state.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TimeoutSnapshot {
+    timed_out: bool,
+    since_update: TimeoutDuration,
+}
+
+impl TimeoutSnapshot {
+    /// Return whether the firmware timeout is active.
+    pub const fn has_timed_out(self) -> bool {
+        self.timed_out
+    }
+
+    /// Return the elapsed time since the last timeout refresh.
+    pub const fn since_update(self) -> TimeoutDuration {
+        self.since_update
+    }
+}
+
 impl PpmSnapshot {
     /// Return the decoded PPM ratio.
     pub const fn value(self) -> PpmInput {
@@ -136,5 +155,20 @@ impl FirmwareInputs {
             Some(true) => Ok(()),
             Some(false) => Err(InputError::FirmwareRejected),
         }
+    }
+
+    /// Read the firmware motor-command timeout state.
+    pub fn timeout(&self) -> TimeoutSnapshot {
+        TimeoutSnapshot {
+            timed_out: unsafe { crate::ffi::timeout_has_timeout() },
+            since_update: TimeoutDuration::new(VescSeconds::from_seconds(unsafe {
+                crate::ffi::timeout_secs_since_update()
+            })),
+        }
+    }
+
+    /// Refresh the firmware motor-command timeout.
+    pub fn reset_timeout(&self) {
+        unsafe { crate::ffi::timeout_reset() }
     }
 }

@@ -381,7 +381,9 @@ mod slots {
     fn_slot!(mc_set_current_off_delay as unsafe extern "C" fn(f32));
     fn_slot!(mc_set_brake_current as unsafe extern "C" fn(f32));
     fn_slot!(timeout_reset as unsafe extern "C" fn());
-    // Float Out Boy capability-probes this pre-6.05 slot because not every motor
+    fn_slot!(timeout_has_timeout as unsafe extern "C" fn() -> bool);
+    fn_slot!(timeout_secs_since_update as unsafe extern "C" fn() -> f32);
+    // Refloat capability-probes this pre-6.05 slot because not every motor
     // implementation populates the FOC-specific function.
     fn_slot!(foc_get_id as unsafe extern "C" fn() -> f32);
     fn_slot!(foc_play_tone as unsafe extern "C" fn(c_int, f32, f32) -> bool);
@@ -1387,6 +1389,16 @@ pub unsafe fn get_cfg_int(param: c_int) -> c_int {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn timeout_reset() {
     unsafe { required_slot!(timeout_reset)() }
+}
+
+/// Return whether the firmware command timeout is active.
+pub unsafe fn timeout_has_timeout() -> bool {
+    unsafe { slots::timeout_has_timeout()() }
+}
+
+/// Return seconds since the firmware command timeout was last refreshed.
+pub unsafe fn timeout_secs_since_update() -> f32 {
+    unsafe { slots::timeout_secs_since_update()() }
 }
 
 /// Keep current control enabled after a current command.
