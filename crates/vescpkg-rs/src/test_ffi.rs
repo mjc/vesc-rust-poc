@@ -1187,6 +1187,10 @@ pub unsafe fn mc_stat_temp_motor_max() -> f32 {
     55.0
 }
 
+pub unsafe fn mc_stat_count_time() -> f32 {
+    90.0
+}
+
 pub unsafe fn mc_stat_reset() {}
 
 pub unsafe fn mc_get_tachometer_abs_value(_reset: bool) -> i32 {

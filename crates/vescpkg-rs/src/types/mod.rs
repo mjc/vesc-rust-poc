@@ -97,5 +97,7 @@ pub use temperature::{
     MotorTemperature, PeakMosfetTemperature, PeakMotorTemperature, TemperatureLimitEnd,
     TemperatureLimitStart,
 };
-pub use time::{CurrentOffDelay, PpmAge, RemoteAge, SystemDuration, TimeoutDuration};
+pub use time::{
+    CurrentOffDelay, MotorStatisticDuration, PpmAge, RemoteAge, SystemDuration, TimeoutDuration,
+};
 pub use version::FirmwareVersion;
