@@ -2,7 +2,7 @@
 
 use vescpkg_rs::{
     AngleDegrees, CanBus, CanControllerId, CanError, CanExtendedId, CanStandardId, Current,
-    DutyCycle, ElectricalSpeed, MotorCurrent, PidPosition, Rpm, SignedRatio,
+    CurrentRelative, DutyCycle, ElectricalSpeed, MotorCurrent, PidPosition, Rpm, SignedRatio,
 };
 
 #[test]
@@ -33,6 +33,11 @@ fn can_bus_transmits_bounded_payloads_and_copies_status() {
         PidPosition::new(AngleDegrees::from_degrees(12.0)),
     )
     .expect("remote position command");
+    bus.set_current_relative(
+        CanControllerId::new(7),
+        CurrentRelative::new(SignedRatio::from_ratio_const(-0.25)),
+    )
+    .expect("remote relative current command");
     assert_eq!(bus.transmit_standard(standard, &[0; 9]), Err(CanError::PayloadTooLong));
 
     let status = bus.status(CanControllerId::new(7)).expect("status snapshot");
