@@ -11,6 +11,7 @@ use super::{
     lbm_add_extension_with_table_base, lbm_car, lbm_cdr, lbm_cons, lbm_dec_as_float,
     lbm_dec_as_i32, lbm_dec_char, lbm_dec_str, lbm_enc_char, lbm_enc_i, lbm_enc_sym_eerror,
     lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number, lbm_list_destructive_reverse,
+    can_transmit_eid, can_transmit_sid,
     mc_get_amp_hours, mc_get_amp_hours_charged, mc_get_battery_level, mc_get_distance_abs,
     mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered, mc_get_odometer,
     mc_get_rpm, mc_get_speed, mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
@@ -382,6 +383,10 @@ extern "C" fn stub_can_get_status_msg_index(_index: c_int) -> *mut CanStatusMsg 
     &CAN_STATUS as *const CanStatusMsg as *mut CanStatusMsg
 }
 
+extern "C" fn stub_can_transmit_sid(_id: u32, _data: *const u8, _len: u8) {}
+
+extern "C" fn stub_can_transmit_eid(_id: u32, _data: *const u8, _len: u8) {}
+
 extern "C" fn stub_mc_gnss() -> *mut GnssData {
     &GNSS as *const GnssData as *mut GnssData
 }
@@ -672,6 +677,8 @@ fn populated_table() -> VescIf {
     table.read_eeprom_var = Some(stub_read_eeprom_var);
     table.store_eeprom_var = Some(stub_store_eeprom_var);
     table.can_get_status_msg_index = Some(stub_can_get_status_msg_index);
+    table.can_transmit_sid = Some(stub_can_transmit_sid);
+    table.can_transmit_eid = Some(stub_can_transmit_eid);
     table.mc_gnss = Some(stub_mc_gnss);
     table.get_remote_state = Some(stub_get_remote_state);
     table.get_ppm = Some(stub_get_ppm);
@@ -938,6 +945,21 @@ fn absent_can_status_loader_returns_none_without_calling_a_null_slot() {
     let table = empty_table();
     with_table(&table, || unsafe {
         assert!(can_status_msg_index(0).is_none());
+    });
+}
+
+#[test]
+fn can_transmit_wrappers_report_optional_slot_presence() {
+    with_populated_table(|| unsafe {
+        let payload = [1_u8, 2];
+        assert_eq!(can_transmit_sid(0x123, payload.as_ptr(), 2), Some(()));
+        assert_eq!(can_transmit_eid(0x12_3456, payload.as_ptr(), 2), Some(()));
+    });
+
+    let table = empty_table();
+    with_table(&table, || unsafe {
+        assert_eq!(can_transmit_sid(0x123, core::ptr::null(), 0), None);
+        assert_eq!(can_transmit_eid(0x123, core::ptr::null(), 0), None);
     });
 }
 
