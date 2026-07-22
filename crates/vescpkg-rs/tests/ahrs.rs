@@ -85,3 +85,60 @@ fn madgwick_rejects_invalid_periods_and_survives_missing_acceleration() {
         assert!(component.is_finite());
     }
 }
+
+#[test]
+fn package_ahrs_initial_orientation_uses_accel_and_magnetometer() {
+    let acceleration = ImuAcceleration::from_axes(
+        ImuAccelerationX::new(AccelerationG::from_g(0.0)),
+        ImuAccelerationY::new(AccelerationG::from_g(0.0)),
+        ImuAccelerationZ::new(AccelerationG::from_g(1.0)),
+    );
+    let magnetic = ImuMagneticField::from_axes(
+        ImuMagneticFieldX::new(MagneticFluxDensity::from_microteslas(1.0)),
+        ImuMagneticFieldY::new(MagneticFluxDensity::from_microteslas(0.0)),
+        ImuMagneticFieldZ::new(MagneticFluxDensity::from_microteslas(0.0)),
+    );
+
+    let mut mahony = vescpkg_rs::Ahrs::new();
+    assert_eq!(
+        mahony.update_initial_orientation(acceleration, magnetic),
+        mahony.orientation()
+    );
+    assert_eq!(
+        mahony.orientation().quaternion().w(),
+        ImuQuaternionW::new(1.0)
+    );
+
+    let mut madgwick = vescpkg_rs::Madgwick::new();
+    assert_eq!(
+        madgwick.update_initial_orientation(acceleration, magnetic),
+        madgwick.orientation()
+    );
+    assert_eq!(
+        madgwick.orientation().quaternion().w(),
+        ImuQuaternionW::new(1.0)
+    );
+}
+
+#[test]
+fn package_ahrs_initial_orientation_resets_on_invalid_vectors() {
+    let acceleration = ImuAcceleration::from_axes(
+        ImuAccelerationX::new(AccelerationG::from_g(0.0)),
+        ImuAccelerationY::new(AccelerationG::from_g(0.0)),
+        ImuAccelerationZ::new(AccelerationG::from_g(0.0)),
+    );
+    let magnetic = ImuMagneticField::from_axes(
+        ImuMagneticFieldX::new(MagneticFluxDensity::from_microteslas(1.0)),
+        ImuMagneticFieldY::new(MagneticFluxDensity::from_microteslas(0.0)),
+        ImuMagneticFieldZ::new(MagneticFluxDensity::from_microteslas(0.0)),
+    );
+    let mut ahrs = vescpkg_rs::Madgwick::new();
+    assert_eq!(
+        ahrs.update_initial_orientation(acceleration, magnetic),
+        ahrs.orientation()
+    );
+    assert_eq!(
+        ahrs.orientation().quaternion().w(),
+        ImuQuaternionW::new(1.0)
+    );
+}
