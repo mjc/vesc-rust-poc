@@ -51,7 +51,7 @@ fn inputs_expose_output_disable_and_explicit_backup_store() {
 fn inputs_expose_timeout_state_and_reset() {
     let firmware = vescpkg_rs::test_support::FirmwareTest::new();
     let inputs = firmware.inputs();
-    let timeout = inputs.timeout();
+    let timeout = inputs.timeout().expect("timeout capability");
 
     assert!(timeout.has_timed_out());
     assert_eq!(timeout.since_update().duration().as_seconds(), 1.5);
