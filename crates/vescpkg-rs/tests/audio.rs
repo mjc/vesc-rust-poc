@@ -2,9 +2,22 @@
 //! Integration coverage for the optional FOC audio subsystem.
 
 use vescpkg_rs::{
-    AudioChannel, AudioDuration, AudioFrequency, AudioSampleRate, AudioVoltage, Frequency,
-    SampleRate, Voltage, test_support::FirmwareTest,
+    AudioChannel, AudioDuration, AudioFrequency, AudioSampleRate, AudioVoltage,
+    FocAudioSampleTable, Frequency, PackageRuntimeState, PackageStateStore, SampleRate, Voltage,
+    test_support::FirmwareTest,
 };
+
+struct PackageState {
+    _table: Option<FocAudioSampleTable<'static>>,
+}
+
+static PACKAGE_STATE: PackageStateStore<PackageState> = PackageStateStore::new();
+
+impl PackageRuntimeState for PackageState {
+    fn runtime_store() -> &'static PackageStateStore<Self> {
+        &PACKAGE_STATE
+    }
+}
 
 #[test]
 fn firmware_audio_forwards_checked_commands_and_owns_sample_table_borrow() {
@@ -65,4 +78,29 @@ fn firmware_audio_rejects_invalid_values_before_ffi() {
             .is_err()
     );
     assert!(audio.set_sample_table(channel, &[f32::INFINITY]).is_err());
+}
+
+#[test]
+fn package_stop_releases_audio_table_before_next_registration() {
+    static SAMPLES: [f32; 3] = [0.1, 0.2, 0.3];
+    let firmware = FirmwareTest::new();
+    let channel = AudioChannel::try_new(1).unwrap();
+    let table = firmware
+        .audio()
+        .set_sample_table(channel, &SAMPLES)
+        .expect("audio sample table");
+    let mut info = vescpkg_rs::test_support::LoaderInfo::new();
+    let mut start = vescpkg_rs::test_support::package_start(&mut info);
+    start
+        .install_runtime_state(PackageState {
+            _table: Some(table),
+        })
+        .expect("package state");
+    assert!(start.finish_start(true));
+    assert!(vescpkg_rs::test_support::stop_package(&mut info));
+
+    firmware
+        .audio()
+        .set_sample_table(channel, &SAMPLES)
+        .expect("stop released audio table");
 }
