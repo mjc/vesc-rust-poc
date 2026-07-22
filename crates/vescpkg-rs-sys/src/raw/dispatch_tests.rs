@@ -21,6 +21,7 @@ use super::{
     vesc_mutex_unlock, vesc_sem_create, vesc_send_app_data, vesc_set_app_data_handler,
     lbm_create_byte_array,
     lbm_dec_sym,
+    lbm_send_message,
     vesc_sleep_us, vesc_system_time_ticks, vesc_thread_set_priority, wipe_nvm, write_nvm,
 };
 
@@ -851,6 +852,13 @@ fn lbm_symbol_helpers_forward_through_mock_table() {
         let value = lbm_enc_sym(7);
         assert_eq!(value, LbmValue(0x47));
         assert_eq!(lbm_dec_sym(value), 7);
+    });
+}
+
+#[test]
+fn lbm_message_send_forwards_through_mock_table() {
+    with_populated_table(|| unsafe {
+        assert_eq!(lbm_send_message(9, LbmValue(7)), 1);
     });
 }
 
