@@ -40,6 +40,10 @@ fn sample(period: f32) -> ImuReadSample {
 
 #[test]
 fn firmware_ahrs_copies_initialized_and_updated_state() {
+    assert_eq!(
+        FirmwareAhrsParameters::default(),
+        FirmwareAhrsParameters::defaults()
+    );
     let (acceleration, magnetic) = vectors();
     let mut ahrs = FirmwareAhrs::new();
     let initial = ahrs.snapshot();
