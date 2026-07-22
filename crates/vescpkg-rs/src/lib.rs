@@ -122,7 +122,7 @@ pub(crate) mod ffi {
         pub use vescpkg_rs_sys::raw::{
             conf_custom_add_config, conf_custom_clear_configs, io_read_analog, io_set_mode,
             io_write, lbm_add_extension, vesc_clear_app_data_handler, vesc_clear_imu_read_callback,
-            vesc_get_arg, vesc_send_app_data, vesc_set_app_data_handler,
+            lbm_send_message, vesc_get_arg, vesc_send_app_data, vesc_set_app_data_handler,
             vesc_set_imu_read_callback,
         };
         #[cfg(target_arch = "arm")]
@@ -150,7 +150,8 @@ pub use alloc::VescAllocator;
 pub use eeprom::{CustomEeprom, CustomEepromAddress, EepromWord};
 pub use extension::{ExtensionDescriptor, ExtensionName, ExtensionRegistration};
 pub use extension::{
-    LbmExtension, LispArgs, LispIntegerError, LispSymbol, LispValue, StatefulLbmExtension,
+    LbmExtension, LispArgs, LispContextId, LispIntegerError, LispMessageError, LispSymbol,
+    LispValue, StatefulLbmExtension,
 };
 
 // Exported macros need public implementation hooks after downstream expansion.

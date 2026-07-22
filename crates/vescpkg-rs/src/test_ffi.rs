@@ -1,4 +1,4 @@
-use core::ffi::{c_char, c_void};
+use core::ffi::{c_char, c_int, c_void};
 use core::hint::spin_loop;
 use core::sync::atomic::{
     AtomicBool, AtomicI32, AtomicU8, AtomicU32, AtomicU64, AtomicUsize, Ordering,
@@ -455,6 +455,9 @@ pub unsafe fn lbm_enc_sym(symbol: u32) -> LbmValue {
 
 pub unsafe fn lbm_dec_sym(_value: LbmValue) -> u32 {
     LBM_SYMBOL_ID.load(Ordering::Relaxed)
+}
+pub unsafe fn lbm_send_message(_context: u32, _message: LbmValue) -> c_int {
+    1
 }
 pub unsafe fn lbm_is_char(value: LbmValue) -> bool {
     value.0 & 0x0f == 0x04
