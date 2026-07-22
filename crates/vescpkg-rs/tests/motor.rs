@@ -3,7 +3,7 @@
 
 use vescpkg_rs::prelude::{
     AudioChannel, AudioFrequency, AudioVoltage, Current, FirmwareFaultCode, Frequency,
-    InputCurrentLimit, Voltage,
+    HandbrakeCurrent, HandbrakeRelative, InputCurrentLimit, Ratio, Voltage,
 };
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{MotorOutput, MotorTelemetry};
@@ -72,5 +72,16 @@ fn input_current_limits_preserve_positive_magnitudes_for_haptic_saturation() {
     assert_eq!(
         firmware.telemetry().brake_input_current_limit(),
         InputCurrentLimit::new(Current::from_amps(15.0))
+    );
+}
+
+#[test]
+fn motor_exposes_typed_handbrake_commands() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    firmware
+        .motor()
+        .set_handbrake(HandbrakeCurrent::new(Current::from_amps(2.0)));
+    firmware.motor().set_handbrake_relative(
+        HandbrakeRelative::new(Ratio::from_ratio_const(0.25)),
     );
 }

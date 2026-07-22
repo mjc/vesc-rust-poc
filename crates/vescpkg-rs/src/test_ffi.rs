@@ -1176,6 +1176,10 @@ pub unsafe fn mc_set_brake_current(amps: f32) {
     BRAKE_CURRENT.store(amps.to_bits(), Ordering::Relaxed);
 }
 
+pub unsafe fn mc_set_handbrake(_amps: f32) {}
+
+pub unsafe fn mc_set_handbrake_rel(_ratio: f32) {}
+
 pub unsafe fn mc_get_rpm() -> f32 {
     load(&ELECTRICAL_SPEED)
 }
