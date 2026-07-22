@@ -223,6 +223,11 @@ impl Gpio {
     }
 
     /// Read one analog pin as a typed firmware-scaled voltage.
+    // The host fixture stores analog samples on `Gpio`; the firmware path
+    // dispatches through a stateless VESC slot. Keep this private helper tied
+    // to the capability object while allowing the target-only receiver to be
+    // unused.
+    #[allow(clippy::unused_self)]
     fn read_analog(&self, pin: AnalogPin) -> AdcVoltage {
         let pin = pin.firmware_pin();
         #[cfg(test)]
