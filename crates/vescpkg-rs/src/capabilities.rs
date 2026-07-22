@@ -2,8 +2,8 @@
 
 use crate::ffi;
 use crate::{
-    BatteryCellCount, CanBus, Charge, Current, DutyCycleLimit, ElectricalSpeed, FocAudio,
-    FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance, GearRatio, InputCurrent,
+    AngleDegrees, BatteryCellCount, CanBus, Charge, Current, DutyCycleLimit, ElectricalSpeed,
+    FocAudio, FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance, GearRatio, InputCurrent,
     InputVoltage, MotorCurrentLimit, Nvm, NvmCapacity, Ratio, TemperatureLimitEnd,
     TemperatureLimitStart, Uart, Voltage, WheelDiameter,
 };
@@ -323,6 +323,21 @@ impl FirmwareSettings {
         crate::SampleRate::from_hertz(self.get_float(FirmwareFloatSetting::ImuSampleRate))
     }
 
+    /// Read the configured IMU roll mounting rotation.
+    pub fn imu_rotation_roll(self) -> AngleDegrees {
+        AngleDegrees::from_degrees(self.get_float(FirmwareFloatSetting::ImuRotationRoll))
+    }
+
+    /// Read the configured IMU pitch mounting rotation.
+    pub fn imu_rotation_pitch(self) -> AngleDegrees {
+        AngleDegrees::from_degrees(self.get_float(FirmwareFloatSetting::ImuRotationPitch))
+    }
+
+    /// Read the configured IMU yaw mounting rotation.
+    pub fn imu_rotation_yaw(self) -> AngleDegrees {
+        AngleDegrees::from_degrees(self.get_float(FirmwareFloatSetting::ImuRotationYaw))
+    }
+
     /// Read the configured positive gear ratio, rejecting malformed firmware state.
     pub fn gear_ratio(self) -> Result<GearRatio, SettingsError> {
         GearRatio::try_new(self.get_float(FirmwareFloatSetting::GearRatio))
@@ -445,6 +460,21 @@ impl FirmwareSettings {
     /// Update the live firmware IMU sample rate; persistence still requires [`Self::store`].
     pub fn set_imu_sample_rate(self, rate: crate::SampleRate) -> Result<(), SettingsError> {
         self.set_float(FirmwareFloatSetting::ImuSampleRate, rate.as_hertz())
+    }
+
+    /// Update the live IMU roll mounting rotation; persistence still requires [`Self::store`].
+    pub fn set_imu_rotation_roll(self, angle: AngleDegrees) -> Result<(), SettingsError> {
+        self.set_float(FirmwareFloatSetting::ImuRotationRoll, angle.as_degrees())
+    }
+
+    /// Update the live IMU pitch mounting rotation; persistence still requires [`Self::store`].
+    pub fn set_imu_rotation_pitch(self, angle: AngleDegrees) -> Result<(), SettingsError> {
+        self.set_float(FirmwareFloatSetting::ImuRotationPitch, angle.as_degrees())
+    }
+
+    /// Update the live IMU yaw mounting rotation; persistence still requires [`Self::store`].
+    pub fn set_imu_rotation_yaw(self, angle: AngleDegrees) -> Result<(), SettingsError> {
+        self.set_float(FirmwareFloatSetting::ImuRotationYaw, angle.as_degrees())
     }
 
     /// Update the live gear ratio; persistence still requires [`Self::store`].
