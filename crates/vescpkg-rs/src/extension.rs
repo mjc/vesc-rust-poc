@@ -2,6 +2,7 @@
 
 use core::ffi::CStr;
 
+use vescpkg_rs_sys::raw::LbmFlatValue;
 use vescpkg_rs_sys::{ExtensionHandler, LbmValue};
 
 const LBM_INT_TAG: u32 = 0x8;
@@ -70,6 +71,77 @@ pub enum LispMessageError {
 /// Process controls available while an extension callback is executing.
 pub struct LispProcess;
 
+/// A firmware-owned flattened LispBM value under construction.
+///
+/// Firmware 6.05 and newer expose these constructors as optional ABI slots.
+/// The buffer is reclaimed if the value is dropped without being accepted by
+/// a context; a successful unblock transfers ownership to LispBM.
+#[cfg_attr(not(test), must_use)]
+pub struct LispFlatValue {
+    raw: LbmFlatValue,
+    finished: bool,
+}
+
+#[cfg(not(test))]
+impl LispFlatValue {
+    /// Start a flattened value with a firmware-allocated buffer.
+    pub fn try_new(buffer_size: usize) -> Option<Self> {
+        let mut raw = LbmFlatValue {
+            buf: core::ptr::null_mut(),
+            buf_size: 0,
+            buf_pos: 0,
+        };
+        (unsafe { crate::ffi::lbm_start_flatten(&mut raw, buffer_size) } == Some(true)).then_some(
+            Self {
+                raw,
+                finished: false,
+            },
+        )
+    }
+
+    /// Append a signed 64-bit value.
+    pub fn push_i64(&mut self, value: i64) -> bool {
+        !self.finished
+            && unsafe { crate::ffi::f_i64(&mut self.raw, value) } == Some(true)
+    }
+
+    /// Append an unsigned 64-bit value.
+    pub fn push_u64(&mut self, value: u64) -> bool {
+        !self.finished
+            && unsafe { crate::ffi::f_u64(&mut self.raw, value) } == Some(true)
+    }
+
+    /// Append a byte array copied by firmware into the flattened value.
+    pub fn push_byte_array(&mut self, bytes: &[u8]) -> bool {
+        let Ok(count) = u32::try_from(bytes.len()) else {
+            return false;
+        };
+        !self.finished
+            && unsafe {
+                crate::ffi::f_lbm_array(&mut self.raw, count, bytes.as_ptr().cast_mut())
+            } == Some(true)
+    }
+
+    /// Finish the flattened value before passing it to LispBM.
+    pub fn finish(&mut self) -> bool {
+        if self.finished {
+            return true;
+        }
+        self.finished = unsafe { crate::ffi::lbm_finish_flatten(&mut self.raw) == Some(true) };
+        self.finished
+    }
+}
+
+#[cfg(not(test))]
+impl Drop for LispFlatValue {
+    fn drop(&mut self) {
+        if !self.raw.buf.is_null() {
+            unsafe { crate::ffi::vesc_free(self.raw.buf.cast()) };
+            self.raw.buf = core::ptr::null_mut();
+        }
+    }
+}
+
 impl LispProcess {
     /// Return the context currently executing the extension callback.
     #[cfg(not(test))]
@@ -89,6 +161,24 @@ impl LispProcess {
         match unsafe { crate::ffi::lbm_unblock_ctx_unboxed(context.raw(), value.raw()) } {
             Some(true) => Ok(()),
             Some(false) | None => Err(LispMessageError::Rejected),
+        }
+    }
+
+    /// Unblock a context with a finished flattened value.
+    #[cfg(not(test))]
+    pub fn unblock_flat(
+        context: LispContextId,
+        mut value: LispFlatValue,
+    ) -> Result<(), LispMessageError> {
+        if !value.finish() {
+            return Err(LispMessageError::Rejected);
+        }
+        let result = unsafe { crate::ffi::lbm_unblock_ctx(context.raw(), &mut value.raw) };
+        if result == Some(true) {
+            value.raw.buf = core::ptr::null_mut();
+            Ok(())
+        } else {
+            Err(LispMessageError::Rejected)
         }
     }
 }
