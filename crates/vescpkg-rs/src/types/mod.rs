@@ -69,7 +69,7 @@ pub use imu::{
     ImuAngularRateYaw, ImuAttitude, ImuMadgwickBeta, ImuMagneticField, ImuMagneticFieldX,
     ImuMagneticFieldY, ImuMagneticFieldZ, ImuMahonyIntegralGain, ImuMahonyProportionalGain,
     ImuOrientation, ImuPitch, ImuQuaternion, ImuQuaternionW, ImuQuaternionX, ImuQuaternionY,
-    ImuQuaternionZ, ImuReadSample, ImuRoll, ImuSamplePeriod, ImuYaw,
+    ImuQuaternionZ, ImuReadSample, ImuRoll, ImuSamplePeriod, ImuSampleRate, ImuYaw,
 };
 pub use io::{
     BaudRate, BaudRateError, PacketLength, PacketLengthError, ThreadPriority, ThreadPriorityError,

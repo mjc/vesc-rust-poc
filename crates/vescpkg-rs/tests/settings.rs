@@ -58,7 +58,7 @@ fn typed_settings_read_write_and_persist() {
             .as_revolutions_per_minute(),
         8_000.0
     );
-    assert_eq!(settings.imu_sample_rate().as_hertz(), 500.0);
+    assert_eq!(settings.imu_sample_rate().sample_rate().as_hertz(), 500.0);
     assert_eq!(settings.imu_rotation_roll().as_degrees(), 0.0);
     assert_eq!(settings.imu_rotation_pitch().as_degrees(), 0.0);
     assert_eq!(settings.imu_rotation_yaw().as_degrees(), 0.0);
@@ -219,7 +219,9 @@ fn typed_settings_read_write_and_persist() {
         ))
         .unwrap();
     settings
-        .set_imu_sample_rate(vescpkg_rs::SampleRate::from_hertz(1_000.0))
+        .set_imu_sample_rate(vescpkg_rs::ImuSampleRate::new(
+            vescpkg_rs::SampleRate::from_hertz(1_000.0),
+        ))
         .unwrap();
     settings
         .set_imu_rotation_roll(vescpkg_rs::AngleDegrees::from_degrees(1.0))
@@ -433,7 +435,7 @@ fn typed_settings_read_write_and_persist() {
             .as_revolutions_per_minute(),
         7_000.0
     );
-    assert_eq!(settings.imu_sample_rate().as_hertz(), 1_000.0);
+    assert_eq!(settings.imu_sample_rate().sample_rate().as_hertz(), 1_000.0);
     assert_eq!(settings.imu_rotation_roll().as_degrees(), 1.0);
     assert_eq!(settings.imu_rotation_pitch().as_degrees(), -2.0);
     assert_eq!(settings.imu_rotation_yaw().as_degrees(), 3.0);

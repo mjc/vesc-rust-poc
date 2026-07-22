@@ -3,8 +3,25 @@
 use core::{fmt, marker::PhantomData};
 
 use crate::units::{
-    AccelerationG, AngleRadians, AngularVelocity, MagneticFluxDensity, VescSeconds,
+    AccelerationG, AngleRadians, AngularVelocity, MagneticFluxDensity, SampleRate, VescSeconds,
 };
+
+/// Firmware IMU configuration sample rate.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct ImuSampleRate(SampleRate);
+
+impl ImuSampleRate {
+    /// Wrap the generic sample-rate unit with firmware IMU meaning.
+    pub const fn new(sample_rate: SampleRate) -> Self {
+        Self(sample_rate)
+    }
+
+    /// Return the generic sample-rate unit without erasing its meaning at the API boundary.
+    pub const fn sample_rate(self) -> SampleRate {
+        self.0
+    }
+}
 
 macro_rules! finite_imu_scalar {
     ($name:ident, $doc:literal) => {
