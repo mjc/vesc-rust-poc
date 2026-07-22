@@ -27,7 +27,10 @@ allocator-backed app-data callback, so the probe exercises the allocation
 instead of optimizing it away.
 
 The hashes above are the current artifact-only proof after the direct Cargo
-binary cutover. They do not claim a new device run. The ignored HIL workflow in
+binary cutover. A user-confirmed known-good Refloat device baseline is
+`46323b07725b807f90ab9e3387d87a977e06a03a`; use that exact revision when
+comparing later runtime changes. The hashes above do not claim a new device
+run. The ignored HIL workflow in
 `crates/cargo-vescpkg/tests/hil_loopback.rs` remains the required current
 device gate and needs `VESC_DEVICE` plus `VESC_BLE_ADDR` before it can be run.
 
