@@ -196,7 +196,7 @@ pub use init::{PackageStart, PackageStartError};
 pub use input::{ControllerInput, RemoteInput};
 pub use lifecycle_core::AppDataSendError;
 pub use motor::{MotorOutput, MotorTelemetry};
-pub use nvm::{Nvm, NvmError, NvmOffset};
+pub use nvm::{Nvm, NvmCapacity, NvmError, NvmOffset};
 pub use packet::{PacketCodec, PacketError, PacketHandler, PacketRegistration};
 pub use plot::{Plot, PlotError};
 pub use runtime::{PackageRuntimeState, PackageStateAccess, PackageStateStore};
