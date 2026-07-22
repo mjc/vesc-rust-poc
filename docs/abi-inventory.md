@@ -40,6 +40,14 @@ The safe LispBM surface follows the pinned `vesc_c_if.h` table:
 - the header has no callable array-header/data accessor, so the SDK does not
   expose an unsound borrowed array slice.
 
+## Firmware AHRS Boundaries
+
+The pinned `ATTITUDE_INFO` struct and its initializer/update/getter slots are
+copied into the owned `FirmwareAhrsSnapshot` surface. The SDK owns the state
+storage, applies checked gains because the C initializer leaves those fields
+for the caller, and keeps the retained IMU read callback behind an exclusive
+unsafe lease. The wrapper does not alias firmware-owned estimator storage.
+
 ## Notes
 
 - This list is intentionally narrow.
