@@ -163,6 +163,7 @@ static CAN_STATUS: CanStatusMsg = CanStatusMsg {
     current: 4.5,
     duty: 0.25,
 };
+static CAN_STATUS_DUTY_BITS: AtomicU32 = AtomicU32::new(0x3e80_0000);
 static CAN_STATUS_2: CanStatusMsg2 = CanStatusMsg2 {
     id: 7,
     rx_time: 123,
@@ -197,6 +198,7 @@ static CAN_STATUS_6: CanStatusMsg6 = CanStatusMsg6 {
     adc_3: 3.0,
     ppm: 0.5,
 };
+static CAN_STATUS_PPM_BITS: AtomicU32 = AtomicU32::new(0x3f00_0000);
 static THREAD_SPAWN_COUNT: AtomicUsize = AtomicUsize::new(0);
 static THREAD_SPAWN_STACKS: [AtomicUsize; 2] = [const { AtomicUsize::new(0) }; 2];
 static THREAD_SPAWN_RESULTS: [AtomicUsize; 2] = [AtomicUsize::new(1), AtomicUsize::new(2)];
@@ -298,6 +300,8 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     MOSFET_TEMPERATURE_LIMIT_START.store(85.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_TEMPERATURE_LIMIT_START.store(85.0_f32.to_bits(), Ordering::Relaxed);
     DUTY_CYCLE_LIMIT.store(0.95_f32.to_bits(), Ordering::Relaxed);
+    CAN_STATUS_DUTY_BITS.store(0x3e80_0000, Ordering::Relaxed);
+    CAN_STATUS_PPM_BITS.store(0x3f00_0000, Ordering::Relaxed);
     BATTERY_CELL_COUNT.store(0, Ordering::Relaxed);
     CONFIG_WRITE_OK.store(true, Ordering::Relaxed);
     CONFIG_STORE_OK.store(true, Ordering::Relaxed);
@@ -862,7 +866,10 @@ pub unsafe fn can_ping(_controller: u8) -> Option<(bool, HardwareType)> {
 }
 
 pub unsafe fn can_status_msg_id(_id: i32) -> Option<CanStatusMsg> {
-    Some(CAN_STATUS)
+    Some(CanStatusMsg {
+        duty: f32::from_bits(CAN_STATUS_DUTY_BITS.load(Ordering::Relaxed)),
+        ..CAN_STATUS
+    })
 }
 
 pub unsafe fn can_status_msg_2_id(_id: i32) -> Option<CanStatusMsg2> {
@@ -882,7 +889,18 @@ pub unsafe fn can_status_msg_5_id(_id: i32) -> Option<CanStatusMsg5> {
 }
 
 pub unsafe fn can_status_msg_6_id(_id: i32) -> Option<CanStatusMsg6> {
-    Some(CAN_STATUS_6)
+    Some(CanStatusMsg6 {
+        ppm: f32::from_bits(CAN_STATUS_PPM_BITS.load(Ordering::Relaxed)),
+        ..CAN_STATUS_6
+    })
+}
+
+pub(crate) fn set_can_status_duty(duty: f32) {
+    CAN_STATUS_DUTY_BITS.store(duty.to_bits(), Ordering::Relaxed);
+}
+
+pub(crate) fn set_can_status_ppm(ppm: f32) {
+    CAN_STATUS_PPM_BITS.store(ppm.to_bits(), Ordering::Relaxed);
 }
 
 pub(crate) fn mutex_lock_count() -> usize {

@@ -125,6 +125,16 @@ impl FirmwareTest {
         crate::test_ffi::set_timer_ticks(ticks);
     }
 
+    /// Configure the fake CAN status duty-cycle value.
+    pub fn set_can_status_duty(&self, duty: f32) {
+        crate::test_ffi::set_can_status_duty(duty);
+    }
+
+    /// Configure the fake CAN status PPM value.
+    pub fn set_can_status_ppm(&self, ppm: f32) {
+        crate::test_ffi::set_can_status_ppm(ppm);
+    }
+
     /// Make the fake firmware reject every NVM operation.
     pub fn fail_nvm_operations(&self) {
         crate::test_ffi::fail_nvm_operations(true);

@@ -150,6 +150,22 @@ fn can_bus_copies_status_message_six() {
 }
 
 #[test]
+fn can_status_rejects_invalid_duty_ratio() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    firmware.set_can_status_duty(2.0);
+
+    assert!(firmware.can().status(CanControllerId::new(7)).is_none());
+}
+
+#[test]
+fn can_status6_rejects_invalid_ppm_ratio() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    firmware.set_can_status_ppm(2.0);
+
+    assert!(firmware.can().status6(CanControllerId::new(7)).is_none());
+}
+
+#[test]
 fn can_status_reports_wrapping_age_and_staleness() {
     let firmware = vescpkg_rs::test_support::FirmwareTest::new();
     let status = firmware
