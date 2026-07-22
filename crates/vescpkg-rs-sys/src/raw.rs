@@ -238,6 +238,12 @@ mod slots {
     optional_fn_slot!(lbm_unblock_ctx_unboxed as unsafe extern "C" fn(u32, LbmValue) -> bool);
     optional_fn_slot!(lbm_start_flatten as unsafe extern "C" fn(*mut LbmFlatValue, usize) -> bool);
     optional_fn_slot!(lbm_finish_flatten as unsafe extern "C" fn(*mut LbmFlatValue) -> bool);
+    optional_fn_slot!(f_cons as unsafe extern "C" fn(*mut LbmFlatValue) -> bool);
+    optional_fn_slot!(f_sym as unsafe extern "C" fn(*mut LbmFlatValue, u32) -> bool);
+    optional_fn_slot!(f_b as unsafe extern "C" fn(*mut LbmFlatValue, u8) -> bool);
+    optional_fn_slot!(f_i32 as unsafe extern "C" fn(*mut LbmFlatValue, i32) -> bool);
+    optional_fn_slot!(f_u32 as unsafe extern "C" fn(*mut LbmFlatValue, u32) -> bool);
+    optional_fn_slot!(f_float as unsafe extern "C" fn(*mut LbmFlatValue, f32) -> bool);
     optional_fn_slot!(f_i64 as unsafe extern "C" fn(*mut LbmFlatValue, i64) -> bool);
     optional_fn_slot!(f_u64 as unsafe extern "C" fn(*mut LbmFlatValue, u64) -> bool);
     optional_fn_slot!(f_lbm_array as unsafe extern "C" fn(*mut LbmFlatValue, u32, *mut u8) -> bool);
@@ -603,6 +609,16 @@ macro_rules! flat_value_bool_call {
 flat_value_bool_call!(f_i64, f_i64, number: i64);
 flat_value_bool_call!(f_u64, f_u64, number: u64);
 flat_value_bool_call!(f_lbm_array, f_lbm_array, count: u32, data: *mut u8);
+flat_value_bool_call!(f_sym, f_sym, symbol: u32);
+flat_value_bool_call!(f_b, f_b, byte: u8);
+flat_value_bool_call!(f_i32, f_i32, number: i32);
+flat_value_bool_call!(f_u32, f_u32, number: u32);
+flat_value_bool_call!(f_float, f_float, number: f32);
+
+/// Append a cons marker to an optional firmware 6.05 flat value.
+pub unsafe fn f_cons(value: *mut LbmFlatValue) -> Option<bool> {
+    optional_bool_call(unsafe { slots::f_cons() }, |build| unsafe { build(value) })
+}
 
 /// Unblock a context with an optional firmware 6.05 flat value.
 pub unsafe fn lbm_unblock_ctx(context: u32, value: *mut LbmFlatValue) -> Option<bool> {

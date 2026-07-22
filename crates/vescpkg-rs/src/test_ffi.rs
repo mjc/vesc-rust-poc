@@ -457,6 +457,48 @@ pub unsafe fn f_i64(value: *mut LbmFlatValue, _number: i64) -> Option<bool> {
     })
 }
 
+pub unsafe fn f_cons(value: *mut LbmFlatValue) -> Option<bool> {
+    unsafe { value.as_mut() }.map(|value| {
+        value.buf_pos = value.buf_pos.saturating_add(1);
+        true
+    })
+}
+
+pub unsafe fn f_sym(value: *mut LbmFlatValue, _symbol: u32) -> Option<bool> {
+    unsafe { value.as_mut() }.map(|value| {
+        value.buf_pos = value.buf_pos.saturating_add(5);
+        true
+    })
+}
+
+pub unsafe fn f_b(value: *mut LbmFlatValue, _byte: u8) -> Option<bool> {
+    unsafe { value.as_mut() }.map(|value| {
+        value.buf_pos = value.buf_pos.saturating_add(2);
+        true
+    })
+}
+
+pub unsafe fn f_i32(value: *mut LbmFlatValue, _number: i32) -> Option<bool> {
+    unsafe { value.as_mut() }.map(|value| {
+        value.buf_pos = value.buf_pos.saturating_add(5);
+        true
+    })
+}
+
+pub unsafe fn f_u32(value: *mut LbmFlatValue, _number: u32) -> Option<bool> {
+    unsafe { value.as_mut() }.map(|value| {
+        value.buf_pos = value.buf_pos.saturating_add(5);
+        true
+    })
+}
+
+pub unsafe fn f_float(value: *mut LbmFlatValue, _number: f32) -> Option<bool> {
+    unsafe { value.as_mut() }.map(|value| {
+        value.buf_pos = value.buf_pos.saturating_add(5);
+        true
+    })
+}
+
 pub unsafe fn f_u64(value: *mut LbmFlatValue, _number: u64) -> Option<bool> {
     unsafe { value.as_mut() }.map(|value| {
         value.buf_pos = value.buf_pos.saturating_add(9);
