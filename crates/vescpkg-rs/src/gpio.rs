@@ -97,8 +97,32 @@ impl AnalogPin {
 pub struct DigitalPin(VescPin);
 
 impl DigitalPin {
+    /// VESC communication receive pin.
+    pub const COMM_RX: Self = Self(VescPin(0));
+    /// VESC communication transmit pin.
+    pub const COMM_TX: Self = Self(VescPin(1));
+    /// VESC SWD data pin.
+    pub const SWDIO: Self = Self(VescPin(2));
+    /// VESC SWD clock pin.
+    pub const SWCLK: Self = Self(VescPin(3));
+    /// VESC Hall sensor 1 pin.
+    pub const HALL1: Self = Self(VescPin(4));
+    /// VESC Hall sensor 2 pin.
+    pub const HALL2: Self = Self(VescPin(5));
+    /// VESC Hall sensor 3 pin.
+    pub const HALL3: Self = Self(VescPin(6));
+    /// VESC Hall sensor 4 pin.
+    pub const HALL4: Self = Self(VescPin(9));
+    /// VESC Hall sensor 5 pin.
+    pub const HALL5: Self = Self(VescPin(10));
+    /// VESC Hall sensor 6 pin.
+    pub const HALL6: Self = Self(VescPin(11));
     /// VESC's Servo/PPM pin.
     pub const PPM: Self = Self(VescPin(12));
+    /// VESC hardware pin 1.
+    pub const HW_1: Self = Self(VescPin(13));
+    /// VESC hardware pin 2.
+    pub const HW_2: Self = Self(VescPin(14));
 }
 
 /// Digital GPIO output level.
@@ -378,7 +402,29 @@ struct TestGpio {
 
 #[cfg(test)]
 mod tests {
-    use super::{AnalogPin, DigitalOutputLevel, DigitalPin, Gpio};
+    use super::{AnalogPin, DigitalOutputLevel, DigitalPin, Gpio, VescPin};
+
+    #[test]
+    fn digital_pin_constants_match_the_pinned_vesc_enum() {
+        let pins = [
+            (DigitalPin::COMM_RX, 0),
+            (DigitalPin::COMM_TX, 1),
+            (DigitalPin::SWDIO, 2),
+            (DigitalPin::SWCLK, 3),
+            (DigitalPin::HALL1, 4),
+            (DigitalPin::HALL2, 5),
+            (DigitalPin::HALL3, 6),
+            (DigitalPin::HALL4, 9),
+            (DigitalPin::HALL5, 10),
+            (DigitalPin::HALL6, 11),
+            (DigitalPin::PPM, 12),
+            (DigitalPin::HW_1, 13),
+            (DigitalPin::HW_2, 14),
+        ];
+        for (pin, raw) in pins {
+            assert_eq!(pin, DigitalPin(VescPin(raw)));
+        }
+    }
 
     #[test]
     fn gpio_uses_one_semantic_capability() {
