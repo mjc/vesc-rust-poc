@@ -86,6 +86,16 @@ impl AnalogPin {
     /// VESC's second external analog input.
     pub const ADC2: Self = Self(8);
 
+    /// Resolve a firmware ADC enum value without exposing the raw pin.
+    #[must_use]
+    pub const fn from_raw(raw: i32) -> Option<Self> {
+        match raw {
+            7 => Some(Self::ADC1),
+            8 => Some(Self::ADC2),
+            _ => None,
+        }
+    }
+
     const fn firmware_pin(self) -> VescPin {
         VescPin(self.0)
     }
@@ -123,6 +133,27 @@ impl DigitalPin {
     pub const HW_1: Self = Self(VescPin(13));
     /// VESC hardware pin 2.
     pub const HW_2: Self = Self(VescPin(14));
+
+    /// Resolve a pinned VESC digital-pin enum value without exposing the raw pin.
+    #[must_use]
+    pub const fn from_raw(raw: i32) -> Option<Self> {
+        match raw {
+            0 => Some(Self::COMM_RX),
+            1 => Some(Self::COMM_TX),
+            2 => Some(Self::SWDIO),
+            3 => Some(Self::SWCLK),
+            4 => Some(Self::HALL1),
+            5 => Some(Self::HALL2),
+            6 => Some(Self::HALL3),
+            9 => Some(Self::HALL4),
+            10 => Some(Self::HALL5),
+            11 => Some(Self::HALL6),
+            12 => Some(Self::PPM),
+            13 => Some(Self::HW_1),
+            14 => Some(Self::HW_2),
+            _ => None,
+        }
+    }
 
     pub(crate) const fn raw(self) -> VescPin {
         self.0
@@ -428,6 +459,14 @@ mod tests {
         for (pin, raw) in pins {
             assert_eq!(pin, DigitalPin(VescPin(raw)));
         }
+    }
+
+    #[test]
+    fn pin_lookup_rejects_unassigned_enum_values() {
+        assert_eq!(DigitalPin::from_raw(12), Some(DigitalPin::PPM));
+        assert_eq!(DigitalPin::from_raw(7), None);
+        assert_eq!(AnalogPin::from_raw(8), Some(AnalogPin::ADC2));
+        assert_eq!(AnalogPin::from_raw(12), None);
     }
 
     #[test]
