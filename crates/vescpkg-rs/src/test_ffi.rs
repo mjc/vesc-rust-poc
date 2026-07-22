@@ -12,7 +12,7 @@ use crate::{
     VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 use vescpkg_rs_sys::raw::{CanStatusMsg, LbmFlatValue};
-use vescpkg_rs_sys::{LbmValue, VescPin, VescPinMode};
+use vescpkg_rs_sys::{HardwareType, LbmValue, VescPin, VescPinMode};
 
 /// Host replacement for the firmware `%s` logging path.
 pub unsafe fn printf_data(message: *const c_char) -> bool {
@@ -687,6 +687,10 @@ pub unsafe fn can_set_rpm(_controller: u8, _rpm: f32) -> Option<()> {
 
 pub unsafe fn can_set_pos(_controller: u8, _position: f32) -> Option<()> {
     Some(())
+}
+
+pub unsafe fn can_ping(_controller: u8) -> Option<(bool, HardwareType)> {
+    Some((true, HardwareType(0)))
 }
 
 pub unsafe fn can_status_msg_id(_id: i32) -> Option<CanStatusMsg> {

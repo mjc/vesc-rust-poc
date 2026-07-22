@@ -153,7 +153,7 @@ mod slots {
     use super::{
         AppDataHandler, CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5,
         CanStatusMsg6, CustomConfigGet, CustomConfigSet, CustomConfigXml, EepromVar,
-        ExtensionHandler, GnssData, ImuReadCallback, LbmFlatValue, LbmValue, LibMutex, LibSemaphore,
+        ExtensionHandler, GnssData, HwType, ImuReadCallback, LbmFlatValue, LbmValue, LibMutex, LibSemaphore,
         LibThread, RemoteState, VescIfAbi, c_char, c_int, c_uchar, c_uint, c_void,
     };
     #[cfg(not(all(target_arch = "arm", not(test))))]
@@ -316,6 +316,7 @@ mod slots {
     optional_fn_slot!(can_set_current_rel as unsafe extern "C" fn(u8, f32));
     optional_fn_slot!(can_set_rpm as unsafe extern "C" fn(u8, f32));
     optional_fn_slot!(can_set_pos as unsafe extern "C" fn(u8, f32));
+    optional_fn_slot!(can_ping as unsafe extern "C" fn(u8, *mut HwType) -> bool);
     optional_fn_slot!(
         can_get_status_msg_2_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg2
     );
@@ -1076,6 +1077,14 @@ pub unsafe fn can_transmit_eid(id: u32, data: *const u8, len: u8) -> Option<()> 
 /// Send a remote motor duty command when the optional slot is present.
 pub unsafe fn can_set_duty(controller: u8, duty: f32) -> Option<()> {
     unsafe { slots::can_set_duty() }.map(|set| unsafe { set(controller, duty) })
+}
+
+/// Ping one remote controller and copy its reported hardware type.
+pub unsafe fn can_ping(controller: u8) -> Option<(bool, crate::HardwareType)> {
+    let ping = unsafe { slots::can_ping() }?;
+    let mut hardware = 0;
+    let ok = unsafe { ping(controller, &mut hardware) };
+    Some((ok, crate::HardwareType(hardware)))
 }
 
 /// Send a remote motor current command when the optional slot is present.
