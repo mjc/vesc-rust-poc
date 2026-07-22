@@ -33,7 +33,7 @@ ifdef DEVICE_ADDRESS
 DEVICE_FLAGS += --address $(DEVICE_ADDRESS)
 endif
 
-.PHONY: check check-full pre-commit fmt clippy clippy-pedantic vescpkg-rs-sys-target-check thumb-dispatch-smoke arm-clippy arm-gates test doc-test package package-only package-examples deploy clean status
+.PHONY: check check-full pre-commit fmt clippy clippy-pedantic vescpkg-rs-sys-target-check thumb-dispatch-smoke arm-clippy arm-gates test math-test doc-test package package-only package-examples deploy clean status
 
 # --- verification -----------------------------------------------------------
 #
@@ -43,7 +43,7 @@ endif
 
 check: fmt clippy test doc-test
 
-check-full: check arm-gates
+check-full: check arm-gates math-test
 
 pre-commit: check-full
 
@@ -70,6 +70,9 @@ thumb-dispatch-smoke:
 
 test:
 	$(CARGO) nextest run --workspace --features test-support
+
+math-test:
+	$(CARGO) nextest run -p vescpkg-rs --features 'test-support math'
 
 doc-test:
 	$(CARGO) test --doc --workspace
