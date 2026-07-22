@@ -31,9 +31,10 @@ The safe LispBM surface follows the pinned `vesc_c_if.h` table:
 - symbol lookup and error reasons accept `&CStr`; the firmware pointer is only
   borrowed for the duration of the call;
 - scalar decoders expose firmware `i32`, `u32`, and `f32` slots. The SDK offers
-  widened `i64`/`u64`/`f64` conversions for values representable by those slots;
-  `f64` encoding is accepted only when it round-trips exactly through the
-  firmware `f32` encoder;
+  exact immediate `i32`/`u32`/`i64`/`u64` decoding plus widened numeric
+  `i64`/`u64`/`f64` conversions for values representable by those slots;
+  exact float decoding rejects immediate integers, and `f64` encoding is
+  accepted only when it round-trips exactly through the firmware `f32` encoder;
 - 64-bit values are constructed through `LispFlatValue::push_i64` and
   `push_u64`, because the pinned table has no direct scalar 64-bit slots;
 - the header has no callable array-header/data accessor, so the SDK does not
