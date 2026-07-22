@@ -2,8 +2,9 @@
 #![cfg(feature = "test-support")]
 
 use vescpkg_rs::prelude::{
-    AudioChannel, AudioFrequency, AudioVoltage, Current, FirmwareFaultCode, Frequency,
-    HandbrakeCurrent, HandbrakeRelative, InputCurrentLimit, Ratio, VescSeconds, Voltage,
+    AngleDegrees, AudioChannel, AudioFrequency, AudioVoltage, Current, FirmwareFaultCode,
+    Frequency, HandbrakeCurrent, HandbrakeRelative, InputCurrentLimit, OdometerMeters, PidPosition,
+    Ratio, VescSeconds, Voltage,
 };
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{MotorOutput, MotorTelemetry};
@@ -145,19 +146,16 @@ fn motor_exposes_typed_handbrake_commands() {
     assert_eq!(telemetry.absolute_tachometer(true).steps().as_steps(), 5678);
     assert_eq!(telemetry.sampling_frequency().as_hertz(), 20_000.0);
     firmware.motor().release_motor();
-<<<<<<< HEAD
     assert!(
         firmware
             .motor()
             .wait_for_motor_release(VescSeconds::from_seconds(0.1))
     );
     firmware.motor().reset_statistics();
-=======
-    assert!(
-        firmware
-            .motor()
-            .wait_for_motor_release(VescSeconds::from_seconds(0.1))
-    );
-    firmware.motor().reset_statistics();
->>>>>>> 4ef95fc9 (test motor power statistics)
+    firmware
+        .motor()
+        .update_pid_position_offset(PidPosition::new(AngleDegrees::from_degrees(5.0)), true);
+    firmware
+        .motor()
+        .set_odometer(OdometerMeters::from_meters(12_345));
 }
