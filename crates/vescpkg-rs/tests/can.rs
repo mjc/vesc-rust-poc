@@ -188,3 +188,23 @@ fn can_bus_sends_brake_and_off_delay_commands() {
         )
         .expect("off-delay command");
 }
+
+unsafe extern "C" fn test_can_receiver(_id: u32, _data: *mut u8, _len: u8) -> bool {
+    true
+}
+
+#[test]
+fn can_receiver_registration_is_exclusive_and_released_on_drop() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    let bus = firmware.can();
+    let registration = bus
+        .register_standard_receiver(test_can_receiver)
+        .expect("SID receiver registration");
+
+    assert!(matches!(
+        bus.register_standard_receiver(test_can_receiver),
+        Err(CanError::ReceiverBusy)
+    ));
+    drop(registration);
+    assert!(bus.register_standard_receiver(test_can_receiver).is_ok());
+}
