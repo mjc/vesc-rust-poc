@@ -8,13 +8,13 @@ use crate::types::FirmwareFaultWireCode;
 use crate::types::{
     AbsoluteTachometerSteps, AmpHoursCharged, AmpHoursDischarged, AverageMosfetTemperature,
     AverageMotorCurrent, AverageMotorTemperature, AveragePower, AverageVehicleSpeed,
-    BatteryCellCount, BatteryLevel, BrakeCurrent, CurrentOffDelay, DCurrent,
+    BatteryCellCount, BatteryLevel, BrakeCurrent, CurrentOffDelay, DCurrent, DVoltage,
     DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed, FirmwareFaultCode,
     HandbrakeCurrent, HandbrakeRelative, InputCurrent, InputVoltage, MosfetTemperature,
     MotorCurrent, MotorCurrentLimit, MotorStatisticDuration, MotorTemperature,
     PeakMosfetTemperature, PeakMotorCurrent, PeakMotorTemperature, PeakPower, PeakVehicleSpeed,
-    PidPosition, SignedTripDistance, TachometerSteps, TemperatureLimitStart, TotalMotorCurrent,
-    TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
+    PidPosition, QCurrent, QVoltage, SignedTripDistance, TachometerSteps, TemperatureLimitStart,
+    TotalMotorCurrent, TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 #[cfg(not(test))]
 use crate::units::{Charge, Current, Distance, Energy, Power, Rpm, Speed, Temperature, Voltage};
@@ -134,6 +134,12 @@ pub trait MotorTelemetryBindings {
     /// all-data at `src/main.c:1364-1368`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:616`.
     fn d_axis_current(&self) -> Option<DCurrent>;
+    /// Return optional FOC q-axis Iq current.
+    fn q_axis_current(&self) -> Option<QCurrent>;
+    /// Return optional FOC d-axis Vd voltage.
+    fn d_axis_voltage(&self) -> Option<DVoltage>;
+    /// Return optional FOC q-axis Vq voltage.
+    fn q_axis_voltage(&self) -> Option<QVoltage>;
     /// Return the absolute distance travelled by the motor/vehicle.
     fn trip_distance(&self) -> TripDistance;
     /// Return signed distance travelled by the motor/vehicle.
@@ -288,6 +294,18 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
 
     fn d_axis_current(&self) -> Option<DCurrent> {
         (**self).d_axis_current()
+    }
+
+    fn q_axis_current(&self) -> Option<QCurrent> {
+        (**self).q_axis_current()
+    }
+
+    fn d_axis_voltage(&self) -> Option<DVoltage> {
+        (**self).d_axis_voltage()
+    }
+
+    fn q_axis_voltage(&self) -> Option<QVoltage> {
+        (**self).q_axis_voltage()
     }
 
     fn trip_distance(&self) -> TripDistance {
@@ -639,6 +657,18 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         call_vesc_ffi!(foc_get_id()).map(|amps| DCurrent::new(Current::from_amps(amps)))
     }
 
+    fn q_axis_current(&self) -> Option<QCurrent> {
+        unsafe { crate::ffi::foc_get_iq() }.map(|amps| QCurrent::new(Current::from_amps(amps)))
+    }
+
+    fn d_axis_voltage(&self) -> Option<DVoltage> {
+        unsafe { crate::ffi::foc_get_vd() }.map(|volts| DVoltage::new(Voltage::from_volts(volts)))
+    }
+
+    fn q_axis_voltage(&self) -> Option<QVoltage> {
+        unsafe { crate::ffi::foc_get_vq() }.map(|volts| QVoltage::new(Voltage::from_volts(volts)))
+    }
+
     fn trip_distance(&self) -> TripDistance {
         TripDistance::new(Distance::from_meters(call_vesc_ffi!(mc_get_distance_abs())))
     }
@@ -907,6 +937,12 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn duty_cycle(&self) -> DutyCycle;
     /// Return optional FOC d-axis current.
     fn d_axis_current(&self) -> Option<DCurrent>;
+    /// Return optional FOC q-axis current.
+    fn q_axis_current(&self) -> Option<QCurrent>;
+    /// Return optional FOC d-axis voltage.
+    fn d_axis_voltage(&self) -> Option<DVoltage>;
+    /// Return optional FOC q-axis voltage.
+    fn q_axis_voltage(&self) -> Option<QVoltage>;
     /// Return the absolute distance travelled by the motor/vehicle.
     fn trip_distance(&self) -> TripDistance;
     /// Return signed distance travelled by the motor/vehicle.
@@ -1187,6 +1223,21 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.d_axis_current()
     }
 
+    /// Return optional FOC q-axis current.
+    pub fn q_axis_current(&self) -> Option<QCurrent> {
+        self.bindings.q_axis_current()
+    }
+
+    /// Return optional FOC d-axis voltage.
+    pub fn d_axis_voltage(&self) -> Option<DVoltage> {
+        self.bindings.d_axis_voltage()
+    }
+
+    /// Return optional FOC q-axis voltage.
+    pub fn q_axis_voltage(&self) -> Option<QVoltage> {
+        self.bindings.q_axis_voltage()
+    }
+
     /// Return the absolute distance travelled by the motor/vehicle.
     pub fn trip_distance(&self) -> TripDistance {
         self.bindings.trip_distance()
@@ -1397,6 +1448,18 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
 
     fn d_axis_current(&self) -> Option<DCurrent> {
         self.d_axis_current()
+    }
+
+    fn q_axis_current(&self) -> Option<QCurrent> {
+        self.q_axis_current()
+    }
+
+    fn d_axis_voltage(&self) -> Option<DVoltage> {
+        self.d_axis_voltage()
+    }
+
+    fn q_axis_voltage(&self) -> Option<QVoltage> {
+        self.q_axis_voltage()
     }
 
     fn trip_distance(&self) -> TripDistance {
