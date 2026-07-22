@@ -2,7 +2,7 @@
 
 //! Integration tests for the safe LispBM value predicates.
 
-use vescpkg_rs::LispValue;
+use vescpkg_rs::{LispSymbol, LispValue};
 use vescpkg_rs::test_support::FirmwareTest;
 
 #[test]
@@ -52,4 +52,10 @@ fn lisp_values_expose_explicit_kind_predicates() {
     assert_eq!(integer.with_str(|value| value.to_bytes() == b"vesc"), None);
 
     assert_eq!(LispValue::try_byte_array(usize::MAX), None);
+
+    let symbol = LispSymbol::new(7);
+    let symbol_value = LispValue::from_symbol(symbol);
+    assert!(symbol_value.is_symbol());
+    assert_eq!(symbol_value.symbol_id(), Some(symbol));
+    assert_eq!(integer.symbol_id(), None);
 }
