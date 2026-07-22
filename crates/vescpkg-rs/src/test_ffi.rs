@@ -11,6 +11,7 @@ use crate::{
     MotorCurrentLimit, MotorTemperature, OdometerMeters, TotalMotorCurrent, TripDistance,
     VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
+use vescpkg_rs_sys::raw::LbmFlatValue;
 use vescpkg_rs_sys::LbmValue;
 use vescpkg_rs_sys::raw::RemoteState;
 
@@ -74,6 +75,7 @@ static IMU_PITCH: AtomicU32 = AtomicU32::new(0);
 static IMU_YAW: AtomicU32 = AtomicU32::new(0);
 static IMU_GYRO: [AtomicU32; 3] = [const { AtomicU32::new(0) }; 3];
 static IMU_QUATERNION: [AtomicU32; 4] = [const { AtomicU32::new(0) }; 4];
+static FLAT_BUFFER: [u8; 256] = [0; 256];
 static THREAD_SPAWN_COUNT: AtomicUsize = AtomicUsize::new(0);
 static THREAD_SPAWN_STACKS: [AtomicUsize; 2] = [const { AtomicUsize::new(0) }; 2];
 static THREAD_SPAWN_RESULTS: [AtomicUsize; 2] = [AtomicUsize::new(1), AtomicUsize::new(2)];
@@ -430,6 +432,50 @@ pub unsafe fn lbm_get_current_cid() -> u32 {
 pub unsafe fn lbm_block_ctx_from_extension() {}
 
 pub unsafe fn lbm_unblock_ctx_unboxed(_context: u32, _value: LbmValue) -> Option<bool> {
+    Some(true)
+}
+
+pub unsafe fn lbm_start_flatten(value: *mut LbmFlatValue, buffer_size: usize) -> Option<bool> {
+    let value = unsafe { value.as_mut()? };
+    if buffer_size > FLAT_BUFFER.len() {
+        return Some(false);
+    }
+    value.buf = core::ptr::addr_of!(FLAT_BUFFER).cast::<u8>().cast_mut();
+    value.buf_size = buffer_size as u32;
+    value.buf_pos = 0;
+    Some(true)
+}
+
+pub unsafe fn lbm_finish_flatten(_value: *mut LbmFlatValue) -> Option<bool> {
+    Some(true)
+}
+
+pub unsafe fn f_i64(value: *mut LbmFlatValue, _number: i64) -> Option<bool> {
+    unsafe { value.as_mut() }.map(|value| {
+        value.buf_pos = value.buf_pos.saturating_add(9);
+        true
+    })
+}
+
+pub unsafe fn f_u64(value: *mut LbmFlatValue, _number: u64) -> Option<bool> {
+    unsafe { value.as_mut() }.map(|value| {
+        value.buf_pos = value.buf_pos.saturating_add(9);
+        true
+    })
+}
+
+pub unsafe fn f_lbm_array(
+    value: *mut LbmFlatValue,
+    count: u32,
+    _data: *mut u8,
+) -> Option<bool> {
+    unsafe { value.as_mut() }.map(|value| {
+        value.buf_pos = value.buf_pos.saturating_add(count);
+        true
+    })
+}
+
+pub unsafe fn lbm_unblock_ctx(_context: u32, _value: *mut LbmFlatValue) -> Option<bool> {
     Some(true)
 }
 

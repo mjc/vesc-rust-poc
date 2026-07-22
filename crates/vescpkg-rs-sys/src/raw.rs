@@ -133,9 +133,9 @@ macro_rules! vesc_slot_word_from {
 mod slots {
     use super::{
         AppDataHandler, CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5,
-        CanStatusMsg6, CustomConfigGet, CustomConfigSet, CustomConfigXml, EepromVar, GnssData,
-        ImuReadCallback, LbmValue, LibMutex, LibSemaphore, LibThread, RemoteState, VescIfAbi,
-        c_char, c_int, c_uchar, c_uint, c_void,
+        CanStatusMsg6, CustomConfigGet, CustomConfigSet, CustomConfigXml, EepromVar,
+        ExtensionHandler, GnssData, ImuReadCallback, LbmFlatValue, LbmValue, LibMutex, LibSemaphore,
+        LibThread, RemoteState, VescIfAbi, c_char, c_int, c_uchar, c_uint, c_void,
     };
     #[cfg(not(all(target_arch = "arm", not(test))))]
     use super::{VescIf, vesc_if};
@@ -234,7 +234,13 @@ mod slots {
     fn_slot!(lbm_send_message as unsafe extern "C" fn(u32, LbmValue) -> c_int);
     fn_slot!(lbm_get_current_cid as unsafe extern "C" fn() -> u32);
     fn_slot!(lbm_block_ctx_from_extension as unsafe extern "C" fn());
+    optional_fn_slot!(lbm_unblock_ctx as unsafe extern "C" fn(u32, *mut LbmFlatValue) -> bool);
     optional_fn_slot!(lbm_unblock_ctx_unboxed as unsafe extern "C" fn(u32, LbmValue) -> bool);
+    optional_fn_slot!(lbm_start_flatten as unsafe extern "C" fn(*mut LbmFlatValue, usize) -> bool);
+    optional_fn_slot!(lbm_finish_flatten as unsafe extern "C" fn(*mut LbmFlatValue) -> bool);
+    optional_fn_slot!(f_i64 as unsafe extern "C" fn(*mut LbmFlatValue, i64) -> bool);
+    optional_fn_slot!(f_u64 as unsafe extern "C" fn(*mut LbmFlatValue, u64) -> bool);
+    optional_fn_slot!(f_lbm_array as unsafe extern "C" fn(*mut LbmFlatValue, u32, *mut u8) -> bool);
     fn_slot!(set_app_data_handler as unsafe extern "C" fn(Option<AppDataHandler>) -> bool);
     fn_slot!(imu_set_read_callback as unsafe extern "C" fn(Option<ImuReadCallback>));
     fn_slot!(read_eeprom_var as unsafe extern "C" fn(*mut EepromVar, c_int) -> bool);
@@ -567,6 +573,42 @@ pub unsafe fn lbm_unblock_ctx_unboxed(context: u32, value: LbmValue) -> Option<b
         unsafe { slots::lbm_unblock_ctx_unboxed() },
         |unblock| unsafe { unblock(context, value) },
     )
+}
+
+/// Start an optional firmware 6.05 flat-value buffer.
+pub unsafe fn lbm_start_flatten(value: *mut LbmFlatValue, buffer_size: usize) -> Option<bool> {
+    optional_bool_call(unsafe { slots::lbm_start_flatten() }, |start| unsafe {
+        start(value, buffer_size)
+    })
+}
+
+/// Finish an optional firmware 6.05 flat-value buffer.
+pub unsafe fn lbm_finish_flatten(value: *mut LbmFlatValue) -> Option<bool> {
+    optional_bool_call(unsafe { slots::lbm_finish_flatten() }, |finish| unsafe {
+        finish(value)
+    })
+}
+
+macro_rules! flat_value_bool_call {
+    ($name:ident, $slot:ident, $($arg:ident : $ty:ty),* $(,)?) => {
+        /// Call an optional firmware 6.05 flat-value constructor.
+        pub unsafe fn $name(value: *mut LbmFlatValue, $($arg: $ty),*) -> Option<bool> {
+            optional_bool_call(unsafe { slots::$slot() }, |build| unsafe {
+                build(value, $($arg),*)
+            })
+        }
+    };
+}
+
+flat_value_bool_call!(f_i64, f_i64, number: i64);
+flat_value_bool_call!(f_u64, f_u64, number: u64);
+flat_value_bool_call!(f_lbm_array, f_lbm_array, count: u32, data: *mut u8);
+
+/// Unblock a context with an optional firmware 6.05 flat value.
+pub unsafe fn lbm_unblock_ctx(context: u32, value: *mut LbmFlatValue) -> Option<bool> {
+    optional_bool_call(unsafe { slots::lbm_unblock_ctx() }, |unblock| unsafe {
+        unblock(context, value)
+    })
 }
 
 /// # Safety
