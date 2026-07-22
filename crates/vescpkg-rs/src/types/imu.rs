@@ -389,8 +389,8 @@ impl ImuQuaternion {
     /// Translate VESC's quaternion buffer at the private FFI boundary.
     ///
     /// C map: VESC writes q0..q3 into q[0..3] at
-    /// `third_party/vesc/imu/imu.c:438-443`; Refloat consumes that same
-    /// order at `third_party/refloat/src/balance_filter.c:54-59`.
+    /// `third_party/vesc/imu/imu.c:438-443`; Float Out Boy consumes that same
+    /// order at `third_party/float-out-boy/src/balance_filter.c:54-59`.
     #[cfg(not(test))]
     pub(crate) const fn from_firmware_wxyz(components: [f32; 4]) -> Self {
         Self::from_components(

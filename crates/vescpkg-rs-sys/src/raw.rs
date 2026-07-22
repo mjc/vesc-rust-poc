@@ -33,27 +33,27 @@ pub type PacketState = crate::bindgen::PACKET_STATE_t;
 type LibThread = crate::bindgen::lib_thread;
 type LibMutex = crate::bindgen::lib_mutex;
 type LibSemaphore = crate::bindgen::lib_semaphore;
-/// Refloat/VESC Tool custom-config serializer callback.
+/// Float Out Boy/VESC Tool custom-config serializer callback.
 ///
-/// Refloat `v1.2.1` passes `get_cfg` to `conf_custom_add_config` in
+/// Float Out Boy `v1.2.1` passes `get_cfg` to `conf_custom_add_config` in
 /// `src/main.c:2456`; the callback is declared in
 /// `vesc_pkg_lib/vesc_c_if.h:549-550`.
 pub type CustomConfigGet = unsafe extern "C" fn(*mut u8, bool) -> c_int;
-/// Refloat/VESC Tool custom-config deserializer callback.
+/// Float Out Boy/VESC Tool custom-config deserializer callback.
 ///
-/// Refloat `v1.2.1` passes `set_cfg` to `conf_custom_add_config` in
+/// Float Out Boy `v1.2.1` passes `set_cfg` to `conf_custom_add_config` in
 /// `src/main.c:2456`; the callback is declared in
 /// `vesc_pkg_lib/vesc_c_if.h:551`.
 pub type CustomConfigSet = unsafe extern "C" fn(*mut u8) -> bool;
-/// Refloat/VESC Tool custom-config XML callback.
+/// Float Out Boy/VESC Tool custom-config XML callback.
 ///
-/// Refloat `v1.2.1` passes `get_cfg_xml` to `conf_custom_add_config` in
+/// Float Out Boy `v1.2.1` passes `get_cfg_xml` to `conf_custom_add_config` in
 /// `src/main.c:2456`; the callback is declared in
 /// `vesc_pkg_lib/vesc_c_if.h:552`.
 pub type CustomConfigXml = unsafe extern "C" fn(*mut *mut u8) -> c_int;
-/// Refloat/VESC IMU read callback.
+/// Float Out Boy/VESC IMU read callback.
 ///
-/// Refloat `v1.2.1` registers `imu_ref_callback` with this slot at
+/// Float Out Boy `v1.2.1` registers `imu_ref_callback` with this slot at
 /// `src/main.c:2455`; the callback itself updates the balance filter at
 /// `src/main.c:760-764`.
 pub type ImuReadCallback = unsafe extern "C" fn(*mut f32, *mut f32, *mut f32, f32);
@@ -312,7 +312,7 @@ mod slots {
     fn_slot!(mc_set_current_off_delay as unsafe extern "C" fn(f32));
     fn_slot!(mc_set_brake_current as unsafe extern "C" fn(f32));
     fn_slot!(timeout_reset as unsafe extern "C" fn());
-    // Refloat capability-probes this pre-6.05 slot because not every motor
+    // Float Out Boy capability-probes this pre-6.05 slot because not every motor
     // implementation populates the FOC-specific function.
     fn_slot!(foc_get_id as unsafe extern "C" fn() -> f32);
     fn_slot!(foc_play_tone as unsafe extern "C" fn(c_int, f32, f32) -> bool);
@@ -598,7 +598,7 @@ fn optional_bool_call<F>(loader: Option<F>, invoke: impl FnOnce(F) -> bool) -> O
     loader.map(invoke)
 }
 
-/// Register the firmware app-data callback using the refloat/C ABI.
+/// Register the firmware app-data callback using the float-out-boy/C ABI.
 ///
 /// # Safety
 ///
@@ -623,7 +623,7 @@ pub unsafe fn vesc_clear_app_data_handler() {
 
 /// Register the firmware IMU read callback.
 ///
-/// Refloat registers `imu_ref_callback` at `src/main.c:2455`; that callback
+/// Float Out Boy registers `imu_ref_callback` at `src/main.c:2455`; that callback
 /// updates the balance filter at `src/main.c:760-764`. The VESC slot is
 /// declared in `lispBM/c_libs/vesc_c_if.h:586`.
 ///
@@ -640,7 +640,7 @@ unsafe fn vesc_set_imu_read_callback_slot(handler: Option<ImuReadCallback>) {
 
 /// Clear the firmware IMU read callback.
 ///
-/// Refloat clears package callbacks during stop at `src/main.c:2401-2403`;
+/// Float Out Boy clears package callbacks during stop at `src/main.c:2401-2403`;
 /// the VESC callback slot is declared in `lispBM/c_libs/vesc_c_if.h:586`.
 ///
 /// # Safety
@@ -653,7 +653,7 @@ pub unsafe fn vesc_clear_imu_read_callback() {
 
 /// Read firmware IMU quaternions.
 ///
-/// Refloat initializes its balance filter from firmware quaternions at
+/// Float Out Boy initializes its balance filter from firmware quaternions at
 /// `src/balance_filter.c:53-61`; the VESC slot is declared in
 /// `lispBM/c_libs/vesc_c_if.h:521`.
 ///
@@ -664,9 +664,9 @@ pub unsafe fn vesc_imu_get_quaternions(quaternions: *mut f32) {
     unsafe { required_slot!(imu_get_quaternions)(quaternions) }
 }
 
-/// Register firmware custom-config callbacks using the Refloat/VESC ABI.
+/// Register firmware custom-config callbacks using the Float Out Boy/VESC ABI.
 ///
-/// Refloat `v1.2.1` registers `get_cfg`, `set_cfg`, and `get_cfg_xml` through
+/// Float Out Boy `v1.2.1` registers `get_cfg`, `set_cfg`, and `get_cfg_xml` through
 /// this slot in `src/main.c:2456`. The VESC function-table slot is declared in
 /// `vesc_pkg_lib/vesc_c_if.h:549-552`.
 ///
@@ -686,7 +686,7 @@ pub unsafe fn conf_custom_add_config(
 
 /// Clear firmware custom-config callbacks.
 ///
-/// Refloat `v1.2.1` calls this during stop in `src/main.c:2403`. The VESC
+/// Float Out Boy `v1.2.1` calls this during stop in `src/main.c:2403`. The VESC
 /// function-table slot is declared in `vesc_pkg_lib/vesc_c_if.h:553`.
 ///
 /// # Safety
@@ -800,7 +800,7 @@ pub unsafe fn vesc_free(ptr: *mut c_void) {
 
 /// Spawn a firmware package thread.
 ///
-/// Refloat v1.2.1 mirrors this VESC ABI slot from
+/// Float Out Boy v1.2.1 mirrors this VESC ABI slot from
 /// `vesc_pkg_lib/vesc_c_if.h:382` and starts its main/auxiliary threads at
 /// `src/main.c:2438-2448`.
 ///
@@ -819,7 +819,7 @@ pub unsafe fn vesc_spawn(
 
 /// Sleep the current firmware package thread for a number of microseconds.
 ///
-/// Refloat v1.2.1 mirrors this VESC ABI slot from
+/// Float Out Boy v1.2.1 mirrors this VESC ABI slot from
 /// `vesc_pkg_lib/vesc_c_if.h:376` and sleeps the main loop at
 /// `src/main.c:1080`.
 ///
@@ -832,7 +832,7 @@ pub unsafe fn vesc_sleep_us(micros: u32) {
 
 /// Set the current firmware package thread priority when the slot is present.
 ///
-/// Refloat v1.2.1 checks optional `thread_set_priority` before lowering
+/// Float Out Boy v1.2.1 checks optional `thread_set_priority` before lowering
 /// `aux_thd` priority at `src/main.c:1133-1135`; the VESC ABI slot is declared
 /// at `vesc_pkg_lib/vesc_c_if.h:670`.
 ///
@@ -846,7 +846,7 @@ pub unsafe fn vesc_thread_set_priority(priority: c_int) -> bool {
 }
 /// Ask a firmware package thread to terminate.
 ///
-/// Refloat v1.2.1 mirrors this VESC ABI slot from
+/// Float Out Boy v1.2.1 mirrors this VESC ABI slot from
 /// `vesc_pkg_lib/vesc_c_if.h:383` and requests thread termination during stop
 /// at `src/main.c:2404-2408`.
 ///
@@ -861,8 +861,8 @@ pub unsafe fn vesc_request_terminate(thread: LibThread) {
 
 /// Return whether the current firmware package thread should terminate.
 ///
-/// Refloat v1.2.1 mirrors this VESC ABI slot from
-/// `vesc_pkg_lib/vesc_c_if.h:384` and loops on it in `refloat_thd` and
+/// Float Out Boy v1.2.1 mirrors this VESC ABI slot from
+/// `vesc_pkg_lib/vesc_c_if.h:384` and loops on it in `float_out_boy_thd` and
 /// `aux_thd` at `src/main.c:771` and `src/main.c:1138`.
 ///
 /// # Safety
@@ -985,7 +985,7 @@ pub unsafe fn get_ppm_age() -> Option<f32> {
 
 /// Return the current motor electrical RPM.
 ///
-/// Refloat v1.2.1 reads this in `motor_data_update` at
+/// Float Out Boy v1.2.1 reads this in `motor_data_update` at
 /// `src/motor_data.c:108`; the VESC ABI slot is declared at
 /// `vesc_pkg_lib/vesc_c_if.h:450`.
 ///
@@ -998,7 +998,7 @@ pub unsafe fn mc_get_rpm() -> f32 {
 
 /// Return firmware-calculated vehicle speed in meters per second.
 ///
-/// Refloat v1.2.1 reads this in `motor_data_update` at
+/// Float Out Boy v1.2.1 reads this in `motor_data_update` at
 /// `src/motor_data.c:118`; the VESC ABI slot is declared at
 /// `vesc_pkg_lib/vesc_c_if.h:470`.
 ///
@@ -1011,7 +1011,7 @@ pub unsafe fn mc_get_speed() -> f32 {
 
 /// Return filtered total motor current.
 ///
-/// Refloat v1.2.1 reads this in `motor_data_update` at
+/// Float Out Boy v1.2.1 reads this in `motor_data_update` at
 /// `src/motor_data.c:120`; the VESC ABI slot is declared at
 /// `vesc_pkg_lib/vesc_c_if.h:456`.
 ///
@@ -1024,7 +1024,7 @@ pub unsafe fn mc_get_tot_current_filtered() -> f32 {
 
 /// Return direction-adjusted filtered motor current.
 ///
-/// Refloat v1.2.1 reads this in `motor_data_update` at
+/// Float Out Boy v1.2.1 reads this in `motor_data_update` at
 /// `src/motor_data.c:121`; the VESC ABI slot is declared at
 /// `vesc_pkg_lib/vesc_c_if.h:458`.
 ///
@@ -1037,7 +1037,7 @@ pub unsafe fn mc_get_tot_current_directional_filtered() -> f32 {
 
 /// Return filtered input/battery current.
 ///
-/// Refloat v1.2.1 reads this in `motor_data_update` at
+/// Float Out Boy v1.2.1 reads this in `motor_data_update` at
 /// `src/motor_data.c:140`; the VESC ABI slot is declared at
 /// `vesc_pkg_lib/vesc_c_if.h:460`.
 ///
@@ -1050,7 +1050,7 @@ pub unsafe fn mc_get_tot_current_in_filtered() -> f32 {
 
 /// Read a firmware motor configuration float by `CFG_PARAM_*` id.
 ///
-/// Refloat v1.2.1 reads `CFG_PARAM_l_current_max` and
+/// Float Out Boy v1.2.1 reads `CFG_PARAM_l_current_max` and
 /// `CFG_PARAM_l_current_min` in `src/motor_data.c:90-91`; the VESC ABI slot is
 /// declared at `vesc_pkg_lib/vesc_c_if.h:588`.
 ///
@@ -1064,7 +1064,7 @@ pub unsafe fn get_cfg_float(param: c_int) -> f32 {
 
 /// Read a firmware motor configuration integer by `CFG_PARAM_*` id.
 ///
-/// Refloat v1.2.1 reads `CFG_PARAM_si_battery_cells` in
+/// Float Out Boy v1.2.1 reads `CFG_PARAM_si_battery_cells` in
 /// `src/motor_data.c:76`; the VESC ABI slot is declared at
 /// `vesc_pkg_lib/vesc_c_if.h:590`.
 ///
@@ -1078,8 +1078,8 @@ pub unsafe fn get_cfg_int(param: c_int) -> c_int {
 
 /// Reset the firmware motor-command safety timeout.
 ///
-/// Refloat v1.2.1 calls this before every motor-control apply branch in
-/// `third_party/refloat/src/motor_control.c:92-93`; the VESC ABI slot is declared at
+/// Float Out Boy v1.2.1 calls this before every motor-control apply branch in
+/// `third_party/float-out-boy/src/motor_control.c:92-93`; the VESC ABI slot is declared at
 /// `third_party/vesc_pkg_lib/vesc_c_if.h:538`.
 ///
 /// # Safety
@@ -1091,8 +1091,8 @@ pub unsafe fn timeout_reset() {
 
 /// Keep current control enabled after a current command.
 ///
-/// Refloat v1.2.1 calls this before `mc_set_current` in
-/// `third_party/refloat/src/motor_control.c:96-99`; the VESC ABI slot is declared at
+/// Float Out Boy v1.2.1 calls this before `mc_set_current` in
+/// `third_party/float-out-boy/src/motor_control.c:96-99`; the VESC ABI slot is declared at
 /// `third_party/vesc_pkg_lib/vesc_c_if.h:476`.
 ///
 /// # Safety
@@ -1104,8 +1104,8 @@ pub unsafe fn mc_set_current_off_delay(seconds: f32) {
 
 /// Set the motor current command in amps.
 ///
-/// Refloat v1.2.1 sends requested current in
-/// `third_party/refloat/src/motor_control.c:96-99`; the VESC ABI slot is
+/// Float Out Boy v1.2.1 sends requested current in
+/// `third_party/float-out-boy/src/motor_control.c:96-99`; the VESC ABI slot is
 /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:440`.
 ///
 /// # Safety
@@ -1117,8 +1117,8 @@ pub unsafe fn mc_set_current(amps: f32) {
 
 /// Set the motor duty-cycle command.
 ///
-/// Refloat v1.2.1 applies parking brake duty zero in
-/// `third_party/refloat/src/motor_control.c:112-114`; the VESC ABI slot is
+/// Float Out Boy v1.2.1 applies parking brake duty zero in
+/// `third_party/float-out-boy/src/motor_control.c:112-114`; the VESC ABI slot is
 /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:436`.
 ///
 /// # Safety
@@ -1130,8 +1130,8 @@ pub unsafe fn mc_set_duty(duty_cycle: f32) {
 
 /// Set the motor brake current command in amps.
 ///
-/// Refloat v1.2.1 applies idle brake current in
-/// `third_party/refloat/src/motor_control.c:115-117`; the VESC ABI slot is
+/// Float Out Boy v1.2.1 applies idle brake current in
+/// `third_party/float-out-boy/src/motor_control.c:115-117`; the VESC ABI slot is
 /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:441`.
 ///
 /// # Safety
@@ -1143,7 +1143,7 @@ pub unsafe fn mc_set_brake_current(amps: f32) {
 
 /// Return the current duty cycle.
 ///
-/// Refloat v1.2.1 reads this in `motor_data_update` at
+/// Float Out Boy v1.2.1 reads this in `motor_data_update` at
 /// `src/motor_data.c:124`; the VESC ABI slot is declared at
 /// `vesc_pkg_lib/vesc_c_if.h:448`.
 ///
@@ -1167,7 +1167,7 @@ pub unsafe fn mc_fault_to_string(code: c_uint) -> Option<*const c_char> {
 
 /// Return FOC d-axis Id current when the firmware slot is present.
 ///
-/// Refloat v1.2.1 reads optional `foc_get_id` while encoding compact all-data
+/// Float Out Boy v1.2.1 reads optional `foc_get_id` while encoding compact all-data
 /// at `src/main.c:1364-1368`; the VESC ABI slot is declared at
 /// `vesc_pkg_lib/vesc_c_if.h:616`.
 ///
@@ -1279,7 +1279,7 @@ pub unsafe fn mc_temp_motor_filtered() -> f32 {
 
 /// Return whether firmware IMU startup has completed.
 ///
-/// Refloat v1.2.1 mirrors this VESC ABI slot from
+/// Float Out Boy v1.2.1 mirrors this VESC ABI slot from
 /// `vesc_pkg_lib/vesc_c_if.h:510` and gates startup readiness at
 /// `src/main.c:834-838`.
 ///
@@ -1292,7 +1292,7 @@ pub unsafe fn imu_startup_done() -> bool {
 
 /// Return firmware IMU roll in radians.
 ///
-/// Refloat v1.2.1 mirrors this VESC ABI slot from
+/// Float Out Boy v1.2.1 mirrors this VESC ABI slot from
 /// `vesc_pkg_lib/vesc_c_if.h:511` and reads it in `src/imu.c:35-40`.
 ///
 /// # Safety
@@ -1304,7 +1304,7 @@ pub unsafe fn imu_get_roll() -> f32 {
 
 /// Return firmware IMU pitch in radians.
 ///
-/// Refloat v1.2.1 mirrors this VESC ABI slot from
+/// Float Out Boy v1.2.1 mirrors this VESC ABI slot from
 /// `vesc_pkg_lib/vesc_c_if.h:512` and reads it in `src/imu.c:37-38`.
 ///
 /// # Safety
@@ -1316,7 +1316,7 @@ pub unsafe fn imu_get_pitch() -> f32 {
 
 /// Return firmware IMU yaw in radians.
 ///
-/// Refloat v1.2.1 mirrors this VESC ABI slot from
+/// Float Out Boy v1.2.1 mirrors this VESC ABI slot from
 /// `vesc_pkg_lib/vesc_c_if.h:513` and reads it in `src/imu.c:39-40`.
 ///
 /// # Safety
@@ -1328,7 +1328,7 @@ pub unsafe fn imu_get_yaw() -> f32 {
 
 /// Write firmware IMU gyro axes in degrees/sec into `xyz`.
 ///
-/// Refloat v1.2.1 mirrors this VESC ABI slot from
+/// Float Out Boy v1.2.1 mirrors this VESC ABI slot from
 /// `vesc_pkg_lib/vesc_c_if.h:516` and reads it in `src/imu.c:45-53`.
 ///
 /// # Safety

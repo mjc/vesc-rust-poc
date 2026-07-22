@@ -89,8 +89,8 @@ pub trait AppDataHandler {
 /// already loaded address. Package code implements this trait through a callback
 /// macro rather than naming the firmware ABI entry directly.
 ///
-/// C map: Refloat passes `on_command_received` directly to
-/// `VESC_IF->set_app_data_handler` at `third_party/refloat/src/main.c:2456`;
+/// C map: Float Out Boy passes `on_command_received` directly to
+/// `VESC_IF->set_app_data_handler` at `third_party/float-out-boy/src/main.c:2456`;
 /// VESC stores and invokes that exact function pointer at
 /// `third_party/vesc/comm/commands.c:1820-1828` and `:770-776`.
 #[doc(hidden)]

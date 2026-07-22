@@ -46,8 +46,8 @@ impl ControllerInput {
 
     /// Return the latest decoded PPM input and its age.
     pub fn ppm(&self) -> (PpmInput, PpmAge) {
-        // C map: Refloat reads these VESC slots in
-        // `third_party/refloat/src/remote.c:39-42`.
+        // C map: Float Out Boy reads these VESC slots in
+        // `third_party/float-out-boy/src/remote.c:39-42`.
         let input = unsafe { crate::ffi::get_ppm() }.zip(unsafe { crate::ffi::get_ppm_age() });
         let (value, age) = input.unwrap_or((0.0, f32::INFINITY));
         (
@@ -58,8 +58,8 @@ impl ControllerInput {
 
     /// Return the latest UART remote Y input and its age.
     pub fn remote(&self) -> RemoteInput {
-        // C map: Refloat reads the remote-state slot in
-        // `third_party/refloat/src/remote.c:43-48`.
+        // C map: Float Out Boy reads the remote-state slot in
+        // `third_party/float-out-boy/src/remote.c:43-48`.
         let remote = unsafe { crate::ffi::remote_state() };
         let (joystick_y, age) =
             remote.map_or((0.0, f32::INFINITY), |remote| (remote.js_y, remote.age_s));

@@ -1,0 +1,27 @@
+[package]
+name = "vesc-example-float-out-boy"
+version = "0.1.0"
+edition = "2024"
+rust-version.workspace = true
+description = "Unofficial Rust port of Refloat, renamed Float Out Boy to avoid confusion with the original package."
+
+publish = false
+
+[package.metadata.vescpkg]
+name = "Float Out Boy"
+version = "1.2.1"
+
+[lints]
+workspace = true
+
+[features]
+test-support = ["vescpkg-rs/test-support"]
+
+[dependencies]
+vescpkg-rs = { path = "../../crates/vescpkg-rs", features = ["math"] }
+
+[build-dependencies]
+vescpkg-build-support = { path = "../../crates/vescpkg-build-support" }
+
+[dev-dependencies]
+vescpkg-rs = { path = "../../crates/vescpkg-rs", features = ["math", "test-support"] }

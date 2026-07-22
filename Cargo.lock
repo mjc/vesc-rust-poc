@@ -1342,18 +1342,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "vesc-example-loopback"
+name = "vesc-example-float-out-boy"
 version = "0.1.0"
 dependencies = [
- "vesc-protocol",
  "vescpkg-build-support",
  "vescpkg-rs",
 ]
 
 [[package]]
-name = "vesc-example-refloat"
+name = "vesc-example-loopback"
 version = "0.1.0"
 dependencies = [
+ "vesc-protocol",
  "vescpkg-build-support",
  "vescpkg-rs",
 ]

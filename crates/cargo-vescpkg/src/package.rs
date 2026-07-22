@@ -182,7 +182,7 @@ mod tests {
         let package = [
             PackageField {
                 key: "name".to_owned(),
-                value: b"Refloat".to_vec(),
+                value: b"Float Out Boy".to_vec(),
             },
             PackageField {
                 key: "qmlIsFullscreen".to_owned(),

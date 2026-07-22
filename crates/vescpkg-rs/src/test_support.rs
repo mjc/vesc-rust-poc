@@ -1015,7 +1015,7 @@ mod tests {
         }
 
         unsafe {
-            // Refloat v1.2.1 registers these three callbacks at `src/main.c:2456`;
+            // Float Out Boy v1.2.1 registers these three callbacks at `src/main.c:2456`;
             // the VESC function-table slots are declared in
             // `vesc_pkg_lib/vesc_c_if.h:549-553`.
             bindings.register_custom_config(get_cfg, set_cfg, get_cfg_xml);
@@ -1031,7 +1031,7 @@ mod tests {
         let bindings = FakeAppDataBindings::new();
 
         unsafe {
-            // Refloat v1.2.1 registers `imu_ref_callback` at `src/main.c:2455`
+            // Float Out Boy v1.2.1 registers `imu_ref_callback` at `src/main.c:2455`
             // and clears it during stop at `src/main.c:2401`.
             bindings.set_imu_read_callback(stubs::imu_read_callback as ImuReadCallback);
         }

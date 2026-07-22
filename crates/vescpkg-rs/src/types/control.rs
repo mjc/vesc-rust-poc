@@ -100,8 +100,8 @@ impl Mul<AngleCurrentGain> for AngleDegrees {
 
     #[inline(always)]
     fn mul(self, rhs: AngleCurrentGain) -> Self::Output {
-        // C map: Refloat multiplies degree error by `kp` and side scale at
-        // `third_party/refloat/src/pid.c:40-70`.
+        // C map: Float Out Boy multiplies degree error by `kp` and side scale at
+        // `third_party/float-out-boy/src/pid.c:40-70`.
         MotorCurrent::new(Current::from_amps(
             self.as_degrees() * rhs.amps_per_degree * rhs.scale.value(),
         ))
@@ -141,9 +141,9 @@ impl Mul<RateCurrentGain> for AngularVelocity {
 
     #[inline(always)]
     fn mul(self, rhs: RateCurrentGain) -> Self::Output {
-        // C map: Refloat exposes degrees/second at
-        // `third_party/refloat/src/imu.c:43-53` and applies `kp2` at
-        // `third_party/refloat/src/pid.c:71-72`.
+        // C map: Float Out Boy exposes degrees/second at
+        // `third_party/float-out-boy/src/imu.c:43-53` and applies `kp2` at
+        // `third_party/float-out-boy/src/pid.c:71-72`.
         MotorCurrent::new(Current::from_amps(self.as_degrees_per_second() * rhs.0))
     }
 }
@@ -172,8 +172,8 @@ impl Mul<IntegralCurrentGain> for AngleDegrees {
 
     #[inline(always)]
     fn mul(self, rhs: IntegralCurrentGain) -> Self::Output {
-        // C map: Refloat accumulates degree error and applies `ki` at
-        // `third_party/refloat/src/pid.c:40-73`.
+        // C map: Float Out Boy accumulates degree error and applies `ki` at
+        // `third_party/float-out-boy/src/pid.c:40-73`.
         MotorCurrent::new(Current::from_amps(self.as_degrees() * rhs.0))
     }
 }

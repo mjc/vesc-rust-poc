@@ -1049,7 +1049,7 @@ Symbol table '.symtab' contains 2 entries:\n\
     }
 
     #[test]
-    fn accepts_the_known_good_refloat_loader_stack_frame() {
+    fn accepts_the_known_good_float_out_boy_loader_stack_frame() {
         let report = "\
 00003720 <package_lib_init>:\n\
     3720:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}\n\
@@ -1066,8 +1066,8 @@ Symbol table '.symtab' contains 2 entries:\n\
     66b0:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}\n\
     66b2:\te92d 0f00 \tstmdb\tsp!, {r8, r9, sl, fp}\n\
     66b6:\tf5ad 7d77 \tsub.w\tsp, sp, #988\t@ 0x3dc\n\
-    67c0:\tf7fe fae6 \tbl\t4d90 <<vesc_example_refloat::package::state::RefloatPackageState>::read_config_from_eeprom>\n\
-00004d90 <<vesc_example_refloat::package::state::RefloatPackageState>::read_config_from_eeprom>:\n\
+    67c0:\tf7fe fae6 \tbl\t4d90 <<vesc_example_float-out-boy::package::state::FloatOutBoyPackageState>::read_config_from_eeprom>\n\
+00004d90 <<vesc_example_float-out-boy::package::state::FloatOutBoyPackageState>::read_config_from_eeprom>:\n\
     4d90:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}\n\
     4d92:\tf5ad 7d13 \tsub.w\tsp, sp, #1180\t@ 0x49c\n";
 

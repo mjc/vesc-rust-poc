@@ -17,13 +17,13 @@ use vescpkg_rs_sys::LbmValue;
 use vescpkg_rs_sys::raw::RemoteState;
 
 // C map: these host replacements model the motor slots declared at
-// `third_party/vesc_pkg_lib/vesc_c_if.h:435-476`. Refloat reads them in
-// `third_party/refloat/src/motor_data.c:75-125` and writes motor commands in
-// `third_party/refloat/src/motor_control.c:92-117`.
+// `third_party/vesc_pkg_lib/vesc_c_if.h:435-476`. Float Out Boy reads them in
+// `third_party/float-out-boy/src/motor_data.c:75-125` and writes motor commands in
+// `third_party/float-out-boy/src/motor_control.c:92-117`.
 // IMU replacements preserve `third_party/vesc/imu/imu.c:414-443`; the typed
-// SDK values feed `third_party/refloat/src/balance_filter.c:54-59`.
+// SDK values feed `third_party/float-out-boy/src/balance_filter.c:54-59`.
 // Thread replacements model `third_party/vesc_pkg_lib/vesc_c_if.h:387-403`
-// as used by `third_party/refloat/src/main.c:1075-1080,2439-2445`.
+// as used by `third_party/float-out-boy/src/main.c:1075-1080,2439-2445`.
 
 static LOCKED: AtomicBool = AtomicBool::new(false);
 static KEEP_ALIVE_COUNT: AtomicUsize = AtomicUsize::new(0);

@@ -17,28 +17,28 @@ use crate::units::{AccelerationG, AngularVelocity, MagneticFluxDensity, VescSeco
 pub trait ImuBindings {
     /// Return whether firmware IMU startup has completed.
     ///
-    /// Refloat v1.2.1 gates `STATE_STARTUP` -> `STATE_READY` on this at
+    /// Float Out Boy v1.2.1 gates `STATE_STARTUP` -> `STATE_READY` on this at
     /// `src/main.c:833-838`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:510`.
     fn is_ready(&self) -> bool;
 
     /// Return firmware IMU roll.
     ///
-    /// Refloat v1.2.1 reads roll from `VESC_IF->imu_get_roll()` at
+    /// Float Out Boy v1.2.1 reads roll from `VESC_IF->imu_get_roll()` at
     /// `src/imu.c:35-38`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:511`.
     fn roll(&self) -> ImuRoll;
 
     /// Return firmware IMU pitch.
     ///
-    /// Refloat v1.2.1 reads pitch from `VESC_IF->imu_get_pitch()` at
+    /// Float Out Boy v1.2.1 reads pitch from `VESC_IF->imu_get_pitch()` at
     /// `src/imu.c:37-38`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:512`.
     fn pitch(&self) -> ImuPitch;
 
     /// Return firmware IMU yaw.
     ///
-    /// Refloat v1.2.1 reads yaw from `VESC_IF->imu_get_yaw()` at
+    /// Float Out Boy v1.2.1 reads yaw from `VESC_IF->imu_get_yaw()` at
     /// `src/imu.c:39-40`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:513`.
     fn yaw(&self) -> ImuYaw;
@@ -50,7 +50,7 @@ pub trait ImuBindings {
 
     /// Return firmware IMU gyro axes in degrees/sec.
     ///
-    /// Refloat v1.2.1 reads gyro from `VESC_IF->imu_get_gyro(...)` at
+    /// Float Out Boy v1.2.1 reads gyro from `VESC_IF->imu_get_gyro(...)` at
     /// `src/imu.c:45-53`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:516`.
     fn angular_rate(&self) -> ImuAngularRate;
@@ -174,12 +174,12 @@ fn dispatch_imu_read<T: ImuReadHandler>(
     state_source: crate::PackageStateAccess<'static, T::State>,
     sample: ImuReadSample,
 ) {
-    // C map: Refloat's `imu_ref_callback` resolves `Data *` through `ARG` and
+    // C map: Float Out Boy's `imu_ref_callback` resolves `Data *` through `ARG` and
     // passes the sample to `balance_filter_update` at
-    // `third_party/refloat/src/main.c:759-764`. This must use the same state
+    // `third_party/float-out-boy/src/main.c:759-764`. This must use the same state
     // source as app-data and custom-config: resolving only the Rust runtime
     // slot dropped IMU samples when that slot was absent, leaving raw VESC
-    // pitch live while Refloat's balance pitch stayed frozen.
+    // pitch live while Float Out Boy's balance pitch stayed frozen.
     let _ = state_source.with_mut(|state| T::read(state, sample));
 }
 
@@ -557,8 +557,8 @@ mod tests {
 
         // C map: VESC's `lib_get_arg` returns the package ARG at
         // `third_party/vesc/lispBM/lispif_c_lib.c:151-158`; the IMU adapter
-        // dispatches the package state source like Refloat's callback at
-        // `third_party/refloat/src/main.c:759-764`.
+        // dispatches the package state source like Float Out Boy's callback at
+        // `third_party/float-out-boy/src/main.c:759-764`.
         unsafe { RUNTIME_STATE.install(&mut state) }.unwrap();
         <RuntimeImuRead as ImuReadCallback>::read(typed_sample());
         RUNTIME_STATE.clear();
