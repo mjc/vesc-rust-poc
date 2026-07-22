@@ -28,6 +28,13 @@ pub fn append_u32(buffer: &mut [u8], index: &mut usize, value: u32) -> Option<()
     append_bytes(buffer, index, &value.to_be_bytes())
 }
 
+/// Append one big-endian signed 32-bit integer.
+#[must_use]
+#[inline(always)]
+pub fn append_i32(buffer: &mut [u8], index: &mut usize, value: i32) -> Option<()> {
+    append_u32(buffer, index, value as u32)
+}
+
 /// Append VESC's automatic 32-bit float representation.
 #[must_use]
 #[inline(always)]
@@ -71,7 +78,9 @@ pub fn float32_auto_bits(value: f32) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{append_float32_auto, append_i16, append_u32, read_float32_auto, read_u32};
+    use super::{
+        append_float32_auto, append_i16, append_i32, append_u32, read_float32_auto, read_u32,
+    };
 
     #[test]
     fn fixed_width_encoder_rejects_partial_output() {
@@ -92,6 +101,16 @@ mod tests {
 
         assert_eq!(bytes, [0xff, 0xff, 0x85, 0xff]);
         assert_eq!(index, 3);
+    }
+
+    #[test]
+    fn signed_i32_encoder_preserves_twos_complement_wire_bits() {
+        let mut bytes = [0; 4];
+        let mut index = 0;
+
+        assert_eq!(append_i32(&mut bytes, &mut index, -42), Some(()));
+        assert_eq!(bytes, (-42_i32).to_be_bytes());
+        assert_eq!(index, 4);
     }
 
     #[test]
