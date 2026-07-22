@@ -7,6 +7,8 @@ use vescpkg_rs::{
     OpenLoopCurrent, OpenLoopPhase, PidPosition, Ratio, Rpm, SignedRatio, VescSeconds,
 };
 
+unsafe extern "C" fn test_pwm_callback() {}
+
 #[test]
 fn motor_exposes_typed_handbrake_commands() {
     let firmware = vescpkg_rs::test_support::FirmwareTest::new()
@@ -19,6 +21,15 @@ fn motor_exposes_typed_handbrake_commands() {
         .set_handbrake_relative(HandbrakeRelative::new(Ratio::from_ratio_const(0.25)));
 
     let telemetry = firmware.telemetry();
+    assert!(firmware.motor().dc_calibration_done());
+    let pwm_lease = unsafe {
+        firmware
+            .motor()
+            .register_pwm_callback(test_pwm_callback)
+            .unwrap()
+    };
+    drop(pwm_lease);
+    assert_eq!(telemetry.firmware_fault_description(), Some("TEST_FAULT"));
     assert_eq!(
         telemetry.motor_current_unfiltered().current().as_amps(),
         12.0
