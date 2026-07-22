@@ -243,37 +243,6 @@ impl Gpio {
             adc_voltage_from_firmware(unsafe { crate::ffi::io_read_analog(pin) })
         }
     }
-
-    /// Configure a digital pin as a push-pull output.
-    pub fn configure_output(&self, pin: DigitalPin) -> bool {
-        #[cfg(test)]
-        {
-            self.test
-                .output_mode_calls
-                .set(self.test.output_mode_calls.get() + 1);
-            self.test.last_pin.set(pin.0.0);
-            true
-        }
-        #[cfg(not(test))]
-        {
-            unsafe { crate::ffi::io_set_mode(pin.0, VescPinMode(DIGITAL_OUTPUT_MODE)) }
-        }
-    }
-
-    /// Drive a configured digital output pin.
-    pub fn write(&self, pin: DigitalPin, level: DigitalOutputLevel) -> bool {
-        #[cfg(test)]
-        {
-            self.test.write_calls.set(self.test.write_calls.get() + 1);
-            self.test.last_pin.set(pin.0.0);
-            self.test.last_output_level.set(Some(level));
-            true
-        }
-        #[cfg(not(test))]
-        {
-            unsafe { crate::ffi::io_write(pin.0, level.firmware_level()) }
-        }
-    }
 }
 
 /// An exclusive, non-cloneable digital GPIO lease.
@@ -420,18 +389,11 @@ fn write(_gpio: &Gpio, pin: VescPin, level: DigitalOutputLevel) -> bool {
     }
 }
 
-#[cfg(not(test))]
-// VESC's `io_set_mode` ABI value for a push-pull digital output.
-const DIGITAL_OUTPUT_MODE: i32 = 3;
-
 #[cfg(test)]
 #[derive(Default)]
 struct TestGpio {
     analog_pair_calls: core::cell::Cell<usize>,
-    output_mode_calls: core::cell::Cell<usize>,
-    write_calls: core::cell::Cell<usize>,
     last_pin: core::cell::Cell<i32>,
-    last_output_level: core::cell::Cell<Option<DigitalOutputLevel>>,
     analog_pair: core::cell::Cell<(f32, f32)>,
 }
 
@@ -481,19 +443,12 @@ mod tests {
     #[test]
     fn digital_gpio_uses_typed_ppm_pin_and_output_level() {
         let gpio = Gpio::test((0.0, 0.0));
+        let ppm = gpio.acquire_digital(DigitalPin::PPM).unwrap();
 
         assert_eq!(DigitalOutputLevel::Low.firmware_level(), 0);
         assert_eq!(DigitalOutputLevel::High.firmware_level(), 1);
 
-        assert!(gpio.configure_output(DigitalPin::PPM));
-        assert!(gpio.write(DigitalPin::PPM, DigitalOutputLevel::High));
-
-        assert_eq!(gpio.test.output_mode_calls.get(), 1);
-        assert_eq!(gpio.test.write_calls.get(), 1);
-        assert_eq!(gpio.test.last_pin.get(), 12);
-        assert_eq!(
-            gpio.test.last_output_level.get(),
-            Some(DigitalOutputLevel::High)
-        );
+        ppm.set_mode(super::GpioMode::Output).unwrap();
+        ppm.write(DigitalOutputLevel::High).unwrap();
     }
 }
