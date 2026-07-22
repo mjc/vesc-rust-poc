@@ -66,4 +66,8 @@ fn nvm_capacity_bounds_are_checked_before_dispatch() {
         nvm.read(NvmOffset::new(15), &mut bytes),
         Err(NvmError::OutOfBounds)
     );
+    assert_eq!(
+        nvm.write(NvmOffset::new(15), &bytes),
+        Err(NvmError::OutOfBounds)
+    );
 }
