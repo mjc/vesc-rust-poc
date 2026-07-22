@@ -44,6 +44,18 @@ type HwType = crate::HardwareType;
 pub const PACKET_MAX_PL_LEN: usize = 512;
 /// Packet framing buffer length from the pinned VESC header.
 pub const PACKET_BUFFER_LEN: usize = PACKET_MAX_PL_LEN + 8;
+#[cfg(all(target_arch = "arm", not(test)))]
+const _: () = {
+    assert!(core::mem::size_of::<LbmFlatValue>() == 12);
+    assert!(core::mem::offset_of!(LbmFlatValue, buf_size) == 4);
+    assert!(core::mem::offset_of!(LbmFlatValue, buf_pos) == 8);
+    assert!(core::mem::size_of::<LbmArrayHeader>() == 8);
+    assert!(core::mem::offset_of!(LbmArrayHeader, data) == 4);
+    assert!(core::mem::size_of::<PacketState>() == 1060);
+    assert!(core::mem::offset_of!(PacketState, rx_read_ptr) == 8);
+    assert!(core::mem::offset_of!(PacketState, rx_buffer) == 20);
+    assert!(core::mem::offset_of!(PacketState, tx_buffer) == 540);
+};
 /// Refloat/VESC Tool custom-config serializer callback.
 ///
 /// Float Out Boy `v1.2.1` passes `get_cfg` to `conf_custom_add_config` in
