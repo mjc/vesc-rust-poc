@@ -127,6 +127,7 @@ static IMU_ROTATION_ROLL: AtomicU32 = AtomicU32::new(0);
 static IMU_ROTATION_PITCH: AtomicU32 = AtomicU32::new(0);
 static IMU_ROTATION_YAW: AtomicU32 = AtomicU32::new(0);
 static DUTY_CYCLE_MINIMUM: AtomicU32 = AtomicU32::new(0);
+static IMU_ACCELERATION_CONFIDENCE_DECAY: AtomicU32 = AtomicU32::new(0);
 static GEAR_RATIO: AtomicU32 = AtomicU32::new(0);
 static WHEEL_DIAMETER: AtomicU32 = AtomicU32::new(0);
 static FOC_MOTOR_RESISTANCE: AtomicU32 = AtomicU32::new(0);
@@ -356,6 +357,7 @@ fn reset_speed_settings() {
     IMU_ROTATION_PITCH.store(0.0_f32.to_bits(), Ordering::Relaxed);
     IMU_ROTATION_YAW.store(0.0_f32.to_bits(), Ordering::Relaxed);
     DUTY_CYCLE_MINIMUM.store(0.05_f32.to_bits(), Ordering::Relaxed);
+    IMU_ACCELERATION_CONFIDENCE_DECAY.store(1.0_f32.to_bits(), Ordering::Relaxed);
 }
 
 pub(crate) fn lock_firmware() -> FirmwareLockGuard {
@@ -1518,6 +1520,7 @@ pub unsafe fn get_cfg_float(param: i32) -> f32 {
         28 => load(&IMU_ROTATION_PITCH),
         29 => load(&IMU_ROTATION_YAW),
         21 => load(&DUTY_CYCLE_MINIMUM),
+        23 => load(&IMU_ACCELERATION_CONFIDENCE_DECAY),
         40 => load(&GEAR_RATIO),
         41 => load(&WHEEL_DIAMETER),
         46 => load(&FOC_MOTOR_RESISTANCE),
@@ -1566,6 +1569,7 @@ pub unsafe fn set_cfg_float(param: i32, value: f32) -> bool {
         28 => IMU_ROTATION_PITCH.store(value.to_bits(), Ordering::Relaxed),
         29 => IMU_ROTATION_YAW.store(value.to_bits(), Ordering::Relaxed),
         21 => DUTY_CYCLE_MINIMUM.store(value.to_bits(), Ordering::Relaxed),
+        23 => IMU_ACCELERATION_CONFIDENCE_DECAY.store(value.to_bits(), Ordering::Relaxed),
         40 => GEAR_RATIO.store(value.to_bits(), Ordering::Relaxed),
         41 => WHEEL_DIAMETER.store(value.to_bits(), Ordering::Relaxed),
         46 => FOC_MOTOR_RESISTANCE.store(value.to_bits(), Ordering::Relaxed),

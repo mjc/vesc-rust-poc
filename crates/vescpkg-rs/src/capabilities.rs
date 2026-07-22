@@ -338,6 +338,11 @@ impl FirmwareSettings {
         AngleDegrees::from_degrees(self.get_float(FirmwareFloatSetting::ImuRotationYaw))
     }
 
+    /// Read the configured IMU accelerometer-confidence decay ratio.
+    pub fn imu_acceleration_confidence_decay(self) -> Ratio {
+        Ratio::clamped(self.get_float(FirmwareFloatSetting::ImuAccelerationConfidenceDecay))
+    }
+
     /// Read the configured positive gear ratio, rejecting malformed firmware state.
     pub fn gear_ratio(self) -> Result<GearRatio, SettingsError> {
         GearRatio::try_new(self.get_float(FirmwareFloatSetting::GearRatio))
@@ -475,6 +480,14 @@ impl FirmwareSettings {
     /// Update the live IMU yaw mounting rotation; persistence still requires [`Self::store`].
     pub fn set_imu_rotation_yaw(self, angle: AngleDegrees) -> Result<(), SettingsError> {
         self.set_float(FirmwareFloatSetting::ImuRotationYaw, angle.as_degrees())
+    }
+
+    /// Update the live IMU accelerometer-confidence decay ratio; persistence still requires [`Self::store`].
+    pub fn set_imu_acceleration_confidence_decay(self, decay: Ratio) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::ImuAccelerationConfidenceDecay,
+            decay.as_ratio(),
+        )
     }
 
     /// Update the live gear ratio; persistence still requires [`Self::store`].
