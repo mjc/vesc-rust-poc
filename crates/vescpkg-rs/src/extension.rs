@@ -43,6 +43,16 @@ impl LispSymbol {
     pub const fn raw(self) -> u32 {
         self.0
     }
+
+    /// Look up a firmware symbol by name without letting the borrowed name escape.
+    #[cfg(not(test))]
+    pub fn lookup(name: &CStr) -> Option<Self> {
+        let mut symbol = 0;
+        let result = unsafe {
+            crate::ffi::lbm_get_symbol_by_name(name.as_ptr().cast_mut(), &mut symbol)
+        };
+        (result != 0).then_some(Self::new(symbol))
+    }
 }
 
 /// A LispBM evaluator context identifier.

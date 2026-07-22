@@ -511,6 +511,15 @@ pub unsafe fn lbm_enc_sym(symbol: u32) -> LbmValue {
 pub unsafe fn lbm_dec_sym(_value: LbmValue) -> u32 {
     LBM_SYMBOL_ID.load(Ordering::Relaxed)
 }
+
+pub unsafe fn lbm_get_symbol_by_name(name: *mut c_char, symbol: *mut u32) -> c_int {
+    if name.is_null() || symbol.is_null() {
+        return 0;
+    }
+    unsafe { *symbol = 7 };
+    1
+}
+
 pub unsafe fn lbm_send_message(_context: u32, _message: LbmValue) -> c_int {
     if LBM_MESSAGE_FAILURE.load(Ordering::Relaxed) {
         0
