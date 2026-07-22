@@ -31,6 +31,18 @@ fn uart_lease_forwards_checked_io_and_releases_ownership() {
 }
 
 #[test]
+fn uart_reports_absent_optional_slots() {
+    let firmware = FirmwareTest::new();
+    firmware.set_uart_available(false);
+    let baud = BaudRate::try_new(115_200).unwrap();
+
+    assert!(matches!(
+        firmware.uart().open(baud, false),
+        Err(vescpkg_rs::UartError::Unavailable)
+    ));
+}
+
+#[test]
 fn package_stop_releases_uart_state_before_next_open() {
     let firmware = FirmwareTest::new();
     let baud = BaudRate::try_new(115_200).unwrap();
