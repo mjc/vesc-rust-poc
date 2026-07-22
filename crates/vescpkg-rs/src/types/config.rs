@@ -1326,4 +1326,25 @@ mod tests {
         assert!(super::GearRatio::try_new(f32::NEG_INFINITY).is_err());
         assert!(super::GearRatio::try_new(f32::NAN).is_err());
     }
+
+    #[test]
+    fn can_baud_rate_reports_discrete_firmware_values() {
+        let selectors = [
+            (0, super::CanBaudRate::Kbps125, 125_000),
+            (1, super::CanBaudRate::Kbps250, 250_000),
+            (2, super::CanBaudRate::Kbps500, 500_000),
+            (3, super::CanBaudRate::Mbps1, 1_000_000),
+            (4, super::CanBaudRate::Kbps10, 10_000),
+            (5, super::CanBaudRate::Kbps20, 20_000),
+            (6, super::CanBaudRate::Kbps50, 50_000),
+            (7, super::CanBaudRate::Kbps75, 75_000),
+            (8, super::CanBaudRate::Kbps100, 100_000),
+        ];
+
+        for (raw, selector, bits_per_second) in selectors {
+            assert_eq!(super::CanBaudRate::from_raw(raw), Some(selector));
+            assert_eq!(selector.as_bits_per_second(), bits_per_second);
+            assert_eq!(selector.as_u8(), raw as u8);
+        }
+    }
 }
