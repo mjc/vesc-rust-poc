@@ -8,6 +8,7 @@
 
 mod functions;
 mod loader;
+mod memory;
 mod runtime;
 mod sync;
 mod table;
@@ -15,6 +16,7 @@ mod types;
 
 pub use functions::*;
 pub use loader::{ExpressCallError, ExpressInterface, ExpressLoadError};
+pub use memory::{ExpressAllocation, ExpressAllocationError};
 pub use runtime::ExpressRuntime;
 pub use sync::{ExpressMutex, ExpressMutexGuard, ExpressSemaphore, ExpressSyncError};
 pub use table::{ExpressSlot, ExpressSlotKind, ExpressTable, ExpressTableError, express_slot_kind};
@@ -111,6 +113,16 @@ mod tests {
             Err(ExpressSyncError::Unavailable(ExpressCallError {
                 slot: ExpressSlot::SemCreate
             }))
+        ));
+        assert!(matches!(
+            ExpressAllocation::new(runtime, 1),
+            Err(ExpressAllocationError::Unavailable(ExpressCallError {
+                slot: ExpressSlot::Malloc
+            }))
+        ));
+        assert!(matches!(
+            ExpressAllocation::new(runtime, 0),
+            Err(ExpressAllocationError::ZeroSize)
         ));
     }
 
