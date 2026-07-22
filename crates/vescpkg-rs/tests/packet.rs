@@ -24,3 +24,17 @@ fn packet_codec_registers_processes_and_resets_owned_state() {
     );
     drop(registration);
 }
+
+#[test]
+fn packet_codec_registration_is_exclusive_and_released_on_drop() {
+    let _firmware = FirmwareTest::new();
+    let mut first = PacketCodec::<Handler>::new();
+    let mut second = PacketCodec::<Handler>::new();
+    let registration = first.register().unwrap();
+    assert!(matches!(
+        second.register(),
+        Err(vescpkg_rs::PacketError::Busy)
+    ));
+    drop(registration);
+    assert!(second.register().is_ok());
+}
