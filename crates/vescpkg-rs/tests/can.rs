@@ -93,6 +93,9 @@ fn can_bus_copies_status_message_three() {
         .status3(CanControllerId::new(7))
         .expect("CAN status message 3");
 
-    assert_eq!(status.watt_hours_discharged().energy().as_watt_hours(), 10.0);
+    assert_eq!(
+        status.watt_hours_discharged().energy().as_watt_hours(),
+        10.0
+    );
     assert_eq!(status.watt_hours_charged().energy().as_watt_hours(), 4.0);
 }
