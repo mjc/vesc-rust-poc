@@ -43,8 +43,13 @@ under Cargo's target directory at `vescpkg/`.
 - `cargo run -p cargo-vescpkg -- package-install <package.vescpkg>`
 - `cargo run -p cargo-vescpkg -- erase-package`
 - `cargo run -p cargo-vescpkg -- loopback`
+- `cargo run -p cargo-vescpkg -- control-loop --device Floatwheel PintV`
 
 `deploy` builds the selected Cargo package and installs the resulting artifact.
-The separate `loopback` command probes a running loopback package.
+The separate `loopback` command probes a running loopback package. The
+`control-loop` command probes the no-actuation control-loop package's typed
+setpoint/status exchange, verifies tick and output progress, and reports the
+observed tick-period range and jitter. It requires a compatible device; host
+build and package checks do not substitute for that hardware proof.
 
 The checked workspace path remains `make check`.
