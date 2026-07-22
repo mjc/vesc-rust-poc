@@ -29,6 +29,10 @@ the corresponding ESP-IDF target selection (`esp32c3`, `esp32s3`, `esp32c6`, or
 documentation/metadata only here; a host pointer must never be made from one
 of these values.
 
+`ExpressTarget::native_load_kind` records the loader split from the pinned
+Express source: ESP32-S3 uses the relocatable container, while ESP32-C3, C6,
+and P4 use the XIP image path.
+
 ## Build boundary
 
 The current `cargo vescpkg build` path emits STM32 packages for
