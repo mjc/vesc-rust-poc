@@ -18,10 +18,42 @@ pub enum FirmwareFloatSetting {
     MotorCurrentMax,
     /// Minimum motor current (`CFG_PARAM_l_current_min`).
     MotorCurrentMin,
+    /// Maximum battery/input current (`CFG_PARAM_l_in_current_max`).
+    InputCurrentMax,
+    /// Minimum battery/input current (`CFG_PARAM_l_in_current_min`).
+    InputCurrentMin,
+    /// Absolute motor current ceiling (`CFG_PARAM_l_abs_current_max`).
+    AbsoluteCurrentMax,
+    /// Minimum electrical speed (`CFG_PARAM_l_min_erpm`).
+    MinimumElectricalSpeed,
+    /// Maximum electrical speed (`CFG_PARAM_l_max_erpm`).
+    MaximumElectricalSpeed,
+    /// Electrical-speed ramp start (`CFG_PARAM_l_erpm_start`).
+    ElectricalSpeedRampStart,
+    /// Maximum electrical speed during braking (`CFG_PARAM_l_max_erpm_fbrake`).
+    MaximumElectricalSpeedBrake,
+    /// Maximum electrical speed during braking-current control (`CFG_PARAM_l_max_erpm_fbrake_cc`).
+    MaximumElectricalSpeedBrakeCurrent,
+    /// Minimum input voltage (`CFG_PARAM_l_min_vin`).
+    MinimumInputVoltage,
+    /// Maximum input voltage (`CFG_PARAM_l_max_vin`).
+    MaximumInputVoltage,
+    /// Battery cut-start voltage (`CFG_PARAM_l_battery_cut_start`).
+    BatteryCutStartVoltage,
+    /// Battery cut-end voltage (`CFG_PARAM_l_battery_cut_end`).
+    BatteryCutEndVoltage,
     /// MOSFET temperature limit-start threshold.
     MosfetTemperatureStart,
+    /// MOSFET temperature limit-end threshold.
+    MosfetTemperatureEnd,
     /// Motor temperature limit-start threshold.
     MotorTemperatureStart,
+    /// Motor temperature limit-end threshold.
+    MotorTemperatureEnd,
+    /// Temperature-based acceleration/deceleration threshold.
+    TemperatureAccelerationDecrease,
+    /// Minimum duty-cycle limit.
+    MinDuty,
     /// Maximum duty-cycle limit.
     MaxDuty,
 }
@@ -31,8 +63,24 @@ impl FirmwareFloatSetting {
         match self {
             Self::MotorCurrentMax => 0,
             Self::MotorCurrentMin => 1,
+            Self::InputCurrentMax => 2,
+            Self::InputCurrentMin => 3,
+            Self::AbsoluteCurrentMax => 4,
+            Self::MinimumElectricalSpeed => 5,
+            Self::MaximumElectricalSpeed => 6,
+            Self::ElectricalSpeedRampStart => 7,
+            Self::MaximumElectricalSpeedBrake => 8,
+            Self::MaximumElectricalSpeedBrakeCurrent => 9,
+            Self::MinimumInputVoltage => 10,
+            Self::MaximumInputVoltage => 11,
+            Self::BatteryCutStartVoltage => 12,
+            Self::BatteryCutEndVoltage => 13,
             Self::MosfetTemperatureStart => 16,
+            Self::MosfetTemperatureEnd => 17,
             Self::MotorTemperatureStart => 18,
+            Self::MotorTemperatureEnd => 19,
+            Self::TemperatureAccelerationDecrease => 20,
+            Self::MinDuty => 21,
             Self::MaxDuty => 22,
         }
     }
