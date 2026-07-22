@@ -6,12 +6,11 @@ use core::ffi::CStr;
 #[cfg(not(test))]
 use crate::types::FirmwareFaultWireCode;
 use crate::types::{
-    AmpHoursCharged, AmpHoursDischarged, AudioChannel, AudioFrequency, AudioVoltage,
-    BatteryCellCount, BatteryLevel, BrakeCurrent, CurrentOffDelay, DCurrent,
-    DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed, FirmwareFaultCode,
-    InputCurrent, InputCurrentLimit, InputVoltage, MosfetTemperature, MotorCurrent,
-    MotorCurrentLimit, MotorTemperature, TemperatureLimitStart, TotalMotorCurrent, TripDistance,
-    VehicleSpeed, WattHoursCharged, WattHoursDischarged,
+    AmpHoursCharged, AmpHoursDischarged, BatteryCellCount, BatteryLevel, BrakeCurrent,
+    CurrentOffDelay, DCurrent, DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed,
+    FirmwareFaultCode, HandbrakeCurrent, HandbrakeRelative, InputCurrent, InputVoltage,
+    MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, TemperatureLimitStart,
+    TotalMotorCurrent, TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 #[cfg(not(test))]
 use crate::units::{Charge, Current, Distance, Energy, Rpm, Speed, Temperature, Voltage};
@@ -273,13 +272,10 @@ pub trait MotorControlBindings {
     /// `third_party/float-out-boy/src/motor_control.c:115-117`; the VESC ABI slot is
     /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:441`.
     fn set_brake_current(&self, current: BrakeCurrent);
-    /// Play a FOC tone when the motor firmware exposes audio support.
-    fn play_foc_tone(
-        &self,
-        channel: AudioChannel,
-        frequency: AudioFrequency,
-        voltage: AudioVoltage,
-    ) -> bool;
+    /// Set motor handbrake current in amps.
+    fn set_handbrake(&self, current: HandbrakeCurrent);
+    /// Set motor handbrake as a relative command.
+    fn set_handbrake_relative(&self, current: HandbrakeRelative);
 }
 
 #[cfg(not(test))]
@@ -304,13 +300,12 @@ impl<B: MotorControlBindings + ?Sized> MotorControlBindings for &B {
         (**self).set_brake_current(current);
     }
 
-    fn play_foc_tone(
-        &self,
-        channel: AudioChannel,
-        frequency: AudioFrequency,
-        voltage: AudioVoltage,
-    ) -> bool {
-        (**self).play_foc_tone(channel, frequency, voltage)
+    fn set_handbrake(&self, current: HandbrakeCurrent) {
+        (**self).set_handbrake(current);
+    }
+
+    fn set_handbrake_relative(&self, current: HandbrakeRelative) {
+        (**self).set_handbrake_relative(current);
     }
 }
 
@@ -503,27 +498,12 @@ impl MotorControlBindings for RealMotorControlBindings {
         unsafe { crate::ffi::mc_set_brake_current(current.current().as_amps()) };
     }
 
-    fn play_foc_tone(
-        &self,
-        channel: AudioChannel,
-        frequency: AudioFrequency,
-        voltage: AudioVoltage,
-    ) -> bool {
-        let played = unsafe {
-            crate::ffi::foc_play_tone(
-                i32::from(channel.as_u8()),
-                frequency.frequency().as_hertz(),
-                voltage.voltage().as_volts(),
-            )
-        };
-        #[cfg(all(feature = "test-support", not(target_arch = "arm")))]
-        {
-            played
-        }
-        #[cfg(not(all(feature = "test-support", not(target_arch = "arm"))))]
-        {
-            played.unwrap_or(false)
-        }
+    fn set_handbrake(&self, current: HandbrakeCurrent) {
+        unsafe { crate::ffi::mc_set_handbrake(current.current().as_amps()) };
+    }
+
+    fn set_handbrake_relative(&self, current: HandbrakeRelative) {
+        unsafe { crate::ffi::mc_set_handbrake_rel(current.ratio().as_ratio()) };
     }
 }
 
@@ -634,14 +614,10 @@ pub trait MotorOutput: private::MotorOutput {
 
     /// Apply a braking-current command.
     fn set_brake_current(&self, current: BrakeCurrent);
-
-    /// Play a FOC tone, returning false when audio is unavailable or rejected.
-    fn play_foc_tone(
-        &self,
-        channel: AudioChannel,
-        frequency: AudioFrequency,
-        voltage: AudioVoltage,
-    ) -> bool;
+    /// Apply a handbrake-current command.
+    fn set_handbrake(&self, current: HandbrakeCurrent);
+    /// Apply a relative handbrake command.
+    fn set_handbrake_relative(&self, current: HandbrakeRelative);
 }
 
 /// High-level motor-control API built on a binding implementation.
@@ -998,14 +974,14 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
         self.bindings.set_brake_current(current);
     }
 
-    /// Play a FOC tone when supported by the motor firmware.
-    pub fn play_foc_tone(
-        &self,
-        channel: AudioChannel,
-        frequency: AudioFrequency,
-        voltage: AudioVoltage,
-    ) -> bool {
-        self.bindings.play_foc_tone(channel, frequency, voltage)
+    /// Set motor handbrake current.
+    pub fn set_handbrake(&self, current: HandbrakeCurrent) {
+        self.bindings.set_handbrake(current);
+    }
+
+    /// Set motor handbrake as a relative command.
+    pub fn set_handbrake_relative(&self, current: HandbrakeRelative) {
+        self.bindings.set_handbrake_relative(current);
     }
 }
 
@@ -1034,12 +1010,11 @@ impl<B: MotorControlBindings> MotorOutput for MotorControlApi<B> {
         MotorControlApi::set_brake_current(self, current);
     }
 
-    fn play_foc_tone(
-        &self,
-        channel: AudioChannel,
-        frequency: AudioFrequency,
-        voltage: AudioVoltage,
-    ) -> bool {
-        MotorControlApi::play_foc_tone(self, channel, frequency, voltage)
+    fn set_handbrake(&self, current: HandbrakeCurrent) {
+        MotorControlApi::set_handbrake(self, current);
+    }
+
+    fn set_handbrake_relative(&self, current: HandbrakeRelative) {
+        MotorControlApi::set_handbrake_relative(self, current);
     }
 }

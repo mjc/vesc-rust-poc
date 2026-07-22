@@ -380,6 +380,8 @@ mod slots {
     fn_slot!(mc_set_current as unsafe extern "C" fn(f32));
     fn_slot!(mc_set_current_off_delay as unsafe extern "C" fn(f32));
     fn_slot!(mc_set_brake_current as unsafe extern "C" fn(f32));
+    fn_slot!(mc_set_handbrake as unsafe extern "C" fn(f32));
+    fn_slot!(mc_set_handbrake_rel as unsafe extern "C" fn(f32));
     fn_slot!(timeout_reset as unsafe extern "C" fn());
     fn_slot!(timeout_has_timeout as unsafe extern "C" fn() -> bool);
     fn_slot!(timeout_secs_since_update as unsafe extern "C" fn() -> f32);
@@ -1451,6 +1453,16 @@ pub unsafe fn mc_set_duty(duty_cycle: f32) {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_set_brake_current(amps: f32) {
     unsafe { required_slot!(mc_set_brake_current)(amps) }
+}
+
+/// Set the motor handbrake current.
+pub unsafe fn mc_set_handbrake(amps: f32) {
+    unsafe { slots::mc_set_handbrake()(amps) }
+}
+
+/// Set the motor relative handbrake command.
+pub unsafe fn mc_set_handbrake_rel(ratio: f32) {
+    unsafe { slots::mc_set_handbrake_rel()(ratio) }
 }
 
 /// Return the current duty cycle.
