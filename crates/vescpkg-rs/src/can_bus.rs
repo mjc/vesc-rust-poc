@@ -533,9 +533,7 @@ impl CanBus {
             received_at: TimestampTicks::from_ticks(raw.rx_time),
             electrical_speed: ElectricalSpeed::new(Rpm::from_revolutions_per_minute(raw.rpm)),
             motor_current: MotorCurrent::new(Current::from_amps(raw.current)),
-            duty_cycle: DutyCycle::new(
-                SignedRatio::from_ratio(raw.duty).unwrap_or(SignedRatio::from_ratio_const(0.0)),
-            ),
+            duty_cycle: DutyCycle::new(SignedRatio::from_ratio(raw.duty).ok()?),
         })
     }
 
@@ -599,10 +597,7 @@ impl CanBus {
             adc_1: AdcVoltage::new(crate::Voltage::from_volts(raw.adc_1)),
             adc_2: AdcVoltage::new(crate::Voltage::from_volts(raw.adc_2)),
             adc_3: AdcVoltage::new(crate::Voltage::from_volts(raw.adc_3)),
-            ppm: PpmInput::new(
-                crate::SignedRatio::from_ratio(raw.ppm)
-                    .unwrap_or(crate::SignedRatio::from_ratio_const(0.0)),
-            ),
+            ppm: PpmInput::new(crate::SignedRatio::from_ratio(raw.ppm).ok()?),
         })
     }
 }
