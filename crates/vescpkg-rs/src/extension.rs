@@ -9,6 +9,8 @@ const LBM_INT_TAG: u32 = 0x8;
 const LBM_VALUE_SHIFT: u32 = 4;
 #[cfg(any(test, not(target_arch = "arm")))]
 const LBM_TRUE: u32 = 2 << LBM_VALUE_SHIFT;
+#[cfg(any(test, not(target_arch = "arm")))]
+const LBM_EERROR: u32 = 0x40;
 const LBM_VALUE_TAG_MASK: u32 = (1 << LBM_VALUE_SHIFT) - 1;
 const LBM_INT_MIN: i32 = -(1 << 27);
 const LBM_INT_MAX: i32 = (1 << 27) - 1;
@@ -616,6 +618,18 @@ impl LispValue {
         #[cfg(any(test, not(target_arch = "arm")))]
         {
             Self(LbmValue(0))
+        }
+    }
+
+    /// Return LispBM's canonical extension error symbol.
+    pub fn error_value() -> Self {
+        #[cfg(all(not(test), target_arch = "arm"))]
+        {
+            Self::from_raw(unsafe { crate::ffi::lbm_enc_sym_eerror() })
+        }
+        #[cfg(any(test, not(target_arch = "arm")))]
+        {
+            Self(LbmValue(LBM_EERROR))
         }
     }
 
