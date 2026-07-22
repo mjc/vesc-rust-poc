@@ -188,8 +188,8 @@ pub use eeprom::{CustomEeprom, CustomEepromAddress, EepromWord};
 pub use encoder::{Encoder, EncoderError, EncoderHandler, EncoderRegistration};
 pub use extension::{ExtensionDescriptor, ExtensionName, ExtensionRegistration};
 pub use extension::{
-    LbmExtension, LispArgs, LispContextId, LispFlatValue, LispIntegerError, LispMessageError,
-    LispProcess, LispSymbol, LispValue, StatefulLbmExtension,
+    LbmExtension, LispArgs, LispContextId, LispFlatValue, LispIntegerError, LispList,
+    LispListError, LispMessageError, LispProcess, LispSymbol, LispValue, StatefulLbmExtension,
 };
 pub use inputs::{
     FirmwareInputs, InputError, PpmSnapshot, RemoteInputSnapshot, ShutdownInhibit, TimeoutSnapshot,
@@ -290,15 +290,15 @@ pub mod prelude {
         FirmwareThreads, FocAudio, FocAudioError, FocAudioSampleTable, Gnss, GnssError,
         GnssSnapshot, Gpio, Imu, ImuReadCallback, ImuReadCallbackError, ImuReadCallbackLease,
         ImuReadHandler, InputError, LbmExtension, LispArgs, LispContextId, LispFlatValue,
-        LispIntegerError, LispMessageError, LispProcess, LispSymbol, LispValue, LogError,
-        MotorOutput, MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset, PackageStartError,
-        PacketCodec, PacketError, PacketHandler, Plot, PlotError, PpmSnapshot, PwmCallbackError,
-        PwmCallbackHandler, PwmCallbackLease, RemoteInputSnapshot, SettingsError, ShutdownInhibit,
-        StatefulCustomConfigCallback, StatefulLbmExtension, StatelessFirmwareThread,
-        StatelessThreadContext, Terminal, TerminalError, TerminalHandler, TerminalRegistration,
-        ThreadContext, ThreadError, ThreadName, ThreadSpec, ThreadWorkingAreaSize,
-        ThreadWorkingAreaSizeError, TimeoutSnapshot, TimerInstant, TypedPwmCallbackLease, Uart,
-        UartError, UartLease,
+        LispIntegerError, LispList, LispListError, LispMessageError, LispProcess, LispSymbol,
+        LispValue, LogError, MotorOutput, MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset,
+        PackageStartError, PacketCodec, PacketError, PacketHandler, Plot, PlotError, PpmSnapshot,
+        PwmCallbackError, PwmCallbackHandler, PwmCallbackLease, RemoteInputSnapshot, SettingsError,
+        ShutdownInhibit, StatefulCustomConfigCallback, StatefulLbmExtension,
+        StatelessFirmwareThread, StatelessThreadContext, Terminal, TerminalError, TerminalHandler,
+        TerminalRegistration, ThreadContext, ThreadError, ThreadName, ThreadSpec,
+        ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimeoutSnapshot, TimerInstant,
+        TypedPwmCallbackLease, Uart, UartError, UartLease,
     };
 }
 
