@@ -255,7 +255,7 @@ impl LispValue {
     /// Convert a firmware-classified numeric value to a widened unsigned integer.
     ///
     /// The pinned VESC ABI exposes a 32-bit scalar decoder; wider LispBM values
-    /// remain available through [`LispFlatValue`].
+    /// are constructed through [`LispFlatValue`] when needed.
     #[cfg(not(test))]
     pub fn decode_number_as_u64(self) -> Option<u64> {
         self.decode_number_as_u32().map(u64::from)
@@ -422,7 +422,7 @@ impl LispValue {
     /// Convert a firmware-classified numeric value to a widened signed integer.
     ///
     /// The pinned VESC ABI exposes a 32-bit scalar decoder; wider LispBM values
-    /// remain available through [`LispFlatValue`].
+    /// are constructed through [`LispFlatValue`] when needed.
     #[cfg(not(test))]
     pub fn decode_number_as_i64(self) -> Option<i64> {
         self.decode_number_as_i32().map(i64::from)
