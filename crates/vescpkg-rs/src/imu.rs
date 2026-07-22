@@ -242,6 +242,7 @@ impl FirmwareAhrs {
                 &mut self.attitude,
             )
         };
+        self.attitude.initialUpdateDone = 1;
         Ok(self.snapshot())
     }
 
