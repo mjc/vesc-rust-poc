@@ -130,7 +130,8 @@ pub(crate) mod ffi {
             f_b, f_cons, f_float, f_i32, f_i64, f_lbm_array, f_sym, f_u32, f_u64, io_read,
             lbm_block_ctx_from_extension, lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true,
             lbm_finish_flatten,
-            can_set_current, can_set_duty, can_set_pos, can_set_rpm, can_status_msg_id,
+            can_set_current, can_set_current_rel, can_set_duty, can_set_pos, can_set_rpm,
+            can_status_msg_id,
             can_transmit_eid, can_transmit_sid, lbm_get_current_cid,
             lbm_start_flatten, lbm_unblock_ctx, lbm_unblock_ctx_unboxed,
         };
@@ -152,8 +153,8 @@ pub use vescpkg_rs_units::{
 
 #[cfg(feature = "alloc")]
 pub use alloc::VescAllocator;
-pub use eeprom::{CustomEeprom, CustomEepromAddress, EepromWord};
 pub use can_bus::{CanBus, CanError, CanStatus};
+pub use eeprom::{CustomEeprom, CustomEepromAddress, EepromWord};
 pub use extension::{ExtensionDescriptor, ExtensionName, ExtensionRegistration};
 pub use extension::{
     LbmExtension, LispArgs, LispContextId, LispFlatValue, LispIntegerError, LispMessageError,
@@ -185,10 +186,10 @@ pub use thread::{
     ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant,
 };
 
-/// GPIO bindings and convenience wrappers for package code.
-mod gpio;
 /// CAN transport and status snapshot helpers for package code.
 mod can_bus;
+/// GPIO bindings and convenience wrappers for package code.
+mod gpio;
 /// IMU bindings and convenience wrappers for package code.
 mod imu;
 /// Device package entrypoint and loader-hook helpers.
@@ -215,14 +216,13 @@ pub mod prelude {
     pub use crate::{
         AnalogPin, AppDataHandler, AppDataSendError, CanBus, CanError, CanStatus, ConfigBytes,
         ConfigXml, DigitalOutputLevel, DigitalPin, ExtensionDescriptor, ExtensionName,
-        ExtensionRegistration, Firmware,
-        FirmwareAppData, FirmwareClock, FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore,
-        FirmwareThread, FirmwareThreads, Gpio, Imu, ImuReadHandler, LbmExtension, LispArgs,
-        LispIntegerError, LispValue, MotorOutput, MotorTelemetry, Nvm, NvmError, NvmOffset,
-        PackageRuntimeState, PackageStart, PackageStartError, StatefulCustomConfigCallback,
-        StatefulLbmExtension, StatelessFirmwareThread, StatelessThreadContext, ThreadContext,
-        ThreadError, ThreadName, ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError,
-        TimerInstant,
+        ExtensionRegistration, Firmware, FirmwareAppData, FirmwareClock, FirmwareMutex,
+        FirmwareMutexGuard, FirmwareSemaphore, FirmwareThread, FirmwareThreads, Gpio, Imu,
+        ImuReadHandler, LbmExtension, LispArgs, LispIntegerError, LispValue, MotorOutput,
+        MotorTelemetry, Nvm, NvmError, NvmOffset, PackageRuntimeState, PackageStart,
+        PackageStartError, StatefulCustomConfigCallback, StatefulLbmExtension,
+        StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadName,
+        ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant,
     };
 }
 
