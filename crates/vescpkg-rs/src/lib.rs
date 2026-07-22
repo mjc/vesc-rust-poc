@@ -29,6 +29,8 @@ extern crate std;
 mod alloc;
 
 mod advanced_foc;
+#[cfg(feature = "math")]
+mod ahrs;
 mod audio;
 mod bindings;
 mod eeprom;
@@ -167,6 +169,8 @@ pub use logging::{FirmwareLog, LogError};
 #[doc(hidden)]
 pub mod __macro_support;
 
+#[cfg(feature = "math")]
+pub use ahrs::Ahrs;
 pub use audio::{FocAudio, FocAudioError, FocAudioSampleTable};
 pub use firmware::{
     AppDataHandler, AppDataPacket, ConfigBytes, ConfigXml, StatefulCustomConfigCallback,

@@ -1,11 +1,12 @@
 #![cfg(feature = "math")]
+#![doc = "Integration coverage for package-owned AHRS state."]
 
 use vescpkg_rs::{
     AccelerationG, AngularVelocity, ImuAcceleration, ImuAccelerationX, ImuAccelerationY,
-    ImuAccelerationZ, ImuAngularRate, ImuAngularRatePitch, ImuAngularRateRoll,
-    ImuAngularRateYaw, ImuMagneticField, ImuMagneticFieldX, ImuMagneticFieldY,
-    ImuMagneticFieldZ, ImuQuaternionW, ImuQuaternionX, ImuQuaternionY, ImuQuaternionZ,
-    ImuReadSample, ImuSamplePeriod, MagneticFluxDensity, SampleRate, VescSeconds,
+    ImuAccelerationZ, ImuAngularRate, ImuAngularRatePitch, ImuAngularRateRoll, ImuAngularRateYaw,
+    ImuMagneticField, ImuMagneticFieldX, ImuMagneticFieldY, ImuMagneticFieldZ, ImuQuaternionW,
+    ImuQuaternionX, ImuQuaternionY, ImuQuaternionZ, ImuReadSample, ImuSamplePeriod,
+    MagneticFluxDensity, VescSeconds,
 };
 
 #[test]
