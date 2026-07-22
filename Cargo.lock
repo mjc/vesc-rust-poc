@@ -1352,7 +1352,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "vesc-example-float-out-boy"
+name = "vesc-example-control-loop-smoke"
+version = "0.1.0"
+dependencies = [
+ "vescpkg-build-support",
+ "vescpkg-rs",
+]
+
+[[package]]
+name = "vesc-example-loopback"
 version = "0.1.0"
 dependencies = [
  "vescpkg-build-support",

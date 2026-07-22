@@ -1,0 +1,33 @@
+[package]
+name = "vesc-example-control-loop-smoke"
+version = "0.1.0"
+edition = "2024"
+rust-version.workspace = true
+description = "Small no-actuation VESC package demonstrating a typed control loop."
+
+publish = false
+
+[package.metadata.vescpkg]
+name = "Rust control-loop smoke package"
+
+[lints]
+workspace = true
+
+[lib]
+crate-type = ["rlib"]
+
+[[bin]]
+name = "vesc-example-control-loop-smoke"
+path = "src/main.rs"
+
+[dependencies]
+vescpkg-rs = { path = "../../crates/vescpkg-rs" }
+
+[dev-dependencies]
+vescpkg-rs = { path = "../../crates/vescpkg-rs", features = ["test-support"] }
+
+[build-dependencies]
+vescpkg-build-support = { path = "../../crates/vescpkg-build-support" }
+
+[features]
+test-support = ["vescpkg-rs/test-support"]
