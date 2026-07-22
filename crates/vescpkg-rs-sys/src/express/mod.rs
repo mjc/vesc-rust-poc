@@ -6,9 +6,11 @@
 //! loader. Typed callable wrappers can build on this boundary without mixing
 //! slot order or target pointers with STM32.
 
+mod loader;
 mod table;
 mod types;
 
+pub use loader::{ExpressCallError, ExpressInterface, ExpressLoadError};
 pub use table::{ExpressSlot, ExpressSlotKind, ExpressTable, ExpressTableError, express_slot_kind};
 pub use types::{
     EXPRESS_C_IF_VERSION, EXPRESS_IF_SLOT_COUNT, EXPRESS_IF_TABLE_BYTES, EXPRESS_NATIVE_LIB_MAGIC,
@@ -66,6 +68,25 @@ mod tests {
             Some(ExpressWord::new(0x1234))
         );
         assert!(!table.is_complete());
+
+        let interface = ExpressInterface::from_words(&[EXPRESS_C_IF_VERSION, 0, 0x1234]).unwrap();
+        assert!(interface.has_slot(ExpressSlot::LbmSetErrorReason));
+        assert!(!interface.has_slot(ExpressSlot::SleepMs));
+        assert_eq!(
+            interface.function_address(ExpressSlot::LbmSetErrorReason),
+            Some(ExpressAddress::new(0x1234))
+        );
+        let _raw_function = unsafe {
+            interface
+                .function::<unsafe extern "C" fn(u32)>(ExpressSlot::LbmSetErrorReason)
+                .unwrap()
+        };
+        assert_eq!(
+            unsafe { interface.function::<unsafe extern "C" fn()>(ExpressSlot::SleepMs) },
+            Err(ExpressCallError {
+                slot: ExpressSlot::SleepMs
+            })
+        );
     }
 
     #[test]
