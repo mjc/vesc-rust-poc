@@ -58,11 +58,12 @@ unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
     }
     #[cfg(any(feature = "test-support", target_arch = "arm"))]
     crate::gpio::reset_leases();
+    #[cfg(target_arch = "arm")]
+    unsafe {
+        crate::runtime::reset_firmware_runtime_gpio_leases(state)
+    };
     #[cfg(any(feature = "test-support", target_arch = "arm"))]
     crate::runtime::disable_callback_dispatch();
-    #[cfg(any(feature = "test-support", target_arch = "arm"))]
-    crate::runtime::disable_callback_dispatch();
->>>>>>> a6d2cafe (runtime: disable typed callbacks during stop)
     #[cfg(all(not(test), target_arch = "arm"))]
     {
         crate::PackageStateStore::<T>::take_callbacks(state)
