@@ -331,7 +331,7 @@ impl RemoteControlState {
         } else {
             input
         };
-        let target_current = MotorCurrent::new(Current::from_amps(current_max.as_amps() * servo));
+        let target_current = MotorCurrent::new(current_max * servo);
         // Upstream READY falls through to `do_rc_move(d)` at
         // `third_party/float-out-boy/src/main.c:1069`, where the remote-throttle idle
         // branch filters and requests `rc_current` at
