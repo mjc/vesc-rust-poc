@@ -55,6 +55,12 @@ macro_rules! scalar_unit {
                 self.0 == 0.0
             }
 
+            /// Return true when this value is greater than another same-unit value.
+            #[inline(always)]
+            pub const fn is_greater_than(self, other: Self) -> bool {
+                self.0 > other.0
+            }
+
             /// Return the smaller same-unit value.
             #[inline(always)]
             pub fn min(self, rhs: Self) -> Self {
