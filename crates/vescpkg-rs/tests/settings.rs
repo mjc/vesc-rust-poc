@@ -72,6 +72,10 @@ fn typed_settings_read_write_and_persist() {
         settings.can_baud_rate().unwrap(),
         vescpkg_rs::CanBaudRate::Kbps500
     );
+    assert_eq!(
+        settings.imu_ahrs_mode().unwrap(),
+        vescpkg_rs::ImuAhrsMode::Madgwick
+    );
     assert_eq!(settings.gear_ratio().unwrap().as_f32(), 2.5);
     assert_eq!(settings.wheel_diameter().distance().as_meters(), 0.165);
     assert_eq!(settings.foc_motor_resistance().resistance().as_ohms(), 0.03);
@@ -199,6 +203,9 @@ fn typed_settings_read_write_and_persist() {
         .unwrap();
     settings
         .set_can_baud_rate(vescpkg_rs::CanBaudRate::Mbps1)
+        .unwrap();
+    settings
+        .set_imu_ahrs_mode(vescpkg_rs::ImuAhrsMode::Mahony)
         .unwrap();
     settings
         .set_gear_ratio(vescpkg_rs::GearRatio::try_new(3.0).unwrap())
@@ -343,6 +350,10 @@ fn typed_settings_read_write_and_persist() {
         settings.can_baud_rate().unwrap(),
         vescpkg_rs::CanBaudRate::Mbps1
     );
+    assert_eq!(
+        settings.imu_ahrs_mode().unwrap(),
+        vescpkg_rs::ImuAhrsMode::Mahony
+    );
     assert_eq!(settings.gear_ratio().unwrap().as_f32(), 3.0);
     assert_eq!(settings.wheel_diameter().distance().as_meters(), 0.2);
     assert_eq!(settings.foc_motor_resistance().resistance().as_ohms(), 0.04);
@@ -442,6 +453,11 @@ fn settings_reject_unknown_battery_chemistry() {
         .set_int(FirmwareIntSetting::AppCanBaudRate, 99)
         .unwrap();
     assert_eq!(settings.can_baud_rate(), Err(SettingsError::InvalidValue));
+
+    settings
+        .set_int(FirmwareIntSetting::ImuAhrsMode, 99)
+        .unwrap();
+    assert_eq!(settings.imu_ahrs_mode(), Err(SettingsError::InvalidValue));
 }
 
 #[test]
