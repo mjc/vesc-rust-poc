@@ -525,6 +525,10 @@ pub unsafe fn lbm_get_current_cid() -> u32 {
 
 pub unsafe fn lbm_block_ctx_from_extension() {}
 
+pub unsafe fn lbm_set_error_reason(reason: *mut c_char) -> c_int {
+    if reason.is_null() { 0 } else { 1 }
+}
+
 pub unsafe fn lbm_unblock_ctx_unboxed(_context: u32, _value: LbmValue) -> Option<bool> {
     Some(true)
 }

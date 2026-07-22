@@ -72,6 +72,14 @@ fn lisp_values_expose_explicit_kind_predicates() {
 }
 
 #[test]
+fn lisp_process_sets_error_reason_from_a_scoped_c_string() {
+    let _firmware = FirmwareTest::new();
+    let reason = c"invalid argument";
+
+    assert_eq!(LispProcess::set_error_reason(reason), 1);
+}
+
+#[test]
 fn lisp_flat_values_encode_wide_values_and_unblock_contexts() {
     let _firmware = FirmwareTest::new();
     let mut value = LispFlatValue::try_new(32).expect("flat-value slots available");

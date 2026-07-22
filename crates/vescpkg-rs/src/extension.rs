@@ -170,6 +170,12 @@ impl Drop for LispFlatValue {
 }
 
 impl LispProcess {
+    /// Set the firmware-owned error reason for the current LispBM evaluation.
+    #[cfg(not(test))]
+    pub fn set_error_reason(reason: &CStr) -> i32 {
+        unsafe { crate::ffi::lbm_set_error_reason(reason.as_ptr().cast_mut()) }
+    }
+
     /// Return the context currently executing the extension callback.
     #[cfg(not(test))]
     pub fn current() -> LispContextId {
@@ -318,17 +324,6 @@ impl LispValue {
             let value = unsafe { CStr::from_ptr(pointer) };
             f(value)
         })
-    }
-
-    /// Ask firmware to allocate a byte array of the requested size.
-    ///
-    /// The returned handle owns the LispBM value; firmware remains responsible
-    /// for the backing storage and reports allocation failure as `None`.
-    #[cfg(not(test))]
-    pub fn try_byte_array(len: usize) -> Option<Self> {
-        let len = u32::try_from(len).ok()?;
-        let mut raw = Self::nil().raw();
-        unsafe { crate::ffi::lbm_create_byte_array(&mut raw, len) }.then(|| Self::from_raw(raw))
     }
 
     /// Encode a firmware symbol identifier as a LispBM value.

@@ -35,6 +35,12 @@ pub type CanReceiverCallback = unsafe extern "C" fn(u32, *mut u8, u8) -> bool;
 type CanRxCallback = CanReceiverCallback;
 type PacketSendCallback = unsafe extern "C" fn(*mut c_uchar, c_uint);
 type PacketProcessCallback = unsafe extern "C" fn(*mut c_uchar, c_uint);
+type ReplyCallback = unsafe extern "C" fn(*mut c_uchar, c_uint);
+type TerminalCallback = unsafe extern "C" fn(c_int, *const *const c_char);
+type EncoderReadCallback = unsafe extern "C" fn() -> f32;
+type EncoderFaultCallback = unsafe extern "C" fn() -> bool;
+type EncoderInfoCallback = unsafe extern "C" fn() -> *mut c_char;
+type PwmCallback = unsafe extern "C" fn();
 
 type LibThread = crate::bindgen::lib_thread;
 type LibMutex = crate::bindgen::lib_mutex;
@@ -176,11 +182,11 @@ mod slots {
     use super::{
         AppDataHandler, AttitudeInfo, CanRxCallback, CanStatusMsg, CanStatusMsg2, CanStatusMsg3,
         CanStatusMsg4, CanStatusMsg5, CanStatusMsg6, CustomConfigGet, CustomConfigSet,
-        CustomConfigXml, EepromVar, EncoderFaultCallback, EncoderInfoCallback, EncoderReadCallback,
-        ExtensionHandler, GnssData, HwType, ImuReadCallback, LbmFlatValue, LbmValue, LibMutex,
+        CustomConfigXml, EepromVar,
+        GnssData, HwType, ImuReadCallback, LbmFlatValue, LbmValue, LibMutex,
         LibSemaphore, LibThread, PacketProcessCallback, PacketSendCallback, PacketState,
-        RemoteState, ReplyCallback, TerminalCallback, VescIfAbi, c_char, c_int, c_uchar, c_uint,
-        c_void,
+        RemoteState, VescIfAbi, c_char, c_int, c_uchar, c_uint, c_void, EncoderFaultCallback,
+        EncoderInfoCallback, EncoderReadCallback, ReplyCallback, TerminalCallback,
     };
     #[cfg(not(all(target_arch = "arm", not(test))))]
     use super::{VescIf, vesc_if};
@@ -205,6 +211,26 @@ mod slots {
     macro_rules! fn_slot {
         ($name:ident as $fn_ty:ty) => {
             #[inline(always)]
+            pub(super) unsafe fn $name() -> $fn_ty {
+                #[cfg(all(target_arch = "arm", not(test)))]
+                unsafe {
+                    let address = vesc_slot_word_from!(VescIfAbi::BASE_ADDR.0, $name);
+                    assert!(address != 0, "required VESC_IF slot is unavailable");
+                    core::mem::transmute::<usize, $fn_ty>(address)
+                }
+
+                #[cfg(not(all(target_arch = "arm", not(test))))]
+                unsafe {
+                    let function = (*vesc_if()).$name.expect("required VESC_IF slot is unavailable");
+                    core::mem::transmute::<_, $fn_ty>(function)
+                }
+            }
+        };
+    }
+
+    macro_rules! optional_fn_slot {
+        ($name:ident as $fn_ty:ty) => {
+            #[inline(always)]
             pub(super) unsafe fn $name() -> Option<$fn_ty> {
                 #[cfg(all(target_arch = "arm", not(test)))]
                 unsafe {
@@ -218,7 +244,9 @@ mod slots {
 
                 #[cfg(not(all(target_arch = "arm", not(test))))]
                 unsafe {
-                    (*vesc_if()).$name
+                    (*vesc_if())
+                        .$name
+                        .map(|function| core::mem::transmute::<_, $fn_ty>(function))
                 }
             }
         };
@@ -320,10 +348,10 @@ mod slots {
             )
     );
     fn_slot!(conf_custom_clear_configs as unsafe extern "C" fn());
-    fn_slot!(mutex_create as unsafe extern "C" fn() -> LibMutex);
+    optional_fn_slot!(mutex_create as unsafe extern "C" fn() -> LibMutex);
     fn_slot!(mutex_lock as unsafe extern "C" fn(LibMutex));
     fn_slot!(mutex_unlock as unsafe extern "C" fn(LibMutex));
-    fn_slot!(sem_create as unsafe extern "C" fn() -> LibSemaphore);
+    optional_fn_slot!(sem_create as unsafe extern "C" fn() -> LibSemaphore);
     fn_slot!(sem_wait as unsafe extern "C" fn(LibSemaphore));
     fn_slot!(sem_signal as unsafe extern "C" fn(LibSemaphore));
     fn_slot!(sem_wait_to as unsafe extern "C" fn(LibSemaphore, u32) -> bool);
@@ -332,13 +360,12 @@ mod slots {
     fn_slot!(free as unsafe extern "C" fn(*mut c_void));
     fn_slot!(sleep_us as unsafe extern "C" fn(u32));
     fn_slot!(
-        spawn
-            as unsafe extern "C" fn(
-                Option<unsafe extern "C" fn(*mut c_void)>,
-                usize,
-                *const c_char,
-                *mut c_void,
-            ) -> LibThread
+        spawn as unsafe extern "C" fn(
+            unsafe extern "C" fn(*mut c_void),
+            usize,
+            *const c_char,
+            *mut c_void,
+        ) -> LibThread
     );
     fn_slot!(request_terminate as unsafe extern "C" fn(LibThread));
     fn_slot!(should_terminate as unsafe extern "C" fn() -> bool);
@@ -522,7 +549,7 @@ mod slots {
     fn_slot!(timer_time_now as unsafe extern "C" fn() -> u32);
     fn_slot!(timer_seconds_elapsed_since as unsafe extern "C" fn(u32) -> f32);
     // Appended in firmware 6.05; older tables fall back to `system_time`.
-    fn_slot!(system_time_ticks as unsafe extern "C" fn() -> u32);
+    optional_fn_slot!(system_time_ticks as unsafe extern "C" fn() -> u32);
     // Appended in firmware 6.06; callers treat absence as an unsupported hint.
     optional_fn_slot!(thread_set_priority as unsafe extern "C" fn(c_int));
     fn_slot!(io_set_mode as unsafe extern "C" fn(c_int, c_int) -> bool);
@@ -562,7 +589,7 @@ fn required_slot<T>(slot: Option<T>) -> T {
 
 macro_rules! required_slot {
     ($name:ident) => {
-        required_slot(slots::$name())
+        slots::$name()
     };
 }
 
@@ -725,13 +752,6 @@ pub unsafe fn lbm_cdr(value: LbmValue) -> LbmValue {
 /// `value` must be a mutable LispBM list owned by the current evaluation.
 pub unsafe fn lbm_list_destructive_reverse(value: LbmValue) -> LbmValue {
     unsafe { LbmValue(required_slot!(lbm_list_destructive_reverse)(value.0)) }
-}
-
-/// # Safety
-///
-/// `value` must be valid for one firmware-written LispBM value.
-pub unsafe fn lbm_create_byte_array(value: *mut LbmValue, len: u32) -> bool {
-    unsafe { slots::lbm_create_byte_array()(value, len) }
 }
 
 /// # Safety
@@ -1149,7 +1169,7 @@ pub unsafe fn vesc_spawn(
     name: *const c_char,
     arg: *mut c_void,
 ) -> LibThread {
-    unsafe { required_slot!(spawn)(Some(entry), stack_bytes, name, arg) }
+    unsafe { required_slot!(spawn)(entry, stack_bytes, name, arg) }
 }
 
 /// Sleep the current firmware package thread for a number of microseconds.
@@ -1252,9 +1272,9 @@ pub unsafe fn can_set_duty(controller: u8, duty: f32) -> Option<()> {
 /// Ping one remote controller and copy its reported hardware type.
 pub unsafe fn can_ping(controller: u8) -> Option<(bool, crate::HardwareType)> {
     let ping = unsafe { slots::can_ping() }?;
-    let mut hardware = 0;
+    let mut hardware = crate::HardwareType(0);
     let ok = unsafe { ping(controller, &mut hardware) };
-    Some((ok, crate::HardwareType(hardware)))
+    Some((ok, hardware))
 }
 
 /// Send a remote motor current command when the optional slot is present.
@@ -2281,21 +2301,21 @@ pub unsafe fn vesc_timer_seconds_elapsed_since(timestamp: u32) -> f32 {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn io_set_mode(pin: crate::VescPin, mode: crate::VescPinMode) -> bool {
-    unsafe { required_slot!(io_set_mode)(pin.0 as c_uint, mode.0 as c_uint) }
+    unsafe { required_slot!(io_set_mode)(pin.0, mode.0) }
 }
 
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn io_write(pin: crate::VescPin, level: i32) -> bool {
-    unsafe { required_slot!(io_write)(pin.0 as c_uint, level) }
+    unsafe { required_slot!(io_write)(pin.0, level) }
 }
 
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn io_read(pin: crate::VescPin) -> bool {
-    unsafe { required_slot!(io_read)(pin.0 as c_uint) }
+    unsafe { required_slot!(io_read)(pin.0) }
 }
 
 /// # Safety
@@ -2304,7 +2324,7 @@ pub unsafe fn io_read(pin: crate::VescPin) -> bool {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 #[inline(always)]
 pub unsafe fn io_read_analog(pin: crate::VescPin) -> f32 {
-    unsafe { required_slot!(io_read_analog)(pin.0 as c_uint) }
+    unsafe { required_slot!(io_read_analog)(pin.0) }
 }
 
 /// # Safety
@@ -2314,8 +2334,8 @@ pub unsafe fn io_read_analog(pin: crate::VescPin) -> f32 {
 #[inline(always)]
 pub unsafe fn io_read_analog_pair(first: crate::VescPin, second: crate::VescPin) -> (f32, f32) {
     let read = unsafe { required_slot!(io_read_analog) };
-    (unsafe { read(first.0 as c_uint) }, unsafe {
-        read(second.0 as c_uint)
+    (unsafe { read(first.0) }, unsafe {
+        read(second.0)
     })
 }
 
@@ -2602,7 +2622,9 @@ pub unsafe fn lbm_symbol_to_io(symbol: u32, gpio: *mut *mut c_void, pin: *mut u3
 
 /// Allocate a firmware mutex handle.
 pub unsafe fn mutex_create() -> *mut c_void {
-    unsafe { slots::mutex_create()() }
+    unsafe { slots::mutex_create() }
+        .map(|create| unsafe { create() })
+        .unwrap_or(core::ptr::null_mut())
 }
 
 /// Lock a firmware mutex.
@@ -2617,7 +2639,9 @@ pub unsafe fn mutex_unlock(mutex: *mut c_void) {
 
 /// Allocate a firmware semaphore handle.
 pub unsafe fn sem_create() -> *mut c_void {
-    unsafe { slots::sem_create()() }
+    unsafe { slots::sem_create() }
+        .map(|create| unsafe { create() })
+        .unwrap_or(core::ptr::null_mut())
 }
 
 /// Wait on a firmware semaphore.
