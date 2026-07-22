@@ -39,17 +39,17 @@ const CFG_PARAM_SI_BATTERY_CELLS: core::ffi::c_int = 43;
 pub trait MotorTelemetryBindings {
     /// Return the current motor electrical RPM.
     ///
-    /// Refloat v1.2.1 reads `mc_get_rpm()` in `src/motor_data.c:108`; the VESC
+    /// Float Out Boy v1.2.1 reads `mc_get_rpm()` in `src/motor_data.c:108`; the VESC
     /// ABI slot is declared at `vesc_pkg_lib/vesc_c_if.h:450`.
     fn electrical_speed(&self) -> ElectricalSpeed;
     /// Return firmware-calculated vehicle speed.
     ///
-    /// Refloat v1.2.1 reads `mc_get_speed()` in `src/motor_data.c:118`; the
+    /// Float Out Boy v1.2.1 reads `mc_get_speed()` in `src/motor_data.c:118`; the
     /// VESC ABI slot is declared at `vesc_pkg_lib/vesc_c_if.h:470`.
     fn vehicle_speed(&self) -> VehicleSpeed;
     /// Return filtered total motor current.
     ///
-    /// Refloat v1.2.1 reads `mc_get_tot_current_filtered()` in
+    /// Float Out Boy v1.2.1 reads `mc_get_tot_current_filtered()` in
     /// `src/motor_data.c:120`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:456`.
     fn motor_current(&self) -> TotalMotorCurrent;
@@ -57,13 +57,13 @@ pub trait MotorTelemetryBindings {
     fn directional_motor_current(&self) -> DirectionalMotorCurrent;
     /// Return the configured positive motor-current limit.
     ///
-    /// Refloat v1.2.1 reads `CFG_PARAM_l_current_max` through `get_cfg_float`
+    /// Float Out Boy v1.2.1 reads `CFG_PARAM_l_current_max` through `get_cfg_float`
     /// in `src/motor_data.c:91`; the VESC config id is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:243`.
     fn drive_current_limit(&self) -> MotorCurrentLimit;
     /// Return the configured braking-current magnitude.
     ///
-    /// Refloat v1.2.1 stores `fabsf(CFG_PARAM_l_current_min)` in
+    /// Float Out Boy v1.2.1 stores `fabsf(CFG_PARAM_l_current_min)` in
     /// `src/motor_data.c:90`; the VESC config id is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:244`.
     fn brake_current_limit(&self) -> MotorCurrentLimit;
@@ -77,7 +77,7 @@ pub trait MotorTelemetryBindings {
     fn motor_temperature_limit_start(&self) -> TemperatureLimitStart;
     /// Return the configured maximum duty-cycle limit.
     ///
-    /// Refloat v1.2.1 reads `CFG_PARAM_l_max_duty` through `get_cfg_float`
+    /// Float Out Boy v1.2.1 reads `CFG_PARAM_l_max_duty` through `get_cfg_float`
     /// in `src/motor_data.c:97`; the VESC config id is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:271` and has ABI value 22.
     fn duty_cycle_limit(&self) -> DutyCycleLimit;
@@ -85,7 +85,7 @@ pub trait MotorTelemetryBindings {
     fn battery_cell_count(&self) -> Option<BatteryCellCount>;
     /// Return filtered input/battery current.
     ///
-    /// Refloat v1.2.1 reads `mc_get_tot_current_in_filtered()` in
+    /// Float Out Boy v1.2.1 reads `mc_get_tot_current_in_filtered()` in
     /// `src/motor_data.c:140`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:460`.
     fn battery_current(&self) -> InputCurrent;
@@ -99,7 +99,7 @@ pub trait MotorTelemetryBindings {
     fn duty_cycle(&self) -> DutyCycle;
     /// Return optional FOC d-axis Id current.
     ///
-    /// Refloat v1.2.1 reads optional `foc_get_id` while encoding compact
+    /// Float Out Boy v1.2.1 reads optional `foc_get_id` while encoding compact
     /// all-data at `src/main.c:1364-1368`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:616`.
     fn d_axis_current(&self) -> Option<DCurrent>;
@@ -245,32 +245,32 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
 pub trait MotorControlBindings {
     /// Reset the firmware motor-command safety timeout.
     ///
-    /// Refloat v1.2.1 calls this before motor-control output at
-    /// `third_party/refloat/src/motor_control.c:92-93`; the VESC ABI slot is
+    /// Float Out Boy v1.2.1 calls this before motor-control output at
+    /// `third_party/float-out-boy/src/motor_control.c:92-93`; the VESC ABI slot is
     /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:538`.
     fn timeout_reset(&self);
     /// Keep current control enabled after a current command.
     ///
-    /// Refloat v1.2.1 sets `0.05f` seconds before sending requested current at
-    /// `third_party/refloat/src/motor_control.c:96-99`; the VESC ABI slot is
+    /// Float Out Boy v1.2.1 sets `0.05f` seconds before sending requested current at
+    /// `third_party/float-out-boy/src/motor_control.c:96-99`; the VESC ABI slot is
     /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:476`.
     fn set_current_off_delay(&self, delay: CurrentOffDelay);
     /// Set motor current in amps.
     ///
-    /// Refloat v1.2.1 sends the requested current at
-    /// `third_party/refloat/src/motor_control.c:99`; the VESC ABI slot is
+    /// Float Out Boy v1.2.1 sends the requested current at
+    /// `third_party/float-out-boy/src/motor_control.c:99`; the VESC ABI slot is
     /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:440`.
     fn set_current(&self, current: MotorCurrent);
     /// Set motor duty cycle.
     ///
-    /// Refloat v1.2.1 sends parking-brake duty zero at
-    /// `third_party/refloat/src/motor_control.c:112-114`; the VESC ABI slot is
+    /// Float Out Boy v1.2.1 sends parking-brake duty zero at
+    /// `third_party/float-out-boy/src/motor_control.c:112-114`; the VESC ABI slot is
     /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:436`.
     fn set_duty_cycle(&self, duty: DutyCycle);
     /// Set motor brake current in amps.
     ///
-    /// Refloat v1.2.1 sends idle brake current at
-    /// `third_party/refloat/src/motor_control.c:115-117`; the VESC ABI slot is
+    /// Float Out Boy v1.2.1 sends idle brake current at
+    /// `third_party/float-out-boy/src/motor_control.c:115-117`; the VESC ABI slot is
     /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:441`.
     fn set_brake_current(&self, current: BrakeCurrent);
     /// Play a FOC tone when the motor firmware exposes audio support.
@@ -982,8 +982,8 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
 
     /// Set motor duty cycle.
     ///
-    /// Refloat uses this for parking brake duty zero at
-    /// `third_party/refloat/src/motor_control.c:112-114`; the VESC ABI slot is
+    /// Float Out Boy uses this for parking brake duty zero at
+    /// `third_party/float-out-boy/src/motor_control.c:112-114`; the VESC ABI slot is
     /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:436`.
     pub fn set_duty_cycle(&self, duty: DutyCycle) {
         self.bindings.set_duty_cycle(duty);
@@ -991,8 +991,8 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
 
     /// Set motor brake current.
     ///
-    /// Refloat uses this for idle brake current at
-    /// `third_party/refloat/src/motor_control.c:115-117`; the VESC ABI slot is
+    /// Float Out Boy uses this for idle brake current at
+    /// `third_party/float-out-boy/src/motor_control.c:115-117`; the VESC ABI slot is
     /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:441`.
     pub fn set_brake_current(&self, current: BrakeCurrent) {
         self.bindings.set_brake_current(current);

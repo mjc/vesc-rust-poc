@@ -76,7 +76,7 @@ doc-test:
 package: check package-only
 
 package-only:
-	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-refloat
+	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-float-out-boy
 
 deploy:
 	$(CARGO) run -p cargo-vescpkg -- deploy -p vesc-example-loopback $(DEVICE_FLAGS)

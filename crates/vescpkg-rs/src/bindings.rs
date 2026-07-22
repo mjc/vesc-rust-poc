@@ -178,7 +178,7 @@ impl<B: AppDataBindings + ?Sized> AppDataBindings for &B {
 pub(crate) trait CustomConfigBindings {
     /// Register package-owned custom-config callbacks.
     ///
-    /// Refloat `v1.2.1` registers `get_cfg`, `set_cfg`, and `get_cfg_xml` at
+    /// Float Out Boy `v1.2.1` registers `get_cfg`, `set_cfg`, and `get_cfg_xml` at
     /// `src/main.c:2456`; the VESC function-table slot is declared in
     /// `vesc_pkg_lib/vesc_c_if.h:549-552`.
     ///
@@ -227,7 +227,7 @@ impl<B: CustomConfigBindings + ?Sized> CustomConfigBindings for &B {
 pub(crate) trait ImuReadCallbackBindings {
     /// Register a package-owned IMU read callback.
     ///
-    /// Refloat `v1.2.1` registers `imu_ref_callback` at `src/main.c:2455`;
+    /// Float Out Boy `v1.2.1` registers `imu_ref_callback` at `src/main.c:2455`;
     /// that callback updates the balance filter at `src/main.c:760-764`.
     ///
     /// # Safety

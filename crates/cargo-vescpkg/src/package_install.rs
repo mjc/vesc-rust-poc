@@ -554,7 +554,7 @@ mod tests {
                 bytes: super::PACKAGE_ERASE_BYTES,
             })
             .reload()
-            .finish("Refloat".to_owned())
+            .finish("Float Out Boy".to_owned())
             .expect_err("install should fail");
 
         assert!(error.to_string().contains("erase Lisp 16 bytes"));

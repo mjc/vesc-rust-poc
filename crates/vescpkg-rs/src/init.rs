@@ -167,8 +167,8 @@ pub struct LoadedAppDataCallback {
 impl LoadedAppDataCallback {
     /// Register this callback with live firmware.
     ///
-    /// C map: Refloat registers `on_command_received` after custom config at
-    /// `third_party/refloat/src/main.c:2455-2456`; VESC validates and stores the
+    /// C map: Float Out Boy registers `on_command_received` after custom config at
+    /// `third_party/float-out-boy/src/main.c:2455-2456`; VESC validates and stores the
     /// callback at `third_party/vesc/comm/commands.c:1820-1828`.
     #[cfg(not(test))]
     #[inline(always)]
@@ -234,7 +234,7 @@ impl<'info> PackageStart<'info> {
     /// Install the default package stop hook into loader metadata.
     ///
     /// C map: the loader stores this callback in `LibInfo.stop_fun` at
-    /// `third_party/refloat/vesc_pkg_lib/vesc_c_if.h:675-677`; the matching
+    /// `third_party/float-out-boy/vesc_pkg_lib/vesc_c_if.h:675-677`; the matching
     /// package state is later exposed through `ARG` at `:698-699`.
     pub fn install_stop_hook(&mut self) -> Result<(), PackageStartError> {
         install_stop_hook(self.info.cast())?;
@@ -335,7 +335,7 @@ impl<'info> PackageStart<'info> {
     ///
     /// C map: VESC uses the init result as the Lisp load result, but selects a
     /// reusable loader slot by `stop_fun == NULL` and only clears that field on
-    /// unload/stop (`lispBM/lispif_c_lib.c:1087-1155`). Refloat returns false
+    /// unload/stop (`lispBM/lispif_c_lib.c:1087-1155`). Float Out Boy returns false
     /// for allocation and thread-spawn failures (`src/main.c:2664-2702`), so a
     /// failed Rust start must both run its stop hook and release the loader slot.
     #[doc(hidden)]
@@ -467,10 +467,10 @@ impl<'info> PackageStart<'info> {
     ///
     /// The callback macro keeps the ABI entry in the package image. Loading it
     /// before other firmware registrations preserves the package-local pointer
-    /// that Refloat later passes to `set_app_data_handler`.
+    /// that Float Out Boy later passes to `set_app_data_handler`.
     ///
-    /// C map: Refloat's `on_command_received` is a package-local function at
-    /// `third_party/refloat/src/main.c:2142-2143` and is registered at `:2456`.
+    /// C map: Float Out Boy's `on_command_received` is a package-local function at
+    /// `third_party/float-out-boy/src/main.c:2142-2143` and is registered at `:2456`.
     #[inline(always)]
     pub fn app_data_callback<T: crate::__macro_support::PackageAppDataCallback>(
         &mut self,
@@ -491,8 +491,8 @@ impl<'info> PackageStart<'info> {
     /// This claims the package-global IMU callback slot. Call it only from the
     /// package's designated coordinator native library.
     ///
-    /// C map: Refloat registers `imu_ref_callback` at
-    /// `third_party/refloat/src/main.c:2454`; VESC stores and invokes it through
+    /// C map: Float Out Boy registers `imu_ref_callback` at
+    /// `third_party/float-out-boy/src/main.c:2454`; VESC stores and invokes it through
     /// `third_party/vesc/imu/imu.c:581-582` and `:704-727`.
     #[cfg(not(test))]
     #[inline(always)]
@@ -539,8 +539,8 @@ impl<'info> PackageStart<'info> {
     /// The app-data callback is resolved before either firmware call, while
     /// firmware receives custom config before app data.
     ///
-    /// C map: Refloat registers custom config and then `on_command_received` at
-    /// `third_party/refloat/src/main.c:2455-2456`. VESC stores the app-data
+    /// C map: Float Out Boy registers custom config and then `on_command_received` at
+    /// `third_party/float-out-boy/src/main.c:2455-2456`. VESC stores the app-data
     /// callback at `third_party/vesc/comm/commands.c:1820-1828`.
     #[cfg(not(test))]
     #[inline(always)]
@@ -1359,8 +1359,8 @@ mod tests {
             start.register_imu_read_callback_with_bindings::<TestPackageImuRead, _>(&bindings),
             Ok(())
         );
-        // C map: Refloat registers `imu_ref_callback` at
-        // `third_party/refloat/src/main.c:2454`; VESC stores the resolved pointer
+        // C map: Float Out Boy registers `imu_ref_callback` at
+        // `third_party/float-out-boy/src/main.c:2454`; VESC stores the resolved pointer
         // at `third_party/vesc/imu/imu.c:581-582`.
         assert_eq!(bindings.imu_read_callback_calls.get(), 1);
         assert_eq!(

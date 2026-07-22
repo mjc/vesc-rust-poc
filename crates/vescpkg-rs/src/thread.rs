@@ -1,6 +1,6 @@
 //! Firmware thread bindings for native package runtime code.
 //!
-//! Refloat v1.2.1 uses the VESC thread ABI declared in
+//! Float Out Boy v1.2.1 uses the VESC thread ABI declared in
 //! `vesc_pkg_lib/vesc_c_if.h:376` and `382-384` for startup, stop, sleep, and
 //! worker loops.
 
@@ -811,8 +811,8 @@ impl<B: ThreadBindings> ThreadApi<B> {
 
     /// Spawn firmware threads in order, terminating the started subset if one cannot start.
     ///
-    /// C map: Refloat passes its position-independent thread and string addresses
-    /// directly to spawn at third_party/refloat/src/main.c:2438-2444.
+    /// C map: Float Out Boy passes its position-independent thread and string addresses
+    /// directly to spawn at third_party/float-out-boy/src/main.c:2438-2444.
     /// VESC's `lib_request_terminate` does not return until the thread has
     /// terminated (`lispBM/lispif_c_lib.c:126-145`).
     ///
@@ -865,7 +865,7 @@ impl<B: ThreadBindings> ThreadApi<B> {
 
     /// Sleep the current package thread for a duration.
     ///
-    /// Refloat's main runtime thread sleeps with `VESC_IF->sleep_us` at
+    /// Float Out Boy's main runtime thread sleeps with `VESC_IF->sleep_us` at
     /// `src/main.c:1080`.
     pub fn sleep_for(&self, duration: Duration) {
         let mut micros = duration.as_nanos().div_ceil(1_000);
@@ -878,7 +878,7 @@ impl<B: ThreadBindings> ThreadApi<B> {
 
     /// Set the current package thread priority when supported by firmware.
     ///
-    /// Refloat lowers `aux_thd` priority with optional
+    /// Float Out Boy lowers `aux_thd` priority with optional
     /// `VESC_IF->thread_set_priority(-1)` at `src/main.c:1133-1135`; the ABI
     /// slot is declared at `vesc_pkg_lib/vesc_c_if.h:670`.
     pub fn set_priority(&self, priority: ThreadPriority) -> Result<(), ThreadError> {
@@ -1195,7 +1195,7 @@ mod tests {
     }
 
     #[test]
-    fn thread_working_area_size_accepts_chibios_minimum_and_refloat_sizes() {
+    fn thread_working_area_size_accepts_chibios_minimum_and_float_out_boy_sizes() {
         assert_eq!(
             ThreadWorkingAreaSize::try_from_bytes(416).unwrap().bytes(),
             416
@@ -1402,14 +1402,15 @@ mod tests {
 
     #[test]
     fn thread_name_exposes_rust_text_without_abi_terminator() {
-        let name = crate::thread_name!("Refloat Main");
+        let name = crate::thread_name!("Float Out Boy Main");
 
-        assert_eq!(name.as_str(), "Refloat Main");
+        assert_eq!(name.as_str(), "Float Out Boy Main");
         assert_eq!(
-            super::ThreadName::__from_terminated("Refloat Main\0").map(super::ThreadName::as_str),
-            Some("Refloat Main")
+            super::ThreadName::__from_terminated("Float Out Boy Main\0")
+                .map(super::ThreadName::as_str),
+            Some("Float Out Boy Main")
         );
-        assert!(super::ThreadName::__from_terminated("Refloat Main").is_none());
-        assert!(super::ThreadName::__from_terminated("Refloat\0 Main\0").is_none());
+        assert!(super::ThreadName::__from_terminated("Float Out Boy Main").is_none());
+        assert!(super::ThreadName::__from_terminated("Float Out Boy\0 Main\0").is_none());
     }
 }

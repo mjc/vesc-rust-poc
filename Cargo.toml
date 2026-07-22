@@ -8,13 +8,13 @@ members = [
     "crates/cargo-vescpkg",
     "examples/loopback",
     "examples/alloc-smoke",
-    "examples/refloat",
+    "examples/float-out-boy",
 ]
 default-members = [
     "crates/cargo-vescpkg",
     "examples/loopback",
     "examples/alloc-smoke",
-    "examples/refloat",
+    "examples/float-out-boy",
 ]
 resolver = "2"
 

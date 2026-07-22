@@ -913,7 +913,7 @@ fn app_data_helpers_forward_through_mock_table() {
 
 #[test]
 fn custom_config_helpers_forward_through_mock_table() {
-    // Refloat v1.2.1 registers these callbacks in `src/main.c:2456`, clears them
+    // Float Out Boy v1.2.1 registers these callbacks in `src/main.c:2456`, clears them
     // in `src/main.c:2403`, and gets the ABI slots from `vesc_pkg_lib/vesc_c_if.h:549-553`.
     with_populated_table(|| unsafe {
         conf_custom_add_config(custom_config_get, custom_config_set, custom_config_xml);
@@ -938,7 +938,7 @@ fn system_time_ticks_forwards_through_mock_table() {
 }
 
 #[test]
-fn system_time_ticks_falls_back_to_seconds_when_tick_slot_is_absent_like_refloat() {
+fn system_time_ticks_falls_back_to_seconds_when_tick_slot_is_absent_like_float_out_boy() {
     let mut table = populated_table();
     table.system_time_ticks = None;
 

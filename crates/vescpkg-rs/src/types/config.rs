@@ -191,8 +191,8 @@ impl CustomConfigOffset {
 
 /// Generated custom-config millisecond-duration field descriptor.
 ///
-/// C map: Refloat decodes generated unsigned 16-bit values in big-endian
-/// order at `third_party/refloat/src/conf/buffer.c:188-191`.
+/// C map: Float Out Boy decodes generated unsigned 16-bit values in big-endian
+/// order at `third_party/float-out-boy/src/conf/buffer.c:188-191`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct CustomConfigDurationField(CustomConfigOffset);
@@ -230,8 +230,8 @@ impl CustomConfigDurationField {
 
 /// Generated custom-config voltage field descriptor.
 ///
-/// C map: Refloat decodes generated unsigned 16-bit values in big-endian
-/// order at `third_party/refloat/src/conf/buffer.c:188-191`.
+/// C map: Float Out Boy decodes generated unsigned 16-bit values in big-endian
+/// order at `third_party/float-out-boy/src/conf/buffer.c:188-191`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct CustomConfigVoltageField(CustomConfigOffset);
@@ -269,8 +269,8 @@ impl CustomConfigVoltageField {
 
 /// Generated custom-config electrical-speed field descriptor.
 ///
-/// C map: Refloat decodes generated unsigned 16-bit values in big-endian
-/// order at `third_party/refloat/src/conf/buffer.c:188-191`.
+/// C map: Float Out Boy decodes generated unsigned 16-bit values in big-endian
+/// order at `third_party/float-out-boy/src/conf/buffer.c:188-191`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct CustomConfigElectricalSpeedField(CustomConfigOffset);
@@ -313,8 +313,8 @@ impl CustomConfigElectricalSpeedField {
 
 /// Generated custom-config sample-rate field descriptor.
 ///
-/// C map: Refloat decodes generated unsigned 16-bit values in big-endian
-/// order at `third_party/refloat/src/conf/buffer.c:188-191`.
+/// C map: Float Out Boy decodes generated unsigned 16-bit values in big-endian
+/// order at `third_party/float-out-boy/src/conf/buffer.c:188-191`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct CustomConfigSampleRateField(CustomConfigOffset);
@@ -451,8 +451,8 @@ impl CustomConfigResetField {
     }
 }
 
-// Refloat's generated float16 fields store a signed big-endian integer and a
-// generated scale. C map: `third_party/refloat/src/conf/buffer.c:182-210`.
+// Float Out Boy's generated float16 fields store a signed big-endian integer and a
+// generated scale. C map: `third_party/float-out-boy/src/conf/buffer.c:182-210`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct CustomConfigScaledField {
     offset: CustomConfigOffset,
