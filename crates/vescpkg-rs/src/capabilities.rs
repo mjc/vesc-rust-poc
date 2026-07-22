@@ -1,7 +1,11 @@
 //! Capability-aware safe subsystem constructors.
 
 use crate::ffi;
-use crate::{BatteryCellCount, CanBus, FocAudio, Nvm, NvmCapacity, Uart};
+use crate::{
+    BatteryCellCount, CanBus, Current, DutyCycleLimit, FocAudio, InputCurrent, InputVoltage,
+    MotorCurrentLimit, Nvm, NvmCapacity, Ratio, TemperatureLimitEnd, TemperatureLimitStart, Uart,
+    Voltage,
+};
 use core::fmt;
 use vescpkg_rs_sys::{AbiError, Stm32AbiRevision, VescIfCapabilities, VescIfPresence};
 
@@ -225,6 +229,62 @@ impl FirmwareSettings {
             .ok_or(SettingsError::Rejected {
                 operation: "float setting",
             })
+    }
+
+    /// Read the positive configured motor-current ceiling without erasing its domain.
+    pub fn motor_current_max(self) -> MotorCurrentLimit {
+        MotorCurrentLimit::new(Current::from_amps(
+            self.get_float(FirmwareFloatSetting::MotorCurrentMax),
+        ))
+    }
+
+    /// Read the positive configured motor-current floor magnitude.
+    pub fn motor_current_min(self) -> MotorCurrentLimit {
+        MotorCurrentLimit::new(Current::from_amps(
+            self.get_float(FirmwareFloatSetting::MotorCurrentMin),
+        ))
+    }
+
+    /// Read the configured battery/input current ceiling.
+    pub fn input_current_max(self) -> InputCurrent {
+        InputCurrent::new(Current::from_amps(
+            self.get_float(FirmwareFloatSetting::InputCurrentMax),
+        ))
+    }
+
+    /// Read the configured minimum input voltage.
+    pub fn input_voltage_min(self) -> InputVoltage {
+        InputVoltage::new(Voltage::from_volts(
+            self.get_float(FirmwareFloatSetting::MinimumInputVoltage),
+        ))
+    }
+
+    /// Read the configured maximum input voltage.
+    pub fn input_voltage_max(self) -> InputVoltage {
+        InputVoltage::new(Voltage::from_volts(
+            self.get_float(FirmwareFloatSetting::MaximumInputVoltage),
+        ))
+    }
+
+    /// Read the MOSFET temperature limit-start threshold.
+    pub fn mosfet_temperature_start(self) -> TemperatureLimitStart {
+        TemperatureLimitStart::new(crate::Temperature::from_degrees_celsius(
+            self.get_float(FirmwareFloatSetting::MosfetTemperatureStart),
+        ))
+    }
+
+    /// Read the MOSFET temperature limit-end threshold.
+    pub fn mosfet_temperature_end(self) -> TemperatureLimitEnd {
+        TemperatureLimitEnd::new(crate::Temperature::from_degrees_celsius(
+            self.get_float(FirmwareFloatSetting::MosfetTemperatureEnd),
+        ))
+    }
+
+    /// Read the configured maximum duty-cycle ratio, clamping malformed firmware output.
+    pub fn duty_cycle_limit(self) -> DutyCycleLimit {
+        DutyCycleLimit::new(Ratio::clamped(
+            self.get_float(FirmwareFloatSetting::MaxDuty),
+        ))
     }
 
     /// Read an integer setting from live firmware state.
