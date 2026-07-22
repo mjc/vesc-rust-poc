@@ -426,6 +426,23 @@ impl LispValue {
         unsafe { crate::ffi::lbm_is_cons(self.raw()) }
     }
 
+    /// Return whether this value is a proper nil-terminated LispBM list.
+    ///
+    /// This walks the cons chain because the pinned ABI exposes no separate
+    /// list predicate; an improper cons tail therefore returns `false`.
+    #[cfg(not(test))]
+    #[must_use]
+    pub fn is_list(self) -> bool {
+        let mut list = self.list();
+        loop {
+            match list.next_value() {
+                Ok(Some(_)) => {}
+                Ok(None) => return true,
+                Err(LispListError::ImproperTail) => return false,
+            }
+        }
+    }
+
     /// Return whether firmware classifies this value as a byte array.
     #[must_use]
     pub fn is_byte_array(self) -> bool {
