@@ -37,6 +37,27 @@ fn typed_settings_read_write_and_persist() {
             .as_revolutions_per_minute(),
         12_000.0
     );
+    assert_eq!(
+        settings
+            .electrical_speed_ramp_start()
+            .rpm()
+            .as_revolutions_per_minute(),
+        500.0
+    );
+    assert_eq!(
+        settings
+            .maximum_electrical_speed_brake()
+            .rpm()
+            .as_revolutions_per_minute(),
+        10_000.0
+    );
+    assert_eq!(
+        settings
+            .maximum_electrical_speed_brake_current()
+            .rpm()
+            .as_revolutions_per_minute(),
+        8_000.0
+    );
     assert_eq!(settings.gear_ratio().unwrap().as_f32(), 2.5);
     assert_eq!(settings.wheel_diameter().distance().as_meters(), 0.165);
     assert_eq!(settings.foc_motor_resistance().resistance().as_ohms(), 0.03);
@@ -122,6 +143,21 @@ fn typed_settings_read_write_and_persist() {
     settings
         .set_maximum_electrical_speed(vescpkg_rs::ElectricalSpeed::new(
             vescpkg_rs::Rpm::from_revolutions_per_minute(10_000.0),
+        ))
+        .unwrap();
+    settings
+        .set_electrical_speed_ramp_start(vescpkg_rs::ElectricalSpeed::new(
+            vescpkg_rs::Rpm::from_revolutions_per_minute(750.0),
+        ))
+        .unwrap();
+    settings
+        .set_maximum_electrical_speed_brake(vescpkg_rs::ElectricalSpeed::new(
+            vescpkg_rs::Rpm::from_revolutions_per_minute(9_000.0),
+        ))
+        .unwrap();
+    settings
+        .set_maximum_electrical_speed_brake_current(vescpkg_rs::ElectricalSpeed::new(
+            vescpkg_rs::Rpm::from_revolutions_per_minute(7_000.0),
         ))
         .unwrap();
     settings
@@ -218,6 +254,27 @@ fn typed_settings_read_write_and_persist() {
             .rpm()
             .as_revolutions_per_minute(),
         10_000.0
+    );
+    assert_eq!(
+        settings
+            .electrical_speed_ramp_start()
+            .rpm()
+            .as_revolutions_per_minute(),
+        750.0
+    );
+    assert_eq!(
+        settings
+            .maximum_electrical_speed_brake()
+            .rpm()
+            .as_revolutions_per_minute(),
+        9_000.0
+    );
+    assert_eq!(
+        settings
+            .maximum_electrical_speed_brake_current()
+            .rpm()
+            .as_revolutions_per_minute(),
+        7_000.0
     );
     assert_eq!(settings.gear_ratio().unwrap().as_f32(), 3.0);
     assert_eq!(settings.wheel_diameter().distance().as_meters(), 0.2);
