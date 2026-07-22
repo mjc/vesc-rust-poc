@@ -72,3 +72,15 @@ fn can_bus_pings_and_reports_remote_hardware_type() {
         CanHardwareType::Vesc
     );
 }
+
+#[test]
+fn can_bus_copies_status_message_two() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    let status = firmware
+        .can()
+        .status2(CanControllerId::new(7))
+        .expect("CAN status message 2");
+
+    assert_eq!(status.amp_hours_discharged().charge().as_amp_hours(), 1.25);
+    assert_eq!(status.amp_hours_charged().charge().as_amp_hours(), 2.5);
+}
