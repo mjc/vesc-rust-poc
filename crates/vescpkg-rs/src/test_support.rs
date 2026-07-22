@@ -103,6 +103,12 @@ impl FirmwareTest {
         self.firmware.inputs()
     }
 
+    /// Borrow the same typed settings capability package code uses on hardware.
+    #[must_use]
+    pub const fn settings(&self) -> &crate::FirmwareSettings {
+        &crate::FirmwareSettings
+    }
+
     /// Borrow the firmware clock capability used on hardware.
     #[must_use]
     pub fn clock(&self) -> &crate::FirmwareClock {
@@ -195,6 +201,16 @@ impl FirmwareTest {
     /// Configure whether the fake firmware exposes shutdown inhibition.
     pub fn set_shutdown_disable_supported(&self, supported: bool) {
         crate::test_ffi::set_shutdown_disable_supported(supported);
+    }
+
+    /// Make the fake firmware reject configuration writes.
+    pub fn fail_settings_writes(&self) {
+        crate::test_ffi::set_settings_write_ok(false);
+    }
+
+    /// Make the fake firmware reject configuration persistence.
+    pub fn fail_settings_store(&self) {
+        crate::test_ffi::set_settings_store_ok(false);
     }
 
     /// Return whether fake firmware automatic shutdown is currently inhibited.

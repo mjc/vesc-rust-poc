@@ -143,21 +143,23 @@ pub(crate) mod ffi {
         mc_temp_fet_filtered, mc_temp_motor_filtered, mc_update_pid_pos_offset,
         mc_wait_for_motor_release, packet_init, packet_process_byte, packet_reset,
         packet_send_packet, plot_add_graph, plot_init, plot_send_points, plot_set_graph,
-        read_eeprom_word, read_nvm, shutdown_disable, store_eeprom_word,
-        terminal_register_command_callback, terminal_unregister_callback, uart_read, uart_start,
-        uart_write, vesc_free, vesc_imu_get_quaternions, vesc_mutex_create, vesc_mutex_lock,
-        vesc_mutex_unlock, vesc_request_terminate, vesc_sem_create, vesc_sem_reset,
-        vesc_sem_signal, vesc_sem_wait, vesc_sem_wait_to, vesc_should_terminate, vesc_sleep_us,
-        vesc_spawn, vesc_system_time_seconds, vesc_system_time_ticks, vesc_thread_set_priority,
-        vesc_timer_seconds_elapsed_since, vesc_timer_time_now, vesc_timestamp_age_seconds,
-        wipe_nvm, write_nvm,
+        read_eeprom_word, read_nvm, set_cfg_float, set_cfg_int, shutdown_disable, store_cfg,
+        store_eeprom_word, terminal_register_command_callback, terminal_unregister_callback,
+        uart_read, uart_start, uart_write, vesc_free, vesc_imu_get_quaternions, vesc_mutex_create,
+        vesc_mutex_lock, vesc_mutex_unlock, vesc_request_terminate, vesc_sem_create,
+        vesc_sem_reset, vesc_sem_signal, vesc_sem_wait, vesc_sem_wait_to, vesc_should_terminate,
+        vesc_sleep_us, vesc_spawn, vesc_system_time_seconds, vesc_system_time_ticks,
+        vesc_thread_set_priority, vesc_timer_seconds_elapsed_since, vesc_timer_time_now,
+        vesc_timestamp_age_seconds, wipe_nvm, write_nvm,
     };
     #[cfg(any(test, not(feature = "test-support")))]
     use vescpkg_rs_sys::raw as selected_ffi;
 }
 
 /// Capability-safe ABI inspection for loaders and host fixtures.
-pub use capabilities::{FirmwareCapabilities, FirmwareSettings};
+pub use capabilities::{
+    FirmwareCapabilities, FirmwareFloatSetting, FirmwareIntSetting, FirmwareSettings, SettingsError,
+};
 pub use vesc_protocol::buffer as protocol_buffer;
 pub use vescpkg_rs_sys::{AbiError, Stm32AbiRevision, VescIfPresence};
 use vescpkg_rs_units as units;
@@ -264,15 +266,16 @@ pub mod prelude {
         CommandReplyHandler, Commands, ConfigBytes, ConfigXml, DigitalOutputLevel, DigitalPin,
         Encoder, EncoderError, EncoderHandler, EncoderRegistration, ExtensionDescriptor,
         ExtensionName, ExtensionRegistration, Firmware, FirmwareAppData, FirmwareCapabilities,
-        FirmwareClock, FirmwareInputs, FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore,
-        FirmwareSettings, FirmwareThread, FirmwareThreads, Gnss, GnssError, GnssSnapshot, Gpio,
-        Imu, ImuReadHandler, LbmExtension, LispArgs, LispIntegerError, LispValue, MotorOutput,
-        MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset, PackageRuntimeState, PackageStart,
-        PackageStartError, PacketCodec, PacketError, PacketHandler, Plot, PlotError,
-        StatefulCustomConfigCallback, StatefulLbmExtension, StatelessFirmwareThread,
-        StatelessThreadContext, Terminal, TerminalError, TerminalHandler, TerminalRegistration,
-        ThreadContext, ThreadError, ThreadName, ThreadSpec, ThreadWorkingAreaSize,
-        ThreadWorkingAreaSizeError, TimerInstant, Uart, UartError, UartLease,
+        FirmwareClock, FirmwareFloatSetting, FirmwareInputs, FirmwareIntSetting, FirmwareMutex,
+        FirmwareMutexGuard, FirmwareSemaphore, FirmwareSettings, FirmwareThread, FirmwareThreads,
+        Gnss, GnssError, GnssSnapshot, Gpio, Imu, ImuReadHandler, LbmExtension, LispArgs,
+        LispIntegerError, LispValue, MotorOutput, MotorTelemetry, Nvm, NvmCapacity, NvmError,
+        NvmOffset, PackageRuntimeState, PackageStart, PackageStartError, PacketCodec, PacketError,
+        PacketHandler, Plot, PlotError, SettingsError, StatefulCustomConfigCallback,
+        StatefulLbmExtension, StatelessFirmwareThread, StatelessThreadContext, Terminal,
+        TerminalError, TerminalHandler, TerminalRegistration, ThreadContext, ThreadError,
+        ThreadName, ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant,
+        Uart, UartError, UartLease,
     };
 }
 

@@ -1,6 +1,8 @@
 //! Capability-aware safe subsystem constructors.
 
+use crate::ffi;
 use crate::{CanBus, FocAudio, Nvm, NvmCapacity, Uart};
+use core::fmt;
 use vescpkg_rs_sys::{AbiError, Stm32AbiRevision, VescIfCapabilities, VescIfPresence};
 
 /// Observed firmware capabilities used to construct safe subsystem handles.
@@ -9,9 +11,110 @@ pub struct FirmwareCapabilities {
     inner: VescIfCapabilities,
 }
 
-/// Checked settings capability marker.
+/// A floating-point firmware setting exposed by the pinned VESC ABI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FirmwareFloatSetting {
+    /// Maximum motor current (`CFG_PARAM_l_current_max`).
+    MotorCurrentMax,
+    /// Minimum motor current (`CFG_PARAM_l_current_min`).
+    MotorCurrentMin,
+    /// MOSFET temperature limit-start threshold.
+    MosfetTemperatureStart,
+    /// Motor temperature limit-start threshold.
+    MotorTemperatureStart,
+    /// Maximum duty-cycle limit.
+    MaxDuty,
+}
+
+impl FirmwareFloatSetting {
+    const fn raw(self) -> i32 {
+        match self {
+            Self::MotorCurrentMax => 0,
+            Self::MotorCurrentMin => 1,
+            Self::MosfetTemperatureStart => 16,
+            Self::MotorTemperatureStart => 18,
+            Self::MaxDuty => 22,
+        }
+    }
+}
+
+/// An integer firmware setting exposed by the pinned VESC ABI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FirmwareIntSetting {
+    /// Battery cell count (`CFG_PARAM_si_battery_cells`).
+    BatteryCellCount,
+}
+
+impl FirmwareIntSetting {
+    const fn raw(self) -> i32 {
+        match self {
+            Self::BatteryCellCount => 43,
+        }
+    }
+}
+
+/// Error returned when firmware rejects a settings write or persistence request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsError {
+    /// The firmware rejected the requested operation.
+    Rejected {
+        /// Operation rejected by firmware.
+        operation: &'static str,
+    },
+}
+
+impl fmt::Display for SettingsError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Rejected { operation } => write!(formatter, "firmware rejected {operation}"),
+        }
+    }
+}
+
+impl core::error::Error for SettingsError {}
+
+/// Checked settings capability backed by the live VESC configuration slots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FirmwareSettings;
+
+impl FirmwareSettings {
+    /// Read a floating-point setting from live firmware state.
+    pub fn get_float(self, setting: FirmwareFloatSetting) -> f32 {
+        unsafe { ffi::get_cfg_float(setting.raw()) }
+    }
+
+    /// Write a floating-point setting to live firmware state.
+    pub fn set_float(self, setting: FirmwareFloatSetting, value: f32) -> Result<(), SettingsError> {
+        unsafe { ffi::set_cfg_float(setting.raw(), value) }
+            .then_some(())
+            .ok_or(SettingsError::Rejected {
+                operation: "float setting",
+            })
+    }
+
+    /// Read an integer setting from live firmware state.
+    pub fn get_int(self, setting: FirmwareIntSetting) -> i32 {
+        unsafe { ffi::get_cfg_int(setting.raw()) }
+    }
+
+    /// Write an integer setting to live firmware state.
+    pub fn set_int(self, setting: FirmwareIntSetting, value: i32) -> Result<(), SettingsError> {
+        unsafe { ffi::set_cfg_int(setting.raw(), value) }
+            .then_some(())
+            .ok_or(SettingsError::Rejected {
+                operation: "integer setting",
+            })
+    }
+
+    /// Persist all accepted setting writes in firmware storage.
+    pub fn store(self) -> Result<(), SettingsError> {
+        unsafe { ffi::store_cfg() }
+            .then_some(())
+            .ok_or(SettingsError::Rejected {
+                operation: "settings persistence",
+            })
+    }
+}
 
 impl FirmwareCapabilities {
     /// Construct capabilities from one bounded table-presence snapshot.

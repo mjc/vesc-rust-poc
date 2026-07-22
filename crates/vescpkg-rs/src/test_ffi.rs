@@ -120,6 +120,8 @@ static MOSFET_TEMPERATURE_LIMIT_START: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE_LIMIT_START: AtomicU32 = AtomicU32::new(0);
 static DUTY_CYCLE_LIMIT: AtomicU32 = AtomicU32::new(0);
 static BATTERY_CELL_COUNT: AtomicI32 = AtomicI32::new(0);
+static CONFIG_WRITE_OK: AtomicBool = AtomicBool::new(true);
+static CONFIG_STORE_OK: AtomicBool = AtomicBool::new(true);
 static INPUT_CURRENT: AtomicU32 = AtomicU32::new(0);
 static DUTY_CYCLE: AtomicU32 = AtomicU32::new(0);
 static FOC_ID_CURRENT: AtomicU32 = AtomicU32::new(0);
@@ -296,6 +298,8 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     MOTOR_TEMPERATURE_LIMIT_START.store(85.0_f32.to_bits(), Ordering::Relaxed);
     DUTY_CYCLE_LIMIT.store(0.95_f32.to_bits(), Ordering::Relaxed);
     BATTERY_CELL_COUNT.store(0, Ordering::Relaxed);
+    CONFIG_WRITE_OK.store(true, Ordering::Relaxed);
+    CONFIG_STORE_OK.store(true, Ordering::Relaxed);
     INPUT_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
     DUTY_CYCLE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     FOC_ID_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -1166,6 +1170,14 @@ pub(crate) fn shutdown_disabled() -> bool {
     SHUTDOWN_DISABLED.load(Ordering::Relaxed)
 }
 
+pub(crate) fn set_settings_write_ok(ok: bool) {
+    CONFIG_WRITE_OK.store(ok, Ordering::Relaxed);
+}
+
+pub(crate) fn set_settings_store_ok(ok: bool) {
+    CONFIG_STORE_OK.store(ok, Ordering::Relaxed);
+}
+
 pub unsafe fn mc_set_current_off_delay(seconds: f32) {
     CURRENT_OFF_DELAY_COUNT.fetch_add(1, Ordering::Relaxed);
     CURRENT_OFF_DELAY.store(seconds.to_bits(), Ordering::Relaxed);
@@ -1312,6 +1324,36 @@ pub unsafe fn get_cfg_int(param: i32) -> i32 {
         43 => BATTERY_CELL_COUNT.load(Ordering::Relaxed),
         _ => 0,
     }
+}
+
+pub unsafe fn set_cfg_float(param: i32, value: f32) -> bool {
+    if !CONFIG_WRITE_OK.load(Ordering::Relaxed) {
+        return false;
+    }
+    match param {
+        0 => MOTOR_CURRENT_MAX.store(value.to_bits(), Ordering::Relaxed),
+        1 => MOTOR_CURRENT_MIN.store(value.to_bits(), Ordering::Relaxed),
+        16 => MOSFET_TEMPERATURE_LIMIT_START.store(value.to_bits(), Ordering::Relaxed),
+        18 => MOTOR_TEMPERATURE_LIMIT_START.store(value.to_bits(), Ordering::Relaxed),
+        22 => DUTY_CYCLE_LIMIT.store(value.to_bits(), Ordering::Relaxed),
+        _ => return false,
+    }
+    true
+}
+
+pub unsafe fn set_cfg_int(param: i32, value: i32) -> bool {
+    if !CONFIG_WRITE_OK.load(Ordering::Relaxed) {
+        return false;
+    }
+    match param {
+        43 => BATTERY_CELL_COUNT.store(value, Ordering::Relaxed),
+        _ => return false,
+    }
+    true
+}
+
+pub unsafe fn store_cfg() -> bool {
+    CONFIG_STORE_OK.load(Ordering::Relaxed)
 }
 
 pub unsafe fn mc_get_tot_current_in_filtered() -> f32 {
