@@ -764,6 +764,9 @@ pub trait FirmwareThreads: private::FirmwareThreads {
     /// Sleep the current package thread for a duration.
     fn sleep_for(&self, duration: Duration);
 
+    /// Sleep the current package thread for a number of microseconds.
+    fn sleep_for_micros(&self, micros: u64);
+
     /// Set the current package thread priority when supported by firmware.
     ///
     /// # Errors
@@ -881,6 +884,10 @@ impl<B: ThreadBindings> FirmwareThreads for ThreadApi<B> {
         self.sleep_for(duration);
     }
 
+    fn sleep_for_micros(&self, micros: u64) {
+        self.sleep_for_micros(micros);
+    }
+
     fn set_priority(&self, priority: ThreadPriority) -> Result<(), ThreadError> {
         self.set_priority(priority)
     }
@@ -954,7 +961,15 @@ impl<B: ThreadBindings> ThreadApi<B> {
     /// Float Out Boy's main runtime thread sleeps with `VESC_IF->sleep_us` at
     /// `src/main.c:1080`.
     pub fn sleep_for(&self, duration: Duration) {
-        let mut micros = duration.as_nanos().div_ceil(1_000);
+        self.sleep_for_micros(duration.as_nanos().div_ceil(1_000) as u64);
+    }
+
+    /// Sleep the current package thread for a checked number of microseconds.
+    ///
+    /// VESC's native sleep slot accepts a 32-bit count. Long waits are split
+    /// into safe chunks so package code cannot silently truncate a duration.
+    pub fn sleep_for_micros(&self, micros: u64) {
+        let mut micros = u128::from(micros);
         while micros != 0 {
             // `Duration` counts nanoseconds with `u128`, while the C firmware
             // accepts only a `uint32_t` microsecond chunk, and its ChibiOS
@@ -1202,6 +1217,10 @@ mod tests {
             u64::from(VESC_MAX_SAFE_SLEEP_MICROS) + 1,
         ));
         assert_eq!(overflow.sleep_micros.get(), [VESC_MAX_SAFE_SLEEP_MICROS, 1]);
+
+        let direct = FakeThreadBindings::new();
+        ThreadApi::new(&direct).sleep_for_micros(u64::from(VESC_MAX_SAFE_SLEEP_MICROS) + 1);
+        assert_eq!(direct.sleep_micros.get(), [VESC_MAX_SAFE_SLEEP_MICROS, 1]);
     }
 
     #[test]
