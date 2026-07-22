@@ -37,6 +37,8 @@ The safe LispBM surface follows the pinned `vesc_c_if.h` table:
   accepted only when it round-trips exactly through the firmware `f32` encoder;
 - 64-bit values are constructed through `LispFlatValue::push_i64` and
   `push_u64`, because the pinned table has no direct scalar 64-bit slots;
+- immediate integer flattening uses the distinct compact `f_i` constructor via
+  `LispFlatValue::push_i`;
 - the header has no callable array-header/data accessor, so the SDK does not
   expose an unsound borrowed array slice.
 - evaluation pause/continue and pause-state observation are exposed as named
