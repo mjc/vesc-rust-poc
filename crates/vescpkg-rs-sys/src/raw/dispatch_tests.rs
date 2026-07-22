@@ -1,7 +1,7 @@
 #![allow(clippy::missing_transmute_annotations)]
 
 use core::cell::Cell;
-use core::ffi::{CStr, c_char, c_int, c_uchar, c_uint, c_void};
+use core::ffi::{c_char, c_int, c_uchar, c_uint, c_void};
 
 use crate::c_vesc_if;
 use crate::test_support::{empty_table, with_table};
@@ -159,7 +159,6 @@ static MC_GET_TOT_CURRENT_DIRECTIONAL_FILTERED: SyncCounter = SyncCounter::new()
 static MC_GET_TOT_CURRENT_IN_FILTERED: SyncCounter = SyncCounter::new();
 static MC_GET_DUTY_CYCLE_NOW: SyncCounter = SyncCounter::new();
 static FOC_GET_ID: SyncCounter = SyncCounter::new();
-static FOC_PLAY_TONE: SyncCounter = SyncCounter::new();
 static MC_TEMP_FET_FILTERED: SyncCounter = SyncCounter::new();
 static MC_TEMP_MOTOR_FILTERED: SyncCounter = SyncCounter::new();
 static MC_GET_AMP_HOURS: SyncCounter = SyncCounter::new();
@@ -169,7 +168,6 @@ static MC_GET_WATT_HOURS_CHARGED: SyncCounter = SyncCounter::new();
 static MC_GET_BATTERY_LEVEL: SyncCounter = SyncCounter::new();
 static MC_GET_ODOMETER: SyncCounter = SyncCounter::new();
 static MC_GET_FAULT: SyncCounter = SyncCounter::new();
-static MC_FAULT_TO_STRING: SyncCounter = SyncCounter::new();
 static MC_GET_INPUT_VOLTAGE_FILTERED: SyncCounter = SyncCounter::new();
 static READ_EEPROM_VAR: SyncCounter = SyncCounter::new();
 static STORE_EEPROM_VAR: SyncCounter = SyncCounter::new();
@@ -180,9 +178,6 @@ static LAST_LBM_VALUE: SyncU32 = SyncU32::new();
 static LAST_SLEEP_US: SyncU32 = SyncU32::new();
 static LAST_THREAD_PRIORITY: SyncI32 = SyncI32::new();
 static LAST_FOC_ID: SyncF32 = SyncF32::new();
-static LAST_FOC_TONE_CHANNEL: SyncI32 = SyncI32::new();
-static LAST_FOC_TONE_FREQUENCY: SyncF32 = SyncF32::new();
-static LAST_FOC_TONE_VOLTAGE: SyncF32 = SyncF32::new();
 static LAST_HANDLER_INSTALLED: SyncBool = SyncBool::new();
 static LAST_CUSTOM_CONFIG_DEFAULT: SyncBool = SyncBool::new();
 static LAST_EEPROM_ADDRESS: SyncI32 = SyncI32::new();
@@ -239,7 +234,6 @@ fn reset_counters() {
         &MC_GET_TOT_CURRENT_IN_FILTERED,
         &MC_GET_DUTY_CYCLE_NOW,
         &FOC_GET_ID,
-        &FOC_PLAY_TONE,
         &MC_GET_DISTANCE_ABS,
         &MC_TEMP_FET_FILTERED,
         &MC_TEMP_MOTOR_FILTERED,
@@ -250,7 +244,6 @@ fn reset_counters() {
         &MC_GET_BATTERY_LEVEL,
         &MC_GET_ODOMETER,
         &MC_GET_FAULT,
-        &MC_FAULT_TO_STRING,
         &MC_GET_INPUT_VOLTAGE_FILTERED,
         &READ_EEPROM_VAR,
         &STORE_EEPROM_VAR,
@@ -265,9 +258,6 @@ fn reset_counters() {
     LAST_SLEEP_US.set(0);
     LAST_THREAD_PRIORITY.set(0);
     LAST_FOC_ID.set(0.0);
-    LAST_FOC_TONE_CHANNEL.set(0);
-    LAST_FOC_TONE_FREQUENCY.set(0.0);
-    LAST_FOC_TONE_VOLTAGE.set(0.0);
     LAST_HANDLER_INSTALLED.set(false);
     LAST_CUSTOM_CONFIG_DEFAULT.set(false);
     LAST_EEPROM_ADDRESS.set(0);
@@ -401,14 +391,6 @@ extern "C" fn stub_get_remote_state() -> RemoteState {
         is_rev: true,
         age_s: 0.5,
     }
-}
-
-extern "C" fn stub_get_ppm() -> f32 {
-    0.25
-}
-
-extern "C" fn stub_get_ppm_age() -> f32 {
-    0.75
 }
 
 extern "C" fn stub_set_app_data_handler(handler: Option<AppDataHandler>) -> bool {
@@ -557,14 +539,6 @@ extern "C" fn stub_foc_get_id() -> f32 {
     1.5
 }
 
-extern "C" fn stub_foc_play_tone(channel: c_int, frequency: f32, voltage: f32) -> bool {
-    FOC_PLAY_TONE.inc();
-    LAST_FOC_TONE_CHANNEL.set(channel);
-    LAST_FOC_TONE_FREQUENCY.set(frequency);
-    LAST_FOC_TONE_VOLTAGE.set(voltage);
-    true
-}
-
 extern "C" fn stub_mc_temp_fet_filtered() -> f32 {
     MC_TEMP_FET_FILTERED.inc();
     44.0
@@ -611,11 +585,6 @@ extern "C" fn stub_mc_get_odometer() -> u64 {
 extern "C" fn stub_mc_get_fault() -> FaultCode {
     MC_GET_FAULT.inc();
     FaultCode(5)
-}
-
-extern "C" fn stub_mc_fault_to_string(_code: c_uint) -> *const c_char {
-    MC_FAULT_TO_STRING.inc();
-    c"FAULT_CODE_OVER_TEMP_FET".as_ptr()
 }
 
 extern "C" fn stub_mc_get_input_voltage_filtered() -> f32 {
@@ -690,8 +659,6 @@ fn populated_table() -> VescIf {
     table.can_transmit_eid = Some(stub_can_transmit_eid);
     table.mc_gnss = Some(stub_mc_gnss);
     table.get_remote_state = Some(stub_get_remote_state);
-    table.get_ppm = Some(stub_get_ppm);
-    table.get_ppm_age = Some(stub_get_ppm_age);
     table.set_app_data_handler = Some(stub_set_app_data_handler);
     table.send_app_data = Some(stub_send_app_data);
     install!(conf_custom_add_config, stub_conf_custom_add_config);
@@ -715,7 +682,6 @@ fn populated_table() -> VescIf {
     table.mc_get_tot_current_in_filtered = Some(stub_mc_get_tot_current_in_filtered);
     table.mc_get_duty_cycle_now = Some(stub_mc_get_duty_cycle_now);
     table.foc_get_id = Some(stub_foc_get_id);
-    table.foc_play_tone = Some(stub_foc_play_tone);
     table.mc_get_distance_abs = Some(stub_mc_get_distance_abs);
     table.mc_temp_fet_filtered = Some(stub_mc_temp_fet_filtered);
     table.mc_temp_motor_filtered = Some(stub_mc_temp_motor_filtered);
@@ -1011,29 +977,11 @@ fn gnss_and_remote_loaders_copy_firmware_owned_records() {
         assert_eq!(gnss.lon, -105.2705);
         assert_eq!(gnss.last_update, 9876);
 
-        let remote = remote_state().expect("mock remote record");
+        let remote = remote_state();
         assert_eq!(remote.js_x, -0.25);
         assert_eq!(remote.js_y, 0.75);
         assert!(remote.bt_c);
         assert!(remote.is_rev);
-    });
-}
-
-#[test]
-fn input_slots_report_absence_instead_of_panicking_on_older_tables() {
-    let table = empty_table();
-    with_table(&table, || unsafe {
-        assert!(remote_state().is_none());
-        assert!(get_ppm().is_none());
-        assert!(get_ppm_age().is_none());
-    });
-}
-
-#[test]
-fn input_slots_forward_through_a_populated_table() {
-    with_populated_table(|| unsafe {
-        assert_eq!(get_ppm(), Some(0.25));
-        assert_eq!(get_ppm_age(), Some(0.75));
     });
 }
 
@@ -1233,7 +1181,6 @@ fn motor_data_helpers_forward_through_mock_table() {
         assert_eq!(MC_GET_BATTERY_LEVEL.get(), 1);
         assert_eq!(MC_GET_ODOMETER.get(), 1);
         assert_eq!(MC_GET_FAULT.get(), 1);
-        assert_eq!(MC_FAULT_TO_STRING.get(), 1);
         assert_eq!(MC_GET_INPUT_VOLTAGE_FILTERED.get(), 1);
     });
 }

@@ -39,11 +39,6 @@ fn firmware_ratio(value: f32) -> SignedRatio {
 }
 
 impl ControllerInput {
-    #[cfg(not(test))]
-    pub(crate) const fn new() -> Self {
-        Self
-    }
-
     /// Return the latest decoded PPM input and its age.
     pub fn ppm(&self) -> (PpmInput, PpmAge) {
         // C map: Float Out Boy reads these VESC slots in
@@ -61,8 +56,7 @@ impl ControllerInput {
         // C map: Float Out Boy reads the remote-state slot in
         // `third_party/float-out-boy/src/remote.c:43-48`.
         let remote = unsafe { crate::ffi::remote_state() };
-        let (joystick_y, age) =
-            remote.map_or((0.0, f32::INFINITY), |remote| (remote.js_y, remote.age_s));
+        let (joystick_y, age) = (remote.js_y, remote.age_s);
         RemoteInput::new(
             JoystickY::new(firmware_ratio(joystick_y)),
             RemoteAge::new(VescSeconds::from_seconds(age.max(0.0))),

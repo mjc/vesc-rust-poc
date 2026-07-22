@@ -20,12 +20,20 @@ const SCALAR_FIELDS: [&str; 5] = [
 
 static LIBCLANG_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
+fn pinned_header() -> PathBuf {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace_header = manifest_dir.join("../..").join(VescIfAbi::SOURCE_HEADER);
+    if workspace_header.exists() {
+        workspace_header
+    } else {
+        manifest_dir.join("vendor/vesc_pkg_lib/vesc_c_if.h")
+    }
+}
+
 #[test]
 fn libclang_agrees_with_generated_vesc_if_inventory() {
     let _guard = LIBCLANG_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-    let header = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join(VescIfAbi::SOURCE_HEADER);
+    let header = pinned_header();
     let clang = Clang::new().expect("load libclang; enter the Nix dev shell");
     let index = Index::new(&clang, false, false);
     let translation_unit = index
@@ -100,9 +108,7 @@ fn is_function_pointer(ty: Type<'_>) -> bool {
 #[test]
 fn concrete_abi_type_sizes_match_the_pinned_header() {
     let _guard = LIBCLANG_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-    let header = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join(VescIfAbi::SOURCE_HEADER);
+    let header = pinned_header();
     let clang = Clang::new().expect("load libclang; enter the Nix dev shell");
     let index = Index::new(&clang, false, false);
     let translation_unit = index
@@ -157,9 +163,7 @@ fn concrete_abi_type_sizes_match_the_pinned_header() {
 #[test]
 fn concrete_abi_field_offsets_match_the_pinned_header() {
     let _guard = LIBCLANG_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-    let header = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join(VescIfAbi::SOURCE_HEADER);
+    let header = pinned_header();
     let clang = Clang::new().expect("load libclang; enter the Nix dev shell");
     let index = Index::new(&clang, false, false);
     let translation_unit = index

@@ -43,11 +43,15 @@ Express container/loader contract. Rust-side target metadata is now available
 for that integration, while the Express-specific compiler/linker/package path
 and device installation proof remain intentionally open.
 
-`ExpressNativeContainer` validates the pinned ESP32-S3 relocatable container
-header, little-endian region metadata, bounded code/data regions, and
-region-relative relocation offsets without allocating or applying patches. It
-is a checked input boundary for the future ESP-IDF/package builder, not a host
-loader or a substitute for target execution.
+`ExpressNativeXipImage` validates the pinned XIP shape (big-endian magic,
+loader-required minimum length, and the eight-byte magic/program-address
+header). `ExpressNativeContainer` validates the pinned ESP32-S3 relocatable
+container header, little-endian region metadata, bounded code/data regions, and
+region-relative relocation offsets without allocating or applying patches.
+`ExpressNativeImage::parse` selects exactly one of those views from the target's
+load-kind metadata, so a C3/C6/P4 XIP image cannot be passed as an S3 container
+or vice versa. These are checked input boundaries for the future ESP-IDF/package
+builder, not host loaders or substitutes for target execution.
 
 ## Current implementation boundary
 

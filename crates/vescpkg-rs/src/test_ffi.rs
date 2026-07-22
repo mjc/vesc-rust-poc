@@ -68,15 +68,22 @@ pub unsafe fn io_read_analog(pin: VescPin) -> f32 {
 }
 
 pub unsafe fn remote_state() -> RemoteState {
-    REMOTE_STATE
+    RemoteState {
+        js_x: REMOTE_STATE.js_x,
+        js_y: load(&REMOTE_INPUT_Y),
+        bt_c: REMOTE_STATE.bt_c,
+        bt_z: REMOTE_STATE.bt_z,
+        is_rev: REMOTE_STATE.is_rev,
+        age_s: load(&REMOTE_AGE),
+    }
 }
 
 pub unsafe fn get_ppm() -> Option<f32> {
-    Some(0.5)
+    Some(load(&PPM_INPUT))
 }
 
 pub unsafe fn get_ppm_age() -> Option<f32> {
-    Some(0.1)
+    Some(load(&PPM_AGE))
 }
 
 pub unsafe fn app_is_output_disabled() -> Option<bool> {
@@ -102,7 +109,6 @@ static CURRENT_OFF_DELAY_COUNT: AtomicUsize = AtomicUsize::new(0);
 static CURRENT_COUNT: AtomicUsize = AtomicUsize::new(0);
 static DUTY_COUNT: AtomicUsize = AtomicUsize::new(0);
 static BRAKE_CURRENT_COUNT: AtomicUsize = AtomicUsize::new(0);
-static FOC_TONE_COUNT: AtomicUsize = AtomicUsize::new(0);
 static CURRENT_OFF_DELAY: AtomicU32 = AtomicU32::new(0);
 static CURRENT: AtomicU32 = AtomicU32::new(0);
 static DUTY: AtomicU32 = AtomicU32::new(0);
@@ -305,14 +311,10 @@ pub(crate) struct MotorOutputState {
     pub current_count: usize,
     pub duty_count: usize,
     pub brake_current_count: usize,
-    pub foc_tone_count: usize,
     pub current_off_delay: f32,
     pub current: f32,
     pub duty: f32,
     pub brake_current: f32,
-    pub foc_tone_channel: i32,
-    pub foc_tone_frequency: f32,
-    pub foc_tone_voltage: f32,
 }
 
 pub(crate) struct FirmwareLockGuard;
@@ -402,6 +404,7 @@ fn reset_selector_settings() {
     MOTOR_POLE_COUNT.store(14, Ordering::Relaxed);
 }
 
+#[allow(clippy::too_many_lines)]
 pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     while LOCKED
         .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -414,14 +417,10 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     CURRENT_COUNT.store(0, Ordering::Relaxed);
     DUTY_COUNT.store(0, Ordering::Relaxed);
     BRAKE_CURRENT_COUNT.store(0, Ordering::Relaxed);
-    FOC_TONE_COUNT.store(0, Ordering::Relaxed);
     CURRENT_OFF_DELAY.store(0.0_f32.to_bits(), Ordering::Relaxed);
     CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
     DUTY.store(0.0_f32.to_bits(), Ordering::Relaxed);
     BRAKE_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    FOC_TONE_CHANNEL.store(0, Ordering::Relaxed);
-    FOC_TONE_FREQUENCY.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    FOC_TONE_VOLTAGE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     ELECTRICAL_SPEED.store(0.0_f32.to_bits(), Ordering::Relaxed);
     VEHICLE_SPEED.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -478,6 +477,10 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     BATTERY_LEVEL.store(0.0_f32.to_bits(), Ordering::Relaxed);
     FIRMWARE_FAULT.store(0, Ordering::Relaxed);
     INPUT_VOLTAGE.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    PPM_INPUT.store(0.5_f32.to_bits(), Ordering::Relaxed);
+    PPM_AGE.store(0.1_f32.to_bits(), Ordering::Relaxed);
+    REMOTE_INPUT_Y.store(0.75_f32.to_bits(), Ordering::Relaxed);
+    REMOTE_AGE.store(0.2_f32.to_bits(), Ordering::Relaxed);
     reset_imu_state();
     reset_thread_state();
     EEPROM_PRESENT
@@ -596,7 +599,6 @@ pub unsafe fn write_nvm(buffer: *mut u8, len: u32, address: u32) -> Option<bool>
     Some(true)
 }
 
-#[allow(clippy::unnecessary_wraps)] // fake preserves nullable firmware NVM slot shape
 pub unsafe fn wipe_nvm() -> Option<bool> {
     if !NVM_AVAILABLE.load(Ordering::Relaxed) {
         return None;
@@ -650,7 +652,7 @@ pub unsafe fn lbm_dec_char(value: LbmValue) -> u8 {
 }
 
 pub unsafe fn lbm_enc_char(value: u8) -> LbmValue {
-    LbmValue(u32::from(value) << 4 | 0x04)
+    LbmValue((value as u32) << 4 | 0x04)
 }
 
 pub unsafe fn lbm_enc_u32(value: u32) -> LbmValue {
@@ -829,12 +831,12 @@ pub unsafe fn lbm_is_symbol(value: LbmValue) -> bool {
     value.0 == 0x40
 }
 
-pub unsafe fn lbm_is_cons(value: LbmValue) -> bool {
-    value.0 == 0x20
+pub unsafe fn lbm_is_cons(_value: LbmValue) -> bool {
+    _value.0 == 0x20
 }
 
-pub unsafe fn lbm_is_byte_array(value: LbmValue) -> bool {
-    value.0 == LBM_BYTE_ARRAY
+pub unsafe fn lbm_is_byte_array(_value: LbmValue) -> bool {
+    _value.0 == LBM_BYTE_ARRAY
 }
 
 pub unsafe fn lbm_create_byte_array(value: *mut LbmValue, _len: u32) -> bool {
@@ -1116,11 +1118,6 @@ pub(crate) fn set_motor_current_limits(max: MotorCurrentLimit, min: MotorCurrent
     store(&MOTOR_CURRENT_MIN, -min.current().as_amps());
 }
 
-pub(crate) fn set_input_current_limits(max: InputCurrentLimit, min: InputCurrentLimit) {
-    store(&INPUT_CURRENT_MAX, max.current().as_amps());
-    store(&INPUT_CURRENT_MIN, -min.current().as_amps());
-}
-
 pub(crate) fn set_duty_cycle_limit(limit: crate::DutyCycleLimit) {
     store(&DUTY_CYCLE_LIMIT, limit.ratio().as_ratio());
 }
@@ -1202,16 +1199,6 @@ pub(crate) fn set_firmware_fault(fault: FirmwareFault) {
 
 pub(crate) fn set_input_voltage(voltage: InputVoltage) {
     store(&INPUT_VOLTAGE, voltage.voltage().as_volts());
-}
-
-pub(crate) fn set_ppm_input(input: crate::PpmInput, age: crate::PpmAge) {
-    store(&PPM_INPUT, input.ratio().as_ratio());
-    store(&PPM_AGE, age.duration().as_seconds());
-}
-
-pub(crate) fn set_remote_input(input: crate::JoystickY, age: crate::RemoteAge) {
-    store(&REMOTE_INPUT_Y, input.ratio().as_ratio());
-    store(&REMOTE_AGE, age.duration().as_seconds());
 }
 
 pub(crate) fn set_foc_id_current(current: Option<DCurrent>) {
@@ -1358,23 +1345,11 @@ pub(crate) fn motor_output() -> MotorOutputState {
         current_count: CURRENT_COUNT.load(Ordering::Relaxed),
         duty_count: DUTY_COUNT.load(Ordering::Relaxed),
         brake_current_count: BRAKE_CURRENT_COUNT.load(Ordering::Relaxed),
-        foc_tone_count: FOC_TONE_COUNT.load(Ordering::Relaxed),
         current_off_delay: f32::from_bits(CURRENT_OFF_DELAY.load(Ordering::Relaxed)),
         current: f32::from_bits(CURRENT.load(Ordering::Relaxed)),
         duty: f32::from_bits(DUTY.load(Ordering::Relaxed)),
         brake_current: f32::from_bits(BRAKE_CURRENT.load(Ordering::Relaxed)),
-        foc_tone_channel: FOC_TONE_CHANNEL.load(Ordering::Relaxed),
-        foc_tone_frequency: f32::from_bits(FOC_TONE_FREQUENCY.load(Ordering::Relaxed)),
-        foc_tone_voltage: f32::from_bits(FOC_TONE_VOLTAGE.load(Ordering::Relaxed)),
     }
-}
-
-pub unsafe fn foc_play_tone(channel: i32, frequency: f32, voltage: f32) -> bool {
-    FOC_TONE_COUNT.fetch_add(1, Ordering::Relaxed);
-    FOC_TONE_CHANNEL.store(channel, Ordering::Relaxed);
-    FOC_TONE_FREQUENCY.store(frequency.to_bits(), Ordering::Relaxed);
-    FOC_TONE_VOLTAGE.store(voltage.to_bits(), Ordering::Relaxed);
-    true
 }
 
 pub unsafe fn timeout_reset() {
@@ -1721,7 +1696,8 @@ pub unsafe fn foc_beep(_frequency: f32, _duration: f32, _voltage: f32) -> Option
     FOC_AUDIO_AVAILABLE.load(Ordering::Relaxed).then_some(true)
 }
 
-pub unsafe fn foc_play_tone(_channel: c_int, _frequency: f32, _voltage: f32) -> Option<bool> {
+pub unsafe fn foc_play_tone(channel: c_int, frequency: f32, voltage: f32) -> Option<bool> {
+    let _ = (channel, frequency, voltage);
     FOC_AUDIO_AVAILABLE.load(Ordering::Relaxed).then_some(true)
 }
 
@@ -1926,28 +1902,6 @@ pub unsafe fn mc_set_pwm_callback(_callback: Option<unsafe extern "C" fn()>) -> 
 
 pub unsafe fn mc_get_input_voltage_filtered() -> f32 {
     load(&INPUT_VOLTAGE)
-}
-
-#[allow(clippy::unnecessary_wraps)] // fake preserves nullable firmware input slot shape
-pub unsafe fn get_ppm() -> Option<f32> {
-    Some(load(&PPM_INPUT))
-}
-
-#[allow(clippy::unnecessary_wraps)] // fake preserves nullable firmware input slot shape
-pub unsafe fn get_ppm_age() -> Option<f32> {
-    Some(load(&PPM_AGE))
-}
-
-#[allow(clippy::unnecessary_wraps)] // fake preserves nullable firmware remote-state slot shape
-pub unsafe fn remote_state() -> Option<RemoteState> {
-    Some(RemoteState {
-        js_x: 0.0,
-        js_y: load(&REMOTE_INPUT_Y),
-        bt_c: false,
-        bt_z: false,
-        is_rev: false,
-        age_s: load(&REMOTE_AGE),
-    })
 }
 
 pub unsafe fn imu_startup_done() -> bool {

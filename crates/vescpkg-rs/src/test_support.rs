@@ -57,22 +57,6 @@ impl FirmwareTest {
         self.firmware.imu()
     }
 
-    /// Borrow typed PPM and UART controller inputs.
-    #[must_use]
-    pub fn input(&self) -> &crate::ControllerInput {
-        self.firmware.input()
-    }
-
-    /// Configure the latest PPM input sample.
-    pub fn set_ppm_input(&self, input: crate::PpmInput, age: crate::PpmAge) {
-        crate::test_ffi::set_ppm_input(input, age);
-    }
-
-    /// Configure the latest UART remote input sample.
-    pub fn set_remote_input(&self, input: crate::JoystickY, age: crate::RemoteAge) {
-        crate::test_ffi::set_remote_input(input, age);
-    }
-
     /// Access the same package custom-EEPROM range used on hardware.
     #[must_use]
     pub fn eeprom(&self) -> crate::CustomEeprom {
@@ -438,17 +422,6 @@ impl FirmwareTest {
     }
 
     #[must_use]
-    /// Configure the typed positive and regenerative input-current limits.
-    pub fn with_input_current_limits(
-        self,
-        max: crate::InputCurrentLimit,
-        min: crate::InputCurrentLimit,
-    ) -> Self {
-        crate::test_ffi::set_input_current_limits(max, min);
-        self
-    }
-
-    #[must_use]
     /// Configure the typed maximum motor duty-cycle limit.
     pub fn with_duty_cycle_limit(self, limit: crate::DutyCycleLimit) -> Self {
         crate::test_ffi::set_duty_cycle_limit(limit);
@@ -528,8 +501,11 @@ impl FirmwareTest {
 
     #[must_use]
     /// Configure the semantic firmware fault result.
-    pub fn with_firmware_fault(self, fault: crate::FirmwareFault) -> Self {
-        crate::test_ffi::set_firmware_fault(fault);
+    pub fn with_firmware_fault<F>(self, fault: F) -> Self
+    where
+        F: Into<crate::FirmwareFault>,
+    {
+        crate::test_ffi::set_firmware_fault(fault.into());
         self
     }
 
@@ -591,12 +567,6 @@ impl FirmwareTest {
     }
 
     #[must_use]
-    /// Return the number of attempted FOC tone writes.
-    pub fn foc_tone_command_count(&self) -> usize {
-        crate::test_ffi::motor_output().foc_tone_count
-    }
-
-    #[must_use]
     /// Return the latest current-off-delay write as the SDK domain type.
     pub fn commanded_current_off_delay(&self) -> crate::CurrentOffDelay {
         crate::CurrentOffDelay::new(crate::VescSeconds::from_seconds(
@@ -625,29 +595,6 @@ impl FirmwareTest {
     pub fn commanded_brake_current(&self) -> crate::BrakeCurrent {
         crate::BrakeCurrent::new(crate::Current::from_amps(
             crate::test_ffi::motor_output().brake_current,
-        ))
-    }
-
-    #[must_use]
-    /// Return the latest FOC tone channel.
-    pub fn commanded_foc_tone_channel(&self) -> crate::AudioChannel {
-        crate::AudioChannel::try_new(crate::test_ffi::motor_output().foc_tone_channel as u8)
-            .expect("fake firmware stores a valid audio channel")
-    }
-
-    #[must_use]
-    /// Return the latest FOC tone frequency.
-    pub fn commanded_foc_tone_frequency(&self) -> crate::AudioFrequency {
-        crate::AudioFrequency::new(crate::Frequency::from_hertz(
-            crate::test_ffi::motor_output().foc_tone_frequency,
-        ))
-    }
-
-    #[must_use]
-    /// Return the latest FOC tone voltage.
-    pub fn commanded_foc_tone_voltage(&self) -> crate::AudioVoltage {
-        crate::AudioVoltage::new(crate::Voltage::from_volts(
-            crate::test_ffi::motor_output().foc_tone_voltage,
         ))
     }
 }

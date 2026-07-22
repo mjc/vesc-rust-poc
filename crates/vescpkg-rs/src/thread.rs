@@ -132,29 +132,21 @@ impl<B: AppDataBindings> AppDataApi<B> {
     }
 
     /// Return firmware uptime in floating-point seconds.
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware clock capability is part of the package API even when host builds do not call it.
     pub(crate) fn system_uptime(&self) -> VescSeconds {
         VescSeconds::from_seconds(self.bindings.system_time_seconds())
     }
 
     /// Return firmware-computed age for a system timestamp.
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware clock capability is part of the package API even when host builds do not call it.
     pub(crate) fn timestamp_age(&self, timestamp: TimestampTicks) -> VescSeconds {
         VescSeconds::from_seconds(self.bindings.timestamp_age_seconds(timestamp.as_ticks()))
     }
 
     /// Return the current high-resolution timer instant.
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware timer capability is part of the package API even when host builds do not call it.
     pub(crate) fn timer_now(&self) -> TimerInstant {
         TimerInstant::from_raw(self.bindings.timer_time_now())
     }
 
     /// Return high-resolution elapsed time since a timer instant.
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware timer capability is part of the package API even when host builds do not call it.
     pub(crate) fn timer_elapsed_since(&self, earlier: TimerInstant) -> VescSeconds {
         VescSeconds::from_seconds(self.bindings.timer_seconds_elapsed_since(earlier.raw()))
     }
@@ -184,8 +176,6 @@ pub struct Firmware {
     eeprom: crate::CustomEeprom,
     #[cfg(not(test))]
     gpio: crate::Gpio,
-    #[cfg(not(test))]
-    input: crate::ControllerInput,
     #[cfg(not(test))]
     imu: crate::imu::ImuApi<crate::imu::RealImuBindings>,
     #[cfg(not(test))]
@@ -239,12 +229,6 @@ impl Firmware {
     #[cfg(not(test))]
     pub fn gpio(&self) -> &crate::Gpio {
         &self.gpio
-    }
-
-    /// Borrow typed PPM and UART controller inputs.
-    #[cfg(not(test))]
-    pub fn input(&self) -> &crate::ControllerInput {
-        &self.input
     }
 
     /// Borrow firmware IMU capabilities without exposing the binding type.
