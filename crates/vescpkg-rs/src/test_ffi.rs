@@ -358,9 +358,9 @@ fn reset_motor_state() {
     IMU_ROTATION_ROLL.store(0.0_f32.to_bits(), Ordering::Relaxed);
     IMU_ROTATION_PITCH.store(0.0_f32.to_bits(), Ordering::Relaxed);
     IMU_ROTATION_YAW.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    IMU_MAHONY_KP.store(10.0_f32.to_bits(), Ordering::Relaxed);
-    IMU_MAHONY_KI.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    IMU_MADGWICK_BETA.store(2.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_MAHONY_KP.store(2.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_MAHONY_KI.store(0.05_f32.to_bits(), Ordering::Relaxed);
+    IMU_MADGWICK_BETA.store(0.1_f32.to_bits(), Ordering::Relaxed);
     IMU_ACCELERATION_OFFSET_X.store(0.0_f32.to_bits(), Ordering::Relaxed);
     IMU_ACCELERATION_OFFSET_Y.store(0.0_f32.to_bits(), Ordering::Relaxed);
     IMU_ACCELERATION_OFFSET_Z.store(0.0_f32.to_bits(), Ordering::Relaxed);

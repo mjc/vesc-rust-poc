@@ -65,10 +65,10 @@ fn typed_settings_read_write_and_persist() {
     assert_eq!(settings.imu_acceleration_confidence_decay().as_ratio(), 1.0);
     assert_eq!(
         settings.imu_mahony_proportional_gain().unwrap().value(),
-        10.0
+        2.0
     );
-    assert_eq!(settings.imu_mahony_integral_gain().unwrap().value(), 0.0);
-    assert_eq!(settings.imu_madgwick_beta().unwrap().value(), 2.0);
+    assert_eq!(settings.imu_mahony_integral_gain().unwrap().value(), 0.05);
+    assert_eq!(settings.imu_madgwick_beta().unwrap().value(), 0.1);
     assert_eq!(settings.imu_acceleration_offset_x().unwrap().as_g(), 0.0);
     assert_eq!(settings.imu_acceleration_offset_y().unwrap().as_g(), 0.0);
     assert_eq!(settings.imu_acceleration_offset_z().unwrap().as_g(), 0.0);
