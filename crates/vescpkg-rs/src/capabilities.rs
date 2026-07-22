@@ -4,9 +4,11 @@ use crate::ffi;
 use crate::{
     AngleDegrees, BatteryCellCount, BatteryChemistry, CanApplicationMode, CanBaudRate, CanBus,
     Charge, Current, DutyCycleLimit, DutyCycleMinimum, ElectricalSpeed, FocAudio,
-    FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance, GearRatio, ImuAhrsMode,
-    InputCurrent, InputVoltage, MotorCurrentLimit, MotorPoleCount, Nvm, NvmCapacity, Ratio,
-    ShutdownMode, TemperatureLimitEnd, TemperatureLimitStart, Uart, Voltage, WheelDiameter,
+    FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance, GearRatio, ImuAccelerationOffset,
+    ImuAhrsMode, ImuAngularRateOffset, ImuMadgwickBeta, ImuMahonyIntegralGain,
+    ImuMahonyProportionalGain, InputCurrent, InputVoltage, MotorCurrentLimit, MotorPoleCount, Nvm,
+    NvmCapacity, Ratio, ShutdownMode, TemperatureLimitEnd, TemperatureLimitStart, Uart, Voltage,
+    WheelDiameter,
 };
 use core::fmt;
 use vescpkg_rs_sys::{AbiError, Stm32AbiRevision, VescIfCapabilities, VescIfPresence};
@@ -344,6 +346,72 @@ impl FirmwareSettings {
         Ratio::clamped(self.get_float(FirmwareFloatSetting::ImuAccelerationConfidenceDecay))
     }
 
+    /// Read the firmware Mahony proportional gain with finite-value validation.
+    pub fn imu_mahony_proportional_gain(self) -> Result<ImuMahonyProportionalGain, SettingsError> {
+        ImuMahonyProportionalGain::try_new(self.get_float(FirmwareFloatSetting::ImuMahonyKp))
+            .ok_or(SettingsError::InvalidValue)
+    }
+
+    /// Read the firmware Mahony integral gain with finite-value validation.
+    pub fn imu_mahony_integral_gain(self) -> Result<ImuMahonyIntegralGain, SettingsError> {
+        ImuMahonyIntegralGain::try_new(self.get_float(FirmwareFloatSetting::ImuMahonyKi))
+            .ok_or(SettingsError::InvalidValue)
+    }
+
+    /// Read the firmware Madgwick beta gain with finite-value validation.
+    pub fn imu_madgwick_beta(self) -> Result<ImuMadgwickBeta, SettingsError> {
+        ImuMadgwickBeta::try_new(self.get_float(FirmwareFloatSetting::ImuMadgwickBeta))
+            .ok_or(SettingsError::InvalidValue)
+    }
+
+    /// Read the firmware IMU accelerometer X calibration offset in g units.
+    pub fn imu_acceleration_offset_x(self) -> Result<ImuAccelerationOffset, SettingsError> {
+        ImuAccelerationOffset::try_new(crate::AccelerationG::from_g(
+            self.get_float(FirmwareFloatSetting::ImuAccelerationOffsetX),
+        ))
+        .ok_or(SettingsError::InvalidValue)
+    }
+
+    /// Read the firmware IMU accelerometer Y calibration offset in g units.
+    pub fn imu_acceleration_offset_y(self) -> Result<ImuAccelerationOffset, SettingsError> {
+        ImuAccelerationOffset::try_new(crate::AccelerationG::from_g(
+            self.get_float(FirmwareFloatSetting::ImuAccelerationOffsetY),
+        ))
+        .ok_or(SettingsError::InvalidValue)
+    }
+
+    /// Read the firmware IMU accelerometer Z calibration offset in g units.
+    pub fn imu_acceleration_offset_z(self) -> Result<ImuAccelerationOffset, SettingsError> {
+        ImuAccelerationOffset::try_new(crate::AccelerationG::from_g(
+            self.get_float(FirmwareFloatSetting::ImuAccelerationOffsetZ),
+        ))
+        .ok_or(SettingsError::InvalidValue)
+    }
+
+    /// Read the firmware IMU gyroscope X calibration offset in degrees per second.
+    pub fn imu_gyro_offset_x(self) -> Result<ImuAngularRateOffset, SettingsError> {
+        ImuAngularRateOffset::try_new(crate::AngularVelocity::from_degrees_per_second(
+            self.get_float(FirmwareFloatSetting::ImuGyroOffsetX),
+        ))
+        .ok_or(SettingsError::InvalidValue)
+    }
+
+    /// Read the firmware IMU gyroscope Y calibration offset in degrees per second.
+    pub fn imu_gyro_offset_y(self) -> Result<ImuAngularRateOffset, SettingsError> {
+        ImuAngularRateOffset::try_new(crate::AngularVelocity::from_degrees_per_second(
+            self.get_float(FirmwareFloatSetting::ImuGyroOffsetY),
+        ))
+        .ok_or(SettingsError::InvalidValue)
+    }
+
+    /// Read the firmware IMU gyroscope Z calibration offset in degrees per second.
+    pub fn imu_gyro_offset_z(self) -> Result<ImuAngularRateOffset, SettingsError> {
+        ImuAngularRateOffset::try_new(crate::AngularVelocity::from_degrees_per_second(
+            self.get_float(FirmwareFloatSetting::ImuGyroOffsetZ),
+        ))
+        .ok_or(SettingsError::InvalidValue)
+    }
+
     /// Read the configured positive gear ratio, rejecting malformed firmware state.
     pub fn gear_ratio(self) -> Result<GearRatio, SettingsError> {
         GearRatio::try_new(self.get_float(FirmwareFloatSetting::GearRatio))
@@ -488,6 +556,75 @@ impl FirmwareSettings {
         self.set_float(
             FirmwareFloatSetting::ImuAccelerationConfidenceDecay,
             decay.as_ratio(),
+        )
+    }
+
+    /// Update the live firmware Mahony proportional gain; persistence still requires [`Self::store`].
+    pub fn set_imu_mahony_proportional_gain(
+        self,
+        gain: ImuMahonyProportionalGain,
+    ) -> Result<(), SettingsError> {
+        self.set_float(FirmwareFloatSetting::ImuMahonyKp, gain.value())
+    }
+
+    /// Update the live firmware Mahony integral gain; persistence still requires [`Self::store`].
+    pub fn set_imu_mahony_integral_gain(
+        self,
+        gain: ImuMahonyIntegralGain,
+    ) -> Result<(), SettingsError> {
+        self.set_float(FirmwareFloatSetting::ImuMahonyKi, gain.value())
+    }
+
+    /// Update the live firmware Madgwick beta gain; persistence still requires [`Self::store`].
+    pub fn set_imu_madgwick_beta(self, beta: ImuMadgwickBeta) -> Result<(), SettingsError> {
+        self.set_float(FirmwareFloatSetting::ImuMadgwickBeta, beta.value())
+    }
+
+    /// Update the live firmware IMU accelerometer X offset; persistence still requires [`Self::store`].
+    pub fn set_imu_acceleration_offset_x(
+        self,
+        offset: ImuAccelerationOffset,
+    ) -> Result<(), SettingsError> {
+        self.set_float(FirmwareFloatSetting::ImuAccelerationOffsetX, offset.as_g())
+    }
+
+    /// Update the live firmware IMU accelerometer Y offset; persistence still requires [`Self::store`].
+    pub fn set_imu_acceleration_offset_y(
+        self,
+        offset: ImuAccelerationOffset,
+    ) -> Result<(), SettingsError> {
+        self.set_float(FirmwareFloatSetting::ImuAccelerationOffsetY, offset.as_g())
+    }
+
+    /// Update the live firmware IMU accelerometer Z offset; persistence still requires [`Self::store`].
+    pub fn set_imu_acceleration_offset_z(
+        self,
+        offset: ImuAccelerationOffset,
+    ) -> Result<(), SettingsError> {
+        self.set_float(FirmwareFloatSetting::ImuAccelerationOffsetZ, offset.as_g())
+    }
+
+    /// Update the live firmware IMU gyroscope X offset; persistence still requires [`Self::store`].
+    pub fn set_imu_gyro_offset_x(self, offset: ImuAngularRateOffset) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::ImuGyroOffsetX,
+            offset.as_degrees_per_second(),
+        )
+    }
+
+    /// Update the live firmware IMU gyroscope Y offset; persistence still requires [`Self::store`].
+    pub fn set_imu_gyro_offset_y(self, offset: ImuAngularRateOffset) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::ImuGyroOffsetY,
+            offset.as_degrees_per_second(),
+        )
+    }
+
+    /// Update the live firmware IMU gyroscope Z offset; persistence still requires [`Self::store`].
+    pub fn set_imu_gyro_offset_z(self, offset: ImuAngularRateOffset) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::ImuGyroOffsetZ,
+            offset.as_degrees_per_second(),
         )
     }
 

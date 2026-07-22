@@ -128,6 +128,15 @@ static IMU_ROTATION_PITCH: AtomicU32 = AtomicU32::new(0);
 static IMU_ROTATION_YAW: AtomicU32 = AtomicU32::new(0);
 static DUTY_CYCLE_MINIMUM: AtomicU32 = AtomicU32::new(0);
 static IMU_ACCELERATION_CONFIDENCE_DECAY: AtomicU32 = AtomicU32::new(0);
+static IMU_MAHONY_KP: AtomicU32 = AtomicU32::new(0);
+static IMU_MAHONY_KI: AtomicU32 = AtomicU32::new(0);
+static IMU_MADGWICK_BETA: AtomicU32 = AtomicU32::new(0);
+static IMU_ACCELERATION_OFFSET_X: AtomicU32 = AtomicU32::new(0);
+static IMU_ACCELERATION_OFFSET_Y: AtomicU32 = AtomicU32::new(0);
+static IMU_ACCELERATION_OFFSET_Z: AtomicU32 = AtomicU32::new(0);
+static IMU_GYRO_OFFSET_X: AtomicU32 = AtomicU32::new(0);
+static IMU_GYRO_OFFSET_Y: AtomicU32 = AtomicU32::new(0);
+static IMU_GYRO_OFFSET_Z: AtomicU32 = AtomicU32::new(0);
 static GEAR_RATIO: AtomicU32 = AtomicU32::new(0);
 static WHEEL_DIAMETER: AtomicU32 = AtomicU32::new(0);
 static FOC_MOTOR_RESISTANCE: AtomicU32 = AtomicU32::new(0);
@@ -364,6 +373,15 @@ fn reset_speed_settings() {
     IMU_ROTATION_YAW.store(0.0_f32.to_bits(), Ordering::Relaxed);
     DUTY_CYCLE_MINIMUM.store(0.05_f32.to_bits(), Ordering::Relaxed);
     IMU_ACCELERATION_CONFIDENCE_DECAY.store(1.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_MAHONY_KP.store(10.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_MAHONY_KI.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_MADGWICK_BETA.store(2.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_ACCELERATION_OFFSET_X.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_ACCELERATION_OFFSET_Y.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_ACCELERATION_OFFSET_Z.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_GYRO_OFFSET_X.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_GYRO_OFFSET_Y.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_GYRO_OFFSET_Z.store(0.0_f32.to_bits(), Ordering::Relaxed);
 }
 
 fn reset_temperature_settings() {
@@ -1536,9 +1554,18 @@ pub unsafe fn get_cfg_float(param: i32) -> f32 {
         8 => load(&ELECTRICAL_SPEED_BRAKE_MAX),
         9 => load(&ELECTRICAL_SPEED_BRAKE_CURRENT_MAX),
         31 => load(&IMU_SAMPLE_RATE),
+        24 => load(&IMU_MAHONY_KP),
+        25 => load(&IMU_MAHONY_KI),
+        26 => load(&IMU_MADGWICK_BETA),
         27 => load(&IMU_ROTATION_ROLL),
         28 => load(&IMU_ROTATION_PITCH),
         29 => load(&IMU_ROTATION_YAW),
+        32 => load(&IMU_ACCELERATION_OFFSET_X),
+        33 => load(&IMU_ACCELERATION_OFFSET_Y),
+        34 => load(&IMU_ACCELERATION_OFFSET_Z),
+        35 => load(&IMU_GYRO_OFFSET_X),
+        36 => load(&IMU_GYRO_OFFSET_Y),
+        37 => load(&IMU_GYRO_OFFSET_Z),
         21 => load(&DUTY_CYCLE_MINIMUM),
         23 => load(&IMU_ACCELERATION_CONFIDENCE_DECAY),
         40 => load(&GEAR_RATIO),
@@ -1591,9 +1618,18 @@ pub unsafe fn set_cfg_float(param: i32, value: f32) -> bool {
         8 => ELECTRICAL_SPEED_BRAKE_MAX.store(value.to_bits(), Ordering::Relaxed),
         9 => ELECTRICAL_SPEED_BRAKE_CURRENT_MAX.store(value.to_bits(), Ordering::Relaxed),
         31 => IMU_SAMPLE_RATE.store(value.to_bits(), Ordering::Relaxed),
+        24 => IMU_MAHONY_KP.store(value.to_bits(), Ordering::Relaxed),
+        25 => IMU_MAHONY_KI.store(value.to_bits(), Ordering::Relaxed),
+        26 => IMU_MADGWICK_BETA.store(value.to_bits(), Ordering::Relaxed),
         27 => IMU_ROTATION_ROLL.store(value.to_bits(), Ordering::Relaxed),
         28 => IMU_ROTATION_PITCH.store(value.to_bits(), Ordering::Relaxed),
         29 => IMU_ROTATION_YAW.store(value.to_bits(), Ordering::Relaxed),
+        32 => IMU_ACCELERATION_OFFSET_X.store(value.to_bits(), Ordering::Relaxed),
+        33 => IMU_ACCELERATION_OFFSET_Y.store(value.to_bits(), Ordering::Relaxed),
+        34 => IMU_ACCELERATION_OFFSET_Z.store(value.to_bits(), Ordering::Relaxed),
+        35 => IMU_GYRO_OFFSET_X.store(value.to_bits(), Ordering::Relaxed),
+        36 => IMU_GYRO_OFFSET_Y.store(value.to_bits(), Ordering::Relaxed),
+        37 => IMU_GYRO_OFFSET_Z.store(value.to_bits(), Ordering::Relaxed),
         21 => DUTY_CYCLE_MINIMUM.store(value.to_bits(), Ordering::Relaxed),
         23 => IMU_ACCELERATION_CONFIDENCE_DECAY.store(value.to_bits(), Ordering::Relaxed),
         40 => GEAR_RATIO.store(value.to_bits(), Ordering::Relaxed),
