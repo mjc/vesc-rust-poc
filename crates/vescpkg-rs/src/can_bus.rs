@@ -13,6 +13,8 @@ pub enum CanError {
     Unsupported,
     /// A classic CAN frame contained more than eight payload bytes.
     PayloadTooLong,
+    /// The remote controller did not answer the ping request.
+    PingFailed,
 }
 
 impl core::fmt::Display for CanError {
@@ -20,7 +22,32 @@ impl core::fmt::Display for CanError {
         f.write_str(match self {
             Self::Unsupported => "firmware does not expose this CAN operation",
             Self::PayloadTooLong => "CAN payload exceeds eight bytes",
+            Self::PingFailed => "remote CAN controller did not answer",
         })
+    }
+}
+
+/// Hardware family reported by a remote VESC controller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanHardwareType {
+    /// Standard VESC motor controller.
+    Vesc,
+    /// VESC BMS controller.
+    VescBms,
+    /// Custom VESC module.
+    CustomModule,
+    /// Firmware-specific hardware type not known by this SDK.
+    Unknown(i32),
+}
+
+impl CanHardwareType {
+    const fn from_raw(raw: i32) -> Self {
+        match raw {
+            0 => Self::Vesc,
+            1 => Self::VescBms,
+            2 => Self::CustomModule,
+            value => Self::Unknown(value),
+        }
     }
 }
 
@@ -69,6 +96,14 @@ pub struct CanBus;
 impl CanBus {
     pub(crate) const fn new() -> Self {
         Self
+    }
+
+    /// Ping a remote controller and return its reported hardware family.
+    pub fn ping(&self, controller: CanControllerId) -> Result<CanHardwareType, CanError> {
+        let (ok, hardware) =
+            unsafe { crate::ffi::can_ping(controller.as_u8()) }.ok_or(CanError::Unsupported)?;
+        ok.then(|| CanHardwareType::from_raw(hardware.0))
+            .ok_or(CanError::PingFailed)
     }
 
     /// Transmit a standard 11-bit CAN frame.
