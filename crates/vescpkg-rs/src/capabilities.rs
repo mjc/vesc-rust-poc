@@ -268,11 +268,41 @@ impl FirmwareSettings {
         ))
     }
 
+    /// Read the configured minimum battery/input current.
+    pub fn input_current_min(self) -> InputCurrent {
+        InputCurrent::new(Current::from_amps(
+            self.get_float(FirmwareFloatSetting::InputCurrentMin),
+        ))
+    }
+
+    /// Read the configured absolute motor-current ceiling.
+    pub fn absolute_current_max(self) -> MotorCurrentLimit {
+        MotorCurrentLimit::new(Current::from_amps(
+            self.get_float(FirmwareFloatSetting::AbsoluteCurrentMax),
+        ))
+    }
+
     /// Update the live battery/input current ceiling; persistence still requires [`Self::store`].
     pub fn set_input_current_max(self, current: InputCurrent) -> Result<(), SettingsError> {
         self.set_float(
             FirmwareFloatSetting::InputCurrentMax,
             current.current().as_amps(),
+        )
+    }
+
+    /// Update the live minimum battery/input current; persistence still requires [`Self::store`].
+    pub fn set_input_current_min(self, current: InputCurrent) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::InputCurrentMin,
+            current.current().as_amps(),
+        )
+    }
+
+    /// Update the live absolute motor-current ceiling; persistence still requires [`Self::store`].
+    pub fn set_absolute_current_max(self, limit: MotorCurrentLimit) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::AbsoluteCurrentMax,
+            limit.current().as_amps(),
         )
     }
 
