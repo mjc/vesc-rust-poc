@@ -165,7 +165,7 @@ mod slots {
         CanStatusMsg5, CanStatusMsg6, CustomConfigGet, CustomConfigSet, CustomConfigXml, EepromVar,
         ExtensionHandler, GnssData, HwType, ImuReadCallback, LbmFlatValue, LbmValue, LibMutex,
         LibSemaphore, LibThread, PacketProcessCallback, PacketSendCallback, PacketState,
-        RemoteState, VescIfAbi, c_char, c_int, c_uchar, c_uint, c_void,
+        RemoteState, ReplyCallback, VescIfAbi, c_char, c_int, c_uchar, c_uint, c_void,
     };
     #[cfg(not(all(target_arch = "arm", not(test))))]
     use super::{VescIf, vesc_if};
@@ -456,6 +456,10 @@ mod slots {
     optional_fn_slot!(
         packet_send_packet as unsafe extern "C" fn(*mut c_uchar, c_uint, *mut PacketState)
     );
+    optional_fn_slot!(
+        commands_process_packet as unsafe extern "C" fn(*mut c_uchar, c_uint, ReplyCallback)
+    );
+    optional_fn_slot!(commands_unregister_reply_func as unsafe extern "C" fn(ReplyCallback));
     fn_slot!(mc_temp_fet_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_temp_motor_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(imu_startup_done as unsafe extern "C" fn() -> bool);
@@ -1876,6 +1880,24 @@ pub unsafe fn packet_process_byte(byte: u8, state: *mut PacketState) -> bool {
 pub unsafe fn packet_send_packet(data: *mut c_uchar, len: c_uint, state: *mut PacketState) -> bool {
     unsafe { slots::packet_send_packet() }
         .map(|func| unsafe { func(data, len, state) })
+        .is_some()
+}
+
+/// Process one command packet and register its reply callback when present.
+pub unsafe fn commands_process_packet(
+    data: *mut c_uchar,
+    len: c_uint,
+    reply: ReplyCallback,
+) -> bool {
+    unsafe { slots::commands_process_packet() }
+        .map(|func| unsafe { func(data, len, reply) })
+        .is_some()
+}
+
+/// Unregister a command reply callback when the cleanup slot is present.
+pub unsafe fn commands_unregister_reply_func(reply: ReplyCallback) -> bool {
+    unsafe { slots::commands_unregister_reply_func() }
+        .map(|func| unsafe { func(reply) })
         .is_some()
 }
 /// Return the filtered input/battery voltage.

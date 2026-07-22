@@ -1375,6 +1375,18 @@ pub unsafe fn gnss_snapshot() -> Option<GnssData> {
     })
 }
 
+pub unsafe fn commands_process_packet(
+    _data: *mut u8,
+    _len: u32,
+    _reply: unsafe extern "C" fn(*mut u8, u32),
+) -> bool {
+    true
+}
+
+pub unsafe fn commands_unregister_reply_func(_reply: unsafe extern "C" fn(*mut u8, u32)) -> bool {
+    true
+}
+
 pub unsafe fn mc_get_distance_abs() -> f32 {
     load(&DISTANCE_ABS)
 }
