@@ -49,3 +49,14 @@ fn settings_report_firmware_rejections() {
         })
     ));
 }
+
+#[test]
+fn settings_reject_non_finite_float_values_before_abi_call() {
+    let firmware = FirmwareTest::new();
+    let settings = firmware.settings();
+
+    assert_eq!(
+        settings.set_float(FirmwareFloatSetting::MaxDuty, f32::NAN),
+        Err(SettingsError::InvalidValue)
+    );
+}

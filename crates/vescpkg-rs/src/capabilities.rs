@@ -61,12 +61,15 @@ pub enum SettingsError {
         /// Operation rejected by firmware.
         operation: &'static str,
     },
+    /// The requested value cannot be represented as a live setting.
+    InvalidValue,
 }
 
 impl fmt::Display for SettingsError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Rejected { operation } => write!(formatter, "firmware rejected {operation}"),
+            Self::InvalidValue => formatter.write_str("setting value must be finite"),
         }
     }
 }
@@ -85,6 +88,9 @@ impl FirmwareSettings {
 
     /// Write a floating-point setting to live firmware state.
     pub fn set_float(self, setting: FirmwareFloatSetting, value: f32) -> Result<(), SettingsError> {
+        if !value.is_finite() {
+            return Err(SettingsError::InvalidValue);
+        }
         unsafe { ffi::set_cfg_float(setting.raw(), value) }
             .then_some(())
             .ok_or(SettingsError::Rejected {
