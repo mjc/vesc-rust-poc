@@ -1707,6 +1707,11 @@ pub unsafe fn vesc_imu_get_quaternions(values: *mut f32) {
     }
 }
 
+pub unsafe fn imu_set_read_callback(
+    _callback: Option<unsafe extern "C" fn(*mut f32, *mut f32, *mut f32, f32)>,
+) {
+}
+
 pub unsafe fn ahrs_init_attitude_info(attitude: *mut AttitudeInfo) {
     let Some(attitude) = (unsafe { attitude.as_mut() }) else {
         return;

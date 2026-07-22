@@ -5,8 +5,8 @@ use vescpkg_rs::{
     AccelerationG, AngularVelocity, FirmwareAhrs, FirmwareAhrsError, FirmwareAhrsParameters,
     ImuAcceleration, ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ, ImuAngularRate,
     ImuAngularRatePitch, ImuAngularRateRoll, ImuAngularRateYaw, ImuMagneticField,
-    ImuMagneticFieldX, ImuMagneticFieldY, ImuMagneticFieldZ, ImuReadSample, ImuSamplePeriod,
-    MagneticFluxDensity, VescSeconds,
+    ImuMagneticFieldX, ImuMagneticFieldY, ImuMagneticFieldZ, ImuReadCallback, ImuReadCallbackError,
+    ImuReadSample, ImuSamplePeriod, MagneticFluxDensity, VescSeconds, register_imu_read_callback,
 };
 
 fn vectors() -> (ImuAcceleration, ImuMagneticField) {
@@ -93,4 +93,21 @@ fn firmware_ahrs_rejects_invalid_vectors_and_periods_before_ffi() {
         FirmwareAhrsParameters::try_new(f32::NAN, 1.0, 1.0, 1.0),
         Err(FirmwareAhrsError::InvalidParameter)
     );
+}
+
+struct Callback;
+
+impl ImuReadCallback for Callback {
+    fn read(_sample: ImuReadSample) {}
+}
+
+#[test]
+fn imu_read_callback_registration_is_exclusive_and_released_on_drop() {
+    let first = unsafe { register_imu_read_callback::<Callback>() }.unwrap();
+    assert!(matches!(
+        unsafe { register_imu_read_callback::<Callback>() },
+        Err(ImuReadCallbackError::AlreadyRegistered)
+    ));
+    drop(first);
+    assert!(unsafe { register_imu_read_callback::<Callback>() }.is_ok());
 }
