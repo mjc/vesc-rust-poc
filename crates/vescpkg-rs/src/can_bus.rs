@@ -1,9 +1,9 @@
 //! Safe CAN transport and status snapshots.
 
 use crate::types::{
-    AmpHoursCharged, AmpHoursDischarged, CanControllerId, CanExtendedId, CanPayloadLen,
+    AdcVoltage, AmpHoursCharged, AmpHoursDischarged, CanControllerId, CanExtendedId, CanPayloadLen,
     CanStandardId, CurrentRelative, DutyCycle, ElectricalSpeed, InputCurrent, InputVoltage,
-    MosfetTemperature, MotorCurrent, MotorTemperature, PidPosition, TachometerSteps,
+    MosfetTemperature, MotorCurrent, MotorTemperature, PidPosition, PpmInput, TachometerSteps,
     WattHoursCharged, WattHoursDischarged,
 };
 use crate::units::{Charge, Current, Energy, Rpm, SignedRatio, TimestampTicks};
@@ -97,6 +97,43 @@ pub struct CanStatus5 {
     controller: CanControllerId,
     input_voltage: InputVoltage,
     tachometer: TachometerSteps,
+}
+
+/// A copied snapshot of CAN status message 6.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CanStatus6 {
+    controller: CanControllerId,
+    adc_1: AdcVoltage,
+    adc_2: AdcVoltage,
+    adc_3: AdcVoltage,
+    ppm: PpmInput,
+}
+
+impl CanStatus6 {
+    /// Return the controller whose status was queried.
+    pub const fn controller(self) -> CanControllerId {
+        self.controller
+    }
+
+    /// Return ADC channel 1.
+    pub const fn adc1(self) -> AdcVoltage {
+        self.adc_1
+    }
+
+    /// Return ADC channel 2.
+    pub const fn adc2(self) -> AdcVoltage {
+        self.adc_2
+    }
+
+    /// Return ADC channel 3.
+    pub const fn adc3(self) -> AdcVoltage {
+        self.adc_3
+    }
+
+    /// Return the decoded PPM input ratio.
+    pub const fn ppm(self) -> PpmInput {
+        self.ppm
+    }
 }
 
 impl CanStatus5 {
@@ -357,6 +394,21 @@ impl CanBus {
             tachometer: TachometerSteps::new(crate::units::TachometerSteps::from_steps(
                 raw.tacho_value,
             )),
+        })
+    }
+
+    /// Copy CAN status message 6 for one remote controller.
+    pub fn status6(&self, controller: CanControllerId) -> Option<CanStatus6> {
+        let raw = unsafe { crate::ffi::can_status_msg_6_id(i32::from(controller.as_u8())) }?;
+        Some(CanStatus6 {
+            controller,
+            adc_1: AdcVoltage::new(crate::Voltage::from_volts(raw.adc_1)),
+            adc_2: AdcVoltage::new(crate::Voltage::from_volts(raw.adc_2)),
+            adc_3: AdcVoltage::new(crate::Voltage::from_volts(raw.adc_3)),
+            ppm: PpmInput::new(
+                crate::SignedRatio::from_ratio(raw.ppm)
+                    .unwrap_or(crate::SignedRatio::from_ratio_const(0.0)),
+            ),
         })
     }
 }
