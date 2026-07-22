@@ -143,12 +143,12 @@ pub(crate) mod ffi {
         mc_temp_fet_filtered, mc_temp_motor_filtered, mc_update_pid_pos_offset,
         mc_wait_for_motor_release, packet_init, packet_process_byte, packet_reset,
         packet_send_packet, plot_add_graph, plot_init, plot_send_points, plot_set_graph,
-        read_eeprom_word, read_nvm, store_eeprom_word, terminal_register_command_callback,
-        terminal_unregister_callback, uart_read, uart_start, uart_write, vesc_free,
-        vesc_imu_get_quaternions, vesc_mutex_create, vesc_mutex_lock, vesc_mutex_unlock,
-        vesc_request_terminate, vesc_sem_create, vesc_sem_reset, vesc_sem_signal, vesc_sem_wait,
-        vesc_sem_wait_to, vesc_should_terminate, vesc_sleep_us, vesc_spawn,
-        vesc_system_time_seconds, vesc_system_time_ticks, vesc_thread_set_priority,
+        read_eeprom_word, read_nvm, shutdown_disable, store_eeprom_word,
+        terminal_register_command_callback, terminal_unregister_callback, uart_read, uart_start,
+        uart_write, vesc_free, vesc_imu_get_quaternions, vesc_mutex_create, vesc_mutex_lock,
+        vesc_mutex_unlock, vesc_request_terminate, vesc_sem_create, vesc_sem_reset,
+        vesc_sem_signal, vesc_sem_wait, vesc_sem_wait_to, vesc_should_terminate, vesc_sleep_us,
+        vesc_spawn, vesc_system_time_seconds, vesc_system_time_ticks, vesc_thread_set_priority,
         vesc_timer_seconds_elapsed_since, vesc_timer_time_now, vesc_timestamp_age_seconds,
         wipe_nvm, write_nvm,
     };
@@ -182,7 +182,9 @@ pub use extension::{
     LbmExtension, LispArgs, LispContextId, LispFlatValue, LispIntegerError, LispMessageError,
     LispProcess, LispSymbol, LispValue, StatefulLbmExtension,
 };
-pub use inputs::{FirmwareInputs, InputError, PpmSnapshot, RemoteInputSnapshot, TimeoutSnapshot};
+pub use inputs::{
+    FirmwareInputs, InputError, PpmSnapshot, RemoteInputSnapshot, ShutdownInhibit, TimeoutSnapshot,
+};
 pub use logging::{FirmwareLog, LogError};
 
 // Exported macros need public implementation hooks after downstream expansion.

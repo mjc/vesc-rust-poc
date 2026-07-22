@@ -192,6 +192,17 @@ impl FirmwareTest {
         crate::test_ffi::fail_semaphore_timeout(true);
     }
 
+    /// Configure whether the fake firmware exposes shutdown inhibition.
+    pub fn set_shutdown_disable_supported(&self, supported: bool) {
+        crate::test_ffi::set_shutdown_disable_supported(supported);
+    }
+
+    /// Return whether fake firmware automatic shutdown is currently inhibited.
+    #[must_use]
+    pub fn shutdown_disabled(&self) -> bool {
+        crate::test_ffi::shutdown_disabled()
+    }
+
     /// Make writes to one custom-EEPROM address fail.
     pub fn fail_eeprom_write(&self, address: crate::CustomEepromAddress) {
         crate::test_ffi::fail_eeprom_write(address);

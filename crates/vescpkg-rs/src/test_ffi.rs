@@ -236,6 +236,8 @@ static SEMAPHORE_TIMED_WAIT_TICKS: AtomicU32 = AtomicU32::new(u32::MAX);
 static SEMAPHORE_SIGNAL_COUNT: AtomicUsize = AtomicUsize::new(0);
 static SEMAPHORE_RESET_COUNT: AtomicUsize = AtomicUsize::new(0);
 static SEMAPHORE_FREE_COUNT: AtomicUsize = AtomicUsize::new(0);
+static SHUTDOWN_DISABLE_SUPPORTED: AtomicBool = AtomicBool::new(true);
+static SHUTDOWN_DISABLED: AtomicBool = AtomicBool::new(false);
 
 pub(crate) struct MotorOutputState {
     pub keep_alive_count: usize,
@@ -363,6 +365,8 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     SEMAPHORE_FREE_COUNT.store(0, Ordering::Relaxed);
     SEMAPHORE_CREATE_FAILURE.store(false, Ordering::Relaxed);
     SEMAPHORE_TIMEOUT_FAILURE.store(false, Ordering::Relaxed);
+    SHUTDOWN_DISABLE_SUPPORTED.store(true, Ordering::Relaxed);
+    SHUTDOWN_DISABLED.store(false, Ordering::Relaxed);
     FirmwareLockGuard
 }
 
@@ -1144,6 +1148,22 @@ pub unsafe fn timeout_has_timeout() -> bool {
 
 pub unsafe fn timeout_secs_since_update() -> f32 {
     1.5
+}
+
+pub unsafe fn shutdown_disable(disable: bool) -> Option<()> {
+    if !SHUTDOWN_DISABLE_SUPPORTED.load(Ordering::Relaxed) {
+        return None;
+    }
+    SHUTDOWN_DISABLED.store(disable, Ordering::Relaxed);
+    Some(())
+}
+
+pub(crate) fn set_shutdown_disable_supported(supported: bool) {
+    SHUTDOWN_DISABLE_SUPPORTED.store(supported, Ordering::Relaxed);
+}
+
+pub(crate) fn shutdown_disabled() -> bool {
+    SHUTDOWN_DISABLED.load(Ordering::Relaxed)
 }
 
 pub unsafe fn mc_set_current_off_delay(seconds: f32) {
