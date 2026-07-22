@@ -52,6 +52,17 @@ Package-author APIs should translate firmware success/failure into named
 results such as `AppDataHandlerRegistrationError` so call sites do not have to
 remember firmware polarity.
 
+## Persistent storage boundary
+
+`CustomEeprom` stores lossless words and exposes fixed-size byte-image helpers;
+`Nvm` is a separate byte-addressed capability. Both APIs operate on caller-
+provided slices, so the same surface works in the no-alloc package build.
+Callers may attach a discovered `NvmCapacity` to reject out-of-range accesses
+before dispatch. Neither subsystem promises atomicity or rollback: an EEPROM
+image write stops at the first failed word, and NVM reports the firmware
+operation result. Signature validation, migrations, defaults, and interrupted-
+update recovery remain package-owned policy.
+
 ## Next Migration Ladder
 
 1. Keep artifact, size, symbol, and ABI guards green under `make package`.
