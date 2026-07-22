@@ -641,6 +641,13 @@ pub unsafe fn f_i32(value: *mut LbmFlatValue, _number: i32) -> Option<bool> {
     })
 }
 
+pub unsafe fn f_i(value: *mut LbmFlatValue, _number: i32) -> Option<bool> {
+    unsafe { value.as_mut() }.map(|value| {
+        value.buf_pos = value.buf_pos.saturating_add(5);
+        true
+    })
+}
+
 pub unsafe fn f_u32(value: *mut LbmFlatValue, _number: u32) -> Option<bool> {
     unsafe { value.as_mut() }.map(|value| {
         value.buf_pos = value.buf_pos.saturating_add(5);

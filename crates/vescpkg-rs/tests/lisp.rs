@@ -121,6 +121,7 @@ fn lisp_flat_values_encode_wide_values_and_unblock_contexts() {
 
     assert!(value.push_i64(-42));
     assert!(value.push_u64(0xfeed_beef));
+    assert!(value.push_i(-7));
     assert!(value.push_cons());
     assert!(value.push_symbol(LispSymbol::new(7)));
     assert!(value.push_i32(-7));

@@ -112,7 +112,7 @@ pub(crate) mod ffi {
         ahrs_get_pitch, ahrs_get_roll, ahrs_get_yaw, ahrs_init_attitude_info,
         ahrs_update_initial_orientation, ahrs_update_madgwick_imu, ahrs_update_mahony_imu,
         commands_process_packet, commands_unregister_reply_func, encoder_set_custom_callbacks, f_b,
-        f_cons, f_float, f_i32, f_i64, f_lbm_array, f_sym, f_u32, f_u64, foc_beep,
+        f_cons, f_float, f_i, f_i32, f_i64, f_lbm_array, f_sym, f_u32, f_u64, foc_beep,
         foc_get_audio_sample_table, foc_get_id, foc_get_iq, foc_get_vd, foc_get_vq,
         foc_play_audio_samples, foc_play_tone, foc_set_audio_sample_table,
         foc_set_openloop_current, foc_set_openloop_duty, foc_set_openloop_duty_phase,

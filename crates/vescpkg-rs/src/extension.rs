@@ -124,6 +124,11 @@ impl LispFlatValue {
         !self.finished && unsafe { crate::ffi::f_i32(&mut self.raw, value) } == Some(true)
     }
 
+    /// Append an immediate LispBM integer using the compact flat-value tag.
+    pub fn push_i(&mut self, value: i32) -> bool {
+        !self.finished && unsafe { crate::ffi::f_i(&mut self.raw, value) } == Some(true)
+    }
+
     /// Append an unsigned 32-bit value.
     pub fn push_u32(&mut self, value: u32) -> bool {
         !self.finished && unsafe { crate::ffi::f_u32(&mut self.raw, value) } == Some(true)
