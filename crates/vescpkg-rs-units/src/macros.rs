@@ -19,6 +19,12 @@ macro_rules! scalar_unit {
                 self.0
             }
 
+            /// Scale this value without converting it to its primitive representation.
+            #[inline(always)]
+            pub const fn scaled_by(self, factor: f32) -> Self {
+                Self(self.0 * factor)
+            }
+
             /// Return the absolute magnitude in the same unit.
             #[must_use]
             pub const fn abs(self) -> Self {
@@ -78,7 +84,7 @@ macro_rules! scalar_unit {
             type Output = Self;
 
             fn mul(self, rhs: f32) -> Self::Output {
-                Self(self.0 * rhs)
+                self.scaled_by(rhs)
             }
         }
 
