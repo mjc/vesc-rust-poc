@@ -105,6 +105,8 @@ fn lisp_lists_validate_tails_and_iterate_fallibly() {
     let integer = LispValue::try_from(7).expect("immediate integer fits");
     let character = LispValue::from_char(b'V');
 
+    assert!(LispValue::nil().is_list());
+    assert!(!integer.is_list());
     let proper = LispValue::cons(integer, LispValue::nil());
     assert!(proper.is_list());
     let mut list = proper.list();
