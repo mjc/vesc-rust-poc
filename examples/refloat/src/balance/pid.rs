@@ -403,7 +403,8 @@ impl Phase {
                 config.ki_limit,
             ),
         };
-        let state = state.with_updated_pid_scales(self.config, self.input.motor_erpm);
+        let mut state = state.with_updated_pid_scales(self.config, self.input.motor_erpm);
+        state.pid_integral_current = currents.integral;
 
         (currents, state)
     }

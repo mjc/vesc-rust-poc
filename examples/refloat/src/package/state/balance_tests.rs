@@ -133,6 +133,11 @@ fn app_data_running_accumulates_angle_i_balance_current_like_refloat_pid() {
         payloads.mode3(),
         payloads.mode4(),
     ));
+    edit_config(&mut state, |config| {
+        assert!(config.set_kp(AngleCurrentGain::new(0.0)));
+        assert!(config.set_kp2(RateCurrentGain::new(0.0)));
+        assert!(config.set_ki(IntegralCurrentGain::new(0.1)));
+    });
     assert!(tick_refloat_state_and_handle_packet(
         &mut state,
         lifecycle,
@@ -144,11 +149,21 @@ fn app_data_running_accumulates_angle_i_balance_current_like_refloat_pid() {
         ],
     ));
     assert!(state.apply_requested_motor_current(bindings));
+    let first_base = state.all_data_payloads().base();
+    let first_error = first_base.setpoints().board().angle().as_degrees()
+        - first_base
+            .attitude()
+            .balance_pitch()
+            .angle_degrees()
+            .as_degrees();
+    let first_integral = state.balance_loop.pid_integral_current.current().as_amps();
     assert!(
-        (telemetry.commanded_current().current().as_amps() - 4.001).abs() < 0.0001,
-        "{:?}",
-        telemetry.commanded_current()
+        (first_integral - first_error * 0.1).abs() < 0.0001,
+        "{first_integral} != {}",
+        first_error * 0.1
     );
+    let first_current = telemetry.commanded_current().current().as_amps();
+    assert!((first_current - first_integral * 0.2).abs() < 0.0001);
 
     assert!(tick_refloat_state_and_handle_packet(
         &mut state,
@@ -165,11 +180,21 @@ fn app_data_running_accumulates_angle_i_balance_current_like_refloat_pid() {
     // Upstream `pid_update` accumulates `pid->i += pid->p * config->ki`
     // and clamps it at `third_party/refloat/src/pid.c:40-46`; RUNNING adds P + I before
     // smoothing balance current at `third_party/refloat/src/main.c:932-954`.
+    let second_base = state.all_data_payloads().base();
+    let second_error = second_base.setpoints().board().angle().as_degrees()
+        - second_base
+            .attitude()
+            .balance_pitch()
+            .angle_degrees()
+            .as_degrees();
+    let second_integral = state.balance_loop.pid_integral_current.current().as_amps();
+    let expected_integral = first_integral + second_error * 0.1;
     assert!(
-        (telemetry.commanded_current().current().as_amps() - 7.2018).abs() < 0.0001,
-        "{:?}",
-        telemetry.commanded_current()
+        (second_integral - expected_integral).abs() < 0.0001,
+        "{second_integral} != {expected_integral}"
     );
+    let expected_current = first_current * 0.8 + second_integral * 0.2;
+    assert!((telemetry.commanded_current().current().as_amps() - expected_current).abs() < 0.0001);
 }
 
 #[test]

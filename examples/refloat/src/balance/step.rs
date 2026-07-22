@@ -184,6 +184,27 @@ mod tests {
     }
 
     #[test]
+    fn balance_loop_unit_persists_pid_integral_across_ticks_like_refloat_pid() {
+        let config = LoopConfig {
+            ki: IntegralCurrentGain::new(1.0),
+            ki_limit: motor_current_limit(Current::from_amps(100.0)),
+            ..base_config()
+        };
+        let input = LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(1.0)),
+            ..base_input()
+        };
+
+        let first = advance_loop(config, input, base_state());
+        let second = advance_loop(config, input, first.state);
+
+        assert_current(
+            second.state.pid_integral_current,
+            motor_current(Current::from_amps(2.0)),
+        );
+    }
+
+    #[test]
     fn balance_loop_unit_limits_normal_current_like_refloat_main_loop() {
         let config = LoopConfig {
             kp: AngleCurrentGain::new(10.0),
