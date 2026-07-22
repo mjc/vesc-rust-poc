@@ -294,6 +294,7 @@ mod slots {
     optional_fn_slot!(can_transmit_eid as unsafe extern "C" fn(u32, *const u8, u8));
     optional_fn_slot!(can_set_duty as unsafe extern "C" fn(u8, f32));
     optional_fn_slot!(can_set_current as unsafe extern "C" fn(u8, f32));
+    optional_fn_slot!(can_set_current_rel as unsafe extern "C" fn(u8, f32));
     optional_fn_slot!(can_set_rpm as unsafe extern "C" fn(u8, f32));
     optional_fn_slot!(can_set_pos as unsafe extern "C" fn(u8, f32));
     optional_fn_slot!(
@@ -1060,6 +1061,11 @@ pub unsafe fn can_set_duty(controller: u8, duty: f32) -> Option<()> {
 /// Send a remote motor current command when the optional slot is present.
 pub unsafe fn can_set_current(controller: u8, current: f32) -> Option<()> {
     unsafe { slots::can_set_current() }.map(|set| unsafe { set(controller, current) })
+}
+
+/// Send a remote motor relative-current command when the optional slot is present.
+pub unsafe fn can_set_current_rel(controller: u8, current: f32) -> Option<()> {
+    unsafe { slots::can_set_current_rel() }.map(|set| unsafe { set(controller, current) })
 }
 
 /// Send a remote motor electrical-speed command when the optional slot is present.

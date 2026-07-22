@@ -652,6 +652,10 @@ pub unsafe fn can_set_current(_controller: u8, _current: f32) -> Option<()> {
     Some(())
 }
 
+pub unsafe fn can_set_current_rel(_controller: u8, _current: f32) -> Option<()> {
+    Some(())
+}
+
 pub unsafe fn can_set_rpm(_controller: u8, _rpm: f32) -> Option<()> {
     Some(())
 }

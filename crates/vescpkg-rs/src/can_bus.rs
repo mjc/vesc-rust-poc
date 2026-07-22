@@ -1,8 +1,8 @@
 //! Safe CAN transport and status snapshots.
 
 use crate::types::{
-    CanControllerId, CanExtendedId, CanPayloadLen, CanStandardId, DutyCycle, ElectricalSpeed,
-    MotorCurrent, PidPosition,
+    CanControllerId, CanExtendedId, CanPayloadLen, CanStandardId, CurrentRelative, DutyCycle,
+    ElectricalSpeed, MotorCurrent, PidPosition,
 };
 use crate::units::{Current, Rpm, SignedRatio, TimestampTicks};
 
@@ -72,11 +72,7 @@ impl CanBus {
     }
 
     /// Transmit a standard 11-bit CAN frame.
-    pub fn transmit_standard(
-        &self,
-        id: CanStandardId,
-        payload: &[u8],
-    ) -> Result<(), CanError> {
+    pub fn transmit_standard(&self, id: CanStandardId, payload: &[u8]) -> Result<(), CanError> {
         let len = CanPayloadLen::try_new(u8::try_from(payload.len()).unwrap_or(u8::MAX))
             .map_err(|_| CanError::PayloadTooLong)?
             .as_u8();
@@ -87,11 +83,7 @@ impl CanBus {
     }
 
     /// Transmit an extended 29-bit CAN frame.
-    pub fn transmit_extended(
-        &self,
-        id: CanExtendedId,
-        payload: &[u8],
-    ) -> Result<(), CanError> {
+    pub fn transmit_extended(&self, id: CanExtendedId, payload: &[u8]) -> Result<(), CanError> {
         let len = CanPayloadLen::try_new(u8::try_from(payload.len()).unwrap_or(u8::MAX))
             .map_err(|_| CanError::PayloadTooLong)?
             .as_u8();
@@ -111,12 +103,19 @@ impl CanBus {
             .ok_or(CanError::Unsupported)
     }
 
-    /// Send a remote motor duty command.
-    pub fn set_duty(
+    /// Send a remote motor relative-current command.
+    pub fn set_current_relative(
         &self,
         controller: CanControllerId,
-        duty: DutyCycle,
+        current: CurrentRelative,
     ) -> Result<(), CanError> {
+        unsafe { crate::ffi::can_set_current_rel(controller.as_u8(), current.ratio().as_ratio()) }
+            .map(|_| ())
+            .ok_or(CanError::Unsupported)
+    }
+
+    /// Send a remote motor duty command.
+    pub fn set_duty(&self, controller: CanControllerId, duty: DutyCycle) -> Result<(), CanError> {
         unsafe { crate::ffi::can_set_duty(controller.as_u8(), duty.ratio().as_ratio()) }
             .map(|_| ())
             .ok_or(CanError::Unsupported)
@@ -129,10 +128,7 @@ impl CanBus {
         rpm: ElectricalSpeed,
     ) -> Result<(), CanError> {
         unsafe {
-            crate::ffi::can_set_rpm(
-                controller.as_u8(),
-                rpm.rpm().as_revolutions_per_minute(),
-            )
+            crate::ffi::can_set_rpm(controller.as_u8(), rpm.rpm().as_revolutions_per_minute())
         }
         .map(|_| ())
         .ok_or(CanError::Unsupported)
@@ -158,8 +154,7 @@ impl CanBus {
             electrical_speed: ElectricalSpeed::new(Rpm::from_revolutions_per_minute(raw.rpm)),
             motor_current: MotorCurrent::new(Current::from_amps(raw.current)),
             duty_cycle: DutyCycle::new(
-                SignedRatio::from_ratio(raw.duty)
-                    .unwrap_or(SignedRatio::from_ratio_const(0.0)),
+                SignedRatio::from_ratio(raw.duty).unwrap_or(SignedRatio::from_ratio_const(0.0)),
             ),
         })
     }
