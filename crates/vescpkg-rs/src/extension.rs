@@ -170,6 +170,12 @@ impl Drop for LispFlatValue {
 }
 
 impl LispProcess {
+    /// Set the firmware-owned error reason for the current LispBM evaluation.
+    #[cfg(not(test))]
+    pub fn set_error_reason(reason: &CStr) -> i32 {
+        unsafe { crate::ffi::lbm_set_error_reason(reason.as_ptr().cast_mut()) }
+    }
+
     /// Return the context currently executing the extension callback.
     #[cfg(not(test))]
     pub fn current() -> LispContextId {
