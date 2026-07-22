@@ -460,6 +460,10 @@ mod slots {
         commands_process_packet as unsafe extern "C" fn(*mut c_uchar, c_uint, ReplyCallback)
     );
     optional_fn_slot!(commands_unregister_reply_func as unsafe extern "C" fn(ReplyCallback));
+    optional_fn_slot!(plot_init as unsafe extern "C" fn(*const c_char, *const c_char));
+    optional_fn_slot!(plot_add_graph as unsafe extern "C" fn(*const c_char));
+    optional_fn_slot!(plot_set_graph as unsafe extern "C" fn(c_int));
+    optional_fn_slot!(plot_send_points as unsafe extern "C" fn(f32, f32));
     fn_slot!(mc_temp_fet_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_temp_motor_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(imu_startup_done as unsafe extern "C" fn() -> bool);
@@ -1898,6 +1902,34 @@ pub unsafe fn commands_process_packet(
 pub unsafe fn commands_unregister_reply_func(reply: ReplyCallback) -> bool {
     unsafe { slots::commands_unregister_reply_func() }
         .map(|func| unsafe { func(reply) })
+        .is_some()
+}
+
+/// Initialize optional firmware plotting output.
+pub unsafe fn plot_init(title: *const c_char, channel: *const c_char) -> bool {
+    unsafe { slots::plot_init() }
+        .map(|func| unsafe { func(title, channel) })
+        .is_some()
+}
+
+/// Add a named graph to optional firmware plotting output.
+pub unsafe fn plot_add_graph(name: *const c_char) -> bool {
+    unsafe { slots::plot_add_graph() }
+        .map(|func| unsafe { func(name) })
+        .is_some()
+}
+
+/// Select a graph in optional firmware plotting output.
+pub unsafe fn plot_set_graph(index: c_int) -> bool {
+    unsafe { slots::plot_set_graph() }
+        .map(|func| unsafe { func(index) })
+        .is_some()
+}
+
+/// Send one point to optional firmware plotting output.
+pub unsafe fn plot_send_points(x: f32, y: f32) -> bool {
+    unsafe { slots::plot_send_points() }
+        .map(|func| unsafe { func(x, y) })
         .is_some()
 }
 /// Return the filtered input/battery voltage.

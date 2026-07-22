@@ -1387,6 +1387,22 @@ pub unsafe fn commands_unregister_reply_func(_reply: unsafe extern "C" fn(*mut u
     true
 }
 
+pub unsafe fn plot_init(_title: *const c_char, _channel: *const c_char) -> bool {
+    true
+}
+
+pub unsafe fn plot_add_graph(_name: *const c_char) -> bool {
+    true
+}
+
+pub unsafe fn plot_set_graph(_index: i32) -> bool {
+    true
+}
+
+pub unsafe fn plot_send_points(_x: f32, _y: f32) -> bool {
+    true
+}
+
 pub unsafe fn mc_get_distance_abs() -> f32 {
     load(&DISTANCE_ABS)
 }
