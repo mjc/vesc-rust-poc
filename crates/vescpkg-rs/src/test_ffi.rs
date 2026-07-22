@@ -13,7 +13,7 @@ use crate::{
 };
 use vescpkg_rs_sys::raw::{
     CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5, CanStatusMsg6,
-    LbmFlatValue, PacketState, RemoteState,
+    GnssData, LbmFlatValue, PacketState, RemoteState,
 };
 use vescpkg_rs_sys::{HardwareType, LbmValue, VescPin, VescPinMode};
 
@@ -1358,6 +1358,21 @@ pub unsafe fn packet_process_byte(_byte: u8, _state: *mut PacketState) -> bool {
 
 pub unsafe fn packet_send_packet(_data: *mut u8, _len: u32, _state: *mut PacketState) -> bool {
     true
+}
+
+pub unsafe fn gnss_snapshot() -> Option<GnssData> {
+    Some(GnssData {
+        lat: 40.0,
+        lon: -105.0,
+        height: 1600.0,
+        speed: 3.5,
+        hdop: 0.9,
+        ms_today: 12_345,
+        yy: 26,
+        mo: 7,
+        dd: 22,
+        last_update: 42,
+    })
 }
 
 pub unsafe fn mc_get_distance_abs() -> f32 {
