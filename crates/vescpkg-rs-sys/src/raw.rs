@@ -953,13 +953,13 @@ pub unsafe fn gnss_snapshot() -> Option<GnssData> {
     unsafe { copy_firmware_record(loader()) }
 }
 
-/// Copy the current remote-control state returned by firmware.
+/// Copy the current remote-control state when firmware exposes the slot.
 ///
 /// # Safety
 ///
 /// The VESC function table must be valid for the duration of this call.
-pub unsafe fn remote_state() -> RemoteState {
-    unsafe { required_slot!(get_remote_state)() }
+pub unsafe fn remote_state() -> Option<RemoteState> {
+    unsafe { slots::get_remote_state() }.map(|func| unsafe { func() })
 }
 
 /// Return the active motor fault code, or zero for no fault.
@@ -975,16 +975,16 @@ pub unsafe fn mc_get_fault() -> c_int {
 ///
 /// # Safety
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-pub unsafe fn get_ppm() -> f32 {
-    unsafe { required_slot!(get_ppm)() }
+pub unsafe fn get_ppm() -> Option<f32> {
+    unsafe { slots::get_ppm() }.map(|func| unsafe { func() })
 }
 
 /// Return the age of the latest decoded PPM input in seconds.
 ///
 /// # Safety
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-pub unsafe fn get_ppm_age() -> f32 {
-    unsafe { required_slot!(get_ppm_age)() }
+pub unsafe fn get_ppm_age() -> Option<f32> {
+    unsafe { slots::get_ppm_age() }.map(|func| unsafe { func() })
 }
 
 /// Return the current motor electrical RPM.

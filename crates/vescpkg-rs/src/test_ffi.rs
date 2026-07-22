@@ -910,23 +910,23 @@ pub unsafe fn mc_get_input_voltage_filtered() -> f32 {
     load(&INPUT_VOLTAGE)
 }
 
-pub unsafe fn get_ppm() -> f32 {
-    load(&PPM_INPUT)
+pub unsafe fn get_ppm() -> Option<f32> {
+    Some(load(&PPM_INPUT))
 }
 
-pub unsafe fn get_ppm_age() -> f32 {
-    load(&PPM_AGE)
+pub unsafe fn get_ppm_age() -> Option<f32> {
+    Some(load(&PPM_AGE))
 }
 
-pub unsafe fn remote_state() -> RemoteState {
-    RemoteState {
+pub unsafe fn remote_state() -> Option<RemoteState> {
+    Some(RemoteState {
         js_x: 0.0,
         js_y: load(&REMOTE_INPUT_Y),
         bt_c: false,
         bt_z: false,
         is_rev: false,
         age_s: load(&REMOTE_AGE),
-    }
+    })
 }
 
 pub unsafe fn imu_startup_done() -> bool {

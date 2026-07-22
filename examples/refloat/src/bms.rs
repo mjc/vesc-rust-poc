@@ -69,12 +69,12 @@ impl RefloatBmsSample {
     fn from_lisp_args(args: &LispArgs<'_>) -> Option<Self> {
         (args.len() > 5).then_some(())?;
         Some(Self::new(
-            Voltage::from_volts(args.get(0)?.as_f32()?),
-            Voltage::from_volts(args.get(1)?.as_f32()?),
-            RefloatBmsTemperature::from_degrees_celsius(args.get(2)?.as_i32()?),
-            RefloatBmsTemperature::from_degrees_celsius(args.get(3)?.as_i32()?),
-            RefloatBmsTemperature::from_degrees_celsius(args.get(4)?.as_i32()?),
-            VescSeconds::from_seconds(args.get(5)?.as_f32()?),
+            Voltage::from_volts(args.get(0)?.decode_number_as_f32()?),
+            Voltage::from_volts(args.get(1)?.decode_number_as_f32()?),
+            RefloatBmsTemperature::from_degrees_celsius(args.get(2)?.decode_number_as_i32()?),
+            RefloatBmsTemperature::from_degrees_celsius(args.get(3)?.decode_number_as_i32()?),
+            RefloatBmsTemperature::from_degrees_celsius(args.get(4)?.decode_number_as_i32()?),
+            VescSeconds::from_seconds(args.get(5)?.decode_number_as_f32()?),
         ))
     }
 }

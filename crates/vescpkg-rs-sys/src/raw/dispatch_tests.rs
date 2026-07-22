@@ -7,8 +7,8 @@ use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescPin, Vesc
 use super::{
     CanStatusMsg, CustomConfigGet, CustomConfigSet, CustomConfigXml, GnssData, RemoteState, VescIf,
     can_status_msg_index, conf_custom_add_config, conf_custom_clear_configs, foc_get_id,
-    foc_play_tone, gnss_snapshot, io_read, io_read_analog, io_set_mode, io_write,
-    lbm_add_extension, lbm_add_extension_with_table_base, lbm_car, lbm_cdr, lbm_cons,
+    foc_play_tone, get_ppm, get_ppm_age, gnss_snapshot, io_read, io_read_analog, io_set_mode,
+    io_write, lbm_add_extension, lbm_add_extension_with_table_base, lbm_car, lbm_cdr, lbm_cons,
     lbm_dec_as_float, lbm_dec_as_i32, lbm_dec_char, lbm_dec_str, lbm_enc_char, lbm_enc_i,
     lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number,
     lbm_list_destructive_reverse, mc_fault_to_string, mc_get_amp_hours, mc_get_amp_hours_charged,
@@ -363,6 +363,14 @@ extern "C" fn stub_get_remote_state() -> RemoteState {
     }
 }
 
+extern "C" fn stub_get_ppm() -> f32 {
+    0.25
+}
+
+extern "C" fn stub_get_ppm_age() -> f32 {
+    0.75
+}
+
 extern "C" fn stub_set_app_data_handler(handler: Option<AppDataHandler>) -> bool {
     SET_APP_DATA_HANDLER.inc();
     LAST_HANDLER_INSTALLED.set(handler.is_some());
@@ -625,6 +633,8 @@ fn populated_table() -> VescIf {
     table.can_get_status_msg_index = Some(stub_can_get_status_msg_index);
     table.mc_gnss = Some(stub_mc_gnss);
     table.get_remote_state = Some(stub_get_remote_state);
+    table.get_ppm = Some(stub_get_ppm);
+    table.get_ppm_age = Some(stub_get_ppm_age);
     table.set_app_data_handler = Some(stub_set_app_data_handler);
     table.send_app_data = Some(stub_send_app_data);
     table.conf_custom_add_config = Some(stub_conf_custom_add_config);
@@ -850,11 +860,29 @@ fn gnss_and_remote_loaders_copy_firmware_owned_records() {
         assert_eq!(gnss.lon, -105.2705);
         assert_eq!(gnss.last_update, 9876);
 
-        let remote = remote_state();
+        let remote = remote_state().expect("mock remote record");
         assert_eq!(remote.js_x, -0.25);
         assert_eq!(remote.js_y, 0.75);
         assert!(remote.bt_c);
         assert!(remote.is_rev);
+    });
+}
+
+#[test]
+fn input_slots_report_absence_instead_of_panicking_on_older_tables() {
+    let table = empty_table();
+    with_table(&table, || unsafe {
+        assert!(remote_state().is_none());
+        assert!(get_ppm().is_none());
+        assert!(get_ppm_age().is_none());
+    });
+}
+
+#[test]
+fn input_slots_forward_through_a_populated_table() {
+    with_populated_table(|| unsafe {
+        assert_eq!(get_ppm(), Some(0.25));
+        assert_eq!(get_ppm_age(), Some(0.75));
     });
 }
 

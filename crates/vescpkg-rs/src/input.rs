@@ -48,8 +48,8 @@ impl ControllerInput {
     pub fn ppm(&self) -> (PpmInput, PpmAge) {
         // C map: Refloat reads these VESC slots in
         // `third_party/refloat/src/remote.c:39-42`.
-        let value = unsafe { crate::ffi::get_ppm() };
-        let age = unsafe { crate::ffi::get_ppm_age() };
+        let input = unsafe { crate::ffi::get_ppm() }.zip(unsafe { crate::ffi::get_ppm_age() });
+        let (value, age) = input.unwrap_or((0.0, f32::INFINITY));
         (
             PpmInput::new(firmware_ratio(value)),
             PpmAge::new(VescSeconds::from_seconds(age.max(0.0))),
@@ -61,9 +61,12 @@ impl ControllerInput {
         // C map: Refloat reads the remote-state slot in
         // `third_party/refloat/src/remote.c:43-48`.
         let remote = unsafe { crate::ffi::remote_state() };
+        let (joystick_y, age) = remote
+            .map(|remote| (remote.js_y, remote.age_s))
+            .unwrap_or((0.0, f32::INFINITY));
         RemoteInput::new(
-            JoystickY::new(firmware_ratio(remote.js_y)),
-            RemoteAge::new(VescSeconds::from_seconds(remote.age_s.max(0.0))),
+            JoystickY::new(firmware_ratio(joystick_y)),
+            RemoteAge::new(VescSeconds::from_seconds(age.max(0.0))),
         )
     }
 }
