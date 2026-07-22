@@ -3,7 +3,7 @@
 //! Integration tests for RAII firmware synchronization.
 
 use vescpkg_rs::test_support::FirmwareTest;
-use vescpkg_rs::{FirmwareMutex, FirmwareSemaphore, SystemTicks};
+use vescpkg_rs::{FirmwareMutex, FirmwareSemaphore, SystemDuration, SystemTicks};
 
 #[test]
 fn mutex_guard_unlocks_before_owned_mutex_is_released() {
@@ -28,6 +28,7 @@ fn semaphore_exposes_wait_timeout_signal_reset_and_release() {
 
     semaphore.wait();
     assert!(semaphore.wait_timeout(SystemTicks::from_ticks(25)));
+    assert!(semaphore.wait_timeout_duration(SystemDuration::new(SystemTicks::from_ticks(25))));
     semaphore.signal();
     semaphore.reset();
 

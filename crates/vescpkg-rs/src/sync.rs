@@ -3,6 +3,7 @@
 use core::ffi::c_void;
 use core::ptr::NonNull;
 
+use crate::types::SystemDuration;
 use crate::units::SystemTicks;
 
 /// An owned firmware mutex allocated from the VESC package heap.
@@ -80,6 +81,11 @@ impl FirmwareSemaphore {
     /// Wait for at most `timeout` system ticks, returning `false` on timeout.
     pub fn wait_timeout(&self, timeout: SystemTicks) -> bool {
         unsafe { crate::ffi::vesc_sem_wait_to(self.handle.as_ptr(), timeout.as_ticks()) }
+    }
+
+    /// Wait for a typed system-clock duration, returning `false` on timeout.
+    pub fn wait_timeout_duration(&self, timeout: SystemDuration) -> bool {
+        self.wait_timeout(timeout.duration())
     }
 
     /// Signal the semaphore.
