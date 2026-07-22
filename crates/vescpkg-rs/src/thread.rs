@@ -40,8 +40,7 @@ impl TimerInstant {
         Self(raw)
     }
 
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware clock helpers need the raw timer value when package code uses high-resolution timing.
+    #[cfg_attr(test, allow(dead_code))]
     pub(crate) const fn raw(self) -> u32 {
         self.0
     }
@@ -120,6 +119,7 @@ pub(crate) struct AppDataApi<B> {
     bindings: B,
 }
 
+#[cfg_attr(test, allow(dead_code))]
 impl<B: AppDataBindings> AppDataApi<B> {
     /// Construct a new firmware app-data API wrapper.
     pub(crate) fn new(bindings: B) -> Self {

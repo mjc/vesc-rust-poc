@@ -11,6 +11,7 @@ use vescpkg_rs::{
 unsafe extern "C" fn test_pwm_callback() {}
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn motor_exposes_typed_handbrake_commands() {
     let firmware = vescpkg_rs::test_support::FirmwareTest::new()
         .with_d_axis_current(Some(DCurrent::new(Current::from_amps(1.5))));

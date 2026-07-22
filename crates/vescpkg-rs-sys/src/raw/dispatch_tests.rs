@@ -1,3 +1,5 @@
+#![allow(clippy::missing_transmute_annotations)]
+
 use core::cell::Cell;
 use core::ffi::{CStr, c_char, c_int, c_uchar, c_uint, c_void};
 
@@ -988,7 +990,7 @@ fn input_and_timeout_wrappers_report_optional_slot_presence() {
         assert_eq!(get_ppm_age(), Some(0.25));
         assert_eq!(app_is_output_disabled(), Some(true));
         assert_eq!(store_backup_data(), Some(false));
-        assert_eq!(timeout_has_timeout(), true);
+        assert!(timeout_has_timeout());
         assert_eq!(timeout_secs_since_update(), 1.25);
     });
 

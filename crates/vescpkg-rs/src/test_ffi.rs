@@ -1,3 +1,11 @@
+#![allow(
+    clippy::bool_to_int_with_if,
+    clippy::cast_lossless,
+    clippy::cast_precision_loss,
+    clippy::unnecessary_wraps,
+    clippy::used_underscore_binding
+)]
+
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::hint::spin_loop;
 use core::sync::atomic::{

@@ -78,7 +78,7 @@ impl UartLease {
         match unsafe { crate::ffi::uart_read() } {
             None => Err(UartError::Unavailable),
             Some(-1) => Ok(None),
-            Some(value) if (0..=u8::MAX as i32).contains(&value) => Ok(Some(value as u8)),
+            Some(value) if (0..=i32::from(u8::MAX)).contains(&value) => Ok(Some(value as u8)),
             Some(_) => Err(UartError::InvalidRead),
         }
     }

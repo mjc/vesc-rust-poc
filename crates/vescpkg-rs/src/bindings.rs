@@ -69,6 +69,7 @@ impl<B: LbmBindings + ?Sized> LbmBindings for &B {
 }
 
 /// Firmware calls used by the app-data and system-time helpers.
+#[allow(dead_code)]
 pub(crate) trait AppDataBindings {
     /// # Safety
     /// `handler` must remain valid until it is replaced or cleared.

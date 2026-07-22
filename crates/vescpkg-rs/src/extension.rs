@@ -86,6 +86,7 @@ pub struct LispProcess;
 /// The buffer is reclaimed if the value is dropped without being accepted by
 /// a context; a successful unblock transfers ownership to LispBM.
 #[cfg_attr(not(test), must_use)]
+#[cfg_attr(test, allow(dead_code))]
 pub struct LispFlatValue {
     raw: LbmFlatValue,
     finished: bool,
