@@ -9,6 +9,10 @@ use vescpkg_rs::{LispContextId, LispFlatValue, LispProcess, LispSymbol, LispValu
 fn lisp_values_expose_explicit_kind_predicates() {
     let firmware = FirmwareTest::new();
     let integer = LispValue::try_from(7).expect("immediate integer fits");
+    assert!(LispValue::nil().is_nil());
+    assert!(LispValue::true_value().is_true());
+    assert!(!integer.is_nil());
+    assert!(!integer.is_true());
 
     assert!(integer.is_integer());
     assert!(integer.is_number());

@@ -330,8 +330,21 @@ impl LispValue {
         call_vesc_ffi!(lbm_is_byte_array(self.raw()))
     }
 
+    /// Return whether this value is the canonical `LispBM` nil value.
+    #[must_use]
+    pub fn is_nil(self) -> bool {
+        self == Self::nil()
+    }
+
+    /// Return whether this value is the canonical `LispBM` true value.
+    #[must_use]
+    pub fn is_true(self) -> bool {
+        self == Self::true_value()
+    }
+
     /// Allocate a `LispBM` byte array through the firmware allocator.
     #[must_use]
+    /// Allocate a `LispBM` byte array through the firmware allocator.
     pub fn try_byte_array(len: usize) -> Option<Self> {
         let len = u32::try_from(len).ok()?;
         let mut value = LbmValue(0);
