@@ -9,6 +9,12 @@ use crate::units::SystemTicks;
 ///
 /// The handle is deliberately neither `Send` nor `Sync`: firmware mutex
 /// ownership and the thread that may use it are provider-defined.
+///
+/// ```compile_fail
+/// use vescpkg_rs::FirmwareMutex;
+/// fn requires_send<T: Send>() {}
+/// requires_send::<FirmwareMutex>();
+/// ```
 pub struct FirmwareMutex {
     handle: NonNull<c_void>,
 }
@@ -46,6 +52,15 @@ impl Drop for FirmwareMutexGuard<'_> {
 }
 
 /// An owned firmware semaphore allocated from the VESC package heap.
+///
+/// Semaphore handles remain thread-affine until the provider documents a
+/// cross-thread ownership contract.
+///
+/// ```compile_fail
+/// use vescpkg_rs::FirmwareSemaphore;
+/// fn requires_sync<T: Sync>() {}
+/// requires_sync::<FirmwareSemaphore>();
+/// ```
 pub struct FirmwareSemaphore {
     handle: NonNull<c_void>,
 }
