@@ -3,7 +3,7 @@
 //! Integration tests for the safe LispBM value predicates.
 
 use vescpkg_rs::test_support::FirmwareTest;
-use vescpkg_rs::{LispContextId, LispSymbol, LispValue};
+use vescpkg_rs::{LispContextId, LispProcess, LispSymbol, LispValue};
 
 #[test]
 fn lisp_values_expose_explicit_kind_predicates() {
@@ -65,4 +65,8 @@ fn lisp_values_expose_explicit_kind_predicates() {
         integer.send_to(LispContextId::new(9)),
         Err(vescpkg_rs::LispMessageError::Rejected)
     );
+
+    let current = LispProcess::current();
+    LispProcess::block_current();
+    assert!(LispProcess::unblock(current, integer).is_ok());
 }
