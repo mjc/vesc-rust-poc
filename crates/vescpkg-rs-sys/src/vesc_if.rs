@@ -326,6 +326,13 @@ impl AbiError {
             }
         }
     }
+
+    /// Return the manifest slot that was required or probed.
+    pub const fn slot(self) -> VescIfSlot {
+        match self {
+            Self::MissingRequired { slot, .. } | Self::Unsupported { slot, .. } => slot,
+        }
+    }
 }
 
 impl VescIfSlot {

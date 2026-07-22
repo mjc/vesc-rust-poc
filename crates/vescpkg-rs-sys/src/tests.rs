@@ -379,6 +379,9 @@ fn vesc_if_capabilities_keep_required_checks_and_revision_observations_separate(
             slot: VescIfAbi::CAN_TRANSMIT_SID,
         }
     );
+    let error = capabilities.require_can().unwrap_err();
+    assert_eq!(error.capability(), "CAN");
+    assert_eq!(error.slot(), VescIfAbi::CAN_TRANSMIT_SID);
     assert_eq!(capabilities.revision(), Stm32AbiRevision::UnknownCompatible);
     assert!(capabilities.require_settings().is_ok());
 }
