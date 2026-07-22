@@ -138,13 +138,14 @@ impl FirmwareInputs {
     /// Copy the remote-control state before returning it to package code.
     pub fn remote(&self) -> Result<RemoteInputSnapshot, InputError> {
         let raw = unsafe { crate::ffi::remote_state() };
+        let age = decode_age(raw.age_s)?;
         Ok(RemoteInputSnapshot {
             joystick_x: JoystickX::new(decode_ratio(raw.js_x)?),
             joystick_y: JoystickY::new(decode_ratio(raw.js_y)?),
             bluetooth_connected: raw.bt_c,
             bluetooth_z: raw.bt_z,
             reverse: raw.is_rev,
-            age: RemoteAge::new(VescSeconds::from_seconds(raw.age_s)),
+            age: RemoteAge::new(age),
         })
     }
 
@@ -154,7 +155,7 @@ impl FirmwareInputs {
         let age = unsafe { crate::ffi::get_ppm_age() }.ok_or(InputError::Unsupported)?;
         Ok(PpmSnapshot {
             value: PpmInput::new(decode_ratio(value)?),
-            age: PpmAge::new(VescSeconds::from_seconds(age)),
+            age: PpmAge::new(decode_age(age)?),
         })
     }
 
@@ -204,6 +205,12 @@ fn decode_ratio(value: f32) -> Result<SignedRatio, InputError> {
     SignedRatio::from_ratio(value).map_err(|_| InputError::InvalidValue)
 }
 
+fn decode_age(value: f32) -> Result<VescSeconds, InputError> {
+    (value.is_finite() && value >= 0.0)
+        .then(|| VescSeconds::from_seconds(value))
+        .ok_or(InputError::InvalidValue)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{InputError, decode_ratio};
@@ -211,5 +218,16 @@ mod tests {
     #[test]
     fn ratio_decode_rejects_values_outside_the_input_domain() {
         assert_eq!(decode_ratio(2.0), Err(InputError::InvalidValue));
+    }
+
+    #[test]
+    fn age_decode_rejects_negative_and_non_finite_values() {
+        assert_eq!(super::decode_age(-0.1), Err(InputError::InvalidValue));
+        assert_eq!(super::decode_age(f32::NAN), Err(InputError::InvalidValue));
+        assert_eq!(
+            super::decode_age(f32::INFINITY),
+            Err(InputError::InvalidValue)
+        );
+        assert_eq!(super::decode_age(0.25).unwrap().as_seconds(), 0.25);
     }
 }
