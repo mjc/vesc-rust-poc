@@ -148,3 +148,16 @@ fn can_bus_copies_status_message_six() {
     assert_eq!(status.adc3().voltage().as_volts(), 3.0);
     assert_eq!(status.ppm().ratio().as_ratio(), 0.5);
 }
+
+#[test]
+fn can_status_reports_wrapping_age_and_staleness() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    let status = firmware
+        .can()
+        .status(CanControllerId::new(7))
+        .expect("CAN status");
+    let now = vescpkg_rs::TimestampTicks::from_ticks(130);
+
+    assert_eq!(status.age_at(now).as_ticks(), 7);
+    assert!(status.is_stale(now, vescpkg_rs::SystemTicks::from_ticks(5)));
+}
