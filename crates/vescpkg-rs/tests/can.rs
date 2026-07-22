@@ -208,3 +208,19 @@ fn can_receiver_registration_is_exclusive_and_released_on_drop() {
     drop(registration);
     assert!(bus.register_standard_receiver(test_can_receiver).is_ok());
 }
+
+#[test]
+fn can_extended_receiver_registration_is_exclusive() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    let bus = firmware.can();
+    let registration = bus
+        .register_extended_receiver(test_can_receiver)
+        .expect("EID receiver registration");
+
+    assert!(matches!(
+        bus.register_extended_receiver(test_can_receiver),
+        Err(CanError::ReceiverBusy)
+    ));
+    drop(registration);
+    assert!(bus.register_extended_receiver(test_can_receiver).is_ok());
+}
