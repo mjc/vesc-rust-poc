@@ -180,6 +180,25 @@ impl Drop for LispFlatValue {
 }
 
 impl LispProcess {
+    /// Pause LispBM evaluation after retaining at least `minimum_free` words.
+    #[cfg(not(test))]
+    pub fn pause_evaluation(minimum_free: u32) {
+        unsafe { crate::ffi::lbm_pause_eval_with_gc(minimum_free) };
+    }
+
+    /// Continue LispBM evaluation after a prior pause.
+    #[cfg(not(test))]
+    pub fn continue_evaluation() {
+        unsafe { crate::ffi::lbm_continue_eval() };
+    }
+
+    /// Return whether LispBM evaluation is currently paused.
+    #[cfg(not(test))]
+    #[must_use]
+    pub fn is_evaluation_paused() -> bool {
+        unsafe { crate::ffi::lbm_eval_is_paused() }
+    }
+
     /// Set the firmware-owned error reason for the current LispBM evaluation.
     #[cfg(not(test))]
     pub fn set_error_reason(reason: &CStr) -> i32 {
