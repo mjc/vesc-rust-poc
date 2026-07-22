@@ -9,7 +9,11 @@ use crate::types::{
 };
 use crate::units::{AccelerationG, AngularVelocity, MagneticFluxDensity, VescSeconds};
 use crate::units::{AngleDegrees, AngleRadians};
+use core::marker::PhantomData;
+use core::sync::atomic::{AtomicBool, Ordering};
 use vescpkg_rs_sys::raw::AttitudeInfo;
+
+static IMU_READ_CALLBACK_REGISTERED: AtomicBool = AtomicBool::new(false);
 
 /// Copied state from one firmware `ATTITUDE_INFO` value.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -610,6 +614,53 @@ impl<B: ImuBindings + ?Sized> ImuBindings for &B {
 pub trait ImuReadCallback {
     /// Handle one typed hardware IMU read sample copied from the firmware callback.
     fn read(sample: ImuReadSample);
+}
+
+/// Failure returned while registering the retained firmware IMU callback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImuReadCallbackError {
+    /// Another package callback already owns the firmware slot.
+    AlreadyRegistered,
+}
+
+impl core::fmt::Display for ImuReadCallbackError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str("a firmware IMU read callback is already registered")
+    }
+}
+
+impl core::error::Error for ImuReadCallbackError {}
+
+/// Exclusive ownership of the retained firmware IMU read callback.
+pub struct ImuReadCallbackLease<T: ImuReadCallback + 'static> {
+    _handler: PhantomData<fn() -> T>,
+}
+
+/// Register one typed callback against the retained firmware IMU read slot.
+///
+/// # Safety
+///
+/// `T::read` runs from firmware IMU context and must obey the provider's callback-time
+/// restrictions. The callback type must remain valid for the lease lifetime.
+pub unsafe fn register_imu_read_callback<T: ImuReadCallback + 'static>()
+-> Result<ImuReadCallbackLease<T>, ImuReadCallbackError> {
+    if IMU_READ_CALLBACK_REGISTERED
+        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
+        return Err(ImuReadCallbackError::AlreadyRegistered);
+    }
+    unsafe { crate::ffi::imu_set_read_callback(Some(imu_read_callback::<T>)) };
+    Ok(ImuReadCallbackLease {
+        _handler: PhantomData,
+    })
+}
+
+impl<T: ImuReadCallback + 'static> Drop for ImuReadCallbackLease<T> {
+    fn drop(&mut self) {
+        unsafe { crate::ffi::imu_set_read_callback(None) };
+        IMU_READ_CALLBACK_REGISTERED.store(false, Ordering::Release);
+    }
 }
 
 /// Typed IMU sample handler for package-owned state.
