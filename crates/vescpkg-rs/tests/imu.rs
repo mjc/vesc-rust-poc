@@ -2,7 +2,8 @@
 //! Integration coverage for typed firmware IMU vectors.
 
 use vescpkg_rs::{
-    AngleDegrees, AngleRadians, Imu, ImuCalibrationError, ImuPitch, ImuRoll, ImuYaw,
+    AngleDegrees, AngleRadians, Imu, ImuCalibrationError, ImuOrientation, ImuPitch, ImuQuaternion,
+    ImuQuaternionW, ImuQuaternionX, ImuQuaternionY, ImuQuaternionZ, ImuRoll, ImuYaw,
     test_support::FirmwareTest,
 };
 
@@ -24,6 +25,26 @@ fn firmware_imu_exposes_vectors_and_derotated_samples() {
     assert!((rpy.roll().angle().as_radians() - 0.1).abs() < 1.0e-6);
     assert!((rpy.pitch().angle().as_radians() + 0.2).abs() < 1.0e-6);
     assert!((rpy.yaw().angle().as_radians() - 0.3).abs() < 1.0e-6);
+
+    let first_orientation = ImuOrientation::from_quaternion(ImuQuaternion::from_components(
+        ImuQuaternionW::new(0.9),
+        ImuQuaternionX::new(0.1),
+        ImuQuaternionY::new(0.2),
+        ImuQuaternionZ::new(0.3),
+    ));
+    firmware.set_imu_orientation(first_orientation);
+    assert_eq!(imu.orientation(), first_orientation);
+    firmware.set_imu_orientation(ImuOrientation::from_quaternion(
+        ImuQuaternion::from_components(
+            ImuQuaternionW::new(0.8),
+            ImuQuaternionX::new(0.4),
+            ImuQuaternionY::new(0.5),
+            ImuQuaternionZ::new(0.6),
+        ),
+    ));
+    assert_eq!(first_orientation.quaternion().w(), ImuQuaternionW::new(0.9));
+    assert_ne!(imu.orientation(), first_orientation);
+
     let calibration = imu
         .calibrate(AngleDegrees::from_degrees(90.0))
         .expect("calibration snapshot");
