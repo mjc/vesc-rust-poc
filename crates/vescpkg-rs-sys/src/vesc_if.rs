@@ -363,6 +363,11 @@ impl VescIfSlot {
         self.offset
     }
 
+    /// Return the corresponding host byte offset for a pointer-sized table.
+    pub const fn host_byte_offset(self, pointer_size: usize) -> usize {
+        self.slot_index() * pointer_size
+    }
+
     /// Return the slot index in the 32-bit function table.
     #[must_use]
     pub const fn slot_index(self) -> usize {

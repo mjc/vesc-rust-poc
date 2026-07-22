@@ -4,7 +4,8 @@ use core::ffi::{CStr, c_char, c_int, c_uchar, c_uint, c_void};
 use crate::c_vesc_if;
 use crate::test_support::{empty_table, with_table};
 use crate::{
-    AppDataHandler, ExtensionHandler, FaultCode, LbmValue, VescIfAbi, VescPin, VescPinMode,
+    AppDataHandler, ExtensionHandler, FaultCode, LbmValue, VescIfAbi, VescIfSlot, VescPin,
+    VescPinMode,
 };
 
 use super::{
@@ -646,25 +647,37 @@ unsafe extern "C" fn stub_wipe_nvm() -> bool {
 
 fn populated_table() -> VescIf {
     let mut table = empty_table();
-    table.lbm_add_extension = Some(stub_lbm_add_extension);
-    table.lbm_dec_as_float = Some(stub_lbm_dec_as_float);
+    macro_rules! install {
+        ($field:ident, $function:ident) => {
+            table.$field =
+                Some(unsafe { core::mem::transmute::<usize, _>($function as *const () as usize) });
+        };
+    }
+    install!(lbm_add_extension, stub_lbm_add_extension);
+    install!(lbm_dec_as_float, stub_lbm_dec_as_float);
     table.lbm_dec_as_i32 = Some(stub_lbm_dec_as_i32);
-    table.lbm_dec_char = Some(stub_lbm_dec_char);
-    table.lbm_enc_i = Some(stub_lbm_enc_i);
-    table.lbm_enc_char = Some(stub_lbm_enc_char);
-    table.lbm_cons = Some(stub_lbm_cons);
-    table.lbm_car = Some(stub_lbm_car);
-    table.lbm_cdr = Some(stub_lbm_cdr);
-    table.lbm_list_destructive_reverse = Some(stub_lbm_list_destructive_reverse);
-    table.lbm_dec_str = Some(stub_lbm_dec_str);
-    table.lbm_create_byte_array = Some(stub_lbm_create_byte_array);
-    table.lbm_enc_sym = Some(stub_lbm_enc_sym);
-    table.lbm_dec_sym = Some(stub_lbm_dec_sym);
-    table.lbm_send_message = Some(stub_lbm_send_message);
-    table.lbm_get_current_cid = Some(stub_lbm_get_current_cid);
-    table.lbm_block_ctx_from_extension = Some(stub_lbm_block_ctx_from_extension);
-    table.lbm_unblock_ctx_unboxed = Some(stub_lbm_unblock_ctx_unboxed);
-    table.lbm_is_number = Some(stub_lbm_is_number);
+    install!(lbm_dec_char, stub_lbm_dec_char);
+    install!(lbm_enc_i, stub_lbm_enc_i);
+    install!(lbm_enc_char, stub_lbm_enc_char);
+    install!(lbm_cons, stub_lbm_cons);
+    install!(lbm_car, stub_lbm_car);
+    install!(lbm_cdr, stub_lbm_cdr);
+    install!(
+        lbm_list_destructive_reverse,
+        stub_lbm_list_destructive_reverse
+    );
+    install!(lbm_dec_str, stub_lbm_dec_str);
+    install!(lbm_create_byte_array, stub_lbm_create_byte_array);
+    install!(lbm_enc_sym, stub_lbm_enc_sym);
+    install!(lbm_dec_sym, stub_lbm_dec_sym);
+    install!(lbm_send_message, stub_lbm_send_message);
+    install!(lbm_get_current_cid, stub_lbm_get_current_cid);
+    install!(
+        lbm_block_ctx_from_extension,
+        stub_lbm_block_ctx_from_extension
+    );
+    install!(lbm_unblock_ctx_unboxed, stub_lbm_unblock_ctx_unboxed);
+    install!(lbm_is_number, stub_lbm_is_number);
     table.lbm_enc_sym_nil = 0xAABB_0000;
     table.lbm_enc_sym_true = 0xAABB_1100;
     table.lbm_enc_sym_eerror = 0xAABB_CC00;
@@ -679,7 +692,7 @@ fn populated_table() -> VescIf {
     table.get_ppm_age = Some(stub_get_ppm_age);
     table.set_app_data_handler = Some(stub_set_app_data_handler);
     table.send_app_data = Some(stub_send_app_data);
-    table.conf_custom_add_config = Some(stub_conf_custom_add_config);
+    install!(conf_custom_add_config, stub_conf_custom_add_config);
     table.conf_custom_clear_configs = Some(stub_conf_custom_clear_configs);
     table.sleep_us = Some(stub_sleep_us);
     table.thread_set_priority = Some(stub_thread_set_priority);
@@ -688,10 +701,10 @@ fn populated_table() -> VescIf {
     table.mutex_unlock = Some(stub_mutex_unlock);
     table.system_time = Some(stub_system_time);
     table.system_time_ticks = Some(stub_system_time_ticks);
-    table.io_set_mode = Some(stub_io_set_mode);
-    table.io_write = Some(stub_io_write);
-    table.io_read = Some(stub_io_read);
-    table.io_read_analog = Some(stub_io_read_analog);
+    install!(io_set_mode, stub_io_set_mode);
+    install!(io_write, stub_io_write);
+    install!(io_read, stub_io_read);
+    install!(io_read_analog, stub_io_read_analog);
     table.mc_get_rpm = Some(stub_mc_get_rpm);
     table.mc_get_speed = Some(stub_mc_get_speed);
     table.mc_get_tot_current_filtered = Some(stub_mc_get_tot_current_filtered);
@@ -710,8 +723,7 @@ fn populated_table() -> VescIf {
     table.mc_get_watt_hours_charged = Some(stub_mc_get_watt_hours_charged);
     table.mc_get_battery_level = Some(stub_mc_get_battery_level);
     table.mc_get_odometer = Some(stub_mc_get_odometer);
-    table.mc_get_fault = Some(stub_mc_get_fault);
-    table.mc_fault_to_string = Some(stub_mc_fault_to_string);
+    install!(mc_get_fault, stub_mc_get_fault);
     table.mc_get_input_voltage_filtered = Some(stub_mc_get_input_voltage_filtered);
     table
 }
@@ -1100,7 +1112,7 @@ fn sleep_us_forwards_through_mock_table() {
 }
 
 #[test]
-#[should_panic(expected = "mock VESC_IF table must populate required slot")]
+#[should_panic(expected = "required VESC_IF slot is unavailable")]
 fn missing_required_slot_fails_loudly() {
     let mut table = populated_table();
     table.sleep_us = None;
@@ -1251,13 +1263,16 @@ fn generated_vesc_if_inventory_matches_pinned_upstream_header() {
     assert_eq!(c_vesc_if::shutdown_disable::INDEX, 252);
     assert_eq!(c_vesc_if::shutdown_disable::HEADER_LINE, 672);
 
-    assert_eq!(c_vesc_if::SLOTS[0].name, c_vesc_if::lbm_add_extension::NAME);
     assert_eq!(
-        c_vesc_if::SLOTS[c_vesc_if::FIELD_COUNT - 1].name,
+        c_vesc_if::SLOTS[0].name(),
+        c_vesc_if::lbm_add_extension::NAME
+    );
+    assert_eq!(
+        c_vesc_if::SLOTS[c_vesc_if::FIELD_COUNT - 1].name(),
         c_vesc_if::shutdown_disable::NAME
     );
     assert_eq!(
-        c_vesc_if::SLOTS[c_vesc_if::FIELD_COUNT - 1].vesc32_byte_offset,
+        c_vesc_if::SLOTS[c_vesc_if::FIELD_COUNT - 1].vesc32_byte_offset(),
         c_vesc_if::shutdown_disable::VESC32_BYTE_OFFSET
     );
 }
@@ -1267,34 +1282,42 @@ fn public_vesc_if_slots_are_projected_from_generated_inventory() {
     for slot in VescIfAbi::USED_SLOTS {
         let generated = c_vesc_if::SLOTS
             .iter()
-            .find(|generated| generated.name == slot.name())
+            .find(|generated| generated.name() == slot.name())
             .expect("used slot must exist in generated upstream inventory");
 
-        assert_eq!(generated.index, slot.slot_index());
-        assert_eq!(generated.vesc32_byte_offset, slot.vesc32_byte_offset());
+        assert_eq!(generated.slot_index(), slot.slot_index());
+        assert_eq!(generated.vesc32_byte_offset(), slot.vesc32_byte_offset());
     }
 }
 
 #[test]
 fn vesc_if_abi_gpio_offsets_match_struct_layout() {
     let pointer_size = core::mem::size_of::<usize>();
-    let vesc32 = |field_offset: usize| (field_offset / pointer_size) * 4;
+    let host = |slot: VescIfSlot| {
+        VescIfAbi::ALL_ENTRIES[..slot.slot_index()]
+            .iter()
+            .fold(0, |offset, entry| {
+                let field_size = if entry.is_callable() { pointer_size } else { 4 };
+                let aligned = (offset + field_size - 1) & !(field_size - 1);
+                aligned + field_size
+            })
+    };
 
     assert_eq!(
-        VescIfAbi::IO_SET_MODE.vesc32_byte_offset(),
-        vesc32(core::mem::offset_of!(VescIf, io_set_mode))
+        host(VescIfAbi::IO_SET_MODE),
+        core::mem::offset_of!(VescIf, io_set_mode)
     );
     assert_eq!(
-        VescIfAbi::IO_WRITE.vesc32_byte_offset(),
-        vesc32(core::mem::offset_of!(VescIf, io_write))
+        host(VescIfAbi::IO_WRITE),
+        core::mem::offset_of!(VescIf, io_write)
     );
     assert_eq!(
-        VescIfAbi::IO_READ.vesc32_byte_offset(),
-        vesc32(core::mem::offset_of!(VescIf, io_read))
+        host(VescIfAbi::IO_READ),
+        core::mem::offset_of!(VescIf, io_read)
     );
     assert_eq!(
-        VescIfAbi::IO_READ_ANALOG.vesc32_byte_offset(),
-        vesc32(core::mem::offset_of!(VescIf, io_read_analog))
+        host(VescIfAbi::IO_READ_ANALOG),
+        core::mem::offset_of!(VescIf, io_read_analog)
     );
 }
 
@@ -1303,65 +1326,81 @@ fn vesc_if_abi_custom_config_offsets_match_struct_layout() {
     // Refloat v1.2.1 uses `src/main.c:2456` and `src/main.c:2403`; the matching
     // ABI slots are declared in `vesc_pkg_lib/vesc_c_if.h:549-553`.
     let pointer_size = core::mem::size_of::<usize>();
-    let vesc32 = |field_offset: usize| (field_offset / pointer_size) * 4;
+    let host = |slot: VescIfSlot| {
+        VescIfAbi::ALL_ENTRIES[..slot.slot_index()]
+            .iter()
+            .fold(0, |offset, entry| {
+                let field_size = if entry.is_callable() { pointer_size } else { 4 };
+                let aligned = (offset + field_size - 1) & !(field_size - 1);
+                aligned + field_size
+            })
+    };
 
     assert_eq!(
-        VescIfAbi::CONF_CUSTOM_ADD_CONFIG.vesc32_byte_offset(),
-        vesc32(core::mem::offset_of!(VescIf, conf_custom_add_config))
+        host(VescIfAbi::CONF_CUSTOM_ADD_CONFIG),
+        core::mem::offset_of!(VescIf, conf_custom_add_config)
     );
     assert_eq!(
-        VescIfAbi::CONF_CUSTOM_CLEAR_CONFIGS.vesc32_byte_offset(),
-        vesc32(core::mem::offset_of!(VescIf, conf_custom_clear_configs))
+        host(VescIfAbi::CONF_CUSTOM_CLEAR_CONFIGS),
+        core::mem::offset_of!(VescIf, conf_custom_clear_configs)
     );
 }
 
 #[test]
 fn vesc_if_abi_motor_data_offsets_match_struct_layout() {
     let pointer_size = core::mem::size_of::<usize>();
-    let vesc32 = |field_offset: usize| (field_offset / pointer_size) * 4;
+    let host = |slot: VescIfSlot| {
+        VescIfAbi::ALL_ENTRIES[..slot.slot_index()]
+            .iter()
+            .fold(0, |offset, entry| {
+                let field_size = if entry.is_callable() { pointer_size } else { 4 };
+                let aligned = (offset + field_size - 1) & !(field_size - 1);
+                aligned + field_size
+            })
+    };
 
     assert_eq!(
-        VescIfAbi::MC_GET_AMP_HOURS.vesc32_byte_offset(),
-        vesc32(core::mem::offset_of!(VescIf, mc_get_amp_hours))
+        host(VescIfAbi::MC_GET_AMP_HOURS),
+        core::mem::offset_of!(VescIf, mc_get_amp_hours)
     );
     assert_eq!(
-        VescIfAbi::MC_GET_AMP_HOURS_CHARGED.vesc32_byte_offset(),
-        vesc32(core::mem::offset_of!(VescIf, mc_get_amp_hours_charged))
+        host(VescIfAbi::MC_GET_AMP_HOURS_CHARGED),
+        core::mem::offset_of!(VescIf, mc_get_amp_hours_charged)
     );
     assert_eq!(
-        VescIfAbi::MC_GET_WATT_HOURS.vesc32_byte_offset(),
-        vesc32(core::mem::offset_of!(VescIf, mc_get_watt_hours))
+        host(VescIfAbi::MC_GET_WATT_HOURS),
+        core::mem::offset_of!(VescIf, mc_get_watt_hours)
     );
     assert_eq!(
-        VescIfAbi::MC_GET_WATT_HOURS_CHARGED.vesc32_byte_offset(),
-        vesc32(core::mem::offset_of!(VescIf, mc_get_watt_hours_charged))
+        host(VescIfAbi::MC_GET_WATT_HOURS_CHARGED),
+        core::mem::offset_of!(VescIf, mc_get_watt_hours_charged)
     );
     assert_eq!(
-        VescIfAbi::MC_GET_DISTANCE_ABS.vesc32_byte_offset(),
-        vesc32(core::mem::offset_of!(VescIf, mc_get_distance_abs))
+        host(VescIfAbi::MC_GET_DISTANCE_ABS),
+        core::mem::offset_of!(VescIf, mc_get_distance_abs)
     );
     assert_eq!(
-        VescIfAbi::MC_TEMP_FET_FILTERED.vesc32_byte_offset(),
-        vesc32(core::mem::offset_of!(VescIf, mc_temp_fet_filtered))
+        host(VescIfAbi::MC_TEMP_FET_FILTERED),
+        core::mem::offset_of!(VescIf, mc_temp_fet_filtered)
     );
     assert_eq!(
-        VescIfAbi::MC_TEMP_MOTOR_FILTERED.vesc32_byte_offset(),
-        vesc32(core::mem::offset_of!(VescIf, mc_temp_motor_filtered))
+        host(VescIfAbi::MC_TEMP_MOTOR_FILTERED),
+        core::mem::offset_of!(VescIf, mc_temp_motor_filtered)
     );
     assert_eq!(
-        VescIfAbi::MC_GET_BATTERY_LEVEL.vesc32_byte_offset(),
-        vesc32(core::mem::offset_of!(VescIf, mc_get_battery_level))
+        host(VescIfAbi::MC_GET_BATTERY_LEVEL),
+        core::mem::offset_of!(VescIf, mc_get_battery_level)
     );
     assert_eq!(
-        VescIfAbi::MC_GET_ODOMETER.vesc32_byte_offset(),
-        vesc32(core::mem::offset_of!(VescIf, mc_get_odometer))
+        host(VescIfAbi::MC_GET_ODOMETER),
+        core::mem::offset_of!(VescIf, mc_get_odometer)
     );
     assert_eq!(
-        VescIfAbi::MC_GET_FAULT.vesc32_byte_offset(),
-        vesc32(core::mem::offset_of!(VescIf, mc_get_fault))
+        host(VescIfAbi::MC_GET_FAULT),
+        core::mem::offset_of!(VescIf, mc_get_fault)
     );
     assert_eq!(
-        VescIfAbi::MC_GET_INPUT_VOLTAGE_FILTERED.vesc32_byte_offset(),
-        vesc32(core::mem::offset_of!(VescIf, mc_get_input_voltage_filtered))
+        host(VescIfAbi::MC_GET_INPUT_VOLTAGE_FILTERED),
+        core::mem::offset_of!(VescIf, mc_get_input_voltage_filtered)
     );
 }

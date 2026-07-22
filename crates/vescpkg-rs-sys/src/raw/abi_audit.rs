@@ -1,4 +1,10 @@
-use std::{mem::size_of, path::PathBuf, vec, vec::Vec};
+use std::{
+    mem::size_of,
+    path::PathBuf,
+    sync::{Mutex, OnceLock},
+    vec,
+    vec::Vec,
+};
 
 use clang::{Clang, EntityKind, Index, Type, TypeKind};
 
@@ -12,8 +18,11 @@ const SCALAR_FIELDS: [&str; 5] = [
     "lbm_enc_sym_merror",
 ];
 
+static LIBCLANG_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
 #[test]
 fn libclang_agrees_with_generated_vesc_if_inventory() {
+    let _guard = LIBCLANG_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
     let header = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join(VescIfAbi::SOURCE_HEADER);
@@ -42,26 +51,26 @@ fn libclang_agrees_with_generated_vesc_if_inventory() {
         .get_typedef_underlying_type()
         .and_then(|ty| ty.get_declaration())
         .expect("resolve vesc_c_if struct");
+    let record_type = record.get_type().expect("typed vesc_c_if struct");
     let fields: Vec<_> = record
         .get_children()
         .into_iter()
         .filter(|entity| entity.get_kind() == EntityKind::FieldDecl)
         .collect();
-    let rust_offsets = crate::c_vesc_if::rust_field_offsets!(VescIf);
-
     assert_eq!(fields.len(), VescIfAbi::ALL_SLOTS.len());
-    assert_eq!(rust_offsets.len(), fields.len());
-    assert_eq!(
-        core::mem::size_of::<VescIf>() / core::mem::size_of::<usize>(),
-        fields.len(),
-        "Rust VescIf must contain one pointer-sized word per C field"
-    );
+    let pointer_size = core::mem::size_of::<usize>();
+    let expected_host_size = VescIfAbi::ALL_ENTRIES.iter().fold(0, |offset, entry| {
+        let field_size = if entry.is_callable() { pointer_size } else { 4 };
+        let aligned = (offset + field_size - 1) & !(field_size - 1);
+        aligned + field_size
+    });
+    assert_eq!(core::mem::size_of::<VescIf>(), expected_host_size);
 
     for (index, (field, slot)) in fields.iter().zip(VescIfAbi::ALL_SLOTS).enumerate() {
         let name = field.get_name().expect("named vesc_c_if field");
         let ty = field.get_type().expect("typed vesc_c_if field");
-        let byte_offset = field
-            .get_offset_of_field()
+        let byte_offset = record_type
+            .get_offsetof(&name)
             .expect("laid-out vesc_c_if field")
             / 8;
 
@@ -70,11 +79,6 @@ fn libclang_agrees_with_generated_vesc_if_inventory() {
             byte_offset,
             slot.vesc32_byte_offset(),
             "VESC32 offset drifted for {name}"
-        );
-        assert_eq!(
-            (rust_offsets[index] / core::mem::size_of::<usize>()) * 4,
-            byte_offset,
-            "Rust VescIf offset drifted for {name}"
         );
         assert_eq!(ty.get_sizeof().expect("sized vesc_c_if field"), 4, "{name}");
         assert_eq!(
@@ -95,6 +99,7 @@ fn is_function_pointer(ty: Type<'_>) -> bool {
 
 #[test]
 fn concrete_abi_type_sizes_match_the_pinned_header() {
+    let _guard = LIBCLANG_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
     let header = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join(VescIfAbi::SOURCE_HEADER);
@@ -151,6 +156,7 @@ fn concrete_abi_type_sizes_match_the_pinned_header() {
 
 #[test]
 fn concrete_abi_field_offsets_match_the_pinned_header() {
+    let _guard = LIBCLANG_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
     let header = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join(VescIfAbi::SOURCE_HEADER);
@@ -181,13 +187,17 @@ fn concrete_abi_field_offsets_match_the_pinned_header() {
             .get_typedef_underlying_type()
             .and_then(|ty| ty.get_declaration())
             .unwrap_or_else(|| panic!("resolve {name} record"));
+        let record_type = record
+            .get_type()
+            .unwrap_or_else(|| panic!("type {name} record"));
         record
             .get_children()
             .into_iter()
             .filter(|field| field.get_kind() == EntityKind::FieldDecl)
             .map(|field| {
-                field
-                    .get_offset_of_field()
+                let field_name = field.get_name().expect("named field");
+                record_type
+                    .get_offsetof(&field_name)
                     .unwrap_or_else(|_| panic!("offset in {name}"))
                     / 8
             })
@@ -276,11 +286,11 @@ fn concrete_abi_field_offsets_match_the_pinned_header() {
                 core::mem::offset_of!(super::AttitudeInfo, q1),
                 core::mem::offset_of!(super::AttitudeInfo, q2),
                 core::mem::offset_of!(super::AttitudeInfo, q3),
-                core::mem::offset_of!(super::AttitudeInfo, integral_fbx),
-                core::mem::offset_of!(super::AttitudeInfo, integral_fby),
-                core::mem::offset_of!(super::AttitudeInfo, integral_fbz),
-                core::mem::offset_of!(super::AttitudeInfo, acc_mag_p),
-                core::mem::offset_of!(super::AttitudeInfo, initial_update_done),
+                core::mem::offset_of!(super::AttitudeInfo, integralFBx),
+                core::mem::offset_of!(super::AttitudeInfo, integralFBy),
+                core::mem::offset_of!(super::AttitudeInfo, integralFBz),
+                core::mem::offset_of!(super::AttitudeInfo, accMagP),
+                core::mem::offset_of!(super::AttitudeInfo, initialUpdateDone),
                 core::mem::offset_of!(super::AttitudeInfo, acc_confidence_decay),
                 core::mem::offset_of!(super::AttitudeInfo, kp),
                 core::mem::offset_of!(super::AttitudeInfo, ki),

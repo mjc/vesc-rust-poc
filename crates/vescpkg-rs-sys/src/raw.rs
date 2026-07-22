@@ -182,11 +182,10 @@ mod slots {
     use super::{
         AppDataHandler, AttitudeInfo, CanRxCallback, CanStatusMsg, CanStatusMsg2, CanStatusMsg3,
         CanStatusMsg4, CanStatusMsg5, CanStatusMsg6, CustomConfigGet, CustomConfigSet,
-        CustomConfigXml, EepromVar,
-        GnssData, HwType, ImuReadCallback, LbmFlatValue, LbmValue, LibMutex,
-        LibSemaphore, LibThread, PacketProcessCallback, PacketSendCallback, PacketState,
-        RemoteState, VescIfAbi, c_char, c_int, c_uchar, c_uint, c_void, EncoderFaultCallback,
-        EncoderInfoCallback, EncoderReadCallback, ReplyCallback, TerminalCallback,
+        CustomConfigXml, EepromVar, EncoderFaultCallback, EncoderInfoCallback, EncoderReadCallback,
+        GnssData, HwType, ImuReadCallback, LbmFlatValue, LbmValue, LibMutex, LibSemaphore,
+        LibThread, PacketProcessCallback, PacketSendCallback, PacketState, RemoteState,
+        ReplyCallback, TerminalCallback, VescIfAbi, c_char, c_int, c_uchar, c_uint, c_void,
     };
     #[cfg(not(all(target_arch = "arm", not(test))))]
     use super::{VescIf, vesc_if};
@@ -221,7 +220,9 @@ mod slots {
 
                 #[cfg(not(all(target_arch = "arm", not(test))))]
                 unsafe {
-                    let function = (*vesc_if()).$name.expect("required VESC_IF slot is unavailable");
+                    let function = (*vesc_if())
+                        .$name
+                        .expect("required VESC_IF slot is unavailable");
                     core::mem::transmute::<_, $fn_ty>(function)
                 }
             }
@@ -360,12 +361,13 @@ mod slots {
     fn_slot!(free as unsafe extern "C" fn(*mut c_void));
     fn_slot!(sleep_us as unsafe extern "C" fn(u32));
     fn_slot!(
-        spawn as unsafe extern "C" fn(
-            unsafe extern "C" fn(*mut c_void),
-            usize,
-            *const c_char,
-            *mut c_void,
-        ) -> LibThread
+        spawn
+            as unsafe extern "C" fn(
+                unsafe extern "C" fn(*mut c_void),
+                usize,
+                *const c_char,
+                *mut c_void,
+            ) -> LibThread
     );
     fn_slot!(request_terminate as unsafe extern "C" fn(LibThread));
     fn_slot!(should_terminate as unsafe extern "C" fn() -> bool);
@@ -574,9 +576,18 @@ mod slots {
     fn_slot!(sys_unlock as unsafe extern "C" fn());
     fn_slot!(timer_sleep as unsafe extern "C" fn(f32));
     fn_slot!(ahrs_init_attitude_info as unsafe extern "C" fn(*mut AttitudeInfo));
-    fn_slot!(ahrs_update_initial_orientation as unsafe extern "C" fn(*const f32, *const f32, *mut AttitudeInfo));
-    fn_slot!(ahrs_update_mahony_imu as unsafe extern "C" fn(*const f32, *const f32, f32, *mut AttitudeInfo));
-    fn_slot!(ahrs_update_madgwick_imu as unsafe extern "C" fn(*const f32, *const f32, f32, *mut AttitudeInfo));
+    fn_slot!(
+        ahrs_update_initial_orientation
+            as unsafe extern "C" fn(*const f32, *const f32, *mut AttitudeInfo)
+    );
+    fn_slot!(
+        ahrs_update_mahony_imu
+            as unsafe extern "C" fn(*const f32, *const f32, f32, *mut AttitudeInfo)
+    );
+    fn_slot!(
+        ahrs_update_madgwick_imu
+            as unsafe extern "C" fn(*const f32, *const f32, f32, *mut AttitudeInfo)
+    );
     fn_slot!(ahrs_get_roll as unsafe extern "C" fn(*const AttitudeInfo) -> f32);
     fn_slot!(ahrs_get_pitch as unsafe extern "C" fn(*const AttitudeInfo) -> f32);
     fn_slot!(ahrs_get_yaw as unsafe extern "C" fn(*const AttitudeInfo) -> f32);
@@ -2334,9 +2345,7 @@ pub unsafe fn io_read_analog(pin: crate::VescPin) -> f32 {
 #[inline(always)]
 pub unsafe fn io_read_analog_pair(first: crate::VescPin, second: crate::VescPin) -> (f32, f32) {
     let read = unsafe { required_slot!(io_read_analog) };
-    (unsafe { read(first.0) }, unsafe {
-        read(second.0)
-    })
+    (unsafe { read(first.0) }, unsafe { read(second.0) })
 }
 
 /// Set the LispBM error reason string.
