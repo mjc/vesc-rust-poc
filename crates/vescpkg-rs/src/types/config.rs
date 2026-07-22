@@ -1359,7 +1359,17 @@ mod tests {
         for (raw, selector, bits_per_second) in selectors {
             assert_eq!(super::CanBaudRate::from_raw(raw), Some(selector));
             assert_eq!(selector.as_bits_per_second(), bits_per_second);
+            assert_eq!(
+                super::CanBaudRate::from_bits_per_second(bits_per_second),
+                Some(selector)
+            );
             assert_eq!(selector.as_u8(), raw as u8);
+        }
+        for unsupported in [0, 100, 125_001, 2_000_000] {
+            assert_eq!(
+                super::CanBaudRate::from_bits_per_second(unsupported),
+                None
+            );
         }
     }
 }
