@@ -5,6 +5,15 @@ use crate::{
     ImuReadSample,
 };
 
+fn orientation_from_quaternion(quaternion: [f32; 4]) -> ImuOrientation {
+    ImuOrientation::from_quaternion(ImuQuaternion::from_components(
+        ImuQuaternionW::new(quaternion[0]),
+        ImuQuaternionX::new(quaternion[1]),
+        ImuQuaternionY::new(quaternion[2]),
+        ImuQuaternionZ::new(quaternion[3]),
+    ))
+}
+
 /// Package-owned attitude estimator state.
 #[derive(Debug, Clone, Copy)]
 pub struct Ahrs {
@@ -62,12 +71,7 @@ impl Ahrs {
 
     /// Return the current normalized attitude quaternion.
     pub fn orientation(&self) -> ImuOrientation {
-        ImuOrientation::from_quaternion(ImuQuaternion::from_components(
-            ImuQuaternionW::new(self.quaternion[0]),
-            ImuQuaternionX::new(self.quaternion[1]),
-            ImuQuaternionY::new(self.quaternion[2]),
-            ImuQuaternionZ::new(self.quaternion[3]),
-        ))
+        orientation_from_quaternion(self.quaternion)
     }
 
     /// Integrate one copied firmware IMU sample.
@@ -180,12 +184,7 @@ impl Madgwick {
 
     /// Return the current normalized attitude quaternion.
     pub fn orientation(&self) -> ImuOrientation {
-        ImuOrientation::from_quaternion(ImuQuaternion::from_components(
-            ImuQuaternionW::new(self.quaternion[0]),
-            ImuQuaternionX::new(self.quaternion[1]),
-            ImuQuaternionY::new(self.quaternion[2]),
-            ImuQuaternionZ::new(self.quaternion[3]),
-        ))
+        orientation_from_quaternion(self.quaternion)
     }
 
     /// Integrate one copied firmware IMU sample.
