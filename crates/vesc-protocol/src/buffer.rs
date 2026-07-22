@@ -35,6 +35,24 @@ pub fn append_float32_auto(buffer: &mut [u8], index: &mut usize, value: f32) -> 
     append_u32(buffer, index, float32_auto_bits(value))
 }
 
+/// Read one big-endian unsigned 32-bit integer.
+#[must_use]
+#[inline(always)]
+pub fn read_u32(buffer: &[u8], index: &mut usize) -> Option<u32> {
+    let end = index.checked_add(4)?;
+    let bytes = buffer.get(*index..end)?;
+    let value = u32::from_be_bytes(bytes.try_into().ok()?);
+    *index = end;
+    Some(value)
+}
+
+/// Read VESC's automatic 32-bit float representation.
+#[must_use]
+#[inline(always)]
+pub fn read_float32_auto(buffer: &[u8], index: &mut usize) -> Option<f32> {
+    read_u32(buffer, index).map(f32::from_bits)
+}
+
 #[inline(always)]
 fn append_bytes(buffer: &mut [u8], index: &mut usize, bytes: &[u8]) -> Option<()> {
     let end = index.checked_add(bytes.len())?;
@@ -53,7 +71,7 @@ pub fn float32_auto_bits(value: f32) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{append_float32_auto, append_i16, append_u32};
+    use super::{append_float32_auto, append_i16, append_u32, read_float32_auto, read_u32};
 
     #[test]
     fn fixed_width_encoder_rejects_partial_output() {
@@ -91,5 +109,23 @@ mod tests {
         );
 
         assert_eq!(bytes, [0, 0, 0, 0, 0x00, 0xae, 0x39, 0x7e]);
+    }
+
+    #[test]
+    fn fixed_width_decoders_reject_partial_input_without_advancing() {
+        let mut index = 1;
+        assert_eq!(read_u32(&[0xff, 0x01, 0x02, 0x03], &mut index), None);
+        assert_eq!(index, 1);
+    }
+
+    #[test]
+    fn float32_auto_round_trips_through_the_public_wire_boundary() {
+        let mut bytes = [0; 4];
+        let mut write_index = 0;
+        append_float32_auto(&mut bytes, &mut write_index, -12.5).expect("four bytes");
+
+        let mut read_index = 0;
+        assert_eq!(read_float32_auto(&bytes, &mut read_index), Some(-12.5));
+        assert_eq!(read_index, 4);
     }
 }
