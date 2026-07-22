@@ -27,7 +27,7 @@ From the repository root:
 nix develop --command cargo check --workspace
 nix develop --command cargo test -p vescpkg-rs-sys --lib
 nix develop --command cargo check -p vescpkg-rs-sys --target thumbv7em-none-eabihf --no-default-features
-nix develop --command cargo nextest run -p vescpkg-rs --features test-support
+nix develop --command cargo nextest run -p vescpkg-rs --features "test-support math"
 ```
 
 The broader package and artifact gates are exposed by `make check-full` and
