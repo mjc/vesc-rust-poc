@@ -273,19 +273,19 @@ pub mod prelude {
         CanReceiverId, CanStatus, CommandError, CommandReplyHandler, Commands, ConfigBytes,
         ConfigXml, CustomEeprom, CustomEepromAddress, DigitalOutputLevel, DigitalPin, EepromWord,
         Encoder, EncoderError, EncoderHandler, EncoderRegistration, ExtensionDescriptor,
-        ExtensionName, ExtensionRegistration, Firmware,
-        FirmwareAhrs, FirmwareAhrsError, FirmwareAhrsParameters, FirmwareAhrsSnapshot,
-        FirmwareAppData, FirmwareCapabilities, FirmwareClock, FirmwareFloatSetting, FirmwareInputs,
-        FirmwareIntSetting, FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore, FirmwareSettings,
-        FirmwareThread, FirmwareThreads, Gnss, GnssError, GnssSnapshot, Gpio, Imu, ImuReadCallback,
-        ImuReadCallbackError, ImuReadCallbackLease, ImuReadHandler, LbmExtension, LispArgs,
-        LispIntegerError, LispValue, MotorOutput, MotorTelemetry, Nvm, NvmCapacity, NvmError,
-        NvmOffset, PackageRuntimeState, PackageStart, PackageStartError, PacketCodec, PacketError,
-        PacketHandler, Plot, PlotError, SettingsError, StatefulCustomConfigCallback,
-        StatefulLbmExtension, StatelessFirmwareThread, StatelessThreadContext, Terminal,
-        TerminalError, TerminalHandler, TerminalRegistration, ThreadContext, ThreadError,
-        ThreadName, ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant,
-        Uart, UartError, UartLease,
+        ExtensionName, ExtensionRegistration, Firmware, FirmwareAhrs, FirmwareAhrsError,
+        FirmwareAhrsParameters, FirmwareAhrsSnapshot, FirmwareAppData, FirmwareCapabilities,
+        FirmwareClock, FirmwareFloatSetting, FirmwareInputs, FirmwareIntSetting, FirmwareMutex,
+        FirmwareMutexGuard, FirmwareSemaphore, FirmwareSettings, FirmwareThread, FirmwareThreads,
+        Gnss, GnssError, GnssSnapshot, Gpio, Imu, ImuReadCallback, ImuReadCallbackError,
+        ImuReadCallbackLease, ImuReadHandler, LbmExtension, LispArgs, LispContextId, LispFlatValue,
+        LispIntegerError, LispMessageError, LispProcess, LispSymbol, LispValue, MotorOutput,
+        MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset, PackageRuntimeState, PackageStart,
+        PackageStartError, PacketCodec, PacketError, PacketHandler, Plot, PlotError, SettingsError,
+        StatefulCustomConfigCallback, StatefulLbmExtension, StatelessFirmwareThread,
+        StatelessThreadContext, Terminal, TerminalError, TerminalHandler, TerminalRegistration,
+        ThreadContext, ThreadError, ThreadName, ThreadSpec, ThreadWorkingAreaSize,
+        ThreadWorkingAreaSizeError, TimerInstant, Uart, UartError, UartLease,
     };
 }
 
@@ -351,6 +351,11 @@ mod tests {
         let _address = CustomEepromAddress::from_index(0);
         let _word = EepromWord::from_u32(1);
         let _eeprom = CustomEeprom::new();
+        let _: Option<LispContextId> = None;
+        let _: Option<LispFlatValue> = None;
+        let _: Option<LispMessageError> = None;
+        let _: Option<LispProcess> = None;
+        let _: Option<LispSymbol> = None;
 
         assert_eq!(switch, BrakeSwitch::Released);
     }
