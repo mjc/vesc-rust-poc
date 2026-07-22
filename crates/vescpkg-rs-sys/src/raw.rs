@@ -1436,26 +1436,6 @@ pub unsafe fn store_backup_data() -> Option<bool> {
     unsafe { slots::store_backup_data() }.map(|store| unsafe { store() })
 }
 
-/// Read the decoded PPM input when the optional slot is present.
-pub unsafe fn get_ppm() -> Option<f32> {
-    unsafe { slots::get_ppm() }.map(|read| unsafe { read() })
-}
-
-/// Read the age of the latest decoded PPM input when supported.
-pub unsafe fn get_ppm_age() -> Option<f32> {
-    unsafe { slots::get_ppm_age() }.map(|read| unsafe { read() })
-}
-
-/// Read whether firmware currently asks applications to disable output.
-pub unsafe fn app_is_output_disabled() -> Option<bool> {
-    unsafe { slots::app_is_output_disabled() }.map(|read| unsafe { read() })
-}
-
-/// Persist firmware backup data when the optional capability is present.
-pub unsafe fn store_backup_data() -> Option<bool> {
-    unsafe { slots::store_backup_data() }.map(|store| unsafe { store() })
-}
-
 /// Return the active motor fault code, or zero for no fault.
 ///
 /// # Safety
