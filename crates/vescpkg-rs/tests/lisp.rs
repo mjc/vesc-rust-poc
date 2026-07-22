@@ -61,31 +61,6 @@ fn lisp_values_expose_explicit_kind_predicates() {
     assert_eq!(pair.reverse_list(), Some(pair));
     assert_eq!(integer.reverse_list(), None);
 
-    let proper = LispValue::cons(integer, LispValue::nil());
-    assert!(proper.is_list());
-    let mut list = proper.list();
-    assert_eq!(list.next_value().unwrap(), Some(integer));
-    assert_eq!(list.next_value().unwrap(), None);
-    let mut iterator = proper.list();
-    assert_eq!(iterator.next(), Some(Ok(integer)));
-    assert_eq!(iterator.next(), None);
-
-    let improper_pair = LispValue::cons(integer, character);
-    assert!(!improper_pair.is_list());
-    let mut improper = improper_pair.list();
-    assert_eq!(improper.next_value().unwrap(), Some(integer));
-    assert_eq!(
-        improper.next_value(),
-        Err(vescpkg_rs::LispListError::ImproperTail)
-    );
-    let mut improper_iterator = improper_pair.list();
-    assert_eq!(improper_iterator.next(), Some(Ok(integer)));
-    assert_eq!(
-        improper_iterator.next(),
-        Some(Err(vescpkg_rs::LispListError::ImproperTail))
-    );
-    assert_eq!(improper_iterator.next(), None);
-
     let string = LispValue::try_byte_array(4).expect("host fake allocates byte arrays");
     assert!(string.is_byte_array());
     assert!(string.is_array());
@@ -122,6 +97,38 @@ fn lisp_values_expose_explicit_kind_predicates() {
     assert!(!LispProcess::is_evaluation_paused());
     LispProcess::block_current();
     assert!(LispProcess::unblock(current, integer).is_ok());
+}
+
+#[test]
+fn lisp_lists_validate_tails_and_iterate_fallibly() {
+    let _firmware = FirmwareTest::new();
+    let integer = LispValue::try_from(7).expect("immediate integer fits");
+    let character = LispValue::from_char(b'V');
+
+    let proper = LispValue::cons(integer, LispValue::nil());
+    assert!(proper.is_list());
+    let mut list = proper.list();
+    assert_eq!(list.next_value().unwrap(), Some(integer));
+    assert_eq!(list.next_value().unwrap(), None);
+    let mut iterator = proper.list();
+    assert_eq!(iterator.next(), Some(Ok(integer)));
+    assert_eq!(iterator.next(), None);
+
+    let improper_pair = LispValue::cons(integer, character);
+    assert!(!improper_pair.is_list());
+    let mut improper = improper_pair.list();
+    assert_eq!(improper.next_value().unwrap(), Some(integer));
+    assert_eq!(
+        improper.next_value(),
+        Err(vescpkg_rs::LispListError::ImproperTail)
+    );
+    let mut improper_iterator = improper_pair.list();
+    assert_eq!(improper_iterator.next(), Some(Ok(integer)));
+    assert_eq!(
+        improper_iterator.next(),
+        Some(Err(vescpkg_rs::LispListError::ImproperTail))
+    );
+    assert_eq!(improper_iterator.next(), None);
 }
 
 #[test]
