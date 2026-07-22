@@ -17,7 +17,7 @@ const DEFAULT_LOADER: &str = concat!(
 const IMAGE_OFFSET_MARKER_PREFIX: &str = "__vescpkg_image_offset_";
 // Native library init runs on VESC's 2048-byte Lisp evaluator stack. Keep half
 // available for the evaluator, loader extension, and saved registers.
-const LOADER_INIT_LOCAL_STACK_BUDGET: usize = 1024;
+const LOADER_INIT_STACK_BUDGET: usize = 1024;
 const STATICLIB_LINKER_SCRIPT: &[u8] = include_bytes!("vescpkg-link.ld");
 const VESC_TARGET: &str = "thumbv7em-none-eabihf";
 
@@ -527,7 +527,7 @@ fn validate_loader_init_stack(elf: &Path) -> Result<(), BuildError> {
 
 fn validate_loader_init_stack_report(report: &str) -> Result<(), BuildError> {
     let mut in_initializer = false;
-    let mut local_stack_bytes = 0;
+    let mut stack_bytes = 0;
 
     for line in report.lines() {
         if line.trim_end().ends_with("<package_lib_init>:") {
@@ -542,6 +542,19 @@ fn validate_loader_init_stack_report(report: &str) -> Result<(), BuildError> {
         }
 
         let fields = line.split_whitespace().collect::<Vec<_>>();
+        let saves_registers = fields.iter().any(|field| field.starts_with("push"))
+            || fields
+                .windows(2)
+                .any(|fields| fields[0].starts_with("stmdb") && fields[1] == "sp!,");
+        if saves_registers
+            && let Some(registers) = line
+                .split_once('{')
+                .and_then(|(_, registers)| registers.split_once('}'))
+                .map(|(registers, _)| registers)
+        {
+            stack_bytes += registers.split(',').count() * std::mem::size_of::<u32>();
+        }
+
         let Some(subtract) = fields.iter().position(|field| field.starts_with("sub")) else {
             continue;
         };
@@ -555,12 +568,12 @@ fn validate_loader_init_stack_report(report: &str) -> Result<(), BuildError> {
             .map(|value| usize::from_str_radix(value, 16))
             .unwrap_or_else(|| immediate.parse())
             .map_err(|_| BuildError(format!("could not read loader stack size `{immediate}`")))?;
-        local_stack_bytes += bytes;
+        stack_bytes += bytes;
     }
 
-    if local_stack_bytes > LOADER_INIT_LOCAL_STACK_BUDGET {
+    if stack_bytes > LOADER_INIT_STACK_BUDGET {
         return Err(BuildError(format!(
-            "package_lib_init has a {local_stack_bytes}-byte local stack frame; VESC native library init permits at most the {LOADER_INIT_LOCAL_STACK_BUDGET}-byte package budget within its 2048-byte Lisp evaluator stack"
+            "package_lib_init uses {stack_bytes} bytes of stack; VESC native library init permits at most the {LOADER_INIT_STACK_BUDGET}-byte package budget within its 2048-byte Lisp evaluator stack"
         )));
     }
     Ok(())
@@ -956,11 +969,12 @@ Symbol table '.symtab' contains 2 entries:\n\
         let report = "\
 00006640 <package_lib_init>:\n\
     6640:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}\n\
+    6644:\te92d 0f00 \tstmdb\tsp!, {r8, r9, sl, fp}\n\
     6648:\tf6ad 3dcc \tsubw\tsp, sp, #3020\t@ 0xbcc\n";
 
         let error = validate_loader_init_stack_report(report).expect_err("oversized frame");
 
-        assert!(error.to_string().contains("3020-byte"));
+        assert!(error.to_string().contains("3056 bytes"));
         assert!(error.to_string().contains("1024-byte"));
     }
 
@@ -969,6 +983,7 @@ Symbol table '.symtab' contains 2 entries:\n\
         let report = "\
 00003720 <package_lib_init>:\n\
     3720:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}\n\
+    3724:\te92d 0f00 \tstmdb\tsp!, {r8, r9, sl, fp}\n\
     3728:\tf5ad 7d4b \tsub.w\tsp, sp, #812\t@ 0x32c\n";
 
         assert!(validate_loader_init_stack_report(report).is_ok());
