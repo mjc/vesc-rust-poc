@@ -9,6 +9,10 @@ use crate::AngleDegrees;
 static ENCODER_OWNED: AtomicBool = AtomicBool::new(false);
 static ENCODER_ACTIVE: AtomicBool = AtomicBool::new(false);
 
+pub(crate) fn disable_callback_dispatch() {
+    ENCODER_ACTIVE.store(false, Ordering::Release);
+}
+
 /// Failure returned by encoder callback registration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]

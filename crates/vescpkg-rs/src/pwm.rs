@@ -19,6 +19,10 @@ pub enum PwmCallbackError {
 static PWM_CALLBACK_REGISTERED: AtomicBool = AtomicBool::new(false);
 static PWM_CALLBACK_ACTIVE: AtomicBool = AtomicBool::new(false);
 
+pub(crate) fn disable_callback_dispatch() {
+    PWM_CALLBACK_ACTIVE.store(false, Ordering::Release);
+}
+
 /// Safe behavior for a typed PWM callback.
 pub trait PwmCallbackHandler {
     /// Run from the firmware PWM callback context.

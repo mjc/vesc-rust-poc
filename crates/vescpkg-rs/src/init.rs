@@ -48,6 +48,8 @@ unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
     if !runtime.begin_stop(state) {
         return;
     }
+    #[cfg(any(feature = "test-support", target_arch = "arm"))]
+    crate::runtime::disable_callback_dispatch();
     #[cfg(all(not(test), target_arch = "arm"))]
     {
         runtime

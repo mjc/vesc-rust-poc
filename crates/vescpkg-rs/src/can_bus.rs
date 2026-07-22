@@ -50,6 +50,11 @@ static EID_RECEIVER_REGISTERED: AtomicBool = AtomicBool::new(false);
 static SID_RECEIVER_ACTIVE: AtomicBool = AtomicBool::new(false);
 static EID_RECEIVER_ACTIVE: AtomicBool = AtomicBool::new(false);
 
+pub(crate) fn disable_callback_dispatch() {
+    SID_RECEIVER_ACTIVE.store(false, Ordering::Release);
+    EID_RECEIVER_ACTIVE.store(false, Ordering::Release);
+}
+
 /// Failure returned by a CAN operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CanError {
