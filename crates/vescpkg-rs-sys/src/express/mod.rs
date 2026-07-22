@@ -153,6 +153,24 @@ mod tests {
                 slot: ExpressSlot::LbmIsNumber
             })
         );
+        assert_eq!(
+            lisp.symbol_nil(),
+            Err(ExpressCallError {
+                slot: ExpressSlot::LbmEncSymNil
+            })
+        );
+        assert_eq!(
+            lisp.current_cid(),
+            Err(ExpressCallError {
+                slot: ExpressSlot::LbmGetCurrentCid
+            })
+        );
+        assert_eq!(
+            lisp.eval_is_paused(),
+            Err(ExpressCallError {
+                slot: ExpressSlot::LbmEvalIsPaused
+            })
+        );
     }
 
     #[test]

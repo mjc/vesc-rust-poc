@@ -113,3 +113,17 @@ pub type LbmIsNumber = unsafe extern "C" fn(LbmValue) -> bool;
 pub type LbmIsChar = unsafe extern "C" fn(LbmValue) -> bool;
 /// `lbm_is_symbol` function-pointer ABI.
 pub type LbmIsSymbol = unsafe extern "C" fn(LbmValue) -> bool;
+/// `lbm_block_ctx_from_extension` function-pointer ABI.
+pub type LbmBlockCtxFromExtension = unsafe extern "C" fn();
+/// `lbm_unblock_ctx_unboxed` function-pointer ABI.
+pub type LbmUnblockCtxUnboxed = unsafe extern "C" fn(LbmCid, LbmValue) -> bool;
+/// `lbm_get_current_cid` function-pointer ABI.
+pub type LbmGetCurrentCid = unsafe extern "C" fn() -> LbmCid;
+/// `lbm_send_message` function-pointer ABI.
+pub type LbmSendMessage = unsafe extern "C" fn(LbmCid, LbmValue) -> i32;
+/// `lbm_pause_eval_with_gc` function-pointer ABI.
+pub type LbmPauseEvalWithGc = unsafe extern "C" fn(u32);
+/// `lbm_continue_eval` function-pointer ABI.
+pub type LbmContinueEval = unsafe extern "C" fn();
+/// `lbm_eval_is_paused` function-pointer ABI.
+pub type LbmEvalIsPaused = unsafe extern "C" fn() -> bool;

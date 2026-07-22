@@ -1,9 +1,11 @@
 //! Core typed LispBM operations for the Express shared runtime.
 
 use super::functions::{
-    LbmCar, LbmCdr, LbmCons, LbmDecAsFloat, LbmDecAsI32, LbmDecAsU32, LbmDecChar, LbmDecSym,
-    LbmEncChar, LbmEncFloat, LbmEncI, LbmEncI32, LbmEncSym, LbmEncU, LbmEncU32, LbmIsByteArray,
-    LbmIsChar, LbmIsCons, LbmIsNumber, LbmIsSymbol, LbmListDestructiveReverse,
+    LbmBlockCtxFromExtension, LbmCar, LbmCdr, LbmCons, LbmContinueEval, LbmDecAsFloat, LbmDecAsI32,
+    LbmDecAsU32, LbmDecChar, LbmDecSym, LbmEncChar, LbmEncFloat, LbmEncI, LbmEncI32, LbmEncSym,
+    LbmEncU, LbmEncU32, LbmEvalIsPaused, LbmGetCurrentCid, LbmIsByteArray, LbmIsChar, LbmIsCons,
+    LbmIsNumber, LbmIsSymbol, LbmListDestructiveReverse, LbmPauseEvalWithGc, LbmSendMessage,
+    LbmUnblockCtxUnboxed,
 };
 use super::{ExpressCallError, ExpressInterface, ExpressSlot};
 
@@ -193,5 +195,91 @@ impl<'a> ExpressLisp<'a> {
     pub fn is_symbol(self, value: ExpressLispValue) -> Result<bool, ExpressCallError> {
         let check: LbmIsSymbol = unsafe { self.interface.function(ExpressSlot::LbmIsSymbol) }?;
         Ok(unsafe { check(value.raw()) })
+    }
+
+    fn symbol_constant(self, slot: ExpressSlot) -> Result<ExpressLispSymbol, ExpressCallError> {
+        let value = self
+            .interface
+            .word(slot)
+            .map(|word| word.get())
+            .ok_or(ExpressCallError { slot })?;
+        Ok(ExpressLispSymbol::new(value))
+    }
+
+    /// Return the firmware's `nil` symbol constant.
+    pub fn symbol_nil(self) -> Result<ExpressLispSymbol, ExpressCallError> {
+        self.symbol_constant(ExpressSlot::LbmEncSymNil)
+    }
+
+    /// Return the firmware's `true` symbol constant.
+    pub fn symbol_true(self) -> Result<ExpressLispSymbol, ExpressCallError> {
+        self.symbol_constant(ExpressSlot::LbmEncSymTrue)
+    }
+
+    /// Return the firmware's `terror` symbol constant.
+    pub fn symbol_terror(self) -> Result<ExpressLispSymbol, ExpressCallError> {
+        self.symbol_constant(ExpressSlot::LbmEncSymTerror)
+    }
+
+    /// Return the firmware's `eerror` symbol constant.
+    pub fn symbol_eerror(self) -> Result<ExpressLispSymbol, ExpressCallError> {
+        self.symbol_constant(ExpressSlot::LbmEncSymEerror)
+    }
+
+    /// Return the firmware's current LispBM context identifier.
+    pub fn current_cid(self) -> Result<u32, ExpressCallError> {
+        let current: LbmGetCurrentCid =
+            unsafe { self.interface.function(ExpressSlot::LbmGetCurrentCid) }?;
+        Ok(unsafe { current() })
+    }
+
+    /// Send a message to a LispBM context.
+    pub fn send_message(self, cid: u32, value: ExpressLispValue) -> Result<i32, ExpressCallError> {
+        let send: LbmSendMessage = unsafe { self.interface.function(ExpressSlot::LbmSendMessage) }?;
+        Ok(unsafe { send(cid, value.raw()) })
+    }
+
+    /// Block the current extension context.
+    pub fn block_context(self) -> Result<(), ExpressCallError> {
+        let block: LbmBlockCtxFromExtension = unsafe {
+            self.interface
+                .function(ExpressSlot::LbmBlockCtxFromExtension)
+        }?;
+        unsafe { block() };
+        Ok(())
+    }
+
+    /// Unblock a LispBM context with an unboxed value.
+    pub fn unblock_context_unboxed(
+        self,
+        cid: u32,
+        value: ExpressLispValue,
+    ) -> Result<bool, ExpressCallError> {
+        let unblock: LbmUnblockCtxUnboxed =
+            unsafe { self.interface.function(ExpressSlot::LbmUnblockCtxUnboxed) }?;
+        Ok(unsafe { unblock(cid, value.raw()) })
+    }
+
+    /// Pause LispBM evaluation while retaining at least `num_free` words.
+    pub fn pause_eval_with_gc(self, num_free: u32) -> Result<(), ExpressCallError> {
+        let pause: LbmPauseEvalWithGc =
+            unsafe { self.interface.function(ExpressSlot::LbmPauseEvalWithGc) }?;
+        unsafe { pause(num_free) };
+        Ok(())
+    }
+
+    /// Continue LispBM evaluation after a prior pause.
+    pub fn continue_eval(self) -> Result<(), ExpressCallError> {
+        let continue_eval: LbmContinueEval =
+            unsafe { self.interface.function(ExpressSlot::LbmContinueEval) }?;
+        unsafe { continue_eval() };
+        Ok(())
+    }
+
+    /// Return whether LispBM evaluation is currently paused.
+    pub fn eval_is_paused(self) -> Result<bool, ExpressCallError> {
+        let is_paused: LbmEvalIsPaused =
+            unsafe { self.interface.function(ExpressSlot::LbmEvalIsPaused) }?;
+        Ok(unsafe { is_paused() })
     }
 }
