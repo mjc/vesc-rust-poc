@@ -161,3 +161,30 @@ fn can_status_reports_wrapping_age_and_staleness() {
     assert_eq!(status.age_at(now).as_ticks(), 7);
     assert!(status.is_stale(now, vescpkg_rs::SystemTicks::from_ticks(5)));
 }
+
+#[test]
+fn can_bus_sends_brake_and_off_delay_commands() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    let brake = vescpkg_rs::BrakeCurrent::new(vescpkg_rs::Current::from_amps(6.0));
+    let relative = vescpkg_rs::BrakeCurrentRelative::new(
+        vescpkg_rs::Ratio::from_ratio(0.25).expect("valid brake ratio"),
+    );
+    let delay = vescpkg_rs::CurrentOffDelay::new(vescpkg_rs::VescSeconds::from_seconds(0.5));
+
+    firmware
+        .can()
+        .set_brake_current(vescpkg_rs::CanControllerId::new(7), brake)
+        .expect("brake command");
+    firmware
+        .can()
+        .set_brake_current_relative(vescpkg_rs::CanControllerId::new(7), relative)
+        .expect("relative brake command");
+    firmware
+        .can()
+        .set_current_off_delay(
+            vescpkg_rs::CanControllerId::new(7),
+            vescpkg_rs::MotorCurrent::new(vescpkg_rs::Current::from_amps(4.0)),
+            delay,
+        )
+        .expect("off-delay command");
+}
