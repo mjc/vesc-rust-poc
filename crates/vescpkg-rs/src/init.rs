@@ -57,6 +57,8 @@ unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
         return;
     }
     #[cfg(any(feature = "test-support", target_arch = "arm"))]
+    crate::gpio::reset_leases();
+    #[cfg(any(feature = "test-support", target_arch = "arm"))]
     crate::runtime::disable_callback_dispatch();
     #[cfg(any(feature = "test-support", target_arch = "arm"))]
     crate::runtime::disable_callback_dispatch();
