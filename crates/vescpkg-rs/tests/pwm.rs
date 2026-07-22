@@ -40,7 +40,9 @@ fn package_stop_releases_typed_pwm_state_before_next_registration() {
     let mut info = vescpkg_rs::test_support::LoaderInfo::new();
     let mut start = vescpkg_rs::test_support::package_start(&mut info);
     start
-        .install_runtime_state(PackageState { _lease: Some(lease) })
+        .install_runtime_state(PackageState {
+            _lease: Some(lease),
+        })
         .expect("package state");
     assert!(start.finish_start(true));
     assert!(vescpkg_rs::test_support::stop_package(&mut info));
