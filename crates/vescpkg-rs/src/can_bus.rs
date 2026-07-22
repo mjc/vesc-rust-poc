@@ -2,8 +2,8 @@
 
 use crate::types::{
     AmpHoursCharged, AmpHoursDischarged, CanControllerId, CanExtendedId, CanPayloadLen,
-    CanStandardId, CurrentRelative, DutyCycle, ElectricalSpeed, MotorCurrent, PidPosition,
-    WattHoursCharged, WattHoursDischarged,
+    CanStandardId, CurrentRelative, DutyCycle, ElectricalSpeed, InputCurrent, MosfetTemperature,
+    MotorCurrent, MotorTemperature, PidPosition, WattHoursCharged, WattHoursDischarged,
 };
 use crate::units::{Charge, Current, Energy, Rpm, SignedRatio, TimestampTicks};
 
@@ -78,6 +78,43 @@ pub struct CanStatus3 {
     controller: CanControllerId,
     watt_hours_discharged: WattHoursDischarged,
     watt_hours_charged: WattHoursCharged,
+}
+
+/// A copied snapshot of CAN status message 4.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CanStatus4 {
+    controller: CanControllerId,
+    fet_temperature: MosfetTemperature,
+    motor_temperature: MotorTemperature,
+    input_current: InputCurrent,
+    position: PidPosition,
+}
+
+impl CanStatus4 {
+    /// Return the controller whose status was queried.
+    pub const fn controller(self) -> CanControllerId {
+        self.controller
+    }
+
+    /// Return the remote FET temperature.
+    pub const fn fet_temperature(self) -> MosfetTemperature {
+        self.fet_temperature
+    }
+
+    /// Return the remote motor temperature.
+    pub const fn motor_temperature(self) -> MotorTemperature {
+        self.motor_temperature
+    }
+
+    /// Return the remote input current.
+    pub const fn input_current(self) -> InputCurrent {
+        self.input_current
+    }
+
+    /// Return the remote PID position.
+    pub const fn position(self) -> PidPosition {
+        self.position
+    }
 }
 
 impl CanStatus3 {
@@ -266,6 +303,22 @@ impl CanBus {
             watt_hours_charged: WattHoursCharged::new(Energy::from_watt_hours(
                 raw.watt_hours_charged,
             )),
+        })
+    }
+
+    /// Copy CAN status message 4 for one remote controller.
+    pub fn status4(&self, controller: CanControllerId) -> Option<CanStatus4> {
+        let raw = unsafe { crate::ffi::can_status_msg_4_id(i32::from(controller.as_u8())) }?;
+        Some(CanStatus4 {
+            controller,
+            fet_temperature: MosfetTemperature::new(crate::Temperature::from_degrees_celsius(
+                raw.temp_fet,
+            )),
+            motor_temperature: MotorTemperature::new(crate::Temperature::from_degrees_celsius(
+                raw.temp_motor,
+            )),
+            input_current: InputCurrent::new(Current::from_amps(raw.current_in)),
+            position: PidPosition::new(crate::AngleDegrees::from_degrees(raw.pid_pos_now)),
         })
     }
 }

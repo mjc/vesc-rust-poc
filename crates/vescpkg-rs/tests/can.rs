@@ -108,8 +108,17 @@ fn can_bus_copies_status_message_four() {
         .status4(CanControllerId::new(7))
         .expect("CAN status message 4");
 
-    assert_eq!(status.fet_temperature().temperature().as_celsius(), 45.0);
-    assert_eq!(status.motor_temperature().temperature().as_celsius(), 50.0);
+    assert_eq!(
+        status.fet_temperature().temperature().as_degrees_celsius(),
+        45.0
+    );
+    assert_eq!(
+        status
+            .motor_temperature()
+            .temperature()
+            .as_degrees_celsius(),
+        50.0
+    );
     assert_eq!(status.input_current().current().as_amps(), 3.0);
     assert_eq!(status.position().angle().as_degrees(), 12.0);
 }
