@@ -37,8 +37,8 @@ mod tests {
         let firmware = FirmwareTest::new();
         let eeprom = firmware.eeprom();
 
-        assert_eq!(read_probe_from(eeprom), None);
-        assert!(write_probe_to(eeprom, 0xfeed_beef));
-        assert_eq!(read_probe_from(eeprom), Some(0xfeed_beef));
+        assert_eq!(read_probe_from(&eeprom), None);
+        assert!(write_probe_to(&eeprom, 0xfeed_beef));
+        assert_eq!(read_probe_from(&eeprom), Some(0xfeed_beef));
     }
 }
