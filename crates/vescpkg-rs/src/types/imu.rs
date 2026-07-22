@@ -16,7 +16,7 @@ macro_rules! finite_imu_scalar {
         impl $name {
             /// Construct a checked firmware configuration value.
             pub fn try_new(value: f32) -> Option<Self> {
-                value.is_finite().then_some(Self(value))
+                (value.is_finite() && value >= 0.0).then_some(Self(value))
             }
 
             /// Return the scalar value without erasing its configuration meaning.
@@ -582,6 +582,9 @@ mod tests {
         assert!(ImuMahonyProportionalGain::try_new(f32::NAN).is_none());
         assert!(ImuMahonyIntegralGain::try_new(f32::INFINITY).is_none());
         assert!(ImuMadgwickBeta::try_new(f32::NEG_INFINITY).is_none());
+        assert!(ImuMahonyProportionalGain::try_new(-0.1).is_none());
+        assert!(ImuMahonyIntegralGain::try_new(-0.1).is_none());
+        assert!(ImuMadgwickBeta::try_new(-0.1).is_none());
     }
 
     #[test]
