@@ -620,6 +620,12 @@ pub unsafe fn vesc_sem_reset(_semaphore: *mut c_void) {
 pub unsafe fn vesc_free(pointer: *mut c_void) {
     if core::ptr::eq(
         pointer.cast_const(),
+        core::ptr::addr_of!(FLAT_BUFFER).cast::<c_void>(),
+    ) {
+        return;
+    }
+    if core::ptr::eq(
+        pointer.cast_const(),
         core::ptr::addr_of!(SEMAPHORE_TOKEN).cast::<c_void>(),
     ) {
         SEMAPHORE_FREE_COUNT.fetch_add(1, Ordering::Relaxed);
