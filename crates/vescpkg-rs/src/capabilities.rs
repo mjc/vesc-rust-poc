@@ -2,11 +2,11 @@
 
 use crate::ffi;
 use crate::{
-    AngleDegrees, BatteryCellCount, BatteryChemistry, CanBaudRate, CanBus, Charge, Current,
-    DutyCycleLimit, DutyCycleMinimum, ElectricalSpeed, FocAudio, FocMotorFluxLinkage,
-    FocMotorInductance, FocMotorResistance, GearRatio, ImuAhrsMode, InputCurrent, InputVoltage,
-    MotorCurrentLimit, MotorPoleCount, Nvm, NvmCapacity, Ratio, ShutdownMode, TemperatureLimitEnd,
-    TemperatureLimitStart, Uart, Voltage, WheelDiameter,
+    AngleDegrees, BatteryCellCount, BatteryChemistry, CanApplicationMode, CanBaudRate, CanBus,
+    Charge, Current, DutyCycleLimit, DutyCycleMinimum, ElectricalSpeed, FocAudio,
+    FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance, GearRatio, ImuAhrsMode,
+    InputCurrent, InputVoltage, MotorCurrentLimit, MotorPoleCount, Nvm, NvmCapacity, Ratio,
+    ShutdownMode, TemperatureLimitEnd, TemperatureLimitStart, Uart, Voltage, WheelDiameter,
 };
 use core::fmt;
 use vescpkg_rs_sys::{AbiError, Stm32AbiRevision, VescIfCapabilities, VescIfPresence};
@@ -760,6 +760,12 @@ impl FirmwareSettings {
             .ok_or(SettingsError::InvalidValue)
     }
 
+    /// Read the configured CAN application mode with semantic validation.
+    pub fn can_application_mode(self) -> Result<CanApplicationMode, SettingsError> {
+        CanApplicationMode::from_raw(self.get_int(FirmwareIntSetting::AppCanMode))
+            .ok_or(SettingsError::InvalidValue)
+    }
+
     /// Read the configured firmware AHRS algorithm with semantic validation.
     pub fn imu_ahrs_mode(self) -> Result<ImuAhrsMode, SettingsError> {
         ImuAhrsMode::from_raw(self.get_int(FirmwareIntSetting::ImuAhrsMode))
@@ -811,6 +817,11 @@ impl FirmwareSettings {
             FirmwareIntSetting::AppCanBaudRate,
             i32::from(baud_rate.as_u8()),
         )
+    }
+
+    /// Write a checked CAN application mode; persistence still requires [`Self::store`].
+    pub fn set_can_application_mode(self, mode: CanApplicationMode) -> Result<(), SettingsError> {
+        self.set_int(FirmwareIntSetting::AppCanMode, i32::from(mode.as_u8()))
     }
 
     /// Write a checked firmware AHRS algorithm; persistence still requires [`Self::store`].

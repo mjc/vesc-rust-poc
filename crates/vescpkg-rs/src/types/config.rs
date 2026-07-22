@@ -226,6 +226,46 @@ impl ShutdownMode {
     }
 }
 
+/// CAN application mode from the VESC application configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CanApplicationMode {
+    /// Native VESC CAN protocol.
+    Vesc,
+    /// UAVCAN protocol.
+    Uavcan,
+    /// CAN communication bridge mode.
+    CommunicationBridge,
+    /// Reserved/unused firmware mode.
+    Unused,
+    /// VESC and UAVCAN combined mode.
+    VescUavcan,
+}
+
+impl CanApplicationMode {
+    /// Decode the VESC `CAN_MODE` enum value.
+    pub const fn from_raw(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(Self::Vesc),
+            1 => Some(Self::Uavcan),
+            2 => Some(Self::CommunicationBridge),
+            3 => Some(Self::Unused),
+            4 => Some(Self::VescUavcan),
+            _ => None,
+        }
+    }
+
+    /// Encode the VESC `CAN_MODE` enum value.
+    pub const fn as_u8(self) -> u8 {
+        match self {
+            Self::Vesc => 0,
+            Self::Uavcan => 1,
+            Self::CommunicationBridge => 2,
+            Self::Unused => 3,
+            Self::VescUavcan => 4,
+        }
+    }
+}
+
 macro_rules! positive_count_type {
     ($name:ident, $error:ident, $doc:literal, $error_doc:literal) => {
         #[doc = $doc]

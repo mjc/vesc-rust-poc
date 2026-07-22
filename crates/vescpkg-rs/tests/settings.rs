@@ -73,6 +73,10 @@ fn typed_settings_read_write_and_persist() {
         vescpkg_rs::CanBaudRate::Kbps500
     );
     assert_eq!(
+        settings.can_application_mode().unwrap(),
+        vescpkg_rs::CanApplicationMode::CommunicationBridge
+    );
+    assert_eq!(
         settings.imu_ahrs_mode().unwrap(),
         vescpkg_rs::ImuAhrsMode::Madgwick
     );
@@ -207,6 +211,9 @@ fn typed_settings_read_write_and_persist() {
         .unwrap();
     settings
         .set_can_baud_rate(vescpkg_rs::CanBaudRate::Mbps1)
+        .unwrap();
+    settings
+        .set_can_application_mode(vescpkg_rs::CanApplicationMode::VescUavcan)
         .unwrap();
     settings
         .set_imu_ahrs_mode(vescpkg_rs::ImuAhrsMode::Mahony)
@@ -358,6 +365,10 @@ fn typed_settings_read_write_and_persist() {
         vescpkg_rs::CanBaudRate::Mbps1
     );
     assert_eq!(
+        settings.can_application_mode().unwrap(),
+        vescpkg_rs::CanApplicationMode::VescUavcan
+    );
+    assert_eq!(
         settings.imu_ahrs_mode().unwrap(),
         vescpkg_rs::ImuAhrsMode::Mahony
     );
@@ -435,7 +446,7 @@ fn typed_settings_read_write_and_persist() {
     settings
         .set_int(FirmwareIntSetting::BatteryCellCount, 12)
         .unwrap();
-    assert_eq!(settings.get_int(FirmwareIntSetting::AppCanMode), 2);
+    assert_eq!(settings.get_int(FirmwareIntSetting::AppCanMode), 4);
     settings.set_int(FirmwareIntSetting::AppCanMode, 1).unwrap();
     assert_eq!(settings.get_int(FirmwareIntSetting::AppCanMode), 1);
     assert_eq!(settings.get_int(FirmwareIntSetting::BatteryCellCount), 12);
@@ -464,6 +475,14 @@ fn settings_reject_unknown_battery_chemistry() {
         .set_int(FirmwareIntSetting::AppCanBaudRate, 99)
         .unwrap();
     assert_eq!(settings.can_baud_rate(), Err(SettingsError::InvalidValue));
+
+    settings
+        .set_int(FirmwareIntSetting::AppCanMode, 99)
+        .unwrap();
+    assert_eq!(
+        settings.can_application_mode(),
+        Err(SettingsError::InvalidValue)
+    );
 
     settings
         .set_int(FirmwareIntSetting::ImuAhrsMode, 99)
