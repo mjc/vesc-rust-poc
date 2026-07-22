@@ -39,6 +39,7 @@ type PacketProcessCallback = unsafe extern "C" fn(*mut c_uchar, c_uint);
 type LibThread = crate::bindgen::lib_thread;
 type LibMutex = crate::bindgen::lib_mutex;
 type LibSemaphore = crate::bindgen::lib_semaphore;
+type HwType = crate::HardwareType;
 /// Maximum packet payload length from the pinned VESC header.
 pub const PACKET_MAX_PL_LEN: usize = 512;
 /// Packet framing buffer length from the pinned VESC header.
