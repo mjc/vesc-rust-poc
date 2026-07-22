@@ -64,6 +64,10 @@ fn typed_settings_read_write_and_persist() {
     assert_eq!(settings.imu_rotation_yaw().as_degrees(), 0.0);
     assert_eq!(settings.imu_acceleration_confidence_decay().as_ratio(), 1.0);
     assert_eq!(settings.motor_pole_count().unwrap().as_u16(), 14);
+    assert_eq!(
+        settings.battery_chemistry().unwrap(),
+        vescpkg_rs::BatteryChemistry::LithiumIon
+    );
     assert_eq!(settings.gear_ratio().unwrap().as_f32(), 2.5);
     assert_eq!(settings.wheel_diameter().distance().as_meters(), 0.165);
     assert_eq!(settings.foc_motor_resistance().resistance().as_ohms(), 0.03);
@@ -185,6 +189,9 @@ fn typed_settings_read_write_and_persist() {
         .unwrap();
     settings
         .set_motor_pole_count(vescpkg_rs::MotorPoleCount::try_new(16).unwrap())
+        .unwrap();
+    settings
+        .set_battery_chemistry(vescpkg_rs::BatteryChemistry::LeadAcid)
         .unwrap();
     settings
         .set_gear_ratio(vescpkg_rs::GearRatio::try_new(3.0).unwrap())
@@ -321,6 +328,10 @@ fn typed_settings_read_write_and_persist() {
     assert_eq!(settings.imu_rotation_yaw().as_degrees(), 3.0);
     assert_eq!(settings.imu_acceleration_confidence_decay().as_ratio(), 0.8);
     assert_eq!(settings.motor_pole_count().unwrap().as_u16(), 16);
+    assert_eq!(
+        settings.battery_chemistry().unwrap(),
+        vescpkg_rs::BatteryChemistry::LeadAcid
+    );
     assert_eq!(settings.gear_ratio().unwrap().as_f32(), 3.0);
     assert_eq!(settings.wheel_diameter().distance().as_meters(), 0.2);
     assert_eq!(settings.foc_motor_resistance().resistance().as_ohms(), 0.04);
@@ -401,6 +412,20 @@ fn typed_settings_read_write_and_persist() {
         .unwrap();
     assert_eq!(settings.battery_cell_count().unwrap().as_u16(), 14);
     settings.store().unwrap();
+}
+
+#[test]
+fn settings_reject_unknown_battery_chemistry() {
+    let firmware = FirmwareTest::new();
+    let settings = firmware.settings();
+
+    settings
+        .set_int(FirmwareIntSetting::BatteryType, 99)
+        .unwrap();
+    assert_eq!(
+        settings.battery_chemistry(),
+        Err(SettingsError::InvalidValue)
+    );
 }
 
 #[test]

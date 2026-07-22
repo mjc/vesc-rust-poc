@@ -46,7 +46,7 @@ pub use battery::{
 };
 pub use can::{CanControllerId, CanExtendedId, CanPayloadLen, CanPayloadLenError, CanStandardId};
 pub use config::{
-    BatteryCellCount, BatteryCellCountError, CustomConfigAngleCurrentGainField,
+    BatteryCellCount, BatteryCellCountError, BatteryChemistry, CustomConfigAngleCurrentGainField,
     CustomConfigAngleField, CustomConfigAngularVelocityField, CustomConfigDurationField,
     CustomConfigEditor, CustomConfigElectricalSpeedField, CustomConfigEnumField,
     CustomConfigFlagField, CustomConfigFrequencyField, CustomConfigImage,

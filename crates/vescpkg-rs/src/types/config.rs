@@ -46,6 +46,38 @@ impl WireByte {
 pub use crate::units::{BatteryCellCount, BatteryCellCountError};
 use crate::units::{Distance, FluxLinkage, Inductance, Resistance};
 
+/// Battery chemistry selector used by the VESC motor configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum BatteryChemistry {
+    /// Lithium-ion chemistry with a 3.0–4.2 V cell range.
+    LithiumIon,
+    /// Lithium-iron-phosphate chemistry with a 2.6–3.6 V cell range.
+    LithiumIronPhosphate,
+    /// Lead-acid chemistry.
+    LeadAcid,
+}
+
+impl BatteryChemistry {
+    /// Decode the VESC `BATTERY_TYPE` enum value.
+    pub const fn from_raw(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(Self::LithiumIon),
+            1 => Some(Self::LithiumIronPhosphate),
+            2 => Some(Self::LeadAcid),
+            _ => None,
+        }
+    }
+
+    /// Encode the VESC `BATTERY_TYPE` enum value.
+    pub const fn as_u8(self) -> u8 {
+        match self {
+            Self::LithiumIon => 0,
+            Self::LithiumIronPhosphate => 1,
+            Self::LeadAcid => 2,
+        }
+    }
+}
+
 macro_rules! positive_count_type {
     ($name:ident, $error:ident, $doc:literal, $error_doc:literal) => {
         #[doc = $doc]
