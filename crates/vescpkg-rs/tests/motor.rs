@@ -2,7 +2,8 @@
 //! Integration coverage for typed motor handbrake commands.
 
 use vescpkg_rs::{
-    Current, HandbrakeCurrent, HandbrakeRelative, MotorOutput, MotorTelemetry, Ratio, VescSeconds,
+    AngleDegrees, Current, HandbrakeCurrent, HandbrakeRelative, MotorOutput, MotorTelemetry,
+    OdometerMeters, PidPosition, Ratio, VescSeconds,
 };
 
 #[test]
@@ -72,6 +73,15 @@ fn motor_exposes_typed_handbrake_commands() {
         telemetry.statistics_count_time().duration().as_seconds(),
         90.0
     );
+    assert_eq!(
+        telemetry.signed_trip_distance().distance().as_meters(),
+        -3.5
+    );
+    assert_eq!(
+        telemetry.pid_position_setpoint().angle().as_degrees(),
+        42.0
+    );
+    assert_eq!(telemetry.pid_position().angle().as_degrees(), 12.0);
     assert_eq!(telemetry.tachometer(false).steps().as_steps(), 1234);
     assert_eq!(telemetry.absolute_tachometer(true).steps().as_steps(), 5678);
     assert_eq!(telemetry.sampling_frequency().as_hertz(), 20_000.0);
@@ -82,4 +92,10 @@ fn motor_exposes_typed_handbrake_commands() {
             .wait_for_motor_release(VescSeconds::from_seconds(0.1))
     );
     firmware.motor().reset_statistics();
+    firmware
+        .motor()
+        .update_pid_position_offset(PidPosition::new(AngleDegrees::from_degrees(5.0)), true);
+    firmware
+        .motor()
+        .set_odometer(OdometerMeters::from_meters(12_345));
 }
