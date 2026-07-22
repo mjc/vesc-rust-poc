@@ -16,6 +16,7 @@ use vescpkg_rs_sys::raw::AttitudeInfo;
 static IMU_READ_CALLBACK_REGISTERED: AtomicBool = AtomicBool::new(false);
 static IMU_LEASE_CALLBACK_ACTIVE: AtomicBool = AtomicBool::new(false);
 
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) fn disable_callback_dispatch() {
     IMU_LEASE_CALLBACK_ACTIVE.store(false, Ordering::Release);
 }
@@ -1155,7 +1156,10 @@ impl<B: ImuBindings> Imu for ImuApi<B> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ImuReadCallback, ImuReadHandler, PackageImuReadCallback, imu_read_callback};
+    use super::{
+        IMU_LEASE_CALLBACK_ACTIVE, ImuReadCallback, ImuReadHandler, PackageImuReadCallback,
+        imu_read_callback, leased_imu_read_callback,
+    };
     use crate::types::{
         ImuAcceleration, ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ, ImuAngularRate,
         ImuAngularRatePitch, ImuAngularRateRoll, ImuAngularRateYaw, ImuMagneticField,
@@ -1164,7 +1168,7 @@ mod tests {
     use crate::units::{AccelerationG, AngularVelocity, MagneticFluxDensity, VescSeconds};
     use core::f32::consts::FRAC_PI_2;
     use core::ptr::NonNull;
-    use core::sync::atomic::{AtomicPtr, AtomicU8, Ordering};
+    use core::sync::atomic::{AtomicPtr, AtomicU8, AtomicUsize, Ordering};
     use std::sync::Mutex;
 
     static LAST_SAMPLE: Mutex<Option<ImuReadSample>> = Mutex::new(None);
@@ -1187,6 +1191,15 @@ mod tests {
     static LOADER_RUNTIME_STATE: crate::PackageStateStore<State> = crate::PackageStateStore::new();
     static LOADER_STATE: AtomicPtr<State> = AtomicPtr::new(core::ptr::null_mut());
     static OBSERVED_SAMPLES: AtomicU8 = AtomicU8::new(0);
+    static LEASE_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    struct LeaseCallback;
+
+    impl ImuReadCallback for LeaseCallback {
+        fn read(_sample: ImuReadSample) {
+            LEASE_CALLS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
 
     unsafe fn loader_state() -> Option<NonNull<State>> {
         NonNull::new(LOADER_STATE.load(Ordering::Acquire))
@@ -1307,6 +1320,33 @@ mod tests {
             (4.0, 5.0, 6.0)
         );
         assert_eq!(sample.period().duration().as_seconds(), 0.02);
+    }
+
+    #[test]
+    fn retained_imu_lease_callback_fails_closed_after_disable() {
+        LEASE_CALLS.store(0, Ordering::Relaxed);
+        let mut acc = [1.0, 0.0, 0.0];
+        let mut gyro = [0.0; 3];
+        let mut mag = [0.0; 3];
+        IMU_LEASE_CALLBACK_ACTIVE.store(true, Ordering::Release);
+        unsafe {
+            leased_imu_read_callback::<LeaseCallback>(
+                acc.as_mut_ptr(),
+                gyro.as_mut_ptr(),
+                mag.as_mut_ptr(),
+                0.02,
+            );
+        }
+        IMU_LEASE_CALLBACK_ACTIVE.store(false, Ordering::Release);
+        unsafe {
+            leased_imu_read_callback::<LeaseCallback>(
+                acc.as_mut_ptr(),
+                gyro.as_mut_ptr(),
+                mag.as_mut_ptr(),
+                0.02,
+            );
+        }
+        assert_eq!(LEASE_CALLS.load(Ordering::Relaxed), 1);
     }
 
     #[test]

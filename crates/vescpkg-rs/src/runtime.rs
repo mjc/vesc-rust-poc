@@ -69,6 +69,7 @@ impl CallbackRegistrations {
 /// Disable every typed callback trampoline owned by the SDK before package
 /// state is torn down. Raw callback registration remains an explicit unsafe
 /// escape hatch and is not touched by this fail-closed gate.
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) fn disable_callback_dispatch() {
     crate::can_bus::disable_callback_dispatch();
     crate::commands::disable_callback_dispatch();
