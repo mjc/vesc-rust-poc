@@ -79,6 +79,13 @@ pub enum ControlLoopProbeError {
         /// Tick count from the final status sample.
         final_tick: u32,
     },
+    /// The package retained a setpoint but never changed its reported output.
+    OutputDidNotChange {
+        /// Output from the first status sample.
+        initial: i16,
+        /// Output from the final status sample.
+        final_output: i16,
+    },
     /// The package did not retain the requested setpoint.
     SetpointMismatch {
         /// Setpoint sent by the probe.
@@ -100,6 +107,15 @@ impl std::fmt::Display for ControlLoopProbeError {
                 write!(
                     f,
                     "control-loop tick did not advance ({initial} -> {final_tick})"
+                )
+            }
+            Self::OutputDidNotChange {
+                initial,
+                final_output,
+            } => {
+                write!(
+                    f,
+                    "control-loop output did not change ({initial} -> {final_output})"
                 )
             }
             Self::SetpointMismatch { expected, observed } => {
@@ -177,8 +193,24 @@ fn run_control_loop_on_session(
         statuses.push(status);
     }
 
-    let initial = statuses[0];
-    let final_status = *statuses.last().expect("status sample count is non-zero");
+    validate_control_loop_statuses(&statuses)?;
+
+    Ok(ControlLoopProbeReport {
+        target,
+        statuses,
+        elapsed: started.elapsed(),
+    })
+}
+
+fn validate_control_loop_statuses(
+    statuses: &[ControlLoopStatus],
+) -> Result<(), ControlLoopProbeError> {
+    let Some(initial) = statuses.first().copied() else {
+        return Err(ControlLoopProbeError::InvalidResponse(
+            ControlLoopCommandError::InvalidLength,
+        ));
+    };
+    let final_status = *statuses.last().expect("status sample count is non-empty");
     if final_status.setpoint() != CONTROL_LOOP_SETPOINT {
         return Err(ControlLoopProbeError::SetpointMismatch {
             expected: CONTROL_LOOP_SETPOINT,
@@ -191,12 +223,17 @@ fn run_control_loop_on_session(
             final_tick: final_status.tick_count(),
         });
     }
-
-    Ok(ControlLoopProbeReport {
-        target,
-        statuses,
-        elapsed: started.elapsed(),
-    })
+    if statuses
+        .iter()
+        .skip(1)
+        .all(|status| status.output() == initial.output())
+    {
+        return Err(ControlLoopProbeError::OutputDidNotChange {
+            initial: initial.output(),
+            final_output: final_status.output(),
+        });
+    }
+    Ok(())
 }
 
 fn send_control_loop_packet(
@@ -335,3 +372,36 @@ impl std::fmt::Display for DeployError {
 }
 
 impl std::error::Error for DeployError {}
+
+#[cfg(test)]
+mod tests {
+    use super::{ControlLoopProbeError, validate_control_loop_statuses};
+    use vesc_protocol::control_loop::{ControlLoopStatus, STATUS_BYTES, STATUS_COMMAND};
+
+    fn status(setpoint: i16, output: i16, tick_count: u32) -> ControlLoopStatus {
+        let mut response = [0_u8; STATUS_BYTES];
+        response[0] = STATUS_COMMAND;
+        response[1..3].copy_from_slice(&setpoint.to_le_bytes());
+        response[5..7].copy_from_slice(&output.to_le_bytes());
+        response[7..11].copy_from_slice(&tick_count.to_le_bytes());
+        ControlLoopStatus::decode(&response).expect("valid status")
+    }
+
+    #[test]
+    fn probe_validation_requires_setpoint_tick_and_output_progress() {
+        let statuses = [status(100, 100, 10), status(100, 50, 12)];
+        assert_eq!(validate_control_loop_statuses(&statuses), Ok(()));
+    }
+
+    #[test]
+    fn probe_validation_rejects_a_frozen_output() {
+        let statuses = [status(100, 100, 10), status(100, 100, 12)];
+        assert_eq!(
+            validate_control_loop_statuses(&statuses),
+            Err(ControlLoopProbeError::OutputDidNotChange {
+                initial: 100,
+                final_output: 100,
+            })
+        );
+    }
+}
