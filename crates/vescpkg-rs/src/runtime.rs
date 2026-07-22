@@ -82,11 +82,20 @@ pub(crate) fn disable_callback_dispatch() {
     crate::terminal::disable_callback_dispatch();
 }
 
+#[cfg(not(target_arch = "arm"))]
 static APP_DATA_REGISTRATION_LIVE: AtomicBool = AtomicBool::new(false);
+#[cfg(not(target_arch = "arm"))]
 static CUSTOM_CONFIG_REGISTRATION_LIVE: AtomicBool = AtomicBool::new(false);
 
 /// Claim the package-global app-data callback slot.
 pub(crate) fn claim_app_data_registration() -> bool {
+    #[cfg(target_arch = "arm")]
+    {
+        // The firmware app-data setter returns a registration result on ARM;
+        // avoid adding writable package statics to the flat image.
+        return true;
+    }
+    #[cfg(not(target_arch = "arm"))]
     APP_DATA_REGISTRATION_LIVE
         .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
         .is_ok()
@@ -94,11 +103,19 @@ pub(crate) fn claim_app_data_registration() -> bool {
 
 /// Release a failed or stopped app-data callback registration.
 pub(crate) fn release_app_data_registration() {
+    #[cfg(not(target_arch = "arm"))]
     APP_DATA_REGISTRATION_LIVE.store(false, Ordering::Release);
 }
 
 /// Claim the package-global custom-config callback slot.
 pub(crate) fn claim_custom_config_registration() -> bool {
+    #[cfg(target_arch = "arm")]
+    {
+        // The pinned custom-config registration slot has no status return;
+        // collision detection remains a provider/firmware boundary on ARM.
+        return true;
+    }
+    #[cfg(not(target_arch = "arm"))]
     CUSTOM_CONFIG_REGISTRATION_LIVE
         .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
         .is_ok()
@@ -106,6 +123,7 @@ pub(crate) fn claim_custom_config_registration() -> bool {
 
 /// Release a failed or stopped custom-config callback registration.
 pub(crate) fn release_custom_config_registration() {
+    #[cfg(not(target_arch = "arm"))]
     CUSTOM_CONFIG_REGISTRATION_LIVE.store(false, Ordering::Release);
 }
 
