@@ -6,7 +6,8 @@ use vescpkg_rs::{
     ImuAcceleration, ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ, ImuAngularRate,
     ImuAngularRatePitch, ImuAngularRateRoll, ImuAngularRateYaw, ImuMagneticField,
     ImuMagneticFieldX, ImuMagneticFieldY, ImuMagneticFieldZ, ImuReadCallback, ImuReadCallbackError,
-    ImuReadSample, ImuSamplePeriod, MagneticFluxDensity, VescSeconds, register_imu_read_callback,
+    ImuReadCallbackLease, ImuReadSample, ImuSamplePeriod, MagneticFluxDensity, PackageRuntimeState,
+    PackageStateStore, VescSeconds, register_imu_read_callback,
 };
 
 fn vectors() -> (ImuAcceleration, ImuMagneticField) {
@@ -107,6 +108,18 @@ impl ImuReadCallback for Callback {
     fn read(_sample: ImuReadSample) {}
 }
 
+struct PackageState {
+    _lease: Option<ImuReadCallbackLease<Callback>>,
+}
+
+static PACKAGE_STATE: PackageStateStore<PackageState> = PackageStateStore::new();
+
+impl PackageRuntimeState for PackageState {
+    fn runtime_store() -> &'static PackageStateStore<Self> {
+        &PACKAGE_STATE
+    }
+}
+
 #[test]
 fn imu_read_callback_registration_is_exclusive_and_released_on_drop() {
     let first = unsafe { register_imu_read_callback::<Callback>() }.unwrap();
@@ -116,4 +129,20 @@ fn imu_read_callback_registration_is_exclusive_and_released_on_drop() {
     ));
     drop(first);
     assert!(unsafe { register_imu_read_callback::<Callback>() }.is_ok());
+}
+
+#[test]
+fn package_stop_releases_imu_read_callback_before_next_registration() {
+    let lease = unsafe { register_imu_read_callback::<Callback>() }.expect("IMU callback");
+    let mut info = vescpkg_rs::test_support::LoaderInfo::new();
+    let mut start = vescpkg_rs::test_support::package_start(&mut info);
+    start
+        .install_runtime_state(PackageState {
+            _lease: Some(lease),
+        })
+        .expect("package state");
+    assert!(start.finish_start(true));
+    assert!(vescpkg_rs::test_support::stop_package(&mut info));
+
+    unsafe { register_imu_read_callback::<Callback>() }.expect("stop released IMU callback");
 }
