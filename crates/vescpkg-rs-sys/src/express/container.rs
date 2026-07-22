@@ -59,6 +59,7 @@ pub enum ExpressNativeContainerError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExpressNativeContainer<'a> {
     bytes: &'a [u8],
+    version: u32,
     code_size: usize,
     data_size: usize,
     entry_offset: usize,
@@ -128,6 +129,7 @@ impl<'a> ExpressNativeContainer<'a> {
 
         let container = Self {
             bytes,
+            version,
             code_size,
             data_size,
             entry_offset,
@@ -154,7 +156,7 @@ impl<'a> ExpressNativeContainer<'a> {
 
     /// Return the version of the container format.
     pub const fn version(self) -> u32 {
-        2
+        self.version
     }
 
     /// Return the code region size in bytes.
@@ -175,6 +177,11 @@ impl<'a> ExpressNativeContainer<'a> {
     /// Return the number of relocation entries.
     pub const fn relocation_count(self) -> usize {
         self.reloc_count
+    }
+
+    /// Return the validated byte length of the encoded container.
+    pub const fn encoded_len(self) -> usize {
+        HEADER_LEN + self.reloc_count * 4 + self.code_size + self.data_size
     }
 
     /// Borrow the code bytes following the relocation table.
