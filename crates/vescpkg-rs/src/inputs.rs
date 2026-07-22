@@ -122,8 +122,10 @@ pub struct ShutdownInhibit;
 
 impl Drop for ShutdownInhibit {
     fn drop(&mut self) {
-        let _ = unsafe { crate::ffi::shutdown_disable(false) };
-        SHUTDOWN_INHIBIT_LIVE.store(false, Ordering::Release);
+        // Keep the guard's ownership bit if firmware cannot restore shutdown.
+        if unsafe { crate::ffi::shutdown_disable(false) }.is_some() {
+            SHUTDOWN_INHIBIT_LIVE.store(false, Ordering::Release);
+        }
     }
 }
 

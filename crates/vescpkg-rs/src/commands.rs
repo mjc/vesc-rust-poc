@@ -71,8 +71,11 @@ impl Commands {
 
 impl<H: CommandReplyHandler> Drop for CommandReplyLease<H> {
     fn drop(&mut self) {
-        let _ = unsafe { crate::ffi::commands_unregister_reply_func(reply::<H>) };
-        COMMAND_REPLY_OWNED.store(false, Ordering::Release);
+        // Keep the ownership bit set if the optional cleanup slot is absent;
+        // replacing a callback we could not unregister would be unsafe.
+        if unsafe { crate::ffi::commands_unregister_reply_func(reply::<H>) } {
+            COMMAND_REPLY_OWNED.store(false, Ordering::Release);
+        }
     }
 }
 
