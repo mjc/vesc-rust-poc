@@ -35,4 +35,24 @@ mod tests {
         let _firmware = FirmwareTest::new();
         assert_eq!(after_probe_signal(|| 42), Some(42));
     }
+
+    #[test]
+    fn package_mutex_guard_unlocks_and_frees_on_panic() {
+        let firmware = FirmwareTest::new();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = with_probe_lock(|| panic!("probe panic"));
+        }));
+
+        assert!(result.is_err());
+        assert_eq!(firmware.mutex_free_count(), 1);
+    }
+
+    #[test]
+    fn package_semaphore_timeout_fails_closed_and_frees() {
+        let firmware = FirmwareTest::new();
+        firmware.fail_semaphore_timeout();
+
+        assert_eq!(after_probe_signal(|| 42), None);
+        assert_eq!(firmware.semaphore_free_count(), 1);
+    }
 }
