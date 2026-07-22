@@ -307,6 +307,7 @@ mod tests {
         assert_eq!(container.data_size(), 8);
         assert_eq!(container.entry_offset(), 0);
         assert_eq!(container.relocation_count(), 1);
+        assert_eq!(container.encoded_len(), bytes.len());
         assert_eq!(container.code(), &[0xaa, 0xbb, 0xcc, 0xdd]);
         assert_eq!(container.data(), &[0xca, 0xfe, 0xba, 0xbe, 1, 2, 3, 4]);
 
