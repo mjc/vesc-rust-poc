@@ -33,12 +33,21 @@ impl<B: LbmBindings> LbmApi<B> {
         .ok_or(ExtensionRegistrationError::FirmwareRejected)
     }
 
-    /// Decode a LispBM numeric value into an `i32`.
-    pub fn decode_i32(&self, value: LbmValue) -> Option<i32> {
+    /// Convert any LispBM numeric value to an `i32`.
+    pub fn decode_number_as_i32(&self, value: LbmValue) -> Option<i32> {
         unsafe {
             self.bindings
                 .is_number(value)
                 .then(|| self.bindings.decode_i32(value))
+        }
+    }
+
+    /// Convert any LispBM numeric value to an `f32`.
+    pub fn decode_number_as_f32(&self, value: LbmValue) -> Option<f32> {
+        unsafe {
+            self.bindings
+                .is_number(value)
+                .then(|| self.bindings.decode_f32(value))
         }
     }
 

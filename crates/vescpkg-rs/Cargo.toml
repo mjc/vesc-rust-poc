@@ -20,4 +20,3 @@ test-support = []
 
 [dev-dependencies]
 rstest = "0.26"
-trybuild = "1"
