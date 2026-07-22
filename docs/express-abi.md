@@ -48,6 +48,11 @@ firmware-owned handles are released with the header-prescribed `free` slot,
 and mutex guards unlock on drop. Creation rejects absent slots and null handles
 without manufacturing a dummy synchronization object.
 
+`ExpressAllocation` provides the corresponding explicit firmware-owned byte
+allocation. It is not installed as a global allocator: callers initialize or
+borrow the handle deliberately, and drop always returns the pointer through the
+Express `free` slot.
+
 The fixed-address `ExpressInterface::from_target` constructor is also unsafe:
 it is only valid on the matching 32-bit Express target and is intentionally not
 used by host tests. This foundation deliberately does not use bindgen.

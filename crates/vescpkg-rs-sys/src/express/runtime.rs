@@ -1,7 +1,7 @@
 //! Constructor-gated shared Express runtime operations.
 
 use super::functions::{
-    Free, LibMutex, LibSemaphore, MutexCreate, MutexLock, MutexUnlock, SemaphoreCreate,
+    Free, LibMutex, LibSemaphore, Malloc, MutexCreate, MutexLock, MutexUnlock, SemaphoreCreate,
     SemaphoreReset, SemaphoreSignal, SemaphoreWait, SemaphoreWaitTo, ShouldTerminate, SleepMs,
     SleepTicks, SleepUs, SystemTime, SystemTimeTicks, ThreadSetPriority, TimerSecondsElapsedSince,
     TimerSleep, TimerTimeNow, TsToAgeS,
@@ -125,6 +125,11 @@ impl<'a> ExpressRuntime<'a> {
         let free: Free = unsafe { self.interface.function(ExpressSlot::Free) }?;
         unsafe { free(pointer) };
         Ok(())
+    }
+
+    pub(crate) fn malloc(self, bytes: usize) -> Result<*mut core::ffi::c_void, ExpressCallError> {
+        let malloc: Malloc = unsafe { self.interface.function(ExpressSlot::Malloc) }?;
+        Ok(unsafe { malloc(bytes) })
     }
 
     pub(crate) fn mutex_create(self) -> Result<LibMutex, ExpressCallError> {
