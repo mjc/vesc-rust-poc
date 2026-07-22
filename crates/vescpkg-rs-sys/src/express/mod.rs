@@ -8,11 +8,13 @@
 
 mod functions;
 mod loader;
+mod runtime;
 mod table;
 mod types;
 
 pub use functions::*;
 pub use loader::{ExpressCallError, ExpressInterface, ExpressLoadError};
+pub use runtime::ExpressRuntime;
 pub use table::{ExpressSlot, ExpressSlotKind, ExpressTable, ExpressTableError, express_slot_kind};
 pub use types::{
     EXPRESS_C_IF_VERSION, EXPRESS_IF_SLOT_COUNT, EXPRESS_IF_TABLE_BYTES, EXPRESS_NATIVE_LIB_MAGIC,
@@ -87,6 +89,13 @@ mod tests {
             unsafe { interface.function::<unsafe extern "C" fn()>(ExpressSlot::SleepMs) },
             Err(ExpressCallError {
                 slot: ExpressSlot::SleepMs
+            })
+        );
+        let runtime = unsafe { ExpressRuntime::from_interface(interface) };
+        assert_eq!(
+            runtime.system_time(),
+            Err(ExpressCallError {
+                slot: ExpressSlot::SystemTime
             })
         );
     }

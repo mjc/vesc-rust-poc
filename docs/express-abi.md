@@ -37,9 +37,11 @@ the STM32 table. Target-specific package builds and hardware proof still need
 to be added.
 
 The module provides named pointer aliases for the shared clock, sleep,
-allocation, thread, mutex, and semaphore signatures. They are ABI fixtures for
-the unsafe resolver, not a safe Express runtime facade; variadic `printf` and
-STM32-only motor/CAN/peripheral slots remain outside this shared surface.
+allocation, thread, mutex, and semaphore signatures. `ExpressRuntime` turns the
+clock/sleep/timer/termination/priority subset into checked methods after its
+unsafe live-table constructor establishes the target invariant. Variadic
+`printf` and STM32-only motor/CAN/peripheral slots remain outside this shared
+surface.
 
 The fixed-address `ExpressInterface::from_target` constructor is also unsafe:
 it is only valid on the matching 32-bit Express target and is intentionally not
