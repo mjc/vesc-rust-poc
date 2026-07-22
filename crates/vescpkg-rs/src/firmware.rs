@@ -688,6 +688,22 @@ mod tests {
                 0
             }
 
+            fn system_time_seconds(&self) -> f32 {
+                0.0
+            }
+
+            fn timestamp_age_seconds(&self, _timestamp: u32) -> f32 {
+                0.0
+            }
+
+            fn timer_time_now(&self) -> u32 {
+                0
+            }
+
+            fn timer_seconds_elapsed_since(&self, _timestamp: u32) -> f32 {
+                0.0
+            }
+
             fn arg(
                 &self,
                 prog_addr: crate::PackageProgramAddress,

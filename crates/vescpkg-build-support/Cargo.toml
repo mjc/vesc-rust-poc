@@ -2,6 +2,7 @@
 name = "vescpkg-build-support"
 version = "0.1.0"
 edition = "2024"
+rust-version.workspace = true
 description = "Shared build-script support for Rust VESC package examples."
 
 [lints]

@@ -1,6 +1,8 @@
 use core::ffi::{c_char, c_void};
 use core::hint::spin_loop;
-use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{
+    AtomicBool, AtomicI32, AtomicU8, AtomicU32, AtomicU64, AtomicUsize, Ordering,
+};
 
 use crate::{
     AmpHoursCharged, AmpHoursDischarged, BatteryLevel, DCurrent, DirectionalMotorCurrent,
@@ -9,6 +11,7 @@ use crate::{
     MotorTemperature, OdometerMeters, TotalMotorCurrent, TripDistance, VehicleSpeed,
     WattHoursCharged, WattHoursDischarged,
 };
+use vescpkg_rs_sys::LbmValue;
 
 // C map: these host replacements model the motor slots declared at
 // `third_party/vesc_pkg_lib/vesc_c_if.h:435-476`. Refloat reads them in
@@ -76,6 +79,29 @@ static EEPROM: [AtomicU32; EEPROM_WORDS] = [const { AtomicU32::new(0) }; EEPROM_
 static EEPROM_PRESENT: [AtomicBool; EEPROM_WORDS] =
     [const { AtomicBool::new(false) }; EEPROM_WORDS];
 static EEPROM_WRITE_FAILURE: AtomicI32 = AtomicI32::new(-1);
+const NVM_BYTES: usize = 256;
+static NVM: [AtomicU8; NVM_BYTES] = [const { AtomicU8::new(0) }; NVM_BYTES];
+static NVM_FAILURE: AtomicBool = AtomicBool::new(false);
+static LBM_FLOAT_BITS: AtomicU32 = AtomicU32::new(0);
+static LBM_CONS_CAR: AtomicU32 = AtomicU32::new(0);
+static LBM_CONS_CDR: AtomicU32 = AtomicU32::new(0);
+static LBM_STRING: [u8; 5] = *b"vesc\0";
+const LBM_BYTE_ARRAY: u32 = 0x03;
+static CLOCK_TICKS: AtomicU32 = AtomicU32::new(0);
+static TIMER_TICKS: AtomicU32 = AtomicU32::new(0);
+static MUTEX_TOKEN: u8 = 0;
+static MUTEX_LOCK_COUNT: AtomicUsize = AtomicUsize::new(0);
+static MUTEX_UNLOCK_COUNT: AtomicUsize = AtomicUsize::new(0);
+static MUTEX_FREE_COUNT: AtomicUsize = AtomicUsize::new(0);
+static MUTEX_CREATE_FAILURE: AtomicBool = AtomicBool::new(false);
+static SEMAPHORE_TOKEN: u8 = 0;
+static SEMAPHORE_CREATE_FAILURE: AtomicBool = AtomicBool::new(false);
+static SEMAPHORE_TIMEOUT_FAILURE: AtomicBool = AtomicBool::new(false);
+static SEMAPHORE_WAIT_COUNT: AtomicUsize = AtomicUsize::new(0);
+static SEMAPHORE_TIMED_WAIT_TICKS: AtomicU32 = AtomicU32::new(u32::MAX);
+static SEMAPHORE_SIGNAL_COUNT: AtomicUsize = AtomicUsize::new(0);
+static SEMAPHORE_RESET_COUNT: AtomicUsize = AtomicUsize::new(0);
+static SEMAPHORE_FREE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 pub(crate) struct MotorOutputState {
     pub keep_alive_count: usize,
@@ -173,6 +199,21 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
         .iter()
         .for_each(|slot| slot.store(false, Ordering::Relaxed));
     EEPROM_WRITE_FAILURE.store(-1, Ordering::Relaxed);
+    NVM.iter().for_each(|byte| byte.store(0, Ordering::Relaxed));
+    NVM_FAILURE.store(false, Ordering::Relaxed);
+    CLOCK_TICKS.store(0, Ordering::Relaxed);
+    TIMER_TICKS.store(0, Ordering::Relaxed);
+    MUTEX_LOCK_COUNT.store(0, Ordering::Relaxed);
+    MUTEX_UNLOCK_COUNT.store(0, Ordering::Relaxed);
+    MUTEX_FREE_COUNT.store(0, Ordering::Relaxed);
+    MUTEX_CREATE_FAILURE.store(false, Ordering::Relaxed);
+    SEMAPHORE_WAIT_COUNT.store(0, Ordering::Relaxed);
+    SEMAPHORE_TIMED_WAIT_TICKS.store(u32::MAX, Ordering::Relaxed);
+    SEMAPHORE_SIGNAL_COUNT.store(0, Ordering::Relaxed);
+    SEMAPHORE_RESET_COUNT.store(0, Ordering::Relaxed);
+    SEMAPHORE_FREE_COUNT.store(0, Ordering::Relaxed);
+    SEMAPHORE_CREATE_FAILURE.store(false, Ordering::Relaxed);
+    SEMAPHORE_TIMEOUT_FAILURE.store(false, Ordering::Relaxed);
     FirmwareLockGuard
 }
 
@@ -214,6 +255,278 @@ pub unsafe fn store_eeprom_word(word: *mut u32, address: i32) -> bool {
 
 pub(crate) fn fail_eeprom_write(address: crate::CustomEepromAddress) {
     EEPROM_WRITE_FAILURE.store(address.get(), Ordering::Relaxed);
+}
+
+pub unsafe fn read_nvm(buffer: *mut u8, len: u32, address: u32) -> Option<bool> {
+    let Some(end) = address
+        .checked_add(len)
+        .and_then(|end| usize::try_from(end).ok())
+    else {
+        return Some(false);
+    };
+    let start = usize::try_from(address).ok()?;
+    let Some(buffer) = core::ptr::NonNull::new(buffer) else {
+        return Some(false);
+    };
+    if end > NVM_BYTES || NVM_FAILURE.load(Ordering::Relaxed) {
+        return Some(false);
+    }
+    for index in 0..usize::try_from(len).ok()? {
+        unsafe {
+            buffer
+                .as_ptr()
+                .add(index)
+                .write(NVM[start + index].load(Ordering::Relaxed));
+        }
+    }
+    Some(true)
+}
+
+pub unsafe fn write_nvm(buffer: *mut u8, len: u32, address: u32) -> Option<bool> {
+    let Some(end) = address
+        .checked_add(len)
+        .and_then(|end| usize::try_from(end).ok())
+    else {
+        return Some(false);
+    };
+    let start = usize::try_from(address).ok()?;
+    let Some(buffer) = core::ptr::NonNull::new(buffer) else {
+        return Some(false);
+    };
+    if end > NVM_BYTES || NVM_FAILURE.load(Ordering::Relaxed) {
+        return Some(false);
+    }
+    for index in 0..usize::try_from(len).ok()? {
+        let byte = unsafe { buffer.as_ptr().add(index).read() };
+        NVM[start + index].store(byte, Ordering::Relaxed);
+    }
+    Some(true)
+}
+
+pub unsafe fn wipe_nvm() -> Option<bool> {
+    if NVM_FAILURE.load(Ordering::Relaxed) {
+        return Some(false);
+    }
+    NVM.iter().for_each(|byte| byte.store(0, Ordering::Relaxed));
+    Some(true)
+}
+
+pub(crate) fn fail_nvm_operations(fail: bool) {
+    NVM_FAILURE.store(fail, Ordering::Relaxed);
+}
+
+pub unsafe fn lbm_is_number(value: LbmValue) -> bool {
+    value.0 & 0x0f == 0x08 || value.0 == 0x10
+}
+
+pub unsafe fn lbm_dec_as_u32(value: LbmValue) -> u32 {
+    (value.0 as i32 >> 4) as u32
+}
+
+pub unsafe fn lbm_dec_as_i32(value: LbmValue) -> i32 {
+    (value.0 as i32) >> 4
+}
+
+pub unsafe fn lbm_dec_as_float(value: LbmValue) -> f32 {
+    if value.0 == 0x10 {
+        f32::from_bits(LBM_FLOAT_BITS.load(Ordering::Relaxed))
+    } else {
+        0.0
+    }
+}
+
+pub unsafe fn lbm_dec_str(_value: LbmValue) -> *mut c_char {
+    LBM_STRING.as_ptr().cast_mut().cast()
+}
+
+pub unsafe fn lbm_enc_i(value: i32) -> LbmValue {
+    LbmValue((value << 4) as u32 | 0x08)
+}
+
+pub unsafe fn lbm_enc_float(value: f32) -> LbmValue {
+    LBM_FLOAT_BITS.store(value.to_bits(), Ordering::Relaxed);
+    LbmValue(0x10)
+}
+
+pub unsafe fn lbm_dec_char(value: LbmValue) -> u8 {
+    (value.0 >> 4) as u8
+}
+
+pub unsafe fn lbm_enc_char(value: u8) -> LbmValue {
+    LbmValue((value as u32) << 4 | 0x04)
+}
+
+pub unsafe fn lbm_enc_u32(value: u32) -> LbmValue {
+    LbmValue(value << 4 | 0x08)
+}
+
+pub unsafe fn lbm_cons(car: LbmValue, cdr: LbmValue) -> LbmValue {
+    LBM_CONS_CAR.store(car.0, Ordering::Relaxed);
+    LBM_CONS_CDR.store(cdr.0, Ordering::Relaxed);
+    LbmValue(0x20)
+}
+
+pub unsafe fn lbm_car(_value: LbmValue) -> LbmValue {
+    LbmValue(LBM_CONS_CAR.load(Ordering::Relaxed))
+}
+
+pub unsafe fn lbm_cdr(_value: LbmValue) -> LbmValue {
+    LbmValue(LBM_CONS_CDR.load(Ordering::Relaxed))
+}
+
+pub unsafe fn lbm_list_destructive_reverse(value: LbmValue) -> LbmValue {
+    value
+}
+
+pub unsafe fn lbm_is_char(value: LbmValue) -> bool {
+    value.0 & 0x0f == 0x04
+}
+
+pub unsafe fn lbm_is_symbol(_value: LbmValue) -> bool {
+    false
+}
+
+pub unsafe fn lbm_is_cons(_value: LbmValue) -> bool {
+    _value.0 == 0x20
+}
+
+pub unsafe fn lbm_is_byte_array(_value: LbmValue) -> bool {
+    _value.0 == LBM_BYTE_ARRAY
+}
+
+pub unsafe fn lbm_create_byte_array(value: *mut LbmValue, _len: u32) -> bool {
+    let Some(value) = (unsafe { value.as_mut() }) else {
+        return false;
+    };
+    *value = LbmValue(LBM_BYTE_ARRAY);
+    true
+}
+
+pub unsafe fn vesc_system_time_ticks() -> u32 {
+    CLOCK_TICKS.load(Ordering::Relaxed)
+}
+
+pub unsafe fn vesc_system_time_seconds() -> f32 {
+    CLOCK_TICKS.load(Ordering::Relaxed) as f32 / 10_000.0
+}
+
+pub unsafe fn vesc_timestamp_age_seconds(timestamp: u32) -> f32 {
+    CLOCK_TICKS.load(Ordering::Relaxed).wrapping_sub(timestamp) as f32 / 10_000.0
+}
+
+pub unsafe fn vesc_timer_time_now() -> u32 {
+    TIMER_TICKS.load(Ordering::Relaxed)
+}
+
+pub unsafe fn vesc_timer_seconds_elapsed_since(timestamp: u32) -> f32 {
+    TIMER_TICKS.load(Ordering::Relaxed).wrapping_sub(timestamp) as f32 / 1_000_000.0
+}
+
+pub(crate) fn set_clock_ticks(ticks: u32) {
+    CLOCK_TICKS.store(ticks, Ordering::Relaxed);
+}
+
+pub(crate) fn set_timer_ticks(ticks: u32) {
+    TIMER_TICKS.store(ticks, Ordering::Relaxed);
+}
+
+pub unsafe fn vesc_mutex_create() -> *mut c_void {
+    if MUTEX_CREATE_FAILURE.load(Ordering::Relaxed) {
+        return core::ptr::null_mut();
+    }
+    core::ptr::addr_of!(MUTEX_TOKEN).cast::<c_void>().cast_mut()
+}
+
+pub unsafe fn vesc_mutex_lock(_mutex: *mut c_void) {
+    MUTEX_LOCK_COUNT.fetch_add(1, Ordering::Relaxed);
+}
+
+pub unsafe fn vesc_mutex_unlock(_mutex: *mut c_void) {
+    MUTEX_UNLOCK_COUNT.fetch_add(1, Ordering::Relaxed);
+}
+
+pub unsafe fn vesc_sem_create() -> *mut c_void {
+    if SEMAPHORE_CREATE_FAILURE.load(Ordering::Relaxed) {
+        return core::ptr::null_mut();
+    }
+    core::ptr::addr_of!(SEMAPHORE_TOKEN)
+        .cast::<c_void>()
+        .cast_mut()
+}
+
+pub unsafe fn vesc_sem_wait(_semaphore: *mut c_void) {
+    SEMAPHORE_WAIT_COUNT.fetch_add(1, Ordering::Relaxed);
+}
+
+pub unsafe fn vesc_sem_wait_to(_semaphore: *mut c_void, ticks: u32) -> bool {
+    SEMAPHORE_TIMED_WAIT_TICKS.store(ticks, Ordering::Relaxed);
+    !SEMAPHORE_TIMEOUT_FAILURE.load(Ordering::Relaxed)
+}
+
+pub unsafe fn vesc_sem_signal(_semaphore: *mut c_void) {
+    SEMAPHORE_SIGNAL_COUNT.fetch_add(1, Ordering::Relaxed);
+}
+
+pub unsafe fn vesc_sem_reset(_semaphore: *mut c_void) {
+    SEMAPHORE_RESET_COUNT.fetch_add(1, Ordering::Relaxed);
+}
+
+pub unsafe fn vesc_free(pointer: *mut c_void) {
+    if core::ptr::eq(
+        pointer.cast_const(),
+        core::ptr::addr_of!(SEMAPHORE_TOKEN).cast::<c_void>(),
+    ) {
+        SEMAPHORE_FREE_COUNT.fetch_add(1, Ordering::Relaxed);
+    } else {
+        MUTEX_FREE_COUNT.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+pub(crate) fn mutex_lock_count() -> usize {
+    MUTEX_LOCK_COUNT.load(Ordering::Relaxed)
+}
+
+pub(crate) fn mutex_unlock_count() -> usize {
+    MUTEX_UNLOCK_COUNT.load(Ordering::Relaxed)
+}
+
+pub(crate) fn mutex_free_count() -> usize {
+    MUTEX_FREE_COUNT.load(Ordering::Relaxed)
+}
+
+pub(crate) fn semaphore_wait_count() -> usize {
+    SEMAPHORE_WAIT_COUNT.load(Ordering::Relaxed)
+}
+
+pub(crate) fn semaphore_timed_wait_ticks() -> Option<u32> {
+    match SEMAPHORE_TIMED_WAIT_TICKS.load(Ordering::Relaxed) {
+        u32::MAX => None,
+        ticks => Some(ticks),
+    }
+}
+
+pub(crate) fn semaphore_signal_count() -> usize {
+    SEMAPHORE_SIGNAL_COUNT.load(Ordering::Relaxed)
+}
+
+pub(crate) fn semaphore_reset_count() -> usize {
+    SEMAPHORE_RESET_COUNT.load(Ordering::Relaxed)
+}
+
+pub(crate) fn semaphore_free_count() -> usize {
+    SEMAPHORE_FREE_COUNT.load(Ordering::Relaxed)
+}
+
+pub(crate) fn fail_mutex_creation(fail: bool) {
+    MUTEX_CREATE_FAILURE.store(fail, Ordering::Relaxed);
+}
+
+pub(crate) fn fail_semaphore_creation(fail: bool) {
+    SEMAPHORE_CREATE_FAILURE.store(fail, Ordering::Relaxed);
+}
+
+pub(crate) fn fail_semaphore_timeout(fail: bool) {
+    SEMAPHORE_TIMEOUT_FAILURE.store(fail, Ordering::Relaxed);
 }
 
 fn load(value: &AtomicU32) -> f32 {

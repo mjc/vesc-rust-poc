@@ -8,13 +8,18 @@ members = [
     "crates/cargo-vescpkg",
     "examples/loopback",
     "examples/alloc-smoke",
+    "examples/refloat",
 ]
 default-members = [
     "crates/cargo-vescpkg",
     "examples/loopback",
     "examples/alloc-smoke",
+    "examples/refloat",
 ]
 resolver = "2"
+
+[workspace.package]
+rust-version = "1.85"
 
 [workspace.lints.rust]
 missing_docs = "warn"

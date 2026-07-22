@@ -1,7 +1,5 @@
 //! Typed access to the package custom-EEPROM range.
 
-use core::mem::size_of;
-
 /// Word address passed to the firmware custom-EEPROM interface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
@@ -28,6 +26,45 @@ impl CustomEepromAddress {
 pub struct EepromWord([u8; 4]);
 
 impl EepromWord {
+    /// Number of serialized bytes in one EEPROM word.
+    pub const BYTE_LEN: usize = 4;
+
+    /// Construct one word from a native-endian unsigned integer.
+    #[must_use]
+    pub const fn from_u32(value: u32) -> Self {
+        Self::from_ne_bytes(value.to_ne_bytes())
+    }
+
+    /// Recover the native-endian unsigned integer represented by this word.
+    #[must_use]
+    pub const fn to_u32(self) -> u32 {
+        u32::from_ne_bytes(self.0)
+    }
+
+    /// Construct one word from a native-endian signed integer.
+    #[must_use]
+    pub const fn from_i32(value: i32) -> Self {
+        Self::from_ne_bytes(value.to_ne_bytes())
+    }
+
+    /// Recover the native-endian signed integer represented by this word.
+    #[must_use]
+    pub const fn to_i32(self) -> i32 {
+        i32::from_ne_bytes(self.0)
+    }
+
+    /// Construct one word from a native-endian `f32` bit pattern.
+    #[must_use]
+    pub const fn from_f32(value: f32) -> Self {
+        Self::from_ne_bytes(value.to_ne_bytes())
+    }
+
+    /// Recover the native-endian `f32` bit pattern represented by this word.
+    #[must_use]
+    pub const fn to_f32(self) -> f32 {
+        f32::from_ne_bytes(self.0)
+    }
+
     /// Construct one word from four serialized bytes.
     #[must_use]
     pub const fn from_ne_bytes(bytes: [u8; 4]) -> Self {
@@ -57,12 +94,12 @@ impl CustomEeprom {
     pub fn read(self, address: CustomEepromAddress) -> Option<EepromWord> {
         let mut word = 0_u32;
         unsafe { crate::ffi::read_eeprom_word(&mut word, address.get()) }
-            .then(|| EepromWord::from_ne_bytes(word.to_ne_bytes()))
+            .then(|| EepromWord::from_u32(word))
     }
 
     /// Store one word and report firmware success.
     pub fn write(self, address: CustomEepromAddress, word: EepromWord) -> bool {
-        let mut word = u32::from_ne_bytes(word.to_ne_bytes());
+        let mut word = word.to_u32();
         unsafe { crate::ffi::store_eeprom_word(&mut word, address.get()) }
     }
 
@@ -72,7 +109,7 @@ impl CustomEeprom {
     /// be represented. Bytes read before a failure remain in `bytes`.
     pub fn read_bytes(self, bytes: &mut [u8]) -> bool {
         bytes
-            .chunks_mut(size_of::<EepromWord>())
+            .chunks_mut(EepromWord::BYTE_LEN)
             .enumerate()
             .all(|(index, bytes)| {
                 let Some(address) = CustomEepromAddress::from_index(index) else {
@@ -92,13 +129,13 @@ impl CustomEeprom {
     /// first address or firmware write failure.
     pub fn write_bytes(self, bytes: &[u8]) -> bool {
         bytes
-            .chunks(size_of::<EepromWord>())
+            .chunks(EepromWord::BYTE_LEN)
             .enumerate()
             .all(|(index, bytes)| {
                 let Some(address) = CustomEepromAddress::from_index(index) else {
                     return false;
                 };
-                let mut word = [0; size_of::<EepromWord>()];
+                let mut word = [0; EepromWord::BYTE_LEN];
                 word[..bytes.len()].copy_from_slice(bytes);
                 self.write(address, EepromWord::from_ne_bytes(word))
             })

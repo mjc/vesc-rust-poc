@@ -25,7 +25,7 @@ const fn is_integer(value: u32) -> bool {
 }
 
 /// A LispBM value that can only be produced by the SDK's typed argument API.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LispValue(LbmValue);
 
 impl LispValue {
@@ -39,6 +39,131 @@ impl LispValue {
     /// Decode this value only when it is an immediate LispBM integer.
     pub fn decode_i32_exact(self) -> Option<i32> {
         is_integer(self.raw().0).then(|| decode_integer(self.raw().0))
+    }
+
+    /// Convert a firmware-classified numeric value to an unsigned integer.
+    #[cfg(not(test))]
+    pub fn decode_number_as_u32(self) -> Option<u32> {
+        self.is_number()
+            .then(|| unsafe { crate::ffi::lbm_dec_as_u32(self.raw()) })
+    }
+
+    /// Encode an unsigned integer through the firmware's LispBM representation.
+    #[cfg(not(test))]
+    pub fn from_u32(value: u32) -> Self {
+        Self::from_raw(unsafe { crate::ffi::lbm_enc_u32(value) })
+    }
+
+    /// Encode a signed integer through the firmware's LispBM representation.
+    #[cfg(not(test))]
+    pub fn from_i32(value: i32) -> Self {
+        Self::from_raw(unsafe { crate::ffi::lbm_enc_i(value) })
+    }
+
+    /// Encode an `f32` through the firmware's LispBM representation.
+    #[cfg(not(test))]
+    pub fn from_f32(value: f32) -> Self {
+        Self::from_raw(unsafe { crate::ffi::lbm_enc_float(value) })
+    }
+
+    /// Decode a LispBM character value.
+    #[cfg(not(test))]
+    pub fn decode_char(self) -> Option<u8> {
+        self.is_char()
+            .then(|| unsafe { crate::ffi::lbm_dec_char(self.raw()) })
+    }
+
+    /// Encode a byte as a LispBM character value.
+    #[cfg(not(test))]
+    pub fn from_char(value: u8) -> Self {
+        Self::from_raw(unsafe { crate::ffi::lbm_enc_char(value) })
+    }
+
+    /// Return whether this value is an immediate LispBM integer.
+    #[must_use]
+    pub const fn is_integer(self) -> bool {
+        is_integer(self.raw().0)
+    }
+
+    /// Return whether firmware classifies this value as numeric.
+    #[must_use]
+    pub fn is_number(self) -> bool {
+        unsafe { crate::ffi::lbm_is_number(self.raw()) }
+    }
+
+    /// Return whether firmware classifies this value as a character.
+    #[must_use]
+    pub fn is_char(self) -> bool {
+        unsafe { crate::ffi::lbm_is_char(self.raw()) }
+    }
+
+    /// Return whether firmware classifies this value as a symbol.
+    #[must_use]
+    pub fn is_symbol(self) -> bool {
+        unsafe { crate::ffi::lbm_is_symbol(self.raw()) }
+    }
+
+    /// Return whether firmware classifies this value as a cons cell.
+    #[must_use]
+    pub fn is_cons(self) -> bool {
+        unsafe { crate::ffi::lbm_is_cons(self.raw()) }
+    }
+
+    /// Return whether firmware classifies this value as a byte array.
+    #[must_use]
+    pub fn is_byte_array(self) -> bool {
+        unsafe { crate::ffi::lbm_is_byte_array(self.raw()) }
+    }
+
+    /// Allocate a LispBM byte array through the firmware allocator.
+    pub fn try_byte_array(len: usize) -> Option<Self> {
+        let len = u32::try_from(len).ok()?;
+        let mut value = LbmValue(0);
+        unsafe { crate::ffi::lbm_create_byte_array(&mut value, len) }.then(|| Self::from_raw(value))
+    }
+
+    /// Borrow firmware-owned string bytes for the duration of a callback.
+    ///
+    /// The callback boundary prevents the returned `CStr` from escaping the
+    /// evaluation that owns the LispBM storage.
+    #[cfg(not(test))]
+    pub fn with_str<R>(self, f: impl FnOnce(&CStr) -> R) -> Option<R> {
+        if !self.is_byte_array() {
+            return None;
+        }
+        let pointer = unsafe { crate::ffi::lbm_dec_str(self.raw()) };
+        (!pointer.is_null()).then(|| {
+            let value = unsafe { CStr::from_ptr(pointer) };
+            f(value)
+        })
+    }
+
+    /// Construct a LispBM cons cell from two owned value handles.
+    #[cfg(not(test))]
+    pub fn cons(car: Self, cdr: Self) -> Self {
+        Self::from_raw(unsafe { crate::ffi::lbm_cons(car.raw(), cdr.raw()) })
+    }
+
+    /// Read the head of a cons cell while preserving its firmware ownership.
+    #[cfg(not(test))]
+    pub fn car(self) -> Option<Self> {
+        self.is_cons()
+            .then(|| Self::from_raw(unsafe { crate::ffi::lbm_car(self.raw()) }))
+    }
+
+    /// Read the tail of a cons cell while preserving its firmware ownership.
+    #[cfg(not(test))]
+    pub fn cdr(self) -> Option<Self> {
+        self.is_cons()
+            .then(|| Self::from_raw(unsafe { crate::ffi::lbm_cdr(self.raw()) }))
+    }
+
+    /// Destructively reverse a firmware-owned list while retaining its handle.
+    #[cfg(not(test))]
+    pub fn reverse_list(self) -> Option<Self> {
+        self.is_cons().then(|| {
+            Self::from_raw(unsafe { crate::ffi::lbm_list_destructive_reverse(self.raw()) })
+        })
     }
 
     /// Convert any LispBM numeric value to an `i32`.

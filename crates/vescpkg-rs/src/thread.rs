@@ -13,7 +13,7 @@ use crate::PackageRuntimeState;
 use crate::bindings::AppDataBindings;
 use crate::lifecycle_core::AppDataSendError;
 use crate::types::ThreadPriority;
-use crate::units::TimestampTicks;
+use crate::units::{TimestampTicks, VescSeconds};
 
 mod private {
     pub trait FirmwareThreads {}
@@ -26,6 +26,23 @@ pub(crate) type ThreadEntry = unsafe extern "C" fn(*mut c_void);
 pub struct FirmwareAppData {
     #[cfg(not(test))]
     api: AppDataApi<crate::bindings::RealBindings>,
+}
+
+/// Opaque high-resolution firmware timer instant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct TimerInstant(u32);
+
+impl TimerInstant {
+    /// Construct an instant from the firmware timer's raw counter.
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Self {
+        Self(raw)
+    }
+
+    pub(crate) const fn raw(self) -> u32 {
+        self.0
+    }
 }
 
 impl FirmwareAppData {
@@ -66,6 +83,34 @@ impl FirmwareClock {
     pub fn now(&self) -> TimestampTicks {
         self.api.system_timestamp()
     }
+
+    /// Return firmware uptime in the native floating-point seconds domain.
+    #[cfg(not(test))]
+    #[inline(always)]
+    pub fn uptime(&self) -> VescSeconds {
+        self.api.system_uptime()
+    }
+
+    /// Ask firmware for the age of a timestamp, including its rollover rules.
+    #[cfg(not(test))]
+    #[inline(always)]
+    pub fn age(&self, timestamp: TimestampTicks) -> VescSeconds {
+        self.api.timestamp_age(timestamp)
+    }
+
+    /// Return the current high-resolution timer instant.
+    #[cfg(not(test))]
+    #[inline(always)]
+    pub fn timer_now(&self) -> TimerInstant {
+        self.api.timer_now()
+    }
+
+    /// Return high-resolution elapsed time since `earlier`.
+    #[cfg(not(test))]
+    #[inline(always)]
+    pub fn timer_elapsed_since(&self, earlier: TimerInstant) -> VescSeconds {
+        self.api.timer_elapsed_since(earlier)
+    }
 }
 
 /// Internal firmware app-data API built on a binding implementation.
@@ -82,6 +127,26 @@ impl<B: AppDataBindings> AppDataApi<B> {
     /// Return the current firmware system time in ticks.
     pub(crate) fn system_timestamp(&self) -> TimestampTicks {
         TimestampTicks::from_ticks(self.bindings.system_time_ticks())
+    }
+
+    /// Return firmware uptime in floating-point seconds.
+    pub(crate) fn system_uptime(&self) -> VescSeconds {
+        VescSeconds::from_seconds(self.bindings.system_time_seconds())
+    }
+
+    /// Return firmware-computed age for a system timestamp.
+    pub(crate) fn timestamp_age(&self, timestamp: TimestampTicks) -> VescSeconds {
+        VescSeconds::from_seconds(self.bindings.timestamp_age_seconds(timestamp.as_ticks()))
+    }
+
+    /// Return the current high-resolution timer instant.
+    pub(crate) fn timer_now(&self) -> TimerInstant {
+        TimerInstant::from_raw(self.bindings.timer_time_now())
+    }
+
+    /// Return high-resolution elapsed time since a timer instant.
+    pub(crate) fn timer_elapsed_since(&self, earlier: TimerInstant) -> VescSeconds {
+        VescSeconds::from_seconds(self.bindings.timer_seconds_elapsed_since(earlier.raw()))
     }
 
     /// Send one app-data response.
@@ -101,6 +166,8 @@ pub struct Firmware {
     app_data: FirmwareAppData,
     #[cfg(not(test))]
     clock: FirmwareClock,
+    #[cfg(not(test))]
+    nvm: crate::Nvm,
     #[cfg(not(test))]
     gpio: crate::Gpio,
     #[cfg(not(test))]
@@ -128,6 +195,12 @@ impl Firmware {
     #[cfg(not(test))]
     pub fn clock(&self) -> &FirmwareClock {
         &self.clock
+    }
+
+    /// Borrow the firmware byte-addressed NVM capability.
+    #[cfg(not(test))]
+    pub fn nvm(&self) -> &crate::Nvm {
+        &self.nvm
     }
 
     /// Borrow firmware GPIO capabilities without exposing the binding type.
@@ -161,6 +234,7 @@ impl Firmware {
             threads: ThreadApi::new(RealThreadBindings),
             app_data: FirmwareAppData::new(),
             clock: FirmwareClock::new(),
+            nvm: crate::Nvm::new(),
             gpio: crate::Gpio::new(),
             imu: crate::imu::ImuApi::new(crate::imu::RealImuBindings),
             telemetry: crate::motor::MotorTelemetryApi::new(

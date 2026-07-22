@@ -59,6 +59,96 @@ impl FirmwareTest {
         crate::CustomEeprom::new()
     }
 
+    /// Access the same byte-addressed NVM capability used on hardware.
+    #[must_use]
+    pub const fn nvm(&self) -> crate::Nvm {
+        crate::Nvm::new()
+    }
+
+    /// Borrow the firmware clock capability used on hardware.
+    #[must_use]
+    pub fn clock(&self) -> &crate::FirmwareClock {
+        self.firmware.clock()
+    }
+
+    /// Set the fake firmware system timestamp.
+    pub fn set_clock_ticks(&self, ticks: u32) {
+        crate::test_ffi::set_clock_ticks(ticks);
+    }
+
+    /// Set the fake high-resolution timer counter.
+    pub fn set_timer_ticks(&self, ticks: u32) {
+        crate::test_ffi::set_timer_ticks(ticks);
+    }
+
+    /// Make the fake firmware reject every NVM operation.
+    pub fn fail_nvm_operations(&self) {
+        crate::test_ffi::fail_nvm_operations(true);
+    }
+
+    /// Return the number of fake firmware mutex locks.
+    #[must_use]
+    pub fn mutex_lock_count(&self) -> usize {
+        crate::test_ffi::mutex_lock_count()
+    }
+
+    /// Return the number of fake firmware mutex unlocks.
+    #[must_use]
+    pub fn mutex_unlock_count(&self) -> usize {
+        crate::test_ffi::mutex_unlock_count()
+    }
+
+    /// Return the number of fake firmware frees for mutex ownership.
+    #[must_use]
+    pub fn mutex_free_count(&self) -> usize {
+        crate::test_ffi::mutex_free_count()
+    }
+
+    /// Return the number of fake firmware semaphore waits.
+    #[must_use]
+    pub fn semaphore_wait_count(&self) -> usize {
+        crate::test_ffi::semaphore_wait_count()
+    }
+
+    /// Return the most recent fake timed-wait timeout.
+    #[must_use]
+    pub fn semaphore_timed_wait_ticks(&self) -> Option<u32> {
+        crate::test_ffi::semaphore_timed_wait_ticks()
+    }
+
+    /// Return the number of fake firmware semaphore signals.
+    #[must_use]
+    pub fn semaphore_signal_count(&self) -> usize {
+        crate::test_ffi::semaphore_signal_count()
+    }
+
+    /// Return the number of fake firmware semaphore resets.
+    #[must_use]
+    pub fn semaphore_reset_count(&self) -> usize {
+        crate::test_ffi::semaphore_reset_count()
+    }
+
+    /// Return the number of fake firmware semaphore releases.
+    #[must_use]
+    pub fn semaphore_free_count(&self) -> usize {
+        crate::test_ffi::semaphore_free_count()
+    }
+
+    /// Make the fake firmware reject mutex creation.
+    pub fn fail_mutex_creation(&self) {
+        crate::test_ffi::fail_mutex_creation(true);
+    }
+
+    /// Make the fake firmware reject semaphore creation.
+    pub fn fail_semaphore_creation(&self) {
+        crate::test_ffi::fail_semaphore_creation(true);
+    }
+
+    /// Make the fake firmware time out semaphore waits.
+    pub fn fail_semaphore_timeout(&self) {
+        crate::test_ffi::fail_semaphore_timeout(true);
+    }
+
     /// Make writes to one custom-EEPROM address fail.
     pub fn fail_eeprom_write(&self, address: crate::CustomEepromAddress) {
         crate::test_ffi::fail_eeprom_write(address);
@@ -671,6 +761,22 @@ impl AppDataBindings for FakeAppDataBindings {
 
     fn system_time_ticks(&self) -> u32 {
         self.ticks.get()
+    }
+
+    fn system_time_seconds(&self) -> f32 {
+        self.ticks.get() as f32 / 10_000.0
+    }
+
+    fn timestamp_age_seconds(&self, timestamp: u32) -> f32 {
+        self.ticks.get().wrapping_sub(timestamp) as f32 / 10_000.0
+    }
+
+    fn timer_time_now(&self) -> u32 {
+        self.ticks.get()
+    }
+
+    fn timer_seconds_elapsed_since(&self, timestamp: u32) -> f32 {
+        self.ticks.get().wrapping_sub(timestamp) as f32 / 1_000_000.0
     }
 
     fn arg(&self, _prog_addr: PackageProgramAddress) -> Option<PackageArgument> {
