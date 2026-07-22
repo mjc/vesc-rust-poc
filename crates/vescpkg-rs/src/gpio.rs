@@ -223,7 +223,7 @@ impl Gpio {
     }
 
     /// Read one analog pin as a typed firmware-scaled voltage.
-    pub fn read_analog(&self, pin: AnalogPin) -> AdcVoltage {
+    fn read_analog(&self, pin: AnalogPin) -> AdcVoltage {
         let pin = pin.firmware_pin();
         #[cfg(test)]
         {
