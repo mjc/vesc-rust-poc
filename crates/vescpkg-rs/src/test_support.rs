@@ -117,6 +117,11 @@ impl FirmwareTest {
         crate::test_ffi::set_nvm_supported(supported);
     }
 
+    /// Make the fake LispBM evaluator reject every process message.
+    pub fn fail_lisp_messages(&self) {
+        crate::test_ffi::fail_lisp_messages(true);
+    }
+
     /// Return the number of fake firmware mutex locks.
     #[must_use]
     pub fn mutex_lock_count(&self) -> usize {
