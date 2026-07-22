@@ -240,6 +240,18 @@ impl LispValue {
         self.decode_number_as_f32().map(f64::from)
     }
 
+    /// Decode an `f32` only when the value is a non-integer LispBM number.
+    #[cfg(not(test))]
+    pub fn decode_f32_exact(self) -> Option<f32> {
+        (!self.is_integer() && self.is_number()).then(|| call_vesc_ffi!(lbm_dec_as_float(self.raw())))
+    }
+
+    /// Decode an exact LispBM float widened to `f64`.
+    #[cfg(not(test))]
+    pub fn decode_f64_exact(self) -> Option<f64> {
+        self.decode_f32_exact().map(f64::from)
+    }
+
     /// Decode this value only when it is an immediate `LispBM` integer.
     #[must_use]
     pub fn decode_i32_exact(self) -> Option<i32> {
