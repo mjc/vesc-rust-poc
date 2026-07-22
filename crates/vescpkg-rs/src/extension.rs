@@ -242,9 +242,8 @@ impl LispValue {
     /// Decode an `f32` only when the value is a non-integer LispBM number.
     #[cfg(not(test))]
     pub fn decode_f32_exact(self) -> Option<f32> {
-        (!self.is_integer() && self.is_number()).then(|| unsafe {
-            crate::ffi::lbm_dec_as_float(self.raw())
-        })
+        (!self.is_integer() && self.is_number())
+            .then(|| unsafe { crate::ffi::lbm_dec_as_float(self.raw()) })
     }
 
     /// Decode an exact LispBM float widened to `f64`.
@@ -834,7 +833,7 @@ pub unsafe extern "C" fn stateful_lbm_extension_handler<T: StatefulLbmExtension>
 
 #[cfg(test)]
 mod tests {
-    use super::{stateful_lbm_extension_handler, LispArgs, LispValue, StatefulLbmExtension};
+    use super::{LispArgs, LispValue, StatefulLbmExtension, stateful_lbm_extension_handler};
     use crate::{PackageRuntimeState, PackageStateStore};
     use std::boxed::Box;
 
