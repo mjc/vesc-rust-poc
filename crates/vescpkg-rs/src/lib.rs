@@ -238,9 +238,6 @@ pub use types::*;
 
 /// Common package-author imports for code running inside the controller.
 pub mod prelude {
-    #[cfg(feature = "math")]
-    pub use crate::Ahrs;
-    pub use crate::Madgwick;
     pub use crate::types::*;
     pub use crate::units::{
         AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, BoundedUnitError, Charge,
@@ -249,6 +246,8 @@ pub mod prelude {
         Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed,
         SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
     };
+    #[cfg(feature = "math")]
+    pub use crate::{Ahrs, Madgwick};
     pub use crate::{
         AnalogPin, AppDataHandler, AppDataSendError, CanBus, CanError, CanStatus, CommandError,
         CommandReplyHandler, Commands, ConfigBytes, ConfigXml, DigitalOutputLevel, DigitalPin,
