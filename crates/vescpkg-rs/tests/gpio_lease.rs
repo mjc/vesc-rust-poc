@@ -94,6 +94,9 @@ fn package_stop_invalidates_retained_gpio_leases() {
     let retained = gpio
         .acquire_digital(DigitalPin::HW_2)
         .expect("retained lease");
+    let retained_analog = gpio
+        .acquire_analog(vescpkg_rs::AnalogPin::ADC1)
+        .expect("retained analog lease");
     let mut info = vescpkg_rs::test_support::LoaderInfo::new();
     let mut start = vescpkg_rs::test_support::package_start(&mut info);
     start
@@ -105,7 +108,12 @@ fn package_stop_invalidates_retained_gpio_leases() {
     let replacement = gpio
         .acquire_digital(DigitalPin::HW_2)
         .expect("stop invalidated the retained lease");
+    let replacement_analog = gpio
+        .acquire_analog(vescpkg_rs::AnalogPin::ADC1)
+        .expect("stop invalidated the retained analog lease");
     drop(replacement);
+    drop(replacement_analog);
+    drop(retained_analog);
     drop(retained);
 }
 
