@@ -2,9 +2,9 @@
 
 use core::marker::PhantomData;
 
-use vescpkg_rs_sys::raw::PacketState;
+use vescpkg_rs_sys::raw::{PACKET_BUFFER_LEN, PACKET_MAX_PL_LEN, PacketState};
 
-const MAX_PACKET_BYTES: usize = 520;
+const MAX_PACKET_BYTES: usize = PACKET_MAX_PL_LEN;
 
 /// Failure returned by packet framing operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,8 +45,8 @@ impl<H: PacketHandler> PacketCodec<H> {
                 rx_read_ptr: 0,
                 rx_write_ptr: 0,
                 bytes_left: 0,
-                rx_buffer: [0; 520],
-                tx_buffer: [0; 520],
+                rx_buffer: [0; PACKET_BUFFER_LEN],
+                tx_buffer: [0; PACKET_BUFFER_LEN],
             },
             _handler: PhantomData,
         }

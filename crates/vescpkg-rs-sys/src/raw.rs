@@ -39,7 +39,11 @@ type PacketProcessCallback = unsafe extern "C" fn(*mut c_uchar, c_uint);
 type LibThread = crate::bindgen::lib_thread;
 type LibMutex = crate::bindgen::lib_mutex;
 type LibSemaphore = crate::bindgen::lib_semaphore;
-/// Float Out Boy/VESC Tool custom-config serializer callback.
+/// Maximum packet payload length from the pinned VESC header.
+pub const PACKET_MAX_PL_LEN: usize = 512;
+/// Packet framing buffer length from the pinned VESC header.
+pub const PACKET_BUFFER_LEN: usize = PACKET_MAX_PL_LEN + 8;
+/// Refloat/VESC Tool custom-config serializer callback.
 ///
 /// Float Out Boy `v1.2.1` passes `get_cfg` to `conf_custom_add_config` in
 /// `src/main.c:2456`; the callback is declared in
