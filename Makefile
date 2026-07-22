@@ -16,7 +16,7 @@ ifdef DEVICE_ADDRESS
 DEVICE_FLAGS += --address $(DEVICE_ADDRESS)
 endif
 
-.PHONY: check check-full pre-commit fmt clippy clippy-pedantic vescpkg-rs-sys-target-check thumb-dispatch-smoke arm-clippy arm-gates test math-test doc-test package package-only package-examples deploy clean status
+.PHONY: check check-full pre-commit fmt clippy clippy-pedantic vescpkg-rs-sys-target-check thumb-dispatch-smoke arm-clippy arm-math-check arm-gates test math-test doc-test package package-only package-examples deploy clean status
 
 # --- verification -----------------------------------------------------------
 #
@@ -61,7 +61,10 @@ arm-clippy:
 	$(CARGO) clippy -p vesc-example-loopback --bin vesc-example-loopback --release --target $(ARM_TARGET) -- $(CLIPPY_PEDANTIC_FLAGS)
 	$(CARGO) clippy -p vesc-example-float-out-boy --bin vesc-example-float-out-boy --release --target $(ARM_TARGET) -- $(CLIPPY_PEDANTIC_FLAGS)
 
-arm-gates: vescpkg-rs-sys-target-check thumb-dispatch-smoke arm-clippy package-examples
+arm-math-check:
+	$(CARGO) check -p vescpkg-rs --target $(ARM_TARGET) --no-default-features --features math
+
+arm-gates: vescpkg-rs-sys-target-check thumb-dispatch-smoke arm-clippy arm-math-check package-examples
 
 thumb-dispatch-smoke:
 	./tools/thumb-dispatch-smoke.sh
