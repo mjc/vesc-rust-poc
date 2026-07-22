@@ -11,5 +11,6 @@ fn plot_forwards_named_graphs_and_checked_points() {
     plot.add_graph(c"speed").unwrap();
     plot.set_graph(0).unwrap();
     plot.send_points(1.0, 2.0).unwrap();
+    assert!(plot.send_points(f32::NAN, 2.0).is_err());
     assert!(plot.set_graph(-1).is_err());
 }
