@@ -5,7 +5,7 @@ use crate::units::{Current, Frequency, SampleRate, VescSeconds, Voltage};
 macro_rules! current_type {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]
-        #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
+        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
         #[repr(transparent)]
         pub struct $name(Current);
 
@@ -25,7 +25,7 @@ macro_rules! current_type {
             type Output = Self;
 
             fn add(self, rhs: Self) -> Self::Output {
-                Self(Current::from_amps(self.0.as_amps() + rhs.0.as_amps()))
+                Self(self.0 + rhs.0)
             }
         }
 
@@ -33,7 +33,7 @@ macro_rules! current_type {
             type Output = Self;
 
             fn sub(self, rhs: Self) -> Self::Output {
-                Self(Current::from_amps(self.0.as_amps() - rhs.0.as_amps()))
+                Self(self.0 - rhs.0)
             }
         }
 
@@ -41,7 +41,7 @@ macro_rules! current_type {
             type Output = Self;
 
             fn mul(self, rhs: f32) -> Self::Output {
-                Self(Current::from_amps(self.0.as_amps() * rhs))
+                Self(self.0 * rhs)
             }
         }
 
@@ -49,7 +49,7 @@ macro_rules! current_type {
             type Output = Self;
 
             fn div(self, rhs: f32) -> Self::Output {
-                Self(Current::from_amps(self.0.as_amps() / rhs))
+                Self(self.0 / rhs)
             }
         }
 
@@ -57,7 +57,7 @@ macro_rules! current_type {
             type Output = Self;
 
             fn neg(self) -> Self::Output {
-                Self(Current::from_amps(-self.0.as_amps()))
+                Self(-self.0)
             }
         }
     };
@@ -100,11 +100,6 @@ macro_rules! frequency_type {
             /// Return the typed frequency without erasing it to a primitive.
             pub const fn frequency(self) -> Frequency {
                 self.0
-            }
-
-            /// Return this typed frequency in hertz.
-            pub const fn as_hertz(self) -> f32 {
-                self.0.as_hertz()
             }
         }
     };
@@ -171,10 +166,6 @@ impl AudioChannel {
     pub const FIRST: Self = Self(Self::MIN);
 
     /// Create a checked FOC audio channel.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`AudioChannelError`] when `channel` is out of range.
     pub const fn try_new(channel: u8) -> Result<Self, AudioChannelError> {
         if channel <= Self::MAX {
             Ok(Self(channel))
@@ -184,7 +175,6 @@ impl AudioChannel {
     }
 
     /// Encode the channel index for the audio boundary.
-    #[must_use]
     pub const fn as_u8(self) -> u8 {
         self.0
     }
@@ -198,7 +188,6 @@ pub struct AudioChannelError {
 
 impl AudioChannelError {
     /// Return the rejected channel.
-    #[must_use]
     pub const fn value(self) -> u8 {
         self.value
     }
@@ -212,28 +201,126 @@ impl core::fmt::Display for AudioChannelError {
 
 impl core::error::Error for AudioChannelError {}
 
-/// Firmware motor fault code token.
+/// Known active motor-fault identifiers from the pinned `mc_fault_code` ABI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct FirmwareFaultCode(i32);
+#[repr(u8)]
+pub enum FirmwareFaultId {
+    /// Controller over-voltage.
+    OverVoltage,
+    /// Controller under-voltage.
+    UnderVoltage,
+    /// Gate-driver fault.
+    Drv,
+    /// Absolute over-current.
+    AbsoluteOverCurrent,
+    /// FET over-temperature.
+    OverTemperatureFet,
+    /// Motor over-temperature.
+    OverTemperatureMotor,
+    /// Gate-driver over-voltage.
+    GateDriverOverVoltage,
+    /// Gate-driver under-voltage.
+    GateDriverUnderVoltage,
+    /// MCU under-voltage.
+    McuUnderVoltage,
+    /// Booting after a watchdog reset.
+    BootingFromWatchdogReset,
+    /// SPI encoder fault.
+    EncoderSpi,
+    /// Sin/cos encoder amplitude below minimum.
+    EncoderSincosBelowMinAmplitude,
+    /// Sin/cos encoder amplitude above maximum.
+    EncoderSincosAboveMaxAmplitude,
+    /// Main flash corruption.
+    FlashCorruption,
+    /// Current-sensor-one offset too high.
+    HighOffsetCurrentSensor1,
+    /// Current-sensor-two offset too high.
+    HighOffsetCurrentSensor2,
+    /// Current-sensor-three offset too high.
+    HighOffsetCurrentSensor3,
+    /// Phase currents are unbalanced.
+    UnbalancedCurrents,
+    /// Brake fault.
+    Brk,
+    /// Resolver loss of tracking.
+    ResolverLot,
+    /// Resolver DOS fault.
+    ResolverDos,
+    /// Resolver loss of signal.
+    ResolverLos,
+    /// Application configuration flash corruption.
+    FlashCorruptionAppConfig,
+    /// Motor configuration flash corruption.
+    FlashCorruptionMcConfig,
+    /// Encoder magnet not detected.
+    EncoderNoMagnet,
+    /// Encoder magnet is too strong.
+    EncoderMagnetTooStrong,
+    /// Phase filter fault.
+    PhaseFilter,
+}
 
-impl FirmwareFaultCode {
-    /// Build an internal fault-code token from the firmware enum value.
-    #[cfg(any(not(test), feature = "test-support"))]
+impl FirmwareFaultId {
+    /// Convert the known ABI identifier to the app-data compatibility byte.
+    pub const fn wire_code(self) -> FirmwareFaultWireCode {
+        FirmwareFaultWireCode(self as u8 + 1)
+    }
+
+    pub(crate) const fn from_raw_code(code: i32) -> Option<Self> {
+        Some(match code {
+            1 => Self::OverVoltage,
+            2 => Self::UnderVoltage,
+            3 => Self::Drv,
+            4 => Self::AbsoluteOverCurrent,
+            5 => Self::OverTemperatureFet,
+            6 => Self::OverTemperatureMotor,
+            7 => Self::GateDriverOverVoltage,
+            8 => Self::GateDriverUnderVoltage,
+            9 => Self::McuUnderVoltage,
+            10 => Self::BootingFromWatchdogReset,
+            11 => Self::EncoderSpi,
+            12 => Self::EncoderSincosBelowMinAmplitude,
+            13 => Self::EncoderSincosAboveMaxAmplitude,
+            14 => Self::FlashCorruption,
+            15 => Self::HighOffsetCurrentSensor1,
+            16 => Self::HighOffsetCurrentSensor2,
+            17 => Self::HighOffsetCurrentSensor3,
+            18 => Self::UnbalancedCurrents,
+            19 => Self::Brk,
+            20 => Self::ResolverLot,
+            21 => Self::ResolverDos,
+            22 => Self::ResolverLos,
+            23 => Self::FlashCorruptionAppConfig,
+            24 => Self::FlashCorruptionMcConfig,
+            25 => Self::EncoderNoMagnet,
+            26 => Self::EncoderMagnetTooStrong,
+            27 => Self::PhaseFilter,
+            _ => return None,
+        })
+    }
+}
+
+/// Semantic result of reading the firmware motor-fault slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FirmwareFault {
+    /// No motor fault is active.
+    None,
+    /// A known active firmware fault.
+    Active(FirmwareFaultId),
+    /// Firmware returned a value this SDK does not understand.
+    Unknown,
+}
+
+impl FirmwareFault {
     pub(crate) const fn from_raw_code(code: i32) -> Self {
-        Self(code)
-    }
-
-    /// Build a firmware fault-code token from its byte wire representation.
-    #[must_use]
-    pub const fn from_wire_code(code: u8) -> Self {
-        Self(i32::from_le_bytes([code, 0, 0, 0]))
-    }
-
-    /// Return true when the firmware reports no active fault.
-    #[must_use]
-    pub const fn is_none(self) -> bool {
-        self.0 == 0
+        match code {
+            0 => Self::None,
+            code => match FirmwareFaultId::from_raw_code(code) {
+                Some(fault) => Self::Active(fault),
+                None => Self::Unknown,
+            },
+        }
     }
 }
 
@@ -244,23 +331,13 @@ pub struct FirmwareFaultWireCode(u8);
 
 impl FirmwareFaultWireCode {
     /// Build a token from an app-data fault-code byte.
-    #[must_use]
     pub const fn from_wire_code(code: u8) -> Self {
         Self(code)
     }
 
     /// Return the app-data fault-code byte.
-    #[must_use]
     pub const fn wire_code(self) -> u8 {
         self.0
-    }
-}
-
-impl TryFrom<FirmwareFaultCode> for FirmwareFaultWireCode {
-    type Error = core::num::TryFromIntError;
-
-    fn try_from(code: FirmwareFaultCode) -> Result<Self, Self::Error> {
-        u8::try_from(code.0).map(Self)
     }
 }
 
@@ -271,7 +348,6 @@ pub struct MotorCurrentLimit(Current);
 
 impl MotorCurrentLimit {
     /// Normalize a configured motor-current limit to its positive magnitude.
-    #[must_use]
     pub const fn new(current: Current) -> Self {
         Self(current.abs())
     }
@@ -283,7 +359,6 @@ impl MotorCurrentLimit {
     }
 
     /// Return the positive current-limit magnitude.
-    #[must_use]
     pub const fn current(self) -> Current {
         self.0
     }
@@ -292,7 +367,6 @@ impl MotorCurrentLimit {
     ///
     /// This follows VESC's comparison semantics: a zero limit clamps nonzero
     /// current to signed zero, while NaN operands leave the current unchanged.
-    #[must_use]
     pub const fn clamp(self, current: MotorCurrent) -> MotorCurrent {
         let requested = current.current();
         if requested.abs().as_amps() > self.0.as_amps() {
@@ -310,13 +384,11 @@ pub struct InputCurrentLimit(Current);
 
 impl InputCurrentLimit {
     /// Normalize a configured input-current limit to its positive magnitude.
-    #[must_use]
     pub const fn new(current: Current) -> Self {
         Self(current.abs())
     }
 
     /// Return the positive input-current-limit magnitude.
-    #[must_use]
     pub const fn current(self) -> Current {
         self.0
     }

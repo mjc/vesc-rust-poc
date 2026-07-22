@@ -120,12 +120,26 @@ fn mode3_ride_totals_refresh_from_motor_telemetry() {
 fn fault_response_skips_mode_telemetry_refresh() {
     let app_data = TimestampTicks::from_ticks(0);
 
-    let bindings = FirmwareTest::new().with_firmware_fault(FirmwareFaultCode::from_wire_code(5));
+    let bindings = FirmwareTest::new()
+        .with_firmware_fault(FirmwareFault::Active(FirmwareFaultId::OverTemperatureFet));
     let telemetry = bindings.telemetry();
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
 
     let packet = handle_all_data_mode(&mut state, app_data, telemetry, 4).unwrap();
     assert_eq!(packet, &[101, 10, 69, 5]);
+}
+
+#[test]
+fn unknown_fault_fails_closed_without_emitting_normal_data() {
+    let app_data = TimestampTicks::from_ticks(0);
+    let bindings = FirmwareTest::new().with_firmware_fault(FirmwareFault::Unknown);
+    let telemetry = bindings.telemetry();
+    let mut state = RefloatPackageState::new(sample_all_data_payloads());
+
+    assert_eq!(
+        handle_all_data_mode(&mut state, app_data, telemetry, 4),
+        None
+    );
 }
 
 #[test]
