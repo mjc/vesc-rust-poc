@@ -266,11 +266,22 @@ mod slots {
     fn_slot!(lbm_send_message as unsafe extern "C" fn(u32, LbmValue) -> c_int);
     fn_slot!(lbm_get_current_cid as unsafe extern "C" fn() -> u32);
     fn_slot!(lbm_block_ctx_from_extension as unsafe extern "C" fn());
+    fn_slot!(lbm_set_error_reason as unsafe extern "C" fn(*mut c_char) -> c_int);
+    fn_slot!(lbm_pause_eval_with_gc as unsafe extern "C" fn(u32));
+    fn_slot!(lbm_continue_eval as unsafe extern "C" fn());
+    fn_slot!(lbm_eval_is_paused as unsafe extern "C" fn() -> bool);
+    fn_slot!(lbm_add_symbol_const as unsafe extern "C" fn(*mut c_char, *mut u32) -> c_int);
+    fn_slot!(lbm_get_symbol_by_name as unsafe extern "C" fn(*mut c_char, *mut u32) -> c_int);
+    fn_slot!(lbm_enc_u as unsafe extern "C" fn(u32) -> LbmValue);
+    fn_slot!(lbm_enc_i32 as unsafe extern "C" fn(i32) -> LbmValue);
+    fn_slot!(lbm_is_symbol_nil as unsafe extern "C" fn(u32) -> bool);
+    fn_slot!(lbm_is_symbol_true as unsafe extern "C" fn(u32) -> bool);
     optional_fn_slot!(lbm_unblock_ctx as unsafe extern "C" fn(u32, *mut LbmFlatValue) -> bool);
     optional_fn_slot!(lbm_unblock_ctx_unboxed as unsafe extern "C" fn(u32, LbmValue) -> bool);
     optional_fn_slot!(lbm_start_flatten as unsafe extern "C" fn(*mut LbmFlatValue, usize) -> bool);
     optional_fn_slot!(lbm_finish_flatten as unsafe extern "C" fn(*mut LbmFlatValue) -> bool);
     optional_fn_slot!(f_cons as unsafe extern "C" fn(*mut LbmFlatValue) -> bool);
+    optional_fn_slot!(f_i as unsafe extern "C" fn(*mut LbmFlatValue, i32) -> bool);
     optional_fn_slot!(f_sym as unsafe extern "C" fn(*mut LbmFlatValue, u32) -> bool);
     optional_fn_slot!(f_b as unsafe extern "C" fn(*mut LbmFlatValue, u8) -> bool);
     optional_fn_slot!(f_i32 as unsafe extern "C" fn(*mut LbmFlatValue, i32) -> bool);
@@ -320,6 +331,12 @@ mod slots {
     fn_slot!(request_terminate as unsafe extern "C" fn(LibThread));
     fn_slot!(should_terminate as unsafe extern "C" fn() -> bool);
     fn_slot!(get_arg as unsafe extern "C" fn(u32) -> *mut *mut c_void);
+    fn_slot!(sleep_ms as unsafe extern "C" fn(u32));
+    fn_slot!(system_time as unsafe extern "C" fn() -> f32);
+    fn_slot!(ts_to_age_s as unsafe extern "C" fn(u32) -> f32);
+    fn_slot!(set_pad_mode as unsafe extern "C" fn(*mut c_void, u32, u32));
+    fn_slot!(set_pad as unsafe extern "C" fn(*mut c_void, u32));
+    fn_slot!(clear_pad as unsafe extern "C" fn(*mut c_void, u32));
     optional_fn_slot!(can_get_status_msg_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg);
     optional_fn_slot!(can_get_status_msg_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg);
     optional_fn_slot!(can_transmit_sid as unsafe extern "C" fn(u32, *const u8, u8));
@@ -490,19 +507,18 @@ mod slots {
     fn_slot!(imu_set_yaw as unsafe extern "C" fn(f32));
     fn_slot!(imu_get_quaternions as unsafe extern "C" fn(*mut f32));
     fn_slot!(send_app_data as unsafe extern "C" fn(*mut c_uchar, u32));
-    fn_slot!(system_time as unsafe extern "C" fn() -> f32);
-    fn_slot!(ts_to_age_s as unsafe extern "C" fn(u32) -> f32);
     optional_fn_slot!(printf as unsafe extern "C" fn(*const c_char, ...) -> c_int);
     fn_slot!(timer_time_now as unsafe extern "C" fn() -> u32);
     fn_slot!(timer_seconds_elapsed_since as unsafe extern "C" fn(u32) -> f32);
     // Appended in firmware 6.05; older tables fall back to `system_time`.
     fn_slot!(system_time_ticks as unsafe extern "C" fn() -> u32);
     // Appended in firmware 6.06; callers treat absence as an unsupported hint.
-    fn_slot!(thread_set_priority as unsafe extern "C" fn(c_int));
-    fn_slot!(io_set_mode as unsafe extern "C" fn(c_uint, c_uint) -> bool);
-    fn_slot!(io_write as unsafe extern "C" fn(c_uint, c_int) -> bool);
-    fn_slot!(io_read as unsafe extern "C" fn(c_uint) -> bool);
-    fn_slot!(io_read_analog as unsafe extern "C" fn(c_uint) -> f32);
+    optional_fn_slot!(thread_set_priority as unsafe extern "C" fn(c_int));
+    fn_slot!(io_set_mode as unsafe extern "C" fn(c_int, c_int) -> bool);
+    fn_slot!(io_write as unsafe extern "C" fn(c_int, c_int) -> bool);
+    fn_slot!(io_read as unsafe extern "C" fn(c_int) -> bool);
+    fn_slot!(io_read_analog as unsafe extern "C" fn(c_int) -> f32);
+    optional_fn_slot!(io_get_st_pin as unsafe extern "C" fn(c_int, *mut *mut c_void, *mut u32) -> bool);
 }
 
 #[track_caller]
@@ -2269,5 +2285,137 @@ pub unsafe fn io_read_analog_pair(first: crate::VescPin, second: crate::VescPin)
     })
 }
 
+/// Set the LispBM error reason string.
+pub unsafe fn lbm_set_error_reason(reason: *mut c_char) -> c_int {
+    unsafe { slots::lbm_set_error_reason()(reason) }
+}
+
+/// Pause LispBM evaluation while retaining the requested free-cell budget.
+pub unsafe fn lbm_pause_eval_with_gc(num_free: u32) {
+    unsafe { slots::lbm_pause_eval_with_gc()(num_free) }
+}
+
+/// Continue a previously paused LispBM evaluation.
+pub unsafe fn lbm_continue_eval() {
+    unsafe { slots::lbm_continue_eval()() }
+}
+
+/// Return whether LispBM evaluation is paused.
+pub unsafe fn lbm_eval_is_paused() -> bool {
+    unsafe { slots::lbm_eval_is_paused()() }
+}
+
+/// Add a constant LispBM symbol and write its numeric identifier.
+pub unsafe fn lbm_add_symbol_const(name: *mut c_char, symbol: *mut u32) -> c_int {
+    unsafe { slots::lbm_add_symbol_const()(name, symbol) }
+}
+
+/// Look up a LispBM symbol by name and write its numeric identifier.
+pub unsafe fn lbm_get_symbol_by_name(name: *mut c_char, symbol: *mut u32) -> c_int {
+    unsafe { slots::lbm_get_symbol_by_name()(name, symbol) }
+}
+
+/// Encode an unsigned LispBM integer.
+pub unsafe fn lbm_enc_u(value: u32) -> LbmValue {
+    unsafe { slots::lbm_enc_u()(value) }
+}
+
+/// Encode a signed 32-bit LispBM integer.
+pub unsafe fn lbm_enc_i32(value: i32) -> LbmValue {
+    unsafe { slots::lbm_enc_i32()(value) }
+}
+
+/// Test whether a LispBM symbol is `nil`.
+pub unsafe fn lbm_is_symbol_nil(symbol: u32) -> bool {
+    unsafe { slots::lbm_is_symbol_nil()(symbol) }
+}
+
+/// Test whether a LispBM symbol is `true`.
+pub unsafe fn lbm_is_symbol_true(symbol: u32) -> bool {
+    unsafe { slots::lbm_is_symbol_true()(symbol) }
+}
+
+/// Append a signed native integer to a LispBM flat value when available.
+pub unsafe fn f_i(value: *mut LbmFlatValue, integer: i32) -> Option<bool> {
+    unsafe { slots::f_i() }.map(|encode| unsafe { encode(value, integer) })
+}
+
+/// Sleep for a firmware millisecond interval.
+pub unsafe fn sleep_ms(milliseconds: u32) {
+    unsafe { slots::sleep_ms()(milliseconds) }
+}
+
+/// Return firmware uptime in seconds.
+pub unsafe fn system_time() -> f32 {
+    unsafe { slots::system_time()() }
+}
+
+/// Convert a firmware timestamp to age in seconds.
+pub unsafe fn ts_to_age_s(timestamp: u32) -> f32 {
+    unsafe { slots::ts_to_age_s()(timestamp) }
+}
+
+/// Allocate firmware-owned memory.
+pub unsafe fn malloc(bytes: usize) -> *mut c_void {
+    unsafe { slots::malloc()(bytes) }
+}
+
+/// Free memory allocated by [`malloc`].
+pub unsafe fn free(pointer: *mut c_void) {
+    unsafe { slots::free()(pointer) }
+}
+
+/// Spawn a firmware thread.
+pub unsafe fn spawn(
+    entry: unsafe extern "C" fn(*mut c_void),
+    stack_bytes: usize,
+    name: *const c_char,
+    argument: *mut c_void,
+) -> *mut c_void {
+    unsafe { slots::spawn()(entry, stack_bytes, name, argument) }
+}
+
+/// Request termination of a firmware thread.
+pub unsafe fn request_terminate(thread: *mut c_void) {
+    unsafe { slots::request_terminate()(thread) }
+}
+
+/// Return whether the current firmware thread should terminate.
+pub unsafe fn should_terminate() -> bool {
+    unsafe { slots::should_terminate()() }
+}
+
+/// Return the package argument pointer for a program address.
+pub unsafe fn get_arg(program_address: u32) -> *mut *mut c_void {
+    unsafe { slots::get_arg()(program_address) }
+}
+
+/// Configure a low-level STM32 GPIO pad.
+pub unsafe fn set_pad_mode(gpio: *mut c_void, pin: u32, mode: u32) {
+    unsafe { slots::set_pad_mode()(gpio, pin, mode) }
+}
+
+/// Set a low-level STM32 GPIO pad.
+pub unsafe fn set_pad(gpio: *mut c_void, pin: u32) {
+    unsafe { slots::set_pad()(gpio, pin) }
+}
+
+/// Clear a low-level STM32 GPIO pad.
+pub unsafe fn clear_pad(gpio: *mut c_void, pin: u32) {
+    unsafe { slots::clear_pad()(gpio, pin) }
+}
+
+/// Resolve a VESC pin to its low-level GPIO port and pin number.
+pub unsafe fn io_get_st_pin(pin: crate::VescPin, gpio: *mut *mut c_void, st_pin: *mut u32) -> bool {
+    unsafe { slots::io_get_st_pin()(pin.0, gpio, st_pin) }
+}
+
+/// Returns all generated `VescIf` field offsets for ABI layout tests.
+#[cfg(test)]
+pub fn vesc_if_offsets_for_tests() -> [usize; VescIfAbi::USED_SLOT_COUNT] {
+    VescIfAbi::USED_SLOTS.map(|slot| slot.host_byte_offset(core::mem::size_of::<usize>()))
+}
+#[cfg(test)]
+mod abi_audit;
 #[cfg(test)]
 mod dispatch_tests;
