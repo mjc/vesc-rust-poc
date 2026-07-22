@@ -234,6 +234,12 @@ impl LispValue {
             .decode_number_as_f32(self.raw())
     }
 
+    /// Widen a firmware numeric value to `f64` without adding a double ABI.
+    #[cfg(not(test))]
+    pub fn decode_number_as_f64(self) -> Option<f64> {
+        self.decode_number_as_f32().map(f64::from)
+    }
+
     /// Decode this value only when it is an immediate `LispBM` integer.
     #[must_use]
     pub fn decode_i32_exact(self) -> Option<i32> {
@@ -283,6 +289,14 @@ impl LispValue {
     #[must_use]
     pub fn from_f32(value: f32) -> Self {
         Self::from_raw(call_vesc_ffi!(lbm_enc_float(value)))
+    }
+
+    /// Encode a `f64` only when its value is exactly representable by the
+    /// firmware's `f32` LispBM encoder.
+    #[cfg(not(test))]
+    pub fn from_f64(value: f64) -> Option<Self> {
+        let narrowed = value as f32;
+        (!value.is_nan() && f64::from(narrowed) == value).then(|| Self::from_f32(narrowed))
     }
 
     /// Decode a `LispBM` character value.
@@ -803,7 +817,7 @@ pub unsafe extern "C" fn stateful_lbm_extension_handler<T: StatefulLbmExtension>
 
 #[cfg(test)]
 mod tests {
-    use super::{LispArgs, LispValue, StatefulLbmExtension, stateful_lbm_extension_handler};
+    use super::{stateful_lbm_extension_handler, LispArgs, LispValue, StatefulLbmExtension};
     use crate::{PackageRuntimeState, PackageStateStore};
     use std::boxed::Box;
 
