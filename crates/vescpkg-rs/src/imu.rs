@@ -14,6 +14,11 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use vescpkg_rs_sys::raw::AttitudeInfo;
 
 static IMU_READ_CALLBACK_REGISTERED: AtomicBool = AtomicBool::new(false);
+static IMU_LEASE_CALLBACK_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn disable_callback_dispatch() {
+    IMU_LEASE_CALLBACK_ACTIVE.store(false, Ordering::Release);
+}
 
 /// Copied state from one firmware `ATTITUDE_INFO` value.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -671,7 +676,8 @@ pub unsafe fn register_imu_read_callback<T: ImuReadCallback + 'static>()
     {
         return Err(ImuReadCallbackError::AlreadyRegistered);
     }
-    unsafe { crate::ffi::imu_set_read_callback(Some(imu_read_callback::<T>)) };
+    unsafe { crate::ffi::imu_set_read_callback(Some(leased_imu_read_callback::<T>)) };
+    IMU_LEASE_CALLBACK_ACTIVE.store(true, Ordering::Release);
     Ok(ImuReadCallbackLease {
         _handler: PhantomData,
     })
@@ -679,8 +685,20 @@ pub unsafe fn register_imu_read_callback<T: ImuReadCallback + 'static>()
 
 impl<T: ImuReadCallback + 'static> Drop for ImuReadCallbackLease<T> {
     fn drop(&mut self) {
+        IMU_LEASE_CALLBACK_ACTIVE.store(false, Ordering::Release);
         unsafe { crate::ffi::imu_set_read_callback(None) };
         IMU_READ_CALLBACK_REGISTERED.store(false, Ordering::Release);
+    }
+}
+
+unsafe extern "C" fn leased_imu_read_callback<T: ImuReadCallback>(
+    acc: *mut f32,
+    gyro: *mut f32,
+    mag: *mut f32,
+    dt: f32,
+) {
+    if IMU_LEASE_CALLBACK_ACTIVE.load(Ordering::Acquire) {
+        unsafe { imu_read_callback::<T>(acc, gyro, mag, dt) };
     }
 }
 

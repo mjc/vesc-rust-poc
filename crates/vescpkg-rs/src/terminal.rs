@@ -7,6 +7,10 @@ use core::sync::atomic::{AtomicBool, Ordering};
 static TERMINAL_OWNED: AtomicBool = AtomicBool::new(false);
 static TERMINAL_ACTIVE: AtomicBool = AtomicBool::new(false);
 
+pub(crate) fn disable_callback_dispatch() {
+    TERMINAL_ACTIVE.store(false, Ordering::Release);
+}
+
 /// Failure returned by terminal registration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]

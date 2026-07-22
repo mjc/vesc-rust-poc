@@ -56,6 +56,11 @@ unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
     if !crate::PackageStateStore::<T>::begin_stop(state) {
         return;
     }
+    #[cfg(any(feature = "test-support", target_arch = "arm"))]
+    crate::runtime::disable_callback_dispatch();
+    #[cfg(any(feature = "test-support", target_arch = "arm"))]
+    crate::runtime::disable_callback_dispatch();
+>>>>>>> a6d2cafe (runtime: disable typed callbacks during stop)
     #[cfg(all(not(test), target_arch = "arm"))]
     {
         crate::PackageStateStore::<T>::take_callbacks(state)

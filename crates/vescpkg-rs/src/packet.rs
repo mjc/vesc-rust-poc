@@ -10,6 +10,10 @@ const MAX_PACKET_BYTES: usize = PACKET_MAX_PL_LEN;
 static PACKET_CODEC_REGISTERED: AtomicBool = AtomicBool::new(false);
 static PACKET_CODEC_ACTIVE: AtomicBool = AtomicBool::new(false);
 
+pub(crate) fn disable_callback_dispatch() {
+    PACKET_CODEC_ACTIVE.store(false, Ordering::Release);
+}
+
 /// Failure returned by packet framing operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
