@@ -20,7 +20,11 @@ fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
     }
 }
 
-#[cfg(any(test, all(not(target_arch = "arm"), feature = "test-support")))]
+#[cfg(any(
+    feature = "alloc",
+    test,
+    all(not(target_arch = "arm"), feature = "test-support")
+))]
 extern crate alloc as rust_alloc;
 #[cfg(test)]
 extern crate std;
@@ -217,9 +221,9 @@ pub use input::{ControllerInput, RemoteInput};
 pub use lifecycle_core::AppDataSendError;
 pub use motor::{MotorOutput, MotorTelemetry};
 pub use nvm::{Nvm, NvmCapacity, NvmError, NvmOffset};
-pub use packet::{
-    OwnedPacketRegistration, PacketCodec, PacketError, PacketHandler, PacketRegistration,
-};
+#[cfg(feature = "alloc")]
+pub use packet::OwnedPacketRegistration;
+pub use packet::{PacketCodec, PacketError, PacketHandler, PacketRegistration};
 pub use plot::{Plot, PlotError};
 pub use runtime::{PackageRuntimeState, PackageStateAccess, PackageStateStore};
 pub use sync::{FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore};
@@ -262,6 +266,8 @@ pub use types::*;
 
 /// Common package-author imports for code running inside the controller.
 pub mod prelude {
+    #[cfg(feature = "alloc")]
+    pub use crate::OwnedPacketRegistration;
     pub use crate::types::*;
     pub use crate::units::{
         AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, BoundedUnitError, Charge,
@@ -285,14 +291,14 @@ pub mod prelude {
         GnssSnapshot, Gpio, Imu, ImuReadCallback, ImuReadCallbackError, ImuReadCallbackLease,
         ImuReadHandler, InputError, LbmExtension, LispArgs, LispContextId, LispFlatValue,
         LispIntegerError, LispMessageError, LispProcess, LispSymbol, LispValue, LogError,
-        MotorOutput, MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset,
-        OwnedPacketRegistration, PackageStartError, PacketCodec, PacketError, PacketHandler, Plot,
-        PlotError, PpmSnapshot, PwmCallbackError, PwmCallbackHandler, PwmCallbackLease,
-        RemoteInputSnapshot, SettingsError, ShutdownInhibit, StatefulCustomConfigCallback,
-        StatefulLbmExtension, StatelessFirmwareThread, StatelessThreadContext, Terminal,
-        TerminalError, TerminalHandler, TerminalRegistration, ThreadContext, ThreadError,
-        ThreadName, ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimeoutSnapshot,
-        TimerInstant, TypedPwmCallbackLease, Uart, UartError, UartLease,
+        MotorOutput, MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset, PackageStartError,
+        PacketCodec, PacketError, PacketHandler, Plot, PlotError, PpmSnapshot, PwmCallbackError,
+        PwmCallbackHandler, PwmCallbackLease, RemoteInputSnapshot, SettingsError, ShutdownInhibit,
+        StatefulCustomConfigCallback, StatefulLbmExtension, StatelessFirmwareThread,
+        StatelessThreadContext, Terminal, TerminalError, TerminalHandler, TerminalRegistration,
+        ThreadContext, ThreadError, ThreadName, ThreadSpec, ThreadWorkingAreaSize,
+        ThreadWorkingAreaSizeError, TimeoutSnapshot, TimerInstant, TypedPwmCallbackLease, Uart,
+        UartError, UartLease,
     };
 }
 

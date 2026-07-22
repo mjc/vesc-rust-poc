@@ -1,8 +1,12 @@
 //! Owned packet framing around the concrete VESC `PACKET_STATE_t` layout.
 
 use core::marker::PhantomData;
+#[cfg(feature = "alloc")]
+use core::pin::Pin;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+#[cfg(feature = "alloc")]
+use crate::rust_alloc::boxed::Box;
 use vescpkg_rs_sys::raw::{PACKET_BUFFER_LEN, PACKET_MAX_PL_LEN, PacketState};
 
 const MAX_PACKET_BYTES: usize = PACKET_MAX_PL_LEN;
@@ -41,18 +45,24 @@ pub struct PacketCodec<H: PacketHandler> {
     _handler: PhantomData<H>,
 }
 
+// PacketCodec has no pin-sensitive fields; the pinned owned registration is
+// needed to keep the firmware-facing allocation stable, not to constrain the
+// codec's internal movement semantics.
+impl<H: PacketHandler> Unpin for PacketCodec<H> {}
+
 /// Active packet registration borrowing its codec and firmware-owned state.
 pub struct PacketRegistration<'a, H: PacketHandler> {
     codec: &'a mut PacketCodec<H>,
 }
 
-/// Active packet registration that owns its codec and firmware-owned state.
+/// Active packet registration that owns a pinned codec and firmware-owned state.
 ///
 /// This form can be stored directly in package runtime state; use
 /// [`PacketCodec::register_owned`] when a callback must outlive the startup
 /// stack frame.
+#[cfg(feature = "alloc")]
 pub struct OwnedPacketRegistration<H: PacketHandler> {
-    codec: PacketCodec<H>,
+    codec: Pin<Box<PacketCodec<H>>>,
 }
 
 impl<H: PacketHandler> PacketCodec<H> {
@@ -78,10 +88,12 @@ impl<H: PacketHandler> PacketCodec<H> {
         Ok(PacketRegistration { codec: self })
     }
 
-    /// Consume this codec and return a registration that owns its state.
-    pub fn register_owned(mut self) -> Result<OwnedPacketRegistration<H>, PacketError> {
-        self.register_impl()?;
-        Ok(OwnedPacketRegistration { codec: self })
+    /// Consume this codec and return a registration that owns pinned state.
+    #[cfg(feature = "alloc")]
+    pub fn register_owned(self) -> Result<OwnedPacketRegistration<H>, PacketError> {
+        let mut codec = Box::pin(self);
+        codec.as_mut().get_mut().register_impl()?;
+        Ok(OwnedPacketRegistration { codec })
     }
 
     fn register_impl(&mut self) -> Result<(), PacketError> {
@@ -128,21 +140,23 @@ impl<H: PacketHandler> Drop for PacketRegistration<'_, H> {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<H: PacketHandler> OwnedPacketRegistration<H> {
     /// Feed one byte into the registered framing state.
     pub fn process_byte(&mut self, byte: u8) -> Result<(), PacketError> {
-        process_byte(&mut self.codec.state, byte)
+        process_byte(&mut self.codec.as_mut().get_mut().state, byte)
     }
 
     /// Send one bounded packet payload through the registered framing state.
     pub fn send_packet(&mut self, data: &mut [u8]) -> Result<(), PacketError> {
-        send_packet(&mut self.codec.state, data)
+        send_packet(&mut self.codec.as_mut().get_mut().state, data)
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<H: PacketHandler> Drop for OwnedPacketRegistration<H> {
     fn drop(&mut self) {
-        release(&mut self.codec.state);
+        release(&mut self.codec.as_mut().get_mut().state);
     }
 }
 
