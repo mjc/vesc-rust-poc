@@ -58,6 +58,10 @@ mod tests {
         assert_eq!(ExpressSlot::LbmAddExtension.index(), 1);
         assert_eq!(ExpressSlot::LbmEncSymNil.index(), 38);
         assert_eq!(ExpressSlot::SemReset.index(), 79);
+        for (index, slot) in ExpressSlot::ALL.into_iter().enumerate() {
+            assert_eq!(slot.index(), index);
+            assert!(express_slot_kind(index).is_some());
+        }
         assert_eq!(ExpressTarget::Esp32C3.interface_address(), 0x3FCD_BE00);
         assert_eq!(ExpressTarget::Esp32S3.interface_address(), 0x3FCE_8800);
         assert_eq!(ExpressTarget::Esp32C6.interface_address(), 0x4087_B800);
