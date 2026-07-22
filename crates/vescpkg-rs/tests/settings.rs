@@ -47,6 +47,8 @@ fn typed_settings_read_write_and_persist() {
         settings.foc_motor_flux_linkage().flux_linkage().as_webers(),
         0.004
     );
+    assert_eq!(settings.battery_capacity().as_amp_hours(), 20.0);
+    assert_eq!(settings.motor_no_load_current().current().as_amps(), 1.5);
     assert_eq!(settings.input_voltage_min().voltage().as_volts(), 20.0);
     assert_eq!(settings.input_voltage_max().voltage().as_volts(), 60.0);
     assert_eq!(
@@ -145,6 +147,14 @@ fn typed_settings_read_write_and_persist() {
         ))
         .unwrap();
     settings
+        .set_battery_capacity(vescpkg_rs::Charge::from_amp_hours(24.0))
+        .unwrap();
+    settings
+        .set_motor_no_load_current(vescpkg_rs::InputCurrent::new(
+            vescpkg_rs::Current::from_amps(2.0),
+        ))
+        .unwrap();
+    settings
         .set_input_voltage_min(vescpkg_rs::InputVoltage::new(
             vescpkg_rs::Voltage::from_volts(24.0),
         ))
@@ -219,6 +229,8 @@ fn typed_settings_read_write_and_persist() {
         settings.foc_motor_flux_linkage().flux_linkage().as_webers(),
         0.005
     );
+    assert_eq!(settings.battery_capacity().as_amp_hours(), 24.0);
+    assert_eq!(settings.motor_no_load_current().current().as_amps(), 2.0);
     assert_eq!(settings.input_voltage_min().voltage().as_volts(), 24.0);
     assert_eq!(settings.input_voltage_max().voltage().as_volts(), 54.0);
     assert_eq!(

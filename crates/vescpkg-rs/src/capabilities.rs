@@ -2,7 +2,7 @@
 
 use crate::ffi;
 use crate::{
-    BatteryCellCount, CanBus, Current, DutyCycleLimit, ElectricalSpeed, FocAudio,
+    BatteryCellCount, CanBus, Charge, Current, DutyCycleLimit, ElectricalSpeed, FocAudio,
     FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance, GearRatio, InputCurrent,
     InputVoltage, MotorCurrentLimit, Nvm, NvmCapacity, Ratio, TemperatureLimitEnd,
     TemperatureLimitStart, Uart, Voltage, WheelDiameter,
@@ -331,6 +331,18 @@ impl FirmwareSettings {
         ))
     }
 
+    /// Read the configured battery capacity.
+    pub fn battery_capacity(self) -> Charge {
+        Charge::from_amp_hours(self.get_float(FirmwareFloatSetting::BatteryCapacity))
+    }
+
+    /// Read the configured motor no-load current.
+    pub fn motor_no_load_current(self) -> InputCurrent {
+        InputCurrent::new(Current::from_amps(
+            self.get_float(FirmwareFloatSetting::MotorNoLoadCurrent),
+        ))
+    }
+
     /// Update the live battery/input current ceiling; persistence still requires [`Self::store`].
     pub fn set_input_current_max(self, current: InputCurrent) -> Result<(), SettingsError> {
         self.set_float(
@@ -414,6 +426,22 @@ impl FirmwareSettings {
         self.set_float(
             FirmwareFloatSetting::FocMotorFluxLinkage,
             flux_linkage.flux_linkage().as_webers(),
+        )
+    }
+
+    /// Update the live battery capacity; persistence still requires [`Self::store`].
+    pub fn set_battery_capacity(self, capacity: Charge) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::BatteryCapacity,
+            capacity.as_amp_hours(),
+        )
+    }
+
+    /// Update the live motor no-load current; persistence still requires [`Self::store`].
+    pub fn set_motor_no_load_current(self, current: InputCurrent) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::MotorNoLoadCurrent,
+            current.current().as_amps(),
         )
     }
 
