@@ -350,6 +350,12 @@ impl LispValue {
         call_vesc_ffi!(lbm_is_byte_array(self.raw()))
     }
 
+    /// Return whether this value is an array in the pinned LispBM runtime.
+    #[must_use]
+    pub fn is_array(self) -> bool {
+        self.is_byte_array()
+    }
+
     /// Return whether this value is the canonical `LispBM` nil value.
     #[must_use]
     pub fn is_nil(self) -> bool {
