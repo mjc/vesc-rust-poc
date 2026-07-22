@@ -342,6 +342,15 @@ impl LispValue {
         unsafe { crate::ffi::lbm_is_byte_array(self.raw()) }
     }
 
+    /// Return whether this value is an array in the pinned LispBM runtime.
+    ///
+    /// VESC's LispBM ABI exposes only byte arrays, so this is intentionally the
+    /// same capability check as [`Self::is_byte_array`].
+    #[must_use]
+    pub fn is_array(self) -> bool {
+        self.is_byte_array()
+    }
+
     /// Return whether this value is the canonical LispBM nil value.
     #[must_use]
     pub fn is_nil(self) -> bool {
