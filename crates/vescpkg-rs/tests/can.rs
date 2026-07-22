@@ -223,6 +223,29 @@ fn package_stop_releases_standard_can_receiver_before_next_registration() {
 }
 
 #[test]
+fn package_stop_releases_extended_can_receiver_before_next_registration() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    let guard = firmware
+        .can()
+        .register_extended_receiver::<ReceiverHandler>()
+        .expect("extended CAN receiver");
+    let mut info = vescpkg_rs::test_support::LoaderInfo::new();
+    let mut start = vescpkg_rs::test_support::package_start(&mut info);
+    start
+        .install_runtime_state(PackageState {
+            _guard: Some(guard),
+        })
+        .expect("package state");
+    assert!(start.finish_start(true));
+    assert!(vescpkg_rs::test_support::stop_package(&mut info));
+
+    firmware
+        .can()
+        .register_extended_receiver::<ReceiverHandler>()
+        .expect("stop released extended CAN receiver");
+}
+
+#[test]
 fn can_bus_sends_brake_and_off_delay_commands() {
     let firmware = vescpkg_rs::test_support::FirmwareTest::new();
     let brake = vescpkg_rs::BrakeCurrent::new(vescpkg_rs::Current::from_amps(6.0));
