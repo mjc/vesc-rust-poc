@@ -1,7 +1,22 @@
 #![cfg(feature = "test-support")]
 //! Integration coverage for typed controller input and safety state.
 
-use vescpkg_rs::{InputError, PpmInput, RemoteInputSnapshot};
+use vescpkg_rs::{
+    InputError, PackageRuntimeState, PackageStateStore, PpmInput, RemoteInputSnapshot,
+    ShutdownInhibit,
+};
+
+struct PackageState {
+    _inhibit: Option<ShutdownInhibit>,
+}
+
+static PACKAGE_STATE: PackageStateStore<PackageState> = PackageStateStore::new();
+
+impl PackageRuntimeState for PackageState {
+    fn runtime_store() -> &'static PackageStateStore<Self> {
+        &PACKAGE_STATE
+    }
+}
 
 #[test]
 fn inputs_copy_remote_state_and_ppm_age() {
@@ -66,4 +81,26 @@ fn shutdown_inhibition_is_exclusive_and_restored_on_drop() {
         inputs.inhibit_shutdown(),
         Err(InputError::Unsupported)
     ));
+}
+
+#[test]
+fn package_stop_restores_shutdown_inhibition_before_next_guard() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    let inhibit = firmware.inputs().inhibit_shutdown().expect("shutdown slot");
+    assert!(firmware.shutdown_disabled());
+    let mut info = vescpkg_rs::test_support::LoaderInfo::new();
+    let mut start = vescpkg_rs::test_support::package_start(&mut info);
+    start
+        .install_runtime_state(PackageState {
+            _inhibit: Some(inhibit),
+        })
+        .expect("package state");
+    assert!(start.finish_start(true));
+    assert!(vescpkg_rs::test_support::stop_package(&mut info));
+    assert!(!firmware.shutdown_disabled());
+
+    firmware
+        .inputs()
+        .inhibit_shutdown()
+        .expect("stop restored shutdown inhibition");
 }
