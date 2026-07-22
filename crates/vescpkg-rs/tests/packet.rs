@@ -57,6 +57,20 @@ fn packet_codec_registration_is_exclusive_and_released_on_drop() {
 }
 
 #[test]
+fn packet_codec_reports_absent_optional_slots() {
+    let firmware = FirmwareTest::new();
+    firmware.set_packet_available(false);
+    let mut codec = PacketCodec::<Handler>::new();
+
+    assert!(matches!(
+        codec.register(),
+        Err(vescpkg_rs::PacketError::Unavailable)
+    ));
+    firmware.set_packet_available(true);
+    assert!(codec.register().is_ok());
+}
+
+#[test]
 #[cfg(feature = "alloc")]
 fn owned_packet_registration_survives_into_package_state_and_stops_cleanly() {
     let _firmware = FirmwareTest::new();
