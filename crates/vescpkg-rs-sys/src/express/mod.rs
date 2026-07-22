@@ -49,6 +49,15 @@ mod tests {
         assert_eq!(core::mem::size_of::<ExpressFlatValueRaw>(), 12);
         #[cfg(target_pointer_width = "64")]
         assert_eq!(core::mem::size_of::<ExpressFlatValueRaw>(), 16);
+        assert_eq!(core::mem::offset_of!(ExpressFlatValueRaw, buf), 0);
+        assert_eq!(
+            core::mem::offset_of!(ExpressFlatValueRaw, buf_size),
+            core::mem::size_of::<*mut u8>()
+        );
+        assert_eq!(
+            core::mem::offset_of!(ExpressFlatValueRaw, buf_pos),
+            core::mem::size_of::<*mut u8>() + 4
+        );
         assert_eq!(express_slot_kind(0), Some(ExpressSlotKind::Scalar));
         assert_eq!(express_slot_kind(38), Some(ExpressSlotKind::Scalar));
         assert_eq!(express_slot_kind(42), Some(ExpressSlotKind::Scalar));
