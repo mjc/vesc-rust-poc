@@ -1128,6 +1128,8 @@ pub unsafe fn mc_set_duty(duty: f32) {
     DUTY.store(duty.to_bits(), Ordering::Relaxed);
 }
 
+pub unsafe fn mc_set_duty_noramp(_duty: f32) {}
+
 pub unsafe fn mc_set_brake_current(amps: f32) {
     BRAKE_CURRENT_COUNT.fetch_add(1, Ordering::Relaxed);
     BRAKE_CURRENT.store(amps.to_bits(), Ordering::Relaxed);

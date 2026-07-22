@@ -4,7 +4,7 @@
 use vescpkg_rs::{
     AngleDegrees, Current, DCurrent, DutyCycle, ElectricalSpeed, HandbrakeCurrent,
     HandbrakeRelative, MotorOutput, MotorSelection, MotorTelemetry, OdometerMeters, PidPosition,
-    Ratio, Rpm, VescSeconds,
+    Ratio, Rpm, SignedRatio, VescSeconds,
 };
 
 #[test]
@@ -118,5 +118,5 @@ fn motor_exposes_typed_handbrake_commands() {
     firmware.motor().select_motor(MotorSelection::new(1));
     firmware
         .motor()
-        .set_duty_cycle_without_ramping(DutyCycle::new(Ratio::from_ratio_const(0.2)));
+        .set_duty_cycle_without_ramping(DutyCycle::new(SignedRatio::from_ratio_const(0.2)));
 }

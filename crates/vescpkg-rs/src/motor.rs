@@ -414,6 +414,8 @@ pub trait MotorControlBindings {
     /// `third_party/float-out-boy/src/motor_control.c:112-114`; the VESC ABI slot is
     /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:436`.
     fn set_duty_cycle(&self, duty: DutyCycle);
+    /// Set motor duty cycle without firmware ramping.
+    fn set_duty_cycle_without_ramping(&self, duty: DutyCycle);
     /// Set motor brake current in amps.
     ///
     /// Float Out Boy v1.2.1 sends idle brake current at
@@ -464,6 +466,10 @@ impl<B: MotorControlBindings + ?Sized> MotorControlBindings for &B {
 
     fn set_duty_cycle(&self, duty: DutyCycle) {
         (**self).set_duty_cycle(duty);
+    }
+
+    fn set_duty_cycle_without_ramping(&self, duty: DutyCycle) {
+        (**self).set_duty_cycle_without_ramping(duty);
     }
 
     fn set_brake_current(&self, current: BrakeCurrent) {
@@ -826,6 +832,10 @@ impl MotorControlBindings for RealMotorControlBindings {
         unsafe { crate::ffi::mc_set_duty(duty.ratio().as_ratio()) };
     }
 
+    fn set_duty_cycle_without_ramping(&self, duty: DutyCycle) {
+        unsafe { crate::ffi::mc_set_duty_noramp(duty.ratio().as_ratio()) };
+    }
+
     fn set_brake_current(&self, current: BrakeCurrent) {
         unsafe { crate::ffi::mc_set_brake_current(current.current().as_amps()) };
     }
@@ -1015,6 +1025,8 @@ pub trait MotorOutput: private::MotorOutput {
 
     /// Apply a duty-cycle command.
     fn set_duty_cycle(&self, duty: DutyCycle);
+    /// Apply a duty-cycle command without firmware ramping.
+    fn set_duty_cycle_without_ramping(&self, duty: DutyCycle);
 
     /// Apply a braking-current command.
     fn set_brake_current(&self, current: BrakeCurrent);
@@ -1601,6 +1613,11 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
         self.bindings.set_duty_cycle(duty);
     }
 
+    /// Apply a duty-cycle command without firmware ramping.
+    pub fn set_duty_cycle_without_ramping(&self, duty: DutyCycle) {
+        self.bindings.set_duty_cycle_without_ramping(duty);
+    }
+
     /// Set motor brake current.
     ///
     /// Float Out Boy uses this for idle brake current at
@@ -1677,6 +1694,10 @@ impl<B: MotorControlBindings> MotorOutput for MotorControlApi<B> {
 
     fn set_duty_cycle(&self, duty: DutyCycle) {
         MotorControlApi::set_duty_cycle(self, duty);
+    }
+
+    fn set_duty_cycle_without_ramping(&self, duty: DutyCycle) {
+        MotorControlApi::set_duty_cycle_without_ramping(self, duty);
     }
 
     fn set_brake_current(&self, current: BrakeCurrent) {
