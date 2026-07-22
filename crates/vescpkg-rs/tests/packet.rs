@@ -18,5 +18,9 @@ fn packet_codec_registers_processes_and_resets_owned_state() {
     let mut registration = codec.register().unwrap();
     registration.process_byte(0x42).unwrap();
     registration.send_packet(&mut [1, 2, 3]).unwrap();
+    assert_eq!(
+        registration.send_packet(&mut [0; 513]),
+        Err(vescpkg_rs::PacketError::PacketTooLong)
+    );
     drop(registration);
 }
