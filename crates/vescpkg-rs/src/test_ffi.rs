@@ -1147,6 +1147,16 @@ pub unsafe fn mc_get_tot_current_in() -> f32 {
     8.0
 }
 
+pub unsafe fn mc_stat_power_avg() -> f32 {
+    120.0
+}
+
+pub unsafe fn mc_stat_power_max() -> f32 {
+    240.0
+}
+
+pub unsafe fn mc_stat_reset() {}
+
 pub unsafe fn mc_get_tachometer_abs_value(_reset: bool) -> i32 {
     5678
 }

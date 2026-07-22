@@ -6,15 +6,15 @@ use core::ffi::CStr;
 #[cfg(not(test))]
 use crate::types::FirmwareFaultWireCode;
 use crate::types::{
-    AbsoluteTachometerSteps, AmpHoursCharged, AmpHoursDischarged, BatteryCellCount, BatteryLevel,
-    BrakeCurrent, CurrentOffDelay, DCurrent, DirectionalMotorCurrent, DutyCycle, DutyCycleLimit,
-    ElectricalSpeed, FirmwareFaultCode, HandbrakeCurrent, HandbrakeRelative, InputCurrent,
-    InputVoltage, MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature,
-    TachometerSteps, TemperatureLimitStart, TotalMotorCurrent, TripDistance, VehicleSpeed,
-    WattHoursCharged, WattHoursDischarged,
+    AbsoluteTachometerSteps, AmpHoursCharged, AmpHoursDischarged, AveragePower, BatteryCellCount,
+    BatteryLevel, BrakeCurrent, CurrentOffDelay, DCurrent, DirectionalMotorCurrent, DutyCycle,
+    DutyCycleLimit, ElectricalSpeed, FirmwareFaultCode, HandbrakeCurrent, HandbrakeRelative,
+    InputCurrent, InputVoltage, MosfetTemperature, MotorCurrent, MotorCurrentLimit,
+    MotorTemperature, PeakPower, TachometerSteps, TemperatureLimitStart, TotalMotorCurrent,
+    TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 #[cfg(not(test))]
-use crate::units::{Charge, Current, Distance, Energy, Rpm, Speed, Temperature, Voltage};
+use crate::units::{Charge, Current, Distance, Energy, Power, Rpm, Speed, Temperature, Voltage};
 use crate::units::{Frequency, OdometerMeters, Ratio, SignedRatio, VescSeconds};
 
 #[cfg(not(test))]
@@ -95,6 +95,10 @@ pub trait MotorTelemetryBindings {
     fn battery_current(&self) -> InputCurrent;
     /// Return instantaneous input/battery current.
     fn battery_current_unfiltered(&self) -> InputCurrent;
+    /// Return average motor power statistics.
+    fn average_power(&self) -> AveragePower;
+    /// Return peak motor power statistics.
+    fn peak_power(&self) -> PeakPower;
     /// Return the current signed duty cycle.
     ///
     /// The firmware value is clamped to the signed ratio range, with NaN
@@ -207,6 +211,14 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
         (**self).battery_current_unfiltered()
     }
 
+    fn average_power(&self) -> AveragePower {
+        (**self).average_power()
+    }
+
+    fn peak_power(&self) -> PeakPower {
+        (**self).peak_power()
+    }
+
     fn duty_cycle(&self) -> DutyCycle {
         (**self).duty_cycle()
     }
@@ -313,6 +325,8 @@ pub trait MotorControlBindings {
     fn set_handbrake(&self, current: HandbrakeCurrent);
     /// Set motor handbrake as a relative command.
     fn set_handbrake_relative(&self, current: HandbrakeRelative);
+    /// Reset accumulated motor statistics.
+    fn reset_statistics(&self);
     /// Release the motor output.
     fn release_motor(&self);
     /// Wait up to `timeout` for the motor output to be released.
@@ -347,6 +361,10 @@ impl<B: MotorControlBindings + ?Sized> MotorControlBindings for &B {
 
     fn set_handbrake_relative(&self, current: HandbrakeRelative) {
         (**self).set_handbrake_relative(current);
+    }
+
+    fn reset_statistics(&self) {
+        (**self).reset_statistics();
     }
 
     fn release_motor(&self) {
@@ -459,6 +477,18 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
     fn battery_current_unfiltered(&self) -> InputCurrent {
         InputCurrent::new(Current::from_amps(unsafe {
             crate::ffi::mc_get_tot_current_in()
+        }))
+    }
+
+    fn average_power(&self) -> AveragePower {
+        AveragePower::new(Power::from_watts(unsafe {
+            crate::ffi::mc_stat_power_avg()
+        }))
+    }
+
+    fn peak_power(&self) -> PeakPower {
+        PeakPower::new(Power::from_watts(unsafe {
+            crate::ffi::mc_stat_power_max()
         }))
     }
 
@@ -589,6 +619,10 @@ impl MotorControlBindings for RealMotorControlBindings {
         unsafe { crate::ffi::mc_set_handbrake_rel(current.ratio().as_ratio()) };
     }
 
+    fn reset_statistics(&self) {
+        unsafe { crate::ffi::mc_stat_reset() };
+    }
+
     fn release_motor(&self) {
         unsafe { crate::ffi::mc_release_motor() };
     }
@@ -665,6 +699,10 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn battery_current(&self) -> InputCurrent;
     /// Return instantaneous input/battery current.
     fn battery_current_unfiltered(&self) -> InputCurrent;
+    /// Return average motor power statistics.
+    fn average_power(&self) -> AveragePower;
+    /// Return peak motor power statistics.
+    fn peak_power(&self) -> PeakPower;
     /// Return the current signed duty cycle.
     fn duty_cycle(&self) -> DutyCycle;
     /// Return optional FOC d-axis current.
@@ -721,6 +759,8 @@ pub trait MotorOutput: private::MotorOutput {
     fn set_handbrake(&self, current: HandbrakeCurrent);
     /// Apply a relative handbrake command.
     fn set_handbrake_relative(&self, current: HandbrakeRelative);
+    /// Reset accumulated motor statistics.
+    fn reset_statistics(&self);
     /// Release the motor output.
     fn release_motor(&self);
     /// Wait up to `timeout` for the motor output to be released.
@@ -870,6 +910,16 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
     /// Return instantaneous input/battery current.
     pub fn battery_current_unfiltered(&self) -> InputCurrent {
         self.bindings.battery_current_unfiltered()
+    }
+
+    /// Return average motor power statistics.
+    pub fn average_power(&self) -> AveragePower {
+        self.bindings.average_power()
+    }
+
+    /// Return peak motor power statistics.
+    pub fn peak_power(&self) -> PeakPower {
+        self.bindings.peak_power()
     }
 
     /// Return the current signed duty cycle.
@@ -1027,6 +1077,14 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
         self.battery_current_unfiltered()
     }
 
+    fn average_power(&self) -> AveragePower {
+        self.average_power()
+    }
+
+    fn peak_power(&self) -> PeakPower {
+        self.peak_power()
+    }
+
     fn duty_cycle(&self) -> DutyCycle {
         self.duty_cycle()
     }
@@ -1145,6 +1203,11 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
         self.bindings.set_handbrake_relative(current);
     }
 
+    /// Reset accumulated motor statistics.
+    pub fn reset_statistics(&self) {
+        self.bindings.reset_statistics();
+    }
+
     /// Release the motor output.
     pub fn release_motor(&self) {
         self.bindings.release_motor();
@@ -1187,6 +1250,10 @@ impl<B: MotorControlBindings> MotorOutput for MotorControlApi<B> {
 
     fn set_handbrake_relative(&self, current: HandbrakeRelative) {
         MotorControlApi::set_handbrake_relative(self, current);
+    }
+
+    fn reset_statistics(&self) {
+        MotorControlApi::reset_statistics(self);
     }
 
     fn release_motor(&self) {
