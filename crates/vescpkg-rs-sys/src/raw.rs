@@ -638,6 +638,7 @@ mod slots {
     // Refloat capability-probes this pre-6.05 slot because not every motor
     // implementation populates the FOC-specific function.
     optional_fn_slot!(foc_get_id as unsafe extern "C" fn() -> f32);
+    optional_fn_slot!(foc_play_tone as unsafe extern "C" fn(c_int, f32, f32) -> bool);
     fn_slot!(mc_temp_fet_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_temp_motor_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(imu_startup_done as unsafe extern "C" fn() -> bool);
@@ -1258,6 +1259,15 @@ pub unsafe fn mc_fault_to_string(code: c_int) -> Option<*const c_char> {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn foc_get_id() -> Option<f32> {
     unsafe { slots::foc_get_id() }.map(|func| unsafe { func() })
+}
+
+/// Play one FOC tone when the motor firmware exposes audio support.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn foc_play_tone(channel: c_int, frequency: f32, voltage: f32) -> Option<bool> {
+    unsafe { slots::foc_play_tone() }.map(|func| unsafe { func(channel, frequency, voltage) })
 }
 /// Return the filtered input/battery voltage.
 ///

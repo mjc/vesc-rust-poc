@@ -6,9 +6,10 @@ use core::ffi::CStr;
 #[cfg(not(test))]
 use crate::types::FirmwareFaultWireCode;
 use crate::types::{
-    AmpHoursCharged, AmpHoursDischarged, BatteryCellCount, BatteryLevel, BrakeCurrent,
-    CurrentOffDelay, DCurrent, DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed,
-    FirmwareFaultCode, InputCurrent, InputVoltage, MosfetTemperature, MotorCurrent,
+    AmpHoursCharged, AmpHoursDischarged, AudioChannel, AudioFrequency, AudioVoltage,
+    BatteryCellCount, BatteryLevel, BrakeCurrent, CurrentOffDelay, DCurrent,
+    DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed, FirmwareFaultCode,
+    InputCurrent, InputCurrentLimit, InputVoltage, MosfetTemperature, MotorCurrent,
     MotorCurrentLimit, MotorTemperature, TemperatureLimitStart, TotalMotorCurrent, TripDistance,
     VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
@@ -20,6 +21,10 @@ use crate::units::{OdometerMeters, Ratio, SignedRatio};
 const CFG_PARAM_L_CURRENT_MAX: core::ffi::c_int = 0;
 #[cfg(not(test))]
 const CFG_PARAM_L_CURRENT_MIN: core::ffi::c_int = 1;
+#[cfg(not(test))]
+const CFG_PARAM_L_IN_CURRENT_MAX: core::ffi::c_int = 2;
+#[cfg(not(test))]
+const CFG_PARAM_L_IN_CURRENT_MIN: core::ffi::c_int = 3;
 #[cfg(not(test))]
 const CFG_PARAM_L_TEMP_FET_START: core::ffi::c_int = 16;
 #[cfg(not(test))]
@@ -62,6 +67,10 @@ pub trait MotorTelemetryBindings {
     /// `src/motor_data.c:90`; the VESC config id is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:244`.
     fn brake_current_limit(&self) -> MotorCurrentLimit;
+    /// Return the configured positive battery/input-current limit.
+    fn drive_input_current_limit(&self) -> InputCurrentLimit;
+    /// Return the configured regenerative battery/input-current limit magnitude.
+    fn brake_input_current_limit(&self) -> InputCurrentLimit;
     /// Return the configured MOSFET temperature limit-start threshold.
     fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart;
     /// Return the configured motor temperature limit-start threshold.
@@ -144,6 +153,14 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
 
     fn brake_current_limit(&self) -> MotorCurrentLimit {
         (**self).brake_current_limit()
+    }
+
+    fn drive_input_current_limit(&self) -> InputCurrentLimit {
+        (**self).drive_input_current_limit()
+    }
+
+    fn brake_input_current_limit(&self) -> InputCurrentLimit {
+        (**self).brake_input_current_limit()
     }
 
     fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart {
@@ -256,6 +273,13 @@ pub trait MotorControlBindings {
     /// `third_party/refloat/src/motor_control.c:115-117`; the VESC ABI slot is
     /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:441`.
     fn set_brake_current(&self, current: BrakeCurrent);
+    /// Play a FOC tone when the motor firmware exposes audio support.
+    fn play_foc_tone(
+        &self,
+        channel: AudioChannel,
+        frequency: AudioFrequency,
+        voltage: AudioVoltage,
+    ) -> bool;
 }
 
 #[cfg(not(test))]
@@ -278,6 +302,15 @@ impl<B: MotorControlBindings + ?Sized> MotorControlBindings for &B {
 
     fn set_brake_current(&self, current: BrakeCurrent) {
         (**self).set_brake_current(current);
+    }
+
+    fn play_foc_tone(
+        &self,
+        channel: AudioChannel,
+        frequency: AudioFrequency,
+        voltage: AudioVoltage,
+    ) -> bool {
+        (**self).play_foc_tone(channel, frequency, voltage)
     }
 }
 
@@ -324,6 +357,18 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
     fn brake_current_limit(&self) -> MotorCurrentLimit {
         MotorCurrentLimit::new(Current::from_amps(unsafe {
             crate::ffi::get_cfg_float(CFG_PARAM_L_CURRENT_MIN)
+        }))
+    }
+
+    fn drive_input_current_limit(&self) -> InputCurrentLimit {
+        InputCurrentLimit::new(Current::from_amps(unsafe {
+            crate::ffi::get_cfg_float(CFG_PARAM_L_IN_CURRENT_MAX)
+        }))
+    }
+
+    fn brake_input_current_limit(&self) -> InputCurrentLimit {
+        InputCurrentLimit::new(Current::from_amps(unsafe {
+            crate::ffi::get_cfg_float(CFG_PARAM_L_IN_CURRENT_MIN)
         }))
     }
 
@@ -457,6 +502,29 @@ impl MotorControlBindings for RealMotorControlBindings {
     fn set_brake_current(&self, current: BrakeCurrent) {
         unsafe { crate::ffi::mc_set_brake_current(current.current().as_amps()) };
     }
+
+    fn play_foc_tone(
+        &self,
+        channel: AudioChannel,
+        frequency: AudioFrequency,
+        voltage: AudioVoltage,
+    ) -> bool {
+        let played = unsafe {
+            crate::ffi::foc_play_tone(
+                i32::from(channel.as_u8()),
+                frequency.frequency().as_hertz(),
+                voltage.voltage().as_volts(),
+            )
+        };
+        #[cfg(all(feature = "test-support", not(target_arch = "arm")))]
+        {
+            played
+        }
+        #[cfg(not(all(feature = "test-support", not(target_arch = "arm"))))]
+        {
+            played.unwrap_or(false)
+        }
+    }
 }
 
 fn duty_cycle_from_firmware(raw_duty: f32) -> DutyCycle {
@@ -506,6 +574,10 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn drive_current_limit(&self) -> MotorCurrentLimit;
     /// Return the configured braking-current magnitude.
     fn brake_current_limit(&self) -> MotorCurrentLimit;
+    /// Return the configured positive battery/input-current limit.
+    fn drive_input_current_limit(&self) -> InputCurrentLimit;
+    /// Return the configured regenerative battery/input-current limit magnitude.
+    fn brake_input_current_limit(&self) -> InputCurrentLimit;
     /// Return the configured MOSFET temperature limit-start threshold.
     fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart;
     /// Return the configured motor temperature limit-start threshold.
@@ -562,6 +634,14 @@ pub trait MotorOutput: private::MotorOutput {
 
     /// Apply a braking-current command.
     fn set_brake_current(&self, current: BrakeCurrent);
+
+    /// Play a FOC tone, returning false when audio is unavailable or rejected.
+    fn play_foc_tone(
+        &self,
+        channel: AudioChannel,
+        frequency: AudioFrequency,
+        voltage: AudioVoltage,
+    ) -> bool;
 }
 
 /// High-level motor-control API built on a binding implementation.
@@ -657,6 +737,16 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
     /// Return the configured braking-current magnitude.
     pub fn brake_current_limit(&self) -> MotorCurrentLimit {
         self.bindings.brake_current_limit()
+    }
+
+    /// Return the configured positive battery/input-current limit.
+    pub fn drive_input_current_limit(&self) -> InputCurrentLimit {
+        self.bindings.drive_input_current_limit()
+    }
+
+    /// Return the configured regenerative battery/input-current limit magnitude.
+    pub fn brake_input_current_limit(&self) -> InputCurrentLimit {
+        self.bindings.brake_input_current_limit()
     }
 
     /// Return the configured MOSFET temperature limit-start threshold.
@@ -784,6 +874,14 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
         self.brake_current_limit()
     }
 
+    fn drive_input_current_limit(&self) -> InputCurrentLimit {
+        self.drive_input_current_limit()
+    }
+
+    fn brake_input_current_limit(&self) -> InputCurrentLimit {
+        self.brake_input_current_limit()
+    }
+
     fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart {
         self.mosfet_temperature_limit_start()
     }
@@ -899,6 +997,16 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
     pub fn set_brake_current(&self, current: BrakeCurrent) {
         self.bindings.set_brake_current(current);
     }
+
+    /// Play a FOC tone when supported by the motor firmware.
+    pub fn play_foc_tone(
+        &self,
+        channel: AudioChannel,
+        frequency: AudioFrequency,
+        voltage: AudioVoltage,
+    ) -> bool {
+        self.bindings.play_foc_tone(channel, frequency, voltage)
+    }
 }
 
 #[cfg(not(test))]
@@ -924,5 +1032,14 @@ impl<B: MotorControlBindings> MotorOutput for MotorControlApi<B> {
 
     fn set_brake_current(&self, current: BrakeCurrent) {
         MotorControlApi::set_brake_current(self, current);
+    }
+
+    fn play_foc_tone(
+        &self,
+        channel: AudioChannel,
+        frequency: AudioFrequency,
+        voltage: AudioVoltage,
+    ) -> bool {
+        MotorControlApi::play_foc_tone(self, channel, frequency, voltage)
     }
 }

@@ -7,17 +7,17 @@ use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescPin, Vesc
 
 use super::{
     CustomConfigGet, CustomConfigSet, CustomConfigXml, VescIf, conf_custom_add_config,
-    conf_custom_clear_configs, foc_get_id, io_read, io_read_analog, io_set_mode, io_write,
-    lbm_add_extension, lbm_add_extension_with_table_base, lbm_dec_as_float, lbm_dec_as_i32,
-    lbm_enc_i, lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number,
-    mc_fault_to_string, mc_get_amp_hours, mc_get_amp_hours_charged, mc_get_battery_level,
-    mc_get_distance_abs, mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered,
-    mc_get_odometer, mc_get_rpm, mc_get_speed, mc_get_tot_current_directional_filtered,
-    mc_get_tot_current_filtered, mc_get_tot_current_in_filtered, mc_get_watt_hours,
-    mc_get_watt_hours_charged, mc_temp_fet_filtered, mc_temp_motor_filtered,
-    vesc_clear_app_data_handler, vesc_mutex_create, vesc_mutex_lock, vesc_mutex_unlock,
-    vesc_send_app_data, vesc_set_app_data_handler, vesc_sleep_us, vesc_system_time_ticks,
-    vesc_thread_set_priority,
+    conf_custom_clear_configs, foc_get_id, foc_play_tone, io_read, io_read_analog, io_set_mode,
+    io_write, lbm_add_extension, lbm_add_extension_with_table_base, lbm_dec_as_float,
+    lbm_dec_as_i32, lbm_enc_i, lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true,
+    lbm_is_number, mc_fault_to_string, mc_get_amp_hours, mc_get_amp_hours_charged,
+    mc_get_battery_level, mc_get_distance_abs, mc_get_duty_cycle_now, mc_get_fault,
+    mc_get_input_voltage_filtered, mc_get_odometer, mc_get_rpm, mc_get_speed,
+    mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
+    mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
+    mc_temp_fet_filtered, mc_temp_motor_filtered, vesc_clear_app_data_handler, vesc_mutex_create,
+    vesc_mutex_lock, vesc_mutex_unlock, vesc_send_app_data, vesc_set_app_data_handler,
+    vesc_sleep_us, vesc_system_time_ticks, vesc_thread_set_priority,
 };
 
 struct SyncCounter(Cell<usize>);
@@ -146,6 +146,7 @@ static MC_GET_TOT_CURRENT_DIRECTIONAL_FILTERED: SyncCounter = SyncCounter::new()
 static MC_GET_TOT_CURRENT_IN_FILTERED: SyncCounter = SyncCounter::new();
 static MC_GET_DUTY_CYCLE_NOW: SyncCounter = SyncCounter::new();
 static FOC_GET_ID: SyncCounter = SyncCounter::new();
+static FOC_PLAY_TONE: SyncCounter = SyncCounter::new();
 static MC_TEMP_FET_FILTERED: SyncCounter = SyncCounter::new();
 static MC_TEMP_MOTOR_FILTERED: SyncCounter = SyncCounter::new();
 static MC_GET_AMP_HOURS: SyncCounter = SyncCounter::new();
@@ -164,6 +165,9 @@ static LAST_LBM_VALUE: SyncU32 = SyncU32::new();
 static LAST_SLEEP_US: SyncU32 = SyncU32::new();
 static LAST_THREAD_PRIORITY: SyncI32 = SyncI32::new();
 static LAST_FOC_ID: SyncF32 = SyncF32::new();
+static LAST_FOC_TONE_CHANNEL: SyncI32 = SyncI32::new();
+static LAST_FOC_TONE_FREQUENCY: SyncF32 = SyncF32::new();
+static LAST_FOC_TONE_VOLTAGE: SyncF32 = SyncF32::new();
 static LAST_HANDLER_INSTALLED: SyncBool = SyncBool::new();
 static LAST_CUSTOM_CONFIG_DEFAULT: SyncBool = SyncBool::new();
 
@@ -199,6 +203,7 @@ fn reset_counters() {
         &MC_GET_TOT_CURRENT_IN_FILTERED,
         &MC_GET_DUTY_CYCLE_NOW,
         &FOC_GET_ID,
+        &FOC_PLAY_TONE,
         &MC_GET_DISTANCE_ABS,
         &MC_TEMP_FET_FILTERED,
         &MC_TEMP_MOTOR_FILTERED,
@@ -222,6 +227,9 @@ fn reset_counters() {
     LAST_SLEEP_US.set(0);
     LAST_THREAD_PRIORITY.set(0);
     LAST_FOC_ID.set(0.0);
+    LAST_FOC_TONE_CHANNEL.set(0);
+    LAST_FOC_TONE_FREQUENCY.set(0.0);
+    LAST_FOC_TONE_VOLTAGE.set(0.0);
     LAST_HANDLER_INSTALLED.set(false);
     LAST_CUSTOM_CONFIG_DEFAULT.set(false);
 }
@@ -400,6 +408,14 @@ extern "C" fn stub_foc_get_id() -> f32 {
     1.5
 }
 
+extern "C" fn stub_foc_play_tone(channel: c_int, frequency: f32, voltage: f32) -> bool {
+    FOC_PLAY_TONE.inc();
+    LAST_FOC_TONE_CHANNEL.set(channel);
+    LAST_FOC_TONE_FREQUENCY.set(frequency);
+    LAST_FOC_TONE_VOLTAGE.set(voltage);
+    true
+}
+
 extern "C" fn stub_mc_temp_fet_filtered() -> f32 {
     MC_TEMP_FET_FILTERED.inc();
     44.0
@@ -491,6 +507,7 @@ fn populated_table() -> VescIf {
     table.mc_get_tot_current_in_filtered = Some(stub_mc_get_tot_current_in_filtered);
     table.mc_get_duty_cycle_now = Some(stub_mc_get_duty_cycle_now);
     table.foc_get_id = Some(stub_foc_get_id);
+    table.foc_play_tone = Some(stub_foc_play_tone);
     table.mc_get_distance_abs = Some(stub_mc_get_distance_abs);
     table.mc_temp_fet_filtered = Some(stub_mc_temp_fet_filtered);
     table.mc_temp_motor_filtered = Some(stub_mc_temp_motor_filtered);
@@ -703,6 +720,23 @@ fn foc_get_id_reports_absence_when_the_motor_does_not_expose_it() {
 }
 
 #[test]
+fn foc_play_tone_forwards_and_reports_optional_audio_support() {
+    with_populated_table(|| unsafe {
+        assert_eq!(foc_play_tone(0, 495.0, 0.6), Some(true));
+        assert_eq!(FOC_PLAY_TONE.get(), 1);
+        assert_eq!(LAST_FOC_TONE_CHANNEL.get(), 0);
+        assert_eq!(LAST_FOC_TONE_FREQUENCY.get(), 495.0);
+        assert_eq!(LAST_FOC_TONE_VOLTAGE.get(), 0.6);
+    });
+
+    let mut table = populated_table();
+    table.foc_play_tone = None;
+    with_table(&table, || unsafe {
+        assert_eq!(foc_play_tone(0, 495.0, 0.6), None);
+    });
+}
+
+#[test]
 fn gpio_helpers_forward_through_mock_table() {
     with_populated_table(|| unsafe {
         let pin = VescPin(3);
@@ -767,6 +801,7 @@ fn generated_vesc_if_inventory_matches_pinned_upstream_header() {
     assert_eq!(c_vesc_if::set_app_data_handler::INDEX, 149);
     assert_eq!(c_vesc_if::mc_get_fault::INDEX, 92);
     assert_eq!(c_vesc_if::mc_fault_to_string::INDEX, 93);
+    assert_eq!(c_vesc_if::foc_play_tone::INDEX, 241);
     assert_eq!(c_vesc_if::system_time_ticks::INDEX, 238);
     assert_eq!(c_vesc_if::shutdown_disable::INDEX, 252);
     assert_eq!(c_vesc_if::shutdown_disable::HEADER_LINE, 672);

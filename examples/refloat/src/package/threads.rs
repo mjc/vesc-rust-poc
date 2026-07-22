@@ -153,6 +153,7 @@ pub(crate) fn tick_refloat_main_thread_with(
     state.refresh_main_loop_runtime_state(
         telemetry,
         imu,
+        motor,
         footpad_adc1,
         footpad_adc2,
         system_time_ticks,
@@ -292,8 +293,9 @@ mod tests {
     use super::super::state::RefloatPackageState;
     use crate::beeper::{RefloatBeeperAlert, RefloatBeeperCount};
     use crate::domain::{
-        RefloatAllDataPayloads, RefloatBeepReason, RefloatFootpadState, RefloatMode,
-        RefloatRunState, RefloatSetpointAdjustment,
+        RefloatAllDataBasePayload, RefloatAllDataPayloads, RefloatAllDataStatus, RefloatBeepReason,
+        RefloatFootpadState, RefloatMode, RefloatRideState, RefloatRunState,
+        RefloatSetpointAdjustment, RefloatStopCondition,
     };
     use crate::package::test_support::{
         default_refloat_config_bytes, sample_all_data_payloads_with_ride_state,
@@ -384,6 +386,63 @@ mod tests {
         assert_eq!(
             state.all_data_payloads().base().footpad().state(),
             RefloatFootpadState::Left,
+        );
+    }
+
+    #[test]
+    fn refloat_main_thread_tick_drives_duty_haptic_through_typed_motor_audio() {
+        let firmware = FirmwareTest::new().with_runtime_motor(
+            ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1200.0)),
+            VehicleSpeed::new(Speed::ZERO),
+            TotalMotorCurrent::new(Current::ZERO),
+            InputCurrent::new(Current::ZERO),
+            DutyCycle::new(SignedRatio::from_ratio_const(0.81)),
+        );
+        firmware.set_imu_ready(true);
+        let payloads =
+            sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Normal);
+        let base = payloads.base();
+        let base = RefloatAllDataBasePayload::new(
+            base.balance_current(),
+            base.attitude(),
+            RefloatAllDataStatus::new(
+                RefloatRideState::new(
+                    RefloatRunState::Running,
+                    RefloatMode::Normal,
+                    RefloatSetpointAdjustment::PushbackDuty,
+                    RefloatStopCondition::None,
+                ),
+                base.status().beep_reason(),
+            ),
+            base.footpad(),
+            base.setpoints(),
+            base.booster_current(),
+            base.motor(),
+        );
+        let mut state = RefloatPackageState::new(RefloatAllDataPayloads::new(
+            base,
+            payloads.mode2(),
+            payloads.mode3(),
+            payloads.mode4(),
+        ));
+
+        super::tick_refloat_main_thread_with(
+            &mut state,
+            firmware.telemetry(),
+            firmware.imu(),
+            firmware.motor(),
+            AdcVoltage::new(Voltage::from_volts(2.5)),
+            AdcVoltage::new(Voltage::from_volts(2.5)),
+            TimestampTicks::from_ticks(0),
+        );
+
+        assert_eq!(firmware.foc_tone_command_count(), 1);
+        assert_eq!(
+            firmware
+                .commanded_foc_tone_frequency()
+                .frequency()
+                .as_hertz(),
+            495.0
         );
     }
 

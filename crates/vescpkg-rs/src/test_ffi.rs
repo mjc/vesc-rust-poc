@@ -5,9 +5,9 @@ use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, AtomicUsiz
 use crate::{
     AmpHoursCharged, AmpHoursDischarged, BatteryLevel, DCurrent, DirectionalMotorCurrent,
     DutyCycle, ElectricalSpeed, FirmwareFaultCode, ImuAngularRate, ImuOrientation, ImuPitch,
-    ImuRoll, ImuYaw, InputCurrent, InputVoltage, MosfetTemperature, MotorCurrentLimit,
-    MotorTemperature, OdometerMeters, TotalMotorCurrent, TripDistance, VehicleSpeed,
-    WattHoursCharged, WattHoursDischarged,
+    ImuRoll, ImuYaw, InputCurrent, InputCurrentLimit, InputVoltage, MosfetTemperature,
+    MotorCurrentLimit, MotorTemperature, OdometerMeters, TotalMotorCurrent, TripDistance,
+    VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 use vescpkg_rs_sys::raw::RemoteState;
 
@@ -26,16 +26,22 @@ static CURRENT_OFF_DELAY_COUNT: AtomicUsize = AtomicUsize::new(0);
 static CURRENT_COUNT: AtomicUsize = AtomicUsize::new(0);
 static DUTY_COUNT: AtomicUsize = AtomicUsize::new(0);
 static BRAKE_CURRENT_COUNT: AtomicUsize = AtomicUsize::new(0);
+static FOC_TONE_COUNT: AtomicUsize = AtomicUsize::new(0);
 static CURRENT_OFF_DELAY: AtomicU32 = AtomicU32::new(0);
 static CURRENT: AtomicU32 = AtomicU32::new(0);
 static DUTY: AtomicU32 = AtomicU32::new(0);
 static BRAKE_CURRENT: AtomicU32 = AtomicU32::new(0);
+static FOC_TONE_CHANNEL: AtomicI32 = AtomicI32::new(0);
+static FOC_TONE_FREQUENCY: AtomicU32 = AtomicU32::new(0);
+static FOC_TONE_VOLTAGE: AtomicU32 = AtomicU32::new(0);
 static ELECTRICAL_SPEED: AtomicU32 = AtomicU32::new(0);
 static VEHICLE_SPEED: AtomicU32 = AtomicU32::new(0);
 static MOTOR_CURRENT: AtomicU32 = AtomicU32::new(0);
 static DIRECTIONAL_MOTOR_CURRENT: AtomicU32 = AtomicU32::new(0);
 static MOTOR_CURRENT_MAX: AtomicU32 = AtomicU32::new(0);
 static MOTOR_CURRENT_MIN: AtomicU32 = AtomicU32::new(0);
+static INPUT_CURRENT_MAX: AtomicU32 = AtomicU32::new(0);
+static INPUT_CURRENT_MIN: AtomicU32 = AtomicU32::new(0);
 static MOSFET_TEMPERATURE_LIMIT_START: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE_LIMIT_START: AtomicU32 = AtomicU32::new(0);
 static DUTY_CYCLE_LIMIT: AtomicU32 = AtomicU32::new(0);
@@ -88,10 +94,14 @@ pub(crate) struct MotorOutputState {
     pub current_count: usize,
     pub duty_count: usize,
     pub brake_current_count: usize,
+    pub foc_tone_count: usize,
     pub current_off_delay: f32,
     pub current: f32,
     pub duty: f32,
     pub brake_current: f32,
+    pub foc_tone_channel: i32,
+    pub foc_tone_frequency: f32,
+    pub foc_tone_voltage: f32,
 }
 
 pub(crate) struct FirmwareLockGuard;
@@ -114,16 +124,22 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     CURRENT_COUNT.store(0, Ordering::Relaxed);
     DUTY_COUNT.store(0, Ordering::Relaxed);
     BRAKE_CURRENT_COUNT.store(0, Ordering::Relaxed);
+    FOC_TONE_COUNT.store(0, Ordering::Relaxed);
     CURRENT_OFF_DELAY.store(0.0_f32.to_bits(), Ordering::Relaxed);
     CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
     DUTY.store(0.0_f32.to_bits(), Ordering::Relaxed);
     BRAKE_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    FOC_TONE_CHANNEL.store(0, Ordering::Relaxed);
+    FOC_TONE_FREQUENCY.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    FOC_TONE_VOLTAGE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     ELECTRICAL_SPEED.store(0.0_f32.to_bits(), Ordering::Relaxed);
     VEHICLE_SPEED.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
     DIRECTIONAL_MOTOR_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_CURRENT_MAX.store(100.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_CURRENT_MIN.store((-100.0_f32).to_bits(), Ordering::Relaxed);
+    INPUT_CURRENT_MAX.store(100.0_f32.to_bits(), Ordering::Relaxed);
+    INPUT_CURRENT_MIN.store((-100.0_f32).to_bits(), Ordering::Relaxed);
     MOSFET_TEMPERATURE_LIMIT_START.store(85.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_TEMPERATURE_LIMIT_START.store(85.0_f32.to_bits(), Ordering::Relaxed);
     DUTY_CYCLE_LIMIT.store(0.95_f32.to_bits(), Ordering::Relaxed);
@@ -253,6 +269,11 @@ pub(crate) fn set_runtime_motor(
 pub(crate) fn set_motor_current_limits(max: MotorCurrentLimit, min: MotorCurrentLimit) {
     store(&MOTOR_CURRENT_MAX, max.current().as_amps());
     store(&MOTOR_CURRENT_MIN, -min.current().as_amps());
+}
+
+pub(crate) fn set_input_current_limits(max: InputCurrentLimit, min: InputCurrentLimit) {
+    store(&INPUT_CURRENT_MAX, max.current().as_amps());
+    store(&INPUT_CURRENT_MIN, -min.current().as_amps());
 }
 
 pub(crate) fn set_duty_cycle_limit(limit: crate::DutyCycleLimit) {
@@ -431,11 +452,23 @@ pub(crate) fn motor_output() -> MotorOutputState {
         current_count: CURRENT_COUNT.load(Ordering::Relaxed),
         duty_count: DUTY_COUNT.load(Ordering::Relaxed),
         brake_current_count: BRAKE_CURRENT_COUNT.load(Ordering::Relaxed),
+        foc_tone_count: FOC_TONE_COUNT.load(Ordering::Relaxed),
         current_off_delay: f32::from_bits(CURRENT_OFF_DELAY.load(Ordering::Relaxed)),
         current: f32::from_bits(CURRENT.load(Ordering::Relaxed)),
         duty: f32::from_bits(DUTY.load(Ordering::Relaxed)),
         brake_current: f32::from_bits(BRAKE_CURRENT.load(Ordering::Relaxed)),
+        foc_tone_channel: FOC_TONE_CHANNEL.load(Ordering::Relaxed),
+        foc_tone_frequency: f32::from_bits(FOC_TONE_FREQUENCY.load(Ordering::Relaxed)),
+        foc_tone_voltage: f32::from_bits(FOC_TONE_VOLTAGE.load(Ordering::Relaxed)),
     }
+}
+
+pub unsafe fn foc_play_tone(channel: i32, frequency: f32, voltage: f32) -> bool {
+    FOC_TONE_COUNT.fetch_add(1, Ordering::Relaxed);
+    FOC_TONE_CHANNEL.store(channel, Ordering::Relaxed);
+    FOC_TONE_FREQUENCY.store(frequency.to_bits(), Ordering::Relaxed);
+    FOC_TONE_VOLTAGE.store(voltage.to_bits(), Ordering::Relaxed);
+    true
 }
 
 pub unsafe fn timeout_reset() {
@@ -482,6 +515,8 @@ pub unsafe fn get_cfg_float(param: i32) -> f32 {
     match param {
         0 => load(&MOTOR_CURRENT_MAX),
         1 => load(&MOTOR_CURRENT_MIN),
+        2 => load(&INPUT_CURRENT_MAX),
+        3 => load(&INPUT_CURRENT_MIN),
         16 => load(&MOSFET_TEMPERATURE_LIMIT_START),
         18 => load(&MOTOR_TEMPERATURE_LIMIT_START),
         22 => load(&DUTY_CYCLE_LIMIT),

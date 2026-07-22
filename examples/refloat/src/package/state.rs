@@ -19,8 +19,8 @@ use crate::motor_control::RefloatMotorControl;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{AdcVoltage, FirmwareVersion};
 use vescpkg_rs::prelude::{
-    AngleRadians, BatteryCellCount, BatteryVoltage, Current, DutyCycleLimit, MosfetTemperature,
-    MotorCurrent, MotorCurrentLimit, MotorTemperature, Ratio, Rpm, Temperature,
+    AngleRadians, BatteryCellCount, BatteryVoltage, Current, DutyCycleLimit, InputCurrentLimit,
+    MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, Ratio, Rpm, Temperature,
     TemperatureLimitStart, TimestampTicks, Voltage,
 };
 use vescpkg_rs::{Imu, MotorOutput, MotorTelemetry};
@@ -36,6 +36,8 @@ mod flywheel;
 #[cfg(any(test, target_arch = "arm"))]
 mod footpad_runtime;
 mod handtest;
+#[cfg(any(test, target_arch = "arm"))]
+mod haptic_feedback;
 mod imu_runtime;
 mod limits;
 mod motor_acceleration;
@@ -56,6 +58,8 @@ mod tuning_tests;
 
 use alert_tracker::AlertTrackerState;
 use flywheel::RefloatFlywheelOffsets;
+#[cfg(any(test, target_arch = "arm"))]
+use haptic_feedback::{HapticFeedbackInput, HapticFeedbackState};
 use motor_acceleration::MotorAccelerationTracker;
 use remote_control::RemoteControlState;
 use ride_modifiers::{RideModifierInput, RideModifierState};
@@ -84,6 +88,8 @@ pub struct RefloatPackageState {
     all_data_payloads: RefloatAllDataPayloads,
     serialized_config: RefloatConfigImage,
     alert_tracker: AlertTrackerState,
+    #[cfg(any(test, target_arch = "arm"))]
+    haptic_feedback: HapticFeedbackState,
     beeper: RefloatBeeper,
     beeper_pin_configured: bool,
     duty_beeping: bool,
@@ -127,6 +133,8 @@ pub struct RefloatPackageState {
     duty_max_with_margin: DutyCycleLimit,
     motor_current_max: MotorCurrentLimit,
     motor_current_min: MotorCurrentLimit,
+    battery_current_max: InputCurrentLimit,
+    battery_current_min: InputCurrentLimit,
     mosfet_temperature: MosfetTemperature,
     motor_temperature: MotorTemperature,
     mosfet_temperature_limit_start: TemperatureLimitStart,
@@ -144,6 +152,8 @@ impl RefloatPackageState {
             all_data_payloads,
             serialized_config,
             alert_tracker: AlertTrackerState::default(),
+            #[cfg(any(test, target_arch = "arm"))]
+            haptic_feedback: HapticFeedbackState::new(),
             beeper: RefloatBeeper::new(serialized_config.beeper_enabled()),
             beeper_pin_configured: false,
             duty_beeping: false,
@@ -187,6 +197,8 @@ impl RefloatPackageState {
             duty_max_with_margin: DutyCycleLimit::new(Ratio::from_ratio_const(0.0)),
             motor_current_max: MotorCurrentLimit::new(Current::ZERO),
             motor_current_min: MotorCurrentLimit::new(Current::ZERO),
+            battery_current_max: InputCurrentLimit::new(Current::ZERO),
+            battery_current_min: InputCurrentLimit::new(Current::ZERO),
             mosfet_temperature: MosfetTemperature::new(Temperature::ZERO),
             motor_temperature: MotorTemperature::new(Temperature::ZERO),
             mosfet_temperature_limit_start: TemperatureLimitStart::new(Temperature::ZERO),
@@ -433,12 +445,14 @@ impl RefloatPackageState {
         &mut self,
         telemetry: &impl MotorTelemetry,
         imu: &impl Imu,
+        motor: &impl MotorOutput,
         footpad_adc1: AdcVoltage,
         footpad_adc2: AdcVoltage,
         system_time_ticks: TimestampTicks,
     ) {
         self.refresh_config_runtime_state();
         self.refresh_motor_runtime_state(telemetry);
+        self.refresh_haptic_runtime_state(motor, system_time_ticks);
         self.alert_tracker.update_firmware_fault(
             telemetry.firmware_fault(),
             system_time_ticks,
@@ -452,6 +466,63 @@ impl RefloatPackageState {
 
     fn handle_rc_move_packet(&mut self, bytes: &[u8]) -> bool {
         remote_control::handle_packet(self.all_data_payloads, &mut self.remote_control, bytes)
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    fn refresh_haptic_runtime_state(
+        &mut self,
+        motor: &impl MotorOutput,
+        system_time_ticks: TimestampTicks,
+    ) {
+        let config = self.serialized_config;
+        let base = self.all_data_payloads.base();
+        let ride_state = base.status().ride_state();
+        let filtered_current = base.motor().filtered_motor_current().current().current();
+        let braking = base.motor().motor_current().current().is_negative();
+        let current_limit = if braking {
+            self.motor_current_min
+        } else {
+            self.motor_current_max
+        };
+        let motor_saturation = if current_limit.current().is_positive() {
+            filtered_current.abs().as_amps() / current_limit.current().as_amps()
+        } else {
+            0.0
+        };
+        let battery_current = base.motor().battery_current().current();
+        let battery_limit = if battery_current.is_negative() {
+            self.battery_current_min
+        } else {
+            self.battery_current_max
+        };
+        let battery_saturation = if battery_limit.current().is_positive() {
+            battery_current.abs().as_amps() / battery_limit.current().as_amps()
+        } else {
+            0.0
+        };
+        self.haptic_feedback.update(
+            config.haptic(),
+            HapticFeedbackInput {
+                run_state: ride_state.run_state(),
+                mode: ride_state.mode(),
+                setpoint_adjustment: ride_state.setpoint_adjustment(),
+                duty_cycle: base.motor().duty_cycle().magnitude(),
+                duty_solid_threshold: Ratio::clamped(
+                    self.runtime_duty_pushback_threshold().as_ratio()
+                        + config.haptic().duty_solid_offset().as_ratio(),
+                ),
+                speed: base.motor().vehicle_speed().speed(),
+                current_saturation: Ratio::clamped(motor_saturation.max(battery_saturation)),
+                fatal_error: matches!(
+                    self.alert_tracker.fatal_error(),
+                    crate::domain::RefloatFatalErrorState::Present
+                ),
+            },
+            motor,
+            &mut self.motor_control,
+            system_time_ticks,
+            config.startup().sample_rate(),
+        );
     }
 
     /// Handle one app-data packet after refreshing live telemetry fields.
