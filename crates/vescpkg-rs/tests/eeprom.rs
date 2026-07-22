@@ -54,3 +54,15 @@ fn eeprom_words_round_trip_supported_scalar_codecs() {
     assert_eq!(EepromWord::from_i32(-42).to_i32(), -42);
     assert_eq!(EepromWord::from_f32(12.5).to_f32(), 12.5);
 }
+
+#[test]
+fn byte_images_can_start_at_an_explicit_word_address() {
+    let firmware = FirmwareTest::new();
+    let eeprom = firmware.eeprom();
+    let start = CustomEepromAddress::from_index(3).expect("address fits");
+
+    assert!(eeprom.write_bytes_at(start, &[9, 8, 7, 6, 5]));
+    let mut bytes = [0; 5];
+    assert!(eeprom.read_bytes_at(start, &mut bytes));
+    assert_eq!(bytes, [9, 8, 7, 6, 5]);
+}
