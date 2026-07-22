@@ -8,7 +8,7 @@ fn inputs_copy_remote_state_and_ppm_age() {
     let firmware = vescpkg_rs::test_support::FirmwareTest::new();
     let inputs = firmware.inputs();
 
-    let remote: RemoteInputSnapshot = inputs.remote();
+    let remote: RemoteInputSnapshot = inputs.remote().expect("remote capability");
     assert_eq!(remote.joystick_x().ratio().as_ratio(), -0.25);
     assert_eq!(remote.joystick_y().ratio().as_ratio(), 0.75);
     assert!(remote.bluetooth_connected());
