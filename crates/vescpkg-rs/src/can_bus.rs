@@ -1,10 +1,10 @@
 //! Safe CAN transport and status snapshots.
 
 use crate::types::{
-    CanControllerId, CanExtendedId, CanPayloadLen, CanStandardId, CurrentRelative, DutyCycle,
-    ElectricalSpeed, MotorCurrent, PidPosition,
+    AmpHoursCharged, AmpHoursDischarged, CanControllerId, CanExtendedId, CanPayloadLen,
+    CanStandardId, CurrentRelative, DutyCycle, ElectricalSpeed, MotorCurrent, PidPosition,
 };
-use crate::units::{Current, Rpm, SignedRatio, TimestampTicks};
+use crate::units::{Charge, Current, Rpm, SignedRatio, TimestampTicks};
 
 /// Failure returned by a CAN operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,6 +61,31 @@ pub struct CanStatus {
     electrical_speed: ElectricalSpeed,
     motor_current: MotorCurrent,
     duty_cycle: DutyCycle,
+}
+
+/// A copied snapshot of CAN status message 2.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CanStatus2 {
+    controller: CanControllerId,
+    amp_hours_discharged: AmpHoursDischarged,
+    amp_hours_charged: AmpHoursCharged,
+}
+
+impl CanStatus2 {
+    /// Return the controller whose status was queried.
+    pub const fn controller(self) -> CanControllerId {
+        self.controller
+    }
+
+    /// Return discharged amp-hours reported by the remote controller.
+    pub const fn amp_hours_discharged(self) -> AmpHoursDischarged {
+        self.amp_hours_discharged
+    }
+
+    /// Return charged amp-hours reported by the remote controller.
+    pub const fn amp_hours_charged(self) -> AmpHoursCharged {
+        self.amp_hours_charged
+    }
 }
 
 impl CanStatus {
@@ -191,6 +216,16 @@ impl CanBus {
             duty_cycle: DutyCycle::new(
                 SignedRatio::from_ratio(raw.duty).unwrap_or(SignedRatio::from_ratio_const(0.0)),
             ),
+        })
+    }
+
+    /// Copy CAN status message 2 for one remote controller.
+    pub fn status2(&self, controller: CanControllerId) -> Option<CanStatus2> {
+        let raw = unsafe { crate::ffi::can_status_msg_2_id(i32::from(controller.as_u8())) }?;
+        Some(CanStatus2 {
+            controller,
+            amp_hours_discharged: AmpHoursDischarged::new(Charge::from_amp_hours(raw.amp_hours)),
+            amp_hours_charged: AmpHoursCharged::new(Charge::from_amp_hours(raw.amp_hours_charged)),
         })
     }
 }
