@@ -269,6 +269,11 @@ impl FirmwareTest {
         crate::test_ffi::set_foc_open_loop_available(available);
     }
 
+    /// Toggle whether the fake firmware exposes its optional UART slots.
+    pub fn set_uart_available(&self, available: bool) {
+        crate::test_ffi::set_uart_available(available);
+    }
+
     /// Borrow the same typed thread capability package code uses on hardware.
     #[must_use]
     pub fn threads(&self) -> &impl crate::FirmwareThreads {

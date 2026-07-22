@@ -128,6 +128,7 @@ static FOC_ID_CURRENT: AtomicU32 = AtomicU32::new(0);
 static HAS_FOC_ID_CURRENT: AtomicBool = AtomicBool::new(false);
 static FOC_AUDIO_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static FOC_OPEN_LOOP_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static UART_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static DISTANCE_ABS: AtomicU32 = AtomicU32::new(0);
 static MOSFET_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
@@ -313,6 +314,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     HAS_FOC_ID_CURRENT.store(false, Ordering::Relaxed);
     FOC_AUDIO_AVAILABLE.store(true, Ordering::Relaxed);
     FOC_OPEN_LOOP_AVAILABLE.store(true, Ordering::Relaxed);
+    UART_AVAILABLE.store(true, Ordering::Relaxed);
     DISTANCE_ABS.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOSFET_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -1096,6 +1098,10 @@ pub(crate) fn set_foc_open_loop_available(available: bool) {
     FOC_OPEN_LOOP_AVAILABLE.store(available, Ordering::Relaxed);
 }
 
+pub(crate) fn set_uart_available(available: bool) {
+    UART_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
 pub(crate) fn set_imu_startup_done(done: bool) {
     IMU_STARTUP_DONE.store(done, Ordering::Relaxed);
 }
@@ -1488,15 +1494,17 @@ pub unsafe fn foc_play_audio_samples(
 }
 
 pub unsafe fn uart_start(_baudrate: u32, _half_duplex: bool) -> Option<bool> {
-    Some(true)
+    UART_AVAILABLE.load(Ordering::Relaxed).then_some(true)
 }
 
 pub unsafe fn uart_write(_data: *const u8, _size: u32) -> Option<bool> {
-    Some(true)
+    UART_AVAILABLE.load(Ordering::Relaxed).then_some(true)
 }
 
 pub unsafe fn uart_read() -> Option<i32> {
-    Some(i32::from(b'A'))
+    UART_AVAILABLE
+        .load(Ordering::Relaxed)
+        .then_some(i32::from(b'A'))
 }
 
 pub unsafe fn packet_init(
