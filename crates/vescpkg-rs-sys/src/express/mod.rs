@@ -233,4 +233,13 @@ mod tests {
         assert_eq!(table.function_address(79), None);
         assert_eq!(table.word(81), None);
     }
+
+    #[cfg(not(target_pointer_width = "32"))]
+    #[test]
+    fn fixed_target_loader_fails_closed_on_wide_hosts() {
+        assert_eq!(
+            unsafe { ExpressInterface::from_target(ExpressTarget::Esp32C3) },
+            Err(ExpressLoadError::UnsupportedPointerWidth)
+        );
+    }
 }
