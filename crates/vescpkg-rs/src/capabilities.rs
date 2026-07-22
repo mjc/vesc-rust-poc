@@ -206,7 +206,7 @@ impl fmt::Display for SettingsError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Rejected { operation } => write!(formatter, "firmware rejected {operation}"),
-            Self::InvalidValue => formatter.write_str("setting value must be finite"),
+            Self::InvalidValue => formatter.write_str("setting value is invalid"),
         }
     }
 }
