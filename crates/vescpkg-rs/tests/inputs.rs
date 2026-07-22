@@ -50,3 +50,17 @@ fn input_error_is_non_exhaustive_for_absent_capabilities() {
         "firmware does not expose this input capability"
     );
 }
+
+#[test]
+fn shutdown_inhibition_is_exclusive_and_restored_on_drop() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    let inputs = firmware.inputs();
+    let guard = inputs.inhibit_shutdown().expect("shutdown slot");
+    assert!(firmware.shutdown_disabled());
+    assert!(matches!(inputs.inhibit_shutdown(), Err(InputError::Busy)));
+    drop(guard);
+    assert!(!firmware.shutdown_disabled());
+
+    firmware.set_shutdown_disable_supported(false);
+    assert!(matches!(inputs.inhibit_shutdown(), Err(InputError::Unsupported)));
+}

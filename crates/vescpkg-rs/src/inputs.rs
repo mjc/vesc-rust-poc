@@ -2,6 +2,9 @@
 
 use crate::types::{JoystickX, JoystickY, PpmAge, PpmInput, RemoteAge, TimeoutDuration};
 use crate::{SignedRatio, VescSeconds};
+use core::sync::atomic::{AtomicBool, Ordering};
+
+static SHUTDOWN_INHIBIT_LIVE: AtomicBool = AtomicBool::new(false);
 
 /// Failure returned when an input/safety capability is unavailable or rejects a request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12,6 +15,8 @@ pub enum InputError {
     FirmwareRejected,
     /// Firmware returned a value outside the semantic input range.
     InvalidValue,
+    /// Another package-owned shutdown inhibition guard is active.
+    Busy,
 }
 
 impl core::fmt::Display for InputError {
@@ -20,6 +25,7 @@ impl core::fmt::Display for InputError {
             Self::Unsupported => "firmware does not expose this input capability",
             Self::FirmwareRejected => "firmware rejected the input capability operation",
             Self::InvalidValue => "firmware returned an invalid input value",
+            Self::Busy => "another shutdown inhibition guard is active",
         })
     }
 }
@@ -111,6 +117,16 @@ impl PpmSnapshot {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FirmwareInputs;
 
+/// RAII guard that keeps firmware automatic shutdown inhibited.
+pub struct ShutdownInhibit;
+
+impl Drop for ShutdownInhibit {
+    fn drop(&mut self) {
+        let _ = unsafe { crate::ffi::shutdown_disable(false) };
+        SHUTDOWN_INHIBIT_LIVE.store(false, Ordering::Release);
+    }
+}
+
 impl FirmwareInputs {
     /// Construct the firmware-backed input capability.
     pub const fn new() -> Self {
@@ -167,6 +183,18 @@ impl FirmwareInputs {
     /// Refresh the firmware motor-command timeout.
     pub fn reset_timeout(&self) {
         unsafe { crate::ffi::timeout_reset() }
+    }
+
+    /// Inhibit firmware automatic shutdown until the guard is dropped.
+    pub fn inhibit_shutdown(&self) -> Result<ShutdownInhibit, InputError> {
+        SHUTDOWN_INHIBIT_LIVE
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .map_err(|_| InputError::Busy)?;
+        if unsafe { crate::ffi::shutdown_disable(true) }.is_none() {
+            SHUTDOWN_INHIBIT_LIVE.store(false, Ordering::Release);
+            return Err(InputError::Unsupported);
+        }
+        Ok(ShutdownInhibit)
     }
 }
 
