@@ -54,6 +54,11 @@ impl<'a> ExpressInterface<'a> {
         self.table.function_address_at(slot)
     }
 
+    /// Return whether a named function slot is present and non-null.
+    pub fn has_function(self, slot: ExpressSlot) -> bool {
+        self.function_address(slot).is_some()
+    }
+
     /// Resolve a raw Express function pointer with its caller-selected C ABI.
     ///
     /// # Safety

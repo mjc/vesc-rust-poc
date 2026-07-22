@@ -120,6 +120,7 @@ mod tests {
         let interface = ExpressInterface::from_words(&[EXPRESS_C_IF_VERSION, 0, 0x1234]).unwrap();
         assert!(interface.has_slot(ExpressSlot::LbmSetErrorReason));
         assert!(!interface.has_slot(ExpressSlot::SleepMs));
+        assert!(!interface.has_function(ExpressSlot::LbmAddExtension));
         assert_eq!(
             interface.function_address(ExpressSlot::LbmSetErrorReason),
             Some(ExpressAddress::new(0x1234))
