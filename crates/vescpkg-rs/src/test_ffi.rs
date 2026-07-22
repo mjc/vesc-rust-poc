@@ -131,6 +131,7 @@ static FOC_OPEN_LOOP_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static UART_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static PACKET_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static COMMANDS_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static TERMINAL_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static DISTANCE_ABS: AtomicU32 = AtomicU32::new(0);
 static MOSFET_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
@@ -319,6 +320,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     UART_AVAILABLE.store(true, Ordering::Relaxed);
     PACKET_AVAILABLE.store(true, Ordering::Relaxed);
     COMMANDS_AVAILABLE.store(true, Ordering::Relaxed);
+    TERMINAL_AVAILABLE.store(true, Ordering::Relaxed);
     DISTANCE_ABS.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOSFET_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -1114,6 +1116,10 @@ pub(crate) fn set_commands_available(available: bool) {
     COMMANDS_AVAILABLE.store(available, Ordering::Relaxed);
 }
 
+pub(crate) fn set_terminal_available(available: bool) {
+    TERMINAL_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
 pub(crate) fn set_imu_startup_done(done: bool) {
     IMU_STARTUP_DONE.store(done, Ordering::Relaxed);
 }
@@ -1588,13 +1594,13 @@ pub unsafe fn terminal_register_command_callback(
     _arg_names: *const c_char,
     _callback: unsafe extern "C" fn(i32, *const *const c_char),
 ) -> bool {
-    true
+    TERMINAL_AVAILABLE.load(Ordering::Relaxed)
 }
 
 pub unsafe fn terminal_unregister_callback(
     _callback: unsafe extern "C" fn(i32, *const *const c_char),
 ) -> bool {
-    true
+    TERMINAL_AVAILABLE.load(Ordering::Relaxed)
 }
 
 pub unsafe fn encoder_set_custom_callbacks(
