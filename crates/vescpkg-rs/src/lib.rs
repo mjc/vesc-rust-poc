@@ -59,8 +59,7 @@ pub(crate) mod ffi {
     #[cfg(any(test, not(feature = "test-support")))]
     pub use vescpkg_rs_sys::raw::{
         can_ping, can_set_current, can_set_current_rel, can_set_duty, can_set_pos, can_set_rpm,
-        can_status_msg_id, can_transmit_eid, can_transmit_sid, io_read, io_read_analog,
-        io_set_mode, io_write,
+        can_status_msg_id, can_transmit_eid, can_transmit_sid,
     };
     #[allow(unused_imports)]
     pub use vescpkg_rs_sys::raw::{
@@ -69,6 +68,8 @@ pub(crate) mod ffi {
         vesc_clear_imu_read_callback, vesc_get_arg, vesc_malloc, vesc_send_app_data,
         vesc_set_app_data_handler, vesc_set_imu_read_callback,
     };
+    #[cfg(all(not(test), not(feature = "test-support")))]
+    pub use vescpkg_rs_sys::raw::{io_read, io_read_analog, io_set_mode, io_write};
     pub use vescpkg_rs_sys::{AppDataHandler, LibInfo, NativeImage};
 
     #[cfg(all(feature = "test-support", not(test)))]
