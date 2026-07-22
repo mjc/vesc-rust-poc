@@ -3,7 +3,7 @@
 //! Integration tests for the safe LispBM value predicates.
 
 use vescpkg_rs::test_support::FirmwareTest;
-use vescpkg_rs::{LispSymbol, LispValue};
+use vescpkg_rs::{LispContextId, LispSymbol, LispValue};
 
 #[test]
 fn lisp_values_expose_explicit_kind_predicates() {
@@ -58,4 +58,6 @@ fn lisp_values_expose_explicit_kind_predicates() {
     assert!(symbol_value.is_symbol());
     assert_eq!(symbol_value.symbol_id(), Some(symbol));
     assert_eq!(integer.symbol_id(), None);
+
+    assert!(integer.send_to(LispContextId::new(9)).is_ok());
 }
