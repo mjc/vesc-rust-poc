@@ -321,6 +321,23 @@ fn vesc_if_manifest_matches_generated_header_descriptors() {
 }
 
 #[test]
+fn vesc_if_manifest_presence_gate_distinguishes_callable_holes_from_scalars() {
+    for (index, entry) in VescIfAbi::ALL_ENTRIES.iter().enumerate() {
+        let mut words = [1_usize; VescIfAbi::FIELD_COUNT];
+        words[index] = 0;
+        let presence = crate::VescIfPresence::from_words(&words);
+
+        if entry.is_callable() {
+            assert!(!presence.contains_index(index), "callable slot {index} must be absent");
+            assert_eq!(entry.kind(), VescIfSlotKind::Function);
+        } else {
+            assert!(presence.contains_index(index), "scalar slot {index} must remain present");
+            assert_eq!(entry.kind(), VescIfSlotKind::Scalar);
+        }
+    }
+}
+
+#[test]
 fn vesc_if_presence_tracks_holes_and_profiles_from_observed_words() {
     let mut words = [1_usize; VescIfAbi::FIELD_COUNT];
     words[VescIfAbi::SYSTEM_TIME_TICKS.slot_index()] = 0;
