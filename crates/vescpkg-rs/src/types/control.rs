@@ -75,7 +75,7 @@ impl MotorCurrent {
     /// Apply a dimensionless control-gain scale without erasing the current type.
     #[inline(always)]
     pub const fn scaled_by(self, scale: PidScale) -> Self {
-        Self::new(Current::from_amps(self.current().as_amps() * scale.0))
+        Self::new(self.current().scaled_by(scale.0))
     }
 }
 
