@@ -1,6 +1,6 @@
 # vescpkg-rs-sys testing
 
-Strategy for the `vescpkg-rs-sys` crate: a hand-maintained, `no_std` firmware ABI mirror. Tests focus on **layout contracts**, **dispatch behavior** through injectable mock tables, and **guardrails** — not firmware HIL.
+Strategy for the `vescpkg-rs-sys` crate: a `no_std` firmware ABI layer generated from the pinned VESC package header with bindgen. Tests focus on **layout contracts**, **dispatch behavior** through injectable mock tables, and **guardrails** — not firmware HIL.
 
 ## Test pyramid
 
@@ -9,7 +9,7 @@ Strategy for the `vescpkg-rs-sys` crate: a hand-maintained, `no_std` firmware AB
 | Compile-fail | `unsafe` required, no `std` leak, crate-internal test harness | rustdoc contracts in `src/compile_fail_contracts.md` |
 | Layout / ABI pins | `LibInfo`, `VescIf` size/offsets, newtypes | `src/tests.rs` |
 | Raw dispatch | mock `VescIf` + stub call recording | `src/raw/dispatch_tests.rs` |
-| Header parity | independent libclang audit of generated slots | `src/raw/abi_audit.rs` |
+| Header parity | bindgen-generated table inventory | `build.rs`, `src/vesc_if.rs` |
 | Thumb/asm smoke | `ldr` immediates vs `VescIfAbi` | `src/tests.rs` |
 
 ## Public export inventory
@@ -53,17 +53,18 @@ It is not a downstream feature surface; the compile-fail tests intentionally pro
 
 Production ARM builds keep inline `asm!` dispatch; host/test builds use `Option<fn>` slots on the mock table.
 
-## Independent header audit
+## Generated header inventory
 
-`raw::abi_audit` asks libclang to lay out the pinned `vesc_c_if` for
-`arm-none-eabi`, then compares every field's name, declaration shape, size,
-and byte offset with both the generated slot inventory and the hand-written
-Rust `VescIf` table. This deliberately does not reuse the build script's C
-declaration parser.
+The build script invokes bindgen against the vendored copy of the pinned
+`vesc_c_if.h` using the firmware's `arm-none-eabi` target configuration. A
+workspace build verifies that copy against the pinned `vesc_pkg_lib` submodule;
+the vendored copy keeps `cargo package` and relocated builds self-contained.
+The semantic slot manifest is derived from bindgen's generated `vesc_c_if`
+definition, so field names, order, signatures, and ABI structs come directly
+from the header.
 
-Libclang is a test-only dependency. Normal `vescpkg-rs-sys` builds remain
-dependency-free; the Nix development shell supplies libclang and sets
-`LIBCLANG_PATH` for `make check`.
+Libclang is therefore a build-time dependency. The Nix development shell
+supplies it and sets `LIBCLANG_PATH` for the normal build and test commands.
 
 ## Boundary: what not to test here
 
@@ -84,7 +85,7 @@ dependency-free; the Nix development shell supplies libclang and sets
 
 ## Adding a new `raw::*` wrapper
 
-1. Add field to `raw::VescIf` in header order and keep the generated parity checks green.
+1. Update the pinned header, then regenerate through the normal bindgen build.
 2. Add `VescIfAbi` slot to `USED_SLOTS`.
 3. Extend `vesc_if_offsets_for_tests()` and layout tests.
 4. Add dispatch tests (Some + None paths) using `test_support`.

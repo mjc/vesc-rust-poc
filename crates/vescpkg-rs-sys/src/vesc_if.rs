@@ -2,7 +2,7 @@
 
 use crate::{c_vesc_if, image::NativeAddress};
 
-const PRESENCE_WORD_COUNT: usize = (c_vesc_if::FIELD_COUNT + 63) / 64;
+const PRESENCE_WORD_COUNT: usize = c_vesc_if::FIELD_COUNT.div_ceil(64);
 
 /// One entry in the VESC firmware function table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,8 +24,6 @@ pub enum VescIfSlotKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VescIfManifestEntry {
     pub(crate) slot: VescIfSlot,
-    pub(crate) header_line: usize,
-    pub(crate) declaration: &'static str,
     pub(crate) kind: VescIfSlotKind,
 }
 
@@ -33,16 +31,6 @@ impl VescIfManifestEntry {
     /// Return the slot identity and 32-bit offset.
     pub const fn slot(self) -> VescIfSlot {
         self.slot
-    }
-
-    /// Return the source header line for this declaration.
-    pub const fn header_line(self) -> usize {
-        self.header_line
-    }
-
-    /// Return the normalized C declaration captured from the pinned header.
-    pub const fn declaration(self) -> &'static str {
-        self.declaration
     }
 
     /// Return whether the entry is callable through a function pointer.
@@ -138,7 +126,7 @@ impl VescIfPresence {
         }
     }
 
-    const fn set(&mut self, index: usize) {
+    pub(crate) const fn set(&mut self, index: usize) {
         self.bits[index / 64] |= 1_u64 << (index % 64);
     }
 }
@@ -207,18 +195,13 @@ impl VescIfSlot {
     pub const fn slot_index(self) -> usize {
         self.offset / 4
     }
-
-    /// Convert the 32-bit slot offset into a host-byte offset.
-    pub const fn host_byte_offset(self, pointer_size: usize) -> usize {
-        self.slot_index() * pointer_size
-    }
 }
 
 /// ABI anchor and slot metadata for the VESC firmware function table.
 pub struct VescIfAbi;
 
 macro_rules! define_vesc_if_abi {
-    ($($const_name:ident => $slot_name:ident),+ $(,)?) => {
+    ($($const_name:ident => $slot_name:literal, $slot_offset:expr),+ $(,)?) => {
         impl VescIfAbi {
             /// Base address of the firmware function table on VESC targets.
             pub const BASE_ADDR: NativeAddress = NativeAddress(0x1000_f800);
@@ -227,15 +210,15 @@ macro_rules! define_vesc_if_abi {
             /// Number of callable function-pointer entries in the manifest.
             pub const CALLABLE_SLOT_COUNT: usize = c_vesc_if::CALLABLE_SLOT_COUNT;
             /// First slot added by the firmware 6.05 interface extension.
-            pub const BASE_SLOT_COUNT: usize = c_vesc_if::lbm_start_flatten::INDEX;
+            pub const BASE_SLOT_COUNT: usize = c_vesc_if::FIRMWARE_605_FIRST_SLOT;
             /// First slot added by the firmware 6.06 interface extension.
-            pub const FIRMWARE_605_SLOT_COUNT: usize = c_vesc_if::thread_set_priority::INDEX;
+            pub const FIRMWARE_605_SLOT_COUNT: usize = c_vesc_if::FIRMWARE_606_FIRST_SLOT;
             /// Complete ordered manifest of every entry in the pinned `VESC_IF` table.
             ///
             /// `ALL_SLOTS` is the authoritative layout inventory and is generated directly
             /// from the pinned header. The named constants below remain compatibility aliases.
             pub const ALL_SLOTS: [VescIfSlot; Self::FIELD_COUNT] = c_vesc_if::ALL_SLOTS;
-            /// Complete declaration, source-line, and offset metadata for every ABI slot.
+            /// Complete kind and offset metadata for every ABI slot.
             pub const ALL_ENTRIES: [VescIfManifestEntry; Self::FIELD_COUNT] =
                 c_vesc_if::ALL_ENTRIES;
             /// Repository containing the pinned ABI header.
@@ -248,10 +231,10 @@ macro_rules! define_vesc_if_abi {
             pub const USED_SLOT_COUNT: usize = Self::FIELD_COUNT;
 
             $(
-                #[doc = concat!("Slot for `", stringify!($slot_name), "`.")]
+                #[doc = concat!("Slot for `", $slot_name, "`.")]
                 pub const $const_name: VescIfSlot = VescIfSlot::new(
-                    c_vesc_if::$slot_name::NAME,
-                    c_vesc_if::$slot_name::VESC32_BYTE_OFFSET,
+                    $slot_name,
+                    $slot_offset,
                 );
             )+
 

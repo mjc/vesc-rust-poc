@@ -2,26 +2,62 @@
 
 use std::{env, fmt::Write as _, fs, path::PathBuf};
 
-#[path = "build/vesc_if.rs"]
-mod vesc_if;
-
-use vesc_if::{SlotDeclaration, SlotKind};
+use syn::{Fields, Item, Type};
 
 const HEADER_REPO: &str = "https://github.com/lukash/vesc_pkg_lib";
 const HEADER_COMMIT: &str = "e8bdc8296b90a266713da3762868f0d18ec027fe";
 const HEADER_PATH: &str = "third_party/vesc_pkg_lib/vesc_c_if.h";
+const VENDORED_HEADER_PATH: &str = "vendor/vesc_pkg_lib/vesc_c_if.h";
+
+#[derive(Clone, Copy)]
+enum SlotKind {
+    Function,
+    Scalar,
+}
+
+struct SlotDeclaration {
+    c_name: String,
+    index: usize,
+    kind: SlotKind,
+}
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("manifest dir"));
-    let workspace = manifest_dir.join("../..");
-    let header = workspace.join(HEADER_PATH);
-    let out = PathBuf::from(env::var("OUT_DIR").expect("out dir")).join("c_vesc_if.rs");
+    let header = manifest_dir.join(VENDORED_HEADER_PATH);
+    let workspace_header = manifest_dir.join("../..").join(HEADER_PATH);
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("out dir"));
+    let out = out_dir.join("c_vesc_if.rs");
+    let bindings_path = out_dir.join("bindings.rs");
 
     println!("cargo::rustc-check-cfg=cfg(coverage)");
     println!("cargo:rerun-if-changed={}", header.display());
-    let source = fs::read_to_string(&header).expect(HEADER_PATH);
-    let slots = vesc_if::parse(&source)
-        .unwrap_or_else(|error| panic!("failed to parse {}: {error}", header.display()));
+    if workspace_header.exists() {
+        println!("cargo:rerun-if-changed={}", workspace_header.display());
+        assert_eq!(
+            fs::read(&header).expect("read vendored VESC header"),
+            fs::read(&workspace_header).expect("read pinned VESC header"),
+            "vendored VESC header must match the pinned vesc_pkg_lib submodule"
+        );
+    }
+
+    let bindings = bindgen::Builder::default()
+        .header(header.to_string_lossy())
+        .allowlist_type("^(vesc_c_if|lbm_array_header_t)$")
+        .clang_arg("-DIS_VESC_LIB")
+        .clang_arg("--target=arm-none-eabi")
+        .clang_arg("-mcpu=cortex-m4")
+        .clang_arg("-mfpu=fpv4-sp-d16")
+        .clang_arg("-mfloat-abi=hard")
+        .use_core()
+        .layout_tests(false)
+        .generate_comments(false)
+        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+        .generate()
+        .expect("generate VESC C ABI bindings");
+    let generated_bindings = bindings.to_string();
+    fs::write(&bindings_path, &generated_bindings).expect("write VESC C ABI bindings");
+
+    let slots = slots_from_bindings(&generated_bindings);
     assert!(
         !slots.is_empty(),
         "failed to parse vesc_c_if slots from {}",
@@ -31,6 +67,46 @@ fn main() {
     fs::write(out, generated_rust(&slots)).expect("write generated c_vesc_if.rs");
 }
 
+fn slots_from_bindings(bindings: &str) -> Vec<SlotDeclaration> {
+    let file = syn::parse_file(bindings).expect("parse generated VESC Rust bindings");
+    let table = file
+        .items
+        .into_iter()
+        .find_map(|item| match item {
+            Item::Struct(item) if item.ident == "vesc_c_if" => Some(item),
+            _ => None,
+        })
+        .expect("bindgen must generate vesc_c_if");
+    let Fields::Named(fields) = table.fields else {
+        panic!("bindgen vesc_c_if must have named fields");
+    };
+
+    fields
+        .named
+        .into_iter()
+        .enumerate()
+        .map(|(index, field)| SlotDeclaration {
+            c_name: field.ident.expect("named VESC_IF field").to_string(),
+            index,
+            kind: if is_function_slot(&field.ty) {
+                SlotKind::Function
+            } else {
+                SlotKind::Scalar
+            },
+        })
+        .collect()
+}
+
+fn is_function_slot(ty: &Type) -> bool {
+    let Type::Path(path) = ty else {
+        return false;
+    };
+    let Some(ident) = path.path.segments.last().map(|segment| &segment.ident) else {
+        return false;
+    };
+    ident != "u32" && ident != "lbm_uint"
+}
+
 fn generated_rust(slots: &[SlotDeclaration]) -> String {
     let mut rust = String::new();
 
@@ -38,15 +114,6 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
     rust.push_str(HEADER_PATH);
     rust.push_str(".\n");
     rust.push_str("// Do not edit by hand; update the vesc_pkg_lib submodule instead.\n\n");
-    rust.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
-    rust.push_str("pub(crate) struct Slot {\n");
-    rust.push_str("    pub(crate) name: &'static str,\n");
-    rust.push_str("    pub(crate) index: usize,\n");
-    rust.push_str("    pub(crate) vesc32_byte_offset: usize,\n");
-    rust.push_str("    pub(crate) header_line: usize,\n");
-    rust.push_str("    pub(crate) declaration: &'static str,\n");
-    rust.push_str("    pub(crate) kind: crate::VescIfSlotKind,\n");
-    rust.push_str("}\n\n");
     writeln!(
         rust,
         "pub(crate) const HEADER_REPO: &str = \"{HEADER_REPO}\";"
@@ -77,32 +144,26 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
             .count()
     )
     .expect("write generated Rust");
+    writeln!(
+        rust,
+        "pub(crate) const FIRMWARE_605_FIRST_SLOT: usize = {};",
+        slot_index(slots, "lbm_start_flatten")
+    )
+    .expect("write generated Rust");
+    writeln!(
+        rust,
+        "pub(crate) const FIRMWARE_606_FIRST_SLOT: usize = {};",
+        slot_index(slots, "thread_set_priority")
+    )
+    .expect("write generated Rust");
     rust.push('\n');
-    rust.push_str("pub(crate) const SLOTS: [Slot; FIELD_COUNT] = [\n");
-    for slot in slots {
-        writeln!(
-            rust,
-            "    Slot {{ name: \"{}\", index: {}, vesc32_byte_offset: {}, header_line: {}, declaration: {:?}, kind: crate::VescIfSlotKind::{} }},",
-            slot.c_name,
-            slot.index,
-            slot.index * 4,
-            slot.line,
-            slot.declaration,
-            slot_kind_name(slot.kind)
-        )
-        .expect("write generated Rust");
-    }
-    rust.push_str("];\n\n");
-
     rust.push_str("pub(crate) const ALL_ENTRIES: [crate::VescIfManifestEntry; FIELD_COUNT] = [\n");
     for slot in slots {
         writeln!(
             rust,
-            "    crate::VescIfManifestEntry {{ slot: crate::VescIfSlot::new(\"{}\", {}), header_line: {}, declaration: {:?}, kind: crate::VescIfSlotKind::{} }},",
+            "    crate::VescIfManifestEntry {{ slot: crate::VescIfSlot::new(\"{}\", {}), kind: crate::VescIfSlotKind::{} }},",
             slot.c_name,
             slot.index * 4,
-            slot.line,
-            slot.declaration,
             slot_kind_name(slot.kind)
         )
         .expect("write generated Rust");
@@ -121,15 +182,33 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
     }
     rust.push_str("];\n\n");
 
+    rust.push_str(
+        "pub(crate) fn presence(table: &crate::bindgen::vesc_c_if) -> crate::VescIfPresence {\n",
+    );
+    rust.push_str("    let mut presence = crate::VescIfPresence::empty();\n");
+    for slot in slots {
+        match slot.kind {
+            SlotKind::Function => writeln!(
+                rust,
+                "    if table.{}.is_some() {{ presence.set({}); }}",
+                slot.c_name, slot.index
+            ),
+            SlotKind::Scalar => writeln!(rust, "    presence.set({});", slot.index),
+        }
+        .expect("write generated Rust");
+    }
+    rust.push_str("    presence\n}\n\n");
+
     rust.push_str("macro_rules! define_vesc_if_manifest_constants {\n");
     rust.push_str("    ($macro:ident) => {\n");
     rust.push_str("        $macro! {\n");
     for slot in slots {
         writeln!(
             rust,
-            "            {} => {},",
-            slot.rust_name.to_ascii_uppercase(),
-            slot.rust_name
+            "            {} => \"{}\", {},",
+            slot.c_name.to_ascii_uppercase(),
+            slot.c_name,
+            slot.index * 4
         )
         .expect("write generated Rust");
     }
@@ -138,45 +217,15 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
     rust.push_str("}\n");
     rust.push_str("pub(crate) use define_vesc_if_manifest_constants;\n\n");
 
-    rust.push_str("#[cfg(test)]\n");
-    rust.push_str("macro_rules! rust_field_offsets {\n");
-    rust.push_str("    ($table:path) => {\n");
-    rust.push_str("        [\n");
-    for slot in slots {
-        writeln!(
-            rust,
-            "            core::mem::offset_of!($table, {}),",
-            slot.rust_name
-        )
-        .expect("write generated Rust");
-    }
-    rust.push_str("        ]\n");
-    rust.push_str("    };\n");
-    rust.push_str("}\n");
-    rust.push_str("#[cfg(test)]\n");
-    rust.push_str("pub(crate) use rust_field_offsets;\n\n");
-
-    for slot in slots {
-        writeln!(rust, "pub(crate) mod {} {{", slot.rust_name).expect("write generated Rust");
-        writeln!(
-            rust,
-            "    pub(crate) const NAME: &str = \"{}\";",
-            slot.c_name
-        )
-        .expect("write generated Rust");
-        writeln!(rust, "    pub(crate) const INDEX: usize = {};", slot.index)
-            .expect("write generated Rust");
-        rust.push_str("    pub(crate) const VESC32_BYTE_OFFSET: usize = INDEX * 4;\n");
-        writeln!(
-            rust,
-            "    pub(crate) const HEADER_LINE: usize = {};",
-            slot.line
-        )
-        .expect("write generated Rust");
-        rust.push_str("}\n\n");
-    }
-
     rust
+}
+
+fn slot_index(slots: &[SlotDeclaration], name: &str) -> usize {
+    slots
+        .iter()
+        .find(|slot| slot.c_name == name)
+        .unwrap_or_else(|| panic!("bindgen VESC_IF must contain {name}"))
+        .index
 }
 
 fn slot_kind_name(kind: SlotKind) -> &'static str {

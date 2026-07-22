@@ -75,35 +75,35 @@ fn lib_info_repr_c_layout_scales_with_the_compilation_pointer_width() {
 }
 
 #[test]
-fn raw_vesc_if_offsets_match_the_documented_32_bit_package_header_slots() {
-    let expected =
-        VescIfAbi::USED_SLOTS.map(|slot| slot.host_byte_offset(core::mem::size_of::<usize>()));
-
-    assert_eq!(crate::raw::vesc_if_offsets_for_tests(), expected);
-}
-
-#[test]
 fn raw_vesc_if_table_covers_the_current_vesc_firmware_header() {
     let pointer_size = core::mem::size_of::<usize>();
-    let expected_fields = VescIfAbi::FIELD_COUNT;
+    let table_size = core::mem::size_of::<crate::raw::VescIf>();
 
+    assert_eq!(core::mem::align_of::<crate::raw::VescIf>(), pointer_size);
     assert_eq!(
-        crate::raw::vesc_if_full_layout_for_tests(),
-        (
-            expected_fields * pointer_size,
-            pointer_size,
-            (expected_fields - 1) * pointer_size
-        )
+        core::mem::offset_of!(crate::raw::VescIf, lbm_enc_sym_true),
+        core::mem::offset_of!(crate::raw::VescIf, lbm_enc_sym_nil) + 4
+    );
+    assert_eq!(
+        core::mem::offset_of!(crate::raw::VescIf, lbm_is_symbol_nil),
+        core::mem::offset_of!(crate::raw::VescIf, lbm_enc_sym_merror) + 8
+    );
+    assert_eq!(
+        table_size,
+        core::mem::offset_of!(crate::raw::VescIf, shutdown_disable) + pointer_size
     );
 }
 
 #[test]
 fn raw_vesc_if_mock_function_slots_have_pointer_layout() {
     let pointer_size = core::mem::size_of::<usize>();
-
     assert_eq!(
-        crate::raw::mock_fn_slot_layout_for_tests(),
-        (pointer_size, pointer_size)
+        core::mem::size_of::<Option<unsafe extern "C" fn()>>(),
+        pointer_size
+    );
+    assert_eq!(
+        core::mem::align_of::<Option<unsafe extern "C" fn()>>(),
+        pointer_size
     );
 }
 
@@ -131,41 +131,33 @@ fn concrete_abi_types_match_the_pinned_stm32_word_layout() {
     let packet_size = pointer_size * 2 + 12 + (512 + 8) * 2;
     assert_eq!(
         core::mem::size_of::<crate::raw::PacketState>(),
-        (packet_size + pointer_size - 1) / pointer_size * pointer_size
+        packet_size.div_ceil(pointer_size) * pointer_size
     );
     assert_eq!(core::mem::offset_of!(crate::raw::GnssData, last_update), 36);
     assert_eq!(
-        core::mem::offset_of!(crate::raw::AttitudeInfo, initial_update_done),
+        core::mem::offset_of!(crate::raw::AttitudeInfo, initialUpdateDone),
         32
     );
 }
 
 #[test]
-fn eeprom_values_round_trip_through_typed_union_helpers() {
-    let unsigned = crate::raw::EepromVar::from_u32(0xfeed_beef);
-    assert_eq!(unsigned.read_u32(), 0xfeed_beef);
+fn eeprom_values_preserve_the_generated_union_bits() {
+    let unsigned = crate::raw::EepromVar {
+        as_u32: 0xfeed_beef,
+    };
+    assert_eq!(unsafe { unsigned.as_u32 }, 0xfeed_beef);
 
-    let signed = crate::raw::EepromVar::from_i32(-42);
-    assert_eq!(signed.read_i32(), -42);
+    let signed = crate::raw::EepromVar { as_i32: -42 };
+    assert_eq!(unsafe { signed.as_i32 }, -42);
 
-    let floating = crate::raw::EepromVar::from_float(12.5);
-    assert_eq!(floating.read_float(), 12.5);
+    let floating = crate::raw::EepromVar { as_float: 12.5 };
+    assert_eq!(unsafe { floating.as_float }, 12.5);
 }
 
 #[test]
 fn vesc_if_slot_constants_name_the_package_header_offsets() {
     assert_eq!(VescIfAbi::BASE_ADDR, NativeAddress(0x1000_f800));
     assert_eq!(VescIfAbi::USED_SLOT_COUNT, VescIfAbi::USED_SLOTS.len());
-
-    for slot in VescIfAbi::USED_SLOTS {
-        let generated = crate::c_vesc_if::SLOTS
-            .iter()
-            .find(|generated| generated.name == slot.name())
-            .expect("used VESC_IF slot must exist in generated header inventory");
-
-        assert_eq!(generated.index, slot.slot_index());
-        assert_eq!(generated.vesc32_byte_offset, slot.vesc32_byte_offset());
-    }
 
     assert!(VescIfAbi::USED_SLOTS.contains(&VescIfAbi::SLEEP_US));
     assert!(VescIfAbi::USED_SLOTS.contains(&VescIfAbi::FOC_GET_ID));
@@ -174,14 +166,12 @@ fn vesc_if_slot_constants_name_the_package_header_offsets() {
     assert_eq!(VescIfAbi::SHUTDOWN_DISABLE.slot_index(), 252);
 }
 #[test]
-fn vesc_if_slot_host_byte_offset_scales_with_pointer_width() {
-    let pointer_size = core::mem::size_of::<usize>();
+fn vesc_if_slot_reports_firmware_offsets() {
     let slot = VescIfSlot::new("custom", 64);
 
     assert_eq!(slot.name(), "custom");
     assert_eq!(slot.vesc32_byte_offset(), 64);
     assert_eq!(slot.slot_index(), 16);
-    assert_eq!(slot.host_byte_offset(pointer_size), 16 * pointer_size);
 }
 
 #[test]
@@ -278,33 +268,39 @@ fn transparent_wrappers_expose_raw_tuple_fields() {
 #[test]
 fn vesc_if_manifest_matches_generated_header_descriptors() {
     assert_eq!(crate::c_vesc_if::FIELD_COUNT, VescIfAbi::FIELD_COUNT);
+    assert_eq!(VescIfAbi::FIELD_COUNT, 253);
     assert_eq!(VescIfAbi::CALLABLE_SLOT_COUNT, 248);
     assert_eq!(VescIfAbi::ALL_SLOTS.len(), VescIfAbi::FIELD_COUNT);
     assert_eq!(VescIfAbi::ALL_ENTRIES.len(), VescIfAbi::FIELD_COUNT);
-    assert_eq!(crate::c_vesc_if::SLOTS[0].name, "lbm_add_extension");
     assert_eq!(
-        crate::c_vesc_if::SLOTS[crate::c_vesc_if::FIELD_COUNT - 1].name,
-        "shutdown_disable"
+        VescIfAbi::SOURCE_REPOSITORY,
+        "https://github.com/lukash/vesc_pkg_lib"
     );
-    for (index, slot) in VescIfAbi::ALL_SLOTS.iter().enumerate() {
+    assert_eq!(
+        VescIfAbi::SOURCE_COMMIT,
+        "e8bdc8296b90a266713da3762868f0d18ec027fe"
+    );
+    assert_eq!(
+        VescIfAbi::SOURCE_HEADER,
+        "third_party/vesc_pkg_lib/vesc_c_if.h"
+    );
+    assert_eq!(VescIfAbi::ALL_SLOTS[0].name(), "lbm_add_extension");
+    assert_eq!(VescIfAbi::ALL_SLOTS[252].name(), "shutdown_disable");
+
+    for (index, (slot, entry)) in VescIfAbi::ALL_SLOTS
+        .iter()
+        .zip(VescIfAbi::ALL_ENTRIES.iter())
+        .enumerate()
+    {
         assert_eq!(slot.slot_index(), index);
-        assert_eq!(slot.name(), crate::c_vesc_if::SLOTS[index].name);
-        assert_eq!(
-            slot.vesc32_byte_offset(),
-            crate::c_vesc_if::SLOTS[index].vesc32_byte_offset
-        );
-        assert_eq!(VescIfAbi::ALL_ENTRIES[index].slot(), *slot);
+        assert_eq!(entry.slot(), *slot);
     }
-    assert_eq!(VescIfAbi::ALL_ENTRIES[0].header_line(), 325);
-    assert_eq!(
-        VescIfAbi::ALL_ENTRIES[0].declaration(),
-        "load_extension_fptr lbm_add_extension;"
-    );
     assert_eq!(VescIfAbi::ALL_ENTRIES[0].kind(), VescIfSlotKind::Function);
-    assert_eq!(
-        VescIfAbi::ALL_ENTRIES[crate::c_vesc_if::lbm_enc_sym_nil::INDEX].kind(),
-        VescIfSlotKind::Scalar
-    );
+    let scalar = VescIfAbi::ALL_ENTRIES
+        .iter()
+        .find(|entry| entry.slot().name() == "lbm_enc_sym_nil")
+        .expect("bindgen scalar slot");
+    assert_eq!(scalar.kind(), VescIfSlotKind::Scalar);
     assert_eq!(
         VescIfAbi::ALL_ENTRIES
             .iter()
@@ -312,22 +308,13 @@ fn vesc_if_manifest_matches_generated_header_descriptors() {
             .count(),
         VescIfAbi::CALLABLE_SLOT_COUNT
     );
-
-    for slot in VescIfAbi::USED_SLOTS {
-        let generated = crate::c_vesc_if::SLOTS
-            .iter()
-            .find(|generated| generated.name == slot.name())
-            .expect("used VESC_IF slot must exist in generated header inventory");
-
-        assert_eq!(generated.vesc32_byte_offset, slot.vesc32_byte_offset());
-    }
 }
 
 #[test]
 fn vesc_if_presence_tracks_holes_and_profiles_from_observed_words() {
     let mut words = [1_usize; VescIfAbi::FIELD_COUNT];
-    words[crate::c_vesc_if::system_time_ticks::INDEX] = 0;
-    words[crate::c_vesc_if::thread_set_priority::INDEX] = 0;
+    words[VescIfAbi::SYSTEM_TIME_TICKS.slot_index()] = 0;
+    words[VescIfAbi::THREAD_SET_PRIORITY.slot_index()] = 0;
 
     let presence = crate::VescIfPresence::from_words(&words);
     assert!(presence.contains(VescIfAbi::LBM_ADD_EXTENSION));

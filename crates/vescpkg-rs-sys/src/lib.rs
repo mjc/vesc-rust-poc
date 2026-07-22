@@ -21,6 +21,18 @@ mod image;
 mod c_vesc_if {
     include!(concat!(env!("OUT_DIR"), "/c_vesc_if.rs"));
 }
+
+#[allow(
+    clippy::all,
+    dead_code,
+    non_camel_case_types,
+    non_snake_case,
+    non_upper_case_globals,
+    unsafe_op_in_unsafe_fn
+)]
+mod bindgen {
+    include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+}
 mod loader;
 mod types;
 mod vesc_if;
