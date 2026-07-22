@@ -28,9 +28,14 @@ of these values.
 
 ## Current implementation boundary
 
-`ExpressTable::load` checks the version before exposing any slot, accepts a
-shorter table for older firmware, and returns raw words or non-null target
-addresses without calling through them. Callable Express wrappers and
-target-specific package builds still need to be added and proven on Express
-hardware. This foundation deliberately does not use bindgen or reinterpret the
-STM32 ABI.
+`ExpressInterface::from_words` checks the version before exposing any slot,
+accepts a shorter table for older firmware, and exposes named capability
+queries. Its explicitly unsafe `function::<F>` boundary can resolve a raw
+function pointer only when the caller supplies the exact C ABI signature from
+the pinned header. It does not make those calls safe, and it never reinterprets
+the STM32 table. Target-specific package builds and hardware proof still need
+to be added.
+
+The fixed-address `ExpressInterface::from_target` constructor is also unsafe:
+it is only valid on the matching 32-bit Express target and is intentionally not
+used by host tests. This foundation deliberately does not use bindgen.
