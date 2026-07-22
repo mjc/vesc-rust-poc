@@ -14,6 +14,11 @@ use crate::{
 use vescpkg_rs_sys::LbmValue;
 use vescpkg_rs_sys::raw::{CanStatusMsg, LbmFlatValue};
 
+/// Host replacement for the firmware `%s` logging path.
+pub unsafe fn printf_data(message: *const c_char) -> bool {
+    !message.is_null()
+}
+
 // C map: these host replacements model the motor slots declared at
 // `third_party/vesc_pkg_lib/vesc_c_if.h:435-476`. Float Out Boy reads them in
 // `third_party/float-out-boy/src/motor_data.c:75-125` and writes motor commands in
