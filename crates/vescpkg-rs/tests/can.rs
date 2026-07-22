@@ -1,4 +1,5 @@
 #![cfg(feature = "test-support")]
+//! Integration coverage for the safe CAN facade.
 
 use vescpkg_rs::{
     AngleDegrees, CanBus, CanControllerId, CanError, CanExtendedId, CanStandardId, Current,
