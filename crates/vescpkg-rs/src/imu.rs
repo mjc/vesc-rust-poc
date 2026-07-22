@@ -1,6 +1,5 @@
 //! IMU helpers built on firmware IMU table slots.
 
-#[cfg(not(test))]
 use crate::types::ImuQuaternion;
 use crate::types::{
     ImuAcceleration, ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ, ImuAngularRate,
@@ -8,10 +7,273 @@ use crate::types::{
     ImuMagneticFieldX, ImuMagneticFieldY, ImuMagneticFieldZ, ImuOrientation, ImuPitch,
     ImuReadSample, ImuRoll, ImuSamplePeriod, ImuYaw,
 };
-use crate::units::AngleDegrees;
-#[cfg(not(test))]
-use crate::units::AngleRadians;
 use crate::units::{AccelerationG, AngularVelocity, MagneticFluxDensity, VescSeconds};
+use crate::units::{AngleDegrees, AngleRadians};
+use vescpkg_rs_sys::raw::AttitudeInfo;
+
+/// Copied state from one firmware `ATTITUDE_INFO` value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FirmwareAhrsSnapshot {
+    orientation: ImuOrientation,
+    integral_feedback: ImuAngularRate,
+    acceleration_magnitude: AccelerationG,
+    initial_update_done: bool,
+    acceleration_confidence_decay: f32,
+    proportional_gain: f32,
+    integral_gain: f32,
+    madgwick_beta: f32,
+}
+
+impl FirmwareAhrsSnapshot {
+    /// Return the copied quaternion orientation.
+    #[must_use]
+    pub const fn orientation(self) -> ImuOrientation {
+        self.orientation
+    }
+
+    /// Return the copied integral feedback in radians per second.
+    #[must_use]
+    pub const fn integral_feedback(self) -> ImuAngularRate {
+        self.integral_feedback
+    }
+
+    /// Return the copied filtered acceleration magnitude in g.
+    #[must_use]
+    pub const fn acceleration_magnitude(self) -> AccelerationG {
+        self.acceleration_magnitude
+    }
+
+    /// Return whether firmware has completed its initial orientation update.
+    #[must_use]
+    pub const fn initial_update_done(self) -> bool {
+        self.initial_update_done
+    }
+
+    /// Return the copied accelerometer confidence decay parameter.
+    #[must_use]
+    pub const fn acceleration_confidence_decay(self) -> f32 {
+        self.acceleration_confidence_decay
+    }
+
+    /// Return the copied Mahony proportional gain.
+    #[must_use]
+    pub const fn proportional_gain(self) -> f32 {
+        self.proportional_gain
+    }
+
+    /// Return the copied Mahony integral gain.
+    #[must_use]
+    pub const fn integral_gain(self) -> f32 {
+        self.integral_gain
+    }
+
+    /// Return the copied Madgwick beta parameter.
+    #[must_use]
+    pub const fn madgwick_beta(self) -> f32 {
+        self.madgwick_beta
+    }
+}
+
+/// Failure returned before a firmware AHRS update crosses the ABI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FirmwareAhrsError {
+    /// One vector contains a non-finite value or has no measurable magnitude.
+    InvalidVector,
+    /// The update period is non-finite or not positive.
+    InvalidPeriod,
+}
+
+impl core::fmt::Display for FirmwareAhrsError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::InvalidVector => {
+                formatter.write_str("firmware AHRS vector must be finite and non-zero")
+            }
+            Self::InvalidPeriod => {
+                formatter.write_str("firmware AHRS period must be finite and positive")
+            }
+        }
+    }
+}
+
+impl core::error::Error for FirmwareAhrsError {}
+
+/// Owned firmware AHRS state backed by the pinned `ATTITUDE_INFO` ABI.
+pub struct FirmwareAhrs {
+    attitude: AttitudeInfo,
+}
+
+impl FirmwareAhrs {
+    /// Construct and initialize one owned firmware AHRS state.
+    #[must_use]
+    pub fn new() -> Self {
+        // SAFETY: ATTITUDE_INFO is a C struct containing only scalar fields; zero is a valid
+        // temporary representation before the firmware initializer fills it.
+        let mut attitude = unsafe { core::mem::zeroed::<AttitudeInfo>() };
+        unsafe { crate::ffi::ahrs_init_attitude_info(&mut attitude) };
+        Self { attitude }
+    }
+
+    /// Reset the owned firmware AHRS state to its firmware defaults.
+    pub fn reset(&mut self) -> FirmwareAhrsSnapshot {
+        unsafe { crate::ffi::ahrs_init_attitude_info(&mut self.attitude) };
+        self.snapshot()
+    }
+
+    /// Set the initial orientation from typed acceleration and magnetic vectors.
+    pub fn update_initial_orientation(
+        &mut self,
+        acceleration: ImuAcceleration,
+        magnetic: ImuMagneticField,
+    ) -> Result<FirmwareAhrsSnapshot, FirmwareAhrsError> {
+        let acceleration = acceleration_values(acceleration)?;
+        let magnetic = magnetic_values(magnetic)?;
+        unsafe {
+            crate::ffi::ahrs_update_initial_orientation(
+                acceleration.as_ptr(),
+                magnetic.as_ptr(),
+                &mut self.attitude,
+            )
+        };
+        Ok(self.snapshot())
+    }
+
+    /// Apply one firmware Mahony update from a copied IMU sample.
+    pub fn update_mahony(
+        &mut self,
+        sample: ImuReadSample,
+    ) -> Result<FirmwareAhrsSnapshot, FirmwareAhrsError> {
+        let (gyro, acceleration, period) = update_values(sample)?;
+        unsafe {
+            crate::ffi::ahrs_update_mahony_imu(
+                gyro.as_ptr(),
+                acceleration.as_ptr(),
+                period,
+                &mut self.attitude,
+            )
+        };
+        Ok(self.snapshot())
+    }
+
+    /// Apply one firmware Madgwick update from a copied IMU sample.
+    pub fn update_madgwick(
+        &mut self,
+        sample: ImuReadSample,
+    ) -> Result<FirmwareAhrsSnapshot, FirmwareAhrsError> {
+        let (gyro, acceleration, period) = update_values(sample)?;
+        unsafe {
+            crate::ffi::ahrs_update_madgwick_imu(
+                gyro.as_ptr(),
+                acceleration.as_ptr(),
+                period,
+                &mut self.attitude,
+            )
+        };
+        Ok(self.snapshot())
+    }
+
+    /// Return copied firmware roll, pitch, and yaw angles in radians.
+    #[must_use]
+    pub fn attitude(&self) -> ImuAttitude {
+        ImuAttitude::new(
+            ImuRoll::new(AngleRadians::from_radians(unsafe {
+                crate::ffi::ahrs_get_roll(&self.attitude)
+            })),
+            ImuPitch::new(AngleRadians::from_radians(unsafe {
+                crate::ffi::ahrs_get_pitch(&self.attitude)
+            })),
+            ImuYaw::new(AngleRadians::from_radians(unsafe {
+                crate::ffi::ahrs_get_yaw(&self.attitude)
+            })),
+        )
+    }
+
+    /// Copy every public field of the firmware attitude state before returning.
+    #[must_use]
+    pub fn snapshot(&self) -> FirmwareAhrsSnapshot {
+        let attitude = &self.attitude;
+        FirmwareAhrsSnapshot {
+            orientation: ImuOrientation::from_quaternion(ImuQuaternion::from_components(
+                crate::ImuQuaternionW::new(attitude.q0),
+                crate::ImuQuaternionX::new(attitude.q1),
+                crate::ImuQuaternionY::new(attitude.q2),
+                crate::ImuQuaternionZ::new(attitude.q3),
+            )),
+            integral_feedback: ImuAngularRate::from_axes(
+                ImuAngularRateRoll::new(AngularVelocity::from_radians_per_second(
+                    attitude.integralFBx,
+                )),
+                ImuAngularRatePitch::new(AngularVelocity::from_radians_per_second(
+                    attitude.integralFBy,
+                )),
+                ImuAngularRateYaw::new(AngularVelocity::from_radians_per_second(
+                    attitude.integralFBz,
+                )),
+            ),
+            acceleration_magnitude: AccelerationG::from_g(attitude.accMagP),
+            initial_update_done: attitude.initialUpdateDone != 0,
+            acceleration_confidence_decay: attitude.acc_confidence_decay,
+            proportional_gain: attitude.kp,
+            integral_gain: attitude.ki,
+            madgwick_beta: attitude.beta,
+        }
+    }
+}
+
+impl Default for FirmwareAhrs {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn acceleration_values(acceleration: ImuAcceleration) -> Result<[f32; 3], FirmwareAhrsError> {
+    let values = acceleration.map_axes(|x, y, z| {
+        [
+            x.acceleration().as_g(),
+            y.acceleration().as_g(),
+            z.acceleration().as_g(),
+        ]
+    });
+    valid_vector(values)
+}
+
+fn magnetic_values(magnetic: ImuMagneticField) -> Result<[f32; 3], FirmwareAhrsError> {
+    let values = magnetic.map_axes(|x, y, z| {
+        [
+            x.magnetic_flux_density().as_microteslas(),
+            y.magnetic_flux_density().as_microteslas(),
+            z.magnetic_flux_density().as_microteslas(),
+        ]
+    });
+    valid_vector(values)
+}
+
+fn valid_vector(values: [f32; 3]) -> Result<[f32; 3], FirmwareAhrsError> {
+    (values.iter().all(|value| value.is_finite())
+        && values.iter().any(|value| value.abs() > f32::EPSILON))
+    .then_some(values)
+    .ok_or(FirmwareAhrsError::InvalidVector)
+}
+
+fn update_values(sample: ImuReadSample) -> Result<([f32; 3], [f32; 3], f32), FirmwareAhrsError> {
+    let gyro = sample.angular_rate().map_axes(|roll, pitch, yaw| {
+        [
+            roll.angular_velocity().as_radians_per_second(),
+            pitch.angular_velocity().as_radians_per_second(),
+            yaw.angular_velocity().as_radians_per_second(),
+        ]
+    });
+    let acceleration = acceleration_values(sample.acceleration())?;
+    let period = sample.period().duration().as_seconds();
+    if !gyro.iter().all(|value| value.is_finite()) || !period.is_finite() || period <= 0.0 {
+        return Err(if period.is_finite() && period > 0.0 {
+            FirmwareAhrsError::InvalidVector
+        } else {
+            FirmwareAhrsError::InvalidPeriod
+        });
+    }
+    Ok((gyro, acceleration, period))
+}
 
 /// Owned firmware IMU calibration result.
 #[derive(Debug, Clone, Copy, PartialEq)]
