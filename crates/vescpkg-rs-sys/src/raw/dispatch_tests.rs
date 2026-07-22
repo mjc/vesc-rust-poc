@@ -19,6 +19,7 @@ use super::{
     mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm, remote_state,
     store_eeprom_word, vesc_clear_app_data_handler, vesc_mutex_create, vesc_mutex_lock,
     vesc_mutex_unlock, vesc_sem_create, vesc_send_app_data, vesc_set_app_data_handler,
+    lbm_create_byte_array,
     vesc_sleep_us, vesc_system_time_ticks, vesc_thread_set_priority, wipe_nvm, write_nvm,
 };
 
@@ -316,6 +317,14 @@ extern "C" fn stub_lbm_list_destructive_reverse(value: u32) -> u32 {
 
 extern "C" fn stub_lbm_dec_str(_value: u32) -> *mut c_char {
     LBM_STRING.as_ptr().cast_mut().cast()
+}
+
+extern "C" fn stub_lbm_create_byte_array(value: *mut LbmValue, _len: u32) -> bool {
+    let Some(value) = (unsafe { value.as_mut() }) else {
+        return false;
+    };
+    *value = LbmValue(0x30);
+    true
 }
 
 extern "C" fn stub_lbm_is_number(value: u32) -> bool {
@@ -624,6 +633,7 @@ fn populated_table() -> VescIf {
     table.lbm_cdr = Some(stub_lbm_cdr);
     table.lbm_list_destructive_reverse = Some(stub_lbm_list_destructive_reverse);
     table.lbm_dec_str = Some(stub_lbm_dec_str);
+    table.lbm_create_byte_array = Some(stub_lbm_create_byte_array);
     table.lbm_is_number = Some(stub_lbm_is_number);
     table.lbm_enc_sym_nil = 0xAABB_0000;
     table.lbm_enc_sym_true = 0xAABB_1100;
@@ -812,6 +822,15 @@ fn lbm_string_decode_forwards_through_mock_table() {
             core::slice::from_raw_parts(pointer.cast::<u8>(), 5),
             b"vesc\0"
         );
+    });
+}
+
+#[test]
+fn lbm_byte_array_creation_forwards_through_mock_table() {
+    with_populated_table(|| unsafe {
+        let mut value = LbmValue(0);
+        assert!(lbm_create_byte_array(&mut value, 4));
+        assert_eq!(value, LbmValue(0x30));
     });
 }
 
