@@ -99,6 +99,7 @@ pub struct RefloatPackageState {
     motor_acceleration: MotorAccelerationTracker,
     motor_current_filter: motor_runtime::RefloatMotorCurrentFilter,
     remote_control: RemoteControlState,
+    runtime_board_setpoint: vescpkg_rs::prelude::AngleDegrees,
     charging_ticks: TimestampTicks,
     engage_ticks: TimestampTicks,
     disengage_ticks: TimestampTicks,
@@ -156,6 +157,7 @@ impl RefloatPackageState {
             motor_acceleration: MotorAccelerationTracker::default(),
             motor_current_filter: motor_runtime::RefloatMotorCurrentFilter::source_startup(),
             remote_control: RemoteControlState::default(),
+            runtime_board_setpoint: all_data_payloads.base().setpoints().board().angle(),
             charging_ticks: TimestampTicks::from_ticks(0),
             engage_ticks: TimestampTicks::from_ticks(0),
             disengage_ticks: TimestampTicks::from_ticks(0),
@@ -184,6 +186,43 @@ impl RefloatPackageState {
             #[cfg(any(test, target_arch = "arm"))]
             firmware_version: None,
         }
+    }
+
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    pub(crate) fn refresh_controller_input(&mut self, input: &vescpkg_rs::ControllerInput) {
+        // C map: Refloat selects UART/PPM, rejects samples one second old,
+        // applies deadband rescaling, then optional inversion at
+        // `third_party/refloat/src/remote.c:36-68`.
+        let config = self.serialized_config;
+        let value = match config.input_tilt_remote_type() {
+            1 => {
+                let remote = input.remote();
+                (remote.age().duration() < vescpkg_rs::VescSeconds::from_seconds(1.0))
+                    .then(|| remote.joystick_y().ratio().as_ratio())
+            }
+            2 => {
+                let (ppm, age) = input.ppm();
+                (age.duration() < vescpkg_rs::VescSeconds::from_seconds(1.0))
+                    .then(|| ppm.ratio().as_ratio())
+            }
+            _ => None,
+        }
+        .unwrap_or(0.0);
+        let deadband = config.input_tilt_deadband().as_ratio();
+        let value = if value.abs() < deadband {
+            0.0
+        } else {
+            value.signum() * (value.abs() - deadband) / (1.0 - deadband)
+        };
+        let value = if config.input_tilt_inverted() {
+            -value
+        } else {
+            value
+        };
+        self.remote_control
+            .set_input(crate::domain::RefloatRealtimeRemoteInput::new(
+                vescpkg_rs::SignedRatio::clamped(value),
+            ));
     }
 
     /// Build startup state and apply the config persisted by firmware.

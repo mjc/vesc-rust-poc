@@ -235,6 +235,7 @@ impl vescpkg_rs::FirmwareThread for RefloatMainThread {
                 let footpad_voltage1 = firmware.gpio().read_analog(AnalogPin::ADC1);
                 let footpad_voltage2 = firmware.gpio().read_analog(AnalogPin::ADC2);
                 let tick = ctx.with_state_mut(|state| {
+                    state.refresh_controller_input(firmware.input());
                     tick_refloat_main_thread_with(
                         state,
                         firmware.telemetry(),

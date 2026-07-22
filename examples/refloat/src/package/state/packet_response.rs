@@ -1,6 +1,6 @@
 use super::super::protocol::{
-    encode_refloat_get_realtime_data_response, encode_refloat_info_response,
-    encode_refloat_realtime_data_ids_response, encode_refloat_realtime_data_response,
+    encode_refloat_get_realtime_data_response_with_remote, encode_refloat_info_response,
+    encode_refloat_realtime_data_ids_response, encode_refloat_realtime_data_response_with_runtime,
 };
 use super::RefloatPackageState;
 use super::refloat_command_payload;
@@ -50,7 +50,10 @@ impl RefloatPackageState {
             Some(_) => {
                 // C map: `on_command_received` dispatches legacy `COMMAND_GET_RTDATA` at
                 // `third_party/refloat/src/main.c:2162-2164`.
-                let response = encode_refloat_get_realtime_data_response(&self.all_data_payloads);
+                let response = encode_refloat_get_realtime_data_response_with_remote(
+                    &self.all_data_payloads,
+                    self.remote_control.input(),
+                );
                 send(&response)
             }
             None => false,
@@ -78,7 +81,13 @@ impl RefloatPackageState {
                 // Refloat's main loop updates `d->time.now` before app-data reads it
                 // in `cmd_realtime_data` at `third_party/refloat/src/main.c:1931`.
                 let system_timestamp = now();
-                let response = encode_refloat_realtime_data_response(&payloads, system_timestamp);
+                let response = encode_refloat_realtime_data_response_with_runtime(
+                    &payloads,
+                    system_timestamp,
+                    self.remote_control.input(),
+                    0.0,
+                    0.0,
+                );
                 send(response.as_bytes())
             }
             None => false,

@@ -930,6 +930,86 @@ fn running_speed_or_sag_fixture(
     (now, telemetry, state)
 }
 
+#[test]
+fn running_input_tilt_ramps_remote_and_board_setpoints_like_refloat() {
+    let (now, telemetry, mut state) = running_speed_or_sag_fixture(
+        InputVoltage::new(Voltage::from_volts(72.0)),
+        DirectionalMotorCurrent::new(Current::ZERO),
+        VehicleSpeed::new(Speed::ZERO),
+    );
+    state
+        .remote_control
+        .set_input(crate::domain::RefloatRealtimeRemoteInput::new(
+            SignedRatio::from_ratio_const(0.5),
+        ));
+    edit_config(&mut state, |config| {
+        assert!(config.set_input_tilt_angle_limit(AngleDegrees::from_degrees(10.0)));
+        assert!(config.set_input_tilt_speed(AngularVelocity::from_degrees_per_second(25.0)));
+    });
+
+    tick_running_protective_pushback(&mut state, &telemetry, now);
+
+    let setpoints = state.all_data_payloads().base().setpoints();
+    // C `remote_update` starts the configured per-loop step with its 0.02 ramp factor,
+    // then adds it to the production setpoint at
+    // `third_party/refloat/src/remote.c:70-94` and
+    // `third_party/refloat/src/main.c:876-879`.
+    let expected = 0.02 * 25.0
+        / editable_config_from_state(&state)
+            .startup()
+            .sample_rate()
+            .as_hertz();
+    let remote = setpoints.remote().angle().as_degrees();
+    let board = setpoints.board().angle().as_degrees();
+    assert!((remote - expected).abs() < 0.000_001, "remote={remote}");
+    assert!((board - expected).abs() < 0.000_001, "board={board}");
+}
+
+#[test]
+fn controller_input_selects_connected_uart_or_ppm_and_applies_deadband_like_refloat() {
+    for (remote_type, ppm, uart, expected) in
+        [(1, 0.8, 0.6, -0.5), (2, 0.6, 0.8, -0.5), (0, 0.8, 0.8, 0.0)]
+    {
+        let firmware = FirmwareTest::new();
+        firmware.set_ppm_input(
+            PpmInput::new(SignedRatio::from_ratio_const(ppm)),
+            PpmAge::new(VescSeconds::from_seconds(0.5)),
+        );
+        firmware.set_remote_input(
+            JoystickY::new(SignedRatio::from_ratio_const(uart)),
+            RemoteAge::new(VescSeconds::from_seconds(0.5)),
+        );
+        let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+        edit_config(&mut state, |config| {
+            assert!(config.set_input_tilt_remote_type(vescpkg_rs::WireByte::new(remote_type)));
+            assert!(config.set_input_tilt_deadband(Ratio::from_ratio_const(0.2)));
+            assert!(config.set_input_tilt_inverted(true));
+        });
+
+        state.refresh_controller_input(firmware.input());
+
+        let actual = state.remote_control.input().ratio().as_ratio();
+        assert!(
+            (actual - expected).abs() < 0.000_001,
+            "remote_type={remote_type}, actual={actual}"
+        );
+    }
+
+    let firmware = FirmwareTest::new();
+    firmware.set_ppm_input(
+        PpmInput::new(SignedRatio::from_ratio_const(0.8)),
+        PpmAge::new(VescSeconds::from_seconds(1.0)),
+    );
+    let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    edit_config(&mut state, |config| {
+        assert!(config.set_input_tilt_remote_type(vescpkg_rs::WireByte::new(2)));
+    });
+
+    state.refresh_controller_input(firmware.input());
+
+    assert_eq!(state.remote_control.input().ratio().as_ratio(), 0.0);
+}
+
 fn set_protective_ride_state(
     state: &mut RefloatPackageState,
     mode: RefloatMode,

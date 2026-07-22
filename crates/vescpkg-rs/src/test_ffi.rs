@@ -9,6 +9,7 @@ use crate::{
     MotorTemperature, OdometerMeters, TotalMotorCurrent, TripDistance, VehicleSpeed,
     WattHoursCharged, WattHoursDischarged,
 };
+use vescpkg_rs_sys::raw::RemoteState;
 
 // C map: these host replacements model the motor slots declared at
 // `third_party/vesc_pkg_lib/vesc_c_if.h:435-476`. Refloat reads them in
@@ -54,6 +55,10 @@ static WATT_HOURS_CHARGED: AtomicU32 = AtomicU32::new(0);
 static BATTERY_LEVEL: AtomicU32 = AtomicU32::new(0);
 static FIRMWARE_FAULT: AtomicI32 = AtomicI32::new(0);
 static INPUT_VOLTAGE: AtomicU32 = AtomicU32::new(0);
+static PPM_INPUT: AtomicU32 = AtomicU32::new(0);
+static PPM_AGE: AtomicU32 = AtomicU32::new(0);
+static REMOTE_INPUT_Y: AtomicU32 = AtomicU32::new(0);
+static REMOTE_AGE: AtomicU32 = AtomicU32::new(0);
 static IMU_STARTUP_DONE: AtomicBool = AtomicBool::new(false);
 static IMU_ROLL: AtomicU32 = AtomicU32::new(0);
 static IMU_PITCH: AtomicU32 = AtomicU32::new(0);
@@ -138,6 +143,10 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     BATTERY_LEVEL.store(0.0_f32.to_bits(), Ordering::Relaxed);
     FIRMWARE_FAULT.store(0, Ordering::Relaxed);
     INPUT_VOLTAGE.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    PPM_INPUT.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    PPM_AGE.store(f32::INFINITY.to_bits(), Ordering::Relaxed);
+    REMOTE_INPUT_Y.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    REMOTE_AGE.store(f32::INFINITY.to_bits(), Ordering::Relaxed);
     IMU_STARTUP_DONE.store(false, Ordering::Relaxed);
     store(&IMU_ROLL, 0.0);
     store(&IMU_PITCH, 0.0);
@@ -322,6 +331,16 @@ pub(crate) fn set_firmware_fault(fault: FirmwareFaultCode) {
 
 pub(crate) fn set_input_voltage(voltage: InputVoltage) {
     store(&INPUT_VOLTAGE, voltage.voltage().as_volts());
+}
+
+pub(crate) fn set_ppm_input(input: crate::PpmInput, age: crate::PpmAge) {
+    store(&PPM_INPUT, input.ratio().as_ratio());
+    store(&PPM_AGE, age.duration().as_seconds());
+}
+
+pub(crate) fn set_remote_input(input: crate::JoystickY, age: crate::RemoteAge) {
+    store(&REMOTE_INPUT_Y, input.ratio().as_ratio());
+    store(&REMOTE_AGE, age.duration().as_seconds());
 }
 
 pub(crate) fn set_foc_id_current(current: Option<DCurrent>) {
@@ -533,6 +552,25 @@ pub unsafe fn mc_get_fault() -> i32 {
 
 pub unsafe fn mc_get_input_voltage_filtered() -> f32 {
     load(&INPUT_VOLTAGE)
+}
+
+pub unsafe fn get_ppm() -> f32 {
+    load(&PPM_INPUT)
+}
+
+pub unsafe fn get_ppm_age() -> f32 {
+    load(&PPM_AGE)
+}
+
+pub unsafe fn get_remote_state() -> RemoteState {
+    RemoteState::new(
+        0.0,
+        load(&REMOTE_INPUT_Y),
+        false,
+        false,
+        false,
+        load(&REMOTE_AGE),
+    )
 }
 
 pub unsafe fn imu_startup_done() -> bool {

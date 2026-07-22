@@ -33,8 +33,22 @@ impl RefloatRealtimeDataResponse {
 }
 
 #[inline(never)]
+#[cfg(test)]
 pub(in crate::package) fn encode_refloat_get_realtime_data_response(
     payloads: &RefloatAllDataPayloads,
+) -> [u8; REFLOAT_GET_REALTIME_DATA_RESPONSE_LEN] {
+    encode_refloat_get_realtime_data_response_with_remote(
+        payloads,
+        crate::domain::RefloatRealtimeRemoteInput::new(
+            vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.0),
+        ),
+    )
+}
+
+#[inline(never)]
+pub(in crate::package) fn encode_refloat_get_realtime_data_response_with_remote(
+    payloads: &RefloatAllDataPayloads,
+    remote_input: crate::domain::RefloatRealtimeRemoteInput,
 ) -> [u8; REFLOAT_GET_REALTIME_DATA_RESPONSE_LEN] {
     let mut bytes = [0; REFLOAT_GET_REALTIME_DATA_RESPONSE_LEN];
     let mut ind = 0;
@@ -136,15 +150,35 @@ pub(in crate::package) fn encode_refloat_get_realtime_data_response(
             motor.directional_motor_current().current().as_amps(),
         );
     }
-    refloat_realtime_push_float32_auto(&mut bytes, &mut ind, 0.0);
+    refloat_realtime_push_float32_auto(&mut bytes, &mut ind, remote_input.ratio().as_ratio());
 
     bytes
 }
 
 #[inline(never)]
+#[cfg(test)]
 pub(in crate::package) fn encode_refloat_realtime_data_response(
     payloads: &RefloatAllDataPayloads,
     system_timestamp: TimestampTicks,
+) -> RefloatRealtimeDataResponse {
+    encode_refloat_realtime_data_response_with_runtime(
+        payloads,
+        system_timestamp,
+        crate::domain::RefloatRealtimeRemoteInput::new(
+            vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.0),
+        ),
+        0.0,
+        0.0,
+    )
+}
+
+#[inline(never)]
+pub(in crate::package) fn encode_refloat_realtime_data_response_with_runtime(
+    payloads: &RefloatAllDataPayloads,
+    system_timestamp: TimestampTicks,
+    remote_input: crate::domain::RefloatRealtimeRemoteInput,
+    atr_accel_diff: f32,
+    atr_speed_boost: f32,
 ) -> RefloatRealtimeDataResponse {
     let mut bytes = [0; REFLOAT_REALTIME_DATA_RESPONSE_CAPACITY];
     let mut ind = 0;
@@ -208,11 +242,31 @@ pub(in crate::package) fn encode_refloat_realtime_data_response(
     refloat_realtime_push_u8(&mut bytes, &mut ind, base.status().beep_reason().id());
 
     REFLOAT_REALTIME_DATA_ITEMS.into_iter().for_each(|item| {
-        push_refloat_float16(&mut bytes, &mut ind, realtime_value(payloads, item))
+        push_refloat_float16(
+            &mut bytes,
+            &mut ind,
+            realtime_value(
+                payloads,
+                item,
+                remote_input,
+                atr_accel_diff,
+                atr_speed_boost,
+            ),
+        )
     });
     if running {
         REFLOAT_REALTIME_RUNTIME_ITEMS.into_iter().for_each(|item| {
-            push_refloat_float16(&mut bytes, &mut ind, realtime_value(payloads, item));
+            push_refloat_float16(
+                &mut bytes,
+                &mut ind,
+                realtime_value(
+                    payloads,
+                    item,
+                    remote_input,
+                    atr_accel_diff,
+                    atr_speed_boost,
+                ),
+            );
         });
     }
     if charging {
@@ -235,7 +289,13 @@ pub(in crate::package) fn encode_refloat_realtime_data_response(
     RefloatRealtimeDataResponse { bytes, len: ind }
 }
 
-fn realtime_value(payloads: &RefloatAllDataPayloads, item: RefloatRealtimeDataItem) -> f32 {
+fn realtime_value(
+    payloads: &RefloatAllDataPayloads,
+    item: RefloatRealtimeDataItem,
+    remote_input: crate::domain::RefloatRealtimeRemoteInput,
+    atr_accel_diff: f32,
+    atr_speed_boost: f32,
+) -> f32 {
     // C map: `cmd_realtime_data` expands `RT_DATA_ITEMS` and
     // `RT_DATA_RUNTIME_ITEMS` through `buffer_append_float16_auto` at
     // `third_party/refloat/src/main.c:1943-1948`; the ID order is the string
@@ -282,11 +342,8 @@ fn realtime_value(payloads: &RefloatAllDataPayloads, item: RefloatRealtimeDataIt
         RefloatRealtimeDataItem::FootpadAdc1 => base.footpad().adc1_volts(),
         RefloatRealtimeDataItem::FootpadAdc2 => base.footpad().adc2_volts(),
         // C map: `RT_DATA_ITEMS` includes `remote.input` at
-        // `third_party/refloat/src/rt_data.h:38-54`; `RT_DATA_RUNTIME_ITEMS`
-        // includes `atr.accel_diff` and `atr.speed_boost` at
-        // `third_party/refloat/src/rt_data.h:56-65`. Those live in unported
-        // runtime submodules.
-        RefloatRealtimeDataItem::RemoteInput => 0.0,
+        // `third_party/refloat/src/rt_data.h:38-54`.
+        RefloatRealtimeDataItem::RemoteInput => remote_input.ratio().as_ratio(),
         RefloatRealtimeDataItem::Setpoint => setpoints.board().angle().as_degrees(),
         RefloatRealtimeDataItem::AtrSetpoint => setpoints.atr().angle().as_degrees(),
         RefloatRealtimeDataItem::BrakeTiltSetpoint => setpoints.brake_tilt().angle().as_degrees(),
@@ -299,8 +356,8 @@ fn realtime_value(payloads: &RefloatAllDataPayloads, item: RefloatRealtimeDataIt
         // C map: runtime-only ATR fields are appended at
         // `third_party/refloat/src/main.c:1946-1948`; keep these explicit
         // placeholders until ATR runtime state is ported.
-        RefloatRealtimeDataItem::AtrAccelDiff => 0.0,
-        RefloatRealtimeDataItem::AtrSpeedBoost => 0.0,
+        RefloatRealtimeDataItem::AtrAccelDiff => atr_accel_diff,
+        RefloatRealtimeDataItem::AtrSpeedBoost => atr_speed_boost,
         RefloatRealtimeDataItem::BoosterCurrent => {
             base.booster_current().current().current().as_amps()
         }
@@ -375,6 +432,27 @@ mod tests {
         assert_f32_be(&bytes, 60, 4.0);
         assert_f32_be(&bytes, 64, 5.0);
         assert_f32_be(&bytes, 68, 0.0);
+    }
+
+    #[test]
+    fn realtime_encoders_use_live_remote_input_like_refloat() {
+        let payloads = sample_all_data_payloads();
+        let input = crate::domain::RefloatRealtimeRemoteInput::new(
+            vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.5),
+        );
+        let legacy = encode_refloat_get_realtime_data_response_with_remote(&payloads, input);
+
+        assert_f32_be(&legacy, 68, 0.5);
+        assert_eq!(
+            realtime_value(
+                &payloads,
+                RefloatRealtimeDataItem::RemoteInput,
+                input,
+                0.0,
+                0.0,
+            ),
+            0.5,
+        );
     }
 
     #[test]

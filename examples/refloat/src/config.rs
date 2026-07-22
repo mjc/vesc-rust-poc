@@ -87,6 +87,10 @@ impl RefloatConfigImage {
     const INPUT_TILT_REMOTE_TYPE_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: REFLOAT_CONFIG_LEN, offset: 79);
     const INPUT_TILT_ANGLE_LIMIT_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 80, scale: 100.0);
     const INPUT_TILT_SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: REFLOAT_CONFIG_LEN, offset: 82, scale: 100.0);
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    const INPUT_TILT_INVERT_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 84);
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    const INPUT_TILT_DEADBAND_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: REFLOAT_CONFIG_LEN, offset: 85, scale: 10000.0);
     const HIGH_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 51, scale: 100.0);
     const HIGH_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigScaledVoltageField, len: REFLOAT_CONFIG_LEN, offset: 55, scale: 100.0);
     const LOW_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 57, scale: 100.0);
@@ -248,6 +252,29 @@ impl RefloatConfigImage {
             0.0,
             Speed::from_kilometers_per_hour,
         )
+    }
+
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    pub(crate) fn input_tilt_remote_type(&self) -> u8 {
+        generated_field(Self::INPUT_TILT_REMOTE_TYPE_FIELD.read(self)).as_u8()
+    }
+
+    pub(crate) fn input_tilt_angle_limit(&self) -> AngleDegrees {
+        generated_field(Self::INPUT_TILT_ANGLE_LIMIT_FIELD.read(self))
+    }
+
+    pub(crate) fn input_tilt_speed(&self) -> AngularVelocity {
+        generated_field(Self::INPUT_TILT_SPEED_FIELD.read(self))
+    }
+
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    pub(crate) fn input_tilt_inverted(&self) -> bool {
+        self.flag(Self::INPUT_TILT_INVERT_FIELD)
+    }
+
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    pub(crate) fn input_tilt_deadband(&self) -> Ratio {
+        generated_field(Self::INPUT_TILT_DEADBAND_FIELD.read(self))
     }
 
     pub(crate) fn beeper_enabled(&self) -> bool {
@@ -521,6 +548,18 @@ impl RefloatConfigEditor<'_> {
     pub(crate) fn set_input_tilt_speed(&mut self, speed: AngularVelocity) -> bool {
         RefloatConfigImage::INPUT_TILT_SPEED_FIELD
             .write(self, speed)
+            .is_some()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_input_tilt_inverted(&mut self, inverted: bool) -> bool {
+        self.set_flag(RefloatConfigImage::INPUT_TILT_INVERT_FIELD, inverted)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_input_tilt_deadband(&mut self, deadband: Ratio) -> bool {
+        RefloatConfigImage::INPUT_TILT_DEADBAND_FIELD
+            .write(self, deadband)
             .is_some()
     }
 

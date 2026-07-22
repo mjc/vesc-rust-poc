@@ -31,6 +31,37 @@ pub struct RemoteState {
     age_s: f32,
 }
 
+impl RemoteState {
+    /// Build a raw remote state for ABI dispatch and host tests.
+    pub const fn new(
+        js_x: f32,
+        js_y: f32,
+        bt_c: bool,
+        bt_z: bool,
+        is_rev: bool,
+        age_s: f32,
+    ) -> Self {
+        Self {
+            js_x,
+            js_y,
+            bt_c,
+            bt_z,
+            is_rev,
+            age_s,
+        }
+    }
+
+    /// Return the vertical joystick axis.
+    pub const fn js_y(&self) -> f32 {
+        self.js_y
+    }
+
+    /// Return the sample age in seconds.
+    pub const fn age_s(&self) -> f32 {
+        self.age_s
+    }
+}
+
 type CanRxCallback = unsafe extern "C" fn(u32, *mut u8, u8) -> bool;
 type ReplyCallback = unsafe extern "C" fn(*mut c_uchar, c_uint);
 type PwmCallback = unsafe extern "C" fn();
@@ -446,8 +477,8 @@ macro_rules! vesc_slot_word_from {
 mod slots {
     use super::{
         AppDataHandler, CustomConfigGet, CustomConfigSet, CustomConfigXml, EepromVar,
-        ExtensionHandler, ImuReadCallback, LibMutex, LibThread, VescIfAbi, c_char, c_int, c_uchar,
-        c_void,
+        ExtensionHandler, ImuReadCallback, LibMutex, LibThread, RemoteState, VescIfAbi, c_char,
+        c_int, c_uchar, c_void,
     };
     #[cfg(not(all(target_arch = "arm", not(test))))]
     use super::{VescIf, vesc_if};
@@ -578,6 +609,9 @@ mod slots {
     fn_slot!(request_terminate as unsafe extern "C" fn(LibThread));
     fn_slot!(should_terminate as unsafe extern "C" fn() -> bool);
     fn_slot!(get_arg as unsafe extern "C" fn(u32) -> *mut *mut c_void);
+    fn_slot!(get_remote_state as unsafe extern "C" fn() -> RemoteState);
+    fn_slot!(get_ppm as unsafe extern "C" fn() -> f32);
+    fn_slot!(get_ppm_age as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_fault as unsafe extern "C" fn() -> c_int);
     fn_slot!(mc_get_rpm as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_speed as unsafe extern "C" fn() -> f32);
@@ -1004,6 +1038,30 @@ pub unsafe fn vesc_get_arg(prog_addr: u32) -> *mut *mut c_void {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_fault() -> c_int {
     unsafe { slots::mc_get_fault()() }
+}
+
+/// Return the latest UART remote sample.
+///
+/// # Safety
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn get_remote_state() -> RemoteState {
+    unsafe { slots::get_remote_state()() }
+}
+
+/// Return the latest decoded PPM input.
+///
+/// # Safety
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn get_ppm() -> f32 {
+    unsafe { slots::get_ppm()() }
+}
+
+/// Return the age of the latest decoded PPM input in seconds.
+///
+/// # Safety
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn get_ppm_age() -> f32 {
+    unsafe { slots::get_ppm_age()() }
 }
 
 /// Return the current motor electrical RPM.

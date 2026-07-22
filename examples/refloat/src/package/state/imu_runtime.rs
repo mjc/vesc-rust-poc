@@ -532,6 +532,7 @@ pub(super) fn refresh(
         state.reverse_total_erpm = Rpm::ZERO;
         state.traction_control = false;
         state.remote_control.reset_runtime_vars();
+        state.runtime_board_setpoint = balance_pitch_degrees;
         let setpoint = RefloatRealtimeRuntimeSetpoint::new(balance_pitch_degrees);
         let zero_setpoint = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::ZERO);
         (
@@ -554,6 +555,7 @@ pub(super) fn refresh(
         )
     };
     if matches!(run_state, RefloatRunState::Running) && !state_engage && !state_stop_fault {
+        let mut board_setpoint = state.runtime_board_setpoint;
         let high_voltage_threshold = pack_voltage_threshold(
             state.serialized_config.high_voltage_threshold(),
             state.battery_cell_count,
@@ -636,7 +638,7 @@ pub(super) fn refresh(
                     | RefloatSetpointAdjustment::PushbackLowVoltage
                     | RefloatSetpointAdjustment::PushbackTemperature
             ) {
-                reverse_stop.carryover_total_erpm(setpoints.board().angle())
+                reverse_stop.carryover_total_erpm(board_setpoint)
             } else {
                 Rpm::ZERO
             };
@@ -680,7 +682,6 @@ pub(super) fn refresh(
             ride_state.setpoint_adjustment(),
             RefloatSetpointAdjustment::Centering
         ) {
-            let board_setpoint = setpoints.board().angle();
             if board_setpoint.is_zero() {
                 // Upstream `calculate_setpoint_target(d)` exits
                 // `SAT_CENTERING` when `setpoint_target_interpolated`
@@ -689,7 +690,7 @@ pub(super) fn refresh(
                 ride_state = ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::None);
             } else {
                 let startup_step = startup.centering_step();
-                let centered_board = if board_setpoint.abs() < startup_step {
+                board_setpoint = if board_setpoint.abs() < startup_step {
                     AngleDegrees::ZERO
                 } else {
                     board_setpoint - startup_step * board_setpoint.signum()
@@ -701,8 +702,6 @@ pub(super) fn refresh(
                 // `third_party/refloat/src/utils.c:25-33`, and assigns the
                 // centered setpoint before PID at
                 // `third_party/refloat/src/main.c:869-875`.
-                let centered_board = RefloatRealtimeRuntimeSetpoint::new(centered_board);
-                setpoints = setpoints.with_board(centered_board);
             }
         }
         if matches!(
@@ -716,7 +715,7 @@ pub(super) fn refresh(
             // `third_party/refloat/src/main.c:522-536`.
             state.reverse_total_erpm = state.reverse_total_erpm + motor_erpm;
             let reverse_total_erpm = state.reverse_total_erpm.abs();
-            let board_setpoint = if reverse_total_erpm > reverse_stop.tolerance_erpm {
+            let reverse_setpoint = if reverse_total_erpm > reverse_stop.tolerance_erpm {
                 Some(reverse_stop.target_angle(state.reverse_total_erpm))
             } else if reverse_total_erpm <= reverse_stop.tolerance_erpm * 0.5
                 && !motor_erpm.is_negative()
@@ -727,9 +726,8 @@ pub(super) fn refresh(
             } else {
                 None
             };
-            if let Some(board_setpoint) = board_setpoint {
-                setpoints =
-                    setpoints.with_board(RefloatRealtimeRuntimeSetpoint::new(board_setpoint));
+            if let Some(reverse_setpoint) = reverse_setpoint {
+                board_setpoint = reverse_setpoint;
             }
         }
         if !matches!(
@@ -745,7 +743,7 @@ pub(super) fn refresh(
             let speed_pushback_threshold = state.serialized_config.speed_pushback_threshold();
             let speed_pushback_active =
                 speed_pushback_threshold.is_positive() && speed.abs() > speed_pushback_threshold;
-            let board_setpoint = if duty_pushback_active {
+            let protective_setpoint = if duty_pushback_active {
                 let angle = state.runtime_duty_pushback_angle();
                 if !matches!(ride_state.mode(), RefloatMode::Flywheel) {
                     ride_state = ride_state
@@ -757,7 +755,7 @@ pub(super) fn refresh(
                     -angle
                 };
                 Some(rate_limit_angle(
-                    setpoints.board().angle(),
+                    board_setpoint,
                     target,
                     state.runtime_duty_pushback_step(),
                 ))
@@ -871,7 +869,7 @@ pub(super) fn refresh(
                 ride_state =
                     ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackSpeed);
                 Some(rate_limit_angle(
-                    setpoints.board().angle(),
+                    board_setpoint,
                     target,
                     state.runtime_duty_pushback_step(),
                 ))
@@ -886,24 +884,23 @@ pub(super) fn refresh(
             ) {
                 ride_state = ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::None);
                 Some(rate_limit_angle(
-                    setpoints.board().angle(),
+                    board_setpoint,
                     AngleDegrees::ZERO,
                     state.runtime_tiltback_return_step(),
                 ))
-            } else if !setpoints.board().angle().is_zero() {
+            } else if !board_setpoint.is_zero() {
                 Some(rate_limit_angle(
-                    setpoints.board().angle(),
+                    board_setpoint,
                     AngleDegrees::ZERO,
                     state.runtime_tiltback_return_step(),
                 ))
             } else {
                 None
             };
-            if let Some(board_setpoint) = board_setpoint {
+            if let Some(protective_setpoint) = protective_setpoint {
                 // Refloat selects duty pushback after reverse stop and
                 // wheelslip at `third_party/refloat/src/main.c:551-592`.
-                setpoints =
-                    setpoints.with_board(RefloatRealtimeRuntimeSetpoint::new(board_setpoint));
+                board_setpoint = protective_setpoint;
             }
         }
         if matches!(ride_state.wheelslip(), RefloatWheelSlipState::Detected)
@@ -912,9 +909,26 @@ pub(super) fn refresh(
             // Upstream forces the target back to zero after every protective
             // selection while wheelslip remains above the motor duty limit at
             // `third_party/refloat/src/main.c:719-721`.
-            setpoints =
-                setpoints.with_board(RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::ZERO));
+            board_setpoint = AngleDegrees::ZERO;
         }
+        state.runtime_board_setpoint = board_setpoint;
+        let remote_setpoint = state.remote_control.update_input_tilt(
+            state.serialized_config.input_tilt_angle_limit(),
+            state.serialized_config.input_tilt_speed(),
+            state.serialized_config.startup().sample_rate(),
+            darkride_active,
+        );
+        // C map: `remote_update` runs after protective setpoint interpolation
+        // and is added before the remaining ride modifiers at
+        // `third_party/refloat/src/main.c:869-879`.
+        setpoints = RefloatRealtimeRuntimeSetpoints::new(
+            RefloatRealtimeRuntimeSetpoint::new(board_setpoint + remote_setpoint),
+            setpoints.atr(),
+            setpoints.brake_tilt(),
+            setpoints.torque_tilt(),
+            setpoints.turn_tilt(),
+            RefloatRealtimeRuntimeSetpoint::new(remote_setpoint),
+        );
         if !matches!(ride_state.mode(), RefloatMode::Flywheel) {
             let duty_warning = matches!(
                 ride_state.setpoint_adjustment(),
