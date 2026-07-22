@@ -11,9 +11,10 @@ use crate::types::{
     BatteryCellCount, BatteryLevel, BrakeCurrent, CurrentOffDelay, DCurrent,
     DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed, FirmwareFaultCode,
     HandbrakeCurrent, HandbrakeRelative, InputCurrent, InputVoltage, MosfetTemperature,
-    MotorCurrent, MotorCurrentLimit, MotorTemperature, PeakMosfetTemperature, PeakMotorCurrent,
-    PeakMotorTemperature, PeakPower, PeakVehicleSpeed, TachometerSteps, TemperatureLimitStart,
-    TotalMotorCurrent, TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
+    MotorCurrent, MotorCurrentLimit, MotorStatisticDuration, MotorTemperature,
+    PeakMosfetTemperature, PeakMotorCurrent, PeakMotorTemperature, PeakPower, PeakVehicleSpeed,
+    TachometerSteps, TemperatureLimitStart, TotalMotorCurrent, TripDistance, VehicleSpeed,
+    WattHoursCharged, WattHoursDischarged,
 };
 #[cfg(not(test))]
 use crate::units::{Charge, Current, Distance, Energy, Power, Rpm, Speed, Temperature, Voltage};
@@ -117,6 +118,8 @@ pub trait MotorTelemetryBindings {
     fn average_motor_temperature(&self) -> AverageMotorTemperature;
     /// Return peak motor temperature statistics.
     fn peak_motor_temperature(&self) -> PeakMotorTemperature;
+    /// Return elapsed motor-statistics count time.
+    fn statistics_count_time(&self) -> MotorStatisticDuration;
     /// Return the current signed duty cycle.
     ///
     /// The firmware value is clamped to the signed ratio range, with NaN
@@ -267,6 +270,10 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
 
     fn peak_motor_temperature(&self) -> PeakMotorTemperature {
         (**self).peak_motor_temperature()
+    }
+
+    fn statistics_count_time(&self) -> MotorStatisticDuration {
+        (**self).statistics_count_time()
     }
 
     fn duty_cycle(&self) -> DutyCycle {
@@ -588,6 +595,12 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         }))
     }
 
+    fn statistics_count_time(&self) -> MotorStatisticDuration {
+        MotorStatisticDuration::new(VescSeconds::from_seconds(unsafe {
+            crate::ffi::mc_stat_count_time()
+        }))
+    }
+
     fn duty_cycle(&self) -> DutyCycle {
         duty_cycle_from_firmware(call_vesc_ffi!(mc_get_duty_cycle_now()))
     }
@@ -832,6 +845,8 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn average_motor_temperature(&self) -> AverageMotorTemperature;
     /// Return peak motor temperature statistics.
     fn peak_motor_temperature(&self) -> PeakMotorTemperature;
+    /// Return elapsed motor-statistics count time.
+    fn statistics_count_time(&self) -> MotorStatisticDuration;
     /// Return the current signed duty cycle.
     fn duty_cycle(&self) -> DutyCycle;
     /// Return optional FOC d-axis current.
@@ -1091,6 +1106,11 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.peak_motor_temperature()
     }
 
+    /// Return elapsed motor-statistics count time.
+    pub fn statistics_count_time(&self) -> MotorStatisticDuration {
+        self.bindings.statistics_count_time()
+    }
+
     /// Return the current signed duty cycle.
     pub fn duty_cycle(&self) -> DutyCycle {
         self.bindings.duty_cycle()
@@ -1284,6 +1304,10 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
 
     fn peak_motor_temperature(&self) -> PeakMotorTemperature {
         self.peak_motor_temperature()
+    }
+
+    fn statistics_count_time(&self) -> MotorStatisticDuration {
+        self.statistics_count_time()
     }
 
     fn duty_cycle(&self) -> DutyCycle {

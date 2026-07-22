@@ -59,3 +59,7 @@ seconds_type!(
     PpmAge,
     "Age of the latest PPM input sample in VESC seconds."
 );
+seconds_type!(
+    MotorStatisticDuration,
+    "Elapsed motor-statistics count time in VESC seconds."
+);
