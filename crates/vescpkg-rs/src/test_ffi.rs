@@ -127,6 +127,7 @@ static DUTY_CYCLE: AtomicU32 = AtomicU32::new(0);
 static FOC_ID_CURRENT: AtomicU32 = AtomicU32::new(0);
 static HAS_FOC_ID_CURRENT: AtomicBool = AtomicBool::new(false);
 static FOC_AUDIO_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static FOC_OPEN_LOOP_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static DISTANCE_ABS: AtomicU32 = AtomicU32::new(0);
 static MOSFET_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
@@ -311,6 +312,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     FOC_ID_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
     HAS_FOC_ID_CURRENT.store(false, Ordering::Relaxed);
     FOC_AUDIO_AVAILABLE.store(true, Ordering::Relaxed);
+    FOC_OPEN_LOOP_AVAILABLE.store(true, Ordering::Relaxed);
     DISTANCE_ABS.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOSFET_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -1090,6 +1092,10 @@ pub(crate) fn set_foc_audio_available(available: bool) {
     FOC_AUDIO_AVAILABLE.store(available, Ordering::Relaxed);
 }
 
+pub(crate) fn set_foc_open_loop_available(available: bool) {
+    FOC_OPEN_LOOP_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
 pub(crate) fn set_imu_startup_done(done: bool) {
     IMU_STARTUP_DONE.store(done, Ordering::Relaxed);
 }
@@ -1431,19 +1437,19 @@ pub unsafe fn foc_get_vq() -> Option<f32> {
 }
 
 pub unsafe fn foc_set_openloop_current(_current: f32, _rpm: f32) -> bool {
-    true
+    FOC_OPEN_LOOP_AVAILABLE.load(Ordering::Relaxed)
 }
 
 pub unsafe fn foc_set_openloop_phase(_current: f32, _phase: f32) -> bool {
-    true
+    FOC_OPEN_LOOP_AVAILABLE.load(Ordering::Relaxed)
 }
 
 pub unsafe fn foc_set_openloop_duty(_duty: f32, _rpm: f32) -> bool {
-    true
+    FOC_OPEN_LOOP_AVAILABLE.load(Ordering::Relaxed)
 }
 
 pub unsafe fn foc_set_openloop_duty_phase(_duty: f32, _phase: f32) -> bool {
-    true
+    FOC_OPEN_LOOP_AVAILABLE.load(Ordering::Relaxed)
 }
 
 pub unsafe fn foc_beep(_frequency: f32, _duration: f32, _voltage: f32) -> Option<bool> {

@@ -167,3 +167,29 @@ fn motor_exposes_typed_handbrake_commands() {
             .unwrap();
     }
 }
+
+#[test]
+fn advanced_foc_reports_absent_optional_slots() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    firmware.set_open_loop_foc_available(false);
+    let advanced = firmware.advanced_foc();
+
+    assert_eq!(
+        unsafe {
+            advanced.set_open_loop_current(
+                OpenLoopCurrent::new(Current::from_amps(1.0)),
+                ElectricalSpeed::new(Rpm::from_revolutions_per_minute(100.0)),
+            )
+        },
+        Err(vescpkg_rs::AdvancedFocError::Unavailable)
+    );
+    assert_eq!(
+        unsafe {
+            advanced.set_open_loop_duty_phase(
+                DutyCycle::new(SignedRatio::from_ratio_const(0.1)),
+                OpenLoopPhase::new(AngleDegrees::from_degrees(30.0)),
+            )
+        },
+        Err(vescpkg_rs::AdvancedFocError::Unavailable)
+    );
+}

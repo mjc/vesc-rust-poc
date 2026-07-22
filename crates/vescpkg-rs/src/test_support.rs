@@ -264,6 +264,11 @@ impl FirmwareTest {
         crate::test_ffi::set_foc_audio_available(available);
     }
 
+    /// Toggle whether the fake firmware exposes optional open-loop FOC slots.
+    pub fn set_open_loop_foc_available(&self, available: bool) {
+        crate::test_ffi::set_foc_open_loop_available(available);
+    }
+
     /// Borrow the same typed thread capability package code uses on hardware.
     #[must_use]
     pub fn threads(&self) -> &impl crate::FirmwareThreads {
