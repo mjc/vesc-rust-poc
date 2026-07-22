@@ -53,6 +53,9 @@ assert_load f_i "$(slot_index f_i)"
 assert_load vesc_system_time_ticks "$(slot_index system_time_ticks)"
 assert_load vesc_thread_set_priority "$(slot_index thread_set_priority)"
 
+required_sleep=$(sed -n '/<.*vesc_sleep_us>:/,/^$/p' "$disassembly")
+printf '%s' "$required_sleep" | rg -q 'bx[[:space:]]+r2'
+
 system_time_ticks=$(sed -n '/<.*vesc_system_time_ticks>:/,/^$/p' "$disassembly")
 printf '%s' "$system_time_ticks" | rg -q 'cbz'
 printf '%s' "$system_time_ticks" | rg -q 'blx'
