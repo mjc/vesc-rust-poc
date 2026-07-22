@@ -380,6 +380,8 @@ mod slots {
     fn_slot!(mc_set_pid_speed as unsafe extern "C" fn(f32));
     fn_slot!(mc_set_pid_pos as unsafe extern "C" fn(f32));
     fn_slot!(mc_set_duty_noramp as unsafe extern "C" fn(f32));
+    fn_slot!(mc_set_current_rel as unsafe extern "C" fn(f32));
+    fn_slot!(mc_set_brake_current_rel as unsafe extern "C" fn(f32));
     fn_slot!(mc_stat_power_avg as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_stat_power_max as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_stat_speed_avg as unsafe extern "C" fn() -> f32);
@@ -1489,6 +1491,16 @@ pub unsafe fn mc_set_pwm_callback(callback: Option<PwmCallback>) -> bool {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_set_current(amps: f32) {
     unsafe { required_slot!(mc_set_current)(amps) }
+}
+
+/// Set relative motor current.
+pub unsafe fn mc_set_current_rel(ratio: f32) {
+    unsafe { slots::mc_set_current_rel()(ratio) }
+}
+
+/// Set relative braking current.
+pub unsafe fn mc_set_brake_current_rel(ratio: f32) {
+    unsafe { slots::mc_set_brake_current_rel()(ratio) }
 }
 
 /// Set the firmware PID speed target in electrical RPM.

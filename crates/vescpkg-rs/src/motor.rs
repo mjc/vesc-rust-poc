@@ -5,13 +5,14 @@ use core::ffi::CStr;
 use crate::types::{
     AbsoluteTachometerSteps, AmpHoursCharged, AmpHoursDischarged, AverageMosfetTemperature,
     AverageMotorCurrent, AverageMotorTemperature, AveragePower, AverageVehicleSpeed,
-    BatteryCellCount, BatteryLevel, BrakeCurrent, CurrentOffDelay, DCurrent, DVoltage,
-    DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed, FirmwareFaultCode,
-    HandbrakeCurrent, HandbrakeRelative, InputCurrent, InputVoltage, MosfetTemperature,
-    MotorCurrent, MotorCurrentLimit, MotorSelection, MotorStatisticDuration, MotorTemperature,
-    PeakMosfetTemperature, PeakMotorCurrent, PeakMotorTemperature, PeakPower, PeakVehicleSpeed,
-    PidPosition, QCurrent, QVoltage, SignedTripDistance, TachometerSteps, TemperatureLimitStart,
-    TotalMotorCurrent, TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
+    BatteryCellCount, BatteryLevel, BrakeCurrent, BrakeCurrentRelative, CurrentOffDelay,
+    CurrentRelative, DCurrent, DVoltage, DirectionalMotorCurrent, DutyCycle, DutyCycleLimit,
+    ElectricalSpeed, FirmwareFaultCode, HandbrakeCurrent, HandbrakeRelative, InputCurrent,
+    InputVoltage, MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorSelection,
+    MotorStatisticDuration, MotorTemperature, PeakMosfetTemperature, PeakMotorCurrent,
+    PeakMotorTemperature, PeakPower, PeakVehicleSpeed, PidPosition, QCurrent, QVoltage,
+    SignedTripDistance, TachometerSteps, TemperatureLimitStart, TotalMotorCurrent, TripDistance,
+    VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 #[cfg(not(test))]
 use crate::units::{Charge, Current, Distance, Energy, Power, Rpm, Speed, Temperature, Voltage};
@@ -411,6 +412,10 @@ pub trait MotorControlBindings {
     /// `third_party/float-out-boy/src/motor_control.c:99`; the VESC ABI slot is
     /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:440`.
     fn set_current(&self, current: MotorCurrent);
+    /// Set motor current as a normalized relative command.
+    fn set_current_relative(&self, current: CurrentRelative);
+    /// Set braking current as a normalized relative command.
+    fn set_brake_current_relative(&self, current: BrakeCurrentRelative);
     /// Set the firmware PID speed target.
     fn set_pid_speed(&self, speed: ElectricalSpeed);
     /// Set the firmware PID position target.
@@ -476,6 +481,14 @@ impl<B: MotorControlBindings + ?Sized> MotorControlBindings for &B {
 
     fn set_current(&self, current: MotorCurrent) {
         (**self).set_current(current);
+    }
+
+    fn set_current_relative(&self, current: CurrentRelative) {
+        (**self).set_current_relative(current);
+    }
+
+    fn set_brake_current_relative(&self, current: BrakeCurrentRelative) {
+        (**self).set_brake_current_relative(current);
     }
 
     fn set_pid_speed(&self, speed: ElectricalSpeed) {
@@ -856,6 +869,14 @@ impl MotorControlBindings for RealMotorControlBindings {
         unsafe { crate::ffi::mc_set_current(current.current().as_amps()) };
     }
 
+    fn set_current_relative(&self, current: CurrentRelative) {
+        unsafe { crate::ffi::mc_set_current_rel(current.ratio().as_ratio()) };
+    }
+
+    fn set_brake_current_relative(&self, current: BrakeCurrentRelative) {
+        unsafe { crate::ffi::mc_set_brake_current_rel(current.ratio().as_ratio()) };
+    }
+
     fn set_pid_speed(&self, speed: ElectricalSpeed) {
         unsafe { crate::ffi::mc_set_pid_speed(speed.rpm().as_revolutions_per_minute()) };
     }
@@ -1063,6 +1084,10 @@ pub trait MotorOutput: private::MotorOutput {
 
     /// Apply a signed motor-current command.
     fn set_current(&self, current: MotorCurrent);
+    /// Apply a normalized relative motor-current command.
+    fn set_current_relative(&self, current: CurrentRelative);
+    /// Apply a normalized relative braking-current command.
+    fn set_brake_current_relative(&self, current: BrakeCurrentRelative);
     /// Apply a firmware PID speed target.
     fn set_pid_speed(&self, speed: ElectricalSpeed);
     /// Apply a firmware PID position target.
@@ -1662,6 +1687,16 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
         self.bindings.set_current(current);
     }
 
+    /// Apply a normalized relative motor-current command.
+    pub fn set_current_relative(&self, current: CurrentRelative) {
+        self.bindings.set_current_relative(current);
+    }
+
+    /// Apply a normalized relative braking-current command.
+    pub fn set_brake_current_relative(&self, current: BrakeCurrentRelative) {
+        self.bindings.set_brake_current_relative(current);
+    }
+
     /// Apply a firmware PID speed target.
     pub fn set_pid_speed(&self, speed: ElectricalSpeed) {
         self.bindings.set_pid_speed(speed);
@@ -1765,6 +1800,14 @@ impl<B: MotorControlBindings> MotorOutput for MotorControlApi<B> {
 
     fn set_current(&self, current: MotorCurrent) {
         MotorControlApi::set_current(self, current);
+    }
+
+    fn set_current_relative(&self, current: CurrentRelative) {
+        MotorControlApi::set_current_relative(self, current);
+    }
+
+    fn set_brake_current_relative(&self, current: BrakeCurrentRelative) {
+        MotorControlApi::set_brake_current_relative(self, current);
     }
 
     fn set_pid_speed(&self, speed: ElectricalSpeed) {

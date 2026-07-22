@@ -22,7 +22,7 @@ fn motor_exposes_typed_handbrake_commands() {
         .set_handbrake_relative(HandbrakeRelative::new(Ratio::from_ratio_const(0.25)));
     firmware
         .motor()
-        .set_current_relative(CurrentRelative::new(Ratio::from_ratio_const(0.4)));
+        .set_current_relative(CurrentRelative::new(SignedRatio::from_ratio_const(0.4)));
     firmware
         .motor()
         .set_brake_current_relative(BrakeCurrentRelative::new(Ratio::from_ratio_const(0.3)));
