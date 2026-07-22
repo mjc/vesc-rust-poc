@@ -340,6 +340,14 @@ fn reset_thread_state() {
         .for_each(|slot| slot.store(0, Ordering::Relaxed));
 }
 
+fn reset_speed_settings() {
+    ELECTRICAL_SPEED_MIN.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    ELECTRICAL_SPEED_MAX.store(12_000.0_f32.to_bits(), Ordering::Relaxed);
+    ELECTRICAL_SPEED_RAMP_START.store(500.0_f32.to_bits(), Ordering::Relaxed);
+    ELECTRICAL_SPEED_BRAKE_MAX.store(10_000.0_f32.to_bits(), Ordering::Relaxed);
+    ELECTRICAL_SPEED_BRAKE_CURRENT_MAX.store(8_000.0_f32.to_bits(), Ordering::Relaxed);
+}
+
 pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     while LOCKED
         .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -369,11 +377,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     INPUT_CURRENT_MAX.store(60.0_f32.to_bits(), Ordering::Relaxed);
     INPUT_CURRENT_MIN.store((-60.0_f32).to_bits(), Ordering::Relaxed);
     ABSOLUTE_CURRENT_MAX.store(150.0_f32.to_bits(), Ordering::Relaxed);
-    ELECTRICAL_SPEED_MIN.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    ELECTRICAL_SPEED_MAX.store(12_000.0_f32.to_bits(), Ordering::Relaxed);
-    ELECTRICAL_SPEED_RAMP_START.store(500.0_f32.to_bits(), Ordering::Relaxed);
-    ELECTRICAL_SPEED_BRAKE_MAX.store(10_000.0_f32.to_bits(), Ordering::Relaxed);
-    ELECTRICAL_SPEED_BRAKE_CURRENT_MAX.store(8_000.0_f32.to_bits(), Ordering::Relaxed);
+    reset_speed_settings();
     GEAR_RATIO.store(2.5_f32.to_bits(), Ordering::Relaxed);
     WHEEL_DIAMETER.store(0.165_f32.to_bits(), Ordering::Relaxed);
     FOC_MOTOR_RESISTANCE.store(0.03_f32.to_bits(), Ordering::Relaxed);
