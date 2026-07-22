@@ -14,6 +14,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 pub type CanReceiverCallback = unsafe extern "C" fn(u32, *mut u8, u8) -> bool;
 
 static SID_RECEIVER_REGISTERED: AtomicBool = AtomicBool::new(false);
+static EID_RECEIVER_REGISTERED: AtomicBool = AtomicBool::new(false);
 
 /// Failure returned by a CAN operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -264,13 +265,24 @@ impl CanStatus {
 /// Safe access to the firmware CAN table.
 pub struct CanBus;
 
-/// Owns one standard-ID receiver registration and unregisters it on drop.
-pub struct CanReceiverGuard;
+/// Owns one CAN receiver registration and unregisters it on drop.
+pub struct CanReceiverGuard {
+    extended: bool,
+}
 
 impl Drop for CanReceiverGuard {
     fn drop(&mut self) {
-        if unsafe { crate::ffi::can_set_sid_callback(None) }.is_some() {
-            SID_RECEIVER_REGISTERED.store(false, Ordering::Release);
+        let cleared = if self.extended {
+            unsafe { crate::ffi::can_set_eid_callback(None) }
+        } else {
+            unsafe { crate::ffi::can_set_sid_callback(None) }
+        };
+        if cleared.is_some() {
+            if self.extended {
+                EID_RECEIVER_REGISTERED.store(false, Ordering::Release);
+            } else {
+                SID_RECEIVER_REGISTERED.store(false, Ordering::Release);
+            }
         }
     }
 }
@@ -292,7 +304,22 @@ impl CanBus {
             SID_RECEIVER_REGISTERED.store(false, Ordering::Release);
             return Err(CanError::Unsupported);
         }
-        Ok(CanReceiverGuard)
+        Ok(CanReceiverGuard { extended: false })
+    }
+
+    /// Register the single extended-ID receive callback exposed by VESC.
+    pub fn register_extended_receiver(
+        &self,
+        callback: CanReceiverCallback,
+    ) -> Result<CanReceiverGuard, CanError> {
+        EID_RECEIVER_REGISTERED
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .map_err(|_| CanError::ReceiverBusy)?;
+        if unsafe { crate::ffi::can_set_eid_callback(Some(callback)) }.is_none() {
+            EID_RECEIVER_REGISTERED.store(false, Ordering::Release);
+            return Err(CanError::Unsupported);
+        }
+        Ok(CanReceiverGuard { extended: true })
     }
 
     /// Ping a remote controller and return its reported hardware family.
@@ -506,4 +533,5 @@ impl CanBus {
 #[cfg(all(feature = "test-support", not(test)))]
 pub(crate) fn reset_receiver_registrations() {
     SID_RECEIVER_REGISTERED.store(false, Ordering::Release);
+    EID_RECEIVER_REGISTERED.store(false, Ordering::Release);
 }
