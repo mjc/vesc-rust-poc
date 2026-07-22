@@ -20,6 +20,8 @@ fn typed_settings_read_write_and_persist() {
     assert_eq!(settings.motor_current_max().current().as_amps(), 100.0);
     assert_eq!(settings.motor_current_min().current().as_amps(), 100.0);
     assert_eq!(settings.input_current_max().current().as_amps(), 60.0);
+    assert_eq!(settings.input_current_min().current().as_amps(), -60.0);
+    assert_eq!(settings.absolute_current_max().current().as_amps(), 150.0);
     assert_eq!(settings.input_voltage_min().voltage().as_volts(), 20.0);
     assert_eq!(settings.input_voltage_max().voltage().as_volts(), 60.0);
     assert_eq!(
@@ -75,6 +77,16 @@ fn typed_settings_read_write_and_persist() {
         ))
         .unwrap();
     settings
+        .set_input_current_min(vescpkg_rs::InputCurrent::new(
+            vescpkg_rs::Current::from_amps(-20.0),
+        ))
+        .unwrap();
+    settings
+        .set_absolute_current_max(vescpkg_rs::MotorCurrentLimit::new(
+            vescpkg_rs::Current::from_amps(120.0),
+        ))
+        .unwrap();
+    settings
         .set_input_voltage_min(vescpkg_rs::InputVoltage::new(
             vescpkg_rs::Voltage::from_volts(24.0),
         ))
@@ -122,6 +134,8 @@ fn typed_settings_read_write_and_persist() {
     assert_eq!(settings.motor_current_max().current().as_amps(), 80.0);
     assert_eq!(settings.motor_current_min().current().as_amps(), 40.0);
     assert_eq!(settings.input_current_max().current().as_amps(), 30.0);
+    assert_eq!(settings.input_current_min().current().as_amps(), -20.0);
+    assert_eq!(settings.absolute_current_max().current().as_amps(), 120.0);
     assert_eq!(settings.input_voltage_min().voltage().as_volts(), 24.0);
     assert_eq!(settings.input_voltage_max().voltage().as_volts(), 54.0);
     assert_eq!(
