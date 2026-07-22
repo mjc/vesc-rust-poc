@@ -2,7 +2,10 @@
 //! Integration coverage for encoder callback ownership.
 
 use core::ffi::CStr;
-use vescpkg_rs::{AngleDegrees, EncoderHandler, test_support::FirmwareTest};
+use vescpkg_rs::{
+    AngleDegrees, EncoderHandler, EncoderRegistration, PackageRuntimeState, PackageStateStore,
+    test_support::FirmwareTest,
+};
 
 struct Handler;
 
@@ -18,6 +21,18 @@ impl EncoderHandler for Handler {
     }
 }
 
+struct PackageState {
+    _registration: Option<EncoderRegistration<Handler>>,
+}
+
+static PACKAGE_STATE: PackageStateStore<PackageState> = PackageStateStore::new();
+
+impl PackageRuntimeState for PackageState {
+    fn runtime_store() -> &'static PackageStateStore<Self> {
+        &PACKAGE_STATE
+    }
+}
+
 #[test]
 fn encoder_registration_is_exclusive_and_clears_on_drop() {
     let firmware = FirmwareTest::new();
@@ -26,4 +41,27 @@ fn encoder_registration_is_exclusive_and_clears_on_drop() {
     assert!(encoder.register::<Handler>().is_err());
     drop(registration);
     assert!(encoder.register::<Handler>().is_ok());
+}
+
+#[test]
+fn package_stop_releases_encoder_state_before_next_registration() {
+    let firmware = FirmwareTest::new();
+    let registration = firmware
+        .encoder()
+        .register::<Handler>()
+        .expect("encoder callback");
+    let mut info = vescpkg_rs::test_support::LoaderInfo::new();
+    let mut start = vescpkg_rs::test_support::package_start(&mut info);
+    start
+        .install_runtime_state(PackageState {
+            _registration: Some(registration),
+        })
+        .expect("package state");
+    assert!(start.finish_start(true));
+    assert!(vescpkg_rs::test_support::stop_package(&mut info));
+
+    firmware
+        .encoder()
+        .register::<Handler>()
+        .expect("stop released encoder callback");
 }
