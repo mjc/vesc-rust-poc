@@ -86,5 +86,9 @@ fn lisp_flat_values_encode_wide_values_and_unblock_contexts() {
     assert!(value.push_byte(b'V'));
     assert!(value.push_byte_array(b"vesc"));
     assert!(value.finish());
+    assert!(!value.push_i32(1));
     LispProcess::unblock_flat(LispContextId::new(9), value).expect("context accepts value");
+
+    let value = LispFlatValue::try_new(4).expect("flat-value slots available");
+    drop(value);
 }
