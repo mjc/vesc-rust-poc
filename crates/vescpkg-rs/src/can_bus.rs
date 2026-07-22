@@ -22,6 +22,23 @@ pub enum CanReceiverId {
     Extended(CanExtendedId),
 }
 
+impl CanReceiverId {
+    /// Return the protocol identifier as an unsigned 29-bit value.
+    #[must_use]
+    pub const fn as_u32(self) -> u32 {
+        match self {
+            Self::Standard(id) => id.as_u16() as u32,
+            Self::Extended(id) => id.as_u32(),
+        }
+    }
+
+    /// Return whether this callback received an extended (29-bit) frame.
+    #[must_use]
+    pub const fn is_extended(self) -> bool {
+        matches!(self, Self::Extended(_))
+    }
+}
+
 /// Safe behavior for one package-owned CAN receive callback.
 pub trait CanReceiverHandler {
     /// Handle a callback-scoped frame payload.
@@ -311,7 +328,7 @@ impl CanBus {
     pub fn register_standard_receiver<H: CanReceiverHandler + 'static>(
         &self,
     ) -> Result<CanReceiverGuard, CanError> {
-        self.register_standard_receiver_impl(standard_receiver::<H>)
+        Self::register_standard_receiver_impl(standard_receiver::<H>)
     }
 
     /// Register a raw standard-ID receive callback.
@@ -324,11 +341,10 @@ impl CanBus {
         &self,
         callback: CanReceiverCallback,
     ) -> Result<CanReceiverGuard, CanError> {
-        self.register_standard_receiver_impl(callback)
+        Self::register_standard_receiver_impl(callback)
     }
 
     fn register_standard_receiver_impl(
-        &self,
         callback: CanReceiverCallback,
     ) -> Result<CanReceiverGuard, CanError> {
         SID_RECEIVER_REGISTERED
@@ -345,7 +361,7 @@ impl CanBus {
     pub fn register_extended_receiver<H: CanReceiverHandler + 'static>(
         &self,
     ) -> Result<CanReceiverGuard, CanError> {
-        self.register_extended_receiver_impl(extended_receiver::<H>)
+        Self::register_extended_receiver_impl(extended_receiver::<H>)
     }
 
     /// Register a raw extended-ID receive callback.
@@ -358,11 +374,10 @@ impl CanBus {
         &self,
         callback: CanReceiverCallback,
     ) -> Result<CanReceiverGuard, CanError> {
-        self.register_extended_receiver_impl(callback)
+        Self::register_extended_receiver_impl(callback)
     }
 
     fn register_extended_receiver_impl(
-        &self,
         callback: CanReceiverCallback,
     ) -> Result<CanReceiverGuard, CanError> {
         EID_RECEIVER_REGISTERED
@@ -640,7 +655,10 @@ pub(crate) fn reset_receiver_registrations() {
 
 #[cfg(test)]
 mod tests {
-    use super::{CanReceiverHandler, CanReceiverId, extended_receiver, standard_receiver};
+    use super::{
+        CanExtendedId, CanReceiverHandler, CanReceiverId, CanStandardId, extended_receiver,
+        standard_receiver,
+    };
 
     struct StandardHandler;
 
@@ -680,5 +698,12 @@ mod tests {
         assert!(!unsafe {
             extended_receiver::<ExtendedHandler>(0x12_3456, extended.as_mut_ptr(), 9)
         });
+
+        let standard_id = CanReceiverId::Standard(CanStandardId::try_new(0x123).unwrap());
+        assert_eq!(standard_id.as_u32(), 0x123);
+        assert!(!standard_id.is_extended());
+        let extended_id = CanReceiverId::Extended(CanExtendedId::try_new(0x12_3456).unwrap());
+        assert_eq!(extended_id.as_u32(), 0x12_3456);
+        assert!(extended_id.is_extended());
     }
 }
