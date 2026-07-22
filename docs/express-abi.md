@@ -36,6 +36,11 @@ the pinned header. It does not make those calls safe, and it never reinterprets
 the STM32 table. Target-specific package builds and hardware proof still need
 to be added.
 
+The module provides named pointer aliases for the shared clock, sleep,
+allocation, thread, mutex, and semaphore signatures. They are ABI fixtures for
+the unsafe resolver, not a safe Express runtime facade; variadic `printf` and
+STM32-only motor/CAN/peripheral slots remain outside this shared surface.
+
 The fixed-address `ExpressInterface::from_target` constructor is also unsafe:
 it is only valid on the matching 32-bit Express target and is intentionally not
 used by host tests. This foundation deliberately does not use bindgen.

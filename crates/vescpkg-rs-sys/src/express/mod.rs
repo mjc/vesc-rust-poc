@@ -6,10 +6,12 @@
 //! loader. Typed callable wrappers can build on this boundary without mixing
 //! slot order or target pointers with STM32.
 
+mod functions;
 mod loader;
 mod table;
 mod types;
 
+pub use functions::*;
 pub use loader::{ExpressCallError, ExpressInterface, ExpressLoadError};
 pub use table::{ExpressSlot, ExpressSlotKind, ExpressTable, ExpressTableError, express_slot_kind};
 pub use types::{
