@@ -985,6 +985,11 @@ pub mod test_support {
             self.should_terminate_after_calls.set(checks);
             self
         }
+
+        pub(crate) fn with_priority_result(self, result: bool) -> Self {
+            self.priority_result.set(result);
+            self
+        }
     }
 
     impl ThreadBindings for FakeThreadBindings {
@@ -1069,6 +1074,7 @@ mod tests {
     use std::sync::Mutex;
 
     use crate::thread::test_support::FakeThreadBindings;
+    use crate::types::ThreadPriority;
     use crate::units::TimestampTicks;
 
     #[test]
@@ -1123,6 +1129,22 @@ mod tests {
             u64::from(VESC_MAX_SAFE_SLEEP_MICROS) + 1,
         ));
         assert_eq!(overflow.sleep_micros.get(), [VESC_MAX_SAFE_SLEEP_MICROS, 1]);
+    }
+
+    #[test]
+    fn thread_priority_forwards_checked_values_and_reports_absence() {
+        let supported = FakeThreadBindings::new();
+        let priority = ThreadPriority::try_new(5).expect("priority is in the ABI range");
+        assert_eq!(ThreadApi::new(&supported).set_priority(priority), Ok(()));
+        assert_eq!(supported.priority_calls.get(), 1);
+        assert_eq!(supported.priorities.get()[0], 5);
+
+        let unsupported = FakeThreadBindings::new().with_priority_result(false);
+        assert_eq!(
+            ThreadApi::new(&unsupported).set_priority(priority),
+            Err(super::ThreadError::PriorityUnsupported)
+        );
+        assert_eq!(unsupported.priority_calls.get(), 1);
     }
 
     static RUN_CALLS: AtomicUsize = AtomicUsize::new(0);
