@@ -290,6 +290,52 @@ impl FirmwareSettings {
         ))
     }
 
+    /// Read the configured battery cut-start voltage.
+    pub fn battery_cut_start_voltage(self) -> InputVoltage {
+        InputVoltage::new(Voltage::from_volts(
+            self.get_float(FirmwareFloatSetting::BatteryCutStartVoltage),
+        ))
+    }
+
+    /// Read the configured battery cut-end voltage.
+    pub fn battery_cut_end_voltage(self) -> InputVoltage {
+        InputVoltage::new(Voltage::from_volts(
+            self.get_float(FirmwareFloatSetting::BatteryCutEndVoltage),
+        ))
+    }
+
+    /// Update the live minimum input-voltage cut threshold; persistence still requires [`Self::store`].
+    pub fn set_input_voltage_min(self, voltage: InputVoltage) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::MinimumInputVoltage,
+            voltage.voltage().as_volts(),
+        )
+    }
+
+    /// Update the live maximum input-voltage cut threshold; persistence still requires [`Self::store`].
+    pub fn set_input_voltage_max(self, voltage: InputVoltage) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::MaximumInputVoltage,
+            voltage.voltage().as_volts(),
+        )
+    }
+
+    /// Update the live battery cut-start voltage; persistence still requires [`Self::store`].
+    pub fn set_battery_cut_start_voltage(self, voltage: InputVoltage) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::BatteryCutStartVoltage,
+            voltage.voltage().as_volts(),
+        )
+    }
+
+    /// Update the live battery cut-end voltage; persistence still requires [`Self::store`].
+    pub fn set_battery_cut_end_voltage(self, voltage: InputVoltage) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::BatteryCutEndVoltage,
+            voltage.voltage().as_volts(),
+        )
+    }
+
     /// Read the MOSFET temperature limit-start threshold.
     pub fn mosfet_temperature_start(self) -> TemperatureLimitStart {
         TemperatureLimitStart::new(crate::Temperature::from_degrees_celsius(
@@ -302,6 +348,64 @@ impl FirmwareSettings {
         TemperatureLimitEnd::new(crate::Temperature::from_degrees_celsius(
             self.get_float(FirmwareFloatSetting::MosfetTemperatureEnd),
         ))
+    }
+
+    /// Read the motor temperature limit-start threshold.
+    pub fn motor_temperature_start(self) -> TemperatureLimitStart {
+        TemperatureLimitStart::new(crate::Temperature::from_degrees_celsius(
+            self.get_float(FirmwareFloatSetting::MotorTemperatureStart),
+        ))
+    }
+
+    /// Read the motor temperature limit-end threshold.
+    pub fn motor_temperature_end(self) -> TemperatureLimitEnd {
+        TemperatureLimitEnd::new(crate::Temperature::from_degrees_celsius(
+            self.get_float(FirmwareFloatSetting::MotorTemperatureEnd),
+        ))
+    }
+
+    /// Update the live MOSFET temperature limit-start threshold; persistence still requires [`Self::store`].
+    pub fn set_mosfet_temperature_start(
+        self,
+        temperature: TemperatureLimitStart,
+    ) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::MosfetTemperatureStart,
+            temperature.temperature().as_degrees_celsius(),
+        )
+    }
+
+    /// Update the live MOSFET temperature limit-end threshold; persistence still requires [`Self::store`].
+    pub fn set_mosfet_temperature_end(
+        self,
+        temperature: TemperatureLimitEnd,
+    ) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::MosfetTemperatureEnd,
+            temperature.temperature().as_degrees_celsius(),
+        )
+    }
+
+    /// Update the live motor temperature limit-start threshold; persistence still requires [`Self::store`].
+    pub fn set_motor_temperature_start(
+        self,
+        temperature: TemperatureLimitStart,
+    ) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::MotorTemperatureStart,
+            temperature.temperature().as_degrees_celsius(),
+        )
+    }
+
+    /// Update the live motor temperature limit-end threshold; persistence still requires [`Self::store`].
+    pub fn set_motor_temperature_end(
+        self,
+        temperature: TemperatureLimitEnd,
+    ) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::MotorTemperatureEnd,
+            temperature.temperature().as_degrees_celsius(),
+        )
     }
 
     /// Read the configured maximum duty-cycle ratio, clamping malformed firmware output.

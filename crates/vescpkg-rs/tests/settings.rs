@@ -20,6 +20,44 @@ fn typed_settings_read_write_and_persist() {
     assert_eq!(settings.motor_current_max().current().as_amps(), 100.0);
     assert_eq!(settings.motor_current_min().current().as_amps(), 100.0);
     assert_eq!(settings.input_current_max().current().as_amps(), 60.0);
+    assert_eq!(settings.input_voltage_min().voltage().as_volts(), 20.0);
+    assert_eq!(settings.input_voltage_max().voltage().as_volts(), 60.0);
+    assert_eq!(
+        settings.battery_cut_start_voltage().voltage().as_volts(),
+        30.0
+    );
+    assert_eq!(
+        settings.battery_cut_end_voltage().voltage().as_volts(),
+        28.0
+    );
+    assert_eq!(
+        settings
+            .mosfet_temperature_start()
+            .temperature()
+            .as_degrees_celsius(),
+        85.0
+    );
+    assert_eq!(
+        settings
+            .mosfet_temperature_end()
+            .temperature()
+            .as_degrees_celsius(),
+        90.0
+    );
+    assert_eq!(
+        settings
+            .motor_temperature_start()
+            .temperature()
+            .as_degrees_celsius(),
+        85.0
+    );
+    assert_eq!(
+        settings
+            .motor_temperature_end()
+            .temperature()
+            .as_degrees_celsius(),
+        95.0
+    );
     assert_eq!(settings.duty_cycle_limit().ratio().as_ratio(), 0.95);
     settings
         .set_motor_current_max(vescpkg_rs::MotorCurrentLimit::new(
@@ -37,6 +75,46 @@ fn typed_settings_read_write_and_persist() {
         ))
         .unwrap();
     settings
+        .set_input_voltage_min(vescpkg_rs::InputVoltage::new(
+            vescpkg_rs::Voltage::from_volts(24.0),
+        ))
+        .unwrap();
+    settings
+        .set_input_voltage_max(vescpkg_rs::InputVoltage::new(
+            vescpkg_rs::Voltage::from_volts(54.0),
+        ))
+        .unwrap();
+    settings
+        .set_battery_cut_start_voltage(vescpkg_rs::InputVoltage::new(
+            vescpkg_rs::Voltage::from_volts(31.0),
+        ))
+        .unwrap();
+    settings
+        .set_battery_cut_end_voltage(vescpkg_rs::InputVoltage::new(
+            vescpkg_rs::Voltage::from_volts(29.0),
+        ))
+        .unwrap();
+    settings
+        .set_mosfet_temperature_start(vescpkg_rs::TemperatureLimitStart::new(
+            vescpkg_rs::Temperature::from_degrees_celsius(75.0),
+        ))
+        .unwrap();
+    settings
+        .set_mosfet_temperature_end(vescpkg_rs::TemperatureLimitEnd::new(
+            vescpkg_rs::Temperature::from_degrees_celsius(85.0),
+        ))
+        .unwrap();
+    settings
+        .set_motor_temperature_start(vescpkg_rs::TemperatureLimitStart::new(
+            vescpkg_rs::Temperature::from_degrees_celsius(80.0),
+        ))
+        .unwrap();
+    settings
+        .set_motor_temperature_end(vescpkg_rs::TemperatureLimitEnd::new(
+            vescpkg_rs::Temperature::from_degrees_celsius(90.0),
+        ))
+        .unwrap();
+    settings
         .set_duty_cycle_limit(vescpkg_rs::DutyCycleLimit::new(
             vescpkg_rs::Ratio::from_ratio_const(0.8),
         ))
@@ -44,6 +122,44 @@ fn typed_settings_read_write_and_persist() {
     assert_eq!(settings.motor_current_max().current().as_amps(), 80.0);
     assert_eq!(settings.motor_current_min().current().as_amps(), 40.0);
     assert_eq!(settings.input_current_max().current().as_amps(), 30.0);
+    assert_eq!(settings.input_voltage_min().voltage().as_volts(), 24.0);
+    assert_eq!(settings.input_voltage_max().voltage().as_volts(), 54.0);
+    assert_eq!(
+        settings.battery_cut_start_voltage().voltage().as_volts(),
+        31.0
+    );
+    assert_eq!(
+        settings.battery_cut_end_voltage().voltage().as_volts(),
+        29.0
+    );
+    assert_eq!(
+        settings
+            .mosfet_temperature_start()
+            .temperature()
+            .as_degrees_celsius(),
+        75.0
+    );
+    assert_eq!(
+        settings
+            .mosfet_temperature_end()
+            .temperature()
+            .as_degrees_celsius(),
+        85.0
+    );
+    assert_eq!(
+        settings
+            .motor_temperature_start()
+            .temperature()
+            .as_degrees_celsius(),
+        80.0
+    );
+    assert_eq!(
+        settings
+            .motor_temperature_end()
+            .temperature()
+            .as_degrees_celsius(),
+        90.0
+    );
     assert_eq!(settings.duty_cycle_limit().ratio().as_ratio(), 0.8);
     settings
         .set_float(FirmwareFloatSetting::InputCurrentMax, 24.0)
