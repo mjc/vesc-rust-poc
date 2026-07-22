@@ -68,17 +68,6 @@ fn firmware_imu_exposes_vectors_and_derotated_samples() {
         [7.0, 8.0, 9.0]
     );
     assert_eq!(
-        imu.calibrate(AngleDegrees::from_degrees(f32::NAN)),
-        Err(ImuCalibrationError::InvalidYaw)
-    );
-    firmware.set_imu_calibration_valid(false);
-    assert_eq!(
-        imu.calibrate(AngleDegrees::from_degrees(90.0)),
-        Err(ImuCalibrationError::InvalidResult)
-    );
-    firmware.set_imu_calibration_valid(true);
-
-    assert_eq!(
         imu.acceleration().map_axes(|x, y, z| [
             x.acceleration().as_g(),
             y.acceleration().as_g(),
@@ -118,5 +107,26 @@ fn firmware_imu_exposes_vectors_and_derotated_samples() {
             z.angular_velocity().as_degrees_per_second(),
         ]),
         [7.0, 8.0, 9.0]
+    );
+}
+
+#[test]
+fn firmware_imu_rejects_non_finite_calibration_output() {
+    let firmware = FirmwareTest::new();
+    firmware.set_imu_calibration_valid(false);
+
+    assert_eq!(
+        firmware.imu().calibrate(AngleDegrees::from_degrees(90.0)),
+        Err(ImuCalibrationError::InvalidResult)
+    );
+}
+
+#[test]
+fn firmware_imu_rejects_non_finite_calibration_yaw() {
+    assert_eq!(
+        FirmwareTest::new()
+            .imu()
+            .calibrate(AngleDegrees::from_degrees(f32::NAN)),
+        Err(ImuCalibrationError::InvalidYaw)
     );
 }
