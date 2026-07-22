@@ -9,9 +9,11 @@ use crate::{
     NativeAddress, NativeImage, NvmAddress, NvmBytes, NvmLen, OwnedFirmwareAllocation,
     PlotAxisName, PlotGraphIndex, PlotGraphName, PlotPoint, ProgramAddress, ReplyPacket,
     SemaphoreHandle, StackSizeBytes, Stm32AbiRevision, SystemTicks, ThreadHandle, ThreadName,
-    UartBaudRate, UartWriteLen, VescIfAbi, VescIfSlot, VescIfSlotKind, VescPin, VescPinMode,
+    UartBaudRate, UartWriteLen, VescIfAbi, VescIfCapabilities, VescIfSlot, VescIfSlotKind,
+    VescIfSubsystem, VescPin, VescPinMode,
 };
 use core::ffi::{CStr, c_char};
+use std::vec;
 
 #[test]
 fn native_image_rebases_image_data_offsets() {
@@ -349,4 +351,16 @@ fn vesc_if_presence_tracks_holes_and_profiles_from_observed_words() {
             slot: VescIfAbi::THREAD_SET_PRIORITY,
         })
     );
+}
+
+#[test]
+fn vesc_if_capabilities_expose_named_subsystems_without_raw_slot_names() {
+    let mut words = vec![0; VescIfAbi::FIELD_COUNT];
+    words[VescIfAbi::CAN_TRANSMIT_SID.slot_index()] = 1;
+    words[VescIfAbi::READ_NVM.slot_index()] = 1;
+    let capabilities = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
+
+    assert_eq!(capabilities.can().unwrap().subsystem(), VescIfSubsystem::Can);
+    assert_eq!(capabilities.nvm().unwrap().subsystem(), VescIfSubsystem::Nvm);
+    assert_eq!(capabilities.audio().unwrap_err().capability(), "FOC audio");
 }
