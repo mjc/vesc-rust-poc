@@ -80,6 +80,14 @@ mod tests {
             ExpressTarget::Esp32S3.sdkconfig_define(),
             "CONFIG_IDF_TARGET_ESP32S3"
         );
+        assert_eq!(
+            ExpressTarget::from_sdkconfig_define("CONFIG_IDF_TARGET_ESP32P4"),
+            Some(ExpressTarget::Esp32P4)
+        );
+        assert_eq!(
+            ExpressTarget::from_sdkconfig_define("CONFIG_IDF_TARGET_ESP32"),
+            None
+        );
     }
 
     #[test]

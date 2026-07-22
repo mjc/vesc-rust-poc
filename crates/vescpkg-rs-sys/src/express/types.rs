@@ -32,6 +32,17 @@ pub enum ExpressTarget {
 }
 
 impl ExpressTarget {
+    /// Parse an ESP-IDF target preprocessor define.
+    pub fn from_sdkconfig_define(define: &str) -> Option<Self> {
+        match define {
+            "CONFIG_IDF_TARGET_ESP32C3" => Some(Self::Esp32C3),
+            "CONFIG_IDF_TARGET_ESP32S3" => Some(Self::Esp32S3),
+            "CONFIG_IDF_TARGET_ESP32C6" => Some(Self::Esp32C6),
+            "CONFIG_IDF_TARGET_ESP32P4" => Some(Self::Esp32P4),
+            _ => None,
+        }
+    }
+
     /// Return the ESP-IDF target name used by Express firmware builds.
     pub const fn target_name(self) -> &'static str {
         match self {
