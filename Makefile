@@ -33,7 +33,7 @@ ifdef DEVICE_ADDRESS
 DEVICE_FLAGS += --address $(DEVICE_ADDRESS)
 endif
 
-.PHONY: check check-full pre-commit fmt clippy clippy-pedantic vescpkg-rs-sys-target-check arm-clippy arm-gates test doc-test package package-only deploy clean status
+.PHONY: check check-full pre-commit fmt clippy clippy-pedantic vescpkg-rs-sys-target-check thumb-dispatch-smoke arm-clippy arm-gates test doc-test package package-only deploy clean status
 
 # --- verification -----------------------------------------------------------
 #
@@ -63,7 +63,10 @@ vescpkg-rs-sys-target-check:
 arm-clippy:
 	$(CARGO) clippy -p vesc-example-loopback --bin vesc-example-loopback --release --target $(ARM_TARGET) -- $(CLIPPY_PEDANTIC_FLAGS)
 
-arm-gates: vescpkg-rs-sys-target-check arm-clippy package-only
+arm-gates: vescpkg-rs-sys-target-check thumb-dispatch-smoke arm-clippy package-only
+
+thumb-dispatch-smoke:
+	./tools/thumb-dispatch-smoke.sh
 
 test:
 	$(CARGO) nextest run --workspace --features test-support
