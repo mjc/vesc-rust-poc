@@ -64,35 +64,14 @@ fn typed_settings_read_write_and_persist() {
     assert_eq!(settings.imu_rotation_yaw().as_degrees(), 0.0);
     assert_eq!(settings.imu_acceleration_confidence_decay().as_ratio(), 1.0);
     assert_eq!(
-        settings
-            .imu_mahony_proportional_gain()
-            .unwrap()
-            .value(),
+        settings.imu_mahony_proportional_gain().unwrap().value(),
         10.0
     );
     assert_eq!(settings.imu_mahony_integral_gain().unwrap().value(), 0.0);
     assert_eq!(settings.imu_madgwick_beta().unwrap().value(), 2.0);
-    assert_eq!(
-        settings
-            .imu_acceleration_offset_x()
-            .unwrap()
-            .as_g(),
-        0.0
-    );
-    assert_eq!(
-        settings
-            .imu_acceleration_offset_y()
-            .unwrap()
-            .as_g(),
-        0.0
-    );
-    assert_eq!(
-        settings
-            .imu_acceleration_offset_z()
-            .unwrap()
-            .as_g(),
-        0.0
-    );
+    assert_eq!(settings.imu_acceleration_offset_x().unwrap().as_g(), 0.0);
+    assert_eq!(settings.imu_acceleration_offset_y().unwrap().as_g(), 0.0);
+    assert_eq!(settings.imu_acceleration_offset_z().unwrap().as_g(), 0.0);
     assert_eq!(
         settings
             .imu_gyro_offset_x()
@@ -266,22 +245,46 @@ fn typed_settings_read_write_and_persist() {
         .set_imu_madgwick_beta(vescpkg_rs::ImuMadgwickBeta::try_new(1.5).unwrap())
         .unwrap();
     settings
-        .set_imu_acceleration_offset_x(vescpkg_rs::AccelerationG::from_g(0.01))
+        .set_imu_acceleration_offset_x(
+            vescpkg_rs::ImuAccelerationOffset::try_new(vescpkg_rs::AccelerationG::from_g(0.01))
+                .unwrap(),
+        )
         .unwrap();
     settings
-        .set_imu_acceleration_offset_y(vescpkg_rs::AccelerationG::from_g(-0.02))
+        .set_imu_acceleration_offset_y(
+            vescpkg_rs::ImuAccelerationOffset::try_new(vescpkg_rs::AccelerationG::from_g(-0.02))
+                .unwrap(),
+        )
         .unwrap();
     settings
-        .set_imu_acceleration_offset_z(vescpkg_rs::AccelerationG::from_g(0.03))
+        .set_imu_acceleration_offset_z(
+            vescpkg_rs::ImuAccelerationOffset::try_new(vescpkg_rs::AccelerationG::from_g(0.03))
+                .unwrap(),
+        )
         .unwrap();
     settings
-        .set_imu_gyro_offset_x(vescpkg_rs::AngularVelocity::from_degrees_per_second(0.4))
+        .set_imu_gyro_offset_x(
+            vescpkg_rs::ImuAngularRateOffset::try_new(
+                vescpkg_rs::AngularVelocity::from_degrees_per_second(0.4),
+            )
+            .unwrap(),
+        )
         .unwrap();
     settings
-        .set_imu_gyro_offset_y(vescpkg_rs::AngularVelocity::from_degrees_per_second(-0.5))
+        .set_imu_gyro_offset_y(
+            vescpkg_rs::ImuAngularRateOffset::try_new(
+                vescpkg_rs::AngularVelocity::from_degrees_per_second(-0.5),
+            )
+            .unwrap(),
+        )
         .unwrap();
     settings
-        .set_imu_gyro_offset_z(vescpkg_rs::AngularVelocity::from_degrees_per_second(0.6))
+        .set_imu_gyro_offset_z(
+            vescpkg_rs::ImuAngularRateOffset::try_new(
+                vescpkg_rs::AngularVelocity::from_degrees_per_second(0.6),
+            )
+            .unwrap(),
+        )
         .unwrap();
     settings
         .set_motor_pole_count(vescpkg_rs::MotorPoleCount::try_new(16).unwrap())
@@ -436,26 +439,14 @@ fn typed_settings_read_write_and_persist() {
     assert_eq!(settings.imu_rotation_yaw().as_degrees(), 3.0);
     assert_eq!(settings.imu_acceleration_confidence_decay().as_ratio(), 0.8);
     assert_eq!(
-        settings
-            .imu_mahony_proportional_gain()
-            .unwrap()
-            .value(),
+        settings.imu_mahony_proportional_gain().unwrap().value(),
         12.0
     );
     assert_eq!(settings.imu_mahony_integral_gain().unwrap().value(), 0.25);
     assert_eq!(settings.imu_madgwick_beta().unwrap().value(), 1.5);
-    assert_eq!(
-        settings.imu_acceleration_offset_x().unwrap().as_g(),
-        0.01
-    );
-    assert_eq!(
-        settings.imu_acceleration_offset_y().unwrap().as_g(),
-        -0.02
-    );
-    assert_eq!(
-        settings.imu_acceleration_offset_z().unwrap().as_g(),
-        0.03
-    );
+    assert_eq!(settings.imu_acceleration_offset_x().unwrap().as_g(), 0.01);
+    assert_eq!(settings.imu_acceleration_offset_y().unwrap().as_g(), -0.02);
+    assert_eq!(settings.imu_acceleration_offset_z().unwrap().as_g(), 0.03);
     assert_eq!(
         settings
             .imu_gyro_offset_x()
