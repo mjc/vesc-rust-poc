@@ -66,3 +66,8 @@ fn byte_images_can_start_at_an_explicit_word_address() {
     assert!(eeprom.read_bytes_at(start, &mut bytes));
     assert_eq!(bytes, [9, 8, 7, 6, 5]);
 }
+
+#[test]
+fn eeprom_address_rejects_indices_outside_the_signed_abi_range() {
+    assert!(CustomEepromAddress::from_index(usize::MAX).is_none());
+}
