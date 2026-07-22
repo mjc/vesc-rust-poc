@@ -53,6 +53,13 @@ pub fn read_u32(buffer: &[u8], index: &mut usize) -> Option<u32> {
     Some(value)
 }
 
+/// Read one big-endian signed 32-bit integer.
+#[must_use]
+#[inline(always)]
+pub fn read_i32(buffer: &[u8], index: &mut usize) -> Option<i32> {
+    read_u32(buffer, index).map(|value| i32::from_be_bytes(value.to_be_bytes()))
+}
+
 /// Read VESC's automatic 32-bit float representation.
 #[must_use]
 #[inline(always)]
@@ -79,7 +86,8 @@ pub fn float32_auto_bits(value: f32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        append_float32_auto, append_i16, append_i32, append_u32, read_float32_auto, read_u32,
+        append_float32_auto, append_i16, append_i32, append_u32, read_float32_auto, read_i32,
+        read_u32,
     };
 
     #[test]
@@ -110,6 +118,13 @@ mod tests {
 
         assert_eq!(append_i32(&mut bytes, &mut index, -42), Some(()));
         assert_eq!(bytes, (-42_i32).to_be_bytes());
+        assert_eq!(index, 4);
+    }
+
+    #[test]
+    fn signed_i32_decoder_preserves_twos_complement_wire_bits() {
+        let mut index = 0;
+        assert_eq!(read_i32(&(-42_i32).to_be_bytes(), &mut index), Some(-42));
         assert_eq!(index, 4);
     }
 
