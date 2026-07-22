@@ -1,15 +1,15 @@
 #[allow(unused_imports)]
 use crate::{
-    AbiError, AppDataLen, AppDataPacket, CanControllerId, CanFrameLen, CanPayload, CanStatusIndex,
-    CfgFloat, CfgInt, CfgParam, CommandPacket, ConfigPayload, ConfigSetResult, ConfigXmlBytes,
-    EepromAddress, EepromVar, FirmwareNonNull, FirmwarePtr, GpioPin, GpioPortPtr, HalfDuplex,
-    HardwareType, ImageOffset, LbmBoolSymbol, LbmCid, LbmCount, LbmErrorSymbol, LbmFloat, LbmInt,
-    LbmIoSymbol, LbmNilSymbol, LbmSymbol, LbmType, LbmUint, LbmValue, LibInfo, LibInfoAbi,
-    LoaderBaseAddress, MallocLen, MotorIndex, MutablePacket, MutexHandle, NativeAddress,
-    NativeImage, NvmAddress, NvmBytes, NvmLen, OwnedFirmwareAllocation, PlotAxisName,
-    PlotGraphIndex, PlotGraphName, PlotPoint, ProgramAddress, ReplyPacket, SemaphoreHandle,
-    StackSizeBytes, Stm32AbiRevision, SystemTicks, ThreadHandle, ThreadName, UartBaudRate,
-    UartWriteLen, VescIfAbi, VescIfSlot, VescIfSlotKind, VescPin, VescPinMode,
+    AbiError, AppDataLen, AppDataPacket, CanBaud, CanControllerId, CanFrameLen, CanPayload,
+    CanStatusIndex, CfgFloat, CfgInt, CfgParam, CommandPacket, ConfigPayload, ConfigSetResult,
+    ConfigXmlBytes, EepromAddress, EepromVar, FirmwareNonNull, FirmwarePtr, GpioPin, GpioPortPtr,
+    HalfDuplex, HardwareType, ImageOffset, LbmBoolSymbol, LbmCid, LbmCount, LbmErrorSymbol,
+    LbmFloat, LbmInt, LbmIoSymbol, LbmNilSymbol, LbmSymbol, LbmType, LbmUint, LbmValue, LibInfo,
+    LibInfoAbi, LoaderBaseAddress, MallocLen, MotorIndex, MutablePacket, MutexHandle,
+    NativeAddress, NativeImage, NvmAddress, NvmBytes, NvmLen, OwnedFirmwareAllocation,
+    PlotAxisName, PlotGraphIndex, PlotGraphName, PlotPoint, ProgramAddress, ReplyPacket,
+    SemaphoreHandle, StackSizeBytes, Stm32AbiRevision, SystemTicks, ThreadHandle, ThreadName,
+    UartBaudRate, UartWriteLen, VescIfAbi, VescIfSlot, VescIfSlotKind, VescPin, VescPinMode,
 };
 use core::ffi::{CStr, c_char};
 
@@ -263,6 +263,14 @@ fn transparent_wrappers_expose_raw_tuple_fields() {
     let point = PlotPoint { x: 1.5, y: 2.5 };
     assert_eq!(point.x, 1.5);
     assert_eq!(point.y, 2.5);
+}
+
+#[test]
+fn can_baud_representation_preserves_pinned_enum_values() {
+    assert_eq!(core::mem::size_of::<CanBaud>(), core::mem::size_of::<i32>());
+    assert_eq!(CanBaud::K125.raw(), 0);
+    assert_eq!(CanBaud::K500.raw(), 2);
+    assert_eq!(CanBaud::K100.raw(), 8);
 }
 
 #[test]
