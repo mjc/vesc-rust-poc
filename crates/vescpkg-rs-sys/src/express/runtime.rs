@@ -1,8 +1,10 @@
 //! Constructor-gated shared Express runtime operations.
 
 use super::functions::{
-    ShouldTerminate, SleepMs, SleepTicks, SleepUs, SystemTime, SystemTimeTicks, ThreadSetPriority,
-    TimerSecondsElapsedSince, TimerSleep, TimerTimeNow, TsToAgeS,
+    Free, LibMutex, LibSemaphore, MutexCreate, MutexLock, MutexUnlock, SemaphoreCreate,
+    SemaphoreReset, SemaphoreSignal, SemaphoreWait, SemaphoreWaitTo, ShouldTerminate, SleepMs,
+    SleepTicks, SleepUs, SystemTime, SystemTimeTicks, ThreadSetPriority, TimerSecondsElapsedSince,
+    TimerSleep, TimerTimeNow, TsToAgeS,
 };
 use super::{ExpressCallError, ExpressInterface, ExpressSlot, ExpressTarget};
 
@@ -116,6 +118,61 @@ impl<'a> ExpressRuntime<'a> {
         let set_priority: ThreadSetPriority =
             unsafe { self.interface.function(ExpressSlot::ThreadSetPriority) }?;
         unsafe { set_priority(priority) };
+        Ok(())
+    }
+
+    pub(crate) fn free(self, pointer: *mut core::ffi::c_void) -> Result<(), ExpressCallError> {
+        let free: Free = unsafe { self.interface.function(ExpressSlot::Free) }?;
+        unsafe { free(pointer) };
+        Ok(())
+    }
+
+    pub(crate) fn mutex_create(self) -> Result<LibMutex, ExpressCallError> {
+        let create: MutexCreate = unsafe { self.interface.function(ExpressSlot::MutexCreate) }?;
+        Ok(unsafe { create() })
+    }
+
+    pub(crate) fn mutex_lock(self, mutex: LibMutex) -> Result<(), ExpressCallError> {
+        let lock: MutexLock = unsafe { self.interface.function(ExpressSlot::MutexLock) }?;
+        unsafe { lock(mutex) };
+        Ok(())
+    }
+
+    pub(crate) fn mutex_unlock(self, mutex: LibMutex) -> Result<(), ExpressCallError> {
+        let unlock: MutexUnlock = unsafe { self.interface.function(ExpressSlot::MutexUnlock) }?;
+        unsafe { unlock(mutex) };
+        Ok(())
+    }
+
+    pub(crate) fn semaphore_create(self) -> Result<LibSemaphore, ExpressCallError> {
+        let create: SemaphoreCreate = unsafe { self.interface.function(ExpressSlot::SemCreate) }?;
+        Ok(unsafe { create() })
+    }
+
+    pub(crate) fn semaphore_wait(self, semaphore: LibSemaphore) -> Result<(), ExpressCallError> {
+        let wait: SemaphoreWait = unsafe { self.interface.function(ExpressSlot::SemWait) }?;
+        unsafe { wait(semaphore) };
+        Ok(())
+    }
+
+    pub(crate) fn semaphore_signal(self, semaphore: LibSemaphore) -> Result<(), ExpressCallError> {
+        let signal: SemaphoreSignal = unsafe { self.interface.function(ExpressSlot::SemSignal) }?;
+        unsafe { signal(semaphore) };
+        Ok(())
+    }
+
+    pub(crate) fn semaphore_wait_to(
+        self,
+        semaphore: LibSemaphore,
+        ticks: u32,
+    ) -> Result<bool, ExpressCallError> {
+        let wait_to: SemaphoreWaitTo = unsafe { self.interface.function(ExpressSlot::SemWaitTo) }?;
+        Ok(unsafe { wait_to(semaphore, ticks) })
+    }
+
+    pub(crate) fn semaphore_reset(self, semaphore: LibSemaphore) -> Result<(), ExpressCallError> {
+        let reset: SemaphoreReset = unsafe { self.interface.function(ExpressSlot::SemReset) }?;
+        unsafe { reset(semaphore) };
         Ok(())
     }
 }
