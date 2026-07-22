@@ -418,3 +418,22 @@ fn vesc_if_capabilities_keep_required_checks_and_revision_observations_separate(
     assert_eq!(capabilities.revision(), Stm32AbiRevision::UnknownCompatible);
     assert!(capabilities.require_settings().is_ok());
 }
+
+#[test]
+fn settings_capability_requires_the_complete_live_and_persisted_surface() {
+    let mut words = [0_usize; VescIfAbi::FIELD_COUNT];
+    for slot in [
+        VescIfAbi::GET_CFG_FLOAT,
+        VescIfAbi::GET_CFG_INT,
+        VescIfAbi::SET_CFG_FLOAT,
+        VescIfAbi::SET_CFG_INT,
+    ] {
+        words[slot.slot_index()] = 1;
+    }
+    let capabilities = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
+
+    assert_eq!(
+        capabilities.settings().unwrap_err().slot(),
+        VescIfAbi::STORE_CFG
+    );
+}

@@ -256,20 +256,45 @@ impl VescIfCapabilities {
 
     /// Require settings support for a constructor that needs configuration access.
     pub const fn require_settings(self) -> Result<VescIfCapability, AbiError> {
-        self.required(
-            VescIfSubsystem::Settings,
-            "settings",
-            VescIfAbi::GET_CFG_FLOAT,
-        )
+        match self.settings_slots(true) {
+            Ok(()) => Ok(VescIfCapability {
+                subsystem: VescIfSubsystem::Settings,
+            }),
+            Err(error) => Err(error),
+        }
     }
 
     /// Probe settings support when a package can operate without configuration access.
     pub const fn settings(self) -> Result<VescIfCapability, AbiError> {
-        self.optional(
-            VescIfSubsystem::Settings,
-            "settings",
+        match self.settings_slots(false) {
+            Ok(()) => Ok(VescIfCapability {
+                subsystem: VescIfSubsystem::Settings,
+            }),
+            Err(error) => Err(error),
+        }
+    }
+
+    const fn settings_slots(self, required: bool) -> Result<(), AbiError> {
+        let checks = [
             VescIfAbi::GET_CFG_FLOAT,
-        )
+            VescIfAbi::GET_CFG_INT,
+            VescIfAbi::SET_CFG_FLOAT,
+            VescIfAbi::SET_CFG_INT,
+            VescIfAbi::STORE_CFG,
+        ];
+        let mut index = 0;
+        while index < checks.len() {
+            let result = if required {
+                self.presence.require("settings", checks[index])
+            } else {
+                self.presence.optional("settings", checks[index])
+            };
+            if let Err(error) = result {
+                return Err(error);
+            }
+            index += 1;
+        }
+        Ok(())
     }
 
     const fn optional(
