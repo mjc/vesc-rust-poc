@@ -19,6 +19,7 @@ struct SlotDeclaration {
     c_name: String,
     index: usize,
     kind: SlotKind,
+    line: usize,
 }
 
 fn main() {
@@ -57,7 +58,15 @@ fn main() {
     let generated_bindings = bindings.to_string();
     fs::write(&bindings_path, &generated_bindings).expect("write VESC C ABI bindings");
 
-    let slots = slots_from_bindings(&generated_bindings);
+    let mut slots = slots_from_bindings(&generated_bindings);
+    let header_source = fs::read_to_string(&header).expect("read vendored VESC header");
+    for slot in &mut slots {
+        slot.line = header_source
+            .lines()
+            .position(|line| line.split_whitespace().any(|word| word == slot.c_name))
+            .map(|line| line + 1)
+            .unwrap_or(0);
+    }
     assert!(
         !slots.is_empty(),
         "failed to parse vesc_c_if slots from {}",
@@ -93,6 +102,7 @@ fn slots_from_bindings(bindings: &str) -> Vec<SlotDeclaration> {
             } else {
                 SlotKind::Scalar
             },
+            line: 0,
         })
         .collect()
 }
@@ -229,7 +239,7 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
     rust.push_str("        $macro! {\n");
     for slot in slots {
         if matches!(slot.kind, SlotKind::Function) {
-            writeln!(rust, "            {},", slot.rust_name).expect("write generated Rust");
+            writeln!(rust, "            {},", slot.c_name).expect("write generated Rust");
         }
     }
     rust.push_str("        }\n");
@@ -245,7 +255,7 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
         writeln!(
             rust,
             "            core::mem::offset_of!($table, {}),",
-            slot.rust_name
+            slot.c_name
         )
         .expect("write generated Rust");
     }
@@ -256,7 +266,7 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
     rust.push_str("pub(crate) use rust_field_offsets;\n\n");
 
     for slot in slots {
-        writeln!(rust, "pub(crate) mod {} {{", slot.rust_name).expect("write generated Rust");
+        writeln!(rust, "pub(crate) mod {} {{", slot.c_name).expect("write generated Rust");
         writeln!(
             rust,
             "    pub(crate) const NAME: &str = \"{}\";",
