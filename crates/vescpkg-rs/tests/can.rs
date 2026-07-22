@@ -2,7 +2,8 @@
 //! Integration coverage for the safe CAN facade.
 
 use vescpkg_rs::{
-    AngleDegrees, CanBus, CanControllerId, CanError, CanExtendedId, CanStandardId, Current,
+    AngleDegrees, CanBus, CanControllerId, CanError, CanExtendedId, CanHardwareType,
+    CanStandardId, Current,
     CurrentRelative, DutyCycle, ElectricalSpeed, MotorCurrent, PidPosition, Rpm, SignedRatio,
 };
 
@@ -57,4 +58,17 @@ fn can_bus_transmits_bounded_payloads_and_copies_status() {
     );
     assert_eq!(status.motor_current().current().as_amps(), 4.5);
     assert_eq!(status.duty_cycle().ratio().as_ratio(), 0.25);
+}
+
+#[test]
+fn can_bus_pings_and_reports_remote_hardware_type() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+
+    assert_eq!(
+        firmware
+            .can()
+            .ping(CanControllerId::new(7))
+            .expect("CAN ping slot"),
+        CanHardwareType::Vesc
+    );
 }
