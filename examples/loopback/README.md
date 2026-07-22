@@ -8,6 +8,11 @@ package library and package entrypoint into the final ELF.
 `cargo-vescpkg` discovers that ELF from Cargo's JSON artifact stream and embeds
 its binary payload into the BLE loopback `.vescpkg` artifact.
 
+The package also includes usage-shaped public-API examples: a typed LispBM
+extension in `src/extensions.rs`, app-data transport in `src/app_data.rs`, and
+an explicit custom-EEPROM probe in `src/config.rs`. The EEPROM helper only
+writes when its caller asks and never reaches into `vescpkg-rs-sys`.
+
 Build the package ELF:
 
 ```bash
