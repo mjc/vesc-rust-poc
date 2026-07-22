@@ -374,6 +374,8 @@ mod slots {
     fn_slot!(mc_get_tachometer_abs_value as unsafe extern "C" fn(bool) -> c_int);
     fn_slot!(mc_stat_power_avg as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_stat_power_max as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_stat_speed_avg as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_stat_speed_max as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_stat_reset as unsafe extern "C" fn());
     fn_slot!(mc_get_input_voltage_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_amp_hours as unsafe extern "C" fn(bool) -> f32);
@@ -1519,6 +1521,16 @@ pub unsafe fn mc_stat_power_avg() -> f32 {
 /// the motor-statistics slot.
 pub unsafe fn mc_stat_power_max() -> f32 {
     unsafe { slots::mc_stat_power_max()() }
+}
+
+/// Read the average vehicle speed statistic.
+pub unsafe fn mc_stat_speed_avg() -> f32 {
+    unsafe { slots::mc_stat_speed_avg()() }
+}
+
+/// Read the peak vehicle speed statistic.
+pub unsafe fn mc_stat_speed_max() -> f32 {
+    unsafe { slots::mc_stat_speed_max()() }
 }
 
 /// Reset motor power and related statistics.

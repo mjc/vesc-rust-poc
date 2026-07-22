@@ -1155,6 +1155,14 @@ pub unsafe fn mc_stat_power_max() -> f32 {
     240.0
 }
 
+pub unsafe fn mc_stat_speed_avg() -> f32 {
+    4.0
+}
+
+pub unsafe fn mc_stat_speed_max() -> f32 {
+    8.0
+}
+
 pub unsafe fn mc_stat_reset() {}
 
 pub unsafe fn mc_get_tachometer_abs_value(_reset: bool) -> i32 {

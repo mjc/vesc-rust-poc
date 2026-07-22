@@ -6,12 +6,13 @@ use core::ffi::CStr;
 #[cfg(not(test))]
 use crate::types::FirmwareFaultWireCode;
 use crate::types::{
-    AbsoluteTachometerSteps, AmpHoursCharged, AmpHoursDischarged, AveragePower, BatteryCellCount,
-    BatteryLevel, BrakeCurrent, CurrentOffDelay, DCurrent, DirectionalMotorCurrent, DutyCycle,
-    DutyCycleLimit, ElectricalSpeed, FirmwareFaultCode, HandbrakeCurrent, HandbrakeRelative,
-    InputCurrent, InputVoltage, MosfetTemperature, MotorCurrent, MotorCurrentLimit,
-    MotorTemperature, PeakPower, TachometerSteps, TemperatureLimitStart, TotalMotorCurrent,
-    TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
+    AbsoluteTachometerSteps, AmpHoursCharged, AmpHoursDischarged, AveragePower,
+    AverageVehicleSpeed, BatteryCellCount, BatteryLevel, BrakeCurrent, CurrentOffDelay, DCurrent,
+    DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed, FirmwareFaultCode,
+    HandbrakeCurrent, HandbrakeRelative, InputCurrent, InputVoltage, MosfetTemperature,
+    MotorCurrent, MotorCurrentLimit, MotorTemperature, PeakPower, PeakVehicleSpeed,
+    TachometerSteps, TemperatureLimitStart, TotalMotorCurrent, TripDistance, VehicleSpeed,
+    WattHoursCharged, WattHoursDischarged,
 };
 #[cfg(not(test))]
 use crate::units::{Charge, Current, Distance, Energy, Power, Rpm, Speed, Temperature, Voltage};
@@ -99,6 +100,10 @@ pub trait MotorTelemetryBindings {
     fn average_power(&self) -> AveragePower;
     /// Return peak motor power statistics.
     fn peak_power(&self) -> PeakPower;
+    /// Return average vehicle speed statistics.
+    fn average_speed(&self) -> AverageVehicleSpeed;
+    /// Return peak vehicle speed statistics.
+    fn peak_speed(&self) -> PeakVehicleSpeed;
     /// Return the current signed duty cycle.
     ///
     /// The firmware value is clamped to the signed ratio range, with NaN
@@ -217,6 +222,14 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
 
     fn peak_power(&self) -> PeakPower {
         (**self).peak_power()
+    }
+
+    fn average_speed(&self) -> AverageVehicleSpeed {
+        (**self).average_speed()
+    }
+
+    fn peak_speed(&self) -> PeakVehicleSpeed {
+        (**self).peak_speed()
     }
 
     fn duty_cycle(&self) -> DutyCycle {
@@ -492,6 +505,18 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         }))
     }
 
+    fn average_speed(&self) -> AverageVehicleSpeed {
+        AverageVehicleSpeed::new(Speed::from_meters_per_second(unsafe {
+            crate::ffi::mc_stat_speed_avg()
+        }))
+    }
+
+    fn peak_speed(&self) -> PeakVehicleSpeed {
+        PeakVehicleSpeed::new(Speed::from_meters_per_second(unsafe {
+            crate::ffi::mc_stat_speed_max()
+        }))
+    }
+
     fn duty_cycle(&self) -> DutyCycle {
         duty_cycle_from_firmware(unsafe { crate::ffi::mc_get_duty_cycle_now() })
     }
@@ -703,6 +728,10 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn average_power(&self) -> AveragePower;
     /// Return peak motor power statistics.
     fn peak_power(&self) -> PeakPower;
+    /// Return average vehicle speed statistics.
+    fn average_speed(&self) -> AverageVehicleSpeed;
+    /// Return peak vehicle speed statistics.
+    fn peak_speed(&self) -> PeakVehicleSpeed;
     /// Return the current signed duty cycle.
     fn duty_cycle(&self) -> DutyCycle;
     /// Return optional FOC d-axis current.
@@ -922,6 +951,16 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.peak_power()
     }
 
+    /// Return average vehicle speed statistics.
+    pub fn average_speed(&self) -> AverageVehicleSpeed {
+        self.bindings.average_speed()
+    }
+
+    /// Return peak vehicle speed statistics.
+    pub fn peak_speed(&self) -> PeakVehicleSpeed {
+        self.bindings.peak_speed()
+    }
+
     /// Return the current signed duty cycle.
     pub fn duty_cycle(&self) -> DutyCycle {
         self.bindings.duty_cycle()
@@ -1083,6 +1122,14 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
 
     fn peak_power(&self) -> PeakPower {
         self.peak_power()
+    }
+
+    fn average_speed(&self) -> AverageVehicleSpeed {
+        self.average_speed()
+    }
+
+    fn peak_speed(&self) -> PeakVehicleSpeed {
+        self.peak_speed()
     }
 
     fn duty_cycle(&self) -> DutyCycle {
