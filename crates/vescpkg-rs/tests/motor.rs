@@ -3,7 +3,7 @@
 
 use vescpkg_rs::prelude::{
     AudioChannel, AudioFrequency, AudioVoltage, Current, FirmwareFaultCode, Frequency,
-    HandbrakeCurrent, HandbrakeRelative, InputCurrentLimit, Ratio, Voltage,
+    HandbrakeCurrent, HandbrakeRelative, InputCurrentLimit, Ratio, VescSeconds, Voltage,
 };
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{MotorOutput, MotorTelemetry};
@@ -100,9 +100,25 @@ fn motor_exposes_typed_handbrake_commands() {
         telemetry.battery_current_unfiltered().current().as_amps(),
         8.0
     );
+    assert_eq!(telemetry.average_power().power().as_watts(), 120.0);
+    assert_eq!(telemetry.peak_power().power().as_watts(), 240.0);
     assert_eq!(telemetry.tachometer(false).steps().as_steps(), 1234);
     assert_eq!(telemetry.absolute_tachometer(true).steps().as_steps(), 5678);
     assert_eq!(telemetry.sampling_frequency().as_hertz(), 20_000.0);
     firmware.motor().release_motor();
-    firmware.motor().wait_for_motor_release();
+<<<<<<< HEAD
+    assert!(
+        firmware
+            .motor()
+            .wait_for_motor_release(VescSeconds::from_seconds(0.1))
+    );
+    firmware.motor().reset_statistics();
+=======
+    assert!(
+        firmware
+            .motor()
+            .wait_for_motor_release(VescSeconds::from_seconds(0.1))
+    );
+    firmware.motor().reset_statistics();
+>>>>>>> 4ef95fc9 (test motor power statistics)
 }
