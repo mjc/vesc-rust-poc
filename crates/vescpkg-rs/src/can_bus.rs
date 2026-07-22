@@ -2,8 +2,9 @@
 
 use crate::types::{
     AmpHoursCharged, AmpHoursDischarged, CanControllerId, CanExtendedId, CanPayloadLen,
-    CanStandardId, CurrentRelative, DutyCycle, ElectricalSpeed, InputCurrent, MosfetTemperature,
-    MotorCurrent, MotorTemperature, PidPosition, WattHoursCharged, WattHoursDischarged,
+    CanStandardId, CurrentRelative, DutyCycle, ElectricalSpeed, InputCurrent, InputVoltage,
+    MosfetTemperature, MotorCurrent, MotorTemperature, PidPosition, TachometerSteps,
+    WattHoursCharged, WattHoursDischarged,
 };
 use crate::units::{Charge, Current, Energy, Rpm, SignedRatio, TimestampTicks};
 
@@ -88,6 +89,31 @@ pub struct CanStatus4 {
     motor_temperature: MotorTemperature,
     input_current: InputCurrent,
     position: PidPosition,
+}
+
+/// A copied snapshot of CAN status message 5.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CanStatus5 {
+    controller: CanControllerId,
+    input_voltage: InputVoltage,
+    tachometer: TachometerSteps,
+}
+
+impl CanStatus5 {
+    /// Return the controller whose status was queried.
+    pub const fn controller(self) -> CanControllerId {
+        self.controller
+    }
+
+    /// Return the remote controller input voltage.
+    pub const fn input_voltage(self) -> InputVoltage {
+        self.input_voltage
+    }
+
+    /// Return the remote tachometer position.
+    pub const fn tachometer(self) -> TachometerSteps {
+        self.tachometer
+    }
 }
 
 impl CanStatus4 {
@@ -319,6 +345,18 @@ impl CanBus {
             )),
             input_current: InputCurrent::new(Current::from_amps(raw.current_in)),
             position: PidPosition::new(crate::AngleDegrees::from_degrees(raw.pid_pos_now)),
+        })
+    }
+
+    /// Copy CAN status message 5 for one remote controller.
+    pub fn status5(&self, controller: CanControllerId) -> Option<CanStatus5> {
+        let raw = unsafe { crate::ffi::can_status_msg_5_id(i32::from(controller.as_u8())) }?;
+        Some(CanStatus5 {
+            controller,
+            input_voltage: InputVoltage::new(crate::Voltage::from_volts(raw.v_in)),
+            tachometer: TachometerSteps::new(crate::units::TachometerSteps::from_steps(
+                raw.tacho_value,
+            )),
         })
     }
 }
