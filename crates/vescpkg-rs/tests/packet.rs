@@ -1,7 +1,10 @@
 #![cfg(feature = "test-support")]
 //! Integration coverage for owned packet framing state.
 
-use vescpkg_rs::{PacketCodec, PacketHandler, test_support::FirmwareTest};
+use vescpkg_rs::{
+    OwnedPacketRegistration, PackageRuntimeState, PackageStateStore, PacketCodec, PacketHandler,
+    test_support::FirmwareTest,
+};
 
 struct Handler;
 
@@ -9,6 +12,18 @@ impl PacketHandler for Handler {
     fn send(_data: &[u8]) {}
 
     fn process(_data: &[u8]) {}
+}
+
+struct PackageState {
+    _registration: Option<OwnedPacketRegistration<Handler>>,
+}
+
+static PACKAGE_STATE: PackageStateStore<PackageState> = PackageStateStore::new();
+
+impl PackageRuntimeState for PackageState {
+    fn runtime_store() -> &'static PackageStateStore<Self> {
+        &PACKAGE_STATE
+    }
 }
 
 #[test]
@@ -37,4 +52,25 @@ fn packet_codec_registration_is_exclusive_and_released_on_drop() {
     ));
     drop(registration);
     assert!(second.register().is_ok());
+}
+
+#[test]
+fn owned_packet_registration_survives_into_package_state_and_stops_cleanly() {
+    let _firmware = FirmwareTest::new();
+    let registration = PacketCodec::<Handler>::new()
+        .register_owned()
+        .expect("owned packet registration");
+    let mut info = vescpkg_rs::test_support::LoaderInfo::new();
+    let mut start = vescpkg_rs::test_support::package_start(&mut info);
+    start
+        .install_runtime_state(PackageState {
+            _registration: Some(registration),
+        })
+        .expect("package state");
+    assert!(start.finish_start(true));
+    assert!(vescpkg_rs::test_support::stop_package(&mut info));
+
+    PacketCodec::<Handler>::new()
+        .register_owned()
+        .expect("stop released owned packet registration");
 }
