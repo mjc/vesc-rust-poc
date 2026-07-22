@@ -95,8 +95,11 @@ impl Terminal {
 
 impl<H: TerminalHandler> Drop for TerminalRegistration<'_, H> {
     fn drop(&mut self) {
-        let _ = unsafe { crate::ffi::terminal_unregister_callback(callback::<H>) };
-        TERMINAL_OWNED.store(false, Ordering::Release);
+        // A failed unregister leaves the provider callback live, so fail closed
+        // instead of allowing a later registration to replace it.
+        if unsafe { crate::ffi::terminal_unregister_callback(callback::<H>) } {
+            TERMINAL_OWNED.store(false, Ordering::Release);
+        }
     }
 }
 

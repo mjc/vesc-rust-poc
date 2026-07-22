@@ -48,7 +48,9 @@ impl PwmCallbackLease {
 
 impl Drop for PwmCallbackLease {
     fn drop(&mut self) {
-        let _ = unsafe { crate::ffi::mc_set_pwm_callback(None) };
-        PWM_CALLBACK_REGISTERED.store(false, Ordering::Release);
+        // Retain ownership if the callback cannot be cleared from firmware.
+        if unsafe { crate::ffi::mc_set_pwm_callback(None) } {
+            PWM_CALLBACK_REGISTERED.store(false, Ordering::Release);
+        }
     }
 }

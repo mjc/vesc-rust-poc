@@ -64,10 +64,13 @@ impl Encoder {
 
 impl<H: EncoderHandler> Drop for EncoderRegistration<H> {
     fn drop(&mut self) {
-        let _ = unsafe {
+        // Do not admit a second provider when firmware rejected the disable set.
+        let cleared = unsafe {
             crate::ffi::encoder_set_custom_callbacks(disabled_read, disabled_fault, disabled_info)
         };
-        ENCODER_OWNED.store(false, Ordering::Release);
+        if cleared {
+            ENCODER_OWNED.store(false, Ordering::Release);
+        }
     }
 }
 
