@@ -5,12 +5,15 @@ use core::ffi::c_char;
 use super::functions::{
     AddExtension, AddSymbolConst, CreateByteArray, GetSymbolByName, LbmBlockCtxFromExtension,
     LbmCar, LbmCdr, LbmCons, LbmContinueEval, LbmDecAsFloat, LbmDecAsI32, LbmDecAsU32, LbmDecChar,
-    LbmDecSym, LbmEncChar, LbmEncFloat, LbmEncI, LbmEncI32, LbmEncSym, LbmEncU, LbmEncU32,
-    LbmEvalIsPaused, LbmGetCurrentCid, LbmIsByteArray, LbmIsChar, LbmIsCons, LbmIsNumber,
-    LbmIsSymbol, LbmListDestructiveReverse, LbmPauseEvalWithGc, LbmSendMessage,
-    LbmUnblockCtxUnboxed, SetErrorReason,
+    LbmDecStr, LbmDecSym, LbmEncChar, LbmEncFloat, LbmEncI, LbmEncI32, LbmEncSym, LbmEncU,
+    LbmEncU32, LbmEvalIsPaused, LbmGetCurrentCid, LbmIsByteArray, LbmIsChar, LbmIsCons,
+    LbmIsNumber, LbmIsSymbol, LbmIsSymbolNil, LbmIsSymbolTrue, LbmListDestructiveReverse,
+    LbmPauseEvalWithGc, LbmSendMessage, LbmUnblockCtxUnboxed, SetErrorReason,
 };
-use super::{ExpressCallError, ExpressInterface, ExpressSlot};
+use super::{
+    ExpressCallError, ExpressFlatValue, ExpressFlatValueError, ExpressInterface,
+    ExpressLispMessageError, ExpressSlot,
+};
 
 /// A typed Express LispBM value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -129,6 +132,18 @@ impl<'a> ExpressLisp<'a> {
         Ok(unsafe { decode(value.raw()) })
     }
 
+    /// Decode a LispBM string value to the firmware-owned C string pointer.
+    ///
+    /// # Safety
+    ///
+    /// The returned pointer is owned by firmware and is only valid for the
+    /// lifetime promised by the Express header. It must not be freed or
+    /// written by the caller.
+    pub unsafe fn dec_str(self, value: ExpressLispValue) -> Result<*mut c_char, ExpressCallError> {
+        let decode: LbmDecStr = unsafe { self.interface.function(ExpressSlot::LbmDecStr) }?;
+        Ok(unsafe { decode(value.raw()) })
+    }
+
     /// Decode a LispBM value as a symbol identifier.
     pub fn dec_sym(self, value: ExpressLispValue) -> Result<ExpressLispSymbol, ExpressCallError> {
         let decode: LbmDecSym = unsafe { self.interface.function(ExpressSlot::LbmDecSym) }?;
@@ -200,6 +215,20 @@ impl<'a> ExpressLisp<'a> {
         Ok(unsafe { check(value.raw()) })
     }
 
+    /// Return whether a LispBM symbol identifier is `nil`.
+    pub fn is_symbol_nil(self, symbol: ExpressLispSymbol) -> Result<bool, ExpressCallError> {
+        let check: LbmIsSymbolNil =
+            unsafe { self.interface.function(ExpressSlot::LbmIsSymbolNil) }?;
+        Ok(unsafe { check(symbol.raw()) })
+    }
+
+    /// Return whether a LispBM symbol identifier is `true`.
+    pub fn is_symbol_true(self, symbol: ExpressLispSymbol) -> Result<bool, ExpressCallError> {
+        let check: LbmIsSymbolTrue =
+            unsafe { self.interface.function(ExpressSlot::LbmIsSymbolTrue) }?;
+        Ok(unsafe { check(symbol.raw()) })
+    }
+
     fn symbol_constant(self, slot: ExpressSlot) -> Result<ExpressLispSymbol, ExpressCallError> {
         let value = self
             .interface
@@ -261,6 +290,39 @@ impl<'a> ExpressLisp<'a> {
         let unblock: LbmUnblockCtxUnboxed =
             unsafe { self.interface.function(ExpressSlot::LbmUnblockCtxUnboxed) }?;
         Ok(unsafe { unblock(cid, value.raw()) })
+    }
+
+    /// Start an ownership-scoped flattened LispBM value.
+    pub fn start_flatten(
+        self,
+        buffer_size: usize,
+    ) -> Result<ExpressFlatValue<'a>, ExpressFlatValueError> {
+        ExpressFlatValue::start(self.interface, buffer_size)
+    }
+
+    /// Unblock a context with a finished flattened LispBM value.
+    pub fn unblock_context_flat(
+        self,
+        cid: u32,
+        mut value: ExpressFlatValue<'a>,
+    ) -> Result<(), ExpressLispMessageError> {
+        if !value.finish().map_err(|error| match error {
+            ExpressFlatValueError::Unavailable(error) => {
+                ExpressLispMessageError::Unavailable(error)
+            }
+            ExpressFlatValueError::Rejected => ExpressLispMessageError::Rejected,
+        })? {
+            return Err(ExpressLispMessageError::Rejected);
+        }
+        let unblock: super::functions::LbmUnblockCtx =
+            unsafe { self.interface.function(ExpressSlot::LbmUnblockCtx) }
+                .map_err(ExpressLispMessageError::Unavailable)?;
+        if unsafe { unblock(cid, &mut value.raw) } {
+            value.relinquish();
+            Ok(())
+        } else {
+            Err(ExpressLispMessageError::Rejected)
+        }
     }
 
     /// Pause LispBM evaluation while retaining at least `num_free` words.

@@ -76,3 +76,22 @@ impl ExpressAddress {
         self.0
     }
 }
+
+/// Firmware-owned flattened LispBM value storage.
+#[derive(Debug)]
+#[repr(C)]
+pub struct ExpressFlatValueRaw {
+    pub(crate) buf: *mut u8,
+    pub(crate) buf_size: u32,
+    pub(crate) buf_pos: u32,
+}
+
+impl ExpressFlatValueRaw {
+    pub(crate) const fn empty() -> Self {
+        Self {
+            buf: core::ptr::null_mut(),
+            buf_size: 0,
+            buf_pos: 0,
+        }
+    }
+}

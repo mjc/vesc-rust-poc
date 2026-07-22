@@ -6,6 +6,7 @@
 //! loader. Typed callable wrappers can build on this boundary without mixing
 //! slot order or target pointers with STM32.
 
+mod flat;
 mod functions;
 mod lisp;
 mod loader;
@@ -15,6 +16,7 @@ mod sync;
 mod table;
 mod types;
 
+pub use flat::{ExpressFlatValue, ExpressFlatValueError, ExpressLispMessageError};
 pub use functions::*;
 pub use lisp::{ExpressLisp, ExpressLispSymbol, ExpressLispValue};
 pub use loader::{ExpressCallError, ExpressInterface, ExpressLoadError};
@@ -24,8 +26,8 @@ pub use sync::{ExpressMutex, ExpressMutexGuard, ExpressSemaphore, ExpressSyncErr
 pub use table::{ExpressSlot, ExpressSlotKind, ExpressTable, ExpressTableError, express_slot_kind};
 pub use types::{
     EXPRESS_C_IF_VERSION, EXPRESS_IF_SLOT_COUNT, EXPRESS_IF_TABLE_BYTES, EXPRESS_NATIVE_LIB_MAGIC,
-    EXPRESS_NATIVE_LIB_RELOC_MAGIC, EXPRESS_SYSTEM_TICK_RATE_HZ, ExpressAddress, ExpressTarget,
-    ExpressWord,
+    EXPRESS_NATIVE_LIB_RELOC_MAGIC, EXPRESS_SYSTEM_TICK_RATE_HZ, ExpressAddress,
+    ExpressFlatValueRaw, ExpressTarget, ExpressWord,
 };
 
 #[cfg(test)]
@@ -43,6 +45,10 @@ mod tests {
         assert_eq!(EXPRESS_C_IF_VERSION, 1);
         assert_eq!(EXPRESS_IF_SLOT_COUNT, 80);
         assert_eq!(EXPRESS_IF_TABLE_BYTES, 320);
+        #[cfg(target_pointer_width = "32")]
+        assert_eq!(core::mem::size_of::<ExpressFlatValueRaw>(), 12);
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(core::mem::size_of::<ExpressFlatValueRaw>(), 16);
         assert_eq!(express_slot_kind(0), Some(ExpressSlotKind::Scalar));
         assert_eq!(express_slot_kind(38), Some(ExpressSlotKind::Scalar));
         assert_eq!(express_slot_kind(42), Some(ExpressSlotKind::Scalar));
@@ -169,6 +175,30 @@ mod tests {
                 slot: ExpressSlot::LbmGetCurrentCid
             })
         );
+        assert_eq!(
+            unsafe { lisp.dec_str(ExpressLispValue::new(0)) },
+            Err(ExpressCallError {
+                slot: ExpressSlot::LbmDecStr
+            })
+        );
+        assert_eq!(
+            lisp.is_symbol_nil(ExpressLispSymbol::new(0)),
+            Err(ExpressCallError {
+                slot: ExpressSlot::LbmIsSymbolNil
+            })
+        );
+        assert_eq!(
+            lisp.is_symbol_true(ExpressLispSymbol::new(0)),
+            Err(ExpressCallError {
+                slot: ExpressSlot::LbmIsSymbolTrue
+            })
+        );
+        assert!(matches!(
+            lisp.start_flatten(16),
+            Err(ExpressFlatValueError::Unavailable(ExpressCallError {
+                slot: ExpressSlot::LbmStartFlatten
+            }))
+        ));
         assert_eq!(
             lisp.eval_is_paused(),
             Err(ExpressCallError {
