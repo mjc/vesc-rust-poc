@@ -239,6 +239,12 @@ impl LispValue {
         is_integer(self.raw().0).then(|| decode_integer(self.raw().0))
     }
 
+    /// Decode an immediate LispBM integer exactly when it is non-negative.
+    #[must_use]
+    pub fn decode_u32_exact(self) -> Option<u32> {
+        self.decode_i32_exact().and_then(|value| value.try_into().ok())
+    }
+
     /// Convert a firmware-classified numeric value to an unsigned integer.
     #[cfg(not(test))]
     pub fn decode_number_as_u32(self) -> Option<u32> {

@@ -23,6 +23,9 @@ fn lisp_values_expose_explicit_kind_predicates() {
     assert!(!integer.is_symbol());
     assert!(!integer.is_cons());
     assert!(!integer.is_byte_array());
+    assert_eq!(integer.decode_i32_exact(), Some(7));
+    assert_eq!(integer.decode_u32_exact(), Some(7));
+    assert_eq!(LispValue::from_i32(-1).decode_u32_exact(), None);
     assert_eq!(integer.decode_number_as_u32(), Some(7));
     assert_eq!(integer.decode_number_as_u64(), Some(7));
     assert_eq!(integer.decode_number_as_i64(), Some(7));
