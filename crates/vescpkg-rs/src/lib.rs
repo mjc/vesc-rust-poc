@@ -183,6 +183,7 @@ pub use alloc::VescAllocator;
 pub use can_bus::{
     CanBus, CanError, CanHardwareType, CanReceiverCallback, CanReceiverGuard, CanReceiverHandler,
     CanReceiverId, CanStatus, CanStatus2, CanStatus3, CanStatus4, CanStatus5, CanStatus6,
+    CanStatusStore,
 };
 pub use eeprom::{CustomEeprom, CustomEepromAddress, EepromWord};
 pub use encoder::{Encoder, EncoderError, EncoderHandler, EncoderRegistration};
@@ -280,25 +281,26 @@ pub mod prelude {
     pub use crate::{Ahrs, Madgwick};
     pub use crate::{
         AnalogPin, AppDataHandler, AppDataSendError, CanBus, CanError, CanReceiverHandler,
-        CanReceiverId, CanStatus, CommandError, CommandReplyHandler, Commands, ConfigBytes,
-        ConfigXml, CustomEeprom, CustomEepromAddress, DigitalOutputLevel, DigitalPin, EepromWord,
-        Encoder, EncoderError, EncoderHandler, EncoderRegistration, ExtensionDescriptor,
-        ExtensionName, ExtensionRegistration, Firmware, FirmwareAhrs, FirmwareAhrsError,
-        FirmwareAhrsParameters, FirmwareAhrsSnapshot, FirmwareAppData, FirmwareCapabilities,
-        FirmwareClock, FirmwareFloatSetting, FirmwareInputs, FirmwareIntSetting, FirmwareLog,
-        FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore, FirmwareSettings, FirmwareThread,
-        FirmwareThreads, FocAudio, FocAudioError, FocAudioSampleTable, Gnss, GnssError,
-        GnssSnapshot, Gpio, Imu, ImuReadCallback, ImuReadCallbackError, ImuReadCallbackLease,
-        ImuReadHandler, InputError, LbmExtension, LispArgs, LispContextId, LispFlatValue,
-        LispIntegerError, LispList, LispListError, LispMessageError, LispProcess, LispSymbol,
-        LispValue, LogError, MotorOutput, MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset,
-        PackageStartError, PacketCodec, PacketError, PacketHandler, Plot, PlotError, PpmSnapshot,
-        PwmCallbackError, PwmCallbackHandler, PwmCallbackLease, RemoteInputSnapshot, SettingsError,
-        ShutdownInhibit, StatefulCustomConfigCallback, StatefulLbmExtension,
-        StatelessFirmwareThread, StatelessThreadContext, Terminal, TerminalError, TerminalHandler,
-        TerminalRegistration, ThreadContext, ThreadError, ThreadName, ThreadSpec,
-        ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimeoutSnapshot, TimerInstant,
-        TypedPwmCallbackLease, Uart, UartError, UartLease,
+        CanReceiverId, CanStatus, CanStatusStore, CommandError, CommandReplyHandler, Commands,
+        ConfigBytes, ConfigXml, CustomEeprom, CustomEepromAddress, DigitalOutputLevel, DigitalPin,
+        EepromWord, Encoder, EncoderError, EncoderHandler, EncoderRegistration,
+        ExtensionDescriptor, ExtensionName, ExtensionRegistration, Firmware, FirmwareAhrs,
+        FirmwareAhrsError, FirmwareAhrsParameters, FirmwareAhrsSnapshot, FirmwareAppData,
+        FirmwareCapabilities, FirmwareClock, FirmwareFloatSetting, FirmwareInputs,
+        FirmwareIntSetting, FirmwareLog, FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore,
+        FirmwareSettings, FirmwareThread, FirmwareThreads, FocAudio, FocAudioError,
+        FocAudioSampleTable, Gnss, GnssError, GnssSnapshot, Gpio, Imu, ImuReadCallback,
+        ImuReadCallbackError, ImuReadCallbackLease, ImuReadHandler, InputError, LbmExtension,
+        LispArgs, LispContextId, LispFlatValue, LispIntegerError, LispList, LispListError,
+        LispMessageError, LispProcess, LispSymbol, LispValue, LogError, MotorOutput,
+        MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset, PackageStartError, PacketCodec,
+        PacketError, PacketHandler, Plot, PlotError, PpmSnapshot, PwmCallbackError,
+        PwmCallbackHandler, PwmCallbackLease, RemoteInputSnapshot, SettingsError, ShutdownInhibit,
+        StatefulCustomConfigCallback, StatefulLbmExtension, StatelessFirmwareThread,
+        StatelessThreadContext, Terminal, TerminalError, TerminalHandler, TerminalRegistration,
+        ThreadContext, ThreadError, ThreadName, ThreadSpec, ThreadWorkingAreaSize,
+        ThreadWorkingAreaSizeError, TimeoutSnapshot, TimerInstant, TypedPwmCallbackLease, Uart,
+        UartError, UartLease,
     };
 }
 
