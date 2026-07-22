@@ -33,6 +33,15 @@ fn firmware_imu_exposes_vectors_and_derotated_samples() {
         [4.0, 5.0, 6.0]
     );
     assert_eq!(
+        imu.derotate_acceleration(imu.acceleration())
+            .map_axes(|x, y, z| [
+                x.acceleration().as_g(),
+                y.acceleration().as_g(),
+                z.acceleration().as_g(),
+            ]),
+        [4.0, 5.0, 6.0]
+    );
+    assert_eq!(
         imu.derotated_angular_rate().map_axes(|x, y, z| [
             x.angular_velocity().as_degrees_per_second(),
             y.angular_velocity().as_degrees_per_second(),

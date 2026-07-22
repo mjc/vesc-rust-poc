@@ -57,6 +57,16 @@ pub trait ImuBindings {
 
     /// Return firmware IMU orientation.
     fn orientation(&self) -> ImuOrientation;
+    /// Return firmware acceleration axes in g units.
+    fn acceleration(&self) -> ImuAcceleration;
+    /// Return firmware magnetic-field axes in microteslas.
+    fn magnetic_field(&self) -> ImuMagneticField;
+    /// Return derotated firmware acceleration axes in g units.
+    fn derotated_acceleration(&self) -> ImuAcceleration;
+    /// Derotate a caller-provided acceleration vector into the firmware frame.
+    fn derotate_acceleration(&self, input: ImuAcceleration) -> ImuAcceleration;
+    /// Return derotated firmware gyro axes in degrees/sec.
+    fn derotated_angular_rate(&self) -> ImuAngularRate;
 }
 
 #[cfg(not(test))]
@@ -83,6 +93,26 @@ impl<B: ImuBindings + ?Sized> ImuBindings for &B {
 
     fn orientation(&self) -> ImuOrientation {
         (**self).orientation()
+    }
+
+    fn acceleration(&self) -> ImuAcceleration {
+        (**self).acceleration()
+    }
+
+    fn magnetic_field(&self) -> ImuMagneticField {
+        (**self).magnetic_field()
+    }
+
+    fn derotated_acceleration(&self) -> ImuAcceleration {
+        (**self).derotated_acceleration()
+    }
+
+    fn derotate_acceleration(&self, input: ImuAcceleration) -> ImuAcceleration {
+        (**self).derotate_acceleration(input)
+    }
+
+    fn derotated_angular_rate(&self) -> ImuAngularRate {
+        (**self).derotated_angular_rate()
     }
 }
 
@@ -287,6 +317,63 @@ impl ImuBindings for RealImuBindings {
         unsafe { crate::ffi::vesc_imu_get_quaternions(quaternions.as_mut_ptr()) };
         ImuOrientation::from_quaternion(ImuQuaternion::from_firmware_wxyz(quaternions))
     }
+
+    fn acceleration(&self) -> ImuAcceleration {
+        let mut values = [0.0; 3];
+        unsafe { crate::ffi::imu_get_accel(values.as_mut_ptr()) };
+        ImuAcceleration::from_axes(
+            ImuAccelerationX::new(AccelerationG::from_g(values[0])),
+            ImuAccelerationY::new(AccelerationG::from_g(values[1])),
+            ImuAccelerationZ::new(AccelerationG::from_g(values[2])),
+        )
+    }
+
+    fn magnetic_field(&self) -> ImuMagneticField {
+        let mut values = [0.0; 3];
+        unsafe { crate::ffi::imu_get_mag(values.as_mut_ptr()) };
+        ImuMagneticField::from_axes(
+            ImuMagneticFieldX::new(MagneticFluxDensity::from_microteslas(values[0])),
+            ImuMagneticFieldY::new(MagneticFluxDensity::from_microteslas(values[1])),
+            ImuMagneticFieldZ::new(MagneticFluxDensity::from_microteslas(values[2])),
+        )
+    }
+
+    fn derotated_acceleration(&self) -> ImuAcceleration {
+        let mut values = [0.0; 3];
+        unsafe { crate::ffi::imu_get_accel_derotated(values.as_mut_ptr()) };
+        ImuAcceleration::from_axes(
+            ImuAccelerationX::new(AccelerationG::from_g(values[0])),
+            ImuAccelerationY::new(AccelerationG::from_g(values[1])),
+            ImuAccelerationZ::new(AccelerationG::from_g(values[2])),
+        )
+    }
+
+    fn derotate_acceleration(&self, input: ImuAcceleration) -> ImuAcceleration {
+        let input = input.map_axes(|x, y, z| {
+            [
+                x.acceleration().as_g(),
+                y.acceleration().as_g(),
+                z.acceleration().as_g(),
+            ]
+        });
+        let mut output = [0.0; 3];
+        unsafe { crate::ffi::imu_derotate(input.as_ptr(), output.as_mut_ptr()) };
+        ImuAcceleration::from_axes(
+            ImuAccelerationX::new(AccelerationG::from_g(output[0])),
+            ImuAccelerationY::new(AccelerationG::from_g(output[1])),
+            ImuAccelerationZ::new(AccelerationG::from_g(output[2])),
+        )
+    }
+
+    fn derotated_angular_rate(&self) -> ImuAngularRate {
+        let mut values = [0.0; 3];
+        unsafe { crate::ffi::imu_get_gyro_derotated(values.as_mut_ptr()) };
+        ImuAngularRate::from_axes(
+            ImuAngularRateRoll::new(AngularVelocity::from_degrees_per_second(values[0])),
+            ImuAngularRatePitch::new(AngularVelocity::from_degrees_per_second(values[1])),
+            ImuAngularRateYaw::new(AngularVelocity::from_degrees_per_second(values[2])),
+        )
+    }
 }
 
 /// High-level IMU API built on a binding implementation.
@@ -315,6 +402,16 @@ pub trait Imu: private::Imu {
     fn angular_rate(&self) -> ImuAngularRate;
     /// Return the current typed orientation.
     fn orientation(&self) -> ImuOrientation;
+    /// Return firmware acceleration axes in g units.
+    fn acceleration(&self) -> ImuAcceleration;
+    /// Return firmware magnetic-field axes in microteslas.
+    fn magnetic_field(&self) -> ImuMagneticField;
+    /// Return derotated firmware acceleration axes in g units.
+    fn derotated_acceleration(&self) -> ImuAcceleration;
+    /// Derotate a caller-provided acceleration vector into the firmware frame.
+    fn derotate_acceleration(&self, input: ImuAcceleration) -> ImuAcceleration;
+    /// Return derotated firmware gyro axes in degrees/sec.
+    fn derotated_angular_rate(&self) -> ImuAngularRate;
 }
 
 #[cfg(not(test))]
@@ -358,6 +455,31 @@ impl<B: ImuBindings> ImuApi<B> {
     pub fn orientation(&self) -> ImuOrientation {
         self.bindings.orientation()
     }
+
+    /// Return firmware acceleration axes in g units.
+    pub fn acceleration(&self) -> ImuAcceleration {
+        self.bindings.acceleration()
+    }
+
+    /// Return firmware magnetic-field axes in microteslas.
+    pub fn magnetic_field(&self) -> ImuMagneticField {
+        self.bindings.magnetic_field()
+    }
+
+    /// Return derotated firmware acceleration axes in g units.
+    pub fn derotated_acceleration(&self) -> ImuAcceleration {
+        self.bindings.derotated_acceleration()
+    }
+
+    /// Derotate a caller-provided acceleration vector into the firmware frame.
+    pub fn derotate_acceleration(&self, input: ImuAcceleration) -> ImuAcceleration {
+        self.bindings.derotate_acceleration(input)
+    }
+
+    /// Return derotated firmware gyro axes in degrees/sec.
+    pub fn derotated_angular_rate(&self) -> ImuAngularRate {
+        self.bindings.derotated_angular_rate()
+    }
 }
 
 #[cfg(not(test))]
@@ -391,6 +513,26 @@ impl<B: ImuBindings> Imu for ImuApi<B> {
 
     fn orientation(&self) -> ImuOrientation {
         self.orientation()
+    }
+
+    fn acceleration(&self) -> ImuAcceleration {
+        self.acceleration()
+    }
+
+    fn magnetic_field(&self) -> ImuMagneticField {
+        self.magnetic_field()
+    }
+
+    fn derotated_acceleration(&self) -> ImuAcceleration {
+        self.derotated_acceleration()
+    }
+
+    fn derotate_acceleration(&self, input: ImuAcceleration) -> ImuAcceleration {
+        self.derotate_acceleration(input)
+    }
+
+    fn derotated_angular_rate(&self) -> ImuAngularRate {
+        self.derotated_angular_rate()
     }
 }
 

@@ -433,7 +433,12 @@ mod slots {
     fn_slot!(imu_get_roll as unsafe extern "C" fn() -> f32);
     fn_slot!(imu_get_pitch as unsafe extern "C" fn() -> f32);
     fn_slot!(imu_get_yaw as unsafe extern "C" fn() -> f32);
+    fn_slot!(imu_get_accel as unsafe extern "C" fn(*mut f32));
     fn_slot!(imu_get_gyro as unsafe extern "C" fn(*mut f32));
+    fn_slot!(imu_get_mag as unsafe extern "C" fn(*mut f32));
+    fn_slot!(imu_derotate as unsafe extern "C" fn(*const f32, *mut f32));
+    fn_slot!(imu_get_accel_derotated as unsafe extern "C" fn(*mut f32));
+    fn_slot!(imu_get_gyro_derotated as unsafe extern "C" fn(*mut f32));
     fn_slot!(imu_get_quaternions as unsafe extern "C" fn(*mut f32));
     fn_slot!(send_app_data as unsafe extern "C" fn(*mut c_uchar, u32));
     fn_slot!(system_time as unsafe extern "C" fn() -> f32);
@@ -1903,6 +1908,11 @@ pub unsafe fn imu_get_yaw() -> f32 {
     unsafe { required_slot!(imu_get_yaw)() }
 }
 
+/// Write firmware IMU acceleration axes in g into `xyz`.
+pub unsafe fn imu_get_accel(xyz: *mut f32) {
+    unsafe { slots::imu_get_accel()(xyz) }
+}
+
 /// Write firmware IMU gyro axes in degrees/sec into `xyz`.
 ///
 /// Float Out Boy v1.2.1 mirrors this VESC ABI slot from
@@ -1914,6 +1924,26 @@ pub unsafe fn imu_get_yaw() -> f32 {
 /// table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn imu_get_gyro(xyz: *mut f32) {
     unsafe { required_slot!(imu_get_gyro)(xyz) }
+}
+
+/// Write firmware IMU magnetic-field axes in microteslas into `xyz`.
+pub unsafe fn imu_get_mag(xyz: *mut f32) {
+    unsafe { slots::imu_get_mag()(xyz) }
+}
+
+/// Derotate a three-axis IMU vector into the firmware frame.
+pub unsafe fn imu_derotate(input: *const f32, output: *mut f32) {
+    unsafe { slots::imu_derotate()(input, output) }
+}
+
+/// Write derotated firmware IMU acceleration axes in g into `xyz`.
+pub unsafe fn imu_get_accel_derotated(xyz: *mut f32) {
+    unsafe { slots::imu_get_accel_derotated()(xyz) }
+}
+
+/// Write derotated firmware IMU gyro axes in degrees/sec into `xyz`.
+pub unsafe fn imu_get_gyro_derotated(xyz: *mut f32) {
+    unsafe { slots::imu_get_gyro_derotated()(xyz) }
 }
 
 /// # Safety
