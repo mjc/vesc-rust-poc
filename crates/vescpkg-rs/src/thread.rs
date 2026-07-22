@@ -191,6 +191,8 @@ pub struct Firmware {
     motor: crate::motor::MotorControlApi<crate::motor::RealMotorControlBindings>,
     #[cfg(not(test))]
     inputs: crate::FirmwareInputs,
+    #[cfg(not(test))]
+    settings: crate::FirmwareSettings,
 }
 
 impl Firmware {
@@ -269,6 +271,12 @@ impl Firmware {
         &self.inputs
     }
 
+    /// Borrow the typed live firmware settings capability.
+    #[cfg(not(test))]
+    pub fn settings(&self) -> &crate::FirmwareSettings {
+        &self.settings
+    }
+
     /// Construct firmware capabilities backed by the live VESC package ABI.
     #[cfg(not(test))]
     #[must_use]
@@ -289,6 +297,7 @@ impl Firmware {
                 crate::motor::RealMotorControlBindings,
             ),
             inputs: crate::FirmwareInputs::new(),
+            settings: crate::FirmwareSettings,
         }
     }
 
