@@ -147,6 +147,22 @@ impl CanBaudRate {
             Self::Kbps100 => 100_000,
         }
     }
+
+    /// Decode an exact numeric CAN bit rate into its firmware selector.
+    pub const fn from_bits_per_second(value: u32) -> Option<Self> {
+        match value {
+            125_000 => Some(Self::Kbps125),
+            250_000 => Some(Self::Kbps250),
+            500_000 => Some(Self::Kbps500),
+            1_000_000 => Some(Self::Mbps1),
+            10_000 => Some(Self::Kbps10),
+            20_000 => Some(Self::Kbps20),
+            50_000 => Some(Self::Kbps50),
+            75_000 => Some(Self::Kbps75),
+            100_000 => Some(Self::Kbps100),
+            _ => None,
+        }
+    }
 }
 
 /// Firmware AHRS algorithm selector from the VESC IMU configuration.
