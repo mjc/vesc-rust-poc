@@ -37,6 +37,10 @@ mod loader;
 mod types;
 mod vesc_if;
 
+/// Separate platform-neutral VESC Express native-library ABI metadata and
+/// fail-closed table loader. It is not part of the STM32 `VescIf` surface.
+pub mod express;
+
 #[cfg(test)]
 pub mod test_support;
 
