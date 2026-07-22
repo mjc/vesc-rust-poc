@@ -122,3 +122,15 @@ fn can_bus_copies_status_message_four() {
     assert_eq!(status.input_current().current().as_amps(), 3.0);
     assert_eq!(status.position().angle().as_degrees(), 12.0);
 }
+
+#[test]
+fn can_bus_copies_status_message_five() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    let status = firmware
+        .can()
+        .status5(CanControllerId::new(7))
+        .expect("CAN status message 5");
+
+    assert_eq!(status.input_voltage().voltage().as_volts(), 48.0);
+    assert_eq!(status.tachometer().steps().as_steps(), 1234);
+}
