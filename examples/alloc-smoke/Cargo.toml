@@ -13,13 +13,6 @@ name = "Rust alloc smoke package"
 [lints]
 workspace = true
 
-[lib]
-crate-type = ["rlib"]
-
-[[bin]]
-name = "vesc-example-alloc-smoke"
-path = "src/main.rs"
-
 [dependencies]
 vesc-protocol = { path = "../../crates/vesc-protocol" }
 vescpkg-rs = { path = "../../crates/vescpkg-rs", features = ["alloc"] }
