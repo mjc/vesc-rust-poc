@@ -378,6 +378,10 @@ mod slots {
     fn_slot!(mc_stat_speed_max as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_stat_current_avg as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_stat_current_max as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_stat_temp_mosfet_avg as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_stat_temp_mosfet_max as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_stat_temp_motor_avg as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_stat_temp_motor_max as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_stat_reset as unsafe extern "C" fn());
     fn_slot!(mc_get_input_voltage_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_amp_hours as unsafe extern "C" fn(bool) -> f32);
@@ -1543,6 +1547,26 @@ pub unsafe fn mc_stat_current_avg() -> f32 {
 /// Read the peak motor current statistic.
 pub unsafe fn mc_stat_current_max() -> f32 {
     unsafe { slots::mc_stat_current_max()() }
+}
+
+/// Read the average MOSFET temperature statistic.
+pub unsafe fn mc_stat_temp_mosfet_avg() -> f32 {
+    unsafe { slots::mc_stat_temp_mosfet_avg()() }
+}
+
+/// Read the peak MOSFET temperature statistic.
+pub unsafe fn mc_stat_temp_mosfet_max() -> f32 {
+    unsafe { slots::mc_stat_temp_mosfet_max()() }
+}
+
+/// Read the average motor temperature statistic.
+pub unsafe fn mc_stat_temp_motor_avg() -> f32 {
+    unsafe { slots::mc_stat_temp_motor_avg()() }
+}
+
+/// Read the peak motor temperature statistic.
+pub unsafe fn mc_stat_temp_motor_max() -> f32 {
+    unsafe { slots::mc_stat_temp_motor_max()() }
 }
 
 /// Reset motor power and related statistics.

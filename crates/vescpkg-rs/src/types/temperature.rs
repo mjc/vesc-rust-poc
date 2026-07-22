@@ -26,5 +26,15 @@ macro_rules! temperature_type {
 temperature_type!(FetTemperature, "FET temperature.");
 temperature_type!(MotorTemperature, "Motor temperature.");
 temperature_type!(MosfetTemperature, "MOSFET temperature.");
+temperature_type!(
+    AverageMosfetTemperature,
+    "Average MOSFET temperature statistic."
+);
+temperature_type!(PeakMosfetTemperature, "Peak MOSFET temperature statistic.");
+temperature_type!(
+    AverageMotorTemperature,
+    "Average motor temperature statistic."
+);
+temperature_type!(PeakMotorTemperature, "Peak motor temperature statistic.");
 temperature_type!(TemperatureLimitStart, "Temperature limit start threshold.");
 temperature_type!(TemperatureLimitEnd, "Temperature limit end threshold.");

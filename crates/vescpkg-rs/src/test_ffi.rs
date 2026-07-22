@@ -1171,6 +1171,22 @@ pub unsafe fn mc_stat_current_max() -> f32 {
     18.0
 }
 
+pub unsafe fn mc_stat_temp_mosfet_avg() -> f32 {
+    45.0
+}
+
+pub unsafe fn mc_stat_temp_mosfet_max() -> f32 {
+    60.0
+}
+
+pub unsafe fn mc_stat_temp_motor_avg() -> f32 {
+    40.0
+}
+
+pub unsafe fn mc_stat_temp_motor_max() -> f32 {
+    55.0
+}
+
 pub unsafe fn mc_stat_reset() {}
 
 pub unsafe fn mc_get_tachometer_abs_value(_reset: bool) -> i32 {

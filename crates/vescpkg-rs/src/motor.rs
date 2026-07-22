@@ -6,13 +6,14 @@ use core::ffi::CStr;
 #[cfg(not(test))]
 use crate::types::FirmwareFaultWireCode;
 use crate::types::{
-    AbsoluteTachometerSteps, AmpHoursCharged, AmpHoursDischarged, AverageMotorCurrent,
-    AveragePower, AverageVehicleSpeed, BatteryCellCount, BatteryLevel, BrakeCurrent,
-    CurrentOffDelay, DCurrent, DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed,
-    FirmwareFaultCode, HandbrakeCurrent, HandbrakeRelative, InputCurrent, InputVoltage,
-    MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, PeakMotorCurrent,
-    PeakPower, PeakVehicleSpeed, TachometerSteps, TemperatureLimitStart, TotalMotorCurrent,
-    TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
+    AbsoluteTachometerSteps, AmpHoursCharged, AmpHoursDischarged, AverageMosfetTemperature,
+    AverageMotorCurrent, AverageMotorTemperature, AveragePower, AverageVehicleSpeed,
+    BatteryCellCount, BatteryLevel, BrakeCurrent, CurrentOffDelay, DCurrent,
+    DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed, FirmwareFaultCode,
+    HandbrakeCurrent, HandbrakeRelative, InputCurrent, InputVoltage, MosfetTemperature,
+    MotorCurrent, MotorCurrentLimit, MotorTemperature, PeakMosfetTemperature, PeakMotorCurrent,
+    PeakMotorTemperature, PeakPower, PeakVehicleSpeed, TachometerSteps, TemperatureLimitStart,
+    TotalMotorCurrent, TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 #[cfg(not(test))]
 use crate::units::{Charge, Current, Distance, Energy, Power, Rpm, Speed, Temperature, Voltage};
@@ -108,6 +109,14 @@ pub trait MotorTelemetryBindings {
     fn average_motor_current(&self) -> AverageMotorCurrent;
     /// Return peak motor current statistics.
     fn peak_motor_current(&self) -> PeakMotorCurrent;
+    /// Return average MOSFET temperature statistics.
+    fn average_mosfet_temperature(&self) -> AverageMosfetTemperature;
+    /// Return peak MOSFET temperature statistics.
+    fn peak_mosfet_temperature(&self) -> PeakMosfetTemperature;
+    /// Return average motor temperature statistics.
+    fn average_motor_temperature(&self) -> AverageMotorTemperature;
+    /// Return peak motor temperature statistics.
+    fn peak_motor_temperature(&self) -> PeakMotorTemperature;
     /// Return the current signed duty cycle.
     ///
     /// The firmware value is clamped to the signed ratio range, with NaN
@@ -242,6 +251,22 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
 
     fn peak_motor_current(&self) -> PeakMotorCurrent {
         (**self).peak_motor_current()
+    }
+
+    fn average_mosfet_temperature(&self) -> AverageMosfetTemperature {
+        (**self).average_mosfet_temperature()
+    }
+
+    fn peak_mosfet_temperature(&self) -> PeakMosfetTemperature {
+        (**self).peak_mosfet_temperature()
+    }
+
+    fn average_motor_temperature(&self) -> AverageMotorTemperature {
+        (**self).average_motor_temperature()
+    }
+
+    fn peak_motor_temperature(&self) -> PeakMotorTemperature {
+        (**self).peak_motor_temperature()
     }
 
     fn duty_cycle(&self) -> DutyCycle {
@@ -541,6 +566,30 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         }))
     }
 
+    fn average_mosfet_temperature(&self) -> AverageMosfetTemperature {
+        AverageMosfetTemperature::new(Temperature::from_degrees_celsius(unsafe {
+            crate::ffi::mc_stat_temp_mosfet_avg()
+        }))
+    }
+
+    fn peak_mosfet_temperature(&self) -> PeakMosfetTemperature {
+        PeakMosfetTemperature::new(Temperature::from_degrees_celsius(unsafe {
+            crate::ffi::mc_stat_temp_mosfet_max()
+        }))
+    }
+
+    fn average_motor_temperature(&self) -> AverageMotorTemperature {
+        AverageMotorTemperature::new(Temperature::from_degrees_celsius(unsafe {
+            crate::ffi::mc_stat_temp_motor_avg()
+        }))
+    }
+
+    fn peak_motor_temperature(&self) -> PeakMotorTemperature {
+        PeakMotorTemperature::new(Temperature::from_degrees_celsius(unsafe {
+            crate::ffi::mc_stat_temp_motor_max()
+        }))
+    }
+
     fn duty_cycle(&self) -> DutyCycle {
         duty_cycle_from_firmware(unsafe { crate::ffi::mc_get_duty_cycle_now() })
     }
@@ -760,6 +809,14 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn average_motor_current(&self) -> AverageMotorCurrent;
     /// Return peak motor current statistics.
     fn peak_motor_current(&self) -> PeakMotorCurrent;
+    /// Return average MOSFET temperature statistics.
+    fn average_mosfet_temperature(&self) -> AverageMosfetTemperature;
+    /// Return peak MOSFET temperature statistics.
+    fn peak_mosfet_temperature(&self) -> PeakMosfetTemperature;
+    /// Return average motor temperature statistics.
+    fn average_motor_temperature(&self) -> AverageMotorTemperature;
+    /// Return peak motor temperature statistics.
+    fn peak_motor_temperature(&self) -> PeakMotorTemperature;
     /// Return the current signed duty cycle.
     fn duty_cycle(&self) -> DutyCycle;
     /// Return optional FOC d-axis current.
@@ -999,6 +1056,26 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.peak_motor_current()
     }
 
+    /// Return average MOSFET temperature statistics.
+    pub fn average_mosfet_temperature(&self) -> AverageMosfetTemperature {
+        self.bindings.average_mosfet_temperature()
+    }
+
+    /// Return peak MOSFET temperature statistics.
+    pub fn peak_mosfet_temperature(&self) -> PeakMosfetTemperature {
+        self.bindings.peak_mosfet_temperature()
+    }
+
+    /// Return average motor temperature statistics.
+    pub fn average_motor_temperature(&self) -> AverageMotorTemperature {
+        self.bindings.average_motor_temperature()
+    }
+
+    /// Return peak motor temperature statistics.
+    pub fn peak_motor_temperature(&self) -> PeakMotorTemperature {
+        self.bindings.peak_motor_temperature()
+    }
+
     /// Return the current signed duty cycle.
     pub fn duty_cycle(&self) -> DutyCycle {
         self.bindings.duty_cycle()
@@ -1176,6 +1253,22 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
 
     fn peak_motor_current(&self) -> PeakMotorCurrent {
         self.peak_motor_current()
+    }
+
+    fn average_mosfet_temperature(&self) -> AverageMosfetTemperature {
+        self.average_mosfet_temperature()
+    }
+
+    fn peak_mosfet_temperature(&self) -> PeakMosfetTemperature {
+        self.peak_mosfet_temperature()
+    }
+
+    fn average_motor_temperature(&self) -> AverageMotorTemperature {
+        self.average_motor_temperature()
+    }
+
+    fn peak_motor_temperature(&self) -> PeakMotorTemperature {
+        self.peak_motor_temperature()
     }
 
     fn duty_cycle(&self) -> DutyCycle {
