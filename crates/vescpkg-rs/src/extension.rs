@@ -115,6 +115,13 @@ impl LispValue {
         unsafe { crate::ffi::lbm_is_byte_array(self.raw()) }
     }
 
+    /// Allocate a LispBM byte array through the firmware allocator.
+    pub fn try_byte_array(len: usize) -> Option<Self> {
+        let len = u32::try_from(len).ok()?;
+        let mut value = LbmValue(0);
+        unsafe { crate::ffi::lbm_create_byte_array(&mut value, len) }.then(|| Self::from_raw(value))
+    }
+
     /// Borrow firmware-owned string bytes for the duration of a callback.
     ///
     /// The callback boundary prevents the returned `CStr` from escaping the

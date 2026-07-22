@@ -551,7 +551,7 @@ extern "C" fn stub_mc_get_input_voltage_filtered() -> f32 {
     84.2
 }
 
-unsafe extern "C" fn stub_read_nvm(buffer: *mut u8, offset: c_uint, len: c_uint) -> bool {
+unsafe extern "C" fn stub_read_nvm(buffer: *mut u8, len: c_uint, address: c_uint) -> bool {
     let Some(buffer) = (unsafe { buffer.cast::<[u8; 4]>().as_mut() }) else {
         return false;
     };
@@ -559,15 +559,15 @@ unsafe extern "C" fn stub_read_nvm(buffer: *mut u8, offset: c_uint, len: c_uint)
         return false;
     }
     buffer.copy_from_slice(&[
-        offset as u8,
-        offset.wrapping_add(1) as u8,
-        offset.wrapping_add(2) as u8,
-        offset.wrapping_add(3) as u8,
+        address as u8,
+        address.wrapping_add(1) as u8,
+        address.wrapping_add(2) as u8,
+        address.wrapping_add(3) as u8,
     ]);
     true
 }
 
-unsafe extern "C" fn stub_write_nvm(_buffer: *mut u8, _offset: c_uint, len: c_uint) -> bool {
+unsafe extern "C" fn stub_write_nvm(_buffer: *mut u8, len: c_uint, _address: c_uint) -> bool {
     len != 0
 }
 
@@ -652,12 +652,12 @@ fn nvm_dispatch_reports_firmware_results_and_absence() {
     with_table(&table, || unsafe {
         let mut bytes = [0; 4];
         assert_eq!(
-            read_nvm(bytes.as_mut_ptr(), 7, bytes.len() as c_uint),
+            read_nvm(bytes.as_mut_ptr(), bytes.len() as c_uint, 7),
             Some(true)
         );
         assert_eq!(bytes, [7, 8, 9, 10]);
         assert_eq!(
-            write_nvm(bytes.as_mut_ptr(), 7, bytes.len() as c_uint),
+            write_nvm(bytes.as_mut_ptr(), bytes.len() as c_uint, 7),
             Some(true)
         );
         assert_eq!(wipe_nvm(), Some(true));
@@ -666,9 +666,9 @@ fn nvm_dispatch_reports_firmware_results_and_absence() {
     let table = populated_table();
     with_table(&table, || unsafe {
         let mut bytes = [0; 4];
-        assert_eq!(read_nvm(bytes.as_mut_ptr(), 0, bytes.len() as c_uint), None);
+        assert_eq!(read_nvm(bytes.as_mut_ptr(), bytes.len() as c_uint, 0), None);
         assert_eq!(
-            write_nvm(bytes.as_mut_ptr(), 0, bytes.len() as c_uint),
+            write_nvm(bytes.as_mut_ptr(), bytes.len() as c_uint, 0),
             None
         );
         assert_eq!(wipe_nvm(), None);

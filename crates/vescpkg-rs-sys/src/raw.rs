@@ -249,6 +249,7 @@ mod slots {
     fn_slot!(lbm_car as unsafe extern "C" fn(u32) -> u32);
     fn_slot!(lbm_cdr as unsafe extern "C" fn(u32) -> u32);
     fn_slot!(lbm_list_destructive_reverse as unsafe extern "C" fn(u32) -> u32);
+    fn_slot!(lbm_create_byte_array as unsafe extern "C" fn(*mut u32, u32) -> bool);
     fn_slot!(set_app_data_handler as unsafe extern "C" fn(Option<AppDataHandler>) -> bool);
     fn_slot!(imu_set_read_callback as unsafe extern "C" fn(Option<ImuReadCallback>));
     fn_slot!(read_eeprom_var as unsafe extern "C" fn(*mut EepromVar, c_int) -> bool);
@@ -503,6 +504,16 @@ pub unsafe fn lbm_is_byte_array(value: LbmValue) -> bool {
     unsafe { slots::lbm_is_byte_array()(value.0) }
 }
 
+/// Allocate a LispBM byte array through the firmware allocator.
+///
+/// # Safety
+///
+/// `value` must be valid for one writable [`LbmValue`], and the firmware
+/// function table must remain valid for the duration of the call.
+pub unsafe fn lbm_create_byte_array(value: *mut LbmValue, len: u32) -> bool {
+    unsafe { slots::lbm_create_byte_array()(value.cast(), len) }
+}
+
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
@@ -581,9 +592,9 @@ pub unsafe fn store_eeprom_word(word: *mut u32, address: c_int) -> bool {
 ///
 /// `buffer` must be valid for `len` writable bytes, and the firmware function
 /// table must remain valid for the duration of the call.
-pub unsafe fn read_nvm(buffer: *mut u8, offset: c_uint, len: c_uint) -> Option<bool> {
+pub unsafe fn read_nvm(buffer: *mut u8, len: c_uint, address: c_uint) -> Option<bool> {
     optional_bool_call(unsafe { slots::read_nvm() }, |read| unsafe {
-        read(buffer, offset, len)
+        read(buffer, len, address)
     })
 }
 
@@ -596,9 +607,9 @@ pub unsafe fn read_nvm(buffer: *mut u8, offset: c_uint, len: c_uint) -> Option<b
 ///
 /// `buffer` must be valid for `len` readable bytes, and the firmware function
 /// table must remain valid for the duration of the call.
-pub unsafe fn write_nvm(buffer: *mut u8, offset: c_uint, len: c_uint) -> Option<bool> {
+pub unsafe fn write_nvm(buffer: *mut u8, len: c_uint, address: c_uint) -> Option<bool> {
     optional_bool_call(unsafe { slots::write_nvm() }, |write| unsafe {
-        write(buffer, offset, len)
+        write(buffer, len, address)
     })
 }
 

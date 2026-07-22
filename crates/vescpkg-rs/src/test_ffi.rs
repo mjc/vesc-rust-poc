@@ -256,14 +256,14 @@ pub(crate) fn fail_eeprom_write(address: crate::CustomEepromAddress) {
     EEPROM_WRITE_FAILURE.store(address.get(), Ordering::Relaxed);
 }
 
-pub unsafe fn read_nvm(buffer: *mut u8, offset: u32, len: u32) -> Option<bool> {
-    let Some(end) = offset
+pub unsafe fn read_nvm(buffer: *mut u8, len: u32, address: u32) -> Option<bool> {
+    let Some(end) = address
         .checked_add(len)
         .and_then(|end| usize::try_from(end).ok())
     else {
         return Some(false);
     };
-    let start = usize::try_from(offset).ok()?;
+    let start = usize::try_from(address).ok()?;
     let Some(buffer) = core::ptr::NonNull::new(buffer) else {
         return Some(false);
     };
@@ -281,14 +281,14 @@ pub unsafe fn read_nvm(buffer: *mut u8, offset: u32, len: u32) -> Option<bool> {
     Some(true)
 }
 
-pub unsafe fn write_nvm(buffer: *mut u8, offset: u32, len: u32) -> Option<bool> {
-    let Some(end) = offset
+pub unsafe fn write_nvm(buffer: *mut u8, len: u32, address: u32) -> Option<bool> {
+    let Some(end) = address
         .checked_add(len)
         .and_then(|end| usize::try_from(end).ok())
     else {
         return Some(false);
     };
-    let start = usize::try_from(offset).ok()?;
+    let start = usize::try_from(address).ok()?;
     let Some(buffer) = core::ptr::NonNull::new(buffer) else {
         return Some(false);
     };
@@ -391,6 +391,14 @@ pub unsafe fn lbm_is_cons(_value: LbmValue) -> bool {
 
 pub unsafe fn lbm_is_byte_array(_value: LbmValue) -> bool {
     _value.0 == (0x1234 << 4 | 0x08)
+}
+
+pub unsafe fn lbm_create_byte_array(value: *mut LbmValue, _len: u32) -> bool {
+    let Some(value) = (unsafe { value.as_mut() }) else {
+        return false;
+    };
+    *value = LbmValue(0x1234 << 4 | 0x08);
+    true
 }
 
 pub unsafe fn vesc_system_time_ticks() -> u32 {

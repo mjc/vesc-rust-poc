@@ -10,9 +10,10 @@ fn nvm_round_trips_a_checked_byte_range_and_wipes_it() {
     let firmware = FirmwareTest::new();
     let nvm = firmware.nvm();
     let offset = NvmOffset::new(12);
-    let expected = [1, 2, 3, 4];
+    let mut expected = [1, 2, 3, 4];
 
-    nvm.write(offset, &expected).expect("NVM write succeeds");
+    nvm.write(offset, &mut expected)
+        .expect("NVM write succeeds");
 
     let mut actual = [0; 4];
     nvm.read(offset, &mut actual).expect("NVM read succeeds");
@@ -47,7 +48,7 @@ fn nvm_reports_firmware_operation_failures() {
         Err(NvmError::FirmwareFailure)
     );
     assert_eq!(
-        firmware.nvm().write(offset, &bytes),
+        firmware.nvm().write(offset, &mut bytes),
         Err(NvmError::FirmwareFailure)
     );
     assert_eq!(firmware.nvm().wipe(), Err(NvmError::FirmwareFailure));
