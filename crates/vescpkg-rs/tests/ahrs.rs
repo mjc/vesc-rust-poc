@@ -10,27 +10,31 @@ use vescpkg_rs::{
     MagneticFluxDensity, VescSeconds,
 };
 
-#[test]
-fn mahony_ahrs_integrates_rate_and_can_reset() {
-    let mut ahrs = vescpkg_rs::Ahrs::new();
-    let sample = ImuReadSample::from_parts(
+fn sample(period: f32, acceleration: [f32; 3], yaw_rate: f32) -> ImuReadSample {
+    ImuReadSample::from_parts(
         ImuAcceleration::from_axes(
-            ImuAccelerationX::new(AccelerationG::from_g(0.0)),
-            ImuAccelerationY::new(AccelerationG::from_g(0.0)),
-            ImuAccelerationZ::new(AccelerationG::from_g(1.0)),
+            ImuAccelerationX::new(AccelerationG::from_g(acceleration[0])),
+            ImuAccelerationY::new(AccelerationG::from_g(acceleration[1])),
+            ImuAccelerationZ::new(AccelerationG::from_g(acceleration[2])),
         ),
         ImuAngularRate::from_axes(
             ImuAngularRateRoll::new(AngularVelocity::from_radians_per_second(0.0)),
             ImuAngularRatePitch::new(AngularVelocity::from_radians_per_second(0.0)),
-            ImuAngularRateYaw::new(AngularVelocity::from_radians_per_second(1.0)),
+            ImuAngularRateYaw::new(AngularVelocity::from_radians_per_second(yaw_rate)),
         ),
         ImuMagneticField::from_axes(
             ImuMagneticFieldX::new(MagneticFluxDensity::from_microteslas(1.0)),
             ImuMagneticFieldY::new(MagneticFluxDensity::from_microteslas(0.0)),
             ImuMagneticFieldZ::new(MagneticFluxDensity::from_microteslas(0.0)),
         ),
-        ImuSamplePeriod::new(VescSeconds::from_seconds(0.1)),
-    );
+        ImuSamplePeriod::new(VescSeconds::from_seconds(period)),
+    )
+}
+
+#[test]
+fn mahony_ahrs_integrates_rate_and_can_reset() {
+    let mut ahrs = vescpkg_rs::Ahrs::new();
+    let sample = sample(0.1, [0.0, 0.0, 1.0], 1.0);
     let estimate = ahrs.update(sample);
     assert_eq!(estimate, ahrs.orientation());
     let quaternion = ahrs.orientation().quaternion();
@@ -49,24 +53,7 @@ fn mahony_ahrs_integrates_rate_and_can_reset() {
 #[test]
 fn madgwick_ahrs_integrates_rate_and_validates_beta() {
     let mut ahrs = vescpkg_rs::Madgwick::new();
-    let sample = ImuReadSample::from_parts(
-        ImuAcceleration::from_axes(
-            ImuAccelerationX::new(AccelerationG::from_g(0.0)),
-            ImuAccelerationY::new(AccelerationG::from_g(0.0)),
-            ImuAccelerationZ::new(AccelerationG::from_g(1.0)),
-        ),
-        ImuAngularRate::from_axes(
-            ImuAngularRateRoll::new(AngularVelocity::from_radians_per_second(0.0)),
-            ImuAngularRatePitch::new(AngularVelocity::from_radians_per_second(0.0)),
-            ImuAngularRateYaw::new(AngularVelocity::from_radians_per_second(1.0)),
-        ),
-        ImuMagneticField::from_axes(
-            ImuMagneticFieldX::new(MagneticFluxDensity::from_microteslas(1.0)),
-            ImuMagneticFieldY::new(MagneticFluxDensity::from_microteslas(0.0)),
-            ImuMagneticFieldZ::new(MagneticFluxDensity::from_microteslas(0.0)),
-        ),
-        ImuSamplePeriod::new(VescSeconds::from_seconds(0.1)),
-    );
+    let sample = sample(0.1, [0.0, 0.0, 1.0], 1.0);
 
     let estimate = ahrs.update(sample);
     assert_eq!(estimate, ahrs.orientation());
@@ -79,4 +66,22 @@ fn madgwick_ahrs_integrates_rate_and_validates_beta() {
         ahrs.orientation().quaternion().w(),
         ImuQuaternionW::new(1.0)
     );
+}
+
+#[test]
+fn madgwick_rejects_invalid_periods_and_survives_missing_acceleration() {
+    let mut ahrs = vescpkg_rs::Madgwick::new();
+    let identity = ahrs.orientation();
+    assert_eq!(ahrs.update(sample(0.0, [0.0, 0.0, 1.0], 1.0)), identity);
+
+    let estimate = ahrs.update(sample(0.1, [0.0, 0.0, 0.0], 1.0));
+    assert_eq!(estimate, ahrs.orientation());
+    for component in [
+        f32::from(estimate.quaternion().w()),
+        f32::from(estimate.quaternion().x()),
+        f32::from(estimate.quaternion().y()),
+        f32::from(estimate.quaternion().z()),
+    ] {
+        assert!(component.is_finite());
+    }
 }
