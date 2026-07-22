@@ -134,8 +134,8 @@ mod slots {
     use super::{
         AppDataHandler, CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5,
         CanStatusMsg6, CustomConfigGet, CustomConfigSet, CustomConfigXml, EepromVar, GnssData,
-        ImuReadCallback, LibMutex, LibSemaphore, LibThread, RemoteState, VescIfAbi, c_char, c_int,
-        c_uchar, c_uint, c_void,
+        ImuReadCallback, LbmValue, LibMutex, LibSemaphore, LibThread, RemoteState, VescIfAbi,
+        c_char, c_int, c_uchar, c_uint, c_void,
     };
     #[cfg(not(all(target_arch = "arm", not(test))))]
     use super::{VescIf, vesc_if};
@@ -228,7 +228,7 @@ mod slots {
     fn_slot!(lbm_car as unsafe extern "C" fn(u32) -> u32);
     fn_slot!(lbm_cdr as unsafe extern "C" fn(u32) -> u32);
     fn_slot!(lbm_list_destructive_reverse as unsafe extern "C" fn(u32) -> u32);
-    fn_slot!(lbm_create_byte_array as unsafe extern "C" fn(*mut u32, u32) -> bool);
+    fn_slot!(lbm_create_byte_array as unsafe extern "C" fn(*mut LbmValue, u32) -> bool);
     fn_slot!(set_app_data_handler as unsafe extern "C" fn(Option<AppDataHandler>) -> bool);
     fn_slot!(imu_set_read_callback as unsafe extern "C" fn(Option<ImuReadCallback>));
     fn_slot!(read_eeprom_var as unsafe extern "C" fn(*mut EepromVar, c_int) -> bool);
@@ -509,6 +509,13 @@ pub unsafe fn lbm_cdr(value: LbmValue) -> LbmValue {
 /// `value` must be a mutable LispBM list owned by the current evaluation.
 pub unsafe fn lbm_list_destructive_reverse(value: LbmValue) -> LbmValue {
     unsafe { LbmValue(required_slot!(lbm_list_destructive_reverse)(value.0)) }
+}
+
+/// # Safety
+///
+/// `value` must be valid for one firmware-written LispBM value.
+pub unsafe fn lbm_create_byte_array(value: *mut LbmValue, len: u32) -> bool {
+    unsafe { slots::lbm_create_byte_array()(value, len) }
 }
 
 /// # Safety

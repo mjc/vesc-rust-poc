@@ -138,6 +138,17 @@ impl LispValue {
         })
     }
 
+    /// Ask firmware to allocate a byte array of the requested size.
+    ///
+    /// The returned handle owns the LispBM value; firmware remains responsible
+    /// for the backing storage and reports allocation failure as `None`.
+    #[cfg(not(test))]
+    pub fn try_byte_array(len: usize) -> Option<Self> {
+        let len = u32::try_from(len).ok()?;
+        let mut raw = Self::nil().raw();
+        unsafe { crate::ffi::lbm_create_byte_array(&mut raw, len) }.then(|| Self::from_raw(raw))
+    }
+
     /// Construct a LispBM cons cell from two owned value handles.
     #[cfg(not(test))]
     pub fn cons(car: Self, cdr: Self) -> Self {
