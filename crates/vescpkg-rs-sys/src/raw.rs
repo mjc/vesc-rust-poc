@@ -613,6 +613,7 @@ mod slots {
     fn_slot!(get_ppm as unsafe extern "C" fn() -> f32);
     fn_slot!(get_ppm_age as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_fault as unsafe extern "C" fn() -> c_int);
+    fn_slot!(mc_fault_to_string as unsafe extern "C" fn(c_int) -> *const c_char);
     fn_slot!(mc_get_rpm as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_speed as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_tot_current_filtered as unsafe extern "C" fn() -> f32);
@@ -1233,6 +1234,17 @@ pub unsafe fn mc_set_brake_current(amps: f32) {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_duty_cycle_now() -> f32 {
     unsafe { slots::mc_get_duty_cycle_now()() }
+}
+
+/// Return the firmware-owned name for a motor fault code when the slot exists.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid. A non-null
+/// returned pointer is firmware-owned and must point to a NUL-terminated string.
+pub unsafe fn mc_fault_to_string(code: c_int) -> Option<*const c_char> {
+    let pointer = unsafe { slots::mc_fault_to_string()(code) };
+    (!pointer.is_null()).then_some(pointer)
 }
 
 /// Return FOC d-axis Id current when the firmware slot is present.

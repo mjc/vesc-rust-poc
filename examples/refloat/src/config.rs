@@ -78,6 +78,7 @@ impl RefloatConfigImage {
     const DUTY_BEEP_ENABLED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 50);
     const FOOT_BEEP_ENABLED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 28);
     const TILTBACK_RETURN_SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: REFLOAT_CONFIG_LEN, offset: 64, scale: 100.0);
+    const PERSISTENT_FATAL_ERROR_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 66);
     const TILTBACK_CONSTANT_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 67, scale: 1000.0);
     const TILTBACK_CONSTANT_ERPM_FIELD: CustomConfigElectricalSpeedField = vescpkg_rs::generated_custom_config_field!(CustomConfigElectricalSpeedField, len: REFLOAT_CONFIG_LEN, offset: 69);
     const TILTBACK_VARIABLE_RATE_FIELD: CustomConfigPidScaleField = vescpkg_rs::generated_custom_config_field!(CustomConfigPidScaleField, len: REFLOAT_CONFIG_LEN, offset: 71, scale: 1000.0);
@@ -228,6 +229,10 @@ impl RefloatConfigImage {
 
     pub(crate) fn tiltback_return_speed(&self) -> AngularVelocity {
         generated_field(Self::TILTBACK_RETURN_SPEED_FIELD.read(self))
+    }
+
+    pub(crate) fn persistent_fatal_error(&self) -> bool {
+        self.flag(Self::PERSISTENT_FATAL_ERROR_FIELD)
     }
 
     pub(crate) fn high_voltage_pushback_angle(&self) -> AngleDegrees {

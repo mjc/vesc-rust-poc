@@ -51,6 +51,7 @@ macro_rules! vesc_if_used_slots {
             SHOULD_TERMINATE => should_terminate,
             GET_ARG => get_arg,
             MC_GET_FAULT => mc_get_fault,
+            MC_FAULT_TO_STRING => mc_fault_to_string,
             MC_GET_RPM => mc_get_rpm,
             MC_GET_SPEED => mc_get_speed,
             MC_GET_TOT_CURRENT_FILTERED => mc_get_tot_current_filtered,

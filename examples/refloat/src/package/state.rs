@@ -25,6 +25,8 @@ use vescpkg_rs::prelude::{
 };
 use vescpkg_rs::{Imu, MotorOutput, MotorTelemetry};
 
+mod alert_tracker;
+mod alerts;
 #[cfg(test)]
 mod balance_tests;
 mod charging;
@@ -52,6 +54,7 @@ mod tuning;
 #[cfg(test)]
 mod tuning_tests;
 
+use alert_tracker::AlertTrackerState;
 use flywheel::RefloatFlywheelOffsets;
 use motor_acceleration::MotorAccelerationTracker;
 use remote_control::RemoteControlState;
@@ -80,6 +83,7 @@ fn refloat_command_payload(bytes: &[u8], command: RefloatAppDataCommand) -> Opti
 pub struct RefloatPackageState {
     all_data_payloads: RefloatAllDataPayloads,
     serialized_config: RefloatConfigImage,
+    alert_tracker: AlertTrackerState,
     beeper: RefloatBeeper,
     beeper_pin_configured: bool,
     duty_beeping: bool,
@@ -139,6 +143,7 @@ impl RefloatPackageState {
         Self {
             all_data_payloads,
             serialized_config,
+            alert_tracker: AlertTrackerState::default(),
             beeper: RefloatBeeper::new(serialized_config.beeper_enabled()),
             beeper_pin_configured: false,
             duty_beeping: false,
@@ -415,6 +420,11 @@ impl RefloatPackageState {
     ) {
         self.refresh_config_runtime_state();
         self.refresh_motor_runtime_state(telemetry);
+        self.alert_tracker.update_firmware_fault(
+            telemetry.firmware_fault(),
+            system_time_ticks,
+            self.serialized_config.persistent_fatal_error(),
+        );
         self.refresh_imu_runtime_state(imu, system_time_ticks);
     }
 
@@ -429,6 +439,11 @@ impl RefloatPackageState {
     ) {
         self.refresh_config_runtime_state();
         self.refresh_motor_runtime_state(telemetry);
+        self.alert_tracker.update_firmware_fault(
+            telemetry.firmware_fault(),
+            system_time_ticks,
+            self.serialized_config.persistent_fatal_error(),
+        );
         self.refresh_footpad_runtime_state(footpad_adc1, footpad_adc2);
         self.refresh_charging_runtime_state(system_time_ticks);
         self.refresh_bms_runtime_state(system_time_ticks);
@@ -456,6 +471,7 @@ impl RefloatPackageState {
             || tuning::handle_other_tune_packet(self, bytes)
             || tuning::handle_booster_packet(self, bytes)
             || self.handle_rc_move_packet(bytes)
+            || self.handle_alert_packet(telemetry, send, bytes)
             || self.send_metadata_packet_response(send, bytes)
             || self.send_legacy_realtime_data_packet_response(send, bytes)
             || self.send_realtime_data_packet_response(telemetry, now, send, bytes)

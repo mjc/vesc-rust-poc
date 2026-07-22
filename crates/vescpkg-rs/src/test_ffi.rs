@@ -550,6 +550,14 @@ pub unsafe fn mc_get_fault() -> i32 {
     FIRMWARE_FAULT.load(Ordering::Relaxed)
 }
 
+pub unsafe fn mc_fault_to_string(code: i32) -> *const core::ffi::c_char {
+    let name: &'static [u8] = match code {
+        5 => b"FAULT_CODE_OVER_TEMP_FET\0",
+        _ => b"FAULT_CODE_NONE\0",
+    };
+    name.as_ptr().cast()
+}
+
 pub unsafe fn mc_get_input_voltage_filtered() -> f32 {
     load(&INPUT_VOLTAGE)
 }

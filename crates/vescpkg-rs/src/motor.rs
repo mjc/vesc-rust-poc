@@ -1,5 +1,10 @@
 //! Motor telemetry helpers built on firmware motor-control table slots.
 
+#[cfg(not(test))]
+use core::ffi::CStr;
+
+#[cfg(not(test))]
+use crate::types::FirmwareFaultWireCode;
 use crate::types::{
     AmpHoursCharged, AmpHoursDischarged, BatteryCellCount, BatteryLevel, BrakeCurrent,
     CurrentOffDelay, DCurrent, DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed,
@@ -109,6 +114,8 @@ pub trait MotorTelemetryBindings {
     fn battery_level(&self) -> BatteryLevel;
     /// Return the active firmware motor fault code.
     fn firmware_fault(&self) -> FirmwareFaultCode;
+    /// Return the firmware-owned display name for a motor fault code.
+    fn firmware_fault_name(&self, fault: FirmwareFaultCode) -> Option<&'static [u8]>;
     /// Return the filtered controller input voltage.
     fn input_voltage(&self) -> InputVoltage;
 }
@@ -205,6 +212,10 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
 
     fn firmware_fault(&self) -> FirmwareFaultCode {
         (**self).firmware_fault()
+    }
+
+    fn firmware_fault_name(&self, fault: FirmwareFaultCode) -> Option<&'static [u8]> {
+        (**self).firmware_fault_name(fault)
     }
 
     fn input_voltage(&self) -> InputVoltage {
@@ -408,6 +419,16 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         FirmwareFaultCode::from_raw_code(unsafe { crate::ffi::mc_get_fault() })
     }
 
+    fn firmware_fault_name(&self, fault: FirmwareFaultCode) -> Option<&'static [u8]> {
+        let code = FirmwareFaultWireCode::try_from(fault).ok()?.wire_code();
+        let pointer = unsafe { crate::ffi::mc_fault_to_string(i32::from(code)) };
+        #[cfg(all(feature = "test-support", not(target_arch = "arm")))]
+        let pointer = Some(pointer);
+        // SAFETY: VESC returns a null-terminated string in firmware-owned static storage.
+        let bytes = unsafe { CStr::from_ptr(pointer?).to_bytes() };
+        Some(bytes.strip_prefix(b"FAULT_CODE_").unwrap_or(bytes))
+    }
+
     fn input_voltage(&self) -> InputVoltage {
         InputVoltage::new(Voltage::from_volts(unsafe {
             crate::ffi::mc_get_input_voltage_filtered()
@@ -519,6 +540,8 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn battery_level(&self) -> BatteryLevel;
     /// Return the active firmware motor fault code.
     fn firmware_fault(&self) -> FirmwareFaultCode;
+    /// Return the firmware display name for a motor fault code without its `FAULT_CODE_` prefix.
+    fn firmware_fault_name(&self, fault: FirmwareFaultCode) -> Option<&'static [u8]>;
     /// Return the filtered controller input voltage.
     fn input_voltage(&self) -> InputVoltage;
 }
@@ -721,6 +744,11 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.firmware_fault()
     }
 
+    /// Return the firmware display name for a motor fault code.
+    pub fn firmware_fault_name(&self, fault: FirmwareFaultCode) -> Option<&'static [u8]> {
+        self.bindings.firmware_fault_name(fault)
+    }
+
     /// Return the filtered controller input voltage.
     pub fn input_voltage(&self) -> InputVoltage {
         self.bindings.input_voltage()
@@ -822,6 +850,10 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
 
     fn firmware_fault(&self) -> FirmwareFaultCode {
         self.firmware_fault()
+    }
+
+    fn firmware_fault_name(&self, fault: FirmwareFaultCode) -> Option<&'static [u8]> {
+        self.firmware_fault_name(fault)
     }
 
     fn input_voltage(&self) -> InputVoltage {

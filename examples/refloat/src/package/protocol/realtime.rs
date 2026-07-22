@@ -5,10 +5,13 @@ use super::wire::{
 use crate::domain::RefloatMode;
 use crate::domain::{
     REFLOAT_APP_DATA_PACKAGE_ID, REFLOAT_REALTIME_DATA_ITEMS, REFLOAT_REALTIME_RUNTIME_ITEMS,
-    RefloatAllDataPayloads, RefloatAppDataCommand, RefloatChargingState, RefloatDarkRideState,
-    RefloatRealtimeDataItem, RefloatRunState, RefloatWheelSlipState,
+    RefloatAllDataPayloads, RefloatAppDataCommand, RefloatChargingState, RefloatRealtimeDataHeader,
+    RefloatRealtimeDataItem, RefloatRealtimeTail, RefloatRunState,
 };
-use vescpkg_rs::prelude::TimestampTicks;
+#[cfg(test)]
+use crate::domain::{RefloatRealtimeAlertMask, RefloatRealtimeReservedFlags};
+#[cfg(test)]
+use vescpkg_rs::prelude::{FirmwareFaultWireCode, TimestampTicks};
 
 // Refloat v1.2.1 `send_realtime_data` declares its fixed buffer at
 // `third_party/refloat/src/main.c:1267-1269`.
@@ -165,7 +168,17 @@ pub(in crate::package) fn encode_refloat_realtime_data_response(
 ) -> RefloatRealtimeDataResponse {
     encode_refloat_realtime_data_response_with_runtime(
         payloads,
-        system_timestamp,
+        RefloatRealtimeDataHeader::new(
+            system_timestamp,
+            payloads.base().status().ride_state(),
+            payloads.base().footpad().state(),
+            payloads.base().status().beep_reason(),
+        ),
+        RefloatRealtimeTail::new(
+            RefloatRealtimeAlertMask::empty(),
+            RefloatRealtimeReservedFlags::none(),
+            FirmwareFaultWireCode::from_wire_code(0),
+        ),
         crate::domain::RefloatRealtimeRemoteInput::new(
             vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.0),
         ),
@@ -177,7 +190,8 @@ pub(in crate::package) fn encode_refloat_realtime_data_response(
 #[inline(never)]
 pub(in crate::package) fn encode_refloat_realtime_data_response_with_runtime(
     payloads: &RefloatAllDataPayloads,
-    system_timestamp: TimestampTicks,
+    header: RefloatRealtimeDataHeader,
+    tail: RefloatRealtimeTail,
     remote_input: crate::domain::RefloatRealtimeRemoteInput,
     atr_accel_diff: f32,
     atr_speed_boost: f32,
@@ -198,50 +212,16 @@ pub(in crate::package) fn encode_refloat_realtime_data_response_with_runtime(
         RefloatAppDataCommand::RealtimeData.id(),
     );
 
-    let mut mask = 0x04;
-    if running {
-        mask |= 0x01;
-    }
-    if charging {
-        mask |= 0x02;
-    }
-    refloat_realtime_push_u8(&mut bytes, &mut ind, mask);
-
-    // The data recorder and alert tracker are still part of the unported
-    // control-loop/runtime state (`third_party/refloat/src/main.c:1927-1930`, `third_party/refloat/src/main.c:1956-1958`).
-    refloat_realtime_push_u8(&mut bytes, &mut ind, 0);
+    refloat_realtime_push_u8(&mut bytes, &mut ind, header.data_mask_compat());
+    refloat_realtime_push_u8(&mut bytes, &mut ind, header.extra_flags_compat());
     // Upstream writes `d->time.now` at `third_party/refloat/src/main.c:1931`; VESC timestamps are
     // represented as 100 us system ticks.
-    refloat_realtime_push_u32(&mut bytes, &mut ind, system_timestamp.as_ticks());
+    refloat_realtime_push_u32(&mut bytes, &mut ind, header.timestamp().as_ticks());
 
-    refloat_realtime_push_u8(
-        &mut bytes,
-        &mut ind,
-        ride_state.mode().id() << 4 | ride_state.run_state().id(),
-    );
-    refloat_realtime_push_u8(
-        &mut bytes,
-        &mut ind,
-        base.footpad().state().id() << 6
-            | u8::from(matches!(
-                ride_state.charging(),
-                RefloatChargingState::Charging
-            )) << 5
-            | u8::from(matches!(
-                ride_state.darkride(),
-                RefloatDarkRideState::Active
-            )) << 1
-            | u8::from(matches!(
-                ride_state.wheelslip(),
-                RefloatWheelSlipState::Detected
-            )),
-    );
-    refloat_realtime_push_u8(
-        &mut bytes,
-        &mut ind,
-        ride_state.setpoint_adjustment().id() << 4 | ride_state.stop_condition().id(),
-    );
-    refloat_realtime_push_u8(&mut bytes, &mut ind, base.status().beep_reason().id());
+    refloat_realtime_push_u8(&mut bytes, &mut ind, header.state_byte_compat());
+    refloat_realtime_push_u8(&mut bytes, &mut ind, header.footpad_flags_compat());
+    refloat_realtime_push_u8(&mut bytes, &mut ind, header.stop_setpoint_byte_compat());
+    refloat_realtime_push_u8(&mut bytes, &mut ind, header.beep_reason_compat());
 
     REFLOAT_REALTIME_DATA_ITEMS.into_iter().for_each(|item| {
         push_refloat_float16(
@@ -284,9 +264,17 @@ pub(in crate::package) fn encode_refloat_realtime_data_response_with_runtime(
         );
     }
 
-    refloat_realtime_push_u32(&mut bytes, &mut ind, 0);
-    refloat_realtime_push_u32(&mut bytes, &mut ind, 0);
-    refloat_realtime_push_u8(&mut bytes, &mut ind, 0);
+    refloat_realtime_push_u32(
+        &mut bytes,
+        &mut ind,
+        tail.active_alerts().active_alert_mask_compat(),
+    );
+    refloat_realtime_push_u32(
+        &mut bytes,
+        &mut ind,
+        tail.reserved_flags().extra_flags_compat(),
+    );
+    refloat_realtime_push_u8(&mut bytes, &mut ind, tail.firmware_fault_code().wire_code());
 
     RefloatRealtimeDataResponse { bytes, len: ind }
 }

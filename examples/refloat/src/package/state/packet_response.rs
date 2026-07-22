@@ -6,7 +6,9 @@ use super::RefloatPackageState;
 use super::refloat_command_payload;
 use crate::domain::{
     RefloatAllDataMode3Payload, RefloatAllDataPayloads, RefloatAllDataRequest,
-    RefloatAllDataResponse, RefloatAppDataCommand, RefloatRealtimeMotorTemperatures,
+    RefloatAllDataResponse, RefloatAppDataCommand, RefloatDataRecorderFlags,
+    RefloatRealtimeDataHeader, RefloatRealtimeMotorTemperatures, RefloatRealtimeReservedFlags,
+    RefloatRealtimeTail,
 };
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{BatteryVoltage, FirmwareFaultWireCode, TimestampTicks};
@@ -82,9 +84,24 @@ impl RefloatPackageState {
                 // Refloat's main loop updates `d->time.now` before app-data reads it
                 // in `cmd_realtime_data` at `third_party/refloat/src/main.c:1931`.
                 let system_timestamp = now();
+                let base = payloads.base();
+                let header = RefloatRealtimeDataHeader::new(
+                    system_timestamp,
+                    base.status().ride_state(),
+                    base.footpad().state(),
+                    base.status().beep_reason(),
+                )
+                .with_fatal_error(self.alert_tracker.fatal_error())
+                .with_data_recorder(RefloatDataRecorderFlags::inactive());
+                let tail = RefloatRealtimeTail::new(
+                    self.alert_tracker.active_alerts(),
+                    RefloatRealtimeReservedFlags::none(),
+                    self.alert_tracker.firmware_fault_code(),
+                );
                 let response = encode_refloat_realtime_data_response_with_runtime(
                     &payloads,
-                    system_timestamp,
+                    header,
+                    tail,
                     self.remote_control.input(),
                     self.ride_modifiers.atr_accel_diff(),
                     self.ride_modifiers.atr_speed_boost(),
@@ -167,6 +184,7 @@ mod tests {
     use super::*;
     use crate::domain::REFLOAT_APP_DATA_PACKAGE_ID;
     use std::vec::Vec;
+    use vescpkg_rs::prelude::FirmwareFaultCode;
     use vescpkg_rs::test_support::FirmwareTest;
 
     #[test]
@@ -194,6 +212,123 @@ mod tests {
         // Refloat v1.2.1 writes `d->time.now` into realtime packets at
         // `third_party/refloat/src/main.c:1931`; VESC system ticks are 100 us ticks.
         assert_eq!(&packet[4..8], &[1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn realtime_packet_reports_live_firmware_fault_alert_like_refloat() {
+        let now = TimestampTicks::from_ticks(42);
+        let firmware =
+            FirmwareTest::new().with_firmware_fault(FirmwareFaultCode::from_wire_code(5));
+        let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+        state.refresh_runtime_state(firmware.telemetry(), firmware.imu(), now);
+        let mut packet = Vec::new();
+
+        assert!(state.send_realtime_data_packet_response(
+            firmware.telemetry(),
+            &mut || now,
+            &mut |bytes| {
+                packet.extend_from_slice(bytes);
+                true
+            },
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+
+        assert_eq!(packet[3] & 0x08, 0x08);
+        assert_eq!(&packet[packet.len() - 9..packet.len() - 5], &[0, 0, 0, 1]);
+        assert_eq!(packet.last(), Some(&5));
+    }
+
+    #[test]
+    fn alerts_list_command_returns_source_header_when_empty() {
+        let firmware = FirmwareTest::new();
+        let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+        let mut packet = Vec::new();
+
+        assert!(state.handle_packet_with_telemetry(
+            firmware.telemetry(),
+            &mut || TimestampTicks::from_ticks(0),
+            &mut |bytes| {
+                packet.extend_from_slice(bytes);
+                true
+            },
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::AlertsList.id(),
+            ],
+        ));
+
+        assert_eq!(packet, [101, 35, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn alerts_list_command_returns_firmware_fault_name_and_record() {
+        let now = TimestampTicks::from_ticks(42);
+        let firmware =
+            FirmwareTest::new().with_firmware_fault(FirmwareFaultCode::from_wire_code(5));
+        let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+        state.refresh_runtime_state(firmware.telemetry(), firmware.imu(), now);
+        let mut packet = Vec::new();
+
+        assert!(state.handle_packet_with_telemetry(
+            firmware.telemetry(),
+            &mut || now,
+            &mut |bytes| {
+                packet.extend_from_slice(bytes);
+                true
+            },
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::AlertsList.id(),
+            ],
+        ));
+
+        let name = b"OVER_TEMP_FET";
+        assert_eq!(&packet[..11], &[101, 35, 0, 0, 0, 1, 0, 0, 0, 0, 5]);
+        assert_eq!(packet[11], name.len() as u8);
+        assert_eq!(&packet[12..25], name);
+        assert_eq!(&packet[25..34], &[1, 0, 0, 0, 42, 1, 1, 5, 13]);
+        assert_eq!(&packet[34..], name);
+    }
+
+    #[test]
+    fn alerts_control_clears_the_persistent_fatal_without_hiding_the_live_fault() {
+        let now = TimestampTicks::from_ticks(42);
+        let firmware =
+            FirmwareTest::new().with_firmware_fault(FirmwareFaultCode::from_wire_code(5));
+        let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+        state.refresh_runtime_state(firmware.telemetry(), firmware.imu(), now);
+
+        assert!(state.handle_packet_with_telemetry(
+            firmware.telemetry(),
+            &mut || now,
+            &mut |_| true,
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::AlertsControl.id(),
+                1,
+            ],
+        ));
+
+        let mut packet = Vec::new();
+        assert!(state.send_realtime_data_packet_response(
+            firmware.telemetry(),
+            &mut || now,
+            &mut |bytes| {
+                packet.extend_from_slice(bytes);
+                true
+            },
+            &[
+                REFLOAT_APP_DATA_PACKAGE_ID.get(),
+                RefloatAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+
+        assert_eq!(packet[3] & 0x08, 0);
+        assert_eq!(&packet[packet.len() - 9..packet.len() - 5], &[0, 0, 0, 1]);
+        assert_eq!(packet.last(), Some(&5));
     }
 
     #[test]
