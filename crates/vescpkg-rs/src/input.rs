@@ -61,9 +61,8 @@ impl ControllerInput {
         // C map: Refloat reads the remote-state slot in
         // `third_party/refloat/src/remote.c:43-48`.
         let remote = unsafe { crate::ffi::remote_state() };
-        let (joystick_y, age) = remote
-            .map(|remote| (remote.js_y, remote.age_s))
-            .unwrap_or((0.0, f32::INFINITY));
+        let (joystick_y, age) =
+            remote.map_or((0.0, f32::INFINITY), |remote| (remote.js_y, remote.age_s));
         RemoteInput::new(
             JoystickY::new(firmware_ratio(joystick_y)),
             RemoteAge::new(VescSeconds::from_seconds(age.max(0.0))),

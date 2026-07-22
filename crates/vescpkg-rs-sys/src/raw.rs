@@ -705,9 +705,7 @@ pub unsafe fn conf_custom_clear_configs() {
 ///
 /// The firmware `VESC_IF` table must be valid.
 pub unsafe fn vesc_mutex_create() -> LibMutex {
-    unsafe { slots::mutex_create() }
-        .map(|create| unsafe { create() })
-        .unwrap_or(core::ptr::null_mut())
+    unsafe { slots::mutex_create() }.map_or(core::ptr::null_mut(), |create| unsafe { create() })
 }
 
 /// Lock a firmware mutex, blocking the current firmware thread.
@@ -738,9 +736,7 @@ pub unsafe fn vesc_mutex_unlock(mutex: LibMutex) {
 /// The firmware function table must be valid; the returned handle must be
 /// released with [`vesc_free`].
 pub unsafe fn vesc_sem_create() -> *mut c_void {
-    unsafe { slots::sem_create() }
-        .map(|create| unsafe { create() })
-        .unwrap_or(core::ptr::null_mut())
+    unsafe { slots::sem_create() }.map_or(core::ptr::null_mut(), |create| unsafe { create() })
 }
 
 /// Block until a firmware semaphore is signaled.

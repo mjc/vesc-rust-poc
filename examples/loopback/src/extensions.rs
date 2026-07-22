@@ -88,11 +88,14 @@ mod tests {
 
     #[test]
     fn rust_add_extension_returns_a_constant_encoded_probe_value() {
-        assert!(rust_add_extension_value() == LispValue::try_from(42).unwrap());
+        assert_eq!(rust_add_extension_value(), LispValue::try_from(42).unwrap());
     }
 
     #[test]
     fn rust_probe_diag_ignores_lisp_arguments() {
-        assert!(RustProbeDiag::call(LispArgs::empty()) == LispValue::try_from(42).unwrap());
+        assert_eq!(
+            RustProbeDiag::call(LispArgs::empty()),
+            LispValue::try_from(42).unwrap()
+        );
     }
 }

@@ -1,5 +1,7 @@
 //! Host-side fake firmware bindings for unit tests in dependent crates.
 
+#![allow(clippy::cast_precision_loss)] // fake firmware exposes tick ages as f32 seconds
+
 use core::cell::Cell;
 use core::ffi::{CStr, c_char};
 

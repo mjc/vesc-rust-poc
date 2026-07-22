@@ -1,3 +1,5 @@
+#![allow(clippy::cast_precision_loss)] // fake firmware exposes tick ages as f32 seconds
+
 use core::ffi::{c_char, c_void};
 use core::hint::spin_loop;
 use core::sync::atomic::{
@@ -138,6 +140,7 @@ impl Drop for FirmwareLockGuard {
     }
 }
 
+#[allow(clippy::too_many_lines)] // one reset point keeps fake firmware state isolated between tests
 pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     while LOCKED
         .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -328,6 +331,7 @@ pub unsafe fn write_nvm(buffer: *mut u8, len: u32, address: u32) -> Option<bool>
     Some(true)
 }
 
+#[allow(clippy::unnecessary_wraps)] // fake preserves nullable firmware NVM slot shape
 pub unsafe fn wipe_nvm() -> Option<bool> {
     if NVM_FAILURE.load(Ordering::Relaxed) {
         return Some(false);
@@ -378,7 +382,7 @@ pub unsafe fn lbm_dec_char(value: LbmValue) -> u8 {
 }
 
 pub unsafe fn lbm_enc_char(value: u8) -> LbmValue {
-    LbmValue((value as u32) << 4 | 0x04)
+    LbmValue(u32::from(value) << 4 | 0x04)
 }
 
 pub unsafe fn lbm_enc_u32(value: u32) -> LbmValue {
@@ -411,12 +415,12 @@ pub unsafe fn lbm_is_symbol(_value: LbmValue) -> bool {
     false
 }
 
-pub unsafe fn lbm_is_cons(_value: LbmValue) -> bool {
-    _value.0 == 0x20
+pub unsafe fn lbm_is_cons(value: LbmValue) -> bool {
+    value.0 == 0x20
 }
 
-pub unsafe fn lbm_is_byte_array(_value: LbmValue) -> bool {
-    _value.0 == LBM_BYTE_ARRAY
+pub unsafe fn lbm_is_byte_array(value: LbmValue) -> bool {
+    value.0 == LBM_BYTE_ARRAY
 }
 
 pub unsafe fn lbm_create_byte_array(value: *mut LbmValue, _len: u32) -> bool {
@@ -910,14 +914,17 @@ pub unsafe fn mc_get_input_voltage_filtered() -> f32 {
     load(&INPUT_VOLTAGE)
 }
 
+#[allow(clippy::unnecessary_wraps)] // fake preserves nullable firmware input slot shape
 pub unsafe fn get_ppm() -> Option<f32> {
     Some(load(&PPM_INPUT))
 }
 
+#[allow(clippy::unnecessary_wraps)] // fake preserves nullable firmware input slot shape
 pub unsafe fn get_ppm_age() -> Option<f32> {
     Some(load(&PPM_AGE))
 }
 
+#[allow(clippy::unnecessary_wraps)] // fake preserves nullable firmware remote-state slot shape
 pub unsafe fn remote_state() -> Option<RemoteState> {
     Some(RemoteState {
         js_x: 0.0,
