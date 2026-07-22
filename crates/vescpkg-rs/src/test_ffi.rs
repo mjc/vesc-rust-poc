@@ -1007,6 +1007,10 @@ pub(crate) fn set_battery_cell_count(count: crate::BatteryCellCount) {
     BATTERY_CELL_COUNT.store(i32::from(count.as_u16()), Ordering::Relaxed);
 }
 
+pub(crate) fn set_raw_battery_cell_count(value: i32) {
+    BATTERY_CELL_COUNT.store(value, Ordering::Relaxed);
+}
+
 pub(crate) fn set_directional_motor_current(current: DirectionalMotorCurrent) {
     store(&DIRECTIONAL_MOTOR_CURRENT, current.current().as_amps());
 }

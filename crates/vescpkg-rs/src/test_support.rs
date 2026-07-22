@@ -403,6 +403,12 @@ impl FirmwareTest {
         self
     }
 
+    /// Configure a malformed raw battery-cell count for rejection-path tests.
+    pub fn with_raw_battery_cell_count(self, count: i32) -> Self {
+        crate::test_ffi::set_raw_battery_cell_count(count);
+        self
+    }
+
     #[must_use]
     /// Configure the filtered directional motor current.
     pub fn with_directional_motor_current(self, current: crate::DirectionalMotorCurrent) -> Self {
