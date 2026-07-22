@@ -11,12 +11,32 @@ use crate::{
     MotorCurrentLimit, MotorTemperature, OdometerMeters, TotalMotorCurrent, TripDistance,
     VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
-use vescpkg_rs_sys::LbmValue;
 use vescpkg_rs_sys::raw::{CanStatusMsg, LbmFlatValue};
+use vescpkg_rs_sys::{LbmValue, VescPin, VescPinMode};
 
 /// Host replacement for the firmware `%s` logging path.
 pub unsafe fn printf_data(message: *const c_char) -> bool {
     !message.is_null()
+}
+
+pub unsafe fn io_set_mode(_pin: VescPin, _mode: VescPinMode) -> bool {
+    true
+}
+
+pub unsafe fn io_write(_pin: VescPin, _level: i32) -> bool {
+    true
+}
+
+pub unsafe fn io_read(_pin: VescPin) -> bool {
+    false
+}
+
+pub unsafe fn io_read_analog(pin: VescPin) -> f32 {
+    match pin.0 {
+        7 => 1.2,
+        8 => 3.4,
+        _ => 0.0,
+    }
 }
 
 // C map: these host replacements model the motor slots declared at

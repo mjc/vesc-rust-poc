@@ -30,6 +30,7 @@ impl FirmwareTest {
     /// Reset this thread's fake firmware state and construct normal capabilities.
     #[must_use]
     pub fn new() -> Self {
+        crate::gpio::reset_leases();
         let lock = crate::test_ffi::lock_firmware();
         Self {
             firmware: crate::Firmware::new(),
@@ -87,6 +88,12 @@ impl FirmwareTest {
     #[must_use]
     pub fn can(&self) -> &crate::CanBus {
         self.firmware.can()
+    }
+
+    /// Borrow the fake firmware GPIO capability used by package tests.
+    #[must_use]
+    pub fn gpio(&self) -> &crate::Gpio {
+        self.firmware.gpio()
     }
 
     /// Borrow the firmware clock capability used on hardware.

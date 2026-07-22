@@ -59,14 +59,15 @@ pub(crate) mod ffi {
     #[cfg(any(test, not(feature = "test-support")))]
     pub use vescpkg_rs_sys::raw::{
         can_set_current, can_set_current_rel, can_set_duty, can_set_pos, can_set_rpm,
-        can_status_msg_id, can_transmit_eid, can_transmit_sid,
+        can_status_msg_id, can_transmit_eid, can_transmit_sid, io_read, io_read_analog,
+        io_set_mode, io_write,
     };
     #[allow(unused_imports)]
     pub use vescpkg_rs_sys::raw::{
-        conf_custom_add_config, conf_custom_clear_configs, io_read, io_read_analog, io_set_mode,
-        io_write, lbm_add_extension, lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true,
-        vesc_clear_app_data_handler, vesc_clear_imu_read_callback, vesc_get_arg, vesc_malloc,
-        vesc_send_app_data, vesc_set_app_data_handler, vesc_set_imu_read_callback,
+        conf_custom_add_config, conf_custom_clear_configs, lbm_add_extension, lbm_enc_sym_eerror,
+        lbm_enc_sym_nil, lbm_enc_sym_true, vesc_clear_app_data_handler,
+        vesc_clear_imu_read_callback, vesc_get_arg, vesc_malloc, vesc_send_app_data,
+        vesc_set_app_data_handler, vesc_set_imu_read_callback,
     };
     pub use vescpkg_rs_sys::{AppDataHandler, LibInfo, NativeImage};
 
@@ -75,7 +76,8 @@ pub(crate) mod ffi {
     #[cfg(all(feature = "test-support", not(test)))]
     pub use crate::test_ffi::{
         can_set_current, can_set_current_rel, can_set_duty, can_set_pos, can_set_rpm,
-        can_status_msg_id, can_transmit_eid, can_transmit_sid, printf_data,
+        can_status_msg_id, can_transmit_eid, can_transmit_sid, io_read, io_read_analog,
+        io_set_mode, io_write, printf_data,
     };
     #[allow(unused_imports)]
     pub use selected_ffi::{
@@ -163,7 +165,10 @@ mod motor;
 /// Firmware thread bindings and convenience wrappers for package code.
 mod thread;
 
-pub use gpio::{AnalogPin, DigitalOutputLevel, DigitalPin, Gpio};
+pub use gpio::{
+    AnalogGpioLease, AnalogPin, DigitalGpioLease, DigitalOutputLevel, DigitalPin, Gpio, GpioError,
+    GpioMode,
+};
 /// VESC-domain semantic types re-exported at the crate root.
 pub use types::*;
 
