@@ -402,6 +402,10 @@ pub trait MotorControlBindings {
     /// `third_party/float-out-boy/src/motor_control.c:99`; the VESC ABI slot is
     /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:440`.
     fn set_current(&self, current: MotorCurrent);
+    /// Set the firmware PID speed target.
+    fn set_pid_speed(&self, speed: ElectricalSpeed);
+    /// Set the firmware PID position target.
+    fn set_pid_position(&self, position: PidPosition);
     /// Set motor duty cycle.
     ///
     /// Float Out Boy v1.2.1 sends parking-brake duty zero at
@@ -442,6 +446,14 @@ impl<B: MotorControlBindings + ?Sized> MotorControlBindings for &B {
 
     fn set_current(&self, current: MotorCurrent) {
         (**self).set_current(current);
+    }
+
+    fn set_pid_speed(&self, speed: ElectricalSpeed) {
+        (**self).set_pid_speed(speed);
+    }
+
+    fn set_pid_position(&self, position: PidPosition) {
+        (**self).set_pid_position(position);
     }
 
     fn set_duty_cycle(&self, duty: DutyCycle) {
@@ -792,6 +804,14 @@ impl MotorControlBindings for RealMotorControlBindings {
         unsafe { crate::ffi::mc_set_current(current.current().as_amps()) };
     }
 
+    fn set_pid_speed(&self, speed: ElectricalSpeed) {
+        unsafe { crate::ffi::mc_set_pid_speed(speed.rpm().as_revolutions_per_minute()) };
+    }
+
+    fn set_pid_position(&self, position: PidPosition) {
+        unsafe { crate::ffi::mc_set_pid_pos(position.angle().as_degrees()) };
+    }
+
     fn set_duty_cycle(&self, duty: DutyCycle) {
         unsafe { crate::ffi::mc_set_duty(duty.ratio().as_ratio()) };
     }
@@ -976,6 +996,10 @@ pub trait MotorOutput: private::MotorOutput {
 
     /// Apply a signed motor-current command.
     fn set_current(&self, current: MotorCurrent);
+    /// Apply a firmware PID speed target.
+    fn set_pid_speed(&self, speed: ElectricalSpeed);
+    /// Apply a firmware PID position target.
+    fn set_pid_position(&self, position: PidPosition);
 
     /// Apply a duty-cycle command.
     fn set_duty_cycle(&self, duty: DutyCycle);
@@ -1541,6 +1565,16 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
         self.bindings.set_current(current);
     }
 
+    /// Apply a firmware PID speed target.
+    pub fn set_pid_speed(&self, speed: ElectricalSpeed) {
+        self.bindings.set_pid_speed(speed);
+    }
+
+    /// Apply a firmware PID position target.
+    pub fn set_pid_position(&self, position: PidPosition) {
+        self.bindings.set_pid_position(position);
+    }
+
     /// Set motor duty cycle.
     ///
     /// Float Out Boy uses this for parking brake duty zero at
@@ -1610,6 +1644,14 @@ impl<B: MotorControlBindings> MotorOutput for MotorControlApi<B> {
 
     fn set_current(&self, current: MotorCurrent) {
         MotorControlApi::set_current(self, current);
+    }
+
+    fn set_pid_speed(&self, speed: ElectricalSpeed) {
+        MotorControlApi::set_pid_speed(self, speed);
+    }
+
+    fn set_pid_position(&self, position: PidPosition) {
+        MotorControlApi::set_pid_position(self, position);
     }
 
     fn set_duty_cycle(&self, duty: DutyCycle) {

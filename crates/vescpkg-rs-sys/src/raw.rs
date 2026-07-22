@@ -375,6 +375,8 @@ mod slots {
     fn_slot!(mc_get_pid_pos_set as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_pid_pos_now as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_update_pid_pos_offset as unsafe extern "C" fn(f32, bool));
+    fn_slot!(mc_set_pid_speed as unsafe extern "C" fn(f32));
+    fn_slot!(mc_set_pid_pos as unsafe extern "C" fn(f32));
     fn_slot!(mc_stat_power_avg as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_stat_power_max as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_stat_speed_avg as unsafe extern "C" fn() -> f32);
@@ -1469,6 +1471,16 @@ pub unsafe fn mc_set_current_off_delay(seconds: f32) {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_set_current(amps: f32) {
     unsafe { required_slot!(mc_set_current)(amps) }
+}
+
+/// Set the firmware PID speed target in electrical RPM.
+pub unsafe fn mc_set_pid_speed(rpm: f32) {
+    unsafe { slots::mc_set_pid_speed()(rpm) }
+}
+
+/// Set the firmware PID position target in electrical degrees.
+pub unsafe fn mc_set_pid_pos(position: f32) {
+    unsafe { slots::mc_set_pid_pos()(position) }
 }
 
 /// Set the motor duty-cycle command.

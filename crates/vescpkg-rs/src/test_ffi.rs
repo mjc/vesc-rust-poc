@@ -1117,6 +1117,10 @@ pub unsafe fn mc_set_current(amps: f32) {
     CURRENT.store(amps.to_bits(), Ordering::Relaxed);
 }
 
+pub unsafe fn mc_set_pid_speed(_rpm: f32) {}
+
+pub unsafe fn mc_set_pid_pos(_position: f32) {}
+
 pub unsafe fn mc_set_duty(duty: f32) {
     DUTY_COUNT.fetch_add(1, Ordering::Relaxed);
     DUTY.store(duty.to_bits(), Ordering::Relaxed);
