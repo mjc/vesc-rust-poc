@@ -252,7 +252,9 @@ pub use gpio::{
     AnalogGpioLease, AnalogPin, DigitalGpioLease, DigitalOutputLevel, DigitalPin, Gpio, GpioError,
     GpioMode,
 };
-pub use pwm::{PwmCallback, PwmCallbackError, PwmCallbackLease};
+pub use pwm::{
+    PwmCallback, PwmCallbackError, PwmCallbackHandler, PwmCallbackLease, TypedPwmCallbackLease,
+};
 /// VESC-domain semantic types re-exported at the crate root.
 pub use types::*;
 
@@ -282,11 +284,12 @@ pub mod prelude {
         ImuReadHandler, InputError, LbmExtension, LispArgs, LispContextId, LispFlatValue,
         LispIntegerError, LispMessageError, LispProcess, LispSymbol, LispValue, LogError,
         MotorOutput, MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset, PackageStartError,
-        PacketCodec, PacketError, PacketHandler, Plot, PlotError, PpmSnapshot, RemoteInputSnapshot,
-        SettingsError, ShutdownInhibit, StatefulCustomConfigCallback, StatefulLbmExtension,
-        StatelessFirmwareThread, StatelessThreadContext, Terminal, TerminalError, TerminalHandler,
-        TerminalRegistration, ThreadContext, ThreadError, ThreadName, ThreadSpec,
-        ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimeoutSnapshot, TimerInstant, Uart,
+        PacketCodec, PacketError, PacketHandler, Plot, PlotError, PpmSnapshot, PwmCallbackError,
+        PwmCallbackHandler, PwmCallbackLease, RemoteInputSnapshot, SettingsError, ShutdownInhibit,
+        StatefulCustomConfigCallback, StatefulLbmExtension, StatelessFirmwareThread,
+        StatelessThreadContext, Terminal, TerminalError, TerminalHandler, TerminalRegistration,
+        ThreadContext, ThreadError, ThreadName, ThreadSpec, ThreadWorkingAreaSize,
+        ThreadWorkingAreaSizeError, TimeoutSnapshot, TimerInstant, TypedPwmCallbackLease, Uart,
         UartError, UartLease,
     };
 }
