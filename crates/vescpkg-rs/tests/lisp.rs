@@ -61,6 +61,19 @@ fn lisp_values_expose_explicit_kind_predicates() {
     assert_eq!(pair.reverse_list(), Some(pair));
     assert_eq!(integer.reverse_list(), None);
 
+    let proper = LispValue::cons(integer, LispValue::nil());
+    let mut list = proper.list();
+    assert_eq!(list.next_value().unwrap(), Some(integer));
+    assert_eq!(list.next_value().unwrap(), None);
+
+    let improper_pair = LispValue::cons(integer, character);
+    let mut improper = improper_pair.list();
+    assert_eq!(improper.next_value().unwrap(), Some(integer));
+    assert_eq!(
+        improper.next_value(),
+        Err(vescpkg_rs::LispListError::ImproperTail)
+    );
+
     let string = LispValue::try_byte_array(4).expect("host fake allocates byte arrays");
     assert!(string.is_byte_array());
     assert!(string.is_array());

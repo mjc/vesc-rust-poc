@@ -77,6 +77,45 @@ pub enum LispMessageError {
     Rejected,
 }
 
+/// Failure returned while traversing a LispBM list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LispListError {
+    /// The list ended in a non-`nil` value instead of a proper list tail.
+    ImproperTail,
+}
+
+impl core::fmt::Display for LispListError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::ImproperTail => formatter.write_str("LispBM list has an improper tail"),
+        }
+    }
+}
+
+impl core::error::Error for LispListError {}
+
+/// Scoped traversal state for a LispBM list value.
+#[cfg_attr(test, allow(dead_code))]
+pub struct LispList {
+    next: LispValue,
+}
+
+#[cfg(not(test))]
+impl LispList {
+    /// Return the next list element, or an explicit error for an improper tail.
+    pub fn next_value(&mut self) -> Result<Option<LispValue>, LispListError> {
+        if self.next.is_nil() {
+            return Ok(None);
+        }
+        if !self.next.is_cons() {
+            return Err(LispListError::ImproperTail);
+        }
+        let value = self.next.car().ok_or(LispListError::ImproperTail)?;
+        self.next = self.next.cdr().ok_or(LispListError::ImproperTail)?;
+        Ok(Some(value))
+    }
+}
+
 /// Process controls available while an extension callback is executing.
 pub struct LispProcess;
 
@@ -462,6 +501,12 @@ impl LispValue {
     #[cfg(not(test))]
     pub fn cons(car: Self, cdr: Self) -> Self {
         Self::from_raw(unsafe { crate::ffi::lbm_cons(car.raw(), cdr.raw()) })
+    }
+
+    /// Start checked traversal of this value as a proper LispBM list.
+    #[cfg(not(test))]
+    pub fn list(self) -> LispList {
+        LispList { next: self }
     }
 
     /// Read the head of a cons cell while preserving its firmware ownership.
