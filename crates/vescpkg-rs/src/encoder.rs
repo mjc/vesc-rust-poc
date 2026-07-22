@@ -108,6 +108,21 @@ unsafe extern "C" fn disabled_info() -> *mut c_char {
     c"".as_ptr().cast_mut()
 }
 
+impl crate::Firmware {
+    /// Return the optional custom encoder capability handle.
+    pub fn encoder(&self) -> Encoder {
+        Encoder::new()
+    }
+}
+
+#[cfg(all(feature = "test-support", not(test)))]
+impl crate::test_support::FirmwareTest {
+    /// Return the optional custom encoder capability handle.
+    pub fn encoder(&self) -> Encoder {
+        Encoder::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{ENCODER_ACTIVE, EncoderHandler, fault, info, read};
@@ -140,20 +155,5 @@ mod tests {
         assert_eq!(unsafe { read::<Handler>() }, 0.0);
         assert!(unsafe { fault::<Handler>() });
         assert_eq!(unsafe { CStr::from_ptr(info::<Handler>()) }, c"");
-    }
-}
-
-impl crate::Firmware {
-    /// Return the optional custom encoder capability handle.
-    pub fn encoder(&self) -> Encoder {
-        Encoder::new()
-    }
-}
-
-#[cfg(all(feature = "test-support", not(test)))]
-impl crate::test_support::FirmwareTest {
-    /// Return the optional custom encoder capability handle.
-    pub fn encoder(&self) -> Encoder {
-        Encoder::new()
     }
 }

@@ -121,6 +121,21 @@ unsafe extern "C" fn callback<H: TerminalHandler>(arg_count: i32, argv: *const *
     });
 }
 
+impl crate::Firmware {
+    /// Return the optional terminal capability handle.
+    pub fn terminal(&self) -> Terminal {
+        Terminal::new()
+    }
+}
+
+#[cfg(all(feature = "test-support", not(test)))]
+impl crate::test_support::FirmwareTest {
+    /// Return the optional terminal capability handle.
+    pub fn terminal(&self) -> Terminal {
+        Terminal::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{TERMINAL_ACTIVE, TerminalArgs, TerminalHandler, callback};
@@ -144,20 +159,5 @@ mod tests {
         TERMINAL_ACTIVE.store(false, Ordering::Release);
         unsafe { callback::<Handler>(0, core::ptr::null()) };
         assert_eq!(CALLS.load(Ordering::Relaxed), 1);
-    }
-}
-
-impl crate::Firmware {
-    /// Return the optional terminal capability handle.
-    pub fn terminal(&self) -> Terminal {
-        Terminal::new()
-    }
-}
-
-#[cfg(all(feature = "test-support", not(test)))]
-impl crate::test_support::FirmwareTest {
-    /// Return the optional terminal capability handle.
-    pub fn terminal(&self) -> Terminal {
-        Terminal::new()
     }
 }
