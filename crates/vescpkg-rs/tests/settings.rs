@@ -114,6 +114,7 @@ fn typed_settings_read_write_and_persist() {
         95.0
     );
     assert_eq!(settings.duty_cycle_limit().ratio().as_ratio(), 0.95);
+    assert_eq!(settings.duty_cycle_minimum().ratio().as_ratio(), 0.05);
     settings
         .set_motor_current_max(vescpkg_rs::MotorCurrentLimit::new(
             vescpkg_rs::Current::from_amps(80.0),
@@ -252,7 +253,13 @@ fn typed_settings_read_write_and_persist() {
             vescpkg_rs::Ratio::from_ratio_const(0.8),
         ))
         .unwrap();
+    settings
+        .set_duty_cycle_minimum(vescpkg_rs::DutyCycleMinimum::new(
+            vescpkg_rs::Ratio::from_ratio_const(0.1),
+        ))
+        .unwrap();
     assert_eq!(settings.motor_current_max().current().as_amps(), 80.0);
+    assert_eq!(settings.duty_cycle_minimum().ratio().as_ratio(), 0.1);
     assert_eq!(settings.motor_current_min().current().as_amps(), 40.0);
     assert_eq!(settings.input_current_max().current().as_amps(), 30.0);
     assert_eq!(settings.input_current_min().current().as_amps(), -20.0);

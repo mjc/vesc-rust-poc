@@ -52,6 +52,10 @@ ratio_type!(
     DutyCycleLimit,
     "Configured maximum controller duty-cycle ratio in `0.0..=1.0`."
 );
+ratio_type!(
+    DutyCycleMinimum,
+    "Configured minimum controller duty-cycle ratio in `0.0..=1.0`."
+);
 
 impl DutyCycle {
     /// Return the unsigned magnitude used by firmware protection thresholds.

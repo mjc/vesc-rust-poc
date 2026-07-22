@@ -2,10 +2,10 @@
 
 use crate::ffi;
 use crate::{
-    AngleDegrees, BatteryCellCount, CanBus, Charge, Current, DutyCycleLimit, ElectricalSpeed,
-    FocAudio, FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance, GearRatio, InputCurrent,
-    InputVoltage, MotorCurrentLimit, Nvm, NvmCapacity, Ratio, TemperatureLimitEnd,
-    TemperatureLimitStart, Uart, Voltage, WheelDiameter,
+    AngleDegrees, BatteryCellCount, CanBus, Charge, Current, DutyCycleLimit, DutyCycleMinimum,
+    ElectricalSpeed, FocAudio, FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance,
+    GearRatio, InputCurrent, InputVoltage, MotorCurrentLimit, Nvm, NvmCapacity, Ratio,
+    TemperatureLimitEnd, TemperatureLimitStart, Uart, Voltage, WheelDiameter,
 };
 use core::fmt;
 use vescpkg_rs_sys::{AbiError, Stm32AbiRevision, VescIfCapabilities, VescIfPresence};
@@ -678,9 +678,21 @@ impl FirmwareSettings {
         ))
     }
 
+    /// Read the configured minimum duty-cycle threshold.
+    pub fn duty_cycle_minimum(self) -> DutyCycleMinimum {
+        DutyCycleMinimum::new(Ratio::clamped(
+            self.get_float(FirmwareFloatSetting::MinDuty),
+        ))
+    }
+
     /// Update the live duty-cycle limit; persistence still requires [`Self::store`].
     pub fn set_duty_cycle_limit(self, limit: DutyCycleLimit) -> Result<(), SettingsError> {
         self.set_float(FirmwareFloatSetting::MaxDuty, limit.ratio().as_ratio())
+    }
+
+    /// Update the live minimum duty-cycle threshold; persistence still requires [`Self::store`].
+    pub fn set_duty_cycle_minimum(self, minimum: DutyCycleMinimum) -> Result<(), SettingsError> {
+        self.set_float(FirmwareFloatSetting::MinDuty, minimum.ratio().as_ratio())
     }
 
     /// Read an integer setting from live firmware state.
