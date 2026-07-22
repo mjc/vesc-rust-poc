@@ -70,3 +70,11 @@ fn nvm_capacity_bounds_are_checked_before_dispatch() {
         Err(NvmError::OutOfBounds)
     );
 }
+
+#[test]
+fn nvm_host_conversions_preserve_firmware_width() {
+    assert_eq!(NvmOffset::from_usize(12), Some(NvmOffset::new(12)));
+    assert_eq!(NvmCapacity::from_usize(16), NvmCapacity::new(16));
+    assert_eq!(NvmOffset::from_usize(usize::MAX), None);
+    assert_eq!(NvmCapacity::from_usize(usize::MAX), None);
+}
