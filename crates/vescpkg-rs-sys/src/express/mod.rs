@@ -177,6 +177,12 @@ mod tests {
                 slot: ExpressSlot::Spawn
             })
         );
+        assert_eq!(
+            unsafe { runtime.get_arg(0) },
+            Err(ExpressCallError {
+                slot: ExpressSlot::GetArg
+            })
+        );
         let lisp = unsafe { ExpressLisp::from_interface(interface) };
         assert_eq!(
             lisp.enc_i(1),
