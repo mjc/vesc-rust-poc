@@ -31,6 +31,15 @@ pub enum ExpressTarget {
     Esp32P4,
 }
 
+/// Native-library image kind accepted by an Express target's loader.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExpressNativeLoadKind {
+    /// Execute the library in place from flash.
+    Xip,
+    /// Copy and relocate the library into executable/data RAM.
+    Relocatable,
+}
+
 impl ExpressTarget {
     /// Parse an ESP-IDF target preprocessor define.
     pub fn from_sdkconfig_define(define: &str) -> Option<Self> {
@@ -71,6 +80,17 @@ impl ExpressTarget {
             Self::Esp32S3 => "CONFIG_IDF_TARGET_ESP32S3",
             Self::Esp32C6 => "CONFIG_IDF_TARGET_ESP32C6",
             Self::Esp32P4 => "CONFIG_IDF_TARGET_ESP32P4",
+        }
+    }
+
+    /// Return the native-library image kind supported by this target.
+    ///
+    /// The pinned Express loader only implements the relocatable container
+    /// path for ESP32-S3; other mapped targets accept the XIP image form.
+    pub const fn native_load_kind(self) -> ExpressNativeLoadKind {
+        match self {
+            Self::Esp32S3 => ExpressNativeLoadKind::Relocatable,
+            Self::Esp32C3 | Self::Esp32C6 | Self::Esp32P4 => ExpressNativeLoadKind::Xip,
         }
     }
 

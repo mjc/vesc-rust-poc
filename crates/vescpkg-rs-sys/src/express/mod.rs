@@ -29,7 +29,7 @@ pub use table::{ExpressSlot, ExpressSlotKind, ExpressTable, ExpressTableError, e
 pub use types::{
     EXPRESS_C_IF_VERSION, EXPRESS_IF_SLOT_COUNT, EXPRESS_IF_TABLE_BYTES, EXPRESS_NATIVE_LIB_MAGIC,
     EXPRESS_NATIVE_LIB_RELOC_MAGIC, EXPRESS_SYSTEM_TICK_RATE_HZ, ExpressAddress,
-    ExpressFlatValueRaw, ExpressTarget, ExpressWord,
+    ExpressFlatValueRaw, ExpressNativeLoadKind, ExpressTarget, ExpressWord,
 };
 
 #[cfg(test)]
@@ -78,6 +78,14 @@ mod tests {
         assert_eq!(ExpressTarget::Esp32C6.interface_address(), 0x4087_B800);
         assert_eq!(ExpressTarget::Esp32P4.interface_address(), 0x4FF3_A000);
         assert_eq!(ExpressTarget::Esp32C3.target_name(), "esp32c3");
+        assert_eq!(
+            ExpressTarget::Esp32S3.native_load_kind(),
+            ExpressNativeLoadKind::Relocatable
+        );
+        assert_eq!(
+            ExpressTarget::Esp32C3.native_load_kind(),
+            ExpressNativeLoadKind::Xip
+        );
         assert_eq!(
             ExpressTarget::from_target_name("esp32s3"),
             Some(ExpressTarget::Esp32S3)
