@@ -423,6 +423,16 @@ pub unsafe fn lbm_send_message(_context: u32, _message: LbmValue) -> c_int {
     }
 }
 
+pub unsafe fn lbm_get_current_cid() -> u32 {
+    9
+}
+
+pub unsafe fn lbm_block_ctx_from_extension() {}
+
+pub unsafe fn lbm_unblock_ctx_unboxed(_context: u32, _value: LbmValue) -> Option<bool> {
+    Some(true)
+}
+
 pub(crate) fn fail_lisp_messages(fail: bool) {
     LBM_MESSAGE_FAILURE.store(fail, Ordering::Relaxed);
 }

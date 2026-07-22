@@ -67,6 +67,32 @@ pub enum LispMessageError {
     Rejected,
 }
 
+/// Process controls available while an extension callback is executing.
+pub struct LispProcess;
+
+impl LispProcess {
+    /// Return the context currently executing the extension callback.
+    #[cfg(not(test))]
+    pub fn current() -> LispContextId {
+        LispContextId::new(unsafe { crate::ffi::lbm_get_current_cid() })
+    }
+
+    /// Block the current extension context until firmware unblocks it.
+    #[cfg(not(test))]
+    pub fn block_current() {
+        unsafe { crate::ffi::lbm_block_ctx_from_extension() }
+    }
+
+    /// Unblock a context with an unboxed LispBM value.
+    #[cfg(not(test))]
+    pub fn unblock(context: LispContextId, value: LispValue) -> Result<(), LispMessageError> {
+        match unsafe { crate::ffi::lbm_unblock_ctx_unboxed(context.raw(), value.raw()) } {
+            Some(true) => Ok(()),
+            Some(false) | None => Err(LispMessageError::Rejected),
+        }
+    }
+}
+
 impl LispValue {
     /// Convert any LispBM numeric value to an `f32`.
     #[cfg(not(test))]

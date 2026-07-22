@@ -232,6 +232,9 @@ mod slots {
     fn_slot!(lbm_enc_sym as unsafe extern "C" fn(u32) -> LbmValue);
     fn_slot!(lbm_dec_sym as unsafe extern "C" fn(LbmValue) -> u32);
     fn_slot!(lbm_send_message as unsafe extern "C" fn(u32, LbmValue) -> c_int);
+    fn_slot!(lbm_get_current_cid as unsafe extern "C" fn() -> u32);
+    fn_slot!(lbm_block_ctx_from_extension as unsafe extern "C" fn());
+    optional_fn_slot!(lbm_unblock_ctx_unboxed as unsafe extern "C" fn(u32, LbmValue) -> bool);
     fn_slot!(set_app_data_handler as unsafe extern "C" fn(Option<AppDataHandler>) -> bool);
     fn_slot!(imu_set_read_callback as unsafe extern "C" fn(Option<ImuReadCallback>));
     fn_slot!(read_eeprom_var as unsafe extern "C" fn(*mut EepromVar, c_int) -> bool);
@@ -540,6 +543,30 @@ pub unsafe fn lbm_dec_sym(value: LbmValue) -> u32 {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn lbm_send_message(context: u32, message: LbmValue) -> c_int {
     unsafe { slots::lbm_send_message()(context, message) }
+}
+
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn lbm_get_current_cid() -> u32 {
+    unsafe { slots::lbm_get_current_cid()() }
+}
+
+/// # Safety
+///
+/// The current callback must be running in a blockable LispBM extension context.
+pub unsafe fn lbm_block_ctx_from_extension() {
+    unsafe { slots::lbm_block_ctx_from_extension()() }
+}
+
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must remain valid.
+pub unsafe fn lbm_unblock_ctx_unboxed(context: u32, value: LbmValue) -> Option<bool> {
+    optional_bool_call(
+        unsafe { slots::lbm_unblock_ctx_unboxed() },
+        |unblock| unsafe { unblock(context, value) },
+    )
 }
 
 /// # Safety
