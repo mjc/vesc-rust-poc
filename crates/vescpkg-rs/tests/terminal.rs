@@ -1,7 +1,7 @@
 #![cfg(feature = "test-support")]
 //! Integration coverage for terminal callback ownership.
 
-use vescpkg_rs::{TerminalHandler, test_support::FirmwareTest};
+use vescpkg_rs::{TerminalError, TerminalHandler, test_support::FirmwareTest};
 
 struct Handler;
 
@@ -18,5 +18,9 @@ fn terminal_registration_owns_callback_until_drop() {
     let registration = terminal
         .register::<Handler>(c"sdk", c"SDK command", c"arg")
         .unwrap();
+    assert!(matches!(
+        terminal.register::<Handler>(c"other", c"Other command", c"arg"),
+        Err(TerminalError::Busy)
+    ));
     drop(registration);
 }
