@@ -61,7 +61,7 @@ arm-clippy:
 	$(CARGO) clippy -p vesc-example-loopback --bin vesc-example-loopback --release --target $(ARM_TARGET) -- $(CLIPPY_PEDANTIC_FLAGS)
 	$(CARGO) clippy -p vesc-example-float-out-boy --bin vesc-example-float-out-boy --release --target $(ARM_TARGET) -- $(CLIPPY_PEDANTIC_FLAGS)
 
-arm-gates: vescpkg-rs-sys-target-check thumb-dispatch-smoke arm-clippy package-only
+arm-gates: vescpkg-rs-sys-target-check thumb-dispatch-smoke arm-clippy package-examples
 
 thumb-dispatch-smoke:
 	./tools/thumb-dispatch-smoke.sh
@@ -77,15 +77,13 @@ doc-test:
 package: check package-only
 
 package-only:
-	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-float-out-boy
+	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-loopback
 
-# Build the representative package set used by docs/package-proof.md. This is
-# intentionally separate from the default gate, which only emits Refloat.
+# Build the representative package set used by the package proof.
 package-examples:
 	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-loopback
 	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-alloc-smoke
 	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-control-loop-smoke
-	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-refloat
 
 deploy:
 	$(CARGO) run -p cargo-vescpkg -- deploy -p vesc-example-loopback $(DEVICE_FLAGS)

@@ -1407,13 +1407,33 @@ pub unsafe fn gnss_snapshot() -> Option<GnssData> {
     unsafe { copy_firmware_record(loader()) }
 }
 
-/// Copy the current remote-control state when firmware exposes the slot.
+/// Copy the current remote-control state returned by firmware.
 ///
 /// # Safety
 ///
 /// The VESC function table must be valid for the duration of this call.
-pub unsafe fn remote_state() -> Option<RemoteState> {
-    unsafe { slots::get_remote_state() }.map(|func| unsafe { func() })
+pub unsafe fn remote_state() -> RemoteState {
+    unsafe { required_slot!(get_remote_state)() }
+}
+
+/// Read the decoded PPM input when the optional slot is present.
+pub unsafe fn get_ppm() -> Option<f32> {
+    unsafe { slots::get_ppm() }.map(|read| unsafe { read() })
+}
+
+/// Read the age of the latest decoded PPM input when supported.
+pub unsafe fn get_ppm_age() -> Option<f32> {
+    unsafe { slots::get_ppm_age() }.map(|read| unsafe { read() })
+}
+
+/// Read whether firmware currently asks applications to disable output.
+pub unsafe fn app_is_output_disabled() -> Option<bool> {
+    unsafe { slots::app_is_output_disabled() }.map(|read| unsafe { read() })
+}
+
+/// Persist firmware backup data when the optional capability is present.
+pub unsafe fn store_backup_data() -> Option<bool> {
+    unsafe { slots::store_backup_data() }.map(|store| unsafe { store() })
 }
 
 /// Read the decoded PPM input when the optional slot is present.
@@ -1821,17 +1841,6 @@ pub unsafe fn mc_wait_for_motor_release(timeout: f32) -> bool {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_duty_cycle_now() -> f32 {
     unsafe { required_slot!(mc_get_duty_cycle_now)() }
-}
-
-/// Return the firmware-owned name for a motor fault code when the slot exists.
-///
-/// # Safety
-///
-/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid. A non-null
-/// returned pointer is firmware-owned and must point to a NUL-terminated string.
-pub unsafe fn mc_fault_to_string(code: c_uint) -> Option<*const c_char> {
-    let pointer = unsafe { required_slot!(mc_fault_to_string)(code) };
-    (!pointer.is_null()).then_some(pointer)
 }
 
 /// Return FOC d-axis Id current when the firmware slot is present.

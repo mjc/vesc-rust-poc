@@ -9,6 +9,7 @@
 mod container;
 mod flat;
 mod functions;
+mod image;
 mod lisp;
 mod loader;
 mod memory;
@@ -22,6 +23,9 @@ pub use container::{
 };
 pub use flat::{ExpressFlatValue, ExpressFlatValueError, ExpressLispMessageError};
 pub use functions::*;
+pub use image::{
+    ExpressNativeImage, ExpressNativeImageError, ExpressNativeXipError, ExpressNativeXipImage,
+};
 pub use lisp::{ExpressLisp, ExpressLispSymbol, ExpressLispValue};
 pub use loader::{ExpressCallError, ExpressInterface, ExpressLoadError};
 pub use memory::{ExpressAllocation, ExpressAllocationError};
@@ -376,6 +380,73 @@ mod tests {
             Err(ExpressNativeContainerError::InvalidRelocation {
                 index: 0,
                 offset: 8
+            })
+        );
+    }
+
+    fn sample_xip_image(magic: u32) -> [u8; 13] {
+        let mut bytes = [0; 13];
+        bytes[..4].copy_from_slice(&magic.to_be_bytes());
+        bytes[8..].copy_from_slice(&[0x10, 0x20, 0x30, 0x40, 0x50]);
+        bytes
+    }
+
+    #[test]
+    fn target_selected_image_accepts_xip_and_relocatable_forms() {
+        let xip_bytes = sample_xip_image(EXPRESS_NATIVE_LIB_MAGIC);
+        let xip = ExpressNativeImage::parse(ExpressTarget::Esp32C3, &xip_bytes).unwrap();
+        assert_eq!(xip.load_kind(), ExpressNativeLoadKind::Xip);
+        assert_eq!(xip.encoded_len(), xip_bytes.len());
+        assert_eq!(xip.entry_offset(), 8);
+        let ExpressNativeImage::Xip(image) = xip else {
+            panic!("C3 must select XIP");
+        };
+        assert_eq!(image.code(), &[0x10, 0x20, 0x30, 0x40, 0x50]);
+
+        let reloc_bytes = sample_relocatable_container(0);
+        let reloc = ExpressNativeImage::parse(ExpressTarget::Esp32S3, &reloc_bytes).unwrap();
+        assert_eq!(reloc.load_kind(), ExpressNativeLoadKind::Relocatable);
+        assert_eq!(reloc.encoded_len(), reloc_bytes.len());
+        assert_eq!(reloc.entry_offset(), 0);
+        assert!(matches!(reloc, ExpressNativeImage::Relocatable(_)));
+    }
+
+    #[test]
+    fn target_selected_image_rejects_the_other_loader_format() {
+        let reloc_bytes = sample_relocatable_container(0);
+        assert_eq!(
+            ExpressNativeImage::parse(ExpressTarget::Esp32C6, &reloc_bytes),
+            Err(ExpressNativeImageError::Xip(
+                ExpressNativeXipError::InvalidMagic {
+                    found: EXPRESS_NATIVE_LIB_RELOC_MAGIC,
+                }
+            ))
+        );
+
+        let mut xip_bytes = [0; 24];
+        xip_bytes[..13].copy_from_slice(&sample_xip_image(EXPRESS_NATIVE_LIB_MAGIC));
+        assert_eq!(
+            ExpressNativeImage::parse(ExpressTarget::Esp32S3, &xip_bytes),
+            Err(ExpressNativeImageError::Relocatable(
+                ExpressNativeContainerError::InvalidMagic {
+                    found: EXPRESS_NATIVE_LIB_MAGIC,
+                }
+            ))
+        );
+    }
+
+    #[test]
+    fn xip_image_matches_loader_length_and_magic_checks() {
+        assert_eq!(
+            ExpressNativeXipImage::parse(&[0; 12]),
+            Err(ExpressNativeXipError::Truncated)
+        );
+        let mut bytes = sample_xip_image(EXPRESS_NATIVE_LIB_MAGIC);
+        bytes[..4].copy_from_slice(&EXPRESS_NATIVE_LIB_RELOC_MAGIC.to_be_bytes());
+        assert_eq!(
+            ExpressNativeXipImage::parse(&bytes),
+            Err(ExpressNativeXipError::InvalidMagic {
+                found: EXPRESS_NATIVE_LIB_RELOC_MAGIC,
             })
         );
     }

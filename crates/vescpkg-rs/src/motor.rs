@@ -25,10 +25,6 @@ const CFG_PARAM_L_CURRENT_MAX: core::ffi::c_int = 0;
 #[cfg(not(test))]
 const CFG_PARAM_L_CURRENT_MIN: core::ffi::c_int = 1;
 #[cfg(not(test))]
-const CFG_PARAM_L_IN_CURRENT_MAX: core::ffi::c_int = 2;
-#[cfg(not(test))]
-const CFG_PARAM_L_IN_CURRENT_MIN: core::ffi::c_int = 3;
-#[cfg(not(test))]
 const CFG_PARAM_L_TEMP_FET_START: core::ffi::c_int = 16;
 #[cfg(not(test))]
 const CFG_PARAM_L_TEMP_MOTOR_START: core::ffi::c_int = 18;
@@ -74,10 +70,6 @@ pub trait MotorTelemetryBindings {
     /// `src/motor_data.c:90`; the VESC config id is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:244`.
     fn brake_current_limit(&self) -> MotorCurrentLimit;
-    /// Return the configured positive battery/input-current limit.
-    fn drive_input_current_limit(&self) -> InputCurrentLimit;
-    /// Return the configured regenerative battery/input-current limit magnitude.
-    fn brake_input_current_limit(&self) -> InputCurrentLimit;
     /// Return the configured MOSFET temperature limit-start threshold.
     fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart;
     /// Return the configured motor temperature limit-start threshold.
@@ -210,14 +202,6 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
 
     fn brake_current_limit(&self) -> MotorCurrentLimit {
         (**self).brake_current_limit()
-    }
-
-    fn drive_input_current_limit(&self) -> InputCurrentLimit {
-        (**self).drive_input_current_limit()
-    }
-
-    fn brake_input_current_limit(&self) -> InputCurrentLimit {
-        (**self).brake_input_current_limit()
     }
 
     fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart {
@@ -604,18 +588,6 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         }))
     }
 
-    fn drive_input_current_limit(&self) -> InputCurrentLimit {
-        InputCurrentLimit::new(Current::from_amps(unsafe {
-            crate::ffi::get_cfg_float(CFG_PARAM_L_IN_CURRENT_MAX)
-        }))
-    }
-
-    fn brake_input_current_limit(&self) -> InputCurrentLimit {
-        InputCurrentLimit::new(Current::from_amps(unsafe {
-            crate::ffi::get_cfg_float(CFG_PARAM_L_IN_CURRENT_MIN)
-        }))
-    }
-
     fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart {
         TemperatureLimitStart::new(Temperature::from_degrees_celsius(unsafe {
             crate::ffi::get_cfg_float(CFG_PARAM_L_TEMP_FET_START)
@@ -987,10 +959,6 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn drive_current_limit(&self) -> MotorCurrentLimit;
     /// Return the configured braking-current magnitude.
     fn brake_current_limit(&self) -> MotorCurrentLimit;
-    /// Return the configured positive battery/input-current limit.
-    fn drive_input_current_limit(&self) -> InputCurrentLimit;
-    /// Return the configured regenerative battery/input-current limit magnitude.
-    fn brake_input_current_limit(&self) -> InputCurrentLimit;
     /// Return the configured MOSFET temperature limit-start threshold.
     fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart;
     /// Return the configured motor temperature limit-start threshold.
@@ -1236,16 +1204,6 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.brake_current_limit()
     }
 
-    /// Return the configured positive battery/input-current limit.
-    pub fn drive_input_current_limit(&self) -> InputCurrentLimit {
-        self.bindings.drive_input_current_limit()
-    }
-
-    /// Return the configured regenerative battery/input-current limit magnitude.
-    pub fn brake_input_current_limit(&self) -> InputCurrentLimit {
-        self.bindings.brake_input_current_limit()
-    }
-
     /// Return the configured MOSFET temperature limit-start threshold.
     pub fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart {
         self.bindings.mosfet_temperature_limit_start()
@@ -1482,14 +1440,6 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
 
     fn brake_current_limit(&self) -> MotorCurrentLimit {
         self.brake_current_limit()
-    }
-
-    fn drive_input_current_limit(&self) -> InputCurrentLimit {
-        self.drive_input_current_limit()
-    }
-
-    fn brake_input_current_limit(&self) -> InputCurrentLimit {
-        self.brake_input_current_limit()
     }
 
     fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart {

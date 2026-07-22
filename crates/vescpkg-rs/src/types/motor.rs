@@ -377,23 +377,6 @@ impl MotorCurrentLimit {
     }
 }
 
-/// Positive battery/input-current limit magnitude.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-#[repr(transparent)]
-pub struct InputCurrentLimit(Current);
-
-impl InputCurrentLimit {
-    /// Normalize a configured input-current limit to its positive magnitude.
-    pub const fn new(current: Current) -> Self {
-        Self(current.abs())
-    }
-
-    /// Return the positive input-current-limit magnitude.
-    pub const fn current(self) -> Current {
-        self.0
-    }
-}
-
 current_type!(MotorCurrent, "Motor phase/current-control current.");
 current_type!(BrakeCurrent, "Motor braking current.");
 current_type!(HandbrakeCurrent, "Handbrake current command.");

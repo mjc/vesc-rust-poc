@@ -192,6 +192,7 @@ pub use extension::{
     LbmExtension, LispArgs, LispContextId, LispFlatValue, LispIntegerError, LispList,
     LispListError, LispMessageError, LispProcess, LispSymbol, LispValue, StatefulLbmExtension,
 };
+pub use input::{ControllerInput, RemoteInput};
 pub use inputs::{
     FirmwareInputs, InputError, PpmSnapshot, RemoteInputSnapshot, ShutdownInhibit, TimeoutSnapshot,
 };
@@ -218,7 +219,6 @@ pub use imu::{
     ImuReadCallbackLease, ImuReadHandler, register_imu_read_callback,
 };
 pub use init::{PackageStart, PackageStartError};
-pub use input::{ControllerInput, RemoteInput};
 pub use lifecycle_core::AppDataSendError;
 pub use motor::{MotorOutput, MotorTelemetry};
 pub use nvm::{Nvm, NvmCapacity, NvmError, NvmOffset};
@@ -246,6 +246,8 @@ mod gpio;
 mod imu;
 /// Device package entrypoint and loader-hook helpers.
 mod init;
+/// Compatibility controller-input view used by older package ports.
+mod input;
 /// Typed controller input and output-safety helpers for package code.
 mod inputs;
 /// Motor telemetry bindings and convenience wrappers for package code.
@@ -282,25 +284,25 @@ pub mod prelude {
     pub use crate::{
         AnalogPin, AppDataHandler, AppDataSendError, CanBus, CanError, CanReceiverHandler,
         CanReceiverId, CanRemoteMotor, CanStatus, CanStatusStore, CommandError,
-        CommandReplyHandler, Commands, ConfigBytes, ConfigXml, CustomEeprom, CustomEepromAddress,
-        DigitalOutputLevel, DigitalPin, EepromWord, Encoder, EncoderError, EncoderHandler,
-        EncoderRegistration, ExtensionDescriptor, ExtensionName, ExtensionRegistration, Firmware,
-        FirmwareAhrs, FirmwareAhrsError, FirmwareAhrsParameters, FirmwareAhrsSnapshot,
-        FirmwareAppData, FirmwareCapabilities, FirmwareClock, FirmwareFloatSetting, FirmwareInputs,
-        FirmwareIntSetting, FirmwareLog, FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore,
-        FirmwareSettings, FirmwareThread, FirmwareThreads, FocAudio, FocAudioError,
-        FocAudioSampleTable, Gnss, GnssError, GnssSnapshot, Gpio, Imu, ImuReadCallback,
-        ImuReadCallbackError, ImuReadCallbackLease, ImuReadHandler, InputError, LbmExtension,
-        LispArgs, LispContextId, LispFlatValue, LispIntegerError, LispList, LispListError,
-        LispMessageError, LispProcess, LispSymbol, LispValue, LogError, MotorOutput,
+        CommandReplyHandler, Commands, ConfigBytes, ConfigXml, ControllerInput, CustomEeprom,
+        CustomEepromAddress, DigitalOutputLevel, DigitalPin, EepromWord, Encoder, EncoderError,
+        EncoderHandler, EncoderRegistration, ExtensionDescriptor, ExtensionName,
+        ExtensionRegistration, Firmware, FirmwareAhrs, FirmwareAhrsError, FirmwareAhrsParameters,
+        FirmwareAhrsSnapshot, FirmwareAppData, FirmwareCapabilities, FirmwareClock,
+        FirmwareFloatSetting, FirmwareInputs, FirmwareIntSetting, FirmwareLog, FirmwareMutex,
+        FirmwareMutexGuard, FirmwareSemaphore, FirmwareSettings, FirmwareThread, FirmwareThreads,
+        FocAudio, FocAudioError, FocAudioSampleTable, Gnss, GnssError, GnssSnapshot, Gpio, Imu,
+        ImuReadCallback, ImuReadCallbackError, ImuReadCallbackLease, ImuReadHandler, InputError,
+        LbmExtension, LispArgs, LispContextId, LispFlatValue, LispIntegerError, LispList,
+        LispListError, LispMessageError, LispProcess, LispSymbol, LispValue, LogError, MotorOutput,
         MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset, PackageStartError, PacketCodec,
         PacketError, PacketHandler, Plot, PlotError, PpmSnapshot, PwmCallbackError,
-        PwmCallbackHandler, PwmCallbackLease, RemoteInputSnapshot, SettingsError, ShutdownInhibit,
-        StatefulCustomConfigCallback, StatefulLbmExtension, StatelessFirmwareThread,
-        StatelessThreadContext, Terminal, TerminalError, TerminalHandler, TerminalRegistration,
-        ThreadContext, ThreadError, ThreadName, ThreadSpec, ThreadWorkingAreaSize,
-        ThreadWorkingAreaSizeError, TimeoutSnapshot, TimerInstant, TypedPwmCallbackLease, Uart,
-        UartError, UartLease,
+        PwmCallbackHandler, PwmCallbackLease, RemoteInput, RemoteInputSnapshot, SettingsError,
+        ShutdownInhibit, StatefulCustomConfigCallback, StatefulLbmExtension,
+        StatelessFirmwareThread, StatelessThreadContext, Terminal, TerminalError, TerminalHandler,
+        TerminalRegistration, ThreadContext, ThreadError, ThreadName, ThreadSpec,
+        ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimeoutSnapshot, TimerInstant,
+        TypedPwmCallbackLease, Uart, UartError, UartLease,
     };
 }
 

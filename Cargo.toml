@@ -9,14 +9,12 @@ members = [
     "examples/loopback",
     "examples/alloc-smoke",
     "examples/control-loop-smoke",
-    "examples/refloat",
 ]
 default-members = [
     "crates/cargo-vescpkg",
     "examples/loopback",
     "examples/alloc-smoke",
     "examples/control-loop-smoke",
-    "examples/refloat",
 ]
 resolver = "2"
 
