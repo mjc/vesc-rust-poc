@@ -1257,6 +1257,18 @@ pub unsafe fn foc_get_id() -> Option<f32> {
         .then(|| load(&FOC_ID_CURRENT))
 }
 
+pub unsafe fn foc_get_iq() -> Option<f32> {
+    Some(2.5)
+}
+
+pub unsafe fn foc_get_vd() -> Option<f32> {
+    Some(3.5)
+}
+
+pub unsafe fn foc_get_vq() -> Option<f32> {
+    Some(4.5)
+}
+
 pub unsafe fn mc_get_distance_abs() -> f32 {
     load(&DISTANCE_ABS)
 }

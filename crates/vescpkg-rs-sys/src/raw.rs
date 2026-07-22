@@ -412,8 +412,10 @@ mod slots {
     fn_slot!(timeout_secs_since_update as unsafe extern "C" fn() -> f32);
     // Refloat capability-probes this pre-6.05 slot because not every motor
     // implementation populates the FOC-specific function.
-    fn_slot!(foc_get_id as unsafe extern "C" fn() -> f32);
-    fn_slot!(foc_play_tone as unsafe extern "C" fn(c_int, f32, f32) -> bool);
+    optional_fn_slot!(foc_get_id as unsafe extern "C" fn() -> f32);
+    optional_fn_slot!(foc_get_iq as unsafe extern "C" fn() -> f32);
+    optional_fn_slot!(foc_get_vd as unsafe extern "C" fn() -> f32);
+    optional_fn_slot!(foc_get_vq as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_temp_fet_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_temp_motor_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(imu_startup_done as unsafe extern "C" fn() -> bool);
@@ -1662,13 +1664,19 @@ pub unsafe fn foc_get_id() -> Option<f32> {
     unsafe { slots::foc_get_id() }.map(|func| unsafe { func() })
 }
 
-/// Play one FOC tone when the motor firmware exposes audio support.
-///
-/// # Safety
-///
-/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-pub unsafe fn foc_play_tone(channel: c_int, frequency: f32, voltage: f32) -> Option<bool> {
-    unsafe { slots::foc_play_tone() }.map(|func| unsafe { func(channel, frequency, voltage) })
+/// Return FOC q-axis Iq current when the firmware slot is present.
+pub unsafe fn foc_get_iq() -> Option<f32> {
+    unsafe { slots::foc_get_iq() }.map(|func| unsafe { func() })
+}
+
+/// Return FOC d-axis Vd voltage when the firmware slot is present.
+pub unsafe fn foc_get_vd() -> Option<f32> {
+    unsafe { slots::foc_get_vd() }.map(|func| unsafe { func() })
+}
+
+/// Return FOC q-axis Vq voltage when the firmware slot is present.
+pub unsafe fn foc_get_vq() -> Option<f32> {
+    unsafe { slots::foc_get_vq() }.map(|func| unsafe { func() })
 }
 /// Return the filtered input/battery voltage.
 ///
