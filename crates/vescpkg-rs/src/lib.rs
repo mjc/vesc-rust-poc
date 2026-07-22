@@ -51,6 +51,8 @@ mod pwm;
 #[cfg(feature = "math")]
 pub use math::{asin, cos, sin, sqrt, tan};
 mod runtime;
+/// Explicitly unsafe STM32 pad/port access, separate from leased abstract GPIO.
+pub mod stm32;
 mod sync;
 mod terminal;
 #[cfg(all(feature = "test-support", not(test)))]
@@ -77,6 +79,11 @@ pub(crate) mod ffi {
         can_transmit_eid, can_transmit_sid, get_ppm, get_ppm_age, remote_state, store_backup_data,
         timeout_has_timeout, timeout_reset, timeout_secs_since_update,
     };
+    #[cfg(all(not(test), not(feature = "test-support")))]
+    pub use vescpkg_rs_sys::raw::{
+        clear_pad, io_get_st_pin, io_read, io_read_analog, io_set_mode, io_write, set_pad,
+        set_pad_mode,
+    };
     #[allow(unused_imports)]
     pub use vescpkg_rs_sys::raw::{
         conf_custom_add_config, conf_custom_clear_configs, lbm_add_extension, lbm_enc_sym_eerror,
@@ -84,8 +91,6 @@ pub(crate) mod ffi {
         vesc_clear_imu_read_callback, vesc_get_arg, vesc_malloc, vesc_send_app_data,
         vesc_set_app_data_handler, vesc_set_imu_read_callback,
     };
-    #[cfg(all(not(test), not(feature = "test-support")))]
-    pub use vescpkg_rs_sys::raw::{io_read, io_read_analog, io_set_mode, io_write};
     pub use vescpkg_rs_sys::{AppDataHandler, LibInfo, NativeImage};
 
     #[cfg(all(feature = "test-support", not(test)))]
@@ -97,10 +102,13 @@ pub(crate) mod ffi {
         can_set_current_rel_off_delay, can_set_duty, can_set_eid_callback, can_set_pos,
         can_set_rpm, can_set_sid_callback, can_status_msg_2_id, can_status_msg_3_id,
         can_status_msg_4_id, can_status_msg_5_id, can_status_msg_6_id, can_status_msg_id,
-        can_transmit_eid, can_transmit_sid, get_ppm, get_ppm_age, io_read, io_read_analog,
-        io_set_mode, io_write, printf_data, remote_state, store_backup_data, timeout_has_timeout,
-        timeout_reset, timeout_secs_since_update,
+        can_transmit_eid, can_transmit_sid, clear_pad, get_ppm, get_ppm_age, io_get_st_pin,
+        io_read, io_read_analog, io_set_mode, io_write, printf_data, remote_state, set_pad,
+        set_pad_mode, store_backup_data, timeout_has_timeout, timeout_reset,
+        timeout_secs_since_update,
     };
+    #[cfg(test)]
+    pub use selected_ffi::{clear_pad, io_get_st_pin, set_pad, set_pad_mode};
     #[allow(unused_imports)]
     pub use selected_ffi::{
         commands_process_packet, commands_unregister_reply_func, encoder_set_custom_callbacks, f_b,

@@ -123,6 +123,10 @@ impl DigitalPin {
     pub const HW_1: Self = Self(VescPin(13));
     /// VESC hardware pin 2.
     pub const HW_2: Self = Self(VescPin(14));
+
+    pub(crate) const fn raw(self) -> VescPin {
+        self.0
+    }
 }
 
 /// Digital GPIO output level.
