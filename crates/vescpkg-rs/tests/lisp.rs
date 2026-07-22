@@ -92,4 +92,9 @@ fn lisp_flat_values_encode_wide_values_and_unblock_contexts() {
     let value = LispFlatValue::try_new(4).expect("flat-value slots available");
     drop(value);
     assert!(LispFlatValue::try_new(257).is_none());
+
+    let mut value = LispFlatValue::try_new(4).expect("flat-value slots available");
+    assert!(value.push_byte(b'V'));
+    LispProcess::unblock_flat(LispContextId::new(9), value)
+        .expect("unblock finishes an unfinished value");
 }
