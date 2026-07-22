@@ -313,7 +313,10 @@ mod slots {
     optional_fn_slot!(can_transmit_eid as unsafe extern "C" fn(u32, *const u8, u8));
     optional_fn_slot!(can_set_duty as unsafe extern "C" fn(u8, f32));
     optional_fn_slot!(can_set_current as unsafe extern "C" fn(u8, f32));
+    optional_fn_slot!(can_set_current_off_delay as unsafe extern "C" fn(u8, f32, f32));
+    optional_fn_slot!(can_set_current_brake as unsafe extern "C" fn(u8, f32));
     optional_fn_slot!(can_set_current_rel as unsafe extern "C" fn(u8, f32));
+    optional_fn_slot!(can_set_current_brake_rel as unsafe extern "C" fn(u8, f32));
     optional_fn_slot!(can_set_rpm as unsafe extern "C" fn(u8, f32));
     optional_fn_slot!(can_set_pos as unsafe extern "C" fn(u8, f32));
     optional_fn_slot!(can_ping as unsafe extern "C" fn(u8, *mut HwType) -> bool);
@@ -1095,6 +1098,26 @@ pub unsafe fn can_set_current(controller: u8, current: f32) -> Option<()> {
 /// Send a remote motor relative-current command when the optional slot is present.
 pub unsafe fn can_set_current_rel(controller: u8, current: f32) -> Option<()> {
     unsafe { slots::can_set_current_rel() }.map(|set| unsafe { set(controller, current) })
+}
+
+/// Send a remote motor brake-current command when the optional slot is present.
+pub unsafe fn can_set_current_brake(controller: u8, current: f32) -> Option<()> {
+    unsafe { slots::can_set_current_brake() }.map(|set| unsafe { set(controller, current) })
+}
+
+/// Send a remote motor relative brake-current command when the optional slot is present.
+pub unsafe fn can_set_current_brake_rel(controller: u8, current: f32) -> Option<()> {
+    unsafe { slots::can_set_current_brake_rel() }.map(|set| unsafe { set(controller, current) })
+}
+
+/// Send a remote motor current command with an off-delay when the optional slot is present.
+pub unsafe fn can_set_current_off_delay(
+    controller: u8,
+    current: f32,
+    delay_seconds: f32,
+) -> Option<()> {
+    unsafe { slots::can_set_current_off_delay() }
+        .map(|set| unsafe { set(controller, current, delay_seconds) })
 }
 
 /// Send a remote motor electrical-speed command when the optional slot is present.

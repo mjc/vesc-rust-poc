@@ -1,10 +1,11 @@
 //! Safe CAN transport and status snapshots.
 
 use crate::types::{
-    AdcVoltage, AmpHoursCharged, AmpHoursDischarged, CanControllerId, CanExtendedId, CanPayloadLen,
-    CanStandardId, CurrentRelative, DutyCycle, ElectricalSpeed, InputCurrent, InputVoltage,
-    MosfetTemperature, MotorCurrent, MotorTemperature, PidPosition, PpmInput, TachometerSteps,
-    WattHoursCharged, WattHoursDischarged,
+    AdcVoltage, AmpHoursCharged, AmpHoursDischarged, BrakeCurrent, BrakeCurrentRelative,
+    CanControllerId, CanExtendedId, CanPayloadLen, CanStandardId, CurrentOffDelay, CurrentRelative,
+    DutyCycle, ElectricalSpeed, InputCurrent, InputVoltage, MosfetTemperature, MotorCurrent,
+    MotorTemperature, PidPosition, PpmInput, TachometerSteps, WattHoursCharged,
+    WattHoursDischarged,
 };
 use crate::units::{Charge, Current, Energy, Rpm, SignedRatio, SystemTicks, TimestampTicks};
 
@@ -325,6 +326,50 @@ impl CanBus {
     ) -> Result<(), CanError> {
         unsafe {
             crate::ffi::can_set_rpm(controller.as_u8(), rpm.rpm().as_revolutions_per_minute())
+        }
+        .map(|_| ())
+        .ok_or(CanError::Unsupported)
+    }
+
+    /// Send a remote motor brake-current command.
+    pub fn set_brake_current(
+        &self,
+        controller: CanControllerId,
+        current: BrakeCurrent,
+    ) -> Result<(), CanError> {
+        unsafe {
+            crate::ffi::can_set_current_brake(controller.as_u8(), current.current().as_amps())
+        }
+        .map(|_| ())
+        .ok_or(CanError::Unsupported)
+    }
+
+    /// Send a remote motor relative brake-current command.
+    pub fn set_brake_current_relative(
+        &self,
+        controller: CanControllerId,
+        current: BrakeCurrentRelative,
+    ) -> Result<(), CanError> {
+        unsafe {
+            crate::ffi::can_set_current_brake_rel(controller.as_u8(), current.ratio().as_ratio())
+        }
+        .map(|_| ())
+        .ok_or(CanError::Unsupported)
+    }
+
+    /// Send a remote motor current command with an off-delay.
+    pub fn set_current_off_delay(
+        &self,
+        controller: CanControllerId,
+        current: MotorCurrent,
+        delay: CurrentOffDelay,
+    ) -> Result<(), CanError> {
+        unsafe {
+            crate::ffi::can_set_current_off_delay(
+                controller.as_u8(),
+                current.current().as_amps(),
+                delay.duration().as_seconds(),
+            )
         }
         .map(|_| ())
         .ok_or(CanError::Unsupported)

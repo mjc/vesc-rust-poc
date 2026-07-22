@@ -58,7 +58,8 @@ pub(crate) mod ffi {
     };
     #[cfg(any(test, not(feature = "test-support")))]
     pub use vescpkg_rs_sys::raw::{
-        can_ping, can_set_current, can_set_current_rel, can_set_duty, can_set_pos, can_set_rpm,
+        can_ping, can_set_current, can_set_current_brake, can_set_current_brake_rel,
+        can_set_current_off_delay, can_set_current_rel, can_set_duty, can_set_pos, can_set_rpm,
         can_status_msg_2_id, can_status_msg_3_id, can_status_msg_4_id, can_status_msg_5_id,
         can_status_msg_6_id, can_status_msg_id, can_transmit_eid, can_transmit_sid,
     };
@@ -77,7 +78,8 @@ pub(crate) mod ffi {
     use crate::test_ffi as selected_ffi;
     #[cfg(all(feature = "test-support", not(test)))]
     pub use crate::test_ffi::{
-        can_ping, can_set_current, can_set_current_rel, can_set_duty, can_set_pos, can_set_rpm,
+        can_ping, can_set_current, can_set_current_brake, can_set_current_brake_rel,
+        can_set_current_off_delay, can_set_current_rel, can_set_duty, can_set_pos, can_set_rpm,
         can_status_msg_2_id, can_status_msg_3_id, can_status_msg_4_id, can_status_msg_5_id,
         can_status_msg_6_id, can_status_msg_id, can_transmit_eid, can_transmit_sid, io_read,
         io_read_analog, io_set_mode, io_write, printf_data,
