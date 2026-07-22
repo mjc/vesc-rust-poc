@@ -217,7 +217,9 @@ pub use input::{ControllerInput, RemoteInput};
 pub use lifecycle_core::AppDataSendError;
 pub use motor::{MotorOutput, MotorTelemetry};
 pub use nvm::{Nvm, NvmCapacity, NvmError, NvmOffset};
-pub use packet::{PacketCodec, PacketError, PacketHandler, PacketRegistration};
+pub use packet::{
+    OwnedPacketRegistration, PacketCodec, PacketError, PacketHandler, PacketRegistration,
+};
 pub use plot::{Plot, PlotError};
 pub use runtime::{PackageRuntimeState, PackageStateAccess, PackageStateStore};
 pub use sync::{FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore};
@@ -283,14 +285,14 @@ pub mod prelude {
         GnssSnapshot, Gpio, Imu, ImuReadCallback, ImuReadCallbackError, ImuReadCallbackLease,
         ImuReadHandler, InputError, LbmExtension, LispArgs, LispContextId, LispFlatValue,
         LispIntegerError, LispMessageError, LispProcess, LispSymbol, LispValue, LogError,
-        MotorOutput, MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset, PackageStartError,
-        PacketCodec, PacketError, PacketHandler, Plot, PlotError, PpmSnapshot, PwmCallbackError,
-        PwmCallbackHandler, PwmCallbackLease, RemoteInputSnapshot, SettingsError, ShutdownInhibit,
-        StatefulCustomConfigCallback, StatefulLbmExtension, StatelessFirmwareThread,
-        StatelessThreadContext, Terminal, TerminalError, TerminalHandler, TerminalRegistration,
-        ThreadContext, ThreadError, ThreadName, ThreadSpec, ThreadWorkingAreaSize,
-        ThreadWorkingAreaSizeError, TimeoutSnapshot, TimerInstant, TypedPwmCallbackLease, Uart,
-        UartError, UartLease,
+        MotorOutput, MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset,
+        OwnedPacketRegistration, PackageStartError, PacketCodec, PacketError, PacketHandler, Plot,
+        PlotError, PpmSnapshot, PwmCallbackError, PwmCallbackHandler, PwmCallbackLease,
+        RemoteInputSnapshot, SettingsError, ShutdownInhibit, StatefulCustomConfigCallback,
+        StatefulLbmExtension, StatelessFirmwareThread, StatelessThreadContext, Terminal,
+        TerminalError, TerminalHandler, TerminalRegistration, ThreadContext, ThreadError,
+        ThreadName, ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimeoutSnapshot,
+        TimerInstant, TypedPwmCallbackLease, Uart, UartError, UartLease,
     };
 }
 

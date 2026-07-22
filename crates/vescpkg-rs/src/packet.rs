@@ -46,6 +46,15 @@ pub struct PacketRegistration<'a, H: PacketHandler> {
     codec: &'a mut PacketCodec<H>,
 }
 
+/// Active packet registration that owns its codec and firmware-owned state.
+///
+/// This form can be stored directly in package runtime state; use
+/// [`PacketCodec::register_owned`] when a callback must outlive the startup
+/// stack frame.
+pub struct OwnedPacketRegistration<H: PacketHandler> {
+    codec: PacketCodec<H>,
+}
+
 impl<H: PacketHandler> PacketCodec<H> {
     /// Construct an unregistered packet codec with zeroed framing state.
     pub const fn new() -> Self {
@@ -65,6 +74,17 @@ impl<H: PacketHandler> PacketCodec<H> {
 
     /// Register the package-owned state and typed callback trampolines.
     pub fn register(&mut self) -> Result<PacketRegistration<'_, H>, PacketError> {
+        self.register_impl()?;
+        Ok(PacketRegistration { codec: self })
+    }
+
+    /// Consume this codec and return a registration that owns its state.
+    pub fn register_owned(mut self) -> Result<OwnedPacketRegistration<H>, PacketError> {
+        self.register_impl()?;
+        Ok(OwnedPacketRegistration { codec: self })
+    }
+
+    fn register_impl(&mut self) -> Result<(), PacketError> {
         if PACKET_CODEC_REGISTERED
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
@@ -76,7 +96,7 @@ impl<H: PacketHandler> PacketCodec<H> {
         };
         if registered {
             PACKET_CODEC_ACTIVE.store(true, Ordering::Release);
-            Ok(PacketRegistration { codec: self })
+            Ok(())
         } else {
             PACKET_CODEC_REGISTERED.store(false, Ordering::Release);
             Err(PacketError::Unavailable)
@@ -93,34 +113,58 @@ impl<H: PacketHandler> Default for PacketCodec<H> {
 impl<H: PacketHandler> PacketRegistration<'_, H> {
     /// Feed one byte into the registered framing state.
     pub fn process_byte(&mut self, byte: u8) -> Result<(), PacketError> {
-        unsafe { crate::ffi::packet_process_byte(byte, &mut self.codec.state) }
-            .then_some(())
-            .ok_or(PacketError::Unavailable)
+        process_byte(&mut self.codec.state, byte)
     }
 
     /// Send one bounded packet payload through the registered framing state.
     pub fn send_packet(&mut self, data: &mut [u8]) -> Result<(), PacketError> {
-        if data.len() > MAX_PACKET_BYTES {
-            return Err(PacketError::PacketTooLong);
-        }
-        unsafe {
-            crate::ffi::packet_send_packet(
-                data.as_mut_ptr(),
-                data.len() as u32,
-                &mut self.codec.state,
-            )
-        }
-        .then_some(())
-        .ok_or(PacketError::Unavailable)
+        send_packet(&mut self.codec.state, data)
     }
 }
 
 impl<H: PacketHandler> Drop for PacketRegistration<'_, H> {
     fn drop(&mut self) {
-        PACKET_CODEC_ACTIVE.store(false, Ordering::Release);
-        let _ = unsafe { crate::ffi::packet_reset(&mut self.codec.state) };
-        PACKET_CODEC_REGISTERED.store(false, Ordering::Release);
+        release(&mut self.codec.state);
     }
+}
+
+impl<H: PacketHandler> OwnedPacketRegistration<H> {
+    /// Feed one byte into the registered framing state.
+    pub fn process_byte(&mut self, byte: u8) -> Result<(), PacketError> {
+        process_byte(&mut self.codec.state, byte)
+    }
+
+    /// Send one bounded packet payload through the registered framing state.
+    pub fn send_packet(&mut self, data: &mut [u8]) -> Result<(), PacketError> {
+        send_packet(&mut self.codec.state, data)
+    }
+}
+
+impl<H: PacketHandler> Drop for OwnedPacketRegistration<H> {
+    fn drop(&mut self) {
+        release(&mut self.codec.state);
+    }
+}
+
+fn process_byte(state: &mut PacketState, byte: u8) -> Result<(), PacketError> {
+    unsafe { crate::ffi::packet_process_byte(byte, state) }
+        .then_some(())
+        .ok_or(PacketError::Unavailable)
+}
+
+fn send_packet(state: &mut PacketState, data: &mut [u8]) -> Result<(), PacketError> {
+    if data.len() > MAX_PACKET_BYTES {
+        return Err(PacketError::PacketTooLong);
+    }
+    unsafe { crate::ffi::packet_send_packet(data.as_mut_ptr(), data.len() as u32, state) }
+        .then_some(())
+        .ok_or(PacketError::Unavailable)
+}
+
+fn release(state: &mut PacketState) {
+    PACKET_CODEC_ACTIVE.store(false, Ordering::Release);
+    let _ = unsafe { crate::ffi::packet_reset(state) };
+    PACKET_CODEC_REGISTERED.store(false, Ordering::Release);
 }
 
 unsafe extern "C" fn packet_send<H: PacketHandler>(data: *mut u8, len: u32) {
