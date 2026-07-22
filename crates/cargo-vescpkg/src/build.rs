@@ -15,6 +15,9 @@ const DEFAULT_LOADER: &str = concat!(
 // PIC may store function offsets in `.got`. SDK callback macros emit symbol-table-only aliases
 // for package-local addresses they normalize against the loaded image before use.
 const IMAGE_OFFSET_MARKER_PREFIX: &str = "__vescpkg_image_offset_";
+// Native library init runs on VESC's 2048-byte Lisp evaluator stack. Keep half
+// available for the evaluator, loader extension, and saved registers.
+const LOADER_INIT_STACK_BUDGET: usize = 1024;
 const STATICLIB_LINKER_SCRIPT: &[u8] = include_bytes!("vescpkg-link.ld");
 const VESC_TARGET: &str = "thumbv7em-none-eabihf";
 
@@ -73,6 +76,7 @@ pub(crate) fn build_package(root: &Path, options: &BuildOptions) -> Result<PathB
     let package = select_package(&metadata, &options.package)?;
     let artifacts = cargo_build(root, options, &package)?;
     validate_flat_image_relocations(&artifacts.elf)?;
+    validate_loader_init_stack(&artifacts.elf)?;
     let package_slug = package_slug(&package.display_name);
     let artifact_name = format!("{package_slug}-{}", package.version);
     let artifact_root = metadata_target_dir(&metadata)?.join("vescpkg");
@@ -512,6 +516,69 @@ fn validate_flat_image_relocations(elf: &Path) -> Result<(), BuildError> {
     validate_relocation_report(&report)
 }
 
+fn validate_loader_init_stack(elf: &Path) -> Result<(), BuildError> {
+    let output = command_output(
+        Command::new("arm-none-eabi-objdump")
+            .arg("--disassemble=package_lib_init")
+            .arg(elf),
+    )?;
+    validate_loader_init_stack_report(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn validate_loader_init_stack_report(report: &str) -> Result<(), BuildError> {
+    let mut in_initializer = false;
+    let mut stack_bytes = 0;
+
+    for line in report.lines() {
+        if line.trim_end().ends_with("<package_lib_init>:") {
+            in_initializer = true;
+            continue;
+        }
+        if in_initializer && line.trim_end().ends_with(">:") {
+            break;
+        }
+        if !in_initializer {
+            continue;
+        }
+
+        let fields = line.split_whitespace().collect::<Vec<_>>();
+        let saves_registers = fields.iter().any(|field| field.starts_with("push"))
+            || fields
+                .windows(2)
+                .any(|fields| fields[0].starts_with("stmdb") && fields[1] == "sp!,");
+        if saves_registers
+            && let Some(registers) = line
+                .split_once('{')
+                .and_then(|(_, registers)| registers.split_once('}'))
+                .map(|(registers, _)| registers)
+        {
+            stack_bytes += registers.split(',').count() * std::mem::size_of::<u32>();
+        }
+
+        let Some(subtract) = fields.iter().position(|field| field.starts_with("sub")) else {
+            continue;
+        };
+        let immediate = match fields.get(subtract + 1..) {
+            Some(["sp,", "sp,", immediate, ..] | ["sp,", immediate, ..]) => immediate,
+            _ => continue,
+        };
+        let immediate = immediate.trim_start_matches('#');
+        let bytes = immediate
+            .strip_prefix("0x")
+            .map(|value| usize::from_str_radix(value, 16))
+            .unwrap_or_else(|| immediate.parse())
+            .map_err(|_| BuildError(format!("could not read loader stack size `{immediate}`")))?;
+        stack_bytes += bytes;
+    }
+
+    if stack_bytes > LOADER_INIT_STACK_BUDGET {
+        return Err(BuildError(format!(
+            "package_lib_init uses {stack_bytes} bytes of stack; VESC native library init permits at most the {LOADER_INIT_STACK_BUDGET}-byte package budget within its 2048-byte Lisp evaluator stack"
+        )));
+    }
+    Ok(())
+}
+
 fn validate_loader_entrypoint_layout(report: &str) -> Result<(), BuildError> {
     let symbol_address = |name| {
         report.lines().find_map(|line| {
@@ -684,7 +751,8 @@ mod tests {
         cargo_build_command, cargo_message_artifacts, command_failure_message, package_slug,
         select_package, stage_generated_assets, validate_descriptor_fullscreen,
         validate_image_offset_relocations, validate_loader_entrypoint_layout,
-        validate_relocation_report, validate_target, validate_writable_section_report,
+        validate_loader_init_stack_report, validate_relocation_report, validate_target,
+        validate_writable_section_report,
     };
     use crate::package::Package;
     use serde_json::json;
@@ -894,6 +962,31 @@ Symbol table '.symtab' contains 2 entries:\n\
      2: 00000005    12 FUNC    GLOBAL DEFAULT    2 init\n";
 
         assert!(validate_loader_entrypoint_layout(report).is_ok());
+    }
+
+    #[test]
+    fn rejects_a_loader_initializer_larger_than_half_the_lisp_stack() {
+        let report = "\
+00006640 <package_lib_init>:\n\
+    6640:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}\n\
+    6644:\te92d 0f00 \tstmdb\tsp!, {r8, r9, sl, fp}\n\
+    6648:\tf6ad 3dcc \tsubw\tsp, sp, #3020\t@ 0xbcc\n";
+
+        let error = validate_loader_init_stack_report(report).expect_err("oversized frame");
+
+        assert!(error.to_string().contains("3056 bytes"));
+        assert!(error.to_string().contains("1024-byte"));
+    }
+
+    #[test]
+    fn accepts_the_known_good_refloat_loader_stack_frame() {
+        let report = "\
+00003720 <package_lib_init>:\n\
+    3720:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}\n\
+    3724:\te92d 0f00 \tstmdb\tsp!, {r8, r9, sl, fp}\n\
+    3728:\tf5ad 7d4b \tsub.w\tsp, sp, #812\t@ 0x32c\n";
+
+        assert!(validate_loader_init_stack_report(report).is_ok());
     }
 
     #[test]

@@ -16,12 +16,15 @@ fn install_refloat_startup_state_with(
     start: &mut PackageStart,
     state: &mut RefloatPackageState,
 ) -> bool {
-    *state = RefloatPackageState::from_persisted_config(RefloatAllDataPayloads::source_startup());
+    *state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
     start
-        .install_runtime_state(core::mem::replace(
-            state,
-            RefloatPackageState::from_persisted_config(RefloatAllDataPayloads::source_startup()),
-        ))
+        .install_runtime_state_with(
+            core::mem::replace(
+                state,
+                RefloatPackageState::new(RefloatAllDataPayloads::source_startup()),
+            ),
+            RefloatPackageState::load_persisted_config_on_startup,
+        )
         .is_ok()
 }
 
@@ -37,9 +40,10 @@ fn install_refloat_startup_state_with(
 fn allocate_refloat_startup_state(
     start: &mut PackageStart,
 ) -> Result<(), vescpkg_rs::PackageStartError> {
-    start.install_runtime_state(RefloatPackageState::from_persisted_config(
-        RefloatAllDataPayloads::source_startup(),
-    ))
+    start.install_runtime_state_with(
+        RefloatPackageState::new(RefloatAllDataPayloads::source_startup()),
+        RefloatPackageState::load_persisted_config_on_startup,
+    )
 }
 
 /// Allocate and install Refloat startup state using firmware memory.
