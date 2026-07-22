@@ -57,10 +57,12 @@ allocation. It is not installed as a global allocator: callers initialize or
 borrow the handle deliberately, and drop always returns the pointer through the
 Express `free` slot.
 
-`ExpressLisp` covers the core scalar encode/decode, cons/list, and type-
-predicate slots with typed `ExpressLispValue`/`ExpressLispSymbol` wrappers.
-String and array pointer APIs remain outside this facade until their firmware
-ownership scopes are modeled.
+`ExpressLisp` covers the core scalar encode/decode, cons/list, type-predicate,
+symbol-constant, evaluator-control, context/message, and extension-registration
+slots with typed `ExpressLispValue`/`ExpressLispSymbol` wrappers. The
+registration, error-reason, symbol-name, and byte-array entry points retain
+explicit unsafe raw-pointer boundaries; the facade does not invent ownership
+for firmware-managed strings or values.
 
 The fixed-address `ExpressInterface::from_target` constructor is also unsafe:
 it is only valid on the matching 32-bit Express target and is intentionally not
