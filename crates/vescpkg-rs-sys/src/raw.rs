@@ -33,6 +33,8 @@ pub type PacketState = crate::bindgen::PACKET_STATE_t;
 /// VESC CAN receive callback ABI.
 pub type CanReceiverCallback = unsafe extern "C" fn(u32, *mut u8, u8) -> bool;
 type CanRxCallback = CanReceiverCallback;
+type PacketSendCallback = unsafe extern "C" fn(*mut c_uchar, c_uint);
+type PacketProcessCallback = unsafe extern "C" fn(*mut c_uchar, c_uint);
 
 type LibThread = crate::bindgen::lib_thread;
 type LibMutex = crate::bindgen::lib_mutex;
@@ -155,10 +157,11 @@ macro_rules! vesc_slot_word_from {
 
 mod slots {
     use super::{
-        AppDataHandler, CanRxCallback, CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5,
-        CanStatusMsg6, CustomConfigGet, CustomConfigSet, CustomConfigXml, EepromVar,
-        ExtensionHandler, GnssData, HwType, ImuReadCallback, LbmFlatValue, LbmValue, LibMutex, LibSemaphore,
-        LibThread, RemoteState, VescIfAbi, c_char, c_int, c_uchar, c_uint, c_void,
+        AppDataHandler, CanRxCallback, CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4,
+        CanStatusMsg5, CanStatusMsg6, CustomConfigGet, CustomConfigSet, CustomConfigXml, EepromVar,
+        ExtensionHandler, GnssData, HwType, ImuReadCallback, LbmFlatValue, LbmValue, LibMutex,
+        LibSemaphore, LibThread, PacketProcessCallback, PacketSendCallback, PacketState,
+        RemoteState, VescIfAbi, c_char, c_int, c_uchar, c_uint, c_void,
     };
     #[cfg(not(all(target_arch = "arm", not(test))))]
     use super::{VescIf, vesc_if};
@@ -440,6 +443,15 @@ mod slots {
     optional_fn_slot!(uart_start as unsafe extern "C" fn(u32, bool) -> bool);
     optional_fn_slot!(uart_write as unsafe extern "C" fn(*const u8, u32) -> bool);
     optional_fn_slot!(uart_read as unsafe extern "C" fn() -> i32);
+    optional_fn_slot!(
+        packet_init
+            as unsafe extern "C" fn(PacketSendCallback, PacketProcessCallback, *mut PacketState)
+    );
+    optional_fn_slot!(packet_reset as unsafe extern "C" fn(*mut PacketState));
+    optional_fn_slot!(packet_process_byte as unsafe extern "C" fn(u8, *mut PacketState));
+    optional_fn_slot!(
+        packet_send_packet as unsafe extern "C" fn(*mut c_uchar, c_uint, *mut PacketState)
+    );
     fn_slot!(mc_temp_fet_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_temp_motor_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(imu_startup_done as unsafe extern "C" fn() -> bool);
@@ -1829,6 +1841,38 @@ pub unsafe fn uart_write(data: *const u8, size: u32) -> Option<bool> {
 /// Read one byte from the optional UART peripheral, or report no byte.
 pub unsafe fn uart_read() -> Option<i32> {
     unsafe { slots::uart_read() }.map(|func| unsafe { func() })
+}
+
+/// Initialize packet framing state when the optional packet slots are present.
+pub unsafe fn packet_init(
+    send: PacketSendCallback,
+    process: PacketProcessCallback,
+    state: *mut PacketState,
+) -> bool {
+    unsafe { slots::packet_init() }
+        .map(|func| unsafe { func(send, process, state) })
+        .is_some()
+}
+
+/// Reset packet framing state when the optional slot is present.
+pub unsafe fn packet_reset(state: *mut PacketState) -> bool {
+    unsafe { slots::packet_reset() }
+        .map(|func| unsafe { func(state) })
+        .is_some()
+}
+
+/// Feed one byte into packet framing state when the optional slot is present.
+pub unsafe fn packet_process_byte(byte: u8, state: *mut PacketState) -> bool {
+    unsafe { slots::packet_process_byte() }
+        .map(|func| unsafe { func(byte, state) })
+        .is_some()
+}
+
+/// Send a packet through packet framing state when the optional slot is present.
+pub unsafe fn packet_send_packet(data: *mut c_uchar, len: c_uint, state: *mut PacketState) -> bool {
+    unsafe { slots::packet_send_packet() }
+        .map(|func| unsafe { func(data, len, state) })
+        .is_some()
 }
 /// Return the filtered input/battery voltage.
 ///

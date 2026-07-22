@@ -13,7 +13,7 @@ use crate::{
 };
 use vescpkg_rs_sys::raw::{
     CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5, CanStatusMsg6,
-    LbmFlatValue, RemoteState,
+    LbmFlatValue, PacketState, RemoteState,
 };
 use vescpkg_rs_sys::{HardwareType, LbmValue, VescPin, VescPinMode};
 
@@ -1338,6 +1338,26 @@ pub unsafe fn uart_write(_data: *const u8, _size: u32) -> Option<bool> {
 
 pub unsafe fn uart_read() -> Option<i32> {
     Some(i32::from(b'A'))
+}
+
+pub unsafe fn packet_init(
+    _send: unsafe extern "C" fn(*mut u8, u32),
+    _process: unsafe extern "C" fn(*mut u8, u32),
+    _state: *mut PacketState,
+) -> bool {
+    true
+}
+
+pub unsafe fn packet_reset(_state: *mut PacketState) -> bool {
+    true
+}
+
+pub unsafe fn packet_process_byte(_byte: u8, _state: *mut PacketState) -> bool {
+    true
+}
+
+pub unsafe fn packet_send_packet(_data: *mut u8, _len: u32, _state: *mut PacketState) -> bool {
+    true
 }
 
 pub unsafe fn mc_get_distance_abs() -> f32 {
