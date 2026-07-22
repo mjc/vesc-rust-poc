@@ -41,6 +41,19 @@ fn terminal_registration_owns_callback_until_drop() {
 }
 
 #[test]
+fn terminal_registration_reports_absent_optional_slots() {
+    let firmware = FirmwareTest::new();
+    firmware.set_terminal_available(false);
+
+    assert!(matches!(
+        firmware
+            .terminal()
+            .register::<Handler>(c"sdk", c"SDK command", c"arg"),
+        Err(TerminalError::Unavailable)
+    ));
+}
+
+#[test]
 fn package_stop_releases_terminal_state_before_next_registration() {
     let firmware = FirmwareTest::new();
     let terminal: &'static _ = Box::leak(Box::new(firmware.terminal()));
