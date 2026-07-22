@@ -17,10 +17,71 @@ use core::time::Duration;
 #[cfg(all(not(test), target_arch = "arm"))]
 use vescpkg_rs::FirmwareThreads;
 
-const SETPOINT_COMMAND: u8 = 1;
-const STATUS_COMMAND: u8 = 2;
+/// Command byte that changes the signed setpoint.
+pub const SETPOINT_COMMAND: u8 = 1;
+/// Command byte that reads the shared control-loop state.
+pub const STATUS_COMMAND: u8 = 2;
 const ACK_BYTES: usize = 2;
-const STATUS_BYTES: usize = 11;
+/// Encoded response size for [`ControlLoopStatus`].
+pub const STATUS_BYTES: usize = 11;
+
+/// Owned status returned by the control-loop example's wire protocol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ControlLoopStatus {
+    setpoint: i16,
+    sampled_input: i16,
+    output: i16,
+    tick_count: u32,
+}
+
+impl ControlLoopStatus {
+    /// Decode one status response without allocating or retaining firmware data.
+    pub fn decode(response: &[u8]) -> Result<Self, CommandError> {
+        if response.len() != STATUS_BYTES {
+            return Err(CommandError::InvalidLength);
+        }
+        if response[0] != STATUS_COMMAND {
+            return Err(CommandError::UnexpectedResponse);
+        }
+        Ok(Self {
+            setpoint: i16::from_le_bytes([response[1], response[2]]),
+            sampled_input: i16::from_le_bytes([response[3], response[4]]),
+            output: i16::from_le_bytes([response[5], response[6]]),
+            tick_count: u32::from_le_bytes(response[7..11].try_into().unwrap()),
+        })
+    }
+
+    /// Return the requested setpoint.
+    pub const fn setpoint(self) -> i16 {
+        self.setpoint
+    }
+
+    /// Return the synthetic sampled input.
+    pub const fn sampled_input(self) -> i16 {
+        self.sampled_input
+    }
+
+    /// Return the computed, non-actuating output.
+    pub const fn output(self) -> i16 {
+        self.output
+    }
+
+    /// Return the number of completed loop ticks reported by firmware.
+    pub const fn tick_count(self) -> u32 {
+        self.tick_count
+    }
+}
+
+/// Encode a setpoint command for the control-loop callback.
+pub const fn encode_setpoint_command(setpoint: i16) -> [u8; 3] {
+    let [low, high] = setpoint.to_le_bytes();
+    [SETPOINT_COMMAND, low, high]
+}
+
+/// Encode a status request for the control-loop callback.
+pub const fn encode_status_command() -> [u8; 1] {
+    [STATUS_COMMAND]
+}
 
 /// State shared by the periodic loop and app-data callback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +152,8 @@ pub enum CommandError {
     InvalidLength,
     /// The response buffer is too short for the requested response.
     ResponseTooShort,
+    /// A response did not carry the expected command byte.
+    UnexpectedResponse,
 }
 
 /// Handle one host command without touching firmware or performing I/O.
@@ -195,7 +258,10 @@ pub fn start(start: &mut vescpkg_rs::PackageStart) -> Result<(), vescpkg_rs::Pac
 
 #[cfg(test)]
 mod tests {
-    use super::{CommandError, ControlLoopState, STATUS_BYTES, handle_command};
+    use super::{
+        CommandError, ControlLoopState, ControlLoopStatus, SETPOINT_COMMAND, STATUS_BYTES,
+        STATUS_COMMAND, encode_setpoint_command, encode_status_command, handle_command,
+    };
 
     #[test]
     fn control_step_moves_sample_and_reports_error_output() {
@@ -214,17 +280,19 @@ mod tests {
         let mut response = [0_u8; STATUS_BYTES];
 
         assert_eq!(
-            handle_command(&mut state, &[1, 100, 0], &mut response),
+            handle_command(&mut state, &encode_setpoint_command(100), &mut response,),
             Ok(2)
         );
         state.tick();
-        let len = handle_command(&mut state, &[2], &mut response).expect("status");
+        let len =
+            handle_command(&mut state, &encode_status_command(), &mut response).expect("status");
 
         assert_eq!(len, STATUS_BYTES);
-        assert_eq!(i16::from_le_bytes([response[1], response[2]]), 100);
-        assert_eq!(i16::from_le_bytes([response[3], response[4]]), 50);
-        assert_eq!(i16::from_le_bytes([response[5], response[6]]), 100);
-        assert_eq!(u32::from_le_bytes(response[7..11].try_into().unwrap()), 1);
+        let status = ControlLoopStatus::decode(&response).expect("decode status");
+        assert_eq!(status.setpoint(), 100);
+        assert_eq!(status.sampled_input(), 50);
+        assert_eq!(status.output(), 100);
+        assert_eq!(status.tick_count(), 1);
     }
 
     #[test]
@@ -243,6 +311,20 @@ mod tests {
         assert_eq!(
             handle_command(&mut state, &[2], &mut [0_u8; 2]),
             Err(CommandError::ResponseTooShort)
+        );
+    }
+
+    #[test]
+    fn status_decoder_rejects_wrong_command_and_length() {
+        assert_eq!(
+            ControlLoopStatus::decode(&[STATUS_COMMAND]),
+            Err(CommandError::InvalidLength)
+        );
+        let mut response = [0_u8; STATUS_BYTES];
+        response[0] = SETPOINT_COMMAND;
+        assert_eq!(
+            ControlLoopStatus::decode(&response),
+            Err(CommandError::UnexpectedResponse)
         );
     }
 
