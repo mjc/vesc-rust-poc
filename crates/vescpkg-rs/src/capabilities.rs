@@ -5,7 +5,7 @@ use crate::{
     AngleDegrees, BatteryCellCount, BatteryChemistry, CanBaudRate, CanBus, Charge, Current,
     DutyCycleLimit, DutyCycleMinimum, ElectricalSpeed, FocAudio, FocMotorFluxLinkage,
     FocMotorInductance, FocMotorResistance, GearRatio, ImuAhrsMode, InputCurrent, InputVoltage,
-    MotorCurrentLimit, MotorPoleCount, Nvm, NvmCapacity, Ratio, TemperatureLimitEnd,
+    MotorCurrentLimit, MotorPoleCount, Nvm, NvmCapacity, Ratio, ShutdownMode, TemperatureLimitEnd,
     TemperatureLimitStart, Uart, Voltage, WheelDiameter,
 };
 use core::fmt;
@@ -766,6 +766,12 @@ impl FirmwareSettings {
             .ok_or(SettingsError::InvalidValue)
     }
 
+    /// Read the configured automatic shutdown policy with semantic validation.
+    pub fn shutdown_mode(self) -> Result<ShutdownMode, SettingsError> {
+        ShutdownMode::from_raw(self.get_int(FirmwareIntSetting::AppShutdownMode))
+            .ok_or(SettingsError::InvalidValue)
+    }
+
     /// Write an integer setting to live firmware state.
     pub fn set_int(self, setting: FirmwareIntSetting, value: i32) -> Result<(), SettingsError> {
         unsafe { ffi::set_cfg_int(setting.raw(), value) }
@@ -810,6 +816,11 @@ impl FirmwareSettings {
     /// Write a checked firmware AHRS algorithm; persistence still requires [`Self::store`].
     pub fn set_imu_ahrs_mode(self, mode: ImuAhrsMode) -> Result<(), SettingsError> {
         self.set_int(FirmwareIntSetting::ImuAhrsMode, i32::from(mode.as_u8()))
+    }
+
+    /// Write a checked automatic shutdown policy; persistence still requires [`Self::store`].
+    pub fn set_shutdown_mode(self, mode: ShutdownMode) -> Result<(), SettingsError> {
+        self.set_int(FirmwareIntSetting::AppShutdownMode, i32::from(mode.as_u8()))
     }
 
     /// Persist all accepted setting writes in firmware storage.
