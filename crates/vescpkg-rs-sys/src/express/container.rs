@@ -204,6 +204,31 @@ impl<'a> ExpressNativeContainer<'a> {
         let offset = HEADER_LEN + index * 4;
         Some(ExpressRelocation::from_raw(read_le_u32(self.bytes, offset)))
     }
+
+    /// Iterate over the validated relocation entries in source order.
+    pub fn relocations(self) -> ExpressRelocationIter<'a> {
+        ExpressRelocationIter {
+            container: self,
+            next: 0,
+        }
+    }
+}
+
+/// Iterator over a validated Express relocation table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExpressRelocationIter<'a> {
+    container: ExpressNativeContainer<'a>,
+    next: usize,
+}
+
+impl Iterator for ExpressRelocationIter<'_> {
+    type Item = ExpressRelocation;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let relocation = self.container.relocation(self.next)?;
+        self.next += 1;
+        Some(relocation)
+    }
 }
 
 /// A single Express relocation entry.

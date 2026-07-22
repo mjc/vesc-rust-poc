@@ -17,7 +17,9 @@ mod sync;
 mod table;
 mod types;
 
-pub use container::{ExpressNativeContainer, ExpressNativeContainerError, ExpressRelocation};
+pub use container::{
+    ExpressNativeContainer, ExpressNativeContainerError, ExpressRelocation, ExpressRelocationIter,
+};
 pub use flat::{ExpressFlatValue, ExpressFlatValueError, ExpressLispMessageError};
 pub use functions::*;
 pub use lisp::{ExpressLisp, ExpressLispSymbol, ExpressLispValue};
@@ -316,6 +318,10 @@ mod tests {
         assert!(relocation.targets_code());
         assert_eq!(relocation.offset(), 0);
         assert!(container.relocation(1).is_none());
+        assert_eq!(
+            container.relocations().collect::<std::vec::Vec<_>>(),
+            [relocation]
+        );
     }
 
     #[test]
