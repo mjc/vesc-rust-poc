@@ -828,6 +828,11 @@ impl LispArgs<'_> {
         self.values.is_empty()
     }
 
+    /// Iterate over borrowed arguments as typed value handles.
+    pub fn iter(&self) -> impl Iterator<Item = LispValue> + '_ {
+        self.values.iter().copied().map(LispValue::from_raw)
+    }
+
     /// Return one argument by position.
     pub fn get(&self, index: usize) -> Option<LispValue> {
         self.values.get(index).copied().map(LispValue::from_raw)
@@ -1007,6 +1012,18 @@ mod tests {
             .expect("valid arguments");
 
         assert_eq!(args.get(0).and_then(LispValue::decode_i32_exact), None);
+    }
+
+    #[test]
+    fn typed_lisp_args_iterate_without_exposing_firmware_storage() {
+        let mut values = [super::encode_integer(7), super::encode_integer(-3)];
+        let args = super::LispArgs::from_raw(values.as_mut_ptr(), values.len() as u32)
+            .expect("valid arguments");
+
+        let mut iter = args.iter().map(LispValue::decode_i32_exact);
+        assert_eq!(iter.next(), Some(Some(7)));
+        assert_eq!(iter.next(), Some(Some(-3)));
+        assert_eq!(iter.next(), None);
     }
 
     #[test]
