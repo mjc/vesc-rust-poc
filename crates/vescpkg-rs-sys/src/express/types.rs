@@ -139,6 +139,34 @@ impl ExpressAddress {
     }
 }
 
+/// Loader-owned metadata passed to an Express native-library initializer.
+///
+/// This is the Express `lib_info` contract, kept separate from the STM32
+/// [`crate::LibInfo`] type. The firmware owns the pointed-to argument and
+/// invokes `stop_fun` during unload; an initializer must install a static
+/// callback before returning success.
+#[derive(Debug)]
+#[repr(C)]
+pub struct ExpressLibInfo {
+    /// Static callback invoked by firmware when the native library is unloaded.
+    pub stop_fun: Option<unsafe extern "C" fn(*mut core::ffi::c_void)>,
+    /// Opaque package argument retained by the firmware loader.
+    pub arg: *mut core::ffi::c_void,
+    /// Runtime base address of the loaded image.
+    pub base_addr: u32,
+}
+
+impl ExpressLibInfo {
+    /// Return an empty loader record for host fixtures.
+    pub const fn empty() -> Self {
+        Self {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0,
+        }
+    }
+}
+
 /// Firmware-owned flattened LispBM value storage.
 #[derive(Debug)]
 #[repr(C)]

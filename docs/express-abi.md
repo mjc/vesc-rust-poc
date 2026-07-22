@@ -100,3 +100,11 @@ ownership for firmware-managed strings or values.
 The fixed-address `ExpressInterface::from_target` constructor is also unsafe:
 it is only valid on the matching 32-bit Express target and is intentionally not
 used by host tests. This foundation deliberately does not use bindgen.
+
+The loader entry contract is available independently of any target toolchain:
+`ExpressLibInfo` mirrors the pinned `lib_info` record, and
+`express_native_start!` emits the `.program_ptr` and `.init_fun` entry symbols
+after checking the loader pointer. An initializer must install its static stop
+callback before returning success. The macro does not choose an ESP-IDF target,
+linker script, or package container; those remain an explicit integration and
+device-proof boundary.
