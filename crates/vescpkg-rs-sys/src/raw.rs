@@ -437,6 +437,9 @@ mod slots {
     optional_fn_slot!(
         foc_play_audio_samples as unsafe extern "C" fn(*const i8, c_int, f32, f32) -> bool
     );
+    optional_fn_slot!(uart_start as unsafe extern "C" fn(u32, bool) -> bool);
+    optional_fn_slot!(uart_write as unsafe extern "C" fn(*const u8, u32) -> bool);
+    optional_fn_slot!(uart_read as unsafe extern "C" fn() -> i32);
     fn_slot!(mc_temp_fet_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_temp_motor_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(imu_startup_done as unsafe extern "C" fn() -> bool);
@@ -1811,6 +1814,21 @@ pub unsafe fn foc_play_audio_samples(
 ) -> Option<bool> {
     unsafe { slots::foc_play_audio_samples() }
         .map(|func| unsafe { func(samples, length, sample_rate, voltage) })
+}
+
+/// Start the optional UART peripheral.
+pub unsafe fn uart_start(baudrate: u32, half_duplex: bool) -> Option<bool> {
+    unsafe { slots::uart_start() }.map(|func| unsafe { func(baudrate, half_duplex) })
+}
+
+/// Write bytes through the optional UART peripheral.
+pub unsafe fn uart_write(data: *const u8, size: u32) -> Option<bool> {
+    unsafe { slots::uart_write() }.map(|func| unsafe { func(data, size) })
+}
+
+/// Read one byte from the optional UART peripheral, or report no byte.
+pub unsafe fn uart_read() -> Option<i32> {
+    unsafe { slots::uart_read() }.map(|func| unsafe { func() })
 }
 /// Return the filtered input/battery voltage.
 ///

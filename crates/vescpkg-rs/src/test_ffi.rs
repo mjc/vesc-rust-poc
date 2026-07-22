@@ -1328,6 +1328,18 @@ pub unsafe fn foc_play_audio_samples(
     Some(true)
 }
 
+pub unsafe fn uart_start(_baudrate: u32, _half_duplex: bool) -> Option<bool> {
+    Some(true)
+}
+
+pub unsafe fn uart_write(_data: *const u8, _size: u32) -> Option<bool> {
+    Some(true)
+}
+
+pub unsafe fn uart_read() -> Option<i32> {
+    Some(i32::from(b'A'))
+}
+
 pub unsafe fn mc_get_distance_abs() -> f32 {
     load(&DISTANCE_ABS)
 }
