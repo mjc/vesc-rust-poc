@@ -80,6 +80,13 @@ fn lisp_process_sets_error_reason_from_a_scoped_c_string() {
 }
 
 #[test]
+fn lisp_symbols_can_be_looked_up_from_a_scoped_c_string() {
+    let _firmware = FirmwareTest::new();
+
+    assert_eq!(LispSymbol::lookup(c"vesc"), Some(LispSymbol::new(7)));
+}
+
+#[test]
 fn lisp_flat_values_encode_wide_values_and_unblock_contexts() {
     let _firmware = FirmwareTest::new();
     let mut value = LispFlatValue::try_new(32).expect("flat-value slots available");
