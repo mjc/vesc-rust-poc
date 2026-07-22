@@ -12,7 +12,7 @@ use crate::{
     VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 use vescpkg_rs_sys::LbmValue;
-use vescpkg_rs_sys::raw::LbmFlatValue;
+use vescpkg_rs_sys::raw::{CanStatusMsg, LbmFlatValue};
 
 // C map: these host replacements model the motor slots declared at
 // `third_party/vesc_pkg_lib/vesc_c_if.h:435-476`. Float Out Boy reads them in
@@ -75,6 +75,13 @@ static IMU_YAW: AtomicU32 = AtomicU32::new(0);
 static IMU_GYRO: [AtomicU32; 3] = [const { AtomicU32::new(0) }; 3];
 static IMU_QUATERNION: [AtomicU32; 4] = [const { AtomicU32::new(0) }; 4];
 static FLAT_BUFFER: [u8; 256] = [0; 256];
+static CAN_STATUS: CanStatusMsg = CanStatusMsg {
+    id: 7,
+    rx_time: 123,
+    rpm: 1200.0,
+    current: 4.5,
+    duty: 0.25,
+};
 static THREAD_SPAWN_COUNT: AtomicUsize = AtomicUsize::new(0);
 static THREAD_SPAWN_STACKS: [AtomicUsize; 2] = [const { AtomicUsize::new(0) }; 2];
 static THREAD_SPAWN_RESULTS: [AtomicUsize; 2] = [AtomicUsize::new(1), AtomicUsize::new(2)];
@@ -627,6 +634,18 @@ pub unsafe fn vesc_free(pointer: *mut c_void) {
     } else {
         MUTEX_FREE_COUNT.fetch_add(1, Ordering::Relaxed);
     }
+}
+
+pub unsafe fn can_transmit_sid(_id: u32, _data: *const u8, _len: u8) -> Option<()> {
+    Some(())
+}
+
+pub unsafe fn can_transmit_eid(_id: u32, _data: *const u8, _len: u8) -> Option<()> {
+    Some(())
+}
+
+pub unsafe fn can_status_msg_id(_id: i32) -> Option<CanStatusMsg> {
+    Some(CAN_STATUS)
 }
 
 pub(crate) fn mutex_lock_count() -> usize {

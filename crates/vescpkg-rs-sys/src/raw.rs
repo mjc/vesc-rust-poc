@@ -288,22 +288,34 @@ mod slots {
     fn_slot!(request_terminate as unsafe extern "C" fn(LibThread));
     fn_slot!(should_terminate as unsafe extern "C" fn() -> bool);
     fn_slot!(get_arg as unsafe extern "C" fn(u32) -> *mut *mut c_void);
-    fn_slot!(can_get_status_msg_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg);
-    fn_slot!(can_get_status_msg_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg);
-    fn_slot!(can_get_status_msg_2_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg2);
-    fn_slot!(can_get_status_msg_2_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg2);
-    fn_slot!(can_get_status_msg_3_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg3);
-    fn_slot!(can_get_status_msg_3_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg3);
-    fn_slot!(can_get_status_msg_4_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg4);
-    fn_slot!(can_get_status_msg_4_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg4);
-    fn_slot!(can_get_status_msg_5_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg5);
-    fn_slot!(can_get_status_msg_5_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg5);
-    fn_slot!(can_get_status_msg_6_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg6);
-    fn_slot!(can_get_status_msg_6_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg6);
-    fn_slot!(mc_gnss as unsafe extern "C" fn() -> *mut GnssData);
-    fn_slot!(read_nvm as unsafe extern "C" fn(*mut u8, c_uint, c_uint) -> bool);
-    fn_slot!(write_nvm as unsafe extern "C" fn(*mut u8, c_uint, c_uint) -> bool);
-    fn_slot!(wipe_nvm as unsafe extern "C" fn() -> bool);
+    optional_fn_slot!(can_get_status_msg_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg);
+    optional_fn_slot!(can_get_status_msg_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg);
+    optional_fn_slot!(can_transmit_sid as unsafe extern "C" fn(u32, *const u8, u8));
+    optional_fn_slot!(can_transmit_eid as unsafe extern "C" fn(u32, *const u8, u8));
+    optional_fn_slot!(
+        can_get_status_msg_2_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg2
+    );
+    optional_fn_slot!(can_get_status_msg_2_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg2);
+    optional_fn_slot!(
+        can_get_status_msg_3_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg3
+    );
+    optional_fn_slot!(can_get_status_msg_3_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg3);
+    optional_fn_slot!(
+        can_get_status_msg_4_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg4
+    );
+    optional_fn_slot!(can_get_status_msg_4_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg4);
+    optional_fn_slot!(
+        can_get_status_msg_5_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg5
+    );
+    optional_fn_slot!(can_get_status_msg_5_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg5);
+    optional_fn_slot!(
+        can_get_status_msg_6_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg6
+    );
+    optional_fn_slot!(can_get_status_msg_6_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg6);
+    optional_fn_slot!(mc_gnss as unsafe extern "C" fn() -> *mut GnssData);
+    optional_fn_slot!(read_nvm as unsafe extern "C" fn(*mut u8, c_uint, c_uint) -> bool);
+    optional_fn_slot!(write_nvm as unsafe extern "C" fn(*mut u8, c_uint, c_uint) -> bool);
+    optional_fn_slot!(wipe_nvm as unsafe extern "C" fn() -> bool);
     fn_slot!(get_remote_state as unsafe extern "C" fn() -> RemoteState);
     fn_slot!(get_ppm as unsafe extern "C" fn() -> f32);
     fn_slot!(get_ppm_age as unsafe extern "C" fn() -> f32);
@@ -1016,6 +1028,24 @@ pub unsafe fn vesc_should_terminate() -> bool {
 /// `prog_addr` must be the native library base address passed by the VESC loader.
 pub unsafe fn vesc_get_arg(prog_addr: u32) -> *mut *mut c_void {
     unsafe { required_slot!(get_arg)(prog_addr) }
+}
+
+/// Transmit one bounded standard CAN frame when the optional slot is present.
+///
+/// # Safety
+///
+/// `data` must point to `len` readable bytes for the duration of the call.
+pub unsafe fn can_transmit_sid(id: u32, data: *const u8, len: u8) -> Option<()> {
+    unsafe { slots::can_transmit_sid() }.map(|transmit| unsafe { transmit(id, data, len) })
+}
+
+/// Transmit one bounded extended CAN frame when the optional slot is present.
+///
+/// # Safety
+///
+/// `data` must point to `len` readable bytes for the duration of the call.
+pub unsafe fn can_transmit_eid(id: u32, data: *const u8, len: u8) -> Option<()> {
+    unsafe { slots::can_transmit_eid() }.map(|transmit| unsafe { transmit(id, data, len) })
 }
 
 /// Copy a firmware-owned record without allowing a null pointer to cross the

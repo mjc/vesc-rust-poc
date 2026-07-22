@@ -83,6 +83,12 @@ impl FirmwareTest {
         crate::Nvm::new()
     }
 
+    /// Borrow the fake firmware CAN transport used by package tests.
+    #[must_use]
+    pub fn can(&self) -> &crate::CanBus {
+        self.firmware.can()
+    }
+
     /// Borrow the firmware clock capability used on hardware.
     #[must_use]
     pub fn clock(&self) -> &crate::FirmwareClock {

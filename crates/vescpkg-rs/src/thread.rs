@@ -171,6 +171,8 @@ impl<B: AppDataBindings> AppDataApi<B> {
 /// Typed access to the firmware capabilities available to package threads.
 pub struct Firmware {
     #[cfg(not(test))]
+    can: crate::CanBus,
+    #[cfg(not(test))]
     threads: ThreadApi<RealThreadBindings>,
     #[cfg(not(test))]
     app_data: FirmwareAppData,
@@ -191,6 +193,12 @@ pub struct Firmware {
 }
 
 impl Firmware {
+    /// Borrow the firmware CAN transport and status capability.
+    #[cfg(not(test))]
+    pub fn can(&self) -> &crate::CanBus {
+        &self.can
+    }
+
     /// Borrow firmware thread capabilities without exposing the binding type.
     #[cfg(not(test))]
     pub fn threads(&self) -> &impl FirmwareThreads {
@@ -249,6 +257,7 @@ impl Firmware {
     #[cfg(not(test))]
     pub fn new() -> Self {
         Self {
+            can: crate::CanBus::new(),
             threads: ThreadApi::new(RealThreadBindings),
             app_data: FirmwareAppData::new(),
             clock: FirmwareClock::new(),

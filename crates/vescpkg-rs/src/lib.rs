@@ -55,18 +55,22 @@ pub(crate) mod ffi {
     };
     #[allow(unused_imports)]
     pub use vescpkg_rs_sys::raw::{
-        conf_custom_add_config, conf_custom_clear_configs, io_read, io_read_analog, io_set_mode,
+        conf_custom_add_config,
+        conf_custom_clear_configs, io_read, io_read_analog, io_set_mode,
         io_write, lbm_add_extension, lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true,
         vesc_clear_app_data_handler, vesc_clear_imu_read_callback, vesc_get_arg, vesc_malloc,
         vesc_send_app_data, vesc_set_app_data_handler, vesc_set_imu_read_callback,
     };
+    #[cfg(any(test, not(feature = "test-support")))]
+    pub use vescpkg_rs_sys::raw::{can_status_msg_id, can_transmit_eid, can_transmit_sid};
     pub use vescpkg_rs_sys::{AppDataHandler, LibInfo, NativeImage};
 
     #[cfg(all(feature = "test-support", not(test)))]
     use crate::test_ffi as selected_ffi;
     #[allow(unused_imports)]
     pub use selected_ffi::{
-        f_b, f_cons, f_float, f_i32, f_i64, f_lbm_array, f_sym, f_u32, f_u64, foc_get_id,
+        can_status_msg_id, can_transmit_eid, can_transmit_sid, f_b, f_cons, f_float, f_i32, f_i64,
+        f_lbm_array, f_sym, f_u32, f_u64, foc_get_id,
         get_cfg_float, get_cfg_int, imu_get_gyro, imu_get_pitch, imu_get_roll, imu_get_yaw,
         imu_startup_done, lbm_block_ctx_from_extension, lbm_car, lbm_cdr, lbm_cons,
         lbm_create_byte_array, lbm_dec_as_float, lbm_dec_as_i32, lbm_dec_as_u32, lbm_dec_char,
@@ -104,6 +108,7 @@ pub use vescpkg_rs_units::{
 #[cfg(feature = "alloc")]
 pub use alloc::VescAllocator;
 pub use eeprom::{CustomEeprom, CustomEepromAddress, EepromWord};
+pub use can_bus::{CanBus, CanError, CanStatus};
 pub use extension::{ExtensionDescriptor, ExtensionName, ExtensionRegistration};
 pub use extension::{
     LbmExtension, LispArgs, LispContextId, LispFlatValue, LispIntegerError, LispMessageError,
@@ -137,6 +142,8 @@ pub use thread::{
 
 /// GPIO bindings and convenience wrappers for package code.
 mod gpio;
+/// CAN transport and status snapshot helpers for package code.
+mod can_bus;
 /// IMU bindings and convenience wrappers for package code.
 mod imu;
 /// Device package entrypoint and loader-hook helpers.
@@ -161,8 +168,9 @@ pub mod prelude {
         SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
     };
     pub use crate::{
-        AnalogPin, AppDataHandler, AppDataSendError, ConfigBytes, ConfigXml, DigitalOutputLevel,
-        DigitalPin, ExtensionDescriptor, ExtensionName, ExtensionRegistration, Firmware,
+        AnalogPin, AppDataHandler, AppDataSendError, CanBus, CanError, CanStatus, ConfigBytes,
+        ConfigXml, DigitalOutputLevel, DigitalPin, ExtensionDescriptor, ExtensionName,
+        ExtensionRegistration, Firmware,
         FirmwareAppData, FirmwareClock, FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore,
         FirmwareThread, FirmwareThreads, Gpio, Imu, ImuReadHandler, LbmExtension, LispArgs,
         LispIntegerError, LispValue, MotorOutput, MotorTelemetry, Nvm, NvmError, NvmOffset,
