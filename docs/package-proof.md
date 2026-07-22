@@ -30,3 +30,9 @@ The hashes above are the current artifact-only proof after the direct Cargo
 binary cutover. They do not claim a new device run. The ignored HIL workflow in
 `crates/cargo-vescpkg/tests/hil_loopback.rs` remains the required current
 device gate and needs `VESC_DEVICE` plus `VESC_BLE_ADDR` before it can be run.
+
+Regenerate the complete representative set with:
+
+```text
+nix develop --command make package-examples
+```
