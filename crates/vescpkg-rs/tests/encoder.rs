@@ -7,9 +7,15 @@ use vescpkg_rs::{AngleDegrees, EncoderHandler, test_support::FirmwareTest};
 struct Handler;
 
 impl EncoderHandler for Handler {
-    fn read_degrees() -> AngleDegrees { AngleDegrees::from_degrees(12.0) }
-    fn has_fault() -> bool { false }
-    fn info() -> &'static CStr { c"SDK encoder" }
+    fn read_degrees() -> AngleDegrees {
+        AngleDegrees::from_degrees(12.0)
+    }
+    fn has_fault() -> bool {
+        false
+    }
+    fn info() -> &'static CStr {
+        c"SDK encoder"
+    }
 }
 
 #[test]
