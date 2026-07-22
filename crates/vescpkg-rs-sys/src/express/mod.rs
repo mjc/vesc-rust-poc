@@ -35,8 +35,40 @@ pub use table::{ExpressSlot, ExpressSlotKind, ExpressTable, ExpressTableError, e
 pub use types::{
     EXPRESS_C_IF_VERSION, EXPRESS_IF_SLOT_COUNT, EXPRESS_IF_TABLE_BYTES, EXPRESS_NATIVE_LIB_MAGIC,
     EXPRESS_NATIVE_LIB_RELOC_MAGIC, EXPRESS_SYSTEM_TICK_RATE_HZ, ExpressAddress,
-    ExpressFlatValueRaw, ExpressNativeLoadKind, ExpressTarget, ExpressWord,
+    ExpressFlatValueRaw, ExpressLibInfo, ExpressNativeLoadKind, ExpressTarget, ExpressWord,
 };
+
+/// Define the Express native-library image entrypoint for an initializer.
+///
+/// The caller receives a validated mutable view of the loader-owned
+/// [`ExpressLibInfo`]. Returning `true` tells firmware that the library is
+/// live; the initializer must set `stop_fun` before doing so. The generated
+/// symbols are placed in the sections consumed by the Express loader. This
+/// macro only defines the ABI entry seam; target-specific linker scripts and
+/// package generation remain outside this crate.
+#[macro_export]
+macro_rules! express_native_start {
+    ($start:path) => {
+        #[used]
+        #[doc(hidden)]
+        #[unsafe(no_mangle)]
+        #[unsafe(link_section = ".program_ptr")]
+        pub static prog_ptr: u32 = 0;
+
+        #[doc(hidden)]
+        #[unsafe(no_mangle)]
+        #[unsafe(link_section = ".init_fun")]
+        pub extern "C" fn init(info: *mut $crate::express::ExpressLibInfo) -> bool {
+            if info.is_null() {
+                return false;
+            }
+            if !unsafe { $start(&mut *info) } {
+                return false;
+            }
+            unsafe { (*info).stop_fun.is_some() }
+        }
+    };
+}
 
 #[cfg(test)]
 mod tests {
@@ -47,6 +79,14 @@ mod tests {
     unsafe extern "C" fn express_lisp_handler(_: *mut u32, _: u32) -> u32 {
         0
     }
+
+    fn express_start(info: &mut ExpressLibInfo) -> bool {
+        info.stop_fun = Some(express_noop);
+        info.arg = core::ptr::null_mut();
+        info.base_addr != 0
+    }
+
+    express_native_start!(express_start);
 
     #[test]
     fn pinned_v1_shape_is_independent_from_stm32() {
@@ -109,6 +149,30 @@ mod tests {
             ExpressTarget::from_sdkconfig_define("CONFIG_IDF_TARGET_ESP32"),
             None
         );
+        let pointer_size = core::mem::size_of::<usize>();
+        assert_eq!(core::mem::offset_of!(ExpressLibInfo, stop_fun), 0);
+        assert_eq!(core::mem::offset_of!(ExpressLibInfo, arg), pointer_size);
+        assert_eq!(
+            core::mem::offset_of!(ExpressLibInfo, base_addr),
+            pointer_size * 2
+        );
+        assert_eq!(
+            core::mem::size_of::<ExpressLibInfo>(),
+            (pointer_size * 2 + 4).next_multiple_of(pointer_size)
+        );
+    }
+
+    #[test]
+    fn native_start_checks_info_and_forwards_loader_metadata() {
+        assert!(!init(core::ptr::null_mut()));
+
+        let mut info = ExpressLibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0x2000,
+        };
+        assert!(init(&mut info));
+        assert!(info.stop_fun.is_some());
     }
 
     #[test]
