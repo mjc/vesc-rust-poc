@@ -138,6 +138,7 @@ static GNSS_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static PWM_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static CAN_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static BACKUP_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static NVM_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static DISTANCE_ABS: AtomicU32 = AtomicU32::new(0);
 static MOSFET_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
@@ -333,6 +334,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     PWM_AVAILABLE.store(true, Ordering::Relaxed);
     CAN_AVAILABLE.store(true, Ordering::Relaxed);
     BACKUP_AVAILABLE.store(true, Ordering::Relaxed);
+    NVM_AVAILABLE.store(true, Ordering::Relaxed);
     DISTANCE_ABS.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOSFET_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -444,6 +446,9 @@ pub(crate) fn fail_eeprom_write(address: crate::CustomEepromAddress) {
 }
 
 pub unsafe fn read_nvm(buffer: *mut u8, len: u32, address: u32) -> Option<bool> {
+    if !NVM_AVAILABLE.load(Ordering::Relaxed) {
+        return None;
+    }
     let Some(end) = address
         .checked_add(len)
         .and_then(|end| usize::try_from(end).ok())
@@ -469,6 +474,9 @@ pub unsafe fn read_nvm(buffer: *mut u8, len: u32, address: u32) -> Option<bool> 
 }
 
 pub unsafe fn write_nvm(buffer: *mut u8, len: u32, address: u32) -> Option<bool> {
+    if !NVM_AVAILABLE.load(Ordering::Relaxed) {
+        return None;
+    }
     let Some(end) = address
         .checked_add(len)
         .and_then(|end| usize::try_from(end).ok())
@@ -491,6 +499,9 @@ pub unsafe fn write_nvm(buffer: *mut u8, len: u32, address: u32) -> Option<bool>
 
 #[allow(clippy::unnecessary_wraps)] // fake preserves nullable firmware NVM slot shape
 pub unsafe fn wipe_nvm() -> Option<bool> {
+    if !NVM_AVAILABLE.load(Ordering::Relaxed) {
+        return None;
+    }
     if NVM_FAILURE.load(Ordering::Relaxed) {
         return Some(false);
     }
@@ -1154,6 +1165,10 @@ pub(crate) fn set_can_available(available: bool) {
 
 pub(crate) fn set_backup_available(available: bool) {
     BACKUP_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_nvm_available(available: bool) {
+    NVM_AVAILABLE.store(available, Ordering::Relaxed);
 }
 
 pub(crate) fn set_imu_startup_done(done: bool) {

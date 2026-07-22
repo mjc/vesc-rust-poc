@@ -54,6 +54,24 @@ fn nvm_reports_firmware_operation_failures() {
 }
 
 #[test]
+fn nvm_reports_absent_optional_slots() {
+    let firmware = FirmwareTest::new();
+    firmware.set_nvm_available(false);
+    let offset = NvmOffset::new(0);
+    let mut bytes = [0; 1];
+
+    assert_eq!(
+        firmware.nvm().read(offset, &mut bytes),
+        Err(NvmError::Unsupported)
+    );
+    assert_eq!(
+        firmware.nvm().write(offset, &bytes),
+        Err(NvmError::Unsupported)
+    );
+    assert_eq!(firmware.nvm().wipe(), Err(NvmError::Unsupported));
+}
+
+#[test]
 fn nvm_capacity_bounds_are_checked_before_dispatch() {
     let nvm = Nvm::with_capacity(NvmCapacity::new(16).unwrap());
     let mut bytes = [0; 2];
