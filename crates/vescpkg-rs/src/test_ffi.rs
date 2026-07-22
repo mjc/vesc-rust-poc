@@ -98,6 +98,7 @@ static NVM_FAILURE: AtomicBool = AtomicBool::new(false);
 static LBM_FLOAT_BITS: AtomicU32 = AtomicU32::new(0);
 static LBM_CONS_CAR: AtomicU32 = AtomicU32::new(0);
 static LBM_CONS_CDR: AtomicU32 = AtomicU32::new(0);
+static LBM_SYMBOL_ID: AtomicU32 = AtomicU32::new(0);
 static LBM_STRING: [u8; 5] = *b"vesc\0";
 const LBM_BYTE_ARRAY: u32 = 0x03;
 static CLOCK_TICKS: AtomicU32 = AtomicU32::new(0);
@@ -407,12 +408,20 @@ pub unsafe fn lbm_list_destructive_reverse(value: LbmValue) -> LbmValue {
     value
 }
 
+pub unsafe fn lbm_enc_sym(symbol: u32) -> LbmValue {
+    LBM_SYMBOL_ID.store(symbol, Ordering::Relaxed);
+    LbmValue(0x40)
+}
+
+pub unsafe fn lbm_dec_sym(_value: LbmValue) -> u32 {
+    LBM_SYMBOL_ID.load(Ordering::Relaxed)
+}
 pub unsafe fn lbm_is_char(value: LbmValue) -> bool {
     value.0 & 0x0f == 0x04
 }
 
-pub unsafe fn lbm_is_symbol(_value: LbmValue) -> bool {
-    false
+pub unsafe fn lbm_is_symbol(value: LbmValue) -> bool {
+    value.0 == 0x40
 }
 
 pub unsafe fn lbm_is_cons(value: LbmValue) -> bool {

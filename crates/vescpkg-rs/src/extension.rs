@@ -28,6 +28,22 @@ const fn is_integer(value: u32) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LispValue(LbmValue);
 
+/// A firmware symbol identifier suitable for encoding into a LispBM value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LispSymbol(u32);
+
+impl LispSymbol {
+    /// Construct a symbol identifier returned by firmware symbol lookup.
+    pub const fn new(raw: u32) -> Self {
+        Self(raw)
+    }
+
+    /// Return the firmware symbol identifier.
+    pub const fn raw(self) -> u32 {
+        self.0
+    }
+}
+
 impl LispValue {
     /// Convert any LispBM numeric value to an `f32`.
     #[cfg(not(test))]
@@ -147,6 +163,19 @@ impl LispValue {
         let len = u32::try_from(len).ok()?;
         let mut raw = Self::nil().raw();
         unsafe { crate::ffi::lbm_create_byte_array(&mut raw, len) }.then(|| Self::from_raw(raw))
+    }
+
+    /// Encode a firmware symbol identifier as a LispBM value.
+    #[cfg(not(test))]
+    pub fn from_symbol(symbol: LispSymbol) -> Self {
+        Self::from_raw(unsafe { crate::ffi::lbm_enc_sym(symbol.raw()) })
+    }
+
+    /// Decode a LispBM symbol identifier when this value is a symbol.
+    #[cfg(not(test))]
+    pub fn symbol_id(self) -> Option<LispSymbol> {
+        self.is_symbol()
+            .then(|| LispSymbol::new(unsafe { crate::ffi::lbm_dec_sym(self.raw()) }))
     }
 
     /// Construct a LispBM cons cell from two owned value handles.
