@@ -34,6 +34,23 @@ pub unsafe fn io_set_mode(_pin: VescPin, _mode: VescPinMode) -> bool {
     true
 }
 
+static STM32_GPIO: u8 = 0;
+
+pub unsafe fn io_get_st_pin(pin: VescPin, gpio: *mut *mut c_void, st_pin: *mut u32) -> bool {
+    let (Some(gpio), Some(st_pin)) = (unsafe { gpio.as_mut() }, unsafe { st_pin.as_mut() }) else {
+        return false;
+    };
+    *gpio = core::ptr::addr_of!(STM32_GPIO).cast_mut().cast();
+    *st_pin = u32::try_from(pin.0).unwrap_or_default();
+    true
+}
+
+pub unsafe fn set_pad_mode(_gpio: *mut c_void, _pin: u32, _mode: u32) {}
+
+pub unsafe fn set_pad(_gpio: *mut c_void, _pin: u32) {}
+
+pub unsafe fn clear_pad(_gpio: *mut c_void, _pin: u32) {}
+
 pub unsafe fn io_write(_pin: VescPin, _level: i32) -> bool {
     true
 }
