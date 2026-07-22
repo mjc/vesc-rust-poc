@@ -558,7 +558,7 @@ impl ThreadWorkingAreaSize {
         if bytes < Self::MIN_BYTES {
             return Err(ThreadWorkingAreaSizeError::TooSmall);
         }
-        if !bytes.is_multiple_of(Self::WORKING_AREA_ALIGNMENT_BYTES) {
+        if bytes % Self::WORKING_AREA_ALIGNMENT_BYTES != 0 {
             return Err(ThreadWorkingAreaSizeError::Misaligned);
         }
         Ok(Self(bytes))

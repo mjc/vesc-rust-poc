@@ -387,6 +387,11 @@ pub trait MotorControlBindings {
     /// Return whether controller DC calibration has completed.
     fn dc_calibration_done(&self) -> bool;
     /// Register an exclusive low-level PWM callback.
+    ///
+    /// # Safety
+    ///
+    /// `callback` must be a valid firmware-compatible callback for the entire
+    /// time the returned lease is alive.
     unsafe fn register_pwm_callback(
         &self,
         callback: PwmCallback,
@@ -1069,6 +1074,11 @@ pub trait MotorOutput: private::MotorOutput {
     /// Return whether controller DC calibration has completed.
     fn dc_calibration_done(&self) -> bool;
     /// Register an exclusive low-level PWM callback.
+    ///
+    /// # Safety
+    ///
+    /// `callback` must be a valid firmware-compatible callback for the entire
+    /// time the returned lease is alive.
     unsafe fn register_pwm_callback(
         &self,
         callback: PwmCallback,

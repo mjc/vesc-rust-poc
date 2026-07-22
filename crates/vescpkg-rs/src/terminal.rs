@@ -100,14 +100,14 @@ impl<H: TerminalHandler> Drop for TerminalRegistration<'_, H> {
     }
 }
 
-unsafe extern "C" fn callback<H: TerminalHandler>(argc: i32, argv: *const *const c_char) {
-    if argc < 0 {
+unsafe extern "C" fn callback<H: TerminalHandler>(arg_count: i32, argv: *const *const c_char) {
+    if arg_count < 0 {
         return;
     }
     H::run(TerminalArgs {
         argv,
         index: 0,
-        length: argc as usize,
+        length: arg_count as usize,
         _lifetime: PhantomData,
     });
 }

@@ -1507,7 +1507,7 @@ pub unsafe fn mc_dccal_done() -> bool {
 }
 
 pub unsafe fn mc_fault_to_string(_fault: FaultCode) -> *const c_char {
-    b"TEST_FAULT\0".as_ptr().cast()
+    c"TEST_FAULT".as_ptr().cast()
 }
 
 pub unsafe fn mc_set_pwm_callback(_callback: Option<unsafe extern "C" fn()>) -> bool {
