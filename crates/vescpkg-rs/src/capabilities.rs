@@ -1,6 +1,6 @@
 //! Capability-aware safe subsystem constructors.
 
-use crate::{CanBus, FocAudio, Nvm, Uart};
+use crate::{CanBus, FocAudio, Nvm, NvmCapacity, Uart};
 use vescpkg_rs_sys::{AbiError, Stm32AbiRevision, VescIfCapabilities, VescIfPresence};
 
 /// Observed firmware capabilities used to construct safe subsystem handles.
@@ -39,6 +39,11 @@ impl FirmwareCapabilities {
     /// Construct an NVM handle only when its observed read entry exists.
     pub fn nvm(self) -> Result<Nvm, AbiError> {
         self.inner.nvm().map(|_| Nvm::new())
+    }
+
+    /// Construct NVM with a separately discovered byte capacity.
+    pub fn nvm_with_capacity(self, capacity: NvmCapacity) -> Result<Nvm, AbiError> {
+        self.inner.nvm().map(|_| Nvm::with_capacity(capacity))
     }
 
     /// Construct an FOC audio handle only when its observed beep entry exists.
@@ -81,6 +86,15 @@ mod tests {
 
         assert!(capabilities.can_bus().is_ok());
         assert!(capabilities.nvm().is_ok());
+        assert_eq!(
+            capabilities
+                .nvm_with_capacity(NvmCapacity::new(32).unwrap())
+                .unwrap()
+                .capacity()
+                .unwrap()
+                .get(),
+            32
+        );
         assert_eq!(capabilities.audio().unwrap_err().capability(), "FOC audio");
         assert_eq!(capabilities.uart().unwrap_err().capability(), "UART");
         assert_eq!(capabilities.settings().unwrap_err().capability(), "settings");
