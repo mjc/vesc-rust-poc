@@ -29,6 +29,8 @@ enum Command {
     Probe(DeviceArgs),
     #[command(name = "control-loop")]
     ControlLoopProbe(DeviceArgs),
+    #[command(name = "control-loop-deploy")]
+    ControlLoopDeploy(DeployArgs),
     PackageInstall(PackageInstallArgs),
     ErasePackage(PackageEraseArgs),
     Deploy(DeployArgs),
@@ -96,6 +98,7 @@ where
         Ok(Command::Build(args)) => run_build(args),
         Ok(Command::Probe(command)) => run_probe(command),
         Ok(Command::ControlLoopProbe(command)) => run_control_loop_probe(command),
+        Ok(Command::ControlLoopDeploy(command)) => run_control_loop_deploy(command),
         Ok(Command::Deploy(command)) => run_deploy(command),
         Ok(Command::PackageInstall(command)) => run_package_install(command),
         Ok(Command::ErasePackage(command)) => run_package_erase(command),
@@ -155,6 +158,39 @@ fn run_control_loop_probe(command: DeviceArgs) -> ExitCode {
         }
         Err(error) => {
             eprintln!("control-loop failed: {error}");
+            ExitCode::from(1)
+        }
+    }
+}
+
+fn run_control_loop_deploy(command: DeployArgs) -> ExitCode {
+    let target = command.device.into_target();
+    let package_path = match build_package(command.build) {
+        Ok(package_path) => package_path,
+        Err(error) => {
+            eprintln!("control-loop-deploy build failed: {error}");
+            return ExitCode::from(1);
+        }
+    };
+    match package_install::install_over_ble(&package_path, target.clone()) {
+        Ok(report) => println!("Installed {}", report.package_name),
+        Err(error) => {
+            eprintln!("control-loop-deploy install failed: {error}");
+            return ExitCode::from(1);
+        }
+    }
+    match deploy::run_control_loop_probe(target, |event| println!("control-loop: {event}")) {
+        Ok(report) => {
+            println!(
+                "control-loop-deploy ok: samples={} elapsed={:?} jitter={:?}",
+                report.statuses().len(),
+                report.elapsed(),
+                report.timing().jitter(),
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("control-loop-deploy probe failed: {error}");
             ExitCode::from(1)
         }
     }
@@ -334,6 +370,30 @@ mod tests {
             Command::ControlLoopProbe(DeviceArgs {
                 device_name: Some("Floatwheel PintV".to_owned()),
                 address: None,
+            })
+        );
+        assert_eq!(
+            parse_args([
+                "cargo-vescpkg",
+                "control-loop-deploy",
+                "-p",
+                "vesc-example-control-loop-smoke",
+                "--device",
+                "Floatwheel PintV",
+            ])
+            .expect("control-loop-deploy"),
+            Command::ControlLoopDeploy(DeployArgs {
+                build: BuildArgs {
+                    package: "vesc-example-control-loop-smoke".to_owned(),
+                    manifest_path: None,
+                    target: "thumbv7em-none-eabihf".to_owned(),
+                    profile: "release".to_owned(),
+                    features: None,
+                },
+                device: DeviceArgs {
+                    device_name: Some("Floatwheel PintV".to_owned()),
+                    address: None,
+                },
             })
         );
     }
