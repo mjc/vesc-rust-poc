@@ -441,6 +441,17 @@ impl LispValue {
         self.is_byte_array()
     }
 
+    /// Return whether this value can be used as a LispBM string.
+    ///
+    /// The pinned VESC ABI represents strings as byte arrays and exposes no
+    /// separate string predicate, so this intentionally has the same
+    /// capability boundary as [`Self::is_byte_array`]. Use [`Self::with_str`]
+    /// to keep the firmware-owned bytes scoped to the callback.
+    #[must_use]
+    pub fn is_string(self) -> bool {
+        self.is_byte_array()
+    }
+
     /// Return whether this value is the canonical LispBM nil value.
     #[must_use]
     pub fn is_nil(self) -> bool {

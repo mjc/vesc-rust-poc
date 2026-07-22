@@ -77,6 +77,7 @@ fn lisp_values_expose_explicit_kind_predicates() {
     let string = LispValue::try_byte_array(4).expect("host fake allocates byte arrays");
     assert!(string.is_byte_array());
     assert!(string.is_array());
+    assert!(string.is_string());
     assert!(!string.is_number());
     assert_eq!(
         string.with_str(|value| value.to_bytes() == b"vesc"),
@@ -86,6 +87,7 @@ fn lisp_values_expose_explicit_kind_predicates() {
 
     assert_eq!(LispValue::try_byte_array(usize::MAX), None);
     assert!(!integer.is_array());
+    assert!(!integer.is_string());
 
     let symbol = LispSymbol::new(7);
     let symbol_value = LispValue::from_symbol(symbol);
