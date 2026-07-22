@@ -134,6 +134,7 @@ static COMMANDS_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static TERMINAL_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static ENCODER_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static PLOT_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static GNSS_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static DISTANCE_ABS: AtomicU32 = AtomicU32::new(0);
 static MOSFET_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
@@ -325,6 +326,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     TERMINAL_AVAILABLE.store(true, Ordering::Relaxed);
     ENCODER_AVAILABLE.store(true, Ordering::Relaxed);
     PLOT_AVAILABLE.store(true, Ordering::Relaxed);
+    GNSS_AVAILABLE.store(true, Ordering::Relaxed);
     DISTANCE_ABS.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOSFET_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -1132,6 +1134,10 @@ pub(crate) fn set_plot_available(available: bool) {
     PLOT_AVAILABLE.store(available, Ordering::Relaxed);
 }
 
+pub(crate) fn set_gnss_available(available: bool) {
+    GNSS_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
 pub(crate) fn set_imu_startup_done(done: bool) {
     IMU_STARTUP_DONE.store(done, Ordering::Relaxed);
 }
@@ -1558,7 +1564,7 @@ pub unsafe fn packet_send_packet(_data: *mut u8, _len: u32, _state: *mut PacketS
 }
 
 pub unsafe fn gnss_snapshot() -> Option<GnssData> {
-    Some(GnssData {
+    GNSS_AVAILABLE.load(Ordering::Relaxed).then_some(GnssData {
         lat: 40.0,
         lon: -105.0,
         height: 1600.0,
