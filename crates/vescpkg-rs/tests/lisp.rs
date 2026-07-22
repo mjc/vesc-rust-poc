@@ -62,11 +62,13 @@ fn lisp_values_expose_explicit_kind_predicates() {
     assert_eq!(integer.reverse_list(), None);
 
     let proper = LispValue::cons(integer, LispValue::nil());
+    assert!(proper.is_list());
     let mut list = proper.list();
     assert_eq!(list.next_value().unwrap(), Some(integer));
     assert_eq!(list.next_value().unwrap(), None);
 
     let improper_pair = LispValue::cons(integer, character);
+    assert!(!improper_pair.is_list());
     let mut improper = improper_pair.list();
     assert_eq!(improper.next_value().unwrap(), Some(integer));
     assert_eq!(
