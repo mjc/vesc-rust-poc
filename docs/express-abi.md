@@ -39,6 +39,12 @@ Express container/loader contract. Rust-side target metadata is now available
 for that integration, while the Express-specific compiler/linker/package path
 and device installation proof remain intentionally open.
 
+`ExpressNativeContainer` validates the pinned ESP32-S3 relocatable container
+header, little-endian region metadata, bounded code/data regions, and
+region-relative relocation offsets without allocating or applying patches. It
+is a checked input boundary for the future ESP-IDF/package builder, not a host
+loader or a substitute for target execution.
+
 ## Current implementation boundary
 
 `ExpressInterface::from_words` checks the version before exposing any slot,
