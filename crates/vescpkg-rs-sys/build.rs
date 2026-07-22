@@ -203,6 +203,7 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
 
     rust.push_str("pub(crate) const SLOTS: [crate::VescIfSlot; FIELD_COUNT] = ALL_SLOTS;\n\n");
 
+    rust.push_str("#[allow(clippy::too_many_lines)]\n");
     rust.push_str(
         "pub(crate) fn presence(table: &crate::bindgen::vesc_c_if) -> crate::VescIfPresence {\n",
     );

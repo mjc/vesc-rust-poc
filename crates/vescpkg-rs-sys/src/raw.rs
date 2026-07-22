@@ -1,4 +1,5 @@
 #![cfg_attr(test, allow(dead_code))]
+#![allow(clippy::missing_safety_doc, clippy::useless_transmute)]
 
 use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescIfPresence, c_vesc_if};
 use core::ffi::{c_char, c_int, c_uchar, c_uint, c_void};
