@@ -22,6 +22,7 @@ fn motor_exposes_typed_handbrake_commands() {
 
     let telemetry = firmware.telemetry();
     assert!(firmware.motor().dc_calibration_done());
+    assert_eq!(firmware.motor().selected_motor().index(), 1);
     let pwm_lease = unsafe {
         firmware
             .motor()

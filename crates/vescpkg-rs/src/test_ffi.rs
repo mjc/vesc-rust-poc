@@ -1349,12 +1349,20 @@ pub unsafe fn mc_get_fault() -> i32 {
     FIRMWARE_FAULT.load(Ordering::Relaxed)
 }
 
-pub unsafe fn mc_fault_to_string(code: u32) -> *const core::ffi::c_char {
-    let name: &'static [u8] = match code {
-        5 => b"FAULT_CODE_OVER_TEMP_FET\0",
-        _ => b"FAULT_CODE_NONE\0",
-    };
-    name.as_ptr().cast()
+pub unsafe fn mc_get_motor_thread() -> i32 {
+    1
+}
+
+pub unsafe fn mc_dccal_done() -> bool {
+    true
+}
+
+pub unsafe fn mc_fault_to_string(_fault: i32) -> *const c_char {
+    b"TEST_FAULT\0".as_ptr().cast()
+}
+
+pub unsafe fn mc_set_pwm_callback(_callback: Option<unsafe extern "C" fn()>) -> bool {
+    true
 }
 
 pub unsafe fn mc_get_input_voltage_filtered() -> f32 {
