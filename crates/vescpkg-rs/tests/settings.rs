@@ -58,6 +58,7 @@ fn typed_settings_read_write_and_persist() {
             .as_revolutions_per_minute(),
         8_000.0
     );
+    assert_eq!(settings.imu_sample_rate().as_hertz(), 500.0);
     assert_eq!(settings.gear_ratio().unwrap().as_f32(), 2.5);
     assert_eq!(settings.wheel_diameter().distance().as_meters(), 0.165);
     assert_eq!(settings.foc_motor_resistance().resistance().as_ohms(), 0.03);
@@ -159,6 +160,9 @@ fn typed_settings_read_write_and_persist() {
         .set_maximum_electrical_speed_brake_current(vescpkg_rs::ElectricalSpeed::new(
             vescpkg_rs::Rpm::from_revolutions_per_minute(7_000.0),
         ))
+        .unwrap();
+    settings
+        .set_imu_sample_rate(vescpkg_rs::SampleRate::from_hertz(1_000.0))
         .unwrap();
     settings
         .set_gear_ratio(vescpkg_rs::GearRatio::try_new(3.0).unwrap())
@@ -276,6 +280,7 @@ fn typed_settings_read_write_and_persist() {
             .as_revolutions_per_minute(),
         7_000.0
     );
+    assert_eq!(settings.imu_sample_rate().as_hertz(), 1_000.0);
     assert_eq!(settings.gear_ratio().unwrap().as_f32(), 3.0);
     assert_eq!(settings.wheel_diameter().distance().as_meters(), 0.2);
     assert_eq!(settings.foc_motor_resistance().resistance().as_ohms(), 0.04);
