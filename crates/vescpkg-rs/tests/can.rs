@@ -168,6 +168,12 @@ fn can_bus_copies_status_message_six() {
     assert_eq!(status.adc2().voltage().as_volts(), 2.0);
     assert_eq!(status.adc3().voltage().as_volts(), 3.0);
     assert_eq!(status.ppm().ratio().as_ratio(), 0.5);
+    assert_eq!(
+        status
+            .age_at(vescpkg_rs::TimestampTicks::from_ticks(130))
+            .as_ticks(),
+        7
+    );
 }
 
 #[test]

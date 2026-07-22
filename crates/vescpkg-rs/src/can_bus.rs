@@ -120,6 +120,7 @@ pub struct CanStatus {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CanStatus2 {
     controller: CanControllerId,
+    received_at: TimestampTicks,
     amp_hours_discharged: AmpHoursDischarged,
     amp_hours_charged: AmpHoursCharged,
 }
@@ -128,6 +129,7 @@ pub struct CanStatus2 {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CanStatus3 {
     controller: CanControllerId,
+    received_at: TimestampTicks,
     watt_hours_discharged: WattHoursDischarged,
     watt_hours_charged: WattHoursCharged,
 }
@@ -136,6 +138,7 @@ pub struct CanStatus3 {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CanStatus4 {
     controller: CanControllerId,
+    received_at: TimestampTicks,
     fet_temperature: MosfetTemperature,
     motor_temperature: MotorTemperature,
     input_current: InputCurrent,
@@ -146,6 +149,7 @@ pub struct CanStatus4 {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CanStatus5 {
     controller: CanControllerId,
+    received_at: TimestampTicks,
     input_voltage: InputVoltage,
     tachometer: TachometerSteps,
 }
@@ -154,6 +158,7 @@ pub struct CanStatus5 {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CanStatus6 {
     controller: CanControllerId,
+    received_at: TimestampTicks,
     adc_1: AdcVoltage,
     adc_2: AdcVoltage,
     adc_3: AdcVoltage,
@@ -161,6 +166,21 @@ pub struct CanStatus6 {
 }
 
 impl CanStatus6 {
+    /// Return the firmware timestamp associated with this record.
+    pub const fn received_at(self) -> TimestampTicks {
+        self.received_at
+    }
+
+    /// Return the wrapping age of this snapshot at a current firmware tick.
+    pub const fn age_at(self, now: TimestampTicks) -> SystemTicks {
+        now.wrapping_duration_since(self.received_at)
+    }
+
+    /// Return whether this snapshot is older than the supplied tick budget.
+    pub fn is_stale(self, now: TimestampTicks, max_age: SystemTicks) -> bool {
+        self.age_at(now) > max_age
+    }
+
     /// Return the controller whose status was queried.
     pub const fn controller(self) -> CanControllerId {
         self.controller
@@ -188,6 +208,21 @@ impl CanStatus6 {
 }
 
 impl CanStatus5 {
+    /// Return the firmware timestamp associated with this record.
+    pub const fn received_at(self) -> TimestampTicks {
+        self.received_at
+    }
+
+    /// Return the wrapping age of this snapshot at a current firmware tick.
+    pub const fn age_at(self, now: TimestampTicks) -> SystemTicks {
+        now.wrapping_duration_since(self.received_at)
+    }
+
+    /// Return whether this snapshot is older than the supplied tick budget.
+    pub fn is_stale(self, now: TimestampTicks, max_age: SystemTicks) -> bool {
+        self.age_at(now) > max_age
+    }
+
     /// Return the controller whose status was queried.
     pub const fn controller(self) -> CanControllerId {
         self.controller
@@ -205,6 +240,21 @@ impl CanStatus5 {
 }
 
 impl CanStatus4 {
+    /// Return the firmware timestamp associated with this record.
+    pub const fn received_at(self) -> TimestampTicks {
+        self.received_at
+    }
+
+    /// Return the wrapping age of this snapshot at a current firmware tick.
+    pub const fn age_at(self, now: TimestampTicks) -> SystemTicks {
+        now.wrapping_duration_since(self.received_at)
+    }
+
+    /// Return whether this snapshot is older than the supplied tick budget.
+    pub fn is_stale(self, now: TimestampTicks, max_age: SystemTicks) -> bool {
+        self.age_at(now) > max_age
+    }
+
     /// Return the controller whose status was queried.
     pub const fn controller(self) -> CanControllerId {
         self.controller
@@ -232,6 +282,21 @@ impl CanStatus4 {
 }
 
 impl CanStatus3 {
+    /// Return the firmware timestamp associated with this record.
+    pub const fn received_at(self) -> TimestampTicks {
+        self.received_at
+    }
+
+    /// Return the wrapping age of this snapshot at a current firmware tick.
+    pub const fn age_at(self, now: TimestampTicks) -> SystemTicks {
+        now.wrapping_duration_since(self.received_at)
+    }
+
+    /// Return whether this snapshot is older than the supplied tick budget.
+    pub fn is_stale(self, now: TimestampTicks, max_age: SystemTicks) -> bool {
+        self.age_at(now) > max_age
+    }
+
     /// Return the controller whose status was queried.
     pub const fn controller(self) -> CanControllerId {
         self.controller
@@ -249,6 +314,21 @@ impl CanStatus3 {
 }
 
 impl CanStatus2 {
+    /// Return the firmware timestamp associated with this record.
+    pub const fn received_at(self) -> TimestampTicks {
+        self.received_at
+    }
+
+    /// Return the wrapping age of this snapshot at a current firmware tick.
+    pub const fn age_at(self, now: TimestampTicks) -> SystemTicks {
+        now.wrapping_duration_since(self.received_at)
+    }
+
+    /// Return whether this snapshot is older than the supplied tick budget.
+    pub fn is_stale(self, now: TimestampTicks, max_age: SystemTicks) -> bool {
+        self.age_at(now) > max_age
+    }
+
     /// Return the controller whose status was queried.
     pub const fn controller(self) -> CanControllerId {
         self.controller
@@ -650,6 +730,7 @@ impl CanBus {
         let raw = unsafe { crate::ffi::can_status_msg_2_id(i32::from(controller.as_u8())) }?;
         Some(CanStatus2 {
             controller,
+            received_at: TimestampTicks::from_ticks(raw.rx_time),
             amp_hours_discharged: AmpHoursDischarged::new(Charge::from_amp_hours(raw.amp_hours)),
             amp_hours_charged: AmpHoursCharged::new(Charge::from_amp_hours(raw.amp_hours_charged)),
         })
@@ -660,6 +741,7 @@ impl CanBus {
         let raw = unsafe { crate::ffi::can_status_msg_3_id(i32::from(controller.as_u8())) }?;
         Some(CanStatus3 {
             controller,
+            received_at: TimestampTicks::from_ticks(raw.rx_time),
             watt_hours_discharged: WattHoursDischarged::new(Energy::from_watt_hours(
                 raw.watt_hours,
             )),
@@ -674,6 +756,7 @@ impl CanBus {
         let raw = unsafe { crate::ffi::can_status_msg_4_id(i32::from(controller.as_u8())) }?;
         Some(CanStatus4 {
             controller,
+            received_at: TimestampTicks::from_ticks(raw.rx_time),
             fet_temperature: MosfetTemperature::new(crate::Temperature::from_degrees_celsius(
                 raw.temp_fet,
             )),
@@ -690,6 +773,7 @@ impl CanBus {
         let raw = unsafe { crate::ffi::can_status_msg_5_id(i32::from(controller.as_u8())) }?;
         Some(CanStatus5 {
             controller,
+            received_at: TimestampTicks::from_ticks(raw.rx_time),
             input_voltage: InputVoltage::new(crate::Voltage::from_volts(raw.v_in)),
             tachometer: TachometerSteps::new(crate::units::TachometerSteps::from_steps(
                 raw.tacho_value,
@@ -702,6 +786,7 @@ impl CanBus {
         let raw = unsafe { crate::ffi::can_status_msg_6_id(i32::from(controller.as_u8())) }?;
         Some(CanStatus6 {
             controller,
+            received_at: TimestampTicks::from_ticks(raw.rx_time),
             adc_1: AdcVoltage::new(crate::Voltage::from_volts(raw.adc_1)),
             adc_2: AdcVoltage::new(crate::Voltage::from_volts(raw.adc_2)),
             adc_3: AdcVoltage::new(crate::Voltage::from_volts(raw.adc_3)),
