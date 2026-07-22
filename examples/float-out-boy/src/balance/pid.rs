@@ -122,7 +122,7 @@ impl PitchRate {
         // from the sign of `rate_p`.
         let scale = ScaleSide::from_current(rate_p).scale(accel_scale, brake_scale);
 
-        rate_p * scale.value()
+        rate_p.scaled_by(scale)
     }
 }
 
@@ -215,14 +215,14 @@ impl ScalePair {
     fn smoothed_angle_proportional(self, current: PidScale) -> PidScale {
         // C map: `third_party/float-out-boy/src/pid.c:51-66` uses a 1% target / 99%
         // previous one-pole filter for all PID scale coefficients.
-        PidScale::new(self.angle_proportional.value() * 0.01 + current.value() * 0.99)
+        current.lerp(self.angle_proportional, 0.01)
     }
 
     #[inline(always)]
     fn smoothed_rate_damping(self, current: PidScale) -> PidScale {
         // C map: `third_party/float-out-boy/src/pid.c:51-66` uses the same 1% / 99%
         // filter for angle-P and rate-P scale coefficients.
-        PidScale::new(self.rate_damping.value() * 0.01 + current.value() * 0.99)
+        current.lerp(self.rate_damping, 0.01)
     }
 }
 

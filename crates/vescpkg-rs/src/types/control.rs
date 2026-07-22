@@ -63,6 +63,20 @@ impl PidScale {
     pub const fn scaled_by(self, scale: Self) -> Self {
         Self(self.0 * scale.0)
     }
+
+    /// Move this scale toward a target by a dimensionless fraction.
+    #[inline(always)]
+    pub const fn lerp(self, target: Self, amount: f32) -> Self {
+        Self(self.0 + (target.0 - self.0) * amount)
+    }
+}
+
+impl MotorCurrent {
+    /// Apply a dimensionless control-gain scale without erasing the current type.
+    #[inline(always)]
+    pub const fn scaled_by(self, scale: PidScale) -> Self {
+        Self::new(Current::from_amps(self.current().as_amps() * scale.0))
+    }
 }
 
 /// Board-angle error to motor-current gain.
@@ -120,6 +134,12 @@ impl RateCurrentGain {
         Self(amps_per_degree_per_second)
     }
 
+    /// Apply a dimensionless control-gain scale.
+    #[inline(always)]
+    pub const fn scaled_by(self, scale: PidScale) -> Self {
+        Self(self.0 * scale.0)
+    }
+
     /// Return the gain in amps per degree per second.
     #[inline(always)]
     pub const fn as_amps_per_degree_per_second(self) -> f32 {
@@ -175,5 +195,32 @@ impl Mul<IntegralCurrentGain> for AngleDegrees {
         // C map: Float Out Boy accumulates degree error and applies `ki` at
         // `third_party/float-out-boy/src/pid.c:40-73`.
         MotorCurrent::new(Current::from_amps(self.as_degrees() * rhs.0))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MotorCurrent, PidScale, RateCurrentGain};
+    use crate::Current;
+
+    #[test]
+    fn typed_control_arithmetic_preserves_domain_values() {
+        assert_eq!(
+            RateCurrentGain::new(2.0)
+                .scaled_by(PidScale::new(0.25))
+                .as_amps_per_degree_per_second(),
+            0.5
+        );
+        assert_eq!(
+            PidScale::new(1.0).lerp(PidScale::new(3.0), 0.01),
+            PidScale::new(1.02)
+        );
+        assert_eq!(
+            MotorCurrent::new(Current::from_amps(8.0))
+                .scaled_by(PidScale::new(0.25))
+                .current()
+                .as_amps(),
+            2.0
+        );
     }
 }
