@@ -297,6 +297,27 @@ impl FirmwareSettings {
         ))
     }
 
+    /// Read the configured electrical-speed ramp-start threshold.
+    pub fn electrical_speed_ramp_start(self) -> ElectricalSpeed {
+        ElectricalSpeed::new(crate::Rpm::from_revolutions_per_minute(
+            self.get_float(FirmwareFloatSetting::ElectricalSpeedRampStart),
+        ))
+    }
+
+    /// Read the configured maximum electrical speed used during braking.
+    pub fn maximum_electrical_speed_brake(self) -> ElectricalSpeed {
+        ElectricalSpeed::new(crate::Rpm::from_revolutions_per_minute(
+            self.get_float(FirmwareFloatSetting::MaximumElectricalSpeedBrake),
+        ))
+    }
+
+    /// Read the configured maximum electrical speed used during brake-current control.
+    pub fn maximum_electrical_speed_brake_current(self) -> ElectricalSpeed {
+        ElectricalSpeed::new(crate::Rpm::from_revolutions_per_minute(
+            self.get_float(FirmwareFloatSetting::MaximumElectricalSpeedBrakeCurrent),
+        ))
+    }
+
     /// Read the configured positive gear ratio, rejecting malformed firmware state.
     pub fn gear_ratio(self) -> Result<GearRatio, SettingsError> {
         GearRatio::try_new(self.get_float(FirmwareFloatSetting::GearRatio))
@@ -379,6 +400,39 @@ impl FirmwareSettings {
     pub fn set_maximum_electrical_speed(self, speed: ElectricalSpeed) -> Result<(), SettingsError> {
         self.set_float(
             FirmwareFloatSetting::MaximumElectricalSpeed,
+            speed.rpm().as_revolutions_per_minute(),
+        )
+    }
+
+    /// Update the live electrical-speed ramp-start threshold; persistence still requires [`Self::store`].
+    pub fn set_electrical_speed_ramp_start(
+        self,
+        speed: ElectricalSpeed,
+    ) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::ElectricalSpeedRampStart,
+            speed.rpm().as_revolutions_per_minute(),
+        )
+    }
+
+    /// Update the live braking electrical-speed ceiling; persistence still requires [`Self::store`].
+    pub fn set_maximum_electrical_speed_brake(
+        self,
+        speed: ElectricalSpeed,
+    ) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::MaximumElectricalSpeedBrake,
+            speed.rpm().as_revolutions_per_minute(),
+        )
+    }
+
+    /// Update the live brake-current electrical-speed ceiling; persistence still requires [`Self::store`].
+    pub fn set_maximum_electrical_speed_brake_current(
+        self,
+        speed: ElectricalSpeed,
+    ) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::MaximumElectricalSpeedBrakeCurrent,
             speed.rpm().as_revolutions_per_minute(),
         )
     }
