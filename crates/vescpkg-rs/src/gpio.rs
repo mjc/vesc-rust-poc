@@ -3,7 +3,9 @@
 use core::cell::Cell;
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use vescpkg_rs_sys::{VescPin, VescPinMode};
+use vescpkg_rs_sys::VescPin;
+#[cfg(not(test))]
+use vescpkg_rs_sys::VescPinMode;
 
 use crate::types::AdcVoltage;
 use crate::units::Voltage;
