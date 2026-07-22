@@ -364,3 +364,21 @@ fn vesc_if_capabilities_expose_named_subsystems_without_raw_slot_names() {
     assert_eq!(capabilities.nvm().unwrap().subsystem(), VescIfSubsystem::Nvm);
     assert_eq!(capabilities.audio().unwrap_err().capability(), "FOC audio");
 }
+
+#[test]
+fn vesc_if_capabilities_keep_required_checks_and_revision_observations_separate() {
+    let mut words = [1_usize; VescIfAbi::FIELD_COUNT];
+    words[VescIfAbi::CAN_TRANSMIT_SID.slot_index()] = 0;
+    words[VescIfAbi::THREAD_SET_PRIORITY.slot_index()] = 0;
+    let capabilities = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
+
+    assert_eq!(
+        capabilities.require_can().unwrap_err(),
+        AbiError::MissingRequired {
+            capability: "CAN",
+            slot: VescIfAbi::CAN_TRANSMIT_SID,
+        }
+    );
+    assert_eq!(capabilities.revision(), Stm32AbiRevision::UnknownCompatible);
+    assert!(capabilities.require_settings().is_ok());
+}
