@@ -1,12 +1,13 @@
 #![cfg(feature = "test-support")]
 //! Integration coverage for typed firmware IMU vectors.
 
-use vescpkg_rs::{Imu, test_support::FirmwareTest};
+use vescpkg_rs::{AngleRadians, Imu, ImuYaw, test_support::FirmwareTest};
 
 #[test]
 fn firmware_imu_exposes_vectors_and_derotated_samples() {
     let firmware = FirmwareTest::new();
     let imu = firmware.imu();
+    imu.set_yaw(ImuYaw::new(AngleRadians::from_radians(0.5)));
 
     assert_eq!(
         imu.acceleration().map_axes(|x, y, z| [
