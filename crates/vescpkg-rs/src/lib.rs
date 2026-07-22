@@ -63,7 +63,8 @@ pub(crate) mod ffi {
     };
     #[cfg(any(test, not(feature = "test-support")))]
     pub use vescpkg_rs_sys::raw::{
-        can_set_current, can_set_duty, can_status_msg_id, can_transmit_eid, can_transmit_sid,
+        can_set_current, can_set_duty, can_set_pos, can_set_rpm, can_status_msg_id,
+        can_transmit_eid, can_transmit_sid,
     };
     pub use vescpkg_rs_sys::{AppDataHandler, LibInfo, NativeImage};
 
@@ -71,8 +72,9 @@ pub(crate) mod ffi {
     use crate::test_ffi as selected_ffi;
     #[allow(unused_imports)]
     pub use selected_ffi::{
-        can_set_current, can_set_duty, can_status_msg_id, can_transmit_eid, can_transmit_sid, f_b,
-        f_cons, f_float, f_i32, f_i64, f_lbm_array, f_sym, f_u32, f_u64, foc_get_id,
+        can_set_current, can_set_duty, can_set_pos, can_set_rpm, can_status_msg_id,
+        can_transmit_eid, can_transmit_sid, f_b, f_cons, f_float, f_i32, f_i64, f_lbm_array, f_sym,
+        f_u32, f_u64, foc_get_id,
         get_cfg_float, get_cfg_int, imu_get_gyro, imu_get_pitch, imu_get_roll, imu_get_yaw,
         imu_startup_done, lbm_block_ctx_from_extension, lbm_car, lbm_cdr, lbm_cons,
         lbm_create_byte_array, lbm_dec_as_float, lbm_dec_as_i32, lbm_dec_as_u32, lbm_dec_char,

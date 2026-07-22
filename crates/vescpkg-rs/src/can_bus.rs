@@ -2,7 +2,7 @@
 
 use crate::types::{
     CanControllerId, CanExtendedId, CanPayloadLen, CanStandardId, DutyCycle, ElectricalSpeed,
-    MotorCurrent,
+    MotorCurrent, PidPosition,
 };
 use crate::units::{Current, Rpm, SignedRatio, TimestampTicks};
 
@@ -118,6 +118,33 @@ impl CanBus {
         duty: DutyCycle,
     ) -> Result<(), CanError> {
         unsafe { crate::ffi::can_set_duty(controller.as_u8(), duty.ratio().as_ratio()) }
+            .map(|_| ())
+            .ok_or(CanError::Unsupported)
+    }
+
+    /// Send a remote motor electrical-speed command.
+    pub fn set_rpm(
+        &self,
+        controller: CanControllerId,
+        rpm: ElectricalSpeed,
+    ) -> Result<(), CanError> {
+        unsafe {
+            crate::ffi::can_set_rpm(
+                controller.as_u8(),
+                rpm.rpm().as_revolutions_per_minute(),
+            )
+        }
+        .map(|_| ())
+        .ok_or(CanError::Unsupported)
+    }
+
+    /// Send a remote motor position command.
+    pub fn set_position(
+        &self,
+        controller: CanControllerId,
+        position: PidPosition,
+    ) -> Result<(), CanError> {
+        unsafe { crate::ffi::can_set_pos(controller.as_u8(), position.angle().as_degrees()) }
             .map(|_| ())
             .ok_or(CanError::Unsupported)
     }

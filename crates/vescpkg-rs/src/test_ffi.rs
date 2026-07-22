@@ -652,6 +652,14 @@ pub unsafe fn can_set_current(_controller: u8, _current: f32) -> Option<()> {
     Some(())
 }
 
+pub unsafe fn can_set_rpm(_controller: u8, _rpm: f32) -> Option<()> {
+    Some(())
+}
+
+pub unsafe fn can_set_pos(_controller: u8, _position: f32) -> Option<()> {
+    Some(())
+}
+
 pub unsafe fn can_status_msg_id(_id: i32) -> Option<CanStatusMsg> {
     Some(CAN_STATUS)
 }
