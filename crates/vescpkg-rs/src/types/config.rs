@@ -134,6 +134,38 @@ impl CanBaudRate {
     }
 }
 
+/// Firmware AHRS algorithm selector from the VESC IMU configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ImuAhrsMode {
+    /// Madgwick attitude estimator.
+    Madgwick,
+    /// Mahony attitude estimator.
+    Mahony,
+    /// Madgwick fusion mode.
+    MadgwickFusion,
+}
+
+impl ImuAhrsMode {
+    /// Decode the VESC `AHRS_MODE` enum value.
+    pub const fn from_raw(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(Self::Madgwick),
+            1 => Some(Self::Mahony),
+            2 => Some(Self::MadgwickFusion),
+            _ => None,
+        }
+    }
+
+    /// Encode the VESC `AHRS_MODE` enum value.
+    pub const fn as_u8(self) -> u8 {
+        match self {
+            Self::Madgwick => 0,
+            Self::Mahony => 1,
+            Self::MadgwickFusion => 2,
+        }
+    }
+}
+
 macro_rules! positive_count_type {
     ($name:ident, $error:ident, $doc:literal, $error_doc:literal) => {
         #[doc = $doc]

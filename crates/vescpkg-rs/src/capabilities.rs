@@ -4,7 +4,7 @@ use crate::ffi;
 use crate::{
     AngleDegrees, BatteryCellCount, BatteryChemistry, CanBaudRate, CanBus, Charge, Current,
     DutyCycleLimit, DutyCycleMinimum, ElectricalSpeed, FocAudio, FocMotorFluxLinkage,
-    FocMotorInductance, FocMotorResistance, GearRatio, InputCurrent, InputVoltage,
+    FocMotorInductance, FocMotorResistance, GearRatio, ImuAhrsMode, InputCurrent, InputVoltage,
     MotorCurrentLimit, MotorPoleCount, Nvm, NvmCapacity, Ratio, TemperatureLimitEnd,
     TemperatureLimitStart, Uart, Voltage, WheelDiameter,
 };
@@ -760,6 +760,12 @@ impl FirmwareSettings {
             .ok_or(SettingsError::InvalidValue)
     }
 
+    /// Read the configured firmware AHRS algorithm with semantic validation.
+    pub fn imu_ahrs_mode(self) -> Result<ImuAhrsMode, SettingsError> {
+        ImuAhrsMode::from_raw(self.get_int(FirmwareIntSetting::ImuAhrsMode))
+            .ok_or(SettingsError::InvalidValue)
+    }
+
     /// Write an integer setting to live firmware state.
     pub fn set_int(self, setting: FirmwareIntSetting, value: i32) -> Result<(), SettingsError> {
         unsafe { ffi::set_cfg_int(setting.raw(), value) }
@@ -799,6 +805,11 @@ impl FirmwareSettings {
             FirmwareIntSetting::AppCanBaudRate,
             i32::from(baud_rate.as_u8()),
         )
+    }
+
+    /// Write a checked firmware AHRS algorithm; persistence still requires [`Self::store`].
+    pub fn set_imu_ahrs_mode(self, mode: ImuAhrsMode) -> Result<(), SettingsError> {
+        self.set_int(FirmwareIntSetting::ImuAhrsMode, i32::from(mode.as_u8()))
     }
 
     /// Persist all accepted setting writes in firmware storage.

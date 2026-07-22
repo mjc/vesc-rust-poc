@@ -149,6 +149,7 @@ static BATTERY_CELL_COUNT: AtomicI32 = AtomicI32::new(0);
 static BATTERY_TYPE: AtomicI32 = AtomicI32::new(0);
 static APP_CAN_BAUD_RATE: AtomicI32 = AtomicI32::new(0);
 static APP_CAN_MODE: AtomicI32 = AtomicI32::new(0);
+static IMU_AHRS_MODE: AtomicI32 = AtomicI32::new(0);
 static MOTOR_POLE_COUNT: AtomicI32 = AtomicI32::new(0);
 static CONFIG_WRITE_OK: AtomicBool = AtomicBool::new(true);
 static CONFIG_STORE_OK: AtomicBool = AtomicBool::new(true);
@@ -421,6 +422,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     BATTERY_TYPE.store(0, Ordering::Relaxed);
     APP_CAN_BAUD_RATE.store(2, Ordering::Relaxed);
     APP_CAN_MODE.store(2, Ordering::Relaxed);
+    IMU_AHRS_MODE.store(0, Ordering::Relaxed);
     MOTOR_POLE_COUNT.store(14, Ordering::Relaxed);
     CONFIG_WRITE_OK.store(true, Ordering::Relaxed);
     CONFIG_STORE_OK.store(true, Ordering::Relaxed);
@@ -1558,6 +1560,7 @@ pub unsafe fn get_cfg_int(param: i32) -> i32 {
     match param {
         14 => APP_CAN_MODE.load(Ordering::Relaxed),
         15 => APP_CAN_BAUD_RATE.load(Ordering::Relaxed),
+        30 => IMU_AHRS_MODE.load(Ordering::Relaxed),
         39 => MOTOR_POLE_COUNT.load(Ordering::Relaxed),
         42 => BATTERY_TYPE.load(Ordering::Relaxed),
         43 => BATTERY_CELL_COUNT.load(Ordering::Relaxed),
@@ -1615,6 +1618,7 @@ pub unsafe fn set_cfg_int(param: i32, value: i32) -> bool {
     match param {
         14 => APP_CAN_MODE.store(value, Ordering::Relaxed),
         15 => APP_CAN_BAUD_RATE.store(value, Ordering::Relaxed),
+        30 => IMU_AHRS_MODE.store(value, Ordering::Relaxed),
         39 => MOTOR_POLE_COUNT.store(value, Ordering::Relaxed),
         42 => BATTERY_TYPE.store(value, Ordering::Relaxed),
         43 => BATTERY_CELL_COUNT.store(value, Ordering::Relaxed),
