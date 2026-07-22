@@ -113,6 +113,8 @@ pub type LbmDecAsU32 = unsafe extern "C" fn(LbmValue) -> u32;
 pub type LbmDecAsI32 = unsafe extern "C" fn(LbmValue) -> i32;
 /// `lbm_dec_char` function-pointer ABI.
 pub type LbmDecChar = unsafe extern "C" fn(LbmValue) -> u8;
+/// `lbm_dec_str` function-pointer ABI.
+pub type LbmDecStr = unsafe extern "C" fn(LbmValue) -> *mut c_char;
 /// `lbm_dec_sym` function-pointer ABI.
 pub type LbmDecSym = unsafe extern "C" fn(LbmValue) -> LbmUint;
 /// `lbm_is_byte_array` function-pointer ABI.
@@ -125,6 +127,39 @@ pub type LbmIsNumber = unsafe extern "C" fn(LbmValue) -> bool;
 pub type LbmIsChar = unsafe extern "C" fn(LbmValue) -> bool;
 /// `lbm_is_symbol` function-pointer ABI.
 pub type LbmIsSymbol = unsafe extern "C" fn(LbmValue) -> bool;
+/// `lbm_is_symbol_nil` function-pointer ABI.
+pub type LbmIsSymbolNil = unsafe extern "C" fn(LbmUint) -> bool;
+/// `lbm_is_symbol_true` function-pointer ABI.
+pub type LbmIsSymbolTrue = unsafe extern "C" fn(LbmUint) -> bool;
+/// `lbm_start_flatten` function-pointer ABI.
+pub type LbmStartFlatten =
+    unsafe extern "C" fn(*mut super::types::ExpressFlatValueRaw, usize) -> bool;
+/// `lbm_finish_flatten` function-pointer ABI.
+pub type LbmFinishFlatten = unsafe extern "C" fn(*mut super::types::ExpressFlatValueRaw) -> bool;
+/// `f_cons` function-pointer ABI.
+pub type FCons = unsafe extern "C" fn(*mut super::types::ExpressFlatValueRaw) -> bool;
+/// `f_sym` function-pointer ABI.
+pub type FSym = unsafe extern "C" fn(*mut super::types::ExpressFlatValueRaw, LbmUint) -> bool;
+/// `f_i` function-pointer ABI.
+pub type FI = unsafe extern "C" fn(*mut super::types::ExpressFlatValueRaw, LbmInt) -> bool;
+/// `f_b` function-pointer ABI.
+pub type FB = unsafe extern "C" fn(*mut super::types::ExpressFlatValueRaw, u8) -> bool;
+/// `f_i32` function-pointer ABI.
+pub type FI32 = unsafe extern "C" fn(*mut super::types::ExpressFlatValueRaw, i32) -> bool;
+/// `f_u32` function-pointer ABI.
+pub type FU32 = unsafe extern "C" fn(*mut super::types::ExpressFlatValueRaw, u32) -> bool;
+/// `f_float` function-pointer ABI.
+pub type FFloat = unsafe extern "C" fn(*mut super::types::ExpressFlatValueRaw, f32) -> bool;
+/// `f_i64` function-pointer ABI.
+pub type FI64 = unsafe extern "C" fn(*mut super::types::ExpressFlatValueRaw, i64) -> bool;
+/// `f_u64` function-pointer ABI.
+pub type FU64 = unsafe extern "C" fn(*mut super::types::ExpressFlatValueRaw, u64) -> bool;
+/// `f_lbm_array` function-pointer ABI.
+pub type FLbmArray =
+    unsafe extern "C" fn(*mut super::types::ExpressFlatValueRaw, u32, *mut u8) -> bool;
+/// `lbm_unblock_ctx` function-pointer ABI.
+pub type LbmUnblockCtx =
+    unsafe extern "C" fn(LbmCid, *mut super::types::ExpressFlatValueRaw) -> bool;
 /// `lbm_block_ctx_from_extension` function-pointer ABI.
 pub type LbmBlockCtxFromExtension = unsafe extern "C" fn();
 /// `lbm_unblock_ctx_unboxed` function-pointer ABI.
