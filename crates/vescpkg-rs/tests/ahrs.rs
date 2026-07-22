@@ -40,4 +40,6 @@ fn mahony_ahrs_integrates_rate_and_can_reset() {
     assert_eq!(quaternion.x(), ImuQuaternionX::new(0.0));
     assert_eq!(quaternion.y(), ImuQuaternionY::new(0.0));
     assert_eq!(quaternion.z(), ImuQuaternionZ::new(0.0));
+    assert!(!ahrs.set_gains(f32::NAN, 0.1));
+    assert!(!ahrs.set_gains(1.0, -0.1));
 }
