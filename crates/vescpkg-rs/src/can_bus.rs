@@ -47,6 +47,8 @@ pub trait CanReceiverHandler {
 
 static SID_RECEIVER_REGISTERED: AtomicBool = AtomicBool::new(false);
 static EID_RECEIVER_REGISTERED: AtomicBool = AtomicBool::new(false);
+static SID_RECEIVER_ACTIVE: AtomicBool = AtomicBool::new(false);
+static EID_RECEIVER_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 /// Failure returned by a CAN operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -304,6 +306,11 @@ pub struct CanReceiverGuard {
 
 impl Drop for CanReceiverGuard {
     fn drop(&mut self) {
+        if self.extended {
+            EID_RECEIVER_ACTIVE.store(false, Ordering::Release);
+        } else {
+            SID_RECEIVER_ACTIVE.store(false, Ordering::Release);
+        }
         let cleared = if self.extended {
             unsafe { crate::ffi::can_set_eid_callback(None) }
         } else {
@@ -354,6 +361,7 @@ impl CanBus {
             SID_RECEIVER_REGISTERED.store(false, Ordering::Release);
             return Err(CanError::Unsupported);
         }
+        SID_RECEIVER_ACTIVE.store(true, Ordering::Release);
         Ok(CanReceiverGuard { extended: false })
     }
 
@@ -387,6 +395,7 @@ impl CanBus {
             EID_RECEIVER_REGISTERED.store(false, Ordering::Release);
             return Err(CanError::Unsupported);
         }
+        EID_RECEIVER_ACTIVE.store(true, Ordering::Release);
         Ok(CanReceiverGuard { extended: true })
     }
 
@@ -607,6 +616,9 @@ unsafe extern "C" fn standard_receiver<H: CanReceiverHandler + 'static>(
     data: *mut u8,
     len: u8,
 ) -> bool {
+    if !SID_RECEIVER_ACTIVE.load(Ordering::Acquire) {
+        return false;
+    }
     let Ok(id) = CanStandardId::try_new(u16::try_from(id).unwrap_or(u16::MAX)) else {
         return false;
     };
@@ -618,6 +630,9 @@ unsafe extern "C" fn extended_receiver<H: CanReceiverHandler + 'static>(
     data: *mut u8,
     len: u8,
 ) -> bool {
+    if !EID_RECEIVER_ACTIVE.load(Ordering::Acquire) {
+        return false;
+    }
     let Ok(id) = CanExtendedId::try_new(id) else {
         return false;
     };
@@ -646,14 +661,17 @@ fn dispatch_receiver<H: CanReceiverHandler + 'static>(
 pub(crate) fn reset_receiver_registrations() {
     SID_RECEIVER_REGISTERED.store(false, Ordering::Release);
     EID_RECEIVER_REGISTERED.store(false, Ordering::Release);
+    SID_RECEIVER_ACTIVE.store(false, Ordering::Release);
+    EID_RECEIVER_ACTIVE.store(false, Ordering::Release);
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        CanExtendedId, CanReceiverHandler, CanReceiverId, CanStandardId, extended_receiver,
-        standard_receiver,
+        CanExtendedId, CanReceiverHandler, CanReceiverId, CanStandardId, EID_RECEIVER_ACTIVE,
+        SID_RECEIVER_ACTIVE, extended_receiver, standard_receiver,
     };
+    use core::sync::atomic::Ordering;
 
     struct StandardHandler;
 
@@ -675,6 +693,8 @@ mod tests {
 
     #[test]
     fn typed_receiver_trampolines_validate_ids_lengths_and_pointers() {
+        SID_RECEIVER_ACTIVE.store(true, Ordering::Release);
+        EID_RECEIVER_ACTIVE.store(true, Ordering::Release);
         let mut standard = [1, 2, 3];
         assert!(unsafe {
             standard_receiver::<StandardHandler>(0x123, standard.as_mut_ptr(), standard.len() as u8)
@@ -700,5 +720,9 @@ mod tests {
         let extended_id = CanReceiverId::Extended(CanExtendedId::try_new(0x12_3456).unwrap());
         assert_eq!(extended_id.as_u32(), 0x12_3456);
         assert!(extended_id.is_extended());
+        SID_RECEIVER_ACTIVE.store(false, Ordering::Release);
+        assert!(!unsafe { standard_receiver::<StandardHandler>(0x123, standard.as_mut_ptr(), 3) });
+        SID_RECEIVER_ACTIVE.store(false, Ordering::Release);
+        EID_RECEIVER_ACTIVE.store(false, Ordering::Release);
     }
 }

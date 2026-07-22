@@ -8,6 +8,7 @@ use vescpkg_rs_sys::raw::{PACKET_BUFFER_LEN, PACKET_MAX_PL_LEN, PacketState};
 const MAX_PACKET_BYTES: usize = PACKET_MAX_PL_LEN;
 
 static PACKET_CODEC_REGISTERED: AtomicBool = AtomicBool::new(false);
+static PACKET_CODEC_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 /// Failure returned by packet framing operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,6 +70,7 @@ impl<H: PacketHandler> PacketCodec<H> {
             crate::ffi::packet_init(packet_send::<H>, packet_process::<H>, &mut self.state)
         };
         if registered {
+            PACKET_CODEC_ACTIVE.store(true, Ordering::Release);
             Ok(PacketRegistration { codec: self })
         } else {
             PACKET_CODEC_REGISTERED.store(false, Ordering::Release);
@@ -110,12 +112,16 @@ impl<H: PacketHandler> PacketRegistration<'_, H> {
 
 impl<H: PacketHandler> Drop for PacketRegistration<'_, H> {
     fn drop(&mut self) {
+        PACKET_CODEC_ACTIVE.store(false, Ordering::Release);
         let _ = unsafe { crate::ffi::packet_reset(&mut self.codec.state) };
         PACKET_CODEC_REGISTERED.store(false, Ordering::Release);
     }
 }
 
 unsafe extern "C" fn packet_send<H: PacketHandler>(data: *mut u8, len: u32) {
+    if !PACKET_CODEC_ACTIVE.load(Ordering::Acquire) {
+        return;
+    }
     let len = len as usize;
     if data.is_null() || len > MAX_PACKET_BYTES {
         return;
@@ -125,10 +131,53 @@ unsafe extern "C" fn packet_send<H: PacketHandler>(data: *mut u8, len: u32) {
 }
 
 unsafe extern "C" fn packet_process<H: PacketHandler>(data: *mut u8, len: u32) {
+    if !PACKET_CODEC_ACTIVE.load(Ordering::Acquire) {
+        return;
+    }
     let len = len as usize;
     if data.is_null() || len > MAX_PACKET_BYTES {
         return;
     }
     let data = unsafe { core::slice::from_raw_parts(data, len) };
     H::process(data);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PACKET_CODEC_ACTIVE, PacketHandler, packet_process, packet_send};
+    use core::sync::atomic::{AtomicUsize, Ordering};
+
+    static SEND_CALLS: AtomicUsize = AtomicUsize::new(0);
+    static PROCESS_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    struct Handler;
+
+    impl PacketHandler for Handler {
+        fn send(_data: &[u8]) {
+            SEND_CALLS.fetch_add(1, Ordering::Relaxed);
+        }
+
+        fn process(_data: &[u8]) {
+            PROCESS_CALLS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    #[test]
+    fn late_packet_callbacks_after_drop_fail_closed() {
+        SEND_CALLS.store(0, Ordering::Relaxed);
+        PROCESS_CALLS.store(0, Ordering::Relaxed);
+        PACKET_CODEC_ACTIVE.store(true, Ordering::Release);
+        let mut data = [1, 2];
+        unsafe {
+            packet_send::<Handler>(data.as_mut_ptr(), data.len() as u32);
+            packet_process::<Handler>(data.as_mut_ptr(), data.len() as u32);
+        }
+        PACKET_CODEC_ACTIVE.store(false, Ordering::Release);
+        unsafe {
+            packet_send::<Handler>(data.as_mut_ptr(), data.len() as u32);
+            packet_process::<Handler>(data.as_mut_ptr(), data.len() as u32);
+        }
+        assert_eq!(SEND_CALLS.load(Ordering::Relaxed), 1);
+        assert_eq!(PROCESS_CALLS.load(Ordering::Relaxed), 1);
+    }
 }

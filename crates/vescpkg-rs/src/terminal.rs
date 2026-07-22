@@ -5,6 +5,7 @@ use core::marker::PhantomData;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 static TERMINAL_OWNED: AtomicBool = AtomicBool::new(false);
+static TERMINAL_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 /// Failure returned by terminal registration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,6 +87,7 @@ impl Terminal {
             TERMINAL_OWNED.store(false, Ordering::Release);
             return Err(TerminalError::Unavailable);
         }
+        TERMINAL_ACTIVE.store(true, Ordering::Release);
         Ok(TerminalRegistration {
             _handler: PhantomData,
             _borrowed_strings: PhantomData,
@@ -95,6 +97,7 @@ impl Terminal {
 
 impl<H: TerminalHandler> Drop for TerminalRegistration<'_, H> {
     fn drop(&mut self) {
+        TERMINAL_ACTIVE.store(false, Ordering::Release);
         // A failed unregister leaves the provider callback live, so fail closed
         // instead of allowing a later registration to replace it.
         if unsafe { crate::ffi::terminal_unregister_callback(callback::<H>) } {
@@ -104,6 +107,9 @@ impl<H: TerminalHandler> Drop for TerminalRegistration<'_, H> {
 }
 
 unsafe extern "C" fn callback<H: TerminalHandler>(arg_count: i32, argv: *const *const c_char) {
+    if !TERMINAL_ACTIVE.load(Ordering::Acquire) {
+        return;
+    }
     if arg_count < 0 {
         return;
     }
@@ -113,6 +119,32 @@ unsafe extern "C" fn callback<H: TerminalHandler>(arg_count: i32, argv: *const *
         length: arg_count as usize,
         _lifetime: PhantomData,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TERMINAL_ACTIVE, TerminalArgs, TerminalHandler, callback};
+    use core::sync::atomic::{AtomicUsize, Ordering};
+
+    static CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    struct Handler;
+
+    impl TerminalHandler for Handler {
+        fn run(_args: TerminalArgs<'_>) {
+            CALLS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    #[test]
+    fn late_terminal_callback_after_drop_fails_closed() {
+        CALLS.store(0, Ordering::Relaxed);
+        TERMINAL_ACTIVE.store(true, Ordering::Release);
+        unsafe { callback::<Handler>(0, core::ptr::null()) };
+        TERMINAL_ACTIVE.store(false, Ordering::Release);
+        unsafe { callback::<Handler>(0, core::ptr::null()) };
+        assert_eq!(CALLS.load(Ordering::Relaxed), 1);
+    }
 }
 
 impl crate::Firmware {
