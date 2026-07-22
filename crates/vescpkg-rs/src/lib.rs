@@ -130,7 +130,8 @@ pub(crate) mod ffi {
             f_b, f_cons, f_float, f_i32, f_i64, f_lbm_array, f_sym, f_u32, f_u64, io_read,
             lbm_block_ctx_from_extension, lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true,
             lbm_finish_flatten,
-            lbm_get_current_cid, lbm_start_flatten, lbm_unblock_ctx, lbm_unblock_ctx_unboxed,
+            can_status_msg_id, can_transmit_eid, can_transmit_sid, lbm_get_current_cid,
+            lbm_start_flatten, lbm_unblock_ctx, lbm_unblock_ctx_unboxed,
         };
     }
     pub use selected_ffi::*;
@@ -151,6 +152,7 @@ pub use vescpkg_rs_units::{
 #[cfg(feature = "alloc")]
 pub use alloc::VescAllocator;
 pub use eeprom::{CustomEeprom, CustomEepromAddress, EepromWord};
+pub use can_bus::{CanBus, CanError, CanStatus};
 pub use extension::{ExtensionDescriptor, ExtensionName, ExtensionRegistration};
 pub use extension::{
     LbmExtension, LispArgs, LispContextId, LispFlatValue, LispIntegerError, LispMessageError,
@@ -184,6 +186,8 @@ pub use thread::{
 
 /// GPIO bindings and convenience wrappers for package code.
 mod gpio;
+/// CAN transport and status snapshot helpers for package code.
+mod can_bus;
 /// IMU bindings and convenience wrappers for package code.
 mod imu;
 /// Device package entrypoint and loader-hook helpers.
@@ -208,8 +212,9 @@ pub mod prelude {
         SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
     };
     pub use crate::{
-        AnalogPin, AppDataHandler, AppDataSendError, ConfigBytes, ConfigXml, DigitalOutputLevel,
-        DigitalPin, ExtensionDescriptor, ExtensionName, ExtensionRegistration, Firmware,
+        AnalogPin, AppDataHandler, AppDataSendError, CanBus, CanError, CanStatus, ConfigBytes,
+        ConfigXml, DigitalOutputLevel, DigitalPin, ExtensionDescriptor, ExtensionName,
+        ExtensionRegistration, Firmware,
         FirmwareAppData, FirmwareClock, FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore,
         FirmwareThread, FirmwareThreads, Gpio, Imu, ImuReadHandler, LbmExtension, LispArgs,
         LispIntegerError, LispValue, MotorOutput, MotorTelemetry, Nvm, NvmError, NvmOffset,
