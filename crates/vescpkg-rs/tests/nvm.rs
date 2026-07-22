@@ -60,6 +60,8 @@ fn nvm_capacity_bounds_are_checked_before_dispatch() {
     let mut bytes = [0; 2];
 
     assert_eq!(nvm.capacity().unwrap().get(), 16);
+    assert_eq!(NvmCapacity::from_usize(16).unwrap().get(), 16);
+    assert!(NvmCapacity::new(0).is_none());
     assert_eq!(
         nvm.read(NvmOffset::new(15), &mut bytes),
         Err(NvmError::OutOfBounds)

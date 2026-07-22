@@ -40,6 +40,12 @@ impl NvmCapacity {
         }
     }
 
+    /// Convert a host-discovered capacity when it fits the firmware width.
+    #[must_use]
+    pub fn from_usize(bytes: usize) -> Option<Self> {
+        u32::try_from(bytes).ok().and_then(Self::new)
+    }
+
     /// Convert the capacity to its firmware byte representation.
     #[must_use]
     pub const fn get(self) -> u32 {
