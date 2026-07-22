@@ -268,10 +268,10 @@ mod slots {
             )
     );
     fn_slot!(conf_custom_clear_configs as unsafe extern "C" fn());
-    fn_slot!(mutex_create as unsafe extern "C" fn() -> LibMutex);
+    optional_fn_slot!(mutex_create as unsafe extern "C" fn() -> LibMutex);
     fn_slot!(mutex_lock as unsafe extern "C" fn(LibMutex));
     fn_slot!(mutex_unlock as unsafe extern "C" fn(LibMutex));
-    fn_slot!(sem_create as unsafe extern "C" fn() -> LibSemaphore);
+    optional_fn_slot!(sem_create as unsafe extern "C" fn() -> LibSemaphore);
     fn_slot!(sem_wait as unsafe extern "C" fn(LibSemaphore));
     fn_slot!(sem_signal as unsafe extern "C" fn(LibSemaphore));
     fn_slot!(sem_wait_to as unsafe extern "C" fn(LibSemaphore, u32) -> bool);
@@ -727,14 +727,16 @@ pub unsafe fn conf_custom_clear_configs() {
 
 /// Allocate and initialize a firmware mutex.
 ///
-/// The returned mutex belongs to the firmware reserve heap and must eventually
-/// be released with [`vesc_free`].
+/// Returns null when the slot is unavailable. A non-null mutex belongs to the
+/// firmware reserve heap and must eventually be released with [`vesc_free`].
 ///
 /// # Safety
 ///
 /// The firmware `VESC_IF` table must be valid.
 pub unsafe fn vesc_mutex_create() -> LibMutex {
-    unsafe { slots::mutex_create()() }
+    unsafe { slots::mutex_create() }
+        .map(|create| unsafe { create() })
+        .unwrap_or(core::ptr::null_mut())
 }
 
 /// Lock a firmware mutex, blocking the current firmware thread.
@@ -757,14 +759,17 @@ pub unsafe fn vesc_mutex_unlock(mutex: LibMutex) {
     unsafe { slots::mutex_unlock()(mutex) };
 }
 
-/// Allocate and initialize a firmware semaphore.
+/// Allocate and initialize a firmware semaphore, returning null when the slot
+/// is unavailable.
 ///
 /// # Safety
 ///
 /// The firmware function table must be valid; the returned handle must be
 /// released with [`vesc_free`].
 pub unsafe fn vesc_sem_create() -> *mut c_void {
-    unsafe { slots::sem_create()() }
+    unsafe { slots::sem_create() }
+        .map(|create| unsafe { create() })
+        .unwrap_or(core::ptr::null_mut())
 }
 
 /// Block until a firmware semaphore is signaled.

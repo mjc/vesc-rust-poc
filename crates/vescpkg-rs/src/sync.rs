@@ -14,7 +14,7 @@ pub struct FirmwareMutex {
 }
 
 impl FirmwareMutex {
-    /// Create a firmware mutex, returning `None` when firmware allocation fails.
+    /// Create a firmware mutex, returning `None` when unavailable or allocation fails.
     #[must_use]
     pub fn new() -> Option<Self> {
         NonNull::new(unsafe { crate::ffi::vesc_mutex_create() }).map(|handle| Self { handle })
@@ -51,7 +51,7 @@ pub struct FirmwareSemaphore {
 }
 
 impl FirmwareSemaphore {
-    /// Create a firmware semaphore, returning `None` on allocation failure.
+    /// Create a firmware semaphore, returning `None` when unavailable or allocation fails.
     #[must_use]
     pub fn new() -> Option<Self> {
         NonNull::new(unsafe { crate::ffi::vesc_sem_create() }).map(|handle| Self { handle })

@@ -17,8 +17,8 @@ use super::{
     mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
     mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm, remote_state,
     store_eeprom_word, vesc_clear_app_data_handler, vesc_mutex_create, vesc_mutex_lock,
-    vesc_mutex_unlock, vesc_send_app_data, vesc_set_app_data_handler, vesc_sleep_us,
-    vesc_system_time_ticks, vesc_thread_set_priority, wipe_nvm, write_nvm,
+    vesc_mutex_unlock, vesc_sem_create, vesc_send_app_data, vesc_set_app_data_handler,
+    vesc_sleep_us, vesc_system_time_ticks, vesc_thread_set_priority, wipe_nvm, write_nvm,
 };
 
 struct SyncCounter(Cell<usize>);
@@ -421,6 +421,10 @@ extern "C" fn stub_mutex_create() -> *mut c_void {
     0xCAFEusize as *mut c_void
 }
 
+extern "C" fn stub_sem_create() -> *mut c_void {
+    0xBABEusize as *mut c_void
+}
+
 extern "C" fn stub_mutex_lock(mutex: *mut c_void) {
     assert_eq!(mutex as usize, 0xCAFE);
     MUTEX_LOCK.inc();
@@ -606,6 +610,7 @@ fn populated_table() -> VescIf {
     table.mutex_create = Some(stub_mutex_create);
     table.mutex_lock = Some(stub_mutex_lock);
     table.mutex_unlock = Some(stub_mutex_unlock);
+    table.sem_create = Some(stub_sem_create);
     table.system_time = Some(stub_system_time);
     table.system_time_ticks = Some(stub_system_time_ticks);
     table.io_set_mode = Some(stub_io_set_mode);
@@ -928,6 +933,22 @@ fn mutex_helpers_forward_through_mock_table() {
         assert_eq!(MUTEX_CREATE.get(), 1);
         assert_eq!(MUTEX_LOCK.get(), 1);
         assert_eq!(MUTEX_UNLOCK.get(), 1);
+    });
+}
+
+#[test]
+fn synchronization_creation_handles_present_and_absent_slots() {
+    with_populated_table(|| unsafe {
+        assert_eq!(vesc_mutex_create() as usize, 0xCAFE);
+        assert_eq!(vesc_sem_create() as usize, 0xBABE);
+    });
+
+    let mut table = populated_table();
+    table.mutex_create = None;
+    table.sem_create = None;
+    with_table(&table, || unsafe {
+        assert!(vesc_mutex_create().is_null());
+        assert!(vesc_sem_create().is_null());
     });
 }
 
