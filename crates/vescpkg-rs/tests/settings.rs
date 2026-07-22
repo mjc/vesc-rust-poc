@@ -76,6 +76,10 @@ fn typed_settings_read_write_and_persist() {
         settings.imu_ahrs_mode().unwrap(),
         vescpkg_rs::ImuAhrsMode::Madgwick
     );
+    assert_eq!(
+        settings.shutdown_mode().unwrap(),
+        vescpkg_rs::ShutdownMode::AlwaysOn
+    );
     assert_eq!(settings.gear_ratio().unwrap().as_f32(), 2.5);
     assert_eq!(settings.wheel_diameter().distance().as_meters(), 0.165);
     assert_eq!(settings.foc_motor_resistance().resistance().as_ohms(), 0.03);
@@ -206,6 +210,9 @@ fn typed_settings_read_write_and_persist() {
         .unwrap();
     settings
         .set_imu_ahrs_mode(vescpkg_rs::ImuAhrsMode::Mahony)
+        .unwrap();
+    settings
+        .set_shutdown_mode(vescpkg_rs::ShutdownMode::OffAfter5Minutes)
         .unwrap();
     settings
         .set_gear_ratio(vescpkg_rs::GearRatio::try_new(3.0).unwrap())
@@ -354,6 +361,10 @@ fn typed_settings_read_write_and_persist() {
         settings.imu_ahrs_mode().unwrap(),
         vescpkg_rs::ImuAhrsMode::Mahony
     );
+    assert_eq!(
+        settings.shutdown_mode().unwrap(),
+        vescpkg_rs::ShutdownMode::OffAfter5Minutes
+    );
     assert_eq!(settings.gear_ratio().unwrap().as_f32(), 3.0);
     assert_eq!(settings.wheel_diameter().distance().as_meters(), 0.2);
     assert_eq!(settings.foc_motor_resistance().resistance().as_ohms(), 0.04);
@@ -458,6 +469,11 @@ fn settings_reject_unknown_battery_chemistry() {
         .set_int(FirmwareIntSetting::ImuAhrsMode, 99)
         .unwrap();
     assert_eq!(settings.imu_ahrs_mode(), Err(SettingsError::InvalidValue));
+
+    settings
+        .set_int(FirmwareIntSetting::AppShutdownMode, 99)
+        .unwrap();
+    assert_eq!(settings.shutdown_mode(), Err(SettingsError::InvalidValue));
 }
 
 #[test]

@@ -166,6 +166,66 @@ impl ImuAhrsMode {
     }
 }
 
+/// Automatic controller shutdown policy from the VESC application configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ShutdownMode {
+    /// Keep shutdown output permanently disabled.
+    AlwaysOff,
+    /// Keep shutdown output permanently enabled.
+    AlwaysOn,
+    /// Let the physical shutdown button toggle the output.
+    ToggleButtonOnly,
+    /// Shut down after ten seconds.
+    OffAfter10Seconds,
+    /// Shut down after one minute.
+    OffAfter1Minute,
+    /// Shut down after five minutes.
+    OffAfter5Minutes,
+    /// Shut down after ten minutes.
+    OffAfter10Minutes,
+    /// Shut down after thirty minutes.
+    OffAfter30Minutes,
+    /// Shut down after one hour.
+    OffAfter1Hour,
+    /// Shut down after five hours.
+    OffAfter5Hours,
+}
+
+impl ShutdownMode {
+    /// Decode the VESC `SHUTDOWN_MODE` enum value.
+    pub const fn from_raw(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(Self::AlwaysOff),
+            1 => Some(Self::AlwaysOn),
+            2 => Some(Self::ToggleButtonOnly),
+            3 => Some(Self::OffAfter10Seconds),
+            4 => Some(Self::OffAfter1Minute),
+            5 => Some(Self::OffAfter5Minutes),
+            6 => Some(Self::OffAfter10Minutes),
+            7 => Some(Self::OffAfter30Minutes),
+            8 => Some(Self::OffAfter1Hour),
+            9 => Some(Self::OffAfter5Hours),
+            _ => None,
+        }
+    }
+
+    /// Encode the VESC `SHUTDOWN_MODE` enum value.
+    pub const fn as_u8(self) -> u8 {
+        match self {
+            Self::AlwaysOff => 0,
+            Self::AlwaysOn => 1,
+            Self::ToggleButtonOnly => 2,
+            Self::OffAfter10Seconds => 3,
+            Self::OffAfter1Minute => 4,
+            Self::OffAfter5Minutes => 5,
+            Self::OffAfter10Minutes => 6,
+            Self::OffAfter30Minutes => 7,
+            Self::OffAfter1Hour => 8,
+            Self::OffAfter5Hours => 9,
+        }
+    }
+}
+
 macro_rules! positive_count_type {
     ($name:ident, $error:ident, $doc:literal, $error_doc:literal) => {
         #[doc = $doc]
