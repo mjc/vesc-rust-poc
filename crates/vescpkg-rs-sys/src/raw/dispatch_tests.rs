@@ -7,21 +7,23 @@ use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescPin, Vesc
 
 use super::{
     CanStatusMsg, CustomConfigGet, CustomConfigSet, CustomConfigXml, GnssData, RemoteState, VescIf,
-    can_status_msg_index, can_transmit_eid, can_transmit_sid, conf_custom_add_config,
-    conf_custom_clear_configs, foc_get_id, gnss_snapshot, io_read, io_read_analog, io_set_mode,
-    io_write, lbm_add_extension, lbm_add_extension_with_table_base, lbm_block_ctx_from_extension,
-    lbm_car, lbm_cdr, lbm_cons, lbm_create_byte_array, lbm_dec_as_float, lbm_dec_as_i32,
-    lbm_dec_char, lbm_dec_str, lbm_dec_sym, lbm_enc_char, lbm_enc_i, lbm_enc_sym,
-    lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true, lbm_get_current_cid, lbm_is_number,
-    lbm_list_destructive_reverse, lbm_send_message, lbm_start_flatten, lbm_unblock_ctx,
-    lbm_unblock_ctx_unboxed, mc_get_amp_hours, mc_get_amp_hours_charged, mc_get_battery_level,
-    mc_get_distance_abs, mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered,
-    mc_get_odometer, mc_get_rpm, mc_get_speed, mc_get_tot_current_directional_filtered,
-    mc_get_tot_current_filtered, mc_get_tot_current_in_filtered, mc_get_watt_hours,
-    mc_get_watt_hours_charged, mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word,
-    read_nvm, remote_state, store_eeprom_word, vesc_clear_app_data_handler, vesc_mutex_create,
-    vesc_mutex_lock, vesc_mutex_unlock, vesc_send_app_data, vesc_set_app_data_handler,
-    vesc_sleep_us, vesc_system_time_ticks, vesc_thread_set_priority, wipe_nvm, write_nvm,
+    app_is_output_disabled, can_status_msg_index, can_transmit_eid, can_transmit_sid,
+    conf_custom_add_config, conf_custom_clear_configs, foc_get_id, get_ppm, get_ppm_age,
+    gnss_snapshot, io_read, io_read_analog, io_set_mode, io_write, lbm_add_extension,
+    lbm_add_extension_with_table_base, lbm_block_ctx_from_extension, lbm_car, lbm_cdr, lbm_cons,
+    lbm_create_byte_array, lbm_dec_as_float, lbm_dec_as_i32, lbm_dec_char, lbm_dec_str,
+    lbm_dec_sym, lbm_enc_char, lbm_enc_i, lbm_enc_sym, lbm_enc_sym_eerror, lbm_enc_sym_nil,
+    lbm_enc_sym_true, lbm_get_current_cid, lbm_is_number, lbm_list_destructive_reverse,
+    lbm_send_message, lbm_start_flatten, lbm_unblock_ctx, lbm_unblock_ctx_unboxed,
+    mc_get_amp_hours, mc_get_amp_hours_charged, mc_get_battery_level, mc_get_distance_abs,
+    mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered, mc_get_odometer,
+    mc_get_rpm, mc_get_speed, mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
+    mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
+    mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm, remote_state,
+    store_backup_data, store_eeprom_word, timeout_has_timeout, timeout_secs_since_update,
+    vesc_clear_app_data_handler, vesc_mutex_create, vesc_mutex_lock, vesc_mutex_unlock,
+    vesc_send_app_data, vesc_set_app_data_handler, vesc_sleep_us, vesc_system_time_ticks,
+    vesc_thread_set_priority, wipe_nvm, write_nvm,
 };
 
 struct SyncCounter(Cell<usize>);
@@ -931,6 +933,57 @@ fn can_transmit_wrappers_report_optional_slot_presence() {
     with_table(&table, || unsafe {
         assert_eq!(can_transmit_sid(0x123, core::ptr::null(), 0), None);
         assert_eq!(can_transmit_eid(0x123, core::ptr::null(), 0), None);
+    });
+}
+
+extern "C" fn stub_get_ppm() -> f32 {
+    0.5
+}
+
+extern "C" fn stub_get_ppm_age() -> f32 {
+    0.25
+}
+
+extern "C" fn stub_output_disabled() -> bool {
+    true
+}
+
+extern "C" fn stub_store_backup() -> bool {
+    false
+}
+
+extern "C" fn stub_timeout_has_timeout() -> bool {
+    true
+}
+
+extern "C" fn stub_timeout_secs_since_update() -> f32 {
+    1.25
+}
+
+#[test]
+fn input_and_timeout_wrappers_report_optional_slot_presence() {
+    let mut table = empty_table();
+    table.get_ppm = Some(stub_get_ppm);
+    table.get_ppm_age = Some(stub_get_ppm_age);
+    table.app_is_output_disabled = Some(stub_output_disabled);
+    table.store_backup_data = Some(stub_store_backup);
+    table.timeout_has_timeout = Some(stub_timeout_has_timeout);
+    table.timeout_secs_since_update = Some(stub_timeout_secs_since_update);
+    with_table(&table, || unsafe {
+        assert_eq!(get_ppm(), Some(0.5));
+        assert_eq!(get_ppm_age(), Some(0.25));
+        assert_eq!(app_is_output_disabled(), Some(true));
+        assert_eq!(store_backup_data(), Some(false));
+        assert_eq!(timeout_has_timeout(), true);
+        assert_eq!(timeout_secs_since_update(), 1.25);
+    });
+
+    let table = empty_table();
+    with_table(&table, || unsafe {
+        assert_eq!(get_ppm(), None);
+        assert_eq!(get_ppm_age(), None);
+        assert_eq!(app_is_output_disabled(), None);
+        assert_eq!(store_backup_data(), None);
     });
 }
 
