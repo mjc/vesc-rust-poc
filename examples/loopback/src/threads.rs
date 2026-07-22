@@ -29,8 +29,9 @@ pub fn register(
 ) -> Result<(), vescpkg_rs::PackageStartError> {
     let stack = ThreadWorkingAreaSize::try_from_bytes(1_024)
         .expect("official thread example stack satisfies ChibiOS alignment");
-    start.spawn_threads([vescpkg_rs::ThreadSpec::stateless::<LoopbackWorker>(
-        stack,
-        vescpkg_rs::thread_name!("Loopback Worker"),
-    )])
+    start.spawn_threads(
+        [vescpkg_rs::ThreadSpec::<crate::LoopbackState>::stateless::<
+            LoopbackWorker,
+        >(stack, vescpkg_rs::thread_name!("Loopback Worker"))],
+    )
 }
