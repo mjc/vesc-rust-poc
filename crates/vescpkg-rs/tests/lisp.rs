@@ -20,6 +20,8 @@ fn lisp_values_expose_explicit_kind_predicates() {
     assert!(!integer.is_cons());
     assert!(!integer.is_byte_array());
     assert_eq!(integer.decode_number_as_u32(), Some(7));
+    assert_eq!(integer.decode_number_as_u64(), Some(7));
+    assert_eq!(integer.decode_number_as_i64(), Some(7));
 
     let encoded = LispValue::from_u32(23);
     assert_eq!(encoded.decode_number_as_u32(), Some(23));

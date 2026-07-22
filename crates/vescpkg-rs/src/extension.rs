@@ -249,6 +249,15 @@ impl LispValue {
             .then(|| call_vesc_ffi!(lbm_dec_as_u32(self.raw())))
     }
 
+    /// Convert a firmware-classified numeric value to a widened unsigned integer.
+    ///
+    /// The pinned VESC ABI exposes a 32-bit scalar decoder; wider LispBM values
+    /// remain available through [`LispFlatValue`].
+    #[cfg(not(test))]
+    pub fn decode_number_as_u64(self) -> Option<u64> {
+        self.decode_number_as_u32().map(u64::from)
+    }
+
     /// Encode an unsigned integer through the firmware's `LispBM` representation.
     #[cfg(not(test))]
     #[must_use]
@@ -405,6 +414,15 @@ impl LispValue {
     pub fn decode_number_as_i32(self) -> Option<i32> {
         crate::lifecycle_core::LbmApi::new(crate::bindings::RealBindings)
             .decode_number_as_i32(self.raw())
+    }
+
+    /// Convert a firmware-classified numeric value to a widened signed integer.
+    ///
+    /// The pinned VESC ABI exposes a 32-bit scalar decoder; wider LispBM values
+    /// remain available through [`LispFlatValue`].
+    #[cfg(not(test))]
+    pub fn decode_number_as_i64(self) -> Option<i64> {
+        self.decode_number_as_i32().map(i64::from)
     }
 
     /// Return `LispBM` true.
