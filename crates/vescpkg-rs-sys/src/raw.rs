@@ -1571,6 +1571,11 @@ pub unsafe fn mc_stat_temp_motor_max() -> f32 {
 }
 
 /// Read the elapsed motor-statistics count time in seconds.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid and contain
+/// the motor-statistics slot.
 pub unsafe fn mc_stat_count_time() -> f32 {
     unsafe { slots::mc_stat_count_time()() }
 }
