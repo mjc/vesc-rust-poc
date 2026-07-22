@@ -63,6 +63,57 @@ fn typed_settings_read_write_and_persist() {
     assert_eq!(settings.imu_rotation_pitch().as_degrees(), 0.0);
     assert_eq!(settings.imu_rotation_yaw().as_degrees(), 0.0);
     assert_eq!(settings.imu_acceleration_confidence_decay().as_ratio(), 1.0);
+    assert_eq!(
+        settings
+            .imu_mahony_proportional_gain()
+            .unwrap()
+            .value(),
+        10.0
+    );
+    assert_eq!(settings.imu_mahony_integral_gain().unwrap().value(), 0.0);
+    assert_eq!(settings.imu_madgwick_beta().unwrap().value(), 2.0);
+    assert_eq!(
+        settings
+            .imu_acceleration_offset_x()
+            .unwrap()
+            .as_g(),
+        0.0
+    );
+    assert_eq!(
+        settings
+            .imu_acceleration_offset_y()
+            .unwrap()
+            .as_g(),
+        0.0
+    );
+    assert_eq!(
+        settings
+            .imu_acceleration_offset_z()
+            .unwrap()
+            .as_g(),
+        0.0
+    );
+    assert_eq!(
+        settings
+            .imu_gyro_offset_x()
+            .unwrap()
+            .as_degrees_per_second(),
+        0.0
+    );
+    assert_eq!(
+        settings
+            .imu_gyro_offset_y()
+            .unwrap()
+            .as_degrees_per_second(),
+        0.0
+    );
+    assert_eq!(
+        settings
+            .imu_gyro_offset_z()
+            .unwrap()
+            .as_degrees_per_second(),
+        0.0
+    );
     assert_eq!(settings.motor_pole_count().unwrap().as_u16(), 14);
     assert_eq!(
         settings.battery_chemistry().unwrap(),
@@ -202,6 +253,35 @@ fn typed_settings_read_write_and_persist() {
         .unwrap();
     settings
         .set_imu_acceleration_confidence_decay(vescpkg_rs::Ratio::from_ratio_const(0.8))
+        .unwrap();
+    settings
+        .set_imu_mahony_proportional_gain(
+            vescpkg_rs::ImuMahonyProportionalGain::try_new(12.0).unwrap(),
+        )
+        .unwrap();
+    settings
+        .set_imu_mahony_integral_gain(vescpkg_rs::ImuMahonyIntegralGain::try_new(0.25).unwrap())
+        .unwrap();
+    settings
+        .set_imu_madgwick_beta(vescpkg_rs::ImuMadgwickBeta::try_new(1.5).unwrap())
+        .unwrap();
+    settings
+        .set_imu_acceleration_offset_x(vescpkg_rs::AccelerationG::from_g(0.01))
+        .unwrap();
+    settings
+        .set_imu_acceleration_offset_y(vescpkg_rs::AccelerationG::from_g(-0.02))
+        .unwrap();
+    settings
+        .set_imu_acceleration_offset_z(vescpkg_rs::AccelerationG::from_g(0.03))
+        .unwrap();
+    settings
+        .set_imu_gyro_offset_x(vescpkg_rs::AngularVelocity::from_degrees_per_second(0.4))
+        .unwrap();
+    settings
+        .set_imu_gyro_offset_y(vescpkg_rs::AngularVelocity::from_degrees_per_second(-0.5))
+        .unwrap();
+    settings
+        .set_imu_gyro_offset_z(vescpkg_rs::AngularVelocity::from_degrees_per_second(0.6))
         .unwrap();
     settings
         .set_motor_pole_count(vescpkg_rs::MotorPoleCount::try_new(16).unwrap())
@@ -355,6 +435,48 @@ fn typed_settings_read_write_and_persist() {
     assert_eq!(settings.imu_rotation_pitch().as_degrees(), -2.0);
     assert_eq!(settings.imu_rotation_yaw().as_degrees(), 3.0);
     assert_eq!(settings.imu_acceleration_confidence_decay().as_ratio(), 0.8);
+    assert_eq!(
+        settings
+            .imu_mahony_proportional_gain()
+            .unwrap()
+            .value(),
+        12.0
+    );
+    assert_eq!(settings.imu_mahony_integral_gain().unwrap().value(), 0.25);
+    assert_eq!(settings.imu_madgwick_beta().unwrap().value(), 1.5);
+    assert_eq!(
+        settings.imu_acceleration_offset_x().unwrap().as_g(),
+        0.01
+    );
+    assert_eq!(
+        settings.imu_acceleration_offset_y().unwrap().as_g(),
+        -0.02
+    );
+    assert_eq!(
+        settings.imu_acceleration_offset_z().unwrap().as_g(),
+        0.03
+    );
+    assert_eq!(
+        settings
+            .imu_gyro_offset_x()
+            .unwrap()
+            .as_degrees_per_second(),
+        0.4
+    );
+    assert_eq!(
+        settings
+            .imu_gyro_offset_y()
+            .unwrap()
+            .as_degrees_per_second(),
+        -0.5
+    );
+    assert_eq!(
+        settings
+            .imu_gyro_offset_z()
+            .unwrap()
+            .as_degrees_per_second(),
+        0.6
+    );
     assert_eq!(settings.motor_pole_count().unwrap().as_u16(), 16);
     assert_eq!(
         settings.battery_chemistry().unwrap(),
