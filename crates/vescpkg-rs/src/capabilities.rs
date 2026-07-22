@@ -1154,4 +1154,12 @@ mod tests {
             "settings"
         );
     }
+
+    #[test]
+    fn invalid_setting_error_describes_domain_rejection() {
+        assert_eq!(
+            std::format!("{}", SettingsError::InvalidValue),
+            "setting value is invalid"
+        );
+    }
 }
