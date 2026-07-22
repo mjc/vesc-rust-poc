@@ -133,6 +133,7 @@ static PACKET_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static COMMANDS_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static TERMINAL_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static ENCODER_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static PLOT_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static DISTANCE_ABS: AtomicU32 = AtomicU32::new(0);
 static MOSFET_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
@@ -323,6 +324,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     COMMANDS_AVAILABLE.store(true, Ordering::Relaxed);
     TERMINAL_AVAILABLE.store(true, Ordering::Relaxed);
     ENCODER_AVAILABLE.store(true, Ordering::Relaxed);
+    PLOT_AVAILABLE.store(true, Ordering::Relaxed);
     DISTANCE_ABS.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOSFET_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -1126,6 +1128,10 @@ pub(crate) fn set_encoder_available(available: bool) {
     ENCODER_AVAILABLE.store(available, Ordering::Relaxed);
 }
 
+pub(crate) fn set_plot_available(available: bool) {
+    PLOT_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
 pub(crate) fn set_imu_startup_done(done: bool) {
     IMU_STARTUP_DONE.store(done, Ordering::Relaxed);
 }
@@ -1579,19 +1585,19 @@ pub unsafe fn commands_unregister_reply_func(_reply: unsafe extern "C" fn(*mut u
 }
 
 pub unsafe fn plot_init(_title: *const c_char, _channel: *const c_char) -> bool {
-    true
+    PLOT_AVAILABLE.load(Ordering::Relaxed)
 }
 
 pub unsafe fn plot_add_graph(_name: *const c_char) -> bool {
-    true
+    PLOT_AVAILABLE.load(Ordering::Relaxed)
 }
 
 pub unsafe fn plot_set_graph(_index: i32) -> bool {
-    true
+    PLOT_AVAILABLE.load(Ordering::Relaxed)
 }
 
 pub unsafe fn plot_send_points(_x: f32, _y: f32) -> bool {
-    true
+    PLOT_AVAILABLE.load(Ordering::Relaxed)
 }
 
 pub unsafe fn terminal_register_command_callback(
