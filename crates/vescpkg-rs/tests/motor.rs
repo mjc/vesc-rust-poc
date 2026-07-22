@@ -2,8 +2,8 @@
 //! Integration coverage for typed motor handbrake commands.
 
 use vescpkg_rs::{
-    AngleDegrees, Current, HandbrakeCurrent, HandbrakeRelative, MotorOutput, MotorTelemetry,
-    OdometerMeters, PidPosition, Ratio, VescSeconds,
+    AngleDegrees, Current, DVoltage, HandbrakeCurrent, HandbrakeRelative, MotorOutput,
+    MotorTelemetry, OdometerMeters, PidPosition, QCurrent, QVoltage, Ratio, VescSeconds,
 };
 
 #[test]
@@ -79,6 +79,10 @@ fn motor_exposes_typed_handbrake_commands() {
     );
     assert_eq!(telemetry.pid_position_setpoint().angle().as_degrees(), 42.0);
     assert_eq!(telemetry.pid_position().angle().as_degrees(), 12.0);
+    assert_eq!(telemetry.d_axis_current().unwrap().current().as_amps(), 1.5);
+    assert_eq!(telemetry.q_axis_current().unwrap().current().as_amps(), 2.5);
+    assert_eq!(telemetry.d_axis_voltage().unwrap().voltage().as_volts(), 3.5);
+    assert_eq!(telemetry.q_axis_voltage().unwrap().voltage().as_volts(), 4.5);
     assert_eq!(telemetry.tachometer(false).steps().as_steps(), 1234);
     assert_eq!(telemetry.absolute_tachometer(true).steps().as_steps(), 5678);
     assert_eq!(telemetry.sampling_frequency().as_hertz(), 20_000.0);
