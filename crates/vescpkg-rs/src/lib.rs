@@ -84,7 +84,7 @@ pub(crate) mod ffi {
         vesc_clear_imu_read_callback, vesc_get_arg, vesc_malloc, vesc_send_app_data,
         vesc_set_app_data_handler, vesc_set_imu_read_callback,
     };
-    #[cfg(any(test, not(feature = "test-support")))]
+    #[cfg(not(feature = "test-support"))]
     pub use vescpkg_rs_sys::raw::lbm_set_error_reason;
     #[cfg(all(not(test), not(feature = "test-support")))]
     pub use vescpkg_rs_sys::raw::{io_read, io_read_analog, io_set_mode, io_write};
