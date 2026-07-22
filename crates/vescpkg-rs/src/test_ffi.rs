@@ -746,6 +746,14 @@ pub unsafe fn can_set_current_rel(_controller: u8, _current: f32) -> Option<()> 
     Some(())
 }
 
+pub unsafe fn can_set_current_rel_off_delay(
+    _controller: u8,
+    _current: f32,
+    _delay_seconds: f32,
+) -> Option<()> {
+    Some(())
+}
+
 pub unsafe fn can_set_rpm(_controller: u8, _rpm: f32) -> Option<()> {
     Some(())
 }

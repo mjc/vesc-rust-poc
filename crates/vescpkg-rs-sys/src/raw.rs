@@ -322,6 +322,7 @@ mod slots {
     optional_fn_slot!(can_set_current_off_delay as unsafe extern "C" fn(u8, f32, f32));
     optional_fn_slot!(can_set_current_brake as unsafe extern "C" fn(u8, f32));
     optional_fn_slot!(can_set_current_rel as unsafe extern "C" fn(u8, f32));
+    optional_fn_slot!(can_set_current_rel_off_delay as unsafe extern "C" fn(u8, f32, f32));
     optional_fn_slot!(can_set_current_brake_rel as unsafe extern "C" fn(u8, f32));
     optional_fn_slot!(can_set_rpm as unsafe extern "C" fn(u8, f32));
     optional_fn_slot!(can_set_pos as unsafe extern "C" fn(u8, f32));
@@ -1114,6 +1115,16 @@ pub unsafe fn can_set_current(controller: u8, current: f32) -> Option<()> {
 /// Send a remote motor relative-current command when the optional slot is present.
 pub unsafe fn can_set_current_rel(controller: u8, current: f32) -> Option<()> {
     unsafe { slots::can_set_current_rel() }.map(|set| unsafe { set(controller, current) })
+}
+
+/// Send a remote motor relative-current command with an off-delay when the optional slot is present.
+pub unsafe fn can_set_current_rel_off_delay(
+    controller: u8,
+    current: f32,
+    delay_seconds: f32,
+) -> Option<()> {
+    unsafe { slots::can_set_current_rel_off_delay() }
+        .map(|set| unsafe { set(controller, current, delay_seconds) })
 }
 
 /// Send a remote motor brake-current command when the optional slot is present.

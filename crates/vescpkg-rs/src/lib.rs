@@ -59,10 +59,10 @@ pub(crate) mod ffi {
     #[cfg(any(test, not(feature = "test-support")))]
     pub use vescpkg_rs_sys::raw::{
         can_ping, can_set_current, can_set_current_brake, can_set_current_brake_rel,
-        can_set_current_off_delay, can_set_current_rel, can_set_duty, can_set_eid_callback,
-        can_set_pos, can_set_rpm, can_set_sid_callback, can_status_msg_2_id, can_status_msg_3_id,
-        can_status_msg_4_id, can_status_msg_5_id, can_status_msg_6_id, can_status_msg_id,
-        can_transmit_eid, can_transmit_sid,
+        can_set_current_off_delay, can_set_current_rel, can_set_current_rel_off_delay,
+        can_set_duty, can_set_eid_callback, can_set_pos, can_set_rpm, can_set_sid_callback,
+        can_status_msg_2_id, can_status_msg_3_id, can_status_msg_4_id, can_status_msg_5_id,
+        can_status_msg_6_id, can_status_msg_id, can_transmit_eid, can_transmit_sid,
     };
     #[allow(unused_imports)]
     pub use vescpkg_rs_sys::raw::{
@@ -80,11 +80,11 @@ pub(crate) mod ffi {
     #[cfg(all(feature = "test-support", not(test)))]
     pub use crate::test_ffi::{
         can_ping, can_set_current, can_set_current_brake, can_set_current_brake_rel,
-        can_set_current_off_delay, can_set_current_rel, can_set_duty, can_set_eid_callback,
-        can_set_pos, can_set_rpm, can_set_sid_callback, can_status_msg_2_id, can_status_msg_3_id,
-        can_status_msg_4_id, can_status_msg_5_id, can_status_msg_6_id, can_status_msg_id,
-        can_transmit_eid, can_transmit_sid, io_read, io_read_analog, io_set_mode, io_write,
-        printf_data,
+        can_set_current_off_delay, can_set_current_rel, can_set_current_rel_off_delay,
+        can_set_duty, can_set_eid_callback, can_set_pos, can_set_rpm, can_set_sid_callback,
+        can_status_msg_2_id, can_status_msg_3_id, can_status_msg_4_id, can_status_msg_5_id,
+        can_status_msg_6_id, can_status_msg_id, can_transmit_eid, can_transmit_sid, io_read,
+        io_read_analog, io_set_mode, io_write, printf_data,
     };
     #[allow(unused_imports)]
     pub use selected_ffi::{
