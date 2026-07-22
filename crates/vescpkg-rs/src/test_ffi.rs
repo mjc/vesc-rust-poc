@@ -282,7 +282,44 @@ impl Drop for FirmwareLockGuard {
     }
 }
 
-#[allow(clippy::too_many_lines)] // one reset point keeps fake firmware state isolated between tests
+fn reset_imu_state() {
+    IMU_STARTUP_DONE.store(false, Ordering::Relaxed);
+    IMU_CALIBRATION_VALID.store(true, Ordering::Relaxed);
+    store(&IMU_ROLL, 0.0);
+    store(&IMU_PITCH, 0.0);
+    store(&IMU_YAW, 0.0);
+    IMU_GYRO.iter().for_each(|axis| store(axis, 0.0));
+    [1.0, 0.0, 0.0, 0.0]
+        .into_iter()
+        .zip(&IMU_QUATERNION)
+        .for_each(|(value, component)| store(component, value));
+}
+
+fn reset_thread_state() {
+    THREAD_SPAWN_COUNT.store(0, Ordering::Relaxed);
+    THREAD_SPAWN_STACKS
+        .iter()
+        .for_each(|slot| slot.store(0, Ordering::Relaxed));
+    [1, 2]
+        .into_iter()
+        .zip(&THREAD_SPAWN_RESULTS)
+        .for_each(|(value, slot)| slot.store(value, Ordering::Relaxed));
+    THREAD_TERMINATE_COUNT.store(0, Ordering::Relaxed);
+    THREAD_TERMINATED
+        .iter()
+        .for_each(|slot| slot.store(0, Ordering::Relaxed));
+    THREAD_TERMINATE_CHECKS.store(0, Ordering::Relaxed);
+    THREAD_TERMINATE_AFTER.store(usize::MAX, Ordering::Relaxed);
+    THREAD_SLEEP_COUNT.store(0, Ordering::Relaxed);
+    THREAD_SLEEP_MICROS
+        .iter()
+        .for_each(|slot| slot.store(0, Ordering::Relaxed));
+    THREAD_PRIORITY_COUNT.store(0, Ordering::Relaxed);
+    THREAD_PRIORITIES
+        .iter()
+        .for_each(|slot| slot.store(0, Ordering::Relaxed));
+}
+
 pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     while LOCKED
         .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -347,42 +384,8 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     BATTERY_LEVEL.store(0.0_f32.to_bits(), Ordering::Relaxed);
     FIRMWARE_FAULT.store(0, Ordering::Relaxed);
     INPUT_VOLTAGE.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    PPM_INPUT.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    PPM_AGE.store(f32::INFINITY.to_bits(), Ordering::Relaxed);
-    REMOTE_INPUT_Y.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    REMOTE_AGE.store(f32::INFINITY.to_bits(), Ordering::Relaxed);
-    IMU_STARTUP_DONE.store(false, Ordering::Relaxed);
-    IMU_CALIBRATION_VALID.store(true, Ordering::Relaxed);
-    store(&IMU_ROLL, 0.0);
-    store(&IMU_PITCH, 0.0);
-    store(&IMU_YAW, 0.0);
-    IMU_GYRO.iter().for_each(|axis| store(axis, 0.0));
-    [1.0, 0.0, 0.0, 0.0]
-        .into_iter()
-        .zip(&IMU_QUATERNION)
-        .for_each(|(value, component)| store(component, value));
-    THREAD_SPAWN_COUNT.store(0, Ordering::Relaxed);
-    THREAD_SPAWN_STACKS
-        .iter()
-        .for_each(|slot| slot.store(0, Ordering::Relaxed));
-    [1, 2]
-        .into_iter()
-        .zip(&THREAD_SPAWN_RESULTS)
-        .for_each(|(value, slot)| slot.store(value, Ordering::Relaxed));
-    THREAD_TERMINATE_COUNT.store(0, Ordering::Relaxed);
-    THREAD_TERMINATED
-        .iter()
-        .for_each(|slot| slot.store(0, Ordering::Relaxed));
-    THREAD_TERMINATE_CHECKS.store(0, Ordering::Relaxed);
-    THREAD_TERMINATE_AFTER.store(usize::MAX, Ordering::Relaxed);
-    THREAD_SLEEP_COUNT.store(0, Ordering::Relaxed);
-    THREAD_SLEEP_MICROS
-        .iter()
-        .for_each(|slot| slot.store(0, Ordering::Relaxed));
-    THREAD_PRIORITY_COUNT.store(0, Ordering::Relaxed);
-    THREAD_PRIORITIES
-        .iter()
-        .for_each(|slot| slot.store(0, Ordering::Relaxed));
+    reset_imu_state();
+    reset_thread_state();
     EEPROM_PRESENT
         .iter()
         .for_each(|slot| slot.store(false, Ordering::Relaxed));
