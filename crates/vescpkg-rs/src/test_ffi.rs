@@ -115,7 +115,6 @@ static DIRECTIONAL_MOTOR_CURRENT: AtomicU32 = AtomicU32::new(0);
 static MOTOR_CURRENT_MAX: AtomicU32 = AtomicU32::new(0);
 static MOTOR_CURRENT_MIN: AtomicU32 = AtomicU32::new(0);
 static INPUT_CURRENT_MAX: AtomicU32 = AtomicU32::new(0);
-static INPUT_CURRENT_MIN: AtomicU32 = AtomicU32::new(0);
 static MOSFET_TEMPERATURE_LIMIT_START: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE_LIMIT_START: AtomicU32 = AtomicU32::new(0);
 static DUTY_CYCLE_LIMIT: AtomicU32 = AtomicU32::new(0);
@@ -346,8 +345,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     DIRECTIONAL_MOTOR_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_CURRENT_MAX.store(100.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_CURRENT_MIN.store((-100.0_f32).to_bits(), Ordering::Relaxed);
-    INPUT_CURRENT_MAX.store(100.0_f32.to_bits(), Ordering::Relaxed);
-    INPUT_CURRENT_MIN.store((-100.0_f32).to_bits(), Ordering::Relaxed);
+    INPUT_CURRENT_MAX.store(60.0_f32.to_bits(), Ordering::Relaxed);
     MOSFET_TEMPERATURE_LIMIT_START.store(85.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_TEMPERATURE_LIMIT_START.store(85.0_f32.to_bits(), Ordering::Relaxed);
     DUTY_CYCLE_LIMIT.store(0.95_f32.to_bits(), Ordering::Relaxed);
@@ -1451,7 +1449,6 @@ pub unsafe fn get_cfg_float(param: i32) -> f32 {
         0 => load(&MOTOR_CURRENT_MAX),
         1 => load(&MOTOR_CURRENT_MIN),
         2 => load(&INPUT_CURRENT_MAX),
-        3 => load(&INPUT_CURRENT_MIN),
         16 => load(&MOSFET_TEMPERATURE_LIMIT_START),
         18 => load(&MOTOR_TEMPERATURE_LIMIT_START),
         22 => load(&DUTY_CYCLE_LIMIT),
@@ -1473,6 +1470,7 @@ pub unsafe fn set_cfg_float(param: i32, value: f32) -> bool {
     match param {
         0 => MOTOR_CURRENT_MAX.store(value.to_bits(), Ordering::Relaxed),
         1 => MOTOR_CURRENT_MIN.store(value.to_bits(), Ordering::Relaxed),
+        2 => INPUT_CURRENT_MAX.store(value.to_bits(), Ordering::Relaxed),
         16 => MOSFET_TEMPERATURE_LIMIT_START.store(value.to_bits(), Ordering::Relaxed),
         18 => MOTOR_TEMPERATURE_LIMIT_START.store(value.to_bits(), Ordering::Relaxed),
         22 => DUTY_CYCLE_LIMIT.store(value.to_bits(), Ordering::Relaxed),

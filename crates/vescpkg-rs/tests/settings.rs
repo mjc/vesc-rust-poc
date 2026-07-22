@@ -13,6 +13,17 @@ fn typed_settings_read_write_and_persist() {
         settings.get_float(FirmwareFloatSetting::MotorCurrentMax),
         100.0
     );
+    assert_eq!(
+        settings.get_float(FirmwareFloatSetting::InputCurrentMax),
+        60.0
+    );
+    settings
+        .set_float(FirmwareFloatSetting::InputCurrentMax, 24.0)
+        .unwrap();
+    assert_eq!(
+        settings.get_float(FirmwareFloatSetting::InputCurrentMax),
+        24.0
+    );
     settings
         .set_float(FirmwareFloatSetting::MotorCurrentMax, 42.0)
         .unwrap();
