@@ -36,5 +36,5 @@ fn firmware_audio_forwards_checked_commands_and_owns_sample_table_borrow() {
     let table = audio.set_sample_table(channel, &samples).unwrap();
     assert!(unsafe { audio.sample_table_ptr(channel) }.is_some());
     drop(table);
-    audio.stop(true);
+    audio.stop(true).unwrap();
 }
