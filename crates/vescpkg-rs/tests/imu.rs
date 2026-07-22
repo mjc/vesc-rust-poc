@@ -1,7 +1,7 @@
 #![cfg(feature = "test-support")]
 //! Integration coverage for typed firmware IMU vectors.
 
-use vescpkg_rs::{AngleRadians, Imu, ImuYaw, test_support::FirmwareTest};
+use vescpkg_rs::{AngleRadians, Imu, ImuPitch, ImuRoll, ImuYaw, test_support::FirmwareTest};
 
 #[test]
 fn firmware_imu_exposes_vectors_and_derotated_samples() {
@@ -12,6 +12,15 @@ fn firmware_imu_exposes_vectors_and_derotated_samples() {
     assert!(imu.is_ready());
     imu.set_yaw(ImuYaw::new(AngleRadians::from_radians(0.5)));
     assert!((imu.yaw().angle().as_radians() - 0.5).abs() < 1.0e-6);
+    firmware.set_imu_attitude(
+        ImuRoll::new(AngleRadians::from_radians(0.1)),
+        ImuPitch::new(AngleRadians::from_radians(-0.2)),
+        ImuYaw::new(AngleRadians::from_radians(0.3)),
+    );
+    let rpy = imu.rpy();
+    assert!((rpy.roll().angle().as_radians() - 0.1).abs() < 1.0e-6);
+    assert!((rpy.pitch().angle().as_radians() + 0.2).abs() < 1.0e-6);
+    assert!((rpy.yaw().angle().as_radians() - 0.3).abs() < 1.0e-6);
 
     assert_eq!(
         imu.acceleration().map_axes(|x, y, z| [
