@@ -24,6 +24,82 @@ pub struct FirmwareAhrsSnapshot {
     madgwick_beta: f32,
 }
 
+/// Parameters applied to an owned firmware AHRS state.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FirmwareAhrsParameters {
+    acceleration_confidence_decay: f32,
+    proportional_gain: f32,
+    integral_gain: f32,
+    madgwick_beta: f32,
+}
+
+impl FirmwareAhrsParameters {
+    /// Construct checked AHRS parameters.
+    pub fn try_new(
+        acceleration_confidence_decay: f32,
+        proportional_gain: f32,
+        integral_gain: f32,
+        madgwick_beta: f32,
+    ) -> Result<Self, FirmwareAhrsError> {
+        let parameters = Self {
+            acceleration_confidence_decay,
+            proportional_gain,
+            integral_gain,
+            madgwick_beta,
+        };
+        parameters
+            .is_valid()
+            .then_some(parameters)
+            .ok_or(FirmwareAhrsError::InvalidParameter)
+    }
+
+    /// Return the SDK defaults used when no firmware gains are supplied.
+    #[must_use]
+    pub const fn defaults() -> Self {
+        Self {
+            acceleration_confidence_decay: 0.0,
+            proportional_gain: 2.0,
+            integral_gain: 0.05,
+            madgwick_beta: 0.1,
+        }
+    }
+
+    /// Return the accelerometer confidence decay.
+    #[must_use]
+    pub const fn acceleration_confidence_decay(self) -> f32 {
+        self.acceleration_confidence_decay
+    }
+
+    /// Return the Mahony proportional gain.
+    #[must_use]
+    pub const fn proportional_gain(self) -> f32 {
+        self.proportional_gain
+    }
+
+    /// Return the Mahony integral gain.
+    #[must_use]
+    pub const fn integral_gain(self) -> f32 {
+        self.integral_gain
+    }
+
+    /// Return the Madgwick beta parameter.
+    #[must_use]
+    pub const fn madgwick_beta(self) -> f32 {
+        self.madgwick_beta
+    }
+
+    const fn is_valid(self) -> bool {
+        self.acceleration_confidence_decay.is_finite()
+            && self.proportional_gain.is_finite()
+            && self.integral_gain.is_finite()
+            && self.madgwick_beta.is_finite()
+            && self.acceleration_confidence_decay >= 0.0
+            && self.proportional_gain >= 0.0
+            && self.integral_gain >= 0.0
+            && self.madgwick_beta >= 0.0
+    }
+}
+
 impl FirmwareAhrsSnapshot {
     /// Return the copied quaternion orientation.
     #[must_use]
@@ -81,6 +157,8 @@ pub enum FirmwareAhrsError {
     InvalidVector,
     /// The update period is non-finite or not positive.
     InvalidPeriod,
+    /// A gain or confidence parameter is non-finite or negative.
+    InvalidParameter,
 }
 
 impl core::fmt::Display for FirmwareAhrsError {
@@ -92,6 +170,9 @@ impl core::fmt::Display for FirmwareAhrsError {
             Self::InvalidPeriod => {
                 formatter.write_str("firmware AHRS period must be finite and positive")
             }
+            Self::InvalidParameter => {
+                formatter.write_str("firmware AHRS parameters must be finite and non-negative")
+            }
         }
     }
 }
@@ -101,22 +182,48 @@ impl core::error::Error for FirmwareAhrsError {}
 /// Owned firmware AHRS state backed by the pinned `ATTITUDE_INFO` ABI.
 pub struct FirmwareAhrs {
     attitude: AttitudeInfo,
+    parameters: FirmwareAhrsParameters,
 }
 
 impl FirmwareAhrs {
     /// Construct and initialize one owned firmware AHRS state.
     #[must_use]
     pub fn new() -> Self {
+        Self::with_parameters(FirmwareAhrsParameters::defaults())
+    }
+
+    /// Construct firmware AHRS state with explicit SDK-owned parameters.
+    #[must_use]
+    pub fn with_parameters(parameters: FirmwareAhrsParameters) -> Self {
         // SAFETY: ATTITUDE_INFO is a C struct containing only scalar fields; zero is a valid
         // temporary representation before the firmware initializer fills it.
         let mut attitude = unsafe { core::mem::zeroed::<AttitudeInfo>() };
         unsafe { crate::ffi::ahrs_init_attitude_info(&mut attitude) };
-        Self { attitude }
+        let mut state = Self {
+            attitude,
+            parameters,
+        };
+        state.apply_parameters();
+        state
+    }
+
+    /// Replace the SDK-owned parameters used by later updates.
+    pub fn set_parameters(
+        &mut self,
+        parameters: FirmwareAhrsParameters,
+    ) -> Result<(), FirmwareAhrsError> {
+        if !parameters.is_valid() {
+            return Err(FirmwareAhrsError::InvalidParameter);
+        }
+        self.parameters = parameters;
+        self.apply_parameters();
+        Ok(())
     }
 
     /// Reset the owned firmware AHRS state to its firmware defaults.
     pub fn reset(&mut self) -> FirmwareAhrsSnapshot {
         unsafe { crate::ffi::ahrs_init_attitude_info(&mut self.attitude) };
+        self.apply_parameters();
         self.snapshot()
     }
 
@@ -217,6 +324,13 @@ impl FirmwareAhrs {
             integral_gain: attitude.ki,
             madgwick_beta: attitude.beta,
         }
+    }
+
+    fn apply_parameters(&mut self) {
+        self.attitude.acc_confidence_decay = self.parameters.acceleration_confidence_decay;
+        self.attitude.kp = self.parameters.proportional_gain;
+        self.attitude.ki = self.parameters.integral_gain;
+        self.attitude.beta = self.parameters.madgwick_beta;
     }
 }
 

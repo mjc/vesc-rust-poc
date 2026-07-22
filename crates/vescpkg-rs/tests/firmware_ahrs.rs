@@ -2,10 +2,11 @@
 #![allow(missing_docs)]
 
 use vescpkg_rs::{
-    AccelerationG, AngularVelocity, FirmwareAhrs, FirmwareAhrsError, ImuAcceleration,
-    ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ, ImuAngularRate, ImuAngularRatePitch,
-    ImuAngularRateRoll, ImuAngularRateYaw, ImuMagneticField, ImuMagneticFieldX, ImuMagneticFieldY,
-    ImuMagneticFieldZ, ImuReadSample, ImuSamplePeriod, MagneticFluxDensity, VescSeconds,
+    AccelerationG, AngularVelocity, FirmwareAhrs, FirmwareAhrsError, FirmwareAhrsParameters,
+    ImuAcceleration, ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ, ImuAngularRate,
+    ImuAngularRatePitch, ImuAngularRateRoll, ImuAngularRateYaw, ImuMagneticField,
+    ImuMagneticFieldX, ImuMagneticFieldY, ImuMagneticFieldZ, ImuReadSample, ImuSamplePeriod,
+    MagneticFluxDensity, VescSeconds,
 };
 
 fn vectors() -> (ImuAcceleration, ImuMagneticField) {
@@ -45,6 +46,7 @@ fn firmware_ahrs_copies_initialized_and_updated_state() {
     assert_eq!(initial.acceleration_magnitude().as_g(), 1.0);
     assert!(!initial.initial_update_done());
     assert_eq!(initial.proportional_gain(), 2.0);
+    assert_eq!(initial.madgwick_beta(), 0.1);
 
     let updated = ahrs
         .update_initial_orientation(acceleration, magnetic)
@@ -60,6 +62,15 @@ fn firmware_ahrs_copies_initialized_and_updated_state() {
 
     let madgwick = ahrs.update_madgwick(sample(0.5)).unwrap();
     assert_eq!(madgwick.madgwick_beta(), 0.2);
+
+    let parameters = FirmwareAhrsParameters::try_new(0.3, 3.0, 0.2, 0.4).unwrap();
+    ahrs.set_parameters(parameters).unwrap();
+    let configured = ahrs.snapshot();
+    assert_eq!(configured.acceleration_confidence_decay(), 0.3);
+    assert_eq!(configured.proportional_gain(), 3.0);
+    assert_eq!(configured.integral_gain(), 0.2);
+    assert_eq!(configured.madgwick_beta(), 0.4);
+    assert_eq!(ahrs.reset().proportional_gain(), 3.0);
 }
 
 #[test]
@@ -77,5 +88,9 @@ fn firmware_ahrs_rejects_invalid_vectors_and_periods_before_ffi() {
     assert_eq!(
         FirmwareAhrs::new().update_mahony(sample(0.0)),
         Err(FirmwareAhrsError::InvalidPeriod)
+    );
+    assert_eq!(
+        FirmwareAhrsParameters::try_new(f32::NAN, 1.0, 1.0, 1.0),
+        Err(FirmwareAhrsError::InvalidParameter)
     );
 }
