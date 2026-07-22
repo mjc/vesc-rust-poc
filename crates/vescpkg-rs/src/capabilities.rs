@@ -2,11 +2,11 @@
 
 use crate::ffi;
 use crate::{
-    AngleDegrees, BatteryCellCount, BatteryChemistry, CanBus, Charge, Current, DutyCycleLimit,
-    DutyCycleMinimum, ElectricalSpeed, FocAudio, FocMotorFluxLinkage, FocMotorInductance,
-    FocMotorResistance, GearRatio, InputCurrent, InputVoltage, MotorCurrentLimit, MotorPoleCount,
-    Nvm, NvmCapacity, Ratio, TemperatureLimitEnd, TemperatureLimitStart, Uart, Voltage,
-    WheelDiameter,
+    AngleDegrees, BatteryCellCount, BatteryChemistry, CanBaudRate, CanBus, Charge, Current,
+    DutyCycleLimit, DutyCycleMinimum, ElectricalSpeed, FocAudio, FocMotorFluxLinkage,
+    FocMotorInductance, FocMotorResistance, GearRatio, InputCurrent, InputVoltage,
+    MotorCurrentLimit, MotorPoleCount, Nvm, NvmCapacity, Ratio, TemperatureLimitEnd,
+    TemperatureLimitStart, Uart, Voltage, WheelDiameter,
 };
 use core::fmt;
 use vescpkg_rs_sys::{AbiError, Stm32AbiRevision, VescIfCapabilities, VescIfPresence};
@@ -754,6 +754,12 @@ impl FirmwareSettings {
             .ok_or(SettingsError::InvalidValue)
     }
 
+    /// Read the configured CAN bus baud-rate selector with semantic validation.
+    pub fn can_baud_rate(self) -> Result<CanBaudRate, SettingsError> {
+        CanBaudRate::from_raw(self.get_int(FirmwareIntSetting::AppCanBaudRate))
+            .ok_or(SettingsError::InvalidValue)
+    }
+
     /// Write an integer setting to live firmware state.
     pub fn set_int(self, setting: FirmwareIntSetting, value: i32) -> Result<(), SettingsError> {
         unsafe { ffi::set_cfg_int(setting.raw(), value) }
@@ -784,6 +790,14 @@ impl FirmwareSettings {
         self.set_int(
             FirmwareIntSetting::BatteryType,
             i32::from(chemistry.as_u8()),
+        )
+    }
+
+    /// Write a checked CAN bus baud-rate selector; persistence still requires [`Self::store`].
+    pub fn set_can_baud_rate(self, baud_rate: CanBaudRate) -> Result<(), SettingsError> {
+        self.set_int(
+            FirmwareIntSetting::AppCanBaudRate,
+            i32::from(baud_rate.as_u8()),
         )
     }
 

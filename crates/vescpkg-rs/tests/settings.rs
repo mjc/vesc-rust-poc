@@ -68,6 +68,10 @@ fn typed_settings_read_write_and_persist() {
         settings.battery_chemistry().unwrap(),
         vescpkg_rs::BatteryChemistry::LithiumIon
     );
+    assert_eq!(
+        settings.can_baud_rate().unwrap(),
+        vescpkg_rs::CanBaudRate::Kbps500
+    );
     assert_eq!(settings.gear_ratio().unwrap().as_f32(), 2.5);
     assert_eq!(settings.wheel_diameter().distance().as_meters(), 0.165);
     assert_eq!(settings.foc_motor_resistance().resistance().as_ohms(), 0.03);
@@ -192,6 +196,9 @@ fn typed_settings_read_write_and_persist() {
         .unwrap();
     settings
         .set_battery_chemistry(vescpkg_rs::BatteryChemistry::LeadAcid)
+        .unwrap();
+    settings
+        .set_can_baud_rate(vescpkg_rs::CanBaudRate::Mbps1)
         .unwrap();
     settings
         .set_gear_ratio(vescpkg_rs::GearRatio::try_new(3.0).unwrap())
@@ -332,6 +339,10 @@ fn typed_settings_read_write_and_persist() {
         settings.battery_chemistry().unwrap(),
         vescpkg_rs::BatteryChemistry::LeadAcid
     );
+    assert_eq!(
+        settings.can_baud_rate().unwrap(),
+        vescpkg_rs::CanBaudRate::Mbps1
+    );
     assert_eq!(settings.gear_ratio().unwrap().as_f32(), 3.0);
     assert_eq!(settings.wheel_diameter().distance().as_meters(), 0.2);
     assert_eq!(settings.foc_motor_resistance().resistance().as_ohms(), 0.04);
@@ -426,6 +437,11 @@ fn settings_reject_unknown_battery_chemistry() {
         settings.battery_chemistry(),
         Err(SettingsError::InvalidValue)
     );
+
+    settings
+        .set_int(FirmwareIntSetting::AppCanBaudRate, 99)
+        .unwrap();
+    assert_eq!(settings.can_baud_rate(), Err(SettingsError::InvalidValue));
 }
 
 #[test]
