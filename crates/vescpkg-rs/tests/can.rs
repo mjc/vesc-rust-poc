@@ -189,6 +189,19 @@ fn can_bus_sends_brake_and_off_delay_commands() {
         .expect("off-delay command");
 }
 
+#[test]
+fn can_bus_sends_relative_current_off_delay() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    firmware
+        .can()
+        .set_current_relative_off_delay(
+            CanControllerId::new(7),
+            CurrentRelative::new(SignedRatio::from_ratio_const(-0.25)),
+            vescpkg_rs::CurrentOffDelay::new(vescpkg_rs::VescSeconds::from_seconds(0.25)),
+        )
+        .expect("relative off-delay command");
+}
+
 unsafe extern "C" fn test_can_receiver(_id: u32, _data: *mut u8, _len: u8) -> bool {
     true
 }
