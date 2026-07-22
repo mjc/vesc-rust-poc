@@ -1,7 +1,7 @@
 //! Capability-aware safe subsystem constructors.
 
 use crate::ffi;
-use crate::{CanBus, FocAudio, Nvm, NvmCapacity, Uart};
+use crate::{BatteryCellCount, CanBus, FocAudio, Nvm, NvmCapacity, Uart};
 use core::fmt;
 use vescpkg_rs_sys::{AbiError, Stm32AbiRevision, VescIfCapabilities, VescIfPresence};
 
@@ -103,6 +103,15 @@ impl FirmwareSettings {
         unsafe { ffi::get_cfg_int(setting.raw()) }
     }
 
+    /// Read the configured battery-cell count with semantic validation.
+    pub fn battery_cell_count(self) -> Result<BatteryCellCount, SettingsError> {
+        let raw = self.get_int(FirmwareIntSetting::BatteryCellCount);
+        u16::try_from(raw)
+            .ok()
+            .and_then(|value| BatteryCellCount::try_new(value).ok())
+            .ok_or(SettingsError::InvalidValue)
+    }
+
     /// Write an integer setting to live firmware state.
     pub fn set_int(self, setting: FirmwareIntSetting, value: i32) -> Result<(), SettingsError> {
         unsafe { ffi::set_cfg_int(setting.raw(), value) }
@@ -110,6 +119,14 @@ impl FirmwareSettings {
             .ok_or(SettingsError::Rejected {
                 operation: "integer setting",
             })
+    }
+
+    /// Write a checked battery-cell count to live firmware state.
+    pub fn set_battery_cell_count(self, count: BatteryCellCount) -> Result<(), SettingsError> {
+        self.set_int(
+            FirmwareIntSetting::BatteryCellCount,
+            i32::from(count.as_u16()),
+        )
     }
 
     /// Persist all accepted setting writes in firmware storage.

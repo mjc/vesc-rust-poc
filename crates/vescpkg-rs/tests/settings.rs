@@ -25,6 +25,11 @@ fn typed_settings_read_write_and_persist() {
         .set_int(FirmwareIntSetting::BatteryCellCount, 12)
         .unwrap();
     assert_eq!(settings.get_int(FirmwareIntSetting::BatteryCellCount), 12);
+    assert_eq!(settings.battery_cell_count().unwrap().as_u16(), 12);
+    settings
+        .set_battery_cell_count(vescpkg_rs::BatteryCellCount::try_new(14).unwrap())
+        .unwrap();
+    assert_eq!(settings.battery_cell_count().unwrap().as_u16(), 14);
     settings.store().unwrap();
 }
 
