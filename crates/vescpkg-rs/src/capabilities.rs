@@ -2,10 +2,11 @@
 
 use crate::ffi;
 use crate::{
-    AngleDegrees, BatteryCellCount, CanBus, Charge, Current, DutyCycleLimit, DutyCycleMinimum,
-    ElectricalSpeed, FocAudio, FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance,
-    GearRatio, InputCurrent, InputVoltage, MotorCurrentLimit, MotorPoleCount, Nvm, NvmCapacity,
-    Ratio, TemperatureLimitEnd, TemperatureLimitStart, Uart, Voltage, WheelDiameter,
+    AngleDegrees, BatteryCellCount, BatteryChemistry, CanBus, Charge, Current, DutyCycleLimit,
+    DutyCycleMinimum, ElectricalSpeed, FocAudio, FocMotorFluxLinkage, FocMotorInductance,
+    FocMotorResistance, GearRatio, InputCurrent, InputVoltage, MotorCurrentLimit, MotorPoleCount,
+    Nvm, NvmCapacity, Ratio, TemperatureLimitEnd, TemperatureLimitStart, Uart, Voltage,
+    WheelDiameter,
 };
 use core::fmt;
 use vescpkg_rs_sys::{AbiError, Stm32AbiRevision, VescIfCapabilities, VescIfPresence};
@@ -747,6 +748,12 @@ impl FirmwareSettings {
             .ok_or(SettingsError::InvalidValue)
     }
 
+    /// Read the configured battery chemistry with semantic validation.
+    pub fn battery_chemistry(self) -> Result<BatteryChemistry, SettingsError> {
+        BatteryChemistry::from_raw(self.get_int(FirmwareIntSetting::BatteryType))
+            .ok_or(SettingsError::InvalidValue)
+    }
+
     /// Write an integer setting to live firmware state.
     pub fn set_int(self, setting: FirmwareIntSetting, value: i32) -> Result<(), SettingsError> {
         unsafe { ffi::set_cfg_int(setting.raw(), value) }
@@ -769,6 +776,14 @@ impl FirmwareSettings {
         self.set_int(
             FirmwareIntSetting::MotorPoleCount,
             i32::from(count.as_u16()),
+        )
+    }
+
+    /// Write a checked battery chemistry; persistence still requires [`Self::store`].
+    pub fn set_battery_chemistry(self, chemistry: BatteryChemistry) -> Result<(), SettingsError> {
+        self.set_int(
+            FirmwareIntSetting::BatteryType,
+            i32::from(chemistry.as_u8()),
         )
     }
 
