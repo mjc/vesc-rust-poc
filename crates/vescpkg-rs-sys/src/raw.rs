@@ -582,6 +582,10 @@ pub unsafe fn lbm_unblock_ctx_unboxed(context: u32, value: LbmValue) -> Option<b
 }
 
 /// Start an optional firmware 6.05 flat-value buffer.
+///
+/// # Safety
+///
+/// `value` must point to writable storage for one [`LbmFlatValue`].
 pub unsafe fn lbm_start_flatten(value: *mut LbmFlatValue, buffer_size: usize) -> Option<bool> {
     optional_bool_call(unsafe { slots::lbm_start_flatten() }, |start| unsafe {
         start(value, buffer_size)
@@ -589,6 +593,10 @@ pub unsafe fn lbm_start_flatten(value: *mut LbmFlatValue, buffer_size: usize) ->
 }
 
 /// Finish an optional firmware 6.05 flat-value buffer.
+///
+/// # Safety
+///
+/// `value` must be a buffer previously initialized by `lbm_start_flatten`.
 pub unsafe fn lbm_finish_flatten(value: *mut LbmFlatValue) -> Option<bool> {
     optional_bool_call(unsafe { slots::lbm_finish_flatten() }, |finish| unsafe {
         finish(value)
@@ -598,6 +606,11 @@ pub unsafe fn lbm_finish_flatten(value: *mut LbmFlatValue) -> Option<bool> {
 macro_rules! flat_value_bool_call {
     ($name:ident, $slot:ident, $($arg:ident : $ty:ty),* $(,)?) => {
         /// Call an optional firmware 6.05 flat-value constructor.
+        ///
+        /// # Safety
+        ///
+        /// `value` must be a live buffer initialized by `lbm_start_flatten` and
+        /// each argument must remain valid for the duration of the call.
         pub unsafe fn $name(value: *mut LbmFlatValue, $($arg: $ty),*) -> Option<bool> {
             optional_bool_call(unsafe { slots::$slot() }, |build| unsafe {
                 build(value, $($arg),*)
@@ -616,11 +629,19 @@ flat_value_bool_call!(f_u32, f_u32, number: u32);
 flat_value_bool_call!(f_float, f_float, number: f32);
 
 /// Append a cons marker to an optional firmware 6.05 flat value.
+///
+/// # Safety
+///
+/// `value` must be a live buffer initialized by `lbm_start_flatten`.
 pub unsafe fn f_cons(value: *mut LbmFlatValue) -> Option<bool> {
     optional_bool_call(unsafe { slots::f_cons() }, |build| unsafe { build(value) })
 }
 
 /// Unblock a context with an optional firmware 6.05 flat value.
+///
+/// # Safety
+///
+/// `value` must be a finished buffer initialized by `lbm_start_flatten`.
 pub unsafe fn lbm_unblock_ctx(context: u32, value: *mut LbmFlatValue) -> Option<bool> {
     optional_bool_call(unsafe { slots::lbm_unblock_ctx() }, |unblock| unsafe {
         unblock(context, value)

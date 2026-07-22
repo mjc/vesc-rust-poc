@@ -11,9 +11,8 @@ use crate::{
     MotorCurrentLimit, MotorTemperature, OdometerMeters, TotalMotorCurrent, TripDistance,
     VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
-use vescpkg_rs_sys::raw::LbmFlatValue;
 use vescpkg_rs_sys::LbmValue;
-use vescpkg_rs_sys::raw::RemoteState;
+use vescpkg_rs_sys::raw::LbmFlatValue;
 
 // C map: these host replacements model the motor slots declared at
 // `third_party/vesc_pkg_lib/vesc_c_if.h:435-476`. Float Out Boy reads them in
@@ -506,11 +505,7 @@ pub unsafe fn f_u64(value: *mut LbmFlatValue, _number: u64) -> Option<bool> {
     })
 }
 
-pub unsafe fn f_lbm_array(
-    value: *mut LbmFlatValue,
-    count: u32,
-    _data: *mut u8,
-) -> Option<bool> {
+pub unsafe fn f_lbm_array(value: *mut LbmFlatValue, count: u32, _data: *mut u8) -> Option<bool> {
     unsafe { value.as_mut() }.map(|value| {
         value.buf_pos = value.buf_pos.saturating_add(count);
         true
