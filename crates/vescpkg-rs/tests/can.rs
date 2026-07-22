@@ -16,8 +16,11 @@ fn can_bus_transmits_bounded_payloads_and_copies_status() {
         .expect("standard transmit");
     bus.transmit_extended(extended, &[4, 5])
         .expect("extended transmit");
-    bus.set_current(CanControllerId::new(7), MotorCurrent::new(Current::from_amps(3.0)))
-        .expect("remote current command");
+    bus.set_current(
+        CanControllerId::new(7),
+        MotorCurrent::new(Current::from_amps(3.0)),
+    )
+    .expect("remote current command");
     bus.set_duty(
         CanControllerId::new(7),
         DutyCycle::new(SignedRatio::from_ratio_const(0.5)),
@@ -38,11 +41,19 @@ fn can_bus_transmits_bounded_payloads_and_copies_status() {
         CurrentRelative::new(SignedRatio::from_ratio_const(-0.25)),
     )
     .expect("remote relative current command");
-    assert_eq!(bus.transmit_standard(standard, &[0; 9]), Err(CanError::PayloadTooLong));
+    assert_eq!(
+        bus.transmit_standard(standard, &[0; 9]),
+        Err(CanError::PayloadTooLong)
+    );
 
-    let status = bus.status(CanControllerId::new(7)).expect("status snapshot");
+    let status = bus
+        .status(CanControllerId::new(7))
+        .expect("status snapshot");
     assert_eq!(status.controller().as_u8(), 7);
-    assert_eq!(status.electrical_speed().rpm().as_revolutions_per_minute(), 1200.0);
+    assert_eq!(
+        status.electrical_speed().rpm().as_revolutions_per_minute(),
+        1200.0
+    );
     assert_eq!(status.motor_current().current().as_amps(), 4.5);
     assert_eq!(status.duty_cycle().ratio().as_ratio(), 0.25);
 }

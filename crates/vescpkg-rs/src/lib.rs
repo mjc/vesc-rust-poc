@@ -71,9 +71,8 @@ pub(crate) mod ffi {
     use crate::test_ffi as selected_ffi;
     #[allow(unused_imports)]
     pub use selected_ffi::{
-        can_set_current, can_set_current_rel, can_set_duty, can_set_pos, can_set_rpm,
-        can_status_msg_id, can_transmit_eid, can_transmit_sid, f_b, f_cons, f_float, f_i32, f_i64,
-        f_lbm_array, f_sym, f_u32, f_u64, foc_get_id, get_cfg_float, get_cfg_int, imu_get_gyro,
+        f_b, f_cons, f_float, f_i32, f_i64, f_lbm_array, f_sym, f_u32, f_u64, foc_get_id,
+        get_cfg_float, get_cfg_int, imu_get_gyro,
         imu_get_pitch, imu_get_roll, imu_get_yaw, imu_startup_done, lbm_block_ctx_from_extension,
         lbm_car, lbm_cdr, lbm_cons, lbm_create_byte_array, lbm_dec_as_float, lbm_dec_as_i32,
         lbm_dec_as_u32, lbm_dec_char, lbm_dec_str, lbm_dec_sym, lbm_enc_char, lbm_enc_float,
@@ -92,6 +91,11 @@ pub(crate) mod ffi {
         vesc_sleep_us, vesc_spawn, vesc_system_time_seconds, vesc_system_time_ticks,
         vesc_thread_set_priority, vesc_timer_seconds_elapsed_since, vesc_timer_time_now,
         vesc_timestamp_age_seconds, wipe_nvm, write_nvm,
+    };
+    #[cfg(all(feature = "test-support", not(test)))]
+    pub use crate::test_ffi::{
+        can_set_current, can_set_current_rel, can_set_duty, can_set_pos, can_set_rpm,
+        can_status_msg_id, can_transmit_eid, can_transmit_sid,
     };
     #[cfg(any(test, not(feature = "test-support")))]
     use vescpkg_rs_sys::raw as selected_ffi;

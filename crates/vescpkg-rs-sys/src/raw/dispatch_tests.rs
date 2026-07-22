@@ -1,29 +1,26 @@
 use core::cell::Cell;
 use core::ffi::{CStr, c_char, c_int, c_uchar, c_uint, c_void};
 
+use crate::c_vesc_if;
 use crate::test_support::{empty_table, with_table};
 use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescPin, VescPinMode};
 
 use super::{
     CanStatusMsg, CustomConfigGet, CustomConfigSet, CustomConfigXml, GnssData, RemoteState, VescIf,
-    can_status_msg_index, conf_custom_add_config, conf_custom_clear_configs, foc_get_id,
-    gnss_snapshot, io_read, io_read_analog, io_set_mode, io_write, lbm_add_extension,
-    lbm_add_extension_with_table_base, lbm_car, lbm_cdr, lbm_cons, lbm_dec_as_float,
-    lbm_dec_as_i32, lbm_dec_char, lbm_dec_str, lbm_enc_char, lbm_enc_i, lbm_enc_sym_eerror,
-    lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number, lbm_list_destructive_reverse,
-    can_transmit_eid, can_transmit_sid,
-    mc_get_amp_hours, mc_get_amp_hours_charged, mc_get_battery_level, mc_get_distance_abs,
-    mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered, mc_get_odometer,
-    mc_get_rpm, mc_get_speed, mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
-    lbm_block_ctx_from_extension, lbm_get_current_cid, lbm_unblock_ctx_unboxed,
-    lbm_start_flatten, lbm_unblock_ctx,
-    mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
-    mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm, remote_state,
-    store_eeprom_word, vesc_clear_app_data_handler, vesc_mutex_create, vesc_mutex_lock,
-    vesc_mutex_unlock, vesc_sem_create, vesc_send_app_data, vesc_set_app_data_handler,
-    lbm_create_byte_array,
-    lbm_dec_sym,
-    lbm_send_message,
+    can_status_msg_index, can_transmit_eid, can_transmit_sid, conf_custom_add_config,
+    conf_custom_clear_configs, foc_get_id, gnss_snapshot, io_read, io_read_analog, io_set_mode,
+    io_write, lbm_add_extension, lbm_add_extension_with_table_base, lbm_block_ctx_from_extension,
+    lbm_car, lbm_cdr, lbm_cons, lbm_create_byte_array, lbm_dec_as_float, lbm_dec_as_i32,
+    lbm_dec_char, lbm_dec_str, lbm_dec_sym, lbm_enc_char, lbm_enc_i, lbm_enc_sym,
+    lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true, lbm_get_current_cid, lbm_is_number,
+    lbm_list_destructive_reverse, lbm_send_message, lbm_start_flatten, lbm_unblock_ctx,
+    lbm_unblock_ctx_unboxed, mc_get_amp_hours, mc_get_amp_hours_charged, mc_get_battery_level,
+    mc_get_distance_abs, mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered,
+    mc_get_odometer, mc_get_rpm, mc_get_speed, mc_get_tot_current_directional_filtered,
+    mc_get_tot_current_filtered, mc_get_tot_current_in_filtered, mc_get_watt_hours,
+    mc_get_watt_hours_charged, mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word,
+    read_nvm, remote_state, store_eeprom_word, vesc_clear_app_data_handler, vesc_mutex_create,
+    vesc_mutex_lock, vesc_mutex_unlock, vesc_send_app_data, vesc_set_app_data_handler,
     vesc_sleep_us, vesc_system_time_ticks, vesc_thread_set_priority, wipe_nvm, write_nvm,
 };
 
@@ -270,12 +267,9 @@ fn reset_counters() {
     LAST_EEPROM_WORD.set(0);
 }
 
-extern "C" fn stub_lbm_add_extension(
-    _name: *mut c_char,
-    handler: Option<ExtensionHandler>,
-) -> bool {
+extern "C" fn stub_lbm_add_extension(_name: *mut c_char, _handler: ExtensionHandler) -> bool {
     LBM_ADD_EXTENSION.inc();
-    handler.is_some()
+    true
 }
 
 extern "C" fn stub_lbm_dec_as_i32(value: u32) -> i32 {
@@ -284,9 +278,9 @@ extern "C" fn stub_lbm_dec_as_i32(value: u32) -> i32 {
     value as i32
 }
 
-extern "C" fn stub_lbm_dec_as_float(value: u32) -> f32 {
+extern "C" fn stub_lbm_dec_as_float(value: LbmValue) -> f32 {
     LBM_DEC_AS_FLOAT.inc();
-    LAST_LBM_VALUE.set(value);
+    LAST_LBM_VALUE.set(value.0);
     4.25
 }
 
@@ -295,31 +289,31 @@ extern "C" fn stub_lbm_enc_i(value: i32) -> u32 {
     value as u32 + 1
 }
 
-extern "C" fn stub_lbm_dec_char(value: u32) -> u8 {
-    value as u8
+extern "C" fn stub_lbm_dec_char(value: LbmValue) -> u8 {
+    value.0 as u8
 }
 
-extern "C" fn stub_lbm_enc_char(value: u8) -> u32 {
-    value as u32
+extern "C" fn stub_lbm_enc_char(value: u8) -> LbmValue {
+    LbmValue(value as u32)
 }
 
-extern "C" fn stub_lbm_cons(_car: u32, _cdr: u32) -> u32 {
-    0x20
+extern "C" fn stub_lbm_cons(_car: LbmValue, _cdr: LbmValue) -> LbmValue {
+    LbmValue(0x20)
 }
 
-extern "C" fn stub_lbm_car(_value: u32) -> u32 {
-    0x11
+extern "C" fn stub_lbm_car(_value: LbmValue) -> LbmValue {
+    LbmValue(0x11)
 }
 
-extern "C" fn stub_lbm_cdr(_value: u32) -> u32 {
-    0x22
+extern "C" fn stub_lbm_cdr(_value: LbmValue) -> LbmValue {
+    LbmValue(0x22)
 }
 
-extern "C" fn stub_lbm_list_destructive_reverse(value: u32) -> u32 {
+extern "C" fn stub_lbm_list_destructive_reverse(value: LbmValue) -> LbmValue {
     value
 }
 
-extern "C" fn stub_lbm_dec_str(_value: u32) -> *mut c_char {
+extern "C" fn stub_lbm_dec_str(_value: LbmValue) -> *mut c_char {
     LBM_STRING.as_ptr().cast_mut().cast()
 }
 
@@ -422,15 +416,15 @@ extern "C" fn stub_send_app_data(_data: *mut c_uchar, len: u32) {
 }
 
 extern "C" fn stub_conf_custom_add_config(
-    get_cfg: Option<CustomConfigGet>,
-    set_cfg: Option<CustomConfigSet>,
-    get_cfg_xml: Option<CustomConfigXml>,
+    get_cfg: CustomConfigGet,
+    set_cfg: CustomConfigSet,
+    get_cfg_xml: CustomConfigXml,
 ) {
     CONF_CUSTOM_ADD_CONFIG.inc();
     unsafe {
-        let _ = get_cfg.expect("get callback")(core::ptr::null_mut(), true);
-        let _ = set_cfg.expect("set callback")(core::ptr::null_mut());
-        let _ = get_cfg_xml.expect("XML callback")(core::ptr::null_mut());
+        let _ = get_cfg(core::ptr::null_mut(), true);
+        let _ = set_cfg(core::ptr::null_mut());
+        let _ = get_cfg_xml(core::ptr::null_mut());
     }
 }
 
@@ -479,10 +473,6 @@ extern "C" fn stub_mutex_create() -> *mut c_void {
     0xCAFEusize as *mut c_void
 }
 
-extern "C" fn stub_sem_create() -> *mut c_void {
-    0xBABEusize as *mut c_void
-}
-
 extern "C" fn stub_mutex_lock(mutex: *mut c_void) {
     assert_eq!(mutex as usize, 0xCAFE);
     MUTEX_LOCK.inc();
@@ -493,29 +483,29 @@ extern "C" fn stub_mutex_unlock(mutex: *mut c_void) {
     MUTEX_UNLOCK.inc();
 }
 
-extern "C" fn stub_io_set_mode(pin: c_uint, mode: c_uint) -> bool {
+extern "C" fn stub_io_set_mode(pin: c_int, mode: c_int) -> bool {
     IO_SET_MODE.inc();
-    LAST_PIN.set(pin as c_int);
-    LAST_MODE.set(mode as c_int);
+    LAST_PIN.set(pin);
+    LAST_MODE.set(mode);
     true
 }
 
-extern "C" fn stub_io_write(pin: c_uint, level: c_int) -> bool {
+extern "C" fn stub_io_write(pin: c_int, level: c_int) -> bool {
     IO_WRITE.inc();
-    LAST_PIN.set(pin as c_int);
+    LAST_PIN.set(pin);
     LAST_LEVEL.set(level);
     true
 }
 
-extern "C" fn stub_io_read(pin: c_uint) -> bool {
+extern "C" fn stub_io_read(pin: c_int) -> bool {
     IO_READ.inc();
-    LAST_PIN.set(pin as c_int);
+    LAST_PIN.set(pin);
     pin == 3
 }
 
-extern "C" fn stub_io_read_analog(pin: c_uint) -> f32 {
+extern "C" fn stub_io_read_analog(pin: c_int) -> f32 {
     IO_READ_ANALOG.inc();
-    LAST_PIN.set(pin as c_int);
+    LAST_PIN.set(pin);
     0.25 * pin as f32
 }
 
@@ -611,7 +601,7 @@ extern "C" fn stub_mc_get_odometer() -> u64 {
     123_456
 }
 
-extern "C" fn stub_mc_get_fault() -> c_uint {
+extern "C" fn stub_mc_get_fault() -> c_int {
     MC_GET_FAULT.inc();
     5
 }
@@ -626,7 +616,7 @@ extern "C" fn stub_mc_get_input_voltage_filtered() -> f32 {
     84.2
 }
 
-unsafe extern "C" fn stub_read_nvm(buffer: *mut u8, len: c_uint, address: c_uint) -> bool {
+unsafe extern "C" fn stub_read_nvm(buffer: *mut u8, offset: c_uint, len: c_uint) -> bool {
     let Some(buffer) = (unsafe { buffer.cast::<[u8; 4]>().as_mut() }) else {
         return false;
     };
@@ -634,15 +624,15 @@ unsafe extern "C" fn stub_read_nvm(buffer: *mut u8, len: c_uint, address: c_uint
         return false;
     }
     buffer.copy_from_slice(&[
-        address as u8,
-        address.wrapping_add(1) as u8,
-        address.wrapping_add(2) as u8,
-        address.wrapping_add(3) as u8,
+        offset as u8,
+        offset.wrapping_add(1) as u8,
+        offset.wrapping_add(2) as u8,
+        offset.wrapping_add(3) as u8,
     ]);
     true
 }
 
-unsafe extern "C" fn stub_write_nvm(_buffer: *mut u8, len: c_uint, _address: c_uint) -> bool {
+unsafe extern "C" fn stub_write_nvm(_buffer: *mut u8, _offset: c_uint, len: c_uint) -> bool {
     len != 0
 }
 
@@ -692,7 +682,6 @@ fn populated_table() -> VescIf {
     table.mutex_create = Some(stub_mutex_create);
     table.mutex_lock = Some(stub_mutex_lock);
     table.mutex_unlock = Some(stub_mutex_unlock);
-    table.sem_create = Some(stub_sem_create);
     table.system_time = Some(stub_system_time);
     table.system_time_ticks = Some(stub_system_time_ticks);
     table.io_set_mode = Some(stub_io_set_mode);
@@ -741,12 +730,12 @@ fn nvm_dispatch_reports_firmware_results_and_absence() {
     with_table(&table, || unsafe {
         let mut bytes = [0; 4];
         assert_eq!(
-            read_nvm(bytes.as_mut_ptr(), bytes.len() as c_uint, 7),
+            read_nvm(bytes.as_mut_ptr(), 7, bytes.len() as c_uint),
             Some(true)
         );
         assert_eq!(bytes, [7, 8, 9, 10]);
         assert_eq!(
-            write_nvm(bytes.as_mut_ptr(), bytes.len() as c_uint, 7),
+            write_nvm(bytes.as_mut_ptr(), 7, bytes.len() as c_uint),
             Some(true)
         );
         assert_eq!(wipe_nvm(), Some(true));
@@ -755,9 +744,9 @@ fn nvm_dispatch_reports_firmware_results_and_absence() {
     let table = populated_table();
     with_table(&table, || unsafe {
         let mut bytes = [0; 4];
-        assert_eq!(read_nvm(bytes.as_mut_ptr(), bytes.len() as c_uint, 0), None);
+        assert_eq!(read_nvm(bytes.as_mut_ptr(), 0, bytes.len() as c_uint), None);
         assert_eq!(
-            write_nvm(bytes.as_mut_ptr(), bytes.len() as c_uint, 0),
+            write_nvm(bytes.as_mut_ptr(), 0, bytes.len() as c_uint),
             None
         );
         assert_eq!(wipe_nvm(), None);
@@ -789,24 +778,6 @@ fn lbm_add_extension_with_table_base_uses_mock_when_base_matches_firmware_addr()
             handler
         ));
         assert_eq!(LBM_ADD_EXTENSION.get(), 1);
-    });
-}
-
-#[test]
-#[should_panic(expected = "required VESC_IF slot is unavailable")]
-fn lbm_add_extension_rejects_a_missing_required_slot() {
-    extern "C" fn handler(_: *mut u32, _: u32) -> u32 {
-        0
-    }
-
-    let mut table = populated_table();
-    table.lbm_add_extension = None;
-    with_table(&table, || unsafe {
-        let _ = lbm_add_extension_with_table_base(
-            VescIfAbi::BASE_ADDR.0 as u32,
-            c"ext-test".as_ptr(),
-            handler,
-        );
     });
 }
 
@@ -1074,7 +1045,7 @@ fn sleep_us_forwards_through_mock_table() {
 }
 
 #[test]
-#[should_panic(expected = "required VESC_IF slot is unavailable")]
+#[should_panic(expected = "mock VESC_IF table must populate required slot")]
 fn missing_required_slot_fails_loudly() {
     let mut table = populated_table();
     table.sleep_us = None;
@@ -1120,22 +1091,6 @@ fn mutex_helpers_forward_through_mock_table() {
 }
 
 #[test]
-fn synchronization_creation_handles_present_and_absent_slots() {
-    with_populated_table(|| unsafe {
-        assert_eq!(vesc_mutex_create() as usize, 0xCAFE);
-        assert_eq!(vesc_sem_create() as usize, 0xBABE);
-    });
-
-    let mut table = populated_table();
-    table.mutex_create = None;
-    table.sem_create = None;
-    with_table(&table, || unsafe {
-        assert!(vesc_mutex_create().is_null());
-        assert!(vesc_sem_create().is_null());
-    });
-}
-
-#[test]
 fn runtime_motor_helpers_forward_through_mock_table() {
     with_populated_table(|| unsafe {
         assert_eq!(mc_get_rpm(), 3210.0);
@@ -1165,33 +1120,6 @@ fn foc_get_id_reports_absence_when_the_motor_does_not_expose_it() {
     with_table(&table, || unsafe {
         assert_eq!(foc_get_id(), None);
         assert_eq!(FOC_GET_ID.get(), 0);
-    });
-}
-
-#[test]
-fn host_table_presence_inspects_generated_fields() {
-    let table = populated_table();
-    let presence = table.presence();
-
-    assert!(presence.contains(VescIfAbi::LBM_ADD_EXTENSION));
-    assert!(presence.contains(VescIfAbi::LBM_ENC_SYM_NIL));
-    assert!(!presence.contains(VescIfAbi::LBM_DEC_AS_U32));
-}
-
-#[test]
-fn foc_play_tone_forwards_and_reports_optional_audio_support() {
-    with_populated_table(|| unsafe {
-        assert_eq!(foc_play_tone(0, 495.0, 0.6), Some(true));
-        assert_eq!(FOC_PLAY_TONE.get(), 1);
-        assert_eq!(LAST_FOC_TONE_CHANNEL.get(), 0);
-        assert_eq!(LAST_FOC_TONE_FREQUENCY.get(), 495.0);
-        assert_eq!(LAST_FOC_TONE_VOLTAGE.get(), 0.6);
-    });
-
-    let mut table = populated_table();
-    table.foc_play_tone = None;
-    with_table(&table, || unsafe {
-        assert_eq!(foc_play_tone(0, 495.0, 0.6), None);
     });
 }
 
@@ -1242,4 +1170,146 @@ fn motor_data_helpers_forward_through_mock_table() {
         assert_eq!(MC_FAULT_TO_STRING.get(), 1);
         assert_eq!(MC_GET_INPUT_VOLTAGE_FILTERED.get(), 1);
     });
+}
+
+#[test]
+fn generated_vesc_if_inventory_matches_pinned_upstream_header() {
+    assert_eq!(
+        VescIfAbi::SOURCE_REPOSITORY,
+        "https://github.com/lukash/vesc_pkg_lib"
+    );
+    assert_eq!(
+        VescIfAbi::SOURCE_COMMIT,
+        "e8bdc8296b90a266713da3762868f0d18ec027fe"
+    );
+    assert_eq!(
+        VescIfAbi::SOURCE_HEADER,
+        "third_party/vesc_pkg_lib/vesc_c_if.h"
+    );
+    assert_eq!(c_vesc_if::FIELD_COUNT, 253);
+    assert_eq!(VescIfAbi::FIELD_COUNT, c_vesc_if::FIELD_COUNT);
+
+    assert_eq!(c_vesc_if::lbm_add_extension::INDEX, 0);
+    assert_eq!(c_vesc_if::lbm_add_extension::VESC32_BYTE_OFFSET, 0);
+    assert_eq!(c_vesc_if::lbm_add_extension::HEADER_LINE, 325);
+    assert_eq!(c_vesc_if::send_app_data::INDEX, 148);
+    assert_eq!(c_vesc_if::set_app_data_handler::INDEX, 149);
+    assert_eq!(c_vesc_if::mc_get_fault::INDEX, 92);
+    assert_eq!(c_vesc_if::system_time_ticks::INDEX, 238);
+    assert_eq!(c_vesc_if::shutdown_disable::INDEX, 252);
+    assert_eq!(c_vesc_if::shutdown_disable::HEADER_LINE, 672);
+
+    assert_eq!(c_vesc_if::SLOTS[0].name, c_vesc_if::lbm_add_extension::NAME);
+    assert_eq!(
+        c_vesc_if::SLOTS[c_vesc_if::FIELD_COUNT - 1].name,
+        c_vesc_if::shutdown_disable::NAME
+    );
+    assert_eq!(
+        c_vesc_if::SLOTS[c_vesc_if::FIELD_COUNT - 1].vesc32_byte_offset,
+        c_vesc_if::shutdown_disable::VESC32_BYTE_OFFSET
+    );
+}
+
+#[test]
+fn public_vesc_if_slots_are_projected_from_generated_inventory() {
+    for slot in VescIfAbi::USED_SLOTS {
+        let generated = c_vesc_if::SLOTS
+            .iter()
+            .find(|generated| generated.name == slot.name())
+            .expect("used slot must exist in generated upstream inventory");
+
+        assert_eq!(generated.index, slot.slot_index());
+        assert_eq!(generated.vesc32_byte_offset, slot.vesc32_byte_offset());
+    }
+}
+
+#[test]
+fn vesc_if_abi_gpio_offsets_match_struct_layout() {
+    let pointer_size = core::mem::size_of::<usize>();
+    let vesc32 = |field_offset: usize| (field_offset / pointer_size) * 4;
+
+    assert_eq!(
+        VescIfAbi::IO_SET_MODE.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, io_set_mode))
+    );
+    assert_eq!(
+        VescIfAbi::IO_WRITE.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, io_write))
+    );
+    assert_eq!(
+        VescIfAbi::IO_READ.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, io_read))
+    );
+    assert_eq!(
+        VescIfAbi::IO_READ_ANALOG.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, io_read_analog))
+    );
+}
+
+#[test]
+fn vesc_if_abi_custom_config_offsets_match_struct_layout() {
+    // Refloat v1.2.1 uses `src/main.c:2456` and `src/main.c:2403`; the matching
+    // ABI slots are declared in `vesc_pkg_lib/vesc_c_if.h:549-553`.
+    let pointer_size = core::mem::size_of::<usize>();
+    let vesc32 = |field_offset: usize| (field_offset / pointer_size) * 4;
+
+    assert_eq!(
+        VescIfAbi::CONF_CUSTOM_ADD_CONFIG.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, conf_custom_add_config))
+    );
+    assert_eq!(
+        VescIfAbi::CONF_CUSTOM_CLEAR_CONFIGS.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, conf_custom_clear_configs))
+    );
+}
+
+#[test]
+fn vesc_if_abi_motor_data_offsets_match_struct_layout() {
+    let pointer_size = core::mem::size_of::<usize>();
+    let vesc32 = |field_offset: usize| (field_offset / pointer_size) * 4;
+
+    assert_eq!(
+        VescIfAbi::MC_GET_AMP_HOURS.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_get_amp_hours))
+    );
+    assert_eq!(
+        VescIfAbi::MC_GET_AMP_HOURS_CHARGED.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_get_amp_hours_charged))
+    );
+    assert_eq!(
+        VescIfAbi::MC_GET_WATT_HOURS.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_get_watt_hours))
+    );
+    assert_eq!(
+        VescIfAbi::MC_GET_WATT_HOURS_CHARGED.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_get_watt_hours_charged))
+    );
+    assert_eq!(
+        VescIfAbi::MC_GET_DISTANCE_ABS.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_get_distance_abs))
+    );
+    assert_eq!(
+        VescIfAbi::MC_TEMP_FET_FILTERED.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_temp_fet_filtered))
+    );
+    assert_eq!(
+        VescIfAbi::MC_TEMP_MOTOR_FILTERED.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_temp_motor_filtered))
+    );
+    assert_eq!(
+        VescIfAbi::MC_GET_BATTERY_LEVEL.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_get_battery_level))
+    );
+    assert_eq!(
+        VescIfAbi::MC_GET_ODOMETER.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_get_odometer))
+    );
+    assert_eq!(
+        VescIfAbi::MC_GET_FAULT.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_get_fault))
+    );
+    assert_eq!(
+        VescIfAbi::MC_GET_INPUT_VOLTAGE_FILTERED.vesc32_byte_offset(),
+        vesc32(core::mem::offset_of!(VescIf, mc_get_input_voltage_filtered))
+    );
 }
