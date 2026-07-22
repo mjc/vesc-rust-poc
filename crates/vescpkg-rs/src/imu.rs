@@ -105,6 +105,12 @@ impl FirmwareAhrsParameters {
     }
 }
 
+impl Default for FirmwareAhrsParameters {
+    fn default() -> Self {
+        Self::defaults()
+    }
+}
+
 impl FirmwareAhrsSnapshot {
     /// Return the copied quaternion orientation.
     #[must_use]
