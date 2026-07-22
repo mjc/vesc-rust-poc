@@ -53,6 +53,7 @@ fn firmware_ahrs_copies_initialized_and_updated_state() {
         .unwrap();
     assert!(updated.initial_update_done());
     assert_eq!(f32::from(updated.orientation().quaternion().w()), 0.9);
+    assert_eq!(updated.attitude().pitch().angle().as_radians(), 0.2);
     assert_eq!(ahrs.attitude().roll().angle().as_radians(), 0.1);
 
     let mahony = ahrs.update_mahony(sample(0.5)).unwrap();
@@ -70,6 +71,7 @@ fn firmware_ahrs_copies_initialized_and_updated_state() {
     assert_eq!(configured.proportional_gain(), 3.0);
     assert_eq!(configured.integral_gain(), 0.2);
     assert_eq!(configured.madgwick_beta(), 0.4);
+    assert_eq!(ahrs.parameters(), parameters);
     assert_eq!(ahrs.reset().proportional_gain(), 3.0);
 }
 

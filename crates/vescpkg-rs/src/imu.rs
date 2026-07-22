@@ -19,6 +19,7 @@ static IMU_READ_CALLBACK_REGISTERED: AtomicBool = AtomicBool::new(false);
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FirmwareAhrsSnapshot {
     orientation: ImuOrientation,
+    attitude: ImuAttitude,
     integral_feedback: ImuAngularRate,
     acceleration_magnitude: AccelerationG,
     initial_update_done: bool,
@@ -109,6 +110,12 @@ impl FirmwareAhrsSnapshot {
     #[must_use]
     pub const fn orientation(self) -> ImuOrientation {
         self.orientation
+    }
+
+    /// Return the copied firmware-derived roll, pitch, and yaw angles.
+    #[must_use]
+    pub const fn attitude(self) -> ImuAttitude {
+        self.attitude
     }
 
     /// Return the copied integral feedback in radians per second.
@@ -224,6 +231,12 @@ impl FirmwareAhrs {
         Ok(())
     }
 
+    /// Return the parameters currently applied to the owned state.
+    #[must_use]
+    pub const fn parameters(&self) -> FirmwareAhrsParameters {
+        self.parameters
+    }
+
     /// Reset the owned firmware AHRS state to its firmware defaults.
     pub fn reset(&mut self) -> FirmwareAhrsSnapshot {
         unsafe { crate::ffi::ahrs_init_attitude_info(&mut self.attitude) };
@@ -303,6 +316,7 @@ impl FirmwareAhrs {
     /// Copy every public field of the firmware attitude state before returning.
     #[must_use]
     pub fn snapshot(&self) -> FirmwareAhrsSnapshot {
+        let attitude_snapshot = self.attitude();
         let attitude = &self.attitude;
         FirmwareAhrsSnapshot {
             orientation: ImuOrientation::from_quaternion(ImuQuaternion::from_components(
@@ -311,6 +325,7 @@ impl FirmwareAhrs {
                 crate::ImuQuaternionY::new(attitude.q2),
                 crate::ImuQuaternionZ::new(attitude.q3),
             )),
+            attitude: attitude_snapshot,
             integral_feedback: ImuAngularRate::from_axes(
                 ImuAngularRateRoll::new(AngularVelocity::from_radians_per_second(
                     attitude.integralFBx,
