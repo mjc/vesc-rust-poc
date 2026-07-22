@@ -22,6 +22,30 @@ fn typed_settings_read_write_and_persist() {
     assert_eq!(settings.input_current_max().current().as_amps(), 60.0);
     assert_eq!(settings.duty_cycle_limit().ratio().as_ratio(), 0.95);
     settings
+        .set_motor_current_max(vescpkg_rs::MotorCurrentLimit::new(
+            vescpkg_rs::Current::from_amps(80.0),
+        ))
+        .unwrap();
+    settings
+        .set_motor_current_min(vescpkg_rs::MotorCurrentLimit::new(
+            vescpkg_rs::Current::from_amps(40.0),
+        ))
+        .unwrap();
+    settings
+        .set_input_current_max(vescpkg_rs::InputCurrent::new(
+            vescpkg_rs::Current::from_amps(30.0),
+        ))
+        .unwrap();
+    settings
+        .set_duty_cycle_limit(vescpkg_rs::DutyCycleLimit::new(
+            vescpkg_rs::Ratio::from_ratio_const(0.8),
+        ))
+        .unwrap();
+    assert_eq!(settings.motor_current_max().current().as_amps(), 80.0);
+    assert_eq!(settings.motor_current_min().current().as_amps(), 40.0);
+    assert_eq!(settings.input_current_max().current().as_amps(), 30.0);
+    assert_eq!(settings.duty_cycle_limit().ratio().as_ratio(), 0.8);
+    settings
         .set_float(FirmwareFloatSetting::InputCurrentMax, 24.0)
         .unwrap();
     assert_eq!(
