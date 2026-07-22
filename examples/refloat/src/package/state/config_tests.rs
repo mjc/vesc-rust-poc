@@ -60,6 +60,7 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
     let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
     assert!(state.serialized_config.editor().set_beeper_enabled(true));
     state.refresh_config_runtime_state();
+    assert!(state.serialized_config.editor().set_disabled(true));
     assert!(
         state
             .serialized_config
@@ -89,6 +90,17 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
             .editor()
             .set_kp(vescpkg_rs::AngleCurrentGain::new(5.0))
     );
+    assert!(state.serialized_config.editor().set_disabled(false));
+    state.refresh_config_runtime_state();
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state(),
+        RefloatRunState::Startup,
+    );
     assert!(handle_config_command(
         &firmware,
         &mut state,
@@ -96,11 +108,29 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
         &[],
     ));
     assert_eq!(state.serialized_config, saved);
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state(),
+        RefloatRunState::Disabled,
+    );
     assert_eq!(state.tick_beeper(), None);
 
     let restarted =
         RefloatPackageState::from_persisted_config(RefloatAllDataPayloads::source_startup());
     assert_eq!(restarted.serialized_config, saved);
+    assert_eq!(
+        restarted
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state(),
+        RefloatRunState::Disabled,
+    );
 }
 
 #[test]
@@ -574,6 +604,37 @@ fn successful_config_write_reconfigures_and_acknowledges_like_refloat() {
         assert_eq!(changes.len(), expected_changes);
         assert_eq!(changes.last(), Some(&expected_last));
     }
+}
+
+#[test]
+fn failed_config_write_does_not_reconfigure_or_acknowledge() {
+    let firmware = FirmwareTest::new();
+    let address = vescpkg_rs::CustomEepromAddress::from_index(0).expect("zero fits");
+    firmware.fail_eeprom_write(address);
+    let mut state = RefloatPackageState::new(sample_all_data_payloads_with_ride_state(
+        RefloatRunState::Ready,
+        RefloatMode::Normal,
+    ));
+    let original = state.serialized_config;
+    let mut bytes = default_refloat_config_bytes();
+    bytes.edit_refloat_config(|config| {
+        assert!(config.set_beeper_enabled(true));
+        assert!(config.set_disabled(true));
+    });
+
+    assert!(!state.store_serialized_config(&bytes));
+
+    assert_eq!(state.serialized_config, original);
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state(),
+        RefloatRunState::Ready,
+    );
+    assert_eq!(state.tick_beeper(), None);
 }
 
 #[test]

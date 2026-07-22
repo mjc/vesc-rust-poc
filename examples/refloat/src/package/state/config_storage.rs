@@ -28,7 +28,6 @@ impl RefloatPackageState {
         }
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(in crate::package) fn load_persisted_config_on_startup(&mut self) {
         self.read_config_from_eeprom();
         self.refresh_balance_filter_config();
@@ -52,7 +51,7 @@ impl RefloatPackageState {
                     self.alert_beeper(RefloatBeeperAlert::Short(RefloatBeeperCount::ONE));
                 }
             }
-            RefloatAppDataCommand::ConfigRestore => self.read_config_from_eeprom(),
+            RefloatAppDataCommand::ConfigRestore => self.load_persisted_config_on_startup(),
             RefloatAppDataCommand::TuneDefaults => {
                 self.serialized_config.reset_tune_defaults();
                 self.refresh_balance_filter_config();
@@ -132,8 +131,12 @@ impl RefloatPackageState {
         // is serialized from `third_party/refloat/src/conf/settings.xml:3903-3914`
         // at byte 275.
         config.editor().clear_meta_is_default();
+        let previous_config = self.serialized_config;
         self.serialized_config = config;
-        self.write_config_to_eeprom();
+        if !self.write_config_to_eeprom() {
+            self.serialized_config = previous_config;
+            return false;
+        }
         // After a successful write, C calls `configure(d)` at
         // `third_party/refloat/src/main.c:2380-2382`, which refreshes the balance filter KP at
         // `third_party/refloat/src/main.c:158-160`.
