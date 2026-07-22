@@ -56,6 +56,7 @@ fn gpio_leases_reject_wrong_mode_and_cover_analog_ownership() {
         .acquire_analog(vescpkg_rs::AnalogPin::ADC1)
         .expect("analog lease");
     assert_eq!(adc.read(), Err(GpioError::WrongMode));
+    assert_eq!(adc.set_mode(GpioMode::Output), Err(GpioError::WrongMode));
     adc.set_mode(GpioMode::Analog).expect("analog mode");
     assert_eq!(adc.read().expect("analog read").voltage().as_volts(), 1.2);
 }
