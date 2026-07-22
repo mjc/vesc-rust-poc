@@ -9,14 +9,24 @@ The current release artifacts produced by `cargo vescpkg build` are:
 
 | artifact | SHA-256 |
 | --- | --- |
-| `Rust-BLE-loopback-test-package-0.1.0.vescpkg` | `36a3106194ff948dca7127c523e754925cbb0505b1b783c18d9a0427bd093e57` |
-| `Rust-alloc-smoke-package-0.1.0.vescpkg` | `f32f6621f505fa4e3660e16f4ad520afa86bb7c2155fd261272010aaad7f3439` |
-| loopback `src/package_lib.bin` | `5f8d468fa9c0d79738e1b96a8258d3ed9bf79df881ca0b134b901a4312fe5a48` |
-| alloc-smoke `src/package_lib.bin` | `879713045ecbb3257ce3af077911a51895a5d0a1bb9ed968a735331c98327e20` |
+| `Rust-BLE-loopback-test-package-0.1.0.vescpkg` | `deb0d07c23889ee77a2ead27a3da634dca77f0a60c954f9225730395b8543ef8` |
+| `Rust-alloc-smoke-package-0.1.0.vescpkg` | `e937929f1d9f745a5d941718cbe636fb144fe0fa91f0debed3344b2469a677d1` |
+| `Rust-control-loop-smoke-package-0.1.0.vescpkg` | `b535bdec53aca2e6c77899ffeb07ea18f9d77aecdd72fd805f565f45be0d0401` |
+| `Refloat-1.2.1.vescpkg` | `d5e7afc37698668638d38c97554a84218aee00f110f106c7b837374680faa773` |
+| loopback `src/package_lib.bin` | `f6d4d981508b56aa2738aba62e79b763c2946fe53c5875e9d976eb1f9e0e47c3` |
+| alloc-smoke `src/package_lib.bin` | `0e6452d42128df37bf55f433d84abbf4708572b424418281dc35fff5df38c9e4` |
+| control-loop `src/package_lib.bin` | `5152a5f6ebea10443c141a00a04f3e2dc2c80e1ec69b31b11715a7f3d6fb66fe` |
+| Refloat `src/package_lib.bin` | `392c8236f96c758d04d337705e62b89f2eba4721212151dd7af3fbd22ba921f6` |
 
 `cargo test -p cargo-vescpkg` decodes the compressed wire fixture through the
-same package reader used by installation. The hardware gate was run with the
-BLE deploy command for both artifacts: install, start, ping, echo, status, and
-teardown all succeeded, and the echo response was `0102020908`. The alloc-smoke
-package performs the same sequence through its allocator-backed app-data
-callback, so the probe exercises the allocation instead of optimizing it away.
+same package reader used by installation. A historical hardware gate ran the
+BLE deploy command for the loopback and alloc-smoke artifacts: install, start,
+ping, echo, status, and teardown all succeeded, and the echo response was
+`0102020908`. The alloc-smoke package performs the same sequence through its
+allocator-backed app-data callback, so the probe exercises the allocation
+instead of optimizing it away.
+
+The hashes above are the current artifact-only proof after the direct Cargo
+binary cutover. They do not claim a new device run. The ignored HIL workflow in
+`crates/cargo-vescpkg/tests/hil_loopback.rs` remains the required current
+device gate and needs `VESC_DEVICE` plus `VESC_BLE_ADDR` before it can be run.
