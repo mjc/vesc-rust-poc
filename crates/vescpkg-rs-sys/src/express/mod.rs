@@ -30,6 +30,8 @@ pub use types::{
 mod tests {
     use super::*;
 
+    unsafe extern "C" fn express_noop(_: *mut core::ffi::c_void) {}
+
     #[test]
     fn pinned_v1_shape_is_independent_from_stm32() {
         assert_eq!(EXPRESS_C_IF_VERSION, 1);
@@ -124,6 +126,18 @@ mod tests {
             ExpressAllocation::new(runtime, 0),
             Err(ExpressAllocationError::ZeroSize)
         ));
+        assert_eq!(
+            unsafe { runtime.request_terminate(core::ptr::null_mut()) },
+            Err(ExpressCallError {
+                slot: ExpressSlot::RequestTerminate
+            })
+        );
+        assert_eq!(
+            unsafe { runtime.spawn(express_noop, 256, core::ptr::null(), core::ptr::null_mut()) },
+            Err(ExpressCallError {
+                slot: ExpressSlot::Spawn
+            })
+        );
     }
 
     #[test]

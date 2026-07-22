@@ -1,10 +1,11 @@
 //! Constructor-gated shared Express runtime operations.
 
 use super::functions::{
-    Free, LibMutex, LibSemaphore, Malloc, MutexCreate, MutexLock, MutexUnlock, SemaphoreCreate,
-    SemaphoreReset, SemaphoreSignal, SemaphoreWait, SemaphoreWaitTo, ShouldTerminate, SleepMs,
-    SleepTicks, SleepUs, SystemTime, SystemTimeTicks, ThreadSetPriority, TimerSecondsElapsedSince,
-    TimerSleep, TimerTimeNow, TsToAgeS,
+    Free, LibMutex, LibSemaphore, LibThread, Malloc, MutexCreate, MutexLock, MutexUnlock,
+    SemaphoreCreate, SemaphoreReset, SemaphoreSignal, SemaphoreWait, SemaphoreWaitTo,
+    ShouldTerminate, SleepMs, SleepTicks, SleepUs, Spawn, SpawnFunction, SystemTime,
+    SystemTimeTicks, ThreadSetPriority, TimerSecondsElapsedSince, TimerSleep, TimerTimeNow,
+    TsToAgeS,
 };
 use super::{ExpressCallError, ExpressInterface, ExpressSlot, ExpressTarget};
 
@@ -118,6 +119,37 @@ impl<'a> ExpressRuntime<'a> {
         let set_priority: ThreadSetPriority =
             unsafe { self.interface.function(ExpressSlot::ThreadSetPriority) }?;
         unsafe { set_priority(priority) };
+        Ok(())
+    }
+
+    /// Spawn a firmware thread.
+    ///
+    /// # Safety
+    ///
+    /// `function`, `name`, and `argument` must remain valid for the firmware's
+    /// use, and `function` must obey the exact callback ABI from the pinned
+    /// Express header. The returned handle is opaque firmware state.
+    pub unsafe fn spawn(
+        self,
+        function: SpawnFunction,
+        stack_size: usize,
+        name: *const core::ffi::c_char,
+        argument: *mut core::ffi::c_void,
+    ) -> Result<LibThread, ExpressCallError> {
+        let spawn: Spawn = unsafe { self.interface.function(ExpressSlot::Spawn) }?;
+        Ok(unsafe { spawn(function, stack_size, name, argument) })
+    }
+
+    /// Request termination of a firmware thread handle returned by [`Self::spawn`].
+    ///
+    /// # Safety
+    ///
+    /// `thread` must be a live handle returned by this Express firmware
+    /// provider and must not be used again after termination is requested.
+    pub unsafe fn request_terminate(self, thread: LibThread) -> Result<(), ExpressCallError> {
+        let request: unsafe extern "C" fn(LibThread) =
+            unsafe { self.interface.function(ExpressSlot::RequestTerminate) }?;
+        unsafe { request(thread) };
         Ok(())
     }
 
