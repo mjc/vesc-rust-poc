@@ -30,6 +30,10 @@ pub type RemoteState = crate::bindgen::remote_state;
 /// Bindgen-generated `PACKET_STATE_t` layout.
 pub type PacketState = crate::bindgen::PACKET_STATE_t;
 
+/// VESC CAN receive callback ABI.
+pub type CanReceiverCallback = unsafe extern "C" fn(u32, *mut u8, u8) -> bool;
+type CanRxCallback = CanReceiverCallback;
+
 type LibThread = crate::bindgen::lib_thread;
 type LibMutex = crate::bindgen::lib_mutex;
 type LibSemaphore = crate::bindgen::lib_semaphore;
@@ -151,7 +155,7 @@ macro_rules! vesc_slot_word_from {
 
 mod slots {
     use super::{
-        AppDataHandler, CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5,
+        AppDataHandler, CanRxCallback, CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5,
         CanStatusMsg6, CustomConfigGet, CustomConfigSet, CustomConfigXml, EepromVar,
         ExtensionHandler, GnssData, HwType, ImuReadCallback, LbmFlatValue, LbmValue, LibMutex, LibSemaphore,
         LibThread, RemoteState, VescIfAbi, c_char, c_int, c_uchar, c_uint, c_void,
@@ -311,6 +315,8 @@ mod slots {
     optional_fn_slot!(can_get_status_msg_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg);
     optional_fn_slot!(can_transmit_sid as unsafe extern "C" fn(u32, *const u8, u8));
     optional_fn_slot!(can_transmit_eid as unsafe extern "C" fn(u32, *const u8, u8));
+    optional_fn_slot!(can_set_sid_cb as unsafe extern "C" fn(Option<CanRxCallback>));
+    optional_fn_slot!(can_set_eid_cb as unsafe extern "C" fn(Option<CanRxCallback>));
     optional_fn_slot!(can_set_duty as unsafe extern "C" fn(u8, f32));
     optional_fn_slot!(can_set_current as unsafe extern "C" fn(u8, f32));
     optional_fn_slot!(can_set_current_off_delay as unsafe extern "C" fn(u8, f32, f32));
@@ -1066,6 +1072,16 @@ pub unsafe fn vesc_get_arg(prog_addr: u32) -> *mut *mut c_void {
 /// `data` must point to `len` readable bytes for the duration of the call.
 pub unsafe fn can_transmit_sid(id: u32, data: *const u8, len: u8) -> Option<()> {
     unsafe { slots::can_transmit_sid() }.map(|transmit| unsafe { transmit(id, data, len) })
+}
+
+/// Install or clear the standard-ID CAN receiver callback.
+pub unsafe fn can_set_sid_callback(callback: Option<CanReceiverCallback>) -> Option<()> {
+    unsafe { slots::can_set_sid_cb() }.map(|set| unsafe { set(callback) })
+}
+
+/// Install or clear the extended-ID CAN receiver callback.
+pub unsafe fn can_set_eid_callback(callback: Option<CanReceiverCallback>) -> Option<()> {
+    unsafe { slots::can_set_eid_cb() }.map(|set| unsafe { set(callback) })
 }
 
 /// Transmit one bounded extended CAN frame when the optional slot is present.

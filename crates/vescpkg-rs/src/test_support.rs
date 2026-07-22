@@ -31,6 +31,7 @@ impl FirmwareTest {
     #[must_use]
     pub fn new() -> Self {
         crate::gpio::reset_leases();
+        crate::can_bus::reset_receiver_registrations();
         let lock = crate::test_ffi::lock_firmware();
         Self {
             firmware: crate::Firmware::new(),

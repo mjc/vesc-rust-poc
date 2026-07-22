@@ -8,6 +8,12 @@ use crate::types::{
     WattHoursDischarged,
 };
 use crate::units::{Charge, Current, Energy, Rpm, SignedRatio, SystemTicks, TimestampTicks};
+use core::sync::atomic::{AtomicBool, Ordering};
+
+/// Callback ABI used by VESC standard/extended CAN receive slots.
+pub type CanReceiverCallback = unsafe extern "C" fn(u32, *mut u8, u8) -> bool;
+
+static SID_RECEIVER_REGISTERED: AtomicBool = AtomicBool::new(false);
 
 /// Failure returned by a CAN operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,6 +24,8 @@ pub enum CanError {
     PayloadTooLong,
     /// The remote controller did not answer the ping request.
     PingFailed,
+    /// A receiver callback of this kind is already registered.
+    ReceiverBusy,
 }
 
 impl core::fmt::Display for CanError {
@@ -26,6 +34,7 @@ impl core::fmt::Display for CanError {
             Self::Unsupported => "firmware does not expose this CAN operation",
             Self::PayloadTooLong => "CAN payload exceeds eight bytes",
             Self::PingFailed => "remote CAN controller did not answer",
+            Self::ReceiverBusy => "a CAN receiver callback is already registered",
         })
     }
 }
@@ -255,9 +264,35 @@ impl CanStatus {
 /// Safe access to the firmware CAN table.
 pub struct CanBus;
 
+/// Owns one standard-ID receiver registration and unregisters it on drop.
+pub struct CanReceiverGuard;
+
+impl Drop for CanReceiverGuard {
+    fn drop(&mut self) {
+        if unsafe { crate::ffi::can_set_sid_callback(None) }.is_some() {
+            SID_RECEIVER_REGISTERED.store(false, Ordering::Release);
+        }
+    }
+}
+
 impl CanBus {
     pub(crate) const fn new() -> Self {
         Self
+    }
+
+    /// Register the single standard-ID receive callback exposed by VESC.
+    pub fn register_standard_receiver(
+        &self,
+        callback: CanReceiverCallback,
+    ) -> Result<CanReceiverGuard, CanError> {
+        SID_RECEIVER_REGISTERED
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .map_err(|_| CanError::ReceiverBusy)?;
+        if unsafe { crate::ffi::can_set_sid_callback(Some(callback)) }.is_none() {
+            SID_RECEIVER_REGISTERED.store(false, Ordering::Release);
+            return Err(CanError::Unsupported);
+        }
+        Ok(CanReceiverGuard)
     }
 
     /// Ping a remote controller and return its reported hardware family.
@@ -466,4 +501,9 @@ impl CanBus {
             ),
         })
     }
+}
+
+#[cfg(all(feature = "test-support", not(test)))]
+pub(crate) fn reset_receiver_registrations() {
+    SID_RECEIVER_REGISTERED.store(false, Ordering::Release);
 }
