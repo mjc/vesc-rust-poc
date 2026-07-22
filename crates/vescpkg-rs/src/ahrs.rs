@@ -71,10 +71,10 @@ impl Ahrs {
     }
 
     /// Integrate one copied firmware IMU sample.
-    pub fn update(&mut self, sample: ImuReadSample) {
+    pub fn update(&mut self, sample: ImuReadSample) -> ImuOrientation {
         let dt = sample.period().duration().as_seconds();
         if !dt.is_finite() || dt <= 0.0 {
-            return;
+            return self.orientation();
         }
 
         let (ax, ay, az) = sample.acceleration().map_axes(|x, y, z| {
@@ -126,5 +126,6 @@ impl Ahrs {
         } else {
             self.reset();
         }
+        self.orientation()
     }
 }
