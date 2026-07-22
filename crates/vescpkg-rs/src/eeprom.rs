@@ -79,7 +79,7 @@ impl EepromWord {
 }
 
 /// Firmware-backed package custom-EEPROM capability.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CustomEeprom;
 
 impl CustomEeprom {
