@@ -1277,6 +1277,22 @@ pub unsafe fn foc_get_vq() -> Option<f32> {
     Some(4.5)
 }
 
+pub unsafe fn foc_set_openloop_current(_current: f32, _rpm: f32) -> bool {
+    true
+}
+
+pub unsafe fn foc_set_openloop_phase(_current: f32, _phase: f32) -> bool {
+    true
+}
+
+pub unsafe fn foc_set_openloop_duty(_duty: f32, _rpm: f32) -> bool {
+    true
+}
+
+pub unsafe fn foc_set_openloop_duty_phase(_duty: f32, _phase: f32) -> bool {
+    true
+}
+
 pub unsafe fn mc_get_distance_abs() -> f32 {
     load(&DISTANCE_ABS)
 }

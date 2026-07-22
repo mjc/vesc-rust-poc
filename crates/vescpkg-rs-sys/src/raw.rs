@@ -418,6 +418,10 @@ mod slots {
     optional_fn_slot!(foc_get_iq as unsafe extern "C" fn() -> f32);
     optional_fn_slot!(foc_get_vd as unsafe extern "C" fn() -> f32);
     optional_fn_slot!(foc_get_vq as unsafe extern "C" fn() -> f32);
+    optional_fn_slot!(foc_set_openloop_current as unsafe extern "C" fn(f32, f32));
+    optional_fn_slot!(foc_set_openloop_phase as unsafe extern "C" fn(f32, f32));
+    optional_fn_slot!(foc_set_openloop_duty as unsafe extern "C" fn(f32, f32));
+    optional_fn_slot!(foc_set_openloop_duty_phase as unsafe extern "C" fn(f32, f32));
     fn_slot!(mc_temp_fet_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_temp_motor_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(imu_startup_done as unsafe extern "C" fn() -> bool);
@@ -1699,6 +1703,34 @@ pub unsafe fn foc_get_vd() -> Option<f32> {
 /// Return FOC q-axis Vq voltage when the firmware slot is present.
 pub unsafe fn foc_get_vq() -> Option<f32> {
     unsafe { slots::foc_get_vq() }.map(|func| unsafe { func() })
+}
+
+/// Apply open-loop current at electrical speed when the slot is present.
+pub unsafe fn foc_set_openloop_current(current: f32, rpm: f32) -> bool {
+    unsafe { slots::foc_set_openloop_current() }
+        .map(|func| unsafe { func(current, rpm) })
+        .is_some()
+}
+
+/// Apply open-loop current at electrical phase when the slot is present.
+pub unsafe fn foc_set_openloop_phase(current: f32, phase: f32) -> bool {
+    unsafe { slots::foc_set_openloop_phase() }
+        .map(|func| unsafe { func(current, phase) })
+        .is_some()
+}
+
+/// Apply open-loop duty at electrical speed when the slot is present.
+pub unsafe fn foc_set_openloop_duty(duty: f32, rpm: f32) -> bool {
+    unsafe { slots::foc_set_openloop_duty() }
+        .map(|func| unsafe { func(duty, rpm) })
+        .is_some()
+}
+
+/// Apply open-loop duty at electrical phase when the slot is present.
+pub unsafe fn foc_set_openloop_duty_phase(duty: f32, phase: f32) -> bool {
+    unsafe { slots::foc_set_openloop_duty_phase() }
+        .map(|func| unsafe { func(duty, phase) })
+        .is_some()
 }
 /// Return the filtered input/battery voltage.
 ///
