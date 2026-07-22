@@ -644,6 +644,14 @@ pub unsafe fn can_transmit_eid(_id: u32, _data: *const u8, _len: u8) -> Option<(
     Some(())
 }
 
+pub unsafe fn can_set_duty(_controller: u8, _duty: f32) -> Option<()> {
+    Some(())
+}
+
+pub unsafe fn can_set_current(_controller: u8, _current: f32) -> Option<()> {
+    Some(())
+}
+
 pub unsafe fn can_status_msg_id(_id: i32) -> Option<CanStatusMsg> {
     Some(CAN_STATUS)
 }

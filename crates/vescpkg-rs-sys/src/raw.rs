@@ -292,6 +292,8 @@ mod slots {
     optional_fn_slot!(can_get_status_msg_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg);
     optional_fn_slot!(can_transmit_sid as unsafe extern "C" fn(u32, *const u8, u8));
     optional_fn_slot!(can_transmit_eid as unsafe extern "C" fn(u32, *const u8, u8));
+    optional_fn_slot!(can_set_duty as unsafe extern "C" fn(u8, f32));
+    optional_fn_slot!(can_set_current as unsafe extern "C" fn(u8, f32));
     optional_fn_slot!(
         can_get_status_msg_2_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg2
     );
@@ -1046,6 +1048,16 @@ pub unsafe fn can_transmit_sid(id: u32, data: *const u8, len: u8) -> Option<()> 
 /// `data` must point to `len` readable bytes for the duration of the call.
 pub unsafe fn can_transmit_eid(id: u32, data: *const u8, len: u8) -> Option<()> {
     unsafe { slots::can_transmit_eid() }.map(|transmit| unsafe { transmit(id, data, len) })
+}
+
+/// Send a remote motor duty command when the optional slot is present.
+pub unsafe fn can_set_duty(controller: u8, duty: f32) -> Option<()> {
+    unsafe { slots::can_set_duty() }.map(|set| unsafe { set(controller, duty) })
+}
+
+/// Send a remote motor current command when the optional slot is present.
+pub unsafe fn can_set_current(controller: u8, current: f32) -> Option<()> {
+    unsafe { slots::can_set_current() }.map(|set| unsafe { set(controller, current) })
 }
 
 /// Copy a firmware-owned record without allowing a null pointer to cross the
