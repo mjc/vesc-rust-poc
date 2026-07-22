@@ -6,9 +6,9 @@ use crate::{
     Charge, Current, DutyCycleLimit, DutyCycleMinimum, ElectricalSpeed, FocAudio,
     FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance, GearRatio, ImuAccelerationOffset,
     ImuAhrsMode, ImuAngularRateOffset, ImuMadgwickBeta, ImuMahonyIntegralGain,
-    ImuMahonyProportionalGain, InputCurrent, InputVoltage, MotorCurrentLimit, MotorPoleCount, Nvm,
-    NvmCapacity, Ratio, ShutdownMode, TemperatureLimitEnd, TemperatureLimitStart, Uart, Voltage,
-    WheelDiameter,
+    ImuMahonyProportionalGain, ImuSampleRate, InputCurrent, InputVoltage, MotorCurrentLimit,
+    MotorPoleCount, Nvm, NvmCapacity, Ratio, ShutdownMode, TemperatureLimitEnd,
+    TemperatureLimitStart, Uart, Voltage, WheelDiameter,
 };
 use core::fmt;
 use vescpkg_rs_sys::{AbiError, Stm32AbiRevision, VescIfCapabilities, VescIfPresence};
@@ -322,8 +322,10 @@ impl FirmwareSettings {
     }
 
     /// Read the configured firmware IMU sample rate.
-    pub fn imu_sample_rate(self) -> crate::SampleRate {
-        crate::SampleRate::from_hertz(self.get_float(FirmwareFloatSetting::ImuSampleRate))
+    pub fn imu_sample_rate(self) -> ImuSampleRate {
+        ImuSampleRate::new(crate::SampleRate::from_hertz(
+            self.get_float(FirmwareFloatSetting::ImuSampleRate),
+        ))
     }
 
     /// Read the configured IMU roll mounting rotation.
@@ -532,8 +534,11 @@ impl FirmwareSettings {
     }
 
     /// Update the live firmware IMU sample rate; persistence still requires [`Self::store`].
-    pub fn set_imu_sample_rate(self, rate: crate::SampleRate) -> Result<(), SettingsError> {
-        self.set_float(FirmwareFloatSetting::ImuSampleRate, rate.as_hertz())
+    pub fn set_imu_sample_rate(self, rate: ImuSampleRate) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::ImuSampleRate,
+            rate.sample_rate().as_hertz(),
+        )
     }
 
     /// Update the live IMU roll mounting rotation; persistence still requires [`Self::store`].
