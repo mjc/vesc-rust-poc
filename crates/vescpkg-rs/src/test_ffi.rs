@@ -84,7 +84,7 @@ pub unsafe fn app_is_output_disabled() -> Option<bool> {
 }
 
 pub unsafe fn store_backup_data() -> Option<bool> {
-    Some(true)
+    BACKUP_AVAILABLE.load(Ordering::Relaxed).then_some(true)
 }
 
 // C map: these host replacements model the motor slots declared at
@@ -137,6 +137,7 @@ static PLOT_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static GNSS_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static PWM_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static CAN_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static BACKUP_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static DISTANCE_ABS: AtomicU32 = AtomicU32::new(0);
 static MOSFET_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
@@ -331,6 +332,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     GNSS_AVAILABLE.store(true, Ordering::Relaxed);
     PWM_AVAILABLE.store(true, Ordering::Relaxed);
     CAN_AVAILABLE.store(true, Ordering::Relaxed);
+    BACKUP_AVAILABLE.store(true, Ordering::Relaxed);
     DISTANCE_ABS.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOSFET_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -1148,6 +1150,10 @@ pub(crate) fn set_pwm_available(available: bool) {
 
 pub(crate) fn set_can_available(available: bool) {
     CAN_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_backup_available(available: bool) {
+    BACKUP_AVAILABLE.store(available, Ordering::Relaxed);
 }
 
 pub(crate) fn set_imu_startup_done(done: bool) {

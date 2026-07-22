@@ -314,6 +314,11 @@ impl FirmwareTest {
         crate::test_ffi::set_can_available(available);
     }
 
+    /// Toggle whether the fake firmware exposes explicit backup persistence.
+    pub fn set_backup_available(&self, available: bool) {
+        crate::test_ffi::set_backup_available(available);
+    }
+
     /// Borrow the same typed thread capability package code uses on hardware.
     #[must_use]
     pub fn threads(&self) -> &impl crate::FirmwareThreads {
