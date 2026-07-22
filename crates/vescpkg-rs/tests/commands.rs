@@ -49,6 +49,18 @@ fn command_reply_registration_is_exclusive() {
 }
 
 #[test]
+fn command_processing_reports_absent_optional_slots() {
+    let firmware = FirmwareTest::new();
+    firmware.set_commands_available(false);
+    let mut packet = [1, 2, 3];
+
+    assert!(matches!(
+        firmware.commands().process::<Handler>(&mut packet),
+        Err(vescpkg_rs::CommandError::Unavailable)
+    ));
+}
+
+#[test]
 fn package_stop_releases_command_reply_state_before_next_registration() {
     let firmware = FirmwareTest::new();
     let mut packet = [1_u8];
