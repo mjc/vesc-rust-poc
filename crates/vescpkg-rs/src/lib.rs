@@ -177,8 +177,8 @@ pub use vescpkg_rs_units::{
 #[cfg(feature = "alloc")]
 pub use alloc::VescAllocator;
 pub use can_bus::{
-    CanBus, CanError, CanHardwareType, CanReceiverCallback, CanReceiverGuard, CanStatus,
-    CanStatus2, CanStatus3, CanStatus4, CanStatus5, CanStatus6,
+    CanBus, CanError, CanHardwareType, CanReceiverCallback, CanReceiverGuard, CanReceiverHandler,
+    CanReceiverId, CanStatus, CanStatus2, CanStatus3, CanStatus4, CanStatus5, CanStatus6,
 };
 pub use eeprom::{CustomEeprom, CustomEepromAddress, EepromWord};
 pub use encoder::{Encoder, EncoderError, EncoderHandler, EncoderRegistration};
@@ -269,21 +269,22 @@ pub mod prelude {
     #[cfg(feature = "math")]
     pub use crate::{Ahrs, Madgwick};
     pub use crate::{
-        AnalogPin, AppDataHandler, AppDataSendError, CanBus, CanError, CanStatus, CommandError,
-        CommandReplyHandler, Commands, ConfigBytes, ConfigXml, DigitalOutputLevel, DigitalPin,
-        Encoder, EncoderError, EncoderHandler, EncoderRegistration, ExtensionDescriptor,
-        ExtensionName, ExtensionRegistration, Firmware, FirmwareAhrs, FirmwareAhrsError,
-        FirmwareAhrsParameters, FirmwareAhrsSnapshot, FirmwareAppData, FirmwareCapabilities,
-        FirmwareClock, FirmwareFloatSetting, FirmwareInputs, FirmwareIntSetting, FirmwareMutex,
-        FirmwareMutexGuard, FirmwareSemaphore, FirmwareSettings, FirmwareThread, FirmwareThreads,
-        Gnss, GnssError, GnssSnapshot, Gpio, Imu, ImuReadCallback, ImuReadCallbackError,
-        ImuReadCallbackLease, ImuReadHandler, LbmExtension, LispArgs, LispIntegerError, LispValue,
-        MotorOutput, MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset, PackageRuntimeState,
-        PackageStart, PackageStartError, PacketCodec, PacketError, PacketHandler, Plot, PlotError,
-        SettingsError, StatefulCustomConfigCallback, StatefulLbmExtension, StatelessFirmwareThread,
-        StatelessThreadContext, Terminal, TerminalError, TerminalHandler, TerminalRegistration,
-        ThreadContext, ThreadError, ThreadName, ThreadSpec, ThreadWorkingAreaSize,
-        ThreadWorkingAreaSizeError, TimerInstant, Uart, UartError, UartLease,
+        AnalogPin, AppDataHandler, AppDataSendError, CanBus, CanError, CanReceiverHandler,
+        CanReceiverId, CanStatus, CommandError, CommandReplyHandler, Commands, ConfigBytes,
+        ConfigXml, DigitalOutputLevel, DigitalPin, Encoder, EncoderError, EncoderHandler,
+        EncoderRegistration, ExtensionDescriptor, ExtensionName, ExtensionRegistration, Firmware,
+        FirmwareAhrs, FirmwareAhrsError, FirmwareAhrsParameters, FirmwareAhrsSnapshot,
+        FirmwareAppData, FirmwareCapabilities, FirmwareClock, FirmwareFloatSetting, FirmwareInputs,
+        FirmwareIntSetting, FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore, FirmwareSettings,
+        FirmwareThread, FirmwareThreads, Gnss, GnssError, GnssSnapshot, Gpio, Imu, ImuReadCallback,
+        ImuReadCallbackError, ImuReadCallbackLease, ImuReadHandler, LbmExtension, LispArgs,
+        LispIntegerError, LispValue, MotorOutput, MotorTelemetry, Nvm, NvmCapacity, NvmError,
+        NvmOffset, PackageRuntimeState, PackageStart, PackageStartError, PacketCodec, PacketError,
+        PacketHandler, Plot, PlotError, SettingsError, StatefulCustomConfigCallback,
+        StatefulLbmExtension, StatelessFirmwareThread, StatelessThreadContext, Terminal,
+        TerminalError, TerminalHandler, TerminalRegistration, ThreadContext, ThreadError,
+        ThreadName, ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant,
+        Uart, UartError, UartLease,
     };
 }
 
