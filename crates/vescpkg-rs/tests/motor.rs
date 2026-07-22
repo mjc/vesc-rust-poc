@@ -4,7 +4,8 @@
 use vescpkg_rs::prelude::{
     AngleDegrees, AudioChannel, AudioFrequency, AudioVoltage, Current, FirmwareFaultCode,
     Frequency, HandbrakeCurrent, HandbrakeRelative, InputCurrentLimit, OdometerMeters, PidPosition,
-    DutyCycle, MotorSelection, Ratio, Rpm, SignedRatio, ElectricalSpeed, VescSeconds, Voltage,
+    DutyCycle, MotorSelection, OpenLoopCurrent, OpenLoopPhase, PidPosition, Ratio, Rpm,
+    SignedRatio, ElectricalSpeed, VescSeconds, Voltage,
 };
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{MotorOutput, MotorTelemetry};
@@ -187,4 +188,31 @@ fn motor_exposes_typed_handbrake_commands() {
     firmware
         .motor()
         .set_duty_cycle_without_ramping(DutyCycle::new(SignedRatio::from_ratio_const(0.2)));
+    let advanced = firmware.advanced_foc();
+    unsafe {
+        advanced
+            .set_open_loop_current(
+                OpenLoopCurrent::new(Current::from_amps(3.0)),
+                ElectricalSpeed::new(Rpm::from_revolutions_per_minute(300.0)),
+            )
+            .unwrap();
+        advanced
+            .set_open_loop_phase(
+                OpenLoopCurrent::new(Current::from_amps(2.0)),
+                OpenLoopPhase::new(AngleDegrees::from_degrees(45.0)),
+            )
+            .unwrap();
+        advanced
+            .set_open_loop_duty(
+                DutyCycle::new(SignedRatio::from_ratio_const(0.1)),
+                ElectricalSpeed::new(Rpm::from_revolutions_per_minute(200.0)),
+            )
+            .unwrap();
+        advanced
+            .set_open_loop_duty_phase(
+                DutyCycle::new(SignedRatio::from_ratio_const(0.15)),
+                OpenLoopPhase::new(AngleDegrees::from_degrees(90.0)),
+            )
+            .unwrap();
+    }
 }
