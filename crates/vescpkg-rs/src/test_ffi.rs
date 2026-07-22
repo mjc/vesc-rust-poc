@@ -1,4 +1,4 @@
-use core::ffi::{c_char, c_int, c_void};
+use core::ffi::{CStr, c_char, c_int, c_void};
 use core::hint::spin_loop;
 use core::sync::atomic::{
     AtomicBool, AtomicI32, AtomicU8, AtomicU32, AtomicU64, AtomicUsize, Ordering,
@@ -514,6 +514,9 @@ pub unsafe fn lbm_dec_sym(_value: LbmValue) -> u32 {
 
 pub unsafe fn lbm_get_symbol_by_name(name: *mut c_char, symbol: *mut u32) -> c_int {
     if name.is_null() || symbol.is_null() {
+        return 0;
+    }
+    if unsafe { CStr::from_ptr(name) }.to_bytes() == b"missing" {
         return 0;
     }
     unsafe { *symbol = 7 };
