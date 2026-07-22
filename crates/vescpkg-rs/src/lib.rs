@@ -130,7 +130,8 @@ pub(crate) mod ffi {
             f_b, f_cons, f_float, f_i32, f_i64, f_lbm_array, f_sym, f_u32, f_u64, io_read,
             lbm_block_ctx_from_extension, lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true,
             lbm_finish_flatten,
-            can_status_msg_id, can_transmit_eid, can_transmit_sid, lbm_get_current_cid,
+            can_set_current, can_set_duty, can_status_msg_id, can_transmit_eid,
+            can_transmit_sid, lbm_get_current_cid,
             lbm_start_flatten, lbm_unblock_ctx, lbm_unblock_ctx_unboxed,
         };
     }

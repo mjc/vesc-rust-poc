@@ -100,6 +100,28 @@ impl CanBus {
             .ok_or(CanError::Unsupported)
     }
 
+    /// Send a remote motor current command.
+    pub fn set_current(
+        &self,
+        controller: CanControllerId,
+        current: MotorCurrent,
+    ) -> Result<(), CanError> {
+        unsafe { crate::ffi::can_set_current(controller.as_u8(), current.current().as_amps()) }
+            .map(|_| ())
+            .ok_or(CanError::Unsupported)
+    }
+
+    /// Send a remote motor duty command.
+    pub fn set_duty(
+        &self,
+        controller: CanControllerId,
+        duty: DutyCycle,
+    ) -> Result<(), CanError> {
+        unsafe { crate::ffi::can_set_duty(controller.as_u8(), duty.ratio().as_ratio()) }
+            .map(|_| ())
+            .ok_or(CanError::Unsupported)
+    }
+
     /// Copy the primary status record for one remote controller.
     pub fn status(&self, controller: CanControllerId) -> Option<CanStatus> {
         let raw = unsafe { crate::ffi::can_status_msg_id(i32::from(controller.as_u8())) }?;
