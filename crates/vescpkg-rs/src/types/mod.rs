@@ -93,7 +93,9 @@ pub use ratio::{
     JoystickY, PpmInput, Pwm,
 };
 pub use temperature::{
-    FetTemperature, MosfetTemperature, MotorTemperature, TemperatureLimitEnd, TemperatureLimitStart,
+    AverageMosfetTemperature, AverageMotorTemperature, FetTemperature, MosfetTemperature,
+    MotorTemperature, PeakMosfetTemperature, PeakMotorTemperature, TemperatureLimitEnd,
+    TemperatureLimitStart,
 };
 pub use time::{CurrentOffDelay, PpmAge, RemoteAge, SystemDuration, TimeoutDuration};
 pub use version::FirmwareVersion;
