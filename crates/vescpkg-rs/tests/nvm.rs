@@ -3,7 +3,7 @@
 //! Integration tests for the typed byte-addressed NVM capability.
 
 use vescpkg_rs::test_support::FirmwareTest;
-use vescpkg_rs::{NvmError, NvmOffset};
+use vescpkg_rs::{Nvm, NvmCapacity, NvmError, NvmOffset};
 
 #[test]
 fn nvm_round_trips_a_checked_byte_range_and_wipes_it() {
@@ -52,4 +52,16 @@ fn nvm_reports_firmware_operation_failures() {
         Err(NvmError::FirmwareFailure)
     );
     assert_eq!(firmware.nvm().wipe(), Err(NvmError::FirmwareFailure));
+}
+
+#[test]
+fn nvm_capacity_bounds_are_checked_before_dispatch() {
+    let nvm = Nvm::with_capacity(NvmCapacity::new(16).unwrap());
+    let mut bytes = [0; 2];
+
+    assert_eq!(nvm.capacity().unwrap().get(), 16);
+    assert_eq!(
+        nvm.read(NvmOffset::new(15), &mut bytes),
+        Err(NvmError::OutOfBounds)
+    );
 }
