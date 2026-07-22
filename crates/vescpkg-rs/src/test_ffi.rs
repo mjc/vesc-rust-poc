@@ -1135,6 +1135,18 @@ pub unsafe fn mc_get_tachometer_value(_reset: bool) -> i32 {
     1234
 }
 
+pub unsafe fn mc_get_tot_current() -> f32 {
+    12.0
+}
+
+pub unsafe fn mc_get_tot_current_directional() -> f32 {
+    -12.5
+}
+
+pub unsafe fn mc_get_tot_current_in() -> f32 {
+    8.0
+}
+
 pub unsafe fn mc_get_tachometer_abs_value(_reset: bool) -> i32 {
     5678
 }

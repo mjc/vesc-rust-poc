@@ -363,8 +363,11 @@ mod slots {
     fn_slot!(mc_get_rpm as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_speed as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_tot_current_filtered as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_get_tot_current as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_tot_current_directional_filtered as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_get_tot_current_directional as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_tot_current_in_filtered as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_get_tot_current_in as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_duty_cycle_now as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_sampling_frequency_now as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_tachometer_value as unsafe extern "C" fn(bool) -> c_int);
@@ -1331,6 +1334,11 @@ pub unsafe fn mc_get_tot_current_filtered() -> f32 {
     unsafe { required_slot!(mc_get_tot_current_filtered)() }
 }
 
+/// Return the instantaneous total motor current.
+pub unsafe fn mc_get_tot_current() -> f32 {
+    unsafe { slots::mc_get_tot_current()() }
+}
+
 /// Return direction-adjusted filtered motor current.
 ///
 /// Float Out Boy v1.2.1 reads this in `motor_data_update` at
@@ -1344,6 +1352,11 @@ pub unsafe fn mc_get_tot_current_directional_filtered() -> f32 {
     unsafe { required_slot!(mc_get_tot_current_directional_filtered)() }
 }
 
+/// Return the instantaneous total motor current with motor direction applied.
+pub unsafe fn mc_get_tot_current_directional() -> f32 {
+    unsafe { slots::mc_get_tot_current_directional()() }
+}
+
 /// Return filtered input/battery current.
 ///
 /// Float Out Boy v1.2.1 reads this in `motor_data_update` at
@@ -1355,6 +1368,11 @@ pub unsafe fn mc_get_tot_current_directional_filtered() -> f32 {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_tot_current_in_filtered() -> f32 {
     unsafe { required_slot!(mc_get_tot_current_in_filtered)() }
+}
+
+/// Return the instantaneous battery/input current.
+pub unsafe fn mc_get_tot_current_in() -> f32 {
+    unsafe { slots::mc_get_tot_current_in()() }
 }
 
 /// Read a firmware motor configuration float by `CFG_PARAM_*` id.

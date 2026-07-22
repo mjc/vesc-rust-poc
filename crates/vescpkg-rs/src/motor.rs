@@ -53,8 +53,12 @@ pub trait MotorTelemetryBindings {
     /// `src/motor_data.c:120`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:456`.
     fn motor_current(&self) -> TotalMotorCurrent;
+    /// Return instantaneous total motor current.
+    fn motor_current_unfiltered(&self) -> TotalMotorCurrent;
     /// Return filtered motor current with the configured motor direction applied.
     fn directional_motor_current(&self) -> DirectionalMotorCurrent;
+    /// Return instantaneous total motor current with motor direction applied.
+    fn directional_motor_current_unfiltered(&self) -> DirectionalMotorCurrent;
     /// Return the configured positive motor-current limit.
     ///
     /// Float Out Boy v1.2.1 reads `CFG_PARAM_l_current_max` through `get_cfg_float`
@@ -89,6 +93,8 @@ pub trait MotorTelemetryBindings {
     /// `src/motor_data.c:140`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:460`.
     fn battery_current(&self) -> InputCurrent;
+    /// Return instantaneous input/battery current.
+    fn battery_current_unfiltered(&self) -> InputCurrent;
     /// Return the current signed duty cycle.
     ///
     /// The firmware value is clamped to the signed ratio range, with NaN
@@ -149,8 +155,16 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
         (**self).motor_current()
     }
 
+    fn motor_current_unfiltered(&self) -> TotalMotorCurrent {
+        (**self).motor_current_unfiltered()
+    }
+
     fn directional_motor_current(&self) -> DirectionalMotorCurrent {
         (**self).directional_motor_current()
+    }
+
+    fn directional_motor_current_unfiltered(&self) -> DirectionalMotorCurrent {
+        (**self).directional_motor_current_unfiltered()
     }
 
     fn drive_current_limit(&self) -> MotorCurrentLimit {
@@ -187,6 +201,10 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
 
     fn battery_current(&self) -> InputCurrent {
         (**self).battery_current()
+    }
+
+    fn battery_current_unfiltered(&self) -> InputCurrent {
+        (**self).battery_current_unfiltered()
     }
 
     fn duty_cycle(&self) -> DutyCycle {
@@ -368,9 +386,21 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         }))
     }
 
+    fn motor_current_unfiltered(&self) -> TotalMotorCurrent {
+        TotalMotorCurrent::new(Current::from_amps(unsafe {
+            crate::ffi::mc_get_tot_current()
+        }))
+    }
+
     fn directional_motor_current(&self) -> DirectionalMotorCurrent {
         DirectionalMotorCurrent::new(Current::from_amps(unsafe {
             crate::ffi::mc_get_tot_current_directional_filtered()
+        }))
+    }
+
+    fn directional_motor_current_unfiltered(&self) -> DirectionalMotorCurrent {
+        DirectionalMotorCurrent::new(Current::from_amps(unsafe {
+            crate::ffi::mc_get_tot_current_directional()
         }))
     }
 
@@ -423,6 +453,12 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
     fn battery_current(&self) -> InputCurrent {
         InputCurrent::new(Current::from_amps(unsafe {
             crate::ffi::mc_get_tot_current_in_filtered()
+        }))
+    }
+
+    fn battery_current_unfiltered(&self) -> InputCurrent {
+        InputCurrent::new(Current::from_amps(unsafe {
+            crate::ffi::mc_get_tot_current_in()
         }))
     }
 
@@ -603,8 +639,12 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn vehicle_speed(&self) -> VehicleSpeed;
     /// Return filtered total motor current.
     fn motor_current(&self) -> TotalMotorCurrent;
+    /// Return instantaneous total motor current.
+    fn motor_current_unfiltered(&self) -> TotalMotorCurrent;
     /// Return filtered motor current with the configured motor direction applied.
     fn directional_motor_current(&self) -> DirectionalMotorCurrent;
+    /// Return instantaneous total motor current with motor direction applied.
+    fn directional_motor_current_unfiltered(&self) -> DirectionalMotorCurrent;
     /// Return the configured positive motor-current limit.
     fn drive_current_limit(&self) -> MotorCurrentLimit;
     /// Return the configured braking-current magnitude.
@@ -623,6 +663,8 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn battery_cell_count(&self) -> Option<BatteryCellCount>;
     /// Return filtered input/battery current.
     fn battery_current(&self) -> InputCurrent;
+    /// Return instantaneous input/battery current.
+    fn battery_current_unfiltered(&self) -> InputCurrent;
     /// Return the current signed duty cycle.
     fn duty_cycle(&self) -> DutyCycle;
     /// Return optional FOC d-axis current.
@@ -765,9 +807,19 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.motor_current()
     }
 
+    /// Return instantaneous total motor current.
+    pub fn motor_current_unfiltered(&self) -> TotalMotorCurrent {
+        self.bindings.motor_current_unfiltered()
+    }
+
     /// Return filtered motor current with the configured motor direction applied.
     pub fn directional_motor_current(&self) -> DirectionalMotorCurrent {
         self.bindings.directional_motor_current()
+    }
+
+    /// Return instantaneous total motor current with motor direction applied.
+    pub fn directional_motor_current_unfiltered(&self) -> DirectionalMotorCurrent {
+        self.bindings.directional_motor_current_unfiltered()
     }
 
     /// Return the configured positive motor-current limit.
@@ -813,6 +865,11 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
     /// Return filtered input/battery current.
     pub fn battery_current(&self) -> InputCurrent {
         self.bindings.battery_current()
+    }
+
+    /// Return instantaneous input/battery current.
+    pub fn battery_current_unfiltered(&self) -> InputCurrent {
+        self.bindings.battery_current_unfiltered()
     }
 
     /// Return the current signed duty cycle.
@@ -918,8 +975,16 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
         self.motor_current()
     }
 
+    fn motor_current_unfiltered(&self) -> TotalMotorCurrent {
+        self.motor_current_unfiltered()
+    }
+
     fn directional_motor_current(&self) -> DirectionalMotorCurrent {
         self.directional_motor_current()
+    }
+
+    fn directional_motor_current_unfiltered(&self) -> DirectionalMotorCurrent {
+        self.directional_motor_current_unfiltered()
     }
 
     fn drive_current_limit(&self) -> MotorCurrentLimit {
@@ -956,6 +1021,10 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
 
     fn battery_current(&self) -> InputCurrent {
         self.battery_current()
+    }
+
+    fn battery_current_unfiltered(&self) -> InputCurrent {
+        self.battery_current_unfiltered()
     }
 
     fn duty_cycle(&self) -> DutyCycle {
