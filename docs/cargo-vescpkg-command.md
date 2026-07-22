@@ -53,3 +53,17 @@ observed tick-period range and jitter. It requires a compatible device; host
 build and package checks do not substitute for that hardware proof.
 
 The checked workspace path remains `make check`.
+
+## Hardware-in-the-loop control-loop proof
+
+With a compatible controller already running the control-loop package, the
+ignored HIL test performs the real BLE probe and asserts advancing ticks,
+changing output, and timing statistics:
+
+```bash
+VESC_DEVICE="Floatwheel PintV" VESC_BLE_ADDR="AA:BB:CC:DD:EE:FF" \
+  cargo nextest run -p cargo-vescpkg --features hil --profile hil -- --ignored
+```
+
+The HIL test is deliberately excluded from the default workspace gate and
+requires a device-specific address.
