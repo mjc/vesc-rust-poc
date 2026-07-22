@@ -7,6 +7,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use crate::AngleDegrees;
 
 static ENCODER_OWNED: AtomicBool = AtomicBool::new(false);
+static ENCODER_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 /// Failure returned by encoder callback registration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,6 +57,7 @@ impl Encoder {
             ENCODER_OWNED.store(false, Ordering::Release);
             return Err(EncoderError::Unavailable);
         }
+        ENCODER_ACTIVE.store(true, Ordering::Release);
         Ok(EncoderRegistration {
             _handler: PhantomData,
         })
@@ -64,6 +66,7 @@ impl Encoder {
 
 impl<H: EncoderHandler> Drop for EncoderRegistration<H> {
     fn drop(&mut self) {
+        ENCODER_ACTIVE.store(false, Ordering::Release);
         // Do not admit a second provider when firmware rejected the disable set.
         let cleared = unsafe {
             crate::ffi::encoder_set_custom_callbacks(disabled_read, disabled_fault, disabled_info)
@@ -75,14 +78,23 @@ impl<H: EncoderHandler> Drop for EncoderRegistration<H> {
 }
 
 unsafe extern "C" fn read<H: EncoderHandler>() -> f32 {
+    if !ENCODER_ACTIVE.load(Ordering::Acquire) {
+        return 0.0;
+    }
     H::read_degrees().as_degrees()
 }
 
 unsafe extern "C" fn fault<H: EncoderHandler>() -> bool {
+    if !ENCODER_ACTIVE.load(Ordering::Acquire) {
+        return true;
+    }
     H::has_fault()
 }
 
 unsafe extern "C" fn info<H: EncoderHandler>() -> *mut c_char {
+    if !ENCODER_ACTIVE.load(Ordering::Acquire) {
+        return unsafe { disabled_info() };
+    }
     H::info().as_ptr().cast_mut()
 }
 
@@ -94,6 +106,41 @@ unsafe extern "C" fn disabled_fault() -> bool {
 }
 unsafe extern "C" fn disabled_info() -> *mut c_char {
     c"".as_ptr().cast_mut()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ENCODER_ACTIVE, EncoderHandler, fault, info, read};
+    use crate::AngleDegrees;
+    use core::ffi::CStr;
+    use core::sync::atomic::Ordering;
+
+    struct Handler;
+
+    impl EncoderHandler for Handler {
+        fn read_degrees() -> AngleDegrees {
+            AngleDegrees::from_degrees(12.0)
+        }
+
+        fn has_fault() -> bool {
+            false
+        }
+
+        fn info() -> &'static CStr {
+            c"test-encoder"
+        }
+    }
+
+    #[test]
+    fn late_encoder_callbacks_after_drop_fail_closed() {
+        ENCODER_ACTIVE.store(true, Ordering::Release);
+        assert_eq!(unsafe { read::<Handler>() }, 12.0);
+        assert!(!unsafe { fault::<Handler>() });
+        ENCODER_ACTIVE.store(false, Ordering::Release);
+        assert_eq!(unsafe { read::<Handler>() }, 0.0);
+        assert!(unsafe { fault::<Handler>() });
+        assert_eq!(unsafe { CStr::from_ptr(info::<Handler>()) }, c"");
+    }
 }
 
 impl crate::Firmware {

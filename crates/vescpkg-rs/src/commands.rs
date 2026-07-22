@@ -5,6 +5,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 const MAX_COMMAND_PACKET: usize = 512;
 static COMMAND_REPLY_OWNED: AtomicBool = AtomicBool::new(false);
+static COMMAND_REPLY_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 /// Failure returned by command reply processing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,6 +64,7 @@ impl Commands {
             COMMAND_REPLY_OWNED.store(false, Ordering::Release);
             return Err(CommandError::Unavailable);
         }
+        COMMAND_REPLY_ACTIVE.store(true, Ordering::Release);
         Ok(CommandReplyLease {
             _handler: PhantomData,
         })
@@ -71,6 +73,7 @@ impl Commands {
 
 impl<H: CommandReplyHandler> Drop for CommandReplyLease<H> {
     fn drop(&mut self) {
+        COMMAND_REPLY_ACTIVE.store(false, Ordering::Release);
         // Keep the ownership bit set if the optional cleanup slot is absent;
         // replacing a callback we could not unregister would be unsafe.
         if unsafe { crate::ffi::commands_unregister_reply_func(reply::<H>) } {
@@ -80,6 +83,9 @@ impl<H: CommandReplyHandler> Drop for CommandReplyLease<H> {
 }
 
 unsafe extern "C" fn reply<H: CommandReplyHandler>(data: *mut u8, len: u32) {
+    if !COMMAND_REPLY_ACTIVE.load(Ordering::Acquire) {
+        return;
+    }
     let len = len as usize;
     if data.is_null() || len > MAX_COMMAND_PACKET {
         return;
@@ -91,6 +97,33 @@ impl crate::Firmware {
     /// Return the optional command-processing capability handle.
     pub fn commands(&self) -> Commands {
         Commands::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{COMMAND_REPLY_ACTIVE, CommandReplyHandler, reply};
+    use core::sync::atomic::{AtomicUsize, Ordering};
+
+    static CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    struct Handler;
+
+    impl CommandReplyHandler for Handler {
+        fn reply(_data: &[u8]) {
+            CALLS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    #[test]
+    fn late_reply_after_lease_drop_fails_closed() {
+        CALLS.store(0, Ordering::Relaxed);
+        COMMAND_REPLY_ACTIVE.store(true, Ordering::Release);
+        let mut data = [1, 2, 3];
+        unsafe { reply::<Handler>(data.as_mut_ptr(), data.len() as u32) };
+        COMMAND_REPLY_ACTIVE.store(false, Ordering::Release);
+        unsafe { reply::<Handler>(data.as_mut_ptr(), data.len() as u32) };
+        assert_eq!(CALLS.load(Ordering::Relaxed), 1);
     }
 }
 
