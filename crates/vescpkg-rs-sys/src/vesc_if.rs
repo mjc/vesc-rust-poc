@@ -175,6 +175,130 @@ pub enum AbiError {
     },
 }
 
+/// Safe subsystem names exposed by a concrete firmware table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VescIfSubsystem {
+    /// Controller-area network support.
+    Can,
+    /// Non-volatile memory support.
+    Nvm,
+    /// FOC audio support.
+    Audio,
+    /// UART support.
+    Uart,
+    /// Firmware settings support.
+    Settings,
+}
+
+/// A capability-bearing handle for one available subsystem.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VescIfCapability {
+    subsystem: VescIfSubsystem,
+}
+
+impl VescIfCapability {
+    /// Return the subsystem represented by this handle.
+    pub const fn subsystem(self) -> VescIfSubsystem {
+        self.subsystem
+    }
+}
+
+/// Named subsystem capabilities derived from observed table presence.
+///
+/// This keeps callers from assembling a public bag of booleans or naming raw
+/// slots. The observed pointers remain authoritative; the revision is only a
+/// descriptive summary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VescIfCapabilities {
+    presence: VescIfPresence,
+}
+
+impl VescIfCapabilities {
+    /// Construct named capabilities from one observed table snapshot.
+    pub const fn new(presence: VescIfPresence) -> Self {
+        Self { presence }
+    }
+
+    /// Return the underlying observed presence snapshot for diagnostics.
+    pub const fn presence(self) -> VescIfPresence {
+        self.presence
+    }
+
+    /// Return the descriptive revision inferred from observed pointers.
+    pub fn revision(self) -> Stm32AbiRevision {
+        self.presence.revision()
+    }
+
+    /// Probe CAN support as an optional subsystem.
+    pub const fn can(self) -> Result<VescIfCapability, AbiError> {
+        self.optional(VescIfSubsystem::Can, "CAN", VescIfAbi::CAN_TRANSMIT_SID)
+    }
+
+    /// Require CAN support for a constructor that cannot operate without it.
+    pub const fn require_can(self) -> Result<VescIfCapability, AbiError> {
+        self.required(VescIfSubsystem::Can, "CAN", VescIfAbi::CAN_TRANSMIT_SID)
+    }
+
+    /// Probe NVM support as an optional subsystem.
+    pub const fn nvm(self) -> Result<VescIfCapability, AbiError> {
+        self.optional(VescIfSubsystem::Nvm, "NVM", VescIfAbi::READ_NVM)
+    }
+
+    /// Probe FOC audio support as an optional subsystem.
+    pub const fn audio(self) -> Result<VescIfCapability, AbiError> {
+        self.optional(VescIfSubsystem::Audio, "FOC audio", VescIfAbi::FOC_BEEP)
+    }
+
+    /// Probe UART support as an optional subsystem.
+    pub const fn uart(self) -> Result<VescIfCapability, AbiError> {
+        self.optional(VescIfSubsystem::Uart, "UART", VescIfAbi::UART_START)
+    }
+
+    /// Require settings support for a constructor that needs configuration access.
+    pub const fn require_settings(self) -> Result<VescIfCapability, AbiError> {
+        self.required(
+            VescIfSubsystem::Settings,
+            "settings",
+            VescIfAbi::GET_CFG_FLOAT,
+        )
+    }
+
+    const fn optional(
+        self,
+        subsystem: VescIfSubsystem,
+        capability: &'static str,
+        slot: VescIfSlot,
+    ) -> Result<VescIfCapability, AbiError> {
+        match self.presence.optional(capability, slot) {
+            Ok(()) => Ok(VescIfCapability { subsystem }),
+            Err(error) => Err(error),
+        }
+    }
+
+    const fn required(
+        self,
+        subsystem: VescIfSubsystem,
+        capability: &'static str,
+        slot: VescIfSlot,
+    ) -> Result<VescIfCapability, AbiError> {
+        match self.presence.require(capability, slot) {
+            Ok(()) => Ok(VescIfCapability { subsystem }),
+            Err(error) => Err(error),
+        }
+    }
+}
+
+impl AbiError {
+    /// Return the human-readable capability name carried by this error.
+    pub const fn capability(self) -> &'static str {
+        match self {
+            Self::MissingRequired { capability, .. } | Self::Unsupported { capability, .. } => {
+                capability
+            }
+        }
+    }
+}
+
 impl VescIfSlot {
     /// Create a named slot at the given 32-bit byte offset.
     pub const fn new(name: &'static str, offset: usize) -> Self {
