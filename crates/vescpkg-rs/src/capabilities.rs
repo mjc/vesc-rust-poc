@@ -684,6 +684,22 @@ impl FirmwareSettings {
         )
     }
 
+    /// Read the normalized acceleration/deceleration temperature adjustment.
+    pub fn temperature_acceleration_decrease(self) -> Ratio {
+        Ratio::clamped(self.get_float(FirmwareFloatSetting::TemperatureAccelerationDecrease))
+    }
+
+    /// Update the normalized acceleration/deceleration temperature adjustment; persistence still requires [`Self::store`].
+    pub fn set_temperature_acceleration_decrease(
+        self,
+        decrease: Ratio,
+    ) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::TemperatureAccelerationDecrease,
+            decrease.as_ratio(),
+        )
+    }
+
     /// Read the configured maximum duty-cycle ratio, clamping malformed firmware output.
     pub fn duty_cycle_limit(self) -> DutyCycleLimit {
         DutyCycleLimit::new(Ratio::clamped(
