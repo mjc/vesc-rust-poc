@@ -93,12 +93,14 @@ pub(crate) fn claim_app_data_registration() -> bool {
     {
         // The firmware app-data setter returns a registration result on ARM;
         // avoid adding writable package statics to the flat image.
-        return true;
+        true
     }
     #[cfg(not(target_arch = "arm"))]
-    APP_DATA_REGISTRATION_LIVE
-        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-        .is_ok()
+    {
+        APP_DATA_REGISTRATION_LIVE
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok()
+    }
 }
 
 /// Release a failed or stopped app-data callback registration.
@@ -113,12 +115,14 @@ pub(crate) fn claim_custom_config_registration() -> bool {
     {
         // The pinned custom-config registration slot has no status return;
         // collision detection remains a provider/firmware boundary on ARM.
-        return true;
+        true
     }
     #[cfg(not(target_arch = "arm"))]
-    CUSTOM_CONFIG_REGISTRATION_LIVE
-        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-        .is_ok()
+    {
+        CUSTOM_CONFIG_REGISTRATION_LIVE
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok()
+    }
 }
 
 /// Release a failed or stopped custom-config callback registration.
