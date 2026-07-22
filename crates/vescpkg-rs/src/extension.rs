@@ -106,26 +106,22 @@ impl LispFlatValue {
 
     /// Append a symbol identifier.
     pub fn push_symbol(&mut self, symbol: LispSymbol) -> bool {
-        !self.finished
-            && unsafe { crate::ffi::f_sym(&mut self.raw, symbol.raw()) } == Some(true)
+        !self.finished && unsafe { crate::ffi::f_sym(&mut self.raw, symbol.raw()) } == Some(true)
     }
 
     /// Append a signed 32-bit value.
     pub fn push_i32(&mut self, value: i32) -> bool {
-        !self.finished
-            && unsafe { crate::ffi::f_i32(&mut self.raw, value) } == Some(true)
+        !self.finished && unsafe { crate::ffi::f_i32(&mut self.raw, value) } == Some(true)
     }
 
     /// Append an unsigned 32-bit value.
     pub fn push_u32(&mut self, value: u32) -> bool {
-        !self.finished
-            && unsafe { crate::ffi::f_u32(&mut self.raw, value) } == Some(true)
+        !self.finished && unsafe { crate::ffi::f_u32(&mut self.raw, value) } == Some(true)
     }
 
     /// Append an `f32` value.
     pub fn push_float(&mut self, value: f32) -> bool {
-        !self.finished
-            && unsafe { crate::ffi::f_float(&mut self.raw, value) } == Some(true)
+        !self.finished && unsafe { crate::ffi::f_float(&mut self.raw, value) } == Some(true)
     }
 
     /// Append a byte value.
@@ -135,14 +131,12 @@ impl LispFlatValue {
 
     /// Append a signed 64-bit value.
     pub fn push_i64(&mut self, value: i64) -> bool {
-        !self.finished
-            && unsafe { crate::ffi::f_i64(&mut self.raw, value) } == Some(true)
+        !self.finished && unsafe { crate::ffi::f_i64(&mut self.raw, value) } == Some(true)
     }
 
     /// Append an unsigned 64-bit value.
     pub fn push_u64(&mut self, value: u64) -> bool {
-        !self.finished
-            && unsafe { crate::ffi::f_u64(&mut self.raw, value) } == Some(true)
+        !self.finished && unsafe { crate::ffi::f_u64(&mut self.raw, value) } == Some(true)
     }
 
     /// Append a byte array copied by firmware into the flattened value.
@@ -151,9 +145,8 @@ impl LispFlatValue {
             return false;
         };
         !self.finished
-            && unsafe {
-                crate::ffi::f_lbm_array(&mut self.raw, count, bytes.as_ptr().cast_mut())
-            } == Some(true)
+            && unsafe { crate::ffi::f_lbm_array(&mut self.raw, count, bytes.as_ptr().cast_mut()) }
+                == Some(true)
     }
 
     /// Finish the flattened value before passing it to LispBM.
