@@ -143,10 +143,13 @@ fn run_control_loop_probe(command: DeviceArgs) -> ExitCode {
                 .last()
                 .map_or(0, |status| status.tick_count());
             println!(
-                "control-loop ok on device={} service={}: ticks={first}->{last} elapsed={:?}",
+                "control-loop ok on device={} service={}: ticks={first}->{last} elapsed={:?} tick-period={:?}..{:?} jitter={:?}",
                 report.target().device_name_hint(),
                 report.target().service_name_hint(),
-                report.elapsed()
+                report.elapsed(),
+                report.timing().min_tick_period(),
+                report.timing().max_tick_period(),
+                report.timing().jitter(),
             );
             ExitCode::SUCCESS
         }
