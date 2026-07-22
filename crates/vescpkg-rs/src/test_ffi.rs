@@ -13,7 +13,7 @@ use crate::{
 };
 use vescpkg_rs_sys::raw::{
     CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5, CanStatusMsg6,
-    LbmFlatValue,
+    LbmFlatValue, RemoteState,
 };
 use vescpkg_rs_sys::{HardwareType, LbmValue, VescPin, VescPinMode};
 
@@ -40,6 +40,26 @@ pub unsafe fn io_read_analog(pin: VescPin) -> f32 {
         8 => 3.4,
         _ => 0.0,
     }
+}
+
+pub unsafe fn remote_state() -> RemoteState {
+    REMOTE_STATE
+}
+
+pub unsafe fn get_ppm() -> Option<f32> {
+    Some(0.5)
+}
+
+pub unsafe fn get_ppm_age() -> Option<f32> {
+    Some(0.1)
+}
+
+pub unsafe fn app_is_output_disabled() -> Option<bool> {
+    Some(false)
+}
+
+pub unsafe fn store_backup_data() -> Option<bool> {
+    Some(true)
 }
 
 // C map: these host replacements model the motor slots declared at
@@ -102,6 +122,14 @@ static IMU_PITCH: AtomicU32 = AtomicU32::new(0);
 static IMU_YAW: AtomicU32 = AtomicU32::new(0);
 static IMU_GYRO: [AtomicU32; 3] = [const { AtomicU32::new(0) }; 3];
 static IMU_QUATERNION: [AtomicU32; 4] = [const { AtomicU32::new(0) }; 4];
+static REMOTE_STATE: RemoteState = RemoteState {
+    js_x: -0.25,
+    js_y: 0.75,
+    bt_c: true,
+    bt_z: false,
+    is_rev: true,
+    age_s: 0.2,
+};
 static FLAT_BUFFER: [u8; 256] = [0; 256];
 static CAN_STATUS: CanStatusMsg = CanStatusMsg {
     id: 7,

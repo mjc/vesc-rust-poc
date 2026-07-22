@@ -97,6 +97,12 @@ impl FirmwareTest {
         self.firmware.gpio()
     }
 
+    /// Borrow the typed controller input capability used by package code.
+    #[must_use]
+    pub fn inputs(&self) -> &crate::FirmwareInputs {
+        self.firmware.inputs()
+    }
+
     /// Borrow the firmware clock capability used on hardware.
     #[must_use]
     pub fn clock(&self) -> &crate::FirmwareClock {

@@ -348,6 +348,10 @@ mod slots {
     );
     optional_fn_slot!(can_get_status_msg_6_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg6);
     optional_fn_slot!(mc_gnss as unsafe extern "C" fn() -> *mut GnssData);
+    optional_fn_slot!(store_backup_data as unsafe extern "C" fn() -> bool);
+    optional_fn_slot!(get_ppm as unsafe extern "C" fn() -> f32);
+    optional_fn_slot!(get_ppm_age as unsafe extern "C" fn() -> f32);
+    optional_fn_slot!(app_is_output_disabled as unsafe extern "C" fn() -> bool);
     optional_fn_slot!(read_nvm as unsafe extern "C" fn(*mut u8, c_uint, c_uint) -> bool);
     optional_fn_slot!(write_nvm as unsafe extern "C" fn(*mut u8, c_uint, c_uint) -> bool);
     optional_fn_slot!(wipe_nvm as unsafe extern "C" fn() -> bool);
@@ -1232,6 +1236,26 @@ pub unsafe fn gnss_snapshot() -> Option<GnssData> {
 /// The VESC function table must be valid for the duration of this call.
 pub unsafe fn remote_state() -> Option<RemoteState> {
     unsafe { slots::get_remote_state() }.map(|func| unsafe { func() })
+}
+
+/// Read the decoded PPM input when the optional slot is present.
+pub unsafe fn get_ppm() -> Option<f32> {
+    unsafe { slots::get_ppm() }.map(|read| unsafe { read() })
+}
+
+/// Read the age of the latest decoded PPM input when supported.
+pub unsafe fn get_ppm_age() -> Option<f32> {
+    unsafe { slots::get_ppm_age() }.map(|read| unsafe { read() })
+}
+
+/// Read whether firmware currently asks applications to disable output.
+pub unsafe fn app_is_output_disabled() -> Option<bool> {
+    unsafe { slots::app_is_output_disabled() }.map(|read| unsafe { read() })
+}
+
+/// Persist firmware backup data when the optional capability is present.
+pub unsafe fn store_backup_data() -> Option<bool> {
+    unsafe { slots::store_backup_data() }.map(|store| unsafe { store() })
 }
 
 /// Return the active motor fault code, or zero for no fault.

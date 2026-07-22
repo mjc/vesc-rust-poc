@@ -190,6 +190,8 @@ pub struct Firmware {
     telemetry: crate::motor::MotorTelemetryApi<crate::motor::RealMotorTelemetryBindings>,
     #[cfg(not(test))]
     motor: crate::motor::MotorControlApi<crate::motor::RealMotorControlBindings>,
+    #[cfg(not(test))]
+    inputs: crate::FirmwareInputs,
 }
 
 impl Firmware {
@@ -253,6 +255,12 @@ impl Firmware {
         &self.motor
     }
 
+    /// Borrow typed controller input and output-safety state.
+    #[cfg(not(test))]
+    pub fn inputs(&self) -> &crate::FirmwareInputs {
+        &self.inputs
+    }
+
     /// Construct firmware capabilities backed by the live VESC package ABI.
     #[cfg(not(test))]
     pub fn new() -> Self {
@@ -271,6 +279,7 @@ impl Firmware {
             motor: crate::motor::MotorControlApi::from_firmware(
                 crate::motor::RealMotorControlBindings,
             ),
+            inputs: crate::FirmwareInputs::new(),
         }
     }
 

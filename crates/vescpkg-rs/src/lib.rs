@@ -58,11 +58,12 @@ pub(crate) mod ffi {
     };
     #[cfg(any(test, not(feature = "test-support")))]
     pub use vescpkg_rs_sys::raw::{
-        can_ping, can_set_current, can_set_current_brake, can_set_current_brake_rel,
-        can_set_current_off_delay, can_set_current_rel, can_set_current_rel_off_delay,
-        can_set_duty, can_set_eid_callback, can_set_pos, can_set_rpm, can_set_sid_callback,
-        can_status_msg_2_id, can_status_msg_3_id, can_status_msg_4_id, can_status_msg_5_id,
-        can_status_msg_6_id, can_status_msg_id, can_transmit_eid, can_transmit_sid,
+        app_is_output_disabled, can_ping, can_set_current, can_set_current_brake,
+        can_set_current_brake_rel, can_set_current_off_delay, can_set_current_rel,
+        can_set_current_rel_off_delay, can_set_duty, can_set_eid_callback, can_set_pos,
+        can_set_rpm, can_set_sid_callback, can_status_msg_2_id, can_status_msg_3_id,
+        can_status_msg_4_id, can_status_msg_5_id, can_status_msg_6_id, can_status_msg_id,
+        can_transmit_eid, can_transmit_sid, get_ppm, get_ppm_age, remote_state, store_backup_data,
     };
     #[allow(unused_imports)]
     pub use vescpkg_rs_sys::raw::{
@@ -79,12 +80,13 @@ pub(crate) mod ffi {
     use crate::test_ffi as selected_ffi;
     #[cfg(all(feature = "test-support", not(test)))]
     pub use crate::test_ffi::{
-        can_ping, can_set_current, can_set_current_brake, can_set_current_brake_rel,
-        can_set_current_off_delay, can_set_current_rel, can_set_current_rel_off_delay,
-        can_set_duty, can_set_eid_callback, can_set_pos, can_set_rpm, can_set_sid_callback,
-        can_status_msg_2_id, can_status_msg_3_id, can_status_msg_4_id, can_status_msg_5_id,
-        can_status_msg_6_id, can_status_msg_id, can_transmit_eid, can_transmit_sid, io_read,
-        io_read_analog, io_set_mode, io_write, printf_data,
+        app_is_output_disabled, can_ping, can_set_current, can_set_current_brake,
+        can_set_current_brake_rel, can_set_current_off_delay, can_set_current_rel,
+        can_set_current_rel_off_delay, can_set_duty, can_set_eid_callback, can_set_pos,
+        can_set_rpm, can_set_sid_callback, can_status_msg_2_id, can_status_msg_3_id,
+        can_status_msg_4_id, can_status_msg_5_id, can_status_msg_6_id, can_status_msg_id,
+        can_transmit_eid, can_transmit_sid, get_ppm, get_ppm_age, io_read, io_read_analog,
+        io_set_mode, io_write, printf_data, remote_state, store_backup_data,
     };
     #[allow(unused_imports)]
     pub use selected_ffi::{
@@ -135,6 +137,7 @@ pub use extension::{
     LbmExtension, LispArgs, LispContextId, LispFlatValue, LispIntegerError, LispMessageError,
     LispProcess, LispSymbol, LispValue, StatefulLbmExtension,
 };
+pub use inputs::{FirmwareInputs, InputError, PpmSnapshot, RemoteInputSnapshot};
 pub use logging::{FirmwareLog, LogError};
 
 // Exported macros need public implementation hooks after downstream expansion.
@@ -170,6 +173,8 @@ mod gpio;
 mod imu;
 /// Device package entrypoint and loader-hook helpers.
 mod init;
+/// Typed controller input and output-safety helpers for package code.
+mod inputs;
 /// Motor telemetry bindings and convenience wrappers for package code.
 mod motor;
 /// Firmware thread bindings and convenience wrappers for package code.
