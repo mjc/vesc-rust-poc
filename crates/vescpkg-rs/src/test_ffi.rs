@@ -86,6 +86,7 @@ static LBM_FLOAT_BITS: AtomicU32 = AtomicU32::new(0);
 static LBM_CONS_CAR: AtomicU32 = AtomicU32::new(0);
 static LBM_CONS_CDR: AtomicU32 = AtomicU32::new(0);
 static LBM_STRING: [u8; 5] = *b"vesc\0";
+const LBM_BYTE_ARRAY: u32 = 0x03;
 static CLOCK_TICKS: AtomicU32 = AtomicU32::new(0);
 static TIMER_TICKS: AtomicU32 = AtomicU32::new(0);
 static MUTEX_TOKEN: u8 = 0;
@@ -390,14 +391,14 @@ pub unsafe fn lbm_is_cons(_value: LbmValue) -> bool {
 }
 
 pub unsafe fn lbm_is_byte_array(_value: LbmValue) -> bool {
-    _value.0 == (0x1234 << 4 | 0x08)
+    _value.0 == LBM_BYTE_ARRAY
 }
 
 pub unsafe fn lbm_create_byte_array(value: *mut LbmValue, _len: u32) -> bool {
     let Some(value) = (unsafe { value.as_mut() }) else {
         return false;
     };
-    *value = LbmValue(0x1234 << 4 | 0x08);
+    *value = LbmValue(LBM_BYTE_ARRAY);
     true
 }
 

@@ -42,14 +42,14 @@ fn lisp_values_expose_explicit_kind_predicates() {
     assert_eq!(pair.reverse_list(), Some(pair));
     assert_eq!(integer.reverse_list(), None);
 
-    let string = LispValue::from_u32(0x1234);
+    let string = LispValue::try_byte_array(4).expect("host fake allocates byte arrays");
+    assert!(string.is_byte_array());
+    assert!(!string.is_number());
     assert_eq!(
         string.with_str(|value| value.to_bytes() == b"vesc"),
         Some(true)
     );
     assert_eq!(integer.with_str(|value| value.to_bytes() == b"vesc"), None);
 
-    let bytes = LispValue::try_byte_array(4).expect("host fake allocates byte arrays");
-    assert!(bytes.is_byte_array());
     assert_eq!(LispValue::try_byte_array(usize::MAX), None);
 }
