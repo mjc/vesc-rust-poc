@@ -20,8 +20,8 @@ use crate::{
     VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 use vescpkg_rs_sys::raw::{
-    CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5, CanStatusMsg6,
-    GnssData, LbmFlatValue, PacketState, RemoteState,
+    AttitudeInfo, CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5,
+    CanStatusMsg6, GnssData, LbmFlatValue, PacketState, RemoteState,
 };
 use vescpkg_rs_sys::{FaultCode, HardwareType, LbmValue, VescPin, VescPinMode};
 
@@ -1705,6 +1705,83 @@ pub unsafe fn vesc_imu_get_quaternions(values: *mut f32) {
             .zip(&IMU_QUATERNION)
             .for_each(|(value, component)| *value = load(component));
     }
+}
+
+pub unsafe fn ahrs_init_attitude_info(attitude: *mut AttitudeInfo) {
+    let Some(attitude) = (unsafe { attitude.as_mut() }) else {
+        return;
+    };
+    *attitude = AttitudeInfo {
+        q0: 1.0,
+        q1: 0.0,
+        q2: 0.0,
+        q3: 0.0,
+        integralFBx: 0.0,
+        integralFBy: 0.0,
+        integralFBz: 0.0,
+        accMagP: 1.0,
+        initialUpdateDone: 0,
+        acc_confidence_decay: 0.25,
+        kp: 2.0,
+        ki: 0.05,
+        beta: 0.1,
+    };
+}
+
+pub unsafe fn ahrs_update_initial_orientation(
+    _acceleration: *const f32,
+    _magnetic: *const f32,
+    attitude: *mut AttitudeInfo,
+) {
+    let Some(attitude) = (unsafe { attitude.as_mut() }) else {
+        return;
+    };
+    attitude.q0 = 0.9;
+    attitude.q1 = 0.1;
+    attitude.q2 = 0.2;
+    attitude.q3 = 0.3;
+    attitude.initialUpdateDone = 1;
+}
+
+pub unsafe fn ahrs_update_mahony_imu(
+    gyro: *const f32,
+    _acceleration: *const f32,
+    dt: f32,
+    attitude: *mut AttitudeInfo,
+) {
+    let Some(attitude) = (unsafe { attitude.as_mut() }) else {
+        return;
+    };
+    let gyro = unsafe { gyro.cast::<[f32; 3]>().as_ref() }
+        .copied()
+        .unwrap_or([0.0; 3]);
+    attitude.integralFBx += gyro[0] * dt;
+    attitude.integralFBy += gyro[1] * dt;
+    attitude.integralFBz += gyro[2] * dt;
+    attitude.accMagP = 1.25;
+}
+
+pub unsafe fn ahrs_update_madgwick_imu(
+    _gyro: *const f32,
+    _acceleration: *const f32,
+    _dt: f32,
+    attitude: *mut AttitudeInfo,
+) {
+    if let Some(attitude) = unsafe { attitude.as_mut() } {
+        attitude.beta = 0.2;
+    }
+}
+
+pub unsafe fn ahrs_get_roll(attitude: *const AttitudeInfo) -> f32 {
+    unsafe { attitude.as_ref() }.map_or(0.0, |attitude| attitude.q1)
+}
+
+pub unsafe fn ahrs_get_pitch(attitude: *const AttitudeInfo) -> f32 {
+    unsafe { attitude.as_ref() }.map_or(0.0, |attitude| attitude.q2)
+}
+
+pub unsafe fn ahrs_get_yaw(attitude: *const AttitudeInfo) -> f32 {
+    unsafe { attitude.as_ref() }.map_or(0.0, |attitude| attitude.q3)
 }
 
 pub unsafe fn vesc_spawn(

@@ -107,10 +107,10 @@ pub(crate) mod ffi {
         set_pad_mode, store_backup_data, timeout_has_timeout, timeout_reset,
         timeout_secs_since_update,
     };
-    #[cfg(test)]
-    pub use selected_ffi::{clear_pad, io_get_st_pin, set_pad, set_pad_mode};
     #[allow(unused_imports)]
     pub use selected_ffi::{
+        ahrs_get_pitch, ahrs_get_roll, ahrs_get_yaw, ahrs_init_attitude_info,
+        ahrs_update_initial_orientation, ahrs_update_madgwick_imu, ahrs_update_mahony_imu,
         commands_process_packet, commands_unregister_reply_func, encoder_set_custom_callbacks, f_b,
         f_cons, f_float, f_i32, f_i64, f_lbm_array, f_sym, f_u32, f_u64, foc_beep,
         foc_get_audio_sample_table, foc_get_id, foc_get_iq, foc_get_vd, foc_get_vq,
@@ -152,6 +152,8 @@ pub(crate) mod ffi {
         vesc_thread_set_priority, vesc_timer_seconds_elapsed_since, vesc_timer_time_now,
         vesc_timestamp_age_seconds, wipe_nvm, write_nvm,
     };
+    #[cfg(test)]
+    pub use selected_ffi::{clear_pad, io_get_st_pin, set_pad, set_pad_mode};
     #[cfg(any(test, not(feature = "test-support")))]
     use vescpkg_rs_sys::raw as selected_ffi;
 }
@@ -204,7 +206,10 @@ pub use firmware::{
 };
 pub(crate) use firmware::{firmware_array, loader_info_mut};
 pub use gnss::{Gnss, GnssError, GnssSnapshot};
-pub use imu::{Imu, ImuCalibration, ImuCalibrationError, ImuReadHandler};
+pub use imu::{
+    FirmwareAhrs, FirmwareAhrsError, FirmwareAhrsSnapshot, Imu, ImuCalibration,
+    ImuCalibrationError, ImuReadHandler,
+};
 pub use init::{PackageStart, PackageStartError};
 pub use input::{ControllerInput, RemoteInput};
 pub use lifecycle_core::AppDataSendError;
@@ -265,8 +270,9 @@ pub mod prelude {
         AnalogPin, AppDataHandler, AppDataSendError, CanBus, CanError, CanStatus, CommandError,
         CommandReplyHandler, Commands, ConfigBytes, ConfigXml, DigitalOutputLevel, DigitalPin,
         Encoder, EncoderError, EncoderHandler, EncoderRegistration, ExtensionDescriptor,
-        ExtensionName, ExtensionRegistration, Firmware, FirmwareAppData, FirmwareCapabilities,
-        FirmwareClock, FirmwareFloatSetting, FirmwareInputs, FirmwareIntSetting, FirmwareMutex,
+        ExtensionName, ExtensionRegistration, Firmware, FirmwareAhrs, FirmwareAhrsError,
+        FirmwareAhrsSnapshot, FirmwareAppData, FirmwareCapabilities, FirmwareClock,
+        FirmwareFloatSetting, FirmwareInputs, FirmwareIntSetting, FirmwareMutex,
         FirmwareMutexGuard, FirmwareSemaphore, FirmwareSettings, FirmwareThread, FirmwareThreads,
         Gnss, GnssError, GnssSnapshot, Gpio, Imu, ImuReadHandler, LbmExtension, LispArgs,
         LispIntegerError, LispValue, MotorOutput, MotorTelemetry, Nvm, NvmCapacity, NvmError,
