@@ -247,7 +247,12 @@ fn realtime_value(payloads: &RefloatAllDataPayloads, item: RefloatRealtimeDataIt
     let temperatures = payloads.mode2().temperatures();
 
     match item {
-        RefloatRealtimeDataItem::MotorSpeed => motor.vehicle_speed().speed().as_meters_per_second(),
+        // Refloat converts its internal m/s speed for the VESC Tool km/h
+        // consumer at `third_party/refloat/src/motor_data.c:119` and
+        // `ui.qml.in:853-925`.
+        RefloatRealtimeDataItem::MotorSpeed => {
+            motor.vehicle_speed().speed().as_kilometers_per_hour()
+        }
         RefloatRealtimeDataItem::MotorErpm => {
             motor.electrical_speed().rpm().as_revolutions_per_minute()
         }
@@ -306,7 +311,32 @@ fn realtime_value(payloads: &RefloatAllDataPayloads, item: RefloatRealtimeDataIt
 mod tests {
     use super::super::super::test_support::sample_all_data_payloads;
     use super::*;
-    use vescpkg_rs::prelude::{AngleDegrees, AngleRadians, TimestampTicks};
+    use crate::domain::{RefloatAllDataBasePayload, RefloatAllDataMotorPayload};
+    use vescpkg_rs::prelude::{AngleDegrees, AngleRadians, Speed, TimestampTicks, VehicleSpeed};
+
+    fn sample_payloads_with_speed(meters_per_second: f32) -> RefloatAllDataPayloads {
+        let payloads = sample_all_data_payloads();
+        let base = payloads.base();
+        let motor = base.motor();
+        let motor = RefloatAllDataMotorPayload::new(
+            motor.battery_voltage(),
+            motor.electrical_speed(),
+            VehicleSpeed::new(Speed::from_meters_per_second(meters_per_second)),
+            motor.currents(),
+            motor.duty_cycle(),
+            motor.foc_id_current(),
+        );
+        let base = RefloatAllDataBasePayload::new(
+            base.balance_current(),
+            base.attitude(),
+            base.status(),
+            base.footpad(),
+            base.setpoints(),
+            base.booster_current(),
+            motor,
+        );
+        RefloatAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4())
+    }
 
     #[test]
     fn app_data_processes_legacy_get_rtdata_like_refloat() {
@@ -382,6 +412,56 @@ mod tests {
         assert_eq!(&bytes[44..48], &[0, 0, 0, 0]);
         assert_eq!(&bytes[48..52], &[0, 0, 0, 0]);
         assert_eq!(bytes[52], 0);
+    }
+
+    #[test]
+    fn command_31_motor_speed_encodes_kilometres_per_hour_like_refloat() {
+        let baseline = encode_refloat_realtime_data_response(
+            &sample_payloads_with_speed(0.0),
+            TimestampTicks::from_ticks(0),
+        );
+
+        for (meters_per_second, expected) in [
+            (0.0, [0x00, 0x00]),
+            (1.0, [0x43, 0x33]),
+            (-1.0, [0xc3, 0x33]),
+            (0.5, [0x3f, 0x33]),
+            (65_504.0 / 3.6, [0x7b, 0xff]),
+        ] {
+            let response = encode_refloat_realtime_data_response(
+                &sample_payloads_with_speed(meters_per_second),
+                TimestampTicks::from_ticks(0),
+            );
+            let bytes = response.as_bytes();
+
+            // C map: Refloat converts m/s to km/h at
+            // `third_party/refloat/src/motor_data.c:119`; VESC Tool reads the
+            // first command-31 data item at `ui.qml.in:853-925` as speed.
+            assert_eq!(bytes.len(), baseline.as_bytes().len());
+            assert_eq!(&bytes[..12], &baseline.as_bytes()[..12]);
+            assert_eq!(&bytes[12..14], &expected);
+            assert_eq!(&bytes[14..], &baseline.as_bytes()[14..]);
+        }
+    }
+
+    #[test]
+    fn command_31_qml_visible_motor_speed_is_kilometres_per_hour() {
+        let response = encode_refloat_realtime_data_response(
+            &sample_payloads_with_speed(1.0),
+            TimestampTicks::from_ticks(0),
+        );
+        let bytes = response.as_bytes();
+        let qml_value = decode_normal_float16([bytes[12], bytes[13]]);
+
+        assert!((qml_value - 3.6).abs() < 0.001);
+    }
+
+    fn decode_normal_float16(bytes: [u8; 2]) -> f32 {
+        let bits = u16::from_be_bytes(bytes);
+        let sign = if bits & 0x8000 == 0 { 1.0 } else { -1.0 };
+        let exponent = i32::from((bits >> 10) & 0x1f) - 15;
+        let significand = 1.0 + f32::from(bits & 0x03ff) / 1024.0;
+        sign * significand * 2.0_f32.powi(exponent)
     }
 
     #[track_caller]
