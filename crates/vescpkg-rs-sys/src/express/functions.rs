@@ -48,9 +48,9 @@ pub type AddExtension = unsafe extern "C" fn(*mut c_char, ExtensionHandler) -> b
 /// `lbm_set_error_reason` function-pointer ABI.
 pub type SetErrorReason = unsafe extern "C" fn(*mut c_char) -> i32;
 /// `lbm_add_symbol_const` function-pointer ABI.
-pub type AddSymbolConst = unsafe extern "C" fn(*mut c_char, *mut LbmUint) -> i32;
+pub type AddSymbolConst = unsafe extern "C" fn(*const c_char, *mut LbmUint) -> i32;
 /// `lbm_get_symbol_by_name` function-pointer ABI.
-pub type GetSymbolByName = unsafe extern "C" fn(*mut c_char, *mut LbmUint) -> i32;
+pub type GetSymbolByName = unsafe extern "C" fn(*const c_char, *mut LbmUint) -> i32;
 /// `lbm_create_byte_array` function-pointer ABI.
 pub type CreateByteArray = unsafe extern "C" fn(*mut LbmValue, LbmUint) -> bool;
 /// Callback ABI accepted by `spawn`.

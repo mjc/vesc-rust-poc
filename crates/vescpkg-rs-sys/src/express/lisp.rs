@@ -385,11 +385,11 @@ impl<'a> ExpressLisp<'a> {
     ///
     /// # Safety
     ///
-    /// `name` must be a valid writable NUL-terminated C string and `symbol`
-    /// must be non-null and writable for the duration of the call.
+    /// `name` must be a valid NUL-terminated C string and `symbol` must be
+    /// non-null and writable for the duration of the call.
     pub unsafe fn add_symbol_const(
         self,
-        name: *mut c_char,
+        name: *const c_char,
         symbol: *mut u32,
     ) -> Result<i32, ExpressCallError> {
         let add: AddSymbolConst =
@@ -401,11 +401,11 @@ impl<'a> ExpressLisp<'a> {
     ///
     /// # Safety
     ///
-    /// `name` must be a valid writable NUL-terminated C string and `symbol`
-    /// must be non-null and writable for the duration of the call.
+    /// `name` must be a valid NUL-terminated C string and `symbol` must be
+    /// non-null and writable for the duration of the call.
     pub unsafe fn get_symbol_by_name(
         self,
-        name: *mut c_char,
+        name: *const c_char,
         symbol: *mut u32,
     ) -> Result<i32, ExpressCallError> {
         let get: GetSymbolByName =

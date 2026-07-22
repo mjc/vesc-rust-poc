@@ -1,7 +1,7 @@
 //! Constructor-gated shared Express runtime operations.
 
 use super::functions::{
-    Free, LibMutex, LibSemaphore, LibThread, Malloc, MutexCreate, MutexLock, MutexUnlock,
+    Free, GetArg, LibMutex, LibSemaphore, LibThread, Malloc, MutexCreate, MutexLock, MutexUnlock,
     SemaphoreCreate, SemaphoreReset, SemaphoreSignal, SemaphoreWait, SemaphoreWaitTo,
     ShouldTerminate, SleepMs, SleepTicks, SleepUs, Spawn, SpawnFunction, SystemTime,
     SystemTimeTicks, ThreadSetPriority, TimerSecondsElapsedSince, TimerSleep, TimerTimeNow,
@@ -120,6 +120,22 @@ impl<'a> ExpressRuntime<'a> {
             unsafe { self.interface.function(ExpressSlot::ThreadSetPriority) }?;
         unsafe { set_priority(priority) };
         Ok(())
+    }
+
+    /// Return the firmware-owned argument vector for a native program address.
+    ///
+    /// # Safety
+    ///
+    /// `program_address` must identify a live Express native program. The
+    /// returned pointer and the argument storage it references are owned by
+    /// firmware and may only be inspected under the lifetime rules of that
+    /// program; this method does not copy or validate the argument vector.
+    pub unsafe fn get_arg(
+        self,
+        program_address: u32,
+    ) -> Result<*mut *mut core::ffi::c_void, ExpressCallError> {
+        let get_arg: GetArg = unsafe { self.interface.function(ExpressSlot::GetArg) }?;
+        Ok(unsafe { get_arg(program_address) })
     }
 
     /// Spawn a firmware thread.
