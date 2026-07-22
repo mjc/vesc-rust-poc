@@ -50,6 +50,7 @@ mod pwm;
 pub use math::{asin, cos, sin, sqrt, tan};
 mod runtime;
 mod sync;
+mod terminal;
 #[cfg(all(feature = "test-support", not(test)))]
 mod test_ffi;
 mod uart;
@@ -130,7 +131,8 @@ pub(crate) mod ffi {
         mc_stat_temp_motor_max, mc_temp_fet_filtered, mc_temp_motor_filtered,
         mc_update_pid_pos_offset, mc_wait_for_motor_release, packet_init, packet_process_byte,
         packet_reset, packet_send_packet, plot_add_graph, plot_init, plot_send_points,
-        plot_set_graph, read_eeprom_word, read_nvm, store_eeprom_word, uart_read, uart_start,
+        plot_set_graph, read_eeprom_word, read_nvm, store_eeprom_word,
+        terminal_register_command_callback, terminal_unregister_callback, uart_read, uart_start,
         uart_write, vesc_free, vesc_imu_get_quaternions, vesc_mutex_create, vesc_mutex_lock,
         vesc_mutex_unlock, vesc_request_terminate, vesc_sem_create, vesc_sem_reset,
         vesc_sem_signal, vesc_sem_wait, vesc_sem_wait_to, vesc_should_terminate, vesc_sleep_us,
@@ -192,6 +194,7 @@ pub use packet::{PacketCodec, PacketError, PacketHandler, PacketRegistration};
 pub use plot::{Plot, PlotError};
 pub use runtime::{PackageRuntimeState, PackageStateAccess, PackageStateStore};
 pub use sync::{FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore};
+pub use terminal::{Terminal, TerminalArgs, TerminalError, TerminalHandler, TerminalRegistration};
 pub use thread::{
     Firmware, FirmwareAppData, FirmwareClock, FirmwareThread, FirmwareThreads,
     StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadName,
