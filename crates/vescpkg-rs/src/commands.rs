@@ -1,8 +1,10 @@
 //! Owned command-packet reply callbacks.
 
 use core::marker::PhantomData;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 const MAX_COMMAND_PACKET: usize = 512;
+static COMMAND_REPLY_OWNED: AtomicBool = AtomicBool::new(false);
 
 /// Failure returned by command reply processing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12,6 +14,8 @@ pub enum CommandError {
     Unavailable,
     /// The command packet exceeds the firmware payload limit.
     PacketTooLong,
+    /// Another command reply callback already owns the firmware slot.
+    Busy,
 }
 
 /// Safe callback behavior for one command reply.
@@ -42,6 +46,12 @@ impl Commands {
         if packet.len() > MAX_COMMAND_PACKET {
             return Err(CommandError::PacketTooLong);
         }
+        if COMMAND_REPLY_OWNED
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
+            return Err(CommandError::Busy);
+        }
         let registered = unsafe {
             crate::ffi::commands_process_packet(
                 packet.as_mut_ptr(),
@@ -49,17 +59,20 @@ impl Commands {
                 reply::<H>,
             )
         };
-        registered
-            .then_some(CommandReplyLease {
-                _handler: PhantomData,
-            })
-            .ok_or(CommandError::Unavailable)
+        if !registered {
+            COMMAND_REPLY_OWNED.store(false, Ordering::Release);
+            return Err(CommandError::Unavailable);
+        }
+        Ok(CommandReplyLease {
+            _handler: PhantomData,
+        })
     }
 }
 
 impl<H: CommandReplyHandler> Drop for CommandReplyLease<H> {
     fn drop(&mut self) {
         let _ = unsafe { crate::ffi::commands_unregister_reply_func(reply::<H>) };
+        COMMAND_REPLY_OWNED.store(false, Ordering::Release);
     }
 }
 
