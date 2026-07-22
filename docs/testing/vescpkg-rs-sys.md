@@ -116,6 +116,17 @@ Host dispatch tests can be run under Miri to exercise the crate-internal mock-ta
 cargo +nightly miri test -p vescpkg-rs-sys
 ```
 
-Miri does not cover the ARM `asm!` dispatch path (`cfg(all(target_arch = "arm", not(test)))`). Treat Miri as a harness sanity check, not firmware validation.
+In the current Nix shell this command is unavailable because no default
+rustup toolchain provides `cargo-miri`; record that as an environment
+limitation rather than weakening the gate. When a nightly Miri toolchain is
+available, use the command above with `-- --test-threads=1` so the host mock
+table and libclang fixtures remain isolated.
+
+Miri covers host mock-table construction, function-pointer storage/loading,
+union/layout helpers, and callback test support. It does not cover the ARM
+`asm!` dispatch path (`cfg(all(target_arch = "arm", not(test)))`) or fixed
+firmware-address loads; the Thumb smoke gate and ARM no-std check are the
+alternative proofs for those paths. Treat Miri as a harness sanity check, not
+firmware validation.
 
 Epic tracking: **br-uc4**.
