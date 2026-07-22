@@ -49,6 +49,33 @@ fn gpio_leases_reject_wrong_mode_and_cover_analog_ownership() {
 }
 
 #[test]
+fn gpio_leases_cover_pull_and_open_drain_modes() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    let gpio = firmware.gpio();
+    let modes = [
+        GpioMode::Input,
+        GpioMode::InputPullDown,
+        GpioMode::Output,
+        GpioMode::OpenDrain,
+        GpioMode::OpenDrainPullUp,
+        GpioMode::OpenDrainPullDown,
+    ];
+
+    for mode in modes {
+        let pin = gpio
+            .acquire_digital(DigitalPin::HW_1)
+            .expect("mode test lease");
+        pin.set_mode(mode).expect("pinned mode");
+        if matches!(mode, GpioMode::Input | GpioMode::InputPullDown) {
+            assert_eq!(pin.read(), Ok(false));
+        } else {
+            pin.write(DigitalOutputLevel::High)
+                .expect("output mode write");
+        }
+    }
+}
+
+#[test]
 fn every_pinned_digital_pin_has_an_exclusive_safe_lease() {
     let firmware = vescpkg_rs::test_support::FirmwareTest::new();
     let gpio = firmware.gpio();
