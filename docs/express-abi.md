@@ -28,6 +28,16 @@ ESP-IDF target selection (`esp32c3`, `esp32s3`, `esp32c6`, or `esp32p4`) for a
 future native-library build integration. They are documentation/metadata only
 here; a host pointer must never be made from one of these values.
 
+## Build boundary
+
+The current `cargo vescpkg build` path emits STM32 packages for
+`thumbv7em-none-eabihf`; it must not be used as an Express builder. An Express
+native library must select exactly one `ExpressTarget` through its ESP-IDF
+`sdkconfig.h` define, use the matching fixed table address, and retain the
+Express container/loader contract. Rust-side target metadata is now available
+for that integration, while the Express-specific compiler/linker/package path
+and device installation proof remain intentionally open.
+
 ## Current implementation boundary
 
 `ExpressInterface::from_words` checks the version before exposing any slot,
