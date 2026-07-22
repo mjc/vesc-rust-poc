@@ -44,7 +44,11 @@ pub(super) fn refloat_realtime_push_float32_auto(buffer: &mut [u8], ind: &mut us
     crate::wire::push_float32_auto(buffer, ind, value);
 }
 
-pub(super) fn refloat_realtime_push_u32(buffer: &mut [u8], ind: &mut usize, value: u32) {
+pub(in crate::package) fn refloat_realtime_push_u32(
+    buffer: &mut [u8],
+    ind: &mut usize,
+    value: u32,
+) {
     crate::wire::push_u32(buffer, ind, value);
 }
 
@@ -52,7 +56,7 @@ fn refloat_realtime_push_u16(buffer: &mut [u8], ind: &mut usize, value: u16) {
     crate::wire::push_u16(buffer, ind, value);
 }
 
-pub(super) fn refloat_realtime_push_u8(buffer: &mut [u8], ind: &mut usize, value: u8) {
+pub(in crate::package) fn refloat_realtime_push_u8(buffer: &mut [u8], ind: &mut usize, value: u8) {
     crate::wire::push_u8(buffer, ind, value);
 }
 

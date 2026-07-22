@@ -290,6 +290,7 @@ mod slots {
     fn_slot!(get_ppm as unsafe extern "C" fn() -> f32);
     fn_slot!(get_ppm_age as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_fault as unsafe extern "C" fn() -> c_uint);
+    fn_slot!(mc_fault_to_string as unsafe extern "C" fn(c_uint) -> *const c_char);
     fn_slot!(mc_get_rpm as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_speed as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_tot_current_filtered as unsafe extern "C" fn() -> f32);
@@ -314,6 +315,7 @@ mod slots {
     // Refloat capability-probes this pre-6.05 slot because not every motor
     // implementation populates the FOC-specific function.
     fn_slot!(foc_get_id as unsafe extern "C" fn() -> f32);
+    fn_slot!(foc_play_tone as unsafe extern "C" fn(c_int, f32, f32) -> bool);
     fn_slot!(mc_temp_fet_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_temp_motor_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(imu_startup_done as unsafe extern "C" fn() -> bool);
@@ -1156,6 +1158,17 @@ pub unsafe fn mc_get_duty_cycle_now() -> f32 {
     unsafe { required_slot!(mc_get_duty_cycle_now)() }
 }
 
+/// Return the firmware-owned name for a motor fault code when the slot exists.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid. A non-null
+/// returned pointer is firmware-owned and must point to a NUL-terminated string.
+pub unsafe fn mc_fault_to_string(code: c_uint) -> Option<*const c_char> {
+    let pointer = unsafe { required_slot!(mc_fault_to_string)(code) };
+    (!pointer.is_null()).then_some(pointer)
+}
+
 /// Return FOC d-axis Id current when the firmware slot is present.
 ///
 /// Refloat v1.2.1 reads optional `foc_get_id` while encoding compact all-data
@@ -1167,6 +1180,15 @@ pub unsafe fn mc_get_duty_cycle_now() -> f32 {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn foc_get_id() -> Option<f32> {
     unsafe { slots::foc_get_id() }.map(|func| unsafe { func() })
+}
+
+/// Play one FOC tone when the motor firmware exposes audio support.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn foc_play_tone(channel: c_int, frequency: f32, voltage: f32) -> Option<bool> {
+    unsafe { slots::foc_play_tone() }.map(|func| unsafe { func(channel, frequency, voltage) })
 }
 /// Return the filtered input/battery voltage.
 ///

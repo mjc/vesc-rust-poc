@@ -244,6 +244,7 @@ mod tests {
         state.refresh_main_loop_runtime_state(
             telemetry.telemetry(),
             telemetry.imu(),
+            telemetry.motor(),
             AdcVoltage::new(Voltage::from_volts(2.5)),
             AdcVoltage::new(Voltage::from_volts(2.5)),
             TimestampTicks::from_ticks(60_000),
@@ -255,6 +256,7 @@ mod tests {
         state.refresh_main_loop_runtime_state(
             telemetry.telemetry(),
             telemetry.imu(),
+            telemetry.motor(),
             AdcVoltage::new(Voltage::from_volts(2.5)),
             AdcVoltage::new(Voltage::from_volts(2.5)),
             TimestampTicks::from_ticks(60_001),

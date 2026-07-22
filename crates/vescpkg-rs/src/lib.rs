@@ -66,14 +66,14 @@ pub(crate) mod ffi {
     use crate::test_ffi as selected_ffi;
     #[allow(unused_imports)]
     pub use selected_ffi::{
-        foc_get_id, get_cfg_float, get_cfg_int, get_ppm, get_ppm_age, imu_get_gyro, imu_get_pitch,
-        imu_get_roll, imu_get_yaw, imu_startup_done, lbm_car, lbm_cdr, lbm_cons,
+        foc_get_id, foc_play_tone, get_cfg_float, get_cfg_int, get_ppm, get_ppm_age, imu_get_gyro,
+        imu_get_pitch, imu_get_roll, imu_get_yaw, imu_startup_done, lbm_car, lbm_cdr, lbm_cons,
         lbm_create_byte_array, lbm_dec_as_float, lbm_dec_as_i32, lbm_dec_as_u32, lbm_dec_char,
         lbm_dec_str, lbm_enc_char, lbm_enc_float, lbm_enc_i, lbm_enc_u32, lbm_is_byte_array,
         lbm_is_char, lbm_is_cons, lbm_is_number, lbm_is_symbol, lbm_list_destructive_reverse,
-        mc_get_amp_hours, mc_get_amp_hours_charged, mc_get_battery_level, mc_get_distance_abs,
-        mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered, mc_get_odometer,
-        mc_get_rpm, mc_get_speed, mc_get_tot_current_directional_filtered,
+        mc_fault_to_string, mc_get_amp_hours, mc_get_amp_hours_charged, mc_get_battery_level,
+        mc_get_distance_abs, mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered,
+        mc_get_odometer, mc_get_rpm, mc_get_speed, mc_get_tot_current_directional_filtered,
         mc_get_tot_current_filtered, mc_get_tot_current_in_filtered, mc_get_watt_hours,
         mc_get_watt_hours_charged, mc_set_brake_current, mc_set_current, mc_set_current_off_delay,
         mc_set_duty, mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm,

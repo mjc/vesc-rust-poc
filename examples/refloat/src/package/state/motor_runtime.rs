@@ -87,6 +87,8 @@ pub(super) fn refresh(state: &mut RefloatPackageState, telemetry: &impl MotorTel
         .reduced_by(TractionLossLimits::REFLOAT.duty_margin);
     state.motor_current_max = telemetry.drive_current_limit();
     state.motor_current_min = telemetry.brake_current_limit();
+    state.battery_current_max = telemetry.drive_input_current_limit();
+    state.battery_current_min = telemetry.brake_input_current_limit();
     state.mosfet_temperature = telemetry.mosfet_temperature();
     state.motor_temperature = telemetry.motor_temperature();
     state.mosfet_temperature_limit_start = telemetry.mosfet_temperature_limit_start();

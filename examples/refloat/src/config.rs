@@ -12,6 +12,8 @@ use vescpkg_rs::prelude::{
     MahonyPitchGain, MahonyRollGain, MotorCurrent, MotorCurrentLimit, PidScale, RateCurrentGain,
     Ratio, Rpm, SampleRate, Speed, VescSeconds, Voltage,
 };
+#[cfg(any(test, target_arch = "arm"))]
+use vescpkg_rs::prelude::{AudioFrequency, AudioVoltage};
 use vescpkg_rs::{
     CustomConfigAngleCurrentGainField, CustomConfigAngleField, CustomConfigAngularVelocityField,
     CustomConfigDurationField, CustomConfigEditor, CustomConfigElectricalSpeedField,
@@ -78,6 +80,7 @@ impl RefloatConfigImage {
     const DUTY_BEEP_ENABLED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 50);
     const FOOT_BEEP_ENABLED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 28);
     const TILTBACK_RETURN_SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: REFLOAT_CONFIG_LEN, offset: 64, scale: 100.0);
+    const PERSISTENT_FATAL_ERROR_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 66);
     const TILTBACK_CONSTANT_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 67, scale: 1000.0);
     const TILTBACK_CONSTANT_ERPM_FIELD: CustomConfigElectricalSpeedField = vescpkg_rs::generated_custom_config_field!(CustomConfigElectricalSpeedField, len: REFLOAT_CONFIG_LEN, offset: 69);
     const TILTBACK_VARIABLE_RATE_FIELD: CustomConfigPidScaleField = vescpkg_rs::generated_custom_config_field!(CustomConfigPidScaleField, len: REFLOAT_CONFIG_LEN, offset: 71, scale: 1000.0);
@@ -180,6 +183,19 @@ impl RefloatConfigImage {
         RefloatBmsConfig(self)
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) const fn haptic(&self) -> RefloatHapticConfig<'_> {
+        RefloatHapticConfig(self)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_haptic_current_threshold(&mut self, threshold: Ratio) -> bool {
+        let mut editor = self.editor();
+        RefloatHapticConfig::CURRENT_THRESHOLD_FIELD
+            .write(&mut editor, threshold)
+            .is_some()
+    }
+
     pub(crate) fn balance_loop_config(&self) -> LoopConfig {
         // C map: `configure(d)` consumes these generated `float_conf` fields to
         // drive the control loop and timing at `third_party/refloat/src/main.c:161-199`;
@@ -228,6 +244,10 @@ impl RefloatConfigImage {
 
     pub(crate) fn tiltback_return_speed(&self) -> AngularVelocity {
         generated_field(Self::TILTBACK_RETURN_SPEED_FIELD.read(self))
+    }
+
+    pub(crate) fn persistent_fatal_error(&self) -> bool {
+        self.flag(Self::PERSISTENT_FATAL_ERROR_FIELD)
     }
 
     pub(crate) fn high_voltage_pushback_angle(&self) -> AngleDegrees {
@@ -307,6 +327,74 @@ impl RefloatConfigImage {
 
     pub(crate) fn editor(&mut self) -> RefloatConfigEditor<'_> {
         RefloatConfigEditor(self.0.editor())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+#[cfg(any(test, target_arch = "arm"))]
+pub(crate) struct RefloatHapticConfig<'a>(&'a RefloatConfigImage);
+
+#[cfg(any(test, target_arch = "arm"))]
+impl RefloatHapticConfig<'_> {
+    const DUTY_FREQUENCY_FIELD: CustomConfigFrequencyField = vescpkg_rs::generated_custom_config_field!(CustomConfigFrequencyField, len: REFLOAT_CONFIG_LEN, offset: 244, scale: 1.0);
+    const DUTY_STRENGTH_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigScaledVoltageField, len: REFLOAT_CONFIG_LEN, offset: 246, scale: 10.0);
+    const ERROR_FREQUENCY_FIELD: CustomConfigFrequencyField = vescpkg_rs::generated_custom_config_field!(CustomConfigFrequencyField, len: REFLOAT_CONFIG_LEN, offset: 248, scale: 1.0);
+    const ERROR_STRENGTH_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigScaledVoltageField, len: REFLOAT_CONFIG_LEN, offset: 250, scale: 10.0);
+    const VIBRATE_FREQUENCY_FIELD: CustomConfigFrequencyField = vescpkg_rs::generated_custom_config_field!(CustomConfigFrequencyField, len: REFLOAT_CONFIG_LEN, offset: 252, scale: 1.0);
+    const VIBRATE_STRENGTH_FIELD: CustomConfigMotorCurrentField = vescpkg_rs::generated_custom_config_field!(CustomConfigMotorCurrentField, len: REFLOAT_CONFIG_LEN, offset: 254, scale: 10.0);
+    const DUTY_SOLID_OFFSET_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: REFLOAT_CONFIG_LEN, offset: 256, scale: 10000.0);
+    const CURRENT_THRESHOLD_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: REFLOAT_CONFIG_LEN, offset: 258, scale: 10000.0);
+    const MIN_STRENGTH_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: REFLOAT_CONFIG_LEN, offset: 260, scale: 10000.0);
+    const MAX_STRENGTH_SPEED_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: REFLOAT_CONFIG_LEN, offset: 262);
+    const STRENGTH_CURVATURE_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: REFLOAT_CONFIG_LEN, offset: 263, scale: 1000.0);
+
+    pub(crate) fn duty_frequency(self) -> AudioFrequency {
+        AudioFrequency::new(generated_field(Self::DUTY_FREQUENCY_FIELD.read(self.0)))
+    }
+
+    pub(crate) fn duty_strength(self) -> AudioVoltage {
+        AudioVoltage::new(generated_field(Self::DUTY_STRENGTH_FIELD.read(self.0)))
+    }
+
+    pub(crate) fn error_frequency(self) -> AudioFrequency {
+        AudioFrequency::new(generated_field(Self::ERROR_FREQUENCY_FIELD.read(self.0)))
+    }
+
+    pub(crate) fn error_strength(self) -> AudioVoltage {
+        AudioVoltage::new(generated_field(Self::ERROR_STRENGTH_FIELD.read(self.0)))
+    }
+
+    pub(crate) fn vibrate_frequency(self) -> AudioFrequency {
+        AudioFrequency::new(generated_field(Self::VIBRATE_FREQUENCY_FIELD.read(self.0)))
+    }
+
+    pub(crate) fn vibrate_strength(self) -> MotorCurrent {
+        generated_field(Self::VIBRATE_STRENGTH_FIELD.read(self.0))
+    }
+
+    pub(crate) fn duty_solid_offset(self) -> Ratio {
+        generated_field(Self::DUTY_SOLID_OFFSET_FIELD.read(self.0))
+    }
+
+    pub(crate) fn current_threshold(self) -> Ratio {
+        generated_field(Self::CURRENT_THRESHOLD_FIELD.read(self.0))
+    }
+
+    pub(crate) fn min_strength(self) -> Ratio {
+        generated_field(Self::MIN_STRENGTH_FIELD.read(self.0))
+    }
+
+    pub(crate) fn max_strength_speed(self) -> Speed {
+        generated_field(Self::MAX_STRENGTH_SPEED_FIELD.read(self.0)).scaled(
+            1.0,
+            0.0,
+            Speed::from_kilometers_per_hour,
+        )
+    }
+
+    pub(crate) fn strength_curvature(self) -> Ratio {
+        generated_field(Self::STRENGTH_CURVATURE_FIELD.read(self.0))
     }
 }
 

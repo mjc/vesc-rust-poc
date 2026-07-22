@@ -6,6 +6,8 @@
 use crate::config::RefloatParkingBrakeMode;
 use crate::domain::{RefloatMotorCommand, RefloatRunState};
 use vescpkg_rs::MotorOutput;
+#[cfg(any(test, target_arch = "arm"))]
+use vescpkg_rs::prelude::{AudioFrequency, SampleRate};
 use vescpkg_rs::prelude::{
     BrakeCurrent, Current, CurrentOffDelay, DutyCycle, MotorCurrent, Rpm, SYSTEM_TICK_RATE_HZ,
     SignedRatio, TimestampTicks, VescSeconds,
@@ -26,6 +28,10 @@ pub(crate) struct RefloatMotorControl {
     // Refloat uses `brake_timer` to release idle motor output after one second
     // at `third_party/refloat/src/motor_control.c:101-109`.
     brake_timer_ticks: TimestampTicks,
+    tone_ticks: u8,
+    tone_counter: u8,
+    tone_high: bool,
+    tone_intensity: MotorCurrent,
 }
 
 impl RefloatMotorControl {
@@ -36,6 +42,10 @@ impl RefloatMotorControl {
             requested_current: None,
             parking_brake_active: false,
             brake_timer_ticks: TimestampTicks::from_ticks(0),
+            tone_ticks: 0,
+            tone_counter: 0,
+            tone_high: false,
+            tone_intensity: MotorCurrent::new(Current::ZERO),
         }
     }
 
@@ -44,6 +54,30 @@ impl RefloatMotorControl {
         // Upstream `motor_control_request_current` sets the request flag and
         // stores the requested current at `third_party/refloat/src/motor_control.c:44-47`.
         self.requested_current = Some(RefloatMotorCommand::new(current));
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn play_tone(
+        &mut self,
+        frequency: AudioFrequency,
+        intensity: MotorCurrent,
+        sample_rate: SampleRate,
+    ) {
+        let ticks = (sample_rate.as_hertz() / 2.0 / frequency.frequency().as_hertz())
+            .max(1.0)
+            .min(f32::from(u8::MAX)) as u8;
+        if ticks != self.tone_ticks {
+            self.tone_ticks = ticks;
+            self.tone_counter = ticks;
+        }
+        self.tone_intensity = intensity;
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn stop_tone(&mut self) {
+        self.tone_ticks = 0;
+        self.tone_counter = 0;
+        self.tone_high = false;
     }
 
     #[inline(always)]
@@ -103,6 +137,23 @@ impl RefloatMotorControl {
             // first idle apply does not immediately trip `timer_older` at
             // `third_party/refloat/src/motor_control.c:106`.
             self.brake_timer_ticks = system_time_ticks;
+        }
+
+        if self.tone_ticks > 0 {
+            self.tone_counter -= 1;
+            if self.tone_counter == 0 {
+                self.tone_counter = self.tone_ticks;
+                self.tone_high = !self.tone_high;
+            }
+            let requested = self.requested_current.map_or(Current::ZERO, |command| {
+                command.requested_current().current()
+            });
+            let tone = self.tone_intensity.current();
+            self.request_current(MotorCurrent::new(if self.tone_high {
+                requested + tone
+            } else {
+                requested - tone
+            }));
         }
 
         if self.apply_requested_current(motor) {
@@ -219,5 +270,52 @@ mod tests {
         assert_eq!(motor.duty_command_count(), 1);
         assert_eq!(motor.current_command_count(), 0);
         assert_eq!(motor.brake_current_command_count(), 0);
+    }
+
+    #[test]
+    fn motor_control_modulates_requested_current_for_vibration_like_refloat() {
+        let motor = FirmwareTest::new();
+        let mut control = RefloatMotorControl::new();
+        control.play_tone(
+            AudioFrequency::new(vescpkg_rs::Frequency::from_hertz(70.0)),
+            MotorCurrent::new(Current::from_amps(2.0)),
+            SampleRate::from_hertz(832.0),
+        );
+
+        for _ in 0..4 {
+            control.request_current(MotorCurrent::new(Current::from_amps(5.0)));
+            assert!(control.apply(
+                motor.motor(),
+                RefloatRunState::Running,
+                Rpm::ZERO,
+                TimestampTicks::from_ticks(0),
+                RefloatParkingBrakeMode::Idle,
+                MotorCurrent::new(Current::from_amps(50.0)),
+            ));
+            assert_eq!(motor.commanded_current().current().as_amps(), 3.0);
+        }
+
+        control.request_current(MotorCurrent::new(Current::from_amps(5.0)));
+        assert!(control.apply(
+            motor.motor(),
+            RefloatRunState::Running,
+            Rpm::ZERO,
+            TimestampTicks::from_ticks(0),
+            RefloatParkingBrakeMode::Idle,
+            MotorCurrent::new(Current::from_amps(50.0)),
+        ));
+        assert_eq!(motor.commanded_current().current().as_amps(), 7.0);
+
+        control.stop_tone();
+        control.request_current(MotorCurrent::new(Current::from_amps(5.0)));
+        assert!(control.apply(
+            motor.motor(),
+            RefloatRunState::Running,
+            Rpm::ZERO,
+            TimestampTicks::from_ticks(0),
+            RefloatParkingBrakeMode::Idle,
+            MotorCurrent::new(Current::from_amps(50.0)),
+        ));
+        assert_eq!(motor.commanded_current().current().as_amps(), 5.0);
     }
 }
