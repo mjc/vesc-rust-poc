@@ -43,6 +43,10 @@ unsafe live-table constructor establishes the target invariant. Variadic
 `printf` and STM32-only motor/CAN/peripheral slots remain outside this shared
 surface.
 
+Thread spawning is available only through an unsafe method because callback,
+name, and argument lifetimes are firmware-owned contracts; termination requests
+remain checked once the caller holds an opaque firmware thread handle.
+
 The same provider exposes RAII `ExpressMutex` and `ExpressSemaphore` handles;
 firmware-owned handles are released with the header-prescribed `free` slot,
 and mutex guards unlock on drop. Creation rejects absent slots and null handles
