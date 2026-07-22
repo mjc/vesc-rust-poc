@@ -1471,6 +1471,12 @@ pub unsafe fn imu_get_yaw() -> f32 {
     load(&IMU_YAW)
 }
 
+pub unsafe fn imu_get_accel(values: *mut f32) {
+    if let Some(values) = unsafe { values.cast::<[f32; 3]>().as_mut() } {
+        *values = [1.0, 2.0, 3.0];
+    }
+}
+
 pub unsafe fn imu_get_gyro(values: *mut f32) {
     // SAFETY: the fake firmware callback contract provides three writable floats.
     if let Some(values) = unsafe { values.cast::<[f32; 3]>().as_mut() } {
@@ -1478,6 +1484,30 @@ pub unsafe fn imu_get_gyro(values: *mut f32) {
             .iter_mut()
             .zip(&IMU_GYRO)
             .for_each(|(value, axis)| *value = load(axis));
+    }
+}
+
+pub unsafe fn imu_get_mag(values: *mut f32) {
+    if let Some(values) = unsafe { values.cast::<[f32; 3]>().as_mut() } {
+        *values = [10.0, 20.0, 30.0];
+    }
+}
+
+pub unsafe fn imu_derotate(_input: *const f32, output: *mut f32) {
+    if let Some(output) = unsafe { output.cast::<[f32; 3]>().as_mut() } {
+        *output = [4.0, 5.0, 6.0];
+    }
+}
+
+pub unsafe fn imu_get_accel_derotated(values: *mut f32) {
+    if let Some(values) = unsafe { values.cast::<[f32; 3]>().as_mut() } {
+        *values = [4.0, 5.0, 6.0];
+    }
+}
+
+pub unsafe fn imu_get_gyro_derotated(values: *mut f32) {
+    if let Some(values) = unsafe { values.cast::<[f32; 3]>().as_mut() } {
+        *values = [7.0, 8.0, 9.0];
     }
 }
 
