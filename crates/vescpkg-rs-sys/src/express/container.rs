@@ -215,7 +215,7 @@ impl<'a> ExpressNativeContainer<'a> {
 }
 
 /// Iterator over a validated Express relocation table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExpressRelocationIter<'a> {
     container: ExpressNativeContainer<'a>,
     next: usize,
