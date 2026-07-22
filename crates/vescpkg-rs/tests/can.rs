@@ -99,3 +99,17 @@ fn can_bus_copies_status_message_three() {
     );
     assert_eq!(status.watt_hours_charged().energy().as_watt_hours(), 4.0);
 }
+
+#[test]
+fn can_bus_copies_status_message_four() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    let status = firmware
+        .can()
+        .status4(CanControllerId::new(7))
+        .expect("CAN status message 4");
+
+    assert_eq!(status.fet_temperature().temperature().as_celsius(), 45.0);
+    assert_eq!(status.motor_temperature().temperature().as_celsius(), 50.0);
+    assert_eq!(status.input_current().current().as_amps(), 3.0);
+    assert_eq!(status.position().angle().as_degrees(), 12.0);
+}
