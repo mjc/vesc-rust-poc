@@ -4,8 +4,8 @@
 use vescpkg_rs::{
     AngleDegrees, CanBus, CanControllerId, CanError, CanExtendedId, CanHardwareType,
     CanReceiverGuard, CanReceiverHandler, CanReceiverId, CanStandardId, Current, CurrentRelative,
-    DutyCycle, ElectricalSpeed, MotorCurrent, PackageRuntimeState, PackageStateStore,
-    PidPosition, Rpm, SignedRatio,
+    DutyCycle, ElectricalSpeed, MotorCurrent, PackageRuntimeState, PackageStateStore, PidPosition,
+    Rpm, SignedRatio,
 };
 
 struct ReceiverHandler;
@@ -209,7 +209,9 @@ fn package_stop_releases_standard_can_receiver_before_next_registration() {
     let mut info = vescpkg_rs::test_support::LoaderInfo::new();
     let mut start = vescpkg_rs::test_support::package_start(&mut info);
     start
-        .install_runtime_state(PackageState { _guard: Some(guard) })
+        .install_runtime_state(PackageState {
+            _guard: Some(guard),
+        })
         .expect("package state");
     assert!(start.finish_start(true));
     assert!(vescpkg_rs::test_support::stop_package(&mut info));
