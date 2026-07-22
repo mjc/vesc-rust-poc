@@ -379,8 +379,11 @@ mod slots {
     optional_fn_slot!(wipe_nvm as unsafe extern "C" fn() -> bool);
     fn_slot!(get_remote_state as unsafe extern "C" fn() -> RemoteState);
     fn_slot!(mc_select_motor_thread as unsafe extern "C" fn(c_int));
+    fn_slot!(mc_get_motor_thread as unsafe extern "C" fn() -> c_int);
+    fn_slot!(mc_dccal_done as unsafe extern "C" fn() -> bool);
+    optional_fn_slot!(mc_set_pwm_callback as unsafe extern "C" fn(Option<unsafe extern "C" fn()>));
     fn_slot!(mc_get_fault as unsafe extern "C" fn() -> c_uint);
-    fn_slot!(mc_fault_to_string as unsafe extern "C" fn(c_uint) -> *const c_char);
+    fn_slot!(mc_fault_to_string as unsafe extern "C" fn(c_int) -> *const c_char);
     fn_slot!(mc_get_rpm as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_speed as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_tot_current_filtered as unsafe extern "C" fn() -> f32);
@@ -1483,6 +1486,17 @@ pub unsafe fn get_ppm() -> Option<f32> {
 pub unsafe fn get_ppm_age() -> Option<f32> {
     call_optional_slot!(get_ppm_age())
 }
+/// Return the active motor-control thread index.
+pub unsafe fn mc_get_motor_thread() -> c_int {
+    unsafe { slots::mc_get_motor_thread()() }
+}
+
+/// Return whether firmware DC calibration has completed.
+pub unsafe fn mc_dccal_done() -> bool {
+    unsafe { slots::mc_dccal_done()() }
+}
+
+}
 
 /// Return the current motor electrical RPM.
 ///
@@ -1638,6 +1652,13 @@ pub unsafe fn mc_set_current_off_delay(seconds: f32) {
 /// Select the active firmware motor-control thread.
 pub unsafe fn mc_select_motor_thread(motor: c_int) {
     unsafe { slots::mc_select_motor_thread()(motor) }
+}
+
+/// Install or clear a PWM callback when the optional slot is present.
+pub unsafe fn mc_set_pwm_callback(callback: Option<PwmCallback>) -> bool {
+    unsafe { slots::mc_set_pwm_callback() }
+        .map(|set| unsafe { set(callback) })
+        .is_some()
 }
 
 /// Set the motor current command in amps.

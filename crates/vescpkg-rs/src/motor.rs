@@ -1,10 +1,7 @@
 //! Motor telemetry helpers built on firmware motor-control table slots.
 
-#[cfg(not(test))]
 use core::ffi::CStr;
 
-#[cfg(not(test))]
-use crate::types::FirmwareFaultWireCode;
 use crate::types::{
     AbsoluteTachometerSteps, AmpHoursCharged, AmpHoursDischarged, AverageMosfetTemperature,
     AverageMotorCurrent, AverageMotorTemperature, AveragePower, AverageVehicleSpeed,
@@ -19,6 +16,7 @@ use crate::types::{
 #[cfg(not(test))]
 use crate::units::{Charge, Current, Distance, Energy, Power, Rpm, Speed, Temperature, Voltage};
 use crate::units::{Frequency, OdometerMeters, Ratio, SignedRatio, VescSeconds};
+use crate::{PwmCallback, PwmCallbackError, PwmCallbackLease};
 
 #[cfg(not(test))]
 const CFG_PARAM_L_CURRENT_MAX: core::ffi::c_int = 0;
@@ -166,8 +164,8 @@ pub trait MotorTelemetryBindings {
     fn battery_level(&self) -> BatteryLevel;
     /// Return the active firmware motor fault code.
     fn firmware_fault(&self) -> FirmwareFaultCode;
-    /// Return the firmware-owned display name for a motor fault code.
-    fn firmware_fault_name(&self, fault: FirmwareFaultCode) -> Option<&'static [u8]>;
+    /// Return the firmware-provided fault description, when valid UTF-8.
+    fn firmware_fault_description(&self) -> Option<&'static str>;
     /// Return the filtered controller input voltage.
     fn input_voltage(&self) -> InputVoltage;
     /// Return the relative motor tachometer, optionally resetting it.
@@ -360,8 +358,8 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
         (**self).firmware_fault()
     }
 
-    fn firmware_fault_name(&self, fault: FirmwareFaultCode) -> Option<&'static [u8]> {
-        (**self).firmware_fault_name(fault)
+    fn firmware_fault_description(&self) -> Option<&'static str> {
+        (**self).firmware_fault_description()
     }
 
     fn input_voltage(&self) -> InputVoltage {
@@ -384,6 +382,15 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
 /// Motor-control operations backed by firmware slots.
 #[cfg(not(test))]
 pub trait MotorControlBindings {
+    /// Return whether controller DC calibration has completed.
+    fn dc_calibration_done(&self) -> bool;
+    /// Register an exclusive low-level PWM callback.
+    unsafe fn register_pwm_callback(
+        &self,
+        callback: PwmCallback,
+    ) -> Result<PwmCallbackLease, PwmCallbackError>;
+    /// Return the firmware-selected motor-control thread.
+    fn selected_motor(&self) -> MotorSelection;
     /// Select the active firmware motor-control thread.
     fn select_motor(&self, motor: MotorSelection);
     /// Reset the firmware motor-command safety timeout.
@@ -440,6 +447,21 @@ pub trait MotorControlBindings {
 
 #[cfg(not(test))]
 impl<B: MotorControlBindings + ?Sized> MotorControlBindings for &B {
+    fn dc_calibration_done(&self) -> bool {
+        (**self).dc_calibration_done()
+    }
+
+    unsafe fn register_pwm_callback(
+        &self,
+        callback: PwmCallback,
+    ) -> Result<PwmCallbackLease, PwmCallbackError> {
+        unsafe { (**self).register_pwm_callback(callback) }
+    }
+
+    fn selected_motor(&self) -> MotorSelection {
+        (**self).selected_motor()
+    }
+
     fn select_motor(&self, motor: MotorSelection) {
         (**self).select_motor(motor);
     }
@@ -773,6 +795,13 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         Some(bytes.strip_prefix(b"FAULT_CODE_").unwrap_or(bytes))
     }
 
+    fn firmware_fault_description(&self) -> Option<&'static str> {
+        let fault = call_vesc_ffi!(mc_get_fault());
+        let ptr = call_vesc_ffi!(mc_fault_to_string(fault as u32))?;
+        // SAFETY: VESC returns a null-terminated string in firmware-owned static storage.
+        unsafe { CStr::from_ptr(ptr) }.to_str().ok()
+    }
+
     fn input_voltage(&self) -> InputVoltage {
         InputVoltage::new(Voltage::from_volts(call_vesc_ffi!(
             mc_get_input_voltage_filtered()
@@ -798,6 +827,21 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
 
 #[cfg(not(test))]
 impl MotorControlBindings for RealMotorControlBindings {
+    fn dc_calibration_done(&self) -> bool {
+        unsafe { crate::ffi::mc_dccal_done() }
+    }
+
+    unsafe fn register_pwm_callback(
+        &self,
+        callback: PwmCallback,
+    ) -> Result<PwmCallbackLease, PwmCallbackError> {
+        unsafe { PwmCallbackLease::register(callback) }
+    }
+
+    fn selected_motor(&self) -> MotorSelection {
+        MotorSelection::new(unsafe { crate::ffi::mc_get_motor_thread() as u8 })
+    }
+
     fn select_motor(&self, motor: MotorSelection) {
         unsafe { crate::ffi::mc_select_motor_thread(i32::from(motor.index())) };
     }
@@ -1009,8 +1053,8 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn battery_level(&self) -> BatteryLevel;
     /// Return the active firmware motor fault code.
     fn firmware_fault(&self) -> FirmwareFaultCode;
-    /// Return the firmware display name for a motor fault code without its `FAULT_CODE_` prefix.
-    fn firmware_fault_name(&self, fault: FirmwareFaultCode) -> Option<&'static [u8]>;
+    /// Return the firmware-provided fault description, when valid UTF-8.
+    fn firmware_fault_description(&self) -> Option<&'static str>;
     /// Return the filtered controller input voltage.
     fn input_voltage(&self) -> InputVoltage;
     /// Return the relative motor tachometer, optionally resetting it.
@@ -1023,6 +1067,15 @@ pub trait MotorTelemetry: private::MotorTelemetry {
 
 /// Semantic motor-output capability used by package code.
 pub trait MotorOutput: private::MotorOutput {
+    /// Return whether controller DC calibration has completed.
+    fn dc_calibration_done(&self) -> bool;
+    /// Register an exclusive low-level PWM callback.
+    unsafe fn register_pwm_callback(
+        &self,
+        callback: PwmCallback,
+    ) -> Result<PwmCallbackLease, PwmCallbackError>;
+    /// Return the firmware-selected motor-control thread.
+    fn selected_motor(&self) -> MotorSelection;
     /// Select the active firmware motor-control thread.
     fn select_motor(&self, motor: MotorSelection);
     /// Keep the controller's motor command watchdog alive.
@@ -1351,9 +1404,9 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.firmware_fault()
     }
 
-    /// Return the firmware display name for a motor fault code.
-    pub fn firmware_fault_name(&self, fault: FirmwareFaultCode) -> Option<&'static [u8]> {
-        self.bindings.firmware_fault_name(fault)
+    /// Return the firmware-provided fault description, when valid UTF-8.
+    pub fn firmware_fault_description(&self) -> Option<&'static str> {
+        self.bindings.firmware_fault_description()
     }
 
     /// Return the filtered controller input voltage.
@@ -1562,8 +1615,8 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
         self.firmware_fault()
     }
 
-    fn firmware_fault_name(&self, fault: FirmwareFaultCode) -> Option<&'static [u8]> {
-        self.firmware_fault_name(fault)
+    fn firmware_fault_description(&self) -> Option<&'static str> {
+        self.firmware_fault_description()
     }
 
     fn input_voltage(&self) -> InputVoltage {
@@ -1587,6 +1640,29 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
 impl<B: MotorControlBindings> MotorControlApi<B> {
     pub(crate) fn from_firmware(bindings: B) -> Self {
         Self { bindings }
+    }
+
+    /// Return whether controller DC calibration has completed.
+    pub fn dc_calibration_done(&self) -> bool {
+        self.bindings.dc_calibration_done()
+    }
+
+    /// Register an exclusive low-level PWM callback.
+    ///
+    /// # Safety
+    ///
+    /// The callback must remain valid for the lease lifetime and obey the
+    /// firmware's interrupt-context restrictions.
+    pub unsafe fn register_pwm_callback(
+        &self,
+        callback: PwmCallback,
+    ) -> Result<PwmCallbackLease, PwmCallbackError> {
+        unsafe { self.bindings.register_pwm_callback(callback) }
+    }
+
+    /// Return the firmware-selected motor-control thread.
+    pub fn selected_motor(&self) -> MotorSelection {
+        self.bindings.selected_motor()
     }
 
     /// Select the active firmware motor-control thread.
@@ -1683,6 +1759,21 @@ impl<B: MotorControlBindings> private::MotorOutput for MotorControlApi<B> {}
 
 #[cfg(not(test))]
 impl<B: MotorControlBindings> MotorOutput for MotorControlApi<B> {
+    fn dc_calibration_done(&self) -> bool {
+        MotorControlApi::dc_calibration_done(self)
+    }
+
+    unsafe fn register_pwm_callback(
+        &self,
+        callback: PwmCallback,
+    ) -> Result<PwmCallbackLease, PwmCallbackError> {
+        unsafe { MotorControlApi::register_pwm_callback(self, callback) }
+    }
+
+    fn selected_motor(&self) -> MotorSelection {
+        MotorControlApi::selected_motor(self)
+    }
+
     fn select_motor(&self, motor: MotorSelection) {
         MotorControlApi::select_motor(self, motor);
     }
