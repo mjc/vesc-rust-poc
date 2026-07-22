@@ -6,6 +6,7 @@
 //! loader. Typed callable wrappers can build on this boundary without mixing
 //! slot order or target pointers with STM32.
 
+mod container;
 mod flat;
 mod functions;
 mod lisp;
@@ -16,6 +17,7 @@ mod sync;
 mod table;
 mod types;
 
+pub use container::{ExpressNativeContainer, ExpressNativeContainerError, ExpressRelocation};
 pub use flat::{ExpressFlatValue, ExpressFlatValueError, ExpressLispMessageError};
 pub use functions::*;
 pub use lisp::{ExpressLisp, ExpressLispSymbol, ExpressLispValue};
@@ -271,6 +273,96 @@ mod tests {
         assert!(table.is_complete());
         assert_eq!(table.function_address(79), None);
         assert_eq!(table.word(81), None);
+    }
+
+    fn sample_relocatable_container(relocation: u32) -> [u8; 40] {
+        let mut bytes = [0; 40];
+        bytes[..4].copy_from_slice(&EXPRESS_NATIVE_LIB_RELOC_MAGIC.to_be_bytes());
+        bytes[4..8].copy_from_slice(&2_u32.to_le_bytes());
+        bytes[8..12].copy_from_slice(&4_u32.to_le_bytes());
+        bytes[12..16].copy_from_slice(&8_u32.to_le_bytes());
+        bytes[16..20].copy_from_slice(&0_u32.to_le_bytes());
+        bytes[20..24].copy_from_slice(&1_u32.to_le_bytes());
+        bytes[24..28].copy_from_slice(&relocation.to_le_bytes());
+        bytes[28..32].copy_from_slice(&[0xaa, 0xbb, 0xcc, 0xdd]);
+        bytes[32..40].copy_from_slice(&[0xca, 0xfe, 0xba, 0xbe, 1, 2, 3, 4]);
+        bytes
+    }
+
+    #[test]
+    fn relocatable_container_exposes_checked_regions_and_relocations() {
+        let bytes = sample_relocatable_container(0xc000_0000);
+        let container = ExpressNativeContainer::parse(&bytes).unwrap();
+
+        assert_eq!(container.version(), 2);
+        assert_eq!(container.code_size(), 4);
+        assert_eq!(container.data_size(), 8);
+        assert_eq!(container.entry_offset(), 0);
+        assert_eq!(container.relocation_count(), 1);
+        assert_eq!(container.code(), &[0xaa, 0xbb, 0xcc, 0xdd]);
+        assert_eq!(container.data(), &[0xca, 0xfe, 0xba, 0xbe, 1, 2, 3, 4]);
+
+        let relocation = container.relocation(0).unwrap();
+        assert!(relocation.patches_data());
+        assert!(relocation.targets_code());
+        assert_eq!(relocation.offset(), 0);
+        assert!(container.relocation(1).is_none());
+    }
+
+    #[test]
+    fn relocatable_container_rejects_bad_header_and_region_metadata() {
+        assert_eq!(
+            ExpressNativeContainer::parse(&[0; 23]),
+            Err(ExpressNativeContainerError::Truncated)
+        );
+
+        let mut bytes = sample_relocatable_container(0);
+        bytes[..4].copy_from_slice(&EXPRESS_NATIVE_LIB_MAGIC.to_be_bytes());
+        assert_eq!(
+            ExpressNativeContainer::parse(&bytes),
+            Err(ExpressNativeContainerError::InvalidMagic {
+                found: EXPRESS_NATIVE_LIB_MAGIC
+            })
+        );
+
+        let mut bytes = sample_relocatable_container(0);
+        bytes[4..8].copy_from_slice(&1_u32.to_le_bytes());
+        assert_eq!(
+            ExpressNativeContainer::parse(&bytes),
+            Err(ExpressNativeContainerError::UnsupportedVersion { found: 1 })
+        );
+
+        let mut bytes = sample_relocatable_container(0);
+        bytes[8..12].copy_from_slice(&3_u32.to_le_bytes());
+        assert_eq!(
+            ExpressNativeContainer::parse(&bytes),
+            Err(ExpressNativeContainerError::InvalidCodeSize { found: 3 })
+        );
+
+        let mut bytes = sample_relocatable_container(0);
+        bytes[16..20].copy_from_slice(&4_u32.to_le_bytes());
+        assert_eq!(
+            ExpressNativeContainer::parse(&bytes),
+            Err(ExpressNativeContainerError::InvalidEntryOffset { found: 4 })
+        );
+    }
+
+    #[test]
+    fn relocatable_container_rejects_truncation_and_out_of_bounds_relocations() {
+        let bytes = sample_relocatable_container(0);
+        assert_eq!(
+            ExpressNativeContainer::parse(&bytes[..39]),
+            Err(ExpressNativeContainerError::Truncated)
+        );
+
+        let bytes = sample_relocatable_container(0x4000_0008);
+        assert_eq!(
+            ExpressNativeContainer::parse(&bytes),
+            Err(ExpressNativeContainerError::InvalidRelocation {
+                index: 0,
+                offset: 8
+            })
+        );
     }
 
     #[cfg(not(target_pointer_width = "32"))]
