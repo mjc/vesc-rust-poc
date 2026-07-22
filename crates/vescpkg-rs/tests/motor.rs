@@ -2,10 +2,10 @@
 #![cfg(feature = "test-support")]
 
 use vescpkg_rs::prelude::{
-    AngleDegrees, AudioChannel, AudioFrequency, AudioVoltage, Current, FirmwareFaultCode,
-    Frequency, HandbrakeCurrent, HandbrakeRelative, InputCurrentLimit, OdometerMeters, PidPosition,
-    DutyCycle, MotorSelection, OpenLoopCurrent, OpenLoopPhase, PidPosition, Ratio, Rpm,
-    SignedRatio, ElectricalSpeed, VescSeconds, Voltage,
+    AngleDegrees, AudioChannel, AudioFrequency, AudioVoltage, BrakeCurrentRelative, Current,
+    CurrentRelative, FirmwareFaultCode, Frequency, HandbrakeCurrent, HandbrakeRelative,
+    InputCurrentLimit, OdometerMeters, PidPosition, DutyCycle, MotorSelection, OpenLoopCurrent,
+    OpenLoopPhase, Ratio, Rpm, SignedRatio, ElectricalSpeed, VescSeconds, Voltage,
 };
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{MotorOutput, MotorTelemetry};
@@ -86,9 +86,15 @@ fn motor_exposes_typed_handbrake_commands() {
     firmware
         .motor()
         .set_handbrake(HandbrakeCurrent::new(Current::from_amps(2.0)));
-    firmware.motor().set_handbrake_relative(
-        HandbrakeRelative::new(Ratio::from_ratio_const(0.25)),
-    );
+    firmware
+        .motor()
+        .set_handbrake_relative(HandbrakeRelative::new(Ratio::from_ratio_const(0.25)));
+    firmware
+        .motor()
+        .set_current_relative(CurrentRelative::new(Ratio::from_ratio_const(0.4)));
+    firmware
+        .motor()
+        .set_brake_current_relative(BrakeCurrentRelative::new(Ratio::from_ratio_const(0.3)));
     let telemetry = firmware.telemetry();
     assert!(firmware.motor().dc_calibration_done());
     assert_eq!(firmware.motor().selected_motor().index(), 1);
