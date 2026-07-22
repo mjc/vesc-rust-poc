@@ -61,6 +61,221 @@ fn darkride_no_footpads_payloads(mode: RefloatMode) -> RefloatAllDataPayloads {
     )
 }
 
+fn upright_no_footpads_payloads() -> RefloatAllDataPayloads {
+    let payloads = running_payloads(RefloatMode::Normal);
+    let base = payloads.base();
+    let no_footpads =
+        RefloatFootpadSample::new(Voltage::ZERO, Voltage::ZERO, RefloatFootpadState::None);
+    RefloatAllDataPayloads::new(
+        RefloatAllDataBasePayload::new(
+            base.balance_current(),
+            base.attitude(),
+            base.status(),
+            no_footpads,
+            base.setpoints(),
+            base.booster_current(),
+            base.motor(),
+        ),
+        payloads.mode2(),
+        payloads.mode3(),
+        payloads.mode4(),
+    )
+}
+
+#[test]
+fn running_darkride_activates_and_clears_with_refloat_roll_hysteresis() {
+    let telemetry = FirmwareTest::new();
+    telemetry.set_imu_ready(true);
+    let imu = telemetry.imu();
+    let mut state = RefloatPackageState::new(upright_no_footpads_payloads());
+    edit_config(&mut state, |config| {
+        assert!(config.set_darkride_enabled(true));
+    });
+    let packet = [
+        crate::domain::REFLOAT_APP_DATA_PACKAGE_ID.get(),
+        crate::domain::RefloatAppDataCommand::RealtimeData.id(),
+    ];
+
+    for (ticks, roll, expected) in [
+        (0, 0.0, RefloatDarkRideState::Upright),
+        (1, 150.0, RefloatDarkRideState::Upright),
+        (2, 151.0, RefloatDarkRideState::Active),
+        (3, 120.0, RefloatDarkRideState::Active),
+        (4, 119.0, RefloatDarkRideState::Upright),
+    ] {
+        telemetry.set_imu_attitude(
+            ImuRoll::new(AngleRadians::from_degrees(roll)),
+            ImuPitch::new(AngleRadians::ZERO),
+            ImuYaw::new(AngleRadians::ZERO),
+        );
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
+            TimestampTicks::from_ticks(ticks),
+            telemetry.telemetry(),
+            imu,
+            &packet,
+        ));
+        assert_eq!(
+            state
+                .all_data_payloads()
+                .base()
+                .status()
+                .ride_state()
+                .darkride(),
+            expected,
+            "roll={roll}"
+        );
+    }
+}
+
+#[test]
+fn running_darkride_stays_upright_when_feature_is_disabled() {
+    let telemetry = FirmwareTest::new();
+    telemetry.set_imu_ready(true);
+    let imu = telemetry.imu();
+    let mut state = RefloatPackageState::new(upright_no_footpads_payloads());
+    let packet = [
+        crate::domain::REFLOAT_APP_DATA_PACKAGE_ID.get(),
+        crate::domain::RefloatAppDataCommand::RealtimeData.id(),
+    ];
+
+    for (ticks, roll) in [(0, 0.0), (1, 151.0)] {
+        telemetry.set_imu_attitude(
+            ImuRoll::new(AngleRadians::from_degrees(roll)),
+            ImuPitch::new(AngleRadians::ZERO),
+            ImuYaw::new(AngleRadians::ZERO),
+        );
+        assert!(tick_refloat_state_and_handle_packet(
+            &mut state,
+            TimestampTicks::from_ticks(ticks),
+            telemetry.telemetry(),
+            imu,
+            &packet,
+        ));
+    }
+
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .darkride(),
+        RefloatDarkRideState::Upright
+    );
+}
+
+#[test]
+fn running_darkride_wheelslip_uses_refloat_thirty_millisecond_runaway_stop() {
+    let telemetry = FirmwareTest::new().with_runtime_motor(
+        ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1500.0)),
+        VehicleSpeed::new(Speed::ZERO),
+        TotalMotorCurrent::new(Current::ZERO),
+        InputCurrent::new(Current::ZERO),
+        DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+    );
+    telemetry.set_imu_ready(true);
+    let payloads = darkride_no_footpads_payloads(RefloatMode::Normal);
+    let base = payloads.base();
+    let ride_state = base
+        .status()
+        .ride_state()
+        .with_wheelslip(RefloatWheelSlipState::Detected);
+    let base = RefloatAllDataBasePayload::new(
+        base.balance_current(),
+        base.attitude(),
+        RefloatAllDataStatus::new(ride_state, base.status().beep_reason()),
+        base.footpad(),
+        base.setpoints(),
+        base.booster_current(),
+        base.motor(),
+    );
+    let mut state = RefloatPackageState::new(RefloatAllDataPayloads::new(
+        base,
+        payloads.mode2(),
+        payloads.mode3(),
+        payloads.mode4(),
+    ));
+    state.upside_down_started = true;
+    state.upside_down_fault_ticks = TimestampTicks::from_ticks(0);
+    state.fault_switch_ticks = TimestampTicks::from_ticks(10_000);
+
+    assert!(tick_refloat_state_and_handle_packet(
+        &mut state,
+        TimestampTicks::from_ticks(10_301),
+        telemetry.telemetry(),
+        telemetry.imu(),
+        &[
+            crate::domain::REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::RefloatAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+
+    let ride_state = state.all_data_payloads().base().status().ride_state();
+    assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
+    assert_eq!(
+        ride_state.stop_condition(),
+        RefloatStopCondition::ReverseStop
+    );
+}
+
+#[test]
+fn running_upright_wheelslip_does_not_use_darkride_runaway_timer() {
+    let telemetry = FirmwareTest::new().with_runtime_motor(
+        ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1500.0)),
+        VehicleSpeed::new(Speed::ZERO),
+        TotalMotorCurrent::new(Current::ZERO),
+        InputCurrent::new(Current::ZERO),
+        DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+    );
+    telemetry.set_imu_ready(true);
+    let payloads = running_payloads(RefloatMode::Normal);
+    let base = payloads.base();
+    let ride_state = base
+        .status()
+        .ride_state()
+        .with_wheelslip(RefloatWheelSlipState::Detected);
+    let base = RefloatAllDataBasePayload::new(
+        base.balance_current(),
+        base.attitude(),
+        RefloatAllDataStatus::new(ride_state, base.status().beep_reason()),
+        base.footpad(),
+        base.setpoints(),
+        base.booster_current(),
+        base.motor(),
+    );
+    let mut state = RefloatPackageState::new(RefloatAllDataPayloads::new(
+        base,
+        payloads.mode2(),
+        payloads.mode3(),
+        payloads.mode4(),
+    ));
+    state.upside_down_started = true;
+    state.upside_down_fault_ticks = TimestampTicks::from_ticks(0);
+    state.fault_switch_ticks = TimestampTicks::from_ticks(10_000);
+
+    assert!(tick_refloat_state_and_handle_packet(
+        &mut state,
+        TimestampTicks::from_ticks(10_301),
+        telemetry.telemetry(),
+        telemetry.imu(),
+        &[
+            crate::domain::REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::RefloatAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state(),
+        RefloatRunState::Running
+    );
+}
+
 #[test]
 fn app_data_running_flywheel_both_footpads_stops_like_refloat_fault_check() {
     // C map: RUNNING FLYWHEEL with both footpads stops at

@@ -84,16 +84,6 @@ pub(super) fn refresh(
         // at `third_party/refloat/src/time.c:38-43`.
         state.idle_ticks = system_time_ticks;
     }
-    if matches!(
-        (run_state, ride_state.darkride()),
-        (RefloatRunState::Ready, RefloatDarkRideState::Active)
-    ) && refloat_ticks_elapsed(system_time_ticks, state.disengage_ticks, 10)
-    {
-        // Refloat removes the post-flip darkride grace before READY engagement
-        // and emits one long alert at `third_party/refloat/src/main.c:984-992`.
-        ride_state = ride_state.with_darkride(RefloatDarkRideState::Upright);
-        beeper_alert = Some(RefloatBeeperAlert::Long(RefloatBeeperCount::ONE));
-    }
     if resets_runtime_vars {
         let low_voltage_threshold = pack_voltage_threshold(
             state.serialized_config.low_voltage_threshold(),
@@ -155,6 +145,34 @@ pub(super) fn refresh(
     let roll = imu_roll.angle();
     let roll_degrees = AngleDegrees::from(roll);
     let roll_abs = roll_degrees.abs();
+    // C map: Refloat activates darkride above 150 degrees only after a prior
+    // RUNNING tick enables it, retains it through the hysteresis band, and
+    // clears below 120 degrees at `third_party/refloat/src/main.c:781-794`.
+    if state.serialized_config.faults().darkride_enabled() {
+        match ride_state.darkride() {
+            RefloatDarkRideState::Active if roll_abs < AngleDegrees::from_degrees(120.0) => {
+                ride_state = ride_state.with_darkride(RefloatDarkRideState::Upright);
+            }
+            RefloatDarkRideState::Upright
+                if state.upside_down_enabled && roll_abs > AngleDegrees::from_degrees(150.0) =>
+            {
+                ride_state = ride_state.with_darkride(RefloatDarkRideState::Active);
+                state.upside_down_started = false;
+            }
+            _ => {}
+        }
+    }
+    if matches!(run_state, RefloatRunState::Ready)
+        && refloat_ticks_elapsed(system_time_ticks, state.disengage_ticks, 10)
+    {
+        // Refloat removes the post-flip darkride grace after updating the
+        // roll transition at `third_party/refloat/src/main.c:781-794,984-992`.
+        if matches!(ride_state.darkride(), RefloatDarkRideState::Active) {
+            beeper_alert = Some(RefloatBeeperAlert::Long(RefloatBeeperCount::ONE));
+        }
+        ride_state = ride_state.with_darkride(RefloatDarkRideState::Upright);
+        state.upside_down_enabled = false;
+    }
     let remote_setpoint_abs = base.setpoints().remote().angle().abs();
     let quickstop = QuickStopLimits::REFLOAT;
     let reverse_stop = ReverseStopLimits::REFLOAT;
@@ -315,12 +333,28 @@ pub(super) fn refresh(
             fault_delay_pitch,
         );
     let darkride_high_erpm_pending = darkride_active && motor_erpm > darkride.timed_high_erpm;
+    // C map: after the one-second post-flip grace, active darkride shortens
+    // the wheelslip runaway stop from 100 ms to 30 ms at
+    // `third_party/refloat/src/main.c:361-366`.
+    let darkride_wheelslip_fault = darkride_high_erpm_pending
+        && matches!(ride_state.wheelslip(), RefloatWheelSlipState::Detected)
+        && refloat_ticks_elapsed_seconds(
+            system_time_ticks,
+            state.upside_down_fault_ticks,
+            VescSeconds::from_seconds(1.0),
+        )
+        && refloat_ticks_elapsed_seconds(
+            system_time_ticks,
+            state.fault_switch_ticks,
+            VescSeconds::from_seconds(0.03),
+        );
     let darkride_high_erpm_fault = darkride_high_erpm_pending
         && (refloat_ticks_elapsed_seconds(
             system_time_ticks,
             state.fault_switch_ticks,
             darkride.timed_high_delay,
-        ) || motor_erpm > darkride.high_erpm);
+        ) || motor_erpm > darkride.high_erpm
+            || darkride_wheelslip_fault);
     let darkride_low_erpm_pending =
         darkride_active && motor_erpm <= darkride.timed_high_erpm && motor_erpm > darkride.low_erpm;
     let darkride_low_erpm_fault = darkride_low_erpm_pending
@@ -445,6 +479,16 @@ pub(super) fn refresh(
         state.flywheel_abort |= flywheel_both_footpads_fault;
     } else if state_transition.state_engaged {
         state.engage_ticks = system_time_ticks;
+    }
+    if matches!(run_state, RefloatRunState::Running) && !state_stop_fault {
+        // C map: a surviving RUNNING tick enables a later upside-down
+        // transition, and the first active tick starts the runaway grace at
+        // `third_party/refloat/src/main.c:867,723-729`.
+        state.upside_down_enabled = true;
+        if darkride_active && !state.upside_down_started {
+            state.upside_down_started = true;
+            state.upside_down_fault_ticks = system_time_ticks;
+        }
     }
     if !darkride_high_erpm_pending && !full_switch_pending {
         state.fault_switch_ticks = system_time_ticks;
