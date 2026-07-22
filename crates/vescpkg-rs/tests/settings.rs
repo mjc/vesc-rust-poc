@@ -5,6 +5,7 @@ use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{FirmwareFloatSetting, FirmwareIntSetting, FirmwareSettings, SettingsError};
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn typed_settings_read_write_and_persist() {
     let firmware = FirmwareTest::new();
     let settings: &FirmwareSettings = firmware.settings();
