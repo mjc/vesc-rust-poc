@@ -81,8 +81,8 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
     // `third_party/float-out-boy/src/motor_data.c:108-145`. Battery current uses the same first-order
     // smoothing expression from `third_party/float-out-boy/src/motor_data.c:140`; this app-data
     // refresh is still a runtime proxy until the real source main loop runs.
-    let previous_battery_current = motor.battery_current().current().as_amps();
-    let next_battery_current = telemetry.battery_current().current().as_amps();
+    let previous_battery_current = motor.battery_current().current();
+    let next_battery_current = telemetry.battery_current().current();
     let previous_duty_cycle = motor.duty_cycle().ratio().as_ratio();
     let raw_duty_cycle = telemetry.duty_cycle().ratio().as_ratio().abs();
     state.motor_duty_raw = telemetry.duty_cycle().magnitude();
@@ -117,11 +117,11 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
             MotorCurrent::new(telemetry.motor_current().current()),
             directional_current,
             filtered_current,
-            BatteryCurrent::new(Current::from_amps(
+            BatteryCurrent::new(
                 previous_battery_current
-                    + MOTOR_DATA_SMOOTHING_FACTOR
-                        * (next_battery_current - previous_battery_current),
-            )),
+                    + (next_battery_current - previous_battery_current)
+                        * MOTOR_DATA_SMOOTHING_FACTOR,
+            ),
         ),
         DutyCycle::new(SignedRatio::clamped(
             previous_duty_cycle
