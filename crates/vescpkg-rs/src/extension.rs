@@ -73,7 +73,7 @@ pub struct LispProcess;
 
 /// A firmware-owned flattened LispBM value under construction.
 ///
-/// Firmware 6.05 and newer expose these constructors as optional ABI slots.
+/// The firmware exposes these constructors as optional ABI slots.
 /// The buffer is reclaimed if the value is dropped without being accepted by
 /// a context; a successful unblock transfers ownership to LispBM.
 #[cfg_attr(not(test), must_use)]
