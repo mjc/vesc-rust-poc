@@ -369,8 +369,8 @@ impl MotorCurrentLimit {
     /// current to signed zero, while NaN operands leave the current unchanged.
     pub const fn clamp(self, current: MotorCurrent) -> MotorCurrent {
         let requested = current.current();
-        if requested.abs().as_amps() > self.0.as_amps() {
-            MotorCurrent::new(Current::from_amps(self.0.as_amps() * requested.signum()))
+        if requested.abs().is_greater_than(self.0) {
+            MotorCurrent::new(self.0.scaled_by(requested.signum()))
         } else {
             current
         }
