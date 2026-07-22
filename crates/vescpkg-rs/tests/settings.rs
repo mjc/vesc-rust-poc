@@ -22,6 +22,20 @@ fn typed_settings_read_write_and_persist() {
     assert_eq!(settings.input_current_max().current().as_amps(), 60.0);
     assert_eq!(settings.input_current_min().current().as_amps(), -60.0);
     assert_eq!(settings.absolute_current_max().current().as_amps(), 150.0);
+    assert_eq!(
+        settings
+            .minimum_electrical_speed()
+            .rpm()
+            .as_revolutions_per_minute(),
+        0.0
+    );
+    assert_eq!(
+        settings
+            .maximum_electrical_speed()
+            .rpm()
+            .as_revolutions_per_minute(),
+        12_000.0
+    );
     assert_eq!(settings.input_voltage_min().voltage().as_volts(), 20.0);
     assert_eq!(settings.input_voltage_max().voltage().as_volts(), 60.0);
     assert_eq!(
@@ -87,6 +101,16 @@ fn typed_settings_read_write_and_persist() {
         ))
         .unwrap();
     settings
+        .set_minimum_electrical_speed(vescpkg_rs::ElectricalSpeed::new(
+            vescpkg_rs::Rpm::from_revolutions_per_minute(100.0),
+        ))
+        .unwrap();
+    settings
+        .set_maximum_electrical_speed(vescpkg_rs::ElectricalSpeed::new(
+            vescpkg_rs::Rpm::from_revolutions_per_minute(10_000.0),
+        ))
+        .unwrap();
+    settings
         .set_input_voltage_min(vescpkg_rs::InputVoltage::new(
             vescpkg_rs::Voltage::from_volts(24.0),
         ))
@@ -136,6 +160,20 @@ fn typed_settings_read_write_and_persist() {
     assert_eq!(settings.input_current_max().current().as_amps(), 30.0);
     assert_eq!(settings.input_current_min().current().as_amps(), -20.0);
     assert_eq!(settings.absolute_current_max().current().as_amps(), 120.0);
+    assert_eq!(
+        settings
+            .minimum_electrical_speed()
+            .rpm()
+            .as_revolutions_per_minute(),
+        100.0
+    );
+    assert_eq!(
+        settings
+            .maximum_electrical_speed()
+            .rpm()
+            .as_revolutions_per_minute(),
+        10_000.0
+    );
     assert_eq!(settings.input_voltage_min().voltage().as_volts(), 24.0);
     assert_eq!(settings.input_voltage_max().voltage().as_volts(), 54.0);
     assert_eq!(
