@@ -129,6 +129,7 @@ static HAS_FOC_ID_CURRENT: AtomicBool = AtomicBool::new(false);
 static FOC_AUDIO_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static FOC_OPEN_LOOP_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static UART_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static PACKET_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static DISTANCE_ABS: AtomicU32 = AtomicU32::new(0);
 static MOSFET_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
@@ -315,6 +316,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     FOC_AUDIO_AVAILABLE.store(true, Ordering::Relaxed);
     FOC_OPEN_LOOP_AVAILABLE.store(true, Ordering::Relaxed);
     UART_AVAILABLE.store(true, Ordering::Relaxed);
+    PACKET_AVAILABLE.store(true, Ordering::Relaxed);
     DISTANCE_ABS.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOSFET_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -1102,6 +1104,10 @@ pub(crate) fn set_uart_available(available: bool) {
     UART_AVAILABLE.store(available, Ordering::Relaxed);
 }
 
+pub(crate) fn set_packet_available(available: bool) {
+    PACKET_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
 pub(crate) fn set_imu_startup_done(done: bool) {
     IMU_STARTUP_DONE.store(done, Ordering::Relaxed);
 }
@@ -1512,19 +1518,19 @@ pub unsafe fn packet_init(
     _process: unsafe extern "C" fn(*mut u8, u32),
     _state: *mut PacketState,
 ) -> bool {
-    true
+    PACKET_AVAILABLE.load(Ordering::Relaxed)
 }
 
 pub unsafe fn packet_reset(_state: *mut PacketState) -> bool {
-    true
+    PACKET_AVAILABLE.load(Ordering::Relaxed)
 }
 
 pub unsafe fn packet_process_byte(_byte: u8, _state: *mut PacketState) -> bool {
-    true
+    PACKET_AVAILABLE.load(Ordering::Relaxed)
 }
 
 pub unsafe fn packet_send_packet(_data: *mut u8, _len: u32, _state: *mut PacketState) -> bool {
-    true
+    PACKET_AVAILABLE.load(Ordering::Relaxed)
 }
 
 pub unsafe fn gnss_snapshot() -> Option<GnssData> {

@@ -274,6 +274,11 @@ impl FirmwareTest {
         crate::test_ffi::set_uart_available(available);
     }
 
+    /// Toggle whether the fake firmware exposes its packet framing slots.
+    pub fn set_packet_available(&self, available: bool) {
+        crate::test_ffi::set_packet_available(available);
+    }
+
     /// Borrow the same typed thread capability package code uses on hardware.
     #[must_use]
     pub fn threads(&self) -> &impl crate::FirmwareThreads {
