@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(dead_code))]
+
 use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescIfPresence};
 use core::ffi::{c_char, c_int, c_uchar, c_uint, c_void};
 
@@ -116,30 +118,26 @@ pub unsafe fn printf_data(message: *const c_char) -> bool {
 /// # Safety
 ///
 /// `base` must point to at least `available_slots` contiguous pointer-sized ABI words.
-#[must_use]
 pub unsafe fn vesc_if_presence_from(base: usize, available_slots: usize) -> VescIfPresence {
     let slot_count = core::cmp::min(available_slots, VescIfAbi::FIELD_COUNT);
-    let table = core::ptr::with_exposed_provenance(base);
-    // SAFETY: the caller guarantees that `table` addresses at least
-    // `slot_count` contiguous, properly aligned ABI words.
-    let words = unsafe { core::slice::from_raw_parts(table, slot_count) };
+    let words = unsafe { core::slice::from_raw_parts(base as *const usize, slot_count) };
     VescIfPresence::from_words(words)
 }
 
 #[cfg(not(all(target_arch = "arm", not(test))))]
+#[inline(always)]
 unsafe fn vesc_if() -> *const VescIf {
     #[cfg(test)]
     if let Some(table) = crate::test_support::current_table() {
         return table;
     }
-    core::ptr::with_exposed_provenance(VescIfAbi::BASE_ADDR.0)
+    VescIfAbi::BASE_ADDR.0 as *const VescIf
 }
 
 #[cfg(all(target_arch = "arm", not(test)))]
+#[inline(always)]
 unsafe fn load_vesc_if_word_from<const OFFSET: usize>(vesc_if: usize) -> usize {
     let word: usize;
-    // SAFETY: callers guarantee that `vesc_if + OFFSET` names one aligned word
-    // in the live firmware function table. The instruction only reads it.
     unsafe {
         core::arch::asm!(
             "ldr {word}, [{vesc_if}, #{offset}]",
@@ -156,14 +154,12 @@ unsafe fn load_vesc_if_word_from<const OFFSET: usize>(vesc_if: usize) -> usize {
 macro_rules! vesc_slot_word_from {
     ($vesc_if:expr, $name:ident) => {
         crate::raw::load_vesc_if_word_from::<{ core::mem::offset_of!(crate::raw::VescIf, $name) }>(
-            $vesc_if,
+            $vesc_if as usize,
         )
     };
 }
 
 mod slots {
-    #[cfg(not(all(target_arch = "arm", not(test))))]
-    use super::vesc_if;
     use super::{
         AppDataHandler, CanRxCallback, CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4,
         CanStatusMsg5, CanStatusMsg6, CustomConfigGet, CustomConfigSet, CustomConfigXml, EepromVar,
@@ -172,26 +168,21 @@ mod slots {
         PacketProcessCallback, PacketSendCallback, PacketState, RemoteState, ReplyCallback,
         TerminalCallback, VescIfAbi, c_char, c_int, c_uchar, c_uint, c_void,
     };
+    #[cfg(not(all(target_arch = "arm", not(test))))]
+    use super::{VescIf, vesc_if};
 
     macro_rules! word_slot {
         ($name:ident) => {
+            #[inline(always)]
             pub(super) unsafe fn $name() -> usize {
                 #[cfg(all(target_arch = "arm", not(test)))]
-                // SAFETY: package startup supplies the fixed VESC table base,
-                // and `offset_of!` selects this declared field within it.
                 unsafe {
                     vesc_slot_word_from!(VescIfAbi::BASE_ADDR.0, $name)
                 }
 
                 #[cfg(not(all(target_arch = "arm", not(test))))]
-                {
-                    // SAFETY: callers guarantee that the active VESC table is
-                    // installed and valid for this field read.
-                    let table = unsafe { vesc_if() };
-                    // SAFETY: `table` is valid and this macro names a declared
-                    // word field in `VescIf`.
-                    let value = unsafe { (*table).$name };
-                    usize::try_from(value).unwrap_or_default()
+                unsafe {
+                    (*vesc_if()).$name as usize
                 }
             }
         };
@@ -199,46 +190,35 @@ mod slots {
 
     macro_rules! fn_slot {
         ($name:ident as $fn_ty:ty) => {
+            #[inline(always)]
             pub(super) unsafe fn $name() -> Option<$fn_ty> {
                 #[cfg(all(target_arch = "arm", not(test)))]
-                {
-                    // SAFETY: package startup supplies the fixed VESC table
-                    // base, and `offset_of!` selects this declared slot.
-                    let address = unsafe { vesc_slot_word_from!(VescIfAbi::BASE_ADDR.0, $name) };
+                unsafe {
+                    let address = vesc_slot_word_from!(VescIfAbi::BASE_ADDR.0, $name);
                     if address == 0 {
                         None
                     } else {
-                        // SAFETY: bindgen declared this table field as `$fn_ty`;
-                        // the firmware stores that exact C function pointer.
-                        Some(unsafe { core::mem::transmute::<usize, $fn_ty>(address) })
+                        Some(core::mem::transmute::<usize, $fn_ty>(address))
                     }
                 }
 
                 #[cfg(not(all(target_arch = "arm", not(test))))]
-                {
-                    // SAFETY: callers guarantee that the active VESC table is
-                    // installed and valid for this field read.
-                    let table = unsafe { vesc_if() };
-                    // SAFETY: `table` is valid and this macro names a declared
-                    // function-pointer field in `VescIf`.
-                    unsafe { (*table).$name }
+                unsafe {
+                    (*vesc_if()).$name
                 }
             }
         };
     }
 
     #[cfg(all(target_arch = "arm", not(test)))]
+    #[inline(always)]
     pub(super) unsafe fn lbm_add_extension_from(
         vesc_if_base: usize,
     ) -> Option<unsafe extern "C" fn(*mut c_char, crate::bindgen::extension_fptr) -> bool> {
-        // SAFETY: the caller provides the VESC table base and the macro uses
-        // the declared `lbm_add_extension` field offset.
         let address = unsafe { vesc_slot_word_from!(vesc_if_base, lbm_add_extension) };
         if address == 0 {
             None
         } else {
-            // SAFETY: the address came from the ABI field declared with this
-            // exact C function-pointer type.
             Some(unsafe {
                 core::mem::transmute::<
                     usize,
@@ -249,17 +229,15 @@ mod slots {
     }
 
     #[cfg(not(all(target_arch = "arm", not(test))))]
+    #[inline(always)]
     pub(super) unsafe fn lbm_add_extension_from(
         vesc_if_base: usize,
     ) -> Option<unsafe extern "C" fn(*mut c_char, crate::bindgen::extension_fptr) -> bool> {
         let table = if vesc_if_base == VescIfAbi::BASE_ADDR.0 {
-            // SAFETY: the caller guarantees that the active default table is valid.
             unsafe { vesc_if() }
         } else {
-            core::ptr::with_exposed_provenance(vesc_if_base)
+            vesc_if_base as *const VescIf
         };
-        // SAFETY: `table` is the caller-provided VESC table and the selected
-        // field has the returned C function-pointer type.
         unsafe { (*table).lbm_add_extension }
     }
 
@@ -390,8 +368,8 @@ mod slots {
     fn_slot!(mc_get_motor_thread as unsafe extern "C" fn() -> c_int);
     fn_slot!(mc_dccal_done as unsafe extern "C" fn() -> bool);
     optional_fn_slot!(mc_set_pwm_callback as unsafe extern "C" fn(Option<unsafe extern "C" fn()>));
-    fn_slot!(mc_get_fault as unsafe extern "C" fn() -> c_uint);
-    fn_slot!(mc_fault_to_string as unsafe extern "C" fn(c_int) -> *const c_char);
+    fn_slot!(mc_get_fault as unsafe extern "C" fn() -> crate::FaultCode);
+    fn_slot!(mc_fault_to_string as unsafe extern "C" fn(crate::FaultCode) -> *const c_char);
     fn_slot!(mc_get_rpm as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_speed as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_tot_current_filtered as unsafe extern "C" fn() -> f32);
@@ -526,120 +504,23 @@ mod slots {
     fn_slot!(io_read_analog as unsafe extern "C" fn(c_uint) -> f32);
 }
 
-trait MissingRequiredSlot {
-    fn missing_required_slot() -> Self;
-}
-
-macro_rules! missing_required_slot_is_zero {
-    ($($type:ty),+ $(,)?) => {
-        $(
-            impl MissingRequiredSlot for $type {
-                fn missing_required_slot() -> Self {
-                    Self::default()
-                }
-            }
-        )+
-    };
-}
-
-missing_required_slot_is_zero!(u8, u32, u64, i32, f32);
-
-impl MissingRequiredSlot for bool {
-    fn missing_required_slot() -> Self {
-        false
-    }
-}
-
-impl MissingRequiredSlot for () {
-    fn missing_required_slot() {}
-}
-
-impl<T> MissingRequiredSlot for *const T {
-    fn missing_required_slot() -> Self {
-        core::ptr::null()
-    }
-}
-
-impl<T> MissingRequiredSlot for *mut T {
-    fn missing_required_slot() -> Self {
-        core::ptr::null_mut()
-    }
-}
-
-impl<T> MissingRequiredSlot for Option<T> {
-    fn missing_required_slot() -> Self {
-        None
-    }
-}
-
-impl MissingRequiredSlot for LbmValue {
-    fn missing_required_slot() -> Self {
-        Self(u32::MAX)
-    }
-}
-
-impl MissingRequiredSlot for (f32, f32) {
-    fn missing_required_slot() -> Self {
-        (0.0, 0.0)
-    }
+#[track_caller]
+fn required_slot<T>(slot: Option<T>) -> T {
+    slot.expect("required VESC_IF slot is unavailable")
 }
 
 macro_rules! required_slot {
-    ($name:ident) => {{
-        // SAFETY: every generated accessor reads one field with the exact type
-        // declared for that field in the VESC C function table.
-        match unsafe { slots::$name() } {
-            Some(slot) => slot,
-            None => return MissingRequiredSlot::missing_required_slot(),
-        }
-    }};
-}
-
-macro_rules! call_required_slot {
-    ($name:ident($($argument:expr),* $(,)?)) => {{
-        let slot = required_slot!($name);
-        // SAFETY: the slot's Rust function type mirrors the C declaration.
-        // Pointer arguments remain governed by the surrounding wrapper's
-        // documented safety contract.
-        unsafe { slot($($argument),*) }
-    }};
-}
-
-macro_rules! call_optional_slot {
-    ($name:ident($($argument:expr),* $(,)?)) => {{
-        // SAFETY: every generated accessor reads one field with the exact type
-        // declared for that field in the VESC C function table.
-        unsafe { slots::$name() }.map(|slot| {
-            // SAFETY: the slot's Rust function type mirrors the C declaration.
-            // Pointer arguments remain governed by the surrounding wrapper's
-            // documented safety contract.
-            unsafe { slot($($argument),*) }
-        })
-    }};
-}
-
-macro_rules! required_word_slot {
-    ($name:ident) => {{
-        // SAFETY: the generated accessor reads the named word with the exact
-        // type declared for that field in the VESC C function table.
-        unsafe { slots::$name() }
-    }};
+    ($name:ident) => {
+        required_slot(slots::$name())
+    };
 }
 
 /// # Safety
 ///
 /// `name` must point to a valid, NUL-terminated extension name and
-/// `handler` must use the firmware `LispBM` extension ABI.
+/// `handler` must use the firmware LispBM extension ABI.
 pub unsafe fn lbm_add_extension(name: *const c_char, handler: ExtensionHandler) -> bool {
-    // Embedded VESC targets use a 32-bit address. Rust's `usize` follows the
-    // host pointer width, so reject an impossible 64-bit host-test address
-    // instead of truncating it or panicking.
-    let Ok(base) = u32::try_from(VescIfAbi::BASE_ADDR.0) else {
-        return false;
-    };
-    // SAFETY: this wrapper forwards its documented table, name, and handler
-    // requirements unchanged.
-    unsafe { lbm_add_extension_with_table_base(base, name, handler) }
+    unsafe { lbm_add_extension_with_table_base(VescIfAbi::BASE_ADDR.0 as u32, name, handler) }
 }
 
 /// # Safety
@@ -647,176 +528,152 @@ pub unsafe fn lbm_add_extension(name: *const c_char, handler: ExtensionHandler) 
 /// `vesc_if_base` must be the firmware VESC function table address and
 /// `name`/`handler` must satisfy the same requirements as
 /// [`lbm_add_extension`].
+#[inline(always)]
 pub unsafe fn lbm_add_extension_with_table_base(
     vesc_if_base: u32,
     name: *const c_char,
     handler: ExtensionHandler,
 ) -> bool {
-    let table_base = usize::try_from(vesc_if_base).unwrap_or_default();
-    // SAFETY: the caller guarantees that `table_base` identifies a valid VESC
-    // table for the duration of the field read.
-    let slot = unsafe { slots::lbm_add_extension_from(table_base) };
-    let Some(lbm_add_extension) = slot else {
-        return false;
-    };
-    // SAFETY: the caller guarantees the extension name and handler satisfy the
-    // C ABI contract.
-    unsafe { lbm_add_extension(name.cast_mut(), Some(handler)) }
+    let slot = unsafe { slots::lbm_add_extension_from(vesc_if_base as usize) };
+    let lbm_add_extension = required_slot(slot);
+    unsafe { lbm_add_extension(name as *mut c_char, Some(handler)) }
 }
 
 /// # Safety
 ///
-/// `value` must be a `LispBM` value supplied by the firmware.
-#[must_use]
+/// `value` must be a LispBM value supplied by the firmware.
 pub unsafe fn lbm_dec_as_float(value: LbmValue) -> f32 {
-    call_required_slot!(lbm_dec_as_float(value.0))
+    unsafe { required_slot!(lbm_dec_as_float)(value.0) }
 }
 
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn lbm_enc_float(value: f32) -> LbmValue {
-    LbmValue(call_required_slot!(lbm_enc_float(value)))
+    unsafe { LbmValue(required_slot!(lbm_enc_float)(value)) }
 }
 
 /// # Safety
 ///
-/// `value` must be a `LispBM` value supplied by the firmware.
-#[must_use]
+/// `value` must be a LispBM value supplied by the firmware.
 pub unsafe fn lbm_dec_as_u32(value: LbmValue) -> u32 {
-    call_required_slot!(lbm_dec_as_u32(value.0))
+    unsafe { required_slot!(lbm_dec_as_u32)(value.0) }
 }
 
 /// # Safety
 ///
-/// `value` must be a `LispBM` value supplied by the firmware.
-#[must_use]
+/// `value` must be a LispBM value supplied by the firmware.
 pub unsafe fn lbm_dec_as_i32(value: LbmValue) -> i32 {
-    call_required_slot!(lbm_dec_as_i32(value.0))
+    unsafe { required_slot!(lbm_dec_as_i32)(value.0) }
 }
 
 /// # Safety
 ///
-/// `value` must be a `LispBM` character value supplied by the firmware.
-#[must_use]
+/// `value` must be a LispBM character value supplied by the firmware.
 pub unsafe fn lbm_dec_char(value: LbmValue) -> u8 {
-    call_required_slot!(lbm_dec_char(value.0))
+    unsafe { required_slot!(lbm_dec_char)(value.0) }
 }
 
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn lbm_enc_i(value: i32) -> LbmValue {
-    LbmValue(call_required_slot!(lbm_enc_i(value)))
+    unsafe { LbmValue(required_slot!(lbm_enc_i)(value)) }
 }
 
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn lbm_enc_char(value: u8) -> LbmValue {
-    LbmValue(call_required_slot!(lbm_enc_char(value)))
+    unsafe { LbmValue(required_slot!(lbm_enc_char)(value)) }
 }
 
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn lbm_enc_u32(value: u32) -> LbmValue {
-    LbmValue(call_required_slot!(lbm_enc_u32(value)))
+    unsafe { LbmValue(required_slot!(lbm_enc_u32)(value)) }
 }
 
 /// # Safety
 ///
-/// `value` must be a `LispBM` string/byte-array value whose firmware-owned
+/// `value` must be a LispBM string/byte-array value whose firmware-owned
 /// storage remains valid for the duration of the call.
-#[must_use]
 pub unsafe fn lbm_dec_str(value: LbmValue) -> *mut c_char {
-    call_required_slot!(lbm_dec_str(value.0))
+    unsafe { required_slot!(lbm_dec_str)(value.0) }
 }
 
 /// # Safety
 ///
-/// `value` must be a `LispBM` value supplied by the firmware.
-#[must_use]
+/// `value` must be a LispBM value supplied by the firmware.
 pub unsafe fn lbm_is_number(value: LbmValue) -> bool {
-    call_required_slot!(lbm_is_number(value.0))
+    unsafe { required_slot!(lbm_is_number)(value.0) }
 }
 
 /// # Safety
 ///
-/// `value` must be a `LispBM` value supplied by the firmware.
-#[must_use]
+/// `value` must be a LispBM value supplied by the firmware.
 pub unsafe fn lbm_is_char(value: LbmValue) -> bool {
-    call_required_slot!(lbm_is_char(value.0))
+    unsafe { required_slot!(lbm_is_char)(value.0) }
 }
 
 /// # Safety
 ///
-/// `value` must be a `LispBM` value supplied by the firmware.
-#[must_use]
+/// `value` must be a LispBM value supplied by the firmware.
 pub unsafe fn lbm_is_symbol(value: LbmValue) -> bool {
-    call_required_slot!(lbm_is_symbol(value.0))
+    unsafe { required_slot!(lbm_is_symbol)(value.0) }
 }
 
 /// # Safety
 ///
-/// `value` must be a `LispBM` value supplied by the firmware.
-#[must_use]
+/// `value` must be a LispBM value supplied by the firmware.
 pub unsafe fn lbm_is_cons(value: LbmValue) -> bool {
-    call_required_slot!(lbm_is_cons(value.0))
+    unsafe { required_slot!(lbm_is_cons)(value.0) }
 }
 
 /// # Safety
 ///
-/// `value` must be a `LispBM` value supplied by the firmware.
-#[must_use]
+/// `value` must be a LispBM value supplied by the firmware.
 pub unsafe fn lbm_is_byte_array(value: LbmValue) -> bool {
-    call_required_slot!(lbm_is_byte_array(value.0))
+    unsafe { required_slot!(lbm_is_byte_array)(value.0) }
 }
 
-/// Allocate a `LispBM` byte array through the firmware allocator.
+/// Allocate a LispBM byte array through the firmware allocator.
 ///
 /// # Safety
 ///
 /// `value` must be valid for one writable [`LbmValue`], and the firmware
 /// function table must remain valid for the duration of the call.
 pub unsafe fn lbm_create_byte_array(value: *mut LbmValue, len: u32) -> bool {
-    call_required_slot!(lbm_create_byte_array(value.cast(), len))
+    unsafe { required_slot!(lbm_create_byte_array)(value.cast(), len) }
 }
 
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn lbm_cons(car: LbmValue, cdr: LbmValue) -> LbmValue {
-    LbmValue(call_required_slot!(lbm_cons(car.0, cdr.0)))
+    unsafe { LbmValue(required_slot!(lbm_cons)(car.0, cdr.0)) }
 }
 
 /// # Safety
 ///
-/// `value` must be a `LispBM` cons cell supplied by the firmware.
-#[must_use]
+/// `value` must be a LispBM cons cell supplied by the firmware.
 pub unsafe fn lbm_car(value: LbmValue) -> LbmValue {
-    LbmValue(call_required_slot!(lbm_car(value.0)))
+    unsafe { LbmValue(required_slot!(lbm_car)(value.0)) }
 }
 
 /// # Safety
 ///
-/// `value` must be a `LispBM` cons cell supplied by the firmware.
-#[must_use]
+/// `value` must be a LispBM cons cell supplied by the firmware.
 pub unsafe fn lbm_cdr(value: LbmValue) -> LbmValue {
-    LbmValue(call_required_slot!(lbm_cdr(value.0)))
+    unsafe { LbmValue(required_slot!(lbm_cdr)(value.0)) }
 }
 
 /// # Safety
 ///
-/// `value` must be a mutable `LispBM` list owned by the current evaluation.
-#[must_use]
+/// `value` must be a mutable LispBM list owned by the current evaluation.
 pub unsafe fn lbm_list_destructive_reverse(value: LbmValue) -> LbmValue {
-    LbmValue(call_required_slot!(lbm_list_destructive_reverse(value.0)))
+    unsafe { LbmValue(required_slot!(lbm_list_destructive_reverse)(value.0)) }
 }
 
 /// # Safety
@@ -829,7 +686,6 @@ pub unsafe fn lbm_create_byte_array(value: *mut LbmValue, len: u32) -> bool {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn lbm_enc_sym(symbol: u32) -> LbmValue {
     unsafe { slots::lbm_enc_sym()(symbol) }
 }
@@ -942,32 +798,22 @@ pub unsafe fn lbm_unblock_ctx(context: u32, value: *mut LbmFlatValue) -> Option<
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn lbm_enc_sym_nil() -> LbmValue {
-    LbmValue(lbm_abi_word(required_word_slot!(lbm_enc_sym_nil)))
+    unsafe { LbmValue(slots::lbm_enc_sym_nil() as u32) }
 }
 
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn lbm_enc_sym_true() -> LbmValue {
-    LbmValue(lbm_abi_word(required_word_slot!(lbm_enc_sym_true)))
+    unsafe { LbmValue(slots::lbm_enc_sym_true() as u32) }
 }
 
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn lbm_enc_sym_eerror() -> LbmValue {
-    LbmValue(lbm_abi_word(required_word_slot!(lbm_enc_sym_eerror)))
-}
-
-fn lbm_abi_word(value: usize) -> u32 {
-    // LispBM values are one 32-bit C word on embedded VESC targets. A desktop
-    // test double can return a 64-bit `usize`; saturating that invalid value
-    // preserves the existing failure sentinel without risking a panic.
-    u32::try_from(value).unwrap_or(u32::MAX)
+    unsafe { LbmValue(slots::lbm_enc_sym_eerror() as u32) }
 }
 
 /// Read one native-endian word from the package custom-EEPROM range.
@@ -977,7 +823,7 @@ fn lbm_abi_word(value: usize) -> u32 {
 /// `word` must be valid for one `u32` write and the firmware function table
 /// must remain valid for the duration of the call.
 pub unsafe fn read_eeprom_word(word: *mut u32, address: c_int) -> bool {
-    call_required_slot!(read_eeprom_var(word.cast(), address))
+    unsafe { required_slot!(read_eeprom_var)(word.cast(), address) }
 }
 
 /// Write one native-endian word to the package custom-EEPROM range.
@@ -987,7 +833,7 @@ pub unsafe fn read_eeprom_word(word: *mut u32, address: c_int) -> bool {
 /// `word` must be valid for one `u32` read and the firmware function table
 /// must remain valid for the duration of the call.
 pub unsafe fn store_eeprom_word(word: *mut u32, address: c_int) -> bool {
-    call_required_slot!(store_eeprom_var(word.cast(), address))
+    unsafe { required_slot!(store_eeprom_var)(word.cast(), address) }
 }
 
 /// Read a byte range from firmware NVM when the optional slot is present.
@@ -1000,7 +846,9 @@ pub unsafe fn store_eeprom_word(word: *mut u32, address: c_int) -> bool {
 /// `buffer` must be valid for `len` writable bytes, and the firmware function
 /// table must remain valid for the duration of the call.
 pub unsafe fn read_nvm(buffer: *mut u8, len: c_uint, address: c_uint) -> Option<bool> {
-    call_optional_slot!(read_nvm(buffer, len, address))
+    optional_bool_call(unsafe { slots::read_nvm() }, |read| unsafe {
+        read(buffer, len, address)
+    })
 }
 
 /// Write a byte range to firmware NVM when the optional slot is present.
@@ -1013,7 +861,9 @@ pub unsafe fn read_nvm(buffer: *mut u8, len: c_uint, address: c_uint) -> Option<
 /// `buffer` must be valid for `len` readable bytes, and the firmware function
 /// table must remain valid for the duration of the call.
 pub unsafe fn write_nvm(buffer: *mut u8, len: c_uint, address: c_uint) -> Option<bool> {
-    call_optional_slot!(write_nvm(buffer, len, address))
+    optional_bool_call(unsafe { slots::write_nvm() }, |write| unsafe {
+        write(buffer, len, address)
+    })
 }
 
 /// Wipe firmware NVM when the optional slot is present.
@@ -1024,9 +874,12 @@ pub unsafe fn write_nvm(buffer: *mut u8, len: c_uint, address: c_uint) -> Option
 /// # Safety
 ///
 /// The firmware function table must remain valid for the duration of the call.
-#[must_use]
 pub unsafe fn wipe_nvm() -> Option<bool> {
-    call_optional_slot!(wipe_nvm())
+    optional_bool_call(unsafe { slots::wipe_nvm() }, |wipe| unsafe { wipe() })
+}
+
+fn optional_bool_call<F>(loader: Option<F>, invoke: impl FnOnce(F) -> bool) -> Option<bool> {
+    loader.map(invoke)
 }
 
 /// Register the firmware app-data callback using the float-out-boy/C ABI.
@@ -1035,12 +888,11 @@ pub unsafe fn wipe_nvm() -> Option<bool> {
 ///
 /// `handler` must remain valid until replaced or cleared by a later firmware call.
 pub unsafe fn vesc_set_app_data_handler(handler: AppDataHandler) -> bool {
-    // SAFETY: this wrapper forwards the caller's handler-lifetime guarantee.
     unsafe { vesc_set_app_data_handler_slot(Some(handler)) }
 }
 
 unsafe fn vesc_set_app_data_handler_slot(handler: Option<AppDataHandler>) -> bool {
-    call_required_slot!(set_app_data_handler(handler))
+    unsafe { required_slot!(set_app_data_handler)(handler) }
 }
 
 /// Clear the firmware app-data callback.
@@ -1050,7 +902,6 @@ unsafe fn vesc_set_app_data_handler_slot(handler: Option<AppDataHandler>) -> boo
 /// Must only be called when the firmware `VESC_IF` table is valid, same as
 /// [`vesc_set_app_data_handler`].
 pub unsafe fn vesc_clear_app_data_handler() {
-    // SAFETY: this wrapper forwards the caller's valid-table guarantee.
     let _ = unsafe { vesc_set_app_data_handler_slot(None) };
 }
 
@@ -1064,12 +915,11 @@ pub unsafe fn vesc_clear_app_data_handler() {
 ///
 /// `handler` must remain valid until replaced or cleared by a later firmware call.
 pub unsafe fn vesc_set_imu_read_callback(handler: ImuReadCallback) {
-    // SAFETY: this wrapper forwards the caller's callback-lifetime guarantee.
     unsafe { vesc_set_imu_read_callback_slot(Some(handler)) }
 }
 
 unsafe fn vesc_set_imu_read_callback_slot(handler: Option<ImuReadCallback>) {
-    call_required_slot!(imu_set_read_callback(handler));
+    unsafe { required_slot!(imu_set_read_callback)(handler) }
 }
 
 /// Clear the firmware IMU read callback.
@@ -1082,7 +932,6 @@ unsafe fn vesc_set_imu_read_callback_slot(handler: Option<ImuReadCallback>) {
 /// Must only be called when the firmware `VESC_IF` table is valid, same as
 /// [`vesc_set_imu_read_callback`].
 pub unsafe fn vesc_clear_imu_read_callback() {
-    // SAFETY: this wrapper forwards the caller's valid-table guarantee.
     unsafe { vesc_set_imu_read_callback_slot(None) }
 }
 
@@ -1096,7 +945,7 @@ pub unsafe fn vesc_clear_imu_read_callback() {
 ///
 /// `quaternions` must point to four writable `f32` values.
 pub unsafe fn vesc_imu_get_quaternions(quaternions: *mut f32) {
-    call_required_slot!(imu_get_quaternions(quaternions));
+    unsafe { required_slot!(imu_get_quaternions)(quaternions) }
 }
 
 /// Register firmware custom-config callbacks using the Float Out Boy/VESC ABI.
@@ -1114,11 +963,9 @@ pub unsafe fn conf_custom_add_config(
     set_cfg: CustomConfigSet,
     get_cfg_xml: CustomConfigXml,
 ) {
-    call_required_slot!(conf_custom_add_config(
-        Some(get_cfg),
-        Some(set_cfg),
-        Some(get_cfg_xml)
-    ));
+    unsafe {
+        required_slot!(conf_custom_add_config)(Some(get_cfg), Some(set_cfg), Some(get_cfg_xml))
+    }
 }
 
 /// Clear firmware custom-config callbacks.
@@ -1130,7 +977,7 @@ pub unsafe fn conf_custom_add_config(
 ///
 /// Must only be called while the firmware `VESC_IF` table is valid.
 pub unsafe fn conf_custom_clear_configs() {
-    call_required_slot!(conf_custom_clear_configs());
+    unsafe { required_slot!(conf_custom_clear_configs)() }
 }
 
 /// Allocate and initialize a firmware mutex.
@@ -1141,9 +988,8 @@ pub unsafe fn conf_custom_clear_configs() {
 /// # Safety
 ///
 /// The firmware `VESC_IF` table must be valid.
-#[must_use]
 pub unsafe fn vesc_mutex_create() -> LibMutex {
-    call_optional_slot!(mutex_create()).unwrap_or(core::ptr::null_mut())
+    unsafe { slots::mutex_create() }.map_or(core::ptr::null_mut(), |create| unsafe { create() })
 }
 
 /// Lock a firmware mutex, blocking the current firmware thread.
@@ -1153,7 +999,7 @@ pub unsafe fn vesc_mutex_create() -> LibMutex {
 /// `mutex` must be a live handle returned by [`vesc_mutex_create`]. The mutex
 /// is non-recursive and must not already be owned by the current thread.
 pub unsafe fn vesc_mutex_lock(mutex: LibMutex) {
-    call_required_slot!(mutex_lock(mutex));
+    unsafe { required_slot!(mutex_lock)(mutex) };
 }
 
 /// Unlock a firmware mutex owned by the current firmware thread.
@@ -1163,7 +1009,7 @@ pub unsafe fn vesc_mutex_lock(mutex: LibMutex) {
 /// `mutex` must be a live handle returned by [`vesc_mutex_create`] and locked
 /// by the current thread.
 pub unsafe fn vesc_mutex_unlock(mutex: LibMutex) {
-    call_required_slot!(mutex_unlock(mutex));
+    unsafe { required_slot!(mutex_unlock)(mutex) };
 }
 
 /// Allocate and initialize a firmware semaphore, returning null when the slot
@@ -1173,9 +1019,8 @@ pub unsafe fn vesc_mutex_unlock(mutex: LibMutex) {
 ///
 /// The firmware function table must be valid; the returned handle must be
 /// released with [`vesc_free`].
-#[must_use]
 pub unsafe fn vesc_sem_create() -> *mut c_void {
-    call_optional_slot!(sem_create()).unwrap_or(core::ptr::null_mut())
+    unsafe { slots::sem_create() }.map_or(core::ptr::null_mut(), |create| unsafe { create() })
 }
 
 /// Block until a firmware semaphore is signaled.
@@ -1184,7 +1029,7 @@ pub unsafe fn vesc_sem_create() -> *mut c_void {
 ///
 /// `semaphore` must be a live handle returned by [`vesc_sem_create`].
 pub unsafe fn vesc_sem_wait(semaphore: *mut c_void) {
-    call_required_slot!(sem_wait(semaphore));
+    unsafe { required_slot!(sem_wait)(semaphore) };
 }
 
 /// Signal a firmware semaphore.
@@ -1193,7 +1038,7 @@ pub unsafe fn vesc_sem_wait(semaphore: *mut c_void) {
 ///
 /// `semaphore` must be a live handle returned by [`vesc_sem_create`].
 pub unsafe fn vesc_sem_signal(semaphore: *mut c_void) {
-    call_required_slot!(sem_signal(semaphore));
+    unsafe { required_slot!(sem_signal)(semaphore) };
 }
 
 /// Wait for a firmware semaphore for at most `ticks` system ticks.
@@ -1202,7 +1047,7 @@ pub unsafe fn vesc_sem_signal(semaphore: *mut c_void) {
 ///
 /// `semaphore` must be a live handle returned by [`vesc_sem_create`].
 pub unsafe fn vesc_sem_wait_to(semaphore: *mut c_void, ticks: u32) -> bool {
-    call_required_slot!(sem_wait_to(semaphore, ticks))
+    unsafe { required_slot!(sem_wait_to)(semaphore, ticks) }
 }
 
 /// Reset a firmware semaphore to its unsignaled state.
@@ -1211,19 +1056,18 @@ pub unsafe fn vesc_sem_wait_to(semaphore: *mut c_void, ticks: u32) -> bool {
 ///
 /// `semaphore` must be a live handle returned by [`vesc_sem_create`].
 pub unsafe fn vesc_sem_reset(semaphore: *mut c_void) {
-    call_required_slot!(sem_reset(semaphore));
+    unsafe { required_slot!(sem_reset)(semaphore) };
 }
 
-/// Allocate memory from the firmware `LispBM` reserve heap.
+/// Allocate memory from the firmware LispBM reserve heap.
 ///
 /// # Safety
 ///
 /// The caller must check for null. A non-null returned pointer belongs to the
 /// firmware/LispBM reserve heap and must be freed with [`vesc_free`] when no
 /// longer used.
-#[must_use]
 pub unsafe fn vesc_malloc(bytes: usize) -> *mut c_void {
-    call_required_slot!(malloc(bytes))
+    unsafe { required_slot!(malloc)(bytes) }
 }
 
 /// Free memory previously allocated by [`vesc_malloc`].
@@ -1233,7 +1077,9 @@ pub unsafe fn vesc_malloc(bytes: usize) -> *mut c_void {
 /// `ptr` must be null or a pointer returned by the firmware allocator, and it
 /// must not already have been freed.
 pub unsafe fn vesc_free(ptr: *mut c_void) {
-    call_required_slot!(free(ptr));
+    unsafe {
+        required_slot!(free)(ptr);
+    }
 }
 
 /// Spawn a firmware package thread.
@@ -1252,7 +1098,7 @@ pub unsafe fn vesc_spawn(
     name: *const c_char,
     arg: *mut c_void,
 ) -> LibThread {
-    call_required_slot!(spawn(Some(entry), stack_bytes, name, arg))
+    unsafe { required_slot!(spawn)(Some(entry), stack_bytes, name, arg) }
 }
 
 /// Sleep the current firmware package thread for a number of microseconds.
@@ -1265,7 +1111,7 @@ pub unsafe fn vesc_spawn(
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn vesc_sleep_us(micros: u32) {
-    call_required_slot!(sleep_us(micros));
+    unsafe { required_slot!(sleep_us)(micros) };
 }
 
 /// Set the current firmware package thread priority when the slot is present.
@@ -1277,9 +1123,10 @@ pub unsafe fn vesc_sleep_us(micros: u32) {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn vesc_thread_set_priority(priority: c_int) -> bool {
-    call_optional_slot!(thread_set_priority(priority)).is_some()
+    unsafe { slots::thread_set_priority() }
+        .map(|func| unsafe { func(priority) })
+        .is_some()
 }
 /// Ask a firmware package thread to terminate.
 ///
@@ -1291,7 +1138,9 @@ pub unsafe fn vesc_thread_set_priority(priority: c_int) -> bool {
 ///
 /// `thread` must be null or a thread handle returned by [`vesc_spawn`].
 pub unsafe fn vesc_request_terminate(thread: LibThread) {
-    call_required_slot!(request_terminate(thread));
+    unsafe {
+        required_slot!(request_terminate)(thread);
+    }
 }
 
 /// Return whether the current firmware package thread should terminate.
@@ -1303,9 +1152,8 @@ pub unsafe fn vesc_request_terminate(thread: LibThread) {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn vesc_should_terminate() -> bool {
-    call_required_slot!(should_terminate())
+    unsafe { required_slot!(should_terminate)() }
 }
 
 /// Return the firmware-owned mutable `lib_info.arg` slot for a loaded native library.
@@ -1313,9 +1161,8 @@ pub unsafe fn vesc_should_terminate() -> bool {
 /// # Safety
 ///
 /// `prog_addr` must be the native library base address passed by the VESC loader.
-#[must_use]
 pub unsafe fn vesc_get_arg(prog_addr: u32) -> *mut *mut c_void {
-    call_required_slot!(get_arg(prog_addr))
+    unsafe { required_slot!(get_arg)(prog_addr) }
 }
 
 /// Transmit one bounded standard CAN frame when the optional slot is present.
@@ -1413,8 +1260,6 @@ pub unsafe fn can_set_pos(controller: u8, position: f32) -> Option<()> {
 /// raw boundary. The firmware records are `Copy` snapshots, so the returned
 /// value is independent of the firmware's storage.
 unsafe fn copy_firmware_record<T: Copy>(record: *const T) -> Option<T> {
-    // SAFETY: callers guarantee that a non-null record points to a valid,
-    // initialized `T` for the duration of this copy.
     unsafe { record.as_ref().copied() }
 }
 
@@ -1428,10 +1273,8 @@ macro_rules! copy_optional_status {
         /// The VESC function table and the record returned by firmware must be
         /// valid for the duration of this call.
         pub unsafe fn $wrapper(index: c_int) -> Option<$status> {
-            let record = call_optional_slot!($slot(index))?;
-            // SAFETY: the wrapper contract requires the firmware record to
-            // remain valid while it is copied.
-            unsafe { copy_firmware_record(record) }
+            let loader = unsafe { slots::$slot()? };
+            unsafe { copy_firmware_record(loader(index)) }
         }
     };
 }
@@ -1476,12 +1319,9 @@ copy_optional_status!(can_status_msg_6_id, can_get_status_msg_6_id, CanStatusMsg
 ///
 /// The VESC function table and its GNSS record pointer must be valid for the
 /// duration of this call.
-#[must_use]
 pub unsafe fn gnss_snapshot() -> Option<GnssData> {
-    let record = call_optional_slot!(mc_gnss())?;
-    // SAFETY: the wrapper contract requires the GNSS record to remain valid
-    // while it is copied.
-    unsafe { copy_firmware_record(record) }
+    let loader = unsafe { slots::mc_gnss()? };
+    unsafe { copy_firmware_record(loader()) }
 }
 
 /// Copy the current remote-control state when firmware exposes the slot.
@@ -1489,9 +1329,8 @@ pub unsafe fn gnss_snapshot() -> Option<GnssData> {
 /// # Safety
 ///
 /// The VESC function table must be valid for the duration of this call.
-#[must_use]
 pub unsafe fn remote_state() -> Option<RemoteState> {
-    call_optional_slot!(get_remote_state())
+    unsafe { slots::get_remote_state() }.map(|func| unsafe { func() })
 }
 
 /// Read the decoded PPM input when the optional slot is present.
@@ -1519,28 +1358,10 @@ pub unsafe fn store_backup_data() -> Option<bool> {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
-pub unsafe fn mc_get_fault() -> c_int {
-    call_required_slot!(mc_get_fault()).cast_signed()
+pub unsafe fn mc_get_fault() -> crate::FaultCode {
+    unsafe { required_slot!(mc_get_fault)() }
 }
 
-/// Return the latest decoded PPM input.
-///
-/// # Safety
-/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
-pub unsafe fn get_ppm() -> Option<f32> {
-    call_optional_slot!(get_ppm())
-}
-
-/// Return the age of the latest decoded PPM input in seconds.
-///
-/// # Safety
-/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
-pub unsafe fn get_ppm_age() -> Option<f32> {
-    call_optional_slot!(get_ppm_age())
-}
 /// Return the active motor-control thread index.
 pub unsafe fn mc_get_motor_thread() -> c_int {
     unsafe { slots::mc_get_motor_thread()() }
@@ -1551,6 +1372,9 @@ pub unsafe fn mc_dccal_done() -> bool {
     unsafe { slots::mc_dccal_done()() }
 }
 
+/// Return the firmware fault description pointer.
+pub unsafe fn mc_fault_to_string(code: crate::FaultCode) -> *const c_char {
+    unsafe { required_slot!(mc_fault_to_string)(code) }
 }
 
 /// Return the current motor electrical RPM.
@@ -1562,9 +1386,8 @@ pub unsafe fn mc_dccal_done() -> bool {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn mc_get_rpm() -> f32 {
-    call_required_slot!(mc_get_rpm())
+    unsafe { required_slot!(mc_get_rpm)() }
 }
 
 /// Return firmware-calculated vehicle speed in meters per second.
@@ -1576,9 +1399,8 @@ pub unsafe fn mc_get_rpm() -> f32 {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn mc_get_speed() -> f32 {
-    call_required_slot!(mc_get_speed())
+    unsafe { required_slot!(mc_get_speed)() }
 }
 
 /// Return filtered total motor current.
@@ -1590,9 +1412,8 @@ pub unsafe fn mc_get_speed() -> f32 {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn mc_get_tot_current_filtered() -> f32 {
-    call_required_slot!(mc_get_tot_current_filtered())
+    unsafe { required_slot!(mc_get_tot_current_filtered)() }
 }
 
 /// Return the instantaneous total motor current.
@@ -1609,9 +1430,8 @@ pub unsafe fn mc_get_tot_current() -> f32 {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn mc_get_tot_current_directional_filtered() -> f32 {
-    call_required_slot!(mc_get_tot_current_directional_filtered())
+    unsafe { required_slot!(mc_get_tot_current_directional_filtered)() }
 }
 
 /// Return the instantaneous total motor current with motor direction applied.
@@ -1628,9 +1448,8 @@ pub unsafe fn mc_get_tot_current_directional() -> f32 {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn mc_get_tot_current_in_filtered() -> f32 {
-    call_required_slot!(mc_get_tot_current_in_filtered())
+    unsafe { required_slot!(mc_get_tot_current_in_filtered)() }
 }
 
 /// Return the instantaneous battery/input current.
@@ -1648,9 +1467,8 @@ pub unsafe fn mc_get_tot_current_in() -> f32 {
 ///
 /// The firmware VESC function table must be valid and `param` must be a valid
 /// firmware configuration parameter id for a float-valued setting.
-#[must_use]
 pub unsafe fn get_cfg_float(param: c_int) -> f32 {
-    call_required_slot!(get_cfg_float(param.cast_unsigned()))
+    unsafe { required_slot!(get_cfg_float)(param as c_uint) }
 }
 
 /// Read a firmware motor configuration integer by `CFG_PARAM_*` id.
@@ -1663,9 +1481,8 @@ pub unsafe fn get_cfg_float(param: c_int) -> f32 {
 ///
 /// The firmware VESC function table must be valid and `param` must be a valid
 /// firmware configuration parameter id for an integer-valued setting.
-#[must_use]
 pub unsafe fn get_cfg_int(param: c_int) -> c_int {
-    call_required_slot!(get_cfg_int(param.cast_unsigned()))
+    unsafe { required_slot!(get_cfg_int)(param as c_uint) }
 }
 
 /// Reset the firmware motor-command safety timeout.
@@ -1678,7 +1495,7 @@ pub unsafe fn get_cfg_int(param: c_int) -> c_int {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn timeout_reset() {
-    call_required_slot!(timeout_reset());
+    unsafe { required_slot!(timeout_reset)() }
 }
 
 /// Return whether the firmware command timeout is active.
@@ -1701,7 +1518,7 @@ pub unsafe fn timeout_secs_since_update() -> f32 {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_set_current_off_delay(seconds: f32) {
-    call_required_slot!(mc_set_current_off_delay(seconds));
+    unsafe { required_slot!(mc_set_current_off_delay)(seconds) }
 }
 
 /// Select the active firmware motor-control thread.
@@ -1726,7 +1543,7 @@ pub unsafe fn mc_set_pwm_callback(callback: Option<PwmCallback>) -> bool {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_set_current(amps: f32) {
-    call_required_slot!(mc_set_current(amps));
+    unsafe { required_slot!(mc_set_current)(amps) }
 }
 
 /// Set relative motor current.
@@ -1759,7 +1576,7 @@ pub unsafe fn mc_set_pid_pos(position: f32) {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_set_duty(duty_cycle: f32) {
-    call_required_slot!(mc_set_duty(duty_cycle));
+    unsafe { required_slot!(mc_set_duty)(duty_cycle) }
 }
 
 /// Set the motor duty-cycle command without ramping.
@@ -1777,7 +1594,7 @@ pub unsafe fn mc_set_duty_noramp(duty_cycle: f32) {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_set_brake_current(amps: f32) {
-    call_required_slot!(mc_set_brake_current(amps));
+    unsafe { required_slot!(mc_set_brake_current)(amps) }
 }
 
 /// Set the motor handbrake current.
@@ -1919,9 +1736,8 @@ pub unsafe fn mc_wait_for_motor_release(timeout: f32) -> bool {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn mc_get_duty_cycle_now() -> f32 {
-    call_required_slot!(mc_get_duty_cycle_now())
+    unsafe { required_slot!(mc_get_duty_cycle_now)() }
 }
 
 /// Return the firmware-owned name for a motor fault code when the slot exists.
@@ -1930,9 +1746,8 @@ pub unsafe fn mc_get_duty_cycle_now() -> f32 {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid. A non-null
 /// returned pointer is firmware-owned and must point to a NUL-terminated string.
-#[must_use]
 pub unsafe fn mc_fault_to_string(code: c_uint) -> Option<*const c_char> {
-    let pointer = call_required_slot!(mc_fault_to_string(code));
+    let pointer = unsafe { required_slot!(mc_fault_to_string)(code) };
     (!pointer.is_null()).then_some(pointer)
 }
 
@@ -1945,19 +1760,8 @@ pub unsafe fn mc_fault_to_string(code: c_uint) -> Option<*const c_char> {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn foc_get_id() -> Option<f32> {
-    call_optional_slot!(foc_get_id())
-}
-
-/// Play one FOC tone when the motor firmware exposes audio support.
-///
-/// # Safety
-///
-/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
-pub unsafe fn foc_play_tone(channel: c_int, frequency: f32, voltage: f32) -> Option<bool> {
-    call_optional_slot!(foc_play_tone(channel, frequency, voltage))
+    unsafe { slots::foc_get_id() }.map(|func| unsafe { func() })
 }
 
 /// Return FOC q-axis Iq current when the firmware slot is present.
@@ -2173,9 +1977,8 @@ pub unsafe fn encoder_set_custom_callbacks(
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn mc_get_input_voltage_filtered() -> f32 {
-    call_required_slot!(mc_get_input_voltage_filtered())
+    unsafe { required_slot!(mc_get_input_voltage_filtered)() }
 }
 
 /// Return the discharged amp-hours counter.
@@ -2183,9 +1986,8 @@ pub unsafe fn mc_get_input_voltage_filtered() -> f32 {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn mc_get_amp_hours(reset: bool) -> f32 {
-    call_required_slot!(mc_get_amp_hours(reset))
+    unsafe { required_slot!(mc_get_amp_hours)(reset) }
 }
 
 /// Return the charged amp-hours counter.
@@ -2193,9 +1995,8 @@ pub unsafe fn mc_get_amp_hours(reset: bool) -> f32 {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn mc_get_amp_hours_charged(reset: bool) -> f32 {
-    call_required_slot!(mc_get_amp_hours_charged(reset))
+    unsafe { required_slot!(mc_get_amp_hours_charged)(reset) }
 }
 
 /// Return the discharged watt-hours counter.
@@ -2203,9 +2004,8 @@ pub unsafe fn mc_get_amp_hours_charged(reset: bool) -> f32 {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn mc_get_watt_hours(reset: bool) -> f32 {
-    call_required_slot!(mc_get_watt_hours(reset))
+    unsafe { required_slot!(mc_get_watt_hours)(reset) }
 }
 
 /// Return the charged watt-hours counter.
@@ -2213,9 +2013,8 @@ pub unsafe fn mc_get_watt_hours(reset: bool) -> f32 {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn mc_get_watt_hours_charged(reset: bool) -> f32 {
-    call_required_slot!(mc_get_watt_hours_charged(reset))
+    unsafe { required_slot!(mc_get_watt_hours_charged)(reset) }
 }
 
 /// Return the estimated battery level as a ratio.
@@ -2225,7 +2024,7 @@ pub unsafe fn mc_get_watt_hours_charged(reset: bool) -> f32 {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid. If
 /// `wh_left` is not null, it must be valid for firmware to write one `f32`.
 pub unsafe fn mc_get_battery_level(wh_left: *mut f32) -> f32 {
-    call_required_slot!(mc_get_battery_level(wh_left))
+    unsafe { required_slot!(mc_get_battery_level)(wh_left) }
 }
 
 /// Return the absolute motor distance in meters.
@@ -2233,9 +2032,8 @@ pub unsafe fn mc_get_battery_level(wh_left: *mut f32) -> f32 {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn mc_get_distance_abs() -> f32 {
-    call_required_slot!(mc_get_distance_abs())
+    unsafe { required_slot!(mc_get_distance_abs)() }
 }
 
 /// Return signed motor distance in meters.
@@ -2248,9 +2046,8 @@ pub unsafe fn mc_get_distance() -> f32 {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn mc_get_odometer() -> u64 {
-    call_required_slot!(mc_get_odometer())
+    unsafe { required_slot!(mc_get_odometer)() }
 }
 
 /// Set the firmware odometer distance in meters.
@@ -2263,9 +2060,8 @@ pub unsafe fn mc_set_odometer(meters: u64) {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn mc_temp_fet_filtered() -> f32 {
-    call_required_slot!(mc_temp_fet_filtered())
+    unsafe { required_slot!(mc_temp_fet_filtered)() }
 }
 
 /// Return the filtered motor temperature in degrees Celsius.
@@ -2273,9 +2069,8 @@ pub unsafe fn mc_temp_fet_filtered() -> f32 {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn mc_temp_motor_filtered() -> f32 {
-    call_required_slot!(mc_temp_motor_filtered())
+    unsafe { required_slot!(mc_temp_motor_filtered)() }
 }
 
 /// Return whether firmware IMU startup has completed.
@@ -2287,9 +2082,8 @@ pub unsafe fn mc_temp_motor_filtered() -> f32 {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn imu_startup_done() -> bool {
-    call_required_slot!(imu_startup_done())
+    unsafe { required_slot!(imu_startup_done)() }
 }
 
 /// Return firmware IMU roll in radians.
@@ -2300,9 +2094,8 @@ pub unsafe fn imu_startup_done() -> bool {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn imu_get_roll() -> f32 {
-    call_required_slot!(imu_get_roll())
+    unsafe { required_slot!(imu_get_roll)() }
 }
 
 /// Return firmware IMU pitch in radians.
@@ -2313,9 +2106,8 @@ pub unsafe fn imu_get_roll() -> f32 {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn imu_get_pitch() -> f32 {
-    call_required_slot!(imu_get_pitch())
+    unsafe { required_slot!(imu_get_pitch)() }
 }
 
 /// Return firmware IMU yaw in radians.
@@ -2326,9 +2118,8 @@ pub unsafe fn imu_get_pitch() -> f32 {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn imu_get_yaw() -> f32 {
-    call_required_slot!(imu_get_yaw())
+    unsafe { required_slot!(imu_get_yaw)() }
 }
 
 /// Set firmware IMU yaw in degrees.
@@ -2351,7 +2142,7 @@ pub unsafe fn imu_get_accel(xyz: *mut f32) {
 /// `xyz` must point to three writable `f32` values, and the VESC function
 /// table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn imu_get_gyro(xyz: *mut f32) {
-    call_required_slot!(imu_get_gyro(xyz));
+    unsafe { required_slot!(imu_get_gyro)(xyz) }
 }
 
 /// Write firmware IMU magnetic-field axes in microteslas into `xyz`.
@@ -2379,48 +2170,23 @@ pub unsafe fn imu_get_gyro_derotated(xyz: *mut f32) {
 /// `data` must point to at least `len` bytes that remain valid for the
 /// duration of the firmware call.
 pub unsafe fn vesc_send_app_data(data: *const u8, len: u32) {
-    call_required_slot!(send_app_data(data.cast_mut(), len));
+    unsafe {
+        required_slot!(send_app_data)(data as *mut c_uchar, len);
+    }
 }
 
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn vesc_system_time_ticks() -> u32 {
-    call_optional_slot!(system_time_ticks()).unwrap_or_else(|| {
-        // Legacy VESC tables expose seconds only. The firmware system tick is
-        // 100 microseconds (10 kHz), matching chVTGetSystemTimeX().
-        vesc_system_time_ticks_from_seconds(call_required_slot!(system_time()))
-    })
-}
-
-fn vesc_system_time_ticks_from_seconds(seconds: f32) -> u32 {
-    let ticks = seconds * 10_000.0;
-    if ticks.is_nan() || ticks <= 0.0 {
-        return 0;
-    }
-    if ticks >= 4_294_967_296.0 {
-        return u32::MAX;
-    }
-
-    // IEEE-754 stores the integer significand separately from its base-two
-    // exponent. Reassembling those fields reproduces C's truncation toward
-    // zero without a narrowing Rust cast that could silently saturate.
-    let bits = ticks.to_bits();
-    let encoded_exponent = (bits >> 23) & 0xff;
-    if encoded_exponent < 127 {
-        return 0;
-    }
-    let Some(exponent) = encoded_exponent.checked_sub(127) else {
-        return 0;
-    };
-    let significand = (bits & 0x7f_ffff) | (1 << 23);
-    if exponent <= 23 {
-        let shift = 23_u32.saturating_sub(exponent);
-        significand.checked_shr(shift).unwrap_or(0)
-    } else {
-        let shift = exponent.saturating_sub(23);
-        significand.checked_shl(shift).unwrap_or(u32::MAX)
+    unsafe {
+        if let Some(system_time_ticks) = slots::system_time_ticks() {
+            system_time_ticks()
+        } else {
+            // Legacy VESC tables expose seconds only. The firmware system tick
+            // is 100 microseconds (10 kHz), matching chVTGetSystemTimeX().
+            (required_slot!(system_time)() * 10_000.0) as u32
+        }
     }
 }
 
@@ -2429,9 +2195,8 @@ fn vesc_system_time_ticks_from_seconds(seconds: f32) -> u32 {
 /// # Safety
 ///
 /// The VESC function table at [`VescIfAbi::BASE_ADDR`] must be valid.
-#[must_use]
 pub unsafe fn vesc_system_time_seconds() -> f32 {
-    call_required_slot!(system_time())
+    unsafe { required_slot!(system_time)() }
 }
 
 /// Return the age of a firmware system timestamp in floating-point seconds.
@@ -2439,9 +2204,8 @@ pub unsafe fn vesc_system_time_seconds() -> f32 {
 /// # Safety
 ///
 /// The VESC function table at [`VescIfAbi::BASE_ADDR`] must be valid.
-#[must_use]
 pub unsafe fn vesc_timestamp_age_seconds(timestamp: u32) -> f32 {
-    call_required_slot!(ts_to_age_s(timestamp))
+    unsafe { required_slot!(ts_to_age_s)(timestamp) }
 }
 
 /// Return the current high-resolution firmware timer instant.
@@ -2449,9 +2213,8 @@ pub unsafe fn vesc_timestamp_age_seconds(timestamp: u32) -> f32 {
 /// # Safety
 ///
 /// The VESC function table at [`VescIfAbi::BASE_ADDR`] must be valid.
-#[must_use]
 pub unsafe fn vesc_timer_time_now() -> u32 {
-    call_required_slot!(timer_time_now())
+    unsafe { required_slot!(timer_time_now)() }
 }
 
 /// Return high-resolution elapsed time in floating-point seconds.
@@ -2459,54 +2222,50 @@ pub unsafe fn vesc_timer_time_now() -> u32 {
 /// # Safety
 ///
 /// The VESC function table at [`VescIfAbi::BASE_ADDR`] must be valid.
-#[must_use]
 pub unsafe fn vesc_timer_seconds_elapsed_since(timestamp: u32) -> f32 {
-    call_required_slot!(timer_seconds_elapsed_since(timestamp))
+    unsafe { required_slot!(timer_seconds_elapsed_since)(timestamp) }
 }
 
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn io_set_mode(pin: crate::VescPin, mode: crate::VescPinMode) -> bool {
-    call_required_slot!(io_set_mode(pin.0.cast_unsigned(), mode.0.cast_unsigned()))
+    unsafe { required_slot!(io_set_mode)(pin.0 as c_uint, mode.0 as c_uint) }
 }
 
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn io_write(pin: crate::VescPin, level: i32) -> bool {
-    call_required_slot!(io_write(pin.0.cast_unsigned(), level))
+    unsafe { required_slot!(io_write)(pin.0 as c_uint, level) }
 }
 
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
 pub unsafe fn io_read(pin: crate::VescPin) -> bool {
-    call_required_slot!(io_read(pin.0.cast_unsigned()))
+    unsafe { required_slot!(io_read)(pin.0 as c_uint) }
 }
 
 /// # Safety
 ///
 /// The VESC slot is declared in `lispBM/c_libs/vesc_c_if.h:396`.
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
+#[inline(always)]
 pub unsafe fn io_read_analog(pin: crate::VescPin) -> f32 {
-    call_required_slot!(io_read_analog(pin.0.cast_unsigned()))
+    unsafe { required_slot!(io_read_analog)(pin.0 as c_uint) }
 }
 
 /// # Safety
 ///
 /// The VESC slot is declared in `lispBM/c_libs/vesc_c_if.h:396`.
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-#[must_use]
+#[inline(always)]
 pub unsafe fn io_read_analog_pair(first: crate::VescPin, second: crate::VescPin) -> (f32, f32) {
-    (
-        call_required_slot!(io_read_analog(first.0.cast_unsigned())),
-        call_required_slot!(io_read_analog(second.0.cast_unsigned())),
-    )
+    let read = unsafe { required_slot!(io_read_analog) };
+    (unsafe { read(first.0 as c_uint) }, unsafe {
+        read(second.0 as c_uint)
+    })
 }
 
 #[cfg(test)]

@@ -552,21 +552,21 @@ pub struct RealMotorControlBindings;
 #[cfg(not(test))]
 impl MotorTelemetryBindings for RealMotorTelemetryBindings {
     fn electrical_speed(&self) -> ElectricalSpeed {
-        ElectricalSpeed::new(Rpm::from_revolutions_per_minute(call_vesc_ffi!(
-            mc_get_rpm()
-        )))
+        ElectricalSpeed::new(Rpm::from_revolutions_per_minute(unsafe {
+            crate::ffi::mc_get_rpm()
+        }))
     }
 
     fn vehicle_speed(&self) -> VehicleSpeed {
-        VehicleSpeed::new(Speed::from_meters_per_second(
-            call_vesc_ffi!(mc_get_speed()),
-        ))
+        VehicleSpeed::new(Speed::from_meters_per_second(unsafe {
+            crate::ffi::mc_get_speed()
+        }))
     }
 
     fn motor_current(&self) -> TotalMotorCurrent {
-        TotalMotorCurrent::new(Current::from_amps(call_vesc_ffi!(
-            mc_get_tot_current_filtered()
-        )))
+        TotalMotorCurrent::new(Current::from_amps(unsafe {
+            crate::ffi::mc_get_tot_current_filtered()
+        }))
     }
 
     fn motor_current_unfiltered(&self) -> TotalMotorCurrent {
@@ -576,9 +576,9 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
     }
 
     fn directional_motor_current(&self) -> DirectionalMotorCurrent {
-        DirectionalMotorCurrent::new(Current::from_amps(call_vesc_ffi!(
-            mc_get_tot_current_directional_filtered()
-        )))
+        DirectionalMotorCurrent::new(Current::from_amps(unsafe {
+            crate::ffi::mc_get_tot_current_directional_filtered()
+        }))
     }
 
     fn directional_motor_current_unfiltered(&self) -> DirectionalMotorCurrent {
@@ -588,53 +588,55 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
     }
 
     fn drive_current_limit(&self) -> MotorCurrentLimit {
-        MotorCurrentLimit::from_positive_current(Current::from_amps(call_vesc_ffi!(get_cfg_float(
-            CFG_PARAM_L_CURRENT_MAX
-        ))))
+        MotorCurrentLimit::from_positive_current(Current::from_amps(unsafe {
+            crate::ffi::get_cfg_float(CFG_PARAM_L_CURRENT_MAX)
+        }))
     }
 
     fn brake_current_limit(&self) -> MotorCurrentLimit {
-        MotorCurrentLimit::new(Current::from_amps(call_vesc_ffi!(get_cfg_float(
-            CFG_PARAM_L_CURRENT_MIN
-        ))))
+        MotorCurrentLimit::new(Current::from_amps(unsafe {
+            crate::ffi::get_cfg_float(CFG_PARAM_L_CURRENT_MIN)
+        }))
     }
 
     fn drive_input_current_limit(&self) -> InputCurrentLimit {
-        InputCurrentLimit::new(Current::from_amps(call_vesc_ffi!(get_cfg_float(
-            CFG_PARAM_L_IN_CURRENT_MAX
-        ))))
+        InputCurrentLimit::new(Current::from_amps(unsafe {
+            crate::ffi::get_cfg_float(CFG_PARAM_L_IN_CURRENT_MAX)
+        }))
     }
 
     fn brake_input_current_limit(&self) -> InputCurrentLimit {
-        InputCurrentLimit::new(Current::from_amps(call_vesc_ffi!(get_cfg_float(
-            CFG_PARAM_L_IN_CURRENT_MIN
-        ))))
+        InputCurrentLimit::new(Current::from_amps(unsafe {
+            crate::ffi::get_cfg_float(CFG_PARAM_L_IN_CURRENT_MIN)
+        }))
     }
 
     fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart {
-        TemperatureLimitStart::new(Temperature::from_degrees_celsius(call_vesc_ffi!(
-            get_cfg_float(CFG_PARAM_L_TEMP_FET_START)
-        )))
+        TemperatureLimitStart::new(Temperature::from_degrees_celsius(unsafe {
+            crate::ffi::get_cfg_float(CFG_PARAM_L_TEMP_FET_START)
+        }))
     }
 
     fn motor_temperature_limit_start(&self) -> TemperatureLimitStart {
-        TemperatureLimitStart::new(Temperature::from_degrees_celsius(call_vesc_ffi!(
-            get_cfg_float(CFG_PARAM_L_TEMP_MOTOR_START)
-        )))
+        TemperatureLimitStart::new(Temperature::from_degrees_celsius(unsafe {
+            crate::ffi::get_cfg_float(CFG_PARAM_L_TEMP_MOTOR_START)
+        }))
     }
 
     fn duty_cycle_limit(&self) -> DutyCycleLimit {
-        duty_cycle_limit_from_firmware(call_vesc_ffi!(get_cfg_float(CFG_PARAM_L_MAX_DUTY)))
+        duty_cycle_limit_from_firmware(unsafe { crate::ffi::get_cfg_float(CFG_PARAM_L_MAX_DUTY) })
     }
 
     fn battery_cell_count(&self) -> Option<BatteryCellCount> {
-        battery_cell_count_from_firmware(call_vesc_ffi!(get_cfg_int(CFG_PARAM_SI_BATTERY_CELLS)))
+        battery_cell_count_from_firmware(unsafe {
+            crate::ffi::get_cfg_int(CFG_PARAM_SI_BATTERY_CELLS)
+        })
     }
 
     fn battery_current(&self) -> InputCurrent {
-        InputCurrent::new(Current::from_amps(call_vesc_ffi!(
-            mc_get_tot_current_in_filtered()
-        )))
+        InputCurrent::new(Current::from_amps(unsafe {
+            crate::ffi::mc_get_tot_current_in_filtered()
+        }))
     }
 
     fn battery_current_unfiltered(&self) -> InputCurrent {
@@ -710,11 +712,11 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
     }
 
     fn duty_cycle(&self) -> DutyCycle {
-        duty_cycle_from_firmware(call_vesc_ffi!(mc_get_duty_cycle_now()))
+        duty_cycle_from_firmware(unsafe { crate::ffi::mc_get_duty_cycle_now() })
     }
 
     fn d_axis_current(&self) -> Option<DCurrent> {
-        call_vesc_ffi!(foc_get_id()).map(|amps| DCurrent::new(Current::from_amps(amps)))
+        unsafe { crate::ffi::foc_get_id() }.map(|amps| DCurrent::new(Current::from_amps(amps)))
     }
 
     fn q_axis_current(&self) -> Option<QCurrent> {
@@ -730,7 +732,9 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
     }
 
     fn trip_distance(&self) -> TripDistance {
-        TripDistance::new(Distance::from_meters(call_vesc_ffi!(mc_get_distance_abs())))
+        TripDistance::new(Distance::from_meters(unsafe {
+            crate::ffi::mc_get_distance_abs()
+        }))
     }
 
     fn signed_trip_distance(&self) -> SignedTripDistance {
@@ -752,74 +756,68 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
     }
 
     fn mosfet_temperature(&self) -> MosfetTemperature {
-        MosfetTemperature::new(Temperature::from_degrees_celsius(call_vesc_ffi!(
-            mc_temp_fet_filtered()
-        )))
+        MosfetTemperature::new(Temperature::from_degrees_celsius(unsafe {
+            crate::ffi::mc_temp_fet_filtered()
+        }))
     }
 
     fn motor_temperature(&self) -> MotorTemperature {
-        MotorTemperature::new(Temperature::from_degrees_celsius(call_vesc_ffi!(
-            mc_temp_motor_filtered()
-        )))
+        MotorTemperature::new(Temperature::from_degrees_celsius(unsafe {
+            crate::ffi::mc_temp_motor_filtered()
+        }))
     }
 
     fn odometer(&self) -> OdometerMeters {
-        OdometerMeters::from_meters(call_vesc_ffi!(mc_get_odometer()))
+        OdometerMeters::from_meters(unsafe { crate::ffi::mc_get_odometer() })
     }
 
     fn amp_hours_discharged(&self) -> AmpHoursDischarged {
-        AmpHoursDischarged::new(Charge::from_amp_hours(call_vesc_ffi!(mc_get_amp_hours(
-            false
-        ))))
+        AmpHoursDischarged::new(Charge::from_amp_hours(unsafe {
+            crate::ffi::mc_get_amp_hours(false)
+        }))
     }
 
     fn amp_hours_charged(&self) -> AmpHoursCharged {
-        AmpHoursCharged::new(Charge::from_amp_hours(call_vesc_ffi!(
-            mc_get_amp_hours_charged(false)
-        )))
+        AmpHoursCharged::new(Charge::from_amp_hours(unsafe {
+            crate::ffi::mc_get_amp_hours_charged(false)
+        }))
     }
 
     fn watt_hours_discharged(&self) -> WattHoursDischarged {
-        WattHoursDischarged::new(Energy::from_watt_hours(call_vesc_ffi!(mc_get_watt_hours(
-            false
-        ))))
+        WattHoursDischarged::new(Energy::from_watt_hours(unsafe {
+            crate::ffi::mc_get_watt_hours(false)
+        }))
     }
 
     fn watt_hours_charged(&self) -> WattHoursCharged {
-        WattHoursCharged::new(Energy::from_watt_hours(call_vesc_ffi!(
-            mc_get_watt_hours_charged(false)
-        )))
+        WattHoursCharged::new(Energy::from_watt_hours(unsafe {
+            crate::ffi::mc_get_watt_hours_charged(false)
+        }))
     }
 
     fn battery_level(&self) -> BatteryLevel {
-        BatteryLevel::from_fraction(call_vesc_ffi!(mc_get_battery_level(core::ptr::null_mut())))
+        BatteryLevel::from_fraction(unsafe {
+            crate::ffi::mc_get_battery_level(core::ptr::null_mut())
+        })
     }
 
     fn firmware_fault(&self) -> FirmwareFaultCode {
-        FirmwareFaultCode::from_raw_code(call_vesc_ffi!(mc_get_fault()))
-    }
-
-    fn firmware_fault_name(&self, fault: FirmwareFaultCode) -> Option<&'static [u8]> {
-        let code = FirmwareFaultWireCode::try_from(fault).ok()?.wire_code();
-        let pointer = call_vesc_ffi!(mc_fault_to_string(u32::from(code)));
-        #[cfg(all(feature = "test-support", not(target_arch = "arm")))]
-        let pointer = Some(pointer);
-        // SAFETY: VESC returns a null-terminated string in firmware-owned static storage.
-        let bytes = unsafe { CStr::from_ptr(pointer?).to_bytes() };
-        Some(bytes.strip_prefix(b"FAULT_CODE_").unwrap_or(bytes))
+        FirmwareFaultCode::from_raw_code(unsafe { crate::ffi::mc_get_fault() }.0)
     }
 
     fn firmware_fault_description(&self) -> Option<&'static str> {
-        let fault = call_vesc_ffi!(mc_get_fault());
-        let ptr = call_vesc_ffi!(mc_fault_to_string(fault as u32))?;
-        // SAFETY: VESC returns a null-terminated string in firmware-owned static storage.
+        let fault = unsafe { crate::ffi::mc_get_fault() };
+        let ptr = unsafe { crate::ffi::mc_fault_to_string(fault) };
+        if ptr.is_null() {
+            return None;
+        }
         unsafe { CStr::from_ptr(ptr) }.to_str().ok()
     }
 
     fn input_voltage(&self) -> InputVoltage {
-        InputVoltage::new(Voltage::from_volts(call_vesc_ffi!(
-            mc_get_input_voltage_filtered()
-        )))
+        InputVoltage::new(Voltage::from_volts(unsafe {
+            crate::ffi::mc_get_input_voltage_filtered()
+        }))
     }
 
     fn tachometer(&self, reset: bool) -> TachometerSteps {
@@ -861,15 +859,15 @@ impl MotorControlBindings for RealMotorControlBindings {
     }
 
     fn timeout_reset(&self) {
-        call_vesc_ffi!(timeout_reset());
+        unsafe { crate::ffi::timeout_reset() };
     }
 
     fn set_current_off_delay(&self, delay: CurrentOffDelay) {
-        call_vesc_ffi!(mc_set_current_off_delay(delay.duration().as_seconds()));
+        unsafe { crate::ffi::mc_set_current_off_delay(delay.duration().as_seconds()) };
     }
 
     fn set_current(&self, current: MotorCurrent) {
-        call_vesc_ffi!(mc_set_current(current.current().as_amps()));
+        unsafe { crate::ffi::mc_set_current(current.current().as_amps()) };
     }
 
     fn set_current_relative(&self, current: CurrentRelative) {
@@ -889,7 +887,7 @@ impl MotorControlBindings for RealMotorControlBindings {
     }
 
     fn set_duty_cycle(&self, duty: DutyCycle) {
-        call_vesc_ffi!(mc_set_duty(duty.ratio().as_ratio()));
+        unsafe { crate::ffi::mc_set_duty(duty.ratio().as_ratio()) };
     }
 
     fn set_duty_cycle_without_ramping(&self, duty: DutyCycle) {
@@ -897,36 +895,15 @@ impl MotorControlBindings for RealMotorControlBindings {
     }
 
     fn set_brake_current(&self, current: BrakeCurrent) {
-        call_vesc_ffi!(mc_set_brake_current(current.current().as_amps()));
-    }
-
-    fn play_foc_tone(
-        &self,
-        channel: AudioChannel,
-        frequency: AudioFrequency,
-        voltage: AudioVoltage,
-    ) -> bool {
-        let played = call_vesc_ffi!(foc_play_tone(
-            i32::from(channel.as_u8()),
-            frequency.frequency().as_hertz(),
-            voltage.voltage().as_volts(),
-        ));
-        #[cfg(all(feature = "test-support", not(target_arch = "arm")))]
-        {
-            played
-        }
-        #[cfg(not(all(feature = "test-support", not(target_arch = "arm"))))]
-        {
-            played.unwrap_or(false)
-        }
+        unsafe { crate::ffi::mc_set_brake_current(current.current().as_amps()) };
     }
 
     fn set_handbrake(&self, current: HandbrakeCurrent) {
-        call_vesc_ffi!(mc_set_handbrake(current.current().as_amps()));
+        unsafe { crate::ffi::mc_set_handbrake(current.current().as_amps()) };
     }
 
     fn set_handbrake_relative(&self, current: HandbrakeRelative) {
-        call_vesc_ffi!(mc_set_handbrake_rel(current.ratio().as_ratio()));
+        unsafe { crate::ffi::mc_set_handbrake_rel(current.ratio().as_ratio()) };
     }
 
     fn reset_statistics(&self) {
@@ -1155,9 +1132,9 @@ mod tests {
 
     #[test]
     fn duty_cycle_preserves_direction_and_normalizes_invalid_values() {
-        assert_f32_eq!(duty_cycle_from_firmware(f32::NAN).ratio().as_ratio(), 0.0);
-        assert_f32_eq!(duty_cycle_from_firmware(-0.42).ratio().as_ratio(), -0.42);
-        assert_f32_eq!(duty_cycle_from_firmware(2.0).ratio().as_ratio(), 1.0);
+        assert_eq!(duty_cycle_from_firmware(f32::NAN).ratio().as_ratio(), 0.0);
+        assert_eq!(duty_cycle_from_firmware(-0.42).ratio().as_ratio(), -0.42);
+        assert_eq!(duty_cycle_from_firmware(2.0).ratio().as_ratio(), 1.0);
     }
 
     #[test]
@@ -1173,23 +1150,23 @@ mod tests {
 
     #[test]
     fn duty_cycle_limit_normalizes_firmware_config_at_the_boundary() {
-        assert_f32_eq!(
+        assert_eq!(
             duty_cycle_limit_from_firmware(f32::NAN).ratio().as_ratio(),
             0.0
         );
-        assert_f32_eq!(
+        assert_eq!(
             duty_cycle_limit_from_firmware(0.95).ratio().as_ratio(),
             0.95
         );
-        assert_f32_eq!(duty_cycle_limit_from_firmware(2.0).ratio().as_ratio(), 1.0);
-        assert_f32_eq!(
+        assert_eq!(duty_cycle_limit_from_firmware(2.0).ratio().as_ratio(), 1.0);
+        assert_eq!(
             duty_cycle_limit_from_firmware(0.95)
                 .reduced_by(Ratio::from_ratio_const(0.05))
                 .ratio()
                 .as_ratio(),
             0.9
         );
-        assert_f32_eq!(
+        assert_eq!(
             DutyCycle::new(SignedRatio::from_ratio_const(-0.85))
                 .magnitude()
                 .as_ratio(),
