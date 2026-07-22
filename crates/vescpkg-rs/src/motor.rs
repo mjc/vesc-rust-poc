@@ -6,13 +6,13 @@ use core::ffi::CStr;
 #[cfg(not(test))]
 use crate::types::FirmwareFaultWireCode;
 use crate::types::{
-    AbsoluteTachometerSteps, AmpHoursCharged, AmpHoursDischarged, AveragePower,
-    AverageVehicleSpeed, BatteryCellCount, BatteryLevel, BrakeCurrent, CurrentOffDelay, DCurrent,
-    DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed, FirmwareFaultCode,
-    HandbrakeCurrent, HandbrakeRelative, InputCurrent, InputVoltage, MosfetTemperature,
-    MotorCurrent, MotorCurrentLimit, MotorTemperature, PeakPower, PeakVehicleSpeed,
-    TachometerSteps, TemperatureLimitStart, TotalMotorCurrent, TripDistance, VehicleSpeed,
-    WattHoursCharged, WattHoursDischarged,
+    AbsoluteTachometerSteps, AmpHoursCharged, AmpHoursDischarged, AverageMotorCurrent,
+    AveragePower, AverageVehicleSpeed, BatteryCellCount, BatteryLevel, BrakeCurrent,
+    CurrentOffDelay, DCurrent, DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed,
+    FirmwareFaultCode, HandbrakeCurrent, HandbrakeRelative, InputCurrent, InputVoltage,
+    MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, PeakMotorCurrent,
+    PeakPower, PeakVehicleSpeed, TachometerSteps, TemperatureLimitStart, TotalMotorCurrent,
+    TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 #[cfg(not(test))]
 use crate::units::{Charge, Current, Distance, Energy, Power, Rpm, Speed, Temperature, Voltage};
@@ -104,6 +104,10 @@ pub trait MotorTelemetryBindings {
     fn average_speed(&self) -> AverageVehicleSpeed;
     /// Return peak vehicle speed statistics.
     fn peak_speed(&self) -> PeakVehicleSpeed;
+    /// Return average motor current statistics.
+    fn average_motor_current(&self) -> AverageMotorCurrent;
+    /// Return peak motor current statistics.
+    fn peak_motor_current(&self) -> PeakMotorCurrent;
     /// Return the current signed duty cycle.
     ///
     /// The firmware value is clamped to the signed ratio range, with NaN
@@ -230,6 +234,14 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
 
     fn peak_speed(&self) -> PeakVehicleSpeed {
         (**self).peak_speed()
+    }
+
+    fn average_motor_current(&self) -> AverageMotorCurrent {
+        (**self).average_motor_current()
+    }
+
+    fn peak_motor_current(&self) -> PeakMotorCurrent {
+        (**self).peak_motor_current()
     }
 
     fn duty_cycle(&self) -> DutyCycle {
@@ -517,6 +529,18 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         }))
     }
 
+    fn average_motor_current(&self) -> AverageMotorCurrent {
+        AverageMotorCurrent::new(Current::from_amps(unsafe {
+            crate::ffi::mc_stat_current_avg()
+        }))
+    }
+
+    fn peak_motor_current(&self) -> PeakMotorCurrent {
+        PeakMotorCurrent::new(Current::from_amps(unsafe {
+            crate::ffi::mc_stat_current_max()
+        }))
+    }
+
     fn duty_cycle(&self) -> DutyCycle {
         duty_cycle_from_firmware(unsafe { crate::ffi::mc_get_duty_cycle_now() })
     }
@@ -732,6 +756,10 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn average_speed(&self) -> AverageVehicleSpeed;
     /// Return peak vehicle speed statistics.
     fn peak_speed(&self) -> PeakVehicleSpeed;
+    /// Return average motor current statistics.
+    fn average_motor_current(&self) -> AverageMotorCurrent;
+    /// Return peak motor current statistics.
+    fn peak_motor_current(&self) -> PeakMotorCurrent;
     /// Return the current signed duty cycle.
     fn duty_cycle(&self) -> DutyCycle;
     /// Return optional FOC d-axis current.
@@ -961,6 +989,16 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.peak_speed()
     }
 
+    /// Return average motor current statistics.
+    pub fn average_motor_current(&self) -> AverageMotorCurrent {
+        self.bindings.average_motor_current()
+    }
+
+    /// Return peak motor current statistics.
+    pub fn peak_motor_current(&self) -> PeakMotorCurrent {
+        self.bindings.peak_motor_current()
+    }
+
     /// Return the current signed duty cycle.
     pub fn duty_cycle(&self) -> DutyCycle {
         self.bindings.duty_cycle()
@@ -1130,6 +1168,14 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
 
     fn peak_speed(&self) -> PeakVehicleSpeed {
         self.peak_speed()
+    }
+
+    fn average_motor_current(&self) -> AverageMotorCurrent {
+        self.average_motor_current()
+    }
+
+    fn peak_motor_current(&self) -> PeakMotorCurrent {
+        self.peak_motor_current()
     }
 
     fn duty_cycle(&self) -> DutyCycle {
