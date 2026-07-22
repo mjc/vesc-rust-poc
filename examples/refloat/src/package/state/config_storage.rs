@@ -23,7 +23,7 @@ impl RefloatPackageState {
     }
 
     #[cfg(any(test, target_arch = "arm"))]
-    pub(super) fn load_persisted_config_on_startup(&mut self) {
+    pub(in crate::package) fn load_persisted_config_on_startup(&mut self) {
         self.read_config_from_eeprom();
         self.refresh_balance_filter_config();
         self.refresh_config_runtime_state();
