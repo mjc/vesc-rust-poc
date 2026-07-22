@@ -4,8 +4,8 @@ use crate::ffi;
 use crate::{
     AngleDegrees, BatteryCellCount, CanBus, Charge, Current, DutyCycleLimit, DutyCycleMinimum,
     ElectricalSpeed, FocAudio, FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance,
-    GearRatio, InputCurrent, InputVoltage, MotorCurrentLimit, Nvm, NvmCapacity, Ratio,
-    TemperatureLimitEnd, TemperatureLimitStart, Uart, Voltage, WheelDiameter,
+    GearRatio, InputCurrent, InputVoltage, MotorCurrentLimit, MotorPoleCount, Nvm, NvmCapacity,
+    Ratio, TemperatureLimitEnd, TemperatureLimitStart, Uart, Voltage, WheelDiameter,
 };
 use core::fmt;
 use vescpkg_rs_sys::{AbiError, Stm32AbiRevision, VescIfCapabilities, VescIfPresence};
@@ -722,6 +722,15 @@ impl FirmwareSettings {
             .ok_or(SettingsError::InvalidValue)
     }
 
+    /// Read the configured motor pole count with semantic validation.
+    pub fn motor_pole_count(self) -> Result<MotorPoleCount, SettingsError> {
+        let raw = self.get_int(FirmwareIntSetting::MotorPoleCount);
+        u16::try_from(raw)
+            .ok()
+            .and_then(|value| MotorPoleCount::try_new(value).ok())
+            .ok_or(SettingsError::InvalidValue)
+    }
+
     /// Write an integer setting to live firmware state.
     pub fn set_int(self, setting: FirmwareIntSetting, value: i32) -> Result<(), SettingsError> {
         unsafe { ffi::set_cfg_int(setting.raw(), value) }
@@ -735,6 +744,14 @@ impl FirmwareSettings {
     pub fn set_battery_cell_count(self, count: BatteryCellCount) -> Result<(), SettingsError> {
         self.set_int(
             FirmwareIntSetting::BatteryCellCount,
+            i32::from(count.as_u16()),
+        )
+    }
+
+    /// Write a checked motor pole count; persistence still requires [`Self::store`].
+    pub fn set_motor_pole_count(self, count: MotorPoleCount) -> Result<(), SettingsError> {
+        self.set_int(
+            FirmwareIntSetting::MotorPoleCount,
             i32::from(count.as_u16()),
         )
     }
