@@ -1,5 +1,6 @@
 //! Motor telemetry helpers built on firmware motor-control table slots.
 
+#[cfg(not(test))]
 use core::ffi::CStr;
 
 use crate::types::{

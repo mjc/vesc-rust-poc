@@ -116,7 +116,7 @@ impl crate::Firmware {
     }
 }
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(all(feature = "test-support", not(test)))]
 impl crate::test_support::FirmwareTest {
     /// Return the explicitly unsafe advanced FOC control surface.
     pub fn advanced_foc(&self) -> AdvancedFoc {
