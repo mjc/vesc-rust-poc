@@ -165,6 +165,7 @@ pub(crate) fn tick_refloat_main_thread_with(
         .ride_state()
         .run_state();
     state.apply_motor_control(motor, run_state, system_time_ticks);
+    state.sample_data_recorder(system_time_ticks);
     let beeper_level = state
         .take_beeper_level()
         .map(crate::beeper::RefloatBeeperLevel::digital_output)
@@ -204,9 +205,11 @@ pub fn start_refloat_runtime_threads(
     start: &mut vescpkg_rs::PackageStart<'_>,
 ) -> Result<(), vescpkg_rs::PackageStartError> {
     let firmware = vescpkg_rs::Firmware::new();
+    let recorder_buffer = start.take_data_recorder_buffer();
     if start
         .with_runtime_state::<RefloatPackageState, _>(|state| {
             state.initialize_balance_filter(firmware.imu().orientation());
+            state.initialize_data_recorder(recorder_buffer);
         })
         .is_none()
     {

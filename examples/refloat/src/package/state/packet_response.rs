@@ -6,9 +6,8 @@ use super::RefloatPackageState;
 use super::refloat_command_payload;
 use crate::domain::{
     RefloatAllDataMode3Payload, RefloatAllDataPayloads, RefloatAllDataRequest,
-    RefloatAllDataResponse, RefloatAppDataCommand, RefloatDataRecorderFlags,
-    RefloatRealtimeDataHeader, RefloatRealtimeMotorTemperatures, RefloatRealtimeReservedFlags,
-    RefloatRealtimeTail,
+    RefloatAllDataResponse, RefloatAppDataCommand, RefloatRealtimeDataHeader,
+    RefloatRealtimeMotorTemperatures, RefloatRealtimeReservedFlags, RefloatRealtimeTail,
 };
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{BatteryVoltage, FirmwareFaultWireCode, TimestampTicks};
@@ -27,6 +26,7 @@ impl RefloatPackageState {
             let response = encode_refloat_info_response(
                 payload,
                 self.serialized_config.hardware_led_mode_id(),
+                self.data_recorder.has_capability(),
             );
             return send(response.as_bytes());
         }
@@ -92,7 +92,7 @@ impl RefloatPackageState {
                     base.status().beep_reason(),
                 )
                 .with_fatal_error(self.alert_tracker.fatal_error())
-                .with_data_recorder(RefloatDataRecorderFlags::inactive());
+                .with_data_recorder(self.data_recorder.flags());
                 let tail = RefloatRealtimeTail::new(
                     self.alert_tracker.active_alerts(),
                     RefloatRealtimeReservedFlags::none(),
