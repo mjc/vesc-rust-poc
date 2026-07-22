@@ -15,7 +15,7 @@ use vescpkg_rs_sys::raw::{
     CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5, CanStatusMsg6,
     GnssData, LbmFlatValue, PacketState, RemoteState,
 };
-use vescpkg_rs_sys::{HardwareType, LbmValue, VescPin, VescPinMode};
+use vescpkg_rs_sys::{FaultCode, HardwareType, LbmValue, VescPin, VescPinMode};
 
 /// Host replacement for the firmware `%s` logging path.
 pub unsafe fn printf_data(message: *const c_char) -> bool {
@@ -1478,8 +1478,8 @@ pub unsafe fn mc_get_battery_level(_wh_left: *mut f32) -> f32 {
     load(&BATTERY_LEVEL)
 }
 
-pub unsafe fn mc_get_fault() -> i32 {
-    FIRMWARE_FAULT.load(Ordering::Relaxed)
+pub unsafe fn mc_get_fault() -> FaultCode {
+    FaultCode(FIRMWARE_FAULT.load(Ordering::Relaxed))
 }
 
 pub unsafe fn mc_get_motor_thread() -> i32 {
@@ -1490,7 +1490,7 @@ pub unsafe fn mc_dccal_done() -> bool {
     true
 }
 
-pub unsafe fn mc_fault_to_string(_fault: i32) -> *const c_char {
+pub unsafe fn mc_fault_to_string(_fault: FaultCode) -> *const c_char {
     b"TEST_FAULT\0".as_ptr().cast()
 }
 

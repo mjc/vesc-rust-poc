@@ -184,10 +184,13 @@ transparent_eq_value_type!(
     pub struct EepromVar(i32);
 );
 
+/// Firmware motor fault enum representation from `mc_fault_code`.
+///
+/// The numeric value is kept open-ended so newer firmware fault codes remain
+/// observable without changing this ABI crate.
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
-pub(crate) struct FaultCode(pub i32);
+pub struct FaultCode(pub i32);
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

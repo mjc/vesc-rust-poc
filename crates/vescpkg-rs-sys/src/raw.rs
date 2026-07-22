@@ -368,8 +368,8 @@ mod slots {
     fn_slot!(mc_get_motor_thread as unsafe extern "C" fn() -> c_int);
     fn_slot!(mc_dccal_done as unsafe extern "C" fn() -> bool);
     optional_fn_slot!(mc_set_pwm_callback as unsafe extern "C" fn(Option<unsafe extern "C" fn()>));
-    fn_slot!(mc_get_fault as unsafe extern "C" fn() -> c_uint);
-    fn_slot!(mc_fault_to_string as unsafe extern "C" fn(c_int) -> *const c_char);
+    fn_slot!(mc_get_fault as unsafe extern "C" fn() -> crate::FaultCode);
+    fn_slot!(mc_fault_to_string as unsafe extern "C" fn(crate::FaultCode) -> *const c_char);
     fn_slot!(mc_get_rpm as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_speed as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_tot_current_filtered as unsafe extern "C" fn() -> f32);
@@ -1358,8 +1358,8 @@ pub unsafe fn store_backup_data() -> Option<bool> {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-pub unsafe fn mc_get_fault() -> c_int {
-    unsafe { required_slot!(mc_get_fault)() as c_int }
+pub unsafe fn mc_get_fault() -> crate::FaultCode {
+    unsafe { required_slot!(mc_get_fault)() }
 }
 
 /// Return the active motor-control thread index.
@@ -1373,8 +1373,8 @@ pub unsafe fn mc_dccal_done() -> bool {
 }
 
 /// Return the firmware fault description pointer.
-pub unsafe fn mc_fault_to_string(code: c_int) -> *const c_char {
-    unsafe { slots::mc_fault_to_string()(code) }
+pub unsafe fn mc_fault_to_string(code: crate::FaultCode) -> *const c_char {
+    unsafe { required_slot!(mc_fault_to_string)(code) }
 }
 
 /// Return the current motor electrical RPM.

@@ -3,7 +3,9 @@ use core::ffi::{CStr, c_char, c_int, c_uchar, c_uint, c_void};
 
 use crate::c_vesc_if;
 use crate::test_support::{empty_table, with_table};
-use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescPin, VescPinMode};
+use crate::{
+    AppDataHandler, ExtensionHandler, FaultCode, LbmValue, VescIfAbi, VescPin, VescPinMode,
+};
 
 use super::{
     CanStatusMsg, CustomConfigGet, CustomConfigSet, CustomConfigXml, GnssData, RemoteState, VescIf,
@@ -603,9 +605,9 @@ extern "C" fn stub_mc_get_odometer() -> u64 {
     123_456
 }
 
-extern "C" fn stub_mc_get_fault() -> c_int {
+extern "C" fn stub_mc_get_fault() -> FaultCode {
     MC_GET_FAULT.inc();
-    5
+    FaultCode(5)
 }
 
 extern "C" fn stub_mc_fault_to_string(_code: c_uint) -> *const c_char {

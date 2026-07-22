@@ -802,7 +802,7 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
     }
 
     fn firmware_fault(&self) -> FirmwareFaultCode {
-        FirmwareFaultCode::from_raw_code(unsafe { crate::ffi::mc_get_fault() })
+        FirmwareFaultCode::from_raw_code(unsafe { crate::ffi::mc_get_fault() }.0)
     }
 
     fn firmware_fault_description(&self) -> Option<&'static str> {
