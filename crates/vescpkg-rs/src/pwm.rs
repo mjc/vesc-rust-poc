@@ -19,6 +19,7 @@ pub enum PwmCallbackError {
 static PWM_CALLBACK_REGISTERED: AtomicBool = AtomicBool::new(false);
 static PWM_CALLBACK_ACTIVE: AtomicBool = AtomicBool::new(false);
 
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) fn disable_callback_dispatch() {
     PWM_CALLBACK_ACTIVE.store(false, Ordering::Release);
 }

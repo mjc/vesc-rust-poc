@@ -7,6 +7,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 static TERMINAL_OWNED: AtomicBool = AtomicBool::new(false);
 static TERMINAL_ACTIVE: AtomicBool = AtomicBool::new(false);
 
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) fn disable_callback_dispatch() {
     TERMINAL_ACTIVE.store(false, Ordering::Release);
 }

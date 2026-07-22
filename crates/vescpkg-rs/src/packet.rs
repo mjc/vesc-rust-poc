@@ -10,6 +10,7 @@ const MAX_PACKET_BYTES: usize = PACKET_MAX_PL_LEN;
 static PACKET_CODEC_REGISTERED: AtomicBool = AtomicBool::new(false);
 static PACKET_CODEC_ACTIVE: AtomicBool = AtomicBool::new(false);
 
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) fn disable_callback_dispatch() {
     PACKET_CODEC_ACTIVE.store(false, Ordering::Release);
 }

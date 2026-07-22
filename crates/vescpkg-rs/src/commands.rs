@@ -7,6 +7,7 @@ const MAX_COMMAND_PACKET: usize = 512;
 static COMMAND_REPLY_OWNED: AtomicBool = AtomicBool::new(false);
 static COMMAND_REPLY_ACTIVE: AtomicBool = AtomicBool::new(false);
 
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) fn disable_callback_dispatch() {
     COMMAND_REPLY_ACTIVE.store(false, Ordering::Release);
 }
