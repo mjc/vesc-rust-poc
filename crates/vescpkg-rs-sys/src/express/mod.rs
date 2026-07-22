@@ -81,6 +81,9 @@ mod tests {
     }
 
     fn express_start(info: &mut ExpressLibInfo) -> bool {
+        if info.base_addr == 0x1000 {
+            return true;
+        }
         info.stop_fun = Some(express_noop);
         info.arg = core::ptr::null_mut();
         info.base_addr != 0
@@ -165,6 +168,14 @@ mod tests {
     #[test]
     fn native_start_checks_info_and_forwards_loader_metadata() {
         assert!(!init(core::ptr::null_mut()));
+
+        let mut missing_stop = ExpressLibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0x1000,
+        };
+        assert!(!init(&mut missing_stop));
+        assert!(missing_stop.stop_fun.is_none());
 
         let mut info = ExpressLibInfo {
             stop_fun: None,
