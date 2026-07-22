@@ -163,10 +163,10 @@ mod slots {
     use super::{
         AppDataHandler, CanRxCallback, CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4,
         CanStatusMsg5, CanStatusMsg6, CustomConfigGet, CustomConfigSet, CustomConfigXml, EepromVar,
-        ExtensionHandler, GnssData, HwType, ImuReadCallback, LbmFlatValue, LbmValue, LibMutex,
-        LibSemaphore, LibThread, PacketProcessCallback, PacketSendCallback, PacketState,
-        RemoteState, ReplyCallback, TerminalCallback, VescIfAbi, c_char, c_int, c_uchar, c_uint,
-        c_void,
+        EncoderFaultCallback, EncoderInfoCallback, EncoderReadCallback, ExtensionHandler, GnssData,
+        HwType, ImuReadCallback, LbmFlatValue, LbmValue, LibMutex, LibSemaphore, LibThread,
+        PacketProcessCallback, PacketSendCallback, PacketState, RemoteState, ReplyCallback,
+        TerminalCallback, VescIfAbi, c_char, c_int, c_uchar, c_uint, c_void,
     };
     #[cfg(not(all(target_arch = "arm", not(test))))]
     use super::{VescIf, vesc_if};
@@ -470,6 +470,10 @@ mod slots {
             as unsafe extern "C" fn(*const c_char, *const c_char, *const c_char, TerminalCallback)
     );
     optional_fn_slot!(terminal_unregister_callback as unsafe extern "C" fn(TerminalCallback));
+    optional_fn_slot!(
+        encoder_set_custom_callbacks
+            as unsafe extern "C" fn(EncoderReadCallback, EncoderFaultCallback, EncoderInfoCallback)
+    );
     fn_slot!(mc_temp_fet_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_temp_motor_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(imu_startup_done as unsafe extern "C" fn() -> bool);
@@ -1955,6 +1959,17 @@ pub unsafe fn terminal_register_command_callback(
 pub unsafe fn terminal_unregister_callback(callback: TerminalCallback) -> bool {
     unsafe { slots::terminal_unregister_callback() }
         .map(|func| unsafe { func(callback) })
+        .is_some()
+}
+
+/// Install optional custom encoder callbacks.
+pub unsafe fn encoder_set_custom_callbacks(
+    read: EncoderReadCallback,
+    fault: EncoderFaultCallback,
+    info: EncoderInfoCallback,
+) -> bool {
+    unsafe { slots::encoder_set_custom_callbacks() }
+        .map(|func| unsafe { func(read, fault, info) })
         .is_some()
 }
 /// Return the filtered input/battery voltage.

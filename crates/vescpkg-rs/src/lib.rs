@@ -34,6 +34,7 @@ mod ahrs;
 mod audio;
 mod bindings;
 mod eeprom;
+mod encoder;
 mod extension;
 mod firmware;
 mod gnss;
@@ -101,42 +102,43 @@ pub(crate) mod ffi {
     };
     #[allow(unused_imports)]
     pub use selected_ffi::{
-        commands_process_packet, commands_unregister_reply_func, f_b, f_cons, f_float, f_i32,
-        f_i64, f_lbm_array, f_sym, f_u32, f_u64, foc_beep, foc_get_audio_sample_table, foc_get_id,
-        foc_get_iq, foc_get_vd, foc_get_vq, foc_play_audio_samples, foc_play_tone,
-        foc_set_audio_sample_table, foc_set_openloop_current, foc_set_openloop_duty,
-        foc_set_openloop_duty_phase, foc_set_openloop_phase, foc_stop_audio, get_cfg_float,
-        get_cfg_int, gnss_snapshot, imu_derotate, imu_get_accel, imu_get_accel_derotated,
-        imu_get_gyro, imu_get_gyro_derotated, imu_get_mag, imu_get_pitch, imu_get_roll,
-        imu_get_yaw, imu_set_yaw, imu_startup_done, lbm_block_ctx_from_extension, lbm_car, lbm_cdr,
-        lbm_cons, lbm_create_byte_array, lbm_dec_as_float, lbm_dec_as_i32, lbm_dec_as_u32,
-        lbm_dec_char, lbm_dec_str, lbm_dec_sym, lbm_enc_char, lbm_enc_float, lbm_enc_i,
-        lbm_enc_sym, lbm_enc_u32, lbm_finish_flatten, lbm_get_current_cid, lbm_is_byte_array,
-        lbm_is_char, lbm_is_cons, lbm_is_number, lbm_is_symbol, lbm_list_destructive_reverse,
-        lbm_send_message, lbm_start_flatten, lbm_unblock_ctx, lbm_unblock_ctx_unboxed,
-        mc_dccal_done, mc_fault_to_string, mc_get_amp_hours, mc_get_amp_hours_charged,
-        mc_get_battery_level, mc_get_distance, mc_get_distance_abs, mc_get_duty_cycle_now,
-        mc_get_fault, mc_get_input_voltage_filtered, mc_get_motor_thread, mc_get_odometer,
-        mc_get_pid_pos_now, mc_get_pid_pos_set, mc_get_rpm, mc_get_sampling_frequency_now,
-        mc_get_speed, mc_get_tachometer_abs_value, mc_get_tachometer_value, mc_get_tot_current,
-        mc_get_tot_current_directional, mc_get_tot_current_directional_filtered,
-        mc_get_tot_current_filtered, mc_get_tot_current_in, mc_get_tot_current_in_filtered,
-        mc_get_watt_hours, mc_get_watt_hours_charged, mc_release_motor, mc_select_motor_thread,
-        mc_set_brake_current, mc_set_brake_current_rel, mc_set_current, mc_set_current_off_delay,
-        mc_set_current_rel, mc_set_duty, mc_set_duty_noramp, mc_set_handbrake,
-        mc_set_handbrake_rel, mc_set_odometer, mc_set_pid_pos, mc_set_pid_speed,
-        mc_set_pwm_callback, mc_stat_count_time, mc_stat_current_avg, mc_stat_current_max,
-        mc_stat_power_avg, mc_stat_power_max, mc_stat_reset, mc_stat_speed_avg, mc_stat_speed_max,
-        mc_stat_temp_mosfet_avg, mc_stat_temp_mosfet_max, mc_stat_temp_motor_avg,
-        mc_stat_temp_motor_max, mc_temp_fet_filtered, mc_temp_motor_filtered,
-        mc_update_pid_pos_offset, mc_wait_for_motor_release, packet_init, packet_process_byte,
-        packet_reset, packet_send_packet, plot_add_graph, plot_init, plot_send_points,
-        plot_set_graph, read_eeprom_word, read_nvm, store_eeprom_word,
-        terminal_register_command_callback, terminal_unregister_callback, uart_read, uart_start,
-        uart_write, vesc_free, vesc_imu_get_quaternions, vesc_mutex_create, vesc_mutex_lock,
-        vesc_mutex_unlock, vesc_request_terminate, vesc_sem_create, vesc_sem_reset,
-        vesc_sem_signal, vesc_sem_wait, vesc_sem_wait_to, vesc_should_terminate, vesc_sleep_us,
-        vesc_spawn, vesc_system_time_seconds, vesc_system_time_ticks, vesc_thread_set_priority,
+        commands_process_packet, commands_unregister_reply_func, encoder_set_custom_callbacks, f_b,
+        f_cons, f_float, f_i32, f_i64, f_lbm_array, f_sym, f_u32, f_u64, foc_beep,
+        foc_get_audio_sample_table, foc_get_id, foc_get_iq, foc_get_vd, foc_get_vq,
+        foc_play_audio_samples, foc_play_tone, foc_set_audio_sample_table,
+        foc_set_openloop_current, foc_set_openloop_duty, foc_set_openloop_duty_phase,
+        foc_set_openloop_phase, foc_stop_audio, get_cfg_float, get_cfg_int, gnss_snapshot,
+        imu_derotate, imu_get_accel, imu_get_accel_derotated, imu_get_gyro, imu_get_gyro_derotated,
+        imu_get_mag, imu_get_pitch, imu_get_roll, imu_get_yaw, imu_set_yaw, imu_startup_done,
+        lbm_block_ctx_from_extension, lbm_car, lbm_cdr, lbm_cons, lbm_create_byte_array,
+        lbm_dec_as_float, lbm_dec_as_i32, lbm_dec_as_u32, lbm_dec_char, lbm_dec_str, lbm_dec_sym,
+        lbm_enc_char, lbm_enc_float, lbm_enc_i, lbm_enc_sym, lbm_enc_u32, lbm_finish_flatten,
+        lbm_get_current_cid, lbm_is_byte_array, lbm_is_char, lbm_is_cons, lbm_is_number,
+        lbm_is_symbol, lbm_list_destructive_reverse, lbm_send_message, lbm_start_flatten,
+        lbm_unblock_ctx, lbm_unblock_ctx_unboxed, mc_dccal_done, mc_fault_to_string,
+        mc_get_amp_hours, mc_get_amp_hours_charged, mc_get_battery_level, mc_get_distance,
+        mc_get_distance_abs, mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered,
+        mc_get_motor_thread, mc_get_odometer, mc_get_pid_pos_now, mc_get_pid_pos_set, mc_get_rpm,
+        mc_get_sampling_frequency_now, mc_get_speed, mc_get_tachometer_abs_value,
+        mc_get_tachometer_value, mc_get_tot_current, mc_get_tot_current_directional,
+        mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
+        mc_get_tot_current_in, mc_get_tot_current_in_filtered, mc_get_watt_hours,
+        mc_get_watt_hours_charged, mc_release_motor, mc_select_motor_thread, mc_set_brake_current,
+        mc_set_brake_current_rel, mc_set_current, mc_set_current_off_delay, mc_set_current_rel,
+        mc_set_duty, mc_set_duty_noramp, mc_set_handbrake, mc_set_handbrake_rel, mc_set_odometer,
+        mc_set_pid_pos, mc_set_pid_speed, mc_set_pwm_callback, mc_stat_count_time,
+        mc_stat_current_avg, mc_stat_current_max, mc_stat_power_avg, mc_stat_power_max,
+        mc_stat_reset, mc_stat_speed_avg, mc_stat_speed_max, mc_stat_temp_mosfet_avg,
+        mc_stat_temp_mosfet_max, mc_stat_temp_motor_avg, mc_stat_temp_motor_max,
+        mc_temp_fet_filtered, mc_temp_motor_filtered, mc_update_pid_pos_offset,
+        mc_wait_for_motor_release, packet_init, packet_process_byte, packet_reset,
+        packet_send_packet, plot_add_graph, plot_init, plot_send_points, plot_set_graph,
+        read_eeprom_word, read_nvm, store_eeprom_word, terminal_register_command_callback,
+        terminal_unregister_callback, uart_read, uart_start, uart_write, vesc_free,
+        vesc_imu_get_quaternions, vesc_mutex_create, vesc_mutex_lock, vesc_mutex_unlock,
+        vesc_request_terminate, vesc_sem_create, vesc_sem_reset, vesc_sem_signal, vesc_sem_wait,
+        vesc_sem_wait_to, vesc_should_terminate, vesc_sleep_us, vesc_spawn,
+        vesc_system_time_seconds, vesc_system_time_ticks, vesc_thread_set_priority,
         vesc_timer_seconds_elapsed_since, vesc_timer_time_now, vesc_timestamp_age_seconds,
         wipe_nvm, write_nvm,
     };
@@ -161,6 +163,7 @@ pub use can_bus::{
     CanStatus2, CanStatus3, CanStatus4, CanStatus5, CanStatus6,
 };
 pub use eeprom::{CustomEeprom, CustomEepromAddress, EepromWord};
+pub use encoder::{Encoder, EncoderError, EncoderHandler, EncoderRegistration};
 pub use extension::{ExtensionDescriptor, ExtensionName, ExtensionRegistration};
 pub use extension::{
     LbmExtension, LispArgs, LispContextId, LispFlatValue, LispIntegerError, LispMessageError,

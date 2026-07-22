@@ -1418,6 +1418,14 @@ pub unsafe fn terminal_unregister_callback(
     true
 }
 
+pub unsafe fn encoder_set_custom_callbacks(
+    _read: unsafe extern "C" fn() -> f32,
+    _fault: unsafe extern "C" fn() -> bool,
+    _info: unsafe extern "C" fn() -> *mut c_char,
+) -> bool {
+    true
+}
+
 pub unsafe fn mc_get_distance_abs() -> f32 {
     load(&DISTANCE_ABS)
 }
