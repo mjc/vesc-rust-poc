@@ -44,6 +44,10 @@ fn lisp_values_expose_explicit_kind_predicates() {
     assert!(floating.is_number());
     assert_eq!(floating.decode_number_as_f32(), Some(3.5));
     assert_eq!(floating.decode_number_as_f64(), Some(3.5));
+    assert_eq!(floating.decode_f32_exact(), Some(3.5));
+    assert_eq!(floating.decode_f64_exact(), Some(3.5));
+    assert_eq!(integer.decode_f32_exact(), None);
+    assert_eq!(integer.decode_f64_exact(), None);
     assert_eq!(LispValue::from_f64(3.5), Some(floating));
     assert_eq!(LispValue::from_f64(3.1), None);
 
