@@ -258,6 +258,11 @@ impl<'a> ExpressLisp<'a> {
         self.symbol_constant(ExpressSlot::LbmEncSymEerror)
     }
 
+    /// Return the firmware's `merror` symbol constant.
+    pub fn symbol_merror(self) -> Result<ExpressLispSymbol, ExpressCallError> {
+        self.symbol_constant(ExpressSlot::LbmEncSymMerror)
+    }
+
     /// Return the firmware's current LispBM context identifier.
     pub fn current_cid(self) -> Result<u32, ExpressCallError> {
         let current: LbmGetCurrentCid =
