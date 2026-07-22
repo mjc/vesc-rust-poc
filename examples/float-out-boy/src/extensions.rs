@@ -53,14 +53,15 @@ impl vescpkg_rs::StatefulLbmExtension for ExtSetFwVersion {
     type State = FloatOutBoyPackageState;
 
     fn call(state: &mut Self::State, args: LispArgs<'_>) -> LispValue {
-        if args.len() > 2
-            && let (Some(major), Some(minor), Some(beta)) = (
-                args.get(0).and_then(LispValue::decode_number_as_i32),
-                args.get(1).and_then(LispValue::decode_number_as_i32),
-                args.get(2).and_then(LispValue::decode_number_as_i32),
-            )
-        {
-            record_float_out_boy_firmware_version(state, &[major, minor, beta]);
+        if args.len() > 2 {
+            let mut values = args.iter();
+            if let (Some(major), Some(minor), Some(beta)) = (
+                values.next().and_then(LispValue::decode_number_as_i32),
+                values.next().and_then(LispValue::decode_number_as_i32),
+                values.next().and_then(LispValue::decode_number_as_i32),
+            ) {
+                record_refloat_firmware_version(state, &[major, minor, beta]);
+            }
         }
         LispValue::true_value()
     }
