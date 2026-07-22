@@ -1,41 +1,25 @@
 # Float Out Boy
 
-A full-featured self-balancing skateboard package.
+Float Out Boy is an unofficial Rust port of [Refloat](https://github.com/lukash/refloat), a full-featured self-balancing skateboard package for VESC-based controllers.
 
-Float Out Boy is a Rust port of [the original package](https://github.com/lukash/refloat). It is intentionally renamed to avoid confusion with the original package.
+The new name is intentional: this is a separate Rust implementation, and calling it Refloat would make it too easy to confuse the port with the original project, its releases, and its support channels.
 
-## New in 1.2
-- BMS alerting support (Pushback and Haptic)
-- Speed-based alerting (Pushback and Haptic)
-- Automatic config migration when updating the package
-- Support for per-cell High/Low Voltage Thresholds (no more needing to adjust them in Specs after a fresh install, 6.05+ only)
-- Groundworks for a new alerting system, for now only providing firmware fault reporting
-- New Rainbow Fade, Rainbow Cycle and Rainbow Roll LED effects
+## Installation and upgrades
 
-For more details, read the [1.2 release post](https://pev.dev/t/refloat-version-1-2/2795).
+Back up your package configuration before upgrading, either with **Backup Configs** on the Start page or by saving the XML from **Float Out Boy Cfg**.
 
-## Installation
-### Upgrading
-Back up your package config (either by **Backup Configs** on the Start page, or by saving the XML on **Float Out Boy Cfg**).
+For a fresh board installation, complete the motor and IMU calibration before installing the package. If the package is already installed, disable it while running motor calibration and re-enable it afterward.
 
-If upgrading from Float Out Boy 1.1 to 1.2, an automatic config restore dialog should pop up. Confirm it to restore. This is the preferred way to update the config from now on, as it will also migrate any changed options to the new version. Other methods of restoring the config will not do that.
+The [Initial Board Setup guide](https://pev.dev/t/initial-board-setup-in-vesc-tool/2190) covers the VESC Tool setup process. On firmware 6.02, set the **Low and High Tiltback voltages** on the **Specs** tab to match the battery. Newer firmware can use the package's per-cell voltage thresholds.
 
-In case the automatic config restore fails, restore it the traditional way and please report the issue, so that it can be fixed.
+## Safety
 
-### Fresh Installation
-If doing a fresh board installation, you need to do the **motor** and **IMU** calibration and configuration. If you install the package before that, you need to disable the package before running the **motor** _calibration_ and re-enable it afterwards.
+**Use at your own risk.** Electric vehicles are inherently dangerous. The authors and contributors are not liable for damage or injury caused by this software. Float Out Boy is not endorsed by the VESC project.
 
-For a detailed guide, read the [Initial Board Setup guide on pev.dev](https://pev.dev/t/initial-board-setup-in-vesc-tool/2190).
+## Lineage and credits
 
-On 6.05+ firmware, the package should ride well without the need to configure anything in Float Out Boy Cfg. On 6.02, the **Low and High Tiltback voltages** on the **Specs** tab of **Float Out Boy Cfg** still need to be set according to your battery specs.
+Float Out Boy follows the behavior and package design of Refloat while porting the native implementation to Rust. Refloat is authored by Lukáš Hrázký and builds on the original Float package by Mitch Lustig, Dado Mista, and Nico Aleman.
 
-## Disclaimer
-**Use at your own risk!** Electric vehicles are inherently dangerous, authors of this package shall not be liable for any damage or harm caused by errors in the software. Not endorsed by the VESC project.
-
-## Credits
-Author: Lukáš Hrázký
-
-Original Float package authors: Mitch Lustig, Dado Mista, Nico Aleman
-
-## Downloads and Changelogs
-[Upstream releases](https://github.com/lukash/refloat/releases)
+- [Refloat source](https://github.com/lukash/refloat)
+- [Refloat releases](https://github.com/lukash/refloat/releases)
+- [Refloat 1.2 release notes](https://pev.dev/t/refloat-version-1-2/2795)

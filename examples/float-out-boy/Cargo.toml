@@ -3,7 +3,7 @@ name = "vesc-example-float-out-boy"
 version = "0.1.0"
 edition = "2024"
 rust-version.workspace = true
-description = "Unofficial Float Out Boy Rust port of Float Out Boy, renamed to avoid confusion with the original package."
+description = "Unofficial Rust port of Refloat, renamed Float Out Boy to avoid confusion with the original package."
 
 publish = false
 
