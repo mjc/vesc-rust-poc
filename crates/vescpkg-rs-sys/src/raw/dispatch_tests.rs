@@ -337,6 +337,10 @@ extern "C" fn stub_lbm_dec_sym(value: LbmValue) -> u32 {
     value.0 - 0x40
 }
 
+extern "C" fn stub_lbm_send_message(_context: u32, _message: LbmValue) -> c_int {
+    1
+}
+
 extern "C" fn stub_lbm_is_number(value: u32) -> bool {
     LBM_IS_NUMBER.inc();
     LAST_LBM_VALUE.set(value);
@@ -646,6 +650,7 @@ fn populated_table() -> VescIf {
     table.lbm_create_byte_array = Some(stub_lbm_create_byte_array);
     table.lbm_enc_sym = Some(stub_lbm_enc_sym);
     table.lbm_dec_sym = Some(stub_lbm_dec_sym);
+    table.lbm_send_message = Some(stub_lbm_send_message);
     table.lbm_is_number = Some(stub_lbm_is_number);
     table.lbm_enc_sym_nil = 0xAABB_0000;
     table.lbm_enc_sym_true = 0xAABB_1100;
