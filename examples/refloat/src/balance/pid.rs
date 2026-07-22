@@ -403,8 +403,8 @@ impl Phase {
                 config.ki_limit,
             ),
         };
-        let mut state = state.with_updated_pid_scales(self.config, self.input.motor_erpm);
-        state.pid_integral_current = currents.integral;
+        let state =
+            state.with_updated_pid_state(self.config, self.input.motor_erpm, currents.integral);
 
         (currents, state)
     }
@@ -423,17 +423,21 @@ impl LoopInput {
 }
 
 impl LoopState {
-    /// Source map: upstream smooths PID brake/accel scales at
-    /// `third_party/refloat/src/pid.c:48-67`.
+    /// Source map: upstream stores integral current and smooths PID scales at
+    /// `third_party/refloat/src/pid.c:40-67`.
     #[inline(always)]
-    pub(super) fn with_updated_pid_scales(
+    pub(super) fn with_updated_pid_state(
         self,
         config: LoopConfig,
         motor_erpm: ElectricalSpeed,
+        integral: MotorCurrent,
     ) -> Self {
-        ScaleDirection::from_motor_erpm(motor_erpm)
-            .targets(config)
-            .smoothed_into(self)
+        Self {
+            pid_integral_current: integral,
+            ..ScaleDirection::from_motor_erpm(motor_erpm)
+                .targets(config)
+                .smoothed_into(self)
+        }
     }
 }
 use vescpkg_rs::{cos, sin};

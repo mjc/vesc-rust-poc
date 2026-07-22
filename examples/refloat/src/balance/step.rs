@@ -154,17 +154,20 @@ mod tests {
         };
         let state = base_state();
 
-        let coasting = state.with_updated_pid_scales(
+        let coasting = state.with_updated_pid_state(
             config,
             electrical_speed(Rpm::from_revolutions_per_minute(0.0)),
+            state.pid_integral_current,
         );
-        let forward = state.with_updated_pid_scales(
+        let forward = state.with_updated_pid_state(
             config,
             electrical_speed(Rpm::from_revolutions_per_minute(1000.0)),
+            state.pid_integral_current,
         );
-        let reverse = state.with_updated_pid_scales(
+        let reverse = state.with_updated_pid_state(
             config,
             electrical_speed(Rpm::from_revolutions_per_minute(-1000.0)),
+            state.pid_integral_current,
         );
 
         assert_scale(coasting.pid_kp_brake_scale, PidScale::new(1.0));
