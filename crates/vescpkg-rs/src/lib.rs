@@ -275,17 +275,19 @@ pub mod prelude {
         Encoder, EncoderError, EncoderHandler, EncoderRegistration, ExtensionDescriptor,
         ExtensionName, ExtensionRegistration, Firmware, FirmwareAhrs, FirmwareAhrsError,
         FirmwareAhrsParameters, FirmwareAhrsSnapshot, FirmwareAppData, FirmwareCapabilities,
-        FirmwareClock, FirmwareFloatSetting, FirmwareInputs, FirmwareIntSetting, FirmwareMutex,
-        FirmwareMutexGuard, FirmwareSemaphore, FirmwareSettings, FirmwareThread, FirmwareThreads,
-        Gnss, GnssError, GnssSnapshot, Gpio, Imu, ImuReadCallback, ImuReadCallbackError,
-        ImuReadCallbackLease, ImuReadHandler, LbmExtension, LispArgs, LispContextId, LispFlatValue,
-        LispIntegerError, LispMessageError, LispProcess, LispSymbol, LispValue, MotorOutput,
-        MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset, PackageRuntimeState, PackageStart,
-        PackageStartError, PacketCodec, PacketError, PacketHandler, Plot, PlotError, SettingsError,
-        StatefulCustomConfigCallback, StatefulLbmExtension, StatelessFirmwareThread,
-        StatelessThreadContext, Terminal, TerminalError, TerminalHandler, TerminalRegistration,
-        ThreadContext, ThreadError, ThreadName, ThreadSpec, ThreadWorkingAreaSize,
-        ThreadWorkingAreaSizeError, TimerInstant, Uart, UartError, UartLease,
+        FirmwareClock, FirmwareFloatSetting, FirmwareInputs, FirmwareIntSetting, FirmwareLog,
+        FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore, FirmwareSettings, FirmwareThread,
+        FirmwareThreads, FocAudio, FocAudioError, FocAudioSampleTable, Gnss, GnssError,
+        GnssSnapshot, Gpio, Imu, ImuReadCallback, ImuReadCallbackError, ImuReadCallbackLease,
+        ImuReadHandler, InputError, LbmExtension, LispArgs, LispContextId, LispFlatValue,
+        LispIntegerError, LispMessageError, LispProcess, LispSymbol, LispValue, LogError,
+        MotorOutput, MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset, PackageStartError,
+        PacketCodec, PacketError, PacketHandler, Plot, PlotError, PpmSnapshot, RemoteInputSnapshot,
+        SettingsError, ShutdownInhibit, StatefulCustomConfigCallback, StatefulLbmExtension,
+        StatelessFirmwareThread, StatelessThreadContext, Terminal, TerminalError, TerminalHandler,
+        TerminalRegistration, ThreadContext, ThreadError, ThreadName, ThreadSpec,
+        ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimeoutSnapshot, TimerInstant, Uart,
+        UartError, UartLease,
     };
 }
 
@@ -356,6 +358,15 @@ mod tests {
         let _: Option<LispMessageError> = None;
         let _: Option<LispProcess> = None;
         let _: Option<LispSymbol> = None;
+        let _: Option<FocAudio> = None;
+        let _: Option<FocAudioError> = None;
+        let _: Option<FocAudioSampleTable<'_>> = None;
+        let _: Option<FirmwareLog<32>> = None;
+        let _: Option<InputError> = None;
+        let _: Option<PpmSnapshot> = None;
+        let _: Option<RemoteInputSnapshot> = None;
+        let _: Option<ShutdownInhibit> = None;
+        let _: Option<TimeoutSnapshot> = None;
 
         assert_eq!(switch, BrakeSwitch::Released);
     }
