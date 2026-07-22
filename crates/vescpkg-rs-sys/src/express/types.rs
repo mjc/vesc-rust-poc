@@ -32,6 +32,26 @@ pub enum ExpressTarget {
 }
 
 impl ExpressTarget {
+    /// Return the ESP-IDF target name used by Express firmware builds.
+    pub const fn target_name(self) -> &'static str {
+        match self {
+            Self::Esp32C3 => "esp32c3",
+            Self::Esp32S3 => "esp32s3",
+            Self::Esp32C6 => "esp32c6",
+            Self::Esp32P4 => "esp32p4",
+        }
+    }
+
+    /// Return the `sdkconfig.h` preprocessor define required for this target.
+    pub const fn sdkconfig_define(self) -> &'static str {
+        match self {
+            Self::Esp32C3 => "CONFIG_IDF_TARGET_ESP32C3",
+            Self::Esp32S3 => "CONFIG_IDF_TARGET_ESP32S3",
+            Self::Esp32C6 => "CONFIG_IDF_TARGET_ESP32C6",
+            Self::Esp32P4 => "CONFIG_IDF_TARGET_ESP32P4",
+        }
+    }
+
     /// Return the firmware address of the Express interface table.
     pub const fn interface_address(self) -> u32 {
         match self {
