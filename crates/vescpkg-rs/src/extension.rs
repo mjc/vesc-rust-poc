@@ -445,6 +445,12 @@ impl LispValue {
         self.is_byte_array()
     }
 
+    /// Return whether this value can be used as a LispBM string.
+    #[must_use]
+    pub fn is_string(self) -> bool {
+        self.is_byte_array()
+    }
+
     /// Return whether this value is the canonical `LispBM` nil value.
     #[must_use]
     pub fn is_nil(self) -> bool {
