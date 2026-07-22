@@ -88,6 +88,11 @@ fn lisp_values_expose_explicit_kind_predicates() {
     );
 
     let current = LispProcess::current();
+    assert!(!LispProcess::is_evaluation_paused());
+    LispProcess::pause_evaluation(32);
+    assert!(LispProcess::is_evaluation_paused());
+    LispProcess::continue_evaluation();
+    assert!(!LispProcess::is_evaluation_paused());
     LispProcess::block_current();
     assert!(LispProcess::unblock(current, integer).is_ok());
 }

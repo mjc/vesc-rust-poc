@@ -221,6 +221,7 @@ static LBM_CONS_CAR: AtomicU32 = AtomicU32::new(0);
 static LBM_CONS_CDR: AtomicU32 = AtomicU32::new(0);
 static LBM_SYMBOL_ID: AtomicU32 = AtomicU32::new(0);
 static LBM_MESSAGE_FAILURE: AtomicBool = AtomicBool::new(false);
+static LBM_EVAL_PAUSED: AtomicBool = AtomicBool::new(false);
 static LBM_STRING: [u8; 5] = *b"vesc\0";
 const LBM_BYTE_ARRAY: u32 = 0x03;
 static CLOCK_TICKS: AtomicU32 = AtomicU32::new(0);
@@ -569,6 +570,18 @@ pub unsafe fn lbm_get_current_cid() -> u32 {
 }
 
 pub unsafe fn lbm_block_ctx_from_extension() {}
+
+pub unsafe fn lbm_pause_eval_with_gc(_minimum_free: u32) {
+    LBM_EVAL_PAUSED.store(true, Ordering::Relaxed);
+}
+
+pub unsafe fn lbm_continue_eval() {
+    LBM_EVAL_PAUSED.store(false, Ordering::Relaxed);
+}
+
+pub unsafe fn lbm_eval_is_paused() -> bool {
+    LBM_EVAL_PAUSED.load(Ordering::Relaxed)
+}
 
 pub unsafe fn lbm_set_error_reason(reason: *mut c_char) -> c_int {
     if reason.is_null() { 0 } else { 1 }
