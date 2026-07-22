@@ -148,6 +148,11 @@ pub(crate) mod ffi {
 
 pub use vesc_protocol::buffer as protocol_buffer;
 use vescpkg_rs_units as units;
+/// Capability-safe ABI inspection for loaders and host fixtures.
+pub use vescpkg_rs_sys::{
+    AbiError, Stm32AbiRevision, VescIfCapability, VescIfCapabilities as FirmwareCapabilities,
+    VescIfPresence, VescIfSubsystem,
+};
 pub use vescpkg_rs_units::{
     AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, BatteryCellCount,
     BatteryCellCountError, Charge, Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance,
