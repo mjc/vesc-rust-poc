@@ -35,6 +35,9 @@ fn typed_settings_read_write_and_persist() {
     settings
         .set_int(FirmwareIntSetting::BatteryCellCount, 12)
         .unwrap();
+    assert_eq!(settings.get_int(FirmwareIntSetting::AppCanMode), 2);
+    settings.set_int(FirmwareIntSetting::AppCanMode, 1).unwrap();
+    assert_eq!(settings.get_int(FirmwareIntSetting::AppCanMode), 1);
     assert_eq!(settings.get_int(FirmwareIntSetting::BatteryCellCount), 12);
     assert_eq!(settings.battery_cell_count().unwrap().as_u16(), 12);
     settings

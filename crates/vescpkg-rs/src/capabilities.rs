@@ -56,6 +56,48 @@ pub enum FirmwareFloatSetting {
     MinDuty,
     /// Maximum duty-cycle limit.
     MaxDuty,
+    /// IMU accelerometer confidence decay (`CFG_PARAM_IMU_accel_confidence_decay`).
+    ImuAccelerationConfidenceDecay,
+    /// Mahony proportional gain (`CFG_PARAM_IMU_mahony_kp`).
+    ImuMahonyKp,
+    /// Mahony integral gain (`CFG_PARAM_IMU_mahony_ki`).
+    ImuMahonyKi,
+    /// Madgwick beta gain (`CFG_PARAM_IMU_madgwick_beta`).
+    ImuMadgwickBeta,
+    /// IMU roll mounting rotation (`CFG_PARAM_IMU_rot_roll`).
+    ImuRotationRoll,
+    /// IMU pitch mounting rotation (`CFG_PARAM_IMU_rot_pitch`).
+    ImuRotationPitch,
+    /// IMU yaw mounting rotation (`CFG_PARAM_IMU_rot_yaw`).
+    ImuRotationYaw,
+    /// IMU sample rate (`CFG_PARAM_IMU_sample_rate`).
+    ImuSampleRate,
+    /// IMU accelerometer X offset (`CFG_PARAM_IMU_accel_offset_x`).
+    ImuAccelerationOffsetX,
+    /// IMU accelerometer Y offset (`CFG_PARAM_IMU_accel_offset_y`).
+    ImuAccelerationOffsetY,
+    /// IMU accelerometer Z offset (`CFG_PARAM_IMU_accel_offset_z`).
+    ImuAccelerationOffsetZ,
+    /// IMU gyro X offset (`CFG_PARAM_IMU_gyro_offset_x`).
+    ImuGyroOffsetX,
+    /// IMU gyro Y offset (`CFG_PARAM_IMU_gyro_offset_y`).
+    ImuGyroOffsetY,
+    /// IMU gyro Z offset (`CFG_PARAM_IMU_gyro_offset_z`).
+    ImuGyroOffsetZ,
+    /// Gear ratio (`CFG_PARAM_si_gear_ratio`).
+    GearRatio,
+    /// Wheel diameter (`CFG_PARAM_si_wheel_diameter`).
+    WheelDiameter,
+    /// Battery capacity in amp-hours (`CFG_PARAM_si_battery_ah`).
+    BatteryCapacity,
+    /// Motor no-load current (`CFG_PARAM_si_motor_nl_current`).
+    MotorNoLoadCurrent,
+    /// FOC motor resistance (`CFG_PARAM_foc_motor_r`).
+    FocMotorResistance,
+    /// FOC motor inductance (`CFG_PARAM_foc_motor_l`).
+    FocMotorInductance,
+    /// FOC motor flux linkage (`CFG_PARAM_foc_motor_flux_linkage`).
+    FocMotorFluxLinkage,
 }
 
 impl FirmwareFloatSetting {
@@ -82,6 +124,27 @@ impl FirmwareFloatSetting {
             Self::TemperatureAccelerationDecrease => 20,
             Self::MinDuty => 21,
             Self::MaxDuty => 22,
+            Self::ImuAccelerationConfidenceDecay => 23,
+            Self::ImuMahonyKp => 24,
+            Self::ImuMahonyKi => 25,
+            Self::ImuMadgwickBeta => 26,
+            Self::ImuRotationRoll => 27,
+            Self::ImuRotationPitch => 28,
+            Self::ImuRotationYaw => 29,
+            Self::ImuSampleRate => 31,
+            Self::ImuAccelerationOffsetX => 32,
+            Self::ImuAccelerationOffsetY => 33,
+            Self::ImuAccelerationOffsetZ => 34,
+            Self::ImuGyroOffsetX => 35,
+            Self::ImuGyroOffsetY => 36,
+            Self::ImuGyroOffsetZ => 37,
+            Self::GearRatio => 40,
+            Self::WheelDiameter => 41,
+            Self::BatteryCapacity => 44,
+            Self::MotorNoLoadCurrent => 45,
+            Self::FocMotorResistance => 46,
+            Self::FocMotorInductance => 47,
+            Self::FocMotorFluxLinkage => 48,
         }
     }
 }
@@ -89,6 +152,18 @@ impl FirmwareFloatSetting {
 /// An integer firmware setting exposed by the pinned VESC ABI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FirmwareIntSetting {
+    /// CAN application mode (`CFG_PARAM_app_can_mode`).
+    AppCanMode,
+    /// CAN bus baud-rate selector (`CFG_PARAM_app_can_baud_rate`).
+    AppCanBaudRate,
+    /// IMU AHRS algorithm selector (`CFG_PARAM_IMU_ahrs_mode`).
+    ImuAhrsMode,
+    /// Application shutdown mode (`CFG_PARAM_app_shutdown_mode`).
+    AppShutdownMode,
+    /// Motor pole count (`CFG_PARAM_si_motor_poles`).
+    MotorPoleCount,
+    /// Battery chemistry selector (`CFG_PARAM_si_battery_type`).
+    BatteryType,
     /// Battery cell count (`CFG_PARAM_si_battery_cells`).
     BatteryCellCount,
 }
@@ -96,6 +171,12 @@ pub enum FirmwareIntSetting {
 impl FirmwareIntSetting {
     const fn raw(self) -> i32 {
         match self {
+            Self::AppCanMode => 14,
+            Self::AppCanBaudRate => 15,
+            Self::ImuAhrsMode => 30,
+            Self::AppShutdownMode => 38,
+            Self::MotorPoleCount => 39,
+            Self::BatteryType => 42,
             Self::BatteryCellCount => 43,
         }
     }

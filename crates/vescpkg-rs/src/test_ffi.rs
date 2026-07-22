@@ -119,6 +119,7 @@ static MOSFET_TEMPERATURE_LIMIT_START: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE_LIMIT_START: AtomicU32 = AtomicU32::new(0);
 static DUTY_CYCLE_LIMIT: AtomicU32 = AtomicU32::new(0);
 static BATTERY_CELL_COUNT: AtomicI32 = AtomicI32::new(0);
+static APP_CAN_MODE: AtomicI32 = AtomicI32::new(0);
 static CONFIG_WRITE_OK: AtomicBool = AtomicBool::new(true);
 static CONFIG_STORE_OK: AtomicBool = AtomicBool::new(true);
 static INPUT_CURRENT: AtomicU32 = AtomicU32::new(0);
@@ -352,6 +353,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     CAN_STATUS_DUTY_BITS.store(0x3e80_0000, Ordering::Relaxed);
     CAN_STATUS_PPM_BITS.store(0x3f00_0000, Ordering::Relaxed);
     BATTERY_CELL_COUNT.store(0, Ordering::Relaxed);
+    APP_CAN_MODE.store(2, Ordering::Relaxed);
     CONFIG_WRITE_OK.store(true, Ordering::Relaxed);
     CONFIG_STORE_OK.store(true, Ordering::Relaxed);
     INPUT_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -1458,6 +1460,7 @@ pub unsafe fn get_cfg_float(param: i32) -> f32 {
 
 pub unsafe fn get_cfg_int(param: i32) -> i32 {
     match param {
+        14 => APP_CAN_MODE.load(Ordering::Relaxed),
         43 => BATTERY_CELL_COUNT.load(Ordering::Relaxed),
         _ => 0,
     }
@@ -1484,6 +1487,7 @@ pub unsafe fn set_cfg_int(param: i32, value: i32) -> bool {
         return false;
     }
     match param {
+        14 => APP_CAN_MODE.store(value, Ordering::Relaxed),
         43 => BATTERY_CELL_COUNT.store(value, Ordering::Relaxed),
         _ => return false,
     }
