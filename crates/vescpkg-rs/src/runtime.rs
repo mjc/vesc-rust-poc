@@ -82,6 +82,39 @@ pub(crate) fn disable_callback_dispatch() {
     crate::terminal::disable_callback_dispatch();
 }
 
+static APP_DATA_REGISTRATION_LIVE: AtomicBool = AtomicBool::new(false);
+static CUSTOM_CONFIG_REGISTRATION_LIVE: AtomicBool = AtomicBool::new(false);
+
+/// Claim the package-global app-data callback slot.
+pub(crate) fn claim_app_data_registration() -> bool {
+    APP_DATA_REGISTRATION_LIVE
+        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_ok()
+}
+
+/// Release a failed or stopped app-data callback registration.
+pub(crate) fn release_app_data_registration() {
+    APP_DATA_REGISTRATION_LIVE.store(false, Ordering::Release);
+}
+
+/// Claim the package-global custom-config callback slot.
+pub(crate) fn claim_custom_config_registration() -> bool {
+    CUSTOM_CONFIG_REGISTRATION_LIVE
+        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_ok()
+}
+
+/// Release a failed or stopped custom-config callback registration.
+pub(crate) fn release_custom_config_registration() {
+    CUSTOM_CONFIG_REGISTRATION_LIVE.store(false, Ordering::Release);
+}
+
+/// Release callback slots owned by the package lifecycle.
+pub(crate) fn release_callback_registrations() {
+    release_app_data_registration();
+    release_custom_config_registration();
+}
+
 #[cfg(not(target_arch = "arm"))]
 #[derive(Clone, Copy)]
 pub(crate) struct CallbackRecorder {
