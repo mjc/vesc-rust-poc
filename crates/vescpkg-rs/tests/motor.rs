@@ -77,10 +77,7 @@ fn motor_exposes_typed_handbrake_commands() {
         telemetry.signed_trip_distance().distance().as_meters(),
         -3.5
     );
-    assert_eq!(
-        telemetry.pid_position_setpoint().angle().as_degrees(),
-        42.0
-    );
+    assert_eq!(telemetry.pid_position_setpoint().angle().as_degrees(), 42.0);
     assert_eq!(telemetry.pid_position().angle().as_degrees(), 12.0);
     assert_eq!(telemetry.tachometer(false).steps().as_steps(), 1234);
     assert_eq!(telemetry.absolute_tachometer(true).steps().as_steps(), 5678);

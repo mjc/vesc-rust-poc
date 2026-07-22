@@ -13,8 +13,8 @@ use crate::types::{
     HandbrakeCurrent, HandbrakeRelative, InputCurrent, InputVoltage, MosfetTemperature,
     MotorCurrent, MotorCurrentLimit, MotorStatisticDuration, MotorTemperature,
     PeakMosfetTemperature, PeakMotorCurrent, PeakMotorTemperature, PeakPower, PeakVehicleSpeed,
-    TachometerSteps, TemperatureLimitStart, TotalMotorCurrent, TripDistance, VehicleSpeed,
-    WattHoursCharged, WattHoursDischarged,
+    PidPosition, SignedTripDistance, TachometerSteps, TemperatureLimitStart, TotalMotorCurrent,
+    TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 #[cfg(not(test))]
 use crate::units::{Charge, Current, Distance, Energy, Power, Rpm, Speed, Temperature, Voltage};
@@ -136,6 +136,12 @@ pub trait MotorTelemetryBindings {
     fn d_axis_current(&self) -> Option<DCurrent>;
     /// Return the absolute distance travelled by the motor/vehicle.
     fn trip_distance(&self) -> TripDistance;
+    /// Return signed distance travelled by the motor/vehicle.
+    fn signed_trip_distance(&self) -> SignedTripDistance;
+    /// Return the firmware PID-position setpoint.
+    fn pid_position_setpoint(&self) -> PidPosition;
+    /// Return the current firmware PID position.
+    fn pid_position(&self) -> PidPosition;
     /// Return the filtered MOSFET/FET temperature.
     fn mosfet_temperature(&self) -> MosfetTemperature;
     /// Return the filtered motor temperature.
@@ -288,6 +294,18 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
         (**self).trip_distance()
     }
 
+    fn signed_trip_distance(&self) -> SignedTripDistance {
+        (**self).signed_trip_distance()
+    }
+
+    fn pid_position_setpoint(&self) -> PidPosition {
+        (**self).pid_position_setpoint()
+    }
+
+    fn pid_position(&self) -> PidPosition {
+        (**self).pid_position()
+    }
+
     fn mosfet_temperature(&self) -> MosfetTemperature {
         (**self).mosfet_temperature()
     }
@@ -384,6 +402,10 @@ pub trait MotorControlBindings {
     fn set_handbrake_relative(&self, current: HandbrakeRelative);
     /// Reset accumulated motor statistics.
     fn reset_statistics(&self);
+    /// Update the firmware PID-position offset and optionally persist it.
+    fn update_pid_position_offset(&self, position: PidPosition, store: bool);
+    /// Set the firmware-owned odometer distance in meters.
+    fn set_odometer(&self, odometer: OdometerMeters);
     /// Release the motor output.
     fn release_motor(&self);
     /// Wait up to `timeout` for the motor output to be released.
@@ -422,6 +444,14 @@ impl<B: MotorControlBindings + ?Sized> MotorControlBindings for &B {
 
     fn reset_statistics(&self) {
         (**self).reset_statistics();
+    }
+
+    fn update_pid_position_offset(&self, position: PidPosition, store: bool) {
+        (**self).update_pid_position_offset(position, store);
+    }
+
+    fn set_odometer(&self, odometer: OdometerMeters) {
+        (**self).set_odometer(odometer);
     }
 
     fn release_motor(&self) {
@@ -617,6 +647,24 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         }))
     }
 
+    fn signed_trip_distance(&self) -> SignedTripDistance {
+        SignedTripDistance::new(Distance::from_meters(unsafe {
+            crate::ffi::mc_get_distance()
+        }))
+    }
+
+    fn pid_position_setpoint(&self) -> PidPosition {
+        PidPosition::new(crate::units::AngleDegrees::from_degrees(unsafe {
+            crate::ffi::mc_get_pid_pos_set()
+        }))
+    }
+
+    fn pid_position(&self) -> PidPosition {
+        PidPosition::new(crate::units::AngleDegrees::from_degrees(unsafe {
+            crate::ffi::mc_get_pid_pos_now()
+        }))
+    }
+
     fn mosfet_temperature(&self) -> MosfetTemperature {
         MosfetTemperature::new(Temperature::from_degrees_celsius(unsafe {
             crate::ffi::mc_temp_fet_filtered()
@@ -734,6 +782,14 @@ impl MotorControlBindings for RealMotorControlBindings {
         unsafe { crate::ffi::mc_stat_reset() };
     }
 
+    fn update_pid_position_offset(&self, position: PidPosition, store: bool) {
+        unsafe { crate::ffi::mc_update_pid_pos_offset(position.angle().as_degrees(), store) };
+    }
+
+    fn set_odometer(&self, odometer: OdometerMeters) {
+        unsafe { crate::ffi::mc_set_odometer(odometer.as_meters()) };
+    }
+
     fn release_motor(&self) {
         unsafe { crate::ffi::mc_release_motor() };
     }
@@ -838,6 +894,12 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn d_axis_current(&self) -> Option<DCurrent>;
     /// Return the absolute distance travelled by the motor/vehicle.
     fn trip_distance(&self) -> TripDistance;
+    /// Return signed distance travelled by the motor/vehicle.
+    fn signed_trip_distance(&self) -> SignedTripDistance;
+    /// Return the firmware PID-position setpoint.
+    fn pid_position_setpoint(&self) -> PidPosition;
+    /// Return the current firmware PID position.
+    fn pid_position(&self) -> PidPosition;
     /// Return the filtered MOSFET/FET temperature.
     fn mosfet_temperature(&self) -> MosfetTemperature;
     /// Return the filtered motor temperature.
@@ -890,6 +952,10 @@ pub trait MotorOutput: private::MotorOutput {
     fn set_handbrake_relative(&self, current: HandbrakeRelative);
     /// Reset accumulated motor statistics.
     fn reset_statistics(&self);
+    /// Update the firmware PID-position offset and optionally persist it.
+    fn update_pid_position_offset(&self, position: PidPosition, store: bool);
+    /// Set the firmware-owned odometer distance in meters.
+    fn set_odometer(&self, odometer: OdometerMeters);
     /// Release the motor output.
     fn release_motor(&self);
     /// Wait up to `timeout` for the motor output to be released.
@@ -1111,6 +1177,21 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.trip_distance()
     }
 
+    /// Return signed distance travelled by the motor/vehicle.
+    pub fn signed_trip_distance(&self) -> SignedTripDistance {
+        self.bindings.signed_trip_distance()
+    }
+
+    /// Return the firmware PID-position setpoint.
+    pub fn pid_position_setpoint(&self) -> PidPosition {
+        self.bindings.pid_position_setpoint()
+    }
+
+    /// Return the current firmware PID position.
+    pub fn pid_position(&self) -> PidPosition {
+        self.bindings.pid_position()
+    }
+
     /// Return the filtered MOSFET/FET temperature.
     pub fn mosfet_temperature(&self) -> MosfetTemperature {
         self.bindings.mosfet_temperature()
@@ -1307,6 +1388,18 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
         self.trip_distance()
     }
 
+    fn signed_trip_distance(&self) -> SignedTripDistance {
+        self.signed_trip_distance()
+    }
+
+    fn pid_position_setpoint(&self) -> PidPosition {
+        self.pid_position_setpoint()
+    }
+
+    fn pid_position(&self) -> PidPosition {
+        self.pid_position()
+    }
+
     fn mosfet_temperature(&self) -> MosfetTemperature {
         self.mosfet_temperature()
     }
@@ -1418,6 +1511,16 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
         self.bindings.reset_statistics();
     }
 
+    /// Update the firmware PID-position offset and optionally persist it.
+    pub fn update_pid_position_offset(&self, position: PidPosition, store: bool) {
+        self.bindings.update_pid_position_offset(position, store);
+    }
+
+    /// Set the firmware-owned odometer distance in meters.
+    pub fn set_odometer(&self, odometer: OdometerMeters) {
+        self.bindings.set_odometer(odometer);
+    }
+
     /// Release the motor output.
     pub fn release_motor(&self) {
         self.bindings.release_motor();
@@ -1464,6 +1567,14 @@ impl<B: MotorControlBindings> MotorOutput for MotorControlApi<B> {
 
     fn reset_statistics(&self) {
         MotorControlApi::reset_statistics(self);
+    }
+
+    fn update_pid_position_offset(&self, position: PidPosition, store: bool) {
+        MotorControlApi::update_pid_position_offset(self, position, store);
+    }
+
+    fn set_odometer(&self, odometer: OdometerMeters) {
+        MotorControlApi::set_odometer(self, odometer);
     }
 
     fn release_motor(&self) {

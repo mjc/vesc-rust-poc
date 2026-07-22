@@ -1261,6 +1261,20 @@ pub unsafe fn mc_get_distance_abs() -> f32 {
     load(&DISTANCE_ABS)
 }
 
+pub unsafe fn mc_get_distance() -> f32 {
+    -3.5
+}
+
+pub unsafe fn mc_get_pid_pos_set() -> f32 {
+    42.0
+}
+
+pub unsafe fn mc_get_pid_pos_now() -> f32 {
+    12.0
+}
+
+pub unsafe fn mc_update_pid_pos_offset(_angle_now: f32, _store: bool) {}
+
 pub unsafe fn mc_temp_fet_filtered() -> f32 {
     load(&MOSFET_TEMPERATURE)
 }
@@ -1272,6 +1286,8 @@ pub unsafe fn mc_temp_motor_filtered() -> f32 {
 pub unsafe fn mc_get_odometer() -> u64 {
     ODOMETER.load(Ordering::Relaxed)
 }
+
+pub unsafe fn mc_set_odometer(_meters: u64) {}
 
 pub unsafe fn mc_get_amp_hours(_reset: bool) -> f32 {
     load(&AMP_HOURS_DISCHARGED)

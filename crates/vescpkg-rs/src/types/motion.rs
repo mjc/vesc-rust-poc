@@ -132,6 +132,10 @@ speed_type!(VehicleSpeed, "Estimated vehicle speed.");
 speed_type!(AverageVehicleSpeed, "Average vehicle speed statistic.");
 speed_type!(PeakVehicleSpeed, "Peak vehicle speed statistic.");
 distance_type!(TripDistance, "Trip distance travelled by the vehicle.");
+distance_type!(
+    SignedTripDistance,
+    "Signed trip distance travelled by the vehicle."
+);
 mechanical_rpm_type!(MechanicalSpeed, "Mechanical motor speed.");
 electrical_rpm_type!(ElectricalSpeed, "Electrical motor speed.");
 tachometer_type!(TachometerSteps, "Relative tachometer position.");

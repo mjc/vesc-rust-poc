@@ -372,6 +372,9 @@ mod slots {
     fn_slot!(mc_get_sampling_frequency_now as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_tachometer_value as unsafe extern "C" fn(bool) -> c_int);
     fn_slot!(mc_get_tachometer_abs_value as unsafe extern "C" fn(bool) -> c_int);
+    fn_slot!(mc_get_pid_pos_set as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_get_pid_pos_now as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_update_pid_pos_offset as unsafe extern "C" fn(f32, bool));
     fn_slot!(mc_stat_power_avg as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_stat_power_max as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_stat_speed_avg as unsafe extern "C" fn() -> f32);
@@ -391,7 +394,9 @@ mod slots {
     fn_slot!(mc_get_watt_hours_charged as unsafe extern "C" fn(bool) -> f32);
     fn_slot!(mc_get_battery_level as unsafe extern "C" fn(*mut f32) -> f32);
     fn_slot!(mc_get_distance_abs as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_get_distance as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_odometer as unsafe extern "C" fn() -> u64);
+    fn_slot!(mc_set_odometer as unsafe extern "C" fn(u64));
     fn_slot!(get_cfg_float as unsafe extern "C" fn(c_uint) -> f32);
     fn_slot!(get_cfg_int as unsafe extern "C" fn(c_uint) -> c_int);
     fn_slot!(mc_set_duty as unsafe extern "C" fn(f32));
@@ -1510,6 +1515,21 @@ pub unsafe fn mc_get_tachometer_abs_value(reset: bool) -> c_int {
     unsafe { slots::mc_get_tachometer_abs_value()(reset) }
 }
 
+/// Return the configured PID position setpoint in degrees.
+pub unsafe fn mc_get_pid_pos_set() -> f32 {
+    unsafe { slots::mc_get_pid_pos_set()() }
+}
+
+/// Return the current PID position in degrees.
+pub unsafe fn mc_get_pid_pos_now() -> f32 {
+    unsafe { slots::mc_get_pid_pos_now()() }
+}
+
+/// Update the PID position offset, optionally persisting it in firmware.
+pub unsafe fn mc_update_pid_pos_offset(angle_now: f32, store: bool) {
+    unsafe { slots::mc_update_pid_pos_offset()(angle_now, store) }
+}
+
 /// Read the average motor power statistic.
 ///
 /// # Safety
@@ -1714,6 +1734,11 @@ pub unsafe fn mc_get_distance_abs() -> f32 {
     unsafe { required_slot!(mc_get_distance_abs)() }
 }
 
+/// Return signed motor distance in meters.
+pub unsafe fn mc_get_distance() -> f32 {
+    unsafe { slots::mc_get_distance()() }
+}
+
 /// Return the odometer distance in meters.
 ///
 /// # Safety
@@ -1721,6 +1746,11 @@ pub unsafe fn mc_get_distance_abs() -> f32 {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_odometer() -> u64 {
     unsafe { required_slot!(mc_get_odometer)() }
+}
+
+/// Set the firmware odometer distance in meters.
+pub unsafe fn mc_set_odometer(meters: u64) {
+    unsafe { slots::mc_set_odometer()(meters) }
 }
 
 /// Return the filtered MOSFET/FET temperature in degrees Celsius.
