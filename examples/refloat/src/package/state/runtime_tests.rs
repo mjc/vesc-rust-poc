@@ -905,6 +905,31 @@ fn running_protective_pushback_fixture(
     (app_data, telemetry, state)
 }
 
+fn running_speed_or_sag_fixture(
+    input_voltage: InputVoltage,
+    directional_current: DirectionalMotorCurrent,
+    vehicle_speed: VehicleSpeed,
+) -> (TimestampTicks, FirmwareTest, RefloatPackageState) {
+    let motor_erpm = Rpm::from_revolutions_per_minute(1_000.0);
+    let duty_cycle = DutyCycle::new(SignedRatio::from_ratio_const(0.10));
+    let (now, telemetry, state) = running_protective_pushback_fixture(
+        duty_cycle.ratio(),
+        motor_erpm,
+        RefloatSetpointAdjustment::None,
+        input_voltage,
+    );
+    let telemetry = telemetry
+        .with_runtime_motor(
+            ElectricalSpeed::new(motor_erpm),
+            vehicle_speed,
+            TotalMotorCurrent::new(Current::ZERO),
+            InputCurrent::new(Current::ZERO),
+            duty_cycle,
+        )
+        .with_directional_motor_current(directional_current);
+    (now, telemetry, state)
+}
+
 fn set_protective_ride_state(
     state: &mut RefloatPackageState,
     mode: RefloatMode,
@@ -1075,6 +1100,203 @@ fn running_enters_duty_pushback_above_configured_threshold_like_refloat() {
     assert_eq!(
         base.setpoints().board().angle(),
         state.runtime_duty_pushback_step(),
+    );
+}
+
+#[test]
+fn running_enters_pack_low_voltage_pushback_below_sag_allowance_like_refloat() {
+    let (now, telemetry, mut state) = running_speed_or_sag_fixture(
+        InputVoltage::new(Voltage::from_volts(51.9)),
+        DirectionalMotorCurrent::new(Current::from_amps(40.0)),
+        VehicleSpeed::new(Speed::ZERO),
+    );
+
+    tick_running_protective_pushback(&mut state, &telemetry, now);
+
+    let base = state.all_data_payloads().base();
+    assert_eq!(
+        base.status().ride_state().setpoint_adjustment(),
+        RefloatSetpointAdjustment::PushbackLowVoltage
+    );
+    assert_eq!(
+        base.setpoints().board().angle(),
+        AngleDegrees::from_degrees(10.0)
+    );
+    assert_eq!(base.status().beep_reason(), RefloatBeepReason::LowVoltage);
+}
+
+#[test]
+fn running_enters_speed_pushback_above_configured_threshold_like_refloat() {
+    let (now, telemetry, mut state) = running_speed_or_sag_fixture(
+        InputVoltage::new(Voltage::from_volts(72.0)),
+        DirectionalMotorCurrent::new(Current::ZERO),
+        VehicleSpeed::new(Speed::from_kilometers_per_hour(10.1)),
+    );
+    edit_config(&mut state, |config| {
+        assert!(config.set_speed_pushback_threshold(vescpkg_rs::WireByte::new(10)));
+    });
+
+    tick_running_protective_pushback(&mut state, &telemetry, now);
+
+    let base = state.all_data_payloads().base();
+    assert_eq!(
+        base.status().ride_state().setpoint_adjustment(),
+        RefloatSetpointAdjustment::PushbackSpeed
+    );
+    assert_eq!(base.status().beep_reason(), RefloatBeepReason::Speed);
+    assert_eq!(
+        base.setpoints().board().angle(),
+        state.runtime_duty_pushback_step()
+    );
+}
+
+#[test]
+fn running_pack_low_voltage_sag_boundaries_match_refloat() {
+    for (volts, amps, expected) in [
+        (52.0, 40.0, RefloatSetpointAdjustment::None),
+        (53.0, 20.0, RefloatSetpointAdjustment::None),
+        (53.0, 19.9, RefloatSetpointAdjustment::PushbackLowVoltage),
+        (53.9, 5.0, RefloatSetpointAdjustment::None),
+        (53.9, 4.9, RefloatSetpointAdjustment::PushbackLowVoltage),
+    ] {
+        let (now, telemetry, mut state) = running_speed_or_sag_fixture(
+            InputVoltage::new(Voltage::from_volts(volts)),
+            DirectionalMotorCurrent::new(Current::from_amps(amps)),
+            VehicleSpeed::new(Speed::ZERO),
+        );
+
+        tick_running_protective_pushback(&mut state, &telemetry, now);
+
+        assert_eq!(
+            state
+                .all_data_payloads()
+                .base()
+                .status()
+                .ride_state()
+                .setpoint_adjustment(),
+            expected,
+            "volts={volts}, amps={amps}"
+        );
+    }
+}
+
+#[test]
+fn running_pack_sag_clears_existing_low_voltage_pushback_like_refloat() {
+    let (now, telemetry, mut state) = running_protective_pushback_fixture(
+        SignedRatio::from_ratio_const(0.10),
+        Rpm::from_revolutions_per_minute(1_000.0),
+        RefloatSetpointAdjustment::PushbackLowVoltage,
+        InputVoltage::new(Voltage::from_volts(52.0)),
+    );
+    let telemetry = telemetry
+        .with_directional_motor_current(DirectionalMotorCurrent::new(Current::from_amps(40.0)));
+
+    tick_running_protective_pushback(&mut state, &telemetry, now);
+
+    let base = state.all_data_payloads().base();
+    assert_eq!(
+        base.status().ride_state().setpoint_adjustment(),
+        RefloatSetpointAdjustment::None
+    );
+    assert_eq!(base.setpoints().board().angle(), AngleDegrees::ZERO);
+}
+
+#[test]
+fn running_speed_pushback_boundaries_direction_and_disable_match_refloat() {
+    for (threshold, speed, expected, expected_angle) in [
+        (10, 10.0, RefloatSetpointAdjustment::None, 0.0),
+        (10, 10.1, RefloatSetpointAdjustment::PushbackSpeed, 1.0),
+        (10, -10.1, RefloatSetpointAdjustment::PushbackSpeed, -1.0),
+        (0, 20.0, RefloatSetpointAdjustment::None, 0.0),
+    ] {
+        let (now, telemetry, mut state) = running_speed_or_sag_fixture(
+            InputVoltage::new(Voltage::from_volts(72.0)),
+            DirectionalMotorCurrent::new(Current::ZERO),
+            VehicleSpeed::new(Speed::from_kilometers_per_hour(speed)),
+        );
+        edit_config(&mut state, |config| {
+            assert!(config.set_speed_pushback_threshold(vescpkg_rs::WireByte::new(threshold)));
+        });
+
+        tick_running_protective_pushback(&mut state, &telemetry, now);
+
+        let base = state.all_data_payloads().base();
+        assert_eq!(
+            base.status().ride_state().setpoint_adjustment(),
+            expected,
+            "threshold={threshold}, speed={speed}"
+        );
+        assert_eq!(
+            base.setpoints().board().angle(),
+            state.runtime_duty_pushback_step() * expected_angle,
+            "threshold={threshold}, speed={speed}"
+        );
+    }
+}
+
+#[test]
+fn running_protective_priority_is_duty_then_pack_voltage_then_speed_like_refloat() {
+    for (duty, voltage, expected) in [
+        (0.81, 51.0, RefloatSetpointAdjustment::PushbackDuty),
+        (0.10, 51.0, RefloatSetpointAdjustment::PushbackLowVoltage),
+    ] {
+        let duty_cycle = DutyCycle::new(SignedRatio::from_ratio(duty).expect("test duty"));
+        let motor_erpm = Rpm::from_revolutions_per_minute(1_000.0);
+        let (now, telemetry, mut state) = running_protective_pushback_fixture(
+            duty_cycle.ratio(),
+            motor_erpm,
+            RefloatSetpointAdjustment::None,
+            InputVoltage::new(Voltage::from_volts(voltage)),
+        );
+        let telemetry = telemetry
+            .with_runtime_motor(
+                ElectricalSpeed::new(motor_erpm),
+                VehicleSpeed::new(Speed::from_kilometers_per_hour(20.0)),
+                TotalMotorCurrent::new(Current::ZERO),
+                InputCurrent::new(Current::ZERO),
+                duty_cycle,
+            )
+            .with_directional_motor_current(DirectionalMotorCurrent::new(Current::ZERO));
+        edit_config(&mut state, |config| {
+            assert!(config.set_speed_pushback_threshold(vescpkg_rs::WireByte::new(10)));
+        });
+
+        tick_running_protective_pushback(&mut state, &telemetry, now);
+
+        assert_eq!(
+            state
+                .all_data_payloads()
+                .base()
+                .status()
+                .ride_state()
+                .setpoint_adjustment(),
+            expected,
+            "duty={duty}, voltage={voltage}"
+        );
+    }
+}
+
+#[test]
+fn running_non_finite_speed_and_sag_current_fail_without_pushback_or_panic() {
+    let (now, telemetry, mut state) = running_speed_or_sag_fixture(
+        InputVoltage::new(Voltage::from_volts(53.9)),
+        DirectionalMotorCurrent::new(Current::from_amps(f32::NAN)),
+        VehicleSpeed::new(Speed::from_meters_per_second(f32::NAN)),
+    );
+    edit_config(&mut state, |config| {
+        assert!(config.set_speed_pushback_threshold(vescpkg_rs::WireByte::new(10)));
+    });
+
+    tick_running_protective_pushback(&mut state, &telemetry, now);
+
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .setpoint_adjustment(),
+        RefloatSetpointAdjustment::None
     );
 }
 

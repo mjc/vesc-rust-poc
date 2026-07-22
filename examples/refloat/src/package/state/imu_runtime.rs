@@ -558,6 +558,10 @@ pub(super) fn refresh(
             state.serialized_config.high_voltage_threshold(),
             state.battery_cell_count,
         );
+        let low_voltage_threshold = pack_voltage_threshold(
+            state.serialized_config.low_voltage_threshold(),
+            state.battery_cell_count,
+        );
         let battery_voltage = base.motor().battery_voltage().voltage();
         #[cfg(any(test, target_arch = "arm"))]
         let bms_cell_over_voltage = state.bms_faults.contains(RefloatBmsFault::CellOverVoltage);
@@ -736,6 +740,11 @@ pub(super) fn refresh(
         {
             let duty_pushback_active = base.motor().duty_cycle().ratio().as_ratio()
                 > state.runtime_duty_pushback_threshold().as_ratio();
+            let voltage_pushback_duty = base.motor().duty_cycle().ratio().as_ratio() > 0.05;
+            let speed = base.motor().vehicle_speed().speed();
+            let speed_pushback_threshold = state.serialized_config.speed_pushback_threshold();
+            let speed_pushback_active =
+                speed_pushback_threshold.is_positive() && speed.abs() > speed_pushback_threshold;
             let board_setpoint = if duty_pushback_active {
                 let angle = state.runtime_duty_pushback_angle();
                 if !matches!(ride_state.mode(), RefloatMode::Flywheel) {
@@ -820,24 +829,59 @@ pub(super) fn refresh(
                 } else {
                     -angle
                 })
-            } else if base.motor().duty_cycle().ratio().as_ratio() > 0.05 && bms_cell_under_voltage
+            } else if voltage_pushback_duty
+                && (bms_cell_under_voltage || battery_voltage < low_voltage_threshold)
             {
-                beep_reason = RefloatBeepReason::CellLowVoltage;
-                beeper_alert = Some(RefloatBeeperAlert::Short(RefloatBeeperCount::THREE));
-                let angle = state.serialized_config.low_voltage_pushback_angle();
-                ride_state = ride_state
-                    .with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackLowVoltage);
-                Some(if motor_erpm.is_positive() {
-                    angle
+                beep_reason = if bms_cell_under_voltage {
+                    RefloatBeepReason::CellLowVoltage
                 } else {
-                    -angle
-                })
+                    RefloatBeepReason::LowVoltage
+                };
+                beeper_alert = Some(RefloatBeeperAlert::Short(RefloatBeeperCount::THREE));
+                let voltage_delta = low_voltage_threshold - battery_voltage;
+                let abs_motor_current = base.motor().directional_motor_current().current().abs();
+                // C map: Refloat tolerates pack sag only within 2 V, at 5 A
+                // or more, and below 20 A per volt at
+                // `third_party/refloat/src/main.c:680-716`.
+                let pushback = voltage_delta > Voltage::from_volts(2.0)
+                    || abs_motor_current < Current::from_amps(5.0)
+                    || voltage_delta.as_volts() * 20.0 / abs_motor_current.as_amps() > 1.0
+                    || bms_cell_under_voltage;
+                if pushback {
+                    let angle = state.serialized_config.low_voltage_pushback_angle();
+                    ride_state = ride_state
+                        .with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackLowVoltage);
+                    Some(if motor_erpm.is_positive() {
+                        angle
+                    } else {
+                        -angle
+                    })
+                } else {
+                    ride_state =
+                        ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::None);
+                    Some(AngleDegrees::ZERO)
+                }
+            } else if speed_pushback_active {
+                // C map: configured km/h speed pushback follows pack LV and
+                // uses the duty angle/speed at
+                // `third_party/refloat/src/main.c:717-729`.
+                let angle = state.runtime_duty_pushback_angle();
+                let target = if speed.is_positive() { angle } else { -angle };
+                beep_reason = RefloatBeepReason::Speed;
+                ride_state =
+                    ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::PushbackSpeed);
+                Some(rate_limit_angle(
+                    setpoints.board().angle(),
+                    target,
+                    state.runtime_duty_pushback_step(),
+                ))
             } else if matches!(
                 ride_state.setpoint_adjustment(),
                 RefloatSetpointAdjustment::PushbackDuty
                     | RefloatSetpointAdjustment::PushbackHighVoltage
                     | RefloatSetpointAdjustment::PushbackError
                     | RefloatSetpointAdjustment::PushbackLowVoltage
+                    | RefloatSetpointAdjustment::PushbackSpeed
                     | RefloatSetpointAdjustment::PushbackTemperature
             ) {
                 ride_state = ride_state.with_setpoint_adjustment(RefloatSetpointAdjustment::None);

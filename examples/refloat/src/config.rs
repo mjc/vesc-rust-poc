@@ -10,7 +10,7 @@ use vescpkg_rs::CustomConfigVoltageField;
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngularVelocity, ElectricalSpeed, IntegralCurrentGain,
     MahonyPitchGain, MahonyRollGain, MotorCurrent, MotorCurrentLimit, PidScale, RateCurrentGain,
-    Ratio, SampleRate, VescSeconds, Voltage,
+    Ratio, SampleRate, Speed, VescSeconds, Voltage,
 };
 use vescpkg_rs::{
     CustomConfigAngleCurrentGainField, CustomConfigAngleField, CustomConfigAngularVelocityField,
@@ -91,6 +91,7 @@ impl RefloatConfigImage {
     const HIGH_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigScaledVoltageField, len: REFLOAT_CONFIG_LEN, offset: 55, scale: 100.0);
     const LOW_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 57, scale: 100.0);
     const LOW_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigScaledVoltageField, len: REFLOAT_CONFIG_LEN, offset: 61, scale: 100.0);
+    const SPEED_PUSHBACK_THRESHOLD_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: REFLOAT_CONFIG_LEN, offset: 63);
     // Generated `is_beeper_enabled` follows the 18-byte hardware LED block
     // beginning at offset 224; upstream serializes it immediately before
     // `disabled` at offset 243 (`third_party/refloat/src/conf/settings.xml:4049-4064`).
@@ -239,6 +240,14 @@ impl RefloatConfigImage {
 
     pub(crate) fn low_voltage_threshold(&self) -> Voltage {
         generated_field(Self::LOW_VOLTAGE_THRESHOLD_FIELD.read(self))
+    }
+
+    pub(crate) fn speed_pushback_threshold(&self) -> Speed {
+        generated_field(Self::SPEED_PUSHBACK_THRESHOLD_FIELD.read(self)).scaled(
+            1.0,
+            0.0,
+            Speed::from_kilometers_per_hour,
+        )
     }
 
     pub(crate) fn beeper_enabled(&self) -> bool {
@@ -434,6 +443,13 @@ impl RefloatConfigEditor<'_> {
 
     pub(crate) fn set_tiltback_return_speed(&mut self, speed: AngularVelocity) -> bool {
         RefloatConfigImage::TILTBACK_RETURN_SPEED_FIELD
+            .write(self, speed)
+            .is_some()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_speed_pushback_threshold(&mut self, speed: vescpkg_rs::WireByte) -> bool {
+        RefloatConfigImage::SPEED_PUSHBACK_THRESHOLD_FIELD
             .write(self, speed)
             .is_some()
     }
