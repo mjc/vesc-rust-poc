@@ -219,6 +219,12 @@ mod tests {
                 slot: ExpressSlot::LbmIsSymbolTrue
             })
         );
+        assert_eq!(
+            lisp.symbol_merror(),
+            Err(ExpressCallError {
+                slot: ExpressSlot::LbmEncSymMerror
+            })
+        );
         assert!(matches!(
             lisp.start_flatten(16),
             Err(ExpressFlatValueError::Unavailable(ExpressCallError {
