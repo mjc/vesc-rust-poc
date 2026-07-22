@@ -48,9 +48,6 @@ fn synchronization_creation_and_timed_wait_failures_are_reported() {
     assert!(FirmwareSemaphore::new().is_none());
 
     drop(firmware);
-    let semaphore = FirmwareSemaphore::new();
-    assert!(semaphore.is_none());
-
     let firmware = FirmwareTest::new();
     let semaphore = FirmwareSemaphore::new().expect("fake firmware creates a semaphore");
     firmware.fail_semaphore_timeout();

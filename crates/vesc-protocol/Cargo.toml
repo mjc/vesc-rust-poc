@@ -2,6 +2,7 @@
 name = "vesc-protocol"
 version = "0.1.0"
 edition = "2024"
+rust-version.workspace = true
 description = "Unofficial shared Rust protocol types for VESC-related host and package experiments."
 
 [lints]
