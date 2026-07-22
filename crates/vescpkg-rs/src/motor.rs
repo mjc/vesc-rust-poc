@@ -8,7 +8,7 @@ use crate::types::{
     AverageMotorCurrent, AverageMotorTemperature, AveragePower, AverageVehicleSpeed,
     BatteryCellCount, BatteryLevel, BrakeCurrent, BrakeCurrentRelative, CurrentOffDelay,
     CurrentRelative, DCurrent, DVoltage, DirectionalMotorCurrent, DutyCycle, DutyCycleLimit,
-    ElectricalSpeed, FirmwareFaultCode, HandbrakeCurrent, HandbrakeRelative, InputCurrent,
+    ElectricalSpeed, FirmwareFault, HandbrakeCurrent, HandbrakeRelative, InputCurrent,
     InputVoltage, MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorSelection,
     MotorStatisticDuration, MotorTemperature, PeakMosfetTemperature, PeakMotorCurrent,
     PeakMotorTemperature, PeakPower, PeakVehicleSpeed, PidPosition, QCurrent, QVoltage,
@@ -165,7 +165,7 @@ pub trait MotorTelemetryBindings {
     /// Return estimated battery level.
     fn battery_level(&self) -> BatteryLevel;
     /// Return the active firmware motor fault code.
-    fn firmware_fault(&self) -> FirmwareFaultCode;
+    fn firmware_fault(&self) -> FirmwareFault;
     /// Return the firmware-provided fault description, when valid UTF-8.
     fn firmware_fault_description(&self) -> Option<&'static str>;
     /// Return the filtered controller input voltage.
@@ -356,7 +356,7 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
         (**self).battery_level()
     }
 
-    fn firmware_fault(&self) -> FirmwareFaultCode {
+    fn firmware_fault(&self) -> FirmwareFault {
         (**self).firmware_fault()
     }
 
@@ -806,8 +806,12 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         })
     }
 
-    fn firmware_fault(&self) -> FirmwareFaultCode {
-        FirmwareFaultCode::from_raw_code(unsafe { crate::ffi::mc_get_fault() }.0)
+    fn firmware_fault(&self) -> FirmwareFault {
+        // C map: `mc_get_fault` returns the `mc_fault_code` enum declared at
+        // `third_party/vesc_pkg_lib/vesc_c_if.h:84-112` (the function slot is
+        // `:434`). Keep the raw integer conversion private to this boundary so
+        // unknown firmware values cannot leak into the public SDK API.
+        FirmwareFault::from_raw_code(unsafe { crate::ffi::mc_get_fault() }.0)
     }
 
     fn firmware_fault_description(&self) -> Option<&'static str> {
@@ -1056,7 +1060,7 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     /// Return estimated battery level.
     fn battery_level(&self) -> BatteryLevel;
     /// Return the active firmware motor fault code.
-    fn firmware_fault(&self) -> FirmwareFaultCode;
+    fn firmware_fault(&self) -> FirmwareFault;
     /// Return the firmware-provided fault description, when valid UTF-8.
     fn firmware_fault_description(&self) -> Option<&'static str>;
     /// Return the filtered controller input voltage.
@@ -1413,7 +1417,7 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
     }
 
     /// Return the active firmware motor fault code.
-    pub fn firmware_fault(&self) -> FirmwareFaultCode {
+    pub fn firmware_fault(&self) -> FirmwareFault {
         self.bindings.firmware_fault()
     }
 
@@ -1624,7 +1628,7 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
         self.battery_level()
     }
 
-    fn firmware_fault(&self) -> FirmwareFaultCode {
+    fn firmware_fault(&self) -> FirmwareFault {
         self.firmware_fault()
     }
 

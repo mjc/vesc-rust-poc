@@ -14,10 +14,10 @@ use core::sync::atomic::{
 
 use crate::{
     AmpHoursCharged, AmpHoursDischarged, BatteryLevel, DCurrent, DirectionalMotorCurrent,
-    DutyCycle, ElectricalSpeed, FirmwareFaultCode, ImuAngularRate, ImuOrientation, ImuPitch,
-    ImuRoll, ImuYaw, InputCurrent, InputCurrentLimit, InputVoltage, MosfetTemperature,
-    MotorCurrentLimit, MotorTemperature, OdometerMeters, TotalMotorCurrent, TripDistance,
-    VehicleSpeed, WattHoursCharged, WattHoursDischarged,
+    DutyCycle, ElectricalSpeed, FirmwareFault, ImuAngularRate, ImuOrientation, ImuPitch, ImuRoll,
+    ImuYaw, InputCurrent, InputVoltage, MosfetTemperature, MotorCurrentLimit, MotorTemperature,
+    OdometerMeters, TotalMotorCurrent, TripDistance, VehicleSpeed, WattHoursCharged,
+    WattHoursDischarged,
 };
 use vescpkg_rs_sys::raw::{
     AttitudeInfo, CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5,
@@ -1131,12 +1131,13 @@ pub(crate) fn set_ride_totals(
     store(&BATTERY_LEVEL, battery_level.as_fraction());
 }
 
-pub(crate) fn set_firmware_fault(fault: FirmwareFaultCode) {
-    FIRMWARE_FAULT.store(
-        crate::FirmwareFaultWireCode::try_from(fault)
-            .map_or(0, |fault| i32::from(fault.wire_code())),
-        Ordering::Relaxed,
-    );
+pub(crate) fn set_firmware_fault(fault: FirmwareFault) {
+    let raw = match fault {
+        FirmwareFault::None => 0,
+        FirmwareFault::Active(fault) => i32::from(fault.wire_code().wire_code()),
+        FirmwareFault::Unknown => i32::MAX,
+    };
+    FIRMWARE_FAULT.store(raw, Ordering::Relaxed);
 }
 
 pub(crate) fn set_input_voltage(voltage: InputVoltage) {

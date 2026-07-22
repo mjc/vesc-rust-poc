@@ -3,9 +3,9 @@
 
 use vescpkg_rs::{
     AngleDegrees, BrakeCurrentRelative, Current, CurrentRelative, DCurrent, DutyCycle,
-    ElectricalSpeed, HandbrakeCurrent, HandbrakeRelative, MotorOutput, MotorSelection,
-    MotorTelemetry, OdometerMeters, OpenLoopCurrent, OpenLoopPhase, PidPosition, PwmCallbackError,
-    Ratio, Rpm, SignedRatio, VescSeconds,
+    ElectricalSpeed, FirmwareFault, FirmwareFaultId, HandbrakeCurrent, HandbrakeRelative,
+    MotorOutput, MotorSelection, MotorTelemetry, OdometerMeters, OpenLoopCurrent, OpenLoopPhase,
+    PidPosition, PwmCallbackError, Ratio, Rpm, SignedRatio, VescSeconds,
 };
 
 unsafe extern "C" fn test_pwm_callback() {}
@@ -14,7 +14,8 @@ unsafe extern "C" fn test_pwm_callback() {}
 #[allow(clippy::too_many_lines)]
 fn motor_exposes_typed_handbrake_commands() {
     let firmware = vescpkg_rs::test_support::FirmwareTest::new()
-        .with_d_axis_current(Some(DCurrent::new(Current::from_amps(1.5))));
+        .with_d_axis_current(Some(DCurrent::new(Current::from_amps(1.5))))
+        .with_firmware_fault(FirmwareFault::Active(FirmwareFaultId::OverTemperatureFet));
     firmware
         .motor()
         .set_handbrake(HandbrakeCurrent::new(Current::from_amps(2.0)));

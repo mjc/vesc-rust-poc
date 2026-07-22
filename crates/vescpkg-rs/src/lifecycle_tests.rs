@@ -4,7 +4,7 @@ use crate::lifecycle_core::{LbmApi, PackageLifecycle};
 use crate::test_support::{FakeBindings, stubs};
 use crate::thread::ThreadApi;
 use crate::thread::test_support::FakeThreadBindings;
-use crate::types::{FirmwareFaultCode, FirmwareFaultWireCode};
+use crate::types::{FirmwareFault, FirmwareFaultId};
 use rstest::rstest;
 use vescpkg_rs_sys::{ExtensionHandler, LbmValue, LibInfo, NativeImage};
 
@@ -161,19 +161,18 @@ fn lbm_api_converts_only_firmware_numeric_values_to_f32() {
 }
 
 #[test]
-fn firmware_fault_code_preserves_raw_values_until_wire_encoding() {
-    let valid = FirmwareFaultCode::from_raw_code(5);
-    let negative = FirmwareFaultCode::from_raw_code(-1);
-    let too_large = FirmwareFaultCode::from_raw_code(256);
-
+fn firmware_fault_maps_known_none_and_unknown_raw_values() {
+    assert_eq!(FirmwareFault::from_raw_code(0), FirmwareFault::None);
     assert_eq!(
-        FirmwareFaultWireCode::try_from(valid)
-            .expect("valid firmware fault code")
-            .wire_code(),
+        FirmwareFault::from_raw_code(5),
+        FirmwareFault::Active(FirmwareFaultId::OverTemperatureFet)
+    );
+    assert_eq!(
+        FirmwareFaultId::OverTemperatureFet.wire_code().wire_code(),
         5
     );
-    assert!(FirmwareFaultWireCode::try_from(negative).is_err());
-    assert!(FirmwareFaultWireCode::try_from(too_large).is_err());
+    assert_eq!(FirmwareFault::from_raw_code(-1), FirmwareFault::Unknown);
+    assert_eq!(FirmwareFault::from_raw_code(256), FirmwareFault::Unknown);
 }
 
 struct GroupTestThread;

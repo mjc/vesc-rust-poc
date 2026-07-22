@@ -527,8 +527,8 @@ impl FirmwareTest {
     }
 
     #[must_use]
-    /// Configure the typed firmware fault code.
-    pub fn with_firmware_fault(self, fault: crate::FirmwareFaultCode) -> Self {
+    /// Configure the semantic firmware fault result.
+    pub fn with_firmware_fault(self, fault: crate::FirmwareFault) -> Self {
         crate::test_ffi::set_firmware_fault(fault);
         self
     }
