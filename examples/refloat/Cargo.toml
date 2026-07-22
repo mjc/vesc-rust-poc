@@ -14,13 +14,6 @@ version = "1.2.1"
 [lints]
 workspace = true
 
-[lib]
-crate-type = ["rlib"]
-
-[[bin]]
-name = "vesc-example-refloat"
-path = "src/main.rs"
-
 [features]
 test-support = ["vescpkg-rs/test-support"]
 
