@@ -571,6 +571,12 @@ impl RefloatRealtimeRuntimeSetpoints {
         }
     }
 
+    /// Return these runtime setpoints with a new board target.
+    pub const fn with_board(mut self, board: RefloatRealtimeRuntimeSetpoint) -> Self {
+        self.board = board;
+        self
+    }
+
     /// Return `setpoint`.
     pub const fn board(self) -> RefloatRealtimeRuntimeSetpoint {
         self.board

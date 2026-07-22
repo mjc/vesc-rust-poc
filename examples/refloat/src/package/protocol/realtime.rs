@@ -5,10 +5,13 @@ use super::wire::{
 use crate::domain::RefloatMode;
 use crate::domain::{
     REFLOAT_APP_DATA_PACKAGE_ID, REFLOAT_REALTIME_DATA_ITEMS, REFLOAT_REALTIME_RUNTIME_ITEMS,
-    RefloatAllDataPayloads, RefloatAppDataCommand, RefloatChargingState, RefloatDarkRideState,
-    RefloatRealtimeDataItem, RefloatRunState, RefloatWheelSlipState,
+    RefloatAllDataPayloads, RefloatAppDataCommand, RefloatChargingState, RefloatRealtimeDataHeader,
+    RefloatRealtimeDataItem, RefloatRealtimeTail, RefloatRunState,
 };
-use vescpkg_rs::prelude::TimestampTicks;
+#[cfg(test)]
+use crate::domain::{RefloatRealtimeAlertMask, RefloatRealtimeReservedFlags};
+#[cfg(test)]
+use vescpkg_rs::prelude::{FirmwareFaultWireCode, TimestampTicks};
 
 // Refloat v1.2.1 `send_realtime_data` declares its fixed buffer at
 // `third_party/refloat/src/main.c:1267-1269`.
@@ -33,8 +36,24 @@ impl RefloatRealtimeDataResponse {
 }
 
 #[inline(never)]
+#[cfg(test)]
 pub(in crate::package) fn encode_refloat_get_realtime_data_response(
     payloads: &RefloatAllDataPayloads,
+) -> [u8; REFLOAT_GET_REALTIME_DATA_RESPONSE_LEN] {
+    encode_refloat_get_realtime_data_response_with_remote(
+        payloads,
+        crate::domain::RefloatRealtimeRemoteInput::new(
+            vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.0),
+        ),
+        0.0,
+    )
+}
+
+#[inline(never)]
+pub(in crate::package) fn encode_refloat_get_realtime_data_response_with_remote(
+    payloads: &RefloatAllDataPayloads,
+    remote_input: crate::domain::RefloatRealtimeRemoteInput,
+    atr_accel_diff: f32,
 ) -> [u8; REFLOAT_GET_REALTIME_DATA_RESPONSE_LEN] {
     let mut bytes = [0; REFLOAT_GET_REALTIME_DATA_RESPONSE_LEN];
     let mut ind = 0;
@@ -112,7 +131,7 @@ pub(in crate::package) fn encode_refloat_get_realtime_data_response(
         &mut ind,
         motor.filtered_motor_current().current().current().as_amps(),
     );
-    refloat_realtime_push_float32_auto(&mut bytes, &mut ind, 0.0);
+    refloat_realtime_push_float32_auto(&mut bytes, &mut ind, atr_accel_diff);
     if matches!(ride_state.charging(), RefloatChargingState::Charging) {
         refloat_realtime_push_float32_auto(
             &mut bytes,
@@ -136,15 +155,46 @@ pub(in crate::package) fn encode_refloat_get_realtime_data_response(
             motor.directional_motor_current().current().as_amps(),
         );
     }
-    refloat_realtime_push_float32_auto(&mut bytes, &mut ind, 0.0);
+    refloat_realtime_push_float32_auto(&mut bytes, &mut ind, remote_input.ratio().as_ratio());
 
     bytes
 }
 
 #[inline(never)]
+#[cfg(test)]
 pub(in crate::package) fn encode_refloat_realtime_data_response(
     payloads: &RefloatAllDataPayloads,
     system_timestamp: TimestampTicks,
+) -> RefloatRealtimeDataResponse {
+    encode_refloat_realtime_data_response_with_runtime(
+        payloads,
+        RefloatRealtimeDataHeader::new(
+            system_timestamp,
+            payloads.base().status().ride_state(),
+            payloads.base().footpad().state(),
+            payloads.base().status().beep_reason(),
+        ),
+        RefloatRealtimeTail::new(
+            RefloatRealtimeAlertMask::empty(),
+            RefloatRealtimeReservedFlags::none(),
+            FirmwareFaultWireCode::from_wire_code(0),
+        ),
+        crate::domain::RefloatRealtimeRemoteInput::new(
+            vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.0),
+        ),
+        0.0,
+        0.0,
+    )
+}
+
+#[inline(never)]
+pub(in crate::package) fn encode_refloat_realtime_data_response_with_runtime(
+    payloads: &RefloatAllDataPayloads,
+    header: RefloatRealtimeDataHeader,
+    tail: RefloatRealtimeTail,
+    remote_input: crate::domain::RefloatRealtimeRemoteInput,
+    atr_accel_diff: f32,
+    atr_speed_boost: f32,
 ) -> RefloatRealtimeDataResponse {
     let mut bytes = [0; REFLOAT_REALTIME_DATA_RESPONSE_CAPACITY];
     let mut ind = 0;
@@ -162,57 +212,43 @@ pub(in crate::package) fn encode_refloat_realtime_data_response(
         RefloatAppDataCommand::RealtimeData.id(),
     );
 
-    let mut mask = 0x04;
-    if running {
-        mask |= 0x01;
-    }
-    if charging {
-        mask |= 0x02;
-    }
-    refloat_realtime_push_u8(&mut bytes, &mut ind, mask);
-
-    // The data recorder and alert tracker are still part of the unported
-    // control-loop/runtime state (`third_party/refloat/src/main.c:1927-1930`, `third_party/refloat/src/main.c:1956-1958`).
-    refloat_realtime_push_u8(&mut bytes, &mut ind, 0);
+    refloat_realtime_push_u8(&mut bytes, &mut ind, header.data_mask_compat());
+    refloat_realtime_push_u8(&mut bytes, &mut ind, header.extra_flags_compat());
     // Upstream writes `d->time.now` at `third_party/refloat/src/main.c:1931`; VESC timestamps are
     // represented as 100 us system ticks.
-    refloat_realtime_push_u32(&mut bytes, &mut ind, system_timestamp.as_ticks());
+    refloat_realtime_push_u32(&mut bytes, &mut ind, header.timestamp().as_ticks());
 
-    refloat_realtime_push_u8(
-        &mut bytes,
-        &mut ind,
-        ride_state.mode().id() << 4 | ride_state.run_state().id(),
-    );
-    refloat_realtime_push_u8(
-        &mut bytes,
-        &mut ind,
-        base.footpad().state().id() << 6
-            | u8::from(matches!(
-                ride_state.charging(),
-                RefloatChargingState::Charging
-            )) << 5
-            | u8::from(matches!(
-                ride_state.darkride(),
-                RefloatDarkRideState::Active
-            )) << 1
-            | u8::from(matches!(
-                ride_state.wheelslip(),
-                RefloatWheelSlipState::Detected
-            )),
-    );
-    refloat_realtime_push_u8(
-        &mut bytes,
-        &mut ind,
-        ride_state.setpoint_adjustment().id() << 4 | ride_state.stop_condition().id(),
-    );
-    refloat_realtime_push_u8(&mut bytes, &mut ind, base.status().beep_reason().id());
+    refloat_realtime_push_u8(&mut bytes, &mut ind, header.state_byte_compat());
+    refloat_realtime_push_u8(&mut bytes, &mut ind, header.footpad_flags_compat());
+    refloat_realtime_push_u8(&mut bytes, &mut ind, header.stop_setpoint_byte_compat());
+    refloat_realtime_push_u8(&mut bytes, &mut ind, header.beep_reason_compat());
 
     REFLOAT_REALTIME_DATA_ITEMS.into_iter().for_each(|item| {
-        push_refloat_float16(&mut bytes, &mut ind, realtime_value(payloads, item))
+        push_refloat_float16(
+            &mut bytes,
+            &mut ind,
+            realtime_value(
+                payloads,
+                item,
+                remote_input,
+                atr_accel_diff,
+                atr_speed_boost,
+            ),
+        )
     });
     if running {
         REFLOAT_REALTIME_RUNTIME_ITEMS.into_iter().for_each(|item| {
-            push_refloat_float16(&mut bytes, &mut ind, realtime_value(payloads, item));
+            push_refloat_float16(
+                &mut bytes,
+                &mut ind,
+                realtime_value(
+                    payloads,
+                    item,
+                    remote_input,
+                    atr_accel_diff,
+                    atr_speed_boost,
+                ),
+            );
         });
     }
     if charging {
@@ -228,14 +264,28 @@ pub(in crate::package) fn encode_refloat_realtime_data_response(
         );
     }
 
-    refloat_realtime_push_u32(&mut bytes, &mut ind, 0);
-    refloat_realtime_push_u32(&mut bytes, &mut ind, 0);
-    refloat_realtime_push_u8(&mut bytes, &mut ind, 0);
+    refloat_realtime_push_u32(
+        &mut bytes,
+        &mut ind,
+        tail.active_alerts().active_alert_mask_compat(),
+    );
+    refloat_realtime_push_u32(
+        &mut bytes,
+        &mut ind,
+        tail.reserved_flags().extra_flags_compat(),
+    );
+    refloat_realtime_push_u8(&mut bytes, &mut ind, tail.firmware_fault_code().wire_code());
 
     RefloatRealtimeDataResponse { bytes, len: ind }
 }
 
-fn realtime_value(payloads: &RefloatAllDataPayloads, item: RefloatRealtimeDataItem) -> f32 {
+fn realtime_value(
+    payloads: &RefloatAllDataPayloads,
+    item: RefloatRealtimeDataItem,
+    remote_input: crate::domain::RefloatRealtimeRemoteInput,
+    atr_accel_diff: f32,
+    atr_speed_boost: f32,
+) -> f32 {
     // C map: `cmd_realtime_data` expands `RT_DATA_ITEMS` and
     // `RT_DATA_RUNTIME_ITEMS` through `buffer_append_float16_auto` at
     // `third_party/refloat/src/main.c:1943-1948`; the ID order is the string
@@ -247,7 +297,12 @@ fn realtime_value(payloads: &RefloatAllDataPayloads, item: RefloatRealtimeDataIt
     let temperatures = payloads.mode2().temperatures();
 
     match item {
-        RefloatRealtimeDataItem::MotorSpeed => motor.vehicle_speed().speed().as_meters_per_second(),
+        // Refloat converts its internal m/s speed for the VESC Tool km/h
+        // consumer at `third_party/refloat/src/motor_data.c:119` and
+        // `ui.qml.in:853-925`.
+        RefloatRealtimeDataItem::MotorSpeed => {
+            motor.vehicle_speed().speed().as_kilometers_per_hour()
+        }
         RefloatRealtimeDataItem::MotorErpm => {
             motor.electrical_speed().rpm().as_revolutions_per_minute()
         }
@@ -277,11 +332,8 @@ fn realtime_value(payloads: &RefloatAllDataPayloads, item: RefloatRealtimeDataIt
         RefloatRealtimeDataItem::FootpadAdc1 => base.footpad().adc1_volts(),
         RefloatRealtimeDataItem::FootpadAdc2 => base.footpad().adc2_volts(),
         // C map: `RT_DATA_ITEMS` includes `remote.input` at
-        // `third_party/refloat/src/rt_data.h:38-54`; `RT_DATA_RUNTIME_ITEMS`
-        // includes `atr.accel_diff` and `atr.speed_boost` at
-        // `third_party/refloat/src/rt_data.h:56-65`. Those live in unported
-        // runtime submodules.
-        RefloatRealtimeDataItem::RemoteInput => 0.0,
+        // `third_party/refloat/src/rt_data.h:38-54`.
+        RefloatRealtimeDataItem::RemoteInput => remote_input.ratio().as_ratio(),
         RefloatRealtimeDataItem::Setpoint => setpoints.board().angle().as_degrees(),
         RefloatRealtimeDataItem::AtrSetpoint => setpoints.atr().angle().as_degrees(),
         RefloatRealtimeDataItem::BrakeTiltSetpoint => setpoints.brake_tilt().angle().as_degrees(),
@@ -294,8 +346,8 @@ fn realtime_value(payloads: &RefloatAllDataPayloads, item: RefloatRealtimeDataIt
         // C map: runtime-only ATR fields are appended at
         // `third_party/refloat/src/main.c:1946-1948`; keep these explicit
         // placeholders until ATR runtime state is ported.
-        RefloatRealtimeDataItem::AtrAccelDiff => 0.0,
-        RefloatRealtimeDataItem::AtrSpeedBoost => 0.0,
+        RefloatRealtimeDataItem::AtrAccelDiff => atr_accel_diff,
+        RefloatRealtimeDataItem::AtrSpeedBoost => atr_speed_boost,
         RefloatRealtimeDataItem::BoosterCurrent => {
             base.booster_current().current().current().as_amps()
         }
@@ -306,7 +358,32 @@ fn realtime_value(payloads: &RefloatAllDataPayloads, item: RefloatRealtimeDataIt
 mod tests {
     use super::super::super::test_support::sample_all_data_payloads;
     use super::*;
-    use vescpkg_rs::prelude::{AngleDegrees, AngleRadians, TimestampTicks};
+    use crate::domain::{RefloatAllDataBasePayload, RefloatAllDataMotorPayload};
+    use vescpkg_rs::prelude::{AngleDegrees, AngleRadians, Speed, TimestampTicks, VehicleSpeed};
+
+    fn sample_payloads_with_speed(meters_per_second: f32) -> RefloatAllDataPayloads {
+        let payloads = sample_all_data_payloads();
+        let base = payloads.base();
+        let motor = base.motor();
+        let motor = RefloatAllDataMotorPayload::new(
+            motor.battery_voltage(),
+            motor.electrical_speed(),
+            VehicleSpeed::new(Speed::from_meters_per_second(meters_per_second)),
+            motor.currents(),
+            motor.duty_cycle(),
+            motor.foc_id_current(),
+        );
+        let base = RefloatAllDataBasePayload::new(
+            base.balance_current(),
+            base.attitude(),
+            base.status(),
+            base.footpad(),
+            base.setpoints(),
+            base.booster_current(),
+            motor,
+        );
+        RefloatAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4())
+    }
 
     #[test]
     fn app_data_processes_legacy_get_rtdata_like_refloat() {
@@ -348,6 +425,28 @@ mod tests {
     }
 
     #[test]
+    fn realtime_encoders_use_live_remote_input_like_refloat() {
+        let payloads = sample_all_data_payloads();
+        let input = crate::domain::RefloatRealtimeRemoteInput::new(
+            vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.5),
+        );
+        let legacy = encode_refloat_get_realtime_data_response_with_remote(&payloads, input, 0.25);
+
+        assert_f32_be(&legacy, 56, 0.25);
+        assert_f32_be(&legacy, 68, 0.5);
+        assert_eq!(
+            realtime_value(
+                &payloads,
+                RefloatRealtimeDataItem::RemoteInput,
+                input,
+                0.0,
+                0.0,
+            ),
+            0.5,
+        );
+    }
+
+    #[test]
     fn float32_auto_zeros_small_normal_like_refloat() {
         let value = 1.25e-38_f32;
         let mut bytes = [0xff; 4];
@@ -382,6 +481,56 @@ mod tests {
         assert_eq!(&bytes[44..48], &[0, 0, 0, 0]);
         assert_eq!(&bytes[48..52], &[0, 0, 0, 0]);
         assert_eq!(bytes[52], 0);
+    }
+
+    #[test]
+    fn command_31_motor_speed_encodes_kilometres_per_hour_like_refloat() {
+        let baseline = encode_refloat_realtime_data_response(
+            &sample_payloads_with_speed(0.0),
+            TimestampTicks::from_ticks(0),
+        );
+
+        for (meters_per_second, expected) in [
+            (0.0, [0x00, 0x00]),
+            (1.0, [0x43, 0x33]),
+            (-1.0, [0xc3, 0x33]),
+            (0.5, [0x3f, 0x33]),
+            (65_504.0 / 3.6, [0x7b, 0xff]),
+        ] {
+            let response = encode_refloat_realtime_data_response(
+                &sample_payloads_with_speed(meters_per_second),
+                TimestampTicks::from_ticks(0),
+            );
+            let bytes = response.as_bytes();
+
+            // C map: Refloat converts m/s to km/h at
+            // `third_party/refloat/src/motor_data.c:119`; VESC Tool reads the
+            // first command-31 data item at `ui.qml.in:853-925` as speed.
+            assert_eq!(bytes.len(), baseline.as_bytes().len());
+            assert_eq!(&bytes[..12], &baseline.as_bytes()[..12]);
+            assert_eq!(&bytes[12..14], &expected);
+            assert_eq!(&bytes[14..], &baseline.as_bytes()[14..]);
+        }
+    }
+
+    #[test]
+    fn command_31_qml_visible_motor_speed_is_kilometres_per_hour() {
+        let response = encode_refloat_realtime_data_response(
+            &sample_payloads_with_speed(1.0),
+            TimestampTicks::from_ticks(0),
+        );
+        let bytes = response.as_bytes();
+        let qml_value = decode_normal_float16([bytes[12], bytes[13]]);
+
+        assert!((qml_value - 3.6).abs() < 0.001);
+    }
+
+    fn decode_normal_float16(bytes: [u8; 2]) -> f32 {
+        let bits = u16::from_be_bytes(bytes);
+        let sign = if bits & 0x8000 == 0 { 1.0 } else { -1.0 };
+        let exponent = i32::from((bits >> 10) & 0x1f) - 15;
+        let significand = 1.0 + f32::from(bits & 0x03ff) / 1024.0;
+        sign * significand * 2.0_f32.powi(exponent)
     }
 
     #[track_caller]

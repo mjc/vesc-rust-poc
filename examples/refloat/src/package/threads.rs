@@ -25,22 +25,23 @@ const REFLOAT_AUX_LOOP_TIME_US: u32 = 1_000_000 / REFLOAT_LEDS_REFRESH_RATE_HZ;
 
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::AdcVoltage;
-#[cfg(target_arch = "arm")]
+#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RefloatRuntimeThread {
     Main,
     Aux,
 }
 
-#[cfg(target_arch = "arm")]
+#[cfg(any(test, target_arch = "arm"))]
 impl RefloatRuntimeThread {
     const fn stack_bytes(self) -> usize {
         match self {
-            Self::Main => 1536,
+            Self::Main => 2048,
             Self::Aux => 1024,
         }
     }
 
+    #[cfg(target_arch = "arm")]
     const fn working_area_size(self) -> ThreadWorkingAreaSize {
         match ThreadWorkingAreaSize::try_from_bytes(self.stack_bytes()) {
             Ok(size) => size,
@@ -48,6 +49,7 @@ impl RefloatRuntimeThread {
         }
     }
 
+    #[cfg(target_arch = "arm")]
     fn name(self) -> vescpkg_rs::ThreadName {
         match self {
             Self::Main => vescpkg_rs::thread_name!("Refloat Main"),
@@ -58,11 +60,11 @@ impl RefloatRuntimeThread {
 
 /// Describe the Refloat runtime threads.
 ///
-/// Upstream passes its position-independent refloat_thd, aux_thd, and
-/// thread-name addresses directly to spawn with stacks of 1536 and
-/// 1024 bytes at third_party/refloat/src/main.c:2438-2445. VESC forwards
-/// those runtime addresses and byte counts to chThdCreateStatic at
-/// third_party/vesc/lispBM/lispif_c_lib.c:98-125.
+/// Upstream passes its position-independent refloat_thd and aux_thd to spawn
+/// with working areas of 1536 and 1024 bytes at
+/// third_party/refloat/src/main.c:2438-2445. The Rust main-loop call chain is
+/// larger, so it reserves 2048 bytes. VESC forwards these byte counts directly
+/// to chThdCreateStatic at third_party/vesc/lispBM/lispif_c_lib.c:98-125.
 #[cfg(target_arch = "arm")]
 fn refloat_runtime_threads() -> [vescpkg_rs::ThreadSpec<RefloatPackageState>; 2] {
     let main_thread = RefloatRuntimeThread::Main;
@@ -97,6 +99,41 @@ pub(crate) fn run_refloat_main_thread_with<F: FnMut() -> u32>(
 }
 
 #[cfg(any(test, target_arch = "arm"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RefloatMainThreadTick {
+    sleep_us: u32,
+    configure_beeper: bool,
+    beeper_level: Option<vescpkg_rs::DigitalOutputLevel>,
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+impl RefloatMainThreadTick {
+    const fn new(
+        sleep_us: u32,
+        configure_beeper: bool,
+        beeper_level: Option<vescpkg_rs::DigitalOutputLevel>,
+    ) -> Self {
+        Self {
+            sleep_us,
+            configure_beeper,
+            beeper_level,
+        }
+    }
+
+    const fn sleep_us(self) -> u32 {
+        self.sleep_us
+    }
+
+    const fn beeper_level(self) -> Option<vescpkg_rs::DigitalOutputLevel> {
+        self.beeper_level
+    }
+
+    const fn configure_beeper(self) -> bool {
+        self.configure_beeper
+    }
+}
+
+#[cfg(any(test, target_arch = "arm"))]
 #[inline(always)]
 pub(crate) fn tick_refloat_main_thread_with(
     state: &mut RefloatPackageState,
@@ -106,13 +143,19 @@ pub(crate) fn tick_refloat_main_thread_with(
     footpad_adc1: AdcVoltage,
     footpad_adc2: AdcVoltage,
     system_time_ticks: TimestampTicks,
-) -> u32 {
+) -> RefloatMainThreadTick {
     // C map: `refloat_thd` refreshes runtime inputs, executes state/control
     // logic, applies motor control, then sleeps `loop_time_us` through
     // `third_party/refloat/src/main.c:772-1080`.
+    // C calls `beeper_update` before its state switch at
+    // `third_party/refloat/src/main.c:776-824`.
+    let alert_level = state
+        .tick_beeper()
+        .map(crate::beeper::RefloatBeeperLevel::digital_output);
     state.refresh_main_loop_runtime_state(
         telemetry,
         imu,
+        motor,
         footpad_adc1,
         footpad_adc2,
         system_time_ticks,
@@ -124,8 +167,16 @@ pub(crate) fn tick_refloat_main_thread_with(
         .ride_state()
         .run_state();
     state.apply_motor_control(motor, run_state, system_time_ticks);
+    let beeper_level = state
+        .take_beeper_level()
+        .map(crate::beeper::RefloatBeeperLevel::digital_output)
+        .or(alert_level);
 
-    state.configured_loop_time_us()
+    RefloatMainThreadTick::new(
+        state.configured_loop_time_us(),
+        state.take_beeper_configuration_request(),
+        beeper_level,
+    )
 }
 
 /// Run Refloat's source-backed auxiliary thread scheduler shell.
@@ -186,7 +237,8 @@ impl vescpkg_rs::FirmwareThread for RefloatMainThread {
                 // defines those enum slots at `third_party/vesc/lispBM/c_libs/vesc_c_if.h:219-220`.
                 let footpad_voltage1 = firmware.gpio().read_analog(AnalogPin::ADC1);
                 let footpad_voltage2 = firmware.gpio().read_analog(AnalogPin::ADC2);
-                ctx.with_state_mut(|state| {
+                let tick = ctx.with_state_mut(|state| {
+                    state.refresh_controller_input(firmware.input());
                     tick_refloat_main_thread_with(
                         state,
                         firmware.telemetry(),
@@ -196,8 +248,18 @@ impl vescpkg_rs::FirmwareThread for RefloatMainThread {
                         footpad_voltage2,
                         system_time_ticks,
                     )
+                });
+                tick.map_or(1, |tick| {
+                    if tick.configure_beeper() {
+                        let _ = firmware
+                            .gpio()
+                            .configure_output(vescpkg_rs::DigitalPin::PPM);
+                    }
+                    if let Some(level) = tick.beeper_level() {
+                        let _ = firmware.gpio().write(vescpkg_rs::DigitalPin::PPM, level);
+                    }
+                    tick.sleep_us()
                 })
-                .unwrap_or(1)
             });
         }
 
@@ -231,10 +293,26 @@ impl vescpkg_rs::StatelessFirmwareThread for RefloatAuxThread {
 #[cfg(test)]
 mod tests {
     use super::super::state::RefloatPackageState;
-    use crate::domain::{RefloatAllDataPayloads, RefloatFootpadState, RefloatRunState};
+    use crate::beeper::{RefloatBeeperAlert, RefloatBeeperCount};
+    use crate::domain::{
+        RefloatAllDataBasePayload, RefloatAllDataPayloads, RefloatAllDataStatus, RefloatBeepReason,
+        RefloatFootpadState, RefloatMode, RefloatRideState, RefloatRunState,
+        RefloatSetpointAdjustment, RefloatStopCondition,
+    };
+    use crate::package::test_support::{
+        default_refloat_config_bytes, sample_all_data_payloads_with_ride_state,
+    };
     use core::time::Duration;
     use vescpkg_rs::prelude::*;
     use vescpkg_rs::test_support::FirmwareTest;
+
+    #[test]
+    fn refloat_main_thread_reserves_the_generated_rust_working_area() {
+        // The current ARM call chain reaches 1480 bytes before ChibiOS's
+        // thread metadata, saved contexts, and interrupt reserve.
+        assert_eq!(super::RefloatRuntimeThread::Main.stack_bytes(), 2048);
+        assert_eq!(super::RefloatRuntimeThread::Aux.stack_bytes(), 1024);
+    }
 
     #[test]
     fn refloat_main_thread_tick_refreshes_runtime_state_and_sleeps_like_refloat_loop() {
@@ -307,6 +385,7 @@ mod tests {
                 AdcVoltage::new(Voltage::from_volts(0.0)),
                 TimestampTicks::from_ticks(0),
             )
+            .sleep_us()
         });
 
         // Upstream `refloat_thd` applies motor control after the state switch at
@@ -318,6 +397,232 @@ mod tests {
             state.all_data_payloads().base().footpad().state(),
             RefloatFootpadState::Left,
         );
+    }
+
+    #[test]
+    fn refloat_main_thread_tick_drives_duty_haptic_through_typed_motor_audio() {
+        let firmware = FirmwareTest::new().with_runtime_motor(
+            ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1200.0)),
+            VehicleSpeed::new(Speed::ZERO),
+            TotalMotorCurrent::new(Current::ZERO),
+            InputCurrent::new(Current::ZERO),
+            DutyCycle::new(SignedRatio::from_ratio_const(0.81)),
+        );
+        firmware.set_imu_ready(true);
+        let payloads =
+            sample_all_data_payloads_with_ride_state(RefloatRunState::Running, RefloatMode::Normal);
+        let base = payloads.base();
+        let base = RefloatAllDataBasePayload::new(
+            base.balance_current(),
+            base.attitude(),
+            RefloatAllDataStatus::new(
+                RefloatRideState::new(
+                    RefloatRunState::Running,
+                    RefloatMode::Normal,
+                    RefloatSetpointAdjustment::PushbackDuty,
+                    RefloatStopCondition::None,
+                ),
+                base.status().beep_reason(),
+            ),
+            base.footpad(),
+            base.setpoints(),
+            base.booster_current(),
+            base.motor(),
+        );
+        let mut state = RefloatPackageState::new(RefloatAllDataPayloads::new(
+            base,
+            payloads.mode2(),
+            payloads.mode3(),
+            payloads.mode4(),
+        ));
+
+        super::tick_refloat_main_thread_with(
+            &mut state,
+            firmware.telemetry(),
+            firmware.imu(),
+            firmware.motor(),
+            AdcVoltage::new(Voltage::from_volts(2.5)),
+            AdcVoltage::new(Voltage::from_volts(2.5)),
+            TimestampTicks::from_ticks(0),
+        );
+
+        assert_eq!(firmware.foc_tone_command_count(), 1);
+        assert_eq!(
+            firmware
+                .commanded_foc_tone_frequency()
+                .frequency()
+                .as_hertz(),
+            495.0
+        );
+    }
+
+    #[test]
+    fn refloat_main_thread_drives_typed_ppm_beeper_levels_like_refloat_loop() {
+        let telemetry = FirmwareTest::new();
+        let imu = telemetry.imu();
+        let motor = telemetry.motor();
+        let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+        let mut config = default_refloat_config_bytes();
+        config[242] = 1;
+        assert!(state.store_serialized_config(&config));
+        state.refresh_runtime_state(telemetry.telemetry(), imu, TimestampTicks::from_ticks(0));
+        state.alert_beeper(RefloatBeeperAlert::Short(RefloatBeeperCount::THREE));
+        let mut changes = std::vec::Vec::new();
+        let mut configure_ticks = std::vec::Vec::new();
+
+        for tick in 1..=160 {
+            let result = super::tick_refloat_main_thread_with(
+                &mut state,
+                telemetry.telemetry(),
+                imu,
+                motor,
+                AdcVoltage::new(Voltage::ZERO),
+                AdcVoltage::new(Voltage::ZERO),
+                TimestampTicks::from_ticks(0),
+            );
+            if let Some(level) = result.beeper_level() {
+                changes.push((tick, level));
+            }
+            if result.configure_beeper() {
+                configure_ticks.push(tick);
+            }
+        }
+
+        assert_eq!(configure_ticks, [1]);
+        assert_eq!(
+            changes,
+            [
+                (80, DigitalOutputLevel::Low),
+                (160, DigitalOutputLevel::High),
+            ]
+        );
+    }
+
+    #[test]
+    fn refloat_main_thread_forces_footpad_warning_on_and_off_like_refloat() {
+        let firmware = FirmwareTest::new().with_runtime_motor(
+            ElectricalSpeed::new(Rpm::from_revolutions_per_minute(3_000.0)),
+            VehicleSpeed::new(Speed::ZERO),
+            TotalMotorCurrent::new(Current::ZERO),
+            InputCurrent::new(Current::ZERO),
+            DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+        );
+        firmware.set_imu_ready(true);
+        let mut state = RefloatPackageState::new(sample_all_data_payloads_with_ride_state(
+            RefloatRunState::Running,
+            RefloatMode::Normal,
+        ));
+        let mut config = default_refloat_config_bytes();
+        config[242] = 1;
+        assert!(state.store_serialized_config(&config));
+        for _ in 0..=240 {
+            let _ = state.tick_beeper();
+        }
+
+        let warning = super::tick_refloat_main_thread_with(
+            &mut state,
+            firmware.telemetry(),
+            firmware.imu(),
+            firmware.motor(),
+            AdcVoltage::new(Voltage::ZERO),
+            AdcVoltage::new(Voltage::ZERO),
+            TimestampTicks::from_ticks(1),
+        );
+        assert_eq!(warning.beeper_level(), Some(DigitalOutputLevel::High));
+        assert_eq!(
+            state.all_data_payloads().base().status().beep_reason(),
+            RefloatBeepReason::Sensors
+        );
+
+        let restored = super::tick_refloat_main_thread_with(
+            &mut state,
+            firmware.telemetry(),
+            firmware.imu(),
+            firmware.motor(),
+            AdcVoltage::new(Voltage::from_volts(3.0)),
+            AdcVoltage::new(Voltage::from_volts(3.0)),
+            TimestampTicks::from_ticks(2),
+        );
+        assert_eq!(restored.beeper_level(), Some(DigitalOutputLevel::Low));
+    }
+
+    #[test]
+    fn refloat_main_thread_holds_duty_warning_for_duty_pushback_like_refloat() {
+        let mut firmware = FirmwareTest::new()
+            .with_runtime_motor(
+                ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1_200.0)),
+                VehicleSpeed::new(Speed::ZERO),
+                TotalMotorCurrent::new(Current::ZERO),
+                InputCurrent::new(Current::ZERO),
+                DutyCycle::new(SignedRatio::from_ratio_const(0.9)),
+            )
+            .with_input_voltage(InputVoltage::new(Voltage::from_volts(72.0)))
+            .with_battery_cell_count(BatteryCellCount::try_new(18).expect("18s battery"));
+        firmware.set_imu_ready(true);
+        let mut state = RefloatPackageState::new(sample_all_data_payloads_with_ride_state(
+            RefloatRunState::Running,
+            RefloatMode::Normal,
+        ));
+        let mut config = default_refloat_config_bytes();
+        config[50] = 1;
+        config[242] = 1;
+        assert!(state.store_serialized_config(&config));
+        for _ in 0..=240 {
+            let _ = state.tick_beeper();
+        }
+
+        let warning_tick = (1..=400).find(|tick| {
+            super::tick_refloat_main_thread_with(
+                &mut state,
+                firmware.telemetry(),
+                firmware.imu(),
+                firmware.motor(),
+                AdcVoltage::new(Voltage::from_volts(3.0)),
+                AdcVoltage::new(Voltage::from_volts(3.0)),
+                TimestampTicks::from_ticks(*tick),
+            )
+            .beeper_level()
+                == Some(DigitalOutputLevel::High)
+        });
+
+        let status = state.all_data_payloads().base().status();
+        assert_eq!(status.ride_state().run_state(), RefloatRunState::Running);
+        let duty = state
+            .all_data_payloads()
+            .base()
+            .motor()
+            .duty_cycle()
+            .ratio()
+            .as_ratio();
+        assert!(duty > 0.8, "duty={duty}, warning_tick={warning_tick:?}");
+        assert_eq!(
+            status.ride_state().setpoint_adjustment(),
+            RefloatSetpointAdjustment::PushbackDuty
+        );
+        assert_eq!(status.beep_reason(), RefloatBeepReason::Duty);
+        assert!(warning_tick.is_some());
+
+        firmware = firmware.with_runtime_motor(
+            ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1_200.0)),
+            VehicleSpeed::new(Speed::ZERO),
+            TotalMotorCurrent::new(Current::ZERO),
+            InputCurrent::new(Current::ZERO),
+            DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+        );
+        let release_tick = (401..=800).find(|tick| {
+            super::tick_refloat_main_thread_with(
+                &mut state,
+                firmware.telemetry(),
+                firmware.imu(),
+                firmware.motor(),
+                AdcVoltage::new(Voltage::from_volts(3.0)),
+                AdcVoltage::new(Voltage::from_volts(3.0)),
+                TimestampTicks::from_ticks(*tick),
+            )
+            .beeper_level()
+                == Some(DigitalOutputLevel::Low)
+        });
+        assert!(release_tick.is_some());
     }
 
     #[test]

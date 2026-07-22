@@ -257,6 +257,10 @@ impl TryFrom<i32> for LispValue {
 
 /// Errors returned when extension registration fails.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    not(any(test, feature = "test-support", target_arch = "arm")),
+    allow(dead_code)
+)]
 pub(crate) enum ExtensionRegistrationError {
     /// Firmware rejected the registration request.
     FirmwareRejected,
@@ -274,6 +278,11 @@ pub struct ExtensionRegistration {
 }
 
 impl ExtensionRegistration {
+    #[cfg_attr(
+        not(any(test, feature = "test-support", target_arch = "arm")),
+        allow(dead_code)
+    )]
+    // Used by lifecycle extension registration on firmware and test-support builds.
     pub(crate) const fn new(requested: usize, registered: usize) -> Self {
         Self {
             requested,
@@ -319,6 +328,11 @@ impl ExtensionName {
         }
     }
 
+    #[cfg_attr(
+        not(any(test, feature = "test-support", target_arch = "arm")),
+        allow(dead_code)
+    )]
+    // Firmware/test-support registration needs the validated C name pointer.
     pub(crate) const fn as_cstr(self) -> &'static CStr {
         // SAFETY: the macro support hook validates the terminating NUL byte.
         unsafe { CStr::from_bytes_with_nul_unchecked(self.0) }

@@ -133,7 +133,7 @@ impl RefloatPackageState {
         }
     }
 
-    fn set_ride_mode(&mut self, mode: RefloatMode) {
+    pub(super) fn set_ride_mode(&mut self, mode: RefloatMode) {
         // HANDTEST changes only `state.mode` in C at `third_party/refloat/src/main.c:1430`;
         // preserve the rest of the packed Rust ride state while swapping mode.
         let payloads = self.all_data_payloads;
@@ -156,17 +156,14 @@ impl RefloatPackageState {
     fn restore_handtest_config(&mut self) {
         // C map: disabling HANDTEST restores the prior config from EEPROM in
         // `third_party/refloat/src/main.c:1447-1449`.
-        if let Some(config) = self.handtest_config_backup.take() {
-            self.serialized_config = config;
-        }
+        self.read_config_from_eeprom();
+        self.refresh_balance_filter_config();
+        self.refresh_config_runtime_state();
     }
 
     fn apply_handtest_safety_config(&mut self) {
-        // C map: enabling HANDTEST preserves the original config, then applies
-        // the temporary safety overrides at `third_party/refloat/src/main.c:1431-1446`.
-        self.handtest_config_backup
-            .get_or_insert(self.serialized_config);
-
+        // C map: enabling HANDTEST applies temporary safety overrides at
+        // `third_party/refloat/src/main.c:1431-1446`.
         if let Some(config) = Self::handtest_safety_config(self.serialized_config) {
             self.serialized_config = config;
         }
@@ -236,6 +233,7 @@ mod tests {
 
     #[test]
     fn handtest_packet_toggles_ready_mode_and_safety_config_like_refloat_qml() {
+        let _firmware = FirmwareTest::new();
         // QML sends COMMAND_HANDTEST at `refloat/ui.qml.in:764-768`; C toggles
         // mode and temporary safety config at `third_party/refloat/src/main.c:1421-1450`.
         let mut state = RefloatPackageState::new(sample_all_data_payloads_with_ride_state(
@@ -284,6 +282,39 @@ mod tests {
             RefloatMode::Normal
         );
         assert_eq!(state.serialized_config(), &original_config);
+    }
+
+    #[test]
+    fn handtest_disable_restores_eeprom_not_the_enable_time_image_like_refloat() {
+        let _firmware = FirmwareTest::new();
+        let mut state = RefloatPackageState::new(sample_all_data_payloads_with_ride_state(
+            RefloatRunState::Ready,
+            RefloatMode::Normal,
+        ));
+        let mut persisted = editable_config_from_state(&state);
+        assert!(persisted.editor().set_kp(AngleCurrentGain::new(1.2)));
+        let persisted = *persisted.as_bytes();
+        assert!(state.store_serialized_config(&persisted));
+
+        let mut volatile = editable_config_from_state(&state);
+        assert!(volatile.editor().set_kp(AngleCurrentGain::new(-9.0)));
+        state.replace_serialized_config_for_test(volatile);
+
+        assert!(state.handle_handtest_packet(&[
+            REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            RefloatAppDataCommand::HandTest.id(),
+            1,
+        ]));
+        assert!(state.handle_handtest_packet(&[
+            REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            RefloatAppDataCommand::HandTest.id(),
+            0,
+        ]));
+
+        assert_eq!(
+            state.serialized_config.balance().kp().as_amps_per_degree(),
+            1.2
+        );
     }
 
     #[test]

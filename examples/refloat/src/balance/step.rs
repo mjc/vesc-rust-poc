@@ -5,6 +5,7 @@ use super::{booster::Phase as BoosterPhase, pid::Phase as PidPhase};
 #[cfg(test)]
 use super::{
     booster::{Profile, Proportional},
+    loop_io::PidState,
     pid::PitchRate,
 };
 
@@ -124,11 +125,7 @@ mod tests {
         LoopState {
             balance_current: motor_current(Current::from_amps(0.0)),
             booster_current: motor_current(Current::from_amps(0.0)),
-            pid_integral_current: motor_current(Current::from_amps(0.0)),
-            pid_kp_brake_scale: PidScale::new(1.0),
-            pid_kp2_brake_scale: PidScale::new(1.0),
-            pid_kp_accel_scale: PidScale::new(1.0),
-            pid_kp2_accel_scale: PidScale::new(1.0),
+            pid: PidState::source_startup(),
             softstart_pid_limit: motor_current(Current::from_amps(100.0)),
         }
     }
@@ -154,33 +151,91 @@ mod tests {
         };
         let state = base_state();
 
-        let coasting = state.with_updated_pid_scales(
+        let coasting = state.with_updated_pid_state(
             config,
             electrical_speed(Rpm::from_revolutions_per_minute(0.0)),
+            state.pid.integral_current,
         );
-        let forward = state.with_updated_pid_scales(
+        let forward = state.with_updated_pid_state(
             config,
             electrical_speed(Rpm::from_revolutions_per_minute(1000.0)),
+            state.pid.integral_current,
         );
-        let reverse = state.with_updated_pid_scales(
+        let reverse = state.with_updated_pid_state(
             config,
             electrical_speed(Rpm::from_revolutions_per_minute(-1000.0)),
+            state.pid.integral_current,
         );
 
-        assert_scale(coasting.pid_kp_brake_scale, PidScale::new(1.0));
-        assert_scale(coasting.pid_kp2_brake_scale, PidScale::new(1.0));
-        assert_scale(coasting.pid_kp_accel_scale, PidScale::new(1.0));
-        assert_scale(coasting.pid_kp2_accel_scale, PidScale::new(1.0));
+        assert_scale(coasting.pid.kp_brake_scale, PidScale::new(1.0));
+        assert_scale(coasting.pid.kp2_brake_scale, PidScale::new(1.0));
+        assert_scale(coasting.pid.kp_accel_scale, PidScale::new(1.0));
+        assert_scale(coasting.pid.kp2_accel_scale, PidScale::new(1.0));
 
-        assert_scale(forward.pid_kp_brake_scale, PidScale::new(1.01));
-        assert_scale(forward.pid_kp2_brake_scale, PidScale::new(1.02));
-        assert_scale(forward.pid_kp_accel_scale, PidScale::new(1.0));
-        assert_scale(forward.pid_kp2_accel_scale, PidScale::new(1.0));
+        assert_scale(forward.pid.kp_brake_scale, PidScale::new(1.01));
+        assert_scale(forward.pid.kp2_brake_scale, PidScale::new(1.02));
+        assert_scale(forward.pid.kp_accel_scale, PidScale::new(1.0));
+        assert_scale(forward.pid.kp2_accel_scale, PidScale::new(1.0));
 
-        assert_scale(reverse.pid_kp_brake_scale, PidScale::new(1.0));
-        assert_scale(reverse.pid_kp2_brake_scale, PidScale::new(1.0));
-        assert_scale(reverse.pid_kp_accel_scale, PidScale::new(1.01));
-        assert_scale(reverse.pid_kp2_accel_scale, PidScale::new(1.02));
+        assert_scale(reverse.pid.kp_brake_scale, PidScale::new(1.0));
+        assert_scale(reverse.pid.kp2_brake_scale, PidScale::new(1.0));
+        assert_scale(reverse.pid.kp_accel_scale, PidScale::new(1.01));
+        assert_scale(reverse.pid.kp2_accel_scale, PidScale::new(1.02));
+    }
+
+    #[test]
+    fn balance_loop_unit_persists_pid_integral_across_ticks_like_refloat_pid() {
+        let config = LoopConfig {
+            ki: IntegralCurrentGain::new(1.0),
+            ki_limit: motor_current_limit(Current::from_amps(100.0)),
+            ..base_config()
+        };
+        let input = LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(1.0)),
+            ..base_input()
+        };
+
+        let first = advance_loop(config, input, base_state());
+        let second = advance_loop(config, input, first.state);
+
+        assert_current(
+            second.state.pid.integral_current,
+            motor_current(Current::from_amps(2.0)),
+        );
+    }
+
+    #[test]
+    fn balance_loop_unit_zero_ki_limit_keeps_integrating_like_refloat_pid() {
+        let config = LoopConfig {
+            ki: IntegralCurrentGain::new(1.0),
+            ki_limit: motor_current_limit(Current::ZERO),
+            ..base_config()
+        };
+        let positive = LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(2.0)),
+            ..base_input()
+        };
+        let negative = LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(-3.0)),
+            ..base_input()
+        };
+
+        let first = advance_loop(config, positive, base_state());
+        let second = advance_loop(config, positive, first.state);
+        let reversed = advance_loop(config, negative, second.state);
+
+        assert_current(
+            first.state.pid.integral_current,
+            motor_current(Current::from_amps(2.0)),
+        );
+        assert_current(
+            second.state.pid.integral_current,
+            motor_current(Current::from_amps(4.0)),
+        );
+        assert_current(
+            reversed.state.pid.integral_current,
+            motor_current(Current::from_amps(1.0)),
+        );
     }
 
     #[test]

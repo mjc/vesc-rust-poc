@@ -25,6 +25,7 @@ fn main() {}
 static HOST_ALLOCATOR: std::alloc::System = std::alloc::System;
 
 mod balance;
+mod beeper;
 pub mod bms;
 mod config;
 pub mod domain;

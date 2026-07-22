@@ -162,6 +162,9 @@ impl AudioChannel {
     /// Highest accepted FOC audio channel.
     pub const MAX: u8 = AUDIO_CHANNEL_COUNT - 1;
 
+    /// First FOC audio channel.
+    pub const FIRST: Self = Self(Self::MIN);
+
     /// Create a checked FOC audio channel.
     pub const fn try_new(channel: u8) -> Result<Self, AudioChannelError> {
         if channel <= Self::MAX {
@@ -279,6 +282,23 @@ impl MotorCurrentLimit {
         } else {
             current
         }
+    }
+}
+
+/// Positive battery/input-current limit magnitude.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct InputCurrentLimit(Current);
+
+impl InputCurrentLimit {
+    /// Normalize a configured input-current limit to its positive magnitude.
+    pub const fn new(current: Current) -> Self {
+        Self(current.abs())
+    }
+
+    /// Return the positive input-current-limit magnitude.
+    pub const fn current(self) -> Current {
+        self.0
     }
 }
 

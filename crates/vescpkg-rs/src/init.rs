@@ -247,13 +247,25 @@ impl<'info> PackageStart<'info> {
         &mut self,
         state_value: T,
     ) -> Result<(), PackageStartError> {
-        self.install_runtime_state_with(state_value, |state, allocation| unsafe {
+        self.install_runtime_state_using(state_value, |state, allocation| unsafe {
             T::runtime_store().install_owned(state, allocation)
         })
     }
 
+    /// Allocate loader-owned package state, publish it, then initialize it in place.
     #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
-    fn install_runtime_state_with<T: crate::PackageRuntimeState>(
+    pub fn install_runtime_state_with<T: crate::PackageRuntimeState>(
+        &mut self,
+        state_value: T,
+        initialize: impl FnOnce(&mut T),
+    ) -> Result<(), PackageStartError> {
+        self.install_runtime_state(state_value)?;
+        self.with_runtime_state(initialize)
+            .ok_or(PackageStartError::StateTypeMismatch)
+    }
+
+    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
+    fn install_runtime_state_using<T: crate::PackageRuntimeState>(
         &mut self,
         state_value: T,
         install: impl FnOnce(
@@ -993,6 +1005,31 @@ mod tests {
     }
 
     #[test]
+    fn package_start_initializes_runtime_state_after_installing_it() {
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0,
+        };
+        let mut start = super::PackageStart::from_lib_info(&mut info);
+
+        assert_eq!(
+            start.install_runtime_state_with(OwnedState(37), |state| state.0 = 42),
+            Ok(())
+        );
+        assert!(!start.raw_info_mut().unwrap().arg.is_null());
+        assert_eq!(
+            start.with_runtime_state::<OwnedState, _>(|state| state.0),
+            Some(42)
+        );
+
+        let stop = start.raw_info_mut().unwrap().stop_fun.unwrap();
+        let arg = start.raw_info_mut().unwrap().arg;
+        assert!(start.finish_start(true));
+        unsafe { stop(arg) };
+    }
+
+    #[test]
     fn failed_package_start_rolls_back_owned_runtime_state() {
         OWNED_STATE_STOPS.store(0, Ordering::Relaxed);
         OWNED_STATE_DROPS.store(0, Ordering::Relaxed);
@@ -1022,7 +1059,7 @@ mod tests {
         };
         let mut start = super::PackageStart::from_lib_info(&mut info);
 
-        let result = start.install_runtime_state_with(FailedState, |_, _| {
+        let result = start.install_runtime_state_using(FailedState, |_, _| {
             Err(crate::runtime::PackageStateInstallError::AlreadyInstalled)
         });
 

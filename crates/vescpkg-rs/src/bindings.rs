@@ -81,15 +81,23 @@ pub(crate) trait AppDataBindings {
     fn system_time_ticks(&self) -> u32;
 
     /// Return firmware uptime in floating-point seconds.
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    // Firmware clock slots remain declared even when host builds do not call every clock helper.
     fn system_time_seconds(&self) -> f32;
 
     /// Return the firmware-computed age of a system timestamp in seconds.
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    // Firmware clock slots remain declared even when host builds do not call every clock helper.
     fn timestamp_age_seconds(&self, timestamp: u32) -> f32;
 
     /// Return the current high-resolution timer instant.
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    // Firmware timer slots remain declared even when host builds do not call every timer helper.
     fn timer_time_now(&self) -> u32;
 
     /// Return high-resolution elapsed time since a timer instant.
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    // Firmware timer slots remain declared even when host builds do not call every timer helper.
     fn timer_seconds_elapsed_since(&self, timestamp: u32) -> f32;
 
     /// Return the package `ARG` pointer stored by the firmware loader.

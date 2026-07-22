@@ -2,7 +2,9 @@ use crate::config::RefloatRemoteThrottleConfig;
 use crate::domain::{RefloatAllDataPayloads, RefloatAppDataCommand, RefloatRunState};
 use crate::package::state::refloat_command_payload;
 use crate::package::time::refloat_ticks_elapsed_seconds;
-use vescpkg_rs::prelude::{Current, MotorCurrent, Ratio, Rpm, TimestampTicks};
+use vescpkg_rs::prelude::{
+    AngleDegrees, AngularVelocity, Current, MotorCurrent, Ratio, Rpm, SampleRate, TimestampTicks,
+};
 
 fn zero_motor_current() -> MotorCurrent {
     // C map: `reset_runtime_vars` and the RC-move idle branches clear current
@@ -150,6 +152,8 @@ pub(super) fn handle_packet(
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct RemoteControlState {
     input: crate::domain::RefloatRealtimeRemoteInput,
+    tilt_ramped_step: AngleDegrees,
+    tilt_setpoint: AngleDegrees,
     current: MotorCurrent,
     steps: u16,
     counter: u16,
@@ -164,6 +168,8 @@ impl Default for RemoteControlState {
             input: crate::domain::RefloatRealtimeRemoteInput::new(
                 vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.0),
             ),
+            tilt_ramped_step: AngleDegrees::ZERO,
+            tilt_setpoint: AngleDegrees::ZERO,
             current: zero_motor_current(),
             steps: 0,
             counter: 0,
@@ -173,11 +179,10 @@ impl Default for RemoteControlState {
 }
 
 impl RemoteControlState {
-    #[cfg(test)]
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
     pub(super) fn set_input(&mut self, input: crate::domain::RefloatRealtimeRemoteInput) {
-        // Test-only helper for feeding the READY remote-throttle path that
-        // upstream derives from command state and input ADC at
-        // `third_party/refloat/src/main.c:275-298`.
+        // C map: `remote_input` stores the connected, deadbanded, optionally
+        // inverted input at `third_party/refloat/src/remote.c:36-68`.
         self.input = input;
     }
 
@@ -186,6 +191,54 @@ impl RemoteControlState {
         // `third_party/refloat/src/main.c:239-252`.
         self.current = zero_motor_current();
         self.steps = 0;
+        self.tilt_ramped_step = AngleDegrees::ZERO;
+        self.tilt_setpoint = AngleDegrees::ZERO;
+    }
+
+    pub(super) fn update_input_tilt(
+        &mut self,
+        angle_limit: AngleDegrees,
+        speed: AngularVelocity,
+        sample_rate: SampleRate,
+        darkride: bool,
+    ) -> AngleDegrees {
+        // C map: `remote_configure` derives the per-loop step and
+        // `remote_update` ramps the input target at
+        // `third_party/refloat/src/remote.c:30-34,70-94`.
+        let Some(period) = sample_rate.sample_period() else {
+            return self.tilt_setpoint;
+        };
+        let step = AngleDegrees::from(speed * period).as_degrees();
+        let direction = if darkride { -1.0 } else { 1.0 };
+        let target = self.input.ratio().as_ratio() * angle_limit.as_degrees() * direction;
+        let setpoint = self.tilt_setpoint.as_degrees();
+        let target_diff = target - setpoint;
+        if target_diff.abs() < 2.0 {
+            self.tilt_ramped_step = AngleDegrees::from_degrees(
+                0.02 * step * target_diff / 2.0 + 0.98 * self.tilt_ramped_step.as_degrees(),
+            );
+            let centering_step = self
+                .tilt_ramped_step
+                .as_degrees()
+                .abs()
+                .min((target_diff / 2.0).abs() * step)
+                * target_diff.signum();
+            self.tilt_setpoint = if target_diff.abs() < centering_step.abs() {
+                AngleDegrees::from_degrees(target)
+            } else {
+                AngleDegrees::from_degrees(setpoint + centering_step)
+            };
+        } else {
+            self.tilt_ramped_step = AngleDegrees::from_degrees(
+                0.02 * step * target_diff.signum() + 0.98 * self.tilt_ramped_step.as_degrees(),
+            );
+            self.tilt_setpoint = self.tilt_setpoint + self.tilt_ramped_step;
+        }
+        self.tilt_setpoint
+    }
+
+    pub(super) const fn input(self) -> crate::domain::RefloatRealtimeRemoteInput {
+        self.input
     }
 
     pub(super) fn queue_move(&mut self, remote_move: RemoteMove) {

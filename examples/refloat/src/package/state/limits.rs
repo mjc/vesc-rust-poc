@@ -1,4 +1,27 @@
-use vescpkg_rs::prelude::{AngleDegrees, Rpm, SignedRatio, VescSeconds};
+use vescpkg_rs::prelude::{AngleDegrees, Ratio, Rpm, SignedRatio, VescSeconds};
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ReverseStopRate {
+    angle: AngleDegrees,
+    erpm: Rpm,
+}
+
+impl ReverseStopRate {
+    const REFLOAT: Self = Self {
+        angle: AngleDegrees::from_degrees(0.08),
+        erpm: Rpm::from_revolutions_per_minute(1_000.0),
+    };
+
+    #[must_use]
+    fn angle_for(self, erpm: Rpm) -> AngleDegrees {
+        self.angle * (erpm / self.erpm)
+    }
+
+    #[must_use]
+    fn erpm_for(self, angle: AngleDegrees) -> Rpm {
+        self.erpm * (angle / self.angle)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct QuickStopLimits {
@@ -16,20 +39,43 @@ impl QuickStopLimits {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct ReverseStopLimits {
+    pub(super) entry_erpm: Rpm,
+    pub(super) tolerance_erpm: Rpm,
     pub(super) total_erpm: Rpm,
     pub(super) pitch: AngleDegrees,
     pub(super) timer_fast_pitch: AngleDegrees,
     pub(super) timer_slow_pitch: AngleDegrees,
+    rate: ReverseStopRate,
 }
 
 impl ReverseStopLimits {
-    // C map: reverse-stop pitch/timer/ERPM thresholds at `third_party/refloat/src/main.c:436-455`.
+    // C map: reverse-stop entry and fault thresholds at
+    // `third_party/refloat/src/main.c:436-455` and
+    // `third_party/refloat/src/main.c:538-552`.
     pub(super) const REFLOAT: Self = Self {
+        entry_erpm: Rpm::from_revolutions_per_minute(200.0),
+        tolerance_erpm: Rpm::from_revolutions_per_minute(20_000.0),
         total_erpm: Rpm::from_revolutions_per_minute(200_000.0),
         pitch: AngleDegrees::from_degrees(18.0),
         timer_fast_pitch: AngleDegrees::from_degrees(10.0),
         timer_slow_pitch: AngleDegrees::from_degrees(5.0),
+        rate: ReverseStopRate::REFLOAT,
     };
+
+    #[must_use]
+    pub(super) fn carryover_total_erpm(self, interpolated_target: AngleDegrees) -> Rpm {
+        // C map: preserve an error-pushback target when entering reverse-stop
+        // at `third_party/refloat/src/main.c:541-546`.
+        -(self.tolerance_erpm + self.rate.erpm_for(interpolated_target))
+    }
+
+    #[must_use]
+    pub(super) fn target_angle(self, reverse_total_erpm: Rpm) -> AngleDegrees {
+        // C map: `REVSTOP_ERPM_INCR` and the target calculation at
+        // `third_party/refloat/src/main.c:100,525-529`.
+        self.rate
+            .angle_for(reverse_total_erpm.abs() - self.tolerance_erpm)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -101,6 +147,9 @@ pub(super) struct TractionLossLimits {
     pub(super) acceleration_detect: Rpm,
     pub(super) acceleration_clear: Rpm,
     pub(super) duty: SignedRatio,
+    pub(super) duty_margin: Ratio,
+    pub(super) clear_delay: VescSeconds,
+    pub(super) raw_duty_clear: Ratio,
     pub(super) erpm: Rpm,
 }
 
@@ -111,6 +160,9 @@ impl TractionLossLimits {
         acceleration_detect: Rpm::from_revolutions_per_minute(15.0),
         acceleration_clear: Rpm::from_revolutions_per_minute(10.0),
         duty: SignedRatio::from_ratio_const(0.3),
+        duty_margin: Ratio::from_ratio_const(0.05),
+        clear_delay: VescSeconds::from_seconds(0.2),
+        raw_duty_clear: Ratio::from_ratio_const(0.85),
         erpm: Rpm::from_revolutions_per_minute(2000.0),
     };
 }
@@ -175,5 +227,14 @@ mod tests {
         );
         assert_eq!(traction_loss.duty, SignedRatio::from_ratio_const(0.3));
         assert_eq!(traction_loss.erpm, Rpm::from_revolutions_per_minute(2000.0));
+        assert_eq!(
+            traction_loss.duty_margin,
+            vescpkg_rs::prelude::Ratio::from_ratio_const(0.05)
+        );
+        assert_eq!(traction_loss.clear_delay, VescSeconds::from_seconds(0.2));
+        assert_eq!(
+            traction_loss.raw_duty_clear,
+            vescpkg_rs::prelude::Ratio::from_ratio_const(0.85)
+        );
     }
 }

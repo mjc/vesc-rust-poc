@@ -287,7 +287,10 @@ mod slots {
     fn_slot!(write_nvm as unsafe extern "C" fn(*mut u8, c_uint, c_uint) -> bool);
     fn_slot!(wipe_nvm as unsafe extern "C" fn() -> bool);
     fn_slot!(get_remote_state as unsafe extern "C" fn() -> RemoteState);
+    fn_slot!(get_ppm as unsafe extern "C" fn() -> f32);
+    fn_slot!(get_ppm_age as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_fault as unsafe extern "C" fn() -> c_uint);
+    fn_slot!(mc_fault_to_string as unsafe extern "C" fn(c_uint) -> *const c_char);
     fn_slot!(mc_get_rpm as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_speed as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_tot_current_filtered as unsafe extern "C" fn() -> f32);
@@ -312,6 +315,7 @@ mod slots {
     // Refloat capability-probes this pre-6.05 slot because not every motor
     // implementation populates the FOC-specific function.
     fn_slot!(foc_get_id as unsafe extern "C" fn() -> f32);
+    fn_slot!(foc_play_tone as unsafe extern "C" fn(c_int, f32, f32) -> bool);
     fn_slot!(mc_temp_fet_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_temp_motor_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(imu_startup_done as unsafe extern "C" fn() -> bool);
@@ -701,9 +705,7 @@ pub unsafe fn conf_custom_clear_configs() {
 ///
 /// The firmware `VESC_IF` table must be valid.
 pub unsafe fn vesc_mutex_create() -> LibMutex {
-    unsafe { slots::mutex_create() }
-        .map(|create| unsafe { create() })
-        .unwrap_or(core::ptr::null_mut())
+    unsafe { slots::mutex_create() }.map_or(core::ptr::null_mut(), |create| unsafe { create() })
 }
 
 /// Lock a firmware mutex, blocking the current firmware thread.
@@ -734,9 +736,7 @@ pub unsafe fn vesc_mutex_unlock(mutex: LibMutex) {
 /// The firmware function table must be valid; the returned handle must be
 /// released with [`vesc_free`].
 pub unsafe fn vesc_sem_create() -> *mut c_void {
-    unsafe { slots::sem_create() }
-        .map(|create| unsafe { create() })
-        .unwrap_or(core::ptr::null_mut())
+    unsafe { slots::sem_create() }.map_or(core::ptr::null_mut(), |create| unsafe { create() })
 }
 
 /// Block until a firmware semaphore is signaled.
@@ -949,13 +949,13 @@ pub unsafe fn gnss_snapshot() -> Option<GnssData> {
     unsafe { copy_firmware_record(loader()) }
 }
 
-/// Copy the current remote-control state returned by firmware.
+/// Copy the current remote-control state when firmware exposes the slot.
 ///
 /// # Safety
 ///
 /// The VESC function table must be valid for the duration of this call.
-pub unsafe fn remote_state() -> RemoteState {
-    unsafe { required_slot!(get_remote_state)() }
+pub unsafe fn remote_state() -> Option<RemoteState> {
+    unsafe { slots::get_remote_state() }.map(|func| unsafe { func() })
 }
 
 /// Return the active motor fault code, or zero for no fault.
@@ -965,6 +965,22 @@ pub unsafe fn remote_state() -> RemoteState {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_fault() -> c_int {
     unsafe { required_slot!(mc_get_fault)() as c_int }
+}
+
+/// Return the latest decoded PPM input.
+///
+/// # Safety
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn get_ppm() -> Option<f32> {
+    unsafe { slots::get_ppm() }.map(|func| unsafe { func() })
+}
+
+/// Return the age of the latest decoded PPM input in seconds.
+///
+/// # Safety
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn get_ppm_age() -> Option<f32> {
+    unsafe { slots::get_ppm_age() }.map(|func| unsafe { func() })
 }
 
 /// Return the current motor electrical RPM.
@@ -1138,6 +1154,17 @@ pub unsafe fn mc_get_duty_cycle_now() -> f32 {
     unsafe { required_slot!(mc_get_duty_cycle_now)() }
 }
 
+/// Return the firmware-owned name for a motor fault code when the slot exists.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid. A non-null
+/// returned pointer is firmware-owned and must point to a NUL-terminated string.
+pub unsafe fn mc_fault_to_string(code: c_uint) -> Option<*const c_char> {
+    let pointer = unsafe { required_slot!(mc_fault_to_string)(code) };
+    (!pointer.is_null()).then_some(pointer)
+}
+
 /// Return FOC d-axis Id current when the firmware slot is present.
 ///
 /// Refloat v1.2.1 reads optional `foc_get_id` while encoding compact all-data
@@ -1149,6 +1176,15 @@ pub unsafe fn mc_get_duty_cycle_now() -> f32 {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn foc_get_id() -> Option<f32> {
     unsafe { slots::foc_get_id() }.map(|func| unsafe { func() })
+}
+
+/// Play one FOC tone when the motor firmware exposes audio support.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn foc_play_tone(channel: c_int, frequency: f32, voltage: f32) -> Option<bool> {
+    unsafe { slots::foc_play_tone() }.map(|func| unsafe { func(channel, frequency, voltage) })
 }
 /// Return the filtered input/battery voltage.
 ///

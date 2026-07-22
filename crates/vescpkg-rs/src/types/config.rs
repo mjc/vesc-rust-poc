@@ -13,6 +13,11 @@ impl WireByte {
         Self(value)
     }
 
+    /// Return the validated protocol byte.
+    pub const fn as_u8(self) -> u8 {
+        self.0
+    }
+
     /// Apply a wire scale and offset directly through a semantic constructor.
     pub fn scaled<T>(self, scale: f32, offset: f32, constructor: fn(f32) -> T) -> T {
         constructor(f32::from(self.0) * scale + offset)
@@ -120,6 +125,11 @@ impl<const LEN: usize> CustomConfigImage<LEN> {
     /// Return the serialized config bytes.
     pub const fn as_bytes(&self) -> &[u8; LEN] {
         &self.0
+    }
+
+    /// Mutably borrow the serialized config bytes.
+    pub fn as_mut_bytes(&mut self) -> &mut [u8; LEN] {
+        &mut self.0
     }
 
     /// Read one big-endian `u16`, returning `None` for out-of-range generated offsets.

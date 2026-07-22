@@ -50,22 +50,41 @@ pub(crate) struct LoopInput {
     pub(crate) traction_control: bool,
 }
 
-/// Mutable PID/booster/current state for one Refloat balance-current step.
+/// Mutable PID state for one Refloat balance-current step.
+///
+/// Source map: upstream stores these fields together in `Data.pid` and updates
+/// them at `third_party/refloat/src/pid.c:31-73`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PidState {
+    pub(crate) integral_current: MotorCurrent,
+    pub(crate) kp_brake_scale: PidScale,
+    pub(crate) kp2_brake_scale: PidScale,
+    pub(crate) kp_accel_scale: PidScale,
+    pub(crate) kp2_accel_scale: PidScale,
+}
+
+impl PidState {
+    pub(crate) fn source_startup() -> Self {
+        Self {
+            integral_current: MotorCurrent::new(Current::ZERO),
+            kp_brake_scale: PidScale::new(1.0),
+            kp2_brake_scale: PidScale::new(1.0),
+            kp_accel_scale: PidScale::new(1.0),
+            kp2_accel_scale: PidScale::new(1.0),
+        }
+    }
+}
+
+/// Mutable control-loop state surrounding Refloat's PID state.
 ///
 /// Source map: upstream stores these fields in `Data.pid`, `Data.booster`,
 /// `Data.softstart_pid_limit`, and `Data.balance_current` while running
-/// `third_party/refloat/src/pid.c:37-73`,
-/// `third_party/refloat/src/booster.c:32-75`, and
 /// `third_party/refloat/src/main.c:924-954`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct LoopState {
     pub(crate) balance_current: MotorCurrent,
     pub(crate) booster_current: MotorCurrent,
-    pub(crate) pid_integral_current: MotorCurrent,
-    pub(crate) pid_kp_brake_scale: PidScale,
-    pub(crate) pid_kp2_brake_scale: PidScale,
-    pub(crate) pid_kp_accel_scale: PidScale,
-    pub(crate) pid_kp2_accel_scale: PidScale,
+    pub(crate) pid: PidState,
     pub(crate) softstart_pid_limit: MotorCurrent,
 }
 
@@ -76,13 +95,14 @@ impl LoopState {
         Self {
             balance_current: zero_current,
             booster_current: zero_current,
-            pid_integral_current: zero_current,
-            pid_kp_brake_scale: PidScale::new(1.0),
-            pid_kp2_brake_scale: PidScale::new(1.0),
-            pid_kp_accel_scale: PidScale::new(1.0),
-            pid_kp2_accel_scale: PidScale::new(1.0),
+            pid: PidState::source_startup(),
             softstart_pid_limit: zero_current,
         }
+    }
+
+    /// Reset transient PID state like upstream `pid_init`.
+    pub(crate) fn reset_pid(&mut self) {
+        self.pid = PidState::source_startup();
     }
 }
 

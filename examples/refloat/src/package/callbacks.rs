@@ -55,6 +55,7 @@ mod tests {
         RefloatRunState,
     };
     use crate::package::RefloatPackageState;
+    use crate::package::protocol::encode_refloat_get_realtime_data_response;
     use crate::package::test_support::{
         sample_all_data_payloads, sample_all_data_payloads_with_ride_state,
     };
@@ -114,6 +115,56 @@ mod tests {
         ));
         assert_eq!(sent.len(), 1);
         assert_eq!(&sent[0][..3], &request);
+    }
+
+    #[test]
+    fn app_data_callback_dispatches_legacy_realtime_data_like_refloat() {
+        let app_data = TimestampTicks::from_ticks(0);
+        let mut sent = Vec::new();
+        let telemetry = FirmwareTest::new();
+        let imu = telemetry.imu();
+        let payloads = sample_all_data_payloads();
+        let expected = encode_refloat_get_realtime_data_response(&payloads);
+        let mut state = RefloatPackageState::new(payloads);
+        let request = [
+            REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            RefloatAppDataCommand::GetRealtimeData.id(),
+        ];
+
+        assert!(handle_packet(
+            &mut state,
+            app_data,
+            &mut sent,
+            telemetry.telemetry(),
+            imu,
+            AppDataPacket::from_bytes(&request),
+        ));
+        assert_eq!(sent.as_slice(), [expected.as_slice()]);
+    }
+
+    #[test]
+    fn app_data_callback_rejects_malformed_legacy_realtime_data_requests() {
+        let app_data = TimestampTicks::from_ticks(0);
+        let mut sent = Vec::new();
+        let telemetry = FirmwareTest::new();
+        let imu = telemetry.imu();
+        let mut state = RefloatPackageState::new(sample_all_data_payloads());
+
+        for request in [
+            &[][..],
+            &[REFLOAT_APP_DATA_PACKAGE_ID.get()][..],
+            &[100, 1][..],
+        ] {
+            assert!(!handle_packet(
+                &mut state,
+                app_data,
+                &mut sent,
+                telemetry.telemetry(),
+                imu,
+                AppDataPacket::from_bytes(request),
+            ));
+        }
+        assert!(sent.is_empty());
     }
 
     #[test]

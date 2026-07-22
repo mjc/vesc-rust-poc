@@ -15,7 +15,17 @@ use core::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 const EMPTY: u8 = 0;
 const INSTALLING: u8 = 1;
 const RUNNING: u8 = 2;
+#[cfg_attr(
+    not(any(test, feature = "test-support", target_arch = "arm")),
+    allow(dead_code)
+)]
+// Stop paths are exercised by firmware/test-support lifecycle, not plain host lib builds.
 const STOPPING: u8 = 3;
+#[cfg_attr(
+    not(any(test, feature = "test-support", target_arch = "arm")),
+    allow(dead_code)
+)]
+// Stop paths are exercised by firmware/test-support lifecycle, not plain host lib builds.
 const STOPPED: u8 = 4;
 #[cfg(target_arch = "arm")]
 const APP_DATA_CALLBACK: u8 = 1;
@@ -25,6 +35,11 @@ const CUSTOM_CONFIG_CALLBACKS: u8 = 1 << 1;
 const IMU_CALLBACK: u8 = 1 << 2;
 
 #[derive(Clone, Copy, Default)]
+#[cfg_attr(
+    not(any(test, feature = "test-support", target_arch = "arm")),
+    allow(dead_code)
+)]
+// Callback flags are consumed when firmware/test-support stop clears registered callbacks.
 pub(crate) struct CallbackRegistrations {
     app_data: bool,
     custom_config: bool,
@@ -64,6 +79,8 @@ pub(crate) struct CallbackRecorder {
 
 #[cfg(not(target_arch = "arm"))]
 impl CallbackRecorder {
+    #[cfg_attr(not(any(test, feature = "test-support")), allow(dead_code))]
+    // Host builds only construct this through package startup tests/support.
     pub(crate) fn new<T: crate::PackageRuntimeState>(state: NonNull<T>) -> Self {
         unsafe fn app_data<T: crate::PackageRuntimeState>(
             state: NonNull<core::ffi::c_void>,
@@ -184,6 +201,8 @@ pub struct PackageStateStore<T> {
     #[cfg(not(target_arch = "arm"))]
     threads: UnsafeCell<Option<crate::thread::ThreadGroup>>,
     #[cfg(not(target_arch = "arm"))]
+    #[cfg_attr(not(any(test, feature = "test-support")), allow(dead_code))]
+    // Host test-support records callback registrations so stop clears only what startup installed.
     callbacks: UnsafeCell<CallbackRegistrations>,
     _state: PhantomData<UnsafeCell<T>>,
 }
@@ -375,7 +394,8 @@ impl<T> Drop for PackageStateEntry<'_, T> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(target_arch = "arm", allow(dead_code))]
+#[cfg_attr(not(any(test, feature = "test-support")), allow(dead_code))]
+// Install errors are visible when host/test-support guards duplicate startup.
 pub(crate) enum PackageStateInstallError {
     AlreadyInstalled,
 }
@@ -576,6 +596,11 @@ impl<T: Send + 'static> PackageStateStore<T> {
         Ok(())
     }
 
+    #[cfg_attr(
+        not(any(test, feature = "test-support", target_arch = "arm")),
+        allow(dead_code)
+    )]
+    // Startup installs owned state on firmware and in lifecycle tests/support.
     #[cfg_attr(target_arch = "arm", allow(clippy::unnecessary_wraps))]
     pub(crate) unsafe fn install_owned(
         &self,
@@ -620,7 +645,8 @@ impl<T: Send + 'static> PackageStateStore<T> {
         }
     }
 
-    #[cfg_attr(target_arch = "arm", allow(dead_code))]
+    #[allow(dead_code)]
+    // Startup completion is recorded by firmware/test-support callback recorders.
     pub(crate) fn finish_start(&self, state: NonNull<T>, started: bool) -> bool {
         #[cfg(not(target_arch = "arm"))]
         let Some(runtime_state) = NonNull::new(self.state.load(Ordering::Acquire)) else {
@@ -659,6 +685,11 @@ impl<T: Send + 'static> PackageStateStore<T> {
         self.finish_stop(state);
     }
 
+    #[cfg_attr(
+        not(any(test, feature = "test-support", target_arch = "arm")),
+        allow(dead_code)
+    )]
+    // Stop drains only live firmware/test-support package state.
     pub(crate) fn begin_stop(&self, state: NonNull<T>) -> bool {
         #[cfg(not(target_arch = "arm"))]
         let phase = {
@@ -723,6 +754,11 @@ impl<T: Send + 'static> PackageStateStore<T> {
         }
     }
 
+    #[cfg_attr(
+        not(any(test, feature = "test-support", target_arch = "arm")),
+        allow(dead_code)
+    )]
+    // Stop takes owned thread groups on firmware/test-support lifecycle paths.
     pub(crate) fn take_threads(&self, state: NonNull<T>) -> Option<crate::thread::ThreadGroup> {
         #[cfg(not(target_arch = "arm"))]
         let _borrow = self.borrow_exclusive();
@@ -745,26 +781,36 @@ impl<T: Send + 'static> PackageStateStore<T> {
     }
 
     #[cfg(not(target_arch = "arm"))]
+    #[cfg_attr(not(any(test, feature = "test-support")), allow(dead_code))]
+    // Host callback recorder uses this in package startup tests/support.
     pub(crate) fn record_app_data_callback(&self, state: NonNull<T>) -> bool {
         self.update_callbacks(state, |callbacks| callbacks.app_data = true)
     }
 
     #[cfg(not(target_arch = "arm"))]
+    #[cfg_attr(not(any(test, feature = "test-support")), allow(dead_code))]
+    // Host callback recorder uses this in package startup tests/support.
     pub(crate) fn record_custom_config_callbacks(&self, state: NonNull<T>) -> bool {
         self.update_callbacks(state, |callbacks| callbacks.custom_config = true)
     }
 
     #[cfg(not(target_arch = "arm"))]
+    #[cfg_attr(not(any(test, feature = "test-support")), allow(dead_code))]
+    // Host callback recorder uses this in package startup tests/support.
     pub(crate) fn clear_custom_config_registration(&self, state: NonNull<T>) -> bool {
         self.update_callbacks(state, |callbacks| callbacks.custom_config = false)
     }
 
     #[cfg(not(target_arch = "arm"))]
+    #[cfg_attr(not(any(test, feature = "test-support")), allow(dead_code))]
+    // Host callback recorder uses this in package startup tests/support.
     pub(crate) fn record_imu_callback(&self, state: NonNull<T>) -> bool {
         self.update_callbacks(state, |callbacks| callbacks.imu = true)
     }
 
     #[cfg(not(target_arch = "arm"))]
+    #[cfg_attr(not(any(test, feature = "test-support")), allow(dead_code))]
+    // Shared host helper for callback registration bookkeeping.
     fn update_callbacks(
         &self,
         state: NonNull<T>,
@@ -816,6 +862,11 @@ impl<T: Send + 'static> PackageStateStore<T> {
         core::mem::take(unsafe { &mut *callbacks.get() })
     }
 
+    #[cfg_attr(
+        not(any(test, feature = "test-support", target_arch = "arm")),
+        allow(dead_code)
+    )]
+    // Stop completion is part of firmware/test-support lifecycle cleanup.
     pub(crate) fn finish_stop(&self, state: NonNull<T>) {
         #[cfg(not(target_arch = "arm"))]
         let active = {
