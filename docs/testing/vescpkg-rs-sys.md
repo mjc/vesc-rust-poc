@@ -11,6 +11,7 @@ Strategy for the `vescpkg-rs-sys` crate: a `no_std` firmware ABI layer generated
 | Raw dispatch | mock `VescIf` + stub call recording | `src/raw/dispatch_tests.rs` |
 | Header parity | bindgen-generated table inventory | `build.rs`, `src/vesc_if.rs` |
 | Thumb/asm smoke | `ldr` immediates vs `VescIfAbi` | `src/tests.rs` |
+| Manifest gate | callable/scalar presence semantics and raw-shim reachability | `src/tests.rs`, `raw.rs` |
 
 ## Public export inventory
 
@@ -68,6 +69,16 @@ from the header.
 Libclang is therefore a build-time dependency. The Nix development shell
 supplies it and sets `LIBCLANG_PATH` for the normal build and test commands.
 
+The complete host gate can be run directly with:
+
+```bash
+nix develop --command cargo test -p vescpkg-rs-sys --lib -- --test-threads=1
+```
+
+The serial flag keeps the process-global libclang fixture deterministic when
+using Cargo's in-process test runner. `cargo nextest` remains the workspace
+default because each test binary runs in its own process.
+
 ## Boundary: what not to test here
 
 | Layer | Role |
@@ -91,6 +102,10 @@ supplies it and sets `LIBCLANG_PATH` for the normal build and test commands.
 2. Add the raw wrapper and choose explicit required or optional behavior.
 3. Add present/absent dispatch tests using `test_support`.
 4. Update this inventory table.
+
+The generated manifest also emits a compile-time callable-shim gate in
+`raw.rs`; adding a callable manifest entry without a matching raw shim fails
+the `vescpkg-rs-sys` build before dispatch tests run.
 
 ## Miri (optional)
 
