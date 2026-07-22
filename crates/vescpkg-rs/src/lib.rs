@@ -149,7 +149,9 @@ pub use vescpkg_rs_units::{
 pub use alloc::VescAllocator;
 pub use eeprom::{CustomEeprom, CustomEepromAddress, EepromWord};
 pub use extension::{ExtensionDescriptor, ExtensionName, ExtensionRegistration};
-pub use extension::{LbmExtension, LispArgs, LispIntegerError, LispValue, StatefulLbmExtension};
+pub use extension::{
+    LbmExtension, LispArgs, LispIntegerError, LispSymbol, LispValue, StatefulLbmExtension,
+};
 
 // Exported macros need public implementation hooks after downstream expansion.
 // Keep those hooks in one hidden namespace instead of the package-author root.
