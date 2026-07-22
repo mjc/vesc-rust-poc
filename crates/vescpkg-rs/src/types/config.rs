@@ -1382,10 +1382,7 @@ mod tests {
             assert_eq!(selector.as_u8(), raw as u8);
         }
         for unsupported in [0, 100, 125_001, 2_000_000] {
-            assert_eq!(
-                super::CanBaudRate::from_bits_per_second(unsupported),
-                None
-            );
+            assert_eq!(super::CanBaudRate::from_bits_per_second(unsupported), None);
         }
     }
 }
