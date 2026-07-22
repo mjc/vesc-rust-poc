@@ -439,6 +439,7 @@ mod slots {
     fn_slot!(imu_derotate as unsafe extern "C" fn(*const f32, *mut f32));
     fn_slot!(imu_get_accel_derotated as unsafe extern "C" fn(*mut f32));
     fn_slot!(imu_get_gyro_derotated as unsafe extern "C" fn(*mut f32));
+    fn_slot!(imu_set_yaw as unsafe extern "C" fn(f32));
     fn_slot!(imu_get_quaternions as unsafe extern "C" fn(*mut f32));
     fn_slot!(send_app_data as unsafe extern "C" fn(*mut c_uchar, u32));
     fn_slot!(system_time as unsafe extern "C" fn() -> f32);
@@ -1906,6 +1907,11 @@ pub unsafe fn imu_get_pitch() -> f32 {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn imu_get_yaw() -> f32 {
     unsafe { required_slot!(imu_get_yaw)() }
+}
+
+/// Set firmware IMU yaw in degrees.
+pub unsafe fn imu_set_yaw(yaw_degrees: f32) {
+    unsafe { slots::imu_set_yaw()(yaw_degrees) }
 }
 
 /// Write firmware IMU acceleration axes in g into `xyz`.

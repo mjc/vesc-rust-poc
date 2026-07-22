@@ -67,6 +67,8 @@ pub trait ImuBindings {
     fn derotate_acceleration(&self, input: ImuAcceleration) -> ImuAcceleration;
     /// Return derotated firmware gyro axes in degrees/sec.
     fn derotated_angular_rate(&self) -> ImuAngularRate;
+    /// Set the firmware estimator yaw reference.
+    fn set_yaw(&self, yaw: ImuYaw);
 }
 
 #[cfg(not(test))]
@@ -109,6 +111,10 @@ impl<B: ImuBindings + ?Sized> ImuBindings for &B {
 
     fn derotate_acceleration(&self, input: ImuAcceleration) -> ImuAcceleration {
         (**self).derotate_acceleration(input)
+    }
+
+    fn set_yaw(&self, yaw: ImuYaw) {
+        (**self).set_yaw(yaw)
     }
 
     fn derotated_angular_rate(&self) -> ImuAngularRate {
@@ -374,6 +380,10 @@ impl ImuBindings for RealImuBindings {
             ImuAngularRateYaw::new(AngularVelocity::from_degrees_per_second(values[2])),
         )
     }
+
+    fn set_yaw(&self, yaw: ImuYaw) {
+        unsafe { crate::ffi::imu_set_yaw(yaw.angle().as_degrees()) };
+    }
 }
 
 /// High-level IMU API built on a binding implementation.
@@ -410,6 +420,8 @@ pub trait Imu: private::Imu {
     fn derotated_acceleration(&self) -> ImuAcceleration;
     /// Derotate a caller-provided acceleration vector into the firmware frame.
     fn derotate_acceleration(&self, input: ImuAcceleration) -> ImuAcceleration;
+    /// Set the firmware estimator yaw reference.
+    fn set_yaw(&self, yaw: ImuYaw);
     /// Return derotated firmware gyro axes in degrees/sec.
     fn derotated_angular_rate(&self) -> ImuAngularRate;
 }
@@ -476,6 +488,11 @@ impl<B: ImuBindings> ImuApi<B> {
         self.bindings.derotate_acceleration(input)
     }
 
+    /// Set the firmware estimator yaw reference.
+    pub fn set_yaw(&self, yaw: ImuYaw) {
+        self.bindings.set_yaw(yaw);
+    }
+
     /// Return derotated firmware gyro axes in degrees/sec.
     pub fn derotated_angular_rate(&self) -> ImuAngularRate {
         self.bindings.derotated_angular_rate()
@@ -529,6 +546,10 @@ impl<B: ImuBindings> Imu for ImuApi<B> {
 
     fn derotate_acceleration(&self, input: ImuAcceleration) -> ImuAcceleration {
         self.derotate_acceleration(input)
+    }
+
+    fn set_yaw(&self, yaw: ImuYaw) {
+        self.set_yaw(yaw)
     }
 
     fn derotated_angular_rate(&self) -> ImuAngularRate {

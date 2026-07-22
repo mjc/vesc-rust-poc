@@ -1411,6 +1411,10 @@ pub unsafe fn imu_get_yaw() -> f32 {
     load(&IMU_YAW)
 }
 
+pub unsafe fn imu_set_yaw(yaw_degrees: f32) {
+    store(&IMU_YAW, yaw_degrees.to_radians());
+}
+
 pub unsafe fn imu_get_accel(values: *mut f32) {
     if let Some(values) = unsafe { values.cast::<[f32; 3]>().as_mut() } {
         *values = [1.0, 2.0, 3.0];

@@ -98,7 +98,7 @@ pub(crate) mod ffi {
         foc_get_iq, foc_get_vd, foc_get_vq, foc_set_openloop_current, foc_set_openloop_duty,
         foc_set_openloop_duty_phase, foc_set_openloop_phase, get_cfg_float, get_cfg_int,
         imu_derotate, imu_get_accel, imu_get_accel_derotated, imu_get_gyro, imu_get_gyro_derotated,
-        imu_get_mag, imu_get_pitch, imu_get_roll, imu_get_yaw, imu_startup_done,
+        imu_get_mag, imu_get_pitch, imu_get_roll, imu_get_yaw, imu_set_yaw, imu_startup_done,
         lbm_block_ctx_from_extension, lbm_car, lbm_cdr, lbm_cons, lbm_create_byte_array,
         lbm_dec_as_float, lbm_dec_as_i32, lbm_dec_as_u32, lbm_dec_char, lbm_dec_str, lbm_dec_sym,
         lbm_enc_char, lbm_enc_float, lbm_enc_i, lbm_enc_sym, lbm_enc_u32, lbm_finish_flatten,
