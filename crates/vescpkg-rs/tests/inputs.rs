@@ -62,5 +62,8 @@ fn shutdown_inhibition_is_exclusive_and_restored_on_drop() {
     assert!(!firmware.shutdown_disabled());
 
     firmware.set_shutdown_disable_supported(false);
-    assert!(matches!(inputs.inhibit_shutdown(), Err(InputError::Unsupported)));
+    assert!(matches!(
+        inputs.inhibit_shutdown(),
+        Err(InputError::Unsupported)
+    ));
 }
