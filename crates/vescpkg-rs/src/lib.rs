@@ -34,6 +34,7 @@ mod extension;
 mod firmware;
 mod input;
 mod lifecycle_core;
+mod logging;
 /// Float math entrypoints backed by Rust `libm` on package and host builds.
 #[cfg(feature = "math")]
 mod math;
@@ -50,6 +51,8 @@ pub mod test_support;
 
 /// Internal ABI seam. `vescpkg-rs-sys` selects the real or test implementation.
 pub(crate) mod ffi {
+    #[cfg(any(test, not(feature = "test-support")))]
+    pub use vescpkg_rs_sys::raw::printf_data;
     pub use vescpkg_rs_sys::raw::{
         CustomConfigGet, CustomConfigSet, CustomConfigXml, ImuReadCallback,
     };
@@ -72,7 +75,7 @@ pub(crate) mod ffi {
     #[cfg(all(feature = "test-support", not(test)))]
     pub use crate::test_ffi::{
         can_set_current, can_set_current_rel, can_set_duty, can_set_pos, can_set_rpm,
-        can_status_msg_id, can_transmit_eid, can_transmit_sid,
+        can_status_msg_id, can_transmit_eid, can_transmit_sid, printf_data,
     };
     #[allow(unused_imports)]
     pub use selected_ffi::{
@@ -120,6 +123,7 @@ pub use extension::{
     LbmExtension, LispArgs, LispContextId, LispFlatValue, LispIntegerError, LispMessageError,
     LispProcess, LispSymbol, LispValue, StatefulLbmExtension,
 };
+pub use logging::{FirmwareLog, LogError};
 
 // Exported macros need public implementation hooks after downstream expansion.
 // Keep those hooks in one hidden namespace instead of the package-author root.

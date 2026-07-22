@@ -86,6 +86,25 @@ const _: () = {
 
 /// Inspect a target table while bounding reads to the caller-provided table width.
 ///
+/// Forward a NUL-terminated message through the firmware's `%s` formatter.
+///
+/// The wrapper never treats message bytes as a format string.
+///
+/// # Safety
+///
+/// `message` must point to a readable, NUL-terminated C string for the duration
+/// of the firmware call.
+pub unsafe fn printf_data(message: *const c_char) -> bool {
+    let Some(printf) = (unsafe { slots::printf() }) else {
+        return false;
+    };
+    static FORMAT: &[u8] = b"%s\0";
+    unsafe {
+        printf(FORMAT.as_ptr().cast(), message);
+    }
+    true
+}
+
 /// # Safety
 ///
 /// `base` must point to at least `available_slots` contiguous pointer-sized ABI words.
@@ -362,6 +381,7 @@ mod slots {
     fn_slot!(send_app_data as unsafe extern "C" fn(*mut c_uchar, u32));
     fn_slot!(system_time as unsafe extern "C" fn() -> f32);
     fn_slot!(ts_to_age_s as unsafe extern "C" fn(u32) -> f32);
+    optional_fn_slot!(printf as unsafe extern "C" fn(*const c_char, ...) -> c_int);
     fn_slot!(timer_time_now as unsafe extern "C" fn() -> u32);
     fn_slot!(timer_seconds_elapsed_since as unsafe extern "C" fn(u32) -> f32);
     // Appended in firmware 6.05; older tables fall back to `system_time`.
