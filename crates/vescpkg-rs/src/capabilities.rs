@@ -2,9 +2,9 @@
 
 use crate::ffi;
 use crate::{
-    BatteryCellCount, CanBus, Current, DutyCycleLimit, FocAudio, InputCurrent, InputVoltage,
-    MotorCurrentLimit, Nvm, NvmCapacity, Ratio, TemperatureLimitEnd, TemperatureLimitStart, Uart,
-    Voltage,
+    BatteryCellCount, CanBus, Current, DutyCycleLimit, ElectricalSpeed, FocAudio, InputCurrent,
+    InputVoltage, MotorCurrentLimit, Nvm, NvmCapacity, Ratio, TemperatureLimitEnd,
+    TemperatureLimitStart, Uart, Voltage,
 };
 use core::fmt;
 use vescpkg_rs_sys::{AbiError, Stm32AbiRevision, VescIfCapabilities, VescIfPresence};
@@ -282,6 +282,20 @@ impl FirmwareSettings {
         ))
     }
 
+    /// Read the configured minimum electrical speed.
+    pub fn minimum_electrical_speed(self) -> ElectricalSpeed {
+        ElectricalSpeed::new(crate::Rpm::from_revolutions_per_minute(
+            self.get_float(FirmwareFloatSetting::MinimumElectricalSpeed),
+        ))
+    }
+
+    /// Read the configured maximum electrical speed.
+    pub fn maximum_electrical_speed(self) -> ElectricalSpeed {
+        ElectricalSpeed::new(crate::Rpm::from_revolutions_per_minute(
+            self.get_float(FirmwareFloatSetting::MaximumElectricalSpeed),
+        ))
+    }
+
     /// Update the live battery/input current ceiling; persistence still requires [`Self::store`].
     pub fn set_input_current_max(self, current: InputCurrent) -> Result<(), SettingsError> {
         self.set_float(
@@ -303,6 +317,22 @@ impl FirmwareSettings {
         self.set_float(
             FirmwareFloatSetting::AbsoluteCurrentMax,
             limit.current().as_amps(),
+        )
+    }
+
+    /// Update the live minimum electrical speed; persistence still requires [`Self::store`].
+    pub fn set_minimum_electrical_speed(self, speed: ElectricalSpeed) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::MinimumElectricalSpeed,
+            speed.rpm().as_revolutions_per_minute(),
+        )
+    }
+
+    /// Update the live maximum electrical speed; persistence still requires [`Self::store`].
+    pub fn set_maximum_electrical_speed(self, speed: ElectricalSpeed) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::MaximumElectricalSpeed,
+            speed.rpm().as_revolutions_per_minute(),
         )
     }
 
