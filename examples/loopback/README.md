@@ -9,9 +9,11 @@ package library and package entrypoint into the final ELF.
 its binary payload into the BLE loopback `.vescpkg` artifact.
 
 The package also includes usage-shaped public-API examples: a typed LispBM
-extension in `src/extensions.rs`, app-data transport in `src/app_data.rs`, and
-an explicit custom-EEPROM probe in `src/config.rs`. The EEPROM helper only
-writes when its caller asks and never reaches into `vescpkg-rs-sys`.
+extension in `src/extensions.rs`, app-data transport in `src/app_data.rs`, an
+explicit custom-EEPROM probe in `src/config.rs`, scoped synchronization and
+clock reads, and a display-style GPIO bus in `src/display.rs`. The EEPROM
+helper only writes when its caller asks and never reaches into
+`vescpkg-rs-sys`.
 
 Build the package ELF:
 

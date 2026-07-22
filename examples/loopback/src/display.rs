@@ -14,10 +14,7 @@ pub struct DisplayBus<'a> {
 /// a product package should choose pins that match its board wiring.
 pub fn open_display_bus(gpio: &Gpio) -> Result<DisplayBus<'_>, GpioError> {
     let data = gpio.acquire_digital(DigitalPin::HW_1)?;
-    let clock = match gpio.acquire_digital(DigitalPin::HW_2) {
-        Ok(clock) => clock,
-        Err(error) => return Err(error),
-    };
+    let clock = gpio.acquire_digital(DigitalPin::HW_2)?;
     data.set_mode(GpioMode::OpenDrainPullUp)?;
     clock.set_mode(GpioMode::OpenDrainPullUp)?;
     Ok(DisplayBus { data, clock })
