@@ -116,6 +116,22 @@ impl LispList {
     }
 }
 
+#[cfg(not(test))]
+impl Iterator for LispList {
+    type Item = Result<LispValue, LispListError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.next_value() {
+            Ok(Some(value)) => Some(Ok(value)),
+            Ok(None) => None,
+            Err(error) => {
+                self.next = LispValue::nil();
+                Some(Err(error))
+            }
+        }
+    }
+}
+
 /// Process controls available while an extension callback is executing.
 pub struct LispProcess;
 
