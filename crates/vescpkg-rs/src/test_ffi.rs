@@ -897,7 +897,9 @@ pub unsafe fn can_set_pos(_controller: u8, _position: f32) -> Option<()> {
 }
 
 pub unsafe fn can_ping(_controller: u8) -> Option<(bool, HardwareType)> {
-    Some((true, HardwareType(0)))
+    CAN_AVAILABLE
+        .load(Ordering::Relaxed)
+        .then_some((true, HardwareType(0)))
 }
 
 pub unsafe fn can_status_msg_id(_id: i32) -> Option<CanStatusMsg> {

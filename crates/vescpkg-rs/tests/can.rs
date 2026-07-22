@@ -101,6 +101,17 @@ fn can_transmit_reports_absent_optional_slot() {
 }
 
 #[test]
+fn can_ping_reports_absent_optional_slot() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    firmware.set_can_available(false);
+
+    assert_eq!(
+        firmware.can().ping(CanControllerId::new(7)),
+        Err(CanError::Unsupported)
+    );
+}
+
+#[test]
 fn can_bus_pings_and_reports_remote_hardware_type() {
     let firmware = vescpkg_rs::test_support::FirmwareTest::new();
 
