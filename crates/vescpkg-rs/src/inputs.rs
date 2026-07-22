@@ -174,13 +174,13 @@ impl FirmwareInputs {
     }
 
     /// Read the firmware motor-command timeout state.
-    pub fn timeout(&self) -> TimeoutSnapshot {
-        TimeoutSnapshot {
+    pub fn timeout(&self) -> Result<TimeoutSnapshot, InputError> {
+        Ok(TimeoutSnapshot {
             timed_out: unsafe { crate::ffi::timeout_has_timeout() },
-            since_update: TimeoutDuration::new(VescSeconds::from_seconds(unsafe {
+            since_update: TimeoutDuration::new(decode_age(unsafe {
                 crate::ffi::timeout_secs_since_update()
-            })),
-        }
+            })?),
+        })
     }
 
     /// Refresh the firmware motor-command timeout.
