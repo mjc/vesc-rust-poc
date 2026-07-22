@@ -2,9 +2,10 @@
 //! Integration coverage for typed motor handbrake commands.
 
 use vescpkg_rs::{
-    AngleDegrees, Current, DCurrent, DutyCycle, ElectricalSpeed, HandbrakeCurrent,
-    HandbrakeRelative, MotorOutput, MotorSelection, MotorTelemetry, OdometerMeters,
-    OpenLoopCurrent, OpenLoopPhase, PidPosition, Ratio, Rpm, SignedRatio, VescSeconds,
+    AngleDegrees, BrakeCurrentRelative, Current, CurrentRelative, DCurrent, DutyCycle,
+    ElectricalSpeed, HandbrakeCurrent, HandbrakeRelative, MotorOutput, MotorSelection,
+    MotorTelemetry, OdometerMeters, OpenLoopCurrent, OpenLoopPhase, PidPosition, Ratio, Rpm,
+    SignedRatio, VescSeconds,
 };
 
 unsafe extern "C" fn test_pwm_callback() {}
@@ -19,6 +20,12 @@ fn motor_exposes_typed_handbrake_commands() {
     firmware
         .motor()
         .set_handbrake_relative(HandbrakeRelative::new(Ratio::from_ratio_const(0.25)));
+    firmware
+        .motor()
+        .set_current_relative(CurrentRelative::new(Ratio::from_ratio_const(0.4)));
+    firmware
+        .motor()
+        .set_brake_current_relative(BrakeCurrentRelative::new(Ratio::from_ratio_const(0.3)));
 
     let telemetry = firmware.telemetry();
     assert!(firmware.motor().dc_calibration_done());
