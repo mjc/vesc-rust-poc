@@ -33,6 +33,11 @@ fn motor_exposes_typed_handbrake_commands() {
     );
     assert_eq!(telemetry.average_power().power().as_watts(), 120.0);
     assert_eq!(telemetry.peak_power().power().as_watts(), 240.0);
+    assert_eq!(
+        telemetry.average_speed().speed().as_meters_per_second(),
+        4.0
+    );
+    assert_eq!(telemetry.peak_speed().speed().as_meters_per_second(), 8.0);
     assert_eq!(telemetry.tachometer(false).steps().as_steps(), 1234);
     assert_eq!(telemetry.absolute_tachometer(true).steps().as_steps(), 5678);
     assert_eq!(telemetry.sampling_frequency().as_hertz(), 20_000.0);
