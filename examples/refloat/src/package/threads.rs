@@ -25,22 +25,23 @@ const REFLOAT_AUX_LOOP_TIME_US: u32 = 1_000_000 / REFLOAT_LEDS_REFRESH_RATE_HZ;
 
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::AdcVoltage;
-#[cfg(target_arch = "arm")]
+#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RefloatRuntimeThread {
     Main,
     Aux,
 }
 
-#[cfg(target_arch = "arm")]
+#[cfg(any(test, target_arch = "arm"))]
 impl RefloatRuntimeThread {
     const fn stack_bytes(self) -> usize {
         match self {
-            Self::Main => 1536,
+            Self::Main => 2048,
             Self::Aux => 1024,
         }
     }
 
+    #[cfg(target_arch = "arm")]
     const fn working_area_size(self) -> ThreadWorkingAreaSize {
         match ThreadWorkingAreaSize::try_from_bytes(self.stack_bytes()) {
             Ok(size) => size,
@@ -48,6 +49,7 @@ impl RefloatRuntimeThread {
         }
     }
 
+    #[cfg(target_arch = "arm")]
     fn name(self) -> vescpkg_rs::ThreadName {
         match self {
             Self::Main => vescpkg_rs::thread_name!("Refloat Main"),
@@ -58,11 +60,11 @@ impl RefloatRuntimeThread {
 
 /// Describe the Refloat runtime threads.
 ///
-/// Upstream passes its position-independent refloat_thd, aux_thd, and
-/// thread-name addresses directly to spawn with stacks of 1536 and
-/// 1024 bytes at third_party/refloat/src/main.c:2438-2445. VESC forwards
-/// those runtime addresses and byte counts to chThdCreateStatic at
-/// third_party/vesc/lispBM/lispif_c_lib.c:98-125.
+/// Upstream passes its position-independent refloat_thd and aux_thd to spawn
+/// with working areas of 1536 and 1024 bytes at
+/// third_party/refloat/src/main.c:2438-2445. The Rust main-loop call chain is
+/// larger, so it reserves 2048 bytes. VESC forwards these byte counts directly
+/// to chThdCreateStatic at third_party/vesc/lispBM/lispif_c_lib.c:98-125.
 #[cfg(target_arch = "arm")]
 fn refloat_runtime_threads() -> [vescpkg_rs::ThreadSpec<RefloatPackageState>; 2] {
     let main_thread = RefloatRuntimeThread::Main;
@@ -303,6 +305,14 @@ mod tests {
     use core::time::Duration;
     use vescpkg_rs::prelude::*;
     use vescpkg_rs::test_support::FirmwareTest;
+
+    #[test]
+    fn refloat_main_thread_reserves_the_generated_rust_working_area() {
+        // The current ARM call chain reaches 1480 bytes before ChibiOS's
+        // thread metadata, saved contexts, and interrupt reserve.
+        assert_eq!(super::RefloatRuntimeThread::Main.stack_bytes(), 2048);
+        assert_eq!(super::RefloatRuntimeThread::Aux.stack_bytes(), 1024);
+    }
 
     #[test]
     fn refloat_main_thread_tick_refreshes_runtime_state_and_sleeps_like_refloat_loop() {

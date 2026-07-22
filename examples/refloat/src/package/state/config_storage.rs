@@ -14,12 +14,18 @@ impl RefloatPackageState {
     }
 
     pub(super) fn read_config_from_eeprom(&mut self) {
-        let mut image = [0; REFLOAT_EEPROM_LEN];
-        let read = vescpkg_rs::CustomEeprom::new().read_bytes(&mut image);
-        self.serialized_config = read
-            .then(|| RefloatConfigImage::from_serialized(&image[..REFLOAT_CONFIG_LEN]))
-            .flatten()
-            .unwrap_or_else(RefloatConfigImage::defaults);
+        let eeprom = vescpkg_rs::CustomEeprom::new();
+        let read = eeprom.read_bytes(self.serialized_config.as_mut_bytes())
+            && (REFLOAT_CONFIG_LEN / vescpkg_rs::EepromWord::BYTE_LEN
+                ..REFLOAT_EEPROM_LEN / vescpkg_rs::EepromWord::BYTE_LEN)
+                .all(|index| {
+                    vescpkg_rs::CustomEepromAddress::from_index(index)
+                        .and_then(|address| eeprom.read(address))
+                        .is_some()
+                });
+        if !read || !self.serialized_config.has_valid_signature() {
+            self.serialized_config = RefloatConfigImage::defaults();
+        }
     }
 
     #[cfg(any(test, target_arch = "arm"))]

@@ -127,6 +127,11 @@ impl<const LEN: usize> CustomConfigImage<LEN> {
         &self.0
     }
 
+    /// Mutably borrow the serialized config bytes.
+    pub fn as_mut_bytes(&mut self) -> &mut [u8; LEN] {
+        &mut self.0
+    }
+
     /// Read one big-endian `u16`, returning `None` for out-of-range generated offsets.
     pub(crate) fn be_u16_at(&self, offset: usize) -> Option<u16> {
         let end = offset.checked_add(2)?;

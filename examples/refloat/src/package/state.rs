@@ -301,6 +301,7 @@ impl RefloatPackageState {
     ///
     /// C map: `bms_update` runs immediately before state logic at
     /// `third_party/refloat/src/main.c:824-831`.
+    #[cfg_attr(target_arch = "arm", inline(never))]
     pub(crate) fn refresh_bms_runtime_state(&mut self, system_time_ticks: TimestampTicks) {
         let bms = self.serialized_config.bms();
         let enabled = bms.enabled();
@@ -391,6 +392,7 @@ impl RefloatPackageState {
         self.balance_filter = balance_filter;
     }
 
+    #[cfg_attr(target_arch = "arm", inline(never))]
     fn refresh_config_runtime_state(&mut self) {
         config_runtime::refresh(self);
     }
@@ -450,6 +452,8 @@ impl RefloatPackageState {
         footpad_adc2: AdcVoltage,
         system_time_ticks: TimestampTicks,
     ) {
+        // Keep the ARM refresh phases in separate frames so LTO cannot merge
+        // their independent stack use inside VESC's fixed thread working area.
         self.refresh_config_runtime_state();
         self.refresh_motor_runtime_state(telemetry);
         self.refresh_haptic_runtime_state(motor, system_time_ticks);
@@ -469,6 +473,7 @@ impl RefloatPackageState {
     }
 
     #[cfg(any(test, target_arch = "arm"))]
+    #[cfg_attr(target_arch = "arm", inline(never))]
     fn refresh_haptic_runtime_state(
         &mut self,
         motor: &impl MotorOutput,
@@ -549,21 +554,24 @@ impl RefloatPackageState {
             || self.send_all_data_packet_response(telemetry, send, bytes)
     }
 
+    #[cfg_attr(target_arch = "arm", inline(never))]
     fn refresh_motor_runtime_state(&mut self, telemetry: &impl MotorTelemetry) {
         motor_runtime::refresh(self, telemetry);
     }
 
     #[cfg(any(test, target_arch = "arm"))]
-    #[inline(always)]
+    #[cfg_attr(target_arch = "arm", inline(never))]
     pub(crate) fn refresh_footpad_runtime_state(&mut self, adc1: AdcVoltage, adc2: AdcVoltage) {
         footpad_runtime::refresh(self, adc1, adc2);
     }
 
+    #[cfg_attr(target_arch = "arm", inline(never))]
     fn refresh_imu_runtime_state(&mut self, imu: &impl Imu, system_time_ticks: TimestampTicks) {
         imu_runtime::refresh(self, imu, system_time_ticks);
     }
 
     #[cfg(any(test, target_arch = "arm"))]
+    #[cfg_attr(target_arch = "arm", inline(never))]
     fn refresh_charging_runtime_state(&mut self, system_time_ticks: TimestampTicks) {
         self.all_data_payloads = charging::timeout(
             self.all_data_payloads,
