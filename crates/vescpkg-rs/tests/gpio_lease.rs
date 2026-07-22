@@ -47,3 +47,30 @@ fn gpio_leases_reject_wrong_mode_and_cover_analog_ownership() {
     adc.set_mode(GpioMode::Analog).expect("analog mode");
     assert_eq!(adc.read().expect("analog read").voltage().as_volts(), 1.2);
 }
+
+#[test]
+fn every_pinned_digital_pin_has_an_exclusive_safe_lease() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    let gpio = firmware.gpio();
+    let pins = [
+        DigitalPin::COMM_RX,
+        DigitalPin::COMM_TX,
+        DigitalPin::SWDIO,
+        DigitalPin::SWCLK,
+        DigitalPin::HALL1,
+        DigitalPin::HALL2,
+        DigitalPin::HALL3,
+        DigitalPin::HALL4,
+        DigitalPin::HALL5,
+        DigitalPin::HALL6,
+        DigitalPin::PPM,
+        DigitalPin::HW_1,
+        DigitalPin::HW_2,
+    ];
+
+    for pin in pins {
+        let lease = gpio.acquire_digital(pin).expect("pin has a lease");
+        lease.set_mode(GpioMode::Input).expect("input mode");
+        assert_eq!(lease.read(), Ok(false));
+    }
+}
