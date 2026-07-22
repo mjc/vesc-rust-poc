@@ -7,20 +7,20 @@ use vescpkg_rs::{CustomEeprom, CustomEepromAddress, EepromWord, Firmware};
 
 /// Read the loopback package's persisted probe value.
 pub fn read_probe(firmware: &Firmware) -> Option<u32> {
-    read_probe_from(firmware.eeprom())
+    read_probe_from(*firmware.eeprom())
 }
 
 /// Persist one loopback package probe value explicitly.
 pub fn write_probe(firmware: &Firmware, value: u32) -> bool {
-    write_probe_to(firmware.eeprom(), value)
+    write_probe_to(*firmware.eeprom(), value)
 }
 
-fn read_probe_from(eeprom: &CustomEeprom) -> Option<u32> {
+fn read_probe_from(eeprom: CustomEeprom) -> Option<u32> {
     let address = CustomEepromAddress::from_index(0)?;
     eeprom.read(address).map(EepromWord::to_u32)
 }
 
-fn write_probe_to(eeprom: &CustomEeprom, value: u32) -> bool {
+fn write_probe_to(eeprom: CustomEeprom, value: u32) -> bool {
     let Some(address) = CustomEepromAddress::from_index(0) else {
         return false;
     };
@@ -37,8 +37,8 @@ mod tests {
         let firmware = FirmwareTest::new();
         let eeprom = firmware.eeprom();
 
-        assert_eq!(read_probe_from(&eeprom), None);
-        assert!(write_probe_to(&eeprom, 0xfeed_beef));
-        assert_eq!(read_probe_from(&eeprom), Some(0xfeed_beef));
+        assert_eq!(read_probe_from(eeprom), None);
+        assert!(write_probe_to(eeprom, 0xfeed_beef));
+        assert_eq!(read_probe_from(eeprom), Some(0xfeed_beef));
     }
 }
