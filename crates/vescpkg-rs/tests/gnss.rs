@@ -12,3 +12,14 @@ fn gnss_snapshot_copies_firmware_owned_record() {
     assert_eq!(snapshot.altitude().altitude().as_meters(), 1600.0);
     assert_eq!(snapshot.speed().speed().as_meters_per_second(), 3.5);
 }
+
+#[test]
+fn gnss_snapshot_reports_absent_optional_slot() {
+    let firmware = FirmwareTest::new();
+    firmware.set_gnss_available(false);
+
+    assert_eq!(
+        firmware.gnss().snapshot(),
+        Err(vescpkg_rs::GnssError::Unavailable)
+    );
+}
