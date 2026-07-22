@@ -36,7 +36,7 @@ mod bindings;
 mod eeprom;
 mod extension;
 mod firmware;
-mod input;
+mod gnss;
 mod lifecycle_core;
 mod logging;
 /// Float math entrypoints backed by Rust `libm` on package and host builds.
@@ -103,9 +103,9 @@ pub(crate) mod ffi {
         foc_get_audio_sample_table, foc_get_id, foc_get_iq, foc_get_vd, foc_get_vq,
         foc_play_audio_samples, foc_play_tone, foc_set_audio_sample_table,
         foc_set_openloop_current, foc_set_openloop_duty, foc_set_openloop_duty_phase,
-        foc_set_openloop_phase, foc_stop_audio, get_cfg_float, get_cfg_int, imu_derotate,
-        imu_get_accel, imu_get_accel_derotated, imu_get_gyro, imu_get_gyro_derotated, imu_get_mag,
-        imu_get_pitch, imu_get_roll, imu_get_yaw, imu_set_yaw, imu_startup_done,
+        foc_set_openloop_phase, foc_stop_audio, get_cfg_float, get_cfg_int, gnss_snapshot,
+        imu_derotate, imu_get_accel, imu_get_accel_derotated, imu_get_gyro, imu_get_gyro_derotated,
+        imu_get_mag, imu_get_pitch, imu_get_roll, imu_get_yaw, imu_set_yaw, imu_startup_done,
         lbm_block_ctx_from_extension, lbm_car, lbm_cdr, lbm_cons, lbm_create_byte_array,
         lbm_dec_as_float, lbm_dec_as_i32, lbm_dec_as_u32, lbm_dec_char, lbm_dec_str, lbm_dec_sym,
         lbm_enc_char, lbm_enc_float, lbm_enc_i, lbm_enc_sym, lbm_enc_u32, lbm_finish_flatten,
@@ -179,6 +179,7 @@ pub use firmware::{
     AppDataHandler, AppDataPacket, ConfigBytes, ConfigXml, StatefulCustomConfigCallback,
 };
 pub(crate) use firmware::{firmware_array, loader_info_mut};
+pub use gnss::{Gnss, GnssError, GnssSnapshot};
 pub use imu::{Imu, ImuReadHandler};
 pub use init::{PackageStart, PackageStartError};
 pub use input::{ControllerInput, RemoteInput};
