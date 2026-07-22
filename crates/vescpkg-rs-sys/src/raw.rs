@@ -1,6 +1,6 @@
 #![cfg_attr(test, allow(dead_code))]
 
-use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescIfPresence};
+use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescIfPresence, c_vesc_if};
 use core::ffi::{c_char, c_int, c_uchar, c_uint, c_void};
 
 /// Bindgen-generated `lbm_flat_value_t` layout.
@@ -162,12 +162,13 @@ macro_rules! vesc_slot_word_from {
 
 mod slots {
     use super::{
-        AppDataHandler, CanRxCallback, CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4,
-        CanStatusMsg5, CanStatusMsg6, CustomConfigGet, CustomConfigSet, CustomConfigXml, EepromVar,
-        EncoderFaultCallback, EncoderInfoCallback, EncoderReadCallback, ExtensionHandler, GnssData,
-        HwType, ImuReadCallback, LbmFlatValue, LbmValue, LibMutex, LibSemaphore, LibThread,
-        PacketProcessCallback, PacketSendCallback, PacketState, RemoteState, ReplyCallback,
-        TerminalCallback, VescIfAbi, c_char, c_int, c_uchar, c_uint, c_void,
+        AppDataHandler, AttitudeInfo, CanRxCallback, CanStatusMsg, CanStatusMsg2, CanStatusMsg3,
+        CanStatusMsg4, CanStatusMsg5, CanStatusMsg6, CustomConfigGet, CustomConfigSet,
+        CustomConfigXml, EepromVar, EncoderFaultCallback, EncoderInfoCallback, EncoderReadCallback,
+        ExtensionHandler, GnssData, HwType, ImuReadCallback, LbmFlatValue, LbmValue, LibMutex,
+        LibSemaphore, LibThread, PacketProcessCallback, PacketSendCallback, PacketState,
+        RemoteState, ReplyCallback, TerminalCallback, VescIfAbi, c_char, c_int, c_uchar, c_uint,
+        c_void,
     };
     #[cfg(not(all(target_arch = "arm", not(test))))]
     use super::{VescIf, vesc_if};
@@ -291,7 +292,6 @@ mod slots {
     optional_fn_slot!(f_u64 as unsafe extern "C" fn(*mut LbmFlatValue, u64) -> bool);
     optional_fn_slot!(f_lbm_array as unsafe extern "C" fn(*mut LbmFlatValue, u32, *mut u8) -> bool);
     fn_slot!(set_app_data_handler as unsafe extern "C" fn(Option<AppDataHandler>) -> bool);
-    fn_slot!(imu_set_read_callback as unsafe extern "C" fn(Option<ImuReadCallback>));
     fn_slot!(read_eeprom_var as unsafe extern "C" fn(*mut EepromVar, c_int) -> bool);
     fn_slot!(store_eeprom_var as unsafe extern "C" fn(*mut EepromVar, c_int) -> bool);
 
@@ -505,7 +505,6 @@ mod slots {
     fn_slot!(imu_get_accel_derotated as unsafe extern "C" fn(*mut f32));
     fn_slot!(imu_get_gyro_derotated as unsafe extern "C" fn(*mut f32));
     fn_slot!(imu_set_yaw as unsafe extern "C" fn(f32));
-    fn_slot!(imu_get_quaternions as unsafe extern "C" fn(*mut f32));
     fn_slot!(send_app_data as unsafe extern "C" fn(*mut c_uchar, u32));
     optional_fn_slot!(printf as unsafe extern "C" fn(*const c_char, ...) -> c_int);
     fn_slot!(timer_time_now as unsafe extern "C" fn() -> u32);
@@ -518,7 +517,30 @@ mod slots {
     fn_slot!(io_write as unsafe extern "C" fn(c_int, c_int) -> bool);
     fn_slot!(io_read as unsafe extern "C" fn(c_int) -> bool);
     fn_slot!(io_read_analog as unsafe extern "C" fn(c_int) -> f32);
-    optional_fn_slot!(io_get_st_pin as unsafe extern "C" fn(c_int, *mut *mut c_void, *mut u32) -> bool);
+    fn_slot!(io_get_st_pin as unsafe extern "C" fn(c_int, *mut *mut c_void, *mut u32) -> bool);
+    optional_fn_slot!(can_send_buffer as unsafe extern "C" fn(u8, *mut u8, c_uint, u8));
+    fn_slot!(imu_get_rpy as unsafe extern "C" fn(*mut f32));
+    fn_slot!(imu_get_quaternions as unsafe extern "C" fn(*mut f32));
+    fn_slot!(imu_get_calibration as unsafe extern "C" fn(f32, *mut f32));
+    fn_slot!(imu_set_read_callback as unsafe extern "C" fn(Option<ImuReadCallback>));
+    fn_slot!(lbm_symbol_to_io as unsafe extern "C" fn(u32, *mut *mut c_void, *mut u32) -> bool);
+    fn_slot!(mc_motor_now as unsafe extern "C" fn() -> c_int);
+    fn_slot!(mc_set_tachometer_value as unsafe extern "C" fn(c_int) -> c_int);
+    fn_slot!(set_cfg_float as unsafe extern "C" fn(c_int, f32) -> bool);
+    fn_slot!(set_cfg_int as unsafe extern "C" fn(c_int, c_int) -> bool);
+    fn_slot!(store_cfg as unsafe extern "C" fn() -> bool);
+    optional_fn_slot!(shutdown_disable as unsafe extern "C" fn(bool));
+    optional_fn_slot!(sleep_ticks as unsafe extern "C" fn(u32));
+    fn_slot!(sys_lock as unsafe extern "C" fn());
+    fn_slot!(sys_unlock as unsafe extern "C" fn());
+    fn_slot!(timer_sleep as unsafe extern "C" fn(f32));
+    fn_slot!(ahrs_init_attitude_info as unsafe extern "C" fn(*mut AttitudeInfo));
+    fn_slot!(ahrs_update_initial_orientation as unsafe extern "C" fn(*const f32, *const f32, *mut AttitudeInfo));
+    fn_slot!(ahrs_update_mahony_imu as unsafe extern "C" fn(*const f32, *const f32, f32, *mut AttitudeInfo));
+    fn_slot!(ahrs_update_madgwick_imu as unsafe extern "C" fn(*const f32, *const f32, f32, *mut AttitudeInfo));
+    fn_slot!(ahrs_get_roll as unsafe extern "C" fn(*const AttitudeInfo) -> f32);
+    fn_slot!(ahrs_get_pitch as unsafe extern "C" fn(*const AttitudeInfo) -> f32);
+    fn_slot!(ahrs_get_yaw as unsafe extern "C" fn(*const AttitudeInfo) -> f32);
 }
 
 #[track_caller]
@@ -2409,6 +2431,336 @@ pub unsafe fn clear_pad(gpio: *mut c_void, pin: u32) {
 pub unsafe fn io_get_st_pin(pin: crate::VescPin, gpio: *mut *mut c_void, st_pin: *mut u32) -> bool {
     unsafe { slots::io_get_st_pin()(pin.0, gpio, st_pin) }
 }
+
+/// Copy the base CAN status record selected by index.
+pub unsafe fn can_get_status_msg_index(index: c_int) -> Option<CanStatusMsg> {
+    unsafe { can_status_msg_index(index) }
+}
+
+/// Copy the base CAN status record selected by controller ID.
+pub unsafe fn can_get_status_msg_id(id: c_int) -> Option<CanStatusMsg> {
+    unsafe { can_status_msg_id(id) }
+}
+
+macro_rules! can_status_alias {
+    ($name:ident, $source:ident, $status:ty, $doc:literal) => {
+        #[doc = $doc]
+        pub unsafe fn $name(index_or_id: c_int) -> Option<$status> {
+            unsafe { $source(index_or_id) }
+        }
+    };
+}
+
+can_status_alias!(
+    can_get_status_msg_2_index,
+    can_status_msg_2_index,
+    CanStatusMsg2,
+    "Copy CAN status message 2 selected by index."
+);
+can_status_alias!(
+    can_get_status_msg_2_id,
+    can_status_msg_2_id,
+    CanStatusMsg2,
+    "Copy CAN status message 2 selected by controller ID."
+);
+can_status_alias!(
+    can_get_status_msg_3_index,
+    can_status_msg_3_index,
+    CanStatusMsg3,
+    "Copy CAN status message 3 selected by index."
+);
+can_status_alias!(
+    can_get_status_msg_3_id,
+    can_status_msg_3_id,
+    CanStatusMsg3,
+    "Copy CAN status message 3 selected by controller ID."
+);
+can_status_alias!(
+    can_get_status_msg_4_index,
+    can_status_msg_4_index,
+    CanStatusMsg4,
+    "Copy CAN status message 4 selected by index."
+);
+can_status_alias!(
+    can_get_status_msg_4_id,
+    can_status_msg_4_id,
+    CanStatusMsg4,
+    "Copy CAN status message 4 selected by controller ID."
+);
+can_status_alias!(
+    can_get_status_msg_5_index,
+    can_status_msg_5_index,
+    CanStatusMsg5,
+    "Copy CAN status message 5 selected by index."
+);
+can_status_alias!(
+    can_get_status_msg_5_id,
+    can_status_msg_5_id,
+    CanStatusMsg5,
+    "Copy CAN status message 5 selected by controller ID."
+);
+can_status_alias!(
+    can_get_status_msg_6_index,
+    can_status_msg_6_index,
+    CanStatusMsg6,
+    "Copy CAN status message 6 selected by index."
+);
+can_status_alias!(
+    can_get_status_msg_6_id,
+    can_status_msg_6_id,
+    CanStatusMsg6,
+    "Copy CAN status message 6 selected by controller ID."
+);
+
+/// Send a raw CAN buffer when the optional slot is present.
+pub unsafe fn can_send_buffer(controller: u8, data: *mut u8, len: c_uint, send: u8) -> Option<()> {
+    unsafe { slots::can_send_buffer() }
+        .map(|send_buffer| unsafe { send_buffer(controller, data, len, send) })
+}
+
+/// Install the standard-ID CAN callback through the manifest-named shim.
+pub unsafe fn can_set_sid_cb(callback: Option<CanReceiverCallback>) -> Option<()> {
+    unsafe { can_set_sid_callback(callback) }
+}
+
+/// Install the extended-ID CAN callback through the manifest-named shim.
+pub unsafe fn can_set_eid_cb(callback: Option<CanReceiverCallback>) -> Option<()> {
+    unsafe { can_set_eid_callback(callback) }
+}
+
+/// Copy the current remote-control state.
+pub unsafe fn get_remote_state() -> RemoteState {
+    unsafe { remote_state() }
+}
+
+/// Copy the current firmware GNSS record when the optional slot is available.
+pub unsafe fn mc_gnss() -> Option<GnssData> {
+    unsafe { gnss_snapshot() }
+}
+
+/// Return the currently selected motor-control thread.
+pub unsafe fn mc_motor_now() -> c_int {
+    unsafe { slots::mc_motor_now()() }
+}
+
+/// Set the motor tachometer and return the firmware result.
+pub unsafe fn mc_set_tachometer_value(steps: c_int) -> c_int {
+    unsafe { slots::mc_set_tachometer_value()(steps) }
+}
+
+/// Read one firmware EEPROM word through the manifest-named shim.
+pub unsafe fn read_eeprom_var(word: *mut EepromVar, address: c_int) -> bool {
+    unsafe { slots::read_eeprom_var()(word, address) }
+}
+
+/// Store one firmware EEPROM word through the manifest-named shim.
+pub unsafe fn store_eeprom_var(word: *mut EepromVar, address: c_int) -> bool {
+    unsafe { slots::store_eeprom_var()(word, address) }
+}
+
+/// Install or clear the firmware application-data callback.
+pub unsafe fn set_app_data_handler(callback: Option<AppDataHandler>) -> bool {
+    unsafe { slots::set_app_data_handler()(callback) }
+}
+
+/// Send an application-data payload through the firmware slot.
+pub unsafe fn send_app_data(data: *mut c_uchar, len: u32) {
+    unsafe { slots::send_app_data()(data, len) }
+}
+
+/// Set a floating-point configuration parameter.
+pub unsafe fn set_cfg_float(parameter: c_int, value: f32) -> bool {
+    unsafe { slots::set_cfg_float()(parameter, value) }
+}
+
+/// Set an integer configuration parameter.
+pub unsafe fn set_cfg_int(parameter: c_int, value: c_int) -> bool {
+    unsafe { slots::set_cfg_int()(parameter, value) }
+}
+
+/// Persist firmware configuration changes.
+pub unsafe fn store_cfg() -> bool {
+    unsafe { slots::store_cfg()() }
+}
+
+/// Resolve a LispBM symbol to its STM32 GPIO port and pin.
+pub unsafe fn lbm_symbol_to_io(symbol: u32, gpio: *mut *mut c_void, pin: *mut u32) -> bool {
+    unsafe { slots::lbm_symbol_to_io()(symbol, gpio, pin) }
+}
+
+/// Allocate a firmware mutex handle.
+pub unsafe fn mutex_create() -> *mut c_void {
+    unsafe { slots::mutex_create()() }
+}
+
+/// Lock a firmware mutex.
+pub unsafe fn mutex_lock(mutex: *mut c_void) {
+    unsafe { slots::mutex_lock()(mutex) }
+}
+
+/// Unlock a firmware mutex.
+pub unsafe fn mutex_unlock(mutex: *mut c_void) {
+    unsafe { slots::mutex_unlock()(mutex) }
+}
+
+/// Allocate a firmware semaphore handle.
+pub unsafe fn sem_create() -> *mut c_void {
+    unsafe { slots::sem_create()() }
+}
+
+/// Wait on a firmware semaphore.
+pub unsafe fn sem_wait(semaphore: *mut c_void) {
+    unsafe { slots::sem_wait()(semaphore) }
+}
+
+/// Signal a firmware semaphore.
+pub unsafe fn sem_signal(semaphore: *mut c_void) {
+    unsafe { slots::sem_signal()(semaphore) }
+}
+
+/// Wait on a firmware semaphore with a tick timeout.
+pub unsafe fn sem_wait_to(semaphore: *mut c_void, ticks: u32) -> bool {
+    unsafe { slots::sem_wait_to()(semaphore, ticks) }
+}
+
+/// Reset a firmware semaphore.
+pub unsafe fn sem_reset(semaphore: *mut c_void) {
+    unsafe { slots::sem_reset()(semaphore) }
+}
+
+/// Return high-resolution elapsed seconds from the firmware timer.
+pub unsafe fn timer_seconds_elapsed_since(timestamp: u32) -> f32 {
+    unsafe { slots::timer_seconds_elapsed_since()(timestamp) }
+}
+
+/// Return the current high-resolution firmware timer tick value.
+pub unsafe fn timer_time_now() -> u32 {
+    unsafe { slots::timer_time_now()() }
+}
+
+/// Sleep for a high-resolution firmware timer interval.
+pub unsafe fn timer_sleep(seconds: f32) {
+    unsafe { slots::timer_sleep()(seconds) }
+}
+
+/// Lock the firmware system lock.
+pub unsafe fn sys_lock() {
+    unsafe { slots::sys_lock()() }
+}
+
+/// Unlock the firmware system lock.
+pub unsafe fn sys_unlock() {
+    unsafe { slots::sys_unlock()() }
+}
+
+/// Set the current thread priority when the optional slot is present.
+pub unsafe fn thread_set_priority(priority: c_int) -> Option<()> {
+    unsafe { slots::thread_set_priority() }.map(|set| unsafe { set(priority) })
+}
+
+/// Return system time ticks when the optional slot is present.
+pub unsafe fn system_time_ticks() -> Option<u32> {
+    unsafe { slots::system_time_ticks() }.map(|read| unsafe { read() })
+}
+
+/// Sleep for system ticks when the optional slot is present.
+pub unsafe fn sleep_ticks(ticks: u32) -> Option<()> {
+    unsafe { slots::sleep_ticks() }.map(|sleep| unsafe { sleep(ticks) })
+}
+
+/// Disable or re-enable automatic shutdown when supported.
+pub unsafe fn shutdown_disable(disable: bool) -> Option<()> {
+    unsafe { slots::shutdown_disable() }.map(|set| unsafe { set(disable) })
+}
+
+/// Sleep for firmware microseconds through the manifest-named shim.
+pub unsafe fn sleep_us(microseconds: u32) {
+    unsafe { slots::sleep_us()(microseconds) }
+}
+
+/// Write roll, pitch, and yaw radians into `rpy`.
+pub unsafe fn imu_get_rpy(rpy: *mut f32) {
+    unsafe { slots::imu_get_rpy()(rpy) }
+}
+
+/// Write the firmware quaternion into four consecutive floats.
+pub unsafe fn imu_get_quaternions(quaternions: *mut f32) {
+    unsafe { slots::imu_get_quaternions()(quaternions) }
+}
+
+/// Write firmware IMU calibration values for the requested yaw.
+pub unsafe fn imu_get_calibration(yaw: f32, calibration: *mut f32) {
+    unsafe { slots::imu_get_calibration()(yaw, calibration) }
+}
+
+/// Install or clear the firmware IMU read callback.
+pub unsafe fn imu_set_read_callback(callback: Option<ImuReadCallback>) {
+    unsafe { slots::imu_set_read_callback()(callback) }
+}
+
+/// Initialize a firmware AHRS attitude state.
+pub unsafe fn ahrs_init_attitude_info(attitude: *mut AttitudeInfo) {
+    unsafe { slots::ahrs_init_attitude_info()(attitude) }
+}
+
+/// Set initial firmware AHRS orientation from acceleration and magnetic vectors.
+pub unsafe fn ahrs_update_initial_orientation(
+    acceleration: *const f32,
+    magnetic: *const f32,
+    attitude: *mut AttitudeInfo,
+) {
+    unsafe { slots::ahrs_update_initial_orientation()(acceleration, magnetic, attitude) }
+}
+
+/// Apply one firmware Mahony AHRS update.
+pub unsafe fn ahrs_update_mahony_imu(
+    gyro: *const f32,
+    acceleration: *const f32,
+    dt: f32,
+    attitude: *mut AttitudeInfo,
+) {
+    unsafe { slots::ahrs_update_mahony_imu()(gyro, acceleration, dt, attitude) }
+}
+
+/// Apply one firmware Madgwick AHRS update.
+pub unsafe fn ahrs_update_madgwick_imu(
+    gyro: *const f32,
+    acceleration: *const f32,
+    dt: f32,
+    attitude: *mut AttitudeInfo,
+) {
+    unsafe { slots::ahrs_update_madgwick_imu()(gyro, acceleration, dt, attitude) }
+}
+
+/// Read firmware AHRS roll from an initialized attitude state.
+pub unsafe fn ahrs_get_roll(attitude: *const AttitudeInfo) -> f32 {
+    unsafe { slots::ahrs_get_roll()(attitude) }
+}
+
+/// Read firmware AHRS pitch from an initialized attitude state.
+pub unsafe fn ahrs_get_pitch(attitude: *const AttitudeInfo) -> f32 {
+    unsafe { slots::ahrs_get_pitch()(attitude) }
+}
+
+/// Read firmware AHRS yaw from an initialized attitude state.
+pub unsafe fn ahrs_get_yaw(attitude: *const AttitudeInfo) -> f32 {
+    unsafe { slots::ahrs_get_yaw()(attitude) }
+}
+
+/// Call firmware `printf` with a format string that takes no variadic values.
+pub unsafe fn printf(format: *const c_char) -> Option<c_int> {
+    unsafe { slots::printf() }.map(|printf| unsafe { printf(format) })
+}
+
+macro_rules! assert_raw_callable_shims {
+    ($($name:ident),+ $(,)?) => {
+        const _: () = {
+            $(let _ = $name;)+
+        };
+    };
+}
+
+c_vesc_if::define_vesc_if_callable_names!(assert_raw_callable_shims);
 
 /// Returns all generated `VescIf` field offsets for ABI layout tests.
 #[cfg(test)]

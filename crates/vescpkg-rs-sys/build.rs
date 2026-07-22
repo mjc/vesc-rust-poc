@@ -224,6 +224,57 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
     rust.push_str("}\n");
     rust.push_str("pub(crate) use define_vesc_if_manifest_constants;\n\n");
 
+    rust.push_str("macro_rules! define_vesc_if_callable_names {\n");
+    rust.push_str("    ($macro:ident) => {\n");
+    rust.push_str("        $macro! {\n");
+    for slot in slots {
+        if matches!(slot.kind, SlotKind::Function) {
+            writeln!(rust, "            {},", slot.rust_name).expect("write generated Rust");
+        }
+    }
+    rust.push_str("        }\n");
+    rust.push_str("    };\n");
+    rust.push_str("}\n");
+    rust.push_str("pub(crate) use define_vesc_if_callable_names;\n\n");
+
+    rust.push_str("#[cfg(test)]\n");
+    rust.push_str("macro_rules! rust_field_offsets {\n");
+    rust.push_str("    ($table:path) => {\n");
+    rust.push_str("        [\n");
+    for slot in slots {
+        writeln!(
+            rust,
+            "            core::mem::offset_of!($table, {}),",
+            slot.rust_name
+        )
+        .expect("write generated Rust");
+    }
+    rust.push_str("        ]\n");
+    rust.push_str("    };\n");
+    rust.push_str("}\n");
+    rust.push_str("#[cfg(test)]\n");
+    rust.push_str("pub(crate) use rust_field_offsets;\n\n");
+
+    for slot in slots {
+        writeln!(rust, "pub(crate) mod {} {{", slot.rust_name).expect("write generated Rust");
+        writeln!(
+            rust,
+            "    pub(crate) const NAME: &str = \"{}\";",
+            slot.c_name
+        )
+        .expect("write generated Rust");
+        writeln!(rust, "    pub(crate) const INDEX: usize = {};", slot.index)
+            .expect("write generated Rust");
+        rust.push_str("    pub(crate) const VESC32_BYTE_OFFSET: usize = INDEX * 4;\n");
+        writeln!(
+            rust,
+            "    pub(crate) const HEADER_LINE: usize = {};",
+            slot.line
+        )
+        .expect("write generated Rust");
+        rust.push_str("}\n\n");
+    }
+
     rust
 }
 
