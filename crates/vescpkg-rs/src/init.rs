@@ -152,8 +152,6 @@ pub struct PackageStart<'info> {
     state_type: Option<TypeId>,
     callback_recorder: Option<CallbackRecorder>,
     extension_image_pinned: bool,
-    #[cfg(all(not(test), target_arch = "arm"))]
-    data_recorder_buffer_taken: bool,
     _info: core::marker::PhantomData<&'info mut crate::LoaderInfo>,
 }
 
@@ -203,8 +201,6 @@ impl<'info> PackageStart<'info> {
             state_type: None,
             callback_recorder: None,
             extension_image_pinned: false,
-            #[cfg(all(not(test), target_arch = "arm"))]
-            data_recorder_buffer_taken: false,
             _info: core::marker::PhantomData,
         }
     }
@@ -216,8 +212,6 @@ impl<'info> PackageStart<'info> {
             state_type: None,
             callback_recorder: None,
             extension_image_pinned: false,
-            #[cfg(all(not(test), target_arch = "arm"))]
-            data_recorder_buffer_taken: false,
             _info: core::marker::PhantomData,
         }
     }
@@ -229,29 +223,12 @@ impl<'info> PackageStart<'info> {
             state_type: None,
             callback_recorder: None,
             extension_image_pinned: false,
-            #[cfg(all(not(test), target_arch = "arm"))]
-            data_recorder_buffer_taken: false,
             _info: core::marker::PhantomData,
         }
     }
 
     fn raw_info_mut(&mut self) -> Option<&mut ffi::LibInfo> {
         unsafe { crate::loader_info_mut(self.info.cast()) }
-    }
-
-    /// Take exclusive ownership of Refloat's optional firmware recorder RAM.
-    #[cfg(all(not(test), target_arch = "arm"))]
-    pub fn take_data_recorder_buffer(&mut self) -> Option<crate::FirmwareDataRecorderBuffer> {
-        // A second `PackageStart` cannot install state while this lifecycle's
-        // stop hook is live, so only the successful state owner can claim RAM.
-        if self.state_type.is_none()
-            || core::mem::replace(&mut self.data_recorder_buffer_taken, true)
-        {
-            return None;
-        }
-        // SAFETY: `PackageStart` is the unique mutable startup coordinator and
-        // this per-lifecycle gate permits only one recorder-buffer owner.
-        unsafe { crate::thread::FirmwareDataRecorderBuffer::discover() }
     }
 
     /// Install the default package stop hook into loader metadata.

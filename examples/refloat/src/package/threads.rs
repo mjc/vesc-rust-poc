@@ -205,11 +205,9 @@ pub fn start_refloat_runtime_threads(
     start: &mut vescpkg_rs::PackageStart<'_>,
 ) -> Result<(), vescpkg_rs::PackageStartError> {
     let firmware = vescpkg_rs::Firmware::new();
-    let recorder_buffer = start.take_data_recorder_buffer();
     if start
         .with_runtime_state::<RefloatPackageState, _>(|state| {
             state.initialize_balance_filter(firmware.imu().orientation());
-            state.initialize_data_recorder(recorder_buffer);
         })
         .is_none()
     {

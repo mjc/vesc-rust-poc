@@ -113,8 +113,6 @@ pub use input::{ControllerInput, RemoteInput};
 pub use lifecycle_core::AppDataSendError;
 pub use motor::{MotorOutput, MotorTelemetry};
 pub use runtime::{PackageRuntimeState, PackageStateAccess, PackageStateStore};
-#[cfg(all(not(test), target_arch = "arm"))]
-pub use thread::FirmwareDataRecorderBuffer;
 pub use thread::{
     Firmware, FirmwareAppData, FirmwareClock, FirmwareThread, FirmwareThreads,
     StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadName,

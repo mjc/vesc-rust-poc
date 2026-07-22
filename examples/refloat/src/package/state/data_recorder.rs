@@ -14,9 +14,6 @@ use crate::package::protocol::wire::encode_refloat_float16;
 use crate::package::protocol::wire::{refloat_realtime_push_u8, refloat_realtime_push_u32};
 use vescpkg_rs::prelude::TimestampTicks;
 
-#[cfg(all(not(test), target_arch = "arm"))]
-use vescpkg_rs::FirmwareDataRecorderBuffer;
-
 const RECORDED_VALUE_COUNT: usize = REFLOAT_REALTIME_RECORDED_ITEMS.len();
 const SAMPLE_SIZE: usize = 4 + 1 + 2 * RECORDED_VALUE_COUNT;
 const HEADER_RESPONSE_LEN: usize = 159;
@@ -79,8 +76,6 @@ pub(super) struct DataRecorderState {
     empty: bool,
     #[cfg(test)]
     buffer: [u8; TEST_SAMPLE_CAPACITY * SAMPLE_SIZE],
-    #[cfg(all(not(test), target_arch = "arm"))]
-    buffer: Option<FirmwareDataRecorderBuffer>,
 }
 
 #[cfg(test)]
@@ -105,22 +100,11 @@ impl Default for DataRecorderState {
             empty: true,
             #[cfg(test)]
             buffer: [0; TEST_SAMPLE_CAPACITY * SAMPLE_SIZE],
-            #[cfg(all(not(test), target_arch = "arm"))]
-            buffer: None,
         }
     }
 }
 
 impl DataRecorderState {
-    #[cfg(all(not(test), target_arch = "arm"))]
-    pub(super) fn initialize(&mut self, buffer: Option<FirmwareDataRecorderBuffer>) {
-        self.enabled = buffer
-            .as_ref()
-            .is_some_and(|buffer| buffer.len() >= SAMPLE_SIZE);
-        self.buffer = buffer;
-        self.clear();
-    }
-
     pub(super) const fn has_capability(&self) -> bool {
         self.enabled
     }
@@ -213,13 +197,7 @@ impl DataRecorderState {
         {
             TEST_SAMPLE_CAPACITY
         }
-        #[cfg(all(not(test), target_arch = "arm"))]
-        {
-            self.buffer
-                .as_ref()
-                .map_or(0, |buffer| buffer.len() / SAMPLE_SIZE)
-        }
-        #[cfg(all(not(test), not(target_arch = "arm")))]
+        #[cfg(not(test))]
         {
             0
         }
@@ -238,13 +216,7 @@ impl DataRecorderState {
             target.copy_from_slice(bytes);
             true
         }
-        #[cfg(all(not(test), target_arch = "arm"))]
-        {
-            self.buffer
-                .as_mut()
-                .is_some_and(|buffer| buffer.write(offset, bytes))
-        }
-        #[cfg(all(not(test), not(target_arch = "arm")))]
+        #[cfg(not(test))]
         {
             let _ = (offset, bytes);
             false
@@ -260,13 +232,7 @@ impl DataRecorderState {
             bytes.copy_from_slice(source);
             true
         }
-        #[cfg(all(not(test), target_arch = "arm"))]
-        {
-            self.buffer
-                .as_ref()
-                .is_some_and(|buffer| buffer.read(offset, bytes))
-        }
-        #[cfg(all(not(test), not(target_arch = "arm")))]
+        #[cfg(not(test))]
         {
             let _ = (offset, bytes);
             false
@@ -275,11 +241,6 @@ impl DataRecorderState {
 }
 
 impl RefloatPackageState {
-    #[cfg(all(not(test), target_arch = "arm"))]
-    pub(crate) fn initialize_data_recorder(&mut self, buffer: Option<FirmwareDataRecorderBuffer>) {
-        self.data_recorder.initialize(buffer);
-    }
-
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn sample_data_recorder(&mut self, timestamp: TimestampTicks) {
         let payloads = self.all_data_payloads;

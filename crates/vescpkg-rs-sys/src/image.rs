@@ -17,13 +17,6 @@ impl ImageOffset {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeAddress(pub(crate) usize);
 
-impl NativeAddress {
-    /// Return the absolute address as a machine-sized integer.
-    pub const fn as_usize(self) -> usize {
-        self.0
-    }
-}
-
 /// Base address used to rebase image-relative pointers and offsets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeImage {

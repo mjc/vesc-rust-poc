@@ -44,10 +44,6 @@ macro_rules! define_vesc_if_abi {
         impl VescIfAbi {
             /// Base address of the firmware function table on VESC targets.
             pub const BASE_ADDR: NativeAddress = NativeAddress(0x1000_f800);
-            /// Byte offset of Refloat's optional data-recorder metadata trailer.
-            pub const DATA_RECORDER_INFO_OFFSET: usize = 2036;
-            /// Magic word identifying Refloat's optional firmware data buffer.
-            pub const DATA_RECORDER_MAGIC: u32 = 0xcafe_1111;
             /// Number of entries in the pinned upstream `vesc_c_if` table.
             pub const FIELD_COUNT: usize = c_vesc_if::FIELD_COUNT;
             /// Number of `VESC_IF` slots that this crate currently relies on.
