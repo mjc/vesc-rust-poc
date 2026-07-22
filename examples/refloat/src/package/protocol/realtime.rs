@@ -42,6 +42,7 @@ pub(in crate::package) fn encode_refloat_get_realtime_data_response(
         crate::domain::RefloatRealtimeRemoteInput::new(
             vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.0),
         ),
+        0.0,
     )
 }
 
@@ -49,6 +50,7 @@ pub(in crate::package) fn encode_refloat_get_realtime_data_response(
 pub(in crate::package) fn encode_refloat_get_realtime_data_response_with_remote(
     payloads: &RefloatAllDataPayloads,
     remote_input: crate::domain::RefloatRealtimeRemoteInput,
+    atr_accel_diff: f32,
 ) -> [u8; REFLOAT_GET_REALTIME_DATA_RESPONSE_LEN] {
     let mut bytes = [0; REFLOAT_GET_REALTIME_DATA_RESPONSE_LEN];
     let mut ind = 0;
@@ -126,7 +128,7 @@ pub(in crate::package) fn encode_refloat_get_realtime_data_response_with_remote(
         &mut ind,
         motor.filtered_motor_current().current().current().as_amps(),
     );
-    refloat_realtime_push_float32_auto(&mut bytes, &mut ind, 0.0);
+    refloat_realtime_push_float32_auto(&mut bytes, &mut ind, atr_accel_diff);
     if matches!(ride_state.charging(), RefloatChargingState::Charging) {
         refloat_realtime_push_float32_auto(
             &mut bytes,
@@ -440,8 +442,9 @@ mod tests {
         let input = crate::domain::RefloatRealtimeRemoteInput::new(
             vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.5),
         );
-        let legacy = encode_refloat_get_realtime_data_response_with_remote(&payloads, input);
+        let legacy = encode_refloat_get_realtime_data_response_with_remote(&payloads, input, 0.25);
 
+        assert_f32_be(&legacy, 56, 0.25);
         assert_f32_be(&legacy, 68, 0.5);
         assert_eq!(
             realtime_value(

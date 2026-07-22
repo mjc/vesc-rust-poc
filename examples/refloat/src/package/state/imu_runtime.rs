@@ -145,6 +145,9 @@ pub(super) fn refresh(
     let roll = imu_roll.angle();
     let roll_degrees = AngleDegrees::from(roll);
     let roll_abs = roll_degrees.abs();
+    state
+        .ride_modifiers
+        .aggregate_yaw(AngleDegrees::from(imu.yaw().angle()));
     // C map: Refloat activates darkride above 150 degrees only after a prior
     // RUNNING tick enables it, retains it through the hysteresis band, and
     // clears below 120 degrees at `third_party/refloat/src/main.c:781-794`.
@@ -532,6 +535,7 @@ pub(super) fn refresh(
         state.reverse_total_erpm = Rpm::ZERO;
         state.traction_control = false;
         state.remote_control.reset_runtime_vars();
+        state.ride_modifiers.reset();
         state.runtime_board_setpoint = balance_pitch_degrees;
         let setpoint = RefloatRealtimeRuntimeSetpoint::new(balance_pitch_degrees);
         let zero_setpoint = RefloatRealtimeRuntimeSetpoint::new(AngleDegrees::ZERO);
@@ -918,16 +922,22 @@ pub(super) fn refresh(
             state.serialized_config.startup().sample_rate(),
             darkride_active,
         );
-        // C map: `remote_update` runs after protective setpoint interpolation
-        // and is added before the remaining ride modifiers at
-        // `third_party/refloat/src/main.c:869-879`.
-        setpoints = RefloatRealtimeRuntimeSetpoints::new(
-            RefloatRealtimeRuntimeSetpoint::new(board_setpoint + remote_setpoint),
-            setpoints.atr(),
-            setpoints.brake_tilt(),
-            setpoints.torque_tilt(),
-            setpoints.turn_tilt(),
-            RefloatRealtimeRuntimeSetpoint::new(remote_setpoint),
+        // C map: `remote_update` runs after protective setpoint interpolation,
+        // then the ride modifiers update and combine at
+        // `third_party/refloat/src/main.c:869-917`.
+        setpoints = state.ride_modifiers.advance(
+            state.serialized_config,
+            RideModifierInput {
+                base_setpoint: board_setpoint,
+                remote_setpoint,
+                balance_pitch: balance_pitch_degrees,
+                motor_erpm,
+                filtered_current: base.motor().filtered_motor_current().current().current(),
+                motor_current: base.motor().motor_current(),
+                acceleration: motor_acceleration,
+                darkride: darkride_active,
+                wheelslip: ride_state.wheelslip(),
+            },
         );
         if !matches!(ride_state.mode(), RefloatMode::Flywheel) {
             let duty_warning = matches!(

@@ -53,6 +53,7 @@ impl RefloatPackageState {
                 let response = encode_refloat_get_realtime_data_response_with_remote(
                     &self.all_data_payloads,
                     self.remote_control.input(),
+                    self.ride_modifiers.atr_accel_diff(),
                 );
                 send(&response)
             }
@@ -85,8 +86,8 @@ impl RefloatPackageState {
                     &payloads,
                     system_timestamp,
                     self.remote_control.input(),
-                    0.0,
-                    0.0,
+                    self.ride_modifiers.atr_accel_diff(),
+                    self.ride_modifiers.atr_speed_boost(),
                 );
                 send(response.as_bytes())
             }

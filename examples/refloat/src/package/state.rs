@@ -42,6 +42,7 @@ mod motor_runtime;
 mod motor_telemetry_tests;
 mod packet_response;
 mod remote_control;
+mod ride_modifiers;
 #[cfg(test)]
 mod runtime_tests;
 mod transition;
@@ -54,6 +55,7 @@ mod tuning_tests;
 use flywheel::RefloatFlywheelOffsets;
 use motor_acceleration::MotorAccelerationTracker;
 use remote_control::RemoteControlState;
+use ride_modifiers::{RideModifierInput, RideModifierState};
 use transition::{
     RefloatStateTransitionInput, RefloatStopEvent, refloat_first_stop_event,
     refloat_state_transition,
@@ -100,6 +102,7 @@ pub struct RefloatPackageState {
     motor_current_filter: motor_runtime::RefloatMotorCurrentFilter,
     remote_control: RemoteControlState,
     runtime_board_setpoint: vescpkg_rs::prelude::AngleDegrees,
+    ride_modifiers: RideModifierState,
     charging_ticks: TimestampTicks,
     engage_ticks: TimestampTicks,
     disengage_ticks: TimestampTicks,
@@ -158,6 +161,7 @@ impl RefloatPackageState {
             motor_current_filter: motor_runtime::RefloatMotorCurrentFilter::source_startup(),
             remote_control: RemoteControlState::default(),
             runtime_board_setpoint: all_data_payloads.base().setpoints().board().angle(),
+            ride_modifiers: RideModifierState::default(),
             charging_ticks: TimestampTicks::from_ticks(0),
             engage_ticks: TimestampTicks::from_ticks(0),
             disengage_ticks: TimestampTicks::from_ticks(0),
