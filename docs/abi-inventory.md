@@ -51,6 +51,10 @@ storage, applies checked gains because the C initializer leaves those fields
 for the caller, and keeps the retained IMU read callback behind an exclusive
 unsafe lease. The wrapper does not alias firmware-owned estimator storage.
 
+Callback leases fail closed when an optional unregister/disable slot rejects
+cleanup: ownership is retained rather than permitting a replacement callback
+to race with provider-owned state.
+
 ## Notes
 
 - This list is intentionally narrow.
