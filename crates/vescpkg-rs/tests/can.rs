@@ -2,9 +2,9 @@
 //! Integration coverage for the safe CAN facade.
 
 use vescpkg_rs::{
-    AngleDegrees, CanBus, CanControllerId, CanError, CanExtendedId, CanHardwareType,
-    CanStandardId, Current,
-    CurrentRelative, DutyCycle, ElectricalSpeed, MotorCurrent, PidPosition, Rpm, SignedRatio,
+    AngleDegrees, CanBus, CanControllerId, CanError, CanExtendedId, CanHardwareType, CanStandardId,
+    Current, CurrentRelative, DutyCycle, ElectricalSpeed, MotorCurrent, PidPosition, Rpm,
+    SignedRatio,
 };
 
 #[test]
