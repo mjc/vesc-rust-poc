@@ -91,4 +91,5 @@ fn lisp_flat_values_encode_wide_values_and_unblock_contexts() {
 
     let value = LispFlatValue::try_new(4).expect("flat-value slots available");
     drop(value);
+    assert!(LispFlatValue::try_new(257).is_none());
 }
