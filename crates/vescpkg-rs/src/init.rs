@@ -688,16 +688,6 @@ macro_rules! package_start {
             start.finish_start(started)
         }
 
-        /// Host-linking loader shim for package crates.
-        #[cfg(all(not(test), not(target_arch = "arm")))]
-        #[inline(never)]
-        #[unsafe(no_mangle)]
-        extern "C" fn package_lib_init(info: *mut $crate::__macro_support::LoaderInfo) -> bool {
-            let mut start = unsafe { $crate::__macro_support::__package_start_from_raw(info) };
-            let _ = start.install_stop_hook();
-            true
-        }
-
         /// ARM package initializer placed in the firmware init section.
         #[cfg(all(not(test), target_arch = "arm"))]
         #[unsafe(no_mangle)]
