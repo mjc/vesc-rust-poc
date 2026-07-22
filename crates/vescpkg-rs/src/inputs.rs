@@ -10,6 +10,8 @@ pub enum InputError {
     Unsupported,
     /// Firmware exposed the capability but rejected the operation.
     FirmwareRejected,
+    /// Firmware returned a value outside the semantic input range.
+    InvalidValue,
 }
 
 impl core::fmt::Display for InputError {
@@ -17,6 +19,7 @@ impl core::fmt::Display for InputError {
         f.write_str(match self {
             Self::Unsupported => "firmware does not expose this input capability",
             Self::FirmwareRejected => "firmware rejected the input capability operation",
+            Self::InvalidValue => "firmware returned an invalid input value",
         })
     }
 }
@@ -115,20 +118,16 @@ impl FirmwareInputs {
     }
 
     /// Copy the remote-control state before returning it to package code.
-    pub fn remote(&self) -> RemoteInputSnapshot {
+    pub fn remote(&self) -> Result<RemoteInputSnapshot, InputError> {
         let raw = unsafe { crate::ffi::remote_state() };
-        RemoteInputSnapshot {
-            joystick_x: JoystickX::new(
-                SignedRatio::from_ratio(raw.js_x).unwrap_or(SignedRatio::from_ratio_const(0.0)),
-            ),
-            joystick_y: JoystickY::new(
-                SignedRatio::from_ratio(raw.js_y).unwrap_or(SignedRatio::from_ratio_const(0.0)),
-            ),
+        Ok(RemoteInputSnapshot {
+            joystick_x: JoystickX::new(decode_ratio(raw.js_x)?),
+            joystick_y: JoystickY::new(decode_ratio(raw.js_y)?),
             bluetooth_connected: raw.bt_c,
             bluetooth_z: raw.bt_z,
             reverse: raw.is_rev,
             age: RemoteAge::new(VescSeconds::from_seconds(raw.age_s)),
-        }
+        })
     }
 
     /// Read and copy decoded PPM input and its firmware-reported age.
@@ -136,9 +135,7 @@ impl FirmwareInputs {
         let value = unsafe { crate::ffi::get_ppm() }.ok_or(InputError::Unsupported)?;
         let age = unsafe { crate::ffi::get_ppm_age() }.ok_or(InputError::Unsupported)?;
         Ok(PpmSnapshot {
-            value: PpmInput::new(
-                SignedRatio::from_ratio(value).unwrap_or(SignedRatio::from_ratio_const(0.0)),
-            ),
+            value: PpmInput::new(decode_ratio(value)?),
             age: PpmAge::new(VescSeconds::from_seconds(age)),
         })
     }
@@ -170,5 +167,19 @@ impl FirmwareInputs {
     /// Refresh the firmware motor-command timeout.
     pub fn reset_timeout(&self) {
         unsafe { crate::ffi::timeout_reset() }
+    }
+}
+
+fn decode_ratio(value: f32) -> Result<SignedRatio, InputError> {
+    SignedRatio::from_ratio(value).map_err(|_| InputError::InvalidValue)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{InputError, decode_ratio};
+
+    #[test]
+    fn ratio_decode_rejects_values_outside_the_input_domain() {
+        assert_eq!(decode_ratio(2.0), Err(InputError::InvalidValue));
     }
 }
