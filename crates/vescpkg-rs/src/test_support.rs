@@ -1,5 +1,6 @@
 //! Host-side fake firmware bindings for unit tests in dependent crates.
 
+#![allow(clippy::cast_precision_loss)]
 use core::cell::Cell;
 use core::ffi::{CStr, c_char};
 

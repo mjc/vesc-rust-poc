@@ -107,9 +107,8 @@ mod tests {
     fn safe_required_constructor_preserves_missing_slot_diagnostics() {
         let capabilities = FirmwareCapabilities::new(VescIfPresence::empty());
 
-        let error = match capabilities.require_can() {
-            Err(error) => error,
-            Ok(_) => panic!("empty presence must reject required CAN"),
+        let Err(error) = capabilities.require_can() else {
+            panic!("empty presence must reject required CAN")
         };
         assert_eq!(error.capability(), "CAN");
         assert_eq!(error.slot(), VescIfAbi::CAN_TRANSMIT_SID);

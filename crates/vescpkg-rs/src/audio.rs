@@ -58,7 +58,7 @@ impl FocAudio {
         let frequency = positive(frequency.frequency().as_hertz())?;
         let voltage = nonnegative(voltage.voltage().as_volts())?;
         command_result(unsafe {
-            crate::ffi::foc_play_tone(channel.as_u8() as c_int, frequency, voltage)
+            crate::ffi::foc_play_tone(c_int::from(channel.as_u8()), frequency, voltage)
         })
     }
 
@@ -100,7 +100,7 @@ impl FocAudio {
         }
         match unsafe {
             crate::ffi::foc_set_audio_sample_table(
-                channel.as_u8() as c_int,
+                c_int::from(channel.as_u8()),
                 samples.as_ptr(),
                 length,
             )
@@ -123,7 +123,7 @@ impl FocAudio {
     /// not dereference it after its lease is dropped or turn it into a slice
     /// without separately knowing the table length.
     pub unsafe fn sample_table_ptr(&self, channel: AudioChannel) -> Option<NonNull<f32>> {
-        unsafe { crate::ffi::foc_get_audio_sample_table(channel.as_u8() as c_int) }
+        unsafe { crate::ffi::foc_get_audio_sample_table(c_int::from(channel.as_u8())) }
             .and_then(|pointer| NonNull::new(pointer as *mut f32))
     }
 }
@@ -162,9 +162,7 @@ fn nonnegative(value: f32) -> Result<f32, FocAudioError> {
 }
 
 fn c_int_length(length: usize) -> Result<c_int, FocAudioError> {
-    (length <= i32::MAX as usize)
-        .then_some(length as c_int)
-        .ok_or(FocAudioError::BufferTooLong)
+    c_int::try_from(length).map_err(|_| FocAudioError::BufferTooLong)
 }
 
 fn command_result(result: Option<bool>) -> Result<(), FocAudioError> {

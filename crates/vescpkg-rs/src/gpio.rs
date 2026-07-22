@@ -324,6 +324,7 @@ pub(crate) fn reset_leases() {
     GPIO_LEASES.store(0, Ordering::Release);
 }
 
+#[allow(clippy::used_underscore_binding)]
 fn set_mode(_gpio: &Gpio, pin: VescPin, mode: GpioMode) -> bool {
     #[cfg(test)]
     {
@@ -336,6 +337,7 @@ fn set_mode(_gpio: &Gpio, pin: VescPin, mode: GpioMode) -> bool {
     }
 }
 
+#[allow(clippy::used_underscore_binding)]
 fn read(_gpio: &Gpio, pin: VescPin) -> bool {
     #[cfg(test)]
     {
@@ -349,6 +351,7 @@ fn read(_gpio: &Gpio, pin: VescPin) -> bool {
     }
 }
 
+#[allow(clippy::used_underscore_binding)]
 fn write(_gpio: &Gpio, pin: VescPin, level: DigitalOutputLevel) -> bool {
     #[cfg(test)]
     {
