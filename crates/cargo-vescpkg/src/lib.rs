@@ -27,6 +27,8 @@ enum Command {
     Build(BuildArgs),
     #[command(name = "loopback")]
     Probe(DeviceArgs),
+    #[command(name = "control-loop")]
+    ControlLoopProbe(DeviceArgs),
     PackageInstall(PackageInstallArgs),
     ErasePackage(PackageEraseArgs),
     Deploy(DeployArgs),
@@ -93,6 +95,7 @@ where
     match parse_args(args) {
         Ok(Command::Build(args)) => run_build(args),
         Ok(Command::Probe(command)) => run_probe(command),
+        Ok(Command::ControlLoopProbe(command)) => run_control_loop_probe(command),
         Ok(Command::Deploy(command)) => run_deploy(command),
         Ok(Command::PackageInstall(command)) => run_package_install(command),
         Ok(Command::ErasePackage(command)) => run_package_erase(command),
@@ -122,6 +125,33 @@ fn run_probe(command: DeviceArgs) -> ExitCode {
         }
         Err(error) => {
             eprintln!("loopback failed: {error}");
+            ExitCode::from(1)
+        }
+    }
+}
+
+fn run_control_loop_probe(command: DeviceArgs) -> ExitCode {
+    let target = command.into_target();
+    match deploy::run_control_loop_probe(target, |event| println!("control-loop: {event}")) {
+        Ok(report) => {
+            let first = report
+                .statuses()
+                .first()
+                .map_or(0, |status| status.tick_count());
+            let last = report
+                .statuses()
+                .last()
+                .map_or(0, |status| status.tick_count());
+            println!(
+                "control-loop ok on device={} service={}: ticks={first}->{last} elapsed={:?}",
+                report.target().device_name_hint(),
+                report.target().service_name_hint(),
+                report.elapsed()
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("control-loop failed: {error}");
             ExitCode::from(1)
         }
     }
@@ -288,6 +318,19 @@ mod tests {
             Command::Probe(DeviceArgs {
                 device_name: Some("Floatwheel PintV".to_owned()),
                 address: Some("AA:BB:CC:DD:EE:FF".to_owned()),
+            })
+        );
+        assert_eq!(
+            parse_args([
+                "cargo-vescpkg",
+                "control-loop",
+                "--device",
+                "Floatwheel PintV",
+            ])
+            .expect("control-loop"),
+            Command::ControlLoopProbe(DeviceArgs {
+                device_name: Some("Floatwheel PintV".to_owned()),
+                address: None,
             })
         );
     }

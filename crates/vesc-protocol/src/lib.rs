@@ -21,6 +21,8 @@ extern crate std;
 pub mod ble_loopback;
 /// VESC firmware buffer-compatible primitive encoders.
 pub mod buffer;
+/// No-actuation control-loop probe and package wire helpers.
+pub mod control_loop;
 
 /// Version tag carried by the shared loopback wire frame.
 ///
