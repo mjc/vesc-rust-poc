@@ -265,6 +265,19 @@ impl LispValue {
             .and_then(|value| value.try_into().ok())
     }
 
+    /// Decode an immediate LispBM integer exactly as an `i64`.
+    ///
+    /// The result is widened from the firmware's immediate payload; this does
+    /// not claim to decode a wider flat value.
+    pub fn decode_i64_exact(self) -> Option<i64> {
+        self.decode_i32_exact().map(i64::from)
+    }
+
+    /// Decode an immediate non-negative LispBM integer exactly as a `u64`.
+    pub fn decode_u64_exact(self) -> Option<u64> {
+        self.decode_u32_exact().map(u64::from)
+    }
+
     /// Convert a firmware-classified numeric value to an unsigned integer.
     #[cfg(not(test))]
     pub fn decode_number_as_u32(self) -> Option<u32> {
