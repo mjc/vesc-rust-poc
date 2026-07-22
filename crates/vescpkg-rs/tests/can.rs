@@ -1,6 +1,9 @@
 #![cfg(feature = "test-support")]
 
-use vescpkg_rs::{CanBus, CanControllerId, CanError, CanExtendedId, CanStandardId};
+use vescpkg_rs::{
+    CanBus, CanControllerId, CanError, CanExtendedId, CanStandardId, Current, DutyCycle,
+    MotorCurrent, SignedRatio,
+};
 
 #[test]
 fn can_bus_transmits_bounded_payloads_and_copies_status() {
@@ -13,6 +16,13 @@ fn can_bus_transmits_bounded_payloads_and_copies_status() {
         .expect("standard transmit");
     bus.transmit_extended(extended, &[4, 5])
         .expect("extended transmit");
+    bus.set_current(CanControllerId::new(7), MotorCurrent::new(Current::from_amps(3.0)))
+        .expect("remote current command");
+    bus.set_duty(
+        CanControllerId::new(7),
+        DutyCycle::new(SignedRatio::from_ratio_const(0.5)),
+    )
+    .expect("remote duty command");
     assert_eq!(bus.transmit_standard(standard, &[0; 9]), Err(CanError::PayloadTooLong));
 
     let status = bus.status(CanControllerId::new(7)).expect("status snapshot");
