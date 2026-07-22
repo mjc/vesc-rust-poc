@@ -2632,9 +2632,7 @@ pub unsafe fn lbm_symbol_to_io(symbol: u32, gpio: *mut *mut c_void, pin: *mut u3
 
 /// Allocate a firmware mutex handle.
 pub unsafe fn mutex_create() -> *mut c_void {
-    unsafe { slots::mutex_create() }
-        .map(|create| unsafe { create() })
-        .unwrap_or(core::ptr::null_mut())
+    unsafe { slots::mutex_create() }.map_or(core::ptr::null_mut(), |create| unsafe { create() })
 }
 
 /// Lock a firmware mutex.
@@ -2649,9 +2647,7 @@ pub unsafe fn mutex_unlock(mutex: *mut c_void) {
 
 /// Allocate a firmware semaphore handle.
 pub unsafe fn sem_create() -> *mut c_void {
-    unsafe { slots::sem_create() }
-        .map(|create| unsafe { create() })
-        .unwrap_or(core::ptr::null_mut())
+    unsafe { slots::sem_create() }.map_or(core::ptr::null_mut(), |create| unsafe { create() })
 }
 
 /// Wait on a firmware semaphore.
