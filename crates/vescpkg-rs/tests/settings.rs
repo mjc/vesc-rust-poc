@@ -62,6 +62,7 @@ fn typed_settings_read_write_and_persist() {
     assert_eq!(settings.imu_rotation_roll().as_degrees(), 0.0);
     assert_eq!(settings.imu_rotation_pitch().as_degrees(), 0.0);
     assert_eq!(settings.imu_rotation_yaw().as_degrees(), 0.0);
+    assert_eq!(settings.imu_acceleration_confidence_decay().as_ratio(), 1.0);
     assert_eq!(settings.gear_ratio().unwrap().as_f32(), 2.5);
     assert_eq!(settings.wheel_diameter().distance().as_meters(), 0.165);
     assert_eq!(settings.foc_motor_resistance().resistance().as_ohms(), 0.03);
@@ -176,6 +177,9 @@ fn typed_settings_read_write_and_persist() {
         .unwrap();
     settings
         .set_imu_rotation_yaw(vescpkg_rs::AngleDegrees::from_degrees(3.0))
+        .unwrap();
+    settings
+        .set_imu_acceleration_confidence_decay(vescpkg_rs::Ratio::from_ratio_const(0.8))
         .unwrap();
     settings
         .set_gear_ratio(vescpkg_rs::GearRatio::try_new(3.0).unwrap())
@@ -303,6 +307,7 @@ fn typed_settings_read_write_and_persist() {
     assert_eq!(settings.imu_rotation_roll().as_degrees(), 1.0);
     assert_eq!(settings.imu_rotation_pitch().as_degrees(), -2.0);
     assert_eq!(settings.imu_rotation_yaw().as_degrees(), 3.0);
+    assert_eq!(settings.imu_acceleration_confidence_decay().as_ratio(), 0.8);
     assert_eq!(settings.gear_ratio().unwrap().as_f32(), 3.0);
     assert_eq!(settings.wheel_diameter().distance().as_meters(), 0.2);
     assert_eq!(settings.foc_motor_resistance().resistance().as_ohms(), 0.04);
