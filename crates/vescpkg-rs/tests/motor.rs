@@ -4,7 +4,7 @@
 use vescpkg_rs::prelude::{
     AngleDegrees, AudioChannel, AudioFrequency, AudioVoltage, Current, FirmwareFaultCode,
     Frequency, HandbrakeCurrent, HandbrakeRelative, InputCurrentLimit, OdometerMeters, PidPosition,
-    Ratio, Rpm, ElectricalSpeed, VescSeconds, Voltage,
+    MotorSelection, Ratio, Rpm, ElectricalSpeed, VescSeconds, Voltage,
 };
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{MotorOutput, MotorTelemetry};
@@ -183,4 +183,5 @@ fn motor_exposes_typed_handbrake_commands() {
     firmware
         .motor()
         .set_pid_position(PidPosition::new(AngleDegrees::from_degrees(90.0)));
+    firmware.motor().select_motor(MotorSelection::new(1));
 }
