@@ -45,6 +45,7 @@ pub fn run_loopback_probe(
 pub struct ControlLoopProbeReport {
     target: LoopbackTarget,
     statuses: Vec<ControlLoopStatus>,
+    timing: ControlLoopTimingStats,
     elapsed: Duration,
 }
 
@@ -59,9 +60,38 @@ impl ControlLoopProbeReport {
         &self.statuses
     }
 
+    /// Return the observed firmware tick timing statistics.
+    pub const fn timing(&self) -> ControlLoopTimingStats {
+        self.timing
+    }
+
     /// Return host-observed probe duration.
     pub const fn elapsed(&self) -> Duration {
         self.elapsed
+    }
+}
+
+/// Host-observed timing statistics derived from successive firmware tick counts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ControlLoopTimingStats {
+    min_tick_period: Duration,
+    max_tick_period: Duration,
+}
+
+impl ControlLoopTimingStats {
+    /// Return the shortest observed duration per firmware tick.
+    pub const fn min_tick_period(self) -> Duration {
+        self.min_tick_period
+    }
+
+    /// Return the longest observed duration per firmware tick.
+    pub const fn max_tick_period(self) -> Duration {
+        self.max_tick_period
+    }
+
+    /// Return the observed period spread between the fastest and slowest samples.
+    pub const fn jitter(self) -> Duration {
+        self.max_tick_period.saturating_sub(self.min_tick_period)
     }
 }
 
@@ -86,6 +116,8 @@ pub enum ControlLoopProbeError {
         /// Output from the final status sample.
         final_output: i16,
     },
+    /// The status samples did not contain two advancing tick observations.
+    TimingUnavailable,
     /// The package did not retain the requested setpoint.
     SetpointMismatch {
         /// Setpoint sent by the probe.
@@ -117,6 +149,9 @@ impl std::fmt::Display for ControlLoopProbeError {
                     f,
                     "control-loop output did not change ({initial} -> {final_output})"
                 )
+            }
+            Self::TimingUnavailable => {
+                f.write_str("control-loop timing was unavailable from status samples")
             }
             Self::SetpointMismatch { expected, observed } => {
                 write!(
@@ -178,6 +213,7 @@ fn run_control_loop_on_session(
     progress(format!("step setpoint: accepted {CONTROL_LOOP_SETPOINT}"));
 
     let mut statuses = Vec::with_capacity(CONTROL_LOOP_STATUS_SAMPLES);
+    let mut sampled_at = Vec::with_capacity(CONTROL_LOOP_STATUS_SAMPLES);
     for sample_index in 0..CONTROL_LOOP_STATUS_SAMPLES {
         if sample_index != 0 {
             std::thread::sleep(Duration::from_millis(100));
@@ -191,13 +227,17 @@ fn run_control_loop_on_session(
             status.output()
         ));
         statuses.push(status);
+        sampled_at.push(Instant::now());
     }
 
     validate_control_loop_statuses(&statuses)?;
+    let timing = derive_control_loop_timing(&statuses, &sampled_at)
+        .ok_or(ControlLoopProbeError::TimingUnavailable)?;
 
     Ok(ControlLoopProbeReport {
         target,
         statuses,
+        timing,
         elapsed: started.elapsed(),
     })
 }
@@ -234,6 +274,31 @@ fn validate_control_loop_statuses(
         });
     }
     Ok(())
+}
+
+fn derive_control_loop_timing(
+    statuses: &[ControlLoopStatus],
+    sampled_at: &[Instant],
+) -> Option<ControlLoopTimingStats> {
+    if statuses.len() != sampled_at.len() || statuses.len() < 2 {
+        return None;
+    }
+    let mut periods = statuses.windows(2).zip(sampled_at.windows(2)).filter_map(
+        |(status_window, time_window)| {
+            let ticks = status_window[1]
+                .tick_count()
+                .checked_sub(status_window[0].tick_count())?;
+            (ticks > 0).then(|| time_window[1].duration_since(time_window[0]) / ticks)
+        },
+    );
+    let first = periods.next()?;
+    let (min_tick_period, max_tick_period) = periods.fold((first, first), |(min, max), period| {
+        (min.min(period), max.max(period))
+    });
+    Some(ControlLoopTimingStats {
+        min_tick_period,
+        max_tick_period,
+    })
 }
 
 fn send_control_loop_packet(
@@ -375,7 +440,11 @@ impl std::error::Error for DeployError {}
 
 #[cfg(test)]
 mod tests {
-    use super::{ControlLoopProbeError, validate_control_loop_statuses};
+    use super::{
+        ControlLoopProbeError, ControlLoopTimingStats, derive_control_loop_timing,
+        validate_control_loop_statuses,
+    };
+    use std::time::{Duration, Instant};
     use vesc_protocol::control_loop::{ControlLoopStatus, STATUS_BYTES, STATUS_COMMAND};
 
     fn status(setpoint: i16, output: i16, tick_count: u32) -> ControlLoopStatus {
@@ -401,6 +470,28 @@ mod tests {
             Err(ControlLoopProbeError::OutputDidNotChange {
                 initial: 100,
                 final_output: 100,
+            })
+        );
+    }
+
+    #[test]
+    fn probe_timing_reports_period_and_jitter_from_tick_samples() {
+        let statuses = [
+            status(100, 100, 10),
+            status(100, 50, 11),
+            status(100, 0, 13),
+        ];
+        let start = Instant::now();
+        let sampled_at = [
+            start,
+            start + Duration::from_millis(33),
+            start + Duration::from_millis(165),
+        ];
+        assert_eq!(
+            derive_control_loop_timing(&statuses, &sampled_at),
+            Some(ControlLoopTimingStats {
+                min_tick_period: Duration::from_millis(33),
+                max_tick_period: Duration::from_millis(66),
             })
         );
     }
