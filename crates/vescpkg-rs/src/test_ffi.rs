@@ -374,6 +374,16 @@ fn reset_temperature_settings() {
     TEMPERATURE_ACCELERATION_DECREASE.store(0.5_f32.to_bits(), Ordering::Relaxed);
 }
 
+fn reset_selector_settings() {
+    BATTERY_CELL_COUNT.store(0, Ordering::Relaxed);
+    BATTERY_TYPE.store(0, Ordering::Relaxed);
+    APP_CAN_BAUD_RATE.store(2, Ordering::Relaxed);
+    APP_CAN_MODE.store(2, Ordering::Relaxed);
+    IMU_AHRS_MODE.store(0, Ordering::Relaxed);
+    APP_SHUTDOWN_MODE.store(1, Ordering::Relaxed);
+    MOTOR_POLE_COUNT.store(14, Ordering::Relaxed);
+}
+
 pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     while LOCKED
         .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -419,13 +429,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     DUTY_CYCLE_LIMIT.store(0.95_f32.to_bits(), Ordering::Relaxed);
     CAN_STATUS_DUTY_BITS.store(0x3e80_0000, Ordering::Relaxed);
     CAN_STATUS_PPM_BITS.store(0x3f00_0000, Ordering::Relaxed);
-    BATTERY_CELL_COUNT.store(0, Ordering::Relaxed);
-    BATTERY_TYPE.store(0, Ordering::Relaxed);
-    APP_CAN_BAUD_RATE.store(2, Ordering::Relaxed);
-    APP_CAN_MODE.store(2, Ordering::Relaxed);
-    IMU_AHRS_MODE.store(0, Ordering::Relaxed);
-    APP_SHUTDOWN_MODE.store(1, Ordering::Relaxed);
-    MOTOR_POLE_COUNT.store(14, Ordering::Relaxed);
+    reset_selector_settings();
     CONFIG_WRITE_OK.store(true, Ordering::Relaxed);
     CONFIG_STORE_OK.store(true, Ordering::Relaxed);
     INPUT_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
