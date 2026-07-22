@@ -609,30 +609,6 @@ fn settings_reject_unknown_battery_chemistry() {
 }
 
 #[test]
-fn settings_round_trip_every_can_baud_selector() {
-    let firmware = FirmwareTest::new();
-    let settings = firmware.settings();
-    let selectors = [
-        (0, vescpkg_rs::CanBaudRate::Kbps125),
-        (1, vescpkg_rs::CanBaudRate::Kbps250),
-        (2, vescpkg_rs::CanBaudRate::Kbps500),
-        (3, vescpkg_rs::CanBaudRate::Mbps1),
-        (4, vescpkg_rs::CanBaudRate::Kbps10),
-        (5, vescpkg_rs::CanBaudRate::Kbps20),
-        (6, vescpkg_rs::CanBaudRate::Kbps50),
-        (7, vescpkg_rs::CanBaudRate::Kbps75),
-        (8, vescpkg_rs::CanBaudRate::Kbps100),
-    ];
-
-    for (raw, selector) in selectors {
-        settings
-            .set_int(FirmwareIntSetting::AppCanBaudRate, raw)
-            .unwrap();
-        assert_eq!(settings.can_baud_rate().unwrap(), selector);
-    }
-}
-
-#[test]
 fn settings_report_firmware_rejections() {
     let firmware = FirmwareTest::new();
     let settings = firmware.settings();

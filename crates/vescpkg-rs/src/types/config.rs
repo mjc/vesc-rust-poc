@@ -132,37 +132,6 @@ impl CanBaudRate {
             Self::Kbps100 => 8,
         }
     }
-
-    /// Return the selected CAN bit rate in bits per second.
-    pub const fn as_bits_per_second(self) -> u32 {
-        match self {
-            Self::Kbps125 => 125_000,
-            Self::Kbps250 => 250_000,
-            Self::Kbps500 => 500_000,
-            Self::Mbps1 => 1_000_000,
-            Self::Kbps10 => 10_000,
-            Self::Kbps20 => 20_000,
-            Self::Kbps50 => 50_000,
-            Self::Kbps75 => 75_000,
-            Self::Kbps100 => 100_000,
-        }
-    }
-
-    /// Decode an exact numeric CAN bit rate into its firmware selector.
-    pub const fn from_bits_per_second(value: u32) -> Option<Self> {
-        match value {
-            125_000 => Some(Self::Kbps125),
-            250_000 => Some(Self::Kbps250),
-            500_000 => Some(Self::Kbps500),
-            1_000_000 => Some(Self::Mbps1),
-            10_000 => Some(Self::Kbps10),
-            20_000 => Some(Self::Kbps20),
-            50_000 => Some(Self::Kbps50),
-            75_000 => Some(Self::Kbps75),
-            100_000 => Some(Self::Kbps100),
-            _ => None,
-        }
-    }
 }
 
 /// Firmware AHRS algorithm selector from the VESC IMU configuration.
@@ -1356,33 +1325,5 @@ mod tests {
         assert!(super::GearRatio::try_new(f32::INFINITY).is_err());
         assert!(super::GearRatio::try_new(f32::NEG_INFINITY).is_err());
         assert!(super::GearRatio::try_new(f32::NAN).is_err());
-    }
-
-    #[test]
-    fn can_baud_rate_reports_discrete_firmware_values() {
-        let selectors = [
-            (0, super::CanBaudRate::Kbps125, 125_000),
-            (1, super::CanBaudRate::Kbps250, 250_000),
-            (2, super::CanBaudRate::Kbps500, 500_000),
-            (3, super::CanBaudRate::Mbps1, 1_000_000),
-            (4, super::CanBaudRate::Kbps10, 10_000),
-            (5, super::CanBaudRate::Kbps20, 20_000),
-            (6, super::CanBaudRate::Kbps50, 50_000),
-            (7, super::CanBaudRate::Kbps75, 75_000),
-            (8, super::CanBaudRate::Kbps100, 100_000),
-        ];
-
-        for (raw, selector, bits_per_second) in selectors {
-            assert_eq!(super::CanBaudRate::from_raw(raw), Some(selector));
-            assert_eq!(selector.as_bits_per_second(), bits_per_second);
-            assert_eq!(
-                super::CanBaudRate::from_bits_per_second(bits_per_second),
-                Some(selector)
-            );
-            assert_eq!(selector.as_u8(), raw as u8);
-        }
-        for unsupported in [0, 100, 125_001, 2_000_000] {
-            assert_eq!(super::CanBaudRate::from_bits_per_second(unsupported), None);
-        }
     }
 }
