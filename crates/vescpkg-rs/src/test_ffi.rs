@@ -122,6 +122,7 @@ static ELECTRICAL_SPEED_MAX: AtomicU32 = AtomicU32::new(0);
 static ELECTRICAL_SPEED_RAMP_START: AtomicU32 = AtomicU32::new(0);
 static ELECTRICAL_SPEED_BRAKE_MAX: AtomicU32 = AtomicU32::new(0);
 static ELECTRICAL_SPEED_BRAKE_CURRENT_MAX: AtomicU32 = AtomicU32::new(0);
+static IMU_SAMPLE_RATE: AtomicU32 = AtomicU32::new(0);
 static GEAR_RATIO: AtomicU32 = AtomicU32::new(0);
 static WHEEL_DIAMETER: AtomicU32 = AtomicU32::new(0);
 static FOC_MOTOR_RESISTANCE: AtomicU32 = AtomicU32::new(0);
@@ -346,6 +347,7 @@ fn reset_speed_settings() {
     ELECTRICAL_SPEED_RAMP_START.store(500.0_f32.to_bits(), Ordering::Relaxed);
     ELECTRICAL_SPEED_BRAKE_MAX.store(10_000.0_f32.to_bits(), Ordering::Relaxed);
     ELECTRICAL_SPEED_BRAKE_CURRENT_MAX.store(8_000.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_SAMPLE_RATE.store(500.0_f32.to_bits(), Ordering::Relaxed);
 }
 
 pub(crate) fn lock_firmware() -> FirmwareLockGuard {
@@ -1503,6 +1505,7 @@ pub unsafe fn get_cfg_float(param: i32) -> f32 {
         7 => load(&ELECTRICAL_SPEED_RAMP_START),
         8 => load(&ELECTRICAL_SPEED_BRAKE_MAX),
         9 => load(&ELECTRICAL_SPEED_BRAKE_CURRENT_MAX),
+        31 => load(&IMU_SAMPLE_RATE),
         40 => load(&GEAR_RATIO),
         41 => load(&WHEEL_DIAMETER),
         46 => load(&FOC_MOTOR_RESISTANCE),
@@ -1546,6 +1549,7 @@ pub unsafe fn set_cfg_float(param: i32, value: f32) -> bool {
         7 => ELECTRICAL_SPEED_RAMP_START.store(value.to_bits(), Ordering::Relaxed),
         8 => ELECTRICAL_SPEED_BRAKE_MAX.store(value.to_bits(), Ordering::Relaxed),
         9 => ELECTRICAL_SPEED_BRAKE_CURRENT_MAX.store(value.to_bits(), Ordering::Relaxed),
+        31 => IMU_SAMPLE_RATE.store(value.to_bits(), Ordering::Relaxed),
         40 => GEAR_RATIO.store(value.to_bits(), Ordering::Relaxed),
         41 => WHEEL_DIAMETER.store(value.to_bits(), Ordering::Relaxed),
         46 => FOC_MOTOR_RESISTANCE.store(value.to_bits(), Ordering::Relaxed),

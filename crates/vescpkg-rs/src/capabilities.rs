@@ -318,6 +318,11 @@ impl FirmwareSettings {
         ))
     }
 
+    /// Read the configured firmware IMU sample rate.
+    pub fn imu_sample_rate(self) -> crate::SampleRate {
+        crate::SampleRate::from_hertz(self.get_float(FirmwareFloatSetting::ImuSampleRate))
+    }
+
     /// Read the configured positive gear ratio, rejecting malformed firmware state.
     pub fn gear_ratio(self) -> Result<GearRatio, SettingsError> {
         GearRatio::try_new(self.get_float(FirmwareFloatSetting::GearRatio))
@@ -435,6 +440,11 @@ impl FirmwareSettings {
             FirmwareFloatSetting::MaximumElectricalSpeedBrakeCurrent,
             speed.rpm().as_revolutions_per_minute(),
         )
+    }
+
+    /// Update the live firmware IMU sample rate; persistence still requires [`Self::store`].
+    pub fn set_imu_sample_rate(self, rate: crate::SampleRate) -> Result<(), SettingsError> {
+        self.set_float(FirmwareFloatSetting::ImuSampleRate, rate.as_hertz())
     }
 
     /// Update the live gear ratio; persistence still requires [`Self::store`].
