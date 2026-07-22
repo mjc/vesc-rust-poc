@@ -65,3 +65,18 @@ fn settings_reject_non_finite_float_values_before_abi_call() {
         Err(SettingsError::InvalidValue)
     );
 }
+
+#[test]
+fn settings_reject_malformed_battery_cell_count_reads() {
+    let firmware = FirmwareTest::new().with_raw_battery_cell_count(0);
+    assert_eq!(
+        firmware.settings().battery_cell_count(),
+        Err(SettingsError::InvalidValue)
+    );
+
+    let firmware = firmware.with_raw_battery_cell_count(-1);
+    assert_eq!(
+        firmware.settings().battery_cell_count(),
+        Err(SettingsError::InvalidValue)
+    );
+}
