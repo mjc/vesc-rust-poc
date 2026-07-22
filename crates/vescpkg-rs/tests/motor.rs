@@ -16,6 +16,18 @@ fn motor_exposes_typed_handbrake_commands() {
         .set_handbrake_relative(HandbrakeRelative::new(Ratio::from_ratio_const(0.25)));
 
     let telemetry = firmware.telemetry();
+    assert_eq!(telemetry.motor_current_unfiltered().current().as_amps(), 12.0);
+    assert_eq!(
+        telemetry
+            .directional_motor_current_unfiltered()
+            .current()
+            .as_amps(),
+        -12.5
+    );
+    assert_eq!(
+        telemetry.battery_current_unfiltered().current().as_amps(),
+        8.0
+    );
     assert_eq!(telemetry.tachometer(false).steps().as_steps(), 1234);
     assert_eq!(telemetry.absolute_tachometer(true).steps().as_steps(), 5678);
     assert_eq!(telemetry.sampling_frequency().as_hertz(), 20_000.0);
