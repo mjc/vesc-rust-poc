@@ -37,6 +37,7 @@ fn drain_one_short_beep(state: &mut RefloatPackageState) -> Vec<(u32, RefloatBee
 
 #[test]
 fn configured_loop_time_uses_refloat_hertz_config() {
+    let _firmware = FirmwareTest::new();
     let mut incoming = default_refloat_config_bytes();
     let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
 
@@ -509,6 +510,7 @@ fn store_serialized_config_rejects_special_modes_like_refloat() {
 
 #[test]
 fn store_serialized_config_clears_default_and_keeps_enabled_while_running_like_refloat() {
+    let _firmware = FirmwareTest::new();
     let mut state = RefloatPackageState::new(sample_all_data_payloads_with_ride_state(
         RefloatRunState::Running,
         RefloatMode::Normal,
@@ -530,6 +532,7 @@ fn store_serialized_config_clears_default_and_keeps_enabled_while_running_like_r
 
 #[test]
 fn successful_config_write_reconfigures_and_acknowledges_like_refloat() {
+    let _firmware = FirmwareTest::new();
     for (disabled, expected_run_state, expected_changes, expected_last) in [
         (
             false,

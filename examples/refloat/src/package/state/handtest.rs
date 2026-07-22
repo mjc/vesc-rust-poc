@@ -233,6 +233,7 @@ mod tests {
 
     #[test]
     fn handtest_packet_toggles_ready_mode_and_safety_config_like_refloat_qml() {
+        let _firmware = FirmwareTest::new();
         // QML sends COMMAND_HANDTEST at `refloat/ui.qml.in:764-768`; C toggles
         // mode and temporary safety config at `third_party/refloat/src/main.c:1421-1450`.
         let mut state = RefloatPackageState::new(sample_all_data_payloads_with_ride_state(
@@ -285,17 +286,18 @@ mod tests {
 
     #[test]
     fn handtest_disable_restores_eeprom_not_the_enable_time_image_like_refloat() {
+        let _firmware = FirmwareTest::new();
         let mut state = RefloatPackageState::new(sample_all_data_payloads_with_ride_state(
             RefloatRunState::Ready,
             RefloatMode::Normal,
         ));
         let mut persisted = editable_config_from_state(&state);
-        assert!(persisted.editor().set_kp(AngleCurrentGain::new(7.0)));
+        assert!(persisted.editor().set_kp(AngleCurrentGain::new(1.2)));
         let persisted = *persisted.as_bytes();
         assert!(state.store_serialized_config(&persisted));
 
         let mut volatile = editable_config_from_state(&state);
-        assert!(volatile.editor().set_kp(AngleCurrentGain::new(11.0)));
+        assert!(volatile.editor().set_kp(AngleCurrentGain::new(-9.0)));
         state.replace_serialized_config_for_test(volatile);
 
         assert!(state.handle_handtest_packet(&[
@@ -311,7 +313,7 @@ mod tests {
 
         assert_eq!(
             state.serialized_config.balance().kp().as_amps_per_degree(),
-            7.0
+            1.2
         );
     }
 
