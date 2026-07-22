@@ -11,6 +11,10 @@ The deliberately tiny command surface is:
 - `[2]` returns `[2, setpoint, sampled_input, output, tick_count]` in the
   corresponding little-endian fields.
 
+Host-side probes can use the allocation-free `encode_setpoint_command`,
+`encode_status_command`, and `ControlLoopStatus::decode` helpers from the
+example library so the probe and package share one wire contract.
+
 Host tests exercise the control step, command validation, shared-state
 round-trips, and package startup. Build the ARM package with:
 
