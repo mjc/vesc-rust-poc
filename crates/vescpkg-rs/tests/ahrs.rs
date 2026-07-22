@@ -31,7 +31,8 @@ fn mahony_ahrs_integrates_rate_and_can_reset() {
         ),
         ImuSamplePeriod::new(VescSeconds::from_seconds(0.1)),
     );
-    ahrs.update(sample);
+    let estimate = ahrs.update(sample);
+    assert_eq!(estimate, ahrs.orientation());
     let quaternion = ahrs.orientation().quaternion();
     assert!(f32::from(quaternion.w()) < 1.0);
     assert!(f32::from(quaternion.z()).abs() > 0.0);
