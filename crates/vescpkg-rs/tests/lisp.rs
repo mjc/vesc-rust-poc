@@ -66,6 +66,9 @@ fn lisp_values_expose_explicit_kind_predicates() {
     let mut list = proper.list();
     assert_eq!(list.next_value().unwrap(), Some(integer));
     assert_eq!(list.next_value().unwrap(), None);
+    let mut iterator = proper.list();
+    assert_eq!(iterator.next(), Some(Ok(integer)));
+    assert_eq!(iterator.next(), None);
 
     let improper_pair = LispValue::cons(integer, character);
     assert!(!improper_pair.is_list());
@@ -75,6 +78,13 @@ fn lisp_values_expose_explicit_kind_predicates() {
         improper.next_value(),
         Err(vescpkg_rs::LispListError::ImproperTail)
     );
+    let mut improper_iterator = improper_pair.list();
+    assert_eq!(improper_iterator.next(), Some(Ok(integer)));
+    assert_eq!(
+        improper_iterator.next(),
+        Some(Err(vescpkg_rs::LispListError::ImproperTail))
+    );
+    assert_eq!(improper_iterator.next(), None);
 
     let string = LispValue::try_byte_array(4).expect("host fake allocates byte arrays");
     assert!(string.is_byte_array());
