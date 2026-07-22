@@ -1,9 +1,57 @@
 //! Package-owned, no-allocation Mahony and Madgwick attitude estimation.
 
 use crate::{
-    ImuOrientation, ImuQuaternion, ImuQuaternionW, ImuQuaternionX, ImuQuaternionY, ImuQuaternionZ,
-    ImuReadSample,
+    ImuAcceleration, ImuMagneticField, ImuOrientation, ImuQuaternion, ImuQuaternionW,
+    ImuQuaternionX, ImuQuaternionY, ImuQuaternionZ, ImuReadSample,
 };
+
+fn initial_quaternion(
+    acceleration: ImuAcceleration,
+    magnetic: ImuMagneticField,
+) -> Option<[f32; 4]> {
+    let (ax, ay, az) = acceleration.map_axes(|x, y, z| {
+        (
+            x.acceleration().as_g(),
+            y.acceleration().as_g(),
+            z.acceleration().as_g(),
+        )
+    });
+    let (mx, my, mz) = magnetic.map_axes(|x, y, z| {
+        (
+            x.magnetic_flux_density().as_microteslas(),
+            y.magnetic_flux_density().as_microteslas(),
+            z.magnetic_flux_density().as_microteslas(),
+        )
+    });
+    let accel_norm = crate::sqrt(ax * ax + ay * ay + az * az);
+    let mag_norm = crate::sqrt(mx * mx + my * my + mz * mz);
+    if !accel_norm.is_finite()
+        || !mag_norm.is_finite()
+        || accel_norm <= f32::EPSILON
+        || mag_norm <= f32::EPSILON
+    {
+        return None;
+    }
+    let roll = crate::atan2(ay, az);
+    let pitch = crate::atan2(-ax, crate::sqrt(ay * ay + az * az));
+    let (sr, cr) = (crate::sin(roll), crate::cos(roll));
+    let (sp, cp) = (crate::sin(pitch), crate::cos(pitch));
+    let horizontal_x = mx * cp + mz * sp;
+    let horizontal_y = mx * sr * sp + my * cr - mz * sr * cp;
+    if crate::sqrt(horizontal_x * horizontal_x + horizontal_y * horizontal_y) <= f32::EPSILON {
+        return None;
+    }
+    let yaw = crate::atan2(-horizontal_y, horizontal_x);
+    let (sr, cr) = (crate::sin(roll * 0.5), crate::cos(roll * 0.5));
+    let (sp, cp) = (crate::sin(pitch * 0.5), crate::cos(pitch * 0.5));
+    let (sy, cy) = (crate::sin(yaw * 0.5), crate::cos(yaw * 0.5));
+    Some([
+        cr * cp * cy + sr * sp * sy,
+        sr * cp * cy - cr * sp * sy,
+        cr * sp * cy + sr * cp * sy,
+        cr * cp * sy - sr * sp * cy,
+    ])
+}
 
 fn orientation_from_quaternion(quaternion: [f32; 4]) -> ImuOrientation {
     ImuOrientation::from_quaternion(ImuQuaternion::from_components(
@@ -72,6 +120,21 @@ impl Ahrs {
     /// Return the current normalized attitude quaternion.
     pub fn orientation(&self) -> ImuOrientation {
         orientation_from_quaternion(self.quaternion)
+    }
+
+    /// Initialize package-owned attitude from gravity and magnetic north.
+    pub fn update_initial_orientation(
+        &mut self,
+        acceleration: ImuAcceleration,
+        magnetic: ImuMagneticField,
+    ) -> ImuOrientation {
+        if let Some(quaternion) = initial_quaternion(acceleration, magnetic) {
+            self.quaternion = quaternion;
+            self.integral = [0.0; 3];
+        } else {
+            self.reset();
+        }
+        self.orientation()
     }
 
     /// Integrate one copied firmware IMU sample.
@@ -185,6 +248,17 @@ impl Madgwick {
     /// Return the current normalized attitude quaternion.
     pub fn orientation(&self) -> ImuOrientation {
         orientation_from_quaternion(self.quaternion)
+    }
+
+    /// Initialize package-owned attitude from gravity and magnetic north.
+    pub fn update_initial_orientation(
+        &mut self,
+        acceleration: ImuAcceleration,
+        magnetic: ImuMagneticField,
+    ) -> ImuOrientation {
+        self.quaternion =
+            initial_quaternion(acceleration, magnetic).unwrap_or([1.0, 0.0, 0.0, 0.0]);
+        self.orientation()
     }
 
     /// Integrate one copied firmware IMU sample.

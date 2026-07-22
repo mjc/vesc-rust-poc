@@ -49,7 +49,7 @@ mod packet;
 mod plot;
 mod pwm;
 #[cfg(feature = "math")]
-pub use math::{asin, cos, sin, sqrt, tan};
+pub use math::{asin, atan2, cos, sin, sqrt, tan};
 mod runtime;
 /// Explicitly unsafe STM32 pad/port access, separate from leased abstract GPIO.
 pub mod stm32;
