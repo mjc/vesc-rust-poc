@@ -8,6 +8,8 @@ use super::types::{EXPRESS_IF_SLOT_COUNT, ExpressAddress, ExpressTarget, Express
 pub enum ExpressLoadError {
     /// The table failed its version check.
     Table(ExpressTableError),
+    /// Express fixed-address tables require a 32-bit target pointer width.
+    UnsupportedPointerWidth,
 }
 
 /// Error returned when a callable Express slot is absent or null.
@@ -78,6 +80,9 @@ impl<'a> ExpressInterface<'a> {
     /// the returned lifetime. The fixed address is never valid as a host
     /// pointer and must not be used on a different architecture or target.
     pub unsafe fn from_target(target: ExpressTarget) -> Result<Self, ExpressLoadError> {
+        if usize::BITS != 32 {
+            return Err(ExpressLoadError::UnsupportedPointerWidth);
+        }
         let words = unsafe {
             core::slice::from_raw_parts(
                 target.interface_address() as *const u32,
