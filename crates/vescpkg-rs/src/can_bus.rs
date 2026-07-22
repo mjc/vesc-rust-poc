@@ -6,7 +6,7 @@ use crate::types::{
     MosfetTemperature, MotorCurrent, MotorTemperature, PidPosition, PpmInput, TachometerSteps,
     WattHoursCharged, WattHoursDischarged,
 };
-use crate::units::{Charge, Current, Energy, Rpm, SignedRatio, TimestampTicks};
+use crate::units::{Charge, Current, Energy, Rpm, SignedRatio, SystemTicks, TimestampTicks};
 
 /// Failure returned by a CAN operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -238,6 +238,16 @@ impl CanStatus {
     /// Return the remote motor duty cycle.
     pub const fn duty_cycle(self) -> DutyCycle {
         self.duty_cycle
+    }
+
+    /// Return the wrapping age of this snapshot at a current firmware tick.
+    pub const fn age_at(self, now: TimestampTicks) -> SystemTicks {
+        now.wrapping_duration_since(self.received_at)
+    }
+
+    /// Return whether this snapshot is older than the supplied tick budget.
+    pub fn is_stale(self, now: TimestampTicks, max_age: SystemTicks) -> bool {
+        self.age_at(now) > max_age
     }
 }
 
