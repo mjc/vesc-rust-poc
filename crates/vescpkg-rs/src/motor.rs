@@ -11,7 +11,7 @@ use crate::types::{
     BatteryCellCount, BatteryLevel, BrakeCurrent, CurrentOffDelay, DCurrent, DVoltage,
     DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed, FirmwareFaultCode,
     HandbrakeCurrent, HandbrakeRelative, InputCurrent, InputVoltage, MosfetTemperature,
-    MotorCurrent, MotorCurrentLimit, MotorStatisticDuration, MotorTemperature,
+    MotorCurrent, MotorCurrentLimit, MotorSelection, MotorStatisticDuration, MotorTemperature,
     PeakMosfetTemperature, PeakMotorCurrent, PeakMotorTemperature, PeakPower, PeakVehicleSpeed,
     PidPosition, QCurrent, QVoltage, SignedTripDistance, TachometerSteps, TemperatureLimitStart,
     TotalMotorCurrent, TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
@@ -384,6 +384,8 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
 /// Motor-control operations backed by firmware slots.
 #[cfg(not(test))]
 pub trait MotorControlBindings {
+    /// Select the active firmware motor-control thread.
+    fn select_motor(&self, motor: MotorSelection);
     /// Reset the firmware motor-command safety timeout.
     ///
     /// Float Out Boy v1.2.1 calls this before motor-control output at
@@ -436,6 +438,10 @@ pub trait MotorControlBindings {
 
 #[cfg(not(test))]
 impl<B: MotorControlBindings + ?Sized> MotorControlBindings for &B {
+    fn select_motor(&self, motor: MotorSelection) {
+        (**self).select_motor(motor);
+    }
+
     fn timeout_reset(&self) {
         (**self).timeout_reset();
     }
@@ -792,6 +798,10 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
 
 #[cfg(not(test))]
 impl MotorControlBindings for RealMotorControlBindings {
+    fn select_motor(&self, motor: MotorSelection) {
+        unsafe { crate::ffi::mc_select_motor_thread(i32::from(motor.index())) };
+    }
+
     fn timeout_reset(&self) {
         unsafe { crate::ffi::timeout_reset() };
     }
@@ -988,6 +998,8 @@ pub trait MotorTelemetry: private::MotorTelemetry {
 
 /// Semantic motor-output capability used by package code.
 pub trait MotorOutput: private::MotorOutput {
+    /// Select the active firmware motor-control thread.
+    fn select_motor(&self, motor: MotorSelection);
     /// Keep the controller's motor command watchdog alive.
     fn keep_alive(&self);
 
@@ -1550,6 +1562,11 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
         Self { bindings }
     }
 
+    /// Select the active firmware motor-control thread.
+    pub fn select_motor(&self, motor: MotorSelection) {
+        self.bindings.select_motor(motor);
+    }
+
     /// Reset the firmware motor-command safety timeout.
     pub fn timeout_reset(&self) {
         self.bindings.timeout_reset();
@@ -1634,6 +1651,10 @@ impl<B: MotorControlBindings> private::MotorOutput for MotorControlApi<B> {}
 
 #[cfg(not(test))]
 impl<B: MotorControlBindings> MotorOutput for MotorControlApi<B> {
+    fn select_motor(&self, motor: MotorSelection) {
+        MotorControlApi::select_motor(self, motor);
+    }
+
     fn keep_alive(&self) {
         self.timeout_reset();
     }

@@ -356,8 +356,7 @@ mod slots {
     optional_fn_slot!(write_nvm as unsafe extern "C" fn(*mut u8, c_uint, c_uint) -> bool);
     optional_fn_slot!(wipe_nvm as unsafe extern "C" fn() -> bool);
     fn_slot!(get_remote_state as unsafe extern "C" fn() -> RemoteState);
-    fn_slot!(get_ppm as unsafe extern "C" fn() -> f32);
-    fn_slot!(get_ppm_age as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_select_motor_thread as unsafe extern "C" fn(c_int));
     fn_slot!(mc_get_fault as unsafe extern "C" fn() -> c_uint);
     fn_slot!(mc_fault_to_string as unsafe extern "C" fn(c_uint) -> *const c_char);
     fn_slot!(mc_get_rpm as unsafe extern "C" fn() -> f32);
@@ -1458,6 +1457,11 @@ pub unsafe fn timeout_secs_since_update() -> f32 {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_set_current_off_delay(seconds: f32) {
     unsafe { required_slot!(mc_set_current_off_delay)(seconds) }
+}
+
+/// Select the active firmware motor-control thread.
+pub unsafe fn mc_select_motor_thread(motor: c_int) {
+    unsafe { slots::mc_select_motor_thread()(motor) }
 }
 
 /// Set the motor current command in amps.

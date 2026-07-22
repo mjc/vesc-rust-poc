@@ -316,6 +316,23 @@ current_type!(OpenLoopCurrent, "Open-loop motor current command.");
 voltage_type!(DVoltage, "FOC d-axis voltage.");
 voltage_type!(QVoltage, "FOC q-axis voltage.");
 voltage_type!(AudioVoltage, "Audio/haptic voltage command.");
+
+/// Explicit motor-control thread selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct MotorSelection(u8);
+
+impl MotorSelection {
+    /// Select a motor-control thread by its firmware index.
+    pub const fn new(index: u8) -> Self {
+        Self(index)
+    }
+
+    /// Return the firmware motor-control thread index.
+    pub const fn index(self) -> u8 {
+        self.0
+    }
+}
 frequency_type!(AudioFrequency, "Audio/haptic frequency command.");
 sample_rate_type!(AudioSampleRate, "Sample rate for audio sample playback.");
 seconds_type!(AudioDuration, "Audio/haptic playback duration.");

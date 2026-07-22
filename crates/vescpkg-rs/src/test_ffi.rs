@@ -1112,6 +1112,8 @@ pub unsafe fn mc_set_current_off_delay(seconds: f32) {
     CURRENT_OFF_DELAY.store(seconds.to_bits(), Ordering::Relaxed);
 }
 
+pub unsafe fn mc_select_motor_thread(_motor: i32) {}
+
 pub unsafe fn mc_set_current(amps: f32) {
     CURRENT_COUNT.fetch_add(1, Ordering::Relaxed);
     CURRENT.store(amps.to_bits(), Ordering::Relaxed);
