@@ -93,6 +93,7 @@ fn lisp_symbols_can_be_looked_up_from_a_scoped_c_string() {
     let _firmware = FirmwareTest::new();
 
     assert_eq!(LispSymbol::lookup(c"vesc"), Some(LispSymbol::new(7)));
+    assert_eq!(LispSymbol::lookup(c"missing"), None);
 }
 
 #[test]
