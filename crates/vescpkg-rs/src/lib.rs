@@ -69,33 +69,33 @@ pub(crate) mod ffi {
 
     #[cfg(all(feature = "test-support", not(test)))]
     use crate::test_ffi as selected_ffi;
+    #[cfg(all(feature = "test-support", not(test)))]
+    pub use crate::test_ffi::{
+        can_set_current, can_set_current_rel, can_set_duty, can_set_pos, can_set_rpm,
+        can_status_msg_id, can_transmit_eid, can_transmit_sid,
+    };
     #[allow(unused_imports)]
     pub use selected_ffi::{
         f_b, f_cons, f_float, f_i32, f_i64, f_lbm_array, f_sym, f_u32, f_u64, foc_get_id,
-        get_cfg_float, get_cfg_int, imu_get_gyro,
-        imu_get_pitch, imu_get_roll, imu_get_yaw, imu_startup_done, lbm_block_ctx_from_extension,
-        lbm_car, lbm_cdr, lbm_cons, lbm_create_byte_array, lbm_dec_as_float, lbm_dec_as_i32,
-        lbm_dec_as_u32, lbm_dec_char, lbm_dec_str, lbm_dec_sym, lbm_enc_char, lbm_enc_float,
-        lbm_enc_i, lbm_enc_sym, lbm_enc_u32, lbm_finish_flatten, lbm_get_current_cid,
-        lbm_is_byte_array, lbm_is_char, lbm_is_cons, lbm_is_number, lbm_is_symbol,
-        lbm_list_destructive_reverse, lbm_send_message, lbm_start_flatten, lbm_unblock_ctx,
-        lbm_unblock_ctx_unboxed, mc_get_amp_hours, mc_get_amp_hours_charged, mc_get_battery_level,
-        mc_get_distance_abs, mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered,
-        mc_get_odometer, mc_get_rpm, mc_get_speed, mc_get_tot_current_directional_filtered,
-        mc_get_tot_current_filtered, mc_get_tot_current_in_filtered, mc_get_watt_hours,
-        mc_get_watt_hours_charged, mc_set_brake_current, mc_set_current, mc_set_current_off_delay,
-        mc_set_duty, mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm,
+        get_cfg_float, get_cfg_int, imu_get_gyro, imu_get_pitch, imu_get_roll, imu_get_yaw,
+        imu_startup_done, lbm_block_ctx_from_extension, lbm_car, lbm_cdr, lbm_cons,
+        lbm_create_byte_array, lbm_dec_as_float, lbm_dec_as_i32, lbm_dec_as_u32, lbm_dec_char,
+        lbm_dec_str, lbm_dec_sym, lbm_enc_char, lbm_enc_float, lbm_enc_i, lbm_enc_sym, lbm_enc_u32,
+        lbm_finish_flatten, lbm_get_current_cid, lbm_is_byte_array, lbm_is_char, lbm_is_cons,
+        lbm_is_number, lbm_is_symbol, lbm_list_destructive_reverse, lbm_send_message,
+        lbm_start_flatten, lbm_unblock_ctx, lbm_unblock_ctx_unboxed, mc_get_amp_hours,
+        mc_get_amp_hours_charged, mc_get_battery_level, mc_get_distance_abs, mc_get_duty_cycle_now,
+        mc_get_fault, mc_get_input_voltage_filtered, mc_get_odometer, mc_get_rpm, mc_get_speed,
+        mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
+        mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
+        mc_set_brake_current, mc_set_current, mc_set_current_off_delay, mc_set_duty,
+        mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm,
         store_eeprom_word, timeout_reset, vesc_free, vesc_imu_get_quaternions, vesc_mutex_create,
         vesc_mutex_lock, vesc_mutex_unlock, vesc_request_terminate, vesc_sem_create,
         vesc_sem_reset, vesc_sem_signal, vesc_sem_wait, vesc_sem_wait_to, vesc_should_terminate,
         vesc_sleep_us, vesc_spawn, vesc_system_time_seconds, vesc_system_time_ticks,
         vesc_thread_set_priority, vesc_timer_seconds_elapsed_since, vesc_timer_time_now,
         vesc_timestamp_age_seconds, wipe_nvm, write_nvm,
-    };
-    #[cfg(all(feature = "test-support", not(test)))]
-    pub use crate::test_ffi::{
-        can_set_current, can_set_current_rel, can_set_duty, can_set_pos, can_set_rpm,
-        can_status_msg_id, can_transmit_eid, can_transmit_sid,
     };
     #[cfg(any(test, not(feature = "test-support")))]
     use vescpkg_rs_sys::raw as selected_ffi;
