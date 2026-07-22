@@ -271,8 +271,9 @@ pub mod prelude {
     pub use crate::{
         AnalogPin, AppDataHandler, AppDataSendError, CanBus, CanError, CanReceiverHandler,
         CanReceiverId, CanStatus, CommandError, CommandReplyHandler, Commands, ConfigBytes,
-        ConfigXml, DigitalOutputLevel, DigitalPin, Encoder, EncoderError, EncoderHandler,
-        EncoderRegistration, ExtensionDescriptor, ExtensionName, ExtensionRegistration, Firmware,
+        ConfigXml, CustomEeprom, CustomEepromAddress, DigitalOutputLevel, DigitalPin, EepromWord,
+        Encoder, EncoderError, EncoderHandler, EncoderRegistration, ExtensionDescriptor,
+        ExtensionName, ExtensionRegistration, Firmware,
         FirmwareAhrs, FirmwareAhrsError, FirmwareAhrsParameters, FirmwareAhrsSnapshot,
         FirmwareAppData, FirmwareCapabilities, FirmwareClock, FirmwareFloatSetting, FirmwareInputs,
         FirmwareIntSetting, FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore, FirmwareSettings,
@@ -347,6 +348,9 @@ mod tests {
 
         let switch = BrakeSwitch::Released;
         let _inputs = FirmwareInputs::new();
+        let _address = CustomEepromAddress::from_index(0);
+        let _word = EepromWord::from_u32(1);
+        let _eeprom = CustomEeprom::new();
 
         assert_eq!(switch, BrakeSwitch::Released);
     }
