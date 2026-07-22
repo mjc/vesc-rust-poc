@@ -3,7 +3,7 @@
 //! Integration tests for the safe LispBM value predicates.
 
 use vescpkg_rs::test_support::FirmwareTest;
-use vescpkg_rs::{LispContextId, LispProcess, LispSymbol, LispValue};
+use vescpkg_rs::{LispContextId, LispFlatValue, LispProcess, LispSymbol, LispValue};
 
 #[test]
 fn lisp_values_expose_explicit_kind_predicates() {
@@ -69,4 +69,16 @@ fn lisp_values_expose_explicit_kind_predicates() {
     let current = LispProcess::current();
     LispProcess::block_current();
     assert!(LispProcess::unblock(current, integer).is_ok());
+}
+
+#[test]
+fn lisp_flat_values_encode_wide_values_and_unblock_contexts() {
+    let _firmware = FirmwareTest::new();
+    let mut value = LispFlatValue::try_new(32).expect("flat-value slots available");
+
+    assert!(value.push_i64(-42));
+    assert!(value.push_u64(0xfeed_beef));
+    assert!(value.push_byte_array(b"vesc"));
+    assert!(value.finish());
+    LispProcess::unblock_flat(LispContextId::new(9), value).expect("context accepts value");
 }
