@@ -2,9 +2,10 @@
 
 use crate::ffi;
 use crate::{
-    BatteryCellCount, CanBus, Current, DutyCycleLimit, ElectricalSpeed, FocAudio, InputCurrent,
+    BatteryCellCount, CanBus, Current, DutyCycleLimit, ElectricalSpeed, FocAudio,
+    FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance, GearRatio, InputCurrent,
     InputVoltage, MotorCurrentLimit, Nvm, NvmCapacity, Ratio, TemperatureLimitEnd,
-    TemperatureLimitStart, Uart, Voltage,
+    TemperatureLimitStart, Uart, Voltage, WheelDiameter,
 };
 use core::fmt;
 use vescpkg_rs_sys::{AbiError, Stm32AbiRevision, VescIfCapabilities, VescIfPresence};
@@ -296,6 +297,40 @@ impl FirmwareSettings {
         ))
     }
 
+    /// Read the configured positive gear ratio, rejecting malformed firmware state.
+    pub fn gear_ratio(self) -> Result<GearRatio, SettingsError> {
+        GearRatio::try_new(self.get_float(FirmwareFloatSetting::GearRatio))
+            .map_err(|_| SettingsError::InvalidValue)
+    }
+
+    /// Read the configured wheel diameter.
+    pub fn wheel_diameter(self) -> WheelDiameter {
+        WheelDiameter::new(crate::Distance::from_meters(
+            self.get_float(FirmwareFloatSetting::WheelDiameter),
+        ))
+    }
+
+    /// Read the configured FOC motor resistance.
+    pub fn foc_motor_resistance(self) -> FocMotorResistance {
+        FocMotorResistance::new(crate::Resistance::from_ohms(
+            self.get_float(FirmwareFloatSetting::FocMotorResistance),
+        ))
+    }
+
+    /// Read the configured FOC motor inductance.
+    pub fn foc_motor_inductance(self) -> FocMotorInductance {
+        FocMotorInductance::new(crate::Inductance::from_henries(
+            self.get_float(FirmwareFloatSetting::FocMotorInductance),
+        ))
+    }
+
+    /// Read the configured FOC motor flux linkage.
+    pub fn foc_motor_flux_linkage(self) -> FocMotorFluxLinkage {
+        FocMotorFluxLinkage::new(crate::FluxLinkage::from_webers(
+            self.get_float(FirmwareFloatSetting::FocMotorFluxLinkage),
+        ))
+    }
+
     /// Update the live battery/input current ceiling; persistence still requires [`Self::store`].
     pub fn set_input_current_max(self, current: InputCurrent) -> Result<(), SettingsError> {
         self.set_float(
@@ -333,6 +368,52 @@ impl FirmwareSettings {
         self.set_float(
             FirmwareFloatSetting::MaximumElectricalSpeed,
             speed.rpm().as_revolutions_per_minute(),
+        )
+    }
+
+    /// Update the live gear ratio; persistence still requires [`Self::store`].
+    pub fn set_gear_ratio(self, ratio: GearRatio) -> Result<(), SettingsError> {
+        self.set_float(FirmwareFloatSetting::GearRatio, ratio.as_f32())
+    }
+
+    /// Update the live wheel diameter; persistence still requires [`Self::store`].
+    pub fn set_wheel_diameter(self, diameter: WheelDiameter) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::WheelDiameter,
+            diameter.distance().as_meters(),
+        )
+    }
+
+    /// Update the live FOC motor resistance; persistence still requires [`Self::store`].
+    pub fn set_foc_motor_resistance(
+        self,
+        resistance: FocMotorResistance,
+    ) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::FocMotorResistance,
+            resistance.resistance().as_ohms(),
+        )
+    }
+
+    /// Update the live FOC motor inductance; persistence still requires [`Self::store`].
+    pub fn set_foc_motor_inductance(
+        self,
+        inductance: FocMotorInductance,
+    ) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::FocMotorInductance,
+            inductance.inductance().as_henries(),
+        )
+    }
+
+    /// Update the live FOC motor flux linkage; persistence still requires [`Self::store`].
+    pub fn set_foc_motor_flux_linkage(
+        self,
+        flux_linkage: FocMotorFluxLinkage,
+    ) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::FocMotorFluxLinkage,
+            flux_linkage.flux_linkage().as_webers(),
         )
     }
 

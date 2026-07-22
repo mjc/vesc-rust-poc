@@ -36,6 +36,17 @@ fn typed_settings_read_write_and_persist() {
             .as_revolutions_per_minute(),
         12_000.0
     );
+    assert_eq!(settings.gear_ratio().unwrap().as_f32(), 2.5);
+    assert_eq!(settings.wheel_diameter().distance().as_meters(), 0.165);
+    assert_eq!(settings.foc_motor_resistance().resistance().as_ohms(), 0.03);
+    assert_eq!(
+        settings.foc_motor_inductance().inductance().as_henries(),
+        0.000_012
+    );
+    assert_eq!(
+        settings.foc_motor_flux_linkage().flux_linkage().as_webers(),
+        0.004
+    );
     assert_eq!(settings.input_voltage_min().voltage().as_volts(), 20.0);
     assert_eq!(settings.input_voltage_max().voltage().as_volts(), 60.0);
     assert_eq!(
@@ -111,6 +122,29 @@ fn typed_settings_read_write_and_persist() {
         ))
         .unwrap();
     settings
+        .set_gear_ratio(vescpkg_rs::GearRatio::try_new(3.0).unwrap())
+        .unwrap();
+    settings
+        .set_wheel_diameter(vescpkg_rs::WheelDiameter::new(
+            vescpkg_rs::Distance::from_meters(0.2),
+        ))
+        .unwrap();
+    settings
+        .set_foc_motor_resistance(vescpkg_rs::FocMotorResistance::new(
+            vescpkg_rs::Resistance::from_ohms(0.04),
+        ))
+        .unwrap();
+    settings
+        .set_foc_motor_inductance(vescpkg_rs::FocMotorInductance::new(
+            vescpkg_rs::Inductance::from_henries(0.000_02),
+        ))
+        .unwrap();
+    settings
+        .set_foc_motor_flux_linkage(vescpkg_rs::FocMotorFluxLinkage::new(
+            vescpkg_rs::FluxLinkage::from_webers(0.005),
+        ))
+        .unwrap();
+    settings
         .set_input_voltage_min(vescpkg_rs::InputVoltage::new(
             vescpkg_rs::Voltage::from_volts(24.0),
         ))
@@ -173,6 +207,17 @@ fn typed_settings_read_write_and_persist() {
             .rpm()
             .as_revolutions_per_minute(),
         10_000.0
+    );
+    assert_eq!(settings.gear_ratio().unwrap().as_f32(), 3.0);
+    assert_eq!(settings.wheel_diameter().distance().as_meters(), 0.2);
+    assert_eq!(settings.foc_motor_resistance().resistance().as_ohms(), 0.04);
+    assert_eq!(
+        settings.foc_motor_inductance().inductance().as_henries(),
+        0.000_02
+    );
+    assert_eq!(
+        settings.foc_motor_flux_linkage().flux_linkage().as_webers(),
+        0.005
     );
     assert_eq!(settings.input_voltage_min().voltage().as_volts(), 24.0);
     assert_eq!(settings.input_voltage_max().voltage().as_volts(), 54.0);
