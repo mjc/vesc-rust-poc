@@ -2611,16 +2611,24 @@ pub unsafe fn send_app_data(data: *mut c_uchar, len: u32) {
 }
 
 /// Set a floating-point configuration parameter.
+///
+/// The parameter ids and setter slot come from `vesc_pkg_lib/vesc_c_if.h:558`;
+/// callers should prefer the typed `vescpkg-rs::FirmwareSettings` wrapper.
 pub unsafe fn set_cfg_float(parameter: c_int, value: f32) -> bool {
     unsafe { slots::set_cfg_float()(parameter, value) }
 }
 
 /// Set an integer configuration parameter.
+///
+/// The parameter ids and setter slot come from `vesc_pkg_lib/vesc_c_if.h:559`;
+/// callers should prefer the typed `vescpkg-rs::FirmwareSettings` wrapper.
 pub unsafe fn set_cfg_int(parameter: c_int, value: c_int) -> bool {
     unsafe { slots::set_cfg_int()(parameter, value) }
 }
 
 /// Persist firmware configuration changes.
+///
+/// This forwards the `store_cfg` slot at `vesc_pkg_lib/vesc_c_if.h:560`.
 pub unsafe fn store_cfg() -> bool {
     unsafe { slots::store_cfg()() }
 }
