@@ -47,9 +47,15 @@ assert_load() {
 
 assert_load sleep_us "$(slot_index sleep_us)"
 assert_load can_transmit_sid "$(slot_index can_transmit_sid)"
+assert_load can_status_msg_id "$(slot_index can_status_msg_id)"
+assert_load printf "$(slot_index printf)"
+assert_load f_i "$(slot_index f_i)"
 assert_load vesc_system_time_ticks "$(slot_index system_time_ticks)"
 assert_load vesc_thread_set_priority "$(slot_index thread_set_priority)"
 
 system_time_ticks=$(sed -n '/<.*vesc_system_time_ticks>:/,/^$/p' "$disassembly")
 printf '%s' "$system_time_ticks" | rg -q 'cbz'
 printf '%s' "$system_time_ticks" | rg -q 'blx'
+
+status_loader=$(sed -n '/<.*can_status_msg_id>:/,/^$/p' "$disassembly")
+printf '%s' "$status_loader" | rg -q 'cbz'
