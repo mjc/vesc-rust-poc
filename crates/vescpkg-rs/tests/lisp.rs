@@ -86,6 +86,7 @@ fn lisp_process_sets_error_reason_from_a_scoped_c_string() {
     let reason = c"invalid argument";
 
     assert_eq!(LispProcess::set_error_reason(reason), 1);
+    assert_eq!(LispProcess::set_error_reason(c""), 1);
 }
 
 #[test]
