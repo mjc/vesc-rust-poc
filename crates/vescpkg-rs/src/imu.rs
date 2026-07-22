@@ -433,8 +433,11 @@ pub struct ImuCalibration {
 
 impl ImuCalibration {
     #[cfg_attr(test, allow(dead_code))]
-    fn from_raw(values: [f32; 9]) -> Self {
-        Self {
+    fn from_raw(values: [f32; 9]) -> Result<Self, ImuCalibrationError> {
+        if !values.iter().all(|value| value.is_finite()) {
+            return Err(ImuCalibrationError::InvalidResult);
+        }
+        Ok(Self {
             roll: AngleDegrees::from_degrees(values[0]),
             pitch: AngleDegrees::from_degrees(values[1]),
             yaw: AngleDegrees::from_degrees(values[2]),
@@ -448,7 +451,7 @@ impl ImuCalibration {
                 ImuAngularRatePitch::new(AngularVelocity::from_degrees_per_second(values[7])),
                 ImuAngularRateYaw::new(AngularVelocity::from_degrees_per_second(values[8])),
             ),
-        }
+        })
     }
 
     /// Return the calibrated roll rotation in degrees.
@@ -482,16 +485,21 @@ impl ImuCalibration {
     }
 }
 
-/// Failure returned before a firmware IMU calibration operation starts.
+/// Failure returned when a firmware IMU calibration request or result is invalid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImuCalibrationError {
     /// The requested yaw is not finite.
     InvalidYaw,
+    /// Firmware returned a non-finite calibration component.
+    InvalidResult,
 }
 
 impl core::fmt::Display for ImuCalibrationError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_str("IMU calibration yaw must be finite")
+        f.write_str(match self {
+            Self::InvalidYaw => "IMU calibration yaw must be finite",
+            Self::InvalidResult => "IMU calibration result contains a non-finite value",
+        })
     }
 }
 
@@ -547,7 +555,7 @@ pub trait ImuBindings {
         }
         let mut values = [0.0; 9];
         unsafe { crate::ffi::imu_get_calibration(yaw, values.as_mut_ptr()) };
-        Ok(ImuCalibration::from_raw(values))
+        ImuCalibration::from_raw(values)
     }
 
     /// Return firmware IMU attitude.

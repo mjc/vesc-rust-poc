@@ -71,6 +71,12 @@ fn firmware_imu_exposes_vectors_and_derotated_samples() {
         imu.calibrate(AngleDegrees::from_degrees(f32::NAN)),
         Err(ImuCalibrationError::InvalidYaw)
     );
+    firmware.set_imu_calibration_valid(false);
+    assert_eq!(
+        imu.calibrate(AngleDegrees::from_degrees(90.0)),
+        Err(ImuCalibrationError::InvalidResult)
+    );
+    firmware.set_imu_calibration_valid(true);
 
     assert_eq!(
         imu.acceleration().map_axes(|x, y, z| [
