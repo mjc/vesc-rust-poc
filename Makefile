@@ -61,7 +61,7 @@ vescpkg-rs-sys-target-check:
 	$(CARGO) check -p vescpkg-rs-sys --target $(ARM_TARGET) --no-default-features
 
 arm-clippy:
-	$(CARGO) clippy -p vesc-example-loopback --lib --release --target $(ARM_TARGET) -- $(CLIPPY_PEDANTIC_FLAGS)
+	$(CARGO) clippy -p vesc-example-loopback --bin vesc-example-loopback --release --target $(ARM_TARGET) -- $(CLIPPY_PEDANTIC_FLAGS)
 
 arm-gates: vescpkg-rs-sys-target-check arm-clippy package-only
 
