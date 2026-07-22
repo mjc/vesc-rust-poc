@@ -393,6 +393,74 @@ mod tests {
     use vescpkg_rs_sys::VescIfAbi;
 
     #[test]
+    fn setting_ids_match_the_pinned_cfg_param_enum() {
+        let floats = [
+            (FirmwareFloatSetting::MotorCurrentMax, 0),
+            (FirmwareFloatSetting::MotorCurrentMin, 1),
+            (FirmwareFloatSetting::InputCurrentMax, 2),
+            (FirmwareFloatSetting::InputCurrentMin, 3),
+            (FirmwareFloatSetting::AbsoluteCurrentMax, 4),
+            (FirmwareFloatSetting::MinimumElectricalSpeed, 5),
+            (FirmwareFloatSetting::MaximumElectricalSpeed, 6),
+            (FirmwareFloatSetting::ElectricalSpeedRampStart, 7),
+            (FirmwareFloatSetting::MaximumElectricalSpeedBrake, 8),
+            (FirmwareFloatSetting::MaximumElectricalSpeedBrakeCurrent, 9),
+            (FirmwareFloatSetting::MinimumInputVoltage, 10),
+            (FirmwareFloatSetting::MaximumInputVoltage, 11),
+            (FirmwareFloatSetting::BatteryCutStartVoltage, 12),
+            (FirmwareFloatSetting::BatteryCutEndVoltage, 13),
+            (FirmwareFloatSetting::MosfetTemperatureStart, 16),
+            (FirmwareFloatSetting::MosfetTemperatureEnd, 17),
+            (FirmwareFloatSetting::MotorTemperatureStart, 18),
+            (FirmwareFloatSetting::MotorTemperatureEnd, 19),
+            (FirmwareFloatSetting::TemperatureAccelerationDecrease, 20),
+            (FirmwareFloatSetting::MinDuty, 21),
+            (FirmwareFloatSetting::MaxDuty, 22),
+            (FirmwareFloatSetting::ImuAccelerationConfidenceDecay, 23),
+            (FirmwareFloatSetting::ImuMahonyKp, 24),
+            (FirmwareFloatSetting::ImuMahonyKi, 25),
+            (FirmwareFloatSetting::ImuMadgwickBeta, 26),
+            (FirmwareFloatSetting::ImuRotationRoll, 27),
+            (FirmwareFloatSetting::ImuRotationPitch, 28),
+            (FirmwareFloatSetting::ImuRotationYaw, 29),
+            (FirmwareFloatSetting::ImuSampleRate, 31),
+            (FirmwareFloatSetting::ImuAccelerationOffsetX, 32),
+            (FirmwareFloatSetting::ImuAccelerationOffsetY, 33),
+            (FirmwareFloatSetting::ImuAccelerationOffsetZ, 34),
+            (FirmwareFloatSetting::ImuGyroOffsetX, 35),
+            (FirmwareFloatSetting::ImuGyroOffsetY, 36),
+            (FirmwareFloatSetting::ImuGyroOffsetZ, 37),
+            (FirmwareFloatSetting::GearRatio, 40),
+            (FirmwareFloatSetting::WheelDiameter, 41),
+            (FirmwareFloatSetting::BatteryCapacity, 44),
+            (FirmwareFloatSetting::MotorNoLoadCurrent, 45),
+            (FirmwareFloatSetting::FocMotorResistance, 46),
+            (FirmwareFloatSetting::FocMotorInductance, 47),
+            (FirmwareFloatSetting::FocMotorFluxLinkage, 48),
+        ];
+        assert!(
+            floats
+                .into_iter()
+                .all(|(setting, raw)| setting.raw() == raw)
+        );
+
+        let integers = [
+            (FirmwareIntSetting::AppCanMode, 14),
+            (FirmwareIntSetting::AppCanBaudRate, 15),
+            (FirmwareIntSetting::ImuAhrsMode, 30),
+            (FirmwareIntSetting::AppShutdownMode, 38),
+            (FirmwareIntSetting::MotorPoleCount, 39),
+            (FirmwareIntSetting::BatteryType, 42),
+            (FirmwareIntSetting::BatteryCellCount, 43),
+        ];
+        assert!(
+            integers
+                .into_iter()
+                .all(|(setting, raw)| setting.raw() == raw)
+        );
+    }
+
+    #[test]
     fn safe_capability_constructors_follow_observed_presence() {
         let mut words = [0_usize; VescIfAbi::FIELD_COUNT];
         words[VescIfAbi::CAN_TRANSMIT_SID.slot_index()] = 1;
