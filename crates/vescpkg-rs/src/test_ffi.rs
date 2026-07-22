@@ -1579,6 +1579,12 @@ pub unsafe fn imu_get_rpy(values: *mut f32) {
     }
 }
 
+pub unsafe fn imu_get_calibration(_yaw: f32, values: *mut f32) {
+    if let Some(values) = unsafe { values.cast::<[f32; 9]>().as_mut() } {
+        *values = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
+    }
+}
+
 pub unsafe fn imu_get_pitch() -> f32 {
     load(&IMU_PITCH)
 }

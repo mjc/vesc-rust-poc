@@ -8,9 +8,86 @@ use crate::types::{
     ImuMagneticFieldX, ImuMagneticFieldY, ImuMagneticFieldZ, ImuOrientation, ImuPitch,
     ImuReadSample, ImuRoll, ImuSamplePeriod, ImuYaw,
 };
+use crate::units::AngleDegrees;
 #[cfg(not(test))]
 use crate::units::AngleRadians;
 use crate::units::{AccelerationG, AngularVelocity, MagneticFluxDensity, VescSeconds};
+
+/// Owned firmware IMU calibration result.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ImuCalibration {
+    roll: AngleDegrees,
+    pitch: AngleDegrees,
+    yaw: AngleDegrees,
+    acceleration_offset: ImuAcceleration,
+    angular_rate_offset: ImuAngularRate,
+}
+
+impl ImuCalibration {
+    #[cfg_attr(test, allow(dead_code))]
+    fn from_raw(values: [f32; 9]) -> Self {
+        Self {
+            roll: AngleDegrees::from_degrees(values[0]),
+            pitch: AngleDegrees::from_degrees(values[1]),
+            yaw: AngleDegrees::from_degrees(values[2]),
+            acceleration_offset: ImuAcceleration::from_axes(
+                ImuAccelerationX::new(AccelerationG::from_g(values[3])),
+                ImuAccelerationY::new(AccelerationG::from_g(values[4])),
+                ImuAccelerationZ::new(AccelerationG::from_g(values[5])),
+            ),
+            angular_rate_offset: ImuAngularRate::from_axes(
+                ImuAngularRateRoll::new(AngularVelocity::from_degrees_per_second(values[6])),
+                ImuAngularRatePitch::new(AngularVelocity::from_degrees_per_second(values[7])),
+                ImuAngularRateYaw::new(AngularVelocity::from_degrees_per_second(values[8])),
+            ),
+        }
+    }
+
+    /// Return the calibrated roll rotation in degrees.
+    #[must_use]
+    pub const fn roll(self) -> AngleDegrees {
+        self.roll
+    }
+
+    /// Return the calibrated pitch rotation in degrees.
+    #[must_use]
+    pub const fn pitch(self) -> AngleDegrees {
+        self.pitch
+    }
+
+    /// Return the requested calibrated yaw rotation in degrees.
+    #[must_use]
+    pub const fn yaw(self) -> AngleDegrees {
+        self.yaw
+    }
+
+    /// Return the copied accelerometer offset vector in g.
+    #[must_use]
+    pub const fn acceleration_offset(self) -> ImuAcceleration {
+        self.acceleration_offset
+    }
+
+    /// Return the copied gyroscope offset vector in degrees per second.
+    #[must_use]
+    pub const fn angular_rate_offset(self) -> ImuAngularRate {
+        self.angular_rate_offset
+    }
+}
+
+/// Failure returned before a firmware IMU calibration operation starts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImuCalibrationError {
+    /// The requested yaw is not finite.
+    InvalidYaw,
+}
+
+impl core::fmt::Display for ImuCalibrationError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("IMU calibration yaw must be finite")
+    }
+}
+
+impl core::error::Error for ImuCalibrationError {}
 
 /// IMU operations backed by firmware slots.
 #[cfg(not(test))]
@@ -52,6 +129,17 @@ pub trait ImuBindings {
             ImuPitch::new(AngleRadians::from_radians(values[1])),
             ImuYaw::new(AngleRadians::from_radians(values[2])),
         )
+    }
+
+    /// Run firmware calibration and copy its nine-value result.
+    fn calibrate(&self, yaw: AngleDegrees) -> Result<ImuCalibration, ImuCalibrationError> {
+        let yaw = yaw.as_degrees();
+        if !yaw.is_finite() {
+            return Err(ImuCalibrationError::InvalidYaw);
+        }
+        let mut values = [0.0; 9];
+        unsafe { crate::ffi::imu_get_calibration(yaw, values.as_mut_ptr()) };
+        Ok(ImuCalibration::from_raw(values))
     }
 
     /// Return firmware IMU attitude.
@@ -102,6 +190,10 @@ impl<B: ImuBindings + ?Sized> ImuBindings for &B {
 
     fn rpy(&self) -> ImuAttitude {
         (**self).rpy()
+    }
+
+    fn calibrate(&self, yaw: AngleDegrees) -> Result<ImuCalibration, ImuCalibrationError> {
+        (**self).calibrate(yaw)
     }
 
     fn angular_rate(&self) -> ImuAngularRate {
@@ -423,6 +515,8 @@ pub trait Imu: private::Imu {
     fn yaw(&self) -> ImuYaw;
     /// Return one copied firmware roll/pitch/yaw snapshot.
     fn rpy(&self) -> ImuAttitude;
+    /// Run firmware calibration and copy its owned result.
+    fn calibrate(&self, yaw: AngleDegrees) -> Result<ImuCalibration, ImuCalibrationError>;
     /// Return the current typed attitude.
     fn attitude(&self) -> ImuAttitude;
     /// Return typed angular rates.
@@ -473,6 +567,11 @@ impl<B: ImuBindings> ImuApi<B> {
     /// Return one copied firmware roll/pitch/yaw snapshot.
     pub fn rpy(&self) -> ImuAttitude {
         self.bindings.rpy()
+    }
+
+    /// Run firmware calibration and copy its owned result.
+    pub fn calibrate(&self, yaw: AngleDegrees) -> Result<ImuCalibration, ImuCalibrationError> {
+        self.bindings.calibrate(yaw)
     }
 
     /// Return firmware IMU attitude.
@@ -544,6 +643,10 @@ impl<B: ImuBindings> Imu for ImuApi<B> {
 
     fn rpy(&self) -> ImuAttitude {
         self.rpy()
+    }
+
+    fn calibrate(&self, yaw: AngleDegrees) -> Result<ImuCalibration, ImuCalibrationError> {
+        self.calibrate(yaw)
     }
 
     fn attitude(&self) -> ImuAttitude {
