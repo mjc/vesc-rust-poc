@@ -427,6 +427,16 @@ mod slots {
     optional_fn_slot!(foc_set_openloop_phase as unsafe extern "C" fn(f32, f32));
     optional_fn_slot!(foc_set_openloop_duty as unsafe extern "C" fn(f32, f32));
     optional_fn_slot!(foc_set_openloop_duty_phase as unsafe extern "C" fn(f32, f32));
+    optional_fn_slot!(foc_beep as unsafe extern "C" fn(f32, f32, f32) -> bool);
+    optional_fn_slot!(foc_play_tone as unsafe extern "C" fn(c_int, f32, f32) -> bool);
+    optional_fn_slot!(foc_stop_audio as unsafe extern "C" fn(bool));
+    optional_fn_slot!(
+        foc_set_audio_sample_table as unsafe extern "C" fn(c_int, *const f32, c_int) -> bool
+    );
+    optional_fn_slot!(foc_get_audio_sample_table as unsafe extern "C" fn(c_int) -> *const f32);
+    optional_fn_slot!(
+        foc_play_audio_samples as unsafe extern "C" fn(*const i8, c_int, f32, f32) -> bool
+    );
     fn_slot!(mc_temp_fet_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_temp_motor_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(imu_startup_done as unsafe extern "C" fn() -> bool);
@@ -1758,6 +1768,49 @@ pub unsafe fn foc_set_openloop_duty_phase(duty: f32, phase: f32) -> bool {
     unsafe { slots::foc_set_openloop_duty_phase() }
         .map(|func| unsafe { func(duty, phase) })
         .is_some()
+}
+
+/// Trigger a FOC audio beep when the firmware slot is present.
+pub unsafe fn foc_beep(frequency: f32, duration: f32, voltage: f32) -> Option<bool> {
+    unsafe { slots::foc_beep() }.map(|func| unsafe { func(frequency, duration, voltage) })
+}
+
+/// Play a FOC audio tone on a channel when the firmware slot is present.
+pub unsafe fn foc_play_tone(channel: c_int, frequency: f32, voltage: f32) -> Option<bool> {
+    unsafe { slots::foc_play_tone() }.map(|func| unsafe { func(channel, frequency, voltage) })
+}
+
+/// Stop FOC audio when the firmware slot is present.
+pub unsafe fn foc_stop_audio(reset: bool) -> bool {
+    unsafe { slots::foc_stop_audio() }
+        .map(|func| unsafe { func(reset) })
+        .is_some()
+}
+
+/// Install a FOC audio sample table when the firmware slot is present.
+pub unsafe fn foc_set_audio_sample_table(
+    channel: c_int,
+    samples: *const f32,
+    length: c_int,
+) -> Option<bool> {
+    unsafe { slots::foc_set_audio_sample_table() }
+        .map(|func| unsafe { func(channel, samples, length) })
+}
+
+/// Return the firmware-owned FOC audio sample table pointer when present.
+pub unsafe fn foc_get_audio_sample_table(channel: c_int) -> Option<*const f32> {
+    unsafe { slots::foc_get_audio_sample_table() }.map(|func| unsafe { func(channel) })
+}
+
+/// Play signed FOC audio samples when the firmware slot is present.
+pub unsafe fn foc_play_audio_samples(
+    samples: *const i8,
+    length: c_int,
+    sample_rate: f32,
+    voltage: f32,
+) -> Option<bool> {
+    unsafe { slots::foc_play_audio_samples() }
+        .map(|func| unsafe { func(samples, length, sample_rate, voltage) })
 }
 /// Return the filtered input/battery voltage.
 ///

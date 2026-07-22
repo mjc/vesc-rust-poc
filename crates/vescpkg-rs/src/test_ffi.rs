@@ -82,9 +82,7 @@ static CURRENT_OFF_DELAY: AtomicU32 = AtomicU32::new(0);
 static CURRENT: AtomicU32 = AtomicU32::new(0);
 static DUTY: AtomicU32 = AtomicU32::new(0);
 static BRAKE_CURRENT: AtomicU32 = AtomicU32::new(0);
-static FOC_TONE_CHANNEL: AtomicI32 = AtomicI32::new(0);
-static FOC_TONE_FREQUENCY: AtomicU32 = AtomicU32::new(0);
-static FOC_TONE_VOLTAGE: AtomicU32 = AtomicU32::new(0);
+static AUDIO_SAMPLE_TABLE: [f32; 3] = [0.1, 0.2, 0.3];
 static ELECTRICAL_SPEED: AtomicU32 = AtomicU32::new(0);
 static VEHICLE_SPEED: AtomicU32 = AtomicU32::new(0);
 static MOTOR_CURRENT: AtomicU32 = AtomicU32::new(0);
@@ -1295,6 +1293,39 @@ pub unsafe fn foc_set_openloop_duty(_duty: f32, _rpm: f32) -> bool {
 
 pub unsafe fn foc_set_openloop_duty_phase(_duty: f32, _phase: f32) -> bool {
     true
+}
+
+pub unsafe fn foc_beep(_frequency: f32, _duration: f32, _voltage: f32) -> Option<bool> {
+    Some(true)
+}
+
+pub unsafe fn foc_play_tone(_channel: c_int, _frequency: f32, _voltage: f32) -> Option<bool> {
+    Some(true)
+}
+
+pub unsafe fn foc_stop_audio(_reset: bool) -> bool {
+    true
+}
+
+pub unsafe fn foc_set_audio_sample_table(
+    _channel: c_int,
+    _samples: *const f32,
+    _length: c_int,
+) -> Option<bool> {
+    Some(true)
+}
+
+pub unsafe fn foc_get_audio_sample_table(_channel: c_int) -> Option<*const f32> {
+    Some(AUDIO_SAMPLE_TABLE.as_ptr())
+}
+
+pub unsafe fn foc_play_audio_samples(
+    _samples: *const i8,
+    _length: c_int,
+    _sample_rate: f32,
+    _voltage: f32,
+) -> Option<bool> {
+    Some(true)
 }
 
 pub unsafe fn mc_get_distance_abs() -> f32 {
