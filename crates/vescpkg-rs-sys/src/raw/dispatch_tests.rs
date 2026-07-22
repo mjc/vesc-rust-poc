@@ -7,14 +7,14 @@ use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescPin, Vesc
 use super::{
     CanStatusMsg, CustomConfigGet, CustomConfigSet, CustomConfigXml, GnssData, RemoteState, VescIf,
     can_status_msg_index, conf_custom_add_config, conf_custom_clear_configs, foc_get_id,
-    foc_play_tone, get_ppm, get_ppm_age, gnss_snapshot, io_read, io_read_analog, io_set_mode,
-    io_write, lbm_add_extension, lbm_add_extension_with_table_base, lbm_car, lbm_cdr, lbm_cons,
-    lbm_dec_as_float, lbm_dec_as_i32, lbm_dec_char, lbm_dec_str, lbm_enc_char, lbm_enc_i,
-    lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number,
-    lbm_list_destructive_reverse, mc_fault_to_string, mc_get_amp_hours, mc_get_amp_hours_charged,
-    mc_get_battery_level, mc_get_distance_abs, mc_get_duty_cycle_now, mc_get_fault,
-    mc_get_input_voltage_filtered, mc_get_odometer, mc_get_rpm, mc_get_speed,
-    mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
+    gnss_snapshot, io_read, io_read_analog, io_set_mode, io_write, lbm_add_extension,
+    lbm_add_extension_with_table_base, lbm_car, lbm_cdr, lbm_cons, lbm_dec_as_float,
+    lbm_dec_as_i32, lbm_dec_char, lbm_dec_str, lbm_enc_char, lbm_enc_i, lbm_enc_sym_eerror,
+    lbm_enc_sym_nil, lbm_enc_sym_true, lbm_is_number, lbm_list_destructive_reverse,
+    mc_get_amp_hours, mc_get_amp_hours_charged, mc_get_battery_level, mc_get_distance_abs,
+    mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered, mc_get_odometer,
+    mc_get_rpm, mc_get_speed, mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
+    lbm_block_ctx_from_extension, lbm_get_current_cid, lbm_unblock_ctx_unboxed,
     mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
     mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm, remote_state,
     store_eeprom_word, vesc_clear_app_data_handler, vesc_mutex_create, vesc_mutex_lock,
@@ -341,6 +341,16 @@ extern "C" fn stub_lbm_send_message(_context: u32, _message: LbmValue) -> c_int 
     1
 }
 
+extern "C" fn stub_lbm_get_current_cid() -> u32 {
+    9
+}
+
+extern "C" fn stub_lbm_block_ctx_from_extension() {}
+
+extern "C" fn stub_lbm_unblock_ctx_unboxed(_context: u32, _value: LbmValue) -> bool {
+    true
+}
+
 extern "C" fn stub_lbm_is_number(value: u32) -> bool {
     LBM_IS_NUMBER.inc();
     LAST_LBM_VALUE.set(value);
@@ -651,6 +661,9 @@ fn populated_table() -> VescIf {
     table.lbm_enc_sym = Some(stub_lbm_enc_sym);
     table.lbm_dec_sym = Some(stub_lbm_dec_sym);
     table.lbm_send_message = Some(stub_lbm_send_message);
+    table.lbm_get_current_cid = Some(stub_lbm_get_current_cid);
+    table.lbm_block_ctx_from_extension = Some(stub_lbm_block_ctx_from_extension);
+    table.lbm_unblock_ctx_unboxed = Some(stub_lbm_unblock_ctx_unboxed);
     table.lbm_is_number = Some(stub_lbm_is_number);
     table.lbm_enc_sym_nil = 0xAABB_0000;
     table.lbm_enc_sym_true = 0xAABB_1100;
@@ -864,6 +877,15 @@ fn lbm_symbol_helpers_forward_through_mock_table() {
 fn lbm_message_send_forwards_through_mock_table() {
     with_populated_table(|| unsafe {
         assert_eq!(lbm_send_message(9, LbmValue(7)), 1);
+    });
+}
+
+#[test]
+fn lbm_process_controls_forward_through_mock_table() {
+    with_populated_table(|| unsafe {
+        assert_eq!(lbm_get_current_cid(), 9);
+        lbm_block_ctx_from_extension();
+        assert_eq!(lbm_unblock_ctx_unboxed(9, LbmValue(7)), Some(true));
     });
 }
 
