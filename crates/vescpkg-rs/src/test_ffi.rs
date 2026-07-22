@@ -136,6 +136,7 @@ static ENCODER_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static PLOT_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static GNSS_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static PWM_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static CAN_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static DISTANCE_ABS: AtomicU32 = AtomicU32::new(0);
 static MOSFET_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
@@ -325,6 +326,7 @@ fn reset_motor_state() {
     PLOT_AVAILABLE.store(true, Ordering::Relaxed);
     GNSS_AVAILABLE.store(true, Ordering::Relaxed);
     PWM_AVAILABLE.store(true, Ordering::Relaxed);
+    CAN_AVAILABLE.store(true, Ordering::Relaxed);
     DISTANCE_ABS.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOSFET_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -867,11 +869,11 @@ pub unsafe fn vesc_free(pointer: *mut c_void) {
 }
 
 pub unsafe fn can_transmit_sid(_id: u32, _data: *const u8, _len: u8) -> Option<()> {
-    Some(())
+    CAN_AVAILABLE.load(Ordering::Relaxed).then_some(())
 }
 
 pub unsafe fn can_transmit_eid(_id: u32, _data: *const u8, _len: u8) -> Option<()> {
-    Some(())
+    CAN_AVAILABLE.load(Ordering::Relaxed).then_some(())
 }
 
 pub unsafe fn can_set_sid_callback(
@@ -1191,6 +1193,10 @@ pub(crate) fn set_gnss_available(available: bool) {
 
 pub(crate) fn set_pwm_available(available: bool) {
     PWM_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_can_available(available: bool) {
+    CAN_AVAILABLE.store(available, Ordering::Relaxed);
 }
 
 pub(crate) fn set_imu_startup_done(done: bool) {

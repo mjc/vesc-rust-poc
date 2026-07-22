@@ -89,6 +89,18 @@ fn can_bus_transmits_bounded_payloads_and_copies_status() {
 }
 
 #[test]
+fn can_transmit_reports_absent_optional_slot() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    firmware.set_can_available(false);
+    let standard = CanStandardId::try_new(0x123).expect("valid standard id");
+
+    assert_eq!(
+        firmware.can().transmit_standard(standard, &[1, 2, 3]),
+        Err(CanError::Unsupported)
+    );
+}
+
+#[test]
 fn can_bus_pings_and_reports_remote_hardware_type() {
     let firmware = vescpkg_rs::test_support::FirmwareTest::new();
 
