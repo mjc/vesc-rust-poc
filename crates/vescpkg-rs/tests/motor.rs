@@ -2,7 +2,7 @@
 //! Integration coverage for typed motor handbrake commands.
 
 use vescpkg_rs::{
-    Current, HandbrakeCurrent, HandbrakeRelative, MotorOutput, MotorTelemetry, Ratio,
+    Current, HandbrakeCurrent, HandbrakeRelative, MotorOutput, MotorTelemetry, Ratio, VescSeconds,
 };
 
 #[test]
@@ -20,5 +20,9 @@ fn motor_exposes_typed_handbrake_commands() {
     assert_eq!(telemetry.absolute_tachometer(true).steps().as_steps(), 5678);
     assert_eq!(telemetry.sampling_frequency().as_hertz(), 20_000.0);
     firmware.motor().release_motor();
-    firmware.motor().wait_for_motor_release();
+    assert!(
+        firmware
+            .motor()
+            .wait_for_motor_release(VescSeconds::from_seconds(0.1))
+    );
 }

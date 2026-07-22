@@ -6,15 +6,16 @@ use core::ffi::CStr;
 #[cfg(not(test))]
 use crate::types::FirmwareFaultWireCode;
 use crate::types::{
-    AmpHoursCharged, AmpHoursDischarged, BatteryCellCount, BatteryLevel, BrakeCurrent,
-    CurrentOffDelay, DCurrent, DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed,
-    FirmwareFaultCode, HandbrakeCurrent, HandbrakeRelative, InputCurrent, InputVoltage,
-    MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, TemperatureLimitStart,
-    TotalMotorCurrent, TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
+    AbsoluteTachometerSteps, AmpHoursCharged, AmpHoursDischarged, BatteryCellCount, BatteryLevel,
+    BrakeCurrent, CurrentOffDelay, DCurrent, DirectionalMotorCurrent, DutyCycle, DutyCycleLimit,
+    ElectricalSpeed, FirmwareFaultCode, HandbrakeCurrent, HandbrakeRelative, InputCurrent,
+    InputVoltage, MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature,
+    TachometerSteps, TemperatureLimitStart, TotalMotorCurrent, TripDistance, VehicleSpeed,
+    WattHoursCharged, WattHoursDischarged,
 };
 #[cfg(not(test))]
 use crate::units::{Charge, Current, Distance, Energy, Rpm, Speed, Temperature, Voltage};
-use crate::units::{OdometerMeters, Ratio, SignedRatio};
+use crate::units::{Frequency, OdometerMeters, Ratio, SignedRatio, VescSeconds};
 
 #[cfg(not(test))]
 const CFG_PARAM_L_CURRENT_MAX: core::ffi::c_int = 0;
@@ -126,6 +127,12 @@ pub trait MotorTelemetryBindings {
     fn firmware_fault_name(&self, fault: FirmwareFaultCode) -> Option<&'static [u8]>;
     /// Return the filtered controller input voltage.
     fn input_voltage(&self) -> InputVoltage;
+    /// Return the relative motor tachometer, optionally resetting it.
+    fn tachometer(&self, reset: bool) -> TachometerSteps;
+    /// Return the absolute motor tachometer, optionally resetting it.
+    fn absolute_tachometer(&self, reset: bool) -> AbsoluteTachometerSteps;
+    /// Return the current motor-control sampling frequency.
+    fn sampling_frequency(&self) -> Frequency;
 }
 
 #[cfg(not(test))]
@@ -237,6 +244,18 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
     fn input_voltage(&self) -> InputVoltage {
         (**self).input_voltage()
     }
+
+    fn tachometer(&self, reset: bool) -> TachometerSteps {
+        (**self).tachometer(reset)
+    }
+
+    fn absolute_tachometer(&self, reset: bool) -> AbsoluteTachometerSteps {
+        (**self).absolute_tachometer(reset)
+    }
+
+    fn sampling_frequency(&self) -> Frequency {
+        (**self).sampling_frequency()
+    }
 }
 
 /// Motor-control operations backed by firmware slots.
@@ -276,6 +295,10 @@ pub trait MotorControlBindings {
     fn set_handbrake(&self, current: HandbrakeCurrent);
     /// Set motor handbrake as a relative command.
     fn set_handbrake_relative(&self, current: HandbrakeRelative);
+    /// Release the motor output.
+    fn release_motor(&self);
+    /// Wait up to `timeout` for the motor output to be released.
+    fn wait_for_motor_release(&self, timeout: VescSeconds) -> bool;
 }
 
 #[cfg(not(test))]
@@ -306,6 +329,14 @@ impl<B: MotorControlBindings + ?Sized> MotorControlBindings for &B {
 
     fn set_handbrake_relative(&self, current: HandbrakeRelative) {
         (**self).set_handbrake_relative(current);
+    }
+
+    fn release_motor(&self) {
+        (**self).release_motor();
+    }
+
+    fn wait_for_motor_release(&self, timeout: VescSeconds) -> bool {
+        (**self).wait_for_motor_release(timeout)
     }
 }
 
@@ -474,6 +505,22 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
             crate::ffi::mc_get_input_voltage_filtered()
         }))
     }
+
+    fn tachometer(&self, reset: bool) -> TachometerSteps {
+        TachometerSteps::new(crate::units::TachometerSteps::from_steps(unsafe {
+            crate::ffi::mc_get_tachometer_value(reset)
+        }))
+    }
+
+    fn absolute_tachometer(&self, reset: bool) -> AbsoluteTachometerSteps {
+        AbsoluteTachometerSteps::new(crate::units::TachometerSteps::from_steps(unsafe {
+            crate::ffi::mc_get_tachometer_abs_value(reset)
+        }))
+    }
+
+    fn sampling_frequency(&self) -> Frequency {
+        Frequency::from_hertz(unsafe { crate::ffi::mc_get_sampling_frequency_now() })
+    }
 }
 
 #[cfg(not(test))]
@@ -504,6 +551,14 @@ impl MotorControlBindings for RealMotorControlBindings {
 
     fn set_handbrake_relative(&self, current: HandbrakeRelative) {
         unsafe { crate::ffi::mc_set_handbrake_rel(current.ratio().as_ratio()) };
+    }
+
+    fn release_motor(&self) {
+        unsafe { crate::ffi::mc_release_motor() };
+    }
+
+    fn wait_for_motor_release(&self, timeout: VescSeconds) -> bool {
+        unsafe { crate::ffi::mc_wait_for_motor_release(timeout.as_seconds()) }
     }
 }
 
@@ -596,6 +651,12 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn firmware_fault_name(&self, fault: FirmwareFaultCode) -> Option<&'static [u8]>;
     /// Return the filtered controller input voltage.
     fn input_voltage(&self) -> InputVoltage;
+    /// Return the relative motor tachometer, optionally resetting it.
+    fn tachometer(&self, reset: bool) -> TachometerSteps;
+    /// Return the absolute motor tachometer, optionally resetting it.
+    fn absolute_tachometer(&self, reset: bool) -> AbsoluteTachometerSteps;
+    /// Return the current motor-control sampling frequency.
+    fn sampling_frequency(&self) -> Frequency;
 }
 
 /// Semantic motor-output capability used by package code.
@@ -618,6 +679,10 @@ pub trait MotorOutput: private::MotorOutput {
     fn set_handbrake(&self, current: HandbrakeCurrent);
     /// Apply a relative handbrake command.
     fn set_handbrake_relative(&self, current: HandbrakeRelative);
+    /// Release the motor output.
+    fn release_motor(&self);
+    /// Wait up to `timeout` for the motor output to be released.
+    fn wait_for_motor_release(&self, timeout: VescSeconds) -> bool;
 }
 
 /// High-level motor-control API built on a binding implementation.
@@ -819,6 +884,21 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
     pub fn input_voltage(&self) -> InputVoltage {
         self.bindings.input_voltage()
     }
+
+    /// Return the relative motor tachometer, optionally resetting it.
+    pub fn tachometer(&self, reset: bool) -> TachometerSteps {
+        self.bindings.tachometer(reset)
+    }
+
+    /// Return the absolute motor tachometer, optionally resetting it.
+    pub fn absolute_tachometer(&self, reset: bool) -> AbsoluteTachometerSteps {
+        self.bindings.absolute_tachometer(reset)
+    }
+
+    /// Return the current motor-control sampling frequency.
+    pub fn sampling_frequency(&self) -> Frequency {
+        self.bindings.sampling_frequency()
+    }
 }
 
 #[cfg(not(test))]
@@ -933,6 +1013,18 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
     fn input_voltage(&self) -> InputVoltage {
         self.input_voltage()
     }
+
+    fn tachometer(&self, reset: bool) -> TachometerSteps {
+        self.tachometer(reset)
+    }
+
+    fn absolute_tachometer(&self, reset: bool) -> AbsoluteTachometerSteps {
+        self.absolute_tachometer(reset)
+    }
+
+    fn sampling_frequency(&self) -> Frequency {
+        self.sampling_frequency()
+    }
 }
 
 #[cfg(not(test))]
@@ -983,6 +1075,16 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
     pub fn set_handbrake_relative(&self, current: HandbrakeRelative) {
         self.bindings.set_handbrake_relative(current);
     }
+
+    /// Release the motor output.
+    pub fn release_motor(&self) {
+        self.bindings.release_motor();
+    }
+
+    /// Wait until the motor output has been released.
+    pub fn wait_for_motor_release(&self, timeout: VescSeconds) -> bool {
+        self.bindings.wait_for_motor_release(timeout)
+    }
 }
 
 #[cfg(not(test))]
@@ -1016,5 +1118,13 @@ impl<B: MotorControlBindings> MotorOutput for MotorControlApi<B> {
 
     fn set_handbrake_relative(&self, current: HandbrakeRelative) {
         MotorControlApi::set_handbrake_relative(self, current);
+    }
+
+    fn release_motor(&self) {
+        MotorControlApi::release_motor(self);
+    }
+
+    fn wait_for_motor_release(&self, timeout: VescSeconds) -> bool {
+        MotorControlApi::wait_for_motor_release(self, timeout)
     }
 }

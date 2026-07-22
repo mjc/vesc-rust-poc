@@ -1131,6 +1131,24 @@ pub unsafe fn mc_set_handbrake(_amps: f32) {}
 
 pub unsafe fn mc_set_handbrake_rel(_ratio: f32) {}
 
+pub unsafe fn mc_get_tachometer_value(_reset: bool) -> i32 {
+    1234
+}
+
+pub unsafe fn mc_get_tachometer_abs_value(_reset: bool) -> i32 {
+    5678
+}
+
+pub unsafe fn mc_get_sampling_frequency_now() -> f32 {
+    20_000.0
+}
+
+pub unsafe fn mc_release_motor() {}
+
+pub unsafe fn mc_wait_for_motor_release(_timeout: f32) -> bool {
+    true
+}
+
 pub unsafe fn mc_get_rpm() -> f32 {
     load(&ELECTRICAL_SPEED)
 }
