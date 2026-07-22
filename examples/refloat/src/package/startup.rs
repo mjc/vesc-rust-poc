@@ -18,17 +18,13 @@ fn install_refloat_startup_state_with(
 ) -> bool {
     *state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
     start
-        .install_runtime_state(core::mem::replace(
-            state,
-            RefloatPackageState::new(RefloatAllDataPayloads::source_startup()),
-        ))
-        .and_then(|()| {
-            start
-                .with_runtime_state::<RefloatPackageState, _>(|state| {
-                    state.load_persisted_config_on_startup();
-                })
-                .ok_or(vescpkg_rs::PackageStartError::StateTypeMismatch)
-        })
+        .install_runtime_state_with(
+            core::mem::replace(
+                state,
+                RefloatPackageState::new(RefloatAllDataPayloads::source_startup()),
+            ),
+            RefloatPackageState::load_persisted_config_on_startup,
+        )
         .is_ok()
 }
 
@@ -44,14 +40,10 @@ fn install_refloat_startup_state_with(
 fn allocate_refloat_startup_state(
     start: &mut PackageStart,
 ) -> Result<(), vescpkg_rs::PackageStartError> {
-    start.install_runtime_state(RefloatPackageState::new(
-        RefloatAllDataPayloads::source_startup(),
-    ))?;
-    start
-        .with_runtime_state::<RefloatPackageState, _>(|state| {
-            state.load_persisted_config_on_startup();
-        })
-        .ok_or(vescpkg_rs::PackageStartError::StateTypeMismatch)
+    start.install_runtime_state_with(
+        RefloatPackageState::new(RefloatAllDataPayloads::source_startup()),
+        RefloatPackageState::load_persisted_config_on_startup,
+    )
 }
 
 /// Allocate and install Refloat startup state using firmware memory.
