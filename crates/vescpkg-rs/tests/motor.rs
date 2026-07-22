@@ -1,7 +1,9 @@
 #![cfg(feature = "test-support")]
 //! Integration coverage for typed motor handbrake commands.
 
-use vescpkg_rs::{Current, HandbrakeCurrent, HandbrakeRelative, MotorOutput, Ratio};
+use vescpkg_rs::{
+    Current, HandbrakeCurrent, HandbrakeRelative, MotorOutput, MotorTelemetry, Ratio,
+};
 
 #[test]
 fn motor_exposes_typed_handbrake_commands() {
@@ -12,4 +14,11 @@ fn motor_exposes_typed_handbrake_commands() {
     firmware
         .motor()
         .set_handbrake_relative(HandbrakeRelative::new(Ratio::from_ratio_const(0.25)));
+
+    let telemetry = firmware.telemetry();
+    assert_eq!(telemetry.tachometer(false).steps().as_steps(), 1234);
+    assert_eq!(telemetry.absolute_tachometer(true).steps().as_steps(), 5678);
+    assert_eq!(telemetry.sampling_frequency().as_hertz(), 20_000.0);
+    firmware.motor().release_motor();
+    firmware.motor().wait_for_motor_release();
 }
