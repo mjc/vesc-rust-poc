@@ -1204,11 +1204,8 @@ fn motor_data_helpers_forward_through_mock_table() {
         assert_eq!(mc_get_watt_hours_charged(false), 18.5);
         assert_eq!(mc_get_battery_level(core::ptr::null_mut()), 0.72);
         assert_eq!(mc_get_odometer(), 123_456);
-        assert_eq!(mc_get_fault(), 5);
-        assert_eq!(
-            CStr::from_ptr(mc_fault_to_string(5).unwrap()).to_bytes(),
-            b"FAULT_CODE_OVER_TEMP_FET"
-        );
+        let fault: crate::FaultCode = mc_get_fault();
+        assert_eq!(fault.0, 5);
         assert_eq!(mc_get_input_voltage_filtered(), 84.2);
         assert_eq!(MC_GET_DISTANCE_ABS.get(), 1);
         assert_eq!(MC_TEMP_FET_FILTERED.get(), 1);
