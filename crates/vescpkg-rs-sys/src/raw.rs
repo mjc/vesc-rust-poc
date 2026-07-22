@@ -1502,16 +1502,31 @@ pub unsafe fn mc_get_tachometer_abs_value(reset: bool) -> c_int {
 }
 
 /// Read the average motor power statistic.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid and contain
+/// the motor-statistics slot.
 pub unsafe fn mc_stat_power_avg() -> f32 {
     unsafe { slots::mc_stat_power_avg()() }
 }
 
 /// Read the peak motor power statistic.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid and contain
+/// the motor-statistics slot.
 pub unsafe fn mc_stat_power_max() -> f32 {
     unsafe { slots::mc_stat_power_max()() }
 }
 
 /// Reset motor power and related statistics.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid and contain
+/// the motor-statistics slot.
 pub unsafe fn mc_stat_reset() {
     unsafe { slots::mc_stat_reset()() }
 }
