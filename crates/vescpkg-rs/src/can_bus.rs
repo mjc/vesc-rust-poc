@@ -10,8 +10,23 @@ use crate::types::{
 use crate::units::{Charge, Current, Energy, Rpm, SignedRatio, SystemTicks, TimestampTicks};
 use core::sync::atomic::{AtomicBool, Ordering};
 
-/// Callback ABI used by VESC standard/extended CAN receive slots.
+/// Raw callback ABI used by the explicitly unsafe CAN registration methods.
 pub type CanReceiverCallback = unsafe extern "C" fn(u32, *mut u8, u8) -> bool;
+
+/// Identifier passed to a typed CAN receive callback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanReceiverId {
+    /// An 11-bit standard CAN identifier.
+    Standard(CanStandardId),
+    /// A 29-bit extended CAN identifier.
+    Extended(CanExtendedId),
+}
+
+/// Safe behavior for one package-owned CAN receive callback.
+pub trait CanReceiverHandler {
+    /// Handle a callback-scoped frame payload.
+    fn receive(id: CanReceiverId, payload: &[u8]) -> bool;
+}
 
 static SID_RECEIVER_REGISTERED: AtomicBool = AtomicBool::new(false);
 static EID_RECEIVER_REGISTERED: AtomicBool = AtomicBool::new(false);
@@ -292,8 +307,27 @@ impl CanBus {
         Self
     }
 
-    /// Register the single standard-ID receive callback exposed by VESC.
-    pub fn register_standard_receiver(
+    /// Register a typed standard-ID receive callback.
+    pub fn register_standard_receiver<H: CanReceiverHandler + 'static>(
+        &self,
+    ) -> Result<CanReceiverGuard, CanError> {
+        self.register_standard_receiver_impl(standard_receiver::<H>)
+    }
+
+    /// Register a raw standard-ID receive callback.
+    ///
+    /// # Safety
+    ///
+    /// The callback must validate the firmware-owned pointer and length, and
+    /// must not retain the pointer after returning.
+    pub unsafe fn register_standard_receiver_raw(
+        &self,
+        callback: CanReceiverCallback,
+    ) -> Result<CanReceiverGuard, CanError> {
+        self.register_standard_receiver_impl(callback)
+    }
+
+    fn register_standard_receiver_impl(
         &self,
         callback: CanReceiverCallback,
     ) -> Result<CanReceiverGuard, CanError> {
@@ -307,8 +341,27 @@ impl CanBus {
         Ok(CanReceiverGuard { extended: false })
     }
 
-    /// Register the single extended-ID receive callback exposed by VESC.
-    pub fn register_extended_receiver(
+    /// Register a typed extended-ID receive callback.
+    pub fn register_extended_receiver<H: CanReceiverHandler + 'static>(
+        &self,
+    ) -> Result<CanReceiverGuard, CanError> {
+        self.register_extended_receiver_impl(extended_receiver::<H>)
+    }
+
+    /// Register a raw extended-ID receive callback.
+    ///
+    /// # Safety
+    ///
+    /// The callback must validate the firmware-owned pointer and length, and
+    /// must not retain the pointer after returning.
+    pub unsafe fn register_extended_receiver_raw(
+        &self,
+        callback: CanReceiverCallback,
+    ) -> Result<CanReceiverGuard, CanError> {
+        self.register_extended_receiver_impl(callback)
+    }
+
+    fn register_extended_receiver_impl(
         &self,
         callback: CanReceiverCallback,
     ) -> Result<CanReceiverGuard, CanError> {
@@ -539,8 +592,93 @@ impl CanBus {
     }
 }
 
+unsafe extern "C" fn standard_receiver<H: CanReceiverHandler + 'static>(
+    id: u32,
+    data: *mut u8,
+    len: u8,
+) -> bool {
+    let Ok(id) = CanStandardId::try_new(u16::try_from(id).unwrap_or(u16::MAX)) else {
+        return false;
+    };
+    dispatch_receiver::<H>(CanReceiverId::Standard(id), data, len)
+}
+
+unsafe extern "C" fn extended_receiver<H: CanReceiverHandler + 'static>(
+    id: u32,
+    data: *mut u8,
+    len: u8,
+) -> bool {
+    let Ok(id) = CanExtendedId::try_new(id) else {
+        return false;
+    };
+    dispatch_receiver::<H>(CanReceiverId::Extended(id), data, len)
+}
+
+fn dispatch_receiver<H: CanReceiverHandler + 'static>(
+    id: CanReceiverId,
+    data: *mut u8,
+    len: u8,
+) -> bool {
+    let Ok(length) = CanPayloadLen::try_new(len) else {
+        return false;
+    };
+    if length.as_u8() == 0 {
+        return H::receive(id, &[]);
+    }
+    if data.is_null() {
+        return false;
+    }
+    let payload = unsafe { core::slice::from_raw_parts(data, usize::from(length.as_u8())) };
+    H::receive(id, payload)
+}
+
 #[cfg(all(feature = "test-support", not(test)))]
 pub(crate) fn reset_receiver_registrations() {
     SID_RECEIVER_REGISTERED.store(false, Ordering::Release);
     EID_RECEIVER_REGISTERED.store(false, Ordering::Release);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CanReceiverHandler, CanReceiverId, extended_receiver, standard_receiver};
+
+    struct StandardHandler;
+
+    impl CanReceiverHandler for StandardHandler {
+        fn receive(id: CanReceiverId, payload: &[u8]) -> bool {
+            matches!(id, CanReceiverId::Standard(id) if id.as_u16() == 0x123)
+                && payload == [1, 2, 3]
+        }
+    }
+
+    struct ExtendedHandler;
+
+    impl CanReceiverHandler for ExtendedHandler {
+        fn receive(id: CanReceiverId, payload: &[u8]) -> bool {
+            matches!(id, CanReceiverId::Extended(id) if id.as_u32() == 0x12_3456)
+                && payload == [4, 5]
+        }
+    }
+
+    #[test]
+    fn typed_receiver_trampolines_validate_ids_lengths_and_pointers() {
+        let mut standard = [1, 2, 3];
+        assert!(unsafe {
+            standard_receiver::<StandardHandler>(0x123, standard.as_mut_ptr(), standard.len() as u8)
+        });
+        assert!(!unsafe { standard_receiver::<StandardHandler>(0x800, standard.as_mut_ptr(), 3) });
+        assert!(!unsafe { standard_receiver::<StandardHandler>(0x123, core::ptr::null_mut(), 1) });
+
+        let mut extended = [4, 5];
+        assert!(unsafe {
+            extended_receiver::<ExtendedHandler>(
+                0x12_3456,
+                extended.as_mut_ptr(),
+                extended.len() as u8,
+            )
+        });
+        assert!(!unsafe {
+            extended_receiver::<ExtendedHandler>(0x12_3456, extended.as_mut_ptr(), 9)
+        });
+    }
 }

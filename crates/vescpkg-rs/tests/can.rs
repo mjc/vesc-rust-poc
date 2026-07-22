@@ -2,9 +2,9 @@
 //! Integration coverage for the safe CAN facade.
 
 use vescpkg_rs::{
-    AngleDegrees, CanBus, CanControllerId, CanError, CanExtendedId, CanHardwareType, CanStandardId,
-    Current, CurrentRelative, DutyCycle, ElectricalSpeed, MotorCurrent, PidPosition, Rpm,
-    SignedRatio,
+    AngleDegrees, CanBus, CanControllerId, CanError, CanExtendedId, CanHardwareType,
+    CanReceiverHandler, CanReceiverId, CanStandardId, Current, CurrentRelative, DutyCycle,
+    ElectricalSpeed, MotorCurrent, PidPosition, Rpm, SignedRatio,
 };
 
 #[test]
@@ -202,8 +202,12 @@ fn can_bus_sends_relative_current_off_delay() {
         .expect("relative off-delay command");
 }
 
-unsafe extern "C" fn test_can_receiver(_id: u32, _data: *mut u8, _len: u8) -> bool {
-    true
+struct TestReceiver;
+
+impl CanReceiverHandler for TestReceiver {
+    fn receive(_id: CanReceiverId, _payload: &[u8]) -> bool {
+        true
+    }
 }
 
 #[test]
@@ -211,15 +215,15 @@ fn can_receiver_registration_is_exclusive_and_released_on_drop() {
     let firmware = vescpkg_rs::test_support::FirmwareTest::new();
     let bus = firmware.can();
     let registration = bus
-        .register_standard_receiver(test_can_receiver)
+        .register_standard_receiver::<TestReceiver>()
         .expect("SID receiver registration");
 
     assert!(matches!(
-        bus.register_standard_receiver(test_can_receiver),
+        bus.register_standard_receiver::<TestReceiver>(),
         Err(CanError::ReceiverBusy)
     ));
     drop(registration);
-    assert!(bus.register_standard_receiver(test_can_receiver).is_ok());
+    assert!(bus.register_standard_receiver::<TestReceiver>().is_ok());
 }
 
 #[test]
@@ -227,13 +231,13 @@ fn can_extended_receiver_registration_is_exclusive() {
     let firmware = vescpkg_rs::test_support::FirmwareTest::new();
     let bus = firmware.can();
     let registration = bus
-        .register_extended_receiver(test_can_receiver)
+        .register_extended_receiver::<TestReceiver>()
         .expect("EID receiver registration");
 
     assert!(matches!(
-        bus.register_extended_receiver(test_can_receiver),
+        bus.register_extended_receiver::<TestReceiver>(),
         Err(CanError::ReceiverBusy)
     ));
     drop(registration);
-    assert!(bus.register_extended_receiver(test_can_receiver).is_ok());
+    assert!(bus.register_extended_receiver::<TestReceiver>().is_ok());
 }
