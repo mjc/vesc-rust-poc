@@ -181,6 +181,8 @@ pub struct Firmware {
     #[cfg(not(test))]
     nvm: crate::Nvm,
     #[cfg(not(test))]
+    eeprom: crate::CustomEeprom,
+    #[cfg(not(test))]
     gpio: crate::Gpio,
     #[cfg(not(test))]
     input: crate::ControllerInput,
@@ -225,6 +227,12 @@ impl Firmware {
     #[cfg(not(test))]
     pub fn nvm(&self) -> &crate::Nvm {
         &self.nvm
+    }
+
+    /// Borrow the package custom-EEPROM capability.
+    #[cfg(not(test))]
+    pub fn eeprom(&self) -> &crate::CustomEeprom {
+        &self.eeprom
     }
 
     /// Borrow firmware GPIO capabilities without exposing the binding type.
@@ -278,6 +286,7 @@ impl Firmware {
             app_data: FirmwareAppData::new(),
             clock: FirmwareClock::new(),
             nvm: crate::Nvm::new(),
+            eeprom: crate::CustomEeprom::new(),
             gpio: crate::Gpio::new(),
             input: crate::ControllerInput::new(),
             imu: crate::imu::ImuApi::new(crate::imu::RealImuBindings),

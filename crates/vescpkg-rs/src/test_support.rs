@@ -75,8 +75,8 @@ impl FirmwareTest {
 
     /// Access the same package custom-EEPROM range used on hardware.
     #[must_use]
-    pub const fn eeprom(&self) -> crate::CustomEeprom {
-        crate::CustomEeprom::new()
+    pub fn eeprom(&self) -> &crate::CustomEeprom {
+        self.firmware.eeprom()
     }
 
     /// Access the same byte-addressed NVM capability used on hardware.
