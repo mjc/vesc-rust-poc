@@ -234,6 +234,8 @@ pub use types::*;
 
 /// Common package-author imports for code running inside the controller.
 pub mod prelude {
+    #[cfg(feature = "math")]
+    pub use crate::Ahrs;
     pub use crate::types::*;
     pub use crate::units::{
         AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, BoundedUnitError, Charge,
@@ -243,15 +245,19 @@ pub mod prelude {
         SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
     };
     pub use crate::{
-        AnalogPin, AppDataHandler, AppDataSendError, CanBus, CanError, CanStatus, ConfigBytes,
-        ConfigXml, DigitalOutputLevel, DigitalPin, ExtensionDescriptor, ExtensionName,
-        ExtensionRegistration, Firmware, FirmwareAppData, FirmwareClock, FirmwareInputs,
-        FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore, FirmwareThread, FirmwareThreads,
-        Gpio, Imu, ImuReadHandler, LbmExtension, LispArgs, LispIntegerError, LispValue,
-        MotorOutput, MotorTelemetry, Nvm, NvmError, NvmOffset, PackageRuntimeState, PackageStart,
-        PackageStartError, StatefulCustomConfigCallback, StatefulLbmExtension,
-        StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadName,
-        ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant,
+        AnalogPin, AppDataHandler, AppDataSendError, CanBus, CanError, CanStatus, CommandError,
+        CommandReplyHandler, Commands, ConfigBytes, ConfigXml, DigitalOutputLevel, DigitalPin,
+        Encoder, EncoderError, EncoderHandler, EncoderRegistration, ExtensionDescriptor,
+        ExtensionName, ExtensionRegistration, Firmware, FirmwareAppData, FirmwareClock,
+        FirmwareInputs, FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore, FirmwareThread,
+        FirmwareThreads, Gnss, GnssError, GnssSnapshot, Gpio, Imu, ImuReadHandler, LbmExtension,
+        LispArgs, LispIntegerError, LispValue, MotorOutput, MotorTelemetry, Nvm, NvmError,
+        NvmOffset, PackageRuntimeState, PackageStart, PackageStartError, PacketCodec, PacketError,
+        PacketHandler, Plot, PlotError, StatefulCustomConfigCallback, StatefulLbmExtension,
+        StatelessFirmwareThread, StatelessThreadContext, Terminal, TerminalError, TerminalHandler,
+        TerminalRegistration, ThreadContext, ThreadError, ThreadName, ThreadSpec,
+        ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant, Uart, UartError,
+        UartLease,
     };
 }
 
