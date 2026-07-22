@@ -1,9 +1,15 @@
+#[allow(unused_imports)]
 use crate::{
-    AbiError, AppDataPacket, CanPayload, CommandPacket, ConfigPayload, ConfigXmlBytes, FirmwarePtr,
-    HalfDuplex, ImageOffset, LbmCid, LbmFloat, LbmInt, LbmSymbol, LbmType, LbmUint, LibInfo,
-    LibInfoAbi, MutablePacket, NativeAddress, NativeImage, NvmBytes, PlotAxisName, PlotGraphName,
-    PlotPoint, ProgramAddress, ReplyPacket, Stm32AbiRevision, SystemTicks, ThreadName, VescIfAbi,
-    VescIfSlot, VescIfSlotKind, VescPin,
+    AbiError, AppDataLen, AppDataPacket, CanBaud, CanControllerId, CanFrameLen, CanPayload,
+    CanStatusIndex, CfgFloat, CfgInt, CfgParam, CommandPacket, ConfigPayload, ConfigSetResult,
+    ConfigXmlBytes, EepromAddress, EepromVar, FirmwareNonNull, FirmwarePtr, GpioPin, GpioPortPtr,
+    HalfDuplex, HardwareType, ImageOffset, LbmBoolSymbol, LbmCid, LbmCount, LbmErrorSymbol,
+    LbmFloat, LbmInt, LbmIoSymbol, LbmNilSymbol, LbmSymbol, LbmType, LbmUint, LbmValue, LibInfo,
+    LibInfoAbi, LoaderBaseAddress, MallocLen, MotorIndex, MutablePacket, MutexHandle,
+    NativeAddress, NativeImage, NvmAddress, NvmBytes, NvmLen, OwnedFirmwareAllocation,
+    PlotAxisName, PlotGraphIndex, PlotGraphName, PlotPoint, ProgramAddress, ReplyPacket,
+    SemaphoreHandle, StackSizeBytes, Stm32AbiRevision, SystemTicks, ThreadHandle, ThreadName,
+    UartBaudRate, UartWriteLen, VescIfAbi, VescIfSlot, VescIfSlotKind, VescPin, VescPinMode,
 };
 use core::ffi::{CStr, c_char};
 
@@ -145,7 +151,7 @@ fn eeprom_values_preserve_the_generated_union_bits() {
     assert_eq!(unsafe { signed.as_i32 }, -42);
 
     let floating = crate::raw::EepromVar { as_float: 12.5 };
-    assert_f32_eq!(unsafe { floating.as_float }, 12.5);
+    assert_eq!(unsafe { floating.as_float }, 12.5);
 }
 
 #[test]
@@ -240,7 +246,7 @@ fn transparent_wrappers_expose_raw_tuple_fields() {
     let name = c"axis";
 
     assert_eq!(LbmInt(-7).0, -7);
-    assert_f32_eq!(LbmFloat(3.5).0, 3.5);
+    assert_eq!(LbmFloat(3.5).0, 3.5);
     assert!(HalfDuplex(true).0);
     assert_eq!(ConfigXmlBytes(&raw).0, &raw);
     assert_eq!(ConfigPayload(&raw).0, &raw);
@@ -255,8 +261,16 @@ fn transparent_wrappers_expose_raw_tuple_fields() {
     }
     assert_eq!(mut_raw[0], 9);
     let point = PlotPoint { x: 1.5, y: 2.5 };
-    assert_f32_eq!(point.x, 1.5);
-    assert_f32_eq!(point.y, 2.5);
+    assert_eq!(point.x, 1.5);
+    assert_eq!(point.y, 2.5);
+}
+
+#[test]
+fn can_baud_representation_preserves_pinned_enum_values() {
+    assert_eq!(core::mem::size_of::<CanBaud>(), core::mem::size_of::<i32>());
+    assert_eq!(CanBaud::K125.raw(), 0);
+    assert_eq!(CanBaud::K500.raw(), 2);
+    assert_eq!(CanBaud::K100.raw(), 8);
 }
 
 #[test]
