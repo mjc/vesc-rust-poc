@@ -12,6 +12,8 @@ the current STM32 package ABI; it is not a firmware-version promise.
 | ARM/no-alloc sys crate | `cargo check -p vescpkg-rs-sys --target thumbv7em-none-eabihf --no-default-features` | Fixed firmware addresses and inline ARM dispatch remain unsafe internally |
 | No-alloc package | `examples/loopback` and `examples/refloat` build without the `alloc` feature | APIs accept caller-owned buffers and slices |
 | Allocator-enabled package | `examples/alloc-smoke` installs `VescAllocator` and is covered by the package build gate | Allocation is package-local and firmware-backed |
+| GPIO inventory and leases | `gpio_lease` covers all 13 pinned digital enum values plus exclusive acquire/configure/read/release behavior | Low-level STM32 pad access remains outside the ordinary safe prelude |
+| Clock/synchronization | Host tests cover tick rollover, RAII mutex/semaphore cleanup, and optional thread-priority absence | Firmware clock domains remain distinct; provider-specific stack proof is separate |
 | Safe package API | Examples import `vescpkg_rs` only; raw sys calls stay behind crate-private bindings | Open-loop FOC, STM32 pads, variadic `printf`, and raw pointers stay unsafe/internal |
 | LispBM arrays | The pinned LispBM contract exposes byte arrays; `LispValue::is_array` is intentionally the same capability as `is_byte_array` | No generic array-data borrow is exposed without a length-bearing ABI slot |
 | VESC Express | Not implemented in this STM32 family | Express needs a separate table, types, loader, and target proof; it must not share STM32 slot order |
