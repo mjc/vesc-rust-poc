@@ -17,71 +17,12 @@ use core::time::Duration;
 #[cfg(all(not(test), target_arch = "arm"))]
 use vescpkg_rs::FirmwareThreads;
 
-/// Command byte that changes the signed setpoint.
-pub const SETPOINT_COMMAND: u8 = 1;
-/// Command byte that reads the shared control-loop state.
-pub const STATUS_COMMAND: u8 = 2;
+pub use vesc_protocol::control_loop::{
+    CommandError, ControlLoopStatus, SETPOINT_COMMAND, STATUS_BYTES, STATUS_COMMAND,
+    encode_setpoint_command, encode_status_command,
+};
+
 const ACK_BYTES: usize = 2;
-/// Encoded response size for [`ControlLoopStatus`].
-pub const STATUS_BYTES: usize = 11;
-
-/// Owned status returned by the control-loop example's wire protocol.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ControlLoopStatus {
-    setpoint: i16,
-    sampled_input: i16,
-    output: i16,
-    tick_count: u32,
-}
-
-impl ControlLoopStatus {
-    /// Decode one status response without allocating or retaining firmware data.
-    pub fn decode(response: &[u8]) -> Result<Self, CommandError> {
-        if response.len() != STATUS_BYTES {
-            return Err(CommandError::InvalidLength);
-        }
-        if response[0] != STATUS_COMMAND {
-            return Err(CommandError::UnexpectedResponse);
-        }
-        Ok(Self {
-            setpoint: i16::from_le_bytes([response[1], response[2]]),
-            sampled_input: i16::from_le_bytes([response[3], response[4]]),
-            output: i16::from_le_bytes([response[5], response[6]]),
-            tick_count: u32::from_le_bytes(response[7..11].try_into().unwrap()),
-        })
-    }
-
-    /// Return the requested setpoint.
-    pub const fn setpoint(self) -> i16 {
-        self.setpoint
-    }
-
-    /// Return the synthetic sampled input.
-    pub const fn sampled_input(self) -> i16 {
-        self.sampled_input
-    }
-
-    /// Return the computed, non-actuating output.
-    pub const fn output(self) -> i16 {
-        self.output
-    }
-
-    /// Return the number of completed loop ticks reported by firmware.
-    pub const fn tick_count(self) -> u32 {
-        self.tick_count
-    }
-}
-
-/// Encode a setpoint command for the control-loop callback.
-pub const fn encode_setpoint_command(setpoint: i16) -> [u8; 3] {
-    let [low, high] = setpoint.to_le_bytes();
-    [SETPOINT_COMMAND, low, high]
-}
-
-/// Encode a status request for the control-loop callback.
-pub const fn encode_status_command() -> [u8; 1] {
-    [STATUS_COMMAND]
-}
 
 /// State shared by the periodic loop and app-data callback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,19 +82,6 @@ impl ControlLoopState {
         self.output = error.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
         self.tick_count = self.tick_count.wrapping_add(1);
     }
-}
-
-/// Error returned by the bounded control-loop command decoder.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CommandError {
-    /// The command byte is not part of this example protocol.
-    UnknownCommand,
-    /// The command did not contain exactly the required bytes.
-    InvalidLength,
-    /// The response buffer is too short for the requested response.
-    ResponseTooShort,
-    /// A response did not carry the expected command byte.
-    UnexpectedResponse,
 }
 
 /// Handle one host command without touching firmware or performing I/O.

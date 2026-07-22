@@ -1355,6 +1355,7 @@ dependencies = [
 name = "vesc-example-control-loop-smoke"
 version = "0.1.0"
 dependencies = [
+ "vesc-protocol",
  "vescpkg-build-support",
  "vescpkg-rs",
 ]
