@@ -34,6 +34,10 @@ mod tests {
 
     unsafe extern "C" fn express_noop(_: *mut core::ffi::c_void) {}
 
+    unsafe extern "C" fn express_lisp_handler(_: *mut u32, _: u32) -> u32 {
+        0
+    }
+
     #[test]
     fn pinned_v1_shape_is_independent_from_stm32() {
         assert_eq!(EXPRESS_C_IF_VERSION, 1);
@@ -169,6 +173,18 @@ mod tests {
             lisp.eval_is_paused(),
             Err(ExpressCallError {
                 slot: ExpressSlot::LbmEvalIsPaused
+            })
+        );
+        assert_eq!(
+            unsafe { lisp.add_extension(core::ptr::null_mut(), express_lisp_handler) },
+            Err(ExpressCallError {
+                slot: ExpressSlot::LbmAddExtension
+            })
+        );
+        assert_eq!(
+            unsafe { lisp.create_byte_array(core::ptr::null_mut(), 1) },
+            Err(ExpressCallError {
+                slot: ExpressSlot::LbmCreateByteArray
             })
         );
     }
