@@ -41,6 +41,18 @@ pub type TimerSleep = unsafe extern "C" fn(f32);
 pub type Malloc = unsafe extern "C" fn(usize) -> *mut c_void;
 /// `free` function-pointer ABI.
 pub type Free = unsafe extern "C" fn(*mut c_void);
+/// LispBM extension handler ABI accepted by `lbm_add_extension`.
+pub type ExtensionHandler = unsafe extern "C" fn(*mut LbmValue, LbmValue) -> LbmValue;
+/// `lbm_add_extension` function-pointer ABI.
+pub type AddExtension = unsafe extern "C" fn(*mut c_char, ExtensionHandler) -> bool;
+/// `lbm_set_error_reason` function-pointer ABI.
+pub type SetErrorReason = unsafe extern "C" fn(*mut c_char) -> i32;
+/// `lbm_add_symbol_const` function-pointer ABI.
+pub type AddSymbolConst = unsafe extern "C" fn(*mut c_char, *mut LbmUint) -> i32;
+/// `lbm_get_symbol_by_name` function-pointer ABI.
+pub type GetSymbolByName = unsafe extern "C" fn(*mut c_char, *mut LbmUint) -> i32;
+/// `lbm_create_byte_array` function-pointer ABI.
+pub type CreateByteArray = unsafe extern "C" fn(*mut LbmValue, LbmUint) -> bool;
 /// Callback ABI accepted by `spawn`.
 pub type SpawnFunction = unsafe extern "C" fn(*mut c_void);
 /// `spawn` function-pointer ABI.

@@ -1,11 +1,14 @@
 //! Core typed LispBM operations for the Express shared runtime.
 
+use core::ffi::c_char;
+
 use super::functions::{
-    LbmBlockCtxFromExtension, LbmCar, LbmCdr, LbmCons, LbmContinueEval, LbmDecAsFloat, LbmDecAsI32,
-    LbmDecAsU32, LbmDecChar, LbmDecSym, LbmEncChar, LbmEncFloat, LbmEncI, LbmEncI32, LbmEncSym,
-    LbmEncU, LbmEncU32, LbmEvalIsPaused, LbmGetCurrentCid, LbmIsByteArray, LbmIsChar, LbmIsCons,
-    LbmIsNumber, LbmIsSymbol, LbmListDestructiveReverse, LbmPauseEvalWithGc, LbmSendMessage,
-    LbmUnblockCtxUnboxed,
+    AddExtension, AddSymbolConst, CreateByteArray, GetSymbolByName, LbmBlockCtxFromExtension,
+    LbmCar, LbmCdr, LbmCons, LbmContinueEval, LbmDecAsFloat, LbmDecAsI32, LbmDecAsU32, LbmDecChar,
+    LbmDecSym, LbmEncChar, LbmEncFloat, LbmEncI, LbmEncI32, LbmEncSym, LbmEncU, LbmEncU32,
+    LbmEvalIsPaused, LbmGetCurrentCid, LbmIsByteArray, LbmIsChar, LbmIsCons, LbmIsNumber,
+    LbmIsSymbol, LbmListDestructiveReverse, LbmPauseEvalWithGc, LbmSendMessage,
+    LbmUnblockCtxUnboxed, SetErrorReason,
 };
 use super::{ExpressCallError, ExpressInterface, ExpressSlot};
 
@@ -281,5 +284,80 @@ impl<'a> ExpressLisp<'a> {
         let is_paused: LbmEvalIsPaused =
             unsafe { self.interface.function(ExpressSlot::LbmEvalIsPaused) }?;
         Ok(unsafe { is_paused() })
+    }
+
+    /// Register a native LispBM extension with firmware.
+    ///
+    /// # Safety
+    ///
+    /// `name` must point to a writable, NUL-terminated C string and remain
+    /// valid for the duration of the call. `handler` must use the exact
+    /// Express extension callback ABI and obey firmware's callback rules.
+    pub unsafe fn add_extension(
+        self,
+        name: *mut c_char,
+        handler: super::functions::ExtensionHandler,
+    ) -> Result<bool, ExpressCallError> {
+        let add: AddExtension = unsafe { self.interface.function(ExpressSlot::LbmAddExtension) }?;
+        Ok(unsafe { add(name, handler) })
+    }
+
+    /// Set the firmware-owned error reason for the current LispBM context.
+    ///
+    /// # Safety
+    ///
+    /// `reason` must point to a writable, NUL-terminated C string valid for
+    /// the duration of the call.
+    pub unsafe fn set_error_reason(self, reason: *mut c_char) -> Result<i32, ExpressCallError> {
+        let set: SetErrorReason =
+            unsafe { self.interface.function(ExpressSlot::LbmSetErrorReason) }?;
+        Ok(unsafe { set(reason) })
+    }
+
+    /// Add a named symbol constant and write its identifier to `symbol`.
+    ///
+    /// # Safety
+    ///
+    /// `name` must be a valid writable NUL-terminated C string and `symbol`
+    /// must be non-null and writable for the duration of the call.
+    pub unsafe fn add_symbol_const(
+        self,
+        name: *mut c_char,
+        symbol: *mut u32,
+    ) -> Result<i32, ExpressCallError> {
+        let add: AddSymbolConst =
+            unsafe { self.interface.function(ExpressSlot::LbmAddSymbolConst) }?;
+        Ok(unsafe { add(name, symbol) })
+    }
+
+    /// Look up a symbol by name and write its identifier to `symbol`.
+    ///
+    /// # Safety
+    ///
+    /// `name` must be a valid writable NUL-terminated C string and `symbol`
+    /// must be non-null and writable for the duration of the call.
+    pub unsafe fn get_symbol_by_name(
+        self,
+        name: *mut c_char,
+        symbol: *mut u32,
+    ) -> Result<i32, ExpressCallError> {
+        let get: GetSymbolByName =
+            unsafe { self.interface.function(ExpressSlot::LbmGetSymbolByName) }?;
+        Ok(unsafe { get(name, symbol) })
+    }
+
+    /// Ask firmware to create a byte-array value in place.
+    ///
+    /// # Safety
+    ///
+    /// `value` must be non-null and writable for the duration of the call.
+    pub unsafe fn create_byte_array(
+        self,
+        value: *mut ExpressLispValue,
+        elements: u32,
+    ) -> Result<bool, ExpressCallError> {
+        let create: CreateByteArray =
+            unsafe { self.interface.function(ExpressSlot::LbmCreateByteArray) }?;
+        Ok(unsafe { create(value.cast(), elements) })
     }
 }
