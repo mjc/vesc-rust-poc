@@ -48,6 +48,17 @@ fn inputs_expose_output_disable_and_explicit_backup_store() {
 }
 
 #[test]
+fn backup_store_reports_absent_optional_slot() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    firmware.set_backup_available(false);
+
+    assert!(matches!(
+        firmware.inputs().store_backup(),
+        Err(InputError::Unsupported)
+    ));
+}
+
+#[test]
 fn inputs_expose_timeout_state_and_reset() {
     let firmware = vescpkg_rs::test_support::FirmwareTest::new();
     let inputs = firmware.inputs();
