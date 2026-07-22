@@ -15,6 +15,7 @@ use super::{
     mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered, mc_get_odometer,
     mc_get_rpm, mc_get_speed, mc_get_tot_current_directional_filtered, mc_get_tot_current_filtered,
     lbm_block_ctx_from_extension, lbm_get_current_cid, lbm_unblock_ctx_unboxed,
+    lbm_start_flatten, lbm_unblock_ctx,
     mc_get_tot_current_in_filtered, mc_get_watt_hours, mc_get_watt_hours_charged,
     mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm, remote_state,
     store_eeprom_word, vesc_clear_app_data_handler, vesc_mutex_create, vesc_mutex_lock,
@@ -886,6 +887,20 @@ fn lbm_process_controls_forward_through_mock_table() {
         assert_eq!(lbm_get_current_cid(), 9);
         lbm_block_ctx_from_extension();
         assert_eq!(lbm_unblock_ctx_unboxed(9, LbmValue(7)), Some(true));
+    });
+}
+
+#[test]
+fn flat_value_slots_report_absence_without_calling_null_entries() {
+    let table = populated_table();
+    with_table(&table, || unsafe {
+        let mut value = super::LbmFlatValue {
+            buf: core::ptr::null_mut(),
+            buf_size: 0,
+            buf_pos: 0,
+        };
+        assert_eq!(lbm_start_flatten(&mut value, 16), None);
+        assert_eq!(lbm_unblock_ctx(9, &mut value), None);
     });
 }
 
