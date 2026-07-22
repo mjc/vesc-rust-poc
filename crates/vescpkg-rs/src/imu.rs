@@ -43,9 +43,20 @@ pub trait ImuBindings {
     /// `vesc_pkg_lib/vesc_c_if.h:513`.
     fn yaw(&self) -> ImuYaw;
 
+    /// Return roll, pitch, and yaw from one firmware snapshot call.
+    fn rpy(&self) -> ImuAttitude {
+        let mut values = [0.0; 3];
+        unsafe { crate::ffi::imu_get_rpy(values.as_mut_ptr()) };
+        ImuAttitude::new(
+            ImuRoll::new(AngleRadians::from_radians(values[0])),
+            ImuPitch::new(AngleRadians::from_radians(values[1])),
+            ImuYaw::new(AngleRadians::from_radians(values[2])),
+        )
+    }
+
     /// Return firmware IMU attitude.
     fn attitude(&self) -> ImuAttitude {
-        ImuAttitude::new(self.roll(), self.pitch(), self.yaw())
+        self.rpy()
     }
 
     /// Return firmware IMU gyro axes in degrees/sec.
@@ -87,6 +98,10 @@ impl<B: ImuBindings + ?Sized> ImuBindings for &B {
 
     fn yaw(&self) -> ImuYaw {
         (**self).yaw()
+    }
+
+    fn rpy(&self) -> ImuAttitude {
+        (**self).rpy()
     }
 
     fn angular_rate(&self) -> ImuAngularRate {
@@ -406,6 +421,8 @@ pub trait Imu: private::Imu {
     fn pitch(&self) -> ImuPitch;
     /// Return the current typed yaw angle.
     fn yaw(&self) -> ImuYaw;
+    /// Return one copied firmware roll/pitch/yaw snapshot.
+    fn rpy(&self) -> ImuAttitude;
     /// Return the current typed attitude.
     fn attitude(&self) -> ImuAttitude;
     /// Return typed angular rates.
@@ -451,6 +468,11 @@ impl<B: ImuBindings> ImuApi<B> {
     /// Return firmware IMU yaw.
     pub fn yaw(&self) -> ImuYaw {
         self.bindings.yaw()
+    }
+
+    /// Return one copied firmware roll/pitch/yaw snapshot.
+    pub fn rpy(&self) -> ImuAttitude {
+        self.bindings.rpy()
     }
 
     /// Return firmware IMU attitude.
@@ -518,6 +540,10 @@ impl<B: ImuBindings> Imu for ImuApi<B> {
 
     fn yaw(&self) -> ImuYaw {
         self.yaw()
+    }
+
+    fn rpy(&self) -> ImuAttitude {
+        self.rpy()
     }
 
     fn attitude(&self) -> ImuAttitude {

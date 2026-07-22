@@ -1573,6 +1573,12 @@ pub unsafe fn imu_get_roll() -> f32 {
     load(&IMU_ROLL)
 }
 
+pub unsafe fn imu_get_rpy(values: *mut f32) {
+    if let Some(values) = unsafe { values.cast::<[f32; 3]>().as_mut() } {
+        *values = [load(&IMU_ROLL), load(&IMU_PITCH), load(&IMU_YAW)];
+    }
+}
+
 pub unsafe fn imu_get_pitch() -> f32 {
     load(&IMU_PITCH)
 }
