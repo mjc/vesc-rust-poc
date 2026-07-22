@@ -45,11 +45,7 @@ impl FocAudio {
         let frequency = positive(frequency.frequency().as_hertz())?;
         let duration = positive(duration.duration().as_seconds())?;
         let voltage = nonnegative(voltage.voltage().as_volts())?;
-        match unsafe { crate::ffi::foc_beep(frequency, duration, voltage) } {
-            None => Err(FocAudioError::Unavailable),
-            Some(true) => Ok(()),
-            Some(false) => Err(FocAudioError::Rejected),
-        }
+        command_result(unsafe { crate::ffi::foc_beep(frequency, duration, voltage) })
     }
 
     /// Play a continuous tone on one of the firmware's audio channels.
@@ -61,11 +57,9 @@ impl FocAudio {
     ) -> Result<(), FocAudioError> {
         let frequency = positive(frequency.frequency().as_hertz())?;
         let voltage = nonnegative(voltage.voltage().as_volts())?;
-        match unsafe { crate::ffi::foc_play_tone(channel.as_u8() as c_int, frequency, voltage) } {
-            None => Err(FocAudioError::Unavailable),
-            Some(true) => Ok(()),
-            Some(false) => Err(FocAudioError::Rejected),
-        }
+        command_result(unsafe {
+            crate::ffi::foc_play_tone(channel.as_u8() as c_int, frequency, voltage)
+        })
     }
 
     /// Stop active FOC audio output.
@@ -88,13 +82,9 @@ impl FocAudio {
         }
         let sample_rate = positive(sample_rate.sample_rate().as_hertz())?;
         let voltage = nonnegative(voltage.voltage().as_volts())?;
-        match unsafe {
+        command_result(unsafe {
             crate::ffi::foc_play_audio_samples(samples.as_ptr(), length, sample_rate, voltage)
-        } {
-            None => Err(FocAudioError::Unavailable),
-            Some(true) => Ok(()),
-            Some(false) => Err(FocAudioError::Rejected),
-        }
+        })
     }
 
     /// Install a sample table and hold its backing slice borrowed until the
@@ -175,4 +165,12 @@ fn c_int_length(length: usize) -> Result<c_int, FocAudioError> {
     (length <= i32::MAX as usize)
         .then_some(length as c_int)
         .ok_or(FocAudioError::BufferTooLong)
+}
+
+fn command_result(result: Option<bool>) -> Result<(), FocAudioError> {
+    match result {
+        None => Err(FocAudioError::Unavailable),
+        Some(true) => Ok(()),
+        Some(false) => Err(FocAudioError::Rejected),
+    }
 }
