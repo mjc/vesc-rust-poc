@@ -709,6 +709,24 @@ fn lbm_add_extension_with_table_base_uses_mock_when_base_matches_firmware_addr()
 }
 
 #[test]
+#[should_panic(expected = "required VESC_IF slot is unavailable")]
+fn lbm_add_extension_rejects_a_missing_required_slot() {
+    extern "C" fn handler(_: *mut u32, _: u32) -> u32 {
+        0
+    }
+
+    let mut table = populated_table();
+    table.lbm_add_extension = None;
+    with_table(&table, || unsafe {
+        let _ = lbm_add_extension_with_table_base(
+            VescIfAbi::BASE_ADDR.0 as u32,
+            c"ext-test".as_ptr(),
+            handler,
+        );
+    });
+}
+
+#[test]
 fn lbm_value_helpers_forward_through_mock_table() {
     with_populated_table(|| unsafe {
         assert_eq!(lbm_dec_as_float(LbmValue(9)), 4.25);
@@ -891,7 +909,7 @@ fn sleep_us_forwards_through_mock_table() {
 }
 
 #[test]
-#[should_panic(expected = "mock VESC_IF table must populate required slot")]
+#[should_panic(expected = "required VESC_IF slot is unavailable")]
 fn missing_required_slot_fails_loudly() {
     let mut table = populated_table();
     table.sleep_us = None;

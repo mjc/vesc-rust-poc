@@ -51,7 +51,9 @@ with_table(&table, || unsafe {
 Implementation: `crates/vescpkg-rs-sys/src/test_support.rs`, compiled only for `vescpkg-rs-sys`'s own tests with `#[cfg(test)]`.
 It is not a downstream feature surface; the compile-fail tests intentionally prove external crates cannot import it.
 
-Production ARM builds keep inline `asm!` dispatch; host/test builds use `Option<fn>` slots on the mock table.
+Production ARM and host/test dispatch both preserve the header's nullable
+function pointers. Required raw wrappers fail through one checked boundary;
+optional capabilities propagate absence or use their documented fallback.
 
 ## Generated header inventory
 
@@ -86,10 +88,9 @@ supplies it and sets `LIBCLANG_PATH` for the normal build and test commands.
 ## Adding a new `raw::*` wrapper
 
 1. Update the pinned header, then regenerate through the normal bindgen build.
-2. Add `VescIfAbi` slot to `USED_SLOTS`.
-3. Extend `vesc_if_offsets_for_tests()` and layout tests.
-4. Add dispatch tests (Some + None paths) using `test_support`.
-5. Update this inventory table.
+2. Add the raw wrapper and choose explicit required or optional behavior.
+3. Add present/absent dispatch tests using `test_support`.
+4. Update this inventory table.
 
 ## Miri (optional)
 
