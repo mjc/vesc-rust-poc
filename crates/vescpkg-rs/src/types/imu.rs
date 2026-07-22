@@ -568,3 +568,31 @@ impl ImuReadSample {
         self.period
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ImuAccelerationOffset, ImuAngularRateOffset, ImuMadgwickBeta, ImuMahonyIntegralGain,
+        ImuMahonyProportionalGain,
+    };
+    use crate::units::{AccelerationG, AngularVelocity};
+
+    #[test]
+    fn configuration_scalars_reject_non_finite_values() {
+        assert!(ImuMahonyProportionalGain::try_new(f32::NAN).is_none());
+        assert!(ImuMahonyIntegralGain::try_new(f32::INFINITY).is_none());
+        assert!(ImuMadgwickBeta::try_new(f32::NEG_INFINITY).is_none());
+    }
+
+    #[test]
+    fn calibration_offsets_preserve_firmware_units() {
+        let acceleration =
+            ImuAccelerationOffset::try_new(AccelerationG::from_g(-0.125)).expect("finite g");
+        assert_eq!(acceleration.as_g(), -0.125);
+
+        let angular_rate =
+            ImuAngularRateOffset::try_new(AngularVelocity::from_degrees_per_second(3.5))
+                .expect("finite degree rate");
+        assert_eq!(angular_rate.as_degrees_per_second(), 3.5);
+    }
+}
