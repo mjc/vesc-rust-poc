@@ -165,7 +165,8 @@ mod slots {
         CanStatusMsg5, CanStatusMsg6, CustomConfigGet, CustomConfigSet, CustomConfigXml, EepromVar,
         ExtensionHandler, GnssData, HwType, ImuReadCallback, LbmFlatValue, LbmValue, LibMutex,
         LibSemaphore, LibThread, PacketProcessCallback, PacketSendCallback, PacketState,
-        RemoteState, ReplyCallback, VescIfAbi, c_char, c_int, c_uchar, c_uint, c_void,
+        RemoteState, ReplyCallback, TerminalCallback, VescIfAbi, c_char, c_int, c_uchar, c_uint,
+        c_void,
     };
     #[cfg(not(all(target_arch = "arm", not(test))))]
     use super::{VescIf, vesc_if};
@@ -464,6 +465,11 @@ mod slots {
     optional_fn_slot!(plot_add_graph as unsafe extern "C" fn(*const c_char));
     optional_fn_slot!(plot_set_graph as unsafe extern "C" fn(c_int));
     optional_fn_slot!(plot_send_points as unsafe extern "C" fn(f32, f32));
+    optional_fn_slot!(
+        terminal_register_command_callback
+            as unsafe extern "C" fn(*const c_char, *const c_char, *const c_char, TerminalCallback)
+    );
+    optional_fn_slot!(terminal_unregister_callback as unsafe extern "C" fn(TerminalCallback));
     fn_slot!(mc_temp_fet_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_temp_motor_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(imu_startup_done as unsafe extern "C" fn() -> bool);
@@ -1930,6 +1936,25 @@ pub unsafe fn plot_set_graph(index: c_int) -> bool {
 pub unsafe fn plot_send_points(x: f32, y: f32) -> bool {
     unsafe { slots::plot_send_points() }
         .map(|func| unsafe { func(x, y) })
+        .is_some()
+}
+
+/// Register an optional terminal command callback.
+pub unsafe fn terminal_register_command_callback(
+    command: *const c_char,
+    help: *const c_char,
+    arg_names: *const c_char,
+    callback: TerminalCallback,
+) -> bool {
+    unsafe { slots::terminal_register_command_callback() }
+        .map(|func| unsafe { func(command, help, arg_names, callback) })
+        .is_some()
+}
+
+/// Unregister an optional terminal command callback.
+pub unsafe fn terminal_unregister_callback(callback: TerminalCallback) -> bool {
+    unsafe { slots::terminal_unregister_callback() }
+        .map(|func| unsafe { func(callback) })
         .is_some()
 }
 /// Return the filtered input/battery voltage.

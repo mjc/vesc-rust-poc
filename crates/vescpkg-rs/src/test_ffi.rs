@@ -1403,6 +1403,21 @@ pub unsafe fn plot_send_points(_x: f32, _y: f32) -> bool {
     true
 }
 
+pub unsafe fn terminal_register_command_callback(
+    _command: *const c_char,
+    _help: *const c_char,
+    _arg_names: *const c_char,
+    _callback: unsafe extern "C" fn(i32, *const *const c_char),
+) -> bool {
+    true
+}
+
+pub unsafe fn terminal_unregister_callback(
+    _callback: unsafe extern "C" fn(i32, *const *const c_char),
+) -> bool {
+    true
+}
+
 pub unsafe fn mc_get_distance_abs() -> f32 {
     load(&DISTANCE_ABS)
 }
