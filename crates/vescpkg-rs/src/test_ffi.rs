@@ -132,6 +132,7 @@ static UART_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static PACKET_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static COMMANDS_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static TERMINAL_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static ENCODER_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static DISTANCE_ABS: AtomicU32 = AtomicU32::new(0);
 static MOSFET_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
@@ -317,6 +318,7 @@ fn reset_motor_state() {
     PACKET_AVAILABLE.store(true, Ordering::Relaxed);
     COMMANDS_AVAILABLE.store(true, Ordering::Relaxed);
     TERMINAL_AVAILABLE.store(true, Ordering::Relaxed);
+    ENCODER_AVAILABLE.store(true, Ordering::Relaxed);
     DISTANCE_ABS.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOSFET_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -1169,6 +1171,10 @@ pub(crate) fn set_terminal_available(available: bool) {
     TERMINAL_AVAILABLE.store(available, Ordering::Relaxed);
 }
 
+pub(crate) fn set_encoder_available(available: bool) {
+    ENCODER_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
 pub(crate) fn set_imu_startup_done(done: bool) {
     IMU_STARTUP_DONE.store(done, Ordering::Relaxed);
 }
@@ -1657,7 +1663,7 @@ pub unsafe fn encoder_set_custom_callbacks(
     _fault: unsafe extern "C" fn() -> bool,
     _info: unsafe extern "C" fn() -> *mut c_char,
 ) -> bool {
-    true
+    ENCODER_AVAILABLE.load(Ordering::Relaxed)
 }
 
 pub unsafe fn mc_get_distance_abs() -> f32 {

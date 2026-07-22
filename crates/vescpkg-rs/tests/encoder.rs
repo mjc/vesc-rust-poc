@@ -44,6 +44,17 @@ fn encoder_registration_is_exclusive_and_clears_on_drop() {
 }
 
 #[test]
+fn encoder_registration_reports_absent_optional_slots() {
+    let firmware = FirmwareTest::new();
+    firmware.set_encoder_available(false);
+
+    assert!(matches!(
+        firmware.encoder().register::<Handler>(),
+        Err(vescpkg_rs::EncoderError::Unavailable)
+    ));
+}
+
+#[test]
 fn package_stop_releases_encoder_state_before_next_registration() {
     let firmware = FirmwareTest::new();
     let registration = firmware
