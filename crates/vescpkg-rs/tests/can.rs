@@ -3,9 +3,30 @@
 
 use vescpkg_rs::{
     AngleDegrees, CanBus, CanControllerId, CanError, CanExtendedId, CanHardwareType,
-    CanReceiverHandler, CanReceiverId, CanStandardId, Current, CurrentRelative, DutyCycle,
-    ElectricalSpeed, MotorCurrent, PidPosition, Rpm, SignedRatio,
+    CanReceiverGuard, CanReceiverHandler, CanReceiverId, CanStandardId, Current, CurrentRelative,
+    DutyCycle, ElectricalSpeed, MotorCurrent, PackageRuntimeState, PackageStateStore,
+    PidPosition, Rpm, SignedRatio,
 };
+
+struct ReceiverHandler;
+
+impl CanReceiverHandler for ReceiverHandler {
+    fn receive(_id: CanReceiverId, _payload: &[u8]) -> bool {
+        true
+    }
+}
+
+struct PackageState {
+    _guard: Option<CanReceiverGuard>,
+}
+
+static PACKAGE_STATE: PackageStateStore<PackageState> = PackageStateStore::new();
+
+impl PackageRuntimeState for PackageState {
+    fn runtime_store() -> &'static PackageStateStore<Self> {
+        &PACKAGE_STATE
+    }
+}
 
 #[test]
 fn can_bus_transmits_bounded_payloads_and_copies_status() {
@@ -176,6 +197,27 @@ fn can_status_reports_wrapping_age_and_staleness() {
 
     assert_eq!(status.age_at(now).as_ticks(), 7);
     assert!(status.is_stale(now, vescpkg_rs::SystemTicks::from_ticks(5)));
+}
+
+#[test]
+fn package_stop_releases_standard_can_receiver_before_next_registration() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    let guard = firmware
+        .can()
+        .register_standard_receiver::<ReceiverHandler>()
+        .expect("standard CAN receiver");
+    let mut info = vescpkg_rs::test_support::LoaderInfo::new();
+    let mut start = vescpkg_rs::test_support::package_start(&mut info);
+    start
+        .install_runtime_state(PackageState { _guard: Some(guard) })
+        .expect("package state");
+    assert!(start.finish_start(true));
+    assert!(vescpkg_rs::test_support::stop_package(&mut info));
+
+    firmware
+        .can()
+        .register_standard_receiver::<ReceiverHandler>()
+        .expect("stop released standard CAN receiver");
 }
 
 #[test]
