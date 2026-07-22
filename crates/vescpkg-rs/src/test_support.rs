@@ -304,6 +304,11 @@ impl FirmwareTest {
         crate::test_ffi::set_gnss_available(available);
     }
 
+    /// Toggle whether the fake firmware exposes its optional PWM callback slot.
+    pub fn set_pwm_available(&self, available: bool) {
+        crate::test_ffi::set_pwm_available(available);
+    }
+
     /// Borrow the same typed thread capability package code uses on hardware.
     #[must_use]
     pub fn threads(&self) -> &impl crate::FirmwareThreads {
