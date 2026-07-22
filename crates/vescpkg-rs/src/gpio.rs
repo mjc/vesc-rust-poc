@@ -36,6 +36,7 @@ pub enum GpioMode {
 }
 
 impl GpioMode {
+    #[cfg(not(test))]
     const fn firmware_mode(self) -> VescPinMode {
         VescPinMode(match self {
             Self::Input => 0,
@@ -316,6 +317,7 @@ fn claim(pin: i32) -> Result<u32, GpioError> {
         .map_err(|_| GpioError::Busy)
 }
 
+#[cfg(all(feature = "test-support", not(test)))]
 pub(crate) fn reset_leases() {
     GPIO_LEASES.store(0, Ordering::Release);
 }
