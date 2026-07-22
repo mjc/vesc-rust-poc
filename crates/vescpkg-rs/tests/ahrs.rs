@@ -1,5 +1,6 @@
 #![cfg(feature = "math")]
 #![doc = "Integration coverage for package-owned AHRS state."]
+#![allow(missing_docs)]
 
 use vescpkg_rs::{
     AccelerationG, AngularVelocity, ImuAcceleration, ImuAccelerationX, ImuAccelerationY,

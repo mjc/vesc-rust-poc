@@ -46,19 +46,23 @@ fn firmware_audio_rejects_invalid_values_before_ffi() {
     let channel = AudioChannel::try_new(0).unwrap();
     let voltage = AudioVoltage::new(Voltage::from_volts(0.2));
 
-    assert!(audio
-        .beep(
-            AudioFrequency::new(Frequency::from_hertz(f32::NAN)),
-            AudioDuration::new(vescpkg_rs::VescSeconds::from_seconds(0.1)),
-            voltage,
-        )
-        .is_err());
-    assert!(audio
-        .play_samples(
-            &[],
-            AudioSampleRate::new(SampleRate::from_hertz(22_050.0)),
-            voltage,
-        )
-        .is_err());
+    assert!(
+        audio
+            .beep(
+                AudioFrequency::new(Frequency::from_hertz(f32::NAN)),
+                AudioDuration::new(vescpkg_rs::VescSeconds::from_seconds(0.1)),
+                voltage,
+            )
+            .is_err()
+    );
+    assert!(
+        audio
+            .play_samples(
+                &[],
+                AudioSampleRate::new(SampleRate::from_hertz(22_050.0)),
+                voltage,
+            )
+            .is_err()
+    );
     assert!(audio.set_sample_table(channel, &[f32::INFINITY]).is_err());
 }
