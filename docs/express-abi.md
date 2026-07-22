@@ -50,10 +50,11 @@ to be added.
 
 The module provides named pointer aliases for the shared clock, sleep,
 allocation, thread, mutex, and semaphore signatures. `ExpressRuntime` turns the
-clock/sleep/timer/termination/priority subset into checked methods after its
-unsafe live-table constructor establishes the target invariant. Variadic
-`printf` and STM32-only motor/CAN/peripheral slots remain outside this shared
-surface.
+clock/sleep/timer/termination/priority/get-arg subset into checked methods
+after its unsafe live-table constructor establishes the target invariant.
+`get_arg` remains an unsafe raw-pointer return because the argument vector is
+owned by the live native program. Variadic `printf` and STM32-only
+motor/CAN/peripheral slots remain outside this shared surface.
 
 Thread spawning is available only through an unsafe method because callback,
 name, and argument lifetimes are firmware-owned contracts; termination requests
@@ -71,12 +72,15 @@ Express `free` slot.
 
 `ExpressLisp` covers the core scalar encode/decode, cons/list, type-predicate,
 symbol-constant, evaluator-control, context/message, and extension-registration
-slots with typed `ExpressLispValue`/`ExpressLispSymbol` wrappers. The
+slots with typed `ExpressLispValue`/`ExpressLispSymbol` wrappers. The symbol
+lookup names follow the official `const char *` ABI, while registration,
+error-reason, and string-decoding pointers retain their source mutability.
+The
 `ExpressFlatValue` builder covers the pinned flat-value constructors and
 transfers or releases its firmware-owned buffer according to the context
-handoff result. Registration, error-reason, symbol-name, and string-decoding
-entry points retain explicit unsafe raw-pointer boundaries; the facade does not
-invent ownership for firmware-managed strings or values.
+handoff result. Registration, error-reason, and string-decoding entry points
+retain explicit unsafe raw-pointer boundaries; the facade does not invent
+ownership for firmware-managed strings or values.
 
 The fixed-address `ExpressInterface::from_target` constructor is also unsafe:
 it is only valid on the matching 32-bit Express target and is intentionally not
