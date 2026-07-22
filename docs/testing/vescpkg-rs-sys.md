@@ -9,8 +9,8 @@ Strategy for the `vescpkg-rs-sys` crate: a `no_std` firmware ABI layer generated
 | Compile-fail | `unsafe` required, no `std` leak, crate-internal test harness | rustdoc contracts in `src/compile_fail_contracts.md` |
 | Layout / ABI pins | `LibInfo`, `VescIf` size/offsets, newtypes | `src/tests.rs` |
 | Raw dispatch | mock `VescIf` + stub call recording | `src/raw/dispatch_tests.rs` |
-| Header parity | bindgen-generated table inventory | `build.rs`, `src/vesc_if.rs` |
-| Thumb/asm smoke | `ldr` immediates vs `VescIfAbi` | `src/tests.rs` |
+| Header parity | independent libclang audit of generated slots | `src/raw/abi_audit.rs` |
+| Thumb/asm smoke | `ldr` offsets, optional branch, and indirect call vs generated manifest | `tools/thumb-dispatch-smoke.sh` |
 | Manifest gate | callable/scalar presence semantics and raw-shim reachability | `src/tests.rs`, `raw.rs` |
 
 ## Public export inventory
@@ -94,6 +94,7 @@ default because each test binary runs in its own process.
 |---------|--------|
 | `make check` | fmt, clippy, default nextest (includes vescpkg-rs-sys unit + dispatch) |
 | `make vescpkg-rs-sys-target-check` | no normal deps + `thumbv7em-none-eabihf` check |
+| `make thumb-dispatch-smoke` | compile, lower, and inspect representative Thumb dispatch from the generated manifest |
 | `make check-full` | check + ARM/package build gates |
 
 ## Adding a new `raw::*` wrapper
