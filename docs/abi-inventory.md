@@ -24,6 +24,19 @@ table does not expose them. A successful `LispProcess::unblock_flat` transfers
 the firmware buffer to LispBM, while a dropped or rejected value releases it
 through the firmware allocator.
 
+## LispBM SDK Boundaries
+
+The safe LispBM surface follows the pinned `vesc_c_if.h` table:
+
+- symbol lookup and error reasons accept `&CStr`; the firmware pointer is only
+  borrowed for the duration of the call;
+- scalar decoders expose firmware `i32`, `u32`, and `f32` slots. The SDK offers
+  widened `i64`/`u64` conversions for values representable by those slots;
+- 64-bit values are constructed through `LispFlatValue::push_i64` and
+  `push_u64`, because the pinned table has no direct scalar 64-bit slots;
+- the header has no callable array-header/data accessor, so the SDK does not
+  expose an unsound borrowed array slice.
+
 ## Notes
 
 - This list is intentionally narrow.
