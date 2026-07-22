@@ -239,6 +239,11 @@ impl FirmwareTest {
         crate::test_ffi::set_imu_startup_done(done);
     }
 
+    /// Configure whether fake firmware returns finite IMU calibration values.
+    pub fn set_imu_calibration_valid(&self, valid: bool) {
+        crate::test_ffi::set_imu_calibration_valid(valid);
+    }
+
     /// Configure the typed firmware IMU attitude.
     pub fn set_imu_attitude(
         &self,

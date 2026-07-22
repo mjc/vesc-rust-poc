@@ -160,6 +160,7 @@ static IMU_PITCH: AtomicU32 = AtomicU32::new(0);
 static IMU_YAW: AtomicU32 = AtomicU32::new(0);
 static IMU_GYRO: [AtomicU32; 3] = [const { AtomicU32::new(0) }; 3];
 static IMU_QUATERNION: [AtomicU32; 4] = [const { AtomicU32::new(0) }; 4];
+static IMU_CALIBRATION_VALID: AtomicBool = AtomicBool::new(true);
 static REMOTE_STATE: RemoteState = RemoteState {
     js_x: -0.25,
     js_y: 0.75,
@@ -351,6 +352,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     REMOTE_INPUT_Y.store(0.0_f32.to_bits(), Ordering::Relaxed);
     REMOTE_AGE.store(f32::INFINITY.to_bits(), Ordering::Relaxed);
     IMU_STARTUP_DONE.store(false, Ordering::Relaxed);
+    IMU_CALIBRATION_VALID.store(true, Ordering::Relaxed);
     store(&IMU_ROLL, 0.0);
     store(&IMU_PITCH, 0.0);
     store(&IMU_YAW, 0.0);
@@ -1177,6 +1179,10 @@ pub(crate) fn set_imu_startup_done(done: bool) {
     IMU_STARTUP_DONE.store(done, Ordering::Relaxed);
 }
 
+pub(crate) fn set_imu_calibration_valid(valid: bool) {
+    IMU_CALIBRATION_VALID.store(valid, Ordering::Relaxed);
+}
+
 pub(crate) fn set_imu_attitude(roll: ImuRoll, pitch: ImuPitch, yaw: ImuYaw) {
     store(&IMU_ROLL, roll.angle().as_radians());
     store(&IMU_PITCH, pitch.angle().as_radians());
@@ -1778,7 +1784,11 @@ pub unsafe fn imu_get_rpy(values: *mut f32) {
 
 pub unsafe fn imu_get_calibration(_yaw: f32, values: *mut f32) {
     if let Some(values) = unsafe { values.cast::<[f32; 9]>().as_mut() } {
-        *values = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
+        *values = if IMU_CALIBRATION_VALID.load(Ordering::Relaxed) {
+            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        } else {
+            [f32::NAN; 9]
+        };
     }
 }
 
