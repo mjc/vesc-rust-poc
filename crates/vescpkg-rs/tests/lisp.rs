@@ -7,7 +7,7 @@ use vescpkg_rs::{LispContextId, LispSymbol, LispValue};
 
 #[test]
 fn lisp_values_expose_explicit_kind_predicates() {
-    let _firmware = FirmwareTest::new();
+    let firmware = FirmwareTest::new();
     let integer = LispValue::try_from(7).expect("immediate integer fits");
 
     assert!(integer.is_integer());
@@ -60,4 +60,9 @@ fn lisp_values_expose_explicit_kind_predicates() {
     assert_eq!(integer.symbol_id(), None);
 
     assert!(integer.send_to(LispContextId::new(9)).is_ok());
+    firmware.fail_lisp_messages();
+    assert_eq!(
+        integer.send_to(LispContextId::new(9)),
+        Err(vescpkg_rs::LispMessageError::Rejected)
+    );
 }
