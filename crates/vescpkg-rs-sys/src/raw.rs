@@ -287,6 +287,8 @@ mod slots {
     fn_slot!(write_nvm as unsafe extern "C" fn(*mut u8, c_uint, c_uint) -> bool);
     fn_slot!(wipe_nvm as unsafe extern "C" fn() -> bool);
     fn_slot!(get_remote_state as unsafe extern "C" fn() -> RemoteState);
+    fn_slot!(get_ppm as unsafe extern "C" fn() -> f32);
+    fn_slot!(get_ppm_age as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_fault as unsafe extern "C" fn() -> c_uint);
     fn_slot!(mc_get_rpm as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_speed as unsafe extern "C" fn() -> f32);
@@ -965,6 +967,22 @@ pub unsafe fn remote_state() -> RemoteState {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_fault() -> c_int {
     unsafe { required_slot!(mc_get_fault)() as c_int }
+}
+
+/// Return the latest decoded PPM input.
+///
+/// # Safety
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn get_ppm() -> f32 {
+    unsafe { required_slot!(get_ppm)() }
+}
+
+/// Return the age of the latest decoded PPM input in seconds.
+///
+/// # Safety
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn get_ppm_age() -> f32 {
+    unsafe { required_slot!(get_ppm_age)() }
 }
 
 /// Return the current motor electrical RPM.

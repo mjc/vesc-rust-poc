@@ -235,6 +235,7 @@ impl vescpkg_rs::FirmwareThread for RefloatMainThread {
                 let footpad_voltage1 = firmware.gpio().read_analog(AnalogPin::ADC1);
                 let footpad_voltage2 = firmware.gpio().read_analog(AnalogPin::ADC2);
                 let tick = ctx.with_state_mut(|state| {
+                    state.refresh_controller_input(firmware.input());
                     tick_refloat_main_thread_with(
                         state,
                         firmware.telemetry(),
@@ -478,13 +479,16 @@ mod tests {
 
     #[test]
     fn refloat_main_thread_holds_duty_warning_for_duty_pushback_like_refloat() {
-        let mut firmware = FirmwareTest::new().with_runtime_motor(
-            ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1_200.0)),
-            VehicleSpeed::new(Speed::ZERO),
-            TotalMotorCurrent::new(Current::ZERO),
-            InputCurrent::new(Current::ZERO),
-            DutyCycle::new(SignedRatio::from_ratio_const(0.9)),
-        );
+        let mut firmware = FirmwareTest::new()
+            .with_runtime_motor(
+                ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1_200.0)),
+                VehicleSpeed::new(Speed::ZERO),
+                TotalMotorCurrent::new(Current::ZERO),
+                InputCurrent::new(Current::ZERO),
+                DutyCycle::new(SignedRatio::from_ratio_const(0.9)),
+            )
+            .with_input_voltage(InputVoltage::new(Voltage::from_volts(72.0)))
+            .with_battery_cell_count(BatteryCellCount::try_new(18).expect("18s battery"));
         firmware.set_imu_ready(true);
         let mut state = RefloatPackageState::new(sample_all_data_payloads_with_ride_state(
             RefloatRunState::Running,
@@ -514,16 +518,14 @@ mod tests {
 
         let status = state.all_data_payloads().base().status();
         assert_eq!(status.ride_state().run_state(), RefloatRunState::Running);
-        assert!(
-            state
-                .all_data_payloads()
-                .base()
-                .motor()
-                .duty_cycle()
-                .ratio()
-                .as_ratio()
-                > 0.8
-        );
+        let duty = state
+            .all_data_payloads()
+            .base()
+            .motor()
+            .duty_cycle()
+            .ratio()
+            .as_ratio();
+        assert!(duty > 0.8, "duty={duty}, warning_tick={warning_tick:?}");
         assert_eq!(
             status.ride_state().setpoint_adjustment(),
             RefloatSetpointAdjustment::PushbackDuty

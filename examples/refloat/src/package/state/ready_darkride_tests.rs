@@ -1,5 +1,5 @@
 use super::super::test_support::{
-    sample_all_data_payloads_with_ride_state, tick_refloat_state_and_handle_packet,
+    edit_config, sample_all_data_payloads_with_ride_state, tick_refloat_state_and_handle_packet,
 };
 use super::RefloatPackageState;
 use crate::domain::{
@@ -141,4 +141,38 @@ fn ready_darkride_disables_and_alerts_after_ten_seconds_like_refloat() {
             expected_first_high,
         );
     }
+}
+
+#[test]
+fn ready_darkride_timeout_prevents_same_tick_reactivation_like_refloat() {
+    let telemetry = FirmwareTest::new();
+    telemetry.set_imu_ready(true);
+    telemetry.set_imu_attitude(
+        ImuRoll::new(AngleRadians::from_degrees(151.0)),
+        ImuPitch::new(AngleRadians::ZERO),
+        ImuYaw::new(AngleRadians::ZERO),
+    );
+    let mut state = RefloatPackageState::new(sample_all_data_payloads_with_ride_state(
+        RefloatRunState::Ready,
+        RefloatMode::Normal,
+    ));
+    edit_config(&mut state, |config| {
+        assert!(config.set_darkride_enabled(true));
+    });
+    state.upside_down_enabled = true;
+
+    assert!(tick_refloat_state_and_handle_packet(
+        &mut state,
+        TimestampTicks::from_ticks(100_001),
+        telemetry.telemetry(),
+        telemetry.imu(),
+        &[
+            crate::domain::REFLOAT_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::RefloatAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+
+    let ride_state = state.all_data_payloads().base().status().ride_state();
+    assert_eq!(ride_state.run_state(), RefloatRunState::Ready);
+    assert_eq!(ride_state.darkride(), RefloatDarkRideState::Upright);
 }

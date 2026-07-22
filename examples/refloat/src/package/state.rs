@@ -42,6 +42,7 @@ mod motor_runtime;
 mod motor_telemetry_tests;
 mod packet_response;
 mod remote_control;
+mod ride_modifiers;
 #[cfg(test)]
 mod runtime_tests;
 mod transition;
@@ -54,6 +55,7 @@ mod tuning_tests;
 use flywheel::RefloatFlywheelOffsets;
 use motor_acceleration::MotorAccelerationTracker;
 use remote_control::RemoteControlState;
+use ride_modifiers::{RideModifierInput, RideModifierState};
 use transition::{
     RefloatStateTransitionInput, RefloatStopEvent, refloat_first_stop_event,
     refloat_state_transition,
@@ -99,6 +101,8 @@ pub struct RefloatPackageState {
     motor_acceleration: MotorAccelerationTracker,
     motor_current_filter: motor_runtime::RefloatMotorCurrentFilter,
     remote_control: RemoteControlState,
+    runtime_board_setpoint: vescpkg_rs::prelude::AngleDegrees,
+    ride_modifiers: RideModifierState,
     charging_ticks: TimestampTicks,
     engage_ticks: TimestampTicks,
     disengage_ticks: TimestampTicks,
@@ -112,6 +116,9 @@ pub struct RefloatPackageState {
     fault_angle_roll_ticks: TimestampTicks,
     high_voltage_ticks: TimestampTicks,
     wheelslip_ticks: TimestampTicks,
+    upside_down_fault_ticks: TimestampTicks,
+    upside_down_enabled: bool,
+    upside_down_started: bool,
     motor_duty_raw: Ratio,
     duty_max_with_margin: DutyCycleLimit,
     motor_current_max: MotorCurrentLimit,
@@ -153,6 +160,8 @@ impl RefloatPackageState {
             motor_acceleration: MotorAccelerationTracker::default(),
             motor_current_filter: motor_runtime::RefloatMotorCurrentFilter::source_startup(),
             remote_control: RemoteControlState::default(),
+            runtime_board_setpoint: all_data_payloads.base().setpoints().board().angle(),
+            ride_modifiers: RideModifierState::default(),
             charging_ticks: TimestampTicks::from_ticks(0),
             engage_ticks: TimestampTicks::from_ticks(0),
             disengage_ticks: TimestampTicks::from_ticks(0),
@@ -166,6 +175,9 @@ impl RefloatPackageState {
             fault_angle_roll_ticks: TimestampTicks::from_ticks(0),
             high_voltage_ticks: TimestampTicks::from_ticks(0),
             wheelslip_ticks: TimestampTicks::from_ticks(0),
+            upside_down_fault_ticks: TimestampTicks::from_ticks(0),
+            upside_down_enabled: false,
+            upside_down_started: false,
             motor_duty_raw: Ratio::from_ratio_const(0.0),
             duty_max_with_margin: DutyCycleLimit::new(Ratio::from_ratio_const(0.0)),
             motor_current_max: MotorCurrentLimit::new(Current::ZERO),
@@ -178,6 +190,43 @@ impl RefloatPackageState {
             #[cfg(any(test, target_arch = "arm"))]
             firmware_version: None,
         }
+    }
+
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    pub(crate) fn refresh_controller_input(&mut self, input: &vescpkg_rs::ControllerInput) {
+        // C map: Refloat selects UART/PPM, rejects samples one second old,
+        // applies deadband rescaling, then optional inversion at
+        // `third_party/refloat/src/remote.c:36-68`.
+        let config = self.serialized_config;
+        let value = match config.input_tilt_remote_type() {
+            1 => {
+                let remote = input.remote();
+                (remote.age().duration() < vescpkg_rs::VescSeconds::from_seconds(1.0))
+                    .then(|| remote.joystick_y().ratio().as_ratio())
+            }
+            2 => {
+                let (ppm, age) = input.ppm();
+                (age.duration() < vescpkg_rs::VescSeconds::from_seconds(1.0))
+                    .then(|| ppm.ratio().as_ratio())
+            }
+            _ => None,
+        }
+        .unwrap_or(0.0);
+        let deadband = config.input_tilt_deadband().as_ratio();
+        let value = if value.abs() < deadband {
+            0.0
+        } else {
+            value.signum() * (value.abs() - deadband) / (1.0 - deadband)
+        };
+        let value = if config.input_tilt_inverted() {
+            -value
+        } else {
+            value
+        };
+        self.remote_control
+            .set_input(crate::domain::RefloatRealtimeRemoteInput::new(
+                vescpkg_rs::SignedRatio::clamped(value),
+            ));
     }
 
     /// Build startup state and apply the config persisted by firmware.

@@ -905,6 +905,191 @@ fn running_protective_pushback_fixture(
     (app_data, telemetry, state)
 }
 
+fn running_speed_or_sag_fixture(
+    input_voltage: InputVoltage,
+    directional_current: DirectionalMotorCurrent,
+    vehicle_speed: VehicleSpeed,
+) -> (TimestampTicks, FirmwareTest, RefloatPackageState) {
+    let motor_erpm = Rpm::from_revolutions_per_minute(1_000.0);
+    let duty_cycle = DutyCycle::new(SignedRatio::from_ratio_const(0.10));
+    let (now, telemetry, state) = running_protective_pushback_fixture(
+        duty_cycle.ratio(),
+        motor_erpm,
+        RefloatSetpointAdjustment::None,
+        input_voltage,
+    );
+    let telemetry = telemetry
+        .with_runtime_motor(
+            ElectricalSpeed::new(motor_erpm),
+            vehicle_speed,
+            TotalMotorCurrent::new(Current::ZERO),
+            InputCurrent::new(Current::ZERO),
+            duty_cycle,
+        )
+        .with_directional_motor_current(directional_current);
+    (now, telemetry, state)
+}
+
+#[test]
+fn running_input_tilt_ramps_remote_and_board_setpoints_like_refloat() {
+    let (now, telemetry, mut state) = running_speed_or_sag_fixture(
+        InputVoltage::new(Voltage::from_volts(72.0)),
+        DirectionalMotorCurrent::new(Current::ZERO),
+        VehicleSpeed::new(Speed::ZERO),
+    );
+    state
+        .remote_control
+        .set_input(crate::domain::RefloatRealtimeRemoteInput::new(
+            SignedRatio::from_ratio_const(0.5),
+        ));
+    edit_config(&mut state, |config| {
+        assert!(config.set_input_tilt_angle_limit(AngleDegrees::from_degrees(10.0)));
+        assert!(config.set_input_tilt_speed(AngularVelocity::from_degrees_per_second(25.0)));
+    });
+
+    tick_running_protective_pushback(&mut state, &telemetry, now);
+
+    let setpoints = state.all_data_payloads().base().setpoints();
+    // C `remote_update` starts the configured per-loop step with its 0.02 ramp factor,
+    // then adds it to the production setpoint at
+    // `third_party/refloat/src/remote.c:70-94` and
+    // `third_party/refloat/src/main.c:876-879`.
+    let expected = 0.02 * 25.0
+        / editable_config_from_state(&state)
+            .startup()
+            .sample_rate()
+            .as_hertz();
+    let remote = setpoints.remote().angle().as_degrees();
+    let board = setpoints.board().angle().as_degrees();
+    assert!((remote - expected).abs() < 0.000_001, "remote={remote}");
+    assert!((board - expected).abs() < 0.000_001, "board={board}");
+}
+
+#[test]
+fn controller_input_selects_connected_uart_or_ppm_and_applies_deadband_like_refloat() {
+    for (remote_type, ppm, uart, expected) in
+        [(1, 0.8, 0.6, -0.5), (2, 0.6, 0.8, -0.5), (0, 0.8, 0.8, 0.0)]
+    {
+        let firmware = FirmwareTest::new();
+        firmware.set_ppm_input(
+            PpmInput::new(SignedRatio::from_ratio_const(ppm)),
+            PpmAge::new(VescSeconds::from_seconds(0.5)),
+        );
+        firmware.set_remote_input(
+            JoystickY::new(SignedRatio::from_ratio_const(uart)),
+            RemoteAge::new(VescSeconds::from_seconds(0.5)),
+        );
+        let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+        edit_config(&mut state, |config| {
+            assert!(config.set_input_tilt_remote_type(vescpkg_rs::WireByte::new(remote_type)));
+            assert!(config.set_input_tilt_deadband(Ratio::from_ratio_const(0.2)));
+            assert!(config.set_input_tilt_inverted(true));
+        });
+
+        state.refresh_controller_input(firmware.input());
+
+        let actual = state.remote_control.input().ratio().as_ratio();
+        assert!(
+            (actual - expected).abs() < 0.000_001,
+            "remote_type={remote_type}, actual={actual}"
+        );
+    }
+
+    let firmware = FirmwareTest::new();
+    firmware.set_ppm_input(
+        PpmInput::new(SignedRatio::from_ratio_const(0.8)),
+        PpmAge::new(VescSeconds::from_seconds(1.0)),
+    );
+    let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
+    edit_config(&mut state, |config| {
+        assert!(config.set_input_tilt_remote_type(vescpkg_rs::WireByte::new(2)));
+    });
+
+    state.refresh_controller_input(firmware.input());
+
+    assert_eq!(state.remote_control.input().ratio().as_ratio(), 0.0);
+}
+
+#[test]
+fn running_nose_angling_changes_the_production_setpoint_like_refloat() {
+    let (now, telemetry, mut state) = running_speed_or_sag_fixture(
+        InputVoltage::new(Voltage::from_volts(72.0)),
+        DirectionalMotorCurrent::new(Current::ZERO),
+        VehicleSpeed::new(Speed::ZERO),
+    );
+    let telemetry = telemetry.with_runtime_motor(
+        ElectricalSpeed::new(Rpm::from_revolutions_per_minute(2_000.0)),
+        VehicleSpeed::new(Speed::ZERO),
+        TotalMotorCurrent::new(Current::ZERO),
+        InputCurrent::new(Current::ZERO),
+        DutyCycle::new(SignedRatio::from_ratio_const(0.1)),
+    );
+    edit_config(&mut state, |config| {
+        assert!(config.set_tiltback_constant(AngleDegrees::from_degrees(2.0)));
+        assert!(config.set_tiltback_constant_erpm(ElectricalSpeed::new(
+            Rpm::from_revolutions_per_minute(500.0)
+        )));
+        assert!(config.set_tiltback_variable(PidScale::new(1.0)));
+        assert!(config.set_tiltback_variable_max(AngleDegrees::from_degrees(3.0)));
+        assert!(config.set_tiltback_variable_erpm(ElectricalSpeed::new(
+            Rpm::from_revolutions_per_minute(1_000.0)
+        )));
+        assert!(config.set_nose_angling_speed(AngularVelocity::from_degrees_per_second(100.0)));
+    });
+
+    tick_running_protective_pushback(&mut state, &telemetry, now);
+
+    let expected = 100.0
+        / editable_config_from_state(&state)
+            .startup()
+            .sample_rate()
+            .as_hertz();
+    let board = state
+        .all_data_payloads()
+        .base()
+        .setpoints()
+        .board()
+        .angle()
+        .as_degrees();
+    assert!((board - expected).abs() < 0.000_001, "board={board}");
+}
+
+#[test]
+fn running_torque_and_atr_update_runtime_setpoints_like_refloat() {
+    let (now, telemetry, mut state) = running_speed_or_sag_fixture(
+        InputVoltage::new(Voltage::from_volts(72.0)),
+        DirectionalMotorCurrent::new(Current::from_amps(30.0)),
+        VehicleSpeed::new(Speed::ZERO),
+    );
+    let telemetry = telemetry
+        .with_runtime_motor(
+            ElectricalSpeed::new(Rpm::from_revolutions_per_minute(3_000.0)),
+            VehicleSpeed::new(Speed::ZERO),
+            TotalMotorCurrent::new(Current::from_amps(30.0)),
+            InputCurrent::new(Current::ZERO),
+            DutyCycle::new(SignedRatio::from_ratio_const(0.1)),
+        )
+        .with_directional_motor_current(DirectionalMotorCurrent::new(Current::from_amps(30.0)));
+    edit_config(&mut state, |config| {
+        assert!(config.set_torque_tilt_start_current(MotorCurrent::new(Current::ZERO)));
+        assert!(config.set_torque_tilt_strength(PidScale::new(0.1)));
+        assert!(config.set_torque_tilt_angle_limit(AngleDegrees::from_degrees(10.0)));
+        assert!(config.set_torque_tilt_on_speed(AngularVelocity::from_degrees_per_second(100.0)));
+        assert!(config.set_atr_strength_up(PidScale::new(1.0)));
+        assert!(config.set_atr_strength_down(PidScale::new(1.0)));
+        assert!(config.set_atr_threshold_up(AngleDegrees::ZERO));
+        assert!(config.set_atr_threshold_down(AngleDegrees::ZERO));
+        assert!(config.set_atr_on_speed(AngularVelocity::from_degrees_per_second(100.0)));
+        assert!(config.set_atr_off_speed(AngularVelocity::from_degrees_per_second(100.0)));
+    });
+
+    tick_running_protective_pushback(&mut state, &telemetry, now);
+
+    let setpoints = state.all_data_payloads().base().setpoints();
+    assert!(setpoints.torque_tilt().angle().is_positive());
+    assert!(setpoints.atr().angle().is_negative());
+}
+
 fn set_protective_ride_state(
     state: &mut RefloatPackageState,
     mode: RefloatMode,
@@ -1075,6 +1260,203 @@ fn running_enters_duty_pushback_above_configured_threshold_like_refloat() {
     assert_eq!(
         base.setpoints().board().angle(),
         state.runtime_duty_pushback_step(),
+    );
+}
+
+#[test]
+fn running_enters_pack_low_voltage_pushback_below_sag_allowance_like_refloat() {
+    let (now, telemetry, mut state) = running_speed_or_sag_fixture(
+        InputVoltage::new(Voltage::from_volts(51.9)),
+        DirectionalMotorCurrent::new(Current::from_amps(40.0)),
+        VehicleSpeed::new(Speed::ZERO),
+    );
+
+    tick_running_protective_pushback(&mut state, &telemetry, now);
+
+    let base = state.all_data_payloads().base();
+    assert_eq!(
+        base.status().ride_state().setpoint_adjustment(),
+        RefloatSetpointAdjustment::PushbackLowVoltage
+    );
+    assert_eq!(
+        base.setpoints().board().angle(),
+        AngleDegrees::from_degrees(10.0)
+    );
+    assert_eq!(base.status().beep_reason(), RefloatBeepReason::LowVoltage);
+}
+
+#[test]
+fn running_enters_speed_pushback_above_configured_threshold_like_refloat() {
+    let (now, telemetry, mut state) = running_speed_or_sag_fixture(
+        InputVoltage::new(Voltage::from_volts(72.0)),
+        DirectionalMotorCurrent::new(Current::ZERO),
+        VehicleSpeed::new(Speed::from_kilometers_per_hour(10.1)),
+    );
+    edit_config(&mut state, |config| {
+        assert!(config.set_speed_pushback_threshold(vescpkg_rs::WireByte::new(10)));
+    });
+
+    tick_running_protective_pushback(&mut state, &telemetry, now);
+
+    let base = state.all_data_payloads().base();
+    assert_eq!(
+        base.status().ride_state().setpoint_adjustment(),
+        RefloatSetpointAdjustment::PushbackSpeed
+    );
+    assert_eq!(base.status().beep_reason(), RefloatBeepReason::Speed);
+    assert_eq!(
+        base.setpoints().board().angle(),
+        state.runtime_duty_pushback_step()
+    );
+}
+
+#[test]
+fn running_pack_low_voltage_sag_boundaries_match_refloat() {
+    for (volts, amps, expected) in [
+        (52.0, 40.0, RefloatSetpointAdjustment::None),
+        (53.0, 20.0, RefloatSetpointAdjustment::None),
+        (53.0, 19.9, RefloatSetpointAdjustment::PushbackLowVoltage),
+        (53.9, 5.0, RefloatSetpointAdjustment::None),
+        (53.9, 4.9, RefloatSetpointAdjustment::PushbackLowVoltage),
+    ] {
+        let (now, telemetry, mut state) = running_speed_or_sag_fixture(
+            InputVoltage::new(Voltage::from_volts(volts)),
+            DirectionalMotorCurrent::new(Current::from_amps(amps)),
+            VehicleSpeed::new(Speed::ZERO),
+        );
+
+        tick_running_protective_pushback(&mut state, &telemetry, now);
+
+        assert_eq!(
+            state
+                .all_data_payloads()
+                .base()
+                .status()
+                .ride_state()
+                .setpoint_adjustment(),
+            expected,
+            "volts={volts}, amps={amps}"
+        );
+    }
+}
+
+#[test]
+fn running_pack_sag_clears_existing_low_voltage_pushback_like_refloat() {
+    let (now, telemetry, mut state) = running_protective_pushback_fixture(
+        SignedRatio::from_ratio_const(0.10),
+        Rpm::from_revolutions_per_minute(1_000.0),
+        RefloatSetpointAdjustment::PushbackLowVoltage,
+        InputVoltage::new(Voltage::from_volts(52.0)),
+    );
+    let telemetry = telemetry
+        .with_directional_motor_current(DirectionalMotorCurrent::new(Current::from_amps(40.0)));
+
+    tick_running_protective_pushback(&mut state, &telemetry, now);
+
+    let base = state.all_data_payloads().base();
+    assert_eq!(
+        base.status().ride_state().setpoint_adjustment(),
+        RefloatSetpointAdjustment::None
+    );
+    assert_eq!(base.setpoints().board().angle(), AngleDegrees::ZERO);
+}
+
+#[test]
+fn running_speed_pushback_boundaries_direction_and_disable_match_refloat() {
+    for (threshold, speed, expected, expected_angle) in [
+        (10, 10.0, RefloatSetpointAdjustment::None, 0.0),
+        (10, 10.1, RefloatSetpointAdjustment::PushbackSpeed, 1.0),
+        (10, -10.1, RefloatSetpointAdjustment::PushbackSpeed, -1.0),
+        (0, 20.0, RefloatSetpointAdjustment::None, 0.0),
+    ] {
+        let (now, telemetry, mut state) = running_speed_or_sag_fixture(
+            InputVoltage::new(Voltage::from_volts(72.0)),
+            DirectionalMotorCurrent::new(Current::ZERO),
+            VehicleSpeed::new(Speed::from_kilometers_per_hour(speed)),
+        );
+        edit_config(&mut state, |config| {
+            assert!(config.set_speed_pushback_threshold(vescpkg_rs::WireByte::new(threshold)));
+        });
+
+        tick_running_protective_pushback(&mut state, &telemetry, now);
+
+        let base = state.all_data_payloads().base();
+        assert_eq!(
+            base.status().ride_state().setpoint_adjustment(),
+            expected,
+            "threshold={threshold}, speed={speed}"
+        );
+        assert_eq!(
+            base.setpoints().board().angle(),
+            state.runtime_duty_pushback_step() * expected_angle,
+            "threshold={threshold}, speed={speed}"
+        );
+    }
+}
+
+#[test]
+fn running_protective_priority_is_duty_then_pack_voltage_then_speed_like_refloat() {
+    for (duty, voltage, expected) in [
+        (0.81, 51.0, RefloatSetpointAdjustment::PushbackDuty),
+        (0.10, 51.0, RefloatSetpointAdjustment::PushbackLowVoltage),
+    ] {
+        let duty_cycle = DutyCycle::new(SignedRatio::from_ratio(duty).expect("test duty"));
+        let motor_erpm = Rpm::from_revolutions_per_minute(1_000.0);
+        let (now, telemetry, mut state) = running_protective_pushback_fixture(
+            duty_cycle.ratio(),
+            motor_erpm,
+            RefloatSetpointAdjustment::None,
+            InputVoltage::new(Voltage::from_volts(voltage)),
+        );
+        let telemetry = telemetry
+            .with_runtime_motor(
+                ElectricalSpeed::new(motor_erpm),
+                VehicleSpeed::new(Speed::from_kilometers_per_hour(20.0)),
+                TotalMotorCurrent::new(Current::ZERO),
+                InputCurrent::new(Current::ZERO),
+                duty_cycle,
+            )
+            .with_directional_motor_current(DirectionalMotorCurrent::new(Current::ZERO));
+        edit_config(&mut state, |config| {
+            assert!(config.set_speed_pushback_threshold(vescpkg_rs::WireByte::new(10)));
+        });
+
+        tick_running_protective_pushback(&mut state, &telemetry, now);
+
+        assert_eq!(
+            state
+                .all_data_payloads()
+                .base()
+                .status()
+                .ride_state()
+                .setpoint_adjustment(),
+            expected,
+            "duty={duty}, voltage={voltage}"
+        );
+    }
+}
+
+#[test]
+fn running_non_finite_speed_and_sag_current_fail_without_pushback_or_panic() {
+    let (now, telemetry, mut state) = running_speed_or_sag_fixture(
+        InputVoltage::new(Voltage::from_volts(53.9)),
+        DirectionalMotorCurrent::new(Current::from_amps(f32::NAN)),
+        VehicleSpeed::new(Speed::from_meters_per_second(f32::NAN)),
+    );
+    edit_config(&mut state, |config| {
+        assert!(config.set_speed_pushback_threshold(vescpkg_rs::WireByte::new(10)));
+    });
+
+    tick_running_protective_pushback(&mut state, &telemetry, now);
+
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .setpoint_adjustment(),
+        RefloatSetpointAdjustment::None
     );
 }
 

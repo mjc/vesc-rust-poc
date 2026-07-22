@@ -13,6 +13,11 @@ impl WireByte {
         Self(value)
     }
 
+    /// Return the validated protocol byte.
+    pub const fn as_u8(self) -> u8 {
+        self.0
+    }
+
     /// Apply a wire scale and offset directly through a semantic constructor.
     pub fn scaled<T>(self, scale: f32, offset: f32, constructor: fn(f32) -> T) -> T {
         constructor(f32::from(self.0) * scale + offset)

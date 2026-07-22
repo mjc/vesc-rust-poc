@@ -53,6 +53,22 @@ impl FirmwareTest {
         self.firmware.imu()
     }
 
+    /// Borrow typed PPM and UART controller inputs.
+    #[must_use]
+    pub fn input(&self) -> &crate::ControllerInput {
+        self.firmware.input()
+    }
+
+    /// Configure the latest PPM input sample.
+    pub fn set_ppm_input(&self, input: crate::PpmInput, age: crate::PpmAge) {
+        crate::test_ffi::set_ppm_input(input, age);
+    }
+
+    /// Configure the latest UART remote input sample.
+    pub fn set_remote_input(&self, input: crate::JoystickY, age: crate::RemoteAge) {
+        crate::test_ffi::set_remote_input(input, age);
+    }
+
     /// Access the same package custom-EEPROM range used on hardware.
     #[must_use]
     pub const fn eeprom(&self) -> crate::CustomEeprom {

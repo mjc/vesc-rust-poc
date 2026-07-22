@@ -171,6 +171,8 @@ pub struct Firmware {
     #[cfg(not(test))]
     gpio: crate::Gpio,
     #[cfg(not(test))]
+    input: crate::ControllerInput,
+    #[cfg(not(test))]
     imu: crate::imu::ImuApi<crate::imu::RealImuBindings>,
     #[cfg(not(test))]
     telemetry: crate::motor::MotorTelemetryApi<crate::motor::RealMotorTelemetryBindings>,
@@ -209,6 +211,12 @@ impl Firmware {
         &self.gpio
     }
 
+    /// Borrow typed PPM and UART controller inputs.
+    #[cfg(not(test))]
+    pub fn input(&self) -> &crate::ControllerInput {
+        &self.input
+    }
+
     /// Borrow firmware IMU capabilities without exposing the binding type.
     #[cfg(not(test))]
     pub fn imu(&self) -> &impl crate::Imu {
@@ -236,6 +244,7 @@ impl Firmware {
             clock: FirmwareClock::new(),
             nvm: crate::Nvm::new(),
             gpio: crate::Gpio::new(),
+            input: crate::ControllerInput::new(),
             imu: crate::imu::ImuApi::new(crate::imu::RealImuBindings),
             telemetry: crate::motor::MotorTelemetryApi::new(
                 crate::motor::RealMotorTelemetryBindings,

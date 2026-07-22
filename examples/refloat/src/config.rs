@@ -10,7 +10,7 @@ use vescpkg_rs::CustomConfigVoltageField;
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngularVelocity, ElectricalSpeed, IntegralCurrentGain,
     MahonyPitchGain, MahonyRollGain, MotorCurrent, MotorCurrentLimit, PidScale, RateCurrentGain,
-    Ratio, SampleRate, VescSeconds, Voltage,
+    Ratio, Rpm, SampleRate, Speed, VescSeconds, Voltage,
 };
 use vescpkg_rs::{
     CustomConfigAngleCurrentGainField, CustomConfigAngleField, CustomConfigAngularVelocityField,
@@ -87,10 +87,15 @@ impl RefloatConfigImage {
     const INPUT_TILT_REMOTE_TYPE_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: REFLOAT_CONFIG_LEN, offset: 79);
     const INPUT_TILT_ANGLE_LIMIT_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 80, scale: 100.0);
     const INPUT_TILT_SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: REFLOAT_CONFIG_LEN, offset: 82, scale: 100.0);
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    const INPUT_TILT_INVERT_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: REFLOAT_CONFIG_LEN, offset: 84);
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    const INPUT_TILT_DEADBAND_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: REFLOAT_CONFIG_LEN, offset: 85, scale: 10000.0);
     const HIGH_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 51, scale: 100.0);
     const HIGH_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigScaledVoltageField, len: REFLOAT_CONFIG_LEN, offset: 55, scale: 100.0);
     const LOW_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 57, scale: 100.0);
     const LOW_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigScaledVoltageField, len: REFLOAT_CONFIG_LEN, offset: 61, scale: 100.0);
+    const SPEED_PUSHBACK_THRESHOLD_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: REFLOAT_CONFIG_LEN, offset: 63);
     // Generated `is_beeper_enabled` follows the 18-byte hardware LED block
     // beginning at offset 224; upstream serializes it immediately before
     // `disabled` at offset 243 (`third_party/refloat/src/conf/settings.xml:4049-4064`).
@@ -239,6 +244,61 @@ impl RefloatConfigImage {
 
     pub(crate) fn low_voltage_threshold(&self) -> Voltage {
         generated_field(Self::LOW_VOLTAGE_THRESHOLD_FIELD.read(self))
+    }
+
+    pub(crate) fn speed_pushback_threshold(&self) -> Speed {
+        generated_field(Self::SPEED_PUSHBACK_THRESHOLD_FIELD.read(self)).scaled(
+            1.0,
+            0.0,
+            Speed::from_kilometers_per_hour,
+        )
+    }
+
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    pub(crate) fn input_tilt_remote_type(&self) -> u8 {
+        generated_field(Self::INPUT_TILT_REMOTE_TYPE_FIELD.read(self)).as_u8()
+    }
+
+    pub(crate) fn input_tilt_angle_limit(&self) -> AngleDegrees {
+        generated_field(Self::INPUT_TILT_ANGLE_LIMIT_FIELD.read(self))
+    }
+
+    pub(crate) fn input_tilt_speed(&self) -> AngularVelocity {
+        generated_field(Self::INPUT_TILT_SPEED_FIELD.read(self))
+    }
+
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    pub(crate) fn input_tilt_inverted(&self) -> bool {
+        self.flag(Self::INPUT_TILT_INVERT_FIELD)
+    }
+
+    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    pub(crate) fn input_tilt_deadband(&self) -> Ratio {
+        generated_field(Self::INPUT_TILT_DEADBAND_FIELD.read(self))
+    }
+
+    pub(crate) fn tiltback_constant(&self) -> AngleDegrees {
+        generated_field(Self::TILTBACK_CONSTANT_ANGLE_FIELD.read(self))
+    }
+
+    pub(crate) fn tiltback_constant_erpm(&self) -> ElectricalSpeed {
+        generated_field(Self::TILTBACK_CONSTANT_ERPM_FIELD.read(self))
+    }
+
+    pub(crate) fn tiltback_variable(&self) -> PidScale {
+        generated_field(Self::TILTBACK_VARIABLE_RATE_FIELD.read(self))
+    }
+
+    pub(crate) fn tiltback_variable_max(&self) -> AngleDegrees {
+        generated_field(Self::TILTBACK_VARIABLE_MAX_FIELD.read(self))
+    }
+
+    pub(crate) fn tiltback_variable_erpm(&self) -> ElectricalSpeed {
+        generated_field(Self::TILTBACK_VARIABLE_ERPM_FIELD.read(self))
+    }
+
+    pub(crate) fn nose_angling_speed(&self) -> AngularVelocity {
+        generated_field(Self::NOSE_ANGLING_SPEED_FIELD.read(self))
     }
 
     pub(crate) fn beeper_enabled(&self) -> bool {
@@ -438,6 +498,13 @@ impl RefloatConfigEditor<'_> {
             .is_some()
     }
 
+    #[cfg(test)]
+    pub(crate) fn set_speed_pushback_threshold(&mut self, speed: vescpkg_rs::WireByte) -> bool {
+        RefloatConfigImage::SPEED_PUSHBACK_THRESHOLD_FIELD
+            .write(self, speed)
+            .is_some()
+    }
+
     pub(crate) fn set_dirty_landings_enabled(&mut self, enabled: bool) -> bool {
         self.set_flag(RefloatStartupConfig::DIRTY_LANDINGS_FIELD, enabled)
     }
@@ -505,6 +572,18 @@ impl RefloatConfigEditor<'_> {
     pub(crate) fn set_input_tilt_speed(&mut self, speed: AngularVelocity) -> bool {
         RefloatConfigImage::INPUT_TILT_SPEED_FIELD
             .write(self, speed)
+            .is_some()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_input_tilt_inverted(&mut self, inverted: bool) -> bool {
+        self.set_flag(RefloatConfigImage::INPUT_TILT_INVERT_FIELD, inverted)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_input_tilt_deadband(&mut self, deadband: Ratio) -> bool {
+        RefloatConfigImage::INPUT_TILT_DEADBAND_FIELD
+            .write(self, deadband)
             .is_some()
     }
 
@@ -997,7 +1076,9 @@ impl RefloatBalanceConfig<'_> {
     const TORQUE_TILT_REGEN_STRENGTH_FIELD: CustomConfigPidScaleField = vescpkg_rs::generated_custom_config_field!(CustomConfigPidScaleField, len: REFLOAT_CONFIG_LEN, offset: 128, scale: 1000.0);
     const TURN_TILT_STRENGTH_FIELD: CustomConfigPidScaleField = vescpkg_rs::generated_custom_config_field!(CustomConfigPidScaleField, len: REFLOAT_CONFIG_LEN, offset: 130, scale: 100.0);
     const TURN_TILT_ANGLE_LIMIT_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 132, scale: 100.0);
+    const TURN_TILT_START_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 134, scale: 100.0);
     const TURN_TILT_START_ERPM_FIELD: CustomConfigElectricalSpeedField = vescpkg_rs::generated_custom_config_field!(CustomConfigElectricalSpeedField, len: REFLOAT_CONFIG_LEN, offset: 136);
+    const TURN_TILT_SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: REFLOAT_CONFIG_LEN, offset: 138, scale: 100.0);
     const ATR_STRENGTH_UP_FIELD: CustomConfigPidScaleField = vescpkg_rs::generated_custom_config_field!(CustomConfigPidScaleField, len: REFLOAT_CONFIG_LEN, offset: 145, scale: 1000.0);
     const ATR_STRENGTH_DOWN_FIELD: CustomConfigPidScaleField = vescpkg_rs::generated_custom_config_field!(CustomConfigPidScaleField, len: REFLOAT_CONFIG_LEN, offset: 147, scale: 1000.0);
     const ATR_THRESHOLD_UP_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: REFLOAT_CONFIG_LEN, offset: 149, scale: 100.0);
@@ -1059,6 +1140,121 @@ impl RefloatBalanceConfig<'_> {
 
     pub(crate) fn brake_booster_current(self) -> MotorCurrent {
         generated_field(Self::BRAKE_BOOSTER_CURRENT_FIELD.read(self.0))
+    }
+
+    pub(crate) fn torque_tilt_start_current(self) -> MotorCurrent {
+        generated_field(Self::TORQUE_TILT_START_CURRENT_FIELD.read(self.0))
+    }
+
+    pub(crate) fn torque_tilt_angle_limit(self) -> AngleDegrees {
+        generated_field(Self::TORQUE_TILT_ANGLE_LIMIT_FIELD.read(self.0))
+    }
+
+    pub(crate) fn torque_tilt_on_speed(self) -> AngularVelocity {
+        generated_field(Self::TORQUE_TILT_ON_SPEED_FIELD.read(self.0))
+    }
+
+    pub(crate) fn torque_tilt_off_speed(self) -> AngularVelocity {
+        generated_field(Self::TORQUE_TILT_OFF_SPEED_FIELD.read(self.0))
+    }
+
+    pub(crate) fn torque_tilt_strength(self) -> PidScale {
+        generated_field(Self::TORQUE_TILT_STRENGTH_FIELD.read(self.0))
+    }
+
+    pub(crate) fn torque_tilt_regen_strength(self) -> PidScale {
+        generated_field(Self::TORQUE_TILT_REGEN_STRENGTH_FIELD.read(self.0))
+    }
+
+    pub(crate) fn turn_tilt_strength(self) -> PidScale {
+        generated_field(Self::TURN_TILT_STRENGTH_FIELD.read(self.0))
+    }
+
+    pub(crate) fn turn_tilt_angle_limit(self) -> AngleDegrees {
+        generated_field(Self::TURN_TILT_ANGLE_LIMIT_FIELD.read(self.0))
+    }
+
+    pub(crate) fn turn_tilt_start_angle(self) -> AngleDegrees {
+        generated_field(Self::TURN_TILT_START_ANGLE_FIELD.read(self.0))
+    }
+
+    pub(crate) fn turn_tilt_start_erpm(self) -> ElectricalSpeed {
+        generated_field(Self::TURN_TILT_START_ERPM_FIELD.read(self.0))
+    }
+
+    pub(crate) fn turn_tilt_speed(self) -> AngularVelocity {
+        generated_field(Self::TURN_TILT_SPEED_FIELD.read(self.0))
+    }
+
+    pub(crate) fn turn_tilt_erpm_boost(self) -> u16 {
+        u16::from_be_bytes([self.0.as_bytes()[140], self.0.as_bytes()[141]])
+    }
+
+    pub(crate) fn turn_tilt_erpm_boost_end(self) -> Rpm {
+        Rpm::from_revolutions_per_minute(f32::from(u16::from_be_bytes([
+            self.0.as_bytes()[142],
+            self.0.as_bytes()[143],
+        ])))
+    }
+
+    pub(crate) fn turn_tilt_yaw_aggregate(self) -> AngleDegrees {
+        AngleDegrees::from_degrees(f32::from(self.0.as_bytes()[144]))
+    }
+
+    pub(crate) fn atr_strength_up(self) -> PidScale {
+        generated_field(Self::ATR_STRENGTH_UP_FIELD.read(self.0))
+    }
+
+    pub(crate) fn atr_strength_down(self) -> PidScale {
+        generated_field(Self::ATR_STRENGTH_DOWN_FIELD.read(self.0))
+    }
+
+    pub(crate) fn atr_threshold_up(self) -> AngleDegrees {
+        generated_field(Self::ATR_THRESHOLD_UP_FIELD.read(self.0))
+    }
+
+    pub(crate) fn atr_threshold_down(self) -> AngleDegrees {
+        generated_field(Self::ATR_THRESHOLD_DOWN_FIELD.read(self.0))
+    }
+
+    pub(crate) fn atr_speed_boost(self) -> PidScale {
+        generated_field(Self::ATR_SPEED_BOOST_FIELD.read(self.0))
+    }
+
+    pub(crate) fn atr_angle_limit(self) -> AngleDegrees {
+        generated_field(Self::ATR_ANGLE_LIMIT_FIELD.read(self.0))
+    }
+
+    pub(crate) fn atr_on_speed(self) -> AngularVelocity {
+        generated_field(Self::ATR_ON_SPEED_FIELD.read(self.0))
+    }
+
+    pub(crate) fn atr_off_speed(self) -> AngularVelocity {
+        generated_field(Self::ATR_OFF_SPEED_FIELD.read(self.0))
+    }
+
+    pub(crate) fn atr_response_boost(self) -> PidScale {
+        generated_field(Self::ATR_RESPONSE_BOOST_FIELD.read(self.0))
+    }
+
+    pub(crate) fn atr_transition_boost(self) -> PidScale {
+        generated_field(Self::ATR_TRANSITION_BOOST_FIELD.read(self.0))
+    }
+
+    pub(crate) fn atr_amps_accel_ratio(self) -> PidScale {
+        generated_field(Self::ATR_AMPS_ACCEL_RATIO_FIELD.read(self.0))
+    }
+
+    pub(crate) fn atr_amps_decel_ratio(self) -> PidScale {
+        generated_field(Self::ATR_AMPS_DECEL_RATIO_FIELD.read(self.0))
+    }
+
+    pub(crate) fn brake_tilt_strength(self) -> PidScale {
+        generated_field(Self::BRAKE_TILT_STRENGTH_FIELD.read(self.0))
+    }
+
+    pub(crate) fn brake_tilt_lingering(self) -> PidScale {
+        generated_field(Self::BRAKE_TILT_LINGERING_FIELD.read(self.0))
     }
 }
 
