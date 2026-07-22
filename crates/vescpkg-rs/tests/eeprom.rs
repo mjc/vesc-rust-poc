@@ -36,6 +36,19 @@ fn byte_image_operations_report_missing_reads_and_failed_writes() {
 }
 
 #[test]
+fn byte_image_read_reports_interrupted_image_without_erasing_prefix() {
+    let firmware = FirmwareTest::new();
+    let eeprom = firmware.eeprom();
+    let first = CustomEepromAddress::from_index(200).expect("address fits");
+    assert!(eeprom.write(first, EepromWord::from_ne_bytes([1, 2, 3, 4])));
+
+    let mut bytes = [0xaa; 8];
+    assert!(!eeprom.read_bytes_at(first, &mut bytes));
+    assert_eq!(&bytes[..4], &[1, 2, 3, 4]);
+    assert_eq!(&bytes[4..], &[0xaa; 4]);
+}
+
+#[test]
 fn eeprom_words_round_trip_supported_scalar_codecs() {
     assert_eq!(EepromWord::from_u32(0xfeed_beef).to_u32(), 0xfeed_beef);
     assert_eq!(EepromWord::from_i32(-42).to_i32(), -42);
