@@ -53,6 +53,17 @@ impl ExpressTarget {
         }
     }
 
+    /// Parse the canonical ESP-IDF target name.
+    pub fn from_target_name(name: &str) -> Option<Self> {
+        match name {
+            "esp32c3" => Some(Self::Esp32C3),
+            "esp32s3" => Some(Self::Esp32S3),
+            "esp32c6" => Some(Self::Esp32C6),
+            "esp32p4" => Some(Self::Esp32P4),
+            _ => None,
+        }
+    }
+
     /// Return the `sdkconfig.h` preprocessor define required for this target.
     pub const fn sdkconfig_define(self) -> &'static str {
         match self {

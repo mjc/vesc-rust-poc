@@ -23,10 +23,11 @@ That header defines:
 The firmware table addresses are represented by `ExpressTarget` and are
 target-specific: ESP32-C3 `0x3FCDBE00`,
 ESP32-S3 `0x3FCE8800`, ESP32-C6 `0x4087B800`, and ESP32-P4 `0x4FF3A000`.
-`ExpressTarget::target_name` and `sdkconfig_define` provide the corresponding
-ESP-IDF target selection (`esp32c3`, `esp32s3`, `esp32c6`, or `esp32p4`) for a
-future native-library build integration. They are documentation/metadata only
-here; a host pointer must never be made from one of these values.
+`ExpressTarget::target_name`, `from_target_name`, and `sdkconfig_define` provide
+the corresponding ESP-IDF target selection (`esp32c3`, `esp32s3`, `esp32c6`, or
+`esp32p4`) for a future native-library build integration. They are
+documentation/metadata only here; a host pointer must never be made from one
+of these values.
 
 ## Build boundary
 
