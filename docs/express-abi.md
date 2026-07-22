@@ -57,6 +57,11 @@ allocation. It is not installed as a global allocator: callers initialize or
 borrow the handle deliberately, and drop always returns the pointer through the
 Express `free` slot.
 
+`ExpressLisp` covers the core scalar encode/decode, cons/list, and type-
+predicate slots with typed `ExpressLispValue`/`ExpressLispSymbol` wrappers.
+String and array pointer APIs remain outside this facade until their firmware
+ownership scopes are modeled.
+
 The fixed-address `ExpressInterface::from_target` constructor is also unsafe:
 it is only valid on the matching 32-bit Express target and is intentionally not
 used by host tests. This foundation deliberately does not use bindgen.

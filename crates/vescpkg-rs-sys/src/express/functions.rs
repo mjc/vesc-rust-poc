@@ -6,6 +6,12 @@ use core::ffi::{c_char, c_void};
 pub type Systime = u32;
 /// Express LispBM context identifier (`lbm_cid`).
 pub type LbmCid = u32;
+/// Express LispBM value (`lbm_value`).
+pub type LbmValue = u32;
+/// Express LispBM unsigned integer (`lbm_uint`).
+pub type LbmUint = u32;
+/// Express LispBM signed integer (`lbm_int`).
+pub type LbmInt = i32;
 /// Firmware-owned thread handle (`lib_thread`).
 pub type LibThread = *mut c_void;
 /// Firmware-owned mutex handle (`lib_mutex`).
@@ -64,3 +70,46 @@ pub type SemaphoreSignal = unsafe extern "C" fn(LibSemaphore);
 pub type SemaphoreWaitTo = unsafe extern "C" fn(LibSemaphore, Systime) -> bool;
 /// `sem_reset` function-pointer ABI.
 pub type SemaphoreReset = unsafe extern "C" fn(LibSemaphore);
+
+/// `lbm_cons` function-pointer ABI.
+pub type LbmCons = unsafe extern "C" fn(LbmValue, LbmValue) -> LbmValue;
+/// `lbm_car` function-pointer ABI.
+pub type LbmCar = unsafe extern "C" fn(LbmValue) -> LbmValue;
+/// `lbm_cdr` function-pointer ABI.
+pub type LbmCdr = unsafe extern "C" fn(LbmValue) -> LbmValue;
+/// `lbm_list_destructive_reverse` function-pointer ABI.
+pub type LbmListDestructiveReverse = unsafe extern "C" fn(LbmValue) -> LbmValue;
+/// `lbm_enc_i` function-pointer ABI.
+pub type LbmEncI = unsafe extern "C" fn(LbmInt) -> LbmValue;
+/// `lbm_enc_u` function-pointer ABI.
+pub type LbmEncU = unsafe extern "C" fn(LbmUint) -> LbmValue;
+/// `lbm_enc_char` function-pointer ABI.
+pub type LbmEncChar = unsafe extern "C" fn(u8) -> LbmValue;
+/// `lbm_enc_float` function-pointer ABI.
+pub type LbmEncFloat = unsafe extern "C" fn(f32) -> LbmValue;
+/// `lbm_enc_u32` function-pointer ABI.
+pub type LbmEncU32 = unsafe extern "C" fn(u32) -> LbmValue;
+/// `lbm_enc_i32` function-pointer ABI.
+pub type LbmEncI32 = unsafe extern "C" fn(i32) -> LbmValue;
+/// `lbm_enc_sym` function-pointer ABI.
+pub type LbmEncSym = unsafe extern "C" fn(LbmUint) -> LbmValue;
+/// `lbm_dec_as_float` function-pointer ABI.
+pub type LbmDecAsFloat = unsafe extern "C" fn(LbmValue) -> f32;
+/// `lbm_dec_as_u32` function-pointer ABI.
+pub type LbmDecAsU32 = unsafe extern "C" fn(LbmValue) -> u32;
+/// `lbm_dec_as_i32` function-pointer ABI.
+pub type LbmDecAsI32 = unsafe extern "C" fn(LbmValue) -> i32;
+/// `lbm_dec_char` function-pointer ABI.
+pub type LbmDecChar = unsafe extern "C" fn(LbmValue) -> u8;
+/// `lbm_dec_sym` function-pointer ABI.
+pub type LbmDecSym = unsafe extern "C" fn(LbmValue) -> LbmUint;
+/// `lbm_is_byte_array` function-pointer ABI.
+pub type LbmIsByteArray = unsafe extern "C" fn(LbmValue) -> bool;
+/// `lbm_is_cons` function-pointer ABI.
+pub type LbmIsCons = unsafe extern "C" fn(LbmValue) -> bool;
+/// `lbm_is_number` function-pointer ABI.
+pub type LbmIsNumber = unsafe extern "C" fn(LbmValue) -> bool;
+/// `lbm_is_char` function-pointer ABI.
+pub type LbmIsChar = unsafe extern "C" fn(LbmValue) -> bool;
+/// `lbm_is_symbol` function-pointer ABI.
+pub type LbmIsSymbol = unsafe extern "C" fn(LbmValue) -> bool;

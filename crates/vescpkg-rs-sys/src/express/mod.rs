@@ -7,6 +7,7 @@
 //! slot order or target pointers with STM32.
 
 mod functions;
+mod lisp;
 mod loader;
 mod memory;
 mod runtime;
@@ -15,6 +16,7 @@ mod table;
 mod types;
 
 pub use functions::*;
+pub use lisp::{ExpressLisp, ExpressLispSymbol, ExpressLispValue};
 pub use loader::{ExpressCallError, ExpressInterface, ExpressLoadError};
 pub use memory::{ExpressAllocation, ExpressAllocationError};
 pub use runtime::ExpressRuntime;
@@ -136,6 +138,19 @@ mod tests {
             unsafe { runtime.spawn(express_noop, 256, core::ptr::null(), core::ptr::null_mut()) },
             Err(ExpressCallError {
                 slot: ExpressSlot::Spawn
+            })
+        );
+        let lisp = unsafe { ExpressLisp::from_interface(interface) };
+        assert_eq!(
+            lisp.enc_i(1),
+            Err(ExpressCallError {
+                slot: ExpressSlot::LbmEncI
+            })
+        );
+        assert_eq!(
+            lisp.is_number(ExpressLispValue::new(0)),
+            Err(ExpressCallError {
+                slot: ExpressSlot::LbmIsNumber
             })
         );
     }
