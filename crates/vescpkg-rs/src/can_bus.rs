@@ -3,8 +3,9 @@
 use crate::types::{
     AmpHoursCharged, AmpHoursDischarged, CanControllerId, CanExtendedId, CanPayloadLen,
     CanStandardId, CurrentRelative, DutyCycle, ElectricalSpeed, MotorCurrent, PidPosition,
+    WattHoursCharged, WattHoursDischarged,
 };
-use crate::units::{Charge, Current, Rpm, SignedRatio, TimestampTicks};
+use crate::units::{Charge, Current, Energy, Rpm, SignedRatio, TimestampTicks};
 
 /// Failure returned by a CAN operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,6 +70,31 @@ pub struct CanStatus2 {
     controller: CanControllerId,
     amp_hours_discharged: AmpHoursDischarged,
     amp_hours_charged: AmpHoursCharged,
+}
+
+/// A copied snapshot of CAN status message 3.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CanStatus3 {
+    controller: CanControllerId,
+    watt_hours_discharged: WattHoursDischarged,
+    watt_hours_charged: WattHoursCharged,
+}
+
+impl CanStatus3 {
+    /// Return the controller whose status was queried.
+    pub const fn controller(self) -> CanControllerId {
+        self.controller
+    }
+
+    /// Return discharged watt-hours reported by the remote controller.
+    pub const fn watt_hours_discharged(self) -> WattHoursDischarged {
+        self.watt_hours_discharged
+    }
+
+    /// Return charged watt-hours reported by the remote controller.
+    pub const fn watt_hours_charged(self) -> WattHoursCharged {
+        self.watt_hours_charged
+    }
 }
 
 impl CanStatus2 {
@@ -226,6 +252,20 @@ impl CanBus {
             controller,
             amp_hours_discharged: AmpHoursDischarged::new(Charge::from_amp_hours(raw.amp_hours)),
             amp_hours_charged: AmpHoursCharged::new(Charge::from_amp_hours(raw.amp_hours_charged)),
+        })
+    }
+
+    /// Copy CAN status message 3 for one remote controller.
+    pub fn status3(&self, controller: CanControllerId) -> Option<CanStatus3> {
+        let raw = unsafe { crate::ffi::can_status_msg_3_id(i32::from(controller.as_u8())) }?;
+        Some(CanStatus3 {
+            controller,
+            watt_hours_discharged: WattHoursDischarged::new(Energy::from_watt_hours(
+                raw.watt_hours,
+            )),
+            watt_hours_charged: WattHoursCharged::new(Energy::from_watt_hours(
+                raw.watt_hours_charged,
+            )),
         })
     }
 }

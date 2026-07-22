@@ -11,7 +11,7 @@ use crate::{
     MotorCurrentLimit, MotorTemperature, OdometerMeters, TotalMotorCurrent, TripDistance,
     VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
-use vescpkg_rs_sys::raw::{CanStatusMsg, CanStatusMsg2, LbmFlatValue};
+use vescpkg_rs_sys::raw::{CanStatusMsg, CanStatusMsg2, CanStatusMsg3, LbmFlatValue};
 use vescpkg_rs_sys::{HardwareType, LbmValue, VescPin, VescPinMode};
 
 /// Host replacement for the firmware `%s` logging path.
@@ -112,6 +112,12 @@ static CAN_STATUS_2: CanStatusMsg2 = CanStatusMsg2 {
     rx_time: 123,
     amp_hours: 1.25,
     amp_hours_charged: 2.5,
+};
+static CAN_STATUS_3: CanStatusMsg3 = CanStatusMsg3 {
+    id: 7,
+    rx_time: 123,
+    watt_hours: 10.0,
+    watt_hours_charged: 4.0,
 };
 static THREAD_SPAWN_COUNT: AtomicUsize = AtomicUsize::new(0);
 static THREAD_SPAWN_STACKS: [AtomicUsize; 2] = [const { AtomicUsize::new(0) }; 2];
@@ -705,6 +711,10 @@ pub unsafe fn can_status_msg_id(_id: i32) -> Option<CanStatusMsg> {
 
 pub unsafe fn can_status_msg_2_id(_id: i32) -> Option<CanStatusMsg2> {
     Some(CAN_STATUS_2)
+}
+
+pub unsafe fn can_status_msg_3_id(_id: i32) -> Option<CanStatusMsg3> {
+    Some(CAN_STATUS_3)
 }
 
 pub(crate) fn mutex_lock_count() -> usize {
