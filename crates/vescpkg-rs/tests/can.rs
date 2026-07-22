@@ -3,9 +3,9 @@
 
 use vescpkg_rs::{
     AngleDegrees, CanBus, CanControllerId, CanError, CanExtendedId, CanHardwareType,
-    CanReceiverGuard, CanReceiverHandler, CanReceiverId, CanStandardId, Current, CurrentRelative,
-    DutyCycle, ElectricalSpeed, MotorCurrent, PackageRuntimeState, PackageStateStore, PidPosition,
-    Rpm, SignedRatio,
+    CanReceiverGuard, CanReceiverHandler, CanReceiverId, CanStandardId, CanStatusStore, Current,
+    CurrentRelative, DutyCycle, ElectricalSpeed, MotorCurrent, PackageRuntimeState,
+    PackageStateStore, PidPosition, Rpm, SignedRatio,
 };
 
 struct ReceiverHandler;
@@ -197,6 +197,18 @@ fn can_status_reports_wrapping_age_and_staleness() {
 
     assert_eq!(status.age_at(now).as_ticks(), 7);
     assert!(status.is_stale(now, vescpkg_rs::SystemTicks::from_ticks(5)));
+}
+
+#[test]
+fn can_status_store_copies_available_messages_and_can_ping() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    let mut store = CanStatusStore::new(CanControllerId::new(7));
+
+    assert_eq!(store.ping(firmware.can()), Ok(CanHardwareType::Vesc));
+    assert_eq!(store.refresh(firmware.can()), 6);
+    assert!(store.status().is_some());
+    assert!(store.status6().is_some());
+    assert_eq!(store.controller().as_u8(), 7);
 }
 
 #[test]

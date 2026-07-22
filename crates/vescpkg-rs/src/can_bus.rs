@@ -302,6 +302,99 @@ impl CanStatus {
     }
 }
 
+/// Owned collection of the six status messages for one remote controller.
+///
+/// Refreshing copies each firmware-owned record into package memory. Missing
+/// messages clear their previous snapshot and are reported by the returned
+/// count rather than being mistaken for stale data.
+#[derive(Debug, Clone, Copy)]
+pub struct CanStatusStore {
+    controller: CanControllerId,
+    status: Option<CanStatus>,
+    status2: Option<CanStatus2>,
+    status3: Option<CanStatus3>,
+    status4: Option<CanStatus4>,
+    status5: Option<CanStatus5>,
+    status6: Option<CanStatus6>,
+}
+
+impl CanStatusStore {
+    /// Create an empty status store for one controller ID.
+    #[must_use]
+    pub const fn new(controller: CanControllerId) -> Self {
+        Self {
+            controller,
+            status: None,
+            status2: None,
+            status3: None,
+            status4: None,
+            status5: None,
+            status6: None,
+        }
+    }
+
+    /// Copy all available status messages and return the number received.
+    pub fn refresh(&mut self, bus: &CanBus) -> usize {
+        self.status = bus.status(self.controller);
+        self.status2 = bus.status2(self.controller);
+        self.status3 = bus.status3(self.controller);
+        self.status4 = bus.status4(self.controller);
+        self.status5 = bus.status5(self.controller);
+        self.status6 = bus.status6(self.controller);
+        [
+            self.status.is_some(),
+            self.status2.is_some(),
+            self.status3.is_some(),
+            self.status4.is_some(),
+            self.status5.is_some(),
+            self.status6.is_some(),
+        ]
+        .into_iter()
+        .filter(|present| *present)
+        .count()
+    }
+
+    /// Return the controller represented by this store.
+    pub const fn controller(self) -> CanControllerId {
+        self.controller
+    }
+
+    /// Return the copied status message 1 snapshot.
+    pub const fn status(self) -> Option<CanStatus> {
+        self.status
+    }
+
+    /// Return the copied status message 2 snapshot.
+    pub const fn status2(self) -> Option<CanStatus2> {
+        self.status2
+    }
+
+    /// Return the copied status message 3 snapshot.
+    pub const fn status3(self) -> Option<CanStatus3> {
+        self.status3
+    }
+
+    /// Return the copied status message 4 snapshot.
+    pub const fn status4(self) -> Option<CanStatus4> {
+        self.status4
+    }
+
+    /// Return the copied status message 5 snapshot.
+    pub const fn status5(self) -> Option<CanStatus5> {
+        self.status5
+    }
+
+    /// Return the copied status message 6 snapshot.
+    pub const fn status6(self) -> Option<CanStatus6> {
+        self.status6
+    }
+
+    /// Ping the store's controller and return its hardware family.
+    pub fn ping(&self, bus: &CanBus) -> Result<CanHardwareType, CanError> {
+        bus.ping(self.controller)
+    }
+}
+
 /// Safe access to the firmware CAN table.
 pub struct CanBus;
 
