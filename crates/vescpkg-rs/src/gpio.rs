@@ -344,7 +344,7 @@ fn claim(pin: i32) -> Result<u32, GpioError> {
         .map_err(|_| GpioError::Busy)
 }
 
-#[cfg(all(feature = "test-support", not(test)))]
+#[cfg(any(feature = "test-support", target_arch = "arm"))]
 pub(crate) fn reset_leases() {
     GPIO_LEASES.store(0, Ordering::Release);
 }

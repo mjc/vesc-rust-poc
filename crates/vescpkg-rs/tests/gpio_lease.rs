@@ -1,7 +1,19 @@
 #![cfg(feature = "test-support")]
 //! Integration coverage for leased GPIO access.
 
-use vescpkg_rs::{DigitalOutputLevel, DigitalPin, GpioError, GpioMode};
+use vescpkg_rs::{
+    DigitalOutputLevel, DigitalPin, GpioError, GpioMode, PackageRuntimeState, PackageStateStore,
+};
+
+struct PackageState;
+
+static PACKAGE_STATE: PackageStateStore<PackageState> = PackageStateStore::new();
+
+impl PackageRuntimeState for PackageState {
+    fn runtime_store() -> &'static PackageStateStore<Self> {
+        &PACKAGE_STATE
+    }
+}
 
 #[test]
 fn gpio_leases_are_exclusive_and_release_on_drop() {
@@ -73,6 +85,28 @@ fn gpio_leases_cover_pull_and_open_drain_modes() {
                 .expect("output mode write");
         }
     }
+}
+
+#[test]
+fn package_stop_invalidates_retained_gpio_leases() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    let gpio = firmware.gpio();
+    let retained = gpio
+        .acquire_digital(DigitalPin::HW_2)
+        .expect("retained lease");
+    let mut info = vescpkg_rs::test_support::LoaderInfo::new();
+    let mut start = vescpkg_rs::test_support::package_start(&mut info);
+    start
+        .install_runtime_state(PackageState)
+        .expect("package state");
+    assert!(start.finish_start(true));
+    assert!(vescpkg_rs::test_support::stop_package(&mut info));
+
+    let replacement = gpio
+        .acquire_digital(DigitalPin::HW_2)
+        .expect("stop invalidated the retained lease");
+    drop(replacement);
+    drop(retained);
 }
 
 #[test]
