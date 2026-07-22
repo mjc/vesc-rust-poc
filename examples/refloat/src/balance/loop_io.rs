@@ -99,6 +99,11 @@ impl LoopState {
             softstart_pid_limit: zero_current,
         }
     }
+
+    /// Reset transient PID state like upstream `pid_init`.
+    pub(crate) fn reset_pid(&mut self) {
+        self.pid = PidState::source_startup();
+    }
 }
 
 /// Result of one Refloat RUNNING balance-current step.

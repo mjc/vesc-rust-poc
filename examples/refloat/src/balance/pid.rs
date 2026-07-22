@@ -42,9 +42,15 @@ impl SetpointError {
         limit: MotorCurrentLimit,
     ) -> MotorCurrent {
         // C map: `third_party/refloat/src/pid.c:40-46` integrates `p * ki`, then
-        // clamps by `ki_limit` while preserving sign.
+        // clamps by a positive `ki_limit` while preserving sign. Zero is the
+        // disabled-limit sentinel exposed at
+        // `third_party/refloat/src/conf/settings.xml:1679-1707`.
         let next = integral + self.angle() * ki;
-        limit.clamp(next)
+        if limit.current().is_positive() {
+            limit.clamp(next)
+        } else {
+            next
+        }
     }
 
     #[inline(always)]

@@ -218,6 +218,11 @@ fn startup_ready_resets_runtime_vars_like_refloat() {
     let imu = telemetry.imu();
     let mut state = RefloatPackageState::new(RefloatAllDataPayloads::source_startup());
     state.set_balance_filter_for_test(balance_filter_with_pitch(AngleRadians::from_radians(1.2)));
+    state.balance_loop.pid.integral_current = MotorCurrent::new(Current::from_amps(8.0));
+    state.balance_loop.pid.kp_brake_scale = PidScale::new(0.2);
+    state.balance_loop.pid.kp2_brake_scale = PidScale::new(0.3);
+    state.balance_loop.pid.kp_accel_scale = PidScale::new(0.4);
+    state.balance_loop.pid.kp2_accel_scale = PidScale::new(0.5);
 
     assert!(tick_refloat_state_and_handle_packet(
         &mut state,
@@ -243,6 +248,14 @@ fn startup_ready_resets_runtime_vars_like_refloat() {
     // `third_party/refloat/src/main.c:249-252`.
     assert_eq!(base.balance_current().current().current().as_amps(), 0.0);
     assert_eq!(base.booster_current().current().current().as_amps(), 0.0);
+    assert_eq!(
+        state.balance_loop.pid.integral_current.current(),
+        Current::ZERO
+    );
+    assert_eq!(state.balance_loop.pid.kp_brake_scale, PidScale::new(1.0));
+    assert_eq!(state.balance_loop.pid.kp2_brake_scale, PidScale::new(1.0));
+    assert_eq!(state.balance_loop.pid.kp_accel_scale, PidScale::new(1.0));
+    assert_eq!(state.balance_loop.pid.kp2_accel_scale, PidScale::new(1.0));
     let expected_startup_setpoint = AngleRadians::from_radians(1.2).as_degrees();
     assert!(
         (base.setpoints().board().angle().as_degrees() - expected_startup_setpoint).abs() < 0.0001
@@ -333,6 +346,11 @@ fn ready_engage_resets_runtime_vars_like_refloat() {
         payloads.mode4(),
     ));
     state.set_balance_filter_for_test(balance_filter_with_pitch(AngleRadians::from_radians(0.05)));
+    state.balance_loop.pid.integral_current = MotorCurrent::new(Current::from_amps(8.0));
+    state.balance_loop.pid.kp_brake_scale = PidScale::new(0.2);
+    state.balance_loop.pid.kp2_brake_scale = PidScale::new(0.3);
+    state.balance_loop.pid.kp_accel_scale = PidScale::new(0.4);
+    state.balance_loop.pid.kp2_accel_scale = PidScale::new(0.5);
 
     assert!(tick_refloat_state_and_handle_packet(
         &mut state,
@@ -360,6 +378,14 @@ fn ready_engage_resets_runtime_vars_like_refloat() {
         expected_engage_setpoint
     );
     assert_eq!(base.setpoints().remote().angle().as_degrees(), 0.0);
+    assert_eq!(
+        state.balance_loop.pid.integral_current.current(),
+        Current::ZERO
+    );
+    assert_eq!(state.balance_loop.pid.kp_brake_scale, PidScale::new(1.0));
+    assert_eq!(state.balance_loop.pid.kp2_brake_scale, PidScale::new(1.0));
+    assert_eq!(state.balance_loop.pid.kp_accel_scale, PidScale::new(1.0));
+    assert_eq!(state.balance_loop.pid.kp2_accel_scale, PidScale::new(1.0));
     assert!(!state.apply_requested_motor_current(bindings));
 }
 

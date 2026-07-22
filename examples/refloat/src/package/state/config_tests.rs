@@ -11,7 +11,7 @@ use crate::package::test_support::{
 };
 use std::{vec, vec::Vec};
 use vescpkg_rs::test_support::FirmwareTest;
-use vescpkg_rs::{MahonyPitchGain, MahonyRollGain, TimestampTicks};
+use vescpkg_rs::{Current, MahonyPitchGain, MahonyRollGain, MotorCurrent, TimestampTicks};
 
 fn handle_config_command(
     firmware: &FirmwareTest,
@@ -272,6 +272,27 @@ fn default_config_decodes_pid_scales_like_refloat_settings() {
     assert_eq!(balance.kp().as_amps_per_degree(), 20.0);
     assert_eq!(balance.kp2().as_amps_per_degree_per_second(), 0.6);
     assert_eq!(balance.kp2_brake().value(), 1.0);
+}
+
+#[test]
+fn ki_limit_accepts_zero_sentinel_and_rejects_invalid_values() {
+    let mut bytes = default_refloat_config_bytes();
+    // Refloat's VESC Tool metadata defines zero as the disabled-limit sentinel
+    // at `third_party/refloat/src/conf/settings.xml:1679-1707`.
+    bytes.edit_refloat_config(|config| {
+        assert!(config.set_ki_limit(MotorCurrent::new(Current::ZERO)));
+        assert!(!config.set_ki_limit(MotorCurrent::new(Current::from_amps(-1.0))));
+        assert!(!config.set_ki_limit(MotorCurrent::new(Current::from_amps(f32::NAN))));
+        assert!(!config.set_ki_limit(MotorCurrent::new(Current::from_amps(f32::INFINITY))));
+    });
+
+    assert_eq!(
+        editable_config_from_bytes(&bytes)
+            .balance()
+            .ki_limit()
+            .current(),
+        Current::ZERO
+    );
 }
 
 #[test]

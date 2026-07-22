@@ -205,6 +205,40 @@ mod tests {
     }
 
     #[test]
+    fn balance_loop_unit_zero_ki_limit_keeps_integrating_like_refloat_pid() {
+        let config = LoopConfig {
+            ki: IntegralCurrentGain::new(1.0),
+            ki_limit: motor_current_limit(Current::ZERO),
+            ..base_config()
+        };
+        let positive = LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(2.0)),
+            ..base_input()
+        };
+        let negative = LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(-3.0)),
+            ..base_input()
+        };
+
+        let first = advance_loop(config, positive, base_state());
+        let second = advance_loop(config, positive, first.state);
+        let reversed = advance_loop(config, negative, second.state);
+
+        assert_current(
+            first.state.pid.integral_current,
+            motor_current(Current::from_amps(2.0)),
+        );
+        assert_current(
+            second.state.pid.integral_current,
+            motor_current(Current::from_amps(4.0)),
+        );
+        assert_current(
+            reversed.state.pid.integral_current,
+            motor_current(Current::from_amps(1.0)),
+        );
+    }
+
+    #[test]
     fn balance_loop_unit_limits_normal_current_like_refloat_main_loop() {
         let config = LoopConfig {
             kp: AngleCurrentGain::new(10.0),
