@@ -44,6 +44,29 @@ impl LispSymbol {
     }
 }
 
+/// A LispBM evaluator context identifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LispContextId(u32);
+
+impl LispContextId {
+    /// Construct a context identifier supplied by firmware.
+    pub const fn new(raw: u32) -> Self {
+        Self(raw)
+    }
+
+    /// Return the firmware context identifier.
+    pub const fn raw(self) -> u32 {
+        self.0
+    }
+}
+
+/// Failure returned when firmware rejects a LispBM process message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LispMessageError {
+    /// The target context did not accept the message.
+    Rejected,
+}
+
 impl LispValue {
     /// Convert any LispBM numeric value to an `f32`.
     #[cfg(not(test))]
@@ -176,6 +199,14 @@ impl LispValue {
     pub fn symbol_id(self) -> Option<LispSymbol> {
         self.is_symbol()
             .then(|| LispSymbol::new(unsafe { crate::ffi::lbm_dec_sym(self.raw()) }))
+    }
+
+    /// Send this value to a running LispBM context.
+    #[cfg(not(test))]
+    pub fn send_to(self, context: LispContextId) -> Result<(), LispMessageError> {
+        (unsafe { crate::ffi::lbm_send_message(context.raw(), self.raw()) } == 1)
+            .then_some(())
+            .ok_or(LispMessageError::Rejected)
     }
 
     /// Construct a LispBM cons cell from two owned value handles.
