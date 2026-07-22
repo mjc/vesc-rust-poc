@@ -245,11 +245,35 @@ impl FirmwareSettings {
         ))
     }
 
+    /// Update the live motor-current ceiling; persistence still requires [`Self::store`].
+    pub fn set_motor_current_max(self, limit: MotorCurrentLimit) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::MotorCurrentMax,
+            limit.current().as_amps(),
+        )
+    }
+
+    /// Update the live motor-current floor magnitude; persistence still requires [`Self::store`].
+    pub fn set_motor_current_min(self, limit: MotorCurrentLimit) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::MotorCurrentMin,
+            -limit.current().as_amps(),
+        )
+    }
+
     /// Read the configured battery/input current ceiling.
     pub fn input_current_max(self) -> InputCurrent {
         InputCurrent::new(Current::from_amps(
             self.get_float(FirmwareFloatSetting::InputCurrentMax),
         ))
+    }
+
+    /// Update the live battery/input current ceiling; persistence still requires [`Self::store`].
+    pub fn set_input_current_max(self, current: InputCurrent) -> Result<(), SettingsError> {
+        self.set_float(
+            FirmwareFloatSetting::InputCurrentMax,
+            current.current().as_amps(),
+        )
     }
 
     /// Read the configured minimum input voltage.
@@ -285,6 +309,11 @@ impl FirmwareSettings {
         DutyCycleLimit::new(Ratio::clamped(
             self.get_float(FirmwareFloatSetting::MaxDuty),
         ))
+    }
+
+    /// Update the live duty-cycle limit; persistence still requires [`Self::store`].
+    pub fn set_duty_cycle_limit(self, limit: DutyCycleLimit) -> Result<(), SettingsError> {
+        self.set_float(FirmwareFloatSetting::MaxDuty, limit.ratio().as_ratio())
     }
 
     /// Read an integer setting from live firmware state.
