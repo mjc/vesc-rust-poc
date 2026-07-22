@@ -393,6 +393,24 @@ impl CanBus {
         .ok_or(CanError::Unsupported)
     }
 
+    /// Send a remote motor relative-current command with an off-delay.
+    pub fn set_current_relative_off_delay(
+        &self,
+        controller: CanControllerId,
+        current: CurrentRelative,
+        delay: CurrentOffDelay,
+    ) -> Result<(), CanError> {
+        unsafe {
+            crate::ffi::can_set_current_rel_off_delay(
+                controller.as_u8(),
+                current.ratio().as_ratio(),
+                delay.duration().as_seconds(),
+            )
+        }
+        .map(|_| ())
+        .ok_or(CanError::Unsupported)
+    }
+
     /// Send a remote motor brake-current command.
     pub fn set_brake_current(
         &self,
