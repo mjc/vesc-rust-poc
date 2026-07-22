@@ -1,7 +1,21 @@
 #![cfg(feature = "test-support")]
 //! Integration coverage for the exclusive UART capability.
 
-use vescpkg_rs::{BaudRate, test_support::FirmwareTest};
+use vescpkg_rs::{
+    BaudRate, PackageRuntimeState, PackageStateStore, UartLease, test_support::FirmwareTest,
+};
+
+struct PackageState {
+    _lease: Option<UartLease>,
+}
+
+static PACKAGE_STATE: PackageStateStore<PackageState> = PackageStateStore::new();
+
+impl PackageRuntimeState for PackageState {
+    fn runtime_store() -> &'static PackageStateStore<Self> {
+        &PACKAGE_STATE
+    }
+}
 
 #[test]
 fn uart_lease_forwards_checked_io_and_releases_ownership() {
@@ -14,4 +28,25 @@ fn uart_lease_forwards_checked_io_and_releases_ownership() {
     assert!(uart.open(baud, true).is_err());
     drop(lease);
     assert!(uart.open(baud, true).is_ok());
+}
+
+#[test]
+fn package_stop_releases_uart_state_before_next_open() {
+    let firmware = FirmwareTest::new();
+    let baud = BaudRate::try_new(115_200).unwrap();
+    let lease = firmware.uart().open(baud, false).expect("UART lease");
+    let mut info = vescpkg_rs::test_support::LoaderInfo::new();
+    let mut start = vescpkg_rs::test_support::package_start(&mut info);
+    start
+        .install_runtime_state(PackageState {
+            _lease: Some(lease),
+        })
+        .expect("package state");
+    assert!(start.finish_start(true));
+    assert!(vescpkg_rs::test_support::stop_package(&mut info));
+
+    firmware
+        .uart()
+        .open(baud, true)
+        .expect("stop released UART lease");
 }
