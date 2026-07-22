@@ -328,6 +328,14 @@ extern "C" fn stub_lbm_create_byte_array(value: *mut LbmValue, _len: u32) -> boo
     true
 }
 
+extern "C" fn stub_lbm_enc_sym(symbol: u32) -> LbmValue {
+    LbmValue(symbol + 0x40)
+}
+
+extern "C" fn stub_lbm_dec_sym(value: LbmValue) -> u32 {
+    value.0 - 0x40
+}
+
 extern "C" fn stub_lbm_is_number(value: u32) -> bool {
     LBM_IS_NUMBER.inc();
     LAST_LBM_VALUE.set(value);
@@ -635,6 +643,8 @@ fn populated_table() -> VescIf {
     table.lbm_list_destructive_reverse = Some(stub_lbm_list_destructive_reverse);
     table.lbm_dec_str = Some(stub_lbm_dec_str);
     table.lbm_create_byte_array = Some(stub_lbm_create_byte_array);
+    table.lbm_enc_sym = Some(stub_lbm_enc_sym);
+    table.lbm_dec_sym = Some(stub_lbm_dec_sym);
     table.lbm_is_number = Some(stub_lbm_is_number);
     table.lbm_enc_sym_nil = 0xAABB_0000;
     table.lbm_enc_sym_true = 0xAABB_1100;
@@ -839,7 +849,7 @@ fn lbm_byte_array_creation_forwards_through_mock_table() {
 fn lbm_symbol_helpers_forward_through_mock_table() {
     with_populated_table(|| unsafe {
         let value = lbm_enc_sym(7);
-        assert_eq!(value, LbmValue(0x40));
+        assert_eq!(value, LbmValue(0x47));
         assert_eq!(lbm_dec_sym(value), 7);
     });
 }
