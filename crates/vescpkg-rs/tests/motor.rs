@@ -2,9 +2,9 @@
 //! Integration coverage for typed motor handbrake commands.
 
 use vescpkg_rs::{
-    AngleDegrees, Current, DCurrent, ElectricalSpeed, HandbrakeCurrent, HandbrakeRelative,
-    MotorOutput, MotorSelection, MotorTelemetry, OdometerMeters, PidPosition, Ratio, Rpm,
-    VescSeconds,
+    AngleDegrees, Current, DCurrent, DutyCycle, ElectricalSpeed, HandbrakeCurrent,
+    HandbrakeRelative, MotorOutput, MotorSelection, MotorTelemetry, OdometerMeters, PidPosition,
+    Ratio, Rpm, VescSeconds,
 };
 
 #[test]
@@ -116,4 +116,7 @@ fn motor_exposes_typed_handbrake_commands() {
         .motor()
         .set_pid_position(PidPosition::new(AngleDegrees::from_degrees(90.0)));
     firmware.motor().select_motor(MotorSelection::new(1));
+    firmware
+        .motor()
+        .set_duty_cycle_without_ramping(DutyCycle::new(Ratio::from_ratio_const(0.2)));
 }
