@@ -124,6 +124,8 @@ static WHEEL_DIAMETER: AtomicU32 = AtomicU32::new(0);
 static FOC_MOTOR_RESISTANCE: AtomicU32 = AtomicU32::new(0);
 static FOC_MOTOR_INDUCTANCE: AtomicU32 = AtomicU32::new(0);
 static FOC_MOTOR_FLUX_LINKAGE: AtomicU32 = AtomicU32::new(0);
+static BATTERY_CAPACITY: AtomicU32 = AtomicU32::new(0);
+static MOTOR_NO_LOAD_CURRENT: AtomicU32 = AtomicU32::new(0);
 static INPUT_VOLTAGE_MIN: AtomicU32 = AtomicU32::new(0);
 static INPUT_VOLTAGE_MAX: AtomicU32 = AtomicU32::new(0);
 static BATTERY_CUT_START_VOLTAGE: AtomicU32 = AtomicU32::new(0);
@@ -371,6 +373,8 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     FOC_MOTOR_RESISTANCE.store(0.03_f32.to_bits(), Ordering::Relaxed);
     FOC_MOTOR_INDUCTANCE.store(0.000_012_f32.to_bits(), Ordering::Relaxed);
     FOC_MOTOR_FLUX_LINKAGE.store(0.004_f32.to_bits(), Ordering::Relaxed);
+    BATTERY_CAPACITY.store(20.0_f32.to_bits(), Ordering::Relaxed);
+    MOTOR_NO_LOAD_CURRENT.store(1.5_f32.to_bits(), Ordering::Relaxed);
     INPUT_VOLTAGE_MIN.store(20.0_f32.to_bits(), Ordering::Relaxed);
     INPUT_VOLTAGE_MAX.store(60.0_f32.to_bits(), Ordering::Relaxed);
     BATTERY_CUT_START_VOLTAGE.store(30.0_f32.to_bits(), Ordering::Relaxed);
@@ -1490,6 +1494,8 @@ pub unsafe fn get_cfg_float(param: i32) -> f32 {
         46 => load(&FOC_MOTOR_RESISTANCE),
         47 => load(&FOC_MOTOR_INDUCTANCE),
         48 => load(&FOC_MOTOR_FLUX_LINKAGE),
+        44 => load(&BATTERY_CAPACITY),
+        45 => load(&MOTOR_NO_LOAD_CURRENT),
         10 => load(&INPUT_VOLTAGE_MIN),
         11 => load(&INPUT_VOLTAGE_MAX),
         12 => load(&BATTERY_CUT_START_VOLTAGE),
@@ -1528,6 +1534,8 @@ pub unsafe fn set_cfg_float(param: i32, value: f32) -> bool {
         46 => FOC_MOTOR_RESISTANCE.store(value.to_bits(), Ordering::Relaxed),
         47 => FOC_MOTOR_INDUCTANCE.store(value.to_bits(), Ordering::Relaxed),
         48 => FOC_MOTOR_FLUX_LINKAGE.store(value.to_bits(), Ordering::Relaxed),
+        44 => BATTERY_CAPACITY.store(value.to_bits(), Ordering::Relaxed),
+        45 => MOTOR_NO_LOAD_CURRENT.store(value.to_bits(), Ordering::Relaxed),
         10 => INPUT_VOLTAGE_MIN.store(value.to_bits(), Ordering::Relaxed),
         11 => INPUT_VOLTAGE_MAX.store(value.to_bits(), Ordering::Relaxed),
         12 => BATTERY_CUT_START_VOLTAGE.store(value.to_bits(), Ordering::Relaxed),
