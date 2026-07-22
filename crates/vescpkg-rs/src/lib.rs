@@ -184,7 +184,7 @@ pub use logging::{FirmwareLog, LogError};
 pub mod __macro_support;
 
 #[cfg(feature = "math")]
-pub use ahrs::Ahrs;
+pub use ahrs::{Ahrs, Madgwick};
 pub use audio::{FocAudio, FocAudioError, FocAudioSampleTable};
 pub use firmware::{
     AppDataHandler, AppDataPacket, ConfigBytes, ConfigXml, StatefulCustomConfigCallback,
@@ -240,6 +240,7 @@ pub use types::*;
 pub mod prelude {
     #[cfg(feature = "math")]
     pub use crate::Ahrs;
+    pub use crate::Madgwick;
     pub use crate::types::*;
     pub use crate::units::{
         AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, BoundedUnitError, Charge,

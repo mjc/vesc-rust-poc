@@ -45,3 +45,38 @@ fn mahony_ahrs_integrates_rate_and_can_reset() {
     assert!(!ahrs.set_gains(f32::NAN, 0.1));
     assert!(!ahrs.set_gains(1.0, -0.1));
 }
+
+#[test]
+fn madgwick_ahrs_integrates_rate_and_validates_beta() {
+    let mut ahrs = vescpkg_rs::Madgwick::new();
+    let sample = ImuReadSample::from_parts(
+        ImuAcceleration::from_axes(
+            ImuAccelerationX::new(AccelerationG::from_g(0.0)),
+            ImuAccelerationY::new(AccelerationG::from_g(0.0)),
+            ImuAccelerationZ::new(AccelerationG::from_g(1.0)),
+        ),
+        ImuAngularRate::from_axes(
+            ImuAngularRateRoll::new(AngularVelocity::from_radians_per_second(0.0)),
+            ImuAngularRatePitch::new(AngularVelocity::from_radians_per_second(0.0)),
+            ImuAngularRateYaw::new(AngularVelocity::from_radians_per_second(1.0)),
+        ),
+        ImuMagneticField::from_axes(
+            ImuMagneticFieldX::new(MagneticFluxDensity::from_microteslas(1.0)),
+            ImuMagneticFieldY::new(MagneticFluxDensity::from_microteslas(0.0)),
+            ImuMagneticFieldZ::new(MagneticFluxDensity::from_microteslas(0.0)),
+        ),
+        ImuSamplePeriod::new(VescSeconds::from_seconds(0.1)),
+    );
+
+    let estimate = ahrs.update(sample);
+    assert_eq!(estimate, ahrs.orientation());
+    assert!(f32::from(ahrs.orientation().quaternion().z()).abs() > 0.0);
+    assert!(ahrs.set_beta(0.2));
+    assert!(!ahrs.set_beta(f32::NAN));
+    assert!(!ahrs.set_beta(-0.1));
+    ahrs.reset();
+    assert_eq!(
+        ahrs.orientation().quaternion().w(),
+        ImuQuaternionW::new(1.0)
+    );
+}
