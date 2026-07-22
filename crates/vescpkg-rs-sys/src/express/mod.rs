@@ -77,6 +77,11 @@ mod tests {
         assert_eq!(ExpressTarget::Esp32P4.interface_address(), 0x4FF3_A000);
         assert_eq!(ExpressTarget::Esp32C3.target_name(), "esp32c3");
         assert_eq!(
+            ExpressTarget::from_target_name("esp32s3"),
+            Some(ExpressTarget::Esp32S3)
+        );
+        assert_eq!(ExpressTarget::from_target_name("esp32"), None);
+        assert_eq!(
             ExpressTarget::Esp32S3.sdkconfig_define(),
             "CONFIG_IDF_TARGET_ESP32S3"
         );
