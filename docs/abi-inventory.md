@@ -39,6 +39,9 @@ The safe LispBM surface follows the pinned `vesc_c_if.h` table:
   `push_u64`, because the pinned table has no direct scalar 64-bit slots;
 - the header has no callable array-header/data accessor, so the SDK does not
   expose an unsound borrowed array slice.
+- evaluation pause/continue and pause-state observation are exposed as named
+  `LispProcess` controls; they retain the firmware's minimum-free-word input
+  instead of inventing an allocator policy in Rust.
 
 ## Firmware AHRS Boundaries
 
