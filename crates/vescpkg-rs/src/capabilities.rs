@@ -97,7 +97,10 @@ mod tests {
         );
         assert_eq!(capabilities.audio().unwrap_err().capability(), "FOC audio");
         assert_eq!(capabilities.uart().unwrap_err().capability(), "UART");
-        assert_eq!(capabilities.settings().unwrap_err().capability(), "settings");
+        assert_eq!(
+            capabilities.settings().unwrap_err().capability(),
+            "settings"
+        );
     }
 
     #[test]
@@ -111,6 +114,9 @@ mod tests {
         assert_eq!(error.capability(), "CAN");
         assert_eq!(error.slot(), VescIfAbi::CAN_TRANSMIT_SID);
         assert_eq!(capabilities.revision(), Stm32AbiRevision::UnknownCompatible);
-        assert_eq!(capabilities.require_settings().unwrap_err().capability(), "settings");
+        assert_eq!(
+            capabilities.require_settings().unwrap_err().capability(),
+            "settings"
+        );
     }
 }

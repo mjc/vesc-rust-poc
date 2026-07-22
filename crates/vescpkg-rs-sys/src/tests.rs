@@ -328,10 +328,16 @@ fn vesc_if_manifest_presence_gate_distinguishes_callable_holes_from_scalars() {
         let presence = crate::VescIfPresence::from_words(&words);
 
         if entry.is_callable() {
-            assert!(!presence.contains_index(index), "callable slot {index} must be absent");
+            assert!(
+                !presence.contains_index(index),
+                "callable slot {index} must be absent"
+            );
             assert_eq!(entry.kind(), VescIfSlotKind::Function);
         } else {
-            assert!(presence.contains_index(index), "scalar slot {index} must remain present");
+            assert!(
+                presence.contains_index(index),
+                "scalar slot {index} must remain present"
+            );
             assert_eq!(entry.kind(), VescIfSlotKind::Scalar);
         }
     }
@@ -377,10 +383,19 @@ fn vesc_if_capabilities_expose_named_subsystems_without_raw_slot_names() {
     words[VescIfAbi::READ_NVM.slot_index()] = 1;
     let capabilities = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
 
-    assert_eq!(capabilities.can().unwrap().subsystem(), VescIfSubsystem::Can);
-    assert_eq!(capabilities.nvm().unwrap().subsystem(), VescIfSubsystem::Nvm);
+    assert_eq!(
+        capabilities.can().unwrap().subsystem(),
+        VescIfSubsystem::Can
+    );
+    assert_eq!(
+        capabilities.nvm().unwrap().subsystem(),
+        VescIfSubsystem::Nvm
+    );
     assert_eq!(capabilities.audio().unwrap_err().capability(), "FOC audio");
-    assert_eq!(capabilities.settings().unwrap_err().capability(), "settings");
+    assert_eq!(
+        capabilities.settings().unwrap_err().capability(),
+        "settings"
+    );
 }
 
 #[test]

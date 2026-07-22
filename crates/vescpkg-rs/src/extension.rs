@@ -48,9 +48,8 @@ impl LispSymbol {
     #[cfg(not(test))]
     pub fn lookup(name: &CStr) -> Option<Self> {
         let mut symbol = 0;
-        let result = unsafe {
-            crate::ffi::lbm_get_symbol_by_name(name.as_ptr().cast_mut(), &mut symbol)
-        };
+        let result =
+            unsafe { crate::ffi::lbm_get_symbol_by_name(name.as_ptr().cast_mut(), &mut symbol) };
         (result != 0).then_some(Self::new(symbol))
     }
 }
@@ -242,7 +241,8 @@ impl LispValue {
     /// Decode an immediate LispBM integer exactly when it is non-negative.
     #[must_use]
     pub fn decode_u32_exact(self) -> Option<u32> {
-        self.decode_i32_exact().and_then(|value| value.try_into().ok())
+        self.decode_i32_exact()
+            .and_then(|value| value.try_into().ok())
     }
 
     /// Convert a firmware-classified numeric value to an unsigned integer.

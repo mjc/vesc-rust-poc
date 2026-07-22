@@ -63,7 +63,10 @@ fn main() {
     for slot in &mut slots {
         slot.line = header_source
             .lines()
-            .position(|line| line.split_whitespace().any(|word| word == slot.c_name))
+            .position(|line| {
+                line.split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+                    .any(|word| word == slot.c_name)
+            })
             .map(|line| line + 1)
             .unwrap_or(0);
     }
@@ -196,6 +199,8 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
     }
     rust.push_str("];\n\n");
 
+    rust.push_str("pub(crate) const SLOTS: [crate::VescIfSlot; FIELD_COUNT] = ALL_SLOTS;\n\n");
+
     rust.push_str(
         "#[allow(clippy::too_many_lines)] // generated slot table mirrors vesc_c_if.h field count\n",
     );
@@ -246,24 +251,6 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
     rust.push_str("    };\n");
     rust.push_str("}\n");
     rust.push_str("pub(crate) use define_vesc_if_callable_names;\n\n");
-
-    rust.push_str("#[cfg(test)]\n");
-    rust.push_str("macro_rules! rust_field_offsets {\n");
-    rust.push_str("    ($table:path) => {\n");
-    rust.push_str("        [\n");
-    for slot in slots {
-        writeln!(
-            rust,
-            "            core::mem::offset_of!($table, {}),",
-            slot.c_name
-        )
-        .expect("write generated Rust");
-    }
-    rust.push_str("        ]\n");
-    rust.push_str("    };\n");
-    rust.push_str("}\n");
-    rust.push_str("#[cfg(test)]\n");
-    rust.push_str("pub(crate) use rust_field_offsets;\n\n");
 
     for slot in slots {
         writeln!(rust, "pub(crate) mod {} {{", slot.c_name).expect("write generated Rust");
