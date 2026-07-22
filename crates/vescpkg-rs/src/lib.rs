@@ -207,8 +207,8 @@ pub use firmware::{
 pub(crate) use firmware::{firmware_array, loader_info_mut};
 pub use gnss::{Gnss, GnssError, GnssSnapshot};
 pub use imu::{
-    FirmwareAhrs, FirmwareAhrsError, FirmwareAhrsSnapshot, Imu, ImuCalibration,
-    ImuCalibrationError, ImuReadHandler,
+    FirmwareAhrs, FirmwareAhrsError, FirmwareAhrsParameters, FirmwareAhrsSnapshot, Imu,
+    ImuCalibration, ImuCalibrationError, ImuReadHandler,
 };
 pub use init::{PackageStart, PackageStartError};
 pub use input::{ControllerInput, RemoteInput};
@@ -271,8 +271,8 @@ pub mod prelude {
         CommandReplyHandler, Commands, ConfigBytes, ConfigXml, DigitalOutputLevel, DigitalPin,
         Encoder, EncoderError, EncoderHandler, EncoderRegistration, ExtensionDescriptor,
         ExtensionName, ExtensionRegistration, Firmware, FirmwareAhrs, FirmwareAhrsError,
-        FirmwareAhrsSnapshot, FirmwareAppData, FirmwareCapabilities, FirmwareClock,
-        FirmwareFloatSetting, FirmwareInputs, FirmwareIntSetting, FirmwareMutex,
+        FirmwareAhrsParameters, FirmwareAhrsSnapshot, FirmwareAppData, FirmwareCapabilities,
+        FirmwareClock, FirmwareFloatSetting, FirmwareInputs, FirmwareIntSetting, FirmwareMutex,
         FirmwareMutexGuard, FirmwareSemaphore, FirmwareSettings, FirmwareThread, FirmwareThreads,
         Gnss, GnssError, GnssSnapshot, Gpio, Imu, ImuReadHandler, LbmExtension, LispArgs,
         LispIntegerError, LispValue, MotorOutput, MotorTelemetry, Nvm, NvmCapacity, NvmError,
