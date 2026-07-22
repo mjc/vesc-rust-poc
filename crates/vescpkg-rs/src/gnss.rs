@@ -1,8 +1,8 @@
 //! Owned GNSS snapshots copied from the optional firmware record.
 
 use crate::{
-    GnssAltitude, GnssHdop, GnssLatitude, GnssLongitude, GnssSpeed, Height, Latitude,
-    Longitude, Speed, TimestampTicks,
+    GnssAltitude, GnssHdop, GnssLatitude, GnssLongitude, GnssSpeed, Height, Latitude, Longitude,
+    Speed, TimestampTicks,
 };
 
 /// Failure returned by the GNSS capability.
