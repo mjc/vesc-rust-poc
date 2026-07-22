@@ -7,7 +7,11 @@ use vescpkg_rs::{AngleRadians, Imu, ImuYaw, test_support::FirmwareTest};
 fn firmware_imu_exposes_vectors_and_derotated_samples() {
     let firmware = FirmwareTest::new();
     let imu = firmware.imu();
+    assert!(!imu.is_ready());
+    firmware.set_imu_ready(true);
+    assert!(imu.is_ready());
     imu.set_yaw(ImuYaw::new(AngleRadians::from_radians(0.5)));
+    assert!((imu.yaw().angle().as_radians() - 0.5).abs() < 1.0e-6);
 
     assert_eq!(
         imu.acceleration().map_axes(|x, y, z| [
