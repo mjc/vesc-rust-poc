@@ -9,12 +9,14 @@
 mod functions;
 mod loader;
 mod runtime;
+mod sync;
 mod table;
 mod types;
 
 pub use functions::*;
 pub use loader::{ExpressCallError, ExpressInterface, ExpressLoadError};
 pub use runtime::ExpressRuntime;
+pub use sync::{ExpressMutex, ExpressMutexGuard, ExpressSemaphore, ExpressSyncError};
 pub use table::{ExpressSlot, ExpressSlotKind, ExpressTable, ExpressTableError, express_slot_kind};
 pub use types::{
     EXPRESS_C_IF_VERSION, EXPRESS_IF_SLOT_COUNT, EXPRESS_IF_TABLE_BYTES, EXPRESS_NATIVE_LIB_MAGIC,
@@ -98,6 +100,18 @@ mod tests {
                 slot: ExpressSlot::SystemTime
             })
         );
+        assert!(matches!(
+            ExpressMutex::new(runtime),
+            Err(ExpressSyncError::Unavailable(ExpressCallError {
+                slot: ExpressSlot::MutexCreate
+            }))
+        ));
+        assert!(matches!(
+            ExpressSemaphore::new(runtime),
+            Err(ExpressSyncError::Unavailable(ExpressCallError {
+                slot: ExpressSlot::SemCreate
+            }))
+        ));
     }
 
     #[test]
