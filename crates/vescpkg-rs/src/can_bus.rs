@@ -478,6 +478,12 @@ impl CanStatusStore {
 /// Safe access to the firmware CAN table.
 pub struct CanBus;
 
+/// Controller-scoped remote-motor command and telemetry handle.
+pub struct CanRemoteMotor<'a> {
+    bus: &'a CanBus,
+    controller: CanControllerId,
+}
+
 /// Owns one CAN receiver registration and unregisters it on drop.
 pub struct CanReceiverGuard {
     extended: bool,
@@ -508,6 +514,15 @@ impl Drop for CanReceiverGuard {
 impl CanBus {
     pub(crate) const fn new() -> Self {
         Self
+    }
+
+    /// Scope remote-motor commands and status reads to one controller ID.
+    #[must_use]
+    pub fn remote_motor(&self, controller: CanControllerId) -> CanRemoteMotor<'_> {
+        CanRemoteMotor {
+            bus: self,
+            controller,
+        }
     }
 
     /// Register a typed standard-ID receive callback.
@@ -792,6 +807,107 @@ impl CanBus {
             adc_3: AdcVoltage::new(crate::Voltage::from_volts(raw.adc_3)),
             ppm: PpmInput::new(crate::SignedRatio::from_ratio(raw.ppm).ok()?),
         })
+    }
+}
+
+impl CanRemoteMotor<'_> {
+    /// Return the scoped controller ID.
+    pub const fn controller(&self) -> CanControllerId {
+        self.controller
+    }
+
+    /// Send a remote motor current command.
+    pub fn set_current(&self, current: MotorCurrent) -> Result<(), CanError> {
+        self.bus.set_current(self.controller, current)
+    }
+
+    /// Send a remote relative-current command.
+    pub fn set_current_relative(&self, current: CurrentRelative) -> Result<(), CanError> {
+        self.bus.set_current_relative(self.controller, current)
+    }
+
+    /// Send a remote duty command.
+    pub fn set_duty(&self, duty: DutyCycle) -> Result<(), CanError> {
+        self.bus.set_duty(self.controller, duty)
+    }
+
+    /// Send a remote electrical-speed command.
+    pub fn set_rpm(&self, rpm: ElectricalSpeed) -> Result<(), CanError> {
+        self.bus.set_rpm(self.controller, rpm)
+    }
+
+    /// Send a remote current command with an off-delay.
+    pub fn set_current_off_delay(
+        &self,
+        current: MotorCurrent,
+        delay: CurrentOffDelay,
+    ) -> Result<(), CanError> {
+        self.bus
+            .set_current_off_delay(self.controller, current, delay)
+    }
+
+    /// Send a remote relative-current command with an off-delay.
+    pub fn set_current_relative_off_delay(
+        &self,
+        current: CurrentRelative,
+        delay: CurrentOffDelay,
+    ) -> Result<(), CanError> {
+        self.bus
+            .set_current_relative_off_delay(self.controller, current, delay)
+    }
+
+    /// Send a remote brake-current command.
+    pub fn set_brake_current(&self, current: BrakeCurrent) -> Result<(), CanError> {
+        self.bus.set_brake_current(self.controller, current)
+    }
+
+    /// Send a remote relative brake-current command.
+    pub fn set_brake_current_relative(
+        &self,
+        current: BrakeCurrentRelative,
+    ) -> Result<(), CanError> {
+        self.bus
+            .set_brake_current_relative(self.controller, current)
+    }
+
+    /// Send a remote position command.
+    pub fn set_position(&self, position: PidPosition) -> Result<(), CanError> {
+        self.bus.set_position(self.controller, position)
+    }
+
+    /// Copy the primary remote status snapshot.
+    pub fn status(&self) -> Option<CanStatus> {
+        self.bus.status(self.controller)
+    }
+
+    /// Copy status message 2.
+    pub fn status2(&self) -> Option<CanStatus2> {
+        self.bus.status2(self.controller)
+    }
+
+    /// Copy status message 3.
+    pub fn status3(&self) -> Option<CanStatus3> {
+        self.bus.status3(self.controller)
+    }
+
+    /// Copy status message 4.
+    pub fn status4(&self) -> Option<CanStatus4> {
+        self.bus.status4(self.controller)
+    }
+
+    /// Copy status message 5.
+    pub fn status5(&self) -> Option<CanStatus5> {
+        self.bus.status5(self.controller)
+    }
+
+    /// Copy status message 6.
+    pub fn status6(&self) -> Option<CanStatus6> {
+        self.bus.status6(self.controller)
+    }
+
+    /// Ping the scoped controller and return its hardware family.
+    pub fn ping(&self) -> Result<CanHardwareType, CanError> {
+        self.bus.ping(self.controller)
     }
 }
 

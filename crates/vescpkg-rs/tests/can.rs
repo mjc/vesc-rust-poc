@@ -79,6 +79,13 @@ fn can_bus_transmits_bounded_payloads_and_copies_status() {
     );
     assert_eq!(status.motor_current().current().as_amps(), 4.5);
     assert_eq!(status.duty_cycle().ratio().as_ratio(), 0.25);
+
+    let remote = bus.remote_motor(CanControllerId::new(7));
+    assert_eq!(remote.controller().as_u8(), 7);
+    remote
+        .set_current(MotorCurrent::new(Current::from_amps(1.0)))
+        .expect("scoped remote current command");
+    assert!(remote.status().is_some());
 }
 
 #[test]
