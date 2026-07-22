@@ -202,10 +202,10 @@ pub mod prelude {
     pub use crate::{
         AnalogPin, AppDataHandler, AppDataSendError, CanBus, CanError, CanStatus, ConfigBytes,
         ConfigXml, DigitalOutputLevel, DigitalPin, ExtensionDescriptor, ExtensionName,
-        ExtensionRegistration, Firmware, FirmwareAppData, FirmwareClock, FirmwareMutex,
-        FirmwareMutexGuard, FirmwareSemaphore, FirmwareThread, FirmwareThreads, Gpio, Imu,
-        ImuReadHandler, LbmExtension, LispArgs, LispIntegerError, LispValue, MotorOutput,
-        MotorTelemetry, Nvm, NvmError, NvmOffset, PackageRuntimeState, PackageStart,
+        ExtensionRegistration, Firmware, FirmwareAppData, FirmwareClock, FirmwareInputs,
+        FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore, FirmwareThread, FirmwareThreads,
+        Gpio, Imu, ImuReadHandler, LbmExtension, LispArgs, LispIntegerError, LispValue,
+        MotorOutput, MotorTelemetry, Nvm, NvmError, NvmOffset, PackageRuntimeState, PackageStart,
         PackageStartError, StatefulCustomConfigCallback, StatefulLbmExtension,
         StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadName,
         ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant,
@@ -270,6 +270,7 @@ mod tests {
         use crate::prelude::*;
 
         let switch = BrakeSwitch::Released;
+        let _inputs = FirmwareInputs::new();
 
         assert_eq!(switch, BrakeSwitch::Released);
     }
