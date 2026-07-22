@@ -39,7 +39,7 @@ fn byte_image_operations_report_missing_reads_and_failed_writes() {
 fn byte_image_read_reports_interrupted_image_without_erasing_prefix() {
     let firmware = FirmwareTest::new();
     let eeprom = firmware.eeprom();
-    let first = CustomEepromAddress::from_index(200).expect("address fits");
+    let first = CustomEepromAddress::from_index(100).expect("address fits");
     assert!(eeprom.write(first, EepromWord::from_ne_bytes([1, 2, 3, 4])));
 
     let mut bytes = [0xaa; 8];

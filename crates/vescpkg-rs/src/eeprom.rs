@@ -108,10 +108,27 @@ impl CustomEeprom {
     /// Returns `false` when any required word is absent or its address cannot
     /// be represented. Bytes read before a failure remain in `bytes`.
     pub fn read_bytes(self, bytes: &mut [u8]) -> bool {
+        let Some(address) = CustomEepromAddress::from_index(0) else {
+            return false;
+        };
+        self.read_bytes_at(address, bytes)
+    }
+
+    /// Read a serialized byte image from consecutive custom-EEPROM words at
+    /// an explicit starting address.
+    ///
+    /// Bytes read before a missing word or address failure remain in `bytes`.
+    pub fn read_bytes_at(self, start: CustomEepromAddress, bytes: &mut [u8]) -> bool {
+        let Some(start) = usize::try_from(start.get()).ok() else {
+            return false;
+        };
         bytes
             .chunks_mut(EepromWord::BYTE_LEN)
             .enumerate()
             .all(|(index, bytes)| {
+                let Some(index) = start.checked_add(index) else {
+                    return false;
+                };
                 let Some(address) = CustomEepromAddress::from_index(index) else {
                     return false;
                 };
@@ -128,10 +145,28 @@ impl CustomEeprom {
     /// A final partial word is padded with zeroes. Returns `false` after the
     /// first address or firmware write failure.
     pub fn write_bytes(self, bytes: &[u8]) -> bool {
+        let Some(address) = CustomEepromAddress::from_index(0) else {
+            return false;
+        };
+        self.write_bytes_at(address, bytes)
+    }
+
+    /// Store a serialized byte image in consecutive words at an explicit
+    /// starting address.
+    ///
+    /// A final partial word is padded with zeroes. Returns `false` after the
+    /// first address or firmware write failure.
+    pub fn write_bytes_at(self, start: CustomEepromAddress, bytes: &[u8]) -> bool {
+        let Some(start) = usize::try_from(start.get()).ok() else {
+            return false;
+        };
         bytes
             .chunks(EepromWord::BYTE_LEN)
             .enumerate()
             .all(|(index, bytes)| {
+                let Some(index) = start.checked_add(index) else {
+                    return false;
+                };
                 let Some(address) = CustomEepromAddress::from_index(index) else {
                     return false;
                 };
