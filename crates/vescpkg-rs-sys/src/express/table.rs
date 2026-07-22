@@ -12,6 +12,103 @@ pub enum ExpressSlotKind {
     Function,
 }
 
+/// A named slot in the pinned Express v1 table.
+///
+/// The discriminants are part of the Express ABI and intentionally do not
+/// share the STM32 slot manifest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(usize)]
+#[allow(missing_docs)]
+pub enum ExpressSlot {
+    IfVersion = 0,
+    LbmAddExtension,
+    LbmSetErrorReason,
+    LbmAddSymbolConst,
+    LbmGetSymbolByName,
+    LbmBlockCtxFromExtension,
+    LbmUnblockCtx,
+    LbmUnblockCtxUnboxed,
+    LbmGetCurrentCid,
+    LbmSendMessage,
+    LbmPauseEvalWithGc,
+    LbmContinueEval,
+    LbmEvalIsPaused,
+    LbmCons,
+    LbmCar,
+    LbmCdr,
+    LbmListDestructiveReverse,
+    LbmCreateByteArray,
+    LbmEncI,
+    LbmEncU,
+    LbmEncChar,
+    LbmEncFloat,
+    LbmEncU32,
+    LbmEncI32,
+    LbmEncSym,
+    LbmDecAsFloat,
+    LbmDecAsU32,
+    LbmDecAsI32,
+    LbmDecChar,
+    LbmDecStr,
+    LbmDecSym,
+    LbmIsByteArray,
+    LbmIsCons,
+    LbmIsNumber,
+    LbmIsChar,
+    LbmIsSymbol,
+    LbmIsSymbolNil,
+    LbmIsSymbolTrue,
+    LbmEncSymNil,
+    LbmEncSymTrue,
+    LbmEncSymTerror,
+    LbmEncSymEerror,
+    LbmEncSymMerror,
+    LbmStartFlatten,
+    LbmFinishFlatten,
+    FCons,
+    FSym,
+    FI,
+    FB,
+    FI32,
+    FU32,
+    FFloat,
+    FI64,
+    FU64,
+    FLbmArray,
+    SleepMs,
+    SleepUs,
+    SystemTime,
+    TsToAgeS,
+    SystemTimeTicks,
+    SleepTicks,
+    TimerTimeNow,
+    TimerSecondsElapsedSince,
+    TimerSleep,
+    Printf,
+    Malloc,
+    Free,
+    Spawn,
+    RequestTerminate,
+    ShouldTerminate,
+    ThreadSetPriority,
+    GetArg,
+    MutexCreate,
+    MutexLock,
+    MutexUnlock,
+    SemCreate,
+    SemWait,
+    SemSignal,
+    SemWaitTo,
+    SemReset,
+}
+
+impl ExpressSlot {
+    /// Return the ABI index of this named slot.
+    pub const fn index(self) -> usize {
+        self as usize
+    }
+}
+
 /// Return the pinned kind of an Express slot, if it is in the v1 table.
 pub const fn express_slot_kind(index: usize) -> Option<ExpressSlotKind> {
     match index {
@@ -65,6 +162,11 @@ impl<'a> ExpressTable<'a> {
         self.words.get(index).map(|word| ExpressWord::new(*word))
     }
 
+    /// Return a raw word from a named Express slot.
+    pub fn word_at(self, slot: ExpressSlot) -> Option<ExpressWord> {
+        self.word(slot.index())
+    }
+
     /// Return a non-null function address without converting it to a host
     /// pointer or making a call through an unverified ABI.
     pub fn function_address(self, index: usize) -> Option<ExpressAddress> {
@@ -75,6 +177,12 @@ impl<'a> ExpressTable<'a> {
             Some(0) | None => None,
             Some(word) => Some(ExpressAddress::new(*word)),
         }
+    }
+
+    /// Return a named Express function slot when firmware exposes it and it is
+    /// non-null.
+    pub fn function_address_at(self, slot: ExpressSlot) -> Option<ExpressAddress> {
+        self.function_address(slot.index())
     }
 
     /// Return whether all slots in the pinned v1 table are present.

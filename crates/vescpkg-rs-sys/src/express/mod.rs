@@ -9,10 +9,11 @@
 mod table;
 mod types;
 
-pub use table::{ExpressSlotKind, ExpressTable, ExpressTableError, express_slot_kind};
+pub use table::{ExpressSlot, ExpressSlotKind, ExpressTable, ExpressTableError, express_slot_kind};
 pub use types::{
     EXPRESS_C_IF_VERSION, EXPRESS_IF_SLOT_COUNT, EXPRESS_IF_TABLE_BYTES, EXPRESS_NATIVE_LIB_MAGIC,
-    EXPRESS_NATIVE_LIB_RELOC_MAGIC, EXPRESS_SYSTEM_TICK_RATE_HZ, ExpressAddress, ExpressWord,
+    EXPRESS_NATIVE_LIB_RELOC_MAGIC, EXPRESS_SYSTEM_TICK_RATE_HZ, ExpressAddress, ExpressTarget,
+    ExpressWord,
 };
 
 #[cfg(test)]
@@ -29,6 +30,14 @@ mod tests {
         assert_eq!(express_slot_kind(42), Some(ExpressSlotKind::Scalar));
         assert_eq!(express_slot_kind(43), Some(ExpressSlotKind::Function));
         assert_eq!(express_slot_kind(80), None);
+        assert_eq!(ExpressSlot::IfVersion.index(), 0);
+        assert_eq!(ExpressSlot::LbmAddExtension.index(), 1);
+        assert_eq!(ExpressSlot::LbmEncSymNil.index(), 38);
+        assert_eq!(ExpressSlot::SemReset.index(), 79);
+        assert_eq!(ExpressTarget::Esp32C3.interface_address(), 0x3FCD_BE00);
+        assert_eq!(ExpressTarget::Esp32S3.interface_address(), 0x3FCE_8800);
+        assert_eq!(ExpressTarget::Esp32C6.interface_address(), 0x4087_B800);
+        assert_eq!(ExpressTarget::Esp32P4.interface_address(), 0x4FF3_A000);
     }
 
     #[test]
@@ -47,7 +56,15 @@ mod tests {
         assert_eq!(table.len(), 3);
         assert_eq!(table.function_address(1), None);
         assert_eq!(table.function_address(2), Some(ExpressAddress::new(0x1234)));
+        assert_eq!(
+            table.function_address_at(ExpressSlot::LbmSetErrorReason),
+            Some(ExpressAddress::new(0x1234))
+        );
         assert_eq!(table.word(2), Some(ExpressWord::new(0x1234)));
+        assert_eq!(
+            table.word_at(ExpressSlot::LbmSetErrorReason),
+            Some(ExpressWord::new(0x1234))
+        );
         assert!(!table.is_complete());
     }
 

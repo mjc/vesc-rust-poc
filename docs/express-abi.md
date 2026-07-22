@@ -20,7 +20,8 @@ That header defines:
 - appended-only function slots, which are null on firmware that predates them;
 - a 1,000 Hz system tick rate.
 
-The firmware table addresses are target-specific: ESP32-C3 `0x3FCDBE00`,
+The firmware table addresses are represented by `ExpressTarget` and are
+target-specific: ESP32-C3 `0x3FCDBE00`,
 ESP32-S3 `0x3FCE8800`, ESP32-C6 `0x4087B800`, and ESP32-P4 `0x4FF3A000`.
 They are documentation only here; a host pointer must never be made from one
 of these values.
