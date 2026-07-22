@@ -483,7 +483,7 @@ pub(super) fn refresh(
         // resets module setpoints at `third_party/refloat/src/main.c:239-244`,
         // and seeds only the board setpoint from `d->imu.balance_pitch` at
         // `third_party/refloat/src/main.c:249-252`.
-        state.balance_loop.pid_integral_current = MotorCurrent::new(Current::ZERO);
+        state.balance_loop.pid.integral_current = MotorCurrent::new(Current::ZERO);
         state.balance_loop.softstart_pid_limit = MotorCurrent::new(Current::ZERO);
         state.reverse_total_erpm = Rpm::ZERO;
         state.traction_control = false;

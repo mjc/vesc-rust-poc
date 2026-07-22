@@ -1,5 +1,5 @@
 use super::current::{PitchBasedCurrent, RequestedCurrent};
-use super::loop_io::{LoopConfig, LoopInput, LoopState};
+use super::loop_io::{LoopConfig, LoopInput, LoopState, PidState};
 use crate::domain::{RefloatDarkRideState, RefloatRealtimeRuntimeSetpoint};
 use vescpkg_rs::prelude::SampleRate;
 use vescpkg_rs::prelude::{
@@ -233,19 +233,19 @@ impl ScaleTargets {
     };
 
     #[inline(always)]
-    fn smoothed_into(self, state: LoopState) -> LoopState {
+    fn smoothed_into(self, state: LoopState) -> PidState {
         // C map: `third_party/refloat/src/pid.c:51-66` smooths brake and accel
         // PID scale pairs back into the stored loop state.
-        LoopState {
-            pid_kp_brake_scale: self
+        PidState {
+            kp_brake_scale: self
                 .brake
-                .smoothed_angle_proportional(state.pid_kp_brake_scale),
-            pid_kp2_brake_scale: self.brake.smoothed_rate_damping(state.pid_kp2_brake_scale),
-            pid_kp_accel_scale: self
+                .smoothed_angle_proportional(state.pid.kp_brake_scale),
+            kp2_brake_scale: self.brake.smoothed_rate_damping(state.pid.kp2_brake_scale),
+            kp_accel_scale: self
                 .accel
-                .smoothed_angle_proportional(state.pid_kp_accel_scale),
-            pid_kp2_accel_scale: self.accel.smoothed_rate_damping(state.pid_kp2_accel_scale),
-            ..state
+                .smoothed_angle_proportional(state.pid.kp_accel_scale),
+            kp2_accel_scale: self.accel.smoothed_rate_damping(state.pid.kp2_accel_scale),
+            ..state.pid
         }
     }
 }
@@ -349,8 +349,8 @@ impl CurrentScales {
         // C map: `third_party/refloat/src/pid.c:51-66` keeps separate accel
         // and brake PID scale pairs for angle-P and rate-P smoothing.
         Self {
-            angle_proportional: SideScale::new(state.pid_kp_accel_scale, state.pid_kp_brake_scale),
-            rate_damping: SideScale::new(state.pid_kp2_accel_scale, state.pid_kp2_brake_scale),
+            angle_proportional: SideScale::new(state.pid.kp_accel_scale, state.pid.kp_brake_scale),
+            rate_damping: SideScale::new(state.pid.kp2_accel_scale, state.pid.kp2_brake_scale),
         }
     }
 
@@ -398,7 +398,7 @@ impl Phase {
                 .angle_proportional_current(setpoint_error, config.kp),
             rate_damping: current_scales.rate_damping_current(pitch_rate, config.kp2),
             integral: setpoint_error.integral_current(
-                state.pid_integral_current,
+                state.pid.integral_current,
                 config.ki,
                 config.ki_limit,
             ),
@@ -433,10 +433,13 @@ impl LoopState {
         integral: MotorCurrent,
     ) -> Self {
         Self {
-            pid_integral_current: integral,
-            ..ScaleDirection::from_motor_erpm(motor_erpm)
-                .targets(config)
-                .smoothed_into(self)
+            pid: PidState {
+                integral_current: integral,
+                ..ScaleDirection::from_motor_erpm(motor_erpm)
+                    .targets(config)
+                    .smoothed_into(self)
+            },
+            ..self
         }
     }
 }

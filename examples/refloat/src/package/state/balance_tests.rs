@@ -156,7 +156,7 @@ fn app_data_running_accumulates_angle_i_balance_current_like_refloat_pid() {
             .balance_pitch()
             .angle_degrees()
             .as_degrees();
-    let first_integral = state.balance_loop.pid_integral_current.current().as_amps();
+    let first_integral = state.balance_loop.pid.integral_current.current().as_amps();
     assert!(
         (first_integral - first_error * 0.1).abs() < 0.0001,
         "{first_integral} != {}",
@@ -187,7 +187,7 @@ fn app_data_running_accumulates_angle_i_balance_current_like_refloat_pid() {
             .balance_pitch()
             .angle_degrees()
             .as_degrees();
-    let second_integral = state.balance_loop.pid_integral_current.current().as_amps();
+    let second_integral = state.balance_loop.pid.integral_current.current().as_amps();
     let expected_integral = first_integral + second_error * 0.1;
     assert!(
         (second_integral - expected_integral).abs() < 0.0001,

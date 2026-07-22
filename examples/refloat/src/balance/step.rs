@@ -5,6 +5,7 @@ use super::{booster::Phase as BoosterPhase, pid::Phase as PidPhase};
 #[cfg(test)]
 use super::{
     booster::{Profile, Proportional},
+    loop_io::PidState,
     pid::PitchRate,
 };
 
@@ -124,11 +125,7 @@ mod tests {
         LoopState {
             balance_current: motor_current(Current::from_amps(0.0)),
             booster_current: motor_current(Current::from_amps(0.0)),
-            pid_integral_current: motor_current(Current::from_amps(0.0)),
-            pid_kp_brake_scale: PidScale::new(1.0),
-            pid_kp2_brake_scale: PidScale::new(1.0),
-            pid_kp_accel_scale: PidScale::new(1.0),
-            pid_kp2_accel_scale: PidScale::new(1.0),
+            pid: PidState::source_startup(),
             softstart_pid_limit: motor_current(Current::from_amps(100.0)),
         }
     }
@@ -157,33 +154,33 @@ mod tests {
         let coasting = state.with_updated_pid_state(
             config,
             electrical_speed(Rpm::from_revolutions_per_minute(0.0)),
-            state.pid_integral_current,
+            state.pid.integral_current,
         );
         let forward = state.with_updated_pid_state(
             config,
             electrical_speed(Rpm::from_revolutions_per_minute(1000.0)),
-            state.pid_integral_current,
+            state.pid.integral_current,
         );
         let reverse = state.with_updated_pid_state(
             config,
             electrical_speed(Rpm::from_revolutions_per_minute(-1000.0)),
-            state.pid_integral_current,
+            state.pid.integral_current,
         );
 
-        assert_scale(coasting.pid_kp_brake_scale, PidScale::new(1.0));
-        assert_scale(coasting.pid_kp2_brake_scale, PidScale::new(1.0));
-        assert_scale(coasting.pid_kp_accel_scale, PidScale::new(1.0));
-        assert_scale(coasting.pid_kp2_accel_scale, PidScale::new(1.0));
+        assert_scale(coasting.pid.kp_brake_scale, PidScale::new(1.0));
+        assert_scale(coasting.pid.kp2_brake_scale, PidScale::new(1.0));
+        assert_scale(coasting.pid.kp_accel_scale, PidScale::new(1.0));
+        assert_scale(coasting.pid.kp2_accel_scale, PidScale::new(1.0));
 
-        assert_scale(forward.pid_kp_brake_scale, PidScale::new(1.01));
-        assert_scale(forward.pid_kp2_brake_scale, PidScale::new(1.02));
-        assert_scale(forward.pid_kp_accel_scale, PidScale::new(1.0));
-        assert_scale(forward.pid_kp2_accel_scale, PidScale::new(1.0));
+        assert_scale(forward.pid.kp_brake_scale, PidScale::new(1.01));
+        assert_scale(forward.pid.kp2_brake_scale, PidScale::new(1.02));
+        assert_scale(forward.pid.kp_accel_scale, PidScale::new(1.0));
+        assert_scale(forward.pid.kp2_accel_scale, PidScale::new(1.0));
 
-        assert_scale(reverse.pid_kp_brake_scale, PidScale::new(1.0));
-        assert_scale(reverse.pid_kp2_brake_scale, PidScale::new(1.0));
-        assert_scale(reverse.pid_kp_accel_scale, PidScale::new(1.01));
-        assert_scale(reverse.pid_kp2_accel_scale, PidScale::new(1.02));
+        assert_scale(reverse.pid.kp_brake_scale, PidScale::new(1.0));
+        assert_scale(reverse.pid.kp2_brake_scale, PidScale::new(1.0));
+        assert_scale(reverse.pid.kp_accel_scale, PidScale::new(1.01));
+        assert_scale(reverse.pid.kp2_accel_scale, PidScale::new(1.02));
     }
 
     #[test]
@@ -202,7 +199,7 @@ mod tests {
         let second = advance_loop(config, input, first.state);
 
         assert_current(
-            second.state.pid_integral_current,
+            second.state.pid.integral_current,
             motor_current(Current::from_amps(2.0)),
         );
     }
