@@ -81,6 +81,49 @@ fn firmware_audio_rejects_invalid_values_before_ffi() {
 }
 
 #[test]
+fn firmware_audio_reports_absent_optional_slots() {
+    let firmware = FirmwareTest::new();
+    firmware.set_audio_available(false);
+    let audio = firmware.audio();
+    let channel = AudioChannel::try_new(1).unwrap();
+    let voltage = AudioVoltage::new(Voltage::from_volts(0.2));
+
+    assert_eq!(
+        audio.beep(
+            AudioFrequency::new(Frequency::from_hertz(440.0)),
+            AudioDuration::new(vescpkg_rs::VescSeconds::from_seconds(0.1)),
+            voltage,
+        ),
+        Err(vescpkg_rs::FocAudioError::Unavailable)
+    );
+    assert_eq!(
+        audio.play_tone(
+            channel,
+            AudioFrequency::new(Frequency::from_hertz(880.0)),
+            voltage,
+        ),
+        Err(vescpkg_rs::FocAudioError::Unavailable)
+    );
+    assert_eq!(
+        audio.play_samples(
+            &[1, -2, 3],
+            AudioSampleRate::new(SampleRate::from_hertz(22_050.0)),
+            voltage,
+        ),
+        Err(vescpkg_rs::FocAudioError::Unavailable)
+    );
+    assert!(matches!(
+        audio.set_sample_table(channel, &[0.1, 0.2]),
+        Err(vescpkg_rs::FocAudioError::Unavailable)
+    ));
+    assert_eq!(
+        audio.stop(true),
+        Err(vescpkg_rs::FocAudioError::Unavailable)
+    );
+    assert!(unsafe { audio.sample_table_ptr(channel) }.is_none());
+}
+
+#[test]
 fn package_stop_releases_audio_table_before_next_registration() {
     static SAMPLES: [f32; 3] = [0.1, 0.2, 0.3];
     let firmware = FirmwareTest::new();
