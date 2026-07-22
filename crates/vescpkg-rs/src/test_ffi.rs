@@ -12,7 +12,7 @@ use crate::{
     VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 use vescpkg_rs_sys::raw::{
-    CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, LbmFlatValue,
+    CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5, LbmFlatValue,
 };
 use vescpkg_rs_sys::{HardwareType, LbmValue, VescPin, VescPinMode};
 
@@ -128,6 +128,12 @@ static CAN_STATUS_4: CanStatusMsg4 = CanStatusMsg4 {
     temp_motor: 50.0,
     current_in: 3.0,
     pid_pos_now: 12.0,
+};
+static CAN_STATUS_5: CanStatusMsg5 = CanStatusMsg5 {
+    id: 7,
+    rx_time: 123,
+    v_in: 48.0,
+    tacho_value: 1234,
 };
 static THREAD_SPAWN_COUNT: AtomicUsize = AtomicUsize::new(0);
 static THREAD_SPAWN_STACKS: [AtomicUsize; 2] = [const { AtomicUsize::new(0) }; 2];
@@ -729,6 +735,10 @@ pub unsafe fn can_status_msg_3_id(_id: i32) -> Option<CanStatusMsg3> {
 
 pub unsafe fn can_status_msg_4_id(_id: i32) -> Option<CanStatusMsg4> {
     Some(CAN_STATUS_4)
+}
+
+pub unsafe fn can_status_msg_5_id(_id: i32) -> Option<CanStatusMsg5> {
+    Some(CAN_STATUS_5)
 }
 
 pub(crate) fn mutex_lock_count() -> usize {
