@@ -5,7 +5,7 @@ use vescpkg_rs::prelude::{
     AngleDegrees, AudioChannel, AudioFrequency, AudioVoltage, BrakeCurrentRelative, Current,
     CurrentRelative, FirmwareFaultCode, Frequency, HandbrakeCurrent, HandbrakeRelative,
     InputCurrentLimit, OdometerMeters, PidPosition, DutyCycle, MotorSelection, OpenLoopCurrent,
-    OpenLoopPhase, Ratio, Rpm, SignedRatio, ElectricalSpeed, VescSeconds, Voltage,
+    OpenLoopPhase, PwmCallbackError, Ratio, Rpm, SignedRatio, ElectricalSpeed, VescSeconds, Voltage,
 };
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{MotorOutput, MotorTelemetry};
@@ -234,6 +234,17 @@ fn motor_exposes_typed_handbrake_commands() {
             )
             .unwrap();
     }
+}
+
+#[test]
+fn pwm_registration_reports_absent_optional_slot() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    firmware.set_pwm_available(false);
+
+    assert!(matches!(
+        unsafe { firmware.motor().register_pwm_callback(test_pwm_callback) },
+        Err(PwmCallbackError::Unavailable)
+    ));
 }
 
 #[test]

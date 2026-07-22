@@ -135,6 +135,7 @@ static TERMINAL_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static ENCODER_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static PLOT_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static GNSS_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static PWM_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static DISTANCE_ABS: AtomicU32 = AtomicU32::new(0);
 static MOSFET_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
@@ -323,6 +324,7 @@ fn reset_motor_state() {
     ENCODER_AVAILABLE.store(true, Ordering::Relaxed);
     PLOT_AVAILABLE.store(true, Ordering::Relaxed);
     GNSS_AVAILABLE.store(true, Ordering::Relaxed);
+    PWM_AVAILABLE.store(true, Ordering::Relaxed);
     DISTANCE_ABS.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOSFET_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -1187,6 +1189,10 @@ pub(crate) fn set_gnss_available(available: bool) {
     GNSS_AVAILABLE.store(available, Ordering::Relaxed);
 }
 
+pub(crate) fn set_pwm_available(available: bool) {
+    PWM_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
 pub(crate) fn set_imu_startup_done(done: bool) {
     IMU_STARTUP_DONE.store(done, Ordering::Relaxed);
 }
@@ -1747,7 +1753,7 @@ pub unsafe fn mc_fault_to_string(_fault: FaultCode) -> *const c_char {
 }
 
 pub unsafe fn mc_set_pwm_callback(_callback: Option<unsafe extern "C" fn()>) -> bool {
-    true
+    PWM_AVAILABLE.load(Ordering::Relaxed)
 }
 
 pub unsafe fn mc_get_input_voltage_filtered() -> f32 {
