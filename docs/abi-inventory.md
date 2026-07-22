@@ -15,6 +15,16 @@ This inventory records the narrow C surface needed for the first Rust-backed tes
 - `lbm_enc_i`: LispBM integer encode helper.
 - `ENC_SYM_EERROR`: LispBM error symbol for bad arity.
 
+## Optional Flat Values
+
+Firmware 6.05 appends `lbm_start_flatten`, `lbm_finish_flatten`, the `f_*`
+constructors, and `lbm_unblock_ctx` to the function table. The Rust
+`LispFlatValue` wrapper probes those slots and returns `None`/`Rejected` when a
+table does not expose them; callers must not infer availability from a release
+number alone. A successful `LispProcess::unblock_flat` transfers the firmware
+buffer to LispBM, while a dropped or rejected value releases it through the
+firmware allocator.
+
 ## Notes
 
 - This list is intentionally narrow.
