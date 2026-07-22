@@ -143,6 +143,7 @@ static MOSFET_TEMPERATURE_LIMIT_START: AtomicU32 = AtomicU32::new(0);
 static MOSFET_TEMPERATURE_LIMIT_END: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE_LIMIT_START: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE_LIMIT_END: AtomicU32 = AtomicU32::new(0);
+static TEMPERATURE_ACCELERATION_DECREASE: AtomicU32 = AtomicU32::new(0);
 static DUTY_CYCLE_LIMIT: AtomicU32 = AtomicU32::new(0);
 static BATTERY_CELL_COUNT: AtomicI32 = AtomicI32::new(0);
 static APP_CAN_MODE: AtomicI32 = AtomicI32::new(0);
@@ -361,6 +362,14 @@ fn reset_speed_settings() {
     IMU_ACCELERATION_CONFIDENCE_DECAY.store(1.0_f32.to_bits(), Ordering::Relaxed);
 }
 
+fn reset_temperature_settings() {
+    MOSFET_TEMPERATURE_LIMIT_START.store(85.0_f32.to_bits(), Ordering::Relaxed);
+    MOSFET_TEMPERATURE_LIMIT_END.store(90.0_f32.to_bits(), Ordering::Relaxed);
+    MOTOR_TEMPERATURE_LIMIT_START.store(85.0_f32.to_bits(), Ordering::Relaxed);
+    MOTOR_TEMPERATURE_LIMIT_END.store(95.0_f32.to_bits(), Ordering::Relaxed);
+    TEMPERATURE_ACCELERATION_DECREASE.store(0.5_f32.to_bits(), Ordering::Relaxed);
+}
+
 pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     while LOCKED
         .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -402,10 +411,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     INPUT_VOLTAGE_MAX.store(60.0_f32.to_bits(), Ordering::Relaxed);
     BATTERY_CUT_START_VOLTAGE.store(30.0_f32.to_bits(), Ordering::Relaxed);
     BATTERY_CUT_END_VOLTAGE.store(28.0_f32.to_bits(), Ordering::Relaxed);
-    MOSFET_TEMPERATURE_LIMIT_START.store(85.0_f32.to_bits(), Ordering::Relaxed);
-    MOSFET_TEMPERATURE_LIMIT_END.store(90.0_f32.to_bits(), Ordering::Relaxed);
-    MOTOR_TEMPERATURE_LIMIT_START.store(85.0_f32.to_bits(), Ordering::Relaxed);
-    MOTOR_TEMPERATURE_LIMIT_END.store(95.0_f32.to_bits(), Ordering::Relaxed);
+    reset_temperature_settings();
     DUTY_CYCLE_LIMIT.store(0.95_f32.to_bits(), Ordering::Relaxed);
     CAN_STATUS_DUTY_BITS.store(0x3e80_0000, Ordering::Relaxed);
     CAN_STATUS_PPM_BITS.store(0x3f00_0000, Ordering::Relaxed);
@@ -1538,6 +1544,7 @@ pub unsafe fn get_cfg_float(param: i32) -> f32 {
         17 => load(&MOSFET_TEMPERATURE_LIMIT_END),
         18 => load(&MOTOR_TEMPERATURE_LIMIT_START),
         19 => load(&MOTOR_TEMPERATURE_LIMIT_END),
+        20 => load(&TEMPERATURE_ACCELERATION_DECREASE),
         22 => load(&DUTY_CYCLE_LIMIT),
         _ => 0.0,
     }
@@ -1588,6 +1595,7 @@ pub unsafe fn set_cfg_float(param: i32, value: f32) -> bool {
         17 => MOSFET_TEMPERATURE_LIMIT_END.store(value.to_bits(), Ordering::Relaxed),
         18 => MOTOR_TEMPERATURE_LIMIT_START.store(value.to_bits(), Ordering::Relaxed),
         19 => MOTOR_TEMPERATURE_LIMIT_END.store(value.to_bits(), Ordering::Relaxed),
+        20 => TEMPERATURE_ACCELERATION_DECREASE.store(value.to_bits(), Ordering::Relaxed),
         22 => DUTY_CYCLE_LIMIT.store(value.to_bits(), Ordering::Relaxed),
         _ => return false,
     }
