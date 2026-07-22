@@ -263,6 +263,15 @@ impl VescIfCapabilities {
         )
     }
 
+    /// Probe settings support when a package can operate without configuration access.
+    pub const fn settings(self) -> Result<VescIfCapability, AbiError> {
+        self.optional(
+            VescIfSubsystem::Settings,
+            "settings",
+            VescIfAbi::GET_CFG_FLOAT,
+        )
+    }
+
     const fn optional(
         self,
         subsystem: VescIfSubsystem,

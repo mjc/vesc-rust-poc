@@ -363,6 +363,7 @@ fn vesc_if_capabilities_expose_named_subsystems_without_raw_slot_names() {
     assert_eq!(capabilities.can().unwrap().subsystem(), VescIfSubsystem::Can);
     assert_eq!(capabilities.nvm().unwrap().subsystem(), VescIfSubsystem::Nvm);
     assert_eq!(capabilities.audio().unwrap_err().capability(), "FOC audio");
+    assert_eq!(capabilities.settings().unwrap_err().capability(), "settings");
 }
 
 #[test]
