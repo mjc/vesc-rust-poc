@@ -126,6 +126,7 @@ static INPUT_CURRENT: AtomicU32 = AtomicU32::new(0);
 static DUTY_CYCLE: AtomicU32 = AtomicU32::new(0);
 static FOC_ID_CURRENT: AtomicU32 = AtomicU32::new(0);
 static HAS_FOC_ID_CURRENT: AtomicBool = AtomicBool::new(false);
+static FOC_AUDIO_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static DISTANCE_ABS: AtomicU32 = AtomicU32::new(0);
 static MOSFET_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
@@ -309,6 +310,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     DUTY_CYCLE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     FOC_ID_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
     HAS_FOC_ID_CURRENT.store(false, Ordering::Relaxed);
+    FOC_AUDIO_AVAILABLE.store(true, Ordering::Relaxed);
     DISTANCE_ABS.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOSFET_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -1084,6 +1086,10 @@ pub(crate) fn set_foc_id_current(current: Option<DCurrent>) {
     }
 }
 
+pub(crate) fn set_foc_audio_available(available: bool) {
+    FOC_AUDIO_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
 pub(crate) fn set_imu_startup_done(done: bool) {
     IMU_STARTUP_DONE.store(done, Ordering::Relaxed);
 }
@@ -1441,15 +1447,15 @@ pub unsafe fn foc_set_openloop_duty_phase(_duty: f32, _phase: f32) -> bool {
 }
 
 pub unsafe fn foc_beep(_frequency: f32, _duration: f32, _voltage: f32) -> Option<bool> {
-    Some(true)
+    FOC_AUDIO_AVAILABLE.load(Ordering::Relaxed).then_some(true)
 }
 
 pub unsafe fn foc_play_tone(_channel: c_int, _frequency: f32, _voltage: f32) -> Option<bool> {
-    Some(true)
+    FOC_AUDIO_AVAILABLE.load(Ordering::Relaxed).then_some(true)
 }
 
 pub unsafe fn foc_stop_audio(_reset: bool) -> bool {
-    true
+    FOC_AUDIO_AVAILABLE.load(Ordering::Relaxed)
 }
 
 pub unsafe fn foc_set_audio_sample_table(
@@ -1457,11 +1463,13 @@ pub unsafe fn foc_set_audio_sample_table(
     _samples: *const f32,
     _length: c_int,
 ) -> Option<bool> {
-    Some(true)
+    FOC_AUDIO_AVAILABLE.load(Ordering::Relaxed).then_some(true)
 }
 
 pub unsafe fn foc_get_audio_sample_table(_channel: c_int) -> Option<*const f32> {
-    Some(AUDIO_SAMPLE_TABLE.as_ptr())
+    FOC_AUDIO_AVAILABLE
+        .load(Ordering::Relaxed)
+        .then_some(AUDIO_SAMPLE_TABLE.as_ptr())
 }
 
 pub unsafe fn foc_play_audio_samples(
@@ -1470,7 +1478,7 @@ pub unsafe fn foc_play_audio_samples(
     _sample_rate: f32,
     _voltage: f32,
 ) -> Option<bool> {
-    Some(true)
+    FOC_AUDIO_AVAILABLE.load(Ordering::Relaxed).then_some(true)
 }
 
 pub unsafe fn uart_start(_baudrate: u32, _half_duplex: bool) -> Option<bool> {
