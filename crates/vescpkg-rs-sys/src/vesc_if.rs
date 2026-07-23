@@ -511,6 +511,9 @@ macro_rules! define_vesc_if_abi {
             /// Callable slots in the same order as the generated raw resolvers.
             pub const RAW_SHIM_SLOTS: [VescIfSlot; Self::RAW_SHIM_COUNT] =
                 c_vesc_if::RAW_SHIM_SLOTS;
+            /// Bindgen-rendered signatures in the same order as the generated raw resolvers.
+            pub const RAW_SHIM_SIGNATURES: [&'static str; Self::RAW_SHIM_COUNT] =
+                c_vesc_if::RAW_SHIM_SIGNATURES;
             /// First slot added by the firmware 6.05 interface extension.
             pub const BASE_SLOT_COUNT: usize = c_vesc_if::FIRMWARE_605_FIRST_SLOT;
             /// First slot added by the firmware 6.06 interface extension.

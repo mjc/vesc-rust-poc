@@ -223,6 +223,15 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
     }
     rust.push_str("];\n\n");
 
+    rust.push_str("pub(crate) const RAW_SHIM_SIGNATURES: [&str; RAW_SHIM_COUNT] = [\n");
+    for slot in slots {
+        if matches!(slot.kind, SlotKind::Function) {
+            writeln!(rust, "    {:?},", slot.signature)
+                .expect("write generated raw shim signature");
+        }
+    }
+    rust.push_str("];\n\n");
+
     rust.push_str("pub(crate) const SLOTS: [crate::VescIfSlot; FIELD_COUNT] = ALL_SLOTS;\n\n");
 
     rust.push_str("#[allow(clippy::too_many_lines)]\n");
