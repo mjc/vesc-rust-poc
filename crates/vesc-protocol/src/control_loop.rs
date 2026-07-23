@@ -42,7 +42,7 @@ impl ControlLoopStatus {
             setpoint: i16::from_le_bytes([response[1], response[2]]),
             sampled_input: i16::from_le_bytes([response[3], response[4]]),
             output: i16::from_le_bytes([response[5], response[6]]),
-            tick_count: u32::from_le_bytes(response[7..11].try_into().unwrap()),
+            tick_count: u32::from_le_bytes([response[7], response[8], response[9], response[10]]),
         })
     }
 
