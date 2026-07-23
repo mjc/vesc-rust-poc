@@ -57,7 +57,9 @@ builder, not host loaders or substitutes for target execution.
 
 `ExpressInterface::from_words` checks the version before exposing any slot,
 accepts a shorter table for older firmware, and exposes named capability
-queries. Its explicitly unsafe `function::<F>` boundary can resolve a raw
+queries. Each `ExpressSlot` also retains its pinned C name and exposes const
+`kind`/`is_callable` metadata, so scalar symbol constants cannot be mistaken
+for nullable function slots. Its explicitly unsafe `function::<F>` boundary can resolve a raw
 function pointer only when the caller supplies the exact C ABI signature from
 the pinned header. It does not make those calls safe, and it never reinterprets
 the STM32 table. Target-specific package builds and hardware proof still need
