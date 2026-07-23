@@ -49,6 +49,14 @@ fn semaphore_exposes_wait_timeout_signal_reset_and_release() {
 }
 
 #[test]
+fn semaphore_wait_outcomes_have_named_predicates() {
+    assert!(SemaphoreWaitOutcome::Signaled.is_signaled());
+    assert!(!SemaphoreWaitOutcome::Signaled.is_timed_out());
+    assert!(!SemaphoreWaitOutcome::TimedOut.is_signaled());
+    assert!(SemaphoreWaitOutcome::TimedOut.is_timed_out());
+}
+
+#[test]
 fn synchronization_creation_and_timed_wait_failures_are_reported() {
     let firmware = FirmwareTest::new();
     firmware.fail_mutex_creation();
