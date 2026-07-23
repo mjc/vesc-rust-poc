@@ -3,8 +3,8 @@ use crate::domain::{FloatOutBoyMode, FloatOutBoyRunState, FloatOutBoySetpointAdj
 use crate::motor_control::FloatOutBoyMotorControl;
 use vescpkg_rs::MotorOutput;
 use vescpkg_rs::prelude::{
-    AudioChannel, AudioFrequency, AudioVoltage, Current, MotorCurrent, Ratio, SYSTEM_TICK_RATE_HZ,
-    SampleRate, Speed, TimestampTicks, Voltage,
+    AudioChannel, AudioFrequency, AudioVoltage, Ratio, SYSTEM_TICK_RATE_HZ, SampleRate, Speed,
+    TimestampTicks, Voltage,
 };
 
 const TONE_LENGTH_TICKS: u32 = crate::wire::truncating_u64_to_u32(SYSTEM_TICK_RATE_HZ) / 10;
@@ -128,12 +128,11 @@ impl HapticFeedbackState {
                     AudioVoltage::new(Voltage::from_volts(voltage.voltage().as_volts() * strength)),
                 );
             }
-            if config.vibrate_strength().current().is_positive() {
+            let vibrate_strength = config.vibrate_strength();
+            if vibrate_strength.current().is_positive() {
                 motor_control.play_tone(
                     config.vibrate_frequency(),
-                    MotorCurrent::new(Current::from_amps(
-                        config.vibrate_strength().current().as_amps() * strength,
-                    )),
+                    vibrate_strength * strength,
                     sample_rate,
                 );
             }
