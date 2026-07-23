@@ -1228,7 +1228,7 @@ fn generated_vesc_if_inventory_matches_pinned_upstream_header() {
 
 #[test]
 fn public_vesc_if_slots_are_projected_from_generated_inventory() {
-    for slot in VescIfAbi::USED_SLOTS {
+    for slot in VescIfAbi::ALL_SLOTS {
         let generated = c_vesc_if::SLOTS
             .iter()
             .find(|generated| generated.name() == slot.name())

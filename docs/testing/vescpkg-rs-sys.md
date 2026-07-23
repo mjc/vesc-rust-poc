@@ -29,7 +29,7 @@ Strategy for the `vescpkg-rs-sys` crate: a `no_std` firmware ABI layer generated
 | `raw::io_set_mode` | fn | `IO_SET_MODE` | yes |
 | `raw::io_write` | fn | `IO_WRITE` | yes |
 | `raw::io_read` | fn | `IO_READ` | yes |
-| `VescIfAbi` / `VescIfSlot` | types | all `USED_SLOTS` | offset tests |
+| `VescIfAbi` / `VescIfSlot` | types | all `ALL_SLOTS` | offset tests |
 | `LibInfo` / `LibInfoAbi` | types | loader header | yes |
 | `NativeImage` | type | rebasing | yes |
 | `views::*` | newtypes | — | size tests |
