@@ -455,7 +455,7 @@ mod tests {
 
         assert_f32_be(&legacy, 56, 0.25);
         assert_f32_be(&legacy, 68, 0.5);
-        assert_eq!(
+        assert_f32_eq!(
             realtime_value(
                 &payloads,
                 FloatOutBoyRealtimeDataItem::RemoteInput,

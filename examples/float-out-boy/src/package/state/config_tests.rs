@@ -217,7 +217,7 @@ fn lock_restores_persisted_config_then_disables_and_saves() {
         FloatOutBoyAppDataCommand::Lock,
         &[1],
     ));
-    assert_eq!(
+    assert_f32_eq!(
         state.balance_config_for_test().kp().as_amps_per_degree(),
         15.0
     );
@@ -303,9 +303,9 @@ fn default_config_decodes_pid_scales_like_float_out_boy_settings() {
     // `kp2_brake` with scale 100 at
     // `third_party/float-out-boy/src/conf/settings.xml:199-222`.
     let balance = state.balance_config_for_test();
-    assert_eq!(balance.kp().as_amps_per_degree(), 20.0);
-    assert_eq!(balance.kp2().as_amps_per_degree_per_second(), 0.6);
-    assert_eq!(balance.kp2_brake().value(), 1.0);
+    assert_f32_eq!(balance.kp().as_amps_per_degree(), 20.0);
+    assert_f32_eq!(balance.kp2().as_amps_per_degree_per_second(), 0.6);
+    assert_f32_eq!(balance.kp2_brake().value(), 1.0);
 }
 
 #[test]
@@ -340,32 +340,32 @@ fn default_scaled_config_fields_decode_to_semantic_values() {
     // decoded by `third_party/float-out-boy/src/conf/buffer.c:208-210`.
     assert_eq!(config.filter().mahony_kp(), MahonyPitchGain::new(2.0));
     assert_eq!(config.filter().mahony_kp_roll(), MahonyRollGain::new(1.4));
-    assert_eq!(
+    assert_f32_eq!(
         config.motor_control().brake_current().current().as_amps(),
         6.0
     );
-    assert_eq!(startup.pitch_tolerance().as_degrees(), 4.0);
-    assert_eq!(startup.roll_tolerance().as_degrees(), 45.0);
-    assert_eq!(startup.startup_speed().as_degrees_per_second(), 30.0);
-    assert_eq!(config.low_voltage_pushback_angle().as_degrees(), 10.0);
-    assert_eq!(config.low_voltage_threshold().as_volts(), 3.0);
-    assert_eq!(balance.kp().as_amps_per_degree(), 20.0);
-    assert_eq!(balance.kp2().as_amps_per_degree_per_second(), 0.6);
-    assert_eq!(balance.ki().as_amps_per_degree_per_tick(), 0.005);
-    assert_eq!(balance.kp_brake().value(), 1.0);
-    assert_eq!(balance.kp2_brake().value(), 1.0);
-    assert_eq!(balance.ki_limit().current().as_amps(), 30.0);
-    assert_eq!(balance.booster_angle().as_degrees(), 8.0);
-    assert_eq!(balance.booster_ramp().as_degrees(), 4.0);
-    assert_eq!(balance.booster_current().current().as_amps(), 0.0);
-    assert_eq!(balance.brake_booster_angle().as_degrees(), 8.0);
-    assert_eq!(balance.brake_booster_ramp().as_degrees(), 4.0);
-    assert_eq!(balance.brake_booster_current().current().as_amps(), 0.0);
-    assert_eq!(
+    assert_f32_eq!(startup.pitch_tolerance().as_degrees(), 4.0);
+    assert_f32_eq!(startup.roll_tolerance().as_degrees(), 45.0);
+    assert_f32_eq!(startup.startup_speed().as_degrees_per_second(), 30.0);
+    assert_f32_eq!(config.low_voltage_pushback_angle().as_degrees(), 10.0);
+    assert_f32_eq!(config.low_voltage_threshold().as_volts(), 3.0);
+    assert_f32_eq!(balance.kp().as_amps_per_degree(), 20.0);
+    assert_f32_eq!(balance.kp2().as_amps_per_degree_per_second(), 0.6);
+    assert_f32_eq!(balance.ki().as_amps_per_degree_per_tick(), 0.005);
+    assert_f32_eq!(balance.kp_brake().value(), 1.0);
+    assert_f32_eq!(balance.kp2_brake().value(), 1.0);
+    assert_f32_eq!(balance.ki_limit().current().as_amps(), 30.0);
+    assert_f32_eq!(balance.booster_angle().as_degrees(), 8.0);
+    assert_f32_eq!(balance.booster_ramp().as_degrees(), 4.0);
+    assert_f32_eq!(balance.booster_current().current().as_amps(), 0.0);
+    assert_f32_eq!(balance.brake_booster_angle().as_degrees(), 8.0);
+    assert_f32_eq!(balance.brake_booster_ramp().as_degrees(), 4.0);
+    assert_f32_eq!(balance.brake_booster_current().current().as_amps(), 0.0);
+    assert_f32_eq!(
         config.remote_throttle().current_max().current().as_amps(),
         0.0
     );
-    assert_eq!(config.remote_throttle().grace_period().as_seconds(), 10.0);
+    assert_f32_eq!(config.remote_throttle().grace_period().as_seconds(), 10.0);
 }
 
 #[test]
@@ -405,27 +405,27 @@ fn semantic_config_writes_round_trip_through_generated_storage() {
 
     let config = editable_config_from_bytes(&bytes);
     let balance = config.balance();
-    assert_eq!(config.startup().pitch_tolerance().as_degrees(), 3.5);
-    assert_eq!(config.startup().roll_tolerance().as_degrees(), 42.0);
-    assert_eq!(
+    assert_f32_eq!(config.startup().pitch_tolerance().as_degrees(), 3.5);
+    assert_f32_eq!(config.startup().roll_tolerance().as_degrees(), 42.0);
+    assert_f32_eq!(
         config.startup().startup_speed().as_degrees_per_second(),
         25.0
     );
-    assert_eq!(
+    assert_f32_eq!(
         config.remote_throttle().current_max().current().as_amps(),
         12.0
     );
-    assert_eq!(config.remote_throttle().grace_period().as_seconds(), 1.5);
-    assert_eq!(balance.kp().as_amps_per_degree(), 15.0);
-    assert_eq!(balance.kp2().as_amps_per_degree_per_second(), 0.75);
-    assert_eq!(balance.ki().as_amps_per_degree_per_tick(), 0.004);
-    assert_eq!(balance.kp_brake().value(), 0.8);
-    assert_eq!(balance.booster_angle().as_degrees(), 7.0);
-    assert_eq!(balance.booster_ramp().as_degrees(), 2.5);
-    assert_eq!(balance.booster_current().current().as_amps(), 4.0);
-    assert_eq!(balance.brake_booster_angle().as_degrees(), 6.0);
-    assert_eq!(balance.brake_booster_ramp().as_degrees(), 2.0);
-    assert_eq!(balance.brake_booster_current().current().as_amps(), 3.0);
+    assert_f32_eq!(config.remote_throttle().grace_period().as_seconds(), 1.5);
+    assert_f32_eq!(balance.kp().as_amps_per_degree(), 15.0);
+    assert_f32_eq!(balance.kp2().as_amps_per_degree_per_second(), 0.75);
+    assert_f32_eq!(balance.ki().as_amps_per_degree_per_tick(), 0.004);
+    assert_f32_eq!(balance.kp_brake().value(), 0.8);
+    assert_f32_eq!(balance.booster_angle().as_degrees(), 7.0);
+    assert_f32_eq!(balance.booster_ramp().as_degrees(), 2.5);
+    assert_f32_eq!(balance.booster_current().current().as_amps(), 4.0);
+    assert_f32_eq!(balance.brake_booster_angle().as_degrees(), 6.0);
+    assert_f32_eq!(balance.brake_booster_ramp().as_degrees(), 2.0);
+    assert_f32_eq!(balance.brake_booster_current().current().as_amps(), 3.0);
 }
 
 #[test]
@@ -453,13 +453,13 @@ fn handtest_safety_overrides_encode_named_semantic_values() {
     assert!(config.editor().apply_handtest_safety_overrides());
 
     let balance = config.balance();
-    assert_eq!(balance.ki().as_amps_per_degree_per_tick(), 0.0);
-    assert_eq!(balance.kp_brake().value(), 1.0);
-    assert_eq!(balance.kp2_brake().value(), 1.0);
-    assert_eq!(balance.booster_angle().as_degrees(), 100.0);
-    assert_eq!(balance.brake_booster_angle().as_degrees(), 100.0);
-    assert_eq!(config.faults().pitch_delay().as_seconds(), 0.05);
-    assert_eq!(config.faults().roll_delay().as_seconds(), 0.05);
+    assert_f32_eq!(balance.ki().as_amps_per_degree_per_tick(), 0.0);
+    assert_f32_eq!(balance.kp_brake().value(), 1.0);
+    assert_f32_eq!(balance.kp2_brake().value(), 1.0);
+    assert_f32_eq!(balance.booster_angle().as_degrees(), 100.0);
+    assert_f32_eq!(balance.brake_booster_angle().as_degrees(), 100.0);
+    assert_f32_eq!(config.faults().pitch_delay().as_seconds(), 0.05);
+    assert_f32_eq!(config.faults().roll_delay().as_seconds(), 0.05);
 
     // These currently unwired tune categories have no domain readers yet;
     // verify their generated float16 storage at the serializer boundary.
@@ -665,7 +665,7 @@ fn store_serialized_config_persists_for_restart_like_float_out_boy_set_cfg() {
     let restarted = FloatOutBoyPackageState::from_persisted_config(
         FloatOutBoyAllDataPayloads::source_startup(),
     );
-    assert_eq!(
+    assert_f32_eq!(
         restarted
             .serialized_config
             .balance()

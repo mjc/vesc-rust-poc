@@ -30,6 +30,32 @@
 #[cfg(any(test, not(target_arch = "arm")))]
 extern crate std;
 
+#[cfg(test)]
+macro_rules! assert_f32_eq {
+    ($actual:expr, $expected:expr $(,)?) => {{
+        let actual: f32 = $actual;
+        let expected: f32 = $expected;
+        let tolerance = f32::EPSILON * actual.abs().max(expected.abs()).max(1.0) * 4.0;
+        assert!(
+            (actual - expected).abs() <= tolerance,
+            "expected {expected:?}, got {actual:?} (tolerance {tolerance:?})"
+        );
+    }};
+}
+
+#[cfg(test)]
+macro_rules! assert_f32_ne {
+    ($actual:expr, $expected:expr $(,)?) => {{
+        let actual: f32 = $actual;
+        let expected: f32 = $expected;
+        let tolerance = f32::EPSILON * actual.abs().max(expected.abs()).max(1.0) * 4.0;
+        assert!(
+            (actual - expected).abs() > tolerance,
+            "expected values to differ by more than {tolerance:?}, both were near {actual:?}"
+        );
+    }};
+}
+
 #[cfg(not(target_arch = "arm"))]
 fn main() {}
 

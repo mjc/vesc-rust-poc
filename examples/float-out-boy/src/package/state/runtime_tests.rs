@@ -49,8 +49,8 @@ fn startup_ready_gate_refreshes_imu_attitude_like_float_out_boy() {
         payloads.base().status().ride_state().run_state(),
         FloatOutBoyRunState::Ready
     );
-    assert_eq!(payloads.base().attitude().roll().angle().as_radians(), 0.25);
-    assert_eq!(
+    assert_f32_eq!(payloads.base().attitude().roll().angle().as_radians(), 0.25);
+    assert_f32_eq!(
         payloads.base().attitude().pitch().angle().as_radians(),
         -0.125
     );
@@ -247,8 +247,8 @@ fn startup_ready_resets_runtime_vars_like_float_out_boy() {
     // module setpoints at `third_party/float-out-boy/src/main.c:239-244`, then
     // seeds only the board setpoint from balance pitch at
     // `third_party/float-out-boy/src/main.c:249-252`.
-    assert_eq!(base.balance_current().current().current().as_amps(), 0.0);
-    assert_eq!(base.booster_current().current().current().as_amps(), 0.0);
+    assert_f32_eq!(base.balance_current().current().current().as_amps(), 0.0);
+    assert_f32_eq!(base.booster_current().current().current().as_amps(), 0.0);
     assert_eq!(
         state.balance_loop.pid.integral_current.current(),
         Current::ZERO
@@ -269,7 +269,7 @@ fn startup_ready_resets_runtime_vars_like_float_out_boy() {
         base.setpoints().remote(),
     ]
     .into_iter()
-    .for_each(|setpoint| assert_eq!(setpoint.angle().as_degrees(), 0.0));
+    .for_each(|setpoint| assert_f32_eq!(setpoint.angle().as_degrees(), 0.0));
 }
 
 #[test]
@@ -373,14 +373,14 @@ fn ready_engage_resets_runtime_vars_like_float_out_boy() {
     // breaks out of the READY branch without running the RUNNING
     // balance-current loop.
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Running);
-    assert_eq!(base.balance_current().current().current().as_amps(), 0.0);
-    assert_eq!(base.booster_current().current().current().as_amps(), 0.0);
+    assert_f32_eq!(base.balance_current().current().current().as_amps(), 0.0);
+    assert_f32_eq!(base.booster_current().current().current().as_amps(), 0.0);
     let expected_engage_setpoint = AngleRadians::from_radians(0.05).as_degrees();
-    assert_eq!(
+    assert_f32_eq!(
         base.setpoints().board().angle().as_degrees(),
         expected_engage_setpoint
     );
-    assert_eq!(base.setpoints().remote().angle().as_degrees(), 0.0);
+    assert_f32_eq!(base.setpoints().remote().angle().as_degrees(), 0.0);
     assert_eq!(
         state.balance_loop.pid.integral_current.current(),
         Current::ZERO
@@ -473,13 +473,13 @@ fn motor_payload_refreshes_like_float_out_boy_motor_data_update() {
     ));
 
     let motor = state.all_data_payloads().base().motor();
-    assert_eq!(
+    assert_f32_eq!(
         motor.electrical_speed().rpm().as_revolutions_per_minute(),
         1234.0
     );
-    assert_eq!(motor.vehicle_speed().speed().as_meters_per_second(), 5.5);
-    assert_eq!(motor.motor_current().current().as_amps(), 12.25);
-    assert_eq!(motor.directional_motor_current().current().as_amps(), -6.75,);
+    assert_f32_eq!(motor.vehicle_speed().speed().as_meters_per_second(), 5.5);
+    assert_f32_eq!(motor.motor_current().current().as_amps(), 12.25);
+    assert_f32_eq!(motor.directional_motor_current().current().as_amps(), -6.75,);
     let normalized_frequency = 5.0 / 832.0;
     let k = vescpkg_rs::tan(core::f32::consts::PI * normalized_frequency);
     let first_filtered_sample = -6.75 * k * k / (1.0 + k / 0.707 + k * k);
@@ -488,8 +488,8 @@ fn motor_payload_refreshes_like_float_out_boy_motor_data_update() {
             .abs()
             < 0.0001
     );
-    assert_eq!(motor.battery_current().current().as_amps(), 0.04);
-    assert_eq!(motor.duty_cycle().ratio().as_ratio(), 0.00375);
+    assert_f32_eq!(motor.battery_current().current().as_amps(), 0.04);
+    assert_f32_eq!(motor.duty_cycle().ratio().as_ratio(), 0.00375);
 }
 
 #[test]
@@ -522,7 +522,7 @@ fn foc_id_current_refreshes_like_float_out_boy_all_data() {
     ));
 
     let motor = state.all_data_payloads().base().motor();
-    assert_eq!(
+    assert_f32_eq!(
         motor
             .foc_id_current()
             .as_measured()
@@ -1020,7 +1020,7 @@ fn controller_input_selects_connected_uart_or_ppm_and_applies_deadband_like_floa
 
     state.refresh_controller_input(firmware.input());
 
-    assert_eq!(state.remote_control.input().ratio().as_ratio(), 0.0);
+    assert_f32_eq!(state.remote_control.input().ratio().as_ratio(), 0.0);
 }
 
 #[test]

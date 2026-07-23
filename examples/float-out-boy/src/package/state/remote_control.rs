@@ -419,7 +419,7 @@ mod tests {
         // Upstream `do_rc_move(d)` uses default inverted throttle and filters
         // `rc_current = old * 0.95 + target * 0.05` before requesting current
         // at `third_party/float-out-boy/src/main.c:291-298`; 10A max with 50% input requests -0.25A.
-        assert_eq!(requested_current.current().as_amps(), -0.25);
+        assert_f32_eq!(requested_current.current().as_amps(), -0.25);
     }
 
     #[test]

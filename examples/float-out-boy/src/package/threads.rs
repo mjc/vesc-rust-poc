@@ -398,7 +398,7 @@ mod tests {
         // `third_party/float-out-boy/src/main.c:1075`, before sleeping at
         // `third_party/float-out-boy/src/main.c:1080`.
         assert_eq!(telemetry.current_command_count(), 1);
-        assert_eq!(telemetry.commanded_current().current().as_amps(), 3.5);
+        assert_f32_eq!(telemetry.commanded_current().current().as_amps(), 3.5);
         assert_eq!(
             state.all_data_payloads().base().footpad().state(),
             FloatOutBoyFootpadState::Left,
@@ -455,7 +455,7 @@ mod tests {
         );
 
         assert_eq!(firmware.foc_tone_command_count(), 1);
-        assert_eq!(
+        assert_f32_eq!(
             firmware
                 .commanded_foc_tone_frequency()
                 .frequency()

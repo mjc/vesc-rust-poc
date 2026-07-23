@@ -29,12 +29,12 @@ fn requested_current_applies_like_float_out_boy_motor_control() {
     // `third_party/float-out-boy/src/motor_control.c:92-99` and `third_party/float-out-boy/src/motor_control.c:121-122`.
     assert_eq!(motor.keep_alive_count(), 1);
     assert_eq!(motor.current_off_delay_count(), 1);
-    assert_eq!(
+    assert_f32_eq!(
         motor.commanded_current_off_delay().duration().as_seconds(),
         0.05
     );
     assert_eq!(motor.current_command_count(), 1);
-    assert_eq!(motor.commanded_current().current().as_amps(), 6.25);
+    assert_f32_eq!(motor.commanded_current().current().as_amps(), 6.25);
     assert!(!state.apply_requested_motor_current(bindings));
     assert_eq!(motor.current_command_count(), 1);
 }

@@ -277,11 +277,11 @@ mod tests {
 
         // Float Out Boy clamps the asin input before converting to pitch at
         // `third_party/float-out-boy/src/balance_filter.c:145-154`.
-        assert_eq!(
+        assert_f32_eq!(
             positive.balance_pitch().angle().as_radians(),
             core::f32::consts::FRAC_PI_2
         );
-        assert_eq!(
+        assert_f32_eq!(
             negative.balance_pitch().angle().as_radians(),
             -core::f32::consts::FRAC_PI_2
         );
@@ -331,9 +331,9 @@ mod tests {
         ))
         .expect("nonzero accel normalizes");
 
-        assert_eq!(unit.x(), 0.0);
-        assert_eq!(unit.y(), 0.0);
-        assert_eq!(unit.z(), 1.0);
+        assert_f32_eq!(unit.x(), 0.0);
+        assert_f32_eq!(unit.y(), 0.0);
+        assert_f32_eq!(unit.z(), 1.0);
     }
 
     #[test]

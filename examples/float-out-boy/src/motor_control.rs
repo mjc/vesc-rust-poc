@@ -207,7 +207,7 @@ mod tests {
             MotorCurrent::new(Current::from_amps(50.0)),
         ));
         assert_eq!(motor.current_command_count(), 1);
-        assert_eq!(motor.commanded_current().current().as_amps(), 0.0);
+        assert_f32_eq!(motor.commanded_current().current().as_amps(), 0.0);
 
         assert!(!control.apply(
             bindings,
@@ -242,7 +242,7 @@ mod tests {
         // `third_party/float-out-boy/src/motor_control.c:112-114`.
         assert_eq!(motor.keep_alive_count(), 1);
         assert_eq!(motor.duty_command_count(), 1);
-        assert_eq!(motor.commanded_duty().ratio().as_ratio(), 0.0);
+        assert_f32_eq!(motor.commanded_duty().ratio().as_ratio(), 0.0);
         assert_eq!(motor.current_command_count(), 0);
         assert_eq!(motor.brake_current_command_count(), 0);
     }
@@ -292,7 +292,7 @@ mod tests {
                 FloatOutBoyParkingBrakeMode::Idle,
                 MotorCurrent::new(Current::from_amps(50.0)),
             ));
-            assert_eq!(motor.commanded_current().current().as_amps(), 3.0);
+            assert_f32_eq!(motor.commanded_current().current().as_amps(), 3.0);
         }
 
         control.request_current(MotorCurrent::new(Current::from_amps(5.0)));
@@ -304,7 +304,7 @@ mod tests {
             FloatOutBoyParkingBrakeMode::Idle,
             MotorCurrent::new(Current::from_amps(50.0)),
         ));
-        assert_eq!(motor.commanded_current().current().as_amps(), 7.0);
+        assert_f32_eq!(motor.commanded_current().current().as_amps(), 7.0);
 
         control.stop_tone();
         control.request_current(MotorCurrent::new(Current::from_amps(5.0)));
@@ -316,6 +316,6 @@ mod tests {
             FloatOutBoyParkingBrakeMode::Idle,
             MotorCurrent::new(Current::from_amps(50.0)),
         ));
-        assert_eq!(motor.commanded_current().current().as_amps(), 5.0);
+        assert_f32_eq!(motor.commanded_current().current().as_amps(), 5.0);
     }
 }

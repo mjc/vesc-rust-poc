@@ -85,7 +85,9 @@ impl TurnTiltState {
         self.last_yaw = yaw;
         let limited = AngleDegrees::from_degrees(change.as_degrees().clamp(-0.10, 0.10));
         self.yaw_change = self.yaw_change * 0.8 + limited * 0.2;
-        if self.yaw_change.signum() != self.yaw_aggregate.signum() {
+        if self.yaw_change.as_degrees().is_sign_negative()
+            != self.yaw_aggregate.as_degrees().is_sign_negative()
+        {
             self.yaw_aggregate = AngleDegrees::ZERO;
         }
         self.abs_yaw_change = self.yaw_change.abs();
@@ -164,7 +166,9 @@ impl RideModifierState {
 
         let ab = self.atr.angle.setpoint + self.brake.setpoint;
         let torque = self.torque.setpoint;
-        let combined_torque = if ab.signum() == torque.signum() {
+        let combined_torque = if ab.as_degrees().is_sign_negative()
+            == torque.as_degrees().is_sign_negative()
+        {
             AngleDegrees::from_degrees(
                 ab.signum() * ab.as_degrees().abs().max(torque.as_degrees().abs()),
             )
@@ -409,7 +413,11 @@ impl RideModifierState {
         };
         let balance_offset = input.base_setpoint + input.remote_setpoint - input.balance_pitch;
         let mut target = AngleDegrees::ZERO;
-        if factor < 0.0 && braking && abs_erpm > 2_000.0 && balance_offset.signum() != erpm_sign {
+        if factor < 0.0
+            && braking
+            && abs_erpm > 2_000.0
+            && balance_offset.as_degrees().is_sign_negative() != erpm_sign.is_sign_negative()
+        {
             let mut downhill = 1.0;
             if (input.motor_erpm.as_revolutions_per_minute() > 1_000.0
                 && self.atr.accel_diff < -1.0)

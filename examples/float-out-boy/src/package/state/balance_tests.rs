@@ -400,8 +400,8 @@ fn app_data_running_wheelslip_without_traction_control_smooths_current_like_floa
     // Upstream RUNNING only sets `balance_current = 0` when
     // `traction_control` is set at `third_party/float-out-boy/src/main.c:949-954`; wheelslip alone
     // remains a UI/state flag and the current path still smooths.
-    assert_ne!(telemetry.commanded_current().current().as_amps(), 0.0);
-    assert_ne!(
+    assert_f32_ne!(telemetry.commanded_current().current().as_amps(), 0.0);
+    assert_f32_ne!(
         state
             .all_data_payloads()
             .base()
@@ -498,7 +498,7 @@ fn app_data_normal_algorithm_trace_matches_float_out_boy_loop_order() {
         FloatOutBoySetpointAdjustment::Centering
     );
     assert!((engaged_base.setpoints().board().angle().as_degrees() - 2.0).abs() < 0.0001);
-    assert_eq!(
+    assert_f32_eq!(
         engaged_base.balance_current().current().current().as_amps(),
         0.0
     );
@@ -542,7 +542,7 @@ fn app_data_normal_algorithm_trace_matches_float_out_boy_loop_order() {
         (running_base.setpoints().board().angle().as_degrees() - expected_board_setpoint).abs()
             < 0.0001
     );
-    assert_eq!(
+    assert_f32_eq!(
         running_base.booster_current().current().current().as_amps(),
         0.0
     );

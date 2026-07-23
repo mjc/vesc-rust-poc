@@ -668,7 +668,12 @@ fn evaluate_transition_phase(
         && matches!(run_state, FloatOutBoyRunState::Running)
         && !matches!(ride_state.mode(), FloatOutBoyMode::Flywheel)
         && motor_acceleration.abs() > traction_loss.acceleration_detect
-        && motor_acceleration.signum() == motor_erpm.signum()
+        && motor_acceleration
+            .as_revolutions_per_minute()
+            .is_sign_negative()
+            == motor_erpm
+                .as_revolutions_per_minute()
+                .is_sign_negative()
         && base.motor().duty_cycle().ratio() > traction_loss.duty
         && motor_erpm.abs() > traction_loss.erpm;
     let state_transition = float_out_boy_state_transition(FloatOutBoyStateTransitionInput {

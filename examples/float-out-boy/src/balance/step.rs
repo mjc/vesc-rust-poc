@@ -431,7 +431,7 @@ mod tests {
 
         // Upstream subtracts brake tilt from booster proportional before
         // `booster_update` at `third_party/float-out-boy/src/main.c:921-922`.
-        assert_eq!(proportional.angle().as_degrees(), 0.0);
+        assert_f32_eq!(proportional.angle().as_degrees(), 0.0);
     }
 
     #[test]
@@ -514,8 +514,8 @@ mod tests {
         // Upstream mixes roll, gyro Y, and gyro Z at
         // `third_party/float-out-boy/src/imu.c:46-51`, then flips darkride at
         // `third_party/float-out-boy/src/imu.c:52-53`.
-        assert_eq!(upright.rate().as_degrees_per_second(), 12.0);
-        assert_eq!(darkride.rate().as_degrees_per_second(), -12.0);
+        assert_f32_eq!(upright.rate().as_degrees_per_second(), 12.0);
+        assert_f32_eq!(darkride.rate().as_degrees_per_second(), -12.0);
     }
 
     #[test]

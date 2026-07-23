@@ -97,16 +97,16 @@ mod tests {
             tracker.record(Rpm::from_revolutions_per_minute(step as f32 * 10.0));
         }
 
-        assert_eq!(tracker.average().as_revolutions_per_minute(), 10.0);
+        assert_f32_eq!(tracker.average().as_revolutions_per_minute(), 10.0);
 
         tracker.record(Rpm::from_revolutions_per_minute(410.0));
 
-        assert_eq!(tracker.average().as_revolutions_per_minute(), 10.0);
+        assert_f32_eq!(tracker.average().as_revolutions_per_minute(), 10.0);
 
         tracker.record(Rpm::from_revolutions_per_minute(450.0));
 
         // Float Out Boy replaces the oldest 10 ERPM sample with the current 40 ERPM sample:
         // `10 + (40 - 10) / ACCEL_ARRAY_SIZE`.
-        assert_eq!(tracker.average().as_revolutions_per_minute(), 10.75);
+        assert_f32_eq!(tracker.average().as_revolutions_per_minute(), 10.75);
     }
 }

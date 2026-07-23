@@ -319,7 +319,7 @@ mod tests {
             0,
         ]));
 
-        assert_eq!(
+        assert_f32_eq!(
             state.serialized_config.balance().kp().as_amps_per_degree(),
             1.2
         );
@@ -400,7 +400,7 @@ mod tests {
         // step toward target zero at `third_party/float-out-boy/src/utils.c:25-33`,
         // and the main loop publishes the new setpoint at
         // `third_party/float-out-boy/src/main.c:869-875`.
-        assert_eq!(base.setpoints().board().angle().as_degrees(), 1.5);
+        assert_f32_eq!(base.setpoints().board().angle().as_degrees(), 1.5);
         assert_eq!(
             base.status().ride_state().setpoint_adjustment(),
             FloatOutBoySetpointAdjustment::Centering

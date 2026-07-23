@@ -16,6 +16,6 @@ fn footpad_runtime_refresh_decodes_adc_like_float_out_boy_sensor_update() {
     // the switch state at
     // `third_party/float-out-boy/src/footpad_sensor.c:28-61`.
     assert_eq!(footpad.state(), FloatOutBoyFootpadState::Left);
-    assert_eq!(footpad.adc1_volts(), 2.5);
-    assert_eq!(footpad.adc2_volts(), 0.0);
+    assert_f32_eq!(footpad.adc1_volts(), 2.5);
+    assert_f32_eq!(footpad.adc2_volts(), 0.0);
 }
