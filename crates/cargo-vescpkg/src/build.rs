@@ -859,6 +859,7 @@ mod tests {
             qml.contains("normalized.package={\"name\":packageName,\"version\":packageVersion}")
         );
         assert!(qml.contains("\"package\":{\"name\":packageName,\"version\":packageVersion}"));
+        assert!(qml.contains("var lines=csv.split(/\\r?\\n/)"));
         assert!(
             qml.contains("if(tuneArchive&&tuneArchive.length>0){downloadedTunesModel.setTunes")
         );

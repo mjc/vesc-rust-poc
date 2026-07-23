@@ -381,7 +381,7 @@ function loadTuneArchive(){if(!tuneStorage.tuneArchive){return null;}
 var archive=typeof tuneStorage.tuneArchive==="string"?JSON.parse(tuneStorage.tuneArchive):tuneStorage.tuneArchive;for(let i=0;i<archive.length;i++){archive[i]=normalizeArchiveTune(archive[i]);}
 return archive;}
 function getTuneArchiveDate(){return Qt.formatDateTime(tuneStorage.tuneArchiveDownloadDate);}
-function parseCsv(csv){var lines=csv.split("\r\n");var tuneCount=lines[0].split(",").length-1;var result=[];for(var i=0;i<tuneCount;i++){result.push({"version":formatVersion,"package":{"name":packageName,"version":packageVersion},"settings":{}});}
+function parseCsv(csv){var lines=csv.split(/\r?\n/);var tuneCount=lines[0].split(",").length-1;var result=[];for(var i=0;i<tuneCount;i++){result.push({"version":formatVersion,"package":{"name":packageName,"version":packageVersion},"settings":{}});}
 for(var i in lines){var currentLine=lines[i].split(",");for(var j=0;j<tuneCount;j++){var value=currentLine[j+1];if(value){var key=currentLine[0];var name;if(key==="_name"){result[j].name=value;continue;}else if(key.startsWith("double_")){name=key.substring(7);value=parseFloat(value);}else if(key.startsWith("int_")){name=key.substring(4);value=parseInt(value);}else if(key.startsWith("bool_")){name=key.substring(5);value=!!parseInt(value);}else if(key.startsWith("enum_")){name=key.substring(5);value=parseInt(value);}
 if(Number.isNaN(value)){continue;}
 result[j].settings[name]=value;}}}
