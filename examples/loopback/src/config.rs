@@ -45,15 +45,13 @@ impl LoopbackConfig {
     fn read_from(eeprom: CustomEeprom) -> Option<Self> {
         let address = CustomEepromAddress::from_index(LOOPBACK_CONFIG_EEPROM_WORD)?;
         let mut bytes = [0_u8; LOOPBACK_CONFIG_LEN];
-        eeprom
-            .read_bytes_at(address, &mut bytes)
-            .then(|| Self::from_serialized(&bytes))
-            .flatten()
+        eeprom.read_bytes_at(address, &mut bytes).ok()?;
+        Self::from_serialized(&bytes)
     }
 
     fn write_to(self, eeprom: CustomEeprom) -> bool {
         let address = CustomEepromAddress::from_index(LOOPBACK_CONFIG_EEPROM_WORD);
-        address.is_some_and(|address| eeprom.write_bytes_at(address, self.0.as_bytes()))
+        address.is_some_and(|address| eeprom.write_bytes_at(address, self.0.as_bytes()).is_ok())
     }
 }
 
@@ -89,7 +87,7 @@ mod tests {
     fn package_config_rejects_an_image_without_its_signature() {
         let firmware = FirmwareTest::new();
         let eeprom = firmware.eeprom();
-        assert!(eeprom.write_bytes(&[0; 8]));
+        assert!(eeprom.write_bytes(&[0; 8]).is_ok());
         assert_eq!(LoopbackConfig::read_from(eeprom), None);
     }
 

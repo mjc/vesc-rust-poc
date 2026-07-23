@@ -663,7 +663,7 @@ fn store_serialized_config_persists_for_restart_like_float_out_boy_set_cfg() {
 
     assert!(state.store_serialized_config(&bytes));
     let mut persisted = [0; FLOAT_OUT_BOY_EEPROM_LEN];
-    assert!(firmware.eeprom().read_bytes(&mut persisted));
+    assert!(firmware.eeprom().read_bytes(&mut persisted).is_ok());
     assert_eq!(
         &persisted[..state.serialized_config.as_bytes().len()],
         state.serialized_config.as_bytes(),
