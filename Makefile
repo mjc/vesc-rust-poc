@@ -48,6 +48,9 @@ clippy-pedantic:
 		--all-targets \
 		--all-features \
 		-- $(CLIPPY_PEDANTIC_FLAGS)
+	# `--all-features` enables `alloc`, so also check the supported host test
+	# helpers without it; conditional imports can otherwise escape this gate.
+	$(CARGO) clippy -p vescpkg-rs --all-targets --no-default-features --features test-support -- $(CLIPPY_PEDANTIC_FLAGS)
 
 vescpkg-rs-sys-target-check:
 	test "$$($(CARGO) tree -p vescpkg-rs-sys --edges normal --no-default-features --prefix none | wc -l | tr -d ' ')" = 1
