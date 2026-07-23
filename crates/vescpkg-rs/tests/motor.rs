@@ -5,10 +5,10 @@ use vescpkg_rs::{
     AngleDegrees, BatteryCellCount, BrakeCurrent, BrakeCurrentRelative, Current, CurrentOffDelay,
     CurrentRelative, DCurrent, DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed,
     FirmwareFault, FirmwareFaultId, HandbrakeCurrent, HandbrakeRelative, InputCurrent,
-    MotorCurrentLimit, MotorOutput, MotorSelection, MotorTelemetry, OdometerMeters,
-    OpenLoopCurrent, OpenLoopPhase, PidPosition, PidPositionOffsetPersistence, PwmCallbackError,
-    Ratio, Rpm, SignedRatio, Speed, TachometerReset, Temperature, TemperatureLimitStart,
-    TotalMotorCurrent, VehicleSpeed, VescSeconds,
+    MotorCurrentLimit, MotorOutput, MotorReleaseOutcome, MotorSelection, MotorTelemetry,
+    OdometerMeters, OpenLoopCurrent, OpenLoopPhase, PidPosition, PidPositionOffsetPersistence,
+    PwmCallbackError, Ratio, Rpm, SignedRatio, Speed, TachometerReset, Temperature,
+    TemperatureLimitStart, TotalMotorCurrent, VehicleSpeed, VescSeconds,
 };
 
 unsafe extern "C" fn test_pwm_callback() {}
@@ -185,10 +185,11 @@ fn motor_exposes_typed_handbrake_commands() {
     );
     assert_eq!(telemetry.sampling_frequency().as_hertz(), 20_000.0);
     firmware.motor().release_motor();
-    assert!(
+    assert_eq!(
         firmware
             .motor()
-            .wait_for_motor_release(VescSeconds::from_seconds(0.1))
+            .wait_for_motor_release(VescSeconds::from_seconds(0.1)),
+        MotorReleaseOutcome::Released
     );
     firmware.motor().reset_statistics();
     firmware.motor().update_pid_position_offset(
