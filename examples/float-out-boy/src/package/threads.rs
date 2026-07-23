@@ -182,9 +182,9 @@ pub(crate) fn tick_float_out_boy_main_thread_with(
 /// Run Float Out Boy's source-backed auxiliary thread scheduler shell.
 ///
 /// Upstream `aux_thd` optionally lowers its current thread priority at
-/// `third_party/float-out-boy/src/main.c:1133-1135`, loops until `should_terminate()` at
-/// `third_party/float-out-boy/src/main.c:1139`, and sleeps at `1e6 / LEDS_REFRESH_RATE` at
-/// `third_party/float-out-boy/src/main.c:1155`. The refresh rate is `30` in
+/// `third_party/float-out-boy/src/main.c:1133-1135`, checks the non-running odometer backup
+/// threshold from `main.c:1142-1146`, loops until `should_terminate()` at `main.c:1139`,
+/// and sleeps at `1e6 / LEDS_REFRESH_RATE` at `main.c:1155`. The refresh rate is `30` in
 /// `third_party/float-out-boy/src/leds.h:26`.
 #[cfg(any(test, target_arch = "arm"))]
 pub(crate) fn run_float_out_boy_aux_thread_with(threads: &impl FirmwareThreads) {
