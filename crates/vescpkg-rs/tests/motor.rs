@@ -417,6 +417,24 @@ fn advanced_foc_reports_absent_optional_slots() {
     );
     assert_eq!(
         unsafe {
+            advanced.set_open_loop_phase(
+                OpenLoopCurrent::new(Current::from_amps(1.0)),
+                OpenLoopPhase::new(AngleDegrees::from_degrees(30.0)),
+            )
+        },
+        Err(vescpkg_rs::AdvancedFocError::Unavailable)
+    );
+    assert_eq!(
+        unsafe {
+            advanced.set_open_loop_duty(
+                DutyCycle::new(SignedRatio::from_ratio_const(0.1)),
+                ElectricalSpeed::new(Rpm::from_revolutions_per_minute(100.0)),
+            )
+        },
+        Err(vescpkg_rs::AdvancedFocError::Unavailable)
+    );
+    assert_eq!(
+        unsafe {
             advanced.set_open_loop_duty_phase(
                 DutyCycle::new(SignedRatio::from_ratio_const(0.1)),
                 OpenLoopPhase::new(AngleDegrees::from_degrees(30.0)),
