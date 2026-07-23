@@ -15,6 +15,15 @@ use super::{
     ExpressLispMessageError, ExpressSlot,
 };
 
+/// Error returned when Express rejects a LispBM operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExpressLispOperationError {
+    /// The firmware did not expose the requested operation.
+    Unavailable(ExpressCallError),
+    /// Firmware rejected the operation or its arguments.
+    Rejected,
+}
+
 /// A typed Express LispBM value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
@@ -291,10 +300,15 @@ impl<'a> ExpressLisp<'a> {
         self,
         cid: u32,
         value: ExpressLispValue,
-    ) -> Result<bool, ExpressCallError> {
+    ) -> Result<(), ExpressLispMessageError> {
         let unblock: LbmUnblockCtxUnboxed =
-            unsafe { self.interface.function(ExpressSlot::LbmUnblockCtxUnboxed) }?;
-        Ok(unsafe { unblock(cid, value.raw()) })
+            unsafe { self.interface.function(ExpressSlot::LbmUnblockCtxUnboxed) }
+                .map_err(ExpressLispMessageError::Unavailable)?;
+        if unsafe { unblock(cid, value.raw()) } {
+            Ok(())
+        } else {
+            Err(ExpressLispMessageError::Rejected)
+        }
     }
 
     /// Start an ownership-scoped flattened LispBM value.
@@ -362,9 +376,14 @@ impl<'a> ExpressLisp<'a> {
         self,
         name: *mut c_char,
         handler: super::functions::ExtensionHandler,
-    ) -> Result<bool, ExpressCallError> {
-        let add: AddExtension = unsafe { self.interface.function(ExpressSlot::LbmAddExtension) }?;
-        Ok(unsafe { add(name, handler) })
+    ) -> Result<(), ExpressLispOperationError> {
+        let add: AddExtension = unsafe { self.interface.function(ExpressSlot::LbmAddExtension) }
+            .map_err(ExpressLispOperationError::Unavailable)?;
+        if unsafe { add(name, handler) } {
+            Ok(())
+        } else {
+            Err(ExpressLispOperationError::Rejected)
+        }
     }
 
     /// Set the firmware-owned error reason for the current LispBM context.
@@ -420,9 +439,14 @@ impl<'a> ExpressLisp<'a> {
         self,
         value: *mut ExpressLispValue,
         elements: u32,
-    ) -> Result<bool, ExpressCallError> {
+    ) -> Result<(), ExpressLispOperationError> {
         let create: CreateByteArray =
-            unsafe { self.interface.function(ExpressSlot::LbmCreateByteArray) }?;
-        Ok(unsafe { create(value.cast(), elements) })
+            unsafe { self.interface.function(ExpressSlot::LbmCreateByteArray) }
+                .map_err(ExpressLispOperationError::Unavailable)?;
+        if unsafe { create(value.cast(), elements) } {
+            Ok(())
+        } else {
+            Err(ExpressLispOperationError::Rejected)
+        }
     }
 }
