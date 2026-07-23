@@ -144,7 +144,7 @@ impl FloatOutBoyMotorControl {
         }
 
         if self.tone_ticks > 0 {
-            self.tone_counter -= 1;
+            self.tone_counter = self.tone_counter.saturating_sub(1);
             if self.tone_counter == 0 {
                 self.tone_counter = self.tone_ticks;
                 self.tone_high = !self.tone_high;
@@ -321,5 +321,25 @@ mod tests {
             MotorCurrent::new(Current::from_amps(50.0)),
         ));
         assert_f32_eq!(motor.commanded_current().current().as_amps(), 5.0);
+    }
+
+    #[test]
+    fn active_tone_saturates_an_empty_counter_instead_of_panicking() {
+        let motor = FirmwareTest::new();
+        let mut control = FloatOutBoyMotorControl {
+            tone_ticks: 1,
+            tone_counter: 0,
+            ..FloatOutBoyMotorControl::new()
+        };
+
+        assert!(control.apply(
+            motor.motor(),
+            FloatOutBoyRunState::Running,
+            Rpm::ZERO,
+            TimestampTicks::from_ticks(0),
+            FloatOutBoyParkingBrakeMode::Idle,
+            MotorCurrent::new(Current::ZERO),
+        ));
+        assert_eq!(control.tone_counter, 1);
     }
 }
