@@ -1932,20 +1932,36 @@ pub unsafe fn mc_get_odometer() -> u64 {
 
 pub unsafe fn mc_set_odometer(_meters: u64) {}
 
-pub unsafe fn mc_get_amp_hours(_reset: bool) -> f32 {
-    load(&AMP_HOURS_DISCHARGED)
+pub unsafe fn mc_get_amp_hours(reset: bool) -> f32 {
+    if reset {
+        -1.0
+    } else {
+        load(&AMP_HOURS_DISCHARGED)
+    }
 }
 
-pub unsafe fn mc_get_amp_hours_charged(_reset: bool) -> f32 {
-    load(&AMP_HOURS_CHARGED)
+pub unsafe fn mc_get_amp_hours_charged(reset: bool) -> f32 {
+    if reset {
+        -1.0
+    } else {
+        load(&AMP_HOURS_CHARGED)
+    }
 }
 
-pub unsafe fn mc_get_watt_hours(_reset: bool) -> f32 {
-    load(&WATT_HOURS_DISCHARGED)
+pub unsafe fn mc_get_watt_hours(reset: bool) -> f32 {
+    if reset {
+        -1.0
+    } else {
+        load(&WATT_HOURS_DISCHARGED)
+    }
 }
 
-pub unsafe fn mc_get_watt_hours_charged(_reset: bool) -> f32 {
-    load(&WATT_HOURS_CHARGED)
+pub unsafe fn mc_get_watt_hours_charged(reset: bool) -> f32 {
+    if reset {
+        -1.0
+    } else {
+        load(&WATT_HOURS_CHARGED)
+    }
 }
 
 pub unsafe fn mc_get_battery_level(wh_left: *mut f32) -> f32 {

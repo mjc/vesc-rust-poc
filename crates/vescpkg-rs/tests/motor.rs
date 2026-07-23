@@ -4,11 +4,12 @@
 use vescpkg_rs::{
     AngleDegrees, BatteryCellCount, BrakeCurrent, BrakeCurrentRelative, Current, CurrentOffDelay,
     CurrentRelative, DCurrent, DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed,
-    Energy, FirmwareFault, FirmwareFaultId, HandbrakeCurrent, HandbrakeRelative, InputCurrent,
-    MotorCurrentLimit, MotorOutput, MotorReleaseOutcome, MotorSelection, MotorTelemetry,
-    OdometerMeters, OpenLoopCurrent, OpenLoopPhase, PidPosition, PidPositionOffsetPersistence,
-    PwmCallbackError, Ratio, Rpm, SignedRatio, Speed, TachometerReset, Temperature,
-    TemperatureLimitStart, TotalMotorCurrent, VehicleSpeed, VescSeconds, WattHoursRemaining,
+    Energy, EnergyCounterReset, FirmwareFault, FirmwareFaultId, HandbrakeCurrent,
+    HandbrakeRelative, InputCurrent, MotorCurrentLimit, MotorOutput, MotorReleaseOutcome,
+    MotorSelection, MotorTelemetry, OdometerMeters, OpenLoopCurrent, OpenLoopPhase, PidPosition,
+    PidPositionOffsetPersistence, PwmCallbackError, Ratio, Rpm, SignedRatio, Speed,
+    TachometerReset, Temperature, TemperatureLimitStart, TotalMotorCurrent, VehicleSpeed,
+    VescSeconds, WattHoursRemaining,
 };
 
 unsafe extern "C" fn test_pwm_callback() {}
@@ -89,6 +90,34 @@ fn motor_exposes_typed_handbrake_commands() {
     assert_eq!(telemetry.duty_cycle_limit().ratio().as_ratio(), 0.85);
     assert_eq!(telemetry.battery_cell_count().unwrap().as_u16(), 12);
     assert_eq!(telemetry.battery_current().current().as_amps(), 6.0);
+    assert_eq!(
+        telemetry
+            .amp_hours_discharged_with(EnergyCounterReset::Reset)
+            .charge()
+            .as_amp_hours(),
+        -1.0
+    );
+    assert_eq!(
+        telemetry
+            .amp_hours_charged_with(EnergyCounterReset::Reset)
+            .charge()
+            .as_amp_hours(),
+        -1.0
+    );
+    assert_eq!(
+        telemetry
+            .watt_hours_discharged_with(EnergyCounterReset::Reset)
+            .energy()
+            .as_watt_hours(),
+        -1.0
+    );
+    assert_eq!(
+        telemetry
+            .watt_hours_charged_with(EnergyCounterReset::Reset)
+            .energy()
+            .as_watt_hours(),
+        -1.0
+    );
     let battery = telemetry.battery_level_snapshot();
     assert_eq!(battery.level().as_fraction(), 0.0);
     assert_eq!(

@@ -18,6 +18,22 @@ impl TachometerReset {
     }
 }
 
+/// Select whether cumulative energy counters preserve or reset firmware state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnergyCounterReset {
+    /// Read the current counter without changing firmware state.
+    Preserve,
+    /// Read the current counter and reset it in firmware.
+    Reset,
+}
+
+impl EnergyCounterReset {
+    /// Return the ABI reset flag for this semantic choice.
+    pub const fn resets(self) -> bool {
+        matches!(self, Self::Reset)
+    }
+}
+
 /// Select whether a PID-position offset update remains live-only or is stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PidPositionOffsetPersistence {
