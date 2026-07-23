@@ -1,5 +1,3 @@
-#![cfg_attr(test, allow(dead_code))]
-
 use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescIfPresence};
 use core::ffi::{c_char, c_int, c_uchar, c_uint, c_void};
 
@@ -1487,11 +1485,6 @@ pub unsafe fn vesc_system_time_ticks() -> u32 {
     }
 }
 
-#[expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "bounds checks reproduce the C firmware's float-to-u32 conversion"
-)]
 fn vesc_system_time_ticks_from_seconds(seconds: f32) -> u32 {
     let ticks = seconds * 10_000.0;
     if ticks.is_nan() || ticks <= 0.0 {
@@ -1501,10 +1494,25 @@ fn vesc_system_time_ticks_from_seconds(seconds: f32) -> u32 {
         return u32::MAX;
     }
 
-    // Rust's `as` conversion drops the fractional part, just like the cast in
-    // the VESC C firmware. The checks above prove the value is finite and lies
-    // inside the `u32` range, so no sign change or wraparound can occur.
-    ticks as u32
+    // IEEE-754 stores the integer significand separately from its base-two
+    // exponent. Reassembling those fields reproduces C's truncation toward
+    // zero without a narrowing Rust cast that could silently saturate.
+    let bits = ticks.to_bits();
+    let encoded_exponent = (bits >> 23) & 0xff;
+    if encoded_exponent < 127 {
+        return 0;
+    }
+    let Some(exponent) = encoded_exponent.checked_sub(127) else {
+        return 0;
+    };
+    let significand = (bits & 0x7f_ffff) | (1 << 23);
+    if exponent <= 23 {
+        let shift = 23_u32.saturating_sub(exponent);
+        significand.checked_shr(shift).unwrap_or(0)
+    } else {
+        let shift = exponent.saturating_sub(23);
+        significand.checked_shl(shift).unwrap_or(u32::MAX)
+    }
 }
 
 /// Return firmware uptime in its native floating-point seconds domain.

@@ -80,20 +80,20 @@ impl VescIfPresence {
 
     /// Return whether a slot was observed as present.
     #[must_use]
-    pub const fn contains(self, slot: VescIfSlot) -> bool {
+    pub fn contains(self, slot: VescIfSlot) -> bool {
         self.contains_index(slot.slot_index())
     }
 
     /// Return whether a slot index was observed as present.
     #[must_use]
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "FIELD_COUNT and PRESENCE_WORD_COUNT prove the word index is in bounds"
-    )]
-    pub const fn contains_index(self, index: usize) -> bool {
-        // `PRESENCE_WORD_COUNT` is the ceiling of `FIELD_COUNT / 64`. Once
-        // `index` is below `FIELD_COUNT`, its word index must exist.
-        index < VescIfAbi::FIELD_COUNT && (self.bits[index / 64] & (1_u64 << (index % 64))) != 0
+    pub fn contains_index(self, index: usize) -> bool {
+        if index >= VescIfAbi::FIELD_COUNT {
+            return false;
+        }
+        let Some(bits) = self.bits.get(index / 64) else {
+            return false;
+        };
+        (*bits & (1_u64 << (index % 64))) != 0
     }
 
     /// Check a required capability and preserve the slot identity in the error.
@@ -101,7 +101,7 @@ impl VescIfPresence {
     /// # Errors
     ///
     /// Returns [`AbiError::MissingRequired`] when `slot` is absent.
-    pub const fn require(self, capability: &'static str, slot: VescIfSlot) -> Result<(), AbiError> {
+    pub fn require(self, capability: &'static str, slot: VescIfSlot) -> Result<(), AbiError> {
         if self.contains(slot) {
             Ok(())
         } else {
@@ -114,11 +114,7 @@ impl VescIfPresence {
     /// # Errors
     ///
     /// Returns [`AbiError::Unsupported`] when `slot` is absent.
-    pub const fn optional(
-        self,
-        capability: &'static str,
-        slot: VescIfSlot,
-    ) -> Result<(), AbiError> {
+    pub fn optional(self, capability: &'static str, slot: VescIfSlot) -> Result<(), AbiError> {
         if self.contains(slot) {
             Ok(())
         } else {
