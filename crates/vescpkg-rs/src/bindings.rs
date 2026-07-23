@@ -131,11 +131,10 @@ pub(crate) trait AppDataBindings {
 
     /// Send app-data bytes through the firmware callback.
     fn send_app_data_bytes(&self, data: &[u8]) -> bool {
-        let Some(len) = u32::try_from(data.len()).ok() else {
-            return false;
-        };
-        (data.len() <= MAX_APP_DATA_PAYLOAD_LEN)
-            .then(|| unsafe { self.send_app_data(data.as_ptr(), len) })
+        u32::try_from(data.len())
+            .ok()
+            .filter(|_| data.len() <= MAX_APP_DATA_PAYLOAD_LEN)
+            .map(|len| unsafe { self.send_app_data(data.as_ptr(), len) })
             .is_some()
     }
 }

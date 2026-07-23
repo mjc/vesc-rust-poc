@@ -251,9 +251,7 @@ impl LispFlatValue {
         if self.finished {
             return Err(LispFlatValueError::AlreadyFinished);
         }
-        let Ok(count) = u32::try_from(bytes.len()) else {
-            return Err(LispFlatValueError::LengthOverflow);
-        };
+        let count = u32::try_from(bytes.len()).map_err(|_| LispFlatValueError::LengthOverflow)?;
         self.append_with(|raw| unsafe {
             crate::ffi::f_lbm_array(raw, count, bytes.as_ptr().cast_mut())
         })

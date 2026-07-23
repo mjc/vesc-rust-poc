@@ -167,13 +167,12 @@ impl VescIfPresence {
 
     /// Return whether every callable slot in a revision profile is present.
     pub fn supports_revision(self, revision: Stm32AbiRevision) -> bool {
-        let Some(slot_count) = revision.minimum_slot_count() else {
-            return false;
-        };
-        VescIfAbi::ALL_ENTRIES[..slot_count]
-            .iter()
-            .enumerate()
-            .all(|(index, entry)| !entry.is_callable() || self.contains_index(index))
+        revision.minimum_slot_count().is_some_and(|slot_count| {
+            VescIfAbi::ALL_ENTRIES[..slot_count]
+                .iter()
+                .enumerate()
+                .all(|(index, entry)| !entry.is_callable() || self.contains_index(index))
+        })
     }
 
     /// Infer the strongest descriptive profile supported by observed presence.
