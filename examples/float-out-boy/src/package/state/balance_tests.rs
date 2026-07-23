@@ -413,8 +413,7 @@ fn app_data_running_wheelslip_without_traction_control_smooths_current_like_floa
     );
 }
 
-#[test]
-fn app_data_normal_algorithm_trace_matches_float_out_boy_loop_order() {
+fn normal_algorithm_trace_fixture() -> (FirmwareTest, FloatOutBoyPackageState) {
     let telemetry = FirmwareTest::new().with_runtime_motor(
         ElectricalSpeed::new(Rpm::from_revolutions_per_minute(0.0)),
         VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
@@ -433,7 +432,7 @@ fn app_data_normal_algorithm_trace_matches_float_out_boy_loop_order() {
         imu_pitch_rate(AngularVelocity::from_degrees_per_second(0.0)),
         imu_yaw_rate(AngularVelocity::from_degrees_per_second(0.0)),
     ));
-    let imu = telemetry.imu();
+
     let payloads = sample_all_data_payloads_with_ride_state(
         FloatOutBoyRunState::Ready,
         FloatOutBoyMode::Normal,
@@ -473,17 +472,47 @@ fn app_data_normal_algorithm_trace_matches_float_out_boy_loop_order() {
         assert!(config.set_hertz(vescpkg_rs::SampleRate::from_hertz(100.0)));
         assert!(config.set_startup_speed(AngularVelocity::from_degrees_per_second(50.0)));
     });
+    (telemetry, state)
+}
 
-    assert!(tick_float_out_boy_state_and_handle_packet(
-        &mut state,
-        TimestampTicks::from_ticks(0),
+fn tick_realtime_data(
+    state: &mut FloatOutBoyPackageState,
+    telemetry: &FirmwareTest,
+    tick: u32,
+) -> bool {
+    tick_float_out_boy_state_and_handle_packet(
+        state,
+        TimestampTicks::from_ticks(tick),
         telemetry.telemetry(),
-        imu,
+        telemetry.imu(),
         &[
             FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
-    ));
+    )
+}
+
+fn expected_normal_trace_current(state: &FloatOutBoyPackageState) -> f32 {
+    let balance = state.balance_config_for_test();
+    let setpoint_error = 1.5 - 2.0;
+    let unclamped_i = setpoint_error * balance.ki().as_amps_per_degree_per_tick();
+    let ki_limit = balance.ki_limit().current().as_amps();
+    let expected_i = if ki_limit > 0.0 && unclamped_i.abs() > ki_limit {
+        ki_limit * unclamped_i.signum()
+    } else {
+        unclamped_i
+    };
+    let current_limit = state.motor_current_max.current().as_amps();
+    let new_current = (setpoint_error * balance.kp().as_amps_per_degree() + expected_i)
+        .clamp(-current_limit, current_limit);
+    new_current * 0.2
+}
+
+#[test]
+fn app_data_normal_algorithm_trace_matches_float_out_boy_loop_order() {
+    let (telemetry, mut state) = normal_algorithm_trace_fixture();
+
+    assert!(tick_realtime_data(&mut state, &telemetry, 0));
     let engaged_base = state.all_data_payloads().base();
     let engaged_ride_state = engaged_base.status().ride_state();
     // Upstream READY/NORMAL engages through `engage(d)` at
@@ -503,33 +532,10 @@ fn app_data_normal_algorithm_trace_matches_float_out_boy_loop_order() {
         0.0
     );
 
-    assert!(tick_float_out_boy_state_and_handle_packet(
-        &mut state,
-        TimestampTicks::from_ticks(1),
-        telemetry.telemetry(),
-        imu,
-        &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-            FloatOutBoyAppDataCommand::RealtimeData.id(),
-        ],
-    ));
+    assert!(tick_realtime_data(&mut state, &telemetry, 1));
     let running_base = state.all_data_payloads().base();
-    let balance = state.balance_config_for_test();
-    let kp = balance.kp().as_amps_per_degree();
-    let ki = balance.ki().as_amps_per_degree_per_tick();
-    let ki_limit = balance.ki_limit().current().as_amps();
     let expected_board_setpoint = 1.5;
-    let expected_setpoint_error = expected_board_setpoint - 2.0;
-    let unclamped_i: f32 = expected_setpoint_error * ki;
-    let expected_i = if ki_limit > 0.0 && unclamped_i.abs() > ki_limit {
-        ki_limit * unclamped_i.signum()
-    } else {
-        unclamped_i
-    };
-    let current_limit = state.motor_current_max.current().as_amps();
-    let expected_new_current =
-        (expected_setpoint_error * kp + expected_i).clamp(-current_limit, current_limit);
-    let expected_smoothed_current = expected_new_current * 0.2;
+    let expected_smoothed_current = expected_normal_trace_current(&state);
     // Upstream RUNNING centers with `startup_speed / hertz` at
     // `third_party/float-out-boy/src/main.c:172`,
     // `third_party/float-out-boy/src/main.c:304-310`, and
@@ -551,9 +557,9 @@ fn app_data_normal_algorithm_trace_matches_float_out_boy_loop_order() {
             .abs()
             < 0.0001
     );
-    let bindings = telemetry.motor();
+
     assert!(state.apply_motor_control(
-        bindings,
+        telemetry.motor(),
         running_base.status().ride_state().run_state(),
         TimestampTicks::from_ticks(1),
     ));

@@ -176,7 +176,7 @@ impl FloatOutBoyPackageState {
         } else {
             self.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE));
         }
-        self.flywheel_abort = false;
+        self.ride_flags.flywheel_abort = false;
 
         let updated = self
             .serialized_config
