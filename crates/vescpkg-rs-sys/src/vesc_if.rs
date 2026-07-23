@@ -533,6 +533,7 @@ macro_rules! define_vesc_if_abi {
             /// Workspace-relative path to the pinned ABI header.
             pub const SOURCE_HEADER: &str = c_vesc_if::HEADER_PATH;
             /// Number of entries in the complete generated manifest.
+            #[deprecated(note = "use FIELD_COUNT; the manifest contains every ABI entry")]
             pub const USED_SLOT_COUNT: usize = Self::FIELD_COUNT;
 
             $(
@@ -545,7 +546,8 @@ macro_rules! define_vesc_if_abi {
             )+
 
             /// Complete slot projection retained under the compatibility name.
-            pub const USED_SLOTS: [VescIfSlot; Self::USED_SLOT_COUNT] = Self::ALL_SLOTS;
+            #[deprecated(note = "use ALL_SLOTS; this compatibility alias is not a subset")]
+            pub const USED_SLOTS: [VescIfSlot; Self::FIELD_COUNT] = Self::ALL_SLOTS;
         }
     };
 }
