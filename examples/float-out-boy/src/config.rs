@@ -115,9 +115,9 @@ impl FloatOutBoyConfigImage {
     const INPUT_TILT_REMOTE_TYPE_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 79);
     const INPUT_TILT_ANGLE_LIMIT_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 80, scale: 100.0);
     const INPUT_TILT_SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 82, scale: 100.0);
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    #[cfg(any(test, target_arch = "arm"))]
     const INPUT_TILT_INVERT_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 84);
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    #[cfg(any(test, target_arch = "arm"))]
     const INPUT_TILT_DEADBAND_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 85, scale: 10000.0);
     const HIGH_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 51, scale: 100.0);
     const HIGH_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigScaledVoltageField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 55, scale: 100.0);
@@ -313,7 +313,7 @@ impl FloatOutBoyConfigImage {
         )
     }
 
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn input_tilt_remote_type(&self) -> u8 {
         generated_field(Self::INPUT_TILT_REMOTE_TYPE_FIELD.read(self)).as_u8()
     }
@@ -326,12 +326,12 @@ impl FloatOutBoyConfigImage {
         generated_field(Self::INPUT_TILT_SPEED_FIELD.read(self))
     }
 
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn input_tilt_inverted(&self) -> bool {
         self.flag(Self::INPUT_TILT_INVERT_FIELD)
     }
 
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn input_tilt_deadband(&self) -> Ratio {
         generated_field(Self::INPUT_TILT_DEADBAND_FIELD.read(self))
     }
@@ -462,7 +462,6 @@ impl core::ops::DerefMut for FloatOutBoyConfigEditor<'_> {
     }
 }
 
-#[cfg_attr(test, allow(dead_code))]
 impl FloatOutBoyConfigEditor<'_> {
     fn set_flag(&mut self, field: CustomConfigFlagField, value: bool) -> bool {
         field.write(&mut self.0, value).is_some()
@@ -528,11 +527,6 @@ impl FloatOutBoyConfigEditor<'_> {
 
     pub(crate) fn set_reversestop_enabled(&mut self, enabled: bool) -> bool {
         self.set_flag(FloatOutBoyFaultConfig::REVERSESTOP_FIELD, enabled)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn set_quickstop_enabled(&mut self, enabled: bool) -> bool {
-        self.set_flag(FloatOutBoyFaultConfig::QUICKSTOP_FIELD, enabled)
     }
 
     pub(crate) fn set_darkride_enabled(&mut self, enabled: bool) -> bool {

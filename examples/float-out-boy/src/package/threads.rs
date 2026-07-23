@@ -59,7 +59,7 @@ impl FloatOutBoyRuntimeThread {
 
 /// Describe the Float Out Boy runtime threads.
 ///
-/// Upstream passes its position-independent float_out_boy_thd and aux_thd to spawn
+/// Upstream passes its position-independent `float_out_boy_thd` and `aux_thd` to spawn
 /// with working areas of 1536 and 1024 bytes at
 /// third_party/float-out-boy/src/main.c:2438-2445. The Rust main-loop call chain is
 /// larger, so it reserves 2048 bytes. VESC forwards these byte counts directly

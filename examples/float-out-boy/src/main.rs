@@ -11,6 +11,7 @@
 
 #![cfg_attr(target_arch = "arm", no_std)]
 #![cfg_attr(target_arch = "arm", no_main)]
+#![deny(warnings, clippy::all, clippy::pedantic)]
 #![forbid(unsafe_code)]
 #![forbid(unused_extern_crates)]
 // An embedded package cannot unwind or print a useful panic report. Keep

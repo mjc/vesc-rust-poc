@@ -185,7 +185,7 @@ impl Default for RemoteControlState {
 }
 
 impl RemoteControlState {
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    #[cfg(any(test, target_arch = "arm"))]
     pub(super) fn set_input(&mut self, input: crate::domain::FloatOutBoyRealtimeRemoteInput) {
         // C map: `remote_input` stores the connected, deadbanded, optionally
         // inverted input at `third_party/float-out-boy/src/remote.c:36-68`.

@@ -753,8 +753,7 @@ fn package_author_encodes_all_data_mode4_response_like_float_out_boy_v1_2_1() {
     );
 }
 
-#[test]
-fn package_author_dispatches_all_data_responses_from_typed_request_mode() {
+fn sample_all_data_response_payloads() -> FloatOutBoyAllDataPayloads {
     let ride_state = FloatOutBoyRideState::new(
         FloatOutBoyRunState::Running,
         FloatOutBoyMode::Normal,
@@ -774,7 +773,7 @@ fn package_author_dispatches_all_data_responses_from_typed_request_mode() {
         FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(-2.0)),
         FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(3.0)),
     );
-    let payloads = FloatOutBoyAllDataPayloads::new(
+    FloatOutBoyAllDataPayloads::new(
         FloatOutBoyAllDataBasePayload::new(
             FloatOutBoyRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(9.0))),
             FloatOutBoyAllDataAttitude::new(
@@ -822,7 +821,12 @@ fn package_author_dispatches_all_data_responses_from_typed_request_mode() {
             FloatOutBoyRealtimeChargingCurrent::new(BatteryCurrent::new(Current::from_amps(1.2))),
             FloatOutBoyRealtimeChargingVoltage::new(BatteryVoltage::new(Voltage::from_volts(82.4))),
         ),
-    );
+    )
+}
+
+#[test]
+fn package_author_dispatches_all_data_responses_from_typed_request_mode() {
+    let payloads = sample_all_data_response_payloads();
 
     assert_eq!(
         payloads

@@ -9,8 +9,6 @@
 //! full `Data`; upstream shares `Data *` through `ARG` for app-data, custom
 //! config, BMS, threads, and stop cleanup.
 
-#![cfg_attr(all(not(test), target_arch = "arm"), allow(dead_code))]
-
 mod callbacks;
 mod custom_config;
 mod imu_callback;

@@ -181,8 +181,30 @@ impl EstimatedOrientation {
     }
 }
 
+#[cfg(any(test, target_arch = "arm"))]
+impl OrientationChange {
+    #[inline]
+    const fn new(
+        scalar: OrientationChangeScalar,
+        x: OrientationChangeBodyX,
+        y: OrientationChangeBodyY,
+        z: OrientationChangeBodyZ,
+    ) -> Self {
+        // C map: `third_party/float-out-boy/src/balance_filter.c:118-124` builds
+        // the quaternion delta in firmware component order.
+        Self([scalar.0, x.0, y.0, z.0])
+    }
+
+    #[inline]
+    const fn wxyz(self) -> [f32; 4] {
+        self.0
+    }
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+use vescpkg_rs::sqrt;
+
 #[cfg(test)]
-#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::EstimatedOrientation;
     use vescpkg_rs::prelude::{
@@ -219,25 +241,3 @@ mod tests {
         );
     }
 }
-
-#[cfg(any(test, target_arch = "arm"))]
-impl OrientationChange {
-    #[inline]
-    const fn new(
-        scalar: OrientationChangeScalar,
-        x: OrientationChangeBodyX,
-        y: OrientationChangeBodyY,
-        z: OrientationChangeBodyZ,
-    ) -> Self {
-        // C map: `third_party/float-out-boy/src/balance_filter.c:118-124` builds
-        // the quaternion delta in firmware component order.
-        Self([scalar.0, x.0, y.0, z.0])
-    }
-
-    #[inline]
-    const fn wxyz(self) -> [f32; 4] {
-        self.0
-    }
-}
-#[cfg(any(test, target_arch = "arm"))]
-use vescpkg_rs::sqrt;
