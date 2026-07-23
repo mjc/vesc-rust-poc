@@ -350,9 +350,7 @@ impl RemoteControlState {
         // `third_party/float-out-boy/src/main.c:291-298`.
         let retain_previous = smoothing.retain_previous().as_ratio();
         let accept_target = smoothing.accept_target().as_ratio();
-        self.current = MotorCurrent::new(
-            self.current.current() * retain_previous + target_current.current() * accept_target,
-        );
+        self.current = self.current * retain_previous + target_current * accept_target;
         self.current
     }
 
