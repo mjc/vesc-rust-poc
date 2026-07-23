@@ -52,9 +52,12 @@ impl FloatOutBoyTuneNibble {
         match self.0 {
             0 => IntegralCurrentGain::new(0.0),
             1 => IntegralCurrentGain::new(0.005),
-            value => {
-                WireByte::new(value - 1).scaled_ratio(1.0, 100.0, 0.0, IntegralCurrentGain::new)
-            }
+            value => WireByte::new(value.saturating_sub(1)).scaled_ratio(
+                1.0,
+                100.0,
+                0.0,
+                IntegralCurrentGain::new,
+            ),
         }
     }
 
@@ -80,7 +83,7 @@ impl FloatOutBoyTuneNibble {
     }
 
     fn brake_gain(self) -> PidScale {
-        WireByte::new(self.0 + 1).scaled_ratio(1.0, 10.0, 0.0, PidScale::new)
+        WireByte::new(self.0.saturating_add(1)).scaled_ratio(1.0, 10.0, 0.0, PidScale::new)
     }
 }
 
