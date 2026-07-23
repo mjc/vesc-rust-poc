@@ -819,4 +819,25 @@ mod tests {
         assert_eq!(result, None);
         assert_eq!(stores, 0);
     }
+
+    #[test]
+    fn aux_tick_retries_a_rejected_backup_without_advancing_threshold() {
+        let firmware = FirmwareTest::new();
+        let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+            FloatOutBoyRunState::Ready,
+            FloatOutBoyMode::Normal,
+        ));
+        state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
+
+        let result = tick_float_out_boy_aux_thread_with(
+            &mut state,
+            firmware.telemetry(),
+            OdometerMeters::from_meters(1_201),
+            || false,
+        );
+
+        assert_eq!(result, Some(false));
+        assert_eq!(state.aux_backup_failures(), 1);
+        assert!(state.aux_backup_due(OdometerMeters::from_meters(1_201)));
+    }
 }
