@@ -233,9 +233,21 @@ pub(in crate::package) fn encode_float_out_boy_realtime_data_response_with_runti
     float_out_boy_realtime_push_u8(&mut bytes, &mut ind, header.stop_setpoint_byte_compat());
     float_out_boy_realtime_push_u8(&mut bytes, &mut ind, header.beep_reason_compat());
 
-    FLOAT_OUT_BOY_REALTIME_DATA_ITEMS
-        .into_iter()
-        .for_each(|item| {
+    for item in FLOAT_OUT_BOY_REALTIME_DATA_ITEMS {
+        push_float_out_boy_float16(
+            &mut bytes,
+            &mut ind,
+            realtime_value(
+                payloads,
+                item,
+                remote_input,
+                atr_accel_diff,
+                atr_speed_boost,
+            ),
+        );
+    }
+    if running {
+        for item in FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS {
             push_float_out_boy_float16(
                 &mut bytes,
                 &mut ind,
@@ -247,23 +259,7 @@ pub(in crate::package) fn encode_float_out_boy_realtime_data_response_with_runti
                     atr_speed_boost,
                 ),
             );
-        });
-    if running {
-        FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS
-            .into_iter()
-            .for_each(|item| {
-                push_float_out_boy_float16(
-                    &mut bytes,
-                    &mut ind,
-                    realtime_value(
-                        payloads,
-                        item,
-                        remote_input,
-                        atr_accel_diff,
-                        atr_speed_boost,
-                    ),
-                );
-            });
+        }
     }
     if charging {
         push_float_out_boy_float16(

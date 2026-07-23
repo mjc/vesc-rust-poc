@@ -103,6 +103,11 @@ pub enum FloatOutBoyAppDataCommand {
 
 impl FloatOutBoyAppDataCommand {
     /// Parse a Float Out Boy app-data command ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FloatOutBoyAppDataCommandError`] when `id` is not one of the
+    /// command bytes defined by Float Out Boy.
     pub const fn try_from_id(id: u8) -> Result<Self, FloatOutBoyAppDataCommandError> {
         match id {
             0 => Ok(Self::Info),
@@ -268,6 +273,11 @@ impl FloatOutBoyAllDataRequest {
     ///
     /// Upstream dispatches this command at `third_party/float-out-boy/src/main.c:2210-2215`
     /// and encodes responses in `third_party/float-out-boy/src/main.c:1313-1399`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FloatOutBoyAllDataRequestError`] when the packet has the wrong
+    /// length, package ID, or command ID.
     pub fn parse(bytes: &[u8]) -> Result<Self, FloatOutBoyAllDataRequestError> {
         let [package_id, command_id, mode] = bytes else {
             return Err(FloatOutBoyAllDataRequestError::Length {

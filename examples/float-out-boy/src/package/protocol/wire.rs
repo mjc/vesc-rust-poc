@@ -75,7 +75,7 @@ mod tests {
 
     #[test]
     fn float16_matches_float_out_boy_encoding() {
-        [
+        for (value, expected) in [
             (0.0, 0x0000),
             (-0.0, 0x8000),
             (1.0, 0x3c00),
@@ -85,10 +85,8 @@ mod tests {
             (131_008.0, 0x7fff),
             (f32::INFINITY, 0x7fff),
             (f32::NEG_INFINITY, 0xffff),
-        ]
-        .into_iter()
-        .for_each(|(value, expected)| {
+        ] {
             assert_eq!(encode_float_out_boy_float16(value), expected);
-        });
+        }
     }
 }

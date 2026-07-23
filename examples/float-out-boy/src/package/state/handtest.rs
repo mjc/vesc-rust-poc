@@ -164,16 +164,16 @@ impl FloatOutBoyPackageState {
     fn apply_handtest_safety_config(&mut self) {
         // C map: enabling HANDTEST applies temporary safety overrides at
         // `third_party/float-out-boy/src/main.c:1431-1446`.
-        if let Some(config) = Self::handtest_safety_config(self.serialized_config) {
+        if let Some(config) = Self::handtest_safety_config(&self.serialized_config) {
             self.serialized_config = config;
         }
     }
 
-    fn handtest_safety_config(config: FloatOutBoyConfigImage) -> Option<FloatOutBoyConfigImage> {
+    fn handtest_safety_config(config: &FloatOutBoyConfigImage) -> Option<FloatOutBoyConfigImage> {
         // Float Out Boy C applies temporary HANDTEST safety config at
         // `third_party/float-out-boy/src/main.c:1431-1446` and restores from EEPROM on off at
         // `third_party/float-out-boy/src/main.c:1447-1449`.
-        FloatOutBoyHandtestSafetyConfig::from_config(config)
+        FloatOutBoyHandtestSafetyConfig::from_config(*config)
             .map(FloatOutBoyHandtestSafetyConfig::into_image)
     }
 }
@@ -306,7 +306,7 @@ mod tests {
 
         let mut volatile = editable_config_from_state(&state);
         assert!(volatile.editor().set_kp(AngleCurrentGain::new(-9.0)));
-        state.replace_serialized_config_for_test(volatile);
+        state.replace_serialized_config_for_test(&volatile);
 
         assert!(state.handle_handtest_packet(&[
             FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
@@ -379,7 +379,7 @@ mod tests {
                 .editor()
                 .set_startup_speed(AngularVelocity::from_degrees_per_second(50.0))
         );
-        state.replace_serialized_config_for_test(config);
+        state.replace_serialized_config_for_test(&config);
 
         assert!(tick_float_out_boy_state_and_handle_packet(
             &mut state,

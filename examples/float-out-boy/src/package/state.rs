@@ -215,8 +215,8 @@ impl FloatOutBoyPackageState {
         }
     }
 
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    pub(crate) fn refresh_controller_input(&mut self, input: &vescpkg_rs::ControllerInput) {
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn refresh_controller_input(&mut self, input: vescpkg_rs::ControllerInput) {
         // C map: Float Out Boy selects UART/PPM, rejects samples one second old,
         // applies deadband rescaling, then optional inversion at
         // `third_party/float-out-boy/src/remote.c:36-68`.
@@ -413,13 +413,16 @@ impl FloatOutBoyPackageState {
     pub fn handle_packet_with_runtime(
         &mut self,
         telemetry: &impl MotorTelemetry,
-        _imu: &impl Imu,
+        imu: &impl Imu,
         now: &mut impl FnMut() -> TimestampTicks,
         send: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
+        // Device callbacks keep the IMU parameter for one stable packet API;
+        // the device's dedicated IMU callback already refreshed state.
+        let _ = imu;
         #[cfg(all(not(test), not(target_arch = "arm")))]
-        self.refresh_runtime_state(telemetry, _imu, now());
+        self.refresh_runtime_state(telemetry, imu, now());
 
         self.handle_packet_with_telemetry(telemetry, now, send, bytes)
     }

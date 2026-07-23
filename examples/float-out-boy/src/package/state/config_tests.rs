@@ -165,7 +165,7 @@ fn tune_defaults_resets_only_the_fields_named_by_float_out_boy() {
     changed[118] = 0x77;
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     state.replace_serialized_config_for_test(
-        FloatOutBoyConfigImage::from_serialized(&changed).expect("valid test image"),
+        &FloatOutBoyConfigImage::from_serialized(&changed).expect("valid test image"),
     );
 
     assert!(handle_config_command(
