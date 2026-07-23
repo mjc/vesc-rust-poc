@@ -24,8 +24,10 @@ package-author APIs; it is not a claim that the SDK is limited to these symbols.
 
 `lbm_start_flatten`, `lbm_finish_flatten`, the `f_*` constructors, and
 `lbm_unblock_ctx` are optional function-table entries. The Rust
-`LispFlatValue` wrapper probes those slots and returns `None`/`Rejected` when a
-table does not expose them. A successful `LispProcess::unblock_flat` transfers
+`LispFlatValue` wrapper probes those slots and returns `None` when a table does
+not expose them. Its append and finish operations return typed
+`LispFlatValueError` values for firmware rejection, length overflow, or attempts
+to append after finishing. A successful `LispProcess::unblock_flat` transfers
 the firmware buffer to LispBM, while a dropped or rejected value releases it
 through the firmware allocator.
 
