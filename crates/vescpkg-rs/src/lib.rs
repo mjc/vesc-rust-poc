@@ -370,7 +370,7 @@ mod tests {
         use crate::prelude::*;
 
         let switch = BrakeSwitch::Released;
-        let _inputs = FirmwareInputs::new();
+        let _: Option<FirmwareInputs> = None;
         let _address = CustomEepromAddress::from_index(0);
         let _word = EepromWord::from_u32(1);
         let _eeprom = CustomEeprom::new();
