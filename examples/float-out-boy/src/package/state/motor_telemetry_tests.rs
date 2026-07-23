@@ -227,9 +227,15 @@ fn motor_runtime_refreshes_live_limits_before_auxiliary_side_effects() {
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
 
     // The source aux loop reads the live motor/config values before its LED and
-    // backup side effects; the package main-loop refresh keeps the same values
-    // current for both paths (`main.c:796-806`, `main.c:1131-1155`).
-    state.refresh_motor_runtime_state(firmware.telemetry());
+    // backup side effects; exercise that complete tick order (`main.c:796-806`,
+    // `main.c:1131-1155`) rather than only the refresh helper.
+    state.initialize_aux_odometer(OdometerMeters::from_meters(0));
+    let _ = crate::package::threads::tick_float_out_boy_aux_thread_with(
+        &mut state,
+        firmware.telemetry(),
+        OdometerMeters::from_meters(201),
+        || true,
+    );
 
     assert_eq!(
         state.motor_current_max,
