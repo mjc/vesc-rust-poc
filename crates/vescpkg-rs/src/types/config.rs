@@ -502,18 +502,33 @@ impl CustomConfigScaledField {
     }
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "the predicate proves the value fits the unsigned wire field"
+)]
 fn finite_u16(value: f32) -> Option<u16> {
-    (value.is_finite() && value >= 0.0 && value <= f32::from(u16::MAX)).then(|| {
-        // SAFETY: the predicate establishes the finite `u16` range.
-        unsafe { value.to_int_unchecked() }
-    })
+    if value.is_finite() && value >= 0.0 && value <= f32::from(u16::MAX) {
+        // VESC stores these settings in a C `uint16_t`. Rust's `as` conversion
+        // drops any fractional part; the condition above prevents saturation.
+        Some(value as u16)
+    } else {
+        None
+    }
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "the predicate proves the value fits the signed wire field"
+)]
 fn finite_i16(value: f32) -> Option<i16> {
-    (value.is_finite() && value >= f32::from(i16::MIN) && value <= f32::from(i16::MAX)).then(|| {
-        // SAFETY: the predicate establishes the finite `i16` range.
-        unsafe { value.to_int_unchecked() }
-    })
+    if value.is_finite() && value >= f32::from(i16::MIN) && value <= f32::from(i16::MAX) {
+        // VESC stores these settings in a C `int16_t`. Rust's `as` conversion
+        // drops any fractional part; the condition above prevents saturation.
+        Some(value as i16)
+    } else {
+        None
+    }
 }
 
 macro_rules! semantic_scaled_config_field {
@@ -797,7 +812,7 @@ mod tests {
         CustomConfigMotorCurrentField, CustomConfigPidScaleField, CustomConfigRateCurrentGainField,
         CustomConfigRatioField, CustomConfigResetField, CustomConfigSampleRateField,
         CustomConfigScaledVoltageField, CustomConfigSecondsField, CustomConfigVoltageField,
-        CustomConfigWireByteField, WireByte,
+        CustomConfigWireByteField, WireByte, finite_i16, finite_u16,
     };
     use crate::{ElectricalSpeed, Frequency, Rpm, SampleRate, VescSeconds, Voltage};
 
@@ -1058,6 +1073,22 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    #[test]
+    fn finite_integer_conversions_document_wire_rounding_and_bounds() {
+        assert_eq!(finite_u16(12.9), Some(12));
+        assert_eq!(finite_u16(f32::from(u16::MAX)), Some(u16::MAX));
+        assert_eq!(finite_u16(65_536.0), None);
+        assert_eq!(finite_u16(-1.0), None);
+        assert_eq!(finite_u16(f32::INFINITY), None);
+
+        assert_eq!(finite_i16(-12.9), Some(-12));
+        assert_eq!(finite_i16(f32::from(i16::MIN)), Some(i16::MIN));
+        assert_eq!(finite_i16(f32::from(i16::MAX)), Some(i16::MAX));
+        assert_eq!(finite_i16(-32_769.0), None);
+        assert_eq!(finite_i16(32_768.0), None);
+        assert_eq!(finite_i16(f32::NAN), None);
     }
 
     #[test]

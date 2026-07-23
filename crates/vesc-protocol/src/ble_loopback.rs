@@ -115,7 +115,7 @@ impl<'a> LoopbackPacket<'a> {
 
         out[0] = self.frame.version().get();
         out[1] = u8::from(self.frame.command());
-        out[2] = u8::try_from(self.frame.payload().len()).unwrap_or(u8::MAX);
+        out[2] = wire_payload_len(self.frame.payload().len());
 
         let mut index = 0;
         while index < self.frame.payload().len() {
@@ -133,7 +133,7 @@ impl<'a> LoopbackPacket<'a> {
         let payload = self.frame.payload();
         bytes[0] = self.frame.version().get();
         bytes[1] = u8::from(self.frame.command());
-        bytes[2] = u8::try_from(payload.len()).unwrap_or(u8::MAX);
+        bytes[2] = wire_payload_len(payload.len());
         copy_payload_no_runtime(&mut bytes, payload);
 
         (bytes, MIN_WIRE_FRAME_BYTES + payload.len())
@@ -194,6 +194,13 @@ fn copy_payload_no_runtime(response: &mut [u8; MAX_LOOPBACK_FRAME_BYTES], payloa
     }
 }
 
+fn wire_payload_len(payload_len: usize) -> u8 {
+    // The BLE frame reserves one byte for its length. Public constructors
+    // reject payloads above the smaller protocol limit. Saturation still keeps
+    // this internal conversion panic-free if validation is accidentally missed.
+    u8::try_from(payload_len).unwrap_or(u8::MAX)
+}
+
 /// Build the wire response for an incoming loopback frame.
 ///
 /// # Errors
@@ -241,7 +248,7 @@ pub fn handle_loopback_frame(
     let mut response = [0_u8; MAX_LOOPBACK_FRAME_BYTES];
     response[0] = BLE_LOOPBACK_PROTOCOL_VERSION.get();
     response[1] = u8::from(command);
-    response[2] = u8::try_from(payload.len()).unwrap_or(u8::MAX);
+    response[2] = wire_payload_len(payload.len());
     copy_payload_no_runtime(&mut response, payload);
 
     Ok((response, MIN_WIRE_FRAME_BYTES + payload.len()))

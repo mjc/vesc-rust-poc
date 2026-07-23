@@ -889,11 +889,17 @@ impl<B: ThreadBindings> ThreadApi<B> {
     ///
     /// Float Out Boy's main runtime thread sleeps with `VESC_IF->sleep_us` at
     /// `src/main.c:1080`.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "min limits each sleep chunk to the firmware's u32 range"
+    )]
     pub fn sleep_for(&self, duration: Duration) {
         let mut micros = duration.as_nanos().div_ceil(1_000);
         while micros != 0 {
-            let chunk = u32::try_from(micros.min(u128::from(VESC_MAX_SAFE_SLEEP_MICROS)))
-                .unwrap_or(u32::MAX);
+            // `Duration` counts nanoseconds with `u128`, while the C firmware
+            // accepts only a `uint32_t` microsecond chunk. Taking the minimum
+            // first proves this narrowing cast cannot discard any high bits.
+            let chunk = micros.min(u128::from(VESC_MAX_SAFE_SLEEP_MICROS)) as u32;
             self.bindings.sleep_us(chunk);
             micros -= u128::from(chunk);
         }
