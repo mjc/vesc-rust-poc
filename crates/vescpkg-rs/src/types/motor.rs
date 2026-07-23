@@ -5,7 +5,7 @@ use crate::units::{Current, Frequency, SampleRate, VescSeconds, Voltage};
 macro_rules! current_type {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+        #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
         #[repr(transparent)]
         pub struct $name(Current);
 
@@ -25,7 +25,7 @@ macro_rules! current_type {
             type Output = Self;
 
             fn add(self, rhs: Self) -> Self::Output {
-                Self(self.0 + rhs.0)
+                Self(Current::from_amps(self.0.as_amps() + rhs.0.as_amps()))
             }
         }
 
@@ -33,7 +33,7 @@ macro_rules! current_type {
             type Output = Self;
 
             fn sub(self, rhs: Self) -> Self::Output {
-                Self(self.0 - rhs.0)
+                Self(Current::from_amps(self.0.as_amps() - rhs.0.as_amps()))
             }
         }
 
@@ -41,7 +41,7 @@ macro_rules! current_type {
             type Output = Self;
 
             fn mul(self, rhs: f32) -> Self::Output {
-                Self(self.0 * rhs)
+                Self(Current::from_amps(self.0.as_amps() * rhs))
             }
         }
 
@@ -49,7 +49,7 @@ macro_rules! current_type {
             type Output = Self;
 
             fn div(self, rhs: f32) -> Self::Output {
-                Self(self.0 / rhs)
+                Self(Current::from_amps(self.0.as_amps() / rhs))
             }
         }
 
@@ -57,7 +57,7 @@ macro_rules! current_type {
             type Output = Self;
 
             fn neg(self) -> Self::Output {
-                Self(-self.0)
+                Self(Current::from_amps(-self.0.as_amps()))
             }
         }
     };

@@ -179,13 +179,12 @@ macro_rules! bounded_unit {
 
             #[doc = concat!("Create a known-good package constant from ", $unit, ".")]
             ///
-            /// This is for embedded configuration constants that should fail at compile time
-            /// if the value is invalid. Use the checked constructor for runtime input.
+            /// This is for embedded configuration constants. Invalid values are
+            /// clamped so an accidentally runtime-supplied value cannot panic an
+            /// embedded package. Use the checked constructor when the caller needs
+            /// to distinguish invalid input.
             pub const fn $from_const(value: f32) -> Self {
-                match Self::$from(value) {
-                    Ok(value) => value,
-                    Err(_) => panic!(concat!("invalid ", $unit, " constant")),
-                }
+                Self::clamped(value)
             }
 
             #[doc = concat!("Clamp a primitive value into the valid ", $unit, " range.")]

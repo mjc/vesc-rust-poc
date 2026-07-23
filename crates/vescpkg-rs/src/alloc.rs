@@ -37,7 +37,7 @@ impl AllocationHeader {
         layout
             .size()
             .checked_add(HEADER_BYTES)
-            .and_then(|bytes| bytes.checked_add(align - 1))
+            .and_then(|bytes| bytes.checked_add(align.saturating_sub(1)))
             .ok_or(AllocationSizeOverflow)
     }
 

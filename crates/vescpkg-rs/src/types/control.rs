@@ -3,7 +3,7 @@ use core::ops::{Mul, Neg};
 use crate::{AngleDegrees, AngularVelocity, Current, MotorCurrent};
 
 /// Mahony pitch feedback gain.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[repr(transparent)]
 pub struct MahonyPitchGain(f32);
 
@@ -22,7 +22,7 @@ impl MahonyPitchGain {
 }
 
 /// Mahony roll feedback gain.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[repr(transparent)]
 pub struct MahonyRollGain(f32);
 
@@ -41,7 +41,7 @@ impl MahonyRollGain {
 }
 
 /// Dimensionless scale applied to a motor-current control gain.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[repr(transparent)]
 pub struct PidScale(f32);
 
@@ -66,7 +66,7 @@ impl PidScale {
 }
 
 /// Board-angle error to motor-current gain.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct AngleCurrentGain {
     amps_per_degree: f32,
     scale: PidScale,
@@ -108,7 +108,7 @@ impl Mul<AngleCurrentGain> for AngleDegrees {
 }
 
 /// Angular-rate error to motor-current gain.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[repr(transparent)]
 pub struct RateCurrentGain(f32);
 
@@ -146,7 +146,7 @@ impl Mul<RateCurrentGain> for AngularVelocity {
 }
 
 /// Per-update board-angle error to accumulated motor-current gain.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[repr(transparent)]
 pub struct IntegralCurrentGain(f32);
 

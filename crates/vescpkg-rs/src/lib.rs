@@ -11,6 +11,20 @@
 #![forbid(unused_extern_crates)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(clippy::missing_safety_doc)]
+// Embedded package code has no unwinder or operator console. Reject explicit
+// crash paths outside the host-only test-support build.
+#![cfg_attr(
+    all(not(test), not(feature = "test-support")),
+    deny(
+        clippy::arithmetic_side_effects,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::panic,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unwrap_used
+    )
+)]
 // These tests check exact values copied across the firmware ABI. Approximate
 // comparison would hide a changed bit pattern, so exact float equality is the
 // intended assertion rather than a numerical-analysis comparison.

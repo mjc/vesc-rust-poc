@@ -99,7 +99,7 @@ impl Mul<AngularVelocity> for VescSeconds {
     type Output = AngleRadians;
 
     fn mul(self, rhs: AngularVelocity) -> Self::Output {
-        rhs * self
+        AngleRadians::from_radians(self.as_seconds() * rhs.as_radians_per_second())
     }
 }
 

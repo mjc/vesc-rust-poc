@@ -71,7 +71,7 @@ impl Mul<Voltage> for BatteryCellCount {
     type Output = Voltage;
 
     fn mul(self, rhs: Voltage) -> Self::Output {
-        rhs * self
+        Voltage::from_volts(rhs.as_volts() * f32::from(self.0))
     }
 }
 
@@ -87,7 +87,7 @@ impl Mul<Voltage> for Current {
     type Output = Power;
 
     fn mul(self, rhs: Voltage) -> Self::Output {
-        rhs * self
+        Power::from_watts(self.as_amps() * rhs.as_volts())
     }
 }
 
@@ -127,7 +127,7 @@ impl Mul<Current> for Resistance {
     type Output = Voltage;
 
     fn mul(self, rhs: Current) -> Self::Output {
-        rhs * self
+        Voltage::from_volts(self.as_ohms() * rhs.as_amps())
     }
 }
 

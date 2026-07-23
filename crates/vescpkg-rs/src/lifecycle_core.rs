@@ -132,13 +132,13 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         image: NativeImage,
         descriptors: impl IntoIterator<Item = ExtensionDescriptor>,
     ) -> ExtensionRegistration {
-        let mut requested = 0;
-        let mut registered = 0;
+        let mut requested = 0_usize;
+        let mut registered = 0_usize;
         for descriptor in descriptors {
-            requested += 1;
-            registered += usize::from(
+            requested = requested.saturating_add(1);
+            registered = registered.saturating_add(usize::from(
                 unsafe { self.register_extension_from_image(image, descriptor) }.is_ok(),
-            );
+            ));
         }
         ExtensionRegistration::new(requested, registered)
     }

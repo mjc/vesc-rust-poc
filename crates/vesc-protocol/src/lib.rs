@@ -13,6 +13,20 @@
 
 #![no_std]
 #![forbid(unused_extern_crates)]
+// Embedded package code has no unwinder or operator console. Reject explicit
+// crash paths in production while still allowing ordinary assertions in tests.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::arithmetic_side_effects,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::panic,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unwrap_used
+    )
+)]
 
 #[cfg(test)]
 extern crate std;

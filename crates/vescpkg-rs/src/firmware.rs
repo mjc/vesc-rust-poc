@@ -244,10 +244,10 @@ impl CustomConfigGetBuffer<'_> {
 
     /// Write serialized config bytes into the firmware-provided output buffer.
     fn write<const LEN: usize>(&mut self, payload: ConfigBytes<'_, LEN>) -> c_int {
-        if payload.as_bytes().len() > self.0.0.len() {
+        let Some(destination) = self.0.0.get_mut(..payload.as_bytes().len()) else {
             return 0;
-        }
-        self.0.0[..payload.as_bytes().len()].copy_from_slice(payload.as_bytes());
+        };
+        destination.copy_from_slice(payload.as_bytes());
         c_int::try_from(payload.as_bytes().len()).unwrap_or(c_int::MAX)
     }
 }

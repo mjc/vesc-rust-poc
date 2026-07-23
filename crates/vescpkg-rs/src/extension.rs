@@ -333,18 +333,20 @@ impl ExtensionName {
     #[must_use]
     pub const fn __from_terminated(name: &'static str) -> Option<Self> {
         let bytes = name.as_bytes();
-        if bytes.len() < 5
-            || bytes[0] != b'e'
-            || bytes[1] != b'x'
-            || bytes[2] != b't'
-            || bytes[3] != b'-'
-        {
+        if !matches!(bytes, [b'e', b'x', b't', b'-', ..]) {
             return None;
         }
         match CStr::from_bytes_with_nul(bytes) {
             Ok(_) => Some(Self(name.as_bytes())),
             Err(_) => None,
         }
+    }
+
+    /// Supply a type-correct value for the unreachable invalid macro branch.
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn __invalid() -> Self {
+        Self(b"ext-invalid\0")
     }
 
     #[cfg_attr(
@@ -360,7 +362,7 @@ impl ExtensionName {
     /// Return the validated Rust extension name without its ABI terminator.
     #[must_use]
     pub fn as_str(self) -> &'static str {
-        let bytes = &self.0[..self.0.len() - 1];
+        let bytes = self.0.strip_suffix(&[0]).unwrap_or(self.0);
         // SAFETY: the macro support hook accepts only valid C strings built
         // from UTF-8 Rust string literals.
         unsafe { core::str::from_utf8_unchecked(bytes) }
@@ -372,9 +374,14 @@ impl ExtensionName {
 macro_rules! extension_name {
     ($name:literal) => {
         const {
-            match $crate::ExtensionName::__from_terminated(concat!($name, "\0")) {
+            const NAME: Option<$crate::ExtensionName> =
+                $crate::ExtensionName::__from_terminated(concat!($name, "\0"));
+            // A mismatched array length makes an invalid literal a compile
+            // error without placing a panic path in an embedded package.
+            const _: [(); 1] = [(); NAME.is_some() as usize];
+            match NAME {
                 Some(name) => name,
-                None => panic!("extension name must begin with `ext-` and contain no NUL"),
+                None => $crate::ExtensionName::__invalid(),
             }
         }
     };

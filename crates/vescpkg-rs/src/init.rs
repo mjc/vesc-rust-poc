@@ -424,9 +424,9 @@ impl<'info> PackageStart<'info> {
         if T::runtime_store().install_threads(state, &mut threads) {
             Ok(())
         } else {
-            threads
-                .expect("failed installation retains the thread group")
-                .terminate_reverse(&crate::thread::ThreadApi::new(bindings));
+            if let Some(threads) = threads {
+                threads.terminate_reverse(&crate::thread::ThreadApi::new(bindings));
+            }
             Err(PackageStartError::ThreadsAlreadyInstalled)
         }
     }

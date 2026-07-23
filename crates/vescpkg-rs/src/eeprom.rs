@@ -119,7 +119,11 @@ impl CustomEeprom {
                 let Some(word) = self.read(address) else {
                     return false;
                 };
-                bytes.copy_from_slice(&word.to_ne_bytes()[..bytes.len()]);
+                let word_bytes = word.to_ne_bytes();
+                let Some(word_bytes) = word_bytes.get(..bytes.len()) else {
+                    return false;
+                };
+                bytes.copy_from_slice(word_bytes);
                 true
             })
     }
@@ -138,7 +142,10 @@ impl CustomEeprom {
                     return false;
                 };
                 let mut word = [0; EepromWord::BYTE_LEN];
-                word[..bytes.len()].copy_from_slice(bytes);
+                let Some(word_bytes) = word.get_mut(..bytes.len()) else {
+                    return false;
+                };
+                word_bytes.copy_from_slice(bytes);
                 self.write(address, EepromWord::from_ne_bytes(word))
             })
     }

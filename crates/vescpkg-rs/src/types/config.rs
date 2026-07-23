@@ -3,7 +3,7 @@
 use core::marker::PhantomData;
 
 /// One protocol byte kept typed while mapping wire values into semantic units.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct WireByte(u8);
 
@@ -27,9 +27,8 @@ impl WireByte {
 
     /// Apply a rational wire scale in protocol operation order.
     ///
-    /// # Panics
-    ///
-    /// Panics when `denominator` is zero or non-finite.
+    /// A zero or non-finite denominator produces the constructor's zero value
+    /// instead of attempting an invalid embedded calculation.
     pub fn scaled_ratio<T>(
         self,
         numerator: f32,
@@ -37,11 +36,11 @@ impl WireByte {
         offset: f32,
         constructor: fn(f32) -> T,
     ) -> T {
-        assert!(
-            denominator.is_finite() && denominator != 0.0,
-            "wire scale denominator must be finite and non-zero"
-        );
-        constructor((f32::from(self.0) * numerator) / denominator + offset)
+        if denominator.is_finite() && denominator != 0.0 {
+            constructor((f32::from(self.0) * numerator) / denominator + offset)
+        } else {
+            constructor(0.0)
+        }
     }
 }
 
@@ -198,6 +197,16 @@ impl CustomConfigOffset {
     }
 }
 
+const fn generated_offset<const LEN: usize>(offset: usize, width: usize) -> CustomConfigOffset {
+    if width <= LEN && offset <= LEN.saturating_sub(width) {
+        CustomConfigOffset::new(offset)
+    } else {
+        // An impossible offset must remain impossible: reads and writes return
+        // `None` instead of silently targeting a different configuration byte.
+        CustomConfigOffset::new(usize::MAX)
+    }
+}
+
 /// Generated custom-config millisecond-duration field descriptor.
 ///
 /// C map: Float Out Boy decodes generated unsigned 16-bit values in big-endian
@@ -210,11 +219,7 @@ impl CustomConfigDurationField {
     #[doc(hidden)]
     #[must_use]
     pub const fn __from_generated<const LEN: usize>(offset: usize) -> Self {
-        assert!(
-            LEN >= 2 && offset <= LEN - 2,
-            "generated config field is out of bounds"
-        );
-        Self(CustomConfigOffset::new(offset))
+        Self(generated_offset::<LEN>(offset, 2))
     }
 
     /// Decode the field directly into a duration.
@@ -250,11 +255,7 @@ impl CustomConfigVoltageField {
     #[doc(hidden)]
     #[must_use]
     pub const fn __from_generated<const LEN: usize>(offset: usize) -> Self {
-        assert!(
-            LEN >= 2 && offset <= LEN - 2,
-            "generated config field is out of bounds"
-        );
-        Self(CustomConfigOffset::new(offset))
+        Self(generated_offset::<LEN>(offset, 2))
     }
 
     /// Decode the field directly into voltage.
@@ -290,11 +291,7 @@ impl CustomConfigElectricalSpeedField {
     #[doc(hidden)]
     #[must_use]
     pub const fn __from_generated<const LEN: usize>(offset: usize) -> Self {
-        assert!(
-            LEN >= 2 && offset <= LEN - 2,
-            "generated config field is out of bounds"
-        );
-        Self(CustomConfigOffset::new(offset))
+        Self(generated_offset::<LEN>(offset, 2))
     }
 
     /// Decode the field directly into electrical RPM.
@@ -335,11 +332,7 @@ impl CustomConfigSampleRateField {
     #[doc(hidden)]
     #[must_use]
     pub const fn __from_generated<const LEN: usize>(offset: usize) -> Self {
-        assert!(
-            LEN >= 2 && offset <= LEN - 2,
-            "generated config field is out of bounds"
-        );
-        Self(CustomConfigOffset::new(offset))
+        Self(generated_offset::<LEN>(offset, 2))
     }
 
     /// Decode the field directly into its semantic sample-rate value.
@@ -372,8 +365,7 @@ impl CustomConfigFlagField {
     #[doc(hidden)]
     #[must_use]
     pub const fn __from_generated<const LEN: usize>(offset: usize) -> Self {
-        assert!(offset < LEN, "generated config field is out of bounds");
-        Self(CustomConfigOffset::new(offset))
+        Self(generated_offset::<LEN>(offset, 1))
     }
 
     /// Read the field, returning `None` when its generated offset is invalid.
@@ -401,8 +393,7 @@ impl CustomConfigWireByteField {
     #[doc(hidden)]
     #[must_use]
     pub const fn __from_generated<const LEN: usize>(offset: usize) -> Self {
-        assert!(offset < LEN, "generated config field is out of bounds");
-        Self(CustomConfigOffset::new(offset))
+        Self(generated_offset::<LEN>(offset, 1))
     }
 
     /// Read the field without erasing its wire type.
@@ -429,8 +420,7 @@ impl<T> CustomConfigEnumField<T> {
     #[doc(hidden)]
     #[must_use]
     pub const fn __from_generated<const LEN: usize>(offset: usize) -> Self {
-        assert!(offset < LEN, "generated config field is out of bounds");
-        Self(CustomConfigOffset::new(offset), PhantomData)
+        Self(generated_offset::<LEN>(offset, 1), PhantomData)
     }
 
     /// Decode the field into its Rust enum.
@@ -451,11 +441,7 @@ impl CustomConfigResetField {
     #[doc(hidden)]
     #[must_use]
     pub const fn __from_generated<const LEN: usize>(offset: usize) -> Self {
-        assert!(
-            LEN >= 2 && offset <= LEN - 2,
-            "generated config field is out of bounds"
-        );
-        Self(CustomConfigOffset::new(offset))
+        Self(generated_offset::<LEN>(offset, 2))
     }
 
     /// Reset the generated field without exposing its storage representation.
@@ -473,14 +459,17 @@ struct CustomConfigScaledField {
 }
 
 impl CustomConfigScaledField {
-    const fn new(offset: usize, scale: f32) -> Option<Self> {
+    const fn new<const LEN: usize>(offset: usize, scale: f32) -> Self {
         if scale.is_finite() && scale > 0.0 {
-            Some(Self {
-                offset: CustomConfigOffset::new(offset),
+            Self {
+                offset: generated_offset::<LEN>(offset, 2),
                 scale,
-            })
+            }
         } else {
-            None
+            Self {
+                offset: CustomConfigOffset::new(usize::MAX),
+                scale: 1.0,
+            }
         }
     }
 
@@ -541,14 +530,7 @@ macro_rules! semantic_scaled_config_field {
         impl $name {
             #[doc(hidden)]
             pub const fn __from_generated<const LEN: usize>(offset: usize, scale: f32) -> Self {
-                assert!(
-                    LEN >= 2 && offset <= LEN - 2,
-                    "generated config field is out of bounds"
-                );
-                match CustomConfigScaledField::new(offset, scale) {
-                    Some(field) => Self(field),
-                    None => panic!("generated config field scale must be finite and positive"),
-                }
+                Self(CustomConfigScaledField::new::<LEN>(offset, scale))
             }
 
             /// Decode the field directly into its semantic value.
@@ -570,17 +552,23 @@ macro_rules! semantic_scaled_config_field {
 
 /// Define a package-local descriptor from generated custom-config metadata.
 ///
-/// The image length and field metadata are checked during constant evaluation,
-/// keeping raw offsets and scales at the generated-layout boundary.
+/// Generated offsets stay at this boundary. An offset that does not fit the
+/// declared image length creates an inert field: reads and writes return
+/// `None` instead of indexing outside the configuration image.
 ///
-/// ```compile_fail
-/// use vescpkg_rs::{CustomConfigFlagField, generated_custom_config_field};
+/// ```
+/// use vescpkg_rs::{
+///     CustomConfigFlagField, CustomConfigImage, generated_custom_config_field,
+/// };
 ///
-/// const BAD: CustomConfigFlagField = generated_custom_config_field!(
+/// const OUT_OF_RANGE: CustomConfigFlagField = generated_custom_config_field!(
 ///     CustomConfigFlagField,
 ///     len: 1,
 ///     offset: 1
 /// );
+///
+/// let image = CustomConfigImage::new([0]);
+/// assert_eq!(OUT_OF_RANGE.read(&image), None);
 /// ```
 #[macro_export]
 macro_rules! generated_custom_config_field {
@@ -686,14 +674,7 @@ impl CustomConfigRatioField {
     #[doc(hidden)]
     #[must_use]
     pub const fn __from_generated<const LEN: usize>(offset: usize, scale: f32) -> Self {
-        assert!(
-            LEN >= 2 && offset <= LEN - 2,
-            "generated config field is out of bounds"
-        );
-        match CustomConfigScaledField::new(offset, scale) {
-            Some(field) => Self(field),
-            None => panic!("generated config field scale must be finite and positive"),
-        }
+        Self(CustomConfigScaledField::new::<LEN>(offset, scale))
     }
 
     /// Decode the field directly into an unsigned ratio.
@@ -1106,18 +1087,16 @@ mod tests {
     }
 
     #[test]
-    fn wire_byte_rejects_invalid_ratio_denominators() {
+    fn wire_byte_uses_zero_for_invalid_ratio_denominators() {
         for denominator in [0.0, f32::INFINITY, f32::NEG_INFINITY, f32::NAN] {
-            assert!(
-                std::panic::catch_unwind(|| {
-                    super::WireByte::new(42).scaled_ratio(
-                        1.0,
-                        denominator,
-                        0.0,
-                        crate::AngleDegrees::from_degrees,
-                    )
-                })
-                .is_err()
+            assert_eq!(
+                super::WireByte::new(42).scaled_ratio(
+                    1.0,
+                    denominator,
+                    0.0,
+                    crate::AngleDegrees::from_degrees,
+                ),
+                crate::AngleDegrees::ZERO
             );
         }
     }

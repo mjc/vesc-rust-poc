@@ -476,10 +476,17 @@ impl ThreadName {
         }
     }
 
+    /// Supply a type-correct value for the unreachable invalid macro branch.
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn __invalid() -> Self {
+        Self(b"invalid-thread\0")
+    }
+
     /// Return the name without its private ABI terminator.
     #[must_use]
     pub fn as_str(self) -> &'static str {
-        let bytes = &self.0[..self.0.len() - 1];
+        let bytes = self.0.strip_suffix(&[0]).unwrap_or(self.0);
         // SAFETY: the macro support hook accepts only valid C strings built
         // from UTF-8 Rust string literals.
         unsafe { core::str::from_utf8_unchecked(bytes) }
@@ -512,9 +519,14 @@ impl core::error::Error for ThreadError {}
 macro_rules! thread_name {
     ($name:literal) => {
         const {
-            match $crate::ThreadName::__from_terminated(concat!($name, "\0")) {
+            const NAME: Option<$crate::ThreadName> =
+                $crate::ThreadName::__from_terminated(concat!($name, "\0"));
+            // A mismatched array length makes an embedded NUL a compile error
+            // without placing a panic path in the package binary.
+            const _: [(); 1] = [(); NAME.is_some() as usize];
+            match NAME {
                 Some(name) => name,
-                None => panic!("thread name literal must not contain NUL"),
+                None => $crate::ThreadName::__invalid(),
             }
         }
     };
@@ -901,7 +913,7 @@ impl<B: ThreadBindings> ThreadApi<B> {
             // first proves this narrowing cast cannot discard any high bits.
             let chunk = micros.min(u128::from(VESC_MAX_SAFE_SLEEP_MICROS)) as u32;
             self.bindings.sleep_us(chunk);
-            micros -= u128::from(chunk);
+            micros = micros.saturating_sub(u128::from(chunk));
         }
     }
 
