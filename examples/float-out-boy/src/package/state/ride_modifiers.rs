@@ -88,6 +88,66 @@ fn combine_torque_offsets(ab: AngleDegrees, torque: AngleDegrees) -> AngleDegree
     }
 }
 
+fn atr_step(
+    config: crate::config::FloatOutBoyBalanceConfig<'_>,
+    target: AngleDegrees,
+    forward: bool,
+    abs_erpm: f32,
+    sample_rate: SampleRate,
+    setpoint: AngleDegrees,
+) -> AngleDegrees {
+    let mut response = 1.0;
+    if abs_erpm > 2_500.0 {
+        response = config.atr_response_boost().value();
+    }
+    if abs_erpm > 6_000.0 {
+        response *= config.atr_response_boost().value();
+    }
+    let on = loop_step(config.atr_on_speed(), sample_rate);
+    let off = loop_step(config.atr_off_speed(), sample_rate);
+    let mut step = if forward {
+        if setpoint.is_negative() {
+            if setpoint < target {
+                if target.is_positive()
+                    && (target - setpoint) > AngleDegrees::from_degrees(2.0)
+                    && abs_erpm > 2_000.0
+                {
+                    off * config.atr_transition_boost().value()
+                } else {
+                    off
+                }
+            } else {
+                on * response
+            }
+        } else if target > AngleDegrees::from_degrees(-3.0) && setpoint > target {
+            off
+        } else {
+            on * response
+        }
+    } else if setpoint.is_positive() {
+        if setpoint > target {
+            if target.is_negative()
+                && (setpoint - target) > AngleDegrees::from_degrees(2.0)
+                && abs_erpm > 2_000.0
+            {
+                off * config.atr_transition_boost().value()
+            } else {
+                off
+            }
+        } else {
+            on * response
+        }
+    } else if target < AngleDegrees::from_degrees(3.0) && setpoint < target {
+        off
+    } else {
+        on * response
+    };
+    if abs_erpm < 500.0 {
+        step = step / 2.0;
+    }
+    step
+}
+
 impl TurnTiltState {
     fn aggregate(&mut self, yaw: AngleDegrees) {
         // C map: yaw filtering and aggregation run before the state switch at
@@ -359,56 +419,8 @@ impl RideModifierState {
             config.atr_angle_limit().as_degrees(),
         );
         let target = AngleDegrees::from_degrees(filtered);
-        let mut response = 1.0;
-        if abs_erpm > 2_500.0 {
-            response = config.atr_response_boost().value();
-        }
-        if abs_erpm > 6_000.0 {
-            response *= config.atr_response_boost().value();
-        }
-        let on = loop_step(config.atr_on_speed(), sample_rate);
-        let off = loop_step(config.atr_off_speed(), sample_rate);
         let setpoint = self.atr.angle.setpoint;
-        let mut step = if forward {
-            if setpoint.is_negative() {
-                if setpoint < target {
-                    if target.is_positive()
-                        && (target - setpoint) > AngleDegrees::from_degrees(2.0)
-                        && abs_erpm > 2_000.0
-                    {
-                        off * config.atr_transition_boost().value()
-                    } else {
-                        off
-                    }
-                } else {
-                    on * response
-                }
-            } else if target > AngleDegrees::from_degrees(-3.0) && setpoint > target {
-                off
-            } else {
-                on * response
-            }
-        } else if setpoint.is_positive() {
-            if setpoint > target {
-                if target.is_negative()
-                    && (setpoint - target) > AngleDegrees::from_degrees(2.0)
-                    && abs_erpm > 2_000.0
-                {
-                    off * config.atr_transition_boost().value()
-                } else {
-                    off
-                }
-            } else {
-                on * response
-            }
-        } else if target < AngleDegrees::from_degrees(3.0) && setpoint < target {
-            off
-        } else {
-            on * response
-        };
-        if abs_erpm < 500.0 {
-            step = step / 2.0;
-        }
+        let step = atr_step(config, target, forward, abs_erpm, sample_rate, setpoint);
         smooth_ramp(&mut self.atr.angle, target, step, 0.05);
     }
 

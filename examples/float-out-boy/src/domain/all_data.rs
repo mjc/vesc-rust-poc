@@ -386,17 +386,17 @@ impl FloatOutBoyAllDataBasePayload {
             float_out_boy_scaled_u8(self.footpad.adc2_volts(), 50.0),
         );
 
-        [
+        for setpoint in [
             self.setpoints.board(),
             self.setpoints.atr(),
             self.setpoints.brake_tilt(),
             self.setpoints.torque_tilt(),
             self.setpoints.turn_tilt(),
             self.setpoints.remote(),
-        ]
-        .into_iter()
-        .map(|setpoint| float_out_boy_offset_scaled_u8(setpoint.angle().as_degrees(), 5.0, 128.0))
-        .for_each(|value| float_out_boy_push_u8(&mut buffer, &mut ind, value));
+        ] {
+            let value = float_out_boy_offset_scaled_u8(setpoint.angle().as_degrees(), 5.0, 128.0);
+            float_out_boy_push_u8(&mut buffer, &mut ind, value);
+        }
 
         float_out_boy_push_scaled_i16(
             &mut buffer,
@@ -413,15 +413,21 @@ impl FloatOutBoyAllDataBasePayload {
                 128.0,
             ),
         );
+        self.encode_motor_response(&mut buffer, &mut ind);
+
+        buffer
+    }
+
+    fn encode_motor_response(&self, buffer: &mut [u8], ind: &mut usize) {
         float_out_boy_push_scaled_i16(
-            &mut buffer,
-            &mut ind,
+            buffer,
+            ind,
             self.motor.battery_voltage().voltage().as_volts(),
             10.0,
         );
         float_out_boy_push_i16(
-            &mut buffer,
-            &mut ind,
+            buffer,
+            ind,
             crate::wire::saturating_trunc_f32_to_i16(
                 self.motor
                     .electrical_speed()
@@ -430,26 +436,26 @@ impl FloatOutBoyAllDataBasePayload {
             ),
         );
         float_out_boy_push_scaled_i16(
-            &mut buffer,
-            &mut ind,
+            buffer,
+            ind,
             self.motor.vehicle_speed().speed().as_meters_per_second(),
             10.0,
         );
         float_out_boy_push_scaled_i16(
-            &mut buffer,
-            &mut ind,
+            buffer,
+            ind,
             self.motor.motor_current().current().as_amps(),
             10.0,
         );
         float_out_boy_push_scaled_i16(
-            &mut buffer,
-            &mut ind,
+            buffer,
+            ind,
             self.motor.battery_current().current().as_amps(),
             10.0,
         );
         float_out_boy_push_u8(
-            &mut buffer,
-            &mut ind,
+            buffer,
+            ind,
             float_out_boy_offset_scaled_u8(
                 self.motor.duty_cycle().ratio().as_ratio(),
                 100.0,
@@ -457,8 +463,8 @@ impl FloatOutBoyAllDataBasePayload {
             ),
         );
         float_out_boy_push_u8(
-            &mut buffer,
-            &mut ind,
+            buffer,
+            ind,
             self.motor
                 .foc_id_current()
                 .as_measured()
@@ -466,8 +472,6 @@ impl FloatOutBoyAllDataBasePayload {
                     float_out_boy_scaled_u8(current.current().as_amps().abs(), 3.0)
                 }),
         );
-
-        buffer
     }
 
     /// Encode the compact all-data mode 4 response bytes.

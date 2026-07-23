@@ -395,6 +395,12 @@ impl FloatOutBoyStatusBarConfig {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct FloatOutBoyLiftedLedsConfig {
+    lights_off: bool,
+    status_on_front: bool,
+}
+
 /// Float Out Boy LEDs configuration.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FloatOutBoyLedsConfig {
@@ -402,8 +408,7 @@ pub struct FloatOutBoyLedsConfig {
     headlights_on: bool,
     headlights_transition: FloatOutBoyLedTransition,
     direction_transition: FloatOutBoyLedTransition,
-    lights_off_when_lifted: bool,
-    status_on_front_when_lifted: bool,
+    lifted: FloatOutBoyLiftedLedsConfig,
     headlights: FloatOutBoyLedBarConfig,
     taillights: FloatOutBoyLedBarConfig,
     front: FloatOutBoyLedBarConfig,
@@ -428,8 +433,10 @@ impl FloatOutBoyLedsConfig {
             headlights_on: false,
             headlights_transition: FloatOutBoyLedTransition::Fade,
             direction_transition: FloatOutBoyLedTransition::Fade,
-            lights_off_when_lifted: false,
-            status_on_front_when_lifted: false,
+            lifted: FloatOutBoyLiftedLedsConfig {
+                lights_off: false,
+                status_on_front: false,
+            },
             headlights,
             taillights,
             front,
@@ -473,14 +480,14 @@ impl FloatOutBoyLedsConfig {
     /// Return this config with lights off while lifted.
     #[must_use]
     pub const fn lights_off_when_lifted(mut self) -> Self {
-        self.lights_off_when_lifted = true;
+        self.lifted.lights_off = true;
         self
     }
 
     /// Return this config with status shown on the front while lifted.
     #[must_use]
     pub const fn status_on_front_when_lifted(mut self) -> Self {
-        self.status_on_front_when_lifted = true;
+        self.lifted.status_on_front = true;
         self
     }
 
@@ -511,13 +518,13 @@ impl FloatOutBoyLedsConfig {
     /// Return whether lights are turned off while lifted.
     #[must_use]
     pub const fn turns_lights_off_when_lifted(self) -> bool {
-        self.lights_off_when_lifted
+        self.lifted.lights_off
     }
 
     /// Return whether status is shown on the front while lifted.
     #[must_use]
     pub const fn shows_status_on_front_when_lifted(self) -> bool {
-        self.status_on_front_when_lifted
+        self.lifted.status_on_front
     }
 
     /// Return the headlights LED bar config.
