@@ -94,7 +94,7 @@ impl FloatOutBoyBeeperCountdown {
 
     #[cfg(any(test, target_arch = "arm"))]
     fn tick(&mut self) -> bool {
-        self.0 -= 1;
+        self.0 = self.0.saturating_sub(1);
         self.0 == 0
     }
 
@@ -179,9 +179,17 @@ mod tests {
     use std::vec::Vec;
 
     use super::{
-        FloatOutBoyBeeper, FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount, FloatOutBoyBeeperLevel,
+        FloatOutBoyBeeper, FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount,
+        FloatOutBoyBeeperCountdown, FloatOutBoyBeeperLevel,
     };
     use crate::config::FloatOutBoyConfigImage;
+
+    #[test]
+    fn idle_countdown_tick_saturates_instead_of_panicking() {
+        let mut countdown = FloatOutBoyBeeperCountdown::IDLE;
+
+        assert!(countdown.tick());
+    }
 
     #[test]
     fn beeper_enable_decodes_exact_float_out_boy_generated_offset() {
