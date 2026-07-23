@@ -26,9 +26,8 @@ fn package_imu_construction_reports_a_missing_required_slot() {
     words[VescIfAbi::IMU_GET_MAG.slot_index()] = 0;
     let capabilities = FirmwareCapabilities::new(VescIfPresence::from_words(&words));
 
-    let error = match capabilities.imu() {
-        Ok(_) => panic!("IMU construction unexpectedly succeeded"),
-        Err(error) => error,
-    };
-    assert_eq!(error.slot(), VescIfAbi::IMU_GET_MAG);
+    assert_eq!(
+        capabilities.imu().err().map(|error| error.slot()),
+        Some(VescIfAbi::IMU_GET_MAG)
+    );
 }
