@@ -1,5 +1,7 @@
 //! Float Out Boy external-beeper sequencing.
 
+#![deny(clippy::arithmetic_side_effects)]
+
 /// External-beeper output level.
 #[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,7 +51,7 @@ impl FloatOutBoyBeeperTransitions {
     }
 
     const fn from_beeps(count: FloatOutBoyBeeperCount) -> Self {
-        Self(count.0 * 2 + 1)
+        Self(count.0.saturating_mul(2).saturating_add(1))
     }
 
     #[cfg(any(test, target_arch = "arm"))]
