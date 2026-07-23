@@ -2,6 +2,7 @@
 
 use std::{env, fmt::Write as _, fs, path::PathBuf};
 
+use quote::ToTokens;
 use syn::{Fields, Item, Type};
 
 const HEADER_REPO: &str = "https://github.com/lukash/vesc_pkg_lib";
@@ -19,6 +20,7 @@ struct SlotDeclaration {
     c_name: String,
     index: usize,
     kind: SlotKind,
+    signature: String,
     line: usize,
 }
 
@@ -104,6 +106,7 @@ fn slots_from_bindings(bindings: &str) -> Vec<SlotDeclaration> {
             } else {
                 SlotKind::Scalar
             },
+            signature: field.ty.to_token_stream().to_string(),
             line: 0,
         })
         .collect()
@@ -174,11 +177,12 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
     for slot in slots {
         writeln!(
             rust,
-            "    crate::VescIfManifestEntry {{ slot: crate::VescIfSlot::with_header_line(\"{}\", {}, {}), kind: crate::VescIfSlotKind::{} }},",
+            "    crate::VescIfManifestEntry {{ slot: crate::VescIfSlot::with_header_line(\"{}\", {}, {}), kind: crate::VescIfSlotKind::{}, signature: {:?} }},",
             slot.c_name,
             slot.index * 4,
             slot.line,
-            slot_kind_name(slot.kind)
+            slot_kind_name(slot.kind),
+            slot.signature
         )
         .expect("write generated Rust");
     }

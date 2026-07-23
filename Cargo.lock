@@ -1405,6 +1405,7 @@ version = "0.1.0"
 dependencies = [
  "bindgen",
  "clang",
+ "quote",
  "syn 2.0.119",
 ]
 
