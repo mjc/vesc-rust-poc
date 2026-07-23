@@ -133,9 +133,7 @@ impl CustomEeprom {
     /// Returns a typed error when any required word is absent or its address
     /// cannot be represented. Bytes read before a failure remain in `bytes`.
     pub fn read_bytes(self, bytes: &mut [u8]) -> Result<(), EepromError> {
-        let Some(address) = CustomEepromAddress::from_index(0) else {
-            return Err(EepromError::AddressOverflow);
-        };
+        let address = CustomEepromAddress::from_index(0).ok_or(EepromError::AddressOverflow)?;
         self.read_bytes_at(address, bytes)
     }
 
@@ -148,22 +146,17 @@ impl CustomEeprom {
         start: CustomEepromAddress,
         bytes: &mut [u8],
     ) -> Result<(), EepromError> {
-        let Some(start) = usize::try_from(start.get()).ok() else {
-            return Err(EepromError::AddressOverflow);
-        };
+        let start = usize::try_from(start.get()).map_err(|_| EepromError::AddressOverflow)?;
         bytes
             .chunks_mut(EepromWord::BYTE_LEN)
             .enumerate()
             .try_for_each(|(index, bytes)| {
-                let Some(index) = start.checked_add(index) else {
-                    return Err(EepromError::AddressOverflow);
-                };
-                let Some(address) = CustomEepromAddress::from_index(index) else {
-                    return Err(EepromError::AddressOverflow);
-                };
-                let Some(word) = self.read(address) else {
-                    return Err(EepromError::Missing);
-                };
+                let index = start
+                    .checked_add(index)
+                    .ok_or(EepromError::AddressOverflow)?;
+                let address =
+                    CustomEepromAddress::from_index(index).ok_or(EepromError::AddressOverflow)?;
+                let word = self.read(address).ok_or(EepromError::Missing)?;
                 bytes.copy_from_slice(&word.to_ne_bytes()[..bytes.len()]);
                 Ok(())
             })
@@ -174,9 +167,7 @@ impl CustomEeprom {
     /// A final partial word is padded with zeroes. Returns a typed error after
     /// the first address or firmware write failure.
     pub fn write_bytes(self, bytes: &[u8]) -> Result<(), EepromError> {
-        let Some(address) = CustomEepromAddress::from_index(0) else {
-            return Err(EepromError::AddressOverflow);
-        };
+        let address = CustomEepromAddress::from_index(0).ok_or(EepromError::AddressOverflow)?;
         self.write_bytes_at(address, bytes)
     }
 
@@ -190,19 +181,16 @@ impl CustomEeprom {
         start: CustomEepromAddress,
         bytes: &[u8],
     ) -> Result<(), EepromError> {
-        let Some(start) = usize::try_from(start.get()).ok() else {
-            return Err(EepromError::AddressOverflow);
-        };
+        let start = usize::try_from(start.get()).map_err(|_| EepromError::AddressOverflow)?;
         bytes
             .chunks(EepromWord::BYTE_LEN)
             .enumerate()
             .try_for_each(|(index, bytes)| {
-                let Some(index) = start.checked_add(index) else {
-                    return Err(EepromError::AddressOverflow);
-                };
-                let Some(address) = CustomEepromAddress::from_index(index) else {
-                    return Err(EepromError::AddressOverflow);
-                };
+                let index = start
+                    .checked_add(index)
+                    .ok_or(EepromError::AddressOverflow)?;
+                let address =
+                    CustomEepromAddress::from_index(index).ok_or(EepromError::AddressOverflow)?;
                 let mut word = [0; EepromWord::BYTE_LEN];
                 word[..bytes.len()].copy_from_slice(bytes);
                 self.write(address, EepromWord::from_ne_bytes(word))
