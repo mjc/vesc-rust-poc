@@ -376,6 +376,17 @@ fn vesc_if_manifest_presence_gate_distinguishes_callable_holes_from_scalars() {
 }
 
 #[test]
+fn vesc_if_manifest_retains_bindgen_signature_metadata() {
+    assert!(VescIfAbi::ALL_ENTRIES
+        .iter()
+        .all(|entry| !entry.signature().is_empty()));
+    assert!(VescIfAbi::ALL_ENTRIES
+        .iter()
+        .filter(|entry| entry.is_callable())
+        .all(|entry| entry.signature().contains("fn")));
+}
+
+#[test]
 fn vesc_if_presence_tracks_holes_and_profiles_from_observed_words() {
     let mut words = [1_usize; VescIfAbi::FIELD_COUNT];
     words[VescIfAbi::SYSTEM_TIME_TICKS.slot_index()] = 0;
