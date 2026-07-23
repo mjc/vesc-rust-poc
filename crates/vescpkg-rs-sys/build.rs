@@ -127,14 +127,9 @@ fn slots_from_bindings(bindings: &str) -> Vec<SlotDeclaration> {
 fn is_function_type(ty: &Type, function_aliases: &HashSet<String>) -> bool {
     match ty {
         Type::BareFn(_) => true,
-        Type::Path(path) => path
-            .path
-            .segments
-            .last()
-            .map(|segment| {
-                segment.ident == "Option" || function_aliases.contains(&segment.ident.to_string())
-            })
-            .unwrap_or(false),
+        Type::Path(path) => path.path.segments.last().is_some_and(|segment| {
+            segment.ident == "Option" || function_aliases.contains(&segment.ident.to_string())
+        }),
         _ => false,
     }
 }
