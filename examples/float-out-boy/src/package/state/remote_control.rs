@@ -346,8 +346,8 @@ impl RemoteControlState {
     ) -> MotorCurrent {
         // C map: `do_rc_move` blends the previous RC current with the target
         // using the same 95/5 smoothing factor at
-        // `third_party/refloat/src/main.c:275-286` and
-        // `third_party/refloat/src/main.c:291-298`.
+        // `third_party/float-out-boy/src/main.c:275-286` and
+        // `third_party/float-out-boy/src/main.c:291-298`.
         let retain_previous = smoothing.retain_previous().as_ratio();
         let accept_target = smoothing.accept_target().as_ratio();
         self.current = MotorCurrent::new(

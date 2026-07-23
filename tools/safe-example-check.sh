@@ -4,6 +4,7 @@ set -euo pipefail
 examples=(
   examples/alloc-smoke
   examples/control-loop-smoke
+  examples/float-out-boy
   examples/loopback
 )
 
