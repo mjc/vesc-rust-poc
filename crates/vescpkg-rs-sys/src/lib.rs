@@ -1,4 +1,4 @@
-//! Raw/minimal VESC firmware ABI bindings.
+//! Raw VESC firmware ABI bindings generated from the pinned package header.
 //!
 //! This crate mirrors the VESC native package ABI. It does not provide
 //! high-level vehicle semantics, package building, or host transport code.
