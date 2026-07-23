@@ -3,6 +3,8 @@
 //! C map: app-data packet encoders forward through Float Out Boy buffer helpers in
 //! `third_party/float-out-boy/src/conf/buffer.c:33-145`.
 
+#![cfg_attr(not(test), deny(clippy::arithmetic_side_effects))]
+
 use vescpkg_rs::prelude::AngleRadians;
 
 pub(super) fn float_out_boy_degrees(angle: AngleRadians) -> f32 {
@@ -24,12 +26,19 @@ fn encode_float_out_boy_float16(value: f32) -> u16 {
     let exponent = (bits & 0x7f80_0000) >> 23;
     let mantissa = bits & 0x007f_ffff;
     let normalized = if exponent > 112 {
-        (((exponent - 112) << 10) & 0x7c00) | (mantissa >> 13)
+        ((exponent.saturating_sub(112) << 10) & 0x7c00) | (mantissa >> 13)
     } else {
         0
     };
+    // In this branch the exponent makes the right shift 13 through 23 bits.
+    // `wrapping_shr` also keeps a future out-of-range shift panic-free without
+    // changing any valid Float Out Boy encoding.
     let denormalized = if exponent < 113 && exponent > 101 {
-        (((0x007f_f000 + mantissa) >> (125 - exponent)) + 1) >> 1
+        (0x007f_f000_u32
+            .saturating_add(mantissa)
+            .wrapping_shr(125_u32.saturating_sub(exponent))
+            .saturating_add(1))
+            >> 1
     } else {
         0
     };
