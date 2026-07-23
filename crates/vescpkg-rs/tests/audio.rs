@@ -3,8 +3,8 @@
 
 use vescpkg_rs::{
     AudioChannel, AudioDuration, AudioFrequency, AudioSampleRate, AudioVoltage,
-    FocAudioSampleTable, Frequency, PackageRuntimeState, PackageStateStore, SampleRate, Voltage,
-    test_support::FirmwareTest,
+    FocAudioSampleTable, FocAudioStopMode, Frequency, PackageRuntimeState, PackageStateStore,
+    SampleRate, Voltage, test_support::FirmwareTest,
 };
 
 struct PackageState {
@@ -49,7 +49,7 @@ fn firmware_audio_forwards_checked_commands_and_owns_sample_table_borrow() {
     let table = audio.set_sample_table(channel, &samples).unwrap();
     assert!(unsafe { audio.sample_table_ptr(channel) }.is_some());
     drop(table);
-    audio.stop(true).unwrap();
+    audio.stop(FocAudioStopMode::Reset).unwrap();
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn firmware_audio_reports_absent_optional_slots() {
         Err(vescpkg_rs::FocAudioError::Unavailable)
     ));
     assert_eq!(
-        audio.stop(true),
+        audio.stop(FocAudioStopMode::Reset),
         Err(vescpkg_rs::FocAudioError::Unavailable)
     );
     assert!(unsafe { audio.sample_table_ptr(channel) }.is_none());
