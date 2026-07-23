@@ -365,7 +365,7 @@ impl FloatOutBoyAllDataBasePayload {
             &mut buffer,
             &mut ind,
             (ride_state.float_state_compat() & 0x0f)
-                + (ride_state.setpoint_adjustment_compat() << 4),
+                | (ride_state.setpoint_adjustment_compat() << 4),
         );
 
         let handtest = matches!(ride_state.mode(), FloatOutBoyMode::HandTest);
@@ -373,7 +373,7 @@ impl FloatOutBoyAllDataBasePayload {
         float_out_boy_push_u8(
             &mut buffer,
             &mut ind,
-            (switch_state & 0x0f) + (self.status.beep_reason.id() << 4),
+            (switch_state & 0x0f) | (self.status.beep_reason.id() << 4),
         );
         float_out_boy_push_u8(
             &mut buffer,

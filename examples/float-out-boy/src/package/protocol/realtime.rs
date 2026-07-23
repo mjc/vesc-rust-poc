@@ -101,14 +101,14 @@ pub(in crate::package) fn encode_float_out_boy_get_realtime_data_response_with_r
     float_out_boy_realtime_push_u8(
         &mut bytes,
         &mut ind,
-        (ride_state.float_state_compat() & 0x0f) + (ride_state.setpoint_adjustment_compat() << 4),
+        (ride_state.float_state_compat() & 0x0f) | (ride_state.setpoint_adjustment_compat() << 4),
     );
     let switch_state = footpad.state().switch_compat()
         | u8::from(matches!(ride_state.mode(), FloatOutBoyMode::HandTest)) << 3;
     float_out_boy_realtime_push_u8(
         &mut bytes,
         &mut ind,
-        (switch_state & 0x0f) + (base.status().beep_reason().id() << 4),
+        (switch_state & 0x0f) | (base.status().beep_reason().id() << 4),
     );
     float_out_boy_realtime_push_float32_auto(&mut bytes, &mut ind, footpad.adc1_volts());
     float_out_boy_realtime_push_float32_auto(&mut bytes, &mut ind, footpad.adc2_volts());
