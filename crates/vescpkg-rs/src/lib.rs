@@ -208,7 +208,7 @@ pub use logging::{FirmwareLog, LogError};
 pub mod __macro_support;
 
 #[cfg(feature = "math")]
-pub use ahrs::{Ahrs, Madgwick};
+pub use ahrs::{Ahrs, AhrsParameterError, Madgwick};
 pub use audio::{FocAudio, FocAudioError, FocAudioSampleTable, FocAudioStopMode};
 pub use firmware::{
     AppDataHandler, AppDataPacket, ConfigBytes, ConfigXml, StatefulCustomConfigCallback,

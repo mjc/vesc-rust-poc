@@ -62,6 +62,25 @@ fn orientation_from_quaternion(quaternion: [f32; 4]) -> ImuOrientation {
     ))
 }
 
+/// Invalid parameter returned by a package-owned AHRS configuration change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AhrsParameterError {
+    /// The parameter was NaN or infinite.
+    NonFinite,
+    /// The parameter was finite but negative.
+    Negative,
+}
+
+fn validate_nonnegative(value: f32) -> Result<(), AhrsParameterError> {
+    if !value.is_finite() {
+        Err(AhrsParameterError::NonFinite)
+    } else if value < 0.0 {
+        Err(AhrsParameterError::Negative)
+    } else {
+        Ok(())
+    }
+}
+
 /// Package-owned attitude estimator state.
 #[derive(Debug, Clone, Copy)]
 pub struct Ahrs {
@@ -89,26 +108,26 @@ impl Ahrs {
     }
 
     /// Construct an estimator with explicit proportional and integral gains.
-    pub const fn with_gains(proportional_gain: f32, integral_gain: f32) -> Self {
-        Self {
-            proportional_gain,
-            integral_gain,
-            ..Self::new()
-        }
+    pub fn with_gains(
+        proportional_gain: f32,
+        integral_gain: f32,
+    ) -> Result<Self, AhrsParameterError> {
+        let mut estimator = Self::new();
+        estimator.set_gains(proportional_gain, integral_gain)?;
+        Ok(estimator)
     }
 
-    /// Replace the estimator gains, ignoring non-finite or negative values.
-    pub fn set_gains(&mut self, proportional_gain: f32, integral_gain: f32) -> bool {
-        if !proportional_gain.is_finite()
-            || !integral_gain.is_finite()
-            || proportional_gain < 0.0
-            || integral_gain < 0.0
-        {
-            return false;
-        }
+    /// Replace the estimator gains after validating both values.
+    pub fn set_gains(
+        &mut self,
+        proportional_gain: f32,
+        integral_gain: f32,
+    ) -> Result<(), AhrsParameterError> {
+        validate_nonnegative(proportional_gain)?;
+        validate_nonnegative(integral_gain)?;
         self.proportional_gain = proportional_gain;
         self.integral_gain = integral_gain;
-        true
+        Ok(())
     }
 
     /// Reset the orientation and accumulated integral correction.
@@ -224,20 +243,17 @@ impl Madgwick {
     }
 
     /// Construct an estimator with an explicit non-negative beta gain.
-    pub const fn with_beta(beta: f32) -> Self {
-        Self {
-            quaternion: [1.0, 0.0, 0.0, 0.0],
-            beta,
-        }
+    pub fn with_beta(beta: f32) -> Result<Self, AhrsParameterError> {
+        let mut estimator = Self::new();
+        estimator.set_beta(beta)?;
+        Ok(estimator)
     }
 
-    /// Replace the beta gain, rejecting negative or non-finite values.
-    pub fn set_beta(&mut self, beta: f32) -> bool {
-        if !beta.is_finite() || beta < 0.0 {
-            return false;
-        }
+    /// Replace the beta gain after validating it is finite and non-negative.
+    pub fn set_beta(&mut self, beta: f32) -> Result<(), AhrsParameterError> {
+        validate_nonnegative(beta)?;
         self.beta = beta;
-        true
+        Ok(())
     }
 
     /// Reset the estimator to the identity orientation.
