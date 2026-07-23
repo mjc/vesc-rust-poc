@@ -499,11 +499,44 @@ fn vesc_if_capabilities_expose_named_subsystems_without_raw_slot_names() {
         capabilities.nvm().unwrap().subsystem(),
         VescIfSubsystem::Nvm
     );
+    assert_eq!(capabilities.imu().unwrap_err().capability(), "IMU");
     assert_eq!(capabilities.audio().unwrap_err().capability(), "FOC audio");
     assert_eq!(
         capabilities.settings().unwrap_err().capability(),
         "settings"
     );
+}
+
+#[test]
+fn vesc_if_capabilities_accept_the_complete_imu_surface() {
+    let mut words = vec![0; VescIfAbi::FIELD_COUNT];
+    for slot in [
+        VescIfAbi::IMU_STARTUP_DONE,
+        VescIfAbi::IMU_GET_ROLL,
+        VescIfAbi::IMU_GET_PITCH,
+        VescIfAbi::IMU_GET_YAW,
+        VescIfAbi::IMU_GET_RPY,
+        VescIfAbi::IMU_GET_ACCEL,
+        VescIfAbi::IMU_GET_GYRO,
+        VescIfAbi::IMU_GET_MAG,
+        VescIfAbi::IMU_DEROTATE,
+        VescIfAbi::IMU_GET_ACCEL_DEROTATED,
+        VescIfAbi::IMU_GET_GYRO_DEROTATED,
+        VescIfAbi::IMU_GET_QUATERNIONS,
+        VescIfAbi::IMU_GET_CALIBRATION,
+        VescIfAbi::IMU_SET_YAW,
+    ] {
+        words[slot.slot_index()] = 1;
+    }
+    let capabilities = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
+
+    assert_eq!(
+        capabilities.imu().unwrap().subsystem(),
+        VescIfSubsystem::Imu
+    );
+    words[VescIfAbi::IMU_GET_MAG.slot_index()] = 0;
+    let missing = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
+    assert_eq!(missing.imu().unwrap_err().slot(), VescIfAbi::IMU_GET_MAG);
 }
 
 #[test]

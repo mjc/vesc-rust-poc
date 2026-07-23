@@ -1070,6 +1070,15 @@ impl FirmwareCapabilities {
         self.inner.settings().map(|_| FirmwareSettings)
     }
 
+    /// Construct a typed IMU handle only when every operation exposed by [`crate::Imu`] has a
+    /// corresponding observed firmware entry.
+    #[cfg(not(test))]
+    pub fn imu(self) -> Result<impl crate::Imu, AbiError> {
+        self.inner
+            .imu()
+            .map(|_| crate::imu::ImuApi::new(crate::imu::RealImuBindings))
+    }
+
     /// Require CAN for a constructor that cannot operate without it.
     pub fn require_can(self) -> Result<CanBus, AbiError> {
         self.inner.require_can().map(|_| CanBus::new())

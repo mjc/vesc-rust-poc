@@ -253,6 +253,8 @@ pub enum VescIfSubsystem {
     Uart,
     /// Firmware settings support.
     Settings,
+    /// Firmware IMU and attitude-estimation support.
+    Imu,
 }
 
 /// A capability-bearing handle for one available subsystem.
@@ -379,6 +381,48 @@ impl VescIfCapabilities {
             }),
             Err(error) => Err(error),
         }
+    }
+
+    /// Probe the complete firmware IMU surface as an optional subsystem.
+    pub const fn imu(self) -> Result<VescIfCapability, AbiError> {
+        match self.imu_slots(false) {
+            Ok(()) => Ok(VescIfCapability {
+                subsystem: VescIfSubsystem::Imu,
+            }),
+            Err(error) => Err(error),
+        }
+    }
+
+    const fn imu_slots(self, required: bool) -> Result<(), AbiError> {
+        let checks = [
+            VescIfAbi::IMU_STARTUP_DONE,
+            VescIfAbi::IMU_GET_ROLL,
+            VescIfAbi::IMU_GET_PITCH,
+            VescIfAbi::IMU_GET_YAW,
+            VescIfAbi::IMU_GET_RPY,
+            VescIfAbi::IMU_GET_ACCEL,
+            VescIfAbi::IMU_GET_GYRO,
+            VescIfAbi::IMU_GET_MAG,
+            VescIfAbi::IMU_DEROTATE,
+            VescIfAbi::IMU_GET_ACCEL_DEROTATED,
+            VescIfAbi::IMU_GET_GYRO_DEROTATED,
+            VescIfAbi::IMU_GET_QUATERNIONS,
+            VescIfAbi::IMU_GET_CALIBRATION,
+            VescIfAbi::IMU_SET_YAW,
+        ];
+        let mut index = 0;
+        while index < checks.len() {
+            let result = if required {
+                self.presence.require("IMU", checks[index])
+            } else {
+                self.presence.optional("IMU", checks[index])
+            };
+            if let Err(error) = result {
+                return Err(error);
+            }
+            index += 1;
+        }
+        Ok(())
     }
 
     const fn settings_slots(self, required: bool) -> Result<(), AbiError> {
