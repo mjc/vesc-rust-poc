@@ -91,7 +91,7 @@ impl<'a> LoopbackPacket<'a> {
 
     /// Return the underlying typed frame by value.
     pub fn frame(&self) -> Frame<'a> {
-        self.frame.clone()
+        self.frame
     }
 
     /// Encode the packet into the provided output buffer.
