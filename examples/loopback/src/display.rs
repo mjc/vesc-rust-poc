@@ -46,14 +46,14 @@ impl Ssd1306Frame {
 
     /// Set one pixel when it lies within the 128×64 display bounds.
     pub fn set_pixel(&mut self, x: i16, y: i16) {
-        let (Ok(x), Ok(y)) = (usize::try_from(x), usize::try_from(y)) else {
-            return;
-        };
-        if x >= SSD1306_WIDTH || y >= SSD1306_HEIGHT {
-            return;
-        }
-        let byte = 1 + x + (y / 8) * SSD1306_WIDTH;
-        self.bytes[byte] |= 1 << (y % 8);
+        usize::try_from(x)
+            .ok()
+            .zip(usize::try_from(y).ok())
+            .filter(|&(x, y)| x < SSD1306_WIDTH && y < SSD1306_HEIGHT)
+            .map(|(x, y)| {
+                let byte = 1 + x + (y / 8) * SSD1306_WIDTH;
+                self.bytes[byte] |= 1 << (y % 8);
+            });
     }
 
     /// Draw a clipped line using the same integer algorithm as the official example.
