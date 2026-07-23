@@ -410,10 +410,22 @@ fn vesc_if_manifest_retains_bindgen_signature_metadata() {
 #[test]
 fn generated_raw_resolvers_cover_every_callable_manifest_entry() {
     assert_eq!(VescIfAbi::RAW_SHIM_COUNT, VescIfAbi::CALLABLE_SLOT_COUNT);
+    assert_eq!(VescIfAbi::RAW_SHIM_SLOTS.len(), VescIfAbi::RAW_SHIM_COUNT);
+
+    let mut callable_index = 0;
+    for entry in VescIfAbi::ALL_ENTRIES {
+        if entry.is_callable() {
+            assert_eq!(VescIfAbi::RAW_SHIM_SLOTS[callable_index], entry.slot());
+            callable_index += 1;
+        }
+    }
+    assert_eq!(callable_index, VescIfAbi::RAW_SHIM_COUNT);
 
     let table = crate::test_support::empty_table();
     crate::test_support::with_table(&table, || unsafe {
         assert!(crate::raw::resolve_lbm_add_extension().is_none());
+        assert!(crate::raw::resolve_mc_set_duty().is_none());
+        assert!(crate::raw::resolve_shutdown_disable().is_none());
     });
 }
 
