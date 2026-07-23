@@ -18,6 +18,19 @@ fn package_callers_can_branch_on_subsystem_handles() {
     assert!(capabilities.uart().is_ok());
     assert!(capabilities.settings().is_ok());
     assert!(capabilities.imu().is_ok());
+    assert!(capabilities.advanced_foc().is_ok());
+}
+
+#[test]
+fn package_advanced_foc_construction_reports_a_missing_slot() {
+    let mut words = vec![1_usize; VescIfAbi::FIELD_COUNT];
+    words[VescIfAbi::FOC_SET_OPENLOOP_DUTY.slot_index()] = 0;
+    let capabilities = FirmwareCapabilities::new(VescIfPresence::from_words(&words));
+
+    assert_eq!(
+        capabilities.advanced_foc().err().map(|error| error.slot()),
+        Some(VescIfAbi::FOC_SET_OPENLOOP_DUTY)
+    );
 }
 
 #[test]
