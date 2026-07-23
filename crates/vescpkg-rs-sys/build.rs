@@ -25,6 +25,7 @@ struct SlotDeclaration {
 }
 
 fn main() {
+    verify_function_classifier();
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("manifest dir"));
     let header = manifest_dir.join(VENDORED_HEADER_PATH);
     let workspace_header = manifest_dir.join("../..").join(HEADER_PATH);
@@ -137,6 +138,24 @@ fn function_aliases(file: &syn::File) -> HashSet<String> {
             return functions;
         }
     }
+}
+
+fn verify_function_classifier() {
+    let fixture = r#"
+        pub type ScalarOption = Option<u32>;
+        pub type Callback = Option<unsafe extern "C" fn()>;
+        pub type CallbackAlias = Callback;
+        pub struct vesc_c_if {
+            pub scalar: ScalarOption,
+            pub callback: CallbackAlias,
+            pub direct: Option<unsafe extern "C" fn()>,
+        }
+    "#;
+    let slots = slots_from_bindings(fixture);
+    assert_eq!(slots.len(), 3, "classifier fixture must cover every field");
+    assert!(matches!(slots[0].kind, SlotKind::Scalar));
+    assert!(matches!(slots[1].kind, SlotKind::Function));
+    assert!(matches!(slots[2].kind, SlotKind::Function));
 }
 
 fn is_function_type(ty: &Type, function_aliases: &HashSet<String>) -> bool {
