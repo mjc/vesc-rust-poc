@@ -114,7 +114,8 @@ function paramIsTune(name){var tuneBlacklist=["tiltback_return_speed","tiltback_
 function fetchConfig(tuneOnly){if(!checkConfig())return null;var settings={};for(let subGroup of pkgConfig.getParamSubgroups("General")){for(let param of pkgConfig.getParamsFromSubgroup("General",subGroup)){if(tuneOnly&&!paramIsTune(param)){continue;}
 var value=getParamValue(param);if(value!==null){settings[param]=getParamValue(param);}}}
 return settings;}
-function versionCompatible(config){var[major,minor]=versionMajorMinor(config.version);if(major!==tuneManager.formatVersionMajor||minor>tuneManager.formatVersionMinor){VescIf.emitStatusMessage("Error: Incompatible version: %1".arg(config.version),false);return false;}
+function versionCompatible(config){if(!config.package||config.package.name!==tuneManager.packageName){VescIf.emitStatusMessage("Error: Backup belongs to another package",false);return false;}
+var[major,minor]=versionMajorMinor(config.version);if(major!==tuneManager.formatVersionMajor||minor>tuneManager.formatVersionMinor){VescIf.emitStatusMessage("Error: Incompatible version: %1".arg(config.version),false);return false;}
 return true;}
 function applyConfig(config){if(!checkConfig())return;if(!versionCompatible(config)){return;}
 for(let[key,value]of Object.entries(config.settings)){if(pkgConfig.isParamDouble(key)){pkgConfig.updateParamDouble(key,value);}else if(pkgConfig.isParamInt(key)){pkgConfig.updateParamInt(key,value);}else if(pkgConfig.isParamBool(key)){pkgConfig.updateParamBool(key,value);}else if(pkgConfig.isParamEnum(key)){pkgConfig.updateParamEnum(key,value);}else if(pkgConfig.isParamQString(key)){pkgConfig.updateParamString(key,value);}else if(pkgConfig.isParamBitfield(key)){pkgConfig.updateParamInt(key,value);}}
@@ -196,7 +197,7 @@ var md_bullet=pkg.description.match(/\n- Version: [a-zA-Z0-9._-]+\n/g);if(md_bul
 return null;}
 Component.onCompleted:{setVesc(VescIf)}}
 function check(){if(!preferences.checkForNewVersions){return;}
-var pkgName="Float Out Boy";var pkgVersion="1.2.1";if(pkgName.includes("PACKAGE_NAME")){return;}
+var pkgName="Float Out Boy";var pkgVersion="0.1.0";if(pkgName.includes("PACKAGE_NAME")){return;}
 var now=Date.now();var oneDayMs=24*60*60*1000;var lpuc=persistentData.lastPackageUpdateCheck;if(!lpuc||now-lpuc>oneDayMs){packageLoader.downloadPackageArchive();persistentData.lastPackageUpdateCheck=Date.now();}
 var pus=persistentData.packageUpdateSnooze;if(pus&&now-pus<30*oneDayMs){return;}
 var version=packageLoader.getPackageVersion(pkgName);if(!version){print("Float Out Boy: Failed to retrieve package version");return;}
@@ -313,12 +314,12 @@ readonly property int formatVersionMajor:1
 readonly property int formatVersionMinor:0
 readonly property string formatVersion:"%1.%2".arg(formatVersionMajor).arg(formatVersionMinor)
 readonly property string packageName:"Float Out Boy"
-readonly property string packageVersion:"1.2.1"
+readonly property string packageVersion:"0.1.0"
 readonly property int maxTunes:6
 signal idBackupFinished(var backup)
 signal autoBackupFinished(var backup)
 property var tuneStorage:Settings{id:tuneStorage
-category:"configs"
+category:"float-out-boy-configs"
 property var tuneArchive
 property var tuneArchiveDownloadDate
 property var fullBackup}
@@ -350,7 +351,8 @@ return tune;}
 function createBackup(){var config=packageConfig.fetchConfig(false);if(!config){return null;}
 return createTune("Full Backup","",config);}
 function loadBackup(name){var backup=tuneStorage.value(name);if(!backup){return null;}
-return migrateTune(convertFromOldFormat(backup));}
+backup=convertFromOldFormat(backup);if(!backup.package||backup.package.name!==packageName){return null;}
+return migrateTune(backup);}
 function saveBackup(name,backup){tuneStorage.setValue(name,convertToOldFormat(backup));}
 function globalBackup(){var backup=createBackup();if(!backup){return;}
 fullBackup=backup;}
@@ -2475,4 +2477,4 @@ NText{id:bottomLine
 Layout.fillWidth:true
 font.pixelSize:0.2*unit
 horizontalAlignment:Text.AlignHCenter
-text:"Float Out Boy v1.2.1"}}}
+text:"Float Out Boy v0.1.0"}}}

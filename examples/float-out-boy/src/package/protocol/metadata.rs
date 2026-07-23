@@ -10,10 +10,10 @@ pub(super) const FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_LEN: usize = 405;
 
 const FLOAT_OUT_BOY_PACKAGE_NAME: &[u8] = b"Float Out Boy";
 const FLOAT_OUT_BOY_VERSION_SUFFIX: &[u8] = b"";
-const FLOAT_OUT_BOY_MAJOR_VERSION: u8 = 1;
-const FLOAT_OUT_BOY_MINOR_VERSION: u8 = 2;
-const FLOAT_OUT_BOY_PATCH_VERSION: u8 = 1;
-const FLOAT_OUT_BOY_BUILD_NUMBER: u8 = 1;
+const FLOAT_OUT_BOY_MAJOR_VERSION: u8 = 0;
+const FLOAT_OUT_BOY_MINOR_VERSION: u8 = 1;
+const FLOAT_OUT_BOY_PATCH_VERSION: u8 = 0;
+const FLOAT_OUT_BOY_BUILD_NUMBER: u8 = 0;
 const FLOAT_OUT_BOY_GIT_HASH: u32 = 0x0ef6_e99d;
 const FLOAT_OUT_BOY_SYSTEM_TICK_RATE_HZ: u32 = SYSTEM_TICK_RATE_HZ as u32;
 
@@ -217,7 +217,7 @@ mod tests {
         assert_eq!(bytes.len(), 60);
         assert_eq!(&bytes[..4], &[101, 0, 2, 0]);
         assert_eq!(&bytes[4..17], b"Float Out Boy");
-        assert_eq!(&bytes[24..27], &[1, 2, 1]);
+        assert_eq!(&bytes[24..27], &[0, 1, 0]);
         assert_eq!(
             u32::from_be_bytes([bytes[47], bytes[48], bytes[49], bytes[50]]),
             0x0ef6_e99d
@@ -241,15 +241,15 @@ mod tests {
     fn info_v1_response_matches_float_out_boy_legacy_shape_and_led_mapping() {
         assert_eq!(
             encode_float_out_boy_info_response(&[], 1).as_bytes(),
-            &[101, 0, 12, 1, 1]
+            &[101, 0, 1, 0, 1]
         );
         assert_eq!(
             encode_float_out_boy_info_response(&[1], 2).as_bytes(),
-            &[101, 0, 12, 1, 3]
+            &[101, 0, 1, 0, 3]
         );
         assert_eq!(
             encode_float_out_boy_info_response(&[1], 3).as_bytes(),
-            &[101, 0, 12, 1, 3]
+            &[101, 0, 1, 0, 3]
         );
     }
 

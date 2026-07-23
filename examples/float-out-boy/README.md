@@ -14,7 +14,7 @@ $ cargo nextest run -p vesc-example-float-out-boy --features test-support
 $ cargo run -p cargo-vescpkg -- build -p vesc-example-float-out-boy
 ```
 
-The finished artifact is written below `target/vescpkg/Float-Out-Boy-1.2.1/`.
+The finished artifact is written below `target/vescpkg/Float-Out-Boy-0.1.0/`.
 
 ## Layout
 

@@ -9,7 +9,7 @@ publish = false
 
 [package.metadata.vescpkg]
 name = "Float Out Boy"
-version = "1.2.1"
+version = "0.1.0"
 
 [lints]
 workspace = true
