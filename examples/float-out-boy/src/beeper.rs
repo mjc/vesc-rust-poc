@@ -54,7 +54,7 @@ impl FloatOutBoyBeeperTransitions {
 
     #[cfg(any(test, target_arch = "arm"))]
     fn advance(&mut self) -> FloatOutBoyBeeperLevel {
-        self.0 -= 1;
+        self.0 = self.0.saturating_sub(1);
         if self.0 & 1 == 1 {
             FloatOutBoyBeeperLevel::High
         } else {
@@ -180,7 +180,7 @@ mod tests {
 
     use super::{
         FloatOutBoyBeeper, FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount,
-        FloatOutBoyBeeperCountdown, FloatOutBoyBeeperLevel,
+        FloatOutBoyBeeperCountdown, FloatOutBoyBeeperLevel, FloatOutBoyBeeperTransitions,
     };
     use crate::config::FloatOutBoyConfigImage;
 
@@ -189,6 +189,14 @@ mod tests {
         let mut countdown = FloatOutBoyBeeperCountdown::IDLE;
 
         assert!(countdown.tick());
+    }
+
+    #[test]
+    fn empty_transition_advance_saturates_instead_of_panicking() {
+        let mut transitions = FloatOutBoyBeeperTransitions::NONE;
+
+        assert_eq!(transitions.advance(), FloatOutBoyBeeperLevel::Low);
+        assert!(transitions.is_empty());
     }
 
     #[test]
