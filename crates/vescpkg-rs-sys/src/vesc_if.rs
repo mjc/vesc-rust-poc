@@ -233,11 +233,22 @@ impl VescIfCapabilities {
 
     /// Probe controller input support as an optional subsystem.
     pub const fn inputs(self) -> Result<VescIfCapability, AbiError> {
-        self.optional(
-            VescIfSubsystem::Inputs,
-            "inputs",
+        let checks = [
             VescIfAbi::GET_REMOTE_STATE,
-        )
+            VescIfAbi::TIMEOUT_RESET,
+            VescIfAbi::TIMEOUT_HAS_TIMEOUT,
+            VescIfAbi::TIMEOUT_SECS_SINCE_UPDATE,
+        ];
+        let mut index = 0;
+        while index < checks.len() {
+            if let Err(error) = self.presence.optional("inputs", checks[index]) {
+                return Err(error);
+            }
+            index += 1;
+        }
+        Ok(VescIfCapability {
+            subsystem: VescIfSubsystem::Inputs,
+        })
     }
 
     /// Probe CAN support as an optional subsystem.
