@@ -3,7 +3,7 @@
 use crate::ffi;
 use crate::{
     AngleDegrees, BatteryCellCount, BatteryChemistry, CanApplicationMode, CanBaudRate, CanBus,
-    Charge, Current, DutyCycleLimit, DutyCycleMinimum, ElectricalSpeed, FocAudio,
+    Charge, Current, DutyCycleLimit, DutyCycleMinimum, ElectricalSpeed, FirmwareInputs, FocAudio,
     FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance, GearRatio, ImuAccelerationOffset,
     ImuAhrsMode, ImuAngularRateOffset, ImuMadgwickBeta, ImuMahonyIntegralGain,
     ImuMahonyProportionalGain, ImuSampleRate, InputCurrent, InputVoltage, MotorCurrentLimit,
@@ -1014,6 +1014,14 @@ impl FirmwareCapabilities {
         self.inner.nvm().map(|_| Nvm::new())
     }
 
+    /// Construct a controller input handle only when its required remote-state entry exists.
+    ///
+    /// Individual input operations still report `InputError::Unsupported` for optional
+    /// firmware entries such as PPM, backup storage, and shutdown inhibition.
+    pub fn inputs(self) -> Result<FirmwareInputs, AbiError> {
+        self.inner.inputs().map(|_| FirmwareInputs::new())
+    }
+
     /// Construct NVM with a separately discovered byte capacity.
     pub fn nvm_with_capacity(self, capacity: NvmCapacity) -> Result<Nvm, AbiError> {
         self.inner.nvm().map(|_| Nvm::with_capacity(capacity))
@@ -1123,10 +1131,12 @@ mod tests {
         let mut words = [0_usize; VescIfAbi::FIELD_COUNT];
         words[VescIfAbi::CAN_TRANSMIT_SID.slot_index()] = 1;
         words[VescIfAbi::READ_NVM.slot_index()] = 1;
+        words[VescIfAbi::GET_REMOTE_STATE.slot_index()] = 1;
         let capabilities = FirmwareCapabilities::new(VescIfPresence::from_words(&words));
 
         assert!(capabilities.can_bus().is_ok());
         assert!(capabilities.nvm().is_ok());
+        assert!(capabilities.inputs().is_ok());
         assert_eq!(
             capabilities
                 .nvm_with_capacity(NvmCapacity::new(32).unwrap())
@@ -1153,6 +1163,11 @@ mod tests {
         };
         assert_eq!(error.capability(), "CAN");
         assert_eq!(error.slot(), VescIfAbi::CAN_TRANSMIT_SID);
+        let Err(error) = capabilities.inputs() else {
+            panic!("empty presence must reject required remote-state input support")
+        };
+        assert_eq!(error.capability(), "inputs");
+        assert_eq!(error.slot(), VescIfAbi::GET_REMOTE_STATE);
         assert_eq!(capabilities.revision(), Stm32AbiRevision::UnknownCompatible);
         assert_eq!(
             capabilities.require_settings().unwrap_err().capability(),

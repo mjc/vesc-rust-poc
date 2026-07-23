@@ -178,6 +178,8 @@ pub enum AbiError {
 /// Safe subsystem names exposed by a concrete firmware table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VescIfSubsystem {
+    /// Controller input and output-safety support.
+    Inputs,
     /// Controller-area network support.
     Can,
     /// Non-volatile memory support.
@@ -227,6 +229,15 @@ impl VescIfCapabilities {
     /// Return the descriptive revision inferred from observed pointers.
     pub fn revision(self) -> Stm32AbiRevision {
         self.presence.revision()
+    }
+
+    /// Probe controller input support as an optional subsystem.
+    pub const fn inputs(self) -> Result<VescIfCapability, AbiError> {
+        self.optional(
+            VescIfSubsystem::Inputs,
+            "inputs",
+            VescIfAbi::GET_REMOTE_STATE,
+        )
     }
 
     /// Probe CAN support as an optional subsystem.
