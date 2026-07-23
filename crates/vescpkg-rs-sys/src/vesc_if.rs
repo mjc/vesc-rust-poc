@@ -254,6 +254,8 @@ pub enum VescIfSubsystem {
     Settings,
     /// Firmware IMU and attitude-estimation support.
     Imu,
+    /// Explicitly unsafe open-loop FOC control support.
+    AdvancedFoc,
 }
 
 /// A capability-bearing handle for one available subsystem.
@@ -390,6 +392,26 @@ impl VescIfCapabilities {
             }),
             Err(error) => Err(error),
         }
+    }
+
+    /// Probe the complete explicitly unsafe open-loop FOC surface.
+    pub const fn advanced_foc(self) -> Result<VescIfCapability, AbiError> {
+        let checks = [
+            VescIfAbi::FOC_SET_OPENLOOP_CURRENT,
+            VescIfAbi::FOC_SET_OPENLOOP_PHASE,
+            VescIfAbi::FOC_SET_OPENLOOP_DUTY,
+            VescIfAbi::FOC_SET_OPENLOOP_DUTY_PHASE,
+        ];
+        let mut index = 0;
+        while index < checks.len() {
+            if let Err(error) = self.presence.optional("advanced FOC", checks[index]) {
+                return Err(error);
+            }
+            index += 1;
+        }
+        Ok(VescIfCapability {
+            subsystem: VescIfSubsystem::AdvancedFoc,
+        })
     }
 
     const fn imu_slots(self) -> Result<(), AbiError> {

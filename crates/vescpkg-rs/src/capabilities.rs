@@ -2,12 +2,12 @@
 
 use crate::ffi;
 use crate::{
-    AngleDegrees, BatteryCellCount, BatteryChemistry, CanApplicationMode, CanBaudRate, CanBus,
-    Charge, Current, DutyCycleLimit, DutyCycleMinimum, ElectricalSpeed, FirmwareInputs, FocAudio,
-    FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance, GearRatio, ImuAccelerationOffset,
-    ImuAhrsMode, ImuAngularRateOffset, ImuMadgwickBeta, ImuMahonyIntegralGain,
-    ImuMahonyProportionalGain, ImuSampleRate, InputCurrent, InputVoltage, MotorCurrentLimit,
-    MotorPoleCount, Nvm, NvmCapacity, Ratio, ShutdownMode, TemperatureLimitEnd,
+    AdvancedFoc, AngleDegrees, BatteryCellCount, BatteryChemistry, CanApplicationMode, CanBaudRate,
+    CanBus, Charge, Current, DutyCycleLimit, DutyCycleMinimum, ElectricalSpeed, FirmwareInputs,
+    FocAudio, FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance, GearRatio,
+    ImuAccelerationOffset, ImuAhrsMode, ImuAngularRateOffset, ImuMadgwickBeta,
+    ImuMahonyIntegralGain, ImuMahonyProportionalGain, ImuSampleRate, InputCurrent, InputVoltage,
+    MotorCurrentLimit, MotorPoleCount, Nvm, NvmCapacity, Ratio, ShutdownMode, TemperatureLimitEnd,
     TemperatureLimitStart, Uart, Voltage, WheelDiameter,
 };
 use core::fmt;
@@ -1079,6 +1079,12 @@ impl FirmwareCapabilities {
             .map(|_| crate::imu::ImuApi::new(crate::imu::RealImuBindings))
     }
 
+    /// Construct the explicitly unsafe open-loop FOC handle only when every
+    /// open-loop operation is present in the observed firmware table.
+    pub fn advanced_foc(self) -> Result<AdvancedFoc, AbiError> {
+        self.inner.advanced_foc().map(|_| AdvancedFoc::new())
+    }
+
     /// Require CAN for a constructor that cannot operate without it.
     pub fn require_can(self) -> Result<CanBus, AbiError> {
         self.inner.require_can().map(|_| CanBus::new())
@@ -1200,6 +1206,20 @@ mod tests {
         assert_eq!(
             capabilities.settings().unwrap_err().capability(),
             "settings"
+        );
+        let mut advanced_foc_words = [0_usize; VescIfAbi::FIELD_COUNT];
+        for slot in [
+            VescIfAbi::FOC_SET_OPENLOOP_CURRENT,
+            VescIfAbi::FOC_SET_OPENLOOP_PHASE,
+            VescIfAbi::FOC_SET_OPENLOOP_DUTY,
+            VescIfAbi::FOC_SET_OPENLOOP_DUTY_PHASE,
+        ] {
+            advanced_foc_words[slot.slot_index()] = 1;
+        }
+        assert!(
+            FirmwareCapabilities::new(VescIfPresence::from_words(&advanced_foc_words))
+                .advanced_foc()
+                .is_ok()
         );
     }
 

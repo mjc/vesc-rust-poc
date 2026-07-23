@@ -540,6 +540,31 @@ fn vesc_if_capabilities_accept_the_complete_imu_surface() {
 }
 
 #[test]
+fn vesc_if_capabilities_accept_the_complete_advanced_foc_surface() {
+    let mut words = vec![0; VescIfAbi::FIELD_COUNT];
+    for slot in [
+        VescIfAbi::FOC_SET_OPENLOOP_CURRENT,
+        VescIfAbi::FOC_SET_OPENLOOP_PHASE,
+        VescIfAbi::FOC_SET_OPENLOOP_DUTY,
+        VescIfAbi::FOC_SET_OPENLOOP_DUTY_PHASE,
+    ] {
+        words[slot.slot_index()] = 1;
+    }
+    let capabilities = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
+
+    assert_eq!(
+        capabilities.advanced_foc().unwrap().subsystem(),
+        VescIfSubsystem::AdvancedFoc
+    );
+    words[VescIfAbi::FOC_SET_OPENLOOP_PHASE.slot_index()] = 0;
+    let missing = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
+    assert_eq!(
+        missing.advanced_foc().unwrap_err().slot(),
+        VescIfAbi::FOC_SET_OPENLOOP_PHASE
+    );
+}
+
+#[test]
 fn vesc_if_capabilities_keep_required_checks_and_revision_observations_separate() {
     let mut words = [1_usize; VescIfAbi::FIELD_COUNT];
     words[VescIfAbi::CAN_TRANSMIT_SID.slot_index()] = 0;
