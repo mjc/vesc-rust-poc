@@ -241,6 +241,14 @@ fn motor_exposes_typed_handbrake_commands() {
 }
 
 #[test]
+fn motor_release_outcomes_have_named_predicates() {
+    assert!(MotorReleaseOutcome::Released.is_released());
+    assert!(!MotorReleaseOutcome::Released.is_timed_out());
+    assert!(!MotorReleaseOutcome::TimedOut.is_released());
+    assert!(MotorReleaseOutcome::TimedOut.is_timed_out());
+}
+
+#[test]
 fn motor_output_preserves_typed_command_forwarding() {
     let firmware = vescpkg_rs::test_support::FirmwareTest::new();
     firmware.motor().keep_alive();
