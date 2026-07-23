@@ -170,11 +170,10 @@ impl FirmwareInputs {
 
     /// Persist firmware backup data explicitly.
     pub fn store_backup(&self) -> Result<(), InputError> {
-        match unsafe { crate::ffi::store_backup_data() } {
-            None => Err(InputError::Unsupported),
-            Some(true) => Ok(()),
-            Some(false) => Err(InputError::FirmwareRejected),
-        }
+        unsafe { crate::ffi::store_backup_data() }
+            .ok_or(InputError::Unsupported)?
+            .then_some(())
+            .ok_or(InputError::FirmwareRejected)
     }
 
     /// Read the firmware motor-command timeout state.

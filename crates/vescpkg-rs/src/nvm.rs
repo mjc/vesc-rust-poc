@@ -115,11 +115,10 @@ impl Nvm {
 }
 
 fn operation_result(result: Option<bool>) -> Result<(), NvmError> {
-    match result {
-        None => Err(NvmError::Unsupported),
-        Some(true) => Ok(()),
-        Some(false) => Err(NvmError::FirmwareFailure),
-    }
+    result
+        .ok_or(NvmError::Unsupported)?
+        .then_some(())
+        .ok_or(NvmError::FirmwareFailure)
 }
 
 fn checked_len(
