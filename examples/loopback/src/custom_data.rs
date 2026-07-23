@@ -23,12 +23,12 @@ impl CustomDataCommState {
     /// The state is unchanged when the payload is shorter than one encoded float.
     pub fn receive(&mut self, payload: &[u8]) -> bool {
         let mut index = 0;
-        let Some(value) = read_float32_auto(payload, &mut index) else {
-            return false;
-        };
-        self.last_value = value;
-        self.message_count = self.message_count.wrapping_add(1);
-        true
+        read_float32_auto(payload, &mut index)
+            .map(|value| {
+                self.last_value = value;
+                self.message_count = self.message_count.wrapping_add(1);
+            })
+            .is_some()
     }
 
     /// Encode the counter and last received value into a caller-owned buffer.
