@@ -187,7 +187,7 @@ pub use can_bus::{
     CanReceiverId, CanRemoteMotor, CanStatus, CanStatus2, CanStatus3, CanStatus4, CanStatus5,
     CanStatus6, CanStatusStore,
 };
-pub use eeprom::{CustomEeprom, CustomEepromAddress, EepromWord};
+pub use eeprom::{CustomEeprom, CustomEepromAddress, EepromError, EepromWord};
 pub use encoder::{Encoder, EncoderError, EncoderHandler, EncoderRegistration};
 pub use extension::{ExtensionDescriptor, ExtensionName, ExtensionRegistration};
 pub use extension::{
@@ -288,8 +288,8 @@ pub mod prelude {
         AnalogPin, AppDataHandler, AppDataSendError, CanBus, CanError, CanReceiverHandler,
         CanReceiverId, CanRemoteMotor, CanStatus, CanStatusStore, CommandError,
         CommandReplyHandler, Commands, ConfigBytes, ConfigXml, ControllerInput, CustomEeprom,
-        CustomEepromAddress, DigitalOutputLevel, DigitalPin, EepromWord, Encoder, EncoderError,
-        EncoderHandler, EncoderRegistration, ExtensionDescriptor, ExtensionName,
+        CustomEepromAddress, DigitalOutputLevel, DigitalPin, EepromError, EepromWord, Encoder,
+        EncoderError, EncoderHandler, EncoderRegistration, ExtensionDescriptor, ExtensionName,
         ExtensionRegistration, Firmware, FirmwareAhrs, FirmwareAhrsError, FirmwareAhrsParameters,
         FirmwareAhrsSnapshot, FirmwareAppData, FirmwareCapabilities, FirmwareClock,
         FirmwareFloatSetting, FirmwareInputs, FirmwareIntSetting, FirmwareLog, FirmwareMutex,
