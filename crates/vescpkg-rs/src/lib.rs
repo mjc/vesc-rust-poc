@@ -102,10 +102,12 @@ pub(crate) mod ffi {
     #[cfg(all(feature = "test-support", not(test)))]
     mod selected_ffi {
         pub use crate::test_ffi::*;
+        #[cfg(feature = "alloc")]
+        pub use vescpkg_rs_sys::raw::vesc_malloc;
         pub use vescpkg_rs_sys::raw::{
             conf_custom_add_config, conf_custom_clear_configs, io_read_analog, io_set_mode,
             io_write, lbm_add_extension, vesc_clear_app_data_handler, vesc_clear_imu_read_callback,
-            vesc_get_arg, vesc_malloc, vesc_send_app_data, vesc_set_app_data_handler,
+            vesc_get_arg, vesc_send_app_data, vesc_set_app_data_handler,
             vesc_set_imu_read_callback,
         };
         #[cfg(target_arch = "arm")]

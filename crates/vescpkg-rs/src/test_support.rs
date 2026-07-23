@@ -555,7 +555,7 @@ pub fn install_state<'a, T: Send + 'static>(
             self.0.clear();
         }
     }
-    unsafe { store.install(state) }.then_some(ClearOnDrop(store))
+    unsafe { store.install(state) }.then(|| ClearOnDrop(store))
 }
 
 /// Clear package state left behind by a callback-focused host test.
@@ -948,7 +948,7 @@ pub(crate) mod stubs {
 
 #[cfg(test)]
 mod tests {
-    use super::{FakeAppDataBindings, FakeBindings, stubs};
+    use super::{FakeAppDataBindings, FakeBindings, install_state, stubs};
     use crate::bindings::{
         AppDataBindings, CustomConfigBindings, ImuReadCallbackBindings, LbmBindings,
     };
@@ -964,6 +964,20 @@ mod tests {
         fn runtime_store() -> &'static crate::PackageStateStore<Self> {
             &OWNED_TEST_STATE
         }
+    }
+
+    #[test]
+    fn failed_borrowed_state_install_preserves_the_existing_state() {
+        let store = crate::PackageStateStore::new();
+        let mut first = 1_u8;
+        let first_guard = install_state(&store, &mut first);
+        assert!(first_guard.is_some());
+
+        let mut second = 2_u8;
+        assert!(install_state(&store, &mut second).is_none());
+        assert_eq!(store.with(|state| *state), Some(1));
+
+        drop(first_guard);
     }
 
     #[test]
