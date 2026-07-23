@@ -2,6 +2,38 @@
 
 use crate::units::{AngleDegrees, Distance, Rpm, Speed, TachometerSteps as UnitTachometerSteps};
 
+/// Select whether a tachometer read preserves or resets firmware state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TachometerReset {
+    /// Read the current value without changing the firmware counter.
+    Preserve,
+    /// Read the current value and reset the firmware counter.
+    Reset,
+}
+
+impl TachometerReset {
+    /// Return the ABI reset flag for this semantic choice.
+    pub const fn resets(self) -> bool {
+        matches!(self, Self::Reset)
+    }
+}
+
+/// Select whether a PID-position offset update remains live-only or is stored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PidPositionOffsetPersistence {
+    /// Update the live value without persisting it to firmware configuration.
+    Volatile,
+    /// Update the live value and ask firmware to persist it.
+    Persistent,
+}
+
+impl PidPositionOffsetPersistence {
+    /// Return the ABI persistence flag for this semantic choice.
+    pub const fn stores(self) -> bool {
+        matches!(self, Self::Persistent)
+    }
+}
+
 macro_rules! speed_type {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]

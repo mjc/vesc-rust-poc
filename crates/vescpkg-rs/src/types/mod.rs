@@ -80,7 +80,8 @@ pub use loader::PackageArgument;
 pub(crate) use loader::PackageArgument;
 pub use motion::{
     AbsoluteTachometerSteps, AverageVehicleSpeed, ElectricalSpeed, MechanicalSpeed, OpenLoopPhase,
-    PeakVehicleSpeed, PidPosition, SignedTripDistance, TachometerSteps, TripDistance, VehicleSpeed,
+    PeakVehicleSpeed, PidPosition, PidPositionOffsetPersistence, SignedTripDistance,
+    TachometerReset, TachometerSteps, TripDistance, VehicleSpeed,
 };
 pub use motor::{
     AudioChannel, AudioChannelError, AudioDuration, AudioFrequency, AudioSampleRate, AudioVoltage,
