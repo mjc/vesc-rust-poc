@@ -14,6 +14,12 @@ use vescpkg_rs::prelude::{
 };
 const CURRENT_OFF_DELAY: CurrentOffDelay = CurrentOffDelay::new(VescSeconds::from_seconds(0.05));
 
+#[cfg(any(test, target_arch = "arm"))]
+fn tone_half_period_ticks(frequency: AudioFrequency, sample_rate: SampleRate) -> u8 {
+    let half_period_ticks = sample_rate.as_hertz() / (2.0 * frequency.as_hertz());
+    crate::wire::saturating_trunc_f32_to_u8(half_period_ticks.max(1.0).min(f32::from(u8::MAX)))
+}
+
 /// Float Out Boy motor-control request state.
 ///
 /// Upstream `MotorControl` stores `current_requested` and `requested_current`
@@ -63,11 +69,7 @@ impl FloatOutBoyMotorControl {
         intensity: MotorCurrent,
         sample_rate: SampleRate,
     ) {
-        let ticks = crate::wire::saturating_trunc_f32_to_u8(
-            (sample_rate.as_hertz() / 2.0 / frequency.frequency().as_hertz())
-                .max(1.0)
-                .min(f32::from(u8::MAX)),
-        );
+        let ticks = tone_half_period_ticks(frequency, sample_rate);
         if ticks != self.tone_ticks {
             self.tone_ticks = ticks;
             self.tone_counter = ticks;

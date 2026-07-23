@@ -57,24 +57,30 @@ pub(crate) fn saturating_trunc_f32_to_u32(value: f32) -> u32 {
     }
 
     let bits = value.to_bits();
-    let exponent_bits = (bits >> 23) & 0xff;
-    let exponent = i32::from(u8::try_from(exponent_bits).unwrap_or(u8::MAX)) - 127;
+    let [exponent_bits, ..] = ((bits >> 23) & 0xff).to_le_bytes();
+    let exponent = i32::from(exponent_bits) - 127;
     if exponent < 0 {
         return 0;
     }
 
     let significand = (bits & 0x007f_ffff) | 0x0080_0000;
+    let shift = exponent.abs_diff(23);
+    // The range checks above limit `exponent` to 0..=31, so both shifts are
+    // within the 24-bit significand and cannot overflow or panic.
     if exponent >= 23 {
-        let shift = u32::try_from(exponent - 23).unwrap_or(u32::MAX);
-        significand.checked_shl(shift).unwrap_or(u32::MAX)
+        significand << shift
     } else {
-        let shift = u32::try_from(23 - exponent).unwrap_or(u32::MAX);
-        significand.checked_shr(shift).unwrap_or(0)
+        significand >> shift
     }
 }
 
 pub(crate) fn saturating_trunc_f32_to_u8(value: f32) -> u8 {
-    u8::try_from(saturating_trunc_f32_to_u32(value)).unwrap_or(u8::MAX)
+    let value = saturating_trunc_f32_to_u32(value);
+    if value > u32::from(u8::MAX) {
+        return u8::MAX;
+    }
+    let [value, ..] = value.to_le_bytes();
+    value
 }
 
 pub(crate) fn saturating_trunc_f32_to_i16(value: f32) -> i16 {
@@ -89,17 +95,13 @@ pub(crate) fn saturating_trunc_f32_to_i16(value: f32) -> i16 {
     }
 
     let magnitude = saturating_trunc_f32_to_u32(value.abs());
-    let signed = i32::try_from(magnitude).unwrap_or(i32::MAX);
-    let signed = if value.is_sign_negative() {
-        -signed
+    let [low, high, ..] = magnitude.to_le_bytes();
+    let magnitude = i16::from_le_bytes([low, high]);
+    if value.is_sign_negative() {
+        -magnitude
     } else {
-        signed
-    };
-    i16::try_from(signed).unwrap_or(if value.is_sign_negative() {
-        i16::MIN
-    } else {
-        i16::MAX
-    })
+        magnitude
+    }
 }
 
 pub(crate) const fn truncating_u64_to_u32(value: u64) -> u32 {
@@ -109,9 +111,12 @@ pub(crate) const fn truncating_u64_to_u32(value: u64) -> u32 {
     u32::from_le_bytes([byte0, byte1, byte2, byte3])
 }
 
-pub(crate) const fn truncating_usize_to_u8(value: usize) -> u8 {
-    // Packet string lengths are one byte in the upstream C format. Selecting
-    // the low byte preserves that ABI without a potentially panicking index.
+pub(crate) const fn saturating_usize_to_u8(value: usize) -> u8 {
+    // Packet string lengths are one byte in the upstream C format. Saturating
+    // prevents a malformed or future oversized field from wrapping its length.
+    if value > 255 {
+        return u8::MAX;
+    }
     let [low, ..] = value.to_le_bytes();
     low
 }
@@ -120,7 +125,7 @@ pub(crate) const fn truncating_usize_to_u8(value: usize) -> u8 {
 mod tests {
     use super::{
         saturating_trunc_f32_to_i16, saturating_trunc_f32_to_u8, saturating_trunc_f32_to_u32,
-        truncating_u64_to_u32, truncating_usize_to_u8,
+        saturating_usize_to_u8, truncating_u64_to_u32,
     };
 
     #[test]
@@ -149,6 +154,6 @@ mod tests {
     fn timestamp_conversion_keeps_the_low_wrapping_bits() {
         assert_eq!(truncating_u64_to_u32(0x0000_0001_ffff_ffff), u32::MAX);
         assert_eq!(truncating_u64_to_u32(0x0000_0001_0000_0000), 0);
-        assert_eq!(truncating_usize_to_u8(0x1ff), u8::MAX);
+        assert_eq!(saturating_usize_to_u8(0x1ff), u8::MAX);
     }
 }

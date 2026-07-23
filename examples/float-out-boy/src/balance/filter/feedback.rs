@@ -145,19 +145,8 @@ impl MahonyFeedbackConfig {
         // and roll KP from config, then derives yaw KP from their midpoint.
         let pitch = PitchFeedbackGain::new(mahony_pitch.value());
         let roll = RollFeedbackGain::new(mahony_roll.value());
-        Self {
-            pitch,
-            roll,
-            yaw: Self::yaw_from_pitch_roll(pitch, roll),
-        }
-    }
-
-    const fn yaw_from_pitch_roll(
-        pitch_feedback_gain: PitchFeedbackGain,
-        roll_feedback_gain: RollFeedbackGain,
-    ) -> YawFeedbackGain {
-        // C map: `third_party/float-out-boy/src/balance_filter.c:67-70`.
-        YawFeedbackGain::new(f32::midpoint(pitch_feedback_gain.0, roll_feedback_gain.0))
+        let yaw = YawFeedbackGain::new(f32::midpoint(pitch.0, roll.0));
+        Self { pitch, roll, yaw }
     }
 
     #[cfg(any(test, target_arch = "arm"))]

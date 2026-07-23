@@ -668,10 +668,7 @@ fn evaluate_transition_phase(
         && matches!(run_state, FloatOutBoyRunState::Running)
         && !matches!(ride_state.mode(), FloatOutBoyMode::Flywheel)
         && motor_acceleration.abs() > traction_loss.acceleration_detect
-        && motor_acceleration
-            .as_revolutions_per_minute()
-            .is_sign_negative()
-            == motor_erpm.as_revolutions_per_minute().is_sign_negative()
+        && motor_acceleration.is_negative() == motor_erpm.is_negative()
         && base.motor().duty_cycle().ratio() > traction_loss.duty
         && motor_erpm.abs() > traction_loss.erpm;
     let state_transition = float_out_boy_state_transition(FloatOutBoyStateTransitionInput {
@@ -1158,7 +1155,7 @@ fn refresh_control_phase(
         // then the ride modifiers update and combine at
         // `third_party/float-out-boy/src/main.c:869-917`.
         setpoints = state.ride_modifiers.advance(
-            state.serialized_config,
+            &state.serialized_config,
             RideModifierInput {
                 base_setpoint: board_setpoint,
                 remote_setpoint,

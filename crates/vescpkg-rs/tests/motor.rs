@@ -45,6 +45,13 @@ fn foc_haptic_tone_uses_typed_audio_values() {
 }
 
 #[test]
+fn typed_audio_frequency_exposes_hertz_without_erasing_its_domain() {
+    let frequency = AudioFrequency::new(Frequency::from_hertz(440.0));
+
+    assert!((frequency.as_hertz() - 440.0).abs() < f32::EPSILON);
+}
+
+#[test]
 fn input_current_limits_preserve_positive_magnitudes_for_haptic_saturation() {
     let firmware = FirmwareTest::new().with_input_current_limits(
         InputCurrentLimit::new(Current::from_amps(30.0)),

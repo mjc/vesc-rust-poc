@@ -7,6 +7,7 @@ use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{FirmwareFaultCode, FirmwareFaultWireCode, TimestampTicks};
 
 const ALERTS_RESPONSE_CAPACITY: usize = 511;
+const FAULT_NAME_MAX_BYTES: usize = 50;
 
 impl FloatOutBoyPackageState {
     pub(super) fn handle_alert_packet(
@@ -95,12 +96,40 @@ fn push_fault_name(
         return;
     }
 
+    // Refloat v1.2.1 `buffer_append_fault_name` removes VESC's
+    // `FAULT_CODE_` prefix and passes a 50-byte limit to
+    // `buffer_append_string_max` (`src/main.c:1963-1969`). `MotorTelemetry`
+    // already performs the exact-prefix removal at the firmware boundary.
     let name = telemetry
         .firmware_fault_name(FirmwareFaultCode::from_wire_code(code.wire_code()))
         .unwrap_or_default();
-    let name = name.get(..name.len().min(50)).unwrap_or(name);
-    float_out_boy_realtime_push_u8(buffer, index, u8::try_from(name.len()).unwrap_or(u8::MAX));
+    let name = bounded_fault_name(name);
+    float_out_boy_realtime_push_u8(
+        buffer,
+        index,
+        crate::wire::saturating_usize_to_u8(name.len()),
+    );
     for byte in name {
         float_out_boy_realtime_push_u8(buffer, index, *byte);
+    }
+}
+
+fn bounded_fault_name(name: &[u8]) -> &[u8] {
+    name.get(..FAULT_NAME_MAX_BYTES).unwrap_or(name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FAULT_NAME_MAX_BYTES, bounded_fault_name};
+
+    #[test]
+    fn fault_names_match_refloats_fifty_byte_wire_limit() {
+        let long_name = [b'X'; FAULT_NAME_MAX_BYTES + 1];
+
+        assert_eq!(bounded_fault_name(b"SHORT"), b"SHORT");
+        assert_eq!(
+            bounded_fault_name(&long_name),
+            &long_name[..FAULT_NAME_MAX_BYTES],
+        );
     }
 }

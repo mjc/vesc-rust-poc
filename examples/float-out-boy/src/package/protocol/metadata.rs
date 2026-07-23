@@ -177,7 +177,7 @@ const fn float_out_boy_realtime_ids_push_id<const N: usize>(
     value: &[u8; N],
 ) -> usize {
     let mut next =
-        float_out_boy_realtime_ids_push_u8(bytes, index, crate::wire::truncating_usize_to_u8(N));
+        float_out_boy_realtime_ids_push_u8(bytes, index, crate::wire::saturating_usize_to_u8(N));
     let mut offset = 0;
     // This packet is materialized at compile time so the embedded package owns
     // every byte. A `for` loop would call iterator trait methods, which stable
