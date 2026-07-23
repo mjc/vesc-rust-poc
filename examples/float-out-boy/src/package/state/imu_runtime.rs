@@ -5,7 +5,7 @@ use super::limits::{
 use super::*;
 #[cfg(any(test, target_arch = "arm"))]
 use crate::bms::FloatOutBoyBmsFault;
-use crate::domain::FloatOutBoyBeepReason;
+use crate::domain::{FloatOutBoyBeepReason, FloatOutBoyRideState};
 use vescpkg_rs::prelude::{AngleDegrees, Temperature, VescSeconds, Voltage};
 use vescpkg_rs::{ImuPitch, ImuRoll};
 
@@ -56,34 +56,37 @@ pub(super) fn startup_ready_beep_count(
     }
 }
 
-/// Float Out Boy runtime refresh of IMU-derived state and control-loop faults.
-///
-/// C map: upstream `check_faults`, READY engage, startup reset, and traction
-/// handling live in `third_party/float-out-boy/src/main.c:263-509`,
-/// `third_party/float-out-boy/src/main.c:551-574`, `third_party/float-out-boy/src/main.c:760-775`,
-/// `third_party/float-out-boy/src/main.c:833-838`, and `third_party/float-out-boy/src/main.c:957-1067`.
-pub(super) fn refresh(
+struct RefreshStart {
+    ride_state: FloatOutBoyRideState,
+    run_state: FloatOutBoyRunState,
+    beep_reason: FloatOutBoyBeepReason,
+    beeper_alert: Option<FloatOutBoyBeeperAlert>,
+    startup_became_ready: bool,
+}
+
+fn begin_refresh(
     state: &mut FloatOutBoyPackageState,
-    imu: &impl Imu,
+    base: FloatOutBoyAllDataBasePayload,
+    imu_ready: bool,
     system_time_ticks: TimestampTicks,
-) {
-    let payloads = state.all_data_payloads;
-    let base = payloads.base();
+) -> RefreshStart {
     let status = base.status();
-    let mut beep_reason = status.beep_reason();
-    let mut beeper_alert = None;
-    let mut ride_state = status.ride_state();
+    let ride_state = status.ride_state();
     let startup_became_ready =
-        matches!(ride_state.run_state(), FloatOutBoyRunState::Startup) && imu.is_ready();
-    let mut run_state = match (ride_state.run_state(), imu.is_ready()) {
-        (FloatOutBoyRunState::Startup, true) => FloatOutBoyRunState::Ready,
-        (run_state, _) => run_state,
+        matches!(ride_state.run_state(), FloatOutBoyRunState::Startup) && imu_ready;
+    let run_state = if startup_became_ready {
+        FloatOutBoyRunState::Ready
+    } else {
+        ride_state.run_state()
     };
     if matches!(run_state, FloatOutBoyRunState::Running) {
         // `time_update` refreshes Float Out Boy's idle timer on every RUNNING loop
         // at `third_party/float-out-boy/src/time.c:38-43`.
         state.idle_ticks = system_time_ticks;
     }
+
+    let mut beep_reason = status.beep_reason();
+    let mut beeper_alert = None;
     if startup_became_ready {
         let low_voltage_threshold = pack_voltage_threshold(
             state.serialized_config.low_voltage_threshold(),
@@ -99,6 +102,177 @@ pub(super) fn refresh(
             battery_voltage,
         )));
     }
+
+    RefreshStart {
+        ride_state,
+        run_state,
+        beep_reason,
+        beeper_alert,
+        startup_became_ready,
+    }
+}
+
+fn refresh_darkride_state(
+    state: &mut FloatOutBoyPackageState,
+    mut ride_state: FloatOutBoyRideState,
+    run_state: FloatOutBoyRunState,
+    roll_abs: AngleDegrees,
+    system_time_ticks: TimestampTicks,
+) -> (FloatOutBoyRideState, Option<FloatOutBoyBeeperAlert>) {
+    // C map: Float Out Boy activates darkride above 150 degrees only after a prior
+    // RUNNING tick enables it, retains it through the hysteresis band, and
+    // clears below 120 degrees at `third_party/float-out-boy/src/main.c:781-794`.
+    if state.serialized_config.faults().darkride_enabled() {
+        match ride_state.darkride() {
+            FloatOutBoyDarkRideState::Active if roll_abs < AngleDegrees::from_degrees(120.0) => {
+                ride_state = ride_state.with_darkride(FloatOutBoyDarkRideState::Upright);
+            }
+            FloatOutBoyDarkRideState::Upright
+                if state.upside_down_enabled && roll_abs > AngleDegrees::from_degrees(150.0) =>
+            {
+                ride_state = ride_state.with_darkride(FloatOutBoyDarkRideState::Active);
+                state.upside_down_started = false;
+            }
+            _ => {}
+        }
+    }
+
+    let reset_after_disengage = matches!(run_state, FloatOutBoyRunState::Ready)
+        && float_out_boy_ticks_elapsed(system_time_ticks, state.disengage_ticks, 10);
+    if !reset_after_disengage {
+        return (ride_state, None);
+    }
+
+    // Float Out Boy removes the post-flip darkride grace after updating the
+    // roll transition at `third_party/float-out-boy/src/main.c:781-794,984-992`.
+    let alert = matches!(ride_state.darkride(), FloatOutBoyDarkRideState::Active)
+        .then_some(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::ONE));
+    state.upside_down_enabled = false;
+    (
+        ride_state.with_darkride(FloatOutBoyDarkRideState::Upright),
+        alert,
+    )
+}
+
+struct RuntimeValues {
+    balance_current: FloatOutBoyRealtimeBalanceCurrent,
+    setpoints: FloatOutBoyRealtimeRuntimeSetpoints,
+    booster_current: FloatOutBoyRealtimeBoosterCurrent,
+}
+
+fn runtime_values(
+    state: &mut FloatOutBoyPackageState,
+    base: FloatOutBoyAllDataBasePayload,
+    balance_pitch: AngleDegrees,
+    reset: bool,
+) -> RuntimeValues {
+    if !reset {
+        return RuntimeValues {
+            balance_current: base.balance_current(),
+            setpoints: base.setpoints(),
+            booster_current: base.booster_current(),
+        };
+    }
+
+    // Upstream `reset_runtime_vars` clears control-loop history and seeds only
+    // the board setpoint from the current balance pitch.
+    state.balance_loop.reset_pid();
+    state.balance_loop.softstart_pid_limit = MotorCurrent::new(Current::ZERO);
+    state.reverse_total_erpm = Rpm::ZERO;
+    state.traction_control = false;
+    state.remote_control.reset_runtime_vars();
+    state.ride_modifiers.reset();
+    state.runtime_board_setpoint = balance_pitch;
+    let board_setpoint = FloatOutBoyRealtimeRuntimeSetpoint::new(balance_pitch);
+    let zero_setpoint = FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::ZERO);
+
+    RuntimeValues {
+        balance_current: FloatOutBoyRealtimeBalanceCurrent::new(MotorCurrent::new(Current::ZERO)),
+        setpoints: FloatOutBoyRealtimeRuntimeSetpoints::new(
+            board_setpoint,
+            zero_setpoint,
+            zero_setpoint,
+            zero_setpoint,
+            zero_setpoint,
+            zero_setpoint,
+        ),
+        booster_current: FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::ZERO)),
+    }
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+fn refresh_ready_alert(
+    state: &mut FloatOutBoyPackageState,
+    base: FloatOutBoyAllDataBasePayload,
+    run_state: FloatOutBoyRunState,
+    ready_flywheel_stop: bool,
+    system_time_ticks: TimestampTicks,
+) -> Option<(FloatOutBoyBeepReason, FloatOutBoyBeeperAlert)> {
+    if !matches!(run_state, FloatOutBoyRunState::Ready) || ready_flywheel_stop {
+        return None;
+    }
+
+    let connection_fault = state.bms_faults.contains(FloatOutBoyBmsFault::Connection);
+    let balance_fault = state.bms_faults.contains(FloatOutBoyBmsFault::CellBalance)
+        && float_out_boy_ticks_elapsed(system_time_ticks, state.disengage_ticks, 5);
+    let mut alert = None;
+    if (connection_fault || balance_fault)
+        && float_out_boy_ticks_elapsed(system_time_ticks, state.bms_alert_ticks, 15)
+    {
+        state.bms_alert_ticks = system_time_ticks;
+        let reason = if connection_fault {
+            FloatOutBoyBeepReason::BmsConnection
+        } else {
+            FloatOutBoyBeepReason::CellBalance
+        };
+        alert = Some((
+            reason,
+            FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::FOUR),
+        ));
+    }
+
+    // READY nags after 30 idle minutes, at most once per minute, and suppresses
+    // the alert while pack voltage rises.
+    if float_out_boy_ticks_elapsed(system_time_ticks, state.idle_ticks, 1_800) {
+        if float_out_boy_ticks_elapsed(system_time_ticks, state.nag_ticks, 60) {
+            state.nag_ticks = system_time_ticks;
+            let battery_voltage = base.motor().battery_voltage();
+            if battery_voltage > state.idle_voltage {
+                state.idle_voltage = battery_voltage;
+            } else {
+                alert = Some((
+                    FloatOutBoyBeepReason::Idle,
+                    FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::TWO),
+                ));
+            }
+        }
+    } else {
+        state.nag_ticks = system_time_ticks;
+        state.idle_voltage = BatteryVoltage::new(Voltage::ZERO);
+    }
+    alert
+}
+
+/// Float Out Boy runtime refresh of IMU-derived state and control-loop faults.
+///
+/// C map: upstream `check_faults`, READY engage, startup reset, and traction
+/// handling live in `third_party/float-out-boy/src/main.c:263-509`,
+/// `third_party/float-out-boy/src/main.c:551-574`, `third_party/float-out-boy/src/main.c:760-775`,
+/// `third_party/float-out-boy/src/main.c:833-838`, and `third_party/float-out-boy/src/main.c:957-1067`.
+pub(super) fn refresh(
+    state: &mut FloatOutBoyPackageState,
+    imu: &impl Imu,
+    system_time_ticks: TimestampTicks,
+) {
+    let payloads = state.all_data_payloads;
+    let base = payloads.base();
+    let RefreshStart {
+        mut ride_state,
+        mut run_state,
+        mut beep_reason,
+        mut beeper_alert,
+        startup_became_ready,
+    } = begin_refresh(state, base, imu.is_ready(), system_time_ticks);
     let flywheel_both_footpads_fault = matches!(
         (run_state, ride_state.mode(), base.footpad().state()),
         (
@@ -148,33 +322,11 @@ pub(super) fn refresh(
     state
         .ride_modifiers
         .aggregate_yaw(AngleDegrees::from(imu.yaw().angle()));
-    // C map: Float Out Boy activates darkride above 150 degrees only after a prior
-    // RUNNING tick enables it, retains it through the hysteresis band, and
-    // clears below 120 degrees at `third_party/float-out-boy/src/main.c:781-794`.
-    if state.serialized_config.faults().darkride_enabled() {
-        match ride_state.darkride() {
-            FloatOutBoyDarkRideState::Active if roll_abs < AngleDegrees::from_degrees(120.0) => {
-                ride_state = ride_state.with_darkride(FloatOutBoyDarkRideState::Upright);
-            }
-            FloatOutBoyDarkRideState::Upright
-                if state.upside_down_enabled && roll_abs > AngleDegrees::from_degrees(150.0) =>
-            {
-                ride_state = ride_state.with_darkride(FloatOutBoyDarkRideState::Active);
-                state.upside_down_started = false;
-            }
-            _ => {}
-        }
-    }
-    if matches!(run_state, FloatOutBoyRunState::Ready)
-        && float_out_boy_ticks_elapsed(system_time_ticks, state.disengage_ticks, 10)
-    {
-        // Float Out Boy removes the post-flip darkride grace after updating the
-        // roll transition at `third_party/float-out-boy/src/main.c:781-794,984-992`.
-        if matches!(ride_state.darkride(), FloatOutBoyDarkRideState::Active) {
-            beeper_alert = Some(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::ONE));
-        }
-        ride_state = ride_state.with_darkride(FloatOutBoyDarkRideState::Upright);
-        state.upside_down_enabled = false;
+    let (next_ride_state, darkride_alert) =
+        refresh_darkride_state(state, ride_state, run_state, roll_abs, system_time_ticks);
+    ride_state = next_ride_state;
+    if darkride_alert.is_some() {
+        beeper_alert = darkride_alert;
     }
     let remote_setpoint_abs = base.setpoints().remote().angle().abs();
     let quickstop = QuickStopLimits::FLOAT_OUT_BOY;
@@ -385,6 +537,7 @@ pub(super) fn refresh(
         && roll_abs < darkride.roll_upper;
     let startup_pitch_tolerance = startup.pitch_tolerance();
     let startup_roll_tolerance = startup.roll_tolerance();
+    let startup_centering_step = startup.centering_step();
     let ready_engage = !startup_became_ready
         && matches!(run_state, FloatOutBoyRunState::Ready)
         && !ready_flywheel_stop
@@ -541,43 +694,11 @@ pub(super) fn refresh(
     // to NORMAL before startup checks at `third_party/float-out-boy/src/main.c:957-963`.
     let mut ride_state = state_transition.ride_state;
     let reset_runtime_vars = startup_became_ready || state_engage;
-    let (mut balance_current, mut setpoints, mut booster_current) = if reset_runtime_vars {
-        // Upstream `STATE_STARTUP` calls `reset_runtime_vars(d)` before
-        // `STATE_READY` at `third_party/float-out-boy/src/main.c:833-837`, and
-        // `engage(d)` calls it before `state_engage(d)` at
-        // `third_party/float-out-boy/src/main.c:263-270`; reset clears
-        // `balance_current` at `third_party/float-out-boy/src/main.c:246`,
-        // resets module setpoints at `third_party/float-out-boy/src/main.c:239-244`,
-        // and seeds only the board setpoint from `d->imu.balance_pitch` at
-        // `third_party/float-out-boy/src/main.c:249-252`.
-        state.balance_loop.reset_pid();
-        state.balance_loop.softstart_pid_limit = MotorCurrent::new(Current::ZERO);
-        state.reverse_total_erpm = Rpm::ZERO;
-        state.traction_control = false;
-        state.remote_control.reset_runtime_vars();
-        state.ride_modifiers.reset();
-        state.runtime_board_setpoint = balance_pitch_degrees;
-        let setpoint = FloatOutBoyRealtimeRuntimeSetpoint::new(balance_pitch_degrees);
-        let zero_setpoint = FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::ZERO);
-        (
-            FloatOutBoyRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
-            FloatOutBoyRealtimeRuntimeSetpoints::new(
-                setpoint,
-                zero_setpoint,
-                zero_setpoint,
-                zero_setpoint,
-                zero_setpoint,
-                zero_setpoint,
-            ),
-            FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
-        )
-    } else {
-        (
-            base.balance_current(),
-            base.setpoints(),
-            base.booster_current(),
-        )
-    };
+    let RuntimeValues {
+        mut balance_current,
+        mut setpoints,
+        mut booster_current,
+    } = runtime_values(state, base, balance_pitch_degrees, reset_runtime_vars);
     if matches!(run_state, FloatOutBoyRunState::Running) && !state_engage && !state_stop_fault {
         let mut board_setpoint = state.runtime_board_setpoint;
         let high_voltage_threshold = pack_voltage_threshold(
@@ -719,11 +840,10 @@ pub(super) fn refresh(
                 ride_state =
                     ride_state.with_setpoint_adjustment(FloatOutBoySetpointAdjustment::None);
             } else {
-                let startup_step = startup.centering_step();
-                board_setpoint = if board_setpoint.abs() < startup_step {
+                board_setpoint = if board_setpoint.abs() < startup_centering_step {
                     AngleDegrees::ZERO
                 } else {
-                    board_setpoint - startup_step * board_setpoint.signum()
+                    board_setpoint - startup_centering_step * board_setpoint.signum()
                 };
                 // Upstream stores `startup_speed / hertz` at
                 // `third_party/float-out-boy/src/main.c:172`, selects it for
@@ -1030,39 +1150,15 @@ pub(super) fn refresh(
         state.request_motor_current(current);
     }
     #[cfg(any(test, target_arch = "arm"))]
-    if matches!(run_state, FloatOutBoyRunState::Ready) && !ready_flywheel_stop {
-        let connection_fault = state.bms_faults.contains(FloatOutBoyBmsFault::Connection);
-        let balance_fault = state.bms_faults.contains(FloatOutBoyBmsFault::CellBalance)
-            && float_out_boy_ticks_elapsed(system_time_ticks, state.disengage_ticks, 5);
-        if (connection_fault || balance_fault)
-            && float_out_boy_ticks_elapsed(system_time_ticks, state.bms_alert_ticks, 15)
-        {
-            state.bms_alert_ticks = system_time_ticks;
-            beep_reason = if connection_fault {
-                FloatOutBoyBeepReason::BmsConnection
-            } else {
-                FloatOutBoyBeepReason::CellBalance
-            };
-            beeper_alert = Some(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::FOUR));
-        }
-        // READY nags after 30 idle minutes, at most once per minute, and
-        // suppresses the alert while pack voltage rises in Float Out Boy C at
-        // `third_party/float-out-boy/src/main.c:1010-1023`.
-        if float_out_boy_ticks_elapsed(system_time_ticks, state.idle_ticks, 1_800) {
-            if float_out_boy_ticks_elapsed(system_time_ticks, state.nag_ticks, 60) {
-                state.nag_ticks = system_time_ticks;
-                let battery_voltage = base.motor().battery_voltage();
-                if battery_voltage > state.idle_voltage {
-                    state.idle_voltage = battery_voltage;
-                } else {
-                    beep_reason = FloatOutBoyBeepReason::Idle;
-                    beeper_alert = Some(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::TWO));
-                }
-            }
-        } else {
-            state.nag_ticks = system_time_ticks;
-            state.idle_voltage = BatteryVoltage::new(Voltage::ZERO);
-        }
+    if let Some((reason, alert)) = refresh_ready_alert(
+        state,
+        base,
+        run_state,
+        ready_flywheel_stop,
+        system_time_ticks,
+    ) {
+        beep_reason = reason;
+        beeper_alert = Some(alert);
     }
     if let Some(alert) = beeper_alert {
         state.alert_beeper(alert);

@@ -177,6 +177,10 @@ const fn float_out_boy_realtime_ids_push_id<const N: usize>(
 ) -> usize {
     let mut next = float_out_boy_realtime_ids_push_u8(bytes, index, N as u8);
     let mut offset = 0;
+    // This packet is materialized at compile time so the embedded package owns
+    // every byte. A `for` loop would call iterator trait methods, which stable
+    // Rust does not yet allow in a `const fn`, so bounded indexing is the
+    // simplest const-compatible form.
     while offset < N {
         // `offset < N` proves that this array access exists. Direct indexing is
         // necessary because stable Rust does not yet permit `get` in a `const fn`.

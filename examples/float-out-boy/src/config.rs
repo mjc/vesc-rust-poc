@@ -56,6 +56,13 @@ vescpkg_rs::firmware_section_static!(
 pub(crate) const FLOAT_OUT_BOY_CONFIG_SIGNATURE_BYTES: [u8; 4] = [0x90, 0xb7, 0xa9, 0xba];
 pub(crate) const FLOAT_OUT_BOY_CONFIG_LEN: usize = FLOAT_OUT_BOY_DEFAULT_CONFIG.len();
 
+fn is_tune_default_byte(index: usize) -> bool {
+    matches!(
+        index,
+        4..=17 | 67..=74 | 77..=78 | 91..=100 | 102..=117 | 130..=174 | 242
+    )
+}
+
 fn generated_field<T: Default>(value: Option<T>) -> T {
     // Generated offsets should always fit the fixed-size configuration image.
     // If the generated layout and image ever disagree, use the field type's
@@ -160,18 +167,14 @@ impl FloatOutBoyConfigImage {
 
     pub(crate) fn reset_tune_defaults(&mut self) {
         let mut bytes = *self.as_bytes();
-        for range in [4..18, 67..75, 77..79, 91..101, 102..118, 130..175] {
-            if let (Some(destination), Some(defaults)) = (
-                bytes.get_mut(range.clone()),
-                FLOAT_OUT_BOY_DEFAULT_CONFIG.get(range),
-            ) {
-                destination.copy_from_slice(defaults);
-            }
-        }
-        if let (Some(destination), Some(default)) =
-            (bytes.get_mut(242), FLOAT_OUT_BOY_DEFAULT_CONFIG.get(242))
+        for (index, (byte, default)) in bytes
+            .iter_mut()
+            .zip(FLOAT_OUT_BOY_DEFAULT_CONFIG.iter())
+            .enumerate()
         {
-            *destination = *default;
+            if is_tune_default_byte(index) {
+                *byte = *default;
+            }
         }
         self.0 = CustomConfigImage::new(bytes);
     }
