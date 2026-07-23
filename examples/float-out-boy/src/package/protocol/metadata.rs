@@ -15,7 +15,8 @@ const FLOAT_OUT_BOY_MINOR_VERSION: u8 = 1;
 const FLOAT_OUT_BOY_PATCH_VERSION: u8 = 0;
 const FLOAT_OUT_BOY_BUILD_NUMBER: u8 = 0;
 const FLOAT_OUT_BOY_GIT_HASH: u32 = 0x0ef6_e99d;
-const FLOAT_OUT_BOY_SYSTEM_TICK_RATE_HZ: u32 = SYSTEM_TICK_RATE_HZ as u32;
+const FLOAT_OUT_BOY_SYSTEM_TICK_RATE_HZ: u32 =
+    crate::wire::truncating_u64_to_u32(SYSTEM_TICK_RATE_HZ);
 
 // Float Out Boy C builds this exact packet in `third_party/float-out-boy/src/main.c:1876-1901`, using the ID
 // order from `third_party/float-out-boy/src/rt_data.h:38-66` and counted-string framing from
@@ -175,7 +176,8 @@ const fn float_out_boy_realtime_ids_push_id<const N: usize>(
     index: usize,
     value: &[u8; N],
 ) -> usize {
-    let mut next = float_out_boy_realtime_ids_push_u8(bytes, index, N as u8);
+    let mut next =
+        float_out_boy_realtime_ids_push_u8(bytes, index, crate::wire::truncating_usize_to_u8(N));
     let mut offset = 0;
     // This packet is materialized at compile time so the embedded package owns
     // every byte. A `for` loop would call iterator trait methods, which stable

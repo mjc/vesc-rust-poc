@@ -166,15 +166,14 @@ impl RideModifierState {
 
         let ab = self.atr.angle.setpoint + self.brake.setpoint;
         let torque = self.torque.setpoint;
-        let combined_torque = if ab.as_degrees().is_sign_negative()
-            == torque.as_degrees().is_sign_negative()
-        {
-            AngleDegrees::from_degrees(
-                ab.signum() * ab.as_degrees().abs().max(torque.as_degrees().abs()),
-            )
-        } else {
-            ab + torque
-        };
+        let combined_torque =
+            if ab.as_degrees().is_sign_negative() == torque.as_degrees().is_sign_negative() {
+                AngleDegrees::from_degrees(
+                    ab.signum() * ab.as_degrees().abs().max(torque.as_degrees().abs()),
+                )
+            } else {
+                ab + torque
+            };
         let modifier = if input.darkride {
             AngleDegrees::ZERO
         } else {
@@ -545,7 +544,8 @@ mod tests {
 
         let mut state = RideModifierState::default();
         for tick in 1..100 {
-            state.aggregate_yaw(AngleDegrees::from_degrees(tick as f32 * 0.1));
+            let tick = i16::try_from(tick).unwrap_or(i16::MAX);
+            state.aggregate_yaw(AngleDegrees::from_degrees(f32::from(tick) * 0.1));
             state.advance(config, input());
         }
         state.aggregate_yaw(AngleDegrees::from_degrees(10.0));

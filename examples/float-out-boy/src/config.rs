@@ -1147,7 +1147,9 @@ impl FloatOutBoyStartupConfig<'_> {
 
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn loop_time_us(self) -> u32 {
-        (1_000_000.0 / self.sample_rate().as_hertz().max(1.0)) as u32
+        crate::wire::saturating_trunc_f32_to_u32(
+            1_000_000.0 / self.sample_rate().as_hertz().max(1.0),
+        )
     }
 
     pub(crate) fn simplestart_enabled(self) -> bool {

@@ -12,7 +12,7 @@ pub(super) fn float_out_boy_ticks_elapsed(
     // C map: `timer_older` uses a strict `>` comparison against
     // `SYSTEM_TICK_RATE_HZ` ticks per second at `third_party/float-out-boy/src/time.h:46-48`.
     now.wrapping_duration_since(then).as_ticks()
-        > seconds.saturating_mul(SYSTEM_TICK_RATE_HZ as u32)
+        > seconds.saturating_mul(crate::wire::truncating_u64_to_u32(SYSTEM_TICK_RATE_HZ))
 }
 
 pub(super) fn float_out_boy_ticks_elapsed_seconds(
@@ -22,6 +22,7 @@ pub(super) fn float_out_boy_ticks_elapsed_seconds(
 ) -> bool {
     // C map: `timer_older` casts seconds times `SYSTEM_TICK_RATE_HZ` to the
     // integer tick type before strict comparison at `third_party/float-out-boy/src/time.h:46-48`.
+    let tick_rate = u16::try_from(SYSTEM_TICK_RATE_HZ).unwrap_or(u16::MAX);
     now.wrapping_duration_since(then).as_ticks()
-        > (seconds.as_seconds() * SYSTEM_TICK_RATE_HZ as f32) as u32
+        > crate::wire::saturating_trunc_f32_to_u32(seconds.as_seconds() * f32::from(tick_rate))
 }

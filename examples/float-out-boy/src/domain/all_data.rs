@@ -422,10 +422,12 @@ impl FloatOutBoyAllDataBasePayload {
         float_out_boy_push_i16(
             &mut buffer,
             &mut ind,
-            self.motor
-                .electrical_speed()
-                .rpm()
-                .as_revolutions_per_minute() as i16,
+            crate::wire::saturating_trunc_f32_to_i16(
+                self.motor
+                    .electrical_speed()
+                    .rpm()
+                    .as_revolutions_per_minute(),
+            ),
         );
         float_out_boy_push_scaled_i16(
             &mut buffer,

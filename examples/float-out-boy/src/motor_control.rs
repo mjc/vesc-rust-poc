@@ -63,9 +63,11 @@ impl FloatOutBoyMotorControl {
         intensity: MotorCurrent,
         sample_rate: SampleRate,
     ) {
-        let ticks = (sample_rate.as_hertz() / 2.0 / frequency.frequency().as_hertz())
-            .max(1.0)
-            .min(f32::from(u8::MAX)) as u8;
+        let ticks = crate::wire::saturating_trunc_f32_to_u8(
+            (sample_rate.as_hertz() / 2.0 / frequency.frequency().as_hertz())
+                .max(1.0)
+                .min(f32::from(u8::MAX)),
+        );
         if ticks != self.tone_ticks {
             self.tone_ticks = ticks;
             self.tone_counter = ticks;
@@ -167,7 +169,7 @@ impl FloatOutBoyMotorControl {
         if system_time_ticks
             .wrapping_duration_since(self.brake_timer_ticks)
             .as_ticks()
-            > SYSTEM_TICK_RATE_HZ as u32
+            > crate::wire::truncating_u64_to_u32(SYSTEM_TICK_RATE_HZ)
         {
             // Upstream releases idle motor output by setting 0A once
             // `timer_older(time, brake_timer, 1)` passes at

@@ -34,7 +34,8 @@ fn encode_float_out_boy_float16(value: f32) -> u16 {
         0
     };
     let saturated = if exponent > 143 { 0x7fff } else { 0 };
-    (((bits & 0x8000_0000) >> 16) | normalized | denormalized | saturated) as u16
+    let encoded = ((bits & 0x8000_0000) >> 16) | normalized | denormalized | saturated;
+    u16::try_from(encoded).unwrap_or(u16::MAX)
 }
 
 pub(super) fn float_out_boy_realtime_push_float32_auto(

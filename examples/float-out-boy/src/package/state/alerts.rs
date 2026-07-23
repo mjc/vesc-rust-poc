@@ -99,7 +99,7 @@ fn push_fault_name(
         .firmware_fault_name(FirmwareFaultCode::from_wire_code(code.wire_code()))
         .unwrap_or_default();
     let name = name.get(..name.len().min(50)).unwrap_or(name);
-    float_out_boy_realtime_push_u8(buffer, index, name.len() as u8);
+    float_out_boy_realtime_push_u8(buffer, index, u8::try_from(name.len()).unwrap_or(u8::MAX));
     for byte in name {
         float_out_boy_realtime_push_u8(buffer, index, *byte);
     }

@@ -7,7 +7,7 @@ use vescpkg_rs::prelude::{
     SampleRate, Speed, TimestampTicks, Voltage,
 };
 
-const TONE_LENGTH_TICKS: u32 = SYSTEM_TICK_RATE_HZ as u32 / 10;
+const TONE_LENGTH_TICKS: u32 = crate::wire::truncating_u64_to_u32(SYSTEM_TICK_RATE_HZ) / 10;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct HapticFeedbackInput {
