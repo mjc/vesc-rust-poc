@@ -1,6 +1,11 @@
-# Minimal VESC C ABI Inventory
+# VESC C ABI Boundary Inventory
 
-This inventory records the narrow C surface needed for the first Rust-backed test package.
+The authoritative complete STM32 inventory is generated from the pinned
+`vesc_c_if.h` by `vescpkg-rs-sys`; see [the SDK compatibility matrix](sdk-compatibility.md)
+and [the sys-crate test inventory](testing/vescpkg-rs-sys.md) for the 253-slot
+manifest, layout checks, and capability gates. This page preserves the original
+LispBM/extension boundary as a focused example of how raw ABI slots become safe
+package-author APIs; it is not a claim that the SDK is limited to these symbols.
 
 ## Required Items
 
@@ -59,6 +64,6 @@ to race with provider-owned state.
 
 ## Notes
 
-- This list is intentionally narrow.
-- It is enough for the first `(ext-rust-add 1 2)` proof.
-- Later BLE work should add only the symbols that the protocol and transport code actually need.
+- The list is intentionally focused on the original extension proof.
+- New callable surfaces belong in the generated manifest and their relevant
+  subsystem documentation/tests, rather than being added only to this example.
