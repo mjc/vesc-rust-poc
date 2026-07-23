@@ -6,6 +6,9 @@ use crate::domain::{
 
 pub(super) fn refresh(state: &mut FloatOutBoyPackageState) {
     state
+        .lcm
+        .set_hardware_mode(state.serialized_config.hardware_led_mode_id());
+    state
         .beeper
         .set_enabled(state.serialized_config.beeper_enabled());
     let payloads = state.all_data_payloads;
