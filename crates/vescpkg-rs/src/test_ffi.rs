@@ -196,6 +196,7 @@ static PWM_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static CAN_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static BACKUP_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static NVM_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static TIMEOUT_OCCURRED: AtomicBool = AtomicBool::new(true);
 static DISTANCE_ABS: AtomicU32 = AtomicU32::new(0);
 static TACHOMETER_VALUE: AtomicI32 = AtomicI32::new(1234);
 static TACHOMETER_ABS_VALUE: AtomicI32 = AtomicI32::new(5678);
@@ -489,6 +490,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     CAN_AVAILABLE.store(true, Ordering::Relaxed);
     BACKUP_AVAILABLE.store(true, Ordering::Relaxed);
     NVM_AVAILABLE.store(true, Ordering::Relaxed);
+    TIMEOUT_OCCURRED.store(true, Ordering::Relaxed);
     DISTANCE_ABS.store(0.0_f32.to_bits(), Ordering::Relaxed);
     TACHOMETER_VALUE.store(1234, Ordering::Relaxed);
     TACHOMETER_ABS_VALUE.store(5678, Ordering::Relaxed);
@@ -1439,10 +1441,11 @@ pub(crate) fn pid_position_offset_stored() -> bool {
 
 pub unsafe fn timeout_reset() {
     KEEP_ALIVE_COUNT.fetch_add(1, Ordering::Relaxed);
+    TIMEOUT_OCCURRED.store(false, Ordering::Relaxed);
 }
 
 pub unsafe fn timeout_has_timeout() -> bool {
-    true
+    TIMEOUT_OCCURRED.load(Ordering::Relaxed)
 }
 
 pub unsafe fn timeout_secs_since_update() -> f32 {
