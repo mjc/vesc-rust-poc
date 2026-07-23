@@ -20,7 +20,7 @@ use crate::motor_control::FloatOutBoyMotorControl;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{AdcVoltage, FirmwareVersion};
 use vescpkg_rs::prelude::{
-    AngleRadians, BatteryCellCount, BatteryVoltage, Current, DutyCycleLimit, InputCurrentLimit,
+    AngleRadians, BatteryCellCount, BatteryVoltage, Current, DutyCycleLimit, InputCurrent,
     MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, Ratio, Rpm, Temperature,
     TemperatureLimitStart, TimestampTicks, Voltage,
 };
@@ -138,8 +138,8 @@ pub struct FloatOutBoyPackageState {
     duty_max_with_margin: DutyCycleLimit,
     motor_current_max: MotorCurrentLimit,
     motor_current_min: MotorCurrentLimit,
-    battery_current_max: InputCurrentLimit,
-    battery_current_min: InputCurrentLimit,
+    battery_current_max: InputCurrent,
+    battery_current_min: InputCurrent,
     mosfet_temperature: MosfetTemperature,
     motor_temperature: MotorTemperature,
     mosfet_temperature_limit_start: TemperatureLimitStart,
@@ -202,8 +202,8 @@ impl FloatOutBoyPackageState {
             duty_max_with_margin: DutyCycleLimit::new(Ratio::from_ratio_const(0.0)),
             motor_current_max: MotorCurrentLimit::new(Current::ZERO),
             motor_current_min: MotorCurrentLimit::new(Current::ZERO),
-            battery_current_max: InputCurrentLimit::new(Current::ZERO),
-            battery_current_min: InputCurrentLimit::new(Current::ZERO),
+            battery_current_max: InputCurrent::new(Current::ZERO),
+            battery_current_min: InputCurrent::new(Current::ZERO),
             mosfet_temperature: MosfetTemperature::new(Temperature::ZERO),
             motor_temperature: MotorTemperature::new(Temperature::ZERO),
             mosfet_temperature_limit_start: TemperatureLimitStart::new(Temperature::ZERO),

@@ -1,5 +1,5 @@
 use crate::domain::{FloatOutBoyAlertId, FloatOutBoyFatalErrorState, FloatOutBoyRealtimeAlertMask};
-use vescpkg_rs::prelude::{FirmwareFaultCode, FirmwareFaultWireCode, TimestampTicks};
+use vescpkg_rs::prelude::{FirmwareFault, FirmwareFaultWireCode, TimestampTicks};
 
 const ALERT_RECORD_CAPACITY: usize = 20;
 
@@ -37,17 +37,18 @@ impl Default for AlertTrackerState {
 impl AlertTrackerState {
     pub(super) fn update_firmware_fault(
         &mut self,
-        fault: FirmwareFaultCode,
+        fault: FirmwareFault,
         timestamp: TimestampTicks,
         persistent_fatal_error: bool,
     ) {
-        let code = FirmwareFaultWireCode::try_from(fault)
-            .unwrap_or(FirmwareFaultWireCode::from_wire_code(0));
+        let (is_active, code) = match fault {
+            FirmwareFault::None => (false, FirmwareFaultWireCode::from_wire_code(0)),
+            FirmwareFault::Active(fault) => (true, fault.wire_code()),
+            FirmwareFault::Unknown => (true, FirmwareFaultWireCode::from_wire_code(0)),
+        };
         let was_active = self
             .active_alerts
             .contains(FloatOutBoyAlertId::FirmwareFault);
-        let is_active = !fault.is_none();
-
         if is_active && (!was_active || code != self.firmware_fault_code) {
             self.push_record(AlertRecord {
                 timestamp,
@@ -131,8 +132,13 @@ mod tests {
     use super::*;
     use std::vec::Vec;
 
-    fn fault(code: u8) -> FirmwareFaultCode {
-        FirmwareFaultCode::from_wire_code(code)
+    fn fault(code: u8) -> FirmwareFault {
+        match code {
+            0 => FirmwareFault::None,
+            5 => FirmwareFault::Active(vescpkg_rs::prelude::FirmwareFaultId::AbsoluteOverCurrent),
+            6 => FirmwareFault::Active(vescpkg_rs::prelude::FirmwareFaultId::OverTemperatureMotor),
+            _ => FirmwareFault::Unknown,
+        }
     }
 
     fn records_since(tracker: &AlertTrackerState, since: TimestampTicks) -> Vec<AlertRecord> {

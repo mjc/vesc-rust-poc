@@ -91,8 +91,10 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
         .reduced_by(TractionLossLimits::FLOAT_OUT_BOY.duty_margin);
     state.motor_current_max = telemetry.drive_current_limit();
     state.motor_current_min = telemetry.brake_current_limit();
-    state.battery_current_max = telemetry.drive_input_current_limit();
-    state.battery_current_min = telemetry.brake_input_current_limit();
+    // Input-current limits are live configuration values, not motor telemetry.
+    let settings = vescpkg_rs::FirmwareSettings;
+    state.battery_current_max = settings.input_current_max();
+    state.battery_current_min = settings.input_current_min();
     state.mosfet_temperature = telemetry.mosfet_temperature();
     state.motor_temperature = telemetry.motor_temperature();
     state.mosfet_temperature_limit_start = telemetry.mosfet_temperature_limit_start();

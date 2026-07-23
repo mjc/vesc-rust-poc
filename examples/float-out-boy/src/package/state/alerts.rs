@@ -4,7 +4,7 @@ use super::super::protocol::wire::{
 use super::{FloatOutBoyPackageState, float_out_boy_command_payload};
 use crate::domain::{FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand};
 use vescpkg_rs::MotorTelemetry;
-use vescpkg_rs::prelude::{FirmwareFaultCode, FirmwareFaultWireCode, TimestampTicks};
+use vescpkg_rs::prelude::{FirmwareFaultWireCode, TimestampTicks};
 
 const ALERTS_RESPONSE_CAPACITY: usize = 511;
 
@@ -93,12 +93,10 @@ fn push_fault_name(
         return;
     }
 
-    let name = telemetry
-        .firmware_fault_name(FirmwareFaultCode::from_wire_code(code.wire_code()))
-        .unwrap_or_default();
+    let name = telemetry.firmware_fault_description().unwrap_or_default();
     let name = &name[..name.len().min(50)];
     float_out_boy_realtime_push_u8(buffer, index, name.len() as u8);
-    for byte in name {
+    for byte in name.as_bytes() {
         float_out_boy_realtime_push_u8(buffer, index, *byte);
     }
 }

@@ -999,7 +999,7 @@ fn controller_input_selects_connected_uart_or_ppm_and_applies_deadband_like_floa
             assert!(config.set_input_tilt_inverted(true));
         });
 
-        state.refresh_controller_input(firmware.input());
+        state.refresh_controller_input(&vescpkg_rs::ControllerInput);
 
         let actual = state.remote_control.input().ratio().as_ratio();
         assert!(
@@ -1018,7 +1018,7 @@ fn controller_input_selects_connected_uart_or_ppm_and_applies_deadband_like_floa
         assert!(config.set_input_tilt_remote_type(vescpkg_rs::WireByte::new(2)));
     });
 
-    state.refresh_controller_input(firmware.input());
+    state.refresh_controller_input(&vescpkg_rs::ControllerInput);
 
     assert_eq!(state.remote_control.input().ratio().as_ratio(), 0.0);
 }

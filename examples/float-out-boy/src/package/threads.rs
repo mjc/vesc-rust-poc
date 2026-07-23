@@ -7,12 +7,12 @@
 use super::state::FloatOutBoyPackageState;
 #[cfg(any(test, target_arch = "arm"))]
 use core::time::Duration;
-#[cfg(all(not(test), target_arch = "arm"))]
-use vescpkg_rs::AnalogPin;
 #[cfg(target_arch = "arm")]
 use vescpkg_rs::ThreadWorkingAreaSize;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{ThreadPriority, TimestampTicks};
+#[cfg(all(not(test), target_arch = "arm"))]
+use vescpkg_rs::{AnalogPin, DigitalPin, GpioMode};
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::{FirmwareThreads, Imu, MotorOutput, MotorTelemetry};
 
@@ -235,10 +235,26 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
                 // C map: Float Out Boy `footpad_sensor_update` reads ADC1/ADC2 at
                 // `third_party/float-out-boy/src/footpad_sensor.c:28-31`; VESC
                 // defines those enum slots at `third_party/vesc/lispBM/c_libs/vesc_c_if.h:219-220`.
-                let footpad_voltage1 = firmware.gpio().read_analog(AnalogPin::ADC1);
-                let footpad_voltage2 = firmware.gpio().read_analog(AnalogPin::ADC2);
+                let footpad_adc1 = firmware.gpio().acquire_analog(AnalogPin::ADC1).ok();
+                let footpad_adc2 = firmware.gpio().acquire_analog(AnalogPin::ADC2).ok();
+                let footpad_voltage1 = footpad_adc1
+                    .as_ref()
+                    .and_then(|pin| {
+                        pin.set_mode(GpioMode::Analog)
+                            .ok()
+                            .and_then(|_| pin.read().ok())
+                    })
+                    .unwrap_or_else(|| AdcVoltage::new(vescpkg_rs::Voltage::ZERO));
+                let footpad_voltage2 = footpad_adc2
+                    .as_ref()
+                    .and_then(|pin| {
+                        pin.set_mode(GpioMode::Analog)
+                            .ok()
+                            .and_then(|_| pin.read().ok())
+                    })
+                    .unwrap_or_else(|| AdcVoltage::new(vescpkg_rs::Voltage::ZERO));
                 let tick = ctx.with_state_mut(|state| {
-                    state.refresh_controller_input(firmware.input());
+                    state.refresh_controller_input(&vescpkg_rs::ControllerInput);
                     tick_float_out_boy_main_thread_with(
                         state,
                         firmware.telemetry(),
@@ -253,10 +269,17 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
                     if tick.configure_beeper() {
                         let _ = firmware
                             .gpio()
-                            .configure_output(vescpkg_rs::DigitalPin::PPM);
+                            .acquire_digital(DigitalPin::PPM)
+                            .and_then(|pin| {
+                                pin.set_mode(GpioMode::Output)?;
+                                pin.write(vescpkg_rs::DigitalOutputLevel::High)
+                            });
                     }
                     if let Some(level) = tick.beeper_level() {
-                        let _ = firmware.gpio().write(vescpkg_rs::DigitalPin::PPM, level);
+                        if let Ok(pin) = firmware.gpio().acquire_digital(DigitalPin::PPM) {
+                            let _ = pin.set_mode(GpioMode::Output);
+                            let _ = pin.write(level);
+                        }
                     }
                     tick.sleep_us()
                 })

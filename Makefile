@@ -103,7 +103,7 @@ doc-all:
 package: check package-only
 
 package-only:
-	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-loopback
+	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-float-out-boy
 
 # Build the representative package set used by the package proof.
 package-examples:

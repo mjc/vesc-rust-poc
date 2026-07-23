@@ -134,7 +134,7 @@ fn unknown_fault_fails_closed_without_emitting_normal_data() {
     let app_data = TimestampTicks::from_ticks(0);
     let bindings = FirmwareTest::new().with_firmware_fault(FirmwareFault::Unknown);
     let telemetry = bindings.telemetry();
-    let mut state = RefloatPackageState::new(sample_all_data_payloads());
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
 
     assert_eq!(
         handle_all_data_mode(&mut state, app_data, telemetry, 4),

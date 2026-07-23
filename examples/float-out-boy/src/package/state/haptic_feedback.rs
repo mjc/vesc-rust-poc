@@ -188,8 +188,8 @@ fn strength_scale(config: FloatOutBoyHapticConfig<'_>, speed: Speed) -> f32 {
     (minimum + linear * speed + quadratic * speed * speed).min(1.0)
 }
 
-fn play_foc_tone(motor: &impl MotorOutput, frequency: AudioFrequency, voltage: AudioVoltage) {
-    motor.play_foc_tone(AudioChannel::FIRST, frequency, voltage);
+fn play_foc_tone(_motor: &impl MotorOutput, frequency: AudioFrequency, voltage: AudioVoltage) {
+    let _ = vescpkg_rs::FocAudio.play_tone(AudioChannel::FIRST, frequency, voltage);
 }
 
 #[cfg(test)]

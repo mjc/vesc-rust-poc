@@ -15,9 +15,9 @@ use core::sync::atomic::{
 use crate::{
     AmpHoursCharged, AmpHoursDischarged, BatteryLevel, DCurrent, DirectionalMotorCurrent,
     DutyCycle, ElectricalSpeed, FirmwareFault, ImuAngularRate, ImuOrientation, ImuPitch, ImuRoll,
-    ImuYaw, InputCurrent, InputVoltage, MosfetTemperature, MotorCurrentLimit, MotorTemperature,
-    OdometerMeters, TotalMotorCurrent, TripDistance, VehicleSpeed, WattHoursCharged,
-    WattHoursDischarged,
+    ImuYaw, InputCurrent, InputVoltage, JoystickY, MosfetTemperature, MotorCurrentLimit,
+    MotorTemperature, OdometerMeters, PpmAge, PpmInput, RemoteAge, TotalMotorCurrent, TripDistance,
+    VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 use vescpkg_rs_sys::raw::{
     AttitudeInfo, CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5,
@@ -174,6 +174,9 @@ static DUTY_CYCLE: AtomicU32 = AtomicU32::new(0);
 static FOC_ID_CURRENT: AtomicU32 = AtomicU32::new(0);
 static HAS_FOC_ID_CURRENT: AtomicBool = AtomicBool::new(false);
 static FOC_AUDIO_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static FOC_TONE_COUNT: AtomicUsize = AtomicUsize::new(0);
+static FOC_TONE_FREQUENCY: AtomicU32 = AtomicU32::new(0);
+static FOC_TONE_VOLTAGE: AtomicU32 = AtomicU32::new(0);
 static FOC_OPEN_LOOP_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static UART_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static PACKET_AVAILABLE: AtomicBool = AtomicBool::new(true);
@@ -454,6 +457,9 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     FOC_ID_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
     HAS_FOC_ID_CURRENT.store(false, Ordering::Relaxed);
     FOC_AUDIO_AVAILABLE.store(true, Ordering::Relaxed);
+    FOC_TONE_COUNT.store(0, Ordering::Relaxed);
+    FOC_TONE_FREQUENCY.store(0, Ordering::Relaxed);
+    FOC_TONE_VOLTAGE.store(0, Ordering::Relaxed);
     FOC_OPEN_LOOP_AVAILABLE.store(true, Ordering::Relaxed);
     UART_AVAILABLE.store(true, Ordering::Relaxed);
     PACKET_AVAILABLE.store(true, Ordering::Relaxed);
@@ -1201,6 +1207,16 @@ pub(crate) fn set_input_voltage(voltage: InputVoltage) {
     store(&INPUT_VOLTAGE, voltage.voltage().as_volts());
 }
 
+pub(crate) fn set_ppm_input(input: PpmInput, age: PpmAge) {
+    store(&PPM_INPUT, input.ratio().as_ratio());
+    store(&PPM_AGE, age.duration().as_seconds());
+}
+
+pub(crate) fn set_remote_input(input: JoystickY, age: RemoteAge) {
+    store(&REMOTE_INPUT_Y, input.ratio().as_ratio());
+    store(&REMOTE_AGE, age.duration().as_seconds());
+}
+
 pub(crate) fn set_foc_id_current(current: Option<DCurrent>) {
     HAS_FOC_ID_CURRENT.store(current.is_some(), Ordering::Relaxed);
     if let Some(value) = current {
@@ -1210,6 +1226,22 @@ pub(crate) fn set_foc_id_current(current: Option<DCurrent>) {
 
 pub(crate) fn set_foc_audio_available(available: bool) {
     FOC_AUDIO_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn foc_tone_command_count() -> usize {
+    FOC_TONE_COUNT.load(Ordering::Relaxed)
+}
+
+pub(crate) fn commanded_foc_tone_frequency() -> crate::AudioFrequency {
+    crate::AudioFrequency::new(crate::Frequency::from_hertz(f32::from_bits(
+        FOC_TONE_FREQUENCY.load(Ordering::Relaxed),
+    )))
+}
+
+pub(crate) fn commanded_foc_tone_voltage() -> crate::AudioVoltage {
+    crate::AudioVoltage::new(crate::Voltage::from_volts(f32::from_bits(
+        FOC_TONE_VOLTAGE.load(Ordering::Relaxed),
+    )))
 }
 
 pub(crate) fn set_foc_open_loop_available(available: bool) {
@@ -1698,7 +1730,14 @@ pub unsafe fn foc_beep(_frequency: f32, _duration: f32, _voltage: f32) -> Option
 
 pub unsafe fn foc_play_tone(channel: c_int, frequency: f32, voltage: f32) -> Option<bool> {
     let _ = (channel, frequency, voltage);
-    FOC_AUDIO_AVAILABLE.load(Ordering::Relaxed).then_some(true)
+    if FOC_AUDIO_AVAILABLE.load(Ordering::Relaxed) {
+        FOC_TONE_COUNT.fetch_add(1, Ordering::Relaxed);
+        FOC_TONE_FREQUENCY.store(frequency.to_bits(), Ordering::Relaxed);
+        FOC_TONE_VOLTAGE.store(voltage.to_bits(), Ordering::Relaxed);
+        Some(true)
+    } else {
+        None
+    }
 }
 
 pub unsafe fn foc_stop_audio(_reset: bool) -> bool {
