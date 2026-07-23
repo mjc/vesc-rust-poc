@@ -336,6 +336,8 @@ fn vesc_if_manifest_matches_generated_header_descriptors() {
     {
         assert_eq!(slot.slot_index(), index);
         assert_eq!(entry.slot(), *slot);
+        assert_eq!(entry.c_decl(), slot.name());
+        assert_eq!(entry.since(), slot.minimum_revision());
     }
     assert_eq!(VescIfAbi::ALL_ENTRIES[0].kind(), VescIfSlotKind::Function);
     let scalar = VescIfAbi::ALL_ENTRIES
