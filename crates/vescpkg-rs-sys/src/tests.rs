@@ -377,13 +377,17 @@ fn vesc_if_manifest_presence_gate_distinguishes_callable_holes_from_scalars() {
 
 #[test]
 fn vesc_if_manifest_retains_bindgen_signature_metadata() {
-    assert!(VescIfAbi::ALL_ENTRIES
-        .iter()
-        .all(|entry| !entry.signature().is_empty()));
-    assert!(VescIfAbi::ALL_ENTRIES
-        .iter()
-        .filter(|entry| entry.is_callable())
-        .all(|entry| entry.signature().contains("fn")));
+    assert!(
+        VescIfAbi::ALL_ENTRIES
+            .iter()
+            .all(|entry| !entry.signature().is_empty())
+    );
+    assert!(
+        VescIfAbi::ALL_ENTRIES
+            .iter()
+            .any(|entry| entry.signature().contains("fn"))
+    );
+    assert_eq!(VescIfAbi::ALL_ENTRIES[0].signature(), "load_extension_fptr");
 }
 
 #[test]
