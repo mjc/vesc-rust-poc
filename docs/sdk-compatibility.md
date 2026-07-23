@@ -6,7 +6,7 @@ the current STM32 package ABI; it is not a firmware-version promise.
 
 | Surface | Evidence | Boundary |
 | --- | --- | --- |
-| STM32 function table | `vescpkg-rs-sys` derives 253 slots from the pinned `vesc_c_if.h`; every generated `VescIfSlot` retains and tests its exact 1-based header source line; the libclang audit checks field names, offsets, sizes, and callable/scalar shape | The pinned header is the source of truth |
+| STM32 function table | `vescpkg-rs-sys` derives 253 slots from the pinned `vesc_c_if.h`; every generated `VescIfSlot` retains and tests its exact 1-based header source line and reports its minimum ordered ABI profile; the libclang audit checks field names, offsets, sizes, and callable/scalar shape | The pinned header is the source of truth; profile metadata describes table shape and never replaces observed slot presence |
 | Older firmware / null tail | `VescIfPresence` preserves holes and scalar words; optional shims return absence or use a documented fallback | Required shims fail closed when a slot is missing |
 | STM32 ABI revision profiles | The pinned header marks the 225-slot base table, the 251-slot firmware 6.05 extension, and the complete 253-slot firmware 6.06 extension; `Stm32AbiRevision` derives these profiles from observed slot presence | A profile is an observed table shape, not a firmware-version promise; unknown shapes remain `UnknownCompatible` |
 | Host ABI and mocks | `cargo test -p vescpkg-rs-sys --lib` exercises independent present/absent mock slots and layout contracts | Host pointers are not treated as STM32 pointers |

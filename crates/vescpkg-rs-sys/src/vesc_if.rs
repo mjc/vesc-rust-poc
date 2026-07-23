@@ -417,6 +417,20 @@ impl VescIfSlot {
         self.header_line
     }
 
+    /// Return the minimum ordered ABI profile containing this slot.
+    ///
+    /// This is descriptive table-shape metadata. Actual slot presence remains authoritative.
+    pub const fn minimum_revision(self) -> Stm32AbiRevision {
+        let index = self.slot_index();
+        if index < VescIfAbi::BASE_SLOT_COUNT {
+            Stm32AbiRevision::Base
+        } else if index < VescIfAbi::FIRMWARE_605_SLOT_COUNT {
+            Stm32AbiRevision::Firmware605
+        } else {
+            Stm32AbiRevision::Firmware606
+        }
+    }
+
     /// Return the corresponding host byte offset for a pointer-sized table.
     pub const fn host_byte_offset(self, pointer_size: usize) -> usize {
         self.slot_index() * pointer_size
