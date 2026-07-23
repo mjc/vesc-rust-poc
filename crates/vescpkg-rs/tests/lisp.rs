@@ -3,7 +3,9 @@
 //! Integration tests for the safe LispBM value predicates.
 
 use vescpkg_rs::test_support::FirmwareTest;
-use vescpkg_rs::{LispContextId, LispFlatValue, LispProcess, LispSymbol, LispValue};
+use vescpkg_rs::{
+    LispContextId, LispFlatValue, LispFlatValueError, LispProcess, LispSymbol, LispValue,
+};
 
 #[test]
 fn lisp_values_expose_explicit_kind_predicates() {
@@ -155,18 +157,19 @@ fn lisp_flat_values_encode_wide_values_and_unblock_contexts() {
     let _firmware = FirmwareTest::new();
     let mut value = LispFlatValue::try_new(32).expect("flat-value slots available");
 
-    assert!(value.push_i64(-42));
-    assert!(value.push_u64(0xfeed_beef));
-    assert!(value.push_i(-7));
-    assert!(value.push_cons());
-    assert!(value.push_symbol(LispSymbol::new(7)));
-    assert!(value.push_i32(-7));
-    assert!(value.push_u32(23));
-    assert!(value.push_float(3.5));
-    assert!(value.push_byte(b'V'));
-    assert!(value.push_byte_array(b"vesc"));
-    assert!(value.finish());
-    assert!(!value.push_i32(1));
+    value.push_i64(-42).unwrap();
+    value.push_u64(0xfeed_beef).unwrap();
+    value.push_i(-7).unwrap();
+    value.push_cons().unwrap();
+    value.push_symbol(LispSymbol::new(7)).unwrap();
+    value.push_i32(-7).unwrap();
+    value.push_u32(23).unwrap();
+    value.push_float(3.5).unwrap();
+    value.push_byte(b'V').unwrap();
+    value.push_byte_array(b"vesc").unwrap();
+    value.finish().unwrap();
+    assert_eq!(value.finish(), Ok(()));
+    assert_eq!(value.push_i32(1), Err(LispFlatValueError::AlreadyFinished));
     LispProcess::unblock_flat(LispContextId::new(9), value).expect("context accepts value");
 
     let value = LispFlatValue::try_new(4).expect("flat-value slots available");
@@ -174,7 +177,7 @@ fn lisp_flat_values_encode_wide_values_and_unblock_contexts() {
     assert!(LispFlatValue::try_new(257).is_none());
 
     let mut value = LispFlatValue::try_new(4).expect("flat-value slots available");
-    assert!(value.push_byte(b'V'));
+    value.push_byte(b'V').unwrap();
     LispProcess::unblock_flat(LispContextId::new(9), value)
         .expect("unblock finishes an unfinished value");
 }

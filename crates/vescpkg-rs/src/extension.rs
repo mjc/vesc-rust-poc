@@ -79,6 +79,29 @@ pub enum LispMessageError {
     Rejected,
 }
 
+/// Failure while appending or finishing a firmware-owned flat LispBM value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LispFlatValueError {
+    /// The flat value has already been finished and cannot accept more data.
+    AlreadyFinished,
+    /// The requested byte-array length cannot fit the firmware ABI width.
+    LengthOverflow,
+    /// Firmware rejected the constructor or finish operation.
+    Rejected,
+}
+
+impl core::fmt::Display for LispFlatValueError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str(match self {
+            Self::AlreadyFinished => "flat LispBM value is already finished",
+            Self::LengthOverflow => "flat LispBM byte-array length exceeds the firmware ABI",
+            Self::Rejected => "firmware rejected the flat LispBM value operation",
+        })
+    }
+}
+
+impl core::error::Error for LispFlatValueError {}
+
 /// Failure returned while traversing a LispBM list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LispListError {
@@ -166,68 +189,87 @@ impl LispFlatValue {
         )
     }
 
+    fn append_with(
+        &mut self,
+        append: impl FnOnce(&mut LbmFlatValue) -> Option<bool>,
+    ) -> Result<(), LispFlatValueError> {
+        if self.finished {
+            return Err(LispFlatValueError::AlreadyFinished);
+        }
+        (append(&mut self.raw) == Some(true))
+            .then_some(())
+            .ok_or(LispFlatValueError::Rejected)
+    }
+
     /// Append a cons marker.
-    pub fn push_cons(&mut self) -> bool {
-        !self.finished && unsafe { crate::ffi::f_cons(&mut self.raw) } == Some(true)
+    pub fn push_cons(&mut self) -> Result<(), LispFlatValueError> {
+        self.append_with(|raw| unsafe { crate::ffi::f_cons(raw) })
     }
 
     /// Append a symbol identifier.
-    pub fn push_symbol(&mut self, symbol: LispSymbol) -> bool {
-        !self.finished && unsafe { crate::ffi::f_sym(&mut self.raw, symbol.raw()) } == Some(true)
+    pub fn push_symbol(&mut self, symbol: LispSymbol) -> Result<(), LispFlatValueError> {
+        self.append_with(|raw| unsafe { crate::ffi::f_sym(raw, symbol.raw()) })
     }
 
     /// Append a signed 32-bit value.
-    pub fn push_i32(&mut self, value: i32) -> bool {
-        !self.finished && unsafe { crate::ffi::f_i32(&mut self.raw, value) } == Some(true)
+    pub fn push_i32(&mut self, value: i32) -> Result<(), LispFlatValueError> {
+        self.append_with(|raw| unsafe { crate::ffi::f_i32(raw, value) })
     }
 
     /// Append an immediate LispBM integer using the compact flat-value tag.
-    pub fn push_i(&mut self, value: i32) -> bool {
-        !self.finished && unsafe { crate::ffi::f_i(&mut self.raw, value) } == Some(true)
+    pub fn push_i(&mut self, value: i32) -> Result<(), LispFlatValueError> {
+        self.append_with(|raw| unsafe { crate::ffi::f_i(raw, value) })
     }
 
     /// Append an unsigned 32-bit value.
-    pub fn push_u32(&mut self, value: u32) -> bool {
-        !self.finished && unsafe { crate::ffi::f_u32(&mut self.raw, value) } == Some(true)
+    pub fn push_u32(&mut self, value: u32) -> Result<(), LispFlatValueError> {
+        self.append_with(|raw| unsafe { crate::ffi::f_u32(raw, value) })
     }
 
     /// Append an `f32` value.
-    pub fn push_float(&mut self, value: f32) -> bool {
-        !self.finished && unsafe { crate::ffi::f_float(&mut self.raw, value) } == Some(true)
+    pub fn push_float(&mut self, value: f32) -> Result<(), LispFlatValueError> {
+        self.append_with(|raw| unsafe { crate::ffi::f_float(raw, value) })
     }
 
     /// Append a byte value.
-    pub fn push_byte(&mut self, value: u8) -> bool {
-        !self.finished && unsafe { crate::ffi::f_b(&mut self.raw, value) } == Some(true)
+    pub fn push_byte(&mut self, value: u8) -> Result<(), LispFlatValueError> {
+        self.append_with(|raw| unsafe { crate::ffi::f_b(raw, value) })
     }
 
     /// Append a signed 64-bit value.
-    pub fn push_i64(&mut self, value: i64) -> bool {
-        !self.finished && unsafe { crate::ffi::f_i64(&mut self.raw, value) } == Some(true)
+    pub fn push_i64(&mut self, value: i64) -> Result<(), LispFlatValueError> {
+        self.append_with(|raw| unsafe { crate::ffi::f_i64(raw, value) })
     }
 
     /// Append an unsigned 64-bit value.
-    pub fn push_u64(&mut self, value: u64) -> bool {
-        !self.finished && unsafe { crate::ffi::f_u64(&mut self.raw, value) } == Some(true)
+    pub fn push_u64(&mut self, value: u64) -> Result<(), LispFlatValueError> {
+        self.append_with(|raw| unsafe { crate::ffi::f_u64(raw, value) })
     }
 
     /// Append a byte array copied by firmware into the flattened value.
-    pub fn push_byte_array(&mut self, bytes: &[u8]) -> bool {
+    pub fn push_byte_array(&mut self, bytes: &[u8]) -> Result<(), LispFlatValueError> {
+        if self.finished {
+            return Err(LispFlatValueError::AlreadyFinished);
+        }
         let Ok(count) = u32::try_from(bytes.len()) else {
-            return false;
+            return Err(LispFlatValueError::LengthOverflow);
         };
-        !self.finished
-            && unsafe { crate::ffi::f_lbm_array(&mut self.raw, count, bytes.as_ptr().cast_mut()) }
-                == Some(true)
+        self.append_with(|raw| unsafe {
+            crate::ffi::f_lbm_array(raw, count, bytes.as_ptr().cast_mut())
+        })
     }
 
     /// Finish the flattened value before passing it to LispBM.
-    pub fn finish(&mut self) -> bool {
+    pub fn finish(&mut self) -> Result<(), LispFlatValueError> {
         if self.finished {
-            return true;
+            return Ok(());
         }
-        self.finished = unsafe { crate::ffi::lbm_finish_flatten(&mut self.raw) == Some(true) };
-        self.finished
+        if unsafe { crate::ffi::lbm_finish_flatten(&mut self.raw) } == Some(true) {
+            self.finished = true;
+            Ok(())
+        } else {
+            Err(LispFlatValueError::Rejected)
+        }
     }
 }
 
@@ -294,9 +336,7 @@ impl LispProcess {
         context: LispContextId,
         mut value: LispFlatValue,
     ) -> Result<(), LispMessageError> {
-        if !value.finish() {
-            return Err(LispMessageError::Rejected);
-        }
+        value.finish().map_err(|_| LispMessageError::Rejected)?;
         let result = unsafe { crate::ffi::lbm_unblock_ctx(context.raw(), &mut value.raw) };
         if result == Some(true) {
             value.raw.buf = core::ptr::null_mut();
