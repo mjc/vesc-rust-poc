@@ -66,6 +66,13 @@ The semantic slot manifest is derived from bindgen's generated `vesc_c_if`
 definition, so field names, order, signatures, and ABI structs come directly
 from the header.
 
+Callable/scalar classification follows the generated Rust type rather than a
+typedef-name allowlist. Bare function types, `Option<fn(...)>` entries, and
+aliases (including aliases of aliases) are callable; `Option<T>` remains a
+scalar unless its inner type is itself a function. The build script checks this
+distinction with a small synthetic fixture so a future bindgen shape change
+cannot silently turn a data slot into a raw-callable shim.
+
 Libclang is therefore a build-time dependency. The Nix development shell
 supplies it and sets `LIBCLANG_PATH` for the normal build and test commands.
 
