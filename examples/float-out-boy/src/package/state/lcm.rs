@@ -59,6 +59,16 @@ impl LcmState {
         self.hardware_mode & 0x2 != 0
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(super) const fn headlights_enabled(self) -> bool {
+        self.headlights_enabled
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(super) const fn set_headlights_enabled(&mut self, enabled: bool) {
+        self.headlights_enabled = enabled;
+    }
+
     fn poll_request(&mut self, payload: &[u8]) {
         if !self.enabled() || payload.is_empty() {
             return;
