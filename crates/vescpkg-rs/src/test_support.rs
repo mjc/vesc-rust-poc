@@ -540,6 +540,13 @@ impl FirmwareTest {
     }
 
     #[must_use]
+    /// Configure firmware's remaining battery-energy estimate.
+    pub fn with_battery_level_remaining(self, remaining: crate::WattHoursRemaining) -> Self {
+        crate::test_ffi::set_battery_level_remaining(remaining);
+        self
+    }
+
+    #[must_use]
     /// Configure the semantic firmware fault result.
     pub fn with_firmware_fault<F>(self, fault: F) -> Self
     where

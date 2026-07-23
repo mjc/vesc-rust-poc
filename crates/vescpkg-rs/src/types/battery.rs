@@ -118,6 +118,33 @@ impl BatteryLevel {
     }
 }
 
+/// Firmware-reported state of charge and remaining energy.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub struct BatteryLevelSnapshot {
+    level: BatteryLevel,
+    watt_hours_remaining: WattHoursRemaining,
+}
+
+impl BatteryLevelSnapshot {
+    /// Construct a snapshot from the two values returned by firmware.
+    pub const fn new(level: BatteryLevel, watt_hours_remaining: WattHoursRemaining) -> Self {
+        Self {
+            level,
+            watt_hours_remaining,
+        }
+    }
+
+    /// Return the firmware state-of-charge fraction.
+    pub const fn level(self) -> BatteryLevel {
+        self.level
+    }
+
+    /// Return the firmware-estimated remaining energy.
+    pub const fn watt_hours_remaining(self) -> WattHoursRemaining {
+        self.watt_hours_remaining
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::BatteryLevel;

@@ -41,8 +41,9 @@ mod version;
 
 pub use adc::{AdcDecodedLevel, AdcVoltage, BrakeLeverLevel, BrakeSwitch};
 pub use battery::{
-    AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, BatteryVoltage, CellVoltage,
-    InputCurrent, InputVoltage, WattHoursCharged, WattHoursDischarged, WattHoursRemaining,
+    AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, BatteryLevelSnapshot,
+    BatteryVoltage, CellVoltage, InputCurrent, InputVoltage, WattHoursCharged, WattHoursDischarged,
+    WattHoursRemaining,
 };
 pub use can::{CanControllerId, CanExtendedId, CanPayloadLen, CanPayloadLenError, CanStandardId};
 pub use config::{
