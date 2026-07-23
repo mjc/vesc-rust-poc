@@ -2,6 +2,8 @@
 //!
 //! C map: Float Out Boy packet encoders forward through `third_party/float-out-boy/src/conf/buffer.c:33-145`.
 
+#![cfg_attr(not(test), deny(clippy::arithmetic_side_effects))]
+
 use vescpkg_rs::prelude::{AngleDegrees, AngleRadians};
 
 pub(crate) fn push_u8(buffer: &mut [u8], ind: &mut usize, value: u8) {
@@ -58,7 +60,7 @@ pub(crate) fn saturating_trunc_f32_to_u32(value: f32) -> u32 {
 
     let bits = value.to_bits();
     let [exponent_bits, ..] = ((bits >> 23) & 0xff).to_le_bytes();
-    let exponent = i32::from(exponent_bits) - 127;
+    let exponent = i32::from(exponent_bits).saturating_sub(127);
     if exponent < 0 {
         return 0;
     }
@@ -98,7 +100,7 @@ pub(crate) fn saturating_trunc_f32_to_i16(value: f32) -> i16 {
     let [low, high, ..] = magnitude.to_le_bytes();
     let magnitude = i16::from_le_bytes([low, high]);
     if value.is_sign_negative() {
-        -magnitude
+        magnitude.saturating_neg()
     } else {
         magnitude
     }
