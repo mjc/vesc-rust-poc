@@ -682,7 +682,7 @@ impl FloatOutBoyPackageState {
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]
-    fn refresh_motor_runtime_state(&mut self, telemetry: &impl MotorTelemetry) {
+    pub(crate) fn refresh_motor_runtime_state(&mut self, telemetry: &impl MotorTelemetry) {
         motor_runtime::refresh(self, telemetry);
     }
 
