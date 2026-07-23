@@ -9,6 +9,9 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState) {
         .lcm
         .set_hardware_mode(state.serialized_config.hardware_led_mode_id());
     state
+        .lcm
+        .set_lights_off_when_lifted(state.serialized_config.lights_off_when_lifted());
+    state
         .beeper
         .set_enabled(state.serialized_config.beeper_enabled());
     let payloads = state.all_data_payloads;

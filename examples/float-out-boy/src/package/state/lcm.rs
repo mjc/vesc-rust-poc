@@ -36,15 +36,20 @@ impl LcmState {
     // Keep the buffer initialization in its own frame so the loader's direct
     // `package_lib_init` frame stays below the 1,024-byte stack budget.
     #[inline(never)]
-    pub(super) fn new(hardware_mode: u8) -> Self {
+    pub(super) fn new(
+        hardware_mode: u8,
+        lights_enabled: bool,
+        headlights_enabled: bool,
+        lights_off_when_lifted: bool,
+    ) -> Self {
         Self {
             hardware_mode,
             brightness: 0,
             brightness_idle: 0,
             status_brightness: 0,
-            lights_off_when_lifted: true,
-            lights_enabled: false,
-            headlights_enabled: false,
+            lights_off_when_lifted,
+            lights_enabled,
+            headlights_enabled,
             name: [0; MAX_LCM_NAME_LENGTH],
             payload: [0; MAX_LCM_PAYLOAD_LENGTH],
             payload_size: 0,
@@ -53,6 +58,10 @@ impl LcmState {
 
     pub(super) const fn set_hardware_mode(&mut self, hardware_mode: u8) {
         self.hardware_mode = hardware_mode;
+    }
+
+    pub(super) const fn set_lights_off_when_lifted(&mut self, enabled: bool) {
+        self.lights_off_when_lifted = enabled;
     }
 
     const fn enabled(self) -> bool {
@@ -372,6 +381,21 @@ mod tests {
                     3,
                     3,
                 ]
+            ),
+            [101, 20, 3]
+        );
+    }
+
+    #[test]
+    fn startup_lights_control_reflects_serialized_led_flags() {
+        let firmware = FirmwareTest::new();
+        let mut state = external_state();
+
+        assert_eq!(
+            dispatch(
+                &mut state,
+                &firmware,
+                &[101, FloatOutBoyAppDataCommand::LightsControl.id()]
             ),
             [101, 20, 3]
         );
