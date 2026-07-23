@@ -350,7 +350,12 @@ macro_rules! required_slot {
 /// `name` must point to a valid, NUL-terminated extension name and
 /// `handler` must use the firmware `LispBM` extension ABI.
 pub unsafe fn lbm_add_extension(name: *const c_char, handler: ExtensionHandler) -> bool {
-    let base = u32::try_from(VescIfAbi::BASE_ADDR.0).unwrap_or(u32::MAX);
+    // Embedded VESC targets use a 32-bit address. Rust's `usize` follows the
+    // host pointer width, so reject an impossible 64-bit host-test address
+    // instead of truncating it or panicking.
+    let Ok(base) = u32::try_from(VescIfAbi::BASE_ADDR.0) else {
+        return false;
+    };
     unsafe { lbm_add_extension_with_table_base(base, name, handler) }
 }
 
@@ -529,7 +534,7 @@ pub unsafe fn lbm_list_destructive_reverse(value: LbmValue) -> LbmValue {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 #[must_use]
 pub unsafe fn lbm_enc_sym_nil() -> LbmValue {
-    unsafe { LbmValue(u32::try_from(slots::lbm_enc_sym_nil()).unwrap_or(u32::MAX)) }
+    unsafe { LbmValue(lbm_abi_word(slots::lbm_enc_sym_nil())) }
 }
 
 /// # Safety
@@ -537,7 +542,7 @@ pub unsafe fn lbm_enc_sym_nil() -> LbmValue {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 #[must_use]
 pub unsafe fn lbm_enc_sym_true() -> LbmValue {
-    unsafe { LbmValue(u32::try_from(slots::lbm_enc_sym_true()).unwrap_or(u32::MAX)) }
+    unsafe { LbmValue(lbm_abi_word(slots::lbm_enc_sym_true())) }
 }
 
 /// # Safety
@@ -545,7 +550,14 @@ pub unsafe fn lbm_enc_sym_true() -> LbmValue {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 #[must_use]
 pub unsafe fn lbm_enc_sym_eerror() -> LbmValue {
-    unsafe { LbmValue(u32::try_from(slots::lbm_enc_sym_eerror()).unwrap_or(u32::MAX)) }
+    unsafe { LbmValue(lbm_abi_word(slots::lbm_enc_sym_eerror())) }
+}
+
+fn lbm_abi_word(value: usize) -> u32 {
+    // LispBM values are one 32-bit C word on embedded VESC targets. A desktop
+    // test double can return a 64-bit `usize`; saturating that invalid value
+    // preserves the existing failure sentinel without risking a panic.
+    u32::try_from(value).unwrap_or(u32::MAX)
 }
 
 /// Read one native-endian word from the package custom-EEPROM range.
@@ -1412,18 +1424,29 @@ pub unsafe fn vesc_system_time_ticks() -> u32 {
         } else {
             // Legacy VESC tables expose seconds only. The firmware system tick
             // is 100 microseconds (10 kHz), matching chVTGetSystemTimeX().
-            let ticks = required_slot!(system_time)() * 10_000.0;
-            if ticks.is_nan() || ticks <= 0.0 {
-                0
-            } else if ticks >= 4_294_967_296.0 {
-                u32::MAX
-            } else {
-                // SAFETY: the checks above establish the finite `u32` range;
-                // unchecked conversion truncates like Rust's saturating `as`.
-                ticks.to_int_unchecked()
-            }
+            vesc_system_time_ticks_from_seconds(required_slot!(system_time)())
         }
     }
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "bounds checks reproduce the C firmware's float-to-u32 conversion"
+)]
+fn vesc_system_time_ticks_from_seconds(seconds: f32) -> u32 {
+    let ticks = seconds * 10_000.0;
+    if ticks.is_nan() || ticks <= 0.0 {
+        return 0;
+    }
+    if ticks >= 4_294_967_296.0 {
+        return u32::MAX;
+    }
+
+    // Rust's `as` conversion drops the fractional part, just like the cast in
+    // the VESC C firmware. The checks above prove the value is finite and lies
+    // inside the `u32` range, so no sign change or wraparound can occur.
+    ticks as u32
 }
 
 /// Return firmware uptime in its native floating-point seconds domain.

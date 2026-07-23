@@ -19,7 +19,8 @@ use super::{
     mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm, remote_state,
     store_eeprom_word, vesc_clear_app_data_handler, vesc_mutex_create, vesc_mutex_lock,
     vesc_mutex_unlock, vesc_sem_create, vesc_send_app_data, vesc_set_app_data_handler,
-    vesc_sleep_us, vesc_system_time_ticks, vesc_thread_set_priority, wipe_nvm, write_nvm,
+    vesc_sleep_us, vesc_system_time_ticks, vesc_system_time_ticks_from_seconds,
+    vesc_thread_set_priority, wipe_nvm, write_nvm,
 };
 
 struct SyncCounter(Cell<usize>);
@@ -276,7 +277,7 @@ extern "C" fn stub_lbm_add_extension(
 extern "C" fn stub_lbm_dec_as_i32(value: u32) -> i32 {
     LBM_DEC_AS_I32.inc();
     LAST_LBM_VALUE.set(value);
-    value as i32
+    value.cast_signed()
 }
 
 extern "C" fn stub_lbm_dec_as_float(value: u32) -> f32 {
@@ -287,7 +288,7 @@ extern "C" fn stub_lbm_dec_as_float(value: u32) -> f32 {
 
 extern "C" fn stub_lbm_enc_i(value: i32) -> u32 {
     LBM_ENC_I.inc();
-    value as u32 + 1
+    value.cast_unsigned() + 1
 }
 
 extern "C" fn stub_lbm_dec_char(value: u32) -> u8 {
@@ -456,27 +457,27 @@ extern "C" fn stub_mutex_unlock(mutex: *mut c_void) {
 
 extern "C" fn stub_io_set_mode(pin: c_uint, mode: c_uint) -> bool {
     IO_SET_MODE.inc();
-    LAST_PIN.set(pin as c_int);
-    LAST_MODE.set(mode as c_int);
+    LAST_PIN.set(pin.cast_signed());
+    LAST_MODE.set(mode.cast_signed());
     true
 }
 
 extern "C" fn stub_io_write(pin: c_uint, level: c_int) -> bool {
     IO_WRITE.inc();
-    LAST_PIN.set(pin as c_int);
+    LAST_PIN.set(pin.cast_signed());
     LAST_LEVEL.set(level);
     true
 }
 
 extern "C" fn stub_io_read(pin: c_uint) -> bool {
     IO_READ.inc();
-    LAST_PIN.set(pin as c_int);
+    LAST_PIN.set(pin.cast_signed());
     pin == 3
 }
 
 extern "C" fn stub_io_read_analog(pin: c_uint) -> f32 {
     IO_READ_ANALOG.inc();
-    LAST_PIN.set(pin as c_int);
+    LAST_PIN.set(pin.cast_signed());
     0.25 * pin as f32
 }
 
@@ -950,6 +951,18 @@ fn system_time_ticks_falls_back_to_seconds_when_tick_slot_is_absent_like_float_o
         assert_eq!(SYSTEM_TIME_TICKS.get(), 0);
         assert_eq!(SYSTEM_TIME.get(), 1);
     });
+}
+
+#[test]
+fn legacy_system_time_seconds_truncate_fractional_ticks() {
+    assert_eq!(vesc_system_time_ticks_from_seconds(1.234_56), 12_345);
+}
+
+#[test]
+fn legacy_system_time_seconds_saturate_out_of_range_values() {
+    assert_eq!(vesc_system_time_ticks_from_seconds(f32::NAN), 0);
+    assert_eq!(vesc_system_time_ticks_from_seconds(-1.0), 0);
+    assert_eq!(vesc_system_time_ticks_from_seconds(f32::INFINITY), u32::MAX);
 }
 
 #[test]
