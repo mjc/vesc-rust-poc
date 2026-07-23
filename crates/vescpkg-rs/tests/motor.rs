@@ -219,6 +219,14 @@ fn motor_exposes_typed_handbrake_commands() {
             .as_steps(),
         5678
     );
+    assert_eq!(
+        firmware
+            .telemetry()
+            .absolute_tachometer(TachometerReset::Preserve)
+            .steps()
+            .as_steps(),
+        0
+    );
     assert_eq!(telemetry.sampling_frequency().as_hertz(), 20_000.0);
     firmware.motor().release_motor();
     assert_eq!(
