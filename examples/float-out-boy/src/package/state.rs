@@ -64,9 +64,9 @@ use alert_tracker::AlertTrackerState;
 use flywheel::FloatOutBoyFlywheelOffsets;
 #[cfg(any(test, target_arch = "arm"))]
 use haptic_feedback::{HapticFeedbackInput, HapticFeedbackState};
-use lcm::LcmState;
 #[cfg(any(test, target_arch = "arm"))]
 use konami::FloatOutBoyKonami;
+use lcm::LcmState;
 use motor_acceleration::MotorAccelerationTracker;
 use remote_control::RemoteControlState;
 use ride_modifiers::{RideModifierInput, RideModifierState};
@@ -525,16 +525,12 @@ impl FloatOutBoyPackageState {
             return;
         }
         if !self.lcm.headlights_enabled()
-            && self
-                .headlights_on_konami
-                .check(footpad, system_time_ticks)
+            && self.headlights_on_konami.check(footpad, system_time_ticks)
         {
             self.lcm.set_headlights_enabled(true);
         }
         if self.lcm.headlights_enabled()
-            && self
-                .headlights_off_konami
-                .check(footpad, system_time_ticks)
+            && self.headlights_off_konami.check(footpad, system_time_ticks)
         {
             self.lcm.set_headlights_enabled(false);
         }
