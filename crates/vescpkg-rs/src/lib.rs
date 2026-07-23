@@ -207,7 +207,7 @@ pub mod __macro_support;
 
 #[cfg(feature = "math")]
 pub use ahrs::{Ahrs, Madgwick};
-pub use audio::{FocAudio, FocAudioError, FocAudioSampleTable};
+pub use audio::{FocAudio, FocAudioError, FocAudioSampleTable, FocAudioStopMode};
 pub use firmware::{
     AppDataHandler, AppDataPacket, ConfigBytes, ConfigXml, StatefulCustomConfigCallback,
 };
@@ -291,14 +291,14 @@ pub mod prelude {
         FirmwareAhrsSnapshot, FirmwareAppData, FirmwareCapabilities, FirmwareClock,
         FirmwareFloatSetting, FirmwareInputs, FirmwareIntSetting, FirmwareLog, FirmwareMutex,
         FirmwareMutexGuard, FirmwareSemaphore, FirmwareSettings, FirmwareThread, FirmwareThreads,
-        FocAudio, FocAudioError, FocAudioSampleTable, Gnss, GnssError, GnssSnapshot, Gpio, Imu,
-        ImuReadCallback, ImuReadCallbackError, ImuReadCallbackLease, ImuReadHandler, InputError,
-        LbmExtension, LispArgs, LispContextId, LispFlatValue, LispIntegerError, LispList,
-        LispListError, LispMessageError, LispProcess, LispSymbol, LispValue, LogError, MotorOutput,
-        MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset, PackageStartError, PacketCodec,
-        PacketError, PacketHandler, Plot, PlotError, PpmSnapshot, PwmCallbackError,
-        PwmCallbackHandler, PwmCallbackLease, RemoteInput, RemoteInputSnapshot, SettingsError,
-        ShutdownInhibit, StatefulCustomConfigCallback, StatefulLbmExtension,
+        FocAudio, FocAudioError, FocAudioSampleTable, FocAudioStopMode, Gnss, GnssError,
+        GnssSnapshot, Gpio, Imu, ImuReadCallback, ImuReadCallbackError, ImuReadCallbackLease,
+        ImuReadHandler, InputError, LbmExtension, LispArgs, LispContextId, LispFlatValue,
+        LispIntegerError, LispList, LispListError, LispMessageError, LispProcess, LispSymbol,
+        LispValue, LogError, MotorOutput, MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset,
+        PackageStartError, PacketCodec, PacketError, PacketHandler, Plot, PlotError, PpmSnapshot,
+        PwmCallbackError, PwmCallbackHandler, PwmCallbackLease, RemoteInput, RemoteInputSnapshot,
+        SettingsError, ShutdownInhibit, StatefulCustomConfigCallback, StatefulLbmExtension,
         StatelessFirmwareThread, StatelessThreadContext, Terminal, TerminalError, TerminalHandler,
         TerminalRegistration, ThreadContext, ThreadError, ThreadName, ThreadSpec,
         ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimeoutSnapshot, TimerInstant,

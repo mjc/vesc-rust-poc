@@ -19,6 +19,22 @@ pub enum FocAudioError {
     BufferTooLong,
 }
 
+/// Select whether stopping FOC audio also resets firmware audio state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FocAudioStopMode {
+    /// Stop output while preserving the firmware's audio state.
+    Preserve,
+    /// Stop output and reset the firmware's audio state.
+    Reset,
+}
+
+impl FocAudioStopMode {
+    /// Return the raw reset flag expected by the firmware ABI.
+    pub const fn resets(self) -> bool {
+        matches!(self, Self::Reset)
+    }
+}
+
 /// Handle for the optional FOC audio entrypoints.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FocAudio;
@@ -62,9 +78,9 @@ impl FocAudio {
         })
     }
 
-    /// Stop active FOC audio output.
-    pub fn stop(&self, reset: bool) -> Result<(), FocAudioError> {
-        unsafe { crate::ffi::foc_stop_audio(reset) }
+    /// Stop active FOC audio output with an explicit reset policy.
+    pub fn stop(&self, mode: FocAudioStopMode) -> Result<(), FocAudioError> {
+        unsafe { crate::ffi::foc_stop_audio(mode.resets()) }
             .then_some(())
             .ok_or(FocAudioError::Unavailable)
     }
@@ -130,7 +146,7 @@ impl FocAudio {
 
 impl Drop for FocAudioSampleTable<'_> {
     fn drop(&mut self) {
-        let _ = self.audio.stop(true);
+        let _ = self.audio.stop(FocAudioStopMode::Reset);
     }
 }
 
