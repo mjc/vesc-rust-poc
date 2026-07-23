@@ -179,7 +179,15 @@ impl FloatOutBoyPackageState {
             .serialized_config
             .editor()
             .apply_flywheel_overrides(start.config);
-        debug_assert!(updated);
+        if !updated {
+            // A failed write means the in-memory configuration layout is not the
+            // layout this package was built for. Reload the saved configuration
+            // instead of running with a mixture of old and partially written values.
+            self.set_ride_mode(FloatOutBoyMode::Normal);
+            self.read_config_from_eeprom();
+            self.refresh_balance_filter_config();
+            return;
+        }
         self.flywheel_runtime_config = Some(start.config);
     }
 

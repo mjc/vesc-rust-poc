@@ -56,8 +56,26 @@ vescpkg_rs::firmware_section_static!(
 pub(crate) const FLOAT_OUT_BOY_CONFIG_SIGNATURE_BYTES: [u8; 4] = [0x90, 0xb7, 0xa9, 0xba];
 pub(crate) const FLOAT_OUT_BOY_CONFIG_LEN: usize = FLOAT_OUT_BOY_DEFAULT_CONFIG.len();
 
-fn generated_field<T>(value: Option<T>) -> T {
-    value.expect("generated Float Out Boy field must fit its config image")
+fn generated_field<T: Default>(value: Option<T>) -> T {
+    // Generated offsets should always fit the fixed-size configuration image.
+    // If the generated layout and image ever disagree, use the field type's
+    // inert value instead of panicking inside the embedded control loop.
+    value.unwrap_or_default()
+}
+
+#[cfg(test)]
+mod generated_field_tests {
+    use vescpkg_rs::{Current, MotorCurrent};
+
+    #[test]
+    fn missing_generated_fields_use_inert_defaults() {
+        assert_eq!(super::generated_field::<u16>(None), 0);
+        assert!(!super::generated_field::<bool>(None));
+        assert_eq!(
+            super::generated_field::<MotorCurrent>(None).current(),
+            Current::from_amps(0.0)
+        );
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,9 +161,18 @@ impl FloatOutBoyConfigImage {
     pub(crate) fn reset_tune_defaults(&mut self) {
         let mut bytes = *self.as_bytes();
         for range in [4..18, 67..75, 77..79, 91..101, 102..118, 130..175] {
-            bytes[range.clone()].copy_from_slice(&FLOAT_OUT_BOY_DEFAULT_CONFIG[range]);
+            if let (Some(destination), Some(defaults)) = (
+                bytes.get_mut(range.clone()),
+                FLOAT_OUT_BOY_DEFAULT_CONFIG.get(range),
+            ) {
+                destination.copy_from_slice(defaults);
+            }
         }
-        bytes[242] = FLOAT_OUT_BOY_DEFAULT_CONFIG[242];
+        if let (Some(destination), Some(default)) =
+            (bytes.get_mut(242), FLOAT_OUT_BOY_DEFAULT_CONFIG.get(242))
+        {
+            *destination = *default;
+        }
         self.0 = CustomConfigImage::new(bytes);
     }
 

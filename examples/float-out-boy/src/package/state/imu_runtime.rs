@@ -73,7 +73,7 @@ pub(super) fn refresh(
     let mut beep_reason = status.beep_reason();
     let mut beeper_alert = None;
     let mut ride_state = status.ride_state();
-    let resets_runtime_vars =
+    let startup_became_ready =
         matches!(ride_state.run_state(), FloatOutBoyRunState::Startup) && imu.is_ready();
     let mut run_state = match (ride_state.run_state(), imu.is_ready()) {
         (FloatOutBoyRunState::Startup, true) => FloatOutBoyRunState::Ready,
@@ -84,7 +84,7 @@ pub(super) fn refresh(
         // at `third_party/float-out-boy/src/time.c:38-43`.
         state.idle_ticks = system_time_ticks;
     }
-    if resets_runtime_vars {
+    if startup_became_ready {
         let low_voltage_threshold = pack_voltage_threshold(
             state.serialized_config.low_voltage_threshold(),
             state.battery_cell_count,
@@ -385,13 +385,13 @@ pub(super) fn refresh(
         && roll_abs < darkride.roll_upper;
     let startup_pitch_tolerance = startup.pitch_tolerance();
     let startup_roll_tolerance = startup.roll_tolerance();
-    let ready_engage = !resets_runtime_vars
+    let ready_engage = !startup_became_ready
         && matches!(run_state, FloatOutBoyRunState::Ready)
         && !ready_flywheel_stop
         && can_engage
         && balance_pitch_abs < startup_pitch_tolerance
         && roll_abs < startup_roll_tolerance;
-    let ready_darkride_engage = !resets_runtime_vars
+    let ready_darkride_engage = !startup_became_ready
         && matches!(
             (run_state, ride_state.darkride()),
             (FloatOutBoyRunState::Ready, FloatOutBoyDarkRideState::Active)
@@ -413,7 +413,7 @@ pub(super) fn refresh(
 
             within_darkride_grace || roll_near_upside_down
         };
-    let ready_push_start = !resets_runtime_vars
+    let ready_push_start = !startup_became_ready
         && matches!(run_state, FloatOutBoyRunState::Ready)
         && startup.pushstart_enabled()
         && motor_erpm.abs() > push_start.erpm_min
@@ -540,7 +540,7 @@ pub(super) fn refresh(
     // `third_party/float-out-boy/src/state.c:36-39`; READY flywheel abort returns
     // to NORMAL before startup checks at `third_party/float-out-boy/src/main.c:957-963`.
     let mut ride_state = state_transition.ride_state;
-    let reset_runtime_vars = resets_runtime_vars || state_engage;
+    let reset_runtime_vars = startup_became_ready || state_engage;
     let (mut balance_current, mut setpoints, mut booster_current) = if reset_runtime_vars {
         // Upstream `STATE_STARTUP` calls `reset_runtime_vars(d)` before
         // `STATE_READY` at `third_party/float-out-boy/src/main.c:833-837`, and

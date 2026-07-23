@@ -12,13 +12,13 @@ const PACKAGE_EXTENSION_COUNT: usize = 1;
 pub const PACKAGE_EXTENSION_NAMES: [ExtensionName; PACKAGE_EXTENSION_COUNT] =
     [EXT_RUST_PROBE_DIAG_NAME];
 
-const _: () = assert!(PACKAGE_EXTENSION_COUNT == 1);
+const _: [(); 1] = [(); (PACKAGE_EXTENSION_COUNT == 1) as usize];
 
 struct RustProbeDiag;
 
 impl LbmExtension for RustProbeDiag {
     fn call(_args: LispArgs<'_>) -> LispValue {
-        LispValue::try_from(42).expect("42 fits the LispBM immediate integer")
+        LispValue::try_from(42).unwrap_or_else(|_| LispValue::nil())
     }
 }
 

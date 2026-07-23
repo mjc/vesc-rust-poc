@@ -110,7 +110,7 @@ impl AlertTrackerState {
         };
         for offset in 0..self.record_count {
             let index = (first + offset) % ALERT_RECORD_CAPACITY;
-            if let Some(record) = self.records[index]
+            if let Some(record) = self.records.get(index).copied().flatten()
                 && record.timestamp > since
                 && !visit(record)
             {
@@ -120,7 +120,9 @@ impl AlertTrackerState {
     }
 
     fn push_record(&mut self, record: AlertRecord) {
-        self.records[self.next_record] = Some(record);
+        if let Some(slot) = self.records.get_mut(self.next_record) {
+            *slot = Some(record);
+        }
         self.next_record = (self.next_record + 1) % ALERT_RECORD_CAPACITY;
         self.record_count = (self.record_count + 1).min(ALERT_RECORD_CAPACITY);
     }

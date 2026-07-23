@@ -9,6 +9,20 @@
 #![cfg_attr(target_arch = "arm", no_main)]
 #![forbid(unsafe_code)]
 #![forbid(unused_extern_crates)]
+// An embedded package cannot unwind or print a useful panic report. Keep
+// explicit crash shortcuts out of the production entrypoint and its modules.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::arithmetic_side_effects,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::panic,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unwrap_used
+    )
+)]
 
 #[cfg(test)]
 extern crate std;

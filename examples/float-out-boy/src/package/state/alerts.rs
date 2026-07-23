@@ -66,8 +66,10 @@ impl FloatOutBoyPackageState {
                 count += 1;
                 true
             });
-            response[count_index] = count;
-            return send(&response[..index]);
+            if let Some(count_slot) = response.get_mut(count_index) {
+                *count_slot = count;
+            }
+            return response.get(..index).is_some_and(send);
         }
 
         if let Some(payload) =
@@ -96,7 +98,7 @@ fn push_fault_name(
     let name = telemetry
         .firmware_fault_name(FirmwareFaultCode::from_wire_code(code.wire_code()))
         .unwrap_or_default();
-    let name = &name[..name.len().min(50)];
+    let name = name.get(..name.len().min(50)).unwrap_or(name);
     float_out_boy_realtime_push_u8(buffer, index, name.len() as u8);
     for byte in name {
         float_out_boy_realtime_push_u8(buffer, index, *byte);
