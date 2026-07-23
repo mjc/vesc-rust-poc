@@ -311,14 +311,12 @@ impl<'a> ExpressLisp<'a> {
         cid: u32,
         mut value: ExpressFlatValue<'a>,
     ) -> Result<(), ExpressLispMessageError> {
-        if !value.finish().map_err(|error| match error {
+        value.finish().map_err(|error| match error {
             ExpressFlatValueError::Unavailable(error) => {
                 ExpressLispMessageError::Unavailable(error)
             }
             ExpressFlatValueError::Rejected => ExpressLispMessageError::Rejected,
-        })? {
-            return Err(ExpressLispMessageError::Rejected);
-        }
+        })?;
         let unblock: super::functions::LbmUnblockCtx =
             unsafe { self.interface.function(ExpressSlot::LbmUnblockCtx) }
                 .map_err(ExpressLispMessageError::Unavailable)?;
