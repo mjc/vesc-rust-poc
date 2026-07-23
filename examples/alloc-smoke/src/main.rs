@@ -2,6 +2,7 @@
 
 #![cfg_attr(target_arch = "arm", no_std)]
 #![cfg_attr(target_arch = "arm", no_main)]
+#![deny(warnings, clippy::all, clippy::pedantic)]
 #![forbid(unsafe_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(clippy::missing_safety_doc)]
@@ -53,9 +54,10 @@ const ALLOC_SMOKE_CANDIDATES: usize = 5;
 #[cfg(all(not(test), target_arch = "arm"))]
 struct AllocSmokeAppData;
 
-#[cfg_attr(not(any(test, target_arch = "arm")), allow(dead_code))]
+#[cfg(any(test, target_arch = "arm"))]
 struct AllocSmokeState;
 
+#[cfg(any(test, target_arch = "arm"))]
 vescpkg_rs::package_start!(crate::start, AllocSmokeState);
 
 #[cfg(all(not(test), target_arch = "arm"))]

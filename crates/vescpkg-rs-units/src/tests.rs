@@ -5,35 +5,51 @@ use super::{
     VescSeconds, Voltage,
 };
 
+macro_rules! assert_f32_eq {
+    ($actual:expr, $expected:expr $(,)?) => {
+        let actual: f32 = $actual;
+        let expected: f32 = $expected;
+        assert_eq!(actual.to_bits(), expected.to_bits());
+    };
+}
+
+macro_rules! assert_f64_eq {
+    ($actual:expr, $expected:expr $(,)?) => {
+        let actual: f64 = $actual;
+        let expected: f64 = $expected;
+        assert_eq!(actual.to_bits(), expected.to_bits());
+    };
+}
+
 #[test]
 fn scalar_units_round_trip_through_named_accessors() {
-    assert_eq!(Voltage::from_volts(50.5).as_volts(), 50.5);
-    assert_eq!(Current::from_amps(12.25).as_amps(), 12.25);
-    assert_eq!(Power::from_watts(600.0).as_watts(), 600.0);
-    assert_eq!(Energy::from_watt_hours(42.0).as_watt_hours(), 42.0);
-    assert_eq!(Charge::from_amp_hours(3.2).as_amp_hours(), 3.2);
-    assert_eq!(
+    assert_f32_eq!(Voltage::from_volts(50.5).as_volts(), 50.5);
+    assert_f32_eq!(Current::from_amps(12.25).as_amps(), 12.25);
+    assert_f32_eq!(Power::from_watts(600.0).as_watts(), 600.0);
+    assert_f32_eq!(Energy::from_watt_hours(42.0).as_watt_hours(), 42.0);
+    assert_f32_eq!(Charge::from_amp_hours(3.2).as_amp_hours(), 3.2);
+    assert_f32_eq!(
         Rpm::from_revolutions_per_minute(12_000.0).as_revolutions_per_minute(),
         12_000.0
     );
-    assert_eq!(
+    assert_f32_eq!(
         Speed::from_meters_per_second(4.5).as_meters_per_second(),
         4.5
     );
-    assert_eq!(
+    assert_f32_eq!(
         Temperature::from_degrees_celsius(23.0).as_degrees_celsius(),
         23.0
     );
     let latitude_degrees: f64 = Latitude::from_degrees(40.015).as_degrees();
     let longitude_degrees: f64 = Longitude::from_degrees(-105.2705).as_degrees();
-    assert_eq!(latitude_degrees, 40.015);
-    assert_eq!(longitude_degrees, -105.2705);
-    assert_eq!(Frequency::from_hertz(1000.0).as_hertz(), 1000.0);
-    assert_eq!(SampleRate::from_hertz(200.0).as_hertz(), 200.0);
-    assert_eq!(VescSeconds::from_seconds(2.5).as_seconds(), 2.5);
-    assert_eq!(AngleRadians::from_radians(1.5).as_radians(), 1.5);
-    assert_eq!(AccelerationG::from_g(1.0).as_g(), 1.0);
-    assert_eq!(
+    assert_f64_eq!(latitude_degrees, 40.015);
+    assert_f64_eq!(longitude_degrees, -105.2705);
+    assert_f32_eq!(Frequency::from_hertz(1000.0).as_hertz(), 1000.0);
+    assert_f32_eq!(SampleRate::from_hertz(200.0).as_hertz(), 200.0);
+    assert_f32_eq!(VescSeconds::from_seconds(2.5).as_seconds(), 2.5);
+    assert_f32_eq!(AngleRadians::from_radians(1.5).as_radians(), 1.5);
+    assert_f32_eq!(AccelerationG::from_g(1.0).as_g(), 1.0);
+    assert_f32_eq!(
         AngularVelocity::from_degrees_per_second(90.0).as_degrees_per_second(),
         90.0
     );
@@ -58,20 +74,20 @@ fn battery_cell_count_scales_per_cell_voltage_without_erasing_units() {
     let cells = BatteryCellCount::try_new(18).expect("18s battery");
     let per_cell = Voltage::from_volts(4.3);
 
-    assert_eq!((per_cell * cells).as_volts(), 77.4);
-    assert_eq!((cells * per_cell).as_volts(), 77.4);
+    assert_f32_eq!((per_cell * cells).as_volts(), 77.4);
+    assert_f32_eq!((cells * per_cell).as_volts(), 77.4);
 }
 
 #[test]
 fn local_unit_conversions_stay_in_the_embedded_units_layer() {
-    assert_eq!(Energy::from_watt_hours(2.0).as_joules(), 7200.0);
-    assert_eq!(Energy::from_joules(7200.0).as_watt_hours(), 2.0);
-    assert_eq!(Charge::from_amp_hours(3.2).as_amp_hours(), 3.2);
-    assert_eq!(
+    assert_f32_eq!(Energy::from_watt_hours(2.0).as_joules(), 7200.0);
+    assert_f32_eq!(Energy::from_joules(7200.0).as_watt_hours(), 2.0);
+    assert_f32_eq!(Charge::from_amp_hours(3.2).as_amp_hours(), 3.2);
+    assert_f32_eq!(
         Speed::from_kilometers_per_hour(36.0).as_meters_per_second(),
         10.0
     );
-    assert_eq!(Speed::from_miles_per_hour(60.0).as_miles_per_hour(), 60.0);
+    assert_f32_eq!(Speed::from_miles_per_hour(60.0).as_miles_per_hour(), 60.0);
 }
 
 #[test]
@@ -81,11 +97,11 @@ fn angle_units_convert_between_degrees_and_radians_once_at_boundaries() {
 
     assert!((right_angle_degrees.as_degrees() - 90.0).abs() < f32::EPSILON);
     assert!((right_angle_radians.as_radians() - core::f32::consts::FRAC_PI_2).abs() < f32::EPSILON);
-    assert_eq!(
+    assert_f32_eq!(
         AngleDegrees::from(right_angle_radians).as_degrees(),
         right_angle_degrees.as_degrees()
     );
-    assert_eq!(
+    assert_f32_eq!(
         AngleRadians::from(right_angle_degrees).as_radians(),
         right_angle_radians.as_radians()
     );
@@ -116,14 +132,14 @@ fn angular_velocity_over_time_is_an_angle_in_radians() {
 
 #[test]
 fn sample_rate_reports_one_sample_period() {
-    assert_eq!(
+    assert_f32_eq!(
         SampleRate::from_hertz(200.0)
             .sample_period()
             .unwrap()
             .as_seconds(),
         0.005
     );
-    assert_eq!(
+    assert_f32_eq!(
         SampleRate::from_hertz(0.5)
             .sample_period()
             .unwrap()
@@ -144,40 +160,40 @@ fn scalar_units_support_same_unit_arithmetic_traits() {
     let rate = -AngularVelocity::from_degrees_per_second(12.0);
     let current = Current::from_amps(10.0) * 0.25 + Current::from_amps(1.0);
 
-    assert_eq!(angle.as_degrees(), 5.0);
-    assert_eq!(rate.as_degrees_per_second(), -12.0);
-    assert_eq!(current.as_amps(), 3.5);
-    assert_eq!((current / 2.0).as_amps(), 1.75);
-    assert_eq!((-angle).abs().as_degrees(), 5.0);
+    assert_f32_eq!(angle.as_degrees(), 5.0);
+    assert_f32_eq!(rate.as_degrees_per_second(), -12.0);
+    assert_f32_eq!(current.as_amps(), 3.5);
+    assert_f32_eq!((current / 2.0).as_amps(), 1.75);
+    assert_f32_eq!((-angle).abs().as_degrees(), 5.0);
     assert_eq!(
         Current::from_amps(-0.0).abs().as_amps().to_bits(),
         0.0_f32.to_bits()
     );
-    assert_eq!(rate.signum(), -1.0);
-    assert_eq!(Current::ZERO.signum(), 1.0);
-    assert_eq!(Current::from_amps(-0.0).signum(), 1.0);
-    assert_eq!(Current::from_amps(f32::NAN).signum(), 1.0);
+    assert_f32_eq!(rate.signum(), -1.0);
+    assert_f32_eq!(Current::ZERO.signum(), 1.0);
+    assert_f32_eq!(Current::from_amps(-0.0).signum(), 1.0);
+    assert_f32_eq!(Current::from_amps(f32::NAN).signum(), 1.0);
     assert!(current.is_positive());
     assert!(Current::ZERO.is_zero());
-    assert_eq!(
+    assert_f32_eq!(
         Current::from_amps(4.0)
             .min(Current::from_amps(6.0))
             .as_amps(),
         4.0
     );
-    assert_eq!(
+    assert_f32_eq!(
         Current::from_amps(6.0)
             .min(Current::from_amps(f32::NAN))
             .as_amps(),
         6.0
     );
-    assert_eq!(
+    assert_f32_eq!(
         Current::from_amps(4.0)
             .max(Current::from_amps(f32::NAN))
             .as_amps(),
         4.0
     );
-    assert_eq!(
+    assert_f32_eq!(
         AngleDegrees::from_degrees(6.0) / AngleDegrees::from_degrees(3.0),
         2.0
     );
@@ -188,13 +204,13 @@ fn efficiency_units_remain_generic_ratios_between_energy_and_distance() {
     let energy_per_distance = EnergyPerDistance::from_watt_hours_per_meter(12.5);
     let distance_per_energy = DistancePerEnergy::from_meters_per_watt_hour(0.08);
 
-    assert_eq!(energy_per_distance.as_watt_hours_per_meter(), 12.5);
-    assert_eq!(distance_per_energy.as_meters_per_watt_hour(), 0.08);
-    assert_eq!(
+    assert_f32_eq!(energy_per_distance.as_watt_hours_per_meter(), 12.5);
+    assert_f32_eq!(distance_per_energy.as_meters_per_watt_hour(), 0.08);
+    assert_f32_eq!(
         (Energy::from_watt_hours(25.0) / Distance::from_meters(2.0)).as_watt_hours_per_meter(),
         12.5
     );
-    assert_eq!(
+    assert_f32_eq!(
         (Distance::from_meters(2.0) / Energy::from_watt_hours(25.0)).as_meters_per_watt_hour(),
         0.08
     );
@@ -205,10 +221,10 @@ fn energy_per_distance_uses_human_scale_ride_efficiency_units() {
     let city_efficiency = EnergyPerDistance::from_watt_hours_per_kilometer(18.0);
     let highway_efficiency = EnergyPerDistance::from_watt_hours_per_mile(32.0);
 
-    assert_eq!(city_efficiency.as_watt_hours_per_kilometer(), 18.0);
-    assert_eq!(city_efficiency.as_watt_hours_per_meter(), 0.018);
-    assert_eq!(highway_efficiency.as_watt_hours_per_mile(), 32.0);
-    assert_eq!(
+    assert_f32_eq!(city_efficiency.as_watt_hours_per_kilometer(), 18.0);
+    assert_f32_eq!(city_efficiency.as_watt_hours_per_meter(), 0.018);
+    assert_f32_eq!(highway_efficiency.as_watt_hours_per_mile(), 32.0);
+    assert_f32_eq!(
         highway_efficiency.as_watt_hours_per_meter(),
         32.0 / 1609.344
     );
@@ -220,7 +236,7 @@ fn energy_divided_by_distance_reports_ride_efficiency_without_manual_conversion(
     let commute_distance = Distance::from_meters(30_000.0);
     let efficiency = commute_energy / commute_distance;
 
-    assert_eq!(efficiency.as_watt_hours_per_kilometer(), 18.0);
+    assert_f32_eq!(efficiency.as_watt_hours_per_kilometer(), 18.0);
     assert!((efficiency.as_watt_hours_per_mile() - 28.968_191).abs() < 0.000_01);
 }
 
@@ -230,11 +246,11 @@ fn electrical_units_support_obvious_no_panic_arithmetic() {
     let current = Current::from_amps(10.0);
     let power = voltage * current;
 
-    assert_eq!(power.as_watts(), 504.0);
-    assert_eq!((current * voltage).as_watts(), 504.0);
-    assert_eq!((power / voltage).as_amps(), 10.0);
-    assert_eq!((power / current).as_volts(), 50.4);
-    assert_eq!((voltage / current).as_ohms(), 5.04);
+    assert_f32_eq!(power.as_watts(), 504.0);
+    assert_f32_eq!((current * voltage).as_watts(), 504.0);
+    assert_f32_eq!((power / voltage).as_amps(), 10.0);
+    assert_f32_eq!((power / current).as_volts(), 50.4);
+    assert_f32_eq!((voltage / current).as_ohms(), 5.04);
 }
 
 #[test]
@@ -257,8 +273,8 @@ fn package_author_derives_speed_from_distance_and_tick_window() {
     let sample_window = SystemTicks::from_ticks(30_000);
     let speed = distance / sample_window;
 
-    assert_eq!(speed.as_meters_per_second(), 14.0);
-    assert_eq!((speed * sample_window).as_meters(), 42.0);
+    assert_f32_eq!(speed.as_meters_per_second(), 14.0);
+    assert_f32_eq!((speed * sample_window).as_meters(), 42.0);
 }
 
 #[test]
@@ -269,7 +285,7 @@ fn package_author_reports_ride_efficiency_without_float_handoff() {
     let distance = Distance::from_meters(30_000.0);
     let efficiency = energy / distance;
 
-    assert_eq!(efficiency.as_watt_hours_per_kilometer(), 18.0);
+    assert_f32_eq!(efficiency.as_watt_hours_per_kilometer(), 18.0);
 }
 
 #[test]
@@ -280,9 +296,9 @@ fn package_author_uses_known_good_bounded_constants_for_commands() {
     const REGEN_LIMIT: SignedRatio = SignedRatio::from_ratio_const(-0.25);
     const BATTERY_WARNING: Percent = Percent::from_percent_const(20.0);
 
-    assert_eq!(DUTY_LIMIT.as_ratio(), 0.85);
-    assert_eq!(REGEN_LIMIT.as_ratio(), -0.25);
-    assert_eq!(BATTERY_WARNING.as_percent(), 20.0);
+    assert_f32_eq!(DUTY_LIMIT.as_ratio(), 0.85);
+    assert_f32_eq!(REGEN_LIMIT.as_ratio(), -0.25);
+    assert_f32_eq!(BATTERY_WARNING.as_percent(), 20.0);
 }
 
 #[test]
@@ -302,17 +318,17 @@ fn package_author_keeps_trip_math_typed_until_display() {
 
 #[test]
 fn bounded_units_reject_out_of_range_values() {
-    assert_eq!(Ratio::from_ratio(0.5).expect("valid").as_ratio(), 0.5);
+    assert_f32_eq!(Ratio::from_ratio(0.5).expect("valid").as_ratio(), 0.5);
 
     let low = Ratio::from_ratio(-0.1).expect_err("too low");
-    assert_eq!(low.value(), -0.1);
-    assert_eq!(low.min(), 0.0);
-    assert_eq!(low.max(), 1.0);
+    assert_f32_eq!(low.value(), -0.1);
+    assert_f32_eq!(low.min(), 0.0);
+    assert_f32_eq!(low.max(), 1.0);
 
     let high = Percent::from_percent(101.0).expect_err("too high");
-    assert_eq!(high.value(), 101.0);
-    assert_eq!(high.min(), 0.0);
-    assert_eq!(high.max(), 100.0);
+    assert_f32_eq!(high.value(), 101.0);
+    assert_f32_eq!(high.min(), 0.0);
+    assert_f32_eq!(high.max(), 100.0);
 }
 
 #[test]
@@ -320,8 +336,8 @@ fn bounded_units_support_known_good_package_constants() {
     const CENTER_DUTY: Ratio = Ratio::from_ratio_const(0.5);
     const FULL_SCALE: Percent = Percent::from_percent_const(100.0);
 
-    assert_eq!(CENTER_DUTY.as_ratio(), 0.5);
-    assert_eq!(FULL_SCALE.as_percent(), 100.0);
+    assert_f32_eq!(CENTER_DUTY.as_ratio(), 0.5);
+    assert_f32_eq!(FULL_SCALE.as_percent(), 100.0);
 }
 
 #[test]
@@ -332,10 +348,10 @@ fn bounded_unit_constant_constructor_clamps_runtime_misuse() {
 
 #[test]
 fn bounded_units_clamp_without_panicking() {
-    assert_eq!(Ratio::clamped(-1.0).as_ratio(), 0.0);
-    assert_eq!(Ratio::clamped(2.0).as_ratio(), 1.0);
-    assert_eq!(Ratio::clamped(0.25).as_ratio(), 0.25);
-    assert_eq!(Ratio::clamped(f32::NAN).as_ratio(), 0.0);
+    assert_f32_eq!(Ratio::clamped(-1.0).as_ratio(), 0.0);
+    assert_f32_eq!(Ratio::clamped(2.0).as_ratio(), 1.0);
+    assert_f32_eq!(Ratio::clamped(0.25).as_ratio(), 0.25);
+    assert_f32_eq!(Ratio::clamped(f32::NAN).as_ratio(), 0.0);
 }
 
 #[test]
@@ -358,15 +374,15 @@ fn timestamp_delta_preserves_vesc_unsigned_wraparound() {
 fn system_tick_duration_arithmetic_stays_typed() {
     let two_seconds = SystemTicks::from_ticks(20_000);
 
-    assert_eq!(
+    assert_f32_eq!(
         (Speed::from_meters_per_second(2.0) * two_seconds).as_meters(),
         4.0
     );
-    assert_eq!(
+    assert_f32_eq!(
         (Distance::from_meters(4.0) / two_seconds).as_meters_per_second(),
         2.0
     );
-    assert_eq!(
+    assert_f32_eq!(
         (Power::from_watts(100.0) * two_seconds).as_watt_hours(),
         200.0 / 3600.0
     );

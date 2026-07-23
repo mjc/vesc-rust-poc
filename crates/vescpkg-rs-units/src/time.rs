@@ -37,7 +37,9 @@ impl SampleRate {
 // bits. Converting a large counter therefore rounds away some low-order ticks.
 // That is intentional here: VESC exposes this boundary as floating-point
 // seconds, and callers needing exact timing retain the typed `SystemTicks`.
-#[allow(clippy::cast_precision_loss)]
 pub(crate) fn system_ticks_as_secs_f32(ticks: SystemTicks) -> f32 {
-    ticks.as_ticks() as f32 / SYSTEM_TICK_RATE_HZ as f32
+    let [low0, low1, high0, high1] = ticks.as_ticks().to_le_bytes();
+    let low = f32::from(u16::from_le_bytes([low0, low1]));
+    let high = f32::from(u16::from_le_bytes([high0, high1]));
+    (high * 65_536.0 + low) / 10_000.0
 }

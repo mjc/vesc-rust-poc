@@ -14,10 +14,6 @@
 // Unit conversions in this crate are deliberately checked against exact
 // expected results. A tolerance would let an accidentally changed conversion
 // constant pass, so the test build keeps exact floating-point comparisons.
-#![cfg_attr(
-    test,
-    expect(clippy::float_cmp, reason = "tests verify exact conversion results")
-)]
 //!
 //! # Unit Boundary
 //!
