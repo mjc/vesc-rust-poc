@@ -220,7 +220,7 @@ pub use imu::{
 };
 pub use init::{PackageStart, PackageStartError};
 pub use lifecycle_core::AppDataSendError;
-pub use motor::{MotorOutput, MotorTelemetry};
+pub use motor::{MotorOutput, MotorReleaseOutcome, MotorTelemetry};
 pub use nvm::{Nvm, NvmCapacity, NvmError, NvmOffset};
 #[cfg(feature = "alloc")]
 pub use packet::OwnedPacketRegistration;
@@ -295,14 +295,15 @@ pub mod prelude {
         GnssSnapshot, Gpio, Imu, ImuReadCallback, ImuReadCallbackError, ImuReadCallbackLease,
         ImuReadHandler, InputError, LbmExtension, LispArgs, LispContextId, LispFlatValue,
         LispIntegerError, LispList, LispListError, LispMessageError, LispProcess, LispSymbol,
-        LispValue, LogError, MotorOutput, MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset,
-        PackageStartError, PacketCodec, PacketError, PacketHandler, Plot, PlotError, PpmSnapshot,
-        PwmCallbackError, PwmCallbackHandler, PwmCallbackLease, RemoteInput, RemoteInputSnapshot,
-        SemaphoreWaitOutcome, SettingsError, ShutdownInhibit, StatefulCustomConfigCallback,
-        StatefulLbmExtension, StatelessFirmwareThread, StatelessThreadContext, Terminal,
-        TerminalError, TerminalHandler, TerminalRegistration, ThreadContext, ThreadError,
-        ThreadName, ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimeoutSnapshot,
-        TimerInstant, TypedPwmCallbackLease, Uart, UartError, UartLease,
+        LispValue, LogError, MotorOutput, MotorReleaseOutcome, MotorTelemetry, Nvm, NvmCapacity,
+        NvmError, NvmOffset, PackageStartError, PacketCodec, PacketError, PacketHandler, Plot,
+        PlotError, PpmSnapshot, PwmCallbackError, PwmCallbackHandler, PwmCallbackLease,
+        RemoteInput, RemoteInputSnapshot, SemaphoreWaitOutcome, SettingsError, ShutdownInhibit,
+        StatefulCustomConfigCallback, StatefulLbmExtension, StatelessFirmwareThread,
+        StatelessThreadContext, Terminal, TerminalError, TerminalHandler, TerminalRegistration,
+        ThreadContext, ThreadError, ThreadName, ThreadSpec, ThreadWorkingAreaSize,
+        ThreadWorkingAreaSizeError, TimeoutSnapshot, TimerInstant, TypedPwmCallbackLease, Uart,
+        UartError, UartLease,
     };
 }
 

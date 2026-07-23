@@ -21,6 +21,38 @@ use crate::units::{Charge, Current, Distance, Energy, Power, Rpm, Speed, Tempera
 use crate::units::{Frequency, OdometerMeters, Ratio, SignedRatio, VescSeconds};
 use crate::{PwmCallback, PwmCallbackError, PwmCallbackLease};
 
+/// Outcome of waiting for firmware to release motor output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MotorReleaseOutcome {
+    /// The motor output was released before the timeout elapsed.
+    Released,
+    /// The timeout elapsed before the motor output was released.
+    TimedOut,
+}
+
+impl MotorReleaseOutcome {
+    /// Return whether firmware reported that motor output was released.
+    #[must_use]
+    pub const fn is_released(self) -> bool {
+        matches!(self, Self::Released)
+    }
+
+    /// Return whether the release wait elapsed without releasing output.
+    #[must_use]
+    pub const fn is_timed_out(self) -> bool {
+        matches!(self, Self::TimedOut)
+    }
+}
+
+#[cfg(not(test))]
+fn motor_release_outcome(released: bool) -> MotorReleaseOutcome {
+    if released {
+        MotorReleaseOutcome::Released
+    } else {
+        MotorReleaseOutcome::TimedOut
+    }
+}
+
 #[cfg(not(test))]
 const CFG_PARAM_L_CURRENT_MAX: core::ffi::c_int = 0;
 #[cfg(not(test))]
@@ -1101,7 +1133,7 @@ pub trait MotorOutput: private::MotorOutput {
     /// Release the motor output.
     fn release_motor(&self);
     /// Wait up to `timeout` for the motor output to be released.
-    fn wait_for_motor_release(&self, timeout: VescSeconds) -> bool;
+    fn wait_for_motor_release(&self, timeout: VescSeconds) -> MotorReleaseOutcome;
 }
 
 /// High-level motor-control API built on a binding implementation.
@@ -1736,8 +1768,8 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
     }
 
     /// Wait until the motor output has been released.
-    pub fn wait_for_motor_release(&self, timeout: VescSeconds) -> bool {
-        self.bindings.wait_for_motor_release(timeout)
+    pub fn wait_for_motor_release(&self, timeout: VescSeconds) -> MotorReleaseOutcome {
+        motor_release_outcome(self.bindings.wait_for_motor_release(timeout))
     }
 }
 
@@ -1833,7 +1865,7 @@ impl<B: MotorControlBindings> MotorOutput for MotorControlApi<B> {
         MotorControlApi::release_motor(self);
     }
 
-    fn wait_for_motor_release(&self, timeout: VescSeconds) -> bool {
+    fn wait_for_motor_release(&self, timeout: VescSeconds) -> MotorReleaseOutcome {
         MotorControlApi::wait_for_motor_release(self, timeout)
     }
 }
