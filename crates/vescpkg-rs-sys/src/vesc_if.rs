@@ -233,6 +233,25 @@ impl VescIfCapabilities {
 
     /// Probe controller input support as an optional subsystem.
     pub const fn inputs(self) -> Result<VescIfCapability, AbiError> {
+        match self.inputs_slots(false) {
+            Ok(()) => Ok(VescIfCapability {
+                subsystem: VescIfSubsystem::Inputs,
+            }),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Require controller input support for a constructor that cannot operate without it.
+    pub const fn require_inputs(self) -> Result<VescIfCapability, AbiError> {
+        match self.inputs_slots(true) {
+            Ok(()) => Ok(VescIfCapability {
+                subsystem: VescIfSubsystem::Inputs,
+            }),
+            Err(error) => Err(error),
+        }
+    }
+
+    const fn inputs_slots(self, required: bool) -> Result<(), AbiError> {
         let checks = [
             VescIfAbi::GET_REMOTE_STATE,
             VescIfAbi::TIMEOUT_RESET,
@@ -241,14 +260,17 @@ impl VescIfCapabilities {
         ];
         let mut index = 0;
         while index < checks.len() {
-            if let Err(error) = self.presence.optional("inputs", checks[index]) {
+            let result = if required {
+                self.presence.require("inputs", checks[index])
+            } else {
+                self.presence.optional("inputs", checks[index])
+            };
+            if let Err(error) = result {
                 return Err(error);
             }
             index += 1;
         }
-        Ok(VescIfCapability {
-            subsystem: VescIfSubsystem::Inputs,
-        })
+        Ok(())
     }
 
     /// Probe CAN support as an optional subsystem.

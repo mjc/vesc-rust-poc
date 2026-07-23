@@ -1023,6 +1023,11 @@ impl FirmwareCapabilities {
         self.inner.inputs().map(|_| FirmwareInputs::new())
     }
 
+    /// Require controller input support for a constructor that cannot operate without it.
+    pub fn require_inputs(self) -> Result<FirmwareInputs, AbiError> {
+        self.inner.require_inputs().map(|_| FirmwareInputs::new())
+    }
+
     /// Construct NVM with a separately discovered byte capacity.
     pub fn nvm_with_capacity(self, capacity: NvmCapacity) -> Result<Nvm, AbiError> {
         self.inner.nvm().map(|_| Nvm::with_capacity(capacity))
@@ -1181,6 +1186,14 @@ mod tests {
         };
         assert_eq!(error.capability(), "inputs");
         assert_eq!(error.slot(), VescIfAbi::GET_REMOTE_STATE);
+        assert_eq!(
+            capabilities.require_inputs().unwrap_err().capability(),
+            "inputs"
+        );
+        assert_eq!(
+            capabilities.require_inputs().unwrap_err().slot(),
+            VescIfAbi::GET_REMOTE_STATE
+        );
         assert_eq!(capabilities.revision(), Stm32AbiRevision::UnknownCompatible);
         assert_eq!(
             capabilities.require_settings().unwrap_err().capability(),
