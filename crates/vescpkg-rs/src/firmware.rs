@@ -101,6 +101,7 @@ pub unsafe trait PackageAppDataCallback: AppDataHandler + Sized {
 
     /// Return the runtime state type required by this callback, when stateful.
     #[doc(hidden)]
+    #[must_use]
     fn state_type() -> Option<core::any::TypeId> {
         Some(core::any::TypeId::of::<Self::State>())
     }
@@ -108,11 +109,13 @@ pub unsafe trait PackageAppDataCallback: AppDataHandler + Sized {
     /// Return state access rooted in this package's loader identity.
     #[doc(hidden)]
     #[cfg(target_arch = "arm")]
+    #[must_use]
     fn state_source() -> crate::PackageStateAccess<'static, Self::State>;
 
     /// Return host-test state access rooted in the package runtime store.
     #[doc(hidden)]
     #[cfg(not(target_arch = "arm"))]
+    #[must_use]
     fn state_source() -> crate::PackageStateAccess<'static, Self::State> {
         crate::PackageStateAccess::runtime(
             <Self::State as crate::PackageRuntimeState>::runtime_store(),
@@ -181,11 +184,11 @@ macro_rules! firmware_stateful_app_data_callback {
     };
 }
 
-/// Convert LispBM extension callback arguments into typed values.
+/// Convert `LispBM` extension callback arguments into typed values.
 ///
 /// # Safety
 ///
-/// `args` must be null with `arg_count == 0` or point to `arg_count` LispBM
+/// `args` must be null with `arg_count == 0` or point to `arg_count` `LispBM`
 /// values that stay valid for the returned borrow.
 pub(crate) unsafe fn lbm_args<'a>(args: *mut u32, arg_count: u32) -> Option<&'a [LbmValue]> {
     let len = usize::try_from(arg_count).ok()?;
@@ -242,11 +245,11 @@ impl CustomConfigGetBuffer<'_> {
 
     /// Write serialized config bytes into the firmware-provided output buffer.
     fn write<const LEN: usize>(&mut self, payload: ConfigBytes<'_, LEN>) -> c_int {
-        if payload.as_bytes().len() > self.0.0.len() {
+        let Some(destination) = self.0.0.get_mut(..payload.as_bytes().len()) else {
             return 0;
-        }
-        self.0.0[..payload.as_bytes().len()].copy_from_slice(payload.as_bytes());
-        payload.as_bytes().len() as c_int
+        };
+        destination.copy_from_slice(payload.as_bytes());
+        c_int::try_from(payload.as_bytes().len()).unwrap_or(c_int::MAX)
     }
 }
 
@@ -272,6 +275,10 @@ pub trait StatefulCustomConfigCallback<const LEN: usize> {
     fn current_config(state: &Self::State) -> ConfigBytes<'_, LEN>;
 
     /// Store config bytes borrowed for the duration of this callback.
+    ///
+    /// # Errors
+    ///
+    /// Returns the package-specific error when the configuration is rejected.
     fn set_config(state: &mut Self::State, config: ConfigBytes<'_, LEN>)
     -> Result<(), Self::Error>;
 
@@ -290,11 +297,13 @@ pub unsafe trait PackageCustomConfigCallback<const LEN: usize>:
     /// Return state access rooted in this package's loader identity.
     #[doc(hidden)]
     #[cfg(target_arch = "arm")]
+    #[must_use]
     fn state_source() -> crate::PackageStateAccess<'static, Self::State>;
 
     /// Return host-test state access rooted in the package runtime store.
     #[doc(hidden)]
     #[cfg(not(target_arch = "arm"))]
+    #[must_use]
     fn state_source() -> crate::PackageStateAccess<'static, Self::State> {
         crate::PackageStateAccess::runtime(
             <Self::State as crate::PackageRuntimeState>::runtime_store(),
@@ -375,7 +384,7 @@ impl CustomConfigXmlOut {
     /// Return XML bytes to firmware by pointer and byte count.
     fn return_xml(self, xml: ConfigXml<'static>) -> c_int {
         unsafe { *self.0.as_ptr() = xml.as_bytes().as_ptr().cast_mut() };
-        xml.as_bytes().len() as c_int
+        c_int::try_from(xml.as_bytes().len()).unwrap_or(c_int::MAX)
     }
 }
 
@@ -448,7 +457,7 @@ unsafe fn register_custom_config_callbacks_from_image<B>(
         resolve_custom_config_get_callback(image, get_cfg),
         resolve_custom_config_set_callback(image, set_cfg),
         resolve_custom_config_xml_callback(image, get_cfg_xml),
-    )
+    );
 }
 
 /// Define package-local custom-config callback symbols backed by package state.
@@ -500,7 +509,6 @@ macro_rules! firmware_stateful_custom_config_callbacks {
 
         unsafe impl $crate::__macro_support::PackageCustomConfigCallback<$len> for $callback {
             #[cfg(target_arch = "arm")]
-            #[inline(always)]
             fn state_source() -> $crate::PackageStateAccess<
                 'static,
                 <$callback as $crate::StatefulCustomConfigCallback<$len>>::State,
@@ -526,7 +534,6 @@ macro_rules! firmware_stateful_custom_config_callbacks {
                 }
             }
 
-            #[inline(always)]
             fn image_addresses() -> (usize, usize, usize) {
                 (
                     $get_name as *const () as usize,
@@ -555,10 +562,10 @@ macro_rules! firmware_stateful_custom_config_callbacks {
 #[macro_export]
 macro_rules! firmware_package_program_address {
     ($symbol:path) => {{
-        let _ = $symbol;
         unsafe extern "C" {
             fn __vescpkg_program_address() -> u32;
         }
+        let _ = $symbol;
         // SAFETY: `package_start!` defines this package-local helper with the
         // declared C ABI and return type.
         $crate::__macro_support::PackageProgramAddress::new(unsafe { __vescpkg_program_address() })
@@ -568,6 +575,7 @@ macro_rules! firmware_package_program_address {
 /// Macro implementation hook for scoped firmware callback state access.
 #[doc(hidden)]
 #[cfg(not(test))]
+#[must_use]
 pub unsafe fn __firmware_package_state_ptr<T: 'static>(
     program: crate::PackageProgramAddress,
 ) -> Option<NonNull<T>> {
@@ -794,8 +802,13 @@ mod tests {
     #[test]
     fn app_data_packet_accepts_nonempty_packet() {
         let mut bytes = [3_u8, 1, 4];
-        let packet = unsafe { app_data_packet(bytes.as_mut_ptr(), bytes.len() as u32) }
-            .expect("valid packet");
+        let packet = unsafe {
+            app_data_packet(
+                bytes.as_mut_ptr(),
+                u32::try_from(bytes.len()).unwrap_or(u32::MAX),
+            )
+        }
+        .expect("valid packet");
 
         assert_eq!(packet.as_bytes(), &[3, 1, 4]);
     }
@@ -816,7 +829,7 @@ mod tests {
     fn custom_config_xml_out_writes_pointer_and_len() {
         let xml = b"<xml/>";
         let mut out = ptr::null_mut();
-        let output = CustomConfigXmlOut::new(&mut out).expect("xml output");
+        let output = CustomConfigXmlOut::new(&raw mut out).expect("xml output");
 
         assert_eq!(output.return_xml(ConfigXml::new(xml)), 6);
         assert_eq!(out, xml.as_ptr().cast_mut());
@@ -882,7 +895,7 @@ mod tests {
                 get_cfg,
                 set_cfg,
                 get_cfg_xml,
-            )
+            );
         };
         assert_eq!(bindings.custom_config_register_calls.get(), 1);
         assert_eq!(

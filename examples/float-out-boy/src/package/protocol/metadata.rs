@@ -36,7 +36,7 @@ pub(in crate::package) struct FloatOutBoyInfoResponse {
 
 impl FloatOutBoyInfoResponse {
     pub(in crate::package) fn as_bytes(&self) -> &[u8] {
-        &self.bytes[..self.len]
+        self.bytes.get(..self.len).unwrap_or_default()
     }
 }
 
@@ -166,6 +166,10 @@ const fn build_float_out_boy_realtime_data_ids_response()
     bytes
 }
 
+#[expect(
+    clippy::indexing_slicing,
+    reason = "the offset is checked against the fixed input length before indexing"
+)]
 const fn float_out_boy_realtime_ids_push_id<const N: usize>(
     bytes: &mut [u8; FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_LEN],
     index: usize,
@@ -173,20 +177,34 @@ const fn float_out_boy_realtime_ids_push_id<const N: usize>(
 ) -> usize {
     let mut next = float_out_boy_realtime_ids_push_u8(bytes, index, N as u8);
     let mut offset = 0;
+    // This packet is materialized at compile time so the embedded package owns
+    // every byte. A `for` loop would call iterator trait methods, which stable
+    // Rust does not yet allow in a `const fn`, so bounded indexing is the
+    // simplest const-compatible form.
     while offset < N {
+        // `offset < N` proves that this array access exists. Direct indexing is
+        // necessary because stable Rust does not yet permit `get` in a `const fn`.
         next = float_out_boy_realtime_ids_push_u8(bytes, next, value[offset]);
         offset += 1;
     }
     next
 }
 
+#[expect(
+    clippy::indexing_slicing,
+    reason = "the bounds check makes const-compatible indexing non-panicking"
+)]
 const fn float_out_boy_realtime_ids_push_u8(
     bytes: &mut [u8; FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_LEN],
     index: usize,
     value: u8,
 ) -> usize {
-    bytes[index] = value;
-    index + 1
+    if index < FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_LEN {
+        // Stable Rust cannot call `get_mut` from this compile-time packet
+        // builder. The explicit check proves that the index is in bounds.
+        bytes[index] = value;
+    }
+    index.saturating_add(1)
 }
 
 fn float_out_boy_response_push_bytes(bytes: &mut [u8], index: &mut usize, values: &[u8]) {

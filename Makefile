@@ -6,24 +6,7 @@ ARM_TARGET := thumbv7em-none-eabihf
 CLIPPY_FLAGS := -D warnings
 CLIPPY_PEDANTIC_FLAGS := \
 	$(CLIPPY_FLAGS) \
-	-W clippy::pedantic \
-	-A clippy::missing_errors_doc \
-	-A clippy::missing_panics_doc \
-	-A clippy::must_use_candidate \
-	-A clippy::return_self_not_must_use \
-	-A clippy::cast_possible_truncation \
-	-A clippy::cast_possible_wrap \
-	-A clippy::cast_sign_loss \
-	-A clippy::doc_markdown \
-	-A clippy::inline_always \
-	-A clippy::ptr_cast_constness \
-	-A clippy::needless_for_each \
-	-A clippy::borrow_as_ptr \
-	-A clippy::ref_as_ptr \
-	-A clippy::redundant_closure_for_method_calls \
-	-A clippy::float_cmp \
-	-A clippy::semicolon_if_nothing_returned \
-	-A clippy::items_after_statements
+	-W clippy::pedantic
 
 DEVICE_FLAGS :=
 ifdef DEVICE_NAME

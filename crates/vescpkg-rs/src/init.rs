@@ -115,7 +115,7 @@ pub enum PackageStartError {
     CustomConfigTooLarge,
     /// Extension registration requires a retained package image.
     PackageNotRetained,
-    /// Firmware rejected at least one required LispBM extension.
+    /// Firmware rejected at least one required `LispBM` extension.
     ExtensionRegistrationIncomplete,
 }
 
@@ -171,12 +171,10 @@ impl LoadedAppDataCallback {
     /// `third_party/float-out-boy/src/main.c:2455-2456`; VESC validates and stores the
     /// callback at `third_party/vesc/comm/commands.c:1820-1828`.
     #[cfg(not(test))]
-    #[inline(always)]
     pub fn register(self) -> Result<(), PackageStartError> {
         self.register_with_bindings(&crate::bindings::RealBindings)
     }
 
-    #[inline(always)]
     fn register_with_bindings<B: crate::bindings::AppDataBindings>(
         self,
         bindings: &B,
@@ -236,12 +234,20 @@ impl<'info> PackageStart<'info> {
     /// C map: the loader stores this callback in `LibInfo.stop_fun` at
     /// `third_party/float-out-boy/vesc_pkg_lib/vesc_c_if.h:675-677`; the matching
     /// package state is later exposed through `ARG` at `:698-699`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PackageStartError`] when loader metadata is unavailable.
     pub fn install_stop_hook(&mut self) -> Result<(), PackageStartError> {
         install_stop_hook(self.info.cast())?;
         Ok(())
     }
 
     /// Allocate loader-owned package state and publish it for callbacks.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PackageStartError`] when allocation or state installation fails.
     #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     pub fn install_runtime_state<T: crate::PackageRuntimeState>(
         &mut self,
@@ -253,6 +259,10 @@ impl<'info> PackageStart<'info> {
     }
 
     /// Allocate loader-owned package state, publish it, then initialize it in place.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PackageStartError`] when state installation or lookup fails.
     #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     pub fn install_runtime_state_with<T: crate::PackageRuntimeState>(
         &mut self,
@@ -339,6 +349,7 @@ impl<'info> PackageStart<'info> {
     /// for allocation and thread-spawn failures (`src/main.c:2664-2702`), so a
     /// failed Rust start must both run its stop hook and release the loader slot.
     #[doc(hidden)]
+    #[must_use]
     pub fn finish_start(mut self, started: bool) -> bool {
         // VESC_IF can add LispBM extensions but cannot remove them. Once a
         // handler is published, keep its native image and runtime alive until
@@ -375,6 +386,10 @@ impl<'info> PackageStart<'info> {
     }
 
     /// Start and retain package-owned firmware threads.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PackageStartError`] when a thread cannot be spawned or retained.
     #[cfg(not(test))]
     pub fn spawn_threads<T: crate::PackageRuntimeState, const N: usize>(
         &mut self,
@@ -409,9 +424,9 @@ impl<'info> PackageStart<'info> {
         if T::runtime_store().install_threads(state, &mut threads) {
             Ok(())
         } else {
-            threads
-                .expect("failed installation retains the thread group")
-                .terminate_reverse(&crate::thread::ThreadApi::new(bindings));
+            if let Some(threads) = threads {
+                threads.terminate_reverse(&crate::thread::ThreadApi::new(bindings));
+            }
             Err(PackageStartError::ThreadsAlreadyInstalled)
         }
     }
@@ -471,7 +486,6 @@ impl<'info> PackageStart<'info> {
     ///
     /// C map: Float Out Boy's `on_command_received` is a package-local function at
     /// `third_party/float-out-boy/src/main.c:2142-2143` and is registered at `:2456`.
-    #[inline(always)]
     pub fn app_data_callback<T: crate::__macro_support::PackageAppDataCallback>(
         &mut self,
     ) -> Option<LoadedAppDataCallback> {
@@ -494,15 +508,17 @@ impl<'info> PackageStart<'info> {
     /// C map: Float Out Boy registers `imu_ref_callback` at
     /// `third_party/float-out-boy/src/main.c:2454`; VESC stores and invokes it through
     /// `third_party/vesc/imu/imu.c:581-582` and `:704-727`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PackageStartError`] when the image, state, or callback slot is invalid.
     #[cfg(not(test))]
-    #[inline(always)]
     pub fn register_imu_read_callback<T: crate::__macro_support::PackageImuReadCallback>(
         &mut self,
     ) -> Result<(), PackageStartError> {
         self.register_imu_read_callback_with_bindings::<T, _>(&crate::bindings::RealBindings)
     }
 
-    #[inline(always)]
     fn register_imu_read_callback_with_bindings<T, B>(
         &mut self,
         bindings: &B,
@@ -542,8 +558,11 @@ impl<'info> PackageStart<'info> {
     /// C map: Float Out Boy registers custom config and then `on_command_received` at
     /// `third_party/float-out-boy/src/main.c:2455-2456`. VESC stores the app-data
     /// callback at `third_party/vesc/comm/commands.c:1820-1828`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PackageStartError`] when callback resolution or registration fails.
     #[cfg(not(test))]
-    #[inline(always)]
     pub fn register_callbacks<C, A, const LEN: usize>(&mut self) -> Result<(), PackageStartError>
     where
         C: crate::__macro_support::PackageCustomConfigCallback<LEN>,
@@ -552,7 +571,6 @@ impl<'info> PackageStart<'info> {
         self.register_callbacks_with_bindings::<C, A, LEN, _>(&crate::bindings::RealBindings)
     }
 
-    #[inline(always)]
     fn register_callbacks_with_bindings<C, A, const LEN: usize, B>(
         &mut self,
         bindings: &B,
@@ -627,6 +645,13 @@ impl<'info> PackageStart<'info> {
     /// Firmware may accept only part of the table. The returned report exposes
     /// that outcome, and any accepted handler pins this native image until the
     /// package-wide Lisp restart.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PackageStartError`] when the package image is unavailable or
+    /// not retained, or when a stateful descriptor names the wrong state type.
+    /// Firmware rejection is reported in the returned
+    /// [`crate::ExtensionRegistration`], including when it accepts no descriptors.
     #[cfg(all(not(test), target_arch = "arm"))]
     pub fn register_extensions<const N: usize>(
         &mut self,
@@ -943,7 +968,7 @@ mod tests {
             base_addr: 0,
         };
 
-        assert_eq!(init_for_tests(&mut info), Ok(()));
+        assert_eq!(init_for_tests(&raw mut info), Ok(()));
 
         let stop_fun = info.stop_fun.expect("stop hook");
         unsafe {

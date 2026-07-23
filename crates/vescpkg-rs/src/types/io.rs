@@ -13,6 +13,10 @@ impl ThreadPriority {
     pub const MAX: i8 = 5;
 
     /// Create a checked thread priority.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThreadPriorityError`] when `priority` is outside the supported range.
     pub const fn try_new(priority: i8) -> Result<Self, ThreadPriorityError> {
         if priority >= Self::MIN && priority <= Self::MAX {
             Ok(Self(priority))
@@ -22,6 +26,7 @@ impl ThreadPriority {
     }
 
     /// Encode the priority for the firmware boundary.
+    #[must_use]
     pub const fn as_i8(self) -> i8 {
         self.0
     }
@@ -35,6 +40,7 @@ pub struct ThreadPriorityError {
 
 impl ThreadPriorityError {
     /// Return the rejected priority.
+    #[must_use]
     pub const fn value(self) -> i8 {
         self.value
     }
@@ -57,6 +63,10 @@ macro_rules! nonzero_u32_token {
 
         impl $name {
             /// Create a checked non-zero token.
+            ///
+            /// # Errors
+            ///
+            /// Returns an error when `value` is zero.
             pub const fn try_new(value: u32) -> Result<Self, $error> {
                 if value == 0 {
                     Err($error { value })

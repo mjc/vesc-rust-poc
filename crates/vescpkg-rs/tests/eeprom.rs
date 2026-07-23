@@ -1,6 +1,5 @@
-#![cfg(feature = "test-support")]
-
 //! Integration tests for typed custom-EEPROM byte images.
+#![cfg(feature = "test-support")]
 
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{CustomEepromAddress, EepromWord};
@@ -39,5 +38,8 @@ fn byte_image_operations_report_missing_reads_and_failed_writes() {
 fn eeprom_words_round_trip_supported_scalar_codecs() {
     assert_eq!(EepromWord::from_u32(0xfeed_beef).to_u32(), 0xfeed_beef);
     assert_eq!(EepromWord::from_i32(-42).to_i32(), -42);
-    assert_eq!(EepromWord::from_f32(12.5).to_f32(), 12.5);
+    assert_eq!(
+        EepromWord::from_f32(12.5).to_f32().to_bits(),
+        12.5_f32.to_bits()
+    );
 }

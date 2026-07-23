@@ -12,16 +12,43 @@
 #![forbid(unused_extern_crates)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(clippy::missing_safety_doc)]
+// Embedded callers cannot recover from an unwind. Raw wrappers therefore use
+// inert typed values when a C function-table slot is unexpectedly absent.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::arithmetic_side_effects,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::panic,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unwrap_used
+    )
+)]
+// The sys tests emulate a C firmware table and verify the exact values that
+// cross that ABI. Exact equality is intentional here: using a tolerance could
+// conceal an incorrect field, slot, or bit pattern.
+#![cfg_attr(
+    test,
+    expect(clippy::float_cmp, reason = "tests verify exact C ABI values")
+)]
 
 #[cfg(test)]
 extern crate std;
 
 mod image;
+// This module is generated from the C header so tests can compare the Rust ABI
+// with C's layout. Some declarations are intentionally not called from Rust.
 #[allow(dead_code)]
 mod c_vesc_if {
     include!(concat!(env!("OUT_DIR"), "/c_vesc_if.rs"));
 }
 
+// bindgen translates the C header mechanically. C permits names and unchecked
+// pointer operations that idiomatic Rust rejects, and editing generated output
+// would be overwritten on the next build. Keep those exceptions inside this
+// private module; every handwritten wrapper around it remains fully linted.
 #[allow(
     clippy::all,
     dead_code,

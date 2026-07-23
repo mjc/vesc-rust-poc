@@ -9,11 +9,13 @@ pub struct AdcVoltage(Voltage);
 
 impl AdcVoltage {
     /// Wrap a generic voltage as a firmware ADC pin voltage.
+    #[must_use]
     pub const fn new(voltage: Voltage) -> Self {
         Self(voltage)
     }
 
     /// Return the typed voltage without erasing it to a primitive.
+    #[must_use]
     pub const fn voltage(self) -> Voltage {
         self.0
     }
@@ -26,11 +28,13 @@ pub struct AdcDecodedLevel(Ratio);
 
 impl AdcDecodedLevel {
     /// Wrap a checked normalized ratio as a decoded ADC level.
+    #[must_use]
     pub const fn new(level: Ratio) -> Self {
         Self(level)
     }
 
     /// Return the typed ratio without erasing it to a primitive.
+    #[must_use]
     pub const fn ratio(self) -> Ratio {
         self.0
     }
@@ -43,11 +47,13 @@ pub struct BrakeLeverLevel(Ratio);
 
 impl BrakeLeverLevel {
     /// Wrap a checked normalized ratio as a brake lever/input level.
+    #[must_use]
     pub const fn new(level: Ratio) -> Self {
         Self(level)
     }
 
     /// Return the typed input level without erasing it to a primitive.
+    #[must_use]
     pub const fn ratio(self) -> Ratio {
         self.0
     }

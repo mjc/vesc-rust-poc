@@ -19,7 +19,8 @@ use super::{
     mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm, remote_state,
     store_eeprom_word, vesc_clear_app_data_handler, vesc_mutex_create, vesc_mutex_lock,
     vesc_mutex_unlock, vesc_sem_create, vesc_send_app_data, vesc_set_app_data_handler,
-    vesc_sleep_us, vesc_system_time_ticks, vesc_thread_set_priority, wipe_nvm, write_nvm,
+    vesc_sleep_us, vesc_system_time_seconds, vesc_system_time_ticks,
+    vesc_system_time_ticks_from_seconds, vesc_thread_set_priority, wipe_nvm, write_nvm,
 };
 
 struct SyncCounter(Cell<usize>);
@@ -276,7 +277,7 @@ extern "C" fn stub_lbm_add_extension(
 extern "C" fn stub_lbm_dec_as_i32(value: u32) -> i32 {
     LBM_DEC_AS_I32.inc();
     LAST_LBM_VALUE.set(value);
-    value as i32
+    value.cast_signed()
 }
 
 extern "C" fn stub_lbm_dec_as_float(value: u32) -> f32 {
@@ -287,7 +288,7 @@ extern "C" fn stub_lbm_dec_as_float(value: u32) -> f32 {
 
 extern "C" fn stub_lbm_enc_i(value: i32) -> u32 {
     LBM_ENC_I.inc();
-    value as u32 + 1
+    value.cast_unsigned() + 1
 }
 
 extern "C" fn stub_lbm_dec_char(value: u32) -> u8 {
@@ -295,7 +296,7 @@ extern "C" fn stub_lbm_dec_char(value: u32) -> u8 {
 }
 
 extern "C" fn stub_lbm_enc_char(value: u8) -> u32 {
-    value as u32
+    u32::from(value)
 }
 
 extern "C" fn stub_lbm_cons(_car: u32, _cdr: u32) -> u32 {
@@ -345,11 +346,11 @@ extern "C" fn stub_store_eeprom_var(word: *mut super::EepromVar, address: c_int)
 }
 
 extern "C" fn stub_can_get_status_msg_index(_index: c_int) -> *mut CanStatusMsg {
-    &CAN_STATUS as *const CanStatusMsg as *mut CanStatusMsg
+    (&raw const CAN_STATUS).cast_mut()
 }
 
 extern "C" fn stub_mc_gnss() -> *mut GnssData {
-    &GNSS as *const GnssData as *mut GnssData
+    (&raw const GNSS).cast_mut()
 }
 
 extern "C" fn stub_get_remote_state() -> RemoteState {
@@ -456,27 +457,27 @@ extern "C" fn stub_mutex_unlock(mutex: *mut c_void) {
 
 extern "C" fn stub_io_set_mode(pin: c_uint, mode: c_uint) -> bool {
     IO_SET_MODE.inc();
-    LAST_PIN.set(pin as c_int);
-    LAST_MODE.set(mode as c_int);
+    LAST_PIN.set(pin.cast_signed());
+    LAST_MODE.set(mode.cast_signed());
     true
 }
 
 extern "C" fn stub_io_write(pin: c_uint, level: c_int) -> bool {
     IO_WRITE.inc();
-    LAST_PIN.set(pin as c_int);
+    LAST_PIN.set(pin.cast_signed());
     LAST_LEVEL.set(level);
     true
 }
 
 extern "C" fn stub_io_read(pin: c_uint) -> bool {
     IO_READ.inc();
-    LAST_PIN.set(pin as c_int);
+    LAST_PIN.set(pin.cast_signed());
     pin == 3
 }
 
 extern "C" fn stub_io_read_analog(pin: c_uint) -> f32 {
     IO_READ_ANALOG.inc();
-    LAST_PIN.set(pin as c_int);
+    LAST_PIN.set(pin.cast_signed());
     0.25 * pin as f32
 }
 
@@ -745,8 +746,7 @@ fn lbm_add_extension_with_table_base_uses_mock_when_base_matches_firmware_addr()
 }
 
 #[test]
-#[should_panic(expected = "required VESC_IF slot is unavailable")]
-fn lbm_add_extension_rejects_a_missing_required_slot() {
+fn lbm_add_extension_reports_a_missing_required_slot() {
     extern "C" fn handler(_: *mut u32, _: u32) -> u32 {
         0
     }
@@ -754,11 +754,11 @@ fn lbm_add_extension_rejects_a_missing_required_slot() {
     let mut table = populated_table();
     table.lbm_add_extension = None;
     with_table(&table, || unsafe {
-        let _ = lbm_add_extension_with_table_base(
+        assert!(!lbm_add_extension_with_table_base(
             VescIfAbi::BASE_ADDR.0 as u32,
             c"ext-test".as_ptr(),
             handler,
-        );
+        ));
     });
 }
 
@@ -819,13 +819,13 @@ fn lbm_string_decode_forwards_through_mock_table() {
 fn eeprom_helpers_forward_word_pointers_and_addresses() {
     with_populated_table(|| unsafe {
         let mut read_word = 0;
-        assert!(read_eeprom_word(&mut read_word, 7));
+        assert!(read_eeprom_word(&raw mut read_word, 7));
         assert_eq!(read_word, 0x1234_5678);
         assert_eq!(READ_EEPROM_VAR.get(), 1);
         assert_eq!(LAST_EEPROM_ADDRESS.get(), 7);
 
         let mut stored_word = 0xAABB_CCDD;
-        assert!(store_eeprom_word(&mut stored_word, 9));
+        assert!(store_eeprom_word(&raw mut stored_word, 9));
         assert_eq!(STORE_EEPROM_VAR.get(), 1);
         assert_eq!(LAST_EEPROM_ADDRESS.get(), 9);
         assert_eq!(LAST_EEPROM_WORD.get(), stored_word);
@@ -953,6 +953,18 @@ fn system_time_ticks_falls_back_to_seconds_when_tick_slot_is_absent_like_float_o
 }
 
 #[test]
+fn legacy_system_time_seconds_truncate_fractional_ticks() {
+    assert_eq!(vesc_system_time_ticks_from_seconds(1.234_56), 12_345);
+}
+
+#[test]
+fn legacy_system_time_seconds_saturate_out_of_range_values() {
+    assert_eq!(vesc_system_time_ticks_from_seconds(f32::NAN), 0);
+    assert_eq!(vesc_system_time_ticks_from_seconds(-1.0), 0);
+    assert_eq!(vesc_system_time_ticks_from_seconds(f32::INFINITY), u32::MAX);
+}
+
+#[test]
 fn sleep_us_forwards_through_mock_table() {
     with_populated_table(|| unsafe {
         vesc_sleep_us(1201);
@@ -963,13 +975,14 @@ fn sleep_us_forwards_through_mock_table() {
 }
 
 #[test]
-#[should_panic(expected = "required VESC_IF slot is unavailable")]
-fn missing_required_slot_fails_loudly() {
+fn missing_required_slots_return_inert_values() {
     let mut table = populated_table();
     table.sleep_us = None;
+    table.system_time = None;
 
     with_table(&table, || unsafe {
         vesc_sleep_us(1);
+        assert_eq!(vesc_system_time_seconds(), 0.0);
     });
 }
 

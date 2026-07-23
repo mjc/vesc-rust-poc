@@ -167,7 +167,7 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
             rust,
             "    crate::VescIfManifestEntry {{ slot: crate::VescIfSlot::new(\"{}\", {}), kind: crate::VescIfSlotKind::{} }},",
             slot.c_name,
-            slot.index * 4,
+            slot.index.saturating_mul(4),
             slot_kind_name(slot.kind)
         )
         .expect("write generated Rust");
@@ -180,7 +180,7 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
             rust,
             "    crate::VescIfSlot::new(\"{}\", {}),",
             slot.c_name,
-            slot.index * 4
+            slot.index.saturating_mul(4)
         )
         .expect("write generated Rust");
     }
@@ -215,7 +215,7 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
             "            {} => \"{}\", {},",
             slot.c_name.to_ascii_uppercase(),
             slot.c_name,
-            slot.index * 4
+            slot.index.saturating_mul(4)
         )
         .expect("write generated Rust");
     }

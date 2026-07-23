@@ -1,6 +1,6 @@
 #![cfg(feature = "test-support")]
 
-//! Integration tests for the safe LispBM value predicates.
+//! Integration tests for the safe `LispBM` value predicates.
 
 use vescpkg_rs::LispValue;
 use vescpkg_rs::test_support::FirmwareTest;

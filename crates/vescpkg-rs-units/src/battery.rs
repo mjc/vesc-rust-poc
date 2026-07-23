@@ -25,11 +25,13 @@ scalar_unit!(
 
 impl Energy {
     /// Create an energy value from joules.
+    #[must_use]
     pub const fn from_joules(value: f32) -> Self {
         Self::from_watt_hours(value / 3600.0)
     }
 
     /// Return this energy value in joules.
+    #[must_use]
     pub const fn as_joules(self) -> f32 {
         self.as_watt_hours() * 3600.0
     }
@@ -39,6 +41,7 @@ impl EnergyPerDistance {
     /// Create an efficiency value from watt-hours per kilometer.
     ///
     /// Uses the canonical conversion of 1 kilometer = 1000 meters.
+    #[must_use]
     pub const fn from_watt_hours_per_kilometer(value: f32) -> Self {
         Self::from_watt_hours_per_meter(value / METERS_PER_KILOMETER)
     }
@@ -46,6 +49,7 @@ impl EnergyPerDistance {
     /// Return this efficiency value in watt-hours per kilometer.
     ///
     /// Uses the canonical conversion of 1 kilometer = 1000 meters.
+    #[must_use]
     pub const fn as_watt_hours_per_kilometer(self) -> f32 {
         self.as_watt_hours_per_meter() * METERS_PER_KILOMETER
     }
@@ -53,6 +57,7 @@ impl EnergyPerDistance {
     /// Create an efficiency value from watt-hours per mile.
     ///
     /// Uses the international mile conversion of 1 mile = 1609.344 meters.
+    #[must_use]
     pub const fn from_watt_hours_per_mile(value: f32) -> Self {
         Self::from_watt_hours_per_meter(value / METERS_PER_MILE)
     }
@@ -60,6 +65,7 @@ impl EnergyPerDistance {
     /// Return this efficiency value in watt-hours per mile.
     ///
     /// Uses the international mile conversion of 1 mile = 1609.344 meters.
+    #[must_use]
     pub const fn as_watt_hours_per_mile(self) -> f32 {
         self.as_watt_hours_per_meter() * METERS_PER_MILE
     }

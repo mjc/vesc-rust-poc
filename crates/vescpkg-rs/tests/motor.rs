@@ -1,5 +1,5 @@
-#![cfg(feature = "test-support")]
 //! Integration tests for typed motor telemetry.
+#![cfg(feature = "test-support")]
 
 use vescpkg_rs::prelude::{
     AudioChannel, AudioFrequency, AudioVoltage, Current, FirmwareFaultCode, Frequency,
@@ -30,17 +30,17 @@ fn foc_haptic_tone_uses_typed_audio_values() {
         AudioVoltage::new(Voltage::from_volts(0.25)),
     ));
     assert_eq!(firmware.foc_tone_command_count(), 1);
-    assert_eq!(firmware.commanded_foc_tone_channel().as_u8(), 0);
     assert_eq!(
-        firmware
-            .commanded_foc_tone_frequency()
-            .frequency()
-            .as_hertz(),
-        440.0
+        firmware.commanded_foc_tone_channel(),
+        AudioChannel::try_new(0).unwrap()
     );
     assert_eq!(
-        firmware.commanded_foc_tone_voltage().voltage().as_volts(),
-        0.25
+        firmware.commanded_foc_tone_frequency(),
+        AudioFrequency::new(Frequency::from_hertz(440.0))
+    );
+    assert_eq!(
+        firmware.commanded_foc_tone_voltage(),
+        AudioVoltage::new(Voltage::from_volts(0.25))
     );
 }
 
@@ -52,19 +52,11 @@ fn input_current_limits_preserve_positive_magnitudes_for_haptic_saturation() {
     );
 
     assert_eq!(
-        firmware
-            .telemetry()
-            .drive_input_current_limit()
-            .current()
-            .as_amps(),
-        30.0
+        firmware.telemetry().drive_input_current_limit(),
+        InputCurrentLimit::new(Current::from_amps(30.0))
     );
     assert_eq!(
-        firmware
-            .telemetry()
-            .brake_input_current_limit()
-            .current()
-            .as_amps(),
-        15.0
+        firmware.telemetry().brake_input_current_limit(),
+        InputCurrentLimit::new(Current::from_amps(15.0))
     );
 }

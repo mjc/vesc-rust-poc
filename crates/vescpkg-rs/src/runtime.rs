@@ -242,7 +242,7 @@ const fn firmware_state_alignment<T>() -> usize {
 pub(crate) fn firmware_runtime_allocation_size<T>() -> Option<usize> {
     core::mem::size_of::<FirmwareRuntime>()
         .checked_add(core::mem::size_of::<*mut FirmwareRuntime>())?
-        .checked_add(firmware_state_alignment::<T>() - 1)?
+        .checked_add(firmware_state_alignment::<T>().saturating_sub(1))?
         .checked_add(if core::mem::size_of::<T>() == 0 {
             1
         } else {
@@ -261,11 +261,13 @@ pub(crate) unsafe fn firmware_runtime_state_pointer<T>(
     allocation: NonNull<core::ffi::c_void>,
 ) -> NonNull<T> {
     let after_runtime = allocation.as_ptr().cast::<u8>().wrapping_add(
-        core::mem::size_of::<FirmwareRuntime>() + core::mem::size_of::<*mut FirmwareRuntime>(),
+        core::mem::size_of::<FirmwareRuntime>()
+            .saturating_add(core::mem::size_of::<*mut FirmwareRuntime>()),
     );
     let align = firmware_state_alignment::<T>();
+    let alignment_mask = align.saturating_sub(1);
     let state = after_runtime
-        .map_addr(|address| (address + align - 1) & !(align - 1))
+        .map_addr(|address| address.saturating_add(alignment_mask) & !alignment_mask)
         .cast::<T>();
     let backlink = state.cast::<*mut FirmwareRuntime>().wrapping_sub(1);
     // SAFETY: the allocation-size calculation reserves this pointer-sized slot
@@ -507,14 +509,12 @@ impl<'a, T: Send + 'static> PackageStateAccess<'a, T> {
     }
 
     /// Run `f` with package state, preferring the runtime slot over loader state.
-    #[inline(always)]
     #[must_use]
     pub fn with<R>(&self, f: impl for<'state> FnOnce(&'state T) -> R) -> Option<R> {
         self.runtime.with_expected(self.expected_state()?, f)
     }
 
     /// Run `f` with mutable package state, preferring the runtime slot over loader state.
-    #[inline(always)]
     #[must_use]
     pub fn with_mut<R>(&self, f: impl for<'state> FnOnce(&'state mut T) -> R) -> Option<R> {
         self.runtime.with_expected_mut(self.expected_state()?, f)
@@ -532,6 +532,7 @@ impl<'a, T: Send + 'static> PackageStateAccess<'a, T> {
 #[cfg_attr(target_arch = "arm", allow(clippy::unused_self))]
 impl<T: Send + 'static> PackageStateStore<T> {
     /// Create an empty package-state slot.
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             #[cfg(not(target_arch = "arm"))]
@@ -878,8 +879,12 @@ impl<T: Send + 'static> PackageStateStore<T> {
         #[cfg(target_arch = "arm")]
         // SAFETY: stop receives the exact loader state pointer retained by the
         // runtime tombstone for the lifetime of the firmware process.
-        let runtime = unsafe { firmware_runtime_from_state(state) }
-            .expect("installed package state owns a runtime control block");
+        let Some(runtime) = (unsafe { firmware_runtime_from_state(state) }) else {
+            // The loader supplied a state pointer without the backlink written
+            // during installation. There is no state we can safely wait on or
+            // destroy, so stopping must remain inert.
+            return;
+        };
         #[cfg(target_arch = "arm")]
         let active = &runtime.active;
         while active.load(Ordering::Acquire) != 0 {
@@ -901,7 +906,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
         #[cfg(not(target_arch = "arm"))]
         self.phase.store(STOPPED, Ordering::Release);
         #[cfg(target_arch = "arm")]
-        finish_firmware_runtime(runtime)
+        finish_firmware_runtime(runtime);
     }
 
     /// Whether startup has installed state.
@@ -912,7 +917,6 @@ impl<T: Send + 'static> PackageStateStore<T> {
     }
 
     /// Run `f` with installed package state, when present.
-    #[inline(always)]
     #[must_use]
     #[cfg(not(target_arch = "arm"))]
     pub fn with<R>(&self, f: impl for<'state> FnOnce(&'state T) -> R) -> Option<R> {
@@ -920,14 +924,12 @@ impl<T: Send + 'static> PackageStateStore<T> {
     }
 
     /// Run `f` with installed mutable package state, when present.
-    #[inline(always)]
     #[must_use]
     #[cfg(not(target_arch = "arm"))]
     pub fn with_mut<R>(&self, f: impl for<'state> FnOnce(&'state mut T) -> R) -> Option<R> {
         self.with_expected_mut(ExpectedState::Any, f)
     }
 
-    #[inline(always)]
     pub(crate) fn with_expected<R>(
         &self,
         expected: ExpectedState<T>,
@@ -950,7 +952,6 @@ impl<T: Send + 'static> PackageStateStore<T> {
         }
     }
 
-    #[inline(always)]
     pub(crate) fn with_expected_mut<R>(
         &self,
         expected: ExpectedState<T>,

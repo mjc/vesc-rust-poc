@@ -7,11 +7,13 @@ pub struct CanControllerId(u8);
 
 impl CanControllerId {
     /// Wrap a raw CAN controller ID.
+    #[must_use]
     pub const fn new(id: u8) -> Self {
         Self(id)
     }
 
     /// Encode the controller ID for the CAN boundary.
+    #[must_use]
     pub const fn as_u8(self) -> u8 {
         self.0
     }
@@ -27,6 +29,10 @@ impl CanStandardId {
     pub const MAX: u16 = 0x07ff;
 
     /// Create a checked standard CAN identifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CanStandardIdError`] when `id` exceeds 11 bits.
     pub const fn try_new(id: u16) -> Result<Self, CanStandardIdError> {
         if id <= Self::MAX {
             Ok(Self(id))
@@ -36,6 +42,7 @@ impl CanStandardId {
     }
 
     /// Encode the standard CAN identifier for the protocol boundary.
+    #[must_use]
     pub const fn as_u16(self) -> u16 {
         self.0
     }
@@ -72,6 +79,10 @@ impl CanExtendedId {
     pub const MAX: u32 = 0x1fff_ffff;
 
     /// Create a checked extended CAN identifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CanExtendedIdError`] when `id` exceeds 29 bits.
     pub const fn try_new(id: u32) -> Result<Self, CanExtendedIdError> {
         if id <= Self::MAX {
             Ok(Self(id))
@@ -81,6 +92,7 @@ impl CanExtendedId {
     }
 
     /// Encode the extended CAN identifier for the protocol boundary.
+    #[must_use]
     pub const fn as_u32(self) -> u32 {
         self.0
     }
@@ -110,6 +122,10 @@ impl CanPayloadLen {
     pub const MAX: u8 = 8;
 
     /// Create a checked CAN payload length.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CanPayloadLenError`] when `len` exceeds eight bytes.
     pub const fn try_new(len: u8) -> Result<Self, CanPayloadLenError> {
         if len <= Self::MAX {
             Ok(Self(len))
@@ -119,6 +135,7 @@ impl CanPayloadLen {
     }
 
     /// Encode the payload length for the protocol boundary.
+    #[must_use]
     pub const fn as_u8(self) -> u8 {
         self.0
     }
@@ -144,6 +161,7 @@ impl core::error::Error for CanPayloadLenError {}
 
 impl CanPayloadLenError {
     /// Return the rejected length.
+    #[must_use]
     pub const fn value(self) -> u8 {
         self.value
     }

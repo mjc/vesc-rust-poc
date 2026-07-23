@@ -42,11 +42,10 @@ impl FloatOutBoyRuntimeThread {
     }
 
     #[cfg(target_arch = "arm")]
-    const fn working_area_size(self) -> ThreadWorkingAreaSize {
-        match ThreadWorkingAreaSize::try_from_bytes(self.stack_bytes()) {
-            Ok(size) => size,
-            Err(_) => panic!("Float Out Boy thread working-area size must satisfy ChibiOS"),
-        }
+    const fn working_area_size(
+        self,
+    ) -> Result<ThreadWorkingAreaSize, vescpkg_rs::ThreadWorkingAreaSizeError> {
+        ThreadWorkingAreaSize::try_from_bytes(self.stack_bytes())
     }
 
     #[cfg(target_arch = "arm")]
@@ -66,19 +65,22 @@ impl FloatOutBoyRuntimeThread {
 /// larger, so it reserves 2048 bytes. VESC forwards these byte counts directly
 /// to chThdCreateStatic at third_party/vesc/lispBM/lispif_c_lib.c:98-125.
 #[cfg(target_arch = "arm")]
-fn float_out_boy_runtime_threads() -> [vescpkg_rs::ThreadSpec<FloatOutBoyPackageState>; 2] {
+fn float_out_boy_runtime_threads() -> Result<
+    [vescpkg_rs::ThreadSpec<FloatOutBoyPackageState>; 2],
+    vescpkg_rs::ThreadWorkingAreaSizeError,
+> {
     let main_thread = FloatOutBoyRuntimeThread::Main;
     let aux_thread = FloatOutBoyRuntimeThread::Aux;
-    [
+    Ok([
         vescpkg_rs::ThreadSpec::<FloatOutBoyPackageState>::new::<FloatOutBoyMainThread>(
-            main_thread.working_area_size(),
+            main_thread.working_area_size()?,
             main_thread.name(),
         ),
         vescpkg_rs::ThreadSpec::<FloatOutBoyPackageState>::stateless::<FloatOutBoyAuxThread>(
-            aux_thread.working_area_size(),
+            aux_thread.working_area_size()?,
             aux_thread.name(),
         ),
-    ]
+    ])
 }
 
 /// Run Float Out Boy's source-backed main thread tick loop.
@@ -214,7 +216,9 @@ pub fn start_float_out_boy_runtime_threads(
     {
         return Err(vescpkg_rs::PackageStartError::StateTypeMismatch);
     }
-    start.spawn_threads(float_out_boy_runtime_threads())
+    let threads = float_out_boy_runtime_threads()
+        .map_err(|_| vescpkg_rs::PackageStartError::ThreadSpawnFailed)?;
+    start.spawn_threads(threads)
 }
 
 #[cfg(target_arch = "arm")]

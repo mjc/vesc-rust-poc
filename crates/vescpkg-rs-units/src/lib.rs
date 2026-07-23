@@ -10,6 +10,14 @@
 //!
 //! The default build has no `std` and no `alloc`; third-party unit facades are
 //! intentionally out of scope for this core embedded layer.
+//
+// Unit conversions in this crate are deliberately checked against exact
+// expected results. A tolerance would let an accidentally changed conversion
+// constant pass, so the test build keeps exact floating-point comparisons.
+#![cfg_attr(
+    test,
+    expect(clippy::float_cmp, reason = "tests verify exact conversion results")
+)]
 //!
 //! # Unit Boundary
 //!
@@ -63,6 +71,20 @@
 #![no_std]
 #![forbid(unused_extern_crates)]
 #![deny(unsafe_code)]
+// Embedded package code has no unwinder or operator console. Reject explicit
+// crash paths in production while still allowing ordinary assertions in tests.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::arithmetic_side_effects,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::panic,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unwrap_used
+    )
+)]
 
 #[cfg(test)]
 extern crate std;
@@ -119,21 +141,25 @@ pub struct BoundedUnitError {
 
 impl BoundedUnitError {
     /// Create a bounded-unit error.
+    #[must_use]
     pub const fn new(value: f32, min: f32, max: f32) -> Self {
         Self { value, min, max }
     }
 
     /// Return the rejected value.
+    #[must_use]
     pub const fn value(self) -> f32 {
         self.value
     }
 
     /// Return the inclusive lower bound.
+    #[must_use]
     pub const fn min(self) -> f32 {
         self.min
     }
 
     /// Return the inclusive upper bound.
+    #[must_use]
     pub const fn max(self) -> f32 {
         self.max
     }

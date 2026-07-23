@@ -2,7 +2,7 @@
 
 use core::ffi::c_void;
 
-/// Handler used to register a LispBM extension from native code.
+/// Handler used to register a `LispBM` extension from native code.
 pub type ExtensionHandler = unsafe extern "C" fn(*mut u32, u32) -> u32;
 /// Handler used when firmware streams application data into Rust code.
 pub type AppDataHandler = unsafe extern "C" fn(*mut u8, u32);
@@ -40,15 +40,19 @@ impl LibInfoAbi {
     /// Alignment of the 32-bit firmware layout in bytes.
     pub const ALIGN: usize = 4;
 
-    /// Assert that [`LibInfo`] matches the 32-bit firmware layout.
-    pub const fn assert_vesc32_layout() {
-        assert!(core::mem::size_of::<LibInfo>() == Self::SIZE);
-        assert!(core::mem::align_of::<LibInfo>() == Self::ALIGN);
-        assert!(core::mem::offset_of!(LibInfo, stop_fun) == Self::STOP_FUN_OFFSET);
-        assert!(core::mem::offset_of!(LibInfo, arg) == Self::ARG_OFFSET);
-        assert!(core::mem::offset_of!(LibInfo, base_addr) == Self::BASE_ADDR_OFFSET);
+    /// Return whether [`LibInfo`] matches the 32-bit firmware layout.
+    #[must_use]
+    pub const fn has_vesc32_layout() -> bool {
+        core::mem::size_of::<LibInfo>() == Self::SIZE
+            && core::mem::align_of::<LibInfo>() == Self::ALIGN
+            && core::mem::offset_of!(LibInfo, stop_fun) == Self::STOP_FUN_OFFSET
+            && core::mem::offset_of!(LibInfo, arg) == Self::ARG_OFFSET
+            && core::mem::offset_of!(LibInfo, base_addr) == Self::BASE_ADDR_OFFSET
     }
 }
 
 #[cfg(target_pointer_width = "32")]
-const _: () = LibInfoAbi::assert_vesc32_layout();
+// A mismatched array length fails compilation if Rust and the C firmware ever
+// disagree about this struct. Unlike a runtime assertion, this cannot become a
+// crash path in an installed package.
+const _: [(); 1] = [(); LibInfoAbi::has_vesc32_layout() as usize];

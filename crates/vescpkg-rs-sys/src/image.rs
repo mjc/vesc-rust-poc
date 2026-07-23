@@ -8,6 +8,7 @@ pub struct ImageOffset(usize);
 
 impl ImageOffset {
     /// Create a new byte offset.
+    #[must_use]
     pub const fn new(offset: usize) -> Self {
         Self(offset)
     }
@@ -25,6 +26,7 @@ pub struct NativeImage {
 
 impl NativeImage {
     /// Construct a native image from its base address.
+    #[must_use]
     pub const fn new(base_addr: u32) -> Self {
         Self {
             base_addr: NativeAddress(base_addr as usize),
@@ -32,21 +34,28 @@ impl NativeImage {
     }
 
     /// Construct a native image from loader metadata.
+    #[must_use]
     pub fn from_info(info: &LibInfo) -> Self {
         Self::new(info.base_addr)
     }
 
     /// Return the stored base address.
+    #[must_use]
     pub const fn base_addr(self) -> NativeAddress {
         self.base_addr
     }
 
     /// Rebase a byte offset into the native image.
+    #[must_use]
     pub fn rebase_offset(self, offset: ImageOffset) -> NativeAddress {
-        NativeAddress(self.base_addr.0 + offset.0)
+        // Loader-provided offsets are bounded by the package image. Saturation
+        // also keeps a malformed value from triggering integer-overflow panic
+        // before the higher-level loader validation can reject it.
+        NativeAddress(self.base_addr.0.saturating_add(offset.0))
     }
 
     /// Rebase a raw image-relative address.
+    #[must_use]
     pub fn rebase_addr(self, image_addr: usize) -> usize {
         self.rebase_offset(ImageOffset::new(image_addr)).0
     }
@@ -57,6 +66,7 @@ impl NativeImage {
     /// an already relocated PC-relative address. VESC loads package images above
     /// their link-time offset range, so only values below the image base need
     /// rebasing.
+    #[must_use]
     pub fn resolve_addr(self, address: usize) -> usize {
         if address < self.base_addr.0 {
             self.rebase_addr(address)

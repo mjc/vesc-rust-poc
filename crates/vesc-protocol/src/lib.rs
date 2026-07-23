@@ -13,6 +13,20 @@
 
 #![no_std]
 #![forbid(unused_extern_crates)]
+// Embedded package code has no unwinder or operator console. Reject explicit
+// crash paths in production while still allowing ordinary assertions in tests.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::arithmetic_side_effects,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::panic,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unwrap_used
+    )
+)]
 
 #[cfg(test)]
 extern crate std;
@@ -33,11 +47,13 @@ impl WireVersion {
     pub const CURRENT: Self = Self(1);
 
     /// Create a version tag from its wire value.
+    #[must_use]
     pub const fn new(value: u8) -> Self {
         Self(value)
     }
 
     /// Explicitly extract the primitive wire value.
+    #[must_use]
     pub const fn get(self) -> u8 {
         self.0
     }
@@ -55,11 +71,13 @@ pub struct InvalidWireCommand(u8);
 
 impl InvalidWireCommand {
     /// Create an invalid command marker from the rejected wire value.
+    #[must_use]
     pub const fn new(code: u8) -> Self {
         Self(code)
     }
 
     /// Explicitly extract the rejected primitive command code.
+    #[must_use]
     pub const fn get(self) -> u8 {
         self.0
     }
@@ -128,6 +146,7 @@ pub struct Frame<'a> {
 
 impl<'a> Frame<'a> {
     /// Construct a frame from its parts.
+    #[must_use]
     pub const fn new(version: WireVersion, command: WireCommand, payload: &'a [u8]) -> Self {
         Self {
             version,
@@ -137,16 +156,19 @@ impl<'a> Frame<'a> {
     }
 
     /// Return the frame version.
+    #[must_use]
     pub const fn version(&self) -> WireVersion {
         self.version
     }
 
     /// Return the frame command.
+    #[must_use]
     pub const fn command(&self) -> WireCommand {
         self.command
     }
 
     /// Return the borrowed payload bytes.
+    #[must_use]
     pub const fn payload(&self) -> &'a [u8] {
         self.payload
     }
@@ -167,7 +189,7 @@ mod tests {
         assert_eq!(u8::from(WireCommand::Ping), 1);
         assert_eq!(WireCommand::try_from(4), Ok(WireCommand::Teardown));
         assert_eq!(
-            WireCommand::try_from(99).map_err(|code| code.get()),
+            WireCommand::try_from(99).map_err(super::InvalidWireCommand::get),
             Err(99)
         );
     }

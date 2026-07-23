@@ -325,9 +325,9 @@ fn bounded_units_support_known_good_package_constants() {
 }
 
 #[test]
-#[should_panic(expected = "invalid normalized ratio constant")]
-fn bounded_unit_constant_constructor_rejects_runtime_misuse() {
-    let _ = Ratio::from_ratio_const(2.0);
+fn bounded_unit_constant_constructor_clamps_runtime_misuse() {
+    assert_eq!(Ratio::from_ratio_const(2.0), Ratio::clamped(2.0));
+    assert_eq!(Ratio::from_ratio_const(f32::NAN), Ratio::clamped(f32::NAN));
 }
 
 #[test]

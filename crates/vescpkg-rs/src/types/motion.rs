@@ -68,7 +68,7 @@ macro_rules! mechanical_rpm_type {
 macro_rules! electrical_rpm_type {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+        #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
         #[repr(transparent)]
         pub struct $name(Rpm);
 

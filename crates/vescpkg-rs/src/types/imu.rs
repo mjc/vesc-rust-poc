@@ -44,21 +44,25 @@ pub struct ImuAttitude {
 }
 impl ImuAttitude {
     /// Group firmware IMU roll, pitch, and yaw into one attitude sample.
+    #[must_use]
     pub const fn new(roll: ImuRoll, pitch: ImuPitch, yaw: ImuYaw) -> Self {
         Self { roll, pitch, yaw }
     }
 
     /// Return firmware IMU roll.
+    #[must_use]
     pub const fn roll(self) -> ImuRoll {
         self.roll
     }
 
     /// Return firmware IMU pitch.
+    #[must_use]
     pub const fn pitch(self) -> ImuPitch {
         self.pitch
     }
 
     /// Return firmware IMU yaw.
+    #[must_use]
     pub const fn yaw(self) -> ImuYaw {
         self.yaw
     }
@@ -200,6 +204,7 @@ axis_type!(
 pub struct ImuAcceleration(AxisVector3<AccelerationG, ImuAccelerationTag>);
 impl ImuAcceleration {
     /// Wrap named hardware acceleration axes.
+    #[must_use]
     pub const fn from_axes(x: ImuAccelerationX, y: ImuAccelerationY, z: ImuAccelerationZ) -> Self {
         Self(AxisVector3::new([
             x.acceleration(),
@@ -230,6 +235,7 @@ impl ImuAcceleration {
 pub struct ImuAngularRate(AxisVector3<AngularVelocity, ImuAngularRateTag>);
 impl ImuAngularRate {
     /// Wrap named hardware angular-rate axes.
+    #[must_use]
     pub const fn from_axes(
         roll: ImuAngularRateRoll,
         pitch: ImuAngularRatePitch,
@@ -255,16 +261,19 @@ impl ImuAngularRate {
     }
 
     /// Return roll-axis angular rate.
+    #[must_use]
     pub const fn roll(self) -> AngularVelocity {
         self.0.x()
     }
 
     /// Return pitch-axis angular rate.
+    #[must_use]
     pub const fn pitch(self) -> AngularVelocity {
         self.0.y()
     }
 
     /// Return yaw-axis angular rate.
+    #[must_use]
     pub const fn yaw(self) -> AngularVelocity {
         self.0.z()
     }
@@ -276,6 +285,7 @@ pub struct ImuMagneticField(AxisVector3<MagneticFluxDensity, ImuMagneticFieldTag
 
 impl ImuMagneticField {
     /// Wrap named hardware magnetic-field axes.
+    #[must_use]
     pub const fn from_axes(
         x: ImuMagneticFieldX,
         y: ImuMagneticFieldY,
@@ -439,11 +449,13 @@ pub struct ImuSamplePeriod(VescSeconds);
 
 impl ImuSamplePeriod {
     /// Wrap the callback period.
+    #[must_use]
     pub const fn new(duration: VescSeconds) -> Self {
         Self(duration)
     }
 
     /// Return the typed duration.
+    #[must_use]
     pub const fn duration(self) -> VescSeconds {
         self.0
     }
@@ -463,6 +475,7 @@ pub struct ImuReadSample {
 }
 impl ImuReadSample {
     /// Build a sample from typed hardware values.
+    #[must_use]
     pub const fn from_parts(
         acceleration: ImuAcceleration,
         angular_rate: ImuAngularRate,
@@ -478,21 +491,25 @@ impl ImuReadSample {
     }
 
     /// Return the hardware acceleration sample.
+    #[must_use]
     pub const fn acceleration(self) -> ImuAcceleration {
         self.acceleration
     }
 
     /// Return the hardware angular-rate sample.
+    #[must_use]
     pub const fn angular_rate(self) -> ImuAngularRate {
         self.angular_rate
     }
 
     /// Return the hardware magnetic-field sample.
+    #[must_use]
     pub const fn magnetic_field(self) -> ImuMagneticField {
         self.magnetic_field
     }
 
     /// Return the sample period.
+    #[must_use]
     pub const fn period(self) -> ImuSamplePeriod {
         self.period
     }

@@ -29,16 +29,19 @@ pub struct VescIfManifestEntry {
 
 impl VescIfManifestEntry {
     /// Return the slot identity and 32-bit offset.
+    #[must_use]
     pub const fn slot(self) -> VescIfSlot {
         self.slot
     }
 
-    /// Return whether the entry is callable through a function pointer.
+    /// Return the ABI kind of this entry.
+    #[must_use]
     pub const fn kind(self) -> VescIfSlotKind {
         self.kind
     }
 
     /// Return whether the entry is callable through a function pointer.
+    #[must_use]
     pub const fn is_callable(self) -> bool {
         matches!(self.kind, VescIfSlotKind::Function)
     }
@@ -52,6 +55,7 @@ pub struct VescIfPresence {
 
 impl VescIfPresence {
     /// Construct a bitmap with no observed entries.
+    #[must_use]
     pub const fn empty() -> Self {
         Self {
             bits: [0; PRESENCE_WORD_COUNT],
@@ -59,10 +63,14 @@ impl VescIfPresence {
     }
 
     /// Inspect pointer-sized table words, preserving holes and scalar entries.
+    #[must_use]
     pub fn from_words(words: &[usize]) -> Self {
         let mut presence = Self::empty();
         for (index, entry) in VescIfAbi::ALL_ENTRIES.iter().enumerate() {
-            if index >= words.len() || (entry.is_callable() && words[index] == 0) {
+            let Some(word) = words.get(index) else {
+                continue;
+            };
+            if entry.is_callable() && *word == 0 {
                 continue;
             }
             presence.set(index);
@@ -71,16 +79,28 @@ impl VescIfPresence {
     }
 
     /// Return whether a slot was observed as present.
+    #[must_use]
     pub const fn contains(self, slot: VescIfSlot) -> bool {
         self.contains_index(slot.slot_index())
     }
 
     /// Return whether a slot index was observed as present.
+    #[must_use]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "FIELD_COUNT and PRESENCE_WORD_COUNT prove the word index is in bounds"
+    )]
     pub const fn contains_index(self, index: usize) -> bool {
+        // `PRESENCE_WORD_COUNT` is the ceiling of `FIELD_COUNT / 64`. Once
+        // `index` is below `FIELD_COUNT`, its word index must exist.
         index < VescIfAbi::FIELD_COUNT && (self.bits[index / 64] & (1_u64 << (index % 64))) != 0
     }
 
     /// Check a required capability and preserve the slot identity in the error.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AbiError::MissingRequired`] when `slot` is absent.
     pub const fn require(self, capability: &'static str, slot: VescIfSlot) -> Result<(), AbiError> {
         if self.contains(slot) {
             Ok(())
@@ -90,6 +110,10 @@ impl VescIfPresence {
     }
 
     /// Check an optional capability without exposing raw table access to callers.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AbiError::Unsupported`] when `slot` is absent.
     pub const fn optional(
         self,
         capability: &'static str,
@@ -103,17 +127,23 @@ impl VescIfPresence {
     }
 
     /// Return whether every callable slot in a revision profile is present.
+    #[must_use]
     pub fn supports_revision(self, revision: Stm32AbiRevision) -> bool {
         let Some(slot_count) = revision.minimum_slot_count() else {
             return false;
         };
-        VescIfAbi::ALL_ENTRIES[..slot_count]
-            .iter()
-            .enumerate()
-            .all(|(index, entry)| !entry.is_callable() || self.contains_index(index))
+        VescIfAbi::ALL_ENTRIES
+            .get(..slot_count)
+            .is_some_and(|entries| {
+                entries
+                    .iter()
+                    .enumerate()
+                    .all(|(index, entry)| !entry.is_callable() || self.contains_index(index))
+            })
     }
 
     /// Infer the strongest descriptive profile supported by observed presence.
+    #[must_use]
     pub fn revision(self) -> Stm32AbiRevision {
         if self.supports_revision(Stm32AbiRevision::Firmware606) {
             Stm32AbiRevision::Firmware606
@@ -126,8 +156,10 @@ impl VescIfPresence {
         }
     }
 
-    pub(crate) const fn set(&mut self, index: usize) {
-        self.bits[index / 64] |= 1_u64 << (index % 64);
+    pub(crate) fn set(&mut self, index: usize) {
+        if let Some(word) = self.bits.get_mut(index / 64) {
+            *word |= 1_u64 << (index % 64);
+        }
     }
 }
 
@@ -146,6 +178,7 @@ pub enum Stm32AbiRevision {
 
 impl Stm32AbiRevision {
     /// Return the minimum ordered table width represented by this profile.
+    #[must_use]
     pub const fn minimum_slot_count(self) -> Option<usize> {
         match self {
             Self::Base => Some(VescIfAbi::BASE_SLOT_COUNT),
@@ -177,21 +210,25 @@ pub enum AbiError {
 
 impl VescIfSlot {
     /// Create a named slot at the given 32-bit byte offset.
+    #[must_use]
     pub const fn new(name: &'static str, offset: usize) -> Self {
         Self { name, offset }
     }
 
     /// Return the firmware symbol name for this slot.
+    #[must_use]
     pub const fn name(self) -> &'static str {
         self.name
     }
 
     /// Return the 32-bit firmware byte offset for this slot.
+    #[must_use]
     pub const fn vesc32_byte_offset(self) -> usize {
         self.offset
     }
 
     /// Return the slot index in the 32-bit function table.
+    #[must_use]
     pub const fn slot_index(self) -> usize {
         self.offset / 4
     }

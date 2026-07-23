@@ -3,35 +3,30 @@
 //! Rust `libm` keeps package math position-independent on both firmware and host.
 
 /// Computes arcsine for a single-precision input.
-#[inline(always)]
 #[must_use]
 pub fn asin(x: f32) -> f32 {
     libm::asinf(x)
 }
 
 /// Computes cosine for a single-precision input.
-#[inline(always)]
 #[must_use]
 pub fn cos(x: f32) -> f32 {
     libm::cosf(x)
 }
 
 /// Computes sine for a single-precision input.
-#[inline(always)]
 #[must_use]
 pub fn sin(x: f32) -> f32 {
     libm::sinf(x)
 }
 
 /// Computes tangent for a single-precision input.
-#[inline(always)]
 #[must_use]
 pub fn tan(x: f32) -> f32 {
     libm::tanf(x)
 }
 
 /// Computes square root for a single-precision input.
-#[inline(always)]
 #[must_use]
 pub fn sqrt(x: f32) -> f32 {
     libm::sqrtf(x)

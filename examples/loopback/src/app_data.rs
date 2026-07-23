@@ -24,7 +24,6 @@ vescpkg_rs::firmware_stateful_app_data_callback!(loopback_handle_app_data, Loopb
 
 /// Register the package-local callback that VESC stores in
 /// `third_party/vesc/comm/commands.c:1820-1828`.
-#[inline(always)]
 pub(crate) fn register(start: &mut PackageStart) -> Result<(), vescpkg_rs::PackageStartError> {
     start
         .app_data_callback::<LoopbackAppData>()

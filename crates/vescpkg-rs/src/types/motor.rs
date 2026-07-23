@@ -5,7 +5,7 @@ use crate::units::{Current, Frequency, SampleRate, VescSeconds, Voltage};
 macro_rules! current_type {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+        #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
         #[repr(transparent)]
         pub struct $name(Current);
 
@@ -25,7 +25,7 @@ macro_rules! current_type {
             type Output = Self;
 
             fn add(self, rhs: Self) -> Self::Output {
-                Self(self.0 + rhs.0)
+                Self(Current::from_amps(self.0.as_amps() + rhs.0.as_amps()))
             }
         }
 
@@ -33,7 +33,7 @@ macro_rules! current_type {
             type Output = Self;
 
             fn sub(self, rhs: Self) -> Self::Output {
-                Self(self.0 - rhs.0)
+                Self(Current::from_amps(self.0.as_amps() - rhs.0.as_amps()))
             }
         }
 
@@ -41,7 +41,7 @@ macro_rules! current_type {
             type Output = Self;
 
             fn mul(self, rhs: f32) -> Self::Output {
-                Self(self.0 * rhs)
+                Self(Current::from_amps(self.0.as_amps() * rhs))
             }
         }
 
@@ -49,7 +49,7 @@ macro_rules! current_type {
             type Output = Self;
 
             fn div(self, rhs: f32) -> Self::Output {
-                Self(self.0 / rhs)
+                Self(Current::from_amps(self.0.as_amps() / rhs))
             }
         }
 
@@ -57,7 +57,7 @@ macro_rules! current_type {
             type Output = Self;
 
             fn neg(self) -> Self::Output {
-                Self(-self.0)
+                Self(Current::from_amps(-self.0.as_amps()))
             }
         }
     };
@@ -166,6 +166,10 @@ impl AudioChannel {
     pub const FIRST: Self = Self(Self::MIN);
 
     /// Create a checked FOC audio channel.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AudioChannelError`] when `channel` is out of range.
     pub const fn try_new(channel: u8) -> Result<Self, AudioChannelError> {
         if channel <= Self::MAX {
             Ok(Self(channel))
@@ -175,6 +179,7 @@ impl AudioChannel {
     }
 
     /// Encode the channel index for the audio boundary.
+    #[must_use]
     pub const fn as_u8(self) -> u8 {
         self.0
     }
@@ -188,6 +193,7 @@ pub struct AudioChannelError {
 
 impl AudioChannelError {
     /// Return the rejected channel.
+    #[must_use]
     pub const fn value(self) -> u8 {
         self.value
     }
@@ -214,11 +220,13 @@ impl FirmwareFaultCode {
     }
 
     /// Build a firmware fault-code token from its byte wire representation.
+    #[must_use]
     pub const fn from_wire_code(code: u8) -> Self {
         Self(code as i32)
     }
 
     /// Return true when the firmware reports no active fault.
+    #[must_use]
     pub const fn is_none(self) -> bool {
         self.0 == 0
     }
@@ -231,11 +239,13 @@ pub struct FirmwareFaultWireCode(u8);
 
 impl FirmwareFaultWireCode {
     /// Build a token from an app-data fault-code byte.
+    #[must_use]
     pub const fn from_wire_code(code: u8) -> Self {
         Self(code)
     }
 
     /// Return the app-data fault-code byte.
+    #[must_use]
     pub const fn wire_code(self) -> u8 {
         self.0
     }
@@ -256,6 +266,7 @@ pub struct MotorCurrentLimit(Current);
 
 impl MotorCurrentLimit {
     /// Normalize a configured motor-current limit to its positive magnitude.
+    #[must_use]
     pub const fn new(current: Current) -> Self {
         Self(current.abs())
     }
@@ -267,6 +278,7 @@ impl MotorCurrentLimit {
     }
 
     /// Return the positive current-limit magnitude.
+    #[must_use]
     pub const fn current(self) -> Current {
         self.0
     }
@@ -275,6 +287,7 @@ impl MotorCurrentLimit {
     ///
     /// This follows VESC's comparison semantics: a zero limit clamps nonzero
     /// current to signed zero, while NaN operands leave the current unchanged.
+    #[must_use]
     pub const fn clamp(self, current: MotorCurrent) -> MotorCurrent {
         let requested = current.current();
         if requested.abs().as_amps() > self.0.as_amps() {
@@ -292,11 +305,13 @@ pub struct InputCurrentLimit(Current);
 
 impl InputCurrentLimit {
     /// Normalize a configured input-current limit to its positive magnitude.
+    #[must_use]
     pub const fn new(current: Current) -> Self {
         Self(current.abs())
     }
 
     /// Return the positive input-current-limit magnitude.
+    #[must_use]
     pub const fn current(self) -> Current {
         self.0
     }

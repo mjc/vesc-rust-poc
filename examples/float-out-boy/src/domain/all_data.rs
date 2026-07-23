@@ -17,8 +17,8 @@ use super::state::{
 use super::wire::{
     float_out_boy_append_all_data_mode2, float_out_boy_append_all_data_mode3,
     float_out_boy_append_all_data_mode4, float_out_boy_degrees, float_out_boy_offset_scaled_u8,
-    float_out_boy_push_i16, float_out_boy_push_scaled_i16, float_out_boy_push_u8,
-    float_out_boy_scaled_u8,
+    float_out_boy_push_bytes, float_out_boy_push_i16, float_out_boy_push_scaled_i16,
+    float_out_boy_push_u8, float_out_boy_scaled_u8,
 };
 use super::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataMode, FloatOutBoyAllDataRequest,
@@ -459,8 +459,8 @@ impl FloatOutBoyAllDataBasePayload {
     ) -> [u8; 41] {
         let mut buffer = [0; 41];
         let base = self.encode_base_response(mode.source_id());
-        buffer[..base.len()].copy_from_slice(&base);
-        let mut ind = base.len();
+        let mut ind = 0;
+        float_out_boy_push_bytes(&mut buffer, &mut ind, &base);
 
         float_out_boy_append_all_data_mode2(&mut buffer, &mut ind, mode2);
 
@@ -476,8 +476,8 @@ impl FloatOutBoyAllDataBasePayload {
     ) -> [u8; 54] {
         let mut buffer = [0; 54];
         let base = self.encode_base_response(mode.source_id());
-        buffer[..base.len()].copy_from_slice(&base);
-        let mut ind = base.len();
+        let mut ind = 0;
+        float_out_boy_push_bytes(&mut buffer, &mut ind, &base);
 
         float_out_boy_append_all_data_mode2(&mut buffer, &mut ind, mode2);
         float_out_boy_append_all_data_mode3(&mut buffer, &mut ind, mode3);
@@ -494,8 +494,8 @@ impl FloatOutBoyAllDataBasePayload {
     ) -> [u8; 58] {
         let mut buffer = [0; 58];
         let base = self.encode_base_response(mode);
-        buffer[..base.len()].copy_from_slice(&base);
-        let mut ind = base.len();
+        let mut ind = 0;
+        float_out_boy_push_bytes(&mut buffer, &mut ind, &base);
 
         float_out_boy_append_all_data_mode2(&mut buffer, &mut ind, mode2);
         float_out_boy_append_all_data_mode3(&mut buffer, &mut ind, mode3);

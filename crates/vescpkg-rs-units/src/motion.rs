@@ -47,13 +47,13 @@ const DEGREES_PER_RADIAN: f32 = 180.0 / core::f32::consts::PI;
 
 impl AngleDegrees {
     /// Create an angle value from radians.
-    #[inline(always)]
+    #[must_use]
     pub fn from_radians(value: f32) -> Self {
         Self::from_degrees(value * DEGREES_PER_RADIAN)
     }
 
     /// Return this angle value in radians.
-    #[inline(always)]
+    #[must_use]
     pub fn as_radians(self) -> f32 {
         self.as_degrees() * RADIANS_PER_DEGREE
     }
@@ -61,13 +61,13 @@ impl AngleDegrees {
 
 impl AngleRadians {
     /// Create an angle value from degrees.
-    #[inline(always)]
+    #[must_use]
     pub fn from_degrees(value: f32) -> Self {
         Self::from_radians(value * RADIANS_PER_DEGREE)
     }
 
     /// Return this angle value in degrees.
-    #[inline(always)]
+    #[must_use]
     pub fn as_degrees(self) -> f32 {
         self.as_radians() * DEGREES_PER_RADIAN
     }
@@ -75,13 +75,13 @@ impl AngleRadians {
 
 impl AngularVelocity {
     /// Create an angular velocity from radians per second.
-    #[inline(always)]
+    #[must_use]
     pub fn from_radians_per_second(value: f32) -> Self {
         Self::from_degrees_per_second(value * DEGREES_PER_RADIAN)
     }
 
     /// Return this angular velocity in radians per second.
-    #[inline(always)]
+    #[must_use]
     pub fn as_radians_per_second(self) -> f32 {
         self.as_degrees_per_second() * RADIANS_PER_DEGREE
     }
@@ -99,19 +99,17 @@ impl Mul<AngularVelocity> for VescSeconds {
     type Output = AngleRadians;
 
     fn mul(self, rhs: AngularVelocity) -> Self::Output {
-        rhs * self
+        AngleRadians::from_radians(self.as_seconds() * rhs.as_radians_per_second())
     }
 }
 
 impl From<AngleDegrees> for AngleRadians {
-    #[inline(always)]
     fn from(angle: AngleDegrees) -> Self {
         Self::from_degrees(angle.as_degrees())
     }
 }
 
 impl From<AngleRadians> for AngleDegrees {
-    #[inline(always)]
     fn from(angle: AngleRadians) -> Self {
         Self::from_radians(angle.as_radians())
     }
@@ -119,21 +117,25 @@ impl From<AngleRadians> for AngleDegrees {
 
 impl Speed {
     /// Create a speed value from kilometers per hour.
+    #[must_use]
     pub const fn from_kilometers_per_hour(value: f32) -> Self {
         Self::from_meters_per_second(value / 3.6)
     }
 
     /// Return this speed value in kilometers per hour.
+    #[must_use]
     pub const fn as_kilometers_per_hour(self) -> f32 {
         self.as_meters_per_second() * 3.6
     }
 
     /// Create a speed value from miles per hour.
+    #[must_use]
     pub const fn from_miles_per_hour(value: f32) -> Self {
         Self::from_meters_per_second(value * 0.447_04)
     }
 
     /// Return this speed value in miles per hour.
+    #[must_use]
     pub const fn as_miles_per_hour(self) -> f32 {
         self.as_meters_per_second() / 0.447_04
     }

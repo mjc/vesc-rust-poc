@@ -98,11 +98,13 @@ pub struct GnssHdop(f32);
 
 impl GnssHdop {
     /// Wrap the unitless HDOP value reported by firmware.
+    #[must_use]
     pub const fn from_unitless(value: f32) -> Self {
         Self(value)
     }
 
     /// Return the unitless HDOP value for explicit firmware/API boundaries.
+    #[must_use]
     pub const fn as_unitless(self) -> f32 {
         self.0
     }
@@ -115,11 +117,13 @@ pub struct GnssAccuracy(Distance);
 
 impl GnssAccuracy {
     /// Wrap generic distance with GNSS accuracy meaning.
+    #[must_use]
     pub const fn new(distance: Distance) -> Self {
         Self(distance)
     }
 
     /// Return the accuracy distance without erasing it to a primitive.
+    #[must_use]
     pub const fn distance(self) -> Distance {
         self.0
     }

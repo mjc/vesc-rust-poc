@@ -49,7 +49,6 @@ impl TimerInstant {
 
 impl FirmwareAppData {
     #[cfg(not(test))]
-    #[inline(always)]
     pub(crate) fn new() -> Self {
         Self {
             api: AppDataApi::new(crate::bindings::RealBindings),
@@ -57,8 +56,11 @@ impl FirmwareAppData {
     }
 
     /// Send one app-data response.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AppDataSendError`] when the payload is too large or firmware rejects it.
     #[cfg(not(test))]
-    #[inline(always)]
     pub fn send(&self, bytes: &[u8]) -> Result<(), AppDataSendError> {
         self.api.send(bytes)
     }
@@ -72,7 +74,6 @@ pub struct FirmwareClock {
 
 impl FirmwareClock {
     #[cfg(not(test))]
-    #[inline(always)]
     pub(crate) fn new() -> Self {
         Self {
             api: AppDataApi::new(crate::bindings::RealBindings),
@@ -81,35 +82,35 @@ impl FirmwareClock {
 
     /// Return the current firmware system timestamp.
     #[cfg(not(test))]
-    #[inline(always)]
+    #[must_use]
     pub fn now(&self) -> TimestampTicks {
         self.api.system_timestamp()
     }
 
     /// Return firmware uptime in the native floating-point seconds domain.
     #[cfg(not(test))]
-    #[inline(always)]
+    #[must_use]
     pub fn uptime(&self) -> VescSeconds {
         self.api.system_uptime()
     }
 
     /// Ask firmware for the age of a timestamp, including its rollover rules.
     #[cfg(not(test))]
-    #[inline(always)]
+    #[must_use]
     pub fn age(&self, timestamp: TimestampTicks) -> VescSeconds {
         self.api.timestamp_age(timestamp)
     }
 
     /// Return the current high-resolution timer instant.
     #[cfg(not(test))]
-    #[inline(always)]
+    #[must_use]
     pub fn timer_now(&self) -> TimerInstant {
         self.api.timer_now()
     }
 
     /// Return high-resolution elapsed time since `earlier`.
     #[cfg(not(test))]
-    #[inline(always)]
+    #[must_use]
     pub fn timer_elapsed_since(&self, earlier: TimerInstant) -> VescSeconds {
         self.api.timer_elapsed_since(earlier)
     }
@@ -193,60 +194,70 @@ pub struct Firmware {
 impl Firmware {
     /// Borrow firmware thread capabilities without exposing the binding type.
     #[cfg(not(test))]
+    #[must_use]
     pub fn threads(&self) -> &impl FirmwareThreads {
         &self.threads
     }
 
     /// Borrow firmware app-data capabilities without exposing the binding type.
     #[cfg(not(test))]
+    #[must_use]
     pub fn app_data(&self) -> &FirmwareAppData {
         &self.app_data
     }
 
     /// Borrow the firmware monotonic clock.
     #[cfg(not(test))]
+    #[must_use]
     pub fn clock(&self) -> &FirmwareClock {
         &self.clock
     }
 
     /// Borrow the firmware byte-addressed NVM capability.
     #[cfg(not(test))]
+    #[must_use]
     pub fn nvm(&self) -> &crate::Nvm {
         &self.nvm
     }
 
     /// Borrow firmware GPIO capabilities without exposing the binding type.
     #[cfg(not(test))]
+    #[must_use]
     pub fn gpio(&self) -> &crate::Gpio {
         &self.gpio
     }
 
     /// Borrow typed PPM and UART controller inputs.
     #[cfg(not(test))]
+    #[must_use]
     pub fn input(&self) -> &crate::ControllerInput {
         &self.input
     }
 
     /// Borrow firmware IMU capabilities without exposing the binding type.
     #[cfg(not(test))]
+    #[must_use]
     pub fn imu(&self) -> &impl crate::Imu {
         &self.imu
     }
 
     /// Borrow firmware motor telemetry capabilities without exposing the binding type.
     #[cfg(not(test))]
+    #[must_use]
     pub fn telemetry(&self) -> &impl crate::MotorTelemetry {
         &self.telemetry
     }
 
     /// Borrow firmware motor-control capabilities without exposing the binding type.
     #[cfg(not(test))]
+    #[must_use]
     pub fn motor(&self) -> &impl crate::MotorOutput {
         &self.motor
     }
 
     /// Construct firmware capabilities backed by the live VESC package ABI.
     #[cfg(not(test))]
+    #[must_use]
     pub fn new() -> Self {
         Self {
             threads: ThreadApi::new(RealThreadBindings),
@@ -287,12 +298,14 @@ pub struct StatelessThreadContext {
 impl StatelessThreadContext {
     /// Borrow firmware thread capabilities without exposing the binding type.
     #[cfg(not(test))]
+    #[must_use]
     pub fn threads(&self) -> &impl FirmwareThreads {
         &self.threads
     }
 
     /// Build a stateless thread context backed by the live VESC package ABI.
     #[cfg(not(test))]
+    #[must_use]
     pub fn new() -> Self {
         Self {
             threads: ThreadApi::new(RealThreadBindings),
@@ -345,6 +358,7 @@ impl<S: PackageRuntimeState> ThreadContext<S> {
     }
 
     /// Return firmware capabilities for this package thread.
+    #[must_use]
     pub fn firmware(&self) -> &Firmware {
         &self.firmware
     }
@@ -462,10 +476,17 @@ impl ThreadName {
         }
     }
 
+    /// Supply a type-correct value for the unreachable invalid macro branch.
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn __invalid() -> Self {
+        Self(b"invalid-thread\0")
+    }
+
     /// Return the name without its private ABI terminator.
     #[must_use]
     pub fn as_str(self) -> &'static str {
-        let bytes = &self.0[..self.0.len() - 1];
+        let bytes = self.0.strip_suffix(&[0]).unwrap_or(self.0);
         // SAFETY: the macro support hook accepts only valid C strings built
         // from UTF-8 Rust string literals.
         unsafe { core::str::from_utf8_unchecked(bytes) }
@@ -498,25 +519,30 @@ impl core::error::Error for ThreadError {}
 macro_rules! thread_name {
     ($name:literal) => {
         const {
-            match $crate::ThreadName::__from_terminated(concat!($name, "\0")) {
+            const NAME: Option<$crate::ThreadName> =
+                $crate::ThreadName::__from_terminated(concat!($name, "\0"));
+            // A mismatched array length makes an embedded NUL a compile error
+            // without placing a panic path in the package binary.
+            const _: [(); 1] = [(); NAME.is_some() as usize];
+            match NAME {
                 Some(name) => name,
-                None => panic!("thread name literal must not contain NUL"),
+                None => $crate::ThreadName::__invalid(),
             }
         }
     };
 }
 
-/// ChibiOS working-area size passed to a firmware thread in bytes.
+/// `ChibiOS` working-area size passed to a firmware thread in bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThreadWorkingAreaSize(usize);
 
-/// Invalid ChibiOS thread working-area size.
+/// Invalid `ChibiOS` thread working-area size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ThreadWorkingAreaSizeError {
-    /// The working area cannot hold ChibiOS's required thread metadata and stack.
+    /// The working area cannot hold `ChibiOS`'s required thread metadata and stack.
     TooSmall,
-    /// The working-area byte count does not satisfy ChibiOS alignment.
+    /// The working-area byte count does not satisfy `ChibiOS` alignment.
     Misaligned,
 }
 
@@ -536,6 +562,10 @@ impl ThreadWorkingAreaSize {
     const WORKING_AREA_ALIGNMENT_BYTES: usize = 8;
 
     /// Build a working-area size from its firmware byte count.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `bytes` is too small or incorrectly aligned.
     pub const fn try_from_bytes(bytes: usize) -> Result<Self, ThreadWorkingAreaSizeError> {
         if bytes < Self::MIN_BYTES {
             return Err(ThreadWorkingAreaSizeError::TooSmall);
@@ -664,9 +694,9 @@ impl ThreadGroup {
     #[cfg(test)]
     pub(crate) fn from_handles<const N: usize>(handles: [ThreadHandle; N]) -> Self {
         let mut group = Self::new();
-        handles.into_iter().for_each(|handle| {
+        for handle in handles {
             assert!(group.push(handle));
-        });
+        }
         group
     }
 
@@ -688,6 +718,10 @@ pub trait FirmwareThreads: private::FirmwareThreads {
     fn sleep_for(&self, duration: Duration);
 
     /// Set the current package thread priority when supported by firmware.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThreadError`] when firmware does not support or rejects the operation.
     fn set_priority(&self, priority: ThreadPriority) -> Result<(), ThreadError>;
 }
 
@@ -867,12 +901,19 @@ impl<B: ThreadBindings> ThreadApi<B> {
     ///
     /// Float Out Boy's main runtime thread sleeps with `VESC_IF->sleep_us` at
     /// `src/main.c:1080`.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "min limits each sleep chunk to the firmware's u32 range"
+    )]
     pub fn sleep_for(&self, duration: Duration) {
         let mut micros = duration.as_nanos().div_ceil(1_000);
         while micros != 0 {
+            // `Duration` counts nanoseconds with `u128`, while the C firmware
+            // accepts only a `uint32_t` microsecond chunk. Taking the minimum
+            // first proves this narrowing cast cannot discard any high bits.
             let chunk = micros.min(u128::from(VESC_MAX_SAFE_SLEEP_MICROS)) as u32;
             self.bindings.sleep_us(chunk);
-            micros -= u128::from(chunk);
+            micros = micros.saturating_sub(u128::from(chunk));
         }
     }
 
@@ -1080,13 +1121,12 @@ mod tests {
 
     #[test]
     fn semantic_thread_capability_hides_binding_shape() {
-        let bindings = FakeThreadBindings::new();
-        let threads = ThreadApi::new(&bindings);
-
         fn accepts_semantic_threads(threads: &impl super::FirmwareThreads) -> bool {
             threads.should_terminate()
         }
 
+        let bindings = FakeThreadBindings::new();
+        let threads = ThreadApi::new(&bindings);
         assert!(!accepts_semantic_threads(&threads));
     }
 
@@ -1267,7 +1307,7 @@ mod tests {
         OBSERVED_STATE.store(0, Ordering::SeqCst);
 
         unsafe {
-            stateless_firmware_thread_entry::<RecordingStatelessThread>(core::ptr::null_mut())
+            stateless_firmware_thread_entry::<RecordingStatelessThread>(core::ptr::null_mut());
         };
 
         assert_eq!(RUN_CALLS.load(Ordering::SeqCst), 1);
@@ -1334,21 +1374,21 @@ mod tests {
             handles
                 .as_ref()
                 .and_then(|group| group.handles[0].as_ref())
-                .map(|handle| handle.as_ptr()),
+                .map(super::ThreadHandle::as_ptr),
             Some(0x1000 as *mut c_void)
         );
         assert_eq!(
             handles
                 .as_ref()
                 .and_then(|group| group.handles[2].as_ref())
-                .map(|handle| handle.as_ptr()),
+                .map(super::ThreadHandle::as_ptr),
             Some(0x3000 as *mut c_void)
         );
         assert_eq!(
             handles
                 .as_ref()
                 .and_then(|group| group.handles[1].as_ref())
-                .map(|handle| handle.as_ptr()),
+                .map(super::ThreadHandle::as_ptr),
             Some(0x2000 as *mut c_void)
         );
         assert_eq!(bindings.spawn_calls.get(), 3);

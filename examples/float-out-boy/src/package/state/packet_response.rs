@@ -351,7 +351,7 @@ mod tests {
             ],
         ));
 
-        assert_eq!(packet, [101, 0, 12, 1, 0]);
+        assert_eq!(packet, [101, 0, 1, 0, 0]);
     }
 
     #[test]

@@ -114,6 +114,12 @@ pub(super) fn float_out_boy_push_u8(buffer: &mut [u8], ind: &mut usize, value: u
     crate::wire::push_u8(buffer, ind, value);
 }
 
+pub(super) fn float_out_boy_push_bytes(buffer: &mut [u8], ind: &mut usize, values: &[u8]) {
+    for &value in values {
+        float_out_boy_push_u8(buffer, ind, value);
+    }
+}
+
 pub(super) fn float_out_boy_push_i16(buffer: &mut [u8], ind: &mut usize, value: i16) {
     // C map: `buffer_append_i16` writes big-endian signed integers via the
     // same bounded byte-by-byte helper path.

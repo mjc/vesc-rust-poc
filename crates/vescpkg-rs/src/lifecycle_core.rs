@@ -7,18 +7,18 @@ use vescpkg_rs_sys::LbmValue;
 #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 use vescpkg_rs_sys::{ExtensionHandler, NativeImage};
 
-/// Thin wrapper around the LispBM binding set used by package code.
+/// Thin wrapper around the `LispBM` binding set used by package code.
 pub(crate) struct LbmApi<B> {
     bindings: B,
 }
 
 impl<B: LbmBindings> LbmApi<B> {
-    /// Construct a new LispBM API wrapper.
+    /// Construct a new `LispBM` API wrapper.
     pub fn new(bindings: B) -> Self {
         Self { bindings }
     }
 
-    /// Register one LispBM extension name and handler.
+    /// Register one `LispBM` extension name and handler.
     #[cfg(test)]
     pub fn register_extension(
         &self,
@@ -33,7 +33,7 @@ impl<B: LbmBindings> LbmApi<B> {
         .ok_or(ExtensionRegistrationError::FirmwareRejected)
     }
 
-    /// Convert any LispBM numeric value to an `i32`.
+    /// Convert any `LispBM` numeric value to an `i32`.
     pub fn decode_number_as_i32(&self, value: LbmValue) -> Option<i32> {
         unsafe {
             self.bindings
@@ -42,7 +42,7 @@ impl<B: LbmBindings> LbmApi<B> {
         }
     }
 
-    /// Convert any LispBM numeric value to an `f32`.
+    /// Convert any `LispBM` numeric value to an `f32`.
     pub fn decode_number_as_f32(&self, value: LbmValue) -> Option<f32> {
         unsafe {
             self.bindings
@@ -51,14 +51,14 @@ impl<B: LbmBindings> LbmApi<B> {
         }
     }
 
-    /// Return the LispBM true value.
+    /// Return the `LispBM` true value.
     #[cfg(not(test))]
     #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
     pub fn encode_true(&self) -> LbmValue {
         self.bindings.encode_true()
     }
 
-    /// Return the LispBM nil value.
+    /// Return the `LispBM` nil value.
     #[cfg(not(test))]
     #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
     pub fn encode_nil(&self) -> LbmValue {
@@ -67,7 +67,7 @@ impl<B: LbmBindings> LbmApi<B> {
 }
 
 #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
-/// Package lifecycle controller that owns the shared LispBM API wrapper.
+/// Package lifecycle controller that owns the shared `LispBM` API wrapper.
 pub(crate) struct PackageLifecycle<B> {
     api: LbmApi<B>,
 }
@@ -101,7 +101,7 @@ impl<B: LbmBindings> PackageLifecycle<B> {
     ///
     /// `image` must describe the loaded native package image that owns
     /// `descriptor`. The resolved handler address must be a valid firmware
-    /// LispBM extension function and remain valid for as long as firmware may
+    /// `LispBM` extension function and remain valid for as long as firmware may
     /// call the registered extension.
     pub(crate) unsafe fn register_extension_from_image(
         &self,
@@ -125,20 +125,20 @@ impl<B: LbmBindings> PackageLifecycle<B> {
     /// # Safety
     ///
     /// `image` must describe the loaded native package image that owns every
-    /// descriptor. Each resolved handler address must be a valid firmware LispBM
+    /// descriptor. Each resolved handler address must be a valid firmware `LispBM`
     /// extension function and remain callable by firmware after registration.
     pub(crate) unsafe fn register_extensions_from_image(
         &self,
         image: NativeImage,
         descriptors: impl IntoIterator<Item = ExtensionDescriptor>,
     ) -> ExtensionRegistration {
-        let mut requested = 0;
-        let mut registered = 0;
+        let mut requested = 0_usize;
+        let mut registered = 0_usize;
         for descriptor in descriptors {
-            requested += 1;
-            registered += usize::from(
+            requested = requested.saturating_add(1);
+            registered = registered.saturating_add(usize::from(
                 unsafe { self.register_extension_from_image(image, descriptor) }.is_ok(),
-            );
+            ));
         }
         ExtensionRegistration::new(requested, registered)
     }
