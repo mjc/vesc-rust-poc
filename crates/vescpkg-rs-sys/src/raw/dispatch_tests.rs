@@ -295,7 +295,7 @@ extern "C" fn stub_lbm_dec_char(value: u32) -> u8 {
 }
 
 extern "C" fn stub_lbm_enc_char(value: u8) -> u32 {
-    value as u32
+    u32::from(value)
 }
 
 extern "C" fn stub_lbm_cons(_car: u32, _cdr: u32) -> u32 {
@@ -345,11 +345,11 @@ extern "C" fn stub_store_eeprom_var(word: *mut super::EepromVar, address: c_int)
 }
 
 extern "C" fn stub_can_get_status_msg_index(_index: c_int) -> *mut CanStatusMsg {
-    &CAN_STATUS as *const CanStatusMsg as *mut CanStatusMsg
+    (&raw const CAN_STATUS).cast_mut()
 }
 
 extern "C" fn stub_mc_gnss() -> *mut GnssData {
-    &GNSS as *const GnssData as *mut GnssData
+    (&raw const GNSS).cast_mut()
 }
 
 extern "C" fn stub_get_remote_state() -> RemoteState {
@@ -819,13 +819,13 @@ fn lbm_string_decode_forwards_through_mock_table() {
 fn eeprom_helpers_forward_word_pointers_and_addresses() {
     with_populated_table(|| unsafe {
         let mut read_word = 0;
-        assert!(read_eeprom_word(&mut read_word, 7));
+        assert!(read_eeprom_word(&raw mut read_word, 7));
         assert_eq!(read_word, 0x1234_5678);
         assert_eq!(READ_EEPROM_VAR.get(), 1);
         assert_eq!(LAST_EEPROM_ADDRESS.get(), 7);
 
         let mut stored_word = 0xAABB_CCDD;
-        assert!(store_eeprom_word(&mut stored_word, 9));
+        assert!(store_eeprom_word(&raw mut stored_word, 9));
         assert_eq!(STORE_EEPROM_VAR.get(), 1);
         assert_eq!(LAST_EEPROM_ADDRESS.get(), 9);
         assert_eq!(LAST_EEPROM_WORD.get(), stored_word);

@@ -9,6 +9,7 @@ static CURRENT_TABLE: AtomicPtr<VescIf> = AtomicPtr::new(ptr::null_mut());
 static TABLE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Returns a zeroed function table suitable for stub installation.
+#[must_use]
 pub fn empty_table() -> VescIf {
     unsafe { core::mem::zeroed() }
 }
@@ -39,7 +40,9 @@ impl Drop for MockGuard {
 
 /// Run `body` with `table` installed as the active `VescIf` pointer.
 pub fn with_table<R>(table: &VescIf, body: impl FnOnce() -> R) -> R {
-    let _lock = TABLE_LOCK.lock().unwrap_or_else(|err| err.into_inner());
+    let _lock = TABLE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     set_table(table);
     let _guard = MockGuard;
     body()
@@ -48,16 +51,17 @@ pub fn with_table<R>(table: &VescIf, body: impl FnOnce() -> R) -> R {
 #[cfg(test)]
 mod tests {
     use super::{TABLE_LOCK, clear_table, current_table, empty_table, set_table};
-    use crate::raw::VescIf;
 
     #[test]
     fn installs_and_clears_mock_table() {
-        let _lock = TABLE_LOCK.lock().unwrap_or_else(|err| err.into_inner());
+        let _lock = TABLE_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let table = empty_table();
         assert!(current_table().is_none());
 
-        set_table(&table);
-        assert_eq!(current_table(), Some(&table as *const VescIf));
+        set_table(&raw const table);
+        assert_eq!(current_table(), Some(&raw const table));
 
         clear_table();
         assert!(current_table().is_none());

@@ -13,7 +13,7 @@ let _ = vescpkg_rs_sys::raw::io_set_mode(
 );
 ```
 
-LispBM encoding requires an unsafe block:
+`LispBM` encoding requires an unsafe block:
 
 ```compile_fail
 let _ = vescpkg_rs_sys::raw::lbm_enc_i(0);

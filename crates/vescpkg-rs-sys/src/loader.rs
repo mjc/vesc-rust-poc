@@ -2,7 +2,7 @@
 
 use core::ffi::c_void;
 
-/// Handler used to register a LispBM extension from native code.
+/// Handler used to register a `LispBM` extension from native code.
 pub type ExtensionHandler = unsafe extern "C" fn(*mut u32, u32) -> u32;
 /// Handler used when firmware streams application data into Rust code.
 pub type AppDataHandler = unsafe extern "C" fn(*mut u8, u32);
@@ -41,6 +41,10 @@ impl LibInfoAbi {
     pub const ALIGN: usize = 4;
 
     /// Assert that [`LibInfo`] matches the 32-bit firmware layout.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the host representation differs from the firmware ABI.
     pub const fn assert_vesc32_layout() {
         assert!(core::mem::size_of::<LibInfo>() == Self::SIZE);
         assert!(core::mem::align_of::<LibInfo>() == Self::ALIGN);
