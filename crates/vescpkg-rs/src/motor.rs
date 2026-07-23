@@ -499,6 +499,8 @@ pub trait MotorControlBindings {
     fn update_pid_position_offset(&self, position: PidPosition, store: bool);
     /// Set the firmware-owned odometer distance in meters.
     fn set_odometer(&self, odometer: OdometerMeters);
+    /// Set the relative tachometer and return its previous value.
+    fn set_tachometer(&self, steps: TachometerSteps) -> TachometerSteps;
     /// Release the motor output.
     fn release_motor(&self);
     /// Wait up to `timeout` for the motor output to be released.
@@ -584,6 +586,10 @@ impl<B: MotorControlBindings + ?Sized> MotorControlBindings for &B {
 
     fn set_odometer(&self, odometer: OdometerMeters) {
         (**self).set_odometer(odometer);
+    }
+
+    fn set_tachometer(&self, steps: TachometerSteps) -> TachometerSteps {
+        (**self).set_tachometer(steps)
     }
 
     fn release_motor(&self) {
@@ -987,6 +993,12 @@ impl MotorControlBindings for RealMotorControlBindings {
         unsafe { crate::ffi::mc_set_odometer(odometer.as_meters()) };
     }
 
+    fn set_tachometer(&self, steps: TachometerSteps) -> TachometerSteps {
+        TachometerSteps::new(crate::units::TachometerSteps::from_steps(unsafe {
+            crate::ffi::mc_set_tachometer_value(steps.steps().as_steps())
+        }))
+    }
+
     fn release_motor(&self) {
         unsafe { crate::ffi::mc_release_motor() };
     }
@@ -1197,6 +1209,8 @@ pub trait MotorOutput: private::MotorOutput {
     );
     /// Set the firmware-owned odometer distance in meters.
     fn set_odometer(&self, odometer: OdometerMeters);
+    /// Set the relative tachometer and return its previous value.
+    fn set_tachometer(&self, steps: TachometerSteps) -> TachometerSteps;
     /// Release the motor output.
     fn release_motor(&self);
     /// Wait up to `timeout` for the motor output to be released.
@@ -1876,6 +1890,11 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
         self.bindings.set_odometer(odometer);
     }
 
+    /// Set the relative tachometer and return its previous value.
+    pub fn set_tachometer(&self, steps: TachometerSteps) -> TachometerSteps {
+        self.bindings.set_tachometer(steps)
+    }
+
     /// Release the motor output.
     pub fn release_motor(&self) {
         self.bindings.release_motor();
@@ -1973,6 +1992,10 @@ impl<B: MotorControlBindings> MotorOutput for MotorControlApi<B> {
 
     fn set_odometer(&self, odometer: OdometerMeters) {
         MotorControlApi::set_odometer(self, odometer);
+    }
+
+    fn set_tachometer(&self, steps: TachometerSteps) -> TachometerSteps {
+        MotorControlApi::set_tachometer(self, steps)
     }
 
     fn release_motor(&self) {

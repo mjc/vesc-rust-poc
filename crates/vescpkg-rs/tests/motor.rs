@@ -8,8 +8,8 @@ use vescpkg_rs::{
     HandbrakeRelative, InputCurrent, MotorCurrentLimit, MotorOutput, MotorReleaseOutcome,
     MotorSelection, MotorTelemetry, OdometerMeters, OpenLoopCurrent, OpenLoopPhase, PidPosition,
     PidPositionOffsetPersistence, PwmCallbackError, Ratio, Rpm, SignedRatio, Speed,
-    TachometerReset, Temperature, TemperatureLimitStart, TotalMotorCurrent, VehicleSpeed,
-    VescSeconds, WattHoursRemaining,
+    TachometerReset, TachometerSteps, Temperature, TemperatureLimitStart, TotalMotorCurrent,
+    VehicleSpeed, VescSeconds, WattHoursRemaining,
 };
 
 unsafe extern "C" fn test_pwm_callback() {}
@@ -235,6 +235,22 @@ fn motor_exposes_typed_handbrake_commands() {
     firmware
         .motor()
         .set_odometer(OdometerMeters::from_meters(12_345));
+    assert_eq!(
+        firmware
+            .motor()
+            .set_tachometer(TachometerSteps::from_steps(777))
+            .steps()
+            .as_steps(),
+        1234
+    );
+    assert_eq!(
+        firmware
+            .telemetry()
+            .tachometer(TachometerReset::Preserve)
+            .steps()
+            .as_steps(),
+        777
+    );
     firmware
         .motor()
         .set_pid_speed(ElectricalSpeed::new(Rpm::from_revolutions_per_minute(

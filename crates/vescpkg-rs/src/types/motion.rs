@@ -142,6 +142,11 @@ macro_rules! tachometer_type {
         pub struct $name(UnitTachometerSteps);
 
         impl $name {
+            /// Construct tachometer steps from the firmware's signed step count.
+            pub const fn from_steps(steps: i32) -> Self {
+                Self(UnitTachometerSteps::from_steps(steps))
+            }
+
             /// Wrap generic tachometer steps with VESC-domain meaning.
             pub const fn new(steps: UnitTachometerSteps) -> Self {
                 Self(steps)
