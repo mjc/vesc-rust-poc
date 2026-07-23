@@ -13,6 +13,7 @@ fn package_callers_can_branch_on_subsystem_handles() {
     assert!(capabilities.can_bus().is_ok());
     assert!(capabilities.nvm().is_ok());
     assert!(capabilities.inputs().is_ok());
+    assert!(capabilities.require_inputs().is_ok());
     assert!(capabilities.audio().is_ok());
     assert!(capabilities.uart().is_ok());
     assert!(capabilities.settings().is_ok());

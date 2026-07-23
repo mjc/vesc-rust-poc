@@ -392,6 +392,10 @@ fn vesc_if_capabilities_expose_named_subsystems_without_raw_slot_names() {
         VescIfSubsystem::Inputs
     );
     assert_eq!(
+        capabilities.require_inputs().unwrap().subsystem(),
+        VescIfSubsystem::Inputs
+    );
+    assert_eq!(
         capabilities.can().unwrap().subsystem(),
         VescIfSubsystem::Can
     );
