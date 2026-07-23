@@ -1,5 +1,5 @@
-#![cfg(feature = "math")]
 #![doc = "Integration coverage for package-owned AHRS state."]
+#![cfg(feature = "math")]
 #![allow(missing_docs)]
 
 use vescpkg_rs::{
