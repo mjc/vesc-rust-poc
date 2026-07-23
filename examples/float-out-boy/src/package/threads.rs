@@ -74,7 +74,7 @@ fn float_out_boy_runtime_threads() -> [vescpkg_rs::ThreadSpec<FloatOutBoyPackage
             main_thread.working_area_size(),
             main_thread.name(),
         ),
-        vescpkg_rs::ThreadSpec::<FloatOutBoyPackageState>::stateless::<FloatOutBoyAuxThread>(
+        vescpkg_rs::ThreadSpec::<FloatOutBoyPackageState>::new::<FloatOutBoyAuxThread>(
             aux_thread.working_area_size(),
             aux_thread.name(),
         ),
@@ -206,9 +206,11 @@ pub fn start_float_out_boy_runtime_threads(
     start: &mut vescpkg_rs::PackageStart<'_>,
 ) -> Result<(), vescpkg_rs::PackageStartError> {
     let firmware = vescpkg_rs::Firmware::new();
+    let odometer = firmware.telemetry().odometer();
     if start
         .with_runtime_state::<FloatOutBoyPackageState, _>(|state| {
             state.initialize_balance_filter(firmware.imu().orientation());
+            state.initialize_aux_odometer(odometer);
         })
         .is_none()
     {
@@ -297,13 +299,36 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
 struct FloatOutBoyAuxThread;
 
 #[cfg(target_arch = "arm")]
-impl vescpkg_rs::StatelessFirmwareThread for FloatOutBoyAuxThread {
-    fn run(ctx: vescpkg_rs::StatelessThreadContext) {
+impl vescpkg_rs::FirmwareThread for FloatOutBoyAuxThread {
+    type State = FloatOutBoyPackageState;
+
+    fn run(ctx: vescpkg_rs::ThreadContext<Self::State>) {
         // C map: Float Out Boy v1.2.1 `aux_thd` starts at
         // `third_party/float-out-boy/src/main.c:1130`.
         #[cfg(all(not(test), target_arch = "arm"))]
         {
-            run_float_out_boy_aux_thread_with(ctx.threads());
+            let firmware = ctx.firmware();
+            let threads = firmware.threads();
+            if let Ok(priority) = ThreadPriority::try_new(-1) {
+                let _ = threads.set_priority(priority);
+            }
+            while !threads.should_terminate() {
+                let odometer = firmware.telemetry().odometer();
+                let backup_due = ctx
+                    .with_state_mut(|state| state.aux_backup_due(odometer))
+                    .unwrap_or(false);
+                if backup_due {
+                    let stored = firmware.inputs().store_backup().is_ok();
+                    let _ = ctx.with_state_mut(|state| {
+                        if stored {
+                            state.record_aux_backup(odometer);
+                        } else {
+                            state.record_aux_backup_failure();
+                        }
+                    });
+                }
+                threads.sleep_for(Duration::from_micros(FLOAT_OUT_BOY_AUX_LOOP_TIME_US as u64));
+            }
         }
 
         #[cfg(test)]
@@ -696,5 +721,35 @@ mod tests {
             firmware.thread_sleep_durations(),
             [Duration::from_micros(33_333), Duration::ZERO]
         );
+    }
+
+    #[test]
+    fn float_out_boy_aux_backup_threshold_matches_source_and_run_state() {
+        let mut ready = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+            FloatOutBoyRunState::Ready,
+            FloatOutBoyMode::Normal,
+        ));
+        ready.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
+        assert!(!ready.aux_backup_due(OdometerMeters::from_meters(1_200)));
+        assert!(ready.aux_backup_due(OdometerMeters::from_meters(1_201)));
+
+        let mut running = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+            FloatOutBoyRunState::Running,
+            FloatOutBoyMode::Normal,
+        ));
+        running.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
+        assert!(!running.aux_backup_due(OdometerMeters::from_meters(1_201)));
+    }
+
+    #[test]
+    fn failed_aux_backup_is_diagnosable_and_does_not_advance_threshold() {
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
+        state.record_aux_backup_failure();
+
+        assert_eq!(state.aux_backup_failures(), 1);
+        assert!(state.aux_backup_due(OdometerMeters::from_meters(1_201)));
+        state.record_aux_backup(OdometerMeters::from_meters(1_201));
+        assert!(!state.aux_backup_due(OdometerMeters::from_meters(1_201)));
     }
 }

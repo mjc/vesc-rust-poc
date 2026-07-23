@@ -18,6 +18,8 @@ use crate::domain::{
 };
 use crate::motor_control::FloatOutBoyMotorControl;
 #[cfg(any(test, target_arch = "arm"))]
+use vescpkg_rs::prelude::OdometerMeters;
+#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{AdcVoltage, FirmwareVersion};
 use vescpkg_rs::prelude::{
     AngleRadians, BatteryCellCount, BatteryVoltage, Current, DutyCycleLimit, InputCurrent,
@@ -159,6 +161,10 @@ pub struct FloatOutBoyPackageState {
     motor_temperature_limit_start: TemperatureLimitStart,
     battery_cell_count: Option<BatteryCellCount>,
     #[cfg(any(test, target_arch = "arm"))]
+    aux_odometer: OdometerMeters,
+    #[cfg(any(test, target_arch = "arm"))]
+    aux_backup_failures: u32,
+    #[cfg(any(test, target_arch = "arm"))]
     firmware_version: Option<FirmwareVersion>,
 }
 
@@ -235,6 +241,10 @@ impl FloatOutBoyPackageState {
             motor_temperature_limit_start: TemperatureLimitStart::new(Temperature::ZERO),
             battery_cell_count: None,
             #[cfg(any(test, target_arch = "arm"))]
+            aux_odometer: OdometerMeters::from_meters(0),
+            #[cfg(any(test, target_arch = "arm"))]
+            aux_backup_failures: 0,
+            #[cfg(any(test, target_arch = "arm"))]
             firmware_version: None,
         }
     }
@@ -285,6 +295,42 @@ impl FloatOutBoyPackageState {
         let mut state = Self::new(all_data_payloads);
         state.load_persisted_config_on_startup();
         state
+    }
+
+    /// Seed the auxiliary backup threshold from the firmware odometer at startup.
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn initialize_aux_odometer(&mut self, odometer: OdometerMeters) {
+        self.aux_odometer = odometer;
+    }
+
+    /// Return whether the source-backed auxiliary backup threshold has been crossed.
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn aux_backup_due(&self, odometer: OdometerMeters) -> bool {
+        !matches!(
+            self.all_data_payloads
+                .base()
+                .status()
+                .ride_state()
+                .run_state(),
+            FloatOutBoyRunState::Running
+        ) && odometer.as_meters() > self.aux_odometer.as_meters().saturating_add(200)
+    }
+
+    /// Record a successful auxiliary backup so the same distance is not stored repeatedly.
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn record_aux_backup(&mut self, odometer: OdometerMeters) {
+        self.aux_odometer = odometer;
+    }
+
+    /// Record an unsuccessful auxiliary backup for diagnostics and retry on the next tick.
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn record_aux_backup_failure(&mut self) {
+        self.aux_backup_failures = self.aux_backup_failures.saturating_add(1);
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn aux_backup_failures(&self) -> u32 {
+        self.aux_backup_failures
     }
 
     #[cfg(any(test, target_arch = "arm"))]
