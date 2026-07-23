@@ -856,6 +856,8 @@ mod tests {
         assert!(qml.contains("[tuneManager.packageName,\"Refloat\"].includes"));
         assert!(qml.contains("backup.package.name!==packageName"));
         assert!(qml.contains("\"package\":{\"name\":\"Refloat\",\"version\":\"1.2.1\"}"));
+        assert!(qml.contains("if(!archive[i].package){archive[i].package={\"name\":\"Refloat\",\"version\":\"1.2.1\"};}"));
+        assert!(qml.contains("if(tuneArchive&&tuneArchive.length>0){downloadedTunesModel.setTunes"));
     }
 
     #[test]
