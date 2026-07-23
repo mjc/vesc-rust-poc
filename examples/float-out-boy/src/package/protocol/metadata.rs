@@ -36,7 +36,7 @@ pub(in crate::package) struct FloatOutBoyInfoResponse {
 
 impl FloatOutBoyInfoResponse {
     pub(in crate::package) fn as_bytes(&self) -> &[u8] {
-        self.bytes.get(..self.len).unwrap_or_default()
+        self.bytes.get(..self.len).unwrap_or(&self.bytes)
     }
 }
 
@@ -279,6 +279,19 @@ mod tests {
         assert_eq!(
             response.as_bytes().len(),
             FLOAT_OUT_BOY_INFO_RESPONSE_V2_LEN
+        );
+    }
+
+    #[test]
+    fn oversized_info_length_preserves_the_complete_buffer() {
+        let response = FloatOutBoyInfoResponse {
+            bytes: [0x5a; FLOAT_OUT_BOY_INFO_RESPONSE_V2_LEN],
+            len: usize::MAX,
+        };
+
+        assert_eq!(
+            response.as_bytes(),
+            &[0x5a; FLOAT_OUT_BOY_INFO_RESPONSE_V2_LEN]
         );
     }
 
