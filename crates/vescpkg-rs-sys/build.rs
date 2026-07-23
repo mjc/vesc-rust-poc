@@ -159,8 +159,7 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
     .expect("write generated Rust");
     writeln!(
         rust,
-        "pub(crate) const CALLABLE_SLOT_COUNT: usize = {};",
-        callable_count
+        "pub(crate) const CALLABLE_SLOT_COUNT: usize = {callable_count};"
     )
     .expect("write generated Rust");
     writeln!(
