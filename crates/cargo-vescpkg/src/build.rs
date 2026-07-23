@@ -860,6 +860,12 @@ mod tests {
         assert!(
             qml.contains("if(tuneArchive&&tuneArchive.length>0){downloadedTunesModel.setTunes")
         );
+        assert!(qml.contains(
+            "https://us-central1-mimetic-union-377520.cloudfunctions.net/float_package_tunes_via_http"
+        ));
+        assert!(!qml.contains(
+            "http://us-central1-mimetic-union-377520.cloudfunctions.net/float_package_tunes_via_http"
+        ));
     }
 
     #[test]
