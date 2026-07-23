@@ -40,8 +40,7 @@ impl TimerInstant {
         Self(raw)
     }
 
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware clock helpers need the raw timer value when package code uses high-resolution timing.
+    #[cfg_attr(test, allow(dead_code))]
     pub(crate) const fn raw(self) -> u32 {
         self.0
     }
@@ -120,6 +119,7 @@ pub(crate) struct AppDataApi<B> {
     bindings: B,
 }
 
+#[cfg_attr(test, allow(dead_code))]
 impl<B: AppDataBindings> AppDataApi<B> {
     /// Construct a new firmware app-data API wrapper.
     pub(crate) fn new(bindings: B) -> Self {
@@ -132,29 +132,21 @@ impl<B: AppDataBindings> AppDataApi<B> {
     }
 
     /// Return firmware uptime in floating-point seconds.
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware clock capability is part of the package API even when host builds do not call it.
     pub(crate) fn system_uptime(&self) -> VescSeconds {
         VescSeconds::from_seconds(self.bindings.system_time_seconds())
     }
 
     /// Return firmware-computed age for a system timestamp.
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware clock capability is part of the package API even when host builds do not call it.
     pub(crate) fn timestamp_age(&self, timestamp: TimestampTicks) -> VescSeconds {
         VescSeconds::from_seconds(self.bindings.timestamp_age_seconds(timestamp.as_ticks()))
     }
 
     /// Return the current high-resolution timer instant.
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware timer capability is part of the package API even when host builds do not call it.
     pub(crate) fn timer_now(&self) -> TimerInstant {
         TimerInstant::from_raw(self.bindings.timer_time_now())
     }
 
     /// Return high-resolution elapsed time since a timer instant.
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware timer capability is part of the package API even when host builds do not call it.
     pub(crate) fn timer_elapsed_since(&self, earlier: TimerInstant) -> VescSeconds {
         VescSeconds::from_seconds(self.bindings.timer_seconds_elapsed_since(earlier.raw()))
     }
@@ -171,6 +163,8 @@ impl<B: AppDataBindings> AppDataApi<B> {
 /// Typed access to the firmware capabilities available to package threads.
 pub struct Firmware {
     #[cfg(not(test))]
+    can: crate::CanBus,
+    #[cfg(not(test))]
     threads: ThreadApi<RealThreadBindings>,
     #[cfg(not(test))]
     app_data: FirmwareAppData,
@@ -179,18 +173,28 @@ pub struct Firmware {
     #[cfg(not(test))]
     nvm: crate::Nvm,
     #[cfg(not(test))]
-    gpio: crate::Gpio,
+    eeprom: crate::CustomEeprom,
     #[cfg(not(test))]
-    input: crate::ControllerInput,
+    gpio: crate::Gpio,
     #[cfg(not(test))]
     imu: crate::imu::ImuApi<crate::imu::RealImuBindings>,
     #[cfg(not(test))]
     telemetry: crate::motor::MotorTelemetryApi<crate::motor::RealMotorTelemetryBindings>,
     #[cfg(not(test))]
     motor: crate::motor::MotorControlApi<crate::motor::RealMotorControlBindings>,
+    #[cfg(not(test))]
+    inputs: crate::FirmwareInputs,
+    #[cfg(not(test))]
+    settings: crate::FirmwareSettings,
 }
 
 impl Firmware {
+    /// Borrow the firmware CAN transport and status capability.
+    #[cfg(not(test))]
+    pub fn can(&self) -> &crate::CanBus {
+        &self.can
+    }
+
     /// Borrow firmware thread capabilities without exposing the binding type.
     #[cfg(not(test))]
     pub fn threads(&self) -> &impl FirmwareThreads {
@@ -215,16 +219,16 @@ impl Firmware {
         &self.nvm
     }
 
+    /// Borrow the package custom-EEPROM capability.
+    #[cfg(not(test))]
+    pub fn eeprom(&self) -> &crate::CustomEeprom {
+        &self.eeprom
+    }
+
     /// Borrow firmware GPIO capabilities without exposing the binding type.
     #[cfg(not(test))]
     pub fn gpio(&self) -> &crate::Gpio {
         &self.gpio
-    }
-
-    /// Borrow typed PPM and UART controller inputs.
-    #[cfg(not(test))]
-    pub fn input(&self) -> &crate::ControllerInput {
-        &self.input
     }
 
     /// Borrow firmware IMU capabilities without exposing the binding type.
@@ -245,16 +249,40 @@ impl Firmware {
         &self.motor
     }
 
+    /// Borrow typed controller input and output-safety state.
+    #[cfg(not(test))]
+    pub fn inputs(&self) -> &crate::FirmwareInputs {
+        &self.inputs
+    }
+
+    /// Borrow the typed live firmware settings capability.
+    #[cfg(not(test))]
+    pub fn settings(&self) -> &crate::FirmwareSettings {
+        &self.settings
+    }
+
     /// Construct firmware capabilities backed by the live VESC package ABI.
     #[cfg(not(test))]
     pub fn new() -> Self {
+        Self::with_gpio(crate::Gpio::new())
+    }
+
+    #[cfg(all(not(test), target_arch = "arm"))]
+    fn from_state<S: PackageRuntimeState>(state: NonNull<S>) -> Self {
+        let leases = unsafe { crate::runtime::firmware_runtime_gpio_leases(state) };
+        Self::with_gpio(crate::Gpio::from_runtime_leases(leases))
+    }
+
+    #[cfg(not(test))]
+    fn with_gpio(gpio: crate::Gpio) -> Self {
         Self {
+            can: crate::CanBus::new(),
             threads: ThreadApi::new(RealThreadBindings),
             app_data: FirmwareAppData::new(),
             clock: FirmwareClock::new(),
             nvm: crate::Nvm::new(),
-            gpio: crate::Gpio::new(),
-            input: crate::ControllerInput::new(),
+            eeprom: crate::CustomEeprom::new(),
+            gpio,
             imu: crate::imu::ImuApi::new(crate::imu::RealImuBindings),
             telemetry: crate::motor::MotorTelemetryApi::new(
                 crate::motor::RealMotorTelemetryBindings,
@@ -262,6 +290,8 @@ impl Firmware {
             motor: crate::motor::MotorControlApi::from_firmware(
                 crate::motor::RealMotorControlBindings,
             ),
+            inputs: crate::FirmwareInputs::new(),
+            settings: crate::FirmwareSettings,
         }
     }
 
@@ -324,7 +354,12 @@ impl<S: PackageRuntimeState> ThreadContext<S> {
     }
 
     /// Build a thread context backed by the live VESC package ABI.
-    #[cfg(not(test))]
+    #[cfg(all(not(test), target_arch = "arm"))]
+    fn from_entry(state: NonNull<S>) -> Self {
+        Self::new(state, Firmware::from_state(state))
+    }
+
+    #[cfg(all(not(test), not(target_arch = "arm")))]
     fn from_entry(state: NonNull<S>) -> Self {
         Self::new(state, Firmware::new())
     }
@@ -687,6 +722,9 @@ pub trait FirmwareThreads: private::FirmwareThreads {
     /// Sleep the current package thread for a duration.
     fn sleep_for(&self, duration: Duration);
 
+    /// Sleep the current package thread for a number of microseconds.
+    fn sleep_for_micros(&self, micros: u64);
+
     /// Set the current package thread priority when supported by firmware.
     fn set_priority(&self, priority: ThreadPriority) -> Result<(), ThreadError>;
 }
@@ -798,6 +836,10 @@ impl<B: ThreadBindings> FirmwareThreads for ThreadApi<B> {
         self.sleep_for(duration);
     }
 
+    fn sleep_for_micros(&self, micros: u64) {
+        self.sleep_for_micros(micros);
+    }
+
     fn set_priority(&self, priority: ThreadPriority) -> Result<(), ThreadError> {
         self.set_priority(priority)
     }
@@ -868,7 +910,15 @@ impl<B: ThreadBindings> ThreadApi<B> {
     /// Float Out Boy's main runtime thread sleeps with `VESC_IF->sleep_us` at
     /// `src/main.c:1080`.
     pub fn sleep_for(&self, duration: Duration) {
-        let mut micros = duration.as_nanos().div_ceil(1_000);
+        self.sleep_for_micros(duration.as_nanos().div_ceil(1_000) as u64);
+    }
+
+    /// Sleep the current package thread for a checked number of microseconds.
+    ///
+    /// VESC's native sleep slot accepts a 32-bit count. Long waits are split
+    /// into safe chunks so package code cannot silently truncate a duration.
+    pub fn sleep_for_micros(&self, micros: u64) {
+        let mut micros = u128::from(micros);
         while micros != 0 {
             let chunk = micros.min(u128::from(VESC_MAX_SAFE_SLEEP_MICROS)) as u32;
             self.bindings.sleep_us(chunk);
@@ -967,6 +1017,11 @@ pub mod test_support {
             self.should_terminate_after_calls.set(checks);
             self
         }
+
+        pub(crate) fn with_priority_result(self, result: bool) -> Self {
+            self.priority_result.set(result);
+            self
+        }
     }
 
     impl ThreadBindings for FakeThreadBindings {
@@ -1051,6 +1106,7 @@ mod tests {
     use std::sync::Mutex;
 
     use crate::thread::test_support::FakeThreadBindings;
+    use crate::types::ThreadPriority;
     use crate::units::TimestampTicks;
 
     #[test]
@@ -1105,6 +1161,26 @@ mod tests {
             u64::from(VESC_MAX_SAFE_SLEEP_MICROS) + 1,
         ));
         assert_eq!(overflow.sleep_micros.get(), [VESC_MAX_SAFE_SLEEP_MICROS, 1]);
+
+        let direct = FakeThreadBindings::new();
+        ThreadApi::new(&direct).sleep_for_micros(u64::from(VESC_MAX_SAFE_SLEEP_MICROS) + 1);
+        assert_eq!(direct.sleep_micros.get(), [VESC_MAX_SAFE_SLEEP_MICROS, 1]);
+    }
+
+    #[test]
+    fn thread_priority_forwards_checked_values_and_reports_absence() {
+        let supported = FakeThreadBindings::new();
+        let priority = ThreadPriority::try_new(5).expect("priority is in the ABI range");
+        assert_eq!(ThreadApi::new(&supported).set_priority(priority), Ok(()));
+        assert_eq!(supported.priority_calls.get(), 1);
+        assert_eq!(supported.priorities.get()[0], 5);
+
+        let unsupported = FakeThreadBindings::new().with_priority_result(false);
+        assert_eq!(
+            ThreadApi::new(&unsupported).set_priority(priority),
+            Err(super::ThreadError::PriorityUnsupported)
+        );
+        assert_eq!(unsupported.priority_calls.get(), 1);
     }
 
     static RUN_CALLS: AtomicUsize = AtomicUsize::new(0);

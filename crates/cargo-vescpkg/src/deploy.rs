@@ -1,10 +1,14 @@
 //! Install a package and run BLE loopback on the same open session.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::runtime::Runtime;
 use vesc_protocol::WireCommand;
 use vesc_protocol::ble_loopback::LoopbackPacket;
+use vesc_protocol::control_loop::{
+    CommandError as ControlLoopCommandError, ControlLoopStatus, encode_setpoint_command,
+    encode_status_command,
+};
 
 use crate::loopback::{LoopbackReport, LoopbackTarget, LoopbackTransportError};
 use crate::package_install::PackageInstallError;
@@ -13,6 +17,9 @@ use crate::vesc_uart::encode_packet;
 
 const COMM_CUSTOM_APP_DATA: u8 = 36;
 const LOOPBACK_RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
+const CONTROL_LOOP_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
+const CONTROL_LOOP_SETPOINT: i16 = 100;
+const CONTROL_LOOP_STATUS_SAMPLES: usize = 4;
 
 /// Opens BLE and runs the standard package app-data loopback sequence.
 pub fn run_loopback_probe(
@@ -31,6 +38,287 @@ pub fn run_loopback_probe(
         .map_err(DeployError::Loopback);
     transport.close();
     result
+}
+
+/// Report produced by the no-actuation control-loop probe.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ControlLoopProbeReport {
+    target: LoopbackTarget,
+    statuses: Vec<ControlLoopStatus>,
+    timing: ControlLoopTimingStats,
+    elapsed: Duration,
+}
+
+impl ControlLoopProbeReport {
+    /// Return the target used for the probe.
+    pub const fn target(&self) -> &LoopbackTarget {
+        &self.target
+    }
+
+    /// Return each status sample in wire order.
+    pub fn statuses(&self) -> &[ControlLoopStatus] {
+        &self.statuses
+    }
+
+    /// Return the observed firmware tick timing statistics.
+    pub const fn timing(&self) -> ControlLoopTimingStats {
+        self.timing
+    }
+
+    /// Return host-observed probe duration.
+    pub const fn elapsed(&self) -> Duration {
+        self.elapsed
+    }
+}
+
+/// Host-observed timing statistics derived from successive firmware tick counts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ControlLoopTimingStats {
+    min_tick_period: Duration,
+    max_tick_period: Duration,
+}
+
+impl ControlLoopTimingStats {
+    /// Return the shortest observed duration per firmware tick.
+    pub const fn min_tick_period(self) -> Duration {
+        self.min_tick_period
+    }
+
+    /// Return the longest observed duration per firmware tick.
+    pub const fn max_tick_period(self) -> Duration {
+        self.max_tick_period
+    }
+
+    /// Return the observed period spread between the fastest and slowest samples.
+    pub const fn jitter(self) -> Duration {
+        self.max_tick_period.saturating_sub(self.min_tick_period)
+    }
+}
+
+/// Errors returned by the no-actuation control-loop probe.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ControlLoopProbeError {
+    /// BLE transport or firmware preflight failed.
+    Transport(PackageInstallError),
+    /// The package returned an unexpected ACK or status payload.
+    InvalidResponse(ControlLoopCommandError),
+    /// The package returned a valid status but its loop did not advance.
+    TickDidNotAdvance {
+        /// Tick count from the first status sample.
+        initial: u32,
+        /// Tick count from the final status sample.
+        final_tick: u32,
+    },
+    /// The package retained a setpoint but never changed its reported output.
+    OutputDidNotChange {
+        /// Output from the first status sample.
+        initial: i16,
+        /// Output from the final status sample.
+        final_output: i16,
+    },
+    /// The status samples did not contain two advancing tick observations.
+    TimingUnavailable,
+    /// The package did not retain the requested setpoint.
+    SetpointMismatch {
+        /// Setpoint sent by the probe.
+        expected: i16,
+        /// Setpoint echoed by the package.
+        observed: i16,
+    },
+}
+
+impl std::fmt::Display for ControlLoopProbeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Transport(error) => write!(f, "control-loop transport failed: {error}"),
+            Self::InvalidResponse(error) => write!(f, "invalid control-loop response: {error:?}"),
+            Self::TickDidNotAdvance {
+                initial,
+                final_tick,
+            } => {
+                write!(
+                    f,
+                    "control-loop tick did not advance ({initial} -> {final_tick})"
+                )
+            }
+            Self::OutputDidNotChange {
+                initial,
+                final_output,
+            } => {
+                write!(
+                    f,
+                    "control-loop output did not change ({initial} -> {final_output})"
+                )
+            }
+            Self::TimingUnavailable => {
+                f.write_str("control-loop timing was unavailable from status samples")
+            }
+            Self::SetpointMismatch { expected, observed } => {
+                write!(
+                    f,
+                    "control-loop setpoint mismatch ({expected} != {observed})"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for ControlLoopProbeError {}
+
+/// Opens BLE and probes the installed no-actuation control-loop package.
+pub fn run_control_loop_probe(
+    target: LoopbackTarget,
+    mut progress: impl FnMut(String),
+) -> Result<ControlLoopProbeReport, ControlLoopProbeError> {
+    let transport = BtlePackageInstallTransport::new().map_err(ControlLoopProbeError::Transport)?;
+    transport
+        .open_without_preflight(target.clone())
+        .map_err(ControlLoopProbeError::Transport)?;
+    progress("BLE session open".to_owned());
+    let result = transport.with_runtime_session(
+        || {
+            ControlLoopProbeError::Transport(PackageInstallError::Device(
+                "BLE transport has not been opened".to_owned(),
+            ))
+        },
+        |runtime, session| run_control_loop_on_session(runtime, session, target, &mut progress),
+    );
+    transport.close();
+    result
+}
+
+fn run_control_loop_on_session(
+    runtime: &Runtime,
+    session: &mut VescSession,
+    target: LoopbackTarget,
+    progress: &mut impl FnMut(String),
+) -> Result<ControlLoopProbeReport, ControlLoopProbeError> {
+    progress("step fw-version-preflight: starting".to_owned());
+    session
+        .confirm_fw_version(runtime)
+        .map_err(ControlLoopProbeError::Transport)?;
+    progress("step fw-version-preflight: received COMM_FW_VERSION ok".to_owned());
+
+    let started = Instant::now();
+    let ack = send_control_loop_packet(
+        runtime,
+        session,
+        &encode_setpoint_command(CONTROL_LOOP_SETPOINT),
+    )?;
+    if ack.as_slice() != [1, 0] {
+        return Err(ControlLoopProbeError::InvalidResponse(
+            ControlLoopCommandError::UnexpectedResponse,
+        ));
+    }
+    progress(format!("step setpoint: accepted {CONTROL_LOOP_SETPOINT}"));
+
+    let mut statuses = Vec::with_capacity(CONTROL_LOOP_STATUS_SAMPLES);
+    let mut sampled_at = Vec::with_capacity(CONTROL_LOOP_STATUS_SAMPLES);
+    for sample_index in 0..CONTROL_LOOP_STATUS_SAMPLES {
+        if sample_index != 0 {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        let response = send_control_loop_packet(runtime, session, &encode_status_command())?;
+        let status =
+            ControlLoopStatus::decode(&response).map_err(ControlLoopProbeError::InvalidResponse)?;
+        progress(format!(
+            "step status-{sample_index}: ticks={} output={}",
+            status.tick_count(),
+            status.output()
+        ));
+        statuses.push(status);
+        sampled_at.push(Instant::now());
+    }
+
+    validate_control_loop_statuses(&statuses)?;
+    let timing = derive_control_loop_timing(&statuses, &sampled_at)
+        .ok_or(ControlLoopProbeError::TimingUnavailable)?;
+
+    Ok(ControlLoopProbeReport {
+        target,
+        statuses,
+        timing,
+        elapsed: started.elapsed(),
+    })
+}
+
+fn validate_control_loop_statuses(
+    statuses: &[ControlLoopStatus],
+) -> Result<(), ControlLoopProbeError> {
+    let (initial, final_status) = statuses
+        .first()
+        .copied()
+        .zip(statuses.last().copied())
+        .ok_or(ControlLoopProbeError::InvalidResponse(
+            ControlLoopCommandError::InvalidLength,
+        ))?;
+    if final_status.setpoint() != CONTROL_LOOP_SETPOINT {
+        return Err(ControlLoopProbeError::SetpointMismatch {
+            expected: CONTROL_LOOP_SETPOINT,
+            observed: final_status.setpoint(),
+        });
+    }
+    if final_status.tick_count() <= initial.tick_count() {
+        return Err(ControlLoopProbeError::TickDidNotAdvance {
+            initial: initial.tick_count(),
+            final_tick: final_status.tick_count(),
+        });
+    }
+    if statuses
+        .iter()
+        .skip(1)
+        .all(|status| status.output() == initial.output())
+    {
+        return Err(ControlLoopProbeError::OutputDidNotChange {
+            initial: initial.output(),
+            final_output: final_status.output(),
+        });
+    }
+    Ok(())
+}
+
+fn derive_control_loop_timing(
+    statuses: &[ControlLoopStatus],
+    sampled_at: &[Instant],
+) -> Option<ControlLoopTimingStats> {
+    if statuses.len() != sampled_at.len() || statuses.len() < 2 {
+        return None;
+    }
+    let mut periods = statuses.windows(2).zip(sampled_at.windows(2)).filter_map(
+        |(status_window, time_window)| {
+            let ticks = status_window[1]
+                .tick_count()
+                .checked_sub(status_window[0].tick_count())?;
+            (ticks > 0).then(|| time_window[1].duration_since(time_window[0]) / ticks)
+        },
+    );
+    let first = periods.next()?;
+    let (min_tick_period, max_tick_period) = periods.fold((first, first), |(min, max), period| {
+        (min.min(period), max.max(period))
+    });
+    Some(ControlLoopTimingStats {
+        min_tick_period,
+        max_tick_period,
+    })
+}
+
+fn send_control_loop_packet(
+    runtime: &Runtime,
+    session: &mut VescSession,
+    payload: &[u8],
+) -> Result<Vec<u8>, ControlLoopProbeError> {
+    session.clear_packet_state();
+    let wire = build_custom_app_data_packet(payload);
+    runtime
+        .block_on(crate::package_transport::write_ble_uart_packet(
+            &session.peripheral,
+            &session.rx_char,
+            &wire,
+        ))
+        .map_err(ControlLoopProbeError::Transport)?;
+    session
+        .receive_custom_app_data(CONTROL_LOOP_RESPONSE_TIMEOUT)
+        .map_err(ControlLoopProbeError::Transport)
 }
 
 fn run_loopback_on_session(
@@ -135,6 +423,8 @@ pub enum DeployError {
     Transport(PackageInstallError),
     /// The post-deploy loopback smoke test failed.
     Loopback(LoopbackTransportError),
+    /// The installed control-loop package probe failed.
+    ControlLoop(ControlLoopProbeError),
 }
 
 impl std::fmt::Display for DeployError {
@@ -142,8 +432,68 @@ impl std::fmt::Display for DeployError {
         match self {
             Self::Transport(error) => write!(f, "package install failed: {error}"),
             Self::Loopback(error) => write!(f, "loopback failed: {error}"),
+            Self::ControlLoop(error) => write!(f, "control-loop probe failed: {error}"),
         }
     }
 }
 
 impl std::error::Error for DeployError {}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ControlLoopProbeError, ControlLoopTimingStats, derive_control_loop_timing,
+        validate_control_loop_statuses,
+    };
+    use std::time::{Duration, Instant};
+    use vesc_protocol::control_loop::{ControlLoopStatus, STATUS_BYTES, STATUS_COMMAND};
+
+    fn status(setpoint: i16, output: i16, tick_count: u32) -> ControlLoopStatus {
+        let mut response = [0_u8; STATUS_BYTES];
+        response[0] = STATUS_COMMAND;
+        response[1..3].copy_from_slice(&setpoint.to_le_bytes());
+        response[5..7].copy_from_slice(&output.to_le_bytes());
+        response[7..11].copy_from_slice(&tick_count.to_le_bytes());
+        ControlLoopStatus::decode(&response).expect("valid status")
+    }
+
+    #[test]
+    fn probe_validation_requires_setpoint_tick_and_output_progress() {
+        let statuses = [status(100, 100, 10), status(100, 50, 12)];
+        assert_eq!(validate_control_loop_statuses(&statuses), Ok(()));
+    }
+
+    #[test]
+    fn probe_validation_rejects_a_frozen_output() {
+        let statuses = [status(100, 100, 10), status(100, 100, 12)];
+        assert_eq!(
+            validate_control_loop_statuses(&statuses),
+            Err(ControlLoopProbeError::OutputDidNotChange {
+                initial: 100,
+                final_output: 100,
+            })
+        );
+    }
+
+    #[test]
+    fn probe_timing_reports_period_and_jitter_from_tick_samples() {
+        let statuses = [
+            status(100, 100, 10),
+            status(100, 50, 11),
+            status(100, 0, 13),
+        ];
+        let start = Instant::now();
+        let sampled_at = [
+            start,
+            start + Duration::from_millis(33),
+            start + Duration::from_millis(165),
+        ];
+        assert_eq!(
+            derive_control_loop_timing(&statuses, &sampled_at),
+            Some(ControlLoopTimingStats {
+                min_tick_period: Duration::from_millis(33),
+                max_tick_period: Duration::from_millis(66),
+            })
+        );
+    }
+}

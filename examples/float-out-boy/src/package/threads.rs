@@ -7,12 +7,12 @@
 use super::state::FloatOutBoyPackageState;
 #[cfg(any(test, target_arch = "arm"))]
 use core::time::Duration;
-#[cfg(all(not(test), target_arch = "arm"))]
-use vescpkg_rs::AnalogPin;
 #[cfg(target_arch = "arm")]
 use vescpkg_rs::ThreadWorkingAreaSize;
 #[cfg(any(test, target_arch = "arm"))]
-use vescpkg_rs::prelude::{ThreadPriority, TimestampTicks};
+use vescpkg_rs::prelude::{OdometerMeters, ThreadPriority, TimestampTicks};
+#[cfg(all(not(test), target_arch = "arm"))]
+use vescpkg_rs::{AnalogPin, DigitalPin, GpioMode};
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::{FirmwareThreads, Imu, MotorOutput, MotorTelemetry};
 
@@ -74,7 +74,7 @@ fn float_out_boy_runtime_threads() -> [vescpkg_rs::ThreadSpec<FloatOutBoyPackage
             main_thread.working_area_size(),
             main_thread.name(),
         ),
-        vescpkg_rs::ThreadSpec::<FloatOutBoyPackageState>::stateless::<FloatOutBoyAuxThread>(
+        vescpkg_rs::ThreadSpec::<FloatOutBoyPackageState>::new::<FloatOutBoyAuxThread>(
             aux_thread.working_area_size(),
             aux_thread.name(),
         ),
@@ -182,9 +182,9 @@ pub(crate) fn tick_float_out_boy_main_thread_with(
 /// Run Float Out Boy's source-backed auxiliary thread scheduler shell.
 ///
 /// Upstream `aux_thd` optionally lowers its current thread priority at
-/// `third_party/float-out-boy/src/main.c:1133-1135`, loops until `should_terminate()` at
-/// `third_party/float-out-boy/src/main.c:1139`, and sleeps at `1e6 / LEDS_REFRESH_RATE` at
-/// `third_party/float-out-boy/src/main.c:1155`. The refresh rate is `30` in
+/// `third_party/float-out-boy/src/main.c:1133-1135`, checks the non-running odometer backup
+/// threshold from `main.c:1142-1146`, loops until `should_terminate()` at `main.c:1139`,
+/// and sleeps at `1e6 / LEDS_REFRESH_RATE` at `main.c:1155`. The refresh rate is `30` in
 /// `third_party/float-out-boy/src/leds.h:26`.
 #[cfg(any(test, target_arch = "arm"))]
 pub(crate) fn run_float_out_boy_aux_thread_with(threads: &impl FirmwareThreads) {
@@ -194,6 +194,31 @@ pub(crate) fn run_float_out_boy_aux_thread_with(threads: &impl FirmwareThreads) 
     while !threads.should_terminate() {
         threads.sleep_for(Duration::from_micros(FLOAT_OUT_BOY_AUX_LOOP_TIME_US as u64));
     }
+}
+
+/// Refresh the source-backed auxiliary state and persist a backup when its threshold is due.
+///
+/// `aux_thd` reads current motor/config limits before its LED and backup effects at
+/// `third_party/float-out-boy/src/main.c:1131-1155`. The closure stays lazy so a normal
+/// 30 Hz tick never touches persistence unless the odometer threshold has crossed.
+#[cfg(any(test, target_arch = "arm"))]
+pub(crate) fn tick_float_out_boy_aux_thread_with(
+    state: &mut FloatOutBoyPackageState,
+    telemetry: &impl MotorTelemetry,
+    odometer: OdometerMeters,
+    store_backup: impl FnOnce() -> bool,
+) -> Option<bool> {
+    state.refresh_motor_runtime_state(telemetry);
+    state
+        .aux_backup_due(odometer)
+        .then(store_backup)
+        .inspect(|&stored| {
+            if stored {
+                state.record_aux_backup(odometer);
+            } else {
+                state.record_aux_backup_failure();
+            }
+        })
 }
 
 /// Start Float Out Boy runtime threads from loader-owned package state.
@@ -206,9 +231,11 @@ pub fn start_float_out_boy_runtime_threads(
     start: &mut vescpkg_rs::PackageStart<'_>,
 ) -> Result<(), vescpkg_rs::PackageStartError> {
     let firmware = vescpkg_rs::Firmware::new();
+    let odometer = firmware.telemetry().odometer();
     if start
         .with_runtime_state::<FloatOutBoyPackageState, _>(|state| {
             state.initialize_balance_filter(firmware.imu().orientation());
+            state.initialize_aux_odometer(odometer);
         })
         .is_none()
     {
@@ -235,10 +262,26 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
                 // C map: Float Out Boy `footpad_sensor_update` reads ADC1/ADC2 at
                 // `third_party/float-out-boy/src/footpad_sensor.c:28-31`; VESC
                 // defines those enum slots at `third_party/vesc/lispBM/c_libs/vesc_c_if.h:219-220`.
-                let footpad_voltage1 = firmware.gpio().read_analog(AnalogPin::ADC1);
-                let footpad_voltage2 = firmware.gpio().read_analog(AnalogPin::ADC2);
+                let footpad_adc1 = firmware.gpio().acquire_analog(AnalogPin::ADC1).ok();
+                let footpad_adc2 = firmware.gpio().acquire_analog(AnalogPin::ADC2).ok();
+                let footpad_voltage1 = footpad_adc1
+                    .as_ref()
+                    .and_then(|pin| {
+                        pin.set_mode(GpioMode::Analog)
+                            .ok()
+                            .and_then(|_| pin.read().ok())
+                    })
+                    .unwrap_or_else(|| AdcVoltage::new(vescpkg_rs::Voltage::ZERO));
+                let footpad_voltage2 = footpad_adc2
+                    .as_ref()
+                    .and_then(|pin| {
+                        pin.set_mode(GpioMode::Analog)
+                            .ok()
+                            .and_then(|_| pin.read().ok())
+                    })
+                    .unwrap_or_else(|| AdcVoltage::new(vescpkg_rs::Voltage::ZERO));
                 let tick = ctx.with_state_mut(|state| {
-                    state.refresh_controller_input(firmware.input());
+                    state.refresh_controller_input(firmware.inputs());
                     tick_float_out_boy_main_thread_with(
                         state,
                         firmware.telemetry(),
@@ -253,10 +296,17 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
                     if tick.configure_beeper() {
                         let _ = firmware
                             .gpio()
-                            .configure_output(vescpkg_rs::DigitalPin::PPM);
+                            .acquire_digital(DigitalPin::PPM)
+                            .and_then(|pin| {
+                                pin.set_mode(GpioMode::Output)?;
+                                pin.write(vescpkg_rs::DigitalOutputLevel::High)
+                            });
                     }
                     if let Some(level) = tick.beeper_level() {
-                        let _ = firmware.gpio().write(vescpkg_rs::DigitalPin::PPM, level);
+                        if let Ok(pin) = firmware.gpio().acquire_digital(DigitalPin::PPM) {
+                            let _ = pin.set_mode(GpioMode::Output);
+                            let _ = pin.write(level);
+                        }
                     }
                     tick.sleep_us()
                 })
@@ -274,13 +324,29 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
 struct FloatOutBoyAuxThread;
 
 #[cfg(target_arch = "arm")]
-impl vescpkg_rs::StatelessFirmwareThread for FloatOutBoyAuxThread {
-    fn run(ctx: vescpkg_rs::StatelessThreadContext) {
+impl vescpkg_rs::FirmwareThread for FloatOutBoyAuxThread {
+    type State = FloatOutBoyPackageState;
+
+    fn run(ctx: vescpkg_rs::ThreadContext<Self::State>) {
         // C map: Float Out Boy v1.2.1 `aux_thd` starts at
         // `third_party/float-out-boy/src/main.c:1130`.
         #[cfg(all(not(test), target_arch = "arm"))]
         {
-            run_float_out_boy_aux_thread_with(ctx.threads());
+            let firmware = ctx.firmware();
+            let threads = firmware.threads();
+            if let Ok(priority) = ThreadPriority::try_new(-1) {
+                let _ = threads.set_priority(priority);
+            }
+            while !threads.should_terminate() {
+                let odometer = firmware.telemetry().odometer();
+                let telemetry = firmware.telemetry();
+                let _ = ctx.with_state_mut(|state| {
+                    tick_float_out_boy_aux_thread_with(state, telemetry, odometer, || {
+                        firmware.inputs().store_backup().is_ok()
+                    })
+                });
+                threads.sleep_for(Duration::from_micros(FLOAT_OUT_BOY_AUX_LOOP_TIME_US as u64));
+            }
         }
 
         #[cfg(test)]
@@ -293,6 +359,7 @@ impl vescpkg_rs::StatelessFirmwareThread for FloatOutBoyAuxThread {
 #[cfg(test)]
 mod tests {
     use super::super::state::FloatOutBoyPackageState;
+    use super::tick_float_out_boy_aux_thread_with;
     use crate::beeper::{FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount};
     use crate::domain::{
         FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus,
@@ -673,5 +740,104 @@ mod tests {
             firmware.thread_sleep_durations(),
             [Duration::from_micros(33_333), Duration::ZERO]
         );
+    }
+
+    #[test]
+    fn float_out_boy_aux_backup_threshold_matches_source_and_run_state() {
+        let mut ready = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+            FloatOutBoyRunState::Ready,
+            FloatOutBoyMode::Normal,
+        ));
+        ready.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
+        assert!(!ready.aux_backup_due(OdometerMeters::from_meters(1_200)));
+        assert!(ready.aux_backup_due(OdometerMeters::from_meters(1_201)));
+
+        let mut running = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+            FloatOutBoyRunState::Running,
+            FloatOutBoyMode::Normal,
+        ));
+        running.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
+        assert!(!running.aux_backup_due(OdometerMeters::from_meters(1_201)));
+    }
+
+    #[test]
+    fn failed_aux_backup_is_diagnosable_and_does_not_advance_threshold() {
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
+        state.record_aux_backup_failure();
+
+        assert_eq!(state.aux_backup_failures(), 1);
+        assert!(state.aux_backup_due(OdometerMeters::from_meters(1_201)));
+        state.record_aux_backup(OdometerMeters::from_meters(1_201));
+        assert!(!state.aux_backup_due(OdometerMeters::from_meters(1_201)));
+    }
+
+    #[test]
+    fn aux_tick_refreshes_live_limits_before_lazy_backup() {
+        let firmware = FirmwareTest::new().with_motor_current_limits(
+            MotorCurrentLimit::new(Current::from_amps(42.0)),
+            MotorCurrentLimit::new(Current::from_amps(17.0)),
+        );
+        let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+            FloatOutBoyRunState::Ready,
+            FloatOutBoyMode::Normal,
+        ));
+        state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
+        let mut stores = 0;
+
+        let result = tick_float_out_boy_aux_thread_with(
+            &mut state,
+            firmware.telemetry(),
+            OdometerMeters::from_meters(1_201),
+            || {
+                stores += 1;
+                true
+            },
+        );
+
+        assert_eq!(result, Some(true));
+        assert_eq!(stores, 1);
+    }
+
+    #[test]
+    fn aux_tick_does_not_touch_backup_before_threshold() {
+        let firmware = FirmwareTest::new();
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
+        let mut stores = 0;
+
+        let result = tick_float_out_boy_aux_thread_with(
+            &mut state,
+            firmware.telemetry(),
+            OdometerMeters::from_meters(1_200),
+            || {
+                stores += 1;
+                true
+            },
+        );
+
+        assert_eq!(result, None);
+        assert_eq!(stores, 0);
+    }
+
+    #[test]
+    fn aux_tick_retries_a_rejected_backup_without_advancing_threshold() {
+        let firmware = FirmwareTest::new();
+        let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+            FloatOutBoyRunState::Ready,
+            FloatOutBoyMode::Normal,
+        ));
+        state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
+
+        let result = tick_float_out_boy_aux_thread_with(
+            &mut state,
+            firmware.telemetry(),
+            OdometerMeters::from_meters(1_201),
+            || false,
+        );
+
+        assert_eq!(result, Some(false));
+        assert_eq!(state.aux_backup_failures(), 1);
+        assert!(state.aux_backup_due(OdometerMeters::from_meters(1_201)));
     }
 }

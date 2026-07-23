@@ -11,12 +11,14 @@ impl FloatOutBoyPackageState {
     fn write_config_to_eeprom(&self) -> bool {
         let mut image = [0; FLOAT_OUT_BOY_EEPROM_LEN];
         image[..FLOAT_OUT_BOY_CONFIG_LEN].copy_from_slice(self.serialized_config.as_bytes());
-        vescpkg_rs::CustomEeprom::new().write_bytes(&image)
+        vescpkg_rs::CustomEeprom::new().write_bytes(&image).is_ok()
     }
 
     pub(super) fn read_config_from_eeprom(&mut self) {
         let eeprom = vescpkg_rs::CustomEeprom::new();
-        let read = eeprom.read_bytes(self.serialized_config.as_mut_bytes())
+        let read = eeprom
+            .read_bytes(self.serialized_config.as_mut_bytes())
+            .is_ok()
             && (FLOAT_OUT_BOY_CONFIG_LEN / vescpkg_rs::EepromWord::BYTE_LEN
                 ..FLOAT_OUT_BOY_EEPROM_LEN / vescpkg_rs::EepromWord::BYTE_LEN)
                 .all(|index| {

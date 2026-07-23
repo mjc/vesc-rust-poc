@@ -141,6 +141,41 @@ transparent_eq_value_type!(
     pub struct HardwareType(i32);
 );
 
+/// Firmware `CAN_BAUD` enum representation.
+///
+/// The ABI currently does not pass this enum through a function-table slot,
+/// but keeping its wire values here prevents callers from treating the C enum
+/// as an untyped integer when constructing configuration payloads.
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CanBaud(pub i32);
+
+impl CanBaud {
+    /// 125 kbit/s.
+    pub const K125: Self = Self(0);
+    /// 250 kbit/s.
+    pub const K250: Self = Self(1);
+    /// 500 kbit/s.
+    pub const K500: Self = Self(2);
+    /// 1 Mbit/s.
+    pub const M1: Self = Self(3);
+    /// 10 kbit/s.
+    pub const K10: Self = Self(4);
+    /// 20 kbit/s.
+    pub const K20: Self = Self(5);
+    /// 50 kbit/s.
+    pub const K50: Self = Self(6);
+    /// 75 kbit/s.
+    pub const K75: Self = Self(7);
+    /// 100 kbit/s.
+    pub const K100: Self = Self(8);
+
+    /// Return the underlying C enum value.
+    pub const fn raw(self) -> i32 {
+        self.0
+    }
+}
+
 transparent_eq_value_type!(
     pub struct PlotGraphIndex(i32);
 );
@@ -184,10 +219,13 @@ transparent_eq_value_type!(
     pub struct EepromVar(i32);
 );
 
+/// Firmware motor fault enum representation from `mc_fault_code`.
+///
+/// The numeric value is kept open-ended so newer firmware fault codes remain
+/// observable without changing this ABI crate.
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
-pub(crate) struct FaultCode(pub i32);
+pub struct FaultCode(pub i32);
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

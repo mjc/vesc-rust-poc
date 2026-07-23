@@ -12,7 +12,7 @@ use crate::domain::{
     FloatOutBoyRealtimeReservedFlags, FloatOutBoyRealtimeTail,
 };
 use vescpkg_rs::MotorTelemetry;
-use vescpkg_rs::prelude::{BatteryVoltage, FirmwareFaultWireCode, TimestampTicks};
+use vescpkg_rs::prelude::{BatteryVoltage, FirmwareFault, TimestampTicks};
 
 impl FloatOutBoyPackageState {
     pub(super) fn send_metadata_packet_response(
@@ -129,12 +129,13 @@ impl FloatOutBoyPackageState {
             telemetry.firmware_fault(),
         ) {
             (Err(_), _) => false,
-            (Ok(_), fault) if !fault.is_none() => {
-                FirmwareFaultWireCode::try_from(fault).is_ok_and(|fault| {
-                    let response = FloatOutBoyAllDataResponse::fault(fault);
-                    send(response.as_bytes())
-                })
+            (Ok(_), FirmwareFault::Active(fault)) => {
+                let response = FloatOutBoyAllDataResponse::fault(fault.wire_code());
+                send(response.as_bytes())
             }
+            // Preserve the fail-closed behavior for an ABI value this SDK
+            // cannot safely represent in Float Out Boy's wire format.
+            (Ok(_), FirmwareFault::Unknown) => false,
             (Ok(request), _) => {
                 let mode = request.mode();
                 let payloads =
@@ -188,7 +189,7 @@ mod tests {
     use super::*;
     use crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID;
     use std::vec::Vec;
-    use vescpkg_rs::prelude::FirmwareFaultCode;
+    use vescpkg_rs::prelude::{FirmwareFault, FirmwareFaultId};
     use vescpkg_rs::test_support::FirmwareTest;
 
     #[test]
@@ -221,8 +222,8 @@ mod tests {
     #[test]
     fn realtime_packet_reports_live_firmware_fault_alert_like_float_out_boy() {
         let now = TimestampTicks::from_ticks(42);
-        let firmware =
-            FirmwareTest::new().with_firmware_fault(FirmwareFaultCode::from_wire_code(5));
+        let firmware = FirmwareTest::new()
+            .with_firmware_fault(FirmwareFault::Active(FirmwareFaultId::OverTemperatureFet));
         let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
         state.refresh_runtime_state(firmware.telemetry(), firmware.imu(), now);
         let mut packet = Vec::new();
@@ -270,8 +271,8 @@ mod tests {
     #[test]
     fn alerts_list_command_returns_firmware_fault_name_and_record() {
         let now = TimestampTicks::from_ticks(42);
-        let firmware =
-            FirmwareTest::new().with_firmware_fault(FirmwareFaultCode::from_wire_code(5));
+        let firmware = FirmwareTest::new()
+            .with_firmware_fault(FirmwareFault::Active(FirmwareFaultId::OverTemperatureFet));
         let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
         state.refresh_runtime_state(firmware.telemetry(), firmware.imu(), now);
         let mut packet = Vec::new();
@@ -289,19 +290,19 @@ mod tests {
             ],
         ));
 
-        let name = b"OVER_TEMP_FET";
+        let name = b"TEST_FAULT";
         assert_eq!(&packet[..11], &[101, 35, 0, 0, 0, 1, 0, 0, 0, 0, 5]);
         assert_eq!(packet[11], name.len() as u8);
-        assert_eq!(&packet[12..25], name);
-        assert_eq!(&packet[25..34], &[1, 0, 0, 0, 42, 1, 1, 5, 13]);
-        assert_eq!(&packet[34..], name);
+        assert_eq!(&packet[12..22], name);
+        assert_eq!(&packet[22..31], &[1, 0, 0, 0, 42, 1, 1, 5, 10]);
+        assert_eq!(&packet[31..], name);
     }
 
     #[test]
     fn alerts_control_clears_the_persistent_fatal_without_hiding_the_live_fault() {
         let now = TimestampTicks::from_ticks(42);
-        let firmware =
-            FirmwareTest::new().with_firmware_fault(FirmwareFaultCode::from_wire_code(5));
+        let firmware = FirmwareTest::new()
+            .with_firmware_fault(FirmwareFault::Active(FirmwareFaultId::OverTemperatureFet));
         let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
         state.refresh_runtime_state(firmware.telemetry(), firmware.imu(), now);
 
@@ -351,7 +352,7 @@ mod tests {
             ],
         ));
 
-        assert_eq!(packet, [101, 0, 12, 1, 0]);
+        assert_eq!(packet, [101, 0, 1, 0, 0]);
     }
 
     #[test]

@@ -9,6 +9,13 @@ pub fn asin(x: f32) -> f32 {
     libm::asinf(x)
 }
 
+/// Computes the quadrant-preserving arctangent for single-precision inputs.
+#[inline(always)]
+#[must_use]
+pub fn atan2(y: f32, x: f32) -> f32 {
+    libm::atan2f(y, x)
+}
+
 /// Computes cosine for a single-precision input.
 #[inline(always)]
 #[must_use]

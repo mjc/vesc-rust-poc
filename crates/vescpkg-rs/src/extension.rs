@@ -2,12 +2,15 @@
 
 use core::ffi::CStr;
 
+use vescpkg_rs_sys::raw::LbmFlatValue;
 use vescpkg_rs_sys::{ExtensionHandler, LbmValue};
 
 const LBM_INT_TAG: u32 = 0x8;
 const LBM_VALUE_SHIFT: u32 = 4;
 #[cfg(any(test, not(target_arch = "arm")))]
 const LBM_TRUE: u32 = 2 << LBM_VALUE_SHIFT;
+#[cfg(any(test, not(target_arch = "arm")))]
+const LBM_EERROR: u32 = 0x40;
 const LBM_VALUE_TAG_MASK: u32 = (1 << LBM_VALUE_SHIFT) - 1;
 const LBM_INT_MIN: i32 = -(1 << 27);
 const LBM_INT_MAX: i32 = (1 << 27) - 1;
@@ -28,6 +31,320 @@ const fn is_integer(value: u32) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LispValue(LbmValue);
 
+/// A firmware symbol identifier suitable for encoding into a LispBM value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LispSymbol(u32);
+
+impl LispSymbol {
+    /// Construct a symbol identifier returned by firmware symbol lookup.
+    pub const fn new(raw: u32) -> Self {
+        Self(raw)
+    }
+
+    /// Return the firmware symbol identifier.
+    pub const fn raw(self) -> u32 {
+        self.0
+    }
+
+    /// Look up a firmware symbol by name without letting the borrowed name escape.
+    #[cfg(not(test))]
+    pub fn lookup(name: &CStr) -> Option<Self> {
+        let mut symbol = 0;
+        let result =
+            unsafe { crate::ffi::lbm_get_symbol_by_name(name.as_ptr().cast_mut(), &mut symbol) };
+        (result != 0).then_some(Self::new(symbol))
+    }
+}
+
+/// A LispBM evaluator context identifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LispContextId(u32);
+
+impl LispContextId {
+    /// Construct a context identifier supplied by firmware.
+    pub const fn new(raw: u32) -> Self {
+        Self(raw)
+    }
+
+    /// Return the firmware context identifier.
+    pub const fn raw(self) -> u32 {
+        self.0
+    }
+}
+
+/// Failure returned when firmware rejects a LispBM process message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LispMessageError {
+    /// The target context did not accept the message.
+    Rejected,
+}
+
+/// Failure while appending or finishing a firmware-owned flat LispBM value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LispFlatValueError {
+    /// The flat value has already been finished and cannot accept more data.
+    AlreadyFinished,
+    /// The requested byte-array length cannot fit the firmware ABI width.
+    LengthOverflow,
+    /// Firmware rejected the constructor or finish operation.
+    Rejected,
+}
+
+impl core::fmt::Display for LispFlatValueError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str(match self {
+            Self::AlreadyFinished => "flat LispBM value is already finished",
+            Self::LengthOverflow => "flat LispBM byte-array length exceeds the firmware ABI",
+            Self::Rejected => "firmware rejected the flat LispBM value operation",
+        })
+    }
+}
+
+impl core::error::Error for LispFlatValueError {}
+
+/// Failure returned while traversing a LispBM list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LispListError {
+    /// The list ended in a non-`nil` value instead of a proper list tail.
+    ImproperTail,
+}
+
+impl core::fmt::Display for LispListError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::ImproperTail => formatter.write_str("LispBM list has an improper tail"),
+        }
+    }
+}
+
+impl core::error::Error for LispListError {}
+
+/// Scoped traversal state for a LispBM list value.
+#[cfg_attr(test, allow(dead_code))]
+pub struct LispList {
+    next: LispValue,
+}
+
+#[cfg(not(test))]
+impl LispList {
+    /// Return the next list element, or an explicit error for an improper tail.
+    pub fn next_value(&mut self) -> Result<Option<LispValue>, LispListError> {
+        if self.next.is_nil() {
+            return Ok(None);
+        }
+        if !self.next.is_cons() {
+            return Err(LispListError::ImproperTail);
+        }
+        let value = self.next.car().ok_or(LispListError::ImproperTail)?;
+        self.next = self.next.cdr().ok_or(LispListError::ImproperTail)?;
+        Ok(Some(value))
+    }
+}
+
+#[cfg(not(test))]
+impl Iterator for LispList {
+    type Item = Result<LispValue, LispListError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.next_value() {
+            Ok(Some(value)) => Some(Ok(value)),
+            Ok(None) => None,
+            Err(error) => {
+                self.next = LispValue::nil();
+                Some(Err(error))
+            }
+        }
+    }
+}
+
+/// Process controls available while an extension callback is executing.
+pub struct LispProcess;
+
+/// A firmware-owned flattened LispBM value under construction.
+///
+/// The firmware exposes these constructors as optional ABI slots.
+/// The buffer is reclaimed if the value is dropped without being accepted by
+/// a context; a successful unblock transfers ownership to LispBM.
+#[cfg_attr(not(test), must_use)]
+#[cfg_attr(test, allow(dead_code))]
+pub struct LispFlatValue {
+    raw: LbmFlatValue,
+    finished: bool,
+}
+
+#[cfg(not(test))]
+impl LispFlatValue {
+    /// Start a flattened value with a firmware-allocated buffer.
+    pub fn try_new(buffer_size: usize) -> Option<Self> {
+        let mut raw = LbmFlatValue {
+            buf: core::ptr::null_mut(),
+            buf_size: 0,
+            buf_pos: 0,
+        };
+        (unsafe { crate::ffi::lbm_start_flatten(&mut raw, buffer_size) } == Some(true)).then_some(
+            Self {
+                raw,
+                finished: false,
+            },
+        )
+    }
+
+    fn append_with(
+        &mut self,
+        append: impl FnOnce(&mut LbmFlatValue) -> Option<bool>,
+    ) -> Result<(), LispFlatValueError> {
+        if self.finished {
+            return Err(LispFlatValueError::AlreadyFinished);
+        }
+        (append(&mut self.raw) == Some(true))
+            .then_some(())
+            .ok_or(LispFlatValueError::Rejected)
+    }
+
+    /// Append a cons marker.
+    pub fn push_cons(&mut self) -> Result<(), LispFlatValueError> {
+        self.append_with(|raw| unsafe { crate::ffi::f_cons(raw) })
+    }
+
+    /// Append a symbol identifier.
+    pub fn push_symbol(&mut self, symbol: LispSymbol) -> Result<(), LispFlatValueError> {
+        self.append_with(|raw| unsafe { crate::ffi::f_sym(raw, symbol.raw()) })
+    }
+
+    /// Append a signed 32-bit value.
+    pub fn push_i32(&mut self, value: i32) -> Result<(), LispFlatValueError> {
+        self.append_with(|raw| unsafe { crate::ffi::f_i32(raw, value) })
+    }
+
+    /// Append an immediate LispBM integer using the compact flat-value tag.
+    pub fn push_i(&mut self, value: i32) -> Result<(), LispFlatValueError> {
+        self.append_with(|raw| unsafe { crate::ffi::f_i(raw, value) })
+    }
+
+    /// Append an unsigned 32-bit value.
+    pub fn push_u32(&mut self, value: u32) -> Result<(), LispFlatValueError> {
+        self.append_with(|raw| unsafe { crate::ffi::f_u32(raw, value) })
+    }
+
+    /// Append an `f32` value.
+    pub fn push_float(&mut self, value: f32) -> Result<(), LispFlatValueError> {
+        self.append_with(|raw| unsafe { crate::ffi::f_float(raw, value) })
+    }
+
+    /// Append a byte value.
+    pub fn push_byte(&mut self, value: u8) -> Result<(), LispFlatValueError> {
+        self.append_with(|raw| unsafe { crate::ffi::f_b(raw, value) })
+    }
+
+    /// Append a signed 64-bit value.
+    pub fn push_i64(&mut self, value: i64) -> Result<(), LispFlatValueError> {
+        self.append_with(|raw| unsafe { crate::ffi::f_i64(raw, value) })
+    }
+
+    /// Append an unsigned 64-bit value.
+    pub fn push_u64(&mut self, value: u64) -> Result<(), LispFlatValueError> {
+        self.append_with(|raw| unsafe { crate::ffi::f_u64(raw, value) })
+    }
+
+    /// Append a byte array copied by firmware into the flattened value.
+    pub fn push_byte_array(&mut self, bytes: &[u8]) -> Result<(), LispFlatValueError> {
+        if self.finished {
+            return Err(LispFlatValueError::AlreadyFinished);
+        }
+        let count = u32::try_from(bytes.len()).map_err(|_| LispFlatValueError::LengthOverflow)?;
+        self.append_with(|raw| unsafe {
+            crate::ffi::f_lbm_array(raw, count, bytes.as_ptr().cast_mut())
+        })
+    }
+
+    /// Finish the flattened value before passing it to LispBM.
+    pub fn finish(&mut self) -> Result<(), LispFlatValueError> {
+        if self.finished {
+            return Ok(());
+        }
+        if unsafe { crate::ffi::lbm_finish_flatten(&mut self.raw) } == Some(true) {
+            self.finished = true;
+            Ok(())
+        } else {
+            Err(LispFlatValueError::Rejected)
+        }
+    }
+}
+
+#[cfg(not(test))]
+impl Drop for LispFlatValue {
+    fn drop(&mut self) {
+        if !self.raw.buf.is_null() {
+            unsafe { crate::ffi::vesc_free(self.raw.buf.cast()) };
+            self.raw.buf = core::ptr::null_mut();
+        }
+    }
+}
+
+impl LispProcess {
+    /// Pause LispBM evaluation after retaining at least `minimum_free` words.
+    #[cfg(not(test))]
+    pub fn pause_evaluation(minimum_free: u32) {
+        unsafe { crate::ffi::lbm_pause_eval_with_gc(minimum_free) };
+    }
+
+    /// Continue LispBM evaluation after a prior pause.
+    #[cfg(not(test))]
+    pub fn continue_evaluation() {
+        unsafe { crate::ffi::lbm_continue_eval() };
+    }
+
+    /// Return whether LispBM evaluation is currently paused.
+    #[cfg(not(test))]
+    #[must_use]
+    pub fn is_evaluation_paused() -> bool {
+        unsafe { crate::ffi::lbm_eval_is_paused() }
+    }
+
+    /// Set the firmware-owned error reason for the current LispBM evaluation.
+    #[cfg(not(test))]
+    pub fn set_error_reason(reason: &CStr) -> i32 {
+        unsafe { crate::ffi::lbm_set_error_reason(reason.as_ptr().cast_mut()) }
+    }
+
+    /// Return the context currently executing the extension callback.
+    #[cfg(not(test))]
+    pub fn current() -> LispContextId {
+        LispContextId::new(unsafe { crate::ffi::lbm_get_current_cid() })
+    }
+
+    /// Block the current extension context until firmware unblocks it.
+    #[cfg(not(test))]
+    pub fn block_current() {
+        unsafe { crate::ffi::lbm_block_ctx_from_extension() }
+    }
+
+    /// Unblock a context with an unboxed LispBM value.
+    #[cfg(not(test))]
+    pub fn unblock(context: LispContextId, value: LispValue) -> Result<(), LispMessageError> {
+        match unsafe { crate::ffi::lbm_unblock_ctx_unboxed(context.raw(), value.raw()) } {
+            Some(true) => Ok(()),
+            Some(false) | None => Err(LispMessageError::Rejected),
+        }
+    }
+
+    /// Unblock a context with a finished flattened value.
+    #[cfg(not(test))]
+    pub fn unblock_flat(
+        context: LispContextId,
+        mut value: LispFlatValue,
+    ) -> Result<(), LispMessageError> {
+        value.finish().map_err(|_| LispMessageError::Rejected)?;
+        let result = unsafe { crate::ffi::lbm_unblock_ctx(context.raw(), &mut value.raw) };
+        if result == Some(true) {
+            value.raw.buf = core::ptr::null_mut();
+            Ok(())
+        } else {
+            Err(LispMessageError::Rejected)
+        }
+    }
+}
+
 impl LispValue {
     /// Convert any LispBM numeric value to an `f32`.
     #[cfg(not(test))]
@@ -36,9 +353,48 @@ impl LispValue {
             .decode_number_as_f32(self.raw())
     }
 
+    /// Widen a firmware numeric value to `f64` without adding a double ABI.
+    #[cfg(not(test))]
+    pub fn decode_number_as_f64(self) -> Option<f64> {
+        self.decode_number_as_f32().map(f64::from)
+    }
+
+    /// Decode an `f32` only when the value is a non-integer LispBM number.
+    #[cfg(not(test))]
+    pub fn decode_f32_exact(self) -> Option<f32> {
+        (!self.is_integer() && self.is_number())
+            .then(|| unsafe { crate::ffi::lbm_dec_as_float(self.raw()) })
+    }
+
+    /// Decode an exact LispBM float widened to `f64`.
+    #[cfg(not(test))]
+    pub fn decode_f64_exact(self) -> Option<f64> {
+        self.decode_f32_exact().map(f64::from)
+    }
+
     /// Decode this value only when it is an immediate LispBM integer.
     pub fn decode_i32_exact(self) -> Option<i32> {
         is_integer(self.raw().0).then(|| decode_integer(self.raw().0))
+    }
+
+    /// Decode an immediate LispBM integer exactly when it is non-negative.
+    #[must_use]
+    pub fn decode_u32_exact(self) -> Option<u32> {
+        self.decode_i32_exact()
+            .and_then(|value| value.try_into().ok())
+    }
+
+    /// Decode an immediate LispBM integer exactly as an `i64`.
+    ///
+    /// The result is widened from the firmware's immediate payload; this does
+    /// not claim to decode a wider flat value.
+    pub fn decode_i64_exact(self) -> Option<i64> {
+        self.decode_i32_exact().map(i64::from)
+    }
+
+    /// Decode an immediate non-negative LispBM integer exactly as a `u64`.
+    pub fn decode_u64_exact(self) -> Option<u64> {
+        self.decode_u32_exact().map(u64::from)
     }
 
     /// Convert a firmware-classified numeric value to an unsigned integer.
@@ -46,6 +402,15 @@ impl LispValue {
     pub fn decode_number_as_u32(self) -> Option<u32> {
         self.is_number()
             .then(|| unsafe { crate::ffi::lbm_dec_as_u32(self.raw()) })
+    }
+
+    /// Convert a firmware-classified numeric value to a widened unsigned integer.
+    ///
+    /// The pinned VESC ABI exposes a 32-bit scalar decoder; wider LispBM values
+    /// are constructed through [`LispFlatValue`] when needed.
+    #[cfg(not(test))]
+    pub fn decode_number_as_u64(self) -> Option<u64> {
+        self.decode_number_as_u32().map(u64::from)
     }
 
     /// Encode an unsigned integer through the firmware's LispBM representation.
@@ -64,6 +429,14 @@ impl LispValue {
     #[cfg(not(test))]
     pub fn from_f32(value: f32) -> Self {
         Self::from_raw(unsafe { crate::ffi::lbm_enc_float(value) })
+    }
+
+    /// Encode a `f64` only when its value is exactly representable by the
+    /// firmware's `f32` LispBM encoder.
+    #[cfg(not(test))]
+    pub fn from_f64(value: f64) -> Option<Self> {
+        let narrowed = value as f32;
+        (!value.is_nan() && f64::from(narrowed) == value).then(|| Self::from_f32(narrowed))
     }
 
     /// Decode a LispBM character value.
@@ -109,10 +482,59 @@ impl LispValue {
         unsafe { crate::ffi::lbm_is_cons(self.raw()) }
     }
 
+    /// Return whether this value is a proper nil-terminated LispBM list.
+    ///
+    /// This walks the cons chain because the pinned ABI exposes no separate
+    /// list predicate; an improper cons tail therefore returns `false`.
+    #[cfg(not(test))]
+    #[must_use]
+    pub fn is_list(self) -> bool {
+        let mut list = self.list();
+        loop {
+            match list.next_value() {
+                Ok(Some(_)) => {}
+                Ok(None) => return true,
+                Err(LispListError::ImproperTail) => return false,
+            }
+        }
+    }
+
     /// Return whether firmware classifies this value as a byte array.
     #[must_use]
     pub fn is_byte_array(self) -> bool {
         unsafe { crate::ffi::lbm_is_byte_array(self.raw()) }
+    }
+
+    /// Return whether this value is an array in the pinned LispBM runtime.
+    ///
+    /// VESC's LispBM ABI exposes only byte arrays, so this is intentionally the
+    /// same capability check as [`Self::is_byte_array`].
+    #[must_use]
+    pub fn is_array(self) -> bool {
+        self.is_byte_array()
+    }
+
+    /// Return whether this value can be used as a LispBM string.
+    ///
+    /// The pinned VESC ABI represents strings as byte arrays and exposes no
+    /// separate string predicate, so this intentionally has the same
+    /// capability boundary as [`Self::is_byte_array`]. Use [`Self::with_str`]
+    /// to keep the firmware-owned bytes scoped to the callback.
+    #[must_use]
+    pub fn is_string(self) -> bool {
+        self.is_byte_array()
+    }
+
+    /// Return whether this value is the canonical LispBM nil value.
+    #[must_use]
+    pub fn is_nil(self) -> bool {
+        self == Self::nil()
+    }
+
+    /// Return whether this value is the canonical LispBM true value.
+    #[must_use]
+    pub fn is_true(self) -> bool {
+        self == Self::true_value()
     }
 
     /// Allocate a LispBM byte array through the firmware allocator.
@@ -138,10 +560,37 @@ impl LispValue {
         })
     }
 
+    /// Encode a firmware symbol identifier as a LispBM value.
+    #[cfg(not(test))]
+    pub fn from_symbol(symbol: LispSymbol) -> Self {
+        Self::from_raw(unsafe { crate::ffi::lbm_enc_sym(symbol.raw()) })
+    }
+
+    /// Decode a LispBM symbol identifier when this value is a symbol.
+    #[cfg(not(test))]
+    pub fn symbol_id(self) -> Option<LispSymbol> {
+        self.is_symbol()
+            .then(|| LispSymbol::new(unsafe { crate::ffi::lbm_dec_sym(self.raw()) }))
+    }
+
+    /// Send this value to a running LispBM context.
+    #[cfg(not(test))]
+    pub fn send_to(self, context: LispContextId) -> Result<(), LispMessageError> {
+        (unsafe { crate::ffi::lbm_send_message(context.raw(), self.raw()) } == 1)
+            .then_some(())
+            .ok_or(LispMessageError::Rejected)
+    }
+
     /// Construct a LispBM cons cell from two owned value handles.
     #[cfg(not(test))]
     pub fn cons(car: Self, cdr: Self) -> Self {
         Self::from_raw(unsafe { crate::ffi::lbm_cons(car.raw(), cdr.raw()) })
+    }
+
+    /// Start checked traversal of this value as a proper LispBM list.
+    #[cfg(not(test))]
+    pub fn list(self) -> LispList {
+        LispList { next: self }
     }
 
     /// Read the head of a cons cell while preserving its firmware ownership.
@@ -173,6 +622,15 @@ impl LispValue {
             .decode_number_as_i32(self.raw())
     }
 
+    /// Convert a firmware-classified numeric value to a widened signed integer.
+    ///
+    /// The pinned VESC ABI exposes a 32-bit scalar decoder; wider LispBM values
+    /// are constructed through [`LispFlatValue`] when needed.
+    #[cfg(not(test))]
+    pub fn decode_number_as_i64(self) -> Option<i64> {
+        self.decode_number_as_i32().map(i64::from)
+    }
+
     /// Return LispBM true.
     pub fn true_value() -> Self {
         #[cfg(all(not(test), target_arch = "arm"))]
@@ -198,6 +656,18 @@ impl LispValue {
         #[cfg(any(test, not(target_arch = "arm")))]
         {
             Self(LbmValue(0))
+        }
+    }
+
+    /// Return LispBM's canonical extension error symbol.
+    pub fn error_value() -> Self {
+        #[cfg(all(not(test), target_arch = "arm"))]
+        {
+            Self::from_raw(unsafe { crate::ffi::lbm_enc_sym_eerror() })
+        }
+        #[cfg(any(test, not(target_arch = "arm")))]
+        {
+            Self(LbmValue(LBM_EERROR))
         }
     }
 
@@ -454,6 +924,11 @@ impl LispArgs<'_> {
         self.values.is_empty()
     }
 
+    /// Iterate over borrowed arguments as typed value handles.
+    pub fn iter(&self) -> impl Iterator<Item = LispValue> + '_ {
+        self.values.iter().copied().map(LispValue::from_raw)
+    }
+
     /// Return one argument by position.
     pub fn get(&self, index: usize) -> Option<LispValue> {
         self.values.get(index).copied().map(LispValue::from_raw)
@@ -489,10 +964,7 @@ pub unsafe extern "C" fn lbm_extension_handler<T: LbmExtension>(
     args: *mut u32,
     arg_count: u32,
 ) -> u32 {
-    let Some(args) = LispArgs::from_raw(args, arg_count) else {
-        return canonical_nil_raw();
-    };
-    T::call(args).raw().0
+    LispArgs::from_raw(args, arg_count).map_or_else(canonical_nil_raw, |args| T::call(args).raw().0)
 }
 
 /// Firmware ABI trampoline for a state-backed LispBM extension callback.
@@ -633,6 +1105,18 @@ mod tests {
             .expect("valid arguments");
 
         assert_eq!(args.get(0).and_then(LispValue::decode_i32_exact), None);
+    }
+
+    #[test]
+    fn typed_lisp_args_iterate_without_exposing_firmware_storage() {
+        let mut values = [super::encode_integer(7), super::encode_integer(-3)];
+        let args = super::LispArgs::from_raw(values.as_mut_ptr(), values.len() as u32)
+            .expect("valid arguments");
+
+        let mut iter = args.iter().map(LispValue::decode_i32_exact);
+        assert_eq!(iter.next(), Some(Some(7)));
+        assert_eq!(iter.next(), Some(Some(-3)));
+        assert_eq!(iter.next(), None);
     }
 
     #[test]

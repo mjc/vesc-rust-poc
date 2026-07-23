@@ -1,4 +1,4 @@
-//! Raw/minimal VESC firmware ABI bindings.
+//! Raw VESC firmware ABI bindings generated from the pinned package header.
 //!
 //! This crate mirrors the VESC native package ABI. It does not provide
 //! high-level vehicle semantics, package building, or host transport code.
@@ -37,6 +37,10 @@ mod loader;
 mod types;
 mod vesc_if;
 
+/// Separate platform-neutral VESC Express native-library ABI metadata and
+/// fail-closed table loader. It is not part of the STM32 `VescIf` surface.
+pub mod express;
+
 #[cfg(test)]
 pub mod test_support;
 
@@ -49,8 +53,9 @@ pub use image::{ImageOffset, NativeAddress, NativeImage};
 pub use loader::{AppDataHandler, ExtensionHandler, LibInfo, LibInfoAbi, StopHandler};
 pub use types::*;
 pub use vesc_if::{
-    AbiError, Stm32AbiRevision, VescIfAbi, VescIfManifestEntry, VescIfPresence, VescIfSlot,
-    VescIfSlotKind,
+    AbiError, Stm32AbiRevision, VescIfAbi, VescIfCapabilities, VescIfCapability,
+    VescIfManifestEntry, VescIfPresence, VescIfSlot, VescIfSlotFamily, VescIfSlotKind,
+    VescIfSlotNullability, VescIfSlotSafety, VescIfSubsystem,
 };
 pub use views::{
     AppDataPacket, CanPayload, CommandPacket, ConfigPayload, ConfigXmlBytes, MutablePacket,

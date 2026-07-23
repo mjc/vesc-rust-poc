@@ -1,6 +1,7 @@
 #![cfg_attr(test, allow(dead_code))]
+#![allow(clippy::missing_safety_doc, clippy::useless_transmute)]
 
-use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescIfPresence};
+use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescIfPresence, c_vesc_if};
 use core::ffi::{c_char, c_int, c_uchar, c_uint, c_void};
 
 /// Bindgen-generated `lbm_flat_value_t` layout.
@@ -30,10 +31,39 @@ pub type RemoteState = crate::bindgen::remote_state;
 /// Bindgen-generated `PACKET_STATE_t` layout.
 pub type PacketState = crate::bindgen::PACKET_STATE_t;
 
+/// VESC CAN receive callback ABI.
+pub type CanReceiverCallback = unsafe extern "C" fn(u32, *mut u8, u8) -> bool;
+type CanRxCallback = CanReceiverCallback;
+type PacketSendCallback = unsafe extern "C" fn(*mut c_uchar, c_uint);
+type PacketProcessCallback = unsafe extern "C" fn(*mut c_uchar, c_uint);
+type ReplyCallback = unsafe extern "C" fn(*mut c_uchar, c_uint);
+type TerminalCallback = unsafe extern "C" fn(c_int, *const *const c_char);
+type EncoderReadCallback = unsafe extern "C" fn() -> f32;
+type EncoderFaultCallback = unsafe extern "C" fn() -> bool;
+type EncoderInfoCallback = unsafe extern "C" fn() -> *mut c_char;
+type PwmCallback = unsafe extern "C" fn();
+
 type LibThread = crate::bindgen::lib_thread;
 type LibMutex = crate::bindgen::lib_mutex;
 type LibSemaphore = crate::bindgen::lib_semaphore;
-/// Float Out Boy/VESC Tool custom-config serializer callback.
+type HwType = crate::HardwareType;
+/// Maximum packet payload length from the pinned VESC header.
+pub const PACKET_MAX_PL_LEN: usize = 512;
+/// Packet framing buffer length from the pinned VESC header.
+pub const PACKET_BUFFER_LEN: usize = PACKET_MAX_PL_LEN + 8;
+#[cfg(all(target_arch = "arm", not(test)))]
+const _: () = {
+    assert!(core::mem::size_of::<LbmFlatValue>() == 12);
+    assert!(core::mem::offset_of!(LbmFlatValue, buf_size) == 4);
+    assert!(core::mem::offset_of!(LbmFlatValue, buf_pos) == 8);
+    assert!(core::mem::size_of::<LbmArrayHeader>() == 8);
+    assert!(core::mem::offset_of!(LbmArrayHeader, data) == 4);
+    assert!(core::mem::size_of::<PacketState>() == 1060);
+    assert!(core::mem::offset_of!(PacketState, rx_read_ptr) == 8);
+    assert!(core::mem::offset_of!(PacketState, rx_buffer) == 20);
+    assert!(core::mem::offset_of!(PacketState, tx_buffer) == 540);
+};
+/// Refloat/VESC Tool custom-config serializer callback.
 ///
 /// Float Out Boy `v1.2.1` passes `get_cfg` to `conf_custom_add_config` in
 /// `src/main.c:2456`; the callback is declared in
@@ -64,6 +94,20 @@ pub type ImuReadCallback = unsafe extern "C" fn(*mut f32, *mut f32, *mut f32, f3
 /// making the C header the single source of field order and signatures.
 pub type VescIf = crate::bindgen::vesc_c_if;
 
+#[allow(
+    clippy::type_complexity,
+    clippy::wildcard_imports,
+    non_snake_case,
+    unused_imports
+)]
+mod generated_slots {
+    use crate::bindgen::*;
+
+    include!(concat!(env!("OUT_DIR"), "/raw_slots.rs"));
+}
+
+pub use generated_slots::*;
+
 impl VescIf {
     /// Inspect this host-side table without exposing its raw fields.
     pub fn presence(&self) -> VescIfPresence {
@@ -86,6 +130,24 @@ const _: () = {
 
 /// Inspect a target table while bounding reads to the caller-provided table width.
 ///
+/// Forward a NUL-terminated message through the firmware's `%s` formatter.
+///
+/// The wrapper never treats message bytes as a format string.
+///
+/// # Safety
+///
+/// `message` must point to a readable, NUL-terminated C string for the duration
+/// of the firmware call.
+pub unsafe fn printf_data(message: *const c_char) -> bool {
+    unsafe { slots::printf() }.is_some_and(|printf| {
+        static FORMAT: &[u8] = b"%s\0";
+        unsafe {
+            printf(FORMAT.as_ptr().cast(), message);
+        }
+        true
+    })
+}
+
 /// # Safety
 ///
 /// `base` must point to at least `available_slots` contiguous pointer-sized ABI words.
@@ -132,10 +194,12 @@ macro_rules! vesc_slot_word_from {
 
 mod slots {
     use super::{
-        AppDataHandler, CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5,
-        CanStatusMsg6, CustomConfigGet, CustomConfigSet, CustomConfigXml, EepromVar, GnssData,
-        ImuReadCallback, LibMutex, LibSemaphore, LibThread, RemoteState, VescIfAbi, c_char, c_int,
-        c_uchar, c_uint, c_void,
+        AppDataHandler, AttitudeInfo, CanRxCallback, CanStatusMsg, CanStatusMsg2, CanStatusMsg3,
+        CanStatusMsg4, CanStatusMsg5, CanStatusMsg6, CustomConfigGet, CustomConfigSet,
+        CustomConfigXml, EepromVar, EncoderFaultCallback, EncoderInfoCallback, EncoderReadCallback,
+        GnssData, HwType, ImuReadCallback, LbmFlatValue, LbmValue, LibMutex, LibSemaphore,
+        LibThread, PacketProcessCallback, PacketSendCallback, PacketState, RemoteState,
+        ReplyCallback, TerminalCallback, VescIfAbi, c_char, c_int, c_uchar, c_uint, c_void,
     };
     #[cfg(not(all(target_arch = "arm", not(test))))]
     use super::{VescIf, vesc_if};
@@ -160,6 +224,28 @@ mod slots {
     macro_rules! fn_slot {
         ($name:ident as $fn_ty:ty) => {
             #[inline(always)]
+            pub(super) unsafe fn $name() -> $fn_ty {
+                #[cfg(all(target_arch = "arm", not(test)))]
+                unsafe {
+                    let address = vesc_slot_word_from!(VescIfAbi::BASE_ADDR.0, $name);
+                    assert!(address != 0, "required VESC_IF slot is unavailable");
+                    core::mem::transmute::<usize, $fn_ty>(address)
+                }
+
+                #[cfg(not(all(target_arch = "arm", not(test))))]
+                unsafe {
+                    let function = (*vesc_if())
+                        .$name
+                        .expect("required VESC_IF slot is unavailable");
+                    core::mem::transmute::<_, $fn_ty>(function)
+                }
+            }
+        };
+    }
+
+    macro_rules! optional_fn_slot {
+        ($name:ident as $fn_ty:ty) => {
+            #[inline(always)]
             pub(super) unsafe fn $name() -> Option<$fn_ty> {
                 #[cfg(all(target_arch = "arm", not(test)))]
                 unsafe {
@@ -173,7 +259,9 @@ mod slots {
 
                 #[cfg(not(all(target_arch = "arm", not(test))))]
                 unsafe {
-                    (*vesc_if()).$name
+                    (*vesc_if())
+                        .$name
+                        .map(|function| core::mem::transmute::<_, $fn_ty>(function))
                 }
             }
         };
@@ -228,9 +316,37 @@ mod slots {
     fn_slot!(lbm_car as unsafe extern "C" fn(u32) -> u32);
     fn_slot!(lbm_cdr as unsafe extern "C" fn(u32) -> u32);
     fn_slot!(lbm_list_destructive_reverse as unsafe extern "C" fn(u32) -> u32);
-    fn_slot!(lbm_create_byte_array as unsafe extern "C" fn(*mut u32, u32) -> bool);
+    fn_slot!(lbm_create_byte_array as unsafe extern "C" fn(*mut LbmValue, u32) -> bool);
+    fn_slot!(lbm_enc_sym as unsafe extern "C" fn(u32) -> LbmValue);
+    fn_slot!(lbm_dec_sym as unsafe extern "C" fn(LbmValue) -> u32);
+    fn_slot!(lbm_send_message as unsafe extern "C" fn(u32, LbmValue) -> c_int);
+    fn_slot!(lbm_get_current_cid as unsafe extern "C" fn() -> u32);
+    fn_slot!(lbm_block_ctx_from_extension as unsafe extern "C" fn());
+    fn_slot!(lbm_set_error_reason as unsafe extern "C" fn(*mut c_char) -> c_int);
+    fn_slot!(lbm_pause_eval_with_gc as unsafe extern "C" fn(u32));
+    fn_slot!(lbm_continue_eval as unsafe extern "C" fn());
+    fn_slot!(lbm_eval_is_paused as unsafe extern "C" fn() -> bool);
+    fn_slot!(lbm_add_symbol_const as unsafe extern "C" fn(*mut c_char, *mut u32) -> c_int);
+    fn_slot!(lbm_get_symbol_by_name as unsafe extern "C" fn(*mut c_char, *mut u32) -> c_int);
+    fn_slot!(lbm_enc_u as unsafe extern "C" fn(u32) -> LbmValue);
+    fn_slot!(lbm_enc_i32 as unsafe extern "C" fn(i32) -> LbmValue);
+    fn_slot!(lbm_is_symbol_nil as unsafe extern "C" fn(u32) -> bool);
+    fn_slot!(lbm_is_symbol_true as unsafe extern "C" fn(u32) -> bool);
+    optional_fn_slot!(lbm_unblock_ctx as unsafe extern "C" fn(u32, *mut LbmFlatValue) -> bool);
+    optional_fn_slot!(lbm_unblock_ctx_unboxed as unsafe extern "C" fn(u32, LbmValue) -> bool);
+    optional_fn_slot!(lbm_start_flatten as unsafe extern "C" fn(*mut LbmFlatValue, usize) -> bool);
+    optional_fn_slot!(lbm_finish_flatten as unsafe extern "C" fn(*mut LbmFlatValue) -> bool);
+    optional_fn_slot!(f_cons as unsafe extern "C" fn(*mut LbmFlatValue) -> bool);
+    optional_fn_slot!(f_i as unsafe extern "C" fn(*mut LbmFlatValue, i32) -> bool);
+    optional_fn_slot!(f_sym as unsafe extern "C" fn(*mut LbmFlatValue, u32) -> bool);
+    optional_fn_slot!(f_b as unsafe extern "C" fn(*mut LbmFlatValue, u8) -> bool);
+    optional_fn_slot!(f_i32 as unsafe extern "C" fn(*mut LbmFlatValue, i32) -> bool);
+    optional_fn_slot!(f_u32 as unsafe extern "C" fn(*mut LbmFlatValue, u32) -> bool);
+    optional_fn_slot!(f_float as unsafe extern "C" fn(*mut LbmFlatValue, f32) -> bool);
+    optional_fn_slot!(f_i64 as unsafe extern "C" fn(*mut LbmFlatValue, i64) -> bool);
+    optional_fn_slot!(f_u64 as unsafe extern "C" fn(*mut LbmFlatValue, u64) -> bool);
+    optional_fn_slot!(f_lbm_array as unsafe extern "C" fn(*mut LbmFlatValue, u32, *mut u8) -> bool);
     fn_slot!(set_app_data_handler as unsafe extern "C" fn(Option<AppDataHandler>) -> bool);
-    fn_slot!(imu_set_read_callback as unsafe extern "C" fn(Option<ImuReadCallback>));
     fn_slot!(read_eeprom_var as unsafe extern "C" fn(*mut EepromVar, c_int) -> bool);
     fn_slot!(store_eeprom_var as unsafe extern "C" fn(*mut EepromVar, c_int) -> bool);
 
@@ -247,10 +363,10 @@ mod slots {
             )
     );
     fn_slot!(conf_custom_clear_configs as unsafe extern "C" fn());
-    fn_slot!(mutex_create as unsafe extern "C" fn() -> LibMutex);
+    optional_fn_slot!(mutex_create as unsafe extern "C" fn() -> LibMutex);
     fn_slot!(mutex_lock as unsafe extern "C" fn(LibMutex));
     fn_slot!(mutex_unlock as unsafe extern "C" fn(LibMutex));
-    fn_slot!(sem_create as unsafe extern "C" fn() -> LibSemaphore);
+    optional_fn_slot!(sem_create as unsafe extern "C" fn() -> LibSemaphore);
     fn_slot!(sem_wait as unsafe extern "C" fn(LibSemaphore));
     fn_slot!(sem_signal as unsafe extern "C" fn(LibSemaphore));
     fn_slot!(sem_wait_to as unsafe extern "C" fn(LibSemaphore, u32) -> bool);
@@ -261,7 +377,7 @@ mod slots {
     fn_slot!(
         spawn
             as unsafe extern "C" fn(
-                Option<unsafe extern "C" fn(*mut c_void)>,
+                unsafe extern "C" fn(*mut c_void),
                 usize,
                 *const c_char,
                 *mut c_void,
@@ -270,33 +386,95 @@ mod slots {
     fn_slot!(request_terminate as unsafe extern "C" fn(LibThread));
     fn_slot!(should_terminate as unsafe extern "C" fn() -> bool);
     fn_slot!(get_arg as unsafe extern "C" fn(u32) -> *mut *mut c_void);
-    fn_slot!(can_get_status_msg_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg);
-    fn_slot!(can_get_status_msg_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg);
-    fn_slot!(can_get_status_msg_2_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg2);
-    fn_slot!(can_get_status_msg_2_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg2);
-    fn_slot!(can_get_status_msg_3_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg3);
-    fn_slot!(can_get_status_msg_3_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg3);
-    fn_slot!(can_get_status_msg_4_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg4);
-    fn_slot!(can_get_status_msg_4_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg4);
-    fn_slot!(can_get_status_msg_5_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg5);
-    fn_slot!(can_get_status_msg_5_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg5);
-    fn_slot!(can_get_status_msg_6_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg6);
-    fn_slot!(can_get_status_msg_6_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg6);
-    fn_slot!(mc_gnss as unsafe extern "C" fn() -> *mut GnssData);
-    fn_slot!(read_nvm as unsafe extern "C" fn(*mut u8, c_uint, c_uint) -> bool);
-    fn_slot!(write_nvm as unsafe extern "C" fn(*mut u8, c_uint, c_uint) -> bool);
-    fn_slot!(wipe_nvm as unsafe extern "C" fn() -> bool);
+    fn_slot!(sleep_ms as unsafe extern "C" fn(u32));
+    fn_slot!(system_time as unsafe extern "C" fn() -> f32);
+    fn_slot!(ts_to_age_s as unsafe extern "C" fn(u32) -> f32);
+    fn_slot!(set_pad_mode as unsafe extern "C" fn(*mut c_void, u32, u32));
+    fn_slot!(set_pad as unsafe extern "C" fn(*mut c_void, u32));
+    fn_slot!(clear_pad as unsafe extern "C" fn(*mut c_void, u32));
+    optional_fn_slot!(can_get_status_msg_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg);
+    optional_fn_slot!(can_get_status_msg_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg);
+    optional_fn_slot!(can_transmit_sid as unsafe extern "C" fn(u32, *const u8, u8));
+    optional_fn_slot!(can_transmit_eid as unsafe extern "C" fn(u32, *const u8, u8));
+    optional_fn_slot!(can_set_sid_cb as unsafe extern "C" fn(Option<CanRxCallback>));
+    optional_fn_slot!(can_set_eid_cb as unsafe extern "C" fn(Option<CanRxCallback>));
+    optional_fn_slot!(can_set_duty as unsafe extern "C" fn(u8, f32));
+    optional_fn_slot!(can_set_current as unsafe extern "C" fn(u8, f32));
+    optional_fn_slot!(can_set_current_off_delay as unsafe extern "C" fn(u8, f32, f32));
+    optional_fn_slot!(can_set_current_brake as unsafe extern "C" fn(u8, f32));
+    optional_fn_slot!(can_set_current_rel as unsafe extern "C" fn(u8, f32));
+    optional_fn_slot!(can_set_current_rel_off_delay as unsafe extern "C" fn(u8, f32, f32));
+    optional_fn_slot!(can_set_current_brake_rel as unsafe extern "C" fn(u8, f32));
+    optional_fn_slot!(can_set_rpm as unsafe extern "C" fn(u8, f32));
+    optional_fn_slot!(can_set_pos as unsafe extern "C" fn(u8, f32));
+    optional_fn_slot!(can_ping as unsafe extern "C" fn(u8, *mut HwType) -> bool);
+    optional_fn_slot!(
+        can_get_status_msg_2_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg2
+    );
+    optional_fn_slot!(can_get_status_msg_2_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg2);
+    optional_fn_slot!(
+        can_get_status_msg_3_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg3
+    );
+    optional_fn_slot!(can_get_status_msg_3_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg3);
+    optional_fn_slot!(
+        can_get_status_msg_4_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg4
+    );
+    optional_fn_slot!(can_get_status_msg_4_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg4);
+    optional_fn_slot!(
+        can_get_status_msg_5_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg5
+    );
+    optional_fn_slot!(can_get_status_msg_5_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg5);
+    optional_fn_slot!(
+        can_get_status_msg_6_index as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg6
+    );
+    optional_fn_slot!(can_get_status_msg_6_id as unsafe extern "C" fn(c_int) -> *mut CanStatusMsg6);
+    optional_fn_slot!(mc_gnss as unsafe extern "C" fn() -> *mut GnssData);
+    optional_fn_slot!(store_backup_data as unsafe extern "C" fn() -> bool);
+    optional_fn_slot!(get_ppm as unsafe extern "C" fn() -> f32);
+    optional_fn_slot!(get_ppm_age as unsafe extern "C" fn() -> f32);
+    optional_fn_slot!(app_is_output_disabled as unsafe extern "C" fn() -> bool);
+    optional_fn_slot!(read_nvm as unsafe extern "C" fn(*mut u8, c_uint, c_uint) -> bool);
+    optional_fn_slot!(write_nvm as unsafe extern "C" fn(*mut u8, c_uint, c_uint) -> bool);
+    optional_fn_slot!(wipe_nvm as unsafe extern "C" fn() -> bool);
     fn_slot!(get_remote_state as unsafe extern "C" fn() -> RemoteState);
-    fn_slot!(get_ppm as unsafe extern "C" fn() -> f32);
-    fn_slot!(get_ppm_age as unsafe extern "C" fn() -> f32);
-    fn_slot!(mc_get_fault as unsafe extern "C" fn() -> c_uint);
-    fn_slot!(mc_fault_to_string as unsafe extern "C" fn(c_uint) -> *const c_char);
+    fn_slot!(mc_select_motor_thread as unsafe extern "C" fn(c_int));
+    fn_slot!(mc_get_motor_thread as unsafe extern "C" fn() -> c_int);
+    fn_slot!(mc_dccal_done as unsafe extern "C" fn() -> bool);
+    optional_fn_slot!(mc_set_pwm_callback as unsafe extern "C" fn(Option<unsafe extern "C" fn()>));
+    fn_slot!(mc_get_fault as unsafe extern "C" fn() -> crate::FaultCode);
+    fn_slot!(mc_fault_to_string as unsafe extern "C" fn(crate::FaultCode) -> *const c_char);
     fn_slot!(mc_get_rpm as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_speed as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_tot_current_filtered as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_get_tot_current as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_tot_current_directional_filtered as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_get_tot_current_directional as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_tot_current_in_filtered as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_get_tot_current_in as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_duty_cycle_now as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_get_sampling_frequency_now as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_get_tachometer_value as unsafe extern "C" fn(bool) -> c_int);
+    fn_slot!(mc_get_tachometer_abs_value as unsafe extern "C" fn(bool) -> c_int);
+    fn_slot!(mc_get_pid_pos_set as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_get_pid_pos_now as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_update_pid_pos_offset as unsafe extern "C" fn(f32, bool));
+    fn_slot!(mc_set_pid_speed as unsafe extern "C" fn(f32));
+    fn_slot!(mc_set_pid_pos as unsafe extern "C" fn(f32));
+    fn_slot!(mc_set_duty_noramp as unsafe extern "C" fn(f32));
+    fn_slot!(mc_set_current_rel as unsafe extern "C" fn(f32));
+    fn_slot!(mc_set_brake_current_rel as unsafe extern "C" fn(f32));
+    fn_slot!(mc_stat_power_avg as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_stat_power_max as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_stat_speed_avg as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_stat_speed_max as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_stat_current_avg as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_stat_current_max as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_stat_temp_mosfet_avg as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_stat_temp_mosfet_max as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_stat_temp_motor_avg as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_stat_temp_motor_max as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_stat_count_time as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_stat_reset as unsafe extern "C" fn());
     fn_slot!(mc_get_input_voltage_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_amp_hours as unsafe extern "C" fn(bool) -> f32);
     fn_slot!(mc_get_amp_hours_charged as unsafe extern "C" fn(bool) -> f32);
@@ -304,39 +482,129 @@ mod slots {
     fn_slot!(mc_get_watt_hours_charged as unsafe extern "C" fn(bool) -> f32);
     fn_slot!(mc_get_battery_level as unsafe extern "C" fn(*mut f32) -> f32);
     fn_slot!(mc_get_distance_abs as unsafe extern "C" fn() -> f32);
+    fn_slot!(mc_get_distance as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_get_odometer as unsafe extern "C" fn() -> u64);
+    fn_slot!(mc_set_odometer as unsafe extern "C" fn(u64));
     fn_slot!(get_cfg_float as unsafe extern "C" fn(c_uint) -> f32);
     fn_slot!(get_cfg_int as unsafe extern "C" fn(c_uint) -> c_int);
     fn_slot!(mc_set_duty as unsafe extern "C" fn(f32));
     fn_slot!(mc_set_current as unsafe extern "C" fn(f32));
     fn_slot!(mc_set_current_off_delay as unsafe extern "C" fn(f32));
     fn_slot!(mc_set_brake_current as unsafe extern "C" fn(f32));
+    fn_slot!(mc_set_handbrake as unsafe extern "C" fn(f32));
+    fn_slot!(mc_set_handbrake_rel as unsafe extern "C" fn(f32));
+    fn_slot!(mc_release_motor as unsafe extern "C" fn());
+    fn_slot!(mc_wait_for_motor_release as unsafe extern "C" fn(f32) -> bool);
     fn_slot!(timeout_reset as unsafe extern "C" fn());
-    // Float Out Boy capability-probes this pre-6.05 slot because not every motor
+    fn_slot!(timeout_has_timeout as unsafe extern "C" fn() -> bool);
+    fn_slot!(timeout_secs_since_update as unsafe extern "C" fn() -> f32);
+    // Refloat capability-probes this pre-6.05 slot because not every motor
     // implementation populates the FOC-specific function.
-    fn_slot!(foc_get_id as unsafe extern "C" fn() -> f32);
-    fn_slot!(foc_play_tone as unsafe extern "C" fn(c_int, f32, f32) -> bool);
+    optional_fn_slot!(foc_get_id as unsafe extern "C" fn() -> f32);
+    optional_fn_slot!(foc_get_iq as unsafe extern "C" fn() -> f32);
+    optional_fn_slot!(foc_get_vd as unsafe extern "C" fn() -> f32);
+    optional_fn_slot!(foc_get_vq as unsafe extern "C" fn() -> f32);
+    optional_fn_slot!(foc_set_openloop_current as unsafe extern "C" fn(f32, f32));
+    optional_fn_slot!(foc_set_openloop_phase as unsafe extern "C" fn(f32, f32));
+    optional_fn_slot!(foc_set_openloop_duty as unsafe extern "C" fn(f32, f32));
+    optional_fn_slot!(foc_set_openloop_duty_phase as unsafe extern "C" fn(f32, f32));
+    optional_fn_slot!(foc_beep as unsafe extern "C" fn(f32, f32, f32) -> bool);
+    optional_fn_slot!(foc_play_tone as unsafe extern "C" fn(c_int, f32, f32) -> bool);
+    optional_fn_slot!(foc_stop_audio as unsafe extern "C" fn(bool));
+    optional_fn_slot!(
+        foc_set_audio_sample_table as unsafe extern "C" fn(c_int, *const f32, c_int) -> bool
+    );
+    optional_fn_slot!(foc_get_audio_sample_table as unsafe extern "C" fn(c_int) -> *const f32);
+    optional_fn_slot!(
+        foc_play_audio_samples as unsafe extern "C" fn(*const i8, c_int, f32, f32) -> bool
+    );
+    optional_fn_slot!(uart_start as unsafe extern "C" fn(u32, bool) -> bool);
+    optional_fn_slot!(uart_write as unsafe extern "C" fn(*const u8, u32) -> bool);
+    optional_fn_slot!(uart_read as unsafe extern "C" fn() -> i32);
+    optional_fn_slot!(
+        packet_init
+            as unsafe extern "C" fn(PacketSendCallback, PacketProcessCallback, *mut PacketState)
+    );
+    optional_fn_slot!(packet_reset as unsafe extern "C" fn(*mut PacketState));
+    optional_fn_slot!(packet_process_byte as unsafe extern "C" fn(u8, *mut PacketState));
+    optional_fn_slot!(
+        packet_send_packet as unsafe extern "C" fn(*mut c_uchar, c_uint, *mut PacketState)
+    );
+    optional_fn_slot!(
+        commands_process_packet as unsafe extern "C" fn(*mut c_uchar, c_uint, ReplyCallback)
+    );
+    optional_fn_slot!(commands_unregister_reply_func as unsafe extern "C" fn(ReplyCallback));
+    optional_fn_slot!(plot_init as unsafe extern "C" fn(*const c_char, *const c_char));
+    optional_fn_slot!(plot_add_graph as unsafe extern "C" fn(*const c_char));
+    optional_fn_slot!(plot_set_graph as unsafe extern "C" fn(c_int));
+    optional_fn_slot!(plot_send_points as unsafe extern "C" fn(f32, f32));
+    optional_fn_slot!(
+        terminal_register_command_callback
+            as unsafe extern "C" fn(*const c_char, *const c_char, *const c_char, TerminalCallback)
+    );
+    optional_fn_slot!(terminal_unregister_callback as unsafe extern "C" fn(TerminalCallback));
+    optional_fn_slot!(
+        encoder_set_custom_callbacks
+            as unsafe extern "C" fn(EncoderReadCallback, EncoderFaultCallback, EncoderInfoCallback)
+    );
     fn_slot!(mc_temp_fet_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(mc_temp_motor_filtered as unsafe extern "C" fn() -> f32);
     fn_slot!(imu_startup_done as unsafe extern "C" fn() -> bool);
     fn_slot!(imu_get_roll as unsafe extern "C" fn() -> f32);
     fn_slot!(imu_get_pitch as unsafe extern "C" fn() -> f32);
     fn_slot!(imu_get_yaw as unsafe extern "C" fn() -> f32);
+    fn_slot!(imu_get_accel as unsafe extern "C" fn(*mut f32));
     fn_slot!(imu_get_gyro as unsafe extern "C" fn(*mut f32));
-    fn_slot!(imu_get_quaternions as unsafe extern "C" fn(*mut f32));
+    fn_slot!(imu_get_mag as unsafe extern "C" fn(*mut f32));
+    fn_slot!(imu_derotate as unsafe extern "C" fn(*const f32, *mut f32));
+    fn_slot!(imu_get_accel_derotated as unsafe extern "C" fn(*mut f32));
+    fn_slot!(imu_get_gyro_derotated as unsafe extern "C" fn(*mut f32));
+    fn_slot!(imu_set_yaw as unsafe extern "C" fn(f32));
     fn_slot!(send_app_data as unsafe extern "C" fn(*mut c_uchar, u32));
-    fn_slot!(system_time as unsafe extern "C" fn() -> f32);
-    fn_slot!(ts_to_age_s as unsafe extern "C" fn(u32) -> f32);
+    optional_fn_slot!(printf as unsafe extern "C" fn(*const c_char, ...) -> c_int);
     fn_slot!(timer_time_now as unsafe extern "C" fn() -> u32);
     fn_slot!(timer_seconds_elapsed_since as unsafe extern "C" fn(u32) -> f32);
     // Appended in firmware 6.05; older tables fall back to `system_time`.
-    fn_slot!(system_time_ticks as unsafe extern "C" fn() -> u32);
+    optional_fn_slot!(system_time_ticks as unsafe extern "C" fn() -> u32);
     // Appended in firmware 6.06; callers treat absence as an unsupported hint.
-    fn_slot!(thread_set_priority as unsafe extern "C" fn(c_int));
-    fn_slot!(io_set_mode as unsafe extern "C" fn(c_uint, c_uint) -> bool);
-    fn_slot!(io_write as unsafe extern "C" fn(c_uint, c_int) -> bool);
-    fn_slot!(io_read as unsafe extern "C" fn(c_uint) -> bool);
-    fn_slot!(io_read_analog as unsafe extern "C" fn(c_uint) -> f32);
+    optional_fn_slot!(thread_set_priority as unsafe extern "C" fn(c_int));
+    fn_slot!(io_set_mode as unsafe extern "C" fn(c_int, c_int) -> bool);
+    fn_slot!(io_write as unsafe extern "C" fn(c_int, c_int) -> bool);
+    fn_slot!(io_read as unsafe extern "C" fn(c_int) -> bool);
+    fn_slot!(io_read_analog as unsafe extern "C" fn(c_int) -> f32);
+    fn_slot!(io_get_st_pin as unsafe extern "C" fn(c_int, *mut *mut c_void, *mut u32) -> bool);
+    optional_fn_slot!(can_send_buffer as unsafe extern "C" fn(u8, *mut u8, c_uint, u8));
+    fn_slot!(imu_get_rpy as unsafe extern "C" fn(*mut f32));
+    fn_slot!(imu_get_quaternions as unsafe extern "C" fn(*mut f32));
+    fn_slot!(imu_get_calibration as unsafe extern "C" fn(f32, *mut f32));
+    fn_slot!(imu_set_read_callback as unsafe extern "C" fn(Option<ImuReadCallback>));
+    fn_slot!(lbm_symbol_to_io as unsafe extern "C" fn(u32, *mut *mut c_void, *mut u32) -> bool);
+    fn_slot!(mc_motor_now as unsafe extern "C" fn() -> c_int);
+    fn_slot!(mc_set_tachometer_value as unsafe extern "C" fn(c_int) -> c_int);
+    fn_slot!(set_cfg_float as unsafe extern "C" fn(c_int, f32) -> bool);
+    fn_slot!(set_cfg_int as unsafe extern "C" fn(c_int, c_int) -> bool);
+    fn_slot!(store_cfg as unsafe extern "C" fn() -> bool);
+    optional_fn_slot!(shutdown_disable as unsafe extern "C" fn(bool));
+    optional_fn_slot!(sleep_ticks as unsafe extern "C" fn(u32));
+    fn_slot!(sys_lock as unsafe extern "C" fn());
+    fn_slot!(sys_unlock as unsafe extern "C" fn());
+    fn_slot!(timer_sleep as unsafe extern "C" fn(f32));
+    fn_slot!(ahrs_init_attitude_info as unsafe extern "C" fn(*mut AttitudeInfo));
+    fn_slot!(
+        ahrs_update_initial_orientation
+            as unsafe extern "C" fn(*const f32, *const f32, *mut AttitudeInfo)
+    );
+    fn_slot!(
+        ahrs_update_mahony_imu
+            as unsafe extern "C" fn(*const f32, *const f32, f32, *mut AttitudeInfo)
+    );
+    fn_slot!(
+        ahrs_update_madgwick_imu
+            as unsafe extern "C" fn(*const f32, *const f32, f32, *mut AttitudeInfo)
+    );
+    fn_slot!(ahrs_get_roll as unsafe extern "C" fn(*const AttitudeInfo) -> f32);
+    fn_slot!(ahrs_get_pitch as unsafe extern "C" fn(*const AttitudeInfo) -> f32);
+    fn_slot!(ahrs_get_yaw as unsafe extern "C" fn(*const AttitudeInfo) -> f32);
 }
 
 #[track_caller]
@@ -346,7 +614,7 @@ fn required_slot<T>(slot: Option<T>) -> T {
 
 macro_rules! required_slot {
     ($name:ident) => {
-        required_slot(slots::$name())
+        slots::$name()
     };
 }
 
@@ -509,6 +777,118 @@ pub unsafe fn lbm_cdr(value: LbmValue) -> LbmValue {
 /// `value` must be a mutable LispBM list owned by the current evaluation.
 pub unsafe fn lbm_list_destructive_reverse(value: LbmValue) -> LbmValue {
     unsafe { LbmValue(required_slot!(lbm_list_destructive_reverse)(value.0)) }
+}
+
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn lbm_enc_sym(symbol: u32) -> LbmValue {
+    unsafe { slots::lbm_enc_sym()(symbol) }
+}
+
+/// # Safety
+///
+/// `value` must be a LispBM symbol supplied by the firmware.
+pub unsafe fn lbm_dec_sym(value: LbmValue) -> u32 {
+    unsafe { slots::lbm_dec_sym()(value) }
+}
+
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn lbm_send_message(context: u32, message: LbmValue) -> c_int {
+    unsafe { slots::lbm_send_message()(context, message) }
+}
+
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+pub unsafe fn lbm_get_current_cid() -> u32 {
+    unsafe { slots::lbm_get_current_cid()() }
+}
+
+/// # Safety
+///
+/// The current callback must be running in a blockable LispBM extension context.
+pub unsafe fn lbm_block_ctx_from_extension() {
+    unsafe { slots::lbm_block_ctx_from_extension()() }
+}
+
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must remain valid.
+pub unsafe fn lbm_unblock_ctx_unboxed(context: u32, value: LbmValue) -> Option<bool> {
+    optional_bool_call(
+        unsafe { slots::lbm_unblock_ctx_unboxed() },
+        |unblock| unsafe { unblock(context, value) },
+    )
+}
+
+/// Start an optional firmware 6.05 flat-value buffer.
+///
+/// # Safety
+///
+/// `value` must point to writable storage for one [`LbmFlatValue`].
+pub unsafe fn lbm_start_flatten(value: *mut LbmFlatValue, buffer_size: usize) -> Option<bool> {
+    optional_bool_call(unsafe { slots::lbm_start_flatten() }, |start| unsafe {
+        start(value, buffer_size)
+    })
+}
+
+/// Finish an optional firmware 6.05 flat-value buffer.
+///
+/// # Safety
+///
+/// `value` must be a buffer previously initialized by `lbm_start_flatten`.
+pub unsafe fn lbm_finish_flatten(value: *mut LbmFlatValue) -> Option<bool> {
+    optional_bool_call(unsafe { slots::lbm_finish_flatten() }, |finish| unsafe {
+        finish(value)
+    })
+}
+
+macro_rules! flat_value_bool_call {
+    ($name:ident, $slot:ident, $($arg:ident : $ty:ty),* $(,)?) => {
+        /// Call an optional firmware 6.05 flat-value constructor.
+        ///
+        /// # Safety
+        ///
+        /// `value` must be a live buffer initialized by `lbm_start_flatten` and
+        /// each argument must remain valid for the duration of the call.
+        pub unsafe fn $name(value: *mut LbmFlatValue, $($arg: $ty),*) -> Option<bool> {
+            optional_bool_call(unsafe { slots::$slot() }, |build| unsafe {
+                build(value, $($arg),*)
+            })
+        }
+    };
+}
+
+flat_value_bool_call!(f_i64, f_i64, number: i64);
+flat_value_bool_call!(f_u64, f_u64, number: u64);
+flat_value_bool_call!(f_lbm_array, f_lbm_array, count: u32, data: *mut u8);
+flat_value_bool_call!(f_sym, f_sym, symbol: u32);
+flat_value_bool_call!(f_b, f_b, byte: u8);
+flat_value_bool_call!(f_i32, f_i32, number: i32);
+flat_value_bool_call!(f_u32, f_u32, number: u32);
+flat_value_bool_call!(f_float, f_float, number: f32);
+
+/// Append a cons marker to an optional firmware 6.05 flat value.
+///
+/// # Safety
+///
+/// `value` must be a live buffer initialized by `lbm_start_flatten`.
+pub unsafe fn f_cons(value: *mut LbmFlatValue) -> Option<bool> {
+    optional_bool_call(unsafe { slots::f_cons() }, |build| unsafe { build(value) })
+}
+
+/// Unblock a context with an optional firmware 6.05 flat value.
+///
+/// # Safety
+///
+/// `value` must be a finished buffer initialized by `lbm_start_flatten`.
+pub unsafe fn lbm_unblock_ctx(context: u32, value: *mut LbmFlatValue) -> Option<bool> {
+    optional_bool_call(unsafe { slots::lbm_unblock_ctx() }, |unblock| unsafe {
+        unblock(context, value)
+    })
 }
 
 /// # Safety
@@ -814,7 +1194,7 @@ pub unsafe fn vesc_spawn(
     name: *const c_char,
     arg: *mut c_void,
 ) -> LibThread {
-    unsafe { required_slot!(spawn)(Some(entry), stack_bytes, name, arg) }
+    unsafe { required_slot!(spawn)(entry, stack_bytes, name, arg) }
 }
 
 /// Sleep the current firmware package thread for a number of microseconds.
@@ -879,6 +1259,97 @@ pub unsafe fn vesc_should_terminate() -> bool {
 /// `prog_addr` must be the native library base address passed by the VESC loader.
 pub unsafe fn vesc_get_arg(prog_addr: u32) -> *mut *mut c_void {
     unsafe { required_slot!(get_arg)(prog_addr) }
+}
+
+/// Transmit one bounded standard CAN frame when the optional slot is present.
+///
+/// # Safety
+///
+/// `data` must point to `len` readable bytes for the duration of the call.
+pub unsafe fn can_transmit_sid(id: u32, data: *const u8, len: u8) -> Option<()> {
+    unsafe { slots::can_transmit_sid() }.map(|transmit| unsafe { transmit(id, data, len) })
+}
+
+/// Install or clear the standard-ID CAN receiver callback.
+pub unsafe fn can_set_sid_callback(callback: Option<CanReceiverCallback>) -> Option<()> {
+    unsafe { slots::can_set_sid_cb() }.map(|set| unsafe { set(callback) })
+}
+
+/// Install or clear the extended-ID CAN receiver callback.
+pub unsafe fn can_set_eid_callback(callback: Option<CanReceiverCallback>) -> Option<()> {
+    unsafe { slots::can_set_eid_cb() }.map(|set| unsafe { set(callback) })
+}
+
+/// Transmit one bounded extended CAN frame when the optional slot is present.
+///
+/// # Safety
+///
+/// `data` must point to `len` readable bytes for the duration of the call.
+pub unsafe fn can_transmit_eid(id: u32, data: *const u8, len: u8) -> Option<()> {
+    unsafe { slots::can_transmit_eid() }.map(|transmit| unsafe { transmit(id, data, len) })
+}
+
+/// Send a remote motor duty command when the optional slot is present.
+pub unsafe fn can_set_duty(controller: u8, duty: f32) -> Option<()> {
+    unsafe { slots::can_set_duty() }.map(|set| unsafe { set(controller, duty) })
+}
+
+/// Ping one remote controller and copy its reported hardware type.
+pub unsafe fn can_ping(controller: u8) -> Option<(bool, crate::HardwareType)> {
+    let ping = unsafe { slots::can_ping() }?;
+    let mut hardware = crate::HardwareType(0);
+    let ok = unsafe { ping(controller, &mut hardware) };
+    Some((ok, hardware))
+}
+
+/// Send a remote motor current command when the optional slot is present.
+pub unsafe fn can_set_current(controller: u8, current: f32) -> Option<()> {
+    unsafe { slots::can_set_current() }.map(|set| unsafe { set(controller, current) })
+}
+
+/// Send a remote motor relative-current command when the optional slot is present.
+pub unsafe fn can_set_current_rel(controller: u8, current: f32) -> Option<()> {
+    unsafe { slots::can_set_current_rel() }.map(|set| unsafe { set(controller, current) })
+}
+
+/// Send a remote motor relative-current command with an off-delay when the optional slot is present.
+pub unsafe fn can_set_current_rel_off_delay(
+    controller: u8,
+    current: f32,
+    delay_seconds: f32,
+) -> Option<()> {
+    unsafe { slots::can_set_current_rel_off_delay() }
+        .map(|set| unsafe { set(controller, current, delay_seconds) })
+}
+
+/// Send a remote motor brake-current command when the optional slot is present.
+pub unsafe fn can_set_current_brake(controller: u8, current: f32) -> Option<()> {
+    unsafe { slots::can_set_current_brake() }.map(|set| unsafe { set(controller, current) })
+}
+
+/// Send a remote motor relative brake-current command when the optional slot is present.
+pub unsafe fn can_set_current_brake_rel(controller: u8, current: f32) -> Option<()> {
+    unsafe { slots::can_set_current_brake_rel() }.map(|set| unsafe { set(controller, current) })
+}
+
+/// Send a remote motor current command with an off-delay when the optional slot is present.
+pub unsafe fn can_set_current_off_delay(
+    controller: u8,
+    current: f32,
+    delay_seconds: f32,
+) -> Option<()> {
+    unsafe { slots::can_set_current_off_delay() }
+        .map(|set| unsafe { set(controller, current, delay_seconds) })
+}
+
+/// Send a remote motor electrical-speed command when the optional slot is present.
+pub unsafe fn can_set_rpm(controller: u8, rpm: f32) -> Option<()> {
+    unsafe { slots::can_set_rpm() }.map(|set| unsafe { set(controller, rpm) })
+}
+
+/// Send a remote motor position command when the optional slot is present.
+pub unsafe fn can_set_pos(controller: u8, position: f32) -> Option<()> {
+    unsafe { slots::can_set_pos() }.map(|set| unsafe { set(controller, position) })
 }
 
 /// Copy a firmware-owned record without allowing a null pointer to cross the
@@ -949,13 +1420,33 @@ pub unsafe fn gnss_snapshot() -> Option<GnssData> {
     unsafe { copy_firmware_record(loader()) }
 }
 
-/// Copy the current remote-control state when firmware exposes the slot.
+/// Copy the current remote-control state returned by firmware.
 ///
 /// # Safety
 ///
 /// The VESC function table must be valid for the duration of this call.
-pub unsafe fn remote_state() -> Option<RemoteState> {
-    unsafe { slots::get_remote_state() }.map(|func| unsafe { func() })
+pub unsafe fn remote_state() -> RemoteState {
+    unsafe { required_slot!(get_remote_state)() }
+}
+
+/// Read the decoded PPM input when the optional slot is present.
+pub unsafe fn get_ppm() -> Option<f32> {
+    unsafe { slots::get_ppm() }.map(|read| unsafe { read() })
+}
+
+/// Read the age of the latest decoded PPM input when supported.
+pub unsafe fn get_ppm_age() -> Option<f32> {
+    unsafe { slots::get_ppm_age() }.map(|read| unsafe { read() })
+}
+
+/// Read whether firmware currently asks applications to disable output.
+pub unsafe fn app_is_output_disabled() -> Option<bool> {
+    unsafe { slots::app_is_output_disabled() }.map(|read| unsafe { read() })
+}
+
+/// Persist firmware backup data when the optional capability is present.
+pub unsafe fn store_backup_data() -> Option<bool> {
+    unsafe { slots::store_backup_data() }.map(|store| unsafe { store() })
 }
 
 /// Return the active motor fault code, or zero for no fault.
@@ -963,24 +1454,23 @@ pub unsafe fn remote_state() -> Option<RemoteState> {
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-pub unsafe fn mc_get_fault() -> c_int {
-    unsafe { required_slot!(mc_get_fault)() as c_int }
+pub unsafe fn mc_get_fault() -> crate::FaultCode {
+    unsafe { required_slot!(mc_get_fault)() }
 }
 
-/// Return the latest decoded PPM input.
-///
-/// # Safety
-/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-pub unsafe fn get_ppm() -> Option<f32> {
-    unsafe { slots::get_ppm() }.map(|func| unsafe { func() })
+/// Return the active motor-control thread index.
+pub unsafe fn mc_get_motor_thread() -> c_int {
+    unsafe { slots::mc_get_motor_thread()() }
 }
 
-/// Return the age of the latest decoded PPM input in seconds.
-///
-/// # Safety
-/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
-pub unsafe fn get_ppm_age() -> Option<f32> {
-    unsafe { slots::get_ppm_age() }.map(|func| unsafe { func() })
+/// Return whether firmware DC calibration has completed.
+pub unsafe fn mc_dccal_done() -> bool {
+    unsafe { slots::mc_dccal_done()() }
+}
+
+/// Return the firmware fault description pointer.
+pub unsafe fn mc_fault_to_string(code: crate::FaultCode) -> *const c_char {
+    unsafe { required_slot!(mc_fault_to_string)(code) }
 }
 
 /// Return the current motor electrical RPM.
@@ -1022,6 +1512,11 @@ pub unsafe fn mc_get_tot_current_filtered() -> f32 {
     unsafe { required_slot!(mc_get_tot_current_filtered)() }
 }
 
+/// Return the instantaneous total motor current.
+pub unsafe fn mc_get_tot_current() -> f32 {
+    unsafe { slots::mc_get_tot_current()() }
+}
+
 /// Return direction-adjusted filtered motor current.
 ///
 /// Float Out Boy v1.2.1 reads this in `motor_data_update` at
@@ -1035,6 +1530,11 @@ pub unsafe fn mc_get_tot_current_directional_filtered() -> f32 {
     unsafe { required_slot!(mc_get_tot_current_directional_filtered)() }
 }
 
+/// Return the instantaneous total motor current with motor direction applied.
+pub unsafe fn mc_get_tot_current_directional() -> f32 {
+    unsafe { slots::mc_get_tot_current_directional()() }
+}
+
 /// Return filtered input/battery current.
 ///
 /// Float Out Boy v1.2.1 reads this in `motor_data_update` at
@@ -1046,6 +1546,11 @@ pub unsafe fn mc_get_tot_current_directional_filtered() -> f32 {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_tot_current_in_filtered() -> f32 {
     unsafe { required_slot!(mc_get_tot_current_in_filtered)() }
+}
+
+/// Return the instantaneous battery/input current.
+pub unsafe fn mc_get_tot_current_in() -> f32 {
+    unsafe { slots::mc_get_tot_current_in()() }
 }
 
 /// Read a firmware motor configuration float by `CFG_PARAM_*` id.
@@ -1089,6 +1594,16 @@ pub unsafe fn timeout_reset() {
     unsafe { required_slot!(timeout_reset)() }
 }
 
+/// Return whether the firmware command timeout is active.
+pub unsafe fn timeout_has_timeout() -> bool {
+    unsafe { slots::timeout_has_timeout()() }
+}
+
+/// Return seconds since the firmware command timeout was last refreshed.
+pub unsafe fn timeout_secs_since_update() -> f32 {
+    unsafe { slots::timeout_secs_since_update()() }
+}
+
 /// Keep current control enabled after a current command.
 ///
 /// Float Out Boy v1.2.1 calls this before `mc_set_current` in
@@ -1100,6 +1615,18 @@ pub unsafe fn timeout_reset() {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_set_current_off_delay(seconds: f32) {
     unsafe { required_slot!(mc_set_current_off_delay)(seconds) }
+}
+
+/// Select the active firmware motor-control thread.
+pub unsafe fn mc_select_motor_thread(motor: c_int) {
+    unsafe { slots::mc_select_motor_thread()(motor) }
+}
+
+/// Install or clear a PWM callback when the optional slot is present.
+pub unsafe fn mc_set_pwm_callback(callback: Option<PwmCallback>) -> bool {
+    unsafe { slots::mc_set_pwm_callback() }
+        .map(|set| unsafe { set(callback) })
+        .is_some()
 }
 
 /// Set the motor current command in amps.
@@ -1115,6 +1642,26 @@ pub unsafe fn mc_set_current(amps: f32) {
     unsafe { required_slot!(mc_set_current)(amps) }
 }
 
+/// Set relative motor current.
+pub unsafe fn mc_set_current_rel(ratio: f32) {
+    unsafe { slots::mc_set_current_rel()(ratio) }
+}
+
+/// Set relative braking current.
+pub unsafe fn mc_set_brake_current_rel(ratio: f32) {
+    unsafe { slots::mc_set_brake_current_rel()(ratio) }
+}
+
+/// Set the firmware PID speed target in electrical RPM.
+pub unsafe fn mc_set_pid_speed(rpm: f32) {
+    unsafe { slots::mc_set_pid_speed()(rpm) }
+}
+
+/// Set the firmware PID position target in electrical degrees.
+pub unsafe fn mc_set_pid_pos(position: f32) {
+    unsafe { slots::mc_set_pid_pos()(position) }
+}
+
 /// Set the motor duty-cycle command.
 ///
 /// Float Out Boy v1.2.1 applies parking brake duty zero in
@@ -1126,6 +1673,11 @@ pub unsafe fn mc_set_current(amps: f32) {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_set_duty(duty_cycle: f32) {
     unsafe { required_slot!(mc_set_duty)(duty_cycle) }
+}
+
+/// Set the motor duty-cycle command without ramping.
+pub unsafe fn mc_set_duty_noramp(duty_cycle: f32) {
+    unsafe { slots::mc_set_duty_noramp()(duty_cycle) }
 }
 
 /// Set the motor brake current command in amps.
@@ -1141,6 +1693,136 @@ pub unsafe fn mc_set_brake_current(amps: f32) {
     unsafe { required_slot!(mc_set_brake_current)(amps) }
 }
 
+/// Set the motor handbrake current.
+pub unsafe fn mc_set_handbrake(amps: f32) {
+    unsafe { slots::mc_set_handbrake()(amps) }
+}
+
+/// Set the motor relative handbrake command.
+pub unsafe fn mc_set_handbrake_rel(ratio: f32) {
+    unsafe { slots::mc_set_handbrake_rel()(ratio) }
+}
+
+/// Read the relative motor tachometer, optionally resetting it.
+pub unsafe fn mc_get_tachometer_value(reset: bool) -> c_int {
+    unsafe { slots::mc_get_tachometer_value()(reset) }
+}
+
+/// Read the absolute motor tachometer, optionally resetting it.
+pub unsafe fn mc_get_tachometer_abs_value(reset: bool) -> c_int {
+    unsafe { slots::mc_get_tachometer_abs_value()(reset) }
+}
+
+/// Return the configured PID position setpoint in degrees.
+pub unsafe fn mc_get_pid_pos_set() -> f32 {
+    unsafe { slots::mc_get_pid_pos_set()() }
+}
+
+/// Return the current PID position in degrees.
+pub unsafe fn mc_get_pid_pos_now() -> f32 {
+    unsafe { slots::mc_get_pid_pos_now()() }
+}
+
+/// Update the PID position offset, optionally persisting it in firmware.
+pub unsafe fn mc_update_pid_pos_offset(angle_now: f32, store: bool) {
+    unsafe { slots::mc_update_pid_pos_offset()(angle_now, store) }
+}
+
+/// Read the average motor power statistic.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid and contain
+/// the motor-statistics slot.
+pub unsafe fn mc_stat_power_avg() -> f32 {
+    unsafe { slots::mc_stat_power_avg()() }
+}
+
+/// Read the peak motor power statistic.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid and contain
+/// the motor-statistics slot.
+pub unsafe fn mc_stat_power_max() -> f32 {
+    unsafe { slots::mc_stat_power_max()() }
+}
+
+/// Read the average vehicle speed statistic.
+pub unsafe fn mc_stat_speed_avg() -> f32 {
+    unsafe { slots::mc_stat_speed_avg()() }
+}
+
+/// Read the peak vehicle speed statistic.
+pub unsafe fn mc_stat_speed_max() -> f32 {
+    unsafe { slots::mc_stat_speed_max()() }
+}
+
+/// Read the average motor current statistic.
+pub unsafe fn mc_stat_current_avg() -> f32 {
+    unsafe { slots::mc_stat_current_avg()() }
+}
+
+/// Read the peak motor current statistic.
+pub unsafe fn mc_stat_current_max() -> f32 {
+    unsafe { slots::mc_stat_current_max()() }
+}
+
+/// Read the average MOSFET temperature statistic.
+pub unsafe fn mc_stat_temp_mosfet_avg() -> f32 {
+    unsafe { slots::mc_stat_temp_mosfet_avg()() }
+}
+
+/// Read the peak MOSFET temperature statistic.
+pub unsafe fn mc_stat_temp_mosfet_max() -> f32 {
+    unsafe { slots::mc_stat_temp_mosfet_max()() }
+}
+
+/// Read the average motor temperature statistic.
+pub unsafe fn mc_stat_temp_motor_avg() -> f32 {
+    unsafe { slots::mc_stat_temp_motor_avg()() }
+}
+
+/// Read the peak motor temperature statistic.
+pub unsafe fn mc_stat_temp_motor_max() -> f32 {
+    unsafe { slots::mc_stat_temp_motor_max()() }
+}
+
+/// Read the elapsed motor-statistics count time in seconds.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid and contain
+/// the motor-statistics slot.
+pub unsafe fn mc_stat_count_time() -> f32 {
+    unsafe { slots::mc_stat_count_time()() }
+}
+
+/// Reset motor power and related statistics.
+///
+/// # Safety
+///
+/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid and contain
+/// the motor-statistics slot.
+pub unsafe fn mc_stat_reset() {
+    unsafe { slots::mc_stat_reset()() }
+}
+
+/// Read the motor control sampling frequency.
+pub unsafe fn mc_get_sampling_frequency_now() -> f32 {
+    unsafe { slots::mc_get_sampling_frequency_now()() }
+}
+
+/// Release motor control ownership.
+pub unsafe fn mc_release_motor() {
+    unsafe { slots::mc_release_motor()() }
+}
+
+/// Wait until motor control ownership has been released.
+pub unsafe fn mc_wait_for_motor_release(timeout: f32) -> bool {
+    unsafe { slots::mc_wait_for_motor_release()(timeout) }
+}
+
 /// Return the current duty cycle.
 ///
 /// Float Out Boy v1.2.1 reads this in `motor_data_update` at
@@ -1152,17 +1834,6 @@ pub unsafe fn mc_set_brake_current(amps: f32) {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_duty_cycle_now() -> f32 {
     unsafe { required_slot!(mc_get_duty_cycle_now)() }
-}
-
-/// Return the firmware-owned name for a motor fault code when the slot exists.
-///
-/// # Safety
-///
-/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid. A non-null
-/// returned pointer is firmware-owned and must point to a NUL-terminated string.
-pub unsafe fn mc_fault_to_string(code: c_uint) -> Option<*const c_char> {
-    let pointer = unsafe { required_slot!(mc_fault_to_string)(code) };
-    (!pointer.is_null()).then_some(pointer)
 }
 
 /// Return FOC d-axis Id current when the firmware slot is present.
@@ -1178,13 +1849,213 @@ pub unsafe fn foc_get_id() -> Option<f32> {
     unsafe { slots::foc_get_id() }.map(|func| unsafe { func() })
 }
 
-/// Play one FOC tone when the motor firmware exposes audio support.
-///
-/// # Safety
-///
-/// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
+/// Return FOC q-axis Iq current when the firmware slot is present.
+pub unsafe fn foc_get_iq() -> Option<f32> {
+    unsafe { slots::foc_get_iq() }.map(|func| unsafe { func() })
+}
+
+/// Return FOC d-axis Vd voltage when the firmware slot is present.
+pub unsafe fn foc_get_vd() -> Option<f32> {
+    unsafe { slots::foc_get_vd() }.map(|func| unsafe { func() })
+}
+
+/// Return FOC q-axis Vq voltage when the firmware slot is present.
+pub unsafe fn foc_get_vq() -> Option<f32> {
+    unsafe { slots::foc_get_vq() }.map(|func| unsafe { func() })
+}
+
+/// Apply open-loop current at electrical speed when the slot is present.
+pub unsafe fn foc_set_openloop_current(current: f32, rpm: f32) -> bool {
+    unsafe { slots::foc_set_openloop_current() }
+        .map(|func| unsafe { func(current, rpm) })
+        .is_some()
+}
+
+/// Apply open-loop current at electrical phase when the slot is present.
+pub unsafe fn foc_set_openloop_phase(current: f32, phase: f32) -> bool {
+    unsafe { slots::foc_set_openloop_phase() }
+        .map(|func| unsafe { func(current, phase) })
+        .is_some()
+}
+
+/// Apply open-loop duty at electrical speed when the slot is present.
+pub unsafe fn foc_set_openloop_duty(duty: f32, rpm: f32) -> bool {
+    unsafe { slots::foc_set_openloop_duty() }
+        .map(|func| unsafe { func(duty, rpm) })
+        .is_some()
+}
+
+/// Apply open-loop duty at electrical phase when the slot is present.
+pub unsafe fn foc_set_openloop_duty_phase(duty: f32, phase: f32) -> bool {
+    unsafe { slots::foc_set_openloop_duty_phase() }
+        .map(|func| unsafe { func(duty, phase) })
+        .is_some()
+}
+
+/// Trigger a FOC audio beep when the firmware slot is present.
+pub unsafe fn foc_beep(frequency: f32, duration: f32, voltage: f32) -> Option<bool> {
+    unsafe { slots::foc_beep() }.map(|func| unsafe { func(frequency, duration, voltage) })
+}
+
+/// Play a FOC audio tone on a channel when the firmware slot is present.
 pub unsafe fn foc_play_tone(channel: c_int, frequency: f32, voltage: f32) -> Option<bool> {
     unsafe { slots::foc_play_tone() }.map(|func| unsafe { func(channel, frequency, voltage) })
+}
+
+/// Stop FOC audio when the firmware slot is present.
+pub unsafe fn foc_stop_audio(reset: bool) -> bool {
+    unsafe { slots::foc_stop_audio() }
+        .map(|func| unsafe { func(reset) })
+        .is_some()
+}
+
+/// Install a FOC audio sample table when the firmware slot is present.
+pub unsafe fn foc_set_audio_sample_table(
+    channel: c_int,
+    samples: *const f32,
+    length: c_int,
+) -> Option<bool> {
+    unsafe { slots::foc_set_audio_sample_table() }
+        .map(|func| unsafe { func(channel, samples, length) })
+}
+
+/// Return the firmware-owned FOC audio sample table pointer when present.
+pub unsafe fn foc_get_audio_sample_table(channel: c_int) -> Option<*const f32> {
+    unsafe { slots::foc_get_audio_sample_table() }.map(|func| unsafe { func(channel) })
+}
+
+/// Play signed FOC audio samples when the firmware slot is present.
+pub unsafe fn foc_play_audio_samples(
+    samples: *const i8,
+    length: c_int,
+    sample_rate: f32,
+    voltage: f32,
+) -> Option<bool> {
+    unsafe { slots::foc_play_audio_samples() }
+        .map(|func| unsafe { func(samples, length, sample_rate, voltage) })
+}
+
+/// Start the optional UART peripheral.
+pub unsafe fn uart_start(baudrate: u32, half_duplex: bool) -> Option<bool> {
+    unsafe { slots::uart_start() }.map(|func| unsafe { func(baudrate, half_duplex) })
+}
+
+/// Write bytes through the optional UART peripheral.
+pub unsafe fn uart_write(data: *const u8, size: u32) -> Option<bool> {
+    unsafe { slots::uart_write() }.map(|func| unsafe { func(data, size) })
+}
+
+/// Read one byte from the optional UART peripheral, or report no byte.
+pub unsafe fn uart_read() -> Option<i32> {
+    unsafe { slots::uart_read() }.map(|func| unsafe { func() })
+}
+
+/// Initialize packet framing state when the optional packet slots are present.
+pub unsafe fn packet_init(
+    send: PacketSendCallback,
+    process: PacketProcessCallback,
+    state: *mut PacketState,
+) -> bool {
+    unsafe { slots::packet_init() }
+        .map(|func| unsafe { func(send, process, state) })
+        .is_some()
+}
+
+/// Reset packet framing state when the optional slot is present.
+pub unsafe fn packet_reset(state: *mut PacketState) -> bool {
+    unsafe { slots::packet_reset() }
+        .map(|func| unsafe { func(state) })
+        .is_some()
+}
+
+/// Feed one byte into packet framing state when the optional slot is present.
+pub unsafe fn packet_process_byte(byte: u8, state: *mut PacketState) -> bool {
+    unsafe { slots::packet_process_byte() }
+        .map(|func| unsafe { func(byte, state) })
+        .is_some()
+}
+
+/// Send a packet through packet framing state when the optional slot is present.
+pub unsafe fn packet_send_packet(data: *mut c_uchar, len: c_uint, state: *mut PacketState) -> bool {
+    unsafe { slots::packet_send_packet() }
+        .map(|func| unsafe { func(data, len, state) })
+        .is_some()
+}
+
+/// Process one command packet and register its reply callback when present.
+pub unsafe fn commands_process_packet(
+    data: *mut c_uchar,
+    len: c_uint,
+    reply: ReplyCallback,
+) -> bool {
+    unsafe { slots::commands_process_packet() }
+        .map(|func| unsafe { func(data, len, reply) })
+        .is_some()
+}
+
+/// Unregister a command reply callback when the cleanup slot is present.
+pub unsafe fn commands_unregister_reply_func(reply: ReplyCallback) -> bool {
+    unsafe { slots::commands_unregister_reply_func() }
+        .map(|func| unsafe { func(reply) })
+        .is_some()
+}
+
+/// Initialize optional firmware plotting output.
+pub unsafe fn plot_init(title: *const c_char, channel: *const c_char) -> bool {
+    unsafe { slots::plot_init() }
+        .map(|func| unsafe { func(title, channel) })
+        .is_some()
+}
+
+/// Add a named graph to optional firmware plotting output.
+pub unsafe fn plot_add_graph(name: *const c_char) -> bool {
+    unsafe { slots::plot_add_graph() }
+        .map(|func| unsafe { func(name) })
+        .is_some()
+}
+
+/// Select a graph in optional firmware plotting output.
+pub unsafe fn plot_set_graph(index: c_int) -> bool {
+    unsafe { slots::plot_set_graph() }
+        .map(|func| unsafe { func(index) })
+        .is_some()
+}
+
+/// Send one point to optional firmware plotting output.
+pub unsafe fn plot_send_points(x: f32, y: f32) -> bool {
+    unsafe { slots::plot_send_points() }
+        .map(|func| unsafe { func(x, y) })
+        .is_some()
+}
+
+/// Register an optional terminal command callback.
+pub unsafe fn terminal_register_command_callback(
+    command: *const c_char,
+    help: *const c_char,
+    arg_names: *const c_char,
+    callback: TerminalCallback,
+) -> bool {
+    unsafe { slots::terminal_register_command_callback() }
+        .map(|func| unsafe { func(command, help, arg_names, callback) })
+        .is_some()
+}
+
+/// Unregister an optional terminal command callback.
+pub unsafe fn terminal_unregister_callback(callback: TerminalCallback) -> bool {
+    unsafe { slots::terminal_unregister_callback() }
+        .map(|func| unsafe { func(callback) })
+        .is_some()
+}
+
+/// Install optional custom encoder callbacks.
+pub unsafe fn encoder_set_custom_callbacks(
+    read: EncoderReadCallback,
+    fault: EncoderFaultCallback,
+    info: EncoderInfoCallback,
+) -> bool {
+    unsafe { slots::encoder_set_custom_callbacks() }
+        .map(|func| unsafe { func(read, fault, info) })
+        .is_some()
 }
 /// Return the filtered input/battery voltage.
 ///
@@ -1250,6 +2121,11 @@ pub unsafe fn mc_get_distance_abs() -> f32 {
     unsafe { required_slot!(mc_get_distance_abs)() }
 }
 
+/// Return signed motor distance in meters.
+pub unsafe fn mc_get_distance() -> f32 {
+    unsafe { slots::mc_get_distance()() }
+}
+
 /// Return the odometer distance in meters.
 ///
 /// # Safety
@@ -1257,6 +2133,11 @@ pub unsafe fn mc_get_distance_abs() -> f32 {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn mc_get_odometer() -> u64 {
     unsafe { required_slot!(mc_get_odometer)() }
+}
+
+/// Set the firmware odometer distance in meters.
+pub unsafe fn mc_set_odometer(meters: u64) {
+    unsafe { slots::mc_set_odometer()(meters) }
 }
 
 /// Return the filtered MOSFET/FET temperature in degrees Celsius.
@@ -1326,6 +2207,16 @@ pub unsafe fn imu_get_yaw() -> f32 {
     unsafe { required_slot!(imu_get_yaw)() }
 }
 
+/// Set firmware IMU yaw in degrees.
+pub unsafe fn imu_set_yaw(yaw_degrees: f32) {
+    unsafe { slots::imu_set_yaw()(yaw_degrees) }
+}
+
+/// Write firmware IMU acceleration axes in g into `xyz`.
+pub unsafe fn imu_get_accel(xyz: *mut f32) {
+    unsafe { slots::imu_get_accel()(xyz) }
+}
+
 /// Write firmware IMU gyro axes in degrees/sec into `xyz`.
 ///
 /// Float Out Boy v1.2.1 mirrors this VESC ABI slot from
@@ -1337,6 +2228,26 @@ pub unsafe fn imu_get_yaw() -> f32 {
 /// table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn imu_get_gyro(xyz: *mut f32) {
     unsafe { required_slot!(imu_get_gyro)(xyz) }
+}
+
+/// Write firmware IMU magnetic-field axes in microteslas into `xyz`.
+pub unsafe fn imu_get_mag(xyz: *mut f32) {
+    unsafe { slots::imu_get_mag()(xyz) }
+}
+
+/// Derotate a three-axis IMU vector into the firmware frame.
+pub unsafe fn imu_derotate(input: *const f32, output: *mut f32) {
+    unsafe { slots::imu_derotate()(input, output) }
+}
+
+/// Write derotated firmware IMU acceleration axes in g into `xyz`.
+pub unsafe fn imu_get_accel_derotated(xyz: *mut f32) {
+    unsafe { slots::imu_get_accel_derotated()(xyz) }
+}
+
+/// Write derotated firmware IMU gyro axes in degrees/sec into `xyz`.
+pub unsafe fn imu_get_gyro_derotated(xyz: *mut f32) {
+    unsafe { slots::imu_get_gyro_derotated()(xyz) }
 }
 
 /// # Safety
@@ -1404,21 +2315,21 @@ pub unsafe fn vesc_timer_seconds_elapsed_since(timestamp: u32) -> f32 {
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn io_set_mode(pin: crate::VescPin, mode: crate::VescPinMode) -> bool {
-    unsafe { required_slot!(io_set_mode)(pin.0 as c_uint, mode.0 as c_uint) }
+    unsafe { required_slot!(io_set_mode)(pin.0, mode.0) }
 }
 
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn io_write(pin: crate::VescPin, level: i32) -> bool {
-    unsafe { required_slot!(io_write)(pin.0 as c_uint, level) }
+    unsafe { required_slot!(io_write)(pin.0, level) }
 }
 
 /// # Safety
 ///
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 pub unsafe fn io_read(pin: crate::VescPin) -> bool {
-    unsafe { required_slot!(io_read)(pin.0 as c_uint) }
+    unsafe { required_slot!(io_read)(pin.0) }
 }
 
 /// # Safety
@@ -1427,7 +2338,7 @@ pub unsafe fn io_read(pin: crate::VescPin) -> bool {
 /// The VESC function table at `VescIfAbi::BASE_ADDR` must be valid.
 #[inline(always)]
 pub unsafe fn io_read_analog(pin: crate::VescPin) -> f32 {
-    unsafe { required_slot!(io_read_analog)(pin.0 as c_uint) }
+    unsafe { required_slot!(io_read_analog)(pin.0) }
 }
 
 /// # Safety
@@ -1437,10 +2348,478 @@ pub unsafe fn io_read_analog(pin: crate::VescPin) -> f32 {
 #[inline(always)]
 pub unsafe fn io_read_analog_pair(first: crate::VescPin, second: crate::VescPin) -> (f32, f32) {
     let read = unsafe { required_slot!(io_read_analog) };
-    (unsafe { read(first.0 as c_uint) }, unsafe {
-        read(second.0 as c_uint)
-    })
+    (unsafe { read(first.0) }, unsafe { read(second.0) })
 }
 
+/// Set the LispBM error reason string.
+pub unsafe fn lbm_set_error_reason(reason: *mut c_char) -> c_int {
+    unsafe { slots::lbm_set_error_reason()(reason) }
+}
+
+/// Pause LispBM evaluation while retaining the requested free-cell budget.
+pub unsafe fn lbm_pause_eval_with_gc(num_free: u32) {
+    unsafe { slots::lbm_pause_eval_with_gc()(num_free) }
+}
+
+/// Continue a previously paused LispBM evaluation.
+pub unsafe fn lbm_continue_eval() {
+    unsafe { slots::lbm_continue_eval()() }
+}
+
+/// Return whether LispBM evaluation is paused.
+pub unsafe fn lbm_eval_is_paused() -> bool {
+    unsafe { slots::lbm_eval_is_paused()() }
+}
+
+/// Add a constant LispBM symbol and write its numeric identifier.
+pub unsafe fn lbm_add_symbol_const(name: *mut c_char, symbol: *mut u32) -> c_int {
+    unsafe { slots::lbm_add_symbol_const()(name, symbol) }
+}
+
+/// Look up a LispBM symbol by name and write its numeric identifier.
+pub unsafe fn lbm_get_symbol_by_name(name: *mut c_char, symbol: *mut u32) -> c_int {
+    unsafe { slots::lbm_get_symbol_by_name()(name, symbol) }
+}
+
+/// Encode an unsigned LispBM integer.
+pub unsafe fn lbm_enc_u(value: u32) -> LbmValue {
+    unsafe { slots::lbm_enc_u()(value) }
+}
+
+/// Encode a signed 32-bit LispBM integer.
+pub unsafe fn lbm_enc_i32(value: i32) -> LbmValue {
+    unsafe { slots::lbm_enc_i32()(value) }
+}
+
+/// Test whether a LispBM symbol is `nil`.
+pub unsafe fn lbm_is_symbol_nil(symbol: u32) -> bool {
+    unsafe { slots::lbm_is_symbol_nil()(symbol) }
+}
+
+/// Test whether a LispBM symbol is `true`.
+pub unsafe fn lbm_is_symbol_true(symbol: u32) -> bool {
+    unsafe { slots::lbm_is_symbol_true()(symbol) }
+}
+
+/// Append a signed native integer to a LispBM flat value when available.
+pub unsafe fn f_i(value: *mut LbmFlatValue, integer: i32) -> Option<bool> {
+    unsafe { slots::f_i() }.map(|encode| unsafe { encode(value, integer) })
+}
+
+/// Sleep for a firmware millisecond interval.
+pub unsafe fn sleep_ms(milliseconds: u32) {
+    unsafe { slots::sleep_ms()(milliseconds) }
+}
+
+/// Return firmware uptime in seconds.
+pub unsafe fn system_time() -> f32 {
+    unsafe { slots::system_time()() }
+}
+
+/// Convert a firmware timestamp to age in seconds.
+pub unsafe fn ts_to_age_s(timestamp: u32) -> f32 {
+    unsafe { slots::ts_to_age_s()(timestamp) }
+}
+
+/// Allocate firmware-owned memory.
+pub unsafe fn malloc(bytes: usize) -> *mut c_void {
+    unsafe { slots::malloc()(bytes) }
+}
+
+/// Free memory allocated by [`malloc`].
+pub unsafe fn free(pointer: *mut c_void) {
+    unsafe { slots::free()(pointer) }
+}
+
+/// Spawn a firmware thread.
+pub unsafe fn spawn(
+    entry: unsafe extern "C" fn(*mut c_void),
+    stack_bytes: usize,
+    name: *const c_char,
+    argument: *mut c_void,
+) -> *mut c_void {
+    unsafe { slots::spawn()(entry, stack_bytes, name, argument) }
+}
+
+/// Request termination of a firmware thread.
+pub unsafe fn request_terminate(thread: *mut c_void) {
+    unsafe { slots::request_terminate()(thread) }
+}
+
+/// Return whether the current firmware thread should terminate.
+pub unsafe fn should_terminate() -> bool {
+    unsafe { slots::should_terminate()() }
+}
+
+/// Return the package argument pointer for a program address.
+pub unsafe fn get_arg(program_address: u32) -> *mut *mut c_void {
+    unsafe { slots::get_arg()(program_address) }
+}
+
+/// Configure a low-level STM32 GPIO pad.
+pub unsafe fn set_pad_mode(gpio: *mut c_void, pin: u32, mode: u32) {
+    unsafe { slots::set_pad_mode()(gpio, pin, mode) }
+}
+
+/// Set a low-level STM32 GPIO pad.
+pub unsafe fn set_pad(gpio: *mut c_void, pin: u32) {
+    unsafe { slots::set_pad()(gpio, pin) }
+}
+
+/// Clear a low-level STM32 GPIO pad.
+pub unsafe fn clear_pad(gpio: *mut c_void, pin: u32) {
+    unsafe { slots::clear_pad()(gpio, pin) }
+}
+
+/// Resolve a VESC pin to its low-level GPIO port and pin number.
+pub unsafe fn io_get_st_pin(pin: crate::VescPin, gpio: *mut *mut c_void, st_pin: *mut u32) -> bool {
+    unsafe { slots::io_get_st_pin()(pin.0, gpio, st_pin) }
+}
+
+/// Copy the base CAN status record selected by index.
+pub unsafe fn can_get_status_msg_index(index: c_int) -> Option<CanStatusMsg> {
+    unsafe { can_status_msg_index(index) }
+}
+
+/// Copy the base CAN status record selected by controller ID.
+pub unsafe fn can_get_status_msg_id(id: c_int) -> Option<CanStatusMsg> {
+    unsafe { can_status_msg_id(id) }
+}
+
+macro_rules! can_status_alias {
+    ($name:ident, $source:ident, $status:ty, $doc:literal) => {
+        #[doc = $doc]
+        pub unsafe fn $name(index_or_id: c_int) -> Option<$status> {
+            unsafe { $source(index_or_id) }
+        }
+    };
+}
+
+can_status_alias!(
+    can_get_status_msg_2_index,
+    can_status_msg_2_index,
+    CanStatusMsg2,
+    "Copy CAN status message 2 selected by index."
+);
+can_status_alias!(
+    can_get_status_msg_2_id,
+    can_status_msg_2_id,
+    CanStatusMsg2,
+    "Copy CAN status message 2 selected by controller ID."
+);
+can_status_alias!(
+    can_get_status_msg_3_index,
+    can_status_msg_3_index,
+    CanStatusMsg3,
+    "Copy CAN status message 3 selected by index."
+);
+can_status_alias!(
+    can_get_status_msg_3_id,
+    can_status_msg_3_id,
+    CanStatusMsg3,
+    "Copy CAN status message 3 selected by controller ID."
+);
+can_status_alias!(
+    can_get_status_msg_4_index,
+    can_status_msg_4_index,
+    CanStatusMsg4,
+    "Copy CAN status message 4 selected by index."
+);
+can_status_alias!(
+    can_get_status_msg_4_id,
+    can_status_msg_4_id,
+    CanStatusMsg4,
+    "Copy CAN status message 4 selected by controller ID."
+);
+can_status_alias!(
+    can_get_status_msg_5_index,
+    can_status_msg_5_index,
+    CanStatusMsg5,
+    "Copy CAN status message 5 selected by index."
+);
+can_status_alias!(
+    can_get_status_msg_5_id,
+    can_status_msg_5_id,
+    CanStatusMsg5,
+    "Copy CAN status message 5 selected by controller ID."
+);
+can_status_alias!(
+    can_get_status_msg_6_index,
+    can_status_msg_6_index,
+    CanStatusMsg6,
+    "Copy CAN status message 6 selected by index."
+);
+can_status_alias!(
+    can_get_status_msg_6_id,
+    can_status_msg_6_id,
+    CanStatusMsg6,
+    "Copy CAN status message 6 selected by controller ID."
+);
+
+/// Send a raw CAN buffer when the optional slot is present.
+pub unsafe fn can_send_buffer(controller: u8, data: *mut u8, len: c_uint, send: u8) -> Option<()> {
+    unsafe { slots::can_send_buffer() }
+        .map(|send_buffer| unsafe { send_buffer(controller, data, len, send) })
+}
+
+/// Install the standard-ID CAN callback through the manifest-named shim.
+pub unsafe fn can_set_sid_cb(callback: Option<CanReceiverCallback>) -> Option<()> {
+    unsafe { can_set_sid_callback(callback) }
+}
+
+/// Install the extended-ID CAN callback through the manifest-named shim.
+pub unsafe fn can_set_eid_cb(callback: Option<CanReceiverCallback>) -> Option<()> {
+    unsafe { can_set_eid_callback(callback) }
+}
+
+/// Copy the current remote-control state.
+pub unsafe fn get_remote_state() -> RemoteState {
+    unsafe { remote_state() }
+}
+
+/// Copy the current firmware GNSS record when the optional slot is available.
+pub unsafe fn mc_gnss() -> Option<GnssData> {
+    unsafe { gnss_snapshot() }
+}
+
+/// Return the currently selected motor-control thread.
+pub unsafe fn mc_motor_now() -> c_int {
+    unsafe { slots::mc_motor_now()() }
+}
+
+/// Set the motor tachometer and return the firmware result.
+pub unsafe fn mc_set_tachometer_value(steps: c_int) -> c_int {
+    unsafe { slots::mc_set_tachometer_value()(steps) }
+}
+
+/// Read one firmware EEPROM word through the manifest-named shim.
+pub unsafe fn read_eeprom_var(word: *mut EepromVar, address: c_int) -> bool {
+    unsafe { slots::read_eeprom_var()(word, address) }
+}
+
+/// Store one firmware EEPROM word through the manifest-named shim.
+pub unsafe fn store_eeprom_var(word: *mut EepromVar, address: c_int) -> bool {
+    unsafe { slots::store_eeprom_var()(word, address) }
+}
+
+/// Install or clear the firmware application-data callback.
+pub unsafe fn set_app_data_handler(callback: Option<AppDataHandler>) -> bool {
+    unsafe { slots::set_app_data_handler()(callback) }
+}
+
+/// Send an application-data payload through the firmware slot.
+pub unsafe fn send_app_data(data: *mut c_uchar, len: u32) {
+    unsafe { slots::send_app_data()(data, len) }
+}
+
+/// Set a floating-point configuration parameter.
+///
+/// The parameter ids and setter slot come from `vesc_pkg_lib/vesc_c_if.h:558`;
+/// callers should prefer the typed `vescpkg-rs::FirmwareSettings` wrapper.
+pub unsafe fn set_cfg_float(parameter: c_int, value: f32) -> bool {
+    unsafe { slots::set_cfg_float()(parameter, value) }
+}
+
+/// Set an integer configuration parameter.
+///
+/// The parameter ids and setter slot come from `vesc_pkg_lib/vesc_c_if.h:559`;
+/// callers should prefer the typed `vescpkg-rs::FirmwareSettings` wrapper.
+pub unsafe fn set_cfg_int(parameter: c_int, value: c_int) -> bool {
+    unsafe { slots::set_cfg_int()(parameter, value) }
+}
+
+/// Persist firmware configuration changes.
+///
+/// This forwards the `store_cfg` slot at `vesc_pkg_lib/vesc_c_if.h:560`.
+pub unsafe fn store_cfg() -> bool {
+    unsafe { slots::store_cfg()() }
+}
+
+/// Resolve a LispBM symbol to its STM32 GPIO port and pin.
+pub unsafe fn lbm_symbol_to_io(symbol: u32, gpio: *mut *mut c_void, pin: *mut u32) -> bool {
+    unsafe { slots::lbm_symbol_to_io()(symbol, gpio, pin) }
+}
+
+/// Allocate a firmware mutex handle.
+pub unsafe fn mutex_create() -> *mut c_void {
+    unsafe { slots::mutex_create() }.map_or(core::ptr::null_mut(), |create| unsafe { create() })
+}
+
+/// Lock a firmware mutex.
+pub unsafe fn mutex_lock(mutex: *mut c_void) {
+    unsafe { slots::mutex_lock()(mutex) }
+}
+
+/// Unlock a firmware mutex.
+pub unsafe fn mutex_unlock(mutex: *mut c_void) {
+    unsafe { slots::mutex_unlock()(mutex) }
+}
+
+/// Allocate a firmware semaphore handle.
+pub unsafe fn sem_create() -> *mut c_void {
+    unsafe { slots::sem_create() }.map_or(core::ptr::null_mut(), |create| unsafe { create() })
+}
+
+/// Wait on a firmware semaphore.
+pub unsafe fn sem_wait(semaphore: *mut c_void) {
+    unsafe { slots::sem_wait()(semaphore) }
+}
+
+/// Signal a firmware semaphore.
+pub unsafe fn sem_signal(semaphore: *mut c_void) {
+    unsafe { slots::sem_signal()(semaphore) }
+}
+
+/// Wait on a firmware semaphore with a tick timeout.
+pub unsafe fn sem_wait_to(semaphore: *mut c_void, ticks: u32) -> bool {
+    unsafe { slots::sem_wait_to()(semaphore, ticks) }
+}
+
+/// Reset a firmware semaphore.
+pub unsafe fn sem_reset(semaphore: *mut c_void) {
+    unsafe { slots::sem_reset()(semaphore) }
+}
+
+/// Return high-resolution elapsed seconds from the firmware timer.
+pub unsafe fn timer_seconds_elapsed_since(timestamp: u32) -> f32 {
+    unsafe { slots::timer_seconds_elapsed_since()(timestamp) }
+}
+
+/// Return the current high-resolution firmware timer tick value.
+pub unsafe fn timer_time_now() -> u32 {
+    unsafe { slots::timer_time_now()() }
+}
+
+/// Sleep for a high-resolution firmware timer interval.
+pub unsafe fn timer_sleep(seconds: f32) {
+    unsafe { slots::timer_sleep()(seconds) }
+}
+
+/// Lock the firmware system lock.
+pub unsafe fn sys_lock() {
+    unsafe { slots::sys_lock()() }
+}
+
+/// Unlock the firmware system lock.
+pub unsafe fn sys_unlock() {
+    unsafe { slots::sys_unlock()() }
+}
+
+/// Set the current thread priority when the optional slot is present.
+pub unsafe fn thread_set_priority(priority: c_int) -> Option<()> {
+    unsafe { slots::thread_set_priority() }.map(|set| unsafe { set(priority) })
+}
+
+/// Return system time ticks when the optional slot is present.
+pub unsafe fn system_time_ticks() -> Option<u32> {
+    unsafe { slots::system_time_ticks() }.map(|read| unsafe { read() })
+}
+
+/// Sleep for system ticks when the optional slot is present.
+pub unsafe fn sleep_ticks(ticks: u32) -> Option<()> {
+    unsafe { slots::sleep_ticks() }.map(|sleep| unsafe { sleep(ticks) })
+}
+
+/// Disable or re-enable automatic shutdown when supported.
+pub unsafe fn shutdown_disable(disable: bool) -> Option<()> {
+    unsafe { slots::shutdown_disable() }.map(|set| unsafe { set(disable) })
+}
+
+/// Sleep for firmware microseconds through the manifest-named shim.
+pub unsafe fn sleep_us(microseconds: u32) {
+    unsafe { slots::sleep_us()(microseconds) }
+}
+
+/// Write roll, pitch, and yaw radians into `rpy`.
+pub unsafe fn imu_get_rpy(rpy: *mut f32) {
+    unsafe { slots::imu_get_rpy()(rpy) }
+}
+
+/// Write the firmware quaternion into four consecutive floats.
+pub unsafe fn imu_get_quaternions(quaternions: *mut f32) {
+    unsafe { slots::imu_get_quaternions()(quaternions) }
+}
+
+/// Write firmware IMU calibration values for the requested yaw.
+pub unsafe fn imu_get_calibration(yaw: f32, calibration: *mut f32) {
+    unsafe { slots::imu_get_calibration()(yaw, calibration) }
+}
+
+/// Install or clear the firmware IMU read callback.
+pub unsafe fn imu_set_read_callback(callback: Option<ImuReadCallback>) {
+    unsafe { slots::imu_set_read_callback()(callback) }
+}
+
+/// Initialize a firmware AHRS attitude state.
+pub unsafe fn ahrs_init_attitude_info(attitude: *mut AttitudeInfo) {
+    unsafe { slots::ahrs_init_attitude_info()(attitude) }
+}
+
+/// Set initial firmware AHRS orientation from acceleration and magnetic vectors.
+pub unsafe fn ahrs_update_initial_orientation(
+    acceleration: *const f32,
+    magnetic: *const f32,
+    attitude: *mut AttitudeInfo,
+) {
+    unsafe { slots::ahrs_update_initial_orientation()(acceleration, magnetic, attitude) }
+}
+
+/// Apply one firmware Mahony AHRS update.
+pub unsafe fn ahrs_update_mahony_imu(
+    gyro: *const f32,
+    acceleration: *const f32,
+    dt: f32,
+    attitude: *mut AttitudeInfo,
+) {
+    unsafe { slots::ahrs_update_mahony_imu()(gyro, acceleration, dt, attitude) }
+}
+
+/// Apply one firmware Madgwick AHRS update.
+pub unsafe fn ahrs_update_madgwick_imu(
+    gyro: *const f32,
+    acceleration: *const f32,
+    dt: f32,
+    attitude: *mut AttitudeInfo,
+) {
+    unsafe { slots::ahrs_update_madgwick_imu()(gyro, acceleration, dt, attitude) }
+}
+
+/// Read firmware AHRS roll from an initialized attitude state.
+pub unsafe fn ahrs_get_roll(attitude: *const AttitudeInfo) -> f32 {
+    unsafe { slots::ahrs_get_roll()(attitude) }
+}
+
+/// Read firmware AHRS pitch from an initialized attitude state.
+pub unsafe fn ahrs_get_pitch(attitude: *const AttitudeInfo) -> f32 {
+    unsafe { slots::ahrs_get_pitch()(attitude) }
+}
+
+/// Read firmware AHRS yaw from an initialized attitude state.
+pub unsafe fn ahrs_get_yaw(attitude: *const AttitudeInfo) -> f32 {
+    unsafe { slots::ahrs_get_yaw()(attitude) }
+}
+
+/// Call firmware `printf` with a format string that takes no variadic values.
+pub unsafe fn printf(format: *const c_char) -> Option<c_int> {
+    unsafe { slots::printf() }.map(|printf| unsafe { printf(format) })
+}
+
+macro_rules! assert_raw_callable_shims {
+    ($($name:ident),+ $(,)?) => {
+        const _: () = {
+            $(let _ = $name;)+
+        };
+    };
+}
+
+c_vesc_if::define_vesc_if_callable_names!(assert_raw_callable_shims);
+
+/// Returns all generated `VescIf` field offsets for ABI layout tests.
+#[cfg(test)]
+pub fn vesc_if_offsets_for_tests() -> [usize; VescIfAbi::FIELD_COUNT] {
+    VescIfAbi::ALL_SLOTS.map(|slot| slot.host_byte_offset(core::mem::size_of::<usize>()))
+}
+#[cfg(test)]
+mod abi_audit;
 #[cfg(test)]
 mod dispatch_tests;

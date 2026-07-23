@@ -1,6 +1,12 @@
-#![allow(clippy::cast_precision_loss)] // fake firmware exposes tick ages as f32 seconds
+#![allow(
+    clippy::bool_to_int_with_if,
+    clippy::cast_lossless,
+    clippy::cast_precision_loss,
+    clippy::unnecessary_wraps,
+    clippy::used_underscore_binding
+)]
 
-use core::ffi::{c_char, c_void};
+use core::ffi::{CStr, c_char, c_int, c_void};
 use core::hint::spin_loop;
 use core::sync::atomic::{
     AtomicBool, AtomicI32, AtomicU8, AtomicU32, AtomicU64, AtomicUsize, Ordering,
@@ -8,13 +14,91 @@ use core::sync::atomic::{
 
 use crate::{
     AmpHoursCharged, AmpHoursDischarged, BatteryLevel, DCurrent, DirectionalMotorCurrent,
-    DutyCycle, ElectricalSpeed, FirmwareFaultCode, ImuAngularRate, ImuOrientation, ImuPitch,
-    ImuRoll, ImuYaw, InputCurrent, InputCurrentLimit, InputVoltage, MosfetTemperature,
-    MotorCurrentLimit, MotorTemperature, OdometerMeters, TotalMotorCurrent, TripDistance,
-    VehicleSpeed, WattHoursCharged, WattHoursDischarged,
+    DutyCycle, ElectricalSpeed, FirmwareFault, ImuAngularRate, ImuOrientation, ImuPitch, ImuRoll,
+    ImuYaw, InputCurrent, InputVoltage, JoystickY, MosfetTemperature, MotorCurrentLimit,
+    MotorTemperature, OdometerMeters, PpmAge, PpmInput, RemoteAge, TotalMotorCurrent, TripDistance,
+    VehicleSpeed, WattHoursCharged, WattHoursDischarged, WattHoursRemaining,
 };
-use vescpkg_rs_sys::LbmValue;
-use vescpkg_rs_sys::raw::RemoteState;
+use vescpkg_rs_sys::raw::{
+    AttitudeInfo, CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5,
+    CanStatusMsg6, GnssData, LbmFlatValue, PacketState, RemoteState,
+};
+use vescpkg_rs_sys::{FaultCode, HardwareType, LbmValue, VescPin, VescPinMode};
+
+/// Host replacement for the firmware `%s` logging path.
+pub unsafe fn printf_data(message: *const c_char) -> bool {
+    !message.is_null()
+}
+
+pub unsafe fn io_set_mode(_pin: VescPin, _mode: VescPinMode) -> bool {
+    true
+}
+
+static STM32_GPIO: u8 = 0;
+
+pub unsafe fn io_get_st_pin(pin: VescPin, gpio: *mut *mut c_void, st_pin: *mut u32) -> bool {
+    let (Some(gpio), Some(st_pin)) = (unsafe { gpio.as_mut() }, unsafe { st_pin.as_mut() }) else {
+        return false;
+    };
+    *gpio = core::ptr::addr_of!(STM32_GPIO).cast_mut().cast();
+    *st_pin = u32::try_from(pin.0).unwrap_or_default();
+    true
+}
+
+pub unsafe fn set_pad_mode(_gpio: *mut c_void, _pin: u32, _mode: u32) {}
+
+pub unsafe fn set_pad(_gpio: *mut c_void, _pin: u32) {}
+
+pub unsafe fn clear_pad(_gpio: *mut c_void, _pin: u32) {}
+
+pub unsafe fn io_write(_pin: VescPin, _level: i32) -> bool {
+    true
+}
+
+pub unsafe fn io_read(_pin: VescPin) -> bool {
+    false
+}
+
+pub unsafe fn io_read_analog(pin: VescPin) -> f32 {
+    match pin.0 {
+        7 => 1.2,
+        8 => 3.4,
+        _ => 0.0,
+    }
+}
+
+pub unsafe fn remote_state() -> RemoteState {
+    RemoteState {
+        js_x: REMOTE_STATE.js_x,
+        js_y: load(&REMOTE_INPUT_Y),
+        bt_c: REMOTE_STATE.bt_c,
+        bt_z: REMOTE_STATE.bt_z,
+        is_rev: REMOTE_STATE.is_rev,
+        age_s: load(&REMOTE_AGE),
+    }
+}
+
+pub unsafe fn get_ppm() -> Option<f32> {
+    PPM_AVAILABLE
+        .load(Ordering::Relaxed)
+        .then(|| load(&PPM_INPUT))
+}
+
+pub unsafe fn get_ppm_age() -> Option<f32> {
+    PPM_AGE_AVAILABLE
+        .load(Ordering::Relaxed)
+        .then(|| load(&PPM_AGE))
+}
+
+pub unsafe fn app_is_output_disabled() -> Option<bool> {
+    OUTPUT_DISABLED_AVAILABLE
+        .load(Ordering::Relaxed)
+        .then_some(false)
+}
+
+pub unsafe fn store_backup_data() -> Option<bool> {
+    BACKUP_AVAILABLE.load(Ordering::Relaxed).then_some(true)
+}
 
 // C map: these host replacements model the motor slots declared at
 // `third_party/vesc_pkg_lib/vesc_c_if.h:435-476`. Float Out Boy reads them in
@@ -31,14 +115,11 @@ static CURRENT_OFF_DELAY_COUNT: AtomicUsize = AtomicUsize::new(0);
 static CURRENT_COUNT: AtomicUsize = AtomicUsize::new(0);
 static DUTY_COUNT: AtomicUsize = AtomicUsize::new(0);
 static BRAKE_CURRENT_COUNT: AtomicUsize = AtomicUsize::new(0);
-static FOC_TONE_COUNT: AtomicUsize = AtomicUsize::new(0);
 static CURRENT_OFF_DELAY: AtomicU32 = AtomicU32::new(0);
 static CURRENT: AtomicU32 = AtomicU32::new(0);
 static DUTY: AtomicU32 = AtomicU32::new(0);
 static BRAKE_CURRENT: AtomicU32 = AtomicU32::new(0);
-static FOC_TONE_CHANNEL: AtomicI32 = AtomicI32::new(0);
-static FOC_TONE_FREQUENCY: AtomicU32 = AtomicU32::new(0);
-static FOC_TONE_VOLTAGE: AtomicU32 = AtomicU32::new(0);
+static AUDIO_SAMPLE_TABLE: [f32; 3] = [0.1, 0.2, 0.3];
 static ELECTRICAL_SPEED: AtomicU32 = AtomicU32::new(0);
 static VEHICLE_SPEED: AtomicU32 = AtomicU32::new(0);
 static MOTOR_CURRENT: AtomicU32 = AtomicU32::new(0);
@@ -47,27 +128,97 @@ static MOTOR_CURRENT_MAX: AtomicU32 = AtomicU32::new(0);
 static MOTOR_CURRENT_MIN: AtomicU32 = AtomicU32::new(0);
 static INPUT_CURRENT_MAX: AtomicU32 = AtomicU32::new(0);
 static INPUT_CURRENT_MIN: AtomicU32 = AtomicU32::new(0);
+static ABSOLUTE_CURRENT_MAX: AtomicU32 = AtomicU32::new(0);
+static ELECTRICAL_SPEED_MIN: AtomicU32 = AtomicU32::new(0);
+static ELECTRICAL_SPEED_MAX: AtomicU32 = AtomicU32::new(0);
+static ELECTRICAL_SPEED_RAMP_START: AtomicU32 = AtomicU32::new(0);
+static ELECTRICAL_SPEED_BRAKE_MAX: AtomicU32 = AtomicU32::new(0);
+static ELECTRICAL_SPEED_BRAKE_CURRENT_MAX: AtomicU32 = AtomicU32::new(0);
+static IMU_SAMPLE_RATE: AtomicU32 = AtomicU32::new(0);
+static IMU_ROTATION_ROLL: AtomicU32 = AtomicU32::new(0);
+static IMU_ROTATION_PITCH: AtomicU32 = AtomicU32::new(0);
+static IMU_ROTATION_YAW: AtomicU32 = AtomicU32::new(0);
+static DUTY_CYCLE_MINIMUM: AtomicU32 = AtomicU32::new(0);
+static IMU_ACCELERATION_CONFIDENCE_DECAY: AtomicU32 = AtomicU32::new(0);
+static IMU_MAHONY_KP: AtomicU32 = AtomicU32::new(0);
+static IMU_MAHONY_KI: AtomicU32 = AtomicU32::new(0);
+static IMU_MADGWICK_BETA: AtomicU32 = AtomicU32::new(0);
+static IMU_ACCELERATION_OFFSET_X: AtomicU32 = AtomicU32::new(0);
+static IMU_ACCELERATION_OFFSET_Y: AtomicU32 = AtomicU32::new(0);
+static IMU_ACCELERATION_OFFSET_Z: AtomicU32 = AtomicU32::new(0);
+static IMU_GYRO_OFFSET_X: AtomicU32 = AtomicU32::new(0);
+static IMU_GYRO_OFFSET_Y: AtomicU32 = AtomicU32::new(0);
+static IMU_GYRO_OFFSET_Z: AtomicU32 = AtomicU32::new(0);
+static GEAR_RATIO: AtomicU32 = AtomicU32::new(0);
+static WHEEL_DIAMETER: AtomicU32 = AtomicU32::new(0);
+static FOC_MOTOR_RESISTANCE: AtomicU32 = AtomicU32::new(0);
+static FOC_MOTOR_INDUCTANCE: AtomicU32 = AtomicU32::new(0);
+static FOC_MOTOR_FLUX_LINKAGE: AtomicU32 = AtomicU32::new(0);
+static BATTERY_CAPACITY: AtomicU32 = AtomicU32::new(0);
+static MOTOR_NO_LOAD_CURRENT: AtomicU32 = AtomicU32::new(0);
+static INPUT_VOLTAGE_MIN: AtomicU32 = AtomicU32::new(0);
+static INPUT_VOLTAGE_MAX: AtomicU32 = AtomicU32::new(0);
+static BATTERY_CUT_START_VOLTAGE: AtomicU32 = AtomicU32::new(0);
+static BATTERY_CUT_END_VOLTAGE: AtomicU32 = AtomicU32::new(0);
 static MOSFET_TEMPERATURE_LIMIT_START: AtomicU32 = AtomicU32::new(0);
+static MOSFET_TEMPERATURE_LIMIT_END: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE_LIMIT_START: AtomicU32 = AtomicU32::new(0);
+static MOTOR_TEMPERATURE_LIMIT_END: AtomicU32 = AtomicU32::new(0);
+static TEMPERATURE_ACCELERATION_DECREASE: AtomicU32 = AtomicU32::new(0);
 static DUTY_CYCLE_LIMIT: AtomicU32 = AtomicU32::new(0);
 static BATTERY_CELL_COUNT: AtomicI32 = AtomicI32::new(0);
+static BATTERY_TYPE: AtomicI32 = AtomicI32::new(0);
+static APP_CAN_BAUD_RATE: AtomicI32 = AtomicI32::new(0);
+static APP_CAN_MODE: AtomicI32 = AtomicI32::new(0);
+static IMU_AHRS_MODE: AtomicI32 = AtomicI32::new(0);
+static APP_SHUTDOWN_MODE: AtomicI32 = AtomicI32::new(0);
+static MOTOR_POLE_COUNT: AtomicI32 = AtomicI32::new(0);
+static CONFIG_WRITE_OK: AtomicBool = AtomicBool::new(true);
+static CONFIG_STORE_OK: AtomicBool = AtomicBool::new(true);
 static INPUT_CURRENT: AtomicU32 = AtomicU32::new(0);
 static DUTY_CYCLE: AtomicU32 = AtomicU32::new(0);
 static FOC_ID_CURRENT: AtomicU32 = AtomicU32::new(0);
 static HAS_FOC_ID_CURRENT: AtomicBool = AtomicBool::new(false);
+static FOC_AUDIO_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static FOC_AUDIO_TABLE_INSTALLED: AtomicBool = AtomicBool::new(false);
+static FOC_TONE_COUNT: AtomicUsize = AtomicUsize::new(0);
+static FOC_TONE_FREQUENCY: AtomicU32 = AtomicU32::new(0);
+static FOC_TONE_VOLTAGE: AtomicU32 = AtomicU32::new(0);
+static FOC_OPEN_LOOP_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static UART_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static PACKET_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static COMMANDS_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static TERMINAL_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static ENCODER_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static PLOT_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static GNSS_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static PWM_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static CAN_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static BACKUP_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static NVM_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static TIMEOUT_OCCURRED: AtomicBool = AtomicBool::new(true);
 static DISTANCE_ABS: AtomicU32 = AtomicU32::new(0);
+static TACHOMETER_VALUE: AtomicI32 = AtomicI32::new(1234);
+static TACHOMETER_ABS_VALUE: AtomicI32 = AtomicI32::new(5678);
+static SELECTED_MOTOR: AtomicI32 = AtomicI32::new(1);
 static MOSFET_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static ODOMETER: AtomicU64 = AtomicU64::new(0);
+static PID_POSITION_OFFSET: AtomicU32 = AtomicU32::new(0);
+static PID_POSITION_OFFSET_STORED: AtomicBool = AtomicBool::new(false);
 static AMP_HOURS_DISCHARGED: AtomicU32 = AtomicU32::new(0);
 static AMP_HOURS_CHARGED: AtomicU32 = AtomicU32::new(0);
 static WATT_HOURS_DISCHARGED: AtomicU32 = AtomicU32::new(0);
 static WATT_HOURS_CHARGED: AtomicU32 = AtomicU32::new(0);
 static BATTERY_LEVEL: AtomicU32 = AtomicU32::new(0);
+static BATTERY_WATT_HOURS_REMAINING: AtomicU32 = AtomicU32::new(0);
 static FIRMWARE_FAULT: AtomicI32 = AtomicI32::new(0);
 static INPUT_VOLTAGE: AtomicU32 = AtomicU32::new(0);
 static PPM_INPUT: AtomicU32 = AtomicU32::new(0);
 static PPM_AGE: AtomicU32 = AtomicU32::new(0);
+static PPM_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static PPM_AGE_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static OUTPUT_DISABLED_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static REMOTE_INPUT_Y: AtomicU32 = AtomicU32::new(0);
 static REMOTE_AGE: AtomicU32 = AtomicU32::new(0);
 static IMU_STARTUP_DONE: AtomicBool = AtomicBool::new(false);
@@ -76,6 +227,59 @@ static IMU_PITCH: AtomicU32 = AtomicU32::new(0);
 static IMU_YAW: AtomicU32 = AtomicU32::new(0);
 static IMU_GYRO: [AtomicU32; 3] = [const { AtomicU32::new(0) }; 3];
 static IMU_QUATERNION: [AtomicU32; 4] = [const { AtomicU32::new(0) }; 4];
+static IMU_CALIBRATION_VALID: AtomicBool = AtomicBool::new(true);
+static REMOTE_STATE: RemoteState = RemoteState {
+    js_x: -0.25,
+    js_y: 0.75,
+    bt_c: true,
+    bt_z: false,
+    is_rev: true,
+    age_s: 0.2,
+};
+static FLAT_BUFFER: [u8; 256] = [0; 256];
+static CAN_STATUS: CanStatusMsg = CanStatusMsg {
+    id: 7,
+    rx_time: 123,
+    rpm: 1200.0,
+    current: 4.5,
+    duty: 0.25,
+};
+static CAN_STATUS_DUTY_BITS: AtomicU32 = AtomicU32::new(0x3e80_0000);
+static CAN_STATUS_2: CanStatusMsg2 = CanStatusMsg2 {
+    id: 7,
+    rx_time: 123,
+    amp_hours: 1.25,
+    amp_hours_charged: 2.5,
+};
+static CAN_STATUS_3: CanStatusMsg3 = CanStatusMsg3 {
+    id: 7,
+    rx_time: 123,
+    watt_hours: 10.0,
+    watt_hours_charged: 4.0,
+};
+static CAN_STATUS_4: CanStatusMsg4 = CanStatusMsg4 {
+    id: 7,
+    rx_time: 123,
+    temp_fet: 45.0,
+    temp_motor: 50.0,
+    current_in: 3.0,
+    pid_pos_now: 12.0,
+};
+static CAN_STATUS_5: CanStatusMsg5 = CanStatusMsg5 {
+    id: 7,
+    rx_time: 123,
+    v_in: 48.0,
+    tacho_value: 1234,
+};
+static CAN_STATUS_6: CanStatusMsg6 = CanStatusMsg6 {
+    id: 7,
+    rx_time: 123,
+    adc_1: 1.0,
+    adc_2: 2.0,
+    adc_3: 3.0,
+    ppm: 0.5,
+};
+static CAN_STATUS_PPM_BITS: AtomicU32 = AtomicU32::new(0x3f00_0000);
 static THREAD_SPAWN_COUNT: AtomicUsize = AtomicUsize::new(0);
 static THREAD_SPAWN_STACKS: [AtomicUsize; 2] = [const { AtomicUsize::new(0) }; 2];
 static THREAD_SPAWN_RESULTS: [AtomicUsize; 2] = [AtomicUsize::new(1), AtomicUsize::new(2)];
@@ -98,6 +302,9 @@ static NVM_FAILURE: AtomicBool = AtomicBool::new(false);
 static LBM_FLOAT_BITS: AtomicU32 = AtomicU32::new(0);
 static LBM_CONS_CAR: AtomicU32 = AtomicU32::new(0);
 static LBM_CONS_CDR: AtomicU32 = AtomicU32::new(0);
+static LBM_SYMBOL_ID: AtomicU32 = AtomicU32::new(0);
+static LBM_MESSAGE_FAILURE: AtomicBool = AtomicBool::new(false);
+static LBM_EVAL_PAUSED: AtomicBool = AtomicBool::new(false);
 static LBM_STRING: [u8; 5] = *b"vesc\0";
 const LBM_BYTE_ARRAY: u32 = 0x03;
 static CLOCK_TICKS: AtomicU32 = AtomicU32::new(0);
@@ -115,6 +322,8 @@ static SEMAPHORE_TIMED_WAIT_TICKS: AtomicU32 = AtomicU32::new(u32::MAX);
 static SEMAPHORE_SIGNAL_COUNT: AtomicUsize = AtomicUsize::new(0);
 static SEMAPHORE_RESET_COUNT: AtomicUsize = AtomicUsize::new(0);
 static SEMAPHORE_FREE_COUNT: AtomicUsize = AtomicUsize::new(0);
+static SHUTDOWN_DISABLE_SUPPORTED: AtomicBool = AtomicBool::new(true);
+static SHUTDOWN_DISABLED: AtomicBool = AtomicBool::new(false);
 
 pub(crate) struct MotorOutputState {
     pub keep_alive_count: usize,
@@ -122,14 +331,10 @@ pub(crate) struct MotorOutputState {
     pub current_count: usize,
     pub duty_count: usize,
     pub brake_current_count: usize,
-    pub foc_tone_count: usize,
     pub current_off_delay: f32,
     pub current: f32,
     pub duty: f32,
     pub brake_current: f32,
-    pub foc_tone_channel: i32,
-    pub foc_tone_frequency: f32,
-    pub foc_tone_voltage: f32,
 }
 
 pub(crate) struct FirmwareLockGuard;
@@ -140,59 +345,9 @@ impl Drop for FirmwareLockGuard {
     }
 }
 
-#[allow(clippy::too_many_lines)] // one reset point keeps fake firmware state isolated between tests
-pub(crate) fn lock_firmware() -> FirmwareLockGuard {
-    while LOCKED
-        .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
-        .is_err()
-    {
-        spin_loop();
-    }
-    KEEP_ALIVE_COUNT.store(0, Ordering::Relaxed);
-    CURRENT_OFF_DELAY_COUNT.store(0, Ordering::Relaxed);
-    CURRENT_COUNT.store(0, Ordering::Relaxed);
-    DUTY_COUNT.store(0, Ordering::Relaxed);
-    BRAKE_CURRENT_COUNT.store(0, Ordering::Relaxed);
-    FOC_TONE_COUNT.store(0, Ordering::Relaxed);
-    CURRENT_OFF_DELAY.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    DUTY.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    BRAKE_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    FOC_TONE_CHANNEL.store(0, Ordering::Relaxed);
-    FOC_TONE_FREQUENCY.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    FOC_TONE_VOLTAGE.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    ELECTRICAL_SPEED.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    VEHICLE_SPEED.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    MOTOR_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    DIRECTIONAL_MOTOR_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    MOTOR_CURRENT_MAX.store(100.0_f32.to_bits(), Ordering::Relaxed);
-    MOTOR_CURRENT_MIN.store((-100.0_f32).to_bits(), Ordering::Relaxed);
-    INPUT_CURRENT_MAX.store(100.0_f32.to_bits(), Ordering::Relaxed);
-    INPUT_CURRENT_MIN.store((-100.0_f32).to_bits(), Ordering::Relaxed);
-    MOSFET_TEMPERATURE_LIMIT_START.store(85.0_f32.to_bits(), Ordering::Relaxed);
-    MOTOR_TEMPERATURE_LIMIT_START.store(85.0_f32.to_bits(), Ordering::Relaxed);
-    DUTY_CYCLE_LIMIT.store(0.95_f32.to_bits(), Ordering::Relaxed);
-    BATTERY_CELL_COUNT.store(0, Ordering::Relaxed);
-    INPUT_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    DUTY_CYCLE.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    FOC_ID_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    HAS_FOC_ID_CURRENT.store(false, Ordering::Relaxed);
-    DISTANCE_ABS.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    MOSFET_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    MOTOR_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    ODOMETER.store(0, Ordering::Relaxed);
-    AMP_HOURS_DISCHARGED.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    AMP_HOURS_CHARGED.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    WATT_HOURS_DISCHARGED.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    WATT_HOURS_CHARGED.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    BATTERY_LEVEL.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    FIRMWARE_FAULT.store(0, Ordering::Relaxed);
-    INPUT_VOLTAGE.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    PPM_INPUT.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    PPM_AGE.store(f32::INFINITY.to_bits(), Ordering::Relaxed);
-    REMOTE_INPUT_Y.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    REMOTE_AGE.store(f32::INFINITY.to_bits(), Ordering::Relaxed);
+fn reset_imu_state() {
     IMU_STARTUP_DONE.store(false, Ordering::Relaxed);
+    IMU_CALIBRATION_VALID.store(true, Ordering::Relaxed);
     store(&IMU_ROLL, 0.0);
     store(&IMU_PITCH, 0.0);
     store(&IMU_YAW, 0.0);
@@ -201,6 +356,9 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
         .into_iter()
         .zip(&IMU_QUATERNION)
         .for_each(|(value, component)| store(component, value));
+}
+
+fn reset_thread_state() {
     THREAD_SPAWN_COUNT.store(0, Ordering::Relaxed);
     THREAD_SPAWN_STACKS
         .iter()
@@ -223,6 +381,142 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     THREAD_PRIORITIES
         .iter()
         .for_each(|slot| slot.store(0, Ordering::Relaxed));
+}
+
+fn reset_speed_settings() {
+    ELECTRICAL_SPEED_MIN.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    ELECTRICAL_SPEED_MAX.store(12_000.0_f32.to_bits(), Ordering::Relaxed);
+    ELECTRICAL_SPEED_RAMP_START.store(500.0_f32.to_bits(), Ordering::Relaxed);
+    ELECTRICAL_SPEED_BRAKE_MAX.store(10_000.0_f32.to_bits(), Ordering::Relaxed);
+    ELECTRICAL_SPEED_BRAKE_CURRENT_MAX.store(8_000.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_SAMPLE_RATE.store(500.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_ROTATION_ROLL.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_ROTATION_PITCH.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_ROTATION_YAW.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    DUTY_CYCLE_MINIMUM.store(0.05_f32.to_bits(), Ordering::Relaxed);
+    IMU_ACCELERATION_CONFIDENCE_DECAY.store(1.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_MAHONY_KP.store(2.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_MAHONY_KI.store(0.05_f32.to_bits(), Ordering::Relaxed);
+    IMU_MADGWICK_BETA.store(0.1_f32.to_bits(), Ordering::Relaxed);
+    IMU_ACCELERATION_OFFSET_X.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_ACCELERATION_OFFSET_Y.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_ACCELERATION_OFFSET_Z.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_GYRO_OFFSET_X.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_GYRO_OFFSET_Y.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    IMU_GYRO_OFFSET_Z.store(0.0_f32.to_bits(), Ordering::Relaxed);
+}
+
+fn reset_temperature_settings() {
+    MOSFET_TEMPERATURE_LIMIT_START.store(85.0_f32.to_bits(), Ordering::Relaxed);
+    MOSFET_TEMPERATURE_LIMIT_END.store(90.0_f32.to_bits(), Ordering::Relaxed);
+    MOTOR_TEMPERATURE_LIMIT_START.store(85.0_f32.to_bits(), Ordering::Relaxed);
+    MOTOR_TEMPERATURE_LIMIT_END.store(95.0_f32.to_bits(), Ordering::Relaxed);
+    TEMPERATURE_ACCELERATION_DECREASE.store(0.5_f32.to_bits(), Ordering::Relaxed);
+}
+
+fn reset_selector_settings() {
+    BATTERY_CELL_COUNT.store(0, Ordering::Relaxed);
+    BATTERY_TYPE.store(0, Ordering::Relaxed);
+    APP_CAN_BAUD_RATE.store(2, Ordering::Relaxed);
+    APP_CAN_MODE.store(2, Ordering::Relaxed);
+    IMU_AHRS_MODE.store(0, Ordering::Relaxed);
+    APP_SHUTDOWN_MODE.store(1, Ordering::Relaxed);
+    MOTOR_POLE_COUNT.store(14, Ordering::Relaxed);
+}
+
+#[allow(clippy::too_many_lines)]
+pub(crate) fn lock_firmware() -> FirmwareLockGuard {
+    while LOCKED
+        .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
+        spin_loop();
+    }
+    KEEP_ALIVE_COUNT.store(0, Ordering::Relaxed);
+    CURRENT_OFF_DELAY_COUNT.store(0, Ordering::Relaxed);
+    CURRENT_COUNT.store(0, Ordering::Relaxed);
+    DUTY_COUNT.store(0, Ordering::Relaxed);
+    BRAKE_CURRENT_COUNT.store(0, Ordering::Relaxed);
+    CURRENT_OFF_DELAY.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    DUTY.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    BRAKE_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    ELECTRICAL_SPEED.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    VEHICLE_SPEED.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    MOTOR_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    DIRECTIONAL_MOTOR_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    MOTOR_CURRENT_MAX.store(100.0_f32.to_bits(), Ordering::Relaxed);
+    MOTOR_CURRENT_MIN.store((-100.0_f32).to_bits(), Ordering::Relaxed);
+    INPUT_CURRENT_MAX.store(60.0_f32.to_bits(), Ordering::Relaxed);
+    INPUT_CURRENT_MIN.store((-60.0_f32).to_bits(), Ordering::Relaxed);
+    ABSOLUTE_CURRENT_MAX.store(150.0_f32.to_bits(), Ordering::Relaxed);
+    reset_speed_settings();
+    GEAR_RATIO.store(2.5_f32.to_bits(), Ordering::Relaxed);
+    WHEEL_DIAMETER.store(0.165_f32.to_bits(), Ordering::Relaxed);
+    FOC_MOTOR_RESISTANCE.store(0.03_f32.to_bits(), Ordering::Relaxed);
+    FOC_MOTOR_INDUCTANCE.store(0.000_012_f32.to_bits(), Ordering::Relaxed);
+    FOC_MOTOR_FLUX_LINKAGE.store(0.004_f32.to_bits(), Ordering::Relaxed);
+    BATTERY_CAPACITY.store(20.0_f32.to_bits(), Ordering::Relaxed);
+    MOTOR_NO_LOAD_CURRENT.store(1.5_f32.to_bits(), Ordering::Relaxed);
+    INPUT_VOLTAGE_MIN.store(20.0_f32.to_bits(), Ordering::Relaxed);
+    INPUT_VOLTAGE_MAX.store(60.0_f32.to_bits(), Ordering::Relaxed);
+    BATTERY_CUT_START_VOLTAGE.store(30.0_f32.to_bits(), Ordering::Relaxed);
+    BATTERY_CUT_END_VOLTAGE.store(28.0_f32.to_bits(), Ordering::Relaxed);
+    reset_temperature_settings();
+    DUTY_CYCLE_LIMIT.store(0.95_f32.to_bits(), Ordering::Relaxed);
+    CAN_STATUS_DUTY_BITS.store(0x3e80_0000, Ordering::Relaxed);
+    CAN_STATUS_PPM_BITS.store(0x3f00_0000, Ordering::Relaxed);
+    reset_selector_settings();
+    CONFIG_WRITE_OK.store(true, Ordering::Relaxed);
+    CONFIG_STORE_OK.store(true, Ordering::Relaxed);
+    INPUT_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    DUTY_CYCLE.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    FOC_ID_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    HAS_FOC_ID_CURRENT.store(false, Ordering::Relaxed);
+    FOC_AUDIO_AVAILABLE.store(true, Ordering::Relaxed);
+    FOC_AUDIO_TABLE_INSTALLED.store(false, Ordering::Relaxed);
+    FOC_TONE_COUNT.store(0, Ordering::Relaxed);
+    FOC_TONE_FREQUENCY.store(0, Ordering::Relaxed);
+    FOC_TONE_VOLTAGE.store(0, Ordering::Relaxed);
+    FOC_OPEN_LOOP_AVAILABLE.store(true, Ordering::Relaxed);
+    UART_AVAILABLE.store(true, Ordering::Relaxed);
+    PACKET_AVAILABLE.store(true, Ordering::Relaxed);
+    COMMANDS_AVAILABLE.store(true, Ordering::Relaxed);
+    TERMINAL_AVAILABLE.store(true, Ordering::Relaxed);
+    ENCODER_AVAILABLE.store(true, Ordering::Relaxed);
+    PLOT_AVAILABLE.store(true, Ordering::Relaxed);
+    GNSS_AVAILABLE.store(true, Ordering::Relaxed);
+    PWM_AVAILABLE.store(true, Ordering::Relaxed);
+    CAN_AVAILABLE.store(true, Ordering::Relaxed);
+    BACKUP_AVAILABLE.store(true, Ordering::Relaxed);
+    NVM_AVAILABLE.store(true, Ordering::Relaxed);
+    TIMEOUT_OCCURRED.store(true, Ordering::Relaxed);
+    DISTANCE_ABS.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    TACHOMETER_VALUE.store(1234, Ordering::Relaxed);
+    TACHOMETER_ABS_VALUE.store(5678, Ordering::Relaxed);
+    SELECTED_MOTOR.store(1, Ordering::Relaxed);
+    MOSFET_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    MOTOR_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    ODOMETER.store(0, Ordering::Relaxed);
+    PID_POSITION_OFFSET.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    PID_POSITION_OFFSET_STORED.store(false, Ordering::Relaxed);
+    AMP_HOURS_DISCHARGED.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    AMP_HOURS_CHARGED.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    WATT_HOURS_DISCHARGED.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    WATT_HOURS_CHARGED.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    BATTERY_LEVEL.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    BATTERY_WATT_HOURS_REMAINING.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    FIRMWARE_FAULT.store(0, Ordering::Relaxed);
+    INPUT_VOLTAGE.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    PPM_INPUT.store(0.5_f32.to_bits(), Ordering::Relaxed);
+    PPM_AGE.store(0.1_f32.to_bits(), Ordering::Relaxed);
+    PPM_AVAILABLE.store(true, Ordering::Relaxed);
+    PPM_AGE_AVAILABLE.store(true, Ordering::Relaxed);
+    OUTPUT_DISABLED_AVAILABLE.store(true, Ordering::Relaxed);
+    REMOTE_INPUT_Y.store(0.75_f32.to_bits(), Ordering::Relaxed);
+    REMOTE_AGE.store(0.2_f32.to_bits(), Ordering::Relaxed);
+    reset_imu_state();
+    reset_thread_state();
     EEPROM_PRESENT
         .iter()
         .for_each(|slot| slot.store(false, Ordering::Relaxed));
@@ -242,6 +536,8 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     SEMAPHORE_FREE_COUNT.store(0, Ordering::Relaxed);
     SEMAPHORE_CREATE_FAILURE.store(false, Ordering::Relaxed);
     SEMAPHORE_TIMEOUT_FAILURE.store(false, Ordering::Relaxed);
+    SHUTDOWN_DISABLE_SUPPORTED.store(true, Ordering::Relaxed);
+    SHUTDOWN_DISABLED.store(false, Ordering::Relaxed);
     FirmwareLockGuard
 }
 
@@ -286,6 +582,9 @@ pub(crate) fn fail_eeprom_write(address: crate::CustomEepromAddress) {
 }
 
 pub unsafe fn read_nvm(buffer: *mut u8, len: u32, address: u32) -> Option<bool> {
+    if !NVM_AVAILABLE.load(Ordering::Relaxed) {
+        return None;
+    }
     let Some(end) = address
         .checked_add(len)
         .and_then(|end| usize::try_from(end).ok())
@@ -311,6 +610,9 @@ pub unsafe fn read_nvm(buffer: *mut u8, len: u32, address: u32) -> Option<bool> 
 }
 
 pub unsafe fn write_nvm(buffer: *mut u8, len: u32, address: u32) -> Option<bool> {
+    if !NVM_AVAILABLE.load(Ordering::Relaxed) {
+        return None;
+    }
     let Some(end) = address
         .checked_add(len)
         .and_then(|end| usize::try_from(end).ok())
@@ -331,8 +633,10 @@ pub unsafe fn write_nvm(buffer: *mut u8, len: u32, address: u32) -> Option<bool>
     Some(true)
 }
 
-#[allow(clippy::unnecessary_wraps)] // fake preserves nullable firmware NVM slot shape
 pub unsafe fn wipe_nvm() -> Option<bool> {
+    if !NVM_AVAILABLE.load(Ordering::Relaxed) {
+        return None;
+    }
     if NVM_FAILURE.load(Ordering::Relaxed) {
         return Some(false);
     }
@@ -382,7 +686,7 @@ pub unsafe fn lbm_dec_char(value: LbmValue) -> u8 {
 }
 
 pub unsafe fn lbm_enc_char(value: u8) -> LbmValue {
-    LbmValue(u32::from(value) << 4 | 0x04)
+    LbmValue((value as u32) << 4 | 0x04)
 }
 
 pub unsafe fn lbm_enc_u32(value: u32) -> LbmValue {
@@ -407,20 +711,166 @@ pub unsafe fn lbm_list_destructive_reverse(value: LbmValue) -> LbmValue {
     value
 }
 
+pub unsafe fn lbm_enc_sym(symbol: u32) -> LbmValue {
+    LBM_SYMBOL_ID.store(symbol, Ordering::Relaxed);
+    LbmValue(0x40)
+}
+
+pub unsafe fn lbm_dec_sym(_value: LbmValue) -> u32 {
+    LBM_SYMBOL_ID.load(Ordering::Relaxed)
+}
+
+pub unsafe fn lbm_get_symbol_by_name(name: *mut c_char, symbol: *mut u32) -> c_int {
+    if name.is_null() || symbol.is_null() {
+        return 0;
+    }
+    if unsafe { CStr::from_ptr(name) }.to_bytes() == b"missing" {
+        return 0;
+    }
+    unsafe { *symbol = 7 };
+    1
+}
+
+pub unsafe fn lbm_send_message(_context: u32, _message: LbmValue) -> c_int {
+    if LBM_MESSAGE_FAILURE.load(Ordering::Relaxed) {
+        0
+    } else {
+        1
+    }
+}
+
+pub unsafe fn lbm_get_current_cid() -> u32 {
+    9
+}
+
+pub unsafe fn lbm_block_ctx_from_extension() {}
+
+pub unsafe fn lbm_pause_eval_with_gc(_minimum_free: u32) {
+    LBM_EVAL_PAUSED.store(true, Ordering::Relaxed);
+}
+
+pub unsafe fn lbm_continue_eval() {
+    LBM_EVAL_PAUSED.store(false, Ordering::Relaxed);
+}
+
+pub unsafe fn lbm_eval_is_paused() -> bool {
+    LBM_EVAL_PAUSED.load(Ordering::Relaxed)
+}
+
+pub unsafe fn lbm_set_error_reason(reason: *mut c_char) -> c_int {
+    if reason.is_null() { 0 } else { 1 }
+}
+
+pub unsafe fn lbm_unblock_ctx_unboxed(_context: u32, _value: LbmValue) -> Option<bool> {
+    Some(true)
+}
+
+pub unsafe fn lbm_start_flatten(value: *mut LbmFlatValue, buffer_size: usize) -> Option<bool> {
+    let value = unsafe { value.as_mut()? };
+    if buffer_size > FLAT_BUFFER.len() {
+        return Some(false);
+    }
+    value.buf = core::ptr::addr_of!(FLAT_BUFFER).cast::<u8>().cast_mut();
+    value.buf_size = buffer_size as u32;
+    value.buf_pos = 0;
+    Some(true)
+}
+
+pub unsafe fn lbm_finish_flatten(_value: *mut LbmFlatValue) -> Option<bool> {
+    Some(true)
+}
+
+pub unsafe fn f_i64(value: *mut LbmFlatValue, _number: i64) -> Option<bool> {
+    unsafe { value.as_mut() }.map(|value| {
+        value.buf_pos = value.buf_pos.saturating_add(9);
+        true
+    })
+}
+
+pub unsafe fn f_cons(value: *mut LbmFlatValue) -> Option<bool> {
+    unsafe { value.as_mut() }.map(|value| {
+        value.buf_pos = value.buf_pos.saturating_add(1);
+        true
+    })
+}
+
+pub unsafe fn f_sym(value: *mut LbmFlatValue, _symbol: u32) -> Option<bool> {
+    unsafe { value.as_mut() }.map(|value| {
+        value.buf_pos = value.buf_pos.saturating_add(5);
+        true
+    })
+}
+
+pub unsafe fn f_b(value: *mut LbmFlatValue, _byte: u8) -> Option<bool> {
+    unsafe { value.as_mut() }.map(|value| {
+        value.buf_pos = value.buf_pos.saturating_add(2);
+        true
+    })
+}
+
+pub unsafe fn f_i32(value: *mut LbmFlatValue, _number: i32) -> Option<bool> {
+    unsafe { value.as_mut() }.map(|value| {
+        value.buf_pos = value.buf_pos.saturating_add(5);
+        true
+    })
+}
+
+pub unsafe fn f_i(value: *mut LbmFlatValue, _number: i32) -> Option<bool> {
+    unsafe { value.as_mut() }.map(|value| {
+        value.buf_pos = value.buf_pos.saturating_add(5);
+        true
+    })
+}
+
+pub unsafe fn f_u32(value: *mut LbmFlatValue, _number: u32) -> Option<bool> {
+    unsafe { value.as_mut() }.map(|value| {
+        value.buf_pos = value.buf_pos.saturating_add(5);
+        true
+    })
+}
+
+pub unsafe fn f_float(value: *mut LbmFlatValue, _number: f32) -> Option<bool> {
+    unsafe { value.as_mut() }.map(|value| {
+        value.buf_pos = value.buf_pos.saturating_add(5);
+        true
+    })
+}
+
+pub unsafe fn f_u64(value: *mut LbmFlatValue, _number: u64) -> Option<bool> {
+    unsafe { value.as_mut() }.map(|value| {
+        value.buf_pos = value.buf_pos.saturating_add(9);
+        true
+    })
+}
+
+pub unsafe fn f_lbm_array(value: *mut LbmFlatValue, count: u32, _data: *mut u8) -> Option<bool> {
+    unsafe { value.as_mut() }.map(|value| {
+        value.buf_pos = value.buf_pos.saturating_add(count);
+        true
+    })
+}
+
+pub unsafe fn lbm_unblock_ctx(_context: u32, _value: *mut LbmFlatValue) -> Option<bool> {
+    Some(true)
+}
+
+pub(crate) fn fail_lisp_messages(fail: bool) {
+    LBM_MESSAGE_FAILURE.store(fail, Ordering::Relaxed);
+}
 pub unsafe fn lbm_is_char(value: LbmValue) -> bool {
     value.0 & 0x0f == 0x04
 }
 
-pub unsafe fn lbm_is_symbol(_value: LbmValue) -> bool {
-    false
+pub unsafe fn lbm_is_symbol(value: LbmValue) -> bool {
+    value.0 == 0x40
 }
 
-pub unsafe fn lbm_is_cons(value: LbmValue) -> bool {
-    value.0 == 0x20
+pub unsafe fn lbm_is_cons(_value: LbmValue) -> bool {
+    _value.0 == 0x20
 }
 
-pub unsafe fn lbm_is_byte_array(value: LbmValue) -> bool {
-    value.0 == LBM_BYTE_ARRAY
+pub unsafe fn lbm_is_byte_array(_value: LbmValue) -> bool {
+    _value.0 == LBM_BYTE_ARRAY
 }
 
 pub unsafe fn lbm_create_byte_array(value: *mut LbmValue, _len: u32) -> bool {
@@ -503,12 +953,126 @@ pub unsafe fn vesc_sem_reset(_semaphore: *mut c_void) {
 pub unsafe fn vesc_free(pointer: *mut c_void) {
     if core::ptr::eq(
         pointer.cast_const(),
+        core::ptr::addr_of!(FLAT_BUFFER).cast::<c_void>(),
+    ) {
+        return;
+    }
+    if core::ptr::eq(
+        pointer.cast_const(),
         core::ptr::addr_of!(SEMAPHORE_TOKEN).cast::<c_void>(),
     ) {
         SEMAPHORE_FREE_COUNT.fetch_add(1, Ordering::Relaxed);
     } else {
         MUTEX_FREE_COUNT.fetch_add(1, Ordering::Relaxed);
     }
+}
+
+pub unsafe fn can_transmit_sid(_id: u32, _data: *const u8, _len: u8) -> Option<()> {
+    CAN_AVAILABLE.load(Ordering::Relaxed).then_some(())
+}
+
+pub unsafe fn can_transmit_eid(_id: u32, _data: *const u8, _len: u8) -> Option<()> {
+    CAN_AVAILABLE.load(Ordering::Relaxed).then_some(())
+}
+
+pub unsafe fn can_set_sid_callback(
+    _callback: Option<unsafe extern "C" fn(u32, *mut u8, u8) -> bool>,
+) -> Option<()> {
+    Some(())
+}
+
+pub unsafe fn can_set_eid_callback(
+    _callback: Option<unsafe extern "C" fn(u32, *mut u8, u8) -> bool>,
+) -> Option<()> {
+    Some(())
+}
+
+pub unsafe fn can_set_duty(_controller: u8, _duty: f32) -> Option<()> {
+    Some(())
+}
+
+pub unsafe fn can_set_current(_controller: u8, _current: f32) -> Option<()> {
+    Some(())
+}
+
+pub unsafe fn can_set_current_brake(_controller: u8, _current: f32) -> Option<()> {
+    Some(())
+}
+
+pub unsafe fn can_set_current_brake_rel(_controller: u8, _current: f32) -> Option<()> {
+    Some(())
+}
+
+pub unsafe fn can_set_current_off_delay(
+    _controller: u8,
+    _current: f32,
+    _delay_seconds: f32,
+) -> Option<()> {
+    Some(())
+}
+
+pub unsafe fn can_set_current_rel(_controller: u8, _current: f32) -> Option<()> {
+    Some(())
+}
+
+pub unsafe fn can_set_current_rel_off_delay(
+    _controller: u8,
+    _current: f32,
+    _delay_seconds: f32,
+) -> Option<()> {
+    Some(())
+}
+
+pub unsafe fn can_set_rpm(_controller: u8, _rpm: f32) -> Option<()> {
+    Some(())
+}
+
+pub unsafe fn can_set_pos(_controller: u8, _position: f32) -> Option<()> {
+    Some(())
+}
+
+pub unsafe fn can_ping(_controller: u8) -> Option<(bool, HardwareType)> {
+    CAN_AVAILABLE
+        .load(Ordering::Relaxed)
+        .then_some((true, HardwareType(0)))
+}
+
+pub unsafe fn can_status_msg_id(_id: i32) -> Option<CanStatusMsg> {
+    Some(CanStatusMsg {
+        duty: f32::from_bits(CAN_STATUS_DUTY_BITS.load(Ordering::Relaxed)),
+        ..CAN_STATUS
+    })
+}
+
+pub unsafe fn can_status_msg_2_id(_id: i32) -> Option<CanStatusMsg2> {
+    Some(CAN_STATUS_2)
+}
+
+pub unsafe fn can_status_msg_3_id(_id: i32) -> Option<CanStatusMsg3> {
+    Some(CAN_STATUS_3)
+}
+
+pub unsafe fn can_status_msg_4_id(_id: i32) -> Option<CanStatusMsg4> {
+    Some(CAN_STATUS_4)
+}
+
+pub unsafe fn can_status_msg_5_id(_id: i32) -> Option<CanStatusMsg5> {
+    Some(CAN_STATUS_5)
+}
+
+pub unsafe fn can_status_msg_6_id(_id: i32) -> Option<CanStatusMsg6> {
+    Some(CanStatusMsg6 {
+        ppm: f32::from_bits(CAN_STATUS_PPM_BITS.load(Ordering::Relaxed)),
+        ..CAN_STATUS_6
+    })
+}
+
+pub(crate) fn set_can_status_duty(duty: f32) {
+    CAN_STATUS_DUTY_BITS.store(duty.to_bits(), Ordering::Relaxed);
+}
+
+pub(crate) fn set_can_status_ppm(ppm: f32) {
+    CAN_STATUS_PPM_BITS.store(ppm.to_bits(), Ordering::Relaxed);
 }
 
 pub(crate) fn mutex_lock_count() -> usize {
@@ -588,11 +1152,6 @@ pub(crate) fn set_motor_current_limits(max: MotorCurrentLimit, min: MotorCurrent
     store(&MOTOR_CURRENT_MIN, -min.current().as_amps());
 }
 
-pub(crate) fn set_input_current_limits(max: InputCurrentLimit, min: InputCurrentLimit) {
-    store(&INPUT_CURRENT_MAX, max.current().as_amps());
-    store(&INPUT_CURRENT_MIN, -min.current().as_amps());
-}
-
 pub(crate) fn set_duty_cycle_limit(limit: crate::DutyCycleLimit) {
     store(&DUTY_CYCLE_LIMIT, limit.ratio().as_ratio());
 }
@@ -613,6 +1172,10 @@ pub(crate) fn set_temperature_limit_starts(
 
 pub(crate) fn set_battery_cell_count(count: crate::BatteryCellCount) {
     BATTERY_CELL_COUNT.store(i32::from(count.as_u16()), Ordering::Relaxed);
+}
+
+pub(crate) fn set_raw_battery_cell_count(value: i32) {
+    BATTERY_CELL_COUNT.store(value, Ordering::Relaxed);
 }
 
 pub(crate) fn set_directional_motor_current(current: DirectionalMotorCurrent) {
@@ -659,24 +1222,44 @@ pub(crate) fn set_ride_totals(
     store(&BATTERY_LEVEL, battery_level.as_fraction());
 }
 
-pub(crate) fn set_firmware_fault(fault: FirmwareFaultCode) {
-    FIRMWARE_FAULT.store(
-        crate::FirmwareFaultWireCode::try_from(fault)
-            .map_or(0, |fault| i32::from(fault.wire_code())),
-        Ordering::Relaxed,
+pub(crate) fn set_battery_level_remaining(remaining: WattHoursRemaining) {
+    store(
+        &BATTERY_WATT_HOURS_REMAINING,
+        remaining.energy().as_watt_hours(),
     );
+}
+
+pub(crate) fn set_firmware_fault(fault: FirmwareFault) {
+    let raw = match fault {
+        FirmwareFault::None => 0,
+        FirmwareFault::Active(fault) => i32::from(fault.wire_code().wire_code()),
+        FirmwareFault::Unknown => i32::MAX,
+    };
+    FIRMWARE_FAULT.store(raw, Ordering::Relaxed);
 }
 
 pub(crate) fn set_input_voltage(voltage: InputVoltage) {
     store(&INPUT_VOLTAGE, voltage.voltage().as_volts());
 }
 
-pub(crate) fn set_ppm_input(input: crate::PpmInput, age: crate::PpmAge) {
+pub(crate) fn set_ppm_input(input: PpmInput, age: PpmAge) {
     store(&PPM_INPUT, input.ratio().as_ratio());
     store(&PPM_AGE, age.duration().as_seconds());
 }
 
-pub(crate) fn set_remote_input(input: crate::JoystickY, age: crate::RemoteAge) {
+pub(crate) fn set_ppm_available(available: bool) {
+    PPM_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_ppm_age_available(available: bool) {
+    PPM_AGE_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_output_disabled_available(available: bool) {
+    OUTPUT_DISABLED_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_remote_input(input: JoystickY, age: RemoteAge) {
     store(&REMOTE_INPUT_Y, input.ratio().as_ratio());
     store(&REMOTE_AGE, age.duration().as_seconds());
 }
@@ -688,8 +1271,80 @@ pub(crate) fn set_foc_id_current(current: Option<DCurrent>) {
     }
 }
 
+pub(crate) fn set_foc_audio_available(available: bool) {
+    FOC_AUDIO_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn foc_tone_command_count() -> usize {
+    FOC_TONE_COUNT.load(Ordering::Relaxed)
+}
+
+pub(crate) fn commanded_foc_tone_frequency() -> crate::AudioFrequency {
+    crate::AudioFrequency::new(crate::Frequency::from_hertz(f32::from_bits(
+        FOC_TONE_FREQUENCY.load(Ordering::Relaxed),
+    )))
+}
+
+pub(crate) fn commanded_foc_tone_voltage() -> crate::AudioVoltage {
+    crate::AudioVoltage::new(crate::Voltage::from_volts(f32::from_bits(
+        FOC_TONE_VOLTAGE.load(Ordering::Relaxed),
+    )))
+}
+
+pub(crate) fn set_foc_open_loop_available(available: bool) {
+    FOC_OPEN_LOOP_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_uart_available(available: bool) {
+    UART_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_packet_available(available: bool) {
+    PACKET_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_commands_available(available: bool) {
+    COMMANDS_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_terminal_available(available: bool) {
+    TERMINAL_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_encoder_available(available: bool) {
+    ENCODER_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_plot_available(available: bool) {
+    PLOT_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_gnss_available(available: bool) {
+    GNSS_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_pwm_available(available: bool) {
+    PWM_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_can_available(available: bool) {
+    CAN_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_backup_available(available: bool) {
+    BACKUP_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_nvm_available(available: bool) {
+    NVM_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
 pub(crate) fn set_imu_startup_done(done: bool) {
     IMU_STARTUP_DONE.store(done, Ordering::Relaxed);
+}
+
+pub(crate) fn set_imu_calibration_valid(valid: bool) {
+    IMU_CALIBRATION_VALID.store(valid, Ordering::Relaxed);
 }
 
 pub(crate) fn set_imu_attitude(roll: ImuRoll, pitch: ImuPitch, yaw: ImuYaw) {
@@ -769,27 +1424,56 @@ pub(crate) fn motor_output() -> MotorOutputState {
         current_count: CURRENT_COUNT.load(Ordering::Relaxed),
         duty_count: DUTY_COUNT.load(Ordering::Relaxed),
         brake_current_count: BRAKE_CURRENT_COUNT.load(Ordering::Relaxed),
-        foc_tone_count: FOC_TONE_COUNT.load(Ordering::Relaxed),
         current_off_delay: f32::from_bits(CURRENT_OFF_DELAY.load(Ordering::Relaxed)),
         current: f32::from_bits(CURRENT.load(Ordering::Relaxed)),
         duty: f32::from_bits(DUTY.load(Ordering::Relaxed)),
         brake_current: f32::from_bits(BRAKE_CURRENT.load(Ordering::Relaxed)),
-        foc_tone_channel: FOC_TONE_CHANNEL.load(Ordering::Relaxed),
-        foc_tone_frequency: f32::from_bits(FOC_TONE_FREQUENCY.load(Ordering::Relaxed)),
-        foc_tone_voltage: f32::from_bits(FOC_TONE_VOLTAGE.load(Ordering::Relaxed)),
     }
 }
 
-pub unsafe fn foc_play_tone(channel: i32, frequency: f32, voltage: f32) -> bool {
-    FOC_TONE_COUNT.fetch_add(1, Ordering::Relaxed);
-    FOC_TONE_CHANNEL.store(channel, Ordering::Relaxed);
-    FOC_TONE_FREQUENCY.store(frequency.to_bits(), Ordering::Relaxed);
-    FOC_TONE_VOLTAGE.store(voltage.to_bits(), Ordering::Relaxed);
-    true
+pub(crate) fn pid_position_offset() -> f32 {
+    f32::from_bits(PID_POSITION_OFFSET.load(Ordering::Relaxed))
+}
+
+pub(crate) fn pid_position_offset_stored() -> bool {
+    PID_POSITION_OFFSET_STORED.load(Ordering::Relaxed)
 }
 
 pub unsafe fn timeout_reset() {
     KEEP_ALIVE_COUNT.fetch_add(1, Ordering::Relaxed);
+    TIMEOUT_OCCURRED.store(false, Ordering::Relaxed);
+}
+
+pub unsafe fn timeout_has_timeout() -> bool {
+    TIMEOUT_OCCURRED.load(Ordering::Relaxed)
+}
+
+pub unsafe fn timeout_secs_since_update() -> f32 {
+    1.5
+}
+
+pub unsafe fn shutdown_disable(disable: bool) -> Option<()> {
+    if !SHUTDOWN_DISABLE_SUPPORTED.load(Ordering::Relaxed) {
+        return None;
+    }
+    SHUTDOWN_DISABLED.store(disable, Ordering::Relaxed);
+    Some(())
+}
+
+pub(crate) fn set_shutdown_disable_supported(supported: bool) {
+    SHUTDOWN_DISABLE_SUPPORTED.store(supported, Ordering::Relaxed);
+}
+
+pub(crate) fn shutdown_disabled() -> bool {
+    SHUTDOWN_DISABLED.load(Ordering::Relaxed)
+}
+
+pub(crate) fn set_settings_write_ok(ok: bool) {
+    CONFIG_WRITE_OK.store(ok, Ordering::Relaxed);
+}
+
+pub(crate) fn set_settings_store_ok(ok: bool) {
+    CONFIG_STORE_OK.store(ok, Ordering::Relaxed);
 }
 
 pub unsafe fn mc_set_current_off_delay(seconds: f32) {
@@ -797,19 +1481,125 @@ pub unsafe fn mc_set_current_off_delay(seconds: f32) {
     CURRENT_OFF_DELAY.store(seconds.to_bits(), Ordering::Relaxed);
 }
 
+pub unsafe fn mc_select_motor_thread(motor: i32) {
+    SELECTED_MOTOR.store(motor, Ordering::Relaxed);
+}
+
 pub unsafe fn mc_set_current(amps: f32) {
     CURRENT_COUNT.fetch_add(1, Ordering::Relaxed);
     CURRENT.store(amps.to_bits(), Ordering::Relaxed);
 }
+
+pub unsafe fn mc_set_current_rel(_ratio: f32) {}
+
+pub unsafe fn mc_set_brake_current_rel(_ratio: f32) {}
+
+pub unsafe fn mc_set_pid_speed(_rpm: f32) {}
+
+pub unsafe fn mc_set_pid_pos(_position: f32) {}
 
 pub unsafe fn mc_set_duty(duty: f32) {
     DUTY_COUNT.fetch_add(1, Ordering::Relaxed);
     DUTY.store(duty.to_bits(), Ordering::Relaxed);
 }
 
+pub unsafe fn mc_set_duty_noramp(_duty: f32) {}
+
 pub unsafe fn mc_set_brake_current(amps: f32) {
     BRAKE_CURRENT_COUNT.fetch_add(1, Ordering::Relaxed);
     BRAKE_CURRENT.store(amps.to_bits(), Ordering::Relaxed);
+}
+
+pub unsafe fn mc_set_handbrake(_amps: f32) {}
+
+pub unsafe fn mc_set_handbrake_rel(_ratio: f32) {}
+
+pub unsafe fn mc_get_tachometer_value(reset: bool) -> i32 {
+    let value = TACHOMETER_VALUE.load(Ordering::Relaxed);
+    if reset {
+        TACHOMETER_VALUE.store(0, Ordering::Relaxed);
+    }
+    value
+}
+
+pub unsafe fn mc_set_tachometer_value(steps: i32) -> i32 {
+    TACHOMETER_VALUE.swap(steps, Ordering::Relaxed)
+}
+
+pub unsafe fn mc_get_tot_current() -> f32 {
+    12.0
+}
+
+pub unsafe fn mc_get_tot_current_directional() -> f32 {
+    -12.5
+}
+
+pub unsafe fn mc_get_tot_current_in() -> f32 {
+    8.0
+}
+
+pub unsafe fn mc_stat_power_avg() -> f32 {
+    120.0
+}
+
+pub unsafe fn mc_stat_power_max() -> f32 {
+    240.0
+}
+
+pub unsafe fn mc_stat_speed_avg() -> f32 {
+    4.0
+}
+
+pub unsafe fn mc_stat_speed_max() -> f32 {
+    8.0
+}
+
+pub unsafe fn mc_stat_current_avg() -> f32 {
+    6.0
+}
+
+pub unsafe fn mc_stat_current_max() -> f32 {
+    18.0
+}
+
+pub unsafe fn mc_stat_temp_mosfet_avg() -> f32 {
+    45.0
+}
+
+pub unsafe fn mc_stat_temp_mosfet_max() -> f32 {
+    60.0
+}
+
+pub unsafe fn mc_stat_temp_motor_avg() -> f32 {
+    40.0
+}
+
+pub unsafe fn mc_stat_temp_motor_max() -> f32 {
+    55.0
+}
+
+pub unsafe fn mc_stat_count_time() -> f32 {
+    90.0
+}
+
+pub unsafe fn mc_stat_reset() {}
+
+pub unsafe fn mc_get_tachometer_abs_value(reset: bool) -> i32 {
+    let value = TACHOMETER_ABS_VALUE.load(Ordering::Relaxed);
+    if reset {
+        TACHOMETER_ABS_VALUE.store(0, Ordering::Relaxed);
+    }
+    value
+}
+
+pub unsafe fn mc_get_sampling_frequency_now() -> f32 {
+    20_000.0
+}
+
+pub unsafe fn mc_release_motor() {}
+
+pub unsafe fn mc_wait_for_motor_release(_timeout: f32) -> bool {
+    true
 }
 
 pub unsafe fn mc_get_rpm() -> f32 {
@@ -834,8 +1624,43 @@ pub unsafe fn get_cfg_float(param: i32) -> f32 {
         1 => load(&MOTOR_CURRENT_MIN),
         2 => load(&INPUT_CURRENT_MAX),
         3 => load(&INPUT_CURRENT_MIN),
+        4 => load(&ABSOLUTE_CURRENT_MAX),
+        5 => load(&ELECTRICAL_SPEED_MIN),
+        6 => load(&ELECTRICAL_SPEED_MAX),
+        7 => load(&ELECTRICAL_SPEED_RAMP_START),
+        8 => load(&ELECTRICAL_SPEED_BRAKE_MAX),
+        9 => load(&ELECTRICAL_SPEED_BRAKE_CURRENT_MAX),
+        31 => load(&IMU_SAMPLE_RATE),
+        24 => load(&IMU_MAHONY_KP),
+        25 => load(&IMU_MAHONY_KI),
+        26 => load(&IMU_MADGWICK_BETA),
+        27 => load(&IMU_ROTATION_ROLL),
+        28 => load(&IMU_ROTATION_PITCH),
+        29 => load(&IMU_ROTATION_YAW),
+        32 => load(&IMU_ACCELERATION_OFFSET_X),
+        33 => load(&IMU_ACCELERATION_OFFSET_Y),
+        34 => load(&IMU_ACCELERATION_OFFSET_Z),
+        35 => load(&IMU_GYRO_OFFSET_X),
+        36 => load(&IMU_GYRO_OFFSET_Y),
+        37 => load(&IMU_GYRO_OFFSET_Z),
+        21 => load(&DUTY_CYCLE_MINIMUM),
+        23 => load(&IMU_ACCELERATION_CONFIDENCE_DECAY),
+        40 => load(&GEAR_RATIO),
+        41 => load(&WHEEL_DIAMETER),
+        46 => load(&FOC_MOTOR_RESISTANCE),
+        47 => load(&FOC_MOTOR_INDUCTANCE),
+        48 => load(&FOC_MOTOR_FLUX_LINKAGE),
+        44 => load(&BATTERY_CAPACITY),
+        45 => load(&MOTOR_NO_LOAD_CURRENT),
+        10 => load(&INPUT_VOLTAGE_MIN),
+        11 => load(&INPUT_VOLTAGE_MAX),
+        12 => load(&BATTERY_CUT_START_VOLTAGE),
+        13 => load(&BATTERY_CUT_END_VOLTAGE),
         16 => load(&MOSFET_TEMPERATURE_LIMIT_START),
+        17 => load(&MOSFET_TEMPERATURE_LIMIT_END),
         18 => load(&MOTOR_TEMPERATURE_LIMIT_START),
+        19 => load(&MOTOR_TEMPERATURE_LIMIT_END),
+        20 => load(&TEMPERATURE_ACCELERATION_DECREASE),
         22 => load(&DUTY_CYCLE_LIMIT),
         _ => 0.0,
     }
@@ -843,9 +1668,88 @@ pub unsafe fn get_cfg_float(param: i32) -> f32 {
 
 pub unsafe fn get_cfg_int(param: i32) -> i32 {
     match param {
+        14 => APP_CAN_MODE.load(Ordering::Relaxed),
+        15 => APP_CAN_BAUD_RATE.load(Ordering::Relaxed),
+        30 => IMU_AHRS_MODE.load(Ordering::Relaxed),
+        38 => APP_SHUTDOWN_MODE.load(Ordering::Relaxed),
+        39 => MOTOR_POLE_COUNT.load(Ordering::Relaxed),
+        42 => BATTERY_TYPE.load(Ordering::Relaxed),
         43 => BATTERY_CELL_COUNT.load(Ordering::Relaxed),
         _ => 0,
     }
+}
+
+pub unsafe fn set_cfg_float(param: i32, value: f32) -> bool {
+    if !CONFIG_WRITE_OK.load(Ordering::Relaxed) {
+        return false;
+    }
+    match param {
+        0 => MOTOR_CURRENT_MAX.store(value.to_bits(), Ordering::Relaxed),
+        1 => MOTOR_CURRENT_MIN.store(value.to_bits(), Ordering::Relaxed),
+        2 => INPUT_CURRENT_MAX.store(value.to_bits(), Ordering::Relaxed),
+        3 => INPUT_CURRENT_MIN.store(value.to_bits(), Ordering::Relaxed),
+        4 => ABSOLUTE_CURRENT_MAX.store(value.to_bits(), Ordering::Relaxed),
+        5 => ELECTRICAL_SPEED_MIN.store(value.to_bits(), Ordering::Relaxed),
+        6 => ELECTRICAL_SPEED_MAX.store(value.to_bits(), Ordering::Relaxed),
+        7 => ELECTRICAL_SPEED_RAMP_START.store(value.to_bits(), Ordering::Relaxed),
+        8 => ELECTRICAL_SPEED_BRAKE_MAX.store(value.to_bits(), Ordering::Relaxed),
+        9 => ELECTRICAL_SPEED_BRAKE_CURRENT_MAX.store(value.to_bits(), Ordering::Relaxed),
+        31 => IMU_SAMPLE_RATE.store(value.to_bits(), Ordering::Relaxed),
+        24 => IMU_MAHONY_KP.store(value.to_bits(), Ordering::Relaxed),
+        25 => IMU_MAHONY_KI.store(value.to_bits(), Ordering::Relaxed),
+        26 => IMU_MADGWICK_BETA.store(value.to_bits(), Ordering::Relaxed),
+        27 => IMU_ROTATION_ROLL.store(value.to_bits(), Ordering::Relaxed),
+        28 => IMU_ROTATION_PITCH.store(value.to_bits(), Ordering::Relaxed),
+        29 => IMU_ROTATION_YAW.store(value.to_bits(), Ordering::Relaxed),
+        32 => IMU_ACCELERATION_OFFSET_X.store(value.to_bits(), Ordering::Relaxed),
+        33 => IMU_ACCELERATION_OFFSET_Y.store(value.to_bits(), Ordering::Relaxed),
+        34 => IMU_ACCELERATION_OFFSET_Z.store(value.to_bits(), Ordering::Relaxed),
+        35 => IMU_GYRO_OFFSET_X.store(value.to_bits(), Ordering::Relaxed),
+        36 => IMU_GYRO_OFFSET_Y.store(value.to_bits(), Ordering::Relaxed),
+        37 => IMU_GYRO_OFFSET_Z.store(value.to_bits(), Ordering::Relaxed),
+        21 => DUTY_CYCLE_MINIMUM.store(value.to_bits(), Ordering::Relaxed),
+        23 => IMU_ACCELERATION_CONFIDENCE_DECAY.store(value.to_bits(), Ordering::Relaxed),
+        40 => GEAR_RATIO.store(value.to_bits(), Ordering::Relaxed),
+        41 => WHEEL_DIAMETER.store(value.to_bits(), Ordering::Relaxed),
+        46 => FOC_MOTOR_RESISTANCE.store(value.to_bits(), Ordering::Relaxed),
+        47 => FOC_MOTOR_INDUCTANCE.store(value.to_bits(), Ordering::Relaxed),
+        48 => FOC_MOTOR_FLUX_LINKAGE.store(value.to_bits(), Ordering::Relaxed),
+        44 => BATTERY_CAPACITY.store(value.to_bits(), Ordering::Relaxed),
+        45 => MOTOR_NO_LOAD_CURRENT.store(value.to_bits(), Ordering::Relaxed),
+        10 => INPUT_VOLTAGE_MIN.store(value.to_bits(), Ordering::Relaxed),
+        11 => INPUT_VOLTAGE_MAX.store(value.to_bits(), Ordering::Relaxed),
+        12 => BATTERY_CUT_START_VOLTAGE.store(value.to_bits(), Ordering::Relaxed),
+        13 => BATTERY_CUT_END_VOLTAGE.store(value.to_bits(), Ordering::Relaxed),
+        16 => MOSFET_TEMPERATURE_LIMIT_START.store(value.to_bits(), Ordering::Relaxed),
+        17 => MOSFET_TEMPERATURE_LIMIT_END.store(value.to_bits(), Ordering::Relaxed),
+        18 => MOTOR_TEMPERATURE_LIMIT_START.store(value.to_bits(), Ordering::Relaxed),
+        19 => MOTOR_TEMPERATURE_LIMIT_END.store(value.to_bits(), Ordering::Relaxed),
+        20 => TEMPERATURE_ACCELERATION_DECREASE.store(value.to_bits(), Ordering::Relaxed),
+        22 => DUTY_CYCLE_LIMIT.store(value.to_bits(), Ordering::Relaxed),
+        _ => return false,
+    }
+    true
+}
+
+pub unsafe fn set_cfg_int(param: i32, value: i32) -> bool {
+    if !CONFIG_WRITE_OK.load(Ordering::Relaxed) {
+        return false;
+    }
+    match param {
+        14 => APP_CAN_MODE.store(value, Ordering::Relaxed),
+        15 => APP_CAN_BAUD_RATE.store(value, Ordering::Relaxed),
+        30 => IMU_AHRS_MODE.store(value, Ordering::Relaxed),
+        38 => APP_SHUTDOWN_MODE.store(value, Ordering::Relaxed),
+        39 => MOTOR_POLE_COUNT.store(value, Ordering::Relaxed),
+        42 => BATTERY_TYPE.store(value, Ordering::Relaxed),
+        43 => BATTERY_CELL_COUNT.store(value, Ordering::Relaxed),
+        _ => return false,
+    }
+    true
+}
+
+pub unsafe fn store_cfg() -> bool {
+    CONFIG_STORE_OK.load(Ordering::Relaxed)
 }
 
 pub unsafe fn mc_get_tot_current_in_filtered() -> f32 {
@@ -862,8 +1766,204 @@ pub unsafe fn foc_get_id() -> Option<f32> {
         .then(|| load(&FOC_ID_CURRENT))
 }
 
+pub unsafe fn foc_get_iq() -> Option<f32> {
+    Some(2.5)
+}
+
+pub unsafe fn foc_get_vd() -> Option<f32> {
+    Some(3.5)
+}
+
+pub unsafe fn foc_get_vq() -> Option<f32> {
+    Some(4.5)
+}
+
+pub unsafe fn foc_set_openloop_current(_current: f32, _rpm: f32) -> bool {
+    FOC_OPEN_LOOP_AVAILABLE.load(Ordering::Relaxed)
+}
+
+pub unsafe fn foc_set_openloop_phase(_current: f32, _phase: f32) -> bool {
+    FOC_OPEN_LOOP_AVAILABLE.load(Ordering::Relaxed)
+}
+
+pub unsafe fn foc_set_openloop_duty(_duty: f32, _rpm: f32) -> bool {
+    FOC_OPEN_LOOP_AVAILABLE.load(Ordering::Relaxed)
+}
+
+pub unsafe fn foc_set_openloop_duty_phase(_duty: f32, _phase: f32) -> bool {
+    FOC_OPEN_LOOP_AVAILABLE.load(Ordering::Relaxed)
+}
+
+pub unsafe fn foc_beep(_frequency: f32, _duration: f32, _voltage: f32) -> Option<bool> {
+    FOC_AUDIO_AVAILABLE.load(Ordering::Relaxed).then_some(true)
+}
+
+pub unsafe fn foc_play_tone(channel: c_int, frequency: f32, voltage: f32) -> Option<bool> {
+    let _ = (channel, frequency, voltage);
+    if FOC_AUDIO_AVAILABLE.load(Ordering::Relaxed) {
+        FOC_TONE_COUNT.fetch_add(1, Ordering::Relaxed);
+        FOC_TONE_FREQUENCY.store(frequency.to_bits(), Ordering::Relaxed);
+        FOC_TONE_VOLTAGE.store(voltage.to_bits(), Ordering::Relaxed);
+        Some(true)
+    } else {
+        None
+    }
+}
+
+pub unsafe fn foc_stop_audio(reset: bool) -> bool {
+    if reset {
+        FOC_AUDIO_TABLE_INSTALLED.store(false, Ordering::Relaxed);
+    }
+    FOC_AUDIO_AVAILABLE.load(Ordering::Relaxed)
+}
+
+pub unsafe fn foc_set_audio_sample_table(
+    _channel: c_int,
+    _samples: *const f32,
+    _length: c_int,
+) -> Option<bool> {
+    if FOC_AUDIO_AVAILABLE.load(Ordering::Relaxed) {
+        FOC_AUDIO_TABLE_INSTALLED.store(true, Ordering::Relaxed);
+        Some(true)
+    } else {
+        None
+    }
+}
+
+pub unsafe fn foc_get_audio_sample_table(_channel: c_int) -> Option<*const f32> {
+    (FOC_AUDIO_AVAILABLE.load(Ordering::Relaxed)
+        && FOC_AUDIO_TABLE_INSTALLED.load(Ordering::Relaxed))
+    .then_some(AUDIO_SAMPLE_TABLE.as_ptr())
+}
+
+pub unsafe fn foc_play_audio_samples(
+    _samples: *const i8,
+    _length: c_int,
+    _sample_rate: f32,
+    _voltage: f32,
+) -> Option<bool> {
+    FOC_AUDIO_AVAILABLE.load(Ordering::Relaxed).then_some(true)
+}
+
+pub unsafe fn uart_start(_baudrate: u32, _half_duplex: bool) -> Option<bool> {
+    UART_AVAILABLE.load(Ordering::Relaxed).then_some(true)
+}
+
+pub unsafe fn uart_write(_data: *const u8, _size: u32) -> Option<bool> {
+    UART_AVAILABLE.load(Ordering::Relaxed).then_some(true)
+}
+
+pub unsafe fn uart_read() -> Option<i32> {
+    UART_AVAILABLE
+        .load(Ordering::Relaxed)
+        .then_some(i32::from(b'A'))
+}
+
+pub unsafe fn packet_init(
+    _send: unsafe extern "C" fn(*mut u8, u32),
+    _process: unsafe extern "C" fn(*mut u8, u32),
+    _state: *mut PacketState,
+) -> bool {
+    PACKET_AVAILABLE.load(Ordering::Relaxed)
+}
+
+pub unsafe fn packet_reset(_state: *mut PacketState) -> bool {
+    PACKET_AVAILABLE.load(Ordering::Relaxed)
+}
+
+pub unsafe fn packet_process_byte(_byte: u8, _state: *mut PacketState) -> bool {
+    PACKET_AVAILABLE.load(Ordering::Relaxed)
+}
+
+pub unsafe fn packet_send_packet(_data: *mut u8, _len: u32, _state: *mut PacketState) -> bool {
+    PACKET_AVAILABLE.load(Ordering::Relaxed)
+}
+
+pub unsafe fn gnss_snapshot() -> Option<GnssData> {
+    GNSS_AVAILABLE.load(Ordering::Relaxed).then_some(GnssData {
+        lat: 40.0,
+        lon: -105.0,
+        height: 1600.0,
+        speed: 3.5,
+        hdop: 0.9,
+        ms_today: 12_345,
+        yy: 26,
+        mo: 7,
+        dd: 22,
+        last_update: 42,
+    })
+}
+
+pub unsafe fn commands_process_packet(
+    _data: *mut u8,
+    _len: u32,
+    _reply: unsafe extern "C" fn(*mut u8, u32),
+) -> bool {
+    COMMANDS_AVAILABLE.load(Ordering::Relaxed)
+}
+
+pub unsafe fn commands_unregister_reply_func(_reply: unsafe extern "C" fn(*mut u8, u32)) -> bool {
+    true
+}
+
+pub unsafe fn plot_init(_title: *const c_char, _channel: *const c_char) -> bool {
+    PLOT_AVAILABLE.load(Ordering::Relaxed)
+}
+
+pub unsafe fn plot_add_graph(_name: *const c_char) -> bool {
+    PLOT_AVAILABLE.load(Ordering::Relaxed)
+}
+
+pub unsafe fn plot_set_graph(_index: i32) -> bool {
+    PLOT_AVAILABLE.load(Ordering::Relaxed)
+}
+
+pub unsafe fn plot_send_points(_x: f32, _y: f32) -> bool {
+    PLOT_AVAILABLE.load(Ordering::Relaxed)
+}
+
+pub unsafe fn terminal_register_command_callback(
+    _command: *const c_char,
+    _help: *const c_char,
+    _arg_names: *const c_char,
+    _callback: unsafe extern "C" fn(i32, *const *const c_char),
+) -> bool {
+    TERMINAL_AVAILABLE.load(Ordering::Relaxed)
+}
+
+pub unsafe fn terminal_unregister_callback(
+    _callback: unsafe extern "C" fn(i32, *const *const c_char),
+) -> bool {
+    TERMINAL_AVAILABLE.load(Ordering::Relaxed)
+}
+
+pub unsafe fn encoder_set_custom_callbacks(
+    _read: unsafe extern "C" fn() -> f32,
+    _fault: unsafe extern "C" fn() -> bool,
+    _info: unsafe extern "C" fn() -> *mut c_char,
+) -> bool {
+    ENCODER_AVAILABLE.load(Ordering::Relaxed)
+}
+
 pub unsafe fn mc_get_distance_abs() -> f32 {
     load(&DISTANCE_ABS)
+}
+
+pub unsafe fn mc_get_distance() -> f32 {
+    -3.5
+}
+
+pub unsafe fn mc_get_pid_pos_set() -> f32 {
+    42.0
+}
+
+pub unsafe fn mc_get_pid_pos_now() -> f32 {
+    12.0
+}
+
+pub unsafe fn mc_update_pid_pos_offset(angle_now: f32, store: bool) {
+    PID_POSITION_OFFSET.store(angle_now.to_bits(), Ordering::Relaxed);
+    PID_POSITION_OFFSET_STORED.store(store, Ordering::Relaxed);
 }
 
 pub unsafe fn mc_temp_fet_filtered() -> f32 {
@@ -878,62 +1978,71 @@ pub unsafe fn mc_get_odometer() -> u64 {
     ODOMETER.load(Ordering::Relaxed)
 }
 
-pub unsafe fn mc_get_amp_hours(_reset: bool) -> f32 {
-    load(&AMP_HOURS_DISCHARGED)
+pub unsafe fn mc_set_odometer(meters: u64) {
+    ODOMETER.store(meters, Ordering::Relaxed);
 }
 
-pub unsafe fn mc_get_amp_hours_charged(_reset: bool) -> f32 {
-    load(&AMP_HOURS_CHARGED)
+pub unsafe fn mc_get_amp_hours(reset: bool) -> f32 {
+    let value = load(&AMP_HOURS_DISCHARGED);
+    if reset {
+        store(&AMP_HOURS_DISCHARGED, 0.0);
+    }
+    value
 }
 
-pub unsafe fn mc_get_watt_hours(_reset: bool) -> f32 {
-    load(&WATT_HOURS_DISCHARGED)
+pub unsafe fn mc_get_amp_hours_charged(reset: bool) -> f32 {
+    let value = load(&AMP_HOURS_CHARGED);
+    if reset {
+        store(&AMP_HOURS_CHARGED, 0.0);
+    }
+    value
 }
 
-pub unsafe fn mc_get_watt_hours_charged(_reset: bool) -> f32 {
-    load(&WATT_HOURS_CHARGED)
+pub unsafe fn mc_get_watt_hours(reset: bool) -> f32 {
+    let value = load(&WATT_HOURS_DISCHARGED);
+    if reset {
+        store(&WATT_HOURS_DISCHARGED, 0.0);
+    }
+    value
 }
 
-pub unsafe fn mc_get_battery_level(_wh_left: *mut f32) -> f32 {
+pub unsafe fn mc_get_watt_hours_charged(reset: bool) -> f32 {
+    let value = load(&WATT_HOURS_CHARGED);
+    if reset {
+        store(&WATT_HOURS_CHARGED, 0.0);
+    }
+    value
+}
+
+pub unsafe fn mc_get_battery_level(wh_left: *mut f32) -> f32 {
+    if let Some(wh_left) = unsafe { wh_left.as_mut() } {
+        *wh_left = load(&BATTERY_WATT_HOURS_REMAINING);
+    }
     load(&BATTERY_LEVEL)
 }
 
-pub unsafe fn mc_get_fault() -> i32 {
-    FIRMWARE_FAULT.load(Ordering::Relaxed)
+pub unsafe fn mc_get_fault() -> FaultCode {
+    FaultCode(FIRMWARE_FAULT.load(Ordering::Relaxed))
 }
 
-pub unsafe fn mc_fault_to_string(code: u32) -> *const core::ffi::c_char {
-    let name: &'static [u8] = match code {
-        5 => b"FAULT_CODE_OVER_TEMP_FET\0",
-        _ => b"FAULT_CODE_NONE\0",
-    };
-    name.as_ptr().cast()
+pub unsafe fn mc_get_motor_thread() -> i32 {
+    SELECTED_MOTOR.load(Ordering::Relaxed)
+}
+
+pub unsafe fn mc_dccal_done() -> bool {
+    true
+}
+
+pub unsafe fn mc_fault_to_string(_fault: FaultCode) -> *const c_char {
+    c"TEST_FAULT".as_ptr().cast()
+}
+
+pub unsafe fn mc_set_pwm_callback(_callback: Option<unsafe extern "C" fn()>) -> bool {
+    PWM_AVAILABLE.load(Ordering::Relaxed)
 }
 
 pub unsafe fn mc_get_input_voltage_filtered() -> f32 {
     load(&INPUT_VOLTAGE)
-}
-
-#[allow(clippy::unnecessary_wraps)] // fake preserves nullable firmware input slot shape
-pub unsafe fn get_ppm() -> Option<f32> {
-    Some(load(&PPM_INPUT))
-}
-
-#[allow(clippy::unnecessary_wraps)] // fake preserves nullable firmware input slot shape
-pub unsafe fn get_ppm_age() -> Option<f32> {
-    Some(load(&PPM_AGE))
-}
-
-#[allow(clippy::unnecessary_wraps)] // fake preserves nullable firmware remote-state slot shape
-pub unsafe fn remote_state() -> Option<RemoteState> {
-    Some(RemoteState {
-        js_x: 0.0,
-        js_y: load(&REMOTE_INPUT_Y),
-        bt_c: false,
-        bt_z: false,
-        is_rev: false,
-        age_s: load(&REMOTE_AGE),
-    })
 }
 
 pub unsafe fn imu_startup_done() -> bool {
@@ -944,12 +2053,38 @@ pub unsafe fn imu_get_roll() -> f32 {
     load(&IMU_ROLL)
 }
 
+pub unsafe fn imu_get_rpy(values: *mut f32) {
+    if let Some(values) = unsafe { values.cast::<[f32; 3]>().as_mut() } {
+        *values = [load(&IMU_ROLL), load(&IMU_PITCH), load(&IMU_YAW)];
+    }
+}
+
+pub unsafe fn imu_get_calibration(_yaw: f32, values: *mut f32) {
+    if let Some(values) = unsafe { values.cast::<[f32; 9]>().as_mut() } {
+        *values = if IMU_CALIBRATION_VALID.load(Ordering::Relaxed) {
+            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        } else {
+            [f32::NAN; 9]
+        };
+    }
+}
+
 pub unsafe fn imu_get_pitch() -> f32 {
     load(&IMU_PITCH)
 }
 
 pub unsafe fn imu_get_yaw() -> f32 {
     load(&IMU_YAW)
+}
+
+pub unsafe fn imu_set_yaw(yaw_degrees: f32) {
+    store(&IMU_YAW, yaw_degrees.to_radians());
+}
+
+pub unsafe fn imu_get_accel(values: *mut f32) {
+    if let Some(values) = unsafe { values.cast::<[f32; 3]>().as_mut() } {
+        *values = [1.0, 2.0, 3.0];
+    }
 }
 
 pub unsafe fn imu_get_gyro(values: *mut f32) {
@@ -961,6 +2096,30 @@ pub unsafe fn imu_get_gyro(values: *mut f32) {
     }
 }
 
+pub unsafe fn imu_get_mag(values: *mut f32) {
+    if let Some(values) = unsafe { values.cast::<[f32; 3]>().as_mut() } {
+        *values = [10.0, 20.0, 30.0];
+    }
+}
+
+pub unsafe fn imu_derotate(_input: *const f32, output: *mut f32) {
+    if let Some(output) = unsafe { output.cast::<[f32; 3]>().as_mut() } {
+        *output = [4.0, 5.0, 6.0];
+    }
+}
+
+pub unsafe fn imu_get_accel_derotated(values: *mut f32) {
+    if let Some(values) = unsafe { values.cast::<[f32; 3]>().as_mut() } {
+        *values = [4.0, 5.0, 6.0];
+    }
+}
+
+pub unsafe fn imu_get_gyro_derotated(values: *mut f32) {
+    if let Some(values) = unsafe { values.cast::<[f32; 3]>().as_mut() } {
+        *values = [7.0, 8.0, 9.0];
+    }
+}
+
 pub unsafe fn vesc_imu_get_quaternions(values: *mut f32) {
     if let Some(values) = unsafe { values.cast::<[f32; 4]>().as_mut() } {
         values
@@ -968,6 +2127,88 @@ pub unsafe fn vesc_imu_get_quaternions(values: *mut f32) {
             .zip(&IMU_QUATERNION)
             .for_each(|(value, component)| *value = load(component));
     }
+}
+
+pub unsafe fn imu_set_read_callback(
+    _callback: Option<unsafe extern "C" fn(*mut f32, *mut f32, *mut f32, f32)>,
+) {
+}
+
+pub unsafe fn ahrs_init_attitude_info(attitude: *mut AttitudeInfo) {
+    let Some(attitude) = (unsafe { attitude.as_mut() }) else {
+        return;
+    };
+    *attitude = AttitudeInfo {
+        q0: 1.0,
+        q1: 0.0,
+        q2: 0.0,
+        q3: 0.0,
+        integralFBx: 0.0,
+        integralFBy: 0.0,
+        integralFBz: 0.0,
+        accMagP: 1.0,
+        initialUpdateDone: 0,
+        acc_confidence_decay: 0.25,
+        kp: 2.0,
+        ki: 0.05,
+        beta: 0.1,
+    };
+}
+
+pub unsafe fn ahrs_update_initial_orientation(
+    _acceleration: *const f32,
+    _magnetic: *const f32,
+    attitude: *mut AttitudeInfo,
+) {
+    let Some(attitude) = (unsafe { attitude.as_mut() }) else {
+        return;
+    };
+    attitude.q0 = 0.9;
+    attitude.q1 = 0.1;
+    attitude.q2 = 0.2;
+    attitude.q3 = 0.3;
+    attitude.initialUpdateDone = 1;
+}
+
+pub unsafe fn ahrs_update_mahony_imu(
+    gyro: *const f32,
+    _acceleration: *const f32,
+    dt: f32,
+    attitude: *mut AttitudeInfo,
+) {
+    let Some(attitude) = (unsafe { attitude.as_mut() }) else {
+        return;
+    };
+    let gyro = unsafe { gyro.cast::<[f32; 3]>().as_ref() }
+        .copied()
+        .unwrap_or([0.0; 3]);
+    attitude.integralFBx += gyro[0] * dt;
+    attitude.integralFBy += gyro[1] * dt;
+    attitude.integralFBz += gyro[2] * dt;
+    attitude.accMagP = 1.25;
+}
+
+pub unsafe fn ahrs_update_madgwick_imu(
+    _gyro: *const f32,
+    _acceleration: *const f32,
+    _dt: f32,
+    attitude: *mut AttitudeInfo,
+) {
+    if let Some(attitude) = unsafe { attitude.as_mut() } {
+        attitude.beta = 0.2;
+    }
+}
+
+pub unsafe fn ahrs_get_roll(attitude: *const AttitudeInfo) -> f32 {
+    unsafe { attitude.as_ref() }.map_or(0.0, |attitude| attitude.q1)
+}
+
+pub unsafe fn ahrs_get_pitch(attitude: *const AttitudeInfo) -> f32 {
+    unsafe { attitude.as_ref() }.map_or(0.0, |attitude| attitude.q2)
+}
+
+pub unsafe fn ahrs_get_yaw(attitude: *const AttitudeInfo) -> f32 {
+    unsafe { attitude.as_ref() }.map_or(0.0, |attitude| attitude.q3)
 }
 
 pub unsafe fn vesc_spawn(

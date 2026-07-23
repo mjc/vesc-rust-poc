@@ -3,7 +3,9 @@
 //! Integration tests for RAII firmware synchronization.
 
 use vescpkg_rs::test_support::FirmwareTest;
-use vescpkg_rs::{FirmwareMutex, FirmwareSemaphore, SystemTicks};
+use vescpkg_rs::{
+    FirmwareMutex, FirmwareSemaphore, SemaphoreWaitOutcome, SystemDuration, SystemTicks,
+};
 
 #[test]
 fn mutex_guard_unlocks_before_owned_mutex_is_released() {
@@ -27,7 +29,14 @@ fn semaphore_exposes_wait_timeout_signal_reset_and_release() {
     let semaphore = FirmwareSemaphore::new().expect("fake firmware creates a semaphore");
 
     semaphore.wait();
-    assert!(semaphore.wait_timeout(SystemTicks::from_ticks(25)));
+    assert_eq!(
+        semaphore.wait_timeout(SystemTicks::from_ticks(25)),
+        SemaphoreWaitOutcome::Signaled
+    );
+    assert_eq!(
+        semaphore.wait_timeout_duration(SystemDuration::new(SystemTicks::from_ticks(25))),
+        SemaphoreWaitOutcome::Signaled
+    );
     semaphore.signal();
     semaphore.reset();
 
@@ -37,6 +46,14 @@ fn semaphore_exposes_wait_timeout_signal_reset_and_release() {
     assert_eq!(firmware.semaphore_reset_count(), 1);
     drop(semaphore);
     assert_eq!(firmware.semaphore_free_count(), 1);
+}
+
+#[test]
+fn semaphore_wait_outcomes_have_named_predicates() {
+    assert!(SemaphoreWaitOutcome::Signaled.is_signaled());
+    assert!(!SemaphoreWaitOutcome::Signaled.is_timed_out());
+    assert!(!SemaphoreWaitOutcome::TimedOut.is_signaled());
+    assert!(SemaphoreWaitOutcome::TimedOut.is_timed_out());
 }
 
 #[test]
@@ -51,5 +68,8 @@ fn synchronization_creation_and_timed_wait_failures_are_reported() {
     let firmware = FirmwareTest::new();
     let semaphore = FirmwareSemaphore::new().expect("fake firmware creates a semaphore");
     firmware.fail_semaphore_timeout();
-    assert!(!semaphore.wait_timeout(SystemTicks::from_ticks(5)));
+    assert_eq!(
+        semaphore.wait_timeout(SystemTicks::from_ticks(5)),
+        SemaphoreWaitOutcome::TimedOut
+    );
 }

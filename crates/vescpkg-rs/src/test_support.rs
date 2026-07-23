@@ -1,6 +1,6 @@
 //! Host-side fake firmware bindings for unit tests in dependent crates.
 
-#![allow(clippy::cast_precision_loss)] // fake firmware exposes tick ages as f32 seconds
+#![allow(clippy::cast_precision_loss)]
 
 use core::cell::Cell;
 use core::ffi::{CStr, c_char};
@@ -30,6 +30,8 @@ impl FirmwareTest {
     /// Reset this thread's fake firmware state and construct normal capabilities.
     #[must_use]
     pub fn new() -> Self {
+        crate::gpio::reset_leases();
+        crate::can_bus::reset_receiver_registrations();
         let lock = crate::test_ffi::lock_firmware();
         Self {
             firmware: crate::Firmware::new(),
@@ -55,32 +57,40 @@ impl FirmwareTest {
         self.firmware.imu()
     }
 
-    /// Borrow typed PPM and UART controller inputs.
-    #[must_use]
-    pub fn input(&self) -> &crate::ControllerInput {
-        self.firmware.input()
-    }
-
-    /// Configure the latest PPM input sample.
-    pub fn set_ppm_input(&self, input: crate::PpmInput, age: crate::PpmAge) {
-        crate::test_ffi::set_ppm_input(input, age);
-    }
-
-    /// Configure the latest UART remote input sample.
-    pub fn set_remote_input(&self, input: crate::JoystickY, age: crate::RemoteAge) {
-        crate::test_ffi::set_remote_input(input, age);
-    }
-
     /// Access the same package custom-EEPROM range used on hardware.
     #[must_use]
-    pub const fn eeprom(&self) -> crate::CustomEeprom {
-        crate::CustomEeprom::new()
+    pub fn eeprom(&self) -> crate::CustomEeprom {
+        *self.firmware.eeprom()
     }
 
     /// Access the same byte-addressed NVM capability used on hardware.
     #[must_use]
     pub const fn nvm(&self) -> crate::Nvm {
         crate::Nvm::new()
+    }
+
+    /// Borrow the fake firmware CAN transport used by package tests.
+    #[must_use]
+    pub fn can(&self) -> &crate::CanBus {
+        self.firmware.can()
+    }
+
+    /// Borrow the fake firmware GPIO capability used by package tests.
+    #[must_use]
+    pub fn gpio(&self) -> &crate::Gpio {
+        self.firmware.gpio()
+    }
+
+    /// Borrow the typed controller input capability used by package code.
+    #[must_use]
+    pub fn inputs(&self) -> &crate::FirmwareInputs {
+        self.firmware.inputs()
+    }
+
+    /// Borrow the same typed settings capability package code uses on hardware.
+    #[must_use]
+    pub const fn settings(&self) -> &crate::FirmwareSettings {
+        &crate::FirmwareSettings
     }
 
     /// Borrow the firmware clock capability used on hardware.
@@ -99,9 +109,24 @@ impl FirmwareTest {
         crate::test_ffi::set_timer_ticks(ticks);
     }
 
+    /// Configure the fake CAN status duty-cycle value.
+    pub fn set_can_status_duty(&self, duty: f32) {
+        crate::test_ffi::set_can_status_duty(duty);
+    }
+
+    /// Configure the fake CAN status PPM value.
+    pub fn set_can_status_ppm(&self, ppm: f32) {
+        crate::test_ffi::set_can_status_ppm(ppm);
+    }
+
     /// Make the fake firmware reject every NVM operation.
     pub fn fail_nvm_operations(&self) {
         crate::test_ffi::fail_nvm_operations(true);
+    }
+
+    /// Make the fake LispBM evaluator reject every process message.
+    pub fn fail_lisp_messages(&self) {
+        crate::test_ffi::fail_lisp_messages(true);
     }
 
     /// Return the number of fake firmware mutex locks.
@@ -167,6 +192,27 @@ impl FirmwareTest {
         crate::test_ffi::fail_semaphore_timeout(true);
     }
 
+    /// Configure whether the fake firmware exposes shutdown inhibition.
+    pub fn set_shutdown_disable_supported(&self, supported: bool) {
+        crate::test_ffi::set_shutdown_disable_supported(supported);
+    }
+
+    /// Make the fake firmware reject configuration writes.
+    pub fn fail_settings_writes(&self) {
+        crate::test_ffi::set_settings_write_ok(false);
+    }
+
+    /// Make the fake firmware reject configuration persistence.
+    pub fn fail_settings_store(&self) {
+        crate::test_ffi::set_settings_store_ok(false);
+    }
+
+    /// Return whether fake firmware automatic shutdown is currently inhibited.
+    #[must_use]
+    pub fn shutdown_disabled(&self) -> bool {
+        crate::test_ffi::shutdown_disabled()
+    }
+
     /// Make writes to one custom-EEPROM address fail.
     pub fn fail_eeprom_write(&self, address: crate::CustomEepromAddress) {
         crate::test_ffi::fail_eeprom_write(address);
@@ -175,6 +221,11 @@ impl FirmwareTest {
     /// Configure whether firmware IMU startup has completed.
     pub fn set_imu_ready(&self, done: bool) {
         crate::test_ffi::set_imu_startup_done(done);
+    }
+
+    /// Configure whether fake firmware returns finite IMU calibration values.
+    pub fn set_imu_calibration_valid(&self, valid: bool) {
+        crate::test_ffi::set_imu_calibration_valid(valid);
     }
 
     /// Configure the typed firmware IMU attitude.
@@ -195,6 +246,111 @@ impl FirmwareTest {
     /// Configure the typed firmware IMU orientation.
     pub fn set_imu_orientation(&self, orientation: crate::ImuOrientation) {
         crate::test_ffi::set_imu_orientation(orientation);
+    }
+
+    /// Toggle whether the fake firmware exposes its optional FOC audio slots.
+    pub fn set_audio_available(&self, available: bool) {
+        crate::test_ffi::set_foc_audio_available(available);
+    }
+
+    /// Return the number of FOC tone commands accepted by the fake firmware.
+    pub fn foc_tone_command_count(&self) -> usize {
+        crate::test_ffi::foc_tone_command_count()
+    }
+
+    /// Return the last accepted FOC tone frequency.
+    pub fn commanded_foc_tone_frequency(&self) -> crate::AudioFrequency {
+        crate::test_ffi::commanded_foc_tone_frequency()
+    }
+
+    /// Return the last accepted FOC tone voltage.
+    pub fn commanded_foc_tone_voltage(&self) -> crate::AudioVoltage {
+        crate::test_ffi::commanded_foc_tone_voltage()
+    }
+
+    /// Configure the fake PPM input sample and age.
+    pub fn set_ppm_input(&self, input: crate::PpmInput, age: crate::PpmAge) {
+        crate::test_ffi::set_ppm_input(input, age);
+    }
+
+    /// Toggle whether the fake firmware exposes the PPM value slot.
+    pub fn set_ppm_available(&self, available: bool) {
+        crate::test_ffi::set_ppm_available(available);
+    }
+
+    /// Toggle whether the fake firmware exposes the PPM age slot.
+    pub fn set_ppm_age_available(&self, available: bool) {
+        crate::test_ffi::set_ppm_age_available(available);
+    }
+
+    /// Toggle whether the fake firmware exposes the output-disabled slot.
+    pub fn set_output_disabled_available(&self, available: bool) {
+        crate::test_ffi::set_output_disabled_available(available);
+    }
+
+    /// Configure the fake UART remote input sample and age.
+    pub fn set_remote_input(&self, input: crate::JoystickY, age: crate::RemoteAge) {
+        crate::test_ffi::set_remote_input(input, age);
+    }
+
+    /// Toggle whether the fake firmware exposes optional open-loop FOC slots.
+    pub fn set_open_loop_foc_available(&self, available: bool) {
+        crate::test_ffi::set_foc_open_loop_available(available);
+    }
+
+    /// Toggle whether the fake firmware exposes its optional UART slots.
+    pub fn set_uart_available(&self, available: bool) {
+        crate::test_ffi::set_uart_available(available);
+    }
+
+    /// Toggle whether the fake firmware exposes its packet framing slots.
+    pub fn set_packet_available(&self, available: bool) {
+        crate::test_ffi::set_packet_available(available);
+    }
+
+    /// Toggle whether the fake firmware exposes its optional command slots.
+    pub fn set_commands_available(&self, available: bool) {
+        crate::test_ffi::set_commands_available(available);
+    }
+
+    /// Toggle whether the fake firmware exposes its optional terminal slots.
+    pub fn set_terminal_available(&self, available: bool) {
+        crate::test_ffi::set_terminal_available(available);
+    }
+
+    /// Toggle whether the fake firmware exposes its optional encoder slots.
+    pub fn set_encoder_available(&self, available: bool) {
+        crate::test_ffi::set_encoder_available(available);
+    }
+
+    /// Toggle whether the fake firmware exposes its optional plotting slots.
+    pub fn set_plot_available(&self, available: bool) {
+        crate::test_ffi::set_plot_available(available);
+    }
+
+    /// Toggle whether the fake firmware exposes its optional GNSS record.
+    pub fn set_gnss_available(&self, available: bool) {
+        crate::test_ffi::set_gnss_available(available);
+    }
+
+    /// Toggle whether the fake firmware exposes its optional PWM callback slot.
+    pub fn set_pwm_available(&self, available: bool) {
+        crate::test_ffi::set_pwm_available(available);
+    }
+
+    /// Toggle whether the fake firmware exposes its optional CAN transmit slots.
+    pub fn set_can_available(&self, available: bool) {
+        crate::test_ffi::set_can_available(available);
+    }
+
+    /// Toggle whether the fake firmware exposes explicit backup persistence.
+    pub fn set_backup_available(&self, available: bool) {
+        crate::test_ffi::set_backup_available(available);
+    }
+
+    /// Toggle whether the fake firmware exposes its optional NVM slots.
+    pub fn set_nvm_available(&self, available: bool) {
+        crate::test_ffi::set_nvm_available(available);
     }
 
     /// Borrow the same typed thread capability package code uses on hardware.
@@ -306,17 +462,6 @@ impl FirmwareTest {
     }
 
     #[must_use]
-    /// Configure the typed positive and regenerative input-current limits.
-    pub fn with_input_current_limits(
-        self,
-        max: crate::InputCurrentLimit,
-        min: crate::InputCurrentLimit,
-    ) -> Self {
-        crate::test_ffi::set_input_current_limits(max, min);
-        self
-    }
-
-    #[must_use]
     /// Configure the typed maximum motor duty-cycle limit.
     pub fn with_duty_cycle_limit(self, limit: crate::DutyCycleLimit) -> Self {
         crate::test_ffi::set_duty_cycle_limit(limit);
@@ -338,6 +483,12 @@ impl FirmwareTest {
     /// Configure the typed firmware battery cell count.
     pub fn with_battery_cell_count(self, count: crate::BatteryCellCount) -> Self {
         crate::test_ffi::set_battery_cell_count(count);
+        self
+    }
+
+    /// Configure a malformed raw battery-cell count for rejection-path tests.
+    pub fn with_raw_battery_cell_count(self, count: i32) -> Self {
+        crate::test_ffi::set_raw_battery_cell_count(count);
         self
     }
 
@@ -389,9 +540,19 @@ impl FirmwareTest {
     }
 
     #[must_use]
-    /// Configure the typed firmware fault code.
-    pub fn with_firmware_fault(self, fault: crate::FirmwareFaultCode) -> Self {
-        crate::test_ffi::set_firmware_fault(fault);
+    /// Configure firmware's remaining battery-energy estimate.
+    pub fn with_battery_level_remaining(self, remaining: crate::WattHoursRemaining) -> Self {
+        crate::test_ffi::set_battery_level_remaining(remaining);
+        self
+    }
+
+    #[must_use]
+    /// Configure the semantic firmware fault result.
+    pub fn with_firmware_fault<F>(self, fault: F) -> Self
+    where
+        F: Into<crate::FirmwareFault>,
+    {
+        crate::test_ffi::set_firmware_fault(fault.into());
         self
     }
 
@@ -453,12 +614,6 @@ impl FirmwareTest {
     }
 
     #[must_use]
-    /// Return the number of attempted FOC tone writes.
-    pub fn foc_tone_command_count(&self) -> usize {
-        crate::test_ffi::motor_output().foc_tone_count
-    }
-
-    #[must_use]
     /// Return the latest current-off-delay write as the SDK domain type.
     pub fn commanded_current_off_delay(&self) -> crate::CurrentOffDelay {
         crate::CurrentOffDelay::new(crate::VescSeconds::from_seconds(
@@ -491,26 +646,17 @@ impl FirmwareTest {
     }
 
     #[must_use]
-    /// Return the latest FOC tone channel.
-    pub fn commanded_foc_tone_channel(&self) -> crate::AudioChannel {
-        crate::AudioChannel::try_new(crate::test_ffi::motor_output().foc_tone_channel as u8)
-            .expect("fake firmware stores a valid audio channel")
-    }
-
-    #[must_use]
-    /// Return the latest FOC tone frequency.
-    pub fn commanded_foc_tone_frequency(&self) -> crate::AudioFrequency {
-        crate::AudioFrequency::new(crate::Frequency::from_hertz(
-            crate::test_ffi::motor_output().foc_tone_frequency,
+    /// Return the latest firmware PID-position offset write.
+    pub fn pid_position_offset(&self) -> crate::PidPosition {
+        crate::PidPosition::new(crate::AngleDegrees::from_degrees(
+            crate::test_ffi::pid_position_offset(),
         ))
     }
 
     #[must_use]
-    /// Return the latest FOC tone voltage.
-    pub fn commanded_foc_tone_voltage(&self) -> crate::AudioVoltage {
-        crate::AudioVoltage::new(crate::Voltage::from_volts(
-            crate::test_ffi::motor_output().foc_tone_voltage,
-        ))
+    /// Return whether the latest PID-position offset write requested persistence.
+    pub fn pid_position_offset_was_stored(&self) -> bool {
+        crate::test_ffi::pid_position_offset_stored()
     }
 }
 

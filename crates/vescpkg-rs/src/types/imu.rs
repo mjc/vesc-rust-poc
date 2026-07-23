@@ -3,8 +3,96 @@
 use core::{fmt, marker::PhantomData};
 
 use crate::units::{
-    AccelerationG, AngleRadians, AngularVelocity, MagneticFluxDensity, VescSeconds,
+    AccelerationG, AngleRadians, AngularVelocity, MagneticFluxDensity, SampleRate, VescSeconds,
 };
+
+/// Firmware IMU configuration sample rate.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct ImuSampleRate(SampleRate);
+
+impl ImuSampleRate {
+    /// Wrap the generic sample-rate unit with firmware IMU meaning.
+    pub const fn new(sample_rate: SampleRate) -> Self {
+        Self(sample_rate)
+    }
+
+    /// Return the generic sample-rate unit without erasing its meaning at the API boundary.
+    pub const fn sample_rate(self) -> SampleRate {
+        self.0
+    }
+}
+
+macro_rules! finite_imu_scalar {
+    ($name:ident, $doc:literal) => {
+        #[doc = $doc]
+        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+        #[repr(transparent)]
+        pub struct $name(f32);
+
+        impl $name {
+            /// Construct a checked firmware configuration value.
+            pub fn try_new(value: f32) -> Option<Self> {
+                (value.is_finite() && value >= 0.0).then_some(Self(value))
+            }
+
+            /// Return the scalar value without erasing its configuration meaning.
+            pub const fn value(self) -> f32 {
+                self.0
+            }
+        }
+    };
+}
+
+finite_imu_scalar!(
+    ImuMahonyProportionalGain,
+    "Firmware Mahony proportional gain (`CFG_PARAM_IMU_mahony_kp`)."
+);
+finite_imu_scalar!(
+    ImuMahonyIntegralGain,
+    "Firmware Mahony integral gain (`CFG_PARAM_IMU_mahony_ki`)."
+);
+finite_imu_scalar!(
+    ImuMadgwickBeta,
+    "Firmware Madgwick beta gain (`CFG_PARAM_IMU_madgwick_beta`)."
+);
+
+/// Firmware accelerometer calibration offset in g units.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct ImuAccelerationOffset(AccelerationG);
+
+impl ImuAccelerationOffset {
+    /// Construct an accelerometer offset from g units.
+    pub fn try_new(value: AccelerationG) -> Option<Self> {
+        value.as_g().is_finite().then_some(Self(value))
+    }
+
+    /// Return the offset in g units.
+    pub const fn as_g(self) -> f32 {
+        self.0.as_g()
+    }
+}
+
+/// Firmware gyroscope calibration offset in degrees per second.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct ImuAngularRateOffset(AngularVelocity);
+
+impl ImuAngularRateOffset {
+    /// Construct a gyroscope offset from degrees per second.
+    pub fn try_new(value: AngularVelocity) -> Option<Self> {
+        value
+            .as_degrees_per_second()
+            .is_finite()
+            .then_some(Self(value))
+    }
+
+    /// Return the offset in degrees per second.
+    pub const fn as_degrees_per_second(self) -> f32 {
+        self.0.as_degrees_per_second()
+    }
+}
 
 macro_rules! attitude_type {
     ($name:ident, $doc:literal) => {
@@ -495,5 +583,36 @@ impl ImuReadSample {
     /// Return the sample period.
     pub const fn period(self) -> ImuSamplePeriod {
         self.period
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ImuAccelerationOffset, ImuAngularRateOffset, ImuMadgwickBeta, ImuMahonyIntegralGain,
+        ImuMahonyProportionalGain,
+    };
+    use crate::units::{AccelerationG, AngularVelocity};
+
+    #[test]
+    fn configuration_scalars_reject_non_finite_values() {
+        assert!(ImuMahonyProportionalGain::try_new(f32::NAN).is_none());
+        assert!(ImuMahonyIntegralGain::try_new(f32::INFINITY).is_none());
+        assert!(ImuMadgwickBeta::try_new(f32::NEG_INFINITY).is_none());
+        assert!(ImuMahonyProportionalGain::try_new(-0.1).is_none());
+        assert!(ImuMahonyIntegralGain::try_new(-0.1).is_none());
+        assert!(ImuMadgwickBeta::try_new(-0.1).is_none());
+    }
+
+    #[test]
+    fn calibration_offsets_preserve_firmware_units() {
+        let acceleration =
+            ImuAccelerationOffset::try_new(AccelerationG::from_g(-0.125)).expect("finite g");
+        assert_eq!(acceleration.as_g(), -0.125);
+
+        let angular_rate =
+            ImuAngularRateOffset::try_new(AngularVelocity::from_degrees_per_second(3.5))
+                .expect("finite degree rate");
+        assert_eq!(angular_rate.as_degrees_per_second(), 3.5);
     }
 }

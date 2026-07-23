@@ -3,8 +3,8 @@ use crate::domain::{FloatOutBoyMode, FloatOutBoyRunState, FloatOutBoySetpointAdj
 use crate::motor_control::FloatOutBoyMotorControl;
 use vescpkg_rs::MotorOutput;
 use vescpkg_rs::prelude::{
-    AudioChannel, AudioFrequency, AudioVoltage, Current, MotorCurrent, Ratio, SYSTEM_TICK_RATE_HZ,
-    SampleRate, Speed, TimestampTicks, Voltage,
+    AudioChannel, AudioFrequency, AudioVoltage, Ratio, SYSTEM_TICK_RATE_HZ, SampleRate, Speed,
+    TimestampTicks, Voltage,
 };
 
 const TONE_LENGTH_TICKS: u32 = SYSTEM_TICK_RATE_HZ as u32 / 10;
@@ -124,12 +124,11 @@ impl HapticFeedbackState {
                     AudioVoltage::new(Voltage::from_volts(voltage.voltage().as_volts() * strength)),
                 );
             }
-            if config.vibrate_strength().current().is_positive() {
+            let vibrate_strength = config.vibrate_strength();
+            if vibrate_strength.is_positive() {
                 motor_control.play_tone(
                     config.vibrate_frequency(),
-                    MotorCurrent::new(Current::from_amps(
-                        config.vibrate_strength().current().as_amps() * strength,
-                    )),
+                    vibrate_strength * strength,
                     sample_rate,
                 );
             }
@@ -188,8 +187,8 @@ fn strength_scale(config: FloatOutBoyHapticConfig<'_>, speed: Speed) -> f32 {
     (minimum + linear * speed + quadratic * speed * speed).min(1.0)
 }
 
-fn play_foc_tone(motor: &impl MotorOutput, frequency: AudioFrequency, voltage: AudioVoltage) {
-    motor.play_foc_tone(AudioChannel::FIRST, frequency, voltage);
+fn play_foc_tone(_motor: &impl MotorOutput, frequency: AudioFrequency, voltage: AudioVoltage) {
+    let _ = vescpkg_rs::FocAudio.play_tone(AudioChannel::FIRST, frequency, voltage);
 }
 
 #[cfg(test)]

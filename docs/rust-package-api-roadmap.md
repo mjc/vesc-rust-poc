@@ -1,10 +1,10 @@
 # Rust Package API Roadmap
 
-This is the short migration ladder for the Rust-backed VESC package experiment
-in `examples/loopback`. It stays deliberately narrow so later API work keeps
-moving in the right direction instead of growing a too-clever wrapper too early.
-This workspace is unofficial and is not an official VESC project or endorsed
-Rust package API.
+This page preserves the original migration ladder for the Rust-backed VESC
+package work. The implemented general-purpose SDK surface and current
+compatibility evidence live in [the SDK compatibility matrix](sdk-compatibility.md)
+and the pinned design roadmap. This workspace is unofficial and is not an
+official VESC project or endorsed Rust package API.
 
 ## Current workspace shape
 
@@ -51,6 +51,17 @@ Raw ABI bools can remain in `vescpkg-rs-sys` and low-level binding traits.
 Package-author APIs should translate firmware success/failure into named
 results such as `AppDataHandlerRegistrationError` so call sites do not have to
 remember firmware polarity.
+
+## Persistent storage boundary
+
+`CustomEeprom` stores lossless words and exposes fixed-size byte-image helpers;
+`Nvm` is a separate byte-addressed capability. Both APIs operate on caller-
+provided slices, so the same surface works in the no-alloc package build.
+Callers may attach a discovered `NvmCapacity` to reject out-of-range accesses
+before dispatch. Neither subsystem promises atomicity or rollback: an EEPROM
+image write stops at the first failed word, and NVM reports the firmware
+operation result. Signature validation, migrations, defaults, and interrupted-
+update recovery remain package-owned policy.
 
 ## Next Migration Ladder
 

@@ -258,3 +258,16 @@ fn set_electrical_speed(_: ElectricalSpeed) {}
 let mechanical = MechanicalSpeed::new(Rpm::from_revolutions_per_minute(3000.0));
 set_electrical_speed(mechanical);
 ```
+
+GPIO reads and writes require an exclusive lease:
+
+```compile_fail
+use vescpkg_rs::{AnalogPin, DigitalOutputLevel, DigitalPin, Firmware};
+
+let firmware = Firmware::new();
+let _ = firmware.gpio().read_analog(AnalogPin::ADC1);
+let _ = firmware.gpio().configure_output(DigitalPin::HW_1);
+let _ = firmware
+    .gpio()
+    .write(DigitalPin::HW_1, DigitalOutputLevel::High);
+```

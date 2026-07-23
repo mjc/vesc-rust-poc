@@ -93,9 +93,16 @@ pub(in crate::package) fn encode_float_out_boy_info_response(
         &FLOAT_OUT_BOY_SYSTEM_TICK_RATE_HZ.to_be_bytes(),
     );
     // Upstream derives capabilities from data-recorder and LED config at
-    // `third_party/float-out-boy/src/main.c:2121-2132`; this Rust runtime has not ported either
-    // capability yet, so the honest advertised capability mask is zero.
-    float_out_boy_response_push_bytes(&mut bytes, &mut index, &0u32.to_be_bytes());
+    // `third_party/float-out-boy/src/main.c:2121-2132`. Bit 0 is the LED
+    // surface and bit 1 is the external LCM surface.
+    let capabilities: u32 = if hardware_led_mode & 0x2 != 0 {
+        // The external LCM protocol is operational. Internal-only LED mode
+        // stays unadvertised until the DMA renderer is ported.
+        0x3
+    } else {
+        0
+    };
+    float_out_boy_response_push_bytes(&mut bytes, &mut index, &capabilities.to_be_bytes());
     // Upstream currently sends zero `extra_flags` at `third_party/float-out-boy/src/main.c:2134-2135`.
     float_out_boy_response_push_u8(&mut bytes, &mut index, 0);
     FloatOutBoyInfoResponse { bytes, len: index }
@@ -231,6 +238,18 @@ mod tests {
             0
         );
         assert_eq!(bytes[59], 0);
+        let external_response = encode_float_out_boy_info_response(&[2, 0], 2);
+        let external = external_response.as_bytes();
+        assert_eq!(
+            u32::from_be_bytes([external[55], external[56], external[57], external[58]]),
+            3
+        );
+        let internal_response = encode_float_out_boy_info_response(&[2, 0], 1);
+        let internal = internal_response.as_bytes();
+        assert_eq!(
+            u32::from_be_bytes([internal[55], internal[56], internal[57], internal[58]]),
+            0
+        );
         assert_eq!(
             &encode_float_out_boy_info_response(&[2, 0xa5], 0).as_bytes()[..4],
             &[101, 0, 2, 0xa5]

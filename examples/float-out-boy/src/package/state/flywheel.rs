@@ -149,11 +149,12 @@ impl FloatOutBoyFlywheelRequest {
 
 impl FloatOutBoyPackageState {
     pub(super) fn handle_flywheel_packet(&mut self, bytes: &[u8]) -> bool {
-        let Some(request) = FloatOutBoyFlywheelRequest::from_packet(bytes) else {
-            return false;
-        };
-        request.apply_to(self);
-        true
+        FloatOutBoyFlywheelRequest::from_packet(bytes)
+            .map(|request| {
+                request.apply_to(self);
+                true
+            })
+            .unwrap_or(false)
     }
 
     fn start_flywheel(&mut self, start: FloatOutBoyFlywheelStart) {

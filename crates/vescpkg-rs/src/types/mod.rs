@@ -41,22 +41,23 @@ mod version;
 
 pub use adc::{AdcDecodedLevel, AdcVoltage, BrakeLeverLevel, BrakeSwitch};
 pub use battery::{
-    AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, BatteryVoltage, CellVoltage,
-    InputCurrent, InputVoltage, WattHoursCharged, WattHoursDischarged, WattHoursRemaining,
+    AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, BatteryLevelSnapshot,
+    BatteryVoltage, CellVoltage, InputCurrent, InputVoltage, WattHoursCharged, WattHoursDischarged,
+    WattHoursRemaining,
 };
 pub use can::{CanControllerId, CanExtendedId, CanPayloadLen, CanPayloadLenError, CanStandardId};
 pub use config::{
-    BatteryCellCount, BatteryCellCountError, CustomConfigAngleCurrentGainField,
-    CustomConfigAngleField, CustomConfigAngularVelocityField, CustomConfigDurationField,
-    CustomConfigEditor, CustomConfigElectricalSpeedField, CustomConfigEnumField,
-    CustomConfigFlagField, CustomConfigFrequencyField, CustomConfigImage,
+    BatteryCellCount, BatteryCellCountError, BatteryChemistry, CanApplicationMode, CanBaudRate,
+    CustomConfigAngleCurrentGainField, CustomConfigAngleField, CustomConfigAngularVelocityField,
+    CustomConfigDurationField, CustomConfigEditor, CustomConfigElectricalSpeedField,
+    CustomConfigEnumField, CustomConfigFlagField, CustomConfigFrequencyField, CustomConfigImage,
     CustomConfigIntegralCurrentGainField, CustomConfigMahonyPitchGainField,
     CustomConfigMahonyRollGainField, CustomConfigMotorCurrentField, CustomConfigPidScaleField,
     CustomConfigRateCurrentGainField, CustomConfigRatioField, CustomConfigResetField,
     CustomConfigSampleRateField, CustomConfigScaledVoltageField, CustomConfigSecondsField,
     CustomConfigVoltageField, CustomConfigWireByteField, FocMotorFluxLinkage, FocMotorInductance,
-    FocMotorResistance, GearRatio, GearRatioError, MotorPoleCount, MotorPoleCountError,
-    WheelDiameter, WireByte,
+    FocMotorResistance, GearRatio, GearRatioError, ImuAhrsMode, MotorPoleCount,
+    MotorPoleCountError, ShutdownMode, WheelDiameter, WireByte,
 };
 pub use control::{
     AngleCurrentGain, IntegralCurrentGain, MahonyPitchGain, MahonyRollGain, PidScale,
@@ -64,11 +65,12 @@ pub use control::{
 };
 pub use gnss::{GnssAccuracy, GnssAltitude, GnssHdop, GnssLatitude, GnssLongitude, GnssSpeed};
 pub use imu::{
-    ImuAcceleration, ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ, ImuAngularRate,
-    ImuAngularRatePitch, ImuAngularRateRoll, ImuAngularRateYaw, ImuAttitude, ImuMagneticField,
-    ImuMagneticFieldX, ImuMagneticFieldY, ImuMagneticFieldZ, ImuOrientation, ImuPitch,
-    ImuQuaternion, ImuQuaternionW, ImuQuaternionX, ImuQuaternionY, ImuQuaternionZ, ImuReadSample,
-    ImuRoll, ImuSamplePeriod, ImuYaw,
+    ImuAcceleration, ImuAccelerationOffset, ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ,
+    ImuAngularRate, ImuAngularRateOffset, ImuAngularRatePitch, ImuAngularRateRoll,
+    ImuAngularRateYaw, ImuAttitude, ImuMadgwickBeta, ImuMagneticField, ImuMagneticFieldX,
+    ImuMagneticFieldY, ImuMagneticFieldZ, ImuMahonyIntegralGain, ImuMahonyProportionalGain,
+    ImuOrientation, ImuPitch, ImuQuaternion, ImuQuaternionW, ImuQuaternionX, ImuQuaternionY,
+    ImuQuaternionZ, ImuReadSample, ImuRoll, ImuSamplePeriod, ImuSampleRate, ImuYaw,
 };
 pub use io::{
     BaudRate, BaudRateError, PacketLength, PacketLengthError, ThreadPriority, ThreadPriorityError,
@@ -78,22 +80,28 @@ pub use loader::PackageArgument;
 #[cfg(not(any(test, feature = "test-support")))]
 pub(crate) use loader::PackageArgument;
 pub use motion::{
-    AbsoluteTachometerSteps, ElectricalSpeed, MechanicalSpeed, OpenLoopPhase, PidPosition,
-    TachometerSteps, TripDistance, VehicleSpeed,
+    AbsoluteTachometerSteps, AverageVehicleSpeed, ElectricalSpeed, EnergyCounterReset,
+    MechanicalSpeed, OpenLoopPhase, PeakVehicleSpeed, PidPosition, PidPositionOffsetPersistence,
+    SignedTripDistance, TachometerReset, TachometerSteps, TripDistance, VehicleSpeed,
 };
 pub use motor::{
     AudioChannel, AudioChannelError, AudioDuration, AudioFrequency, AudioSampleRate, AudioVoltage,
-    BrakeCurrent, DCurrent, DVoltage, DirectionalMotorCurrent, FirmwareFaultCode,
-    FirmwareFaultWireCode, HandbrakeCurrent, InputCurrentLimit, MotorCurrent, MotorCurrentLimit,
-    OpenLoopCurrent, PhaseCurrent, QCurrent, QVoltage, TotalMotorCurrent,
+    AverageMotorCurrent, BrakeCurrent, DCurrent, DVoltage, DirectionalMotorCurrent, FirmwareFault,
+    FirmwareFaultId, FirmwareFaultWireCode, HandbrakeCurrent, MotorCurrent, MotorCurrentLimit,
+    MotorSelection, OpenLoopCurrent, PeakMotorCurrent, PhaseCurrent, QCurrent, QVoltage,
+    TotalMotorCurrent,
 };
 pub use power::{AveragePower, PeakPower};
 pub use ratio::{
-    BrakeCurrentRelative, CurrentRelative, DutyCycle, DutyCycleLimit, HandbrakeRelative, JoystickX,
-    JoystickY, PpmInput, Pwm,
+    BrakeCurrentRelative, CurrentRelative, DutyCycle, DutyCycleLimit, DutyCycleMinimum,
+    HandbrakeRelative, JoystickX, JoystickY, PpmInput, Pwm,
 };
 pub use temperature::{
-    FetTemperature, MosfetTemperature, MotorTemperature, TemperatureLimitEnd, TemperatureLimitStart,
+    AverageMosfetTemperature, AverageMotorTemperature, FetTemperature, MosfetTemperature,
+    MotorTemperature, PeakMosfetTemperature, PeakMotorTemperature, TemperatureLimitEnd,
+    TemperatureLimitStart,
 };
-pub use time::{CurrentOffDelay, PpmAge, RemoteAge, SystemDuration, TimeoutDuration};
+pub use time::{
+    CurrentOffDelay, MotorStatisticDuration, PpmAge, RemoteAge, SystemDuration, TimeoutDuration,
+};
 pub use version::FirmwareVersion;

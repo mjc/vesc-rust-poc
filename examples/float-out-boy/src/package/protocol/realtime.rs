@@ -364,8 +364,8 @@ fn realtime_value(
             base.balance_current().current().current().as_amps()
         }
         // C map: runtime-only ATR fields are appended at
-        // `third_party/float-out-boy/src/main.c:1946-1948`; keep these explicit
-        // placeholders until ATR runtime state is ported.
+        // `third_party/float-out-boy/src/main.c:1946-1948`; the live values come
+        // from the source-shaped `RideModifierState` refresh.
         FloatOutBoyRealtimeDataItem::AtrAccelDiff => atr_accel_diff,
         FloatOutBoyRealtimeDataItem::AtrSpeedBoost => atr_speed_boost,
         FloatOutBoyRealtimeDataItem::BoosterCurrent => {

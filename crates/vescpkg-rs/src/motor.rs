@@ -3,28 +3,60 @@
 #[cfg(not(test))]
 use core::ffi::CStr;
 
-#[cfg(not(test))]
-use crate::types::FirmwareFaultWireCode;
 use crate::types::{
-    AmpHoursCharged, AmpHoursDischarged, AudioChannel, AudioFrequency, AudioVoltage,
-    BatteryCellCount, BatteryLevel, BrakeCurrent, CurrentOffDelay, DCurrent,
-    DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed, FirmwareFaultCode,
-    InputCurrent, InputCurrentLimit, InputVoltage, MosfetTemperature, MotorCurrent,
-    MotorCurrentLimit, MotorTemperature, TemperatureLimitStart, TotalMotorCurrent, TripDistance,
+    AbsoluteTachometerSteps, AmpHoursCharged, AmpHoursDischarged, AverageMosfetTemperature,
+    AverageMotorCurrent, AverageMotorTemperature, AveragePower, AverageVehicleSpeed,
+    BatteryCellCount, BatteryLevel, BatteryLevelSnapshot, BrakeCurrent, BrakeCurrentRelative,
+    CurrentOffDelay, CurrentRelative, DCurrent, DVoltage, DirectionalMotorCurrent, DutyCycle,
+    DutyCycleLimit, ElectricalSpeed, EnergyCounterReset, FirmwareFault, HandbrakeCurrent,
+    HandbrakeRelative, InputCurrent, InputVoltage, MosfetTemperature, MotorCurrent,
+    MotorCurrentLimit, MotorSelection, MotorStatisticDuration, MotorTemperature,
+    PeakMosfetTemperature, PeakMotorCurrent, PeakMotorTemperature, PeakPower, PeakVehicleSpeed,
+    PidPosition, PidPositionOffsetPersistence, QCurrent, QVoltage, SignedTripDistance,
+    TachometerReset, TachometerSteps, TemperatureLimitStart, TotalMotorCurrent, TripDistance,
     VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 #[cfg(not(test))]
-use crate::units::{Charge, Current, Distance, Energy, Rpm, Speed, Temperature, Voltage};
-use crate::units::{OdometerMeters, Ratio, SignedRatio};
+use crate::units::{Charge, Current, Distance, Energy, Power, Rpm, Speed, Temperature, Voltage};
+use crate::units::{Frequency, OdometerMeters, Ratio, SignedRatio, VescSeconds};
+use crate::{PwmCallback, PwmCallbackError, PwmCallbackLease};
+
+/// Outcome of waiting for firmware to release motor output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MotorReleaseOutcome {
+    /// The motor output was released before the timeout elapsed.
+    Released,
+    /// The timeout elapsed before the motor output was released.
+    TimedOut,
+}
+
+impl MotorReleaseOutcome {
+    /// Return whether firmware reported that motor output was released.
+    #[must_use]
+    pub const fn is_released(self) -> bool {
+        matches!(self, Self::Released)
+    }
+
+    /// Return whether the release wait elapsed without releasing output.
+    #[must_use]
+    pub const fn is_timed_out(self) -> bool {
+        matches!(self, Self::TimedOut)
+    }
+}
+
+#[cfg(not(test))]
+fn motor_release_outcome(released: bool) -> MotorReleaseOutcome {
+    if released {
+        MotorReleaseOutcome::Released
+    } else {
+        MotorReleaseOutcome::TimedOut
+    }
+}
 
 #[cfg(not(test))]
 const CFG_PARAM_L_CURRENT_MAX: core::ffi::c_int = 0;
 #[cfg(not(test))]
 const CFG_PARAM_L_CURRENT_MIN: core::ffi::c_int = 1;
-#[cfg(not(test))]
-const CFG_PARAM_L_IN_CURRENT_MAX: core::ffi::c_int = 2;
-#[cfg(not(test))]
-const CFG_PARAM_L_IN_CURRENT_MIN: core::ffi::c_int = 3;
 #[cfg(not(test))]
 const CFG_PARAM_L_TEMP_FET_START: core::ffi::c_int = 16;
 #[cfg(not(test))]
@@ -53,8 +85,12 @@ pub trait MotorTelemetryBindings {
     /// `src/motor_data.c:120`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:456`.
     fn motor_current(&self) -> TotalMotorCurrent;
+    /// Return instantaneous total motor current.
+    fn motor_current_unfiltered(&self) -> TotalMotorCurrent;
     /// Return filtered motor current with the configured motor direction applied.
     fn directional_motor_current(&self) -> DirectionalMotorCurrent;
+    /// Return instantaneous total motor current with motor direction applied.
+    fn directional_motor_current_unfiltered(&self) -> DirectionalMotorCurrent;
     /// Return the configured positive motor-current limit.
     ///
     /// Float Out Boy v1.2.1 reads `CFG_PARAM_l_current_max` through `get_cfg_float`
@@ -67,10 +103,6 @@ pub trait MotorTelemetryBindings {
     /// `src/motor_data.c:90`; the VESC config id is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:244`.
     fn brake_current_limit(&self) -> MotorCurrentLimit;
-    /// Return the configured positive battery/input-current limit.
-    fn drive_input_current_limit(&self) -> InputCurrentLimit;
-    /// Return the configured regenerative battery/input-current limit magnitude.
-    fn brake_input_current_limit(&self) -> InputCurrentLimit;
     /// Return the configured MOSFET temperature limit-start threshold.
     fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart;
     /// Return the configured motor temperature limit-start threshold.
@@ -89,6 +121,30 @@ pub trait MotorTelemetryBindings {
     /// `src/motor_data.c:140`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:460`.
     fn battery_current(&self) -> InputCurrent;
+    /// Return instantaneous input/battery current.
+    fn battery_current_unfiltered(&self) -> InputCurrent;
+    /// Return average motor power statistics.
+    fn average_power(&self) -> AveragePower;
+    /// Return peak motor power statistics.
+    fn peak_power(&self) -> PeakPower;
+    /// Return average vehicle speed statistics.
+    fn average_speed(&self) -> AverageVehicleSpeed;
+    /// Return peak vehicle speed statistics.
+    fn peak_speed(&self) -> PeakVehicleSpeed;
+    /// Return average motor current statistics.
+    fn average_motor_current(&self) -> AverageMotorCurrent;
+    /// Return peak motor current statistics.
+    fn peak_motor_current(&self) -> PeakMotorCurrent;
+    /// Return average MOSFET temperature statistics.
+    fn average_mosfet_temperature(&self) -> AverageMosfetTemperature;
+    /// Return peak MOSFET temperature statistics.
+    fn peak_mosfet_temperature(&self) -> PeakMosfetTemperature;
+    /// Return average motor temperature statistics.
+    fn average_motor_temperature(&self) -> AverageMotorTemperature;
+    /// Return peak motor temperature statistics.
+    fn peak_motor_temperature(&self) -> PeakMotorTemperature;
+    /// Return elapsed motor-statistics count time.
+    fn statistics_count_time(&self) -> MotorStatisticDuration;
     /// Return the current signed duty cycle.
     ///
     /// The firmware value is clamped to the signed ratio range, with NaN
@@ -103,8 +159,20 @@ pub trait MotorTelemetryBindings {
     /// all-data at `src/main.c:1364-1368`; the VESC ABI slot is declared at
     /// `vesc_pkg_lib/vesc_c_if.h:616`.
     fn d_axis_current(&self) -> Option<DCurrent>;
+    /// Return optional FOC q-axis Iq current.
+    fn q_axis_current(&self) -> Option<QCurrent>;
+    /// Return optional FOC d-axis Vd voltage.
+    fn d_axis_voltage(&self) -> Option<DVoltage>;
+    /// Return optional FOC q-axis Vq voltage.
+    fn q_axis_voltage(&self) -> Option<QVoltage>;
     /// Return the absolute distance travelled by the motor/vehicle.
     fn trip_distance(&self) -> TripDistance;
+    /// Return signed distance travelled by the motor/vehicle.
+    fn signed_trip_distance(&self) -> SignedTripDistance;
+    /// Return the firmware PID-position setpoint.
+    fn pid_position_setpoint(&self) -> PidPosition;
+    /// Return the current firmware PID position.
+    fn pid_position(&self) -> PidPosition;
     /// Return the filtered MOSFET/FET temperature.
     fn mosfet_temperature(&self) -> MosfetTemperature;
     /// Return the filtered motor temperature.
@@ -113,20 +181,38 @@ pub trait MotorTelemetryBindings {
     fn odometer(&self) -> OdometerMeters;
     /// Return discharged amp-hours.
     fn amp_hours_discharged(&self) -> AmpHoursDischarged;
+    /// Return discharged amp-hours with an explicit preserve/reset policy.
+    fn amp_hours_discharged_with(&self, reset: EnergyCounterReset) -> AmpHoursDischarged;
     /// Return charged amp-hours.
     fn amp_hours_charged(&self) -> AmpHoursCharged;
+    /// Return charged amp-hours with an explicit preserve/reset policy.
+    fn amp_hours_charged_with(&self, reset: EnergyCounterReset) -> AmpHoursCharged;
     /// Return discharged watt-hours.
     fn watt_hours_discharged(&self) -> WattHoursDischarged;
+    /// Return discharged watt-hours with an explicit preserve/reset policy.
+    fn watt_hours_discharged_with(&self, reset: EnergyCounterReset) -> WattHoursDischarged;
     /// Return charged watt-hours.
     fn watt_hours_charged(&self) -> WattHoursCharged;
+    /// Return charged watt-hours with an explicit preserve/reset policy.
+    fn watt_hours_charged_with(&self, reset: EnergyCounterReset) -> WattHoursCharged;
     /// Return estimated battery level.
     fn battery_level(&self) -> BatteryLevel;
+    /// Return the battery level and firmware-estimated remaining energy.
+    fn battery_level_snapshot(&self) -> BatteryLevelSnapshot;
     /// Return the active firmware motor fault code.
-    fn firmware_fault(&self) -> FirmwareFaultCode;
-    /// Return the firmware-owned display name for a motor fault code.
-    fn firmware_fault_name(&self, fault: FirmwareFaultCode) -> Option<&'static [u8]>;
+    fn firmware_fault(&self) -> FirmwareFault;
+    /// Borrow the firmware-provided fault description for this telemetry handle.
+    ///
+    /// The string is owned by firmware and must not outlive the telemetry borrow.
+    fn firmware_fault_description(&self) -> Option<&str>;
     /// Return the filtered controller input voltage.
     fn input_voltage(&self) -> InputVoltage;
+    /// Return the relative motor tachometer, optionally resetting it.
+    fn tachometer(&self, reset: bool) -> TachometerSteps;
+    /// Return the absolute motor tachometer, optionally resetting it.
+    fn absolute_tachometer(&self, reset: bool) -> AbsoluteTachometerSteps;
+    /// Return the current motor-control sampling frequency.
+    fn sampling_frequency(&self) -> Frequency;
 }
 
 #[cfg(not(test))]
@@ -143,8 +229,16 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
         (**self).motor_current()
     }
 
+    fn motor_current_unfiltered(&self) -> TotalMotorCurrent {
+        (**self).motor_current_unfiltered()
+    }
+
     fn directional_motor_current(&self) -> DirectionalMotorCurrent {
         (**self).directional_motor_current()
+    }
+
+    fn directional_motor_current_unfiltered(&self) -> DirectionalMotorCurrent {
+        (**self).directional_motor_current_unfiltered()
     }
 
     fn drive_current_limit(&self) -> MotorCurrentLimit {
@@ -153,14 +247,6 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
 
     fn brake_current_limit(&self) -> MotorCurrentLimit {
         (**self).brake_current_limit()
-    }
-
-    fn drive_input_current_limit(&self) -> InputCurrentLimit {
-        (**self).drive_input_current_limit()
-    }
-
-    fn brake_input_current_limit(&self) -> InputCurrentLimit {
-        (**self).brake_input_current_limit()
     }
 
     fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart {
@@ -183,6 +269,54 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
         (**self).battery_current()
     }
 
+    fn battery_current_unfiltered(&self) -> InputCurrent {
+        (**self).battery_current_unfiltered()
+    }
+
+    fn average_power(&self) -> AveragePower {
+        (**self).average_power()
+    }
+
+    fn peak_power(&self) -> PeakPower {
+        (**self).peak_power()
+    }
+
+    fn average_speed(&self) -> AverageVehicleSpeed {
+        (**self).average_speed()
+    }
+
+    fn peak_speed(&self) -> PeakVehicleSpeed {
+        (**self).peak_speed()
+    }
+
+    fn average_motor_current(&self) -> AverageMotorCurrent {
+        (**self).average_motor_current()
+    }
+
+    fn peak_motor_current(&self) -> PeakMotorCurrent {
+        (**self).peak_motor_current()
+    }
+
+    fn average_mosfet_temperature(&self) -> AverageMosfetTemperature {
+        (**self).average_mosfet_temperature()
+    }
+
+    fn peak_mosfet_temperature(&self) -> PeakMosfetTemperature {
+        (**self).peak_mosfet_temperature()
+    }
+
+    fn average_motor_temperature(&self) -> AverageMotorTemperature {
+        (**self).average_motor_temperature()
+    }
+
+    fn peak_motor_temperature(&self) -> PeakMotorTemperature {
+        (**self).peak_motor_temperature()
+    }
+
+    fn statistics_count_time(&self) -> MotorStatisticDuration {
+        (**self).statistics_count_time()
+    }
+
     fn duty_cycle(&self) -> DutyCycle {
         (**self).duty_cycle()
     }
@@ -191,8 +325,32 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
         (**self).d_axis_current()
     }
 
+    fn q_axis_current(&self) -> Option<QCurrent> {
+        (**self).q_axis_current()
+    }
+
+    fn d_axis_voltage(&self) -> Option<DVoltage> {
+        (**self).d_axis_voltage()
+    }
+
+    fn q_axis_voltage(&self) -> Option<QVoltage> {
+        (**self).q_axis_voltage()
+    }
+
     fn trip_distance(&self) -> TripDistance {
         (**self).trip_distance()
+    }
+
+    fn signed_trip_distance(&self) -> SignedTripDistance {
+        (**self).signed_trip_distance()
+    }
+
+    fn pid_position_setpoint(&self) -> PidPosition {
+        (**self).pid_position_setpoint()
+    }
+
+    fn pid_position(&self) -> PidPosition {
+        (**self).pid_position()
     }
 
     fn mosfet_temperature(&self) -> MosfetTemperature {
@@ -211,38 +369,86 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
         (**self).amp_hours_discharged()
     }
 
+    fn amp_hours_discharged_with(&self, reset: EnergyCounterReset) -> AmpHoursDischarged {
+        (**self).amp_hours_discharged_with(reset)
+    }
+
     fn amp_hours_charged(&self) -> AmpHoursCharged {
         (**self).amp_hours_charged()
+    }
+
+    fn amp_hours_charged_with(&self, reset: EnergyCounterReset) -> AmpHoursCharged {
+        (**self).amp_hours_charged_with(reset)
     }
 
     fn watt_hours_discharged(&self) -> WattHoursDischarged {
         (**self).watt_hours_discharged()
     }
 
+    fn watt_hours_discharged_with(&self, reset: EnergyCounterReset) -> WattHoursDischarged {
+        (**self).watt_hours_discharged_with(reset)
+    }
+
     fn watt_hours_charged(&self) -> WattHoursCharged {
         (**self).watt_hours_charged()
+    }
+
+    fn watt_hours_charged_with(&self, reset: EnergyCounterReset) -> WattHoursCharged {
+        (**self).watt_hours_charged_with(reset)
     }
 
     fn battery_level(&self) -> BatteryLevel {
         (**self).battery_level()
     }
 
-    fn firmware_fault(&self) -> FirmwareFaultCode {
+    fn battery_level_snapshot(&self) -> BatteryLevelSnapshot {
+        (**self).battery_level_snapshot()
+    }
+
+    fn firmware_fault(&self) -> FirmwareFault {
         (**self).firmware_fault()
     }
 
-    fn firmware_fault_name(&self, fault: FirmwareFaultCode) -> Option<&'static [u8]> {
-        (**self).firmware_fault_name(fault)
+    fn firmware_fault_description(&self) -> Option<&str> {
+        (**self).firmware_fault_description()
     }
 
     fn input_voltage(&self) -> InputVoltage {
         (**self).input_voltage()
+    }
+
+    fn tachometer(&self, reset: bool) -> TachometerSteps {
+        (**self).tachometer(reset)
+    }
+
+    fn absolute_tachometer(&self, reset: bool) -> AbsoluteTachometerSteps {
+        (**self).absolute_tachometer(reset)
+    }
+
+    fn sampling_frequency(&self) -> Frequency {
+        (**self).sampling_frequency()
     }
 }
 
 /// Motor-control operations backed by firmware slots.
 #[cfg(not(test))]
 pub trait MotorControlBindings {
+    /// Return whether controller DC calibration has completed.
+    fn dc_calibration_done(&self) -> bool;
+    /// Register an exclusive low-level PWM callback.
+    ///
+    /// # Safety
+    ///
+    /// `callback` must be a valid firmware-compatible callback for the entire
+    /// time the returned lease is alive.
+    unsafe fn register_pwm_callback(
+        &self,
+        callback: PwmCallback,
+    ) -> Result<PwmCallbackLease, PwmCallbackError>;
+    /// Return the firmware-selected motor-control thread.
+    fn selected_motor(&self) -> MotorSelection;
+    /// Select the active firmware motor-control thread.
+    fn select_motor(&self, motor: MotorSelection);
     /// Reset the firmware motor-command safety timeout.
     ///
     /// Float Out Boy v1.2.1 calls this before motor-control output at
@@ -261,29 +467,67 @@ pub trait MotorControlBindings {
     /// `third_party/float-out-boy/src/motor_control.c:99`; the VESC ABI slot is
     /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:440`.
     fn set_current(&self, current: MotorCurrent);
+    /// Set motor current as a normalized relative command.
+    fn set_current_relative(&self, current: CurrentRelative);
+    /// Set braking current as a normalized relative command.
+    fn set_brake_current_relative(&self, current: BrakeCurrentRelative);
+    /// Set the firmware PID speed target.
+    fn set_pid_speed(&self, speed: ElectricalSpeed);
+    /// Set the firmware PID position target.
+    fn set_pid_position(&self, position: PidPosition);
     /// Set motor duty cycle.
     ///
     /// Float Out Boy v1.2.1 sends parking-brake duty zero at
     /// `third_party/float-out-boy/src/motor_control.c:112-114`; the VESC ABI slot is
     /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:436`.
     fn set_duty_cycle(&self, duty: DutyCycle);
+    /// Set motor duty cycle without firmware ramping.
+    fn set_duty_cycle_without_ramping(&self, duty: DutyCycle);
     /// Set motor brake current in amps.
     ///
     /// Float Out Boy v1.2.1 sends idle brake current at
     /// `third_party/float-out-boy/src/motor_control.c:115-117`; the VESC ABI slot is
     /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:441`.
     fn set_brake_current(&self, current: BrakeCurrent);
-    /// Play a FOC tone when the motor firmware exposes audio support.
-    fn play_foc_tone(
-        &self,
-        channel: AudioChannel,
-        frequency: AudioFrequency,
-        voltage: AudioVoltage,
-    ) -> bool;
+    /// Set motor handbrake current in amps.
+    fn set_handbrake(&self, current: HandbrakeCurrent);
+    /// Set motor handbrake as a relative command.
+    fn set_handbrake_relative(&self, current: HandbrakeRelative);
+    /// Reset accumulated motor statistics.
+    fn reset_statistics(&self);
+    /// Update the firmware PID-position offset and optionally persist it.
+    fn update_pid_position_offset(&self, position: PidPosition, store: bool);
+    /// Set the firmware-owned odometer distance in meters.
+    fn set_odometer(&self, odometer: OdometerMeters);
+    /// Set the relative tachometer and return its previous value.
+    fn set_tachometer(&self, steps: TachometerSteps) -> TachometerSteps;
+    /// Release the motor output.
+    fn release_motor(&self);
+    /// Wait up to `timeout` for the motor output to be released.
+    fn wait_for_motor_release(&self, timeout: VescSeconds) -> bool;
 }
 
 #[cfg(not(test))]
 impl<B: MotorControlBindings + ?Sized> MotorControlBindings for &B {
+    fn dc_calibration_done(&self) -> bool {
+        (**self).dc_calibration_done()
+    }
+
+    unsafe fn register_pwm_callback(
+        &self,
+        callback: PwmCallback,
+    ) -> Result<PwmCallbackLease, PwmCallbackError> {
+        unsafe { (**self).register_pwm_callback(callback) }
+    }
+
+    fn selected_motor(&self) -> MotorSelection {
+        (**self).selected_motor()
+    }
+
+    fn select_motor(&self, motor: MotorSelection) {
+        (**self).select_motor(motor);
+    }
+
     fn timeout_reset(&self) {
         (**self).timeout_reset();
     }
@@ -296,21 +540,64 @@ impl<B: MotorControlBindings + ?Sized> MotorControlBindings for &B {
         (**self).set_current(current);
     }
 
+    fn set_current_relative(&self, current: CurrentRelative) {
+        (**self).set_current_relative(current);
+    }
+
+    fn set_brake_current_relative(&self, current: BrakeCurrentRelative) {
+        (**self).set_brake_current_relative(current);
+    }
+
+    fn set_pid_speed(&self, speed: ElectricalSpeed) {
+        (**self).set_pid_speed(speed);
+    }
+
+    fn set_pid_position(&self, position: PidPosition) {
+        (**self).set_pid_position(position);
+    }
+
     fn set_duty_cycle(&self, duty: DutyCycle) {
         (**self).set_duty_cycle(duty);
+    }
+
+    fn set_duty_cycle_without_ramping(&self, duty: DutyCycle) {
+        (**self).set_duty_cycle_without_ramping(duty);
     }
 
     fn set_brake_current(&self, current: BrakeCurrent) {
         (**self).set_brake_current(current);
     }
 
-    fn play_foc_tone(
-        &self,
-        channel: AudioChannel,
-        frequency: AudioFrequency,
-        voltage: AudioVoltage,
-    ) -> bool {
-        (**self).play_foc_tone(channel, frequency, voltage)
+    fn set_handbrake(&self, current: HandbrakeCurrent) {
+        (**self).set_handbrake(current);
+    }
+
+    fn set_handbrake_relative(&self, current: HandbrakeRelative) {
+        (**self).set_handbrake_relative(current);
+    }
+
+    fn reset_statistics(&self) {
+        (**self).reset_statistics();
+    }
+
+    fn update_pid_position_offset(&self, position: PidPosition, store: bool) {
+        (**self).update_pid_position_offset(position, store);
+    }
+
+    fn set_odometer(&self, odometer: OdometerMeters) {
+        (**self).set_odometer(odometer);
+    }
+
+    fn set_tachometer(&self, steps: TachometerSteps) -> TachometerSteps {
+        (**self).set_tachometer(steps)
+    }
+
+    fn release_motor(&self) {
+        (**self).release_motor();
+    }
+
+    fn wait_for_motor_release(&self, timeout: VescSeconds) -> bool {
+        (**self).wait_for_motor_release(timeout)
     }
 }
 
@@ -342,9 +629,21 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         }))
     }
 
+    fn motor_current_unfiltered(&self) -> TotalMotorCurrent {
+        TotalMotorCurrent::new(Current::from_amps(unsafe {
+            crate::ffi::mc_get_tot_current()
+        }))
+    }
+
     fn directional_motor_current(&self) -> DirectionalMotorCurrent {
         DirectionalMotorCurrent::new(Current::from_amps(unsafe {
             crate::ffi::mc_get_tot_current_directional_filtered()
+        }))
+    }
+
+    fn directional_motor_current_unfiltered(&self) -> DirectionalMotorCurrent {
+        DirectionalMotorCurrent::new(Current::from_amps(unsafe {
+            crate::ffi::mc_get_tot_current_directional()
         }))
     }
 
@@ -357,18 +656,6 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
     fn brake_current_limit(&self) -> MotorCurrentLimit {
         MotorCurrentLimit::new(Current::from_amps(unsafe {
             crate::ffi::get_cfg_float(CFG_PARAM_L_CURRENT_MIN)
-        }))
-    }
-
-    fn drive_input_current_limit(&self) -> InputCurrentLimit {
-        InputCurrentLimit::new(Current::from_amps(unsafe {
-            crate::ffi::get_cfg_float(CFG_PARAM_L_IN_CURRENT_MAX)
-        }))
-    }
-
-    fn brake_input_current_limit(&self) -> InputCurrentLimit {
-        InputCurrentLimit::new(Current::from_amps(unsafe {
-            crate::ffi::get_cfg_float(CFG_PARAM_L_IN_CURRENT_MIN)
         }))
     }
 
@@ -400,6 +687,78 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         }))
     }
 
+    fn battery_current_unfiltered(&self) -> InputCurrent {
+        InputCurrent::new(Current::from_amps(unsafe {
+            crate::ffi::mc_get_tot_current_in()
+        }))
+    }
+
+    fn average_power(&self) -> AveragePower {
+        AveragePower::new(Power::from_watts(unsafe {
+            crate::ffi::mc_stat_power_avg()
+        }))
+    }
+
+    fn peak_power(&self) -> PeakPower {
+        PeakPower::new(Power::from_watts(unsafe {
+            crate::ffi::mc_stat_power_max()
+        }))
+    }
+
+    fn average_speed(&self) -> AverageVehicleSpeed {
+        AverageVehicleSpeed::new(Speed::from_meters_per_second(unsafe {
+            crate::ffi::mc_stat_speed_avg()
+        }))
+    }
+
+    fn peak_speed(&self) -> PeakVehicleSpeed {
+        PeakVehicleSpeed::new(Speed::from_meters_per_second(unsafe {
+            crate::ffi::mc_stat_speed_max()
+        }))
+    }
+
+    fn average_motor_current(&self) -> AverageMotorCurrent {
+        AverageMotorCurrent::new(Current::from_amps(unsafe {
+            crate::ffi::mc_stat_current_avg()
+        }))
+    }
+
+    fn peak_motor_current(&self) -> PeakMotorCurrent {
+        PeakMotorCurrent::new(Current::from_amps(unsafe {
+            crate::ffi::mc_stat_current_max()
+        }))
+    }
+
+    fn average_mosfet_temperature(&self) -> AverageMosfetTemperature {
+        AverageMosfetTemperature::new(Temperature::from_degrees_celsius(unsafe {
+            crate::ffi::mc_stat_temp_mosfet_avg()
+        }))
+    }
+
+    fn peak_mosfet_temperature(&self) -> PeakMosfetTemperature {
+        PeakMosfetTemperature::new(Temperature::from_degrees_celsius(unsafe {
+            crate::ffi::mc_stat_temp_mosfet_max()
+        }))
+    }
+
+    fn average_motor_temperature(&self) -> AverageMotorTemperature {
+        AverageMotorTemperature::new(Temperature::from_degrees_celsius(unsafe {
+            crate::ffi::mc_stat_temp_motor_avg()
+        }))
+    }
+
+    fn peak_motor_temperature(&self) -> PeakMotorTemperature {
+        PeakMotorTemperature::new(Temperature::from_degrees_celsius(unsafe {
+            crate::ffi::mc_stat_temp_motor_max()
+        }))
+    }
+
+    fn statistics_count_time(&self) -> MotorStatisticDuration {
+        MotorStatisticDuration::new(VescSeconds::from_seconds(unsafe {
+            crate::ffi::mc_stat_count_time()
+        }))
+    }
+
     fn duty_cycle(&self) -> DutyCycle {
         duty_cycle_from_firmware(unsafe { crate::ffi::mc_get_duty_cycle_now() })
     }
@@ -408,9 +767,39 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         unsafe { crate::ffi::foc_get_id() }.map(|amps| DCurrent::new(Current::from_amps(amps)))
     }
 
+    fn q_axis_current(&self) -> Option<QCurrent> {
+        unsafe { crate::ffi::foc_get_iq() }.map(|amps| QCurrent::new(Current::from_amps(amps)))
+    }
+
+    fn d_axis_voltage(&self) -> Option<DVoltage> {
+        unsafe { crate::ffi::foc_get_vd() }.map(|volts| DVoltage::new(Voltage::from_volts(volts)))
+    }
+
+    fn q_axis_voltage(&self) -> Option<QVoltage> {
+        unsafe { crate::ffi::foc_get_vq() }.map(|volts| QVoltage::new(Voltage::from_volts(volts)))
+    }
+
     fn trip_distance(&self) -> TripDistance {
         TripDistance::new(Distance::from_meters(unsafe {
             crate::ffi::mc_get_distance_abs()
+        }))
+    }
+
+    fn signed_trip_distance(&self) -> SignedTripDistance {
+        SignedTripDistance::new(Distance::from_meters(unsafe {
+            crate::ffi::mc_get_distance()
+        }))
+    }
+
+    fn pid_position_setpoint(&self) -> PidPosition {
+        PidPosition::new(crate::units::AngleDegrees::from_degrees(unsafe {
+            crate::ffi::mc_get_pid_pos_set()
+        }))
+    }
+
+    fn pid_position(&self) -> PidPosition {
+        PidPosition::new(crate::units::AngleDegrees::from_degrees(unsafe {
+            crate::ffi::mc_get_pid_pos_now()
         }))
     }
 
@@ -431,47 +820,73 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
     }
 
     fn amp_hours_discharged(&self) -> AmpHoursDischarged {
+        self.amp_hours_discharged_with(EnergyCounterReset::Preserve)
+    }
+
+    fn amp_hours_discharged_with(&self, reset: EnergyCounterReset) -> AmpHoursDischarged {
         AmpHoursDischarged::new(Charge::from_amp_hours(unsafe {
-            crate::ffi::mc_get_amp_hours(false)
+            crate::ffi::mc_get_amp_hours(reset.resets())
         }))
     }
 
     fn amp_hours_charged(&self) -> AmpHoursCharged {
+        self.amp_hours_charged_with(EnergyCounterReset::Preserve)
+    }
+
+    fn amp_hours_charged_with(&self, reset: EnergyCounterReset) -> AmpHoursCharged {
         AmpHoursCharged::new(Charge::from_amp_hours(unsafe {
-            crate::ffi::mc_get_amp_hours_charged(false)
+            crate::ffi::mc_get_amp_hours_charged(reset.resets())
         }))
     }
 
     fn watt_hours_discharged(&self) -> WattHoursDischarged {
+        self.watt_hours_discharged_with(EnergyCounterReset::Preserve)
+    }
+
+    fn watt_hours_discharged_with(&self, reset: EnergyCounterReset) -> WattHoursDischarged {
         WattHoursDischarged::new(Energy::from_watt_hours(unsafe {
-            crate::ffi::mc_get_watt_hours(false)
+            crate::ffi::mc_get_watt_hours(reset.resets())
         }))
     }
 
     fn watt_hours_charged(&self) -> WattHoursCharged {
+        self.watt_hours_charged_with(EnergyCounterReset::Preserve)
+    }
+
+    fn watt_hours_charged_with(&self, reset: EnergyCounterReset) -> WattHoursCharged {
         WattHoursCharged::new(Energy::from_watt_hours(unsafe {
-            crate::ffi::mc_get_watt_hours_charged(false)
+            crate::ffi::mc_get_watt_hours_charged(reset.resets())
         }))
     }
 
     fn battery_level(&self) -> BatteryLevel {
-        BatteryLevel::from_fraction(unsafe {
-            crate::ffi::mc_get_battery_level(core::ptr::null_mut())
-        })
+        self.battery_level_snapshot().level()
     }
 
-    fn firmware_fault(&self) -> FirmwareFaultCode {
-        FirmwareFaultCode::from_raw_code(unsafe { crate::ffi::mc_get_fault() })
+    fn battery_level_snapshot(&self) -> BatteryLevelSnapshot {
+        let mut watt_hours_remaining = 0.0;
+        let level = unsafe { crate::ffi::mc_get_battery_level(&mut watt_hours_remaining) };
+        BatteryLevelSnapshot::new(
+            BatteryLevel::from_fraction(level),
+            crate::WattHoursRemaining::new(Energy::from_watt_hours(watt_hours_remaining)),
+        )
     }
 
-    fn firmware_fault_name(&self, fault: FirmwareFaultCode) -> Option<&'static [u8]> {
-        let code = FirmwareFaultWireCode::try_from(fault).ok()?.wire_code();
-        let pointer = unsafe { crate::ffi::mc_fault_to_string(u32::from(code)) };
-        #[cfg(all(feature = "test-support", not(target_arch = "arm")))]
-        let pointer = Some(pointer);
-        // SAFETY: VESC returns a null-terminated string in firmware-owned static storage.
-        let bytes = unsafe { CStr::from_ptr(pointer?).to_bytes() };
-        Some(bytes.strip_prefix(b"FAULT_CODE_").unwrap_or(bytes))
+    fn firmware_fault(&self) -> FirmwareFault {
+        // C map: `mc_get_fault` returns the `mc_fault_code` enum declared at
+        // `third_party/vesc_pkg_lib/vesc_c_if.h:84-112` (the function slot is
+        // `:434`). Keep the raw integer conversion private to this boundary so
+        // unknown firmware values cannot leak into the public SDK API.
+        FirmwareFault::from_raw_code(unsafe { crate::ffi::mc_get_fault() }.0)
+    }
+
+    fn firmware_fault_description(&self) -> Option<&str> {
+        let fault = unsafe { crate::ffi::mc_get_fault() };
+        let ptr = unsafe { crate::ffi::mc_fault_to_string(fault) };
+        if ptr.is_null() {
+            return None;
+        }
+        unsafe { CStr::from_ptr(ptr) }.to_str().ok()
     }
 
     fn input_voltage(&self) -> InputVoltage {
@@ -479,10 +894,45 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
             crate::ffi::mc_get_input_voltage_filtered()
         }))
     }
+
+    fn tachometer(&self, reset: bool) -> TachometerSteps {
+        TachometerSteps::new(crate::units::TachometerSteps::from_steps(unsafe {
+            crate::ffi::mc_get_tachometer_value(reset)
+        }))
+    }
+
+    fn absolute_tachometer(&self, reset: bool) -> AbsoluteTachometerSteps {
+        AbsoluteTachometerSteps::new(crate::units::TachometerSteps::from_steps(unsafe {
+            crate::ffi::mc_get_tachometer_abs_value(reset)
+        }))
+    }
+
+    fn sampling_frequency(&self) -> Frequency {
+        Frequency::from_hertz(unsafe { crate::ffi::mc_get_sampling_frequency_now() })
+    }
 }
 
 #[cfg(not(test))]
 impl MotorControlBindings for RealMotorControlBindings {
+    fn dc_calibration_done(&self) -> bool {
+        unsafe { crate::ffi::mc_dccal_done() }
+    }
+
+    unsafe fn register_pwm_callback(
+        &self,
+        callback: PwmCallback,
+    ) -> Result<PwmCallbackLease, PwmCallbackError> {
+        unsafe { PwmCallbackLease::register(callback) }
+    }
+
+    fn selected_motor(&self) -> MotorSelection {
+        MotorSelection::new(unsafe { crate::ffi::mc_get_motor_thread() as u8 })
+    }
+
+    fn select_motor(&self, motor: MotorSelection) {
+        unsafe { crate::ffi::mc_select_motor_thread(i32::from(motor.index())) };
+    }
+
     fn timeout_reset(&self) {
         unsafe { crate::ffi::timeout_reset() };
     }
@@ -495,35 +945,66 @@ impl MotorControlBindings for RealMotorControlBindings {
         unsafe { crate::ffi::mc_set_current(current.current().as_amps()) };
     }
 
+    fn set_current_relative(&self, current: CurrentRelative) {
+        unsafe { crate::ffi::mc_set_current_rel(current.ratio().as_ratio()) };
+    }
+
+    fn set_brake_current_relative(&self, current: BrakeCurrentRelative) {
+        unsafe { crate::ffi::mc_set_brake_current_rel(current.ratio().as_ratio()) };
+    }
+
+    fn set_pid_speed(&self, speed: ElectricalSpeed) {
+        unsafe { crate::ffi::mc_set_pid_speed(speed.rpm().as_revolutions_per_minute()) };
+    }
+
+    fn set_pid_position(&self, position: PidPosition) {
+        unsafe { crate::ffi::mc_set_pid_pos(position.angle().as_degrees()) };
+    }
+
     fn set_duty_cycle(&self, duty: DutyCycle) {
         unsafe { crate::ffi::mc_set_duty(duty.ratio().as_ratio()) };
+    }
+
+    fn set_duty_cycle_without_ramping(&self, duty: DutyCycle) {
+        unsafe { crate::ffi::mc_set_duty_noramp(duty.ratio().as_ratio()) };
     }
 
     fn set_brake_current(&self, current: BrakeCurrent) {
         unsafe { crate::ffi::mc_set_brake_current(current.current().as_amps()) };
     }
 
-    fn play_foc_tone(
-        &self,
-        channel: AudioChannel,
-        frequency: AudioFrequency,
-        voltage: AudioVoltage,
-    ) -> bool {
-        let played = unsafe {
-            crate::ffi::foc_play_tone(
-                i32::from(channel.as_u8()),
-                frequency.frequency().as_hertz(),
-                voltage.voltage().as_volts(),
-            )
-        };
-        #[cfg(all(feature = "test-support", not(target_arch = "arm")))]
-        {
-            played
-        }
-        #[cfg(not(all(feature = "test-support", not(target_arch = "arm"))))]
-        {
-            played.unwrap_or(false)
-        }
+    fn set_handbrake(&self, current: HandbrakeCurrent) {
+        unsafe { crate::ffi::mc_set_handbrake(current.current().as_amps()) };
+    }
+
+    fn set_handbrake_relative(&self, current: HandbrakeRelative) {
+        unsafe { crate::ffi::mc_set_handbrake_rel(current.ratio().as_ratio()) };
+    }
+
+    fn reset_statistics(&self) {
+        unsafe { crate::ffi::mc_stat_reset() };
+    }
+
+    fn update_pid_position_offset(&self, position: PidPosition, store: bool) {
+        unsafe { crate::ffi::mc_update_pid_pos_offset(position.angle().as_degrees(), store) };
+    }
+
+    fn set_odometer(&self, odometer: OdometerMeters) {
+        unsafe { crate::ffi::mc_set_odometer(odometer.as_meters()) };
+    }
+
+    fn set_tachometer(&self, steps: TachometerSteps) -> TachometerSteps {
+        TachometerSteps::new(crate::units::TachometerSteps::from_steps(unsafe {
+            crate::ffi::mc_set_tachometer_value(steps.steps().as_steps())
+        }))
+    }
+
+    fn release_motor(&self) {
+        unsafe { crate::ffi::mc_release_motor() };
+    }
+
+    fn wait_for_motor_release(&self, timeout: VescSeconds) -> bool {
+        unsafe { crate::ffi::mc_wait_for_motor_release(timeout.as_seconds()) }
     }
 }
 
@@ -568,16 +1049,16 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn vehicle_speed(&self) -> VehicleSpeed;
     /// Return filtered total motor current.
     fn motor_current(&self) -> TotalMotorCurrent;
+    /// Return instantaneous total motor current.
+    fn motor_current_unfiltered(&self) -> TotalMotorCurrent;
     /// Return filtered motor current with the configured motor direction applied.
     fn directional_motor_current(&self) -> DirectionalMotorCurrent;
+    /// Return instantaneous total motor current with motor direction applied.
+    fn directional_motor_current_unfiltered(&self) -> DirectionalMotorCurrent;
     /// Return the configured positive motor-current limit.
     fn drive_current_limit(&self) -> MotorCurrentLimit;
     /// Return the configured braking-current magnitude.
     fn brake_current_limit(&self) -> MotorCurrentLimit;
-    /// Return the configured positive battery/input-current limit.
-    fn drive_input_current_limit(&self) -> InputCurrentLimit;
-    /// Return the configured regenerative battery/input-current limit magnitude.
-    fn brake_input_current_limit(&self) -> InputCurrentLimit;
     /// Return the configured MOSFET temperature limit-start threshold.
     fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart;
     /// Return the configured motor temperature limit-start threshold.
@@ -588,12 +1069,48 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn battery_cell_count(&self) -> Option<BatteryCellCount>;
     /// Return filtered input/battery current.
     fn battery_current(&self) -> InputCurrent;
+    /// Return instantaneous input/battery current.
+    fn battery_current_unfiltered(&self) -> InputCurrent;
+    /// Return average motor power statistics.
+    fn average_power(&self) -> AveragePower;
+    /// Return peak motor power statistics.
+    fn peak_power(&self) -> PeakPower;
+    /// Return average vehicle speed statistics.
+    fn average_speed(&self) -> AverageVehicleSpeed;
+    /// Return peak vehicle speed statistics.
+    fn peak_speed(&self) -> PeakVehicleSpeed;
+    /// Return average motor current statistics.
+    fn average_motor_current(&self) -> AverageMotorCurrent;
+    /// Return peak motor current statistics.
+    fn peak_motor_current(&self) -> PeakMotorCurrent;
+    /// Return average MOSFET temperature statistics.
+    fn average_mosfet_temperature(&self) -> AverageMosfetTemperature;
+    /// Return peak MOSFET temperature statistics.
+    fn peak_mosfet_temperature(&self) -> PeakMosfetTemperature;
+    /// Return average motor temperature statistics.
+    fn average_motor_temperature(&self) -> AverageMotorTemperature;
+    /// Return peak motor temperature statistics.
+    fn peak_motor_temperature(&self) -> PeakMotorTemperature;
+    /// Return elapsed motor-statistics count time.
+    fn statistics_count_time(&self) -> MotorStatisticDuration;
     /// Return the current signed duty cycle.
     fn duty_cycle(&self) -> DutyCycle;
     /// Return optional FOC d-axis current.
     fn d_axis_current(&self) -> Option<DCurrent>;
+    /// Return optional FOC q-axis current.
+    fn q_axis_current(&self) -> Option<QCurrent>;
+    /// Return optional FOC d-axis voltage.
+    fn d_axis_voltage(&self) -> Option<DVoltage>;
+    /// Return optional FOC q-axis voltage.
+    fn q_axis_voltage(&self) -> Option<QVoltage>;
     /// Return the absolute distance travelled by the motor/vehicle.
     fn trip_distance(&self) -> TripDistance;
+    /// Return signed distance travelled by the motor/vehicle.
+    fn signed_trip_distance(&self) -> SignedTripDistance;
+    /// Return the firmware PID-position setpoint.
+    fn pid_position_setpoint(&self) -> PidPosition;
+    /// Return the current firmware PID position.
+    fn pid_position(&self) -> PidPosition;
     /// Return the filtered MOSFET/FET temperature.
     fn mosfet_temperature(&self) -> MosfetTemperature;
     /// Return the filtered motor temperature.
@@ -602,24 +1119,58 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn odometer(&self) -> OdometerMeters;
     /// Return discharged amp-hours.
     fn amp_hours_discharged(&self) -> AmpHoursDischarged;
+    /// Return discharged amp-hours with an explicit preserve/reset policy.
+    fn amp_hours_discharged_with(&self, reset: EnergyCounterReset) -> AmpHoursDischarged;
     /// Return charged amp-hours.
     fn amp_hours_charged(&self) -> AmpHoursCharged;
+    /// Return charged amp-hours with an explicit preserve/reset policy.
+    fn amp_hours_charged_with(&self, reset: EnergyCounterReset) -> AmpHoursCharged;
     /// Return discharged watt-hours.
     fn watt_hours_discharged(&self) -> WattHoursDischarged;
+    /// Return discharged watt-hours with an explicit preserve/reset policy.
+    fn watt_hours_discharged_with(&self, reset: EnergyCounterReset) -> WattHoursDischarged;
     /// Return charged watt-hours.
     fn watt_hours_charged(&self) -> WattHoursCharged;
+    /// Return charged watt-hours with an explicit preserve/reset policy.
+    fn watt_hours_charged_with(&self, reset: EnergyCounterReset) -> WattHoursCharged;
     /// Return estimated battery level.
     fn battery_level(&self) -> BatteryLevel;
+    /// Return the battery level and firmware-estimated remaining energy.
+    fn battery_level_snapshot(&self) -> BatteryLevelSnapshot;
     /// Return the active firmware motor fault code.
-    fn firmware_fault(&self) -> FirmwareFaultCode;
-    /// Return the firmware display name for a motor fault code without its `FAULT_CODE_` prefix.
-    fn firmware_fault_name(&self, fault: FirmwareFaultCode) -> Option<&'static [u8]>;
+    fn firmware_fault(&self) -> FirmwareFault;
+    /// Borrow the firmware-provided fault description for this telemetry handle.
+    ///
+    /// The string is owned by firmware and must not outlive the telemetry borrow.
+    fn firmware_fault_description(&self) -> Option<&str>;
     /// Return the filtered controller input voltage.
     fn input_voltage(&self) -> InputVoltage;
+    /// Return the relative motor tachometer with an explicit read/reset policy.
+    fn tachometer(&self, reset: TachometerReset) -> TachometerSteps;
+    /// Return the absolute motor tachometer with an explicit read/reset policy.
+    fn absolute_tachometer(&self, reset: TachometerReset) -> AbsoluteTachometerSteps;
+    /// Return the current motor-control sampling frequency.
+    fn sampling_frequency(&self) -> Frequency;
 }
 
 /// Semantic motor-output capability used by package code.
 pub trait MotorOutput: private::MotorOutput {
+    /// Return whether controller DC calibration has completed.
+    fn dc_calibration_done(&self) -> bool;
+    /// Register an exclusive low-level PWM callback.
+    ///
+    /// # Safety
+    ///
+    /// `callback` must be a valid firmware-compatible callback for the entire
+    /// time the returned lease is alive.
+    unsafe fn register_pwm_callback(
+        &self,
+        callback: PwmCallback,
+    ) -> Result<PwmCallbackLease, PwmCallbackError>;
+    /// Return the firmware-selected motor-control thread.
+    fn selected_motor(&self) -> MotorSelection;
+    /// Select the active firmware motor-control thread.
+    fn select_motor(&self, motor: MotorSelection);
     /// Keep the controller's motor command watchdog alive.
     fn keep_alive(&self);
 
@@ -628,20 +1179,42 @@ pub trait MotorOutput: private::MotorOutput {
 
     /// Apply a signed motor-current command.
     fn set_current(&self, current: MotorCurrent);
+    /// Apply a normalized relative motor-current command.
+    fn set_current_relative(&self, current: CurrentRelative);
+    /// Apply a normalized relative braking-current command.
+    fn set_brake_current_relative(&self, current: BrakeCurrentRelative);
+    /// Apply a firmware PID speed target.
+    fn set_pid_speed(&self, speed: ElectricalSpeed);
+    /// Apply a firmware PID position target.
+    fn set_pid_position(&self, position: PidPosition);
 
     /// Apply a duty-cycle command.
     fn set_duty_cycle(&self, duty: DutyCycle);
+    /// Apply a duty-cycle command without firmware ramping.
+    fn set_duty_cycle_without_ramping(&self, duty: DutyCycle);
 
     /// Apply a braking-current command.
     fn set_brake_current(&self, current: BrakeCurrent);
-
-    /// Play a FOC tone, returning false when audio is unavailable or rejected.
-    fn play_foc_tone(
+    /// Apply a handbrake-current command.
+    fn set_handbrake(&self, current: HandbrakeCurrent);
+    /// Apply a relative handbrake command.
+    fn set_handbrake_relative(&self, current: HandbrakeRelative);
+    /// Reset accumulated motor statistics.
+    fn reset_statistics(&self);
+    /// Update the firmware PID-position offset with an explicit persistence policy.
+    fn update_pid_position_offset(
         &self,
-        channel: AudioChannel,
-        frequency: AudioFrequency,
-        voltage: AudioVoltage,
-    ) -> bool;
+        position: PidPosition,
+        persistence: PidPositionOffsetPersistence,
+    );
+    /// Set the firmware-owned odometer distance in meters.
+    fn set_odometer(&self, odometer: OdometerMeters);
+    /// Set the relative tachometer and return its previous value.
+    fn set_tachometer(&self, steps: TachometerSteps) -> TachometerSteps;
+    /// Release the motor output.
+    fn release_motor(&self);
+    /// Wait up to `timeout` for the motor output to be released.
+    fn wait_for_motor_release(&self, timeout: VescSeconds) -> MotorReleaseOutcome;
 }
 
 /// High-level motor-control API built on a binding implementation.
@@ -724,9 +1297,19 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.motor_current()
     }
 
+    /// Return instantaneous total motor current.
+    pub fn motor_current_unfiltered(&self) -> TotalMotorCurrent {
+        self.bindings.motor_current_unfiltered()
+    }
+
     /// Return filtered motor current with the configured motor direction applied.
     pub fn directional_motor_current(&self) -> DirectionalMotorCurrent {
         self.bindings.directional_motor_current()
+    }
+
+    /// Return instantaneous total motor current with motor direction applied.
+    pub fn directional_motor_current_unfiltered(&self) -> DirectionalMotorCurrent {
+        self.bindings.directional_motor_current_unfiltered()
     }
 
     /// Return the configured positive motor-current limit.
@@ -737,16 +1320,6 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
     /// Return the configured braking-current magnitude.
     pub fn brake_current_limit(&self) -> MotorCurrentLimit {
         self.bindings.brake_current_limit()
-    }
-
-    /// Return the configured positive battery/input-current limit.
-    pub fn drive_input_current_limit(&self) -> InputCurrentLimit {
-        self.bindings.drive_input_current_limit()
-    }
-
-    /// Return the configured regenerative battery/input-current limit magnitude.
-    pub fn brake_input_current_limit(&self) -> InputCurrentLimit {
-        self.bindings.brake_input_current_limit()
     }
 
     /// Return the configured MOSFET temperature limit-start threshold.
@@ -774,6 +1347,66 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.battery_current()
     }
 
+    /// Return instantaneous input/battery current.
+    pub fn battery_current_unfiltered(&self) -> InputCurrent {
+        self.bindings.battery_current_unfiltered()
+    }
+
+    /// Return average motor power statistics.
+    pub fn average_power(&self) -> AveragePower {
+        self.bindings.average_power()
+    }
+
+    /// Return peak motor power statistics.
+    pub fn peak_power(&self) -> PeakPower {
+        self.bindings.peak_power()
+    }
+
+    /// Return average vehicle speed statistics.
+    pub fn average_speed(&self) -> AverageVehicleSpeed {
+        self.bindings.average_speed()
+    }
+
+    /// Return peak vehicle speed statistics.
+    pub fn peak_speed(&self) -> PeakVehicleSpeed {
+        self.bindings.peak_speed()
+    }
+
+    /// Return average motor current statistics.
+    pub fn average_motor_current(&self) -> AverageMotorCurrent {
+        self.bindings.average_motor_current()
+    }
+
+    /// Return peak motor current statistics.
+    pub fn peak_motor_current(&self) -> PeakMotorCurrent {
+        self.bindings.peak_motor_current()
+    }
+
+    /// Return average MOSFET temperature statistics.
+    pub fn average_mosfet_temperature(&self) -> AverageMosfetTemperature {
+        self.bindings.average_mosfet_temperature()
+    }
+
+    /// Return peak MOSFET temperature statistics.
+    pub fn peak_mosfet_temperature(&self) -> PeakMosfetTemperature {
+        self.bindings.peak_mosfet_temperature()
+    }
+
+    /// Return average motor temperature statistics.
+    pub fn average_motor_temperature(&self) -> AverageMotorTemperature {
+        self.bindings.average_motor_temperature()
+    }
+
+    /// Return peak motor temperature statistics.
+    pub fn peak_motor_temperature(&self) -> PeakMotorTemperature {
+        self.bindings.peak_motor_temperature()
+    }
+
+    /// Return elapsed motor-statistics count time.
+    pub fn statistics_count_time(&self) -> MotorStatisticDuration {
+        self.bindings.statistics_count_time()
+    }
+
     /// Return the current signed duty cycle.
     pub fn duty_cycle(&self) -> DutyCycle {
         self.bindings.duty_cycle()
@@ -784,9 +1417,39 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.d_axis_current()
     }
 
+    /// Return optional FOC q-axis current.
+    pub fn q_axis_current(&self) -> Option<QCurrent> {
+        self.bindings.q_axis_current()
+    }
+
+    /// Return optional FOC d-axis voltage.
+    pub fn d_axis_voltage(&self) -> Option<DVoltage> {
+        self.bindings.d_axis_voltage()
+    }
+
+    /// Return optional FOC q-axis voltage.
+    pub fn q_axis_voltage(&self) -> Option<QVoltage> {
+        self.bindings.q_axis_voltage()
+    }
+
     /// Return the absolute distance travelled by the motor/vehicle.
     pub fn trip_distance(&self) -> TripDistance {
         self.bindings.trip_distance()
+    }
+
+    /// Return signed distance travelled by the motor/vehicle.
+    pub fn signed_trip_distance(&self) -> SignedTripDistance {
+        self.bindings.signed_trip_distance()
+    }
+
+    /// Return the firmware PID-position setpoint.
+    pub fn pid_position_setpoint(&self) -> PidPosition {
+        self.bindings.pid_position_setpoint()
+    }
+
+    /// Return the current firmware PID position.
+    pub fn pid_position(&self) -> PidPosition {
+        self.bindings.pid_position()
     }
 
     /// Return the filtered MOSFET/FET temperature.
@@ -809,9 +1472,19 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.amp_hours_discharged()
     }
 
+    /// Return discharged amp-hours with an explicit preserve/reset policy.
+    pub fn amp_hours_discharged_with(&self, reset: EnergyCounterReset) -> AmpHoursDischarged {
+        self.bindings.amp_hours_discharged_with(reset)
+    }
+
     /// Return charged amp-hours.
     pub fn amp_hours_charged(&self) -> AmpHoursCharged {
         self.bindings.amp_hours_charged()
+    }
+
+    /// Return charged amp-hours with an explicit preserve/reset policy.
+    pub fn amp_hours_charged_with(&self, reset: EnergyCounterReset) -> AmpHoursCharged {
+        self.bindings.amp_hours_charged_with(reset)
     }
 
     /// Return discharged watt-hours.
@@ -819,9 +1492,19 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.watt_hours_discharged()
     }
 
+    /// Return discharged watt-hours with an explicit preserve/reset policy.
+    pub fn watt_hours_discharged_with(&self, reset: EnergyCounterReset) -> WattHoursDischarged {
+        self.bindings.watt_hours_discharged_with(reset)
+    }
+
     /// Return charged watt-hours.
     pub fn watt_hours_charged(&self) -> WattHoursCharged {
         self.bindings.watt_hours_charged()
+    }
+
+    /// Return charged watt-hours with an explicit preserve/reset policy.
+    pub fn watt_hours_charged_with(&self, reset: EnergyCounterReset) -> WattHoursCharged {
+        self.bindings.watt_hours_charged_with(reset)
     }
 
     /// Return estimated battery level.
@@ -829,19 +1512,41 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.battery_level()
     }
 
+    /// Return the battery level and firmware-estimated remaining energy.
+    pub fn battery_level_snapshot(&self) -> BatteryLevelSnapshot {
+        self.bindings.battery_level_snapshot()
+    }
+
     /// Return the active firmware motor fault code.
-    pub fn firmware_fault(&self) -> FirmwareFaultCode {
+    pub fn firmware_fault(&self) -> FirmwareFault {
         self.bindings.firmware_fault()
     }
 
-    /// Return the firmware display name for a motor fault code.
-    pub fn firmware_fault_name(&self, fault: FirmwareFaultCode) -> Option<&'static [u8]> {
-        self.bindings.firmware_fault_name(fault)
+    /// Borrow the firmware-provided fault description for this telemetry handle.
+    ///
+    /// The string is owned by firmware and must not outlive the telemetry borrow.
+    pub fn firmware_fault_description(&self) -> Option<&str> {
+        self.bindings.firmware_fault_description()
     }
 
     /// Return the filtered controller input voltage.
     pub fn input_voltage(&self) -> InputVoltage {
         self.bindings.input_voltage()
+    }
+
+    /// Return the relative motor tachometer with an explicit read/reset policy.
+    pub fn tachometer(&self, reset: TachometerReset) -> TachometerSteps {
+        self.bindings.tachometer(reset.resets())
+    }
+
+    /// Return the absolute motor tachometer with an explicit read/reset policy.
+    pub fn absolute_tachometer(&self, reset: TachometerReset) -> AbsoluteTachometerSteps {
+        self.bindings.absolute_tachometer(reset.resets())
+    }
+
+    /// Return the current motor-control sampling frequency.
+    pub fn sampling_frequency(&self) -> Frequency {
+        self.bindings.sampling_frequency()
     }
 }
 
@@ -862,8 +1567,16 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
         self.motor_current()
     }
 
+    fn motor_current_unfiltered(&self) -> TotalMotorCurrent {
+        self.motor_current_unfiltered()
+    }
+
     fn directional_motor_current(&self) -> DirectionalMotorCurrent {
         self.directional_motor_current()
+    }
+
+    fn directional_motor_current_unfiltered(&self) -> DirectionalMotorCurrent {
+        self.directional_motor_current_unfiltered()
     }
 
     fn drive_current_limit(&self) -> MotorCurrentLimit {
@@ -872,14 +1585,6 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
 
     fn brake_current_limit(&self) -> MotorCurrentLimit {
         self.brake_current_limit()
-    }
-
-    fn drive_input_current_limit(&self) -> InputCurrentLimit {
-        self.drive_input_current_limit()
-    }
-
-    fn brake_input_current_limit(&self) -> InputCurrentLimit {
-        self.brake_input_current_limit()
     }
 
     fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart {
@@ -902,6 +1607,54 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
         self.battery_current()
     }
 
+    fn battery_current_unfiltered(&self) -> InputCurrent {
+        self.battery_current_unfiltered()
+    }
+
+    fn average_power(&self) -> AveragePower {
+        self.average_power()
+    }
+
+    fn peak_power(&self) -> PeakPower {
+        self.peak_power()
+    }
+
+    fn average_speed(&self) -> AverageVehicleSpeed {
+        self.average_speed()
+    }
+
+    fn peak_speed(&self) -> PeakVehicleSpeed {
+        self.peak_speed()
+    }
+
+    fn average_motor_current(&self) -> AverageMotorCurrent {
+        self.average_motor_current()
+    }
+
+    fn peak_motor_current(&self) -> PeakMotorCurrent {
+        self.peak_motor_current()
+    }
+
+    fn average_mosfet_temperature(&self) -> AverageMosfetTemperature {
+        self.average_mosfet_temperature()
+    }
+
+    fn peak_mosfet_temperature(&self) -> PeakMosfetTemperature {
+        self.peak_mosfet_temperature()
+    }
+
+    fn average_motor_temperature(&self) -> AverageMotorTemperature {
+        self.average_motor_temperature()
+    }
+
+    fn peak_motor_temperature(&self) -> PeakMotorTemperature {
+        self.peak_motor_temperature()
+    }
+
+    fn statistics_count_time(&self) -> MotorStatisticDuration {
+        self.statistics_count_time()
+    }
+
     fn duty_cycle(&self) -> DutyCycle {
         self.duty_cycle()
     }
@@ -910,8 +1663,32 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
         self.d_axis_current()
     }
 
+    fn q_axis_current(&self) -> Option<QCurrent> {
+        self.q_axis_current()
+    }
+
+    fn d_axis_voltage(&self) -> Option<DVoltage> {
+        self.d_axis_voltage()
+    }
+
+    fn q_axis_voltage(&self) -> Option<QVoltage> {
+        self.q_axis_voltage()
+    }
+
     fn trip_distance(&self) -> TripDistance {
         self.trip_distance()
+    }
+
+    fn signed_trip_distance(&self) -> SignedTripDistance {
+        self.signed_trip_distance()
+    }
+
+    fn pid_position_setpoint(&self) -> PidPosition {
+        self.pid_position_setpoint()
+    }
+
+    fn pid_position(&self) -> PidPosition {
+        self.pid_position()
     }
 
     fn mosfet_temperature(&self) -> MosfetTemperature {
@@ -930,32 +1707,64 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
         self.amp_hours_discharged()
     }
 
+    fn amp_hours_discharged_with(&self, reset: EnergyCounterReset) -> AmpHoursDischarged {
+        self.amp_hours_discharged_with(reset)
+    }
+
     fn amp_hours_charged(&self) -> AmpHoursCharged {
         self.amp_hours_charged()
+    }
+
+    fn amp_hours_charged_with(&self, reset: EnergyCounterReset) -> AmpHoursCharged {
+        self.amp_hours_charged_with(reset)
     }
 
     fn watt_hours_discharged(&self) -> WattHoursDischarged {
         self.watt_hours_discharged()
     }
 
+    fn watt_hours_discharged_with(&self, reset: EnergyCounterReset) -> WattHoursDischarged {
+        self.watt_hours_discharged_with(reset)
+    }
+
     fn watt_hours_charged(&self) -> WattHoursCharged {
         self.watt_hours_charged()
+    }
+
+    fn watt_hours_charged_with(&self, reset: EnergyCounterReset) -> WattHoursCharged {
+        self.watt_hours_charged_with(reset)
     }
 
     fn battery_level(&self) -> BatteryLevel {
         self.battery_level()
     }
 
-    fn firmware_fault(&self) -> FirmwareFaultCode {
+    fn battery_level_snapshot(&self) -> BatteryLevelSnapshot {
+        self.battery_level_snapshot()
+    }
+
+    fn firmware_fault(&self) -> FirmwareFault {
         self.firmware_fault()
     }
 
-    fn firmware_fault_name(&self, fault: FirmwareFaultCode) -> Option<&'static [u8]> {
-        self.firmware_fault_name(fault)
+    fn firmware_fault_description(&self) -> Option<&str> {
+        self.firmware_fault_description()
     }
 
     fn input_voltage(&self) -> InputVoltage {
         self.input_voltage()
+    }
+
+    fn tachometer(&self, reset: TachometerReset) -> TachometerSteps {
+        self.tachometer(reset)
+    }
+
+    fn absolute_tachometer(&self, reset: TachometerReset) -> AbsoluteTachometerSteps {
+        self.absolute_tachometer(reset)
+    }
+
+    fn sampling_frequency(&self) -> Frequency {
+        self.sampling_frequency()
     }
 }
 
@@ -963,6 +1772,34 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
 impl<B: MotorControlBindings> MotorControlApi<B> {
     pub(crate) fn from_firmware(bindings: B) -> Self {
         Self { bindings }
+    }
+
+    /// Return whether controller DC calibration has completed.
+    pub fn dc_calibration_done(&self) -> bool {
+        self.bindings.dc_calibration_done()
+    }
+
+    /// Register an exclusive low-level PWM callback.
+    ///
+    /// # Safety
+    ///
+    /// The callback must remain valid for the lease lifetime and obey the
+    /// firmware's interrupt-context restrictions.
+    pub unsafe fn register_pwm_callback(
+        &self,
+        callback: PwmCallback,
+    ) -> Result<PwmCallbackLease, PwmCallbackError> {
+        unsafe { self.bindings.register_pwm_callback(callback) }
+    }
+
+    /// Return the firmware-selected motor-control thread.
+    pub fn selected_motor(&self) -> MotorSelection {
+        self.bindings.selected_motor()
+    }
+
+    /// Select the active firmware motor-control thread.
+    pub fn select_motor(&self, motor: MotorSelection) {
+        self.bindings.select_motor(motor);
     }
 
     /// Reset the firmware motor-command safety timeout.
@@ -980,6 +1817,26 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
         self.bindings.set_current(current);
     }
 
+    /// Apply a normalized relative motor-current command.
+    pub fn set_current_relative(&self, current: CurrentRelative) {
+        self.bindings.set_current_relative(current);
+    }
+
+    /// Apply a normalized relative braking-current command.
+    pub fn set_brake_current_relative(&self, current: BrakeCurrentRelative) {
+        self.bindings.set_brake_current_relative(current);
+    }
+
+    /// Apply a firmware PID speed target.
+    pub fn set_pid_speed(&self, speed: ElectricalSpeed) {
+        self.bindings.set_pid_speed(speed);
+    }
+
+    /// Apply a firmware PID position target.
+    pub fn set_pid_position(&self, position: PidPosition) {
+        self.bindings.set_pid_position(position);
+    }
+
     /// Set motor duty cycle.
     ///
     /// Float Out Boy uses this for parking brake duty zero at
@@ -987,6 +1844,11 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
     /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:436`.
     pub fn set_duty_cycle(&self, duty: DutyCycle) {
         self.bindings.set_duty_cycle(duty);
+    }
+
+    /// Apply a duty-cycle command without firmware ramping.
+    pub fn set_duty_cycle_without_ramping(&self, duty: DutyCycle) {
+        self.bindings.set_duty_cycle_without_ramping(duty);
     }
 
     /// Set motor brake current.
@@ -998,14 +1860,49 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
         self.bindings.set_brake_current(current);
     }
 
-    /// Play a FOC tone when supported by the motor firmware.
-    pub fn play_foc_tone(
+    /// Set motor handbrake current.
+    pub fn set_handbrake(&self, current: HandbrakeCurrent) {
+        self.bindings.set_handbrake(current);
+    }
+
+    /// Set motor handbrake as a relative command.
+    pub fn set_handbrake_relative(&self, current: HandbrakeRelative) {
+        self.bindings.set_handbrake_relative(current);
+    }
+
+    /// Reset accumulated motor statistics.
+    pub fn reset_statistics(&self) {
+        self.bindings.reset_statistics();
+    }
+
+    /// Update the firmware PID-position offset with an explicit persistence policy.
+    pub fn update_pid_position_offset(
         &self,
-        channel: AudioChannel,
-        frequency: AudioFrequency,
-        voltage: AudioVoltage,
-    ) -> bool {
-        self.bindings.play_foc_tone(channel, frequency, voltage)
+        position: PidPosition,
+        persistence: PidPositionOffsetPersistence,
+    ) {
+        self.bindings
+            .update_pid_position_offset(position, persistence.stores());
+    }
+
+    /// Set the firmware-owned odometer distance in meters.
+    pub fn set_odometer(&self, odometer: OdometerMeters) {
+        self.bindings.set_odometer(odometer);
+    }
+
+    /// Set the relative tachometer and return its previous value.
+    pub fn set_tachometer(&self, steps: TachometerSteps) -> TachometerSteps {
+        self.bindings.set_tachometer(steps)
+    }
+
+    /// Release the motor output.
+    pub fn release_motor(&self) {
+        self.bindings.release_motor();
+    }
+
+    /// Wait until the motor output has been released.
+    pub fn wait_for_motor_release(&self, timeout: VescSeconds) -> MotorReleaseOutcome {
+        motor_release_outcome(self.bindings.wait_for_motor_release(timeout))
     }
 }
 
@@ -1014,6 +1911,25 @@ impl<B: MotorControlBindings> private::MotorOutput for MotorControlApi<B> {}
 
 #[cfg(not(test))]
 impl<B: MotorControlBindings> MotorOutput for MotorControlApi<B> {
+    fn dc_calibration_done(&self) -> bool {
+        MotorControlApi::dc_calibration_done(self)
+    }
+
+    unsafe fn register_pwm_callback(
+        &self,
+        callback: PwmCallback,
+    ) -> Result<PwmCallbackLease, PwmCallbackError> {
+        unsafe { MotorControlApi::register_pwm_callback(self, callback) }
+    }
+
+    fn selected_motor(&self) -> MotorSelection {
+        MotorControlApi::selected_motor(self)
+    }
+
+    fn select_motor(&self, motor: MotorSelection) {
+        MotorControlApi::select_motor(self, motor);
+    }
+
     fn keep_alive(&self) {
         self.timeout_reset();
     }
@@ -1026,20 +1942,67 @@ impl<B: MotorControlBindings> MotorOutput for MotorControlApi<B> {
         MotorControlApi::set_current(self, current);
     }
 
+    fn set_current_relative(&self, current: CurrentRelative) {
+        MotorControlApi::set_current_relative(self, current);
+    }
+
+    fn set_brake_current_relative(&self, current: BrakeCurrentRelative) {
+        MotorControlApi::set_brake_current_relative(self, current);
+    }
+
+    fn set_pid_speed(&self, speed: ElectricalSpeed) {
+        MotorControlApi::set_pid_speed(self, speed);
+    }
+
+    fn set_pid_position(&self, position: PidPosition) {
+        MotorControlApi::set_pid_position(self, position);
+    }
+
     fn set_duty_cycle(&self, duty: DutyCycle) {
         MotorControlApi::set_duty_cycle(self, duty);
+    }
+
+    fn set_duty_cycle_without_ramping(&self, duty: DutyCycle) {
+        MotorControlApi::set_duty_cycle_without_ramping(self, duty);
     }
 
     fn set_brake_current(&self, current: BrakeCurrent) {
         MotorControlApi::set_brake_current(self, current);
     }
 
-    fn play_foc_tone(
+    fn set_handbrake(&self, current: HandbrakeCurrent) {
+        MotorControlApi::set_handbrake(self, current);
+    }
+
+    fn set_handbrake_relative(&self, current: HandbrakeRelative) {
+        MotorControlApi::set_handbrake_relative(self, current);
+    }
+
+    fn reset_statistics(&self) {
+        MotorControlApi::reset_statistics(self);
+    }
+
+    fn update_pid_position_offset(
         &self,
-        channel: AudioChannel,
-        frequency: AudioFrequency,
-        voltage: AudioVoltage,
-    ) -> bool {
-        MotorControlApi::play_foc_tone(self, channel, frequency, voltage)
+        position: PidPosition,
+        persistence: PidPositionOffsetPersistence,
+    ) {
+        MotorControlApi::update_pid_position_offset(self, position, persistence);
+    }
+
+    fn set_odometer(&self, odometer: OdometerMeters) {
+        MotorControlApi::set_odometer(self, odometer);
+    }
+
+    fn set_tachometer(&self, steps: TachometerSteps) -> TachometerSteps {
+        MotorControlApi::set_tachometer(self, steps)
+    }
+
+    fn release_motor(&self) {
+        MotorControlApi::release_motor(self);
+    }
+
+    fn wait_for_motor_release(&self, timeout: VescSeconds) -> MotorReleaseOutcome {
+        MotorControlApi::wait_for_motor_release(self, timeout)
     }
 }

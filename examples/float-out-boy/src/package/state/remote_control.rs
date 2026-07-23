@@ -211,36 +211,38 @@ impl RemoteControlState {
         // C map: `remote_configure` derives the per-loop step and
         // `remote_update` ramps the input target at
         // `third_party/float-out-boy/src/remote.c:30-34,70-94`.
-        let Some(period) = sample_rate.sample_period() else {
-            return self.tilt_setpoint;
-        };
-        let step = AngleDegrees::from(speed * period).as_degrees();
-        let direction = if darkride { -1.0 } else { 1.0 };
-        let target = self.input.ratio().as_ratio() * angle_limit.as_degrees() * direction;
-        let setpoint = self.tilt_setpoint.as_degrees();
-        let target_diff = target - setpoint;
-        if target_diff.abs() < 2.0 {
-            self.tilt_ramped_step = AngleDegrees::from_degrees(
-                0.02 * step * target_diff / 2.0 + 0.98 * self.tilt_ramped_step.as_degrees(),
-            );
-            let centering_step = self
-                .tilt_ramped_step
-                .as_degrees()
-                .abs()
-                .min((target_diff / 2.0).abs() * step)
-                * target_diff.signum();
-            self.tilt_setpoint = if target_diff.abs() < centering_step.abs() {
-                AngleDegrees::from_degrees(target)
-            } else {
-                AngleDegrees::from_degrees(setpoint + centering_step)
-            };
-        } else {
-            self.tilt_ramped_step = AngleDegrees::from_degrees(
-                0.02 * step * target_diff.signum() + 0.98 * self.tilt_ramped_step.as_degrees(),
-            );
-            self.tilt_setpoint = self.tilt_setpoint + self.tilt_ramped_step;
-        }
-        self.tilt_setpoint
+        sample_rate
+            .sample_period()
+            .map_or(self.tilt_setpoint, |period| {
+                let step = AngleDegrees::from(speed * period).as_degrees();
+                let direction = if darkride { -1.0 } else { 1.0 };
+                let target = self.input.ratio().as_ratio() * angle_limit.as_degrees() * direction;
+                let setpoint = self.tilt_setpoint.as_degrees();
+                let target_diff = target - setpoint;
+                if target_diff.abs() < 2.0 {
+                    self.tilt_ramped_step = AngleDegrees::from_degrees(
+                        0.02 * step * target_diff / 2.0 + 0.98 * self.tilt_ramped_step.as_degrees(),
+                    );
+                    let centering_step = self
+                        .tilt_ramped_step
+                        .as_degrees()
+                        .abs()
+                        .min((target_diff / 2.0).abs() * step)
+                        * target_diff.signum();
+                    self.tilt_setpoint = if target_diff.abs() < centering_step.abs() {
+                        AngleDegrees::from_degrees(target)
+                    } else {
+                        AngleDegrees::from_degrees(setpoint + centering_step)
+                    };
+                } else {
+                    self.tilt_ramped_step = AngleDegrees::from_degrees(
+                        0.02 * step * target_diff.signum()
+                            + 0.98 * self.tilt_ramped_step.as_degrees(),
+                    );
+                    self.tilt_setpoint = self.tilt_setpoint + self.tilt_ramped_step;
+                }
+                self.tilt_setpoint
+            })
     }
 
     pub(super) const fn input(self) -> crate::domain::FloatOutBoyRealtimeRemoteInput {
@@ -311,10 +313,10 @@ impl RemoteControlState {
         // C map: READY remote throttle stays idle until the max current,
         // grace period, and deadband checks all pass at
         // `third_party/float-out-boy/src/main.c:291-298`.
-        let current_max = remote_throttle.current_max().current();
+        let current_max = remote_throttle.current_max();
         let input = self.input.ratio().as_ratio();
         let grace_period = remote_throttle.grace_period();
-        if current_max <= Current::ZERO
+        if current_max <= MotorCurrent::new(Current::ZERO)
             || !float_out_boy_ticks_elapsed_seconds(
                 system_time_ticks,
                 disengage_ticks,
@@ -331,7 +333,7 @@ impl RemoteControlState {
         } else {
             input
         };
-        let target_current = MotorCurrent::new(Current::from_amps(current_max.as_amps() * servo));
+        let target_current = current_max * servo;
         // Upstream READY falls through to `do_rc_move(d)` at
         // `third_party/float-out-boy/src/main.c:1069`, where the remote-throttle idle
         // branch filters and requests `rc_current` at
@@ -348,13 +350,9 @@ impl RemoteControlState {
         // using the same 95/5 smoothing factor at
         // `third_party/float-out-boy/src/main.c:275-286` and
         // `third_party/float-out-boy/src/main.c:291-298`.
-        let current_amps = self.current.current().as_amps();
-        let target_amps = target_current.current().as_amps();
         let retain_previous = smoothing.retain_previous().as_ratio();
         let accept_target = smoothing.accept_target().as_ratio();
-        self.current = MotorCurrent::new(Current::from_amps(
-            current_amps * retain_previous + target_amps * accept_target,
-        ));
+        self.current = self.current * retain_previous + target_current * accept_target;
         self.current
     }
 

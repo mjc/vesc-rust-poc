@@ -21,6 +21,8 @@ extern crate std;
 pub mod ble_loopback;
 /// VESC firmware buffer-compatible primitive encoders.
 pub mod buffer;
+/// No-actuation control-loop probe and package wire helpers.
+pub mod control_loop;
 
 /// Version tag carried by the shared loopback wire frame.
 ///
@@ -116,7 +118,7 @@ impl From<WireCommand> for u8 {
 }
 
 /// A borrowed loopback frame with a version, command, and payload slice.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Frame<'a> {
     /// Wire protocol version for this frame.
     version: WireVersion,

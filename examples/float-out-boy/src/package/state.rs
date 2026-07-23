@@ -18,9 +18,11 @@ use crate::domain::{
 };
 use crate::motor_control::FloatOutBoyMotorControl;
 #[cfg(any(test, target_arch = "arm"))]
+use vescpkg_rs::prelude::OdometerMeters;
+#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{AdcVoltage, FirmwareVersion};
 use vescpkg_rs::prelude::{
-    AngleRadians, BatteryCellCount, BatteryVoltage, Current, DutyCycleLimit, InputCurrentLimit,
+    AngleRadians, BatteryCellCount, BatteryVoltage, Current, DutyCycleLimit, InputCurrent,
     MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, Ratio, Rpm, Temperature,
     TemperatureLimitStart, TimestampTicks, Voltage,
 };
@@ -40,6 +42,9 @@ mod handtest;
 #[cfg(any(test, target_arch = "arm"))]
 mod haptic_feedback;
 mod imu_runtime;
+#[cfg(any(test, target_arch = "arm"))]
+mod konami;
+mod lcm;
 mod limits;
 mod motor_acceleration;
 mod motor_runtime;
@@ -61,6 +66,9 @@ use alert_tracker::AlertTrackerState;
 use flywheel::FloatOutBoyFlywheelOffsets;
 #[cfg(any(test, target_arch = "arm"))]
 use haptic_feedback::{HapticFeedbackInput, HapticFeedbackState};
+#[cfg(any(test, target_arch = "arm"))]
+use konami::FloatOutBoyKonami;
+use lcm::LcmState;
 use motor_acceleration::MotorAccelerationTracker;
 use remote_control::RemoteControlState;
 use ride_modifiers::{RideModifierInput, RideModifierState};
@@ -68,6 +76,11 @@ use transition::{
     FloatOutBoyStateTransitionInput, FloatOutBoyStopEvent, float_out_boy_first_stop_event,
     float_out_boy_state_transition,
 };
+
+// C map: `aux_thd` stores backup data after more than 200 m while not running
+// at `third_party/float-out-boy/src/main.c:1142-1146`.
+#[cfg(any(test, target_arch = "arm"))]
+const FLOAT_OUT_BOY_AUX_BACKUP_DISTANCE_METERS: u64 = 200;
 
 #[inline]
 /// C map: `on_command_received` in `third_party/float-out-boy/src/main.c:2143-2225` filters
@@ -93,6 +106,13 @@ pub struct FloatOutBoyPackageState {
     all_data_payloads: FloatOutBoyAllDataPayloads,
     serialized_config: FloatOutBoyConfigImage,
     alert_tracker: AlertTrackerState,
+    lcm: LcmState,
+    #[cfg(any(test, target_arch = "arm"))]
+    flywheel_konami: FloatOutBoyKonami,
+    #[cfg(any(test, target_arch = "arm"))]
+    headlights_on_konami: FloatOutBoyKonami,
+    #[cfg(any(test, target_arch = "arm"))]
+    headlights_off_konami: FloatOutBoyKonami,
     #[cfg(any(test, target_arch = "arm"))]
     haptic_feedback: HapticFeedbackState,
     beeper: FloatOutBoyBeeper,
@@ -138,13 +158,17 @@ pub struct FloatOutBoyPackageState {
     duty_max_with_margin: DutyCycleLimit,
     motor_current_max: MotorCurrentLimit,
     motor_current_min: MotorCurrentLimit,
-    battery_current_max: InputCurrentLimit,
-    battery_current_min: InputCurrentLimit,
+    battery_current_max: InputCurrent,
+    battery_current_min: InputCurrent,
     mosfet_temperature: MosfetTemperature,
     motor_temperature: MotorTemperature,
     mosfet_temperature_limit_start: TemperatureLimitStart,
     motor_temperature_limit_start: TemperatureLimitStart,
     battery_cell_count: Option<BatteryCellCount>,
+    #[cfg(any(test, target_arch = "arm"))]
+    aux_odometer: OdometerMeters,
+    #[cfg(any(test, target_arch = "arm"))]
+    aux_backup_failures: u32,
     #[cfg(any(test, target_arch = "arm"))]
     firmware_version: Option<FirmwareVersion>,
 }
@@ -157,6 +181,18 @@ impl FloatOutBoyPackageState {
             all_data_payloads,
             serialized_config,
             alert_tracker: AlertTrackerState::default(),
+            lcm: LcmState::new(
+                serialized_config.hardware_led_mode_id(),
+                serialized_config.leds_enabled(),
+                serialized_config.headlights_enabled(),
+                serialized_config.lights_off_when_lifted(),
+            ),
+            #[cfg(any(test, target_arch = "arm"))]
+            flywheel_konami: FloatOutBoyKonami::flywheel(),
+            #[cfg(any(test, target_arch = "arm"))]
+            headlights_on_konami: FloatOutBoyKonami::headlights_on(),
+            #[cfg(any(test, target_arch = "arm"))]
+            headlights_off_konami: FloatOutBoyKonami::headlights_off(),
             #[cfg(any(test, target_arch = "arm"))]
             haptic_feedback: HapticFeedbackState::new(),
             beeper: FloatOutBoyBeeper::new(serialized_config.beeper_enabled()),
@@ -202,35 +238,37 @@ impl FloatOutBoyPackageState {
             duty_max_with_margin: DutyCycleLimit::new(Ratio::from_ratio_const(0.0)),
             motor_current_max: MotorCurrentLimit::new(Current::ZERO),
             motor_current_min: MotorCurrentLimit::new(Current::ZERO),
-            battery_current_max: InputCurrentLimit::new(Current::ZERO),
-            battery_current_min: InputCurrentLimit::new(Current::ZERO),
+            battery_current_max: InputCurrent::new(Current::ZERO),
+            battery_current_min: InputCurrent::new(Current::ZERO),
             mosfet_temperature: MosfetTemperature::new(Temperature::ZERO),
             motor_temperature: MotorTemperature::new(Temperature::ZERO),
             mosfet_temperature_limit_start: TemperatureLimitStart::new(Temperature::ZERO),
             motor_temperature_limit_start: TemperatureLimitStart::new(Temperature::ZERO),
             battery_cell_count: None,
             #[cfg(any(test, target_arch = "arm"))]
+            aux_odometer: OdometerMeters::from_meters(0),
+            #[cfg(any(test, target_arch = "arm"))]
+            aux_backup_failures: 0,
+            #[cfg(any(test, target_arch = "arm"))]
             firmware_version: None,
         }
     }
 
     #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    pub(crate) fn refresh_controller_input(&mut self, input: &vescpkg_rs::ControllerInput) {
+    pub(crate) fn refresh_controller_input(&mut self, input: &vescpkg_rs::FirmwareInputs) {
         // C map: Float Out Boy selects UART/PPM, rejects samples one second old,
         // applies deadband rescaling, then optional inversion at
         // `third_party/float-out-boy/src/remote.c:36-68`.
         let config = self.serialized_config;
         let value = match config.input_tilt_remote_type() {
-            1 => {
-                let remote = input.remote();
+            1 => input.remote().ok().and_then(|remote| {
                 (remote.age().duration() < vescpkg_rs::VescSeconds::from_seconds(1.0))
                     .then(|| remote.joystick_y().ratio().as_ratio())
-            }
-            2 => {
-                let (ppm, age) = input.ppm();
-                (age.duration() < vescpkg_rs::VescSeconds::from_seconds(1.0))
-                    .then(|| ppm.ratio().as_ratio())
-            }
+            }),
+            2 => input.ppm().ok().and_then(|ppm| {
+                (ppm.age().duration() < vescpkg_rs::VescSeconds::from_seconds(1.0))
+                    .then(|| ppm.value().ratio().as_ratio())
+            }),
             _ => None,
         }
         .unwrap_or(0.0);
@@ -260,6 +298,46 @@ impl FloatOutBoyPackageState {
         let mut state = Self::new(all_data_payloads);
         state.load_persisted_config_on_startup();
         state
+    }
+
+    /// Seed the auxiliary backup threshold from the firmware odometer at startup.
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn initialize_aux_odometer(&mut self, odometer: OdometerMeters) {
+        self.aux_odometer = odometer;
+    }
+
+    /// Return whether the source-backed auxiliary backup threshold has been crossed.
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn aux_backup_due(&self, odometer: OdometerMeters) -> bool {
+        !matches!(
+            self.all_data_payloads
+                .base()
+                .status()
+                .ride_state()
+                .run_state(),
+            FloatOutBoyRunState::Running
+        ) && odometer.as_meters()
+            > self
+                .aux_odometer
+                .as_meters()
+                .saturating_add(FLOAT_OUT_BOY_AUX_BACKUP_DISTANCE_METERS)
+    }
+
+    /// Record a successful auxiliary backup so the same distance is not stored repeatedly.
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn record_aux_backup(&mut self, odometer: OdometerMeters) {
+        self.aux_odometer = odometer;
+    }
+
+    /// Record an unsuccessful auxiliary backup for diagnostics and retry on the next tick.
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn record_aux_backup_failure(&mut self) {
+        self.aux_backup_failures = self.aux_backup_failures.saturating_add(1);
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn aux_backup_failures(&self) -> u32 {
+        self.aux_backup_failures
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -468,9 +546,52 @@ impl FloatOutBoyPackageState {
             self.serialized_config.persistent_fatal_error(),
         );
         self.refresh_footpad_runtime_state(footpad_adc1, footpad_adc2);
+        self.refresh_konami_runtime_state(system_time_ticks);
         self.refresh_charging_runtime_state(system_time_ticks);
         self.refresh_bms_runtime_state(system_time_ticks);
         self.refresh_imu_runtime_state(imu, system_time_ticks);
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    fn refresh_konami_runtime_state(&mut self, system_time_ticks: TimestampTicks) {
+        let base = self.all_data_payloads.base();
+        let ride_state = base.status().ride_state();
+        let pitch = crate::wire::degrees(base.attitude().pitch().angle());
+        let footpad = base.footpad().state();
+
+        if matches!(ride_state.run_state(), FloatOutBoyRunState::Ready)
+            && !matches!(ride_state.mode(), FloatOutBoyMode::Flywheel)
+            && (75.0..105.0).contains(&pitch)
+            && self.flywheel_konami.check(footpad, system_time_ticks)
+        {
+            // C map: `main.c:85-89` and `main.c:945-949`; this is the same
+            // armed default flywheel command used by the native handler.
+            let command = [
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                FloatOutBoyAppDataCommand::Flywheel.id(),
+                0x82,
+                0,
+                0,
+                0,
+                0,
+                1,
+            ];
+            self.handle_flywheel_packet(&command);
+        }
+
+        if self.serialized_config.hardware_led_mode_id() == 0 {
+            return;
+        }
+        if !self.lcm.headlights_enabled()
+            && self.headlights_on_konami.check(footpad, system_time_ticks)
+        {
+            self.lcm.set_headlights_enabled(true);
+        }
+        if self.lcm.headlights_enabled()
+            && self.headlights_off_konami.check(footpad, system_time_ticks)
+        {
+            self.lcm.set_headlights_enabled(false);
+        }
     }
 
     fn handle_rc_move_packet(&mut self, bytes: &[u8]) -> bool {
@@ -488,7 +609,7 @@ impl FloatOutBoyPackageState {
         let base = self.all_data_payloads.base();
         let ride_state = base.status().ride_state();
         let filtered_current = base.motor().filtered_motor_current().current().current();
-        let braking = base.motor().motor_current().current().is_negative();
+        let braking = base.motor().motor_current().is_negative();
         let current_limit = if braking {
             self.motor_current_min
         } else {
@@ -553,6 +674,7 @@ impl FloatOutBoyPackageState {
             || tuning::handle_booster_packet(self, bytes)
             || self.handle_rc_move_packet(bytes)
             || self.handle_alert_packet(telemetry, send, bytes)
+            || self.handle_lcm_packet(telemetry, send, bytes)
             || self.send_metadata_packet_response(send, bytes)
             || self.send_legacy_realtime_data_packet_response(send, bytes)
             || self.send_realtime_data_packet_response(telemetry, now, send, bytes)
@@ -560,7 +682,7 @@ impl FloatOutBoyPackageState {
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]
-    fn refresh_motor_runtime_state(&mut self, telemetry: &impl MotorTelemetry) {
+    pub(crate) fn refresh_motor_runtime_state(&mut self, telemetry: &impl MotorTelemetry) {
         motor_runtime::refresh(self, telemetry);
     }
 

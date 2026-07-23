@@ -1,6 +1,5 @@
 //! IMU helpers built on firmware IMU table slots.
 
-#[cfg(not(test))]
 use crate::types::ImuQuaternion;
 use crate::types::{
     ImuAcceleration, ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ, ImuAngularRate,
@@ -8,9 +7,503 @@ use crate::types::{
     ImuMagneticFieldX, ImuMagneticFieldY, ImuMagneticFieldZ, ImuOrientation, ImuPitch,
     ImuReadSample, ImuRoll, ImuSamplePeriod, ImuYaw,
 };
-#[cfg(not(test))]
-use crate::units::AngleRadians;
 use crate::units::{AccelerationG, AngularVelocity, MagneticFluxDensity, VescSeconds};
+use crate::units::{AngleDegrees, AngleRadians};
+use core::marker::PhantomData;
+use core::sync::atomic::{AtomicBool, Ordering};
+use vescpkg_rs_sys::raw::AttitudeInfo;
+
+static IMU_READ_CALLBACK_REGISTERED: AtomicBool = AtomicBool::new(false);
+static IMU_LEASE_CALLBACK_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+#[cfg_attr(test, allow(dead_code))]
+pub(crate) fn disable_callback_dispatch() {
+    IMU_LEASE_CALLBACK_ACTIVE.store(false, Ordering::Release);
+}
+
+/// Copied state from one firmware `ATTITUDE_INFO` value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FirmwareAhrsSnapshot {
+    orientation: ImuOrientation,
+    attitude: ImuAttitude,
+    integral_feedback: ImuAngularRate,
+    acceleration_magnitude: AccelerationG,
+    initial_update_done: bool,
+    acceleration_confidence_decay: f32,
+    proportional_gain: f32,
+    integral_gain: f32,
+    madgwick_beta: f32,
+}
+
+/// Parameters applied to an owned firmware AHRS state.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FirmwareAhrsParameters {
+    acceleration_confidence_decay: f32,
+    proportional_gain: f32,
+    integral_gain: f32,
+    madgwick_beta: f32,
+}
+
+impl FirmwareAhrsParameters {
+    /// Construct checked AHRS parameters.
+    pub fn try_new(
+        acceleration_confidence_decay: f32,
+        proportional_gain: f32,
+        integral_gain: f32,
+        madgwick_beta: f32,
+    ) -> Result<Self, FirmwareAhrsError> {
+        let parameters = Self {
+            acceleration_confidence_decay,
+            proportional_gain,
+            integral_gain,
+            madgwick_beta,
+        };
+        parameters
+            .is_valid()
+            .then_some(parameters)
+            .ok_or(FirmwareAhrsError::InvalidParameter)
+    }
+
+    /// Return the SDK defaults used when no firmware gains are supplied.
+    #[must_use]
+    pub const fn defaults() -> Self {
+        Self {
+            acceleration_confidence_decay: 0.0,
+            proportional_gain: 2.0,
+            integral_gain: 0.05,
+            madgwick_beta: 0.1,
+        }
+    }
+
+    /// Return the accelerometer confidence decay.
+    #[must_use]
+    pub const fn acceleration_confidence_decay(self) -> f32 {
+        self.acceleration_confidence_decay
+    }
+
+    /// Return the Mahony proportional gain.
+    #[must_use]
+    pub const fn proportional_gain(self) -> f32 {
+        self.proportional_gain
+    }
+
+    /// Return the Mahony integral gain.
+    #[must_use]
+    pub const fn integral_gain(self) -> f32 {
+        self.integral_gain
+    }
+
+    /// Return the Madgwick beta parameter.
+    #[must_use]
+    pub const fn madgwick_beta(self) -> f32 {
+        self.madgwick_beta
+    }
+
+    const fn is_valid(self) -> bool {
+        self.acceleration_confidence_decay.is_finite()
+            && self.proportional_gain.is_finite()
+            && self.integral_gain.is_finite()
+            && self.madgwick_beta.is_finite()
+            && self.acceleration_confidence_decay >= 0.0
+            && self.proportional_gain >= 0.0
+            && self.integral_gain >= 0.0
+            && self.madgwick_beta >= 0.0
+    }
+}
+
+impl Default for FirmwareAhrsParameters {
+    fn default() -> Self {
+        Self::defaults()
+    }
+}
+
+impl FirmwareAhrsSnapshot {
+    /// Return the copied quaternion orientation.
+    #[must_use]
+    pub const fn orientation(self) -> ImuOrientation {
+        self.orientation
+    }
+
+    /// Return the copied firmware-derived roll, pitch, and yaw angles.
+    #[must_use]
+    pub const fn attitude(self) -> ImuAttitude {
+        self.attitude
+    }
+
+    /// Return the copied integral feedback in radians per second.
+    #[must_use]
+    pub const fn integral_feedback(self) -> ImuAngularRate {
+        self.integral_feedback
+    }
+
+    /// Return the copied filtered acceleration magnitude in g.
+    #[must_use]
+    pub const fn acceleration_magnitude(self) -> AccelerationG {
+        self.acceleration_magnitude
+    }
+
+    /// Return whether firmware has completed its initial orientation update.
+    #[must_use]
+    pub const fn initial_update_done(self) -> bool {
+        self.initial_update_done
+    }
+
+    /// Return the copied accelerometer confidence decay parameter.
+    #[must_use]
+    pub const fn acceleration_confidence_decay(self) -> f32 {
+        self.acceleration_confidence_decay
+    }
+
+    /// Return the copied Mahony proportional gain.
+    #[must_use]
+    pub const fn proportional_gain(self) -> f32 {
+        self.proportional_gain
+    }
+
+    /// Return the copied Mahony integral gain.
+    #[must_use]
+    pub const fn integral_gain(self) -> f32 {
+        self.integral_gain
+    }
+
+    /// Return the copied Madgwick beta parameter.
+    #[must_use]
+    pub const fn madgwick_beta(self) -> f32 {
+        self.madgwick_beta
+    }
+}
+
+/// Failure returned before a firmware AHRS update crosses the ABI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FirmwareAhrsError {
+    /// One vector contains a non-finite value or has no measurable magnitude.
+    InvalidVector,
+    /// The update period is non-finite or not positive.
+    InvalidPeriod,
+    /// A gain or confidence parameter is non-finite or negative.
+    InvalidParameter,
+}
+
+impl core::fmt::Display for FirmwareAhrsError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::InvalidVector => {
+                formatter.write_str("firmware AHRS vector must be finite and non-zero")
+            }
+            Self::InvalidPeriod => {
+                formatter.write_str("firmware AHRS period must be finite and positive")
+            }
+            Self::InvalidParameter => {
+                formatter.write_str("firmware AHRS parameters must be finite and non-negative")
+            }
+        }
+    }
+}
+
+impl core::error::Error for FirmwareAhrsError {}
+
+/// Owned firmware AHRS state backed by the pinned `ATTITUDE_INFO` ABI.
+pub struct FirmwareAhrs {
+    attitude: AttitudeInfo,
+    parameters: FirmwareAhrsParameters,
+}
+
+impl FirmwareAhrs {
+    /// Construct and initialize one owned firmware AHRS state.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::with_parameters(FirmwareAhrsParameters::defaults())
+    }
+
+    /// Construct firmware AHRS state with explicit SDK-owned parameters.
+    #[must_use]
+    pub fn with_parameters(parameters: FirmwareAhrsParameters) -> Self {
+        // SAFETY: ATTITUDE_INFO is a C struct containing only scalar fields; zero is a valid
+        // temporary representation before the firmware initializer fills it.
+        let mut attitude = unsafe { core::mem::zeroed::<AttitudeInfo>() };
+        unsafe { crate::ffi::ahrs_init_attitude_info(&mut attitude) };
+        let mut state = Self {
+            attitude,
+            parameters,
+        };
+        state.apply_parameters();
+        state
+    }
+
+    /// Replace the SDK-owned parameters used by later updates.
+    pub fn set_parameters(
+        &mut self,
+        parameters: FirmwareAhrsParameters,
+    ) -> Result<(), FirmwareAhrsError> {
+        if !parameters.is_valid() {
+            return Err(FirmwareAhrsError::InvalidParameter);
+        }
+        self.parameters = parameters;
+        self.apply_parameters();
+        Ok(())
+    }
+
+    /// Return the parameters currently applied to the owned state.
+    #[must_use]
+    pub const fn parameters(&self) -> FirmwareAhrsParameters {
+        self.parameters
+    }
+
+    /// Reset the owned firmware AHRS state to its firmware defaults.
+    pub fn reset(&mut self) -> FirmwareAhrsSnapshot {
+        unsafe { crate::ffi::ahrs_init_attitude_info(&mut self.attitude) };
+        self.apply_parameters();
+        self.snapshot()
+    }
+
+    /// Set the initial orientation from typed acceleration and magnetic vectors.
+    pub fn update_initial_orientation(
+        &mut self,
+        acceleration: ImuAcceleration,
+        magnetic: ImuMagneticField,
+    ) -> Result<FirmwareAhrsSnapshot, FirmwareAhrsError> {
+        let acceleration = acceleration_values(acceleration)?;
+        let magnetic = magnetic_values(magnetic)?;
+        unsafe {
+            crate::ffi::ahrs_update_initial_orientation(
+                acceleration.as_ptr(),
+                magnetic.as_ptr(),
+                &mut self.attitude,
+            )
+        };
+        self.attitude.initialUpdateDone = 1;
+        Ok(self.snapshot())
+    }
+
+    /// Apply one firmware Mahony update from a copied IMU sample.
+    pub fn update_mahony(
+        &mut self,
+        sample: ImuReadSample,
+    ) -> Result<FirmwareAhrsSnapshot, FirmwareAhrsError> {
+        let (gyro, acceleration, period) = update_values(sample)?;
+        unsafe {
+            crate::ffi::ahrs_update_mahony_imu(
+                gyro.as_ptr(),
+                acceleration.as_ptr(),
+                period,
+                &mut self.attitude,
+            )
+        };
+        Ok(self.snapshot())
+    }
+
+    /// Apply one firmware Madgwick update from a copied IMU sample.
+    pub fn update_madgwick(
+        &mut self,
+        sample: ImuReadSample,
+    ) -> Result<FirmwareAhrsSnapshot, FirmwareAhrsError> {
+        let (gyro, acceleration, period) = update_values(sample)?;
+        unsafe {
+            crate::ffi::ahrs_update_madgwick_imu(
+                gyro.as_ptr(),
+                acceleration.as_ptr(),
+                period,
+                &mut self.attitude,
+            )
+        };
+        Ok(self.snapshot())
+    }
+
+    /// Return copied firmware roll, pitch, and yaw angles in radians.
+    #[must_use]
+    pub fn attitude(&self) -> ImuAttitude {
+        ImuAttitude::new(
+            ImuRoll::new(AngleRadians::from_radians(unsafe {
+                crate::ffi::ahrs_get_roll(&self.attitude)
+            })),
+            ImuPitch::new(AngleRadians::from_radians(unsafe {
+                crate::ffi::ahrs_get_pitch(&self.attitude)
+            })),
+            ImuYaw::new(AngleRadians::from_radians(unsafe {
+                crate::ffi::ahrs_get_yaw(&self.attitude)
+            })),
+        )
+    }
+
+    /// Copy every public field of the firmware attitude state before returning.
+    #[must_use]
+    pub fn snapshot(&self) -> FirmwareAhrsSnapshot {
+        let attitude_snapshot = self.attitude();
+        let attitude = &self.attitude;
+        FirmwareAhrsSnapshot {
+            orientation: ImuOrientation::from_quaternion(ImuQuaternion::from_components(
+                crate::ImuQuaternionW::new(attitude.q0),
+                crate::ImuQuaternionX::new(attitude.q1),
+                crate::ImuQuaternionY::new(attitude.q2),
+                crate::ImuQuaternionZ::new(attitude.q3),
+            )),
+            attitude: attitude_snapshot,
+            integral_feedback: ImuAngularRate::from_axes(
+                ImuAngularRateRoll::new(AngularVelocity::from_radians_per_second(
+                    attitude.integralFBx,
+                )),
+                ImuAngularRatePitch::new(AngularVelocity::from_radians_per_second(
+                    attitude.integralFBy,
+                )),
+                ImuAngularRateYaw::new(AngularVelocity::from_radians_per_second(
+                    attitude.integralFBz,
+                )),
+            ),
+            acceleration_magnitude: AccelerationG::from_g(attitude.accMagP),
+            initial_update_done: attitude.initialUpdateDone != 0,
+            acceleration_confidence_decay: attitude.acc_confidence_decay,
+            proportional_gain: attitude.kp,
+            integral_gain: attitude.ki,
+            madgwick_beta: attitude.beta,
+        }
+    }
+
+    fn apply_parameters(&mut self) {
+        self.attitude.acc_confidence_decay = self.parameters.acceleration_confidence_decay;
+        self.attitude.kp = self.parameters.proportional_gain;
+        self.attitude.ki = self.parameters.integral_gain;
+        self.attitude.beta = self.parameters.madgwick_beta;
+    }
+}
+
+impl Default for FirmwareAhrs {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn acceleration_values(acceleration: ImuAcceleration) -> Result<[f32; 3], FirmwareAhrsError> {
+    let values = acceleration.map_axes(|x, y, z| {
+        [
+            x.acceleration().as_g(),
+            y.acceleration().as_g(),
+            z.acceleration().as_g(),
+        ]
+    });
+    valid_vector(values)
+}
+
+fn magnetic_values(magnetic: ImuMagneticField) -> Result<[f32; 3], FirmwareAhrsError> {
+    let values = magnetic.map_axes(|x, y, z| {
+        [
+            x.magnetic_flux_density().as_microteslas(),
+            y.magnetic_flux_density().as_microteslas(),
+            z.magnetic_flux_density().as_microteslas(),
+        ]
+    });
+    valid_vector(values)
+}
+
+fn valid_vector(values: [f32; 3]) -> Result<[f32; 3], FirmwareAhrsError> {
+    (values.iter().all(|value| value.is_finite())
+        && values.iter().any(|value| value.abs() > f32::EPSILON))
+    .then_some(values)
+    .ok_or(FirmwareAhrsError::InvalidVector)
+}
+
+fn update_values(sample: ImuReadSample) -> Result<([f32; 3], [f32; 3], f32), FirmwareAhrsError> {
+    let gyro = sample.angular_rate().map_axes(|roll, pitch, yaw| {
+        [
+            roll.angular_velocity().as_radians_per_second(),
+            pitch.angular_velocity().as_radians_per_second(),
+            yaw.angular_velocity().as_radians_per_second(),
+        ]
+    });
+    let acceleration = acceleration_values(sample.acceleration())?;
+    let period = sample.period().duration().as_seconds();
+    if !gyro.iter().all(|value| value.is_finite()) || !period.is_finite() || period <= 0.0 {
+        return Err(if period.is_finite() && period > 0.0 {
+            FirmwareAhrsError::InvalidVector
+        } else {
+            FirmwareAhrsError::InvalidPeriod
+        });
+    }
+    Ok((gyro, acceleration, period))
+}
+
+/// Owned firmware IMU calibration result.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ImuCalibration {
+    roll: AngleDegrees,
+    pitch: AngleDegrees,
+    yaw: AngleDegrees,
+    acceleration_offset: ImuAcceleration,
+    angular_rate_offset: ImuAngularRate,
+}
+
+impl ImuCalibration {
+    #[cfg_attr(test, allow(dead_code))]
+    fn from_raw(values: [f32; 9]) -> Result<Self, ImuCalibrationError> {
+        if !values.iter().all(|value| value.is_finite()) {
+            return Err(ImuCalibrationError::InvalidResult);
+        }
+        Ok(Self {
+            roll: AngleDegrees::from_degrees(values[0]),
+            pitch: AngleDegrees::from_degrees(values[1]),
+            yaw: AngleDegrees::from_degrees(values[2]),
+            acceleration_offset: ImuAcceleration::from_axes(
+                ImuAccelerationX::new(AccelerationG::from_g(values[3])),
+                ImuAccelerationY::new(AccelerationG::from_g(values[4])),
+                ImuAccelerationZ::new(AccelerationG::from_g(values[5])),
+            ),
+            angular_rate_offset: ImuAngularRate::from_axes(
+                ImuAngularRateRoll::new(AngularVelocity::from_degrees_per_second(values[6])),
+                ImuAngularRatePitch::new(AngularVelocity::from_degrees_per_second(values[7])),
+                ImuAngularRateYaw::new(AngularVelocity::from_degrees_per_second(values[8])),
+            ),
+        })
+    }
+
+    /// Return the calibrated roll rotation in degrees.
+    #[must_use]
+    pub const fn roll(self) -> AngleDegrees {
+        self.roll
+    }
+
+    /// Return the calibrated pitch rotation in degrees.
+    #[must_use]
+    pub const fn pitch(self) -> AngleDegrees {
+        self.pitch
+    }
+
+    /// Return the requested calibrated yaw rotation in degrees.
+    #[must_use]
+    pub const fn yaw(self) -> AngleDegrees {
+        self.yaw
+    }
+
+    /// Return the copied accelerometer offset vector in g.
+    #[must_use]
+    pub const fn acceleration_offset(self) -> ImuAcceleration {
+        self.acceleration_offset
+    }
+
+    /// Return the copied gyroscope offset vector in degrees per second.
+    #[must_use]
+    pub const fn angular_rate_offset(self) -> ImuAngularRate {
+        self.angular_rate_offset
+    }
+}
+
+/// Failure returned when a firmware IMU calibration request or result is invalid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImuCalibrationError {
+    /// The requested yaw is not finite.
+    InvalidYaw,
+    /// Firmware returned a non-finite calibration component.
+    InvalidResult,
+}
+
+impl core::fmt::Display for ImuCalibrationError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::InvalidYaw => "IMU calibration yaw must be finite",
+            Self::InvalidResult => "IMU calibration result contains a non-finite value",
+        })
+    }
+}
+
+impl core::error::Error for ImuCalibrationError {}
 
 /// IMU operations backed by firmware slots.
 #[cfg(not(test))]
@@ -43,9 +536,31 @@ pub trait ImuBindings {
     /// `vesc_pkg_lib/vesc_c_if.h:513`.
     fn yaw(&self) -> ImuYaw;
 
+    /// Return roll, pitch, and yaw from one firmware snapshot call.
+    fn rpy(&self) -> ImuAttitude {
+        let mut values = [0.0; 3];
+        unsafe { crate::ffi::imu_get_rpy(values.as_mut_ptr()) };
+        ImuAttitude::new(
+            ImuRoll::new(AngleRadians::from_radians(values[0])),
+            ImuPitch::new(AngleRadians::from_radians(values[1])),
+            ImuYaw::new(AngleRadians::from_radians(values[2])),
+        )
+    }
+
+    /// Run firmware calibration and copy its nine-value result.
+    fn calibrate(&self, yaw: AngleDegrees) -> Result<ImuCalibration, ImuCalibrationError> {
+        let yaw = yaw.as_degrees();
+        if !yaw.is_finite() {
+            return Err(ImuCalibrationError::InvalidYaw);
+        }
+        let mut values = [0.0; 9];
+        unsafe { crate::ffi::imu_get_calibration(yaw, values.as_mut_ptr()) };
+        ImuCalibration::from_raw(values)
+    }
+
     /// Return firmware IMU attitude.
     fn attitude(&self) -> ImuAttitude {
-        ImuAttitude::new(self.roll(), self.pitch(), self.yaw())
+        self.rpy()
     }
 
     /// Return firmware IMU gyro axes in degrees/sec.
@@ -57,6 +572,18 @@ pub trait ImuBindings {
 
     /// Return firmware IMU orientation.
     fn orientation(&self) -> ImuOrientation;
+    /// Return firmware acceleration axes in g units.
+    fn acceleration(&self) -> ImuAcceleration;
+    /// Return firmware magnetic-field axes in microteslas.
+    fn magnetic_field(&self) -> ImuMagneticField;
+    /// Return derotated firmware acceleration axes in g units.
+    fn derotated_acceleration(&self) -> ImuAcceleration;
+    /// Derotate a caller-provided acceleration vector into the firmware frame.
+    fn derotate_acceleration(&self, input: ImuAcceleration) -> ImuAcceleration;
+    /// Return derotated firmware gyro axes in degrees/sec.
+    fn derotated_angular_rate(&self) -> ImuAngularRate;
+    /// Set the firmware estimator yaw reference.
+    fn set_yaw(&self, yaw: ImuYaw);
 }
 
 #[cfg(not(test))]
@@ -77,6 +604,14 @@ impl<B: ImuBindings + ?Sized> ImuBindings for &B {
         (**self).yaw()
     }
 
+    fn rpy(&self) -> ImuAttitude {
+        (**self).rpy()
+    }
+
+    fn calibrate(&self, yaw: AngleDegrees) -> Result<ImuCalibration, ImuCalibrationError> {
+        (**self).calibrate(yaw)
+    }
+
     fn angular_rate(&self) -> ImuAngularRate {
         (**self).angular_rate()
     }
@@ -84,12 +619,96 @@ impl<B: ImuBindings + ?Sized> ImuBindings for &B {
     fn orientation(&self) -> ImuOrientation {
         (**self).orientation()
     }
+
+    fn acceleration(&self) -> ImuAcceleration {
+        (**self).acceleration()
+    }
+
+    fn magnetic_field(&self) -> ImuMagneticField {
+        (**self).magnetic_field()
+    }
+
+    fn derotated_acceleration(&self) -> ImuAcceleration {
+        (**self).derotated_acceleration()
+    }
+
+    fn derotate_acceleration(&self, input: ImuAcceleration) -> ImuAcceleration {
+        (**self).derotate_acceleration(input)
+    }
+
+    fn set_yaw(&self, yaw: ImuYaw) {
+        (**self).set_yaw(yaw)
+    }
+
+    fn derotated_angular_rate(&self) -> ImuAngularRate {
+        (**self).derotated_angular_rate()
+    }
 }
 
 /// Rust implementation for a firmware IMU read callback.
 pub trait ImuReadCallback {
     /// Handle one typed hardware IMU read sample copied from the firmware callback.
     fn read(sample: ImuReadSample);
+}
+
+/// Failure returned while registering the retained firmware IMU callback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImuReadCallbackError {
+    /// Another package callback already owns the firmware slot.
+    AlreadyRegistered,
+}
+
+impl core::fmt::Display for ImuReadCallbackError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str("a firmware IMU read callback is already registered")
+    }
+}
+
+impl core::error::Error for ImuReadCallbackError {}
+
+/// Exclusive ownership of the retained firmware IMU read callback.
+pub struct ImuReadCallbackLease<T: ImuReadCallback + 'static> {
+    _handler: PhantomData<fn() -> T>,
+}
+
+/// Register one typed callback against the retained firmware IMU read slot.
+///
+/// # Safety
+///
+/// `T::read` runs from firmware IMU context and must obey the provider's callback-time
+/// restrictions. The callback type must remain valid for the lease lifetime.
+pub unsafe fn register_imu_read_callback<T: ImuReadCallback + 'static>()
+-> Result<ImuReadCallbackLease<T>, ImuReadCallbackError> {
+    if IMU_READ_CALLBACK_REGISTERED
+        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
+        return Err(ImuReadCallbackError::AlreadyRegistered);
+    }
+    unsafe { crate::ffi::imu_set_read_callback(Some(leased_imu_read_callback::<T>)) };
+    IMU_LEASE_CALLBACK_ACTIVE.store(true, Ordering::Release);
+    Ok(ImuReadCallbackLease {
+        _handler: PhantomData,
+    })
+}
+
+impl<T: ImuReadCallback + 'static> Drop for ImuReadCallbackLease<T> {
+    fn drop(&mut self) {
+        IMU_LEASE_CALLBACK_ACTIVE.store(false, Ordering::Release);
+        unsafe { crate::ffi::imu_set_read_callback(None) };
+        IMU_READ_CALLBACK_REGISTERED.store(false, Ordering::Release);
+    }
+}
+
+unsafe extern "C" fn leased_imu_read_callback<T: ImuReadCallback>(
+    acc: *mut f32,
+    gyro: *mut f32,
+    mag: *mut f32,
+    dt: f32,
+) {
+    if IMU_LEASE_CALLBACK_ACTIVE.load(Ordering::Acquire) {
+        unsafe { imu_read_callback::<T>(acc, gyro, mag, dt) };
+    }
 }
 
 /// Typed IMU sample handler for package-owned state.
@@ -287,6 +906,67 @@ impl ImuBindings for RealImuBindings {
         unsafe { crate::ffi::vesc_imu_get_quaternions(quaternions.as_mut_ptr()) };
         ImuOrientation::from_quaternion(ImuQuaternion::from_firmware_wxyz(quaternions))
     }
+
+    fn acceleration(&self) -> ImuAcceleration {
+        let mut values = [0.0; 3];
+        unsafe { crate::ffi::imu_get_accel(values.as_mut_ptr()) };
+        ImuAcceleration::from_axes(
+            ImuAccelerationX::new(AccelerationG::from_g(values[0])),
+            ImuAccelerationY::new(AccelerationG::from_g(values[1])),
+            ImuAccelerationZ::new(AccelerationG::from_g(values[2])),
+        )
+    }
+
+    fn magnetic_field(&self) -> ImuMagneticField {
+        let mut values = [0.0; 3];
+        unsafe { crate::ffi::imu_get_mag(values.as_mut_ptr()) };
+        ImuMagneticField::from_axes(
+            ImuMagneticFieldX::new(MagneticFluxDensity::from_microteslas(values[0])),
+            ImuMagneticFieldY::new(MagneticFluxDensity::from_microteslas(values[1])),
+            ImuMagneticFieldZ::new(MagneticFluxDensity::from_microteslas(values[2])),
+        )
+    }
+
+    fn derotated_acceleration(&self) -> ImuAcceleration {
+        let mut values = [0.0; 3];
+        unsafe { crate::ffi::imu_get_accel_derotated(values.as_mut_ptr()) };
+        ImuAcceleration::from_axes(
+            ImuAccelerationX::new(AccelerationG::from_g(values[0])),
+            ImuAccelerationY::new(AccelerationG::from_g(values[1])),
+            ImuAccelerationZ::new(AccelerationG::from_g(values[2])),
+        )
+    }
+
+    fn derotate_acceleration(&self, input: ImuAcceleration) -> ImuAcceleration {
+        let input = input.map_axes(|x, y, z| {
+            [
+                x.acceleration().as_g(),
+                y.acceleration().as_g(),
+                z.acceleration().as_g(),
+            ]
+        });
+        let mut output = [0.0; 3];
+        unsafe { crate::ffi::imu_derotate(input.as_ptr(), output.as_mut_ptr()) };
+        ImuAcceleration::from_axes(
+            ImuAccelerationX::new(AccelerationG::from_g(output[0])),
+            ImuAccelerationY::new(AccelerationG::from_g(output[1])),
+            ImuAccelerationZ::new(AccelerationG::from_g(output[2])),
+        )
+    }
+
+    fn derotated_angular_rate(&self) -> ImuAngularRate {
+        let mut values = [0.0; 3];
+        unsafe { crate::ffi::imu_get_gyro_derotated(values.as_mut_ptr()) };
+        ImuAngularRate::from_axes(
+            ImuAngularRateRoll::new(AngularVelocity::from_degrees_per_second(values[0])),
+            ImuAngularRatePitch::new(AngularVelocity::from_degrees_per_second(values[1])),
+            ImuAngularRateYaw::new(AngularVelocity::from_degrees_per_second(values[2])),
+        )
+    }
+
+    fn set_yaw(&self, yaw: ImuYaw) {
+        unsafe { crate::ffi::imu_set_yaw(yaw.angle().as_degrees()) };
+    }
 }
 
 /// High-level IMU API built on a binding implementation.
@@ -309,12 +989,28 @@ pub trait Imu: private::Imu {
     fn pitch(&self) -> ImuPitch;
     /// Return the current typed yaw angle.
     fn yaw(&self) -> ImuYaw;
+    /// Return one copied firmware roll/pitch/yaw snapshot.
+    fn rpy(&self) -> ImuAttitude;
+    /// Run firmware calibration and copy its owned result.
+    fn calibrate(&self, yaw: AngleDegrees) -> Result<ImuCalibration, ImuCalibrationError>;
     /// Return the current typed attitude.
     fn attitude(&self) -> ImuAttitude;
     /// Return typed angular rates.
     fn angular_rate(&self) -> ImuAngularRate;
     /// Return the current typed orientation.
     fn orientation(&self) -> ImuOrientation;
+    /// Return firmware acceleration axes in g units.
+    fn acceleration(&self) -> ImuAcceleration;
+    /// Return firmware magnetic-field axes in microteslas.
+    fn magnetic_field(&self) -> ImuMagneticField;
+    /// Return derotated firmware acceleration axes in g units.
+    fn derotated_acceleration(&self) -> ImuAcceleration;
+    /// Derotate a caller-provided acceleration vector into the firmware frame.
+    fn derotate_acceleration(&self, input: ImuAcceleration) -> ImuAcceleration;
+    /// Set the firmware estimator yaw reference.
+    fn set_yaw(&self, yaw: ImuYaw);
+    /// Return derotated firmware gyro axes in degrees/sec.
+    fn derotated_angular_rate(&self) -> ImuAngularRate;
 }
 
 #[cfg(not(test))]
@@ -344,6 +1040,16 @@ impl<B: ImuBindings> ImuApi<B> {
         self.bindings.yaw()
     }
 
+    /// Return one copied firmware roll/pitch/yaw snapshot.
+    pub fn rpy(&self) -> ImuAttitude {
+        self.bindings.rpy()
+    }
+
+    /// Run firmware calibration and copy its owned result.
+    pub fn calibrate(&self, yaw: AngleDegrees) -> Result<ImuCalibration, ImuCalibrationError> {
+        self.bindings.calibrate(yaw)
+    }
+
     /// Return firmware IMU attitude.
     pub fn attitude(&self) -> ImuAttitude {
         self.bindings.attitude()
@@ -357,6 +1063,36 @@ impl<B: ImuBindings> ImuApi<B> {
     /// Return firmware IMU orientation.
     pub fn orientation(&self) -> ImuOrientation {
         self.bindings.orientation()
+    }
+
+    /// Return firmware acceleration axes in g units.
+    pub fn acceleration(&self) -> ImuAcceleration {
+        self.bindings.acceleration()
+    }
+
+    /// Return firmware magnetic-field axes in microteslas.
+    pub fn magnetic_field(&self) -> ImuMagneticField {
+        self.bindings.magnetic_field()
+    }
+
+    /// Return derotated firmware acceleration axes in g units.
+    pub fn derotated_acceleration(&self) -> ImuAcceleration {
+        self.bindings.derotated_acceleration()
+    }
+
+    /// Derotate a caller-provided acceleration vector into the firmware frame.
+    pub fn derotate_acceleration(&self, input: ImuAcceleration) -> ImuAcceleration {
+        self.bindings.derotate_acceleration(input)
+    }
+
+    /// Set the firmware estimator yaw reference.
+    pub fn set_yaw(&self, yaw: ImuYaw) {
+        self.bindings.set_yaw(yaw);
+    }
+
+    /// Return derotated firmware gyro axes in degrees/sec.
+    pub fn derotated_angular_rate(&self) -> ImuAngularRate {
+        self.bindings.derotated_angular_rate()
     }
 }
 
@@ -381,6 +1117,14 @@ impl<B: ImuBindings> Imu for ImuApi<B> {
         self.yaw()
     }
 
+    fn rpy(&self) -> ImuAttitude {
+        self.rpy()
+    }
+
+    fn calibrate(&self, yaw: AngleDegrees) -> Result<ImuCalibration, ImuCalibrationError> {
+        self.calibrate(yaw)
+    }
+
     fn attitude(&self) -> ImuAttitude {
         self.attitude()
     }
@@ -392,11 +1136,38 @@ impl<B: ImuBindings> Imu for ImuApi<B> {
     fn orientation(&self) -> ImuOrientation {
         self.orientation()
     }
+
+    fn acceleration(&self) -> ImuAcceleration {
+        self.acceleration()
+    }
+
+    fn magnetic_field(&self) -> ImuMagneticField {
+        self.magnetic_field()
+    }
+
+    fn derotated_acceleration(&self) -> ImuAcceleration {
+        self.derotated_acceleration()
+    }
+
+    fn derotate_acceleration(&self, input: ImuAcceleration) -> ImuAcceleration {
+        self.derotate_acceleration(input)
+    }
+
+    fn set_yaw(&self, yaw: ImuYaw) {
+        self.set_yaw(yaw)
+    }
+
+    fn derotated_angular_rate(&self) -> ImuAngularRate {
+        self.derotated_angular_rate()
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ImuReadCallback, ImuReadHandler, PackageImuReadCallback, imu_read_callback};
+    use super::{
+        IMU_LEASE_CALLBACK_ACTIVE, ImuReadCallback, ImuReadHandler, PackageImuReadCallback,
+        imu_read_callback, leased_imu_read_callback,
+    };
     use crate::types::{
         ImuAcceleration, ImuAccelerationX, ImuAccelerationY, ImuAccelerationZ, ImuAngularRate,
         ImuAngularRatePitch, ImuAngularRateRoll, ImuAngularRateYaw, ImuMagneticField,
@@ -405,7 +1176,7 @@ mod tests {
     use crate::units::{AccelerationG, AngularVelocity, MagneticFluxDensity, VescSeconds};
     use core::f32::consts::FRAC_PI_2;
     use core::ptr::NonNull;
-    use core::sync::atomic::{AtomicPtr, AtomicU8, Ordering};
+    use core::sync::atomic::{AtomicPtr, AtomicU8, AtomicUsize, Ordering};
     use std::sync::Mutex;
 
     static LAST_SAMPLE: Mutex<Option<ImuReadSample>> = Mutex::new(None);
@@ -428,6 +1199,15 @@ mod tests {
     static LOADER_RUNTIME_STATE: crate::PackageStateStore<State> = crate::PackageStateStore::new();
     static LOADER_STATE: AtomicPtr<State> = AtomicPtr::new(core::ptr::null_mut());
     static OBSERVED_SAMPLES: AtomicU8 = AtomicU8::new(0);
+    static LEASE_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    struct LeaseCallback;
+
+    impl ImuReadCallback for LeaseCallback {
+        fn read(_sample: ImuReadSample) {
+            LEASE_CALLS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
 
     unsafe fn loader_state() -> Option<NonNull<State>> {
         NonNull::new(LOADER_STATE.load(Ordering::Acquire))
@@ -548,6 +1328,33 @@ mod tests {
             (4.0, 5.0, 6.0)
         );
         assert_eq!(sample.period().duration().as_seconds(), 0.02);
+    }
+
+    #[test]
+    fn retained_imu_lease_callback_fails_closed_after_disable() {
+        LEASE_CALLS.store(0, Ordering::Relaxed);
+        let mut acc = [1.0, 0.0, 0.0];
+        let mut gyro = [0.0; 3];
+        let mut mag = [0.0; 3];
+        IMU_LEASE_CALLBACK_ACTIVE.store(true, Ordering::Release);
+        unsafe {
+            leased_imu_read_callback::<LeaseCallback>(
+                acc.as_mut_ptr(),
+                gyro.as_mut_ptr(),
+                mag.as_mut_ptr(),
+                0.02,
+            );
+        }
+        IMU_LEASE_CALLBACK_ACTIVE.store(false, Ordering::Release);
+        unsafe {
+            leased_imu_read_callback::<LeaseCallback>(
+                acc.as_mut_ptr(),
+                gyro.as_mut_ptr(),
+                mag.as_mut_ptr(),
+                0.02,
+            );
+        }
+        assert_eq!(LEASE_CALLS.load(Ordering::Relaxed), 1);
     }
 
     #[test]

@@ -1,0 +1,1024 @@
+//! Safe CAN transport and status snapshots.
+
+use crate::types::{
+    AdcVoltage, AmpHoursCharged, AmpHoursDischarged, BrakeCurrent, BrakeCurrentRelative,
+    CanControllerId, CanExtendedId, CanPayloadLen, CanStandardId, CurrentOffDelay, CurrentRelative,
+    DutyCycle, ElectricalSpeed, InputCurrent, InputVoltage, MosfetTemperature, MotorCurrent,
+    MotorTemperature, PidPosition, PpmInput, TachometerSteps, WattHoursCharged,
+    WattHoursDischarged,
+};
+use crate::units::{Charge, Current, Energy, Rpm, SignedRatio, SystemTicks, TimestampTicks};
+use core::sync::atomic::{AtomicBool, Ordering};
+
+/// Raw callback ABI used by the explicitly unsafe CAN registration methods.
+pub type CanReceiverCallback = unsafe extern "C" fn(u32, *mut u8, u8) -> bool;
+
+/// Identifier passed to a typed CAN receive callback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanReceiverId {
+    /// An 11-bit standard CAN identifier.
+    Standard(CanStandardId),
+    /// A 29-bit extended CAN identifier.
+    Extended(CanExtendedId),
+}
+
+impl CanReceiverId {
+    /// Return the protocol identifier as an unsigned 29-bit value.
+    #[must_use]
+    pub const fn as_u32(self) -> u32 {
+        match self {
+            Self::Standard(id) => id.as_u16() as u32,
+            Self::Extended(id) => id.as_u32(),
+        }
+    }
+
+    /// Return whether this callback received an extended (29-bit) frame.
+    #[must_use]
+    pub const fn is_extended(self) -> bool {
+        matches!(self, Self::Extended(_))
+    }
+}
+
+/// Safe behavior for one package-owned CAN receive callback.
+pub trait CanReceiverHandler {
+    /// Handle a callback-scoped frame payload.
+    fn receive(id: CanReceiverId, payload: &[u8]) -> bool;
+}
+
+static SID_RECEIVER_REGISTERED: AtomicBool = AtomicBool::new(false);
+static EID_RECEIVER_REGISTERED: AtomicBool = AtomicBool::new(false);
+static SID_RECEIVER_ACTIVE: AtomicBool = AtomicBool::new(false);
+static EID_RECEIVER_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+#[cfg_attr(test, allow(dead_code))]
+pub(crate) fn disable_callback_dispatch() {
+    SID_RECEIVER_ACTIVE.store(false, Ordering::Release);
+    EID_RECEIVER_ACTIVE.store(false, Ordering::Release);
+}
+
+/// Failure returned by a CAN operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanError {
+    /// The firmware table does not expose the requested CAN operation.
+    Unsupported,
+    /// A classic CAN frame contained more than eight payload bytes.
+    PayloadTooLong,
+    /// The remote controller did not answer the ping request.
+    PingFailed,
+    /// A receiver callback of this kind is already registered.
+    ReceiverBusy,
+}
+
+impl core::fmt::Display for CanError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::Unsupported => "firmware does not expose this CAN operation",
+            Self::PayloadTooLong => "CAN payload exceeds eight bytes",
+            Self::PingFailed => "remote CAN controller did not answer",
+            Self::ReceiverBusy => "a CAN receiver callback is already registered",
+        })
+    }
+}
+
+/// Hardware family reported by a remote VESC controller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanHardwareType {
+    /// Standard VESC motor controller.
+    Vesc,
+    /// VESC BMS controller.
+    VescBms,
+    /// Custom VESC module.
+    CustomModule,
+    /// Firmware-specific hardware type not known by this SDK.
+    Unknown(i32),
+}
+
+impl CanHardwareType {
+    const fn from_raw(raw: i32) -> Self {
+        match raw {
+            0 => Self::Vesc,
+            1 => Self::VescBms,
+            2 => Self::CustomModule,
+            value => Self::Unknown(value),
+        }
+    }
+}
+
+impl core::error::Error for CanError {}
+
+/// A copied snapshot of the firmware's primary CAN status record.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CanStatus {
+    controller: CanControllerId,
+    received_at: TimestampTicks,
+    electrical_speed: ElectricalSpeed,
+    motor_current: MotorCurrent,
+    duty_cycle: DutyCycle,
+}
+
+/// A copied snapshot of CAN status message 2.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CanStatus2 {
+    controller: CanControllerId,
+    received_at: TimestampTicks,
+    amp_hours_discharged: AmpHoursDischarged,
+    amp_hours_charged: AmpHoursCharged,
+}
+
+/// A copied snapshot of CAN status message 3.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CanStatus3 {
+    controller: CanControllerId,
+    received_at: TimestampTicks,
+    watt_hours_discharged: WattHoursDischarged,
+    watt_hours_charged: WattHoursCharged,
+}
+
+/// A copied snapshot of CAN status message 4.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CanStatus4 {
+    controller: CanControllerId,
+    received_at: TimestampTicks,
+    fet_temperature: MosfetTemperature,
+    motor_temperature: MotorTemperature,
+    input_current: InputCurrent,
+    position: PidPosition,
+}
+
+/// A copied snapshot of CAN status message 5.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CanStatus5 {
+    controller: CanControllerId,
+    received_at: TimestampTicks,
+    input_voltage: InputVoltage,
+    tachometer: TachometerSteps,
+}
+
+/// A copied snapshot of CAN status message 6.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CanStatus6 {
+    controller: CanControllerId,
+    received_at: TimestampTicks,
+    adc_1: AdcVoltage,
+    adc_2: AdcVoltage,
+    adc_3: AdcVoltage,
+    ppm: PpmInput,
+}
+
+impl CanStatus6 {
+    /// Return the firmware timestamp associated with this record.
+    pub const fn received_at(self) -> TimestampTicks {
+        self.received_at
+    }
+
+    /// Return the wrapping age of this snapshot at a current firmware tick.
+    pub const fn age_at(self, now: TimestampTicks) -> SystemTicks {
+        now.wrapping_duration_since(self.received_at)
+    }
+
+    /// Return whether this snapshot is older than the supplied tick budget.
+    pub fn is_stale(self, now: TimestampTicks, max_age: SystemTicks) -> bool {
+        self.age_at(now) > max_age
+    }
+
+    /// Return the controller whose status was queried.
+    pub const fn controller(self) -> CanControllerId {
+        self.controller
+    }
+
+    /// Return ADC channel 1.
+    pub const fn adc1(self) -> AdcVoltage {
+        self.adc_1
+    }
+
+    /// Return ADC channel 2.
+    pub const fn adc2(self) -> AdcVoltage {
+        self.adc_2
+    }
+
+    /// Return ADC channel 3.
+    pub const fn adc3(self) -> AdcVoltage {
+        self.adc_3
+    }
+
+    /// Return the decoded PPM input ratio.
+    pub const fn ppm(self) -> PpmInput {
+        self.ppm
+    }
+}
+
+impl CanStatus5 {
+    /// Return the firmware timestamp associated with this record.
+    pub const fn received_at(self) -> TimestampTicks {
+        self.received_at
+    }
+
+    /// Return the wrapping age of this snapshot at a current firmware tick.
+    pub const fn age_at(self, now: TimestampTicks) -> SystemTicks {
+        now.wrapping_duration_since(self.received_at)
+    }
+
+    /// Return whether this snapshot is older than the supplied tick budget.
+    pub fn is_stale(self, now: TimestampTicks, max_age: SystemTicks) -> bool {
+        self.age_at(now) > max_age
+    }
+
+    /// Return the controller whose status was queried.
+    pub const fn controller(self) -> CanControllerId {
+        self.controller
+    }
+
+    /// Return the remote controller input voltage.
+    pub const fn input_voltage(self) -> InputVoltage {
+        self.input_voltage
+    }
+
+    /// Return the remote tachometer position.
+    pub const fn tachometer(self) -> TachometerSteps {
+        self.tachometer
+    }
+}
+
+impl CanStatus4 {
+    /// Return the firmware timestamp associated with this record.
+    pub const fn received_at(self) -> TimestampTicks {
+        self.received_at
+    }
+
+    /// Return the wrapping age of this snapshot at a current firmware tick.
+    pub const fn age_at(self, now: TimestampTicks) -> SystemTicks {
+        now.wrapping_duration_since(self.received_at)
+    }
+
+    /// Return whether this snapshot is older than the supplied tick budget.
+    pub fn is_stale(self, now: TimestampTicks, max_age: SystemTicks) -> bool {
+        self.age_at(now) > max_age
+    }
+
+    /// Return the controller whose status was queried.
+    pub const fn controller(self) -> CanControllerId {
+        self.controller
+    }
+
+    /// Return the remote FET temperature.
+    pub const fn fet_temperature(self) -> MosfetTemperature {
+        self.fet_temperature
+    }
+
+    /// Return the remote motor temperature.
+    pub const fn motor_temperature(self) -> MotorTemperature {
+        self.motor_temperature
+    }
+
+    /// Return the remote input current.
+    pub const fn input_current(self) -> InputCurrent {
+        self.input_current
+    }
+
+    /// Return the remote PID position.
+    pub const fn position(self) -> PidPosition {
+        self.position
+    }
+}
+
+impl CanStatus3 {
+    /// Return the firmware timestamp associated with this record.
+    pub const fn received_at(self) -> TimestampTicks {
+        self.received_at
+    }
+
+    /// Return the wrapping age of this snapshot at a current firmware tick.
+    pub const fn age_at(self, now: TimestampTicks) -> SystemTicks {
+        now.wrapping_duration_since(self.received_at)
+    }
+
+    /// Return whether this snapshot is older than the supplied tick budget.
+    pub fn is_stale(self, now: TimestampTicks, max_age: SystemTicks) -> bool {
+        self.age_at(now) > max_age
+    }
+
+    /// Return the controller whose status was queried.
+    pub const fn controller(self) -> CanControllerId {
+        self.controller
+    }
+
+    /// Return discharged watt-hours reported by the remote controller.
+    pub const fn watt_hours_discharged(self) -> WattHoursDischarged {
+        self.watt_hours_discharged
+    }
+
+    /// Return charged watt-hours reported by the remote controller.
+    pub const fn watt_hours_charged(self) -> WattHoursCharged {
+        self.watt_hours_charged
+    }
+}
+
+impl CanStatus2 {
+    /// Return the firmware timestamp associated with this record.
+    pub const fn received_at(self) -> TimestampTicks {
+        self.received_at
+    }
+
+    /// Return the wrapping age of this snapshot at a current firmware tick.
+    pub const fn age_at(self, now: TimestampTicks) -> SystemTicks {
+        now.wrapping_duration_since(self.received_at)
+    }
+
+    /// Return whether this snapshot is older than the supplied tick budget.
+    pub fn is_stale(self, now: TimestampTicks, max_age: SystemTicks) -> bool {
+        self.age_at(now) > max_age
+    }
+
+    /// Return the controller whose status was queried.
+    pub const fn controller(self) -> CanControllerId {
+        self.controller
+    }
+
+    /// Return discharged amp-hours reported by the remote controller.
+    pub const fn amp_hours_discharged(self) -> AmpHoursDischarged {
+        self.amp_hours_discharged
+    }
+
+    /// Return charged amp-hours reported by the remote controller.
+    pub const fn amp_hours_charged(self) -> AmpHoursCharged {
+        self.amp_hours_charged
+    }
+}
+
+impl CanStatus {
+    /// Return the controller whose status was queried.
+    pub const fn controller(self) -> CanControllerId {
+        self.controller
+    }
+
+    /// Return the firmware timestamp associated with the record.
+    pub const fn received_at(self) -> TimestampTicks {
+        self.received_at
+    }
+
+    /// Return the remote motor's electrical speed.
+    pub const fn electrical_speed(self) -> ElectricalSpeed {
+        self.electrical_speed
+    }
+
+    /// Return the remote motor current.
+    pub const fn motor_current(self) -> MotorCurrent {
+        self.motor_current
+    }
+
+    /// Return the remote motor duty cycle.
+    pub const fn duty_cycle(self) -> DutyCycle {
+        self.duty_cycle
+    }
+
+    /// Return the wrapping age of this snapshot at a current firmware tick.
+    pub const fn age_at(self, now: TimestampTicks) -> SystemTicks {
+        now.wrapping_duration_since(self.received_at)
+    }
+
+    /// Return whether this snapshot is older than the supplied tick budget.
+    pub fn is_stale(self, now: TimestampTicks, max_age: SystemTicks) -> bool {
+        self.age_at(now) > max_age
+    }
+}
+
+/// Owned collection of the six status messages for one remote controller.
+///
+/// Refreshing copies each firmware-owned record into package memory. Missing
+/// messages clear their previous snapshot and are reported by the returned
+/// count rather than being mistaken for stale data.
+#[derive(Debug, Clone, Copy)]
+pub struct CanStatusStore {
+    controller: CanControllerId,
+    status: Option<CanStatus>,
+    status2: Option<CanStatus2>,
+    status3: Option<CanStatus3>,
+    status4: Option<CanStatus4>,
+    status5: Option<CanStatus5>,
+    status6: Option<CanStatus6>,
+}
+
+impl CanStatusStore {
+    /// Create an empty status store for one controller ID.
+    #[must_use]
+    pub const fn new(controller: CanControllerId) -> Self {
+        Self {
+            controller,
+            status: None,
+            status2: None,
+            status3: None,
+            status4: None,
+            status5: None,
+            status6: None,
+        }
+    }
+
+    /// Copy all available status messages and return the number received.
+    pub fn refresh(&mut self, bus: &CanBus) -> usize {
+        self.status = bus.status(self.controller);
+        self.status2 = bus.status2(self.controller);
+        self.status3 = bus.status3(self.controller);
+        self.status4 = bus.status4(self.controller);
+        self.status5 = bus.status5(self.controller);
+        self.status6 = bus.status6(self.controller);
+        [
+            self.status.is_some(),
+            self.status2.is_some(),
+            self.status3.is_some(),
+            self.status4.is_some(),
+            self.status5.is_some(),
+            self.status6.is_some(),
+        ]
+        .into_iter()
+        .filter(|present| *present)
+        .count()
+    }
+
+    /// Return the controller represented by this store.
+    pub const fn controller(self) -> CanControllerId {
+        self.controller
+    }
+
+    /// Return the copied status message 1 snapshot.
+    pub const fn status(self) -> Option<CanStatus> {
+        self.status
+    }
+
+    /// Return the copied status message 2 snapshot.
+    pub const fn status2(self) -> Option<CanStatus2> {
+        self.status2
+    }
+
+    /// Return the copied status message 3 snapshot.
+    pub const fn status3(self) -> Option<CanStatus3> {
+        self.status3
+    }
+
+    /// Return the copied status message 4 snapshot.
+    pub const fn status4(self) -> Option<CanStatus4> {
+        self.status4
+    }
+
+    /// Return the copied status message 5 snapshot.
+    pub const fn status5(self) -> Option<CanStatus5> {
+        self.status5
+    }
+
+    /// Return the copied status message 6 snapshot.
+    pub const fn status6(self) -> Option<CanStatus6> {
+        self.status6
+    }
+
+    /// Ping the store's controller and return its hardware family.
+    pub fn ping(&self, bus: &CanBus) -> Result<CanHardwareType, CanError> {
+        bus.ping(self.controller)
+    }
+}
+
+/// Safe access to the firmware CAN table.
+pub struct CanBus;
+
+/// Controller-scoped remote-motor command and telemetry handle.
+pub struct CanRemoteMotor<'a> {
+    bus: &'a CanBus,
+    controller: CanControllerId,
+}
+
+/// Owns one CAN receiver registration and unregisters it on drop.
+pub struct CanReceiverGuard {
+    extended: bool,
+}
+
+impl Drop for CanReceiverGuard {
+    fn drop(&mut self) {
+        if self.extended {
+            EID_RECEIVER_ACTIVE.store(false, Ordering::Release);
+        } else {
+            SID_RECEIVER_ACTIVE.store(false, Ordering::Release);
+        }
+        let cleared = if self.extended {
+            unsafe { crate::ffi::can_set_eid_callback(None) }
+        } else {
+            unsafe { crate::ffi::can_set_sid_callback(None) }
+        };
+        if cleared.is_some() {
+            if self.extended {
+                EID_RECEIVER_REGISTERED.store(false, Ordering::Release);
+            } else {
+                SID_RECEIVER_REGISTERED.store(false, Ordering::Release);
+            }
+        }
+    }
+}
+
+impl CanBus {
+    pub(crate) const fn new() -> Self {
+        Self
+    }
+
+    /// Scope remote-motor commands and status reads to one controller ID.
+    #[must_use]
+    pub fn remote_motor(&self, controller: CanControllerId) -> CanRemoteMotor<'_> {
+        CanRemoteMotor {
+            bus: self,
+            controller,
+        }
+    }
+
+    /// Register a typed standard-ID receive callback.
+    pub fn register_standard_receiver<H: CanReceiverHandler + 'static>(
+        &self,
+    ) -> Result<CanReceiverGuard, CanError> {
+        Self::register_standard_receiver_impl(standard_receiver::<H>)
+    }
+
+    /// Register a raw standard-ID receive callback.
+    ///
+    /// # Safety
+    ///
+    /// The callback must validate the firmware-owned pointer and length, and
+    /// must not retain the pointer after returning.
+    pub unsafe fn register_standard_receiver_raw(
+        &self,
+        callback: CanReceiverCallback,
+    ) -> Result<CanReceiverGuard, CanError> {
+        Self::register_standard_receiver_impl(callback)
+    }
+
+    fn register_standard_receiver_impl(
+        callback: CanReceiverCallback,
+    ) -> Result<CanReceiverGuard, CanError> {
+        SID_RECEIVER_REGISTERED
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .map_err(|_| CanError::ReceiverBusy)?;
+        if unsafe { crate::ffi::can_set_sid_callback(Some(callback)) }.is_none() {
+            SID_RECEIVER_REGISTERED.store(false, Ordering::Release);
+            return Err(CanError::Unsupported);
+        }
+        SID_RECEIVER_ACTIVE.store(true, Ordering::Release);
+        Ok(CanReceiverGuard { extended: false })
+    }
+
+    /// Register a typed extended-ID receive callback.
+    pub fn register_extended_receiver<H: CanReceiverHandler + 'static>(
+        &self,
+    ) -> Result<CanReceiverGuard, CanError> {
+        Self::register_extended_receiver_impl(extended_receiver::<H>)
+    }
+
+    /// Register a raw extended-ID receive callback.
+    ///
+    /// # Safety
+    ///
+    /// The callback must validate the firmware-owned pointer and length, and
+    /// must not retain the pointer after returning.
+    pub unsafe fn register_extended_receiver_raw(
+        &self,
+        callback: CanReceiverCallback,
+    ) -> Result<CanReceiverGuard, CanError> {
+        Self::register_extended_receiver_impl(callback)
+    }
+
+    fn register_extended_receiver_impl(
+        callback: CanReceiverCallback,
+    ) -> Result<CanReceiverGuard, CanError> {
+        EID_RECEIVER_REGISTERED
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .map_err(|_| CanError::ReceiverBusy)?;
+        if unsafe { crate::ffi::can_set_eid_callback(Some(callback)) }.is_none() {
+            EID_RECEIVER_REGISTERED.store(false, Ordering::Release);
+            return Err(CanError::Unsupported);
+        }
+        EID_RECEIVER_ACTIVE.store(true, Ordering::Release);
+        Ok(CanReceiverGuard { extended: true })
+    }
+
+    /// Ping a remote controller and return its reported hardware family.
+    pub fn ping(&self, controller: CanControllerId) -> Result<CanHardwareType, CanError> {
+        let (ok, hardware) =
+            unsafe { crate::ffi::can_ping(controller.as_u8()) }.ok_or(CanError::Unsupported)?;
+        ok.then(|| CanHardwareType::from_raw(hardware.0))
+            .ok_or(CanError::PingFailed)
+    }
+
+    /// Transmit a standard 11-bit CAN frame.
+    pub fn transmit_standard(&self, id: CanStandardId, payload: &[u8]) -> Result<(), CanError> {
+        let len = CanPayloadLen::try_new(u8::try_from(payload.len()).unwrap_or(u8::MAX))
+            .map_err(|_| CanError::PayloadTooLong)?
+            .as_u8();
+        (unsafe { crate::ffi::can_transmit_sid(u32::from(id.as_u16()), payload.as_ptr(), len) }
+            .is_some())
+        .then_some(())
+        .ok_or(CanError::Unsupported)
+    }
+
+    /// Transmit an extended 29-bit CAN frame.
+    pub fn transmit_extended(&self, id: CanExtendedId, payload: &[u8]) -> Result<(), CanError> {
+        let len = CanPayloadLen::try_new(u8::try_from(payload.len()).unwrap_or(u8::MAX))
+            .map_err(|_| CanError::PayloadTooLong)?
+            .as_u8();
+        (unsafe { crate::ffi::can_transmit_eid(id.as_u32(), payload.as_ptr(), len) }.is_some())
+            .then_some(())
+            .ok_or(CanError::Unsupported)
+    }
+
+    /// Send a remote motor current command.
+    pub fn set_current(
+        &self,
+        controller: CanControllerId,
+        current: MotorCurrent,
+    ) -> Result<(), CanError> {
+        unsafe { crate::ffi::can_set_current(controller.as_u8(), current.current().as_amps()) }
+            .ok_or(CanError::Unsupported)
+    }
+
+    /// Send a remote motor relative-current command.
+    pub fn set_current_relative(
+        &self,
+        controller: CanControllerId,
+        current: CurrentRelative,
+    ) -> Result<(), CanError> {
+        unsafe { crate::ffi::can_set_current_rel(controller.as_u8(), current.ratio().as_ratio()) }
+            .ok_or(CanError::Unsupported)
+    }
+
+    /// Send a remote motor duty command.
+    pub fn set_duty(&self, controller: CanControllerId, duty: DutyCycle) -> Result<(), CanError> {
+        unsafe { crate::ffi::can_set_duty(controller.as_u8(), duty.ratio().as_ratio()) }
+            .ok_or(CanError::Unsupported)
+    }
+
+    /// Send a remote motor electrical-speed command.
+    pub fn set_rpm(
+        &self,
+        controller: CanControllerId,
+        rpm: ElectricalSpeed,
+    ) -> Result<(), CanError> {
+        unsafe {
+            crate::ffi::can_set_rpm(controller.as_u8(), rpm.rpm().as_revolutions_per_minute())
+        }
+        .ok_or(CanError::Unsupported)
+    }
+
+    /// Send a remote motor relative-current command with an off-delay.
+    pub fn set_current_relative_off_delay(
+        &self,
+        controller: CanControllerId,
+        current: CurrentRelative,
+        delay: CurrentOffDelay,
+    ) -> Result<(), CanError> {
+        unsafe {
+            crate::ffi::can_set_current_rel_off_delay(
+                controller.as_u8(),
+                current.ratio().as_ratio(),
+                delay.duration().as_seconds(),
+            )
+        }
+        .ok_or(CanError::Unsupported)
+    }
+
+    /// Send a remote motor brake-current command.
+    pub fn set_brake_current(
+        &self,
+        controller: CanControllerId,
+        current: BrakeCurrent,
+    ) -> Result<(), CanError> {
+        unsafe {
+            crate::ffi::can_set_current_brake(controller.as_u8(), current.current().as_amps())
+        }
+        .ok_or(CanError::Unsupported)
+    }
+
+    /// Send a remote motor relative brake-current command.
+    pub fn set_brake_current_relative(
+        &self,
+        controller: CanControllerId,
+        current: BrakeCurrentRelative,
+    ) -> Result<(), CanError> {
+        unsafe {
+            crate::ffi::can_set_current_brake_rel(controller.as_u8(), current.ratio().as_ratio())
+        }
+        .ok_or(CanError::Unsupported)
+    }
+
+    /// Send a remote motor current command with an off-delay.
+    pub fn set_current_off_delay(
+        &self,
+        controller: CanControllerId,
+        current: MotorCurrent,
+        delay: CurrentOffDelay,
+    ) -> Result<(), CanError> {
+        unsafe {
+            crate::ffi::can_set_current_off_delay(
+                controller.as_u8(),
+                current.current().as_amps(),
+                delay.duration().as_seconds(),
+            )
+        }
+        .ok_or(CanError::Unsupported)
+    }
+
+    /// Send a remote motor position command.
+    pub fn set_position(
+        &self,
+        controller: CanControllerId,
+        position: PidPosition,
+    ) -> Result<(), CanError> {
+        unsafe { crate::ffi::can_set_pos(controller.as_u8(), position.angle().as_degrees()) }
+            .ok_or(CanError::Unsupported)
+    }
+
+    /// Copy the primary status record for one remote controller.
+    pub fn status(&self, controller: CanControllerId) -> Option<CanStatus> {
+        let raw = unsafe { crate::ffi::can_status_msg_id(i32::from(controller.as_u8())) }?;
+        Some(CanStatus {
+            controller,
+            received_at: TimestampTicks::from_ticks(raw.rx_time),
+            electrical_speed: ElectricalSpeed::new(Rpm::from_revolutions_per_minute(raw.rpm)),
+            motor_current: MotorCurrent::new(Current::from_amps(raw.current)),
+            duty_cycle: DutyCycle::new(SignedRatio::from_ratio(raw.duty).ok()?),
+        })
+    }
+
+    /// Copy CAN status message 2 for one remote controller.
+    pub fn status2(&self, controller: CanControllerId) -> Option<CanStatus2> {
+        let raw = unsafe { crate::ffi::can_status_msg_2_id(i32::from(controller.as_u8())) }?;
+        Some(CanStatus2 {
+            controller,
+            received_at: TimestampTicks::from_ticks(raw.rx_time),
+            amp_hours_discharged: AmpHoursDischarged::new(Charge::from_amp_hours(raw.amp_hours)),
+            amp_hours_charged: AmpHoursCharged::new(Charge::from_amp_hours(raw.amp_hours_charged)),
+        })
+    }
+
+    /// Copy CAN status message 3 for one remote controller.
+    pub fn status3(&self, controller: CanControllerId) -> Option<CanStatus3> {
+        let raw = unsafe { crate::ffi::can_status_msg_3_id(i32::from(controller.as_u8())) }?;
+        Some(CanStatus3 {
+            controller,
+            received_at: TimestampTicks::from_ticks(raw.rx_time),
+            watt_hours_discharged: WattHoursDischarged::new(Energy::from_watt_hours(
+                raw.watt_hours,
+            )),
+            watt_hours_charged: WattHoursCharged::new(Energy::from_watt_hours(
+                raw.watt_hours_charged,
+            )),
+        })
+    }
+
+    /// Copy CAN status message 4 for one remote controller.
+    pub fn status4(&self, controller: CanControllerId) -> Option<CanStatus4> {
+        let raw = unsafe { crate::ffi::can_status_msg_4_id(i32::from(controller.as_u8())) }?;
+        Some(CanStatus4 {
+            controller,
+            received_at: TimestampTicks::from_ticks(raw.rx_time),
+            fet_temperature: MosfetTemperature::new(crate::Temperature::from_degrees_celsius(
+                raw.temp_fet,
+            )),
+            motor_temperature: MotorTemperature::new(crate::Temperature::from_degrees_celsius(
+                raw.temp_motor,
+            )),
+            input_current: InputCurrent::new(Current::from_amps(raw.current_in)),
+            position: PidPosition::new(crate::AngleDegrees::from_degrees(raw.pid_pos_now)),
+        })
+    }
+
+    /// Copy CAN status message 5 for one remote controller.
+    pub fn status5(&self, controller: CanControllerId) -> Option<CanStatus5> {
+        let raw = unsafe { crate::ffi::can_status_msg_5_id(i32::from(controller.as_u8())) }?;
+        Some(CanStatus5 {
+            controller,
+            received_at: TimestampTicks::from_ticks(raw.rx_time),
+            input_voltage: InputVoltage::new(crate::Voltage::from_volts(raw.v_in)),
+            tachometer: TachometerSteps::new(crate::units::TachometerSteps::from_steps(
+                raw.tacho_value,
+            )),
+        })
+    }
+
+    /// Copy CAN status message 6 for one remote controller.
+    pub fn status6(&self, controller: CanControllerId) -> Option<CanStatus6> {
+        let raw = unsafe { crate::ffi::can_status_msg_6_id(i32::from(controller.as_u8())) }?;
+        Some(CanStatus6 {
+            controller,
+            received_at: TimestampTicks::from_ticks(raw.rx_time),
+            adc_1: AdcVoltage::new(crate::Voltage::from_volts(raw.adc_1)),
+            adc_2: AdcVoltage::new(crate::Voltage::from_volts(raw.adc_2)),
+            adc_3: AdcVoltage::new(crate::Voltage::from_volts(raw.adc_3)),
+            ppm: PpmInput::new(crate::SignedRatio::from_ratio(raw.ppm).ok()?),
+        })
+    }
+}
+
+impl CanRemoteMotor<'_> {
+    /// Return the scoped controller ID.
+    pub const fn controller(&self) -> CanControllerId {
+        self.controller
+    }
+
+    /// Send a remote motor current command.
+    pub fn set_current(&self, current: MotorCurrent) -> Result<(), CanError> {
+        self.bus.set_current(self.controller, current)
+    }
+
+    /// Send a remote relative-current command.
+    pub fn set_current_relative(&self, current: CurrentRelative) -> Result<(), CanError> {
+        self.bus.set_current_relative(self.controller, current)
+    }
+
+    /// Send a remote duty command.
+    pub fn set_duty(&self, duty: DutyCycle) -> Result<(), CanError> {
+        self.bus.set_duty(self.controller, duty)
+    }
+
+    /// Send a remote electrical-speed command.
+    pub fn set_rpm(&self, rpm: ElectricalSpeed) -> Result<(), CanError> {
+        self.bus.set_rpm(self.controller, rpm)
+    }
+
+    /// Send a remote current command with an off-delay.
+    pub fn set_current_off_delay(
+        &self,
+        current: MotorCurrent,
+        delay: CurrentOffDelay,
+    ) -> Result<(), CanError> {
+        self.bus
+            .set_current_off_delay(self.controller, current, delay)
+    }
+
+    /// Send a remote relative-current command with an off-delay.
+    pub fn set_current_relative_off_delay(
+        &self,
+        current: CurrentRelative,
+        delay: CurrentOffDelay,
+    ) -> Result<(), CanError> {
+        self.bus
+            .set_current_relative_off_delay(self.controller, current, delay)
+    }
+
+    /// Send a remote brake-current command.
+    pub fn set_brake_current(&self, current: BrakeCurrent) -> Result<(), CanError> {
+        self.bus.set_brake_current(self.controller, current)
+    }
+
+    /// Send a remote relative brake-current command.
+    pub fn set_brake_current_relative(
+        &self,
+        current: BrakeCurrentRelative,
+    ) -> Result<(), CanError> {
+        self.bus
+            .set_brake_current_relative(self.controller, current)
+    }
+
+    /// Send a remote position command.
+    pub fn set_position(&self, position: PidPosition) -> Result<(), CanError> {
+        self.bus.set_position(self.controller, position)
+    }
+
+    /// Copy the primary remote status snapshot.
+    pub fn status(&self) -> Option<CanStatus> {
+        self.bus.status(self.controller)
+    }
+
+    /// Copy status message 2.
+    pub fn status2(&self) -> Option<CanStatus2> {
+        self.bus.status2(self.controller)
+    }
+
+    /// Copy status message 3.
+    pub fn status3(&self) -> Option<CanStatus3> {
+        self.bus.status3(self.controller)
+    }
+
+    /// Copy status message 4.
+    pub fn status4(&self) -> Option<CanStatus4> {
+        self.bus.status4(self.controller)
+    }
+
+    /// Copy status message 5.
+    pub fn status5(&self) -> Option<CanStatus5> {
+        self.bus.status5(self.controller)
+    }
+
+    /// Copy status message 6.
+    pub fn status6(&self) -> Option<CanStatus6> {
+        self.bus.status6(self.controller)
+    }
+
+    /// Ping the scoped controller and return its hardware family.
+    pub fn ping(&self) -> Result<CanHardwareType, CanError> {
+        self.bus.ping(self.controller)
+    }
+}
+
+unsafe extern "C" fn standard_receiver<H: CanReceiverHandler + 'static>(
+    id: u32,
+    data: *mut u8,
+    len: u8,
+) -> bool {
+    if !SID_RECEIVER_ACTIVE.load(Ordering::Acquire) {
+        return false;
+    }
+    CanStandardId::try_new(u16::try_from(id).unwrap_or(u16::MAX))
+        .is_ok_and(|id| dispatch_receiver::<H>(CanReceiverId::Standard(id), data, len))
+}
+
+unsafe extern "C" fn extended_receiver<H: CanReceiverHandler + 'static>(
+    id: u32,
+    data: *mut u8,
+    len: u8,
+) -> bool {
+    if !EID_RECEIVER_ACTIVE.load(Ordering::Acquire) {
+        return false;
+    }
+    CanExtendedId::try_new(id)
+        .is_ok_and(|id| dispatch_receiver::<H>(CanReceiverId::Extended(id), data, len))
+}
+
+fn dispatch_receiver<H: CanReceiverHandler + 'static>(
+    id: CanReceiverId,
+    data: *mut u8,
+    len: u8,
+) -> bool {
+    CanPayloadLen::try_new(len).is_ok_and(|length| {
+        if length.as_u8() == 0 {
+            return H::receive(id, &[]);
+        }
+
+        core::ptr::NonNull::new(data).is_some_and(|data| {
+            let payload =
+                unsafe { core::slice::from_raw_parts(data.as_ptr(), usize::from(length.as_u8())) };
+            H::receive(id, payload)
+        })
+    })
+}
+
+#[cfg(all(feature = "test-support", not(test)))]
+pub(crate) fn reset_receiver_registrations() {
+    SID_RECEIVER_REGISTERED.store(false, Ordering::Release);
+    EID_RECEIVER_REGISTERED.store(false, Ordering::Release);
+    SID_RECEIVER_ACTIVE.store(false, Ordering::Release);
+    EID_RECEIVER_ACTIVE.store(false, Ordering::Release);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        CanExtendedId, CanReceiverHandler, CanReceiverId, CanStandardId, EID_RECEIVER_ACTIVE,
+        SID_RECEIVER_ACTIVE, extended_receiver, standard_receiver,
+    };
+    use core::sync::atomic::Ordering;
+
+    struct StandardHandler;
+
+    impl CanReceiverHandler for StandardHandler {
+        fn receive(id: CanReceiverId, payload: &[u8]) -> bool {
+            matches!(id, CanReceiverId::Standard(id) if id.as_u16() == 0x123)
+                && payload == [1, 2, 3]
+        }
+    }
+
+    struct ExtendedHandler;
+
+    impl CanReceiverHandler for ExtendedHandler {
+        fn receive(id: CanReceiverId, payload: &[u8]) -> bool {
+            matches!(id, CanReceiverId::Extended(id) if id.as_u32() == 0x12_3456)
+                && payload == [4, 5]
+        }
+    }
+
+    #[test]
+    fn typed_receiver_trampolines_validate_ids_lengths_and_pointers() {
+        SID_RECEIVER_ACTIVE.store(true, Ordering::Release);
+        EID_RECEIVER_ACTIVE.store(true, Ordering::Release);
+        let mut standard = [1, 2, 3];
+        assert!(unsafe {
+            standard_receiver::<StandardHandler>(0x123, standard.as_mut_ptr(), standard.len() as u8)
+        });
+        assert!(!unsafe { standard_receiver::<StandardHandler>(0x800, standard.as_mut_ptr(), 3) });
+        assert!(!unsafe { standard_receiver::<StandardHandler>(0x123, core::ptr::null_mut(), 1) });
+
+        let mut extended = [4, 5];
+        assert!(unsafe {
+            extended_receiver::<ExtendedHandler>(
+                0x12_3456,
+                extended.as_mut_ptr(),
+                extended.len() as u8,
+            )
+        });
+        assert!(!unsafe {
+            extended_receiver::<ExtendedHandler>(0x12_3456, extended.as_mut_ptr(), 9)
+        });
+
+        let standard_id = CanReceiverId::Standard(CanStandardId::try_new(0x123).unwrap());
+        assert_eq!(standard_id.as_u32(), 0x123);
+        assert!(!standard_id.is_extended());
+        let extended_id = CanReceiverId::Extended(CanExtendedId::try_new(0x12_3456).unwrap());
+        assert_eq!(extended_id.as_u32(), 0x12_3456);
+        assert!(extended_id.is_extended());
+        SID_RECEIVER_ACTIVE.store(false, Ordering::Release);
+        assert!(!unsafe { standard_receiver::<StandardHandler>(0x123, standard.as_mut_ptr(), 3) });
+        SID_RECEIVER_ACTIVE.store(false, Ordering::Release);
+        EID_RECEIVER_ACTIVE.store(false, Ordering::Release);
+    }
+}

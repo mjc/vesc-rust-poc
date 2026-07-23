@@ -369,6 +369,18 @@ fn default_scaled_config_fields_decode_to_semantic_values() {
 }
 
 #[test]
+fn default_led_runtime_flags_follow_generated_config_image() {
+    let config = FloatOutBoyConfigImage::defaults();
+
+    assert!(config.leds_enabled());
+    assert!(config.headlights_enabled());
+    assert!(config.lights_off_when_lifted());
+    assert_eq!(config.as_bytes()[175], 1);
+    assert_eq!(config.as_bytes()[176], 1);
+    assert_eq!(config.as_bytes()[179], 1);
+}
+
+#[test]
 fn semantic_config_writes_round_trip_through_generated_storage() {
     let mut bytes = default_float_out_boy_config_bytes();
     bytes.edit_float_out_boy_config(|config| {
@@ -651,7 +663,7 @@ fn store_serialized_config_persists_for_restart_like_float_out_boy_set_cfg() {
 
     assert!(state.store_serialized_config(&bytes));
     let mut persisted = [0; FLOAT_OUT_BOY_EEPROM_LEN];
-    assert!(firmware.eeprom().read_bytes(&mut persisted));
+    assert!(firmware.eeprom().read_bytes(&mut persisted).is_ok());
     assert_eq!(
         &persisted[..state.serialized_config.as_bytes().len()],
         state.serialized_config.as_bytes(),

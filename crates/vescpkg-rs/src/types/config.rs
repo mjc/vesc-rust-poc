@@ -46,6 +46,226 @@ impl WireByte {
 pub use crate::units::{BatteryCellCount, BatteryCellCountError};
 use crate::units::{Distance, FluxLinkage, Inductance, Resistance};
 
+/// Battery chemistry selector used by the VESC motor configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum BatteryChemistry {
+    /// Lithium-ion chemistry with a 3.0–4.2 V cell range.
+    LithiumIon,
+    /// Lithium-iron-phosphate chemistry with a 2.6–3.6 V cell range.
+    LithiumIronPhosphate,
+    /// Lead-acid chemistry.
+    LeadAcid,
+}
+
+impl BatteryChemistry {
+    /// Decode the VESC `BATTERY_TYPE` enum value.
+    pub const fn from_raw(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(Self::LithiumIon),
+            1 => Some(Self::LithiumIronPhosphate),
+            2 => Some(Self::LeadAcid),
+            _ => None,
+        }
+    }
+
+    /// Encode the VESC `BATTERY_TYPE` enum value.
+    pub const fn as_u8(self) -> u8 {
+        match self {
+            Self::LithiumIon => 0,
+            Self::LithiumIronPhosphate => 1,
+            Self::LeadAcid => 2,
+        }
+    }
+}
+
+/// CAN baud-rate selector used by the VESC application configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CanBaudRate {
+    /// 125 kbit/s (`CAN_BAUD_125K`).
+    Kbps125,
+    /// 250 kbit/s (`CAN_BAUD_250K`).
+    Kbps250,
+    /// 500 kbit/s (`CAN_BAUD_500K`).
+    Kbps500,
+    /// 1 Mbit/s (`CAN_BAUD_1M`).
+    Mbps1,
+    /// 10 kbit/s (`CAN_BAUD_10K`).
+    Kbps10,
+    /// 20 kbit/s (`CAN_BAUD_20K`).
+    Kbps20,
+    /// 50 kbit/s (`CAN_BAUD_50K`).
+    Kbps50,
+    /// 75 kbit/s (`CAN_BAUD_75K`).
+    Kbps75,
+    /// 100 kbit/s (`CAN_BAUD_100K`).
+    Kbps100,
+}
+
+impl CanBaudRate {
+    /// Decode the VESC `CAN_BAUD` enum value.
+    pub const fn from_raw(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(Self::Kbps125),
+            1 => Some(Self::Kbps250),
+            2 => Some(Self::Kbps500),
+            3 => Some(Self::Mbps1),
+            4 => Some(Self::Kbps10),
+            5 => Some(Self::Kbps20),
+            6 => Some(Self::Kbps50),
+            7 => Some(Self::Kbps75),
+            8 => Some(Self::Kbps100),
+            _ => None,
+        }
+    }
+
+    /// Encode the VESC `CAN_BAUD` enum value.
+    pub const fn as_u8(self) -> u8 {
+        match self {
+            Self::Kbps125 => 0,
+            Self::Kbps250 => 1,
+            Self::Kbps500 => 2,
+            Self::Mbps1 => 3,
+            Self::Kbps10 => 4,
+            Self::Kbps20 => 5,
+            Self::Kbps50 => 6,
+            Self::Kbps75 => 7,
+            Self::Kbps100 => 8,
+        }
+    }
+}
+
+/// Firmware AHRS algorithm selector from the VESC IMU configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ImuAhrsMode {
+    /// Madgwick attitude estimator.
+    Madgwick,
+    /// Mahony attitude estimator.
+    Mahony,
+    /// Madgwick fusion mode.
+    MadgwickFusion,
+}
+
+impl ImuAhrsMode {
+    /// Decode the VESC `AHRS_MODE` enum value.
+    pub const fn from_raw(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(Self::Madgwick),
+            1 => Some(Self::Mahony),
+            2 => Some(Self::MadgwickFusion),
+            _ => None,
+        }
+    }
+
+    /// Encode the VESC `AHRS_MODE` enum value.
+    pub const fn as_u8(self) -> u8 {
+        match self {
+            Self::Madgwick => 0,
+            Self::Mahony => 1,
+            Self::MadgwickFusion => 2,
+        }
+    }
+}
+
+/// Automatic controller shutdown policy from the VESC application configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ShutdownMode {
+    /// Keep shutdown output permanently disabled.
+    AlwaysOff,
+    /// Keep shutdown output permanently enabled.
+    AlwaysOn,
+    /// Let the physical shutdown button toggle the output.
+    ToggleButtonOnly,
+    /// Shut down after ten seconds.
+    OffAfter10Seconds,
+    /// Shut down after one minute.
+    OffAfter1Minute,
+    /// Shut down after five minutes.
+    OffAfter5Minutes,
+    /// Shut down after ten minutes.
+    OffAfter10Minutes,
+    /// Shut down after thirty minutes.
+    OffAfter30Minutes,
+    /// Shut down after one hour.
+    OffAfter1Hour,
+    /// Shut down after five hours.
+    OffAfter5Hours,
+}
+
+impl ShutdownMode {
+    /// Decode the VESC `SHUTDOWN_MODE` enum value.
+    pub const fn from_raw(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(Self::AlwaysOff),
+            1 => Some(Self::AlwaysOn),
+            2 => Some(Self::ToggleButtonOnly),
+            3 => Some(Self::OffAfter10Seconds),
+            4 => Some(Self::OffAfter1Minute),
+            5 => Some(Self::OffAfter5Minutes),
+            6 => Some(Self::OffAfter10Minutes),
+            7 => Some(Self::OffAfter30Minutes),
+            8 => Some(Self::OffAfter1Hour),
+            9 => Some(Self::OffAfter5Hours),
+            _ => None,
+        }
+    }
+
+    /// Encode the VESC `SHUTDOWN_MODE` enum value.
+    pub const fn as_u8(self) -> u8 {
+        match self {
+            Self::AlwaysOff => 0,
+            Self::AlwaysOn => 1,
+            Self::ToggleButtonOnly => 2,
+            Self::OffAfter10Seconds => 3,
+            Self::OffAfter1Minute => 4,
+            Self::OffAfter5Minutes => 5,
+            Self::OffAfter10Minutes => 6,
+            Self::OffAfter30Minutes => 7,
+            Self::OffAfter1Hour => 8,
+            Self::OffAfter5Hours => 9,
+        }
+    }
+}
+
+/// CAN application mode from the VESC application configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CanApplicationMode {
+    /// Native VESC CAN protocol.
+    Vesc,
+    /// UAVCAN protocol.
+    Uavcan,
+    /// CAN communication bridge mode.
+    CommunicationBridge,
+    /// Reserved/unused firmware mode.
+    Unused,
+    /// VESC and UAVCAN combined mode.
+    VescUavcan,
+}
+
+impl CanApplicationMode {
+    /// Decode the VESC `CAN_MODE` enum value.
+    pub const fn from_raw(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(Self::Vesc),
+            1 => Some(Self::Uavcan),
+            2 => Some(Self::CommunicationBridge),
+            3 => Some(Self::Unused),
+            4 => Some(Self::VescUavcan),
+            _ => None,
+        }
+    }
+
+    /// Encode the VESC `CAN_MODE` enum value.
+    pub const fn as_u8(self) -> u8 {
+        match self {
+            Self::Vesc => 0,
+            Self::Uavcan => 1,
+            Self::CommunicationBridge => 2,
+            Self::Unused => 3,
+            Self::VescUavcan => 4,
+        }
+    }
+}
+
 macro_rules! positive_count_type {
     ($name:ident, $error:ident, $doc:literal, $error_doc:literal) => {
         #[doc = $doc]

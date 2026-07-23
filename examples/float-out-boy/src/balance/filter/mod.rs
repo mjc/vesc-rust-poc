@@ -90,16 +90,18 @@ impl BalanceFilter {
         gyro: MeasuredAngularRate,
         acceleration: ImuAcceleration,
     ) -> CorrectedAngularRate {
-        let Some((accel_norm, measured_gravity)) = Self::measured_gravity(acceleration) else {
-            return gyro.without_accel_feedback();
-        };
-        let confidence = self.accel_confidence(accel_norm);
-        let error = self.accel_error(measured_gravity);
+        Self::measured_gravity(acceleration).map_or_else(
+            || gyro.without_accel_feedback(),
+            |(accel_norm, measured_gravity)| {
+                let confidence = self.accel_confidence(accel_norm);
+                let error = self.accel_error(measured_gravity);
 
-        // C map: `third_party/float-out-boy/src/balance_filter.c:87-111` applies
-        // Mahony proportional feedback from accelerometer confidence,
-        // measured-vs-estimated gravity error, and per-axis KP.
-        gyro.with_gravity_feedback(error, self.feedback_gains(confidence))
+                // C map: `third_party/float-out-boy/src/balance_filter.c:87-111` applies
+                // Mahony proportional feedback from accelerometer confidence,
+                // measured-vs-estimated gravity error, and per-axis KP.
+                gyro.with_gravity_feedback(error, self.feedback_gains(confidence))
+            },
+        )
     }
 
     #[cfg(any(test, target_arch = "arm"))]

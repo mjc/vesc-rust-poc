@@ -1,8 +1,9 @@
 //! Generate VESC firmware function-table descriptors from the pinned upstream header.
 
-use std::{env, fmt::Write as _, fs, path::PathBuf};
+use std::{collections::HashSet, env, fmt::Write as _, fs, path::PathBuf};
 
-use syn::{Fields, Item, Type};
+use quote::ToTokens;
+use syn::{Fields, GenericArgument, Item, PathArguments, Type};
 
 const HEADER_REPO: &str = "https://github.com/lukash/vesc_pkg_lib";
 const HEADER_COMMIT: &str = "e8bdc8296b90a266713da3762868f0d18ec027fe";
@@ -19,14 +20,18 @@ struct SlotDeclaration {
     c_name: String,
     index: usize,
     kind: SlotKind,
+    signature: String,
+    line: usize,
 }
 
 fn main() {
+    verify_function_classifier();
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("manifest dir"));
     let header = manifest_dir.join(VENDORED_HEADER_PATH);
     let workspace_header = manifest_dir.join("../..").join(HEADER_PATH);
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("out dir"));
     let out = out_dir.join("c_vesc_if.rs");
+    let raw_slots = out_dir.join("raw_slots.rs");
     let bindings_path = out_dir.join("bindings.rs");
 
     println!("cargo::rustc-check-cfg=cfg(coverage)");
@@ -57,18 +62,30 @@ fn main() {
     let generated_bindings = bindings.to_string();
     fs::write(&bindings_path, &generated_bindings).expect("write VESC C ABI bindings");
 
-    let slots = slots_from_bindings(&generated_bindings);
+    let mut slots = slots_from_bindings(&generated_bindings);
+    let header_source = fs::read_to_string(&header).expect("read vendored VESC header");
+    for slot in &mut slots {
+        slot.line = header_source
+            .lines()
+            .position(|line| {
+                line.split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+                    .any(|word| word == slot.c_name)
+            })
+            .map_or(0, |line| line + 1);
+    }
     assert!(
         !slots.is_empty(),
         "failed to parse vesc_c_if slots from {}",
         header.display()
     );
 
-    fs::write(out, generated_rust(&slots)).expect("write generated c_vesc_if.rs");
+    fs::write(&out, generated_rust(&slots)).expect("write generated c_vesc_if.rs");
+    fs::write(raw_slots, generated_raw_slots(&slots)).expect("write generated raw slots");
 }
 
 fn slots_from_bindings(bindings: &str) -> Vec<SlotDeclaration> {
     let file = syn::parse_file(bindings).expect("parse generated VESC Rust bindings");
+    let function_aliases = function_aliases(&file);
     let table = file
         .items
         .into_iter()
@@ -88,26 +105,90 @@ fn slots_from_bindings(bindings: &str) -> Vec<SlotDeclaration> {
         .map(|(index, field)| SlotDeclaration {
             c_name: field.ident.expect("named VESC_IF field").to_string(),
             index,
-            kind: if is_function_slot(&field.ty) {
+            kind: if is_function_type(&field.ty, &function_aliases) {
                 SlotKind::Function
             } else {
                 SlotKind::Scalar
             },
+            signature: field.ty.to_token_stream().to_string(),
+            line: 0,
         })
         .collect()
 }
 
-fn is_function_slot(ty: &Type) -> bool {
-    let Type::Path(path) = ty else {
-        return false;
-    };
-    let Some(ident) = path.path.segments.last().map(|segment| &segment.ident) else {
-        return false;
-    };
-    ident != "u32" && ident != "lbm_uint"
+fn function_aliases(file: &syn::File) -> HashSet<String> {
+    let aliases = file
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Type(item) => Some((item.ident.to_string(), &item.ty)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let mut functions = HashSet::new();
+
+    loop {
+        let previous_len = functions.len();
+        for (name, ty) in &aliases {
+            if is_function_type(ty, &functions) {
+                functions.insert(name.clone());
+            }
+        }
+        if functions.len() == previous_len {
+            return functions;
+        }
+    }
 }
 
-fn write_header_constants(rust: &mut String, slots: &[SlotDeclaration]) {
+fn verify_function_classifier() {
+    let fixture = r#"
+        pub type ScalarOption = Option<u32>;
+        pub type Callback = Option<unsafe extern "C" fn()>;
+        pub type CallbackAlias = Callback;
+        pub struct vesc_c_if {
+            pub scalar: ScalarOption,
+            pub callback: CallbackAlias,
+            pub direct: Option<unsafe extern "C" fn()>,
+        }
+    "#;
+    let slots = slots_from_bindings(fixture);
+    assert_eq!(slots.len(), 3, "classifier fixture must cover every field");
+    assert!(matches!(slots[0].kind, SlotKind::Scalar));
+    assert!(matches!(slots[1].kind, SlotKind::Function));
+    assert!(matches!(slots[2].kind, SlotKind::Function));
+}
+
+fn is_function_type(ty: &Type, function_aliases: &HashSet<String>) -> bool {
+    match ty {
+        Type::BareFn(_) => true,
+        Type::Paren(paren) => is_function_type(&paren.elem, function_aliases),
+        Type::Path(path) => path.path.segments.last().is_some_and(|segment| {
+            if function_aliases.contains(&segment.ident.to_string()) {
+                return true;
+            }
+            if segment.ident != "Option" {
+                return false;
+            }
+            let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+                return false;
+            };
+            arguments.args.iter().any(|argument| match argument {
+                GenericArgument::Type(inner) => is_function_type(inner, function_aliases),
+                _ => false,
+            })
+        }),
+        _ => false,
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+fn generated_rust(slots: &[SlotDeclaration]) -> String {
+    let mut rust = String::new();
+    let callable_count = slots
+        .iter()
+        .filter(|slot| matches!(slot.kind, SlotKind::Function))
+        .count();
+
     rust.push_str("// Generated by crates/vescpkg-rs-sys/build.rs from ");
     rust.push_str(HEADER_PATH);
     rust.push_str(".\n");
@@ -135,11 +216,12 @@ fn write_header_constants(rust: &mut String, slots: &[SlotDeclaration]) {
     .expect("write generated Rust");
     writeln!(
         rust,
-        "pub(crate) const CALLABLE_SLOT_COUNT: usize = {};",
-        slots
-            .iter()
-            .filter(|slot| matches!(slot.kind, SlotKind::Function))
-            .count()
+        "pub(crate) const CALLABLE_SLOT_COUNT: usize = {callable_count};"
+    )
+    .expect("write generated Rust");
+    writeln!(
+        rust,
+        "pub(crate) const RAW_SHIM_COUNT: usize = {callable_count};"
     )
     .expect("write generated Rust");
     writeln!(
@@ -154,21 +236,17 @@ fn write_header_constants(rust: &mut String, slots: &[SlotDeclaration]) {
         slot_index(slots, "thread_set_priority")
     )
     .expect("write generated Rust");
-}
-
-fn generated_rust(slots: &[SlotDeclaration]) -> String {
-    let mut rust = String::new();
-
-    write_header_constants(&mut rust, slots);
     rust.push('\n');
     rust.push_str("pub(crate) const ALL_ENTRIES: [crate::VescIfManifestEntry; FIELD_COUNT] = [\n");
     for slot in slots {
         writeln!(
             rust,
-            "    crate::VescIfManifestEntry {{ slot: crate::VescIfSlot::new(\"{}\", {}), kind: crate::VescIfSlotKind::{} }},",
+            "    crate::VescIfManifestEntry {{ slot: crate::VescIfSlot::with_header_line(\"{}\", {}, {}), kind: crate::VescIfSlotKind::{}, signature: {:?} }},",
             slot.c_name,
             slot.index * 4,
-            slot_kind_name(slot.kind)
+            slot.line,
+            slot_kind_name(slot.kind),
+            slot.signature
         )
         .expect("write generated Rust");
     }
@@ -178,17 +256,42 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
     for slot in slots {
         writeln!(
             rust,
-            "    crate::VescIfSlot::new(\"{}\", {}),",
+            "    crate::VescIfSlot::with_header_line(\"{}\", {}, {}),",
             slot.c_name,
-            slot.index * 4
+            slot.index * 4,
+            slot.line
         )
         .expect("write generated Rust");
     }
     rust.push_str("];\n\n");
 
-    rust.push_str(
-        "#[allow(clippy::too_many_lines)] // generated slot table mirrors vesc_c_if.h field count\n",
-    );
+    rust.push_str("pub(crate) const RAW_SHIM_SLOTS: [crate::VescIfSlot; RAW_SHIM_COUNT] = [\n");
+    for slot in slots {
+        if matches!(slot.kind, SlotKind::Function) {
+            writeln!(
+                rust,
+                "    crate::VescIfSlot::with_header_line(\"{}\", {}, {}),",
+                slot.c_name,
+                slot.index * 4,
+                slot.line
+            )
+            .expect("write generated raw shim slot");
+        }
+    }
+    rust.push_str("];\n\n");
+
+    rust.push_str("pub(crate) const RAW_SHIM_SIGNATURES: [&str; RAW_SHIM_COUNT] = [\n");
+    for slot in slots {
+        if matches!(slot.kind, SlotKind::Function) {
+            writeln!(rust, "    {:?},", slot.signature)
+                .expect("write generated raw shim signature");
+        }
+    }
+    rust.push_str("];\n\n");
+
+    rust.push_str("pub(crate) const SLOTS: [crate::VescIfSlot; FIELD_COUNT] = ALL_SLOTS;\n\n");
+
+    rust.push_str("#[allow(clippy::too_many_lines)]\n");
     rust.push_str(
         "pub(crate) fn presence(table: &crate::bindgen::vesc_c_if) -> crate::VescIfPresence {\n",
     );
@@ -212,10 +315,11 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
     for slot in slots {
         writeln!(
             rust,
-            "            {} => \"{}\", {},",
+            "            {} => \"{}\", {}, {},",
             slot.c_name.to_ascii_uppercase(),
             slot.c_name,
-            slot.index * 4
+            slot.index * 4,
+            slot.line
         )
         .expect("write generated Rust");
     }
@@ -224,6 +328,89 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
     rust.push_str("}\n");
     rust.push_str("pub(crate) use define_vesc_if_manifest_constants;\n\n");
 
+    rust.push_str("macro_rules! define_vesc_if_callable_names {\n");
+    rust.push_str("    ($macro:ident) => {\n");
+    rust.push_str("        $macro! {\n");
+    for slot in slots {
+        if matches!(slot.kind, SlotKind::Function) {
+            writeln!(rust, "            {},", slot.c_name).expect("write generated Rust");
+        }
+    }
+    rust.push_str("        }\n");
+    rust.push_str("    };\n");
+    rust.push_str("}\n");
+    rust.push_str("pub(crate) use define_vesc_if_callable_names;\n\n");
+
+    for slot in slots {
+        writeln!(rust, "pub(crate) mod {} {{", slot.c_name).expect("write generated Rust");
+        writeln!(
+            rust,
+            "    pub(crate) const NAME: &str = \"{}\";",
+            slot.c_name
+        )
+        .expect("write generated Rust");
+        writeln!(rust, "    pub(crate) const INDEX: usize = {};", slot.index)
+            .expect("write generated Rust");
+        rust.push_str("    pub(crate) const VESC32_BYTE_OFFSET: usize = INDEX * 4;\n");
+        writeln!(
+            rust,
+            "    pub(crate) const HEADER_LINE: usize = {};",
+            slot.line
+        )
+        .expect("write generated Rust");
+        rust.push_str("}\n\n");
+    }
+
+    rust
+}
+
+fn generated_raw_slots(slots: &[SlotDeclaration]) -> String {
+    let mut rust = String::new();
+    rust.push_str("// Generated raw resolvers for every callable VESC_IF slot.\n");
+    rust.push_str("// Do not edit by hand; update the pinned VESC header instead.\n\n");
+    for slot in slots {
+        if !matches!(slot.kind, SlotKind::Function) {
+            continue;
+        }
+        writeln!(
+            rust,
+            "/// Resolve the raw `{}` function slot without invoking it.",
+            slot.c_name
+        )
+        .expect("write generated raw resolver docs");
+        rust.push_str("///\n/// # Safety\n/// The returned pointer must be called only with the exact ABI contract in the manifest.\n");
+        writeln!(
+            rust,
+            "#[inline(always)]\npub unsafe fn resolve_{}() -> {} {{",
+            slot.c_name, slot.signature
+        )
+        .expect("write generated raw resolver");
+        rust.push_str("    #[cfg(all(target_arch = \"arm\", not(test)))]\n");
+        rust.push_str("    {\n");
+        writeln!(
+            rust,
+            "        let address = unsafe {{ super::load_vesc_if_word_from::<{}>(crate::VescIfAbi::BASE_ADDR.0) }};",
+            slot.index * 4
+        )
+        .expect("write generated ARM resolver");
+        writeln!(
+            rust,
+            "        unsafe {{ core::mem::transmute::<usize, {}>(address) }}",
+            slot.signature
+        )
+        .expect("write generated ARM resolver");
+        rust.push_str("    }\n");
+        rust.push_str("    #[cfg(not(all(target_arch = \"arm\", not(test))))]\n");
+        rust.push_str("    {\n");
+        writeln!(
+            rust,
+            "        unsafe {{ (*super::vesc_if()).{} }}",
+            slot.c_name
+        )
+        .expect("write generated host resolver");
+        rust.push_str("    }\n");
+        rust.push_str("}\n\n");
+    }
     rust
 }
 

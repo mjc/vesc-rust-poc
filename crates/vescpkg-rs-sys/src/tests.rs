@@ -1,17 +1,19 @@
 #[allow(unused_imports)]
 use crate::{
-    AbiError, AppDataLen, AppDataPacket, CanControllerId, CanFrameLen, CanPayload, CanStatusIndex,
-    CfgFloat, CfgInt, CfgParam, CommandPacket, ConfigPayload, ConfigSetResult, ConfigXmlBytes,
-    EepromAddress, EepromVar, FirmwareNonNull, FirmwarePtr, GpioPin, GpioPortPtr, HalfDuplex,
-    HardwareType, ImageOffset, LbmBoolSymbol, LbmCid, LbmCount, LbmErrorSymbol, LbmFloat, LbmInt,
-    LbmIoSymbol, LbmNilSymbol, LbmSymbol, LbmType, LbmUint, LbmValue, LibInfo, LibInfoAbi,
-    LoaderBaseAddress, MallocLen, MotorIndex, MutablePacket, MutexHandle, NativeAddress,
-    NativeImage, NvmAddress, NvmBytes, NvmLen, OwnedFirmwareAllocation, PlotAxisName,
-    PlotGraphIndex, PlotGraphName, PlotPoint, ProgramAddress, ReplyPacket, SemaphoreHandle,
-    StackSizeBytes, Stm32AbiRevision, SystemTicks, ThreadHandle, ThreadName, UartBaudRate,
-    UartWriteLen, VescIfAbi, VescIfSlot, VescIfSlotKind, VescPin, VescPinMode,
+    AbiError, AppDataLen, AppDataPacket, CanBaud, CanControllerId, CanFrameLen, CanPayload,
+    CanStatusIndex, CfgFloat, CfgInt, CfgParam, CommandPacket, ConfigPayload, ConfigSetResult,
+    ConfigXmlBytes, EepromAddress, EepromVar, FirmwareNonNull, FirmwarePtr, GpioPin, GpioPortPtr,
+    HalfDuplex, HardwareType, ImageOffset, LbmBoolSymbol, LbmCid, LbmCount, LbmErrorSymbol,
+    LbmFloat, LbmInt, LbmIoSymbol, LbmNilSymbol, LbmSymbol, LbmType, LbmUint, LbmValue, LibInfo,
+    LibInfoAbi, LoaderBaseAddress, MallocLen, MotorIndex, MutablePacket, MutexHandle,
+    NativeAddress, NativeImage, NvmAddress, NvmBytes, NvmLen, OwnedFirmwareAllocation,
+    PlotAxisName, PlotGraphIndex, PlotGraphName, PlotPoint, ProgramAddress, ReplyPacket,
+    SemaphoreHandle, StackSizeBytes, Stm32AbiRevision, SystemTicks, ThreadHandle, ThreadName,
+    UartBaudRate, UartWriteLen, VescIfAbi, VescIfCapabilities, VescIfSlot, VescIfSlotFamily,
+    VescIfSlotKind, VescIfSlotNullability, VescIfSlotSafety, VescIfSubsystem, VescPin, VescPinMode,
 };
 use core::ffi::{CStr, c_char};
+use std::vec;
 
 #[test]
 fn native_image_rebases_image_data_offsets() {
@@ -157,11 +159,11 @@ fn eeprom_values_preserve_the_generated_union_bits() {
 #[test]
 fn vesc_if_slot_constants_name_the_package_header_offsets() {
     assert_eq!(VescIfAbi::BASE_ADDR, NativeAddress(0x1000_f800));
-    assert_eq!(VescIfAbi::USED_SLOT_COUNT, VescIfAbi::USED_SLOTS.len());
+    assert_eq!(VescIfAbi::FIELD_COUNT, VescIfAbi::ALL_SLOTS.len());
 
-    assert!(VescIfAbi::USED_SLOTS.contains(&VescIfAbi::SLEEP_US));
-    assert!(VescIfAbi::USED_SLOTS.contains(&VescIfAbi::FOC_GET_ID));
-    assert!(VescIfAbi::USED_SLOTS.contains(&VescIfAbi::THREAD_SET_PRIORITY));
+    assert!(VescIfAbi::ALL_SLOTS.contains(&VescIfAbi::SLEEP_US));
+    assert!(VescIfAbi::ALL_SLOTS.contains(&VescIfAbi::FOC_GET_ID));
+    assert!(VescIfAbi::ALL_SLOTS.contains(&VescIfAbi::THREAD_SET_PRIORITY));
     assert_eq!(VescIfAbi::CAN_GET_STATUS_MSG_INDEX.slot_index(), 75);
     assert_eq!(VescIfAbi::SHUTDOWN_DISABLE.slot_index(), 252);
 }
@@ -266,6 +268,14 @@ fn transparent_wrappers_expose_raw_tuple_fields() {
 }
 
 #[test]
+fn can_baud_representation_preserves_pinned_enum_values() {
+    assert_eq!(core::mem::size_of::<CanBaud>(), core::mem::size_of::<i32>());
+    assert_eq!(CanBaud::K125.raw(), 0);
+    assert_eq!(CanBaud::K500.raw(), 2);
+    assert_eq!(CanBaud::K100.raw(), 8);
+}
+
+#[test]
 fn vesc_if_manifest_matches_generated_header_descriptors() {
     assert_eq!(crate::c_vesc_if::FIELD_COUNT, VescIfAbi::FIELD_COUNT);
     assert_eq!(VescIfAbi::FIELD_COUNT, 253);
@@ -286,6 +296,38 @@ fn vesc_if_manifest_matches_generated_header_descriptors() {
     );
     assert_eq!(VescIfAbi::ALL_SLOTS[0].name(), "lbm_add_extension");
     assert_eq!(VescIfAbi::ALL_SLOTS[252].name(), "shutdown_disable");
+    assert_eq!(
+        VescIfAbi::ALL_SLOTS[0].minimum_revision(),
+        Stm32AbiRevision::Base
+    );
+    assert_eq!(
+        VescIfAbi::ALL_SLOTS[VescIfAbi::BASE_SLOT_COUNT].minimum_revision(),
+        Stm32AbiRevision::Firmware605
+    );
+    assert_eq!(
+        VescIfAbi::ALL_SLOTS[VescIfAbi::FIRMWARE_605_SLOT_COUNT].minimum_revision(),
+        Stm32AbiRevision::Firmware606
+    );
+    assert!(
+        VescIfAbi::ALL_SLOTS
+            .iter()
+            .all(|slot| slot.header_line() > 0)
+    );
+    assert_eq!(VescIfAbi::GET_REMOTE_STATE.header_line(), 605);
+    let header = include_str!("../vendor/vesc_pkg_lib/vesc_c_if.h");
+    for slot in VescIfAbi::ALL_SLOTS {
+        let source = header
+            .lines()
+            .nth(slot.header_line() - 1)
+            .expect("manifest source line must exist");
+        assert!(
+            source
+                .split(|character: char| { !character.is_ascii_alphanumeric() && character != '_' })
+                .any(|word| word == slot.name()),
+            "manifest source anchor for {} points at: {source}",
+            slot.name()
+        );
+    }
 
     for (index, (slot, entry)) in VescIfAbi::ALL_SLOTS
         .iter()
@@ -294,6 +336,8 @@ fn vesc_if_manifest_matches_generated_header_descriptors() {
     {
         assert_eq!(slot.slot_index(), index);
         assert_eq!(entry.slot(), *slot);
+        assert_eq!(entry.c_decl(), slot.name());
+        assert_eq!(entry.since(), slot.minimum_revision());
     }
     assert_eq!(VescIfAbi::ALL_ENTRIES[0].kind(), VescIfSlotKind::Function);
     let scalar = VescIfAbi::ALL_ENTRIES
@@ -308,6 +352,91 @@ fn vesc_if_manifest_matches_generated_header_descriptors() {
             .count(),
         VescIfAbi::CALLABLE_SLOT_COUNT
     );
+}
+
+#[test]
+fn vesc_if_manifest_presence_gate_distinguishes_callable_holes_from_scalars() {
+    for (index, entry) in VescIfAbi::ALL_ENTRIES.iter().enumerate() {
+        let mut words = [1_usize; VescIfAbi::FIELD_COUNT];
+        words[index] = 0;
+        let presence = crate::VescIfPresence::from_words(&words);
+
+        if entry.is_callable() {
+            assert!(
+                !presence.contains_index(index),
+                "callable slot {index} must be absent"
+            );
+            assert_eq!(entry.kind(), VescIfSlotKind::Function);
+        } else {
+            assert!(
+                presence.contains_index(index),
+                "scalar slot {index} must remain present"
+            );
+            assert_eq!(entry.kind(), VescIfSlotKind::Scalar);
+        }
+    }
+}
+
+#[test]
+fn vesc_if_manifest_retains_bindgen_signature_metadata() {
+    assert!(
+        VescIfAbi::ALL_ENTRIES
+            .iter()
+            .all(|entry| !entry.signature().is_empty())
+    );
+    assert!(
+        VescIfAbi::ALL_ENTRIES
+            .iter()
+            .any(|entry| entry.signature().contains("fn"))
+    );
+    assert_eq!(VescIfAbi::ALL_ENTRIES[0].signature(), "load_extension_fptr");
+    assert!(
+        VescIfAbi::ALL_ENTRIES
+            .iter()
+            .all(|entry| entry.family() == VescIfSlotFamily::Stm32)
+    );
+    assert_eq!(
+        VescIfAbi::ALL_ENTRIES[0].nullability(),
+        VescIfSlotNullability::NullableFunction
+    );
+    assert_eq!(
+        VescIfAbi::ALL_ENTRIES
+            .iter()
+            .find(|entry| entry.slot().name() == "lbm_enc_sym_nil")
+            .expect("scalar manifest entry")
+            .safety(),
+        VescIfSlotSafety::ScalarWord
+    );
+}
+
+#[test]
+fn generated_raw_resolvers_cover_every_callable_manifest_entry() {
+    assert_eq!(VescIfAbi::RAW_SHIM_COUNT, VescIfAbi::CALLABLE_SLOT_COUNT);
+    assert_eq!(VescIfAbi::RAW_SHIM_SLOTS.len(), VescIfAbi::RAW_SHIM_COUNT);
+    assert_eq!(
+        VescIfAbi::RAW_SHIM_SIGNATURES.len(),
+        VescIfAbi::RAW_SHIM_COUNT
+    );
+
+    let mut callable_index = 0;
+    for entry in VescIfAbi::ALL_ENTRIES {
+        if entry.is_callable() {
+            assert_eq!(VescIfAbi::RAW_SHIM_SLOTS[callable_index], entry.slot());
+            assert_eq!(
+                VescIfAbi::RAW_SHIM_SIGNATURES[callable_index],
+                entry.signature()
+            );
+            callable_index += 1;
+        }
+    }
+    assert_eq!(callable_index, VescIfAbi::RAW_SHIM_COUNT);
+
+    let table = crate::test_support::empty_table();
+    crate::test_support::with_table(&table, || unsafe {
+        assert!(crate::raw::resolve_lbm_add_extension().is_none());
+        assert!(crate::raw::resolve_mc_set_duty().is_none());
+        assert!(crate::raw::resolve_shutdown_disable().is_none());
+    });
 }
 
 #[test]
@@ -340,5 +469,137 @@ fn vesc_if_presence_tracks_holes_and_profiles_from_observed_words() {
             capability: "thread priority",
             slot: VescIfAbi::THREAD_SET_PRIORITY,
         })
+    );
+}
+
+#[test]
+fn vesc_if_capabilities_expose_named_subsystems_without_raw_slot_names() {
+    let mut words = vec![0; VescIfAbi::FIELD_COUNT];
+    words[VescIfAbi::CAN_TRANSMIT_SID.slot_index()] = 1;
+    words[VescIfAbi::READ_NVM.slot_index()] = 1;
+    words[VescIfAbi::GET_REMOTE_STATE.slot_index()] = 1;
+    words[VescIfAbi::TIMEOUT_RESET.slot_index()] = 1;
+    words[VescIfAbi::TIMEOUT_HAS_TIMEOUT.slot_index()] = 1;
+    words[VescIfAbi::TIMEOUT_SECS_SINCE_UPDATE.slot_index()] = 1;
+    let capabilities = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
+
+    assert_eq!(
+        capabilities.inputs().unwrap().subsystem(),
+        VescIfSubsystem::Inputs
+    );
+    assert_eq!(
+        capabilities.require_inputs().unwrap().subsystem(),
+        VescIfSubsystem::Inputs
+    );
+    assert_eq!(
+        capabilities.can().unwrap().subsystem(),
+        VescIfSubsystem::Can
+    );
+    assert_eq!(
+        capabilities.nvm().unwrap().subsystem(),
+        VescIfSubsystem::Nvm
+    );
+    assert_eq!(capabilities.imu().unwrap_err().capability(), "IMU");
+    assert_eq!(capabilities.audio().unwrap_err().capability(), "FOC audio");
+    assert_eq!(
+        capabilities.settings().unwrap_err().capability(),
+        "settings"
+    );
+}
+
+#[test]
+fn vesc_if_capabilities_accept_the_complete_imu_surface() {
+    let mut words = vec![0; VescIfAbi::FIELD_COUNT];
+    for slot in [
+        VescIfAbi::IMU_STARTUP_DONE,
+        VescIfAbi::IMU_GET_ROLL,
+        VescIfAbi::IMU_GET_PITCH,
+        VescIfAbi::IMU_GET_YAW,
+        VescIfAbi::IMU_GET_RPY,
+        VescIfAbi::IMU_GET_ACCEL,
+        VescIfAbi::IMU_GET_GYRO,
+        VescIfAbi::IMU_GET_MAG,
+        VescIfAbi::IMU_DEROTATE,
+        VescIfAbi::IMU_GET_ACCEL_DEROTATED,
+        VescIfAbi::IMU_GET_GYRO_DEROTATED,
+        VescIfAbi::IMU_GET_QUATERNIONS,
+        VescIfAbi::IMU_GET_CALIBRATION,
+        VescIfAbi::IMU_SET_YAW,
+    ] {
+        words[slot.slot_index()] = 1;
+    }
+    let capabilities = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
+
+    assert_eq!(
+        capabilities.imu().unwrap().subsystem(),
+        VescIfSubsystem::Imu
+    );
+    words[VescIfAbi::IMU_GET_MAG.slot_index()] = 0;
+    let missing = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
+    assert_eq!(missing.imu().unwrap_err().slot(), VescIfAbi::IMU_GET_MAG);
+}
+
+#[test]
+fn vesc_if_capabilities_accept_the_complete_advanced_foc_surface() {
+    let mut words = vec![0; VescIfAbi::FIELD_COUNT];
+    for slot in [
+        VescIfAbi::FOC_SET_OPENLOOP_CURRENT,
+        VescIfAbi::FOC_SET_OPENLOOP_PHASE,
+        VescIfAbi::FOC_SET_OPENLOOP_DUTY,
+        VescIfAbi::FOC_SET_OPENLOOP_DUTY_PHASE,
+    ] {
+        words[slot.slot_index()] = 1;
+    }
+    let capabilities = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
+
+    assert_eq!(
+        capabilities.advanced_foc().unwrap().subsystem(),
+        VescIfSubsystem::AdvancedFoc
+    );
+    words[VescIfAbi::FOC_SET_OPENLOOP_PHASE.slot_index()] = 0;
+    let missing = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
+    assert_eq!(
+        missing.advanced_foc().unwrap_err().slot(),
+        VescIfAbi::FOC_SET_OPENLOOP_PHASE
+    );
+}
+
+#[test]
+fn vesc_if_capabilities_keep_required_checks_and_revision_observations_separate() {
+    let mut words = [1_usize; VescIfAbi::FIELD_COUNT];
+    words[VescIfAbi::CAN_TRANSMIT_SID.slot_index()] = 0;
+    words[VescIfAbi::THREAD_SET_PRIORITY.slot_index()] = 0;
+    let capabilities = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
+
+    assert_eq!(
+        capabilities.require_can().unwrap_err(),
+        AbiError::MissingRequired {
+            capability: "CAN",
+            slot: VescIfAbi::CAN_TRANSMIT_SID,
+        }
+    );
+    let error = capabilities.require_can().unwrap_err();
+    assert_eq!(error.capability(), "CAN");
+    assert_eq!(error.slot(), VescIfAbi::CAN_TRANSMIT_SID);
+    assert_eq!(capabilities.revision(), Stm32AbiRevision::UnknownCompatible);
+    assert!(capabilities.require_settings().is_ok());
+}
+
+#[test]
+fn settings_capability_requires_the_complete_live_and_persisted_surface() {
+    let mut words = [0_usize; VescIfAbi::FIELD_COUNT];
+    for slot in [
+        VescIfAbi::GET_CFG_FLOAT,
+        VescIfAbi::GET_CFG_INT,
+        VescIfAbi::SET_CFG_FLOAT,
+        VescIfAbi::SET_CFG_INT,
+    ] {
+        words[slot.slot_index()] = 1;
+    }
+    let capabilities = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
+
+    assert_eq!(
+        capabilities.settings().unwrap_err().slot(),
+        VescIfAbi::STORE_CFG
     );
 }

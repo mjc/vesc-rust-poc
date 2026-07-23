@@ -350,10 +350,19 @@ impl BtlePackageInstallTransport {
         &self,
         f: impl FnOnce(&Runtime, &mut VescSession) -> Result<R, LoopbackTransportError>,
     ) -> Result<R, LoopbackTransportError> {
+        self.with_runtime_session(
+            || LoopbackTransportError::Device("BLE transport has not been opened".to_owned()),
+            f,
+        )
+    }
+
+    pub(crate) fn with_runtime_session<R, E>(
+        &self,
+        missing: impl FnOnce() -> E,
+        f: impl FnOnce(&Runtime, &mut VescSession) -> Result<R, E>,
+    ) -> Result<R, E> {
         let mut session = self.session.borrow_mut();
-        let session = session.as_mut().ok_or_else(|| {
-            LoopbackTransportError::Device("BLE transport has not been opened".to_owned())
-        })?;
+        let session = session.as_mut().ok_or_else(missing)?;
         f(&self.runtime, session)
     }
 
@@ -762,9 +771,10 @@ fn parse_write_ack(response: &[u8], expected_command: u8) -> Result<bool, Packag
 }
 
 fn read_string<'a>(cursor: &mut &'a [u8]) -> Result<&'a str, PackageInstallError> {
-    let Some(len) = cursor.iter().position(|byte| *byte == 0) else {
-        return Err(malformed_reply("missing NUL terminator"));
-    };
+    let len = cursor
+        .iter()
+        .position(|byte| *byte == 0)
+        .ok_or_else(|| malformed_reply("missing NUL terminator"))?;
     if cursor.len() <= len {
         return Err(malformed_reply("truncated BLE reply"));
     }
