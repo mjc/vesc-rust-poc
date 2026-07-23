@@ -12,9 +12,11 @@ The current release artifacts produced by `cargo vescpkg build` are:
 | `Rust-BLE-loopback-test-package-0.1.0.vescpkg` | 2,820 | `deb0d07c23889ee77a2ead27a3da634dca77f0a60c954f9225730395b8543ef8` |
 | `Rust-alloc-smoke-package-0.1.0.vescpkg` | 4,187 | `e937929f1d9f745a5d941718cbe636fb144fe0fa91f0debed3344b2469a677d1` |
 | `Rust-control-loop-smoke-package-0.1.0.vescpkg` | 2,871 | `b535bdec53aca2e6c77899ffeb07ea18f9d77aecdd72fd805f565f45be0d0401` |
+| `Float-Out-Boy-0.1.0.vescpkg` | 99,293 | `181f2ad34134f43ac2ff97de4ba392e2cbf78f504ffa136b50f1a7a63f0f1c5b` |
 | loopback `src/package_lib.bin` | 2,972 | `f6d4d981508b56aa2738aba62e79b763c2946fe53c5875e9d976eb1f9e0e47c3` |
 | alloc-smoke `src/package_lib.bin` | 4,888 | `0e6452d42128df37bf55f433d84abbf4708572b424418281dc35fff5df38c9e4` |
 | control-loop `src/package_lib.bin` | 3,097 | `5152a5f6ebea10443c141a00a04f3e2dc2c80e1ec69b31b11715a7f3d6fb66fe` |
+| Float Out Boy `src/package_lib.bin` | 76,008 | `79a59c6869b20ca14934ba3a094cfd5315b43bcffd86eece1988767a5a0409e1` |
 
 `cargo test -p cargo-vescpkg` decodes the compressed wire fixture through the
 same package reader used by installation. A historical hardware gate ran the

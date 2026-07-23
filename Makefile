@@ -110,6 +110,7 @@ package-examples:
 	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-loopback
 	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-alloc-smoke
 	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-control-loop-smoke
+	$(CARGO) run -p cargo-vescpkg -- build -p vesc-example-float-out-boy
 
 deploy:
 	$(CARGO) run -p cargo-vescpkg -- deploy -p vesc-example-loopback $(DEVICE_FLAGS)
