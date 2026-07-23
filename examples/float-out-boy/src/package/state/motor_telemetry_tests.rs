@@ -207,6 +207,57 @@ fn motor_runtime_tracks_typed_float_out_boy_wheelslip_duty_inputs() {
 }
 
 #[test]
+fn motor_runtime_refreshes_live_limits_before_auxiliary_side_effects() {
+    let firmware = FirmwareTest::new()
+        .with_motor_current_limits(
+            MotorCurrentLimit::new(Current::from_amps(42.0)),
+            MotorCurrentLimit::new(Current::from_amps(17.0)),
+        )
+        .with_temperature_limit_starts(
+            TemperatureLimitStart::new(Temperature::from_degrees_celsius(82.0)),
+            TemperatureLimitStart::new(Temperature::from_degrees_celsius(91.0)),
+        );
+    let settings = FirmwareSettings;
+    settings
+        .set_input_current_max(InputCurrent::new(Current::from_amps(31.0)))
+        .unwrap();
+    settings
+        .set_input_current_min(InputCurrent::new(Current::from_amps(13.0)))
+        .unwrap();
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+
+    // The source aux loop reads the live motor/config values before its LED and
+    // backup side effects; the package main-loop refresh keeps the same values
+    // current for both paths (`main.c:796-806`, `main.c:1131-1155`).
+    state.refresh_motor_runtime_state(firmware.telemetry());
+
+    assert_eq!(
+        state.motor_current_max,
+        MotorCurrentLimit::new(Current::from_amps(42.0))
+    );
+    assert_eq!(
+        state.motor_current_min,
+        MotorCurrentLimit::new(Current::from_amps(17.0))
+    );
+    assert_eq!(
+        state.battery_current_max,
+        InputCurrent::new(Current::from_amps(31.0))
+    );
+    assert_eq!(
+        state.battery_current_min,
+        InputCurrent::new(Current::from_amps(13.0))
+    );
+    assert_eq!(
+        state.mosfet_temperature_limit_start,
+        TemperatureLimitStart::new(Temperature::from_degrees_celsius(82.0))
+    );
+    assert_eq!(
+        state.motor_temperature_limit_start,
+        TemperatureLimitStart::new(Temperature::from_degrees_celsius(91.0))
+    );
+}
+
+#[test]
 fn realtime_voltage_and_temperatures_refresh_from_motor_telemetry() {
     let now = TimestampTicks::from_ticks(0);
     let bindings = FirmwareTest::new().with_input_voltage_and_temperatures(
