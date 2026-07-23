@@ -2,10 +2,12 @@
 //! Integration coverage for typed motor handbrake commands.
 
 use vescpkg_rs::{
-    AngleDegrees, BrakeCurrentRelative, Current, CurrentRelative, DCurrent, DutyCycle,
-    ElectricalSpeed, FirmwareFault, FirmwareFaultId, HandbrakeCurrent, HandbrakeRelative,
+    AngleDegrees, BatteryCellCount, BrakeCurrentRelative, Current, CurrentRelative, DCurrent,
+    DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed, FirmwareFault,
+    FirmwareFaultId, HandbrakeCurrent, HandbrakeRelative, InputCurrent, MotorCurrentLimit,
     MotorOutput, MotorSelection, MotorTelemetry, OdometerMeters, OpenLoopCurrent, OpenLoopPhase,
-    PidPosition, PwmCallbackError, Ratio, Rpm, SignedRatio, VescSeconds,
+    PidPosition, PwmCallbackError, Ratio, Rpm, SignedRatio, Speed, Temperature,
+    TemperatureLimitStart, TotalMotorCurrent, VehicleSpeed, VescSeconds,
 };
 
 unsafe extern "C" fn test_pwm_callback() {}
@@ -14,6 +16,24 @@ unsafe extern "C" fn test_pwm_callback() {}
 #[allow(clippy::too_many_lines)]
 fn motor_exposes_typed_handbrake_commands() {
     let firmware = vescpkg_rs::test_support::FirmwareTest::new()
+        .with_runtime_motor(
+            ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1500.0)),
+            VehicleSpeed::new(Speed::from_meters_per_second(4.5)),
+            TotalMotorCurrent::new(Current::from_amps(10.0)),
+            InputCurrent::new(Current::from_amps(6.0)),
+            DutyCycle::new(SignedRatio::from_ratio_const(-0.2)),
+        )
+        .with_motor_current_limits(
+            MotorCurrentLimit::new(Current::from_amps(40.0)),
+            MotorCurrentLimit::new(Current::from_amps(30.0)),
+        )
+        .with_duty_cycle_limit(DutyCycleLimit::new(Ratio::from_ratio_const(0.85)))
+        .with_temperature_limit_starts(
+            TemperatureLimitStart::new(Temperature::from_degrees_celsius(70.0)),
+            TemperatureLimitStart::new(Temperature::from_degrees_celsius(80.0)),
+        )
+        .with_battery_cell_count(BatteryCellCount::try_new(12).unwrap())
+        .with_directional_motor_current(DirectionalMotorCurrent::new(Current::from_amps(-11.0)))
         .with_d_axis_current(Some(DCurrent::new(Current::from_amps(1.5))))
         .with_firmware_fault(FirmwareFault::Active(FirmwareFaultId::OverTemperatureFet));
     firmware
@@ -32,6 +52,42 @@ fn motor_exposes_typed_handbrake_commands() {
     let telemetry = firmware.telemetry();
     assert!(firmware.motor().dc_calibration_done());
     assert_eq!(firmware.motor().selected_motor().index(), 1);
+    assert_eq!(
+        telemetry
+            .electrical_speed()
+            .rpm()
+            .as_revolutions_per_minute(),
+        1500.0
+    );
+    assert_eq!(
+        telemetry.vehicle_speed().speed().as_meters_per_second(),
+        4.5
+    );
+    assert_eq!(telemetry.motor_current().current().as_amps(), 10.0);
+    assert_eq!(
+        telemetry.directional_motor_current().current().as_amps(),
+        -11.0
+    );
+    assert_eq!(telemetry.drive_current_limit().current().as_amps(), 40.0);
+    assert_eq!(telemetry.brake_current_limit().current().as_amps(), 30.0);
+    assert_eq!(
+        telemetry
+            .mosfet_temperature_limit_start()
+            .temperature()
+            .as_degrees_celsius(),
+        70.0
+    );
+    assert_eq!(
+        telemetry
+            .motor_temperature_limit_start()
+            .temperature()
+            .as_degrees_celsius(),
+        80.0
+    );
+    assert_eq!(telemetry.duty_cycle_limit().ratio().as_ratio(), 0.85);
+    assert_eq!(telemetry.battery_cell_count().unwrap().as_u16(), 12);
+    assert_eq!(telemetry.battery_current().current().as_amps(), 6.0);
+    assert_eq!(telemetry.duty_cycle().ratio().as_ratio(), -0.2);
     let pwm_lease = unsafe {
         firmware
             .motor()
