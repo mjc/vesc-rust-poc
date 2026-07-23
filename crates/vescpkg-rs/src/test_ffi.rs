@@ -1983,35 +1983,35 @@ pub unsafe fn mc_set_odometer(meters: u64) {
 }
 
 pub unsafe fn mc_get_amp_hours(reset: bool) -> f32 {
+    let value = load(&AMP_HOURS_DISCHARGED);
     if reset {
-        -1.0
-    } else {
-        load(&AMP_HOURS_DISCHARGED)
+        store(&AMP_HOURS_DISCHARGED, 0.0);
     }
+    value
 }
 
 pub unsafe fn mc_get_amp_hours_charged(reset: bool) -> f32 {
+    let value = load(&AMP_HOURS_CHARGED);
     if reset {
-        -1.0
-    } else {
-        load(&AMP_HOURS_CHARGED)
+        store(&AMP_HOURS_CHARGED, 0.0);
     }
+    value
 }
 
 pub unsafe fn mc_get_watt_hours(reset: bool) -> f32 {
+    let value = load(&WATT_HOURS_DISCHARGED);
     if reset {
-        -1.0
-    } else {
-        load(&WATT_HOURS_DISCHARGED)
+        store(&WATT_HOURS_DISCHARGED, 0.0);
     }
+    value
 }
 
 pub unsafe fn mc_get_watt_hours_charged(reset: bool) -> f32 {
+    let value = load(&WATT_HOURS_CHARGED);
     if reset {
-        -1.0
-    } else {
-        load(&WATT_HOURS_CHARGED)
+        store(&WATT_HOURS_CHARGED, 0.0);
     }
+    value
 }
 
 pub unsafe fn mc_get_battery_level(wh_left: *mut f32) -> f32 {

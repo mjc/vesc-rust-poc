@@ -2,11 +2,12 @@
 //! Integration coverage for typed motor handbrake commands.
 
 use vescpkg_rs::{
-    AngleDegrees, BatteryCellCount, BrakeCurrent, BrakeCurrentRelative, Current, CurrentOffDelay,
-    CurrentRelative, DCurrent, DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed,
-    Energy, EnergyCounterReset, FirmwareFault, FirmwareFaultId, HandbrakeCurrent,
-    HandbrakeRelative, InputCurrent, MotorCurrentLimit, MotorOutput, MotorReleaseOutcome,
-    MotorSelection, MotorTelemetry, OdometerMeters, OpenLoopCurrent, OpenLoopPhase, PidPosition,
+    AmpHoursCharged, AmpHoursDischarged, AngleDegrees, BatteryCellCount, BatteryLevel,
+    BrakeCurrent, BrakeCurrentRelative, Charge, Current, CurrentOffDelay, CurrentRelative,
+    DCurrent, DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed, Energy,
+    EnergyCounterReset, FirmwareFault, FirmwareFaultId, HandbrakeCurrent, HandbrakeRelative,
+    InputCurrent, MotorCurrentLimit, MotorOutput, MotorReleaseOutcome, MotorSelection,
+    MotorTelemetry, OdometerMeters, OpenLoopCurrent, OpenLoopPhase, PidPosition,
     PidPositionOffsetPersistence, PwmCallbackError, Ratio, Rpm, SignedRatio, Speed,
     TachometerReset, TachometerSteps, Temperature, TemperatureLimitStart, TotalMotorCurrent,
     VehicleSpeed, VescSeconds, WattHoursRemaining,
@@ -35,6 +36,14 @@ fn motor_exposes_typed_handbrake_commands() {
             TemperatureLimitStart::new(Temperature::from_degrees_celsius(80.0)),
         )
         .with_battery_cell_count(BatteryCellCount::try_new(12).unwrap())
+        .with_ride_totals(
+            OdometerMeters::from_meters(0),
+            AmpHoursDischarged::new(Charge::from_amp_hours(1.25)),
+            AmpHoursCharged::new(Charge::from_amp_hours(2.5)),
+            vescpkg_rs::WattHoursDischarged::new(Energy::from_watt_hours(10.0)),
+            vescpkg_rs::WattHoursCharged::new(Energy::from_watt_hours(4.0)),
+            BatteryLevel::from_fraction(0.0),
+        )
         .with_battery_level_remaining(WattHoursRemaining::new(Energy::from_watt_hours(321.0)))
         .with_directional_motor_current(DirectionalMotorCurrent::new(Current::from_amps(-11.0)))
         .with_d_axis_current(Some(DCurrent::new(Current::from_amps(1.5))))
@@ -95,28 +104,56 @@ fn motor_exposes_typed_handbrake_commands() {
             .amp_hours_discharged_with(EnergyCounterReset::Reset)
             .charge()
             .as_amp_hours(),
-        -1.0
+        1.25
     );
     assert_eq!(
         telemetry
             .amp_hours_charged_with(EnergyCounterReset::Reset)
             .charge()
             .as_amp_hours(),
-        -1.0
+        2.5
     );
     assert_eq!(
         telemetry
             .watt_hours_discharged_with(EnergyCounterReset::Reset)
             .energy()
             .as_watt_hours(),
-        -1.0
+        10.0
     );
     assert_eq!(
         telemetry
             .watt_hours_charged_with(EnergyCounterReset::Reset)
             .energy()
             .as_watt_hours(),
-        -1.0
+        4.0
+    );
+    assert_eq!(
+        telemetry
+            .amp_hours_discharged_with(EnergyCounterReset::Preserve)
+            .charge()
+            .as_amp_hours(),
+        0.0
+    );
+    assert_eq!(
+        telemetry
+            .amp_hours_charged_with(EnergyCounterReset::Preserve)
+            .charge()
+            .as_amp_hours(),
+        0.0
+    );
+    assert_eq!(
+        telemetry
+            .watt_hours_discharged_with(EnergyCounterReset::Preserve)
+            .energy()
+            .as_watt_hours(),
+        0.0
+    );
+    assert_eq!(
+        telemetry
+            .watt_hours_charged_with(EnergyCounterReset::Preserve)
+            .energy()
+            .as_watt_hours(),
+        0.0
     );
     let battery = telemetry.battery_level_snapshot();
     assert_eq!(battery.level().as_fraction(), 0.0);
