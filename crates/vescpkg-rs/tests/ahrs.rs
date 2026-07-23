@@ -46,8 +46,19 @@ fn mahony_ahrs_integrates_rate_and_can_reset() {
     assert_eq!(quaternion.x(), ImuQuaternionX::new(0.0));
     assert_eq!(quaternion.y(), ImuQuaternionY::new(0.0));
     assert_eq!(quaternion.z(), ImuQuaternionZ::new(0.0));
-    assert!(!ahrs.set_gains(f32::NAN, 0.1));
-    assert!(!ahrs.set_gains(1.0, -0.1));
+    assert_eq!(
+        ahrs.set_gains(f32::NAN, 0.1),
+        Err(vescpkg_rs::AhrsParameterError::NonFinite)
+    );
+    assert_eq!(
+        ahrs.set_gains(1.0, -0.1),
+        Err(vescpkg_rs::AhrsParameterError::Negative)
+    );
+    assert!(vescpkg_rs::Ahrs::with_gains(1.0, 0.1).is_ok());
+    assert!(matches!(
+        vescpkg_rs::Ahrs::with_gains(-1.0, 0.1),
+        Err(vescpkg_rs::AhrsParameterError::Negative)
+    ));
 }
 
 #[test]
@@ -58,9 +69,20 @@ fn madgwick_ahrs_integrates_rate_and_validates_beta() {
     let estimate = ahrs.update(sample);
     assert_eq!(estimate, ahrs.orientation());
     assert!(f32::from(ahrs.orientation().quaternion().z()).abs() > 0.0);
-    assert!(ahrs.set_beta(0.2));
-    assert!(!ahrs.set_beta(f32::NAN));
-    assert!(!ahrs.set_beta(-0.1));
+    assert_eq!(ahrs.set_beta(0.2), Ok(()));
+    assert_eq!(
+        ahrs.set_beta(f32::NAN),
+        Err(vescpkg_rs::AhrsParameterError::NonFinite)
+    );
+    assert_eq!(
+        ahrs.set_beta(-0.1),
+        Err(vescpkg_rs::AhrsParameterError::Negative)
+    );
+    assert!(vescpkg_rs::Madgwick::with_beta(0.2).is_ok());
+    assert!(matches!(
+        vescpkg_rs::Madgwick::with_beta(f32::INFINITY),
+        Err(vescpkg_rs::AhrsParameterError::NonFinite)
+    ));
     ahrs.reset();
     assert_eq!(
         ahrs.orientation().quaternion().w(),
