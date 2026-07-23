@@ -52,12 +52,22 @@ macro_rules! express_native_start {
         #[used]
         #[doc(hidden)]
         #[unsafe(no_mangle)]
-        #[unsafe(link_section = ".program_ptr")]
+        // Express packages are linked as ARM32 firmware images.  Keep the
+        // loader sections on that target, but leave host/test builds as
+        // ordinary symbols: Mach-O (for example, macOS/aarch64) rejects the
+        // ELF-style section names used by the VESC linker script.
+        #[cfg_attr(
+            all(not(test), target_arch = "arm"),
+            unsafe(link_section = ".program_ptr")
+        )]
         pub static prog_ptr: u32 = 0;
 
         #[doc(hidden)]
         #[unsafe(no_mangle)]
-        #[unsafe(link_section = ".init_fun")]
+        #[cfg_attr(
+            all(not(test), target_arch = "arm"),
+            unsafe(link_section = ".init_fun")
+        )]
         pub extern "C" fn init(info: *mut $crate::express::ExpressLibInfo) -> bool {
             if info.is_null() {
                 return false;
