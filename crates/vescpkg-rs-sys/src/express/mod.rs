@@ -26,7 +26,7 @@ pub use functions::*;
 pub use image::{
     ExpressNativeImage, ExpressNativeImageError, ExpressNativeXipError, ExpressNativeXipImage,
 };
-pub use lisp::{ExpressLisp, ExpressLispSymbol, ExpressLispValue};
+pub use lisp::{ExpressLisp, ExpressLispOperationError, ExpressLispSymbol, ExpressLispValue};
 pub use loader::{ExpressCallError, ExpressInterface, ExpressLoadError};
 pub use memory::{ExpressAllocation, ExpressAllocationError};
 pub use runtime::ExpressRuntime;
@@ -369,15 +369,21 @@ mod tests {
         );
         assert_eq!(
             unsafe { lisp.add_extension(core::ptr::null_mut(), express_lisp_handler) },
-            Err(ExpressCallError {
+            Err(ExpressLispOperationError::Unavailable(ExpressCallError {
                 slot: ExpressSlot::LbmAddExtension
-            })
+            }))
         );
         assert_eq!(
             unsafe { lisp.create_byte_array(core::ptr::null_mut(), 1) },
-            Err(ExpressCallError {
+            Err(ExpressLispOperationError::Unavailable(ExpressCallError {
                 slot: ExpressSlot::LbmCreateByteArray
-            })
+            }))
+        );
+        assert_eq!(
+            lisp.unblock_context_unboxed(1, ExpressLispValue::new(0)),
+            Err(ExpressLispMessageError::Unavailable(ExpressCallError {
+                slot: ExpressSlot::LbmUnblockCtxUnboxed
+            }))
         );
     }
 
