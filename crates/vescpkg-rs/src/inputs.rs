@@ -114,6 +114,10 @@ impl PpmSnapshot {
 }
 
 /// Firmware controller-input and output-safety capability.
+///
+/// Obtain this handle from [`crate::FirmwareCapabilities::inputs`] or
+/// [`crate::FirmwareCapabilities::require_inputs`]; its constructor is kept
+/// crate-private so required-slot checks cannot be bypassed by package code.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FirmwareInputs;
 
@@ -131,7 +135,7 @@ impl Drop for ShutdownInhibit {
 
 impl FirmwareInputs {
     /// Construct the firmware-backed input capability.
-    pub const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self
     }
 
