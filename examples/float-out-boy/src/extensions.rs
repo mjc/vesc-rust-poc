@@ -68,14 +68,19 @@ impl vescpkg_rs::StatefulLbmExtension for ExtSetFwVersion {
 }
 
 #[cfg(any(test, target_arch = "arm"))]
-fn record_float_out_boy_firmware_version(state: &mut FloatOutBoyPackageState, args: &[i32]) {
+fn record_float_out_boy_firmware_version(
+    state: &mut FloatOutBoyPackageState,
+    args: &[i32],
+) -> bool {
     // Float Out Boy v1.2.1 only updates version state when `argn > 2` at
     // `third_party/float-out-boy/src/main.c:2306-2310`; shorter calls still
     // return true at `third_party/float-out-boy/src/main.c:2311`.
-    let [major, minor, beta] = args else {
-        return;
-    };
-    state.record_firmware_version(FirmwareVersion::new(*major, *minor, *beta));
+    args.get(..3)
+        .and_then(|values| <&[i32; 3]>::try_from(values).ok())
+        .is_some_and(|&[major, minor, beta]| {
+            state.record_firmware_version(FirmwareVersion::new(major, minor, beta));
+            true
+        })
 }
 
 /// Return the native extension descriptors required by upstream `package.lisp`.
