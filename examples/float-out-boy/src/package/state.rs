@@ -255,22 +255,20 @@ impl FloatOutBoyPackageState {
     }
 
     #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    pub(crate) fn refresh_controller_input(&mut self, input: &vescpkg_rs::ControllerInput) {
+    pub(crate) fn refresh_controller_input(&mut self, input: &vescpkg_rs::FirmwareInputs) {
         // C map: Float Out Boy selects UART/PPM, rejects samples one second old,
         // applies deadband rescaling, then optional inversion at
         // `third_party/float-out-boy/src/remote.c:36-68`.
         let config = self.serialized_config;
         let value = match config.input_tilt_remote_type() {
-            1 => {
-                let remote = input.remote();
+            1 => input.remote().ok().and_then(|remote| {
                 (remote.age().duration() < vescpkg_rs::VescSeconds::from_seconds(1.0))
                     .then(|| remote.joystick_y().ratio().as_ratio())
-            }
-            2 => {
-                let (ppm, age) = input.ppm();
-                (age.duration() < vescpkg_rs::VescSeconds::from_seconds(1.0))
-                    .then(|| ppm.ratio().as_ratio())
-            }
+            }),
+            2 => input.ppm().ok().and_then(|ppm| {
+                (ppm.age().duration() < vescpkg_rs::VescSeconds::from_seconds(1.0))
+                    .then(|| ppm.value().ratio().as_ratio())
+            }),
             _ => None,
         }
         .unwrap_or(0.0);

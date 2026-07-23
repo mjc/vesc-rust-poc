@@ -999,7 +999,7 @@ fn controller_input_selects_connected_uart_or_ppm_and_applies_deadband_like_floa
             assert!(config.set_input_tilt_inverted(true));
         });
 
-        state.refresh_controller_input(&vescpkg_rs::ControllerInput);
+        state.refresh_controller_input(firmware.inputs());
 
         let actual = state.remote_control.input().ratio().as_ratio();
         assert!(
@@ -1018,7 +1018,21 @@ fn controller_input_selects_connected_uart_or_ppm_and_applies_deadband_like_floa
         assert!(config.set_input_tilt_remote_type(vescpkg_rs::WireByte::new(2)));
     });
 
-    state.refresh_controller_input(&vescpkg_rs::ControllerInput);
+    state.refresh_controller_input(firmware.inputs());
+
+    assert_eq!(state.remote_control.input().ratio().as_ratio(), 0.0);
+}
+
+#[test]
+fn controller_input_fails_closed_when_the_selected_ppm_slot_is_absent() {
+    let firmware = FirmwareTest::new();
+    firmware.set_ppm_available(false);
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    edit_config(&mut state, |config| {
+        assert!(config.set_input_tilt_remote_type(vescpkg_rs::WireByte::new(2)));
+    });
+
+    state.refresh_controller_input(firmware.inputs());
 
     assert_eq!(state.remote_control.input().ratio().as_ratio(), 0.0);
 }

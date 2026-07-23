@@ -1,5 +1,7 @@
 //! Typed controller-input access backed by VESC PPM and UART slots.
 
+#![allow(deprecated)]
+
 use crate::{JoystickY, PpmAge, PpmInput, RemoteAge, SignedRatio, VescSeconds};
 
 /// Latest UART remote input used by package control loops.
@@ -26,7 +28,12 @@ impl RemoteInput {
     }
 }
 
-/// Firmware controller-input capability.
+/// Legacy firmware controller-input capability.
+///
+/// Use [`crate::FirmwareInputs`] for new code. This compatibility wrapper
+/// predates the capability-aware API and intentionally preserves its fallback
+/// return shapes for existing package ports.
+#[deprecated(note = "use FirmwareInputs for capability-aware input access")]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ControllerInput;
 

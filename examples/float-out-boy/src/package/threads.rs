@@ -256,7 +256,7 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
                     })
                     .unwrap_or_else(|| AdcVoltage::new(vescpkg_rs::Voltage::ZERO));
                 let tick = ctx.with_state_mut(|state| {
-                    state.refresh_controller_input(&vescpkg_rs::ControllerInput);
+                    state.refresh_controller_input(firmware.inputs());
                     tick_float_out_boy_main_thread_with(
                         state,
                         firmware.telemetry(),
