@@ -2,12 +2,12 @@
 //! Integration coverage for typed motor handbrake commands.
 
 use vescpkg_rs::{
-    AngleDegrees, BatteryCellCount, BrakeCurrentRelative, Current, CurrentRelative, DCurrent,
-    DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed, FirmwareFault,
-    FirmwareFaultId, HandbrakeCurrent, HandbrakeRelative, InputCurrent, MotorCurrentLimit,
-    MotorOutput, MotorSelection, MotorTelemetry, OdometerMeters, OpenLoopCurrent, OpenLoopPhase,
-    PidPosition, PwmCallbackError, Ratio, Rpm, SignedRatio, Speed, Temperature,
-    TemperatureLimitStart, TotalMotorCurrent, VehicleSpeed, VescSeconds,
+    AngleDegrees, BatteryCellCount, BrakeCurrent, BrakeCurrentRelative, Current, CurrentOffDelay,
+    CurrentRelative, DCurrent, DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed,
+    FirmwareFault, FirmwareFaultId, HandbrakeCurrent, HandbrakeRelative, InputCurrent,
+    MotorCurrentLimit, MotorOutput, MotorSelection, MotorTelemetry, OdometerMeters,
+    OpenLoopCurrent, OpenLoopPhase, PidPosition, PwmCallbackError, Ratio, Rpm, SignedRatio, Speed,
+    Temperature, TemperatureLimitStart, TotalMotorCurrent, VehicleSpeed, VescSeconds,
 };
 
 unsafe extern "C" fn test_pwm_callback() {}
@@ -223,6 +223,40 @@ fn motor_exposes_typed_handbrake_commands() {
             )
             .unwrap();
     }
+}
+
+#[test]
+fn motor_output_preserves_typed_command_forwarding() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    firmware.motor().keep_alive();
+    firmware
+        .motor()
+        .set_current_off_delay(CurrentOffDelay::new(VescSeconds::from_seconds(0.05)));
+    firmware
+        .motor()
+        .set_current(vescpkg_rs::MotorCurrent::new(Current::from_amps(8.0)));
+    firmware
+        .motor()
+        .set_duty_cycle(DutyCycle::new(SignedRatio::from_ratio_const(-0.25)));
+    firmware
+        .motor()
+        .set_brake_current(BrakeCurrent::new(Current::from_amps(3.0)));
+
+    assert_eq!(firmware.keep_alive_count(), 1);
+    assert_eq!(firmware.current_off_delay_count(), 1);
+    assert_eq!(
+        firmware
+            .commanded_current_off_delay()
+            .duration()
+            .as_seconds(),
+        0.05
+    );
+    assert_eq!(firmware.current_command_count(), 1);
+    assert_eq!(firmware.commanded_current().current().as_amps(), 8.0);
+    assert_eq!(firmware.duty_command_count(), 1);
+    assert_eq!(firmware.commanded_duty().ratio().as_ratio(), -0.25);
+    assert_eq!(firmware.brake_current_command_count(), 1);
+    assert_eq!(firmware.commanded_brake_current().current().as_amps(), 3.0);
 }
 
 #[test]
