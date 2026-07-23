@@ -79,6 +79,7 @@ use transition::{
 
 // C map: `aux_thd` stores backup data after more than 200 m while not running
 // at `third_party/float-out-boy/src/main.c:1142-1146`.
+#[cfg(any(test, target_arch = "arm"))]
 const FLOAT_OUT_BOY_AUX_BACKUP_DISTANCE_METERS: u64 = 200;
 
 #[inline]
