@@ -67,20 +67,10 @@ pub unsafe fn io_read_analog(pin: VescPin) -> f32 {
     }
 }
 
-pub unsafe fn remote_state() -> RemoteState {
-    REMOTE_STATE
-}
-
-pub unsafe fn get_ppm() -> Option<f32> {
-    Some(0.5)
-}
-
-pub unsafe fn get_ppm_age() -> Option<f32> {
-    Some(0.1)
-}
-
 pub unsafe fn app_is_output_disabled() -> Option<bool> {
-    Some(false)
+    OUTPUT_DISABLED_AVAILABLE
+        .load(Ordering::Relaxed)
+        .then_some(false)
 }
 
 pub unsafe fn store_backup_data() -> Option<bool> {
@@ -197,6 +187,9 @@ static INPUT_VOLTAGE: AtomicU32 = AtomicU32::new(0);
 static PPM_INPUT: AtomicU32 = AtomicU32::new(0);
 static PPM_AGE: AtomicU32 = AtomicU32::new(0);
 static PPM_SUPPORTED: AtomicBool = AtomicBool::new(true);
+static PPM_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static PPM_AGE_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static OUTPUT_DISABLED_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static REMOTE_INPUT_Y: AtomicU32 = AtomicU32::new(0);
 static REMOTE_AGE: AtomicU32 = AtomicU32::new(0);
 static REMOTE_SUPPORTED: AtomicBool = AtomicBool::new(true);
@@ -428,6 +421,9 @@ fn reset_motor_state() {
     PPM_INPUT.store(0.0_f32.to_bits(), Ordering::Relaxed);
     PPM_AGE.store(f32::INFINITY.to_bits(), Ordering::Relaxed);
     PPM_SUPPORTED.store(true, Ordering::Relaxed);
+    PPM_AVAILABLE.store(true, Ordering::Relaxed);
+    PPM_AGE_AVAILABLE.store(true, Ordering::Relaxed);
+    OUTPUT_DISABLED_AVAILABLE.store(true, Ordering::Relaxed);
     REMOTE_INPUT_Y.store(0.0_f32.to_bits(), Ordering::Relaxed);
     REMOTE_AGE.store(f32::INFINITY.to_bits(), Ordering::Relaxed);
     REMOTE_SUPPORTED.store(true, Ordering::Relaxed);
@@ -1978,14 +1974,12 @@ pub unsafe fn mc_get_input_voltage_filtered() -> f32 {
 }
 
 pub unsafe fn get_ppm() -> Option<f32> {
-    PPM_SUPPORTED
-        .load(Ordering::Relaxed)
+    (PPM_SUPPORTED.load(Ordering::Relaxed) && PPM_AVAILABLE.load(Ordering::Relaxed))
         .then(|| load(&PPM_INPUT))
 }
 
 pub unsafe fn get_ppm_age() -> Option<f32> {
-    PPM_SUPPORTED
-        .load(Ordering::Relaxed)
+    (PPM_SUPPORTED.load(Ordering::Relaxed) && PPM_AGE_AVAILABLE.load(Ordering::Relaxed))
         .then(|| load(&PPM_AGE))
 }
 
@@ -2004,6 +1998,18 @@ pub unsafe fn remote_state() -> Option<RemoteState> {
 
 pub(crate) fn set_ppm_supported(supported: bool) {
     PPM_SUPPORTED.store(supported, Ordering::Relaxed);
+}
+
+pub(crate) fn set_ppm_available(available: bool) {
+    PPM_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_ppm_age_available(available: bool) {
+    PPM_AGE_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_output_disabled_available(available: bool) {
+    OUTPUT_DISABLED_AVAILABLE.store(available, Ordering::Relaxed);
 }
 
 pub(crate) fn set_remote_supported(supported: bool) {

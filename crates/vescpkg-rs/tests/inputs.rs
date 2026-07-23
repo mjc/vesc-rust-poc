@@ -59,6 +59,35 @@ fn backup_store_reports_absent_optional_slot() {
 }
 
 #[test]
+fn ppm_reports_each_absent_optional_slot_independently() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    firmware.set_ppm_available(false);
+    assert!(matches!(
+        firmware.inputs().ppm(),
+        Err(InputError::Unsupported)
+    ));
+    drop(firmware);
+
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    firmware.set_ppm_age_available(false);
+    assert!(matches!(
+        firmware.inputs().ppm(),
+        Err(InputError::Unsupported)
+    ));
+}
+
+#[test]
+fn output_disabled_reports_absent_optional_slot() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    firmware.set_output_disabled_available(false);
+
+    assert!(matches!(
+        firmware.inputs().output_disabled(),
+        Err(InputError::Unsupported)
+    ));
+}
+
+#[test]
 fn inputs_expose_timeout_state_and_reset() {
     let firmware = vescpkg_rs::test_support::FirmwareTest::new();
     let inputs = firmware.inputs();
