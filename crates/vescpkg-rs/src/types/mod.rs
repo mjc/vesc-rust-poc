@@ -80,9 +80,9 @@ pub use loader::PackageArgument;
 #[cfg(not(any(test, feature = "test-support")))]
 pub(crate) use loader::PackageArgument;
 pub use motion::{
-    AbsoluteTachometerSteps, AverageVehicleSpeed, ElectricalSpeed, MechanicalSpeed, OpenLoopPhase,
-    PeakVehicleSpeed, PidPosition, PidPositionOffsetPersistence, SignedTripDistance,
-    TachometerReset, TachometerSteps, TripDistance, VehicleSpeed,
+    AbsoluteTachometerSteps, AverageVehicleSpeed, ElectricalSpeed, EnergyCounterReset,
+    MechanicalSpeed, OpenLoopPhase, PeakVehicleSpeed, PidPosition, PidPositionOffsetPersistence,
+    SignedTripDistance, TachometerReset, TachometerSteps, TripDistance, VehicleSpeed,
 };
 pub use motor::{
     AudioChannel, AudioChannelError, AudioDuration, AudioFrequency, AudioSampleRate, AudioVoltage,

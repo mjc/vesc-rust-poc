@@ -8,13 +8,13 @@ use crate::types::{
     AverageMotorCurrent, AverageMotorTemperature, AveragePower, AverageVehicleSpeed,
     BatteryCellCount, BatteryLevel, BatteryLevelSnapshot, BrakeCurrent, BrakeCurrentRelative,
     CurrentOffDelay, CurrentRelative, DCurrent, DVoltage, DirectionalMotorCurrent, DutyCycle,
-    DutyCycleLimit, ElectricalSpeed, FirmwareFault, HandbrakeCurrent, HandbrakeRelative,
-    InputCurrent, InputVoltage, MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorSelection,
-    MotorStatisticDuration, MotorTemperature, PeakMosfetTemperature, PeakMotorCurrent,
-    PeakMotorTemperature, PeakPower, PeakVehicleSpeed, PidPosition, PidPositionOffsetPersistence,
-    QCurrent, QVoltage, SignedTripDistance, TachometerReset, TachometerSteps,
-    TemperatureLimitStart, TotalMotorCurrent, TripDistance, VehicleSpeed, WattHoursCharged,
-    WattHoursDischarged,
+    DutyCycleLimit, ElectricalSpeed, EnergyCounterReset, FirmwareFault, HandbrakeCurrent,
+    HandbrakeRelative, InputCurrent, InputVoltage, MosfetTemperature, MotorCurrent,
+    MotorCurrentLimit, MotorSelection, MotorStatisticDuration, MotorTemperature,
+    PeakMosfetTemperature, PeakMotorCurrent, PeakMotorTemperature, PeakPower, PeakVehicleSpeed,
+    PidPosition, PidPositionOffsetPersistence, QCurrent, QVoltage, SignedTripDistance,
+    TachometerReset, TachometerSteps, TemperatureLimitStart, TotalMotorCurrent, TripDistance,
+    VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 #[cfg(not(test))]
 use crate::units::{Charge, Current, Distance, Energy, Power, Rpm, Speed, Temperature, Voltage};
@@ -181,12 +181,20 @@ pub trait MotorTelemetryBindings {
     fn odometer(&self) -> OdometerMeters;
     /// Return discharged amp-hours.
     fn amp_hours_discharged(&self) -> AmpHoursDischarged;
+    /// Return discharged amp-hours with an explicit preserve/reset policy.
+    fn amp_hours_discharged_with(&self, reset: EnergyCounterReset) -> AmpHoursDischarged;
     /// Return charged amp-hours.
     fn amp_hours_charged(&self) -> AmpHoursCharged;
+    /// Return charged amp-hours with an explicit preserve/reset policy.
+    fn amp_hours_charged_with(&self, reset: EnergyCounterReset) -> AmpHoursCharged;
     /// Return discharged watt-hours.
     fn watt_hours_discharged(&self) -> WattHoursDischarged;
+    /// Return discharged watt-hours with an explicit preserve/reset policy.
+    fn watt_hours_discharged_with(&self, reset: EnergyCounterReset) -> WattHoursDischarged;
     /// Return charged watt-hours.
     fn watt_hours_charged(&self) -> WattHoursCharged;
+    /// Return charged watt-hours with an explicit preserve/reset policy.
+    fn watt_hours_charged_with(&self, reset: EnergyCounterReset) -> WattHoursCharged;
     /// Return estimated battery level.
     fn battery_level(&self) -> BatteryLevel;
     /// Return the battery level and firmware-estimated remaining energy.
@@ -361,16 +369,32 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
         (**self).amp_hours_discharged()
     }
 
+    fn amp_hours_discharged_with(&self, reset: EnergyCounterReset) -> AmpHoursDischarged {
+        (**self).amp_hours_discharged_with(reset)
+    }
+
     fn amp_hours_charged(&self) -> AmpHoursCharged {
         (**self).amp_hours_charged()
+    }
+
+    fn amp_hours_charged_with(&self, reset: EnergyCounterReset) -> AmpHoursCharged {
+        (**self).amp_hours_charged_with(reset)
     }
 
     fn watt_hours_discharged(&self) -> WattHoursDischarged {
         (**self).watt_hours_discharged()
     }
 
+    fn watt_hours_discharged_with(&self, reset: EnergyCounterReset) -> WattHoursDischarged {
+        (**self).watt_hours_discharged_with(reset)
+    }
+
     fn watt_hours_charged(&self) -> WattHoursCharged {
         (**self).watt_hours_charged()
+    }
+
+    fn watt_hours_charged_with(&self, reset: EnergyCounterReset) -> WattHoursCharged {
+        (**self).watt_hours_charged_with(reset)
     }
 
     fn battery_level(&self) -> BatteryLevel {
@@ -790,26 +814,42 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
     }
 
     fn amp_hours_discharged(&self) -> AmpHoursDischarged {
+        self.amp_hours_discharged_with(EnergyCounterReset::Preserve)
+    }
+
+    fn amp_hours_discharged_with(&self, reset: EnergyCounterReset) -> AmpHoursDischarged {
         AmpHoursDischarged::new(Charge::from_amp_hours(unsafe {
-            crate::ffi::mc_get_amp_hours(false)
+            crate::ffi::mc_get_amp_hours(reset.resets())
         }))
     }
 
     fn amp_hours_charged(&self) -> AmpHoursCharged {
+        self.amp_hours_charged_with(EnergyCounterReset::Preserve)
+    }
+
+    fn amp_hours_charged_with(&self, reset: EnergyCounterReset) -> AmpHoursCharged {
         AmpHoursCharged::new(Charge::from_amp_hours(unsafe {
-            crate::ffi::mc_get_amp_hours_charged(false)
+            crate::ffi::mc_get_amp_hours_charged(reset.resets())
         }))
     }
 
     fn watt_hours_discharged(&self) -> WattHoursDischarged {
+        self.watt_hours_discharged_with(EnergyCounterReset::Preserve)
+    }
+
+    fn watt_hours_discharged_with(&self, reset: EnergyCounterReset) -> WattHoursDischarged {
         WattHoursDischarged::new(Energy::from_watt_hours(unsafe {
-            crate::ffi::mc_get_watt_hours(false)
+            crate::ffi::mc_get_watt_hours(reset.resets())
         }))
     }
 
     fn watt_hours_charged(&self) -> WattHoursCharged {
+        self.watt_hours_charged_with(EnergyCounterReset::Preserve)
+    }
+
+    fn watt_hours_charged_with(&self, reset: EnergyCounterReset) -> WattHoursCharged {
         WattHoursCharged::new(Energy::from_watt_hours(unsafe {
-            crate::ffi::mc_get_watt_hours_charged(false)
+            crate::ffi::mc_get_watt_hours_charged(reset.resets())
         }))
     }
 
@@ -1067,12 +1107,20 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn odometer(&self) -> OdometerMeters;
     /// Return discharged amp-hours.
     fn amp_hours_discharged(&self) -> AmpHoursDischarged;
+    /// Return discharged amp-hours with an explicit preserve/reset policy.
+    fn amp_hours_discharged_with(&self, reset: EnergyCounterReset) -> AmpHoursDischarged;
     /// Return charged amp-hours.
     fn amp_hours_charged(&self) -> AmpHoursCharged;
+    /// Return charged amp-hours with an explicit preserve/reset policy.
+    fn amp_hours_charged_with(&self, reset: EnergyCounterReset) -> AmpHoursCharged;
     /// Return discharged watt-hours.
     fn watt_hours_discharged(&self) -> WattHoursDischarged;
+    /// Return discharged watt-hours with an explicit preserve/reset policy.
+    fn watt_hours_discharged_with(&self, reset: EnergyCounterReset) -> WattHoursDischarged;
     /// Return charged watt-hours.
     fn watt_hours_charged(&self) -> WattHoursCharged;
+    /// Return charged watt-hours with an explicit preserve/reset policy.
+    fn watt_hours_charged_with(&self, reset: EnergyCounterReset) -> WattHoursCharged;
     /// Return estimated battery level.
     fn battery_level(&self) -> BatteryLevel;
     /// Return the battery level and firmware-estimated remaining energy.
@@ -1410,9 +1458,19 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.amp_hours_discharged()
     }
 
+    /// Return discharged amp-hours with an explicit preserve/reset policy.
+    pub fn amp_hours_discharged_with(&self, reset: EnergyCounterReset) -> AmpHoursDischarged {
+        self.bindings.amp_hours_discharged_with(reset)
+    }
+
     /// Return charged amp-hours.
     pub fn amp_hours_charged(&self) -> AmpHoursCharged {
         self.bindings.amp_hours_charged()
+    }
+
+    /// Return charged amp-hours with an explicit preserve/reset policy.
+    pub fn amp_hours_charged_with(&self, reset: EnergyCounterReset) -> AmpHoursCharged {
+        self.bindings.amp_hours_charged_with(reset)
     }
 
     /// Return discharged watt-hours.
@@ -1420,9 +1478,19 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.watt_hours_discharged()
     }
 
+    /// Return discharged watt-hours with an explicit preserve/reset policy.
+    pub fn watt_hours_discharged_with(&self, reset: EnergyCounterReset) -> WattHoursDischarged {
+        self.bindings.watt_hours_discharged_with(reset)
+    }
+
     /// Return charged watt-hours.
     pub fn watt_hours_charged(&self) -> WattHoursCharged {
         self.bindings.watt_hours_charged()
+    }
+
+    /// Return charged watt-hours with an explicit preserve/reset policy.
+    pub fn watt_hours_charged_with(&self, reset: EnergyCounterReset) -> WattHoursCharged {
+        self.bindings.watt_hours_charged_with(reset)
     }
 
     /// Return estimated battery level.
@@ -1625,16 +1693,32 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
         self.amp_hours_discharged()
     }
 
+    fn amp_hours_discharged_with(&self, reset: EnergyCounterReset) -> AmpHoursDischarged {
+        self.amp_hours_discharged_with(reset)
+    }
+
     fn amp_hours_charged(&self) -> AmpHoursCharged {
         self.amp_hours_charged()
+    }
+
+    fn amp_hours_charged_with(&self, reset: EnergyCounterReset) -> AmpHoursCharged {
+        self.amp_hours_charged_with(reset)
     }
 
     fn watt_hours_discharged(&self) -> WattHoursDischarged {
         self.watt_hours_discharged()
     }
 
+    fn watt_hours_discharged_with(&self, reset: EnergyCounterReset) -> WattHoursDischarged {
+        self.watt_hours_discharged_with(reset)
+    }
+
     fn watt_hours_charged(&self) -> WattHoursCharged {
         self.watt_hours_charged()
+    }
+
+    fn watt_hours_charged_with(&self, reset: EnergyCounterReset) -> WattHoursCharged {
+        self.watt_hours_charged_with(reset)
     }
 
     fn battery_level(&self) -> BatteryLevel {
