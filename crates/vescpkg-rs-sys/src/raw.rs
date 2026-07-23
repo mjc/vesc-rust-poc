@@ -2817,8 +2817,8 @@ c_vesc_if::define_vesc_if_callable_names!(assert_raw_callable_shims);
 
 /// Returns all generated `VescIf` field offsets for ABI layout tests.
 #[cfg(test)]
-pub fn vesc_if_offsets_for_tests() -> [usize; VescIfAbi::USED_SLOT_COUNT] {
-    VescIfAbi::USED_SLOTS.map(|slot| slot.host_byte_offset(core::mem::size_of::<usize>()))
+pub fn vesc_if_offsets_for_tests() -> [usize; VescIfAbi::FIELD_COUNT] {
+    VescIfAbi::ALL_SLOTS.map(|slot| slot.host_byte_offset(core::mem::size_of::<usize>()))
 }
 #[cfg(test)]
 mod abi_audit;

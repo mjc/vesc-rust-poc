@@ -159,11 +159,11 @@ fn eeprom_values_preserve_the_generated_union_bits() {
 #[test]
 fn vesc_if_slot_constants_name_the_package_header_offsets() {
     assert_eq!(VescIfAbi::BASE_ADDR, NativeAddress(0x1000_f800));
-    assert_eq!(VescIfAbi::USED_SLOT_COUNT, VescIfAbi::USED_SLOTS.len());
+    assert_eq!(VescIfAbi::FIELD_COUNT, VescIfAbi::ALL_SLOTS.len());
 
-    assert!(VescIfAbi::USED_SLOTS.contains(&VescIfAbi::SLEEP_US));
-    assert!(VescIfAbi::USED_SLOTS.contains(&VescIfAbi::FOC_GET_ID));
-    assert!(VescIfAbi::USED_SLOTS.contains(&VescIfAbi::THREAD_SET_PRIORITY));
+    assert!(VescIfAbi::ALL_SLOTS.contains(&VescIfAbi::SLEEP_US));
+    assert!(VescIfAbi::ALL_SLOTS.contains(&VescIfAbi::FOC_GET_ID));
+    assert!(VescIfAbi::ALL_SLOTS.contains(&VescIfAbi::THREAD_SET_PRIORITY));
     assert_eq!(VescIfAbi::CAN_GET_STATUS_MSG_INDEX.slot_index(), 75);
     assert_eq!(VescIfAbi::SHUTDOWN_DISABLE.slot_index(), 252);
 }
