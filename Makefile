@@ -33,7 +33,7 @@ ifdef DEVICE_ADDRESS
 DEVICE_FLAGS += --address $(DEVICE_ADDRESS)
 endif
 
-.PHONY: check check-full pre-commit fmt clippy clippy-pedantic vescpkg-rs-sys-target-check thumb-dispatch-smoke arm-clippy arm-math-check arm-alloc-check arm-alloc-math-check arm-gates test math-test doc-test package package-only package-examples deploy clean status
+.PHONY: check check-full pre-commit fmt clippy clippy-pedantic vescpkg-rs-sys-target-check thumb-dispatch-smoke arm-clippy arm-noalloc-check arm-math-check arm-alloc-check arm-alloc-math-check arm-gates test math-test doc-test package package-only package-examples deploy clean status
 
 # --- verification -----------------------------------------------------------
 #
@@ -60,6 +60,9 @@ vescpkg-rs-sys-target-check:
 	test "$$($(CARGO) tree -p vescpkg-rs-sys --edges normal --no-default-features --prefix none | wc -l | tr -d ' ')" = 1
 	$(CARGO) check -p vescpkg-rs-sys --target $(ARM_TARGET) --no-default-features
 
+arm-noalloc-check:
+	$(CARGO) check -p vescpkg-rs --target $(ARM_TARGET) --no-default-features
+
 arm-clippy:
 	$(CARGO) clippy -p vesc-example-loopback --bin vesc-example-loopback --release --target $(ARM_TARGET) -- $(CLIPPY_PEDANTIC_FLAGS)
 
@@ -72,7 +75,7 @@ arm-alloc-check:
 arm-alloc-math-check:
 	$(CARGO) check -p vescpkg-rs --target $(ARM_TARGET) --no-default-features --features 'alloc math'
 
-arm-gates: vescpkg-rs-sys-target-check thumb-dispatch-smoke arm-clippy arm-math-check arm-alloc-check arm-alloc-math-check package-examples
+arm-gates: vescpkg-rs-sys-target-check thumb-dispatch-smoke arm-noalloc-check arm-clippy arm-math-check arm-alloc-check arm-alloc-math-check package-examples
 
 thumb-dispatch-smoke:
 	./tools/thumb-dispatch-smoke.sh
