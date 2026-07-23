@@ -538,9 +538,9 @@ impl<'info> PackageStart<'info> {
         T: crate::__macro_support::PackageImuReadCallback,
         B: crate::bindings::ImuReadCallbackBindings,
     {
-        let Some(image) = self.native_image() else {
-            return Err(PackageStartError::LoaderUnavailable);
-        };
+        let image = self
+            .native_image()
+            .ok_or(PackageStartError::LoaderUnavailable)?;
         if !self.state_type_matches::<T::State>() {
             return Err(PackageStartError::StateTypeMismatch);
         }
