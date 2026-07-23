@@ -9,8 +9,8 @@ use crate::{
     NativeAddress, NativeImage, NvmAddress, NvmBytes, NvmLen, OwnedFirmwareAllocation,
     PlotAxisName, PlotGraphIndex, PlotGraphName, PlotPoint, ProgramAddress, ReplyPacket,
     SemaphoreHandle, StackSizeBytes, Stm32AbiRevision, SystemTicks, ThreadHandle, ThreadName,
-    UartBaudRate, UartWriteLen, VescIfAbi, VescIfCapabilities, VescIfSlot, VescIfSlotKind,
-    VescIfSubsystem, VescPin, VescPinMode,
+    UartBaudRate, UartWriteLen, VescIfAbi, VescIfCapabilities, VescIfSlot, VescIfSlotFamily,
+    VescIfSlotKind, VescIfSlotNullability, VescIfSlotSafety, VescIfSubsystem, VescPin, VescPinMode,
 };
 use core::ffi::{CStr, c_char};
 use std::vec;
@@ -388,6 +388,23 @@ fn vesc_if_manifest_retains_bindgen_signature_metadata() {
             .any(|entry| entry.signature().contains("fn"))
     );
     assert_eq!(VescIfAbi::ALL_ENTRIES[0].signature(), "load_extension_fptr");
+    assert!(
+        VescIfAbi::ALL_ENTRIES
+            .iter()
+            .all(|entry| entry.family() == VescIfSlotFamily::Stm32)
+    );
+    assert_eq!(
+        VescIfAbi::ALL_ENTRIES[0].nullability(),
+        VescIfSlotNullability::NullableFunction
+    );
+    assert_eq!(
+        VescIfAbi::ALL_ENTRIES
+            .iter()
+            .find(|entry| entry.slot().name() == "lbm_enc_sym_nil")
+            .expect("scalar manifest entry")
+            .safety(),
+        VescIfSlotSafety::ScalarWord
+    );
 }
 
 #[test]
