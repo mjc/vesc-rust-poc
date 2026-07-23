@@ -21,6 +21,31 @@ pub enum VescIfSlotKind {
     Scalar,
 }
 
+/// ABI family that owns a manifest entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VescIfSlotFamily {
+    /// The STM32 controller-resident package ABI.
+    Stm32,
+}
+
+/// Nullability represented by a generated STM32 table entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VescIfSlotNullability {
+    /// A function pointer may be absent in a tail or partial table.
+    NullableFunction,
+    /// A scalar table word is represented directly and is not a callable slot.
+    NonNullableScalar,
+}
+
+/// Safety classification for the raw manifest surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VescIfSlotSafety {
+    /// Calling the raw function pointer requires the sys-layer safety contract.
+    RawFunction,
+    /// The entry is a scalar ABI word rather than a callable pointer.
+    ScalarWord,
+}
+
 /// Complete metadata for one entry in the pinned VESC firmware table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VescIfManifestEntry {
@@ -40,9 +65,30 @@ impl VescIfManifestEntry {
         self.kind
     }
 
+    /// Return the ABI family that owns this manifest entry.
+    pub const fn family(self) -> VescIfSlotFamily {
+        VescIfSlotFamily::Stm32
+    }
+
+    /// Return whether this entry is nullable in the generated table.
+    pub const fn nullability(self) -> VescIfSlotNullability {
+        match self.kind {
+            VescIfSlotKind::Function => VescIfSlotNullability::NullableFunction,
+            VescIfSlotKind::Scalar => VescIfSlotNullability::NonNullableScalar,
+        }
+    }
+
     /// Return the bindgen-rendered Rust type for this ABI table entry.
     pub const fn signature(self) -> &'static str {
         self.signature
+    }
+
+    /// Return the raw safety class of this manifest entry.
+    pub const fn safety(self) -> VescIfSlotSafety {
+        match self.kind {
+            VescIfSlotKind::Function => VescIfSlotSafety::RawFunction,
+            VescIfSlotKind::Scalar => VescIfSlotSafety::ScalarWord,
+        }
     }
 
     /// Return whether the entry is callable through a function pointer.

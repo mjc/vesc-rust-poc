@@ -54,7 +54,8 @@ pub use loader::{AppDataHandler, ExtensionHandler, LibInfo, LibInfoAbi, StopHand
 pub use types::*;
 pub use vesc_if::{
     AbiError, Stm32AbiRevision, VescIfAbi, VescIfCapabilities, VescIfCapability,
-    VescIfManifestEntry, VescIfPresence, VescIfSlot, VescIfSlotKind, VescIfSubsystem,
+    VescIfManifestEntry, VescIfPresence, VescIfSlot, VescIfSlotFamily, VescIfSlotKind,
+    VescIfSlotNullability, VescIfSlotSafety, VescIfSubsystem,
 };
 pub use views::{
     AppDataPacket, CanPayload, CommandPacket, ConfigPayload, ConfigXmlBytes, MutablePacket,
