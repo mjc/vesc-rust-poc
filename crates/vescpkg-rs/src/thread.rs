@@ -350,8 +350,15 @@ impl<S: PackageRuntimeState> ThreadContext<S> {
         &self,
         operation: impl for<'state> FnOnce(&'state mut S) -> R,
     ) -> Option<R> {
-        S::runtime_store()
-            .with_expected_mut(crate::runtime::ExpectedState::Exact(self.state), operation)
+        let expected = crate::runtime::ExpectedState::Exact(self.state);
+        #[cfg(not(target_arch = "arm"))]
+        {
+            S::runtime_store().with_expected_mut(expected, operation)
+        }
+        #[cfg(target_arch = "arm")]
+        {
+            crate::PackageStateStore::<S>::with_expected_mut(expected, operation)
+        }
     }
 
     /// Return firmware capabilities for this package thread.
@@ -1284,7 +1291,7 @@ mod tests {
         RUN_CALLS.store(0, Ordering::SeqCst);
         OBSERVED_STATE.store(0, Ordering::SeqCst);
         let state = Box::leak(Box::new(ThreadState(41)));
-        unsafe { THREAD_STATE.install(state) }.unwrap();
+        assert!(unsafe { THREAD_STATE.install(state) });
 
         unsafe {
             firmware_thread_entry::<RecordingThread>(core::ptr::from_mut(state).cast::<c_void>());

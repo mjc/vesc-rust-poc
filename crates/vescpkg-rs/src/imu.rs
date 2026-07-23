@@ -544,7 +544,7 @@ mod tests {
             }),
             (4.0, 5.0, 6.0)
         );
-        assert_eq!(sample.period().duration().as_seconds(), 0.02);
+        assert_f32_eq!(sample.period().duration().as_seconds(), 0.02);
     }
 
     #[test]
@@ -556,7 +556,7 @@ mod tests {
         // `third_party/vesc/lispBM/lispif_c_lib.c:151-158`; the IMU adapter
         // dispatches the package state source like Float Out Boy's callback at
         // `third_party/float-out-boy/src/main.c:759-764`.
-        unsafe { RUNTIME_STATE.install(&mut state) }.unwrap();
+        assert!(unsafe { RUNTIME_STATE.install(&mut state) });
         <RuntimeImuRead as ImuReadCallback>::read(typed_sample());
         RUNTIME_STATE.clear();
         assert_eq!(state.samples, 1);
@@ -569,7 +569,7 @@ mod tests {
     #[test]
     fn imu_read_handler_validates_loader_package_state_identity() {
         let mut state = State { samples: 0 };
-        unsafe { LOADER_RUNTIME_STATE.install(&mut state) }.unwrap();
+        assert!(unsafe { LOADER_RUNTIME_STATE.install(&mut state) });
         LOADER_STATE.store(&raw mut state, Ordering::Release);
 
         <LoaderImuRead as ImuReadCallback>::read(typed_sample());

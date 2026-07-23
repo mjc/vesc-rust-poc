@@ -156,8 +156,8 @@ mod tests {
     #[test]
     fn gpio_uses_one_semantic_capability() {
         let gpio = Gpio::test((1.2, 3.4));
-        assert_eq!(gpio.read_analog(AnalogPin::ADC1).voltage().as_volts(), 1.2);
-        assert_eq!(gpio.read_analog(AnalogPin::ADC2).voltage().as_volts(), 3.4);
+        assert_f32_eq!(gpio.read_analog(AnalogPin::ADC1).voltage().as_volts(), 1.2);
+        assert_f32_eq!(gpio.read_analog(AnalogPin::ADC2).voltage().as_volts(), 3.4);
         assert_eq!(gpio.test.analog_pair_calls.get(), 2);
         assert_eq!(gpio.test.last_pin.get(), 8);
     }

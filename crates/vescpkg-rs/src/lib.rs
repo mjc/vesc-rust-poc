@@ -11,10 +11,11 @@
 #![forbid(unused_extern_crates)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(clippy::missing_safety_doc)]
-// Embedded package code has no unwinder or operator console. Reject explicit
-// crash paths outside the host-only test-support build.
+// Package and fake-firmware code must degrade through typed errors or inert
+// fallbacks. Embedded targets have no unwinder or operator console, and keeping
+// test support under the same rule prevents tests from modeling unsafe recovery.
 #![cfg_attr(
-    all(not(test), not(feature = "test-support")),
+    not(test),
     deny(
         clippy::arithmetic_side_effects,
         clippy::expect_used,
@@ -25,14 +26,6 @@
         clippy::unwrap_used
     )
 )]
-// These tests check exact values copied across the firmware ABI. Approximate
-// comparison would hide a changed bit pattern, so exact float equality is the
-// intended assertion rather than a numerical-analysis comparison.
-#![cfg_attr(
-    test,
-    expect(clippy::float_cmp, reason = "tests verify exact firmware ABI values")
-)]
-
 #[cfg(target_arch = "arm")]
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
@@ -45,6 +38,24 @@ fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
 extern crate alloc as rust_alloc;
 #[cfg(test)]
 extern crate std;
+
+#[cfg(test)]
+macro_rules! assert_f32_eq {
+    ($left:expr, $right:expr $(,)?) => {{
+        let left: f32 = $left;
+        let right: f32 = $right;
+        assert_eq!(left.to_bits(), right.to_bits());
+    }};
+}
+
+#[cfg(test)]
+macro_rules! assert_f64_eq {
+    ($left:expr, $right:expr $(,)?) => {{
+        let left: f64 = $left;
+        let right: f64 = $right;
+        assert_eq!(left.to_bits(), right.to_bits());
+    }};
+}
 
 /// Firmware allocation helpers backed by the VESC native package allocator.
 mod alloc;
@@ -69,42 +80,39 @@ mod test_ffi;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 
+#[cfg(all(not(test), feature = "test-support"))]
+fn tick_count_as_seconds(ticks: u32, ticks_per_second: f32) -> f32 {
+    // A `u32` has more significant bits than an `f32`. Split it into two
+    // exactly representable `u16` halves, then reconstruct the rounded
+    // floating-point value expected by the firmware API.
+    let [low0, low1, high0, high1] = ticks.to_le_bytes();
+    let low = f32::from(u16::from_le_bytes([low0, low1]));
+    let high = f32::from(u16::from_le_bytes([high0, high1]));
+    (high * 65_536.0 + low) / ticks_per_second
+}
+
 /// Internal ABI seam. `vescpkg-rs-sys` selects the real or test implementation.
 pub(crate) mod ffi {
     pub use vescpkg_rs_sys::raw::{
         CustomConfigGet, CustomConfigSet, CustomConfigXml, ImuReadCallback,
     };
-    #[allow(unused_imports)]
-    pub use vescpkg_rs_sys::raw::{
-        conf_custom_add_config, conf_custom_clear_configs, io_read, io_read_analog, io_set_mode,
-        io_write, lbm_add_extension, lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true,
-        vesc_clear_app_data_handler, vesc_clear_imu_read_callback, vesc_get_arg, vesc_malloc,
-        vesc_send_app_data, vesc_set_app_data_handler, vesc_set_imu_read_callback,
-    };
     pub use vescpkg_rs_sys::{AppDataHandler, LibInfo, NativeImage};
 
     #[cfg(all(feature = "test-support", not(test)))]
-    use crate::test_ffi as selected_ffi;
-    #[allow(unused_imports)]
-    pub use selected_ffi::{
-        foc_get_id, foc_play_tone, get_cfg_float, get_cfg_int, get_ppm, get_ppm_age, imu_get_gyro,
-        imu_get_pitch, imu_get_roll, imu_get_yaw, imu_startup_done, lbm_car, lbm_cdr, lbm_cons,
-        lbm_create_byte_array, lbm_dec_as_float, lbm_dec_as_i32, lbm_dec_as_u32, lbm_dec_char,
-        lbm_dec_str, lbm_enc_char, lbm_enc_float, lbm_enc_i, lbm_enc_u32, lbm_is_byte_array,
-        lbm_is_char, lbm_is_cons, lbm_is_number, lbm_is_symbol, lbm_list_destructive_reverse,
-        mc_fault_to_string, mc_get_amp_hours, mc_get_amp_hours_charged, mc_get_battery_level,
-        mc_get_distance_abs, mc_get_duty_cycle_now, mc_get_fault, mc_get_input_voltage_filtered,
-        mc_get_odometer, mc_get_rpm, mc_get_speed, mc_get_tot_current_directional_filtered,
-        mc_get_tot_current_filtered, mc_get_tot_current_in_filtered, mc_get_watt_hours,
-        mc_get_watt_hours_charged, mc_set_brake_current, mc_set_current, mc_set_current_off_delay,
-        mc_set_duty, mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm,
-        remote_state, store_eeprom_word, timeout_reset, vesc_free, vesc_imu_get_quaternions,
-        vesc_mutex_create, vesc_mutex_lock, vesc_mutex_unlock, vesc_request_terminate,
-        vesc_sem_create, vesc_sem_reset, vesc_sem_signal, vesc_sem_wait, vesc_sem_wait_to,
-        vesc_should_terminate, vesc_sleep_us, vesc_spawn, vesc_system_time_seconds,
-        vesc_system_time_ticks, vesc_thread_set_priority, vesc_timer_seconds_elapsed_since,
-        vesc_timer_time_now, vesc_timestamp_age_seconds, wipe_nvm, write_nvm,
-    };
+    mod selected_ffi {
+        pub use crate::test_ffi::*;
+        pub use vescpkg_rs_sys::raw::{
+            conf_custom_add_config, conf_custom_clear_configs, io_read_analog, io_set_mode,
+            io_write, lbm_add_extension, vesc_clear_app_data_handler, vesc_clear_imu_read_callback,
+            vesc_get_arg, vesc_malloc, vesc_send_app_data, vesc_set_app_data_handler,
+            vesc_set_imu_read_callback,
+        };
+        #[cfg(target_arch = "arm")]
+        pub use vescpkg_rs_sys::raw::{
+            io_read, lbm_enc_sym_eerror, lbm_enc_sym_nil, lbm_enc_sym_true,
+        };
+    }
+    pub use selected_ffi::*;
     #[cfg(any(test, not(feature = "test-support")))]
     use vescpkg_rs_sys::raw as selected_ffi;
 }
@@ -266,8 +274,8 @@ mod tests {
         let motor = MotorCurrent::new(Current::from_amps(10.0));
         let battery = BatteryCurrent::new(Current::from_amps(6.0));
 
-        assert_eq!(motor.current().as_amps(), 10.0);
-        assert_eq!(battery.current().as_amps(), 6.0);
+        assert_f32_eq!(motor.current().as_amps(), 10.0);
+        assert_f32_eq!(battery.current().as_amps(), 6.0);
     }
 
     #[test]
@@ -276,9 +284,9 @@ mod tests {
             + MotorCurrent::new(Current::from_amps(2.0));
         let filtered = command * 0.25 - MotorCurrent::new(Current::from_amps(1.0));
 
-        assert_eq!(command.current().as_amps(), 12.0);
-        assert_eq!(filtered.current().as_amps(), 2.0);
-        assert_eq!((-filtered).current().as_amps(), -2.0);
+        assert_f32_eq!(command.current().as_amps(), 12.0);
+        assert_f32_eq!(filtered.current().as_amps(), 2.0);
+        assert_f32_eq!((-filtered).current().as_amps(), -2.0);
     }
 
     #[test]
@@ -293,15 +301,15 @@ mod tests {
         let average_power = AveragePower::new(Power::from_watts(420.0));
         let peak_power = PeakPower::new(Power::from_watts(900.0));
 
-        assert_eq!(total.current().as_amps(), 18.0);
-        assert_eq!(directional.current().as_amps(), -2.0);
-        assert_eq!(battery_voltage.voltage().as_volts(), 50.4);
-        assert_eq!(discharged.energy().as_watt_hours(), 42.0);
-        assert_eq!(d_voltage.voltage().as_volts(), 1.25);
-        assert_eq!(q_voltage.voltage().as_volts(), 2.5);
-        assert_eq!(audio_voltage.voltage().as_volts(), 0.75);
-        assert_eq!(average_power.power().as_watts(), 420.0);
-        assert_eq!(peak_power.power().as_watts(), 900.0);
+        assert_f32_eq!(total.current().as_amps(), 18.0);
+        assert_f32_eq!(directional.current().as_amps(), -2.0);
+        assert_f32_eq!(battery_voltage.voltage().as_volts(), 50.4);
+        assert_f32_eq!(discharged.energy().as_watt_hours(), 42.0);
+        assert_f32_eq!(d_voltage.voltage().as_volts(), 1.25);
+        assert_f32_eq!(q_voltage.voltage().as_volts(), 2.5);
+        assert_f32_eq!(audio_voltage.voltage().as_volts(), 0.75);
+        assert_f32_eq!(average_power.power().as_watts(), 420.0);
+        assert_f32_eq!(peak_power.power().as_watts(), 900.0);
     }
 
     #[test]
@@ -315,14 +323,14 @@ mod tests {
         let hdop = GnssHdop::from_unitless(0.9);
         let accuracy = GnssAccuracy::new(Distance::from_meters(1.8));
 
-        assert_eq!(speed.speed().as_meters_per_second(), 4.0);
-        assert_eq!(trip.distance().as_meters(), 123.0);
-        assert_eq!(mechanical.rpm().as_revolutions_per_minute(), 3000.0);
-        assert_eq!(latitude.latitude().as_degrees(), 40.015);
-        assert_eq!(longitude.longitude().as_degrees(), -105.2705);
-        assert_eq!(gnss_speed.speed().as_meters_per_second(), 3.5);
-        assert_eq!(hdop.as_unitless(), 0.9);
-        assert_eq!(accuracy.distance().as_meters(), 1.8);
+        assert_f32_eq!(speed.speed().as_meters_per_second(), 4.0);
+        assert_f32_eq!(trip.distance().as_meters(), 123.0);
+        assert_f32_eq!(mechanical.rpm().as_revolutions_per_minute(), 3000.0);
+        assert_f64_eq!(latitude.latitude().as_degrees(), 40.015);
+        assert_f64_eq!(longitude.longitude().as_degrees(), -105.2705);
+        assert_f32_eq!(gnss_speed.speed().as_meters_per_second(), 3.5);
+        assert_f32_eq!(hdop.as_unitless(), 0.9);
+        assert_f32_eq!(accuracy.distance().as_meters(), 1.8);
     }
 
     #[test]
@@ -338,11 +346,11 @@ mod tests {
         let mechanical = MechanicalSpeed::new(Rpm::from_revolutions_per_minute(3000.0));
         let electrical = ElectricalSpeed::new(Rpm::from_revolutions_per_minute(21_000.0));
 
-        assert_eq!(
+        assert_f32_eq!(
             mechanical_command(mechanical).as_revolutions_per_minute(),
             3000.0
         );
-        assert_eq!(
+        assert_f32_eq!(
             electrical_command(electrical).as_revolutions_per_minute(),
             21_000.0
         );
@@ -360,11 +368,11 @@ mod tests {
         assert_eq!(channel.as_u8(), 3);
         assert_eq!(AudioChannel::try_new(0).expect("first channel").as_u8(), 0);
         assert_eq!(AudioChannel::try_new(4).expect_err("too high").value(), 4);
-        assert_eq!(position.angle().as_degrees(), 90.0);
-        assert_eq!(phase.angle().as_degrees(), 180.0);
-        assert_eq!(audio_frequency.frequency().as_hertz(), 440.0);
-        assert_eq!(audio_sample_rate.sample_rate().as_hertz(), 22_050.0);
-        assert_eq!(audio_duration.duration().as_seconds(), 0.25);
+        assert_f32_eq!(position.angle().as_degrees(), 90.0);
+        assert_f32_eq!(phase.angle().as_degrees(), 180.0);
+        assert_f32_eq!(audio_frequency.frequency().as_hertz(), 440.0);
+        assert_f32_eq!(audio_sample_rate.sample_rate().as_hertz(), 22_050.0);
+        assert_f32_eq!(audio_duration.duration().as_seconds(), 0.25);
     }
 
     #[test]
@@ -379,11 +387,11 @@ mod tests {
 
         assert_eq!(poles.as_u16(), 14);
         assert_eq!(cells.as_u16(), 12);
-        assert_eq!(gear_ratio.as_f32(), 2.6);
-        assert_eq!(wheel.distance().as_meters(), 0.165);
-        assert_eq!(motor_r.resistance().as_ohms(), 0.03);
-        assert_eq!(motor_l.inductance().as_henries(), 0.000_012);
-        assert_eq!(flux.flux_linkage().as_webers(), 0.004);
+        assert_f32_eq!(gear_ratio.as_f32(), 2.6);
+        assert_f32_eq!(wheel.distance().as_meters(), 0.165);
+        assert_f32_eq!(motor_r.resistance().as_ohms(), 0.03);
+        assert_f32_eq!(motor_l.inductance().as_henries(), 0.000_012);
+        assert_f32_eq!(flux.flux_linkage().as_webers(), 0.004);
         assert!(MotorPoleCount::try_new(0).is_err());
         assert!(crate::types::BatteryCellCount::try_new(0).is_err());
         assert!(GearRatio::try_new(0.0).is_err());
@@ -401,9 +409,9 @@ mod tests {
 
         assert_eq!(timestamp.as_ticks(), 123_456);
         assert_eq!(duration.duration().as_ticks(), 25_000);
-        assert_eq!(timeout.duration().as_seconds(), 2.5);
-        assert_eq!(remote_age.duration().as_seconds(), 2.5);
-        assert_eq!(ppm_age.duration().as_seconds(), 2.5);
+        assert_f32_eq!(timeout.duration().as_seconds(), 2.5);
+        assert_f32_eq!(remote_age.duration().as_seconds(), 2.5);
+        assert_f32_eq!(ppm_age.duration().as_seconds(), 2.5);
     }
 
     #[test]
@@ -439,14 +447,14 @@ mod tests {
         let joystick_x = JoystickX::new(SignedRatio::from_ratio(-0.2).expect("joystick X"));
         let joystick_y = JoystickY::new(SignedRatio::from_ratio(0.8).expect("joystick Y"));
 
-        assert_eq!(duty.ratio().as_ratio(), -0.25);
-        assert_eq!(pwm.ratio().as_ratio(), 0.75);
-        assert_eq!(current_rel.ratio().as_ratio(), -0.5);
-        assert_eq!(brake_rel.ratio().as_ratio(), 0.75);
-        assert_eq!(handbrake_rel.ratio().as_ratio(), 0.5);
-        assert_eq!(ppm.ratio().as_ratio(), -1.0);
-        assert_eq!(joystick_x.ratio().as_ratio(), -0.2);
-        assert_eq!(joystick_y.ratio().as_ratio(), 0.8);
+        assert_f32_eq!(duty.ratio().as_ratio(), -0.25);
+        assert_f32_eq!(pwm.ratio().as_ratio(), 0.75);
+        assert_f32_eq!(current_rel.ratio().as_ratio(), -0.5);
+        assert_f32_eq!(brake_rel.ratio().as_ratio(), 0.75);
+        assert_f32_eq!(handbrake_rel.ratio().as_ratio(), 0.5);
+        assert_f32_eq!(ppm.ratio().as_ratio(), -1.0);
+        assert_f32_eq!(joystick_x.ratio().as_ratio(), -0.2);
+        assert_f32_eq!(joystick_y.ratio().as_ratio(), 0.8);
     }
 
     #[test]
@@ -476,20 +484,20 @@ mod tests {
             ImuQuaternionZ::new(0.0),
         ));
 
-        assert_eq!(adc_voltage.voltage().as_volts(), 1.65);
-        assert_eq!(adc_level.ratio().as_ratio(), 0.5);
-        assert_eq!(brake_lever.ratio().as_ratio(), 0.35);
+        assert_f32_eq!(adc_voltage.voltage().as_volts(), 1.65);
+        assert_f32_eq!(adc_level.ratio().as_ratio(), 0.5);
+        assert_f32_eq!(brake_lever.ratio().as_ratio(), 0.35);
         assert_eq!(brake_switch, BrakeSwitch::Pressed);
-        assert_eq!(roll.angle().as_radians(), 0.25);
-        assert_eq!(pitch.angle().as_radians(), -0.125);
-        assert_eq!(yaw.angle().as_radians(), 1.0);
-        accel.map_axes(|_, _, z| assert_eq!(z.acceleration().as_g(), 1.0));
+        assert_f32_eq!(roll.angle().as_radians(), 0.25);
+        assert_f32_eq!(pitch.angle().as_radians(), -0.125);
+        assert_f32_eq!(yaw.angle().as_radians(), 1.0);
+        accel.map_axes(|_, _, z| assert_f32_eq!(z.acceleration().as_g(), 1.0));
         gyro.map_axes(|_, pitch, yaw| {
-            assert_eq!(pitch.angular_velocity().as_degrees_per_second(), 2.0);
-            assert_eq!(yaw.angular_velocity().as_degrees_per_second(), 3.0);
+            assert_f32_eq!(pitch.angular_velocity().as_degrees_per_second(), 2.0);
+            assert_f32_eq!(yaw.angular_velocity().as_degrees_per_second(), 3.0);
         });
-        assert_eq!(gyro.pitch().as_degrees_per_second(), 2.0);
-        assert_eq!(gyro.yaw().as_degrees_per_second(), 3.0);
+        assert_f32_eq!(gyro.pitch().as_degrees_per_second(), 2.0);
+        assert_f32_eq!(gyro.yaw().as_degrees_per_second(), 3.0);
         assert_eq!(attitude.roll(), roll);
         assert_eq!(attitude.pitch(), pitch);
         assert_eq!(attitude.yaw(), yaw);

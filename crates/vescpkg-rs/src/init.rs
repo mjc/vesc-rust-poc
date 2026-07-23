@@ -1,6 +1,7 @@
 //! Native VESC package loader helpers shared across package payloads.
 
 use crate::ffi;
+#[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 use crate::runtime::CallbackRecorder;
 use core::any::TypeId;
 
@@ -44,22 +45,30 @@ unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
     let Some(mut state) = core::ptr::NonNull::new(arg.cast::<T>()) else {
         return;
     };
+    #[cfg(not(target_arch = "arm"))]
     let runtime = T::runtime_store();
+    #[cfg(not(target_arch = "arm"))]
     if !runtime.begin_stop(state) {
+        return;
+    }
+    #[cfg(target_arch = "arm")]
+    if !crate::PackageStateStore::<T>::begin_stop(state) {
         return;
     }
     #[cfg(all(not(test), target_arch = "arm"))]
     {
-        runtime
-            .take_callbacks(state)
+        crate::PackageStateStore::<T>::take_callbacks(state)
             .clear_registered(&crate::bindings::RealBindings);
-        if let Some(threads) = runtime.take_threads(state) {
+        if let Some(threads) = crate::PackageStateStore::<T>::take_threads(state) {
             threads.terminate_reverse(&crate::thread::ThreadApi::new(
                 crate::thread::RealThreadBindings,
             ));
         }
     }
+    #[cfg(not(target_arch = "arm"))]
     runtime.finish_stop(state);
+    #[cfg(target_arch = "arm")]
+    crate::PackageStateStore::<T>::finish_stop(state);
     unsafe { state.as_mut() }.stop();
     #[cfg(all(not(test), target_arch = "arm"))]
     {
@@ -150,6 +159,7 @@ impl core::error::Error for PackageStartError {}
 pub struct PackageStart<'info> {
     info: *mut crate::LoaderInfo,
     state_type: Option<TypeId>,
+    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     callback_recorder: Option<CallbackRecorder>,
     extension_image_pinned: bool,
     _info: core::marker::PhantomData<&'info mut crate::LoaderInfo>,
@@ -219,6 +229,7 @@ impl<'info> PackageStart<'info> {
         Self {
             info: core::ptr::from_mut(info).cast(),
             state_type: None,
+            #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
             callback_recorder: None,
             extension_image_pinned: false,
             _info: core::marker::PhantomData,
@@ -253,8 +264,15 @@ impl<'info> PackageStart<'info> {
         &mut self,
         state_value: T,
     ) -> Result<(), PackageStartError> {
-        self.install_runtime_state_using(state_value, |state, allocation| unsafe {
-            T::runtime_store().install_owned(state, allocation)
+        self.install_runtime_state_using(state_value, |state, allocation| {
+            #[cfg(not(target_arch = "arm"))]
+            {
+                unsafe { T::runtime_store().install_owned(state, allocation) }
+            }
+            #[cfg(target_arch = "arm")]
+            {
+                unsafe { crate::PackageStateStore::<T>::install_owned(state, allocation) }
+            }
         })
     }
 
@@ -278,10 +296,7 @@ impl<'info> PackageStart<'info> {
     fn install_runtime_state_using<T: crate::PackageRuntimeState>(
         &mut self,
         state_value: T,
-        install: impl FnOnce(
-            &mut T,
-            core::ptr::NonNull<core::ffi::c_void>,
-        ) -> Result<(), crate::runtime::PackageStateInstallError>,
+        install: impl FnOnce(&mut T, core::ptr::NonNull<core::ffi::c_void>) -> bool,
     ) -> Result<(), PackageStartError> {
         let info = self
             .raw_info_mut()
@@ -312,17 +327,13 @@ impl<'info> PackageStart<'info> {
         let allocation = core::ptr::NonNull::from(&mut *state).cast();
 
         let state_ptr = core::ptr::from_mut(state);
-        if let Err(error) = install(state, allocation) {
+        if !install(state, allocation) {
             #[cfg(target_arch = "arm")]
             {
                 unsafe { state_ptr.drop_in_place() };
                 unsafe { ffi::vesc_free(allocation.as_ptr()) };
             }
-            return Err(match error {
-                crate::runtime::PackageStateInstallError::AlreadyInstalled => {
-                    PackageStartError::StateAlreadyInstalled
-                }
-            });
+            return Err(PackageStartError::StateAlreadyInstalled);
         }
         info.arg = state_ptr.cast();
         info.stop_fun = Some(crate::firmware::stop_handler_for_loader(
@@ -355,9 +366,12 @@ impl<'info> PackageStart<'info> {
         // handler is published, keep its native image and runtime alive until
         // the package-wide Lisp restart resets the extension table.
         let started = started || self.extension_image_pinned;
+        #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
         let running = self
             .callback_recorder
             .map_or(started, |recorder| recorder.finish_start(started));
+        #[cfg(not(any(test, feature = "test-support", target_arch = "arm")))]
+        let running = started;
         if !running && let Some(info) = self.raw_info_mut() {
             let arg = info.arg;
             if let Some(stop) = info.stop_fun.take() {
@@ -382,7 +396,15 @@ impl<'info> PackageStart<'info> {
         let state = self
             .raw_info_mut()
             .and_then(|info| core::ptr::NonNull::new(info.arg.cast::<T>()))?;
-        T::runtime_store().with_expected_mut(crate::runtime::ExpectedState::Exact(state), operation)
+        let expected = crate::runtime::ExpectedState::Exact(state);
+        #[cfg(not(target_arch = "arm"))]
+        {
+            T::runtime_store().with_expected_mut(expected, operation)
+        }
+        #[cfg(target_arch = "arm")]
+        {
+            crate::PackageStateStore::<T>::with_expected_mut(expected, operation)
+        }
     }
 
     /// Start and retain package-owned firmware threads.
@@ -414,14 +436,23 @@ impl<'info> PackageStart<'info> {
             .raw_info_mut()
             .and_then(|info| core::ptr::NonNull::new(info.arg.cast::<T>()))
             .ok_or(PackageStartError::LoaderUnavailable)?;
+        let expected = crate::runtime::ExpectedState::Exact(state);
+        #[cfg(not(target_arch = "arm"))]
         T::runtime_store()
-            .with_expected(crate::runtime::ExpectedState::Exact(state), |_| ())
+            .with_expected(expected, |_| ())
+            .ok_or(PackageStartError::LoaderUnavailable)?;
+        #[cfg(target_arch = "arm")]
+        crate::PackageStateStore::<T>::with_expected(expected, |_| ())
             .ok_or(PackageStartError::LoaderUnavailable)?;
         let threads = crate::thread::ThreadApi::new(&bindings)
             .spawn_threads(specs, state)
             .ok_or(PackageStartError::ThreadSpawnFailed)?;
         let mut threads = Some(threads);
-        if T::runtime_store().install_threads(state, &mut threads) {
+        #[cfg(not(target_arch = "arm"))]
+        let installed = T::runtime_store().install_threads(state, &mut threads);
+        #[cfg(target_arch = "arm")]
+        let installed = crate::PackageStateStore::<T>::install_threads(state, &mut threads);
+        if installed {
             Ok(())
         } else {
             if let Some(threads) = threads {
@@ -1084,9 +1115,7 @@ mod tests {
         };
         let mut start = super::PackageStart::from_lib_info(&mut info);
 
-        let result = start.install_runtime_state_using(FailedState, |_, _| {
-            Err(crate::runtime::PackageStateInstallError::AlreadyInstalled)
-        });
+        let result = start.install_runtime_state_using(FailedState, |_, _| false);
 
         assert_eq!(result, Err(PackageStartError::StateAlreadyInstalled));
         assert_eq!(FAILED_STATE_DROPS.load(Ordering::Relaxed), 1);

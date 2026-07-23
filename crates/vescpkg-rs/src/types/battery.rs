@@ -128,6 +128,6 @@ mod tests {
     fn battery_level_preserves_firmware_fraction_above_one() {
         let level = BatteryLevel::from_fraction(1.1);
 
-        assert_eq!(level.as_fraction(), 1.1);
+        assert_f32_eq!(level.as_fraction(), 1.1);
     }
 }

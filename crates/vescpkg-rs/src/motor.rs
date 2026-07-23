@@ -659,9 +659,9 @@ mod tests {
 
     #[test]
     fn duty_cycle_preserves_direction_and_normalizes_invalid_values() {
-        assert_eq!(duty_cycle_from_firmware(f32::NAN).ratio().as_ratio(), 0.0);
-        assert_eq!(duty_cycle_from_firmware(-0.42).ratio().as_ratio(), -0.42);
-        assert_eq!(duty_cycle_from_firmware(2.0).ratio().as_ratio(), 1.0);
+        assert_f32_eq!(duty_cycle_from_firmware(f32::NAN).ratio().as_ratio(), 0.0);
+        assert_f32_eq!(duty_cycle_from_firmware(-0.42).ratio().as_ratio(), -0.42);
+        assert_f32_eq!(duty_cycle_from_firmware(2.0).ratio().as_ratio(), 1.0);
     }
 
     #[test]
@@ -677,23 +677,23 @@ mod tests {
 
     #[test]
     fn duty_cycle_limit_normalizes_firmware_config_at_the_boundary() {
-        assert_eq!(
+        assert_f32_eq!(
             duty_cycle_limit_from_firmware(f32::NAN).ratio().as_ratio(),
             0.0
         );
-        assert_eq!(
+        assert_f32_eq!(
             duty_cycle_limit_from_firmware(0.95).ratio().as_ratio(),
             0.95
         );
-        assert_eq!(duty_cycle_limit_from_firmware(2.0).ratio().as_ratio(), 1.0);
-        assert_eq!(
+        assert_f32_eq!(duty_cycle_limit_from_firmware(2.0).ratio().as_ratio(), 1.0);
+        assert_f32_eq!(
             duty_cycle_limit_from_firmware(0.95)
                 .reduced_by(Ratio::from_ratio_const(0.05))
                 .ratio()
                 .as_ratio(),
             0.9
         );
-        assert_eq!(
+        assert_f32_eq!(
             DutyCycle::new(SignedRatio::from_ratio_const(-0.85))
                 .magnitude()
                 .as_ratio(),

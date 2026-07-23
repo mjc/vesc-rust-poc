@@ -52,15 +52,13 @@ impl<B: LbmBindings> LbmApi<B> {
     }
 
     /// Return the `LispBM` true value.
-    #[cfg(not(test))]
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    #[cfg(all(not(test), target_arch = "arm"))]
     pub fn encode_true(&self) -> LbmValue {
         self.bindings.encode_true()
     }
 
     /// Return the `LispBM` nil value.
-    #[cfg(not(test))]
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    #[cfg(all(not(test), target_arch = "arm"))]
     pub fn encode_nil(&self) -> LbmValue {
         self.bindings.encode_nil()
     }

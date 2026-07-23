@@ -276,10 +276,7 @@ impl TryFrom<i32> for LispValue {
 
 /// Errors returned when extension registration fails.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(
-    not(any(test, feature = "test-support", target_arch = "arm")),
-    allow(dead_code)
-)]
+#[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 pub(crate) enum ExtensionRegistrationError {
     /// Firmware rejected the registration request.
     FirmwareRejected,
@@ -297,11 +294,7 @@ pub struct ExtensionRegistration {
 }
 
 impl ExtensionRegistration {
-    #[cfg_attr(
-        not(any(test, feature = "test-support", target_arch = "arm")),
-        allow(dead_code)
-    )]
-    // Used by lifecycle extension registration on firmware and test-support builds.
+    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     pub(crate) const fn new(requested: usize, registered: usize) -> Self {
         Self {
             requested,
@@ -349,11 +342,7 @@ impl ExtensionName {
         Self(b"ext-invalid\0")
     }
 
-    #[cfg_attr(
-        not(any(test, feature = "test-support", target_arch = "arm")),
-        allow(dead_code)
-    )]
-    // Firmware/test-support registration needs the validated C name pointer.
+    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     pub(crate) const fn as_cstr(self) -> &'static CStr {
         // SAFETY: the macro support hook validates the terminating NUL byte.
         unsafe { CStr::from_bytes_with_nul_unchecked(self.0) }
@@ -391,15 +380,9 @@ macro_rules! extension_name {
 #[derive(Clone, Copy)]
 pub struct ExtensionDescriptor {
     name: ExtensionName,
-    #[cfg_attr(
-        not(any(test, feature = "test-support", target_arch = "arm")),
-        allow(dead_code)
-    )]
+    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     handler: ExtensionHandler,
-    #[cfg_attr(
-        not(any(test, feature = "test-support", target_arch = "arm")),
-        allow(dead_code)
-    )]
+    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     state_type: Option<fn() -> core::any::TypeId>,
 }
 
@@ -407,7 +390,9 @@ impl ExtensionDescriptor {
     pub(crate) fn from_handler(name: ExtensionName, handler: ExtensionHandler) -> Self {
         Self {
             name,
+            #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
             handler,
+            #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
             state_type: None,
         }
     }
@@ -421,7 +406,9 @@ impl ExtensionDescriptor {
     pub fn stateful<T: StatefulLbmExtension>(name: ExtensionName) -> Self {
         Self {
             name,
+            #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
             handler: stateful_lbm_extension_handler::<T>,
+            #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
             state_type: Some(runtime_state_type::<T::State>),
         }
     }
@@ -444,6 +431,7 @@ impl ExtensionDescriptor {
     }
 }
 
+#[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 fn runtime_state_type<T: 'static>() -> core::any::TypeId {
     core::any::TypeId::of::<T>()
 }
@@ -544,10 +532,10 @@ pub unsafe extern "C" fn stateful_lbm_extension_handler<T: StatefulLbmExtension>
     // VESC returns the live `T::State` installed in this package's ARG slot.
     let result = unsafe { crate::firmware::__firmware_package_state_ptr::<T::State>(program) }
         .and_then(|state| {
-            <T::State as crate::PackageRuntimeState>::runtime_store()
-                .with_expected_mut(crate::runtime::ExpectedState::Exact(state), |state| {
-                    T::call(state, args)
-                })
+            crate::PackageStateStore::<T::State>::with_expected_mut(
+                crate::runtime::ExpectedState::Exact(state),
+                |state| T::call(state, args),
+            )
         });
     #[cfg(any(test, not(target_arch = "arm")))]
     let result = <T::State as crate::PackageRuntimeState>::runtime_store()
@@ -613,7 +601,7 @@ mod tests {
         );
 
         let state = Box::leak(Box::new(State { calls: 0 }));
-        unsafe { SLOT.install(state) }.unwrap();
+        assert!(unsafe { SLOT.install(state) });
 
         assert_eq!(
             unsafe { stateful_lbm_extension_handler::<TestExtension>(core::ptr::null_mut(), 0) },
