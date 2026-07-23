@@ -1977,7 +1977,9 @@ pub unsafe fn mc_get_odometer() -> u64 {
     ODOMETER.load(Ordering::Relaxed)
 }
 
-pub unsafe fn mc_set_odometer(_meters: u64) {}
+pub unsafe fn mc_set_odometer(meters: u64) {
+    ODOMETER.store(meters, Ordering::Relaxed);
+}
 
 pub unsafe fn mc_get_amp_hours(reset: bool) -> f32 {
     if reset {

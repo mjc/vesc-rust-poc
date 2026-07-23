@@ -251,6 +251,7 @@ fn motor_exposes_typed_handbrake_commands() {
     firmware
         .motor()
         .set_odometer(OdometerMeters::from_meters(12_345));
+    assert_eq!(firmware.telemetry().odometer().as_meters(), 12_345);
     assert_eq!(
         firmware
             .motor()
