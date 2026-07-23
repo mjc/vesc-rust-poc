@@ -26,6 +26,22 @@ pub enum UartError {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Uart;
 
+/// Select the UART wiring mode used when opening a lease.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UartDuplexMode {
+    /// Use separate transmit and receive lines.
+    FullDuplex,
+    /// Share one line for transmit and receive.
+    HalfDuplex,
+}
+
+impl UartDuplexMode {
+    /// Return the raw half-duplex flag expected by the firmware ABI.
+    pub const fn is_half_duplex(self) -> bool {
+        matches!(self, Self::HalfDuplex)
+    }
+}
+
 /// Exclusive UART ownership lease.
 pub struct UartLease {
     _private: (),
@@ -37,14 +53,14 @@ impl Uart {
     }
 
     /// Acquire the UART and configure its baud and duplex mode.
-    pub fn open(&self, baud: BaudRate, half_duplex: bool) -> Result<UartLease, UartError> {
+    pub fn open(&self, baud: BaudRate, mode: UartDuplexMode) -> Result<UartLease, UartError> {
         if UART_OWNED
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
             return Err(UartError::Busy);
         }
-        let started = unsafe { crate::ffi::uart_start(baud.as_u32(), half_duplex) };
+        let started = unsafe { crate::ffi::uart_start(baud.as_u32(), mode.is_half_duplex()) };
         match started {
             Some(true) => Ok(UartLease { _private: () }),
             Some(false) => {

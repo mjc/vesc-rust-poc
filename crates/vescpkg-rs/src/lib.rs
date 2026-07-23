@@ -63,6 +63,8 @@ mod terminal;
 mod test_ffi;
 mod uart;
 
+pub use uart::UartDuplexMode;
+
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 
