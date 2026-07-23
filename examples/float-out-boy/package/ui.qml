@@ -375,8 +375,9 @@ return null;}
 function eraseTune(slot){tuneStorage.setValue(tuneId(slot),"");tunes[slot]=null;tunes=tunes;}
 function slotEmpty(slot){return!tuneStorage.value(tuneId(slot),null);}
 function saveTuneArchive(tuneArchive){tuneStorage.tuneArchive=JSON.stringify(tuneArchive);tuneStorage.tuneArchiveDownloadDate=new Date();}
-function loadTuneArchive(){if(tuneStorage.tuneArchive){if(typeof tuneStorage.tuneArchive==="string"){return JSON.parse(tuneStorage.tuneArchive);}else{return tuneStorage.tuneArchive;}}
-return null;}
+function loadTuneArchive(){if(!tuneStorage.tuneArchive){return null;}
+var archive=typeof tuneStorage.tuneArchive==="string"?JSON.parse(tuneStorage.tuneArchive):tuneStorage.tuneArchive;for(let i=0;i<archive.length;i++){archive[i]=convertFromOldFormat(archive[i]);if(!archive[i].package){archive[i].package={"name":"Refloat","version":"1.2.1"};}}
+return archive;}
 function getTuneArchiveDate(){return Qt.formatDateTime(tuneStorage.tuneArchiveDownloadDate);}
 function parseCsv(csv){var lines=csv.split("\r\n");var tuneCount=lines[0].split(",").length-1;var result=[];for(var i=0;i<tuneCount;i++){result.push({"version":formatVersion,"package":{"name":"Refloat","version":"1.2.1"},"settings":{}});}
 for(var i in lines){var currentLine=lines[i].split(",");for(var j=0;j<tuneCount;j++){var value=currentLine[j+1];if(value){var key=currentLine[0];var name;if(key==="_name"){result[j].name=value;continue;}else if(key.startsWith("double_")){name=key.substring(7);value=parseFloat(value);}else if(key.startsWith("int_")){name=key.substring(4);value=parseInt(value);}else if(key.startsWith("bool_")){name=key.substring(5);value=!!parseInt(value);}else if(key.startsWith("enum_")){name=key.substring(5);value=parseInt(value);}
@@ -1363,7 +1364,7 @@ clip:true
 title:"Tune Archive"
 standardButtons:Dialog.Reset|Dialog.Close
 function download(){tuneArchiveDownloadStatus.text="Downloading tunes...";var http=new XMLHttpRequest();var url="http://us-central1-mimetic-union-377520.cloudfunctions.net/float_package_tunes_via_http";http.open("GET",url,true);http.onreadystatechange=function(){if(http.readyState===XMLHttpRequest.DONE){if(http.status===200){tuneArchiveDownloadStatus.text="Download succesful.";var tunes=tuneManager.parseCsv(http.responseText);tuneManager.saveTuneArchive(tunes);downloadedTunesModel.setTunes(tunes);}else if(http.status===0){tuneArchiveDownloadStatus.text="Download failed: Connection error";}else{tuneArchiveDownloadStatus.text="Download failed: %1 - %2".arg(http.status).arg(http.statusText);}}};http.send();}
-function show(){open();var tuneArchive=tuneManager.loadTuneArchive();if(tuneArchive&&tuneArchive.length>0&&!Array.isArray(tuneArchive[0].settings)){downloadedTunesModel.setTunes(tuneArchive);tuneArchiveDownloadStatus.text="Tunes downloaded on %1".arg(tuneManager.getTuneArchiveDate());}else{download();}}
+function show(){open();var tuneArchive=tuneManager.loadTuneArchive();if(tuneArchive&&tuneArchive.length>0){downloadedTunesModel.setTunes(tuneArchive);tuneArchiveDownloadStatus.text="Tunes downloaded on %1".arg(tuneManager.getTuneArchiveDate());}else{download();}}
 onReset:{download();}
 Component.onCompleted:{standardButton(Dialog.Reset).text="Refresh"}
 ColumnLayout{anchors.centerIn:parent
