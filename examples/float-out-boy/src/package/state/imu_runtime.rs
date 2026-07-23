@@ -253,26 +253,42 @@ fn refresh_ready_alert(
     alert
 }
 
-/// Float Out Boy runtime refresh of IMU-derived state and control-loop faults.
-///
-/// C map: upstream `check_faults`, READY engage, startup reset, and traction
-/// handling live in `third_party/float-out-boy/src/main.c:263-509`,
-/// `third_party/float-out-boy/src/main.c:551-574`, `third_party/float-out-boy/src/main.c:760-775`,
-/// `third_party/float-out-boy/src/main.c:833-838`, and `third_party/float-out-boy/src/main.c:957-1067`.
-pub(super) fn refresh(
+struct TransitionPhase {
+    ride_state: FloatOutBoyRideState,
+    run_state: FloatOutBoyRunState,
+    beep_reason: FloatOutBoyBeepReason,
+    beeper_alert: Option<FloatOutBoyBeeperAlert>,
+    startup_became_ready: bool,
+    state_engage: bool,
+    state_stop_fault: bool,
+    #[cfg(any(test, target_arch = "arm"))]
+    ready_flywheel_stop: bool,
+    balance_pitch: FloatOutBoyRealtimeBalancePitch,
+    pitch_degrees: AngleDegrees,
+    imu_pitch: ImuPitch,
+    imu_roll: ImuRoll,
+    motor_erpm: Rpm,
+    reverse_stop_entry_pending: bool,
+    traction_loss_detected: bool,
+    darkride_active: bool,
+    motor_acceleration: Rpm,
+    startup_centering_step: AngleDegrees,
+}
+
+fn evaluate_transition_phase(
     state: &mut FloatOutBoyPackageState,
     imu: &impl Imu,
+    base: FloatOutBoyAllDataBasePayload,
     system_time_ticks: TimestampTicks,
-) {
-    let payloads = state.all_data_payloads;
-    let base = payloads.base();
+    start: RefreshStart,
+) -> TransitionPhase {
     let RefreshStart {
         mut ride_state,
         mut run_state,
         mut beep_reason,
         mut beeper_alert,
         startup_became_ready,
-    } = begin_refresh(state, base, imu.is_ready(), system_time_ticks);
+    } = start;
     let flywheel_both_footpads_fault = matches!(
         (run_state, ride_state.mode(), base.footpad().state()),
         (
@@ -688,11 +704,59 @@ pub(super) fn refresh(
     if !pitch_fault_pending {
         state.fault_angle_pitch_ticks = system_time_ticks;
     }
+
+    TransitionPhase {
+        ride_state: state_transition.ride_state,
+        run_state,
+        beep_reason,
+        beeper_alert,
+        startup_became_ready,
+        state_engage,
+        state_stop_fault,
+        #[cfg(any(test, target_arch = "arm"))]
+        ready_flywheel_stop,
+        balance_pitch,
+        pitch_degrees,
+        imu_pitch,
+        imu_roll,
+        motor_erpm,
+        reverse_stop_entry_pending,
+        traction_loss_detected,
+        darkride_active,
+        motor_acceleration,
+        startup_centering_step,
+    }
+}
+
+fn refresh_control_phase(
+    state: &mut FloatOutBoyPackageState,
+    imu: &impl Imu,
+    base: FloatOutBoyAllDataBasePayload,
+    system_time_ticks: TimestampTicks,
+    mut phase: TransitionPhase,
+) -> (TransitionPhase, RuntimeValues) {
+    let run_state = phase.run_state;
+    let state_engage = phase.state_engage;
+    let state_stop_fault = phase.state_stop_fault;
+    let startup_became_ready = phase.startup_became_ready;
+    let balance_pitch = phase.balance_pitch;
+    let balance_pitch_degrees = balance_pitch.angle_degrees();
+    let pitch_degrees = phase.pitch_degrees;
+    let motor_erpm = phase.motor_erpm;
+    let reverse_stop_entry_pending = phase.reverse_stop_entry_pending;
+    let traction_loss_detected = phase.traction_loss_detected;
+    let darkride_active = phase.darkride_active;
+    let motor_acceleration = phase.motor_acceleration;
+    let startup_centering_step = phase.startup_centering_step;
+    let reverse_stop = ReverseStopLimits::FLOAT_OUT_BOY;
+    let traction_loss = TractionLossLimits::FLOAT_OUT_BOY;
+    let mut beep_reason = phase.beep_reason;
+    let mut beeper_alert = phase.beeper_alert;
     // Upstream READY engages at `third_party/float-out-boy/src/main.c:1033-1067`;
     // `state_engage` writes RUNNING/CENTERING/STOP_NONE at
     // `third_party/float-out-boy/src/state.c:36-39`; READY flywheel abort returns
     // to NORMAL before startup checks at `third_party/float-out-boy/src/main.c:957-963`.
-    let mut ride_state = state_transition.ride_state;
+    let mut ride_state = phase.ride_state;
     let reset_runtime_vars = startup_became_ready || state_engage;
     let RuntimeValues {
         mut balance_current,
@@ -1149,30 +1213,64 @@ pub(super) fn refresh(
     {
         state.request_motor_current(current);
     }
+
+    phase.ride_state = ride_state;
+    phase.beep_reason = beep_reason;
+    phase.beeper_alert = beeper_alert;
+    (
+        phase,
+        RuntimeValues {
+            balance_current,
+            setpoints,
+            booster_current,
+        },
+    )
+}
+
+/// Float Out Boy runtime refresh of IMU-derived state and control-loop faults.
+///
+/// C map: upstream `check_faults`, READY engage, startup reset, and traction
+/// handling live in `third_party/float-out-boy/src/main.c:263-509`,
+/// `third_party/float-out-boy/src/main.c:551-574`, `third_party/float-out-boy/src/main.c:760-775`,
+/// `third_party/float-out-boy/src/main.c:833-838`, and `third_party/float-out-boy/src/main.c:957-1067`.
+pub(super) fn refresh(
+    state: &mut FloatOutBoyPackageState,
+    imu: &impl Imu,
+    system_time_ticks: TimestampTicks,
+) {
+    let payloads = state.all_data_payloads;
+    let base = payloads.base();
+    let start = begin_refresh(state, base, imu.is_ready(), system_time_ticks);
+    let phase = evaluate_transition_phase(state, imu, base, system_time_ticks, start);
+    let (phase, runtime) = refresh_control_phase(state, imu, base, system_time_ticks, phase);
+
+    #[cfg(any(test, target_arch = "arm"))]
+    let mut phase = phase;
     #[cfg(any(test, target_arch = "arm"))]
     if let Some((reason, alert)) = refresh_ready_alert(
         state,
         base,
-        run_state,
-        ready_flywheel_stop,
+        phase.run_state,
+        phase.ready_flywheel_stop,
         system_time_ticks,
     ) {
-        beep_reason = reason;
-        beeper_alert = Some(alert);
+        phase.beep_reason = reason;
+        phase.beeper_alert = Some(alert);
     }
-    if let Some(alert) = beeper_alert {
+    if let Some(alert) = phase.beeper_alert {
         state.alert_beeper(alert);
     }
+
     // C publishes the just-refreshed `imu.balance_pitch` through app-data;
-    // normal mode comes from the balance filter at `third_party/float-out-boy/src/imu.c:35-41`, while
-    // FLYWHEEL mirrors raw pitch at `third_party/float-out-boy/src/imu.c:56-58`.
+    // normal mode comes from the balance filter at `third_party/float-out-boy/src/imu.c:35-41`,
+    // while FLYWHEEL mirrors raw pitch at `third_party/float-out-boy/src/imu.c:56-58`.
     let base = FloatOutBoyAllDataBasePayload::new(
-        balance_current,
-        FloatOutBoyAllDataAttitude::new(balance_pitch, imu_roll, imu_pitch),
-        FloatOutBoyAllDataStatus::new(ride_state, beep_reason),
+        runtime.balance_current,
+        FloatOutBoyAllDataAttitude::new(phase.balance_pitch, phase.imu_roll, phase.imu_pitch),
+        FloatOutBoyAllDataStatus::new(phase.ride_state, phase.beep_reason),
         base.footpad(),
-        setpoints,
-        booster_current,
+        runtime.setpoints,
+        runtime.booster_current,
         base.motor(),
     );
     state.all_data_payloads =
