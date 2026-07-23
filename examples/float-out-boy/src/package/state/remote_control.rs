@@ -311,10 +311,10 @@ impl RemoteControlState {
         // C map: READY remote throttle stays idle until the max current,
         // grace period, and deadband checks all pass at
         // `third_party/float-out-boy/src/main.c:291-298`.
-        let current_max = remote_throttle.current_max().current();
+        let current_max = remote_throttle.current_max();
         let input = self.input.ratio().as_ratio();
         let grace_period = remote_throttle.grace_period();
-        if current_max <= Current::ZERO
+        if current_max <= MotorCurrent::new(Current::ZERO)
             || !float_out_boy_ticks_elapsed_seconds(
                 system_time_ticks,
                 disengage_ticks,
@@ -331,7 +331,7 @@ impl RemoteControlState {
         } else {
             input
         };
-        let target_current = MotorCurrent::new(current_max * servo);
+        let target_current = current_max * servo;
         // Upstream READY falls through to `do_rc_move(d)` at
         // `third_party/float-out-boy/src/main.c:1069`, where the remote-throttle idle
         // branch filters and requests `rc_current` at
