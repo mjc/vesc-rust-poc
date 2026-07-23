@@ -273,6 +273,21 @@ impl FirmwareTest {
         crate::test_ffi::set_ppm_input(input, age);
     }
 
+    /// Toggle whether the fake firmware exposes the PPM value slot.
+    pub fn set_ppm_available(&self, available: bool) {
+        crate::test_ffi::set_ppm_available(available);
+    }
+
+    /// Toggle whether the fake firmware exposes the PPM age slot.
+    pub fn set_ppm_age_available(&self, available: bool) {
+        crate::test_ffi::set_ppm_age_available(available);
+    }
+
+    /// Toggle whether the fake firmware exposes the output-disabled slot.
+    pub fn set_output_disabled_available(&self, available: bool) {
+        crate::test_ffi::set_output_disabled_available(available);
+    }
+
     /// Configure the fake UART remote input sample and age.
     pub fn set_remote_input(&self, input: crate::JoystickY, age: crate::RemoteAge) {
         crate::test_ffi::set_remote_input(input, age);

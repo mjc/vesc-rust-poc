@@ -79,15 +79,21 @@ pub unsafe fn remote_state() -> RemoteState {
 }
 
 pub unsafe fn get_ppm() -> Option<f32> {
-    Some(load(&PPM_INPUT))
+    PPM_AVAILABLE
+        .load(Ordering::Relaxed)
+        .then(|| load(&PPM_INPUT))
 }
 
 pub unsafe fn get_ppm_age() -> Option<f32> {
-    Some(load(&PPM_AGE))
+    PPM_AGE_AVAILABLE
+        .load(Ordering::Relaxed)
+        .then(|| load(&PPM_AGE))
 }
 
 pub unsafe fn app_is_output_disabled() -> Option<bool> {
-    Some(false)
+    OUTPUT_DISABLED_AVAILABLE
+        .load(Ordering::Relaxed)
+        .then_some(false)
 }
 
 pub unsafe fn store_backup_data() -> Option<bool> {
@@ -202,6 +208,9 @@ static FIRMWARE_FAULT: AtomicI32 = AtomicI32::new(0);
 static INPUT_VOLTAGE: AtomicU32 = AtomicU32::new(0);
 static PPM_INPUT: AtomicU32 = AtomicU32::new(0);
 static PPM_AGE: AtomicU32 = AtomicU32::new(0);
+static PPM_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static PPM_AGE_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static OUTPUT_DISABLED_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static REMOTE_INPUT_Y: AtomicU32 = AtomicU32::new(0);
 static REMOTE_AGE: AtomicU32 = AtomicU32::new(0);
 static IMU_STARTUP_DONE: AtomicBool = AtomicBool::new(false);
@@ -485,6 +494,9 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     INPUT_VOLTAGE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     PPM_INPUT.store(0.5_f32.to_bits(), Ordering::Relaxed);
     PPM_AGE.store(0.1_f32.to_bits(), Ordering::Relaxed);
+    PPM_AVAILABLE.store(true, Ordering::Relaxed);
+    PPM_AGE_AVAILABLE.store(true, Ordering::Relaxed);
+    OUTPUT_DISABLED_AVAILABLE.store(true, Ordering::Relaxed);
     REMOTE_INPUT_Y.store(0.75_f32.to_bits(), Ordering::Relaxed);
     REMOTE_AGE.store(0.2_f32.to_bits(), Ordering::Relaxed);
     reset_imu_state();
@@ -1210,6 +1222,18 @@ pub(crate) fn set_input_voltage(voltage: InputVoltage) {
 pub(crate) fn set_ppm_input(input: PpmInput, age: PpmAge) {
     store(&PPM_INPUT, input.ratio().as_ratio());
     store(&PPM_AGE, age.duration().as_seconds());
+}
+
+pub(crate) fn set_ppm_available(available: bool) {
+    PPM_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_ppm_age_available(available: bool) {
+    PPM_AGE_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_output_disabled_available(available: bool) {
+    OUTPUT_DISABLED_AVAILABLE.store(available, Ordering::Relaxed);
 }
 
 pub(crate) fn set_remote_input(input: JoystickY, age: RemoteAge) {
