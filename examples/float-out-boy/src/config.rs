@@ -1172,10 +1172,11 @@ impl FloatOutBoyStartupConfig<'_> {
     }
 
     pub(crate) fn centering_step(self) -> AngleDegrees {
-        let Some(period) = self.sample_rate().sample_period() else {
-            return AngleDegrees::from_degrees(0.0);
-        };
-        AngleDegrees::from(self.startup_speed() * period)
+        self.sample_rate()
+            .sample_period()
+            .map_or(AngleDegrees::from_degrees(0.0), |period| {
+                AngleDegrees::from(self.startup_speed() * period)
+            })
     }
 }
 

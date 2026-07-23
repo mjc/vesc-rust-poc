@@ -940,17 +940,17 @@ fn dispatch_receiver<H: CanReceiverHandler + 'static>(
     data: *mut u8,
     len: u8,
 ) -> bool {
-    let Ok(length) = CanPayloadLen::try_new(len) else {
-        return false;
-    };
-    if length.as_u8() == 0 {
-        return H::receive(id, &[]);
-    }
-    if data.is_null() {
-        return false;
-    }
-    let payload = unsafe { core::slice::from_raw_parts(data, usize::from(length.as_u8())) };
-    H::receive(id, payload)
+    CanPayloadLen::try_new(len).is_ok_and(|length| {
+        if length.as_u8() == 0 {
+            return H::receive(id, &[]);
+        }
+
+        core::ptr::NonNull::new(data).is_some_and(|data| {
+            let payload =
+                unsafe { core::slice::from_raw_parts(data.as_ptr(), usize::from(length.as_u8())) };
+            H::receive(id, payload)
+        })
+    })
 }
 
 #[cfg(all(feature = "test-support", not(test)))]
