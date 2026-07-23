@@ -11,9 +11,10 @@ use crate::types::{
     ElectricalSpeed, FirmwareFault, HandbrakeCurrent, HandbrakeRelative, InputCurrent,
     InputVoltage, MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorSelection,
     MotorStatisticDuration, MotorTemperature, PeakMosfetTemperature, PeakMotorCurrent,
-    PeakMotorTemperature, PeakPower, PeakVehicleSpeed, PidPosition, QCurrent, QVoltage,
-    SignedTripDistance, TachometerSteps, TemperatureLimitStart, TotalMotorCurrent, TripDistance,
-    VehicleSpeed, WattHoursCharged, WattHoursDischarged,
+    PeakMotorTemperature, PeakPower, PeakVehicleSpeed, PidPosition, PidPositionOffsetPersistence,
+    QCurrent, QVoltage, SignedTripDistance, TachometerReset, TachometerSteps,
+    TemperatureLimitStart, TotalMotorCurrent, TripDistance, VehicleSpeed, WattHoursCharged,
+    WattHoursDischarged,
 };
 #[cfg(not(test))]
 use crate::units::{Charge, Current, Distance, Energy, Power, Rpm, Speed, Temperature, Voltage};
@@ -1033,10 +1034,10 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn firmware_fault_description(&self) -> Option<&'static str>;
     /// Return the filtered controller input voltage.
     fn input_voltage(&self) -> InputVoltage;
-    /// Return the relative motor tachometer, optionally resetting it.
-    fn tachometer(&self, reset: bool) -> TachometerSteps;
-    /// Return the absolute motor tachometer, optionally resetting it.
-    fn absolute_tachometer(&self, reset: bool) -> AbsoluteTachometerSteps;
+    /// Return the relative motor tachometer with an explicit read/reset policy.
+    fn tachometer(&self, reset: TachometerReset) -> TachometerSteps;
+    /// Return the absolute motor tachometer with an explicit read/reset policy.
+    fn absolute_tachometer(&self, reset: TachometerReset) -> AbsoluteTachometerSteps;
     /// Return the current motor-control sampling frequency.
     fn sampling_frequency(&self) -> Frequency;
 }
@@ -1089,8 +1090,12 @@ pub trait MotorOutput: private::MotorOutput {
     fn set_handbrake_relative(&self, current: HandbrakeRelative);
     /// Reset accumulated motor statistics.
     fn reset_statistics(&self);
-    /// Update the firmware PID-position offset and optionally persist it.
-    fn update_pid_position_offset(&self, position: PidPosition, store: bool);
+    /// Update the firmware PID-position offset with an explicit persistence policy.
+    fn update_pid_position_offset(
+        &self,
+        position: PidPosition,
+        persistence: PidPositionOffsetPersistence,
+    );
     /// Set the firmware-owned odometer distance in meters.
     fn set_odometer(&self, odometer: OdometerMeters);
     /// Release the motor output.
@@ -1389,14 +1394,14 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.input_voltage()
     }
 
-    /// Return the relative motor tachometer, optionally resetting it.
-    pub fn tachometer(&self, reset: bool) -> TachometerSteps {
-        self.bindings.tachometer(reset)
+    /// Return the relative motor tachometer with an explicit read/reset policy.
+    pub fn tachometer(&self, reset: TachometerReset) -> TachometerSteps {
+        self.bindings.tachometer(reset.resets())
     }
 
-    /// Return the absolute motor tachometer, optionally resetting it.
-    pub fn absolute_tachometer(&self, reset: bool) -> AbsoluteTachometerSteps {
-        self.bindings.absolute_tachometer(reset)
+    /// Return the absolute motor tachometer with an explicit read/reset policy.
+    pub fn absolute_tachometer(&self, reset: TachometerReset) -> AbsoluteTachometerSteps {
+        self.bindings.absolute_tachometer(reset.resets())
     }
 
     /// Return the current motor-control sampling frequency.
@@ -1590,11 +1595,11 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
         self.input_voltage()
     }
 
-    fn tachometer(&self, reset: bool) -> TachometerSteps {
+    fn tachometer(&self, reset: TachometerReset) -> TachometerSteps {
         self.tachometer(reset)
     }
 
-    fn absolute_tachometer(&self, reset: bool) -> AbsoluteTachometerSteps {
+    fn absolute_tachometer(&self, reset: TachometerReset) -> AbsoluteTachometerSteps {
         self.absolute_tachometer(reset)
     }
 
@@ -1710,9 +1715,14 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
         self.bindings.reset_statistics();
     }
 
-    /// Update the firmware PID-position offset and optionally persist it.
-    pub fn update_pid_position_offset(&self, position: PidPosition, store: bool) {
-        self.bindings.update_pid_position_offset(position, store);
+    /// Update the firmware PID-position offset with an explicit persistence policy.
+    pub fn update_pid_position_offset(
+        &self,
+        position: PidPosition,
+        persistence: PidPositionOffsetPersistence,
+    ) {
+        self.bindings
+            .update_pid_position_offset(position, persistence.stores());
     }
 
     /// Set the firmware-owned odometer distance in meters.
@@ -1807,8 +1817,12 @@ impl<B: MotorControlBindings> MotorOutput for MotorControlApi<B> {
         MotorControlApi::reset_statistics(self);
     }
 
-    fn update_pid_position_offset(&self, position: PidPosition, store: bool) {
-        MotorControlApi::update_pid_position_offset(self, position, store);
+    fn update_pid_position_offset(
+        &self,
+        position: PidPosition,
+        persistence: PidPositionOffsetPersistence,
+    ) {
+        MotorControlApi::update_pid_position_offset(self, position, persistence);
     }
 
     fn set_odometer(&self, odometer: OdometerMeters) {

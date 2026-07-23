@@ -6,8 +6,9 @@ use vescpkg_rs::{
     CurrentRelative, DCurrent, DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed,
     FirmwareFault, FirmwareFaultId, HandbrakeCurrent, HandbrakeRelative, InputCurrent,
     MotorCurrentLimit, MotorOutput, MotorSelection, MotorTelemetry, OdometerMeters,
-    OpenLoopCurrent, OpenLoopPhase, PidPosition, PwmCallbackError, Ratio, Rpm, SignedRatio, Speed,
-    Temperature, TemperatureLimitStart, TotalMotorCurrent, VehicleSpeed, VescSeconds,
+    OpenLoopCurrent, OpenLoopPhase, PidPosition, PidPositionOffsetPersistence, PwmCallbackError,
+    Ratio, Rpm, SignedRatio, Speed, TachometerReset, Temperature, TemperatureLimitStart,
+    TotalMotorCurrent, VehicleSpeed, VescSeconds,
 };
 
 unsafe extern "C" fn test_pwm_callback() {}
@@ -168,8 +169,20 @@ fn motor_exposes_typed_handbrake_commands() {
         telemetry.q_axis_voltage().unwrap().voltage().as_volts(),
         4.5
     );
-    assert_eq!(telemetry.tachometer(false).steps().as_steps(), 1234);
-    assert_eq!(telemetry.absolute_tachometer(true).steps().as_steps(), 5678);
+    assert_eq!(
+        telemetry
+            .tachometer(TachometerReset::Preserve)
+            .steps()
+            .as_steps(),
+        1234
+    );
+    assert_eq!(
+        telemetry
+            .absolute_tachometer(TachometerReset::Reset)
+            .steps()
+            .as_steps(),
+        5678
+    );
     assert_eq!(telemetry.sampling_frequency().as_hertz(), 20_000.0);
     firmware.motor().release_motor();
     assert!(
@@ -178,9 +191,10 @@ fn motor_exposes_typed_handbrake_commands() {
             .wait_for_motor_release(VescSeconds::from_seconds(0.1))
     );
     firmware.motor().reset_statistics();
-    firmware
-        .motor()
-        .update_pid_position_offset(PidPosition::new(AngleDegrees::from_degrees(5.0)), true);
+    firmware.motor().update_pid_position_offset(
+        PidPosition::new(AngleDegrees::from_degrees(5.0)),
+        PidPositionOffsetPersistence::Persistent,
+    );
     firmware
         .motor()
         .set_odometer(OdometerMeters::from_meters(12_345));
