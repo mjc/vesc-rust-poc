@@ -303,7 +303,9 @@ pub(super) fn handle_tilt_tune_packet(state: &mut FloatOutBoyPackageState, bytes
             AngularVelocity::from_degrees_per_second,
         ));
     }
-    debug_assert!(updated);
+    if !updated {
+        return false;
+    }
     state.refresh_config_runtime_state();
     state.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE));
     true
@@ -534,7 +536,9 @@ pub(super) fn handle_booster_packet(state: &mut FloatOutBoyPackageState, bytes: 
     ]
     .into_iter()
     .all(core::convert::identity);
-    debug_assert!(updated);
+    if !updated {
+        return false;
+    }
     state.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
     true
 }
