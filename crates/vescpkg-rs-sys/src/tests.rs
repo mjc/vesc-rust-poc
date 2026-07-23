@@ -381,8 +381,13 @@ fn vesc_if_capabilities_expose_named_subsystems_without_raw_slot_names() {
     let mut words = vec![0; VescIfAbi::FIELD_COUNT];
     words[VescIfAbi::CAN_TRANSMIT_SID.slot_index()] = 1;
     words[VescIfAbi::READ_NVM.slot_index()] = 1;
+    words[VescIfAbi::GET_REMOTE_STATE.slot_index()] = 1;
     let capabilities = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
 
+    assert_eq!(
+        capabilities.inputs().unwrap().subsystem(),
+        VescIfSubsystem::Inputs
+    );
     assert_eq!(
         capabilities.can().unwrap().subsystem(),
         VescIfSubsystem::Can
