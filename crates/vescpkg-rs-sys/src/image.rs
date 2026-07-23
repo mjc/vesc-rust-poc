@@ -48,7 +48,10 @@ impl NativeImage {
     /// Rebase a byte offset into the native image.
     #[must_use]
     pub fn rebase_offset(self, offset: ImageOffset) -> NativeAddress {
-        NativeAddress(self.base_addr.0 + offset.0)
+        // Loader-provided offsets are bounded by the package image. Saturation
+        // also keeps a malformed value from triggering integer-overflow panic
+        // before the higher-level loader validation can reject it.
+        NativeAddress(self.base_addr.0.saturating_add(offset.0))
     }
 
     /// Rebase a raw image-relative address.

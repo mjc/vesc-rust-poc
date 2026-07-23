@@ -67,7 +67,10 @@ impl VescIfPresence {
     pub fn from_words(words: &[usize]) -> Self {
         let mut presence = Self::empty();
         for (index, entry) in VescIfAbi::ALL_ENTRIES.iter().enumerate() {
-            if index >= words.len() || (entry.is_callable() && words[index] == 0) {
+            let Some(word) = words.get(index) else {
+                continue;
+            };
+            if entry.is_callable() && *word == 0 {
                 continue;
             }
             presence.set(index);
@@ -83,7 +86,13 @@ impl VescIfPresence {
 
     /// Return whether a slot index was observed as present.
     #[must_use]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "FIELD_COUNT and PRESENCE_WORD_COUNT prove the word index is in bounds"
+    )]
     pub const fn contains_index(self, index: usize) -> bool {
+        // `PRESENCE_WORD_COUNT` is the ceiling of `FIELD_COUNT / 64`. Once
+        // `index` is below `FIELD_COUNT`, its word index must exist.
         index < VescIfAbi::FIELD_COUNT && (self.bits[index / 64] & (1_u64 << (index % 64))) != 0
     }
 
@@ -123,10 +132,14 @@ impl VescIfPresence {
         let Some(slot_count) = revision.minimum_slot_count() else {
             return false;
         };
-        VescIfAbi::ALL_ENTRIES[..slot_count]
-            .iter()
-            .enumerate()
-            .all(|(index, entry)| !entry.is_callable() || self.contains_index(index))
+        VescIfAbi::ALL_ENTRIES
+            .get(..slot_count)
+            .is_some_and(|entries| {
+                entries
+                    .iter()
+                    .enumerate()
+                    .all(|(index, entry)| !entry.is_callable() || self.contains_index(index))
+            })
     }
 
     /// Infer the strongest descriptive profile supported by observed presence.
@@ -143,8 +156,10 @@ impl VescIfPresence {
         }
     }
 
-    pub(crate) const fn set(&mut self, index: usize) {
-        self.bits[index / 64] |= 1_u64 << (index % 64);
+    pub(crate) fn set(&mut self, index: usize) {
+        if let Some(word) = self.bits.get_mut(index / 64) {
+            *word |= 1_u64 << (index % 64);
+        }
     }
 }
 

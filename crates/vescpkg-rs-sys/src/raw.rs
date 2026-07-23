@@ -334,14 +334,70 @@ mod slots {
     fn_slot!(io_read_analog as unsafe extern "C" fn(c_uint) -> f32);
 }
 
-#[track_caller]
-fn required_slot<T>(slot: Option<T>) -> T {
-    slot.expect("required VESC_IF slot is unavailable")
+trait MissingRequiredSlot {
+    fn missing_required_slot() -> Self;
+}
+
+macro_rules! missing_required_slot_is_zero {
+    ($($type:ty),+ $(,)?) => {
+        $(
+            impl MissingRequiredSlot for $type {
+                fn missing_required_slot() -> Self {
+                    Self::default()
+                }
+            }
+        )+
+    };
+}
+
+missing_required_slot_is_zero!(u8, u32, u64, i32, f32);
+
+impl MissingRequiredSlot for bool {
+    fn missing_required_slot() -> Self {
+        false
+    }
+}
+
+impl MissingRequiredSlot for () {
+    fn missing_required_slot() {}
+}
+
+impl<T> MissingRequiredSlot for *const T {
+    fn missing_required_slot() -> Self {
+        core::ptr::null()
+    }
+}
+
+impl<T> MissingRequiredSlot for *mut T {
+    fn missing_required_slot() -> Self {
+        core::ptr::null_mut()
+    }
+}
+
+impl<T> MissingRequiredSlot for Option<T> {
+    fn missing_required_slot() -> Self {
+        None
+    }
+}
+
+impl MissingRequiredSlot for LbmValue {
+    fn missing_required_slot() -> Self {
+        Self(u32::MAX)
+    }
+}
+
+impl MissingRequiredSlot for (f32, f32) {
+    fn missing_required_slot() -> Self {
+        (0.0, 0.0)
+    }
 }
 
 macro_rules! required_slot {
     ($name:ident) => {
-        required_slot(slots::$name())
+        match slots::$name() {
+            Some(slot) => slot,
+            None => return MissingRequiredSlot::missing_required_slot(),
+        }
     };
 }
 
@@ -370,7 +426,9 @@ pub unsafe fn lbm_add_extension_with_table_base(
     handler: ExtensionHandler,
 ) -> bool {
     let slot = unsafe { slots::lbm_add_extension_from(vesc_if_base as usize) };
-    let lbm_add_extension = required_slot(slot);
+    let Some(lbm_add_extension) = slot else {
+        return false;
+    };
     unsafe { lbm_add_extension(name.cast_mut(), Some(handler)) }
 }
 

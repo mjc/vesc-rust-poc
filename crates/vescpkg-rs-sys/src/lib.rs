@@ -12,6 +12,20 @@
 #![forbid(unused_extern_crates)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(clippy::missing_safety_doc)]
+// Embedded callers cannot recover from an unwind. Raw wrappers therefore use
+// inert typed values when a C function-table slot is unexpectedly absent.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::arithmetic_side_effects,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::panic,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unwrap_used
+    )
+)]
 // The sys tests emulate a C firmware table and verify the exact values that
 // cross that ABI. Exact equality is intentional here: using a tolerance could
 // conceal an incorrect field, slot, or bit pattern.

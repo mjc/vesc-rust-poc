@@ -19,8 +19,8 @@ use super::{
     mc_temp_fet_filtered, mc_temp_motor_filtered, read_eeprom_word, read_nvm, remote_state,
     store_eeprom_word, vesc_clear_app_data_handler, vesc_mutex_create, vesc_mutex_lock,
     vesc_mutex_unlock, vesc_sem_create, vesc_send_app_data, vesc_set_app_data_handler,
-    vesc_sleep_us, vesc_system_time_ticks, vesc_system_time_ticks_from_seconds,
-    vesc_thread_set_priority, wipe_nvm, write_nvm,
+    vesc_sleep_us, vesc_system_time_seconds, vesc_system_time_ticks,
+    vesc_system_time_ticks_from_seconds, vesc_thread_set_priority, wipe_nvm, write_nvm,
 };
 
 struct SyncCounter(Cell<usize>);
@@ -746,8 +746,7 @@ fn lbm_add_extension_with_table_base_uses_mock_when_base_matches_firmware_addr()
 }
 
 #[test]
-#[should_panic(expected = "required VESC_IF slot is unavailable")]
-fn lbm_add_extension_rejects_a_missing_required_slot() {
+fn lbm_add_extension_reports_a_missing_required_slot() {
     extern "C" fn handler(_: *mut u32, _: u32) -> u32 {
         0
     }
@@ -755,11 +754,11 @@ fn lbm_add_extension_rejects_a_missing_required_slot() {
     let mut table = populated_table();
     table.lbm_add_extension = None;
     with_table(&table, || unsafe {
-        let _ = lbm_add_extension_with_table_base(
+        assert!(!lbm_add_extension_with_table_base(
             VescIfAbi::BASE_ADDR.0 as u32,
             c"ext-test".as_ptr(),
             handler,
-        );
+        ));
     });
 }
 
@@ -976,13 +975,14 @@ fn sleep_us_forwards_through_mock_table() {
 }
 
 #[test]
-#[should_panic(expected = "required VESC_IF slot is unavailable")]
-fn missing_required_slot_fails_loudly() {
+fn missing_required_slots_return_inert_values() {
     let mut table = populated_table();
     table.sleep_us = None;
+    table.system_time = None;
 
     with_table(&table, || unsafe {
         vesc_sleep_us(1);
+        assert_eq!(vesc_system_time_seconds(), 0.0);
     });
 }
 
