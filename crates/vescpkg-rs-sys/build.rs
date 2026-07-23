@@ -1,6 +1,6 @@
 //! Generate VESC firmware function-table descriptors from the pinned upstream header.
 
-use std::{env, fmt::Write as _, fs, path::PathBuf};
+use std::{collections::HashSet, env, fmt::Write as _, fs, path::PathBuf};
 
 use quote::ToTokens;
 use syn::{Fields, Item, Type};
@@ -84,6 +84,16 @@ fn main() {
 
 fn slots_from_bindings(bindings: &str) -> Vec<SlotDeclaration> {
     let file = syn::parse_file(bindings).expect("parse generated VESC Rust bindings");
+    let function_aliases = file
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Type(item) if is_function_type(&item.ty, &HashSet::new()) => {
+                Some(item.ident.to_string())
+            }
+            _ => None,
+        })
+        .collect::<HashSet<_>>();
     let table = file
         .items
         .into_iter()
@@ -103,7 +113,7 @@ fn slots_from_bindings(bindings: &str) -> Vec<SlotDeclaration> {
         .map(|(index, field)| SlotDeclaration {
             c_name: field.ident.expect("named VESC_IF field").to_string(),
             index,
-            kind: if is_function_slot(&field.ty) {
+            kind: if is_function_type(&field.ty, &function_aliases) {
                 SlotKind::Function
             } else {
                 SlotKind::Scalar
@@ -114,14 +124,19 @@ fn slots_from_bindings(bindings: &str) -> Vec<SlotDeclaration> {
         .collect()
 }
 
-fn is_function_slot(ty: &Type) -> bool {
-    let Type::Path(path) = ty else {
-        return false;
-    };
-    let Some(ident) = path.path.segments.last().map(|segment| &segment.ident) else {
-        return false;
-    };
-    ident != "u32" && ident != "lbm_uint"
+fn is_function_type(ty: &Type, function_aliases: &HashSet<String>) -> bool {
+    match ty {
+        Type::BareFn(_) => true,
+        Type::Path(path) => path
+            .path
+            .segments
+            .last()
+            .map(|segment| {
+                segment.ident == "Option" || function_aliases.contains(&segment.ident.to_string())
+            })
+            .unwrap_or(false),
+        _ => false,
+    }
 }
 
 #[allow(clippy::too_many_lines)]
