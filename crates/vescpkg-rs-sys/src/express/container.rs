@@ -135,10 +135,7 @@ impl<'a> ExpressNativeContainer<'a> {
             entry_offset,
             reloc_count,
         };
-        for index in 0..reloc_count {
-            let relocation = container
-                .relocation(index)
-                .expect("validated relocation index");
+        for (index, relocation) in container.relocations().enumerate() {
             let region_size = if relocation.patches_data() {
                 data_size
             } else {
