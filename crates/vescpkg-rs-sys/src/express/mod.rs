@@ -130,8 +130,14 @@ mod tests {
         assert_eq!(ExpressSlot::SemReset.index(), 79);
         for (index, slot) in ExpressSlot::ALL.into_iter().enumerate() {
             assert_eq!(slot.index(), index);
-            assert!(express_slot_kind(index).is_some());
+            assert_eq!(express_slot_kind(index), Some(slot.kind()));
+            assert_eq!(slot.is_callable(), slot.kind() == ExpressSlotKind::Function);
+            assert!(!slot.name().is_empty());
         }
+        assert_eq!(ExpressSlot::IfVersion.name(), "if_version");
+        assert_eq!(ExpressSlot::LbmAddExtension.name(), "lbm_add_extension");
+        assert_eq!(ExpressSlot::Printf.name(), "printf");
+        assert_eq!(ExpressSlot::SemReset.name(), "sem_reset");
         assert_eq!(ExpressTarget::Esp32C3.interface_address(), 0x3FCD_BE00);
         assert_eq!(ExpressTarget::Esp32S3.interface_address(), 0x3FCE_8800);
         assert_eq!(ExpressTarget::Esp32C6.interface_address(), 0x4087_B800);
