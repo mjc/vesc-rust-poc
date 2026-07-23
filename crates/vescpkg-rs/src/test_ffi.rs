@@ -196,6 +196,7 @@ static CAN_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static BACKUP_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static NVM_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static DISTANCE_ABS: AtomicU32 = AtomicU32::new(0);
+static TACHOMETER_VALUE: AtomicI32 = AtomicI32::new(1234);
 static MOSFET_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static ODOMETER: AtomicU64 = AtomicU64::new(0);
@@ -483,6 +484,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     BACKUP_AVAILABLE.store(true, Ordering::Relaxed);
     NVM_AVAILABLE.store(true, Ordering::Relaxed);
     DISTANCE_ABS.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    TACHOMETER_VALUE.store(1234, Ordering::Relaxed);
     MOSFET_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     ODOMETER.store(0, Ordering::Relaxed);
@@ -1489,8 +1491,16 @@ pub unsafe fn mc_set_handbrake(_amps: f32) {}
 
 pub unsafe fn mc_set_handbrake_rel(_ratio: f32) {}
 
-pub unsafe fn mc_get_tachometer_value(_reset: bool) -> i32 {
-    1234
+pub unsafe fn mc_get_tachometer_value(reset: bool) -> i32 {
+    let value = TACHOMETER_VALUE.load(Ordering::Relaxed);
+    if reset {
+        TACHOMETER_VALUE.store(0, Ordering::Relaxed);
+    }
+    value
+}
+
+pub unsafe fn mc_set_tachometer_value(steps: i32) -> i32 {
+    TACHOMETER_VALUE.swap(steps, Ordering::Relaxed)
 }
 
 pub unsafe fn mc_get_tot_current() -> f32 {
