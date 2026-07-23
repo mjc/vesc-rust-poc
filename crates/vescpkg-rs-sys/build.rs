@@ -30,6 +30,7 @@ fn main() {
     let workspace_header = manifest_dir.join("../..").join(HEADER_PATH);
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("out dir"));
     let out = out_dir.join("c_vesc_if.rs");
+    let raw_slots = out_dir.join("raw_slots.rs");
     let bindings_path = out_dir.join("bindings.rs");
 
     println!("cargo::rustc-check-cfg=cfg(coverage)");
@@ -77,7 +78,8 @@ fn main() {
         header.display()
     );
 
-    fs::write(out, generated_rust(&slots)).expect("write generated c_vesc_if.rs");
+    fs::write(&out, generated_rust(&slots)).expect("write generated c_vesc_if.rs");
+    fs::write(raw_slots, generated_raw_slots(&slots)).expect("write generated raw slots");
 }
 
 fn slots_from_bindings(bindings: &str) -> Vec<SlotDeclaration> {
@@ -158,6 +160,11 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
             .iter()
             .filter(|slot| matches!(slot.kind, SlotKind::Function))
             .count()
+    )
+    .expect("write generated Rust");
+    writeln!(
+        rust,
+        "pub(crate) const RAW_SHIM_COUNT: usize = CALLABLE_SLOT_COUNT;"
     )
     .expect("write generated Rust");
     writeln!(
@@ -273,6 +280,56 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
         rust.push_str("}\n\n");
     }
 
+    rust
+}
+
+fn generated_raw_slots(slots: &[SlotDeclaration]) -> String {
+    let mut rust = String::new();
+    rust.push_str("// Generated raw resolvers for every callable VESC_IF slot.\n");
+    rust.push_str("// Do not edit by hand; update the pinned VESC header instead.\n\n");
+    for slot in slots {
+        if !matches!(slot.kind, SlotKind::Function) {
+            continue;
+        }
+        writeln!(
+            rust,
+            "/// Resolve the raw `{}` function slot without invoking it.",
+            slot.c_name
+        )
+        .expect("write generated raw resolver docs");
+        rust.push_str("///\n/// # Safety\n/// The returned pointer must be called only with the exact ABI contract in the manifest.\n");
+        writeln!(
+            rust,
+            "#[inline(always)]\npub unsafe fn resolve_{}() -> {} {{",
+            slot.c_name, slot.signature
+        )
+        .expect("write generated raw resolver");
+        rust.push_str("    #[cfg(all(target_arch = \"arm\", not(test)))]\n");
+        rust.push_str("    {\n");
+        writeln!(
+            rust,
+            "        let address = unsafe {{ super::load_vesc_if_word_from::<{}>(crate::VescIfAbi::BASE_ADDR.0) }};",
+            slot.index * 4
+        )
+        .expect("write generated ARM resolver");
+        writeln!(
+            rust,
+            "        unsafe {{ core::mem::transmute::<usize, {}>(address) }}",
+            slot.signature
+        )
+        .expect("write generated ARM resolver");
+        rust.push_str("    }\n");
+        rust.push_str("    #[cfg(not(all(target_arch = \"arm\", not(test))))]\n");
+        rust.push_str("    {\n");
+        writeln!(
+            rust,
+            "        unsafe {{ (*super::vesc_if()).{} }}",
+            slot.c_name
+        )
+        .expect("write generated host resolver");
+        rust.push_str("    }\n");
+        rust.push_str("}\n\n");
+    }
     rust
 }
 

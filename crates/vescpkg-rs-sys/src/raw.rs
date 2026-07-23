@@ -94,6 +94,15 @@ pub type ImuReadCallback = unsafe extern "C" fn(*mut f32, *mut f32, *mut f32, f3
 /// making the C header the single source of field order and signatures.
 pub type VescIf = crate::bindgen::vesc_c_if;
 
+#[allow(clippy::type_complexity, non_snake_case, unused_imports)]
+mod generated_slots {
+    use crate::bindgen::*;
+
+    include!(concat!(env!("OUT_DIR"), "/raw_slots.rs"));
+}
+
+pub use generated_slots::*;
+
 impl VescIf {
     /// Inspect this host-side table without exposing its raw fields.
     pub fn presence(&self) -> VescIfPresence {
