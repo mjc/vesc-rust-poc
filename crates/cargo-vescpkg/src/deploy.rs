@@ -245,12 +245,13 @@ fn run_control_loop_on_session(
 fn validate_control_loop_statuses(
     statuses: &[ControlLoopStatus],
 ) -> Result<(), ControlLoopProbeError> {
-    let Some(initial) = statuses.first().copied() else {
-        return Err(ControlLoopProbeError::InvalidResponse(
+    let (initial, final_status) = statuses
+        .first()
+        .copied()
+        .zip(statuses.last().copied())
+        .ok_or(ControlLoopProbeError::InvalidResponse(
             ControlLoopCommandError::InvalidLength,
-        ));
-    };
-    let final_status = *statuses.last().expect("status sample count is non-empty");
+        ))?;
     if final_status.setpoint() != CONTROL_LOOP_SETPOINT {
         return Err(ControlLoopProbeError::SetpointMismatch {
             expected: CONTROL_LOOP_SETPOINT,
