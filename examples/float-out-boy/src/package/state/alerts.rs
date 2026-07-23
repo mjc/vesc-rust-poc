@@ -52,7 +52,7 @@ impl FloatOutBoyPackageState {
             float_out_boy_realtime_push_u8(&mut response, &mut index, 0);
             let mut count = 0_u8;
             self.alert_tracker.for_each_record_since(since, |record| {
-                if index + 58 > response.len() {
+                if response.len().saturating_sub(index) < 58 {
                     return false;
                 }
                 float_out_boy_realtime_push_u32(
@@ -64,7 +64,7 @@ impl FloatOutBoyPackageState {
                 float_out_boy_realtime_push_u8(&mut response, &mut index, u8::from(record.active));
                 float_out_boy_realtime_push_u8(&mut response, &mut index, record.code.wire_code());
                 push_fault_name(&mut response, &mut index, telemetry, record.code);
-                count += 1;
+                count = count.saturating_add(1);
                 true
             });
             if let Some(count_slot) = response.get_mut(count_index) {
