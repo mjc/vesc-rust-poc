@@ -94,7 +94,12 @@ pub type ImuReadCallback = unsafe extern "C" fn(*mut f32, *mut f32, *mut f32, f3
 /// making the C header the single source of field order and signatures.
 pub type VescIf = crate::bindgen::vesc_c_if;
 
-#[allow(clippy::type_complexity, non_snake_case, unused_imports)]
+#[allow(
+    clippy::type_complexity,
+    clippy::wildcard_imports,
+    non_snake_case,
+    unused_imports
+)]
 mod generated_slots {
     use crate::bindgen::*;
 
