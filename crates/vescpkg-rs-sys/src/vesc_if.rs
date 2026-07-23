@@ -508,6 +508,9 @@ macro_rules! define_vesc_if_abi {
             pub const CALLABLE_SLOT_COUNT: usize = c_vesc_if::CALLABLE_SLOT_COUNT;
             /// Number of generated raw resolvers for callable entries.
             pub const RAW_SHIM_COUNT: usize = c_vesc_if::RAW_SHIM_COUNT;
+            /// Callable slots in the same order as the generated raw resolvers.
+            pub const RAW_SHIM_SLOTS: [VescIfSlot; Self::RAW_SHIM_COUNT] =
+                c_vesc_if::RAW_SHIM_SLOTS;
             /// First slot added by the firmware 6.05 interface extension.
             pub const BASE_SLOT_COUNT: usize = c_vesc_if::FIRMWARE_605_FIRST_SLOT;
             /// First slot added by the firmware 6.06 interface extension.
