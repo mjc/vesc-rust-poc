@@ -296,6 +296,12 @@ fn vesc_if_manifest_matches_generated_header_descriptors() {
     );
     assert_eq!(VescIfAbi::ALL_SLOTS[0].name(), "lbm_add_extension");
     assert_eq!(VescIfAbi::ALL_SLOTS[252].name(), "shutdown_disable");
+    assert!(
+        VescIfAbi::ALL_SLOTS
+            .iter()
+            .all(|slot| slot.header_line() > 0)
+    );
+    assert_eq!(VescIfAbi::GET_REMOTE_STATE.header_line(), 605);
 
     for (index, (slot, entry)) in VescIfAbi::ALL_SLOTS
         .iter()

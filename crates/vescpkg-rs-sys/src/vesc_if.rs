@@ -9,6 +9,7 @@ const PRESENCE_WORD_COUNT: usize = c_vesc_if::FIELD_COUNT.div_ceil(64);
 pub struct VescIfSlot {
     name: &'static str,
     offset: usize,
+    header_line: usize,
 }
 
 /// Whether a manifest entry is a callable function pointer or a scalar ABI word.
@@ -387,7 +388,16 @@ impl AbiError {
 impl VescIfSlot {
     /// Create a named slot at the given 32-bit byte offset.
     pub const fn new(name: &'static str, offset: usize) -> Self {
-        Self { name, offset }
+        Self::with_header_line(name, offset, 0)
+    }
+
+    /// Create a named slot with its source line in the pinned ABI header.
+    pub const fn with_header_line(name: &'static str, offset: usize, header_line: usize) -> Self {
+        Self {
+            name,
+            offset,
+            header_line,
+        }
     }
 
     /// Return the firmware symbol name for this slot.
@@ -398,6 +408,13 @@ impl VescIfSlot {
     /// Return the 32-bit firmware byte offset for this slot.
     pub const fn vesc32_byte_offset(self) -> usize {
         self.offset
+    }
+
+    /// Return the 1-based line containing this slot in [`VescIfAbi::SOURCE_HEADER`].
+    ///
+    /// Hand-constructed slots created with [`Self::new`] have no source anchor and return zero.
+    pub const fn header_line(self) -> usize {
+        self.header_line
     }
 
     /// Return the corresponding host byte offset for a pointer-sized table.
@@ -415,7 +432,7 @@ impl VescIfSlot {
 pub struct VescIfAbi;
 
 macro_rules! define_vesc_if_abi {
-    ($($const_name:ident => $slot_name:literal, $slot_offset:expr),+ $(,)?) => {
+    ($($const_name:ident => $slot_name:literal, $slot_offset:expr, $header_line:expr),+ $(,)?) => {
         impl VescIfAbi {
             /// Base address of the firmware function table on VESC targets.
             pub const BASE_ADDR: NativeAddress = NativeAddress(0x1000_f800);
@@ -446,9 +463,10 @@ macro_rules! define_vesc_if_abi {
 
             $(
                 #[doc = concat!("Slot for `", $slot_name, "`.")]
-                pub const $const_name: VescIfSlot = VescIfSlot::new(
+                pub const $const_name: VescIfSlot = VescIfSlot::with_header_line(
                     $slot_name,
                     $slot_offset,
+                    $header_line,
                 );
             )+
 
