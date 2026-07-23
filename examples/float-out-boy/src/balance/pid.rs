@@ -16,12 +16,12 @@ use vescpkg_rs::{AngleCurrentGain, IntegralCurrentGain, PidScale, RateCurrentGai
 pub(super) struct SetpointError(AngleDegrees);
 
 impl SetpointError {
-    #[inline(always)]
+    #[inline]
     const fn new(angle: AngleDegrees) -> Self {
         Self(angle)
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) fn from_input(
         setpoint: FloatOutBoyRealtimeRuntimeSetpoint,
         balance_pitch: AngleDegrees,
@@ -29,12 +29,12 @@ impl SetpointError {
         Self::new(setpoint.angle() - balance_pitch)
     }
 
-    #[inline(always)]
+    #[inline]
     const fn angle(self) -> AngleDegrees {
         self.0
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) fn integral_current(
         self,
         integral: MotorCurrent,
@@ -53,7 +53,7 @@ impl SetpointError {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) fn angle_proportional_current(
         self,
         kp: AngleCurrentGain,
@@ -76,7 +76,7 @@ impl SetpointError {
 pub(super) struct PitchRate(AngularVelocity);
 
 impl PitchRate {
-    #[inline(always)]
+    #[inline]
     fn from_roll_corrected(rate: AngularVelocity, darkride: FloatOutBoyDarkRideState) -> Self {
         // C map: `imu_update` flips pitch rate when darkride is active at
         // `third_party/float-out-boy/src/imu.c:52-54`.
@@ -86,7 +86,7 @@ impl PitchRate {
         })
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) fn from_imu(
         roll: ImuRoll,
         gyro_pitch: AngularVelocity,
@@ -98,19 +98,19 @@ impl PitchRate {
         Self::from_roll_corrected(pitch_rate, darkride)
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) const fn rate(self) -> AngularVelocity {
         self.0
     }
 
-    #[inline(always)]
+    #[inline]
     fn damping_current(self, kp2: RateCurrentGain) -> MotorCurrent {
         // C map: `third_party/float-out-boy/src/pid.c:71` negates pitch rate before
         // multiplying by the rate gain.
         self.rate() * -kp2
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) fn rate_proportional_current(
         self,
         kp2: RateCurrentGain,
@@ -133,7 +133,7 @@ struct RollProjection {
 }
 
 impl RollProjection {
-    #[inline(always)]
+    #[inline]
     fn from_roll(roll: ImuRoll) -> Self {
         // C map: `imu_update` uses raw roll radians for the pitch-rate yaw
         // projection at `third_party/float-out-boy/src/imu.c:46-51`.
@@ -144,7 +144,7 @@ impl RollProjection {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn pitch_rate(self, gyro_pitch: AngularVelocity, gyro_yaw: AngularVelocity) -> AngularVelocity {
         // C map: `third_party/float-out-boy/src/imu.c:49-51` damps yaw influence
         // on pitch-rate while the board is rolled.
@@ -161,7 +161,7 @@ enum ScaleDirection {
 }
 
 impl ScaleDirection {
-    #[inline(always)]
+    #[inline]
     fn from_motor_erpm(motor_erpm: ElectricalSpeed) -> Self {
         // C map: PID scale smoothing returns to unity below 500 ERPM, then
         // chooses forward/reverse scaling at `third_party/float-out-boy/src/pid.c:48-67`.
@@ -175,7 +175,7 @@ impl ScaleDirection {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     const fn targets(self, config: LoopConfig) -> ScaleTargets {
         match self {
             Self::Coasting => ScaleTargets::UNITY,
@@ -203,7 +203,7 @@ impl ScalePair {
         rate_damping: PidScale::new(1.0),
     };
 
-    #[inline(always)]
+    #[inline]
     const fn new(angle_proportional: PidScale, rate_damping: PidScale) -> Self {
         Self {
             angle_proportional,
@@ -211,14 +211,14 @@ impl ScalePair {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn smoothed_angle_proportional(self, current: PidScale) -> PidScale {
         // C map: `third_party/float-out-boy/src/pid.c:51-66` uses a 1% target / 99%
         // previous one-pole filter for all PID scale coefficients.
         PidScale::new(self.angle_proportional.value() * 0.01 + current.value() * 0.99)
     }
 
-    #[inline(always)]
+    #[inline]
     fn smoothed_rate_damping(self, current: PidScale) -> PidScale {
         // C map: `third_party/float-out-boy/src/pid.c:51-66` uses the same 1% / 99%
         // filter for angle-P and rate-P scale coefficients.
@@ -238,7 +238,7 @@ impl ScaleTargets {
         accel: ScalePair::UNITY,
     };
 
-    #[inline(always)]
+    #[inline]
     fn smoothed_into(self, state: LoopState) -> PidState {
         // C map: `third_party/float-out-boy/src/pid.c:51-66` smooths brake and accel
         // PID scale pairs back into the stored loop state.
@@ -263,7 +263,7 @@ enum ScaleSide {
 }
 
 impl ScaleSide {
-    #[inline(always)]
+    #[inline]
     fn from_setpoint_error(error: SetpointError) -> Self {
         // C map: `third_party/float-out-boy/src/pid.c:69` picks accel vs brake scale
         // from the sign of the setpoint error.
@@ -274,7 +274,7 @@ impl ScaleSide {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn from_current(current: MotorCurrent) -> Self {
         // C map: `third_party/float-out-boy/src/pid.c:72` picks accel vs brake scale
         // from the sign of the rate-P current contribution.
@@ -285,7 +285,7 @@ impl ScaleSide {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     const fn scale(self, accel_scale: PidScale, brake_scale: PidScale) -> PidScale {
         // C map: `third_party/float-out-boy/src/pid.c:69-72` chooses between the
         // accel and brake scale coefficients after the sign check.
@@ -304,7 +304,7 @@ pub(super) struct Currents {
 }
 
 impl Currents {
-    #[inline(always)]
+    #[inline]
     pub(super) fn pitch_based_current(
         self,
         booster_current: MotorCurrent,
@@ -321,7 +321,7 @@ impl Currents {
         )
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) fn requested_with_pitch_based(
         self,
         pitch_based: PitchBasedCurrent,
@@ -337,7 +337,7 @@ struct SideScale {
 }
 
 impl SideScale {
-    #[inline(always)]
+    #[inline]
     const fn new(accel: PidScale, brake: PidScale) -> Self {
         Self { accel, brake }
     }
@@ -350,7 +350,7 @@ struct CurrentScales {
 }
 
 impl CurrentScales {
-    #[inline(always)]
+    #[inline]
     const fn from_state(state: LoopState) -> Self {
         // C map: `third_party/float-out-boy/src/pid.c:51-66` keeps separate accel
         // and brake PID scale pairs for angle-P and rate-P smoothing.
@@ -360,7 +360,7 @@ impl CurrentScales {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn angle_proportional_current(
         self,
         error: SetpointError,
@@ -373,7 +373,7 @@ impl CurrentScales {
         )
     }
 
-    #[inline(always)]
+    #[inline]
     fn rate_damping_current(self, pitch_rate: PitchRate, kp2: RateCurrentGain) -> MotorCurrent {
         pitch_rate.rate_proportional_current(kp2, self.rate_damping.accel, self.rate_damping.brake)
     }
@@ -386,12 +386,12 @@ pub(super) struct Phase {
 }
 
 impl Phase {
-    #[inline(always)]
+    #[inline]
     pub(super) const fn from_step(config: LoopConfig, input: LoopInput) -> Self {
         Self { config, input }
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) fn update_state(self, state: LoopState) -> (Currents, LoopState) {
         // C map: `third_party/float-out-boy/src/pid.c:37-73` updates P/I/rate-P before
         // smoothing the accel/brake scale coefficients for the next tick.
@@ -417,12 +417,12 @@ impl Phase {
 }
 
 impl LoopInput {
-    #[inline(always)]
+    #[inline]
     pub(super) fn setpoint_error(&self) -> SetpointError {
         SetpointError::from_input(self.setpoint, self.balance_pitch)
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) fn pitch_rate(&self) -> PitchRate {
         PitchRate::from_imu(self.roll, self.gyro_pitch, self.gyro_yaw, self.darkride)
     }
@@ -431,7 +431,7 @@ impl LoopInput {
 impl LoopState {
     /// Source map: upstream stores integral current and smooths PID scales at
     /// `third_party/float-out-boy/src/pid.c:40-67`.
-    #[inline(always)]
+    #[inline]
     pub(super) fn with_updated_pid_state(
         self,
         config: LoopConfig,

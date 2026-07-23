@@ -29,7 +29,7 @@ impl LoopState {
     /// `third_party/float-out-boy/src/pid.c:37-73`,
     /// `third_party/float-out-boy/src/booster.c:32-75`, and
     /// `third_party/float-out-boy/src/imu.c:43-53`.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn advance_balance_loop(self, config: LoopConfig, input: LoopInput) -> LoopOutput {
         let (pid_currents, state) = PidPhase::from_step(config, input).update_state(self);
         let booster_current =

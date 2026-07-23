@@ -6,7 +6,7 @@ use crate::beeper::{FloatOutBoyBeeper, FloatOutBoyBeeperAlert, FloatOutBoyBeeper
 #[cfg(any(test, target_arch = "arm"))]
 use crate::bms::FloatOutBoyBmsFaults;
 use crate::bms::FloatOutBoyBmsSample;
-use crate::config::*;
+use crate::config::{FloatOutBoyConfigImage, FloatOutBoyFlywheelConfig};
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload,
     FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand,
@@ -151,6 +151,7 @@ pub struct FloatOutBoyPackageState {
 
 impl FloatOutBoyPackageState {
     /// Build app-data state from the current all-data payload snapshot.
+    #[must_use]
     pub fn new(all_data_payloads: FloatOutBoyAllDataPayloads) -> Self {
         let serialized_config = FloatOutBoyConfigImage::defaults();
         Self {
@@ -341,6 +342,7 @@ impl FloatOutBoyPackageState {
     }
 
     /// Return the current all-data payload snapshot.
+    #[must_use]
     pub const fn all_data_payloads(self) -> FloatOutBoyAllDataPayloads {
         self.all_data_payloads
     }

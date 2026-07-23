@@ -18,6 +18,7 @@ pub enum FloatOutBoyLedPin {
 
 impl FloatOutBoyLedPin {
     /// Return the Float Out Boy `v1.2.1` LED pin ID.
+    #[must_use]
     pub const fn id(self) -> u8 {
         match self {
             Self::B6 => 0,
@@ -38,6 +39,7 @@ pub enum FloatOutBoyLedPinConfig {
 
 impl FloatOutBoyLedPinConfig {
     /// Return the Float Out Boy `v1.2.1` LED pin config ID.
+    #[must_use]
     pub const fn id(self) -> u8 {
         match self {
             Self::PullupTo5v => 0,
@@ -61,6 +63,7 @@ pub enum FloatOutBoyLedColorOrder {
 
 impl FloatOutBoyLedColorOrder {
     /// Return the Float Out Boy `v1.2.1` LED color order ID.
+    #[must_use]
     pub const fn id(self) -> u8 {
         match self {
             Self::Grb => 0,
@@ -146,6 +149,7 @@ impl FloatOutBoyLedColor {
     ///
     /// C map: these IDs follow the `enumNames` order for LED color config fields at
     /// `third_party/float-out-boy/src/conf/settings.xml:3456-3487`.
+    #[must_use]
     pub const fn id(self) -> u8 {
         self as u8
     }
@@ -176,6 +180,7 @@ pub enum FloatOutBoyLedAnimationMode {
 
 impl FloatOutBoyLedAnimationMode {
     /// Return the Float Out Boy `v1.2.1` LED animation mode ID.
+    #[must_use]
     pub const fn id(self) -> u8 {
         match self {
             Self::Solid => 0,
@@ -206,6 +211,7 @@ pub enum FloatOutBoyLedTransition {
 
 impl FloatOutBoyLedTransition {
     /// Return the Float Out Boy `v1.2.1` LED transition ID.
+    #[must_use]
     pub const fn id(self) -> u8 {
         match self {
             Self::Fade => 0,
@@ -223,11 +229,13 @@ pub struct FloatOutBoyLedAnimationSpeed(f32);
 
 impl FloatOutBoyLedAnimationSpeed {
     /// Wrap a Float Out Boy LED animation speed value.
+    #[must_use]
     pub const fn from_units(value: f32) -> Self {
         Self(value)
     }
 
     /// Return the Float Out Boy LED animation speed value.
+    #[must_use]
     pub const fn as_units(self) -> f32 {
         self.0
     }
@@ -245,6 +253,7 @@ pub struct FloatOutBoyLedBarConfig {
 
 impl FloatOutBoyLedBarConfig {
     /// Build a typed Float Out Boy LED bar config.
+    #[must_use]
     pub const fn new(
         brightness: Ratio,
         primary_color: FloatOutBoyLedColor,
@@ -262,26 +271,31 @@ impl FloatOutBoyLedBarConfig {
     }
 
     /// Return the configured brightness.
+    #[must_use]
     pub const fn brightness(self) -> Ratio {
         self.brightness
     }
 
     /// Return the primary LED color.
+    #[must_use]
     pub const fn primary_color(self) -> FloatOutBoyLedColor {
         self.primary_color
     }
 
     /// Return the secondary LED color.
+    #[must_use]
     pub const fn secondary_color(self) -> FloatOutBoyLedColor {
         self.secondary_color
     }
 
     /// Return the animation mode.
+    #[must_use]
     pub const fn animation_mode(self) -> FloatOutBoyLedAnimationMode {
         self.animation_mode
     }
 
     /// Return the animation speed.
+    #[must_use]
     pub const fn animation_speed(self) -> FloatOutBoyLedAnimationSpeed {
         self.animation_speed
     }
@@ -294,11 +308,13 @@ pub struct FloatOutBoyStatusBarIdleTimeout(u16);
 
 impl FloatOutBoyStatusBarIdleTimeout {
     /// Wrap a Float Out Boy status-bar idle timeout in seconds.
+    #[must_use]
     pub const fn from_seconds(value: u16) -> Self {
         Self(value)
     }
 
     /// Return the idle timeout in seconds.
+    #[must_use]
     pub const fn as_seconds(self) -> u16 {
         self.0
     }
@@ -317,6 +333,7 @@ pub struct FloatOutBoyStatusBarConfig {
 
 impl FloatOutBoyStatusBarConfig {
     /// Build a typed Float Out Boy status-bar config.
+    #[must_use]
     pub const fn new(
         idle_timeout: FloatOutBoyStatusBarIdleTimeout,
         duty_threshold: Ratio,
@@ -335,37 +352,44 @@ impl FloatOutBoyStatusBarConfig {
     }
 
     /// Return this config with sensor display enabled while running.
+    #[must_use]
     pub const fn showing_sensors_while_running(mut self) -> Self {
         self.show_sensors_while_running = true;
         self
     }
 
     /// Return the idle timeout.
+    #[must_use]
     pub const fn idle_timeout(self) -> FloatOutBoyStatusBarIdleTimeout {
         self.idle_timeout
     }
 
     /// Return the duty threshold for switching status display.
+    #[must_use]
     pub const fn duty_threshold(self) -> Ratio {
         self.duty_threshold
     }
 
     /// Return the red-bar percentage threshold.
+    #[must_use]
     pub const fn red_bar_percentage(self) -> Ratio {
         self.red_bar_percentage
     }
 
     /// Return whether sensors are shown while running.
+    #[must_use]
     pub const fn shows_sensors_while_running(self) -> bool {
         self.show_sensors_while_running
     }
 
     /// Return status brightness when headlights are on.
+    #[must_use]
     pub const fn brightness_headlights_on(self) -> Ratio {
         self.brightness_headlights_on
     }
 
     /// Return status brightness when headlights are off.
+    #[must_use]
     pub const fn brightness_headlights_off(self) -> Ratio {
         self.brightness_headlights_off
     }
@@ -390,6 +414,7 @@ pub struct FloatOutBoyLedsConfig {
 
 impl FloatOutBoyLedsConfig {
     /// Build a typed Float Out Boy LEDs config.
+    #[must_use]
     pub const fn new(
         headlights: FloatOutBoyLedBarConfig,
         taillights: FloatOutBoyLedBarConfig,
@@ -415,18 +440,21 @@ impl FloatOutBoyLedsConfig {
     }
 
     /// Return this config with LEDs enabled.
+    #[must_use]
     pub const fn enabled(mut self) -> Self {
         self.on = true;
         self
     }
 
     /// Return this config with headlights enabled.
+    #[must_use]
     pub const fn with_headlights_on(mut self) -> Self {
         self.headlights_on = true;
         self
     }
 
     /// Return this config with the headlights transition set.
+    #[must_use]
     pub const fn with_headlights_transition(
         mut self,
         transition: FloatOutBoyLedTransition,
@@ -436,79 +464,94 @@ impl FloatOutBoyLedsConfig {
     }
 
     /// Return this config with the direction transition set.
+    #[must_use]
     pub const fn with_direction_transition(mut self, transition: FloatOutBoyLedTransition) -> Self {
         self.direction_transition = transition;
         self
     }
 
     /// Return this config with lights off while lifted.
+    #[must_use]
     pub const fn lights_off_when_lifted(mut self) -> Self {
         self.lights_off_when_lifted = true;
         self
     }
 
     /// Return this config with status shown on the front while lifted.
+    #[must_use]
     pub const fn status_on_front_when_lifted(mut self) -> Self {
         self.status_on_front_when_lifted = true;
         self
     }
 
     /// Return whether LEDs are enabled.
+    #[must_use]
     pub const fn is_enabled(self) -> bool {
         self.on
     }
 
     /// Return whether headlights are on.
+    #[must_use]
     pub const fn are_headlights_on(self) -> bool {
         self.headlights_on
     }
 
     /// Return the headlights transition.
+    #[must_use]
     pub const fn headlights_transition(self) -> FloatOutBoyLedTransition {
         self.headlights_transition
     }
 
     /// Return the direction transition.
+    #[must_use]
     pub const fn direction_transition(self) -> FloatOutBoyLedTransition {
         self.direction_transition
     }
 
     /// Return whether lights are turned off while lifted.
+    #[must_use]
     pub const fn turns_lights_off_when_lifted(self) -> bool {
         self.lights_off_when_lifted
     }
 
     /// Return whether status is shown on the front while lifted.
+    #[must_use]
     pub const fn shows_status_on_front_when_lifted(self) -> bool {
         self.status_on_front_when_lifted
     }
 
     /// Return the headlights LED bar config.
+    #[must_use]
     pub const fn headlights(self) -> FloatOutBoyLedBarConfig {
         self.headlights
     }
 
     /// Return the taillights LED bar config.
+    #[must_use]
     pub const fn taillights(self) -> FloatOutBoyLedBarConfig {
         self.taillights
     }
 
     /// Return the front LED bar config.
+    #[must_use]
     pub const fn front(self) -> FloatOutBoyLedBarConfig {
         self.front
     }
 
     /// Return the rear LED bar config.
+    #[must_use]
     pub const fn rear(self) -> FloatOutBoyLedBarConfig {
         self.rear
     }
 
     /// Return the status-bar config.
+    #[must_use]
     pub const fn status(self) -> FloatOutBoyStatusBarConfig {
         self.status
     }
 
     /// Return the idle status LED bar config.
+    #[must_use]
     pub const fn status_idle(self) -> FloatOutBoyLedBarConfig {
         self.status_idle
     }
@@ -529,6 +572,7 @@ pub enum FloatOutBoyLedStripOrder {
 
 impl FloatOutBoyLedStripOrder {
     /// Return the Float Out Boy `v1.2.1` LED strip order ID.
+    #[must_use]
     pub const fn id(self) -> u8 {
         match self {
             Self::None => 0,
@@ -550,6 +594,7 @@ pub struct FloatOutBoyLedStripConfig {
 
 impl FloatOutBoyLedStripConfig {
     /// Build a typed Float Out Boy LED strip config.
+    #[must_use]
     pub const fn new(
         order: FloatOutBoyLedStripOrder,
         count: u8,
@@ -564,27 +609,32 @@ impl FloatOutBoyLedStripConfig {
     }
 
     /// Return this config with reverse ordering enabled or disabled.
+    #[must_use]
     pub const fn with_reverse(mut self, reverse: bool) -> Self {
         self.reverse = reverse;
         self
     }
 
     /// Return the physical strip order.
+    #[must_use]
     pub const fn order(self) -> FloatOutBoyLedStripOrder {
         self.order
     }
 
     /// Return the configured LED count.
+    #[must_use]
     pub const fn count(self) -> u8 {
         self.count
     }
 
     /// Return the configured color channel order.
+    #[must_use]
     pub const fn color_order(self) -> FloatOutBoyLedColorOrder {
         self.color_order
     }
 
     /// Return whether LED indexing is reversed.
+    #[must_use]
     pub const fn is_reversed(self) -> bool {
         self.reverse
     }

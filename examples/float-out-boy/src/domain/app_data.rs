@@ -28,6 +28,7 @@ impl FloatOutBoyAppDataPackageId {
     }
 
     /// Explicitly extract the app-data package ID.
+    #[must_use]
     pub const fn get(self) -> u8 {
         self.0
     }
@@ -138,6 +139,7 @@ impl FloatOutBoyAppDataCommand {
     }
 
     /// Return the Float Out Boy `v1.2.1` command ID.
+    #[must_use]
     pub const fn id(self) -> u8 {
         match self {
             Self::Info => 0,
@@ -181,6 +183,7 @@ pub struct FloatOutBoyAppDataCommandError {
 
 impl FloatOutBoyAppDataCommandError {
     /// Return the rejected command ID.
+    #[must_use]
     pub const fn value(self) -> u8 {
         self.value
     }
@@ -194,46 +197,55 @@ pub struct FloatOutBoyAllDataMode {
 
 impl FloatOutBoyAllDataMode {
     /// Build a mode token from the upstream Float Out Boy request byte.
+    #[must_use]
     pub const fn from_source_id(source_id: u8) -> Self {
         Self { source_id }
     }
 
     /// Build a base all-data request mode.
+    #[must_use]
     pub const fn base() -> Self {
         Self::from_source_id(1)
     }
 
     /// Build a request mode that includes mode 2 fields.
+    #[must_use]
     pub const fn with_mode2() -> Self {
         Self::from_source_id(2)
     }
 
     /// Build a request mode that includes mode 2 and 3 fields.
+    #[must_use]
     pub const fn with_mode3() -> Self {
         Self::from_source_id(3)
     }
 
     /// Build a request mode that includes mode 2, 3, and 4 fields.
+    #[must_use]
     pub const fn with_mode4() -> Self {
         Self::from_source_id(4)
     }
 
     /// Return the source request byte.
+    #[must_use]
     pub const fn source_id(self) -> u8 {
         self.source_id
     }
 
     /// Return whether the mode includes mode 2 extension fields.
+    #[must_use]
     pub const fn includes_mode2(self) -> bool {
         self.source_id >= 2
     }
 
     /// Return whether the mode includes mode 3 extension fields.
+    #[must_use]
     pub const fn includes_mode3(self) -> bool {
         self.source_id >= 3
     }
 
     /// Return whether the mode includes mode 4 extension fields.
+    #[must_use]
     pub const fn includes_mode4(self) -> bool {
         self.source_id >= 4
     }
@@ -247,6 +259,7 @@ pub struct FloatOutBoyAllDataRequest {
 
 impl FloatOutBoyAllDataRequest {
     /// Build an all-data request.
+    #[must_use]
     pub const fn new(mode: FloatOutBoyAllDataMode) -> Self {
         Self { mode }
     }
@@ -274,6 +287,7 @@ impl FloatOutBoyAllDataRequest {
     }
 
     /// Return the requested all-data mode.
+    #[must_use]
     pub const fn mode(self) -> FloatOutBoyAllDataMode {
         self.mode
     }

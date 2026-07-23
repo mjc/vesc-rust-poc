@@ -9,7 +9,7 @@ use vescpkg_rs::prelude::{AngleDegrees, Current, ElectricalSpeed, MotorCurrent};
 struct Direction(f32);
 
 impl Direction {
-    #[inline(always)]
+    #[inline]
     fn from_proportional(proportional: Proportional) -> Self {
         // C map: `booster_update` chooses boost direction from the sign of the
         // proportional angle at `third_party/float-out-boy/src/booster.c:63-72`.
@@ -17,7 +17,7 @@ impl Direction {
     }
 
     /// C map: `third_party/float-out-boy/src/booster.c:65-66`.
-    #[inline(always)]
+    #[inline]
     fn ramp_current(
         self,
         current: MotorCurrent,
@@ -28,7 +28,7 @@ impl Direction {
     }
 
     /// C map: `third_party/float-out-boy/src/booster.c:67-69`.
-    #[inline(always)]
+    #[inline]
     fn saturated_current(self, current: MotorCurrent) -> MotorCurrent {
         current * self.0
     }
@@ -44,12 +44,12 @@ impl Direction {
 pub(super) struct Proportional(AngleDegrees);
 
 impl Proportional {
-    #[inline(always)]
+    #[inline]
     pub(super) const fn new(angle: AngleDegrees) -> Self {
         Self(angle)
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) fn from_input(
         setpoint: FloatOutBoyRealtimeRuntimeSetpoint,
         brake_tilt: FloatOutBoyRealtimeRuntimeSetpoint,
@@ -58,12 +58,12 @@ impl Proportional {
         Self::new(setpoint.angle() - brake_tilt.angle() - raw_pitch)
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) const fn angle(self) -> AngleDegrees {
         self.0
     }
 
-    #[inline(always)]
+    #[inline]
     fn direction(self) -> Direction {
         Direction::from_proportional(self)
     }
@@ -76,7 +76,7 @@ pub(super) enum Branch {
 }
 
 impl Branch {
-    #[inline(always)]
+    #[inline]
     pub(super) fn from_motor_current(motor_current: MotorCurrent) -> Self {
         // C map: `booster_update` selects accel vs brake booster path from
         // the sign of the current at `third_party/float-out-boy/src/booster.c:32-45`.
@@ -87,12 +87,12 @@ impl Branch {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) const fn is_braking(self) -> bool {
         matches!(self, Self::Brake)
     }
 
-    #[inline(always)]
+    #[inline]
     fn profile(self, config: LoopConfig) -> Profile {
         // C map: `third_party/float-out-boy/src/booster.c:32-45` picks the accel
         // or brake booster parameters before applying speed stiffness.
@@ -112,7 +112,7 @@ impl Branch {
 
     /// Source map: upstream computes booster target current at
     /// `third_party/float-out-boy/src/booster.c:32-73`.
-    #[inline(always)]
+    #[inline]
     pub(super) fn target_current(
         self,
         config: LoopConfig,
@@ -126,7 +126,7 @@ impl Branch {
 
     /// Source map: upstream filters booster current at
     /// `third_party/float-out-boy/src/booster.c:74-75`.
-    #[inline(always)]
+    #[inline]
     pub(super) fn filtered_current(
         self,
         config: LoopConfig,
@@ -147,19 +147,19 @@ impl Branch {
 struct RampOffset(AngleDegrees);
 
 impl RampOffset {
-    #[inline(always)]
+    #[inline]
     fn from_profile(proportional: Proportional, profile: Profile) -> Self {
         // C map: `third_party/float-out-boy/src/booster.c:63-72` compares the
         // proportional angle against the deadband and ramp threshold.
         Self(proportional.angle().abs() - profile.angle)
     }
 
-    #[inline(always)]
+    #[inline]
     const fn angle(self) -> AngleDegrees {
         self.0
     }
 
-    #[inline(always)]
+    #[inline]
     fn range(self, ramp: AngleDegrees) -> Range {
         // C map: `third_party/float-out-boy/src/booster.c:63-72` uses deadband,
         // then ramp, then saturated current.
@@ -185,7 +185,7 @@ enum Range {
 struct SpeedStiffness(f32);
 
 impl SpeedStiffness {
-    #[inline(always)]
+    #[inline]
     fn from_abs_erpm(abs_erpm: Rpm) -> Self {
         // C map: `third_party/float-out-boy/src/booster.c:48-51` starts stiffness
         // above 3000 ERPM and caps `(abs_erpm - 3000) / 10000` at 1.
@@ -194,21 +194,21 @@ impl SpeedStiffness {
         Self(((abs_erpm - start) / range).clamp(0.0, 1.0))
     }
 
-    #[inline(always)]
+    #[inline]
     fn from_motor_erpm(motor_erpm: ElectricalSpeed) -> Self {
         // C map: `third_party/float-out-boy/src/booster.c:48-60` applies no stiffness
         // below 3000 ERPM and reaches full stiffness 10000 ERPM later.
         Self::from_abs_erpm(motor_erpm.rpm().abs())
     }
 
-    #[inline(always)]
+    #[inline]
     fn boosted_current(self, current: MotorCurrent) -> MotorCurrent {
         // C map: braking adds `current * speedstiffness` at
         // `third_party/float-out-boy/src/booster.c:52-54`.
         current + current * self.0
     }
 
-    #[inline(always)]
+    #[inline]
     fn softened_angle(self, angle: AngleDegrees) -> AngleDegrees {
         // C map: accelerating divides start angle by `1 + speedstiffness` at
         // `third_party/float-out-boy/src/booster.c:55-59`.
@@ -224,12 +224,12 @@ pub(super) struct Profile {
 }
 
 impl Profile {
-    #[inline(always)]
+    #[inline]
     fn zero_current() -> MotorCurrent {
         MotorCurrent::new(Current::ZERO)
     }
 
-    #[inline(always)]
+    #[inline]
     fn with_speed_stiffness(self, branch: Branch, motor_erpm: ElectricalSpeed) -> Self {
         // C map: `third_party/float-out-boy/src/booster.c:48-60` scales current or
         // start angle by speed before the booster ramp is applied.
@@ -246,7 +246,7 @@ impl Profile {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) fn target_current(self, proportional: Proportional) -> MotorCurrent {
         let direction = proportional.direction();
 
@@ -267,14 +267,14 @@ pub(super) struct Phase {
 }
 
 impl Phase {
-    #[inline(always)]
+    #[inline]
     pub(super) const fn from_step(config: LoopConfig, input: LoopInput) -> Self {
         // C map: `third_party/float-out-boy/src/booster.c:32-75` runs from the
         // current loop's config and live input.
         Self { config, input }
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) fn filtered_current(self, previous: MotorCurrent) -> MotorCurrent {
         // C map: `third_party/float-out-boy/src/booster.c:74-75` filters the newly
         // computed booster current with the previous sample.
@@ -288,7 +288,7 @@ impl Phase {
 }
 
 impl LoopInput {
-    #[inline(always)]
+    #[inline]
     pub(super) fn booster_proportional(self) -> Proportional {
         // C map: `booster_update` uses setpoint, brake tilt, and pitch to
         // compute the booster proportional angle at

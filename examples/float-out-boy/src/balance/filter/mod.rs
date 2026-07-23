@@ -79,7 +79,7 @@ impl BalanceFilter {
         self.estimated_orientation().balance_pitch()
     }
 
-    #[inline(always)]
+    #[inline]
     const fn estimated_orientation(&self) -> EstimatedOrientation {
         self.orientation
     }
@@ -319,7 +319,7 @@ mod tests {
             filter.feedback_gains(AccelConfidence::new(0.5)),
         );
 
-        assert!((corrected.yaw().as_radians_per_second() - 16.0).abs() < 0.000001);
+        assert!((corrected.yaw().as_radians_per_second() - 16.0).abs() < 0.000_001);
     }
 
     #[test]
@@ -353,9 +353,9 @@ mod tests {
             ),
         );
 
-        assert!((gyro.roll().as_radians_per_second() - 1.0).abs() < 0.000001);
-        assert!((gyro.pitch().as_radians_per_second() - 2.0).abs() < 0.000001);
-        assert!((gyro.yaw().as_radians_per_second() - 3.0).abs() < 0.000001);
+        assert!((gyro.roll().as_radians_per_second() - 1.0).abs() < 0.000_001);
+        assert!((gyro.pitch().as_radians_per_second() - 2.0).abs() < 0.000_001);
+        assert!((gyro.yaw().as_radians_per_second() - 3.0).abs() < 0.000_001);
     }
 
     #[test]
@@ -375,9 +375,9 @@ mod tests {
             ),
         );
 
-        assert!((gyro.roll().as_radians_per_second() - 2.4).abs() < 0.000001);
-        assert!((gyro.pitch().as_radians_per_second() - 2.0).abs() < 0.000001);
-        assert!((gyro.yaw().as_radians_per_second() - 3.0).abs() < 0.000001);
+        assert!((gyro.roll().as_radians_per_second() - 2.4).abs() < 0.000_001);
+        assert!((gyro.pitch().as_radians_per_second() - 2.0).abs() < 0.000_001);
+        assert!((gyro.yaw().as_radians_per_second() - 3.0).abs() < 0.000_001);
     }
 
     #[test]
@@ -401,9 +401,9 @@ mod tests {
         );
 
         let [scalar, body_x, body_y, body_z] = filter.estimated_orientation().wxyz_for_test();
-        assert!((scalar - 0.0).abs() < 0.000001);
-        assert!((body_x - 2.1).abs() < 0.000001);
-        assert!((body_y - 3.0).abs() < 0.000001);
-        assert!((body_z - 4.2).abs() < 0.000001);
+        assert!((scalar - 0.0).abs() < 0.000_001);
+        assert!((body_x - 2.1).abs() < 0.000_001);
+        assert!((body_y - 3.0).abs() < 0.000_001);
+        assert!((body_z - 4.2).abs() < 0.000_001);
     }
 }

@@ -80,9 +80,9 @@ pub(super) fn lock_test_float_out_boy_config_state() -> impl Drop {
 }
 
 #[cfg(test)]
-pub(super) fn install_test_float_out_boy_runtime_state<'a>(
-    state: &'a mut FloatOutBoyPackageState,
-) -> impl Drop + 'a {
+pub(super) fn install_test_float_out_boy_runtime_state(
+    state: &mut FloatOutBoyPackageState,
+) -> impl Drop + '_ {
     vescpkg_rs::test_support::install_state(&crate::__VESCPKG_PACKAGE_STATE, state)
 }
 

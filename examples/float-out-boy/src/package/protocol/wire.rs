@@ -18,7 +18,7 @@ pub(super) fn push_float_out_boy_float16(buffer: &mut [u8], ind: &mut usize, val
 }
 
 #[must_use]
-#[inline(always)]
+#[inline]
 fn encode_float_out_boy_float16(value: f32) -> u16 {
     let bits = value.to_bits().wrapping_add(0x0000_1000);
     let exponent = (bits & 0x7f80_0000) >> 23;

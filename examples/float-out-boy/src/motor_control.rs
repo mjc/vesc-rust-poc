@@ -35,7 +35,7 @@ pub(crate) struct FloatOutBoyMotorControl {
 }
 
 impl FloatOutBoyMotorControl {
-    #[inline(always)]
+    #[inline]
     pub(crate) const fn new() -> Self {
         Self {
             disabled: false,
@@ -49,7 +49,7 @@ impl FloatOutBoyMotorControl {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn request_current(&mut self, current: MotorCurrent) {
         // Upstream `motor_control_request_current` sets the request flag and
         // stores the requested current at `third_party/float-out-boy/src/motor_control.c:44-47`.
@@ -80,7 +80,7 @@ impl FloatOutBoyMotorControl {
         self.tone_high = false;
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn apply_requested_current(&mut self, motor: &impl MotorOutput) -> bool {
         self.requested_current.take().is_some_and(|command| {
             // Upstream keeps this sign unchanged: `motor_control_request_current`
@@ -94,7 +94,7 @@ impl FloatOutBoyMotorControl {
         })
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn apply(
         &mut self,
         motor: &impl MotorOutput,

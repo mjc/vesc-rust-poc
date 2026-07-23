@@ -50,6 +50,7 @@ pub enum FloatOutBoyAllDataResponse {
 
 impl FloatOutBoyAllDataResponse {
     /// Encode a Float Out Boy all-data fault response.
+    #[must_use]
     pub const fn fault(fault: FirmwareFaultWireCode) -> Self {
         Self::Fault([
             FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
@@ -60,6 +61,7 @@ impl FloatOutBoyAllDataResponse {
     }
 
     /// Return the encoded response bytes.
+    #[must_use]
     pub const fn as_bytes(&self) -> &[u8] {
         match self {
             Self::Fault(bytes) => bytes,
@@ -81,6 +83,7 @@ pub struct FloatOutBoyAllDataAttitude {
 
 impl FloatOutBoyAllDataAttitude {
     /// Build typed compact all-data attitude fields.
+    #[must_use]
     pub const fn new(
         balance_pitch: FloatOutBoyRealtimeBalancePitch,
         roll: ImuRoll,
@@ -94,16 +97,19 @@ impl FloatOutBoyAllDataAttitude {
     }
 
     /// Return balance pitch.
+    #[must_use]
     pub const fn balance_pitch(self) -> FloatOutBoyRealtimeBalancePitch {
         self.balance_pitch
     }
 
     /// Return IMU roll.
+    #[must_use]
     pub const fn roll(self) -> ImuRoll {
         self.roll
     }
 
     /// Return IMU pitch.
+    #[must_use]
     pub const fn pitch(self) -> ImuPitch {
         self.pitch
     }
@@ -118,6 +124,7 @@ pub struct FloatOutBoyAllDataStatus {
 
 impl FloatOutBoyAllDataStatus {
     /// Build typed compact all-data status fields.
+    #[must_use]
     pub const fn new(ride_state: FloatOutBoyRideState, beep_reason: FloatOutBoyBeepReason) -> Self {
         Self {
             ride_state,
@@ -126,11 +133,13 @@ impl FloatOutBoyAllDataStatus {
     }
 
     /// Return ride state.
+    #[must_use]
     pub const fn ride_state(self) -> FloatOutBoyRideState {
         self.ride_state
     }
 
     /// Return beep reason.
+    #[must_use]
     pub const fn beep_reason(self) -> FloatOutBoyBeepReason {
         self.beep_reason
     }
@@ -147,16 +156,19 @@ pub enum FloatOutBoyFocIdCurrent {
 
 impl FloatOutBoyFocIdCurrent {
     /// Build a measured FOC ID current value.
+    #[must_use]
     pub const fn measured(current: MotorCurrent) -> Self {
         Self::Measured(current)
     }
 
     /// Build an unavailable FOC ID current marker.
+    #[must_use]
     pub const fn unavailable() -> Self {
         Self::Unavailable
     }
 
     /// Return the measured current, when available.
+    #[must_use]
     pub const fn as_measured(self) -> Option<MotorCurrent> {
         match self {
             Self::Measured(current) => Some(current),
@@ -178,6 +190,7 @@ pub struct FloatOutBoyAllDataMotorPayload {
 
 impl FloatOutBoyAllDataMotorPayload {
     /// Build typed compact all-data motor fields.
+    #[must_use]
     pub const fn new(
         battery_voltage: BatteryVoltage,
         electrical_speed: ElectricalSpeed,
@@ -197,11 +210,13 @@ impl FloatOutBoyAllDataMotorPayload {
     }
 
     /// Return battery voltage.
+    #[must_use]
     pub const fn battery_voltage(self) -> BatteryVoltage {
         self.battery_voltage
     }
 
     /// Return motor fields with refreshed battery voltage.
+    #[must_use]
     pub const fn with_battery_voltage(self, battery_voltage: BatteryVoltage) -> Self {
         Self {
             battery_voltage,
@@ -214,46 +229,55 @@ impl FloatOutBoyAllDataMotorPayload {
     }
 
     /// Return electrical speed.
+    #[must_use]
     pub const fn electrical_speed(self) -> ElectricalSpeed {
         self.electrical_speed
     }
 
     /// Return vehicle speed.
+    #[must_use]
     pub const fn vehicle_speed(self) -> VehicleSpeed {
         self.vehicle_speed
     }
 
     /// Return motor current.
+    #[must_use]
     pub const fn motor_current(self) -> MotorCurrent {
         self.currents.motor()
     }
 
     /// Return grouped Float Out Boy motor currents.
+    #[must_use]
     pub const fn currents(self) -> FloatOutBoyRealtimeMotorCurrents {
         self.currents
     }
 
     /// Return directional motor current.
+    #[must_use]
     pub const fn directional_motor_current(self) -> DirectionalMotorCurrent {
         self.currents.directional()
     }
 
     /// Return Float Out Boy's filtered directional motor current.
+    #[must_use]
     pub const fn filtered_motor_current(self) -> FloatOutBoyRealtimeFilteredMotorCurrent {
         self.currents.filtered()
     }
 
     /// Return battery current.
+    #[must_use]
     pub const fn battery_current(self) -> BatteryCurrent {
         self.currents.battery()
     }
 
     /// Return duty cycle.
+    #[must_use]
     pub const fn duty_cycle(self) -> DutyCycle {
         self.duty_cycle
     }
 
     /// Return FOC ID current state.
+    #[must_use]
     pub const fn foc_id_current(self) -> FloatOutBoyFocIdCurrent {
         self.foc_id_current
     }
@@ -273,6 +297,7 @@ pub struct FloatOutBoyAllDataBasePayload {
 
 impl FloatOutBoyAllDataBasePayload {
     /// Build typed compact all-data base payload fields.
+    #[must_use]
     pub const fn new(
         balance_current: FloatOutBoyRealtimeBalanceCurrent,
         attitude: FloatOutBoyAllDataAttitude,
@@ -294,6 +319,7 @@ impl FloatOutBoyAllDataBasePayload {
     }
 
     /// Return the Float Out Boy app-data command this payload belongs to.
+    #[must_use]
     pub const fn command(self) -> FloatOutBoyAppDataCommand {
         FloatOutBoyAppDataCommand::GetAllData
     }
@@ -303,6 +329,7 @@ impl FloatOutBoyAllDataBasePayload {
     /// C map: `cmd_all_data` writes degree-valued IMU fields with scale 10 at
     /// `third_party/float-out-boy/src/main.c:1328-1365`; Rust stores the source IMU
     /// readings as typed radians and converts at this wire boundary.
+    #[must_use]
     pub fn encode_base_response(&self, mode: u8) -> [u8; 34] {
         let mut buffer = [0; 34];
         let mut ind = 0;
@@ -442,6 +469,7 @@ impl FloatOutBoyAllDataBasePayload {
     }
 
     /// Encode the compact all-data mode 4 response bytes.
+    #[must_use]
     pub fn encode_mode4_response(
         &self,
         mode2: FloatOutBoyAllDataMode2Payload,
@@ -452,6 +480,7 @@ impl FloatOutBoyAllDataBasePayload {
     }
 
     /// Encode the compact all-data mode 2 response bytes.
+    #[must_use]
     pub fn encode_mode2_response(
         &self,
         mode: FloatOutBoyAllDataMode,
@@ -468,6 +497,7 @@ impl FloatOutBoyAllDataBasePayload {
     }
 
     /// Encode the compact all-data mode 3 response bytes.
+    #[must_use]
     pub fn encode_mode3_response(
         &self,
         mode: FloatOutBoyAllDataMode,
@@ -505,41 +535,49 @@ impl FloatOutBoyAllDataBasePayload {
     }
 
     /// Return balance current.
+    #[must_use]
     pub const fn balance_current(self) -> FloatOutBoyRealtimeBalanceCurrent {
         self.balance_current
     }
 
     /// Return attitude fields.
+    #[must_use]
     pub const fn attitude(self) -> FloatOutBoyAllDataAttitude {
         self.attitude
     }
 
     /// Return status fields.
+    #[must_use]
     pub const fn status(self) -> FloatOutBoyAllDataStatus {
         self.status
     }
 
     /// Return footpad sample.
+    #[must_use]
     pub const fn footpad(self) -> FloatOutBoyFootpadSample {
         self.footpad
     }
 
     /// Return runtime setpoints.
+    #[must_use]
     pub const fn setpoints(self) -> FloatOutBoyRealtimeRuntimeSetpoints {
         self.setpoints
     }
 
     /// Return booster current.
+    #[must_use]
     pub const fn booster_current(self) -> FloatOutBoyRealtimeBoosterCurrent {
         self.booster_current
     }
 
     /// Return motor payload.
+    #[must_use]
     pub const fn motor(self) -> FloatOutBoyAllDataMotorPayload {
         self.motor
     }
 
     /// Return base all-data fields with refreshed motor battery voltage.
+    #[must_use]
     pub const fn with_motor_battery_voltage(self, battery_voltage: BatteryVoltage) -> Self {
         Self {
             balance_current: self.balance_current,
@@ -564,6 +602,7 @@ pub struct FloatOutBoyAllDataPayloads {
 
 impl FloatOutBoyAllDataPayloads {
     /// Build a complete all-data payload snapshot.
+    #[must_use]
     pub const fn new(
         base: FloatOutBoyAllDataBasePayload,
         mode2: FloatOutBoyAllDataMode2Payload,
@@ -582,6 +621,7 @@ impl FloatOutBoyAllDataPayloads {
     ///
     /// Upstream zeroes and initializes `Data` in `third_party/float-out-boy/src/main.c:1190-1205`; this
     /// Rust snapshot is a test/default model, not proof of hardware state.
+    #[must_use]
     pub const fn source_startup() -> Self {
         let zero_current = Current::from_amps(0.0);
         let zero_angle = AngleRadians::from_radians(0.0);
@@ -657,6 +697,7 @@ impl FloatOutBoyAllDataPayloads {
     /// The byte order and mode gates mirror `cmd_send_all_data` in upstream
     /// `third_party/float-out-boy/src/main.c:1313-1399`.
     #[inline(never)]
+    #[must_use]
     pub fn encode_response(
         &self,
         request: FloatOutBoyAllDataRequest,
@@ -682,16 +723,19 @@ impl FloatOutBoyAllDataPayloads {
     }
 
     /// Return base all-data payload fields.
+    #[must_use]
     pub const fn base(self) -> FloatOutBoyAllDataBasePayload {
         self.base
     }
 
     /// Return mode 2 all-data extension fields.
+    #[must_use]
     pub const fn mode2(self) -> FloatOutBoyAllDataMode2Payload {
         self.mode2
     }
 
     /// Return a payload snapshot with refreshed base battery voltage.
+    #[must_use]
     pub const fn with_base_battery_voltage(self, battery_voltage: BatteryVoltage) -> Self {
         Self::new(
             self.base.with_motor_battery_voltage(battery_voltage),
@@ -702,6 +746,7 @@ impl FloatOutBoyAllDataPayloads {
     }
 
     /// Return a payload snapshot with refreshed absolute-distance mode 2 data.
+    #[must_use]
     pub const fn with_mode2_distance_abs(self, distance_abs: TripDistance) -> Self {
         Self::new(
             self.base,
@@ -712,6 +757,7 @@ impl FloatOutBoyAllDataPayloads {
     }
 
     /// Return a payload snapshot with refreshed mode 2 motor temperatures.
+    #[must_use]
     pub const fn with_mode2_temperatures(
         self,
         temperatures: FloatOutBoyRealtimeMotorTemperatures,
@@ -725,21 +771,25 @@ impl FloatOutBoyAllDataPayloads {
     }
 
     /// Return a payload snapshot with refreshed mode 3 ride totals.
+    #[must_use]
     pub const fn with_mode3_ride_totals(self, mode3: FloatOutBoyAllDataMode3Payload) -> Self {
         Self::new(self.base, self.mode2, mode3, self.mode4)
     }
 
     /// Return mode 3 all-data extension fields.
+    #[must_use]
     pub const fn mode3(self) -> FloatOutBoyAllDataMode3Payload {
         self.mode3
     }
 
     /// Return a payload snapshot with refreshed mode 4 charging data.
+    #[must_use]
     pub const fn with_mode4_charging(self, mode4: FloatOutBoyAllDataMode4Payload) -> Self {
         Self::new(self.base, self.mode2, self.mode3, mode4)
     }
 
     /// Return mode 4 all-data extension fields.
+    #[must_use]
     pub const fn mode4(self) -> FloatOutBoyAllDataMode4Payload {
         self.mode4
     }
@@ -756,16 +806,19 @@ pub enum FloatOutBoyAllDataBatteryTemperature {
 
 impl FloatOutBoyAllDataBatteryTemperature {
     /// Build a measured battery-temperature value.
+    #[must_use]
     pub const fn measured(temperature: Temperature) -> Self {
         Self::Measured(temperature)
     }
 
     /// Build an unavailable battery-temperature marker.
+    #[must_use]
     pub const fn unavailable() -> Self {
         Self::Unavailable
     }
 
     /// Return the measured battery temperature, when available.
+    #[must_use]
     pub const fn as_measured(self) -> Option<Temperature> {
         match self {
             Self::Measured(temperature) => Some(temperature),
@@ -784,6 +837,7 @@ pub struct FloatOutBoyAllDataMode2Payload {
 
 impl FloatOutBoyAllDataMode2Payload {
     /// Build typed all-data mode 2 extension fields.
+    #[must_use]
     pub const fn new(
         distance_abs: TripDistance,
         temperatures: FloatOutBoyRealtimeMotorTemperatures,
@@ -797,16 +851,19 @@ impl FloatOutBoyAllDataMode2Payload {
     }
 
     /// Return absolute distance.
+    #[must_use]
     pub const fn distance_abs(self) -> TripDistance {
         self.distance_abs
     }
 
     /// Return mode 2 fields with refreshed absolute distance.
+    #[must_use]
     pub const fn with_distance_abs(self, distance_abs: TripDistance) -> Self {
         Self::new(distance_abs, self.temperatures, self.battery_temperature)
     }
 
     /// Return mode 2 fields with refreshed motor temperatures.
+    #[must_use]
     pub const fn with_temperatures(
         self,
         temperatures: FloatOutBoyRealtimeMotorTemperatures,
@@ -815,11 +872,13 @@ impl FloatOutBoyAllDataMode2Payload {
     }
 
     /// Return motor temperatures.
+    #[must_use]
     pub const fn temperatures(self) -> FloatOutBoyRealtimeMotorTemperatures {
         self.temperatures
     }
 
     /// Return battery-temperature state.
+    #[must_use]
     pub const fn battery_temperature(self) -> FloatOutBoyAllDataBatteryTemperature {
         self.battery_temperature
     }
@@ -838,6 +897,7 @@ pub struct FloatOutBoyAllDataMode3Payload {
 
 impl FloatOutBoyAllDataMode3Payload {
     /// Build typed all-data mode 3 extension fields.
+    #[must_use]
     pub const fn new(
         odometer: OdometerMeters,
         discharged_charge: AmpHoursDischarged,
@@ -857,31 +917,37 @@ impl FloatOutBoyAllDataMode3Payload {
     }
 
     /// Return odometer distance.
+    #[must_use]
     pub const fn odometer(self) -> OdometerMeters {
         self.odometer
     }
 
     /// Return discharged amp-hours.
+    #[must_use]
     pub const fn discharged_charge(self) -> AmpHoursDischarged {
         self.discharged_charge
     }
 
     /// Return charged amp-hours.
+    #[must_use]
     pub const fn charged_charge(self) -> AmpHoursCharged {
         self.charged_charge
     }
 
     /// Return discharged watt-hours.
+    #[must_use]
     pub const fn discharged_energy(self) -> WattHoursDischarged {
         self.discharged_energy
     }
 
     /// Return charged watt-hours.
+    #[must_use]
     pub const fn charged_energy(self) -> WattHoursCharged {
         self.charged_energy
     }
 
     /// Return battery state of charge.
+    #[must_use]
     pub const fn battery_level(self) -> BatteryLevel {
         self.battery_level
     }
@@ -896,6 +962,7 @@ pub struct FloatOutBoyAllDataMode4Payload {
 
 impl FloatOutBoyAllDataMode4Payload {
     /// Build typed all-data mode 4 extension fields.
+    #[must_use]
     pub const fn new(
         current: FloatOutBoyRealtimeChargingCurrent,
         voltage: FloatOutBoyRealtimeChargingVoltage,
@@ -904,11 +971,13 @@ impl FloatOutBoyAllDataMode4Payload {
     }
 
     /// Return charging current.
+    #[must_use]
     pub const fn current(self) -> FloatOutBoyRealtimeChargingCurrent {
         self.current
     }
 
     /// Return charging voltage.
+    #[must_use]
     pub const fn voltage(self) -> FloatOutBoyRealtimeChargingVoltage {
         self.voltage
     }

@@ -96,7 +96,7 @@ pub(crate) fn run_float_out_boy_main_thread_with<F: FnMut() -> u32>(
     mut tick: F,
 ) {
     while !threads.should_terminate() {
-        threads.sleep_for(Duration::from_micros(tick() as u64));
+        threads.sleep_for(Duration::from_micros(u64::from(tick())));
     }
 }
 
@@ -136,7 +136,7 @@ impl FloatOutBoyMainThreadTick {
 }
 
 #[cfg(any(test, target_arch = "arm"))]
-#[inline(always)]
+#[inline]
 pub(crate) fn tick_float_out_boy_main_thread_with(
     state: &mut FloatOutBoyPackageState,
     telemetry: &impl MotorTelemetry,
@@ -194,7 +194,9 @@ pub(crate) fn run_float_out_boy_aux_thread_with(threads: &impl FirmwareThreads) 
         let _ = threads.set_priority(priority);
     }
     while !threads.should_terminate() {
-        threads.sleep_for(Duration::from_micros(FLOAT_OUT_BOY_AUX_LOOP_TIME_US as u64));
+        threads.sleep_for(Duration::from_micros(u64::from(
+            FLOAT_OUT_BOY_AUX_LOOP_TIME_US,
+        )));
     }
 }
 
@@ -654,7 +656,7 @@ mod tests {
         assert_eq!(firmware.thread_sleep_count(), 1);
         assert_eq!(
             firmware.thread_sleep_durations(),
-            [Duration::from_micros(2000), Duration::ZERO]
+            [Duration::from_millis(2), Duration::ZERO]
         );
     }
 

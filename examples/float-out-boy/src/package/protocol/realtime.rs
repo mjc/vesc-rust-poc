@@ -246,7 +246,7 @@ pub(in crate::package) fn encode_float_out_boy_realtime_data_response_with_runti
                     atr_accel_diff,
                     atr_speed_boost,
                 ),
-            )
+            );
         });
     if running {
         FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS

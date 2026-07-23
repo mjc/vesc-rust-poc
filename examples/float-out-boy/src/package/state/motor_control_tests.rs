@@ -107,10 +107,10 @@ fn running_limits_normal_current_from_motor_config_like_float_out_boy_loop() {
         ));
         let mut config = *state.serialized_config();
         config.edit_float_out_boy_config(|config| {
-            assert!(config.set_kp2(vescpkg_rs::RateCurrentGain::new(0.0)))
+            assert!(config.set_kp2(vescpkg_rs::RateCurrentGain::new(0.0)));
         });
         config.edit_float_out_boy_config(|config| {
-            assert!(config.set_ki(vescpkg_rs::IntegralCurrentGain::new(0.0)))
+            assert!(config.set_ki(vescpkg_rs::IntegralCurrentGain::new(0.0)));
         });
         assert!(state.store_serialized_config(&config));
 

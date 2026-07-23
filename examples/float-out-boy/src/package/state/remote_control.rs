@@ -22,13 +22,13 @@ impl CurrentSmoothing {
     // at `third_party/float-out-boy/src/main.c:275-286` and `third_party/float-out-boy/src/main.c:291-298`.
     const REMOTE_CURRENT_FILTER: Self = Self(Ratio::from_ratio_const(0.05));
 
-    #[inline(always)]
+    #[inline]
     const fn retain_previous(self) -> Ratio {
         // C map: `do_rc_move` keeps the previous RC current with 95% weight.
         Ratio::from_ratio_const(1.0 - self.0.as_ratio())
     }
 
-    #[inline(always)]
+    #[inline]
     const fn accept_target(self) -> Ratio {
         // C map: `do_rc_move` keeps the new RC target with 5% weight.
         self.0
@@ -400,10 +400,10 @@ mod tests {
             assert!(
                 config
                     .set_remote_throttle_current_max(MotorCurrent::new(Current::from_amps(10.0,)))
-            )
+            );
         });
         config.edit_float_out_boy_config(|config| {
-            assert!(config.set_remote_throttle_grace_period(VescSeconds::ZERO))
+            assert!(config.set_remote_throttle_grace_period(VescSeconds::ZERO));
         });
         let config = editable_config_from_bytes(&config);
         let remote_throttle = config.remote_throttle();

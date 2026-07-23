@@ -1,4 +1,4 @@
-//! LispBM extensions required by Float Out Boy's package loader.
+//! `LispBM` extensions required by Float Out Boy's package loader.
 //!
 //! Float Out Boy `v1.2.1` (`0ef6e99d8701`) defines `ext_set_fw_version` in
 //! `third_party/float-out-boy/src/main.c:2305-2313`, `ext_bms` in
@@ -127,11 +127,15 @@ mod tests {
         );
         assert_eq!(descriptors.len(), names.len());
         assert_eq!(
-            descriptors.next().map(|descriptor| descriptor.name()),
+            descriptors
+                .next()
+                .map(vescpkg_rs::ExtensionDescriptor::name),
             Some(names[0])
         );
         assert_eq!(
-            descriptors.next().map(|descriptor| descriptor.name()),
+            descriptors
+                .next()
+                .map(vescpkg_rs::ExtensionDescriptor::name),
             Some(names[1])
         );
         assert!(descriptors.next().is_none());

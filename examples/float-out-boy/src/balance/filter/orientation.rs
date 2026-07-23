@@ -52,14 +52,14 @@ pub(super) struct EstimatedOrientation([f32; 4]);
 pub(super) struct OrientationChange([f32; 4]);
 
 impl OrientationVector {
-    #[inline(always)]
+    #[inline]
     const fn new(x: OrientationBodyX, y: OrientationBodyY, z: OrientationBodyZ) -> Self {
         Self { x, y, z }
     }
 }
 
 impl EstimatedOrientation {
-    #[inline(always)]
+    #[inline]
     const fn new(scalar: OrientationScalar, vector: OrientationVector) -> Self {
         Self([scalar.0, vector.x.0, vector.y.0, vector.z.0])
     }
@@ -89,7 +89,7 @@ impl EstimatedOrientation {
     }
 
     /// C map: `third_party/float-out-boy/src/balance_filter.c:145-154`.
-    #[inline(always)]
+    #[inline]
     pub(super) fn balance_pitch(self) -> FloatOutBoyRealtimeBalancePitch {
         FloatOutBoyRealtimeBalancePitch::new(AngleRadians::from_radians(asin(
             self.pitch_projection().clamp(-1.0, 1.0),
@@ -97,14 +97,14 @@ impl EstimatedOrientation {
     }
 
     /// C map: `third_party/float-out-boy/src/balance_filter.c:145-154`.
-    #[inline(always)]
+    #[inline]
     fn pitch_projection(self) -> f32 {
         let [scalar, body_x, body_y, body_z] = self.0;
         -2.0 * (body_x * body_z - scalar * body_y)
     }
 
     #[cfg(any(test, target_arch = "arm"))]
-    #[inline(always)]
+    #[inline]
     fn length_squared(self) -> f32 {
         // C map: `third_party/float-out-boy/src/balance_filter.c:126-133` normalizes
         // by the quaternion magnitude after integration.
@@ -114,7 +114,7 @@ impl EstimatedOrientation {
 
     /// C map: `third_party/float-out-boy/src/balance_filter.c:98-101`.
     #[cfg(any(test, target_arch = "arm"))]
-    #[inline(always)]
+    #[inline]
     pub(super) fn estimated_half_gravity(self) -> HalfGravity {
         let [scalar, body_x, body_y, body_z] = self.0;
         HalfGravity::new(
@@ -126,7 +126,7 @@ impl EstimatedOrientation {
 
     /// C map: `third_party/float-out-boy/src/balance_filter.c:118-124`.
     #[cfg(any(test, target_arch = "arm"))]
-    #[inline(always)]
+    #[inline]
     pub(super) fn change_from_angular_rate(
         self,
         rotation: AngularRateHalfStep,
@@ -152,7 +152,7 @@ impl EstimatedOrientation {
     }
 
     #[cfg(any(test, target_arch = "arm"))]
-    #[inline(always)]
+    #[inline]
     pub(super) fn apply_change(&mut self, change: OrientationChange) {
         // C map: `third_party/float-out-boy/src/balance_filter.c:118-124` adds the
         // integrated quaternion delta into the current orientation.
@@ -164,7 +164,7 @@ impl EstimatedOrientation {
     }
 
     #[cfg(any(test, target_arch = "arm"))]
-    #[inline(always)]
+    #[inline]
     pub(super) fn normalize(&mut self) {
         // C map: `third_party/float-out-boy/src/balance_filter.c:38-40` uses
         // `1.0 / sqrtf(x)` to renormalize the quaternion.
@@ -222,7 +222,7 @@ mod tests {
 
 #[cfg(any(test, target_arch = "arm"))]
 impl OrientationChange {
-    #[inline(always)]
+    #[inline]
     const fn new(
         scalar: OrientationChangeScalar,
         x: OrientationChangeBodyX,
@@ -234,7 +234,7 @@ impl OrientationChange {
         Self([scalar.0, x.0, y.0, z.0])
     }
 
-    #[inline(always)]
+    #[inline]
     const fn wxyz(self) -> [f32; 4] {
         self.0
     }

@@ -55,28 +55,28 @@ pub(super) struct MahonyFeedbackConfig {
 
 #[cfg(any(test, target_arch = "arm"))]
 impl AccelConfidence {
-    #[inline(always)]
+    #[inline]
     pub(super) const fn new(confidence: f32) -> Self {
         // C map: `calculate_acc_confidence` stores the clamped confidence
         // scalar at `third_party/float-out-boy/src/balance_filter.c:42-50`.
         Self(AxisScalar::new(confidence))
     }
 
-    #[inline(always)]
+    #[inline]
     fn roll_gain(self, gain: RollFeedbackGain) -> RollAccelCorrectionGain {
         // C map: `third_party/float-out-boy/src/balance_filter.c:87-90` turns the
         // filtered accel confidence into the roll correction gain.
         RollAccelCorrectionGain::new(2.0 * gain.0 * self.0.0)
     }
 
-    #[inline(always)]
+    #[inline]
     fn pitch_gain(self, gain: PitchFeedbackGain) -> PitchAccelCorrectionGain {
         // C map: `third_party/float-out-boy/src/balance_filter.c:87-90` turns the
         // filtered accel confidence into the pitch correction gain.
         PitchAccelCorrectionGain::new(2.0 * gain.0 * self.0.0)
     }
 
-    #[inline(always)]
+    #[inline]
     fn yaw_gain(self, gain: YawFeedbackGain) -> YawAccelCorrectionGain {
         // C map: `third_party/float-out-boy/src/balance_filter.c:87-90` turns the
         // filtered accel confidence into the yaw correction gain.
@@ -86,21 +86,21 @@ impl AccelConfidence {
 
 #[cfg(any(test, target_arch = "arm"))]
 impl MahonyFeedbackGains {
-    #[inline(always)]
+    #[inline]
     pub(super) fn roll_correction(self, error: RollGravityError) -> AngularVelocity {
         // C map: `third_party/float-out-boy/src/balance_filter.c:87-90` applies
         // the roll correction gain to the roll gravity error.
         AngularVelocity::from_radians_per_second(self.roll.0 * error.0)
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) fn pitch_correction(self, error: PitchGravityError) -> AngularVelocity {
         // C map: `third_party/float-out-boy/src/balance_filter.c:87-90` applies
         // the pitch correction gain to the pitch gravity error.
         AngularVelocity::from_radians_per_second(self.pitch.0 * error.0)
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) fn yaw_correction(self, error: YawGravityError) -> AngularVelocity {
         // C map: `third_party/float-out-boy/src/balance_filter.c:87-90` applies
         // the yaw correction gain to the yaw gravity error.
@@ -157,7 +157,7 @@ impl MahonyFeedbackConfig {
         roll_feedback_gain: RollFeedbackGain,
     ) -> YawFeedbackGain {
         // C map: `third_party/float-out-boy/src/balance_filter.c:67-70`.
-        YawFeedbackGain::new((pitch_feedback_gain.0 + roll_feedback_gain.0) / 2.0)
+        YawFeedbackGain::new(f32::midpoint(pitch_feedback_gain.0, roll_feedback_gain.0))
     }
 
     #[cfg(any(test, target_arch = "arm"))]

@@ -37,7 +37,7 @@ use vescpkg_rs::test_support::LoaderInfo;
 fn test_package_lib_init_uses_side_effect_free_registration_tail() {
     let mut info = LoaderInfo::new();
 
-    assert!(crate::package_lib_init(&mut info));
+    assert!(crate::package_lib_init(&raw mut info));
     // Upstream Float Out Boy v1.2.1 installs `stop`/`Data *` at
     // `third_party/float-out-boy/src/main.c:2431-2432` before the registration tail at
     // `third_party/float-out-boy/src/main.c:2456-2459`; the test build keeps that tail side-effect free.
