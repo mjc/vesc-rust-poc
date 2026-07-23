@@ -96,6 +96,12 @@ fn inputs_expose_timeout_state_and_reset() {
     assert!(timeout.has_timed_out());
     assert_eq!(timeout.since_update().duration().as_seconds(), 1.5);
     inputs.reset_timeout();
+    assert!(
+        !inputs
+            .timeout()
+            .expect("timeout capability after reset")
+            .has_timed_out()
+    );
 }
 
 #[test]
