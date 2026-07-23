@@ -98,14 +98,14 @@ impl RemoteMove {
     ) -> Self {
         // C map: `cmd_rc_move` treats checksum failure as `current = 0`, then
         // stores READY-state RC move fields at `third_party/float-out-boy/src/main.c:1735-1758`.
-        let current = if u16::from(sum) == u16::from(time) + u16::from(current) {
+        let current = if u16::from(sum) == u16::from(time).saturating_add(u16::from(current)) {
             current
         } else {
             0
         };
 
         let target = match direction {
-            0 => RemoteCurrentTarget::new(-i16::from(current)),
+            0 => RemoteCurrentTarget::new(i16::from(current).saturating_neg()),
             _ => RemoteCurrentTarget::new(i16::from(current)),
         };
 
@@ -294,8 +294,8 @@ impl RemoteControlState {
         if motor_erpm.abs() > Rpm::from_revolutions_per_minute(800.0) {
             self.current = zero_motor_current();
         }
-        self.steps -= 1;
-        self.counter += 1;
+        self.steps = self.steps.saturating_sub(1);
+        self.counter = self.counter.saturating_add(1);
         if self.counter == 500 && self.target.should_halve_mid_move() {
             self.target.halve();
         }
@@ -448,6 +448,22 @@ mod tests {
         // current/10 at `third_party/float-out-boy/src/main.c:1747-1756`; `do_rc_move` filters the first
         // READY tick by 5% at `third_party/float-out-boy/src/main.c:276-286`.
         assert!((requested_current.current().as_amps() - 0.2).abs() < 0.0001);
+    }
+
+    #[test]
+    fn active_move_saturates_its_tick_counter_instead_of_panicking() {
+        let mut remote_control = RemoteControlState {
+            steps: 1,
+            counter: u16::MAX,
+            ..RemoteControlState::default()
+        };
+
+        assert!(
+            remote_control
+                .request_active_move_current(Rpm::ZERO)
+                .is_some()
+        );
+        assert_eq!(remote_control.counter, u16::MAX);
     }
 
     #[test]
