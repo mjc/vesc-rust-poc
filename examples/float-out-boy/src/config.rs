@@ -111,6 +111,25 @@ impl FloatOutBoyConfigImage {
         len: FLOAT_OUT_BOY_CONFIG_LEN,
         offset: 224
     );
+    // These fields immediately follow `braketilt_lingering` in the generated
+    // `SerOrder` at `third_party/float-out-boy/src/conf/settings.xml:4134-4140`.
+    // The generated default image confirms the bytes at 175, 176, and 179 as
+    // the default-on LEDs/headlights and lifted-lights flags.
+    const LEDS_ON_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(
+        CustomConfigFlagField,
+        len: FLOAT_OUT_BOY_CONFIG_LEN,
+        offset: 175
+    );
+    const LEDS_HEADLIGHTS_ON_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(
+        CustomConfigFlagField,
+        len: FLOAT_OUT_BOY_CONFIG_LEN,
+        offset: 176
+    );
+    const LEDS_LIGHTS_OFF_WHEN_LIFTED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(
+        CustomConfigFlagField,
+        len: FLOAT_OUT_BOY_CONFIG_LEN,
+        offset: 179
+    );
 
     pub(crate) const fn defaults() -> Self {
         Self(CustomConfigImage::new(FLOAT_OUT_BOY_DEFAULT_CONFIG))
@@ -153,6 +172,18 @@ impl FloatOutBoyConfigImage {
         Self::HARDWARE_LED_MODE_FIELD
             .read(&self.0)
             .map_or(0, |mode| mode.0)
+    }
+
+    pub(crate) fn leds_enabled(&self) -> bool {
+        self.flag(Self::LEDS_ON_FIELD)
+    }
+
+    pub(crate) fn headlights_enabled(&self) -> bool {
+        self.flag(Self::LEDS_HEADLIGHTS_ON_FIELD)
+    }
+
+    pub(crate) fn lights_off_when_lifted(&self) -> bool {
+        self.flag(Self::LEDS_LIGHTS_OFF_WHEN_LIFTED_FIELD)
     }
 
     fn flag(&self, field: CustomConfigFlagField) -> bool {

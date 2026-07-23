@@ -170,7 +170,12 @@ impl FloatOutBoyPackageState {
             all_data_payloads,
             serialized_config,
             alert_tracker: AlertTrackerState::default(),
-            lcm: LcmState::new(serialized_config.hardware_led_mode_id()),
+            lcm: LcmState::new(
+                serialized_config.hardware_led_mode_id(),
+                serialized_config.leds_enabled(),
+                serialized_config.headlights_enabled(),
+                serialized_config.lights_off_when_lifted(),
+            ),
             #[cfg(any(test, target_arch = "arm"))]
             flywheel_konami: FloatOutBoyKonami::flywheel(),
             #[cfg(any(test, target_arch = "arm"))]
