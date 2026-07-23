@@ -919,10 +919,8 @@ unsafe extern "C" fn standard_receiver<H: CanReceiverHandler + 'static>(
     if !SID_RECEIVER_ACTIVE.load(Ordering::Acquire) {
         return false;
     }
-    let Ok(id) = CanStandardId::try_new(u16::try_from(id).unwrap_or(u16::MAX)) else {
-        return false;
-    };
-    dispatch_receiver::<H>(CanReceiverId::Standard(id), data, len)
+    CanStandardId::try_new(u16::try_from(id).unwrap_or(u16::MAX))
+        .is_ok_and(|id| dispatch_receiver::<H>(CanReceiverId::Standard(id), data, len))
 }
 
 unsafe extern "C" fn extended_receiver<H: CanReceiverHandler + 'static>(
@@ -933,10 +931,8 @@ unsafe extern "C" fn extended_receiver<H: CanReceiverHandler + 'static>(
     if !EID_RECEIVER_ACTIVE.load(Ordering::Acquire) {
         return false;
     }
-    let Ok(id) = CanExtendedId::try_new(id) else {
-        return false;
-    };
-    dispatch_receiver::<H>(CanReceiverId::Extended(id), data, len)
+    CanExtendedId::try_new(id)
+        .is_ok_and(|id| dispatch_receiver::<H>(CanReceiverId::Extended(id), data, len))
 }
 
 fn dispatch_receiver<H: CanReceiverHandler + 'static>(
