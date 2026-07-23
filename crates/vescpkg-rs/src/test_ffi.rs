@@ -175,6 +175,7 @@ static BACKUP_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static NVM_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static DISTANCE_ABS: AtomicU32 = AtomicU32::new(0);
 static TACHOMETER_VALUE: AtomicI32 = AtomicI32::new(1234);
+static TACHOMETER_ABS_VALUE: AtomicI32 = AtomicI32::new(5678);
 static MOSFET_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static ODOMETER: AtomicU64 = AtomicU64::new(0);
@@ -411,6 +412,7 @@ fn reset_motor_state() {
     NVM_AVAILABLE.store(true, Ordering::Relaxed);
     DISTANCE_ABS.store(0.0_f32.to_bits(), Ordering::Relaxed);
     TACHOMETER_VALUE.store(1234, Ordering::Relaxed);
+    TACHOMETER_ABS_VALUE.store(5678, Ordering::Relaxed);
     MOSFET_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     ODOMETER.store(0, Ordering::Relaxed);
@@ -1567,8 +1569,12 @@ pub unsafe fn mc_stat_count_time() -> f32 {
 
 pub unsafe fn mc_stat_reset() {}
 
-pub unsafe fn mc_get_tachometer_abs_value(_reset: bool) -> i32 {
-    5678
+pub unsafe fn mc_get_tachometer_abs_value(reset: bool) -> i32 {
+    let value = TACHOMETER_ABS_VALUE.load(Ordering::Relaxed);
+    if reset {
+        TACHOMETER_ABS_VALUE.store(0, Ordering::Relaxed);
+    }
+    value
 }
 
 pub unsafe fn mc_get_sampling_frequency_now() -> f32 {
