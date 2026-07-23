@@ -964,10 +964,7 @@ pub unsafe extern "C" fn lbm_extension_handler<T: LbmExtension>(
     args: *mut u32,
     arg_count: u32,
 ) -> u32 {
-    let Some(args) = LispArgs::from_raw(args, arg_count) else {
-        return canonical_nil_raw();
-    };
-    T::call(args).raw().0
+    LispArgs::from_raw(args, arg_count).map_or_else(canonical_nil_raw, |args| T::call(args).raw().0)
 }
 
 /// Firmware ABI trampoline for a state-backed LispBM extension callback.

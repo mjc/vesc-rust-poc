@@ -139,14 +139,13 @@ const _: () = {
 /// `message` must point to a readable, NUL-terminated C string for the duration
 /// of the firmware call.
 pub unsafe fn printf_data(message: *const c_char) -> bool {
-    let Some(printf) = (unsafe { slots::printf() }) else {
-        return false;
-    };
-    static FORMAT: &[u8] = b"%s\0";
-    unsafe {
-        printf(FORMAT.as_ptr().cast(), message);
-    }
-    true
+    unsafe { slots::printf() }.is_some_and(|printf| {
+        static FORMAT: &[u8] = b"%s\0";
+        unsafe {
+            printf(FORMAT.as_ptr().cast(), message);
+        }
+        true
+    })
 }
 
 /// # Safety
