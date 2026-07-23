@@ -202,6 +202,8 @@ static TACHOMETER_ABS_VALUE: AtomicI32 = AtomicI32::new(5678);
 static MOSFET_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static ODOMETER: AtomicU64 = AtomicU64::new(0);
+static PID_POSITION_OFFSET: AtomicU32 = AtomicU32::new(0);
+static PID_POSITION_OFFSET_STORED: AtomicBool = AtomicBool::new(false);
 static AMP_HOURS_DISCHARGED: AtomicU32 = AtomicU32::new(0);
 static AMP_HOURS_CHARGED: AtomicU32 = AtomicU32::new(0);
 static WATT_HOURS_DISCHARGED: AtomicU32 = AtomicU32::new(0);
@@ -492,6 +494,8 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     MOSFET_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     ODOMETER.store(0, Ordering::Relaxed);
+    PID_POSITION_OFFSET.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    PID_POSITION_OFFSET_STORED.store(false, Ordering::Relaxed);
     AMP_HOURS_DISCHARGED.store(0.0_f32.to_bits(), Ordering::Relaxed);
     AMP_HOURS_CHARGED.store(0.0_f32.to_bits(), Ordering::Relaxed);
     WATT_HOURS_DISCHARGED.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -1423,6 +1427,14 @@ pub(crate) fn motor_output() -> MotorOutputState {
     }
 }
 
+pub(crate) fn pid_position_offset() -> f32 {
+    f32::from_bits(PID_POSITION_OFFSET.load(Ordering::Relaxed))
+}
+
+pub(crate) fn pid_position_offset_stored() -> bool {
+    PID_POSITION_OFFSET_STORED.load(Ordering::Relaxed)
+}
+
 pub unsafe fn timeout_reset() {
     KEEP_ALIVE_COUNT.fetch_add(1, Ordering::Relaxed);
 }
@@ -1942,7 +1954,10 @@ pub unsafe fn mc_get_pid_pos_now() -> f32 {
     12.0
 }
 
-pub unsafe fn mc_update_pid_pos_offset(_angle_now: f32, _store: bool) {}
+pub unsafe fn mc_update_pid_pos_offset(angle_now: f32, store: bool) {
+    PID_POSITION_OFFSET.store(angle_now.to_bits(), Ordering::Relaxed);
+    PID_POSITION_OFFSET_STORED.store(store, Ordering::Relaxed);
+}
 
 pub unsafe fn mc_temp_fet_filtered() -> f32 {
     load(&MOSFET_TEMPERATURE)

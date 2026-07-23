@@ -240,6 +240,14 @@ fn motor_exposes_typed_handbrake_commands() {
         PidPosition::new(AngleDegrees::from_degrees(5.0)),
         PidPositionOffsetPersistence::Persistent,
     );
+    assert_eq!(firmware.pid_position_offset().angle().as_degrees(), 5.0);
+    assert!(firmware.pid_position_offset_was_stored());
+    firmware.motor().update_pid_position_offset(
+        PidPosition::new(AngleDegrees::from_degrees(6.0)),
+        PidPositionOffsetPersistence::Volatile,
+    );
+    assert_eq!(firmware.pid_position_offset().angle().as_degrees(), 6.0);
+    assert!(!firmware.pid_position_offset_was_stored());
     firmware
         .motor()
         .set_odometer(OdometerMeters::from_meters(12_345));
