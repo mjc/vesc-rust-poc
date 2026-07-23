@@ -16,7 +16,7 @@ ifdef DEVICE_ADDRESS
 DEVICE_FLAGS += --address $(DEVICE_ADDRESS)
 endif
 
-.PHONY: check check-full pre-commit fmt clippy clippy-pedantic vescpkg-rs-sys-target-check thumb-dispatch-smoke safe-example-check arm-clippy arm-noalloc-check arm-math-check arm-alloc-check arm-alloc-math-check arm-gates test math-test alloc-math-test doc-test package package-only package-examples deploy clean status
+.PHONY: check check-full pre-commit fmt clippy clippy-pedantic vescpkg-rs-sys-target-check thumb-dispatch-smoke safe-example-check arm-clippy arm-noalloc-check arm-math-check arm-alloc-check arm-alloc-math-check arm-gates test math-test alloc-math-test doc-test doc-all package package-only package-examples deploy clean status
 
 # --- verification -----------------------------------------------------------
 #
@@ -26,7 +26,7 @@ endif
 
 check: fmt clippy test doc-test
 
-check-full: check arm-gates safe-example-check math-test alloc-math-test
+check-full: check arm-gates safe-example-check math-test alloc-math-test doc-all
 
 pre-commit: check-full
 
@@ -92,6 +92,9 @@ alloc-math-test:
 
 doc-test:
 	$(CARGO) test --doc --workspace
+
+doc-all:
+	$(CARGO) doc --workspace --all-features --no-deps
 
 # --- packaging & device -----------------------------------------------------
 
