@@ -685,19 +685,12 @@ impl ThreadGroup {
         }
     }
 
-    fn push(&mut self, handle: ThreadHandle) -> Result<(), ThreadHandle> {
-        let Some(slot) = self.handles.iter_mut().find(|slot| slot.is_none()) else {
-            return Err(handle);
-        };
-        *slot = Some(handle);
-        Ok(())
-    }
-
     #[cfg(test)]
     pub(crate) fn from_handles<const N: usize>(handles: [ThreadHandle; N]) -> Self {
+        assert!(N <= MAX_PACKAGE_THREADS);
         let mut group = Self::new();
-        for handle in handles {
-            assert!(group.push(handle).is_ok());
+        for (slot, handle) in group.handles.iter_mut().zip(handles) {
+            *slot = Some(handle);
         }
         group
     }
@@ -864,7 +857,7 @@ impl<B: ThreadBindings> ThreadApi<B> {
             return None;
         }
         let mut threads = ThreadGroup::new();
-        for spec in specs {
+        for (slot, spec) in threads.handles.iter_mut().zip(specs) {
             let arg = match spec.argument {
                 ThreadArgument::PackageState => state.as_ptr().cast::<c_void>(),
                 ThreadArgument::None => core::ptr::null_mut(),
@@ -884,13 +877,7 @@ impl<B: ThreadBindings> ThreadApi<B> {
                 threads.terminate_reverse(self);
                 return None;
             };
-            if let Err(handle) = threads.push(handle) {
-                // The firmware thread already exists, so stop it before
-                // returning the earlier threads in reverse startup order.
-                self.request_terminate(handle);
-                threads.terminate_reverse(self);
-                return None;
-            }
+            *slot = Some(handle);
         }
         Some(threads)
     }
@@ -1087,10 +1074,9 @@ pub mod test_support {
 #[cfg(test)]
 mod tests {
     use super::{
-        AppDataApi, FirmwareThread, MAX_PACKAGE_THREADS, StatelessFirmwareThread,
-        StatelessThreadContext, ThreadApi, ThreadContext, ThreadGroup, ThreadHandle, ThreadSpec,
-        ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, VESC_MAX_SAFE_SLEEP_MICROS,
-        firmware_thread_entry, stateless_firmware_thread_entry,
+        AppDataApi, FirmwareThread, StatelessFirmwareThread, StatelessThreadContext, ThreadApi,
+        ThreadContext, ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError,
+        VESC_MAX_SAFE_SLEEP_MICROS, firmware_thread_entry, stateless_firmware_thread_entry,
     };
     use core::ffi::CStr;
     use core::ffi::c_void;
@@ -1415,19 +1401,6 @@ mod tests {
         );
         assert_eq!(bindings.spawn_args.get(), [state_arg, 0, 0]);
         assert_eq!(bindings.terminate_calls.get(), 0);
-    }
-
-    #[test]
-    fn full_thread_group_returns_rejected_handle_for_cleanup() {
-        let handles: [ThreadHandle; MAX_PACKAGE_THREADS] =
-            core::array::from_fn(|_| ThreadHandle(core::ptr::NonNull::dangling()));
-        let mut group = ThreadGroup::from_handles(handles);
-
-        assert!(
-            group
-                .push(ThreadHandle(core::ptr::NonNull::dangling()))
-                .is_err()
-        );
     }
 
     #[test]
