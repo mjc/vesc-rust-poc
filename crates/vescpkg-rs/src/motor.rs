@@ -191,8 +191,10 @@ pub trait MotorTelemetryBindings {
     fn battery_level(&self) -> BatteryLevel;
     /// Return the active firmware motor fault code.
     fn firmware_fault(&self) -> FirmwareFault;
-    /// Return the firmware-provided fault description, when valid UTF-8.
-    fn firmware_fault_description(&self) -> Option<&'static str>;
+    /// Borrow the firmware-provided fault description for this telemetry handle.
+    ///
+    /// The string is owned by firmware and must not outlive the telemetry borrow.
+    fn firmware_fault_description(&self) -> Option<&str>;
     /// Return the filtered controller input voltage.
     fn input_voltage(&self) -> InputVoltage;
     /// Return the relative motor tachometer, optionally resetting it.
@@ -377,7 +379,7 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
         (**self).firmware_fault()
     }
 
-    fn firmware_fault_description(&self) -> Option<&'static str> {
+    fn firmware_fault_description(&self) -> Option<&str> {
         (**self).firmware_fault_description()
     }
 
@@ -819,7 +821,7 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         FirmwareFault::from_raw_code(unsafe { crate::ffi::mc_get_fault() }.0)
     }
 
-    fn firmware_fault_description(&self) -> Option<&'static str> {
+    fn firmware_fault_description(&self) -> Option<&str> {
         let fault = unsafe { crate::ffi::mc_get_fault() };
         let ptr = unsafe { crate::ffi::mc_fault_to_string(fault) };
         if ptr.is_null() {
@@ -1062,8 +1064,10 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn battery_level(&self) -> BatteryLevel;
     /// Return the active firmware motor fault code.
     fn firmware_fault(&self) -> FirmwareFault;
-    /// Return the firmware-provided fault description, when valid UTF-8.
-    fn firmware_fault_description(&self) -> Option<&'static str>;
+    /// Borrow the firmware-provided fault description for this telemetry handle.
+    ///
+    /// The string is owned by firmware and must not outlive the telemetry borrow.
+    fn firmware_fault_description(&self) -> Option<&str>;
     /// Return the filtered controller input voltage.
     fn input_voltage(&self) -> InputVoltage;
     /// Return the relative motor tachometer with an explicit read/reset policy.
@@ -1416,8 +1420,10 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.firmware_fault()
     }
 
-    /// Return the firmware-provided fault description, when valid UTF-8.
-    pub fn firmware_fault_description(&self) -> Option<&'static str> {
+    /// Borrow the firmware-provided fault description for this telemetry handle.
+    ///
+    /// The string is owned by firmware and must not outlive the telemetry borrow.
+    pub fn firmware_fault_description(&self) -> Option<&str> {
         self.bindings.firmware_fault_description()
     }
 
@@ -1619,7 +1625,7 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
         self.firmware_fault()
     }
 
-    fn firmware_fault_description(&self) -> Option<&'static str> {
+    fn firmware_fault_description(&self) -> Option<&str> {
         self.firmware_fault_description()
     }
 
