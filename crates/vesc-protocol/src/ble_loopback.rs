@@ -76,6 +76,10 @@ pub struct LoopbackPacket<'a> {
 
 impl<'a> LoopbackPacket<'a> {
     /// Construct a validated loopback packet.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LoopbackError::PayloadTooLong`] when the payload exceeds the wire limit.
     pub const fn new(command: WireCommand, payload: &'a [u8]) -> Result<Self, LoopbackError> {
         if payload.len() > MAX_LOOPBACK_PAYLOAD_BYTES {
             return Err(LoopbackError::PayloadTooLong {
@@ -90,11 +94,16 @@ impl<'a> LoopbackPacket<'a> {
     }
 
     /// Return the underlying typed frame by value.
+    #[must_use]
     pub fn frame(&self) -> Frame<'a> {
         self.frame.clone()
     }
 
     /// Encode the packet into the provided output buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LoopbackError::BufferTooShort`] when `out` cannot hold the packet.
     pub fn encode_into(&self, out: &mut [u8]) -> Result<usize, LoopbackError> {
         let required = MIN_WIRE_FRAME_BYTES + self.frame.payload().len();
         if out.len() < required {
@@ -106,7 +115,7 @@ impl<'a> LoopbackPacket<'a> {
 
         out[0] = self.frame.version().get();
         out[1] = u8::from(self.frame.command());
-        out[2] = self.frame.payload().len() as u8;
+        out[2] = u8::try_from(self.frame.payload().len()).unwrap_or(u8::MAX);
 
         let mut index = 0;
         while index < self.frame.payload().len() {
@@ -118,18 +127,23 @@ impl<'a> LoopbackPacket<'a> {
     }
 
     /// Encode the packet into a fixed-size byte buffer and its used length.
+    #[must_use]
     pub fn encode(&self) -> ([u8; MAX_LOOPBACK_FRAME_BYTES], usize) {
         let mut bytes = [0_u8; MAX_LOOPBACK_FRAME_BYTES];
         let payload = self.frame.payload();
         bytes[0] = self.frame.version().get();
         bytes[1] = u8::from(self.frame.command());
-        bytes[2] = payload.len() as u8;
+        bytes[2] = u8::try_from(payload.len()).unwrap_or(u8::MAX);
         copy_payload_no_runtime(&mut bytes, payload);
 
         (bytes, MIN_WIRE_FRAME_BYTES + payload.len())
     }
 
     /// Decode a packet from raw bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`LoopbackError`] when the frame header, command, or payload is invalid.
     pub fn decode(bytes: &'a [u8]) -> Result<Self, LoopbackError> {
         if bytes.len() < MIN_WIRE_FRAME_BYTES {
             return Err(LoopbackError::FrameTooShort);
@@ -181,6 +195,10 @@ fn copy_payload_no_runtime(response: &mut [u8; MAX_LOOPBACK_FRAME_BYTES], payloa
 }
 
 /// Build the wire response for an incoming loopback frame.
+///
+/// # Errors
+///
+/// Returns a [`LoopbackError`] when the frame header, command, or payload is invalid.
 #[cfg_attr(all(not(test), target_arch = "arm"), no_panic::no_panic)]
 pub fn handle_loopback_frame(
     bytes: &[u8],
@@ -223,7 +241,7 @@ pub fn handle_loopback_frame(
     let mut response = [0_u8; MAX_LOOPBACK_FRAME_BYTES];
     response[0] = BLE_LOOPBACK_PROTOCOL_VERSION.get();
     response[1] = u8::from(command);
-    response[2] = payload.len() as u8;
+    response[2] = u8::try_from(payload.len()).unwrap_or(u8::MAX);
     copy_payload_no_runtime(&mut response, payload);
 
     Ok((response, MIN_WIRE_FRAME_BYTES + payload.len()))
@@ -298,14 +316,12 @@ mod tests {
     fn round_trips_every_loopback_command() {
         let payload = [0xaa, 0x55];
 
-        [
+        for (command, payload) in [
             (WireCommand::Ping, &[][..]),
             (WireCommand::Echo, &payload[..]),
             (WireCommand::Status, &payload[..]),
             (WireCommand::Teardown, &[][..]),
-        ]
-        .into_iter()
-        .for_each(|(command, payload)| {
+        ] {
             let packet = LoopbackPacket::new(command, payload).expect("loopback packet");
             let (bytes, len) = packet.encode();
             let decoded = LoopbackPacket::decode(&bytes[..len]).expect("decoded packet");
@@ -313,7 +329,7 @@ mod tests {
             assert_eq!(decoded.frame().version(), BLE_LOOPBACK_PROTOCOL_VERSION);
             assert_eq!(decoded.frame().command(), command);
             assert_eq!(decoded.frame().payload(), payload);
-        });
+        }
     }
 
     #[test]

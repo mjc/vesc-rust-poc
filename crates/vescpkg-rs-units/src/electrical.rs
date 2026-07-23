@@ -26,6 +26,10 @@ pub struct BatteryCellCount(u16);
 
 impl BatteryCellCount {
     /// Create a checked non-zero battery cell count.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BatteryCellCountError`] when `count` is zero.
     pub const fn try_new(count: u16) -> Result<Self, BatteryCellCountError> {
         if count == 0 {
             Err(BatteryCellCountError { value: count })
@@ -35,6 +39,7 @@ impl BatteryCellCount {
     }
 
     /// Encode the count for a firmware boundary.
+    #[must_use]
     pub const fn as_u16(self) -> u16 {
         self.0
     }
@@ -48,6 +53,7 @@ pub struct BatteryCellCountError {
 
 impl BatteryCellCountError {
     /// Return the rejected count.
+    #[must_use]
     pub const fn value(self) -> u16 {
         self.value
     }

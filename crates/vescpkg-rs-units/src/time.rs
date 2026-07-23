@@ -19,7 +19,6 @@ scalar_unit!(SampleRate, from_hertz, as_hertz, "hertz");
 impl TimestampTicks {
     /// Return the unsigned wrapping duration since an earlier VESC timestamp.
     #[must_use]
-    #[inline(always)]
     pub const fn wrapping_duration_since(self, earlier: Self) -> SystemTicks {
         SystemTicks::from_ticks(self.as_ticks().wrapping_sub(earlier.as_ticks()))
     }
@@ -27,12 +26,17 @@ impl TimestampTicks {
 
 impl SampleRate {
     /// Return the duration of one sample at this rate.
+    #[must_use]
     pub fn sample_period(self) -> Option<VescSeconds> {
         let seconds = 1.0 / self.as_hertz();
         (seconds.is_finite() && seconds > 0.0).then(|| VescSeconds::from_seconds(seconds))
     }
 }
 
+// A firmware tick counter has 32 integer bits, while `f32` stores 24 significant
+// bits. Converting a large counter therefore rounds away some low-order ticks.
+// That is intentional here: VESC exposes this boundary as floating-point
+// seconds, and callers needing exact timing retain the typed `SystemTicks`.
 #[allow(clippy::cast_precision_loss)]
 pub(crate) fn system_ticks_as_secs_f32(ticks: SystemTicks) -> f32 {
     ticks.as_ticks() as f32 / SYSTEM_TICK_RATE_HZ as f32

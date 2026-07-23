@@ -20,43 +20,39 @@ macro_rules! scalar_unit {
             }
 
             /// Return the absolute magnitude in the same unit.
-            #[inline(always)]
+            #[must_use]
             pub const fn abs(self) -> Self {
                 Self(self.0.abs())
             }
 
             /// Return -1.0 for negative values and 1.0 otherwise, matching VESC `SIGN`.
-            #[inline(always)]
             pub const fn signum(self) -> f32 {
                 if self.0 < 0.0 { -1.0 } else { 1.0 }
             }
 
             /// Return true when this value is greater than zero.
-            #[inline(always)]
             pub const fn is_positive(self) -> bool {
                 self.0 > 0.0
             }
 
             /// Return true when this value is less than zero.
-            #[inline(always)]
             pub const fn is_negative(self) -> bool {
                 self.0 < 0.0
             }
 
             /// Return true when this value is exactly zero.
-            #[inline(always)]
             pub const fn is_zero(self) -> bool {
                 self.0 == 0.0
             }
 
             /// Return the smaller same-unit value.
-            #[inline(always)]
+            #[must_use]
             pub fn min(self, rhs: Self) -> Self {
                 Self(self.0.min(rhs.0))
             }
 
             /// Return the larger same-unit value.
-            #[inline(always)]
+            #[must_use]
             pub fn max(self, rhs: Self) -> Self {
                 Self(self.0.max(rhs.0))
             }
@@ -65,7 +61,6 @@ macro_rules! scalar_unit {
         impl core::ops::Add for $name {
             type Output = Self;
 
-            #[inline(always)]
             fn add(self, rhs: Self) -> Self::Output {
                 Self(self.0 + rhs.0)
             }
@@ -74,7 +69,6 @@ macro_rules! scalar_unit {
         impl core::ops::Sub for $name {
             type Output = Self;
 
-            #[inline(always)]
             fn sub(self, rhs: Self) -> Self::Output {
                 Self(self.0 - rhs.0)
             }
@@ -83,7 +77,6 @@ macro_rules! scalar_unit {
         impl core::ops::Mul<f32> for $name {
             type Output = Self;
 
-            #[inline(always)]
             fn mul(self, rhs: f32) -> Self::Output {
                 Self(self.0 * rhs)
             }
@@ -92,7 +85,6 @@ macro_rules! scalar_unit {
         impl core::ops::Div<f32> for $name {
             type Output = Self;
 
-            #[inline(always)]
             fn div(self, rhs: f32) -> Self::Output {
                 Self(self.0 / rhs)
             }
@@ -101,7 +93,6 @@ macro_rules! scalar_unit {
         impl core::ops::Div for $name {
             type Output = f32;
 
-            #[inline(always)]
             fn div(self, rhs: Self) -> Self::Output {
                 self.0 / rhs.0
             }
@@ -110,7 +101,6 @@ macro_rules! scalar_unit {
         impl core::ops::Neg for $name {
             type Output = Self;
 
-            #[inline(always)]
             fn neg(self) -> Self::Output {
                 Self(-self.0)
             }
@@ -175,6 +165,10 @@ macro_rules! bounded_unit {
             pub const MAX: f32 = $max;
 
             #[doc = concat!("Create a checked value from ", $unit, ".")]
+            ///
+            /// # Errors
+            ///
+            /// Returns an error when `value` is outside the inclusive bounds.
             pub const fn $from(value: f32) -> Result<Self, crate::BoundedUnitError> {
                 if value >= Self::MIN && value <= Self::MAX {
                     Ok(Self(value))
@@ -196,7 +190,7 @@ macro_rules! bounded_unit {
 
             #[doc = concat!("Clamp a primitive value into the valid ", $unit, " range.")]
             pub const fn clamped(value: f32) -> Self {
-                if value != value || value < Self::MIN {
+                if value.is_nan() || value < Self::MIN {
                     Self(Self::MIN)
                 } else if value > Self::MAX {
                     Self(Self::MAX)
