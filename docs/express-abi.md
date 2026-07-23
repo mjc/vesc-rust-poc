@@ -95,7 +95,9 @@ error-reason, and string-decoding pointers retain their source mutability.
 The
 `ExpressFlatValue` builder covers the pinned flat-value constructors and
 transfers or releases its firmware-owned buffer according to the context
-handoff result. Registration, error-reason, and string-decoding entry points
+handoff result. Append and finish rejection is represented as
+`ExpressFlatValueError::Rejected`; callers do not have to interpret a raw
+success boolean. Registration, error-reason, and string-decoding entry points
 retain explicit unsafe raw-pointer boundaries; the facade does not invent
 ownership for firmware-managed strings or values.
 
