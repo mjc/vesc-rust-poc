@@ -1207,16 +1207,20 @@ mod tests {
     fn safe_required_constructor_preserves_missing_slot_diagnostics() {
         let capabilities = FirmwareCapabilities::new(VescIfPresence::empty());
 
-        let Err(error) = capabilities.require_can() else {
-            panic!("empty presence must reject required CAN")
-        };
-        assert_eq!(error.capability(), "CAN");
-        assert_eq!(error.slot(), VescIfAbi::CAN_TRANSMIT_SID);
-        let Err(error) = capabilities.inputs() else {
-            panic!("empty presence must reject required remote-state input support")
-        };
-        assert_eq!(error.capability(), "inputs");
-        assert_eq!(error.slot(), VescIfAbi::GET_REMOTE_STATE);
+        assert_eq!(
+            capabilities
+                .require_can()
+                .err()
+                .map(|error| (error.capability(), error.slot())),
+            Some(("CAN", VescIfAbi::CAN_TRANSMIT_SID))
+        );
+        assert_eq!(
+            capabilities
+                .inputs()
+                .err()
+                .map(|error| (error.capability(), error.slot())),
+            Some(("inputs", VescIfAbi::GET_REMOTE_STATE))
+        );
         assert_eq!(
             capabilities.require_inputs().unwrap_err().capability(),
             "inputs"
