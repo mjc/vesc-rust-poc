@@ -276,7 +276,8 @@ fn motor_exposes_typed_handbrake_commands() {
     firmware
         .motor()
         .set_pid_position(PidPosition::new(AngleDegrees::from_degrees(90.0)));
-    firmware.motor().select_motor(MotorSelection::new(1));
+    firmware.motor().select_motor(MotorSelection::new(2));
+    assert_eq!(firmware.motor().selected_motor().index(), 2);
     firmware
         .motor()
         .set_duty_cycle_without_ramping(DutyCycle::new(SignedRatio::from_ratio_const(0.2)));

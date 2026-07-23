@@ -199,6 +199,7 @@ static NVM_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static DISTANCE_ABS: AtomicU32 = AtomicU32::new(0);
 static TACHOMETER_VALUE: AtomicI32 = AtomicI32::new(1234);
 static TACHOMETER_ABS_VALUE: AtomicI32 = AtomicI32::new(5678);
+static SELECTED_MOTOR: AtomicI32 = AtomicI32::new(1);
 static MOSFET_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static MOTOR_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static ODOMETER: AtomicU64 = AtomicU64::new(0);
@@ -491,6 +492,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     DISTANCE_ABS.store(0.0_f32.to_bits(), Ordering::Relaxed);
     TACHOMETER_VALUE.store(1234, Ordering::Relaxed);
     TACHOMETER_ABS_VALUE.store(5678, Ordering::Relaxed);
+    SELECTED_MOTOR.store(1, Ordering::Relaxed);
     MOSFET_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     MOTOR_TEMPERATURE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     ODOMETER.store(0, Ordering::Relaxed);
@@ -1476,7 +1478,9 @@ pub unsafe fn mc_set_current_off_delay(seconds: f32) {
     CURRENT_OFF_DELAY.store(seconds.to_bits(), Ordering::Relaxed);
 }
 
-pub unsafe fn mc_select_motor_thread(_motor: i32) {}
+pub unsafe fn mc_select_motor_thread(motor: i32) {
+    SELECTED_MOTOR.store(motor, Ordering::Relaxed);
+}
 
 pub unsafe fn mc_set_current(amps: f32) {
     CURRENT_COUNT.fetch_add(1, Ordering::Relaxed);
@@ -2019,7 +2023,7 @@ pub unsafe fn mc_get_fault() -> FaultCode {
 }
 
 pub unsafe fn mc_get_motor_thread() -> i32 {
-    1
+    SELECTED_MOTOR.load(Ordering::Relaxed)
 }
 
 pub unsafe fn mc_dccal_done() -> bool {
