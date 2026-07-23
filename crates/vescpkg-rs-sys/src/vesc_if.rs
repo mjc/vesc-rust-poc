@@ -26,6 +26,7 @@ pub enum VescIfSlotKind {
 pub struct VescIfManifestEntry {
     pub(crate) slot: VescIfSlot,
     pub(crate) kind: VescIfSlotKind,
+    pub(crate) signature: &'static str,
 }
 
 impl VescIfManifestEntry {
@@ -39,6 +40,11 @@ impl VescIfManifestEntry {
     #[must_use]
     pub const fn kind(self) -> VescIfSlotKind {
         self.kind
+    }
+
+    /// Return the bindgen-rendered Rust type for this ABI table entry.
+    pub const fn signature(self) -> &'static str {
+        self.signature
     }
 
     /// Return whether the entry is callable through a function pointer.
