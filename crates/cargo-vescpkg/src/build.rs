@@ -850,13 +850,15 @@ mod tests {
     }
 
     #[test]
-    fn float_out_boy_qml_imports_refloat_without_restoring_its_backups() {
+    fn float_out_boy_qml_migrates_legacy_tune_archive_identity() {
         let qml = include_str!("../../../examples/float-out-boy/package/ui.qml");
 
         assert!(qml.contains("[tuneManager.packageName,\"Refloat\"].includes"));
         assert!(qml.contains("backup.package.name!==packageName"));
-        assert!(qml.contains("\"package\":{\"name\":\"Refloat\",\"version\":\"1.2.1\"}"));
-        assert!(qml.contains("if(!archive[i].package){archive[i].package={\"name\":\"Refloat\",\"version\":\"1.2.1\"};}"));
+        assert!(
+            qml.contains("normalized.package={\"name\":packageName,\"version\":packageVersion}")
+        );
+        assert!(qml.contains("\"package\":{\"name\":packageName,\"version\":packageVersion}"));
         assert!(
             qml.contains("if(tuneArchive&&tuneArchive.length>0){downloadedTunesModel.setTunes")
         );
