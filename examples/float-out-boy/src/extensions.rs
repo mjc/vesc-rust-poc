@@ -60,7 +60,7 @@ impl vescpkg_rs::StatefulLbmExtension for ExtSetFwVersion {
                 values.next().and_then(LispValue::decode_number_as_i32),
                 values.next().and_then(LispValue::decode_number_as_i32),
             ) {
-                record_refloat_firmware_version(state, &[major, minor, beta]);
+                record_float_out_boy_firmware_version(state, &[major, minor, beta]);
             }
         }
         LispValue::true_value()
