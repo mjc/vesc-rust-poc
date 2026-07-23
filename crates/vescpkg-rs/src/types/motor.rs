@@ -19,6 +19,26 @@ macro_rules! current_type {
             pub const fn current(self) -> Current {
                 self.0
             }
+
+            /// Return the absolute current while preserving the domain wrapper.
+            pub const fn abs(self) -> Self {
+                Self(self.0.abs())
+            }
+
+            /// Return true when this current is greater than zero.
+            pub const fn is_positive(self) -> bool {
+                self.0.is_positive()
+            }
+
+            /// Return true when this current is less than zero.
+            pub const fn is_negative(self) -> bool {
+                self.0.is_negative()
+            }
+
+            /// Return true when this current is exactly zero.
+            pub const fn is_zero(self) -> bool {
+                self.0.is_zero()
+            }
         }
 
         impl core::ops::Add for $name {
@@ -473,5 +493,15 @@ mod tests {
         let nan_limit = MotorCurrentLimit::new(Current::from_amps(f32::NAN));
         let finite_current = MotorCurrent::new(Current::from_amps(50.0));
         assert_eq!(nan_limit.clamp(finite_current), finite_current);
+    }
+
+    #[test]
+    fn motor_current_predicates_preserve_the_domain_wrapper() {
+        let current = MotorCurrent::new(Current::from_amps(-4.0));
+
+        assert!(current.is_negative());
+        assert!(!current.is_positive());
+        assert!(!current.is_zero());
+        assert_eq!(current.abs(), MotorCurrent::new(Current::from_amps(4.0)));
     }
 }
