@@ -408,6 +408,16 @@ fn vesc_if_manifest_retains_bindgen_signature_metadata() {
 }
 
 #[test]
+fn generated_raw_resolvers_cover_every_callable_manifest_entry() {
+    assert_eq!(VescIfAbi::RAW_SHIM_COUNT, VescIfAbi::CALLABLE_SLOT_COUNT);
+
+    let table = crate::test_support::empty_table();
+    crate::test_support::with_table(&table, || unsafe {
+        assert!(crate::raw::resolve_lbm_add_extension().is_none());
+    });
+}
+
+#[test]
 fn vesc_if_presence_tracks_holes_and_profiles_from_observed_words() {
     let mut words = [1_usize; VescIfAbi::FIELD_COUNT];
     words[VescIfAbi::SYSTEM_TIME_TICKS.slot_index()] = 0;
