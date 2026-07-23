@@ -69,7 +69,7 @@ fn rust_add_extension_value() -> LispValue {
 mod tests {
     use super::{
         EXT_RUST_PROBE_DIAG_NAME, EXT_TEST_NAME, LbmExtension, LispArgs, LispValue,
-        PACKAGE_EXTENSION_NAMES, RustProbeDiag, package_extension_descriptors,
+        OfficialExtTest, PACKAGE_EXTENSION_NAMES, RustProbeDiag, package_extension_descriptors,
         rust_add_extension_value,
     };
     use vescpkg_rs::test_support::{LoaderInfo, TestExtensionRegistry};
