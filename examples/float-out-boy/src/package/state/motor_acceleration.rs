@@ -10,11 +10,11 @@ impl AccelerationHistoryIndex {
     const START: Self = Self(0);
 
     const fn next(self) -> Self {
-        Self((self.0 + 1) % WINDOW_U8)
+        Self(self.0.wrapping_add(1) % WINDOW_U8)
     }
 
-    const fn as_usize(self) -> usize {
-        self.0 as usize
+    fn as_usize(self) -> usize {
+        usize::from(self.0)
     }
 
     fn replace(
@@ -88,6 +88,14 @@ mod tests {
         }
 
         assert_eq!(index, AccelerationHistoryIndex::START);
+    }
+
+    #[test]
+    fn invalid_history_index_wraps_to_start_instead_of_panicking() {
+        assert_eq!(
+            AccelerationHistoryIndex(u8::MAX).next(),
+            AccelerationHistoryIndex::START
+        );
     }
 
     #[test]
