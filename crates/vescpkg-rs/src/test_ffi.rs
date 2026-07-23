@@ -373,7 +373,7 @@ pub unsafe fn lbm_dec_str(_value: LbmValue) -> *mut c_char {
 }
 
 pub unsafe fn lbm_enc_i(value: i32) -> LbmValue {
-    LbmValue((value << 4).cast_unsigned() | 0x08)
+    LbmValue(value.wrapping_shl(4).cast_unsigned() | 0x08)
 }
 
 pub unsafe fn lbm_enc_float(value: f32) -> LbmValue {

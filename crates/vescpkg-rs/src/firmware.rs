@@ -109,6 +109,7 @@ pub unsafe trait PackageAppDataCallback: AppDataHandler + Sized {
     /// Return state access rooted in this package's loader identity.
     #[doc(hidden)]
     #[cfg(target_arch = "arm")]
+    #[must_use]
     fn state_source() -> crate::PackageStateAccess<'static, Self::State>;
 
     /// Return host-test state access rooted in the package runtime store.
@@ -296,6 +297,7 @@ pub unsafe trait PackageCustomConfigCallback<const LEN: usize>:
     /// Return state access rooted in this package's loader identity.
     #[doc(hidden)]
     #[cfg(target_arch = "arm")]
+    #[must_use]
     fn state_source() -> crate::PackageStateAccess<'static, Self::State>;
 
     /// Return host-test state access rooted in the package runtime store.

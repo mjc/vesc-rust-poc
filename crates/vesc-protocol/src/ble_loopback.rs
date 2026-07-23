@@ -221,27 +221,23 @@ fn copy_payload_no_runtime(response: &mut [u8; MAX_LOOPBACK_FRAME_BYTES], payloa
     }
 }
 
-fn wire_payload_len(payload_len: usize) -> u8 {
-    // The BLE frame reserves one byte for its length. Public constructors
-    // reject payloads above the smaller protocol limit. Saturation still keeps
-    // this internal conversion panic-free if validation is accidentally missed.
-    u8::try_from(payload_len).unwrap_or(u8::MAX)
-}
-
 fn write_wire_header(
     out: &mut [u8],
     version: WireVersion,
     command: WireCommand,
     payload_len: usize,
 ) -> bool {
+    // VESC's C ABI carries the outer custom-app-data length as an `unsigned int`.
+    // This one-byte length belongs only to our inner loopback protocol, whose
+    // public packet constructors cap payloads at 16 bytes. Reject an invalid
+    // internal call instead of silently changing a wider transport length.
+    let Ok(payload_len) = u8::try_from(payload_len) else {
+        return false;
+    };
     let Some(header) = out.first_chunk_mut::<MIN_WIRE_FRAME_BYTES>() else {
         return false;
     };
-    *header = [
-        version.get(),
-        u8::from(command),
-        wire_payload_len(payload_len),
-    ];
+    *header = [version.get(), u8::from(command), payload_len];
     true
 }
 
@@ -313,7 +309,7 @@ pub fn handle_loopback_frame(
 mod tests {
     use super::{
         BLE_LOOPBACK_PROTOCOL_VERSION, LoopbackError, LoopbackPacket, MAX_LOOPBACK_FRAME_BYTES,
-        MAX_LOOPBACK_PAYLOAD_BYTES, MIN_WIRE_FRAME_BYTES,
+        MAX_LOOPBACK_PAYLOAD_BYTES, MIN_WIRE_FRAME_BYTES, write_wire_header,
     };
     use crate::{WireCommand, WireVersion};
     use std::format;
@@ -372,6 +368,20 @@ mod tests {
 
         assert_eq!(len, MIN_WIRE_FRAME_BYTES + payload.len());
         assert_eq!(&bytes[..len], &[1, u8::from(WireCommand::Echo), 2, 9, 8]);
+    }
+
+    #[test]
+    fn wire_header_rejects_lengths_that_do_not_fit_its_one_byte_field() {
+        let mut bytes = [0xaa; MIN_WIRE_FRAME_BYTES];
+        let too_long = usize::from(u8::MAX).saturating_add(1);
+
+        assert!(!write_wire_header(
+            &mut bytes,
+            BLE_LOOPBACK_PROTOCOL_VERSION,
+            WireCommand::Echo,
+            too_long,
+        ));
+        assert_eq!(bytes, [0xaa; MIN_WIRE_FRAME_BYTES]);
     }
 
     #[test]

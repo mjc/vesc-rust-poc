@@ -397,6 +397,7 @@ impl CustomConfigWireByteField {
     }
 
     /// Read the field without erasing its wire type.
+    #[must_use]
     pub fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> Option<WireByte> {
         image.0.get(self.0.get()).copied().map(WireByte::new)
     }

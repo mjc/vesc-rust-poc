@@ -649,7 +649,9 @@ impl<'info> PackageStart<'info> {
     /// # Errors
     ///
     /// Returns [`PackageStartError`] when the package image is unavailable or
-    /// firmware rejects every descriptor.
+    /// not retained, or when a stateful descriptor names the wrong state type.
+    /// Firmware rejection is reported in the returned
+    /// [`crate::ExtensionRegistration`], including when it accepts no descriptors.
     #[cfg(all(not(test), target_arch = "arm"))]
     pub fn register_extensions<const N: usize>(
         &mut self,

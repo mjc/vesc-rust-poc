@@ -34,7 +34,7 @@ impl VescIfManifestEntry {
         self.slot
     }
 
-    /// Return whether the entry is callable through a function pointer.
+    /// Return the ABI kind of this entry.
     #[must_use]
     pub const fn kind(self) -> VescIfSlotKind {
         self.kind
