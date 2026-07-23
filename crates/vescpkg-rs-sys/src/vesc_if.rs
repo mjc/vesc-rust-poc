@@ -60,6 +60,11 @@ impl VescIfManifestEntry {
         self.slot
     }
 
+    /// Return the originating C declaration name from the pinned header.
+    pub const fn c_decl(self) -> &'static str {
+        self.slot.name()
+    }
+
     /// Return whether the entry is callable through a function pointer.
     pub const fn kind(self) -> VescIfSlotKind {
         self.kind
@@ -68,6 +73,11 @@ impl VescIfManifestEntry {
     /// Return the ABI family that owns this manifest entry.
     pub const fn family(self) -> VescIfSlotFamily {
         VescIfSlotFamily::Stm32
+    }
+
+    /// Return the minimum ordered ABI profile containing this entry.
+    pub const fn since(self) -> Stm32AbiRevision {
+        self.slot.minimum_revision()
     }
 
     /// Return whether this entry is nullable in the generated table.
