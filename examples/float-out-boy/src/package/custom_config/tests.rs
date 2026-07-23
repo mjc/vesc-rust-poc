@@ -32,17 +32,13 @@ fn runtime_set_config(config: &[u8; FLOAT_OUT_BOY_CONFIG_LEN]) -> bool {
 }
 
 #[test]
-fn custom_config_xml_callback_returns_upstream_settings_blob() {
+fn custom_config_xml_callback_returns_float_out_boy_settings_blob() {
     let bytes = FloatOutBoyCustomConfig::config_xml();
 
-    // Float Out Boy v1.2.1 returns generated `data_float_out_boy_config_` at
-    // `third_party/float-out-boy/src/main.c:2388-2396`, produced from
-    // `third_party/float-out-boy/src/conf/settings.xml` by
-    // `third_party/float-out-boy/src/Makefile:28-31`.
-    assert_eq!(bytes.as_bytes().len(), 25_723);
+    assert_eq!(bytes.as_bytes().len(), 25_749);
     assert_eq!(
         &bytes.as_bytes()[..6],
-        &[0x00, 0x05, 0x5c, 0xa1, 0x78, 0xda]
+        &[0x00, 0x05, 0x5c, 0xd3, 0x78, 0xda]
     );
 }
 

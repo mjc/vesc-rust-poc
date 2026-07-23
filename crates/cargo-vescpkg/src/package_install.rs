@@ -207,6 +207,21 @@ impl<'a, T: PackageInstallTransport> PackageInstallAttempt<'a, T> {
         self
     }
 
+    fn require_qml_app(mut self, required: bool) -> Self {
+        if required && self.first_error.is_none() {
+            match self.transport.has_qml_app() {
+                Ok(true) => {}
+                Ok(false) => {
+                    self.first_error = Some(PackageInstallError::Device(
+                        "uploaded QML App UI is not present after firmware reload".to_owned(),
+                    ));
+                }
+                Err(error) => self.first_error = Some(step_error("verify QML App UI", error)),
+            }
+        }
+        self
+    }
+
     fn finish(self, package_name: String) -> Result<PackageInstallReport, PackageInstallError> {
         self.first_error.map_or_else(
             || {
@@ -327,12 +342,14 @@ pub fn install_package<T: PackageInstallTransport>(
         lisp.map(|_| PackageInstallAction::SetLispRunning),
     ];
 
+    let requires_qml_app = qml.is_some();
     qml_actions
         .into_iter()
         .chain(lisp_actions)
         .flatten()
         .fold(attempt, PackageInstallAttempt::run)
         .reload()
+        .require_qml_app(requires_qml_app)
         .finish(package.name.clone())
 }
 
@@ -424,6 +441,8 @@ mod tests {
         reject_erase_lisp: Cell<bool>,
         reject_set_running_true: Cell<bool>,
         fail_set_running_true_io: Cell<bool>,
+        qml_app_present: Cell<bool>,
+        hide_qml_app: Cell<bool>,
         steps: RefCell<Vec<PackageInstallStep>>,
     }
 
@@ -437,14 +456,18 @@ mod tests {
         fn fail_set_running_true_io(&self) {
             self.fail_set_running_true_io.set(true);
         }
+        fn hide_qml_app(&self) {
+            self.hide_qml_app.set(true);
+        }
     }
 
     impl PackageInstallTransport for FakePackageInstallTransport {
         fn has_qml_app(&self) -> Result<bool, PackageInstallError> {
-            Ok(false)
+            Ok(self.qml_app_present.get() && !self.hide_qml_app.get())
         }
 
         fn erase_qml(&self, bytes: usize) -> Result<(), PackageInstallError> {
+            self.qml_app_present.set(false);
             self.steps
                 .borrow_mut()
                 .push(PackageInstallStep::EraseQml { bytes });
@@ -452,6 +475,7 @@ mod tests {
         }
 
         fn upload_qml(&self, qml: &[u8], fullscreen: bool) -> Result<(), PackageInstallError> {
+            self.qml_app_present.set(true);
             self.steps.borrow_mut().push(PackageInstallStep::UploadQml {
                 bytes: qml.len(),
                 fullscreen,
@@ -621,6 +645,21 @@ mod tests {
                 PackageInstallStep::SetRunning { running: true },
                 PackageInstallStep::ReloadFirmware,
             ]
+        );
+    }
+
+    #[test]
+    fn install_rejects_a_missing_qml_app_after_reload() {
+        let package = decode_package(&build_package_bytes()).expect("package");
+        let transport = FakePackageInstallTransport::default();
+        transport.hide_qml_app();
+
+        let error = install_package(&package, &transport).expect_err("missing QML App UI");
+
+        assert!(
+            error
+                .to_string()
+                .contains("not present after firmware reload")
         );
     }
 

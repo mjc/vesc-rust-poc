@@ -564,12 +564,15 @@ impl PackageInstallTransport for BtlePackageInstallTransport {
     }
 
     fn reload_firmware(&self) -> Result<(), PackageInstallError> {
-        // Source: third_party/vesc_tool/vescinterface.h:260-263 only marks
-        // cached firmware, QML, and config state stale via updateFwRx(false).
         self.with_spinner("Reloading package state", || {
             thread::sleep(POST_PACKAGE_INSTALL_SETTLE);
+            let runtime = &self.runtime;
             self.with_session(|session| {
-                session.fw_info.has_qml_app = false;
+                session.fw_info = session.query_fw_info_with_retries(
+                    runtime,
+                    FW_VERSION_OPEN_ATTEMPTS,
+                    FW_VERSION_OPEN_RETRY_DELAY,
+                )?;
                 Ok(())
             })
         })

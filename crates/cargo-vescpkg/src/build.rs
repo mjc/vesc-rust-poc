@@ -825,12 +825,37 @@ mod tests {
         validate_writable_section_report,
     };
     use crate::package::Package;
+    use flate2::read::ZlibDecoder;
     use serde_json::json;
+    use std::io::Read;
     use std::path::Path;
 
     #[test]
     fn package_slug_matches_existing_artifact_names() {
         assert_eq!(package_slug("A minimal package"), "A-minimal-package");
+    }
+
+    #[test]
+    fn float_out_boy_config_xml_has_its_own_identity() {
+        let compressed =
+            include_bytes!("../../../examples/float-out-boy/src/conf/float_out_boy_config.dat");
+        let mut xml = String::new();
+        ZlibDecoder::new(&compressed[4..])
+            .read_to_string(&mut xml)
+            .expect("Float Out Boy config XML");
+
+        assert!(xml.contains("<valString>FloatOutBoyConfig</valString>"));
+        assert!(xml.contains("<longName>Float Out Boy Cfg</longName>"));
+        assert!(!xml.to_ascii_lowercase().contains("refloat"));
+    }
+
+    #[test]
+    fn float_out_boy_qml_imports_refloat_without_restoring_its_backups() {
+        let qml = include_str!("../../../examples/float-out-boy/package/ui.qml");
+
+        assert!(qml.contains("[tuneManager.packageName,\"Refloat\"].includes"));
+        assert!(qml.contains("backup.package.name!==packageName"));
+        assert!(qml.contains("\"package\":{\"name\":\"Refloat\",\"version\":\"1.2.1\"}"));
     }
 
     #[test]

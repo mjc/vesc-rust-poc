@@ -36,7 +36,7 @@ pub(crate) use flywheel::FloatOutBoyFlywheelConfig;
 // `third_party/float-out-boy/src/main.c:2388-2396`.
 vescpkg_rs::firmware_section_static!(
     ".text.float_out_boy_config_xml",
-    pub(crate) static FLOAT_OUT_BOY_CONFIG_XML: [u8; 25_723] = *include_bytes!("conf/float_out_boy_config.dat")
+    pub(crate) static FLOAT_OUT_BOY_CONFIG_XML: [u8; 25_749] = *include_bytes!("conf/float_out_boy_config.dat")
 );
 
 // Float Out Boy v1.2.1 generated serialized default custom config. Upstream

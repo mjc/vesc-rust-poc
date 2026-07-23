@@ -114,7 +114,7 @@ function paramIsTune(name){var tuneBlacklist=["tiltback_return_speed","tiltback_
 function fetchConfig(tuneOnly){if(!checkConfig())return null;var settings={};for(let subGroup of pkgConfig.getParamSubgroups("General")){for(let param of pkgConfig.getParamsFromSubgroup("General",subGroup)){if(tuneOnly&&!paramIsTune(param)){continue;}
 var value=getParamValue(param);if(value!==null){settings[param]=getParamValue(param);}}}
 return settings;}
-function versionCompatible(config){if(!config.package||config.package.name!==tuneManager.packageName){VescIf.emitStatusMessage("Error: Backup belongs to another package",false);return false;}
+function versionCompatible(config){if(!config.package||![tuneManager.packageName,"Refloat"].includes(config.package.name)){VescIf.emitStatusMessage("Error: Backup belongs to another package",false);return false;}
 var[major,minor]=versionMajorMinor(config.version);if(major!==tuneManager.formatVersionMajor||minor>tuneManager.formatVersionMinor){VescIf.emitStatusMessage("Error: Incompatible version: %1".arg(config.version),false);return false;}
 return true;}
 function applyConfig(config){if(!checkConfig())return;if(!versionCompatible(config)){return;}
@@ -378,7 +378,7 @@ function saveTuneArchive(tuneArchive){tuneStorage.tuneArchive=JSON.stringify(tun
 function loadTuneArchive(){if(tuneStorage.tuneArchive){if(typeof tuneStorage.tuneArchive==="string"){return JSON.parse(tuneStorage.tuneArchive);}else{return tuneStorage.tuneArchive;}}
 return null;}
 function getTuneArchiveDate(){return Qt.formatDateTime(tuneStorage.tuneArchiveDownloadDate);}
-function parseCsv(csv){var lines=csv.split("\r\n");var tuneCount=lines[0].split(",").length-1;var result=[];for(var i=0;i<tuneCount;i++){result.push({"version":formatVersion,"settings":{}});}
+function parseCsv(csv){var lines=csv.split("\r\n");var tuneCount=lines[0].split(",").length-1;var result=[];for(var i=0;i<tuneCount;i++){result.push({"version":formatVersion,"package":{"name":"Refloat","version":"1.2.1"},"settings":{}});}
 for(var i in lines){var currentLine=lines[i].split(",");for(var j=0;j<tuneCount;j++){var value=currentLine[j+1];if(value){var key=currentLine[0];var name;if(key==="_name"){result[j].name=value;continue;}else if(key.startsWith("double_")){name=key.substring(7);value=parseFloat(value);}else if(key.startsWith("int_")){name=key.substring(4);value=parseInt(value);}else if(key.startsWith("bool_")){name=key.substring(5);value=!!parseInt(value);}else if(key.startsWith("enum_")){name=key.substring(5);value=parseInt(value);}
 if(Number.isNaN(value)){continue;}
 result[j].settings[name]=value;}}}
