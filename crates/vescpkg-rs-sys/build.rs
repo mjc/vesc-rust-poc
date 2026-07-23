@@ -3,7 +3,7 @@
 use std::{collections::HashSet, env, fmt::Write as _, fs, path::PathBuf};
 
 use quote::ToTokens;
-use syn::{Fields, Item, Type};
+use syn::{Fields, GenericArgument, Item, PathArguments, Type};
 
 const HEADER_REPO: &str = "https://github.com/lukash/vesc_pkg_lib";
 const HEADER_COMMIT: &str = "e8bdc8296b90a266713da3762868f0d18ec027fe";
@@ -84,16 +84,7 @@ fn main() {
 
 fn slots_from_bindings(bindings: &str) -> Vec<SlotDeclaration> {
     let file = syn::parse_file(bindings).expect("parse generated VESC Rust bindings");
-    let function_aliases = file
-        .items
-        .iter()
-        .filter_map(|item| match item {
-            Item::Type(item) if is_function_type(&item.ty, &HashSet::new()) => {
-                Some(item.ident.to_string())
-            }
-            _ => None,
-        })
-        .collect::<HashSet<_>>();
+    let function_aliases = function_aliases(&file);
     let table = file
         .items
         .into_iter()
@@ -124,11 +115,48 @@ fn slots_from_bindings(bindings: &str) -> Vec<SlotDeclaration> {
         .collect()
 }
 
+fn function_aliases(file: &syn::File) -> HashSet<String> {
+    let aliases = file
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Type(item) => Some((item.ident.to_string(), &item.ty)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let mut functions = HashSet::new();
+
+    loop {
+        let previous_len = functions.len();
+        for (name, ty) in &aliases {
+            if is_function_type(ty, &functions) {
+                functions.insert(name.clone());
+            }
+        }
+        if functions.len() == previous_len {
+            return functions;
+        }
+    }
+}
+
 fn is_function_type(ty: &Type, function_aliases: &HashSet<String>) -> bool {
     match ty {
         Type::BareFn(_) => true,
+        Type::Paren(paren) => is_function_type(&paren.elem, function_aliases),
         Type::Path(path) => path.path.segments.last().is_some_and(|segment| {
-            segment.ident == "Option" || function_aliases.contains(&segment.ident.to_string())
+            if function_aliases.contains(&segment.ident.to_string()) {
+                return true;
+            }
+            if segment.ident != "Option" {
+                return false;
+            }
+            let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+                return false;
+            };
+            arguments.args.iter().any(|argument| match argument {
+                GenericArgument::Type(inner) => is_function_type(inner, function_aliases),
+                _ => false,
+            })
         }),
         _ => false,
     }
