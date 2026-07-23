@@ -710,11 +710,25 @@ impl FirmwareTest {
     }
 
     #[must_use]
+    /// Return the latest firmware PID-position offset write.
+    pub fn pid_position_offset(&self) -> crate::PidPosition {
+        crate::PidPosition::new(crate::AngleDegrees::from_degrees(
+            crate::test_ffi::pid_position_offset(),
+        ))
+    }
+
+    #[must_use]
     /// Return the latest FOC tone voltage.
     pub fn commanded_foc_tone_voltage(&self) -> crate::AudioVoltage {
         crate::AudioVoltage::new(crate::Voltage::from_volts(
             crate::test_ffi::motor_output().foc_tone_voltage,
         ))
+    }
+
+    #[must_use]
+    /// Return whether the latest PID-position offset write requested persistence.
+    pub fn pid_position_offset_was_stored(&self) -> bool {
+        crate::test_ffi::pid_position_offset_stored()
     }
 }
 
