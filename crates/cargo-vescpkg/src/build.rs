@@ -860,6 +860,7 @@ mod tests {
         );
         assert!(qml.contains("\"package\":{\"name\":packageName,\"version\":packageVersion}"));
         assert!(qml.contains("var lines=csv.split(/\\r?\\n/)"));
+        assert!(qml.contains("append({\"tune\":tuneManager.normalizeArchiveTune(tunes[i])})"));
         assert!(
             qml.contains("if(tuneArchive&&tuneArchive.length>0){downloadedTunesModel.setTunes")
         );

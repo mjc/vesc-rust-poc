@@ -1387,7 +1387,7 @@ Layout.alignment:Qt.AlignHCenter
 spacing:10
 clip:true
 model:ListModel{id:downloadedTunesModel
-function setTunes(tunes){clear();for(var i in tunes){append({"tune":tunes[i]});}}}
+function setTunes(tunes){clear();for(var i in tunes){append({"tune":tuneManager.normalizeArchiveTune(tunes[i])});}}}
 delegate:Button{width:tuneArchiveTunesList.width
 text:tune.name
 onClicked:{applyConfigDialog.show(tune,false,true);}}}}}
