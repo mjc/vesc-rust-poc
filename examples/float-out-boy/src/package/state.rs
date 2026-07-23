@@ -40,6 +40,8 @@ mod handtest;
 #[cfg(any(test, target_arch = "arm"))]
 mod haptic_feedback;
 mod imu_runtime;
+#[cfg(any(test, target_arch = "arm"))]
+mod konami;
 mod lcm;
 mod limits;
 mod motor_acceleration;
@@ -63,6 +65,8 @@ use flywheel::FloatOutBoyFlywheelOffsets;
 #[cfg(any(test, target_arch = "arm"))]
 use haptic_feedback::{HapticFeedbackInput, HapticFeedbackState};
 use lcm::LcmState;
+#[cfg(any(test, target_arch = "arm"))]
+use konami::FloatOutBoyKonami;
 use motor_acceleration::MotorAccelerationTracker;
 use remote_control::RemoteControlState;
 use ride_modifiers::{RideModifierInput, RideModifierState};
@@ -96,6 +100,12 @@ pub struct FloatOutBoyPackageState {
     serialized_config: FloatOutBoyConfigImage,
     alert_tracker: AlertTrackerState,
     lcm: LcmState,
+    #[cfg(any(test, target_arch = "arm"))]
+    flywheel_konami: FloatOutBoyKonami,
+    #[cfg(any(test, target_arch = "arm"))]
+    headlights_on_konami: FloatOutBoyKonami,
+    #[cfg(any(test, target_arch = "arm"))]
+    headlights_off_konami: FloatOutBoyKonami,
     #[cfg(any(test, target_arch = "arm"))]
     haptic_feedback: HapticFeedbackState,
     beeper: FloatOutBoyBeeper,
@@ -161,6 +171,12 @@ impl FloatOutBoyPackageState {
             serialized_config,
             alert_tracker: AlertTrackerState::default(),
             lcm: LcmState::new(serialized_config.hardware_led_mode_id()),
+            #[cfg(any(test, target_arch = "arm"))]
+            flywheel_konami: FloatOutBoyKonami::flywheel(),
+            #[cfg(any(test, target_arch = "arm"))]
+            headlights_on_konami: FloatOutBoyKonami::headlights_on(),
+            #[cfg(any(test, target_arch = "arm"))]
+            headlights_off_konami: FloatOutBoyKonami::headlights_off(),
             #[cfg(any(test, target_arch = "arm"))]
             haptic_feedback: HapticFeedbackState::new(),
             beeper: FloatOutBoyBeeper::new(serialized_config.beeper_enabled()),
@@ -472,9 +488,56 @@ impl FloatOutBoyPackageState {
             self.serialized_config.persistent_fatal_error(),
         );
         self.refresh_footpad_runtime_state(footpad_adc1, footpad_adc2);
+        self.refresh_konami_runtime_state(system_time_ticks);
         self.refresh_charging_runtime_state(system_time_ticks);
         self.refresh_bms_runtime_state(system_time_ticks);
         self.refresh_imu_runtime_state(imu, system_time_ticks);
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    fn refresh_konami_runtime_state(&mut self, system_time_ticks: TimestampTicks) {
+        let base = self.all_data_payloads.base();
+        let ride_state = base.status().ride_state();
+        let pitch = crate::wire::degrees(base.attitude().pitch().angle());
+        let footpad = base.footpad().state();
+
+        if matches!(ride_state.run_state(), FloatOutBoyRunState::Ready)
+            && !matches!(ride_state.mode(), FloatOutBoyMode::Flywheel)
+            && (75.0..105.0).contains(&pitch)
+            && self.flywheel_konami.check(footpad, system_time_ticks)
+        {
+            // C map: `main.c:85-89` and `main.c:945-949`; this is the same
+            // armed default flywheel command used by the native handler.
+            let command = [
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                FloatOutBoyAppDataCommand::Flywheel.id(),
+                0x82,
+                0,
+                0,
+                0,
+                0,
+                1,
+            ];
+            self.handle_flywheel_packet(&command);
+        }
+
+        if self.serialized_config.hardware_led_mode_id() == 0 {
+            return;
+        }
+        if !self.lcm.headlights_enabled()
+            && self
+                .headlights_on_konami
+                .check(footpad, system_time_ticks)
+        {
+            self.lcm.set_headlights_enabled(true);
+        }
+        if self.lcm.headlights_enabled()
+            && self
+                .headlights_off_konami
+                .check(footpad, system_time_ticks)
+        {
+            self.lcm.set_headlights_enabled(false);
+        }
     }
 
     fn handle_rc_move_packet(&mut self, bytes: &[u8]) -> bool {
