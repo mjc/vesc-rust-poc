@@ -296,6 +296,18 @@ fn vesc_if_manifest_matches_generated_header_descriptors() {
     );
     assert_eq!(VescIfAbi::ALL_SLOTS[0].name(), "lbm_add_extension");
     assert_eq!(VescIfAbi::ALL_SLOTS[252].name(), "shutdown_disable");
+    assert_eq!(
+        VescIfAbi::ALL_SLOTS[0].minimum_revision(),
+        Stm32AbiRevision::Base
+    );
+    assert_eq!(
+        VescIfAbi::ALL_SLOTS[VescIfAbi::BASE_SLOT_COUNT].minimum_revision(),
+        Stm32AbiRevision::Firmware605
+    );
+    assert_eq!(
+        VescIfAbi::ALL_SLOTS[VescIfAbi::FIRMWARE_605_SLOT_COUNT].minimum_revision(),
+        Stm32AbiRevision::Firmware606
+    );
     assert!(
         VescIfAbi::ALL_SLOTS
             .iter()
