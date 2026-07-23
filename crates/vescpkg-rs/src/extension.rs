@@ -1,4 +1,4 @@
-//! LispBM extension descriptor validation and registration errors.
+//! `LispBM` extension descriptor validation and registration errors.
 
 use core::ffi::CStr;
 
@@ -13,73 +13,81 @@ const LBM_INT_MIN: i32 = -(1 << 27);
 const LBM_INT_MAX: i32 = (1 << 27) - 1;
 
 const fn encode_integer(value: i32) -> u32 {
-    value.wrapping_shl(LBM_VALUE_SHIFT) as u32 | LBM_INT_TAG
+    value.wrapping_shl(LBM_VALUE_SHIFT).cast_unsigned() | LBM_INT_TAG
 }
 
 const fn decode_integer(value: u32) -> i32 {
-    (value as i32) >> LBM_VALUE_SHIFT
+    value.cast_signed() >> LBM_VALUE_SHIFT
 }
 
 const fn is_integer(value: u32) -> bool {
     value & LBM_VALUE_TAG_MASK == LBM_INT_TAG
 }
 
-/// A LispBM value that can only be produced by the SDK's typed argument API.
+/// A `LispBM` value that can only be produced by the SDK's typed argument API.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LispValue(LbmValue);
 
 impl LispValue {
-    /// Convert any LispBM numeric value to an `f32`.
+    /// Convert any `LispBM` numeric value to an `f32`.
     #[cfg(not(test))]
+    #[must_use]
     pub fn decode_number_as_f32(self) -> Option<f32> {
         crate::lifecycle_core::LbmApi::new(crate::bindings::RealBindings)
             .decode_number_as_f32(self.raw())
     }
 
-    /// Decode this value only when it is an immediate LispBM integer.
+    /// Decode this value only when it is an immediate `LispBM` integer.
+    #[must_use]
     pub fn decode_i32_exact(self) -> Option<i32> {
         is_integer(self.raw().0).then(|| decode_integer(self.raw().0))
     }
 
     /// Convert a firmware-classified numeric value to an unsigned integer.
     #[cfg(not(test))]
+    #[must_use]
     pub fn decode_number_as_u32(self) -> Option<u32> {
         self.is_number()
             .then(|| unsafe { crate::ffi::lbm_dec_as_u32(self.raw()) })
     }
 
-    /// Encode an unsigned integer through the firmware's LispBM representation.
+    /// Encode an unsigned integer through the firmware's `LispBM` representation.
     #[cfg(not(test))]
+    #[must_use]
     pub fn from_u32(value: u32) -> Self {
         Self::from_raw(unsafe { crate::ffi::lbm_enc_u32(value) })
     }
 
-    /// Encode a signed integer through the firmware's LispBM representation.
+    /// Encode a signed integer through the firmware's `LispBM` representation.
     #[cfg(not(test))]
+    #[must_use]
     pub fn from_i32(value: i32) -> Self {
         Self::from_raw(unsafe { crate::ffi::lbm_enc_i(value) })
     }
 
-    /// Encode an `f32` through the firmware's LispBM representation.
+    /// Encode an `f32` through the firmware's `LispBM` representation.
     #[cfg(not(test))]
+    #[must_use]
     pub fn from_f32(value: f32) -> Self {
         Self::from_raw(unsafe { crate::ffi::lbm_enc_float(value) })
     }
 
-    /// Decode a LispBM character value.
+    /// Decode a `LispBM` character value.
     #[cfg(not(test))]
+    #[must_use]
     pub fn decode_char(self) -> Option<u8> {
         self.is_char()
             .then(|| unsafe { crate::ffi::lbm_dec_char(self.raw()) })
     }
 
-    /// Encode a byte as a LispBM character value.
+    /// Encode a byte as a `LispBM` character value.
     #[cfg(not(test))]
+    #[must_use]
     pub fn from_char(value: u8) -> Self {
         Self::from_raw(unsafe { crate::ffi::lbm_enc_char(value) })
     }
 
-    /// Return whether this value is an immediate LispBM integer.
+    /// Return whether this value is an immediate `LispBM` integer.
     #[must_use]
     pub const fn is_integer(self) -> bool {
         is_integer(self.raw().0)
@@ -115,17 +123,19 @@ impl LispValue {
         unsafe { crate::ffi::lbm_is_byte_array(self.raw()) }
     }
 
-    /// Allocate a LispBM byte array through the firmware allocator.
+    /// Allocate a `LispBM` byte array through the firmware allocator.
+    #[must_use]
     pub fn try_byte_array(len: usize) -> Option<Self> {
         let len = u32::try_from(len).ok()?;
         let mut value = LbmValue(0);
-        unsafe { crate::ffi::lbm_create_byte_array(&mut value, len) }.then(|| Self::from_raw(value))
+        unsafe { crate::ffi::lbm_create_byte_array(&raw mut value, len) }
+            .then(|| Self::from_raw(value))
     }
 
     /// Borrow firmware-owned string bytes for the duration of a callback.
     ///
     /// The callback boundary prevents the returned `CStr` from escaping the
-    /// evaluation that owns the LispBM storage.
+    /// evaluation that owns the `LispBM` storage.
     #[cfg(not(test))]
     pub fn with_str<R>(self, f: impl FnOnce(&CStr) -> R) -> Option<R> {
         if !self.is_byte_array() {
@@ -138,14 +148,16 @@ impl LispValue {
         })
     }
 
-    /// Construct a LispBM cons cell from two owned value handles.
+    /// Construct a `LispBM` cons cell from two owned value handles.
     #[cfg(not(test))]
+    #[must_use]
     pub fn cons(car: Self, cdr: Self) -> Self {
         Self::from_raw(unsafe { crate::ffi::lbm_cons(car.raw(), cdr.raw()) })
     }
 
     /// Read the head of a cons cell while preserving its firmware ownership.
     #[cfg(not(test))]
+    #[must_use]
     pub fn car(self) -> Option<Self> {
         self.is_cons()
             .then(|| Self::from_raw(unsafe { crate::ffi::lbm_car(self.raw()) }))
@@ -153,6 +165,7 @@ impl LispValue {
 
     /// Read the tail of a cons cell while preserving its firmware ownership.
     #[cfg(not(test))]
+    #[must_use]
     pub fn cdr(self) -> Option<Self> {
         self.is_cons()
             .then(|| Self::from_raw(unsafe { crate::ffi::lbm_cdr(self.raw()) }))
@@ -160,20 +173,23 @@ impl LispValue {
 
     /// Destructively reverse a firmware-owned list while retaining its handle.
     #[cfg(not(test))]
+    #[must_use]
     pub fn reverse_list(self) -> Option<Self> {
         self.is_cons().then(|| {
             Self::from_raw(unsafe { crate::ffi::lbm_list_destructive_reverse(self.raw()) })
         })
     }
 
-    /// Convert any LispBM numeric value to an `i32`.
+    /// Convert any `LispBM` numeric value to an `i32`.
     #[cfg(not(test))]
+    #[must_use]
     pub fn decode_number_as_i32(self) -> Option<i32> {
         crate::lifecycle_core::LbmApi::new(crate::bindings::RealBindings)
             .decode_number_as_i32(self.raw())
     }
 
-    /// Return LispBM true.
+    /// Return `LispBM` true.
+    #[must_use]
     pub fn true_value() -> Self {
         #[cfg(all(not(test), target_arch = "arm"))]
         {
@@ -187,7 +203,8 @@ impl LispValue {
         }
     }
 
-    /// Return LispBM nil.
+    /// Return `LispBM` nil.
+    #[must_use]
     pub fn nil() -> Self {
         #[cfg(all(not(test), target_arch = "arm"))]
         {
@@ -201,7 +218,8 @@ impl LispValue {
         }
     }
 
-    /// Convert a Rust boolean to LispBM true or nil.
+    /// Convert a Rust boolean to `LispBM` true or nil.
+    #[must_use]
     pub fn boolean(value: bool) -> Self {
         if value {
             Self::true_value()
@@ -219,7 +237,7 @@ impl LispValue {
     }
 }
 
-/// Error returned when an integer cannot use LispBM's immediate representation.
+/// Error returned when an integer cannot use `LispBM`'s immediate representation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LispIntegerError {
     value: i32,
@@ -227,6 +245,7 @@ pub struct LispIntegerError {
 
 impl LispIntegerError {
     /// Return the rejected integer.
+    #[must_use]
     pub const fn value(self) -> i32 {
         self.value
     }
@@ -266,7 +285,7 @@ pub(crate) enum ExtensionRegistrationError {
     FirmwareRejected,
 }
 
-/// Result of registering a package's LispBM extension table.
+/// Result of registering a package's `LispBM` extension table.
 ///
 /// VESC exposes extension insertion but not removal through `VESC_IF`, so a
 /// batch can be partially registered. Once any entry succeeds, the SDK keeps
@@ -303,7 +322,7 @@ impl ExtensionRegistration {
     }
 }
 
-/// A static name assigned to a LispBM extension.
+/// A static name assigned to a `LispBM` extension.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct ExtensionName(&'static [u8]);
@@ -339,6 +358,7 @@ impl ExtensionName {
     }
 
     /// Return the validated Rust extension name without its ABI terminator.
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         let bytes = &self.0[..self.0.len() - 1];
         // SAFETY: the macro support hook accepts only valid C strings built
@@ -347,7 +367,7 @@ impl ExtensionName {
     }
 }
 
-/// Create a checked static LispBM extension name from a Rust string literal.
+/// Create a checked static `LispBM` extension name from a Rust string literal.
 #[macro_export]
 macro_rules! extension_name {
     ($name:literal) => {
@@ -386,13 +406,11 @@ impl ExtensionDescriptor {
     }
 
     /// Build a descriptor for a stateless typed extension callback.
-    #[inline(always)]
     pub fn typed<T: LbmExtension>(name: ExtensionName) -> Self {
         Self::from_handler(name, lbm_extension_handler::<T>)
     }
 
     /// Build a descriptor for a runtime-state-backed typed extension callback.
-    #[inline(always)]
     pub fn stateful<T: StatefulLbmExtension>(name: ExtensionName) -> Self {
         Self {
             name,
@@ -402,6 +420,7 @@ impl ExtensionDescriptor {
     }
 
     /// Return the descriptor name.
+    #[must_use]
     pub const fn name(self) -> ExtensionName {
         self.name
     }
@@ -422,7 +441,7 @@ fn runtime_state_type<T: 'static>() -> core::any::TypeId {
     core::any::TypeId::of::<T>()
 }
 
-/// Typed LispBM extension callback arguments.
+/// Typed `LispBM` extension callback arguments.
 pub struct LispArgs<'a> {
     values: &'a [LbmValue],
 }
@@ -444,12 +463,14 @@ impl LispArgs<'_> {
         unsafe { crate::firmware::lbm_args(args, arg_count).map(|values| Self { values }) }
     }
 
-    /// Return the number of arguments supplied by LispBM.
+    /// Return the number of arguments supplied by `LispBM`.
+    #[must_use]
     pub const fn len(&self) -> usize {
         self.values.len()
     }
 
-    /// Return whether LispBM supplied no arguments.
+    /// Return whether `LispBM` supplied no arguments.
+    #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.values.is_empty()
     }
@@ -464,13 +485,13 @@ fn canonical_nil_raw() -> u32 {
     LispValue::nil().raw().0
 }
 
-/// Rust implementation for a LispBM extension callback.
+/// Rust implementation for a `LispBM` extension callback.
 pub trait LbmExtension {
     /// Handle one extension call.
     fn call(args: LispArgs<'_>) -> LispValue;
 }
 
-/// State-backed LispBM extension behavior for package authors.
+/// State-backed `LispBM` extension behavior for package authors.
 pub trait StatefulLbmExtension {
     /// Package state installed by startup.
     type State: crate::PackageRuntimeState;
@@ -479,11 +500,11 @@ pub trait StatefulLbmExtension {
     fn call(state: &mut Self::State, args: LispArgs<'_>) -> LispValue;
 }
 
-/// Firmware ABI trampoline for a typed LispBM extension callback.
+/// Firmware ABI trampoline for a typed `LispBM` extension callback.
 ///
 /// # Safety
 ///
-/// `args` must be null with `arg_count == 0` or point to `arg_count` LispBM values that stay valid for
+/// `args` must be null with `arg_count == 0` or point to `arg_count` `LispBM` values that stay valid for
 /// this call.
 pub unsafe extern "C" fn lbm_extension_handler<T: LbmExtension>(
     args: *mut u32,
@@ -495,11 +516,11 @@ pub unsafe extern "C" fn lbm_extension_handler<T: LbmExtension>(
     T::call(args).raw().0
 }
 
-/// Firmware ABI trampoline for a state-backed LispBM extension callback.
+/// Firmware ABI trampoline for a state-backed `LispBM` extension callback.
 ///
 /// # Safety
 ///
-/// `args` must be null with `arg_count == 0` or point to `arg_count` LispBM values that stay valid for
+/// `args` must be null with `arg_count == 0` or point to `arg_count` `LispBM` values that stay valid for
 /// this call.
 pub unsafe extern "C" fn stateful_lbm_extension_handler<T: StatefulLbmExtension>(
     args: *mut u32,
@@ -619,7 +640,7 @@ mod tests {
             unsafe {
                 super::lbm_extension_handler::<EchoIntegerExtension>(
                     args.as_mut_ptr().cast(),
-                    args.len() as u32,
+                    u32::try_from(args.len()).unwrap_or(u32::MAX),
                 )
             },
             super::encode_integer(37),
@@ -629,8 +650,11 @@ mod tests {
     #[test]
     fn typed_lisp_args_reject_non_integer_values() {
         let mut values = [0_u32];
-        let args = super::LispArgs::from_raw(values.as_mut_ptr(), values.len() as u32)
-            .expect("valid arguments");
+        let args = super::LispArgs::from_raw(
+            values.as_mut_ptr(),
+            u32::try_from(values.len()).unwrap_or(u32::MAX),
+        )
+        .expect("valid arguments");
 
         assert_eq!(args.get(0).and_then(LispValue::decode_i32_exact), None);
     }

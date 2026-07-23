@@ -221,6 +221,10 @@ impl FirmwareTest {
 
     #[must_use]
     /// Return stack sizes from the first two firmware thread spawns.
+    ///
+    /// # Panics
+    ///
+    /// Panics if fake firmware recorded an invalid working-area size.
     pub fn spawned_thread_working_area_sizes(&self) -> [Option<crate::ThreadWorkingAreaSize>; 2] {
         crate::test_ffi::thread_spawn_stacks().map(|bytes| {
             (bytes != 0).then(|| crate::ThreadWorkingAreaSize::try_from_bytes(bytes).unwrap())
@@ -492,9 +496,15 @@ impl FirmwareTest {
 
     #[must_use]
     /// Return the latest FOC tone channel.
+    ///
+    /// # Panics
+    ///
+    /// Panics if fake firmware recorded an invalid channel.
     pub fn commanded_foc_tone_channel(&self) -> crate::AudioChannel {
-        crate::AudioChannel::try_new(crate::test_ffi::motor_output().foc_tone_channel as u8)
-            .expect("fake firmware stores a valid audio channel")
+        crate::AudioChannel::try_new(
+            u8::try_from(crate::test_ffi::motor_output().foc_tone_channel).unwrap_or(u8::MAX),
+        )
+        .expect("fake firmware stores a valid audio channel")
     }
 
     #[must_use]
@@ -525,17 +535,21 @@ use vescpkg_rs_sys::ExtensionHandler;
 use vescpkg_rs_sys::LbmValue;
 
 /// Install borrowed state for callback-focused host tests.
+///
+/// # Panics
+///
+/// Panics when the store already contains state.
 pub fn install_state<'a, T: Send + 'static>(
     store: &'a crate::PackageStateStore<T>,
     state: &'a mut T,
 ) -> impl Drop + 'a {
-    unsafe { store.install(state) }.unwrap();
     struct ClearOnDrop<'a, T: Send + 'static>(&'a crate::PackageStateStore<T>);
     impl<T: Send + 'static> Drop for ClearOnDrop<'_, T> {
         fn drop(&mut self) {
             self.0.clear();
         }
     }
+    unsafe { store.install(state) }.unwrap();
     ClearOnDrop(store)
 }
 
@@ -555,6 +569,7 @@ pub fn stop_package(info: &mut crate::LoaderInfo) -> bool {
 }
 
 /// Build a startup context with no loader metadata for rejection-path tests.
+#[must_use]
 pub fn package_start_without_loader() -> crate::PackageStart<'static> {
     unsafe { crate::PackageStart::from_raw(core::ptr::null_mut()) }
 }
@@ -582,6 +597,10 @@ impl TestExtensionRegistry {
     }
 
     /// Register extension descriptors through the package loader test seam.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::PackageStartError`] when registration fails.
     pub fn register<const N: usize>(
         &self,
         start: &mut crate::PackageStart<'_>,
@@ -982,8 +1001,8 @@ mod tests {
 
     #[test]
     fn fake_app_data_bindings_track_handler_send_and_ticks() {
-        let bindings = FakeAppDataBindings::with_ticks(999);
         unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
+        let bindings = FakeAppDataBindings::with_ticks(999);
 
         assert_eq!(bindings.system_time_ticks(), 999);
         unsafe {
@@ -1000,8 +1019,6 @@ mod tests {
 
     #[test]
     fn fake_app_data_bindings_track_custom_config_registration() {
-        let bindings = FakeAppDataBindings::new();
-
         unsafe extern "C" fn get_cfg(_data: *mut u8, _is_default: bool) -> core::ffi::c_int {
             0
         }
@@ -1014,6 +1031,7 @@ mod tests {
             0
         }
 
+        let bindings = FakeAppDataBindings::new();
         unsafe {
             // Float Out Boy v1.2.1 registers these three callbacks at `src/main.c:2456`;
             // the VESC function-table slots are declared in

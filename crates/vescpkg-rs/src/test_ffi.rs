@@ -196,38 +196,40 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     store(&IMU_ROLL, 0.0);
     store(&IMU_PITCH, 0.0);
     store(&IMU_YAW, 0.0);
-    IMU_GYRO.iter().for_each(|axis| store(axis, 0.0));
-    [1.0, 0.0, 0.0, 0.0]
-        .into_iter()
-        .zip(&IMU_QUATERNION)
-        .for_each(|(value, component)| store(component, value));
+    for axis in &IMU_GYRO {
+        store(axis, 0.0);
+    }
+    for (value, component) in [1.0, 0.0, 0.0, 0.0].into_iter().zip(&IMU_QUATERNION) {
+        store(component, value);
+    }
     THREAD_SPAWN_COUNT.store(0, Ordering::Relaxed);
-    THREAD_SPAWN_STACKS
-        .iter()
-        .for_each(|slot| slot.store(0, Ordering::Relaxed));
-    [1, 2]
-        .into_iter()
-        .zip(&THREAD_SPAWN_RESULTS)
-        .for_each(|(value, slot)| slot.store(value, Ordering::Relaxed));
+    for slot in &THREAD_SPAWN_STACKS {
+        slot.store(0, Ordering::Relaxed);
+    }
+    for (value, slot) in [1, 2].into_iter().zip(&THREAD_SPAWN_RESULTS) {
+        slot.store(value, Ordering::Relaxed);
+    }
     THREAD_TERMINATE_COUNT.store(0, Ordering::Relaxed);
-    THREAD_TERMINATED
-        .iter()
-        .for_each(|slot| slot.store(0, Ordering::Relaxed));
+    for slot in &THREAD_TERMINATED {
+        slot.store(0, Ordering::Relaxed);
+    }
     THREAD_TERMINATE_CHECKS.store(0, Ordering::Relaxed);
     THREAD_TERMINATE_AFTER.store(usize::MAX, Ordering::Relaxed);
     THREAD_SLEEP_COUNT.store(0, Ordering::Relaxed);
-    THREAD_SLEEP_MICROS
-        .iter()
-        .for_each(|slot| slot.store(0, Ordering::Relaxed));
+    for slot in &THREAD_SLEEP_MICROS {
+        slot.store(0, Ordering::Relaxed);
+    }
     THREAD_PRIORITY_COUNT.store(0, Ordering::Relaxed);
-    THREAD_PRIORITIES
-        .iter()
-        .for_each(|slot| slot.store(0, Ordering::Relaxed));
-    EEPROM_PRESENT
-        .iter()
-        .for_each(|slot| slot.store(false, Ordering::Relaxed));
+    for slot in &THREAD_PRIORITIES {
+        slot.store(0, Ordering::Relaxed);
+    }
+    for slot in &EEPROM_PRESENT {
+        slot.store(false, Ordering::Relaxed);
+    }
     EEPROM_WRITE_FAILURE.store(-1, Ordering::Relaxed);
-    NVM.iter().for_each(|byte| byte.store(0, Ordering::Relaxed));
+    for byte in &NVM {
+        byte.store(0, Ordering::Relaxed);
+    }
     NVM_FAILURE.store(false, Ordering::Relaxed);
     CLOCK_TICKS.store(0, Ordering::Relaxed);
     TIMER_TICKS.store(0, Ordering::Relaxed);
@@ -336,7 +338,9 @@ pub unsafe fn wipe_nvm() -> Option<bool> {
     if NVM_FAILURE.load(Ordering::Relaxed) {
         return Some(false);
     }
-    NVM.iter().for_each(|byte| byte.store(0, Ordering::Relaxed));
+    for byte in &NVM {
+        byte.store(0, Ordering::Relaxed);
+    }
     Some(true)
 }
 
@@ -349,11 +353,11 @@ pub unsafe fn lbm_is_number(value: LbmValue) -> bool {
 }
 
 pub unsafe fn lbm_dec_as_u32(value: LbmValue) -> u32 {
-    (value.0 as i32 >> 4) as u32
+    (value.0.cast_signed() >> 4).cast_unsigned()
 }
 
 pub unsafe fn lbm_dec_as_i32(value: LbmValue) -> i32 {
-    (value.0 as i32) >> 4
+    value.0.cast_signed() >> 4
 }
 
 pub unsafe fn lbm_dec_as_float(value: LbmValue) -> f32 {
@@ -369,7 +373,7 @@ pub unsafe fn lbm_dec_str(_value: LbmValue) -> *mut c_char {
 }
 
 pub unsafe fn lbm_enc_i(value: i32) -> LbmValue {
-    LbmValue((value << 4) as u32 | 0x08)
+    LbmValue((value << 4).cast_unsigned() | 0x08)
 }
 
 pub unsafe fn lbm_enc_float(value: f32) -> LbmValue {
@@ -378,7 +382,7 @@ pub unsafe fn lbm_enc_float(value: f32) -> LbmValue {
 }
 
 pub unsafe fn lbm_dec_char(value: LbmValue) -> u8 {
-    (value.0 >> 4) as u8
+    u8::try_from(value.0 >> 4).unwrap_or(u8::MAX)
 }
 
 pub unsafe fn lbm_enc_char(value: u8) -> LbmValue {

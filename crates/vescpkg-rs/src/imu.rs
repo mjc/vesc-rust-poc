@@ -116,6 +116,7 @@ pub unsafe trait PackageImuReadCallback: ImuReadHandler {
     /// Return host-test state access rooted in the package runtime store.
     #[doc(hidden)]
     #[cfg(not(target_arch = "arm"))]
+    #[must_use]
     fn state_source() -> crate::PackageStateAccess<'static, Self::State> {
         crate::PackageStateAccess::runtime(
             <Self::State as crate::PackageRuntimeState>::runtime_store(),
@@ -142,7 +143,6 @@ macro_rules! firmware_imu_read_callback {
 
         unsafe impl $crate::__macro_support::PackageImuReadCallback for $handler {
             #[cfg(target_arch = "arm")]
-            #[inline(always)]
             fn state_source() -> $crate::PackageStateAccess<'static, Self::State> {
                 unsafe fn package_state_ptr()
                 -> Option<core::ptr::NonNull<<$handler as $crate::ImuReadHandler>::State>> {
@@ -161,7 +161,6 @@ macro_rules! firmware_imu_read_callback {
                 }
             }
 
-            #[inline(always)]
             fn image_address() -> usize {
                 $name as *const () as usize
             }
@@ -169,7 +168,6 @@ macro_rules! firmware_imu_read_callback {
     };
 }
 #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
-#[inline(always)]
 fn dispatch_imu_read<T: ImuReadHandler>(
     state_source: crate::PackageStateAccess<'static, T::State>,
     sample: ImuReadSample,
@@ -187,7 +185,6 @@ impl<T> ImuReadCallback for T
 where
     T: PackageImuReadCallback,
 {
-    #[inline(always)]
     fn read(sample: ImuReadSample) {
         #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
         dispatch_imu_read::<T>(<T as PackageImuReadCallback>::state_source(), sample);
@@ -573,7 +570,7 @@ mod tests {
     fn imu_read_handler_validates_loader_package_state_identity() {
         let mut state = State { samples: 0 };
         unsafe { LOADER_RUNTIME_STATE.install(&mut state) }.unwrap();
-        LOADER_STATE.store(&mut state, Ordering::Release);
+        LOADER_STATE.store(&raw mut state, Ordering::Release);
 
         <LoaderImuRead as ImuReadCallback>::read(typed_sample());
 

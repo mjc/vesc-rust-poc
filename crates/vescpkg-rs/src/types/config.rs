@@ -9,11 +9,13 @@ pub struct WireByte(u8);
 
 impl WireByte {
     /// Wrap one byte received from a validated protocol payload.
+    #[must_use]
     pub const fn new(value: u8) -> Self {
         Self(value)
     }
 
     /// Return the validated protocol byte.
+    #[must_use]
     pub const fn as_u8(self) -> u8 {
         self.0
     }
@@ -55,6 +57,10 @@ macro_rules! positive_count_type {
 
         impl $name {
             /// Create a checked non-zero count.
+            ///
+            /// # Errors
+            ///
+            /// Returns an error when `count` is zero.
             pub const fn try_new(count: u16) -> Result<Self, $error> {
                 if count == 0 {
                     Err($error { value: count })
@@ -112,17 +118,20 @@ pub struct CustomConfigImage<const LEN: usize>([u8; LEN]);
 
 impl<const LEN: usize> CustomConfigImage<LEN> {
     /// Wrap already validated custom-config bytes.
+    #[must_use]
     pub const fn new(bytes: [u8; LEN]) -> Self {
         Self(bytes)
     }
 
     /// Parse bytes with the generated 32-bit config signature.
+    #[must_use]
     pub fn from_serialized(bytes: &[u8], signature: [u8; 4]) -> Option<Self> {
         let bytes = <&[u8; LEN]>::try_from(bytes).ok()?;
         bytes.starts_with(&signature).then_some(Self(*bytes))
     }
 
     /// Return the serialized config bytes.
+    #[must_use]
     pub const fn as_bytes(&self) -> &[u8; LEN] {
         &self.0
     }
@@ -199,6 +208,7 @@ pub struct CustomConfigDurationField(CustomConfigOffset);
 
 impl CustomConfigDurationField {
     #[doc(hidden)]
+    #[must_use]
     pub const fn __from_generated<const LEN: usize>(offset: usize) -> Self {
         assert!(
             LEN >= 2 && offset <= LEN - 2,
@@ -208,7 +218,7 @@ impl CustomConfigDurationField {
     }
 
     /// Decode the field directly into a duration.
-    #[inline(always)]
+    #[must_use]
     pub fn read<const LEN: usize>(
         self,
         image: &CustomConfigImage<LEN>,
@@ -238,6 +248,7 @@ pub struct CustomConfigVoltageField(CustomConfigOffset);
 
 impl CustomConfigVoltageField {
     #[doc(hidden)]
+    #[must_use]
     pub const fn __from_generated<const LEN: usize>(offset: usize) -> Self {
         assert!(
             LEN >= 2 && offset <= LEN - 2,
@@ -247,7 +258,7 @@ impl CustomConfigVoltageField {
     }
 
     /// Decode the field directly into voltage.
-    #[inline(always)]
+    #[must_use]
     pub fn read<const LEN: usize>(
         self,
         image: &CustomConfigImage<LEN>,
@@ -277,6 +288,7 @@ pub struct CustomConfigElectricalSpeedField(CustomConfigOffset);
 
 impl CustomConfigElectricalSpeedField {
     #[doc(hidden)]
+    #[must_use]
     pub const fn __from_generated<const LEN: usize>(offset: usize) -> Self {
         assert!(
             LEN >= 2 && offset <= LEN - 2,
@@ -286,7 +298,7 @@ impl CustomConfigElectricalSpeedField {
     }
 
     /// Decode the field directly into electrical RPM.
-    #[inline(always)]
+    #[must_use]
     pub fn read<const LEN: usize>(
         self,
         image: &CustomConfigImage<LEN>,
@@ -321,6 +333,7 @@ pub struct CustomConfigSampleRateField(CustomConfigOffset);
 
 impl CustomConfigSampleRateField {
     #[doc(hidden)]
+    #[must_use]
     pub const fn __from_generated<const LEN: usize>(offset: usize) -> Self {
         assert!(
             LEN >= 2 && offset <= LEN - 2,
@@ -330,7 +343,7 @@ impl CustomConfigSampleRateField {
     }
 
     /// Decode the field directly into its semantic sample-rate value.
-    #[inline(always)]
+    #[must_use]
     pub fn read<const LEN: usize>(
         self,
         image: &CustomConfigImage<LEN>,
@@ -357,19 +370,19 @@ pub struct CustomConfigFlagField(CustomConfigOffset);
 
 impl CustomConfigFlagField {
     #[doc(hidden)]
+    #[must_use]
     pub const fn __from_generated<const LEN: usize>(offset: usize) -> Self {
         assert!(offset < LEN, "generated config field is out of bounds");
         Self(CustomConfigOffset::new(offset))
     }
 
     /// Read the field, returning `None` when its generated offset is invalid.
-    #[inline(always)]
+    #[must_use]
     pub fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> Option<bool> {
         image.flag_at(self.0.get())
     }
 
     /// Write the field, returning `None` when its generated offset is invalid.
-    #[inline(always)]
     pub fn write<const LEN: usize>(
         self,
         editor: &mut CustomConfigEditor<'_, LEN>,
@@ -386,19 +399,18 @@ pub struct CustomConfigWireByteField(CustomConfigOffset);
 
 impl CustomConfigWireByteField {
     #[doc(hidden)]
+    #[must_use]
     pub const fn __from_generated<const LEN: usize>(offset: usize) -> Self {
         assert!(offset < LEN, "generated config field is out of bounds");
         Self(CustomConfigOffset::new(offset))
     }
 
     /// Read the field without erasing its wire type.
-    #[inline(always)]
     pub fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> Option<WireByte> {
         image.0.get(self.0.get()).copied().map(WireByte::new)
     }
 
     /// Write the field without exposing primitive conversion to package code.
-    #[inline(always)]
     pub fn write<const LEN: usize>(
         self,
         editor: &mut CustomConfigEditor<'_, LEN>,
@@ -415,13 +427,13 @@ pub struct CustomConfigEnumField<T>(CustomConfigOffset, PhantomData<fn() -> T>);
 
 impl<T> CustomConfigEnumField<T> {
     #[doc(hidden)]
+    #[must_use]
     pub const fn __from_generated<const LEN: usize>(offset: usize) -> Self {
         assert!(offset < LEN, "generated config field is out of bounds");
         Self(CustomConfigOffset::new(offset), PhantomData)
     }
 
     /// Decode the field into its Rust enum.
-    #[inline(always)]
     pub fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> Option<T>
     where
         T: From<u8>,
@@ -437,6 +449,7 @@ pub struct CustomConfigResetField(CustomConfigOffset);
 
 impl CustomConfigResetField {
     #[doc(hidden)]
+    #[must_use]
     pub const fn __from_generated<const LEN: usize>(offset: usize) -> Self {
         assert!(
             LEN >= 2 && offset <= LEN - 2,
@@ -471,11 +484,10 @@ impl CustomConfigScaledField {
         }
     }
 
-    #[inline(always)]
     fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> Option<f32> {
         image
             .be_u16_at(self.offset.get())
-            .map(|value| f32::from(value as i16) / self.scale)
+            .map(|value| f32::from(value.cast_signed()) / self.scale)
     }
 
     fn write<const LEN: usize>(
@@ -483,17 +495,25 @@ impl CustomConfigScaledField {
         editor: &mut CustomConfigEditor<'_, LEN>,
         value: f32,
     ) -> Option<()> {
-        editor.set_be_u16_at(self.offset.get(), finite_i16(value * self.scale)? as u16)
+        editor.set_be_u16_at(
+            self.offset.get(),
+            finite_i16(value * self.scale)?.cast_unsigned(),
+        )
     }
 }
 
 fn finite_u16(value: f32) -> Option<u16> {
-    (value.is_finite() && value >= 0.0 && value <= f32::from(u16::MAX)).then_some(value as u16)
+    (value.is_finite() && value >= 0.0 && value <= f32::from(u16::MAX)).then(|| {
+        // SAFETY: the predicate establishes the finite `u16` range.
+        unsafe { value.to_int_unchecked() }
+    })
 }
 
 fn finite_i16(value: f32) -> Option<i16> {
-    (value.is_finite() && value >= f32::from(i16::MIN) && value <= f32::from(i16::MAX))
-        .then_some(value as i16)
+    (value.is_finite() && value >= f32::from(i16::MIN) && value <= f32::from(i16::MAX)).then(|| {
+        // SAFETY: the predicate establishes the finite `i16` range.
+        unsafe { value.to_int_unchecked() }
+    })
 }
 
 macro_rules! semantic_scaled_config_field {
@@ -517,7 +537,6 @@ macro_rules! semantic_scaled_config_field {
             }
 
             /// Decode the field directly into its semantic value.
-            #[inline(always)]
             pub fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> Option<$value> {
                 self.0.read(image).map($decode)
             }
@@ -650,6 +669,7 @@ pub struct CustomConfigRatioField(CustomConfigScaledField);
 
 impl CustomConfigRatioField {
     #[doc(hidden)]
+    #[must_use]
     pub const fn __from_generated<const LEN: usize>(offset: usize, scale: f32) -> Self {
         assert!(
             LEN >= 2 && offset <= LEN - 2,
@@ -662,7 +682,7 @@ impl CustomConfigRatioField {
     }
 
     /// Decode the field directly into an unsigned ratio.
-    #[inline(always)]
+    #[must_use]
     pub fn read<const LEN: usize>(self, image: &CustomConfigImage<LEN>) -> Option<crate::Ratio> {
         self.0
             .read(image)
@@ -686,6 +706,10 @@ pub struct GearRatio(f32);
 
 impl GearRatio {
     /// Create a checked positive gear ratio.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GearRatioError`] when `ratio` is not finite and positive.
     pub const fn try_new(ratio: f32) -> Result<Self, GearRatioError> {
         if ratio.is_finite() && ratio > 0.0 {
             Ok(Self(ratio))
@@ -695,6 +719,7 @@ impl GearRatio {
     }
 
     /// Return the configured ratio for typed calculations.
+    #[must_use]
     pub const fn as_f32(self) -> f32 {
         self.0
     }
@@ -708,6 +733,7 @@ pub struct GearRatioError {
 
 impl GearRatioError {
     /// Return the rejected ratio.
+    #[must_use]
     pub const fn value(self) -> f32 {
         self.value
     }

@@ -1,4 +1,7 @@
 #![cfg(feature = "test-support")]
+// Fake firmware returns fixed ABI values, so these assertions intentionally
+// require exact values rather than accepting a nearby floating-point result.
+#![expect(clippy::float_cmp, reason = "test verifies exact firmware ABI values")]
 //! Integration tests for typed motor telemetry.
 
 use vescpkg_rs::prelude::{

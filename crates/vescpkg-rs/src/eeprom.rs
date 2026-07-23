@@ -93,14 +93,15 @@ impl CustomEeprom {
     #[must_use]
     pub fn read(self, address: CustomEepromAddress) -> Option<EepromWord> {
         let mut word = 0_u32;
-        unsafe { crate::ffi::read_eeprom_word(&mut word, address.get()) }
+        unsafe { crate::ffi::read_eeprom_word(&raw mut word, address.get()) }
             .then(|| EepromWord::from_u32(word))
     }
 
     /// Store one word and report firmware success.
+    #[must_use]
     pub fn write(self, address: CustomEepromAddress, word: EepromWord) -> bool {
         let mut word = word.to_u32();
-        unsafe { crate::ffi::store_eeprom_word(&mut word, address.get()) }
+        unsafe { crate::ffi::store_eeprom_word(&raw mut word, address.get()) }
     }
 
     /// Read a serialized byte image from consecutive custom-EEPROM words.
@@ -127,6 +128,7 @@ impl CustomEeprom {
     ///
     /// A final partial word is padded with zeroes. Returns `false` after the
     /// first address or firmware write failure.
+    #[must_use]
     pub fn write_bytes(self, bytes: &[u8]) -> bool {
         bytes
             .chunks(EepromWord::BYTE_LEN)

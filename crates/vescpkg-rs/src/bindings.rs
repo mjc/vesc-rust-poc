@@ -21,13 +21,13 @@ pub(crate) trait LbmBindings {
     /// and `handler` must obey the firmware's extension callback ABI.
     unsafe fn add_extension(&self, name: *const c_char, handler: ExtensionHandler) -> bool;
     /// # Safety
-    /// `value` must be a valid firmware-provided LispBM value.
+    /// `value` must be a valid firmware-provided `LispBM` value.
     unsafe fn is_number(&self, value: LbmValue) -> bool;
     /// # Safety
-    /// `value` must be a valid firmware-provided LispBM value.
+    /// `value` must be a valid firmware-provided `LispBM` value.
     unsafe fn decode_f32(&self, value: LbmValue) -> f32;
     /// # Safety
-    /// `value` must be a valid firmware-provided LispBM value.
+    /// `value` must be a valid firmware-provided `LispBM` value.
     unsafe fn decode_i32(&self, value: LbmValue) -> i32;
     /// Return the firmware's true symbol.
     #[cfg(not(test))]
@@ -131,7 +131,10 @@ pub(crate) trait AppDataBindings {
     /// Send app-data bytes through the firmware callback.
     fn send_app_data_bytes(&self, data: &[u8]) -> bool {
         (data.len() <= MAX_APP_DATA_PAYLOAD_LEN)
-            .then(|| unsafe { self.send_app_data(data.as_ptr(), data.len() as u32) })
+            .then(|| {
+                let len = u32::try_from(data.len()).unwrap_or(u32::MAX);
+                unsafe { self.send_app_data(data.as_ptr(), len) }
+            })
             .is_some()
     }
 }

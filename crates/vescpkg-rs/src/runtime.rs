@@ -507,14 +507,12 @@ impl<'a, T: Send + 'static> PackageStateAccess<'a, T> {
     }
 
     /// Run `f` with package state, preferring the runtime slot over loader state.
-    #[inline(always)]
     #[must_use]
     pub fn with<R>(&self, f: impl for<'state> FnOnce(&'state T) -> R) -> Option<R> {
         self.runtime.with_expected(self.expected_state()?, f)
     }
 
     /// Run `f` with mutable package state, preferring the runtime slot over loader state.
-    #[inline(always)]
     #[must_use]
     pub fn with_mut<R>(&self, f: impl for<'state> FnOnce(&'state mut T) -> R) -> Option<R> {
         self.runtime.with_expected_mut(self.expected_state()?, f)
@@ -532,6 +530,7 @@ impl<'a, T: Send + 'static> PackageStateAccess<'a, T> {
 #[cfg_attr(target_arch = "arm", allow(clippy::unused_self))]
 impl<T: Send + 'static> PackageStateStore<T> {
     /// Create an empty package-state slot.
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             #[cfg(not(target_arch = "arm"))]
@@ -901,7 +900,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
         #[cfg(not(target_arch = "arm"))]
         self.phase.store(STOPPED, Ordering::Release);
         #[cfg(target_arch = "arm")]
-        finish_firmware_runtime(runtime)
+        finish_firmware_runtime(runtime);
     }
 
     /// Whether startup has installed state.
@@ -912,7 +911,6 @@ impl<T: Send + 'static> PackageStateStore<T> {
     }
 
     /// Run `f` with installed package state, when present.
-    #[inline(always)]
     #[must_use]
     #[cfg(not(target_arch = "arm"))]
     pub fn with<R>(&self, f: impl for<'state> FnOnce(&'state T) -> R) -> Option<R> {
@@ -920,14 +918,12 @@ impl<T: Send + 'static> PackageStateStore<T> {
     }
 
     /// Run `f` with installed mutable package state, when present.
-    #[inline(always)]
     #[must_use]
     #[cfg(not(target_arch = "arm"))]
     pub fn with_mut<R>(&self, f: impl for<'state> FnOnce(&'state mut T) -> R) -> Option<R> {
         self.with_expected_mut(ExpectedState::Any, f)
     }
 
-    #[inline(always)]
     pub(crate) fn with_expected<R>(
         &self,
         expected: ExpectedState<T>,
@@ -950,7 +946,6 @@ impl<T: Send + 'static> PackageStateStore<T> {
         }
     }
 
-    #[inline(always)]
     pub(crate) fn with_expected_mut<R>(
         &self,
         expected: ExpectedState<T>,

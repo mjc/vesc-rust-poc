@@ -1,8 +1,8 @@
-//! POC-specific LispBM extensions for the BLE loopback package.
+//! POC-specific `LispBM` extensions for the BLE loopback package.
 
 use vescpkg_rs::{ExtensionDescriptor, ExtensionName, LbmExtension, LispArgs, LispValue};
 
-/// LispBM extension name registered on device (`ext-rust-probe-diag-v4`).
+/// `LispBM` extension name registered on device (`ext-rust-probe-diag-v4`).
 const EXT_RUST_PROBE_DIAG_NAME: ExtensionName =
     vescpkg_rs::extension_name!("ext-rust-probe-diag-v4");
 
@@ -23,6 +23,7 @@ impl LbmExtension for RustProbeDiag {
 }
 
 /// Returns extension descriptors registered by the loopback example package.
+#[must_use]
 pub fn package_extension_descriptors() -> [ExtensionDescriptor; PACKAGE_EXTENSION_COUNT] {
     [ExtensionDescriptor::typed::<RustProbeDiag>(
         EXT_RUST_PROBE_DIAG_NAME,
@@ -30,6 +31,7 @@ pub fn package_extension_descriptors() -> [ExtensionDescriptor; PACKAGE_EXTENSIO
 }
 
 /// Returns the diagnostic probe extension descriptor used by tests and fixtures.
+#[must_use]
 pub fn rust_probe_diag_descriptor() -> ExtensionDescriptor {
     package_extension_descriptors()[0]
 }

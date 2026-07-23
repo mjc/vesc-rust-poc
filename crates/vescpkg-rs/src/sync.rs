@@ -63,6 +63,7 @@ impl FirmwareSemaphore {
     }
 
     /// Wait for at most `timeout` system ticks, returning `false` on timeout.
+    #[must_use]
     pub fn wait_timeout(&self, timeout: SystemTicks) -> bool {
         unsafe { crate::ffi::vesc_sem_wait_to(self.handle.as_ptr(), timeout.as_ticks()) }
     }

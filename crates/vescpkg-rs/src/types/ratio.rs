@@ -55,6 +55,7 @@ ratio_type!(
 
 impl DutyCycle {
     /// Return the unsigned magnitude used by firmware protection thresholds.
+    #[must_use]
     pub fn magnitude(self) -> Ratio {
         Ratio::clamped(self.ratio().as_ratio().abs())
     }
@@ -62,6 +63,7 @@ impl DutyCycle {
 
 impl DutyCycleLimit {
     /// Reduce this configured limit by a typed safety margin.
+    #[must_use]
     pub fn reduced_by(self, margin: Ratio) -> Self {
         Self::new(Ratio::clamped(self.ratio().as_ratio() - margin.as_ratio()))
     }

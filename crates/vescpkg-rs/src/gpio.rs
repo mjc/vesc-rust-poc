@@ -78,6 +78,7 @@ impl Gpio {
     }
 
     /// Read one analog pin as a typed firmware-scaled voltage.
+    #[must_use]
     pub fn read_analog(&self, pin: AnalogPin) -> AdcVoltage {
         let pin = pin.firmware_pin();
         #[cfg(test)]
@@ -100,6 +101,7 @@ impl Gpio {
     }
 
     /// Configure a digital pin as a push-pull output.
+    #[must_use]
     pub fn configure_output(&self, pin: DigitalPin) -> bool {
         #[cfg(test)]
         {
@@ -116,6 +118,7 @@ impl Gpio {
     }
 
     /// Drive a configured digital output pin.
+    #[must_use]
     pub fn write(&self, pin: DigitalPin, level: DigitalOutputLevel) -> bool {
         #[cfg(test)]
         {

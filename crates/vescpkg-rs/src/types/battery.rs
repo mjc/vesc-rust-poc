@@ -108,11 +108,13 @@ pub struct BatteryLevel(f32);
 
 impl BatteryLevel {
     /// Preserve the raw fraction reported by firmware.
+    #[must_use]
     pub const fn from_fraction(fraction: f32) -> Self {
         Self(fraction)
     }
 
     /// Return the raw firmware fraction.
+    #[must_use]
     pub const fn as_fraction(self) -> f32 {
         self.0
     }

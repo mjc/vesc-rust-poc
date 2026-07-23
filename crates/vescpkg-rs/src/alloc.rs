@@ -45,7 +45,7 @@ impl AllocationHeader {
         let original = original.as_ptr().cast::<c_void>();
         let header = user.as_ptr().wrapping_sub(HEADER_BYTES);
         unsafe {
-            ptr::copy_nonoverlapping((&raw const original).cast::<u8>(), header, HEADER_BYTES)
+            ptr::copy_nonoverlapping((&raw const original).cast::<u8>(), header, HEADER_BYTES);
         };
     }
 

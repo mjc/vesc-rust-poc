@@ -1,4 +1,7 @@
 #![cfg(feature = "test-support")]
+// EEPROM float words preserve their exact bit pattern; approximate comparison
+// would fail to test that storage contract.
+#![expect(clippy::float_cmp, reason = "test verifies exact EEPROM round trip")]
 
 //! Integration tests for typed custom-EEPROM byte images.
 
