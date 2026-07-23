@@ -385,7 +385,7 @@ impl VescIfCapabilities {
 
     /// Probe the complete firmware IMU surface as an optional subsystem.
     pub const fn imu(self) -> Result<VescIfCapability, AbiError> {
-        match self.imu_slots(false) {
+        match self.imu_slots() {
             Ok(()) => Ok(VescIfCapability {
                 subsystem: VescIfSubsystem::Imu,
             }),
@@ -393,7 +393,7 @@ impl VescIfCapabilities {
         }
     }
 
-    const fn imu_slots(self, required: bool) -> Result<(), AbiError> {
+    const fn imu_slots(self) -> Result<(), AbiError> {
         let checks = [
             VescIfAbi::IMU_STARTUP_DONE,
             VescIfAbi::IMU_GET_ROLL,
@@ -412,11 +412,7 @@ impl VescIfCapabilities {
         ];
         let mut index = 0;
         while index < checks.len() {
-            let result = if required {
-                self.presence.require("IMU", checks[index])
-            } else {
-                self.presence.optional("IMU", checks[index])
-            };
+            let result = self.presence.optional("IMU", checks[index]);
             if let Err(error) = result {
                 return Err(error);
             }
