@@ -79,8 +79,8 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
     let motor = base.motor();
     // C map: Float Out Boy v1.2.1 updates motor fields in `motor_data_update` at
     // `third_party/float-out-boy/src/motor_data.c:108-145`. Battery current uses the same first-order
-    // smoothing expression from `third_party/float-out-boy/src/motor_data.c:140`; this app-data
-    // refresh is still a runtime proxy until the real source main loop runs.
+    // smoothing expression from `third_party/float-out-boy/src/motor_data.c:140`; the package main
+    // loop invokes this refresh before control aggregation like the source loop.
     let previous_battery_current = motor.battery_current().current();
     let next_battery_current = telemetry.battery_current().current();
     let previous_duty_cycle = motor.duty_cycle().ratio().as_ratio();
