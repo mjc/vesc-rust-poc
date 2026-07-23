@@ -578,36 +578,30 @@ fn settings_reject_unknown_battery_chemistry() {
     let firmware = FirmwareTest::new();
     let settings = firmware.settings();
 
-    settings
-        .set_int(FirmwareIntSetting::BatteryType, 99)
-        .unwrap();
     assert_eq!(
-        settings.battery_chemistry(),
+        settings.set_int(FirmwareIntSetting::BatteryType, 99),
         Err(SettingsError::InvalidValue)
     );
 
-    settings
-        .set_int(FirmwareIntSetting::AppCanBaudRate, 99)
-        .unwrap();
-    assert_eq!(settings.can_baud_rate(), Err(SettingsError::InvalidValue));
-
-    settings
-        .set_int(FirmwareIntSetting::AppCanMode, 99)
-        .unwrap();
     assert_eq!(
-        settings.can_application_mode(),
+        settings.set_int(FirmwareIntSetting::AppCanBaudRate, 99),
         Err(SettingsError::InvalidValue)
     );
 
-    settings
-        .set_int(FirmwareIntSetting::ImuAhrsMode, 99)
-        .unwrap();
-    assert_eq!(settings.imu_ahrs_mode(), Err(SettingsError::InvalidValue));
+    assert_eq!(
+        settings.set_int(FirmwareIntSetting::AppCanMode, 99),
+        Err(SettingsError::InvalidValue)
+    );
 
-    settings
-        .set_int(FirmwareIntSetting::AppShutdownMode, 99)
-        .unwrap();
-    assert_eq!(settings.shutdown_mode(), Err(SettingsError::InvalidValue));
+    assert_eq!(
+        settings.set_int(FirmwareIntSetting::ImuAhrsMode, 99),
+        Err(SettingsError::InvalidValue)
+    );
+
+    assert_eq!(
+        settings.set_int(FirmwareIntSetting::AppShutdownMode, 99),
+        Err(SettingsError::InvalidValue)
+    );
 }
 
 #[test]

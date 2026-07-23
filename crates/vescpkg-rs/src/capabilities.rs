@@ -188,6 +188,25 @@ impl FirmwareIntSetting {
             Self::BatteryCellCount => 43,
         }
     }
+
+    #[must_use]
+    fn accepts(self, value: i32) -> bool {
+        match self {
+            Self::AppCanMode => CanApplicationMode::from_raw(value).is_some(),
+            Self::AppCanBaudRate => CanBaudRate::from_raw(value).is_some(),
+            Self::ImuAhrsMode => ImuAhrsMode::from_raw(value).is_some(),
+            Self::AppShutdownMode => ShutdownMode::from_raw(value).is_some(),
+            Self::MotorPoleCount => u16::try_from(value)
+                .ok()
+                .and_then(|value| MotorPoleCount::try_new(value).ok())
+                .is_some(),
+            Self::BatteryType => BatteryChemistry::from_raw(value).is_some(),
+            Self::BatteryCellCount => u16::try_from(value)
+                .ok()
+                .and_then(|value| BatteryCellCount::try_new(value).ok())
+                .is_some(),
+        }
+    }
 }
 
 /// Error returned when firmware rejects a settings write or persistence request.
@@ -922,6 +941,9 @@ impl FirmwareSettings {
 
     /// Write an integer setting to live firmware state.
     pub fn set_int(self, setting: FirmwareIntSetting, value: i32) -> Result<(), SettingsError> {
+        if !setting.accepts(value) {
+            return Err(SettingsError::InvalidValue);
+        }
         unsafe { ffi::set_cfg_int(setting.raw(), value) }
             .then_some(())
             .ok_or(SettingsError::Rejected {
@@ -1207,5 +1229,13 @@ mod tests {
             std::format!("{}", SettingsError::InvalidValue),
             "setting value is invalid"
         );
+    }
+
+    #[test]
+    fn integer_setting_validation_rejects_invalid_domains() {
+        assert!(!FirmwareIntSetting::AppCanMode.accepts(99));
+        assert!(!FirmwareIntSetting::BatteryCellCount.accepts(0));
+        assert!(!FirmwareIntSetting::MotorPoleCount.accepts(-1));
+        assert!(FirmwareIntSetting::AppShutdownMode.accepts(9));
     }
 }
