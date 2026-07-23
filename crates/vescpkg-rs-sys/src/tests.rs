@@ -302,6 +302,20 @@ fn vesc_if_manifest_matches_generated_header_descriptors() {
             .all(|slot| slot.header_line() > 0)
     );
     assert_eq!(VescIfAbi::GET_REMOTE_STATE.header_line(), 605);
+    let header = include_str!("../vendor/vesc_pkg_lib/vesc_c_if.h");
+    for slot in VescIfAbi::ALL_SLOTS {
+        let source = header
+            .lines()
+            .nth(slot.header_line() - 1)
+            .expect("manifest source line must exist");
+        assert!(
+            source
+                .split(|character: char| { !character.is_ascii_alphanumeric() && character != '_' })
+                .any(|word| word == slot.name()),
+            "manifest source anchor for {} points at: {source}",
+            slot.name()
+        );
+    }
 
     for (index, (slot, entry)) in VescIfAbi::ALL_SLOTS
         .iter()
