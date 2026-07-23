@@ -76,6 +76,16 @@ fn motor_exposes_typed_handbrake_commands() {
         4.5
     );
     assert_eq!(telemetry.motor_current().current().as_amps(), 10.0);
+    assert_eq!(telemetry.d_axis_current().unwrap().current().as_amps(), 1.5);
+    assert_eq!(telemetry.q_axis_current().unwrap().current().as_amps(), 2.5);
+    assert_eq!(
+        telemetry.d_axis_voltage().unwrap().voltage().as_volts(),
+        3.5
+    );
+    assert_eq!(
+        telemetry.q_axis_voltage().unwrap().voltage().as_volts(),
+        4.5
+    );
     assert_eq!(
         telemetry.directional_motor_current().current().as_amps(),
         -11.0
