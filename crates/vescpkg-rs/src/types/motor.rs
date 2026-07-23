@@ -39,6 +39,11 @@ macro_rules! current_type {
             pub const fn is_zero(self) -> bool {
                 self.0.is_zero()
             }
+
+            /// Return true when the wrapped current is finite.
+            pub const fn is_finite(self) -> bool {
+                self.0.as_amps().is_finite()
+            }
         }
 
         impl core::ops::Add for $name {
@@ -503,5 +508,7 @@ mod tests {
         assert!(!current.is_positive());
         assert!(!current.is_zero());
         assert_eq!(current.abs(), MotorCurrent::new(Current::from_amps(4.0)));
+        assert!(current.is_finite());
+        assert!(!MotorCurrent::new(Current::from_amps(f32::NAN)).is_finite());
     }
 }

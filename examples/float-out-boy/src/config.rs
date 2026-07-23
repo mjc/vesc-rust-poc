@@ -585,8 +585,7 @@ impl FloatOutBoyConfigEditor<'_> {
     }
 
     pub(crate) fn set_ki_limit(&mut self, current: MotorCurrent) -> bool {
-        let amps = current.current().as_amps();
-        if !amps.is_finite() || amps < 0.0 {
+        if !current.is_finite() || current.is_negative() {
             return false;
         }
         FloatOutBoyBalanceConfig::KI_LIMIT_FIELD
