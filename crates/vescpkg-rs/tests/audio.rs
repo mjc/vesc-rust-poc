@@ -48,8 +48,10 @@ fn firmware_audio_forwards_checked_commands_and_owns_sample_table_borrow() {
     let samples = [0.1, 0.2, 0.3];
     let table = audio.set_sample_table(channel, &samples).unwrap();
     assert!(unsafe { audio.sample_table_ptr(channel) }.is_some());
+    audio.stop(FocAudioStopMode::Preserve).unwrap();
+    assert!(unsafe { audio.sample_table_ptr(channel) }.is_some());
     drop(table);
-    audio.stop(FocAudioStopMode::Reset).unwrap();
+    assert!(unsafe { audio.sample_table_ptr(channel) }.is_none());
 }
 
 #[test]

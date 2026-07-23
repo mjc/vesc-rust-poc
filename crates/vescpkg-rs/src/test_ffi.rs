@@ -158,6 +158,7 @@ static DUTY_CYCLE: AtomicU32 = AtomicU32::new(0);
 static FOC_ID_CURRENT: AtomicU32 = AtomicU32::new(0);
 static HAS_FOC_ID_CURRENT: AtomicBool = AtomicBool::new(false);
 static FOC_AUDIO_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static FOC_AUDIO_TABLE_INSTALLED: AtomicBool = AtomicBool::new(false);
 static FOC_TONE_COUNT: AtomicUsize = AtomicUsize::new(0);
 static FOC_TONE_FREQUENCY: AtomicU32 = AtomicU32::new(0);
 static FOC_TONE_VOLTAGE: AtomicU32 = AtomicU32::new(0);
@@ -395,6 +396,7 @@ fn reset_motor_state() {
     FOC_ID_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
     HAS_FOC_ID_CURRENT.store(false, Ordering::Relaxed);
     FOC_AUDIO_AVAILABLE.store(true, Ordering::Relaxed);
+    FOC_AUDIO_TABLE_INSTALLED.store(false, Ordering::Relaxed);
     FOC_TONE_COUNT.store(0, Ordering::Relaxed);
     FOC_TONE_FREQUENCY.store(0, Ordering::Relaxed);
     FOC_TONE_VOLTAGE.store(0, Ordering::Relaxed);
@@ -1795,7 +1797,10 @@ pub unsafe fn foc_play_tone(channel: c_int, frequency: f32, voltage: f32) -> Opt
     }
 }
 
-pub unsafe fn foc_stop_audio(_reset: bool) -> bool {
+pub unsafe fn foc_stop_audio(reset: bool) -> bool {
+    if reset {
+        FOC_AUDIO_TABLE_INSTALLED.store(false, Ordering::Relaxed);
+    }
     FOC_AUDIO_AVAILABLE.load(Ordering::Relaxed)
 }
 
@@ -1804,13 +1809,18 @@ pub unsafe fn foc_set_audio_sample_table(
     _samples: *const f32,
     _length: c_int,
 ) -> Option<bool> {
-    FOC_AUDIO_AVAILABLE.load(Ordering::Relaxed).then_some(true)
+    if FOC_AUDIO_AVAILABLE.load(Ordering::Relaxed) {
+        FOC_AUDIO_TABLE_INSTALLED.store(true, Ordering::Relaxed);
+        Some(true)
+    } else {
+        None
+    }
 }
 
 pub unsafe fn foc_get_audio_sample_table(_channel: c_int) -> Option<*const f32> {
-    FOC_AUDIO_AVAILABLE
-        .load(Ordering::Relaxed)
-        .then_some(AUDIO_SAMPLE_TABLE.as_ptr())
+    (FOC_AUDIO_AVAILABLE.load(Ordering::Relaxed)
+        && FOC_AUDIO_TABLE_INSTALLED.load(Ordering::Relaxed))
+    .then_some(AUDIO_SAMPLE_TABLE.as_ptr())
 }
 
 pub unsafe fn foc_play_audio_samples(
