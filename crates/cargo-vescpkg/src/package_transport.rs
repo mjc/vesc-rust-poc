@@ -771,9 +771,10 @@ fn parse_write_ack(response: &[u8], expected_command: u8) -> Result<bool, Packag
 }
 
 fn read_string<'a>(cursor: &mut &'a [u8]) -> Result<&'a str, PackageInstallError> {
-    let Some(len) = cursor.iter().position(|byte| *byte == 0) else {
-        return Err(malformed_reply("missing NUL terminator"));
-    };
+    let len = cursor
+        .iter()
+        .position(|byte| *byte == 0)
+        .ok_or_else(|| malformed_reply("missing NUL terminator"))?;
     if cursor.len() <= len {
         return Err(malformed_reply("truncated BLE reply"));
     }

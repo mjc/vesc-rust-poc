@@ -82,9 +82,10 @@ pub fn parse_vescpkg(data: &[u8]) -> Result<Vec<PackageField>, WireError> {
 }
 
 fn read_string(cursor: &mut &[u8]) -> Result<String, WireError> {
-    let Some(end) = cursor.iter().position(|byte| *byte == 0) else {
-        return Err(WireError("unexpected end of vescpkg wire data".to_owned()));
-    };
+    let end = cursor
+        .iter()
+        .position(|byte| *byte == 0)
+        .ok_or_else(|| WireError("unexpected end of vescpkg wire data".to_owned()))?;
     let bytes = take(cursor, end)?;
     take(cursor, 1)?;
     String::from_utf8(bytes).map_err(|_| WireError("vescpkg field is not valid utf-8".to_owned()))

@@ -90,9 +90,7 @@ pub fn handle_command(
     packet: &[u8],
     response: &mut [u8],
 ) -> Result<usize, CommandError> {
-    let Some(&command) = packet.first() else {
-        return Err(CommandError::InvalidLength);
-    };
+    let command = packet.first().copied().ok_or(CommandError::InvalidLength)?;
     match command {
         SETPOINT_COMMAND => {
             if packet.len() != 3 {
