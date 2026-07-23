@@ -77,6 +77,10 @@ use transition::{
     float_out_boy_state_transition,
 };
 
+// C map: `aux_thd` stores backup data after more than 200 m while not running
+// at `third_party/float-out-boy/src/main.c:1142-1146`.
+const FLOAT_OUT_BOY_AUX_BACKUP_DISTANCE_METERS: u64 = 200;
+
 #[inline]
 /// C map: `on_command_received` in `third_party/float-out-boy/src/main.c:2143-2225` filters
 /// app-data packets by package byte and command ID before dispatching to per-command handlers.
@@ -313,7 +317,11 @@ impl FloatOutBoyPackageState {
                 .ride_state()
                 .run_state(),
             FloatOutBoyRunState::Running
-        ) && odometer.as_meters() > self.aux_odometer.as_meters().saturating_add(200)
+        ) && odometer.as_meters()
+            > self
+                .aux_odometer
+                .as_meters()
+                .saturating_add(FLOAT_OUT_BOY_AUX_BACKUP_DISTANCE_METERS)
     }
 
     /// Record a successful auxiliary backup so the same distance is not stored repeatedly.
