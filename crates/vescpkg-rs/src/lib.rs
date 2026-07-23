@@ -195,6 +195,7 @@ pub use extension::{
     LispList, LispListError, LispMessageError, LispProcess, LispSymbol, LispValue,
     StatefulLbmExtension,
 };
+#[allow(deprecated)]
 pub use input::{ControllerInput, RemoteInput};
 pub use inputs::{
     FirmwareInputs, InputError, PpmSnapshot, RemoteInputSnapshot, ShutdownInhibit, TimeoutSnapshot,
@@ -271,6 +272,7 @@ pub use pwm::{
 pub use types::*;
 
 /// Common package-author imports for code running inside the controller.
+#[allow(deprecated)]
 pub mod prelude {
     #[cfg(feature = "alloc")]
     pub use crate::OwnedPacketRegistration;
