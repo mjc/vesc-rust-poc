@@ -609,7 +609,7 @@ impl FloatOutBoyPackageState {
         let base = self.all_data_payloads.base();
         let ride_state = base.status().ride_state();
         let filtered_current = base.motor().filtered_motor_current().current().current();
-        let braking = base.motor().motor_current().current().is_negative();
+        let braking = base.motor().motor_current().is_negative();
         let current_limit = if braking {
             self.motor_current_min
         } else {

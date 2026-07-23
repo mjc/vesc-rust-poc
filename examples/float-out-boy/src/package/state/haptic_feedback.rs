@@ -125,7 +125,7 @@ impl HapticFeedbackState {
                 );
             }
             let vibrate_strength = config.vibrate_strength();
-            if vibrate_strength.current().is_positive() {
+            if vibrate_strength.is_positive() {
                 motor_control.play_tone(
                     config.vibrate_frequency(),
                     vibrate_strength * strength,

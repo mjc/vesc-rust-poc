@@ -80,7 +80,7 @@ impl Branch {
     pub(super) fn from_motor_current(motor_current: MotorCurrent) -> Self {
         // C map: `booster_update` selects accel vs brake booster path from
         // the sign of the current at `third_party/float-out-boy/src/booster.c:32-45`.
-        if motor_current.current().is_negative() {
+        if motor_current.is_negative() {
             Self::Brake
         } else {
             Self::Accel

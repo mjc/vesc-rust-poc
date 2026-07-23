@@ -278,7 +278,7 @@ impl ScaleSide {
     fn from_current(current: MotorCurrent) -> Self {
         // C map: `third_party/float-out-boy/src/pid.c:72` picks accel vs brake scale
         // from the sign of the rate-P current contribution.
-        if current.current().is_positive() {
+        if current.is_positive() {
             Self::Accel
         } else {
             Self::Brake
