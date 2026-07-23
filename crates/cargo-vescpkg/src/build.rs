@@ -606,18 +606,20 @@ fn stack_through<'function>(
     if active.contains(&name) {
         return 0;
     }
-    let Some(function) = functions.iter().find(|function| function.name == name) else {
-        return 0;
-    };
-    active.push(name);
-    let callee_stack = function
-        .callees
+    functions
         .iter()
-        .map(|callee| stack_through(callee, functions, active))
-        .max()
-        .unwrap_or(0);
-    active.pop();
-    function.stack_bytes + callee_stack
+        .find(|function| function.name == name)
+        .map_or(0, |function| {
+            active.push(name);
+            let callee_stack = function
+                .callees
+                .iter()
+                .map(|callee| stack_through(callee, functions, active))
+                .max()
+                .unwrap_or(0);
+            active.pop();
+            function.stack_bytes + callee_stack
+        })
 }
 
 fn validate_loader_init_stack_report(report: &str) -> Result<(), BuildError> {
