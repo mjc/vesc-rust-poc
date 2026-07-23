@@ -40,6 +40,7 @@ mod handtest;
 #[cfg(any(test, target_arch = "arm"))]
 mod haptic_feedback;
 mod imu_runtime;
+mod lcm;
 mod limits;
 mod motor_acceleration;
 mod motor_runtime;
@@ -61,6 +62,7 @@ use alert_tracker::AlertTrackerState;
 use flywheel::FloatOutBoyFlywheelOffsets;
 #[cfg(any(test, target_arch = "arm"))]
 use haptic_feedback::{HapticFeedbackInput, HapticFeedbackState};
+use lcm::LcmState;
 use motor_acceleration::MotorAccelerationTracker;
 use remote_control::RemoteControlState;
 use ride_modifiers::{RideModifierInput, RideModifierState};
@@ -93,6 +95,7 @@ pub struct FloatOutBoyPackageState {
     all_data_payloads: FloatOutBoyAllDataPayloads,
     serialized_config: FloatOutBoyConfigImage,
     alert_tracker: AlertTrackerState,
+    lcm: LcmState,
     #[cfg(any(test, target_arch = "arm"))]
     haptic_feedback: HapticFeedbackState,
     beeper: FloatOutBoyBeeper,
@@ -157,6 +160,7 @@ impl FloatOutBoyPackageState {
             all_data_payloads,
             serialized_config,
             alert_tracker: AlertTrackerState::default(),
+            lcm: LcmState::new(serialized_config.hardware_led_mode_id()),
             #[cfg(any(test, target_arch = "arm"))]
             haptic_feedback: HapticFeedbackState::new(),
             beeper: FloatOutBoyBeeper::new(serialized_config.beeper_enabled()),
@@ -553,6 +557,7 @@ impl FloatOutBoyPackageState {
             || tuning::handle_booster_packet(self, bytes)
             || self.handle_rc_move_packet(bytes)
             || self.handle_alert_packet(telemetry, send, bytes)
+            || self.handle_lcm_packet(telemetry, send, bytes)
             || self.send_metadata_packet_response(send, bytes)
             || self.send_legacy_realtime_data_packet_response(send, bytes)
             || self.send_realtime_data_packet_response(telemetry, now, send, bytes)
