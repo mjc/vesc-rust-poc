@@ -2,7 +2,8 @@
 //! Integration coverage for the exclusive UART capability.
 
 use vescpkg_rs::{
-    BaudRate, PackageRuntimeState, PackageStateStore, UartLease, test_support::FirmwareTest,
+    BaudRate, PackageRuntimeState, PackageStateStore, UartDuplexMode, UartLease,
+    test_support::FirmwareTest,
 };
 
 struct PackageState {
@@ -18,16 +19,22 @@ impl PackageRuntimeState for PackageState {
 }
 
 #[test]
+fn uart_duplex_mode_has_explicit_abi_mapping() {
+    assert!(!UartDuplexMode::FullDuplex.is_half_duplex());
+    assert!(UartDuplexMode::HalfDuplex.is_half_duplex());
+}
+
+#[test]
 fn uart_lease_forwards_checked_io_and_releases_ownership() {
     let firmware = FirmwareTest::new();
     let uart = firmware.uart();
     let baud = BaudRate::try_new(115_200).unwrap();
-    let lease = uart.open(baud, false).unwrap();
+    let lease = uart.open(baud, UartDuplexMode::FullDuplex).unwrap();
     assert_eq!(lease.write(b"abc").unwrap(), 3);
     assert_eq!(lease.read(), Ok(Some(b'A')));
-    assert!(uart.open(baud, true).is_err());
+    assert!(uart.open(baud, UartDuplexMode::HalfDuplex).is_err());
     drop(lease);
-    assert!(uart.open(baud, true).is_ok());
+    assert!(uart.open(baud, UartDuplexMode::HalfDuplex).is_ok());
 }
 
 #[test]
@@ -37,7 +44,7 @@ fn uart_reports_absent_optional_slots() {
     let baud = BaudRate::try_new(115_200).unwrap();
 
     assert!(matches!(
-        firmware.uart().open(baud, false),
+        firmware.uart().open(baud, UartDuplexMode::FullDuplex),
         Err(vescpkg_rs::UartError::Unavailable)
     ));
 }
@@ -46,7 +53,10 @@ fn uart_reports_absent_optional_slots() {
 fn package_stop_releases_uart_state_before_next_open() {
     let firmware = FirmwareTest::new();
     let baud = BaudRate::try_new(115_200).unwrap();
-    let lease = firmware.uart().open(baud, false).expect("UART lease");
+    let lease = firmware
+        .uart()
+        .open(baud, UartDuplexMode::FullDuplex)
+        .expect("UART lease");
     let mut info = vescpkg_rs::test_support::LoaderInfo::new();
     let mut start = vescpkg_rs::test_support::package_start(&mut info);
     start
@@ -59,6 +69,6 @@ fn package_stop_releases_uart_state_before_next_open() {
 
     firmware
         .uart()
-        .open(baud, true)
+        .open(baud, UartDuplexMode::HalfDuplex)
         .expect("stop released UART lease");
 }
