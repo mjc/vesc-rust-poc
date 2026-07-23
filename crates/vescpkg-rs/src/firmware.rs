@@ -129,8 +129,7 @@ pub unsafe trait PackageAppDataCallback: AppDataHandler + Sized {
 ///
 /// `data` must be null with `len == 0` or point to `len` readable bytes that stay valid for this
 /// call.
-#[cfg(any(test, not(feature = "test-support")))]
-#[cfg_attr(test, allow(dead_code))]
+#[cfg(all(not(test), not(feature = "test-support")))]
 pub unsafe extern "C" fn app_data_handler<T: PackageAppDataCallback>(data: *mut u8, len: u32) {
     let Some(packet) = (unsafe { app_data_packet(data, len) }) else {
         return;
@@ -696,18 +695,22 @@ mod tests {
                 0
             }
 
+            #[cfg(not(test))]
             fn system_time_seconds(&self) -> f32 {
                 0.0
             }
 
+            #[cfg(not(test))]
             fn timestamp_age_seconds(&self, _timestamp: u32) -> f32 {
                 0.0
             }
 
+            #[cfg(not(test))]
             fn timer_time_now(&self) -> u32 {
                 0
             }
 
+            #[cfg(not(test))]
             fn timer_seconds_elapsed_since(&self, _timestamp: u32) -> f32 {
                 0.0
             }
@@ -968,7 +971,7 @@ mod tests {
         let state = Box::leak(Box::new(State {
             config: CustomConfigImage::new([1, 2, 3, 4, 9]),
         }));
-        unsafe { SLOT.install(state) }.unwrap();
+        assert!(unsafe { SLOT.install(state) });
 
         let mut out = [0_u8; 5];
         assert_eq!(
@@ -1076,7 +1079,7 @@ mod tests {
         let runtime_state = Box::leak(Box::new(State {
             config: CustomConfigImage::new([1, 2, 3, 4, 9]),
         }));
-        unsafe { RUNTIME.install(runtime_state) }.unwrap();
+        assert!(unsafe { RUNTIME.install(runtime_state) });
         FALLBACK.store(core::ptr::from_mut(runtime_state), Ordering::Release);
 
         let mut out = [0_u8; 5];

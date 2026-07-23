@@ -29,7 +29,7 @@ impl LoopState {
     /// `third_party/float-out-boy/src/pid.c:37-73`,
     /// `third_party/float-out-boy/src/booster.c:32-75`, and
     /// `third_party/float-out-boy/src/imu.c:43-53`.
-    #[inline(always)]
+    #[inline]
     pub(crate) fn advance_balance_loop(self, config: LoopConfig, input: LoopInput) -> LoopOutput {
         let (pid_currents, state) = PidPhase::from_step(config, input).update_state(self);
         let booster_current =
@@ -261,27 +261,25 @@ mod tests {
             ),
         ];
 
-        cases.into_iter().for_each(
-            |(measured_current, board_setpoint, current_limit, expected_current)| {
-                let output = advance_loop(
-                    config,
-                    LoopInput {
-                        setpoint: board_setpoint,
-                        motor_current: measured_current,
-                        motor_current_max: motor_current_limit(Current::from_amps(3.0)),
-                        motor_current_min: motor_current_limit(current_limit.current()),
-                        ..base_input()
-                    },
-                    base_state(),
-                );
+        for (measured_current, board_setpoint, current_limit, expected_current) in cases {
+            let output = advance_loop(
+                config,
+                LoopInput {
+                    setpoint: board_setpoint,
+                    motor_current: measured_current,
+                    motor_current_max: motor_current_limit(Current::from_amps(3.0)),
+                    motor_current_min: motor_current_limit(current_limit.current()),
+                    ..base_input()
+                },
+                base_state(),
+            );
 
-                // Upstream `pid_update` computes P/I at
-                // `third_party/float-out-boy/src/pid.c:40-46`; RUNNING selects max
-                // or min current limit at `third_party/float-out-boy/src/main.c:932-942`
-                // and smooths at `third_party/float-out-boy/src/main.c:949-954`.
-                assert_current(output.state.balance_current, expected_current);
-            },
-        );
+            // Upstream `pid_update` computes P/I at
+            // `third_party/float-out-boy/src/pid.c:40-46`; RUNNING selects max
+            // or min current limit at `third_party/float-out-boy/src/main.c:932-942`
+            // and smooths at `third_party/float-out-boy/src/main.c:949-954`.
+            assert_current(output.state.balance_current, expected_current);
+        }
     }
 
     #[test]
@@ -431,7 +429,7 @@ mod tests {
 
         // Upstream subtracts brake tilt from booster proportional before
         // `booster_update` at `third_party/float-out-boy/src/main.c:921-922`.
-        assert_eq!(proportional.angle().as_degrees(), 0.0);
+        assert_f32_eq!(proportional.angle().as_degrees(), 0.0);
     }
 
     #[test]
@@ -514,8 +512,8 @@ mod tests {
         // Upstream mixes roll, gyro Y, and gyro Z at
         // `third_party/float-out-boy/src/imu.c:46-51`, then flips darkride at
         // `third_party/float-out-boy/src/imu.c:52-53`.
-        assert_eq!(upright.rate().as_degrees_per_second(), 12.0);
-        assert_eq!(darkride.rate().as_degrees_per_second(), -12.0);
+        assert_f32_eq!(upright.rate().as_degrees_per_second(), 12.0);
+        assert_f32_eq!(darkride.rate().as_degrees_per_second(), -12.0);
     }
 
     #[test]

@@ -30,12 +30,10 @@ pub(crate) trait LbmBindings {
     /// `value` must be a valid firmware-provided `LispBM` value.
     unsafe fn decode_i32(&self, value: LbmValue) -> i32;
     /// Return the firmware's true symbol.
-    #[cfg(not(test))]
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    #[cfg(all(not(test), target_arch = "arm"))]
     fn encode_true(&self) -> LbmValue;
     /// Return the firmware's nil symbol.
-    #[cfg(not(test))]
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    #[cfg(all(not(test), target_arch = "arm"))]
     fn encode_nil(&self) -> LbmValue;
 }
 
@@ -57,12 +55,12 @@ impl<B: LbmBindings + ?Sized> LbmBindings for &B {
         unsafe { (**self).decode_f32(value) }
     }
 
-    #[cfg(not(test))]
+    #[cfg(all(not(test), target_arch = "arm"))]
     fn encode_true(&self) -> LbmValue {
         (**self).encode_true()
     }
 
-    #[cfg(not(test))]
+    #[cfg(all(not(test), target_arch = "arm"))]
     fn encode_nil(&self) -> LbmValue {
         (**self).encode_nil()
     }
@@ -81,23 +79,19 @@ pub(crate) trait AppDataBindings {
     fn system_time_ticks(&self) -> u32;
 
     /// Return firmware uptime in floating-point seconds.
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware clock slots remain declared even when host builds do not call every clock helper.
+    #[cfg(not(test))]
     fn system_time_seconds(&self) -> f32;
 
     /// Return the firmware-computed age of a system timestamp in seconds.
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware clock slots remain declared even when host builds do not call every clock helper.
+    #[cfg(not(test))]
     fn timestamp_age_seconds(&self, timestamp: u32) -> f32;
 
     /// Return the current high-resolution timer instant.
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware timer slots remain declared even when host builds do not call every timer helper.
+    #[cfg(not(test))]
     fn timer_time_now(&self) -> u32;
 
     /// Return high-resolution elapsed time since a timer instant.
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware timer slots remain declared even when host builds do not call every timer helper.
+    #[cfg(not(test))]
     fn timer_seconds_elapsed_since(&self, timestamp: u32) -> f32;
 
     /// Return the package `ARG` pointer stored by the firmware loader.
@@ -155,18 +149,22 @@ impl<B: AppDataBindings + ?Sized> AppDataBindings for &B {
         (**self).system_time_ticks()
     }
 
+    #[cfg(not(test))]
     fn system_time_seconds(&self) -> f32 {
         (**self).system_time_seconds()
     }
 
+    #[cfg(not(test))]
     fn timestamp_age_seconds(&self, timestamp: u32) -> f32 {
         (**self).timestamp_age_seconds(timestamp)
     }
 
+    #[cfg(not(test))]
     fn timer_time_now(&self) -> u32 {
         (**self).timer_time_now()
     }
 
+    #[cfg(not(test))]
     fn timer_seconds_elapsed_since(&self, timestamp: u32) -> f32 {
         (**self).timer_seconds_elapsed_since(timestamp)
     }
@@ -285,10 +283,12 @@ impl LbmBindings for RealBindings {
         unsafe { crate::ffi::lbm_dec_as_float(value) }
     }
 
+    #[cfg(target_arch = "arm")]
     fn encode_true(&self) -> LbmValue {
         unsafe { crate::ffi::lbm_enc_sym_true() }
     }
 
+    #[cfg(target_arch = "arm")]
     fn encode_nil(&self) -> LbmValue {
         unsafe { crate::ffi::lbm_enc_sym_nil() }
     }

@@ -187,24 +187,25 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
     rust.push_str("];\n\n");
 
     rust.push_str(
-        "#[allow(clippy::too_many_lines)] // generated slot table mirrors vesc_c_if.h field count\n",
-    );
-    rust.push_str(
         "pub(crate) fn presence(table: &crate::bindgen::vesc_c_if) -> crate::VescIfPresence {\n",
     );
     rust.push_str("    let mut presence = crate::VescIfPresence::empty();\n");
+    rust.push_str("    let present = [");
     for slot in slots {
         match slot.kind {
-            SlotKind::Function => writeln!(
-                rust,
-                "    if table.{}.is_some() {{ presence.set({}); }}",
-                slot.c_name, slot.index
-            ),
-            SlotKind::Scalar => writeln!(rust, "    presence.set({});", slot.index),
+            SlotKind::Function => write!(rust, "table.{}.is_some(),", slot.c_name),
+            SlotKind::Scalar => rust.write_str("true,"),
         }
         .expect("write generated Rust");
     }
-    rust.push_str("    presence\n}\n\n");
+    rust.push_str("];\n");
+    rust.push_str(
+        "    for (index, is_present) in present.into_iter().enumerate() {\n\
+         \x20       if is_present { presence.set(index); }\n\
+         \x20   }\n\
+         \x20   presence\n\
+         }\n\n",
+    );
 
     rust.push_str("macro_rules! define_vesc_if_manifest_constants {\n");
     rust.push_str("    ($macro:ident) => {\n");

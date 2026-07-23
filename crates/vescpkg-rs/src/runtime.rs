@@ -15,17 +15,9 @@ use core::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 const EMPTY: u8 = 0;
 const INSTALLING: u8 = 1;
 const RUNNING: u8 = 2;
-#[cfg_attr(
-    not(any(test, feature = "test-support", target_arch = "arm")),
-    allow(dead_code)
-)]
-// Stop paths are exercised by firmware/test-support lifecycle, not plain host lib builds.
+#[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 const STOPPING: u8 = 3;
-#[cfg_attr(
-    not(any(test, feature = "test-support", target_arch = "arm")),
-    allow(dead_code)
-)]
-// Stop paths are exercised by firmware/test-support lifecycle, not plain host lib builds.
+#[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 const STOPPED: u8 = 4;
 #[cfg(target_arch = "arm")]
 const APP_DATA_CALLBACK: u8 = 1;
@@ -35,11 +27,7 @@ const CUSTOM_CONFIG_CALLBACKS: u8 = 1 << 1;
 const IMU_CALLBACK: u8 = 1 << 2;
 
 #[derive(Clone, Copy, Default)]
-#[cfg_attr(
-    not(any(test, feature = "test-support", target_arch = "arm")),
-    allow(dead_code)
-)]
-// Callback flags are consumed when firmware/test-support stop clears registered callbacks.
+#[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 pub(crate) struct CallbackRegistrations {
     app_data: bool,
     custom_config: bool,
@@ -66,7 +54,7 @@ impl CallbackRegistrations {
     }
 }
 
-#[cfg(not(target_arch = "arm"))]
+#[cfg(all(not(target_arch = "arm"), any(test, feature = "test-support")))]
 #[derive(Clone, Copy)]
 pub(crate) struct CallbackRecorder {
     state: NonNull<core::ffi::c_void>,
@@ -77,10 +65,8 @@ pub(crate) struct CallbackRecorder {
     imu: unsafe fn(NonNull<core::ffi::c_void>) -> bool,
 }
 
-#[cfg(not(target_arch = "arm"))]
+#[cfg(all(not(target_arch = "arm"), any(test, feature = "test-support")))]
 impl CallbackRecorder {
-    #[cfg_attr(not(any(test, feature = "test-support")), allow(dead_code))]
-    // Host builds only construct this through package startup tests/support.
     pub(crate) fn new<T: crate::PackageRuntimeState>(state: NonNull<T>) -> Self {
         unsafe fn app_data<T: crate::PackageRuntimeState>(
             state: NonNull<core::ffi::c_void>,
@@ -201,8 +187,7 @@ pub struct PackageStateStore<T> {
     #[cfg(not(target_arch = "arm"))]
     threads: UnsafeCell<Option<crate::thread::ThreadGroup>>,
     #[cfg(not(target_arch = "arm"))]
-    #[cfg_attr(not(any(test, feature = "test-support")), allow(dead_code))]
-    // Host test-support records callback registrations so stop clears only what startup installed.
+    #[cfg(any(test, feature = "test-support"))]
     callbacks: UnsafeCell<CallbackRegistrations>,
     _state: PhantomData<UnsafeCell<T>>,
 }
@@ -395,13 +380,6 @@ impl<T> Drop for PackageStateEntry<'_, T> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(not(any(test, feature = "test-support")), allow(dead_code))]
-// Install errors are visible when host/test-support guards duplicate startup.
-pub(crate) enum PackageStateInstallError {
-    AlreadyInstalled,
-}
-
 #[cfg(any(test, target_arch = "arm"))]
 fn finish_firmware_runtime(runtime: &FirmwareRuntime) {
     runtime.phase.store(STOPPED, Ordering::Release);
@@ -430,6 +408,22 @@ fn finish_firmware_start(runtime: &FirmwareRuntime, started: bool) -> bool {
             .is_ok();
     runtime.active.fetch_sub(1, Ordering::AcqRel);
     running
+}
+
+#[cfg(any(test, feature = "test-support", target_arch = "arm"))]
+fn begin_stop_phase(phase: &AtomicU8) -> bool {
+    loop {
+        let current = phase.load(Ordering::Acquire);
+        if !matches!(current, INSTALLING | RUNNING) {
+            return false;
+        }
+        if phase
+            .compare_exchange(current, STOPPING, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            return true;
+        }
+    }
 }
 
 enum StateIdentity<T> {
@@ -468,7 +462,10 @@ impl<T> Copy for StateIdentity<T> {}
 /// Rust-owned fast path, while `fallback` preserves the firmware lookup used by
 /// callbacks that can run without that slot installed.
 pub struct PackageStateAccess<'a, T: Send + 'static> {
+    #[cfg(not(target_arch = "arm"))]
     runtime: &'a PackageStateStore<T>,
+    #[cfg(target_arch = "arm")]
+    _runtime: PhantomData<&'a PackageStateStore<T>>,
     identity: StateIdentity<T>,
 }
 
@@ -499,11 +496,15 @@ impl<'a, T: Send + 'static> PackageStateAccess<'a, T> {
     /// `Some`. The pointed-to state must remain valid for the duration of each callback,
     /// and all callback access to that state must be coordinated through this store.
     pub(crate) const unsafe fn with_firmware_fallback(
-        runtime: &'a PackageStateStore<T>,
+        #[cfg(not(target_arch = "arm"))] runtime: &'a PackageStateStore<T>,
+        #[cfg(target_arch = "arm")] _runtime: &'a PackageStateStore<T>,
         firmware_state: unsafe fn() -> Option<NonNull<T>>,
     ) -> Self {
         Self {
+            #[cfg(not(target_arch = "arm"))]
             runtime,
+            #[cfg(target_arch = "arm")]
+            _runtime: PhantomData,
             identity: StateIdentity::Firmware(firmware_state),
         }
     }
@@ -511,16 +512,32 @@ impl<'a, T: Send + 'static> PackageStateAccess<'a, T> {
     /// Run `f` with package state, preferring the runtime slot over loader state.
     #[must_use]
     pub fn with<R>(&self, f: impl for<'state> FnOnce(&'state T) -> R) -> Option<R> {
-        self.runtime.with_expected(self.expected_state()?, f)
+        let expected = self.expected_state()?;
+        #[cfg(not(target_arch = "arm"))]
+        {
+            self.runtime.with_expected(expected, f)
+        }
+        #[cfg(target_arch = "arm")]
+        {
+            PackageStateStore::<T>::with_expected(expected, f)
+        }
     }
 
     /// Run `f` with mutable package state, preferring the runtime slot over loader state.
     #[must_use]
     pub fn with_mut<R>(&self, f: impl for<'state> FnOnce(&'state mut T) -> R) -> Option<R> {
-        self.runtime.with_expected_mut(self.expected_state()?, f)
+        let expected = self.expected_state()?;
+        #[cfg(not(target_arch = "arm"))]
+        {
+            self.runtime.with_expected_mut(expected, f)
+        }
+        #[cfg(target_arch = "arm")]
+        {
+            PackageStateStore::<T>::with_expected_mut(expected, f)
+        }
     }
 
-    fn expected_state(&self) -> Option<ExpectedState<T>> {
+    fn expected_state(self) -> Option<ExpectedState<T>> {
         match self.identity {
             #[cfg(not(target_arch = "arm"))]
             StateIdentity::Installed => Some(ExpectedState::Any),
@@ -529,7 +546,6 @@ impl<'a, T: Send + 'static> PackageStateAccess<'a, T> {
     }
 }
 
-#[cfg_attr(target_arch = "arm", allow(clippy::unused_self))]
 impl<T: Send + 'static> PackageStateStore<T> {
     /// Create an empty package-state slot.
     #[must_use]
@@ -576,10 +592,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
     }
 
     #[cfg(target_arch = "arm")]
-    fn borrow_exclusive<'runtime>(
-        &self,
-        runtime: &'runtime FirmwareRuntime,
-    ) -> FirmwareRuntimeBorrow<'runtime> {
+    fn borrow_exclusive(runtime: &FirmwareRuntime) -> FirmwareRuntimeBorrow<'_> {
         borrow_firmware_runtime(runtime)
     }
 
@@ -589,82 +602,69 @@ impl<T: Send + 'static> PackageStateStore<T> {
     ///
     /// `state` must outlive every callback that can access this slot, and the
     /// caller must clear the slot before freeing it.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) unsafe fn install(&self, state: &mut T) -> Result<(), PackageStateInstallError> {
+    #[cfg(all(not(target_arch = "arm"), any(test, feature = "test-support")))]
+    pub(crate) unsafe fn install(&self, state: &mut T) -> bool {
         let state_ptr = NonNull::from(&mut *state);
-        unsafe { self.install_owned(state, state_ptr.cast()) }?;
-        let _ = self.finish_start(state_ptr, true);
-        Ok(())
+        if !unsafe { self.install_owned(state, state_ptr.cast()) } {
+            return false;
+        }
+        self.finish_start(state_ptr, true)
     }
 
-    #[cfg_attr(
-        not(any(test, feature = "test-support", target_arch = "arm")),
-        allow(dead_code)
-    )]
-    // Startup installs owned state on firmware and in lifecycle tests/support.
-    #[cfg_attr(target_arch = "arm", allow(clippy::unnecessary_wraps))]
+    #[cfg(all(not(target_arch = "arm"), any(test, feature = "test-support")))]
     pub(crate) unsafe fn install_owned(
         &self,
         state: &mut T,
         allocation: NonNull<core::ffi::c_void>,
-    ) -> Result<(), PackageStateInstallError> {
-        #[cfg(not(target_arch = "arm"))]
+    ) -> bool {
+        let phase = self.phase.load(Ordering::Acquire);
+        if !matches!(phase, EMPTY | STOPPED)
+            || self
+                .phase
+                .compare_exchange(phase, INSTALLING, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
         {
-            let phase = self.phase.load(Ordering::Acquire);
-            if !matches!(phase, EMPTY | STOPPED)
-                || self
-                    .phase
-                    .compare_exchange(phase, INSTALLING, Ordering::AcqRel, Ordering::Acquire)
-                    .is_err()
-            {
-                return Err(PackageStateInstallError::AlreadyInstalled);
-            }
-            self.state
-                .store(core::ptr::from_mut(state), Ordering::Release);
-            let _ = allocation;
-            self.active.store(1, Ordering::Release);
-            Ok(())
+            return false;
         }
-        #[cfg(target_arch = "arm")]
-        {
-            let runtime = allocation.cast::<FirmwareRuntime>();
-            // SAFETY: `allocation` reserves and aligns a `FirmwareRuntime` header
-            // before `state`; startup has exclusive ownership of it here.
-            unsafe {
-                runtime.as_ptr().write(FirmwareRuntime {
-                    magic: RUNTIME_MAGIC,
-                    state_type: TypeId::of::<T>(),
-                    state: core::ptr::from_mut(state).cast(),
-                    state_lock: AtomicBool::new(false),
-                    phase: AtomicU8::new(INSTALLING),
-                    active: AtomicUsize::new(1),
-                    threads: UnsafeCell::new(None),
-                    callbacks: UnsafeCell::new(CallbackRegistrations::default()),
-                });
-            }
-            Ok(())
-        }
+        self.state
+            .store(core::ptr::from_mut(state), Ordering::Release);
+        let _ = allocation;
+        self.active.store(1, Ordering::Release);
+        true
     }
 
-    #[allow(dead_code)]
-    // Startup completion is recorded by firmware/test-support callback recorders.
+    #[cfg(target_arch = "arm")]
+    pub(crate) unsafe fn install_owned(
+        state: &mut T,
+        allocation: NonNull<core::ffi::c_void>,
+    ) -> bool {
+        let runtime = allocation.cast::<FirmwareRuntime>();
+        // SAFETY: `allocation` reserves and aligns a `FirmwareRuntime` header
+        // before `state`; startup has exclusive ownership of it here.
+        unsafe {
+            runtime.as_ptr().write(FirmwareRuntime {
+                magic: RUNTIME_MAGIC,
+                state_type: TypeId::of::<T>(),
+                state: core::ptr::from_mut(state).cast(),
+                state_lock: AtomicBool::new(false),
+                phase: AtomicU8::new(INSTALLING),
+                active: AtomicUsize::new(1),
+                threads: UnsafeCell::new(None),
+                callbacks: UnsafeCell::new(CallbackRegistrations::default()),
+            });
+        }
+        true
+    }
+
+    #[cfg(all(not(target_arch = "arm"), any(test, feature = "test-support")))]
     pub(crate) fn finish_start(&self, state: NonNull<T>, started: bool) -> bool {
-        #[cfg(not(target_arch = "arm"))]
         let Some(runtime_state) = NonNull::new(self.state.load(Ordering::Acquire)) else {
             return false;
         };
-        #[cfg(not(target_arch = "arm"))]
         if runtime_state != state {
             return false;
         }
-        #[cfg(not(target_arch = "arm"))]
         let (phase, active) = (&self.phase, &self.active);
-        #[cfg(target_arch = "arm")]
-        let Some(runtime) = (unsafe { firmware_runtime_from_state(state) }) else {
-            return false;
-        };
-        #[cfg(target_arch = "arm")]
-        let (phase, active) = (&runtime.phase, &runtime.active);
         let running = started
             && phase
                 .compare_exchange(INSTALLING, RUNNING, Ordering::AcqRel, Ordering::Acquire)
@@ -686,62 +686,60 @@ impl<T: Send + 'static> PackageStateStore<T> {
         self.finish_stop(state);
     }
 
-    #[cfg_attr(
-        not(any(test, feature = "test-support", target_arch = "arm")),
-        allow(dead_code)
-    )]
-    // Stop drains only live firmware/test-support package state.
+    #[cfg(all(not(target_arch = "arm"), any(test, feature = "test-support")))]
     pub(crate) fn begin_stop(&self, state: NonNull<T>) -> bool {
-        #[cfg(not(target_arch = "arm"))]
-        let phase = {
-            if !self.owns(state) {
-                return false;
-            }
-            &self.phase
-        };
-        #[cfg(target_arch = "arm")]
+        if !self.owns(state) {
+            return false;
+        }
+        begin_stop_phase(&self.phase)
+    }
+
+    #[cfg(target_arch = "arm")]
+    pub(crate) fn begin_stop(state: NonNull<T>) -> bool {
         // SAFETY: lifecycle methods receive the exact live loader state pointer.
         let Some(phase) =
             (unsafe { firmware_runtime_from_state(state) }).map(|runtime| &runtime.phase)
         else {
             return false;
         };
-        loop {
-            let current = phase.load(Ordering::Acquire);
-            if !matches!(current, INSTALLING | RUNNING) {
-                return false;
-            }
-            if phase
-                .compare_exchange(current, STOPPING, Ordering::AcqRel, Ordering::Acquire)
-                .is_ok()
-            {
-                return true;
-            }
-        }
+        begin_stop_phase(phase)
     }
 
+    #[cfg(not(target_arch = "arm"))]
     pub(crate) fn install_threads(
         &self,
         state: NonNull<T>,
         threads: &mut Option<crate::thread::ThreadGroup>,
     ) -> bool {
-        #[cfg(not(target_arch = "arm"))]
         let _borrow = self.borrow_exclusive();
-        #[cfg(not(target_arch = "arm"))]
         let (phase, slot) = {
             if !self.owns(state) {
                 return false;
             }
             (&self.phase, &self.threads)
         };
-        #[cfg(target_arch = "arm")]
+        if !matches!(phase.load(Ordering::Acquire), INSTALLING | RUNNING) {
+            return false;
+        }
+        let slot = unsafe { &mut *slot.get() };
+        if slot.is_some() {
+            false
+        } else {
+            *slot = threads.take();
+            true
+        }
+    }
+
+    #[cfg(target_arch = "arm")]
+    pub(crate) fn install_threads(
+        state: NonNull<T>,
+        threads: &mut Option<crate::thread::ThreadGroup>,
+    ) -> bool {
         // SAFETY: thread installation receives the exact live loader state pointer.
         let Some(runtime) = (unsafe { firmware_runtime_from_state(state) }) else {
             return false;
         };
-        #[cfg(target_arch = "arm")]
-        let _borrow = self.borrow_exclusive(runtime);
-        #[cfg(target_arch = "arm")]
+        let _borrow = Self::borrow_exclusive(runtime);
         let (phase, slot) = (&runtime.phase, &runtime.threads);
         if !matches!(phase.load(Ordering::Acquire), INSTALLING | RUNNING) {
             return false;
@@ -755,63 +753,49 @@ impl<T: Send + 'static> PackageStateStore<T> {
         }
     }
 
-    #[cfg_attr(
-        not(any(test, feature = "test-support", target_arch = "arm")),
-        allow(dead_code)
-    )]
-    // Stop takes owned thread groups on firmware/test-support lifecycle paths.
+    #[cfg(all(not(target_arch = "arm"), any(test, feature = "test-support")))]
     pub(crate) fn take_threads(&self, state: NonNull<T>) -> Option<crate::thread::ThreadGroup> {
-        #[cfg(not(target_arch = "arm"))]
         let _borrow = self.borrow_exclusive();
-        #[cfg(not(target_arch = "arm"))]
         let slot = {
             if !self.owns(state) {
                 return None;
             }
             &self.threads
         };
-        #[cfg(target_arch = "arm")]
+        unsafe { &mut *slot.get() }.take()
+    }
+
+    #[cfg(target_arch = "arm")]
+    pub(crate) fn take_threads(state: NonNull<T>) -> Option<crate::thread::ThreadGroup> {
         // SAFETY: stop receives the exact loader state pointer retained by the
         // runtime tombstone for the lifetime of the firmware process.
         let runtime = unsafe { firmware_runtime_from_state(state) }?;
-        #[cfg(target_arch = "arm")]
-        let _borrow = self.borrow_exclusive(runtime);
-        #[cfg(target_arch = "arm")]
+        let _borrow = Self::borrow_exclusive(runtime);
         let slot = &runtime.threads;
         unsafe { &mut *slot.get() }.take()
     }
 
-    #[cfg(not(target_arch = "arm"))]
-    #[cfg_attr(not(any(test, feature = "test-support")), allow(dead_code))]
-    // Host callback recorder uses this in package startup tests/support.
+    #[cfg(all(not(target_arch = "arm"), any(test, feature = "test-support")))]
     pub(crate) fn record_app_data_callback(&self, state: NonNull<T>) -> bool {
         self.update_callbacks(state, |callbacks| callbacks.app_data = true)
     }
 
-    #[cfg(not(target_arch = "arm"))]
-    #[cfg_attr(not(any(test, feature = "test-support")), allow(dead_code))]
-    // Host callback recorder uses this in package startup tests/support.
+    #[cfg(all(not(target_arch = "arm"), any(test, feature = "test-support")))]
     pub(crate) fn record_custom_config_callbacks(&self, state: NonNull<T>) -> bool {
         self.update_callbacks(state, |callbacks| callbacks.custom_config = true)
     }
 
-    #[cfg(not(target_arch = "arm"))]
-    #[cfg_attr(not(any(test, feature = "test-support")), allow(dead_code))]
-    // Host callback recorder uses this in package startup tests/support.
+    #[cfg(all(not(target_arch = "arm"), any(test, feature = "test-support")))]
     pub(crate) fn clear_custom_config_registration(&self, state: NonNull<T>) -> bool {
         self.update_callbacks(state, |callbacks| callbacks.custom_config = false)
     }
 
-    #[cfg(not(target_arch = "arm"))]
-    #[cfg_attr(not(any(test, feature = "test-support")), allow(dead_code))]
-    // Host callback recorder uses this in package startup tests/support.
+    #[cfg(all(not(target_arch = "arm"), any(test, feature = "test-support")))]
     pub(crate) fn record_imu_callback(&self, state: NonNull<T>) -> bool {
         self.update_callbacks(state, |callbacks| callbacks.imu = true)
     }
 
-    #[cfg(not(target_arch = "arm"))]
-    #[cfg_attr(not(any(test, feature = "test-support")), allow(dead_code))]
-    // Shared host helper for callback registration bookkeeping.
+    #[cfg(all(not(target_arch = "arm"), any(test, feature = "test-support")))]
     fn update_callbacks(
         &self,
         state: NonNull<T>,
@@ -831,7 +815,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
             return false;
         };
         #[cfg(target_arch = "arm")]
-        let _borrow = self.borrow_exclusive(runtime);
+        let _borrow = Self::borrow_exclusive(runtime);
         #[cfg(target_arch = "arm")]
         let (phase, callbacks) = (&runtime.phase, &runtime.callbacks);
         if !matches!(phase.load(Ordering::Acquire), INSTALLING | RUNNING) {
@@ -841,42 +825,47 @@ impl<T: Send + 'static> PackageStateStore<T> {
         true
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
+    #[cfg(test)]
     pub(crate) fn take_callbacks(&self, state: NonNull<T>) -> CallbackRegistrations {
-        #[cfg(not(target_arch = "arm"))]
         let _borrow = self.borrow_exclusive();
-        #[cfg(not(target_arch = "arm"))]
         let callbacks = {
             if !self.owns(state) {
                 return CallbackRegistrations::default();
             }
             &self.callbacks
         };
-        #[cfg(target_arch = "arm")]
+        core::mem::take(unsafe { &mut *callbacks.get() })
+    }
+
+    #[cfg(target_arch = "arm")]
+    pub(crate) fn take_callbacks(state: NonNull<T>) -> CallbackRegistrations {
         let Some(runtime) = (unsafe { firmware_runtime_from_state(state) }) else {
             return CallbackRegistrations::default();
         };
-        #[cfg(target_arch = "arm")]
-        let _borrow = self.borrow_exclusive(runtime);
-        #[cfg(target_arch = "arm")]
+        let _borrow = Self::borrow_exclusive(runtime);
         let callbacks = &runtime.callbacks;
         core::mem::take(unsafe { &mut *callbacks.get() })
     }
 
-    #[cfg_attr(
-        not(any(test, feature = "test-support", target_arch = "arm")),
-        allow(dead_code)
-    )]
-    // Stop completion is part of firmware/test-support lifecycle cleanup.
+    #[cfg(all(not(target_arch = "arm"), any(test, feature = "test-support")))]
     pub(crate) fn finish_stop(&self, state: NonNull<T>) {
-        #[cfg(not(target_arch = "arm"))]
         let active = {
             if !self.owns(state) {
                 return;
             }
             &self.active
         };
-        #[cfg(target_arch = "arm")]
+        while active.load(Ordering::Acquire) != 0 {
+            spin_loop();
+        }
+        let borrow = self.borrow_exclusive();
+        self.state.store(core::ptr::null_mut(), Ordering::Release);
+        drop(borrow);
+        self.phase.store(STOPPED, Ordering::Release);
+    }
+
+    #[cfg(target_arch = "arm")]
+    pub(crate) fn finish_stop(state: NonNull<T>) {
         // SAFETY: stop receives the exact loader state pointer retained by the
         // runtime tombstone for the lifetime of the firmware process.
         let Some(runtime) = (unsafe { firmware_runtime_from_state(state) }) else {
@@ -885,27 +874,15 @@ impl<T: Send + 'static> PackageStateStore<T> {
             // destroy, so stopping must remain inert.
             return;
         };
-        #[cfg(target_arch = "arm")]
         let active = &runtime.active;
         while active.load(Ordering::Acquire) != 0 {
-            #[cfg(target_arch = "arm")]
             unsafe {
                 // SAFETY: VESC sleep is valid in the stop callback's thread context.
                 crate::ffi::vesc_sleep_us(1);
             }
-            #[cfg(not(target_arch = "arm"))]
-            spin_loop();
         }
-        #[cfg(not(target_arch = "arm"))]
-        let borrow = self.borrow_exclusive();
-        #[cfg(target_arch = "arm")]
-        let borrow = self.borrow_exclusive(runtime);
-        #[cfg(not(target_arch = "arm"))]
-        self.state.store(core::ptr::null_mut(), Ordering::Release);
+        let borrow = Self::borrow_exclusive(runtime);
         drop(borrow);
-        #[cfg(not(target_arch = "arm"))]
-        self.phase.store(STOPPED, Ordering::Release);
-        #[cfg(target_arch = "arm")]
         finish_firmware_runtime(runtime);
     }
 
@@ -930,48 +907,52 @@ impl<T: Send + 'static> PackageStateStore<T> {
         self.with_expected_mut(ExpectedState::Any, f)
     }
 
+    #[cfg(not(target_arch = "arm"))]
     pub(crate) fn with_expected<R>(
         &self,
         expected: ExpectedState<T>,
         f: impl for<'state> FnOnce(&'state T) -> R,
     ) -> Option<R> {
-        #[cfg(not(target_arch = "arm"))]
-        {
-            let _entry = self.enter()?;
-            let _borrow = self.borrow_exclusive();
-            let state = self.running_state(expected)?;
-            Some(f(unsafe { state.as_ref() }))
-        }
-        #[cfg(target_arch = "arm")]
-        {
-            let (state, runtime) = self.running_firmware(expected)?;
-            let _entry = self.enter(runtime)?;
-            let _borrow = self.borrow_exclusive(runtime);
-            matches!(runtime.phase.load(Ordering::Acquire), INSTALLING | RUNNING)
-                .then(|| f(unsafe { state.as_ref() }))
-        }
+        let _entry = self.enter()?;
+        let _borrow = self.borrow_exclusive();
+        let state = self.running_state(expected)?;
+        Some(f(unsafe { state.as_ref() }))
     }
 
+    #[cfg(target_arch = "arm")]
+    pub(crate) fn with_expected<R>(
+        expected: ExpectedState<T>,
+        f: impl for<'state> FnOnce(&'state T) -> R,
+    ) -> Option<R> {
+        let (state, runtime) = Self::running_firmware(expected)?;
+        let _entry = Self::enter(runtime)?;
+        let _borrow = Self::borrow_exclusive(runtime);
+        matches!(runtime.phase.load(Ordering::Acquire), INSTALLING | RUNNING)
+            .then(|| f(unsafe { state.as_ref() }))
+    }
+
+    #[cfg(not(target_arch = "arm"))]
     pub(crate) fn with_expected_mut<R>(
         &self,
         expected: ExpectedState<T>,
         f: impl for<'state> FnOnce(&'state mut T) -> R,
     ) -> Option<R> {
-        #[cfg(not(target_arch = "arm"))]
-        {
-            let _entry = self.enter()?;
-            let _borrow = self.borrow_exclusive();
-            let mut state = self.running_state(expected)?;
-            Some(f(unsafe { state.as_mut() }))
-        }
-        #[cfg(target_arch = "arm")]
-        {
-            let (mut state, runtime) = self.running_firmware(expected)?;
-            let _entry = self.enter(runtime)?;
-            let _borrow = self.borrow_exclusive(runtime);
-            matches!(runtime.phase.load(Ordering::Acquire), INSTALLING | RUNNING)
-                .then(|| f(unsafe { state.as_mut() }))
-        }
+        let _entry = self.enter()?;
+        let _borrow = self.borrow_exclusive();
+        let mut state = self.running_state(expected)?;
+        Some(f(unsafe { state.as_mut() }))
+    }
+
+    #[cfg(target_arch = "arm")]
+    pub(crate) fn with_expected_mut<R>(
+        expected: ExpectedState<T>,
+        f: impl for<'state> FnOnce(&'state mut T) -> R,
+    ) -> Option<R> {
+        let (mut state, runtime) = Self::running_firmware(expected)?;
+        let _entry = Self::enter(runtime)?;
+        let _borrow = Self::borrow_exclusive(runtime);
+        matches!(runtime.phase.load(Ordering::Acquire), INSTALLING | RUNNING)
+            .then(|| f(unsafe { state.as_mut() }))
     }
 
     #[cfg(not(target_arch = "arm"))]
@@ -990,10 +971,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
     }
 
     #[cfg(target_arch = "arm")]
-    fn enter<'runtime>(
-        &self,
-        runtime: &'runtime FirmwareRuntime,
-    ) -> Option<PackageStateEntry<'runtime, T>> {
+    fn enter(runtime: &FirmwareRuntime) -> Option<PackageStateEntry<'_, T>> {
         enter_firmware(runtime).then(|| PackageStateEntry {
             runtime,
             _state: PhantomData,
@@ -1012,18 +990,26 @@ impl<T: Send + 'static> PackageStateStore<T> {
         }
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
-    #[cfg_attr(not(target_arch = "arm"), allow(clippy::unused_self))]
-    #[cfg_attr(target_arch = "arm", allow(clippy::infallible_destructuring_match))]
+    #[cfg(test)]
     fn running_firmware(
-        &self,
         expected: ExpectedState<T>,
     ) -> Option<(NonNull<T>, &'static FirmwareRuntime)> {
         let state = match expected {
             ExpectedState::Exact(state) => state,
-            #[cfg(not(target_arch = "arm"))]
             ExpectedState::Any => return None,
         };
+        // SAFETY: target `ExpectedState::Exact` originates from the loader ARG
+        // or a thread argument installed by this runtime.
+        let runtime = unsafe { firmware_runtime_from_state(state) }?;
+        matches!(runtime.phase.load(Ordering::Acquire), INSTALLING | RUNNING)
+            .then_some((state, runtime))
+    }
+
+    #[cfg(target_arch = "arm")]
+    fn running_firmware(
+        expected: ExpectedState<T>,
+    ) -> Option<(NonNull<T>, &'static FirmwareRuntime)> {
+        let ExpectedState::Exact(state) = expected;
         // SAFETY: target `ExpectedState::Exact` originates from the loader ARG
         // or a thread argument installed by this runtime.
         let runtime = unsafe { firmware_runtime_from_state(state) }?;
@@ -1041,9 +1027,9 @@ impl<T: Send + 'static> Default for PackageStateStore<T> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ExpectedState, FirmwareRuntime, PackageStateAccess, PackageStateInstallError,
-        PackageStateStore, RUNNING, RUNTIME_MAGIC, STOPPED, STOPPING, enter_firmware,
-        finish_firmware_runtime, firmware_runtime_allocation_size, firmware_runtime_from_state,
+        ExpectedState, FirmwareRuntime, PackageStateAccess, PackageStateStore, RUNNING,
+        RUNTIME_MAGIC, STOPPED, STOPPING, enter_firmware, finish_firmware_runtime,
+        firmware_runtime_allocation_size, firmware_runtime_from_state,
         firmware_runtime_state_pointer,
     };
     use core::any::TypeId;
@@ -1136,9 +1122,7 @@ mod tests {
         assert_eq!(runtime.phase.load(Ordering::Acquire), STOPPED);
         assert!(unsafe { firmware_runtime_from_state(state) }.is_some());
         assert!(
-            PackageStateStore::new()
-                .running_firmware(ExpectedState::Exact(state))
-                .is_none()
+            PackageStateStore::<State>::running_firmware(ExpectedState::Exact(state)).is_none()
         );
     }
 
@@ -1189,7 +1173,7 @@ mod tests {
         let state = Box::leak(Box::new(State { value: 1 }));
 
         assert!(!slot.is_installed());
-        unsafe { slot.install(state) }.unwrap();
+        assert!(unsafe { slot.install(state) });
         assert_eq!(slot.with(|state| state.value), Some(1));
         assert_eq!(slot.with_mut(|state| state.value += 10), Some(()));
         assert_eq!(slot.with(|state| state.value), Some(11));
@@ -1204,11 +1188,8 @@ mod tests {
         let first = Box::leak(Box::new(State { value: 1 }));
         let second = Box::leak(Box::new(State { value: 2 }));
 
-        unsafe { slot.install(first) }.unwrap();
-        assert_eq!(
-            unsafe { slot.install(second) },
-            Err(PackageStateInstallError::AlreadyInstalled)
-        );
+        assert!(unsafe { slot.install(first) });
+        assert!(!unsafe { slot.install(second) });
         assert_eq!(slot.with(|state| state.value), Some(1));
 
         slot.clear();
@@ -1218,7 +1199,7 @@ mod tests {
     fn contended_state_access_waits_without_dropping_mutation() {
         let slot: &'static PackageStateStore<State> = Box::leak(Box::new(PackageStateStore::new()));
         let state = Box::leak(Box::new(State { value: 1 }));
-        unsafe { slot.install(state) }.unwrap();
+        assert!(unsafe { slot.install(state) });
         let (first_entered_tx, first_entered_rx) = std::sync::mpsc::channel();
         let (release_first_tx, release_first_rx) = std::sync::mpsc::channel();
         let (second_done_tx, second_done_rx) = std::sync::mpsc::channel();
@@ -1254,7 +1235,7 @@ mod tests {
     fn clear_waits_for_every_admitted_state_access() {
         let slot: &'static PackageStateStore<State> = Box::leak(Box::new(PackageStateStore::new()));
         let state = Box::leak(Box::new(State { value: 0 }));
-        unsafe { slot.install(state) }.unwrap();
+        assert!(unsafe { slot.install(state) });
         let admitted = slot.enter().unwrap();
         let (clear_done_tx, clear_done_rx) = std::sync::mpsc::channel();
 
@@ -1279,7 +1260,7 @@ mod tests {
         let slot: &'static PackageStateStore<State> = Box::leak(Box::new(PackageStateStore::new()));
         let state = Box::leak(Box::new(State { value: 0 }));
         let state_ptr = NonNull::from(&mut *state);
-        unsafe { slot.install_owned(state, state_ptr.cast()) }.unwrap();
+        assert!(unsafe { slot.install_owned(state, state_ptr.cast()) });
         assert!(slot.begin_stop(state_ptr));
         let (stop_done_tx, stop_done_rx) = std::sync::mpsc::channel();
         let state_address = state_ptr.as_ptr() as usize;
@@ -1305,7 +1286,7 @@ mod tests {
         let slot = PackageStateStore::new();
         let state = Box::leak(Box::new(State { value: 0 }));
         let state_ptr = NonNull::from(&mut *state);
-        unsafe { slot.install(state) }.unwrap();
+        assert!(unsafe { slot.install(state) });
         let mut first_token = 0_u8;
         let mut second_token = 0_u8;
         let first = unsafe {
@@ -1340,7 +1321,7 @@ mod tests {
 
         FALLBACK.store(other_state, Ordering::Release);
         assert_eq!(source.with(|state| state.value), None);
-        unsafe { runtime.install(runtime_state) }.unwrap();
+        assert!(unsafe { runtime.install(runtime_state) });
         assert_eq!(source.with(|state| state.value), None);
         FALLBACK.store(runtime_state, Ordering::Release);
         assert_eq!(source.with_mut(|state| state.value = 33), Some(()));
@@ -1357,7 +1338,7 @@ mod tests {
         let runtime = PackageStateStore::new();
         let state = Box::leak(Box::new(State { value: 0 }));
         let state_ptr = NonNull::from(&mut *state);
-        unsafe { runtime.install(state) }.unwrap();
+        assert!(unsafe { runtime.install(state) });
         assert!(runtime.record_app_data_callback(state_ptr));
         assert!(runtime.record_imu_callback(state_ptr));
 
@@ -1383,7 +1364,7 @@ mod tests {
         let foreign = Box::leak(Box::new(State { value: 0 }));
         let installed_id = NonNull::from(&mut *installed);
         let foreign_id = NonNull::from(&mut *foreign);
-        unsafe { runtime.install(installed) }.unwrap();
+        assert!(unsafe { runtime.install(installed) });
 
         assert!(!runtime.begin_stop(foreign_id));
         assert!(!runtime.record_app_data_callback(foreign_id));

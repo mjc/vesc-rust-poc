@@ -11,6 +11,7 @@
 
 #![cfg_attr(target_arch = "arm", no_std)]
 #![cfg_attr(target_arch = "arm", no_main)]
+#![deny(warnings, clippy::all, clippy::pedantic)]
 #![forbid(unsafe_code)]
 #![forbid(unused_extern_crates)]
 // An embedded package cannot unwind or print a useful panic report. Keep
@@ -23,12 +24,47 @@
         clippy::panic,
         clippy::todo,
         clippy::unimplemented,
+        clippy::unreachable,
         clippy::unwrap_used
     )
 )]
 
 #[cfg(any(test, not(target_arch = "arm")))]
 extern crate std;
+
+#[cfg(test)]
+macro_rules! assert_f32_eq {
+    ($actual:expr, $expected:expr $(,)?) => {{
+        let actual: f32 = $actual;
+        let expected: f32 = $expected;
+        let tolerance = f32::EPSILON * actual.abs().max(expected.abs()).max(1.0) * 4.0;
+        let exactly_equal = !actual.is_nan() && actual.to_bits() == expected.to_bits();
+        assert!(
+            exactly_equal
+                || (actual.is_finite()
+                    && expected.is_finite()
+                    && (actual - expected).abs() <= tolerance),
+            "expected {expected:?}, got {actual:?} (tolerance {tolerance:?})"
+        );
+    }};
+}
+
+#[cfg(test)]
+macro_rules! assert_f32_ne {
+    ($actual:expr, $expected:expr $(,)?) => {{
+        let actual: f32 = $actual;
+        let expected: f32 = $expected;
+        let tolerance = f32::EPSILON * actual.abs().max(expected.abs()).max(1.0) * 4.0;
+        let exactly_equal = !actual.is_nan() && actual.to_bits() == expected.to_bits();
+        assert!(
+            !exactly_equal
+                && (!actual.is_finite()
+                    || !expected.is_finite()
+                    || (actual - expected).abs() > tolerance),
+            "expected values to differ by more than {tolerance:?}, both were near {actual:?}"
+        );
+    }};
+}
 
 #[cfg(not(target_arch = "arm"))]
 fn main() {}
@@ -60,6 +96,15 @@ mod tests {
     mod package_author;
 
     use vescpkg_rs::test_support::LoaderInfo;
+
+    #[test]
+    fn float_assertions_handle_non_finite_values_without_nan_arithmetic() {
+        assert_f32_eq!(f32::INFINITY, f32::INFINITY);
+        assert_f32_eq!(f32::NEG_INFINITY, f32::NEG_INFINITY);
+        assert_f32_eq!(0.0, -0.0);
+        assert_f32_ne!(f32::INFINITY, f32::NEG_INFINITY);
+        assert_f32_ne!(f32::NAN, f32::NAN);
+    }
 
     #[test]
     fn package_lib_init_runs_float_out_boy_start() {

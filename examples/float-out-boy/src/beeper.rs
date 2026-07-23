@@ -1,5 +1,7 @@
 //! Float Out Boy external-beeper sequencing.
 
+#![deny(clippy::arithmetic_side_effects)]
+
 /// External-beeper output level.
 #[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,12 +51,12 @@ impl FloatOutBoyBeeperTransitions {
     }
 
     const fn from_beeps(count: FloatOutBoyBeeperCount) -> Self {
-        Self(count.0 * 2 + 1)
+        Self(count.0.saturating_mul(2).saturating_add(1))
     }
 
     #[cfg(any(test, target_arch = "arm"))]
     fn advance(&mut self) -> FloatOutBoyBeeperLevel {
-        self.0 -= 1;
+        self.0 = self.0.saturating_sub(1);
         if self.0 & 1 == 1 {
             FloatOutBoyBeeperLevel::High
         } else {
@@ -94,7 +96,7 @@ impl FloatOutBoyBeeperCountdown {
 
     #[cfg(any(test, target_arch = "arm"))]
     fn tick(&mut self) -> bool {
-        self.0 -= 1;
+        self.0 = self.0.saturating_sub(1);
         self.0 == 0
     }
 
@@ -179,9 +181,25 @@ mod tests {
     use std::vec::Vec;
 
     use super::{
-        FloatOutBoyBeeper, FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount, FloatOutBoyBeeperLevel,
+        FloatOutBoyBeeper, FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount,
+        FloatOutBoyBeeperCountdown, FloatOutBoyBeeperLevel, FloatOutBoyBeeperTransitions,
     };
     use crate::config::FloatOutBoyConfigImage;
+
+    #[test]
+    fn idle_countdown_tick_saturates_instead_of_panicking() {
+        let mut countdown = FloatOutBoyBeeperCountdown::IDLE;
+
+        assert!(countdown.tick());
+    }
+
+    #[test]
+    fn empty_transition_advance_saturates_instead_of_panicking() {
+        let mut transitions = FloatOutBoyBeeperTransitions::NONE;
+
+        assert_eq!(transitions.advance(), FloatOutBoyBeeperLevel::Low);
+        assert!(transitions.is_empty());
+    }
 
     #[test]
     fn beeper_enable_decodes_exact_float_out_boy_generated_offset() {

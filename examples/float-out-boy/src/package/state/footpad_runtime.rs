@@ -5,7 +5,7 @@ use crate::domain::{
 };
 use vescpkg_rs::prelude::AdcVoltage;
 
-#[inline(always)]
+#[inline]
 pub(super) fn refresh(state: &mut FloatOutBoyPackageState, adc1: AdcVoltage, adc2: AdcVoltage) {
     // C map: state derives footpad sensor state from raw ADC volts at
     // `third_party/float-out-boy/src/footpad_sensor.c:28-61`.
@@ -38,7 +38,7 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, adc1: AdcVoltage, adc
         FloatOutBoyAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4());
 }
 
-#[inline(always)]
+#[inline]
 fn sensor_state(
     adc1_volts: f32,
     adc2_volts: f32,

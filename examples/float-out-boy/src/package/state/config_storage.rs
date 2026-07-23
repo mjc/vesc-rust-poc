@@ -98,9 +98,9 @@ impl FloatOutBoyPackageState {
     #[cfg(test)]
     pub(in crate::package) fn replace_serialized_config_for_test(
         &mut self,
-        config: crate::config::FloatOutBoyConfigImage,
+        config: &crate::config::FloatOutBoyConfigImage,
     ) {
-        self.serialized_config = config;
+        self.serialized_config = *config;
     }
 
     #[cfg(test)]

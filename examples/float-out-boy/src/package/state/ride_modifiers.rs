@@ -71,6 +71,83 @@ struct TurnTiltState {
     yaw_aggregate: AngleDegrees,
 }
 
+fn same_source_sign(lhs: AngleDegrees, rhs: AngleDegrees) -> bool {
+    // Refloat's `sign` macro returns -1 only for values below zero; both
+    // positive and negative IEEE-754 zero therefore belong to the positive
+    // branch. Using the unit type keeps that C compatibility rule explicit.
+    lhs.is_negative() == rhs.is_negative()
+}
+
+fn combine_torque_offsets(ab: AngleDegrees, torque: AngleDegrees) -> AngleDegrees {
+    if same_source_sign(ab, torque) {
+        AngleDegrees::from_degrees(
+            ab.signum() * ab.as_degrees().abs().max(torque.as_degrees().abs()),
+        )
+    } else {
+        ab + torque
+    }
+}
+
+fn atr_step(
+    config: crate::config::FloatOutBoyBalanceConfig<'_>,
+    target: AngleDegrees,
+    forward: bool,
+    abs_erpm: f32,
+    sample_rate: SampleRate,
+    setpoint: AngleDegrees,
+) -> AngleDegrees {
+    let mut response = 1.0;
+    if abs_erpm > 2_500.0 {
+        response = config.atr_response_boost().value();
+    }
+    if abs_erpm > 6_000.0 {
+        response *= config.atr_response_boost().value();
+    }
+    let on = loop_step(config.atr_on_speed(), sample_rate);
+    let off = loop_step(config.atr_off_speed(), sample_rate);
+    let mut step = if forward {
+        if setpoint.is_negative() {
+            if setpoint < target {
+                if target.is_positive()
+                    && (target - setpoint) > AngleDegrees::from_degrees(2.0)
+                    && abs_erpm > 2_000.0
+                {
+                    off * config.atr_transition_boost().value()
+                } else {
+                    off
+                }
+            } else {
+                on * response
+            }
+        } else if target > AngleDegrees::from_degrees(-3.0) && setpoint > target {
+            off
+        } else {
+            on * response
+        }
+    } else if setpoint.is_positive() {
+        if setpoint > target {
+            if target.is_negative()
+                && (setpoint - target) > AngleDegrees::from_degrees(2.0)
+                && abs_erpm > 2_000.0
+            {
+                off * config.atr_transition_boost().value()
+            } else {
+                off
+            }
+        } else {
+            on * response
+        }
+    } else if target < AngleDegrees::from_degrees(3.0) && setpoint < target {
+        off
+    } else {
+        on * response
+    };
+    if abs_erpm < 500.0 {
+        step = step / 2.0;
+    }
+    step
+}
+
 impl TurnTiltState {
     fn aggregate(&mut self, yaw: AngleDegrees) {
         // C map: yaw filtering and aggregation run before the state switch at
@@ -85,7 +162,7 @@ impl TurnTiltState {
         self.last_yaw = yaw;
         let limited = AngleDegrees::from_degrees(change.as_degrees().clamp(-0.10, 0.10));
         self.yaw_change = self.yaw_change * 0.8 + limited * 0.2;
-        if self.yaw_change.signum() != self.yaw_aggregate.signum() {
+        if !same_source_sign(self.yaw_change, self.yaw_aggregate) {
             self.yaw_aggregate = AngleDegrees::ZERO;
         }
         self.abs_yaw_change = self.yaw_change.abs();
@@ -128,49 +205,54 @@ impl RideModifierState {
 
     pub(super) fn advance(
         &mut self,
-        config: FloatOutBoyConfigImage,
+        config: &FloatOutBoyConfigImage,
         input: RideModifierInput,
     ) -> FloatOutBoyRealtimeRuntimeSetpoints {
+        self.advance_modifiers(config, input);
+        self.runtime_setpoints(input)
+    }
+
+    fn advance_modifiers(&mut self, config: &FloatOutBoyConfigImage, input: RideModifierInput) {
+        if input.darkride {
+            return;
+        }
+        if matches!(input.wheelslip, FloatOutBoyWheelSlipState::Detected) {
+            self.wind_down_for_wheelslip();
+            return;
+        }
+
         let balance = config.balance();
         let sample_rate = config.startup().sample_rate();
         let abs_erpm = input.motor_erpm.abs().as_revolutions_per_minute();
         let erpm_sign = input.motor_erpm.signum();
         let braking = input.motor_current.current().is_negative();
+        self.update_nose(config, input.motor_erpm, sample_rate);
+        self.update_turn(balance, input.motor_erpm, sample_rate);
+        self.update_torque(
+            balance,
+            input.filtered_current,
+            braking,
+            abs_erpm,
+            sample_rate,
+        );
+        self.update_atr(balance, input, braking, abs_erpm, erpm_sign, sample_rate);
+        self.update_brake(balance, input, braking, abs_erpm, erpm_sign, sample_rate);
+    }
 
-        if !input.darkride {
-            if matches!(input.wheelslip, FloatOutBoyWheelSlipState::Detected) {
-                // C map: wheelslip freezes nose angling and winds modifier state
-                // down at `third_party/float-out-boy/src/main.c:881-887`.
-                self.turn.angle.setpoint = self.turn.angle.setpoint * 0.995;
-                self.torque.setpoint = self.torque.setpoint * 0.995;
-                self.atr.angle.setpoint = self.atr.angle.setpoint * 0.995;
-                self.atr.angle.target = self.atr.angle.target * 0.99;
-                self.brake.setpoint = self.brake.setpoint * 0.995;
-                self.brake.target = self.brake.target * 0.99;
-            } else {
-                self.update_nose(&config, input.motor_erpm, sample_rate);
-                self.update_turn(balance, input.motor_erpm, sample_rate);
-                self.update_torque(
-                    balance,
-                    input.filtered_current,
-                    braking,
-                    abs_erpm,
-                    sample_rate,
-                );
-                self.update_atr(balance, input, braking, abs_erpm, erpm_sign, sample_rate);
-                self.update_brake(balance, input, braking, abs_erpm, erpm_sign, sample_rate);
-            }
-        }
+    fn wind_down_for_wheelslip(&mut self) {
+        // C map: wheelslip freezes nose angling and winds modifier state down
+        // at `third_party/float-out-boy/src/main.c:881-887`.
+        self.turn.angle.setpoint = self.turn.angle.setpoint * 0.995;
+        self.torque.setpoint = self.torque.setpoint * 0.995;
+        self.atr.angle.setpoint = self.atr.angle.setpoint * 0.995;
+        self.atr.angle.target = self.atr.angle.target * 0.99;
+        self.brake.setpoint = self.brake.setpoint * 0.995;
+        self.brake.target = self.brake.target * 0.99;
+    }
 
+    fn runtime_setpoints(&self, input: RideModifierInput) -> FloatOutBoyRealtimeRuntimeSetpoints {
         let ab = self.atr.angle.setpoint + self.brake.setpoint;
-        let torque = self.torque.setpoint;
-        let combined_torque = if ab.signum() == torque.signum() {
-            AngleDegrees::from_degrees(
-                ab.signum() * ab.as_degrees().abs().max(torque.as_degrees().abs()),
-            )
-        } else {
-            ab + torque
-        };
+        let combined_torque = combine_torque_offsets(ab, self.torque.setpoint);
         let modifier = if input.darkride {
             AngleDegrees::ZERO
         } else {
@@ -337,56 +419,8 @@ impl RideModifierState {
             config.atr_angle_limit().as_degrees(),
         );
         let target = AngleDegrees::from_degrees(filtered);
-        let mut response = 1.0;
-        if abs_erpm > 2_500.0 {
-            response = config.atr_response_boost().value();
-        }
-        if abs_erpm > 6_000.0 {
-            response *= config.atr_response_boost().value();
-        }
-        let on = loop_step(config.atr_on_speed(), sample_rate);
-        let off = loop_step(config.atr_off_speed(), sample_rate);
         let setpoint = self.atr.angle.setpoint;
-        let mut step = if forward {
-            if setpoint.is_negative() {
-                if setpoint < target {
-                    if target.is_positive()
-                        && (target - setpoint) > AngleDegrees::from_degrees(2.0)
-                        && abs_erpm > 2_000.0
-                    {
-                        off * config.atr_transition_boost().value()
-                    } else {
-                        off
-                    }
-                } else {
-                    on * response
-                }
-            } else if target > AngleDegrees::from_degrees(-3.0) && setpoint > target {
-                off
-            } else {
-                on * response
-            }
-        } else if setpoint.is_positive() {
-            if setpoint > target {
-                if target.is_negative()
-                    && (setpoint - target) > AngleDegrees::from_degrees(2.0)
-                    && abs_erpm > 2_000.0
-                {
-                    off * config.atr_transition_boost().value()
-                } else {
-                    off
-                }
-            } else {
-                on * response
-            }
-        } else if target < AngleDegrees::from_degrees(3.0) && setpoint < target {
-            off
-        } else {
-            on * response
-        };
-        if abs_erpm < 500.0 {
-            step = step / 2.0;
-        }
+        let step = atr_step(config, target, forward, abs_erpm, sample_rate, setpoint);
         smooth_ramp(&mut self.atr.angle, target, step, 0.05);
     }
 
@@ -409,7 +443,11 @@ impl RideModifierState {
         };
         let balance_offset = input.base_setpoint + input.remote_setpoint - input.balance_pitch;
         let mut target = AngleDegrees::ZERO;
-        if factor < 0.0 && braking && abs_erpm > 2_000.0 && balance_offset.signum() != erpm_sign {
+        if factor < 0.0
+            && braking
+            && abs_erpm > 2_000.0
+            && balance_offset.as_degrees().is_sign_negative() != erpm_sign.is_sign_negative()
+        {
             let mut downhill = 1.0;
             if (input.motor_erpm.as_revolutions_per_minute() > 1_000.0
                 && self.atr.accel_diff < -1.0)
@@ -537,11 +575,12 @@ mod tests {
 
         let mut state = RideModifierState::default();
         for tick in 1..100 {
-            state.aggregate_yaw(AngleDegrees::from_degrees(tick as f32 * 0.1));
-            state.advance(config, input());
+            let tick = i16::try_from(tick).unwrap_or(i16::MAX);
+            state.aggregate_yaw(AngleDegrees::from_degrees(f32::from(tick) * 0.1));
+            state.advance(&config, input());
         }
         state.aggregate_yaw(AngleDegrees::from_degrees(10.0));
-        let setpoints = state.advance(config, input());
+        let setpoints = state.advance(&config, input());
 
         assert!(setpoints.turn_tilt().angle().is_positive());
         assert_eq!(setpoints.board().angle(), setpoints.turn_tilt().angle());
@@ -553,7 +592,7 @@ mod tests {
         assert!(config.editor().set_brake_tilt_strength(PidScale::new(10.0)));
         let mut state = RideModifierState::default();
         let setpoints = state.advance(
-            config,
+            &config,
             RideModifierInput {
                 balance_pitch: AngleDegrees::from_degrees(5.0),
                 motor_current: MotorCurrent::new(Current::from_amps(-5.0)),
@@ -584,9 +623,10 @@ mod tests {
             },
             ..RideModifierState::default()
         };
+        let config = FloatOutBoyConfigImage::defaults();
 
         let setpoints = state.advance(
-            FloatOutBoyConfigImage::defaults(),
+            &config,
             RideModifierInput {
                 wheelslip: FloatOutBoyWheelSlipState::Detected,
                 ..input()
@@ -616,8 +656,9 @@ mod tests {
             },
             ..RideModifierState::default()
         };
+        let config = FloatOutBoyConfigImage::defaults();
         let setpoints = state.advance(
-            FloatOutBoyConfigImage::defaults(),
+            &config,
             RideModifierInput {
                 base_setpoint: AngleDegrees::from_degrees(4.0),
                 remote_setpoint: AngleDegrees::from_degrees(-1.0),
@@ -628,5 +669,16 @@ mod tests {
 
         assert_eq!(setpoints.board().angle(), AngleDegrees::from_degrees(3.0));
         assert_eq!(setpoints.remote().angle(), AngleDegrees::from_degrees(-1.0));
+    }
+
+    #[test]
+    fn source_sign_treats_both_zero_encodings_as_nonnegative() {
+        let positive = AngleDegrees::from_degrees(3.0);
+        let positive_zero = AngleDegrees::from_degrees(0.0);
+        let negative_zero = AngleDegrees::from_degrees(-0.0);
+
+        assert!(same_source_sign(positive_zero, positive));
+        assert!(same_source_sign(negative_zero, positive));
+        assert_eq!(combine_torque_offsets(negative_zero, positive), positive,);
     }
 }

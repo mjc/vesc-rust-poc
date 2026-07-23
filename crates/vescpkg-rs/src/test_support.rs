@@ -1,7 +1,5 @@
 //! Host-side fake firmware bindings for unit tests in dependent crates.
 
-#![allow(clippy::cast_precision_loss)] // fake firmware exposes tick ages as f32 seconds
-
 use core::cell::Cell;
 use core::ffi::{CStr, c_char};
 
@@ -66,9 +64,19 @@ impl FirmwareTest {
         crate::test_ffi::set_ppm_input(input, age);
     }
 
+    /// Configure whether the fake firmware exposes its PPM input slots.
+    pub fn set_ppm_supported(&self, supported: bool) {
+        crate::test_ffi::set_ppm_supported(supported);
+    }
+
     /// Configure the latest UART remote input sample.
     pub fn set_remote_input(&self, input: crate::JoystickY, age: crate::RemoteAge) {
         crate::test_ffi::set_remote_input(input, age);
+    }
+
+    /// Configure whether the fake firmware exposes its UART remote-state slot.
+    pub fn set_remote_supported(&self, supported: bool) {
+        crate::test_ffi::set_remote_supported(supported);
     }
 
     /// Access the same package custom-EEPROM range used on hardware.
@@ -102,6 +110,11 @@ impl FirmwareTest {
     /// Make the fake firmware reject every NVM operation.
     pub fn fail_nvm_operations(&self) {
         crate::test_ffi::fail_nvm_operations(true);
+    }
+
+    /// Configure whether the fake firmware exposes its NVM slots.
+    pub fn set_nvm_supported(&self, supported: bool) {
+        crate::test_ffi::set_nvm_supported(supported);
     }
 
     /// Return the number of fake firmware mutex locks.
@@ -220,14 +233,14 @@ impl FirmwareTest {
     }
 
     #[must_use]
-    /// Return stack sizes from the first two firmware thread spawns.
+    /// Return valid stack sizes from the first two firmware thread spawns.
     ///
-    /// # Panics
-    ///
-    /// Panics if fake firmware recorded an invalid working-area size.
+    /// A missing or malformed fake-firmware value is reported as `None`.
     pub fn spawned_thread_working_area_sizes(&self) -> [Option<crate::ThreadWorkingAreaSize>; 2] {
         crate::test_ffi::thread_spawn_stacks().map(|bytes| {
-            (bytes != 0).then(|| crate::ThreadWorkingAreaSize::try_from_bytes(bytes).unwrap())
+            (bytes != 0)
+                .then(|| crate::ThreadWorkingAreaSize::try_from_bytes(bytes))
+                .and_then(Result::ok)
         })
     }
 
@@ -495,16 +508,11 @@ impl FirmwareTest {
     }
 
     #[must_use]
-    /// Return the latest FOC tone channel.
-    ///
-    /// # Panics
-    ///
-    /// Panics if fake firmware recorded an invalid channel.
-    pub fn commanded_foc_tone_channel(&self) -> crate::AudioChannel {
-        crate::AudioChannel::try_new(
-            u8::try_from(crate::test_ffi::motor_output().foc_tone_channel).unwrap_or(u8::MAX),
-        )
-        .expect("fake firmware stores a valid audio channel")
+    /// Return the latest FOC tone channel, if the fake recorded a valid channel.
+    pub fn commanded_foc_tone_channel(&self) -> Option<crate::AudioChannel> {
+        u8::try_from(crate::test_ffi::motor_output().foc_tone_channel)
+            .ok()
+            .and_then(|channel| crate::AudioChannel::try_new(channel).ok())
     }
 
     #[must_use]
@@ -536,21 +544,18 @@ use vescpkg_rs_sys::LbmValue;
 
 /// Install borrowed state for callback-focused host tests.
 ///
-/// # Panics
-///
-/// Panics when the store already contains state.
+/// Returns `None` when the store already contains state.
 pub fn install_state<'a, T: Send + 'static>(
     store: &'a crate::PackageStateStore<T>,
     state: &'a mut T,
-) -> impl Drop + 'a {
+) -> Option<impl Drop + 'a> {
     struct ClearOnDrop<'a, T: Send + 'static>(&'a crate::PackageStateStore<T>);
     impl<T: Send + 'static> Drop for ClearOnDrop<'_, T> {
         fn drop(&mut self) {
             self.0.clear();
         }
     }
-    unsafe { store.install(state) }.unwrap();
-    ClearOnDrop(store)
+    unsafe { store.install(state) }.then(|| ClearOnDrop(store))
 }
 
 /// Clear package state left behind by a callback-focused host test.
@@ -672,11 +677,11 @@ impl FakeBindings {
 impl LbmBindings for FakeBindings {
     #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     unsafe fn add_extension(&self, name: *const c_char, handler: ExtensionHandler) -> bool {
-        self.add_calls.set(self.add_calls.get() + 1);
+        self.add_calls.set(self.add_calls.get().saturating_add(1));
         self.last_name.set(name as usize);
         self.last_handler.set(handler as usize);
         let index = self.add_calls.get().saturating_sub(1).min(1);
-        self.add_results.get()[index]
+        self.add_results.get().get(index).copied().unwrap_or(false)
     }
 
     unsafe fn is_number(&self, _value: LbmValue) -> bool {
@@ -684,21 +689,11 @@ impl LbmBindings for FakeBindings {
     }
 
     unsafe fn decode_i32(&self, _value: LbmValue) -> i32 {
-        unreachable!("extension registration does not decode LispBM values")
+        0
     }
 
     unsafe fn decode_f32(&self, _value: LbmValue) -> f32 {
-        unreachable!("extension registration does not decode LispBM values")
-    }
-
-    #[cfg(not(test))]
-    fn encode_true(&self) -> LbmValue {
-        LbmValue(1)
-    }
-
-    #[cfg(not(test))]
-    fn encode_nil(&self) -> LbmValue {
-        LbmValue(0)
+        0.0
     }
 }
 
@@ -840,20 +835,24 @@ impl AppDataBindings for FakeAppDataBindings {
         self.ticks.get()
     }
 
+    #[cfg(not(test))]
     fn system_time_seconds(&self) -> f32 {
-        self.ticks.get() as f32 / 10_000.0
+        crate::tick_count_as_seconds(self.ticks.get(), 10_000.0)
     }
 
+    #[cfg(not(test))]
     fn timestamp_age_seconds(&self, timestamp: u32) -> f32 {
-        self.ticks.get().wrapping_sub(timestamp) as f32 / 10_000.0
+        crate::tick_count_as_seconds(self.ticks.get().wrapping_sub(timestamp), 10_000.0)
     }
 
+    #[cfg(not(test))]
     fn timer_time_now(&self) -> u32 {
         self.ticks.get()
     }
 
+    #[cfg(not(test))]
     fn timer_seconds_elapsed_since(&self, timestamp: u32) -> f32 {
-        self.ticks.get().wrapping_sub(timestamp) as f32 / 1_000_000.0
+        crate::tick_count_as_seconds(self.ticks.get().wrapping_sub(timestamp), 1_000_000.0)
     }
 
     fn arg(&self, _prog_addr: PackageProgramAddress) -> Option<PackageArgument> {
@@ -949,7 +948,7 @@ pub(crate) mod stubs {
 
 #[cfg(test)]
 mod tests {
-    use super::{FakeAppDataBindings, FakeBindings, stubs};
+    use super::{FakeAppDataBindings, FakeBindings, install_state, stubs};
     use crate::bindings::{
         AppDataBindings, CustomConfigBindings, ImuReadCallbackBindings, LbmBindings,
     };
@@ -965,6 +964,20 @@ mod tests {
         fn runtime_store() -> &'static crate::PackageStateStore<Self> {
             &OWNED_TEST_STATE
         }
+    }
+
+    #[test]
+    fn failed_borrowed_state_install_preserves_the_existing_state() {
+        let store = crate::PackageStateStore::new();
+        let mut first = 1_u8;
+        let first_guard = install_state(&store, &mut first);
+        assert!(first_guard.is_some());
+
+        let mut second = 2_u8;
+        assert!(install_state(&store, &mut second).is_none());
+        assert_eq!(store.with(|state| *state), Some(1));
+
+        drop(first_guard);
     }
 
     #[test]

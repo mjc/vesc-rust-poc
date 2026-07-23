@@ -101,6 +101,11 @@ macro_rules! frequency_type {
             pub const fn frequency(self) -> Frequency {
                 self.0
             }
+
+            /// Return this typed frequency in hertz.
+            pub const fn as_hertz(self) -> f32 {
+                self.0.as_hertz()
+            }
         }
     };
 }

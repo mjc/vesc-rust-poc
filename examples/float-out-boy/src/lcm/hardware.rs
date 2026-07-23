@@ -26,6 +26,7 @@ pub struct FloatOutBoyHardwareLedsConfig {
 
 impl FloatOutBoyHardwareLedsConfig {
     /// Build the hardware LED config from typed Float Out Boy LED mode.
+    #[must_use]
     pub const fn new(mode: FloatOutBoyLedMode) -> Self {
         Self {
             mode,
@@ -50,71 +51,84 @@ impl FloatOutBoyHardwareLedsConfig {
     }
 
     /// Return this config with the LED output pin set.
+    #[must_use]
     pub const fn with_pin(mut self, pin: FloatOutBoyLedPin) -> Self {
         self.pin = pin;
         self
     }
 
     /// Return this config with the LED pin configuration set.
+    #[must_use]
     pub const fn with_pin_config(mut self, pin_config: FloatOutBoyLedPinConfig) -> Self {
         self.pin_config = pin_config;
         self
     }
 
     /// Return this config with the status strip set.
+    #[must_use]
     pub const fn with_status_strip(mut self, status: FloatOutBoyLedStripConfig) -> Self {
         self.status = status;
         self
     }
 
     /// Return this config with the front strip set.
+    #[must_use]
     pub const fn with_front_strip(mut self, front: FloatOutBoyLedStripConfig) -> Self {
         self.front = front;
         self
     }
 
     /// Return this config with the rear strip set.
+    #[must_use]
     pub const fn with_rear_strip(mut self, rear: FloatOutBoyLedStripConfig) -> Self {
         self.rear = rear;
         self
     }
 
     /// Return the configured LED mode.
+    #[must_use]
     pub const fn mode(self) -> FloatOutBoyLedMode {
         self.mode
     }
 
     /// Return the configured LED output pin.
+    #[must_use]
     pub const fn pin(self) -> FloatOutBoyLedPin {
         self.pin
     }
 
     /// Return the configured LED pin mode.
+    #[must_use]
     pub const fn pin_config(self) -> FloatOutBoyLedPinConfig {
         self.pin_config
     }
 
     /// Return the configured status LED strip.
+    #[must_use]
     pub const fn status_strip(self) -> FloatOutBoyLedStripConfig {
         self.status
     }
 
     /// Return the configured front LED strip.
+    #[must_use]
     pub const fn front_strip(self) -> FloatOutBoyLedStripConfig {
         self.front
     }
 
     /// Return the configured rear LED strip.
+    #[must_use]
     pub const fn rear_strip(self) -> FloatOutBoyLedStripConfig {
         self.rear
     }
 
     /// Return whether internal/status LEDs are enabled.
+    #[must_use]
     pub const fn uses_internal_leds(self) -> bool {
         self.mode.uses_internal_leds()
     }
 
     /// Return whether external LCM LEDs are enabled.
+    #[must_use]
     pub const fn uses_external_leds(self) -> bool {
         self.mode.uses_external_leds()
     }
@@ -128,11 +142,13 @@ pub struct FloatOutBoyHardwareConfig {
 
 impl FloatOutBoyHardwareConfig {
     /// Build a typed Float Out Boy hardware config.
+    #[must_use]
     pub const fn new(leds: FloatOutBoyHardwareLedsConfig) -> Self {
         Self { leds }
     }
 
     /// Return the hardware LED configuration.
+    #[must_use]
     pub const fn leds(self) -> FloatOutBoyHardwareLedsConfig {
         self.leds
     }

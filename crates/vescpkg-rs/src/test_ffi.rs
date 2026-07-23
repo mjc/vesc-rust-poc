@@ -1,5 +1,3 @@
-#![allow(clippy::cast_precision_loss)] // fake firmware exposes tick ages as f32 seconds
-
 use core::ffi::{c_char, c_void};
 use core::hint::spin_loop;
 use core::sync::atomic::{
@@ -68,8 +66,10 @@ static FIRMWARE_FAULT: AtomicI32 = AtomicI32::new(0);
 static INPUT_VOLTAGE: AtomicU32 = AtomicU32::new(0);
 static PPM_INPUT: AtomicU32 = AtomicU32::new(0);
 static PPM_AGE: AtomicU32 = AtomicU32::new(0);
+static PPM_SUPPORTED: AtomicBool = AtomicBool::new(true);
 static REMOTE_INPUT_Y: AtomicU32 = AtomicU32::new(0);
 static REMOTE_AGE: AtomicU32 = AtomicU32::new(0);
+static REMOTE_SUPPORTED: AtomicBool = AtomicBool::new(true);
 static IMU_STARTUP_DONE: AtomicBool = AtomicBool::new(false);
 static IMU_ROLL: AtomicU32 = AtomicU32::new(0);
 static IMU_PITCH: AtomicU32 = AtomicU32::new(0);
@@ -95,6 +95,7 @@ static EEPROM_WRITE_FAILURE: AtomicI32 = AtomicI32::new(-1);
 const NVM_BYTES: usize = 256;
 static NVM: [AtomicU8; NVM_BYTES] = [const { AtomicU8::new(0) }; NVM_BYTES];
 static NVM_FAILURE: AtomicBool = AtomicBool::new(false);
+static NVM_SUPPORTED: AtomicBool = AtomicBool::new(true);
 static LBM_FLOAT_BITS: AtomicU32 = AtomicU32::new(0);
 static LBM_CONS_CAR: AtomicU32 = AtomicU32::new(0);
 static LBM_CONS_CDR: AtomicU32 = AtomicU32::new(0);
@@ -140,14 +141,7 @@ impl Drop for FirmwareLockGuard {
     }
 }
 
-#[allow(clippy::too_many_lines)] // one reset point keeps fake firmware state isolated between tests
-pub(crate) fn lock_firmware() -> FirmwareLockGuard {
-    while LOCKED
-        .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
-        .is_err()
-    {
-        spin_loop();
-    }
+fn reset_motor_state() {
     KEEP_ALIVE_COUNT.store(0, Ordering::Relaxed);
     CURRENT_OFF_DELAY_COUNT.store(0, Ordering::Relaxed);
     CURRENT_COUNT.store(0, Ordering::Relaxed);
@@ -190,8 +184,13 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     INPUT_VOLTAGE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     PPM_INPUT.store(0.0_f32.to_bits(), Ordering::Relaxed);
     PPM_AGE.store(f32::INFINITY.to_bits(), Ordering::Relaxed);
+    PPM_SUPPORTED.store(true, Ordering::Relaxed);
     REMOTE_INPUT_Y.store(0.0_f32.to_bits(), Ordering::Relaxed);
     REMOTE_AGE.store(f32::INFINITY.to_bits(), Ordering::Relaxed);
+    REMOTE_SUPPORTED.store(true, Ordering::Relaxed);
+}
+
+fn reset_imu_and_threads() {
     IMU_STARTUP_DONE.store(false, Ordering::Relaxed);
     store(&IMU_ROLL, 0.0);
     store(&IMU_PITCH, 0.0);
@@ -223,6 +222,9 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     for slot in &THREAD_PRIORITIES {
         slot.store(0, Ordering::Relaxed);
     }
+}
+
+fn reset_storage_and_sync() {
     for slot in &EEPROM_PRESENT {
         slot.store(false, Ordering::Relaxed);
     }
@@ -231,6 +233,7 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
         byte.store(0, Ordering::Relaxed);
     }
     NVM_FAILURE.store(false, Ordering::Relaxed);
+    NVM_SUPPORTED.store(true, Ordering::Relaxed);
     CLOCK_TICKS.store(0, Ordering::Relaxed);
     TIMER_TICKS.store(0, Ordering::Relaxed);
     MUTEX_LOCK_COUNT.store(0, Ordering::Relaxed);
@@ -244,21 +247,33 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
     SEMAPHORE_FREE_COUNT.store(0, Ordering::Relaxed);
     SEMAPHORE_CREATE_FAILURE.store(false, Ordering::Relaxed);
     SEMAPHORE_TIMEOUT_FAILURE.store(false, Ordering::Relaxed);
+}
+
+pub(crate) fn lock_firmware() -> FirmwareLockGuard {
+    while LOCKED
+        .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
+        spin_loop();
+    }
+    reset_motor_state();
+    reset_imu_and_threads();
+    reset_storage_and_sync();
     FirmwareLockGuard
 }
 
 pub unsafe fn read_eeprom_word(word: *mut u32, address: i32) -> bool {
-    let Some(index) = usize::try_from(address)
+    let Some((stored, present)) = usize::try_from(address)
         .ok()
-        .filter(|index| *index < EEPROM_WORDS)
+        .and_then(|index| EEPROM.get(index).zip(EEPROM_PRESENT.get(index)))
     else {
         return false;
     };
-    if !EEPROM_PRESENT[index].load(Ordering::Relaxed) {
+    if !present.load(Ordering::Relaxed) {
         return false;
     }
     if let Some(word) = unsafe { word.as_mut() } {
-        *word = EEPROM[index].load(Ordering::Relaxed);
+        *word = stored.load(Ordering::Relaxed);
         true
     } else {
         false
@@ -266,9 +281,9 @@ pub unsafe fn read_eeprom_word(word: *mut u32, address: i32) -> bool {
 }
 
 pub unsafe fn store_eeprom_word(word: *mut u32, address: i32) -> bool {
-    let Some(index) = usize::try_from(address)
+    let Some((stored, present)) = usize::try_from(address)
         .ok()
-        .filter(|index| *index < EEPROM_WORDS)
+        .and_then(|index| EEPROM.get(index).zip(EEPROM_PRESENT.get(index)))
     else {
         return false;
     };
@@ -278,8 +293,8 @@ pub unsafe fn store_eeprom_word(word: *mut u32, address: i32) -> bool {
     let Some(word) = (unsafe { word.as_ref() }) else {
         return false;
     };
-    EEPROM[index].store(*word, Ordering::Relaxed);
-    EEPROM_PRESENT[index].store(true, Ordering::Relaxed);
+    stored.store(*word, Ordering::Relaxed);
+    present.store(true, Ordering::Relaxed);
     true
 }
 
@@ -288,6 +303,9 @@ pub(crate) fn fail_eeprom_write(address: crate::CustomEepromAddress) {
 }
 
 pub unsafe fn read_nvm(buffer: *mut u8, len: u32, address: u32) -> Option<bool> {
+    if !NVM_SUPPORTED.load(Ordering::Relaxed) {
+        return None;
+    }
     let Some(end) = address
         .checked_add(len)
         .and_then(|end| usize::try_from(end).ok())
@@ -302,17 +320,23 @@ pub unsafe fn read_nvm(buffer: *mut u8, len: u32, address: u32) -> Option<bool> 
         return Some(false);
     }
     for index in 0..usize::try_from(len).ok()? {
+        let Some(stored) = start.checked_add(index).and_then(|offset| NVM.get(offset)) else {
+            return Some(false);
+        };
         unsafe {
             buffer
                 .as_ptr()
                 .add(index)
-                .write(NVM[start + index].load(Ordering::Relaxed));
+                .write(stored.load(Ordering::Relaxed));
         }
     }
     Some(true)
 }
 
 pub unsafe fn write_nvm(buffer: *mut u8, len: u32, address: u32) -> Option<bool> {
+    if !NVM_SUPPORTED.load(Ordering::Relaxed) {
+        return None;
+    }
     let Some(end) = address
         .checked_add(len)
         .and_then(|end| usize::try_from(end).ok())
@@ -327,14 +351,19 @@ pub unsafe fn write_nvm(buffer: *mut u8, len: u32, address: u32) -> Option<bool>
         return Some(false);
     }
     for index in 0..usize::try_from(len).ok()? {
+        let Some(stored) = start.checked_add(index).and_then(|offset| NVM.get(offset)) else {
+            return Some(false);
+        };
         let byte = unsafe { buffer.as_ptr().add(index).read() };
-        NVM[start + index].store(byte, Ordering::Relaxed);
+        stored.store(byte, Ordering::Relaxed);
     }
     Some(true)
 }
 
-#[allow(clippy::unnecessary_wraps)] // fake preserves nullable firmware NVM slot shape
 pub unsafe fn wipe_nvm() -> Option<bool> {
+    if !NVM_SUPPORTED.load(Ordering::Relaxed) {
+        return None;
+    }
     if NVM_FAILURE.load(Ordering::Relaxed) {
         return Some(false);
     }
@@ -346,6 +375,10 @@ pub unsafe fn wipe_nvm() -> Option<bool> {
 
 pub(crate) fn fail_nvm_operations(fail: bool) {
     NVM_FAILURE.store(fail, Ordering::Relaxed);
+}
+
+pub(crate) fn set_nvm_supported(supported: bool) {
+    NVM_SUPPORTED.store(supported, Ordering::Relaxed);
 }
 
 pub unsafe fn lbm_is_number(value: LbmValue) -> bool {
@@ -440,11 +473,14 @@ pub unsafe fn vesc_system_time_ticks() -> u32 {
 }
 
 pub unsafe fn vesc_system_time_seconds() -> f32 {
-    CLOCK_TICKS.load(Ordering::Relaxed) as f32 / 10_000.0
+    crate::tick_count_as_seconds(CLOCK_TICKS.load(Ordering::Relaxed), 10_000.0)
 }
 
 pub unsafe fn vesc_timestamp_age_seconds(timestamp: u32) -> f32 {
-    CLOCK_TICKS.load(Ordering::Relaxed).wrapping_sub(timestamp) as f32 / 10_000.0
+    crate::tick_count_as_seconds(
+        CLOCK_TICKS.load(Ordering::Relaxed).wrapping_sub(timestamp),
+        10_000.0,
+    )
 }
 
 pub unsafe fn vesc_timer_time_now() -> u32 {
@@ -452,7 +488,10 @@ pub unsafe fn vesc_timer_time_now() -> u32 {
 }
 
 pub unsafe fn vesc_timer_seconds_elapsed_since(timestamp: u32) -> f32 {
-    TIMER_TICKS.load(Ordering::Relaxed).wrapping_sub(timestamp) as f32 / 1_000_000.0
+    crate::tick_count_as_seconds(
+        TIMER_TICKS.load(Ordering::Relaxed).wrapping_sub(timestamp),
+        1_000_000.0,
+    )
 }
 
 pub(crate) fn set_clock_ticks(ticks: u32) {
@@ -918,26 +957,37 @@ pub unsafe fn mc_get_input_voltage_filtered() -> f32 {
     load(&INPUT_VOLTAGE)
 }
 
-#[allow(clippy::unnecessary_wraps)] // fake preserves nullable firmware input slot shape
 pub unsafe fn get_ppm() -> Option<f32> {
-    Some(load(&PPM_INPUT))
+    PPM_SUPPORTED
+        .load(Ordering::Relaxed)
+        .then(|| load(&PPM_INPUT))
 }
 
-#[allow(clippy::unnecessary_wraps)] // fake preserves nullable firmware input slot shape
 pub unsafe fn get_ppm_age() -> Option<f32> {
-    Some(load(&PPM_AGE))
+    PPM_SUPPORTED
+        .load(Ordering::Relaxed)
+        .then(|| load(&PPM_AGE))
 }
 
-#[allow(clippy::unnecessary_wraps)] // fake preserves nullable firmware remote-state slot shape
 pub unsafe fn remote_state() -> Option<RemoteState> {
-    Some(RemoteState {
-        js_x: 0.0,
-        js_y: load(&REMOTE_INPUT_Y),
-        bt_c: false,
-        bt_z: false,
-        is_rev: false,
-        age_s: load(&REMOTE_AGE),
-    })
+    REMOTE_SUPPORTED
+        .load(Ordering::Relaxed)
+        .then(|| RemoteState {
+            js_x: 0.0,
+            js_y: load(&REMOTE_INPUT_Y),
+            bt_c: false,
+            bt_z: false,
+            is_rev: false,
+            age_s: load(&REMOTE_AGE),
+        })
+}
+
+pub(crate) fn set_ppm_supported(supported: bool) {
+    PPM_SUPPORTED.store(supported, Ordering::Relaxed);
+}
+
+pub(crate) fn set_remote_supported(supported: bool) {
+    REMOTE_SUPPORTED.store(supported, Ordering::Relaxed);
 }
 
 pub unsafe fn imu_startup_done() -> bool {
@@ -982,27 +1032,41 @@ pub unsafe fn vesc_spawn(
 ) -> *mut c_void {
     let call = THREAD_SPAWN_COUNT.fetch_add(1, Ordering::Relaxed);
     let index = call.min(1);
-    THREAD_SPAWN_STACKS[index].store(stack_bytes, Ordering::Relaxed);
-    THREAD_SPAWN_RESULTS[index].load(Ordering::Relaxed) as *mut c_void
+    let Some((stack, result)) = THREAD_SPAWN_STACKS
+        .get(index)
+        .zip(THREAD_SPAWN_RESULTS.get(index))
+    else {
+        return core::ptr::null_mut();
+    };
+    stack.store(stack_bytes, Ordering::Relaxed);
+    result.load(Ordering::Relaxed) as *mut c_void
 }
 
 pub unsafe fn vesc_request_terminate(thread: *mut c_void) {
     let call = THREAD_TERMINATE_COUNT.fetch_add(1, Ordering::Relaxed);
-    THREAD_TERMINATED[call.min(1)].store(thread as usize, Ordering::Relaxed);
+    if let Some(slot) = THREAD_TERMINATED.get(call.min(1)) {
+        slot.store(thread as usize, Ordering::Relaxed);
+    }
 }
 
 pub unsafe fn vesc_should_terminate() -> bool {
-    THREAD_TERMINATE_CHECKS.fetch_add(1, Ordering::Relaxed) + 1
+    THREAD_TERMINATE_CHECKS
+        .fetch_add(1, Ordering::Relaxed)
+        .saturating_add(1)
         >= THREAD_TERMINATE_AFTER.load(Ordering::Relaxed)
 }
 
 pub unsafe fn vesc_sleep_us(micros: u32) {
     let call = THREAD_SLEEP_COUNT.fetch_add(1, Ordering::Relaxed);
-    THREAD_SLEEP_MICROS[call.min(1)].store(micros, Ordering::Relaxed);
+    if let Some(slot) = THREAD_SLEEP_MICROS.get(call.min(1)) {
+        slot.store(micros, Ordering::Relaxed);
+    }
 }
 
 pub unsafe fn vesc_thread_set_priority(priority: i32) -> bool {
     let call = THREAD_PRIORITY_COUNT.fetch_add(1, Ordering::Relaxed);
-    THREAD_PRIORITIES[call.min(1)].store(priority, Ordering::Relaxed);
-    true
+    THREAD_PRIORITIES.get(call.min(1)).is_some_and(|slot| {
+        slot.store(priority, Ordering::Relaxed);
+        true
+    })
 }

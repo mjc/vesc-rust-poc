@@ -13,7 +13,9 @@ use crate::PackageRuntimeState;
 use crate::bindings::AppDataBindings;
 use crate::lifecycle_core::AppDataSendError;
 use crate::types::ThreadPriority;
-use crate::units::{TimestampTicks, VescSeconds};
+use crate::units::TimestampTicks;
+#[cfg(not(test))]
+use crate::units::VescSeconds;
 
 mod private {
     pub trait FirmwareThreads {}
@@ -40,9 +42,8 @@ impl TimerInstant {
         Self(raw)
     }
 
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware clock helpers need the raw timer value when package code uses high-resolution timing.
-    pub(crate) const fn raw(self) -> u32 {
+    #[cfg(not(test))]
+    const fn raw(self) -> u32 {
         self.0
     }
 }
@@ -133,30 +134,26 @@ impl<B: AppDataBindings> AppDataApi<B> {
     }
 
     /// Return firmware uptime in floating-point seconds.
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware clock capability is part of the package API even when host builds do not call it.
-    pub(crate) fn system_uptime(&self) -> VescSeconds {
+    #[cfg(not(test))]
+    fn system_uptime(&self) -> VescSeconds {
         VescSeconds::from_seconds(self.bindings.system_time_seconds())
     }
 
     /// Return firmware-computed age for a system timestamp.
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware clock capability is part of the package API even when host builds do not call it.
-    pub(crate) fn timestamp_age(&self, timestamp: TimestampTicks) -> VescSeconds {
+    #[cfg(not(test))]
+    fn timestamp_age(&self, timestamp: TimestampTicks) -> VescSeconds {
         VescSeconds::from_seconds(self.bindings.timestamp_age_seconds(timestamp.as_ticks()))
     }
 
     /// Return the current high-resolution timer instant.
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware timer capability is part of the package API even when host builds do not call it.
-    pub(crate) fn timer_now(&self) -> TimerInstant {
+    #[cfg(not(test))]
+    fn timer_now(&self) -> TimerInstant {
         TimerInstant::from_raw(self.bindings.timer_time_now())
     }
 
     /// Return high-resolution elapsed time since a timer instant.
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware timer capability is part of the package API even when host builds do not call it.
-    pub(crate) fn timer_elapsed_since(&self, earlier: TimerInstant) -> VescSeconds {
+    #[cfg(not(test))]
+    fn timer_elapsed_since(&self, earlier: TimerInstant) -> VescSeconds {
         VescSeconds::from_seconds(self.bindings.timer_seconds_elapsed_since(earlier.raw()))
     }
 
@@ -353,8 +350,15 @@ impl<S: PackageRuntimeState> ThreadContext<S> {
         &self,
         operation: impl for<'state> FnOnce(&'state mut S) -> R,
     ) -> Option<R> {
-        S::runtime_store()
-            .with_expected_mut(crate::runtime::ExpectedState::Exact(self.state), operation)
+        let expected = crate::runtime::ExpectedState::Exact(self.state);
+        #[cfg(not(target_arch = "arm"))]
+        {
+            S::runtime_store().with_expected_mut(expected, operation)
+        }
+        #[cfg(target_arch = "arm")]
+        {
+            crate::PackageStateStore::<S>::with_expected_mut(expected, operation)
+        }
     }
 
     /// Return firmware capabilities for this package thread.
@@ -681,21 +685,12 @@ impl ThreadGroup {
         }
     }
 
-    fn push(&mut self, handle: ThreadHandle) -> bool {
-        self.handles
-            .iter_mut()
-            .find(|slot| slot.is_none())
-            .is_some_and(|slot| {
-                *slot = Some(handle);
-                true
-            })
-    }
-
     #[cfg(test)]
     pub(crate) fn from_handles<const N: usize>(handles: [ThreadHandle; N]) -> Self {
+        assert!(N <= MAX_PACKAGE_THREADS);
         let mut group = Self::new();
-        for handle in handles {
-            assert!(group.push(handle));
+        for (slot, handle) in group.handles.iter_mut().zip(handles) {
+            *slot = Some(handle);
         }
         group
     }
@@ -862,7 +857,7 @@ impl<B: ThreadBindings> ThreadApi<B> {
             return None;
         }
         let mut threads = ThreadGroup::new();
-        for spec in specs {
+        for (slot, spec) in threads.handles.iter_mut().zip(specs) {
             let arg = match spec.argument {
                 ThreadArgument::PackageState => state.as_ptr().cast::<c_void>(),
                 ThreadArgument::None => core::ptr::null_mut(),
@@ -882,7 +877,7 @@ impl<B: ThreadBindings> ThreadApi<B> {
                 threads.terminate_reverse(self);
                 return None;
             };
-            debug_assert!(threads.push(handle));
+            *slot = Some(handle);
         }
         Some(threads)
     }
@@ -901,17 +896,16 @@ impl<B: ThreadBindings> ThreadApi<B> {
     ///
     /// Float Out Boy's main runtime thread sleeps with `VESC_IF->sleep_us` at
     /// `src/main.c:1080`.
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "min limits each sleep chunk to the firmware's u32 range"
-    )]
     pub fn sleep_for(&self, duration: Duration) {
         let mut micros = duration.as_nanos().div_ceil(1_000);
         while micros != 0 {
             // `Duration` counts nanoseconds with `u128`, while the C firmware
-            // accepts only a `uint32_t` microsecond chunk. Taking the minimum
-            // first proves this narrowing cast cannot discard any high bits.
-            let chunk = micros.min(u128::from(VESC_MAX_SAFE_SLEEP_MICROS)) as u32;
+            // accepts only a `uint32_t` microsecond chunk, and its ChibiOS
+            // conversion has a still-smaller safe limit. Clamp to that limit
+            // before the checked Rust conversion; the fallback is defensive
+            // and cannot crash even if those limits change independently.
+            let chunk = u32::try_from(micros.min(u128::from(VESC_MAX_SAFE_SLEEP_MICROS)))
+                .unwrap_or(VESC_MAX_SAFE_SLEEP_MICROS);
             self.bindings.sleep_us(chunk);
             micros = micros.saturating_sub(u128::from(chunk));
         }
@@ -1288,7 +1282,7 @@ mod tests {
         RUN_CALLS.store(0, Ordering::SeqCst);
         OBSERVED_STATE.store(0, Ordering::SeqCst);
         let state = Box::leak(Box::new(ThreadState(41)));
-        unsafe { THREAD_STATE.install(state) }.unwrap();
+        assert!(unsafe { THREAD_STATE.install(state) });
 
         unsafe {
             firmware_thread_entry::<RecordingThread>(core::ptr::from_mut(state).cast::<c_void>());

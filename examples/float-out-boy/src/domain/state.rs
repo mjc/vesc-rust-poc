@@ -22,6 +22,7 @@ impl FloatOutBoyRunState {
     /// Return the Float Out Boy `v1.2.1` run-state ID.
     ///
     /// C map: `third_party/float-out-boy/src/state.h:23-28`.
+    #[must_use]
     pub const fn id(self) -> u8 {
         match self {
             Self::Disabled => 0,
@@ -47,6 +48,7 @@ impl FloatOutBoyMode {
     /// Return the Float Out Boy `v1.2.1` mode ID.
     ///
     /// C map: `third_party/float-out-boy/src/state.h:30-34`.
+    #[must_use]
     pub const fn id(self) -> u8 {
         match self {
             Self::Normal => 0,
@@ -79,6 +81,7 @@ impl FloatOutBoyStopCondition {
     /// Return the Float Out Boy `v1.2.1` stop-condition ID.
     ///
     /// C map: `third_party/float-out-boy/src/state.h:36-44`.
+    #[must_use]
     pub const fn id(self) -> u8 {
         match self {
             Self::None => 0,
@@ -119,6 +122,7 @@ impl FloatOutBoySetpointAdjustment {
     /// Return the Float Out Boy `v1.2.1` realtime-data setpoint-adjustment ID.
     ///
     /// C map: `third_party/float-out-boy/src/state.h:46-58`.
+    #[must_use]
     pub const fn id(self) -> u8 {
         match self {
             Self::None => 0,
@@ -220,6 +224,7 @@ impl FloatOutBoyBeepReason {
     /// Return the Float Out Boy `v1.2.1` beep-reason ID.
     ///
     /// C map: `third_party/float-out-boy/src/main.c:61-80`.
+    #[must_use]
     pub const fn id(self) -> u8 {
         match self {
             Self::None => 0,
@@ -259,6 +264,7 @@ pub struct FloatOutBoyDataRecorderFlags {
 
 impl FloatOutBoyDataRecorderFlags {
     /// Return inactive data-recorder flags.
+    #[must_use]
     pub const fn inactive() -> Self {
         Self {
             recording: false,
@@ -268,18 +274,21 @@ impl FloatOutBoyDataRecorderFlags {
     }
 
     /// Return flags with recording enabled.
+    #[must_use]
     pub const fn with_recording(mut self) -> Self {
         self.recording = true;
         self
     }
 
     /// Return flags with autostart enabled.
+    #[must_use]
     pub const fn with_autostart(mut self) -> Self {
         self.autostart = true;
         self
     }
 
     /// Return flags with autostop enabled.
+    #[must_use]
     pub const fn with_autostop(mut self) -> Self {
         self.autostop = true;
         self

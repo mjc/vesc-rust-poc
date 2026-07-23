@@ -59,7 +59,7 @@ impl FloatOutBoyRuntimeThread {
 
 /// Describe the Float Out Boy runtime threads.
 ///
-/// Upstream passes its position-independent float_out_boy_thd and aux_thd to spawn
+/// Upstream passes its position-independent `float_out_boy_thd` and `aux_thd` to spawn
 /// with working areas of 1536 and 1024 bytes at
 /// third_party/float-out-boy/src/main.c:2438-2445. The Rust main-loop call chain is
 /// larger, so it reserves 2048 bytes. VESC forwards these byte counts directly
@@ -96,7 +96,7 @@ pub(crate) fn run_float_out_boy_main_thread_with<F: FnMut() -> u32>(
     mut tick: F,
 ) {
     while !threads.should_terminate() {
-        threads.sleep_for(Duration::from_micros(tick() as u64));
+        threads.sleep_for(Duration::from_micros(u64::from(tick())));
     }
 }
 
@@ -136,7 +136,7 @@ impl FloatOutBoyMainThreadTick {
 }
 
 #[cfg(any(test, target_arch = "arm"))]
-#[inline(always)]
+#[inline]
 pub(crate) fn tick_float_out_boy_main_thread_with(
     state: &mut FloatOutBoyPackageState,
     telemetry: &impl MotorTelemetry,
@@ -194,7 +194,9 @@ pub(crate) fn run_float_out_boy_aux_thread_with(threads: &impl FirmwareThreads) 
         let _ = threads.set_priority(priority);
     }
     while !threads.should_terminate() {
-        threads.sleep_for(Duration::from_micros(FLOAT_OUT_BOY_AUX_LOOP_TIME_US as u64));
+        threads.sleep_for(Duration::from_micros(u64::from(
+            FLOAT_OUT_BOY_AUX_LOOP_TIME_US,
+        )));
     }
 }
 
@@ -242,7 +244,7 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
                 let footpad_voltage1 = firmware.gpio().read_analog(AnalogPin::ADC1);
                 let footpad_voltage2 = firmware.gpio().read_analog(AnalogPin::ADC2);
                 let tick = ctx.with_state_mut(|state| {
-                    state.refresh_controller_input(firmware.input());
+                    state.refresh_controller_input(*firmware.input());
                     tick_float_out_boy_main_thread_with(
                         state,
                         firmware.telemetry(),
@@ -396,7 +398,7 @@ mod tests {
         // `third_party/float-out-boy/src/main.c:1075`, before sleeping at
         // `third_party/float-out-boy/src/main.c:1080`.
         assert_eq!(telemetry.current_command_count(), 1);
-        assert_eq!(telemetry.commanded_current().current().as_amps(), 3.5);
+        assert_f32_eq!(telemetry.commanded_current().current().as_amps(), 3.5);
         assert_eq!(
             state.all_data_payloads().base().footpad().state(),
             FloatOutBoyFootpadState::Left,
@@ -453,7 +455,7 @@ mod tests {
         );
 
         assert_eq!(firmware.foc_tone_command_count(), 1);
-        assert_eq!(
+        assert_f32_eq!(
             firmware
                 .commanded_foc_tone_frequency()
                 .frequency()
@@ -654,7 +656,7 @@ mod tests {
         assert_eq!(firmware.thread_sleep_count(), 1);
         assert_eq!(
             firmware.thread_sleep_durations(),
-            [Duration::from_micros(2000), Duration::ZERO]
+            [Duration::from_millis(2), Duration::ZERO]
         );
     }
 

@@ -32,7 +32,7 @@ fn foc_haptic_tone_uses_typed_audio_values() {
     assert_eq!(firmware.foc_tone_command_count(), 1);
     assert_eq!(
         firmware.commanded_foc_tone_channel(),
-        AudioChannel::try_new(0).unwrap()
+        AudioChannel::try_new(0).ok()
     );
     assert_eq!(
         firmware.commanded_foc_tone_frequency(),
@@ -42,6 +42,13 @@ fn foc_haptic_tone_uses_typed_audio_values() {
         firmware.commanded_foc_tone_voltage(),
         AudioVoltage::new(Voltage::from_volts(0.25))
     );
+}
+
+#[test]
+fn typed_audio_frequency_exposes_hertz_without_erasing_its_domain() {
+    let frequency = AudioFrequency::new(Frequency::from_hertz(440.0));
+
+    assert!((frequency.as_hertz() - 440.0).abs() < f32::EPSILON);
 }
 
 #[test]

@@ -14,6 +14,12 @@ use vescpkg_rs::prelude::{
 };
 const CURRENT_OFF_DELAY: CurrentOffDelay = CurrentOffDelay::new(VescSeconds::from_seconds(0.05));
 
+#[cfg(any(test, target_arch = "arm"))]
+fn tone_half_period_ticks(frequency: AudioFrequency, sample_rate: SampleRate) -> u8 {
+    let half_period_ticks = sample_rate.as_hertz() / (2.0 * frequency.as_hertz());
+    crate::wire::saturating_trunc_f32_to_u8(half_period_ticks.max(1.0).min(f32::from(u8::MAX)))
+}
+
 /// Float Out Boy motor-control request state.
 ///
 /// Upstream `MotorControl` stores `current_requested` and `requested_current`
@@ -35,7 +41,7 @@ pub(crate) struct FloatOutBoyMotorControl {
 }
 
 impl FloatOutBoyMotorControl {
-    #[inline(always)]
+    #[inline]
     pub(crate) const fn new() -> Self {
         Self {
             disabled: false,
@@ -49,7 +55,7 @@ impl FloatOutBoyMotorControl {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn request_current(&mut self, current: MotorCurrent) {
         // Upstream `motor_control_request_current` sets the request flag and
         // stores the requested current at `third_party/float-out-boy/src/motor_control.c:44-47`.
@@ -63,9 +69,7 @@ impl FloatOutBoyMotorControl {
         intensity: MotorCurrent,
         sample_rate: SampleRate,
     ) {
-        let ticks = (sample_rate.as_hertz() / 2.0 / frequency.frequency().as_hertz())
-            .max(1.0)
-            .min(f32::from(u8::MAX)) as u8;
+        let ticks = tone_half_period_ticks(frequency, sample_rate);
         if ticks != self.tone_ticks {
             self.tone_ticks = ticks;
             self.tone_counter = ticks;
@@ -80,7 +84,7 @@ impl FloatOutBoyMotorControl {
         self.tone_high = false;
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn apply_requested_current(&mut self, motor: &impl MotorOutput) -> bool {
         self.requested_current.take().is_some_and(|command| {
             // Upstream keeps this sign unchanged: `motor_control_request_current`
@@ -94,7 +98,7 @@ impl FloatOutBoyMotorControl {
         })
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn apply(
         &mut self,
         motor: &impl MotorOutput,
@@ -140,7 +144,7 @@ impl FloatOutBoyMotorControl {
         }
 
         if self.tone_ticks > 0 {
-            self.tone_counter -= 1;
+            self.tone_counter = self.tone_counter.saturating_sub(1);
             if self.tone_counter == 0 {
                 self.tone_counter = self.tone_ticks;
                 self.tone_high = !self.tone_high;
@@ -167,7 +171,7 @@ impl FloatOutBoyMotorControl {
         if system_time_ticks
             .wrapping_duration_since(self.brake_timer_ticks)
             .as_ticks()
-            > SYSTEM_TICK_RATE_HZ as u32
+            > crate::wire::truncating_u64_to_u32(SYSTEM_TICK_RATE_HZ)
         {
             // Upstream releases idle motor output by setting 0A once
             // `timer_older(time, brake_timer, 1)` passes at
@@ -207,7 +211,7 @@ mod tests {
             MotorCurrent::new(Current::from_amps(50.0)),
         ));
         assert_eq!(motor.current_command_count(), 1);
-        assert_eq!(motor.commanded_current().current().as_amps(), 0.0);
+        assert_f32_eq!(motor.commanded_current().current().as_amps(), 0.0);
 
         assert!(!control.apply(
             bindings,
@@ -242,7 +246,7 @@ mod tests {
         // `third_party/float-out-boy/src/motor_control.c:112-114`.
         assert_eq!(motor.keep_alive_count(), 1);
         assert_eq!(motor.duty_command_count(), 1);
-        assert_eq!(motor.commanded_duty().ratio().as_ratio(), 0.0);
+        assert_f32_eq!(motor.commanded_duty().ratio().as_ratio(), 0.0);
         assert_eq!(motor.current_command_count(), 0);
         assert_eq!(motor.brake_current_command_count(), 0);
     }
@@ -292,7 +296,7 @@ mod tests {
                 FloatOutBoyParkingBrakeMode::Idle,
                 MotorCurrent::new(Current::from_amps(50.0)),
             ));
-            assert_eq!(motor.commanded_current().current().as_amps(), 3.0);
+            assert_f32_eq!(motor.commanded_current().current().as_amps(), 3.0);
         }
 
         control.request_current(MotorCurrent::new(Current::from_amps(5.0)));
@@ -304,7 +308,7 @@ mod tests {
             FloatOutBoyParkingBrakeMode::Idle,
             MotorCurrent::new(Current::from_amps(50.0)),
         ));
-        assert_eq!(motor.commanded_current().current().as_amps(), 7.0);
+        assert_f32_eq!(motor.commanded_current().current().as_amps(), 7.0);
 
         control.stop_tone();
         control.request_current(MotorCurrent::new(Current::from_amps(5.0)));
@@ -316,6 +320,26 @@ mod tests {
             FloatOutBoyParkingBrakeMode::Idle,
             MotorCurrent::new(Current::from_amps(50.0)),
         ));
-        assert_eq!(motor.commanded_current().current().as_amps(), 5.0);
+        assert_f32_eq!(motor.commanded_current().current().as_amps(), 5.0);
+    }
+
+    #[test]
+    fn active_tone_saturates_an_empty_counter_instead_of_panicking() {
+        let motor = FirmwareTest::new();
+        let mut control = FloatOutBoyMotorControl {
+            tone_ticks: 1,
+            tone_counter: 0,
+            ..FloatOutBoyMotorControl::new()
+        };
+
+        assert!(control.apply(
+            motor.motor(),
+            FloatOutBoyRunState::Running,
+            Rpm::ZERO,
+            TimestampTicks::from_ticks(0),
+            FloatOutBoyParkingBrakeMode::Idle,
+            MotorCurrent::new(Current::ZERO),
+        ));
+        assert_eq!(control.tone_counter, 1);
     }
 }

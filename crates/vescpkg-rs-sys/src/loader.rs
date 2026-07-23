@@ -9,11 +9,6 @@ pub type AppDataHandler = unsafe extern "C" fn(*mut u8, u32);
 /// Function invoked when a native package is asked to stop.
 pub type StopHandler = unsafe extern "C" fn(*mut c_void);
 
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
-pub(crate) struct ThreadEntry(pub core::ptr::NonNull<c_void>);
-
 /// Loader metadata passed from firmware to a native package.
 #[repr(C)]
 pub struct LibInfo {

@@ -143,11 +143,11 @@ fn flywheel_start_calibrates_upright_attitude_and_applies_payload_overrides() {
 
     let ride_state = state.all_data_payloads().base().status().ride_state();
     assert_eq!(ride_state.mode(), FloatOutBoyMode::Flywheel);
-    assert_eq!(
+    assert_f32_eq!(
         state.serialized_config.balance().kp().as_amps_per_degree(),
         9.0
     );
-    assert_eq!(
+    assert_f32_eq!(
         state
             .serialized_config
             .balance()
@@ -155,7 +155,7 @@ fn flywheel_start_calibrates_upright_attitude_and_applies_payload_overrides() {
             .as_amps_per_degree_per_second(),
         0.5,
     );
-    assert_eq!(
+    assert_f32_eq!(
         state
             .serialized_config
             .startup()
@@ -163,7 +163,7 @@ fn flywheel_start_calibrates_upright_attitude_and_applies_payload_overrides() {
             .as_degrees(),
         0.2
     );
-    assert_eq!(
+    assert_f32_eq!(
         state
             .serialized_config
             .startup()
@@ -171,19 +171,19 @@ fn flywheel_start_calibrates_upright_attitude_and_applies_payload_overrides() {
             .as_degrees(),
         25.0
     );
-    assert_eq!(
+    assert_f32_eq!(
         state.serialized_config.faults().pitch_angle().as_degrees(),
         6.0
     );
-    assert_eq!(
+    assert_f32_eq!(
         state.serialized_config.faults().roll_angle().as_degrees(),
         35.0
     );
-    assert_eq!(
+    assert_f32_eq!(
         state.serialized_config.duty_pushback_angle().as_degrees(),
         3.0
     );
-    assert_eq!(
+    assert_f32_eq!(
         state.serialized_config.duty_pushback_threshold().as_ratio(),
         0.199
     );
@@ -217,7 +217,7 @@ fn flywheel_uses_unserialized_command_values_like_float_out_boy_runtime() {
         balance.kp2,
         WireByte::new(20).scaled(0.01, 0.0, RateCurrentGain::new)
     );
-    assert_eq!(
+    assert_f32_eq!(
         state.serialized_config.duty_pushback_threshold().as_ratio(),
         0.199
     );
@@ -290,7 +290,7 @@ fn flywheel_stop_restores_the_persisted_config() {
             .mode(),
         FloatOutBoyMode::Normal,
     );
-    assert_eq!(
+    assert_f32_eq!(
         state.serialized_config.balance().kp().as_amps_per_degree(),
         12.0
     );
@@ -485,11 +485,11 @@ fn flywheel_defaults_optional_speed_and_relaxed_roll_match_float_out_boy() {
         &flywheel_packet(&[0x85, 0, 0, 0, 0, 1, 99]),
     ));
 
-    assert_eq!(
+    assert_f32_eq!(
         state.serialized_config.balance().kp().as_amps_per_degree(),
         8.0
     );
-    assert_eq!(
+    assert_f32_eq!(
         state
             .serialized_config
             .balance()
@@ -497,18 +497,18 @@ fn flywheel_defaults_optional_speed_and_relaxed_roll_match_float_out_boy() {
             .as_amps_per_degree_per_second(),
         0.3
     );
-    assert_eq!(
+    assert_f32_eq!(
         state.serialized_config.faults().roll_angle().as_degrees(),
         90.0
     );
-    assert_eq!(
+    assert_f32_eq!(
         state
             .serialized_config
             .duty_pushback_speed()
             .as_degrees_per_second(),
         49.5
     );
-    assert_eq!(
+    assert_f32_eq!(
         state
             .serialized_config
             .tiltback_return_speed()
@@ -581,7 +581,7 @@ fn flywheel_footpad_abort_restores_config_after_the_footpads_release() {
             .run_state(),
         FloatOutBoyRunState::Ready,
     );
-    assert_eq!(
+    assert_f32_eq!(
         state.serialized_config.balance().kp().as_amps_per_degree(),
         9.0
     );
@@ -591,7 +591,7 @@ fn flywheel_footpad_abort_restores_config_after_the_footpads_release() {
 
     let ride_state = state.all_data_payloads().base().status().ride_state();
     assert_eq!(ride_state.mode(), FloatOutBoyMode::Normal);
-    assert_eq!(
+    assert_f32_eq!(
         state.serialized_config.balance().kp().as_amps_per_degree(),
         12.0
     );

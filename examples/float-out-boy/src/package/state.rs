@@ -6,7 +6,7 @@ use crate::beeper::{FloatOutBoyBeeper, FloatOutBoyBeeperAlert, FloatOutBoyBeeper
 #[cfg(any(test, target_arch = "arm"))]
 use crate::bms::FloatOutBoyBmsFaults;
 use crate::bms::FloatOutBoyBmsSample;
-use crate::config::*;
+use crate::config::{FloatOutBoyConfigImage, FloatOutBoyFlywheelConfig};
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload,
     FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand,
@@ -87,6 +87,24 @@ fn float_out_boy_command_payload(
     }
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct BeeperRuntimeFlags {
+    pin_configured: bool,
+    duty_warning_active: bool,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct RideRuntimeFlags {
+    flywheel_abort: bool,
+    traction_control: bool,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct UpsideDownRuntimeFlags {
+    enabled: bool,
+    started: bool,
+}
+
 /// Float Out Boy package state.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FloatOutBoyPackageState {
@@ -96,8 +114,7 @@ pub struct FloatOutBoyPackageState {
     #[cfg(any(test, target_arch = "arm"))]
     haptic_feedback: HapticFeedbackState,
     beeper: FloatOutBoyBeeper,
-    beeper_pin_configured: bool,
-    duty_beeping: bool,
+    beeper_flags: BeeperRuntimeFlags,
     bms_sample: FloatOutBoyBmsSample,
     #[cfg(any(test, target_arch = "arm"))]
     bms_faults: FloatOutBoyBmsFaults,
@@ -107,10 +124,9 @@ pub struct FloatOutBoyPackageState {
     bms_alert_ticks: TimestampTicks,
     flywheel_offsets: FloatOutBoyFlywheelOffsets,
     flywheel_runtime_config: Option<FloatOutBoyFlywheelConfig>,
-    flywheel_abort: bool,
+    ride_flags: RideRuntimeFlags,
     motor_control: FloatOutBoyMotorControl,
     balance_filter: BalanceFilter,
-    traction_control: bool,
     balance_loop: LoopState,
     reverse_total_erpm: Rpm,
     motor_acceleration: MotorAccelerationTracker,
@@ -132,8 +148,7 @@ pub struct FloatOutBoyPackageState {
     high_voltage_ticks: TimestampTicks,
     wheelslip_ticks: TimestampTicks,
     upside_down_fault_ticks: TimestampTicks,
-    upside_down_enabled: bool,
-    upside_down_started: bool,
+    upside_down_flags: UpsideDownRuntimeFlags,
     motor_duty_raw: Ratio,
     duty_max_with_margin: DutyCycleLimit,
     motor_current_max: MotorCurrentLimit,
@@ -151,6 +166,7 @@ pub struct FloatOutBoyPackageState {
 
 impl FloatOutBoyPackageState {
     /// Build app-data state from the current all-data payload snapshot.
+    #[must_use]
     pub fn new(all_data_payloads: FloatOutBoyAllDataPayloads) -> Self {
         let serialized_config = FloatOutBoyConfigImage::defaults();
         Self {
@@ -160,8 +176,7 @@ impl FloatOutBoyPackageState {
             #[cfg(any(test, target_arch = "arm"))]
             haptic_feedback: HapticFeedbackState::new(),
             beeper: FloatOutBoyBeeper::new(serialized_config.beeper_enabled()),
-            beeper_pin_configured: false,
-            duty_beeping: false,
+            beeper_flags: BeeperRuntimeFlags::default(),
             bms_sample: FloatOutBoyBmsSample::source_startup(),
             #[cfg(any(test, target_arch = "arm"))]
             bms_faults: FloatOutBoyBmsFaults::NONE,
@@ -171,10 +186,9 @@ impl FloatOutBoyPackageState {
             bms_alert_ticks: TimestampTicks::from_ticks(0),
             flywheel_offsets: FloatOutBoyFlywheelOffsets::source_startup(),
             flywheel_runtime_config: None,
-            flywheel_abort: false,
+            ride_flags: RideRuntimeFlags::default(),
             motor_control: FloatOutBoyMotorControl::new(),
             balance_filter: BalanceFilter::source_startup(),
-            traction_control: false,
             balance_loop: LoopState::source_startup(),
             reverse_total_erpm: Rpm::ZERO,
             motor_acceleration: MotorAccelerationTracker::default(),
@@ -196,8 +210,7 @@ impl FloatOutBoyPackageState {
             high_voltage_ticks: TimestampTicks::from_ticks(0),
             wheelslip_ticks: TimestampTicks::from_ticks(0),
             upside_down_fault_ticks: TimestampTicks::from_ticks(0),
-            upside_down_enabled: false,
-            upside_down_started: false,
+            upside_down_flags: UpsideDownRuntimeFlags::default(),
             motor_duty_raw: Ratio::from_ratio_const(0.0),
             duty_max_with_margin: DutyCycleLimit::new(Ratio::from_ratio_const(0.0)),
             motor_current_max: MotorCurrentLimit::new(Current::ZERO),
@@ -214,8 +227,8 @@ impl FloatOutBoyPackageState {
         }
     }
 
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    pub(crate) fn refresh_controller_input(&mut self, input: &vescpkg_rs::ControllerInput) {
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn refresh_controller_input(&mut self, input: vescpkg_rs::ControllerInput) {
         // C map: Float Out Boy selects UART/PPM, rejects samples one second old,
         // applies deadband rescaling, then optional inversion at
         // `third_party/float-out-boy/src/remote.c:36-68`.
@@ -256,6 +269,7 @@ impl FloatOutBoyPackageState {
     /// Upstream `data_init` reads EEPROM and falls back to generated defaults
     /// at `third_party/float-out-boy/src/main.c:1160-1185`.
     #[cfg(any(test, target_arch = "arm"))]
+    #[cfg(test)]
     pub(super) fn from_persisted_config(all_data_payloads: FloatOutBoyAllDataPayloads) -> Self {
         let mut state = Self::new(all_data_payloads);
         state.load_persisted_config_on_startup();
@@ -296,8 +310,9 @@ impl FloatOutBoyPackageState {
 
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn take_beeper_configuration_request(&mut self) -> bool {
-        let configure = self.serialized_config.beeper_enabled() && !self.beeper_pin_configured;
-        self.beeper_pin_configured |= configure;
+        let configure =
+            self.serialized_config.beeper_enabled() && !self.beeper_flags.pin_configured;
+        self.beeper_flags.pin_configured |= configure;
         configure
     }
 
@@ -341,6 +356,7 @@ impl FloatOutBoyPackageState {
     }
 
     /// Return the current all-data payload snapshot.
+    #[must_use]
     pub const fn all_data_payloads(self) -> FloatOutBoyAllDataPayloads {
         self.all_data_payloads
     }
@@ -411,13 +427,16 @@ impl FloatOutBoyPackageState {
     pub fn handle_packet_with_runtime(
         &mut self,
         telemetry: &impl MotorTelemetry,
-        _imu: &impl Imu,
+        imu: &impl Imu,
         now: &mut impl FnMut() -> TimestampTicks,
         send: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
+        // Device callbacks keep the IMU parameter for one stable packet API;
+        // the device's dedicated IMU callback already refreshed state.
+        let _ = imu;
         #[cfg(all(not(test), not(target_arch = "arm")))]
-        self.refresh_runtime_state(telemetry, _imu, now());
+        self.refresh_runtime_state(telemetry, imu, now());
 
         self.handle_packet_with_telemetry(telemetry, now, send, bytes)
     }
@@ -431,6 +450,7 @@ impl FloatOutBoyPackageState {
     /// `third_party/float-out-boy/src/main.c:184-191`, updates IMU at `third_party/float-out-boy/src/main.c:775`, motor data at
     /// `third_party/float-out-boy/src/main.c:796`, and performs the `STATE_STARTUP` -> `STATE_READY`
     /// gate at `third_party/float-out-boy/src/main.c:833-838`.
+    #[cfg(not(target_arch = "arm"))]
     pub(crate) fn refresh_runtime_state(
         &mut self,
         telemetry: &impl MotorTelemetry,

@@ -24,6 +24,7 @@ pub struct FloatOutBoyRideState {
 
 impl FloatOutBoyRideState {
     /// Build a Float Out Boy ride state from required enum-shaped state.
+    #[must_use]
     pub const fn new(
         run_state: FloatOutBoyRunState,
         mode: FloatOutBoyMode,
@@ -42,18 +43,21 @@ impl FloatOutBoyRideState {
     }
 
     /// Return this state with the requested charging state.
+    #[must_use]
     pub const fn with_charging(mut self, charging: FloatOutBoyChargingState) -> Self {
         self.charging = charging;
         self
     }
 
     /// Return this state with the requested wheel-slip state.
+    #[must_use]
     pub const fn with_wheelslip(mut self, wheelslip: FloatOutBoyWheelSlipState) -> Self {
         self.wheelslip = wheelslip;
         self
     }
 
     /// Return this state with the requested darkride/upside-down state.
+    #[must_use]
     pub const fn with_darkride(mut self, darkride: FloatOutBoyDarkRideState) -> Self {
         self.darkride = darkride;
         self
@@ -72,6 +76,7 @@ impl FloatOutBoyRideState {
     ///
     /// Mirrors upstream `d->state.state`, read by `set_cfg` at
     /// `third_party/float-out-boy/src/main.c:2369-2372`.
+    #[must_use]
     pub const fn run_state(self) -> FloatOutBoyRunState {
         self.run_state
     }
@@ -80,36 +85,43 @@ impl FloatOutBoyRideState {
     ///
     /// Mirrors upstream `d->state.mode`, read by `set_cfg` at
     /// `third_party/float-out-boy/src/main.c:2362-2365`.
+    #[must_use]
     pub const fn mode(self) -> FloatOutBoyMode {
         self.mode
     }
 
     /// Return the setpoint adjustment/pushback state.
+    #[must_use]
     pub const fn setpoint_adjustment(self) -> FloatOutBoySetpointAdjustment {
         self.setpoint_adjustment
     }
 
     /// Return the stop condition.
+    #[must_use]
     pub const fn stop_condition(self) -> FloatOutBoyStopCondition {
         self.stop_condition
     }
 
     /// Return the charging state.
+    #[must_use]
     pub const fn charging(self) -> FloatOutBoyChargingState {
         self.charging
     }
 
     /// Return the wheel-slip state.
+    #[must_use]
     pub const fn wheelslip(self) -> FloatOutBoyWheelSlipState {
         self.wheelslip
     }
 
     /// Return the darkride/upside-down state.
+    #[must_use]
     pub const fn darkride(self) -> FloatOutBoyDarkRideState {
         self.darkride
     }
 
     /// Return the Float Out Boy app-data Float State compatibility value.
+    #[must_use]
     pub const fn float_state_compat(self) -> u8 {
         if matches!(self.charging, FloatOutBoyChargingState::Charging) {
             return 14;
@@ -124,6 +136,7 @@ impl FloatOutBoyRideState {
     }
 
     /// Return the Float Out Boy app-data setpoint-adjustment compatibility value.
+    #[must_use]
     pub const fn setpoint_adjustment_compat(self) -> u8 {
         match self.setpoint_adjustment {
             FloatOutBoySetpointAdjustment::Centering => 0,

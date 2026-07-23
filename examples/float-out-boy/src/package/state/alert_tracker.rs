@@ -1,3 +1,5 @@
+#![cfg_attr(not(test), deny(clippy::arithmetic_side_effects))]
+
 use crate::domain::{FloatOutBoyAlertId, FloatOutBoyFatalErrorState, FloatOutBoyRealtimeAlertMask};
 use vescpkg_rs::prelude::{FirmwareFaultCode, FirmwareFaultWireCode, TimestampTicks};
 
@@ -109,7 +111,7 @@ impl AlertTrackerState {
             0
         };
         for offset in 0..self.record_count {
-            let index = (first + offset) % ALERT_RECORD_CAPACITY;
+            let index = first.saturating_add(offset) % ALERT_RECORD_CAPACITY;
             if let Some(record) = self.records.get(index).copied().flatten()
                 && record.timestamp > since
                 && !visit(record)
@@ -123,8 +125,11 @@ impl AlertTrackerState {
         if let Some(slot) = self.records.get_mut(self.next_record) {
             *slot = Some(record);
         }
-        self.next_record = (self.next_record + 1) % ALERT_RECORD_CAPACITY;
-        self.record_count = (self.record_count + 1).min(ALERT_RECORD_CAPACITY);
+        self.next_record = self.next_record.saturating_add(1) % ALERT_RECORD_CAPACITY;
+        self.record_count = self
+            .record_count
+            .saturating_add(1)
+            .min(ALERT_RECORD_CAPACITY);
     }
 }
 

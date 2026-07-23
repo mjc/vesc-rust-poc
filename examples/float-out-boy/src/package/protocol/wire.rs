@@ -3,6 +3,8 @@
 //! C map: app-data packet encoders forward through Float Out Boy buffer helpers in
 //! `third_party/float-out-boy/src/conf/buffer.c:33-145`.
 
+#![cfg_attr(not(test), deny(clippy::arithmetic_side_effects))]
+
 use vescpkg_rs::prelude::AngleRadians;
 
 pub(super) fn float_out_boy_degrees(angle: AngleRadians) -> f32 {
@@ -18,23 +20,31 @@ pub(super) fn push_float_out_boy_float16(buffer: &mut [u8], ind: &mut usize, val
 }
 
 #[must_use]
-#[inline(always)]
+#[inline]
 fn encode_float_out_boy_float16(value: f32) -> u16 {
     let bits = value.to_bits().wrapping_add(0x0000_1000);
     let exponent = (bits & 0x7f80_0000) >> 23;
     let mantissa = bits & 0x007f_ffff;
     let normalized = if exponent > 112 {
-        (((exponent - 112) << 10) & 0x7c00) | (mantissa >> 13)
+        ((exponent.saturating_sub(112) << 10) & 0x7c00) | (mantissa >> 13)
     } else {
         0
     };
+    // In this branch the exponent makes the right shift 13 through 23 bits.
+    // `wrapping_shr` also keeps a future out-of-range shift panic-free without
+    // changing any valid Float Out Boy encoding.
     let denormalized = if exponent < 113 && exponent > 101 {
-        (((0x007f_f000 + mantissa) >> (125 - exponent)) + 1) >> 1
+        (0x007f_f000_u32
+            .saturating_add(mantissa)
+            .wrapping_shr(125_u32.saturating_sub(exponent))
+            .saturating_add(1))
+            >> 1
     } else {
         0
     };
     let saturated = if exponent > 143 { 0x7fff } else { 0 };
-    (((bits & 0x8000_0000) >> 16) | normalized | denormalized | saturated) as u16
+    let encoded = ((bits & 0x8000_0000) >> 16) | normalized | denormalized | saturated;
+    u16::try_from(encoded).unwrap_or(u16::MAX)
 }
 
 pub(super) fn float_out_boy_realtime_push_float32_auto(
@@ -74,7 +84,7 @@ mod tests {
 
     #[test]
     fn float16_matches_float_out_boy_encoding() {
-        [
+        for (value, expected) in [
             (0.0, 0x0000),
             (-0.0, 0x8000),
             (1.0, 0x3c00),
@@ -84,10 +94,8 @@ mod tests {
             (131_008.0, 0x7fff),
             (f32::INFINITY, 0x7fff),
             (f32::NEG_INFINITY, 0xffff),
-        ]
-        .into_iter()
-        .for_each(|(value, expected)| {
+        ] {
             assert_eq!(encode_float_out_boy_float16(value), expected);
-        });
+        }
     }
 }

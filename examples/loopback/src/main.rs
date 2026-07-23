@@ -7,6 +7,7 @@
 
 #![cfg_attr(target_arch = "arm", no_std)]
 #![cfg_attr(target_arch = "arm", no_main)]
+#![deny(warnings, clippy::all, clippy::pedantic)]
 #![forbid(unsafe_code)]
 #![forbid(unused_extern_crates)]
 // An embedded package cannot unwind or print a useful panic report. Keep
@@ -20,6 +21,7 @@
         clippy::panic,
         clippy::todo,
         clippy::unimplemented,
+        clippy::unreachable,
         clippy::unwrap_used
     )
 )]
@@ -35,9 +37,10 @@ pub mod extensions;
 
 pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
 
-#[cfg_attr(not(any(test, target_arch = "arm")), allow(dead_code))]
+#[cfg(any(test, target_arch = "arm"))]
 pub(crate) struct LoopbackState;
 
+#[cfg(any(test, target_arch = "arm"))]
 vescpkg_rs::package_start!(crate::start, LoopbackState);
 
 #[cfg(test)]

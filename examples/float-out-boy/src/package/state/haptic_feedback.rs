@@ -7,7 +7,7 @@ use vescpkg_rs::prelude::{
     SampleRate, Speed, TimestampTicks, Voltage,
 };
 
-const TONE_LENGTH_TICKS: u32 = SYSTEM_TICK_RATE_HZ as u32 / 10;
+const TONE_LENGTH_TICKS: u32 = crate::wire::truncating_u64_to_u32(SYSTEM_TICK_RATE_HZ) / 10;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct HapticFeedbackInput {
@@ -228,14 +228,14 @@ mod tests {
         );
 
         assert_eq!(firmware.foc_tone_command_count(), 1);
-        assert_eq!(
+        assert_f32_eq!(
             firmware
                 .commanded_foc_tone_frequency()
                 .frequency()
                 .as_hertz(),
             495.0
         );
-        assert_eq!(
+        assert_f32_eq!(
             firmware.commanded_foc_tone_voltage().voltage().as_volts(),
             0.6
         );
@@ -246,17 +246,17 @@ mod tests {
         let defaults = FloatOutBoyConfigImage::defaults();
         let config = defaults.haptic();
 
-        assert_eq!(config.duty_frequency().frequency().as_hertz(), 495.0);
-        assert_eq!(config.duty_strength().voltage().as_volts(), 3.0);
-        assert_eq!(config.error_frequency().frequency().as_hertz(), 550.0);
-        assert_eq!(config.error_strength().voltage().as_volts(), 3.0);
-        assert_eq!(config.vibrate_frequency().frequency().as_hertz(), 70.0);
-        assert_eq!(config.vibrate_strength().current().as_amps(), 0.0);
-        assert_eq!(config.duty_solid_offset().as_ratio(), 0.05);
-        assert_eq!(config.current_threshold().as_ratio(), 0.0);
-        assert_eq!(config.min_strength().as_ratio(), 0.2);
+        assert_f32_eq!(config.duty_frequency().frequency().as_hertz(), 495.0);
+        assert_f32_eq!(config.duty_strength().voltage().as_volts(), 3.0);
+        assert_f32_eq!(config.error_frequency().frequency().as_hertz(), 550.0);
+        assert_f32_eq!(config.error_strength().voltage().as_volts(), 3.0);
+        assert_f32_eq!(config.vibrate_frequency().frequency().as_hertz(), 70.0);
+        assert_f32_eq!(config.vibrate_strength().current().as_amps(), 0.0);
+        assert_f32_eq!(config.duty_solid_offset().as_ratio(), 0.05);
+        assert_f32_eq!(config.current_threshold().as_ratio(), 0.0);
+        assert_f32_eq!(config.min_strength().as_ratio(), 0.2);
         assert!((config.max_strength_speed().as_kilometers_per_hour() - 30.0).abs() < 0.0001);
-        assert_eq!(config.strength_curvature().as_ratio(), 0.6);
+        assert_f32_eq!(config.strength_curvature().as_ratio(), 0.6);
     }
 
     #[test]
@@ -277,7 +277,7 @@ mod tests {
         }
 
         assert_eq!(firmware.foc_tone_command_count(), 3);
-        assert_eq!(
+        assert_f32_eq!(
             firmware.commanded_foc_tone_voltage().voltage().as_volts(),
             0.6
         );
@@ -300,7 +300,7 @@ mod tests {
             SampleRate::from_hertz(832.0),
         );
 
-        assert_eq!(
+        assert_f32_eq!(
             firmware
                 .commanded_foc_tone_frequency()
                 .frequency()
@@ -335,7 +335,7 @@ mod tests {
         );
 
         assert_eq!(firmware.foc_tone_command_count(), 2);
-        assert_eq!(
+        assert_f32_eq!(
             firmware.commanded_foc_tone_voltage().voltage().as_volts(),
             0.0
         );

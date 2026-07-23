@@ -81,8 +81,8 @@ mod tests {
 
     #[test]
     fn firmware_ratio_clamps_and_normalizes_non_finite_input() {
-        assert_eq!(firmware_ratio(2.0).as_ratio(), 1.0);
-        assert_eq!(firmware_ratio(-2.0).as_ratio(), -1.0);
-        assert_eq!(firmware_ratio(f32::NAN).as_ratio(), 0.0);
+        assert_f32_eq!(firmware_ratio(2.0).as_ratio(), 1.0);
+        assert_f32_eq!(firmware_ratio(-2.0).as_ratio(), -1.0);
+        assert_f32_eq!(firmware_ratio(f32::NAN).as_ratio(), 0.0);
     }
 }

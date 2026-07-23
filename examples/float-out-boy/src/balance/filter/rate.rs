@@ -81,7 +81,7 @@ pub(super) struct CorrectedAngularRate {
 pub(super) struct AngularRateHalfStep(pub(super) [AngleRadians; 3]);
 
 impl<Tag> AngularRateAxis<Tag> {
-    #[inline(always)]
+    #[inline]
     pub(super) const fn new(value: AngularVelocity) -> Self {
         // C map: `imu_update` keeps callback gyro axes as angular velocity
         // inputs before the balance filter integrates them at
@@ -90,14 +90,14 @@ impl<Tag> AngularRateAxis<Tag> {
         Self(value, core::marker::PhantomData)
     }
 
-    #[inline(always)]
+    #[inline]
     const fn angular_velocity(self) -> AngularVelocity {
         self.0
     }
 }
 
 impl<Tag> AngularHalfStepAxis<Tag> {
-    #[inline(always)]
+    #[inline]
     const fn new(value: AngleRadians) -> Self {
         // C map: `balance_filter_update` and `imu_update` carry these half
         // step rotation values as raw radians at
@@ -107,7 +107,7 @@ impl<Tag> AngularHalfStepAxis<Tag> {
 }
 
 impl MeasuredAngularRate {
-    #[inline(always)]
+    #[inline]
     pub(super) const fn new(
         roll: RollAngularRate,
         pitch: PitchAngularRate,
@@ -131,7 +131,7 @@ impl MeasuredAngularRate {
         )
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) const fn without_accel_feedback(self) -> CorrectedAngularRate {
         CorrectedAngularRate {
             roll: self.roll,
@@ -141,7 +141,7 @@ impl MeasuredAngularRate {
     }
 
     /// C map: `third_party/float-out-boy/src/balance_filter.c:107-111`.
-    #[inline(always)]
+    #[inline]
     pub(super) fn with_gravity_feedback(
         self,
         error: GravityError,
@@ -162,7 +162,7 @@ impl MeasuredAngularRate {
 }
 
 impl From<ImuAngularRate> for MeasuredAngularRate {
-    #[inline(always)]
+    #[inline]
     fn from(angular_rate: ImuAngularRate) -> Self {
         angular_rate.map_axes(Self::from_axes)
     }
@@ -179,7 +179,7 @@ impl CorrectedAngularRate {
     }
 
     /// C map: `third_party/float-out-boy/src/balance_filter.c:114-117`.
-    #[inline(always)]
+    #[inline]
     pub(super) fn half_step(self, dt: VescSeconds) -> AngularRateHalfStep {
         AngularRateHalfStep::new(
             RollAngularHalfStep::new(self.roll.angular_velocity() * dt * 0.5),
@@ -205,7 +205,7 @@ impl CorrectedAngularRate {
 }
 
 impl AngularRateHalfStep {
-    #[inline(always)]
+    #[inline]
     const fn new(
         roll: RollAngularHalfStep,
         pitch: PitchAngularHalfStep,

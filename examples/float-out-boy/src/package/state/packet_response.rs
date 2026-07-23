@@ -291,7 +291,7 @@ mod tests {
 
         let name = b"OVER_TEMP_FET";
         assert_eq!(&packet[..11], &[101, 35, 0, 0, 0, 1, 0, 0, 0, 0, 5]);
-        assert_eq!(packet[11], name.len() as u8);
+        assert_eq!(packet[11], u8::try_from(name.len()).unwrap_or(u8::MAX));
         assert_eq!(&packet[12..25], name);
         assert_eq!(&packet[25..34], &[1, 0, 0, 0, 42, 1, 1, 5, 13]);
         assert_eq!(&packet[34..], name);

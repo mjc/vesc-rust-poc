@@ -6,7 +6,6 @@ use super::{
 };
 use vescpkg_rs::prelude::{AngleDegrees, IntegralCurrentGain, PidScale, VescSeconds};
 
-#[cfg_attr(test, allow(dead_code))]
 impl FloatOutBoyConfigEditor<'_> {
     pub(crate) fn apply_handtest_safety_overrides(&mut self) -> bool {
         // C map: HANDTEST temporarily clears these tune fields at
