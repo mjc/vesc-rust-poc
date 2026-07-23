@@ -219,6 +219,11 @@ mod tests {
         assert_eq!(table.function_address(1), None);
         assert_eq!(table.function_address(2), Some(ExpressAddress::new(0x1234)));
         assert_eq!(
+            table.function_address_at(ExpressSlot::IfVersion),
+            None,
+            "scalar version words must never be exposed as function pointers"
+        );
+        assert_eq!(
             table.function_address_at(ExpressSlot::LbmSetErrorReason),
             Some(ExpressAddress::new(0x1234))
         );
@@ -236,6 +241,12 @@ mod tests {
         assert_eq!(
             interface.function_address(ExpressSlot::LbmSetErrorReason),
             Some(ExpressAddress::new(0x1234))
+        );
+        assert_eq!(
+            unsafe { interface.function::<unsafe extern "C" fn()>(ExpressSlot::IfVersion) },
+            Err(ExpressCallError {
+                slot: ExpressSlot::IfVersion
+            })
         );
         let _raw_function = unsafe {
             interface
