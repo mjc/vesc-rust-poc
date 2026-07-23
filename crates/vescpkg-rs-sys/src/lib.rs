@@ -9,6 +9,7 @@
 
 #![doc = include_str!("compile_fail_contracts.md")]
 #![no_std]
+#![deny(warnings, clippy::all, clippy::pedantic)]
 #![forbid(unused_extern_crates)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(clippy::missing_safety_doc)]

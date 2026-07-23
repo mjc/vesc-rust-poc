@@ -37,14 +37,26 @@ clippy: clippy-pedantic vescpkg-rs-sys-target-check arm-clippy
 	$(CARGO) clippy --workspace --all-targets --all-features -- $(CLIPPY_FLAGS)
 
 clippy-pedantic:
-	$(CARGO) clippy -p vesc-protocol -p vescpkg-rs -p vesc-example-loopback --all-targets --all-features -- $(CLIPPY_PEDANTIC_FLAGS)
+	$(CARGO) clippy \
+		-p vesc-protocol \
+		-p vescpkg-rs-sys \
+		-p vescpkg-rs-units \
+		-p vescpkg-rs \
+		-p vesc-example-alloc-smoke \
+		-p vesc-example-loopback \
+		-p vesc-example-float-out-boy \
+		--all-targets \
+		--all-features \
+		-- $(CLIPPY_PEDANTIC_FLAGS)
 
 vescpkg-rs-sys-target-check:
 	test "$$($(CARGO) tree -p vescpkg-rs-sys --edges normal --no-default-features --prefix none | wc -l | tr -d ' ')" = 1
 	$(CARGO) check -p vescpkg-rs-sys --target $(ARM_TARGET) --no-default-features
 
 arm-clippy:
+	$(CARGO) clippy -p vescpkg-rs-sys --target $(ARM_TARGET) --no-default-features -- $(CLIPPY_PEDANTIC_FLAGS)
 	$(CARGO) clippy -p vesc-example-loopback --bin vesc-example-loopback --release --target $(ARM_TARGET) -- $(CLIPPY_PEDANTIC_FLAGS)
+	$(CARGO) clippy -p vesc-example-float-out-boy --bin vesc-example-float-out-boy --release --target $(ARM_TARGET) -- $(CLIPPY_PEDANTIC_FLAGS)
 
 arm-gates: vescpkg-rs-sys-target-check arm-clippy package-only
 

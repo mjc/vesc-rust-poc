@@ -65,6 +65,7 @@
 //! both can contain [`Current`].
 
 #![no_std]
+#![deny(warnings, clippy::all, clippy::pedantic)]
 #![forbid(unused_extern_crates)]
 #![deny(unsafe_code)]
 // Embedded package code has no unwinder or operator console. Reject explicit

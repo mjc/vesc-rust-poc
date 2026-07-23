@@ -12,6 +12,7 @@
 //! the `vescpkg-rs` package layer.
 
 #![no_std]
+#![deny(warnings, clippy::all, clippy::pedantic)]
 #![forbid(unused_extern_crates)]
 // Embedded package code has no unwinder or operator console. Reject explicit
 // crash paths in production while still allowing ordinary assertions in tests.
