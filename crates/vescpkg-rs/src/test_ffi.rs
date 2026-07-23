@@ -17,7 +17,7 @@ use crate::{
     DutyCycle, ElectricalSpeed, FirmwareFault, ImuAngularRate, ImuOrientation, ImuPitch, ImuRoll,
     ImuYaw, InputCurrent, InputVoltage, JoystickY, MosfetTemperature, MotorCurrentLimit,
     MotorTemperature, OdometerMeters, PpmAge, PpmInput, RemoteAge, TotalMotorCurrent, TripDistance,
-    VehicleSpeed, WattHoursCharged, WattHoursDischarged,
+    VehicleSpeed, WattHoursCharged, WattHoursDischarged, WattHoursRemaining,
 };
 use vescpkg_rs_sys::raw::{
     AttitudeInfo, CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5,
@@ -182,6 +182,7 @@ static AMP_HOURS_CHARGED: AtomicU32 = AtomicU32::new(0);
 static WATT_HOURS_DISCHARGED: AtomicU32 = AtomicU32::new(0);
 static WATT_HOURS_CHARGED: AtomicU32 = AtomicU32::new(0);
 static BATTERY_LEVEL: AtomicU32 = AtomicU32::new(0);
+static BATTERY_WATT_HOURS_REMAINING: AtomicU32 = AtomicU32::new(0);
 static FIRMWARE_FAULT: AtomicI32 = AtomicI32::new(0);
 static INPUT_VOLTAGE: AtomicU32 = AtomicU32::new(0);
 static PPM_INPUT: AtomicU32 = AtomicU32::new(0);
@@ -416,6 +417,7 @@ fn reset_motor_state() {
     WATT_HOURS_DISCHARGED.store(0.0_f32.to_bits(), Ordering::Relaxed);
     WATT_HOURS_CHARGED.store(0.0_f32.to_bits(), Ordering::Relaxed);
     BATTERY_LEVEL.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    BATTERY_WATT_HOURS_REMAINING.store(0.0_f32.to_bits(), Ordering::Relaxed);
     FIRMWARE_FAULT.store(0, Ordering::Relaxed);
     INPUT_VOLTAGE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     PPM_INPUT.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -1212,6 +1214,13 @@ pub(crate) fn set_ride_totals(
     store(&BATTERY_LEVEL, battery_level.as_fraction());
 }
 
+pub(crate) fn set_battery_level_remaining(remaining: WattHoursRemaining) {
+    store(
+        &BATTERY_WATT_HOURS_REMAINING,
+        remaining.energy().as_watt_hours(),
+    );
+}
+
 pub(crate) fn set_firmware_fault(fault: FirmwareFault) {
     let raw = match fault {
         FirmwareFault::None => 0,
@@ -1945,7 +1954,10 @@ pub unsafe fn mc_get_watt_hours_charged(_reset: bool) -> f32 {
     load(&WATT_HOURS_CHARGED)
 }
 
-pub unsafe fn mc_get_battery_level(_wh_left: *mut f32) -> f32 {
+pub unsafe fn mc_get_battery_level(wh_left: *mut f32) -> f32 {
+    if let Some(wh_left) = unsafe { wh_left.as_mut() } {
+        *wh_left = load(&BATTERY_WATT_HOURS_REMAINING);
+    }
     load(&BATTERY_LEVEL)
 }
 

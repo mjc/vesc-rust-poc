@@ -6,10 +6,10 @@ use core::ffi::CStr;
 use crate::types::{
     AbsoluteTachometerSteps, AmpHoursCharged, AmpHoursDischarged, AverageMosfetTemperature,
     AverageMotorCurrent, AverageMotorTemperature, AveragePower, AverageVehicleSpeed,
-    BatteryCellCount, BatteryLevel, BrakeCurrent, BrakeCurrentRelative, CurrentOffDelay,
-    CurrentRelative, DCurrent, DVoltage, DirectionalMotorCurrent, DutyCycle, DutyCycleLimit,
-    ElectricalSpeed, FirmwareFault, HandbrakeCurrent, HandbrakeRelative, InputCurrent,
-    InputVoltage, MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorSelection,
+    BatteryCellCount, BatteryLevel, BatteryLevelSnapshot, BrakeCurrent, BrakeCurrentRelative,
+    CurrentOffDelay, CurrentRelative, DCurrent, DVoltage, DirectionalMotorCurrent, DutyCycle,
+    DutyCycleLimit, ElectricalSpeed, FirmwareFault, HandbrakeCurrent, HandbrakeRelative,
+    InputCurrent, InputVoltage, MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorSelection,
     MotorStatisticDuration, MotorTemperature, PeakMosfetTemperature, PeakMotorCurrent,
     PeakMotorTemperature, PeakPower, PeakVehicleSpeed, PidPosition, PidPositionOffsetPersistence,
     QCurrent, QVoltage, SignedTripDistance, TachometerReset, TachometerSteps,
@@ -189,6 +189,8 @@ pub trait MotorTelemetryBindings {
     fn watt_hours_charged(&self) -> WattHoursCharged;
     /// Return estimated battery level.
     fn battery_level(&self) -> BatteryLevel;
+    /// Return the battery level and firmware-estimated remaining energy.
+    fn battery_level_snapshot(&self) -> BatteryLevelSnapshot;
     /// Return the active firmware motor fault code.
     fn firmware_fault(&self) -> FirmwareFault;
     /// Borrow the firmware-provided fault description for this telemetry handle.
@@ -373,6 +375,10 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
 
     fn battery_level(&self) -> BatteryLevel {
         (**self).battery_level()
+    }
+
+    fn battery_level_snapshot(&self) -> BatteryLevelSnapshot {
+        (**self).battery_level_snapshot()
     }
 
     fn firmware_fault(&self) -> FirmwareFault {
@@ -808,9 +814,16 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
     }
 
     fn battery_level(&self) -> BatteryLevel {
-        BatteryLevel::from_fraction(unsafe {
-            crate::ffi::mc_get_battery_level(core::ptr::null_mut())
-        })
+        self.battery_level_snapshot().level()
+    }
+
+    fn battery_level_snapshot(&self) -> BatteryLevelSnapshot {
+        let mut watt_hours_remaining = 0.0;
+        let level = unsafe { crate::ffi::mc_get_battery_level(&mut watt_hours_remaining) };
+        BatteryLevelSnapshot::new(
+            BatteryLevel::from_fraction(level),
+            crate::WattHoursRemaining::new(Energy::from_watt_hours(watt_hours_remaining)),
+        )
     }
 
     fn firmware_fault(&self) -> FirmwareFault {
@@ -1062,6 +1075,8 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     fn watt_hours_charged(&self) -> WattHoursCharged;
     /// Return estimated battery level.
     fn battery_level(&self) -> BatteryLevel;
+    /// Return the battery level and firmware-estimated remaining energy.
+    fn battery_level_snapshot(&self) -> BatteryLevelSnapshot;
     /// Return the active firmware motor fault code.
     fn firmware_fault(&self) -> FirmwareFault;
     /// Borrow the firmware-provided fault description for this telemetry handle.
@@ -1415,6 +1430,11 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.battery_level()
     }
 
+    /// Return the battery level and firmware-estimated remaining energy.
+    pub fn battery_level_snapshot(&self) -> BatteryLevelSnapshot {
+        self.bindings.battery_level_snapshot()
+    }
+
     /// Return the active firmware motor fault code.
     pub fn firmware_fault(&self) -> FirmwareFault {
         self.bindings.firmware_fault()
@@ -1619,6 +1639,10 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
 
     fn battery_level(&self) -> BatteryLevel {
         self.battery_level()
+    }
+
+    fn battery_level_snapshot(&self) -> BatteryLevelSnapshot {
+        self.battery_level_snapshot()
     }
 
     fn firmware_fault(&self) -> FirmwareFault {
