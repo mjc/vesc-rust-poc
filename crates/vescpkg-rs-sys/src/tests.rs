@@ -382,6 +382,9 @@ fn vesc_if_capabilities_expose_named_subsystems_without_raw_slot_names() {
     words[VescIfAbi::CAN_TRANSMIT_SID.slot_index()] = 1;
     words[VescIfAbi::READ_NVM.slot_index()] = 1;
     words[VescIfAbi::GET_REMOTE_STATE.slot_index()] = 1;
+    words[VescIfAbi::TIMEOUT_RESET.slot_index()] = 1;
+    words[VescIfAbi::TIMEOUT_HAS_TIMEOUT.slot_index()] = 1;
+    words[VescIfAbi::TIMEOUT_SECS_SINCE_UPDATE.slot_index()] = 1;
     let capabilities = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
 
     assert_eq!(

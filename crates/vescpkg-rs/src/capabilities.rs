@@ -1014,7 +1014,8 @@ impl FirmwareCapabilities {
         self.inner.nvm().map(|_| Nvm::new())
     }
 
-    /// Construct a controller input handle only when its required remote-state entry exists.
+    /// Construct a controller input handle only when its required remote-state and timeout
+    /// entries exist.
     ///
     /// Individual input operations still report `InputError::Unsupported` for optional
     /// firmware entries such as PPM, backup storage, and shutdown inhibition.
@@ -1132,11 +1133,23 @@ mod tests {
         words[VescIfAbi::CAN_TRANSMIT_SID.slot_index()] = 1;
         words[VescIfAbi::READ_NVM.slot_index()] = 1;
         words[VescIfAbi::GET_REMOTE_STATE.slot_index()] = 1;
+        words[VescIfAbi::TIMEOUT_RESET.slot_index()] = 1;
+        words[VescIfAbi::TIMEOUT_HAS_TIMEOUT.slot_index()] = 1;
+        words[VescIfAbi::TIMEOUT_SECS_SINCE_UPDATE.slot_index()] = 1;
         let capabilities = FirmwareCapabilities::new(VescIfPresence::from_words(&words));
 
         assert!(capabilities.can_bus().is_ok());
         assert!(capabilities.nvm().is_ok());
         assert!(capabilities.inputs().is_ok());
+        let mut remote_only = [0_usize; VescIfAbi::FIELD_COUNT];
+        remote_only[VescIfAbi::GET_REMOTE_STATE.slot_index()] = 1;
+        assert_eq!(
+            FirmwareCapabilities::new(VescIfPresence::from_words(&remote_only))
+                .inputs()
+                .unwrap_err()
+                .slot(),
+            VescIfAbi::TIMEOUT_RESET
+        );
         assert_eq!(
             capabilities
                 .nvm_with_capacity(NvmCapacity::new(32).unwrap())
