@@ -227,7 +227,7 @@ pub use packet::OwnedPacketRegistration;
 pub use packet::{PacketCodec, PacketError, PacketHandler, PacketRegistration};
 pub use plot::{Plot, PlotError};
 pub use runtime::{PackageRuntimeState, PackageStateAccess, PackageStateStore};
-pub use sync::{FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore};
+pub use sync::{FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore, SemaphoreWaitOutcome};
 pub use terminal::{Terminal, TerminalArgs, TerminalError, TerminalHandler, TerminalRegistration};
 pub use thread::{
     Firmware, FirmwareAppData, FirmwareClock, FirmwareThread, FirmwareThreads,
@@ -298,11 +298,11 @@ pub mod prelude {
         LispValue, LogError, MotorOutput, MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset,
         PackageStartError, PacketCodec, PacketError, PacketHandler, Plot, PlotError, PpmSnapshot,
         PwmCallbackError, PwmCallbackHandler, PwmCallbackLease, RemoteInput, RemoteInputSnapshot,
-        SettingsError, ShutdownInhibit, StatefulCustomConfigCallback, StatefulLbmExtension,
-        StatelessFirmwareThread, StatelessThreadContext, Terminal, TerminalError, TerminalHandler,
-        TerminalRegistration, ThreadContext, ThreadError, ThreadName, ThreadSpec,
-        ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimeoutSnapshot, TimerInstant,
-        TypedPwmCallbackLease, Uart, UartError, UartLease,
+        SemaphoreWaitOutcome, SettingsError, ShutdownInhibit, StatefulCustomConfigCallback,
+        StatefulLbmExtension, StatelessFirmwareThread, StatelessThreadContext, Terminal,
+        TerminalError, TerminalHandler, TerminalRegistration, ThreadContext, ThreadError,
+        ThreadName, ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimeoutSnapshot,
+        TimerInstant, TypedPwmCallbackLease, Uart, UartError, UartLease,
     };
 }
 

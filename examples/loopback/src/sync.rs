@@ -1,7 +1,7 @@
 //! Usage-shaped RAII synchronization for package code.
 
 use vescpkg_rs::prelude::SystemTicks;
-use vescpkg_rs::{FirmwareMutex, FirmwareSemaphore};
+use vescpkg_rs::{FirmwareMutex, FirmwareSemaphore, SemaphoreWaitOutcome};
 
 /// Run a package operation while holding a firmware-owned mutex.
 pub fn with_probe_lock<R>(operation: impl FnOnce() -> R) -> Option<R> {
@@ -14,9 +14,10 @@ pub fn with_probe_lock<R>(operation: impl FnOnce() -> R) -> Option<R> {
 pub fn after_probe_signal<R>(operation: impl FnOnce() -> R) -> Option<R> {
     let semaphore = FirmwareSemaphore::new()?;
     semaphore.signal();
-    semaphore
-        .wait_timeout(SystemTicks::from_ticks(1))
-        .then_some(operation())
+    match semaphore.wait_timeout(SystemTicks::from_ticks(1)) {
+        SemaphoreWaitOutcome::Signaled => Some(operation()),
+        SemaphoreWaitOutcome::TimedOut => None,
+    }
 }
 
 #[cfg(all(test, feature = "test-support"))]

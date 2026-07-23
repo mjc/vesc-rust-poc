@@ -6,6 +6,29 @@ use core::ptr::NonNull;
 use crate::types::SystemDuration;
 use crate::units::SystemTicks;
 
+/// Outcome of a bounded firmware semaphore wait.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SemaphoreWaitOutcome {
+    /// The semaphore was signaled before the timeout elapsed.
+    Signaled,
+    /// The timeout elapsed before the semaphore was signaled.
+    TimedOut,
+}
+
+impl SemaphoreWaitOutcome {
+    /// Return whether the wait acquired a signal.
+    #[must_use]
+    pub const fn is_signaled(self) -> bool {
+        matches!(self, Self::Signaled)
+    }
+
+    /// Return whether the wait elapsed without acquiring a signal.
+    #[must_use]
+    pub const fn is_timed_out(self) -> bool {
+        matches!(self, Self::TimedOut)
+    }
+}
+
 /// An owned firmware mutex allocated from the VESC package heap.
 ///
 /// The handle is deliberately neither `Send` nor `Sync`: firmware mutex
@@ -78,13 +101,15 @@ impl FirmwareSemaphore {
         unsafe { crate::ffi::vesc_sem_wait(self.handle.as_ptr()) };
     }
 
-    /// Wait for at most `timeout` system ticks, returning `false` on timeout.
-    pub fn wait_timeout(&self, timeout: SystemTicks) -> bool {
-        unsafe { crate::ffi::vesc_sem_wait_to(self.handle.as_ptr(), timeout.as_ticks()) }
+    /// Wait for at most `timeout` system ticks and report the outcome.
+    pub fn wait_timeout(&self, timeout: SystemTicks) -> SemaphoreWaitOutcome {
+        semaphore_wait_outcome(unsafe {
+            crate::ffi::vesc_sem_wait_to(self.handle.as_ptr(), timeout.as_ticks())
+        })
     }
 
-    /// Wait for a typed system-clock duration, returning `false` on timeout.
-    pub fn wait_timeout_duration(&self, timeout: SystemDuration) -> bool {
+    /// Wait for a typed system-clock duration and report the outcome.
+    pub fn wait_timeout_duration(&self, timeout: SystemDuration) -> SemaphoreWaitOutcome {
         self.wait_timeout(timeout.duration())
     }
 
@@ -96,6 +121,14 @@ impl FirmwareSemaphore {
     /// Reset the semaphore to its unsignaled state.
     pub fn reset(&self) {
         unsafe { crate::ffi::vesc_sem_reset(self.handle.as_ptr()) };
+    }
+}
+
+fn semaphore_wait_outcome(signaled: bool) -> SemaphoreWaitOutcome {
+    if signaled {
+        SemaphoreWaitOutcome::Signaled
+    } else {
+        SemaphoreWaitOutcome::TimedOut
     }
 }
 
