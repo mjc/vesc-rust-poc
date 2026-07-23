@@ -299,10 +299,10 @@ impl ExpressSlot {
 
 /// Return the pinned kind of an Express slot, if it is in the v1 table.
 pub const fn express_slot_kind(index: usize) -> Option<ExpressSlotKind> {
-    match index {
-        0 | 38..=42 => Some(ExpressSlotKind::Scalar),
-        1..=37 | 43..=79 => Some(ExpressSlotKind::Function),
-        _ => None,
+    if index < EXPRESS_IF_SLOT_COUNT {
+        Some(ExpressSlot::ALL[index].kind())
+    } else {
+        None
     }
 }
 
