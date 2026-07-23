@@ -89,7 +89,10 @@ Express `free` slot.
 
 `ExpressLisp` covers the core scalar encode/decode, cons/list, type-predicate,
 symbol-constant, evaluator-control, context/message, and extension-registration
-slots with typed `ExpressLispValue`/`ExpressLispSymbol` wrappers. The symbol
+slots with typed `ExpressLispValue`/`ExpressLispSymbol` wrappers. Registration,
+byte-array creation, and context-unblock acceptance are represented as typed
+`ExpressLispOperationError`/`ExpressLispMessageError` results rather than raw
+success booleans. The symbol
 lookup names follow the official `const char *` ABI, while registration,
 error-reason, and string-decoding pointers retain their source mutability.
 The
