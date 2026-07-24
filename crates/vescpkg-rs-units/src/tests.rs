@@ -363,6 +363,17 @@ fn fugit_timer_aliases_model_vesc_system_ticks() {
 }
 
 #[test]
+fn system_tick_seconds_follow_the_vesc_tick_rate() {
+    let ticks_per_second = u16::try_from(crate::SYSTEM_TICK_RATE_HZ).unwrap_or_default();
+
+    assert_ne!(ticks_per_second, 0);
+    assert_f32_eq!(
+        crate::time::system_ticks_as_secs_f32(SystemTicks::from_ticks(u32::from(ticks_per_second))),
+        1.0
+    );
+}
+
+#[test]
 fn timestamp_delta_preserves_vesc_unsigned_wraparound() {
     let then = TimestampTicks::from_ticks(u32::MAX - 4);
     let now = TimestampTicks::from_ticks(5);

@@ -41,5 +41,6 @@ pub(crate) fn system_ticks_as_secs_f32(ticks: SystemTicks) -> f32 {
     let [low0, low1, high0, high1] = ticks.as_ticks().to_le_bytes();
     let low = f32::from(u16::from_le_bytes([low0, low1]));
     let high = f32::from(u16::from_le_bytes([high0, high1]));
-    (high * 65_536.0 + low) / 10_000.0
+    let ticks_per_second = u16::try_from(SYSTEM_TICK_RATE_HZ).map_or(f32::NAN, f32::from);
+    (high * 65_536.0 + low) / ticks_per_second
 }
