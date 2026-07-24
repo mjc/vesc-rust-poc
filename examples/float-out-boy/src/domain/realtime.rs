@@ -3,8 +3,6 @@
 //! Source map: realtime ID lists and payloads mirror Float Out Boy `v1.2.1` at
 //! `third_party/float-out-boy/src/rt_data.h:38-66` and `third_party/float-out-boy/src/main.c:1876-1960`.
 
-#![cfg_attr(not(test), deny(clippy::arithmetic_side_effects))]
-
 use super::{
     FloatOutBoyBeepReason, FloatOutBoyChargingState, FloatOutBoyDarkRideState,
     FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState, FloatOutBoyFootpadSample,

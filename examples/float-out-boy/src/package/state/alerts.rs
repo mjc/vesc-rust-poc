@@ -1,5 +1,3 @@
-#![cfg_attr(not(test), deny(clippy::arithmetic_side_effects))]
-
 use super::super::protocol::wire::{
     float_out_boy_realtime_push_u8, float_out_boy_realtime_push_u32,
 };

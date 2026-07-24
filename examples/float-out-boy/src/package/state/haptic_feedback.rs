@@ -85,8 +85,12 @@ impl HapticFeedbackState {
                 self.can_change_type = true;
                 true
             } else {
-                let tone_time = now.wrapping_duration_since(self.tone_timer).as_ticks()
-                    % (TONE_LENGTH_TICKS * beats);
+                let cycle_ticks = TONE_LENGTH_TICKS.saturating_mul(beats);
+                let tone_time = now
+                    .wrapping_duration_since(self.tone_timer)
+                    .as_ticks()
+                    .checked_rem(cycle_ticks)
+                    .unwrap_or_default();
                 let beat = tone_time / TONE_LENGTH_TICKS;
                 let off_beat = beats.saturating_sub(2);
                 self.can_change_type = !self.is_playing && beat == 0;
@@ -281,6 +285,21 @@ mod tests {
             firmware.commanded_foc_tone_voltage().voltage().as_volts(),
             0.6
         );
+    }
+
+    #[test]
+    fn patterned_haptic_periods_match_refloat() {
+        for (feedback_type, beats, cycle_ticks) in [
+            (HapticFeedbackType::DutySpeed, 2, 2_000),
+            (HapticFeedbackType::ErrorTemperature, 6, 6_000),
+            (HapticFeedbackType::ErrorVoltage, 8, 8_000),
+            (HapticFeedbackType::ErrorFatal, 10, 10_000),
+        ] {
+            assert_eq!(feedback_type.beats(), beats);
+            assert_eq!(TONE_LENGTH_TICKS.checked_mul(beats), Some(cycle_ticks));
+        }
+        assert_eq!(HapticFeedbackType::DutyContinuous.beats(), 0);
+        assert_eq!(HapticFeedbackType::None.beats(), 0);
     }
 
     #[test]

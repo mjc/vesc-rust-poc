@@ -150,6 +150,10 @@ impl FloatOutBoyLedColor {
     /// C map: these IDs follow the `enumNames` order for LED color config fields at
     /// `third_party/float-out-boy/src/conf/settings.xml:3456-3487`.
     #[must_use]
+    #[expect(
+        clippy::as_conversions,
+        reason = "the repr(u8) discriminant is the firmware wire value"
+    )]
     pub const fn id(self) -> u8 {
         self as u8
     }

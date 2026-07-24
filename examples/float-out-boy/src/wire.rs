@@ -2,8 +2,6 @@
 //!
 //! C map: Float Out Boy packet encoders forward through `third_party/float-out-boy/src/conf/buffer.c:33-145`.
 
-#![cfg_attr(not(test), deny(clippy::arithmetic_side_effects))]
-
 use vescpkg_rs::prelude::{AngleDegrees, AngleRadians};
 
 pub(crate) fn push_u8(buffer: &mut [u8], ind: &mut usize, value: u8) {

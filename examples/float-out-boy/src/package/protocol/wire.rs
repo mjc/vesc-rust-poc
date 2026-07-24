@@ -3,8 +3,6 @@
 //! C map: app-data packet encoders forward through Float Out Boy buffer helpers in
 //! `third_party/float-out-boy/src/conf/buffer.c:33-145`.
 
-#![cfg_attr(not(test), deny(clippy::arithmetic_side_effects))]
-
 use vescpkg_rs::prelude::AngleRadians;
 
 pub(super) fn float_out_boy_degrees(angle: AngleRadians) -> f32 {

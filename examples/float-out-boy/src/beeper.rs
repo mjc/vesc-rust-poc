@@ -1,7 +1,5 @@
 //! Float Out Boy external-beeper sequencing.
 
-#![deny(clippy::arithmetic_side_effects)]
-
 /// External-beeper output level.
 #[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

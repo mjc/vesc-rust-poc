@@ -2,20 +2,25 @@
 
 #![cfg_attr(target_arch = "arm", no_std)]
 #![cfg_attr(target_arch = "arm", no_main)]
-#![deny(warnings, clippy::all, clippy::pedantic)]
+#![deny(warnings, clippy::pedantic)]
 #![forbid(unsafe_code)]
-#![deny(unsafe_op_in_unsafe_fn)]
-#![deny(clippy::missing_safety_doc)]
 // An embedded package cannot unwind or print a useful panic report. Keep
 // explicit crash shortcuts out of the production entrypoint and its modules.
 #![cfg_attr(
     not(test),
     deny(
+        clippy::allow_attributes,
+        clippy::allow_attributes_without_reason,
         clippy::arithmetic_side_effects,
+        clippy::as_conversions,
         clippy::expect_used,
         clippy::indexing_slicing,
+        clippy::mem_forget,
+        clippy::missing_safety_doc,
+        clippy::multiple_unsafe_ops_per_block,
         clippy::panic,
         clippy::todo,
+        clippy::undocumented_unsafe_blocks,
         clippy::unimplemented,
         clippy::unreachable,
         clippy::unwrap_used

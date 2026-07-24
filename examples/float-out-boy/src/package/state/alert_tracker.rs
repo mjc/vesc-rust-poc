@@ -1,5 +1,3 @@
-#![cfg_attr(not(test), deny(clippy::arithmetic_side_effects))]
-
 use crate::domain::{FloatOutBoyAlertId, FloatOutBoyFatalErrorState, FloatOutBoyRealtimeAlertMask};
 use vescpkg_rs::prelude::{FirmwareFaultCode, FirmwareFaultWireCode, TimestampTicks};
 
