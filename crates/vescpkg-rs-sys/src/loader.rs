@@ -50,4 +50,8 @@ impl LibInfoAbi {
 // A mismatched array length fails compilation if Rust and the C firmware ever
 // disagree about this struct. Unlike a runtime assertion, this cannot become a
 // crash path in an installed package.
-const _: [(); 1] = [(); LibInfoAbi::has_vesc32_layout() as usize];
+const _: [(); 1] = [(); if LibInfoAbi::has_vesc32_layout() {
+    1
+} else {
+    0
+}];

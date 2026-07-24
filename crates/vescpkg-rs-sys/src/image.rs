@@ -27,9 +27,9 @@ pub struct NativeImage {
 impl NativeImage {
     /// Construct a native image from its base address.
     #[must_use]
-    pub const fn new(base_addr: u32) -> Self {
+    pub fn new(base_addr: u32) -> Self {
         Self {
-            base_addr: NativeAddress(base_addr as usize),
+            base_addr: NativeAddress(usize::try_from(base_addr).unwrap_or_default()),
         }
     }
 
@@ -77,6 +77,6 @@ impl NativeImage {
 
     /// Rebase a raw pointer into the native image address space.
     pub fn rebase_ptr<T>(self, ptr: *const T) -> *const T {
-        self.rebase_addr(ptr as usize) as *const T
+        core::ptr::with_exposed_provenance(self.rebase_addr(ptr.addr()))
     }
 }

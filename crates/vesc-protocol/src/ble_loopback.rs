@@ -205,18 +205,26 @@ impl<'a> LoopbackPacket<'a> {
 }
 
 #[cfg_attr(all(not(test), target_arch = "arm"), no_panic::no_panic)]
+#[cfg_attr(
+    all(not(test), target_arch = "arm"),
+    expect(
+        clippy::mem_forget,
+        reason = "the no_panic proof macro forgets its private Drop guard"
+    )
+)]
 fn copy_payload_no_runtime(response: &mut [u8; MAX_LOOPBACK_FRAME_BYTES], payload: &[u8]) {
     let mut index = 0;
     while index < payload.len() {
-        // SAFETY: callers only pass payload slices that are already capped to
-        // MAX_LOOPBACK_PAYLOAD_BYTES, and response has exactly enough trailing
-        // capacity after the fixed header. Pointer copy avoids target codegen
-        // pulling in memcpy/compiler-builtins in the final native package.
-        unsafe {
-            *response
-                .as_mut_ptr()
-                .add(MIN_WIRE_FRAME_BYTES.saturating_add(index)) = *payload.as_ptr().add(index);
-        }
+        let source = payload.as_ptr().wrapping_add(index);
+        // SAFETY: `index < payload.len()`, so `source` points to an initialized byte.
+        let byte = unsafe { source.read() };
+
+        let destination = response
+            .as_mut_ptr()
+            .wrapping_add(MIN_WIRE_FRAME_BYTES.saturating_add(index));
+        // SAFETY: payloads are capped to the response capacity after its fixed header.
+        unsafe { destination.write(byte) };
+
         index = index.saturating_add(1);
     }
 }
@@ -247,6 +255,13 @@ fn write_wire_header(
 ///
 /// Returns a [`LoopbackError`] when the frame header, command, or payload is invalid.
 #[cfg_attr(all(not(test), target_arch = "arm"), no_panic::no_panic)]
+#[cfg_attr(
+    all(not(test), target_arch = "arm"),
+    expect(
+        clippy::mem_forget,
+        reason = "the no_panic proof macro forgets its private Drop guard"
+    )
+)]
 pub fn handle_loopback_frame(
     bytes: &[u8],
     now_ms: u64,
