@@ -93,7 +93,7 @@ impl CustomEeprom {
     #[must_use]
     pub fn read(self, address: CustomEepromAddress) -> Option<EepromWord> {
         let mut word = 0_u32;
-        unsafe { crate::ffi::read_eeprom_word(&raw mut word, address.get()) }
+        call_vesc_ffi!(read_eeprom_word(&raw mut word, address.get()))
             .then(|| EepromWord::from_u32(word))
     }
 
@@ -101,7 +101,7 @@ impl CustomEeprom {
     #[must_use]
     pub fn write(self, address: CustomEepromAddress, word: EepromWord) -> bool {
         let mut word = word.to_u32();
-        unsafe { crate::ffi::store_eeprom_word(&raw mut word, address.get()) }
+        call_vesc_ffi!(store_eeprom_word(&raw mut word, address.get()))
     }
 
     /// Read a serialized byte image from consecutive custom-EEPROM words.

@@ -7,6 +7,15 @@ use vescpkg_rs_sys::LbmValue;
 #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 use vescpkg_rs_sys::{ExtensionHandler, NativeImage};
 
+#[cfg(any(test, feature = "test-support", target_arch = "arm"))]
+#[expect(
+    clippy::as_conversions,
+    reason = "Rust provides no non-cast conversion from a function pointer to its code address"
+)]
+pub(crate) fn extension_handler_address(handler: ExtensionHandler) -> usize {
+    handler as usize
+}
+
 /// Thin wrapper around the `LispBM` binding set used by package code.
 pub(crate) struct LbmApi<B> {
     bindings: B,
@@ -25,6 +34,8 @@ impl<B: LbmBindings> LbmApi<B> {
         name: crate::ExtensionName,
         handler: ExtensionHandler,
     ) -> Result<(), ExtensionRegistrationError> {
+        // SAFETY: the validated name is static and NUL-terminated, and the
+        // handler is a static function with the firmware callback ABI.
         unsafe {
             self.bindings
                 .add_extension(name.as_cstr().as_ptr(), handler)
@@ -35,19 +46,23 @@ impl<B: LbmBindings> LbmApi<B> {
 
     /// Convert any `LispBM` numeric value to an `i32`.
     pub fn decode_number_as_i32(&self, value: LbmValue) -> Option<i32> {
-        unsafe {
-            self.bindings
-                .is_number(value)
-                .then(|| self.bindings.decode_i32(value))
+        // SAFETY: the caller supplied a firmware `LispBM` value.
+        if unsafe { self.bindings.is_number(value) } {
+            // SAFETY: firmware just confirmed that the value is numeric.
+            Some(unsafe { self.bindings.decode_i32(value) })
+        } else {
+            None
         }
     }
 
     /// Convert any `LispBM` numeric value to an `f32`.
     pub fn decode_number_as_f32(&self, value: LbmValue) -> Option<f32> {
-        unsafe {
-            self.bindings
-                .is_number(value)
-                .then(|| self.bindings.decode_f32(value))
+        // SAFETY: the caller supplied a firmware `LispBM` value.
+        if unsafe { self.bindings.is_number(value) } {
+            // SAFETY: firmware just confirmed that the value is numeric.
+            Some(unsafe { self.bindings.decode_f32(value) })
+        } else {
+            None
         }
     }
 
@@ -107,10 +122,13 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         descriptor: ExtensionDescriptor,
     ) -> Result<(), ExtensionRegistrationError> {
         let name = descriptor.name().as_cstr().as_ptr();
-        let handler_address = descriptor.handler() as usize;
+        let handler_address = extension_handler_address(descriptor.handler());
+        // SAFETY: the caller guarantees that resolving this package-local
+        // address produces a function with the `ExtensionHandler` C ABI.
         let handler = unsafe {
             core::mem::transmute::<usize, ExtensionHandler>(image.resolve_addr(handler_address))
         };
+        // SAFETY: the name and resolved handler satisfy the registration contract.
         if unsafe { self.api.bindings.add_extension(name, handler) } {
             Ok(())
         } else {
@@ -134,6 +152,7 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         let mut registered = 0_usize;
         for descriptor in descriptors {
             requested = requested.saturating_add(1);
+            // SAFETY: the caller's image and lifetime guarantees apply to every descriptor.
             registered = registered.saturating_add(usize::from(
                 unsafe { self.register_extension_from_image(image, descriptor) }.is_ok(),
             ));

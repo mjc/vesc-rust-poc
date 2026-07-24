@@ -96,7 +96,7 @@ impl Gpio {
         }
         #[cfg(not(test))]
         {
-            adc_voltage_from_firmware(unsafe { crate::ffi::io_read_analog(pin) })
+            adc_voltage_from_firmware(call_vesc_ffi!(io_read_analog(pin)))
         }
     }
 
@@ -113,7 +113,7 @@ impl Gpio {
         }
         #[cfg(not(test))]
         {
-            unsafe { crate::ffi::io_set_mode(pin.0, VescPinMode(DIGITAL_OUTPUT_MODE)) }
+            call_vesc_ffi!(io_set_mode(pin.0, VescPinMode(DIGITAL_OUTPUT_MODE)))
         }
     }
 
@@ -129,7 +129,7 @@ impl Gpio {
         }
         #[cfg(not(test))]
         {
-            unsafe { crate::ffi::io_write(pin.0, level.firmware_level()) }
+            call_vesc_ffi!(io_write(pin.0, level.firmware_level()))
         }
     }
 }

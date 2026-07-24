@@ -45,6 +45,7 @@ impl LoaderInfo {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn stop_for_test(&mut self) -> bool {
         self.0.stop_fun.take().is_some_and(|stop| {
+            // SAFETY: the loader stores the stop function together with its `ARG`.
             unsafe { stop(self.0.arg) };
             true
         })

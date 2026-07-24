@@ -29,6 +29,7 @@ pub const unsafe fn __package_state_access<T: Send + 'static>(
     runtime: &crate::PackageStateStore<T>,
     firmware_state: unsafe fn() -> Option<core::ptr::NonNull<T>>,
 ) -> crate::PackageStateAccess<'_, T> {
+    // SAFETY: this hook forwards the macro-generated lookup contract unchanged.
     unsafe { crate::PackageStateAccess::with_firmware_fallback(runtime, firmware_state) }
 }
 

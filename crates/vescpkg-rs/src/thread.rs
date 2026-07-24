@@ -758,6 +758,8 @@ impl<B: ThreadBindings + ?Sized> ThreadBindings for &B {
         name: *const c_char,
         arg: *mut c_void,
     ) -> *mut c_void {
+        // SAFETY: the caller supplied firmware-compatible entry and name
+        // pointers, plus state that outlives the spawned thread.
         unsafe { (*self).spawn(entry, stack_bytes, name, arg) }
     }
 
@@ -791,23 +793,23 @@ impl ThreadBindings for RealThreadBindings {
         name: *const c_char,
         arg: *mut c_void,
     ) -> *mut c_void {
-        unsafe { crate::ffi::vesc_spawn(entry, stack_bytes, name, arg) }
+        call_vesc_ffi!(vesc_spawn(entry, stack_bytes, name, arg))
     }
 
     fn request_terminate(&self, thread: ThreadHandle) {
-        unsafe { crate::ffi::vesc_request_terminate(thread.as_ptr()) };
+        call_vesc_ffi!(vesc_request_terminate(thread.as_ptr()));
     }
 
     fn should_terminate(&self) -> bool {
-        unsafe { crate::ffi::vesc_should_terminate() }
+        call_vesc_ffi!(vesc_should_terminate())
     }
 
     fn sleep_us(&self, micros: u32) {
-        unsafe { crate::ffi::vesc_sleep_us(micros) };
+        call_vesc_ffi!(vesc_sleep_us(micros));
     }
 
     fn set_priority(&self, priority: ThreadPriority) -> bool {
-        unsafe { crate::ffi::vesc_thread_set_priority(priority.as_i8().into()) }
+        call_vesc_ffi!(vesc_thread_set_priority(priority.as_i8().into()))
     }
 }
 
@@ -865,6 +867,8 @@ impl<B: ThreadBindings> ThreadApi<B> {
             // C map: lispif_spawn consumes the runtime entry, name, and
             // argument addresses unchanged at
             // third_party/vesc/lispBM/lispif_c_lib.c:98-125.
+            // SAFETY: each spec contains static entry/name pointers, and `arg`
+            // is either null or the live package state for this thread group.
             let thread = unsafe {
                 self.bindings.spawn(
                     spec.entry,
@@ -873,6 +877,7 @@ impl<B: ThreadBindings> ThreadApi<B> {
                     arg,
                 )
             };
+            // SAFETY: firmware returns null or an opaque live thread handle.
             let Some(handle) = (unsafe { ThreadHandle::from_firmware(thread) }) else {
                 threads.terminate_reverse(self);
                 return None;

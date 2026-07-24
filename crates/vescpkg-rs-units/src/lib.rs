@@ -65,7 +65,7 @@
 //! both can contain [`Current`].
 
 #![no_std]
-#![deny(warnings, clippy::all, clippy::pedantic)]
+#![deny(warnings, clippy::pedantic)]
 #![forbid(unused_extern_crates)]
 #![deny(unsafe_code)]
 // Embedded package code has no unwinder or operator console. Reject explicit
@@ -73,11 +73,18 @@
 #![cfg_attr(
     not(test),
     deny(
+        clippy::allow_attributes,
+        clippy::allow_attributes_without_reason,
         clippy::arithmetic_side_effects,
+        clippy::as_conversions,
         clippy::expect_used,
         clippy::indexing_slicing,
+        clippy::mem_forget,
+        clippy::missing_safety_doc,
+        clippy::multiple_unsafe_ops_per_block,
         clippy::panic,
         clippy::todo,
+        clippy::undocumented_unsafe_blocks,
         clippy::unimplemented,
         clippy::unreachable,
         clippy::unwrap_used

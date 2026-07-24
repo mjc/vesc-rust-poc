@@ -272,6 +272,7 @@ pub unsafe fn read_eeprom_word(word: *mut u32, address: i32) -> bool {
     if !present.load(Ordering::Relaxed) {
         return false;
     }
+    // SAFETY: the fake firmware accepts either null or one writable word.
     if let Some(word) = unsafe { word.as_mut() } {
         *word = stored.load(Ordering::Relaxed);
         true
@@ -290,6 +291,7 @@ pub unsafe fn store_eeprom_word(word: *mut u32, address: i32) -> bool {
     if EEPROM_WRITE_FAILURE.load(Ordering::Relaxed) == address {
         return false;
     }
+    // SAFETY: the fake firmware accepts either null or one readable word.
     let Some(word) = (unsafe { word.as_ref() }) else {
         return false;
     };
@@ -323,12 +325,10 @@ pub unsafe fn read_nvm(buffer: *mut u8, len: u32, address: u32) -> Option<bool> 
         let Some(stored) = start.checked_add(index).and_then(|offset| NVM.get(offset)) else {
             return Some(false);
         };
-        unsafe {
-            buffer
-                .as_ptr()
-                .add(index)
-                .write(stored.load(Ordering::Relaxed));
-        }
+        // SAFETY: `index < len`, and the caller provides a writable `len`-byte buffer.
+        let destination = unsafe { buffer.as_ptr().add(index) };
+        // SAFETY: `destination` identifies one byte inside that writable buffer.
+        unsafe { destination.write(stored.load(Ordering::Relaxed)) };
     }
     Some(true)
 }
@@ -354,7 +354,10 @@ pub unsafe fn write_nvm(buffer: *mut u8, len: u32, address: u32) -> Option<bool>
         let Some(stored) = start.checked_add(index).and_then(|offset| NVM.get(offset)) else {
             return Some(false);
         };
-        let byte = unsafe { buffer.as_ptr().add(index).read() };
+        // SAFETY: `index < len`, and the caller provides a readable `len`-byte buffer.
+        let source = unsafe { buffer.as_ptr().add(index) };
+        // SAFETY: `source` identifies one initialized byte inside that buffer.
+        let byte = unsafe { source.read() };
         stored.store(byte, Ordering::Relaxed);
     }
     Some(true)
@@ -461,6 +464,7 @@ pub unsafe fn lbm_is_byte_array(value: LbmValue) -> bool {
 }
 
 pub unsafe fn lbm_create_byte_array(value: *mut LbmValue, _len: u32) -> bool {
+    // SAFETY: the fake firmware accepts either null or one writable value.
     let Some(value) = (unsafe { value.as_mut() }) else {
         return false;
     };
@@ -1007,6 +1011,7 @@ pub unsafe fn imu_get_yaw() -> f32 {
 }
 
 pub unsafe fn imu_get_gyro(values: *mut f32) {
+    // SAFETY: the fake firmware callback contract provides three writable floats.
     if let Some(values) = unsafe { values.cast::<[f32; 3]>().as_mut() } {
         values
             .iter_mut()
@@ -1016,6 +1021,7 @@ pub unsafe fn imu_get_gyro(values: *mut f32) {
 }
 
 pub unsafe fn vesc_imu_get_quaternions(values: *mut f32) {
+    // SAFETY: the fake firmware callback contract provides four writable floats.
     if let Some(values) = unsafe { values.cast::<[f32; 4]>().as_mut() } {
         values
             .iter_mut()
@@ -1039,13 +1045,13 @@ pub unsafe fn vesc_spawn(
         return core::ptr::null_mut();
     };
     stack.store(stack_bytes, Ordering::Relaxed);
-    result.load(Ordering::Relaxed) as *mut c_void
+    core::ptr::with_exposed_provenance_mut(result.load(Ordering::Relaxed))
 }
 
 pub unsafe fn vesc_request_terminate(thread: *mut c_void) {
     let call = THREAD_TERMINATE_COUNT.fetch_add(1, Ordering::Relaxed);
     if let Some(slot) = THREAD_TERMINATED.get(call.min(1)) {
-        slot.store(thread as usize, Ordering::Relaxed);
+        slot.store(thread.addr(), Ordering::Relaxed);
     }
 }
 

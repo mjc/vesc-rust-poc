@@ -52,7 +52,7 @@ impl ControllerInput {
     pub fn ppm(&self) -> (PpmInput, PpmAge) {
         // C map: Float Out Boy reads these VESC slots in
         // `third_party/float-out-boy/src/remote.c:39-42`.
-        let input = unsafe { crate::ffi::get_ppm() }.zip(unsafe { crate::ffi::get_ppm_age() });
+        let input = call_vesc_ffi!(get_ppm()).zip(call_vesc_ffi!(get_ppm_age()));
         let (value, age) = input.unwrap_or((0.0, f32::INFINITY));
         (
             PpmInput::new(firmware_ratio(value)),
@@ -65,7 +65,7 @@ impl ControllerInput {
     pub fn remote(&self) -> RemoteInput {
         // C map: Float Out Boy reads the remote-state slot in
         // `third_party/float-out-boy/src/remote.c:43-48`.
-        let remote = unsafe { crate::ffi::remote_state() };
+        let remote = call_vesc_ffi!(remote_state());
         let (joystick_y, age) =
             remote.map_or((0.0, f32::INFINITY), |remote| (remote.js_y, remote.age_s));
         RemoteInput::new(

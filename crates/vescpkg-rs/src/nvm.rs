@@ -53,7 +53,11 @@ impl Nvm {
     /// Returns an error for an invalid range, unsupported firmware, or firmware failure.
     pub fn read(self, offset: NvmOffset, bytes: &mut [u8]) -> Result<(), NvmError> {
         let len = checked_len(offset, bytes.len())?;
-        operation_result(unsafe { crate::ffi::read_nvm(bytes.as_mut_ptr(), len, offset.get()) })
+        operation_result(call_vesc_ffi!(read_nvm(
+            bytes.as_mut_ptr(),
+            len,
+            offset.get()
+        )))
     }
 
     /// Write bytes beginning at `offset` from a caller buffer.
@@ -63,7 +67,11 @@ impl Nvm {
     /// Returns an error for an invalid range, unsupported firmware, or firmware failure.
     pub fn write(self, offset: NvmOffset, bytes: &mut [u8]) -> Result<(), NvmError> {
         let len = checked_len(offset, bytes.len())?;
-        operation_result(unsafe { crate::ffi::write_nvm(bytes.as_mut_ptr(), len, offset.get()) })
+        operation_result(call_vesc_ffi!(write_nvm(
+            bytes.as_mut_ptr(),
+            len,
+            offset.get()
+        )))
     }
 
     /// Erase the complete firmware NVM region.
@@ -72,7 +80,7 @@ impl Nvm {
     ///
     /// Returns an error when NVM is unsupported or the firmware operation fails.
     pub fn wipe(self) -> Result<(), NvmError> {
-        operation_result(unsafe { crate::ffi::wipe_nvm() })
+        operation_result(call_vesc_ffi!(wipe_nvm()))
     }
 }
 

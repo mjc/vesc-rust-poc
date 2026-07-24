@@ -555,6 +555,7 @@ pub fn install_state<'a, T: Send + 'static>(
             self.0.clear();
         }
     }
+    // SAFETY: the returned guard clears the store before the borrowed state can expire.
     unsafe { store.install(state) }.then(|| ClearOnDrop(store))
 }
 
@@ -576,6 +577,7 @@ pub fn stop_package(info: &mut crate::LoaderInfo) -> bool {
 /// Build a startup context with no loader metadata for rejection-path tests.
 #[must_use]
 pub fn package_start_without_loader() -> crate::PackageStart<'static> {
+    // SAFETY: this fixture deliberately models an absent loader with a null pointer.
     unsafe { crate::PackageStart::from_raw(core::ptr::null_mut()) }
 }
 
@@ -629,9 +631,9 @@ impl TestExtensionRegistry {
             return None;
         }
 
-        unsafe { CStr::from_ptr(pointer as *const c_char) }
-            .to_str()
-            .ok()
+        let pointer = core::ptr::with_exposed_provenance(pointer);
+        // SAFETY: `add_extension` stores the pointer to a static, NUL-terminated name.
+        unsafe { CStr::from_ptr(pointer) }.to_str().ok()
     }
 }
 
@@ -678,8 +680,9 @@ impl LbmBindings for FakeBindings {
     #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     unsafe fn add_extension(&self, name: *const c_char, handler: ExtensionHandler) -> bool {
         self.add_calls.set(self.add_calls.get().saturating_add(1));
-        self.last_name.set(name as usize);
-        self.last_handler.set(handler as usize);
+        self.last_name.set(name.addr());
+        self.last_handler
+            .set(crate::lifecycle_core::extension_handler_address(handler));
         let index = self.add_calls.get().saturating_sub(1).min(1);
         self.add_results.get().get(index).copied().unwrap_or(false)
     }

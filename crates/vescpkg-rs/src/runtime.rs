@@ -43,12 +43,15 @@ impl CallbackRegistrations {
             + crate::bindings::ImuReadCallbackBindings,
     {
         if self.imu {
+            // SAFETY: this clears the package callback recorded in `self`.
             unsafe { bindings.clear_imu_read_callback() };
         }
         if self.app_data {
+            // SAFETY: this clears the package callback recorded in `self`.
             let _ = unsafe { bindings.clear_app_data_handler() };
         }
         if self.custom_config {
+            // SAFETY: this clears the package callbacks recorded in `self`.
             unsafe { bindings.clear_custom_configs() };
         }
     }
@@ -104,22 +107,27 @@ impl CallbackRecorder {
     }
 
     pub(crate) fn finish_start(self, started: bool) -> bool {
+        // SAFETY: `new` pairs this erased pointer with the matching `T` function.
         unsafe { (self.finish_start)(self.state, started) }
     }
 
     pub(crate) fn record_app_data(self) -> bool {
+        // SAFETY: `new` pairs this erased pointer with the matching `T` function.
         unsafe { (self.app_data)(self.state) }
     }
 
     pub(crate) fn record_custom_config(self) -> bool {
+        // SAFETY: `new` pairs this erased pointer with the matching `T` function.
         unsafe { (self.custom_config)(self.state) }
     }
 
     pub(crate) fn clear_custom_config(self) -> bool {
+        // SAFETY: `new` pairs this erased pointer with the matching `T` function.
         unsafe { (self.clear_custom_config)(self.state) }
     }
 
     pub(crate) fn record_imu(self) -> bool {
+        // SAFETY: `new` pairs this erased pointer with the matching `T` function.
         unsafe { (self.imu)(self.state) }
     }
 }
@@ -135,6 +143,7 @@ impl CallbackRecorder {
     }
 
     fn update(self, flag: u8, registered: bool) -> bool {
+        // SAFETY: `CallbackRecorder::new` receives the live package state pointer.
         unsafe {
             update_firmware_callbacks(self.0, |callbacks| match flag {
                 APP_DATA_CALLBACK => callbacks.app_data = registered,
@@ -146,6 +155,7 @@ impl CallbackRecorder {
     }
 
     pub(crate) fn finish_start(self, started: bool) -> bool {
+        // SAFETY: this recorder retains the live state pointer supplied at construction.
         let Some(runtime) = (unsafe { firmware_runtime_from_untyped_state(self.0) }) else {
             return false;
         };
@@ -272,6 +282,7 @@ pub(crate) unsafe fn firmware_runtime_state_pointer<T>(
 unsafe fn firmware_runtime_from_state<T: 'static>(
     state: NonNull<T>,
 ) -> Option<&'static FirmwareRuntime> {
+    // SAFETY: the caller's contract is identical after erasing `T`.
     let runtime = unsafe { firmware_runtime_from_untyped_state(state.cast()) }?;
     (runtime.state_type == TypeId::of::<T>()).then_some(runtime)
 }
@@ -325,12 +336,14 @@ unsafe fn update_firmware_callbacks(
     state: NonNull<core::ffi::c_void>,
     update: impl FnOnce(&mut CallbackRegistrations),
 ) -> bool {
+    // SAFETY: the caller guarantees this is the live firmware runtime state.
     let Some(runtime) = (unsafe { firmware_runtime_from_untyped_state(state) }) else {
         return false;
     };
     let _borrow = borrow_firmware_runtime(runtime);
     let running = matches!(runtime.phase.load(Ordering::Acquire), INSTALLING | RUNNING);
     if running {
+        // SAFETY: the runtime borrow serializes callback registration access.
         update(unsafe { &mut *runtime.callbacks.get() });
     }
     running
@@ -541,6 +554,8 @@ impl<'a, T: Send + 'static> PackageStateAccess<'a, T> {
         match self.identity {
             #[cfg(not(target_arch = "arm"))]
             StateIdentity::Installed => Some(ExpectedState::Any),
+            // SAFETY: construction requires this function to return the live
+            // state installed for the same package type.
             StateIdentity::Firmware(state) => unsafe { state() }.map(ExpectedState::Exact),
         }
     }
@@ -605,6 +620,8 @@ impl<T: Send + 'static> PackageStateStore<T> {
     #[cfg(all(not(target_arch = "arm"), any(test, feature = "test-support")))]
     pub(crate) unsafe fn install(&self, state: &mut T) -> bool {
         let state_ptr = NonNull::from(&mut *state);
+        // SAFETY: the caller's lifetime guarantee covers the state and its
+        // allocation identity until this store is cleared.
         if !unsafe { self.install_owned(state, state_ptr.cast()) } {
             return false;
         }
@@ -721,6 +738,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
         if !matches!(phase.load(Ordering::Acquire), INSTALLING | RUNNING) {
             return false;
         }
+        // SAFETY: `borrow_exclusive` prevents any simultaneous slot access.
         let slot = unsafe { &mut *slot.get() };
         if slot.is_some() {
             false
@@ -744,6 +762,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
         if !matches!(phase.load(Ordering::Acquire), INSTALLING | RUNNING) {
             return false;
         }
+        // SAFETY: the exclusive runtime borrow prevents simultaneous slot access.
         let slot = unsafe { &mut *slot.get() };
         if slot.is_some() {
             false
@@ -762,6 +781,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
             }
             &self.threads
         };
+        // SAFETY: `borrow_exclusive` prevents any simultaneous slot access.
         unsafe { &mut *slot.get() }.take()
     }
 
@@ -772,6 +792,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
         let runtime = unsafe { firmware_runtime_from_state(state) }?;
         let _borrow = Self::borrow_exclusive(runtime);
         let slot = &runtime.threads;
+        // SAFETY: the exclusive runtime borrow prevents simultaneous slot access.
         unsafe { &mut *slot.get() }.take()
     }
 
@@ -821,6 +842,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
         if !matches!(phase.load(Ordering::Acquire), INSTALLING | RUNNING) {
             return false;
         }
+        // SAFETY: the exclusive runtime borrow prevents simultaneous callback access.
         update(unsafe { &mut *callbacks.get() });
         true
     }
@@ -839,11 +861,13 @@ impl<T: Send + 'static> PackageStateStore<T> {
 
     #[cfg(target_arch = "arm")]
     pub(crate) fn take_callbacks(state: NonNull<T>) -> CallbackRegistrations {
+        // SAFETY: stop supplies the exact live loader state pointer.
         let Some(runtime) = (unsafe { firmware_runtime_from_state(state) }) else {
             return CallbackRegistrations::default();
         };
         let _borrow = Self::borrow_exclusive(runtime);
         let callbacks = &runtime.callbacks;
+        // SAFETY: the exclusive runtime borrow prevents simultaneous callback access.
         core::mem::take(unsafe { &mut *callbacks.get() })
     }
 
@@ -916,6 +940,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
         let _entry = self.enter()?;
         let _borrow = self.borrow_exclusive();
         let state = self.running_state(expected)?;
+        // SAFETY: the entry and exclusive borrow keep the validated state live.
         Some(f(unsafe { state.as_ref() }))
     }
 
@@ -927,8 +952,10 @@ impl<T: Send + 'static> PackageStateStore<T> {
         let (state, runtime) = Self::running_firmware(expected)?;
         let _entry = Self::enter(runtime)?;
         let _borrow = Self::borrow_exclusive(runtime);
-        matches!(runtime.phase.load(Ordering::Acquire), INSTALLING | RUNNING)
-            .then(|| f(unsafe { state.as_ref() }))
+        matches!(runtime.phase.load(Ordering::Acquire), INSTALLING | RUNNING).then(|| {
+            // SAFETY: the entry and exclusive borrow keep the validated state live.
+            f(unsafe { state.as_ref() })
+        })
     }
 
     #[cfg(not(target_arch = "arm"))]
@@ -940,6 +967,8 @@ impl<T: Send + 'static> PackageStateStore<T> {
         let _entry = self.enter()?;
         let _borrow = self.borrow_exclusive();
         let mut state = self.running_state(expected)?;
+        // SAFETY: the entry and exclusive borrow keep the validated state live
+        // and prevent any competing mutable access.
         Some(f(unsafe { state.as_mut() }))
     }
 
@@ -951,8 +980,11 @@ impl<T: Send + 'static> PackageStateStore<T> {
         let (mut state, runtime) = Self::running_firmware(expected)?;
         let _entry = Self::enter(runtime)?;
         let _borrow = Self::borrow_exclusive(runtime);
-        matches!(runtime.phase.load(Ordering::Acquire), INSTALLING | RUNNING)
-            .then(|| f(unsafe { state.as_mut() }))
+        matches!(runtime.phase.load(Ordering::Acquire), INSTALLING | RUNNING).then(|| {
+            // SAFETY: the entry and exclusive borrow keep the validated state
+            // live and prevent any competing mutable access.
+            f(unsafe { state.as_mut() })
+        })
     }
 
     #[cfg(not(target_arch = "arm"))]

@@ -44,6 +44,8 @@ impl AllocationHeader {
     unsafe fn write_before(user: NonNull<u8>, original: NonNull<u8>) {
         let original = original.as_ptr().cast::<c_void>();
         let header = user.as_ptr().wrapping_sub(HEADER_BYTES);
+        // SAFETY: `aligned_user_ptr` reserves `HEADER_BYTES` immediately before
+        // `user`; the source is a live pointer value and the regions do not overlap.
         unsafe {
             ptr::copy_nonoverlapping((&raw const original).cast::<u8>(), header, HEADER_BYTES);
         };
@@ -52,6 +54,8 @@ impl AllocationHeader {
     unsafe fn read_before(user: NonNull<u8>) -> *mut c_void {
         let mut original = ptr::null_mut::<c_void>();
         let header = user.as_ptr().wrapping_sub(HEADER_BYTES);
+        // SAFETY: `user` came from `aligned_user_ptr`, which initialized this
+        // header, and `original` has space for exactly `HEADER_BYTES`.
         unsafe { ptr::copy_nonoverlapping(header, (&raw mut original).cast::<u8>(), HEADER_BYTES) };
         original
     }
@@ -78,14 +82,16 @@ pub struct VescAllocator;
 struct AllocationSizeOverflow;
 
 #[cfg(feature = "alloc")]
+// SAFETY: every returned pointer comes from the VESC allocator, satisfies the
+// requested layout, and retains its original firmware pointer for deallocation.
 unsafe impl GlobalAlloc for VescAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         match AllocationHeader::request_bytes(layout) {
             Ok(request) => {
-                let raw = unsafe { crate::ffi::vesc_malloc(request) }.cast::<u8>();
+                let raw = call_vesc_ffi!(vesc_malloc(request)).cast::<u8>();
                 let Some(user) = aligned_user_ptr(raw, layout.align()) else {
                     if !raw.is_null() {
-                        unsafe { crate::ffi::vesc_free(raw.cast()) };
+                        call_vesc_ffi!(vesc_free(raw.cast()));
                     }
                     return ptr::null_mut();
                 };
@@ -100,14 +106,19 @@ unsafe impl GlobalAlloc for VescAllocator {
             return;
         }
 
+        // SAFETY: the null case returned above, so `ptr` is non-null.
         let user = unsafe { NonNull::new_unchecked(ptr) };
+        // SAFETY: `GlobalAlloc::dealloc` requires `ptr` to have been returned by
+        // this allocator, which means `aligned_user_ptr` initialized its header.
         let original = unsafe { AllocationHeader::read_before(user) };
-        unsafe { crate::ffi::vesc_free(original) };
+        call_vesc_ffi!(vesc_free(original));
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        // SAFETY: this method forwards its `GlobalAlloc` layout contract.
         let ptr = unsafe { self.alloc(layout) };
         if !ptr.is_null() {
+            // SAFETY: a successful allocation is writable for `layout.size()` bytes.
             unsafe { zero_allocation_bytes(ptr, layout.size()) };
         }
         ptr
@@ -115,6 +126,8 @@ unsafe impl GlobalAlloc for VescAllocator {
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         if new_size == 0 {
+            // SAFETY: this method receives the same live allocation and layout
+            // required by `GlobalAlloc::dealloc`.
             unsafe { self.dealloc(ptr, layout) };
             return ptr::null_mut();
         }
@@ -122,10 +135,15 @@ unsafe impl GlobalAlloc for VescAllocator {
         let Ok(new_layout) = Layout::from_size_align(new_size, layout.align()) else {
             return ptr::null_mut();
         };
+        // SAFETY: `new_layout` was validated by `Layout::from_size_align`.
         let new_ptr = unsafe { self.alloc(new_layout) };
         if !new_ptr.is_null() {
             let bytes_to_copy = layout.size().min(new_size);
+            // SAFETY: both allocations are live, non-overlapping, and contain
+            // at least `bytes_to_copy` initialized/writable bytes respectively.
             unsafe { copy_allocation_bytes(ptr, new_ptr, bytes_to_copy) };
+            // SAFETY: copying is complete and `ptr` still satisfies the original
+            // allocation's deallocation contract.
             unsafe { self.dealloc(ptr, layout) };
         }
         new_ptr
@@ -134,11 +152,13 @@ unsafe impl GlobalAlloc for VescAllocator {
 
 #[cfg(feature = "alloc")]
 unsafe fn zero_allocation_bytes(dst: *mut u8, len: usize) {
+    // SAFETY: the caller guarantees `dst` is writable for `len` bytes.
     unsafe { ptr::write_bytes(dst, 0, len) };
 }
 
 #[cfg(feature = "alloc")]
 unsafe fn copy_allocation_bytes(src: *const u8, dst: *mut u8, len: usize) {
+    // SAFETY: the caller guarantees both regions cover `len` bytes and do not overlap.
     unsafe { ptr::copy_nonoverlapping(src, dst, len) };
 }
 
@@ -153,9 +173,9 @@ fn aligned_user_ptr(raw: *mut u8, align: usize) -> Option<NonNull<u8>> {
     }
     let user = NonNull::new(start.wrapping_add(offset))?;
 
-    unsafe {
-        AllocationHeader::write_before(user, raw);
-    }
+    // SAFETY: the request reserved the header plus alignment padding before
+    // `user`, and both pointers belong to the same live firmware allocation.
+    unsafe { AllocationHeader::write_before(user, raw) };
 
     Some(user)
 }
@@ -171,6 +191,7 @@ const fn effective_align(requested: usize) -> usize {
 
 #[cfg(all(test, feature = "alloc"))]
 unsafe fn stored_original_ptr(user: NonNull<u8>) -> *mut c_void {
+    // SAFETY: tests pass a pointer returned by `aligned_user_ptr`.
     unsafe { AllocationHeader::read_before(user) }
 }
 

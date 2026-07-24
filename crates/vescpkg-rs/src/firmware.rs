@@ -43,6 +43,7 @@ impl AsRef<[u8]> for AppDataPacket<'_> {
 /// `info` must be null or point to live, exclusively borrowed loader metadata
 /// for the returned borrow.
 pub unsafe fn loader_info_mut<'a>(info: *mut LibInfo) -> Option<&'a mut LibInfo> {
+    // SAFETY: the caller guarantees a non-null pointer is live and exclusively borrowed.
     NonNull::new(info).map(|mut info| unsafe { info.as_mut() })
 }
 
@@ -55,7 +56,17 @@ pub(crate) fn resolve_native_handler_addr(info: &LibInfo, handler_addr: usize) -
 pub(crate) fn stop_handler_for_loader(info: &LibInfo, stop_handler: StopHandler) -> StopHandler {
     #[cfg(all(not(test), target_arch = "arm"))]
     {
-        let handler_addr = resolve_native_handler_addr(info, stop_handler as *const () as usize);
+        #[expect(
+            clippy::as_conversions,
+            reason = "Rust provides no non-cast conversion from a function pointer to its code address"
+        )]
+        fn address(handler: StopHandler) -> usize {
+            handler as usize
+        }
+
+        let handler_addr = resolve_native_handler_addr(info, address(stop_handler));
+        // SAFETY: `handler_addr` is the relocated address of the same stop
+        // function and therefore retains its exact C ABI.
         unsafe { core::mem::transmute::<usize, StopHandler>(handler_addr) }
     }
 
@@ -70,6 +81,7 @@ pub(crate) fn stop_handler_for_loader(info: &LibInfo, stop_handler: StopHandler)
 #[cfg(any(test, not(feature = "test-support")))]
 pub(crate) unsafe fn app_data_packet<'a>(data: *mut u8, len: u32) -> Option<AppDataPacket<'a>> {
     let len = usize::try_from(len).ok()?;
+    // SAFETY: the caller guarantees the firmware buffer covers `len` bytes.
     unsafe { borrowed_slice(data.cast_const(), len) }.map(AppDataPacket)
 }
 
@@ -131,6 +143,7 @@ pub unsafe trait PackageAppDataCallback: AppDataHandler + Sized {
 /// call.
 #[cfg(all(not(test), not(feature = "test-support")))]
 pub unsafe extern "C" fn app_data_handler<T: PackageAppDataCallback>(data: *mut u8, len: u32) {
+    // SAFETY: this function receives exactly the firmware app-data callback ABI.
     let Some(packet) = (unsafe { app_data_packet(data, len) }) else {
         return;
     };
@@ -191,6 +204,7 @@ macro_rules! firmware_stateful_app_data_callback {
 /// values that stay valid for the returned borrow.
 pub(crate) unsafe fn lbm_args<'a>(args: *mut u32, arg_count: u32) -> Option<&'a [LbmValue]> {
     let len = usize::try_from(arg_count).ok()?;
+    // SAFETY: the caller guarantees the pointer covers `arg_count` live values.
     unsafe { borrowed_slice(args.cast::<LbmValue>().cast_const(), len) }
 }
 
@@ -239,6 +253,7 @@ struct CustomConfigGetBuffer<'a>(MutablePacket<'a>);
 impl CustomConfigGetBuffer<'_> {
     /// Borrow the firmware-provided output buffer.
     pub unsafe fn new<'a>(buffer: *mut u8, len: usize) -> Option<CustomConfigGetBuffer<'a>> {
+        // SAFETY: the caller guarantees the buffer is writable for `len` bytes.
         unsafe { mutable_bytes(buffer, len) }.map(CustomConfigGetBuffer)
     }
 
@@ -256,6 +271,7 @@ impl CustomConfigGetBuffer<'_> {
 unsafe fn custom_config_payload<'a, const LEN: usize>(
     buffer: *mut u8,
 ) -> Option<ConfigBytes<'a, LEN>> {
+    // SAFETY: the caller guarantees the firmware buffer contains `LEN` bytes.
     let bytes = unsafe { borrowed_slice(buffer.cast_const(), LEN) }?;
     <&[u8; LEN]>::try_from(bytes).ok().map(ConfigBytes::new)
 }
@@ -315,16 +331,22 @@ pub unsafe trait PackageCustomConfigCallback<const LEN: usize>:
 
     #[doc(hidden)]
     unsafe fn get(buffer: *mut u8, is_default: bool) -> core::ffi::c_int {
+        // SAFETY: firmware supplies a writable `LEN`-byte config buffer when it
+        // requests bytes; the trampoline validates the pointer before writing.
         unsafe { stateful_custom_config_get::<Self, LEN>(buffer, is_default) }
     }
 
     #[doc(hidden)]
     unsafe fn set(buffer: *mut u8) -> bool {
+        // SAFETY: firmware supplies a readable `LEN`-byte config buffer; the
+        // trampoline validates the pointer before exposing those bytes.
         unsafe { stateful_custom_config_set::<Self, LEN>(buffer) }
     }
 
     #[doc(hidden)]
     unsafe fn xml(buffer: *mut *mut u8) -> core::ffi::c_int {
+        // SAFETY: firmware supplies one writable pointer slot; the trampoline
+        // validates it before storing the package's static XML address.
         unsafe { stateful_custom_config_xml::<Self, LEN>(buffer) }
     }
 }
@@ -341,6 +363,7 @@ pub unsafe extern "C" fn stateful_custom_config_get<T, const LEN: usize>(
 where
     T: PackageCustomConfigCallback<LEN>,
 {
+    // SAFETY: the callback contract guarantees a writable `LEN`-byte buffer.
     let Some(mut buffer) = (unsafe { CustomConfigGetBuffer::new(buffer, LEN) }) else {
         return 0;
     };
@@ -363,6 +386,7 @@ pub unsafe extern "C" fn stateful_custom_config_set<T, const LEN: usize>(buffer:
 where
     T: PackageCustomConfigCallback<LEN>,
 {
+    // SAFETY: the callback contract guarantees a readable `LEN`-byte buffer.
     let Some(payload) = (unsafe { custom_config_payload::<LEN>(buffer) }) else {
         return false;
     };
@@ -382,6 +406,8 @@ impl CustomConfigXmlOut {
 
     /// Return XML bytes to firmware by pointer and byte count.
     fn return_xml(self, xml: ConfigXml<'static>) -> c_int {
+        // SAFETY: construction validated the output slot, and the static XML
+        // bytes remain live after this callback returns.
         unsafe { *self.0.as_ptr() = xml.as_bytes().as_ptr().cast_mut() };
         c_int::try_from(xml.as_bytes().len()).unwrap_or(c_int::MAX)
     }
@@ -579,6 +605,7 @@ pub unsafe fn __firmware_package_state_ptr<T: 'static>(
     program: crate::PackageProgramAddress,
 ) -> Option<NonNull<T>> {
     let bindings = crate::bindings::RealBindings;
+    // SAFETY: the caller guarantees the loader ARG contains a live `T`.
     unsafe { crate::bindings::AppDataBindings::arg_state_ptr::<T>(&bindings, program) }
 }
 
@@ -589,6 +616,7 @@ pub unsafe fn __firmware_package_state_ptr<T: 'static>(
 /// `values` must be null or point to `N` initialized, readable `T` values.
 pub unsafe fn firmware_array<T: Copy, const N: usize>(values: *const T) -> Option<[T; N]> {
     let values = NonNull::new(values.cast_mut())?;
+    // SAFETY: the caller guarantees `values` covers `N` initialized `T` values.
     let values = unsafe { core::slice::from_raw_parts(values.as_ptr().cast_const(), N) };
     values.try_into().ok()
 }
@@ -602,11 +630,14 @@ unsafe fn borrowed_slice<'a, T>(data: *const T, len: usize) -> Option<&'a [T]> {
         .filter(|bytes| isize::try_from(*bytes).is_ok())?;
 
     let data = NonNull::new(data.cast_mut())?;
+    // SAFETY: the caller guarantees the non-null region contains `len` live
+    // values; the byte-count check above keeps the slice within `isize::MAX`.
     Some(unsafe { core::slice::from_raw_parts(data.as_ptr(), len) })
 }
 
 unsafe fn mutable_bytes<'a>(data: *mut u8, len: usize) -> Option<MutablePacket<'a>> {
     let data = NonNull::new(data)?;
+    // SAFETY: the caller guarantees exclusive access to `len` writable bytes.
     Some(MutablePacket(unsafe {
         core::slice::from_raw_parts_mut(data.as_ptr(), len)
     }))

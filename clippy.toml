@@ -1,0 +1,24 @@
+# These wrappers implement arithmetic by delegating to primitive `f32`, whose
+# operators do not panic or overflow. Keep integer and unaudited operator types
+# covered by `clippy::arithmetic_side_effects`.
+arithmetic-side-effects-allowed = [
+  "vescpkg_rs::AngleCurrentGain",
+  "vescpkg_rs::AngleDegrees",
+  "vescpkg_rs::AngleRadians",
+  "vescpkg_rs::AccelerationG",
+  "vescpkg_rs::AngularVelocity",
+  "vescpkg_rs::BatteryCellCount",
+  "vescpkg_rs::Current",
+  "vescpkg_rs::ElectricalSpeed",
+  "vescpkg_rs::IntegralCurrentGain",
+  "vescpkg_rs::MotorCurrent",
+  "vescpkg_rs::PidScale",
+  "vescpkg_rs::RateCurrentGain",
+  "vescpkg_rs::Ratio",
+  "vescpkg_rs::Rpm",
+  "vescpkg_rs::SampleRate",
+  "vescpkg_rs::SignedRatio",
+  "vescpkg_rs::Temperature",
+  "vescpkg_rs::VescSeconds",
+  "vescpkg_rs::Voltage",
+]
