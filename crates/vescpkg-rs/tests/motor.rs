@@ -8,6 +8,13 @@ use vescpkg_rs::prelude::{
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{MotorOutput, MotorTelemetry};
 
+const MAX_WIRE_FAULT: FirmwareFaultCode = FirmwareFaultCode::from_wire_code(u8::MAX);
+
+#[test]
+fn firmware_fault_code_can_be_built_at_compile_time() {
+    assert!(!MAX_WIRE_FAULT.is_none());
+}
+
 #[test]
 fn firmware_fault_name_trims_the_vesc_prefix_without_allocating() {
     let firmware = FirmwareTest::new().with_firmware_fault(FirmwareFaultCode::from_wire_code(5));

@@ -226,8 +226,8 @@ impl FirmwareFaultCode {
 
     /// Build a firmware fault-code token from its byte wire representation.
     #[must_use]
-    pub fn from_wire_code(code: u8) -> Self {
-        Self(i32::from(code))
+    pub const fn from_wire_code(code: u8) -> Self {
+        Self(i32::from_le_bytes([code, 0, 0, 0]))
     }
 
     /// Return true when the firmware reports no active fault.
