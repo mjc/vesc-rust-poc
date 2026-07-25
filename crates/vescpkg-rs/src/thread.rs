@@ -964,7 +964,7 @@ impl<B: ThreadBindings> ThreadApi<B> {
     /// Float Out Boy's main runtime thread sleeps with `VESC_IF->sleep_us` at
     /// `src/main.c:1080`.
     pub fn sleep_for(&self, duration: Duration) {
-        self.sleep_for_micros(duration.as_nanos().div_ceil(1_000) as u64);
+        self.sleep_for_micros_u128(duration_micros(duration));
     }
 
     /// Sleep the current package thread for a checked number of microseconds.
@@ -972,7 +972,10 @@ impl<B: ThreadBindings> ThreadApi<B> {
     /// VESC's native sleep slot accepts a 32-bit count. Long waits are split
     /// into safe chunks so package code cannot silently truncate a duration.
     pub fn sleep_for_micros(&self, micros: u64) {
-        let mut micros = u128::from(micros);
+        self.sleep_for_micros_u128(u128::from(micros));
+    }
+
+    fn sleep_for_micros_u128(&self, mut micros: u128) {
         while micros != 0 {
             // `Duration` counts nanoseconds with `u128`, while the C firmware
             // accepts only a `uint32_t` microsecond chunk, and its ChibiOS
@@ -1151,6 +1154,10 @@ pub mod test_support {
     }
 }
 
+fn duration_micros(duration: Duration) -> u128 {
+    duration.as_nanos().div_ceil(1_000)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -1224,6 +1231,13 @@ mod tests {
         let direct = FakeThreadBindings::new();
         ThreadApi::new(&direct).sleep_for_micros(u64::from(VESC_MAX_SAFE_SLEEP_MICROS) + 1);
         assert_eq!(direct.sleep_micros.get(), [VESC_MAX_SAFE_SLEEP_MICROS, 1]);
+    }
+
+    #[test]
+    fn duration_to_sleep_micros_does_not_narrow_before_chunking() {
+        let micros = super::duration_micros(Duration::MAX);
+
+        assert!(micros > u128::from(u64::MAX));
     }
 
     #[test]
