@@ -547,6 +547,7 @@ impl VescIfCapabilities {
             VescIfAbi::IMU_GET_QUATERNIONS,
             VescIfAbi::IMU_GET_CALIBRATION,
             VescIfAbi::IMU_SET_YAW,
+            VescIfAbi::IMU_SET_READ_CALLBACK,
         ];
         let mut index = 0;
         while index < checks.len() {

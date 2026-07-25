@@ -46,6 +46,14 @@ fn package_imu_construction_reports_a_missing_required_slot() {
         capabilities.imu().err().map(|error| error.slot()),
         Some(VescIfAbi::IMU_GET_MAG)
     );
+
+    words[VescIfAbi::IMU_GET_MAG.slot_index()] = 1;
+    words[VescIfAbi::IMU_SET_READ_CALLBACK.slot_index()] = 0;
+    let capabilities = FirmwareCapabilities::new(VescIfPresence::from_words(&words));
+    assert_eq!(
+        capabilities.imu().err().map(|error| error.slot()),
+        Some(VescIfAbi::IMU_SET_READ_CALLBACK)
+    );
 }
 
 #[test]

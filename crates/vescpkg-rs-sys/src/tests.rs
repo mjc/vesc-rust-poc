@@ -549,6 +549,7 @@ fn vesc_if_capabilities_accept_the_complete_imu_surface() {
         VescIfAbi::IMU_GET_QUATERNIONS,
         VescIfAbi::IMU_GET_CALIBRATION,
         VescIfAbi::IMU_SET_YAW,
+        VescIfAbi::IMU_SET_READ_CALLBACK,
     ] {
         words[slot.slot_index()] = 1;
     }
