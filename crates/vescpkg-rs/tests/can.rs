@@ -3,10 +3,10 @@
 //! Integration coverage for the safe CAN facade.
 
 use vescpkg_rs::{
-    AngleDegrees, CanBus, CanControllerId, CanError, CanExtendedId, CanHardwareType,
-    CanReceiverGuard, CanReceiverHandler, CanReceiverId, CanStandardId, CanStatusStore, Current,
-    CurrentRelative, DutyCycle, ElectricalSpeed, MotorCurrent, PackageRuntimeState,
-    PackageStateStore, PidPosition, Rpm, SignedRatio,
+    AngleDegrees, CanBus, CanControllerId, CanError, CanExtendedId, CanExtendedIdError,
+    CanHardwareType, CanReceiverGuard, CanReceiverHandler, CanReceiverId, CanStandardId,
+    CanStandardIdError, CanStatusStore, Current, CurrentRelative, DutyCycle, ElectricalSpeed,
+    MotorCurrent, PackageRuntimeState, PackageStateStore, PidPosition, Rpm, SignedRatio,
 };
 
 struct ReceiverHandler;
@@ -372,4 +372,15 @@ fn can_extended_receiver_registration_is_exclusive() {
     ));
     drop(registration);
     assert!(bus.register_extended_receiver::<TestReceiver>().is_ok());
+}
+
+#[test]
+fn can_identifier_errors_are_public_and_preserve_rejected_values() {
+    let standard: CanStandardIdError = CanStandardId::try_new(CanStandardId::MAX + 1)
+        .expect_err("out-of-range standard identifier");
+    assert_eq!(standard.value(), CanStandardId::MAX + 1);
+
+    let extended: CanExtendedIdError = CanExtendedId::try_new(CanExtendedId::MAX + 1)
+        .expect_err("out-of-range extended identifier");
+    assert_eq!(extended.value(), CanExtendedId::MAX + 1);
 }

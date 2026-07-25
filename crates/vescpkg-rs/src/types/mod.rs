@@ -45,7 +45,10 @@ pub use battery::{
     BatteryVoltage, CellVoltage, InputCurrent, InputVoltage, WattHoursCharged, WattHoursDischarged,
     WattHoursRemaining,
 };
-pub use can::{CanControllerId, CanExtendedId, CanPayloadLen, CanPayloadLenError, CanStandardId};
+pub use can::{
+    CanControllerId, CanExtendedId, CanExtendedIdError, CanPayloadLen, CanPayloadLenError,
+    CanStandardId, CanStandardIdError,
+};
 pub use config::{
     BatteryCellCount, BatteryCellCountError, BatteryChemistry, CanApplicationMode, CanBaudRate,
     CustomConfigAngleCurrentGainField, CustomConfigAngleField, CustomConfigAngularVelocityField,
