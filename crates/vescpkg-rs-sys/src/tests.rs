@@ -529,6 +529,14 @@ fn vesc_if_capabilities_require_the_complete_motor_surface() {
         missing_selector.motor().unwrap_err().slot(),
         VescIfAbi::MC_SELECT_MOTOR_THREAD
     );
+
+    words[VescIfAbi::MC_SELECT_MOTOR_THREAD.slot_index()] = 1;
+    words[VescIfAbi::MC_SET_PWM_CALLBACK.slot_index()] = 0;
+    let without_optional_pwm = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
+    assert_eq!(
+        without_optional_pwm.motor().unwrap().subsystem(),
+        VescIfSubsystem::Motor
+    );
 }
 
 #[test]

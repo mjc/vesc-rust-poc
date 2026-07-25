@@ -394,7 +394,6 @@ impl VescIfCapabilities {
             VescIfAbi::MC_SET_BRAKE_CURRENT,
             VescIfAbi::MC_SET_HANDBRAKE,
             VescIfAbi::MC_SET_HANDBRAKE_REL,
-            VescIfAbi::MC_SET_PWM_CALLBACK,
             VescIfAbi::MC_STAT_RESET,
             VescIfAbi::MC_UPDATE_PID_POS_OFFSET,
             VescIfAbi::MC_SET_ODOMETER,

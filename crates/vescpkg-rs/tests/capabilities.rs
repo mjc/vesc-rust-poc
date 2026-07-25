@@ -81,4 +81,9 @@ fn package_motor_construction_reports_a_missing_required_slot() {
         capabilities.motor().err().map(|error| error.slot()),
         Some(VescIfAbi::MC_SELECT_MOTOR_THREAD)
     );
+
+    words[VescIfAbi::MC_SELECT_MOTOR_THREAD.slot_index()] = 1;
+    words[VescIfAbi::MC_SET_PWM_CALLBACK.slot_index()] = 0;
+    let capabilities = FirmwareCapabilities::new(VescIfPresence::from_words(&words));
+    assert!(capabilities.motor().is_ok());
 }
