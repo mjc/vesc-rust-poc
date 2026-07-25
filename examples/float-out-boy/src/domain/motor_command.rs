@@ -11,11 +11,13 @@ pub struct FloatOutBoyMotorCommand {
 
 impl FloatOutBoyMotorCommand {
     /// Build a motor command from typed requested current.
+    #[must_use]
     pub const fn new(requested_current: MotorCurrent) -> Self {
         Self { requested_current }
     }
 
     /// Return the typed requested current.
+    #[must_use]
     pub const fn requested_current(self) -> MotorCurrent {
         self.requested_current
     }

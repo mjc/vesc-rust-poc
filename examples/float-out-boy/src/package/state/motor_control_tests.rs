@@ -29,12 +29,12 @@ fn requested_current_applies_like_float_out_boy_motor_control() {
     // `third_party/float-out-boy/src/motor_control.c:92-99` and `third_party/float-out-boy/src/motor_control.c:121-122`.
     assert_eq!(motor.keep_alive_count(), 1);
     assert_eq!(motor.current_off_delay_count(), 1);
-    assert_eq!(
+    assert_f32_eq!(
         motor.commanded_current_off_delay().duration().as_seconds(),
         0.05
     );
     assert_eq!(motor.current_command_count(), 1);
-    assert_eq!(motor.commanded_current().current().as_amps(), 6.25);
+    assert_f32_eq!(motor.commanded_current().current().as_amps(), 6.25);
     assert!(!state.apply_requested_motor_current(bindings));
     assert_eq!(motor.current_command_count(), 1);
 }
@@ -107,10 +107,10 @@ fn running_limits_normal_current_from_motor_config_like_float_out_boy_loop() {
         ));
         let mut config = *state.serialized_config();
         config.edit_float_out_boy_config(|config| {
-            assert!(config.set_kp2(vescpkg_rs::RateCurrentGain::new(0.0)))
+            assert!(config.set_kp2(vescpkg_rs::RateCurrentGain::new(0.0)));
         });
         config.edit_float_out_boy_config(|config| {
-            assert!(config.set_ki(vescpkg_rs::IntegralCurrentGain::new(0.0)))
+            assert!(config.set_ki(vescpkg_rs::IntegralCurrentGain::new(0.0)));
         });
         assert!(state.store_serialized_config(&config));
 

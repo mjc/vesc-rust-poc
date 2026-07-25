@@ -148,11 +148,11 @@ mod tests {
             payloads.base().status().ride_state().charging(),
             FloatOutBoyChargingState::Charging
         );
-        assert_eq!(
+        assert_f32_eq!(
             payloads.mode4().current().current().current().as_amps(),
             12.3
         );
-        assert_eq!(
+        assert_f32_eq!(
             payloads.mode4().voltage().voltage().voltage().as_volts(),
             50.0
         );
@@ -178,17 +178,17 @@ mod tests {
         };
 
         let charging = packet(1, (-123_i16).to_be_bytes());
-        assert_eq!(
+        assert_f32_eq!(
             charging.mode4().current().current().current().as_amps(),
             -12.3
         );
 
         let inactive = packet(0, 123_i16.to_be_bytes());
-        assert_eq!(
+        assert_f32_eq!(
             inactive.mode4().current().current().current().as_amps(),
             0.0
         );
-        assert_eq!(
+        assert_f32_eq!(
             inactive.mode4().voltage().voltage().voltage().as_volts(),
             0.0
         );

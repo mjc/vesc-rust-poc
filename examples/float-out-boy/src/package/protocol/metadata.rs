@@ -15,7 +15,8 @@ const FLOAT_OUT_BOY_MINOR_VERSION: u8 = 1;
 const FLOAT_OUT_BOY_PATCH_VERSION: u8 = 0;
 const FLOAT_OUT_BOY_BUILD_NUMBER: u8 = 0;
 const FLOAT_OUT_BOY_GIT_HASH: u32 = 0x0ef6_e99d;
-const FLOAT_OUT_BOY_SYSTEM_TICK_RATE_HZ: u32 = SYSTEM_TICK_RATE_HZ as u32;
+const FLOAT_OUT_BOY_SYSTEM_TICK_RATE_HZ: u32 =
+    crate::wire::truncating_u64_to_u32(SYSTEM_TICK_RATE_HZ);
 
 // Float Out Boy C builds this exact packet in `third_party/float-out-boy/src/main.c:1876-1901`, using the ID
 // order from `third_party/float-out-boy/src/rt_data.h:38-66` and counted-string framing from
@@ -26,7 +27,36 @@ const FLOAT_OUT_BOY_SYSTEM_TICK_RATE_HZ: u32 = SYSTEM_TICK_RATE_HZ as u32;
 vescpkg_rs::firmware_section_static!(
     ".text.float_out_boy_realtime_data_ids",
     static FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_BYTES: [u8; FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_LEN] =
-        build_float_out_boy_realtime_data_ids_response()
+        // Each leading byte is the following ASCII identifier's length. Keeping
+        // the complete packet as a compile-time byte string eliminates runtime
+        // construction and every potentially panicking indexed write.
+        *b"\x65\x20\
+            \x10\x0bmotor.speed\
+            \x0amotor.erpm\
+            \x0dmotor.current\
+            \x11motor.dir_current\
+            \x12motor.filt_current\
+            \x10motor.duty_cycle\
+            \x12motor.batt_voltage\
+            \x12motor.batt_current\
+            \x11motor.mosfet_temp\
+            \x10motor.motor_temp\
+            \x09imu.pitch\
+            \x11imu.balance_pitch\
+            \x08imu.roll\
+            \x0cfootpad.adc1\
+            \x0cfootpad.adc2\
+            \x0cremote.input\
+            \x0a\x08setpoint\
+            \x0catr.setpoint\
+            \x13brake_tilt.setpoint\
+            \x14torque_tilt.setpoint\
+            \x12turn_tilt.setpoint\
+            \x0fremote.setpoint\
+            \x0fbalance_current\
+            \x0eatr.accel_diff\
+            \x0fatr.speed_boost\
+            \x0fbooster.current"
 );
 
 pub(in crate::package) struct FloatOutBoyInfoResponse {
@@ -121,90 +151,6 @@ pub(in crate::package) fn encode_float_out_boy_realtime_data_ids_response()
     // Return owned bytes so the firmware copy reads callback-stack storage, not
     // a package static through an extra firmware boundary.
     FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_BYTES
-}
-
-// Same packet as `cmd_realtime_data_ids` in `third_party/float-out-boy/src/main.c:1876-1901`, built as
-// bytes so the ARM image does not rely on target string-literal addresses.
-const fn build_float_out_boy_realtime_data_ids_response()
--> [u8; FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_LEN] {
-    let mut bytes = [0; FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_LEN];
-    let mut index = 0;
-
-    index = float_out_boy_realtime_ids_push_u8(&mut bytes, index, 101);
-    index = float_out_boy_realtime_ids_push_u8(&mut bytes, index, 32);
-
-    index = float_out_boy_realtime_ids_push_u8(&mut bytes, index, 16);
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"motor.speed");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"motor.erpm");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"motor.current");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"motor.dir_current");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"motor.filt_current");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"motor.duty_cycle");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"motor.batt_voltage");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"motor.batt_current");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"motor.mosfet_temp");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"motor.motor_temp");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"imu.pitch");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"imu.balance_pitch");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"imu.roll");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"footpad.adc1");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"footpad.adc2");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"remote.input");
-
-    index = float_out_boy_realtime_ids_push_u8(&mut bytes, index, 10);
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"setpoint");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"atr.setpoint");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"brake_tilt.setpoint");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"torque_tilt.setpoint");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"turn_tilt.setpoint");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"remote.setpoint");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"balance_current");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"atr.accel_diff");
-    index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"atr.speed_boost");
-    let _index = float_out_boy_realtime_ids_push_id(&mut bytes, index, b"booster.current");
-
-    bytes
-}
-
-#[expect(
-    clippy::indexing_slicing,
-    reason = "the offset is checked against the fixed input length before indexing"
-)]
-const fn float_out_boy_realtime_ids_push_id<const N: usize>(
-    bytes: &mut [u8; FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_LEN],
-    index: usize,
-    value: &[u8; N],
-) -> usize {
-    let mut next = float_out_boy_realtime_ids_push_u8(bytes, index, N as u8);
-    let mut offset = 0;
-    // This packet is materialized at compile time so the embedded package owns
-    // every byte. A `for` loop would call iterator trait methods, which stable
-    // Rust does not yet allow in a `const fn`, so bounded indexing is the
-    // simplest const-compatible form.
-    while offset < N {
-        // `offset < N` proves that this array access exists. Direct indexing is
-        // necessary because stable Rust does not yet permit `get` in a `const fn`.
-        next = float_out_boy_realtime_ids_push_u8(bytes, next, value[offset]);
-        offset += 1;
-    }
-    next
-}
-
-#[expect(
-    clippy::indexing_slicing,
-    reason = "the bounds check makes const-compatible indexing non-panicking"
-)]
-const fn float_out_boy_realtime_ids_push_u8(
-    bytes: &mut [u8; FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_LEN],
-    index: usize,
-    value: u8,
-) -> usize {
-    if index < FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_LEN {
-        // Stable Rust cannot call `get_mut` from this compile-time packet
-        // builder. The explicit check proves that the index is in bounds.
-        bytes[index] = value;
-    }
-    index.saturating_add(1)
 }
 
 fn float_out_boy_response_push_bytes(bytes: &mut [u8], index: &mut usize, values: &[u8]) {

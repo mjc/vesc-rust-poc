@@ -30,39 +30,42 @@ pub(crate) trait LbmBindings {
     /// `value` must be a valid firmware-provided `LispBM` value.
     unsafe fn decode_i32(&self, value: LbmValue) -> i32;
     /// Return the firmware's true symbol.
-    #[cfg(not(test))]
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    #[cfg(all(not(test), target_arch = "arm"))]
     fn encode_true(&self) -> LbmValue;
     /// Return the firmware's nil symbol.
-    #[cfg(not(test))]
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    #[cfg(all(not(test), target_arch = "arm"))]
     fn encode_nil(&self) -> LbmValue;
 }
 
 impl<B: LbmBindings + ?Sized> LbmBindings for &B {
     #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     unsafe fn add_extension(&self, name: *const c_char, handler: ExtensionHandler) -> bool {
+        // SAFETY: the caller supplied a NUL-terminated name and a handler with
+        // the firmware callback ABI; forwarding both values preserves that guarantee.
         unsafe { (**self).add_extension(name, handler) }
     }
 
     unsafe fn is_number(&self, value: LbmValue) -> bool {
+        // SAFETY: the caller supplied a firmware-created LispBM value.
         unsafe { (**self).is_number(value) }
     }
 
     unsafe fn decode_i32(&self, value: LbmValue) -> i32 {
+        // SAFETY: the caller supplied a firmware-created LispBM value.
         unsafe { (**self).decode_i32(value) }
     }
 
     unsafe fn decode_f32(&self, value: LbmValue) -> f32 {
+        // SAFETY: the caller supplied a firmware-created LispBM value.
         unsafe { (**self).decode_f32(value) }
     }
 
-    #[cfg(not(test))]
+    #[cfg(all(not(test), target_arch = "arm"))]
     fn encode_true(&self) -> LbmValue {
         (**self).encode_true()
     }
 
-    #[cfg(not(test))]
+    #[cfg(all(not(test), target_arch = "arm"))]
     fn encode_nil(&self) -> LbmValue {
         (**self).encode_nil()
     }
@@ -81,23 +84,19 @@ pub(crate) trait AppDataBindings {
     fn system_time_ticks(&self) -> u32;
 
     /// Return firmware uptime in floating-point seconds.
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware clock slots remain declared even when host builds do not call every clock helper.
+    #[cfg(not(test))]
     fn system_time_seconds(&self) -> f32;
 
     /// Return the firmware-computed age of a system timestamp in seconds.
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware clock slots remain declared even when host builds do not call every clock helper.
+    #[cfg(not(test))]
     fn timestamp_age_seconds(&self, timestamp: u32) -> f32;
 
     /// Return the current high-resolution timer instant.
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware timer slots remain declared even when host builds do not call every timer helper.
+    #[cfg(not(test))]
     fn timer_time_now(&self) -> u32;
 
     /// Return high-resolution elapsed time since a timer instant.
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
-    // Firmware timer slots remain declared even when host builds do not call every timer helper.
+    #[cfg(not(test))]
     fn timer_seconds_elapsed_since(&self, timestamp: u32) -> f32;
 
     /// Return the package `ARG` pointer stored by the firmware loader.
@@ -119,6 +118,7 @@ pub(crate) trait AppDataBindings {
         prog_addr: PackageProgramAddress,
     ) -> Option<NonNull<T>> {
         self.arg(prog_addr)
+            // SAFETY: the caller guarantees that `ARG` points to a live `T`.
             .map(|argument| unsafe { argument.state_ptr() })
     }
 
@@ -137,6 +137,7 @@ pub(crate) trait AppDataBindings {
             return false;
         };
 
+        // SAFETY: the slice remains live and contains `len` bytes for this call.
         unsafe { self.send_app_data(data.as_ptr(), len) };
         true
     }
@@ -144,10 +145,14 @@ pub(crate) trait AppDataBindings {
 
 impl<B: AppDataBindings + ?Sized> AppDataBindings for &B {
     unsafe fn set_app_data_handler(&self, handler: AppDataHandler) -> bool {
+        // SAFETY: the caller guarantees that the handler remains valid until
+        // firmware replaces or clears it; forwarding it does not shorten that lifetime.
         unsafe { (**self).set_app_data_handler(handler) }
     }
 
     unsafe fn clear_app_data_handler(&self) -> bool {
+        // SAFETY: the caller guarantees that the live firmware binding may
+        // clear this package's registered handler.
         unsafe { (**self).clear_app_data_handler() }
     }
 
@@ -155,18 +160,22 @@ impl<B: AppDataBindings + ?Sized> AppDataBindings for &B {
         (**self).system_time_ticks()
     }
 
+    #[cfg(not(test))]
     fn system_time_seconds(&self) -> f32 {
         (**self).system_time_seconds()
     }
 
+    #[cfg(not(test))]
     fn timestamp_age_seconds(&self, timestamp: u32) -> f32 {
         (**self).timestamp_age_seconds(timestamp)
     }
 
+    #[cfg(not(test))]
     fn timer_time_now(&self) -> u32 {
         (**self).timer_time_now()
     }
 
+    #[cfg(not(test))]
     fn timer_seconds_elapsed_since(&self, timestamp: u32) -> f32 {
         (**self).timer_seconds_elapsed_since(timestamp)
     }
@@ -176,6 +185,8 @@ impl<B: AppDataBindings + ?Sized> AppDataBindings for &B {
     }
 
     unsafe fn send_app_data(&self, data: *const u8, len: u32) {
+        // SAFETY: the caller guarantees that `data` remains readable for
+        // `len` bytes while the delegated firmware call runs.
         unsafe { (**self).send_app_data(data, len) }
     }
 }
@@ -207,6 +218,7 @@ pub(crate) trait CustomConfigBindings {
         set_cfg: CustomConfigSet,
         get_cfg_xml: CustomConfigXml,
     ) {
+        // SAFETY: these function pointers are static package callbacks.
         unsafe { self.register_custom_config(get_cfg, set_cfg, get_cfg_xml) }
     }
 
@@ -221,10 +233,14 @@ impl<B: CustomConfigBindings + ?Sized> CustomConfigBindings for &B {
         set_cfg: CustomConfigSet,
         get_cfg_xml: CustomConfigXml,
     ) {
+        // SAFETY: the caller guarantees a live firmware table and callbacks
+        // that remain valid until they are cleared or replaced.
         unsafe { (**self).register_custom_config(get_cfg, set_cfg, get_cfg_xml) }
     }
 
     unsafe fn clear_custom_configs(&self) {
+        // SAFETY: the caller guarantees that the live firmware table owns this
+        // package's custom-config registrations.
         unsafe { (**self).clear_custom_configs() }
     }
 }
@@ -245,6 +261,7 @@ pub(crate) trait ImuReadCallbackBindings {
 
     /// Register a package-owned IMU read callback.
     fn set_imu_read_callback_handler(&self, callback: ImuReadCallback) {
+        // SAFETY: the function pointer is a static package callback.
         unsafe { self.set_imu_read_callback(callback) }
     }
 
@@ -254,10 +271,14 @@ pub(crate) trait ImuReadCallbackBindings {
 
 impl<B: ImuReadCallbackBindings + ?Sized> ImuReadCallbackBindings for &B {
     unsafe fn set_imu_read_callback(&self, callback: ImuReadCallback) {
+        // SAFETY: the caller guarantees a live firmware table and a callback
+        // that remains valid until firmware clears or replaces it.
         unsafe { (**self).set_imu_read_callback(callback) }
     }
 
     unsafe fn clear_imu_read_callback(&self) {
+        // SAFETY: the caller guarantees that the live firmware table owns this
+        // package's IMU callback registration.
         unsafe { (**self).clear_imu_read_callback() }
     }
 }
@@ -270,27 +291,29 @@ pub struct RealBindings;
 impl LbmBindings for RealBindings {
     #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     unsafe fn add_extension(&self, name: *const c_char, handler: ExtensionHandler) -> bool {
-        unsafe { crate::ffi::lbm_add_extension(name, handler) }
+        call_vesc_ffi!(lbm_add_extension(name, handler))
     }
 
     unsafe fn is_number(&self, value: LbmValue) -> bool {
-        unsafe { crate::ffi::lbm_is_number(value) }
+        call_vesc_ffi!(lbm_is_number(value))
     }
 
     unsafe fn decode_i32(&self, value: LbmValue) -> i32 {
-        unsafe { crate::ffi::lbm_dec_as_i32(value) }
+        call_vesc_ffi!(lbm_dec_as_i32(value))
     }
 
     unsafe fn decode_f32(&self, value: LbmValue) -> f32 {
-        unsafe { crate::ffi::lbm_dec_as_float(value) }
+        call_vesc_ffi!(lbm_dec_as_float(value))
     }
 
+    #[cfg(target_arch = "arm")]
     fn encode_true(&self) -> LbmValue {
-        unsafe { crate::ffi::lbm_enc_sym_true() }
+        call_vesc_ffi!(lbm_enc_sym_true())
     }
 
+    #[cfg(target_arch = "arm")]
     fn encode_nil(&self) -> LbmValue {
-        unsafe { crate::ffi::lbm_enc_sym_nil() }
+        call_vesc_ffi!(lbm_enc_sym_nil())
     }
 }
 
@@ -302,63 +325,65 @@ impl CustomConfigBindings for RealBindings {
         set_cfg: CustomConfigSet,
         get_cfg_xml: CustomConfigXml,
     ) {
-        unsafe { crate::ffi::conf_custom_add_config(get_cfg, set_cfg, get_cfg_xml) }
+        call_vesc_ffi!(conf_custom_add_config(get_cfg, set_cfg, get_cfg_xml));
     }
 
     unsafe fn clear_custom_configs(&self) {
-        unsafe { crate::ffi::conf_custom_clear_configs() }
+        call_vesc_ffi!(conf_custom_clear_configs());
     }
 }
 
 #[cfg(not(test))]
 impl AppDataBindings for RealBindings {
     unsafe fn set_app_data_handler(&self, handler: AppDataHandler) -> bool {
-        unsafe { crate::ffi::vesc_set_app_data_handler(handler) }
+        call_vesc_ffi!(vesc_set_app_data_handler(handler))
     }
 
     unsafe fn clear_app_data_handler(&self) -> bool {
-        unsafe { crate::ffi::vesc_clear_app_data_handler() };
+        call_vesc_ffi!(vesc_clear_app_data_handler());
         true
     }
 
     fn system_time_ticks(&self) -> u32 {
-        unsafe { crate::ffi::vesc_system_time_ticks() }
+        call_vesc_ffi!(vesc_system_time_ticks())
     }
 
     fn system_time_seconds(&self) -> f32 {
-        unsafe { crate::ffi::vesc_system_time_seconds() }
+        call_vesc_ffi!(vesc_system_time_seconds())
     }
 
     fn timestamp_age_seconds(&self, timestamp: u32) -> f32 {
-        unsafe { crate::ffi::vesc_timestamp_age_seconds(timestamp) }
+        call_vesc_ffi!(vesc_timestamp_age_seconds(timestamp))
     }
 
     fn timer_time_now(&self) -> u32 {
-        unsafe { crate::ffi::vesc_timer_time_now() }
+        call_vesc_ffi!(vesc_timer_time_now())
     }
 
     fn timer_seconds_elapsed_since(&self, timestamp: u32) -> f32 {
-        unsafe { crate::ffi::vesc_timer_seconds_elapsed_since(timestamp) }
+        call_vesc_ffi!(vesc_timer_seconds_elapsed_since(timestamp))
     }
 
     fn arg(&self, prog_addr: PackageProgramAddress) -> Option<PackageArgument> {
-        let slot = unsafe { crate::ffi::vesc_get_arg(prog_addr.get()) };
+        let slot = call_vesc_ffi!(vesc_get_arg(prog_addr.get()));
+        // SAFETY: a non-null slot is loader-owned storage for one pointer; reading
+        // copies the pointer value without taking ownership of the slot.
         let arg = unsafe { core::ptr::NonNull::new(slot)?.as_ptr().read() };
         core::ptr::NonNull::new(arg).map(PackageArgument::new)
     }
 
     unsafe fn send_app_data(&self, data: *const u8, len: u32) {
-        unsafe { crate::ffi::vesc_send_app_data(data, len) }
+        call_vesc_ffi!(vesc_send_app_data(data, len));
     }
 }
 
 #[cfg(not(test))]
 impl ImuReadCallbackBindings for RealBindings {
     unsafe fn set_imu_read_callback(&self, callback: ImuReadCallback) {
-        unsafe { crate::ffi::vesc_set_imu_read_callback(callback) }
+        call_vesc_ffi!(vesc_set_imu_read_callback(callback));
     }
 
     unsafe fn clear_imu_read_callback(&self) {
-        unsafe { crate::ffi::vesc_clear_imu_read_callback() }
+        call_vesc_ffi!(vesc_clear_imu_read_callback());
     }
 }

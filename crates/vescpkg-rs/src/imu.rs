@@ -206,12 +206,15 @@ pub unsafe extern "C" fn imu_read_callback<T: ImuReadCallback>(
     mag: *mut f32,
     dt: f32,
 ) {
+    // SAFETY: the callback contract guarantees three readable acceleration values.
     let Some(accel) = (unsafe { crate::firmware_array::<f32, 3>(acc.cast_const()) }) else {
         return;
     };
+    // SAFETY: the callback contract guarantees three readable gyroscope values.
     let Some(gyro) = (unsafe { crate::firmware_array::<f32, 3>(gyro.cast_const()) }) else {
         return;
     };
+    // SAFETY: the callback contract guarantees three readable magnetometer values.
     let Some(mag) = (unsafe { crate::firmware_array::<f32, 3>(mag.cast_const()) }) else {
         return;
     };
@@ -248,30 +251,24 @@ pub struct RealImuBindings;
 #[cfg(not(test))]
 impl ImuBindings for RealImuBindings {
     fn is_ready(&self) -> bool {
-        unsafe { crate::ffi::imu_startup_done() }
+        call_vesc_ffi!(imu_startup_done())
     }
 
     fn roll(&self) -> ImuRoll {
-        ImuRoll::new(AngleRadians::from_radians(unsafe {
-            crate::ffi::imu_get_roll()
-        }))
+        ImuRoll::new(AngleRadians::from_radians(call_vesc_ffi!(imu_get_roll())))
     }
 
     fn pitch(&self) -> ImuPitch {
-        ImuPitch::new(AngleRadians::from_radians(unsafe {
-            crate::ffi::imu_get_pitch()
-        }))
+        ImuPitch::new(AngleRadians::from_radians(call_vesc_ffi!(imu_get_pitch())))
     }
 
     fn yaw(&self) -> ImuYaw {
-        ImuYaw::new(AngleRadians::from_radians(unsafe {
-            crate::ffi::imu_get_yaw()
-        }))
+        ImuYaw::new(AngleRadians::from_radians(call_vesc_ffi!(imu_get_yaw())))
     }
 
     fn angular_rate(&self) -> ImuAngularRate {
         let mut gyro = [0.0; 3];
-        unsafe { crate::ffi::imu_get_gyro(gyro.as_mut_ptr()) };
+        call_vesc_ffi!(imu_get_gyro(gyro.as_mut_ptr()));
         ImuAngularRate::from_axes(
             ImuAngularRateRoll::new(AngularVelocity::from_degrees_per_second(gyro[0])),
             ImuAngularRatePitch::new(AngularVelocity::from_degrees_per_second(gyro[1])),
@@ -281,7 +278,7 @@ impl ImuBindings for RealImuBindings {
 
     fn orientation(&self) -> ImuOrientation {
         let mut quaternions = [0.0; 4];
-        unsafe { crate::ffi::vesc_imu_get_quaternions(quaternions.as_mut_ptr()) };
+        call_vesc_ffi!(vesc_imu_get_quaternions(quaternions.as_mut_ptr()));
         ImuOrientation::from_quaternion(ImuQuaternion::from_firmware_wxyz(quaternions))
     }
 }
@@ -544,7 +541,7 @@ mod tests {
             }),
             (4.0, 5.0, 6.0)
         );
-        assert_eq!(sample.period().duration().as_seconds(), 0.02);
+        assert_f32_eq!(sample.period().duration().as_seconds(), 0.02);
     }
 
     #[test]
@@ -556,7 +553,7 @@ mod tests {
         // `third_party/vesc/lispBM/lispif_c_lib.c:151-158`; the IMU adapter
         // dispatches the package state source like Float Out Boy's callback at
         // `third_party/float-out-boy/src/main.c:759-764`.
-        unsafe { RUNTIME_STATE.install(&mut state) }.unwrap();
+        assert!(unsafe { RUNTIME_STATE.install(&mut state) });
         <RuntimeImuRead as ImuReadCallback>::read(typed_sample());
         RUNTIME_STATE.clear();
         assert_eq!(state.samples, 1);
@@ -569,7 +566,7 @@ mod tests {
     #[test]
     fn imu_read_handler_validates_loader_package_state_identity() {
         let mut state = State { samples: 0 };
-        unsafe { LOADER_RUNTIME_STATE.install(&mut state) }.unwrap();
+        assert!(unsafe { LOADER_RUNTIME_STATE.install(&mut state) });
         LOADER_STATE.store(&raw mut state, Ordering::Release);
 
         <LoaderImuRead as ImuReadCallback>::read(typed_sample());

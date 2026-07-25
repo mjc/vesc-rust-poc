@@ -1,6 +1,7 @@
 // C map: Float Out Boy averages ERPM deltas over this many samples at
 // `third_party/float-out-boy/src/motor_data.h:26`.
 const WINDOW: usize = 40;
+const WINDOW_U8: u8 = 40;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct AccelerationHistoryIndex(u8);
@@ -9,11 +10,11 @@ impl AccelerationHistoryIndex {
     const START: Self = Self(0);
 
     const fn next(self) -> Self {
-        Self((self.0 + 1) % WINDOW as u8)
+        Self(self.0.wrapping_add(1) % WINDOW_U8)
     }
 
-    const fn as_usize(self) -> usize {
-        self.0 as usize
+    fn as_usize(self) -> usize {
+        usize::from(self.0)
     }
 
     fn replace(
@@ -60,7 +61,7 @@ impl MotorAccelerationTracker {
         // replaces one rolling history slot, and adjusts the stored average by the delta.
         let current = motor_erpm - self.last_erpm;
         let previous = self.next.replace(&mut self.history, current);
-        self.average = self.average + (current - previous) / WINDOW as f32;
+        self.average = self.average + (current - previous) / f32::from(WINDOW_U8);
 
         self.last_erpm = motor_erpm;
         self.next = self.next.next();
@@ -75,7 +76,7 @@ impl MotorAccelerationTracker {
 
 #[cfg(test)]
 mod tests {
-    use super::{AccelerationHistoryIndex, MotorAccelerationTracker, WINDOW};
+    use super::{AccelerationHistoryIndex, MotorAccelerationTracker, WINDOW, WINDOW_U8};
     use vescpkg_rs::prelude::Rpm;
 
     #[test]
@@ -90,23 +91,31 @@ mod tests {
     }
 
     #[test]
+    fn invalid_history_index_wraps_to_start_instead_of_panicking() {
+        assert_eq!(
+            AccelerationHistoryIndex(u8::MAX).next(),
+            AccelerationHistoryIndex::START
+        );
+    }
+
+    #[test]
     fn record_matches_float_out_boy_rolling_erpm_delta_average() {
         let mut tracker = MotorAccelerationTracker::default();
 
-        for step in 1..=WINDOW {
-            tracker.record(Rpm::from_revolutions_per_minute(step as f32 * 10.0));
+        for step in 1..=WINDOW_U8 {
+            tracker.record(Rpm::from_revolutions_per_minute(f32::from(step) * 10.0));
         }
 
-        assert_eq!(tracker.average().as_revolutions_per_minute(), 10.0);
+        assert_f32_eq!(tracker.average().as_revolutions_per_minute(), 10.0);
 
         tracker.record(Rpm::from_revolutions_per_minute(410.0));
 
-        assert_eq!(tracker.average().as_revolutions_per_minute(), 10.0);
+        assert_f32_eq!(tracker.average().as_revolutions_per_minute(), 10.0);
 
         tracker.record(Rpm::from_revolutions_per_minute(450.0));
 
         // Float Out Boy replaces the oldest 10 ERPM sample with the current 40 ERPM sample:
         // `10 + (40 - 10) / ACCEL_ARRAY_SIZE`.
-        assert_eq!(tracker.average().as_revolutions_per_minute(), 10.75);
+        assert_f32_eq!(tracker.average().as_revolutions_per_minute(), 10.75);
     }
 }

@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    FloatOutBoyAppDataCommand, FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount, FloatOutBoyMode,
+    FloatOutBoyPackageState, FloatOutBoyRunState, LoopConfig, float_out_boy_command_payload,
+};
 use crate::config::FloatOutBoyFlywheelConfig;
 use vescpkg_rs::WireByte;
 use vescpkg_rs::prelude::{
@@ -173,7 +176,7 @@ impl FloatOutBoyPackageState {
         } else {
             self.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE));
         }
-        self.flywheel_abort = false;
+        self.ride_flags.flywheel_abort = false;
 
         let updated = self
             .serialized_config

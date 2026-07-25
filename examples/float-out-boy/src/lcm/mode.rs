@@ -19,6 +19,7 @@ impl FloatOutBoyLedMode {
     /// Return the Float Out Boy `v1.2.1` hardware LED mode ID.
     ///
     /// C map: `third_party/float-out-boy/src/conf/datatypes.h:36-60`.
+    #[must_use]
     pub const fn id(self) -> u8 {
         match self {
             Self::Off => 0,

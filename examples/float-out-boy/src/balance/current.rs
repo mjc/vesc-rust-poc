@@ -15,14 +15,14 @@ const SOFTSTART_CURRENT_RAMP_AMPS_PER_SECOND: f32 = 100.0;
 struct PitchBasedDemand(MotorCurrent);
 
 impl PitchBasedDemand {
-    #[inline(always)]
+    #[inline]
     fn from_terms(rate_p: MotorCurrent, booster: MotorCurrent) -> Self {
         // C map: `third_party/float-out-boy/src/main.c:926-930` adds the rate-P and
         // booster terms before soft-start and current limiting.
         Self(rate_p + booster)
     }
 
-    #[inline(always)]
+    #[inline]
     fn with_softstart(
         self,
         softstart_pid_limit: MotorCurrent,
@@ -62,7 +62,7 @@ pub(super) struct PitchBasedCurrent {
 impl PitchBasedCurrent {
     /// Source map: upstream soft-start clamps pitch-based current at
     /// `third_party/float-out-boy/src/main.c:924-930`.
-    #[inline(always)]
+    #[inline]
     pub(super) fn from_rate_and_booster(
         rate_p: MotorCurrent,
         booster: MotorCurrent,
@@ -83,21 +83,21 @@ impl PitchBasedCurrent {
 pub(super) struct RequestedCurrent(pub(super) MotorCurrent);
 
 impl RequestedCurrent {
-    #[inline(always)]
+    #[inline]
     fn zero() -> MotorCurrent {
         // C map: traction-control filter zeroes the request in
         // `third_party/float-out-boy/src/main.c:949-954`.
         MotorCurrent::new(Current::ZERO)
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) fn clamped_to(self, limit: MotorCurrentLimit) -> Self {
         // C map: `third_party/float-out-boy/src/main.c:941-942` clamps the requested
         // balance current to the selected magnitude while preserving sign.
         Self(limit.clamp(self.0))
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) fn adjusted_for_darkride(self, darkride: FloatOutBoyDarkRideState) -> Self {
         // C map: `third_party/float-out-boy/src/main.c:944-946` flips the completed
         // RUNNING current request after limit selection and before smoothing.
@@ -107,7 +107,7 @@ impl RequestedCurrent {
         })
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) fn filtered_from(
         self,
         previous: MotorCurrent,
@@ -124,7 +124,7 @@ impl RequestedCurrent {
 }
 
 impl LoopInput {
-    #[inline(always)]
+    #[inline]
     pub(super) fn current_limit(self) -> MotorCurrentLimit {
         let braking = Branch::from_motor_current(self.motor_current).is_braking();
 
@@ -142,7 +142,7 @@ impl LoopInput {
 }
 
 impl LoopState {
-    #[inline(always)]
+    #[inline]
     pub(super) fn with_booster_current_and_softstart_limit(
         self,
         booster_current: MotorCurrent,
@@ -155,7 +155,7 @@ impl LoopState {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) fn with_balance_current(self, balance_current: MotorCurrent) -> Self {
         Self {
             balance_current,

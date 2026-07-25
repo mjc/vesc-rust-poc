@@ -76,11 +76,18 @@ mod tests {
         packet: AppDataPacket<'_>,
     ) -> bool {
         let mut now = || now;
-        let mut send = |bytes: &[u8]| {
+        let mut record_packet = |bytes: &[u8]| {
             sent.push(Vec::from(bytes));
             true
         };
-        handle_float_out_boy_app_data_packet(state, telemetry, imu, &mut now, &mut send, packet)
+        handle_float_out_boy_app_data_packet(
+            state,
+            telemetry,
+            imu,
+            &mut now,
+            &mut record_packet,
+            packet,
+        )
     }
 
     #[test]

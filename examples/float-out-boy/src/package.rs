@@ -9,8 +9,6 @@
 //! full `Data`; upstream shares `Data *` through `ARG` for app-data, custom
 //! config, BMS, threads, and stop cleanup.
 
-#![cfg_attr(all(not(test), target_arch = "arm"), allow(dead_code))]
-
 mod callbacks;
 mod custom_config;
 mod imu_callback;
@@ -30,11 +28,13 @@ pub use self::state::FloatOutBoyPackageState;
 /// extension registration at `third_party/float-out-boy/src/main.c:2455-2459` are
 /// best-effort side effects.
 #[cfg(any(test, target_arch = "arm"))]
-fn finish_startup(required_setup: bool, registrations: impl FnOnce()) -> bool {
-    required_setup && {
-        registrations();
-        true
-    }
+fn finish_startup(
+    required_setup: Result<(), vescpkg_rs::PackageStartError>,
+    registrations: impl FnOnce(),
+) -> Result<(), vescpkg_rs::PackageStartError> {
+    required_setup?;
+    registrations();
+    Ok(())
 }
 
 #[cfg(test)]
@@ -42,7 +42,7 @@ pub(crate) fn start(
     start: &mut vescpkg_rs::PackageStart,
 ) -> Result<(), vescpkg_rs::PackageStartError> {
     let _ = start;
-    Ok(())
+    finish_startup(Ok(()), || {})
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
@@ -57,12 +57,11 @@ pub(crate) fn start(
     // a function-pointer table would contain image-relative addresses.
     startup::install_float_out_boy_package_state(start)?;
     threads::start_float_out_boy_runtime_threads(start)?;
-    let _ = finish_startup(true, || {
+    finish_startup(Ok(()), || {
         let _ = imu_callback::register_float_out_boy_imu_callback(start);
         let _ = startup::register_float_out_boy_app_data_callbacks(start);
         let _ = crate::extensions::register_float_out_boy_loader_extensions(start);
-    });
-    Ok(())
+    })
 }
 
 #[cfg(test)]
@@ -106,15 +105,27 @@ mod tests {
     fn startup_ignores_registration_failures_after_required_setup() {
         let registrations = core::cell::Cell::new(0);
 
-        assert!(finish_startup(true, || {
-            registrations.set(registrations.get() + 1);
-        }));
+        assert!(
+            finish_startup(Ok(()), || {
+                registrations.set(registrations.get() + 1);
+            })
+            .is_ok()
+        );
         assert_eq!(registrations.get(), 1);
     }
 
     #[test]
     fn startup_stops_before_registration_when_required_setup_fails() {
-        assert!(!finish_startup(false, || panic!("registration")));
+        let registrations = core::cell::Cell::new(0);
+
+        assert!(
+            finish_startup(
+                Err(vescpkg_rs::PackageStartError::LoaderUnavailable),
+                || registrations.set(registrations.get() + 1),
+            )
+            .is_err()
+        );
+        assert_eq!(registrations.get(), 0);
     }
 }
 

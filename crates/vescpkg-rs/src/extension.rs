@@ -48,28 +48,28 @@ impl LispValue {
     #[must_use]
     pub fn decode_number_as_u32(self) -> Option<u32> {
         self.is_number()
-            .then(|| unsafe { crate::ffi::lbm_dec_as_u32(self.raw()) })
+            .then(|| call_vesc_ffi!(lbm_dec_as_u32(self.raw())))
     }
 
     /// Encode an unsigned integer through the firmware's `LispBM` representation.
     #[cfg(not(test))]
     #[must_use]
     pub fn from_u32(value: u32) -> Self {
-        Self::from_raw(unsafe { crate::ffi::lbm_enc_u32(value) })
+        Self::from_raw(call_vesc_ffi!(lbm_enc_u32(value)))
     }
 
     /// Encode a signed integer through the firmware's `LispBM` representation.
     #[cfg(not(test))]
     #[must_use]
     pub fn from_i32(value: i32) -> Self {
-        Self::from_raw(unsafe { crate::ffi::lbm_enc_i(value) })
+        Self::from_raw(call_vesc_ffi!(lbm_enc_i(value)))
     }
 
     /// Encode an `f32` through the firmware's `LispBM` representation.
     #[cfg(not(test))]
     #[must_use]
     pub fn from_f32(value: f32) -> Self {
-        Self::from_raw(unsafe { crate::ffi::lbm_enc_float(value) })
+        Self::from_raw(call_vesc_ffi!(lbm_enc_float(value)))
     }
 
     /// Decode a `LispBM` character value.
@@ -77,14 +77,14 @@ impl LispValue {
     #[must_use]
     pub fn decode_char(self) -> Option<u8> {
         self.is_char()
-            .then(|| unsafe { crate::ffi::lbm_dec_char(self.raw()) })
+            .then(|| call_vesc_ffi!(lbm_dec_char(self.raw())))
     }
 
     /// Encode a byte as a `LispBM` character value.
     #[cfg(not(test))]
     #[must_use]
     pub fn from_char(value: u8) -> Self {
-        Self::from_raw(unsafe { crate::ffi::lbm_enc_char(value) })
+        Self::from_raw(call_vesc_ffi!(lbm_enc_char(value)))
     }
 
     /// Return whether this value is an immediate `LispBM` integer.
@@ -96,31 +96,31 @@ impl LispValue {
     /// Return whether firmware classifies this value as numeric.
     #[must_use]
     pub fn is_number(self) -> bool {
-        unsafe { crate::ffi::lbm_is_number(self.raw()) }
+        call_vesc_ffi!(lbm_is_number(self.raw()))
     }
 
     /// Return whether firmware classifies this value as a character.
     #[must_use]
     pub fn is_char(self) -> bool {
-        unsafe { crate::ffi::lbm_is_char(self.raw()) }
+        call_vesc_ffi!(lbm_is_char(self.raw()))
     }
 
     /// Return whether firmware classifies this value as a symbol.
     #[must_use]
     pub fn is_symbol(self) -> bool {
-        unsafe { crate::ffi::lbm_is_symbol(self.raw()) }
+        call_vesc_ffi!(lbm_is_symbol(self.raw()))
     }
 
     /// Return whether firmware classifies this value as a cons cell.
     #[must_use]
     pub fn is_cons(self) -> bool {
-        unsafe { crate::ffi::lbm_is_cons(self.raw()) }
+        call_vesc_ffi!(lbm_is_cons(self.raw()))
     }
 
     /// Return whether firmware classifies this value as a byte array.
     #[must_use]
     pub fn is_byte_array(self) -> bool {
-        unsafe { crate::ffi::lbm_is_byte_array(self.raw()) }
+        call_vesc_ffi!(lbm_is_byte_array(self.raw()))
     }
 
     /// Allocate a `LispBM` byte array through the firmware allocator.
@@ -128,8 +128,7 @@ impl LispValue {
     pub fn try_byte_array(len: usize) -> Option<Self> {
         let len = u32::try_from(len).ok()?;
         let mut value = LbmValue(0);
-        unsafe { crate::ffi::lbm_create_byte_array(&raw mut value, len) }
-            .then(|| Self::from_raw(value))
+        call_vesc_ffi!(lbm_create_byte_array(&raw mut value, len)).then(|| Self::from_raw(value))
     }
 
     /// Borrow firmware-owned string bytes for the duration of a callback.
@@ -141,8 +140,10 @@ impl LispValue {
         if !self.is_byte_array() {
             return None;
         }
-        let pointer = unsafe { crate::ffi::lbm_dec_str(self.raw()) };
+        let pointer = call_vesc_ffi!(lbm_dec_str(self.raw()));
         (!pointer.is_null()).then(|| {
+            // SAFETY: LispBM returns a NUL-terminated string pointer that remains
+            // valid for the duration of this firmware callback.
             let value = unsafe { CStr::from_ptr(pointer) };
             f(value)
         })
@@ -152,7 +153,7 @@ impl LispValue {
     #[cfg(not(test))]
     #[must_use]
     pub fn cons(car: Self, cdr: Self) -> Self {
-        Self::from_raw(unsafe { crate::ffi::lbm_cons(car.raw(), cdr.raw()) })
+        Self::from_raw(call_vesc_ffi!(lbm_cons(car.raw(), cdr.raw())))
     }
 
     /// Read the head of a cons cell while preserving its firmware ownership.
@@ -160,7 +161,7 @@ impl LispValue {
     #[must_use]
     pub fn car(self) -> Option<Self> {
         self.is_cons()
-            .then(|| Self::from_raw(unsafe { crate::ffi::lbm_car(self.raw()) }))
+            .then(|| Self::from_raw(call_vesc_ffi!(lbm_car(self.raw()))))
     }
 
     /// Read the tail of a cons cell while preserving its firmware ownership.
@@ -168,16 +169,15 @@ impl LispValue {
     #[must_use]
     pub fn cdr(self) -> Option<Self> {
         self.is_cons()
-            .then(|| Self::from_raw(unsafe { crate::ffi::lbm_cdr(self.raw()) }))
+            .then(|| Self::from_raw(call_vesc_ffi!(lbm_cdr(self.raw()))))
     }
 
     /// Destructively reverse a firmware-owned list while retaining its handle.
     #[cfg(not(test))]
     #[must_use]
     pub fn reverse_list(self) -> Option<Self> {
-        self.is_cons().then(|| {
-            Self::from_raw(unsafe { crate::ffi::lbm_list_destructive_reverse(self.raw()) })
-        })
+        self.is_cons()
+            .then(|| Self::from_raw(call_vesc_ffi!(lbm_list_destructive_reverse(self.raw()))))
     }
 
     /// Convert any `LispBM` numeric value to an `i32`.
@@ -276,10 +276,7 @@ impl TryFrom<i32> for LispValue {
 
 /// Errors returned when extension registration fails.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(
-    not(any(test, feature = "test-support", target_arch = "arm")),
-    allow(dead_code)
-)]
+#[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 pub(crate) enum ExtensionRegistrationError {
     /// Firmware rejected the registration request.
     FirmwareRejected,
@@ -297,11 +294,7 @@ pub struct ExtensionRegistration {
 }
 
 impl ExtensionRegistration {
-    #[cfg_attr(
-        not(any(test, feature = "test-support", target_arch = "arm")),
-        allow(dead_code)
-    )]
-    // Used by lifecycle extension registration on firmware and test-support builds.
+    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     pub(crate) const fn new(requested: usize, registered: usize) -> Self {
         Self {
             requested,
@@ -349,11 +342,7 @@ impl ExtensionName {
         Self(b"ext-invalid\0")
     }
 
-    #[cfg_attr(
-        not(any(test, feature = "test-support", target_arch = "arm")),
-        allow(dead_code)
-    )]
-    // Firmware/test-support registration needs the validated C name pointer.
+    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     pub(crate) const fn as_cstr(self) -> &'static CStr {
         // SAFETY: the macro support hook validates the terminating NUL byte.
         unsafe { CStr::from_bytes_with_nul_unchecked(self.0) }
@@ -391,15 +380,9 @@ macro_rules! extension_name {
 #[derive(Clone, Copy)]
 pub struct ExtensionDescriptor {
     name: ExtensionName,
-    #[cfg_attr(
-        not(any(test, feature = "test-support", target_arch = "arm")),
-        allow(dead_code)
-    )]
+    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     handler: ExtensionHandler,
-    #[cfg_attr(
-        not(any(test, feature = "test-support", target_arch = "arm")),
-        allow(dead_code)
-    )]
+    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     state_type: Option<fn() -> core::any::TypeId>,
 }
 
@@ -407,7 +390,9 @@ impl ExtensionDescriptor {
     pub(crate) fn from_handler(name: ExtensionName, handler: ExtensionHandler) -> Self {
         Self {
             name,
+            #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
             handler,
+            #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
             state_type: None,
         }
     }
@@ -421,7 +406,9 @@ impl ExtensionDescriptor {
     pub fn stateful<T: StatefulLbmExtension>(name: ExtensionName) -> Self {
         Self {
             name,
+            #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
             handler: stateful_lbm_extension_handler::<T>,
+            #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
             state_type: Some(runtime_state_type::<T::State>),
         }
     }
@@ -444,6 +431,7 @@ impl ExtensionDescriptor {
     }
 }
 
+#[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 fn runtime_state_type<T: 'static>() -> core::any::TypeId {
     core::any::TypeId::of::<T>()
 }
@@ -467,6 +455,8 @@ impl LispArgs<'_> {
         if len == 0 {
             return Some(Self { values: &[] });
         }
+        // SAFETY: this constructor forwards its pointer and length contract to
+        // the slice conversion helper.
         unsafe { crate::firmware::lbm_args(args, arg_count).map(|values| Self { values }) }
     }
 
@@ -544,10 +534,10 @@ pub unsafe extern "C" fn stateful_lbm_extension_handler<T: StatefulLbmExtension>
     // VESC returns the live `T::State` installed in this package's ARG slot.
     let result = unsafe { crate::firmware::__firmware_package_state_ptr::<T::State>(program) }
         .and_then(|state| {
-            <T::State as crate::PackageRuntimeState>::runtime_store()
-                .with_expected_mut(crate::runtime::ExpectedState::Exact(state), |state| {
-                    T::call(state, args)
-                })
+            crate::PackageStateStore::<T::State>::with_expected_mut(
+                crate::runtime::ExpectedState::Exact(state),
+                |state| T::call(state, args),
+            )
         });
     #[cfg(any(test, not(target_arch = "arm")))]
     let result = <T::State as crate::PackageRuntimeState>::runtime_store()
@@ -613,7 +603,7 @@ mod tests {
         );
 
         let state = Box::leak(Box::new(State { calls: 0 }));
-        unsafe { SLOT.install(state) }.unwrap();
+        assert!(unsafe { SLOT.install(state) });
 
         assert_eq!(
             unsafe { stateful_lbm_extension_handler::<TestExtension>(core::ptr::null_mut(), 0) },

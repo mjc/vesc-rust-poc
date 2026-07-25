@@ -7,7 +7,7 @@ use vescpkg_rs::prelude::{
     SampleRate, Speed, TimestampTicks, Voltage,
 };
 
-const TONE_LENGTH_TICKS: u32 = SYSTEM_TICK_RATE_HZ as u32 / 10;
+const TONE_LENGTH_TICKS: u32 = crate::wire::truncating_u64_to_u32(SYSTEM_TICK_RATE_HZ) / 10;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct HapticFeedbackInput {
@@ -85,8 +85,12 @@ impl HapticFeedbackState {
                 self.can_change_type = true;
                 true
             } else {
-                let tone_time = now.wrapping_duration_since(self.tone_timer).as_ticks()
-                    % (TONE_LENGTH_TICKS * beats);
+                let cycle_ticks = TONE_LENGTH_TICKS.saturating_mul(beats);
+                let tone_time = now
+                    .wrapping_duration_since(self.tone_timer)
+                    .as_ticks()
+                    .checked_rem(cycle_ticks)
+                    .unwrap_or_default();
                 let beat = tone_time / TONE_LENGTH_TICKS;
                 let off_beat = beats.saturating_sub(2);
                 self.can_change_type = !self.is_playing && beat == 0;
@@ -228,14 +232,14 @@ mod tests {
         );
 
         assert_eq!(firmware.foc_tone_command_count(), 1);
-        assert_eq!(
+        assert_f32_eq!(
             firmware
                 .commanded_foc_tone_frequency()
                 .frequency()
                 .as_hertz(),
             495.0
         );
-        assert_eq!(
+        assert_f32_eq!(
             firmware.commanded_foc_tone_voltage().voltage().as_volts(),
             0.6
         );
@@ -246,17 +250,17 @@ mod tests {
         let defaults = FloatOutBoyConfigImage::defaults();
         let config = defaults.haptic();
 
-        assert_eq!(config.duty_frequency().frequency().as_hertz(), 495.0);
-        assert_eq!(config.duty_strength().voltage().as_volts(), 3.0);
-        assert_eq!(config.error_frequency().frequency().as_hertz(), 550.0);
-        assert_eq!(config.error_strength().voltage().as_volts(), 3.0);
-        assert_eq!(config.vibrate_frequency().frequency().as_hertz(), 70.0);
-        assert_eq!(config.vibrate_strength().current().as_amps(), 0.0);
-        assert_eq!(config.duty_solid_offset().as_ratio(), 0.05);
-        assert_eq!(config.current_threshold().as_ratio(), 0.0);
-        assert_eq!(config.min_strength().as_ratio(), 0.2);
+        assert_f32_eq!(config.duty_frequency().frequency().as_hertz(), 495.0);
+        assert_f32_eq!(config.duty_strength().voltage().as_volts(), 3.0);
+        assert_f32_eq!(config.error_frequency().frequency().as_hertz(), 550.0);
+        assert_f32_eq!(config.error_strength().voltage().as_volts(), 3.0);
+        assert_f32_eq!(config.vibrate_frequency().frequency().as_hertz(), 70.0);
+        assert_f32_eq!(config.vibrate_strength().current().as_amps(), 0.0);
+        assert_f32_eq!(config.duty_solid_offset().as_ratio(), 0.05);
+        assert_f32_eq!(config.current_threshold().as_ratio(), 0.0);
+        assert_f32_eq!(config.min_strength().as_ratio(), 0.2);
         assert!((config.max_strength_speed().as_kilometers_per_hour() - 30.0).abs() < 0.0001);
-        assert_eq!(config.strength_curvature().as_ratio(), 0.6);
+        assert_f32_eq!(config.strength_curvature().as_ratio(), 0.6);
     }
 
     #[test]
@@ -277,10 +281,25 @@ mod tests {
         }
 
         assert_eq!(firmware.foc_tone_command_count(), 3);
-        assert_eq!(
+        assert_f32_eq!(
             firmware.commanded_foc_tone_voltage().voltage().as_volts(),
             0.6
         );
+    }
+
+    #[test]
+    fn patterned_haptic_periods_match_refloat() {
+        for (feedback_type, beats, cycle_ticks) in [
+            (HapticFeedbackType::DutySpeed, 2, 2_000),
+            (HapticFeedbackType::ErrorTemperature, 6, 6_000),
+            (HapticFeedbackType::ErrorVoltage, 8, 8_000),
+            (HapticFeedbackType::ErrorFatal, 10, 10_000),
+        ] {
+            assert_eq!(feedback_type.beats(), beats);
+            assert_eq!(TONE_LENGTH_TICKS.checked_mul(beats), Some(cycle_ticks));
+        }
+        assert_eq!(HapticFeedbackType::DutyContinuous.beats(), 0);
+        assert_eq!(HapticFeedbackType::None.beats(), 0);
     }
 
     #[test]
@@ -300,7 +319,7 @@ mod tests {
             SampleRate::from_hertz(832.0),
         );
 
-        assert_eq!(
+        assert_f32_eq!(
             firmware
                 .commanded_foc_tone_frequency()
                 .frequency()
@@ -335,7 +354,7 @@ mod tests {
         );
 
         assert_eq!(firmware.foc_tone_command_count(), 2);
-        assert_eq!(
+        assert_f32_eq!(
             firmware.commanded_foc_tone_voltage().voltage().as_volts(),
             0.0
         );

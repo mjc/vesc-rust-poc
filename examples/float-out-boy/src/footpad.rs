@@ -28,6 +28,7 @@ impl FloatOutBoyFootpadState {
     /// Return the Float Out Boy `v1.2.1` footpad state ID.
     ///
     /// C map: `third_party/float-out-boy/src/footpad_sensor.h:22-27`.
+    #[must_use]
     pub const fn id(self) -> u8 {
         match self {
             Self::None => 0,
@@ -40,6 +41,7 @@ impl FloatOutBoyFootpadState {
     /// Return the Float Out Boy app-data switch compatibility value.
     ///
     /// C map: `third_party/float-out-boy/src/footpad_sensor.c:63-73`.
+    #[must_use]
     pub const fn switch_compat(self) -> u8 {
         match self {
             Self::None => 0,
@@ -64,16 +66,19 @@ impl FloatOutBoyFootpadSample {
     ///
     /// C map: Float Out Boy v1.2.1 stores `VESC_IF->io_read_analog` results in
     /// `FootpadSensor.adc1/adc2` at `third_party/float-out-boy/src/footpad_sensor.c:28-31`.
+    #[must_use]
     pub const fn new(adc1: Voltage, adc2: Voltage, state: FloatOutBoyFootpadState) -> Self {
         Self { adc1, adc2, state }
     }
 
     /// Return Float Out Boy's raw ADC1 voltage from `third_party/float-out-boy/src/footpad_sensor.c:28-31`.
+    #[must_use]
     pub const fn adc1_volts(self) -> f32 {
         self.adc1.as_volts()
     }
 
     /// Return Float Out Boy's raw ADC2 voltage from `third_party/float-out-boy/src/footpad_sensor.c:28-31`.
+    #[must_use]
     pub const fn adc2_volts(self) -> f32 {
         self.adc2.as_volts()
     }
@@ -81,6 +86,7 @@ impl FloatOutBoyFootpadSample {
     /// Return the decoded footpad sensor state.
     ///
     /// C map: `third_party/float-out-boy/src/footpad_sensor.h:29-32`.
+    #[must_use]
     pub const fn state(self) -> FloatOutBoyFootpadState {
         self.state
     }

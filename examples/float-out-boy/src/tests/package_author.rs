@@ -37,7 +37,7 @@ use vescpkg_rs::test_support::LoaderInfo;
 fn test_package_lib_init_uses_side_effect_free_registration_tail() {
     let mut info = LoaderInfo::new();
 
-    assert!(crate::package_lib_init(&mut info));
+    assert!(crate::package_lib_init(&raw mut info));
     // Upstream Float Out Boy v1.2.1 installs `stop`/`Data *` at
     // `third_party/float-out-boy/src/main.c:2431-2432` before the registration tail at
     // `third_party/float-out-boy/src/main.c:2456-2459`; the test build keeps that tail side-effect free.
@@ -100,11 +100,11 @@ fn package_author_models_float_out_boy_ride_inputs_without_raw_float_handoff() {
     let battery_current = BatteryCurrent::new(Current::from_amps(3.0));
 
     assert_eq!(footpad.state(), FloatOutBoyFootpadState::Both);
-    assert_eq!(attitude.pitch().angle().as_radians(), 0.03);
-    assert_eq!(angular_rate.roll().as_degrees_per_second(), 12.0);
-    assert_eq!(electrical_speed.rpm().as_revolutions_per_minute(), 2400.0);
-    assert_eq!(motor_current.current().as_amps(), 8.0);
-    assert_eq!(battery_current.current().as_amps(), 3.0);
+    assert_f32_eq!(attitude.pitch().angle().as_radians(), 0.03);
+    assert_f32_eq!(angular_rate.roll().as_degrees_per_second(), 12.0);
+    assert_f32_eq!(electrical_speed.rpm().as_revolutions_per_minute(), 2400.0);
+    assert_f32_eq!(motor_current.current().as_amps(), 8.0);
+    assert_f32_eq!(battery_current.current().as_amps(), 3.0);
 }
 
 #[test]
@@ -115,7 +115,7 @@ fn package_author_requests_float_out_boy_motor_current_with_domain_intent() {
 
     let command = FloatOutBoyMotorCommand::new(MotorCurrent::new(Current::from_amps(11.0)));
 
-    assert_eq!(apply_requested_current(command).current().as_amps(), 11.0);
+    assert_f32_eq!(apply_requested_current(command).current().as_amps(), 11.0);
 }
 
 #[test]
@@ -391,11 +391,11 @@ fn package_author_builds_realtime_always_payload_without_raw_values() {
         payload.item_contract().map(FloatOutBoyRealtimeDataItem::id),
         FLOAT_OUT_BOY_REALTIME_DATA_ITEMS.map(FloatOutBoyRealtimeDataItem::id)
     );
-    assert_eq!(
+    assert_f32_eq!(
         payload.motor().speed().speed().as_kilometers_per_hour(),
         12.6
     );
-    assert_eq!(
+    assert_f32_eq!(
         payload
             .motor()
             .electrical_speed()
@@ -403,7 +403,7 @@ fn package_author_builds_realtime_always_payload_without_raw_values() {
             .as_revolutions_per_minute(),
         2400.0
     );
-    assert_eq!(
+    assert_f32_eq!(
         payload
             .motor()
             .currents()
@@ -413,7 +413,7 @@ fn package_author_builds_realtime_always_payload_without_raw_values() {
             .as_amps(),
         -6.5
     );
-    assert_eq!(
+    assert_f32_eq!(
         payload
             .motor()
             .temperatures()
@@ -422,9 +422,9 @@ fn package_author_builds_realtime_always_payload_without_raw_values() {
             .as_degrees_celsius(),
         52.0
     );
-    assert_eq!(payload.imu().balance_pitch().angle().as_radians(), 0.03);
+    assert_f32_eq!(payload.imu().balance_pitch().angle().as_radians(), 0.03);
     assert_eq!(payload.footpad().state(), FloatOutBoyFootpadState::Both);
-    assert_eq!(payload.remote_input().ratio().as_ratio(), 0.18);
+    assert_f32_eq!(payload.remote_input().ratio().as_ratio(), 0.18);
 }
 
 #[test]
@@ -450,12 +450,12 @@ fn package_author_builds_realtime_runtime_payload_without_raw_values() {
         payload.item_contract().map(FloatOutBoyRealtimeDataItem::id),
         FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS.map(FloatOutBoyRealtimeDataItem::id)
     );
-    assert_eq!(payload.setpoints().board().angle().as_degrees(), 1.5);
-    assert_eq!(payload.setpoints().brake_tilt().angle().as_degrees(), -0.5);
-    assert_eq!(payload.balance_current().current().current().as_amps(), 9.5);
-    assert_eq!(payload.atr().accel_diff().as_erpm_delta(), 12.0);
-    assert_eq!(payload.atr().speed_boost().as_units(), -0.1);
-    assert_eq!(
+    assert_f32_eq!(payload.setpoints().board().angle().as_degrees(), 1.5);
+    assert_f32_eq!(payload.setpoints().brake_tilt().angle().as_degrees(), -0.5);
+    assert_f32_eq!(payload.balance_current().current().current().as_amps(), 9.5);
+    assert_f32_eq!(payload.atr().accel_diff().as_erpm_delta(), 12.0);
+    assert_f32_eq!(payload.atr().speed_boost().as_units(), -0.1);
+    assert_f32_eq!(
         payload.booster_current().current().current().as_amps(),
         1.25
     );
@@ -473,8 +473,8 @@ fn package_author_builds_realtime_charging_and_tail_without_raw_values() {
         FirmwareFaultWireCode::from_wire_code(12),
     );
 
-    assert_eq!(charging.current().current().current().as_amps(), 4.2);
-    assert_eq!(charging.voltage().voltage().voltage().as_volts(), 82.5);
+    assert_f32_eq!(charging.current().current().current().as_amps(), 4.2);
+    assert_f32_eq!(charging.voltage().voltage().voltage().as_volts(), 82.5);
     assert!(
         tail.active_alerts()
             .contains(FloatOutBoyAlertId::FirmwareFault)
@@ -538,14 +538,14 @@ fn package_author_builds_all_data_base_payload_without_raw_values() {
     assert_eq!(payload.status().ride_state().float_state_compat(), 1);
     assert_eq!(payload.status().beep_reason().id(), 1);
     assert_eq!(payload.footpad().state(), FloatOutBoyFootpadState::Both);
-    assert_eq!(payload.setpoints().remote().angle().as_degrees(), 2.0);
-    assert_eq!(payload.attitude().pitch().angle().as_radians(), 0.04);
-    assert_eq!(payload.balance_current().current().current().as_amps(), 9.5);
-    assert_eq!(
+    assert_f32_eq!(payload.setpoints().remote().angle().as_degrees(), 2.0);
+    assert_f32_eq!(payload.attitude().pitch().angle().as_radians(), 0.04);
+    assert_f32_eq!(payload.balance_current().current().current().as_amps(), 9.5);
+    assert_f32_eq!(
         payload.booster_current().current().current().as_amps(),
         1.25
     );
-    assert_eq!(
+    assert_f32_eq!(
         payload
             .motor()
             .vehicle_speed()
@@ -553,7 +553,7 @@ fn package_author_builds_all_data_base_payload_without_raw_values() {
             .as_meters_per_second(),
         3.4
     );
-    assert_eq!(
+    assert_f32_eq!(
         payload
             .motor()
             .foc_id_current()
@@ -588,8 +588,8 @@ fn package_author_builds_all_data_extension_payloads_without_raw_values() {
         FloatOutBoyRealtimeChargingVoltage::new(BatteryVoltage::new(Voltage::from_volts(82.4))),
     );
 
-    assert_eq!(mode2.distance_abs().distance().as_meters(), 42.5);
-    assert_eq!(
+    assert_f32_eq!(mode2.distance_abs().distance().as_meters(), 42.5);
+    assert_f32_eq!(
         mode2
             .temperatures()
             .mosfet()
@@ -599,13 +599,13 @@ fn package_author_builds_all_data_extension_payloads_without_raw_values() {
     );
     assert!(mode2.battery_temperature().as_measured().is_none());
     assert_eq!(mode3.odometer().as_meters(), 123_456);
-    assert_eq!(mode3.discharged_charge().charge().as_amp_hours(), 3.2);
-    assert_eq!(mode3.charged_charge().charge().as_amp_hours(), 0.8);
-    assert_eq!(mode3.discharged_energy().energy().as_watt_hours(), 170.0);
-    assert_eq!(mode3.charged_energy().energy().as_watt_hours(), 18.5);
-    assert_eq!(mode3.battery_level().as_fraction(), 0.72);
-    assert_eq!(mode4.current().current().current().as_amps(), 1.2);
-    assert_eq!(mode4.voltage().voltage().voltage().as_volts(), 82.4);
+    assert_f32_eq!(mode3.discharged_charge().charge().as_amp_hours(), 3.2);
+    assert_f32_eq!(mode3.charged_charge().charge().as_amp_hours(), 0.8);
+    assert_f32_eq!(mode3.discharged_energy().energy().as_watt_hours(), 170.0);
+    assert_f32_eq!(mode3.charged_energy().energy().as_watt_hours(), 18.5);
+    assert_f32_eq!(mode3.battery_level().as_fraction(), 0.72);
+    assert_f32_eq!(mode4.current().current().current().as_amps(), 1.2);
+    assert_f32_eq!(mode4.voltage().voltage().voltage().as_volts(), 82.4);
 }
 
 #[test]
@@ -753,8 +753,7 @@ fn package_author_encodes_all_data_mode4_response_like_float_out_boy_v1_2_1() {
     );
 }
 
-#[test]
-fn package_author_dispatches_all_data_responses_from_typed_request_mode() {
+fn sample_all_data_response_payloads() -> FloatOutBoyAllDataPayloads {
     let ride_state = FloatOutBoyRideState::new(
         FloatOutBoyRunState::Running,
         FloatOutBoyMode::Normal,
@@ -774,7 +773,7 @@ fn package_author_dispatches_all_data_responses_from_typed_request_mode() {
         FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(-2.0)),
         FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(3.0)),
     );
-    let payloads = FloatOutBoyAllDataPayloads::new(
+    FloatOutBoyAllDataPayloads::new(
         FloatOutBoyAllDataBasePayload::new(
             FloatOutBoyRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(9.0))),
             FloatOutBoyAllDataAttitude::new(
@@ -822,7 +821,12 @@ fn package_author_dispatches_all_data_responses_from_typed_request_mode() {
             FloatOutBoyRealtimeChargingCurrent::new(BatteryCurrent::new(Current::from_amps(1.2))),
             FloatOutBoyRealtimeChargingVoltage::new(BatteryVoltage::new(Voltage::from_volts(82.4))),
         ),
-    );
+    )
+}
+
+#[test]
+fn package_author_dispatches_all_data_responses_from_typed_request_mode() {
+    let payloads = sample_all_data_response_payloads();
 
     assert_eq!(
         payloads

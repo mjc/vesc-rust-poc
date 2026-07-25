@@ -183,33 +183,3 @@ transparent_eq_value_type!(
 transparent_eq_value_type!(
     pub struct EepromVar(i32);
 );
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
-pub(crate) struct FaultCode(pub i32);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
-pub(crate) struct CustomConfigCallback(pub core::ptr::NonNull<c_void>);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
-pub(crate) struct TerminalCommandName<'a>(pub &'a core::ffi::CStr);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
-pub(crate) struct TerminalHelp<'a>(pub &'a core::ffi::CStr);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
-pub(crate) struct TerminalArgNames<'a>(pub &'a [u8]);
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
-pub(crate) struct TerminalCallback(pub core::ptr::NonNull<c_void>);

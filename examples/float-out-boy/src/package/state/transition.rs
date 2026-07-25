@@ -34,7 +34,7 @@ pub(crate) enum FloatOutBoyStopEvent {
 }
 
 impl FloatOutBoyStopEvent {
-    #[inline(always)]
+    #[inline]
     #[must_use]
     pub(crate) const fn stop_condition(self) -> FloatOutBoyStopCondition {
         // C map: `state_stop` chooses the stored stop condition from the
@@ -60,7 +60,7 @@ impl FloatOutBoyStopEvent {
 ///
 /// Source map: upstream returns immediately from `check_faults` after each
 /// `state_stop` at `third_party/float-out-boy/src/main.c:357-509`.
-#[inline(always)]
+#[inline]
 pub(crate) fn float_out_boy_first_stop_event(
     events: &[(FloatOutBoyStopEvent, bool)],
 ) -> Option<FloatOutBoyStopEvent> {
@@ -104,7 +104,7 @@ enum FloatOutBoyStateTransitionAction {
 }
 
 impl FloatOutBoyStateTransitionAction {
-    #[inline(always)]
+    #[inline]
     fn select(input: &FloatOutBoyStateTransitionInput) -> Self {
         // C map: upstream evaluates stop checks before READY engage, and
         // then preserves state only when no stop and no engage path fires at
@@ -117,7 +117,7 @@ impl FloatOutBoyStateTransitionAction {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn apply(self, input: FloatOutBoyStateTransitionInput) -> FloatOutBoyStateTransitionOutput {
         let previous = input.previous;
         // C map: `state_stop` writes READY/stop condition and clears wheelslip at
@@ -172,7 +172,7 @@ impl FloatOutBoyStateTransitionAction {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn rolling_setpoint_adjustment(
         previous: FloatOutBoyRideState,
         traction_loss_detected: bool,
@@ -186,7 +186,7 @@ impl FloatOutBoyStateTransitionAction {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn mode_after_ready_check(input: FloatOutBoyStateTransitionInput) -> FloatOutBoyMode {
         // C map: READY flywheel abort calls `flywheel_stop(d)` before startup checks at
         // `third_party/float-out-boy/src/main.c:957-963`; `flywheel_stop` returns mode to NORMAL at
@@ -198,7 +198,7 @@ impl FloatOutBoyStateTransitionAction {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn rolling_wheelslip(
         previous: FloatOutBoyRideState,
         traction_loss_detected: bool,
@@ -221,7 +221,7 @@ impl FloatOutBoyStateTransitionAction {
 /// `SAT_CENTERING`, and `STOP_NONE` at `third_party/float-out-boy/src/state.c:36-39`;
 /// READY flywheel abort returns to NORMAL before startup checks at
 /// `third_party/float-out-boy/src/main.c:957-963` via `third_party/float-out-boy/src/main.c:1869-1873`.
-#[inline(always)]
+#[inline]
 pub(crate) fn float_out_boy_state_transition(
     input: FloatOutBoyStateTransitionInput,
 ) -> FloatOutBoyStateTransitionOutput {

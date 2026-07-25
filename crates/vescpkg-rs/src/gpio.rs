@@ -96,7 +96,7 @@ impl Gpio {
         }
         #[cfg(not(test))]
         {
-            adc_voltage_from_firmware(unsafe { crate::ffi::io_read_analog(pin) })
+            adc_voltage_from_firmware(call_vesc_ffi!(io_read_analog(pin)))
         }
     }
 
@@ -113,7 +113,7 @@ impl Gpio {
         }
         #[cfg(not(test))]
         {
-            unsafe { crate::ffi::io_set_mode(pin.0, VescPinMode(DIGITAL_OUTPUT_MODE)) }
+            call_vesc_ffi!(io_set_mode(pin.0, VescPinMode(DIGITAL_OUTPUT_MODE)))
         }
     }
 
@@ -129,7 +129,7 @@ impl Gpio {
         }
         #[cfg(not(test))]
         {
-            unsafe { crate::ffi::io_write(pin.0, level.firmware_level()) }
+            call_vesc_ffi!(io_write(pin.0, level.firmware_level()))
         }
     }
 }
@@ -156,8 +156,8 @@ mod tests {
     #[test]
     fn gpio_uses_one_semantic_capability() {
         let gpio = Gpio::test((1.2, 3.4));
-        assert_eq!(gpio.read_analog(AnalogPin::ADC1).voltage().as_volts(), 1.2);
-        assert_eq!(gpio.read_analog(AnalogPin::ADC2).voltage().as_volts(), 3.4);
+        assert_f32_eq!(gpio.read_analog(AnalogPin::ADC1).voltage().as_volts(), 1.2);
+        assert_f32_eq!(gpio.read_analog(AnalogPin::ADC2).voltage().as_volts(), 3.4);
         assert_eq!(gpio.test.analog_pair_calls.get(), 2);
         assert_eq!(gpio.test.last_pin.get(), 8);
     }

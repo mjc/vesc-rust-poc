@@ -101,14 +101,14 @@ pub(in crate::package) fn encode_float_out_boy_get_realtime_data_response_with_r
     float_out_boy_realtime_push_u8(
         &mut bytes,
         &mut ind,
-        (ride_state.float_state_compat() & 0x0f) + (ride_state.setpoint_adjustment_compat() << 4),
+        (ride_state.float_state_compat() & 0x0f) | (ride_state.setpoint_adjustment_compat() << 4),
     );
     let switch_state = footpad.state().switch_compat()
         | u8::from(matches!(ride_state.mode(), FloatOutBoyMode::HandTest)) << 3;
     float_out_boy_realtime_push_u8(
         &mut bytes,
         &mut ind,
-        (switch_state & 0x0f) + (base.status().beep_reason().id() << 4),
+        (switch_state & 0x0f) | (base.status().beep_reason().id() << 4),
     );
     float_out_boy_realtime_push_float32_auto(&mut bytes, &mut ind, footpad.adc1_volts());
     float_out_boy_realtime_push_float32_auto(&mut bytes, &mut ind, footpad.adc2_volts());
@@ -233,9 +233,21 @@ pub(in crate::package) fn encode_float_out_boy_realtime_data_response_with_runti
     float_out_boy_realtime_push_u8(&mut bytes, &mut ind, header.stop_setpoint_byte_compat());
     float_out_boy_realtime_push_u8(&mut bytes, &mut ind, header.beep_reason_compat());
 
-    FLOAT_OUT_BOY_REALTIME_DATA_ITEMS
-        .into_iter()
-        .for_each(|item| {
+    for item in FLOAT_OUT_BOY_REALTIME_DATA_ITEMS {
+        push_float_out_boy_float16(
+            &mut bytes,
+            &mut ind,
+            realtime_value(
+                payloads,
+                item,
+                remote_input,
+                atr_accel_diff,
+                atr_speed_boost,
+            ),
+        );
+    }
+    if running {
+        for item in FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS {
             push_float_out_boy_float16(
                 &mut bytes,
                 &mut ind,
@@ -246,24 +258,8 @@ pub(in crate::package) fn encode_float_out_boy_realtime_data_response_with_runti
                     atr_accel_diff,
                     atr_speed_boost,
                 ),
-            )
-        });
-    if running {
-        FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS
-            .into_iter()
-            .for_each(|item| {
-                push_float_out_boy_float16(
-                    &mut bytes,
-                    &mut ind,
-                    realtime_value(
-                        payloads,
-                        item,
-                        remote_input,
-                        atr_accel_diff,
-                        atr_speed_boost,
-                    ),
-                );
-            });
+            );
+        }
     }
     if charging {
         push_float_out_boy_float16(
@@ -455,7 +451,7 @@ mod tests {
 
         assert_f32_be(&legacy, 56, 0.25);
         assert_f32_be(&legacy, 68, 0.5);
-        assert_eq!(
+        assert_f32_eq!(
             realtime_value(
                 &payloads,
                 FloatOutBoyRealtimeDataItem::RemoteInput,

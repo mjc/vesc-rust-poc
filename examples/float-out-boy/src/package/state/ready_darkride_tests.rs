@@ -162,7 +162,7 @@ fn ready_darkride_timeout_prevents_same_tick_reactivation_like_float_out_boy() {
     edit_config(&mut state, |config| {
         assert!(config.set_darkride_enabled(true));
     });
-    state.upside_down_enabled = true;
+    state.upside_down_flags.enabled = true;
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,

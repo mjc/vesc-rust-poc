@@ -26,7 +26,7 @@ impl<Tag> PartialEq for AxisScalar<Tag> {
 }
 
 impl<Tag> AxisScalar<Tag> {
-    #[inline(always)]
+    #[inline]
     pub(crate) const fn new(value: f32) -> Self {
         Self(value, PhantomData)
     }

@@ -22,13 +22,13 @@ impl CurrentSmoothing {
     // at `third_party/float-out-boy/src/main.c:275-286` and `third_party/float-out-boy/src/main.c:291-298`.
     const REMOTE_CURRENT_FILTER: Self = Self(Ratio::from_ratio_const(0.05));
 
-    #[inline(always)]
+    #[inline]
     const fn retain_previous(self) -> Ratio {
         // C map: `do_rc_move` keeps the previous RC current with 95% weight.
         Ratio::from_ratio_const(1.0 - self.0.as_ratio())
     }
 
-    #[inline(always)]
+    #[inline]
     const fn accept_target(self) -> Ratio {
         // C map: `do_rc_move` keeps the new RC target with 5% weight.
         self.0
@@ -98,14 +98,14 @@ impl RemoteMove {
     ) -> Self {
         // C map: `cmd_rc_move` treats checksum failure as `current = 0`, then
         // stores READY-state RC move fields at `third_party/float-out-boy/src/main.c:1735-1758`.
-        let current = if u16::from(sum) == u16::from(time) + u16::from(current) {
+        let current = if u16::from(sum) == u16::from(time).saturating_add(u16::from(current)) {
             current
         } else {
             0
         };
 
         let target = match direction {
-            0 => RemoteCurrentTarget::new(-i16::from(current)),
+            0 => RemoteCurrentTarget::new(i16::from(current).saturating_neg()),
             _ => RemoteCurrentTarget::new(i16::from(current)),
         };
 
@@ -185,7 +185,7 @@ impl Default for RemoteControlState {
 }
 
 impl RemoteControlState {
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    #[cfg(any(test, target_arch = "arm"))]
     pub(super) fn set_input(&mut self, input: crate::domain::FloatOutBoyRealtimeRemoteInput) {
         // C map: `remote_input` stores the connected, deadbanded, optionally
         // inverted input at `third_party/float-out-boy/src/remote.c:36-68`.
@@ -294,8 +294,8 @@ impl RemoteControlState {
         if motor_erpm.abs() > Rpm::from_revolutions_per_minute(800.0) {
             self.current = zero_motor_current();
         }
-        self.steps -= 1;
-        self.counter += 1;
+        self.steps = self.steps.saturating_sub(1);
+        self.counter = self.counter.saturating_add(1);
         if self.counter == 500 && self.target.should_halve_mid_move() {
             self.target.halve();
         }
@@ -400,10 +400,10 @@ mod tests {
             assert!(
                 config
                     .set_remote_throttle_current_max(MotorCurrent::new(Current::from_amps(10.0,)))
-            )
+            );
         });
         config.edit_float_out_boy_config(|config| {
-            assert!(config.set_remote_throttle_grace_period(VescSeconds::ZERO))
+            assert!(config.set_remote_throttle_grace_period(VescSeconds::ZERO));
         });
         let config = editable_config_from_bytes(&config);
         let remote_throttle = config.remote_throttle();
@@ -419,7 +419,7 @@ mod tests {
         // Upstream `do_rc_move(d)` uses default inverted throttle and filters
         // `rc_current = old * 0.95 + target * 0.05` before requesting current
         // at `third_party/float-out-boy/src/main.c:291-298`; 10A max with 50% input requests -0.25A.
-        assert_eq!(requested_current.current().as_amps(), -0.25);
+        assert_f32_eq!(requested_current.current().as_amps(), -0.25);
     }
 
     #[test]
@@ -448,6 +448,22 @@ mod tests {
         // current/10 at `third_party/float-out-boy/src/main.c:1747-1756`; `do_rc_move` filters the first
         // READY tick by 5% at `third_party/float-out-boy/src/main.c:276-286`.
         assert!((requested_current.current().as_amps() - 0.2).abs() < 0.0001);
+    }
+
+    #[test]
+    fn active_move_saturates_its_tick_counter_instead_of_panicking() {
+        let mut remote_control = RemoteControlState {
+            steps: 1,
+            counter: u16::MAX,
+            ..RemoteControlState::default()
+        };
+
+        assert!(
+            remote_control
+                .request_active_move_current(Rpm::ZERO)
+                .is_some()
+        );
+        assert_eq!(remote_control.counter, u16::MAX);
     }
 
     #[test]

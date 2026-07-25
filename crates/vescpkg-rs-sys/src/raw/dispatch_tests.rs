@@ -23,6 +23,10 @@ use super::{
     vesc_system_time_ticks_from_seconds, vesc_thread_set_priority, wipe_nvm, write_nvm,
 };
 
+fn c_uint_from_usize(value: usize) -> c_uint {
+    c_uint::try_from(value).unwrap_or(c_uint::MAX)
+}
+
 struct SyncCounter(Cell<usize>);
 
 static LBM_STRING: [u8; 5] = *b"vesc\0";
@@ -292,7 +296,7 @@ extern "C" fn stub_lbm_enc_i(value: i32) -> u32 {
 }
 
 extern "C" fn stub_lbm_dec_char(value: u32) -> u8 {
-    value as u8
+    value.to_le_bytes().first().copied().unwrap_or(0)
 }
 
 extern "C" fn stub_lbm_enc_char(value: u8) -> u32 {
@@ -478,7 +482,10 @@ extern "C" fn stub_io_read(pin: c_uint) -> bool {
 extern "C" fn stub_io_read_analog(pin: c_uint) -> f32 {
     IO_READ_ANALOG.inc();
     LAST_PIN.set(pin.cast_signed());
-    0.25 * pin as f32
+    let Ok(pin) = u16::try_from(pin) else {
+        return f32::NAN;
+    };
+    0.25 * f32::from(pin)
 }
 
 extern "C" fn stub_mc_get_distance_abs() -> f32 {
@@ -592,14 +599,15 @@ unsafe extern "C" fn stub_read_nvm(buffer: *mut u8, len: c_uint, address: c_uint
     let Some(buffer) = (unsafe { buffer.cast::<[u8; 4]>().as_mut() }) else {
         return false;
     };
-    if len != buffer.len() as c_uint {
+    if len != c_uint_from_usize(buffer.len()) {
         return false;
     }
+    let start = address.to_le_bytes().first().copied().unwrap_or(0);
     buffer.copy_from_slice(&[
-        address as u8,
-        address.wrapping_add(1) as u8,
-        address.wrapping_add(2) as u8,
-        address.wrapping_add(3) as u8,
+        start,
+        start.wrapping_add(1),
+        start.wrapping_add(2),
+        start.wrapping_add(3),
     ]);
     true
 }
@@ -694,12 +702,12 @@ fn nvm_dispatch_reports_firmware_results_and_absence() {
     with_table(&table, || unsafe {
         let mut bytes = [0; 4];
         assert_eq!(
-            read_nvm(bytes.as_mut_ptr(), bytes.len() as c_uint, 7),
+            read_nvm(bytes.as_mut_ptr(), c_uint_from_usize(bytes.len()), 7),
             Some(true)
         );
         assert_eq!(bytes, [7, 8, 9, 10]);
         assert_eq!(
-            write_nvm(bytes.as_mut_ptr(), bytes.len() as c_uint, 7),
+            write_nvm(bytes.as_mut_ptr(), c_uint_from_usize(bytes.len()), 7),
             Some(true)
         );
         assert_eq!(wipe_nvm(), Some(true));
@@ -708,9 +716,12 @@ fn nvm_dispatch_reports_firmware_results_and_absence() {
     let table = populated_table();
     with_table(&table, || unsafe {
         let mut bytes = [0; 4];
-        assert_eq!(read_nvm(bytes.as_mut_ptr(), bytes.len() as c_uint, 0), None);
         assert_eq!(
-            write_nvm(bytes.as_mut_ptr(), bytes.len() as c_uint, 0),
+            read_nvm(bytes.as_mut_ptr(), c_uint_from_usize(bytes.len()), 0),
+            None
+        );
+        assert_eq!(
+            write_nvm(bytes.as_mut_ptr(), c_uint_from_usize(bytes.len()), 0),
             None
         );
         assert_eq!(wipe_nvm(), None);
@@ -737,7 +748,7 @@ fn lbm_add_extension_with_table_base_uses_mock_when_base_matches_firmware_addr()
         }
 
         assert!(lbm_add_extension_with_table_base(
-            VescIfAbi::BASE_ADDR.0 as u32,
+            c_uint_from_usize(VescIfAbi::BASE_ADDR.0),
             c"ext-test".as_ptr(),
             handler
         ));
@@ -755,7 +766,7 @@ fn lbm_add_extension_reports_a_missing_required_slot() {
     table.lbm_add_extension = None;
     with_table(&table, || unsafe {
         assert!(!lbm_add_extension_with_table_base(
-            VescIfAbi::BASE_ADDR.0 as u32,
+            c_uint_from_usize(VescIfAbi::BASE_ADDR.0),
             c"ext-test".as_ptr(),
             handler,
         ));
@@ -765,7 +776,7 @@ fn lbm_add_extension_reports_a_missing_required_slot() {
 #[test]
 fn lbm_value_helpers_forward_through_mock_table() {
     with_populated_table(|| unsafe {
-        assert_eq!(lbm_dec_as_float(LbmValue(9)), 4.25);
+        assert_f32_eq!(lbm_dec_as_float(LbmValue(9)), 4.25);
         assert_eq!(LAST_LBM_VALUE.get(), 9);
         assert_eq!(LBM_DEC_AS_FLOAT.get(), 1);
         assert_eq!(lbm_dec_as_i32(LbmValue(9)), 9);
@@ -838,9 +849,9 @@ fn can_status_loader_copies_firmware_owned_records() {
         let status = can_status_msg_index(3).expect("mock CAN status record");
         assert_eq!(status.id, 17);
         assert_eq!(status.rx_time, 1234);
-        assert_eq!(status.rpm, 1500.0);
-        assert_eq!(status.current, 4.5);
-        assert_eq!(status.duty, 0.25);
+        assert_f32_eq!(status.rpm, 1500.0);
+        assert_f32_eq!(status.current, 4.5);
+        assert_f32_eq!(status.duty, 0.25);
     });
 }
 
@@ -856,13 +867,13 @@ fn absent_can_status_loader_returns_none_without_calling_a_null_slot() {
 fn gnss_and_remote_loaders_copy_firmware_owned_records() {
     with_populated_table(|| unsafe {
         let gnss = gnss_snapshot().expect("mock GNSS record");
-        assert_eq!(gnss.lat, 40.015);
-        assert_eq!(gnss.lon, -105.2705);
+        assert_f64_eq!(gnss.lat, 40.015);
+        assert_f64_eq!(gnss.lon, -105.2705);
         assert_eq!(gnss.last_update, 9876);
 
         let remote = remote_state().expect("mock remote record");
-        assert_eq!(remote.js_x, -0.25);
-        assert_eq!(remote.js_y, 0.75);
+        assert_f32_eq!(remote.js_x, -0.25);
+        assert_f32_eq!(remote.js_y, 0.75);
         assert!(remote.bt_c);
         assert!(remote.is_rev);
     });
@@ -905,7 +916,7 @@ fn app_data_helpers_forward_through_mock_table() {
         assert!(!LAST_HANDLER_INSTALLED.get());
 
         let payload = [1_u8, 2, 3];
-        vesc_send_app_data(payload.as_ptr(), payload.len() as u32);
+        vesc_send_app_data(payload.as_ptr(), c_uint_from_usize(payload.len()));
         assert_eq!(SEND_APP_DATA.get(), 1);
         assert_eq!(SEND_APP_DATA_LEN.get(), 3);
     });
@@ -982,7 +993,7 @@ fn missing_required_slots_return_inert_values() {
 
     with_table(&table, || unsafe {
         vesc_sleep_us(1);
-        assert_eq!(vesc_system_time_seconds(), 0.0);
+        assert_f32_eq!(vesc_system_time_seconds(), 0.0);
     });
 }
 
@@ -1040,12 +1051,12 @@ fn synchronization_creation_handles_present_and_absent_slots() {
 #[test]
 fn runtime_motor_helpers_forward_through_mock_table() {
     with_populated_table(|| unsafe {
-        assert_eq!(mc_get_rpm(), 3210.0);
-        assert_eq!(mc_get_speed(), 12.25);
-        assert_eq!(mc_get_tot_current_filtered(), 33.5);
-        assert_eq!(mc_get_tot_current_directional_filtered(), -21.25);
-        assert_eq!(mc_get_tot_current_in_filtered(), -8.25);
-        assert_eq!(mc_get_duty_cycle_now(), -0.42);
+        assert_f32_eq!(mc_get_rpm(), 3210.0);
+        assert_f32_eq!(mc_get_speed(), 12.25);
+        assert_f32_eq!(mc_get_tot_current_filtered(), 33.5);
+        assert_f32_eq!(mc_get_tot_current_directional_filtered(), -21.25);
+        assert_f32_eq!(mc_get_tot_current_in_filtered(), -8.25);
+        assert_f32_eq!(mc_get_duty_cycle_now(), -0.42);
         assert_eq!(foc_get_id(), Some(1.5));
 
         assert_eq!(MC_GET_RPM.get(), 1);
@@ -1055,7 +1066,7 @@ fn runtime_motor_helpers_forward_through_mock_table() {
         assert_eq!(MC_GET_TOT_CURRENT_IN_FILTERED.get(), 1);
         assert_eq!(MC_GET_DUTY_CYCLE_NOW.get(), 1);
         assert_eq!(FOC_GET_ID.get(), 1);
-        assert_eq!(LAST_FOC_ID.get(), 1.5);
+        assert_f32_eq!(LAST_FOC_ID.get(), 1.5);
     });
 }
 
@@ -1086,8 +1097,8 @@ fn foc_play_tone_forwards_and_reports_optional_audio_support() {
         assert_eq!(foc_play_tone(0, 495.0, 0.6), Some(true));
         assert_eq!(FOC_PLAY_TONE.get(), 1);
         assert_eq!(LAST_FOC_TONE_CHANNEL.get(), 0);
-        assert_eq!(LAST_FOC_TONE_FREQUENCY.get(), 495.0);
-        assert_eq!(LAST_FOC_TONE_VOLTAGE.get(), 0.6);
+        assert_f32_eq!(LAST_FOC_TONE_FREQUENCY.get(), 495.0);
+        assert_f32_eq!(LAST_FOC_TONE_VOLTAGE.get(), 0.6);
     });
 
     let mut table = populated_table();
@@ -1106,7 +1117,7 @@ fn gpio_helpers_forward_through_mock_table() {
         assert!(io_set_mode(pin, mode));
         assert!(io_write(pin, 1));
         assert!(io_read(pin));
-        assert_eq!(io_read_analog(pin), 0.75);
+        assert_f32_eq!(io_read_analog(pin), 0.75);
         assert_eq!(LAST_PIN.get(), 3);
         assert_eq!(LAST_MODE.get(), 2);
         assert_eq!(LAST_LEVEL.get(), 1);
@@ -1116,21 +1127,21 @@ fn gpio_helpers_forward_through_mock_table() {
 #[test]
 fn motor_data_helpers_forward_through_mock_table() {
     with_populated_table(|| unsafe {
-        assert_eq!(mc_get_distance_abs(), 12.5);
-        assert_eq!(mc_temp_fet_filtered(), 44.0);
-        assert_eq!(mc_temp_motor_filtered(), 51.5);
-        assert_eq!(mc_get_amp_hours(false), 3.2);
-        assert_eq!(mc_get_amp_hours_charged(false), 0.8);
-        assert_eq!(mc_get_watt_hours(false), 170.0);
-        assert_eq!(mc_get_watt_hours_charged(false), 18.5);
-        assert_eq!(mc_get_battery_level(core::ptr::null_mut()), 0.72);
+        assert_f32_eq!(mc_get_distance_abs(), 12.5);
+        assert_f32_eq!(mc_temp_fet_filtered(), 44.0);
+        assert_f32_eq!(mc_temp_motor_filtered(), 51.5);
+        assert_f32_eq!(mc_get_amp_hours(false), 3.2);
+        assert_f32_eq!(mc_get_amp_hours_charged(false), 0.8);
+        assert_f32_eq!(mc_get_watt_hours(false), 170.0);
+        assert_f32_eq!(mc_get_watt_hours_charged(false), 18.5);
+        assert_f32_eq!(mc_get_battery_level(core::ptr::null_mut()), 0.72);
         assert_eq!(mc_get_odometer(), 123_456);
         assert_eq!(mc_get_fault(), 5);
         assert_eq!(
             CStr::from_ptr(mc_fault_to_string(5).unwrap()).to_bytes(),
             b"FAULT_CODE_OVER_TEMP_FET"
         );
-        assert_eq!(mc_get_input_voltage_filtered(), 84.2);
+        assert_f32_eq!(mc_get_input_voltage_filtered(), 84.2);
         assert_eq!(MC_GET_DISTANCE_ABS.get(), 1);
         assert_eq!(MC_TEMP_FET_FILTERED.get(), 1);
         assert_eq!(MC_TEMP_MOTOR_FILTERED.get(), 1);

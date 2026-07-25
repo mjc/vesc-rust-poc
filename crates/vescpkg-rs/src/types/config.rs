@@ -492,33 +492,45 @@ impl CustomConfigScaledField {
     }
 }
 
-#[expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "the predicate proves the value fits the unsigned wire field"
-)]
 fn finite_u16(value: f32) -> Option<u16> {
     if value.is_finite() && value >= 0.0 && value <= f32::from(u16::MAX) {
-        // VESC stores these settings in a C `uint16_t`. Rust's `as` conversion
-        // drops any fractional part; the condition above prevents saturation.
-        Some(value as u16)
+        u16::try_from(truncated_f32_magnitude(value)?).ok()
     } else {
         None
     }
 }
 
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "the predicate proves the value fits the signed wire field"
-)]
 fn finite_i16(value: f32) -> Option<i16> {
     if value.is_finite() && value >= f32::from(i16::MIN) && value <= f32::from(i16::MAX) {
-        // VESC stores these settings in a C `int16_t`. Rust's `as` conversion
-        // drops any fractional part; the condition above prevents saturation.
-        Some(value as i16)
+        let magnitude = i32::try_from(truncated_f32_magnitude(value.abs())?).ok()?;
+        let signed = if value.is_sign_negative() {
+            magnitude.checked_neg()?
+        } else {
+            magnitude
+        };
+        i16::try_from(signed).ok()
     } else {
         None
     }
+}
+
+fn truncated_f32_magnitude(value: f32) -> Option<u32> {
+    // An IEEE-754 `f32` stores a 24-bit significand and a base-two exponent.
+    // Rebuilding the integer from those fields gives the same truncate-toward-
+    // zero behavior as C's float-to-integer conversion without a narrowing
+    // Rust `as` cast. The callers reject negative, non-finite, and out-of-range
+    // inputs before reaching this helper. Values below 1.0 have no integer part.
+    // This helper only supports magnitudes below 2^24. Its two callers narrow to
+    // 16-bit integers first, so their largest accepted magnitude is 65,535.
+    let bits = value.to_bits();
+    let encoded_exponent = (bits >> 23) & 0xff;
+    if encoded_exponent < 127 {
+        return Some(0);
+    }
+
+    let exponent = encoded_exponent.checked_sub(127)?;
+    let significand = (bits & 0x7f_ffff) | (1 << 23);
+    significand.checked_shr(23_u32.checked_sub(exponent)?)
 }
 
 macro_rules! semantic_scaled_config_field {

@@ -46,7 +46,7 @@ pub(super) type HalfGravityZ = AxisScalar<HalfGravityZTag>;
 
 impl MeasuredGravity {
     /// C map: `third_party/float-out-boy/src/balance_filter.c:82-96`.
-    #[inline(always)]
+    #[inline]
     pub(super) fn from_acceleration(
         acceleration: ImuAcceleration,
     ) -> Option<(AccelerationG, Self)> {
@@ -83,7 +83,7 @@ impl MeasuredGravity {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn scaled(self, scale: f32) -> Self {
         // C map: `third_party/float-out-boy/src/balance_filter.c:82-96` multiplies
         // the measured gravity vector by the reciprocal norm.
@@ -94,7 +94,7 @@ impl MeasuredGravity {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn length_squared(self) -> f32 {
         // C map: `third_party/float-out-boy/src/balance_filter.c:82-96` measures the
         // accel vector magnitude before confidence and normalization.
@@ -102,7 +102,7 @@ impl MeasuredGravity {
     }
 
     /// C map: `third_party/float-out-boy/src/balance_filter.c:103-106`.
-    #[inline(always)]
+    #[inline]
     pub(super) fn error_against(self, estimated_gravity: HalfGravity) -> GravityError {
         GravityError::new(
             RollGravityError::new(
@@ -134,7 +134,7 @@ impl MeasuredGravity {
 }
 
 impl HalfGravity {
-    #[inline(always)]
+    #[inline]
     pub(super) const fn new(x: HalfGravityX, y: HalfGravityY, z: HalfGravityZ) -> Self {
         // C map: `third_party/float-out-boy/src/balance_filter.c:98-101` stores the
         // estimated gravity half-vector in firmware component order.
@@ -143,24 +143,24 @@ impl HalfGravity {
 }
 
 impl GravityError {
-    #[inline(always)]
+    #[inline]
     const fn new(roll: RollGravityError, pitch: PitchGravityError, yaw: YawGravityError) -> Self {
         // C map: `third_party/float-out-boy/src/balance_filter.c:103-106` stores
         // the gravity cross-product error components.
         Self { roll, pitch, yaw }
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) const fn roll_error(self) -> RollGravityError {
         self.roll
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) const fn pitch_error(self) -> PitchGravityError {
         self.pitch
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) const fn yaw_error(self) -> YawGravityError {
         self.yaw
     }

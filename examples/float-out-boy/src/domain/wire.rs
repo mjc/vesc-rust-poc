@@ -57,7 +57,11 @@ pub(super) fn float_out_boy_append_all_data_mode3(
 ) {
     // C map: mode >= 3 appends odometer, Ah/Wh totals, and battery level at
     // `third_party/float-out-boy/src/main.c:1381-1389`.
-    float_out_boy_push_u32(buffer, ind, mode3.odometer().as_meters() as u32);
+    float_out_boy_push_u32(
+        buffer,
+        ind,
+        crate::wire::truncating_u64_to_u32(mode3.odometer().as_meters()),
+    );
     float_out_boy_push_scaled_i16(
         buffer,
         ind,
@@ -152,13 +156,17 @@ pub(super) fn float_out_boy_push_scaled_i16(
     // C map: compact all-data uses direct scale/cast wire encodings at
     // `third_party/float-out-boy/src/main.c:1328-1395`; callers keep unit conversion
     // at this packet boundary.
-    float_out_boy_push_i16(buffer, ind, (value * scale) as i16);
+    float_out_boy_push_i16(
+        buffer,
+        ind,
+        crate::wire::saturating_trunc_f32_to_i16(value * scale),
+    );
 }
 
 pub(super) fn float_out_boy_scaled_u8(value: f32, scale: f32) -> u8 {
     // C map: packet helpers use direct scale/cast encoding for compact
     // integer fields at `third_party/float-out-boy/src/main.c:1328-1399`.
-    (value * scale) as u8
+    crate::wire::saturating_trunc_f32_to_u8(value * scale)
 }
 
 fn float_out_boy_nonnegative_scaled_u8(value: f32, scale: f32) -> u8 {
@@ -170,5 +178,5 @@ fn float_out_boy_nonnegative_scaled_u8(value: f32, scale: f32) -> u8 {
 pub(super) fn float_out_boy_offset_scaled_u8(value: f32, scale: f32, offset: f32) -> u8 {
     // C map: compact packet helpers add a fixed offset before the integer cast
     // at `third_party/float-out-boy/src/main.c:1241-1399`.
-    (value * scale + offset) as u8
+    crate::wire::saturating_trunc_f32_to_u8(value * scale + offset)
 }

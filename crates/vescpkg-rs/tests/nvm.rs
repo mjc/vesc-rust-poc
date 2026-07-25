@@ -53,3 +53,16 @@ fn nvm_reports_firmware_operation_failures() {
     );
     assert_eq!(firmware.nvm().wipe(), Err(NvmError::FirmwareFailure));
 }
+
+#[test]
+fn nvm_reports_when_firmware_does_not_expose_the_optional_slots() {
+    let firmware = FirmwareTest::new();
+    firmware.set_nvm_supported(false);
+    let mut bytes = [0; 1];
+
+    assert_eq!(
+        firmware.nvm().read(NvmOffset::new(0), &mut bytes),
+        Err(NvmError::Unsupported)
+    );
+    assert_eq!(firmware.nvm().wipe(), Err(NvmError::Unsupported));
+}

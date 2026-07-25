@@ -64,7 +64,8 @@ fn stateful_custom_config_current_callback_reads_runtime_slot_state() {
         assert!(config.set_meta_is_default(false));
     });
     assert!(FloatOutBoyCustomConfig::set_config(&mut state, ConfigBytes::new(&incoming),).is_ok());
-    let _runtime_state = install_test_float_out_boy_runtime_state(&mut state);
+    let runtime_state = install_test_float_out_boy_runtime_state(&mut state);
+    assert!(runtime_state.is_some());
 
     let current = runtime_current_config();
 
@@ -88,7 +89,8 @@ fn stateful_custom_config_current_callback_returns_none_without_runtime_state() 
 fn stateful_custom_config_set_callback_writes_runtime_state() {
     let _state_lock = lock_test_float_out_boy_config_state();
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
-    let _runtime_state = install_test_float_out_boy_runtime_state(&mut state);
+    let runtime_state = install_test_float_out_boy_runtime_state(&mut state);
+    assert!(runtime_state.is_some());
     let incoming = float_out_boy_config_with_hertz(500);
 
     assert!(runtime_set_config(&incoming));

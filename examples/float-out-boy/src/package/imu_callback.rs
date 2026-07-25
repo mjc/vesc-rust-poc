@@ -20,7 +20,7 @@ impl vescpkg_rs::ImuReadHandler for FloatOutBoyImuRead {
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 vescpkg_rs::firmware_imu_read_callback!(float_out_boy_imu_read_callback, FloatOutBoyImuRead);
 
-#[cfg(any(test, all(not(test), target_arch = "arm")))]
+#[cfg(test)]
 pub(super) fn float_out_boy_imu_callback_with_state(
     state: &mut FloatOutBoyPackageState,
     sample: ImuReadSample,

@@ -1,6 +1,7 @@
 //! Native VESC package loader helpers shared across package payloads.
 
 use crate::ffi;
+#[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 use crate::runtime::CallbackRecorder;
 use core::any::TypeId;
 
@@ -34,6 +35,7 @@ fn align_state_pointer<T>(
 fn align_state_pointer<T>(
     allocation: core::ptr::NonNull<core::ffi::c_void>,
 ) -> core::ptr::NonNull<T> {
+    // SAFETY: startup passes the allocation sized by `state_allocation_size::<T>`.
     unsafe { crate::runtime::firmware_runtime_state_pointer(allocation) }
 }
 
@@ -44,25 +46,35 @@ unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
     let Some(mut state) = core::ptr::NonNull::new(arg.cast::<T>()) else {
         return;
     };
+    #[cfg(not(target_arch = "arm"))]
     let runtime = T::runtime_store();
+    #[cfg(not(target_arch = "arm"))]
     if !runtime.begin_stop(state) {
+        return;
+    }
+    #[cfg(target_arch = "arm")]
+    if !crate::PackageStateStore::<T>::begin_stop(state) {
         return;
     }
     #[cfg(all(not(test), target_arch = "arm"))]
     {
-        runtime
-            .take_callbacks(state)
+        crate::PackageStateStore::<T>::take_callbacks(state)
             .clear_registered(&crate::bindings::RealBindings);
-        if let Some(threads) = runtime.take_threads(state) {
+        if let Some(threads) = crate::PackageStateStore::<T>::take_threads(state) {
             threads.terminate_reverse(&crate::thread::ThreadApi::new(
                 crate::thread::RealThreadBindings,
             ));
         }
     }
+    #[cfg(not(target_arch = "arm"))]
     runtime.finish_stop(state);
+    #[cfg(target_arch = "arm")]
+    crate::PackageStateStore::<T>::finish_stop(state);
+    // SAFETY: stop owns the live state exclusively after callback and thread draining.
     unsafe { state.as_mut() }.stop();
     #[cfg(all(not(test), target_arch = "arm"))]
     {
+        // SAFETY: the state was initialized in place and is now exclusively owned.
         unsafe { state.as_ptr().drop_in_place() };
         // VESC cannot unregister LispBM extensions or quiesce callbacks that
         // already loaded this ARG. Keep the allocation as a STOPPED admission
@@ -70,6 +82,7 @@ unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
     }
     #[cfg(not(target_arch = "arm"))]
     {
+        // SAFETY: host startup allocated this state with `Box::into_raw`.
         drop(unsafe { crate::rust_alloc::boxed::Box::from_raw(state.as_ptr()) });
     }
 }
@@ -83,6 +96,7 @@ unsafe extern "C" fn stop_package(_arg: *mut core::ffi::c_void) {
 
 /// Install the package stop hook into loader metadata.
 fn install_stop_hook(info: *mut ffi::LibInfo) -> Result<(), PackageStartError> {
+    // SAFETY: startup receives exclusive loader metadata for this operation.
     let Some(info) = (unsafe { crate::loader_info_mut(info) }) else {
         return Err(PackageStartError::LoaderUnavailable);
     };
@@ -150,6 +164,7 @@ impl core::error::Error for PackageStartError {}
 pub struct PackageStart<'info> {
     info: *mut crate::LoaderInfo,
     state_type: Option<TypeId>,
+    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     callback_recorder: Option<CallbackRecorder>,
     extension_image_pinned: bool,
     _info: core::marker::PhantomData<&'info mut crate::LoaderInfo>,
@@ -179,11 +194,14 @@ impl LoadedAppDataCallback {
         self,
         bindings: &B,
     ) -> Result<(), PackageStartError> {
+        // SAFETY: the handler is a static package function and remains registered
+        // until package cleanup clears it.
         let registered = unsafe { bindings.set_app_data_handler(self.handler) };
         if registered && self.recorder.record_app_data() {
             return Ok(());
         }
         if registered {
+            // SAFETY: this clears the handler installed immediately above.
             let _ = unsafe { bindings.clear_app_data_handler() };
         }
         Err(PackageStartError::AppDataHandlerRejected)
@@ -219,6 +237,7 @@ impl<'info> PackageStart<'info> {
         Self {
             info: core::ptr::from_mut(info).cast(),
             state_type: None,
+            #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
             callback_recorder: None,
             extension_image_pinned: false,
             _info: core::marker::PhantomData,
@@ -226,6 +245,7 @@ impl<'info> PackageStart<'info> {
     }
 
     fn raw_info_mut(&mut self) -> Option<&mut ffi::LibInfo> {
+        // SAFETY: `PackageStart` owns the exclusive loader borrow for `'info`.
         unsafe { crate::loader_info_mut(self.info.cast()) }
     }
 
@@ -253,8 +273,17 @@ impl<'info> PackageStart<'info> {
         &mut self,
         state_value: T,
     ) -> Result<(), PackageStartError> {
-        self.install_runtime_state_using(state_value, |state, allocation| unsafe {
-            T::runtime_store().install_owned(state, allocation)
+        self.install_runtime_state_using(state_value, |state, allocation| {
+            #[cfg(not(target_arch = "arm"))]
+            {
+                // SAFETY: this allocation owns `state` until package stop.
+                unsafe { T::runtime_store().install_owned(state, allocation) }
+            }
+            #[cfg(target_arch = "arm")]
+            {
+                // SAFETY: this allocation owns `state` until package stop.
+                unsafe { crate::PackageStateStore::<T>::install_owned(state, allocation) }
+            }
         })
     }
 
@@ -278,10 +307,7 @@ impl<'info> PackageStart<'info> {
     fn install_runtime_state_using<T: crate::PackageRuntimeState>(
         &mut self,
         state_value: T,
-        install: impl FnOnce(
-            &mut T,
-            core::ptr::NonNull<core::ffi::c_void>,
-        ) -> Result<(), crate::runtime::PackageStateInstallError>,
+        install: impl FnOnce(&mut T, core::ptr::NonNull<core::ffi::c_void>) -> bool,
     ) -> Result<(), PackageStartError> {
         let info = self
             .raw_info_mut()
@@ -295,13 +321,15 @@ impl<'info> PackageStart<'info> {
         #[cfg(target_arch = "arm")]
         let (mut state_ptr, allocation) = {
             let bytes = state_allocation_size::<T>().ok_or(PackageStartError::AllocationFailed)?;
-            let allocation = core::ptr::NonNull::new(unsafe { ffi::vesc_malloc(bytes) })
+            let allocation = core::ptr::NonNull::new(call_vesc_ffi!(vesc_malloc(bytes)))
                 .ok_or(PackageStartError::AllocationFailed)?;
             let state = align_state_pointer::<T>(allocation);
+            // SAFETY: the aligned allocation has space for one `T` and is not initialized yet.
             unsafe { state.as_ptr().write(state_value) };
             (state, allocation)
         };
         #[cfg(target_arch = "arm")]
+        // SAFETY: the state was initialized immediately above and is exclusively owned.
         let state = unsafe { state_ptr.as_mut() };
 
         #[cfg(not(target_arch = "arm"))]
@@ -312,17 +340,14 @@ impl<'info> PackageStart<'info> {
         let allocation = core::ptr::NonNull::from(&mut *state).cast();
 
         let state_ptr = core::ptr::from_mut(state);
-        if let Err(error) = install(state, allocation) {
+        if !install(state, allocation) {
             #[cfg(target_arch = "arm")]
             {
+                // SAFETY: installation failed before publishing the initialized state.
                 unsafe { state_ptr.drop_in_place() };
-                unsafe { ffi::vesc_free(allocation.as_ptr()) };
+                call_vesc_ffi!(vesc_free(allocation.as_ptr()));
             }
-            return Err(match error {
-                crate::runtime::PackageStateInstallError::AlreadyInstalled => {
-                    PackageStartError::StateAlreadyInstalled
-                }
-            });
+            return Err(PackageStartError::StateAlreadyInstalled);
         }
         info.arg = state_ptr.cast();
         info.stop_fun = Some(crate::firmware::stop_handler_for_loader(
@@ -355,12 +380,16 @@ impl<'info> PackageStart<'info> {
         // handler is published, keep its native image and runtime alive until
         // the package-wide Lisp restart resets the extension table.
         let started = started || self.extension_image_pinned;
+        #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
         let running = self
             .callback_recorder
             .map_or(started, |recorder| recorder.finish_start(started));
+        #[cfg(not(any(test, feature = "test-support", target_arch = "arm")))]
+        let running = started;
         if !running && let Some(info) = self.raw_info_mut() {
             let arg = info.arg;
             if let Some(stop) = info.stop_fun.take() {
+                // SAFETY: the loader stored this stop function together with its `ARG`.
                 unsafe { stop(arg) };
             }
         }
@@ -382,7 +411,15 @@ impl<'info> PackageStart<'info> {
         let state = self
             .raw_info_mut()
             .and_then(|info| core::ptr::NonNull::new(info.arg.cast::<T>()))?;
-        T::runtime_store().with_expected_mut(crate::runtime::ExpectedState::Exact(state), operation)
+        let expected = crate::runtime::ExpectedState::Exact(state);
+        #[cfg(not(target_arch = "arm"))]
+        {
+            T::runtime_store().with_expected_mut(expected, operation)
+        }
+        #[cfg(target_arch = "arm")]
+        {
+            crate::PackageStateStore::<T>::with_expected_mut(expected, operation)
+        }
     }
 
     /// Start and retain package-owned firmware threads.
@@ -414,14 +451,23 @@ impl<'info> PackageStart<'info> {
             .raw_info_mut()
             .and_then(|info| core::ptr::NonNull::new(info.arg.cast::<T>()))
             .ok_or(PackageStartError::LoaderUnavailable)?;
+        let expected = crate::runtime::ExpectedState::Exact(state);
+        #[cfg(not(target_arch = "arm"))]
         T::runtime_store()
-            .with_expected(crate::runtime::ExpectedState::Exact(state), |_| ())
+            .with_expected(expected, |_| ())
+            .ok_or(PackageStartError::LoaderUnavailable)?;
+        #[cfg(target_arch = "arm")]
+        crate::PackageStateStore::<T>::with_expected(expected, |_| ())
             .ok_or(PackageStartError::LoaderUnavailable)?;
         let threads = crate::thread::ThreadApi::new(&bindings)
             .spawn_threads(specs, state)
             .ok_or(PackageStartError::ThreadSpawnFailed)?;
         let mut threads = Some(threads);
-        if T::runtime_store().install_threads(state, &mut threads) {
+        #[cfg(not(target_arch = "arm"))]
+        let installed = T::runtime_store().install_threads(state, &mut threads);
+        #[cfg(target_arch = "arm")]
+        let installed = crate::PackageStateStore::<T>::install_threads(state, &mut threads);
+        if installed {
             Ok(())
         } else {
             if let Some(threads) = threads {
@@ -462,17 +508,22 @@ impl<'info> PackageStart<'info> {
             .callback_recorder
             .ok_or(PackageStartError::StateTypeMismatch)?;
         let (get, set, xml) = T::image_addresses();
-        let callbacks = unsafe {
-            (
-                core::mem::transmute::<usize, ffi::CustomConfigGet>(image.resolve_addr(get)),
-                core::mem::transmute::<usize, ffi::CustomConfigSet>(image.resolve_addr(set)),
-                core::mem::transmute::<usize, ffi::CustomConfigXml>(image.resolve_addr(xml)),
-            )
-        };
+        // SAFETY: the callback trait supplies package-local addresses for the
+        // matching C ABI function types, and `image` resolves that package.
+        let get =
+            unsafe { core::mem::transmute::<usize, ffi::CustomConfigGet>(image.resolve_addr(get)) };
+        // SAFETY: the same trait contract identifies the set callback address.
+        let set =
+            unsafe { core::mem::transmute::<usize, ffi::CustomConfigSet>(image.resolve_addr(set)) };
+        // SAFETY: the same trait contract identifies the XML callback address.
+        let xml =
+            unsafe { core::mem::transmute::<usize, ffi::CustomConfigXml>(image.resolve_addr(xml)) };
+        let callbacks = (get, set, xml);
         bindings.register_custom_config_callbacks(callbacks.0, callbacks.1, callbacks.2);
         if recorder.record_custom_config() {
             Ok(())
         } else {
+            // SAFETY: this clears the callbacks registered immediately above.
             unsafe { bindings.clear_custom_configs() };
             Err(PackageStartError::StateTypeMismatch)
         }
@@ -496,6 +547,7 @@ impl<'info> PackageStart<'info> {
         let recorder = self.callback_recorder?;
         let image = self.native_image()?;
         let address = image.resolve_addr(T::image_address());
+        // SAFETY: the callback trait supplies an address with the app-data C ABI.
         let handler = unsafe { core::mem::transmute::<usize, ffi::AppDataHandler>(address) };
         Some(LoadedAppDataCallback { handler, recorder })
     }
@@ -537,11 +589,13 @@ impl<'info> PackageStart<'info> {
             .callback_recorder
             .ok_or(PackageStartError::StateTypeMismatch)?;
         let address = image.resolve_addr(T::image_address());
+        // SAFETY: the callback trait supplies an address with the IMU callback C ABI.
         let callback = unsafe { core::mem::transmute::<usize, ffi::ImuReadCallback>(address) };
         bindings.set_imu_read_callback_handler(callback);
         if recorder.record_imu() {
             Ok(())
         } else {
+            // SAFETY: this clears the callback registered immediately above.
             unsafe { bindings.clear_imu_read_callback() };
             Err(PackageStartError::StateTypeMismatch)
         }
@@ -585,6 +639,7 @@ impl<'info> PackageStart<'info> {
             .ok_or(PackageStartError::StateTypeMismatch)?;
         self.register_stateful_custom_config_with_bindings::<B, C, LEN>(bindings)?;
         if let Err(error) = callback.register_with_bindings(bindings) {
+            // SAFETY: this clears the callbacks registered by the preceding call.
             unsafe { bindings.clear_custom_configs() };
             if let Some(recorder) = self.callback_recorder {
                 let _ = recorder.clear_custom_config();
@@ -669,6 +724,7 @@ impl<'info> PackageStart<'info> {
 ///
 /// `info` must be null or point to loader metadata that remains valid for package startup.
 pub unsafe fn __package_start_from_raw<'info>(info: *mut crate::LoaderInfo) -> PackageStart<'info> {
+    // SAFETY: this entrypoint forwards the loader metadata contract unchanged.
     unsafe { PackageStart::from_raw(info) }
 }
 
@@ -1084,9 +1140,7 @@ mod tests {
         };
         let mut start = super::PackageStart::from_lib_info(&mut info);
 
-        let result = start.install_runtime_state_using(FailedState, |_, _| {
-            Err(crate::runtime::PackageStateInstallError::AlreadyInstalled)
-        });
+        let result = start.install_runtime_state_using(FailedState, |_, _| false);
 
         assert_eq!(result, Err(PackageStartError::StateAlreadyInstalled));
         assert_eq!(FAILED_STATE_DROPS.load(Ordering::Relaxed), 1);

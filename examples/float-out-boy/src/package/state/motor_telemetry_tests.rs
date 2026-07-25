@@ -317,5 +317,5 @@ fn darkride_traction_loss_refreshes_like_float_out_boy_loop() {
         crate::domain::FloatOutBoySetpointAdjustment::None
     );
     assert_eq!(state.wheelslip_ticks, expected_wheelslip_ticks);
-    assert_eq!(firmware.commanded_current().current().as_amps(), 0.0);
+    assert_f32_eq!(firmware.commanded_current().current().as_amps(), 0.0);
 }

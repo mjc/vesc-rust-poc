@@ -8,6 +8,13 @@ use vescpkg_rs::prelude::{
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{MotorOutput, MotorTelemetry};
 
+const MAX_WIRE_FAULT: FirmwareFaultCode = FirmwareFaultCode::from_wire_code(u8::MAX);
+
+#[test]
+fn firmware_fault_code_can_be_built_at_compile_time() {
+    assert!(!MAX_WIRE_FAULT.is_none());
+}
+
 #[test]
 fn firmware_fault_name_trims_the_vesc_prefix_without_allocating() {
     let firmware = FirmwareTest::new().with_firmware_fault(FirmwareFaultCode::from_wire_code(5));
@@ -32,7 +39,7 @@ fn foc_haptic_tone_uses_typed_audio_values() {
     assert_eq!(firmware.foc_tone_command_count(), 1);
     assert_eq!(
         firmware.commanded_foc_tone_channel(),
-        AudioChannel::try_new(0).unwrap()
+        AudioChannel::try_new(0).ok()
     );
     assert_eq!(
         firmware.commanded_foc_tone_frequency(),
@@ -42,6 +49,13 @@ fn foc_haptic_tone_uses_typed_audio_values() {
         firmware.commanded_foc_tone_voltage(),
         AudioVoltage::new(Voltage::from_volts(0.25))
     );
+}
+
+#[test]
+fn typed_audio_frequency_exposes_hertz_without_erasing_its_domain() {
+    let frequency = AudioFrequency::new(Frequency::from_hertz(440.0));
+
+    assert!((frequency.as_hertz() - 440.0).abs() < f32::EPSILON);
 }
 
 #[test]

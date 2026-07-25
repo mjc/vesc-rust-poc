@@ -101,6 +101,11 @@ macro_rules! frequency_type {
             pub const fn frequency(self) -> Frequency {
                 self.0
             }
+
+            /// Return this typed frequency in hertz.
+            pub const fn as_hertz(self) -> f32 {
+                self.0.as_hertz()
+            }
         }
     };
 }
@@ -222,7 +227,7 @@ impl FirmwareFaultCode {
     /// Build a firmware fault-code token from its byte wire representation.
     #[must_use]
     pub const fn from_wire_code(code: u8) -> Self {
-        Self(code as i32)
+        Self(i32::from_le_bytes([code, 0, 0, 0]))
     }
 
     /// Return true when the firmware reports no active fault.

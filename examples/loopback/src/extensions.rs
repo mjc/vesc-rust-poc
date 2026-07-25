@@ -12,7 +12,7 @@ const PACKAGE_EXTENSION_COUNT: usize = 1;
 pub const PACKAGE_EXTENSION_NAMES: [ExtensionName; PACKAGE_EXTENSION_COUNT] =
     [EXT_RUST_PROBE_DIAG_NAME];
 
-const _: [(); 1] = [(); (PACKAGE_EXTENSION_COUNT == 1) as usize];
+const _: [(); 1] = [(); if PACKAGE_EXTENSION_COUNT == 1 { 1 } else { 0 }];
 
 struct RustProbeDiag;
 
