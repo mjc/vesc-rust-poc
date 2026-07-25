@@ -521,6 +521,14 @@ fn vesc_if_capabilities_require_the_complete_motor_surface() {
     words[VescIfAbi::MC_GET_RPM.slot_index()] = 0;
     let missing = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
     assert_eq!(missing.motor().unwrap_err().slot(), VescIfAbi::MC_GET_RPM);
+
+    words[VescIfAbi::MC_GET_RPM.slot_index()] = 1;
+    words[VescIfAbi::MC_SELECT_MOTOR_THREAD.slot_index()] = 0;
+    let missing_selector = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
+    assert_eq!(
+        missing_selector.motor().unwrap_err().slot(),
+        VescIfAbi::MC_SELECT_MOTOR_THREAD
+    );
 }
 
 #[test]

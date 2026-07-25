@@ -65,4 +65,12 @@ fn package_motor_construction_reports_a_missing_required_slot() {
             .map(|error| error.slot()),
         Some(VescIfAbi::MC_SET_CURRENT)
     );
+
+    words[VescIfAbi::MC_SET_CURRENT.slot_index()] = 1;
+    words[VescIfAbi::MC_SELECT_MOTOR_THREAD.slot_index()] = 0;
+    let capabilities = FirmwareCapabilities::new(VescIfPresence::from_words(&words));
+    assert_eq!(
+        capabilities.motor().err().map(|error| error.slot()),
+        Some(VescIfAbi::MC_SELECT_MOTOR_THREAD)
+    );
 }

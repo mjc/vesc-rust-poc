@@ -381,6 +381,7 @@ impl VescIfCapabilities {
             VescIfAbi::MC_GET_DISTANCE,
             VescIfAbi::MC_DCCAL_DONE,
             VescIfAbi::MC_GET_MOTOR_THREAD,
+            VescIfAbi::MC_SELECT_MOTOR_THREAD,
             VescIfAbi::TIMEOUT_RESET,
             VescIfAbi::MC_SET_CURRENT_OFF_DELAY,
             VescIfAbi::MC_SET_CURRENT,
