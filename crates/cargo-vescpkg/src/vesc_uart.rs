@@ -84,16 +84,16 @@ pub fn encode_packet(payload: &[u8]) -> Vec<u8> {
 
     if len <= 255 {
         packet.push(START_8B);
-        packet.push(u8::try_from(len).expect("short UART length fits u8"));
+        packet.push(u8::try_from(len & 0xff).expect("short UART length fits u8"));
     } else if len <= 65535 {
         packet.push(START_16B);
-        packet.push(u8::try_from(len >> 8).expect("UART length high byte fits u8"));
-        packet.push(u8::try_from(len).expect("UART length low byte fits u8"));
+        packet.push(u8::try_from((len >> 8) & 0xff).expect("UART length high byte fits u8"));
+        packet.push(u8::try_from(len & 0xff).expect("UART length low byte fits u8"));
     } else {
         packet.push(START_24B);
-        packet.push(u8::try_from(len >> 16).expect("UART length high byte fits u8"));
-        packet.push(u8::try_from(len >> 8).expect("UART length middle byte fits u8"));
-        packet.push(u8::try_from(len).expect("UART length low byte fits u8"));
+        packet.push(u8::try_from((len >> 16) & 0xff).expect("UART length high byte fits u8"));
+        packet.push(u8::try_from((len >> 8) & 0xff).expect("UART length middle byte fits u8"));
+        packet.push(u8::try_from(len & 0xff).expect("UART length low byte fits u8"));
     }
 
     packet.extend_from_slice(payload);
@@ -181,7 +181,7 @@ fn try_decode_packet(buffer: &[u8]) -> DecodeOutcome {
 
 #[cfg(test)]
 mod tests {
-    use super::{PacketDecoder, crc16, encode_packet};
+    use super::{PacketDecoder, START_16B, START_24B, crc16, encode_packet};
 
     #[test]
     fn encodes_and_decodes_short_packets() {
@@ -200,6 +200,24 @@ mod tests {
         let mut decoder = PacketDecoder::default();
         let packets = decoder.push(&packet).expect("packets");
         assert_eq!(packets, vec![payload.to_vec()]);
+    }
+
+    #[test]
+    fn encodes_and_decodes_extended_packet_lengths() {
+        for (length, header) in [
+            (256, vec![START_16B, 1, 0]),
+            (65_536, vec![START_24B, 1, 0, 0]),
+        ] {
+            let payload = vec![0x5a; length];
+            let packet = encode_packet(&payload);
+            assert_eq!(&packet[..header.len()], &header);
+
+            let mut decoder = PacketDecoder::default();
+            assert_eq!(
+                decoder.push(&packet).expect("extended packet"),
+                vec![payload]
+            );
+        }
     }
 
     #[test]
