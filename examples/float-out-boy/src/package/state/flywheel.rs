@@ -177,10 +177,8 @@ impl FloatOutBoyPackageState {
         }
         self.ride_flags.flywheel_abort = false;
 
-        let updated = self
-            .serialized_config
-            .editor()
-            .apply_flywheel_overrides(start.config);
+        let mut config = self.serialized_config;
+        let updated = config.editor().apply_flywheel_overrides(start.config);
         if !updated {
             // A failed write means the in-memory configuration layout is not the
             // layout this package was built for. Reload the saved configuration
@@ -189,6 +187,7 @@ impl FloatOutBoyPackageState {
             self.read_config_from_eeprom();
             return;
         }
+        self.replace_active_config(&config);
         self.flywheel_runtime_config = Some(start.config);
     }
 
