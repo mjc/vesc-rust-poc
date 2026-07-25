@@ -126,7 +126,7 @@ fn firmware_audio_reports_absent_optional_slots() {
 }
 
 #[test]
-fn firmware_audio_sample_tables_are_exclusive_per_channel() {
+fn firmware_audio_sample_table_lease_is_global() {
     static FIRST: [f32; 2] = [0.1, 0.2];
     static SECOND: [f32; 2] = [0.3, 0.4];
     let firmware = FirmwareTest::new();
@@ -141,15 +141,34 @@ fn firmware_audio_sample_tables_are_exclusive_per_channel() {
         audio.set_sample_table(channel, &SECOND),
         Err(vescpkg_rs::FocAudioError::Busy)
     ));
-    let other = audio
-        .set_sample_table(other_channel, &SECOND)
-        .expect("independent channel lease");
-    drop(other);
-    drop(first);
+    assert!(matches!(
+        audio.set_sample_table(other_channel, &SECOND),
+        Err(vescpkg_rs::FocAudioError::Busy)
+    ));
 
+    drop(first);
     audio
         .set_sample_table(channel, &SECOND)
         .expect("channel released with its lease");
+}
+
+#[test]
+fn firmware_audio_failed_sample_table_registration_releases_lease() {
+    static SAMPLES: [f32; 2] = [0.1, 0.2];
+    let firmware = FirmwareTest::new();
+    let channel = AudioChannel::try_new(1).unwrap();
+    firmware.set_audio_available(false);
+
+    assert!(matches!(
+        firmware.audio().set_sample_table(channel, &SAMPLES),
+        Err(vescpkg_rs::FocAudioError::Unavailable)
+    ));
+
+    firmware.set_audio_available(true);
+    firmware
+        .audio()
+        .set_sample_table(channel, &SAMPLES)
+        .expect("failed registration released the lease");
 }
 
 #[test]
