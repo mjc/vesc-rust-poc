@@ -7,7 +7,7 @@ copy of the deleted legacy builder's output.
 
 The current release artifacts produced by `cargo vescpkg build` are:
 
-These values were regenerated from SDK commit `783730bb` on the ARM32 package
+These values were regenerated from SDK commit `ba71b611` on the ARM32 package
 path; they are an artifact baseline, not a claim of byte identity with
 `origin/main`.
 
