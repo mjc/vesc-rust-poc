@@ -111,6 +111,7 @@ pub(crate) const fn truncating_u64_to_u32(value: u64) -> u32 {
     u32::from_le_bytes([byte0, byte1, byte2, byte3])
 }
 
+#[cfg(test)]
 pub(crate) const fn saturating_usize_to_u8(value: usize) -> u8 {
     // Packet string lengths are one byte in the upstream C format. Saturating
     // prevents a malformed or future oversized field from wrapping its length.

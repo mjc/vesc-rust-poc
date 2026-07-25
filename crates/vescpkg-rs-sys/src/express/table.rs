@@ -18,7 +18,10 @@ pub enum ExpressSlotKind {
 /// share the STM32 slot manifest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(usize)]
-#[allow(missing_docs)]
+#[expect(
+    missing_docs,
+    reason = "slot names are documented by the pinned Express header"
+)]
 pub enum ExpressSlot {
     IfVersion = 0,
     LbmAddExtension,

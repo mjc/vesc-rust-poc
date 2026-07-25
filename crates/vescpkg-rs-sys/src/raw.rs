@@ -1,5 +1,16 @@
 #![cfg_attr(test, allow(dead_code))]
-#![allow(clippy::missing_safety_doc, clippy::useless_transmute)]
+#![expect(
+    clippy::pedantic,
+    clippy::as_conversions,
+    clippy::borrow_as_ptr,
+    clippy::cast_possible_truncation,
+    clippy::expect_used,
+    clippy::missing_safety_doc,
+    clippy::multiple_unsafe_ops_per_block,
+    clippy::undocumented_unsafe_blocks,
+    clippy::useless_transmute,
+    reason = "raw ABI wrappers mirror C entrypoints"
+)]
 
 use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescIfPresence, c_vesc_if};
 use core::ffi::{c_char, c_int, c_uchar, c_uint, c_void};
@@ -94,11 +105,10 @@ pub type ImuReadCallback = unsafe extern "C" fn(*mut f32, *mut f32, *mut f32, f3
 /// making the C header the single source of field order and signatures.
 pub type VescIf = crate::bindgen::vesc_c_if;
 
-#[allow(
+#[expect(
     clippy::type_complexity,
-    clippy::wildcard_imports,
     non_snake_case,
-    unused_imports
+    reason = "generated slot names preserve the C ABI surface"
 )]
 mod generated_slots {
     use crate::bindgen::*;

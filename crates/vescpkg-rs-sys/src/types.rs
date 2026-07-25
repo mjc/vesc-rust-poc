@@ -1,3 +1,8 @@
+#![expect(
+    clippy::must_use_candidate,
+    reason = "transparent ABI wrappers expose intentional scalar accessors"
+)]
+
 use core::ffi::c_void;
 
 macro_rules! transparent_value_type {
@@ -229,25 +234,40 @@ pub struct FaultCode(pub i32);
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "ABI callback wrappers are exposed only through generated bindings"
+)]
 pub(crate) struct CustomConfigCallback(pub core::ptr::NonNull<c_void>);
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "ABI callback wrappers are exposed only through generated bindings"
+)]
 pub(crate) struct TerminalCommandName<'a>(pub &'a core::ffi::CStr);
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "ABI callback wrappers are exposed only through generated bindings"
+)]
 pub(crate) struct TerminalHelp<'a>(pub &'a core::ffi::CStr);
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "ABI callback wrappers are exposed only through generated bindings"
+)]
 pub(crate) struct TerminalArgNames<'a>(pub &'a [u8]);
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "ABI callback wrappers are exposed only through generated bindings"
+)]
 pub(crate) struct TerminalCallback(pub core::ptr::NonNull<c_void>);

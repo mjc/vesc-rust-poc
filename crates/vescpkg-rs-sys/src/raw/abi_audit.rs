@@ -1,3 +1,8 @@
+#![expect(
+    clippy::too_many_lines,
+    reason = "ABI audit keeps the complete pinned slot inventory in one test"
+)]
+
 use std::{
     mem::size_of,
     path::PathBuf,

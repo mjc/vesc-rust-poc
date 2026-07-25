@@ -23,7 +23,7 @@ impl LbmExtension for RustProbeDiag {
     }
 }
 
-/// Port of the official `examples/extension` LispBM callback.
+/// Port of the official `examples/extension` `LispBM` callback.
 struct OfficialExtTest;
 
 impl LbmExtension for OfficialExtTest {

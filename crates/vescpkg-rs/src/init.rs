@@ -57,10 +57,6 @@ unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
         return;
     }
     crate::runtime::release_callback_registrations();
-    #[cfg(all(feature = "test-support", not(target_arch = "arm")))]
-    crate::runtime::release_callback_registrations();
-    #[cfg(all(feature = "test-support", not(target_arch = "arm")))]
->>>>>>> 2220b034 (feat: guard package-global callbacks)
     crate::gpio::reset_leases();
     #[cfg(target_arch = "arm")]
     unsafe {
@@ -221,10 +217,6 @@ impl LoadedAppDataCallback {
         if !crate::runtime::claim_app_data_registration() {
             return Err(PackageStartError::AppDataHandlerAlreadyRegistered);
         }
-        if !crate::runtime::claim_app_data_registration() {
-            return Err(PackageStartError::AppDataHandlerAlreadyRegistered);
-        }
->>>>>>> 2220b034 (feat: guard package-global callbacks)
         let registered = unsafe { bindings.set_app_data_handler(self.handler) };
         if registered && self.recorder.record_app_data() {
             return Ok(());

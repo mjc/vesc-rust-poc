@@ -4,6 +4,15 @@
 //! command in `src/main.c`. This module owns only the external protocol seam;
 //! internal LED DMA rendering remains a separate runtime slice.
 
+#![expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::indexing_slicing,
+    clippy::verbose_bit_mask,
+    reason = "LCM wire encoding uses fixed-width protocol offsets"
+)]
+
 use super::FloatOutBoyPackageState;
 use super::float_out_boy_command_payload;
 use crate::domain::{

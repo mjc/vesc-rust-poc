@@ -26,7 +26,6 @@ pub fn append_u32(buffer: &mut [u8], index: &mut usize, value: u32) -> Option<()
 
 /// Append one big-endian signed 32-bit integer.
 #[must_use]
-#[inline(always)]
 pub fn append_i32(buffer: &mut [u8], index: &mut usize, value: i32) -> Option<()> {
     append_be(buffer, index, value.to_be_bytes())
 }
@@ -39,21 +38,18 @@ pub fn append_float32_auto(buffer: &mut [u8], index: &mut usize, value: f32) -> 
 
 /// Read one big-endian unsigned 32-bit integer.
 #[must_use]
-#[inline(always)]
 pub fn read_u32(buffer: &[u8], index: &mut usize) -> Option<u32> {
     read_be(buffer, index).map(u32::from_be_bytes)
 }
 
 /// Read one big-endian signed 32-bit integer.
 #[must_use]
-#[inline(always)]
 pub fn read_i32(buffer: &[u8], index: &mut usize) -> Option<i32> {
     read_be(buffer, index).map(i32::from_be_bytes)
 }
 
 /// Read VESC's automatic 32-bit float representation.
 #[must_use]
-#[inline(always)]
 pub fn read_float32_auto(buffer: &[u8], index: &mut usize) -> Option<f32> {
     read_u32(buffer, index).map(f32::from_bits)
 }
@@ -65,12 +61,10 @@ fn append_bytes(buffer: &mut [u8], index: &mut usize, bytes: &[u8]) -> Option<()
     Some(())
 }
 
-#[inline(always)]
 fn append_be<const N: usize>(buffer: &mut [u8], index: &mut usize, bytes: [u8; N]) -> Option<()> {
     append_bytes(buffer, index, &bytes)
 }
 
-#[inline(always)]
 fn read_be<const N: usize>(buffer: &[u8], index: &mut usize) -> Option<[u8; N]> {
     let end = index.checked_add(N)?;
     let bytes = buffer.get(*index..end)?;

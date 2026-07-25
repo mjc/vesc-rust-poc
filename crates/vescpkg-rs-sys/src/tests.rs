@@ -1,4 +1,5 @@
-#[allow(unused_imports)]
+#![allow(clippy::float_cmp, unused_imports)]
+
 use crate::{
     AbiError, AppDataLen, AppDataPacket, CanBaud, CanControllerId, CanFrameLen, CanPayload,
     CanStatusIndex, CfgFloat, CfgInt, CfgParam, CommandPacket, ConfigPayload, ConfigSetResult,

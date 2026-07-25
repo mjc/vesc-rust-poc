@@ -128,14 +128,13 @@ impl FloatOutBoyPackageState {
             FloatOutBoyAllDataRequest::parse(bytes),
             telemetry.firmware_fault(),
         ) {
-            (Err(_), _) => false,
+            (Err(_), _) | (Ok(_), FirmwareFault::Unknown) => false,
             (Ok(_), FirmwareFault::Active(fault)) => {
                 let response = FloatOutBoyAllDataResponse::fault(fault.wire_code());
                 send(response.as_bytes())
             }
             // Preserve the fail-closed behavior for an ABI value this SDK
             // cannot safely represent in Float Out Boy's wire format.
-            (Ok(_), FirmwareFault::Unknown) => false,
             (Ok(request), _) => {
                 let mode = request.mode();
                 let payloads =
@@ -292,7 +291,7 @@ mod tests {
 
         let name = b"TEST_FAULT";
         assert_eq!(&packet[..11], &[101, 35, 0, 0, 0, 1, 0, 0, 0, 0, 5]);
-        assert_eq!(packet[11], name.len() as u8);
+        assert_eq!(packet[11], u8::try_from(name.len()).unwrap_or(u8::MAX));
         assert_eq!(&packet[12..22], name);
         assert_eq!(&packet[22..31], &[1, 0, 0, 0, 42, 1, 1, 5, 10]);
         assert_eq!(&packet[31..], name);

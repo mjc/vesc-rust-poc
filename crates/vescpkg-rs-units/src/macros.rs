@@ -20,6 +20,7 @@ macro_rules! scalar_unit {
             }
 
             /// Scale this value without converting it to its primitive representation.
+            #[must_use]
             #[inline(always)]
             pub const fn scaled_by(self, factor: f32) -> Self {
                 Self(self.0 * factor)

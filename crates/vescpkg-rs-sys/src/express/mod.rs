@@ -6,6 +6,17 @@
 //! loader. Typed callable wrappers can build on this boundary without mixing
 //! slot order or target pointers with STM32.
 
+#![expect(
+    clippy::pedantic,
+    clippy::arithmetic_side_effects,
+    clippy::as_conversions,
+    clippy::borrow_as_ptr,
+    clippy::cast_possible_truncation,
+    clippy::indexing_slicing,
+    clippy::undocumented_unsafe_blocks,
+    reason = "Express ABI glue mirrors the pinned native C surface"
+)]
+
 mod container;
 mod flat;
 mod functions;

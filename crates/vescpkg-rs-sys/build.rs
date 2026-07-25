@@ -181,7 +181,10 @@ fn is_function_type(ty: &Type, function_aliases: &HashSet<String>) -> bool {
     }
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "generated manifest keeps all slot metadata together"
+)]
 fn generated_rust(slots: &[SlotDeclaration]) -> String {
     let mut rust = String::new();
     let callable_count = slots
@@ -291,7 +294,6 @@ fn generated_rust(slots: &[SlotDeclaration]) -> String {
 
     rust.push_str("pub(crate) const SLOTS: [crate::VescIfSlot; FIELD_COUNT] = ALL_SLOTS;\n\n");
 
-    rust.push_str("#[allow(clippy::too_many_lines)]\n");
     rust.push_str(
         "pub(crate) fn presence(table: &crate::bindgen::vesc_c_if) -> crate::VescIfPresence {\n",
     );

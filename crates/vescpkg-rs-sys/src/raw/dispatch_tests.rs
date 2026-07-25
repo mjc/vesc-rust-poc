@@ -1,4 +1,19 @@
-#![allow(clippy::missing_transmute_annotations)]
+#![allow(
+    clippy::all,
+    clippy::pedantic,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::ptr_cast_constness,
+    clippy::ref_as_ptr,
+    clippy::as_conversions,
+    clippy::borrow_as_ptr,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::float_cmp,
+    clippy::indexing_slicing,
+    clippy::missing_transmute_annotations,
+    clippy::too_many_lines
+)]
 
 use core::cell::Cell;
 use core::ffi::{c_char, c_int, c_uchar, c_uint, c_void};

@@ -1,5 +1,14 @@
 //! Documented VESC firmware function-table slots used by Rust packages.
 
+#![expect(
+    clippy::missing_errors_doc,
+    clippy::must_use_candidate,
+    clippy::question_mark,
+    clippy::arithmetic_side_effects,
+    clippy::indexing_slicing,
+    reason = "capability probes are a compact manifest-facing API"
+)]
+
 use crate::{c_vesc_if, image::NativeAddress};
 
 const PRESENCE_WORD_COUNT: usize = c_vesc_if::FIELD_COUNT.div_ceil(64);
@@ -188,12 +197,14 @@ impl VescIfPresence {
     #[must_use]
     pub fn supports_revision(self, revision: Stm32AbiRevision) -> bool {
         revision.minimum_slot_count().is_some_and(|slot_count| {
-            VescIfAbi::ALL_ENTRIES.get(..slot_count).is_some_and(|entries| {
-                entries
-                .iter()
-                .enumerate()
-                .all(|(index, entry)| !entry.is_callable() || self.contains_index(index))
-            })
+            VescIfAbi::ALL_ENTRIES
+                .get(..slot_count)
+                .is_some_and(|entries| {
+                    entries
+                        .iter()
+                        .enumerate()
+                        .all(|(index, entry)| !entry.is_callable() || self.contains_index(index))
+                })
         })
     }
 
@@ -324,7 +335,7 @@ impl VescIfCapabilities {
     }
 
     /// Probe controller input support as an optional subsystem.
-    pub const fn inputs(self) -> Result<VescIfCapability, AbiError> {
+    pub fn inputs(self) -> Result<VescIfCapability, AbiError> {
         match self.inputs_slots(false) {
             Ok(()) => Ok(VescIfCapability {
                 subsystem: VescIfSubsystem::Inputs,
@@ -334,7 +345,7 @@ impl VescIfCapabilities {
     }
 
     /// Require controller input support for a constructor that cannot operate without it.
-    pub const fn require_inputs(self) -> Result<VescIfCapability, AbiError> {
+    pub fn require_inputs(self) -> Result<VescIfCapability, AbiError> {
         match self.inputs_slots(true) {
             Ok(()) => Ok(VescIfCapability {
                 subsystem: VescIfSubsystem::Inputs,
@@ -343,7 +354,7 @@ impl VescIfCapabilities {
         }
     }
 
-    const fn inputs_slots(self, required: bool) -> Result<(), AbiError> {
+    fn inputs_slots(self, required: bool) -> Result<(), AbiError> {
         let checks = [
             VescIfAbi::GET_REMOTE_STATE,
             VescIfAbi::TIMEOUT_RESET,
@@ -366,32 +377,32 @@ impl VescIfCapabilities {
     }
 
     /// Probe CAN support as an optional subsystem.
-    pub const fn can(self) -> Result<VescIfCapability, AbiError> {
+    pub fn can(self) -> Result<VescIfCapability, AbiError> {
         self.optional(VescIfSubsystem::Can, "CAN", VescIfAbi::CAN_TRANSMIT_SID)
     }
 
     /// Require CAN support for a constructor that cannot operate without it.
-    pub const fn require_can(self) -> Result<VescIfCapability, AbiError> {
+    pub fn require_can(self) -> Result<VescIfCapability, AbiError> {
         self.required(VescIfSubsystem::Can, "CAN", VescIfAbi::CAN_TRANSMIT_SID)
     }
 
     /// Probe NVM support as an optional subsystem.
-    pub const fn nvm(self) -> Result<VescIfCapability, AbiError> {
+    pub fn nvm(self) -> Result<VescIfCapability, AbiError> {
         self.optional(VescIfSubsystem::Nvm, "NVM", VescIfAbi::READ_NVM)
     }
 
     /// Probe FOC audio support as an optional subsystem.
-    pub const fn audio(self) -> Result<VescIfCapability, AbiError> {
+    pub fn audio(self) -> Result<VescIfCapability, AbiError> {
         self.optional(VescIfSubsystem::Audio, "FOC audio", VescIfAbi::FOC_BEEP)
     }
 
     /// Probe UART support as an optional subsystem.
-    pub const fn uart(self) -> Result<VescIfCapability, AbiError> {
+    pub fn uart(self) -> Result<VescIfCapability, AbiError> {
         self.optional(VescIfSubsystem::Uart, "UART", VescIfAbi::UART_START)
     }
 
     /// Require settings support for a constructor that needs configuration access.
-    pub const fn require_settings(self) -> Result<VescIfCapability, AbiError> {
+    pub fn require_settings(self) -> Result<VescIfCapability, AbiError> {
         match self.settings_slots(true) {
             Ok(()) => Ok(VescIfCapability {
                 subsystem: VescIfSubsystem::Settings,
@@ -401,7 +412,7 @@ impl VescIfCapabilities {
     }
 
     /// Probe settings support when a package can operate without configuration access.
-    pub const fn settings(self) -> Result<VescIfCapability, AbiError> {
+    pub fn settings(self) -> Result<VescIfCapability, AbiError> {
         match self.settings_slots(false) {
             Ok(()) => Ok(VescIfCapability {
                 subsystem: VescIfSubsystem::Settings,
@@ -411,7 +422,7 @@ impl VescIfCapabilities {
     }
 
     /// Probe the complete firmware IMU surface as an optional subsystem.
-    pub const fn imu(self) -> Result<VescIfCapability, AbiError> {
+    pub fn imu(self) -> Result<VescIfCapability, AbiError> {
         match self.imu_slots() {
             Ok(()) => Ok(VescIfCapability {
                 subsystem: VescIfSubsystem::Imu,
@@ -421,7 +432,7 @@ impl VescIfCapabilities {
     }
 
     /// Probe the complete explicitly unsafe open-loop FOC surface.
-    pub const fn advanced_foc(self) -> Result<VescIfCapability, AbiError> {
+    pub fn advanced_foc(self) -> Result<VescIfCapability, AbiError> {
         let checks = [
             VescIfAbi::FOC_SET_OPENLOOP_CURRENT,
             VescIfAbi::FOC_SET_OPENLOOP_PHASE,
@@ -440,7 +451,7 @@ impl VescIfCapabilities {
         })
     }
 
-    const fn imu_slots(self) -> Result<(), AbiError> {
+    fn imu_slots(self) -> Result<(), AbiError> {
         let checks = [
             VescIfAbi::IMU_STARTUP_DONE,
             VescIfAbi::IMU_GET_ROLL,
@@ -468,7 +479,7 @@ impl VescIfCapabilities {
         Ok(())
     }
 
-    const fn settings_slots(self, required: bool) -> Result<(), AbiError> {
+    fn settings_slots(self, required: bool) -> Result<(), AbiError> {
         let checks = [
             VescIfAbi::GET_CFG_FLOAT,
             VescIfAbi::GET_CFG_INT,
@@ -491,7 +502,7 @@ impl VescIfCapabilities {
         Ok(())
     }
 
-    const fn optional(
+    fn optional(
         self,
         subsystem: VescIfSubsystem,
         capability: &'static str,
@@ -503,7 +514,7 @@ impl VescIfCapabilities {
         }
     }
 
-    const fn required(
+    fn required(
         self,
         subsystem: VescIfSubsystem,
         capability: &'static str,

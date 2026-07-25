@@ -1020,7 +1020,7 @@ fn controller_input_selects_connected_uart_or_ppm_and_applies_deadband_like_floa
 
     state.refresh_controller_input(firmware.inputs());
 
-    assert_eq!(state.remote_control.input().ratio().as_ratio(), 0.0);
+    assert!(state.remote_control.input().ratio().as_ratio().abs() < f32::EPSILON);
 }
 
 #[test]

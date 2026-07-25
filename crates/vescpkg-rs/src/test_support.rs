@@ -1,6 +1,7 @@
 //! Host-side fake firmware bindings for unit tests in dependent crates.
 
 #![allow(clippy::cast_precision_loss)]
+#![allow(deprecated)]
 use core::cell::Cell;
 use core::ffi::{CStr, c_char};
 
@@ -283,26 +284,6 @@ impl FirmwareTest {
         crate::test_ffi::set_foc_audio_available(available);
     }
 
-    /// Return the number of FOC tone commands accepted by the fake firmware.
-    pub fn foc_tone_command_count(&self) -> usize {
-        crate::test_ffi::foc_tone_command_count()
-    }
-
-    /// Return the last accepted FOC tone frequency.
-    pub fn commanded_foc_tone_frequency(&self) -> crate::AudioFrequency {
-        crate::test_ffi::commanded_foc_tone_frequency()
-    }
-
-    /// Return the last accepted FOC tone voltage.
-    pub fn commanded_foc_tone_voltage(&self) -> crate::AudioVoltage {
-        crate::test_ffi::commanded_foc_tone_voltage()
-    }
-
-    /// Configure the fake PPM input sample and age.
-    pub fn set_ppm_input(&self, input: crate::PpmInput, age: crate::PpmAge) {
-        crate::test_ffi::set_ppm_input(input, age);
-    }
-
     /// Toggle whether the fake firmware exposes the PPM value slot.
     pub fn set_ppm_available(&self, available: bool) {
         crate::test_ffi::set_ppm_available(available);
@@ -316,11 +297,6 @@ impl FirmwareTest {
     /// Toggle whether the fake firmware exposes the output-disabled slot.
     pub fn set_output_disabled_available(&self, available: bool) {
         crate::test_ffi::set_output_disabled_available(available);
-    }
-
-    /// Configure the fake UART remote input sample and age.
-    pub fn set_remote_input(&self, input: crate::JoystickY, age: crate::RemoteAge) {
-        crate::test_ffi::set_remote_input(input, age);
     }
 
     /// Toggle whether the fake firmware exposes optional open-loop FOC slots.

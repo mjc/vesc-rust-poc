@@ -37,28 +37,11 @@
 #[cfg(test)]
 extern crate std;
 
-// These tests verify values crossing the C ABI exactly. Comparing the IEEE-754
-// bit patterns makes that intent explicit and avoids accidentally replacing an
-// ABI check with an approximate numerical comparison.
-#[cfg(test)]
-macro_rules! assert_f32_eq {
-    ($left:expr, $right:expr $(,)?) => {{
-        let left: f32 = $left;
-        let right: f32 = $right;
-        assert_eq!(left.to_bits(), right.to_bits());
-    }};
-}
-
-#[cfg(test)]
-macro_rules! assert_f64_eq {
-    ($left:expr, $right:expr $(,)?) => {{
-        let left: f64 = $left;
-        let right: f64 = $right;
-        assert_eq!(left.to_bits(), right.to_bits());
-    }};
-}
-
 mod image;
+#[expect(
+    dead_code,
+    reason = "generated ABI metadata includes every pinned slot"
+)]
 mod c_vesc_if {
     include!(concat!(env!("OUT_DIR"), "/c_vesc_if.rs"));
 }

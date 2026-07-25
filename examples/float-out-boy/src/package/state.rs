@@ -267,7 +267,11 @@ impl FloatOutBoyPackageState {
         }
     }
 
-    #[cfg_attr(not(target_arch = "arm"), allow(dead_code))]
+    #[cfg(any(test, target_arch = "arm"))]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "the capability reference keeps the package input seam explicit"
+    )]
     pub(crate) fn refresh_controller_input(&mut self, input: &vescpkg_rs::FirmwareInputs) {
         // C map: Float Out Boy selects UART/PPM, rejects samples one second old,
         // applies deadband rescaling, then optional inversion at

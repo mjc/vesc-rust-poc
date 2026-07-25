@@ -4,6 +4,8 @@
 //! `vesc_pkg_lib/vesc_c_if.h:376` and `382-384` for startup, stop, sleep, and
 //! worker loops.
 
+#![allow(deprecated)]
+
 use core::ffi::{CStr, c_char, c_void};
 use core::marker::PhantomData;
 use core::ptr::NonNull;
@@ -308,6 +310,7 @@ impl Firmware {
             nvm: crate::Nvm::new(),
             eeprom: crate::CustomEeprom::new(),
             gpio,
+            input: crate::ControllerInput::new(),
             imu: crate::imu::ImuApi::new(crate::imu::RealImuBindings),
             telemetry: crate::motor::MotorTelemetryApi::new(
                 crate::motor::RealMotorTelemetryBindings,

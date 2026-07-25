@@ -29,6 +29,28 @@ extern crate alloc as rust_alloc;
 #[cfg(test)]
 extern crate std;
 
+#[cfg(test)]
+macro_rules! assert_f32_eq {
+    ($left:expr, $right:expr $(,)?) => {{
+        let left: f32 = $left;
+        let right: f32 = $right;
+        assert_eq!(left.to_bits(), right.to_bits());
+    }};
+}
+
+macro_rules! call_vesc_ffi {
+    ($function:ident($($argument:expr),* $(,)?)) => {{
+        // SAFETY: `vescpkg-rs-sys` declares this function with the firmware's
+        // exact C ABI. The SDK wrapper supplies the required pointer lifetimes.
+        unsafe { crate::ffi::$function($($argument),*) }
+    }};
+}
+
+#[cfg(all(feature = "test-support", not(test)))]
+fn tick_count_as_seconds(ticks: u32, ticks_per_second: f32) -> f32 {
+    ticks as f32 / ticks_per_second
+}
+
 /// Firmware allocation helpers backed by the VESC native package allocator.
 mod alloc;
 

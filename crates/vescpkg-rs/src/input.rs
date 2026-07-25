@@ -72,9 +72,14 @@ impl ControllerInput {
     pub fn remote(&self) -> RemoteInput {
         // C map: Float Out Boy reads the remote-state slot in
         // `third_party/float-out-boy/src/remote.c:43-48`.
-        let remote = call_vesc_ffi!(remote_state());
-        let (joystick_y, age) =
-            remote.map_or((0.0, f32::INFINITY), |remote| (remote.js_y, remote.age_s));
+        #[cfg(test)]
+        let (joystick_y, age) = {
+            let remote = call_vesc_ffi!(remote_state());
+            (remote.js_y, remote.age_s)
+        };
+        #[cfg(not(test))]
+        let (joystick_y, age) = call_vesc_ffi!(remote_state())
+            .map_or((0.0, f32::INFINITY), |remote| (remote.js_y, remote.age_s));
         RemoteInput::new(
             JoystickY::new(firmware_ratio(joystick_y)),
             RemoteAge::new(VescSeconds::from_seconds(age.max(0.0))),

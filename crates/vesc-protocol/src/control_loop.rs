@@ -31,49 +31,73 @@ pub struct ControlLoopStatus {
 
 impl ControlLoopStatus {
     /// Decode one status response without allocating or retaining firmware data.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CommandError::InvalidLength`] for a response with the wrong
+    /// size and [`CommandError::UnexpectedResponse`] for a different command.
     pub fn decode(response: &[u8]) -> Result<Self, CommandError> {
-        if response.len() != STATUS_BYTES {
-            return Err(CommandError::InvalidLength);
-        }
-        if response[0] != STATUS_COMMAND {
+        let bytes: &[u8; STATUS_BYTES] = response
+            .try_into()
+            .map_err(|_| CommandError::InvalidLength)?;
+        let [
+            status,
+            setpoint_low,
+            setpoint_high,
+            sampled_low,
+            sampled_high,
+            output_low,
+            output_high,
+            tick_0,
+            tick_1,
+            tick_2,
+            tick_3,
+        ] = *bytes;
+        if status != STATUS_COMMAND {
             return Err(CommandError::UnexpectedResponse);
         }
         Ok(Self {
-            setpoint: i16::from_le_bytes([response[1], response[2]]),
-            sampled_input: i16::from_le_bytes([response[3], response[4]]),
-            output: i16::from_le_bytes([response[5], response[6]]),
-            tick_count: u32::from_le_bytes([response[7], response[8], response[9], response[10]]),
+            setpoint: i16::from_le_bytes([setpoint_low, setpoint_high]),
+            sampled_input: i16::from_le_bytes([sampled_low, sampled_high]),
+            output: i16::from_le_bytes([output_low, output_high]),
+            tick_count: u32::from_le_bytes([tick_0, tick_1, tick_2, tick_3]),
         })
     }
 
     /// Return the requested setpoint.
+    #[must_use]
     pub const fn setpoint(self) -> i16 {
         self.setpoint
     }
 
     /// Return the synthetic sampled input.
+    #[must_use]
     pub const fn sampled_input(self) -> i16 {
         self.sampled_input
     }
 
     /// Return the computed, non-actuating output.
+    #[must_use]
     pub const fn output(self) -> i16 {
         self.output
     }
 
     /// Return the number of completed loop ticks reported by firmware.
+    #[must_use]
     pub const fn tick_count(self) -> u32 {
         self.tick_count
     }
 }
 
 /// Encode a setpoint command for the control-loop callback.
+#[must_use]
 pub const fn encode_setpoint_command(setpoint: i16) -> [u8; 3] {
     let [low, high] = setpoint.to_le_bytes();
     [SETPOINT_COMMAND, low, high]
 }
 
 /// Encode a status request for the control-loop callback.
+#[must_use]
 pub const fn encode_status_command() -> [u8; 1] {
     [STATUS_COMMAND]
 }

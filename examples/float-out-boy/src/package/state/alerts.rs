@@ -7,6 +7,7 @@ use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{FirmwareFaultWireCode, TimestampTicks};
 
 const ALERTS_RESPONSE_CAPACITY: usize = 511;
+#[cfg(test)]
 const FAULT_NAME_MAX_BYTES: usize = 50;
 
 impl FloatOutBoyPackageState {
@@ -98,12 +99,13 @@ fn push_fault_name(
 
     let name = telemetry.firmware_fault_description().unwrap_or_default();
     let name = &name[..name.len().min(50)];
-    float_out_boy_realtime_push_u8(buffer, index, name.len() as u8);
+    float_out_boy_realtime_push_u8(buffer, index, u8::try_from(name.len()).unwrap_or(u8::MAX));
     for byte in name.as_bytes() {
         float_out_boy_realtime_push_u8(buffer, index, *byte);
     }
 }
 
+#[cfg(test)]
 fn bounded_fault_name(name: &[u8]) -> &[u8] {
     name.get(..FAULT_NAME_MAX_BYTES).unwrap_or(name)
 }

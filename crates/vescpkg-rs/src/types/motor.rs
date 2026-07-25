@@ -5,7 +5,7 @@ use crate::units::{Current, Frequency, SampleRate, VescSeconds, Voltage};
 macro_rules! current_type {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+        #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
         #[repr(transparent)]
         pub struct $name(Current);
 
@@ -399,6 +399,25 @@ impl MotorCurrentLimit {
         } else {
             current
         }
+    }
+}
+
+/// Positive battery/input-current limit magnitude.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct InputCurrentLimit(Current);
+
+impl InputCurrentLimit {
+    /// Normalize a configured input-current limit to its positive magnitude.
+    #[must_use]
+    pub const fn new(current: Current) -> Self {
+        Self(current.abs())
+    }
+
+    /// Return the positive input-current-limit magnitude.
+    #[must_use]
+    pub const fn current(self) -> Current {
+        self.0
     }
 }
 

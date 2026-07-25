@@ -15,9 +15,9 @@ use core::sync::atomic::{
 use crate::{
     AmpHoursCharged, AmpHoursDischarged, BatteryLevel, DCurrent, DirectionalMotorCurrent,
     DutyCycle, ElectricalSpeed, FirmwareFault, ImuAngularRate, ImuOrientation, ImuPitch, ImuRoll,
-    ImuYaw, InputCurrent, InputVoltage, JoystickY, MosfetTemperature, MotorCurrentLimit,
-    MotorTemperature, OdometerMeters, PpmAge, PpmInput, RemoteAge, TotalMotorCurrent, TripDistance,
-    VehicleSpeed, WattHoursCharged, WattHoursDischarged, WattHoursRemaining,
+    ImuYaw, InputCurrent, InputCurrentLimit, InputVoltage, MosfetTemperature, MotorCurrentLimit,
+    MotorTemperature, OdometerMeters, TotalMotorCurrent, TripDistance, VehicleSpeed,
+    WattHoursCharged, WattHoursDischarged, WattHoursRemaining,
 };
 use vescpkg_rs_sys::raw::{
     AttitudeInfo, CanStatusMsg, CanStatusMsg2, CanStatusMsg3, CanStatusMsg4, CanStatusMsg5,
@@ -92,7 +92,6 @@ static CURRENT_OFF_DELAY_COUNT: AtomicUsize = AtomicUsize::new(0);
 static CURRENT_COUNT: AtomicUsize = AtomicUsize::new(0);
 static DUTY_COUNT: AtomicUsize = AtomicUsize::new(0);
 static BRAKE_CURRENT_COUNT: AtomicUsize = AtomicUsize::new(0);
-static FOC_TONE_COUNT: AtomicUsize = AtomicUsize::new(0);
 static CURRENT_OFF_DELAY: AtomicU32 = AtomicU32::new(0);
 static CURRENT: AtomicU32 = AtomicU32::new(0);
 static DUTY: AtomicU32 = AtomicU32::new(0);
@@ -160,6 +159,7 @@ static HAS_FOC_ID_CURRENT: AtomicBool = AtomicBool::new(false);
 static FOC_AUDIO_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static FOC_AUDIO_TABLE_INSTALLED: AtomicBool = AtomicBool::new(false);
 static FOC_TONE_COUNT: AtomicUsize = AtomicUsize::new(0);
+static FOC_TONE_CHANNEL: AtomicI32 = AtomicI32::new(0);
 static FOC_TONE_FREQUENCY: AtomicU32 = AtomicU32::new(0);
 static FOC_TONE_VOLTAGE: AtomicU32 = AtomicU32::new(0);
 static FOC_OPEN_LOOP_AVAILABLE: AtomicBool = AtomicBool::new(true);
@@ -208,14 +208,6 @@ static IMU_YAW: AtomicU32 = AtomicU32::new(0);
 static IMU_GYRO: [AtomicU32; 3] = [const { AtomicU32::new(0) }; 3];
 static IMU_QUATERNION: [AtomicU32; 4] = [const { AtomicU32::new(0) }; 4];
 static IMU_CALIBRATION_VALID: AtomicBool = AtomicBool::new(true);
-static REMOTE_STATE: RemoteState = RemoteState {
-    js_x: -0.25,
-    js_y: 0.75,
-    bt_c: true,
-    bt_z: false,
-    is_rev: true,
-    age_s: 0.2,
-};
 static FLAT_BUFFER: [u8; 256] = [0; 256];
 static CAN_STATUS: CanStatusMsg = CanStatusMsg {
     id: 7,
@@ -330,6 +322,14 @@ impl Drop for FirmwareLockGuard {
     }
 }
 
+fn reset_temperature_settings() {
+    MOSFET_TEMPERATURE_LIMIT_START.store(85.0_f32.to_bits(), Ordering::Relaxed);
+    MOSFET_TEMPERATURE_LIMIT_END.store(90.0_f32.to_bits(), Ordering::Relaxed);
+    MOTOR_TEMPERATURE_LIMIT_START.store(85.0_f32.to_bits(), Ordering::Relaxed);
+    MOTOR_TEMPERATURE_LIMIT_END.store(95.0_f32.to_bits(), Ordering::Relaxed);
+    TEMPERATURE_ACCELERATION_DECREASE.store(0.0_f32.to_bits(), Ordering::Relaxed);
+}
+
 fn reset_motor_state() {
     KEEP_ALIVE_COUNT.store(0, Ordering::Relaxed);
     CURRENT_OFF_DELAY_COUNT.store(0, Ordering::Relaxed);
@@ -365,6 +365,7 @@ fn reset_motor_state() {
     IMU_MAHONY_KP.store(2.0_f32.to_bits(), Ordering::Relaxed);
     IMU_MAHONY_KI.store(0.05_f32.to_bits(), Ordering::Relaxed);
     IMU_MADGWICK_BETA.store(0.1_f32.to_bits(), Ordering::Relaxed);
+    IMU_ACCELERATION_CONFIDENCE_DECAY.store(1.0_f32.to_bits(), Ordering::Relaxed);
     IMU_ACCELERATION_OFFSET_X.store(0.0_f32.to_bits(), Ordering::Relaxed);
     IMU_ACCELERATION_OFFSET_Y.store(0.0_f32.to_bits(), Ordering::Relaxed);
     IMU_ACCELERATION_OFFSET_Z.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -384,6 +385,8 @@ fn reset_motor_state() {
     BATTERY_CUT_END_VOLTAGE.store(28.0_f32.to_bits(), Ordering::Relaxed);
     reset_temperature_settings();
     DUTY_CYCLE_LIMIT.store(0.95_f32.to_bits(), Ordering::Relaxed);
+    DUTY_CYCLE_MINIMUM.store(0.05_f32.to_bits(), Ordering::Relaxed);
+    TEMPERATURE_ACCELERATION_DECREASE.store(0.5_f32.to_bits(), Ordering::Relaxed);
     CAN_STATUS_DUTY_BITS.store(0x3e80_0000, Ordering::Relaxed);
     CAN_STATUS_PPM_BITS.store(0x3f00_0000, Ordering::Relaxed);
     BATTERY_CELL_COUNT.store(0, Ordering::Relaxed);
@@ -434,14 +437,14 @@ fn reset_motor_state() {
     BATTERY_WATT_HOURS_REMAINING.store(0.0_f32.to_bits(), Ordering::Relaxed);
     FIRMWARE_FAULT.store(0, Ordering::Relaxed);
     INPUT_VOLTAGE.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    PPM_INPUT.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    PPM_AGE.store(f32::INFINITY.to_bits(), Ordering::Relaxed);
+    PPM_INPUT.store(0.5_f32.to_bits(), Ordering::Relaxed);
+    PPM_AGE.store(0.1_f32.to_bits(), Ordering::Relaxed);
     PPM_SUPPORTED.store(true, Ordering::Relaxed);
     PPM_AVAILABLE.store(true, Ordering::Relaxed);
     PPM_AGE_AVAILABLE.store(true, Ordering::Relaxed);
     OUTPUT_DISABLED_AVAILABLE.store(true, Ordering::Relaxed);
-    REMOTE_INPUT_Y.store(0.0_f32.to_bits(), Ordering::Relaxed);
-    REMOTE_AGE.store(f32::INFINITY.to_bits(), Ordering::Relaxed);
+    REMOTE_INPUT_Y.store(0.75_f32.to_bits(), Ordering::Relaxed);
+    REMOTE_AGE.store(0.2_f32.to_bits(), Ordering::Relaxed);
     REMOTE_SUPPORTED.store(true, Ordering::Relaxed);
 }
 
@@ -1269,22 +1272,6 @@ pub(crate) fn set_foc_audio_available(available: bool) {
     FOC_AUDIO_AVAILABLE.store(available, Ordering::Relaxed);
 }
 
-pub(crate) fn foc_tone_command_count() -> usize {
-    FOC_TONE_COUNT.load(Ordering::Relaxed)
-}
-
-pub(crate) fn commanded_foc_tone_frequency() -> crate::AudioFrequency {
-    crate::AudioFrequency::new(crate::Frequency::from_hertz(f32::from_bits(
-        FOC_TONE_FREQUENCY.load(Ordering::Relaxed),
-    )))
-}
-
-pub(crate) fn commanded_foc_tone_voltage() -> crate::AudioVoltage {
-    crate::AudioVoltage::new(crate::Voltage::from_volts(f32::from_bits(
-        FOC_TONE_VOLTAGE.load(Ordering::Relaxed),
-    )))
-}
-
 pub(crate) fn set_foc_open_loop_available(available: bool) {
     FOC_OPEN_LOOP_AVAILABLE.store(available, Ordering::Relaxed);
 }
@@ -1427,14 +1414,6 @@ pub(crate) fn motor_output() -> MotorOutputState {
         foc_tone_frequency: f32::from_bits(FOC_TONE_FREQUENCY.load(Ordering::Relaxed)),
         foc_tone_voltage: f32::from_bits(FOC_TONE_VOLTAGE.load(Ordering::Relaxed)),
     }
-}
-
-pub unsafe fn foc_play_tone(channel: i32, frequency: f32, voltage: f32) -> bool {
-    FOC_TONE_COUNT.fetch_add(1, Ordering::Relaxed);
-    FOC_TONE_CHANNEL.store(channel, Ordering::Relaxed);
-    FOC_TONE_FREQUENCY.store(frequency.to_bits(), Ordering::Relaxed);
-    FOC_TONE_VOLTAGE.store(voltage.to_bits(), Ordering::Relaxed);
-    true
 }
 
 pub(crate) fn pid_position_offset() -> f32 {
@@ -2065,11 +2044,11 @@ pub unsafe fn remote_state() -> Option<RemoteState> {
     REMOTE_SUPPORTED
         .load(Ordering::Relaxed)
         .then(|| RemoteState {
-            js_x: 0.0,
+            js_x: -0.25,
             js_y: load(&REMOTE_INPUT_Y),
-            bt_c: false,
+            bt_c: true,
             bt_z: false,
-            is_rev: false,
+            is_rev: true,
             age_s: load(&REMOTE_AGE),
         })
 }
