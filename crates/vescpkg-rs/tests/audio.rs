@@ -126,6 +126,33 @@ fn firmware_audio_reports_absent_optional_slots() {
 }
 
 #[test]
+fn firmware_audio_sample_tables_are_exclusive_per_channel() {
+    static FIRST: [f32; 2] = [0.1, 0.2];
+    static SECOND: [f32; 2] = [0.3, 0.4];
+    let firmware = FirmwareTest::new();
+    let audio = firmware.audio();
+    let channel = AudioChannel::try_new(1).unwrap();
+    let other_channel = AudioChannel::try_new(2).unwrap();
+    let first = audio
+        .set_sample_table(channel, &FIRST)
+        .expect("first channel lease");
+
+    assert!(matches!(
+        audio.set_sample_table(channel, &SECOND),
+        Err(vescpkg_rs::FocAudioError::Busy)
+    ));
+    let other = audio
+        .set_sample_table(other_channel, &SECOND)
+        .expect("independent channel lease");
+    drop(other);
+    drop(first);
+
+    audio
+        .set_sample_table(channel, &SECOND)
+        .expect("channel released with its lease");
+}
+
+#[test]
 fn package_stop_releases_audio_table_before_next_registration() {
     static SAMPLES: [f32; 3] = [0.1, 0.2, 0.3];
     let firmware = FirmwareTest::new();

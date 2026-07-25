@@ -2,8 +2,11 @@
 
 use core::ffi::c_int;
 use core::ptr::NonNull;
+use core::sync::atomic::{AtomicU8, Ordering};
 
 use crate::{AudioChannel, AudioDuration, AudioFrequency, AudioSampleRate, AudioVoltage};
+
+static AUDIO_SAMPLE_TABLE_LEASES: AtomicU8 = AtomicU8::new(0);
 
 /// Failure returned by a FOC audio operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,6 +20,8 @@ pub enum FocAudioError {
     InvalidParameter,
     /// A sample buffer length cannot be represented by the C ABI.
     BufferTooLong,
+    /// Another package-owned lease already owns this audio channel.
+    Busy,
 }
 
 /// Select whether stopping FOC audio also resets firmware audio state.
@@ -43,6 +48,7 @@ pub struct FocAudio;
 /// its pointer.
 pub struct FocAudioSampleTable<'a> {
     audio: FocAudio,
+    channel: AudioChannel,
     _samples: &'a [f32],
 }
 
@@ -114,6 +120,10 @@ impl FocAudio {
         if samples.is_empty() || samples.iter().any(|sample| !sample.is_finite()) {
             return Err(FocAudioError::InvalidParameter);
         }
+        let mask = channel_mask(channel);
+        if AUDIO_SAMPLE_TABLE_LEASES.fetch_or(mask, Ordering::Acquire) & mask != 0 {
+            return Err(FocAudioError::Busy);
+        }
         match unsafe {
             crate::ffi::foc_set_audio_sample_table(
                 c_int::from(channel.as_u8()),
@@ -121,10 +131,17 @@ impl FocAudio {
                 length,
             )
         } {
-            None => Err(FocAudioError::Unavailable),
-            Some(false) => Err(FocAudioError::Rejected),
+            None => {
+                release_channel(mask);
+                Err(FocAudioError::Unavailable)
+            }
+            Some(false) => {
+                release_channel(mask);
+                Err(FocAudioError::Rejected)
+            }
             Some(true) => Ok(FocAudioSampleTable {
                 audio: *self,
+                channel,
                 _samples: samples,
             }),
         }
@@ -147,6 +164,7 @@ impl FocAudio {
 impl Drop for FocAudioSampleTable<'_> {
     fn drop(&mut self) {
         let _ = self.audio.stop(FocAudioStopMode::Reset);
+        release_channel(channel_mask(self.channel));
     }
 }
 
@@ -179,6 +197,14 @@ fn nonnegative(value: f32) -> Result<f32, FocAudioError> {
 
 fn c_int_length(length: usize) -> Result<c_int, FocAudioError> {
     c_int::try_from(length).map_err(|_| FocAudioError::BufferTooLong)
+}
+
+fn channel_mask(channel: AudioChannel) -> u8 {
+    1_u8 << channel.as_u8()
+}
+
+fn release_channel(mask: u8) {
+    AUDIO_SAMPLE_TABLE_LEASES.fetch_and(!mask, Ordering::Release);
 }
 
 fn command_result(result: Option<bool>) -> Result<(), FocAudioError> {
