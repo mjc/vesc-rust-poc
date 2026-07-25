@@ -157,8 +157,6 @@ impl FloatOutBoyPackageState {
         // C map: disabling HANDTEST restores the prior config from EEPROM in
         // `third_party/float-out-boy/src/main.c:1447-1449`.
         self.read_config_from_eeprom();
-        self.refresh_balance_filter_config();
-        self.refresh_config_runtime_state();
     }
 
     fn apply_handtest_safety_config(&mut self) {

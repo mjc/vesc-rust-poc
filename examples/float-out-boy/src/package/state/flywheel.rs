@@ -187,7 +187,6 @@ impl FloatOutBoyPackageState {
             // instead of running with a mixture of old and partially written values.
             self.set_ride_mode(FloatOutBoyMode::Normal);
             self.read_config_from_eeprom();
-            self.refresh_balance_filter_config();
             return;
         }
         self.flywheel_runtime_config = Some(start.config);
@@ -202,8 +201,6 @@ impl FloatOutBoyPackageState {
         self.set_ride_mode(FloatOutBoyMode::Normal);
         self.flywheel_runtime_config = None;
         self.read_config_from_eeprom();
-        self.refresh_balance_filter_config();
-        self.refresh_config_runtime_state();
     }
 
     pub(super) fn runtime_duty_pushback_threshold(&self) -> Ratio {

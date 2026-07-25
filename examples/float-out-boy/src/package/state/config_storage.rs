@@ -45,25 +45,38 @@ impl core::convert::TryFrom<FloatOutBoyEepromImage> for FloatOutBoyConfigImage {
 }
 
 impl FloatOutBoyPackageState {
-    fn write_config_to_eeprom(&self) -> bool {
-        let image = FloatOutBoyEepromImage::from(self.serialized_config);
+    fn write_config_to_eeprom(config: &FloatOutBoyConfigImage) -> bool {
+        let image = FloatOutBoyEepromImage::from(*config);
         let bytes = image.into_bytes();
         vescpkg_rs::CustomEeprom::new().write_image(&bytes).is_ok()
     }
 
-    pub(super) fn read_config_from_eeprom(&mut self) {
-        self.serialized_config = vescpkg_rs::CustomEeprom::new()
+    fn persisted_config() -> FloatOutBoyConfigImage {
+        vescpkg_rs::CustomEeprom::new()
             .read_image::<FLOAT_OUT_BOY_EEPROM_LEN>()
             .map(|bytes| FloatOutBoyEepromImage::from_bytes(&bytes))
             .ok()
             .and_then(|image| FloatOutBoyConfigImage::try_from(image).ok())
-            .unwrap_or_else(FloatOutBoyConfigImage::defaults);
+            .unwrap_or_else(FloatOutBoyConfigImage::defaults)
+    }
+
+    fn replace_active_config(&mut self, config: &FloatOutBoyConfigImage) {
+        self.serialized_config = *config;
+        self.refresh_balance_filter_config();
+        self.refresh_config_runtime_state();
+    }
+
+    fn persist_active_config(&self) -> bool {
+        Self::write_config_to_eeprom(&self.serialized_config)
+    }
+
+    pub(super) fn read_config_from_eeprom(&mut self) {
+        let config = Self::persisted_config();
+        self.replace_active_config(&config);
     }
 
     pub(in crate::package) fn load_persisted_config_on_startup(&mut self) {
         self.read_config_from_eeprom();
-        self.refresh_balance_filter_config();
-        self.refresh_config_runtime_state();
     }
 
     pub(super) fn handle_config_command(&mut self, bytes: &[u8]) -> bool {
@@ -79,14 +92,15 @@ impl FloatOutBoyPackageState {
 
         match command {
             FloatOutBoyAppDataCommand::ConfigSave => {
-                if self.write_config_to_eeprom() {
+                if self.persist_active_config() {
                     self.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
                 }
             }
             FloatOutBoyAppDataCommand::ConfigRestore => self.load_persisted_config_on_startup(),
             FloatOutBoyAppDataCommand::TuneDefaults => {
-                self.serialized_config.reset_tune_defaults();
-                self.refresh_balance_filter_config();
+                let mut config = self.serialized_config;
+                config.reset_tune_defaults();
+                self.replace_active_config(&config);
             }
             FloatOutBoyAppDataCommand::Lock => {
                 let Some(disabled) = payload.first() else {
@@ -100,10 +114,10 @@ impl FloatOutBoyPackageState {
                     .run_state();
                 if !matches!(run_state, FloatOutBoyRunState::Running) {
                     self.read_config_from_eeprom();
-                    self.serialized_config.editor().set_disabled(*disabled != 0);
-                    self.refresh_balance_filter_config();
-                    self.refresh_config_runtime_state();
-                    if self.write_config_to_eeprom() {
+                    let mut config = self.serialized_config;
+                    config.editor().set_disabled(*disabled != 0);
+                    self.replace_active_config(&config);
+                    if self.persist_active_config() {
                         self.alert_beeper(FloatOutBoyBeeperAlert::Short(
                             FloatOutBoyBeeperCount::ONE,
                         ));
@@ -165,17 +179,13 @@ impl FloatOutBoyPackageState {
         // is serialized from `third_party/float-out-boy/src/conf/settings.xml:3903-3914`
         // at byte 275.
         config.editor().clear_meta_is_default();
-        let previous_config = self.serialized_config;
-        self.serialized_config = config;
-        if !self.write_config_to_eeprom() {
-            self.serialized_config = previous_config;
+        if !Self::write_config_to_eeprom(&config) {
             return false;
         }
+        self.replace_active_config(&config);
         // After a successful write, C calls `configure(d)` at
         // `third_party/float-out-boy/src/main.c:2380-2382`, which refreshes the balance filter KP at
         // `third_party/float-out-boy/src/main.c:158-160`.
-        self.refresh_balance_filter_config();
-        self.refresh_config_runtime_state();
         // `configure(d)` applies the new beeper setting, then acknowledges
         // disabled state with three short beeps and every other state with one
         // at `third_party/float-out-boy/src/main.c:219-227`.
