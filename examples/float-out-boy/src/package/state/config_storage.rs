@@ -7,28 +7,57 @@ use crate::domain::{
 
 pub(super) const FLOAT_OUT_BOY_EEPROM_LEN: usize = 320;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct FloatOutBoyEepromImage([u8; FLOAT_OUT_BOY_EEPROM_LEN]);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct FloatOutBoyEepromImageError;
+
+impl FloatOutBoyEepromImage {
+    pub(super) const fn from_bytes(bytes: &[u8; FLOAT_OUT_BOY_EEPROM_LEN]) -> Self {
+        Self(*bytes)
+    }
+
+    pub(super) const fn as_bytes(&self) -> &[u8; FLOAT_OUT_BOY_EEPROM_LEN] {
+        &self.0
+    }
+
+    pub(super) const fn into_bytes(self) -> [u8; FLOAT_OUT_BOY_EEPROM_LEN] {
+        self.0
+    }
+}
+
+impl From<FloatOutBoyConfigImage> for FloatOutBoyEepromImage {
+    fn from(config: FloatOutBoyConfigImage) -> Self {
+        let mut bytes = [0; FLOAT_OUT_BOY_EEPROM_LEN];
+        bytes[..FLOAT_OUT_BOY_CONFIG_LEN].copy_from_slice(config.as_bytes());
+        Self(bytes)
+    }
+}
+
+impl core::convert::TryFrom<FloatOutBoyEepromImage> for FloatOutBoyConfigImage {
+    type Error = FloatOutBoyEepromImageError;
+
+    fn try_from(image: FloatOutBoyEepromImage) -> Result<Self, Self::Error> {
+        Self::from_serialized(&image.as_bytes()[..FLOAT_OUT_BOY_CONFIG_LEN])
+            .ok_or(FloatOutBoyEepromImageError)
+    }
+}
+
 impl FloatOutBoyPackageState {
     fn write_config_to_eeprom(&self) -> bool {
-        let mut image = [0; FLOAT_OUT_BOY_EEPROM_LEN];
-        image[..FLOAT_OUT_BOY_CONFIG_LEN].copy_from_slice(self.serialized_config.as_bytes());
-        vescpkg_rs::CustomEeprom::new().write_bytes(&image).is_ok()
+        let image = FloatOutBoyEepromImage::from(self.serialized_config);
+        let bytes = image.into_bytes();
+        vescpkg_rs::CustomEeprom::new().write_image(&bytes).is_ok()
     }
 
     pub(super) fn read_config_from_eeprom(&mut self) {
-        let eeprom = vescpkg_rs::CustomEeprom::new();
-        let read = eeprom
-            .read_bytes(self.serialized_config.as_mut_bytes())
-            .is_ok()
-            && (FLOAT_OUT_BOY_CONFIG_LEN / vescpkg_rs::EepromWord::BYTE_LEN
-                ..FLOAT_OUT_BOY_EEPROM_LEN / vescpkg_rs::EepromWord::BYTE_LEN)
-                .all(|index| {
-                    vescpkg_rs::CustomEepromAddress::from_index(index)
-                        .and_then(|address| eeprom.read(address))
-                        .is_some()
-                });
-        if !read || !self.serialized_config.has_valid_signature() {
-            self.serialized_config = FloatOutBoyConfigImage::defaults();
-        }
+        self.serialized_config = vescpkg_rs::CustomEeprom::new()
+            .read_image::<FLOAT_OUT_BOY_EEPROM_LEN>()
+            .map(|bytes| FloatOutBoyEepromImage::from_bytes(&bytes))
+            .ok()
+            .and_then(|image| FloatOutBoyConfigImage::try_from(image).ok())
+            .unwrap_or_else(FloatOutBoyConfigImage::defaults);
     }
 
     pub(in crate::package) fn load_persisted_config_on_startup(&mut self) {

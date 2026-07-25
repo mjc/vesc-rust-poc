@@ -175,15 +175,6 @@ impl FloatOutBoyConfigImage {
         self.0.as_bytes()
     }
 
-    pub(crate) fn as_mut_bytes(&mut self) -> &mut [u8; FLOAT_OUT_BOY_CONFIG_LEN] {
-        self.0.as_mut_bytes()
-    }
-
-    pub(crate) fn has_valid_signature(&self) -> bool {
-        self.as_bytes()
-            .starts_with(&FLOAT_OUT_BOY_CONFIG_SIGNATURE_BYTES)
-    }
-
     pub(crate) fn reset_tune_defaults(&mut self) {
         let mut bytes = *self.as_bytes();
         for (index, (byte, default)) in bytes

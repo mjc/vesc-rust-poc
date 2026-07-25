@@ -229,7 +229,7 @@ pub use can_bus::{
     CanReceiverId, CanRemoteMotor, CanStatus, CanStatus2, CanStatus3, CanStatus4, CanStatus5,
     CanStatus6, CanStatusStore,
 };
-pub use eeprom::{CustomEeprom, CustomEepromAddress, EepromError, EepromWord};
+pub use eeprom::{CustomEeprom, CustomEepromAddress, EepromError, EepromWord, EepromWordOffset};
 pub use encoder::{Encoder, EncoderError, EncoderHandler, EncoderRegistration};
 pub use extension::{ExtensionDescriptor, ExtensionName, ExtensionRegistration};
 pub use extension::{
@@ -332,20 +332,20 @@ pub mod prelude {
         AnalogPin, AppDataHandler, AppDataSendError, CanBus, CanError, CanReceiverHandler,
         CanReceiverId, CanRemoteMotor, CanStatus, CanStatusStore, CommandError,
         CommandReplyHandler, Commands, ConfigBytes, ConfigXml, ControllerInput, CustomEeprom,
-        CustomEepromAddress, DigitalOutputLevel, DigitalPin, EepromError, EepromWord, Encoder,
-        EncoderError, EncoderHandler, EncoderRegistration, ExtensionDescriptor, ExtensionName,
-        ExtensionRegistration, Firmware, FirmwareAhrs, FirmwareAhrsError, FirmwareAhrsParameters,
-        FirmwareAhrsSnapshot, FirmwareAppData, FirmwareCapabilities, FirmwareClock,
-        FirmwareFloatSetting, FirmwareInputs, FirmwareIntSetting, FirmwareLog, FirmwareMutex,
-        FirmwareMutexGuard, FirmwareSemaphore, FirmwareSettings, FirmwareThread, FirmwareThreads,
-        FocAudio, FocAudioError, FocAudioSampleTable, FocAudioStopMode, Gnss, GnssError,
-        GnssSnapshot, Gpio, Imu, ImuReadCallback, ImuReadCallbackError, ImuReadCallbackLease,
-        ImuReadHandler, InputError, LbmExtension, LispArgs, LispContextId, LispFlatValue,
-        LispFlatValueError, LispIntegerError, LispList, LispListError, LispMessageError,
-        LispProcess, LispSymbol, LispValue, LogError, MotorOutput, MotorReleaseOutcome,
-        MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset, PackageStartError, PacketCodec,
-        PacketError, PacketHandler, Plot, PlotError, PpmSnapshot, PwmCallbackError,
-        PwmCallbackHandler, PwmCallbackLease, RemoteInput, RemoteInputSnapshot,
+        CustomEepromAddress, DigitalOutputLevel, DigitalPin, EepromError, EepromWord,
+        EepromWordOffset, Encoder, EncoderError, EncoderHandler, EncoderRegistration,
+        ExtensionDescriptor, ExtensionName, ExtensionRegistration, Firmware, FirmwareAhrs,
+        FirmwareAhrsError, FirmwareAhrsParameters, FirmwareAhrsSnapshot, FirmwareAppData,
+        FirmwareCapabilities, FirmwareClock, FirmwareFloatSetting, FirmwareInputs,
+        FirmwareIntSetting, FirmwareLog, FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore,
+        FirmwareSettings, FirmwareThread, FirmwareThreads, FocAudio, FocAudioError,
+        FocAudioSampleTable, FocAudioStopMode, Gnss, GnssError, GnssSnapshot, Gpio, Imu,
+        ImuReadCallback, ImuReadCallbackError, ImuReadCallbackLease, ImuReadHandler, InputError,
+        LbmExtension, LispArgs, LispContextId, LispFlatValue, LispFlatValueError, LispIntegerError,
+        LispList, LispListError, LispMessageError, LispProcess, LispSymbol, LispValue, LogError,
+        MotorOutput, MotorReleaseOutcome, MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset,
+        PackageStartError, PacketCodec, PacketError, PacketHandler, Plot, PlotError, PpmSnapshot,
+        PwmCallbackError, PwmCallbackHandler, PwmCallbackLease, RemoteInput, RemoteInputSnapshot,
         SemaphoreWaitOutcome, SettingsError, ShutdownInhibit, StatefulCustomConfigCallback,
         StatefulLbmExtension, StatelessFirmwareThread, StatelessThreadContext, Terminal,
         TerminalError, TerminalHandler, TerminalRegistration, ThreadContext, ThreadError,

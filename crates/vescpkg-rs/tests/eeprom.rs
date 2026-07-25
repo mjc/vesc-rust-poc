@@ -2,7 +2,7 @@
 #![cfg(feature = "test-support")]
 
 use vescpkg_rs::test_support::FirmwareTest;
-use vescpkg_rs::{CustomEepromAddress, EepromError, EepromWord};
+use vescpkg_rs::{CustomEepromAddress, EepromError, EepromWord, EepromWordOffset};
 
 #[test]
 fn byte_image_round_trips_complete_and_partial_words() {
@@ -77,6 +77,46 @@ fn byte_images_can_start_at_an_explicit_word_address() {
     let mut bytes = [0; 5];
     assert!(eeprom.read_bytes_at(start, &mut bytes).is_ok());
     assert_eq!(bytes, [9, 8, 7, 6, 5]);
+}
+
+#[test]
+fn typed_offsets_round_trip_a_signature_prefixed_image() {
+    let firmware = FirmwareTest::new();
+    let eeprom = firmware.eeprom();
+    let signature = EepromWordOffset::from_index(7);
+    let image = [0xca, 0xfe, 0xba, 0xbe, 1, 2, 3, 4, 5];
+
+    assert!(eeprom.write_image_at(signature, &image).is_ok());
+    assert_eq!(eeprom.read_image_at::<9>(signature), Ok(image));
+}
+
+#[test]
+fn fixed_size_image_reads_are_owned_and_report_missing_words() {
+    let firmware = FirmwareTest::new();
+    let eeprom = firmware.eeprom();
+    let start = EepromWordOffset::from_index(3);
+    let image = [9, 8, 7, 6, 5];
+
+    assert!(eeprom.write_image_at(start, &image).is_ok());
+    assert_eq!(eeprom.read_image_at::<5>(start), Ok(image));
+    assert_eq!(eeprom.read_image::<5>(), Err(EepromError::Missing));
+}
+
+#[test]
+fn typed_offset_conversion_rejects_an_abi_overflow() {
+    let firmware = FirmwareTest::new();
+    let eeprom = firmware.eeprom();
+    let offset = EepromWordOffset::from_index(i32::MAX as usize + 1);
+    let mut image = [0; 4];
+
+    assert_eq!(
+        eeprom.read_image_at::<4>(offset),
+        Err(EepromError::AddressOverflow)
+    );
+    assert_eq!(
+        eeprom.read_bytes_at_offset(offset, &mut image),
+        Err(EepromError::AddressOverflow)
+    );
 }
 
 #[test]

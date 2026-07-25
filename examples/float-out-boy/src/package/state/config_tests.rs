@@ -1,4 +1,9 @@
-use super::{FloatOutBoyPackageState, config_storage::FLOAT_OUT_BOY_EEPROM_LEN};
+use super::{
+    FloatOutBoyPackageState,
+    config_storage::{
+        FLOAT_OUT_BOY_EEPROM_LEN, FloatOutBoyEepromImage, FloatOutBoyEepromImageError,
+    },
+};
 use crate::beeper::FloatOutBoyBeeperLevel;
 use crate::config::FloatOutBoyConfigImage;
 use crate::domain::{
@@ -52,6 +57,36 @@ fn configured_loop_time_uses_float_out_boy_hertz_config() {
     // seven float16 config fields; `configure(d)` then uses it as
     // `1e6 / d->float_conf.hertz` at `third_party/float-out-boy/src/main.c:190-191`.
     assert_eq!(state.configured_loop_time_us(), 2000);
+}
+
+#[test]
+fn eeprom_image_conversion_keeps_the_fixed_tail_deterministic() {
+    let config = FloatOutBoyConfigImage::defaults();
+    let image = FloatOutBoyEepromImage::from(config);
+    let bytes = image.into_bytes();
+
+    assert_eq!(&bytes[..config.as_bytes().len()], config.as_bytes());
+    assert!(
+        bytes[config.as_bytes().len()..]
+            .iter()
+            .all(|byte| *byte == 0)
+    );
+    assert_eq!(
+        FloatOutBoyConfigImage::try_from(FloatOutBoyEepromImage::from_bytes(&bytes)),
+        Ok(config)
+    );
+}
+
+#[test]
+fn eeprom_image_conversion_rejects_a_bad_signature() {
+    let config = FloatOutBoyConfigImage::defaults();
+    let mut bytes = FloatOutBoyEepromImage::from(config).into_bytes();
+    bytes[0] ^= 0xff;
+
+    assert_eq!(
+        FloatOutBoyConfigImage::try_from(FloatOutBoyEepromImage::from_bytes(&bytes)),
+        Err(FloatOutBoyEepromImageError)
+    );
 }
 
 #[test]
