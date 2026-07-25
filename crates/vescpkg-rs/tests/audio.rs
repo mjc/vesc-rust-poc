@@ -172,6 +172,25 @@ fn firmware_audio_failed_sample_table_registration_releases_lease() {
 }
 
 #[test]
+fn firmware_audio_requires_stop_slot_before_borrowing_sample_table() {
+    static SAMPLES: [f32; 2] = [0.1, 0.2];
+    let firmware = FirmwareTest::new();
+    let channel = AudioChannel::try_new(1).unwrap();
+    firmware.set_audio_stop_available(false);
+
+    assert!(matches!(
+        firmware.audio().set_sample_table(channel, &SAMPLES),
+        Err(vescpkg_rs::FocAudioError::Unavailable)
+    ));
+
+    firmware.set_audio_stop_available(true);
+    firmware
+        .audio()
+        .set_sample_table(channel, &SAMPLES)
+        .expect("stop-capable audio table");
+}
+
+#[test]
 fn package_stop_releases_audio_table_before_next_registration() {
     static SAMPLES: [f32; 3] = [0.1, 0.2, 0.3];
     let firmware = FirmwareTest::new();

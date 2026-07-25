@@ -119,6 +119,9 @@ impl FocAudio {
         if samples.is_empty() || samples.iter().any(|sample| !sample.is_finite()) {
             return Err(FocAudioError::InvalidParameter);
         }
+        if !unsafe { crate::ffi::foc_stop_audio_available() } {
+            return Err(FocAudioError::Unavailable);
+        }
         if AUDIO_SAMPLE_TABLE_LEASE
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()

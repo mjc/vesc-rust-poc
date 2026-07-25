@@ -284,6 +284,11 @@ impl FirmwareTest {
         crate::test_ffi::set_foc_audio_available(available);
     }
 
+    /// Toggle whether the fake firmware exposes the FOC audio stop slot.
+    pub fn set_audio_stop_available(&self, available: bool) {
+        crate::test_ffi::set_foc_audio_stop_available(available);
+    }
+
     /// Toggle whether the fake firmware exposes the PPM value slot.
     pub fn set_ppm_available(&self, available: bool) {
         crate::test_ffi::set_ppm_available(available);

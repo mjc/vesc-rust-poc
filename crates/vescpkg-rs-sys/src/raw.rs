@@ -1925,6 +1925,11 @@ pub unsafe fn foc_stop_audio(reset: bool) -> bool {
         .is_some()
 }
 
+/// Return whether the FOC audio stop slot is present without invoking it.
+pub unsafe fn foc_stop_audio_available() -> bool {
+    unsafe { slots::foc_stop_audio() }.is_some()
+}
+
 /// Install a FOC audio sample table when the firmware slot is present.
 pub unsafe fn foc_set_audio_sample_table(
     channel: c_int,
