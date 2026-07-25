@@ -66,13 +66,7 @@ fn package_motor_construction_reports_a_missing_required_slot() {
         capabilities.motor().err().map(|error| error.slot()),
         Some(VescIfAbi::MC_SET_CURRENT)
     );
-    assert_eq!(
-        capabilities
-            .motor_telemetry()
-            .err()
-            .map(|error| error.slot()),
-        Some(VescIfAbi::MC_SET_CURRENT)
-    );
+    assert!(capabilities.motor_telemetry().is_ok());
 
     words[VescIfAbi::MC_SET_CURRENT.slot_index()] = 1;
     words[VescIfAbi::MC_SELECT_MOTOR_THREAD.slot_index()] = 0;

@@ -277,8 +277,10 @@ pub enum AbiError {
 /// Safe subsystem names exposed by a concrete firmware table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VescIfSubsystem {
-    /// Complete motor telemetry and command support.
+    /// Complete motor command support.
     Motor,
+    /// Complete motor telemetry read support.
+    MotorTelemetry,
     /// Controller input and output-safety support.
     Inputs,
     /// Controller-area network support.
@@ -336,8 +338,8 @@ impl VescIfCapabilities {
         self.presence.revision()
     }
 
-    /// Probe the complete motor telemetry and command surface.
-    pub fn motor(self) -> Result<VescIfCapability, AbiError> {
+    /// Probe the complete motor telemetry read surface.
+    pub fn motor_telemetry(self) -> Result<VescIfCapability, AbiError> {
         let checks = [
             VescIfAbi::MC_GET_RPM,
             VescIfAbi::MC_GET_SPEED,
@@ -379,6 +381,16 @@ impl VescIfCapabilities {
             VescIfAbi::MC_GET_SAMPLING_FREQUENCY_NOW,
             VescIfAbi::MC_GET_DISTANCE_ABS,
             VescIfAbi::MC_GET_DISTANCE,
+        ];
+        self.require_slots("motor telemetry", &checks)?;
+        Ok(VescIfCapability {
+            subsystem: VescIfSubsystem::MotorTelemetry,
+        })
+    }
+
+    /// Probe the complete motor command surface.
+    pub fn motor(self) -> Result<VescIfCapability, AbiError> {
+        let checks = [
             VescIfAbi::MC_DCCAL_DONE,
             VescIfAbi::MC_GET_MOTOR_THREAD,
             VescIfAbi::MC_SELECT_MOTOR_THREAD,
@@ -401,16 +413,21 @@ impl VescIfCapabilities {
             VescIfAbi::MC_RELEASE_MOTOR,
             VescIfAbi::MC_WAIT_FOR_MOTOR_RELEASE,
         ];
-        let mut index = 0;
-        while index < checks.len() {
-            if let Err(error) = self.presence.require("motor", checks[index]) {
-                return Err(error);
-            }
-            index += 1;
-        }
+        self.require_slots("motor", &checks)?;
         Ok(VescIfCapability {
             subsystem: VescIfSubsystem::Motor,
         })
+    }
+
+    fn require_slots(
+        self,
+        capability: &'static str,
+        checks: &[VescIfSlot],
+    ) -> Result<(), AbiError> {
+        for &slot in checks {
+            self.presence.require(capability, slot)?;
+        }
+        Ok(())
     }
 
     /// Probe controller input support as an optional subsystem.

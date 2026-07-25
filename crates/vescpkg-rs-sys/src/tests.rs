@@ -517,10 +517,18 @@ fn vesc_if_capabilities_require_the_complete_motor_surface() {
         capabilities.motor().unwrap().subsystem(),
         VescIfSubsystem::Motor
     );
+    assert_eq!(
+        capabilities.motor_telemetry().unwrap().subsystem(),
+        VescIfSubsystem::MotorTelemetry
+    );
 
     words[VescIfAbi::MC_GET_RPM.slot_index()] = 0;
     let missing = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
-    assert_eq!(missing.motor().unwrap_err().slot(), VescIfAbi::MC_GET_RPM);
+    assert_eq!(
+        missing.motor_telemetry().unwrap_err().slot(),
+        VescIfAbi::MC_GET_RPM
+    );
+    assert!(missing.motor().is_ok());
 
     words[VescIfAbi::MC_GET_RPM.slot_index()] = 1;
     words[VescIfAbi::MC_SELECT_MOTOR_THREAD.slot_index()] = 0;
