@@ -163,7 +163,7 @@ impl FloatOutBoyPackageState {
         // C map: enabling HANDTEST applies temporary safety overrides at
         // `third_party/float-out-boy/src/main.c:1431-1446`.
         if let Some(config) = Self::handtest_safety_config(&self.serialized_config) {
-            self.serialized_config = config;
+            self.replace_active_config(&config);
         }
     }
 

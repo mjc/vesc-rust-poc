@@ -60,7 +60,7 @@ impl FloatOutBoyPackageState {
             .unwrap_or_else(FloatOutBoyConfigImage::defaults)
     }
 
-    fn replace_active_config(&mut self, config: &FloatOutBoyConfigImage) {
+    pub(super) fn replace_active_config(&mut self, config: &FloatOutBoyConfigImage) {
         self.serialized_config = *config;
         self.refresh_balance_filter_config();
         self.refresh_config_runtime_state();
