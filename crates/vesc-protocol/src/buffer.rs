@@ -3,31 +3,31 @@
 /// Append one byte using VESC's incrementing-index convention.
 #[must_use]
 pub fn append_u8(buffer: &mut [u8], index: &mut usize, value: u8) -> Option<()> {
-    append_be(buffer, index, value.to_be_bytes())
+    append_bytes(buffer, index, value.to_be_bytes())
 }
 
 /// Append a big-endian unsigned 16-bit integer.
 #[must_use]
 pub fn append_u16(buffer: &mut [u8], index: &mut usize, value: u16) -> Option<()> {
-    append_be(buffer, index, value.to_be_bytes())
+    append_bytes(buffer, index, value.to_be_bytes())
 }
 
 /// Append a big-endian signed 16-bit integer.
 #[must_use]
 pub fn append_i16(buffer: &mut [u8], index: &mut usize, value: i16) -> Option<()> {
-    append_be(buffer, index, value.to_be_bytes())
+    append_bytes(buffer, index, value.to_be_bytes())
 }
 
 /// Append a big-endian unsigned 32-bit integer.
 #[must_use]
 pub fn append_u32(buffer: &mut [u8], index: &mut usize, value: u32) -> Option<()> {
-    append_be(buffer, index, value.to_be_bytes())
+    append_bytes(buffer, index, value.to_be_bytes())
 }
 
 /// Append one big-endian signed 32-bit integer.
 #[must_use]
 pub fn append_i32(buffer: &mut [u8], index: &mut usize, value: i32) -> Option<()> {
-    append_be(buffer, index, value.to_be_bytes())
+    append_bytes(buffer, index, value.to_be_bytes())
 }
 
 /// Append VESC's automatic 32-bit float representation.
@@ -54,15 +54,15 @@ pub fn read_float32_auto(buffer: &[u8], index: &mut usize) -> Option<f32> {
     read_u32(buffer, index).map(f32::from_bits)
 }
 
-fn append_bytes(buffer: &mut [u8], index: &mut usize, bytes: &[u8]) -> Option<()> {
-    let end = index.checked_add(bytes.len())?;
-    buffer.get_mut(*index..end)?.copy_from_slice(bytes);
+fn append_bytes<const N: usize>(
+    buffer: &mut [u8],
+    index: &mut usize,
+    bytes: [u8; N],
+) -> Option<()> {
+    let end = index.checked_add(N)?;
+    buffer.get_mut(*index..end)?.copy_from_slice(&bytes);
     *index = end;
     Some(())
-}
-
-fn append_be<const N: usize>(buffer: &mut [u8], index: &mut usize, bytes: [u8; N]) -> Option<()> {
-    append_bytes(buffer, index, &bytes)
 }
 
 fn read_be<const N: usize>(buffer: &[u8], index: &mut usize) -> Option<[u8; N]> {
