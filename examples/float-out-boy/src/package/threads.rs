@@ -188,7 +188,7 @@ pub(crate) fn tick_float_out_boy_main_thread_with(
 /// threshold from `main.c:1142-1146`, loops until `should_terminate()` at `main.c:1139`,
 /// and sleeps at `1e6 / LEDS_REFRESH_RATE` at `main.c:1155`. The refresh rate is `30` in
 /// `third_party/float-out-boy/src/leds.h:26`.
-#[cfg(any(test, target_arch = "arm"))]
+#[cfg(test)]
 pub(crate) fn run_float_out_boy_aux_thread_with(threads: &impl FirmwareThreads) {
     if let Ok(priority) = ThreadPriority::try_new(-1) {
         let _ = threads.set_priority(priority);
@@ -275,7 +275,7 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
                     .and_then(|pin| {
                         pin.set_mode(GpioMode::Analog)
                             .ok()
-                            .and_then(|_| pin.read().ok())
+                            .and_then(|()| pin.read().ok())
                     })
                     .unwrap_or_else(|| AdcVoltage::new(vescpkg_rs::Voltage::ZERO));
                 let footpad_voltage2 = footpad_adc2
@@ -283,7 +283,7 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
                     .and_then(|pin| {
                         pin.set_mode(GpioMode::Analog)
                             .ok()
-                            .and_then(|_| pin.read().ok())
+                            .and_then(|()| pin.read().ok())
                     })
                     .unwrap_or_else(|| AdcVoltage::new(vescpkg_rs::Voltage::ZERO));
                 let tick = ctx.with_state_mut(|state| {
@@ -351,7 +351,9 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyAuxThread {
                         firmware.inputs().store_backup().is_ok()
                     })
                 });
-                threads.sleep_for(Duration::from_micros(FLOAT_OUT_BOY_AUX_LOOP_TIME_US as u64));
+                threads.sleep_for(Duration::from_micros(u64::from(
+                    FLOAT_OUT_BOY_AUX_LOOP_TIME_US,
+                )));
             }
         }
 

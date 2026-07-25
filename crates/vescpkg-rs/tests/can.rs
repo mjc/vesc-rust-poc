@@ -1,4 +1,5 @@
 #![cfg(feature = "test-support")]
+#![allow(clippy::float_cmp)]
 //! Integration coverage for the safe CAN facade.
 
 use vescpkg_rs::{

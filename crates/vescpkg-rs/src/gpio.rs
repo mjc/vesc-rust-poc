@@ -380,10 +380,13 @@ fn claim(leases: &AtomicU32, pin: i32) -> Result<u32, GpioError> {
         .map_err(|_| GpioError::Busy)
 }
 
-#[cfg(all(feature = "test-support", not(target_arch = "arm")))]
+#[cfg(not(target_arch = "arm"))]
 pub(crate) fn reset_leases() {
     GPIO_LEASES.store(0, Ordering::Release);
 }
+
+#[cfg(target_arch = "arm")]
+pub(crate) fn reset_leases() {}
 
 #[allow(clippy::used_underscore_binding)]
 fn set_mode(_gpio: &Gpio, pin: VescPin, mode: GpioMode) -> bool {

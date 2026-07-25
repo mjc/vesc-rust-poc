@@ -141,9 +141,9 @@ impl FirmwareInputs {
 
     /// Copy the remote-control state before returning it to package code.
     pub fn remote(&self) -> Result<RemoteInputSnapshot, InputError> {
-        #[cfg(test)]
+        #[cfg(any(test, not(feature = "test-support")))]
         let raw = unsafe { crate::ffi::remote_state() };
-        #[cfg(not(test))]
+        #[cfg(all(not(test), feature = "test-support"))]
         let raw = unsafe { crate::ffi::remote_state() }.ok_or(InputError::Unsupported)?;
         let age = decode_age(raw.age_s)?;
         Ok(RemoteInputSnapshot {

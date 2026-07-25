@@ -1,4 +1,5 @@
 #![cfg(feature = "test-support")]
+#![allow(clippy::float_cmp)]
 //! Integration coverage for typed controller input and safety state.
 
 use vescpkg_rs::{

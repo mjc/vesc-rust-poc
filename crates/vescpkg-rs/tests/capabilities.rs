@@ -1,4 +1,5 @@
 #![cfg(feature = "test-support")]
+#![allow(clippy::redundant_closure_for_method_calls)]
 
 //! Public capability constructors stay independent of raw slot names.
 
@@ -19,6 +20,8 @@ fn package_callers_can_branch_on_subsystem_handles() {
     assert!(capabilities.settings().is_ok());
     assert!(capabilities.imu().is_ok());
     assert!(capabilities.advanced_foc().is_ok());
+    assert!(capabilities.motor().is_ok());
+    assert!(capabilities.motor_telemetry().is_ok());
 }
 
 #[test]
@@ -42,5 +45,24 @@ fn package_imu_construction_reports_a_missing_required_slot() {
     assert_eq!(
         capabilities.imu().err().map(|error| error.slot()),
         Some(VescIfAbi::IMU_GET_MAG)
+    );
+}
+
+#[test]
+fn package_motor_construction_reports_a_missing_required_slot() {
+    let mut words = vec![1_usize; VescIfAbi::FIELD_COUNT];
+    words[VescIfAbi::MC_SET_CURRENT.slot_index()] = 0;
+    let capabilities = FirmwareCapabilities::new(VescIfPresence::from_words(&words));
+
+    assert_eq!(
+        capabilities.motor().err().map(|error| error.slot()),
+        Some(VescIfAbi::MC_SET_CURRENT)
+    );
+    assert_eq!(
+        capabilities
+            .motor_telemetry()
+            .err()
+            .map(|error| error.slot()),
+        Some(VescIfAbi::MC_SET_CURRENT)
     );
 }

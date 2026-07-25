@@ -509,6 +509,21 @@ fn vesc_if_capabilities_expose_named_subsystems_without_raw_slot_names() {
 }
 
 #[test]
+fn vesc_if_capabilities_require_the_complete_motor_surface() {
+    let mut words = vec![1_usize; VescIfAbi::FIELD_COUNT];
+    let capabilities = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
+
+    assert_eq!(
+        capabilities.motor().unwrap().subsystem(),
+        VescIfSubsystem::Motor
+    );
+
+    words[VescIfAbi::MC_GET_RPM.slot_index()] = 0;
+    let missing = VescIfCapabilities::new(crate::VescIfPresence::from_words(&words));
+    assert_eq!(missing.motor().unwrap_err().slot(), VescIfAbi::MC_GET_RPM);
+}
+
+#[test]
 fn vesc_if_capabilities_accept_the_complete_imu_surface() {
     let mut words = vec![0; VescIfAbi::FIELD_COUNT];
     for slot in [

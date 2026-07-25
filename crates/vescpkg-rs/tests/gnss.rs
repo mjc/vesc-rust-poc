@@ -1,4 +1,5 @@
 #![cfg(feature = "test-support")]
+#![allow(clippy::float_cmp)]
 //! Integration coverage for owned GNSS snapshots.
 
 use vescpkg_rs::test_support::FirmwareTest;

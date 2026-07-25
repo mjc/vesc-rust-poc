@@ -1,4 +1,5 @@
 #![cfg(feature = "test-support")]
+#![allow(clippy::float_cmp)]
 //! Integration coverage for typed firmware IMU vectors.
 
 use vescpkg_rs::{

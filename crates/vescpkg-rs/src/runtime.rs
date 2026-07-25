@@ -754,6 +754,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
                 state_lock: AtomicBool::new(false),
                 phase: AtomicU8::new(INSTALLING),
                 active: AtomicUsize::new(1),
+                gpio_leases: AtomicU32::new(0),
                 threads: UnsafeCell::new(None),
                 callbacks: UnsafeCell::new(CallbackRegistrations::default()),
             });

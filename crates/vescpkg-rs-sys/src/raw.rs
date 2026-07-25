@@ -8,8 +8,14 @@
     clippy::missing_safety_doc,
     clippy::multiple_unsafe_ops_per_block,
     clippy::undocumented_unsafe_blocks,
-    clippy::useless_transmute,
     reason = "raw ABI wrappers mirror C entrypoints"
+)]
+#![cfg_attr(
+    not(target_arch = "arm"),
+    expect(
+        clippy::useless_transmute,
+        reason = "the host ABI table is intentionally retyped from opaque function pointers"
+    )
 )]
 
 use crate::{AppDataHandler, ExtensionHandler, LbmValue, VescIfAbi, VescIfPresence, c_vesc_if};

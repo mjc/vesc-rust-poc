@@ -69,16 +69,23 @@ impl FloatOutBoyKonami {
             self.reset();
         }
 
-        if footpad == self.sequence[self.state]
+        if self.sequence.get(self.state).copied() == Some(footpad)
             && float_out_boy_ticks_elapsed_seconds(now, self.timer, STEP_TIMEOUT)
         {
-            self.state += 1;
+            self.state = self.state.saturating_add(1);
             if self.state == self.sequence.len() {
                 self.reset();
                 return true;
             }
             self.timer = now;
-        } else if self.state > 0 && footpad != self.sequence[self.state - 1] {
+        } else if self
+            .state
+            .checked_sub(1)
+            .and_then(|index| self.sequence.get(index))
+            .copied()
+            != Some(footpad)
+            && self.state > 0
+        {
             self.reset();
         }
         false

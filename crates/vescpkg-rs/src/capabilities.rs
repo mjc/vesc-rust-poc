@@ -1026,6 +1026,24 @@ impl FirmwareCapabilities {
         self.inner.revision()
     }
 
+    /// Construct the complete motor telemetry capability after proving that
+    /// every safe motor read and command slot is present.
+    #[cfg(not(test))]
+    pub fn motor_telemetry(self) -> Result<impl crate::MotorTelemetry, AbiError> {
+        self.inner
+            .motor()
+            .map(|_| crate::motor::MotorTelemetryApi::new(crate::motor::RealMotorTelemetryBindings))
+    }
+
+    /// Construct the complete motor-command capability after proving that
+    /// every safe motor read and command slot is present.
+    #[cfg(not(test))]
+    pub fn motor(self) -> Result<impl crate::MotorOutput, AbiError> {
+        self.inner.motor().map(|_| {
+            crate::motor::MotorControlApi::from_firmware(crate::motor::RealMotorControlBindings)
+        })
+    }
+
     /// Construct a CAN handle only when its observed transmit entry exists.
     pub fn can_bus(self) -> Result<CanBus, AbiError> {
         self.inner.can().map(|_| CanBus::new())

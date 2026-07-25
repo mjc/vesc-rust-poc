@@ -1,5 +1,6 @@
 #![cfg(feature = "test-support")]
 #![allow(missing_docs)]
+#![allow(clippy::float_cmp)]
 
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{FirmwareFloatSetting, FirmwareIntSetting, FirmwareSettings, SettingsError};

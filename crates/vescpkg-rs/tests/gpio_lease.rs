@@ -1,4 +1,5 @@
 #![cfg(feature = "test-support")]
+#![allow(clippy::float_cmp)]
 //! Integration coverage for leased GPIO access.
 
 use vescpkg_rs::{

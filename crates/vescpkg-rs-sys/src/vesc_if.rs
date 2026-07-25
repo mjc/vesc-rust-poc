@@ -277,6 +277,8 @@ pub enum AbiError {
 /// Safe subsystem names exposed by a concrete firmware table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VescIfSubsystem {
+    /// Complete motor telemetry and command support.
+    Motor,
     /// Controller input and output-safety support.
     Inputs,
     /// Controller-area network support.
@@ -332,6 +334,83 @@ impl VescIfCapabilities {
     /// Return the descriptive revision inferred from observed pointers.
     pub fn revision(self) -> Stm32AbiRevision {
         self.presence.revision()
+    }
+
+    /// Probe the complete motor telemetry and command surface.
+    pub fn motor(self) -> Result<VescIfCapability, AbiError> {
+        let checks = [
+            VescIfAbi::MC_GET_RPM,
+            VescIfAbi::MC_GET_SPEED,
+            VescIfAbi::MC_GET_TOT_CURRENT_FILTERED,
+            VescIfAbi::MC_GET_TOT_CURRENT,
+            VescIfAbi::MC_GET_TOT_CURRENT_DIRECTIONAL_FILTERED,
+            VescIfAbi::MC_GET_TOT_CURRENT_DIRECTIONAL,
+            VescIfAbi::GET_CFG_FLOAT,
+            VescIfAbi::GET_CFG_INT,
+            VescIfAbi::MC_GET_TOT_CURRENT_IN_FILTERED,
+            VescIfAbi::MC_GET_TOT_CURRENT_IN,
+            VescIfAbi::MC_STAT_POWER_AVG,
+            VescIfAbi::MC_STAT_POWER_MAX,
+            VescIfAbi::MC_STAT_SPEED_AVG,
+            VescIfAbi::MC_STAT_SPEED_MAX,
+            VescIfAbi::MC_STAT_CURRENT_AVG,
+            VescIfAbi::MC_STAT_CURRENT_MAX,
+            VescIfAbi::MC_STAT_TEMP_MOSFET_AVG,
+            VescIfAbi::MC_STAT_TEMP_MOSFET_MAX,
+            VescIfAbi::MC_STAT_TEMP_MOTOR_AVG,
+            VescIfAbi::MC_STAT_TEMP_MOTOR_MAX,
+            VescIfAbi::MC_STAT_COUNT_TIME,
+            VescIfAbi::MC_GET_DUTY_CYCLE_NOW,
+            VescIfAbi::MC_GET_PID_POS_SET,
+            VescIfAbi::MC_GET_PID_POS_NOW,
+            VescIfAbi::MC_TEMP_FET_FILTERED,
+            VescIfAbi::MC_TEMP_MOTOR_FILTERED,
+            VescIfAbi::MC_GET_ODOMETER,
+            VescIfAbi::MC_GET_AMP_HOURS,
+            VescIfAbi::MC_GET_AMP_HOURS_CHARGED,
+            VescIfAbi::MC_GET_WATT_HOURS,
+            VescIfAbi::MC_GET_WATT_HOURS_CHARGED,
+            VescIfAbi::MC_GET_BATTERY_LEVEL,
+            VescIfAbi::MC_GET_FAULT,
+            VescIfAbi::MC_FAULT_TO_STRING,
+            VescIfAbi::MC_GET_INPUT_VOLTAGE_FILTERED,
+            VescIfAbi::MC_GET_TACHOMETER_VALUE,
+            VescIfAbi::MC_GET_TACHOMETER_ABS_VALUE,
+            VescIfAbi::MC_GET_SAMPLING_FREQUENCY_NOW,
+            VescIfAbi::MC_GET_DISTANCE_ABS,
+            VescIfAbi::MC_GET_DISTANCE,
+            VescIfAbi::MC_DCCAL_DONE,
+            VescIfAbi::MC_GET_MOTOR_THREAD,
+            VescIfAbi::TIMEOUT_RESET,
+            VescIfAbi::MC_SET_CURRENT_OFF_DELAY,
+            VescIfAbi::MC_SET_CURRENT,
+            VescIfAbi::MC_SET_CURRENT_REL,
+            VescIfAbi::MC_SET_BRAKE_CURRENT_REL,
+            VescIfAbi::MC_SET_PID_SPEED,
+            VescIfAbi::MC_SET_PID_POS,
+            VescIfAbi::MC_SET_DUTY,
+            VescIfAbi::MC_SET_DUTY_NORAMP,
+            VescIfAbi::MC_SET_BRAKE_CURRENT,
+            VescIfAbi::MC_SET_HANDBRAKE,
+            VescIfAbi::MC_SET_HANDBRAKE_REL,
+            VescIfAbi::MC_SET_PWM_CALLBACK,
+            VescIfAbi::MC_STAT_RESET,
+            VescIfAbi::MC_UPDATE_PID_POS_OFFSET,
+            VescIfAbi::MC_SET_ODOMETER,
+            VescIfAbi::MC_SET_TACHOMETER_VALUE,
+            VescIfAbi::MC_RELEASE_MOTOR,
+            VescIfAbi::MC_WAIT_FOR_MOTOR_RELEASE,
+        ];
+        let mut index = 0;
+        while index < checks.len() {
+            if let Err(error) = self.presence.require("motor", checks[index]) {
+                return Err(error);
+            }
+            index += 1;
+        }
+        Ok(VescIfCapability {
+            subsystem: VescIfSubsystem::Motor,
+        })
     }
 
     /// Probe controller input support as an optional subsystem.

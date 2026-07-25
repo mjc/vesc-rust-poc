@@ -1,4 +1,5 @@
 #![cfg(feature = "test-support")]
+#![allow(clippy::float_cmp)]
 #![allow(missing_docs)]
 
 use vescpkg_rs::{
