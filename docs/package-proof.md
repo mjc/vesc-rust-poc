@@ -7,20 +7,20 @@ copy of the deleted legacy builder's output.
 
 The current release artifacts produced by `cargo vescpkg build` are:
 
-These values were regenerated from SDK commit `d466a7e3` on the ARM32 package
+These values were regenerated from SDK commit `783730bb` on the ARM32 package
 path; they are an artifact baseline, not a claim of byte identity with
 `origin/main`.
 
 | artifact | bytes | SHA-256 |
 | --- | ---: | --- |
-| `Rust-BLE-loopback-test-package-0.1.0.vescpkg` | 2,822 | `825db1ee9e7d2378dc7abb61f22af2b704b64590d298e8d03221b79953503efc` |
-| `Rust-alloc-smoke-package-0.1.0.vescpkg` | 4,185 | `7c7e731fbb66ba75f03461f9276eae7a08aaa67c6152d54b5713b371369446ea` |
-| `Rust-control-loop-smoke-package-0.1.0.vescpkg` | 2,873 | `f95f02385aad8d6105eaf11d6f92290d5917d8988c5a42eda77ba9145687e72e` |
-| `Float-Out-Boy-0.1.0.vescpkg` | 100,966 | `07b01ddc2bb7d7c026fad2ed7e54197b2ccf3dbfaae65fde5cb2b640a32986f6` |
-| loopback `src/package_lib.bin` | 2,972 | `e488bd6413b8d5f8429ce431e52d497d127d5b2e8f945b7b6c22f96fbd3b1a4f` |
-| alloc-smoke `src/package_lib.bin` | 4,888 | `ca2ba53cb68fcd968a6e97738dba37bfac780909dd42c1a5fabfca3ef0d682b6` |
-| control-loop `src/package_lib.bin` | 3,097 | `98986583d770b2d70dac189c9c6bed724a93126fe368fd6864a427944c4da4a8` |
-| Float Out Boy `src/package_lib.bin` | 78,248 | `9eaeeef86e5f8de3b6a144a448d111103f556723da25e524634b4b76a3e059b1` |
+| `Rust-BLE-loopback-test-package-0.1.0.vescpkg` | 2,942 | `640640541ac2210e9b3ca86939d7ca1d9ecd6274a3f0621baa37343a19ce309c` |
+| `Rust-alloc-smoke-package-0.1.0.vescpkg` | 4,227 | `6ff9fa6db8af00284aaa2b474ead62ba171cc7a92c6c17cec2b7667b3b43f4d4` |
+| `Rust-control-loop-smoke-package-0.1.0.vescpkg` | 2,912 | `36a2bb66ca390d8a9009a063062982f6f35ac8d9be563dd6819df10324359a34` |
+| `Float-Out-Boy-0.1.0.vescpkg` | 101,051 | `0bad41b9ad8c0e771417f767356e2fe705e1c4099bf85b60ca136b8417b23a81` |
+| loopback `src/package_lib.bin` | 3,148 | `1e4ff87ade57dede9cb63b543241ab8204c75f0e59f55f2f56bb216636656be2` |
+| alloc-smoke `src/package_lib.bin` | 4,968 | `09432f96bc013f270661f85fa888ffc3b493bac038dcac0e262dad928d3a2fd6` |
+| control-loop `src/package_lib.bin` | 3,129 | `b59cd8bc9e001c5443d8c268243f5093f01549ce1c4568a3911aa12bd4921c31` |
+| Float Out Boy `src/package_lib.bin` | 78,040 | `2d54eaf7e9b0d3a8036f3db264c92934f54686c7fdf1e864c90aba6672100933` |
 
 `cargo test -p cargo-vescpkg` decodes the compressed wire fixture through the
 same package reader used by installation. A historical hardware gate ran the
