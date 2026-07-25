@@ -241,17 +241,16 @@ fn validate_path_component(label: &str, value: &str) -> Result<(), BuildError> {
 
 fn command_output(command: &mut Command) -> Result<Output, BuildError> {
     let output = command.output()?;
-    match output.status.success() {
-        true => {
-            if !output.stderr.is_empty() {
-                let _ = std::io::stderr().write_all(&output.stderr);
-            }
-            Ok(output)
+    if output.status.success() {
+        if !output.stderr.is_empty() {
+            let _ = std::io::stderr().write_all(&output.stderr);
         }
-        false => Err(BuildError(command_failure_message(
+        Ok(output)
+    } else {
+        Err(BuildError(command_failure_message(
             &output.stdout,
             &output.stderr,
-        ))),
+        )))
     }
 }
 
@@ -456,7 +455,7 @@ fn cargo_message_artifacts(
             .into_iter()
             .flatten()
             .filter_map(Value::as_str)
-            .find(|path| path.ends_with(".a"))
+            .find(|path| Path::new(path).extension().is_some_and(|ext| ext == "a"))
             .map(PathBuf::from),
     })
     .flatten();
@@ -533,6 +532,7 @@ fn validate_loader_init_stack(elf: &Path) -> Result<(), BuildError> {
     validate_loader_init_stack_report(&String::from_utf8_lossy(&output.stdout))
 }
 
+#[allow(clippy::manual_let_else)]
 fn disassembled_functions(report: &str) -> Result<Vec<DisassembledFunction>, BuildError> {
     let mut functions = Vec::new();
     for line in report.lines() {
@@ -576,8 +576,10 @@ fn disassembled_functions(report: &str) -> Result<Vec<DisassembledFunction>, Bui
             let immediate = immediate.trim_start_matches('#');
             let bytes = immediate
                 .strip_prefix("0x")
-                .map(|value| usize::from_str_radix(value, 16))
-                .unwrap_or_else(|| immediate.parse())
+                .map_or_else(
+                    || immediate.parse(),
+                    |value| usize::from_str_radix(value, 16),
+                )
                 .map_err(|_| {
                     BuildError(format!("could not read loader stack size `{immediate}`"))
                 })?;

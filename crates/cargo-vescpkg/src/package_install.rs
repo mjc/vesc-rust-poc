@@ -101,7 +101,7 @@ impl From<crate::package::PackageError> for PackageInstallError {
         match error {
             crate::package::PackageError::Io(error) => Self::Io(error.to_string()),
             crate::package::PackageError::InvalidPackage(reason) => Self::InvalidPackage(reason),
-            other => Self::Io(other.to_string()),
+            other @ crate::package::PackageError::Wire(_) => Self::Io(other.to_string()),
         }
     }
 }
@@ -109,18 +109,46 @@ impl From<crate::package::PackageError> for PackageInstallError {
 /// Firmware-side transport operations needed to install or erase a package.
 pub trait PackageInstallTransport {
     /// Returns whether a QML App UI is already present on the target.
+    ///
+    /// # Errors
+    ///
+    /// Returns a transport error when the target cannot be queried.
     fn has_qml_app(&self) -> Result<bool, PackageInstallError>;
     /// Erases enough space for a QML App UI payload of `bytes` bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns a transport error when the erase command fails.
     fn erase_qml(&self, bytes: usize) -> Result<(), PackageInstallError>;
     /// Uploads a compressed QML App UI payload and its fullscreen setting.
+    ///
+    /// # Errors
+    ///
+    /// Returns a transport error when the upload command fails.
     fn upload_qml(&self, qml: &[u8], fullscreen: bool) -> Result<(), PackageInstallError>;
     /// Erases enough space for a Lisp payload of `bytes` bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns a transport error when the erase command fails.
     fn erase_lisp(&self, bytes: usize) -> Result<(), PackageInstallError>;
     /// Uploads the Lisp payload bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns a transport error when the upload command fails.
     fn upload_lisp(&self, lisp: &[u8]) -> Result<(), PackageInstallError>;
     /// Enables or disables the installed Lisp package.
+    ///
+    /// # Errors
+    ///
+    /// Returns a transport error when the target rejects the state change.
     fn set_running(&self, running: bool) -> Result<(), PackageInstallError>;
     /// Requests a firmware reload after package changes complete.
+    ///
+    /// # Errors
+    ///
+    /// Returns a transport error when the reload command fails.
     fn reload_firmware(&self) -> Result<(), PackageInstallError>;
 }
 
@@ -247,16 +275,28 @@ impl<'a, T: PackageInstallTransport> PackageInstallAttempt<'a, T> {
 }
 
 /// Reads and decodes a package from a filesystem path.
+///
+/// # Errors
+///
+/// Returns an error when the file cannot be read or is not a valid package.
 pub fn read_package_from_path(path: impl AsRef<Path>) -> Result<VescPackage, PackageInstallError> {
     VescPackage::read(path).map_err(Into::into)
 }
 
 /// Decodes raw package bytes into an installable VESC package model.
+///
+/// # Errors
+///
+/// Returns an error when the bytes do not contain a valid package.
 pub fn decode_package(data: &[u8]) -> Result<VescPackage, PackageInstallError> {
     VescPackage::from_bytes(data).map_err(Into::into)
 }
 
 /// Opens BLE, installs a package from disk, and closes the transport.
+///
+/// # Errors
+///
+/// Returns an error when package decoding, BLE setup, or installation fails.
 pub fn install_over_ble(
     package_path: impl AsRef<Path>,
     target: LoopbackTarget,
@@ -268,13 +308,18 @@ pub fn install_over_ble(
 }
 
 /// Opens BLE, erases the installed package, and closes the transport.
+///
+/// # Errors
+///
+/// Returns an error when BLE setup or package erasure fails.
 pub fn erase_over_ble(
     target: LoopbackTarget,
     no_preflight: bool,
 ) -> Result<PackageInstallReport, PackageInstallError> {
-    let open_mode = match no_preflight {
-        true => OpenMode::NoPreflightRecovery,
-        false => OpenMode::Preflight,
+    let open_mode = if no_preflight {
+        OpenMode::NoPreflightRecovery
+    } else {
+        OpenMode::Preflight
     };
 
     with_open_transport(target, open_mode, |transport| {
@@ -290,6 +335,10 @@ pub fn erase_over_ble(
 }
 
 /// Installs a validated package using the same operation order as VESC Tool.
+///
+/// # Errors
+///
+/// Returns an error when validation or any transport operation fails.
 pub fn install_package<T: PackageInstallTransport>(
     package: &VescPackage,
     transport: &T,
@@ -354,6 +403,10 @@ pub fn install_package<T: PackageInstallTransport>(
 }
 
 /// Erases any installed package payloads from the target and reloads firmware state.
+///
+/// # Errors
+///
+/// Returns an error when any erase or reload operation fails.
 pub fn erase_package<T: PackageInstallTransport>(
     transport: &T,
 ) -> Result<PackageInstallReport, PackageInstallError> {
@@ -549,7 +602,11 @@ mod tests {
 
     fn write_field(buf: &mut Vec<u8>, name: &str, data: &[u8]) {
         write_string(buf, name);
-        buf.extend_from_slice(&(data.len() as i32).to_be_bytes());
+        buf.extend_from_slice(
+            &i32::try_from(data.len())
+                .expect("test package field length fits VESC wire field")
+                .to_be_bytes(),
+        );
         buf.extend_from_slice(data);
     }
 
@@ -558,7 +615,8 @@ mod tests {
         encoder.write_all(data).expect("write compressed package");
         let compressed = encoder.finish().expect("finish compressed package");
 
-        (data.len() as u32)
+        u32::try_from(data.len())
+            .expect("test package length fits VESC wire field")
             .to_be_bytes()
             .into_iter()
             .chain(compressed)

@@ -1,5 +1,6 @@
 //! Install a package and run BLE loopback on the same open session.
 
+use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
 use tokio::runtime::Runtime;
@@ -22,6 +23,10 @@ const CONTROL_LOOP_SETPOINT: i16 = 100;
 const CONTROL_LOOP_STATUS_SAMPLES: usize = 4;
 
 /// Opens BLE and runs the standard package app-data loopback sequence.
+///
+/// # Errors
+///
+/// Returns an error when BLE cannot be opened or the package does not answer the loopback probe.
 pub fn run_loopback_probe(
     target: LoopbackTarget,
     mut progress: impl FnMut(String),
@@ -51,21 +56,25 @@ pub struct ControlLoopProbeReport {
 
 impl ControlLoopProbeReport {
     /// Return the target used for the probe.
+    #[must_use]
     pub const fn target(&self) -> &LoopbackTarget {
         &self.target
     }
 
     /// Return each status sample in wire order.
+    #[must_use]
     pub fn statuses(&self) -> &[ControlLoopStatus] {
         &self.statuses
     }
 
     /// Return the observed firmware tick timing statistics.
+    #[must_use]
     pub const fn timing(&self) -> ControlLoopTimingStats {
         self.timing
     }
 
     /// Return host-observed probe duration.
+    #[must_use]
     pub const fn elapsed(&self) -> Duration {
         self.elapsed
     }
@@ -80,16 +89,19 @@ pub struct ControlLoopTimingStats {
 
 impl ControlLoopTimingStats {
     /// Return the shortest observed duration per firmware tick.
+    #[must_use]
     pub const fn min_tick_period(self) -> Duration {
         self.min_tick_period
     }
 
     /// Return the longest observed duration per firmware tick.
+    #[must_use]
     pub const fn max_tick_period(self) -> Duration {
         self.max_tick_period
     }
 
     /// Return the observed period spread between the fastest and slowest samples.
+    #[must_use]
     pub const fn jitter(self) -> Duration {
         self.max_tick_period.saturating_sub(self.min_tick_period)
     }
@@ -166,6 +178,10 @@ impl std::fmt::Display for ControlLoopProbeError {
 impl std::error::Error for ControlLoopProbeError {}
 
 /// Opens BLE and probes the installed no-actuation control-loop package.
+///
+/// # Errors
+///
+/// Returns an error when BLE cannot be opened or the control-loop package returns an invalid result.
 pub fn run_control_loop_probe(
     target: LoopbackTarget,
     mut progress: impl FnMut(String),
@@ -398,11 +414,10 @@ fn build_custom_app_data_packet(payload: &[u8]) -> Vec<u8> {
 
 fn hex_snippet(bytes: &[u8], max_bytes: usize) -> String {
     let shown = bytes.len().min(max_bytes);
-    let mut hex = bytes[..shown]
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<Vec<_>>()
-        .join("");
+    let mut hex = String::with_capacity(shown * 2 + usize::from(bytes.len() > max_bytes));
+    bytes[..shown].iter().for_each(|byte| {
+        write!(&mut hex, "{byte:02x}").expect("writing to a String cannot fail");
+    });
     if bytes.len() > max_bytes {
         hex.push('…');
     }

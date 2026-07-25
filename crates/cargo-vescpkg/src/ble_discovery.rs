@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::loopback::LoopbackTarget;
 
-const VESC_BLE_UART_SERVICE_UUID: Uuid = Uuid::from_u128(0x6e400001b5a3f393e0a9e50e24dcca9e);
+const VESC_BLE_UART_SERVICE_UUID: Uuid = Uuid::from_u128(0x6e40_0001_b5a3_f393_e0a9_e50e_24dc_ca9e);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DiscoveryError {
@@ -27,9 +27,10 @@ pub(crate) async fn find_matching_peripheral(
             .await
             .map_err(|_| DiscoveryError::InspectFailed)?;
         for peripheral in peripherals {
-            let properties = match peripheral.properties().await {
-                Ok(Some(properties)) => properties,
-                Ok(None) | Err(_) => continue,
+            #[allow(clippy::manual_let_else)]
+            let properties = match peripheral.properties().await.ok().flatten() {
+                Some(properties) => properties,
+                None => continue,
             };
             if target_matches_properties(
                 target,
@@ -53,14 +54,11 @@ fn target_matches_properties(
     let address_matches = target
         .address()
         .zip(address)
-        .map(|(expected, actual)| expected.eq_ignore_ascii_case(actual))
-        .unwrap_or(false);
-    let name_matches = local_name
-        .map(|name| {
-            name.eq_ignore_ascii_case(target.device_name_hint())
-                || name.eq_ignore_ascii_case(target.service_name_hint())
-        })
-        .unwrap_or(false);
+        .is_some_and(|(expected, actual)| expected.eq_ignore_ascii_case(actual));
+    let name_matches = local_name.is_some_and(|name| {
+        name.eq_ignore_ascii_case(target.device_name_hint())
+            || name.eq_ignore_ascii_case(target.service_name_hint())
+    });
     let service_matches =
         !target.requires_explicit_match() && services.contains(&VESC_BLE_UART_SERVICE_UUID);
 
@@ -77,7 +75,7 @@ mod tests {
     fn target_matching_covers_scan_filter_and_selectors() {
         assert!(vesc_tool_scan_filter().services.is_empty());
 
-        let service_uuid = Uuid::from_u128(0x6e400001b5a3f393e0a9e50e24dcca9e);
+        let service_uuid = Uuid::from_u128(0x6e40_0001_b5a3_f393_e0a9_e50e_24dc_ca9e);
         let named = LoopbackTarget::named("Floatwheel PintV");
         assert!(target_matches_properties(
             &named,

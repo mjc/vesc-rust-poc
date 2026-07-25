@@ -111,7 +111,8 @@ mod tests {
 
     #[test]
     fn rejects_unreasonable_decompressed_length() {
-        let declared = (MAX_DECOMPRESSED_PACKAGE_BYTES + 1) as u32;
+        let declared = u32::try_from(MAX_DECOMPRESSED_PACKAGE_BYTES + 1)
+            .expect("test package length fits VESC wire field");
         let error = decompress(&declared.to_be_bytes()).expect_err("length must be rejected");
 
         assert_eq!(

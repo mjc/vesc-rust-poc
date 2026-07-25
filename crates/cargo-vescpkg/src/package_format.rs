@@ -251,8 +251,7 @@ fn markdown_description_html(markdown: &str) -> String {
         "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" \"http://www.w3.org/TR/REC-html40/strict.dtd\">\n",
     );
     let events = Parser::new_ext(markdown, Options::empty()).map(|event| match event {
-        Event::Html(html) => Event::Text(html),
-        Event::InlineHtml(html) => Event::Text(html),
+        Event::Html(html) | Event::InlineHtml(html) => Event::Text(html),
         event => event,
     });
     html::push_html(&mut rendered, events);
