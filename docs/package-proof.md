@@ -7,7 +7,7 @@ copy of the deleted legacy builder's output.
 
 The current release artifacts produced by `cargo vescpkg build` are:
 
-These values were regenerated from SDK commit `fac546ce` on the ARM32 package
+These values were regenerated from SDK commit `1f4fe8c8` on the ARM32 package
 path; they are an artifact baseline, not a claim of byte identity with
 `origin/main`.
 
@@ -16,11 +16,11 @@ path; they are an artifact baseline, not a claim of byte identity with
 | `Rust-BLE-loopback-test-package-0.1.0.vescpkg` | 2,942 | `640640541ac2210e9b3ca86939d7ca1d9ecd6274a3f0621baa37343a19ce309c` |
 | `Rust-alloc-smoke-package-0.1.0.vescpkg` | 4,227 | `6ff9fa6db8af00284aaa2b474ead62ba171cc7a92c6c17cec2b7667b3b43f4d4` |
 | `Rust-control-loop-smoke-package-0.1.0.vescpkg` | 3,479 | `abac826d2b31852dde2468bb522843916ee996d0e5e77c372681171ffd58a67b` |
-| `Float-Out-Boy-0.1.0.vescpkg` | 101,098 | `a69e0b286db8b72dc1ca0ad20aadbacd0782fa3bbf1b8a2822291dc66a1a675b` |
+| `Float-Out-Boy-0.1.0.vescpkg` | 101,063 | `ccecda97f7a96b034c9407cf2413cb66e62cf233dbf09d7f095bfeb7095ab15d` |
 | loopback `src/package_lib.bin` | 3,148 | `1e4ff87ade57dede9cb63b543241ab8204c75f0e59f55f2f56bb216636656be2` |
 | alloc-smoke `src/package_lib.bin` | 4,968 | `09432f96bc013f270661f85fa888ffc3b493bac038dcac0e262dad928d3a2fd6` |
 | control-loop `src/package_lib.bin` | 3,817 | `3cb48cd42c72102cd9acef99913d99a37fedd093f0f534d51816062720d56998` |
-| Float Out Boy `src/package_lib.bin` | 78,120 | `7d6a6fc62edc3065c0850bf769a4dbf305360ac93738c390988696d1577adff9` |
+| Float Out Boy `src/package_lib.bin` | 78,088 | `c52e3fef3d1849da02946b0a97c864a024787ee7eb2f1e69a3aeca6d64b74a00` |
 
 `cargo test -p cargo-vescpkg` decodes the compressed wire fixture through the
 same package reader used by installation. A historical hardware gate ran the
