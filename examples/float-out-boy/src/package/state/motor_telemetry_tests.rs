@@ -120,12 +120,26 @@ fn mode3_ride_totals_refresh_from_motor_telemetry() {
 fn fault_response_skips_mode_telemetry_refresh() {
     let app_data = TimestampTicks::from_ticks(0);
 
-    let bindings = FirmwareTest::new().with_firmware_fault(FirmwareFaultCode::from_wire_code(5));
+    let bindings = FirmwareTest::new()
+        .with_firmware_fault(FirmwareFault::Active(FirmwareFaultId::OverTemperatureFet));
     let telemetry = bindings.telemetry();
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
 
     let packet = handle_all_data_mode(&mut state, app_data, telemetry, 4).unwrap();
     assert_eq!(packet, &[101, 10, 69, 5]);
+}
+
+#[test]
+fn unknown_fault_fails_closed_without_emitting_normal_data() {
+    let app_data = TimestampTicks::from_ticks(0);
+    let bindings = FirmwareTest::new().with_firmware_fault(FirmwareFault::Unknown);
+    let telemetry = bindings.telemetry();
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+
+    assert_eq!(
+        handle_all_data_mode(&mut state, app_data, telemetry, 4),
+        None
+    );
 }
 
 #[test]
@@ -189,6 +203,63 @@ fn motor_runtime_tracks_typed_float_out_boy_wheelslip_duty_inputs() {
     assert_eq!(
         state.duty_max_with_margin,
         DutyCycleLimit::new(Ratio::from_ratio_const(0.90))
+    );
+}
+
+#[test]
+fn motor_runtime_refreshes_live_limits_before_auxiliary_side_effects() {
+    let firmware = FirmwareTest::new()
+        .with_motor_current_limits(
+            MotorCurrentLimit::new(Current::from_amps(42.0)),
+            MotorCurrentLimit::new(Current::from_amps(17.0)),
+        )
+        .with_temperature_limit_starts(
+            TemperatureLimitStart::new(Temperature::from_degrees_celsius(82.0)),
+            TemperatureLimitStart::new(Temperature::from_degrees_celsius(91.0)),
+        );
+    let settings = FirmwareSettings;
+    settings
+        .set_input_current_max(InputCurrent::new(Current::from_amps(31.0)))
+        .unwrap();
+    settings
+        .set_input_current_min(InputCurrent::new(Current::from_amps(13.0)))
+        .unwrap();
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+
+    // The source aux loop reads the live motor/config values before its LED and
+    // backup side effects; exercise that complete tick order (`main.c:796-806`,
+    // `main.c:1131-1155`) rather than only the refresh helper.
+    state.initialize_aux_odometer(OdometerMeters::from_meters(0));
+    let _ = crate::package::threads::tick_float_out_boy_aux_thread_with(
+        &mut state,
+        firmware.telemetry(),
+        OdometerMeters::from_meters(201),
+        || true,
+    );
+
+    assert_eq!(
+        state.motor_current_max,
+        MotorCurrentLimit::new(Current::from_amps(42.0))
+    );
+    assert_eq!(
+        state.motor_current_min,
+        MotorCurrentLimit::new(Current::from_amps(17.0))
+    );
+    assert_eq!(
+        state.battery_current_max,
+        InputCurrent::new(Current::from_amps(31.0))
+    );
+    assert_eq!(
+        state.battery_current_min,
+        InputCurrent::new(Current::from_amps(13.0))
+    );
+    assert_eq!(
+        state.mosfet_temperature_limit_start,
+        TemperatureLimitStart::new(Temperature::from_degrees_celsius(82.0))
+    );
+    assert_eq!(
+        state.motor_temperature_limit_start,
+        TemperatureLimitStart::new(Temperature::from_degrees_celsius(91.0))
     );
 }
 

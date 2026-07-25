@@ -1,4 +1,4 @@
-//! Raw/minimal VESC firmware ABI bindings.
+//! Raw VESC firmware ABI bindings generated from the pinned package header.
 //!
 //! This crate mirrors the VESC native package ABI. It does not provide
 //! high-level vehicle semantics, package building, or host transport code.
@@ -37,28 +37,11 @@
 #[cfg(test)]
 extern crate std;
 
-// These tests verify values crossing the C ABI exactly. Comparing the IEEE-754
-// bit patterns makes that intent explicit and avoids accidentally replacing an
-// ABI check with an approximate numerical comparison.
-#[cfg(test)]
-macro_rules! assert_f32_eq {
-    ($left:expr, $right:expr $(,)?) => {{
-        let left: f32 = $left;
-        let right: f32 = $right;
-        assert_eq!(left.to_bits(), right.to_bits());
-    }};
-}
-
-#[cfg(test)]
-macro_rules! assert_f64_eq {
-    ($left:expr, $right:expr $(,)?) => {{
-        let left: f64 = $left;
-        let right: f64 = $right;
-        assert_eq!(left.to_bits(), right.to_bits());
-    }};
-}
-
 mod image;
+#[expect(
+    dead_code,
+    reason = "generated ABI metadata includes every pinned slot"
+)]
 mod c_vesc_if {
     include!(concat!(env!("OUT_DIR"), "/c_vesc_if.rs"));
 }
@@ -82,6 +65,10 @@ mod loader;
 mod types;
 mod vesc_if;
 
+/// Separate platform-neutral VESC Express native-library ABI metadata and
+/// fail-closed table loader. It is not part of the STM32 `VescIf` surface.
+pub mod express;
+
 #[cfg(test)]
 pub mod test_support;
 
@@ -94,8 +81,9 @@ pub use image::{ImageOffset, NativeAddress, NativeImage};
 pub use loader::{AppDataHandler, ExtensionHandler, LibInfo, LibInfoAbi, StopHandler};
 pub use types::*;
 pub use vesc_if::{
-    AbiError, Stm32AbiRevision, VescIfAbi, VescIfManifestEntry, VescIfPresence, VescIfSlot,
-    VescIfSlotKind,
+    AbiError, Stm32AbiRevision, VescIfAbi, VescIfCapabilities, VescIfCapability,
+    VescIfManifestEntry, VescIfPresence, VescIfSlot, VescIfSlotFamily, VescIfSlotKind,
+    VescIfSlotNullability, VescIfSlotSafety, VescIfSubsystem,
 };
 pub use views::{
     AppDataPacket, CanPayload, CommandPacket, ConfigPayload, ConfigXmlBytes, MutablePacket,

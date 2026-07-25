@@ -428,7 +428,7 @@ mod tests {
         let nil = LispValue::nil();
         let value = ExtBms::call(&mut state, args);
 
-        assert!(value == nil);
+        assert_eq!(value, nil);
     }
 
     #[test]
@@ -442,7 +442,7 @@ mod tests {
 
         let value = ExtBms::call(&mut state, LispArgs::empty());
 
-        assert!(value == LispValue::true_value());
+        assert_eq!(value, LispValue::true_value());
     }
 
     #[test]

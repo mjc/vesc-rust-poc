@@ -1,5 +1,7 @@
 //! Typed controller-input access backed by VESC PPM and UART slots.
 
+#![allow(deprecated)]
+
 use crate::{JoystickY, PpmAge, PpmInput, RemoteAge, SignedRatio, VescSeconds};
 
 /// Latest UART remote input used by package control loops.
@@ -29,7 +31,12 @@ impl RemoteInput {
     }
 }
 
-/// Firmware controller-input capability.
+/// Legacy firmware controller-input capability.
+///
+/// Use [`crate::FirmwareInputs`] for new code. This compatibility wrapper
+/// predates the capability-aware API and intentionally preserves its fallback
+/// return shapes for existing package ports.
+#[deprecated(note = "use FirmwareInputs for capability-aware input access")]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ControllerInput;
 
@@ -65,9 +72,14 @@ impl ControllerInput {
     pub fn remote(&self) -> RemoteInput {
         // C map: Float Out Boy reads the remote-state slot in
         // `third_party/float-out-boy/src/remote.c:43-48`.
-        let remote = call_vesc_ffi!(remote_state());
-        let (joystick_y, age) =
-            remote.map_or((0.0, f32::INFINITY), |remote| (remote.js_y, remote.age_s));
+        #[cfg(any(test, not(feature = "test-support")))]
+        let (joystick_y, age) = {
+            let remote = call_vesc_ffi!(remote_state());
+            (remote.js_y, remote.age_s)
+        };
+        #[cfg(all(not(test), feature = "test-support"))]
+        let (joystick_y, age) = call_vesc_ffi!(remote_state())
+            .map_or((0.0, f32::INFINITY), |remote| (remote.js_y, remote.age_s));
         RemoteInput::new(
             JoystickY::new(firmware_ratio(joystick_y)),
             RemoteAge::new(VescSeconds::from_seconds(age.max(0.0))),

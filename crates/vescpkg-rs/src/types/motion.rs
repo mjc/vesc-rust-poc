@@ -2,6 +2,54 @@
 
 use crate::units::{AngleDegrees, Distance, Rpm, Speed, TachometerSteps as UnitTachometerSteps};
 
+/// Select whether a tachometer read preserves or resets firmware state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TachometerReset {
+    /// Read the current value without changing the firmware counter.
+    Preserve,
+    /// Read the current value and reset the firmware counter.
+    Reset,
+}
+
+impl TachometerReset {
+    /// Return the ABI reset flag for this semantic choice.
+    pub const fn resets(self) -> bool {
+        matches!(self, Self::Reset)
+    }
+}
+
+/// Select whether cumulative energy counters preserve or reset firmware state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnergyCounterReset {
+    /// Read the current counter without changing firmware state.
+    Preserve,
+    /// Read the current counter and reset it in firmware.
+    Reset,
+}
+
+impl EnergyCounterReset {
+    /// Return the ABI reset flag for this semantic choice.
+    pub const fn resets(self) -> bool {
+        matches!(self, Self::Reset)
+    }
+}
+
+/// Select whether a PID-position offset update remains live-only or is stored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PidPositionOffsetPersistence {
+    /// Update the live value without persisting it to firmware configuration.
+    Volatile,
+    /// Update the live value and ask firmware to persist it.
+    Persistent,
+}
+
+impl PidPositionOffsetPersistence {
+    /// Return the ABI persistence flag for this semantic choice.
+    pub const fn stores(self) -> bool {
+        matches!(self, Self::Persistent)
+    }
+}
+
 macro_rules! speed_type {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]
@@ -94,6 +142,11 @@ macro_rules! tachometer_type {
         pub struct $name(UnitTachometerSteps);
 
         impl $name {
+            /// Construct tachometer steps from the firmware's signed step count.
+            pub const fn from_steps(steps: i32) -> Self {
+                Self(UnitTachometerSteps::from_steps(steps))
+            }
+
             /// Wrap generic tachometer steps with VESC-domain meaning.
             pub const fn new(steps: UnitTachometerSteps) -> Self {
                 Self(steps)
@@ -129,7 +182,13 @@ macro_rules! angle_degrees_type {
 }
 
 speed_type!(VehicleSpeed, "Estimated vehicle speed.");
+speed_type!(AverageVehicleSpeed, "Average vehicle speed statistic.");
+speed_type!(PeakVehicleSpeed, "Peak vehicle speed statistic.");
 distance_type!(TripDistance, "Trip distance travelled by the vehicle.");
+distance_type!(
+    SignedTripDistance,
+    "Signed trip distance travelled by the vehicle."
+);
 mechanical_rpm_type!(MechanicalSpeed, "Mechanical motor speed.");
 electrical_rpm_type!(ElectricalSpeed, "Electrical motor speed.");
 tachometer_type!(TachometerSteps, "Relative tachometer position.");

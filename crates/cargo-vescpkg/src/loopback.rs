@@ -44,21 +44,25 @@ impl LoopbackTarget {
     }
 
     /// Returns the preferred BLE device-name match hint.
+    #[must_use]
     pub fn device_name_hint(&self) -> &str {
         &self.device_name_hint
     }
 
     /// Returns the preferred BLE service-name match hint.
+    #[must_use]
     pub fn service_name_hint(&self) -> &str {
         &self.service_name_hint
     }
 
     /// Returns the explicit BLE address filter, if one was provided.
+    #[must_use]
     pub fn address(&self) -> Option<&str> {
         self.address.as_deref()
     }
 
     /// Returns whether discovery must match the provided name or address exactly.
+    #[must_use]
     pub fn requires_explicit_match(&self) -> bool {
         self.require_explicit_match
     }
@@ -99,16 +103,19 @@ pub struct LoopbackReport {
 
 impl LoopbackReport {
     /// Creates a loopback report from the selected target and observed commands.
+    #[must_use]
     pub fn new(target: LoopbackTarget, commands: Vec<WireCommand>) -> Self {
         Self { target, commands }
     }
 
     /// Returns the target used by the loopback run.
+    #[must_use]
     pub fn target(&self) -> &LoopbackTarget {
         &self.target
     }
 
     /// Returns the response commands decoded during the loopback run.
+    #[must_use]
     pub fn commands(&self) -> &[WireCommand] {
         &self.commands
     }

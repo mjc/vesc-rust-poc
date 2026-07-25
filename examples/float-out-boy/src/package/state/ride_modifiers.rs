@@ -225,7 +225,7 @@ impl RideModifierState {
         let sample_rate = config.startup().sample_rate();
         let abs_erpm = input.motor_erpm.abs().as_revolutions_per_minute();
         let erpm_sign = input.motor_erpm.signum();
-        let braking = input.motor_current.current().is_negative();
+        let braking = input.motor_current.is_negative();
         self.update_nose(config, input.motor_erpm, sample_rate);
         self.update_turn(balance, input.motor_erpm, sample_rate);
         self.update_torque(

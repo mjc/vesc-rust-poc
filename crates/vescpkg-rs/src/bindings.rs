@@ -72,6 +72,7 @@ impl<B: LbmBindings + ?Sized> LbmBindings for &B {
 }
 
 /// Firmware calls used by the app-data and system-time helpers.
+#[allow(dead_code)]
 pub(crate) trait AppDataBindings {
     /// # Safety
     /// `handler` must remain valid until it is replaced or cleared.
@@ -130,16 +131,11 @@ pub(crate) trait AppDataBindings {
 
     /// Send app-data bytes through the firmware callback.
     fn send_app_data_bytes(&self, data: &[u8]) -> bool {
-        if data.len() > MAX_APP_DATA_PAYLOAD_LEN {
-            return false;
-        }
-        let Ok(len) = u32::try_from(data.len()) else {
-            return false;
-        };
-
-        // SAFETY: the slice remains live and contains `len` bytes for this call.
-        unsafe { self.send_app_data(data.as_ptr(), len) };
-        true
+        u32::try_from(data.len())
+            .ok()
+            .filter(|_| data.len() <= MAX_APP_DATA_PAYLOAD_LEN)
+            .map(|len| unsafe { self.send_app_data(data.as_ptr(), len) })
+            .is_some()
     }
 }
 

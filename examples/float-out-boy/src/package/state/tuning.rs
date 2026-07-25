@@ -2,6 +2,7 @@ use super::{
     FloatOutBoyAppDataCommand, FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount,
     FloatOutBoyPackageState, float_out_boy_command_payload,
 };
+use crate::config::FloatOutBoyConfigEditor;
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngularVelocity, Current, ElectricalSpeed, IntegralCurrentGain,
     MahonyPitchGain, MotorCurrent, PidScale, RateCurrentGain, Ratio, Rpm, WireByte,
@@ -95,6 +96,18 @@ fn electrical_speed(erpm: f32) -> ElectricalSpeed {
     ElectricalSpeed::new(Rpm::from_revolutions_per_minute(erpm))
 }
 
+fn update_active_config(
+    state: &mut FloatOutBoyPackageState,
+    update: impl FnOnce(&mut FloatOutBoyConfigEditor<'_>) -> bool,
+) -> bool {
+    let mut config = state.serialized_config;
+    let updated = update(&mut config.editor());
+    if updated {
+        state.replace_active_config(&config);
+    }
+    updated
+}
+
 fn apply_primary_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8]) -> bool {
     let [
         pid,
@@ -139,55 +152,56 @@ fn apply_primary_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8
     let brake_lingering = FloatOutBoyTuneNibble::high(*brake_tilt);
     let speed_boost_numerator = if atr_speed_sign.0 == 0 { 5.0 } else { -5.0 };
 
-    let mut config = state.serialized_config.editor();
-    [
-        config.set_kp(pid_low.scaled(1.0, 15.0, AngleCurrentGain::new)),
-        config.set_kp2(pid_high.divided(10.0, 0.0, RateCurrentGain::new)),
-        config.set_ki(integral_low.integral_gain()),
-        config.set_ki_limit(integral_high.integral_limit()),
-        config.set_booster_angle(booster_low.angle_from(AngleDegrees::from_degrees(5.0))),
-        config.set_booster_ramp(booster_high.angle_from(AngleDegrees::from_degrees(2.0))),
-        config.set_booster_current(booster_current.booster_current()),
-        config.set_turn_tilt_strength(turn_strength.scaled(1.0, 0.0, PidScale::new)),
-        config.set_turn_tilt_angle_limit(FloatOutBoyTuneNibble(turn.0 & 0x03).scaled(
-            1.0,
-            2.0,
-            AngleDegrees::from_degrees,
-        )),
-        config.set_turn_tilt_start_erpm(FloatOutBoyTuneNibble(turn.0 >> 2).scaled(
-            500.0,
-            1000.0,
-            electrical_speed,
-        )),
-        config.set_mahony_kp(mahony.divided(10.0, 1.5, MahonyPitchGain::new)),
-        config.set_atr_strength_up(atr_up.atr_strength()),
-        config.set_atr_strength_down(atr_down.atr_strength()),
-        config.set_atr_speed_boost(atr_speed_amount.scaled_ratio(
-            speed_boost_numerator,
-            100.0,
-            0.0,
-            PidScale::new,
-        )),
-        config.set_atr_angle_limit(atr_angle.angle_from(AngleDegrees::from_degrees(5.0))),
-        config.set_atr_on_speed(FloatOutBoyTuneNibble(atr_speeds.0 & 0x03).scaled(
-            1.0,
-            3.0,
-            AngularVelocity::from_degrees_per_second,
-        )),
-        config.set_atr_off_speed(FloatOutBoyTuneNibble(atr_speeds.0 >> 2).scaled(
-            1.0,
-            2.0,
-            AngularVelocity::from_degrees_per_second,
-        )),
-        config.set_atr_response_boost(response_boost.divided(10.0, 1.0, PidScale::new)),
-        config.set_atr_transition_boost(transition_boost.divided(5.0, 1.0, PidScale::new)),
-        config.set_atr_amps_accel_ratio(accel_ratio.scaled(1.0, 5.0, PidScale::new)),
-        config.set_atr_amps_decel_ratio(decel_ratio.scaled(1.0, 5.0, PidScale::new)),
-        config.set_brake_tilt_strength(brake_strength.scaled(1.0, 0.0, PidScale::new)),
-        config.set_brake_tilt_lingering(brake_lingering.scaled(1.0, 0.0, PidScale::new)),
-    ]
-    .into_iter()
-    .all(core::convert::identity)
+    update_active_config(state, |config| {
+        [
+            config.set_kp(pid_low.scaled(1.0, 15.0, AngleCurrentGain::new)),
+            config.set_kp2(pid_high.divided(10.0, 0.0, RateCurrentGain::new)),
+            config.set_ki(integral_low.integral_gain()),
+            config.set_ki_limit(integral_high.integral_limit()),
+            config.set_booster_angle(booster_low.angle_from(AngleDegrees::from_degrees(5.0))),
+            config.set_booster_ramp(booster_high.angle_from(AngleDegrees::from_degrees(2.0))),
+            config.set_booster_current(booster_current.booster_current()),
+            config.set_turn_tilt_strength(turn_strength.scaled(1.0, 0.0, PidScale::new)),
+            config.set_turn_tilt_angle_limit(FloatOutBoyTuneNibble(turn.0 & 0x03).scaled(
+                1.0,
+                2.0,
+                AngleDegrees::from_degrees,
+            )),
+            config.set_turn_tilt_start_erpm(FloatOutBoyTuneNibble(turn.0 >> 2).scaled(
+                500.0,
+                1000.0,
+                electrical_speed,
+            )),
+            config.set_mahony_kp(mahony.divided(10.0, 1.5, MahonyPitchGain::new)),
+            config.set_atr_strength_up(atr_up.atr_strength()),
+            config.set_atr_strength_down(atr_down.atr_strength()),
+            config.set_atr_speed_boost(atr_speed_amount.scaled_ratio(
+                speed_boost_numerator,
+                100.0,
+                0.0,
+                PidScale::new,
+            )),
+            config.set_atr_angle_limit(atr_angle.angle_from(AngleDegrees::from_degrees(5.0))),
+            config.set_atr_on_speed(FloatOutBoyTuneNibble(atr_speeds.0 & 0x03).scaled(
+                1.0,
+                3.0,
+                AngularVelocity::from_degrees_per_second,
+            )),
+            config.set_atr_off_speed(FloatOutBoyTuneNibble(atr_speeds.0 >> 2).scaled(
+                1.0,
+                2.0,
+                AngularVelocity::from_degrees_per_second,
+            )),
+            config.set_atr_response_boost(response_boost.divided(10.0, 1.0, PidScale::new)),
+            config.set_atr_transition_boost(transition_boost.divided(5.0, 1.0, PidScale::new)),
+            config.set_atr_amps_accel_ratio(accel_ratio.scaled(1.0, 5.0, PidScale::new)),
+            config.set_atr_amps_decel_ratio(decel_ratio.scaled(1.0, 5.0, PidScale::new)),
+            config.set_brake_tilt_strength(brake_strength.scaled(1.0, 0.0, PidScale::new)),
+            config.set_brake_tilt_lingering(brake_lingering.scaled(1.0, 0.0, PidScale::new)),
+        ]
+        .into_iter()
+        .all(core::convert::identity)
+    })
 }
 
 fn apply_torque_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8]) -> bool {
@@ -202,44 +216,54 @@ fn apply_torque_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8]
     let torque_current = FloatOutBoyTuneNibble::high(*torque_limits);
     let torque_on = FloatOutBoyTuneNibble::low(*torque_speeds);
     let torque_off = FloatOutBoyTuneNibble::high(*torque_speeds);
-    let mut config = state.serialized_config.editor();
-    [
-        config.set_atr_threshold_up(threshold_up.scaled(0.5, 0.0, AngleDegrees::from_degrees)),
-        config.set_atr_threshold_down(threshold_down.scaled(0.5, 0.0, AngleDegrees::from_degrees)),
-        config.set_torque_tilt_strength(torque_up.torque_tilt_strength()),
-        config.set_torque_tilt_regen_strength(torque_down.torque_tilt_strength()),
-        config.set_torque_tilt_angle_limit(torque_angle.scaled(
-            0.5,
-            0.0,
-            AngleDegrees::from_degrees,
-        )),
-        config.set_torque_tilt_start_current(torque_current.scaled(1.0, 15.0, motor_current)),
-        config.set_torque_tilt_on_speed(torque_on.scaled(
-            0.5,
-            0.0,
-            AngularVelocity::from_degrees_per_second,
-        )),
-        config.set_torque_tilt_off_speed(torque_off.scaled(
-            1.0,
-            3.0,
-            AngularVelocity::from_degrees_per_second,
-        )),
-    ]
-    .into_iter()
-    .all(core::convert::identity)
+    update_active_config(state, |config| {
+        [
+            config.set_atr_threshold_up(threshold_up.scaled(0.5, 0.0, AngleDegrees::from_degrees)),
+            config.set_atr_threshold_down(threshold_down.scaled(
+                0.5,
+                0.0,
+                AngleDegrees::from_degrees,
+            )),
+            config.set_torque_tilt_strength(torque_up.torque_tilt_strength()),
+            config.set_torque_tilt_regen_strength(torque_down.torque_tilt_strength()),
+            config.set_torque_tilt_angle_limit(torque_angle.scaled(
+                0.5,
+                0.0,
+                AngleDegrees::from_degrees,
+            )),
+            config.set_torque_tilt_start_current(torque_current.scaled(1.0, 15.0, motor_current)),
+            config.set_torque_tilt_on_speed(torque_on.scaled(
+                0.5,
+                0.0,
+                AngularVelocity::from_degrees_per_second,
+            )),
+            config.set_torque_tilt_off_speed(torque_off.scaled(
+                1.0,
+                3.0,
+                AngularVelocity::from_degrees_per_second,
+            )),
+        ]
+        .into_iter()
+        .all(core::convert::identity)
+    })
 }
 
 fn apply_brake_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8]) -> bool {
     let Some(brake) = payload.get(16) else {
         return true;
     };
-    let mut config = state.serialized_config.editor();
-    let updated = [
-        config.set_kp_brake(FloatOutBoyTuneNibble::low(*brake).brake_gain()),
-        config.set_kp2_brake(FloatOutBoyTuneNibble::high(*brake).divided(10.0, 0.0, PidScale::new)),
-    ]
-    .into_iter()
-    .all(core::convert::identity);
+    let updated = update_active_config(state, |config| {
+        [
+            config.set_kp_brake(FloatOutBoyTuneNibble::low(*brake).brake_gain()),
+            config.set_kp2_brake(FloatOutBoyTuneNibble::high(*brake).divided(
+                10.0,
+                0.0,
+                PidScale::new,
+            )),
+        ]
+        .into_iter()
+        .all(core::convert::identity)
+    });
     if updated {
         state.alert_beeper(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::ONE));
     }
@@ -262,8 +286,6 @@ pub(super) fn handle_runtime_tune_packet(
     if !updated {
         return false;
     }
-    state.refresh_balance_filter_config();
-    state.refresh_config_runtime_state();
     true
 }
 
@@ -274,42 +296,43 @@ pub(super) fn handle_tilt_tune_packet(state: &mut FloatOutBoyPackageState, bytes
         return false;
     };
 
-    let mut config = state.serialized_config.editor();
-    let mut updated = [
-        config.set_duty_beep_enabled(*flags & 0x01 != 0),
-        config.set_duty_pushback_threshold(WireByte::new(*duty).scaled_ratio(
-            1.0,
-            100.0,
-            0.0,
-            Ratio::from_ratio_const,
-        )),
-        config.set_duty_pushback_angle(WireByte::new(*duty_angle).scaled_ratio(
-            1.0,
-            10.0,
-            0.0,
-            AngleDegrees::from_degrees,
-        )),
-        config.set_duty_pushback_speed(WireByte::new(*duty_speed).scaled_ratio(
-            1.0,
-            10.0,
-            0.0,
-            AngularVelocity::from_degrees_per_second,
-        )),
-    ]
-    .into_iter()
-    .all(core::convert::identity);
-    if *return_speed != 0 {
-        updated &= config.set_tiltback_return_speed(WireByte::new(*return_speed).scaled_ratio(
-            1.0,
-            10.0,
-            0.0,
-            AngularVelocity::from_degrees_per_second,
-        ));
-    }
+    let updated = update_active_config(state, |config| {
+        let mut updated = [
+            config.set_duty_beep_enabled(*flags & 0x01 != 0),
+            config.set_duty_pushback_threshold(WireByte::new(*duty).scaled_ratio(
+                1.0,
+                100.0,
+                0.0,
+                Ratio::from_ratio_const,
+            )),
+            config.set_duty_pushback_angle(WireByte::new(*duty_angle).scaled_ratio(
+                1.0,
+                10.0,
+                0.0,
+                AngleDegrees::from_degrees,
+            )),
+            config.set_duty_pushback_speed(WireByte::new(*duty_speed).scaled_ratio(
+                1.0,
+                10.0,
+                0.0,
+                AngularVelocity::from_degrees_per_second,
+            )),
+        ]
+        .into_iter()
+        .all(core::convert::identity);
+        if *return_speed != 0 {
+            updated &= config.set_tiltback_return_speed(WireByte::new(*return_speed).scaled_ratio(
+                1.0,
+                10.0,
+                0.0,
+                AngularVelocity::from_degrees_per_second,
+            ));
+        }
+        updated
+    });
     if !updated {
         return false;
     }
-    state.refresh_config_runtime_state();
     state.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE));
     true
 }
@@ -490,15 +513,14 @@ pub(super) fn handle_other_tune_packet(state: &mut FloatOutBoyPackageState, byte
         return false;
     };
 
-    let mut config = state.serialized_config.editor();
-    let updated = apply_other_tune_base(&mut config, &packet)
-        && apply_other_tiltback(&mut config, &packet)
-        && apply_other_input(&mut config, &packet);
+    let updated = update_active_config(state, |config| {
+        apply_other_tune_base(config, &packet)
+            && apply_other_tiltback(config, &packet)
+            && apply_other_input(config, &packet)
+    });
     if !updated {
         return false;
     }
-    state.refresh_balance_filter_config();
-    state.refresh_config_runtime_state();
     true
 }
 
@@ -518,27 +540,32 @@ pub(super) fn handle_booster_packet(state: &mut FloatOutBoyPackageState, bytes: 
     // C map: `cmd_booster` splits four bytes into low/high nibbles at
     // `third_party/float-out-boy/src/main.c:1448-1481`; only the low nibble of each
     // current byte is used.
-    let mut config = state.serialized_config.editor();
-    let updated = [
-        config.set_booster_angle(
-            FloatOutBoyTuneNibble::low(*booster).angle_from(AngleDegrees::from_degrees(5.0)),
-        ),
-        config.set_booster_ramp(
-            FloatOutBoyTuneNibble::high(*booster).angle_from(AngleDegrees::from_degrees(2.0)),
-        ),
-        config.set_booster_current(FloatOutBoyTuneNibble::low(*booster_current).booster_current()),
-        config.set_brake_booster_angle(
-            FloatOutBoyTuneNibble::low(*brake_booster).angle_from(AngleDegrees::from_degrees(5.0)),
-        ),
-        config.set_brake_booster_ramp(
-            FloatOutBoyTuneNibble::high(*brake_booster).angle_from(AngleDegrees::from_degrees(2.0)),
-        ),
-        config.set_brake_booster_current(
-            FloatOutBoyTuneNibble::low(*brake_booster_current).booster_current(),
-        ),
-    ]
-    .into_iter()
-    .all(core::convert::identity);
+    let updated = update_active_config(state, |config| {
+        [
+            config.set_booster_angle(
+                FloatOutBoyTuneNibble::low(*booster).angle_from(AngleDegrees::from_degrees(5.0)),
+            ),
+            config.set_booster_ramp(
+                FloatOutBoyTuneNibble::high(*booster).angle_from(AngleDegrees::from_degrees(2.0)),
+            ),
+            config.set_booster_current(
+                FloatOutBoyTuneNibble::low(*booster_current).booster_current(),
+            ),
+            config.set_brake_booster_angle(
+                FloatOutBoyTuneNibble::low(*brake_booster)
+                    .angle_from(AngleDegrees::from_degrees(5.0)),
+            ),
+            config.set_brake_booster_ramp(
+                FloatOutBoyTuneNibble::high(*brake_booster)
+                    .angle_from(AngleDegrees::from_degrees(2.0)),
+            ),
+            config.set_brake_booster_current(
+                FloatOutBoyTuneNibble::low(*brake_booster_current).booster_current(),
+            ),
+        ]
+        .into_iter()
+        .all(core::convert::identity)
+    });
     if !updated {
         return false;
     }

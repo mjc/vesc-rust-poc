@@ -56,6 +56,14 @@ unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
     if !crate::PackageStateStore::<T>::begin_stop(state) {
         return;
     }
+    crate::runtime::release_callback_registrations();
+    crate::gpio::reset_leases();
+    #[cfg(target_arch = "arm")]
+    unsafe {
+        crate::runtime::reset_firmware_runtime_gpio_leases(state)
+    };
+    #[cfg(any(feature = "test-support", target_arch = "arm"))]
+    crate::runtime::disable_callback_dispatch();
     #[cfg(all(not(test), target_arch = "arm"))]
     {
         crate::PackageStateStore::<T>::take_callbacks(state)
@@ -125,6 +133,10 @@ pub enum PackageStartError {
     ThreadsAlreadyInstalled,
     /// Firmware rejected the package app-data handler.
     AppDataHandlerRejected,
+    /// Another package already owns the app-data callback slot.
+    AppDataHandlerAlreadyRegistered,
+    /// Another package already owns the custom-config callback slots.
+    CustomConfigHandlerAlreadyRegistered,
     /// Serialized custom config cannot fit in the firmware packet buffer.
     CustomConfigTooLarge,
     /// Extension registration requires a retained package image.
@@ -143,6 +155,12 @@ impl core::fmt::Display for PackageStartError {
             Self::ThreadSpawnFailed => "firmware could not spawn a package thread",
             Self::ThreadsAlreadyInstalled => "package threads are already installed",
             Self::AppDataHandlerRejected => "firmware rejected the app-data handler",
+            Self::AppDataHandlerAlreadyRegistered => {
+                "another package already owns the app-data handler"
+            }
+            Self::CustomConfigHandlerAlreadyRegistered => {
+                "another package already owns the custom-config handlers"
+            }
             Self::CustomConfigTooLarge => "custom config exceeds the firmware packet limit",
             Self::PackageNotRetained => "package image is not retained",
             Self::ExtensionRegistrationIncomplete => {
@@ -196,6 +214,9 @@ impl LoadedAppDataCallback {
     ) -> Result<(), PackageStartError> {
         // SAFETY: the handler is a static package function and remains registered
         // until package cleanup clears it.
+        if !crate::runtime::claim_app_data_registration() {
+            return Err(PackageStartError::AppDataHandlerAlreadyRegistered);
+        }
         let registered = unsafe { bindings.set_app_data_handler(self.handler) };
         if registered && self.recorder.record_app_data() {
             return Ok(());
@@ -204,6 +225,7 @@ impl LoadedAppDataCallback {
             // SAFETY: this clears the handler installed immediately above.
             let _ = unsafe { bindings.clear_app_data_handler() };
         }
+        crate::runtime::release_app_data_registration();
         Err(PackageStartError::AppDataHandlerRejected)
     }
 }
@@ -507,6 +529,9 @@ impl<'info> PackageStart<'info> {
         let recorder = self
             .callback_recorder
             .ok_or(PackageStartError::StateTypeMismatch)?;
+        if !crate::runtime::claim_custom_config_registration() {
+            return Err(PackageStartError::CustomConfigHandlerAlreadyRegistered);
+        }
         let (get, set, xml) = T::image_addresses();
         // SAFETY: the callback trait supplies package-local addresses for the
         // matching C ABI function types, and `image` resolves that package.
@@ -525,6 +550,7 @@ impl<'info> PackageStart<'info> {
         } else {
             // SAFETY: this clears the callbacks registered immediately above.
             unsafe { bindings.clear_custom_configs() };
+            crate::runtime::release_custom_config_registration();
             Err(PackageStartError::StateTypeMismatch)
         }
     }
@@ -579,9 +605,9 @@ impl<'info> PackageStart<'info> {
         T: crate::__macro_support::PackageImuReadCallback,
         B: crate::bindings::ImuReadCallbackBindings,
     {
-        let Some(image) = self.native_image() else {
-            return Err(PackageStartError::LoaderUnavailable);
-        };
+        let image = self
+            .native_image()
+            .ok_or(PackageStartError::LoaderUnavailable)?;
         if !self.state_type_matches::<T::State>() {
             return Err(PackageStartError::StateTypeMismatch);
         }
@@ -641,6 +667,7 @@ impl<'info> PackageStart<'info> {
         if let Err(error) = callback.register_with_bindings(bindings) {
             // SAFETY: this clears the callbacks registered by the preceding call.
             unsafe { bindings.clear_custom_configs() };
+            crate::runtime::release_custom_config_registration();
             if let Some(recorder) = self.callback_recorder {
                 let _ = recorder.clear_custom_config();
             }
@@ -1356,6 +1383,158 @@ mod tests {
             .unwrap()
             .stop_fun
             .expect("second config state stop hook");
+        let arg = start.raw_info_mut().unwrap().arg;
+        assert!(start.finish_start(true));
+        unsafe { stop(arg) };
+    }
+
+    #[test]
+    fn app_data_registration_rejects_replacement_until_package_stop() {
+        unsafe extern "C" fn handler(_data: *mut u8, _len: u32) {}
+
+        struct State;
+        struct Callback;
+        static STATE: crate::PackageStateStore<State> = crate::PackageStateStore::new();
+
+        impl crate::PackageRuntimeState for State {
+            fn runtime_store() -> &'static crate::PackageStateStore<Self> {
+                &STATE
+            }
+        }
+
+        impl crate::AppDataHandler for Callback {
+            type State = State;
+
+            fn handle(_: &mut Self::State, _: crate::AppDataPacket<'_>) {}
+        }
+
+        unsafe impl crate::__macro_support::PackageAppDataCallback for Callback {
+            fn image_address() -> usize {
+                handler as *const () as usize
+            }
+        }
+
+        let bindings = FakeAppDataBindings::new();
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0,
+        };
+        let mut start = super::PackageStart::from_lib_info(&mut info);
+        start.install_runtime_state(State).unwrap();
+
+        start
+            .app_data_callback::<Callback>()
+            .expect("callback state matches")
+            .register_with_bindings(&bindings)
+            .expect("first callback registration");
+        assert_eq!(
+            start
+                .app_data_callback::<Callback>()
+                .expect("callback state matches")
+                .register_with_bindings(&bindings),
+            Err(PackageStartError::AppDataHandlerAlreadyRegistered)
+        );
+        assert_eq!(bindings.handler_calls.get(), 1);
+
+        let stop = start
+            .raw_info_mut()
+            .unwrap()
+            .stop_fun
+            .expect("app-data state stop hook");
+        let arg = start.raw_info_mut().unwrap().arg;
+        assert!(start.finish_start(true));
+        unsafe { stop(arg) };
+
+        let mut reloaded_info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0,
+        };
+        let mut reloaded = super::PackageStart::from_lib_info(&mut reloaded_info);
+        reloaded.install_runtime_state(State).unwrap();
+        reloaded
+            .app_data_callback::<Callback>()
+            .expect("callback state matches")
+            .register_with_bindings(&bindings)
+            .expect("stop releases app-data registration");
+        let stop = reloaded
+            .raw_info_mut()
+            .unwrap()
+            .stop_fun
+            .expect("reloaded app-data stop hook");
+        let arg = reloaded.raw_info_mut().unwrap().arg;
+        assert!(reloaded.finish_start(true));
+        unsafe { stop(arg) };
+    }
+
+    #[test]
+    fn custom_config_registration_rejects_replacement_until_package_stop() {
+        struct State;
+        struct Config;
+        static STATE: crate::PackageStateStore<State> = crate::PackageStateStore::new();
+
+        impl crate::PackageRuntimeState for State {
+            fn runtime_store() -> &'static crate::PackageStateStore<Self> {
+                &STATE
+            }
+        }
+
+        impl crate::StatefulCustomConfigCallback<1> for Config {
+            type State = State;
+            type Error = ();
+
+            fn default_config() -> crate::ConfigBytes<'static, 1> {
+                crate::ConfigBytes::new(&[0])
+            }
+
+            fn current_config(_: &Self::State) -> crate::ConfigBytes<'_, 1> {
+                crate::ConfigBytes::new(&[0])
+            }
+
+            fn set_config(
+                _: &mut Self::State,
+                _: crate::ConfigBytes<'_, 1>,
+            ) -> Result<(), Self::Error> {
+                Ok(())
+            }
+
+            fn config_xml() -> crate::ConfigXml<'static> {
+                crate::ConfigXml::new(b"<Config/>")
+            }
+        }
+
+        crate::firmware_stateful_custom_config_callbacks!(
+            collision_config_get,
+            collision_config_set,
+            collision_config_xml,
+            Config,
+            1
+        );
+
+        let bindings = FakeAppDataBindings::new();
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0,
+        };
+        let mut start = super::PackageStart::from_lib_info(&mut info);
+        start.install_runtime_state(State).unwrap();
+
+        start
+            .register_stateful_custom_config_with_bindings::<_, Config, 1>(&bindings)
+            .expect("first custom-config registration");
+        assert_eq!(
+            start.register_stateful_custom_config_with_bindings::<_, Config, 1>(&bindings),
+            Err(PackageStartError::CustomConfigHandlerAlreadyRegistered)
+        );
+        assert_eq!(bindings.custom_config_register_calls.get(), 1);
+
+        let stop = start
+            .raw_info_mut()
+            .unwrap()
+            .stop_fun
+            .expect("custom-config state stop hook");
         let arg = start.raw_info_mut().unwrap().arg;
         assert!(start.finish_start(true));
         unsafe { stop(arg) };

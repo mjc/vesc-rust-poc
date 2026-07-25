@@ -17,8 +17,10 @@ use crate::loopback::LoopbackTransportError;
 use crate::package_install::{PackageInstallError, PackageInstallTransport};
 use crate::vesc_uart::{PacketDecoder, encode_packet};
 
-const VESC_BLE_UART_RX_UUID: uuid::Uuid = uuid::Uuid::from_u128(0x6e400002b5a3f393e0a9e50e24dcca9e);
-const VESC_BLE_UART_TX_UUID: uuid::Uuid = uuid::Uuid::from_u128(0x6e400003b5a3f393e0a9e50e24dcca9e);
+const VESC_BLE_UART_RX_UUID: uuid::Uuid =
+    uuid::Uuid::from_u128(0x6e40_0002_b5a3_f393_e0a9_e50e_24dc_ca9e);
+const VESC_BLE_UART_TX_UUID: uuid::Uuid =
+    uuid::Uuid::from_u128(0x6e40_0003_b5a3_f393_e0a9_e50e_24dc_ca9e);
 
 const SCAN_TIMEOUT: Duration = Duration::from_secs(8);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
@@ -244,6 +246,10 @@ pub struct BtlePackageInstallTransport {
 
 impl BtlePackageInstallTransport {
     /// Creates a BLE package install transport with its own single-worker runtime.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the BLE runtime cannot be initialized.
     pub fn new() -> Result<Self, PackageInstallError> {
         Self::create(false)
     }
@@ -306,11 +312,19 @@ impl BtlePackageInstallTransport {
     }
 
     /// Opens a package install session to `target`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when BLE discovery, connection, or firmware preflight fails.
     pub fn open(&self, target: LoopbackTarget) -> Result<(), PackageInstallError> {
         self.with_spinner("Connecting to VESC", || self.open_session(target))
     }
 
     /// Opens a BLE UART session without querying firmware metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when BLE discovery or connection fails.
     pub fn open_without_preflight(
         &self,
         target: LoopbackTarget,
@@ -325,6 +339,10 @@ impl BtlePackageInstallTransport {
     }
 
     /// Best-effort short-timeout stop used when normal preflight is unavailable.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the stop command cannot be sent or decoded.
     pub fn stop_running_recovery(&self) -> Result<(), PackageInstallError> {
         self.send_with_attempts(
             COMM_LISP_SET_RUNNING,
@@ -350,10 +368,19 @@ impl BtlePackageInstallTransport {
         &self,
         f: impl FnOnce(&Runtime, &mut VescSession) -> Result<R, LoopbackTransportError>,
     ) -> Result<R, LoopbackTransportError> {
+        self.with_runtime_session(
+            || LoopbackTransportError::Device("BLE transport has not been opened".to_owned()),
+            f,
+        )
+    }
+
+    pub(crate) fn with_runtime_session<R, E>(
+        &self,
+        missing: impl FnOnce() -> E,
+        f: impl FnOnce(&Runtime, &mut VescSession) -> Result<R, E>,
+    ) -> Result<R, E> {
         let mut session = self.session.borrow_mut();
-        let session = session.as_mut().ok_or_else(|| {
-            LoopbackTransportError::Device("BLE transport has not been opened".to_owned())
-        })?;
+        let session = session.as_mut().ok_or_else(missing)?;
         f(&self.runtime, session)
     }
 
@@ -462,11 +489,12 @@ impl BtlePackageInstallTransport {
         let response = retry(ERASE_ATTEMPTS, Duration::ZERO, || {
             self.write_command(command, payload, timeout)
         })?;
-        match parse_simple_ack(&response, command)? {
-            true => Ok(()),
-            false => Err(PackageInstallError::Device(
+        if parse_simple_ack(&response, command)? {
+            Ok(())
+        } else {
+            Err(PackageInstallError::Device(
                 "device rejected the package erase".to_owned(),
-            )),
+            ))
         }
     }
 
@@ -490,7 +518,11 @@ impl BtlePackageInstallTransport {
         let progress = self.progress_bar(payload.len(), label);
         for (offset, chunk) in payload.chunks(CHUNK_SIZE).enumerate() {
             let mut command_payload = Vec::with_capacity(4 + chunk.len());
-            command_payload.extend_from_slice(&((offset * CHUNK_SIZE) as u32).to_be_bytes());
+            command_payload.extend_from_slice(
+                &u32::try_from(offset * CHUNK_SIZE)
+                    .expect("upload offset fits VESC wire field")
+                    .to_be_bytes(),
+            );
             command_payload.extend_from_slice(chunk);
             if let Err(error) =
                 self.expect_write_ok(command, &command_payload, WRITE_RESPONSE_TIMEOUT)
@@ -522,7 +554,11 @@ impl PackageInstallTransport for BtlePackageInstallTransport {
         self.with_spinner("Erasing QML", || {
             self.expect_erase_ok(
                 COMM_QMLUI_ERASE,
-                &(bytes as i32).to_be_bytes(),
+                &i32::try_from(bytes)
+                    .map_err(|_| {
+                        PackageInstallError::Device("QML erase size exceeds VESC limit".to_owned())
+                    })?
+                    .to_be_bytes(),
                 ERASE_RESPONSE_TIMEOUT,
             )
         })
@@ -537,7 +573,11 @@ impl PackageInstallTransport for BtlePackageInstallTransport {
         self.with_spinner("Erasing Lisp", || {
             self.expect_erase_ok(
                 COMM_LISP_ERASE_CODE,
-                &(bytes as i32).to_be_bytes(),
+                &i32::try_from(bytes)
+                    .map_err(|_| {
+                        PackageInstallError::Device("Lisp erase size exceeds VESC limit".to_owned())
+                    })?
+                    .to_be_bytes(),
                 ERASE_RESPONSE_TIMEOUT,
             )
         })
@@ -601,7 +641,7 @@ async fn open_session(target: LoopbackTarget) -> Result<VescSession, PackageInst
         .map_err(|_| {
             PackageInstallError::Device("scan timed out while opening the BLE transport".to_owned())
         })?
-        .map_err(map_discovery_error)?;
+        .map_err(|error| map_discovery_error(&error))?;
 
     let _ = adapter.stop_scan().await;
 
@@ -687,7 +727,7 @@ pub(crate) fn build_command_packet(command: u8, payload: &[u8]) -> Vec<u8> {
     encode_packet(&data)
 }
 
-fn map_discovery_error(error: DiscoveryError) -> PackageInstallError {
+fn map_discovery_error(error: &DiscoveryError) -> PackageInstallError {
     match error {
         DiscoveryError::InspectFailed => {
             PackageInstallError::Device("failed to inspect BLE peripherals".to_owned())
@@ -703,7 +743,11 @@ fn build_lisp_upload_payload(lisp: &[u8], hw_type: HwType) -> Result<Vec<u8>, Pa
     };
 
     let mut payload = Vec::with_capacity(4 + 2 + lisp.len());
-    payload.extend_from_slice(&((lisp.len().saturating_sub(2)) as u32).to_be_bytes());
+    payload.extend_from_slice(
+        &u32::try_from(lisp.len().saturating_sub(2))
+            .expect("Lisp payload length fits VESC wire field")
+            .to_be_bytes(),
+    );
     payload.extend_from_slice(&crate::vesc_uart::crc16(lisp).to_be_bytes());
     payload.extend_from_slice(lisp);
 
@@ -762,9 +806,10 @@ fn parse_write_ack(response: &[u8], expected_command: u8) -> Result<bool, Packag
 }
 
 fn read_string<'a>(cursor: &mut &'a [u8]) -> Result<&'a str, PackageInstallError> {
-    let Some(len) = cursor.iter().position(|byte| *byte == 0) else {
-        return Err(malformed_reply("missing NUL terminator"));
-    };
+    let len = cursor
+        .iter()
+        .position(|byte| *byte == 0)
+        .ok_or_else(|| malformed_reply("missing NUL terminator"))?;
     if cursor.len() <= len {
         return Err(malformed_reply("truncated BLE reply"));
     }
@@ -807,7 +852,11 @@ fn build_qml_upload_payload(qml: &[u8], fullscreen: bool) -> Result<Vec<u8>, Pac
     crc_input.extend_from_slice(qml);
 
     let mut payload = Vec::with_capacity(4 + 2 + crc_input.len());
-    payload.extend_from_slice(&(qml.len() as u32).to_be_bytes());
+    payload.extend_from_slice(
+        &u32::try_from(qml.len())
+            .expect("QML payload length fits VESC wire field")
+            .to_be_bytes(),
+    );
     payload.extend_from_slice(&crate::vesc_uart::crc16(&crc_input).to_be_bytes());
     payload.extend_from_slice(&crc_input);
 
@@ -920,7 +969,12 @@ mod tests {
         // Source: third_party/vesc_tool/codeloader.cpp:785-790.
         // QMLUI stores its compressed script length, CRC over the display mode
         // and script, then the mode followed by the script itself.
-        assert_eq!(&payload[..4], &(qml.len() as u32).to_be_bytes());
+        assert_eq!(
+            &payload[..4],
+            &u32::try_from(qml.len())
+                .expect("test QML length fits VESC wire field")
+                .to_be_bytes()
+        );
         assert_eq!(&payload[6..], &[0, 1, 0, 0, 0, 3, 0x78, 0xda]);
         assert_eq!(
             u16::from_be_bytes(payload[4..6].try_into().expect("CRC")),
@@ -941,7 +995,7 @@ mod tests {
         // lispUpload() writes len as vb.size() - 2, crc over vb, then vb bytes.
         assert_eq!(
             u32::from_be_bytes(payload[0..4].try_into().expect("length header")),
-            (lisp_data.len() - 2) as u32
+            u32::try_from(lisp_data.len() - 2).expect("test Lisp length fits VESC wire field")
         );
         assert_eq!(
             u16::from_be_bytes(payload[4..6].try_into().expect("crc header")),

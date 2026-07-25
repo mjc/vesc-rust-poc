@@ -30,13 +30,10 @@ impl PitchBasedDemand {
         hertz: SampleRate,
     ) -> PitchBasedCurrent {
         if softstart_pid_limit.current() < motor_current_max.current() {
-            let pitch_based = self.0.current();
             PitchBasedCurrent {
                 // C map: `third_party/float-out-boy/src/main.c:927-929` clamps only
                 // magnitude; sign remains the requested direction.
-                current: MotorCurrent::new(
-                    pitch_based.abs().min(softstart_pid_limit.current()) * pitch_based.signum(),
-                ),
+                current: MotorCurrentLimit::new(softstart_pid_limit.current()).clamp(self.0),
                 // C map: `third_party/float-out-boy/src/main.c:927-929` advances the
                 // soft-start current limit at 100 A/s.
                 softstart_pid_limit: softstart_pid_limit

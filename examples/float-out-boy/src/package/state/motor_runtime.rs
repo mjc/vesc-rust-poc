@@ -79,10 +79,10 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
     let motor = base.motor();
     // C map: Float Out Boy v1.2.1 updates motor fields in `motor_data_update` at
     // `third_party/float-out-boy/src/motor_data.c:108-145`. Battery current uses the same first-order
-    // smoothing expression from `third_party/float-out-boy/src/motor_data.c:140`; this app-data
-    // refresh is still a runtime proxy until the real source main loop runs.
-    let previous_battery_current = motor.battery_current().current().as_amps();
-    let next_battery_current = telemetry.battery_current().current().as_amps();
+    // smoothing expression from `third_party/float-out-boy/src/motor_data.c:140`; the package main
+    // loop invokes this refresh before control aggregation like the source loop.
+    let previous_battery_current = motor.battery_current().current();
+    let next_battery_current = telemetry.battery_current().current();
     let previous_duty_cycle = motor.duty_cycle().ratio().as_ratio();
     let raw_duty_cycle = telemetry.duty_cycle().ratio().as_ratio().abs();
     state.motor_duty_raw = telemetry.duty_cycle().magnitude();
@@ -91,8 +91,10 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
         .reduced_by(TractionLossLimits::FLOAT_OUT_BOY.duty_margin);
     state.motor_current_max = telemetry.drive_current_limit();
     state.motor_current_min = telemetry.brake_current_limit();
-    state.battery_current_max = telemetry.drive_input_current_limit();
-    state.battery_current_min = telemetry.brake_input_current_limit();
+    // Input-current limits are live configuration values, not motor telemetry.
+    let settings = vescpkg_rs::FirmwareSettings;
+    state.battery_current_max = settings.input_current_max();
+    state.battery_current_min = settings.input_current_min();
     state.mosfet_temperature = telemetry.mosfet_temperature();
     state.motor_temperature = telemetry.motor_temperature();
     state.mosfet_temperature_limit_start = telemetry.mosfet_temperature_limit_start();
@@ -117,11 +119,11 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
             MotorCurrent::new(telemetry.motor_current().current()),
             directional_current,
             filtered_current,
-            BatteryCurrent::new(Current::from_amps(
+            BatteryCurrent::new(
                 previous_battery_current
-                    + MOTOR_DATA_SMOOTHING_FACTOR
-                        * (next_battery_current - previous_battery_current),
-            )),
+                    + (next_battery_current - previous_battery_current)
+                        * MOTOR_DATA_SMOOTHING_FACTOR,
+            ),
         ),
         DutyCycle::new(SignedRatio::clamped(
             previous_duty_cycle

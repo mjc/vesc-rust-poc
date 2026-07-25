@@ -152,11 +152,10 @@ impl FloatOutBoyFlywheelRequest {
 
 impl FloatOutBoyPackageState {
     pub(super) fn handle_flywheel_packet(&mut self, bytes: &[u8]) -> bool {
-        let Some(request) = FloatOutBoyFlywheelRequest::from_packet(bytes) else {
-            return false;
-        };
-        request.apply_to(self);
-        true
+        FloatOutBoyFlywheelRequest::from_packet(bytes).is_some_and(|request| {
+            request.apply_to(self);
+            true
+        })
     }
 
     fn start_flywheel(&mut self, start: FloatOutBoyFlywheelStart) {
@@ -178,19 +177,17 @@ impl FloatOutBoyPackageState {
         }
         self.ride_flags.flywheel_abort = false;
 
-        let updated = self
-            .serialized_config
-            .editor()
-            .apply_flywheel_overrides(start.config);
+        let mut config = self.serialized_config;
+        let updated = config.editor().apply_flywheel_overrides(start.config);
         if !updated {
             // A failed write means the in-memory configuration layout is not the
             // layout this package was built for. Reload the saved configuration
             // instead of running with a mixture of old and partially written values.
             self.set_ride_mode(FloatOutBoyMode::Normal);
             self.read_config_from_eeprom();
-            self.refresh_balance_filter_config();
             return;
         }
+        self.replace_active_config(&config);
         self.flywheel_runtime_config = Some(start.config);
     }
 
@@ -203,8 +200,6 @@ impl FloatOutBoyPackageState {
         self.set_ride_mode(FloatOutBoyMode::Normal);
         self.flywheel_runtime_config = None;
         self.read_config_from_eeprom();
-        self.refresh_balance_filter_config();
-        self.refresh_config_runtime_state();
     }
 
     pub(super) fn runtime_duty_pushback_threshold(&self) -> Ratio {

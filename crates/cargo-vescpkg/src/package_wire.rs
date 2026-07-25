@@ -82,9 +82,10 @@ pub fn parse_vescpkg(data: &[u8]) -> Result<Vec<PackageField>, WireError> {
 }
 
 fn read_string(cursor: &mut &[u8]) -> Result<String, WireError> {
-    let Some(end) = cursor.iter().position(|byte| *byte == 0) else {
-        return Err(WireError("unexpected end of vescpkg wire data".to_owned()));
-    };
+    let end = cursor
+        .iter()
+        .position(|byte| *byte == 0)
+        .ok_or_else(|| WireError("unexpected end of vescpkg wire data".to_owned()))?;
     let bytes = take(cursor, end)?;
     take(cursor, 1)?;
     String::from_utf8(bytes).map_err(|_| WireError("vescpkg field is not valid utf-8".to_owned()))
@@ -110,7 +111,8 @@ mod tests {
 
     #[test]
     fn rejects_unreasonable_decompressed_length() {
-        let declared = (MAX_DECOMPRESSED_PACKAGE_BYTES + 1) as u32;
+        let declared = u32::try_from(MAX_DECOMPRESSED_PACKAGE_BYTES + 1)
+            .expect("test package length fits VESC wire field");
         let error = decompress(&declared.to_be_bytes()).expect_err("length must be rejected");
 
         assert_eq!(

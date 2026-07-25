@@ -4,6 +4,8 @@
 //! `vesc_pkg_lib/vesc_c_if.h:376` and `382-384` for startup, stop, sleep, and
 //! worker loops.
 
+#![allow(deprecated)]
+
 use core::ffi::{CStr, c_char, c_void};
 use core::marker::PhantomData;
 use core::ptr::NonNull;
@@ -42,8 +44,8 @@ impl TimerInstant {
         Self(raw)
     }
 
-    #[cfg(not(test))]
-    const fn raw(self) -> u32 {
+    #[cfg_attr(test, allow(dead_code))]
+    pub(crate) const fn raw(self) -> u32 {
         self.0
     }
 }
@@ -122,6 +124,7 @@ pub(crate) struct AppDataApi<B> {
     bindings: B,
 }
 
+#[cfg_attr(test, allow(dead_code))]
 impl<B: AppDataBindings> AppDataApi<B> {
     /// Construct a new firmware app-data API wrapper.
     pub(crate) fn new(bindings: B) -> Self {
@@ -169,6 +172,8 @@ impl<B: AppDataBindings> AppDataApi<B> {
 /// Typed access to the firmware capabilities available to package threads.
 pub struct Firmware {
     #[cfg(not(test))]
+    can: crate::CanBus,
+    #[cfg(not(test))]
     threads: ThreadApi<RealThreadBindings>,
     #[cfg(not(test))]
     app_data: FirmwareAppData,
@@ -176,6 +181,8 @@ pub struct Firmware {
     clock: FirmwareClock,
     #[cfg(not(test))]
     nvm: crate::Nvm,
+    #[cfg(not(test))]
+    eeprom: crate::CustomEeprom,
     #[cfg(not(test))]
     gpio: crate::Gpio,
     #[cfg(not(test))]
@@ -186,9 +193,19 @@ pub struct Firmware {
     telemetry: crate::motor::MotorTelemetryApi<crate::motor::RealMotorTelemetryBindings>,
     #[cfg(not(test))]
     motor: crate::motor::MotorControlApi<crate::motor::RealMotorControlBindings>,
+    #[cfg(not(test))]
+    inputs: crate::FirmwareInputs,
+    #[cfg(not(test))]
+    settings: crate::FirmwareSettings,
 }
 
 impl Firmware {
+    /// Borrow the firmware CAN transport and status capability.
+    #[cfg(not(test))]
+    pub fn can(&self) -> &crate::CanBus {
+        &self.can
+    }
+
     /// Borrow firmware thread capabilities without exposing the binding type.
     #[cfg(not(test))]
     #[must_use]
@@ -215,6 +232,12 @@ impl Firmware {
     #[must_use]
     pub fn nvm(&self) -> &crate::Nvm {
         &self.nvm
+    }
+
+    /// Borrow the package custom-EEPROM capability.
+    #[cfg(not(test))]
+    pub fn eeprom(&self) -> &crate::CustomEeprom {
+        &self.eeprom
     }
 
     /// Borrow firmware GPIO capabilities without exposing the binding type.
@@ -252,16 +275,41 @@ impl Firmware {
         &self.motor
     }
 
+    /// Borrow typed controller input and output-safety state.
+    #[cfg(not(test))]
+    pub fn inputs(&self) -> &crate::FirmwareInputs {
+        &self.inputs
+    }
+
+    /// Borrow the typed live firmware settings capability.
+    #[cfg(not(test))]
+    pub fn settings(&self) -> &crate::FirmwareSettings {
+        &self.settings
+    }
+
     /// Construct firmware capabilities backed by the live VESC package ABI.
     #[cfg(not(test))]
     #[must_use]
     pub fn new() -> Self {
+        Self::with_gpio(crate::Gpio::new())
+    }
+
+    #[cfg(all(not(test), target_arch = "arm"))]
+    fn from_state<S: PackageRuntimeState>(state: NonNull<S>) -> Self {
+        let leases = unsafe { crate::runtime::firmware_runtime_gpio_leases(state) };
+        Self::with_gpio(crate::Gpio::from_runtime_leases(leases))
+    }
+
+    #[cfg(not(test))]
+    fn with_gpio(gpio: crate::Gpio) -> Self {
         Self {
+            can: crate::CanBus::new(),
             threads: ThreadApi::new(RealThreadBindings),
             app_data: FirmwareAppData::new(),
             clock: FirmwareClock::new(),
             nvm: crate::Nvm::new(),
-            gpio: crate::Gpio::new(),
+            eeprom: crate::CustomEeprom::new(),
+            gpio,
             input: crate::ControllerInput::new(),
             imu: crate::imu::ImuApi::new(crate::imu::RealImuBindings),
             telemetry: crate::motor::MotorTelemetryApi::new(
@@ -270,6 +318,8 @@ impl Firmware {
             motor: crate::motor::MotorControlApi::from_firmware(
                 crate::motor::RealMotorControlBindings,
             ),
+            inputs: crate::FirmwareInputs::new(),
+            settings: crate::FirmwareSettings,
         }
     }
 
@@ -334,7 +384,12 @@ impl<S: PackageRuntimeState> ThreadContext<S> {
     }
 
     /// Build a thread context backed by the live VESC package ABI.
-    #[cfg(not(test))]
+    #[cfg(all(not(test), target_arch = "arm"))]
+    fn from_entry(state: NonNull<S>) -> Self {
+        Self::new(state, Firmware::from_state(state))
+    }
+
+    #[cfg(all(not(test), not(target_arch = "arm")))]
     fn from_entry(state: NonNull<S>) -> Self {
         Self::new(state, Firmware::new())
     }
@@ -712,6 +767,9 @@ pub trait FirmwareThreads: private::FirmwareThreads {
     /// Sleep the current package thread for a duration.
     fn sleep_for(&self, duration: Duration);
 
+    /// Sleep the current package thread for a number of microseconds.
+    fn sleep_for_micros(&self, micros: u64);
+
     /// Set the current package thread priority when supported by firmware.
     ///
     /// # Errors
@@ -829,6 +887,10 @@ impl<B: ThreadBindings> FirmwareThreads for ThreadApi<B> {
         self.sleep_for(duration);
     }
 
+    fn sleep_for_micros(&self, micros: u64) {
+        self.sleep_for_micros(micros);
+    }
+
     fn set_priority(&self, priority: ThreadPriority) -> Result<(), ThreadError> {
         self.set_priority(priority)
     }
@@ -902,7 +964,18 @@ impl<B: ThreadBindings> ThreadApi<B> {
     /// Float Out Boy's main runtime thread sleeps with `VESC_IF->sleep_us` at
     /// `src/main.c:1080`.
     pub fn sleep_for(&self, duration: Duration) {
-        let mut micros = duration.as_nanos().div_ceil(1_000);
+        self.sleep_for_micros_u128(duration_micros(duration));
+    }
+
+    /// Sleep the current package thread for a checked number of microseconds.
+    ///
+    /// VESC's native sleep slot accepts a 32-bit count. Long waits are split
+    /// into safe chunks so package code cannot silently truncate a duration.
+    pub fn sleep_for_micros(&self, micros: u64) {
+        self.sleep_for_micros_u128(u128::from(micros));
+    }
+
+    fn sleep_for_micros_u128(&self, mut micros: u128) {
         while micros != 0 {
             // `Duration` counts nanoseconds with `u128`, while the C firmware
             // accepts only a `uint32_t` microsecond chunk, and its ChibiOS
@@ -1007,6 +1080,11 @@ pub mod test_support {
             self.should_terminate_after_calls.set(checks);
             self
         }
+
+        pub(crate) fn with_priority_result(self, result: bool) -> Self {
+            self.priority_result.set(result);
+            self
+        }
     }
 
     impl ThreadBindings for FakeThreadBindings {
@@ -1076,6 +1154,10 @@ pub mod test_support {
     }
 }
 
+fn duration_micros(duration: Duration) -> u128 {
+    duration.as_nanos().div_ceil(1_000)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -1091,6 +1173,7 @@ mod tests {
     use std::sync::Mutex;
 
     use crate::thread::test_support::FakeThreadBindings;
+    use crate::types::ThreadPriority;
     use crate::units::TimestampTicks;
 
     #[test]
@@ -1144,6 +1227,33 @@ mod tests {
             u64::from(VESC_MAX_SAFE_SLEEP_MICROS) + 1,
         ));
         assert_eq!(overflow.sleep_micros.get(), [VESC_MAX_SAFE_SLEEP_MICROS, 1]);
+
+        let direct = FakeThreadBindings::new();
+        ThreadApi::new(&direct).sleep_for_micros(u64::from(VESC_MAX_SAFE_SLEEP_MICROS) + 1);
+        assert_eq!(direct.sleep_micros.get(), [VESC_MAX_SAFE_SLEEP_MICROS, 1]);
+    }
+
+    #[test]
+    fn duration_to_sleep_micros_does_not_narrow_before_chunking() {
+        let micros = super::duration_micros(Duration::MAX);
+
+        assert!(micros > u128::from(u64::MAX));
+    }
+
+    #[test]
+    fn thread_priority_forwards_checked_values_and_reports_absence() {
+        let supported = FakeThreadBindings::new();
+        let priority = ThreadPriority::try_new(5).expect("priority is in the ABI range");
+        assert_eq!(ThreadApi::new(&supported).set_priority(priority), Ok(()));
+        assert_eq!(supported.priority_calls.get(), 1);
+        assert_eq!(supported.priorities.get()[0], 5);
+
+        let unsupported = FakeThreadBindings::new().with_priority_result(false);
+        assert_eq!(
+            ThreadApi::new(&unsupported).set_priority(priority),
+            Err(super::ThreadError::PriorityUnsupported)
+        );
+        assert_eq!(unsupported.priority_calls.get(), 1);
     }
 
     static RUN_CALLS: AtomicUsize = AtomicUsize::new(0);

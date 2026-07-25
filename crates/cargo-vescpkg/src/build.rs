@@ -241,17 +241,16 @@ fn validate_path_component(label: &str, value: &str) -> Result<(), BuildError> {
 
 fn command_output(command: &mut Command) -> Result<Output, BuildError> {
     let output = command.output()?;
-    match output.status.success() {
-        true => {
-            if !output.stderr.is_empty() {
-                let _ = std::io::stderr().write_all(&output.stderr);
-            }
-            Ok(output)
+    if output.status.success() {
+        if !output.stderr.is_empty() {
+            let _ = std::io::stderr().write_all(&output.stderr);
         }
-        false => Err(BuildError(command_failure_message(
+        Ok(output)
+    } else {
+        Err(BuildError(command_failure_message(
             &output.stdout,
             &output.stderr,
-        ))),
+        )))
     }
 }
 
@@ -456,7 +455,7 @@ fn cargo_message_artifacts(
             .into_iter()
             .flatten()
             .filter_map(Value::as_str)
-            .find(|path| path.ends_with(".a"))
+            .find(|path| Path::new(path).extension().is_some_and(|ext| ext == "a"))
             .map(PathBuf::from),
     })
     .flatten();
@@ -533,6 +532,7 @@ fn validate_loader_init_stack(elf: &Path) -> Result<(), BuildError> {
     validate_loader_init_stack_report(&String::from_utf8_lossy(&output.stdout))
 }
 
+#[allow(clippy::manual_let_else)]
 fn disassembled_functions(report: &str) -> Result<Vec<DisassembledFunction>, BuildError> {
     let mut functions = Vec::new();
     for line in report.lines() {
@@ -576,8 +576,10 @@ fn disassembled_functions(report: &str) -> Result<Vec<DisassembledFunction>, Bui
             let immediate = immediate.trim_start_matches('#');
             let bytes = immediate
                 .strip_prefix("0x")
-                .map(|value| usize::from_str_radix(value, 16))
-                .unwrap_or_else(|| immediate.parse())
+                .map_or_else(
+                    || immediate.parse(),
+                    |value| usize::from_str_radix(value, 16),
+                )
                 .map_err(|_| {
                     BuildError(format!("could not read loader stack size `{immediate}`"))
                 })?;
@@ -606,18 +608,20 @@ fn stack_through<'function>(
     if active.contains(&name) {
         return 0;
     }
-    let Some(function) = functions.iter().find(|function| function.name == name) else {
-        return 0;
-    };
-    active.push(name);
-    let callee_stack = function
-        .callees
+    functions
         .iter()
-        .map(|callee| stack_through(callee, functions, active))
-        .max()
-        .unwrap_or(0);
-    active.pop();
-    function.stack_bytes + callee_stack
+        .find(|function| function.name == name)
+        .map_or(0, |function| {
+            active.push(name);
+            let callee_stack = function
+                .callees
+                .iter()
+                .map(|callee| stack_through(callee, functions, active))
+                .max()
+                .unwrap_or(0);
+            active.pop();
+            function.stack_bytes + callee_stack
+        })
 }
 
 fn validate_loader_init_stack_report(report: &str) -> Result<(), BuildError> {
@@ -850,12 +854,26 @@ mod tests {
     }
 
     #[test]
-    fn float_out_boy_qml_imports_refloat_without_restoring_its_backups() {
+    fn float_out_boy_qml_migrates_legacy_tune_archive_identity() {
         let qml = include_str!("../../../examples/float-out-boy/package/ui.qml");
 
         assert!(qml.contains("[tuneManager.packageName,\"Refloat\"].includes"));
         assert!(qml.contains("backup.package.name!==packageName"));
-        assert!(qml.contains("\"package\":{\"name\":\"Refloat\",\"version\":\"1.2.1\"}"));
+        assert!(
+            qml.contains("normalized.package={\"name\":packageName,\"version\":packageVersion}")
+        );
+        assert!(qml.contains("\"package\":{\"name\":packageName,\"version\":packageVersion}"));
+        assert!(qml.contains("var lines=csv.split(/\\r?\\n/)"));
+        assert!(qml.contains("append({\"tune\":tuneManager.normalizeArchiveTune(tunes[i])})"));
+        assert!(
+            qml.contains("if(tuneArchive&&tuneArchive.length>0){downloadedTunesModel.setTunes")
+        );
+        assert!(qml.contains(
+            "https://us-central1-mimetic-union-377520.cloudfunctions.net/float_package_tunes_via_http"
+        ));
+        assert!(!qml.contains(
+            "http://us-central1-mimetic-union-377520.cloudfunctions.net/float_package_tunes_via_http"
+        ));
     }
 
     #[test]

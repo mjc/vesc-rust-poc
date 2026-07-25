@@ -12,4 +12,8 @@ workspace = true
 
 [build-dependencies]
 bindgen = "0.72.1"
+quote = "1"
 syn = { version = "2", features = ["full"] }
+
+[dev-dependencies]
+clang = "2.0"

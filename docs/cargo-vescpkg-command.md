@@ -43,8 +43,30 @@ under Cargo's target directory at `vescpkg/`.
 - `cargo run -p cargo-vescpkg -- package-install <package.vescpkg>`
 - `cargo run -p cargo-vescpkg -- erase-package`
 - `cargo run -p cargo-vescpkg -- loopback`
+- `cargo run -p cargo-vescpkg -- control-loop --device Floatwheel PintV`
+- `cargo run -p cargo-vescpkg -- control-loop-deploy -p vesc-example-control-loop-smoke --device Floatwheel PintV`
 
 `deploy` builds the selected Cargo package and installs the resulting artifact.
-The separate `loopback` command probes a running loopback package.
+The separate `loopback` command probes a running loopback package. The
+`control-loop` command probes the no-actuation control-loop package's typed
+setpoint/status exchange, verifies tick and output progress, and reports the
+observed tick-period range and jitter. `control-loop-deploy` builds and installs
+the selected package before running the same probe. Both commands require a
+compatible device; host build and package checks do not substitute for that
+hardware proof.
 
 The checked workspace path remains `make check`.
+
+## Hardware-in-the-loop control-loop proof
+
+With a compatible controller already running the control-loop package, the
+ignored HIL test performs the real BLE probe and asserts advancing ticks,
+changing output, and timing statistics:
+
+```bash
+VESC_DEVICE="Floatwheel PintV" VESC_BLE_ADDR="AA:BB:CC:DD:EE:FF" \
+  cargo nextest run -p cargo-vescpkg --features hil --profile hil -- --ignored
+```
+
+The HIL test is deliberately excluded from the default workspace gate and
+requires a device-specific address.

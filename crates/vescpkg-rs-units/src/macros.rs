@@ -19,6 +19,13 @@ macro_rules! scalar_unit {
                 self.0
             }
 
+            /// Scale this value without converting it to its primitive representation.
+            #[must_use]
+            #[inline(always)]
+            pub const fn scaled_by(self, factor: f32) -> Self {
+                Self(self.0 * factor)
+            }
+
             /// Return the absolute magnitude in the same unit.
             #[must_use]
             pub const fn abs(self) -> Self {
@@ -43,6 +50,12 @@ macro_rules! scalar_unit {
             /// Return true when this value is exactly zero.
             pub const fn is_zero(self) -> bool {
                 self.0 == 0.0
+            }
+
+            /// Return true when this value is greater than another same-unit value.
+            #[inline(always)]
+            pub const fn is_greater_than(self, other: Self) -> bool {
+                self.0 > other.0
             }
 
             /// Return the smaller same-unit value.
@@ -78,7 +91,7 @@ macro_rules! scalar_unit {
             type Output = Self;
 
             fn mul(self, rhs: f32) -> Self::Output {
-                Self(self.0 * rhs)
+                self.scaled_by(rhs)
             }
         }
 

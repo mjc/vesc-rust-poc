@@ -144,11 +144,19 @@ impl From<WireError> for PackageError {
 
 impl Package {
     /// Read and decode a package file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the file cannot be read or contains invalid package data.
     pub fn read(path: impl AsRef<Path>) -> Result<Self, PackageError> {
         Self::from_bytes(&fs::read(path)?)
     }
 
     /// Decode package bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the bytes do not contain a valid VESC package.
     pub fn from_bytes(data: &[u8]) -> Result<Self, PackageError> {
         parse_vescpkg(data)?
             .into_iter()
@@ -212,7 +220,10 @@ mod tests {
         let raw = b"VESC Packet\0";
         let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
         encoder.write_all(raw).expect("compress package");
-        let mut bytes = (raw.len() as u32).to_be_bytes().to_vec();
+        let mut bytes = u32::try_from(raw.len())
+            .expect("package field length fits VESC wire field")
+            .to_be_bytes()
+            .to_vec();
         bytes.extend(encoder.finish().expect("finish package"));
 
         assert!(matches!(

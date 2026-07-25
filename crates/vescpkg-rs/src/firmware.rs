@@ -143,12 +143,10 @@ pub unsafe trait PackageAppDataCallback: AppDataHandler + Sized {
 /// call.
 #[cfg(all(not(test), not(feature = "test-support")))]
 pub unsafe extern "C" fn app_data_handler<T: PackageAppDataCallback>(data: *mut u8, len: u32) {
-    // SAFETY: this function receives exactly the firmware app-data callback ABI.
-    let Some(packet) = (unsafe { app_data_packet(data, len) }) else {
-        return;
-    };
-    let source = T::state_source();
-    let _ = source.with_mut(|state| T::handle(state, packet));
+    let _ = unsafe { app_data_packet(data, len) }.is_some_and(|packet| {
+        let source = T::state_source();
+        source.with_mut(|state| T::handle(state, packet)).is_some()
+    });
 }
 
 /// Define a package-local app-data callback symbol backed by package state.
@@ -386,13 +384,11 @@ pub unsafe extern "C" fn stateful_custom_config_set<T, const LEN: usize>(buffer:
 where
     T: PackageCustomConfigCallback<LEN>,
 {
-    // SAFETY: the callback contract guarantees a readable `LEN`-byte buffer.
-    let Some(payload) = (unsafe { custom_config_payload::<LEN>(buffer) }) else {
-        return false;
-    };
-    T::state_source()
-        .with_mut(|state| T::set_config(state, payload).is_ok())
-        .unwrap_or(false)
+    unsafe { custom_config_payload::<LEN>(buffer) }.is_some_and(|payload| {
+        T::state_source()
+            .with_mut(|state| T::set_config(state, payload).is_ok())
+            .unwrap_or(false)
+    })
 }
 
 /// Firmware XML pointer output for `get_cfg_xml` callbacks.
@@ -424,10 +420,7 @@ pub unsafe extern "C" fn stateful_custom_config_xml<T, const LEN: usize>(
 where
     T: PackageCustomConfigCallback<LEN>,
 {
-    let Some(buffer) = CustomConfigXmlOut::new(buffer) else {
-        return 0;
-    };
-    buffer.return_xml(T::config_xml())
+    CustomConfigXmlOut::new(buffer).map_or(0, |buffer| buffer.return_xml(T::config_xml()))
 }
 
 #[cfg(test)]

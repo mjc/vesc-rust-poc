@@ -157,15 +157,13 @@ impl FloatOutBoyPackageState {
         // C map: disabling HANDTEST restores the prior config from EEPROM in
         // `third_party/float-out-boy/src/main.c:1447-1449`.
         self.read_config_from_eeprom();
-        self.refresh_balance_filter_config();
-        self.refresh_config_runtime_state();
     }
 
     fn apply_handtest_safety_config(&mut self) {
         // C map: enabling HANDTEST applies temporary safety overrides at
         // `third_party/float-out-boy/src/main.c:1431-1446`.
         if let Some(config) = Self::handtest_safety_config(&self.serialized_config) {
-            self.serialized_config = config;
+            self.replace_active_config(&config);
         }
     }
 

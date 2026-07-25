@@ -9,8 +9,9 @@ Strategy for the `vescpkg-rs-sys` crate: a `no_std` firmware ABI layer generated
 | Compile-fail | `unsafe` required, no `std` leak, crate-internal test harness | rustdoc contracts in `src/compile_fail_contracts.md` |
 | Layout / ABI pins | `LibInfo`, `VescIf` size/offsets, newtypes | `src/tests.rs` |
 | Raw dispatch | mock `VescIf` + stub call recording | `src/raw/dispatch_tests.rs` |
-| Header parity | bindgen-generated table inventory | `build.rs`, `src/vesc_if.rs` |
-| Thumb/asm smoke | `ldr` immediates vs `VescIfAbi` | `src/tests.rs` |
+| Header parity | independent libclang audit of generated slots | `src/raw/abi_audit.rs` |
+| Thumb/asm smoke | `ldr` offsets, optional branch, and indirect call vs generated manifest | `tools/thumb-dispatch-smoke.sh` |
+| Manifest gate | callable/scalar presence semantics and raw-shim reachability | `src/tests.rs`, `raw.rs` |
 
 ## Public export inventory
 
@@ -28,7 +29,7 @@ Strategy for the `vescpkg-rs-sys` crate: a `no_std` firmware ABI layer generated
 | `raw::io_set_mode` | fn | `IO_SET_MODE` | yes |
 | `raw::io_write` | fn | `IO_WRITE` | yes |
 | `raw::io_read` | fn | `IO_READ` | yes |
-| `VescIfAbi` / `VescIfSlot` | types | all `USED_SLOTS` | offset tests |
+| `VescIfAbi` / `VescIfSlot` | types | all `ALL_SLOTS` | offset tests |
 | `LibInfo` / `LibInfoAbi` | types | loader header | yes |
 | `NativeImage` | type | rebasing | yes |
 | `views::*` | newtypes | — | size tests |
@@ -65,8 +66,25 @@ The semantic slot manifest is derived from bindgen's generated `vesc_c_if`
 definition, so field names, order, signatures, and ABI structs come directly
 from the header.
 
+Callable/scalar classification follows the generated Rust type rather than a
+typedef-name allowlist. Bare function types, `Option<fn(...)>` entries, and
+aliases (including aliases of aliases) are callable; `Option<T>` remains a
+scalar unless its inner type is itself a function. The build script checks this
+distinction with a small synthetic fixture so a future bindgen shape change
+cannot silently turn a data slot into a raw-callable shim.
+
 Libclang is therefore a build-time dependency. The Nix development shell
 supplies it and sets `LIBCLANG_PATH` for the normal build and test commands.
+
+The complete host gate can be run directly with:
+
+```bash
+nix develop --command cargo test -p vescpkg-rs-sys --lib -- --test-threads=1
+```
+
+The serial flag keeps the process-global libclang fixture deterministic when
+using Cargo's in-process test runner. `cargo nextest` remains the workspace
+default because each test binary runs in its own process.
 
 ## Boundary: what not to test here
 
@@ -83,6 +101,7 @@ supplies it and sets `LIBCLANG_PATH` for the normal build and test commands.
 |---------|--------|
 | `make check` | fmt, clippy, default nextest (includes vescpkg-rs-sys unit + dispatch) |
 | `make vescpkg-rs-sys-target-check` | no normal deps + `thumbv7em-none-eabihf` check |
+| `make thumb-dispatch-smoke` | compile, lower, and inspect representative Thumb dispatch from the generated manifest |
 | `make check-full` | check + ARM/package build gates |
 
 ## Adding a new `raw::*` wrapper
@@ -92,6 +111,10 @@ supplies it and sets `LIBCLANG_PATH` for the normal build and test commands.
 3. Add present/absent dispatch tests using `test_support`.
 4. Update this inventory table.
 
+The generated manifest also emits a compile-time callable-shim gate in
+`raw.rs`; adding a callable manifest entry without a matching raw shim fails
+the `vescpkg-rs-sys` build before dispatch tests run.
+
 ## Miri (optional)
 
 Host dispatch tests can be run under Miri to exercise the crate-internal mock-table harness:
@@ -100,6 +123,17 @@ Host dispatch tests can be run under Miri to exercise the crate-internal mock-ta
 cargo +nightly miri test -p vescpkg-rs-sys
 ```
 
-Miri does not cover the ARM `asm!` dispatch path (`cfg(all(target_arch = "arm", not(test)))`). Treat Miri as a harness sanity check, not firmware validation.
+In the current Nix shell this command is unavailable because no default
+rustup toolchain provides `cargo-miri`; record that as an environment
+limitation rather than weakening the gate. When a nightly Miri toolchain is
+available, use the command above with `-- --test-threads=1` so the host mock
+table and libclang fixtures remain isolated.
+
+Miri covers host mock-table construction, function-pointer storage/loading,
+union/layout helpers, and callback test support. It does not cover the ARM
+`asm!` dispatch path (`cfg(all(target_arch = "arm", not(test)))`) or fixed
+firmware-address loads; the Thumb smoke gate and ARM no-std check are the
+alternative proofs for those paths. Treat Miri as a harness sanity check, not
+firmware validation.
 
 Epic tracking: **br-uc4**.

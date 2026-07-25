@@ -1,4 +1,9 @@
-use super::{FloatOutBoyPackageState, config_storage::FLOAT_OUT_BOY_EEPROM_LEN};
+use super::{
+    FloatOutBoyPackageState,
+    config_storage::{
+        FLOAT_OUT_BOY_EEPROM_LEN, FloatOutBoyEepromImage, FloatOutBoyEepromImageError,
+    },
+};
 use crate::beeper::FloatOutBoyBeeperLevel;
 use crate::config::FloatOutBoyConfigImage;
 use crate::domain::{
@@ -52,6 +57,36 @@ fn configured_loop_time_uses_float_out_boy_hertz_config() {
     // seven float16 config fields; `configure(d)` then uses it as
     // `1e6 / d->float_conf.hertz` at `third_party/float-out-boy/src/main.c:190-191`.
     assert_eq!(state.configured_loop_time_us(), 2000);
+}
+
+#[test]
+fn eeprom_image_conversion_keeps_the_fixed_tail_deterministic() {
+    let config = FloatOutBoyConfigImage::defaults();
+    let image = FloatOutBoyEepromImage::from(config);
+    let bytes = image.into_bytes();
+
+    assert_eq!(&bytes[..config.as_bytes().len()], config.as_bytes());
+    assert!(
+        bytes[config.as_bytes().len()..]
+            .iter()
+            .all(|byte| *byte == 0)
+    );
+    assert_eq!(
+        FloatOutBoyConfigImage::try_from(FloatOutBoyEepromImage::from_bytes(&bytes)),
+        Ok(config)
+    );
+}
+
+#[test]
+fn eeprom_image_conversion_rejects_a_bad_signature() {
+    let config = FloatOutBoyConfigImage::defaults();
+    let mut bytes = FloatOutBoyEepromImage::from(config).into_bytes();
+    bytes[0] ^= 0xff;
+
+    assert_eq!(
+        FloatOutBoyConfigImage::try_from(FloatOutBoyEepromImage::from_bytes(&bytes)),
+        Err(FloatOutBoyEepromImageError)
+    );
 }
 
 #[test]
@@ -369,6 +404,18 @@ fn default_scaled_config_fields_decode_to_semantic_values() {
 }
 
 #[test]
+fn default_led_runtime_flags_follow_generated_config_image() {
+    let config = FloatOutBoyConfigImage::defaults();
+
+    assert!(config.leds_enabled());
+    assert!(config.headlights_enabled());
+    assert!(config.lights_off_when_lifted());
+    assert_eq!(config.as_bytes()[175], 1);
+    assert_eq!(config.as_bytes()[176], 1);
+    assert_eq!(config.as_bytes()[179], 1);
+}
+
+#[test]
 fn semantic_config_writes_round_trip_through_generated_storage() {
     let mut bytes = default_float_out_boy_config_bytes();
     bytes.edit_float_out_boy_config(|config| {
@@ -651,7 +698,7 @@ fn store_serialized_config_persists_for_restart_like_float_out_boy_set_cfg() {
 
     assert!(state.store_serialized_config(&bytes));
     let mut persisted = [0; FLOAT_OUT_BOY_EEPROM_LEN];
-    assert!(firmware.eeprom().read_bytes(&mut persisted));
+    assert!(firmware.eeprom().read_bytes(&mut persisted).is_ok());
     assert_eq!(
         &persisted[..state.serialized_config.as_bytes().len()],
         state.serialized_config.as_bytes(),
