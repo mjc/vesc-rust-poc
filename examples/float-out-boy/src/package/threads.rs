@@ -126,12 +126,21 @@ impl FloatOutBoyMainThreadTick {
         self.sleep_us
     }
 
+    #[cfg(test)]
     const fn beeper_level(self) -> Option<vescpkg_rs::DigitalOutputLevel> {
         self.beeper_level
     }
 
+    #[cfg(test)]
     const fn beeper_configuration_level(self) -> Option<vescpkg_rs::DigitalOutputLevel> {
         self.beeper_configuration_level
+    }
+
+    const fn beeper_pin_level(self) -> Option<vescpkg_rs::DigitalOutputLevel> {
+        match self.beeper_level {
+            Some(level) => Some(level),
+            None => self.beeper_configuration_level,
+        }
     }
 }
 
@@ -322,16 +331,7 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
                     )
                 });
                 tick.map_or(1, |tick| {
-                    if let Some(level) = tick.beeper_configuration_level() {
-                        let _ = firmware
-                            .gpio()
-                            .acquire_digital(DigitalPin::PPM)
-                            .and_then(|pin| {
-                                pin.set_mode(GpioMode::Output)?;
-                                pin.write(level)
-                            });
-                    }
-                    if let Some(level) = tick.beeper_level() {
+                    if let Some(level) = tick.beeper_pin_level() {
                         if let Ok(pin) = firmware.gpio().acquire_digital(DigitalPin::PPM) {
                             let _ = pin.set_mode(GpioMode::Output);
                             let _ = pin.write(level);
@@ -628,6 +628,17 @@ mod tests {
             );
             assert!(!state.take_beeper_configuration_request());
         }
+    }
+
+    #[test]
+    fn beeper_transition_wins_when_pin_setup_occurs_on_the_same_tick() {
+        let tick = super::FloatOutBoyMainThreadTick::new(
+            1,
+            Some(DigitalOutputLevel::Low),
+            Some(DigitalOutputLevel::High),
+        );
+
+        assert_eq!(tick.beeper_pin_level(), Some(DigitalOutputLevel::High));
     }
 
     #[test]
