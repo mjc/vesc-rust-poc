@@ -21,7 +21,9 @@ pub(super) fn restart(_pin: FloatOutBoyLedPin, _pulses: &[u16]) -> bool {
 }
 
 #[cfg(not(target_arch = "arm"))]
-pub(super) fn teardown(_pin: FloatOutBoyLedPin) {}
+pub(super) fn teardown(_pin: FloatOutBoyLedPin) -> bool {
+    true
+}
 
 #[cfg(target_arch = "arm")]
 use core::{
@@ -460,16 +462,17 @@ pub(super) fn restart(pin: FloatOutBoyLedPin, pulses: &[u16]) -> bool {
 }
 
 #[cfg(target_arch = "arm")]
-pub(super) fn teardown(pin: FloatOutBoyLedPin) {
+pub(super) fn teardown(pin: FloatOutBoyLedPin) -> bool {
     let hardware = PinHardware::for_pin(pin);
     modify(register(hardware.timer, TIM_DIER), |value| {
         value & !hardware.timer_dma_source
     });
-    let _ = disable_dma_stream(hardware);
+    let stopped = disable_dma_stream(hardware);
     reset_timer(hardware);
     if let Some(pad) = hardware.pad() {
         set_pad_mode(pad, PAL_MODE_INPUT);
     }
+    stopped
 }
 
 #[cfg(target_arch = "arm")]

@@ -103,15 +103,18 @@ impl FloatOutBoyInternalLedDriver {
         self.operational
     }
 
-    pub(super) fn destroy(&mut self, teardown: impl FnOnce(FloatOutBoyLedPin)) {
+    pub(super) fn destroy(&mut self, teardown: impl FnOnce(FloatOutBoyLedPin) -> bool) -> bool {
         if !self.initialized {
-            return;
+            return true;
         }
-        teardown(self.hardware.pin());
-        self.initialized = false;
         self.operational = false;
+        if !teardown(self.hardware.pin()) {
+            return false;
+        }
+        self.initialized = false;
         self.pulse_count = 0;
         self.release_pulses();
+        true
     }
 
     fn required_pulse_count(&self) -> Option<usize> {
@@ -463,16 +466,54 @@ mod tests {
         let mut failed_teardowns = 0;
 
         assert!(!failed.setup(|_, _, _| false, |_| failed_teardowns += 1,));
-        failed.destroy(|_| failed_teardowns += 1);
+        assert!(failed.destroy(|_| {
+            failed_teardowns += 1;
+            true
+        }));
         assert_eq!(failed_teardowns, 1);
 
         let mut active = FloatOutBoyInternalLedDriver::new(hardware);
         assert!(active.setup(|_, _, _| true, |_| {}));
         let mut active_teardowns = 0;
-        active.destroy(|_| active_teardowns += 1);
-        active.destroy(|_| active_teardowns += 1);
+        assert!(active.destroy(|_| {
+            active_teardowns += 1;
+            true
+        }));
+        assert!(active.destroy(|_| {
+            active_teardowns += 1;
+            true
+        }));
         assert_eq!(active_teardowns, 1);
         assert!(!active.is_operational());
+    }
+
+    #[test]
+    fn failed_destroy_retains_dma_storage_and_can_retry() {
+        let strip = FloatOutBoyLedStripConfig::new(
+            FloatOutBoyLedStripOrder::First,
+            1,
+            FloatOutBoyLedColorOrder::Grb,
+        );
+        let hardware = FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal)
+            .with_front_strip(strip);
+        let mut driver = FloatOutBoyInternalLedDriver::new(hardware);
+        assert!(driver.setup(|_, _, _| true, |_| {}));
+        let pulse_count = driver.pulses().len();
+        let mut teardowns = 0;
+
+        assert!(!driver.destroy(|_| {
+            teardowns += 1;
+            false
+        }));
+        assert!(!driver.is_operational());
+        assert!(pulse_count > 0);
+        assert_eq!(driver.pulses().len(), pulse_count);
+        assert!(driver.destroy(|_| {
+            teardowns += 1;
+            true
+        }));
+        assert_eq!(teardowns, 2);
+        assert!(driver.pulses().is_empty());
     }
 
     #[test]
@@ -502,8 +543,14 @@ mod tests {
         assert!(!driver.is_operational());
 
         let mut teardowns = 0;
-        driver.destroy(|_| teardowns += 1);
-        driver.destroy(|_| teardowns += 1);
+        assert!(driver.destroy(|_| {
+            teardowns += 1;
+            true
+        }));
+        assert!(driver.destroy(|_| {
+            teardowns += 1;
+            true
+        }));
         assert_eq!(teardowns, 1);
     }
 }

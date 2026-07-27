@@ -49,7 +49,9 @@ impl FloatOutBoyPackageState {
             config,
             driver: FloatOutBoyInternalLedDriver::new(hardware),
         };
-        if runtime.driver.setup(hardware::setup, hardware::teardown) {
+        if runtime.driver.setup(hardware::setup, |pin| {
+            let _ = hardware::teardown(pin);
+        }) {
             #[cfg(test)]
             {
                 self.internal_leds = Some(runtime);
@@ -95,12 +97,12 @@ impl FloatOutBoyPackageState {
     pub(crate) fn destroy_internal_leds(&mut self) {
         #[cfg(test)]
         if let Some(runtime) = self.internal_leds.as_mut() {
-            runtime.driver.destroy(hardware::teardown);
+            let _ = runtime.driver.destroy(hardware::teardown);
         }
         #[cfg(target_arch = "arm")]
         if let Some(runtime) = self.internal_leds.as_mut() {
             if let Some(runtime) = runtime.runtime_mut() {
-                runtime.driver.destroy(hardware::teardown);
+                let _ = runtime.driver.destroy(hardware::teardown);
             }
         }
         #[cfg(test)]
