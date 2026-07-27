@@ -21,6 +21,18 @@ pub fn cos(x: f32) -> f32 {
     libm::cosf(x)
 }
 
+/// Computes the IEEE remainder after division for single-precision inputs.
+#[must_use]
+pub fn remainder(x: f32, modulus: f32) -> f32 {
+    libm::fmodf(x, modulus)
+}
+
+/// Rounds a single-precision input halfway away from zero.
+#[must_use]
+pub fn round(x: f32) -> f32 {
+    libm::roundf(x)
+}
+
 /// Computes sine for a single-precision input.
 #[must_use]
 pub fn sin(x: f32) -> f32 {
@@ -41,7 +53,7 @@ pub fn sqrt(x: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{asin, cos, sin, sqrt, tan};
+    use super::{asin, cos, remainder, round, sin, sqrt, tan};
 
     fn approx_eq(left: f32, right: f32) {
         assert!(
@@ -75,6 +87,14 @@ mod tests {
             1.75,
         ] {
             approx_eq(cos(value), libm::cosf(value));
+        }
+    }
+
+    #[test]
+    fn animation_math_matches_host_libm_at_boundaries() {
+        for value in [-2.5, -1.0, -0.5, 0.0, 0.5, 1.0, 2.5] {
+            assert_eq!(round(value), libm::roundf(value));
+            assert_eq!(remainder(value, 2.0), libm::fmodf(value, 2.0));
         }
     }
 

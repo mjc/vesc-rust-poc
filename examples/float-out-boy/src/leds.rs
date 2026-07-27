@@ -276,6 +276,24 @@ impl FloatOutBoyLedPixel {
         });
         Self { channels }
     }
+
+    fn blend(first: Self, second: Self, blend: f32) -> Self {
+        if blend <= 0.0 {
+            return first;
+        }
+        if blend >= 1.0 {
+            return second;
+        }
+        let first_weight = 1.0 - blend;
+        let channels = core::array::from_fn(|index| {
+            let first = first.channels.get(index).copied().unwrap_or_default();
+            let second = second.channels.get(index).copied().unwrap_or_default();
+            crate::wire::saturating_trunc_f32_to_u8(
+                f32::from(first) * first_weight + f32::from(second) * blend,
+            )
+        });
+        Self { channels }
+    }
 }
 
 fn refloat_led_gamma(channel: u8) -> u8 {
@@ -825,10 +843,58 @@ impl FloatOutBoyLedStripFrame {
     pub fn render_solid(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, blend: Ratio) {
         let brightness = Ratio::clamped(bar.brightness().as_ratio() * on_off_fade.as_ratio());
         let target = FloatOutBoyLedPixel::from_named(bar.primary_color());
+        self.render_target(target, brightness, blend);
+    }
+
+    /// Render one currently implemented Refloat bar animation.
+    pub fn render_bar(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
+        let time = time * bar.animation_speed().as_units();
+        let target = match bar.animation_mode() {
+            FloatOutBoyLedAnimationMode::Solid => {
+                FloatOutBoyLedPixel::from_named(bar.primary_color())
+            }
+            FloatOutBoyLedAnimationMode::Fade => FloatOutBoyLedPixel::blend(
+                FloatOutBoyLedPixel::from_named(bar.secondary_color()),
+                FloatOutBoyLedPixel::from_named(bar.primary_color()),
+                refloat_cosine_progress(time),
+            ),
+            FloatOutBoyLedAnimationMode::Strobe => {
+                let color = if vescpkg_rs::remainder(time, 2.0) >= 1.0 {
+                    bar.secondary_color()
+                } else {
+                    bar.primary_color()
+                };
+                FloatOutBoyLedPixel::from_named(color)
+            }
+            FloatOutBoyLedAnimationMode::Pulse
+            | FloatOutBoyLedAnimationMode::KnightRider
+            | FloatOutBoyLedAnimationMode::Felony
+            | FloatOutBoyLedAnimationMode::RainbowCycle
+            | FloatOutBoyLedAnimationMode::RainbowFade
+            | FloatOutBoyLedAnimationMode::RainbowRoll => return,
+        };
+        let brightness = Ratio::clamped(bar.brightness().as_ratio() * on_off_fade.as_ratio());
+        self.render_target(target, brightness, Ratio::from_ratio_const(1.0));
+    }
+
+    fn render_target(&mut self, target: FloatOutBoyLedPixel, brightness: Ratio, blend: Ratio) {
         let len = usize::from(self.config.count());
         for pixel in self.pixels.get_mut(..len).unwrap_or_default() {
             *pixel = pixel.scaled_and_blended(target, brightness, blend);
         }
+    }
+}
+
+fn refloat_cosine_progress(time: f32) -> f32 {
+    let rounded = vescpkg_rs::round(time);
+    let mut x = (time - rounded) * core::f32::consts::PI;
+    x *= x;
+    let cosine = 2.5 * x / (x + core::f32::consts::PI * core::f32::consts::PI);
+    let rounded = crate::wire::saturating_trunc_f32_to_u32(rounded);
+    if rounded.checked_rem(2) == Some(1) {
+        1.0 - cosine
+    } else {
+        cosine
     }
 }
 
@@ -987,5 +1053,63 @@ mod renderer_tests {
         };
         assert_eq!(frame.physical_pixel(0), Some(expected));
         assert_eq!(frame.physical_pixel(1), Some(expected));
+    }
+
+    #[test]
+    fn fade_and_strobe_match_refloat_time_boundaries() {
+        let config = super::FloatOutBoyLedStripConfig::new(
+            super::FloatOutBoyLedStripOrder::First,
+            1,
+            FloatOutBoyLedColorOrder::Grb,
+        );
+        let fade = super::FloatOutBoyLedBarConfig::new(
+            Ratio::from_ratio_const(1.0),
+            FloatOutBoyLedColor::Red,
+            FloatOutBoyLedColor::Blue,
+            super::FloatOutBoyLedAnimationMode::Fade,
+            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+        );
+        let strobe = super::FloatOutBoyLedBarConfig::new(
+            Ratio::from_ratio_const(1.0),
+            FloatOutBoyLedColor::Red,
+            FloatOutBoyLedColor::Blue,
+            super::FloatOutBoyLedAnimationMode::Strobe,
+            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+        );
+
+        let mut frame = super::FloatOutBoyLedStripFrame::new(config);
+        frame.render_bar(fade, Ratio::from_ratio_const(1.0), 0.0);
+        assert_eq!(
+            frame.physical_pixel(0),
+            Some(FloatOutBoyLedPixel::from_named(FloatOutBoyLedColor::Blue))
+        );
+        frame.render_bar(fade, Ratio::from_ratio_const(1.0), 0.5);
+        assert_eq!(
+            frame.physical_pixel(0),
+            Some(FloatOutBoyLedPixel {
+                channels: [127, 0, 127, 0]
+            })
+        );
+        frame.render_bar(fade, Ratio::from_ratio_const(1.0), 1.0);
+        assert_eq!(
+            frame.physical_pixel(0),
+            Some(FloatOutBoyLedPixel::from_named(FloatOutBoyLedColor::Red))
+        );
+
+        frame.render_bar(strobe, Ratio::from_ratio_const(1.0), 0.999);
+        assert_eq!(
+            frame.physical_pixel(0),
+            Some(FloatOutBoyLedPixel::from_named(FloatOutBoyLedColor::Red))
+        );
+        frame.render_bar(strobe, Ratio::from_ratio_const(1.0), 1.0);
+        assert_eq!(
+            frame.physical_pixel(0),
+            Some(FloatOutBoyLedPixel::from_named(FloatOutBoyLedColor::Blue))
+        );
+        frame.render_bar(strobe, Ratio::from_ratio_const(1.0), 2.0);
+        assert_eq!(
+            frame.physical_pixel(0),
+            Some(FloatOutBoyLedPixel::from_named(FloatOutBoyLedColor::Red))
+        );
     }
 }
