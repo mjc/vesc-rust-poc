@@ -878,6 +878,7 @@ impl FloatOutBoyLedDynamics {
             distance,
         } = input;
         if matches!(run_state, crate::FloatOutBoyRunState::Startup) {
+            self.run_state = run_state;
             return;
         }
 
@@ -1287,6 +1288,7 @@ impl FloatOutBoyLedRenderer {
             ride: input,
             status,
         } = frame;
+        let was_startup = matches!(self.dynamics.run_state, crate::FloatOutBoyRunState::Startup);
         let old_headlights = self.dynamics.headlights();
         let old_direction = self.dynamics.direction();
         let was_upright = self.dynamics.is_board_upright();
@@ -1296,6 +1298,14 @@ impl FloatOutBoyLedRenderer {
 
         if matches!(input.run_state, crate::FloatOutBoyRunState::Startup) {
             return;
+        }
+        if was_startup {
+            self.animation_start = current_time;
+            self.status_dynamics.idle_time = current_time;
+            self.status_on_front_idle_time = current_time;
+            if upright {
+                self.status_on_front_blend = 1.0;
+            }
         }
         let fade = self.dynamics.on_off_fade();
         if !matches!(input.footpad, crate::FloatOutBoyFootpadState::None)
@@ -1421,7 +1431,7 @@ impl FloatOutBoyLedRenderer {
         current_time: f32,
     ) {
         let blend = Ratio::clamped(self.status_on_front_blend);
-        if blend.as_ratio() <= 0.0 {
+        if !config.shows_status_on_front_when_lifted() || blend.as_ratio() <= 0.0 {
             return;
         }
         self.front.render_status_layers(FloatOutBoyStatusLayers {
@@ -3318,7 +3328,7 @@ mod renderer_tests {
         renderer.update(config, frame, 1.0);
         assert_eq!(pixel(&renderer), [1, 1, 1, 0]);
 
-        for tick in 1..=10 {
+        for tick in 1..=40 {
             renderer.update(
                 config,
                 frame,
@@ -3334,7 +3344,7 @@ mod renderer_tests {
             },
             ..frame
         };
-        for tick in 11..=13 {
+        for tick in 41..=43 {
             renderer.update(
                 config,
                 with_footpad(crate::FloatOutBoyFootpadState::Left),
@@ -3343,7 +3353,7 @@ mod renderer_tests {
         }
         assert_eq!(pixel(&renderer), [0, 0x3a, 0x4d, 0]);
 
-        renderer.update(config, frame, 1.0 + 14.0 / 30.0);
+        renderer.update(config, frame, 1.0 + 44.0 / 30.0);
         assert_eq!(pixel(&renderer), [0x1c, 0x3b, 0x45, 0]);
     }
 
@@ -3541,6 +3551,51 @@ mod renderer_tests {
                 .physical_pixel(0)
                 .map(super::FloatOutBoyLedPixel::channels),
             Some([0; 4])
+        );
+    }
+
+    #[test]
+    fn first_ready_resets_animation_and_idle_epochs_like_refloat() {
+        let bar = super::FloatOutBoyLedBarConfig::new(
+            Ratio::from_ratio_const(1.0),
+            FloatOutBoyLedColor::WhiteRgb,
+            FloatOutBoyLedColor::Black,
+            super::FloatOutBoyLedAnimationMode::Solid,
+            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+        );
+        let status = super::FloatOutBoyStatusBarConfig::new(
+            super::FloatOutBoyStatusBarIdleTimeout::from_seconds(1),
+            Ratio::from_ratio_const(0.9),
+            Ratio::from_ratio_const(0.1),
+            Ratio::from_ratio_const(1.0),
+            Ratio::from_ratio_const(0.5),
+        );
+        let config = super::FloatOutBoyLedsConfig::new(bar, bar, bar, bar, status, bar).enabled();
+        let hardware = crate::lcm::FloatOutBoyHardwareLedsConfig::new(
+            crate::lcm::FloatOutBoyLedMode::Internal,
+        );
+        let frame = |run_state| {
+            super::FloatOutBoyLedFrameUpdate::ride_only(super::FloatOutBoyLedUpdate {
+                run_state,
+                mode: crate::FloatOutBoyMode::Normal,
+                darkride: false,
+                footpad: crate::FloatOutBoyFootpadState::None,
+                pitch_degrees: 0.0,
+                distance: 0.0,
+            })
+        };
+        let mut renderer = super::FloatOutBoyLedRenderer::new(hardware, config, 0.0);
+
+        renderer.update(config, frame(crate::FloatOutBoyRunState::Startup), 100.0);
+        renderer.update(config, frame(crate::FloatOutBoyRunState::Ready), 100.25);
+
+        assert_eq!(
+            (
+                renderer.animation_start,
+                renderer.status_dynamics.idle_time,
+                renderer.status_dynamics.idle_blend,
+            ),
+            (100.25, 100.25, 0.0)
         );
     }
 
