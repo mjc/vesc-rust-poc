@@ -503,6 +503,13 @@ impl FloatOutBoyPackageState {
         config_runtime::refresh_leds(self);
     }
 
+    fn set_led_runtime_flags(&mut self, lights_enabled: bool, headlights_enabled: bool) {
+        let mut editor = self.serialized_config.editor();
+        editor.set_leds_enabled(lights_enabled);
+        editor.set_headlights_enabled(headlights_enabled);
+        self.refresh_led_config_runtime_state();
+    }
+
     /// Handle one app-data packet in the firmware callback context.
     ///
     /// Upstream `on_command_received` dispatches commands at
@@ -612,12 +619,12 @@ impl FloatOutBoyPackageState {
         if !self.lcm.headlights_enabled()
             && self.headlights_on_konami.check(footpad, system_time_ticks)
         {
-            self.lcm.set_headlights_enabled(true);
+            self.set_led_runtime_flags(self.serialized_config.leds_enabled(), true);
         }
         if self.lcm.headlights_enabled()
             && self.headlights_off_konami.check(footpad, system_time_ticks)
         {
-            self.lcm.set_headlights_enabled(false);
+            self.set_led_runtime_flags(self.serialized_config.leds_enabled(), false);
         }
     }
 

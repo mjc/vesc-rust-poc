@@ -772,6 +772,51 @@ fn flywheel_konami_uses_the_typed_start_path_after_invalid_sequence_reset() {
 }
 
 #[test]
+fn headlight_konami_actions_mutate_active_led_config_like_refloat() {
+    let mut state = FloatOutBoyPackageState::new(ready_at(AngleDegrees::ZERO, AngleDegrees::ZERO));
+    let mut config = state.serialized_config.as_bytes().to_vec();
+    config[227] = crate::lcm::FloatOutBoyLedMode::Both.id();
+    assert!(state.store_serialized_config(&config));
+    assert!(state.serialized_config.headlights_enabled());
+
+    for (index, footpad) in [
+        FloatOutBoyFootpadState::Right,
+        FloatOutBoyFootpadState::None,
+        FloatOutBoyFootpadState::Right,
+        FloatOutBoyFootpadState::None,
+        FloatOutBoyFootpadState::Left,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        set_footpad(&mut state, footpad);
+        state.refresh_konami_runtime_state(TimestampTicks::from_ticks(
+            u32::try_from(index + 1).unwrap_or(u32::MAX) * 1_501,
+        ));
+    }
+
+    assert!(!state.serialized_config.headlights_enabled());
+
+    for (index, footpad) in [
+        FloatOutBoyFootpadState::Left,
+        FloatOutBoyFootpadState::None,
+        FloatOutBoyFootpadState::Left,
+        FloatOutBoyFootpadState::None,
+        FloatOutBoyFootpadState::Right,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        set_footpad(&mut state, footpad);
+        state.refresh_konami_runtime_state(TimestampTicks::from_ticks(
+            10_000 + u32::try_from(index + 1).unwrap_or(u32::MAX) * 1_501,
+        ));
+    }
+
+    assert!(state.serialized_config.headlights_enabled());
+}
+
+#[test]
 fn calibrated_flywheel_pitch_commands_the_expected_final_motor_current() {
     let firmware = FirmwareTest::new();
     firmware.set_imu_ready(true);

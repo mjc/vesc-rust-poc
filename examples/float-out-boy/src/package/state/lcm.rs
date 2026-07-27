@@ -96,6 +96,8 @@ impl LcmState {
             self.brightness_idle,
             self.status_brightness,
         ] = configured_brightness(config);
+        self.lights_enabled = config.is_enabled();
+        self.headlights_enabled = config.are_headlights_on();
         self.lights_off_when_lifted = config.turns_lights_off_when_lifted();
     }
 
@@ -106,11 +108,6 @@ impl LcmState {
     #[cfg(any(test, target_arch = "arm"))]
     pub(super) const fn headlights_enabled(self) -> bool {
         self.headlights_enabled
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(super) const fn set_headlights_enabled(&mut self, enabled: bool) {
-        self.headlights_enabled = enabled;
     }
 
     fn poll_request(&mut self, payload: &[u8]) {
@@ -353,10 +350,7 @@ impl FloatOutBoyPackageState {
         {
             if self.lcm.lights_control(payload) {
                 let (lights_enabled, headlights_enabled) = self.lcm.light_flags();
-                let mut editor = self.serialized_config.editor();
-                editor.set_leds_enabled(lights_enabled);
-                editor.set_headlights_enabled(headlights_enabled);
-                self.refresh_led_config_runtime_state();
+                self.set_led_runtime_flags(lights_enabled, headlights_enabled);
             }
             return send(&self.lcm.lights_control_response());
         }
