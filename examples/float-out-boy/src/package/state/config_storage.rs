@@ -172,8 +172,7 @@ impl FloatOutBoyPackageState {
     }
 
     pub(in crate::package) fn load_persisted_config_on_startup(&mut self) {
-        self.read_serialized_config_from_eeprom();
-        self.reconfigure_active_config();
+        self.read_config_from_eeprom();
     }
 
     pub(super) fn handle_config_command(&mut self, bytes: &[u8]) -> bool {
