@@ -65,7 +65,6 @@ struct AtrState {
 struct TurnTiltState {
     angle: SmoothAngle,
     last_yaw: AngleDegrees,
-    last_yaw_change: AngleDegrees,
     yaw_change: AngleDegrees,
     abs_yaw_change: AngleDegrees,
     yaw_aggregate: AngleDegrees,
@@ -250,11 +249,11 @@ impl TurnTiltState {
         // `third_party/float-out-boy/src/turn_tilt.c:45-72` and
         // `third_party/float-out-boy/src/main.c:800`.
         let mut change = yaw - self.last_yaw;
-        let unchanged = change.is_zero() || change.abs() > AngleDegrees::from_degrees(100.0);
-        if unchanged {
-            change = self.last_yaw_change;
+        if change < AngleDegrees::from_degrees(-180.0) {
+            change = change + AngleDegrees::from_degrees(360.0);
+        } else if change > AngleDegrees::from_degrees(180.0) {
+            change = change - AngleDegrees::from_degrees(360.0);
         }
-        self.last_yaw_change = change;
         self.last_yaw = yaw;
         let limited = AngleDegrees::from_degrees(change.as_degrees().clamp(-0.10, 0.10));
         self.yaw_change = self.yaw_change * 0.8 + limited * 0.2;
@@ -262,7 +261,7 @@ impl TurnTiltState {
             self.yaw_aggregate = AngleDegrees::ZERO;
         }
         self.abs_yaw_change = self.yaw_change.abs();
-        if self.abs_yaw_change > AngleDegrees::from_degrees(0.04) && !unchanged {
+        if self.abs_yaw_change > AngleDegrees::from_degrees(0.04) {
             self.yaw_aggregate = self.yaw_aggregate + self.yaw_change;
         }
     }
@@ -602,6 +601,31 @@ mod tests {
 
         assert!(setpoints.turn_tilt().angle().is_positive());
         assert_eq!(setpoints.board().angle(), setpoints.turn_tilt().angle());
+    }
+
+    #[test]
+    fn turn_tilt_preserves_yaw_direction_across_positive_to_negative_wrap() {
+        let mut turn = TurnTiltState {
+            last_yaw: AngleDegrees::from_degrees(179.95),
+            ..TurnTiltState::default()
+        };
+
+        turn.aggregate(AngleDegrees::from_degrees(-179.95));
+
+        assert!((turn.yaw_change.as_degrees() - 0.02).abs() < 0.000_01);
+    }
+
+    #[test]
+    fn turn_tilt_filters_zero_yaw_change_instead_of_replaying_stale_motion() {
+        let mut turn = TurnTiltState {
+            last_yaw: AngleDegrees::from_degrees(10.0),
+            yaw_change: AngleDegrees::from_degrees(0.1),
+            ..TurnTiltState::default()
+        };
+
+        turn.aggregate(AngleDegrees::from_degrees(10.0));
+
+        assert!((turn.yaw_change.as_degrees() - 0.08).abs() < 0.000_01);
     }
 
     #[test]
