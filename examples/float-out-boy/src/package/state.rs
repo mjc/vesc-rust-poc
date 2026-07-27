@@ -91,8 +91,6 @@ use transition::{
 // at `third_party/float-out-boy/src/main.c:1142-1146`.
 #[cfg(any(test, target_arch = "arm"))]
 const FLOAT_OUT_BOY_AUX_BACKUP_DISTANCE_METERS: u64 = 200;
-#[cfg(any(test, target_arch = "arm"))]
-const FLOAT_OUT_BOY_AUX_MOTOR_CONFIG_REFRESH_TICKS: u32 = 5_000;
 
 #[inline]
 /// C map: `on_command_received` in `third_party/float-out-boy/src/main.c:2143-2225` filters
@@ -377,11 +375,11 @@ impl FloatOutBoyPackageState {
         telemetry: &impl MotorTelemetry,
         now: TimestampTicks,
     ) {
-        if now
-            .wrapping_duration_since(self.aux_motor_config_refresh_ticks)
-            .as_ticks()
-            > FLOAT_OUT_BOY_AUX_MOTOR_CONFIG_REFRESH_TICKS
-        {
+        if float_out_boy_ticks_elapsed_seconds(
+            now,
+            self.aux_motor_config_refresh_ticks,
+            vescpkg_rs::VescSeconds::from_seconds(0.5),
+        ) {
             self.refresh_motor_config_runtime_state(telemetry);
             self.aux_motor_config_refresh_ticks = now;
         }
