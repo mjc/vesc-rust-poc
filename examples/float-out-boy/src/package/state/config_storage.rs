@@ -16,6 +16,12 @@ pub(super) enum FloatOutBoyConfigLoadOutcome {
     DefaultAfterInvalidImage,
 }
 
+fn log_config_message(message: &[u8]) {
+    let mut log = vescpkg_rs::FirmwareLog::<48>::new();
+    log.write_bytes(message);
+    let _ = log.flush();
+}
+
 fn log_config_load_fallback(outcome: FloatOutBoyConfigLoadOutcome) {
     let message = match outcome {
         FloatOutBoyConfigLoadOutcome::DefaultAfterReadFailure => {
@@ -28,9 +34,7 @@ fn log_config_load_fallback(outcome: FloatOutBoyConfigLoadOutcome) {
             return;
         }
     };
-    let mut log = vescpkg_rs::FirmwareLog::<48>::new();
-    log.write_bytes(message);
-    let _ = log.flush();
+    log_config_message(message);
 }
 
 fn log_config_store_result(stored: bool) {
@@ -39,9 +43,7 @@ fn log_config_store_result(stored: bool) {
     } else {
         b"Failed to write config.".as_slice()
     };
-    let mut log = vescpkg_rs::FirmwareLog::<32>::new();
-    log.write_bytes(message);
-    let _ = log.flush();
+    log_config_message(message);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
