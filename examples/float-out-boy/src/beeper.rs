@@ -1,7 +1,6 @@
 //! Float Out Boy external-beeper sequencing.
 
 /// External-beeper output level.
-#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FloatOutBoyBeeperLevel {
     Low,
@@ -110,7 +109,7 @@ pub(crate) struct FloatOutBoyBeeper {
     transitions: FloatOutBoyBeeperTransitions,
     period: FloatOutBoyBeeperPeriod,
     countdown: FloatOutBoyBeeperCountdown,
-    pending_high: Option<bool>,
+    pending_level: Option<FloatOutBoyBeeperLevel>,
 }
 
 impl FloatOutBoyBeeper {
@@ -120,7 +119,7 @@ impl FloatOutBoyBeeper {
             transitions: FloatOutBoyBeeperTransitions::NONE,
             period: FloatOutBoyBeeperPeriod::SHORT,
             countdown: FloatOutBoyBeeperCountdown::IDLE,
-            pending_high: None,
+            pending_level: None,
         }
     }
 
@@ -135,42 +134,33 @@ impl FloatOutBoyBeeper {
 
     pub(crate) fn set_enabled(&mut self, enabled: bool) {
         if self.enabled && !enabled {
-            self.pending_high = Some(false);
+            self.pending_level = Some(FloatOutBoyBeeperLevel::Low);
         }
         self.enabled = enabled;
     }
 
     pub(crate) fn on(&mut self, force: bool) {
         if self.enabled && (force || self.transitions.is_empty()) {
-            self.pending_high = Some(true);
+            self.pending_level = Some(FloatOutBoyBeeperLevel::High);
         }
     }
 
     pub(crate) fn off(&mut self, force: bool) {
         if force || self.transitions.is_empty() {
-            self.pending_high = Some(false);
+            self.pending_level = Some(FloatOutBoyBeeperLevel::Low);
         }
     }
 
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn take_level(&mut self) -> Option<FloatOutBoyBeeperLevel> {
-        self.pending_high.take().map(|high| {
-            if high {
-                FloatOutBoyBeeperLevel::High
-            } else {
-                FloatOutBoyBeeperLevel::Low
-            }
-        })
+        self.pending_level.take()
     }
 
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn tick(&mut self) -> Option<FloatOutBoyBeeperLevel> {
         if self.enabled && !self.transitions.is_empty() && self.countdown.tick() {
             self.countdown.restart(self.period);
-            self.pending_high = Some(matches!(
-                self.transitions.advance(),
-                FloatOutBoyBeeperLevel::High
-            ));
+            self.pending_level = Some(self.transitions.advance());
         }
 
         self.take_level()
