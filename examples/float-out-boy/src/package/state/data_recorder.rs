@@ -114,6 +114,57 @@ impl DataRecorderRequest {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct DataRecorderRing {
+    head: usize,
+    tail: usize,
+    empty: bool,
+}
+
+impl DataRecorderRing {
+    fn clear(&mut self) {
+        *self = Self {
+            empty: true,
+            ..Self::default()
+        };
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    fn write_slot(self, capacity: usize) -> Option<usize> {
+        (capacity > 0).then_some(self.head)
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    fn commit_write(&mut self, capacity: usize) {
+        if !self.empty && self.head == self.tail {
+            self.tail = advance_ring_index(self.tail, capacity);
+        }
+        self.head = advance_ring_index(self.head, capacity);
+        self.empty = false;
+    }
+
+    fn len(self, capacity: usize) -> usize {
+        if self.empty {
+            0
+        } else if self.head == self.tail {
+            capacity
+        } else if self.head > self.tail {
+            self.head.saturating_sub(self.tail)
+        } else {
+            self.head
+                .checked_add(capacity)
+                .and_then(|count| count.checked_sub(self.tail))
+                .unwrap_or(0)
+        }
+    }
+
+    fn slot_at(self, index: usize, capacity: usize) -> Option<usize> {
+        (index < self.len(capacity) && capacity > 0)
+            .then(|| self.tail.checked_add(index)?.checked_rem(capacity))
+            .flatten()
+    }
+}
+
 #[derive(Debug)]
 #[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy, PartialEq, Eq))]
 pub(super) struct DataRecorderState {
@@ -121,9 +172,7 @@ pub(super) struct DataRecorderState {
     activity: DataRecorderActivity,
     autostart: bool,
     autostop: bool,
-    head: usize,
-    tail: usize,
-    empty: bool,
+    ring: DataRecorderRing,
     #[cfg(test)]
     buffer: [u8; TEST_SAMPLE_CAPACITY * SAMPLE_SIZE],
     #[cfg(all(not(test), target_arch = "arm"))]
@@ -141,9 +190,10 @@ impl Default for DataRecorderState {
             activity: DataRecorderActivity::Stopped,
             autostart: true,
             autostop: true,
-            head: 0,
-            tail: 0,
-            empty: true,
+            ring: DataRecorderRing {
+                empty: true,
+                ..DataRecorderRing::default()
+            },
             #[cfg(test)]
             buffer: [0; TEST_SAMPLE_CAPACITY * SAMPLE_SIZE],
             #[cfg(all(not(test), target_arch = "arm"))]
@@ -162,9 +212,7 @@ impl DataRecorderState {
             DataRecorderAvailability::Unavailable
         };
         self.stop();
-        self.head = 0;
-        self.tail = 0;
-        self.empty = true;
+        self.ring.clear();
     }
 
     pub(super) const fn has_capability(&self) -> bool {
@@ -201,9 +249,7 @@ impl DataRecorderState {
     }
 
     fn start(&mut self) {
-        self.head = 0;
-        self.tail = 0;
-        self.empty = true;
+        self.ring.clear();
         self.activity = if self.has_capability() {
             DataRecorderActivity::Recording
         } else {
@@ -221,34 +267,19 @@ impl DataRecorderState {
             return;
         }
         let capacity = self.capacity();
-        if capacity == 0 {
+        let Some(slot) = self.ring.write_slot(capacity) else {
             return;
-        }
-        if !self.empty && self.head == self.tail {
-            self.tail = advance_ring_index(self.tail, capacity);
-        }
-        let Some(offset) = self.head.checked_mul(SAMPLE_SIZE) else {
+        };
+        let Some(offset) = slot.checked_mul(SAMPLE_SIZE) else {
             return;
         };
         if self.write(offset, &sample.encode()) {
-            self.head = advance_ring_index(self.head, capacity);
-            self.empty = false;
+            self.ring.commit_write(capacity);
         }
     }
 
     fn sample_count(&self) -> usize {
-        if self.empty {
-            0
-        } else if self.head == self.tail {
-            self.capacity()
-        } else if self.head > self.tail {
-            self.head.saturating_sub(self.tail)
-        } else {
-            self.head
-                .checked_add(self.capacity())
-                .and_then(|count| count.checked_sub(self.tail))
-                .unwrap_or(0)
-        }
+        self.ring.len(self.capacity())
     }
 
     fn capacity(&self) -> usize {
@@ -272,10 +303,7 @@ impl DataRecorderState {
 
     fn sample_at(&self, index: usize) -> Option<DataRecorderSample> {
         let capacity = self.capacity();
-        if index >= self.sample_count() || capacity == 0 {
-            return None;
-        }
-        let slot = self.tail.checked_add(index)?.checked_rem(capacity)?;
+        let slot = self.ring.slot_at(index, capacity)?;
         let offset = slot.checked_mul(SAMPLE_SIZE)?;
         let mut bytes = [0; SAMPLE_SIZE];
         self.read(offset, &mut bytes)
