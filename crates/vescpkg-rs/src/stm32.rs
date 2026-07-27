@@ -31,6 +31,16 @@ impl Stm32Pad {
         resolved.then(|| NonNull::new(gpio).map(|gpio| Self { gpio, pin: st_pin }))?
     }
 
+    /// Build a pad from source-backed STM32 GPIO and pin values.
+    ///
+    /// # Safety
+    ///
+    /// `gpio` must be the correct live GPIO peripheral address for the target,
+    /// `pin` must belong to that port, and the caller must exclusively own it.
+    pub unsafe fn from_raw_parts(gpio: *mut c_void, pin: u32) -> Option<Self> {
+        NonNull::new(gpio).map(|gpio| Self { gpio, pin })
+    }
+
     /// Return the resolved STM32 pad number.
     #[must_use]
     pub const fn pin(self) -> u32 {

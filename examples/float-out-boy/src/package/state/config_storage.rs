@@ -111,6 +111,11 @@ impl FloatOutBoyPackageState {
 
     pub(super) fn replace_active_config(&mut self, config: &FloatOutBoyConfigImage) {
         self.serialized_config = *config;
+        self.reconfigure_active_config();
+    }
+
+    #[cfg_attr(target_arch = "arm", inline(never))]
+    fn reconfigure_active_config(&mut self) {
         self.refresh_balance_filter_config();
         self.refresh_config_runtime_state();
         #[cfg(any(test, target_arch = "arm"))]
@@ -124,13 +129,19 @@ impl FloatOutBoyPackageState {
         Self::write_config_to_eeprom(&self.serialized_config)
     }
 
+    #[cfg_attr(target_arch = "arm", inline(never))]
+    fn read_serialized_config_from_eeprom(&mut self) {
+        self.serialized_config = Self::persisted_config();
+    }
+
     pub(super) fn read_config_from_eeprom(&mut self) {
-        let config = Self::persisted_config();
-        self.replace_active_config(&config);
+        self.read_serialized_config_from_eeprom();
+        self.reconfigure_active_config();
     }
 
     pub(in crate::package) fn load_persisted_config_on_startup(&mut self) {
-        self.read_config_from_eeprom();
+        self.read_serialized_config_from_eeprom();
+        self.reconfigure_active_config();
     }
 
     pub(super) fn handle_config_command(&mut self, bytes: &[u8]) -> bool {

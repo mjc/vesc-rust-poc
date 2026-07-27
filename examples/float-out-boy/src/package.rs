@@ -37,6 +37,14 @@ fn finish_startup(
     Ok(())
 }
 
+#[cfg(any(test, target_arch = "arm"))]
+pub(crate) fn stop(state: &mut FloatOutBoyPackageState) {
+    state.destroy_internal_leds();
+}
+
+#[cfg(all(not(test), not(target_arch = "arm")))]
+pub(crate) fn stop(_state: &mut FloatOutBoyPackageState) {}
+
 #[cfg(test)]
 pub(crate) fn start(
     start: &mut vescpkg_rs::PackageStart,
@@ -46,6 +54,7 @@ pub(crate) fn start(
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
+#[inline(never)]
 pub(crate) fn start(
     start: &mut vescpkg_rs::PackageStart,
 ) -> Result<(), vescpkg_rs::PackageStartError> {
@@ -66,8 +75,13 @@ pub(crate) fn start(
 
 #[cfg(test)]
 mod tests {
-    use super::{finish_startup, time::float_out_boy_ticks_elapsed};
+    use super::{FloatOutBoyPackageState, finish_startup, stop, time::float_out_boy_ticks_elapsed};
+    use crate::{
+        domain::FloatOutBoyAllDataPayloads,
+        package::test_support::default_float_out_boy_config_bytes,
+    };
     use vescpkg_rs::prelude::TimestampTicks;
+    use vescpkg_rs::test_support::FirmwareTest;
 
     #[test]
     fn float_out_boy_ticks_elapsed_matches_timer_older_strict_boundary() {
@@ -126,6 +140,20 @@ mod tests {
             .is_err()
         );
         assert_eq!(registrations.get(), 0);
+    }
+
+    #[test]
+    fn stop_tears_down_internal_led_runtime() {
+        let _firmware = FirmwareTest::new();
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        let mut config = default_float_out_boy_config_bytes();
+        config[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+        assert!(state.store_serialized_config(&config));
+        assert!(state.internal_leds_operational());
+
+        stop(&mut state);
+
+        assert!(!state.internal_leds_operational());
     }
 }
 

@@ -12,7 +12,7 @@
 #![cfg_attr(target_arch = "arm", no_std)]
 #![cfg_attr(target_arch = "arm", no_main)]
 #![deny(warnings, clippy::pedantic)]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 #![forbid(unused_extern_crates)]
 // An embedded package cannot unwind or print a useful panic report. Keep
 // explicit crash shortcuts out of the production entrypoint and its modules.
@@ -80,6 +80,9 @@ fn main() {}
 #[cfg(all(not(test), not(target_arch = "arm")))]
 #[global_allocator]
 static HOST_ALLOCATOR: std::alloc::System = std::alloc::System;
+#[cfg(all(not(test), target_arch = "arm"))]
+#[global_allocator]
+static FIRMWARE_ALLOCATOR: vescpkg_rs::VescAllocator = vescpkg_rs::VescAllocator;
 
 mod balance;
 mod beeper;
@@ -98,7 +101,8 @@ mod wire;
 
 vescpkg_rs::package_start!(
     crate::package::start,
-    crate::package::FloatOutBoyPackageState
+    crate::package::FloatOutBoyPackageState,
+    crate::package::stop
 );
 
 #[cfg(test)]

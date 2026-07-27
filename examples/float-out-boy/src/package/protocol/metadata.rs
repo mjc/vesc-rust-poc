@@ -73,6 +73,7 @@ impl FloatOutBoyInfoResponse {
 pub(in crate::package) fn encode_float_out_boy_info_response(
     request_payload: &[u8],
     hardware_led_mode: u8,
+    internal_leds_operational: bool,
     data_recorder_capable: bool,
 ) -> FloatOutBoyInfoResponse {
     let version = request_payload.first().copied().unwrap_or(1);
@@ -126,13 +127,9 @@ pub(in crate::package) fn encode_float_out_boy_info_response(
     // Upstream derives capabilities from data-recorder and LED config at
     // `third_party/float-out-boy/src/main.c:2121-2132`. Bit 0 is the LED
     // surface and bit 1 is the external LCM surface.
-    let mut capabilities: u32 = if hardware_led_mode & 0x2 != 0 {
-        // The external LCM protocol is operational. Internal-only LED mode
-        // stays unadvertised until the DMA renderer is ported.
-        0x3
-    } else {
-        0
-    };
+    let external_leds_operational = hardware_led_mode & 0x2 != 0;
+    let mut capabilities = u32::from(internal_leds_operational || external_leds_operational)
+        | (u32::from(external_leds_operational) << 1);
     capabilities |= u32::from(data_recorder_capable) << 31;
     float_out_boy_response_push_bytes(&mut bytes, &mut index, &capabilities.to_be_bytes());
     // Upstream currently sends zero `extra_flags` at `third_party/float-out-boy/src/main.c:2134-2135`.
@@ -182,7 +179,7 @@ mod tests {
 
     #[test]
     fn info_v2_response_matches_float_out_boy_qml_metadata() {
-        let response = encode_float_out_boy_info_response(&[2, 0], 0, false);
+        let response = encode_float_out_boy_info_response(&[2, 0], 0, false, false);
         let bytes = response.as_bytes();
 
         // QML sends COMMAND_INFO version 2 at `ui.qml.in:693-697`; upstream
@@ -204,20 +201,30 @@ mod tests {
             0
         );
         assert_eq!(bytes[59], 0);
-        let external_response = encode_float_out_boy_info_response(&[2, 0], 2, false);
+        let external_response = encode_float_out_boy_info_response(&[2, 0], 2, false, false);
         let external = external_response.as_bytes();
         assert_eq!(
             u32::from_be_bytes([external[55], external[56], external[57], external[58]]),
             3
         );
-        let internal_response = encode_float_out_boy_info_response(&[2, 0], 1, false);
+        let internal_response = encode_float_out_boy_info_response(&[2, 0], 1, false, false);
         let internal = internal_response.as_bytes();
         assert_eq!(
             u32::from_be_bytes([internal[55], internal[56], internal[57], internal[58]]),
             0
         );
+        let operational_internal = encode_float_out_boy_info_response(&[2, 0], 1, true, false);
         assert_eq!(
-            &encode_float_out_boy_info_response(&[2, 0xa5], 0, false).as_bytes()[..4],
+            u32::from_be_bytes([
+                operational_internal.as_bytes()[55],
+                operational_internal.as_bytes()[56],
+                operational_internal.as_bytes()[57],
+                operational_internal.as_bytes()[58],
+            ]),
+            1
+        );
+        assert_eq!(
+            &encode_float_out_boy_info_response(&[2, 0xa5], 0, false, false).as_bytes()[..4],
             &[101, 0, 2, 0xa5]
         );
     }
@@ -225,22 +232,22 @@ mod tests {
     #[test]
     fn info_v1_response_matches_float_out_boy_legacy_shape_and_led_mapping() {
         assert_eq!(
-            encode_float_out_boy_info_response(&[], 1, false).as_bytes(),
+            encode_float_out_boy_info_response(&[], 1, false, false).as_bytes(),
             &[101, 0, 1, 0, 1]
         );
         assert_eq!(
-            encode_float_out_boy_info_response(&[1], 2, false).as_bytes(),
+            encode_float_out_boy_info_response(&[1], 2, false, false).as_bytes(),
             &[101, 0, 1, 0, 3]
         );
         assert_eq!(
-            encode_float_out_boy_info_response(&[1], 3, false).as_bytes(),
+            encode_float_out_boy_info_response(&[1], 3, false, false).as_bytes(),
             &[101, 0, 1, 0, 3]
         );
     }
 
     #[test]
     fn unknown_info_version_uses_v2_without_echoing_flags() {
-        let response = encode_float_out_boy_info_response(&[99, 0xff], 0, false);
+        let response = encode_float_out_boy_info_response(&[99, 0xff], 0, false, false);
 
         assert_eq!(&response.as_bytes()[..4], &[101, 0, 2, 0]);
         assert_eq!(
@@ -251,7 +258,7 @@ mod tests {
 
     #[test]
     fn info_v2_advertises_only_an_operational_recorder() {
-        let response = encode_float_out_boy_info_response(&[2, 0], 0, true);
+        let response = encode_float_out_boy_info_response(&[2, 0], 0, false, true);
         let bytes = response.as_bytes();
 
         assert_eq!(

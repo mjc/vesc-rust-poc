@@ -73,7 +73,7 @@ use data_recorder::DataRecorderState;
 use flywheel::FloatOutBoyFlywheelOffsets;
 #[cfg(any(test, target_arch = "arm"))]
 use haptic_feedback::{HapticFeedbackInput, HapticFeedbackState};
-#[cfg(any(test, target_arch = "arm"))]
+#[cfg(test)]
 use internal_leds::FloatOutBoyInternalLedRuntime;
 #[cfg(any(test, target_arch = "arm"))]
 use konami::FloatOutBoyKonami;
@@ -196,8 +196,10 @@ pub struct FloatOutBoyPackageState {
     aux_odometer: OdometerMeters,
     #[cfg(any(test, target_arch = "arm"))]
     aux_backup_failures: u32,
-    #[cfg(any(test, target_arch = "arm"))]
+    #[cfg(test)]
     internal_leds: Option<FloatOutBoyInternalLedRuntime>,
+    #[cfg(target_arch = "arm")]
+    internal_leds: Option<internal_leds::RuntimeAllocation>,
     #[cfg(any(test, target_arch = "arm"))]
     firmware_version: Option<FirmwareVersion>,
 }
@@ -278,7 +280,9 @@ impl FloatOutBoyPackageState {
             aux_odometer: OdometerMeters::from_meters(0),
             #[cfg(any(test, target_arch = "arm"))]
             aux_backup_failures: 0,
-            #[cfg(any(test, target_arch = "arm"))]
+            #[cfg(test)]
+            internal_leds: None,
+            #[cfg(target_arch = "arm")]
             internal_leds: None,
             #[cfg(any(test, target_arch = "arm"))]
             firmware_version: None,

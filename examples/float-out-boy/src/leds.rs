@@ -793,7 +793,10 @@ impl FloatOutBoyLedStripConfig {
 }
 
 // Refloat stores each strip length in one byte.
-const MAX_LED_STRIP_PIXELS: usize = 255;
+// Refloat's internal LED setup accepts at most 30 front, rear, or status
+// pixels; keeping only that physical bound avoids putting three impossible
+// 255-pixel scratch frames on the firmware startup stack.
+const MAX_LED_STRIP_PIXELS: usize = 30;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FloatOutBoyHeadlightsState {

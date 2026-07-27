@@ -10,33 +10,107 @@ use vescpkg_rs::MotorTelemetry;
 
 use super::FloatOutBoyPackageState;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+mod driver;
+#[cfg_attr(
+    target_arch = "arm",
+    expect(
+        unsafe_code,
+        reason = "the ARM-only adapter owns the source-mapped STM32 timer, DMA, and pad MMIO boundary"
+    )
+)]
+mod hardware;
+
+use driver::FloatOutBoyInternalLedDriver;
+#[cfg(target_arch = "arm")]
+pub(super) use hardware::RuntimeAllocation;
+
+#[derive(Debug, PartialEq)]
+#[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy))]
 pub(super) struct FloatOutBoyInternalLedRuntime {
     renderer: FloatOutBoyLedRenderer,
     config: FloatOutBoyLedsConfig,
+    driver: FloatOutBoyInternalLedDriver,
 }
 
 impl FloatOutBoyPackageState {
     /// Replace the pure internal LED runtime during setup or reconfiguration.
+    #[cfg_attr(target_arch = "arm", inline(never))]
     pub(crate) fn configure_internal_leds(
         &mut self,
         hardware: FloatOutBoyHardwareLedsConfig,
         config: FloatOutBoyLedsConfig,
     ) {
-        self.internal_leds = Some(FloatOutBoyInternalLedRuntime {
+        #[cfg(target_arch = "arm")]
+        let Some(allocation) = RuntimeAllocation::allocate() else {
+            return;
+        };
+        let mut runtime = FloatOutBoyInternalLedRuntime {
             renderer: FloatOutBoyLedRenderer::new(hardware, config, 0.0),
             config,
-        });
+            driver: FloatOutBoyInternalLedDriver::new(hardware),
+        };
+        if runtime.driver.setup(hardware::setup, hardware::teardown) {
+            #[cfg(test)]
+            {
+                self.internal_leds = Some(runtime);
+            }
+            #[cfg(target_arch = "arm")]
+            {
+                self.internal_leds = Some(allocation.initialize(runtime));
+            }
+        } else {
+            #[cfg(target_arch = "arm")]
+            allocation.release_uninitialized();
+        }
     }
 
     pub(super) fn refresh_internal_leds_from_config(&mut self) {
-        self.internal_leds = None;
+        self.destroy_internal_leds();
         let Some((hardware, config)) = self.serialized_config.led_configs() else {
             return;
         };
-        if hardware.uses_internal_leds() {
+        if hardware.uses_internal_leds()
+            && !matches!(
+                self.all_data_payloads.base().footpad().state(),
+                crate::FloatOutBoyFootpadState::Both
+            )
+        {
             self.configure_internal_leds(hardware, config);
         }
+    }
+
+    pub(crate) fn destroy_internal_leds(&mut self) {
+        #[cfg(test)]
+        if let Some(runtime) = self.internal_leds.as_mut() {
+            runtime.driver.destroy(hardware::teardown);
+        }
+        #[cfg(target_arch = "arm")]
+        if let Some(runtime) = self.internal_leds.as_mut() {
+            if let Some(runtime) = runtime.runtime_mut() {
+                runtime.driver.destroy(hardware::teardown);
+            }
+        }
+        #[cfg(test)]
+        {
+            self.internal_leds = None;
+        }
+        #[cfg(target_arch = "arm")]
+        {
+            if let Some(runtime) = self.internal_leds.take() {
+                runtime.release();
+            }
+        }
+    }
+
+    pub(crate) fn internal_leds_operational(&self) -> bool {
+        #[cfg(test)]
+        let runtime = self.internal_leds.as_ref();
+        #[cfg(target_arch = "arm")]
+        let runtime = self
+            .internal_leds
+            .as_ref()
+            .and_then(RuntimeAllocation::runtime);
+        runtime.is_some_and(|runtime| runtime.driver.is_operational())
     }
 
     /// Sample one coherent firmware snapshot, render it, and expose it for one paint.
@@ -68,9 +142,21 @@ impl FloatOutBoyPackageState {
                     > 100.0,
             },
         );
-        if let Some(runtime) = self.internal_leds.as_mut() {
+        #[cfg(test)]
+        let runtime = self.internal_leds.as_mut();
+        #[cfg(target_arch = "arm")]
+        let runtime = self
+            .internal_leds
+            .as_mut()
+            .and_then(RuntimeAllocation::runtime_mut);
+        if let Some(runtime) = runtime {
             runtime.renderer.update(runtime.config, frame, current_time);
-            paint(&runtime.renderer);
+            if runtime
+                .driver
+                .paint(&runtime.renderer, hardware::quiesce, hardware::restart)
+            {
+                paint(&runtime.renderer);
+            }
         }
     }
 }

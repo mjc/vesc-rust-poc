@@ -780,6 +780,22 @@ pub unsafe fn __package_start_from_raw<'info>(info: *mut crate::LoaderInfo) -> P
 /// Define the VESC firmware entrypoints for a package start function.
 #[macro_export]
 macro_rules! package_start {
+    ($start:path, $state:ty, $stop:path) => {
+        static __VESCPKG_PACKAGE_STATE: $crate::PackageStateStore<$state> =
+            $crate::PackageStateStore::new();
+
+        impl $crate::PackageRuntimeState for $state {
+            fn runtime_store() -> &'static $crate::PackageStateStore<Self> {
+                &__VESCPKG_PACKAGE_STATE
+            }
+
+            fn stop(&mut self) {
+                $stop(self);
+            }
+        }
+
+        $crate::package_start!($start);
+    };
     ($start:path, $state:ty) => {
         static __VESCPKG_PACKAGE_STATE: $crate::PackageStateStore<$state> =
             $crate::PackageStateStore::new();
