@@ -492,9 +492,8 @@ fn tick_realtime_data(
     )
 }
 
-fn expected_normal_trace_current(state: &FloatOutBoyPackageState) -> f32 {
+fn expected_smoothed_current(state: &FloatOutBoyPackageState, setpoint_error: f32) -> f32 {
     let balance = state.balance_config_for_test();
-    let setpoint_error = 1.5 - 2.0;
     let unclamped_i = setpoint_error * balance.ki().as_amps_per_degree_per_tick();
     let ki_limit = balance.ki_limit().current().as_amps();
     let expected_i = if ki_limit > 0.0 && unclamped_i.abs() > ki_limit {
@@ -535,7 +534,7 @@ fn app_data_normal_algorithm_trace_matches_float_out_boy_loop_order() {
     assert!(tick_realtime_data(&mut state, &telemetry, 1));
     let running_base = state.all_data_payloads().base();
     let expected_board_setpoint = 1.5;
-    let expected_smoothed_current = expected_normal_trace_current(&state);
+    let expected_smoothed_current = expected_smoothed_current(&state, 1.5 - 2.0);
     // Upstream RUNNING centers with `startup_speed / hertz` at
     // `third_party/float-out-boy/src/main.c:172`,
     // `third_party/float-out-boy/src/main.c:304-310`, and
@@ -596,19 +595,8 @@ fn app_data_input_tilt_changes_final_motor_current_with_source_cadence() {
     let base = state.all_data_payloads().base();
     let expected_remote = 0.02 * 25.0 / 100.0;
     let expected_board = 1.5 + expected_remote;
-    let balance = state.balance_config_for_test();
     let setpoint_error = expected_board - 2.0;
-    let unclamped_i = setpoint_error * balance.ki().as_amps_per_degree_per_tick();
-    let ki_limit = balance.ki_limit().current().as_amps();
-    let expected_i = if ki_limit > 0.0 && unclamped_i.abs() > ki_limit {
-        ki_limit * unclamped_i.signum()
-    } else {
-        unclamped_i
-    };
-    let current_limit = state.motor_current_max.current().as_amps();
-    let expected_current = (setpoint_error * balance.kp().as_amps_per_degree() + expected_i)
-        .clamp(-current_limit, current_limit)
-        * 0.2;
+    let expected_current = expected_smoothed_current(&state, setpoint_error);
 
     assert!((base.setpoints().remote().angle().as_degrees() - expected_remote).abs() < 0.000_001);
     assert!((base.setpoints().board().angle().as_degrees() - expected_board).abs() < 0.000_001);
