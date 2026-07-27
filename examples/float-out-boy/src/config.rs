@@ -704,19 +704,21 @@ impl<'a> FloatOutBoyLedConfigDecoder<'a> {
         }
     }
 
+    fn enum_value<T: Copy>(&mut self, values: &[T]) -> Option<T> {
+        values.get(usize::from(self.byte()?)).copied()
+    }
+
     fn transition(&mut self) -> Option<FloatOutBoyLedTransition> {
-        [
+        self.enum_value(&[
             FloatOutBoyLedTransition::Fade,
             FloatOutBoyLedTransition::FadeOutIn,
             FloatOutBoyLedTransition::Cipher,
             FloatOutBoyLedTransition::MonoCipher,
-        ]
-        .get(usize::from(self.byte()?))
-        .copied()
+        ])
     }
 
     fn animation_mode(&mut self) -> Option<FloatOutBoyLedAnimationMode> {
-        [
+        self.enum_value(&[
             FloatOutBoyLedAnimationMode::Solid,
             FloatOutBoyLedAnimationMode::Fade,
             FloatOutBoyLedAnimationMode::Pulse,
@@ -726,13 +728,11 @@ impl<'a> FloatOutBoyLedConfigDecoder<'a> {
             FloatOutBoyLedAnimationMode::RainbowCycle,
             FloatOutBoyLedAnimationMode::RainbowFade,
             FloatOutBoyLedAnimationMode::RainbowRoll,
-        ]
-        .get(usize::from(self.byte()?))
-        .copied()
+        ])
     }
 
     fn color(&mut self) -> Option<FloatOutBoyLedColor> {
-        [
+        self.enum_value(&[
             FloatOutBoyLedColor::Black,
             FloatOutBoyLedColor::WhiteFull,
             FloatOutBoyLedColor::WhiteRgb,
@@ -765,61 +765,49 @@ impl<'a> FloatOutBoyLedConfigDecoder<'a> {
             FloatOutBoyLedColor::Pink,
             FloatOutBoyLedColor::Fuchsia,
             FloatOutBoyLedColor::Lavender,
-        ]
-        .get(usize::from(self.byte()?))
-        .copied()
+        ])
     }
 
     fn mode(&mut self) -> Option<FloatOutBoyLedMode> {
-        [
+        self.enum_value(&[
             FloatOutBoyLedMode::Off,
             FloatOutBoyLedMode::Internal,
             FloatOutBoyLedMode::External,
             FloatOutBoyLedMode::Both,
-        ]
-        .get(usize::from(self.byte()?))
-        .copied()
+        ])
     }
 
     fn pin(&mut self) -> Option<FloatOutBoyLedPin> {
-        [
+        self.enum_value(&[
             FloatOutBoyLedPin::B6,
             FloatOutBoyLedPin::B7,
             FloatOutBoyLedPin::C9,
-        ]
-        .get(usize::from(self.byte()?))
-        .copied()
+        ])
     }
 
     fn pin_config(&mut self) -> Option<FloatOutBoyLedPinConfig> {
-        [
+        self.enum_value(&[
             FloatOutBoyLedPinConfig::PullupTo5v,
             FloatOutBoyLedPinConfig::NoPullup,
-        ]
-        .get(usize::from(self.byte()?))
-        .copied()
+        ])
     }
 
     fn strip_order(&mut self) -> Option<FloatOutBoyLedStripOrder> {
-        [
+        self.enum_value(&[
             FloatOutBoyLedStripOrder::None,
             FloatOutBoyLedStripOrder::First,
             FloatOutBoyLedStripOrder::Second,
             FloatOutBoyLedStripOrder::Third,
-        ]
-        .get(usize::from(self.byte()?))
-        .copied()
+        ])
     }
 
     fn color_order(&mut self) -> Option<FloatOutBoyLedColorOrder> {
-        [
+        self.enum_value(&[
             FloatOutBoyLedColorOrder::Grb,
             FloatOutBoyLedColorOrder::Grbw,
             FloatOutBoyLedColorOrder::Rgb,
             FloatOutBoyLedColorOrder::Wrgb,
-        ]
-        .get(usize::from(self.byte()?))
-        .copied()
+        ])
     }
 }
 
