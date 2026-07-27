@@ -442,13 +442,24 @@ unsafe fn update_firmware_callbacks(
 // therefore requires `T: Send`, not `T: Sync`.
 unsafe impl<T: Send> Sync for PackageStateStore<T> {}
 
+/// Whether stopped package state can be destroyed safely.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PackageStopDisposition {
+    /// Drop the state after package-owned resources stop.
+    Drop,
+    /// Keep the allocation alive because external hardware may still reference it.
+    Retain,
+}
+
 /// Loader-owned package state with package-specific stop behavior.
 pub trait PackageRuntimeState: Sized + Send + 'static {
     /// Return the callback-visible slot for this state.
     fn runtime_store() -> &'static PackageStateStore<Self>;
 
-    /// Stop package-owned resources before the state is freed.
-    fn stop(&mut self) {}
+    /// Stop package-owned resources and report whether the state is safe to free.
+    fn stop(&mut self) -> PackageStopDisposition {
+        PackageStopDisposition::Drop
+    }
 }
 
 #[cfg(not(target_arch = "arm"))]

@@ -79,19 +79,21 @@ unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
     #[cfg(target_arch = "arm")]
     crate::PackageStateStore::<T>::finish_stop(state);
     // SAFETY: stop owns the live state exclusively after callback and thread draining.
-    unsafe { state.as_mut() }.stop();
-    #[cfg(all(not(test), target_arch = "arm"))]
-    {
-        // SAFETY: the state was initialized in place and is now exclusively owned.
-        unsafe { state.as_ptr().drop_in_place() };
-        // VESC cannot unregister LispBM extensions or quiesce callbacks that
-        // already loaded this ARG. Keep the allocation as a STOPPED admission
-        // tombstone; late callbacks inspect it without touching dropped `T`.
-    }
-    #[cfg(not(target_arch = "arm"))]
-    {
-        // SAFETY: host startup allocated this state with `Box::into_raw`.
-        drop(unsafe { crate::rust_alloc::boxed::Box::from_raw(state.as_ptr()) });
+    let disposition = unsafe { state.as_mut() }.stop();
+    if matches!(disposition, crate::PackageStopDisposition::Drop) {
+        #[cfg(all(not(test), target_arch = "arm"))]
+        {
+            // SAFETY: the state was initialized in place and is now exclusively owned.
+            unsafe { state.as_ptr().drop_in_place() };
+            // VESC cannot unregister LispBM extensions or quiesce callbacks that
+            // already loaded this ARG. Keep the allocation as a STOPPED admission
+            // tombstone; late callbacks inspect it without touching dropped `T`.
+        }
+        #[cfg(not(target_arch = "arm"))]
+        {
+            // SAFETY: host startup allocated this state with `Box::into_raw`.
+            drop(unsafe { crate::rust_alloc::boxed::Box::from_raw(state.as_ptr()) });
+        }
     }
 }
 
@@ -789,8 +791,8 @@ macro_rules! package_start {
                 &__VESCPKG_PACKAGE_STATE
             }
 
-            fn stop(&mut self) {
-                $stop(self);
+            fn stop(&mut self) -> $crate::PackageStopDisposition {
+                $stop(self)
             }
         }
 
@@ -935,6 +937,9 @@ mod tests {
     static OWNED_STATE: crate::PackageStateStore<OwnedState> = crate::PackageStateStore::new();
     static OWNED_STATE_STOPS: AtomicUsize = AtomicUsize::new(0);
     static OWNED_STATE_DROPS: AtomicUsize = AtomicUsize::new(0);
+    static RETAINED_STATE: crate::PackageStateStore<RetainedState> =
+        crate::PackageStateStore::new();
+    static RETAINED_STATE_DROPS: AtomicUsize = AtomicUsize::new(0);
     static FAILED_STATE: crate::PackageStateStore<FailedState> = crate::PackageStateStore::new();
     static FAILED_STATE_DROPS: AtomicUsize = AtomicUsize::new(0);
     static EXTENSION_REGISTRATION_STATE: crate::PackageStateStore<ExtensionRegistrationState> =
@@ -945,6 +950,7 @@ mod tests {
     static SPAWN_STATE: crate::PackageStateStore<SpawnState> = crate::PackageStateStore::new();
 
     struct OwnedState(u32);
+    struct RetainedState;
     struct FailedState;
     struct ExtensionRegistrationState;
     struct RegistrationState;
@@ -1022,8 +1028,25 @@ mod tests {
             &OWNED_STATE
         }
 
-        fn stop(&mut self) {
+        fn stop(&mut self) -> crate::PackageStopDisposition {
             OWNED_STATE_STOPS.fetch_add(1, Ordering::Relaxed);
+            crate::PackageStopDisposition::Drop
+        }
+    }
+
+    impl crate::PackageRuntimeState for RetainedState {
+        fn runtime_store() -> &'static crate::PackageStateStore<Self> {
+            &RETAINED_STATE
+        }
+
+        fn stop(&mut self) -> crate::PackageStopDisposition {
+            crate::PackageStopDisposition::Retain
+        }
+    }
+
+    impl Drop for RetainedState {
+        fn drop(&mut self) {
+            RETAINED_STATE_DROPS.fetch_add(1, Ordering::Relaxed);
         }
     }
 
@@ -1148,6 +1171,30 @@ mod tests {
         assert_eq!(OWNED_STATE_STOPS.load(Ordering::Relaxed), 1);
         assert_eq!(OWNED_STATE_DROPS.load(Ordering::Relaxed), 2);
         assert_eq!(OWNED_STATE.with(|state| state.0), None);
+    }
+
+    #[test]
+    fn package_stop_can_retain_state_when_hardware_cannot_quiesce() {
+        RETAINED_STATE_DROPS.store(0, Ordering::Relaxed);
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0,
+        };
+        let mut start = super::PackageStart::from_lib_info(&mut info);
+        assert_eq!(start.install_runtime_state(RetainedState), Ok(()));
+        let stop = start
+            .raw_info_mut()
+            .unwrap()
+            .stop_fun
+            .expect("retained state stop hook");
+        let arg = start.raw_info_mut().unwrap().arg;
+        assert!(start.finish_start(true));
+
+        unsafe { stop(arg) };
+
+        assert_eq!(RETAINED_STATE_DROPS.load(Ordering::Relaxed), 0);
+        assert_eq!(RETAINED_STATE.with(|_| ()), None);
     }
 
     #[test]

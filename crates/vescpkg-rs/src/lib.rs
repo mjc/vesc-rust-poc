@@ -276,7 +276,9 @@ pub use nvm::{Nvm, NvmCapacity, NvmError, NvmOffset};
 pub use packet::OwnedPacketRegistration;
 pub use packet::{PacketCodec, PacketError, PacketHandler, PacketRegistration};
 pub use plot::{Plot, PlotError};
-pub use runtime::{PackageRuntimeState, PackageStateAccess, PackageStateStore};
+pub use runtime::{
+    PackageRuntimeState, PackageStateAccess, PackageStateStore, PackageStopDisposition,
+};
 pub use sync::{FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore, SemaphoreWaitOutcome};
 pub use terminal::{Terminal, TerminalArgs, TerminalError, TerminalHandler, TerminalRegistration};
 pub use thread::{

@@ -38,13 +38,27 @@ fn finish_startup(
 }
 
 #[cfg(any(test, target_arch = "arm"))]
-pub(crate) fn stop(state: &mut FloatOutBoyPackageState) {
+pub(crate) fn stop(state: &mut FloatOutBoyPackageState) -> vescpkg_rs::PackageStopDisposition {
+    stop_with(state, FloatOutBoyPackageState::destroy_internal_leds)
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+fn stop_with(
+    state: &mut FloatOutBoyPackageState,
+    destroy_internal_leds: impl FnOnce(&mut FloatOutBoyPackageState) -> bool,
+) -> vescpkg_rs::PackageStopDisposition {
     state.stop_data_recorder();
-    state.destroy_internal_leds();
+    if destroy_internal_leds(state) {
+        vescpkg_rs::PackageStopDisposition::Drop
+    } else {
+        vescpkg_rs::PackageStopDisposition::Retain
+    }
 }
 
 #[cfg(all(not(test), not(target_arch = "arm")))]
-pub(crate) fn stop(_state: &mut FloatOutBoyPackageState) {}
+pub(crate) fn stop(_state: &mut FloatOutBoyPackageState) -> vescpkg_rs::PackageStopDisposition {
+    vescpkg_rs::PackageStopDisposition::Drop
+}
 
 #[cfg(test)]
 pub(crate) fn start(
@@ -76,7 +90,9 @@ pub(crate) fn start(
 
 #[cfg(test)]
 mod tests {
-    use super::{FloatOutBoyPackageState, finish_startup, stop, time::float_out_boy_ticks_elapsed};
+    use super::{
+        FloatOutBoyPackageState, finish_startup, stop, stop_with, time::float_out_boy_ticks_elapsed,
+    };
     use crate::{
         domain::FloatOutBoyAllDataPayloads,
         package::test_support::default_float_out_boy_config_bytes,
@@ -152,8 +168,24 @@ mod tests {
         assert!(state.store_serialized_config(&config));
         assert!(state.internal_leds_operational());
 
-        stop(&mut state);
+        assert_eq!(stop(&mut state), vescpkg_rs::PackageStopDisposition::Drop,);
 
+        assert!(!state.internal_leds_operational());
+    }
+
+    #[test]
+    fn stop_retains_state_when_internal_led_dma_cannot_quiesce() {
+        let _firmware = FirmwareTest::new();
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        let mut config = default_float_out_boy_config_bytes();
+        config[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+        assert!(state.store_serialized_config(&config));
+
+        let disposition = stop_with(&mut state, |state| {
+            state.destroy_internal_leds_with(|_| false)
+        });
+
+        assert_eq!(disposition, vescpkg_rs::PackageStopDisposition::Retain,);
         assert!(!state.internal_leds_operational());
     }
 }
