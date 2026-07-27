@@ -164,7 +164,11 @@ impl FloatOutBoyPackageState {
             let attitude = self.all_data_payloads.base().attitude();
             let pitch = AngleDegrees::from(attitude.pitch().angle());
             if pitch.abs() < AngleDegrees::from_degrees(70.0) {
-                self.set_ride_mode(FloatOutBoyMode::Normal);
+                if self.flywheel_runtime_config.is_some() {
+                    self.restore_flywheel_config();
+                } else {
+                    self.set_ride_mode(FloatOutBoyMode::Normal);
+                }
                 return;
             }
             self.flywheel_offsets = FloatOutBoyFlywheelOffsets::calibrated(

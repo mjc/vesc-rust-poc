@@ -301,6 +301,84 @@ fn flywheel_stop_restores_the_persisted_config() {
 }
 
 #[test]
+fn rejected_forced_recalibration_restores_the_persisted_config() {
+    let firmware = FirmwareTest::new();
+    firmware.set_imu_ready(true);
+    let mut state = FloatOutBoyPackageState::new(ready_at(
+        AngleDegrees::from_degrees(80.0),
+        AngleDegrees::ZERO,
+    ));
+    assert!(
+        state
+            .serialized_config
+            .editor()
+            .set_kp(vescpkg_rs::AngleCurrentGain::new(12.0))
+    );
+    let persisted = *state.serialized_config.as_bytes();
+    assert!(state.store_serialized_config(&persisted));
+    assert!(state.handle_packet_with_telemetry(
+        firmware.telemetry(),
+        &mut || TimestampTicks::from_ticks(0),
+        &mut |_bytes| true,
+        &flywheel_packet(&[0x81, 90, 50, 30, 20, 1]),
+    ));
+    let payloads = state.all_data_payloads;
+    let base = payloads.base();
+    state.all_data_payloads = FloatOutBoyAllDataPayloads::new(
+        FloatOutBoyAllDataBasePayload::new(
+            base.balance_current(),
+            FloatOutBoyAllDataAttitude::new(
+                base.attitude().balance_pitch(),
+                ImuRoll::new(AngleRadians::ZERO),
+                ImuPitch::new(AngleRadians::ZERO),
+            ),
+            FloatOutBoyAllDataStatus::new(base.status().ride_state(), base.status().beep_reason()),
+            base.footpad(),
+            base.setpoints(),
+            base.booster_current(),
+            base.motor(),
+        ),
+        payloads.mode2(),
+        payloads.mode3(),
+        payloads.mode4(),
+    );
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .mode(),
+        FloatOutBoyMode::Flywheel,
+    );
+    assert_f32_eq!(
+        state.serialized_config.balance().kp().as_amps_per_degree(),
+        9.0
+    );
+
+    assert!(state.handle_packet_with_telemetry(
+        firmware.telemetry(),
+        &mut || TimestampTicks::from_ticks(2),
+        &mut |_bytes| true,
+        &flywheel_packet(&[0x82, 0, 0, 0, 0, 1]),
+    ));
+
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .mode(),
+        FloatOutBoyMode::Normal,
+    );
+    assert_f32_eq!(
+        state.serialized_config.balance().kp().as_amps_per_degree(),
+        12.0
+    );
+}
+
+#[test]
 fn flywheel_runtime_applies_calibrated_pitch_and_roll_offsets() {
     let firmware = FirmwareTest::new();
     firmware.set_imu_ready(true);
