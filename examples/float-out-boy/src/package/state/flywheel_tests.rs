@@ -596,32 +596,54 @@ fn flywheel_defaults_optional_speed_and_relaxed_roll_match_float_out_boy() {
 }
 
 #[test]
-fn flywheel_rejects_unarmed_and_short_payloads_without_mutation() {
-    let mut state = FloatOutBoyPackageState::new(ready_at(
-        AngleDegrees::from_degrees(80.0),
-        AngleDegrees::ZERO,
-    ));
-    let before = state;
+fn flywheel_rejection_matrix_never_mutates_package_state() {
+    let valid = flywheel_packet(&[0x81, 0, 0, 0, 0, 1]);
+    let mut malformed = std::vec::Vec::new();
+    for length in 0..valid.len() {
+        malformed.push(valid[..length].to_vec());
+    }
+    let mut wrong_package = valid.clone();
+    wrong_package[0] = wrong_package[0].wrapping_add(1);
+    malformed.push(wrong_package);
+    let mut wrong_command = valid.clone();
+    wrong_command[1] = wrong_command[1].wrapping_add(1);
+    malformed.push(wrong_command);
+    malformed.push(flywheel_packet(&[0x01, 0, 0, 0, 0, 1]));
 
-    assert!(!state.handle_flywheel_packet(&flywheel_packet(&[0x01, 0, 0, 0, 0, 1])));
-    assert!(!state.handle_flywheel_packet(&flywheel_packet(&[0x81, 0, 0, 0, 0])));
-    assert_eq!(state, before);
-}
-
-#[test]
-fn flywheel_start_obeys_float_out_boy_mode_and_ready_gates() {
-    let request = flywheel_packet(&[0x81, 0, 0, 0, 0, 1]);
-    for (run_state, mode) in [
-        (FloatOutBoyRunState::Ready, FloatOutBoyMode::HandTest),
-        (FloatOutBoyRunState::Running, FloatOutBoyMode::Normal),
-    ] {
-        let mut state =
-            FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(run_state, mode));
+    for packet in malformed {
+        let mut state = FloatOutBoyPackageState::new(ready_at(
+            AngleDegrees::from_degrees(80.0),
+            AngleDegrees::ZERO,
+        ));
         let before = state;
 
-        assert!(state.handle_flywheel_packet(&request));
-        assert_eq!(state, before);
+        assert!(!state.handle_flywheel_packet(&packet), "packet={packet:?}");
+        assert_eq!(state, before, "packet={packet:?}");
     }
+
+    for run_state in [
+        FloatOutBoyRunState::Disabled,
+        FloatOutBoyRunState::Startup,
+        FloatOutBoyRunState::Running,
+    ] {
+        let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+            run_state,
+            FloatOutBoyMode::Normal,
+        ));
+        let before = state;
+
+        assert!(state.handle_flywheel_packet(&valid));
+        assert_eq!(state, before, "run_state={run_state:?}");
+    }
+
+    let mut handtest = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+        FloatOutBoyRunState::Ready,
+        FloatOutBoyMode::HandTest,
+    ));
+    let before = handtest;
+
+    assert!(handtest.handle_flywheel_packet(&valid));
+    assert_eq!(handtest, before);
 }
 
 #[test]
