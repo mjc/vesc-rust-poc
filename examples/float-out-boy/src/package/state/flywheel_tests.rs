@@ -252,6 +252,46 @@ fn flywheel_start_rejects_first_calibration_below_seventy_degrees() {
 }
 
 #[test]
+fn flywheel_reuses_calibration_until_valid_forced_recalibration() {
+    let mut state = FloatOutBoyPackageState::new(ready_at(
+        AngleDegrees::from_degrees(80.0),
+        AngleDegrees::from_degrees(10.0),
+    ));
+    let start = flywheel_packet(&[0x81, 0, 0, 0, 0, 1]);
+    let stop = flywheel_packet(&[0x80, 0, 0, 0, 0, 1]);
+
+    assert!(state.handle_flywheel_packet(&start));
+    assert!(state.handle_flywheel_packet(&stop));
+    state.all_data_payloads = ready_at(
+        AngleDegrees::from_degrees(30.0),
+        AngleDegrees::from_degrees(20.0),
+    );
+
+    assert!(state.handle_flywheel_packet(&start));
+    let reused = state.flywheel_attitude(
+        FloatOutBoyMode::Flywheel,
+        AngleDegrees::from_degrees(30.0),
+        AngleDegrees::from_degrees(20.0),
+    );
+    assert_f32_eq!(reused.0.as_degrees(), 50.0);
+    assert_f32_eq!(reused.1.as_degrees(), 10.0);
+
+    assert!(state.handle_flywheel_packet(&stop));
+    state.all_data_payloads = ready_at(
+        AngleDegrees::from_degrees(85.0),
+        AngleDegrees::from_degrees(30.0),
+    );
+    assert!(state.handle_flywheel_packet(&flywheel_packet(&[0x82, 0, 0, 0, 0, 1,])));
+    let recalibrated = state.flywheel_attitude(
+        FloatOutBoyMode::Flywheel,
+        AngleDegrees::from_degrees(85.0),
+        AngleDegrees::from_degrees(30.0),
+    );
+    assert!(recalibrated.0.as_degrees().abs() < 0.000_01);
+    assert!(recalibrated.1.as_degrees().abs() < 0.000_01);
+}
+
+#[test]
 fn flywheel_stop_restores_the_persisted_config() {
     let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(ready_at(
