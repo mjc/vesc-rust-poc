@@ -254,6 +254,28 @@ impl FloatOutBoyLedPixel {
         };
         FloatOutBoyLedPhysicalChannels { bytes, len }
     }
+
+    fn scaled_and_blended(self, target: Self, brightness: Ratio, blend: Ratio) -> Self {
+        let brightness = brightness.as_ratio();
+        let blend = blend.as_ratio();
+        if blend <= 0.0 {
+            return self;
+        }
+
+        let channels = core::array::from_fn(|index| {
+            let target = target.channels.get(index).copied().unwrap_or_default();
+            let scaled =
+                crate::wire::saturating_trunc_f32_to_u8(f32::from(target) * brightness + 0.5);
+            if blend >= 1.0 {
+                return scaled;
+            }
+            let original = self.channels.get(index).copied().unwrap_or_default();
+            crate::wire::saturating_trunc_f32_to_u8(
+                f32::from(scaled) * blend + f32::from(original) * (1.0 - blend),
+            )
+        });
+        Self { channels }
+    }
 }
 
 fn refloat_led_gamma(channel: u8) -> u8 {
@@ -798,11 +820,22 @@ impl FloatOutBoyLedStripFrame {
         };
         self.pixels.get(logical_index).copied()
     }
+
+    /// Render a solid bar with Refloat's brightness and blend ordering.
+    pub fn render_solid(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, blend: Ratio) {
+        let brightness = Ratio::clamped(bar.brightness().as_ratio() * on_off_fade.as_ratio());
+        let target = FloatOutBoyLedPixel::from_named(bar.primary_color());
+        let len = usize::from(self.config.count());
+        for pixel in self.pixels.get_mut(..len).unwrap_or_default() {
+            *pixel = pixel.scaled_and_blended(target, brightness, blend);
+        }
+    }
 }
 
 #[cfg(test)]
 mod renderer_tests {
     use super::{FloatOutBoyLedColor, FloatOutBoyLedColorOrder, FloatOutBoyLedPixel};
+    use vescpkg_rs::prelude::Ratio;
 
     #[test]
     fn named_led_colors_match_refloat_1_2_1_rgba_channels() {
@@ -922,5 +955,37 @@ mod renderer_tests {
         );
         assert_eq!(frame.physical_pixel(2), Some(red));
         assert_eq!(frame.physical_pixel(3), None);
+    }
+
+    #[test]
+    fn solid_bar_applies_brightness_on_off_fade_and_blend_like_refloat() {
+        let config = super::FloatOutBoyLedStripConfig::new(
+            super::FloatOutBoyLedStripOrder::First,
+            2,
+            FloatOutBoyLedColorOrder::Grb,
+        );
+        let mut frame = super::FloatOutBoyLedStripFrame::new(config);
+        let blue = FloatOutBoyLedPixel::from_named(FloatOutBoyLedColor::Blue);
+        assert!(frame.set_logical_pixel(0, blue));
+        assert!(frame.set_logical_pixel(1, blue));
+        let bar = super::FloatOutBoyLedBarConfig::new(
+            Ratio::from_ratio_const(0.5),
+            FloatOutBoyLedColor::Red,
+            FloatOutBoyLedColor::Black,
+            super::FloatOutBoyLedAnimationMode::Solid,
+            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+        );
+
+        frame.render_solid(
+            bar,
+            Ratio::from_ratio_const(0.5),
+            Ratio::from_ratio_const(0.5),
+        );
+
+        let expected = FloatOutBoyLedPixel {
+            channels: [32, 0, 127, 0],
+        };
+        assert_eq!(frame.physical_pixel(0), Some(expected));
+        assert_eq!(frame.physical_pixel(1), Some(expected));
     }
 }
