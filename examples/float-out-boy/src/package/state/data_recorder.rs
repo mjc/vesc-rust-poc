@@ -22,6 +22,14 @@ const DATA_RECORD_DATA_COMMAND_ID: u8 = 43;
 #[cfg(test)]
 const TEST_SAMPLE_CAPACITY: usize = 24;
 
+#[cfg(any(test, target_arch = "arm"))]
+fn advance_ring_index(index: usize, capacity: usize) -> usize {
+    index
+        .checked_add(1)
+        .filter(|next| *next < capacity)
+        .unwrap_or(0)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct DataRecorderSample {
     timestamp: TimestampTicks,
@@ -217,21 +225,13 @@ impl DataRecorderState {
             return;
         }
         if !self.empty && self.head == self.tail {
-            self.tail = self
-                .tail
-                .checked_add(1)
-                .filter(|next| *next < capacity)
-                .unwrap_or(0);
+            self.tail = advance_ring_index(self.tail, capacity);
         }
         let Some(offset) = self.head.checked_mul(SAMPLE_SIZE) else {
             return;
         };
         if self.write(offset, &sample.encode()) {
-            self.head = self
-                .head
-                .checked_add(1)
-                .filter(|next| *next < capacity)
-                .unwrap_or(0);
+            self.head = advance_ring_index(self.head, capacity);
             self.empty = false;
         }
     }
