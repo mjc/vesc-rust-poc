@@ -3,11 +3,20 @@ use crate::domain::{FloatOutBoyMode, FloatOutBoyRunState, FloatOutBoySetpointAdj
 use crate::motor_control::FloatOutBoyMotorControl;
 use vescpkg_rs::MotorOutput;
 use vescpkg_rs::prelude::{
-    AudioChannel, AudioFrequency, AudioVoltage, Ratio, SYSTEM_TICK_RATE_HZ, SampleRate, Speed,
-    TimestampTicks, Voltage,
+    AudioChannel, AudioFrequency, AudioVoltage, Current, Ratio, SYSTEM_TICK_RATE_HZ, SampleRate,
+    Speed, TimestampTicks, Voltage,
 };
 
 const TONE_LENGTH_TICKS: u32 = crate::wire::truncating_u64_to_u32(SYSTEM_TICK_RATE_HZ) / 10;
+
+pub(super) fn normalized_current_saturation(current: Current, limit: Current) -> f32 {
+    let limit = limit.abs();
+    if limit.is_positive() {
+        current.abs().as_amps() / limit.as_amps()
+    } else {
+        0.0
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct HapticFeedbackInput {
@@ -380,5 +389,15 @@ mod tests {
         );
 
         assert_eq!(firmware.foc_tone_command_count(), 1);
+    }
+
+    #[test]
+    fn negative_regen_limit_produces_refloat_battery_saturation() {
+        let saturation = super::normalized_current_saturation(
+            vescpkg_rs::Current::from_amps(-10.0),
+            vescpkg_rs::Current::from_amps(-20.0),
+        );
+
+        assert!((saturation - 0.5).abs() < f32::EPSILON);
     }
 }

@@ -73,7 +73,7 @@ use config_storage::FirmwareImuMigration;
 use data_recorder::DataRecorderState;
 use flywheel::FloatOutBoyFlywheelRuntime;
 #[cfg(any(test, target_arch = "arm"))]
-use haptic_feedback::{HapticFeedbackInput, HapticFeedbackState};
+use haptic_feedback::{HapticFeedbackInput, HapticFeedbackState, normalized_current_saturation};
 #[cfg(test)]
 use internal_leds::FloatOutBoyInternalLedRuntime;
 #[cfg(any(test, target_arch = "arm"))]
@@ -671,22 +671,16 @@ impl FloatOutBoyPackageState {
         } else {
             self.motor_current_max
         };
-        let motor_saturation = if current_limit.current().is_positive() {
-            filtered_current.abs().as_amps() / current_limit.current().as_amps()
-        } else {
-            0.0
-        };
+        let motor_saturation =
+            normalized_current_saturation(filtered_current, current_limit.current());
         let battery_current = base.motor().battery_current().current();
         let battery_limit = if battery_current.is_negative() {
             self.battery_current_min
         } else {
             self.battery_current_max
         };
-        let battery_saturation = if battery_limit.current().is_positive() {
-            battery_current.abs().as_amps() / battery_limit.current().as_amps()
-        } else {
-            0.0
-        };
+        let battery_saturation =
+            normalized_current_saturation(battery_current, battery_limit.current());
         self.haptic_feedback.update(
             config.haptic(),
             HapticFeedbackInput {
