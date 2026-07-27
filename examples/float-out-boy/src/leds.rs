@@ -1048,18 +1048,77 @@ pub struct FloatOutBoyLedStatusUpdate {
     pub moving: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct FloatOutBoyStatusDynamics {
+    brightness: f32,
+    duty_blend: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct FloatOutBoyStatusRenderState {
+    brightness: Ratio,
+    duty: f32,
+    duty_blend: Ratio,
+}
+
+impl FloatOutBoyStatusDynamics {
+    const fn new() -> Self {
+        Self {
+            brightness: 0.0,
+            duty_blend: 0.0,
+        }
+    }
+
+    fn update(
+        &mut self,
+        config: FloatOutBoyLedsConfig,
+        input: FloatOutBoyLedUpdate,
+        status: FloatOutBoyLedStatusUpdate,
+    ) -> FloatOutBoyStatusRenderState {
+        let status_config = config.status();
+        let target_brightness = if config.are_headlights_on() {
+            status_config.brightness_headlights_on()
+        } else {
+            status_config.brightness_headlights_off()
+        };
+        self.brightness = rate_limit(self.brightness, target_brightness.as_ratio(), 3.0 / 30.0);
+
+        let duty = if matches!(input.run_state, crate::FloatOutBoyRunState::Running)
+            && !matches!(input.mode, crate::FloatOutBoyMode::Flywheel)
+        {
+            (status.duty_cycle.abs() * 10.0 / 9.0).min(1.0)
+        } else {
+            0.0
+        };
+        let duty_threshold = status_config.duty_threshold().as_ratio().max(0.15);
+        let duty_target = if duty > duty_threshold {
+            1.0
+        } else if duty < duty_threshold - 0.1 {
+            0.0
+        } else {
+            self.duty_blend
+        };
+        self.duty_blend = rate_limit(self.duty_blend, duty_target, 5.0 / 30.0).clamp(0.0, 1.0);
+
+        FloatOutBoyStatusRenderState {
+            brightness: Ratio::clamped(self.brightness),
+            duty,
+            duty_blend: Ratio::clamped(self.duty_blend),
+        }
+    }
+}
+
 /// Pure composed status/front/rear frames for one internal LED configuration.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FloatOutBoyLedRenderer {
     dynamics: FloatOutBoyLedDynamics,
+    status_dynamics: FloatOutBoyStatusDynamics,
     status: FloatOutBoyLedStripFrame,
     front: FloatOutBoyLedStripFrame,
     rear: FloatOutBoyLedStripFrame,
     front_bar: FloatOutBoyLedBarConfig,
     rear_bar: FloatOutBoyLedBarConfig,
     animation_start: f32,
-    status_brightness: f32,
-    status_duty_blend: f32,
     confirmation_start: f32,
 }
 
@@ -1086,14 +1145,13 @@ impl FloatOutBoyLedRenderer {
     ) -> Self {
         Self {
             dynamics: FloatOutBoyLedDynamics::new(distance),
+            status_dynamics: FloatOutBoyStatusDynamics::new(),
             status: FloatOutBoyLedStripFrame::new(hardware.status_strip()),
             front: FloatOutBoyLedStripFrame::new(hardware.front_strip()),
             rear: FloatOutBoyLedStripFrame::new(hardware.rear_strip()),
             front_bar: config.front(),
             rear_bar: config.rear(),
             animation_start: 0.0,
-            status_brightness: 0.0,
-            status_duty_blend: 0.0,
             confirmation_start: -1.0,
         }
     }
@@ -1183,43 +1241,11 @@ impl FloatOutBoyLedRenderer {
         fade: Ratio,
     ) {
         let status_config = config.status();
-        let target_brightness = if config.are_headlights_on() {
-            status_config.brightness_headlights_on()
-        } else {
-            status_config.brightness_headlights_off()
-        };
-        self.status_brightness = rate_limit(
-            self.status_brightness,
-            target_brightness.as_ratio(),
-            3.0 / 30.0,
-        );
+        let state = self.status_dynamics.update(config, input, status);
 
-        let duty = if matches!(input.run_state, crate::FloatOutBoyRunState::Running)
-            && !matches!(input.mode, crate::FloatOutBoyMode::Flywheel)
-        {
-            (status.duty_cycle.abs() * 10.0 / 9.0).min(1.0)
-        } else {
-            0.0
-        };
-        let duty_threshold = status_config.duty_threshold().as_ratio().max(0.15);
-        let duty_target = if duty > duty_threshold {
-            1.0
-        } else if duty < duty_threshold - 0.1 {
-            0.0
-        } else {
-            self.status_duty_blend
-        };
-        self.status_duty_blend =
-            rate_limit(self.status_duty_blend, duty_target, 5.0 / 30.0).clamp(0.0, 1.0);
-
-        let overlay = |blend| {
-            FloatOutBoyLedOverlay::new(
-                Ratio::clamped(self.status_brightness),
-                fade,
-                Ratio::clamped(blend),
-            )
-        };
-        if self.status_duty_blend < 1.0 {
+        let overlay =
+            |blend| FloatOutBoyLedOverlay::new(state.brightness, fade, Ratio::clamped(blend));
+        if state.duty_blend.as_ratio() < 1.0 {
             self.status.render_status_progress(
                 status.battery_level.clamp(0.0, 1.0),
                 FloatOutBoyStatusProgress::Battery,
@@ -1228,13 +1254,13 @@ impl FloatOutBoyLedRenderer {
                 overlay(1.0),
             );
         }
-        if self.status_duty_blend > 0.0 {
+        if state.duty_blend.as_ratio() > 0.0 {
             self.status.render_status_progress(
-                duty,
+                state.duty,
                 FloatOutBoyStatusProgress::Duty,
                 status_config.red_bar_percentage(),
                 false,
-                overlay(self.status_duty_blend),
+                overlay(state.duty_blend.as_ratio()),
             );
         }
 
@@ -1246,11 +1272,8 @@ impl FloatOutBoyLedRenderer {
 
         let confirmation_progress = (current_time - self.confirmation_start) / 0.8;
         if (0.0..=1.0).contains(&confirmation_progress) {
-            self.status.render_confirmation(
-                Ratio::clamped(self.status_brightness),
-                fade,
-                confirmation_progress,
-            );
+            self.status
+                .render_confirmation(state.brightness, fade, confirmation_progress);
         }
     }
 
