@@ -482,11 +482,9 @@ impl RideModifierState {
     ) {
         // C map: turn target gates, boosts, direction, and ramp mirror
         // `third_party/float-out-boy/src/turn_tilt.c:74-130`.
-        if config.turn_tilt_strength().value() == 0.0 {
-            return;
-        }
         let abs_erpm = erpm.abs().as_revolutions_per_minute();
-        let mut target = if self.turn.yaw_aggregate.abs() < config.turn_tilt_start_angle()
+        let mut target = if config.turn_tilt_strength().value() == 0.0
+            || self.turn.yaw_aggregate.abs() < config.turn_tilt_start_angle()
             || self.turn.abs_yaw_change < AngleDegrees::from_degrees(0.04)
         {
             0.0
@@ -584,6 +582,32 @@ mod tests {
 
         assert!(setpoints.turn_tilt().angle().is_positive());
         assert_eq!(setpoints.board().angle(), setpoints.turn_tilt().angle());
+    }
+
+    #[test]
+    fn disabling_turn_tilt_winds_down_an_existing_setpoint() {
+        let mut config = FloatOutBoyConfigImage::defaults();
+        let mut editor = config.editor();
+        assert!(editor.set_turn_tilt_strength(PidScale::new(5.0)));
+        assert!(editor.set_turn_tilt_angle_limit(AngleDegrees::from_degrees(10.0)));
+        assert!(editor.set_turn_tilt_start_erpm(ElectricalSpeed::new(
+            Rpm::from_revolutions_per_minute(1_000.0),
+        )));
+
+        let mut state = RideModifierState::default();
+        for tick in 1..100 {
+            let tick = i16::try_from(tick).unwrap_or(i16::MAX);
+            state.aggregate_yaw(AngleDegrees::from_degrees(f32::from(tick) * 0.1));
+            state.advance(&config, input());
+        }
+        state.aggregate_yaw(AngleDegrees::from_degrees(10.0));
+        let active = state.advance(&config, input()).turn_tilt().angle();
+        assert!(active.is_positive());
+
+        assert!(config.editor().set_turn_tilt_strength(PidScale::new(0.0)));
+        let disabled = state.advance(&config, input()).turn_tilt().angle();
+
+        assert!(disabled < active);
     }
 
     #[test]
