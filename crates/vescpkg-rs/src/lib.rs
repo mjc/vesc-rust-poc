@@ -79,6 +79,7 @@ mod ahrs;
 mod audio;
 mod bindings;
 mod capabilities;
+mod data_recorder;
 mod eeprom;
 mod encoder;
 mod extension;
@@ -210,6 +211,9 @@ pub(crate) mod ffi {
 /// Capability-safe ABI inspection for loaders and host fixtures.
 pub use capabilities::{
     FirmwareCapabilities, FirmwareFloatSetting, FirmwareIntSetting, FirmwareSettings, SettingsError,
+};
+pub use data_recorder::{
+    FirmwareDataRecorderDescriptor, FirmwareDataRecorderDescriptorError,
 };
 pub use vesc_protocol::buffer as protocol_buffer;
 pub use vescpkg_rs_sys::{AbiError, Stm32AbiRevision, VescIfPresence};
