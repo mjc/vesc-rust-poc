@@ -226,8 +226,14 @@ impl FloatOutBoyPackageState {
         self.reconfigure_active_config();
     }
 
-    pub(in crate::package) fn load_persisted_config_on_startup(&mut self) {
+    fn restore_persisted_config(&mut self) {
         self.read_config_from_eeprom();
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(in crate::package) fn load_persisted_config_on_startup(&mut self) {
+        self.restore_persisted_config();
+        self.refresh_idle_epoch(vescpkg_rs::FirmwareClock::current_timestamp());
     }
 
     pub(super) fn handle_config_command(
@@ -251,7 +257,7 @@ impl FloatOutBoyPackageState {
                     self.acknowledge_command_config_write(now);
                 }
             }
-            FloatOutBoyAppDataCommand::ConfigRestore => self.load_persisted_config_on_startup(),
+            FloatOutBoyAppDataCommand::ConfigRestore => self.restore_persisted_config(),
             FloatOutBoyAppDataCommand::TuneDefaults => {
                 let mut config = self.serialized_config;
                 config.reset_tune_defaults();

@@ -292,7 +292,9 @@ fn eeprom_image_conversion_rejects_a_bad_signature() {
 #[test]
 fn config_save_restore_and_startup_round_trip_custom_eeprom() {
     let firmware = FirmwareTest::new();
+    firmware.set_clock_ticks(42);
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    state.idle_ticks = TimestampTicks::from_ticks(7);
     assert!(state.serialized_config.editor().set_beeper_enabled(true));
     state.refresh_config_runtime_state();
     assert!(state.serialized_config.editor().set_disabled(true));
@@ -346,6 +348,7 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
         &[],
     ));
     assert_eq!(state.serialized_config, saved);
+    assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(7));
     assert_eq!(
         state
             .all_data_payloads()
@@ -360,6 +363,7 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
     let restarted = FloatOutBoyPackageState::from_persisted_config(
         FloatOutBoyAllDataPayloads::source_startup(),
     );
+    assert_eq!(restarted.idle_ticks, TimestampTicks::from_ticks(42));
     assert_eq!(restarted.serialized_config, saved);
     assert_eq!(
         restarted
