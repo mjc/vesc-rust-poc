@@ -158,9 +158,8 @@ impl FloatOutBoyPackageState {
         })
     }
 
-    fn start_flywheel(&mut self, start: FloatOutBoyFlywheelStart) {
-        self.set_ride_mode(FloatOutBoyMode::Flywheel);
-        if self.flywheel_offsets.needs_calibration() || start.recalibrate {
+    fn accept_flywheel_calibration(&mut self, recalibrate: bool) -> bool {
+        if self.flywheel_offsets.needs_calibration() || recalibrate {
             let attitude = self.all_data_payloads.base().attitude();
             let pitch = AngleDegrees::from(attitude.pitch().angle());
             if pitch.abs() < AngleDegrees::from_degrees(70.0) {
@@ -169,7 +168,7 @@ impl FloatOutBoyPackageState {
                 } else {
                     self.set_ride_mode(FloatOutBoyMode::Normal);
                 }
-                return;
+                return false;
             }
             self.flywheel_offsets = FloatOutBoyFlywheelOffsets::calibrated(
                 pitch,
@@ -178,6 +177,14 @@ impl FloatOutBoyPackageState {
             self.alert_beeper(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::ONE));
         } else {
             self.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE));
+        }
+        true
+    }
+
+    fn start_flywheel(&mut self, start: FloatOutBoyFlywheelStart) {
+        self.set_ride_mode(FloatOutBoyMode::Flywheel);
+        if !self.accept_flywheel_calibration(start.recalibrate) {
+            return;
         }
         self.ride_flags.flywheel_abort = false;
 
