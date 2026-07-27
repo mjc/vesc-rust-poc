@@ -93,6 +93,7 @@ impl FloatOutBoyFlywheelRuntime {
 
     fn deactivate(&mut self) {
         self.config = None;
+        self.abort = false;
     }
 
     pub(super) fn latch_abort(&mut self, abort: bool) {
@@ -249,8 +250,7 @@ impl FloatOutBoyPackageState {
             // A failed write means the in-memory configuration layout is not the
             // layout this package was built for. Reload the saved configuration
             // instead of running with a mixture of old and partially written values.
-            self.set_ride_mode(FloatOutBoyMode::Normal);
-            self.read_config_from_eeprom();
+            self.restore_flywheel_config();
             return;
         }
         self.replace_active_config(&config);
